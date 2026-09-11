@@ -281,6 +281,28 @@
   }
 
   var Importador = {
+    /* Abas de um workbook do SheetJS → [{nome, matriz}], de A1 até a ÚLTIMA
+     * CÉLULA QUE EXISTE — não até a dimensão gravada no arquivo.
+     * ⚠ A DIMENSÃO GRAVADA MENTE: uma planilha completa real, de outro programa de orçamento, escreve
+     *   <dimension ref="A1:A94"> numa aba que vai até a coluna J. Confiando
+     *   nela, o SheetJS entregava UMA coluna — item sem código, sem banco, sem
+     *   preço, e a planilha "não reconhecida". Começar em A1 mantém cada
+     *   coluna no índice dela. Puro: o XLSX vem de quem chama (no app,
+     *   js/vendor/xlsx.full.min.js; no teste, o mesmo arquivo). */
+    abasDoSheetJS: function (XLSX, wb) {
+      return ((wb && wb.SheetNames) || []).map(function (nm) {
+        var ws = wb.Sheets[nm] || {}, maxR = -1, maxC = -1;
+        for (var k in ws) {
+          if (!Object.prototype.hasOwnProperty.call(ws, k) || k.charAt(0) === "!") continue;
+          var c = XLSX.utils.decode_cell(k);
+          if (c.r > maxR) maxR = c.r;
+          if (c.c > maxC) maxC = c.c;
+        }
+        if (maxR < 0) return { nome: String(nm), matriz: [] };
+        return { nome: String(nm), matriz: XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: true, defval: "", range: { s: { r: 0, c: 0 }, e: { r: maxR, c: maxC } } }) };
+      }).filter(function (a) { return a.matriz.length; });
+    },
+
     _num: num, _txt: txt, _norm: norm, _ehCodSinapi: ehCodSinapi, _ehMoeda: ehMoeda, _pareceIndice: pareceIndice, _detectarColunas: detectarColunas, _acharCabecalho: acharCabecalho, _etapaEmbutida: etapaEmbutida,
 
     analisar: function (matriz, opts) {

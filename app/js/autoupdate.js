@@ -82,6 +82,38 @@
     return true;
   }
 
+  /* ⚠ O CACHE DO NAVEGADOR DEVOLVIA O JS VELHO NA RECARGA (medido 11/09/2026).
+   * O GitHub Pages manda `Cache-Control: max-age=600` para cada .js e .css do
+   * PWA. A recarga troca o endereço do index.html (?_upd=), mas os <script>
+   * vêm sem quebra-cache — e o que o aparelho baixou nos últimos 10 minutos
+   * sai do cache HTTP sem ir à rede. O app voltava com o código ANTIGO, e a
+   * trava de laço (uma recarga por versão-alvo por sessão) impedia a segunda
+   * tentativa: o celular seguia na versão velha até alguém fechar o app.
+   * Aqui cada arquivo do shell é pedido de novo com `cache: "reload"`, que vai
+   * à rede e SUBSTITUI a cópia do cache HTTP; a recarga já acha os novos.
+   * No computador o servidor local manda `no-store`, e isto só custa uns
+   * pedidos a mais no localhost.
+   * ⚠ A MESMA EXPRESSÃO do `sw.js` (pré-cache do shell): as duas listas têm de
+   * ser a mesma, e tools/test-foto-obra-remoto.js confere. */
+  var RE_SHELL = /(?:src|href)="((?:js|css)\/[^"]+)"/g;
+  function urlsDoShell(html) {
+    var out = [], m;
+    RE_SHELL.lastIndex = 0;
+    while ((m = RE_SHELL.exec(String(html || "")))) out.push(m[1]);
+    return out;
+  }
+  function renovarShell() {
+    if (typeof fetch !== "function") return Promise.resolve([]);
+    return fetch("index.html", { cache: "reload" })
+      .then(function (r) { return r.ok ? r.text() : ""; })
+      .then(function (html) {
+        var us = urlsDoShell(html);
+        return Promise.all(us.map(function (u) { return fetch(u, { cache: "reload" }).catch(function () {}); }))
+          .then(function () { return us; });
+      })
+      .catch(function () { return []; });
+  }
+
   function limparCachesERecarregar() {
     var done = false;
     function go() {
@@ -97,9 +129,13 @@
       var tarefas = [];
       if (global.caches && caches.keys) tarefas.push(caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); }));
       if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) tarefas.push(navigator.serviceWorker.getRegistrations().then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); }));
+      tarefas.push(renovarShell());
       Promise.all(tarefas).then(go, go);
     } catch (e) { go(); }
-    setTimeout(go, 1500); // fallback: recarrega de qualquer jeito
+    /* fallback: recarrega de qualquer jeito. Era 1,5 s — curto demais agora que
+       a recarga espera o shell ser baixado de novo; em 3G de obra isso passa de
+       1,5 s e a recarga saía no meio, com metade dos arquivos ainda velhos. */
+    setTimeout(go, 15000);
   }
 
   /* Update já está no disco: recarrega agora se seguro, senão espera ficar. */
@@ -340,6 +376,8 @@
 
   var AutoUpdate = {
     forcar: forcarAtualizacao, // botão manual — continua existindo para quem quiser puxar na hora
+    _urlsDoShell: urlsDoShell,   // expostos para tools/e2e-foto-obra-aparelhos.js
+    _renovarShell: renovarShell,
     // Verifica e ATUALIZA sozinho. Silencioso se: não há servidor de update, offline, ou já é a última.
     verificar: function () {
       ultimaConferencia = Date.now();

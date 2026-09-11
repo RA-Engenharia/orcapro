@@ -180,9 +180,24 @@
     return srv() + "/api/foto/" + encodeURIComponent(ref.tenant) + "/" + encodeURIComponent(ref.remoto);
   };
 
+  /* ⚠ QUEM PEDE A MESMA FOTO AO MESMO TEMPO ESPERA O MESMO DOWNLOAD.
+     Medido (tools/e2e-foto-obra-aparelhos.js, contando por ENDEREÇO): a obra
+     que está no palco da lista de Obras aparece também no card, e os dois
+     pedem a foto no mesmo milissegundo — antes de ela estar no IndexedDB.
+     Eram 2 downloads da mesma imagem, no 4G do cliente. As fotos que só
+     aparecem no card já saíam uma vez cada. */
+  var baixando = {};
   Fotos.baixar = function (ref) {
     var u = Fotos.url(ref);
     if (!u) return Promise.resolve("");
+    if (baixando[u]) return baixando[u];
+    var p = baixarDeVerdade(ref, u);
+    baixando[u] = p;
+    var soltar = function () { delete baixando[u]; };
+    p.then(soltar, soltar);
+    return p;
+  };
+  function baixarDeVerdade(ref, u) {
     return fetch(u, { headers: { "x-licenca": chave() } }).then(function (r) {
       if (!r.ok) return "";
       return r.blob().then(function (b) {
@@ -485,6 +500,25 @@
       if (v && v.remoto) { r.remoto = v.remoto; r.tenant = v.tenant; n++; }
     });
     return n;
+  };
+
+  /* Devolve à fila as fotos que nunca ganharam endereço remoto — só as que têm
+     os bytes NESTE aparelho: quem não tem a foto não tem o que mandar, e pôr o
+     id na fila de outro aparelho só faria a fila descartá-lo a cada abertura.
+     Quem chama é o reparo das fotos de obra (Gestao._repararFotosDeObra):
+     quando ela subir, o `aoSubir` carimba o registro. */
+  Fotos.reenviar = function (ids) {
+    if (typeof Idb === "undefined" || !Idb.disponivel()) return Promise.resolve(0);
+    var fila0 = lerFila();
+    var pend = (ids || []).filter(function (id) { return id && fila0.indexOf(id) < 0; });
+    return Promise.all(pend.map(function (id) {
+      return Idb.get(PREF + id).then(function (d) { return d ? id : ""; }).catch(function () { return ""; });
+    })).then(function (tem) {
+      var f = lerFila(), n = 0;
+      tem.forEach(function (id) { if (id && f.indexOf(id) < 0) { f.push(id); n++; } });
+      if (n) { gravarFila(f); Fotos.andarFila(); }
+      return n;
+    });
   };
 
   Fotos.apagar = function (refs) {

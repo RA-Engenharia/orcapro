@@ -6175,7 +6175,7 @@
               custoTotal: Util.num(i.coeficiente) * Util.num(i.custoUnitario), categoria: normCat(i.categoria) };
           })
         };
-        var bgP = UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("buscar", 15) : "") + " Composição própria " + String(codigo) + " — Insumos", UI.renderInsumos(aP, ufAtivo), [
+        var bgP = UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("buscar", 15) : "") + " Analítico do item — composição própria " + String(codigo), UI.renderInsumos(aP, ufAtivo), [
           { texto: "" + (typeof Icones !== "undefined" ? Icones.get("editar", 15) : "") + " Editar composição", classe: "ghost", onClick: function () { UI.fecharModal(); self.editarComposicao(String(codigo)); } },
           { texto: "⧉ Duplicar", classe: "ghost", onClick: function () { UI.fecharModal(); self.duplicarComposicao(String(codigo)); } },
           { texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }
@@ -6238,7 +6238,7 @@
             [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
           return;
         }
-        var bg = UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("buscar", 15) : "") + " Composição " + codigo + " — Insumos", UI.renderInsumos(a, ufAtivo), [
+        var bg = UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("buscar", 15) : "") + " Analítico do item — composição " + codigo, UI.renderInsumos(a, ufAtivo), [
           // v1.1.124 — "quero essa, mas com MEU coeficiente": clona p/ composição própria
           { texto: "🧬 Criar minha versão", classe: "ghost", onClick: function () { self.criarVersaoPropria(String(codigo)); } },
           { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }
@@ -7013,6 +7013,27 @@
       }
       this._propriaEspelhar(item);
       return item;
+    },
+    /* O MESMO _propriaGravar, para VÁRIOS itens de uma vez (importação).
+     * ⚠ Um por um seria N leituras e N gravações da base inteira, N backups
+     *   urgentes e N espelhos — e, se o décimo falhasse, os nove primeiros já
+     *   estariam no disco sem o orçamento que os usa. Em lote é uma gravação
+     *   só. Mesma regra de substituição: mesmo código (sem caixa) substitui;
+     *   o resto da base fica como estava. */
+    _propriaGravarVarios: function (itens) {
+      itens = Util.arr(itens);
+      if (!itens.length) return 0;
+      var eid = Auth.empresaId(), payload = Store.lerBasesExtras(eid) || [], atual = null;
+      for (var i = 0; i < payload.length; i++) { if (String(payload[i].fonte).toUpperCase() === "PROPRIA") atual = payload[i]; }
+      var novos = {};
+      itens.forEach(function (it) { novos[String(it.codigo).trim().toLowerCase()] = 1; });
+      var dados = (atual && atual.dados ? atual.dados : []).filter(function (d) { return !novos[String(d.codigo).trim().toLowerCase()]; });
+      itens.forEach(function (it) { dados.push(it); });
+      Bases.registrar("PROPRIA", { dados: dados, uf: (atual && atual.uf) || String(this._baseUf || Sinapi.uf || ""), mes: (atual && atual.mes) || new Date().toISOString().slice(0, 7) });
+      Bases.persistir(eid);
+      try { this.backupAuto({ urgente: true }); } catch (e) {} // dado autoral: cópia em arquivo sem esperar
+      this._propriaEspelharVarios(itens);
+      return itens.length;
     },
 
     /* ==================================================================
@@ -8269,16 +8290,28 @@
         var f = inp.files && inp.files[0]; if (!f) return;
         if (f.size > 25 * 1024 * 1024) { UI.toast("Planilha muito grande (máx. 25 MB). Reduza ou divida o arquivo.", "erro"); return; }
         UI.toast("Lendo a planilha…", "ok");
-        self._lerPlanilha(f, function (matriz, erro, meta) {
-          if (erro || !matriz || !matriz.length) { UI.toast("Não consegui ler a planilha: " + (erro || "vazia"), "erro"); return; }
-          // planilha gerada por este app: o orçamento inteiro está na _meta
-          if (meta && meta.snapshot) { self._abrirRestaurarSnapshot(meta.snapshot, f.name, matriz, meta); return; }
-          var res = Importador.analisar(matriz);
-          self._imp = { matriz: matriz, nome: f.name, res: res, abas: (meta && meta.abas) || null, abaIdx: (meta && meta.idx) || 0 };
-          self._abrirImportPreview();
-        });
+        self._lerPlanilha(f, function (matriz, erro, meta) { self._aoLerPlanilha(f, matriz, erro, meta); });
       };
       document.body.appendChild(inp); inp.click(); setTimeout(function () { try { inp.remove(); } catch (e) {} }, 0);
+    },
+    /* O que fazer com a planilha lida. Separado do <input> para a e2e
+       (tools/e2e-import-planilha-completa.js) entrar pela MESMA porta que o clique —
+       montar a tela na mão provaria a tela, não o caminho até ela. */
+    _aoLerPlanilha: function (f, matriz, erro, meta) {
+      var self = this;
+      if (erro || !matriz || !matriz.length) { UI.toast("Não consegui ler a planilha: " + (erro || "vazia"), "erro"); return; }
+      // planilha gerada por este app: o orçamento inteiro está na _meta
+      if (meta && meta.snapshot) { self._abrirRestaurarSnapshot(meta.snapshot, f.name, matriz, meta); return; }
+      /* ⚠ PLANILHA ORÇAMENTÁRIA COMPLETA ANTES DA HEURÍSTICA DE GRADE. A
+         heurística lê UMA aba e devolve item solto: a composição própria
+         vira preço fixo sem estrutura, o banco de cada item se perde, o BDI
+         e o regime de encargos ficam para trás e o arredondamento vira o
+         truncamento do app — o total sai centavos abaixo do que o cliente
+         já recebeu. O arquivo diz tudo isso por escrito; é só ler. */
+      if (self._tentarPlanilhaCompleta((meta && meta.abas) || [{ nome: f.name, matriz: matriz }], f.name, matriz, meta)) return;
+      var res = Importador.analisar(matriz);
+      self._imp = { matriz: matriz, nome: f.name, res: res, abas: (meta && meta.abas) || null, abaIdx: (meta && meta.idx) || 0 };
+      self._abrirImportPreview();
     },
     /* ==================================================================
      * RESTAURAR O ORÇAMENTO DA PRÓPRIA PLANILHA (v1.1.211)
@@ -8421,6 +8454,215 @@
       if (nCon) UI.toast(nCon + " composição(ões) própria(s) da planilha foram IGNORADAS — você preferiu manter as suas. Os itens do orçamento seguem com o preço da época.", "erro");
       try { this.backupAuto({ urgente: true }); } catch (eB) {} // dado recuperado: cópia em arquivo na hora
     },
+    /* ==================================================================
+     * PLANILHA ORÇAMENTÁRIA COMPLETA (motor: js/planilhacompleta.js)
+     *
+     * Vira orçamento NOVO com tudo que o arquivo diz: etapas e sub etapas,
+     * banco de cada item, BDI, UF, competência, regime de encargos, divisão
+     * MO/MAT/EQ e o arredondamento dele. As composições e os insumos
+     * PRÓPRIOS aparecem numa lista para a pessoa marcar o que vai para o
+     * banco dela — e o que já está lá é identificado e PERGUNTADO: gravar
+     * por cima ou salvar uma cópia com prefixo (2-, 3-…).
+     * ================================================================== */
+    _tentarPlanilhaCompleta: function (abas, nomeArq, matriz, meta) {
+      if (typeof PlanilhaCompleta === "undefined") return false;
+      var det = null;
+      try { det = PlanilhaCompleta.detectar(abas); } catch (eD) { return false; }
+      if (!det || !det.ok) return false;
+      var plano = null;
+      try { plano = PlanilhaCompleta.analisar(abas, { arquivo: nomeArq }); }
+      catch (eA) { plano = { ok: false, erro: String((eA && eA.message) || eA) }; }
+      if (!plano || !plano.ok) {
+        /* recado honesto e saída que existe: a leitura comum continua lá */
+        UI.toast("Reconheci uma " + PlanilhaCompleta.NOME.toLowerCase() + ", mas não consegui lê-la inteira (" +
+          ((plano && plano.erro) || "erro desconhecido") + "). Abrindo pela leitura de planilha comum.", "erro");
+        return false;
+      }
+      this._pc = { plano: plano, nome: nomeArq, abas: abas, matriz: matriz, meta: meta };
+      this._abrirImportPlanilhaCompleta();
+      return true;
+    },
+    /* A base PROPRIA como está NO DISCO — a mesma fonte que o _propriaGravar lê. */
+    _pcProprias: function () {
+      var payload = Store.lerBasesExtras(Auth.empresaId()) || [], atual = null;
+      for (var i = 0; i < payload.length; i++) { if (String(payload[i].fonte).toUpperCase() === "PROPRIA") atual = payload[i]; }
+      return (atual && atual.dados) ? atual.dados : [];
+    },
+    _abrirImportPlanilhaCompleta: function () {
+      var self = this, pc = this._pc;
+      if (!pc) return;
+      var plano = pc.plano, cab = plano.cabecalho || {}, ct = plano.contagem || {};
+      PlanilhaCompleta.classificar(plano, { todos: this._pcProprias() });
+      /* a prévia do total sai do MESMO motor que vai gravar — conferir contra
+         o arquivo antes de decidir, e não depois de o orçamento existir */
+      var conf = null;
+      try { conf = PlanilhaCompleta.conferirTotais(PlanilhaCompleta.montarOrcamento(plano, {}), plano); } catch (eC) {}
+      var esc = Util.esc, ic = function (n) { return typeof Icones !== "undefined" ? Icones.get(n, 15) : ""; };
+      var linha = function (r, v) { return '<tr><td class="muted" style="padding:2px 10px 2px 0;white-space:nowrap;vertical-align:top">' + r + '</td><td style="padding:2px 0"><b>' + v + '</b></td></tr>'; };
+      var fontes = Object.keys(ct.porFonte || {}).map(function (f) { return ct.porFonte[f] + " " + (f === "PROPRIA" ? "próprio(s)" : esc(f)); }).join(" · ");
+      var bancos = (cab.bancos || []).map(function (b) {
+        return esc(b.nome) + (b.competencia ? " " + b.competencia.split("-").reverse().join("/") : "") + (b.uf ? " · " + b.uf : (b.estado ? " · " + esc(b.estado) : ""));
+      }).join("<br>") || "—";
+      var enc = cab.desonerado === true ? "Desonerado" : (cab.desonerado === false ? "Não desonerado" : "não declarado no arquivo");
+      var tot = "—";
+      if (conf && conf.conferivel) {
+        tot = Util.fmtMoeda(plano.totais.geral) + " no arquivo · " + Util.fmtMoeda(conf.precoVenda) + " recalculado aqui " +
+          (conf.bate ? '<span style="color:#15803d">' + ic("check") + " confere centavo a centavo</span>"
+                     : '<span style="color:#b45309">' + ic("alerta") + " diferença de " + Util.fmtMoeda(conf.difVenda) + " — confira antes de enviar ao cliente</span>");
+      } else if (conf) {
+        tot = Util.fmtMoeda(conf.precoVenda) + ' recalculado aqui <span class="muted">(o arquivo não traz o total geral para conferir)</span>';
+      }
+      var abasLidas = [plano.abas.sintetico, plano.abas.divisao].concat(plano.abas.composicoes || []).filter(Boolean);
+      var props = plano.proprias || [];
+      var nPend = props.filter(function (p) { return !p.padrao; }).length;
+      var th = function (t) { return '<th style="text-align:left;padding:5px 6px;border-bottom:1px solid var(--borda,#e5e7eb);white-space:nowrap">' + t + '</th>'; };
+      var linhasP = props.map(function (p) {
+        var pend = !p.padrao;
+        var sel = '<select data-pc-acao="' + esc(p.chave) + '" data-pc-status="' + esc(p.status) + '" style="font-size:12px;min-width:240px;max-width:320px">' +
+          (pend ? '<option value="">— escolha —</option>' : "") +
+          p.opcoes.map(function (a) { return '<option value="' + a + '"' + (a === p.padrao ? " selected" : "") + ">" + esc(PlanilhaCompleta.rotuloAcao(p, a)) + "</option>"; }).join("") +
+          "</select>";
+        var onde = p.usadaEm.length ? "item " + p.usadaEm.slice(0, 3).join(", ") + (p.usadaEm.length > 3 ? "…" : "")
+          : (p.usadaEmComposicao.length ? "usado dentro de " + p.usadaEmComposicao.length + " composição(ões)" : "");
+        var ex = p.existente ? '<br><span class="muted">no seu banco: ' + esc(p.existente.codigo) + " · " + Util.fmtMoeda(p.existente.custoUnitario) + "</span>" : "";
+        var td = function (h, st) { return '<td style="padding:5px 6px;border-bottom:1px solid var(--borda,#f1f5f9);vertical-align:top' + (st ? ";" + st : "") + '">' + h + "</td>"; };
+        return "<tr" + (pend ? ' style="background:rgba(234,88,12,.08)"' : "") + ">" +
+          td(sel) +
+          td(p.tipo === "composicao" ? (p.semEstrutura ? "Composição<br><span class=\"muted\">sem estrutura</span>" : "Composição<br><span class=\"muted\">" + p.insumos.length + " insumo(s)</span>") : "Insumo") +
+          td(esc(p.codigoOrigem), "white-space:nowrap") +
+          td(esc(p.descricao) + (onde ? '<br><span class="muted" style="font-size:11px">' + esc(onde) + "</span>" : "") +
+             (p.avisos.length ? '<br><span style="font-size:11px;color:#b45309">' + ic("alerta") + " " + p.avisos.map(esc).join(" ") + "</span>" : "")) +
+          td(esc(p.unidade)) +
+          td(Util.fmtMoeda(p.custo.total), "white-space:nowrap;text-align:right") +
+          td(esc(PlanilhaCompleta.rotuloStatus(p)) + ex, "font-size:11.5px") +
+          "</tr>";
+      }).join("");
+      var blocoProprias = !props.length
+        ? '<p class="muted" style="font-size:12.5px;margin:12px 0 0">O arquivo não tem composição nem insumo próprio — só itens de banco oficial.</p>'
+        : '<h3 style="font-size:14px;margin:14px 0 4px">Itens próprios do arquivo — ' + ct.composicoesProprias + " composição(ões) · " + ct.insumosProprios + " insumo(s)</h3>" +
+          '<p class="muted" style="font-size:12px;margin:0 0 6px">Escolha o que vai para o <b>seu banco</b> (Minhas composições). O que não for salvo entra só neste orçamento, com o preço da planilha. ' +
+          "Composição salva leva junto os insumos próprios que ela usa.</p>" +
+          '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">' +
+            '<button type="button" class="btn sm ghost" data-pc-todas="salvar">Salvar todas as novas</button>' +
+            '<button type="button" class="btn sm ghost" data-pc-todas="naoSalvar">Não salvar nenhuma nova</button></div>' +
+          (nPend ? '<div style="padding:8px 12px;border-radius:8px;background:rgba(234,88,12,.09);border:1px solid rgba(234,88,12,.32);font-size:12.5px;margin-bottom:6px">' +
+            ic("alerta") + " <b>" + nPend + " já existe(m) no seu banco</b> com outro conteúdo ou com a mesma descrição. Em cada uma, escolha: " +
+            "<b>gravar por cima</b> (a sua passa a ser a do arquivo) ou <b>salvar como cópia</b> com prefixo (2-, 3-…).</div>" : "") +
+          '<div style="overflow:auto;max-height:46vh;border:1px solid var(--borda,#e5e7eb);border-radius:8px">' +
+          '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr>' +
+            th("O que fazer") + th("Tipo") + th("Código no arquivo") + th("Descrição") + th("Und") + th("Custo") + th("Situação") +
+          "</tr></thead><tbody>" + linhasP + "</tbody></table></div>";
+      var avs = plano.avisos || [];
+      var corpo =
+        '<p style="font-size:13px;margin:0 0 10px">Esta é uma <b>' + esc(PlanilhaCompleta.NOME.toLowerCase()) + '</b> — sintético, analítico e composições. ' +
+        "Ela entra como <b>orçamento novo</b>, com a estrutura, os bancos, o BDI e o arredondamento do arquivo.</p>" +
+        '<div class="card" style="padding:10px 12px;margin-bottom:10px"><table style="font-size:12.5px;border-collapse:collapse">' +
+          linha("Obra", esc(cab.obra || "—")) +
+          linha("Banco de preços", bancos) +
+          linha("BDI", cab.bdi != null ? Util.fmtNum(cab.bdi, 2) + "%" : "não informado no arquivo — fica o padrão do app") +
+          linha("Encargos", enc) +
+          linha("Estrutura", ct.etapas + " etapa(s) · " + ct.subetapas + " sub etapa(s) · " + ct.itens + " item(ns) (" + fontes + ")") +
+          linha("Total", tot) +
+          linha("Arredondamento", "arredondar em 2 casas — o do arquivo (o padrão do app é truncar)") +
+          linha("Abas lidas", esc(abasLidas.join(", "))) +
+        "</table></div>" +
+        '<div class="row" style="gap:10px;flex-wrap:wrap">' +
+          '<div class="field" style="flex:2;min-width:220px"><label>Nome do orçamento</label><input id="pc-nome" value="' + esc(cab.obra || String(pc.nome || "").replace(/\.(xlsx|xls|csv)$/i, "")) + '"></div>' +
+          '<div class="field" style="flex:1;min-width:180px"><label>Cliente</label><input id="pc-cliente" placeholder="o arquivo não separa o cliente"></div>' +
+          '<div class="field" style="flex:2;min-width:220px"><label>Obra</label><input id="pc-obra" value="' + esc(cab.obra || "") + '"></div>' +
+        "</div>" +
+        (avs.length ? '<div style="padding:8px 12px;border-radius:8px;background:rgba(37,99,235,.07);border:1px solid rgba(37,99,235,.25);font-size:12px;margin-top:8px">' +
+          ic("nota") + " " + avs.map(esc).join("<br>") + "</div>" : "") +
+        blocoProprias +
+        '<div id="pc-valida" style="margin-top:8px"></div>';
+      var bg = UI.modal(ic("graficos") + " " + esc(PlanilhaCompleta.NOME) + " — " + esc(pc.nome || ""), corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { self._pc = null; UI.fecharModal(); } },
+        { texto: "Ler como planilha comum", classe: "ghost", onClick: function () {
+          /* saída honesta: quem quer só os itens, pela heurística de grade */
+          var o = self._pc; self._pc = null; if (!o) return;
+          self._imp = { matriz: o.matriz, nome: o.nome, res: Importador.analisar(o.matriz), abas: (o.meta && o.meta.abas) || null, abaIdx: (o.meta && o.meta.idx) || 0 };
+          self._abrirImportPreview();
+        } },
+        { texto: ic("check") + " Importar orçamento", classe: "success", onClick: function () { self.criarOrcamentoDaPlanilhaCompleta(); } }
+      ]);
+      if (bg && bg.querySelectorAll) {
+        Array.prototype.forEach.call(bg.querySelectorAll("[data-pc-todas]"), function (b) {
+          b.addEventListener("click", function () {
+            var alvo = b.getAttribute("data-pc-todas");
+            Array.prototype.forEach.call(bg.querySelectorAll('select[data-pc-status="nova"]'), function (s) { s.value = alvo; });
+          });
+        });
+      }
+    },
+    criarOrcamentoDaPlanilhaCompleta: function () {
+      var self = this, pc = this._pc;
+      if (!pc) return;
+      if (this._trialBloqueado()) { this._avisoTrial(); return; }
+      var eid = Auth.empresaId(), plano = pc.plano;
+      try {
+        var qtd = Store.listarOrcamentos(eid).length, lim = Auth.limite("limiteOrcamentos");
+        if (lim && qtd >= lim) { UI.toast("Limite de " + lim + " orçamento(s) do seu plano atingido — faça upgrade ou apague um antes de importar.", "erro"); return; }
+      } catch (eL) {}
+      var limIt = Auth.limite("limiteItensPorOrcamento");
+      if (limIt && plano.contagem.itens > limIt) {
+        UI.toast("A planilha tem " + plano.contagem.itens + " itens e o seu plano permite " + limIt + " por orçamento. Importação cancelada para não entregar um orçamento pela metade.", "erro");
+        return;
+      }
+      var decisoes = {};
+      Array.prototype.forEach.call(document.querySelectorAll("[data-pc-acao]"), function (s) { decisoes[s.getAttribute("data-pc-acao")] = s.value; });
+      var v = function (id) { var e = UI.el(id); return e ? String(e.value || "").trim() : ""; };
+      /* ⚠ RECLASSIFICA CONTRA O DISCO NA HORA DE GRAVAR. Entre abrir a lista e
+         confirmar, a nuvem pode ter trazido de outro aparelho a mesma
+         composição — gravar "nova" por cima dela seria sobrescrever sem ter
+         perguntado. Se mudou, a decisão antiga deixa de valer e a lista volta. */
+      var antes = {};
+      Util.arr(plano.proprias).forEach(function (p) { antes[p.chave] = p.status; });
+      PlanilhaCompleta.classificar(plano, { todos: this._pcProprias() });
+      var mudou = Util.arr(plano.proprias).some(function (p) { return antes[p.chave] !== p.status; });
+      if (mudou) {
+        UI.toast("O seu banco de composições mudou enquanto a lista estava aberta (sincronização). Revise a lista de novo antes de importar.", "erro");
+        this._abrirImportPlanilhaCompleta();
+        return;
+      }
+      var autor = (typeof Auth !== "undefined" && Auth.nome) ? Auth.nome() : "";
+      var g = PlanilhaCompleta.planejarGravacao(plano, decisoes, { agora: Util.agoraISO(), autor: autor, arquivo: pc.nome });
+      if (!g.ok) {
+        var box = UI.el("pc-valida");
+        if (box) box.innerHTML = '<div style="padding:9px 12px;border-radius:8px;background:rgba(220,38,38,.10);border:1px solid rgba(220,38,38,.3);font-size:12.5px">' +
+          (typeof Icones !== "undefined" ? Icones.get("proibido", 15) : "") + " " + Util.esc(g.erro) + "</div>";
+        UI.toast(g.erro, "erro");
+        return;
+      }
+      var orc = PlanilhaCompleta.montarOrcamento(plano, { codigoPorChave: g.codigoPorChave, nome: v("pc-nome"), cliente: v("pc-cliente"), obra: v("pc-obra"), arquivo: pc.nome });
+      /* ⚠ AS PRÓPRIAS ENTRAM ANTES DO ORÇAMENTO — o item nasce apontando para
+         um código que já existe, e o detalhamento dele abre na hora. Se o
+         orçamento falhar depois, as próprias ficam (reimportar as encontra
+         como "já salva, igual", sem duplicar). */
+      if (g.gravar.length) {
+        try { this._propriaGravarVarios(g.gravar); }
+        catch (eP) { UI.toast("Falhou ao gravar os itens próprios no seu banco (" + ((eP && eP.message) || eP) + "). Nada foi importado.", "erro"); return; }
+      }
+      try { Store.salvarOrcamento(eid, orc); }
+      catch (eS) {
+        UI.toast("Os itens próprios foram gravados, mas o orçamento falhou ao salvar (" + ((eS && eS.message) || eS) + "). Importe de novo: o que já foi gravado aparece como \"já salva, igual\".", "erro");
+        return;
+      }
+      var conf = null;
+      try { conf = PlanilhaCompleta.conferirTotais(orc, plano); } catch (eC) {}
+      this._pc = null;
+      UI.fecharModal();
+      this.abrirOrcamento(orc.id);
+      var r = g.resumo, nGrav = r.novas + r.sobrescritas + r.copias;
+      var totTxt = (conf && conf.conferivel)
+        ? (conf.bate ? " O total confere com o arquivo: " + Util.fmtMoeda(conf.precoVenda) + "."
+                     : " ATENÇÃO: o total ficou " + Util.fmtMoeda(conf.precoVenda) + ", diferente do arquivo em " + Util.fmtMoeda(conf.difVenda) + ".")
+        : "";
+      UI.toast("Orçamento importado da planilha completa: " + orc.etapas.length + " etapa(s) e " + plano.contagem.itens + " item(ns)." + totTxt +
+        (nGrav ? " No seu banco: " + [r.novas ? r.novas + " nova(s)" : "", r.sobrescritas ? r.sobrescritas + " gravada(s) por cima" : "", r.copias ? r.copias + " cópia(s)" : ""].filter(Boolean).join(", ") + "." : ""),
+        (conf && conf.conferivel && !conf.bate) ? "erro" : "ok");
+      if (g.avisos.length) UI.toast(g.avisos.join(" "), "erro");
+      try { this.backupAuto({ urgente: true }); } catch (eB) {}
+    },
     _lerPlanilha: function (file, cb) {
       var nome = String(file.name || "").toLowerCase(), fr = new FileReader();
       if (/\.csv$/.test(nome)) { fr.onload = function () { try { cb(App._parseCSV(String(fr.result))); } catch (e) { cb(null, String(e && e.message || e)); } }; fr.onerror = function () { cb(null, "falha ao ler o arquivo"); }; fr.readAsText(file); return; }
@@ -8434,9 +8676,7 @@
             try {
               if (!global.XLSX) { cb(null, "Não consegui carregar o leitor de .xls. Salve como .xlsx ou .csv."); return; }
               var wb = XLSX.read(new Uint8Array(fr.result), { type: "array" });
-              var abas = (wb.SheetNames || []).map(function (nm) {
-                return { nome: String(nm), matriz: XLSX.utils.sheet_to_json(wb.Sheets[nm], { header: 1, blankrows: true, defval: "" }) };
-              }).filter(function (a) { return a.matriz.length; });
+              var abas = App._abasDoSheetJS(wb); // área real das células, não a dimensão gravada (ver a nota lá)
               if (!abas.length) { cb(null, "planilha .xls sem abas legíveis"); return; }
               var idx = App._melhorAba(abas);
               cb(abas[idx].matriz, null, { abas: abas, idx: idx });
@@ -8477,13 +8717,35 @@
               } catch (eSn) {}
               var idx = App._melhorAba(abas);
               cb(abas[idx].matriz, null, { abas: abas, idx: idx, snapshot: snap });
-            }).catch(function (e) { cb(null, App._msgExcelErro(e)); });
+            }).catch(function (e) { App._lerComSheetJS(fr.result, e, cb); }); // ver a nota em _lerComSheetJS
           } catch (e) { cb(null, App._msgExcelErro(e)); }
         });
       };
       fr.onerror = function () { cb(null, "falha ao ler o arquivo"); };
       fr.readAsArrayBuffer(file);
     },
+    /* ⚠ O EXCELJS RECUSA ARQUIVO QUE O EXCEL ABRE. A planilha completa de outro programa
+       grava a mesma mescla de células duas vezes, e o ExcelJS aborta a leitura
+       inteira ("Cannot merge already merged cells") — medido com o
+       js/vendor/exceljs.min.js do próprio app. O cliente via "Falha ao ler a
+       planilha" num arquivo que abre normal no Excel. O SheetJS, que já viaja
+       no app para o .xls, lê o mesmo arquivo. Só se os DOIS falharem o erro
+       chega à pessoa — e é o do ExcelJS, que é o leitor principal. */
+    _lerComSheetJS: function (buf, erroExcelJS, cb) {
+      if (typeof ExcelOrc === "undefined" || !ExcelOrc.ensureSheetJS) { cb(null, App._msgExcelErro(erroExcelJS)); return; }
+      ExcelOrc.ensureSheetJS(function () {
+        try {
+          if (!global.XLSX) { cb(null, App._msgExcelErro(erroExcelJS)); return; }
+          var abas = App._abasDoSheetJS(XLSX.read(new Uint8Array(buf), { type: "array" }));
+          if (!abas.length) { cb(null, App._msgExcelErro(erroExcelJS)); return; }
+          var idx = App._melhorAba(abas);
+          cb(abas[idx].matriz, null, { abas: abas, idx: idx, leitor: "sheetjs" });
+        } catch (e2) { cb(null, App._msgExcelErro(erroExcelJS)); }
+      });
+    },
+    /* ⚠ A dimensão gravada no arquivo mente — a área real sai das células
+       (ver Importador.abasDoSheetJS, onde a regra é testada em Node). */
+    _abasDoSheetJS: function (wb) { return Importador.abasDoSheetJS(XLSX, wb); },
     // Traduz o erro cru do ExcelJS numa mensagem acionável (arquivo não-xlsx/corrompido/protegido).
     _msgExcelErro: function (e) {
       var raw = String((e && e.message) || e || "");

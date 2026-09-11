@@ -134,6 +134,27 @@
     return (TRANSICOES[a] || []).indexOf(b) > -1;
   }
 
+  /* ⚠ LANÇAMENTO NOVO NÃO TEM ESTADO DE ORIGEM — e é aqui que isso se decide.
+   *
+   * O formulário chamava `podeIr(f.status, escolhido)` também para o
+   * lançamento que ainda não existe. Registro novo não tem status, e
+   * `norm(undefined)` devolve `pago` (a regra do legado, ver `norm`) — então
+   * o sistema tratava a conta que a pessoa estava CRIANDO como uma baixa já
+   * conciliada, e `pago` é terminal: Previsto, Pendente e Agendado eram
+   * recusados no primeiro Salvar. Só "Pago" passava. Relato de cliente em
+   * 10/09/2026 (v1.2.64): "tentei colocar como pendente para depois marcar
+   * como pago, não foi aceito; tentei agendado e previsto, também não".
+   * A nota lida pela IA nascia `pendente` e só podia ser salva como pendente,
+   * agendada ou paga — o mesmo defeito pelo outro lado.
+   *
+   * Quem tem `id` já foi gravado e segue a máquina de estados. Quem não tem
+   * está nascendo: escolhe o estado inicial livremente. Não confundir com o
+   * legado SEM status mas COM id — esse continua `pago`, e terminal. */
+  function podeSalvar(anterior, para) {
+    if (!anterior || !anterior.id) return true;
+    return podeIr(anterior.status, para);
+  }
+
   function rotulo(s) { return (ESTADOS[norm(s)] || {}).rotulo || "—"; }
   function cor(s) { return (ESTADOS[norm(s)] || {}).cor || "#64748b"; }
 
@@ -154,7 +175,7 @@
   var FinStatus = {
     ESTADOS: ESTADOS, TRANSICOES: TRANSICOES,
     norm: norm, realizado: realizado, emAberto: emAberto,
-    vencido: vencido, venceAte: venceAte, podeIr: podeIr,
+    vencido: vencido, venceAte: venceAte, podeIr: podeIr, podeSalvar: podeSalvar,
     rotulo: rotulo, cor: cor, opcoes: opcoes,
     valorDoEstorno: valorDoEstorno
   };

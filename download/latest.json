@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.66",
+  "versao": "1.2.67",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.66.zip",
-  "notas": "Ajustes internos no cadastro do teste gratis.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.66/OrcaPRO-IA-Instalador-v1.2.66.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.67.zip",
+  "notas": "Correcao: a foto de cada obra passa a aparecer tambem no tablet e no celular. Para as obras que ja tinham foto, abra o OrcaPRO uma vez, com internet, no computador onde as fotos foram anexadas. Novidades: importar a planilha orcamentaria completa como orcamento novo, com as composicoes e os insumos proprios; o lancamento novo do Financeiro ja nasce como Previsto, Pendente ou Agendado; o botao Insumos da linha do orcamento passa a se chamar Analitico do item; o cadastro do teste gratis passa a pedir e-mail.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.67/OrcaPRO-IA-Instalador-v1.2.67.exe"
 }

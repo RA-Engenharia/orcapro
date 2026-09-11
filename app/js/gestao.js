@@ -4058,6 +4058,13 @@
         /* a referencia so troca quando a pessoa mexeu: salvar o cadastro sem
            tocar na foto nao pode apagar a que ja estava la */
         if (fotoTrocou) { if (fotoRef) obj.foto = fotoRef; else delete obj.foto; }
+        /* ⚠ CARIMBA ANTES DE GRAVAR, como o diário faz. A foto começa a subir no
+           instante em que é escolhida, com este formulário ainda aberto — o
+           `aoSubir` varre as obras JÁ gravadas e não a encontra. Sem esta linha
+           a obra nascia com `remoto: ""` e a foto só existia no aparelho que a
+           anexou: no tablet e no celular a capa e o palco ficavam vazios.
+           Vale também para obra antiga salva de novo sem mexer na foto. */
+        if (obj.foto && typeof Fotos !== "undefined" && Fotos.carimbarRemotos) Fotos.carimbarRemotos([obj.foto]);
         obj.clienteId = v("g-cliente"); obj.tipo = v("g-tipo"); obj.fase = v("g-fase"); obj.status = v("g-status");
         obj.valor = nv("g-valor"); obj.local = v("g-local"); obj.inicio = v("g-inicio"); obj.termino = v("g-termino");
         obj.enderecoEntrega = v("g-endentrega"); obj.responsavelRecebimento = v("g-receb");
@@ -6693,13 +6700,30 @@
            conta já conciliada sem deixar rastro; quem quer desfazer um
            pagamento usa ESTORNO, que cria registro espelho em vez de
            reescrever a história. O <select> oferece tudo, mas o save recusa o
-           que o ciclo de vida não permite — e diz para onde dá para ir. */
-        if (typeof FinStatus !== "undefined" && !FinStatus.podeIr(f.status, obj.status)) {
+           que o ciclo de vida não permite — e diz para onde dá para ir.
+           ⚠ A PERGUNTA É `podeSalvar(f, …)`, NÃO `podeIr(f.status, …)`: no
+           lançamento NOVO `f.status` é vazio, vazio é lido como `pago`, e `pago`
+           é terminal — só "Pago" passava. Ver FinStatus.podeSalvar. */
+        if (typeof FinStatus !== "undefined" && !FinStatus.podeSalvar(f, obj.status)) {
           var destinos = (FinStatus.TRANSICOES[FinStatus.norm(f.status)] || [])
             .map(function (d) { return FinStatus.rotulo(d); });
-          UI.toast("De “" + FinStatus.rotulo(f.status) + "” não dá para ir direto a “" +
+          var msgSt = "De “" + FinStatus.rotulo(f.status) + "” não dá para ir direto a “" +
             FinStatus.rotulo(obj.status) + "”." +
-            (destinos.length ? " Caminhos possíveis: " + destinos.join(", ") + "." : ""), "erro");
+            (destinos.length ? " Caminhos possíveis: " + destinos.join(", ") + "." : "");
+          /* ⚠ TODA TRAVA PRECISA DE PORTA. `pago` não tem destino nenhum, e a
+             recusa terminava em "não dá" — sem dizer que o caminho existe e
+             onde fica. O caminho é o estorno: o botão mora na linha do
+             lançamento, na lista, e só aparece enquanto ele não foi estornado.
+             O original JÁ estornado não chega aqui — a `guarda.salvar` lá
+             embaixo recusa antes, com a mensagem dela. Chega o próprio
+             espelho, que não tem botão Estornar: mandar a pessoa procurá-lo
+             seria porta pintada na parede. */
+          if (!destinos.length && FinStatus.norm(f.status) === "pago") {
+            msgSt += f.estornoDe
+              ? " Este é um lançamento de estorno — ele não muda de estado. Para desfazer a reversão, exclua o par."
+              : " Para desfazer um pagamento, feche esta janela e use o botão Estornar na linha deste lançamento, na lista do Financeiro (o original continua lá e o estorno soma zero). Depois crie o lançamento de novo com o status certo.";
+          }
+          UI.toast(msgSt, "erro");
           return false;
         }
         /* uma conta marcada como paga sem dizer QUANDO deixa o fluxo de caixa
@@ -18008,8 +18032,58 @@
               return;
             }
           }
+
+          /* ⚠ E A FOTO DA OBRA — a capa do card e o fundo do palco. Faltava
+             aqui até a 1.2.65: a foto subia, o registro da obra nunca sabia o
+             endereço, e os outros aparelhos não tinham de onde baixá-la. Ver
+             _repararFotosDeObra, que conserta o que já foi gravado assim. */
+          var obs = Store.listar(eid(), "obras") || [];
+          for (var w = 0; w < obs.length; w++) {
+            var fo = obs[w] && obs[w].foto;
+            if (fo && fo.id === idLocal && !fo.remoto) {
+              fo.remoto = idRemoto; fo.tenant = tenant;
+              Store.salvar(eid(), "obras", obs[w]);
+              return;
+            }
+          }
         } catch (e) {}
       };
+      setTimeout(function () { self._repararFotosDeObra(0); }, 6000);
+    },
+
+    /* ⚠ A FOTO DA OBRA NUNCA APRENDIA O ENDEREÇO REMOTO (até a 1.2.65).
+     * O `aoSubir` só olhava diário e tour 360, e o formulário da obra gravava a
+     * referência sem carimbar. A foto subia para o servidor, mas o registro
+     * ficava com `remoto: ""` para sempre: no computador que a anexou ela
+     * aparecia (os bytes estão no IndexedDB dele); no tablet e no celular a
+     * capa e o palco da lista de Obras ficavam vazios, sem erro em lugar nenhum.
+     *
+     * Uma vez por sessão, conserta o que já foi gravado assim:
+     *   1. carimba pelo mapa idLocal→remoto, quando a foto já subiu;
+     *   2. sem o par no mapa (ele guarda só os 400 mais recentes) e com os
+     *      bytes NESTE aparelho, põe a foto de volta na fila — quando ela subir,
+     *      o `aoSubir` acima carimba a obra.
+     * Aparelho sem os bytes não faz nada: só quem anexou tem o que reenviar.
+     * Espera a conta abrir (eid) — o boot chama isto antes do login. */
+    _repararFotosDeObra: function (tentativa) {
+      var self = this;
+      if (this._fotosObraReparadas || typeof Fotos === "undefined") return;
+      var e = "";
+      try { e = eid(); } catch (er) {}
+      if (!e) {
+        if ((tentativa || 0) < 20) setTimeout(function () { self._repararFotosDeObra((tentativa || 0) + 1); }, 15000);
+        return;
+      }
+      this._fotosObraReparadas = true;
+      var semPar = [];
+      try {
+        (Store.listar(e, "obras") || []).forEach(function (o) {
+          if (!o || !o.foto || !o.foto.id || o.foto.remoto) return;
+          if (Fotos.carimbarRemotos && Fotos.carimbarRemotos([o.foto])) { Store.salvar(e, "obras", o); return; }
+          semPar.push(o.foto.id);
+        });
+      } catch (er2) {}
+      if (semPar.length && Fotos.reenviar) Fotos.reenviar(semPar);
     },
 
     /* Gêmeo de `_republicarSeNoAr` para a visita 360: a foto que termina de
