@@ -269,6 +269,9 @@
     { id: "mapa", rot: "Mapa", dica: "O mapa é do Google: abrir esta aba envia o endereço da obra ao Google Maps (Política de Privacidade, item 4.11)" },
     { id: "diario", rot: "Diário" },
     { id: "medicoes", rot: "Medições" },
+    /* o previsto × realizado da obra (espec v2 3.2, adendo A2): vizinha de
+       Diário e Medições, as outras duas abas que respondem "como a obra anda" */
+    { id: "cronograma", rot: "Cronograma" },
     { id: "fotos", rot: "Fotos" },
     { id: "documentos", rot: "Documentos" }
   ];
@@ -282,7 +285,10 @@
        entra pelo Resumo. Resumo e Documentos ficam só na ficha: no palco
        sobrariam botões demais para uma olhada. */
     var atalhos = abasPermitidas(opts && opts.abas).filter(function (a) {
-      return a.id === "mapa" || a.id === "diario" || a.id === "medicoes" || a.id === "fotos";
+      /* ⚠ o Cronograma entra no palco porque o palco mostra "medido" e
+         "calendário": quem lê os dois pergunta "está atrasada?" — e a
+         resposta mora na aba (memória "ação mora no card do número") */
+      return a.id === "mapa" || a.id === "diario" || a.id === "medicoes" || a.id === "cronograma" || a.id === "fotos";
     });
     return cabecalho(m) +
       ObraVitrine.numerosHtml(m) +
@@ -463,9 +469,184 @@
     return n > 0 ? (global.Util && global.Util.fmtNum ? global.Util.fmtNum(n, 2) : String(n)) + " m²" : "";
   }
 
+  /* ---------------------------------------------------------------
+   * A ABA CRONOGRAMA — o previsto × realizado da obra (espec v2 3.2,
+   * adendo A2). A CONTA é do CronoPlan.montarPainel (montada UMA vez, por
+   * App._cronoPainelDados) e o DESENHO do painel — com as ações da linha de
+   * base — é do CronoExecUI.painelPR; aqui só se decide o estado honesto de
+   * cada caso e as portas da obra. `ctx.crono` chega montado pela fiação
+   * (Gestao._cronoFicha), e só quando esta aba está aberta:
+   *   estado     "sem-orcamento" | "orcamento-sumiu" | "sem-motor" | "painel"
+   *   obraId
+   *   pr         o que o painelPR desenha: {painel, bases, ativa, podeEditar,
+   *              podeMedicoes, semDinheiro?}
+   *   dados      = pr.painel (já sem dinheiro para quem não vê dinheiro —
+   *              ver cronoSemDinheiro)
+   *   orcRot     "nome · número · estado" do orçamento da obra
+   *   base       {versao, criadaEm} da linha de base ativa, ou null
+   *   opcoes     [{id, rot, obra}] para vincular (obra = a outra obra já
+   *              ligada àquele orçamento ou a uma revisão anterior dele)
+   *   podeVincular, podeOrcamentos
+   * --------------------------------------------------------------- */
+
+  /* ⚠ DINHEIRO SÓ PARA QUEM VÊ DINHEIRO. O painel carrega o valor de venda de
+     cada etapa e subetapa (nós, VP/VA do IDP, "fora da linha de base (R$ X)")
+     e, na medição por valor, o R$ aprovado. A aba aparece para quem pode
+     Obras; o dinheiro segue a regra da aba Medições (e do Financeiro): sem
+     um dos dois, os percentuais ficam e os valores saem — inclusive de dentro
+     dos recados, onde o número em R$ vem escrito. Uma lista de campos só
+     esqueceria o próximo recado com R$ dentro; por isso o texto também passa. */
+  var CHAVES_REAIS = { valor: 1, vp: 1, va: 1, VP: 1, VA: 1, emValor: 1, valorForaDaBase: 1, valorBase: 1 };
+  function semReais(s) { return String(s).replace(/R\$\s?-?\d[\d.]*(?:,\d+)?/g, "R$ —"); }
+  ObraVitrine.cronoSemDinheiro = function (dados) {
+    function vai(x, pai) {
+      if (typeof x === "string") return semReais(x);
+      if (x === null || typeof x !== "object") return x;
+      if (Object.prototype.toString.call(x) === "[object Array]") return x.map(function (y) { return vai(y, pai); });
+      var o = {}, k;
+      for (k in x) {
+        if (!Object.prototype.hasOwnProperty.call(x, k)) continue;
+        /* ⚠ `kpis.idp.valor` é o IDP (0,94), não dinheiro — o único "valor"
+           do painel que não é R$. Zerá-lo tiraria o índice de quem pode vê-lo. */
+        o[k] = (CHAVES_REAIS[k] === 1 && !(k === "valor" && pai === "idp")) ? null : vai(x[k], k);
+      }
+      return o;
+    }
+    var c = vai(dados, "");
+    if (c && typeof c === "object") c.semDinheiro = true;
+    return c;
+  };
+
+  function d2(n) { return ("0" + n).slice(-2); }
+  /* carimbo ISO (UTC) → dia LOCAL: "congelada às 22h do dia 11" não pode
+     virar "dia 12" em Brasília */
+  function diaCarimbo(ts) {
+    if (!ts) return "";
+    var d = new Date(ts);
+    return isNaN(d.getTime()) ? "" : d2(d.getDate()) + "/" + d2(d.getMonth() + 1) + "/" + d.getFullYear();
+  }
+  function pctCx(v) {
+    if (v == null || !isFinite(Number(v))) return "—";
+    if (global.Util && global.Util.fmtPct) return global.Util.fmtPct(Number(v), 1);
+    return (Math.round(Number(v) * 10) / 10).toFixed(1).replace(".", ",") + "%";
+  }
+  function maiuscula(s) { s = String(s == null ? "" : s); return s.charAt(0).toUpperCase() + s.slice(1); }
+
+  /* O painel sem o CronoExecUI (um cache velho sem o arquivo, ou o desenho
+     que falhou): os números do PRÓPRIO montarPainel, cada um com o rótulo
+     dele — nenhuma conta aqui, para não virar uma segunda régua. */
+  ObraVitrine.cronoReservaHtml = function (d, falhou) {
+    var K = (d && d.kpis) || {}, linhas = [];
+    function lin(rot, txt) { if (rot) linhas.push("<div><dt>" + esc(rot) + "</dt><dd>" + esc(txt) + "</dd></div>"); }
+    [K.executadoOrcamento, K.portal, K.medido, K.previstoNaData].forEach(function (k) { if (k) lin(k.rotulo, pctCx(k.pct)); });
+    if (K.idp && K.idp.valor != null && isFinite(Number(K.idp.valor))) {
+      lin("IDP" + (K.idp.rotulo ? " (" + K.idp.rotulo + ")" : ""), global.Util && global.Util.fmtNum ? global.Util.fmtNum(Number(K.idp.valor), 2) : String(K.idp.valor));
+    }
+    return '<p class="ov-crono-aviso">' + esc(falhou
+      ? "O desenho do painel falhou (" + falhou + ") — os números abaixo são os do painel, sem a curva e sem a tabela. Atualize o app; se continuar, avise o suporte."
+      : "O desenho do painel (js/cronoexecui.js) não carregou — atualize o app. Os números abaixo são os do painel, sem a curva e sem a tabela.") + "</p>" +
+      '<dl class="ov-crono-kpis">' + linhas.join("") + "</dl>";
+  };
+
+  /* ⚠ O PAINEL É PAPEL BRANCO DENTRO DO VIDRO. O CronoExecUI desenha com os
+     tokens do tema (--texto, --linha…) e o Gantt/curva em papel branco; sobre
+     o vidro escuro da ficha, o --texto do tema claro (#111d2b) seria tinta
+     escura sobre navy. Os tokens são redefinidos AQUI DENTRO com os valores
+     do tema claro, então o painel lê igual nos dois temas. Duas classes
+     (`.ov-ficha .ov-papel h3`) pelo mesmo motivo do nome da obra: `.main h3`
+     (0,1,1) pintaria o título com a cor do tema (memória ".main h2 vence o
+     componente"). Emitido pela própria aba, como o CronoExecUI faz: nada
+     muda no css/app.css. */
+  ObraVitrine.CSS_CRONO =
+    ".ov-crono-cab{display:flex;flex-wrap:wrap;gap:4px 22px;margin:0 0 14px}" +
+    ".ov-crono-cab p{margin:0;font-size:var(--t-peq,13px);color:var(--ov-fraco,#b9c9d9)}" +
+    ".ov-crono-cab b{color:var(--ov-texto,#fff);font-weight:var(--p-medio,500)}" +
+    ".ov-ficha .ov-papel{background:#fff;color:#111d2b;border-radius:var(--raio-lg,14px);padding:16px 18px;color-scheme:light;overflow-x:auto;" +
+      "--navy:#0f2740;--navy-2:#15324f;--aco:#0d6ebd;--aco-claro:#3d92cb;--verde:#15803d;--verde-claro:#1a9c4b;--vermelho:#d61f26;--amarelo:#aa6200;" +
+      "--bg:#f4f7fb;--surface:#fff;--surface-2:#eef2f7;--surface-3:#e5ecf4;--linha:#c9d6e4;--linha-forte:#7e95aa;--texto:#111d2b;--texto-fraco:#516375;" +
+      "--faixa-sub:#f3f6f9;--tot-fundo:#0f2740}" +
+    ".ov-ficha .ov-papel h1,.ov-ficha .ov-papel h2,.ov-ficha .ov-papel h3,.ov-ficha .ov-papel h4{color:#111d2b}" +
+    ".ov-ficha .ov-papel .muted,.ov-ficha .ov-papel small{color:#516375}" +
+    ".ov-crono-kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px 22px;margin:10px 0 0}" +
+    ".ov-crono-kpis dt{font-size:12px;color:var(--texto-fraco,#516375)}" +
+    ".ov-crono-kpis dd{margin:2px 0 0;font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}" +
+    ".ov-crono-aviso{margin:0;font-size:12.5px;color:#6b4200;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.4);border-radius:8px;padding:6px 10px}" +
+    ".ov-vinc{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:4px}" +
+    ".ov-vinc label{flex-basis:100%;font-size:var(--t-peq,13px);color:var(--ov-fraco,#b9c9d9)}" +
+    ".ov-vinc select{min-width:min(100%,340px);max-width:100%;min-height:40px}";
+
+  /* estados de ERRO do montarPainel (os que vêm com `erro`); os outros três
+     (ok, sem-diarios, sem-inicio) têm número e vão ao painel */
+  var CRONO_ERROS = { modulos: 1, "sem-obra": 1, "sem-orcamento": 1, "sem-etapas": 1, "sem-valores": 1,
+    "plano-invalido": 1, "corte-invalido": 1, "sem-realizado": 1, falha: 1 };
+  function botaoCx(gacao, id, rot, primario, titulo) {
+    return '<button type="button" class="btn ' + (primario ? "primary" : "ov-sec") + '" data-gacao="' + gacao + '" data-id="' + esc(id) + '"' +
+      (titulo ? ' title="' + esc(titulo) + '"' : "") + ">" + esc(rot) + "</button>";
+  }
+  /* ⚠ O SELETOR NÃO DISPARA SOZINHO: um <select data-gacao> age no `change`,
+     e escolher o orçamento errado por um toque no celular ligaria a obra a
+     ele na hora. Escolher e depois confirmar no botão — que confere, na
+     função, a outra obra ligada ao mesmo orçamento (medição em dobro). */
+  function vincularHtml(cr, id) {
+    if (!cr.podeVincular) return '<p class="ov-nota">' + esc("Quem pode editar o cadastro desta obra vincula o orçamento a ela.") + "</p>";
+    var ops = cr.opcoes || [];
+    if (!ops.length) {
+      return '<p class="ov-nota">' + esc("Nenhum orçamento cadastrado ainda — crie o orçamento desta obra e volte aqui para vinculá-lo.") + "</p>" +
+        (cr.podeOrcamentos ? '<div class="ov-mais"><button type="button" class="ov-chip" data-gacao="ov-ir" data-mod="orcamentos" data-id="' + esc(id) + '">Ir para Orçamentos</button></div>' : "");
+    }
+    return '<div class="ov-vinc"><label for="ov-vinc-orc">Orçamento desta obra (nome · número · estado)</label>' +
+      '<select id="ov-vinc-orc"><option value="">— escolha o orçamento —</option>' + ops.map(function (o) {
+        return '<option value="' + esc(o.id) + '">' + esc(o.rot + (o.obra ? " — já ligado a: " + o.obra : "")) + "</option>";
+      }).join("") + "</select>" +
+      '<button type="button" class="btn primary" data-gacao="cronobra-vincular" data-id="' + esc(id) + '" data-sel="ov-vinc-orc">Vincular orçamento</button></div>';
+  }
+
+  function abaCronograma(ctx) {
+    var cr = ctx.crono || {}, id = cr.obraId || (ctx.m && ctx.m.id) || "";
+    var css = "<style>" + ObraVitrine.CSS_CRONO + "</style>";
+    if (cr.estado === "sem-orcamento") {
+      return css + '<div class="ov-vazio"><p>' + esc("Esta obra não tem orçamento vinculado — o cronograma da obra mede o avanço (previsto × realizado) contra o orçamento dela.") + "</p>" + vincularHtml(cr, id) + "</div>";
+    }
+    if (cr.estado === "orcamento-sumiu") {
+      /* ⚠ "não foi encontrado NESTE APARELHO", nunca "não existe": pode ser um
+         orçamento que ainda não chegou pela sincronização */
+      /* ⚠ COM BOLETIM SOBRE O ORÇAMENTO SUMIDO, NÃO HÁ SELETOR (revisão 3,
+         lente dinheiro): ligar outro orçamento zerava o acumulado já medido do
+         próximo boletim (Gestao._pctAnterioresPorItem é por obra + orçamento)
+         — medição em dobro. A fiação (Gestao._cronoFicha) manda o recado com
+         os números; a trava de verdade está na função (_cronoVincularAplicar). */
+      if (cr.bloqueioVinculo) return css + '<div class="ov-vazio"><p>' + esc("O orçamento ligado a esta obra não foi encontrado neste aparelho — pode ter sido excluído, ou ainda não chegou pela sincronização.") + '</p><p class="ov-crono-aviso">' + esc(cr.bloqueioVinculo) + "</p></div>";
+      return css + '<div class="ov-vazio"><p>' + esc("O orçamento ligado a esta obra não foi encontrado neste aparelho — pode ter sido excluído, ou ainda não chegou pela sincronização. Se foi excluído, vincule o orçamento certo:") + "</p>" + vincularHtml(cr, id) + "</div>";
+    }
+    if (cr.estado === "sem-motor") return vazio("O planejamento da obra não carregou neste aparelho (js/cronoplan.js) — atualize o app. Nada foi calculado.");
+    if (cr.estado !== "painel") return vazio("Não consegui montar o cronograma desta obra agora — feche a ficha e abra de novo; se continuar, avise o suporte.");
+    var d = cr.dados || {};
+    /* ⚠ a porta para o cronograma do ORÇAMENTO é daqui (Gestao.cronobraAbrirOrc),
+       e não a do painel: vindo de uma tela da Gestão, abrir o orçamento sem
+       trocar de tela antes é um clique mudo (ver a nota em cronobraAbrirOrc) */
+    var portaOrc = cr.podeOrcamentos ? '<div class="ov-mais">' + botaoCx("cronobra-orc", id, "Abrir cronograma no orçamento", false, "Abre o orçamento da obra na aba Cronograma") + "</div>" : "";
+    var CX = ctx.CronoExecUI || global.CronoExecUI || null, corpo = null, falhou = "";
+    if (cr.pr && CX && typeof CX.painelPR === "function") {
+      /* o painel traz as réguas, a base, a mini-curva, os nós em atenção e as
+         ações da linha de base (congelar, reprogramar, histórico, completo) */
+      try { corpo = CX.painelPR(cr.pr, { compacto: true, semNomeObra: true }); } catch (eP) { corpo = null; falhou = String((eP && eP.message) || eP); }
+      if (corpo) return css + '<div class="ov-papel">' + corpo + "</div>" + portaOrc;
+    }
+    /* RESERVA (sem o desenho do painel): os números e NENHUMA ação da linha
+       de base — o diálogo de congelar é do CronoExecUI, e oferecê-lo sem ele
+       seria porta que não abre (memória "porta prometida precisa existir") */
+    var cab = '<div class="ov-crono-cab">' + (cr.orcRot ? "<p>Orçamento: <b>" + esc(cr.orcRot) + "</b></p>" : "") + "<p>" +
+      (cr.base
+        ? "Linha de base <b>v" + esc(cr.base.versao) + "</b>" + (diaCarimbo(cr.base.criadaEm) ? ", congelada em " + esc(diaCarimbo(cr.base.criadaEm)) : "")
+        : esc("Sem linha de base: o previsto é o do plano atual e muda a cada edição — o IDP só aparece depois de congelar.")) + "</p></div>";
+    if (d.erro && CRONO_ERROS[d.estado]) return css + cab + '<div class="ov-vazio"><p>' + esc(maiuscula(d.erro)) + "</p></div>" + portaOrc;
+    return css + cab + '<div class="ov-papel">' + ObraVitrine.cronoReservaHtml(d, falhou) + "</div>" + portaOrc;
+  }
+
   /* o corpo de UMA aba — separado para a troca de aba não redesenhar a ficha */
   ObraVitrine.corpoAba = function (ctx) {
     var m = ctx.m, o = ctx.obra || {}, id = esc(m.id), aba = ctx.aba || "resumo";
+    if (aba === "cronograma") return abaCronograma(ctx);
     var editar = '<button type="button" class="btn ov-sec" data-gopen="obras:' + id + '">Editar cadastro</button>';
     if (aba === "mapa") {
       var url = ObraVitrine.urlMapa(o.local, ctx.mapa === "satelite");

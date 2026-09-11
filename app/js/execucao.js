@@ -141,6 +141,92 @@
     return 0;
   }
 
+  /* ================= FOLHAS DE REDE (cronograma executivo, espec 1.5) =================
+   * A duração por Hh SINAPI existia só por ETAPA: o Hh de cada item era somado
+   * e jogado fora (simular). O cronograma executivo detalha o prazo pelas
+   * subetapas da planilha, então a mesma conta precisa sair também por FOLHA.
+   *
+   * ⚠ CONTRATO DE IDS (fixo, é o mesmo do motor do cronograma, espec 1.1) —
+   * é por ele que sub.duracoes[folhaId] casa com a folha desenhada no Gantt:
+   *   - subetapa COM item ............ id = sub.id
+   *   - itens soltos de uma etapa que TAMBÉM tem subetapa com item
+   *                                    id = etapa.id + "~g" ("Serviços gerais da etapa")
+   *   - etapa sem subetapa com item .. NÃO tem folha separada: a própria etapa é a
+   *     folha de rede, e a duração dela continua em duracoes[etapa.id]. Por isso
+   *     `folhas` sai VAZIA — se saísse [{id: etapa.id}], o envio gravaria o id da
+   *     ETAPA no mapa das SUBETAPAS e a mesma duração passaria a ter dois donos.
+   * Subetapa vazia não vira folha (a planilha não lhe dá número); item com
+   * subEtapaId que não existe mais é solto (a mesma regra de Orcamento.calcular).
+   * Ordem: soltos primeiro, depois as subetapas na ordem de e.subetapas — a
+   * ordem canônica de e.itens. Quem casa folha usa o ID, nunca a posição.
+   * ================================================================================= */
+  function folhasDe(e) {
+    var subs = Array.isArray(e && e.subetapas) ? e.subetapas : [], valido = {}, nItens = {}, nSoltos = 0;
+    subs.forEach(function (s) { if (s && s.id) { valido[s.id] = true; nItens[s.id] = 0; } });
+    (e.itens || []).forEach(function (it) {
+      var sid = it && it.subEtapaId;
+      if (sid && valido[sid]) nItens[sid]++; else nSoltos++;
+    });
+    var lista = [], porId = {}, soltos = null;
+    function nova(id, nome, tipo) {
+      return { id: id, nome: nome, tipo: tipo, prof: {}, homensDiaEstim: 0, nComQtd: 0, nExatos: 0, nSemBaseMO: 0 };
+    }
+    subs.forEach(function (s) {
+      if (!s || !s.id || !nItens[s.id] || porId[s.id]) return;
+      porId[s.id] = nova(s.id, s.nome || "Sub etapa", "subetapa");
+      lista.push(porId[s.id]);
+    });
+    if (!lista.length) return null; // etapa sem subetapa com item: ela mesma é a folha
+    if (nSoltos > 0) { soltos = nova(e.id + "~g", "Serviços gerais da etapa", "soltos"); lista.unshift(soltos); }
+    return { lista: lista, de: function (it) { var sid = it && it.subEtapaId; return (sid && valido[sid]) ? porId[sid] : soltos; } };
+  }
+  /* Acumula UM item na folha dele com a MESMA triagem que simular faz na etapa:
+     Hh SINAPI quando o item tem coeficiente; senão MO-R$ ÷ diária de referência;
+     com custoMO 0, "sem base de MO". Acumuladores PRÓPRIOS da folha — nenhum
+     objeto é compartilhado com a etapa, senão o laço de equipe/custo da etapa
+     (que escreve em prof[P]) vazaria para dentro da folha. */
+  function acumFolha(f, it, q, r, diariaRef) {
+    if (!f) return;
+    if (q > 0) { f.nComQtd++; if (r.exato) f.nExatos++; }
+    if (r.exato) {
+      for (var p in r.prof) { var s = f.prof[p] || (f.prof[p] = { hh: 0, custoHora: 0 }); s.hh += r.prof[p].hh; if (!s.custoHora) s.custoHora = r.prof[p].custoHora; }
+    } else if (q > 0) {
+      var moR = num(it.custoMO) * q;
+      if (moR > 0) f.homensDiaEstim += moR / diariaRef; else f.nSemBaseMO++;
+    }
+  }
+  /* ⚠ A MESMA FÓRMULA DA ETAPA (passo 2 e 4 do simular), aplicada à SOMA da folha:
+     max(1, ceil(max(max_P ΣHh_P ÷ jornada, homensDiaEstim))). A crítica de
+     produto mediu o porquê: somar o máximo de cada item (em vez do máximo da
+     soma) dá um prazo maior para o mesmo serviço, e duas telas rotuladas
+     "SINAPI" discordariam. `homensDia` = o valor dentro do ceil (a profissão
+     gargalo com 1 pessoa). `duracao` aplica o mesmo fator de prazo-alvo da
+     etapa — sem data de entrega, fator 1 e duracao === duracaoNatural.
+     `exato` = toda a duração vem de Hh SINAPI (nenhum item com quantidade
+     entrou pela MO-R$ nem ficou sem base). */
+  function fecharFolha(f, jorn, fator) {
+    var maxHD = 0;
+    for (var p in f.prof) { var hd = f.prof[p].hh / jorn; f.prof[p].homensDia = hd; if (hd > maxHD) maxHD = hd; }
+    if (f.homensDiaEstim > maxHD) maxHD = f.homensDiaEstim;
+    f.homensDia = maxHD;
+    f.temBaseMO = maxHD > 0;
+    f.duracaoNatural = f.temBaseMO ? Math.max(1, Math.ceil(maxHD)) : 0;
+    f.duracao = f.temBaseMO ? Math.max(1, Math.round(f.duracaoNatural * fator)) : 0;
+    f.exato = f.nComQtd > 0 && f.nExatos === f.nComQtd;
+  }
+  /* Mapa gravável. ⚠ Um objeto que a nuvem devolveu como [] ("a forma no disco
+     decide se sincroniza") aceita chave de texto na memória e a PERDE no
+     JSON.stringify — a duração enviada sumiria no próximo salvar, sem erro.
+     Aqui array vira objeto (levando o que tinha) antes de receber chave. */
+  function mapaObj(o) {
+    if (o && typeof o === "object" && !Array.isArray(o)) return o;
+    var n = {};
+    if (Array.isArray(o)) for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) n[k] = o[k];
+    return n;
+  }
+  var MOTIVO_SUBETAPAS = "duração vem das subetapas";
+  var MOTIVO_SEM_BASE = "não estimável (sem base de mão de obra)";
+
   var Execucao = {
     DEFAULTS: {
       jornadaH: 8,            // horas por dia de trabalho
@@ -159,6 +245,8 @@
     _A: function () { return this._deps.Analitico || global.Analitico || null; },
     _C: function () { return this._deps.Cronograma || global.Cronograma || null; },
     profDe: profDe, ehMoPura: ehMoPura, _score: scoreMatch,
+    // textos do `detalhe` do envio em modo executivo — a fiação compara por eles, nunca por cópia
+    MOTIVO_SUBETAPAS: MOTIVO_SUBETAPAS, MOTIVO_SEM_BASE: MOTIVO_SEM_BASE,
 
     // Horas-homem por profissão de UM item (recursa nas sub-composições não-MO,
     // multiplicando coeficientes). Retorna {prof:{HH,custoHora}}, exato:bool.
@@ -236,6 +324,7 @@
       //    marca itens de base estadual/própria SEM custo de MO (GOINFRA/SEINFRA só têm preço total).
       var etapas = (orc.etapas || []).map(function (e) {
         var prof = {}, moEstimR = 0, hdEstim = 0, custoDireto = 0, nComQtd = 0, nExatos = 0, orcadoMOExato = 0, custoSemBaseMO = 0, nSemBaseMO = 0;
+        var fl = folhasDe(e); // null = etapa sem subetapa com item (ela mesma é a folha)
         (e.itens || []).forEach(function (it) {
           var q = num(it.quantidade);
           custoDireto += q * num(it.custoUnitario);
@@ -252,6 +341,8 @@
             if (moR > 0) { moEstimR += moR; hdEstim += moR / diariaRef; }
             else { custoSemBaseMO += q * num(it.custoUnitario); nSemBaseMO++; }
           }
+          // aditivo: o MESMO r do item vai para a folha dele; nada acima muda
+          if (fl) acumFolha(fl.de(it), it, q, r, diariaRef);
         });
         var catO = (C && C.classificar) ? C.classificar((e.itens && e.itens[0] && e.itens[0].descricao) || e.nome) : null;
         return {
@@ -259,7 +350,8 @@
           categoria: catO ? catO.id : "outros", cor: catO ? catO.cor : "#94a3b8",
           prof: prof, moEstimR: moEstimR, homensDiaEstim: hdEstim, custoDireto: custoDireto,
           nComQtd: nComQtd, nExatos: nExatos, orcadoMOExato: orcadoMOExato,
-          custoSemBaseMO: custoSemBaseMO, nSemBaseMO: nSemBaseMO
+          custoSemBaseMO: custoSemBaseMO, nSemBaseMO: nSemBaseMO,
+          folhas: fl ? fl.lista : [] // espec 1.5 — campo NOVO; [] = a etapa é a própria folha
         };
       });
 
@@ -293,6 +385,8 @@
       var modo = prazoAlvo && prazoAlvo > 0 ? "prazo" : "equipe";
       // duração-alvo por etapa: se há prazoAlvo, comprime proporcional à duração natural
       var fatorGlobal = (modo === "prazo" && prazoNatural > 0) ? Math.min(1, prazoAlvo / prazoNatural) : 1;
+      // folhas: mesma fórmula e mesmo fator da etapa (só leem jorn/fatorGlobal; não entram na cascata da etapa)
+      etapas.forEach(function (et) { et.folhas.forEach(function (f) { fecharFolha(f, jorn, fatorGlobal); }); });
 
       etapas.forEach(function (et) {
         var durAlvo = et.temBaseMO ? Math.max(1, Math.round(et.duracaoNatural * fatorGlobal)) : 0;
@@ -422,7 +516,14 @@
     // antes gravada pelo agente virou "não estimável", REMOVE o valor stale (senão ressurgiria como
     // override "editado" falso no Gantt/Curva-S/Excel/proposta). Edição MANUAL do usuário (não marcada
     // em duracoesAgente) é preservada. Retorna {enviadas, puladas}.
-    aplicarNoCronograma: function (cron, etapas) {
+    //
+    // opts.rede === true (cronograma executivo, espec 1.5): ver _aplicarRede.
+    // ⚠ Sem opts.rede === true o caminho é o de ANTES, linha por linha, e devolve
+    // o MESMO objeto {enviadas, puladas} — tools/test-execucao-folhas.js compara
+    // contra a cópia do master b8907ef. Qualquer valor diferente de `true`
+    // (inclusive "true" em texto) fica no caminho antigo: na dúvida, não muda data.
+    aplicarNoCronograma: function (cron, etapas, opts) {
+      if (opts && opts.rede === true) return this._aplicarRede(cron, etapas);
       cron.duracoes = cron.duracoes || {};
       cron.duracoesAgente = cron.duracoesAgente || {};
       cron.iaMotivos = cron.iaMotivos || {};
@@ -440,6 +541,88 @@
         }
       });
       return { enviadas: nEnv, puladas: lista.length - nEnv };
+    },
+
+    /* MODO EXECUTIVO — a duração da etapa COM folhas é o vão da rede interna
+     * (Cronograma.materializar grava duracoes[etapa] com a marca "subetapas").
+     * Gravar o Hh da ETAPA ali seria sobrescrito no próximo persistir, e o
+     * toast "N etapas aplicadas" contaria um número que não chega à tela — o
+     * defeito que a crítica de compatibilidade achou. Por isso:
+     *   - etapa COM folhas: NÃO toca no mapa de etapa; vai em `puladas` com o
+     *     motivo "duração vem das subetapas", e cada folha é gravada no mapa
+     *     cron.sub (nunca em cron.duracoes — invariante I3);
+     *   - etapa SEM folhas (é a própria folha): a regra de hoje, no mapa de etapa.
+     * Regra por folha:
+     *   - com base (temBaseMO e duração > 0): grava sub.duracoes[id] e
+     *     sub.agente[id] = "exec" e apaga sub.iaMotivos[id] — SE a casa estiver
+     *     vazia ou já for do "exec";
+     *   - ⚠ duração que a PESSOA digitou (sem marca) ou que veio da IA ("ia",
+     *     que no fluxo novo passou pelo diff que a pessoa aprovou) NÃO é
+     *     sobrescrita: vai em `folhasPreservadas` com o motivo. É aqui que isto
+     *     diverge do mapa de etapa (onde o envio sobrescreve tudo desde antes):
+     *     no mapa novo não há comportamento antigo a manter, e sobrescrever a
+     *     decisão de alguém sem desfazer é a perda que não se recupera — deixar
+     *     de aplicar se recupera limpando a edição e enviando de novo;
+     *   - sem base: apaga só o que o PRÓPRIO "exec" gravou (valor velho); manual
+     *     e "ia" ficam — a mesma limpeza de hoje.
+     * Devolve contagens VERDADEIRAS para o toast:
+     *   {enviadas, puladas, folhasEnviadas, folhasPuladas, folhasPreservadas,
+     *    detalhe:[{id, tipo:"etapa"|"folha", etapaId, motivo, dias?}]}
+     * com enviadas + puladas === nº de etapas e folhasEnviadas + folhasPuladas +
+     * folhasPreservadas === nº de folhas. */
+    _aplicarRede: function (cron, etapas) {
+      cron.duracoes = mapaObj(cron.duracoes);
+      cron.duracoesAgente = mapaObj(cron.duracoesAgente);
+      cron.iaMotivos = mapaObj(cron.iaMotivos);
+      var sub = cron.sub = mapaObj(cron.sub);
+      sub.duracoes = mapaObj(sub.duracoes);
+      sub.agente = mapaObj(sub.agente);
+      if (sub.iaMotivos != null) sub.iaMotivos = mapaObj(sub.iaMotivos);
+      var res = { enviadas: 0, puladas: 0, folhasEnviadas: 0, folhasPuladas: 0, folhasPreservadas: 0, detalhe: [] };
+      (etapas || []).forEach(function (et) {
+        var folhas = (Array.isArray(et.folhas) ? et.folhas : []).filter(function (f) { return f && f.id && f.id !== et.id; });
+        if (folhas.length) {
+          res.puladas++;
+          res.detalhe.push({ id: et.id, tipo: "etapa", etapaId: et.id, motivo: MOTIVO_SUBETAPAS });
+          folhas.forEach(function (f) {
+            var dias = num(f.duracao != null ? f.duracao : f.duracaoNatural);
+            var marca = sub.agente[f.id], temValor = num(sub.duracoes[f.id]) > 0;
+            if (f.temBaseMO && dias > 0) {
+              if (temValor && marca !== "exec") {
+                res.folhasPreservadas++;
+                res.detalhe.push({ id: f.id, tipo: "folha", etapaId: et.id, dias: num(sub.duracoes[f.id]),
+                  motivo: marca === "ia" ? "definida pela IA" : (marca ? "definida por outra fonte (" + marca + ")" : "definida por você") });
+                return;
+              }
+              sub.duracoes[f.id] = dias; sub.agente[f.id] = "exec";
+              if (sub.iaMotivos && sub.iaMotivos[f.id]) delete sub.iaMotivos[f.id];
+              res.folhasEnviadas++;
+            } else {
+              if (marca === "exec") {
+                delete sub.duracoes[f.id]; delete sub.agente[f.id];
+                if (sub.iaMotivos && sub.iaMotivos[f.id]) delete sub.iaMotivos[f.id];
+              }
+              res.folhasPuladas++;
+              res.detalhe.push({ id: f.id, tipo: "folha", etapaId: et.id, motivo: MOTIVO_SEM_BASE });
+            }
+          });
+          return;
+        }
+        // etapa sem folhas: exatamente a regra do caminho antigo, no mapa de etapa
+        if (et.temBaseMO && num(et.duracao) > 0) {
+          cron.duracoes[et.id] = et.duracao; cron.duracoesAgente[et.id] = "exec";
+          if (cron.iaMotivos[et.id]) delete cron.iaMotivos[et.id];
+          res.enviadas++;
+        } else {
+          if (cron.duracoesAgente[et.id] === "exec") {
+            delete cron.duracoes[et.id]; delete cron.duracoesAgente[et.id];
+            if (cron.iaMotivos[et.id]) delete cron.iaMotivos[et.id];
+          }
+          res.puladas++;
+          res.detalhe.push({ id: et.id, tipo: "etapa", etapaId: et.id, motivo: MOTIVO_SEM_BASE });
+        }
+      });
+      return res;
     },
 
     /* os parametros de feriado vivem no cronograma do orcamento; a Execucao

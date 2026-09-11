@@ -183,6 +183,321 @@
     return out;
   }
 
+  /* ===== Puxar do cronograma PELO NÓ (etapa ou subetapa) =====
+   *
+   * Com o cronograma executivo, o que a equipe planeja na semana é a
+   * SUBETAPA ("Estrutura › Pilares"), não a etapa inteira. Com o detalhe da
+   * aba Cronograma diferente de "etapa", puxam-se as FOLHAS da árvore
+   * (`Cronograma.estimar(orc, {dataInicio: obra.inicio}, {eap:true})`,
+   * nós de papel "folha": subetapa, "serviços gerais" da etapa, ou a
+   * própria etapa quando ela não tem subetapa). Com detalhe "etapa", as
+   * etapas — como sempre foi.
+   *
+   * A tarefa grava `cronoNoId` (o nó de onde veio) e `etapaId`: é o carimbo
+   * que o diário herda e que liga o apontamento à etapa sem depender do nome.
+   *
+   * ⚠ NÃO DUPLICAR, nas três formas em que isto aconteceria:
+   *   - a mesma folha já puxada nesta semana (mesmo `cronoNoId`);
+   *   - tarefa ANTIGA (sem `cronoNoId`) com o mesmo título — era a regra de
+   *     antes, e a tarefa puxada por etapa numa versão anterior tem o nome
+   *     da etapa como título;
+   *   - a ETAPA INTEIRA já está no plano da semana (tarefa antiga com o nome
+   *     da etapa, ou tarefa com `cronoNoId` = a etapa): as subetapas dela não
+   *     entram, e o recado diz quais e como sair (excluir a tarefa da etapa
+   *     e puxar de novo). Sem isto, "Estrutura" e "Estrutura › Pilares"
+   *     ficariam lado a lado na mesma semana e o PPC contaria o mesmo
+   *     trabalho duas vezes.
+   * Puro — quem grava no Store é a view. */
+  function ehDataObj(d) { return Object.prototype.toString.call(d) === "[object Date]" && !isNaN(d.getTime()); }
+  function isoLocal(d) {
+    if (ehDataObj(d)) return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+    var s = String(d == null ? "" : d).slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
+  }
+  function somaDiasISO(iso, n) {
+    var p = iso.split("-"), d = new Date(+p[0], (+p[1]) - 1, +p[2]);
+    d.setDate(d.getDate() + n);
+    return isoLocal(d);
+  }
+
+  /* r = Cronograma.estimar(orc, override, {eap:true}). Devolve os nós que
+     viram tarefa, já com título, carimbo e janela em "AAAA-MM-DD". */
+  function nosDoCronograma(r, detalhe) {
+    var out = [], avisos = [];
+    if (!r || !Array.isArray(r.etapas)) return { nos: out, detalhe: "etapa", avisos: avisos };
+    var det = detalhe || (r.exec && r.exec.detalhe) || "etapa";
+    var temArvore = Array.isArray(r.atividades);
+    if (det !== "etapa" && !temArvore) {
+      avisos.push("as subetapas não puderam ser montadas" + (r.exec && r.exec.erro ? " (" + r.exec.erro + ")" : "") + " — as tarefas foram puxadas por etapa.");
+      det = "etapa";
+    }
+    var nomeEt = {};
+    r.etapas.forEach(function (e) { if (e && e.id != null) nomeEt[e.id] = e.nome || ""; });
+    if (det !== "etapa") {
+      r.atividades.forEach(function (n) {
+        if (!n || n.papel !== "folha") return;
+        if (n.tipo !== "etapa" && n.tipo !== "subetapa" && n.tipo !== "soltos") return;
+        var eNome = nomeEt[n.etapaId] || "";
+        /* a subetapa leva o nome da etapa na frente: "Pilares" e "Serviços
+           gerais da etapa" se repetem de uma etapa para outra, e a tarefa na
+           semana precisa dizer de qual */
+        var tit = n.tipo === "etapa" ? (n.nome || eNome) : ((eNome ? eNome + " › " : "") + (n.nome || ""));
+        out.push({ cronoNoId: String(n.id), etapaId: n.etapaId != null ? String(n.etapaId) : "", etapaNome: eNome,
+          tipo: n.tipo, titulo: tit, categoria: n.categoria || "", categoriaNome: n.categoriaNome || "",
+          ini: isoLocal(n.dataInicio), fim: isoLocal(n.dataFim) });
+      });
+    } else {
+      r.etapas.forEach(function (e) {
+        if (!e) return;
+        out.push({ cronoNoId: e.id != null ? String(e.id) : "", etapaId: e.id != null ? String(e.id) : "", etapaNome: e.nome || "",
+          tipo: "etapa", titulo: e.nome || "", categoria: e.categoria || "", categoriaNome: e.categoriaNome || "",
+          ini: isoLocal(e.dataInicio), fim: isoLocal(e.dataFim) });
+      });
+    }
+    return { nos: out, detalhe: det, avisos: avisos };
+  }
+
+  function sugerirDoCronogramaNos(nos, semanaISO, existentes) {
+    var res = { sugestoes: [], jaNoPlano: 0, cobertas: [] };
+    var seg = isoLocal(semanaISO);
+    if (!seg) return res;
+    var fimSem = somaDiasISO(seg, 6);
+    var porNo = {}, porTit = {}, cob = {}, ordemCob = [];
+    arr(existentes).forEach(function (t) {
+      if (!t || t.semana !== semanaISO) return;
+      if (t.cronoNoId) porNo[String(t.cronoNoId)] = 1;
+      else porTit[normTit(t.titulo)] = 1;
+    });
+    arr(nos).forEach(function (n) {
+      if (!n || !n.titulo || !n.ini || !n.fim) return;
+      if (n.fim < seg || n.ini > fimSem) return;           // fora da janela da semana
+      if ((n.cronoNoId && porNo[n.cronoNoId]) || porTit[normTit(n.titulo)]) { res.jaNoPlano++; return; }
+      if (n.tipo !== "etapa" && ((n.etapaId && porNo[n.etapaId]) || (n.etapaNome && porTit[normTit(n.etapaNome)]))) {
+        if (!cob[n.etapaNome]) { cob[n.etapaNome] = []; ordemCob.push(n.etapaNome); }
+        cob[n.etapaNome].push(n.titulo);
+        return;
+      }
+      if (n.cronoNoId) porNo[n.cronoNoId] = 1;
+      porTit[normTit(n.titulo)] = 1;
+      var t = { titulo: n.titulo, frente: n.categoriaNome || n.categoria || "", semana: semanaISO,
+        comprometida: false, status: "afazer", restricoes: [], origem: "cronograma" };
+      if (n.cronoNoId) t.cronoNoId = n.cronoNoId;
+      if (n.etapaId) t.etapaId = n.etapaId;
+      if (n.etapaNome) t.etapaNome = n.etapaNome;
+      res.sugestoes.push(t);
+    });
+    res.cobertas = ordemCob.map(function (e) { return { etapa: e, folhas: cob[e] }; });
+    return res;
+  }
+
+  /* O caminho inteiro do botão "Puxar do cronograma", sem DOM nem Store.
+     deps = { Cronograma } (injetado: em Node este módulo não enxerga o
+     global do app, e a view passa o que tem em mãos). */
+  function puxarDoCronograma(orc, obra, semanaISO, existentes, deps) {
+    var C = deps && deps.Cronograma;
+    if (!C || typeof C.estimar !== "function") return { ok: false, erro: "o motor do cronograma não está carregado.", sugestoes: [], jaNoPlano: 0, cobertas: [] };
+    var r;
+    try { r = C.estimar(orc, obra && obra.inicio ? { dataInicio: obra.inicio } : null, { eap: true }); }
+    catch (e) { return { ok: false, erro: "falha ao estimar o cronograma: " + (e && e.message), sugestoes: [], jaNoPlano: 0, cobertas: [] }; }
+    var nd = nosDoCronograma(r);
+    var s = sugerirDoCronogramaNos(nd.nos, semanaISO, existentes);
+    s.ok = true; s.detalhe = nd.detalhe; s.avisos = nd.avisos;
+    return s;
+  }
+
+  /* O recado do botão, com os números. `tipo` = "ok" | "erro" (UI.toast). */
+  function textoPuxar(res) {
+    if (!res || !res.ok) return { tipo: "erro", msg: "Não deu para puxar do cronograma: " + ((res && res.erro) || "motivo desconhecido") + "." };
+    var unid = res.detalhe === "etapa" ? "etapa(s)" : "subetapa(s)";
+    var partes = [];
+    if (res.sugestoes.length) partes.push(res.sugestoes.length + " tarefa(s) do cronograma entraram no plano desta semana (por " + (res.detalhe === "etapa" ? "etapa" : "subetapa") + ") — gerencie as restrições e comprometa.");
+    else partes.push("Nada novo para esta semana: nenhuma " + unid.replace("(s)", "") + " do cronograma cai nela, ou já está no plano.");
+    if (res.jaNoPlano) partes.push(res.jaNoPlano + " já estava(m) no plano.");
+    res.cobertas.forEach(function (c) {
+      partes.push(c.folhas.length + " subetapa(s) de \"" + c.etapa + "\" não entraram porque a etapa inteira já está no plano desta semana — para planejar por subetapa, abra a tarefa \"" + c.etapa + "\", clique em Excluir e puxe de novo.");
+    });
+    (res.avisos || []).forEach(function (a) { partes.push(a); });
+    return { tipo: "ok", msg: partes.join(" ") };
+  }
+
+  /* ===== KPI "Previsto × Real" do Last Planner =====
+   *
+   * ⚠ ESTE NÚMERO SOMAVA MEDIÇÃO PENDENTE. O "real" era a soma do percentual
+   * de todo boletim não rejeitado — inclusive o que o fiscal ainda nem olhou.
+   * Com uma aprovada de 30% e uma pendente de 55%, o Painel dizia 30% e este
+   * KPI, na tela ao lado, 85%. É a divergência que a memória "seis réguas"
+   * registra no Painel × Portal; aqui ela sobrevivia. Agora vale a doutrina
+   * de `BimAvanco.NAO_CONTA`: rejeitada e pendente não contam; boletim sem
+   * status (antigo) conta, porque exigir "aprovada" apagaria histórico.
+   * A cópia abaixo é cobrada contra a de bimavanco.js em test-lastplanner.
+   *
+   * Duas réguas, NUNCA misturadas numa média:
+   *   - obra COM linha de base (CronoBase.ativa): previsto da base na data
+   *     de corte × executado sobre o orçamento (CronoPlan.confrontoPorNo) —
+   *     o KPI se chama "Previsto × Real";
+   *   - obra SEM base: o prazo decorrido (linear em `cronogramaMeses` desde
+   *     `obra.inicio`) × o medido nos boletins — e o KPI diz isso no nome:
+   *     "Medido × prazo linear". Chamar essa conta de "previsto" era vender
+   *     uma régua de régua.
+   * Obra medida só em valor (boletim sem %): "não sei", fora da média — nunca
+   * zero (mesma regra de Gestao._avancoMedido). */
+  var NAO_CONTA = { rejeitada: 1, pendente: 1 };
+  /* ⚠ A RÉGUA DO "MEDIDO (boletins aprovados)" É A DO CARTÃO DA OBRA
+     (revisão 3 da Fase 3, lente dinheiro). Este KPI seguia a NAO_CONTA (lista
+     de EXCLUSÃO: boletim sem status conta) e o painel da obra, o palco e o
+     cartão seguem `Gestao._avancoMedido` (lista de INCLUSÃO: só aprovada ou
+     paga). O MESMO rótulo, "boletins aprovados", com dois números na mesma
+     obra: 40% aqui e 10% no painel com um boletim antigo sem status — o
+     defeito da memória "conserto que para no segundo consumidor". Enquanto o
+     Rogério não decide qual régua vale para a empresa inteira (pendência), o
+     LP usa a que o engenheiro já vê no cartão; `test-lastplanner` executa o
+     `_avancoMedido` REAL do gestao.js num corpus e exige o mesmo número. Se a
+     decisão for a exclusão, ela muda lá e aqui junto (a suíte reprova se não).
+     Nenhum boletim → 0; aprovados só em R$ (sem %) → null, "não sei". */
+  var CONTA = { aprovada: 1, paga: 1 };
+
+  function medidoBoletins(meds, obraId, num) {
+    var soma = 0, algum = false, soValor = false, n = 0;
+    arr(meds).forEach(function (m) {
+      if (!m || m.obraId !== obraId) return;
+      if (CONTA[m.status] !== 1) return;
+      n++;
+      if (m.percentual != null && m.percentual !== "") { soma += num(m.percentual); algum = true; }
+      else if (num(m.valor) > 0) soValor = true;
+    });
+    if (!n) return 0;
+    if (!algum && soValor) return null;
+    return Math.round(soma);
+  }
+
+  /* ent = { obra, orc, orcPlano?, base?, medicoes, rdosPublicaveis, hoje (Date) }
+     deps = { num (Util.num), Cronograma, CronoPlan, Orcamento, Fisico }.
+     Devolve null (obra fora: sem orçamento/início, ou sem nada a mostrar) ou
+     { nome, fonte:"base"|"linear", prev, real (inteiros, para o gráfico),
+       prevPct, realPct, desvio, medido, idp?, baseVersao?, dataCorte?, erro? }. */
+  function prevRealObra(ent, deps) {
+    deps = deps || {};
+    var o = ent && ent.obra, orc = ent && ent.orc;
+    var num = deps.num;
+    if (!o || !orc || !o.orcamentoId) return null;
+    if (typeof num !== "function") return { nome: o.nome || "", erro: "conversor de número (Util.num) não informado." };
+    var hoje = ehDataObj(ent.hoje) ? ent.hoje : new Date();
+    var medido = medidoBoletins(ent.medicoes, o.id, num);
+    var base = ent.base || null;
+    if (base) {
+      var CP = deps.CronoPlan, C = deps.Cronograma, O = deps.Orcamento, F = deps.Fisico;
+      var falha = function (msg) { return { nome: o.nome || "", fonte: "base", baseVersao: base.versao, erro: msg, medido: medido }; };
+      if (!CP || !C || !O || !F || typeof O.valoresEAP !== "function" || typeof CP.realizadoPorNo !== "function" ||
+          typeof CP.confrontoPorNo !== "function" || typeof F.porServico !== "function") return falha("módulos do planejamento não carregados");
+      /* ⚠ base congelada sobre OUTRO orçamento (a obra foi religada pelo
+         cadastro): a MESMA regra do painel da obra (CronoPlan.baseVale) — o
+         IDP contra etapas que não são as mesmas dava 0 e "atrasada" numa obra
+         adiantada. Fica fora da média, com o motivo (nunca cai calada na
+         régua linear). `ent.orcamentos` sobe a cadeia de revisões. */
+      if (typeof CP.baseVale === "function") {
+        var bv = CP.baseVale(base, orc, ent.orcamentos);
+        if (!bv.ok) return falha("a linha de base v" + base.versao + " é de outro orçamento (" + (bv.orcNumero || bv.orcamentoId) + ") — reprograme a partir do plano atual");
+      }
+      try {
+        var V = O.valoresEAP(orc);
+        if (!V || !V.ok) return falha((V && V.motivo) || "valores de venda indisponíveis");
+        var rdos = arr(ent.rdosPublicaveis), ult = "";
+        rdos.forEach(function (r) { var d = String((r && r.data) || "").slice(0, 10); if (d > ult) ult = d; });
+        /* ⚠ o corte é o ÚLTIMO DIÁRIO PUBLICÁVEL (senão hoje): o previsto
+           na data de hoje contra um realizado de semanas atrás diria
+           "atrasada" só porque o diário ainda não foi publicado. O realizado
+           e o confronto saem com a MESMA data (o confronto recusa se não). */
+        var corte = ult || isoLocal(hoje);
+        var linhas = F.porServico(rdos, o.id, { ate: corte });
+        var real = CP.realizadoPorNo(orc, linhas, { valores: V, dataCorte: corte, opcionaisIncluidos: arr(base.opcionaisIncluidos) });
+        if (!real || real.ok === false) return falha((real && real.erro) || "realizado indisponível");
+        var ini = o.inicio || (base.cal && base.cal.dataInicio) || null;
+        var r = C.estimar(ent.orcPlano || orc, ini ? { dataInicio: ini } : null, { eap: true, valores: V });
+        var conf = CP.confrontoPorNo(base, r, real, { dataCorte: corte, hoje: isoLocal(hoje) });
+        if (!conf || conf.erro || !conf.totais) return falha((conf && conf.erro) || "confronto indisponível");
+        var T = conf.totais;
+        if (T.previstoPct == null || T.realPct == null) return falha("a linha de base não tem valor para comparar");
+        return { nome: o.nome || "", fonte: "base", baseVersao: base.versao, dataCorte: conf.dataCorte,
+          prevPct: T.previstoPct, realPct: T.realPct, prev: Math.round(T.previstoPct), real: Math.round(T.realPct),
+          desvio: Math.round((T.realPct - T.previstoPct) * 10) / 10, idp: T.IDP, medido: medido };
+      } catch (e) { return falha("falha ao calcular: " + (e && e.message)); }
+    }
+    if (!o.inicio) return null;
+    var meses = parseInt(orc.cronogramaMeses || 6, 10) || 6;
+    var ini0 = new Date(String(o.inicio).slice(0, 10) + "T00:00:00");
+    if (isNaN(ini0.getTime())) return null;
+    var prev = Math.max(0, Math.min(100, ((hoje - ini0) / (30.44 * 86400000)) / meses * 100));
+    if (medido === null) return null;                     // só em valor: sem % para comparar
+    if (prev <= 0 && medido <= 0) return null;
+    /* o número é o do cartão da obra (sem teto: boletins que somam mais de
+       100% aparecem como somam); só a BARRA do gráfico é presa em 0..100 */
+    return { nome: o.nome || "", fonte: "linear", prevPct: prev, realPct: medido,
+      prev: Math.round(prev), real: Math.round(Math.max(0, Math.min(100, medido))), desvio: Math.round(medido) - Math.round(prev), medido: medido };
+  }
+
+  function brPts(v) { return (v > 0 ? "+" : "") + (Math.round(v * 10) / 10).toFixed(1).replace(".", ",") + " pts"; }
+
+  /* O cartão do KPI: {titulo, valor, sub, positivo} ou null. Texto puro —
+     quem desenha escapa. */
+  function kpiPrevReal(dados) {
+    var todos = arr(dados);
+    var ok = todos.filter(function (d) { return d && !d.erro && d.prev != null && d.real != null; });
+    var comBase = ok.filter(function (d) { return d.fonte === "base"; });
+    var lin = ok.filter(function (d) { return d.fonte === "linear"; });
+    var erros = todos.filter(function (d) { return d && d.erro; });
+    /* base: o desvio exato do confronto; linear: a conta de antes, sobre os
+       inteiros que o gráfico desenha (a média não muda para quem não tem base) */
+    function media(l) {
+      return l.reduce(function (s, d) { return s + (d.fonte === "base" ? (d.realPct - d.prevPct) : (d.real - d.prev)); }, 0) / l.length;
+    }
+    var nErro = erros.length ? " · " + erros.length + " obra(s) com linha de base sem cálculo (" + erros[0].nome + ": " + erros[0].erro + ")" : "";
+    if (comBase.length) {
+      var dv = media(comBase);
+      return { titulo: "Previsto × Real", valor: brPts(dv), positivo: dv >= 0,
+        sub: "linha de base · executado × previsto na data, os dois pelo valor de cada subetapa na base · média de " + comBase.length + " obra(s)" +
+          (lin.length ? " · " + lin.length + " sem linha de base fora da média" : "") + nErro };
+    }
+    if (lin.length) {
+      var dl = media(lin);
+      return { titulo: "Medido × prazo linear", valor: brPts(dl), positivo: dl >= 0,
+        sub: "boletins aprovados × prazo decorrido · média de " + lin.length + " obra(s) · sem linha de base" + nErro };
+    }
+    if (erros.length) return { titulo: "Previsto × Real", valor: "—", positivo: true, sub: nErro.slice(3) };
+    return null;
+  }
+
+  /* O que cada barra do gráfico diz ao passar o mouse — a régua daquela obra.
+     A obra com base mostra também o medido nos boletins, ao lado: "executado
+     sobre o orçamento" e "medido" respondem perguntas diferentes, e o
+     engenheiro precisa ver os dois antes de o cliente ligar. */
+  function brPct(v) { return String(Math.round(v * 10) / 10).replace(".", ",") + "%"; }
+  function rotulosPrevReal(d) {
+    if (!d) return { prev: "", real: "" };
+    if (d.fonte === "base") {
+      /* ⚠ O RÓTULO DIZ O QUE O NÚMERO É (revisão 3, lente dinheiro). O real
+         daqui é o do confronto — cada subetapa pelo valor da BASE, o mesmo do
+         previsto (é o que o IDP compara). Estava debaixo do rótulo "Executado
+         sobre o orçamento (diários publicáveis)", que no painel da obra é outro
+         número (cada serviço pelo valor de HOJE): depois de uma revisão de
+         quantidades, 47,6% aqui e 23,2% no painel com o mesmo nome. Agora o
+         texto é o do sub do "Previsto na data" do painel — mesmo número,
+         mesmo nome. */
+      return { prev: "Previsto na linha de base" + (d.baseVersao ? " v" + d.baseVersao : "") + (d.dataCorte ? " em " + d.dataCorte.split("-").reverse().join("/") : "") + ": " + brPct(d.prevPct),
+        real: "Executado na régua da linha de base" + (d.baseVersao ? " v" + d.baseVersao : "") + " (diários publicáveis, cada subetapa pelo valor na base): " + brPct(d.realPct) +
+          (d.medido != null ? " · medido nos boletins aprovados: " + brPct(d.medido) : " · medido nos boletins: sem percentual") };
+    }
+    return { prev: "Prazo decorrido (linear, sem linha de base): " + brPct(d.prevPct), real: "Medido nos boletins aprovados: " + brPct(d.realPct) };
+  }
+  /* título e subtítulo do cartão do gráfico, pela régua das obras mostradas */
+  function legendaPrevReal(dados) {
+    var ok = arr(dados).filter(function (d) { return d && !d.erro; });
+    var temB = ok.some(function (d) { return d.fonte === "base"; }), temL = ok.some(function (d) { return d.fonte === "linear"; });
+    if (temB && temL) return { titulo: "Previsto × Realizado", sub: "Com linha de base: previsto × executado, os dois pelo valor de cada subetapa na base (diários). Sem base: prazo decorrido × medido nos boletins aprovados." };
+    if (temB) return { titulo: "Previsto × Realizado", sub: "Previsto da linha de base × executado na régua da base (diários publicáveis), por obra" };
+    if (temL) return { titulo: "Medido × prazo linear", sub: "Prazo decorrido (linear) × medido nos boletins aprovados, por obra — sem linha de base" };
+    return { titulo: "Previsto × Realizado", sub: "Por obra" };
+  }
+
   /* ===== Quadro Kanban (visão em colunas do MESMO estado LPS) =====
    * Nada de status novo: as colunas DERIVAM de comprometida/status/restrições/
    * semana. Precedência: feito > naofeito > impedida > execucao > (liberada |
@@ -291,6 +606,10 @@
     resumo: resumo,
     QUADRO_COLUNAS: QUADRO_COLUNAS, classificarQuadro: classificarQuadro, moverQuadro: moverQuadro,
     sugerirDoCronograma: sugerirDoCronograma, concluirPorRdo: concluirPorRdo,
+    nosDoCronograma: nosDoCronograma, sugerirDoCronogramaNos: sugerirDoCronogramaNos,
+    puxarDoCronograma: puxarDoCronograma, textoPuxar: textoPuxar,
+    NAO_CONTA: NAO_CONTA, CONTA: CONTA, medidoBoletins: medidoBoletins, prevRealObra: prevRealObra, kpiPrevReal: kpiPrevReal,
+    rotulosPrevReal: rotulosPrevReal, legendaPrevReal: legendaPrevReal,
     novo: function (obraId) { return { obraId: obraId || "", tarefas: [] }; }
   };
 

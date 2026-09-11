@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.72",
+  "versao": "1.2.73",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.72.zip",
-  "notas": "Novidades: a aba Fotos da ficha da obra passa a mostrar o album da obra; obras importadas do RA Gestao de Obras podem trazer de volta as fotos antigas dos diarios, conferidas uma a uma e sem duplicar. Correcao: na ficha da obra, a aba Mapa avisa que o endereco vai ao Google Maps, as medicoes aparecem com virgula e com o valor em reais, o texto e os links ficam legiveis sobre fotos brancas e a foto de fundo nao sai na impressao.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.72/OrcaPRO-IA-Instalador-v1.2.72.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.73.zip",
+  "notas": "Novidades: a licenca pode ser renovada automaticamente no cartao — pela tela de Licenca voce cadastra o cartao uma vez e ela nao vence mais. O cronograma ganhou planejamento por subetapa, com previsto x realizado na obra, e a IA monta e ajusta esse cronograma a pedido, mostrando o que muda antes de gravar e com desfazer. O sistema passa a guardar backup automatico na pasta da sua nuvem (OneDrive, Google Drive ou Dropbox), quando houver. Correcao: no Portal do cliente, o texto ficou legivel no tema escuro.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.73/OrcaPRO-IA-Instalador-v1.2.73.exe"
 }

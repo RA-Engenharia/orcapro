@@ -117,9 +117,15 @@
        "propostaHistorico", "obraId", "contratoId", "medicoes",
        "estadoAprovacao", "historicoAprovacao", "revisaoMotivo", "revisaoPor",
        "revisaoEm", "aprovadoPeloProprioAutor", "revisaoDe", "revisaoNumero",
-       "fechamento"].forEach(function (k) {
+       "fechamento"].concat(Orcamento.CAMPOS_IA_LOCAIS).forEach(function (k) {
         if (copia[k] !== undefined) delete copia[k];
       });
+      /* ⚠ `iaEdicao` / `iaHistorico` (js/iaedit.js) também não atravessam — é o
+         MESMO defeito do `fechamento` acima: o "Desfazer edição da IA" da
+         cópia reverteria quantidades e textos para um retrato tirado no
+         orçamento de ORIGEM, e o histórico levaria o pedido interno de um
+         cliente para o orçamento de outro. A lista mora em CAMPOS_IA_LOCAIS
+         para a revisão e a _meta do Excel lerem a mesma. */
 
       /* itens sem quantidade: útil para reaproveitar SÓ a estrutura de
          serviços quando a obra nova tem metragem diferente */
@@ -211,7 +217,19 @@
         excluso: "Projetos complementares e taxas de aprovação;\nLigações definitivas de água, energia e esgoto;\nMobiliário, paisagismo e itens de decoração;\nServiços não descritos expressamente nesta proposta.",
         /* endereço (URL) da planilha desta proposta — vira o botão "Abrir planilha"
            no PDF quando o modelo de proposta pede. Vazio = sem botão. */
-        linkPlanilha: ""
+        linkPlanilha: "",
+        /* ⚠ VAZIO É O PADRÃO, NÃO UM TEXTO EM BRANCO. Premissas, metodologia e
+           responsabilidades eram texto FIXO na proposta clássica (proposta.js,
+           seções 5 e 8). Viraram campo para poderem ser editados (à mão e pela
+           IA), mas VAZIO continua imprimindo o texto fixo — exatamente o de
+           antes, byte a byte. Por isso nascem "" e não com o texto: pôr o texto
+           aqui trocaria o parágrafo de sempre por uma lista no primeiro salvar
+           de todo orçamento. O texto que o campo vazio representa está em
+           TEXTOS_PADRAO_PROPOSTA (1 item por linha). */
+        premissas: "",
+        metodologia: "",
+        respContratada: "",
+        respContratante: ""
       };
     },
 
@@ -221,6 +239,47 @@
       for (var k in pad) { if (orc.comercial[k] == null) orc.comercial[k] = pad[k]; }
       return orc.comercial;
     },
+
+    /* O que cada campo VAZIO imprime na proposta clássica, escrito como a
+       pessoa editaria (1 item por linha). Serve de "texto atual" para a IA
+       (o `de` do diff) e de placeholder no modal Dados.
+       ⚠ É o MESMO conteúdo dos literais de proposta.js (seções 5 e 8) —
+       tools/test-proposta-campos-texto.js confere linha a linha. Mudou um,
+       mude o outro; e mudar os dois muda a proposta de todo orçamento antigo. */
+    TEXTOS_PADRAO_PROPOSTA: {
+      premissas: "Condições normais de trabalho e acesso à obra;\nFornecimento de água e energia pelo contratante durante a execução;\nQuantitativos sujeitos a confirmação em projeto executivo.",
+      metodologia: "Execução por etapas com medição mensal, controle de qualidade e acompanhamento técnico responsável, seguindo normas técnicas vigentes (ABNT).",
+      respContratada: "Execução dos serviços conforme escopo e normas técnicas;\nFornecimento de mão de obra e EPIs da equipe;\nResponsável técnico com ART/RRT.",
+      respContratante: "Liberação da obra e acessos;\nFornecimento de água e energia;\nAprovação de projetos e licenças."
+    },
+
+    /* O texto que o documento mostra HOJE para o campo: o gravado; vazio, o
+       padrão acima (só os quatro campos novos têm padrão implícito — incluso,
+       excluso e garantia já nascem gravados; apresentação vazia é "", porque
+       o parágrafo padrão dela depende do nome da empresa). */
+    textoComercial: function (orc, campo) {
+      var c = (orc && orc.comercial && typeof orc.comercial === "object") ? orc.comercial : {};
+      var v = c[campo];
+      if (Util.naoVazio(v)) return String(v).replace(/\r\n/g, "\n");
+      return Object.prototype.hasOwnProperty.call(Orcamento.TEXTOS_PADRAO_PROPOSTA, campo) ? Orcamento.TEXTOS_PADRAO_PROPOSTA[campo] : (v == null ? "" : String(v));
+    },
+
+    /* Para o modal Dados: o que a pessoa deixou IGUAL ao padrão volta a ser
+       vazio. Sem isto, abrir e salvar o modal com o texto padrão pré-preenchido
+       mudaria o desenho da proposta (parágrafo → lista) sem ninguém ter
+       editado nada. */
+    normalizarTextoComercial: function (campo, valor) {
+      var v = String(valor == null ? "" : valor).replace(/\r\n/g, "\n").trim();
+      var p = Orcamento.TEXTOS_PADRAO_PROPOSTA[campo];
+      if (p != null && v === String(p).trim()) return "";
+      return v;
+    },
+
+    /* ⚠ Campos do orçamento que são do APARELHO/da sessão de edição, não do
+       documento: o desfazer de 1 nível e o histórico da IA (js/iaedit.js).
+       Não atravessam cópia (copiarDe), revisão (novaRevisao) nem a _meta do
+       Excel que vai ao cliente (excel.js). Uma lista só, lida pelos três. */
+    CAMPOS_IA_LOCAIS: ["iaEdicao", "iaHistorico"],
 
     // ---- Etapas ----
     addEtapa: function (orc, nome) {
@@ -1193,6 +1252,183 @@
       return rows;
     },
 
+    /* =================================================================
+     * VALOR DE VENDA POR NÓ DA EAP — etapa › folha › serviço
+     *
+     * POR QUE EXISTE: o cronograma executivo, a linha de base, o previsto ×
+     * realizado e o IDP precisam de um valor por NÓ (etapa, subetapa, serviço),
+     * e o orçamento só tinha valor por ETAPA (`sintetico`) e por LINHA
+     * (`calcular`). Cada tela que fosse fazer a própria conta repetiria o
+     * defeito que a FONTE ÚNICA acima existe para impedir: dois documentos do
+     * mesmo orçamento divergindo em centavos. E a saída mais fácil — pesar pelo
+     * custo direto — põe a margem do escritório na curva que vai ao cliente.
+     * Por isso o valor por nó sai SÓ daqui, e é sempre PREÇO DE VENDA.
+     *
+     * Ids das folhas (contrato fixo com o motor do cronograma):
+     *   etapa                         → etapa.id
+     *   subetapa com itens            → sub.id
+     *   soltos de etapa que TAMBÉM tem
+     *     subetapa com itens          → etapa.id + "~g"   (vem ANTES das subetapas,
+     *                                   como na numeração de `calcular`)
+     *   etapa sem subetapa com itens  → a própria etapa é a folha (sem "~g")
+     *   serviço                       → item.id
+     * Subetapa VAZIA não vira nó (mesma regra da numeração: não gasta número).
+     *
+     * A conta, nível a nível (etapa → folha → serviço):
+     *  - etapa = `sintetico[i].precoVenda`, casado por ÍNDICE (o sintético não
+     *    tem id) — com a guarda de tamanho, a mesma de `cronograma`;
+     *  - folha e serviço = rateio proporcional do valor do PAI. O peso é o que
+     *    o próprio orçamento usa para chegar ao valor do pai: no BDI "unitario"
+     *    o preço total da LINHA (o que a planilha imprime e a medição fatura);
+     *    no BDI "final", o custo total da linha (o BDI entra proporcional ao
+     *    custo — é assim que `sintetico` faz a etapa). Assim, no "unitario",
+     *    serviço = `L.precoTotal` e subetapa = `grupo.precoTotal` ao centavo;
+     *  - em CADA nível o resíduo de arredondamento vai, POR DIFERENÇA, ao maior
+     *    filho (maior peso em módulo; empate = 1º na ordem EAP). Por
+     *    construção Σ filhos === pai ao centavo, em qualquer modo de
+     *    arredondamento, nas duas incidências e com BDI negativo (a diferença
+     *    é somada com o sinal que tiver — o defeito do `medirItens` com
+     *    desconto era truncar a diferença, e aqui ela nunca é truncada);
+     *  - serviço sem quantidade (0 ou `qtdPendente`) vale 0 e não recebe
+     *    resíduo: não se executa o que não tem quantidade, e dar valor a ele
+     *    faria o avanço nunca chegar a 100%.
+     *
+     * Devolve {ok:true, porId, pai, tipo, opcional, ordem, total, modo,
+     * incidencia} ou {ok:false, motivo}. NUNCA cai no custo: sem valor de
+     * venda confiável, o chamador recebe o motivo e mostra à pessoa.
+     * Puro: não grava nada no orçamento (além do que `calcular` já normaliza
+     * em `orc.config`, como em qualquer chamada dele).
+     * ================================================================= */
+    valoresEAP: function (orc) {
+      var etapas = Util.arr(orc && orc.etapas);
+      if (!etapas.length) return { ok: false, motivo: "orçamento sem etapas — não há valor de venda para distribuir no cronograma. Lance ao menos uma etapa com itens." };
+      var self = this, A0 = A();
+      var c = this.calcular(orc), sint = this.sintetico(orc);
+      /* ⚠ O sintético não tem id: a etapa i recebe o valor da linha i. Se um
+         dia os tamanhos divergirem, casar por índice poria o preço de uma
+         etapa em outra — sem erro, só dinheiro no lugar errado. Mesma guarda
+         de `cronograma` e do PDF. */
+      if (sint.length !== etapas.length) {
+        return { ok: false, motivo: "o resumo por etapa tem " + sint.length + " linha(s) e o orçamento tem " + etapas.length + " etapa(s) — o valor de uma etapa iria para outra. Reabra o orçamento; se continuar, avise o suporte." };
+      }
+      var nenhum = A0.normalizar(c.modo) === "nenhum";
+      var bdiNoPU = c.bdiNoPU;
+      /* centavos inteiros fora do modo "nenhum": somar inteiros é exato, e
+         é isso que faz o "por diferença" fechar sem ruído de float */
+      var paraUnid = function (v) { return nenhum ? v : Math.round(v * 100); };
+      var deUnid = function (u) { return nenhum ? u : u / 100; };
+
+      /* Rateia `P` (em unidades: centavos, ou reais crus no "nenhum") entre
+         `filhos` [{w, elegivel}] na ordem EAP. Devolve a lista de valores em
+         unidades, ou null quando há valor e nenhum filho pode recebê-lo. */
+      function ratear(P, filhos) {
+        var out = [], eleg = [], W = 0, k;
+        for (k = 0; k < filhos.length; k++) {
+          out.push(0);
+          if (filhos[k].elegivel) { eleg.push(k); W += filhos[k].w; }
+        }
+        if (!eleg.length) return (nenhum ? Math.abs(P) < 0.005 : P === 0) ? out : null;
+        // ⚠ maior filho = maior peso em módulo; empate fica com o 1º na ordem EAP (">" estrito)
+        var mx = eleg[0], temPos = false, temNeg = false;
+        for (k = 1; k < eleg.length; k++) { if (Math.abs(filhos[eleg[k]].w) > Math.abs(filhos[mx].w)) mx = eleg[k]; }
+        for (k = 0; k < eleg.length; k++) { if (filhos[eleg[k]].w > 0) temPos = true; else if (filhos[eleg[k]].w < 0) temNeg = true; }
+        /* ⚠ SINAIS OPOSTOS (item de DESCONTO entre os irmãos): o rateio P×w/W
+           amplifica o arredondamento do pai — com W pequeno perto de Σ|w|, cada
+           filho sai multiplicado por P/W. Medido: serviço de R$ 1.250,00 e
+           desconto de −1.249,98 numa etapa de R$ 0,01 saíam 625,00 e −624,99
+           (metade do que a planilha imprime). Aqui cada filho fica com o
+           PRÓPRIO valor (no "unitario" o peso já é o preço da linha; no
+           "final", custo × (1 + BDI)) e só a diferença vai ao maior. Sem sinal
+           trocado nada muda: é o rateio de sempre (0 custos negativos nos
+           backups — mesmo resultado nos 304 orçamentos reais). */
+        var proprio = temPos && temNeg;
+        var Preais = deUnid(P), semPeso = Math.abs(W) < 1e-9, soma = 0;
+        for (k = 0; k < eleg.length; k++) {
+          var j = eleg[k];
+          if (j === mx) continue;
+          // peso somando zero (todos os pesos 0 com o pai ≠ 0): partes iguais entre os elegíveis
+          var bruto = proprio ? (bdiNoPU ? filhos[j].w : Bdi.aplicar(filhos[j].w, c.pct))
+            : (semPeso ? Preais / eleg.length : Preais * filhos[j].w / W);
+          var v = nenhum ? bruto : Math.round(A0.valor(bruto, c.modo) * 100);
+          out[j] = v; soma += v;
+        }
+        // ⚠ O RESÍDUO, POR DIFERENÇA, AO MAIOR FILHO — é esta linha que fecha Σ filhos === pai
+        out[mx] = P - soma;
+        return out;
+      }
+
+      var porId = {}, pai = {}, tipo = {}, opcional = {}, ordem = [], repetidos = 0, semId = 0;
+      function reg(id, t, paiId, op) {
+        if (id == null || id === "") { semId++; return false; }
+        if (Object.prototype.hasOwnProperty.call(tipo, id)) { repetidos++; return false; }
+        tipo[id] = t; pai[id] = paiId; ordem.push(id);
+        if (op) opcional[id] = true;
+        return true;
+      }
+      function gravar(id, u) { porId[id] = deUnid(u); }
+
+      var linhasDe = [];
+      etapas.forEach(function () { linhasDe.push([]); });
+      c.linhas.forEach(function (L) { if (linhasDe[L.etapaIdx]) linhasDe[L.etapaIdx].push(L); });
+      /* peso e elegibilidade do serviço (ver o cabeçalho). Sem quantidade =
+         mesma regra de `itensSemQuantidade`: qtdPendente OU quantidade ≤ 0. */
+      function servico(L) {
+        var semBase = !!(L.item && L.item.qtdPendente) || !(L.quantidade > 0);
+        return { id: L.itemId, w: bdiNoPU ? L.precoTotal : L.custoTotal, elegivel: !semBase };
+      }
+      function ratearServicos(uPai, servs, paiId, op, rotulo) {
+        var vals = ratear(uPai, servs);
+        if (!vals) return rotulo;
+        servs.forEach(function (s, k) { if (reg(s.id, "servico", paiId, op)) gravar(s.id, vals[k]); });
+        return null;
+      }
+
+      var totalU = 0, falta = null;
+      etapas.forEach(function (e, ei) {
+        if (falta) return;
+        var op = !!e.opcional, uE = paraUnid(sint[ei].precoVenda);
+        var rotulo = "etapa " + (ei + 1) + (e.nome ? " (" + e.nome + ")" : "");
+        totalU += uE;
+        reg(e.id, "etapa", null, op); gravar(e.id, uE);
+        var linhas = linhasDe[ei], soltos = [], porSub = {};
+        linhas.forEach(function (L) {
+          if (L.subEtapaId) (porSub[L.subEtapaId] = porSub[L.subEtapaId] || []).push(L);
+          else soltos.push(L);
+        });
+        var folhas = [];
+        self.subEtapas(e).forEach(function (s) {
+          if (porSub[s.id] && porSub[s.id].length) folhas.push({ id: s.id, t: "subetapa", linhas: porSub[s.id] });
+        });
+        if (!folhas.length) {
+          // etapa sem subetapa com itens: ela mesma é a folha e os serviços penduram nela
+          falta = ratearServicos(uE, linhas.map(servico), e.id, op, rotulo);
+          return;
+        }
+        if (soltos.length) folhas.unshift({ id: e.id + "~g", t: "soltos", linhas: soltos });
+        folhas.forEach(function (f) {
+          f.servs = f.linhas.map(servico);
+          f.w = 0; f.elegivel = false;
+          f.servs.forEach(function (s) { if (s.elegivel) { f.w += s.w; f.elegivel = true; } });
+        });
+        var vf = ratear(uE, folhas);
+        if (!vf) { falta = rotulo; return; }
+        folhas.forEach(function (f, k) {
+          if (falta) return;
+          if (reg(f.id, f.t, e.id, op)) gravar(f.id, vf[k]);
+          falta = ratearServicos(vf[k], f.servs, f.id, op, rotulo);
+        });
+      });
+      if (falta) {
+        return { ok: false, motivo: "a " + falta + " tem valor de venda, mas nenhum serviço dela tem quantidade para recebê-lo — informe a quantidade dos itens pendentes (Memória de cálculo) e tente de novo." };
+      }
+      if (repetidos || semId) {
+        return { ok: false, motivo: (repetidos ? repetidos + " identificador(es) repetido(s)" : "") + (repetidos && semId ? " e " : "") +
+          (semId ? semId + " nó(s) sem identificador" : "") + " na estrutura do orçamento — o valor de um nó iria para outro. Avise o suporte antes de usar o cronograma executivo." };
+      }
+      return { ok: true, porId: porId, pai: pai, tipo: tipo, opcional: opcional, ordem: ordem,
+        total: deUnid(totalU), modo: c.modo, incidencia: c.incidencia };
+    },
+
     // Linha a linha (analítico) — útil p/ export
     analitico: function (orc) {
       return this.calcular(orc).linhas.map(function (L) {
@@ -1582,6 +1818,11 @@
         qtd = it * rep;
         texto = fm(it, 0) + (rep > 1 ? " × " + fm(rep, 0) : "") + " = " + fm(qtd, 0) + " un";
       }
+      /* ⚠ CONTA FORA DA ESCALA (revisão 4A da IA que edita): 1e200 × 1e200 dá
+         Infinity, que passa em `qtd > 0` e o aplicarMemoriaQuantidade gravava
+         como 0 (Util.num de não finito) — tirando a marca de pendente e
+         contornando o "quantidade zero não entra". Vale para a tela também. */
+      if (!isFinite(qtd)) return { ok: false, erro: "A conta saiu da escala — confira as medidas." };
       return { ok: true, qtd: Math.round(qtd * 10000) / 10000, unidade: F.unidade, texto: texto };
     },
 
@@ -1740,7 +1981,8 @@
      * Devolve { ok, erro? } — recusa unidade incompatível em vez de converter
      * no chute (m³ entrando em item de m² multiplica preço em silêncio). */
     aplicarMemoriaQuantidade: function (orc, etapaId, itemId, r) {
-      if (!r || !r.ok || !(r.qtd > 0)) return { ok: false, erro: "Não há quantidade calculada para subir." };
+      /* ⚠ isFinite: Infinity passa em `> 0` e virava quantidade 0 gravada */
+      if (!r || !r.ok || !(r.qtd > 0) || !isFinite(r.qtd)) return { ok: false, erro: "Não há quantidade calculada para subir." };
       var etapa = this._etapa(orc, etapaId);
       var it = etapa && (etapa.itens || []).filter(function (x) { return x.id === itemId; })[0];
       if (!it) return { ok: false, erro: "Item não encontrado." };
@@ -1752,6 +1994,72 @@
       delete it.qtdPendente;
       if (r.texto) it.memoriaCalculo = String(r.texto);
       return { ok: true, qtd: it.quantidade };
+    },
+
+    /* ===== MUTADORES DO EDITOR POR IA (js/iaedit.js) =====
+       O editor por IA só escreve no orçamento por mutador daqui — nunca
+       montando campo de item na mão lá dentro. Estes três existem porque
+       nenhum dos de cima faz o que o desfazer precisa: */
+
+    /* Troca SÓ o texto da memória de cálculo (a IA reescreve a redação; a
+       quantidade não muda). Vazio apaga o campo, como um item que nunca teve. */
+    definirMemoriaTexto: function (orc, etapaId, itemId, texto) {
+      var etapa = this._etapa(orc, etapaId);
+      var it = etapa && Util.arr(etapa.itens).filter(function (x) { return x.id === itemId; })[0];
+      if (!it) return { ok: false, erro: "Item não encontrado." };
+      var t = String(texto == null ? "" : texto);
+      if (t.trim()) it.memoriaCalculo = t; else delete it.memoriaCalculo;
+      return { ok: true };
+    },
+
+    /* Devolve quantidade, `qtdPendente` e memória EXATAMENTE como estavam — é o
+       inverso de aplicarMemoriaQuantidade. ⚠ Não passa por atualizarItem de
+       propósito: aquele recusa 0 (e avisa), e o item que era PENDENTE (0 +
+       qtdPendente) tem de voltar a ser pendente, não ficar com a quantidade
+       que a IA pôs. `antes` = { q, p (pendente), m (memória ou null) }. */
+    restaurarQuantidade: function (orc, etapaId, itemId, antes) {
+      var etapa = this._etapa(orc, etapaId);
+      var it = etapa && Util.arr(etapa.itens).filter(function (x) { return x.id === itemId; })[0];
+      if (!it || !antes) return { ok: false, erro: "Item não encontrado." };
+      it.quantidade = Util.num(antes.q);
+      if (antes.p) it.qtdPendente = true; else delete it.qtdPendente;
+      if (antes.m != null && String(antes.m) !== "") it.memoriaCalculo = String(antes.m); else delete it.memoriaCalculo;
+      return { ok: true };
+    },
+
+    /* Põe os itens da etapa na ordem `ids` — só se forem EXATAMENTE os mesmos
+       itens (nenhum a mais, nenhum a menos). É o que devolve cada serviço à
+       POSIÇÃO original depois de desfazer um "mover para subetapa": a _meta
+       do Excel casa linhas pela ordem (roundtrip.js), e o moverItemParaSub
+       sozinho devolve o item ao grupo, mas no FIM dele. */
+    reordenarItens: function (orc, etapaId, ids) {
+      var e = this._etapa(orc, etapaId); if (!e) return { ok: false, erro: "Etapa não encontrada." };
+      var itens = Util.arr(e.itens), porId = {}, lista = Util.arr(ids);
+      if (lista.length !== itens.length) return { ok: false, erro: "A etapa mudou de tamanho." };
+      itens.forEach(function (it) { porId[it.id] = it; });
+      var novo = [], visto = {};
+      for (var i = 0; i < lista.length; i++) {
+        if (!Object.prototype.hasOwnProperty.call(porId, lista[i]) || visto[lista[i]]) return { ok: false, erro: "A etapa tem outros itens agora." };
+        visto[lista[i]] = true; novo.push(porId[lista[i]]);
+      }
+      e.itens = novo;
+      this._normalizarEtapa(e);   // idempotente: com os blocos já contíguos, não muda nada
+      return { ok: true };
+    },
+
+    /* Devolve os CÓDIGOS das etapas como estavam. addEtapa e removerEtapa
+       renumeram tudo para 1.0, 2.0… (_renumerarEtapas): o desfazer de uma
+       etapa criada pela IA dizia "tudo revertido" e o código importado
+       ("01", "02", "09") saía no sintético da proposta como "1.0".
+       `lista` = [{id, codigo}] na ordem de antes. ⚠ Só age se as etapas são
+       EXATAMENTE as mesmas, na MESMA ordem — senão o código antigo cairia na
+       posição errada (quem reordenou depois já tem a numeração nova). */
+    restaurarCodigosEtapas: function (orc, lista) {
+      var es = Util.arr(orc && orc.etapas), l = Util.arr(lista), i;
+      if (es.length !== l.length) return { ok: false, erro: "A lista de etapas mudou." };
+      for (i = 0; i < l.length; i++) if (!l[i] || es[i].id !== l[i].id) return { ok: false, erro: "A ordem das etapas mudou." };
+      for (i = 0; i < l.length; i++) es[i].codigo = String(l[i].codigo == null ? "" : l[i].codigo);
+      return { ok: true };
     },
 
     /* Itens que entraram sem quantidade e continuam esperando. Espelha o
@@ -1911,6 +2219,10 @@
       copia.estadoAprovacao = "rascunho";
       delete copia.aprovadoPor; delete copia.aprovadoEm; delete copia.aprovadoPeloProprioAutor;
       delete copia.historicoAprovacao; delete copia.revisaoMotivo; delete copia.revisaoPor; delete copia.revisaoEm;
+      /* ⚠ o desfazer e o histórico da IA são do ORIGINAL: na revisão, o botão
+         "Desfazer edição da IA" reverteria o documento novo para um retrato
+         tirado no aprovado (ver CAMPOS_IA_LOCAIS e o mesmo cuidado em copiarDe) */
+      Orcamento.CAMPOS_IA_LOCAIS.forEach(function (k) { delete copia[k]; });
       copia.criadoEm = agoraISO || copia.criadoEm;
       copia.atualizadoEm = agoraISO || copia.atualizadoEm;
       copia.diasEditados = [];

@@ -1076,7 +1076,11 @@ input[type="checkbox"], input[type="radio"] { flex: 0 0 auto; }
   border: 1px solid var(--linha); border-radius: var(--raio); padding: 11px 13px; }
 .opt-linha + .opt-linha { margin-top: 6px; }
 .opt-linha > span { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
-.opt-linha.opt-alerta { background: #fff7ed; border-color: #fdba74; }
+/* fundo claro FIXO pede texto escuro fixo: no tema escuro o nome herdava o
+   texto claro do tema e sumia (1,06:1) — é justamente o relatório que revela
+   custo ao cliente, e ele precisa ser lido antes de marcar */
+.opt-linha.opt-alerta { background: #fff7ed; border-color: #fdba74; color: #111d2b; }
+.opt-linha.opt-alerta .muted { color: #9a3412; }
 .opt-linha.opt-nu { border: 0; padding: 0; }
 /* alvo de toque confortável no celular, sem mexer no desenho do desktop */
 @media (max-width: 820px) {
@@ -2256,11 +2260,11 @@ input.cell.cell-erro { border-color: #dc2626 !important; background: rgba(220,38
 
 /* ---------- O Portal do cliente com a cara da ficha ----------
    Pedido de 11/09/2026: "o painel da obra e o do portal do cliente com a
-   mesma configuração de layout". O modal do Portal ganha o vidro da ficha
-   e o tema escuro (data-tema="dark" no #modal-bg: as variáveis do tema
-   valem para tudo que está dentro dele, e os campos, avisos e caixas do
-   formulário se acertam sozinhos). Só o do Portal — os outros ~140
-   UI.modal do app continuam como são. */
+   mesma configuração de layout". O modal do Portal ganha o vidro da ficha,
+   no tema de quem usa (ver abaixo). Caixa com fundo claro fixo no style=
+   tem de fixar também a cor do texto — senão, no escuro, herda o texto
+   claro e some. Só o do Portal leva o vidro — os outros ~140 UI.modal do
+   app continuam como são. */
 .modal-bg.ov-modal-vidro { background: rgba(3,9,16,.55); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
 /* ⚠ O TEMA É O DE QUEM USA. A primeira versão punha data-tema="dark" no
    #modal-bg sempre — e o formulário do Portal tem caixas com fundo claro
@@ -2585,6 +2589,16 @@ input.coef-edit.mexido { border-color: var(--amarelo); background: rgba(170, 98,
 @media (max-width: 640px) {
   .acoes-sep { display: none; }
   .acoes-grp { flex-wrap: wrap; }
+}
+/* ⚠ O [Editar com IA] DIZ O NOME INTEIRO SÓ ONDE CABE (revisão 4B). Medido a
+   1366×768 com o menu lateral aberto: a linha 1 da barra tem 1086 px e
+   sobravam 79 px antes do botão, que ocupa 127 px. Sem isto a linha quebrava:
+   Comparar cenários e Relatório completo desciam para uma 2ª linha e tudo
+   abaixo (KPIs, abas, Gantt) descia 40 px. Abaixo de 1440 px o botão diz "IA"
+   (o nome inteiro fica no aria-label e no title). Sem este CSS — cache velho —
+   o rótulo inteiro aparece: degrada para a quebra de linha, nunca some. */
+@media (max-width: 1439px) {
+  .barra-acoes .ia-rot-largo { display: none; }
 }
 
 /* =====================================================================

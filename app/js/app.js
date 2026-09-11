@@ -446,6 +446,9 @@
 
     // ---------- Render dispatcher ----------
     render: function () {
+      /* contador de renders: o CronoExecUI.preparar reaproveita o cálculo do
+         cronograma DENTRO do mesmo render e o refaz no seguinte (algo mudou) */
+      this._rtok = (this._rtok || 0) + 1;
       var topbar = UI.el("topbar");
       var main = UI.el("main");
       var sidebar = UI.el("sidebar");
@@ -683,15 +686,28 @@
     },
 
     /* ---- o padrão comercial da empresa (js prefs), aplicado a qualquer orçamento ---- */
-    _COMERCIAL_PADRAO: ["condicoesPagamento", "prazoExecucao", "validadeProposta", "validadeDias", "garantia", "incluso", "excluso"],
+    _COMERCIAL_PADRAO: ["condicoesPagamento", "prazoExecucao", "validadeProposta", "validadeDias", "garantia", "incluso", "excluso",
+      "premissas", "metodologia", "respContratada", "respContratante"],
+    /* os 4 textos que a proposta imprimia FIXOS (Fase 4): o campo do modal
+       Dados de cada um. Um mapa só para o modal, o salvar e o usar padrão. */
+    _TEXTOS_PROPOSTA_ED: { premissas: "ed-prem", metodologia: "ed-met", respContratada: "ed-respcda", respContratante: "ed-respcte" },
     _comercialPadrao: function () {
       try { return (Store.lerPrefs(Auth.empresaId()) || {}).comercialPadrao || null; } catch (e) { return null; }
     },
     salvarComercialPadrao: function () {
       var d = {};
       var campos = { condicoesPagamento: "ed-pag", prazoExecucao: "ed-prazo", validadeProposta: "ed-val",
-        garantia: "ed-gar", incluso: "ed-inc", excluso: "ed-exc" };
+        garantia: "ed-gar", incluso: "ed-inc", excluso: "ed-exc",
+        premissas: "ed-prem", metodologia: "ed-met", respContratada: "ed-respcda", respContratante: "ed-respcte" };
       for (var k in campos) if (Object.prototype.hasOwnProperty.call(campos, k)) d[k] = (UI.el(campos[k]) || {}).value || "";
+      /* ⚠ os 4 textos novos se guardam NORMALIZADOS: o padrão do sistema
+         escrito de volta no campo vira "" (vazio = o texto de sempre). Sem
+         isto, "Salvar como padrão" com o placeholder copiado espalharia para
+         todo orçamento novo um texto que imprime em LISTA onde o de sempre
+         imprime em parágrafo. */
+      for (var kT in this._TEXTOS_PROPOSTA_ED) {
+        if (Object.prototype.hasOwnProperty.call(this._TEXTOS_PROPOSTA_ED, kT)) d[kT] = Orcamento.normalizarTextoComercial(kT, d[kT]);
+      }
       d.validadeDias = Util.num((UI.el("ed-valdias") || {}).value);
       try {
         var p = Store.lerPrefs(Auth.empresaId()) || {};
@@ -699,12 +715,30 @@
         Store.salvarPrefs(Auth.empresaId(), p);
       } catch (e) { UI.toast("Não consegui guardar: " + (e.message || e), "erro"); return; }
       UI.toast("Padrão da empresa guardado. Ele aparece como opção nos próximos orçamentos.", "ok");
+      /* a porta nasce na hora (revisão 4B): o [Usar o padrão da empresa] só era
+         desenhado se já houvesse padrão AO ABRIR o modal — quem acabava de
+         guardar o primeiro não o via até fechar e reabrir o Dados */
+      this._comercialPadraoPorta();
+    },
+    _comercialUsarPadraoBotao: function () {
+      return '<button class="btn sm ghost" data-acao="comercial-usar-padrao" type="button" title="Preenche os campos acima com o padrão guardado">Usar o padrão da empresa</button>';
+    },
+    _comercialPadraoPorta: function () {
+      try {
+        if (typeof document === "undefined" || !document.querySelector) return false;
+        if (document.querySelector('[data-acao="comercial-usar-padrao"]')) return false;
+        var s = document.querySelector('[data-acao="comercial-salvar-padrao"]');
+        if (!s || !s.insertAdjacentHTML) return false;
+        s.insertAdjacentHTML("afterend", this._comercialUsarPadraoBotao());
+        return true;
+      } catch (eP) { return false; }
     },
     usarComercialPadrao: function () {
       var d = this._comercialPadrao();
       if (!d) { UI.toast("Nenhum padrão guardado ainda.", "erro"); return; }
       var campos = { condicoesPagamento: "ed-pag", prazoExecucao: "ed-prazo", validadeProposta: "ed-val",
-        garantia: "ed-gar", incluso: "ed-inc", excluso: "ed-exc" };
+        garantia: "ed-gar", incluso: "ed-inc", excluso: "ed-exc",
+        premissas: "ed-prem", metodologia: "ed-met", respContratada: "ed-respcda", respContratante: "ed-respcte" };
       for (var k in campos) {
         if (!Object.prototype.hasOwnProperty.call(campos, k)) continue;
         var el = UI.el(campos[k]);
@@ -837,8 +871,17 @@
       }
       var r = Aprovacao.transicionar(orc, acao, eu, dados);
       if (!r || !r.ok) { UI.toast((r && r.erro) || "Ação não permitida agora.", "erro"); return; }
+      /* ⚠ ANTES de mudar o estado (o orçamento ainda está destravado): a
+         proposta sela com o prazo gravado igual ao desta tela. Sem isto, no
+         modo executivo, o aprovado ficava com o vão velho no disco — a versão
+         anterior do app imprimia outra entrega para a MESMA proposta, e a
+         trava do aprovado impedia o salvar que alinharia (ver _materializarSeExec). */
+      this._materializarSeExec(orc);
       Aprovacao.registrar(orc, acao, eu, dados, Util.agoraISO());
       orc.estadoAprovacao = r.estado;
+      /* ⚠ mudou o estado de aprovação: o desfazer da IA não atravessa (um
+         clique depois reverteria o que acabou de ser aprovado ou devolvido) */
+      if (typeof IAEdit !== "undefined") IAEdit.limparDesfazer(orc);
       orc.atualizadoEm = Util.agoraISO();
       /* grava DIRETO: o persistir() recusa aprovado, e é justamente aprovar
          que precisa gravar o aprovado. */
@@ -887,6 +930,7 @@
         var lim = Auth.limite("limiteOrcamentos"), qtd = Store.listarOrcamentos(eid).length;
         if (lim && qtd >= lim) { UI.toast("Limite de " + lim + " orçamento(s) do seu plano atingido — a revisão é um orçamento novo.", "erro"); return; }
       } catch (eL) {}
+      this._materializarSeExec(nova);   // a revisão nasce com o gravado igual ao prazo que ela mostra
       Store.salvarOrcamento(eid, nova);
       this._avisouTravado = null;
       this.abrirOrcamento(nova.id);
@@ -1581,9 +1625,37 @@
         case "escanear-pasta": this.escanearPastaUI(); break;
         case "cron-recalc": this.cronRecalc(); break;
         case "cron-reset": this.cronReset(); break;
-        case "cron-ia": this.cronRefinarIA(); break;
+        /* ⚠ o [Refinar com IA] da aba Cronograma é ATALHO do Editar com IA (chip
+           Cronograma + pedido pronto): a resposta passa pelo diff antes de
+           gravar. O cronRefinarIA antigo gravava direto e ficou sem porta. */
+        case "cron-ia": this.iaEditarAbrir({ alvo: "cronograma", pronto: "refinar" }); break;
+        case "ia-editar": this.iaEditarAbrir({}); break;
+        case "ia-desfazer": this.iaDesfazer(); break;
         case "cron-pdf": this.cronPDF(); break;
         case "cron-msproject": this.cronMSProject(); break;
+        // cronograma executivo (Fase 2): estado de TELA (nunca do orçamento) e os handlers que gravam pelo _cronoAlvo
+        case "crono-sub": this._cronoEstado("_cronoSub", t.dataset.sub); break;
+        case "crono-det": this._cronoEstado("_cronoDet", t.dataset.det); break;
+        case "crono-ir-ff": this.aba = "cronograma"; this._cronoEstado("_cronoSub", "fisico"); break;
+        case "crono-abrir": this._cronoAbrirEtapa(t.dataset.etapa, t.dataset.valor); break;
+        case "crono-ff": this._cronoFFEstado(t.dataset.camada, t.dataset.modo); break;
+        case "crono-exec": this.cronExecAlternar(t.dataset.ligar === "1"); break;
+        case "crono-params": this.cronParamsAvancados(); break;
+        case "crono-detalhar": this.cronDetalharEtapa(t.dataset.etapa); break;
+        // porta do aviso "aprovado com o gravado velho": a revisão é o caminho que existe (o aprovado não se regrava)
+        case "crono-revisao": if (this.orcAtual) this.criarRevisao(this.orcAtual); break;
+        /* planejamento da obra (Fase 3). ⚠ Estas ações são as MESMAS no
+           orçamento e na ficha da obra (o painel do CronoExecUI emite os mesmos
+           data-acao nos dois lugares): uma função por ação, aqui. */
+        case "crono-plano-iniciar": this.cronoIniciarPlano(t.dataset.obra); break;
+        case "crono-obra-criar": this.cronoCriarObra(); break;
+        case "crono-obra-passar": this.cronoPassarObra(t.dataset.obra); break;
+        case "crono-obra-sel": this._cronoEstado("_cronoObraSel", t.dataset.obra || null); break;
+        case "crono-editar": this._cronoEstado("_cronoEditaPlano", t.dataset.modo === "plano"); break;
+        case "crono-congelar": this.cronoCongelar(t.dataset.obra, t.dataset.reprogramar === "1"); break;
+        case "crono-historico": this.cronoHistorico(t.dataset.obra); break;
+        case "crono-planejamento": this.cronoAbrirPlanejamento(t.dataset.obra); break;
+        case "crono-abrir-orc": this.cronoAbrirOrcamento(t.dataset.orc); break;
         case "exec-recalc": this.execRecalc(); break;
         case "exec-cronograma": this.execEnviarCronograma(); break;
         case "parede-explodir": this.paredeExplodir(); break;
@@ -1682,6 +1754,18 @@
     },
 
     onChange: function (e) {
+      /* Editar com IA: o checkbox do diff (só o NÚMERO da mudança — as ops
+         ficam em memória) e o chip de alvo do pedido (troca só os exemplos;
+         redesenhar o modal perderia o que foi digitado) */
+      if (e.target && e.target.getAttribute && e.target.getAttribute("data-ia-idx") != null) {
+        this._iaAlternarTela(parseInt(e.target.getAttribute("data-ia-idx"), 10), !!e.target.checked);
+        return;
+      }
+      if (e.target && e.target.getAttribute && e.target.getAttribute("data-ia-alvo-chip") != null) {
+        var exIA = UI.el("ia-exemplos");
+        if (exIA) exIA.innerHTML = this._iaExemplosHtml(e.target.value);
+        return;
+      }
       /* Mover um item entre os grupos da etapa (solto ↔ sub etapa). É <select>,
          então fala por CHANGE — o onClick retorna cedo em "select, option". */
       if (e.target && e.target.getAttribute && e.target.getAttribute("data-item-sub")) {
@@ -1733,40 +1817,90 @@
       if (e.target.id === "fs-file") { var ff = e.target.files && e.target.files[0]; if (ff && typeof Gestao !== "undefined") Gestao.fsImportarArquivo(ff); return; }
       // ligar/desligar base de preço
       if (e.target.matches("[data-base-toggle]")) { Bases.setAtiva(e.target.dataset.baseToggle, e.target.checked); return; }
+      /* editar uma SUBETAPA (duração, "Depende de", equipes) no cronograma
+         executivo. A decisão (validação, o que apagar, o que nunca gravar) é
+         pura em CronoExecUI.editarFolha — testada executando em
+         tools/test-cronoexecui.js; aqui só o alvo único, a trava e o salvar.
+         ⚠ inválido não grava: o recado diz e o render devolve o valor anterior. */
+      if (e.target.matches("[data-crono-sub-dur]") || e.target.matches("[data-crono-sub-pred]") || e.target.matches("[data-crono-sub-eq]")) {
+        var alvoS = this._cronoAlvo(); if (!alvoS || typeof Cronograma === "undefined" || typeof CronoExecUI === "undefined") return;
+        if (alvoS.travado) { this._cronoTravado(alvoS); return; }
+        var dsS = e.target.dataset;
+        var campoS = dsS.cronoSubDur != null ? "dur" : (dsS.cronoSubPred != null ? "pred" : "eq");
+        var idS = dsS.cronoSubDur != null ? dsS.cronoSubDur : (dsS.cronoSubPred != null ? dsS.cronoSubPred : dsS.cronoSubEq);
+        // o prazo desta tela ANTES de mexer: é o "antes" do recado (ver _cronoMaterializar)
+        var antesS = null; try { antesS = Cronograma.estimar(alvoS.orc); } catch (eA) { antesS = null; }
+        var resS = CronoExecUI.editarFolha(alvoS.cron, Cronograma.eap(alvoS.orc), campoS, idS, e.target.value);
+        if (!resS.ok) { UI.toast(resS.msg, "erro"); this.render(); return; }
+        if (resS.mudou) alvoS.salvar({ cronoAntes: antesS });
+        if (resS.msg) UI.toast(resS.msg, "info");   // gravou, mas algo que a pessoa precisa saber (ex.: duração digitada manda sobre equipes)
+        this.render(); return;
+      }
+      /* data de corte do previsto × realizado: estado de TELA por obra (nunca
+         gravado — é o dia que se quer olhar, não um dado da obra). Vazio volta
+         ao padrão (último diário publicado). Vale no orçamento e na ficha. */
+      if (e.target.matches("[data-crono-corte]")) {
+        var obC = e.target.getAttribute("data-crono-corte"), vC = String(e.target.value || "").trim();
+        if (!obC) return;
+        this._cronoCorte = (this._cronoCorte && typeof this._cronoCorte === "object") ? this._cronoCorte : {};
+        if (/^\d{4}-\d{2}-\d{2}$/.test(vC)) this._cronoCorte[obC] = vC; else delete this._cronoCorte[obC];
+        this._cronoRepintar(); return;
+      }
       // editar duração de etapa no cronograma
+      // ⚠ grava pelo ALVO ÚNICO (_cronoAlvo), nunca direto em orcAtual.cronograma: ver o comentário de _cronoAlvo
       if (e.target.matches("[data-cron-dur]")) {
-        var o = this.orcAtual; if (!o) return;
-        o.cronograma = o.cronograma || {}; o.cronograma.duracoes = o.cronograma.duracoes || {};
+        var alvoD = this._cronoAlvo(); if (!alvoD) return;
+        if (alvoD.travado) { this._cronoTravado(alvoD); return; }
+        /* ⚠ modo executivo: a etapa com subetapas dura o VÃO delas — o número
+           digitado aqui seria regravado no próximo salvar (a pessoa veria 10 e
+           o PDF sairia com 14). A tela já deixa só leitura; isto é a trava na
+           função, para o campo que escapar (teclado, versão velha da tela). */
+        /* ⚠ a trava vale só onde o VÃO manda (nó com fonte "subetapas", a mesma
+           conta do motor): a etapa cujas subetapas são todas marco não tem vão,
+           o motor usa o que se digita nela — travá-la era trava sem porta com
+           recado falso ("é o vão das subetapas (4 dias)"). */
+        var bloqD = null;
+        if (typeof CronoExecUI !== "undefined" && typeof Cronograma !== "undefined" && alvoD.cron.exec && alvoD.cron.exec.rede === true) {
+          try { bloqD = CronoExecUI.motivoEtapaTravada(alvoD.cron, Cronograma.estimar(alvoD.orc, null, { eap: true }).atividades, e.target.dataset.cronDur); } catch (eB) { bloqD = null; }
+        }
+        if (bloqD) { UI.toast(bloqD, "erro"); this.render(); return; }
+        var cD = alvoD.cron;
+        /* ⚠ mapa que voltou da sincronização como LISTA ([]): a chave posta
+           nele some no JSON do salvar — a duração digitada não chegava ao disco
+           (a mesma régua do obj() do Refinar com IA) */
+        function objD(m) { return (m && typeof m === "object" && !Array.isArray(m)) ? m : {}; }
+        cD.duracoes = objD(cD.duracoes);
         var idDur = e.target.dataset.cronDur, durDig = parseInt(Util.num(e.target.value), 10);
         // "0" digitado pela PESSOA = marco (entrega, vistoria). Vai para `marcos`,
         // nunca para `duracoes`: lá o 0 já significa "não estimável" e o motor o ignora.
-        o.cronograma.marcos = o.cronograma.marcos || {};
-        if (String(e.target.value).trim() === "0") { o.cronograma.marcos[idDur] = true; delete o.cronograma.duracoes[idDur]; }
-        else { delete o.cronograma.marcos[idDur]; o.cronograma.duracoes[idDur] = Math.max(1, durDig || 1); }
-        if (o.cronograma.duracoesAgente) delete o.cronograma.duracoesAgente[idDur]; // virou edição do USUÁRIO
-        if (o.cronograma.iaMotivos) delete o.cronograma.iaMotivos[idDur]; // remove justificativa IA órfã
-        this.persistir(); this.render(); return;
+        cD.marcos = objD(cD.marcos);
+        if (String(e.target.value).trim() === "0") { cD.marcos[idDur] = true; delete cD.duracoes[idDur]; }
+        else { delete cD.marcos[idDur]; cD.duracoes[idDur] = Math.max(1, durDig || 1); }
+        if (cD.duracoesAgente) delete cD.duracoesAgente[idDur]; // virou edição do USUÁRIO
+        if (cD.iaMotivos) delete cD.iaMotivos[idDur]; // remove justificativa IA órfã
+        alvoD.salvar(); this.render(); return;
       }
       // editar "Depende de" no cronograma (rede de precedência do Gantt / caminho crítico)
       if (e.target.matches("[data-cron-pred]")) {
-        var oc = this.orcAtual; if (!oc || typeof Cronograma === "undefined") return;
+        var alvoP = this._cronoAlvo(); if (!alvoP || typeof Cronograma === "undefined") return;
+        if (alvoP.travado) { this._cronoTravado(alvoP); return; }
+        var cP = alvoP.cron;
         var idPred = e.target.dataset.cronPred;
-        var ordemIds = (oc.etapas || []).map(function (et) { return et.id; });
+        var ordemIds = (alvoP.orc.etapas || []).map(function (et) { return et.id; });
         var pr = Cronograma.parsePreds(e.target.value, ordemIds, idPred);
         if (pr.invalidos.length) UI.toast("“" + pr.invalidos.join(", ") + "” não é etapa válida em “Depende de” — use o nº da linha (1 a " + ordemIds.length + "), sem apontar para a própria etapa. Espera: 1+7 · avanço: 1-3.", "erro");
-        oc.cronograma = oc.cronograma || {};
         if (pr.preds !== null) {
-          oc.cronograma.predecessoras = oc.cronograma.predecessoras || {};
-          oc.cronograma.predecessoras[idPred] = pr.preds;
+          cP.predecessoras = cP.predecessoras || {};
+          cP.predecessoras[idPred] = pr.preds;
           // lag por elo vive em mapa próprio (a lista de ids fica legível para a versão anterior do app)
-          oc.cronograma.lags = oc.cronograma.lags || {};
-          if (Object.keys(pr.lags).length) oc.cronograma.lags[idPred] = pr.lags; else delete oc.cronograma.lags[idPred];
-        } else if (!pr.invalidos.length && oc.cronograma.predecessoras) {
-          delete oc.cronograma.predecessoras[idPred]; // vazio = volta ao padrão (depende da anterior)
-          if (oc.cronograma.lags) delete oc.cronograma.lags[idPred];
+          cP.lags = cP.lags || {};
+          if (Object.keys(pr.lags).length) cP.lags[idPred] = pr.lags; else delete cP.lags[idPred];
+        } else if (!pr.invalidos.length && cP.predecessoras) {
+          delete cP.predecessoras[idPred]; // vazio = volta ao padrão (depende da anterior)
+          if (cP.lags) delete cP.lags[idPred];
         }
         // ⚠ só inválidos: não grava nada — erro de digitação não muda o cronograma em silêncio; o render devolve o valor anterior
-        this.persistir(); this.render(); return;
+        alvoP.salvar(); this.render(); return;
       }
       // preço de insumo NÃO COLETADO informado pelo usuário (detalhamento) —
       // salva por empresa e re-renderiza o modal para a soma/aviso atualizarem
@@ -1858,6 +1992,11 @@
         this._escopo[j].quantidade = Util.num(e.target.value);
       }
       // Cronograma: muda nº de meses (edição do usuário TRAVA o prazo — FASE 1.4)
+      /* ⚠ NÃO passa pelo _cronoAlvo, de propósito: `cronogramaMeses` é o nº de
+         colunas do DESEMBOLSO DA PROPOSTA (campo do orçamento, não de
+         orc.cronograma). Quando o alvo virar o plano de execução da obra
+         (orçamento aprovado), o desembolso impresso na proposta aprovada não
+         pode andar junto — ele continua travado com o aprovado. */
       if (e.target.id === "cron-meses") {
         var n = parseInt(Util.num(e.target.value), 10);
         if (n >= 1 && n <= 60) { this.orcAtual.cronogramaMeses = n; this.orcAtual.cronogramaMesesManual = true; this.persistir(); this.render(); }
@@ -3090,6 +3229,7 @@
            backup em que ninguém confia — e o cliente só descobre que não tinha
            no dia em que precisa. */
         '<div id="bkp-auto" class="muted" style="margin:10px 0;padding:9px 12px;border-radius:8px;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.25)">⏳ verificando o backup automático…</div>' +
+        '<div id="bkp-nuvem" style="margin:0 0 10px"></div>' +
         '<div class="flex" style="gap:10px;margin-top:10px"><button class="btn primary" data-acao="backup-export">' + (typeof Icones !== 'undefined' ? Icones.get('salvar', 15) : '') + ' Exportar backup</button></div>' +
         '<div class="field" style="margin-top:14px"><label>Restaurar de um backup (.json)</label><input type="file" id="bkp-file" accept=".json,application/json">' +
         '<div class="muted" style="font-size:12px;margin-top:4px">Aceita também um <b>pacote de orçamento</b> (<span class="mono">.orcapro.json</span>) gerado fora do sistema: ele entra já cadastrado, com cliente e obra.</div></div>' +
@@ -3124,11 +3264,12 @@
           }
           if (!j || !j.ok) { box.innerHTML = "⚠ <b>Backup automático desligado</b> — o app foi aberto sem o servidor local. Exporte o backup à mão, por enquanto."; return; }
           box.innerHTML = (j.total
-            ? "✅ <b>Backup automático ligado</b> — " + j.total + " cópia(s) guardadas em disco. Última: <b>"
+            ? "✅ <b>Backup automático ligado</b> — " + j.total + " cópia(s) guardadas " + (j.destino === "nuvem" ? "na pasta do " + Util.esc(j.nuvem || "") : "em disco") + ". Última: <b>"
               + Util.esc(String(j.ultimoEm || "").slice(0, 19).replace("T", " ")) + "</b>."
               + (j.melhorComposicoes ? " A melhor cópia das composições próprias tem <b>" + j.melhorComposicoes + "</b> item(ns) e nunca é apagada." : "")
             : "✅ <b>Backup automático ligado</b> — ainda sem cópia gravada (a primeira sai depois da próxima alteração).")
             + '<br><span class="mono" style="font-size:11px">' + Util.esc(j.pasta || "") + "</span>";
+          try { App._bkpNuvem(j); } catch (eN) {}
         }).catch(function () {
           var box = UI.el("bkp-auto"); if (!box) return;
           /* sem resposta nenhuma: ou é o app do celular/navegador (não existe
@@ -3143,6 +3284,55 @@
           });
         });
       } catch (e) {}
+    },
+    /* ==================================================================
+     * BACKUP NA PASTA DA NUVEM (pedido do Rogério, 11/09/2026). O cliente
+     * escolhe uma nuvem que JÁ está no computador e o backup automático passa
+     * a ser gravado nela; o app da nuvem leva para a conta dele. Quem acha as
+     * nuvens e grava a escolha é o servidor local (server/static.js): daqui
+     * só vai o id da nuvem, nunca um caminho.
+     * ================================================================== */
+    _bkpNuvem: function (st) {
+      var box = UI.el("bkp-nuvem"); if (!box) return;
+      var self = this;
+      var caixa = function (tom, html) {
+        var c = tom === "ok" ? "22,163,74" : (tom === "alerta" ? "217,119,6" : "59,130,246");
+        return '<div style="padding:9px 12px;border-radius:8px;background:rgba(' + c + ',.08);border:1px solid rgba(' + c + ',.3)">' + html + '</div>';
+      };
+      fetch("/__backup/pastas").then(function (r) { return r.ok ? r.json() : null; }).then(function (p) {
+        if (!p || !p.ok) { box.innerHTML = ""; return; }
+        var ic = (typeof Icones !== "undefined" ? Icones.get("nuvem", 15) : "") + " ";
+        var h;
+        if (st && st.destino === "nuvem") {
+          h = caixa("ok", ic + "<b>Os backups estão indo para o " + Util.esc(st.nuvem || "") + "</b>, que leva as cópias para a sua conta." +
+            '<br><span class="mono" style="font-size:11px">' + Util.esc(st.pasta || "") + "</span>" +
+            '<div style="margin-top:8px"><button class="btn sm ghost" data-bkp-nuvem="padrao">Voltar para a pasta do computador</button></div>');
+        } else if (st && st.falhaNuvem) {
+          h = caixa("alerta", "⚠ <b>A pasta do " + Util.esc(st.nuvem || "") + " não está acessível agora</b> (o programa da nuvem está desligado ou a pasta mudou de lugar). " +
+            "Os backups estão sendo gravados na pasta do computador até ela voltar." +
+            '<div style="margin-top:8px"><button class="btn sm ghost" data-bkp-nuvem="padrao">Deixar só na pasta do computador</button></div>');
+        } else if (p.candidatas && p.candidatas.length) {
+          h = caixa("", ic + "<b>Guarde os backups também na sua nuvem.</b> Escolha a nuvem que já está neste computador: as cópias automáticas passam a ser gravadas na pasta dela, e ela leva para a sua conta. " +
+            "O arquivo tem os dados da empresa (orçamentos, obras, financeiro e equipe) e fica só na sua conta." +
+            '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">' + p.candidatas.map(function (c) {
+              return '<button class="btn sm primary" data-bkp-nuvem="' + Util.esc(c.id) + '" title="' + Util.esc(c.destino || "") + '">Guardar no ' + Util.esc(c.nome) + "</button>";
+            }).join("") + "</div>");
+        } else {
+          h = caixa("", ic + "<b>Nenhuma nuvem encontrada neste computador.</b> Para guardar os backups na sua conta, instale o OneDrive, o Google Drive para computador ou o Dropbox, entre com a sua conta e abra esta tela de novo.");
+        }
+        box.innerHTML = h;
+        Array.prototype.forEach.call(box.querySelectorAll("[data-bkp-nuvem]"), function (b) {
+          b.onclick = function () {
+            b.disabled = true;
+            fetch("/__backup/pasta", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: b.getAttribute("data-bkp-nuvem") }) })
+              .then(function (r) { return r.json(); }).then(function (j) {
+                if (!j || !j.ok) { b.disabled = false; UI.toast((j && j.erro) || "Não deu para mudar a pasta do backup.", "erro"); return; }
+                UI.toast(j.destino === "nuvem" ? "Pronto: os backups agora vão para o " + j.nuvem + "." : "Os backups voltaram para a pasta do computador.", "ok");
+                self.abrirBackup();
+              })["catch"](function () { b.disabled = false; UI.toast("Sem resposta do programa. Feche e abra o OrçaPRO e tente de novo.", "erro"); });
+          };
+        });
+      })["catch"](function () { box.innerHTML = ""; });
     },
     /* A base PRÓPRIA (composições e insumos criados pelo cliente) é o ÚNICO
      * dado autoral que vivia só no IndexedDB deste aparelho — fora do backup,
@@ -3205,9 +3395,17 @@
       var self = this;
       /* composição própria é dado AUTORAL e insubstituível: fura a espera de
          5 min (só o agrupamento de 15 s continua, p/ não gerar 1 arquivo por tecla) */
-      if (!opts.urgente && (Date.now() - this._bkpUltimo) < 5 * 60 * 1000) return;
+      if (this._bkpSemServidor) return;   // ver _backupEnviar
+      /* gravação da GESTÃO (js/store.js) espaça 30 min: diário e financeiro
+         gravam o dia todo, e a cada 5 min as 30 cópias cobririam só 2,5 h */
+      var esperaMin = opts.gestao ? 30 : 5;
+      if (!opts.urgente && (Date.now() - this._bkpUltimo) < esperaMin * 60 * 1000) return;
       if (this._bkpTimer) clearTimeout(this._bkpTimer);
       this._bkpTimer = setTimeout(function () { self._bkpTimer = null; self._backupEnviar(); }, 15000);
+    },
+    _hostLocal: function () {
+      var h = (typeof location !== "undefined" && location.hostname) ? String(location.hostname).toLowerCase() : "";
+      return h === "localhost" || h === "127.0.0.1" || h === "[::1]" || h === "::1";
     },
     _backupEnviar: function () {
       var self = this, eid, dump;
@@ -3217,6 +3415,18 @@
          backup REAL, começando pelo mais antigo. E o modal de Backup passaria
          a mostrar como "última cópia" um arquivo de dado falso. */
       if (typeof PreviewCli !== "undefined" && PreviewCli.ehPrevia(eid)) return;
+      /* ⚠ SEM SERVIDOR LOCAL, NÃO MONTA O DUMP. Toda gravação da Gestão pede
+         backup (js/store.js), e no celular e no PWA não existe o servidor que
+         grava. O _bkpUltimo só andava no SUCESSO, então cada 15 s de edição
+         montava o JSON da empresa inteira para um envio que nunca chega. Um
+         404/405 diz "aqui não há servidor": para de tentar nesta sessão. */
+      if (this._bkpSemServidor) return;
+      /* ⚠ SÓ DO localhost. É a única origem que o servidor de backup aceita
+         (fora dela responde 403). Sem esta guarda o primeiro backup de cada
+         sessão do PWA mandava a empresa inteira por POST ao github.io, e na
+         rede local (http://192.168...) ela atravessava o Wi-Fi a cada 5 min
+         para ser recusada (revisão, 11/09/2026). */
+      if (!this._hostLocal()) { this._bkpSemServidor = true; return; }
       try { dump = this._dumpBackup(eid); } catch (e) { return; }
       /* ⚠ e a GESTÃO conta como motivo para gravar. Antes, uma conta que só
          usasse obras e diários — sem orçamento e sem base própria — nunca
@@ -3225,9 +3435,15 @@
       if (!dump.orcamentos.length && !(dump.basePropria && dump.basePropria.dados.length) && !temGestao) return;
       try {
         fetch("/__backup/salvar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dump) })
-          .then(function (r) { return r.json(); })
-          .then(function (j) { if (j && j.ok) { self._bkpUltimo = Date.now(); self._bkpInfo = j; } })
-          .catch(function () {});
+          .then(function (r) {
+            if (r.status === 404 || r.status === 405 || r.status === 403) { self._bkpSemServidor = true; return null; }
+            return r.json();
+          })
+          /* recusa ou falha de rede também marcam a hora: tenta de novo em 5 min,
+             sem martelar (um servidor reiniciando depois do update não desliga o
+             backup da sessão — só o 404/405 desliga) */
+          .then(function (j) { self._bkpUltimo = Date.now(); if (j && j.ok) self._bkpInfo = j; })
+          .catch(function () { self._bkpUltimo = Date.now(); });
       } catch (e) {}
     },
     exportarBackup: function () {
@@ -3555,6 +3771,12 @@
         { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Ativar", classe: "primary", onClick: function () { self.salvarLicenca(); } }
       ]);
+      /* RENOVAÇÃO AUTOMÁTICA NO CARTÃO (js/assinatura.js): preenche o espaço
+         que o renderLicenca reservou, depois de perguntar ao servidor quanto
+         custa e se esta licença pode assinar. Sem o módulo (pacote antigo) ou
+         sem internet, o espaço fica vazio e a tela é a de sempre — este bloco
+         nunca pode impedir a pessoa de colar a chave dela. */
+      try { if (typeof Assinatura !== "undefined") Assinatura.montar("assin-box"); } catch (eAs) {}
     },
     salvarLicenca: function () {
       var chave = (UI.el("lic-chave") || {}).value || "";
@@ -3758,47 +3980,998 @@
       }).catch(function (e) { UI.toast("Falhou: " + e.message, "erro"); });
     },
 
+    /* ⚠ ALVO ÚNICO de toda gravação no cronograma: duração, "Depende de",
+       Recalcular, Limpar edições, Execução → Enviar ao cronograma e Refinar
+       com IA passam TODOS por aqui, e nenhum deles toca `orcAtual.cronograma`
+       direto. Motivo (espec v2, 3.2): com o orçamento APROVADO e obra
+       vinculada, as edições vão para o PLANO DE EXECUÇÃO da obra, e a
+       proposta aprovada fica intacta. Se cada handler escolhesse o próprio
+       destino, bastaria um esquecido para a obra em andamento ser replanejada
+       por baixo do contrato (ou para o plano da obra nunca receber a edição).
+       A decisão é pura (CronoExecUI.decidirAlvo, testada executando):
+       - aprovado + obra ligada a ESTE orçamento + plano → tipo "plano";
+       - aprovado + obra sem plano → "orc" travado (a faixa oferece [Iniciar
+         plano de execução da obra]; até lá, a trava de hoje com a revisão);
+       - obra numa revisão ANTERIOR, várias obras sem escolha, sem obra, sem
+         Gestão → "orc" como antes (a faixa diz a porta);
+       - não aprovado → "orc"; com plano, a pessoa pode escolher editá-lo
+         (estado de tela `_cronoEditaPlano`).
+       {tipo, orc (o que o motor calcula — no plano, o clone de
+       CronoBase.orcComPlano, com o cronograma DO PLANO por referência), cron
+       (o objeto que se grava — sempre existe), travado, salvar(opts) → true se
+       gravou, decisao, obra, plano, inicioObra}. */
+    _cronoAlvo: function () {
+      var o = this.orcAtual; if (!o) return null;
+      if (!o.cronograma || typeof o.cronograma !== "object" || Array.isArray(o.cronograma)) o.cronograma = {};
+      var self = this;
+      var travado = !!(typeof Orcamento !== "undefined" && Orcamento.travadoPorAprovacao && Orcamento.travadoPorAprovacao(o));
+      var dec = this._cronoDecisao(o, travado);
+      var alvo = {
+        tipo: "orc", orc: o, cron: o.cronograma, travado: travado,
+        salvar: function (opts) { return self.persistir(opts); },
+        decisao: dec, obra: dec ? dec.obra : null, plano: dec ? dec.plano : null
+      };
+      if (!dec || dec.tipo !== "plano" || !dec.plano || typeof CronoBase === "undefined") return alvo;
+      var pl = dec.plano, oP = CronoBase.orcComPlano(o, pl);
+      if (!oP) return alvo;   // plano sem cronograma: fica a trava de hoje
+      /* ⚠ A OBRA É O CENTRO: o plano conta do início DA OBRA. Quem mais lê o
+         plano (painel, linha de base, Last Planner) calcula com o override
+         {dataInicio: obra.inicio}; sem alinhar aqui, esta aba desenharia o
+         plano com a data da proposta e o painel com a da obra — duas datas
+         para a mesma subetapa. O campo Início do cartão fica só leitura
+         (mudar é no cadastro da obra). O plano é relido do Store a cada
+         chamada, então isto só vai ao disco junto com a edição seguinte. */
+      var ini = this._cronoInicioObra(dec.obra);
+      if (ini) {
+        var cr = oP.cronograma;
+        if (!cr.params || typeof cr.params !== "object" || Array.isArray(cr.params)) cr.params = {};
+        cr.params.dataInicio = ini;
+      }
+      return {
+        tipo: "plano", orc: oP, cron: oP.cronograma, travado: false, decisao: dec, obra: dec.obra, plano: pl, inicioObra: ini,
+        salvar: function (opts) { return self._cronoSalvarPlano(oP, pl, dec.obra, opts); }
+      };
+    },
+    /* a obra do orçamento aberto e o que fazer com ela — lê o Store e chama a
+       decisão pura. Sem ui.js/CronoExecUI (teste que monta só o app.js, cache
+       velho): null, e o alvo é o orçamento como antes. */
+    _cronoDecisao: function (o, travado) {
+      if (typeof UI === "undefined" || typeof UI._cronoObraInfo !== "function" || typeof CronoExecUI === "undefined" || !CronoExecUI.decidirAlvo) return null;
+      var info = null;
+      try { info = UI._cronoObraInfo(o); } catch (eI) { info = null; }
+      if (!info) return null;
+      var lista = [], nivel0 = false;
+      (info.obras || []).forEach(function (a) { if (a && a.nivel === 0) nivel0 = true; });
+      // o planejamento das obras só é lido quando há obra ligada a ESTE orçamento (é a única que pode ter plano aqui)
+      if (info.podeGestao && nivel0 && typeof CronoBase !== "undefined") {
+        try { lista = Store.listar(Auth.empresaId(), CronoBase.ENTIDADE) || []; } catch (eL) { lista = []; }
+      }
+      var sel = (this._cronoObraSel && typeof this._cronoObraSel === "object") ? this._cronoObraSel[o.id] : null;
+      var ed = !!(this._cronoEditaPlano && typeof this._cronoEditaPlano === "object" && this._cronoEditaPlano[o.id] === true);
+      var dec = CronoExecUI.decidirAlvo({ info: info, travado: travado, escolha: sel, editaPlano: ed, lista: lista,
+        CronoBase: typeof CronoBase !== "undefined" ? CronoBase : null });
+      dec.info = info;
+      return dec;
+    },
+    _cronoInicioObra: function (obra) {
+      var s = obra && obra.inicio, m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s == null ? "" : s).slice(0, 10));
+      if (!m) return null;
+      var d = new Date(+m[1], +m[2] - 1, +m[3]);
+      return (d.getFullYear() === +m[1] && d.getMonth() === +m[2] - 1 && d.getDate() === +m[3]) ? m[0] : null;
+    },
+    _cronoPor: function () {
+      var u = null;
+      try { u = (typeof Auth !== "undefined" && Auth.usuario) ? Auth.usuario() : null; } catch (eU) { u = null; }
+      return String((u && (u.nome || u.email)) || "").slice(0, 60);
+    },
+    /* o orçamento que os DOCUMENTOS da aba (PDF, MS Project) imprimem: o que
+       está na tela — no plano de execução, o plano (senão o engenheiro
+       editaria o plano e imprimiria a proposta) */
+    _cronoOrcDoc: function () {
+      var a = null;
+      try { a = this._cronoAlvo(); } catch (eA) { a = null; }
+      return (a && a.tipo === "plano" && a.orc) ? a.orc : this.orcAtual;
+    },
+    /* grava o PLANO DE EXECUÇÃO da obra (o `salvar` do alvo "plano").
+       ⚠ Nunca pelo persistir: ele grava o ORÇAMENTO (e no aprovado abre o
+       modal da revisão). Aqui: a mesma trava de licença do persistir; o modo
+       executivo materializado NO PLANO (a regra do salvar do orçamento, para o
+       gravado bater com a tela); o teto do plano e o da entidade
+       (CronoBase.salvarPlano — recusa com os números e sem gravar nada); e o
+       carimbo que o motor pôs (manterCarimbo). true só se gravou. */
+    _cronoSalvarPlano: function (oP, pl, obra, opts) {
+      var nome = String((obra && obra.nome) || "sem nome");
+      if (this._trialBloqueado()) {
+        var sSus = (typeof Licenca !== "undefined" && Licenca.status) ? (Licenca.status() || {}) : {};
+        if (sSus.suspensa && this._avisoTrial) this._avisoTrial();
+        else UI.toast("Modo demonstração — para salvar, ative sua licença (🔑). O plano de execução da obra " + nome + " não foi gravado.", "erro");
+        return false;
+      }
+      if (typeof CronoBase === "undefined" || typeof Store.salvarVarios !== "function") {
+        UI.toast("Módulo do planejamento da obra não carregado (cronobase.js) — o plano de execução não foi gravado. Recarregue o app.", "erro");
+        return false;
+      }
+      /* ⚠ o desfazer da IA no PLANO segue a regra do orçamento: a primeira
+         gravação que NÃO é da própria tela da IA apaga o retrato — edição de
+         gente depois da IA viraria um desfazer que reverte o que ninguém lembra */
+      if (!(opts && opts.daIA) && typeof IAEdit !== "undefined") IAEdit.limparDesfazer(pl);
+      var m = null;
+      try { m = Cronograma.materializar(oP); } catch (eM) { m = null; }
+      var eid = Auth.empresaId(), lista = null;
+      try { lista = Store.listar(eid, CronoBase.ENTIDADE) || []; } catch (eL) { lista = null; }
+      /* ⚠ lista ilegível NÃO vira []: a porta do espaço mediria a entidade
+         vazia e deixaria passar o que não cabe */
+      if (lista === null) { UI.toast("Não consegui ler o planejamento das obras deste aparelho — o plano de execução da obra " + nome + " não foi gravado. Recarregue o app.", "erro"); return false; }
+      var antes = opts && opts.cronoAntes;
+      /* ⚠ O PRAZO DE ANTES SAI DO PLANO GRAVADO quando a tela não o mediu
+         (revisão 3, navegador): a duração da Fundação ia de 20 para 30 no
+         plano, o prazo de 60 para 70 dias úteis, e nenhum recado — só o
+         Recalcular do modo executivo passava o "antes". O gravado é o que está
+         na lista lida ANTES de gravar, com o MESMO início da obra que a tela
+         usa (senão o recado acusaria mudança que é só o alinhamento da data). */
+      if (!antes) {
+        try {
+          var velho = CronoBase.plano(lista, pl.obraId), oV = velho ? CronoBase.orcComPlano(oP, velho) : null;
+          if (oV) {
+            oV.cronograma = JSON.parse(JSON.stringify(oV.cronograma));
+            var iniV = this._cronoInicioObra(obra);
+            if (iniV) { if (!oV.cronograma.params || typeof oV.cronograma.params !== "object" || Array.isArray(oV.cronograma.params)) oV.cronograma.params = {}; oV.cronograma.params.dataInicio = iniV; }
+            antes = Cronograma.estimar(oV);
+          }
+        } catch (eV) { antes = null; }
+      }
+      var r = CronoBase.salvarPlano(lista, pl, { agora: Util.agoraISO(), por: this._cronoPor() });
+      if (!r.ok) { UI.toast("O plano de execução da obra " + nome + " NÃO foi gravado: " + r.erro, "erro"); return false; }
+      if (!Store.salvarVarios(eid, CronoBase.ENTIDADE, r.gravar, true)) {
+        UI.toast("O plano de execução da obra " + nome + " NÃO foi gravado — o armazenamento deste aparelho recusou (cheio?). Nada mudou.", "erro");
+        return false;
+      }
+      if (r.msg) UI.toast(r.msg, "info");
+      if (antes && antes.dataFim && typeof antes.dataFim.getTime === "function") {
+        var dep = null;
+        try { dep = Cronograma.estimar(oP); } catch (eD) { dep = null; }
+        var br = function (d) { return ("0" + d.getDate()).slice(-2) + "/" + ("0" + (d.getMonth() + 1)).slice(-2) + "/" + d.getFullYear(); };
+        var aprov = false;
+        try { aprov = !!(typeof Orcamento !== "undefined" && Orcamento.travadoPorAprovacao && Orcamento.travadoPorAprovacao(this.orcAtual)); } catch (eA) { aprov = false; }
+        if (dep && dep.dataFim && (dep.totalDias !== antes.totalDias || dep.dataFim.getTime() !== antes.dataFim.getTime()))
+          UI.toast("Plano de execução da obra " + nome + ": o prazo passou de " + antes.totalDias + " para " + dep.totalDias + " dias úteis (término " + br(antes.dataFim) + " → " + br(dep.dataFim) + "). " + (aprov ? "A proposta aprovada não muda." : "A proposta não muda."), "info");
+      }
+      void m;
+      try { if (this.backupAuto) this.backupAuto(); } catch (eB) {}
+      return true;
+    },
+    /* Orçamento aprovado: o handler NÃO mexe no objeto em memória. Antes a
+       edição entrava na tela e o persistir recusava — do 2º clique em diante
+       (o modal só aparece uma vez por abertura) a tabela mostrava durações que
+       não estavam gravadas em lugar nenhum. Aqui o persistir mostra o modal da
+       revisão na 1ª vez; nas seguintes, um recado; e o render devolve o valor
+       gravado ao campo. */
+    _cronoTravado: function (alvo) {
+      var o = alvo && alvo.orc, jaAvisou = !!(o && this._avisouTravado === o.id), self = this;
+      /* ⚠ a porta que o recado cita tem de EXISTIR na tela: [Iniciar plano de
+         execução da obra] só aparece com a obra ligada a este orçamento, sem
+         plano e com o módulo Obras (a mesma condição da faixa) */
+      var dcT = alvo && alvo.decisao, obT = dcT && dcT.obra, podeIni = !!(obT && dcT.nivel === 0 && !dcT.plano && !dcT.planoAlheio && dcT.info && dcT.info.podeEditarObra);
+      /* ⚠ 1ª EDIÇÃO NO APROVADO COM OBRA (revisão 3 da Fase 3, lente UX). O
+         persistir abria o modal genérico "Criar revisão e editar nela" — que
+         não cita o plano — e só a 2ª tentativa dizia [Iniciar plano]. Seguindo
+         o botão verde, a pessoa criava uma revisão de PREÇO para replanejar
+         PRAZO, e a revisão não recebia a obra (passar é recusado com boletim
+         sobre o aprovado): o planejamento da obra continuava lendo o original
+         — a crítica produto #1 voltando por esta porta. Com a obra ligada e
+         sem plano, o modal é este: o plano da obra como caminho principal, a
+         revisão como a porta para mudar a PROPOSTA, e o que acontece com a
+         obra em cada uma. Uma vez por abertura (a mesma marca do persistir). */
+      if (podeIni && !jaAvisou && o) {
+        this._avisouTravado = o.id;
+        var medsT = [];
+        try { medsT = Store.listar(Auth.empresaId(), "medicoes") || []; } catch (eM) { medsT = []; }
+        var blT = (typeof CronoExecUI !== "undefined" && CronoExecUI.bloqueioPassarObra) ? CronoExecUI.bloqueioPassarObra(obT, medsT, null, null) : null;
+        var nomeT = String(obT.nome || ""), numT = String(o.numero || "");
+        UI.modal("Orçamento aprovado — replanejar a obra ou mudar a proposta?",
+          '<p style="font-size:13px">O <b>' + Util.esc(numT) + '</b> está <b>aprovado</b>: o cronograma dele é o que foi ao cliente e não muda. <b>Nada foi gravado.</b></p>' +
+          '<p style="font-size:13px">Para <b>replanejar a obra ' + Util.esc(nomeT) + '</b> (chuva, atraso, outra sequência), inicie o <b>plano de execução da obra</b>: ele nasce como cópia deste cronograma, as edições desta aba passam a ir para ele e o previsto × realizado da obra compara com ele. A proposta aprovada fica intacta. Depois de iniciar, faça de novo a edição que você tentou.</p>' +
+          '<p class="muted" style="font-size:12.5px">A <b>revisão</b> é para mudar a PROPOSTA (preço, quantidades, prazo contratado): nasce um orçamento novo, e a obra só passa para ele pela porta [Passar a obra para esta revisão]' +
+          (blT ? ' — que será recusada enquanto a obra tiver os ' + blT.n + ' boletim(ns) de medição feitos sobre este orçamento.' : '.') + '</p>',
+          [
+            { texto: "Voltar sem gravar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+            { texto: "Criar revisão (muda a proposta)", classe: "", onClick: function () { UI.fecharModal(); self.criarRevisao(o); } },
+            { texto: "Iniciar plano de execução da obra", classe: "primary", onClick: function () { UI.fecharModal(); self.cronoIniciarPlano(obT.id); } }
+          ]);
+        this.render();
+        return;
+      }
+      this.persistir();
+      if (jaAvisou) UI.toast("Orçamento " + (o && o.numero ? o.numero + " " : "") + "aprovado — o cronograma dele não muda e nada foi gravado. " +
+        (podeIni ? "Para replanejar a obra " + String(obT.nome || "") + ", use [Iniciar plano de execução da obra] na linha de cima; para mudar a proposta, crie uma revisão."
+          : (obT && dcT.nivel > 0 ? "A obra " + String(obT.nome || "") + " está ligada a uma revisão anterior — o plano dela se edita a partir do orçamento ligado a ela (linha de cima)." : "Para replanejar, crie uma revisão.")), "erro");
+      this.render();
+    },
+    /* Formulário de parâmetros → objeto com SÓ os campos cujo input EXISTE.
+       `el(id)` devolve o elemento ou null (em produção, UI.el). Input presente
+       e vazio → null (é assim que o início volta a ser "hoje"; nos números, o
+       motor usa o padrão) — EXCETO o paralelismo, em que vazio sempre foi 0
+       (ver a linha dele). A lista de feriados locais vazia continua [] —
+       lista vazia é o valor digitado, e todo leitor a trata como null.
+       ⚠ Ler `(UI.el("cron-x") || {}).value` transformava input AUSENTE em
+       valor: paralelismo virava 0 (o padrão é 0,15), o início voltava para
+       hoje e o feriado local sumia — bastava o Recalcular estar numa tela sem
+       o formulário inteiro para a data impressa na proposta mudar calada. */
+    _cronDoForm: function (el) {
+      var f = {}, x;
+      function pega(id) { var e = el(id); return e || null; }
+      function vazio(e) { return String(e.value == null ? "" : e.value).trim() === ""; }
+      x = pega("cron-inicio"); if (x) f.dataInicio = vazio(x) ? null : x.value;
+      x = pega("cron-equipes"); if (x) f.equipes = vazio(x) ? null : Math.max(1, parseInt(Util.num(x.value), 10) || 1);
+      x = pega("cron-dias"); if (x) f.diasUteisSemana = vazio(x) ? null : Math.min(7, Math.max(1, parseInt(Util.num(x.value), 10) || 5));
+      /* ⚠ PARALELISMO VAZIO = 0, não null. Nos outros números o vazio sempre
+         virou o padrão do motor (equipes `|| 1`, dias `|| 5`, custo `|| 700`),
+         então null dá o mesmo número de antes. No paralelismo o vazio valia 0
+         (`Util.num("")`) e null viraria o padrão 0,15: mesma ação da pessoa
+         (apagar o campo e Recalcular) e a entrega impressa na proposta andava
+         22 dias úteis para trás (197 → 175, 24/06/2027 → 24/05/2027). */
+      x = pega("cron-paral"); if (x) f.paralelismo = vazio(x) ? 0 : Util.num(x.value);
+      x = pega("cron-custodia"); if (x) f.custoDiaEquipe = vazio(x) ? null : Math.max(1, Util.num(x.value) || 700);
+      x = pega("cron-feriados"); if (x) f.descontarFeriados = !!x.checked;
+      /* pontos facultativos: o controle que faltava (sub-aba Parâmetros). Antes
+         não havia input, e o Recalcular antigo apagava a chave a cada clique. */
+      x = pega("cron-facult"); if (x) f.feriadosFacultativos = !!x.checked;
+      /* ⚠ o que não é AAAA-MM-DD NÃO é gravado como feriado: o motor devolve
+         o texto em `invalidos` e a tela mostra em vermelho. Aceitar um
+         "24/06" silenciosamente deslocaria a entrega da obra por causa de um
+         formato de data — e ninguém procuraria o erro aí. */
+      x = pega("cron-feriados-extras");
+      if (x) f.feriadosExtras = String(x.value || "")
+        .split(/[;,\n]+/).map(function (s) { return s.trim(); }).filter(function (s) { return s; })
+        .map(function (s) { return { data: s, nome: "Feriado local" }; });
+      return f;
+    },
+    /* MODO EXECUTIVO materializado no salvar (espec 1.2): grava em
+       `duracoes` a duração das etapas com subetapas (o vão da rede interna,
+       marca "subetapas") ou apaga essas marcas quando o modo está desligado.
+       É o que faz o PDF, a proposta, o desembolso e a versão ANTIGA do app
+       darem a mesma data que a aba. Duração digitada que foi substituída
+       volta como aviso com os dois números. ⚠ Nunca derruba o salvar: se o
+       motor falhar, grava o resto como antes. */
+    _cronoMaterializar: function (o, antesTela) {
+      if (!o || typeof Cronograma === "undefined" || !Cronograma.materializar) return null;
+      var m = null, antesVA = null, cr = o.cronograma;
+      /* ⚠ DOIS "ANTES" (revisão da Fase 2, 11/09/2026). Com o cálculo ao vivo
+         (adendo A1) o prazo DESTA tela já é o do vão novo antes de salvar: o
+         `estimar(o)` que ficava aqui dava o mesmo número do "depois", e o
+         recado saía "o prazo total continua 134 dias úteis" logo depois de a
+         pessoa ver o prazo subir de 124 para 134 (medido no navegador; o
+         Recalcular com 2 equipes, 124 → 70, dizia "continua 70").
+         - `antesVA`: o que o aparelho com a VERSÃO ANTERIOR mostra (lê o
+           gravado) — é o prazo que ESTE salvar muda;
+         - `antesTela`: o prazo desta tela antes da edição — só o handler que
+           mexeu sabe (mede antes de mexer) e passa pelo persistir.
+         Custa dois estimar, e só no modo executivo (o único em que o salvar
+         regrava duração de etapa). */
+      if (cr && cr.exec && cr.exec.rede === true && Cronograma.estimarVersaoAnterior) { try { antesVA = Cronograma.estimarVersaoAnterior(o); } catch (eA) { antesVA = null; } }
+      try { m = Cronograma.materializar(o); } catch (e) { return null; }
+      var nomes = {};
+      (o.etapas || []).forEach(function (et, i) { nomes[et.id] = (i + 1) + ". " + String(et.nome || "").slice(0, 40); });
+      function br(d) { return ("0" + d.getDate()).slice(-2) + "/" + ("0" + (d.getMonth() + 1)).slice(-2) + "/" + d.getFullYear(); }
+      function igual(a, b) { return !!a && !!b && a.totalDias === b.totalDias && !!a.dataFim && !!b.dataFim && a.dataFim.getTime() === b.dataFim.getTime(); }
+      /* ⚠ SUBETAPAS MUDARAM → PRAZO MUDA: o vão materializado envelhece quando
+         o orçamento é gravado sem passar por aqui (reprecificação em lote, EAP
+         do BIM, assistente, importação de pacote). O salvar seguinte — de
+         QUALQUER campo, até o nome do cliente — o regrava, e a entrega da
+         proposta andava de 85 para 186 dias úteis sem recado nenhum. */
+      if (m && m.mudancas && m.mudancas.length) {
+        var depois = null;
+        try { depois = Cronograma.estimar(o); } catch (eD) { depois = null; }
+        var ps = m.mudancas.slice(0, 3).map(function (a) { return (nomes[a.etapaId] || "etapa") + ": " + a.antes + " → " + a.depois + " dia(s)"; });
+        if (m.mudancas.length > 3) ps.push("e mais " + (m.mudancas.length - 3));
+        var etTxt = m.mudancas.length + " etapa(s) com subetapas (" + ps.join("; ") + ")", t;
+        if (antesTela && depois && antesTela.dataFim && depois.dataFim && !igual(antesTela, depois))
+          t = "Modo executivo: o prazo passou de " + antesTela.totalDias + " para " + depois.totalDias + " dias úteis (término " + br(antesTela.dataFim) + " → " + br(depois.dataFim) + "), porque mudou a duração de " + etTxt + ".";
+        else if (antesTela && depois && depois.dataFim)
+          t = "Modo executivo: mudou a duração de " + etTxt + ", mas o prazo total continua " + depois.totalDias + " dias úteis (término " + br(depois.dataFim) + ").";
+        else t = "Modo executivo: a duração gravada de " + etTxt + " foi atualizada para o vão das subetapas.";
+        // o que este salvar muda de verdade: o prazo dos aparelhos com a versão anterior
+        if (antesVA && depois && antesVA.dataFim && depois.dataFim && !igual(antesVA, depois))
+          t += " Aparelhos com versão anterior do app viam " + antesVA.totalDias + " dias úteis (término " + br(antesVA.dataFim) + ") e passam a ver " + depois.totalDias + " (término " + br(depois.dataFim) + "), o mesmo desta tela.";
+        else if (depois && depois.dataFim) t += " Aparelhos com versão anterior do app veem o mesmo prazo desta tela.";
+        UI.toast(t + " Confira o cronograma antes de enviar a proposta.", "info");
+      }
+      if (m && m.avisos && m.avisos.length) {
+        /* ⚠ de ONDE vinha o número: "digitada" para a duração da IA ou do Hh da
+           Execução fazia a pessoa achar que perdia um número dela — e ela perdia
+           uma duração rastreável (I7) sem saber */
+        var ORIG = { ia: "sugerida pela IA", exec: "do Hh SINAPI (aba Execução)" };
+        var partes = m.avisos.slice(0, 3).map(function (a) {
+          return (nomes[a.etapaId] || "etapa") + ": " + a.digitado + " (" + (ORIG[a.agente] || "digitada") + ") → " + a.vao + " dia(s)";
+        });
+        if (m.avisos.length > 3) partes.push("e mais " + (m.avisos.length - 3));
+        UI.toast("Modo executivo: " + m.avisos.length + " etapa(s) com subetapas passaram a durar o vão das subetapas — " +
+          partes.join("; ") + ". A duração de antes fica guardada e volta se o modo executivo for desligado; para mudar o prazo delas agora, edite as subetapas.", "info");
+      }
+      return m;
+    },
+    /* ⚠ GRAVADORES DIRETOS (os que gravam o orçamento sem o App.persistir:
+       aprovar, criar revisão, copiar, reprecificação em lote, restaurar do
+       Excel, EAP e vínculo do BIM). Com o cálculo ao vivo (A1) a versão nova
+       já mostra o vão certo; isto mantém o GRAVADO igual a ela, para o
+       aparelho com a versão anterior. Medido (revisão da Fase 2): um item do
+       BIM mudou a armação dos pilares, o orçamento foi aprovado pelo caminho
+       direto, e a MESMA proposta aprovada passou a ter 217 dias úteis nesta
+       versão e 124 na anterior — com a trava do aprovado impedindo qualquer
+       salvar de alinhar depois.
+       Silencioso de propósito (esta tela não muda de prazo). Aprovado não é
+       tocado; motor que falha não impede o gravador. Mesma ordem do persistir:
+       trava → materializar → sincronizarPrazo. Devolve o `materializar` ou null.
+       NÃO chamar em dado RECEBIDO (restaurar backup, importar pacote): eles
+       gravam com o carimbo de origem, e mudar conteúdo sob o mesmo carimbo faz
+       o merge da nuvem divergir entre aparelhos. */
+    _materializarSeExec: function (o) {
+      if (!o || typeof Cronograma === "undefined" || !Cronograma.materializarSeExec) return null;
+      try { if (typeof Orcamento !== "undefined" && Orcamento.travadoPorAprovacao && Orcamento.travadoPorAprovacao(o)) return null; } catch (eT) { return null; }
+      var m = null;
+      try { m = Cronograma.materializarSeExec(o); } catch (e) { return null; }
+      if (m && m.mudou) { try { Orcamento.sincronizarPrazo(o); } catch (eS) {} }
+      return m;
+    },
+    // grava cada orçamento afetado por uma troca de preço em lote (composição própria, insumo)
+    _salvarOrcsAfetados: function (eid, afetados) {
+      var self = this;
+      (afetados || []).forEach(function (a) { self._materializarSeExec(a.orc); Store.salvarOrcamento(eid, a.orc); });
+    },
+
+    /* ================================================================
+       PLANEJAMENTO DA OBRA (Fase 3) — as ações da faixa e do painel.
+       ⚠ Fiação fina: a DECISÃO de cada ação é pura (CronoExecUI.decidirAlvo,
+       bloqueioPassarObra, diffQuantidades, congelarDoForm; CronoBase;
+       CronoPlan) e testada executando; aqui só Store, RBAC, modal e recado.
+       As mesmas funções servem a aba do orçamento e a ficha da obra (o
+       painel emite os mesmos data-acao nos dois lugares).
+       ================================================================ */
+    /* RBAC em FUNÇÃO (botão escondido não é guarda): Gestão (Plus), módulo
+       Obras e a obra liberada para este usuário. null = pode; senão o recado. */
+    /* ⚠ quem VÊ o dinheiro do planejamento da obra: a regra do painel da obra
+       (Gestao._cronoDinheiro — Medições OU Financeiro). Uma regra só: o
+       Histórico de bases e o diálogo de congelar/reprogramar vazavam o valor de
+       venda que a própria ficha escondia (revisão 3, lentes dinheiro e
+       código). Sem a Gestão carregada não dá para conferir: não mostra. */
+    _cronoVeDinheiro: function () {
+      try { return (typeof Gestao !== "undefined" && typeof Gestao._cronoDinheiro === "function") ? !!Gestao._cronoDinheiro() : false; } catch (e) { return false; }
+    },
+    _cronoSemPermissao: function (obraId) {
+      if (typeof Gestao === "undefined" || !Gestao.podeGestao || !Gestao.podeGestao()) return "O planejamento da obra é da Gestão de Obras (plano Plus).";
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("obras")) return "Seu usuário não tem permissão no módulo Obras — peça ao administrador.";
+      if (obraId && typeof Auth !== "undefined" && Auth.podeObra && !Auth.podeObra(obraId)) return "Esta obra não está liberada para o seu usuário.";
+      return null;
+    },
+    _cronoBrD: function (s) { s = String(s || ""); return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(8, 10) + "/" + s.slice(5, 7) + "/" + s.slice(0, 4) : s; },
+    /* obra + orçamento ligado a ela + planejamento, FRESCOS do Store (quem
+       grava relê: o modal pode ter ficado aberto enquanto outro aparelho
+       sincronizava). `lista` null = ilegível (e aí ninguém grava). */
+    _cronoObraCtx: function (obraId) {
+      var eid = Auth.empresaId(), obra = null, lista = null, CB = (typeof CronoBase !== "undefined") ? CronoBase : null;
+      try { obra = Store.obter(eid, "obras", obraId); } catch (eO) { obra = null; }
+      if (!obra) return { erro: "Obra não encontrada neste aparelho — atualize a tela." };
+      var orc = null;
+      try { orc = obra.orcamentoId ? Store.obterOrcamento(eid, obra.orcamentoId) : null; } catch (eC) { orc = null; }
+      if (CB) { try { lista = Store.listar(eid, CB.ENTIDADE) || []; } catch (eL) { lista = null; } }
+      return { eid: eid, obra: obra, orc: orc, lista: lista,
+        plano: (CB && lista) ? CB.plano(lista, obra.id) : null, ativa: (CB && lista) ? CB.ativa(lista, obra.id) : null };
+    },
+    /* depois de gravar: a ficha da obra (outra tela) redesenha pelo caminho
+       dela quando está aberta; senão o render geral */
+    _cronoRepintar: function () {
+      if (this.tela === "gestao" && typeof Gestao !== "undefined" && Gestao._ovFicha && typeof Gestao._ovFichaMontar === "function") { try { Gestao._ovFichaMontar(false); return; } catch (eF) {} }
+      this.render();
+    },
+    /* A MONTAGEM ÚNICA do previsto × realizado de uma obra: o chip da faixa, a
+       sub-aba do orçamento e — por esta mesma função — a ficha e o módulo da
+       obra. ⚠ Uma segunda montagem divergiria na data de corte, no plano, nos
+       diários ou nas medições (memória "conserto que para no segundo
+       consumidor"). Diários e medições vão CRUS: o painel filtra pela obra e
+       pelo RDO.podeIrAoPortal (a regra do Portal, sem cópia).
+       `opts.comGantt`: devolve também `r` (o plano atual com a árvore, na
+       MESMA âncora e no MESMO plano do painel) para o Gantt com a base.
+       Devolve {painel, r?, plano, bases, ativa, obra, podeMedicoes, podeEditar}. */
+    _cronoPainelDados: function (obra, orc, opts) {
+      opts = opts || {};
+      if (!obra || typeof CronoPlan === "undefined" || !CronoPlan.montarPainel) return null;
+      var eid = Auth.empresaId(), CB = (typeof CronoBase !== "undefined") ? CronoBase : null, lista = [];
+      if (CB) { try { lista = Store.listar(eid, CB.ENTIDADE) || []; } catch (eL) { lista = []; } }
+      var plano = CB ? CB.plano(lista, obra.id) : null;
+      var bases = lista.filter(function (x) { return !!x && x.tipo === "base" && String(x.obraId) === String(obra.id); });
+      function ler(ent) { try { return Store.listar(eid, ent) || []; } catch (e) { return []; } }
+      var ativ = [];
+      try { if (typeof Gestao !== "undefined" && typeof Gestao._atividadesDaObra === "function") ativ = Gestao._atividadesDaObra(obra.id) || []; } catch (eA) { ativ = []; }
+      var corte = (this._cronoCorte && typeof this._cronoCorte === "object") ? this._cronoCorte[obra.id] : null;
+      /* a lista de orçamentos: a cadeia de revisões (base de outro orçamento
+         não vale — CronoPlan.baseVale) e o aviso de revisão mais nova */
+      var orcsP = [];
+      try { orcsP = Store.listarOrcamentos(eid) || []; } catch (eO) { orcsP = []; }
+      var p = CronoPlan.montarPainel({ orc: orc, obra: obra, plano: plano, bases: bases, rdos: ler("rdo"), medicoes: ler("medicoes"),
+        atividadesDaObra: ativ, hoje: new Date(), dataCorte: corte || null, orcamentos: orcsP });
+      var out = { painel: p, plano: plano, bases: bases, ativa: CB ? CB.ativa(lista, obra.id) : null, obra: obra,
+        podeMedicoes: !(typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("medicoes")),
+        podeEditar: !this._cronoSemPermissao(obra.id) };
+      if (opts.comGantt && p && (p.estado === "ok" || p.estado === "sem-diarios") && p.ancora && p.ancora.data && orc) {
+        try {
+          var oA = orc;
+          if (plano && CB) {
+            oA = CB.orcComPlano(orc, plano);
+            // ⚠ cópia: o orcComPlano entrega o cronograma DO PLANO por referência, e desenhar não grava
+            if (oA) oA.cronograma = JSON.parse(JSON.stringify(oA.cronograma)); else oA = orc;
+          }
+          var V = Orcamento.valoresEAP(orc), calc = null;
+          try { calc = Orcamento.calcular(orc); } catch (eC) { calc = null; }
+          var ctx = { eap: true };
+          if (calc) ctx.calc = calc;
+          if (V && V.ok === true) ctx.valores = V;
+          out.r = Cronograma.estimar(oA, { dataInicio: p.ancora.data }, ctx);
+        } catch (eR) { out.r = null; }
+      }
+      return out;
+    },
+    /* [Iniciar plano de execução da obra] — copia o cronograma do orçamento
+       APROVADO para a obra (CronoBase.iniciarPlano confere que a obra é deste
+       orçamento). O plano nasce contando do início DA OBRA. */
+    cronoIniciarPlano: function (obraId) {
+      var o = this.orcAtual; if (!o || !obraId) return;
+      if (this._trialBloqueado()) { this._avisoTrial(); return; }
+      var np = this._cronoSemPermissao(obraId); if (np) { UI.toast(np + " Nada foi criado.", "erro"); return; }
+      if (typeof CronoBase === "undefined") { UI.toast("Módulo do planejamento da obra não carregado (cronobase.js) — nada foi criado. Recarregue o app.", "erro"); return; }
+      var c = this._cronoObraCtx(obraId), self = this;
+      if (c.erro) { UI.toast(c.erro, "erro"); return; }
+      var nome = String(c.obra.nome || "");
+      if (c.lista === null) { UI.toast("Não consegui ler o planejamento das obras deste aparelho — nada foi criado. Recarregue o app.", "erro"); return; }
+      if (c.plano) {
+        /* ⚠ PLANO DE OUTRO ORÇAMENTO (revisão 3, lente sync): a obra religada
+           pelo cadastro a um orçamento de fora da cadeia ficava com o plano
+           copiado do antigo, e "Iniciar" dizia "já tem plano — é ele que esta
+           aba edita" (não era: as etapas não são as mesmas). A porta é
+           reiniciar, com a confirmação que diz o que se perde. */
+        var orcsI = [];
+        try { orcsI = Store.listarOrcamentos(c.eid) || []; } catch (eO) { orcsI = []; }
+        var cadI = (typeof CronoExecUI !== "undefined" && CronoExecUI.cadeiaIds) ? CronoExecUI.cadeiaIds(o, orcsI) : [String(o.id)];
+        var alheio = !!c.plano.orcamentoId && cadI.indexOf(String(c.plano.orcamentoId)) < 0;
+        if (!alheio) { UI.toast("A obra " + nome + " já tem plano de execução — nada foi criado. É ele que esta aba edita.", "info"); this.render(); return; }
+        var plA = c.plano, marca = String(plA.atualizadoEm || "");
+        UI.modal("Reiniciar o plano de execução da obra " + nome,
+          '<p style="font-size:13px">O plano de execução desta obra foi iniciado a partir do orçamento <b>' + Util.esc(plA.orcNumero || plA.orcamentoId) + '</b>' +
+          (plA.atualizadoEm ? ' (gravado em ' + Util.esc(this._cronoBrD(String(plA.atualizadoEm).slice(0, 10))) + (plA.por ? ' por ' + Util.esc(plA.por) : '') + ')' : '') +
+          ', que não é o <b>' + Util.esc(o.numero || "") + '</b> nem uma revisão dele — as etapas não são as mesmas.</p>' +
+          '<p style="font-size:13px">Reiniciar copia o cronograma do <b>' + Util.esc(o.numero || "") + '</b> para o plano da obra e <b>apaga as edições feitas no plano atual</b> (durações, dependências, subetapas, modo executivo). As linhas de base já congeladas não mudam — depois de reiniciar, reprograme (nova base) para o previsto × realizado comparar com este orçamento.</p>',
+          [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+            { texto: "Reiniciar o plano a partir do " + (o.numero || "orçamento"), classe: "primary", onClick: function () { UI.fecharModal(); self._cronoIniciarPlanoAplicar(obraId, marca); } }]);
+        return;
+      }
+      this._cronoIniciarPlanoAplicar(obraId, null);
+    },
+    /* grava o plano copiado do orçamento aberto. `marcaSubstituir` (o
+       atualizadoEm do plano que o diálogo mostrou) = reiniciar um plano
+       existente; ⚠ relido aqui: se o plano mudou com o diálogo aberto (outro
+       aparelho editou ou reiniciou), nada é gravado. */
+    _cronoIniciarPlanoAplicar: function (obraId, marcaSubstituir) {
+      var o = this.orcAtual; if (!o || !obraId) return false;
+      if (this._trialBloqueado()) { this._avisoTrial(); return false; }
+      var np = this._cronoSemPermissao(obraId); if (np) { UI.toast(np + " Nada foi criado.", "erro"); return false; }
+      if (typeof CronoBase === "undefined") { UI.toast("Módulo do planejamento da obra não carregado (cronobase.js) — nada foi criado. Recarregue o app.", "erro"); return false; }
+      var c = this._cronoObraCtx(obraId), self = this;
+      if (c.erro) { UI.toast(c.erro, "erro"); return false; }
+      var nome = String(c.obra.nome || ""), substituir = marcaSubstituir != null;
+      if (c.lista === null) { UI.toast("Não consegui ler o planejamento das obras deste aparelho — nada foi criado. Recarregue o app.", "erro"); return false; }
+      if (substituir) {
+        if (!c.plano || String(c.plano.atualizadoEm || "") !== String(marcaSubstituir)) {
+          UI.toast("O plano de execução da obra " + nome + " mudou enquanto você conferia (outro aparelho ou outra tela) — nada foi gravado. Confira de novo.", "erro"); this.render(); return false;
+        }
+      } else if (c.plano) { UI.toast("A obra " + nome + " já tem plano de execução — nada foi criado. É ele que esta aba edita.", "info"); this.render(); return false; }
+      var rec = CronoBase.iniciarPlano(o, c.obra, Util.agoraISO(), this._cronoPor());
+      if (!rec || rec.erro) { UI.toast("O plano de execução não foi criado: " + ((rec && rec.erro) || "motor do planejamento indisponível."), "erro"); return; }
+      var ini = this._cronoInicioObra(c.obra), cr = rec.cronograma;
+      if (!cr.params || typeof cr.params !== "object" || Array.isArray(cr.params)) cr.params = {};
+      var pIni = cr.params.dataInicio ? String(cr.params.dataInicio).slice(0, 10) : "";
+      if (ini) cr.params.dataInicio = ini;   // a obra é o centro (ver _cronoAlvo)
+      var r = CronoBase.salvarPlano(c.lista, rec, { agora: Util.agoraISO(), por: this._cronoPor(), novo: true, substituir: substituir });
+      if (!r.ok) { UI.toast("O plano de execução não foi criado: " + r.erro, "erro"); return false; }
+      if (!Store.salvarVarios(c.eid, CronoBase.ENTIDADE, r.gravar, true)) { UI.toast("O plano de execução NÃO foi criado — o armazenamento deste aparelho recusou (cheio?). Nada mudou.", "erro"); return false; }
+      UI.toast("Plano de execução da obra " + nome + (substituir ? " reiniciado" : " iniciado") + " a partir do " + (o.numero || "orçamento") + ": as edições desta aba vão para ele" +
+        (substituir ? ". As linhas de base congeladas não mudaram: reprograme (nova base) para a obra passar a ser comparada com este orçamento." : ", e a proposta aprovada fica intacta.") +
+        (ini ? " O plano conta do início da obra (" + self._cronoBrD(ini) + ")" + (pIni && pIni !== ini ? "; a proposta dizia " + self._cronoBrD(pIni) : "") + "."
+          : " A obra ainda não tem data de início: informe no cadastro da obra (Gestão → Obras) — é dela que a linha de base conta.") + (r.msg ? " " + r.msg : ""), "ok");
+      this.render();
+      return true;
+    },
+    /* [Criar obra deste orçamento] — Gestao.obraDeOrcamento com o início do
+       cronograma e o término que o motor dá, pré-preenchidos (nada é gravado
+       sem a pessoa salvar o cadastro). */
+    cronoCriarObra: function () {
+      var o = this.orcAtual; if (!o) return;
+      if (typeof Gestao === "undefined" || typeof Gestao.obraDeOrcamento !== "function") { UI.toast("A Gestão de Obras não está carregada — recarregue o app.", "erro"); return; }
+      var np = this._cronoSemPermissao(null); if (np) { UI.toast(np, "erro"); return; }
+      var info = null;
+      try { info = (typeof UI._cronoObraInfo === "function") ? UI._cronoObraInfo(o) : null; } catch (eI) { info = null; }
+      /* ⚠ NUNCA com obra na cadeia de revisões — nem a que este usuário não
+         vê. O acumulado já medido é por obra: uma segunda obra mediria de novo,
+         do zero, os itens já medidos na primeira (faturamento em dobro). A
+         conferência é AQUI, no clique, e não só no botão escondido. */
+      if (!info || (info.obras || []).length || info.ocultas) {
+        UI.toast(info ? "Este orçamento já tem obra ligada (nele ou numa revisão anterior) — outra obra dividiria diários e medições e mediria de novo o que já foi medido. Nada foi criado: use a obra que existe (linha de cima)."
+          : "Não consegui conferir se este orçamento já tem obra — nada foi criado. Recarregue o app.", "erro");
+        this.render(); return;
+      }
+      /* ⚠ E NEM COM OBRA EM OUTRA REVISÃO DA FAMÍLIA (mais nova ou irmã —
+         revisão 3, lente dinheiro): com a obra passada para a R1, abrir a R0
+         oferecia [Criar obra] e o clique criava a segunda obra, que mediria
+         do zero os itens já medidos na primeira (`_pctAnterioresPorItem` é por
+         obra). A trava é no clique, não só no botão escondido. */
+      if ((info.outras || []).length || info.ocultasOutras) {
+        var oq = (info.outras || [])[0];
+        UI.toast("Este orçamento tem obra ligada a outra revisão dele" + (oq ? " (a obra " + String(oq.obra.nome || "") + ", na " + String(oq.orcNumero || oq.orcId) + ")" : "") +
+          " — outra obra dividiria diários e medições e mediria de novo o que já foi medido. Nada foi criado: abra o orçamento ligado à obra (linha de cima).", "erro");
+        this.render(); return;
+      }
+      Gestao.obraDeOrcamento(o, this._cronoDatasObra(o));
+    },
+    /* início = o do cronograma do orçamento (params.dataInicio, como a pessoa
+       escreveu); término = o fim que o motor calcula. ⚠ Só com início
+       gravado: sem ele o motor conta de HOJE, e hoje não é data da obra —
+       pré-preencher isso seria inventar o início. */
+    _cronoDatasObra: function (o) {
+      var p = o && o.cronograma && o.cronograma.params, di = p && p.dataInicio ? String(p.dataInicio).slice(0, 10) : "";
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(di) || typeof Cronograma === "undefined") return {};
+      var r = null;
+      try { r = Cronograma.estimar(o); } catch (eR) { r = null; }
+      var out = { inicio: di };
+      if (r && r.dataFim && typeof r.dataFim.getTime === "function" && !isNaN(r.dataFim.getTime())) out.termino = Cronograma._ch(r.dataFim);
+      return out;
+    },
+    /* [Passar a obra para esta revisão] — a obra está ligada a uma revisão
+       ANTERIOR deste orçamento. Mostra o antes → depois das quantidades (ids
+       iguais: a revisão clona o orçamento) e pede confirmação.
+       ⚠ DINHEIRO: o acumulado já medido de cada item é contado por obra E POR
+       ORÇAMENTO (Gestao._pctAnterioresPorItem). Com boletim feito sobre o
+       orçamento de agora, o próximo boletim sobre a revisão começaria do zero
+       nos itens já medidos — medição em dobro. Então: RECUSA com os números e
+       a porta que existe (abrir o orçamento ligado à obra). */
+    cronoPassarObra: function (obraId) {
+      var o = this.orcAtual, self = this; if (!o || !obraId) return;
+      if (this._trialBloqueado()) { this._avisoTrial(); return; }
+      var np = this._cronoSemPermissao(obraId); if (np) { UI.toast(np + " A obra não mudou.", "erro"); return; }
+      var info = null, a = null;
+      try { info = (typeof UI._cronoObraInfo === "function") ? UI._cronoObraInfo(o) : null; } catch (eI) { info = null; }
+      ((info && info.obras) || []).forEach(function (x) { if (x && x.obra && x.obra.id === obraId) a = x; });
+      if (!a || !(a.nivel > 0)) { UI.toast("Essa obra não está ligada a uma revisão anterior deste orçamento — nada mudou.", "erro"); this.render(); return; }
+      var c = this._cronoObraCtx(obraId);
+      if (c.erro) { UI.toast(c.erro, "erro"); return; }
+      var meds = null;
+      try { meds = Store.listar(c.eid, "medicoes") || []; } catch (eM) { meds = null; }
+      if (meds === null) { UI.toast("Não consegui ler as medições deste aparelho — a obra não mudou.", "erro"); return; }
+      var numeros = {};
+      try { (Store.listarOrcamentos(c.eid) || []).forEach(function (x) { if (x && x.id) numeros[x.id] = x.numero || x.id; }); } catch (eN) {}
+      var deNum = numeros[c.obra.orcamentoId] || a.orcNumero || "";
+      var bl = CronoExecUI.bloqueioPassarObra(c.obra, meds, o.id, numeros);
+      if (bl) {
+        var bts = [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }];
+        if (c.orc) bts.push({ texto: "Abrir o orçamento ligado à obra", classe: "primary", onClick: function () { UI.fecharModal(); self.cronoAbrirOrcamento(c.obra.orcamentoId); } });
+        /* ⚠ título e texto de botão são TEXTO: o UI.modal os escreve por
+           _rotuloHtml/_rotulo, que já escapam — o Util.esc aqui dobrava, e
+           "D'Ávila & Filhos" aparecia como "D&#39;Ávila &amp; Filhos" (revisão 3) */
+        UI.modal("A obra continua ligada ao " + deNum, '<p style="font-size:13px;margin:0">' + Util.esc(this._cronoVeDinheiro() ? bl.msg : bl.msg.replace(/ \(R\$[^)]*\)/, "")) + '</p>', bts);
+        return;
+      }
+      // o prazo do cronograma que o Portal do cliente desenha (Cronograma.estimar do orçamento ligado), antes → depois
+      var prz = null;
+      try { if (c.orc && typeof Cronograma !== "undefined") prz = { de: Cronograma.estimar(c.orc).totalDias, para: Cronograma.estimar(o).totalDias }; } catch (eP) { prz = null; }
+      UI.modal("Passar a obra " + String(c.obra.nome || "") + " para a revisão " + (o.numero || ""),
+        CronoExecUI.passarObraHtml({ obra: c.obra, de: c.orc, deNumero: deNum, para: o, diff: c.orc ? CronoExecUI.diffQuantidades(c.orc, o) : null, temPlano: !!c.plano, prazo: prz }), [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Passar a obra para " + (o.numero || "esta revisão"), classe: "primary", onClick: function () { UI.fecharModal(); self._cronoPassarObraAplicar(obraId, c.obra.orcamentoId, o.id); } }
+        ]);
+    },
+    _cronoPassarObraAplicar: function (obraId, deId, paraId) {
+      if (this._trialBloqueado()) { this._avisoTrial(); return false; }
+      var np = this._cronoSemPermissao(obraId); if (np) { UI.toast(np + " A obra não mudou.", "erro"); return false; }
+      var c = this._cronoObraCtx(obraId);
+      if (c.erro) { UI.toast(c.erro, "erro"); return false; }
+      /* ⚠ RELÊ antes de gravar: outro aparelho pode ter trocado a obra de
+         orçamento enquanto o modal estava aberto */
+      if (String(c.obra.orcamentoId || "") !== String(deId || "")) { UI.toast("A obra mudou de orçamento enquanto você conferia (outro aparelho ou outra tela) — nada foi gravado. Confira de novo.", "erro"); this._cronoRepintar(); return false; }
+      var meds = null;
+      try { meds = Store.listar(c.eid, "medicoes") || []; } catch (eM) { meds = null; }
+      // a trava de novo, com o que está no disco AGORA (um boletim pode ter chegado pela nuvem)
+      var bl = meds === null ? { msg: "Não consegui ler as medições deste aparelho — nada foi gravado." } : CronoExecUI.bloqueioPassarObra(c.obra, meds, paraId, null);
+      if (bl) { UI.toast(bl.msg, "erro"); return false; }
+      var para = null;
+      try { para = Store.obterOrcamento(c.eid, paraId); } catch (eP) { para = null; }
+      if (!para) { UI.toast("A revisão não está gravada neste aparelho — a obra não mudou.", "erro"); return false; }
+      var obra = c.obra, deNum = String((c.orc && c.orc.numero) || "");
+      /* ⚠ AÇÃO REGISTRADA na própria obra: quem passou, quando, de onde para
+         onde (as 10 últimas). Não há trilha de auditoria central no app; o
+         registro vai no cadastro da obra e sincroniza com ele. */
+      var hist = Array.isArray(obra.vinculoOrcamento) ? obra.vinculoOrcamento.slice(-9) : [];
+      hist.push({ de: String(deId || ""), deNumero: deNum, para: String(paraId), paraNumero: String(para.numero || ""), em: Util.agoraISO(), por: this._cronoPor() });
+      obra.vinculoOrcamento = hist;
+      obra.orcamentoId = paraId;
+      if (!Store.salvar(c.eid, "obras", obra)) { UI.toast("A obra NÃO foi passada — o armazenamento deste aparelho recusou a gravação (cheio?). Nada mudou.", "erro"); return false; }
+      var extra = "";
+      if (c.plano && typeof CronoBase !== "undefined" && c.lista) {
+        var pl = c.plano;
+        pl.orcamentoId = String(paraId); pl.orcNumero = String(para.numero || "").slice(0, 40);
+        var rp = CronoBase.salvarPlano(c.lista, pl, { agora: Util.agoraISO(), por: this._cronoPor() });
+        if (rp.ok && Store.salvarVarios(c.eid, CronoBase.ENTIDADE, rp.gravar, true)) extra = " O plano de execução da obra passou junto.";
+        else extra = " Atenção: o plano de execução da obra continua marcado com a revisão anterior (" + ((rp && rp.erro) || "o armazenamento recusou") + "); ele segue valendo (as etapas têm os mesmos ids), e o painel avisa.";
+      }
+      UI.toast("A obra " + String(obra.nome || "") + " passou do " + (deNum || "orçamento anterior") + " para o " + String(para.numero || "") +
+        ". Os diários continuam valendo (os itens têm o mesmo id); o que foi lançado em item que saiu na revisão fica fora do avanço sobre o orçamento." + extra +
+        " O Portal do cliente passa a mostrar o cronograma e a curva planejada do " + String(para.numero || "orçamento novo") + " na próxima publicação.", "ok");
+      this._cronoRepintar();
+      return true;
+    },
+    /* [Congelar linha de base] / [Reprogramar (nova base)] — a MESMA função:
+       a versão é a próxima que existe (1 sem base; ativa + 1 com base), e a
+       partir da v2 o motivo é obrigatório. `reprogramar` só nomeia o botão. */
+    cronoCongelar: function (obraId, reprogramar) {
+      var self = this; if (!obraId) return;
+      void reprogramar;
+      if (this._trialBloqueado()) { this._avisoTrial(); return; }
+      var np = this._cronoSemPermissao(obraId); if (np) { UI.toast(np + " Nada foi congelado.", "erro"); return; }
+      if (typeof CronoBase === "undefined" || typeof CronoPlan === "undefined" || !CronoPlan.congelarBase) { UI.toast("Módulo do planejamento da obra não carregado (cronobase.js / cronoplan.js) — nada foi congelado. Recarregue o app.", "erro"); return; }
+      var c = this._cronoObraCtx(obraId);
+      if (c.erro) { UI.toast(c.erro, "erro"); return; }
+      if (!c.orc) { UI.toast("A obra " + String(c.obra.nome || "") + " não tem orçamento vinculado — vincule o orçamento da obra antes de congelar a linha de base.", "erro"); return; }
+      if (c.lista === null) { UI.toast("Não consegui ler o planejamento das obras deste aparelho — nada foi congelado. Recarregue o app.", "erro"); return; }
+      var prox = CronoBase.proximaVersao(c.lista, obraId), ini = this._cronoInicioObra(c.obra) || "", opc = [];
+      (c.orc.etapas || []).forEach(function (e, i) { if (e && e.opcional) opc.push({ id: e.id, numero: String(i + 1), nome: e.nome || "" }); });
+      // o "o que muda" do diálogo: a base que sairia com o início da obra e as opcionais desmarcadas (o padrão)
+      var sim = ini ? this._cronoCongelarCalc(c, { dataInicio: ini, opcionaisIncluidos: [], motivo: prox > 1 ? "simulação" : "" }, prox) : null;
+      var crP = c.plano ? c.plano.cronograma : c.orc.cronograma;
+      var pIni = crP && crP.params && crP.params.dataInicio ? String(crP.params.dataInicio).slice(0, 10) : "";
+      UI.modal(prox > 1 ? "Reprogramar a obra — linha de base v" + prox : "Congelar a linha de base da obra",
+        CronoExecUI.congelarForm({ obra: c.obra, inicio: ini, inicioPlano: pIni, versao: prox, ativa: c.ativa, opcionais: opc, sim: sim,
+          fontePlano: c.plano ? "plano" : "orcamento", orcNumero: c.orc.numero || "", termino: c.obra.termino || "", semDinheiro: !this._cronoVeDinheiro() }), [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: prox > 1 ? "Gravar a linha de base v" + prox : "Congelar a v1", classe: "primary", onClick: function () {
+            var f = CronoExecUI.congelarDoForm(function (id) { return UI.el(id); }, opc.map(function (x) { return x.id; }), prox);
+            if (f.erro) { UI.toast(f.erro, "erro"); return; }   // o modal fica aberto com o que foi digitado
+            if (self._cronoCongelarAplicar(obraId, f, prox)) UI.fecharModal();
+          } }
+        ]);
+    },
+    /* a base que `f` produziria (ou {erro}) — o MESMO cálculo do diálogo e do
+       gravar: plano da obra (quando existe) sobre o orçamento ligado, âncora
+       no início pedido, valor de venda obrigatório (nunca custo) */
+    _cronoCongelarCalc: function (c, f, versao) {
+      var V = null, calc = null, oA = c.orc;
+      try { V = Orcamento.valoresEAP(c.orc); } catch (eV) { V = { ok: false, motivo: String((eV && eV.message) || eV) }; }
+      if (!V || V.ok === false || !V.porId) return { erro: "sem o valor de venda de cada etapa e subetapa não dá para congelar (" + ((V && V.motivo) || "valores indisponíveis") + ") — a linha de base pesa por preço de venda, nunca por custo." };
+      try { calc = Orcamento.calcular(c.orc); } catch (eC) { calc = null; }
+      if (c.plano) {
+        oA = CronoBase.orcComPlano(c.orc, c.plano);
+        if (!oA) return { erro: "o plano de execução da obra está sem cronograma — inicie o plano de novo a partir do orçamento." };
+        oA.cronograma = JSON.parse(JSON.stringify(oA.cronograma));   // congelar lê; o plano vivo não é tocado
+      }
+      var ctx = { eap: true, valores: V };
+      if (calc) ctx.calc = calc;
+      var r = Cronograma.estimar(oA, { dataInicio: f.dataInicio }, ctx);
+      return CronoPlan.congelarBase(r, { obraId: c.obra.id, versao: versao, orcamentoId: c.orc.id, orcNumero: c.orc.numero || "", motivo: f.motivo, por: this._cronoPor() },
+        { valores: V, dataInicio: f.dataInicio, opcionaisIncluidos: f.opcionaisIncluidos || [], agora: Util.agoraISO() });
+    },
+    /* grava a base do diálogo. true = fecha o modal. */
+    _cronoCongelarAplicar: function (obraId, f, versaoMostrada) {
+      if (this._trialBloqueado()) { this._avisoTrial(); return false; }
+      var np = this._cronoSemPermissao(obraId); if (np) { UI.toast(np + " Nada foi congelado.", "erro"); return false; }
+      var c = this._cronoObraCtx(obraId), self = this;
+      if (c.erro || !c.orc || c.lista === null) { UI.toast((c.erro || "A obra não tem orçamento vinculado, ou o planejamento das obras não pôde ser lido") + " — nada foi congelado.", "erro"); return false; }
+      var prox = CronoBase.proximaVersao(c.lista, obraId), nome = String(c.obra.nome || "");
+      // outro aparelho congelou enquanto o diálogo estava aberto: o "o que muda" que a pessoa leu não vale mais
+      if (versaoMostrada != null && prox !== versaoMostrada) { UI.toast("Enquanto o diálogo estava aberto, outra linha de base foi gravada nesta obra (a próxima agora é a v" + prox + ") — nada foi gravado. Abra de novo para ver o que muda.", "erro"); this._cronoRepintar(); return true; }
+      if (prox > 1 && !String(f.motivo || "").trim()) { UI.toast("Informe o motivo da reprogramação — a v" + prox + " substitui a v" + (prox - 1) + " na comparação da obra. Nada foi gravado.", "erro"); return false; }
+      var base = this._cronoCongelarCalc(c, f, prox);
+      if (!base || base.erro) { UI.toast("A linha de base não foi congelada: " + ((base && base.erro) || "o cálculo falhou."), "erro"); return false; }
+      var res = CronoBase.novaBase(c.lista, obraId, base, { agora: Util.agoraISO() });
+      if (!res.ok) { UI.toast("A linha de base não foi gravada: " + res.erro, "erro"); return false; }
+      /* ⚠ A OBRA É O CENTRO: a base congela do início DA OBRA. Data digitada
+         diferente da do cadastro → o cadastro passa a ter ela, ANTES da base
+         (se falhar, nada foi gravado; o contrário deixaria uma base contando
+         de uma data que a obra não tem). */
+      var iniAntes = this._cronoInicioObra(c.obra), mudouIni = iniAntes !== f.dataInicio;
+      /* o TÉRMINO do cadastro só muda quando a pessoa marcou no diálogo
+         (revisão 3, lente UX: a base e o cadastro davam dois prazos) */
+      var termAntes = /^\d{4}-\d{2}-\d{2}$/.test(String(c.obra.termino || "")) ? String(c.obra.termino) : "", termNovo = String(res.base.dataFim || "");
+      var mudouTerm = !!f.atualizarTermino && /^\d{4}-\d{2}-\d{2}$/.test(termNovo) && termNovo !== termAntes;
+      if (mudouIni || mudouTerm) {
+        c.obra.inicio = f.dataInicio;
+        if (mudouTerm) c.obra.termino = termNovo;
+        if (!Store.salvar(c.eid, "obras", c.obra)) { UI.toast("Nada foi gravado: o armazenamento deste aparelho recusou gravar o cadastro da obra (cheio?).", "erro"); return false; }
+      }
+      if (!Store.salvarVarios(c.eid, CronoBase.ENTIDADE, res.gravar, true)) {
+        UI.toast("A linha de base NÃO foi gravada — o armazenamento deste aparelho recusou (cheio?)." + (mudouIni ? " O início da obra já ficou gravado como " + this._cronoBrD(f.dataInicio) + "." : "") +
+          (mudouTerm ? " O término da obra já ficou gravado como " + this._cronoBrD(termNovo) + "." : ""), "erro");
+        return false;
+      }
+      var b = res.base, fora = (b.opcionaisFora || []).length;
+      // ⚠ o valor de venda só para quem vê dinheiro (a regra do painel da obra — ver _cronoVeDinheiro)
+      UI.toast("Linha de base v" + b.versao + " da obra " + nome + " congelada: " + b.totalDias + " dias úteis, de " + self._cronoBrD(b.cal && b.cal.dataInicio) + " a " + self._cronoBrD(b.dataFim) + (this._cronoVeDinheiro() ? ", " + Util.fmtMoeda(b.valor) : "") +
+        (fora ? " (" + fora + " etapa(s) opcional(is) fora do avanço)" : "") + "." +
+        (mudouIni ? " O início da obra passou a ser " + self._cronoBrD(f.dataInicio) + (iniAntes ? " (era " + self._cronoBrD(iniAntes) + ")" : "") + "." : "") +
+        (mudouTerm ? " O término da obra passou a ser " + self._cronoBrD(termNovo) + (termAntes ? " (era " + self._cronoBrD(termAntes) + ")" : "") + "." : "") + (res.msg ? " " + res.msg : ""), "ok");
+      this._cronoRepintar();
+      return true;
+    },
+    cronoHistorico: function (obraId) {
+      if (!obraId) return;
+      var np = this._cronoSemPermissao(obraId); if (np) { UI.toast(np, "erro"); return; }
+      if (typeof CronoBase === "undefined") { UI.toast("Módulo do planejamento da obra não carregado (cronobase.js) — recarregue o app.", "erro"); return; }
+      var c = this._cronoObraCtx(obraId);
+      if (c.erro) { UI.toast(c.erro, "erro"); return; }
+      if (c.lista === null) { UI.toast("Não consegui ler o planejamento das obras deste aparelho — recarregue o app.", "erro"); return; }
+      // título é texto (o UI.modal escapa); o valor de venda só para quem vê dinheiro
+      UI.modal("Histórico da linha de base — " + String(c.obra.nome || ""),
+        CronoExecUI.historicoBases(CronoBase.bases(c.lista, obraId), c.ativa ? c.ativa.id : null, CronoBase.ocupacao(c.lista), { semDinheiro: !this._cronoVeDinheiro() }),
+        [{ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+    },
+    /* [Abrir planejamento da obra]: o módulo "Cronograma da obra" (cronobra),
+       que a etapa da ficha registra — guardado com typeof, na ordem: a função
+       dela, a view registrada, e por último o cadastro da obra (que existe
+       hoje). Nunca um clique mudo. A obra escolhida fica em _cronobraObra. */
+    cronoAbrirPlanejamento: function (obraId) {
+      if (!obraId) return;
+      var np = this._cronoSemPermissao(obraId); if (np) { UI.toast(np, "erro"); return; }
+      this._cronobraObra = obraId;
+      if (typeof Gestao !== "undefined" && typeof Gestao.abrirCronobra === "function") { Gestao.abrirCronobra(obraId); return; }
+      if (typeof this.viewValida === "function" && this.viewValida("cronobra")) { this.irPara("cronobra"); return; }
+      if (typeof Gestao !== "undefined" && typeof Gestao.abrir === "function") {
+        UI.toast("O cronograma da obra ainda não está disponível nesta versão — abrindo o cadastro da obra.", "info");
+        Gestao.abrir("obras", obraId);
+      }
+    },
+    /* [Abrir cronograma no orçamento] (ficha da obra) / [Abrir o orçamento ligado à obra] */
+    cronoAbrirOrcamento: function (orcId) {
+      if (!orcId) return;
+      /* ⚠ vindo de uma tela da Gestão (ficha, módulo), só o abrirOrcamento
+         marcava o editor por baixo e o render seguia desenhando a Gestão — um
+         clique mudo. O irPara vem antes (a receita do Gestao.cronobraAbrirOrc). */
+      if (this.tela === "gestao" && typeof this.irPara === "function" && this.irPara("orcamentos") === false) return;
+      this.abrirOrcamento(orcId);
+      if (this.orcAtual && this.orcAtual.id === orcId) { this.aba = "cronograma"; this.render(); }
+    },
+
     // Cronograma — recalcular com os parâmetros / limpar edições de duração
     cronRecalc: function () {
-      var o = this.orcAtual; if (!o) return;
-      o.cronograma = o.cronograma || {};
-      o.cronograma.params = {
-        dataInicio: (UI.el("cron-inicio") || {}).value || null,
-        equipes: Math.max(1, parseInt(Util.num((UI.el("cron-equipes") || {}).value), 10) || 1),
-        diasUteisSemana: Math.min(7, Math.max(1, parseInt(Util.num((UI.el("cron-dias") || {}).value), 10) || 5)),
-        paralelismo: Util.num((UI.el("cron-paral") || {}).value),
-        custoDiaEquipe: Math.max(1, Util.num((UI.el("cron-custodia") || {}).value) || 700),
-        descontarFeriados: UI.el("cron-feriados") ? !!UI.el("cron-feriados").checked : true,
-        /* ⚠ o que não é AAAA-MM-DD NÃO é gravado como feriado: o motor devolve
-           o texto em `invalidos` e a tela mostra em vermelho. Aceitar um
-           "24/06" silenciosamente deslocaria a entrega da obra por causa de um
-           formato de data — e ninguém procuraria o erro aí. */
-        feriadosExtras: String((UI.el("cron-feriados-extras") || {}).value || "")
-          .split(/[;,\n]+/).map(function (s) { return s.trim(); }).filter(function (s) { return s; })
-          .map(function (s) { return { data: s, nome: "Feriado local" }; })
-      };
-      this.persistir(); this.render();
+      var alvo = this._cronoAlvo(); if (!alvo || typeof Cronograma === "undefined") return;
+      if (alvo.travado) { this._cronoTravado(alvo); return; }
+      /* ⚠ MESCLA, nunca substitui: chave que não veio do formulário conserva o
+         valor gravado (feriadosFacultativos não tem input e sumia a cada
+         Recalcular). Ver _cronDoForm e Cronograma.mesclarParams. */
+      // modo executivo: o prazo de ANTES desta tela, para o recado (equipes mudam o vão das subetapas)
+      var antesR = null;
+      if (alvo.cron.exec && alvo.cron.exec.rede === true) { try { antesR = Cronograma.estimar(alvo.orc); } catch (eA) { antesR = null; } }
+      alvo.cron.params = Cronograma.mesclarParams(alvo.cron.params, this._cronDoForm(function (id) { return UI.el(id); }));
+      alvo.salvar({ cronoAntes: antesR }); this.render();
     },
     cronReset: function () {
-      var o = this.orcAtual; if (o && o.cronograma) { o.cronograma.duracoes = {}; o.cronograma.iaMotivos = {}; o.cronograma.duracoesAgente = {}; o.cronograma.predecessoras = {}; o.cronograma.lags = {}; o.cronograma.marcos = {}; }
-      // FASE 1.4: destrava também o nº de meses (false explícito ≠ undefined: não re-dispara a migração)
-      if (o) { o.cronogramaMesesManual = false; try { Orcamento.sincronizarPrazo(o); } catch (e) {} }
-      this.persistir(); UI.toast("Durações, dependências e prazo voltaram à estimativa do agente.", "ok"); this.render();
+      var alvo = this._cronoAlvo(); if (!alvo || typeof Cronograma === "undefined") return;
+      if (alvo.travado) { this._cronoTravado(alvo); return; }
+      var c = alvo.cron, k, nDur = 0, nDep = 0, nMarco = 0, folhas = {}, nSub = 0;
+      var ag = (c.duracoesAgente && typeof c.duracoesAgente === "object") ? c.duracoesAgente : {};
+      // o que conta como EDIÇÃO: materialização "subetapas" não é edição de ninguém (volta sozinha)
+      for (k in (c.duracoes || {})) if (Object.prototype.hasOwnProperty.call(c.duracoes, k) && ag[k] !== "subetapas") nDur++;
+      for (k in (c.predecessoras || {})) if (Object.prototype.hasOwnProperty.call(c.predecessoras, k)) nDep++;
+      for (k in (c.marcos || {})) if (Object.prototype.hasOwnProperty.call(c.marcos, k) && c.marcos[k] === true) nMarco++;
+      var sub = (c.sub && typeof c.sub === "object") ? c.sub : {};
+      ["duracoes", "marcos", "predecessoras", "lags", "tipos", "equipes", "agente", "iaMotivos"].forEach(function (m) {
+        var mp = sub[m]; if (!mp || typeof mp !== "object") return;
+        for (var id in mp) if (Object.prototype.hasOwnProperty.call(mp, id) && !folhas[id]) { folhas[id] = true; nSub++; }
+      });
+      /* ⚠ Limpar edições zera etapa E subetapa (sub.*) e REMATERIALIZA; mantém
+         params e exec (são parâmetros, não edições). Antes limpava só 6 mapas
+         de etapa: com o modo executivo a rede das subetapas continuava e o
+         recado "voltaram à estimativa do agente" mentia. */
+      // o prazo antes e depois: limpar edições muda a entrega, e o recado diz quanto
+      var rAntes = null; try { rAntes = Cronograma.estimar(alvo.orc); } catch (eA) { rAntes = null; }
+      var res = Cronograma.limparEdicoes(alvo.orc);
+      // FASE 1.4: destrava também o nº de meses (false explícito ≠ undefined: não re-dispara a migração).
+      // Só no orçamento: o nº de meses é do desembolso da PROPOSTA, não do plano da obra.
+      var o = alvo.orc;
+      if (alvo.tipo === "orc" && o) { o.cronogramaMesesManual = false; try { Orcamento.sincronizarPrazo(o); } catch (e) {} }
+      if (alvo.salvar({ cronoAntes: rAntes })) {
+        var nada = !nDur && !nDep && !nMarco && !nSub;
+        var mat = res && res.materializacao, nMat = mat && mat.gravadas ? mat.gravadas.length : 0;
+        var rDep = null; try { rDep = Cronograma.estimar(alvo.orc); } catch (eD) { rDep = null; }
+        var fmt = function (d) { return d && d.toLocaleDateString ? d.toLocaleDateString("pt-BR") : "—"; };
+        var prazoR = (rAntes && rDep) ? (rAntes.totalDias !== rDep.totalDias
+          ? " O prazo passou de " + rAntes.totalDias + " para " + rDep.totalDias + " dias úteis (término " + fmt(rAntes.dataFim) + " → " + fmt(rDep.dataFim) + ")."
+          : " O prazo continua " + rDep.totalDias + " dias úteis (término " + fmt(rDep.dataFim) + ").") : "";
+        UI.toast((nada ? "Não havia duração, dependência nem marco editados" :
+          "Limpas: " + nDur + " duração(ões), " + nDep + " dependência(s), " + nMarco + " marco(s) e " + nSub + " subetapa(s) editada(s)") +
+          " — o cronograma segue a estimativa do agente e o prazo (meses) voltou a acompanhar o cronograma." +
+          (c.exec && c.exec.rede === true ? " O modo executivo continua ligado: " + nMat + " etapa(s) com subetapas duram o vão das subetapas." : "") + prazoR, "ok");
+      }
+      this.render();
+    },
+
+    /* ---- cronograma executivo (Fase 2): estado de TELA da aba ----
+       ⚠ Sub-aba, detalhe, etapas recolhidas e camada do físico-financeiro
+       são da TELA, por orçamento aberto — nunca do orçamento: gravar a cada
+       clique de visualização mudaria o atualizadoEm, sincronizaria à toa e,
+       no orçamento aprovado, esbarraria na trava. */
+    _cronoEstado: function (mapa, valor) {
+      var o = this.orcAtual; if (!o) return;
+      this[mapa] = (this[mapa] && typeof this[mapa] === "object") ? this[mapa] : {};
+      this[mapa][o.id] = valor;
+      this.render();
+    },
+    _cronoAbrirEtapa: function (etapaId, valor) {
+      var o = this.orcAtual; if (!o || !etapaId) return;
+      this._cronoAbertas = (this._cronoAbertas && typeof this._cronoAbertas === "object") ? this._cronoAbertas : {};
+      var m = this._cronoAbertas[o.id] = this._cronoAbertas[o.id] || {};
+      if (etapaId === "*") {
+        if (valor === "1") this._cronoAbertas[o.id] = {};
+        else (o.etapas || []).forEach(function (et) { m[et.id] = false; });
+      } else if (m[etapaId] === false) delete m[etapaId];
+      else m[etapaId] = false;
+      this.render();
+    },
+    _cronoFFEstado: function (camada, modo) {
+      var o = this.orcAtual; if (!o) return;
+      this._cronoFF = (this._cronoFF && typeof this._cronoFF === "object") ? this._cronoFF : {};
+      var f = this._cronoFF[o.id] = this._cronoFF[o.id] || {};
+      if (camada) f.camada = camada;
+      if (modo) f.modo = modo;
+      this.render();
+    },
+
+    /* Interruptor "Detalhar o prazo pelas subetapas": primeiro o ANTES →
+       DEPOIS (Cronograma.simularExec, que não toca no orçamento), com a
+       parcela de arredondamento e o aviso do prazo escrito na proposta; só
+       grava se a pessoa confirmar. ⚠ Ligar muda a data de entrega que a
+       proposta imprime — mudar calado seria o pior dos recados. */
+    cronExecAlternar: function (ligar) {
+      var alvo = this._cronoAlvo(); if (!alvo || typeof Cronograma === "undefined" || !Cronograma.simularExec || typeof CronoExecUI === "undefined") return;
+      if (alvo.travado) { this._cronoTravado(alvo); return; }
+      var sim;
+      try { sim = Cronograma.simularExec(alvo.orc, !!ligar); }
+      catch (e) { UI.toast("Não consegui simular o modo executivo (" + ((e && e.message) || e) + ") — nada foi alterado.", "erro"); return; }
+      var nomes = {}, self = this;
+      (alvo.orc.etapas || []).forEach(function (et, i) { nomes[et.id] = (i + 1) + ". " + String(et.nome || "").slice(0, 50); });
+      UI.modal((ligar ? "Ligar" : "Desligar") + " o cronograma executivo — " + sim.antes.totalDias + " → " + sim.depois.totalDias + " dias úteis",
+        CronoExecUI.textoSimulacao(sim, nomes), [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: ligar ? "Ligar e gravar" : "Desligar e gravar", classe: "primary", onClick: function () { UI.fecharModal(); self._cronExecAplicar(!!ligar, sim); } }
+        ]);
+    },
+    /* grava o interruptor: exec.rede → materializar (recado dos números
+       digitados que viram o vão) → nº de meses da proposta → persistir.
+       ⚠ salvar recusado (licença, Store): desfaz em memória — a tela não pode
+       mostrar um modo que não ficou gravado em lugar nenhum. */
+    _cronExecAplicar: function (ligar, sim) {
+      var alvo = this._cronoAlvo(); if (!alvo) return;
+      if (alvo.travado) { this._cronoTravado(alvo); return; }
+      var cronAntes = JSON.stringify(alvo.cron), mesesAntes = alvo.orc.cronogramaMeses;
+      var ex = {}, k, velho = alvo.cron.exec;
+      if (velho && typeof velho === "object" && !Array.isArray(velho)) for (k in velho) if (Object.prototype.hasOwnProperty.call(velho, k)) ex[k] = velho[k];
+      ex.rede = !!ligar;
+      alvo.cron.exec = ex;
+      /* no PLANO a materialização é do salvar dele (_cronoSalvarPlano); o
+         _cronoMaterializar fala de "aparelhos com versão anterior", que nem
+         enxergam o plano da obra — seria recado que mente */
+      if (alvo.tipo === "orc") this._cronoMaterializar(alvo.orc);
+      if (alvo.tipo === "orc") { try { Orcamento.sincronizarPrazo(alvo.orc); } catch (eS) {} }
+      if (!alvo.salvar()) {
+        var volta = JSON.parse(cronAntes);
+        for (k in alvo.cron) if (Object.prototype.hasOwnProperty.call(alvo.cron, k)) delete alvo.cron[k];
+        for (k in volta) if (Object.prototype.hasOwnProperty.call(volta, k)) alvo.cron[k] = volta[k];
+        if (alvo.tipo === "orc") alvo.orc.cronogramaMeses = mesesAntes;
+        UI.toast("O modo executivo NÃO foi " + (ligar ? "ligado" : "desligado") + ": o orçamento não foi gravado (veja o aviso). O cronograma continua como estava.", "erro");
+        this.render(); return;
+      }
+      var rN = null;
+      try { rN = Cronograma.estimar(alvo.orc); } catch (eR) { rN = null; }
+      var a = sim && sim.antes, br = function (d) { return d && d.toLocaleDateString ? d.toLocaleDateString("pt-BR") : "—"; };
+      /* ⚠ "PDF, proposta e desembolso já usam este prazo" era afirmado SEM
+         CONDIÇÃO — e com o nº de meses travado pela pessoa o desembolso ficava
+         em 2 colunas somando 5 meses na última, e o texto "Prazo de execução"
+         da proposta (que o modal avisa que não é editado) continuava o de antes. */
+      var ress = [];
+      if (alvo.tipo === "orc") {
+        try {
+          var sug = Orcamento.mesesSugeridos ? Orcamento.mesesSugeridos(alvo.orc) : null, mes = Util.num(alvo.orc.cronogramaMeses);
+          if (alvo.orc.cronogramaMesesManual && sug && mes && sug > mes)
+            ress.push("o desembolso da proposta continua em " + mes + " mes(es), travado por você — o cronograma pede " + sug + " e o que passa do último mês soma nele (Relatórios → Prazo (meses))");
+        } catch (eM) {}
+      }
+      var pt = sim && sim.prazoTexto;
+      if (pt && pt.msg && (pt.difere || pt.ambiguo)) ress.push("o texto “Prazo de execução” da proposta continua dizendo “" + pt.texto + "” — ajuste nos dados comerciais");
+      UI.toast("Cronograma executivo " + (ligar ? "ligado" : "desligado") + (rN && a ? ": o prazo " + (a.totalDias === rN.totalDias ? "continua " + rN.totalDias + " dias úteis (término " + br(rN.dataFim) + ")"
+        : "passou de " + a.totalDias + " para " + rN.totalDias + " dias úteis (término " + br(a.dataFim) + " → " + br(rN.dataFim) + ")") : "") +
+        (ress.length ? ". O PDF e o Gantt da proposta já usam este prazo; mas " + ress.join("; e ") + "." : ". PDF, proposta e desembolso já usam este prazo."), "ok");
+      this.render();
+    },
+    /* Parâmetros avançados (sub-aba Parâmetros): os campos de params que
+       estão NA TELA (hoje, o de pontos facultativos) pelo mesmo
+       Cronograma.mesclarParams do Recalcular, e os de `exec` (paralelismo
+       entre subetapas, tolerância, detalhe padrão) — nunca o `rede`. */
+    cronParamsAvancados: function () {
+      var alvoA = this._cronoAlvo(); if (!alvoA || typeof Cronograma === "undefined" || typeof CronoExecUI === "undefined") return;
+      if (alvoA.travado) { this._cronoTravado(alvoA); return; }
+      var el = function (id) { return UI.el(id); };
+      var antesTxt = JSON.stringify({ p: alvoA.cron.params || null, e: alvoA.cron.exec || null });
+      var antesP = JSON.parse(antesTxt), rA = null;
+      try { rA = Cronograma.estimar(alvoA.orc); } catch (eA) { rA = null; }
+      alvoA.cron.params = Cronograma.mesclarParams(alvoA.cron.params, this._cronDoForm(el));
+      alvoA.cron.exec = CronoExecUI.mesclarExec(alvoA.cron.exec, CronoExecUI.execDoForm(el));
+      if (JSON.stringify({ p: alvoA.cron.params || null, e: alvoA.cron.exec || null }) === antesTxt) { UI.toast("Nada mudou nos parâmetros do cronograma.", "info"); this.render(); return; }
+      // rA = o prazo desta tela antes: sem ele o recado do modo executivo dizia "continua" junto do "passou de A para B" daqui
+      if (!alvoA.salvar({ cronoAntes: rA })) {
+        if (antesP.p) alvoA.cron.params = antesP.p; else delete alvoA.cron.params;
+        if (antesP.e) alvoA.cron.exec = antesP.e; else delete alvoA.cron.exec;
+        UI.toast("Os parâmetros NÃO foram gravados (veja o aviso) — o cronograma continua como estava.", "erro");
+        this.render(); return;
+      }
+      var rD = null;
+      try { rD = Cronograma.estimar(alvoA.orc); } catch (eD) { rD = null; }
+      UI.toast("Parâmetros do cronograma gravados" + (rA && rD ? (rA.totalDias === rD.totalDias ? " — o prazo continua " + rD.totalDias + " dias úteis."
+        : " — o prazo passou de " + rA.totalDias + " para " + rD.totalDias + " dias úteis.") : "."), "ok");
+      this.render();
+    },
+    /* porta "Detalhar em subetapas" da etapa sem subetapas: o cronograma
+       detalha até onde a planilha detalha — leva à Planilha, na etapa, com o
+       diálogo de criar subetapa aberto (o mesmo do botão da planilha). */
+    cronDetalharEtapa: function (etapaId) {
+      var o = this.orcAtual; if (!o || !etapaId) return;
+      this.aba = "planilha";
+      if (this.expandirEtapa) { try { this.expandirEtapa(etapaId); } catch (eX) {} }
+      this.render();
+      this.addSubEtapa(etapaId);
     },
 
     /* Cronograma em papel (A4 paisagem) e em MS Project. Os dois saem do MESMO
        `Cronograma.estimar` que desenha a aba — nada é recalculado aqui, senão
        o PDF do cliente e a tela do engenheiro divergiriam sem ninguém ver. */
     cronPDF: function () {
-      var o = this.orcAtual; if (!o) return;
+      var o = this._cronoOrcDoc(); if (!o) return;   // no plano de execução: o plano (é o que está na tela)
       if (this._trialBloqueado()) { this._avisoTrial(); return; }
       if (typeof Cronograma === "undefined" || typeof CronoPDF === "undefined") { UI.toast("Módulo de cronograma indisponível.", "erro"); return; }
       if (!(o.etapas || []).length) { UI.toast("Adicione etapas para gerar o cronograma.", "erro"); return; }
-      var r = Cronograma.estimar(o);
-      // o Gantt do documento é o MESMO SVG da tela (UI._gantt) — um desenho só
-      this._abrirPrint("Cronograma da Obra — " + o.numero,
-        CronoPDF.gerarHTML(o, r, { ganttSVG: UI._gantt(r, { semLegenda: true }), usuario: Auth.usuario(), realizado: this._avancoRealDe(o) }),
+      var D = this._cronoDocs(o);
+      // o Gantt do documento é o MESMO desenho da tela (UI._gantt por etapa, CronoExecUI.gantt com subetapas)
+      this._abrirPrint((o._planoDaObra ? "Plano de execução da obra — " : "Cronograma da Obra — ") + o.numero,
+        CronoPDF.gerarHTML(o, D.r, { ganttSVG: D.ganttSVG, detalhe: D.detalhe, usuario: Auth.usuario(), realizado: this._avancoRealDe(o) }),
         "cronograma");
+      /* o papel diz só "valor por subetapa indisponível" (vai ao cliente); o
+         MOTIVO e o que fazer são do engenheiro — ficam aqui, na tela */
+      if (D.detalhe !== "etapa" && typeof Orcamento !== "undefined" && Orcamento.valoresEAP) {
+        try { var VEp = Orcamento.valoresEAP(o); if (VEp && VEp.ok === false) UI.toast("O PDF saiu sem as colunas de valor e peso por subetapa: " + (VEp.motivo || "o valor de venda por subetapa não fechou") + ".", "info"); } catch (eV) {}
+      }
+    },
+
+    /* O que os DOCUMENTOS da aba (PDF, MS Project) recebem: o detalhe que está
+       na tela (opts.detalhe EXPLÍCITO — proposta e demais chamadores não
+       passam e continuam por etapa), o resultado do motor com a árvore EAP e
+       o Gantt. ⚠ Datas não dependem da árvore (I4): `r.etapas` é o mesmo de
+       `Cronograma.estimar(o)`. No PDF o Gantt vai no máximo até a subetapa —
+       serviço num A4 é borrão; os serviços ficam na tabela.
+       Qualquer falha na árvore cai no documento por etapa, como antes. */
+    _cronoDocs: function (o) {
+      var det = "etapa", r = null, svg = null;
+      if (typeof CronoExecUI !== "undefined") {
+        try {
+          det = CronoExecUI.estado(this, o).detalhe;
+          if (det !== "etapa") {
+            r = CronoExecUI.preparar(o, {}).r;
+            if (!r || !r.atividades || (r.exec && r.exec.erro)) { r = null; det = "etapa"; }
+            /* ⚠ nada abaixo da etapa nesse detalhe (orçamento sem subetapa, no
+               detalhe subetapa — o padrão da tela): o documento é o POR ETAPA de
+               sempre, byte a byte o de hoje. Medido em 11/09/2026: passando
+               "subetapa" a um orçamento sem subetapa, o PDF e o XML saíam
+               diferentes do de hoje sem ter nada a mais para mostrar. */
+            else if (!CronoExecUI.temFilhos(r, det)) det = "etapa";
+            else if (CronoExecUI.temFilhos(r, det === "servico" ? "subetapa" : det))
+              svg = CronoExecUI.gantt(r, { detalhe: det === "servico" ? "subetapa" : det, papel: true, semLegenda: true });
+          }
+        } catch (e) { r = null; svg = null; det = "etapa"; }
+      }
+      if (!r) r = Cronograma.estimar(o);
+      if (svg == null) svg = UI._gantt(r, { semLegenda: true });
+      return { r: r, detalhe: det, ganttSVG: svg };
     },
 
     /* Avanço FÍSICO da obra vinculada a este orçamento, para o cronograma
@@ -3840,16 +5013,38 @@
       } catch (e) { return null; }
     },
 
+    /* ⚠ o recado do MS Project diz o que FOI no arquivo: com o detalhe, "5
+       etapas" escondia as subetapas e os serviços — e o que ficou fora
+       (serviço sem quantidade não tem data; tarefa cujas partes não cobrem o
+       prazo vai sem elas; elo circular entre subetapas). Números de
+       MSProject.detalhar, o mesmo plano que gerou o arquivo. */
+    _cronMSPResumo: function (r, det) {
+      var oQue = r.etapas.length + " etapas", fora = [];
+      if (det !== "etapa" && typeof MSProject !== "undefined" && MSProject.detalhar) {
+        try {
+          var pl = MSProject.detalhar(r, det), ct = pl && pl.ok ? pl.contagens : null;
+          if (ct && ct.folhas) {
+            oQue = ct.etapas + " etapas, " + ct.folhas + " subetapa(s)" + (det === "servico" ? " e " + ct.servicos + " serviço(s)" : "");
+            if (ct.semBase) fora.push(ct.semBase + " serviço(s) sem quantidade não entraram (não têm data no cronograma)");
+            if (pl.recolhidas.length) fora.push(pl.recolhidas.length + " tarefa(s) foram sem as partes de baixo, porque elas não cobrem o prazo da tarefa (ex.: subetapas todas marco) — o motivo está na nota da tarefa");
+            if (ct.elosCortados) fora.push(ct.elosCortados + " dependência(s) circular(es) entre subetapas ficaram fora (o Project recusaria a rede)");
+          }
+        } catch (eP) { fora = []; }
+      }
+      return { oQue: oQue, fora: fora, depois: fora.length ? '<p class="muted" style="margin:0 0 10px;font-size:12.5px">' + Util.esc(fora.join(" · ")) + '.</p>' : '' };
+    },
     cronMSProject: function () {
-      var o = this.orcAtual; if (!o) return;
+      var o = this._cronoOrcDoc(); if (!o) return;   // no plano de execução: o plano
       if (this._trialBloqueado()) { this._avisoTrial(); return; }
       if (typeof Cronograma === "undefined" || typeof MSProject === "undefined") { UI.toast("Módulo de cronograma indisponível.", "erro"); return; }
       if (!(o.etapas || []).length) { UI.toast("Adicione etapas para exportar o cronograma.", "erro"); return; }
-      var r = Cronograma.estimar(o);
-      var xml = MSProject.gerarXML(o, r);
+      var Dx = this._cronoDocs(o), r = Dx.r;
+      // sem opts.detalhe o XML é o de sempre; com ele, tarefas-resumo e subetapas (passo dos documentos)
+      var xml = MSProject.gerarXML(o, r, { detalhe: Dx.detalhe });
       if (!xml) { UI.toast("Nada a exportar: o cronograma está vazio.", "erro"); return; }
       var nomeArq = MSProject.nomeArquivo(o);
       Util.baixar(nomeArq, xml, "application/xml;charset=utf-8");
+      var RS = this._cronMSPResumo(r, Dx.detalhe);
       /* ⚠ TOAST NÃO SERVE AQUI, e isso foi medido no uso real: o Windows não
          associa `.xml` ao Project (o MSPDI é XML puro, e a associação padrão é
          o navegador ou o bloco de notas). Quem dá duplo clique — que é o que
@@ -3859,7 +5054,7 @@
          "Projetos", e o .xml simplesmente NÃO APARECE na lista até trocar para
          "Todos os arquivos". Por isso o passo a passo fica na tela até fechar. */
       UI.modal("Cronograma exportado para o MS Project",
-        '<p style="margin:0 0 10px"><b>' + Util.esc(nomeArq) + '</b> — ' + r.etapas.length + ' etapas, com as dependências, os lags e os feriados.</p>' +
+        '<p style="margin:0 0 10px"><b>' + Util.esc(nomeArq) + '</b> — ' + Util.esc(RS.oQue) + ', com as dependências, os lags e os feriados.</p>' + RS.depois +
         '<div style="background:var(--surface-2,#eef2f7);border-left:4px solid var(--aco,#0d6ebd);border-radius:6px;padding:10px 14px;margin-bottom:10px">' +
         '<b>Duplo clique não abre no Project</b> — o Windows manda arquivo <code>.xml</code> para o navegador. O caminho é:</div>' +
         '<ol style="margin:0 0 10px 18px;line-height:1.9">' +
@@ -3894,17 +5089,56 @@
     // Manda as durações dimensionadas pelo agente para o Cronograma (uma fonte de verdade)
     execEnviarCronograma: function () {
       var o = this.orcAtual; if (!o || typeof Execucao === "undefined") return;
-      if (UI.el("exec-inicio")) this._execLerParams(o); // usa os inputs ATUAIS (não os salvos/stale)
+      var alvo = this._cronoAlvo(); if (!alvo) return;
+      if (alvo.travado) { this._cronoTravado(alvo); return; }
+      /* ⚠ PLANO DE EXECUÇÃO (Fase 3): o orçamento é o APROVADO — os inputs da
+         aba Execução não se gravam nele (o persistir recusa), então não entram
+         em memória: valem os parâmetros gravados. E o início do plano é o da
+         obra (não o da Execução, que é o da proposta): ver o dataInicio abaixo. */
+      var noPlanoE = alvo.tipo === "plano";
+      if (!noPlanoE && UI.el("exec-inicio")) this._execLerParams(o); // usa os inputs ATUAIS (não os salvos/stale)
       // durações do agente dependem só do Hh (não da diária), então colaboradores não são necessários aqui
-      var sim = Execucao.simular(o, {});
-      o.cronograma = o.cronograma || {};
+      var sim = Execucao.simular(noPlanoE ? alvo.orc : o, {});
+      /* ⚠ MODO EXECUTIVO: a etapa com subetapas não recebe a duração do Hh (ela
+         vem das subetapas e o persistir a regravaria) — o motor a devolve em
+         `puladas` e grava as SUBETAPAS. Sem passar `rede`, o toast anunciava
+         "N etapas aplicadas" e o número não chegava à tela.
+         `=== true`, como o motor lê (Cronograma.estimar/materializar): um "true"
+         em texto não pode ligar a Execução num modo e o motor em outro. */
+      var rede = !!(alvo.cron.exec && alvo.cron.exec.rede === true);
       // proveniência + limpeza de stale ficam no motor puro (testável): ver Execucao.aplicarNoCronograma
-      var apl = Execucao.aplicarNoCronograma(o.cronograma, sim.etapas);
-      var nEnv = apl.enviadas;
-      if (sim.params.dataInicio) { o.cronograma.params = o.cronograma.params || {}; o.cronograma.params.dataInicio = (typeof sim.dataInicio.toISOString === "function") ? sim.dataInicio.toISOString().slice(0, 10) : sim.params.dataInicio; }
-      try { Orcamento.sincronizarPrazo(o); } catch (e) {}
-      var nPula = sim.etapas.length - nEnv;
-      this.persistir(); UI.toast("Durações do agente aplicadas ao Cronograma (" + nEnv + " etapa" + (nEnv === 1 ? "" : "s") + (nPula > 0 ? "; " + nPula + " não estimável(is) não foram alteradas" : "") + ").", "ok"); this.render();
+      var apl = Execucao.aplicarNoCronograma(alvo.cron, sim.etapas, { rede: rede });
+      /* data local "AAAA-MM-DD" (Cronograma._ch), nunca toISOString: em UTC-3,
+         depois das 21h, o ISO já é o dia seguinte */
+      if (sim.params.dataInicio && !noPlanoE) {
+        alvo.cron.params = alvo.cron.params || {};
+        alvo.cron.params.dataInicio = (sim.dataInicio && typeof sim.dataInicio.getFullYear === "function" && typeof Cronograma !== "undefined") ? Cronograma._ch(sim.dataInicio) : sim.params.dataInicio;
+      }
+      // nº de meses = desembolso da PROPOSTA: só acompanha quando o alvo é o próprio orçamento
+      if (alvo.tipo === "orc") { try { Orcamento.sincronizarPrazo(o); } catch (e) {} }
+      if (alvo.salvar()) UI.toast(this._execMsgEnvio(apl, rede, (sim.etapas || []).length), "ok");
+      this.render();
+    },
+    /* Recado do "Enviar ao cronograma" com os números VERDADEIROS do motor
+       (Execucao.aplicarNoCronograma). No modo de hoje o texto é o de antes. */
+    _execMsgEnvio: function (apl, rede, nEtapas) {
+      apl = apl || {};
+      var nEnv = apl.enviadas || 0;
+      if (!rede) {
+        var nPula = nEtapas - nEnv;
+        return "Durações do agente aplicadas ao Cronograma (" + nEnv + " etapa" + (nEnv === 1 ? "" : "s") + (nPula > 0 ? "; " + nPula + " não estimável(is) não foram alteradas" : "") + ").";
+      }
+      var nComSub = 0, nSemBaseEt = 0;
+      (apl.detalhe || []).forEach(function (d) {
+        if (d.tipo !== "etapa") return;
+        if (/subetapas/.test(d.motivo || "")) nComSub++; else nSemBaseEt++;
+      });
+      var p = [nEnv + " etapa(s) sem subetapas e " + (apl.folhasEnviadas || 0) + " subetapa(s) receberam a duração do Hh"];
+      if (nComSub) p.push(nComSub + " etapa(s) com subetapas não recebem duração direta (no modo executivo ela vem das subetapas)");
+      if (apl.folhasPreservadas) p.push(apl.folhasPreservadas + " subetapa(s) mantida(s) porque você ou a IA definiram a duração");
+      var semBase = nSemBaseEt + (apl.folhasPuladas || 0);
+      if (semBase) p.push(semBase + " sem base de mão de obra (não alteradas)");
+      return "Execução → Cronograma: " + p.join("; ") + ".";
     },
     // ---- Parede-Cebola (Fase B): explode parede em camadas de serviço ----
     _paredeLerInputs: function () {
@@ -3970,30 +5204,1094 @@
       this.persistir(); this.render();
       UI.toast(out.adicionadas + " camada(s) adicionada(s) ao orçamento" + (out.puladas ? " · " + out.puladas + " pulada(s) (sem código/unidade divergente)" : "") + ".", out.adicionadas ? "ok" : "info");
     },
-    // Refina as durações com a IA do ERP (planejador) — fonte de verdade = backend (chave da IA fica lá)
+    /* Refina as durações com a IA do ERP (planejador) — fonte de verdade =
+       backend (a chave da IA fica lá). Nesta fase só as TRAVAS (espec 1.10);
+       o diff com checkbox vem na Fase 4 (IAEdit).
+       ⚠ O que cada trava impede — não simplificar sem ler:
+       - CARIMBO (orcId + reqId + ids capturados no pedido) e casamento por ID:
+         a resposta volta pelo índice `i` do pedido; se a pessoa reordenou ou
+         apagou etapa durante a espera, o índice cai na etapa ERRADA. E se
+         trocou de orçamento, a duração ia parar em outro orçamento.
+       - AbortController de 60 s: sem ele a tela ficava esperando para sempre
+         e o 2º clique disparava outra chamada paga.
+       - faixa 1..999 dias, `i` fora da faixa ou repetido descartado: o
+         servidor não confere o que o modelo escreve.
+       - NÃO zera iaMotivos: zerar deixava etapa marcada "ia" sem motivo.
+       - NÃO sobrescreve duração do USUÁRIO (sem marca de agente): a IA não
+         desfaz decisão humana — vem em "puladas" e o recado diz.
+       - modo executivo: etapa com subetapas recusada (a duração vem delas; o
+         persistir regravaria e o "N refinadas" mentia).
+       - aprovado: nem consulta; e se aprovou durante a espera, não aplica —
+         nunca "N refinadas" com o salvar recusado. */
     cronRefinarIA: function () {
-      var o = this.orcAtual; if (!o || !(o.etapas || []).length) return;
-      var r = Cronograma.estimar(o), self = this;
-      var etapas = o.etapas.map(function (e, i) {
+      var o = this.orcAtual; if (!o || !(o.etapas || []).length || typeof Cronograma === "undefined") return;
+      var alvo = this._cronoAlvo(); if (!alvo) return;
+      if (alvo.travado) { this._cronoTravado(alvo); return; }
+      if (this._cronIA) { UI.toast("A IA ainda está respondendo ao pedido anterior — aguarde (no máximo 60 s).", "info"); return; }
+      var r = Cronograma.estimar(alvo.orc), self = this;
+      var etapas = alvo.orc.etapas.map(function (e, i) {
         return {
           i: i, id: e.id, nome: e.nome, categoria: r.etapas[i].categoriaNome, duracaoAtual: r.etapas[i].duracao,
           itens: (e.itens || []).slice(0, 15).map(function (it) { return { descricao: it.descricao, quantidade: it.quantidade, unidade: it.unidade }; })
         };
       });
+      var pedido = { orcId: o.id, reqId: (this._cronIAReq = (this._cronIAReq || 0) + 1), ids: etapas.map(function (x) { return x.id; }) };
+      var ctrl = null;
+      try { if (typeof AbortController !== "undefined") ctrl = new AbortController(); } catch (eA) { ctrl = null; }
+      this._cronIA = pedido;
+      function vivo() { return self._cronIA === pedido; } // só o pedido CORRENTE aplica (o abortado já foi avisado)
+      var timer = setTimeout(function () {
+        if (!vivo()) return;
+        self._cronIA = null;
+        try { if (ctrl) ctrl.abort(); } catch (eAb) {}
+        UI.toast("A IA não respondeu em 60 s — nada foi alterado no cronograma. Tente de novo.", "erro");
+      }, 60000);
+      function fim() { self._cronIA = null; try { clearTimeout(timer); } catch (eT) {} }
       var back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? CONFIG.iaBackend : "http://localhost:3041";
       UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("ia", 15) : "") + " Consultando a IA do ERP (planejador)…", "ok");
-      fetch(back + "/ia/cronograma", { method: "POST", headers: { "Content-Type": "application/json", "x-licenca": (typeof Licenca !== "undefined" ? Licenca.chave() : "") }, body: JSON.stringify({ etapas: etapas, equipes: (r.params.equipes || 1) }) })
+      fetch(back + "/ia/cronograma", { method: "POST", headers: { "Content-Type": "application/json", "x-licenca": (typeof Licenca !== "undefined" ? Licenca.chave() : "") }, body: JSON.stringify({ etapas: etapas, equipes: (r.params.equipes || 1) }), signal: ctrl ? ctrl.signal : undefined })
         .then(function (resp) { return resp.json(); })
         .then(function (j) {
-          if (!j.ok) { UI.toast("IA: " + (j.error || "não retornou"), "erro"); return; }
-          o.cronograma = o.cronograma || {}; o.cronograma.duracoes = o.cronograma.duracoes || {}; o.cronograma.iaMotivos = {}; o.cronograma.duracoesAgente = o.cronograma.duracoesAgente || {};
-          var n = 0;
-          (j.etapas || []).forEach(function (x) { var et = etapas[x.i]; if (et && x.dias >= 1) { o.cronograma.duracoes[et.id] = Math.round(Util.num(x.dias)); o.cronograma.iaMotivos[et.id] = x.motivo || ""; o.cronograma.duracoesAgente[et.id] = "ia"; n++; } });
-          self.persistir();
-          UI.toast("🤖 " + n + " etapas refinadas pela IA (" + (j.provider || "") + "). Passe o mouse no " + (typeof Icones !== "undefined" ? Icones.get("ia", 15) : "") + " p/ ver o motivo; edite se quiser.", "ok");
+          if (!vivo()) return;
+          fim();
+          if (!j || !j.ok) { UI.toast("IA: " + ((j && j.error) || "não retornou") + " — nada foi alterado no cronograma.", "erro"); return; }
+          if (!self.orcAtual || self.orcAtual.id !== pedido.orcId) {
+            UI.toast("A resposta da IA chegou depois que você saiu do orçamento — nada foi gravado. Abra o orçamento e peça de novo.", "info");
+            return;
+          }
+          var alvo2 = self._cronoAlvo();
+          if (!alvo2 || alvo2.travado) { if (alvo2) self._cronoTravado(alvo2); return; } // aprovado durante a espera
+          var comFolhas = {};
+          try { Cronograma.eap(alvo2.orc).forEach(function (n) { if (n.tipo === "etapa" && n.papel === "resumo") comFolhas[n.id] = true; }); } catch (eE) {}
+          var res = self._cronIAAplicar(alvo2.cron, pedido, j, {
+            etapaIds: (alvo2.orc.etapas || []).map(function (e) { return e.id; }),
+            comFolhas: comFolhas, rede: !!(alvo2.cron.exec && alvo2.cron.exec.rede === true)
+          });
+          var salvou = res.aplicadas.length ? alvo2.salvar() : true;
+          if (salvou) UI.toast(self._cronIAMsg(res, alvo2.orc, j.provider), res.aplicadas.length ? "ok" : "info");
+          else UI.toast("A IA sugeriu " + res.aplicadas.length + " duração(ões), mas o orçamento NÃO foi gravado — veja o aviso.", "erro");
           self.render();
         })
-        .catch(function (e) { UI.toast("Sem conexão com a IA: " + e.message + " — confira a internet e se a licença está ativa.", "erro"); });
+        ["catch"](function (e) {
+          if (!vivo()) return;
+          fim();
+          UI.toast("Sem conexão com a IA: " + ((e && e.message) || "falha de rede") + " — confira a internet e se a licença está ativa. Nada foi alterado.", "erro");
+        });
+    },
+    /* A DECISÃO do Refinar com IA, pura (sem tela, sem rede): testada
+       executando em tools/test-crono-fiacao.js.
+       cron = o objeto que se grava (alvo.cron); pedido = {ids:[etapaIds na
+       ordem enviada]}; resposta = {etapas:[{i, dias, motivo, id?}]};
+       opts = {etapaIds (etapas que existem AGORA), comFolhas {id:true}, rede}.
+       Muta `cron` só nas aplicadas. Devolve {aplicadas:[{etapaId, dias, antes}],
+       puladas:[{etapaId, motivo:"usuario"|"subetapas"|"marco", dias?, sugerido}],
+       descartadas:[{i, motivo}]}. */
+    _cronIAAplicar: function (cron, pedido, resposta, opts) {
+      opts = opts || {};
+      var out = { aplicadas: [], puladas: [], descartadas: [] };
+      var ids = (pedido && Array.isArray(pedido.ids)) ? pedido.ids : [], existe = {}, vistos = {};
+      var comF = opts.comFolhas || {}, rede = opts.rede === true;
+      (opts.etapaIds || []).forEach(function (id) { existe[id] = true; });
+      function obj(m) { return (m && typeof m === "object" && !Array.isArray(m)) ? m : {}; }
+      function n(v) { var x = Number(v); return isFinite(x) ? x : 0; }
+      function tem(m, k) { return Object.prototype.hasOwnProperty.call(m, k); }
+      cron.duracoes = obj(cron.duracoes); cron.duracoesAgente = obj(cron.duracoesAgente);
+      // ⚠ o mapa de motivos é PRESERVADO: só quem voltou nesta resposta ganha motivo novo
+      cron.iaMotivos = obj(cron.iaMotivos);
+      var marcos = obj(cron.marcos);
+      var lista = (resposta && Array.isArray(resposta.etapas)) ? resposta.etapas : [];
+      lista.forEach(function (x) {
+        var i = (x && (typeof x.i === "number" || /^\d+$/.test(String(x && x.i)))) ? Number(x.i) : NaN;
+        if (!(i >= 0 && i < ids.length && i % 1 === 0)) { out.descartadas.push({ i: x ? x.i : null, motivo: "i fora da faixa do pedido" }); return; }
+        if (vistos[i]) { out.descartadas.push({ i: i, motivo: "etapa repetida na resposta" }); return; }
+        vistos[i] = true;
+        var id = ids[i]; // ⚠ o id CAPTURADO no pedido, nunca a posição de agora
+        if (x.id != null && String(x.id) !== String(id)) { out.descartadas.push({ i: i, motivo: "id não confere com o pedido" }); return; }
+        var bruto = typeof x.dias === "number" ? x.dias : (typeof x.dias === "string" && x.dias.trim() !== "" ? Number(x.dias.replace(",", ".")) : NaN);
+        if (!(isFinite(bruto) && bruto >= 1 && bruto <= 999)) { out.descartadas.push({ i: i, motivo: "duração fora de 1 a 999 dias" }); return; }
+        var dias = Math.round(bruto);
+        if (!existe[id]) { out.descartadas.push({ i: i, motivo: "etapa não existe mais" }); return; }
+        var ag = tem(cron.duracoesAgente, id) ? cron.duracoesAgente[id] : null;
+        if (rede && (comF[id] || ag === "subetapas")) { out.puladas.push({ etapaId: id, motivo: "subetapas", sugerido: dias }); return; }
+        if (marcos[id] === true) { out.puladas.push({ etapaId: id, motivo: "marco", sugerido: dias }); return; }
+        var atual = tem(cron.duracoes, id) ? cron.duracoes[id] : null;
+        if (n(atual) > 0 && !ag) { out.puladas.push({ etapaId: id, motivo: "usuario", dias: n(atual), sugerido: dias }); return; }
+        cron.duracoes[id] = dias; cron.duracoesAgente[id] = "ia";
+        cron.iaMotivos[id] = String(x.motivo == null ? "" : x.motivo).replace(/\s+/g, " ").trim().slice(0, 120);
+        // `agenteAntes`: o recado diz quando a IA trocou um número RASTREÁVEL (Hh SINAPI, "exec") por um palpite
+        out.aplicadas.push({ etapaId: id, dias: dias, antes: atual, agenteAntes: ag });
+      });
+      return out;
+    },
+    // recado do Refinar com IA: cada número que o motor decidiu, nada a mais
+    _cronIAMsg: function (res, orc, provider) {
+      var nomes = {};
+      ((orc && orc.etapas) || []).forEach(function (e, i) { nomes[e.id] = (i + 1) + ". " + String(e.nome || "").slice(0, 30); });
+      var us = [], sub = 0, marco = 0;
+      res.puladas.forEach(function (p) {
+        if (p.motivo === "usuario") us.push(p); else if (p.motivo === "subetapas") sub++; else marco++;
+      });
+      var nA = res.aplicadas.length, t = [];
+      t.push(nA ? nA + " etapa(s) refinada(s) pela IA" + (provider ? " (" + provider + ")" : "") + " — passe o mouse no ícone da IA para ver o motivo"
+        : "A IA não mudou nenhuma duração");
+      /* ⚠ a duração da Execução vem do Hh do analítico SINAPI (I7: fonte
+         rastreável); a da IA é sugestão. Trocar uma pela outra calado fazia os
+         40 d do Hh virarem 8 d sem ninguém ver o antes. */
+      var ex = res.aplicadas.filter(function (a) { return a.agenteAntes === "exec"; });
+      if (ex.length) t.push((ex.length === 1 ? "1 delas trocou" : ex.length + " delas trocaram") + " a duração calculada pelo Hh SINAPI (aba Execução) pela da IA (" +
+        ex.slice(0, 3).map(function (a) { return (nomes[a.etapaId] || "etapa") + ": Hh " + a.antes + " d → IA " + a.dias + " d"; }).join("; ") +
+        (ex.length > 3 ? "; e mais " + (ex.length - 3) : "") + ") — para voltar ao Hh, reenvie pela aba Execução");
+      if (us.length) t.push(us.length + " mantida(s) porque você definiu a duração (" +
+        us.slice(0, 3).map(function (p) { return (nomes[p.etapaId] || "etapa") + ": você " + p.dias + " d, IA " + p.sugerido + " d"; }).join("; ") +
+        (us.length > 3 ? "; e mais " + (us.length - 3) : "") + ") — para aceitar a sugestão, apague a sua duração e peça de novo");
+      if (sub) t.push(sub + " etapa(s) com subetapas fora: no modo executivo a duração delas vem das subetapas");
+      if (marco) t.push(marco + " marco(s) mantido(s)");
+      if (res.descartadas.length) t.push(res.descartadas.length + " resposta(s) descartada(s) (fora de 1 a 999 dias, repetida ou etapa inexistente)");
+      return t.join(". ") + ".";
+    },
+
+    /* =====================================================================
+     * EDITAR COM IA (espec v2, 4.3 — Fase 4B): a TELA sobre o motor IAEdit.
+     *
+     * O padrão da casa (I9): a IA PROPÕE → o IAEdit VALIDA num universo
+     * fechado → esta tela mostra o diff com checkbox → a PESSOA aplica →
+     * desfazer de 1 nível. Aqui mora a fiação; toda decisão que dá para
+     * testar sem tela é função pura (_iaErroRecado, _iaDecidir,
+     * _iaConferirDisco, _iaPedidoHtml, _iaDiffHtml, _iaEfeitoHtml,
+     * _iaPalavras, _iaAlternar), EXECUTADA em tools/test-ia-fiacao.js.
+     *
+     * ⚠ TEXTO DA IA É TEXTO DE TERCEIRO. Rótulo, "hoje", "proposto", motivo,
+     *   perguntas, premissas e os motivos de recusa/descarte passam SEMPRE por
+     *   Util.esc: o modelo lê descrições importadas de planilha alheia, e uma
+     *   descrição com instrução embutida vira HTML no diff no dia em que alguém
+     *   esquecer. Checkbox só com data-ia-idx NUMÉRICO; as ops ficam em memória
+     *   (App._iaEd); nenhum texto em atributo de evento (memória "XSS por aspas
+     *   em onclick": escapar HTML NÃO protege string JS dentro de onclick).
+     * ⚠ UM ESTADO SÓ (App._iaEd). O carimbo {orcId, reqId, atualizadoEm,
+     *   snapshot} nasce no Enviar e é o que liga a resposta ao pedido. Resposta
+     *   de outro reqId, de outro orçamento ou que chega depois de fechar o
+     *   pedido é descartada DIZENDO — nunca aplicada no que estiver aberto.
+     * ⚠ O `cronRefinarIA` antigo (logo acima) ficou SEM PORTA na tela: o
+     *   [Refinar com IA] (data-acao "cron-ia") abre este modal com o pedido
+     *   pronto. Não religar: ele grava sem diff, com o validador próprio.
+     * ===================================================================== */
+    _iaEd: null,
+    _iaSeq: 0,
+    _IA_PRAZO_MS: 60000,
+    _IA_ALVOS: [["planilha", "Planilha"], ["cronograma", "Cronograma"], ["documentos", "Textos da proposta"]],
+    /* exemplos por alvo. ⚠ O da planilha traz a MEDIDA ESCRITA: a IA não usa
+       número que a pessoa não escreveu (nem o da descrição do serviço — é o
+       vetor da injeção), e sem medida no pedido ela pergunta */
+    _IA_EXEMPLOS: {
+      planilha: ["No serviço 2.3, a alvenaria é uma parede de 12 m por 2,8 m.",
+        "Crie a subetapa Térreo na etapa 3 e mova para ela os serviços de reboco.",
+        "Renomeie a etapa 4 para Instalações hidrossanitárias."],
+      cronograma: ["Refine a duração de cada etapa pelo porte dos serviços.",
+        "A pintura só começa depois que a alvenaria terminar.",
+        "Marque a entrega da obra como marco."],
+      documentos: ["Reescreva a apresentação num tom mais direto, sem mudar o que ela promete.",
+        "Nas premissas, diga que água e energia do canteiro são do contratante.",
+        "Organize o que não está incluso em itens curtos."]
+    },
+    _IA_REGRA: {
+      planilha: "A medida precisa estar escrita no pedido: a IA não usa número que você não escreveu (nem o da descrição do serviço) e, sem ele, pergunta.",
+      cronograma: "O que você definiu à mão vem desmarcado no diff. Subetapa só se edita com o cronograma executivo ligado.",
+      documentos: "Número, %, R$ ou data só entram se já estiverem no texto ou escritos no seu pedido; o que faltar sai como [preencher: …]. Pagamento, prazo e validade ficam com você, no modal Dados."
+    },
+    _IA_ROTULO_OP: { alterar_quantidade: "Quantidade", criar_etapa: "Nova etapa", renomear_etapa: "Nome de etapa",
+      criar_subetapa: "Nova subetapa", renomear_subetapa: "Nome de subetapa", mover_item_para_subetapa: "Mover serviço",
+      definir_duracao: "Duração", definir_dependencia: "Depende de", marcar_marco: "Marco", definir_equipes: "Equipes",
+      alterar_texto: "Texto da proposta", alterar_memoria_calculo: "Memória de cálculo" },
+
+    /* ---------------- decisões PURAS (testadas executando) ---------------- */
+
+    /* o chip que o modal abre marcado: o assunto da aba em que a pessoa está */
+    _iaChipPadrao: function (aba) {
+      return (aba === "cronograma" || aba === "execucao") ? "cronograma" : "planilha";
+    },
+    /* o texto enviado é o pedido pronto de Refinar? (espaços das pontas e
+       repetidos não contam — a pessoa pode ter clicado no fim do texto) */
+    _iaEhPedidoRefinar: function (p) {
+      return typeof IAEdit !== "undefined" && !!IAEdit.PEDIDO_REFINAR &&
+        String(p == null ? "" : p).replace(/\s+/g, " ").trim() === IAEdit.PEDIDO_REFINAR;
+    },
+
+    /* O recado de cada falha da rota. ⚠ Recado é interface: diz o que
+       aconteceu, o que fazer, e que NADA foi alterado. O 404 NÃO é
+       "indisponível": é o servidor de IA antigo, sem a rota /ia/editar — um
+       "indisponível" educado seria lido como estado normal por meses (memória
+       "erro educado esconde defeito"). `corpo.error` vem do NOSSO servidor
+       (nunca o texto do provedor) e vai só em texto puro (toast/textContent). */
+    _iaErroRecado: function (status, corpo) {
+      var err = "";
+      try { err = String((corpo && (corpo.error || corpo.erro)) || "").replace(/\s+/g, " ").trim().slice(0, 200); } catch (eE) { err = ""; }
+      var entre = err ? " (" + err + ")" : "", nada = " Nada foi alterado.";
+      if (status === "offline") return "Sem conexão com o servidor de IA — confira a internet e tente de novo." + nada;
+      if (status === "prazo") return "A IA não respondeu em 60 s — o pedido foi cancelado. Tente de novo, pedindo menos coisa por vez." + nada;
+      if (status === 403) return "A edição por IA é do plano licenciado — o servidor de IA não aceitou a licença deste aparelho" + entre + ". Confira a licença em 🔑." + nada;
+      if (status === 404) return "O servidor de IA ainda não tem a edição — peça a atualização do servidor à RA Engenharia." + nada;
+      if (status === 413) return "Pedido grande demais para a IA" + entre + " — escolha as etapas em “Etapas deste pedido” ou peça menos coisa por vez." + nada;
+      if (status === 429) {
+        var s = Number(corpo && corpo.tenteEm);
+        var quando = (isFinite(s) && s > 0) ? (s >= 90 ? "em " + Math.ceil(s / 60) + " min" : "em " + Math.ceil(s) + " s") : "daqui a 1 min";
+        return "Limite de pedidos à IA atingido — tente de novo " + quando + "." + nada;
+      }
+      if (status === 502) return "A IA respondeu fora do combinado" + entre + " — tente de novo, pedindo menos coisa por vez." + nada;
+      if (status === 503) return "O servidor de IA não está pronto para a edição" + entre + " — avise o suporte da RA Engenharia." + nada;
+      if (status === 504) return "A IA passou do prazo no servidor — tente de novo, pedindo menos coisa por vez." + nada;
+      return "O servidor de IA respondeu com erro " + (typeof status === "number" ? status : "desconhecido") + entre + " — tente de novo; se repetir, avise o suporte." + nada;
+    },
+
+    /* o que fazer com a resposta: {tipo:"diff", ops, descartadas, perguntas,
+       premissas} | {tipo:"antigo"} (servidor sem /ia/editar e pedido pronto
+       de Refinar: cai na rota velha) | {tipo:"erro", recado} */
+    _iaDecidir: function (status, j, ctx) {
+      ctx = ctx || {};
+      function lista(v) { return Array.isArray(v) ? v : []; }
+      if (status === 200 && j && j.ok && j.resultado && typeof j.resultado === "object") {
+        if (ctx.reqId && j.reqId && j.reqId !== ctx.reqId) {
+          return { tipo: "erro", recado: "A resposta da IA não é deste pedido (carimbo diferente) — descartada. Peça de novo. Nada foi alterado." };
+        }
+        var r = j.resultado;
+        return { tipo: "diff", ops: lista(r.ops), descartadas: lista(r.descartadas), descartadasAlem: Number(r.descartadasAlem) || 0,
+          perguntas: lista(r.perguntas).slice(0, 3).map(function (x) { return String(x == null ? "" : x).slice(0, 300); }),
+          premissas: lista(r.premissas).slice(0, 5).map(function (x) { return String(x == null ? "" : x).slice(0, 300); }) };
+      }
+      /* ⚠ SÓ O PEDIDO PRONTO, E INTACTO, cai na rota antiga (revisão 4B). A rota
+         /ia/cronograma não recebe o pedido — ela só refina durações. Quem abria
+         pelo atalho e REESCREVIA o pedido ("a pintura só começa depois da
+         alvenaria") recebia, numa 2ª chamada paga, durações que não pediu. O
+         `pronto` diz de onde o modal abriu; o TEXTO enviado diz o que se pede. */
+      if (status === 404 && ctx.pronto === "refinar" && ctx.alvo === "cronograma" && this._iaEhPedidoRefinar(ctx.pedido)) return { tipo: "antigo" };
+      if (status === 200) return { tipo: "erro", recado: this._iaErroRecado(502, (j && j.ok === false) ? j : { error: "a resposta veio sem resultado" }) };
+      return { tipo: "erro", recado: this._iaErroRecado(status, j) };
+    },
+
+    /* ⚠ RELÊ O DISCO ANTES DE APLICAR (crítica ia-seguranca, item 1). A nuvem
+       grava o merge no Store mas NÃO troca o orcAtual aberto: validar contra a
+       memória não enxerga a edição feita no outro aparelho, e o persistir em
+       seguida a mandaria para _conflitoDe (acima de ~50 KB ela se perde). O
+       pedido guarda o atualizadoEm; mudou no disco, não aplica.
+       car = carimbo; disco = {existe, atualizadoEm} | null (ilegível);
+       memoria = atualizadoEm do objeto aberto (distingue "salvou aqui"). */
+    _iaConferirDisco: function (car, disco, memoria) {
+      var plano = car && car.cronTipo === "plano", nada = " Nada foi aplicado.";
+      if (!car) return { ok: false, recado: "Sem o carimbo do pedido — peça de novo." + nada };
+      if (disco === null || disco === undefined) return { ok: false, recado: "Não consegui ler " + (plano ? "o plano de execução da obra" : "este orçamento") + " no armazenamento deste aparelho — recarregue o app e peça de novo." + nada };
+      if (!disco.existe) return { ok: false, recado: (plano ? "O plano de execução da obra não está mais neste aparelho" : "Este orçamento não está mais neste aparelho (apagado em outro?)") + " — reabra e peça de novo." + nada };
+      if (String(disco.atualizadoEm || "") === String(car.atualizadoEm || "")) return { ok: true };
+      if (plano) return { ok: false, recado: "O plano de execução da obra mudou enquanto a IA respondia (neste ou em outro aparelho) — reabra o cronograma e peça de novo." + nada };
+      if (memoria != null && String(memoria) === String(disco.atualizadoEm || "")) {
+        return { ok: false, recado: "Você salvou outra alteração neste orçamento enquanto a IA respondia — peça de novo, para a IA partir do que está na tela." + nada };
+      }
+      return { ok: false, recado: "Este orçamento mudou em outro aparelho enquanto a IA respondia — reabra e peça de novo." + nada };
+    },
+
+    /* dd/mm (ou dd/mm/aaaa) de "AAAA-MM-DD" ou de um ISO com hora. ⚠ ISO com
+       hora é UTC: a data que vale é a LOCAL (22h em Brasília já é amanhã no ISO) */
+    _iaDia: function (s, comAno) {
+      var t = String(s == null ? "" : s), m = /^(\d{4})-(\d{2})-(\d{2})/.exec(t);
+      if (!m) return "—";
+      if (t.length > 10) {
+        var d = new Date(t);
+        if (!isNaN(d.getTime())) return ("0" + d.getDate()).slice(-2) + "/" + ("0" + (d.getMonth() + 1)).slice(-2) + (comAno ? "/" + d.getFullYear() : "");
+      }
+      return m[3] + "/" + m[2] + (comAno ? "/" + m[1] : "");
+    },
+
+    /* TEXTO LONGO, palavra a palavra: o que sai (em "Hoje") e o que entra (em
+       "Proposto") marcados. LCS sobre os pedaços (palavra ou espaço); cada
+       pedaço sai por Util.esc. ⚠ Teto da tabela: acima de 250 mil células a
+       marcação some e fica o texto inteiro — nunca a aba travada no diff. */
+    _iaPalavras: function (de, para) {
+      var esc = Util.esc;
+      function tok(s) { return String(s == null ? "" : s).split(/(\s+)/).filter(function (x) { return x !== ""; }); }
+      function branco(x) { return /^\s+$/.test(x); }
+      var A = tok(de), B = tok(para), n = A.length, m = B.length, i, j;
+      if (n * m > 250000) return { de: esc(de), para: esc(para), marcado: false, mudancas: null };
+      var L = new Array(n + 1);
+      for (i = 0; i <= n; i++) { L[i] = new Array(m + 1); L[i][m] = 0; }
+      for (j = 0; j <= m; j++) L[n][j] = 0;
+      for (i = n - 1; i >= 0; i--) {
+        for (j = m - 1; j >= 0; j--) L[i][j] = A[i] === B[j] ? L[i + 1][j + 1] + 1 : (L[i + 1][j] >= L[i][j + 1] ? L[i + 1][j] : L[i][j + 1]);
+      }
+      var SAI = '<del style="background:#fee2e2;color:#991b1b">', ENTRA = '<mark style="background:#dcfce7;color:#166534">';
+      var oa = "", ob = "", mud = 0;
+      function tira(x) { if (branco(x)) oa += esc(x); else { oa += SAI + esc(x) + "</del>"; mud++; } }
+      function poe(x) { if (branco(x)) ob += esc(x); else { ob += ENTRA + esc(x) + "</mark>"; mud++; } }
+      i = 0; j = 0;
+      while (i < n && j < m) {
+        if (A[i] === B[j]) { oa += esc(A[i]); ob += esc(B[j]); i++; j++; }
+        else if (L[i + 1][j] >= L[i][j + 1]) { tira(A[i]); i++; }
+        else { poe(B[j]); j++; }
+      }
+      while (i < n) { tira(A[i]); i++; }
+      while (j < m) { poe(B[j]); j++; }
+      return { de: oa, para: ob, marcado: true, mudancas: mud };
+    },
+
+    /* o antes → depois do conjunto MARCADO. ⚠ OS TRÊS TOTAIS (revisão 4A): o
+       da proposta (sem opcionais), o dos opcionais, e o total com opcionais —
+       que é o "VALOR TOTAL DA PROPOSTA" da proposta CLÁSSICA. Mostrar um só
+       fazia "R$ X → R$ X" enquanto a clássica subia 42%. O que muda leva
+       "(muda)" escrito (cor não é a única pista). */
+    _iaEfeitoHtml: function (ef, nMarc, nTotal) {
+      var esc = Util.esc, self = this;
+      var h = '<div class="muted" style="font-size:12px;margin-bottom:4px">' + esc(nMarc + " de " + nTotal + " mudança(s) marcada(s) — o efeito abaixo é só o das marcadas") + '</div>';
+      if (!ef || !ef.antes || !ef.depois) return h + '<p class="muted" style="margin:0">Não consegui calcular o efeito antes → depois — confira os totais e o prazo na planilha depois de aplicar.</p>';
+      var a = ef.antes, b = ef.depois;
+      function din(v) { return v == null ? "—" : Util.fmtMoeda(v); }
+      function pz(v) { return v == null ? "—" : v + " dias úteis"; }
+      function dia(v) { return v == null ? "—" : self._iaDia(v, true); }
+      var linhas = [
+        ["Total da proposta (sem opcionais)", din(a.totalProposta), din(b.totalProposta), a.totalProposta !== b.totalProposta],
+        ["Opcionais (adicionais)", din(a.totalOpcional), din(b.totalOpcional), a.totalOpcional !== b.totalOpcional],
+        ["Total com opcionais (o que a proposta clássica imprime)", din(a.totalComOpcionais), din(b.totalComOpcionais), a.totalComOpcionais !== b.totalComOpcionais],
+        ["Prazo", pz(a.prazoDiasUteis), pz(b.prazoDiasUteis), a.prazoDiasUteis !== b.prazoDiasUteis],
+        ["Término", dia(a.termino), dia(b.termino), a.termino !== b.termino]
+      ];
+      h += '<table style="width:100%;font-size:12.5px;border-collapse:collapse"><tr><th style="text-align:left">Efeito</th><th style="text-align:right">Hoje</th><th></th><th style="text-align:right">Com as marcadas</th></tr>';
+      linhas.forEach(function (l) {
+        h += '<tr' + (l[3] ? ' data-ia-muda="1"' : '') + '><td>' + esc(l[0]) + '</td><td style="text-align:right">' + esc(l[1]) + '</td><td style="text-align:center">→</td>' +
+          '<td style="text-align:right;' + (l[3] ? 'font-weight:700;color:#b45309' : '') + '">' + esc(l[2]) + (l[3] ? " (muda)" : "") + '</td></tr>';
+      });
+      h += '</table>';
+      if (ef.desfazerBytes > ef.tetoDesfazer) {
+        h += '<p style="color:#b91c1c;font-size:12.5px;margin:6px 0 0">' + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") + esc("Esta edição passa do teto do desfazer (" + Math.ceil(ef.desfazerBytes / 1024) + " KB; o teto é " +
+          Math.ceil(ef.tetoDesfazer / 1024) + " KB): aplicada assim, ela NÃO terá o botão Desfazer. Desmarque algumas para ter o desfazer.") + '</p>';
+      }
+      var nao = Util.arr(ef.naoAplicadas);
+      if (nao.length) {
+        h += '<p style="color:#b45309;font-size:12px;margin:6px 0 0">' + esc(nao.length + " das marcadas não entraria(m): ") +
+          nao.slice(0, 5).map(function (x) { return esc(x.rotulo) + " — " + esc(x.motivo); }).join("; ") + '</p>';
+      }
+      return h;
+    },
+
+    _iaExemplosHtml: function (alvo) {
+      var esc = Util.esc, ex = this._IA_EXEMPLOS[alvo] || this._IA_EXEMPLOS.planilha, rg = this._IA_REGRA[alvo] || this._IA_REGRA.planilha;
+      return '<div class="muted" style="font-size:12px"><b>Exemplos</b><ul style="margin:4px 0 4px 18px">' +
+        ex.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + '</ul><div style="color:#b45309">' + esc(rg) + '</div></div>';
+    },
+
+    /* o modal do PEDIDO: aviso fixo de privacidade, chips de alvo (rádio — a
+       troca não redesenha e não perde o que foi digitado), o pedido, os
+       exemplos do alvo e a escolha de etapas (a porta do "escolha as etapas":
+       recado que manda escolher precisa de onde escolher) */
+    _iaPedidoHtml: function (st, orc) {
+      var esc = Util.esc, alvo = st.alvo || "planilha", teto = (typeof IAEdit !== "undefined" && IAEdit.TETOS) ? IAEdit.TETOS.pedidoCaracteres : 1500;
+      var aviso = (typeof IAEdit !== "undefined" && IAEdit.AVISO_PRIVACIDADE) || "O pedido e os textos selecionados vão ao provedor de IA.";
+      var h = '<div data-modal-largo="1">';
+      h += '<p style="font-size:12.5px;margin:0 0 10px;padding:7px 10px;border-radius:6px;border:1px solid var(--linha)">🔒 ' + esc(aviso) + '</p>';
+      h += '<div class="muted" style="font-size:12px;margin-bottom:4px">O que a IA pode mudar neste pedido</div><div class="flex" role="radiogroup" style="gap:8px;flex-wrap:wrap;margin-bottom:10px">';
+      this._IA_ALVOS.forEach(function (x) {
+        h += '<label style="display:inline-flex;gap:6px;align-items:center;border:1px solid var(--linha);border-radius:999px;padding:4px 12px;cursor:pointer">' +
+          '<input type="radio" name="ia-alvo" id="ia-alvo-' + x[0] + '" value="' + x[0] + '" data-ia-alvo-chip="1"' + (x[0] === alvo ? " checked" : "") + '> ' + esc(x[1]) + '</label>';
+      });
+      h += '</div>';
+      h += '<div class="field"><label for="ia-pedido">O que mudar</label><textarea id="ia-pedido" rows="5" maxlength="' + Number(teto) + '" placeholder="' +
+        esc("Ex.: renomeie a etapa 3 para Revestimentos. Medida vai escrita (parede de 12 por 2,8).") + '">' + esc(st.pedido || "") + '</textarea></div>';
+      h += '<label style="display:flex;gap:6px;align-items:center;font-size:12.5px;margin:-4px 0 8px"><input type="checkbox" id="ia-memoria"' + (st.memoria ? " checked" : "") +
+        '> incluir as memórias de cálculo (só em Textos da proposta — a IA reescreve a redação, nunca a conta)</label>';
+      h += '<div id="ia-exemplos">' + this._iaExemplosHtml(alvo) + '</div>';
+      var es = (orc && orc.etapas) || [];
+      if (es.length) {
+        h += '<details style="margin-top:8px"' + (st.etapasIdx && Object.keys(st.etapasIdx).length ? " open" : "") + '><summary style="cursor:pointer;font-size:12.5px">' +
+          'Etapas deste pedido (opcional — sem marcar nenhuma, vão as citadas no pedido, ou todas)</summary><div style="max-height:180px;overflow:auto;margin-top:6px;font-size:12.5px">';
+        es.forEach(function (e, i) {
+          h += '<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="ia-etapa-' + i + '"' + (st.etapasIdx && st.etapasIdx[i] ? " checked" : "") + '> ' +
+            (i + 1) + ". " + esc(e && e.nome) + '</label>';
+        });
+        h += '</div></details>';
+      }
+      h += '<p id="ia-status" role="status" aria-live="polite" style="margin:8px 0 0;font-weight:600">' + esc(st.recado || "") + '</p>';
+      return h + '</div>';
+    },
+
+    /* uma linha do diff: checkbox (só o número), rótulo, Hoje → Proposto
+       (texto longo: Hoje em cima, Proposto embaixo, palavras marcadas), a
+       memória da conta, o motivo da IA e por que veio desmarcada */
+    _iaOpHtml: function (a, st) {
+      var esc = Util.esc, idx = Math.floor(Number(a && a.idx));
+      if (!isFinite(idx) || idx < 0) return "";
+      var de = String(a.deTexto == null ? "" : a.deTexto), pa = String(a.paraTexto == null ? "" : a.paraTexto);
+      var longo = a.grupo === "documentos" || de.length > 60 || pa.length > 60 || /\n/.test(de + pa);
+      var h = '<div class="ia-op" style="border:1px solid var(--linha);border-radius:6px;padding:8px 10px;margin-bottom:6px">' +
+        '<label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer"><input type="checkbox" id="ia-chk-' + idx + '" data-ia-idx="' + idx + '"' +
+        (st.marcados && st.marcados[idx] ? " checked" : "") + ' style="margin-top:3px"><b>' + esc(a.rotulo) + '</b></label>';
+      if (longo) {
+        var p = this._iaPalavras(de, pa);
+        h += '<div style="font-size:12.5px;margin:6px 0 0 24px"><div class="muted">Hoje</div><div style="white-space:pre-wrap;border-left:3px solid #94a3b8;padding-left:8px">' + p.de + '</div>' +
+          '<div class="muted" style="margin-top:6px">Proposto</div><div style="white-space:pre-wrap;border-left:3px solid #16a34a;padding-left:8px">' + p.para + '</div></div>';
+      } else {
+        h += '<div style="font-size:12.5px;margin:4px 0 0 24px"><span class="muted">Hoje:</span> ' + esc(de) + ' <span aria-hidden="true">→</span> <span class="muted">Proposto:</span> <b>' + esc(pa) + '</b></div>';
+      }
+      if (a.memoria) h += '<div class="muted" style="font-size:12px;margin:4px 0 0 24px;white-space:pre-wrap">Conta: ' + esc(a.memoria) + '</div>';
+      if (a.motivo) h += '<div class="muted" style="font-size:12px;margin:4px 0 0 24px">Motivo da IA: ' + esc(a.motivo) + '</div>';
+      if (a.motivoDesmarcada) h += '<div style="font-size:12px;margin:4px 0 0 24px;color:#b45309">Veio desmarcada: ' + esc(a.motivoDesmarcada) + '</div>';
+      if (a.nota) h += '<div style="font-size:12px;margin:4px 0 0 24px;color:#1d4ed8">' + esc(a.nota) + '</div>';
+      if (a.dependeDe && a.dependeDe.length) h += '<div class="muted" style="font-size:12px;margin:4px 0 0 24px">Depende de uma criação desta lista — desmarcar a criação desmarca esta.</div>';
+      return h + '</div>';
+    },
+
+    /* o DIFF inteiro, agrupado por alvo: perguntas da IA no topo; aceitas com
+       checkbox; recusadas pelo app e descartadas pelo servidor com o motivo;
+       o efeito antes → depois embaixo (redesenhado a cada checkbox) */
+    _iaDiffHtml: function (st) {
+      var esc = Util.esc, self = this, res = st.res || { aceitas: [], recusadas: [], avisos: [] }, dec = st.dec || {};
+      var ROT = this._IA_ROTULO_OP;
+      function nomeOp(x) { var k = String(x == null ? "" : x); return Object.prototype.hasOwnProperty.call(ROT, k) ? ROT[k] : (k || "?"); }
+      var perg = Util.arr(dec.perguntas), prem = Util.arr(dec.premissas), aceitas = Util.arr(res.aceitas);
+      var h = '<div data-modal-largo="1">';
+      if (perg.length) {
+        h += '<div style="border:1px solid #f59e0b;border-radius:6px;padding:8px 10px;margin-bottom:10px"><b>A IA perguntou</b> <span class="muted" style="font-size:12px">— responda num pedido novo ([Voltar ao pedido]); o que está abaixo não depende da resposta</span>' +
+          '<ul style="margin:6px 0 0 18px">' + perg.map(function (q) { return "<li>" + esc(q) + "</li>"; }).join("") + '</ul></div>';
+      }
+      if (prem.length) h += '<div class="muted" style="font-size:12.5px;margin-bottom:8px"><b>A IA assumiu:</b> ' + prem.map(function (p) { return esc(p); }).join(" · ") + '</div>';
+      if (dec.rotaAntiga) h += '<p class="muted" style="font-size:12.5px;margin:0 0 6px">O servidor de IA ainda é o antigo: o pedido de refinar foi pela rota antiga, e as durações passaram pela mesma conferência.</p>';
+      Util.arr(res.avisos).forEach(function (a) { h += '<p style="font-size:12.5px;margin:0 0 6px;color:#1d4ed8">' + esc(a) + '</p>'; });
+      h += '<p id="ia-recado" role="alert" style="color:#b91c1c;font-weight:600;margin:0 0 6px">' + esc(st.recado || "") + '</p>';
+      if (!aceitas.length) h += '<p style="margin:8px 0"><b>Nenhuma mudança aproveitável nesta resposta.</b> <span class="muted">Os motivos estão abaixo — ajuste o pedido e peça de novo.</span></p>';
+      var grupos = { planilha: [], cronograma: [], documentos: [] };
+      aceitas.forEach(function (a) { if (!grupos[a.grupo]) grupos[a.grupo] = []; grupos[a.grupo].push(a); });
+      var ROTG = { planilha: "Planilha", cronograma: st.carimbo && st.carimbo.cronTipo === "plano" ? "Cronograma — plano de execução da obra" : "Cronograma", documentos: "Textos da proposta" };
+      Object.keys(grupos).forEach(function (g) {
+        var l = grupos[g];
+        if (!l.length) return;
+        h += '<h3 style="margin:12px 0 6px;font-size:14px">' + esc(ROTG[g] || g) + ' <span class="muted" style="font-weight:400">(' + l.length + ')</span></h3>';
+        l.forEach(function (a) { h += self._iaOpHtml(a, st); });
+      });
+      var rec = Util.arr(res.recusadas);
+      if (rec.length) {
+        h += '<details style="margin-top:10px"' + (aceitas.length ? '' : ' open') + '><summary style="cursor:pointer">' + rec.length + ' mudança(s) recusada(s) pelo app — não entram</summary><ul style="margin:6px 0 0 18px;font-size:12.5px">' +
+          rec.map(function (r) { return '<li><b>' + esc(nomeOp(r.op && r.op.op)) + '</b> — ' + esc(r.motivo) + '</li>'; }).join("") + '</ul></details>';
+      }
+      var desc = Util.arr(dec.descartadas);
+      if (desc.length || dec.descartadasAlem) {
+        h += '<details style="margin-top:6px"' + (aceitas.length ? '' : ' open') + '><summary style="cursor:pointer">' + (desc.length + (Number(dec.descartadasAlem) || 0)) + ' mudança(s) descartada(s) pelo servidor de IA</summary><ul style="margin:6px 0 0 18px;font-size:12.5px">' +
+          desc.map(function (d) { return '<li><b>' + esc(nomeOp(d && d.op)) + '</b> — ' + esc(d && d.motivo) + '</li>'; }).join("") +
+          (dec.descartadasAlem ? '<li>' + esc("e mais " + dec.descartadasAlem) + '</li>' : '') + '</ul></details>';
+      }
+      var antigas = Util.arr(dec.antigoDescartadas);
+      if (antigas.length) {
+        h += '<details style="margin-top:6px" open><summary style="cursor:pointer">' + antigas.length + ' resposta(s) da rota antiga descartada(s)</summary><ul style="margin:6px 0 0 18px;font-size:12.5px">' +
+          antigas.map(function (d) { return '<li>' + esc(d && d.motivo) + '</li>'; }).join("") + '</ul></details>';
+      }
+      var nMarc = 0;
+      aceitas.forEach(function (a) { if (st.marcados && st.marcados[a.idx]) nMarc++; });
+      h += '<div id="ia-efeito" style="margin-top:12px;border-top:1px solid var(--linha);padding-top:8px">' + this._iaEfeitoHtml(st.efeito, nMarc, aceitas.length) + '</div>';
+      return h + '</div>';
+    },
+
+    /* marca/desmarca UMA mudança. O fecho vem do motor: desmarcar a criação
+       desmarca quem depende dela (a subetapa nova, o serviço movido para ela),
+       e marcar o filho sem o pai não pega. Devolve o que a tela redesenha. */
+    _iaAlternar: function (idx, marcado) {
+      var st = this._iaEd, o = this.orcAtual;
+      if (!st || st.fase !== "diff" || !st.res || !o) return null;
+      idx = Math.floor(Number(idx));
+      if (!isFinite(idx)) return null;
+      var lista = [];
+      Object.keys(st.marcados || {}).forEach(function (k) { if (st.marcados[k] && Number(k) !== idx) lista.push(Number(k)); });
+      if (marcado) lista.push(idx);
+      var fc = IAEdit.fechoDesmarcar(st.res.aceitas, lista);
+      st.marcados = {};
+      fc.marcados.forEach(function (i) { st.marcados[i] = true; });
+      st.efeito = this._iaEfeitoAgora(st, o);
+      return { marcados: fc.marcados, desmarcadosPorPai: fc.desmarcadosPorPai, efeito: st.efeito, pegou: !marcado || !!st.marcados[idx] };
+    },
+    _iaEfeitoAgora: function (st, o) {
+      var marcadas = Util.arr(st.res && st.res.aceitas).filter(function (a) { return st.marcados && st.marcados[a.idx]; });
+      try { return IAEdit.efeito(o, marcadas, st.efOpts || {}); } catch (eF) { return null; }
+    },
+    _iaListaMotivos: function (lista) {
+      var l = Util.arr(lista);
+      if (!l.length) return "";
+      return l.slice(0, 3).map(function (x) { return String((x && x.rotulo) || "mudança") + ": " + String((x && x.motivo) || ""); }).join("; ") + (l.length > 3 ? "; e mais " + (l.length - 3) : "");
+    },
+    _iaDesfazerRotulo: function (ed) {
+      var por = String((ed && ed.por) || "").trim();
+      return "edição da IA por " + (por ? por.slice(0, 40) : "alguém") + " em " + this._iaDia(ed && ed.em);
+    },
+
+    /* ---------------- a fiação (tela, rede, armazenamento) ---------------- */
+
+    /* ⚠ a MESMA regra do Escopo Inteligente por IA (Auth.podeUsar
+       "escopoIA"): conferida ao abrir E ao enviar — botão escondido não é guarda */
+    _iaPode: function () {
+      if (typeof Auth !== "undefined" && Auth.podeUsar && !Auth.podeUsar("escopoIA")) {
+        UI.toast("Editar com IA é recurso PRO (a mesma regra do Escopo Inteligente por IA). Faça upgrade para usar.", "erro");
+        return false;
+      }
+      return true;
+    },
+    /* opts = {alvo?, pronto? ("refinar" = o pedido pronto do atalho da aba Cronograma)} */
+    iaEditarAbrir: function (opts) {
+      opts = opts || {};
+      var o = this.orcAtual;
+      if (!o) return;
+      if (typeof IAEdit === "undefined") { UI.toast("A edição por IA não carregou neste aparelho (js/iaedit.js) — recarregue o app com Ctrl+Shift+R.", "erro"); return; }
+      if (!this._iaPode()) return;
+      if (this._iaEd && this._iaEd.fase === "enviando") { UI.toast("A IA ainda está respondendo ao pedido anterior — aguarde (no máximo 60 s).", "info"); return; }
+      var refinar = opts.pronto === "refinar";
+      this._iaEd = { fase: "pedido", orcId: o.id, alvo: refinar ? "cronograma" : (opts.alvo || this._iaChipPadrao(this.aba)),
+        pronto: refinar ? "refinar" : "", pedido: refinar ? IAEdit.PEDIDO_REFINAR : String(opts.pedido || ""), recado: "", memoria: false, etapasIdx: {} };
+      this._iaModalPedido();
+    },
+    _iaModalPedido: function () {
+      var self = this, st = this._iaEd;
+      if (!st) return;
+      UI.modal("Editar com IA", this._iaPedidoHtml(st, this.orcAtual), [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { self._iaCancelar(); } },
+        { texto: "Enviar à IA", classe: "primary", onClick: function () { self.iaEditarEnviar(); } }
+      ]);
+    },
+    _iaCancelar: function () {
+      var st = this._iaEd;
+      if (st) {
+        if (st.timer) { try { clearTimeout(st.timer); } catch (eT) {} st.timer = null; }
+        if (st.fase === "enviando" && st.ctrl) { try { st.ctrl.abort(); } catch (eA) {} }
+        st.fase = "cancelado";
+      }
+      this._iaEd = null;
+      UI.fecharModal();
+    },
+    _iaVoltarPedido: function () {
+      var st = this._iaEd;
+      if (!st) return;
+      st.fase = "pedido"; st.recado = "";
+      this._iaModalPedido();
+    },
+    _iaStatus: function (msg) { var el = UI.el("ia-status"); if (el) el.textContent = String(msg == null ? "" : msg); },
+    _iaRecadoDiff: function (msg) { var el = UI.el("ia-recado"); if (el) el.textContent = String(msg == null ? "" : msg); if (this._iaEd) this._iaEd.recado = String(msg == null ? "" : msg); },
+    /* o que está no formulário do pedido (por id — sem seletor de CSS) */
+    _iaLerFormulario: function (orc) {
+      var f = { alvo: null, pedido: "", memoria: false, etapaIds: [], etapasIdx: {} };
+      this._IA_ALVOS.forEach(function (x) { var el = UI.el("ia-alvo-" + x[0]); if (el && el.checked) f.alvo = x[0]; });
+      f.pedido = String((UI.el("ia-pedido") || {}).value || "");
+      f.memoria = !!(UI.el("ia-memoria") || {}).checked;
+      ((orc && orc.etapas) || []).forEach(function (e, i) {
+        var el = UI.el("ia-etapa-" + i);
+        if (el && el.checked && e && e.id != null) { f.etapaIds.push(e.id); f.etapasIdx[i] = true; }
+      });
+      return f;
+    },
+    /* monta o corpo e o CARIMBO. Alvo cronograma com o orçamento aprovado e
+       obra (ou o plano escolhido): o que se edita é o PLANO DE EXECUÇÃO da obra
+       (_cronoAlvo) — o contexto sai do plano e o carimbo guarda o registro. */
+    _iaPreparar: function (o, f) {
+      var alvo = f.alvo || "planilha", cronAlvo = null, plano = null, obra = null, carimboEm = o.atualizadoEm || null, cronTipo = "orc";
+      if (alvo === "cronograma") {
+        var a = null;
+        try { a = this._cronoAlvo(); } catch (eA) { a = null; }
+        if (a && a.tipo === "plano" && a.plano) { cronAlvo = a.cron; plano = a.plano; obra = a.obra || null; cronTipo = "plano"; carimboEm = a.plano.atualizadoEm || null; }
+      }
+      var reqId = "ia" + (this._iaSeq = (this._iaSeq || 0) + 1) + "-" + Date.now().toString(36);
+      var ctx = IAEdit.contexto(o, (alvo === "documentos" && f.memoria) ? "memoria" : alvo, f.pedido,
+        { etapaIds: f.etapaIds && f.etapaIds.length ? f.etapaIds : null, reqId: reqId, cronAlvo: cronAlvo });
+      if (!ctx || !ctx.ok) {
+        var e = String((ctx && ctx.erro) || "não consegui montar o pedido");
+        if (/escolha as etapas/.test(e)) e += " — marque as etapas em “Etapas deste pedido”, logo abaixo, ou cite-as no texto (ex.: etapas 2 a 4)";
+        return { ok: false, erro: e.charAt(0).toUpperCase() + e.slice(1) + ". Nada foi enviado." };
+      }
+      return { ok: true, ctx: ctx, carimbo: { orcId: o.id, reqId: reqId, atualizadoEm: carimboEm, snapshot: ctx.snapshot, alvo: alvo, cronTipo: cronTipo,
+        planoId: plano ? plano.id : null, obraNome: obra ? String(obra.nome || "") : "" } };
+    },
+    _iaPost: function (caminho, corpo, ctrl) {
+      var back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? CONFIG.iaBackend : "http://localhost:3041";
+      return fetch(back + caminho, { method: "POST", headers: { "Content-Type": "application/json", "x-licenca": (typeof Licenca !== "undefined" ? Licenca.chave() : "") },
+        body: JSON.stringify(corpo), signal: ctrl ? ctrl.signal : undefined })
+        .then(function (r) {
+          var s = (r && typeof r.status === "number") ? r.status : 200;
+          return r.json().then(function (j) { return { status: s, j: j }; }, function () { return { status: s, j: {} }; });
+        });
+    },
+    /* espera com prazo: AbortController de 60 s e o `vivo` do carimbo (só a
+       resposta do pedido CORRENTE segue; a abortada já foi avisada) */
+    _iaEsperar: function (st, caminho, corpo, aoChegar) {
+      var self = this, reqId = st.carimbo.reqId, ctrl = null;
+      try { if (typeof AbortController !== "undefined") ctrl = new AbortController(); } catch (eC) { ctrl = null; }
+      st.ctrl = ctrl; st.fase = "enviando";
+      function vivo() { return self._iaEd === st && st.fase === "enviando" && st.carimbo && st.carimbo.reqId === reqId; }
+      function fim() { if (st.timer) { try { clearTimeout(st.timer); } catch (eT) {} st.timer = null; } if (st.fase === "enviando") st.fase = "pedido"; }
+      st.timer = setTimeout(function () {
+        if (!vivo()) return;
+        fim();
+        try { if (ctrl) ctrl.abort(); } catch (eAb) {}
+        self._iaFalha(st, self._iaErroRecado("prazo"));
+      }, this._IA_PRAZO_MS);
+      this._iaPost(caminho, corpo, ctrl).then(function (x) {
+        if (!vivo()) return;
+        fim();
+        try { aoChegar(x); } catch (eX) { self._iaFalha(st, "Não consegui montar a conferência da resposta (" + String((eX && eX.message) || eX).slice(0, 120) + ") — nada foi alterado."); }
+      }, function () {
+        if (!vivo()) return;
+        fim();
+        self._iaFalha(st, self._iaErroRecado("offline"));
+      });
+    },
+    iaEditarEnviar: function () {
+      var st = this._iaEd, o = this.orcAtual, self = this;
+      if (!st || !o || st.orcId !== o.id || typeof IAEdit === "undefined") return;
+      /* ⚠ TRAVA DE CLIQUE DUPLO: cada Enviar é uma chamada PAGA ao provedor, e
+         sem resposta visível a pessoa clica de novo */
+      if (st.fase === "enviando") { this._iaStatus("A IA ainda está respondendo a este pedido — aguarde (no máximo 60 s)."); return; }
+      if (!this._iaPode()) return;
+      var f = this._iaLerFormulario(o);
+      if (f.alvo) st.alvo = f.alvo;
+      f.alvo = st.alvo;
+      st.pedido = f.pedido; st.memoria = f.memoria; st.etapasIdx = f.etapasIdx;
+      var prep = this._iaPreparar(o, f);
+      if (!prep.ok) { st.recado = prep.erro; this._iaStatus(prep.erro); return; }
+      st.carimbo = prep.carimbo; st.recado = "";
+      var pedidoEnviado = f.pedido;   // o texto que FOI (o da caixa pode mudar enquanto a IA responde)
+      this._iaStatus("Enviando à IA… (até 60 s)");
+      this._iaEsperar(st, "/ia/editar", prep.ctx.corpo, function (x) {
+        var dec = self._iaDecidir(x.status, x.j, { reqId: st.carimbo.reqId, pronto: st.pronto, alvo: st.alvo, pedido: pedidoEnviado });
+        if (dec.tipo === "antigo") { self._iaRotaAntiga(st); return; }
+        if (dec.tipo === "erro") { self._iaFalha(st, dec.recado); return; }
+        self._iaMostrarDiff(st, dec);
+      });
+    },
+    _iaFalha: function (st, recado) {
+      if (st.fase === "enviando") st.fase = "pedido";
+      st.recado = recado;
+      /* ⚠ UM LUGAR SÓ PARA O RECADO (revisão 4B): com o modal do pedido aberto
+         ele vai na linha de status, que fica. O toast repetido empilhava sobre
+         o rodapé do modal — medido na foto: 7 toasts cobrindo o [Enviar à IA]
+         e a própria linha de status depois de erros seguidos. Toast só quando
+         não há modal do pedido para dizer. */
+      if (this._iaEd === st && UI.el("ia-pedido")) { this._iaStatus(recado); return; }
+      UI.toast(recado, "erro");
+    },
+    /* a mesma regra no DIFF: o recado vai na linha dele (role=alert); toast só
+       se o diff não estiver na tela */
+    _iaAvisoDiff: function (msg) {
+      var naTela = !!UI.el("ia-recado");
+      this._iaRecadoDiff(msg);
+      if (!naTela) UI.toast(msg, "erro");
+    },
+    _iaDescartar: function (st, msg) {
+      if (this._iaEd === st) this._iaEd = null;
+      UI.toast(msg, "info");
+    },
+    /* 404 no /ia/editar com o pedido pronto de Refinar: o servidor ainda é o
+       antigo. O pedido cai na rota velha /ia/cronograma (o mesmo corpo que o
+       Refinar de antes mandava), e a resposta vira ops definir_duracao
+       (IAEdit.deCronogramaAntigo, casadas pelo id CAPTURADO aqui) que passam
+       pelo MESMO validar e pelo MESMO diff — duas portas com validadores
+       diferentes era o defeito (crítica ia-seguranca, item 11). */
+    _iaRotaAntiga: function (st) {
+      var self = this, o = this.orcAtual, a = null, r = null;
+      if (!o || o.id !== st.orcId) { this._iaDescartar(st, "A resposta da IA chegou depois que você saiu do orçamento — nada foi alterado."); return; }
+      try { a = this._cronoAlvo(); } catch (eA) { a = null; }
+      if (!a || (a.tipo === "plano") !== (st.carimbo.cronTipo === "plano")) { this._iaFalha(st, "O cronograma desta aba mudou enquanto a IA respondia — peça de novo. Nada foi alterado."); return; }
+      try { r = Cronograma.estimar(a.orc); } catch (eR) { r = null; }
+      if (!r) { this._iaFalha(st, "Não consegui calcular o cronograma para o pedido pela rota antiga — nada foi alterado."); return; }
+      var etapas = (a.orc.etapas || []).map(function (e, i) {
+        var re = r.etapas[i] || {};
+        return { i: i, id: e.id, nome: e.nome, categoria: re.categoriaNome, duracaoAtual: re.duracao,
+          itens: (e.itens || []).slice(0, 15).map(function (it) { return { descricao: it.descricao, quantidade: it.quantidade, unidade: it.unidade }; }) };
+      });
+      var etapaIds = etapas.map(function (x) { return x.id; });
+      st.carimbo.reqId = st.carimbo.reqId + "-antigo";
+      this._iaStatus("O servidor de IA ainda é o antigo — mandando o pedido de refinar pela rota antiga… (até 60 s)");
+      this._iaEsperar(st, "/ia/cronograma", { etapas: etapas, equipes: (r.params && r.params.equipes) || 1 }, function (x) {
+        if (x.status !== 200) { self._iaFalha(st, self._iaErroRecado(x.status, x.j)); return; }
+        if (!x.j || x.j.ok === false || !Array.isArray(x.j.etapas)) {
+          self._iaFalha(st, "A IA (rota antiga) não devolveu durações" + (x.j && x.j.error ? " (" + String(x.j.error).slice(0, 200) + ")" : "") + " — nada foi alterado.");
+          return;
+        }
+        var conv = IAEdit.deCronogramaAntigo(x.j, { etapaIds: etapaIds, snapshot: st.carimbo.snapshot });
+        if (conv.erro) { self._iaFalha(st, "A IA (rota antiga): " + conv.erro + " — nada foi alterado."); return; }
+        self._iaMostrarDiff(st, { tipo: "diff", ops: conv.ops, descartadas: [], antigoDescartadas: conv.descartadas, perguntas: [], premissas: [], rotaAntiga: true });
+      });
+    },
+    /* a obra do orçamento tem diário? (o renomear_etapa ganha o recado do
+       Portal, que ainda casa etapa pelo nome até a próxima publicação) */
+    _iaObraComDiario: function (o) {
+      try {
+        var info = (typeof UI !== "undefined" && UI._cronoObraInfo) ? UI._cronoObraInfo(o) : null, ids = {}, tem = false;
+        Util.arr(info && info.obras).forEach(function (x) { var ob = x && (x.obra || x); if (ob && ob.id) { ids[ob.id] = true; tem = true; } });
+        if (!tem) return false;
+        return Util.arr(Store.listar(Auth.empresaId(), "rdo")).some(function (r) { return r && ids[r.obraId]; });
+      } catch (eO) { return false; }
+    },
+    _iaValidar: function (st, o, ops) {
+      var opts = {};
+      if (st.carimbo.cronTipo === "plano") {
+        var a = null;
+        try { a = this._cronoAlvo(); } catch (eA) { a = null; }
+        if (!a || a.tipo !== "plano" || !a.plano || a.plano.id !== st.carimbo.planoId) {
+          return { erro: "O cronograma que a IA recebeu era o plano de execução da obra, e esta aba não está mais nele — peça de novo. Nada foi alterado." };
+        }
+        opts.cronAlvo = a.cron;
+      }
+      opts.obraComDiario = this._iaObraComDiario(o);
+      return { res: IAEdit.validar(o, ops, st.carimbo.snapshot, opts), efOpts: { cronAlvo: opts.cronAlvo || null } };
+    },
+    _iaMostrarDiff: function (st, dec) {
+      var o = this.orcAtual;
+      if (!o || o.id !== st.orcId) { this._iaDescartar(st, "A resposta da IA chegou depois que você saiu do orçamento — nada foi alterado. Abra o orçamento e peça de novo."); return; }
+      if (!UI.el("ia-pedido")) { this._iaDescartar(st, "A resposta da IA chegou depois que você fechou o pedido — nada foi alterado. Peça de novo se quiser."); return; }
+      var v = this._iaValidar(st, o, dec.ops);
+      if (v.erro) { this._iaFalha(st, v.erro); return; }
+      st.dec = dec; st.ops = dec.ops; st.res = v.res; st.efOpts = v.efOpts; st.recado = "";
+      var marc = [];
+      v.res.aceitas.forEach(function (a) { if (a.marcadaPorPadrao) marc.push(a.idx); });
+      var fc = IAEdit.fechoDesmarcar(v.res.aceitas, marc);
+      st.marcados = {};
+      fc.marcados.forEach(function (i) { st.marcados[i] = true; });
+      st.efeito = this._iaEfeitoAgora(st, o);
+      st.fase = "diff";
+      this._iaModalDiff(st);
+    },
+    _iaModalDiff: function (st) {
+      var self = this, o = this.orcAtual;
+      var travado = st.carimbo.cronTipo !== "plano" && !!(o && Orcamento.travadoPorAprovacao && Orcamento.travadoPorAprovacao(o));
+      var bts = [{ texto: "Cancelar", classe: "ghost", onClick: function () { self._iaCancelar(); } },
+        { texto: "Voltar ao pedido", classe: "ghost", onClick: function () { self._iaVoltarPedido(); } }];
+      if (Util.arr(st.res && st.res.aceitas).length) {
+        bts.push(travado
+          ? { texto: "Criar revisão e aplicar nela", classe: "success", onClick: function () { self.iaEditarRevisao(); } }
+          : { texto: "Aplicar selecionadas", classe: "primary", onClick: function () { self.iaEditarAplicar(); } });
+      }
+      UI.modal("Editar com IA — confira antes de aplicar", this._iaDiffHtml(st), bts);
+    },
+    /* change do checkbox (data-ia-idx): o motor decide o fecho e o efeito; a
+       tela só acerta as caixas e redesenha o efeito */
+    _iaAlternarTela: function (idx, marcado) {
+      var r = this._iaAlternar(idx, marcado), st = this._iaEd;
+      if (!r || !st) return;
+      Util.arr(st.res.aceitas).forEach(function (a) { var el = UI.el("ia-chk-" + a.idx); if (el) el.checked = !!st.marcados[a.idx]; });
+      var ef = UI.el("ia-efeito");
+      if (ef) ef.innerHTML = this._iaEfeitoHtml(st.efeito, r.marcados.length, st.res.aceitas.length);
+      this._iaRecadoDiff(r.pegou ? "" : "Essa mudança depende de uma criação desmarcada — marque a criação primeiro.");
+    },
+    _iaLerDisco: function (car) {
+      var eid = null;
+      try { eid = Auth.empresaId(); } catch (eE) { return null; }
+      if (car.cronTipo === "plano") {
+        var l = null;
+        try { l = Store.listar(eid, (typeof CronoBase !== "undefined" && CronoBase.ENTIDADE) || "crono_obra"); } catch (eL) { return null; }
+        if (!Array.isArray(l)) return null;
+        for (var i = 0; i < l.length; i++) if (l[i] && l[i].id === car.planoId) return { existe: true, atualizadoEm: l[i].atualizadoEm || null, iaEm: (l[i].iaEdicao && l[i].iaEdicao.em) || null };
+        return { existe: false };
+      }
+      var d = null;
+      try { d = Store.obterOrcamento(eid, car.orcId); } catch (eO) { return null; }
+      /* iaEm = o carimbo do retrato do desfazer GRAVADO (o desfazer confere) */
+      return d ? { existe: true, atualizadoEm: d.atualizadoEm || null, iaEm: (d.iaEdicao && d.iaEdicao.em) || null } : { existe: false };
+    },
+    _iaCarimbo: function (st) {
+      return { em: Util.agoraISO(), por: this._cronoPor(), pedido: (st.carimbo && st.carimbo.snapshot && st.carimbo.snapshot.pedido) || st.pedido, alvo: st.alvo };
+    },
+    /* por que o salvar recusou, dito sem inventar: o persistir recusa por modo
+       demonstração/licença suspensa ou por armazenamento; o do plano tem mais
+       motivos (módulo, lista ilegível, teto), e cada um já saiu no aviso dele.
+       A porta do armazenamento é a do aviso do Store (js/store.js, gravar) —
+       não "apague a base SINAPI": ela mora no IndexedDB e não ocupa o que
+       está cheio. */
+    _iaPorqueNaoGravou: function (ehPlano) {
+      var trial = false, adm = true;
+      try { trial = !!this._trialBloqueado(); } catch (eT) { trial = false; }
+      try { adm = !(typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin()); } catch (eA) { adm = true; }
+      if (trial) return "este aparelho está em modo demonstração ou com a licença suspensa — ative a licença em 🔑";
+      if (ehPlano) return "o motivo está no aviso ao pé da tela";
+      return adm ? "o armazenamento deste aparelho recusou (cheio?) — faça 💾 Backup e veja o que ocupa espaço em 🗂 Tabelas › Saúde do armazenamento"
+        : "o armazenamento deste aparelho recusou (cheio?) — avise o administrador da conta";
+    },
+    /* volta um objeto ao retrato JSON, NO LUGAR (as referências continuam) */
+    _iaRestaurar: function (obj, json) {
+      if (!obj || !json) return;
+      var v = JSON.parse(json), k;
+      for (k in obj) if (Object.prototype.hasOwnProperty.call(obj, k)) delete obj[k];
+      for (k in v) if (Object.prototype.hasOwnProperty.call(v, k)) obj[k] = v[k];
+    },
+    iaEditarAplicar: function () {
+      var st = this._iaEd, o = this.orcAtual, m;
+      if (!st || st.fase !== "diff" || !st.res) return;
+      if (!o || o.id !== st.orcId) { UI.fecharModal(); this._iaDescartar(st, "Você saiu do orçamento que fez o pedido — nada foi aplicado."); return; }
+      var marcadas = st.res.aceitas.filter(function (a) { return st.marcados && st.marcados[a.idx]; });
+      if (!marcadas.length) { this._iaRecadoDiff("Nenhuma mudança marcada — marque as que quer aplicar."); return; }
+      var cd = this._iaConferirDisco(st.carimbo, this._iaLerDisco(st.carimbo), o.atualizadoEm);
+      if (!cd.ok) { this._iaAvisoDiff(cd.recado); return; }
+      var ehPlano = st.carimbo.cronTipo === "plano", alvoP = null, opts = {};
+      if (!ehPlano && Orcamento.travadoPorAprovacao && Orcamento.travadoPorAprovacao(o)) {
+        /* aprovado ENQUANTO o diff estava aberto: o botão que vale agora é o da revisão */
+        st.recado = "Este orçamento foi aprovado enquanto você conferia — o aprovado não muda; use [Criar revisão e aplicar nela].";
+        this._iaModalDiff(st);
+        return;
+      }
+      if (ehPlano) {
+        try { alvoP = this._cronoAlvo(); } catch (eA) { alvoP = null; }
+        if (!alvoP || alvoP.tipo !== "plano" || !alvoP.plano || alvoP.plano.id !== st.carimbo.planoId) {
+          m = "O cronograma desta aba não é mais o plano de execução que a IA recebeu — peça de novo. Nada foi aplicado.";
+          this._iaAvisoDiff(m); return;
+        }
+        /* ⚠ destinoDesfazer = o REGISTRO do plano: sem ele o IAEdit guardaria o
+           desfazer (com o e-mail de quem pediu) no orçamento aprovado — e o
+           motor recusa com {erro}, que é mostrado */
+        opts = { cronAlvo: alvoP.cron, destinoDesfazer: alvoP.plano };
+      }
+      var bkO = JSON.stringify(o), bkP = alvoP ? JSON.stringify(alvoP.plano) : null, res;
+      try { res = IAEdit.aplicar(o, marcadas, this._iaCarimbo(st), opts); }
+      catch (eX) {
+        this._iaRestaurar(o, bkO); if (alvoP) this._iaRestaurar(alvoP.plano, bkP);
+        res = { erro: "falhou ao aplicar (" + String((eX && eX.message) || eX).slice(0, 120) + ")" };
+      }
+      if (res.erro) {
+        /* o erro do motor já diz "nada foi aplicado" — não repetir */
+        m = /nada foi/i.test(res.erro) ? res.erro.charAt(0).toUpperCase() + res.erro.slice(1) + "." : "Nada foi aplicado: " + res.erro + ".";
+        this._iaAvisoDiff(m); return;
+      }
+      if (!res.n) { m = "Nada foi aplicado — " + (this._iaListaMotivos(res.naoAplicadas) || "nenhuma das marcadas passou na conferência final") + "."; this._iaAvisoDiff(m); return; }
+      /* ⚠ semBackupModal (revisão 4B): na PRIMEIRA recusa o persistir abre o
+         modal de backup para o administrador — por cima do diff, que sumia com
+         a resposta já paga, e o _iaEd ficava em "diff" sem tela nenhuma
+         (medido na e2e). Aqui o diff fica, com o recado dizendo o que fazer; o
+         aviso do persistir (toast) continua. */
+      var salvou = ehPlano ? alvoP.salvar({ daIA: true }) : this.persistir({ daIA: true, semBackupModal: true });
+      if (!salvou) {
+        /* ⚠ NADA GRAVADO = NADA MUDADO NA TELA: a memória volta ao retrato, senão
+           a planilha mostraria a edição que o disco não tem */
+        this._iaRestaurar(o, bkO); if (alvoP) this._iaRestaurar(alvoP.plano, bkP);
+        m = "A IA aplicaria " + res.n + " mudança(s), mas NADA foi gravado: " + this._iaPorqueNaoGravou(ehPlano) + ". " +
+          (ehPlano ? "O plano de execução" : "O orçamento") + " ficou como estava, e as mudanças continuam aqui — resolva e clique de novo em Aplicar.";
+        st.recado = m;
+        /* ⚠ nunca "diff" sem tela: se outro modal tomou o lugar (o do modo
+           demonstração, um aviso do plano), o diff volta com o recado */
+        if (UI.el("ia-recado")) this._iaRecadoDiff(m); else this._iaModalDiff(st);
+        return;
+      }
+      try { this.backupAuto({ urgente: true }); } catch (eB) {}
+      this._iaEd = null;
+      UI.fecharModal();
+      this.render();
+      this._iaResultado(res, ehPlano ? (st.carimbo.obraNome || "desta obra") : "", false);
+    },
+    /* o recado do que foi feito: o NÚMERO aplicado, o que não entrou, e onde
+       fica a volta (ou que não há volta) */
+    _iaResultado: function (res, plano, soModal) {
+      var nao = Util.arr(res.naoAplicadas);
+      if (!soModal) {
+        var msg = res.n + " mudança(s) da IA aplicada(s)" + (plano ? " no plano de execução da obra " + plano : "") + ".";
+        if (nao.length) msg += " " + nao.length + " não entrou(aram) — veja a lista.";
+        var sd = String(res.semDesfazer || "");
+        msg += sd ? " " + sd.charAt(0).toUpperCase() + sd.slice(1) : " Para voltar: Desfazer edição da IA, na barra do orçamento.";
+        UI.toast(msg, (nao.length || res.semDesfazer) ? "info" : "ok");
+      }
+      if (!nao.length && !res.semDesfazer) return;
+      UI.modal("Editar com IA — aplicado com ressalvas",
+        '<p style="margin-top:0">' + Util.esc(res.n + " mudança(s) aplicada(s).") + '</p>' +
+        (res.semDesfazer ? '<p style="color:#b91c1c">' + Util.esc(res.semDesfazer) + '</p>' : '') +
+        (nao.length ? '<p><b>Não entraram:</b></p><ul style="margin:6px 0 0 18px;font-size:12.5px">' +
+          nao.map(function (x) { return "<li><b>" + Util.esc((x && x.rotulo) || "mudança") + "</b> — " + Util.esc(x && x.motivo) + "</li>"; }).join("") + "</ul>" : ""),
+        [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+    },
+    /* ⚠ APROVADO → [Criar revisão e aplicar nela] (crítica ia-seguranca, item
+       15). O criarRevisao de sempre abre a revisão e troca o orcAtual — o
+       carimbo descartaria a resposta como "você saiu do orçamento" — e pode
+       recusar pelo limite do plano, levando junto o diff (já pago). Aqui: o
+       limite ANTES; a revisão por Orcamento.novaRevisao; as ops REVALIDADAS
+       contra ela; aplica; grava; e SÓ ENTÃO abre. Recusou em qualquer ponto:
+       nada foi criado e o diff continua aberto com o recado. */
+    iaEditarRevisao: function () {
+      var st = this._iaEd, o = this.orcAtual, m;
+      if (!st || st.fase !== "diff" || !st.res) return;
+      if (!o || o.id !== st.orcId) { UI.fecharModal(); this._iaDescartar(st, "Você saiu do orçamento que fez o pedido — nada foi aplicado."); return; }
+      var marcIdx = [];
+      Object.keys(st.marcados || {}).forEach(function (k) { if (st.marcados[k]) marcIdx.push(Number(k)); });
+      if (!marcIdx.length) { this._iaRecadoDiff("Nenhuma mudança marcada — marque as que quer levar para a revisão."); return; }
+      var cd = this._iaConferirDisco(st.carimbo, this._iaLerDisco(st.carimbo), o.atualizadoEm);
+      if (!cd.ok) { this._iaAvisoDiff(cd.recado); return; }
+      if (this._trialBloqueado()) { this._avisoTrial(); return; }
+      var eid = Auth.empresaId();
+      try {
+        var lim = Auth.limite("limiteOrcamentos"), qtd = Store.listarOrcamentos(eid).length;
+        if (lim && qtd >= lim) {
+          m = "Limite de " + lim + " orçamento(s) do seu plano atingido — a revisão é um orçamento novo. Nada foi criado; as mudanças continuam aqui.";
+          this._iaAvisoDiff(m); return;
+        }
+      } catch (eL) {}
+      var rev = Orcamento.novaRevisao(o, Util.agoraISO());
+      if (!rev) { m = "Não consegui montar a revisão deste orçamento — nada foi criado."; this._iaAvisoDiff(m); return; }
+      /* ⚠ REVALIDA CONTRA A REVISÃO: o retrato é do aprovado, e o validar recusa
+         retrato de outro orçamento. A revisão preserva os ids de etapa e de
+         serviço (novaRevisao), então o MESMO retrato com o id dela confere cada
+         ponto contra o documento que vai ser gravado. */
+      var S2 = JSON.parse(JSON.stringify(st.carimbo.snapshot));
+      S2.orcId = rev.id;
+      var res2 = IAEdit.validar(rev, st.ops, S2, {});
+      var fc = IAEdit.fechoDesmarcar(res2.aceitas, marcIdx), ok2 = {};
+      fc.marcados.forEach(function (i) { ok2[i] = true; });
+      var aceitas2 = res2.aceitas.filter(function (a) { return ok2[a.idx]; });
+      var perdidas = marcIdx.filter(function (i) { return !ok2[i]; }).map(function (i) {
+        var rc = res2.recusadas.filter(function (x) { return x.idx === i; })[0], ac = st.res.aceitas.filter(function (x) { return x.idx === i; })[0];
+        return { rotulo: ac ? ac.rotulo : "mudança " + (i + 1), motivo: rc ? rc.motivo : "depende de uma criação que não passou na revisão" };
+      });
+      if (!aceitas2.length) {
+        m = "Na revisão, nenhuma das mudanças marcadas passou de novo pela conferência — nada foi criado. " + this._iaListaMotivos(perdidas);
+        this._iaAvisoDiff(m); return;
+      }
+      var res3 = IAEdit.aplicar(rev, aceitas2, this._iaCarimbo(st), {});
+      if (res3.erro || !res3.n) {
+        m = "Nada foi aplicado na revisão (" + (res3.erro || this._iaListaMotivos(res3.naoAplicadas) || "nenhuma passou") + ") — nada foi criado.";
+        this._iaAvisoDiff(m); return;
+      }
+      try { this._materializarSeExec(rev); } catch (eM) {}   // a revisão nasce com o gravado igual ao prazo que ela mostra (como no criarRevisao)
+      if (!Store.salvarOrcamento(eid, rev)) {
+        m = "A revisão NÃO foi gravada — o armazenamento deste aparelho recusou (cheio?). Nada foi criado; o aprovado continua intacto.";
+        this._iaAvisoDiff(m); return;
+      }
+      this._avisouTravado = null;
+      this._iaEd = null;
+      UI.fecharModal();
+      this.abrirOrcamento(rev.id);
+      try { this.backupAuto({ urgente: true }); } catch (eB) {}
+      res3.naoAplicadas = perdidas.concat(Util.arr(res3.naoAplicadas));
+      UI.toast("Revisão " + rev.numero + " criada a partir do aprovado " + (o.numero || "") + ", com " + res3.n + " mudança(s) da IA — o aprovado continua intacto. Para voltar: Desfazer edição da IA.", "ok");
+      this._iaResultado(res3, "", true);
+    },
+
+    /* ---------------- desfazer (1 nível) ---------------- */
+
+    /* o desfazer do ORÇAMENTO ainda vale? ed = o retrato em memória; disco =
+       _iaLerDisco (null = ilegível); memoriaEm = atualizadoEm do aberto. Vale
+       só se o gravado é o MESMO que está na tela e carrega o MESMO retrato.
+       Cada recusa diz o que aconteceu e onde está a versão certa. */
+    _iaDesfazerVale: function (ed, disco, memoriaEm) {
+      var nada = " Nada foi desfeito.";
+      if (disco === null || disco === undefined) return { ok: false, recado: "Não consegui ler este orçamento no armazenamento deste aparelho — recarregue o app." + nada };
+      if (!disco.existe) return { ok: false, recado: "Este orçamento não está mais neste aparelho (apagado em outro?) — volte à lista de orçamentos." + nada };
+      if (String(disco.atualizadoEm || "") !== String(memoriaEm || "")) {
+        return { ok: false, recado: "Este orçamento mudou em outro aparelho depois da edição da IA — o desfazer não vale mais (voltaria por cima do que foi feito lá). Reabra o orçamento para ver a versão atual." + nada };
+      }
+      if (!disco.iaEm || !ed || String(disco.iaEm) !== String(ed.em || "")) {
+        return { ok: false, recado: "A edição da IA já não está no orçamento gravado (houve edição depois dela) — o desfazer não vale mais. Reabra o orçamento." + nada };
+      }
+      return { ok: true };
+    },
+
+    /* onde está o desfazer que vale para o orçamento aberto: no ORÇAMENTO
+       (destravado), ou no PLANO da obra (aprovado com obra, ou plano escolhido) */
+    _iaDesfazerInfo: function (orc) {
+      if (!orc) return null;
+      var trav = !!(typeof Orcamento !== "undefined" && Orcamento.travadoPorAprovacao && Orcamento.travadoPorAprovacao(orc));
+      /* no aprovado o desfazer do ORÇAMENTO recusa sempre ("o aprovado não se
+         desfaz") — botão que sempre recusa é porta falsa; não aparece */
+      if (!trav && orc.iaEdicao && Array.isArray(orc.iaEdicao.inversos)) {
+        /* ⚠ O DESFAZER CONFERE O DISCO (revisão 4B, achado alto). A nuvem grava
+           o merge no Store e NÃO troca o orcAtual aberto. Sem esta conferência
+           o desfazer revertia a memória velha e a gravava por cima do que a
+           colega fez no outro aparelho — cujo persistir humano já tinha
+           apagado o retrato lá (medido: a garantia dela voltou a "Conforme a
+           lei", e o toast disse "desfeita"). Mesma régua do Aplicar. */
+        var v = this._iaDesfazerVale(orc.iaEdicao, this._iaLerDisco({ orcId: orc.id }), orc.atualizadoEm);
+        return { ed: orc.iaEdicao, destino: "orcamento", vale: v.ok, recado: v.recado || "" };
+      }
+      var ep = !!(this._cronoEditaPlano && typeof this._cronoEditaPlano === "object" && this._cronoEditaPlano[orc.id] === true);
+      if ((!trav && !ep) || orc !== this.orcAtual) return null;
+      var a = null;
+      try { a = this._cronoAlvo(); } catch (eA) { a = null; }
+      /* no PLANO a conferência já está feita: o _cronoAlvo relê o registro do
+         plano do Store a cada chamada, então o retrato lido aqui É o do disco
+         (a gravação humana do plano no outro aparelho o apagou lá) */
+      if (a && a.tipo === "plano" && a.plano && a.plano.iaEdicao && Array.isArray(a.plano.iaEdicao.inversos)) return { ed: a.plano.iaEdicao, destino: "plano", obra: a.obra || null, vale: true };
+      return null;
+    },
+    _iaDesfazerBotao: function (orc) {
+      var info = null;
+      try { info = this._iaDesfazerInfo(orc); } catch (eI) { info = null; }
+      if (!info || info.vale === false) return "";   // porta que o disco já fechou não aparece
+      var rot = this._iaDesfazerRotulo(info.ed) + (info.destino === "plano" ? " (plano de execução da obra)" : "");
+      return '<button class="btn sm" data-acao="ia-desfazer" title="' + Util.esc("Desfazer a " + rot + " — volta o que ainda está como a IA deixou; o que você mexeu depois fica") + '">' +
+        '↶ Desfazer edição da IA <span class="muted" style="font-size:11px;font-weight:400">· ' + Util.esc(rot.replace(/^edição da IA /, "")) + '</span></button>';
+    },
+    iaDesfazer: function () {
+      var o = this.orcAtual, self = this;
+      if (!o || typeof IAEdit === "undefined") return;
+      var info = this._iaDesfazerInfo(o);
+      if (!info) { UI.toast("Não há edição da IA para desfazer neste orçamento — o desfazer some na sua primeira edição depois da IA, na aprovação e ao gerar a proposta.", "info"); return; }
+      if (info.vale === false) { this.render(); UI.toast(info.recado, "erro"); return; }
+      var rot = this._iaDesfazerRotulo(info.ed), vistos = {}, itens = [];
+      info.ed.inversos.forEach(function (inv) { var r = String((inv && inv.r) || ""); if (r && !vistos[r]) { vistos[r] = 1; itens.push(r); } });
+      UI.modal("Desfazer edição da IA",
+        '<p style="margin-top:0">' + Util.esc(rot.charAt(0).toUpperCase() + rot.slice(1) + (info.destino === "plano" ? ", no plano de execução da obra" : "") + ".") + '</p>' +
+        '<p class="muted" style="font-size:12.5px">Volta só o que ainda está como a IA deixou. O que você mexeu depois fica como está, e o recado do fim diz o quê.</p>' +
+        (itens.length ? '<ul style="margin:6px 0 0 18px;font-size:12.5px">' + itens.slice(0, 15).map(function (r) { return "<li>" + Util.esc(r) + "</li>"; }).join("") +
+          (itens.length > 15 ? "<li>" + Util.esc("e mais " + (itens.length - 15)) + "</li>" : "") + "</ul>" : ""),
+        [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+         { texto: "Desfazer", classe: "danger", onClick: function () { self._iaDesfazerAgora(); } }]);
+    },
+    _iaDesfazerAgora: function () {
+      var o = this.orcAtual;
+      if (!o || typeof IAEdit === "undefined") return;
+      var info = this._iaDesfazerInfo(o);
+      if (!info) { UI.fecharModal(); UI.toast("A edição da IA já não está disponível para desfazer — nada mudou.", "info"); return; }
+      /* ⚠ a conferência do disco vale NA HORA de gravar (a nuvem pode ter
+         chegado entre o botão e a confirmação) */
+      if (info.vale === false) { UI.fecharModal(); this.render(); UI.toast(info.recado, "erro"); return; }
+      var por = this._cronoPor(), r, bk, a = null;
+      if (info.destino === "plano") {
+        try { a = this._cronoAlvo(); } catch (eA) { a = null; }
+        if (!a || a.tipo !== "plano" || !a.plano) { UI.fecharModal(); UI.toast("O plano de execução da obra não está aberto nesta aba — nada foi desfeito.", "erro"); return; }
+        bk = JSON.stringify(a.plano);
+        r = IAEdit.desfazer(a.orc, { cronAlvo: a.cron, destinoDesfazer: a.plano, por: por });
+      } else {
+        bk = JSON.stringify(o);
+        r = IAEdit.desfazer(o, { por: por });
+      }
+      if (r.erro) { UI.fecharModal(); UI.toast("Nada foi desfeito: " + r.erro + ".", "erro"); return; }
+      /* ⚠ fecha a confirmação ANTES de gravar: se o armazenamento recusar, o
+         persistir abre o modal de backup (administrador) — fechar depois o
+         derrubava junto, levando a porta que o aviso manda usar */
+      UI.fecharModal();
+      var salvou = a ? a.salvar({ daIA: true }) : this.persistir({ daIA: true });
+      if (!salvou) {
+        this._iaRestaurar(a ? a.plano : o, bk);
+        this.render();
+        UI.toast("O desfazer NÃO foi gravado (veja o aviso) — " + (a ? "o plano de execução" : "o orçamento") + " ficou como estava, e o botão Desfazer continua.", "erro");
+        return;
+      }
+      UI.fecharModal(); this.render();
+      var nao = Util.arr(r.naoRevertidas);
+      if (!nao.length) { UI.toast("Edição da IA desfeita: " + r.revertidas + " mudança(s) revertida(s).", "ok"); return; }
+      UI.toast((r.revertidas ? r.revertidas + " mudança(s) revertida(s); " : "Nada voltou: ") + nao.length + " mudança(s) ficou(aram) como está(ão), porque foram mexidas depois da IA — veja a lista.", r.revertidas ? "info" : "erro");
+      UI.modal("Edição da IA desfeita — com ressalvas",
+        '<p style="margin-top:0">' + Util.esc(r.revertidas + " mudança(s) voltaram. Estas ficaram como estão:") + '</p><ul style="margin:6px 0 0 18px;font-size:12.5px">' +
+        nao.map(function (x) { return "<li><b>" + Util.esc((x && x.rotulo) || "mudança") + "</b> — " + Util.esc(x && x.motivo) + "</li>"; }).join("") + "</ul>",
+        [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+    },
+    /* ⚠ GERAR A PROPOSTA APAGA O DESFAZER (crítica ia-seguranca, item 13): o
+       documento foi ao cliente com o que está na tela; um clique depois
+       reverteria o que o cliente leu.
+       ⚠ E NÃO GRAVA O ORÇAMENTO ABERTO (revisão 4B). A 1ª versão gravava o
+       orcAtual inteiro só para tirar o retrato — e com a memória velha (a
+       nuvem grava no Store e não troca o aberto), IMPRIMIR a proposta apagava
+       a garantia que a colega tinha acabado de mudar no outro aparelho
+       (medido). Agora o retrato sai do REGISTRO DO DISCO, e só quando ele é o
+       mesmo que está na tela (mesmo atualizadoEm, mesmo retrato); senão sai
+       só da memória — e a conferência do desfazer já recusa aquele disco. O
+       aprovado não é gravado (e nele o desfazer do orçamento nem aparece).
+       ⚠ E REDESENHA: sem isso o [Desfazer edição da IA] ficava na barra até o
+       próximo render, e o clique nele dizia "não há edição" (porta falsa). */
+    _iaLimparNaProposta: function () {
+      var o = this.orcAtual;
+      if (!o || !o.iaEdicao || typeof IAEdit === "undefined") return;
+      var ed = o.iaEdicao;
+      IAEdit.limparDesfazer(o);
+      if (!(Orcamento.travadoPorAprovacao && Orcamento.travadoPorAprovacao(o))) {
+        var eid = null, d = null;
+        try { eid = Auth.empresaId(); d = Store.obterOrcamento(eid, o.id); } catch (eD) { d = null; }
+        if (d && d.iaEdicao && d.iaEdicao.em === ed.em && String(d.atualizadoEm || "") === String(o.atualizadoEm || "")) {
+          IAEdit.limparDesfazer(d);
+          var g = null;
+          try { g = Store.salvarOrcamento(eid, d); } catch (eS) { g = null; }
+          if (g) o.atualizadoEm = d.atualizadoEm;   // memória e disco seguem com o mesmo carimbo
+        }
+      }
+      try { this.render(); } catch (eR) {}
     },
 
     /* ⚠ carregarSetop e carregarGoinfra foram REMOVIDOS na v1.1.204.
@@ -4497,6 +6795,7 @@
             obra: (UI.el("co-obra") || {}).value || "",
             semQuantidades: !!((UI.el("co-semqtd") || {}).checked)
           });
+          self._materializarSeExec(novo);   // sem quantidades o vão muda: o gravado acompanha
           Store.salvarOrcamento(eid, novo);
           UI.fecharModal();
           self.orcAtual = novo; self.tela = "editor"; self.aba = "planilha";
@@ -4759,14 +7058,23 @@
         '<div class="field"><label>Garantia</label><textarea id="ed-gar" rows="2">' + Util.esc(c.garantia) + '</textarea></div>' +
         '<div class="row"><div class="field"><label>Incluso (1 por linha)</label><textarea id="ed-inc" rows="4">' + Util.esc(c.incluso) + '</textarea></div>' +
         '<div class="field"><label>Não incluso (1 por linha)</label><textarea id="ed-exc" rows="4">' + Util.esc(c.excluso) + '</textarea></div></div>' +
+        /* os 4 textos que a proposta imprimia FIXOS (Fase 4) — todo campo que a
+           IA edita é editável à mão. ⚠ VAZIO = o texto de sempre, e o
+           placeholder mostra qual é; salvar o próprio padrão volta a vazio
+           (Orcamento.normalizarTextoComercial), senão abrir e salvar este modal
+           trocaria o parágrafo por lista na proposta de todo orçamento antigo. */
+        '<div class="row">' + this._edTextoPadrao("ed-prem", "Premissas (1 por linha — vazio = o texto padrão)", c, "premissas") +
+          this._edTextoPadrao("ed-met", "Metodologia (vazio = o texto padrão)", c, "metodologia") + '</div>' +
+        '<div class="row">' + this._edTextoPadrao("ed-respcda", "Responsabilidades da contratada (1 por linha)", c, "respContratada") +
+          this._edTextoPadrao("ed-respcte", "Responsabilidades do contratante (1 por linha)", c, "respContratante") + '</div>' +
         '<div class="field"><label>Link da planilha desta proposta (URL do Excel — vira o botão "Abrir planilha" no PDF)</label><input id="ed-planilha" value="' + Util.esc(c.linkPlanilha || "") + '" placeholder="https://…/proposta.xlsx"></div>' +
         /* ⚠ ISTO NÃO É ENFEITE: pagamento, garantia, incluso e não incluso são
            os MESMOS textos em toda proposta da empresa, e eram reescritos (ou
            esquecidos) a cada orçamento. Guardar uma vez e aplicar é o que faz
            a cláusula ser igual no documento de todo mundo. */
         '<div class="flex" style="gap:8px;margin-top:4px">'
-        + '<button class="btn sm ghost" data-acao="comercial-salvar-padrao" type="button" title="Guarda pagamento, prazo, validade, garantia, incluso e não incluso como o padrão da sua empresa">Salvar como padrão da empresa</button>'
-        + (App._comercialPadrao() ? '<button class="btn sm ghost" data-acao="comercial-usar-padrao" type="button" title="Preenche os campos acima com o padrão guardado">Usar o padrão da empresa</button>' : "")
+        + '<button class="btn sm ghost" data-acao="comercial-salvar-padrao" type="button" title="Guarda pagamento, prazo, validade, garantia, incluso, não incluso, premissas, metodologia e as responsabilidades como o padrão da sua empresa">Salvar como padrão da empresa</button>'
+        + (App._comercialPadrao() ? App._comercialUsarPadraoBotao() : "")
         + "</div>",
         [
           { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
@@ -4784,12 +7092,28 @@
             c.incluso = (UI.el("ed-inc") || {}).value || "";
             c.excluso = (UI.el("ed-exc") || {}).value || "";
             c.linkPlanilha = String((UI.el("ed-planilha") || {}).value || "").trim();
+            /* ⚠ NORMALIZADO: o texto padrão deixado no campo volta a "" (vazio =
+               o de sempre). E campo que não está na tela não é tocado — um
+               modal de versão antiga não apaga o que a IA ou a pessoa gravou. */
+            for (var kT in self._TEXTOS_PROPOSTA_ED) {
+              if (!Object.prototype.hasOwnProperty.call(self._TEXTOS_PROPOSTA_ED, kT)) continue;
+              var elT = UI.el(self._TEXTOS_PROPOSTA_ED[kT]);
+              if (elT) c[kT] = Orcamento.normalizarTextoComercial(kT, elT.value);
+            }
             self._edSalvarBase(o, function () {
               self.persistir(); UI.fecharModal(); self.render(); UI.toast("Dados salvos.", "ok");
             });
           } }
         ]);
       this._edBindBase(o);
+    },
+
+    /* um textarea de texto da proposta com o padrão do sistema no placeholder
+       (as quebras de linha como &#10;, que o placeholder mostra em linhas) */
+    _edTextoPadrao: function (id, rotulo, c, campo) {
+      var pad = (Orcamento.TEXTOS_PADRAO_PROPOSTA && Orcamento.TEXTOS_PADRAO_PROPOSTA[campo]) || "";
+      return '<div class="field"><label for="' + id + '">' + Util.esc(rotulo) + '</label><textarea id="' + id + '" rows="4" placeholder="' +
+        Util.esc(pad).replace(/\n/g, "&#10;") + '">' + Util.esc(c[campo] || "") + '</textarea></div>';
     },
 
     addEtapa: function () {
@@ -7003,7 +9327,7 @@
                   afetados.length + " orçamento(s). Atualizar o preço desses itens agora?\n\n" +
                   "OK = atualiza para " + Util.fmtMoeda(item.custoUnitario) + "/" + item.unidade +
                   " · Cancelar = mantém como está")) {
-                afetados.forEach(function (a) { Store.salvarOrcamento(eidRp, a.orc); });
+                self._salvarOrcsAfetados(eidRp, afetados);   // ⚠ materializa o modo executivo antes (ver _materializarSeExec)
                 UI.toast(totRp + " item(ns) reprecificado(s) em " + afetados.length + " orçamento(s).", "ok");
                 if (afetados.some(function (a) { return a.mesmoAberto; })) self.render();
               } else {
@@ -7383,7 +9707,7 @@
         return;
       }
       atualizadas.forEach(function (c) { self._propriaGravar(c, null, null); });
-      afetados.forEach(function (a) { Store.salvarOrcamento(eid, a.orc); });
+      this._salvarOrcsAfetados(eid, afetados);   // ⚠ materializa o modo executivo antes (ver _materializarSeExec)
       if (afetados.some(function (a) { return a.mesmoAberto; })) this.render();
       UI.toast("Atualizado: " + (atualizadas.length ? atualizadas.length + " composição(ões)" : "") + (atualizadas.length && totItens ? " e " : "") +
         (totItens ? totItens + " item(ns) de orçamento" : "") + ".", "ok");
@@ -8114,8 +10438,11 @@
       return lotes.reduce(function (p, lote) {
         return p.then(function () {
           if (res.limite) return; // já bateu o limite: para
+          /* ⚠ SEM CUSTO no payload (crítica ia-seguranca, item 17): o provedor
+             é externo e escolher o código não precisa do preço. O servidor já
+             descarta o custo, mas até lá ele saía do aparelho. */
           var payload = lote.map(function (l) {
-            return { descricao: l.textoOriginal, unidade: l.unidade || "", candidatos: l.candidatos.slice(0, 2).map(function (c) { return { codigo: c.item.codigo, descricao: String(c.item.descricao || "").slice(0, 70), unidade: c.item.unidade, custo: c.item.custoUnitario }; }) };
+            return { descricao: l.textoOriginal, unidade: l.unidade || "", candidatos: l.candidatos.slice(0, 2).map(function (c) { return { codigo: c.item.codigo, descricao: String(c.item.descricao || "").slice(0, 70), unidade: c.item.unidade }; }) };
           });
           return fetch(back + "/ia/casar", { method: "POST", headers: { "Content-Type": "application/json", "x-licenca": (typeof Licenca !== "undefined" ? Licenca.chave() : "") }, body: JSON.stringify({ itens: payload }) })
             .then(function (r) { return r.json().then(function (j) { return { status: r.status, j: j }; }, function () { return { status: r.status, j: {} }; }); })
@@ -8238,6 +10565,7 @@
 
     /* o documento de sempre — o caminho que existia antes dos modelos */
     _propostaClassica: function () {
+      this._iaLimparNaProposta();   // o documento vai ao cliente: o desfazer da IA não atravessa
       this._abrirPrint("Proposta — " + this.orcAtual.numero, Proposta.gerarHTML(this.orcAtual, Auth.usuario()), "nota");
     },
 
@@ -8247,6 +10575,7 @@
       var raw = null;
       try { raw = Store.obter(Auth.empresaId(), "prop_modelos", modeloId); } catch (e) {}
       if (!raw) { UI.toast("Modelo não encontrado.", "erro"); return; }
+      this._iaLimparNaProposta();   // o documento vai ao cliente: o desfazer da IA não atravessa
       var m = PropTpl.modelo(raw);
       var temEmp = typeof Empresa !== "undefined";
       var c = orc.comercial || {};
@@ -8482,6 +10811,7 @@
       }
       orc.atualizadoEm = Util.agoraISO();
       orc.restauradoEm = Util.agoraISO();       // rastro: este orçamento voltou de um Excel
+      this._materializarSeExec(orc);             // gravação NOVA deste aparelho (não é dado recebido da nuvem)
       try {
         Store.salvarOrcamento(eid, orc);
       } catch (eS) { UI.toast("Falhou ao gravar o orçamento restaurado: " + ((eS && eS.message) || eS), "erro"); return; }
@@ -9042,8 +11372,19 @@
       try { this.abrirLicenca(); } catch (e) {}
     },
 
-    persistir: function () {
-      if (!this.orcAtual) return;
+    /* Devolve true se GRAVOU (e false quando a licença, a trava do aprovado ou
+       o armazenamento recusaram) — para quem chama não anunciar "aplicado" de
+       uma edição que não foi a lugar nenhum. */
+    /* opts.cronoAntes (opcional): o resultado de Cronograma.estimar desta tela
+       ANTES da edição — o handler do cronograma mede e passa, para o recado do
+       modo executivo dizer o antes → depois verdadeiro (ver _cronoMaterializar). */
+    persistir: function (opts) {
+      if (!this.orcAtual) return false;
+      /* ⚠ o clone do PLANO DE EXECUÇÃO da obra (CronoBase.orcComPlano, marca
+         `_planoDaObra`) NUNCA vira orçamento: gravá-lo poria o plano da obra
+         dentro da proposta aprovada. Nenhum caminho deve trazê-lo até aqui —
+         esta é a última porta, e ela recusa dizendo o que aconteceu. */
+      if (this.orcAtual._planoDaObra) { UI.toast("Isto é o plano de execução da obra, não o orçamento — nada foi gravado no orçamento. Recarregue a tela.", "erro"); return false; }
       if (this._trialBloqueado()) {
         /* ⚠ quem está SUSPENSO não está em "modo demonstração": esse texto
            mandaria um cliente pagante ativar uma licença que ele já tem */
@@ -9053,7 +11394,7 @@
           if (sSus && sSus.suspensa) this._avisoTrial();
           else UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("cadeado", 15) : "") + " Modo demonstração — para salvar, ative sua licença (🔑).", "erro");
         }
-        return;
+        return false;
       }
       /* ⚠ APROVADO NÃO GRAVA (fase 4). O aprovado é o preço que foi ao cliente
          e virou contrato: editar por baixo faz o documento entregue e a tela
@@ -9075,8 +11416,18 @@
                 onClick: function () { UI.fecharModal(); self0.criarRevisao(alvo); } }
             ]);
         }
-        return;
+        return false;
       }
+      /* ⚠ O DESFAZER DA IA VALE ATÉ A PRIMEIRA EDIÇÃO HUMANA (crítica
+         ia-seguranca, item 13): um retrato que atravessa edição de gente,
+         aparelho e semanas vira um clique que reverte o que ninguém lembra. Só
+         a tela da IA salva com {daIA:true}. Depois das travas: o aprovado não
+         é tocado nem em memória. */
+      if (!(opts && opts.daIA) && typeof IAEdit !== "undefined") IAEdit.limparDesfazer(this.orcAtual);
+      /* ⚠ ORDEM: materializar DEPOIS das duas travas (o aprovado não é tocado
+         nem em memória) e ANTES do sincronizarPrazo — o nº de meses do
+         desembolso tem de sair da duração que vai ser gravada, não da de antes. */
+      this._cronoMaterializar(this.orcAtual, opts && opts.cronoAntes);
       try { Orcamento.sincronizarPrazo(this.orcAtual); } catch (e) {} // FASE 1.4: prazo segue o agente (depois do gate de licença)
       /* FASE 3 — ESFORÇO, NÃO CALENDÁRIO. `criadoEm → atualizadoEm` conta fim
          de semana e orçamento parado como se fosse trabalho. Marcar o DIA a
@@ -9096,8 +11447,11 @@
         UI.toast(_adm
           ? "Não foi possível salvar — armazenamento cheio. Exporte um backup (💾) e remova a base SINAPI grande do navegador."
           : "Não foi possível salvar — armazenamento deste aparelho cheio. Avise o administrador da conta.", "erro");
-        if (_adm) { try { this.abrirBackup(); } catch (e) {} }
+        /* {semBackupModal}: a tela da IA mantém o diff aberto e diz o recado lá
+           (o modal de backup por cima levava junto a resposta já paga) */
+        if (_adm && !(opts && opts.semBackupModal)) { try { this.abrirBackup(); } catch (e) {} }
       } else if (ok) { this._avisouQuota = false; try { this.backupAuto(); } catch (e) {} }
+      return !!ok;
     }
   };
 

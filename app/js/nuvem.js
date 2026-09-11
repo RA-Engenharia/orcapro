@@ -150,6 +150,20 @@
     "fornecedores", "familias", "centrocusto",
     // compras e planejamento (têm obraId → entram na cascata da obra)
     "cotacoes", "lp_tarefas", "tarefas", "bim_edicoes",
+    /* ⚠ PLANEJAMENTO DA OBRA (cronograma executivo, js/cronobase.js): as
+     * linhas de base congeladas e o plano de execução. Mesmo papel de
+     * `lp_tarefas` logo acima — TEM obraId, então entra na cascata da obra
+     * (Gestao._ENT_DA_OBRA) e NUNCA em Store._IMUNES_CASCATA.
+     * ⚠ Sem esta linha a linha de base congelada no escritório não chega ao
+     *   celular da obra, não entra no backup (App._dumpGestao deriva a lista
+     *   DESTE array) e a exclusão da obra não deixa lápide que a alcance.
+     * ⚠ No disco é LISTA, inclusive o plano (registro único por obra, com id
+     *   próprio): objeto aqui vira [] no primeiro merge e o sync grava o
+     *   vazio por cima — memória da forma no disco, três vezes paga.
+     * ⚠ É a lista que MAIS pesa por registro (uma base cheia chega a ~25 KB):
+     *   o js/cronobase.js mede em bytes antes de gravar e resume as versões
+     *   antigas para a lista nunca passar de 900 KB. */
+    "crono_obra",
     // folha de diaristas e ponto: DINHEIRO e JORNADA DE PESSOA (imunes à cascata)
     "folha", "fs_lancamentos", "fs_pagamentos", "ponto",
     // movimento de frota: a frota já era imune; o movimento dela também é
@@ -353,6 +367,9 @@
     // o vencedor guarda a cópia perdedora em _conflitoDe (até ~50KB; acima
     // disso, só metadados) e o contador alimenta o aviso pós-sync.
     _conflitosUltimoMerge: 0,
+    /* obras cujo planejamento (`crono_obra`) teve conflito no último merge —
+       recado próprio, porque ali a versão perdedora NÃO é guardada (ver _merge) */
+    _conflitosCrono: [],
 
     /* ===== v1.1.232 — MARCAS DA ÚLTIMA SINCRONIZAÇÃO =====
        O merge antigo tratava QUALQUER diferença de atualizadoEm como "editado
@@ -520,15 +537,32 @@
         var marca = String(marcas[o.id] || "");
         if (marca && (tl === marca || tc === marca)) { byId[o.id] = venc; return; }
         try {
-          /* cópia SEM o _conflitoDe do perdedor: aninhar a cadeia inteira fazia
-             o registro crescer a cada ida-e-volta (provado em Node: 2ª rodada
-             já carregava 3 versões dentro de si) */
-          var raso = perd;
-          if (perd && perd._conflitoDe) { raso = Object.assign({}, perd); delete raso._conflitoDe; }
-          var json = JSON.stringify(raso);
-          venc._conflitoDe = (json.length <= 51200)
-            ? { em: perd.atualizadoEm || "", quando: new Date().toISOString(), copia: raso }
-            : { em: perd.atualizadoEm || "", quando: new Date().toISOString(), resumo: String(perd.nome || perd.numero || perd.id) };
+          if (ent === "crono_obra") {
+            /* ⚠ O PLANEJAMENTO DA OBRA NÃO GUARDA A CÓPIA DO PERDEDOR (revisão 3
+               da Fase 3, lente sync). A entidade inteira — planos e linhas de
+               base de TODAS as obras — mora num documento só, que o CronoBase
+               mantém abaixo de 900 KB ANTES do sync; a cópia (até 50 KB por
+               registro) entrava DEPOIS, sem passar pela porta: três conflitos
+               de planos cheios levaram o documento a 1.033.669 B e seis o
+               passavam de 1 MiB — o Firestore recusa e o planejamento de todas
+               as obras para de sincronizar. Fica o resumo (quem perdeu e
+               quando) e o recado próprio abaixo, que NÃO diz "não se perdeu
+               nada": aqui se perdeu, e a pessoa precisa conferir o plano. */
+            venc._conflitoDe = { em: perd.atualizadoEm || "", quando: new Date().toISOString(),
+              resumo: String(perd.tipo || "") + " da obra " + String(perd.obraId || ""), obraId: String(perd.obraId || "") };
+            if (!self._conflitosCrono) self._conflitosCrono = [];
+            self._conflitosCrono.push(String(perd.obraId || perd.id));
+          } else {
+            /* cópia SEM o _conflitoDe do perdedor: aninhar a cadeia inteira fazia
+               o registro crescer a cada ida-e-volta (provado em Node: 2ª rodada
+               já carregava 3 versões dentro de si) */
+            var raso = perd;
+            if (perd && perd._conflitoDe) { raso = Object.assign({}, perd); delete raso._conflitoDe; }
+            var json = JSON.stringify(raso);
+            venc._conflitoDe = (json.length <= 51200)
+              ? { em: perd.atualizadoEm || "", quando: new Date().toISOString(), copia: raso }
+              : { em: perd.atualizadoEm || "", quando: new Date().toISOString(), resumo: String(perd.nome || perd.numero || perd.id) };
+          }
           self._conflitosUltimoMerge++;
         } catch (e) {}
         byId[o.id] = venc;
@@ -684,6 +718,7 @@
     _sincronizarAgora: function (empresaId) {
       var self = this;
       self._conflitosUltimoMerge = 0;
+      self._conflitosCrono = [];
       var falhou = 0, tentadas = 0;
       var uma = function (ent) {
         tentadas++;
@@ -711,6 +746,10 @@
              não trazia dado nenhum — o começo do laço. */
           var ck = empresaId + "|" + ent;
           if (carga && self._ultimoEnviado[ck] === carga) return true;
+          /* ⚠ o MESMO aviso de tamanho do push (revisão 3, lente sync): o que
+             o merge grava e sobe aqui nunca passava por ele — o documento
+             podia crescer por conflito até o teto do Firestore sem nenhum recado */
+          self._avisarTamanho(ent, carga);
           self._ultimoEnviado[ck] = carga;
           return self._doc(ent).set({ v: merged, em: Date.now() }).then(function () { return true; });
         }).catch(function (e) {
@@ -727,10 +766,22 @@
         Store.podarLapidesDe(empresaId); // o teto só valia nas exclusões locais
         return Promise.all(ENTIDADES.filter(function (e) { return e !== "_lapides"; }).map(uma));
       }).then(function () {
-        if (self._conflitosUltimoMerge > 0) {
+        /* ⚠ o planejamento da obra tem recado PRÓPRIO: lá a versão perdedora
+           não é guardada (ver _merge), e "não se perdeu nada" seria recado que
+           mente — a pessoa precisa conferir o plano das obras que vieram aqui */
+        var nCrono = (self._conflitosCrono || []).length;
+        var nGeral = self._conflitosUltimoMerge - nCrono;
+        if (nGeral > 0) {
           try {
-            if (global.UI && global.UI.toast) global.UI.toast("⚠ " + self._conflitosUltimoMerge + " registro(s) editados em 2 aparelhos ao mesmo tempo — a versão mais recente venceu e a anterior ficou guardada dentro do registro (não se perdeu nada).", "erro");
+            if (global.UI && global.UI.toast) global.UI.toast("⚠ " + nGeral + " registro(s) editados em 2 aparelhos ao mesmo tempo — a versão mais recente venceu e a anterior ficou guardada dentro do registro (não se perdeu nada).", "erro");
           } catch (e) {}
+        }
+        if (nCrono > 0) {
+          var obrasC = {}, qtdObras = 0;
+          self._conflitosCrono.forEach(function (x) { if (!obrasC[x]) { obrasC[x] = 1; qtdObras++; } });
+          try {
+            if (global.UI && global.UI.toast) global.UI.toast("⚠ O cronograma de " + qtdObras + " obra(s) foi editado em 2 aparelhos ao mesmo tempo — valeu a versão gravada por último, e a do outro aparelho NÃO foi guardada (o plano de execução da obra é um registro só). Abra o cronograma dessas obras e confira o plano.", "erro");
+          } catch (e2) {}
         }
         /* Devolve FALSO quando tudo falhou. Antes devolvia `true` mesmo com as
            32 entidades reprovadas, e quem chamou anunciava "☁ Sincronizado!"
@@ -934,6 +985,36 @@
           try { carga = JSON.stringify(v); } catch (e) { carga = ""; }
           var chave = empresaId + "|" + ent;
           if (carga && self._ultimoEnviado[chave] === carga) return;   // nada mudou: não escreve
+          self._avisarTamanho(ent, carga);
+          self._ultimoEnviado[chave] = carga;
+          self._doc(ent).set({ v: v, em: Date.now() }).then(function () {
+            self._marcarSync(empresaId, ent, v); // o que subiu vira a base comum
+          }).catch(function (e) {
+            /* a escrita falhou: esquece a marca, senão a próxima tentativa
+               acharia que já subiu e o dado ficaria só no aparelho */
+            delete self._ultimoEnviado[chave];
+            self._registrarFalha(ent, e);
+          });
+        } catch (e) {}
+      };
+      /* ⚠ RECONFERE NA HORA DE MANDAR. A guarda de cima roda no AGENDAMENTO;
+         o envio acontece 900 ms depois (150 ms para as lápides). Um bloqueio que
+         chega no meio não cancelava o timer, e o que subia era a entidade
+         INTEIRA para o documento da outra empresa. Pior com `_lapides`: os ids
+         determinísticos (código do insumo, código da composição) COLIDEM entre
+         empresas, e uma lápide dessas apaga o registro legítimo do outro lado. */
+      var mandarSeLiberado = function () { if (self.bloqueioDeDono) return; mandar(); };
+      if (ent === "_lapides") { clearTimeout(this._push[ent]); this._push[ent] = setTimeout(mandarSeLiberado, 150); return; }
+      clearTimeout(this._push[ent]);
+      this._push[ent] = setTimeout(mandarSeLiberado, 900);
+    },
+
+    /* O aviso de "lista perto do teto de 1 MiB" — do push e, desde a revisão 3
+       da Fase 3, também do sincronizar (o merge grava e sobe sem passar pelo
+       push). UM código para os dois, com a mesma marca "uma vez por versão". */
+    _avisarTamanho: function (ent, carga) {
+      var self = this;
+      try {
           /* ⚠ O DOCUMENTO DO FIRESTORE TEM TETO DE 1 MiB, E A ENTIDADE INTEIRA
            * VAI NUM DOCUMENTO SÓ. Não havia guarda nenhuma de tamanho aqui: ao
            * passar do teto a escrita simplesmente falha, e a partir daí o
@@ -973,27 +1054,7 @@
             } catch (eT) {}
             try { console.warn("[nuvem] entidade grande:", ent, Math.round(carga.length / 1024) + " KB"); } catch (eC) {}
           }
-          self._ultimoEnviado[chave] = carga;
-          self._doc(ent).set({ v: v, em: Date.now() }).then(function () {
-            self._marcarSync(empresaId, ent, v); // o que subiu vira a base comum
-          }).catch(function (e) {
-            /* a escrita falhou: esquece a marca, senão a próxima tentativa
-               acharia que já subiu e o dado ficaria só no aparelho */
-            delete self._ultimoEnviado[chave];
-            self._registrarFalha(ent, e);
-          });
-        } catch (e) {}
-      };
-      /* ⚠ RECONFERE NA HORA DE MANDAR. A guarda de cima roda no AGENDAMENTO;
-         o envio acontece 900 ms depois (150 ms para as lápides). Um bloqueio que
-         chega no meio não cancelava o timer, e o que subia era a entidade
-         INTEIRA para o documento da outra empresa. Pior com `_lapides`: os ids
-         determinísticos (código do insumo, código da composição) COLIDEM entre
-         empresas, e uma lápide dessas apaga o registro legítimo do outro lado. */
-      var mandarSeLiberado = function () { if (self.bloqueioDeDono) return; mandar(); };
-      if (ent === "_lapides") { clearTimeout(this._push[ent]); this._push[ent] = setTimeout(mandarSeLiberado, 150); return; }
-      clearTimeout(this._push[ent]);
-      this._push[ent] = setTimeout(mandarSeLiberado, 900);
+      } catch (e) {}
     },
 
     /* DESLIGAMENTO PELO USUÁRIO — é a revogação de consentimento da LGPD.

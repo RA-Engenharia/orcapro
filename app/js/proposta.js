@@ -46,6 +46,15 @@
         .map(function (l) { return "<li>" + Util.esc(l.trim().replace(/;$/, "")) + "</li>"; }).join("");
     },
 
+    /* Campo de texto "1 item por linha" com rótulo em negrito: UMA linha sai
+       como o parágrafo de sempre ("<b>Premissas:</b> texto"); várias, como
+       lista. Todo texto passa por Util.esc (o campo pode ter vindo da IA). */
+    _paragrafoOuLista: function (rotulo, txt) {
+      var linhas = String(txt || "").split(/\r?\n/).filter(function (l) { return l.trim(); });
+      if (linhas.length <= 1) return '<p><b>' + Util.esc(rotulo) + '</b> ' + Util.esc(String(linhas[0] || "").trim()) + '</p>';
+      return '<p><b>' + Util.esc(rotulo) + '</b></p><ul>' + this._lista(txt) + '</ul>';
+    },
+
     /* Cronograma para a PROPOSTA: o Gantt em versão de cliente (UI._gantt com
        `limpo`) mais um quadro de etapa/prazo/entrega.
 
@@ -202,11 +211,21 @@
         '<div><h3>' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' Não incluso</h3><ul>' + this._lista(c.excluso) + '</ul></div></div>'));
 
       // 5) PREMISSAS E METODOLOGIA
+      /* ⚠ CAMPO VAZIO = O TEXTO FIXO DE SEMPRE, BYTE A BYTE. `premissas`,
+         `metodologia`, `respContratada` e `respContratante` viraram campos do
+         orçamento (editáveis à mão e pela IA — js/iaedit.js). Os literais
+         abaixo NÃO podem ser mexidos nem "unificados" com
+         Orcamento.TEXTOS_PADRAO_PROPOSTA: é por eles que a proposta de todo
+         orçamento que já existe sai idêntica à do master b8907ef
+         (tools/test-proposta-campos-texto.js compara as duas no mesmo relógio).
+         Preenchido: uma linha sai como parágrafo; várias, como lista. */
       P.push(pg(sc("Premissas e Metodologia"),
+        (Util.naoVazio(c.premissas) ? this._paragrafoOuLista("Premissas:", c.premissas) :
         '<p><b>Premissas:</b> condições normais de trabalho e acesso à obra; fornecimento de água e energia ' +
-        'pelo contratante durante a execução; quantitativos sujeitos a confirmação em projeto executivo.</p>' +
+        'pelo contratante durante a execução; quantitativos sujeitos a confirmação em projeto executivo.</p>') +
+        (Util.naoVazio(c.metodologia) ? this._paragrafoOuLista("Metodologia:", c.metodologia) :
         '<p><b>Metodologia:</b> execução por etapas com medição mensal, controle de qualidade e ' +
-        'acompanhamento técnico responsável, seguindo normas técnicas vigentes (ABNT).</p>' +
+        'acompanhamento técnico responsável, seguindo normas técnicas vigentes (ABNT).</p>') +
         '<p><b>' + (Orcamento.basesUsadas(orc).length > 1 ? 'Bases de preços:' : 'Base de preços:') + '</b> ' + Util.esc(Orcamento.basesUsadasTexto(orc)) +
         ', regime <b>' + Util.esc(Orcamento.regimeDe ? Orcamento.regimeDe(orc) : (orc.desonerado ? 'desonerado' : 'onerado')) + '</b>, ' +
         'BDI conforme metodologia do Acórdão TCU nº 2.622/2013.</p>'));
@@ -228,16 +247,18 @@
         bloco("Prazo de execução", c.prazoExecucao) +
         bloco("Validade da proposta", c.validadeProposta)));
 
-      // 8) RESPONSABILIDADES
+      // 8) RESPONSABILIDADES — ⚠ vazio = os literais de sempre (ver seção 5)
       P.push(pg(sc("Responsabilidades"),
         '<div class="cols"><div><h3>Contratada</h3><ul>' +
+          (Util.naoVazio(c.respContratada) ? this._lista(c.respContratada) :
           '<li>Execução dos serviços conforme escopo e normas técnicas;</li>' +
           '<li>Fornecimento de mão de obra e EPIs da equipe;</li>' +
-          '<li>Responsável técnico com ART/RRT.</li></ul></div>' +
+          '<li>Responsável técnico com ART/RRT.</li>') + '</ul></div>' +
         '<div><h3>Contratante</h3><ul>' +
+          (Util.naoVazio(c.respContratante) ? this._lista(c.respContratante) :
           '<li>Liberação da obra e acessos;</li>' +
           '<li>Fornecimento de água e energia;</li>' +
-          '<li>Aprovação de projetos e licenças.</li></ul></div></div>'));
+          '<li>Aprovação de projetos e licenças.</li>') + '</ul></div></div>'));
 
       // 9) GARANTIAS
       P.push(pg(sc("Garantias"), '<p>' + Util.esc(c.garantia) + '</p>'));

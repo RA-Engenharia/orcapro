@@ -1460,7 +1460,20 @@
     // (FASE 4; o import é a etapa seguinte). Invisível p/ usuário e impressão.
     var wmeta = wb.addWorksheet('_meta');
     wmeta.state = 'veryHidden';
-    var metaJson = JSON.stringify(orc);
+    /* ⚠ O DESFAZER E O HISTÓRICO DA IA NÃO VÃO NA PLANILHA. Esta planilha vai
+       ao CLIENTE ("Abrir a planilha desta proposta"), e `iaHistorico[].pedido`
+       é a instrução interna do orçamentista, `por` é o e-mail de quem pediu e
+       `iaEdicao.inversos` guarda textos e quantidades de ANTES. Pior: reimportar
+       ou restaurar por este arquivo traria de volta um desfazer velho, que
+       reverteria o orçamento para um retrato de semanas atrás. Cópia rasa sem
+       as duas chaves (a ordem das outras chaves não muda — o round-trip lê o
+       mesmo JSON de sempre). A lista mora em Orcamento.CAMPOS_IA_LOCAIS. */
+    var foraMeta = (global.Orcamento && Orcamento.CAMPOS_IA_LOCAIS) || ['iaEdicao', 'iaHistorico'];
+    var orcMeta = {};
+    for (var mk in orc) {
+      if (Object.prototype.hasOwnProperty.call(orc, mk) && foraMeta.indexOf(mk) < 0) orcMeta[mk] = orc[mk];
+    }
+    var metaJson = JSON.stringify(orcMeta);
     var FATIA = 30000, metaPartes = Math.max(1, Math.ceil(metaJson.length / FATIA));
 
     /* ===== AS COMPOSIÇÕES PRÓPRIAS VÃO JUNTO (v1.1.211) =====

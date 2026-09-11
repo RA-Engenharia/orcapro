@@ -202,6 +202,9 @@
             /* o vínculo com a fonte VIAJA JUNTO: sem ele a linha consolidada
                não consegue mais achar o próprio preço (ver `precoDe`) */
             refId: texto(it.refId), codigo: texto(it.codigo),
+            /* o carimbo da etapa (linha puxada do orçamento ou do Last
+               Planner). Só `porEtapaId` lê — ver lá por quê. */
+            etapaId: texto(it.etapaId),
             previsto: 0, executado: 0, refeito: 0, lancamentos: []
           };
           ordem.push(k);
@@ -210,6 +213,7 @@
         /* a etapa só é preenchida se ainda não havia uma: diário mais antigo
            sem classificação não pode apagar a etapa que alguém já corrigiu */
         if (L.etapa === SEM_ETAPA && texto(it.etapa)) L.etapa = texto(it.etapa);
+        if (!L.etapaId && texto(it.etapaId)) L.etapaId = texto(it.etapaId);
         var prev = num(it.qtdPrevista);
         if (prev > L.previsto) L.previsto = prev;   // regra 5
         var q = num(it.qtdExecutada);
@@ -363,6 +367,115 @@
         /* quanto ESTA etapa representa da obra (só quando há peso financeiro em
            tudo o que dá) — é o que permite ao cliente ver que "Fundação" pesa
            18% e "Pintura" 3%, em vez de as duas parecerem iguais na lista */
+        pesoRelativo: totalPeso > 0 ? pct1((pesoEtapa / totalPeso) * 100) : null,
+        unidades: Object.keys(g.unidades).map(function (u) {
+          var x = g.unidades[u];
+          x.pct = x.previsto > 0 ? pct1((x.executado / x.previsto) * 100) : null;
+          x.saldo = x.previsto > 0 ? r2(x.previsto - x.executado) : 0;
+          return x;
+        }),
+        itens: g.itens
+      };
+    });
+  }
+
+  /* -------------------------------------------------------------------
+   * AGRUPAMENTO POR ETAPA **PELO ID** — o vínculo que não quebra ao renomear.
+   *
+   * ⚠ POR QUE EXISTE: `porEtapa` agrupa pelo NOME escrito na linha do
+   * diário, e o Portal casava esse nome com o nome da etapa do orçamento.
+   * Renomear a etapa no orçamento ("Estrutura" → "Superestrutura") fazia o
+   * Gantt do cliente perder o avanço MEDIDO daquela etapa e voltar a mostrar
+   * a ESTIMATIVA por custo — com os mesmos diários, na mesma página. E a
+   * etapa da linha é editável no diário: um serviço do item 2.3 podia ser
+   * contado na etapa 1 porque alguém corrigiu o texto.
+   *
+   * ⚠ A RÉGUA É A MESMA: cada grupo passa por `ponderar`, exatamente como em
+   * `porEtapa`. Só o AGRUPAMENTO muda (nome → id). Trocar a régua do Portal
+   * (denominador = orçamento inteiro, `CronoPlan.realizadoPorNo`) é outra
+   * entrega, com recado no portal.html — aqui não.
+   *
+   * De onde sai a etapa de cada linha, nesta ordem (nada por semelhança):
+   *   1) origem "orcamento" + refId que existe no orçamento → a etapa ATUAL
+   *      do item (item movido numa revisão vai para onde está hoje);
+   *   2) o carimbo `etapaId` gravado na linha, se a etapa ainda existe;
+   *   3) o NOME, como sempre foi: se for igual (sem caixa/espaços) ao nome
+   *      de UMA etapa do orçamento, junta-se a ela; senão, grupo pelo nome.
+   *      Dois nomes iguais no orçamento = ambíguo, não junta em nenhuma.
+   * Sem mapa, o resultado é o de `porEtapa`, só com `etapaId: ""`.
+   *
+   * `mapa` = Fisico.mapaDoOrcamento(orc).
+   * ----------------------------------------------------------------- */
+  function normNome(s) { return texto(s).toLowerCase().replace(/\s+/g, " "); }
+
+  function mapaDoOrcamento(orc) {
+    var porItem = {}, etapas = [], nomeDe = {}, porNome = {};
+    ((orc && orc.etapas) || []).forEach(function (e) {
+      if (!e || e.id == null || e.id === "") return;
+      var id = String(e.id);
+      if (Object.prototype.hasOwnProperty.call(nomeDe, id)) return;   // id repetido: vale o 1º
+      nomeDe[id] = texto(e.nome);
+      etapas.push({ id: id, nome: texto(e.nome) });
+      var nn = normNome(e.nome);
+      if (nn) porNome[nn] = Object.prototype.hasOwnProperty.call(porNome, nn) ? null : id;   // null = ambíguo
+      (e.itens || []).forEach(function (it) {
+        if (!it || it.id == null || it.id === "") return;
+        var iid = String(it.id);
+        if (!Object.prototype.hasOwnProperty.call(porItem, iid)) porItem[iid] = id;
+      });
+    });
+    return { porItem: porItem, etapas: etapas, nomeDe: nomeDe, porNome: porNome };
+  }
+
+  function etapaIdDaLinha(l, M) {
+    var own = Object.prototype.hasOwnProperty;
+    if (texto(l.origem) === "orcamento" && texto(l.refId) && own.call(M.porItem, texto(l.refId))) return M.porItem[texto(l.refId)];
+    if (texto(l.etapaId) && own.call(M.nomeDe, texto(l.etapaId))) return texto(l.etapaId);
+    var nn = normNome(l.etapa);
+    if (nn && own.call(M.porNome, nn) && M.porNome[nn]) return M.porNome[nn];
+    return "";
+  }
+
+  function porEtapaId(rdos, mapa, obraId, opc) {
+    var linhas = consolidar(rdos, obraId, opc);
+    var M = (mapa && mapa.porItem && mapa.nomeDe && mapa.porNome) ? mapa : null;
+    if (!M) {
+      return porEtapa(linhas, obraId, opc).map(function (e) { e.etapaId = ""; e.vinculo = "nome"; return e; });
+    }
+    var grupos = {}, ordem = [];
+    linhas.forEach(function (l) {
+      var eid = etapaIdDaLinha(l, M), k, rot;
+      if (eid) { k = "id|" + eid; rot = M.nomeDe[eid] || texto(l.etapa) || SEM_ETAPA; }
+      else { rot = l.etapa || SEM_ETAPA; k = "nome|" + rot; }
+      if (!grupos[k]) { grupos[k] = { etapa: rot, etapaId: eid, itens: [], unidades: {} }; ordem.push(k); }
+      var g = grupos[k];
+      g.itens.push(l);
+      var un = l.unidade || "un";
+      if (!g.unidades[un]) g.unidades[un] = { unidade: un, previsto: 0, executado: 0 };
+      g.unidades[un].previsto = r2(g.unidades[un].previsto + l.previsto);
+      g.unidades[un].executado = r2(g.unidades[un].executado + l.executado);
+    });
+    /* mesma ordem de `porEtapa`: pelo rótulo, "Sem etapa" por último */
+    ordem.sort(function (a, b) {
+      var ra = grupos[a].etapa, rb = grupos[b].etapa;
+      if (ra === SEM_ETAPA && rb !== SEM_ETAPA) return 1;
+      if (rb === SEM_ETAPA && ra !== SEM_ETAPA) return -1;
+      return ra.localeCompare(rb, "pt-BR");
+    });
+    var totalPeso = 0;
+    linhas.forEach(function (l) { totalPeso += l.peso; });
+    return ordem.map(function (k) {
+      var g = grupos[k];
+      var p = ponderar(g.itens);
+      var pesoEtapa = 0;
+      g.itens.forEach(function (l) { pesoEtapa += l.peso; });
+      return {
+        etapa: g.etapa, etapaId: g.etapaId, vinculo: g.etapaId ? "id" : "nome",
+        pct: p.pct, base: p.base,
+        servicos: g.itens.length,
+        itensSemPrevisto: p.itensSemPrevisto,
+        excedentes: p.excedentes,
+        concluidos: g.itens.filter(function (l) { return l.concluido; }).length,
         pesoRelativo: totalPeso > 0 ? pct1((pesoEtapa / totalPeso) * 100) : null,
         unidades: Object.keys(g.unidades).map(function (u) {
           var x = g.unidades[u];
@@ -551,17 +664,26 @@
       pesos[l.chave] = somaPeso > 0 ? Math.round((p / somaPeso) * 1e6) / 1e6 : 0;
     });
 
+    /* `o.mapaItens` (Fisico.mapaDoOrcamento): as etapas saem agrupadas pelo
+       ID (ver `porEtapaId`) e cada uma leva o `etapaId`. É o que o Gantt do
+       Portal lê — os dois blocos da mesma página saem da MESMA partição,
+       senão "Estrutura 62%" num e "Estrutura 50%" no outro. Sem o mapa, o
+       pacote é byte a byte o de antes. */
+    var comId = !!(o.mapaItens && o.mapaItens.porItem);
+    var gruposEt = comId ? porEtapaId(linhas, o.mapaItens) : porEtapa(linhas, obraId, o);
     return {
       pct: geral.pct, base: geral.base, aviso: geral.aviso,
       servicos: geral.servicos, itensSemPrevisto: geral.itensSemPrevisto,
       itensSemPeso: geral.itensSemPeso, excedentes: geral.excedentes,
-      etapas: porEtapa(linhas, obraId, o).map(function (e) {
+      etapas: gruposEt.map(function (e) {
         /* sem os itens crus: o portal remonta os serviços a partir dos diários
            publicados, e mandar a lista duas vezes só engorda o snapshot */
-        return { etapa: e.etapa, pct: e.pct, base: e.base, servicos: e.servicos,
-                 concluidos: e.concluidos, excedentes: e.excedentes,
-                 itensSemPrevisto: e.itensSemPrevisto, pesoRelativo: e.pesoRelativo,
-                 unidades: e.unidades };
+        var s = { etapa: e.etapa, pct: e.pct, base: e.base, servicos: e.servicos,
+                  concluidos: e.concluidos, excedentes: e.excedentes,
+                  itensSemPrevisto: e.itensSemPrevisto, pesoRelativo: e.pesoRelativo,
+                  unidades: e.unidades };
+        if (comId) s.etapaId = e.etapaId || "";
+        return s;
       }),
       pesos: pesos,
       /* as três granularidades vão prontas: são baratas de gerar aqui e o
@@ -707,6 +829,7 @@
     previsao: previsao, somaDias: somaDias, diffSemanas: diffSemanas,
     chave: chave, indicePrecos: indicePrecos, precoDe: precoDe,
     porServico: porServico, consolidar: consolidar, ponderar: ponderar, porEtapa: porEtapa,
+    porEtapaId: porEtapaId, mapaDoOrcamento: mapaDoOrcamento,
     pctObra: pctObra, avisoDaBase: avisoDaBase,
     segundaDe: segundaDe, balde: balde, rotuloBalde: rotuloBalde,
     serie: serie, pacote: pacote

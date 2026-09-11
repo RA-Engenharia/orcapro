@@ -349,22 +349,89 @@
    * (para o avanço saber voltar para o item certo do orçamento).
    * --------------------------------------------------------------- */
 
-  /* Do ORÇAMENTO: etapa › sub etapa › item, já numerado. */
-  RDO.atividadesDoOrcamento = function (orc) {
+  /* A NUMERAÇÃO DO ITEM é a da PLANILHA — `Orcamento.calcular` é a fonte.
+   *
+   * ⚠ ISTO DIVERGIA DA PLANILHA. A subetapa era numerada pela POSIÇÃO na
+   * lista (subetapa vazia gastava número) e o item pela posição entre TODOS
+   * os itens da etapa: numa etapa com um item solto e uma subetapa, o
+   * serviço que a planilha imprime como 1.2.1 entrava no diário como 1.1.2.
+   * O diário é documento (vai ao Portal e é citado em medição e pleito): o
+   * número dele tem de ser o do orçamento que o cliente tem na mão.
+   *
+   * `calcular` é usado quando está carregado (o app sempre tem). Sem ele (o
+   * motor rodando sozinho em Node), a MESMA regra do calcular vem replicada
+   * abaixo — e a paridade entre as duas é cobrada em tools/test-rdo.js com
+   * soltos + subetapas + subetapa vazia + subEtapaId órfão. Réplica sem
+   * suíte de paridade apodrece calada (ver o num() de fisico.js).
+   *
+   * Devolve { "ie|ii": {numero, subEtapaId} } — pela POSIÇÃO do item, e não
+   * pelo id: item sem id (orçamento antigo) também precisa de número. */
+  function numeracaoDoOrcamento(orc, calc) {
+    var out = {};
+    var C = calc;
+    if (!C) {
+      var Orc = (typeof Orcamento !== "undefined") ? Orcamento : null;
+      if (Orc && typeof Orc.calcular === "function") { try { C = Orc.calcular(orc); } catch (e) { C = null; } }
+    }
+    if (C && C.linhas && C.linhas.length) {
+      C.linhas.forEach(function (L) {
+        out[L.etapaIdx + "|" + L.itemIdx] = { numero: String(L.numero || ""), subEtapaId: L.subEtapaId || "" };
+      });
+      return out;
+    }
+    /* réplica da regra de Orcamento.calcular (orcamento.js, "NUMERAÇÃO DO 2º
+       NÍVEL"): soltos ocupam 1..N; cada subetapa COM item vem depois, na
+       ordem da lista; subetapa vazia não gasta número; item com subEtapaId
+       que não existe mais conta como solto. */
+    (orc.etapas || []).forEach(function (e, ei) {
+      var subs = Array.isArray(e.subetapas) ? e.subetapas : [];
+      var valido = {}, nItensSub = {}, numSub = {}, cntSub = {}, nSoltos = 0;
+      subs.forEach(function (s) { valido[s.id] = true; nItensSub[s.id] = 0; });
+      (e.itens || []).forEach(function (it) {
+        if (it.subEtapaId && valido[it.subEtapaId]) nItensSub[it.subEtapaId]++;
+        else nSoltos++;
+      });
+      var seq2 = nSoltos;
+      subs.forEach(function (s) {
+        if (nItensSub[s.id]) { seq2++; numSub[s.id] = (ei + 1) + "." + seq2; }
+        cntSub[s.id] = 0;
+      });
+      var seq = 0;
+      (e.itens || []).forEach(function (it, ii) {
+        var sid = (it.subEtapaId && valido[it.subEtapaId]) ? it.subEtapaId : "";
+        var numero;
+        if (!sid) { seq++; numero = (ei + 1) + "." + seq; }
+        else { cntSub[sid]++; numero = numSub[sid] + "." + cntSub[sid]; }
+        out[ei + "|" + ii] = { numero: numero, subEtapaId: sid };
+      });
+    });
+    return out;
+  }
+  RDO._numeracaoDoOrcamento = numeracaoDoOrcamento;
+
+  /* Do ORÇAMENTO: etapa › sub etapa › item, já numerado.
+   *
+   * `etapaId` e `subEtapaId` viajam na linha (aditivo): são o CARIMBO que liga
+   * o serviço à etapa do orçamento sem depender do nome. O nome da etapa pode
+   * mudar depois (e muda: revisão, correção de digitação), e o avanço por
+   * etapa que o cliente vê no Portal casava por nome — renomear a etapa fazia
+   * o Gantt dele trocar o medido pela estimativa. `subEtapaId` é o válido
+   * (subetapa que não existe mais = solto, como na planilha).
+   * `calc` (opcional) = Orcamento.calcular(orc) já feito por quem chama. */
+  RDO.atividadesDoOrcamento = function (orc, calc) {
     var out = [];
     if (!orc || !orc.etapas) return out;
+    var num = numeracaoDoOrcamento(orc, calc);
     orc.etapas.forEach(function (e, ie) {
-      var numE = String(ie + 1);
-      var subs = e.subetapas || [];
-      var idxSub = {};
-      subs.forEach(function (s, is) { idxSub[s.id] = numE + "." + (is + 1); });
       (e.itens || []).forEach(function (it, ii) {
-        var pai = (it.subEtapaId && idxSub[it.subEtapaId]) ? idxSub[it.subEtapaId] : numE;
+        var n = num[ie + "|" + ii] || { numero: (ie + 1) + "." + (ii + 1), subEtapaId: "" };
         out.push({
           origem: "orcamento",
           refId: it.id || "",
           etapa: e.nome || "",
-          numero: pai + "." + (ii + 1),
+          etapaId: e.id || "",
+          subEtapaId: n.subEtapaId || "",
+          numero: n.numero,
           descricao: it.descricao || "",
           unidade: it.unidade || "",
           /* ⚠ o item do orçamento guarda `quantidade` (Orcamento.addItem), não
@@ -377,6 +444,27 @@
       });
     });
     return out;
+  };
+
+  /* A LINHA QUE ENTRA NO DIÁRIO quando a pessoa marca uma fonte (orçamento
+   * ou Last Planner) no painel "Do orçamento / Last Planner".
+   *
+   * ⚠ A CÓPIA ERA CAMPO A CAMPO NA TELA, e por isso os ids ficavam para trás:
+   * a fonte trazia o carimbo e o diário gravava só o nome. Aqui é o único
+   * lugar que decide o que a linha leva — a tela (gestao.js) só chama.
+   * Os ids só entram quando existem: fonte sem carimbo (lista livre) grava
+   * exatamente a linha de antes. */
+  RDO.itemDaFonte = function (f) {
+    f = f || {};
+    var a = {
+      origem: f.origem || "", refId: f.refId || "", etapa: f.etapa || "", numero: f.numero || "",
+      descricao: f.descricao || "", unidade: f.unidade || "", qtdPrevista: f.qtdPrevista,
+      codigo: f.codigo || "", qtdExecutada: 0, situacao: "execucao"
+    };
+    if (f.etapaId) a.etapaId = String(f.etapaId);
+    if (f.subEtapaId) a.subEtapaId = String(f.subEtapaId);
+    if (f.cronoNoId) a.cronoNoId = String(f.cronoNoId);
+    return a;
   };
 
   /* Do CRONOGRAMA: as etapas com data, filtradas pelas que estão em curso na
@@ -405,21 +493,31 @@
     return out;
   };
 
-  /* Do LAST PLANNER: as tarefas planejadas para a semana e ainda abertas. */
+  /* Do LAST PLANNER: as tarefas planejadas para a semana e ainda abertas.
+   *
+   * Tarefa puxada do cronograma carrega `cronoNoId` (a etapa ou subetapa de
+   * onde veio) e `etapaId`; eles seguem para a linha do diário, que é o que
+   * permite ao avanço por etapa agrupar pelo id. A etapa escrita passa a ser
+   * a da obra (`etapaNome`, gravado ao puxar) quando existe: `frente` é a
+   * CATEGORIA do serviço ("Estrutura", "Acabamento") e não a etapa do
+   * orçamento — tarefa antiga, sem `etapaNome`, continua como era. */
   RDO.atividadesDoLastPlanner = function (tarefas, semana) {
     return (tarefas || []).filter(function (t) {
       return (!semana || t.semana === semana) && t.status !== "feito";
     }).map(function (t) {
-      return {
+      var o = {
         origem: "lastplanner",
         refId: t.id || "",
-        etapa: t.frente || "",
+        etapa: t.etapaNome || t.frente || "",
         numero: "",
         descricao: t.titulo || "",
         unidade: "",
         qtdPrevista: 0,
         codigo: ""
       };
+      if (t.etapaId) o.etapaId = String(t.etapaId);
+      if (t.cronoNoId) o.cronoNoId = String(t.cronoNoId);
+      return o;
     });
   };
 

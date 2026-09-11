@@ -81,7 +81,11 @@
        nenhum citava `producao`, `carpintaria` nem `remunvar`, então o
        sub-usuário criado por preset numa carpintaria nascia SEM as três telas
        do dia a dia dele e ninguém entendia por quê. */
-    engenharia:     ["dashboard", "orcamentos", "obras", "medicoes", "rdo", "producao", "requisicoes", "cotacoes", "insumos", "epi", "relatorios", "carpintaria"],
+    /* `cronobra` (Cronograma da obra, previsto × realizado) é do engenheiro:
+       é ele quem responde "a obra está atrasada?" e congela a linha de base
+       (espec v2 3.2). Sem estar aqui, o sub-usuário de engenharia criado por
+       preset nasceria sem a tela — o mesmo buraco da `producao` acima. */
+    engenharia:     ["dashboard", "orcamentos", "obras", "medicoes", "rdo", "cronobra", "producao", "requisicoes", "cotacoes", "insumos", "epi", "relatorios", "carpintaria"],
     compras:        ["dashboard", "compras", "estoque", "requisicoes", "cotacoes", "insumos", "fornecedores"],
     financeiro:     ["dashboard", "financeiro", "folhasemanal", "medicoes", "contratos", "fiscal", "centrocusto", "relatorios"],
     rh:             ["dashboard", "colaboradores", "folhasemanal", "epi", "ponto", "folha", "remunvar"],
@@ -511,6 +515,11 @@
     /* o elo modelo<->orcamento carrega obraId: sem estar aqui, o sub-usuario
        restrito a duas obras veria os elos das outras oito. */
     bim_orc_vinculos: 1,
+    /* ⚠ o planejamento da obra (linhas de base e plano de execução,
+       js/cronobase.js) carrega obraId e mostra prazo e valor de venda por
+       etapa: sem esta linha, o sub-usuário restrito à obra A abriria o
+       previsto × realizado da obra B. */
+    crono_obra: 1,
     /* ⚠ `horas_extras` entrou na v1.2 pelo outro lado (ela sincroniza e grava
        obraId, e o merge da nuvem a apagava junto com a obra). A invariante de
        tools/test-v12-escopo.js pegou o segundo efeito na mesma hora: quem
@@ -629,6 +638,8 @@
     galeria: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>',
     tarefas: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
     lastplanner: '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/><path d="m8 15 2 2 3-3"/>',
+    /* barras de Gantt em escada: o cronograma da obra (previsto × realizado) */
+    cronobra: '<path d="M3 3v18h18"/><rect x="6" y="5" width="7" height="3" rx="1"/><rect x="9" y="10.5" width="8" height="3" rx="1"/><rect x="13" y="16" width="7" height="3" rx="1"/>',
     ajuda: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
     relatos: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="13" y2="13"/>',
     bim: '<path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M12 12l9-5"/><path d="M12 12v10"/><path d="M12 12L3 7"/>',
@@ -769,6 +780,12 @@
       { id: "tarefas", nome: "Tarefas", g: "obra" },
       { id: "rdo", nome: "Diário (RDO)", g: "canteiro" },
       { id: "lastplanner", nome: "Last Planner (PPC)", curto: "Last Planner", g: "canteiro" },
+      /* ⚠ o NOME não pode ser só "Previsto × Real": já existe esse módulo no
+         Financeiro (custo direto), e o Ctrl+K devolveria dois assuntos
+         diferentes com o mesmo nome (crítica produto #5). Módulo do PRODUTO:
+         vale por omissão, NÃO é SOB_DEMANDA (js/perfis.js). A porta de entrada
+         é a aba Cronograma da ficha da obra (adendo A2); este é o completo. */
+      { id: "cronobra", nome: "Cronograma da obra (previsto × realizado)", curto: "Cronograma", g: "canteiro" },
       { id: "producao", nome: "Produção (por serviço)", curto: "Produção", g: "canteiro" },
       { id: "medicoes", nome: "Medições", g: "canteiro" },
       { id: "galeria", nome: "Galeria de Fotos", curto: "Fotos", g: "canteiro" },
@@ -1295,6 +1312,7 @@
         case "obras": return this.renderObras();
         case "tarefas": return this.renderTarefas();
         case "lastplanner": return this.renderLastPlanner();
+        case "cronobra": return this.renderCronobra();
         case "folhasemanal": return this.renderFolhaSemanal();
         case "clientes": return this.renderClientes();
         case "contratos": return this.renderContratos();
@@ -3666,6 +3684,10 @@
       var a = ["resumo", "mapa"];
       if (pode("rdo")) a.push("diario");
       if (pode("medicoes")) a.push("medicoes");
+      /* o Cronograma da obra (adendo A2): aparece para quem pode Obras — é a
+         ficha DELA; o dinheiro dentro dele segue Medições/Financeiro
+         (ver _cronoFicha → ObraVitrine.cronoSemDinheiro) */
+      if (pode("obras")) a.push("cronograma");
       if (pode("galeria") || pode("rdo")) a.push("fotos");
       a.push("documentos");
       return a;
@@ -3687,6 +3709,10 @@
       });
       if (f.aba === "fotos") ctx.fotos = this._ovFotosFicha = ObraVitrine.fotosDaObra(o, lista("rdo"), 24);
       if (f.aba === "documentos") ctx.documentos = (o.portalDocumentos || []).slice();
+      /* ⚠ o painel (estimar + realizado + confronto) só roda com a aba ABERTA:
+         a ficha redesenha a cada sincronização, e montar o previsto × realizado
+         de toda obra a cada toque seria custo para uma aba que ninguém olhou */
+      if (f.aba === "cronograma") ctx.crono = this._cronoFicha(o);
       return ctx;
     },
     ovFicha: function (d) {
@@ -3975,6 +4001,13 @@
          imagens da licença. Mesmo destino do diário, e pela mesma razão. */
       ["tour360", "tour(s) virtual(is) 360 e suas fotos"],
       ["lp_tarefas", "tarefa(s) do Last Planner"], ["tarefas", "tarefa(s)"],
+      /* ⚠ O PLANEJAMENTO MORRE COM A OBRA, e entra AQUI e em lugar nenhum mais
+         (nunca em `Store._IMUNES_CASCATA`: as duas regras juntas devolveriam
+         as linhas de base órfãs no sync seguinte — o defeito da v1.1.236).
+         Linha de base e plano de execução só existem para comparar AQUELA
+         obra; sem ela não medem nada e ocupam o documento de 1 MiB que todas
+         as obras dividem na nuvem. */
+      ["crono_obra", "registro(s) do cronograma da obra (linhas de base e plano de execução)"],
       ["requisicoes", "requisição(ões)"], ["cotacoes", "cotação(ões)"], ["compras", "compra(s)"],
       ["estoque", "item(ns) de estoque"], ["estoque_mov", "movimento(s) de estoque"],
       ["epi", "entrega(s) de EPI"],
@@ -4169,20 +4202,26 @@
             solta.itens.map(function (x) { return "<b>" + x.n + "</b> " + x.rot; }).join(", ") + ".</p>"
         : "";
 
+      /* o cronograma da obra sai nas DUAS opções (ver _excluirObra): a escolha
+         "só a obra" vale para o resto, e o diálogo diz isso com o número */
+      var nCrono = 0;
+      v.itens.forEach(function (x) { if (x.ent === "crono_obra") nCrono = x.n; });
+      var nEscolha = v.total - nCrono;
+      var cronoHtml = nCrono ? '<p style="margin:10px 0 0;font-size:12.5px">O <b>cronograma da obra</b> (' + nCrono + ' registro(s): linhas de base e plano de execução) sai junto nas duas opções — ele só existe para comparar esta obra e ocupa o espaço da nuvem que todas as obras dividem.</p>' : "";
       var corpo =
         '<div style="padding:10px 12px;border-radius:10px;background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.25);margin-bottom:12px">' +
           "<b>" + Util.esc(obra.nome) + "</b><br>" +
           '<span class="muted">' + (obra.local ? Util.esc(obra.local) + " · " : "") + rot(P.obraStatus, obra.status || "planejamento") +
             (obra.valor ? " · " + Util.fmtMoeda(obra.valor) : "") + "</span>" +
         "</div>" +
-        '<p style="margin:0 0 4px">O que está ligado a esta obra:</p>' + listaHtml + soltaHtml +
+        '<p style="margin:0 0 4px">O que está ligado a esta obra:</p>' + listaHtml + cronoHtml + soltaHtml +
         (orc ? '<p style="margin:10px 0 0;font-size:12.5px">O orçamento <b>' + Util.esc(orc.nome) + "</b> <b>não</b> será apagado — ele vive na tela de Orçamentos.</p>" : "") +
         (obra.portalUser ? '<p style="margin:10px 0 0;color:#b45309;font-size:12.5px">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Esta obra está publicada no <b>Portal do Cliente</b> (' + Util.esc(obra.portalUser) + "). O acesso do cliente a ela também será removido.</p>" : "") +
         '<p style="margin:12px 0 0;font-size:12.5px">Esta ação <b>não pode ser desfeita</b>' +
-          (v.total ? " — escolha abaixo se os " + v.total + " registro(s) vão junto." : ".") + "</p>";
+          (nEscolha ? " — escolha abaixo se os " + nEscolha + " registro(s) vão junto." : ".") + "</p>";
 
       var botoes = [{ texto: "Cancelar", classe: "primary", onClick: function () { UI.fecharModal(); } }];
-      if (v.total) {
+      if (nEscolha) {
         botoes.push({ texto: "Excluir só a obra", classe: "ghost", onClick: function () { self._excluirObra(id, false); } });
         botoes.push({ texto: "" + (typeof Icones !== "undefined" ? Icones.get("lixeira", 15) : "") + " Excluir a obra e os " + v.total + " registro(s)", classe: "danger", onClick: function () { self._excluirObra(id, true); } });
       } else {
@@ -4272,6 +4311,21 @@
         });
         // as anotações do BIM são guardadas com o id da obra como chave (não têm obraId)
         try { Store.excluir(e, "bim_edicoes", id); } catch (er) {}
+      } else {
+        /* ⚠ "EXCLUIR SÓ A OBRA" TAMBÉM LEVA O CRONOGRAMA DA OBRA (revisão 3 da
+           Fase 3, lente sync). Linha de base e plano de execução só existem
+           para comparar AQUELA obra; sem a cascata eles ficavam com o obraId de
+           uma obra morta, invisíveis (a ficha e o módulo abrem por obra
+           existente) e presos no documento de 900 KB que todas as obras
+           dividem — a porta do espaço protege "a ativa" e o plano de qualquer
+           obraId, inclusive o de obra morta, e a recusa por espaço os contava
+           como planos vivos. Sai com lápide POR REGISTRO (sem a de cascata,
+           que aqui não se grava), para não voltar pelo outro aparelho. O
+           diálogo diz que ele sai nas duas opções (confirmarExcluirObra). */
+        try {
+          var idsCr = this._idsDaObraPara("crono_obra", id);
+          if (idsCr.length) apagados += Store.excluirVarios(e, "crono_obra", idsCr, false);
+        } catch (eCr) {}
       }
       // cadastros da empresa (equipe, patrimônio, frota) apenas soltam o vínculo
       this._ENT_SO_DESVINCULA.forEach(function (par) {
@@ -4305,6 +4359,7 @@
       Store.excluir(e, "obras", id);
       // filtros em memória apontando para a obra apagada deixariam telas vazias sem explicação
       if (this._lpObra === id) this._lpObra = null;
+      if (this._cronoObra === id) this._cronoObra = null;
       if (this._tarObra === id) this._tarObra = "";
       if (this._fsObra === id) this._fsObra = "";
       if (this._prSel === id) this._prSel = null;
@@ -4463,7 +4518,11 @@
           + campo("Horário para receber", inp("g-recebhora", o.horarioRecebimento, "Ex.: 08h às 17h, seg a sex")) + "</div>" +
         '<div class="row">' + campo("Início", inp("g-inicio", o.inicio, "", "date")) + campo("Previsão de término", inp("g-termino", o.termino, "", "date")) + "</div>" +
         '<div class="row">' + campo("Área construída (m²)", inp("g-areac", o.areaConstruida)) + campo("Área do terreno (m²)", inp("g-areat", o.areaTerreno)) + "</div>" +
-        campo("Vincular a um orçamento", sel("g-orc", optsRec(orcs, "nome", o.orcamentoId, "— nenhum —"))) +
+        /* "nome · número · estado" (_orcRotulo): só pelo nome, a revisão (que
+           copia o nome) aparecia como duas opções iguais, sem pista de qual é
+           a aprovada — e é por este vínculo que a obra mede, faz boletim e
+           acompanha o cronograma. O VALOR da opção continua sendo o id. */
+        campo("Vincular a um orçamento", sel("g-orc", optsRec(selfObra._orcOpcoesRot(orcs), "rot", o.orcamentoId, "— nenhum —"))) +
           /* ---------------------------------------------------------------
            * DIÁRIO DE OBRA PELO WHATSAPP — o cadastro fica AQUI, na obra
            *
@@ -5070,7 +5129,9 @@
         '<div class="row">' + campo("Tipo de contrato", sel("g-tipo", opts(P.contratoTipo, c.tipo || "empreitada_global"))) + campo("Regime", sel("g-regime", opts(P.contratoRegime, c.regime || "direta"))) + "</div>" +
         '<div class="row">' + campo("Valor total (R$)", inp("g-valor", c.valor)) + campo("Forma de pagamento", sel("g-forma", opts(P.formaPgto, c.formaPgto || "medicao"))) + "</div>" +
         '<div class="row">' + campo("Assinatura", inp("g-assin", c.dataAssinatura, "", "date")) + campo("Início", inp("g-inicio", c.inicio, "", "date")) + campo("Término", inp("g-termino", c.termino, "", "date")) + "</div>" +
-        campo("Vincular a um orçamento", sel("g-orc", optsRec(orcs, "nome", c.orcamentoId, "— nenhum —"))) +
+        /* o mesmo rótulo do cadastro da obra (_orcRotulo): o contrato também
+           escolhia entre revisões de nome igual sem saber qual era qual */
+        campo("Vincular a um orçamento", sel("g-orc", optsRec(this._orcOpcoesRot(orcs), "rot", c.orcamentoId, "— nenhum —"))) +
         campo("Objeto / Descrição do escopo", '<textarea id="g-desc" rows="2">' + Util.esc(c.descricao || "") + "</textarea>") +
         '<h3 style="margin:12px 0 4px;color:var(--aco)">Responsável técnico & garantias</h3>' +
         '<div class="row">' + campo("Responsável técnico", inp("g-rt", c.rtContratada)) + campo("CREA/CAU", inp("g-crea", c.creaContratada)) + campo("ART/RRT", inp("g-art", c.artContratada)) + "</div>" +
@@ -12922,6 +12983,8 @@
         novo.rastreioBim = { regra: sv.regra, fonte: Bimeap.fonteDaQuantidade(sv, unFinal), ids: (sv.elementos || []).slice(0, 200).map(function (e) { return { a: e.a, e: e.e }; }) };
       });
       Orcamento.aplicarBdi(orc, "padrao");
+      // ⚠ modo executivo: o gravado acompanha o vão das subetapas (versão anterior do app) — ver App._materializarSeExec
+      if (typeof App !== "undefined" && App._materializarSeExec) App._materializarSeExec(orc);
       var salvo = Store.salvarOrcamento(eid(), orc);
       if (!salvo) { UI.toast("Não consegui salvar (armazenamento cheio) — faça um backup e tente de novo.", "erro"); return; }
       var vinc = UI.el("eap-vincular");
@@ -14136,6 +14199,8 @@
             if (!orc) { UI.toast("O orçamento sumiu no meio do caminho.", "erro"); UI.fecharModal(); return; }
             var vin = ctx.vinculos.filter(function (x) { return String(x.itemId) === String(itemId); })[0];
             Orcamento.atualizarItem(orc, vin.etapaId, itemId, { quantidade: inst.quantidade });
+            // ⚠ a quantidade move o vão das subetapas: o gravado acompanha (versão anterior do app) — ver App._materializarSeExec
+            if (typeof App !== "undefined" && App._materializarSeExec) App._materializarSeExec(orc);
             Store.salvarOrcamento(eid(), orc);
             /* o elo guarda o que foi conferido: da próxima vez a tela sabe
                dizer se a diferença é nova ou é a mesma de sempre */
@@ -18686,6 +18751,22 @@
      * permite, depois, confrontar o Hh gasto com o Hh orçado.
      * ================================================================= */
 
+    /* As fontes MARCADAS no painel "Do orçamento / Last Planner" entram no
+       diário por `RDO.itemDaFonte` — o único lugar que decide o que a linha
+       leva. ⚠ A cópia era campo a campo aqui e deixava para trás o carimbo
+       da etapa (`etapaId`/`subEtapaId`/`cronoNoId`): o avanço por etapa do
+       Portal voltava a depender do nome. Devolve quantas entraram. */
+    _incluirFontesNoDiario: function (ativ, fontes, marcados) {
+      var n = 0;
+      (marcados || []).forEach(function (i) {
+        var f = (fontes || [])[i];
+        if (!f) return;
+        ativ.push(RDO.itemDaFonte(f));
+        n++;
+      });
+      return n;
+    },
+
     /* Atividades vêm de onde já existem — ninguém deve redigitar o que a
        empresa já orçou. O que não estiver em fonte nenhuma, cadastra na hora. */
     _fontesAtividade: function (obraId, dataISO) {
@@ -19207,15 +19288,9 @@
           '<button type="button" id="g-at-incluir" class="btn sm" style="background:#16a34a;color:#fff;margin-top:8px">Incluir marcados</button></div>';
         document.getElementById("g-at-fechar").onclick = function () { pn.innerHTML = ""; };
         document.getElementById("g-at-incluir").onclick = function () {
-          var n = 0;
-          todos("[data-fi]", pn).forEach(function (c) {
-            if (!c.checked) return;
-            var f = fontes[+c.getAttribute("data-fi")];
-            buf.ativ.push({ origem: f.origem, refId: f.refId, etapa: f.etapa, numero: f.numero,
-              descricao: f.descricao, unidade: f.unidade, qtdPrevista: f.qtdPrevista,
-              codigo: f.codigo, qtdExecutada: 0, situacao: "execucao" });
-            n++;
-          });
+          var marcados = [];
+          todos("[data-fi]", pn).forEach(function (c) { if (c.checked) marcados.push(+c.getAttribute("data-fi")); });
+          var n = self._incluirFontesNoDiario(buf.ativ, fontes, marcados);
           pn.innerHTML = ""; renderAtiv();
           if (n) UI.toast(n + " serviço(s) incluído(s).", "ok");
           else UI.toast("Nenhum serviço marcado.", "erro");
@@ -24606,7 +24681,8 @@
       var foneIntl = fone ? (fone.length <= 11 ? "55" + fone : fone) : "";
       var wa = foneIntl ? ("https://wa.me/" + foneIntl + "?text=" + encodeURIComponent(msg)) : "";
       var mail = u.email ? ("mailto:" + encodeURIComponent(u.email) + "?subject=" + encodeURIComponent("Seu acesso ao OrçaPRO") + "&body=" + encodeURIComponent(msg)) : "";
-      var creds = '<div style="background:#f0fdf4;border:1px solid #b9e6c8;border-radius:10px;padding:12px 14px;margin:10px 0;font-size:14px">' +
+      /* fundo claro FIXO pede texto escuro fixo: no tema escuro login e senha sumiam */
+      var creds = '<div style="background:#f0fdf4;border:1px solid #b9e6c8;border-radius:10px;padding:12px 14px;margin:10px 0;font-size:14px;color:#14532d">' +
         '<div><b>Login:</b> <span style="font-family:monospace">' + Util.esc(u.login) + '</span></div>' +
         '<div><b>Senha provisória:</b> <span style="font-family:monospace">' + Util.esc(senha) + '</span></div></div>';
       var botoes = '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px">' +
@@ -29338,10 +29414,17 @@ renderFolha: function () {
     },
 
     // ---------- Integração: criar obra a partir de um orçamento ----------
-    obraDeOrcamento: function (orc) {
+    /* `datas` (opcional) = {inicio, termino} em "AAAA-MM-DD", calculados pelo
+       chamador (aba Cronograma do orçamento: o início do cronograma e o
+       término que o motor dá). ⚠ Sem eles a obra nascia sem início, e o
+       planejamento da obra pedia "informe o início" logo depois — a obra é o
+       centro: é do início DELA que a linha de base congela. */
+    obraDeOrcamento: function (orc, datas) {
       var t = Orcamento.totais(orc);
       var o = { nome: orc.nome || "Obra do orçamento", status: "planejamento", valor: t.precoVenda, orcamentoId: orc.id,
         clienteNome: (orc.cliente && orc.cliente.nome) || "", local: (orc.obra && orc.obra.nome) || "" };
+      if (datas && /^\d{4}-\d{2}-\d{2}$/.test(String(datas.inicio || ""))) o.inicio = datas.inicio;
+      if (datas && /^\d{4}-\d{2}-\d{2}$/.test(String(datas.termino || ""))) o.termino = datas.termino;
       // tenta casar o cliente pelo nome
       var cli = lista("clientes").filter(function (c) { return c.nome && orc.cliente && c.nome.toLowerCase() === (orc.cliente.nome || "").toLowerCase(); })[0];
       if (cli) o.clienteId = cli.id;
@@ -29393,12 +29476,317 @@ renderFolha: function () {
       var m = bg && bg.querySelector(".modal"); if (m) m.style.maxWidth = "540px";
     },
 
+    // ================= CRONOGRAMA DA OBRA (previsto × realizado) — espec v2 3.2, adendo A2 =================
+    /* A OBRA É O CENTRO. A conta mora no CronoPlan.montarPainel e a entidade no
+       CronoBase; a MONTAGEM do painel de uma obra é UMA SÓ — App._cronoPainelDados
+       (js/app.js), a mesma do chip e da sub-aba do orçamento —, e o desenho é o
+       CronoExecUI.painelPR (compacto na ficha, completo no módulo). As ações da
+       linha de base (congelar, reprogramar, histórico) e a data de corte são as
+       do App (cronoCongelar, cronoHistorico, data-crono-corte), e o próprio
+       painel as oferece. Aqui fica o que é DA OBRA: a aba da ficha, o módulo,
+       vincular o orçamento à obra, o dinheiro por permissão e as portas.
+       ⚠ NENHUMA SEGUNDA MONTAGEM AQUI: duas montagens do "mesmo" painel
+       divergem no primeiro filtro esquecido, e aí a ficha diz um número e o
+       orçamento outro (memória "conserto que para no segundo consumidor"). */
+    _cronoObra: null,        /* obra aberta no módulo (o padrão do _lpObra) */
+
+    _cronoPode: function (mod) { return !(typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo(mod)); },
+    /* ⚠ o DINHEIRO do painel (valor de venda por etapa e subetapa, VP/VA, "fora
+       da linha de base (R$ X)", medição em R$) segue a regra da aba Medições da
+       ficha e do Financeiro: sem um dos dois, os percentuais ficam e os
+       valores saem (ObraVitrine.cronoSemDinheiro) */
+    _cronoDinheiro: function () { return this._cronoPode("medicoes") || this._cronoPode("financeiro"); },
+
+    /* "nome · número · estado" — o rótulo do orçamento em TODO seletor de
+       vínculo (cadastro da obra, contrato, ficha e módulo).
+       ⚠ Só pelo nome, a revisão (que copia o nome) aparecia como duas opções
+       iguais, sem pista de qual é a aprovada (crítica produto #6) — e ligar a
+       errada mede a obra, o boletim e o cronograma contra o escopo errado. */
+    _orcRotulo: function (o) {
+      if (!o) return "";
+      var est = "";
+      if (typeof Aprovacao !== "undefined" && Aprovacao.estadoDe && Aprovacao.ESTADOS) {
+        var e = Aprovacao.ESTADOS[Aprovacao.estadoDe(o)];
+        est = e ? e.rotulo : "";
+      }
+      return [String(o.nome == null ? "" : o.nome).trim() || "(orçamento sem nome)", String(o.numero == null ? "" : o.numero).trim(), est]
+        .filter(function (x) { return !!x; }).join(" · ");
+    },
+    _orcOpcoesRot: function (orcs) {
+      var self = this;
+      return Util.arr(orcs).filter(function (o) { return !!o; }).map(function (o) { return { id: o.id, rot: self._orcRotulo(o) }; });
+    },
+
+    /* O painel da obra, pela montagem ÚNICA do App, com o dinheiro por
+       permissão. estado: sem-obra | sem-orcamento | orcamento-sumiu |
+       sem-motor | painel. `opts.comGantt` pede o plano com a árvore (o Gantt
+       do completo). */
+    _cronoDados: function (obra, opts) {
+      opts = opts || {};
+      var c = { estado: "", obra: obra || null, orc: null, pr: null, dados: null, ativa: null, bases: [], plano: null };
+      if (!obra) { c.estado = "sem-obra"; return c; }
+      if (!obra.orcamentoId) { c.estado = "sem-orcamento"; return c; }
+      try { c.orc = Store.obterOrcamento ? Store.obterOrcamento(eid(), obra.orcamentoId) : null; } catch (eO) { c.orc = null; }
+      if (!c.orc) { c.estado = "orcamento-sumiu"; return c; }
+      /* ⚠ SEM O CronoBase NÃO HÁ PAINEL — e não um painel "sem plano": ler a
+         obra sem o motor da entidade mediria a obra contra a proposta, calado,
+         com o plano de execução e a linha de base gravados ali do lado. */
+      if (typeof CronoPlan === "undefined" || !CronoPlan.montarPainel || typeof CronoBase === "undefined" || !CronoBase.ENTIDADE ||
+          typeof App === "undefined" || typeof App._cronoPainelDados !== "function") { c.estado = "sem-motor"; return c; }
+      var dinheiro = this._cronoDinheiro();
+      /* o Gantt do completo carrega o valor e o peso de cada nó: sem
+         permissão de dinheiro, o painel vai sem ele */
+      var pr = App._cronoPainelDados(obra, c.orc, { comGantt: !!opts.comGantt && dinheiro });
+      if (!pr || !pr.painel) { c.estado = "sem-motor"; return c; }
+      if (!dinheiro) {
+        /* sem o removedor não se mostra o painel: melhor "não carregou" que o
+           valor de venda para quem não pode vê-lo */
+        if (typeof ObraVitrine === "undefined" || !ObraVitrine.cronoSemDinheiro) { c.estado = "sem-motor"; return c; }
+        pr.painel = ObraVitrine.cronoSemDinheiro(pr.painel);
+        pr.r = null;
+        pr.semDinheiro = true;
+      }
+      c.pr = pr; c.dados = pr.painel; c.ativa = pr.ativa || null; c.bases = Util.arr(pr.bases); c.plano = pr.plano || null;
+      c.estado = "painel";
+      return c;
+    },
+
+    /* Os orçamentos que podem ser ligados à obra, com o rótulo e — quando há —
+       a OUTRA obra que já mede por ele (ou por uma revisão anterior dele,
+       pela cadeia `revisaoDe` de CronoExecUI.obraDaCadeia).
+       ⚠ A LISTA INTEIRA de obras, sem o funil: "já ligado a outra obra" tem de
+       valer também quando a outra é de alguém que o usuário não vê — senão ele
+       abre medição em dobro sem saber (`_pctAnterioresPorItem` é por obra).
+       O NOME dela só aparece se ele pode vê-la. */
+    _cronoOpcoesVinculo: function (obraId) {
+      var self = this, orcs = [], obras = [];
+      try { orcs = Store.listarOrcamentos(eid()) || []; } catch (eL) { orcs = []; }
+      try { obras = (Store.listar(eid(), "obras") || []).filter(function (ob) { return ob && ob.id !== obraId; }); } catch (eL2) { obras = []; }
+      var podeVer = function (ob) { return !(typeof Auth !== "undefined" && Auth.podeObra && !Auth.podeObra(ob.id)); };
+      var CX = (typeof CronoExecUI !== "undefined" && CronoExecUI.obraDaCadeia) ? CronoExecUI : null;
+      return orcs.filter(function (o) { return !!o; }).map(function (o) {
+        var nomes = [], ocultas = 0;
+        if (CX) {
+          var info = CX.obraDaCadeia(o, orcs, obras, podeVer) || {};
+          Util.arr(info.obras).forEach(function (x) { if (x && x.obra) nomes.push(x.obra.nome || "obra sem nome"); });
+          /* ⚠ e a obra ligada a OUTRA revisão da família (mais nova ou irmã):
+             ligar a R0 com a obra na R1 é a mesma medição em dobro (revisão 3) */
+          Util.arr(info.outras).forEach(function (x) { if (x && x.obra) nomes.push((x.obra.nome || "obra sem nome") + " (na revisão " + (x.orcNumero || x.orcId) + ")"); });
+          ocultas = (Number(info.ocultas) || 0) + (Number(info.ocultasOutras) || 0);
+        } else {
+          /* sem o CronoExecUI (cache velho): só o vínculo direto — a cadeia de
+             revisões fica de fora, e isso é o que a versão anterior já fazia */
+          obras.forEach(function (ob) { if (ob.orcamentoId === o.id) { if (podeVer(ob)) nomes.push(ob.nome || "obra sem nome"); else ocultas++; } });
+        }
+        if (ocultas) nomes.push(ocultas === 1 ? "1 obra que o seu usuário não vê" : ocultas + " obras que o seu usuário não vê");
+        return { id: o.id, rot: self._orcRotulo(o), obra: nomes.join(", ") };
+      });
+    },
+
+    /* a aba Cronograma da ficha: o painel compacto e as portas (ver
+       ObraVitrine.corpoAba → abaCronograma) */
+    _cronoFicha: function (o) {
+      var c = this._cronoDados(o, { comGantt: false });
+      var podeObras = this._cronoPode("obras") && !(typeof Auth !== "undefined" && Auth.podeObra && !Auth.podeObra(o.id));
+      var out = {
+        estado: c.estado, obraId: o.id, pr: c.pr, dados: c.dados || null,
+        orcRot: c.orc ? this._orcRotulo(c.orc) : "",
+        base: c.ativa ? { versao: c.ativa.versao, criadaEm: c.ativa.criadaEm || "" } : null,
+        opcoes: [], podeVincular: podeObras,
+        podeOrcamentos: this._cronoPode("orcamentos")
+      };
+      if ((c.estado === "sem-orcamento" || c.estado === "orcamento-sumiu") && podeObras) {
+        /* ⚠ orçamento sumido com boletim sobre ele: sem seletor, com os números
+           e a saída que existe (ver _cronoTrocaBloqueada) */
+        var blq = c.estado === "orcamento-sumiu" ? this._cronoTrocaBloqueada(o, null) : null;
+        if (blq) out.bloqueioVinculo = blq; else out.opcoes = this._cronoOpcoesVinculo(o.id);
+      }
+      return out;
+    },
+    /* ⚠ TROCAR O ORÇAMENTO DE UMA OBRA QUE JÁ TEM MEDIÇÃO (revisão 3 da Fase 3,
+       lente dinheiro). O acumulado já medido de cada item é contado por obra E
+       por orçamento (_pctAnterioresPorItem: `x.orcamentoId !== orcamentoId`
+       sai da conta): ligar outro orçamento faz o próximo boletim começar do
+       zero nos itens já medidos — medição em dobro. A ficha e o módulo, com o
+       orçamento da obra "não encontrado neste aparelho", ofereciam o seletor e
+       trocavam sem perguntar (anterior de 60% → {}), enquanto a passagem para
+       a revisão já recusava: portas do mesmo documento discordando (skill
+       dinheiro). Mesma trava: CronoExecUI.bloqueioPassarObra. `destinoId` null
+       = qualquer orçamento. Devolve null (pode) ou o recado com os números. */
+    _cronoTrocaBloqueada: function (obra, destinoId) {
+      if (!obra || !obra.orcamentoId) return null;
+      if (typeof CronoExecUI === "undefined" || typeof CronoExecUI.bloqueioPassarObra !== "function")
+        return "Não consegui conferir as medições desta obra (o arquivo js/cronoexecui.js não carregou) — nada foi gravado. Atualize o app e tente de novo.";
+      var meds = null;
+      try { meds = Store.listar(eid(), "medicoes") || []; } catch (eM) { meds = null; }
+      if (meds === null) return "Não consegui ler as medições deste aparelho — nada foi gravado.";
+      var bl = CronoExecUI.bloqueioPassarObra(obra, meds, destinoId == null ? null : destinoId, null);
+      if (!bl) return null;
+      var orcA = null;
+      try { orcA = Store.obterOrcamento ? Store.obterOrcamento(eid(), obra.orcamentoId) : null; } catch (eO) { orcA = null; }
+      var qual = orcA ? "o orçamento " + this._orcRotulo(orcA) : "o orçamento que ela usa hoje (" + obra.orcamentoId + ", que não está neste aparelho)";
+      return "A obra " + (obra.nome || "") + " tem " + bl.n + " boletim(ns) de medição feito(s) sobre " + qual + (this._cronoDinheiro() ? " (" + Util.fmtMoeda(bl.valor) + ")" : "") +
+        ". O acumulado já medido de cada item é contado por orçamento: ligar outro orçamento faria o próximo boletim começar do zero nos itens já medidos — medição em dobro. Nada foi gravado. " +
+        (orcA ? "Planeje e meça pelo orçamento ligado à obra; para trocar o orçamento de uma obra que já tem medição, fale com o suporte da RA."
+          : "Se o orçamento só não chegou pela sincronização, espere sincronizar e abra de novo; se ele foi excluído, fale com o suporte da RA — não vincule outro.");
+    },
+
+    /* [Vincular orçamento] — da ficha e do módulo. O botão lê o seletor (só
+       os dois ids que existem) e a regra mora em _cronoVincularAplicar. */
+    cronobraVincular: function (d) {
+      var ids = { "ov-vinc-orc": 1, "cronobra-vinc-orc": 1 };
+      var selId = (d && ids[d.sel] === 1) ? d.sel : "ov-vinc-orc";
+      var el = (typeof document !== "undefined" && document.getElementById) ? document.getElementById(selId) : null;
+      return this._cronoVincularAplicar(d && d.id, el ? String(el.value || "") : "");
+    },
+    _cronoVincularAplicar: function (obraId, orcId) {
+      function nao(msg) { UI.toast(msg, "erro"); return { ok: false, erro: msg }; }
+      if (this._bloqueado()) return { ok: false, erro: "bloqueado" };   /* o _bloqueado já avisou */
+      if (!this._cronoPode("obras")) return nao("Seu usuário não tem permissão no módulo Obras — só quem edita o cadastro da obra vincula o orçamento. Nada foi gravado.");
+      if (typeof Auth !== "undefined" && Auth.podeObra && !Auth.podeObra(obraId)) return nao("Esta obra não está liberada para o seu usuário — nada foi gravado.");
+      if (!orcId) return nao("Escolha o orçamento na lista antes de vincular.");
+      var obra = obraId ? Store.obter(eid(), "obras", obraId) : null;
+      if (!obra) return nao("Obra não encontrada neste aparelho — ela pode ter sido excluída em outro. Nada foi gravado.");
+      var atual = obra.orcamentoId ? Store.obterOrcamento(eid(), obra.orcamentoId) : null;
+      /* ⚠ ESTA PORTA SÓ LIGA OBRA SEM ORÇAMENTO (ou com um que não existe mais
+         aqui). TROCAR o orçamento de uma obra muda a base dos boletins
+         (`_pctAnterioresPorItem` é por obra + orçamento) — isso continua no
+         cadastro, e a passagem para uma revisão tem a porta própria no
+         orçamento (App.cronoPassarObra, que confere os boletins). */
+      if (atual && String(obra.orcamentoId) === String(orcId)) { UI.toast("Esta obra já está ligada a esse orçamento — nada mudou.", "ok"); return { ok: true, nadaMudou: true }; }
+      if (atual) return nao("Esta obra já está ligada ao orçamento " + this._orcRotulo(atual) + " — trocar muda a base das medições e do cronograma; se for isso mesmo, troque em Editar cadastro. Nada foi gravado.");
+      /* ⚠ a obra aponta para um orçamento que NÃO está no aparelho (excluído,
+         ou ainda não sincronizou) e tem boletim sobre ele: trocar aqui era a
+         segunda porta de troca de orçamento que não perguntava — o boletim
+         seguinte nascia do zero nos itens já medidos */
+      if (obra.orcamentoId) { var blqV = this._cronoTrocaBloqueada(obra, orcId); if (blqV) return nao(blqV); }
+      var orc = Store.obterOrcamento(eid(), orcId);
+      if (!orc) return nao("Orçamento não encontrado neste aparelho — atualize a tela e escolha de novo. Nada foi gravado.");
+      var op = this._cronoOpcoesVinculo(obra.id).filter(function (x) { return x.id === orcId; })[0];
+      if (op && op.obra) {
+        var txt = "O orçamento " + this._orcRotulo(orc) + " (ele ou uma revisão anterior dele) já está ligado a: " + op.obra + ".\n\n" +
+          "Duas obras no mesmo orçamento dividem os diários e as medições dele — o boletim de uma não enxerga o que a outra já mediu, e o mesmo serviço pode ser medido duas vezes.\n\n" +
+          "Vincular mesmo assim?";
+        var conf = (typeof window !== "undefined" && window.confirm) ? window.confirm(txt) : false;
+        if (!conf) return { ok: false, cancelado: true };
+      }
+      var novo = Util.clone(obra);
+      /* ⚠ AÇÃO REGISTRADA na própria obra, no MESMO campo e formato da
+         passagem para uma revisão (App._cronoPassarObraAplicar): quem ligou,
+         quando, de onde para onde (as 10 últimas). Não há trilha de auditoria
+         central no app; o registro vai com o cadastro e sincroniza com ele. */
+      var hist = Util.arr(novo.vinculoOrcamento).slice(-9);
+      var quem = "";
+      try { quem = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) ? String(Auth.usuario().nome || Auth.usuario().email || "") : ""; } catch (eQ) { quem = ""; }
+      hist.push({ de: String(obra.orcamentoId || ""), deNumero: "", para: String(orc.id), paraNumero: String(orc.numero == null ? "" : orc.numero), em: Util.agoraISO(), por: quem.slice(0, 60) });
+      novo.vinculoOrcamento = hist;
+      novo.orcamentoId = orc.id;
+      if (!Store.salvar(eid(), "obras", novo)) return nao("O vínculo NÃO foi gravado — o armazenamento deste aparelho recusou (cheio?). Nada mudou.");
+      UI.toast("Orçamento " + this._orcRotulo(orc) + " vinculado à obra " + (obra.nome || "sem nome") + " — o cronograma da obra passa a medir o avanço contra ele.", "ok");
+      App.render();
+      return { ok: true };
+    },
+
+    cronobraTrocaObra: function (id) { if (id == null) return; this._cronoObra = id; App.render(); },
+    /* [Abrir cronograma completo] — o gancho que App.cronoAbrirPlanejamento
+       chama (o botão do painel): o módulo, já na obra, com a ficha fechada */
+    abrirCronobra: function (id) {
+      if (!this._cronoPode("cronobra")) { UI.toast("Seu usuário não tem permissão no módulo Cronograma da obra — peça ao administrador da conta.", "erro"); return; }
+      this._cronoObra = id || null; this._ovFicha = null;
+      App.irPara("cronobra");
+    },
+    /* [Abrir cronograma no orçamento] — o caminho da busca (irPara +
+       abrirOrcamento), e então a aba Cronograma do editor.
+       ⚠ O irPara("orcamentos") vem ANTES: vindo da ficha ou do módulo (uma
+       view da Gestão), só o abrirOrcamento marcaria o editor por baixo e o
+       render continuaria desenhando a tela da Gestão — um clique mudo. */
+    cronobraAbrirOrc: function (id) {
+      if (!this._cronoPode("orcamentos")) { UI.toast("Seu usuário não tem permissão no módulo Orçamentos, onde fica o cronograma do orçamento.", "erro"); return; }
+      var obra = id ? Store.obter(eid(), "obras", id) : null;
+      var orc = obra && obra.orcamentoId && Store.obterOrcamento ? Store.obterOrcamento(eid(), obra.orcamentoId) : null;
+      if (!orc) { UI.toast("Esta obra não tem orçamento vinculado neste aparelho.", "erro"); return; }
+      this._ovFicha = null;
+      if (App.irPara("orcamentos") === false) return;
+      App.abrirOrcamento(orc.id);
+      if (App.orcAtual && App.orcAtual.id === orc.id) { App.aba = "cronograma"; App.render(); }
+    },
+
+    /* o seletor de vínculo do MÓDULO (tema do app; a ficha desenha o dela em
+       vidro, com os mesmos dados de _cronoOpcoesVinculo) */
+    _cronoVincularHtml: function (obraId, opcoes) {
+      var esc = Util.esc;
+      if (!this._cronoPode("obras")) return '<p class="muted">' + esc("Quem pode editar o cadastro da obra (módulo Obras) vincula o orçamento a ela.") + "</p>";
+      if (!Util.arr(opcoes).length) return '<p class="muted">' + esc("Nenhum orçamento cadastrado ainda — crie o orçamento desta obra em Orçamentos e volte aqui para vinculá-lo.") + "</p>";
+      return '<div class="flex" style="gap:8px;flex-wrap:wrap;align-items:center"><select id="cronobra-vinc-orc" aria-label="Orçamento desta obra (nome · número · estado)" style="min-width:280px;max-width:100%">' +
+        '<option value="">— escolha o orçamento —</option>' + Util.arr(opcoes).map(function (o) {
+          return '<option value="' + esc(o.id) + '">' + esc(o.rot + (o.obra ? " — já ligado a: " + o.obra : "")) + "</option>";
+        }).join("") + '</select><button class="btn primary" data-gacao="cronobra-vincular" data-id="' + esc(obraId) + '" data-sel="cronobra-vinc-orc">Vincular orçamento</button></div>';
+    },
+
+    /* O MÓDULO "Cronograma da obra": o seletor de obra (o padrão do Last
+       Planner) e o painel COMPLETO — que traz a data de corte, a curva, o
+       Gantt com a base, a tabela por nó e as ações da linha de base. */
+    renderCronobra: function () {
+      var self = this, esc = Util.esc, obras = lista("obras");
+      if (!obras.some(function (o) { return o && o.id === self._cronoObra; })) this._cronoObra = obras.length ? obras[0].id : "";
+      var selObra = '<select data-gacao="cronobra-obra" aria-label="Obra" style="max-width:260px">' + (obras.length ? "" : '<option value="">— sem obra —</option>') +
+        obras.map(function (o) { return '<option value="' + esc(o.id) + '"' + (o.id === self._cronoObra ? " selected" : "") + ">" + esc(o.nome || "Obra sem nome") + "</option>"; }).join("") + "</select>";
+      var html = this._head(svg("cronobra") + "Cronograma da obra", "", "", selObra);
+      if (!obras.length) return html + vazioBox("Cadastre uma obra primeiro — o cronograma da obra compara o previsto com o realizado de uma obra.", "nova-obra", "Nova obra");
+      var obra = obras.filter(function (o) { return o && o.id === self._cronoObra; })[0];
+      var c = this._cronoDados(obra, { comGantt: true });
+      var id = obra.id, editar = '<button class="btn" data-gopen="obras:' + esc(id) + '">Editar cadastro da obra</button>';
+      var blqM = c.estado === "orcamento-sumiu" ? this._cronoTrocaBloqueada(obra, null) : null;
+      if (blqM) {
+        // com boletim sobre o orçamento sumido: nenhum seletor (ver _cronoTrocaBloqueada)
+        return html + '<div class="card"><p>' + esc("O orçamento ligado à obra " + (obra.nome || "") + " não foi encontrado neste aparelho — pode ter sido excluído, ou ainda não chegou pela sincronização.") +
+          '</p><p class="muted">' + esc(blqM) + "</p></div>";
+      }
+      if (c.estado === "sem-orcamento" || c.estado === "orcamento-sumiu") {
+        return html + '<div class="card"><p>' + esc(c.estado === "sem-orcamento"
+          ? "A obra " + (obra.nome || "") + " não tem orçamento vinculado — o cronograma da obra mede o avanço (previsto × realizado) contra o orçamento dela."
+          : "O orçamento ligado à obra " + (obra.nome || "") + " não foi encontrado neste aparelho — pode ter sido excluído, ou ainda não chegou pela sincronização. Se foi excluído, vincule o orçamento certo:") + "</p>" +
+          this._cronoVincularHtml(id, this._cronoPode("obras") ? this._cronoOpcoesVinculo(id) : []) + "</div>";
+      }
+      if (c.estado === "sem-motor") return html + '<div class="card"><p>' + esc("O planejamento da obra não carregou neste aparelho (js/cronoplan.js, js/cronobase.js) — atualize o app. Nada foi calculado.") + "</p></div>";
+      var portas = [];
+      if (this._cronoPode("orcamentos")) portas.push('<button class="btn" data-gacao="cronobra-orc" data-id="' + esc(id) + '" title="Abre o orçamento da obra na aba Cronograma">Abrir cronograma no orçamento</button>');
+      portas.push(editar);
+      html += '<div class="flex" style="gap:8px;flex-wrap:wrap;margin:0 0 14px">' + portas.join("") + "</div>";
+      var CX = (typeof CronoExecUI !== "undefined") ? CronoExecUI : null, corpo = null, falhou = "";
+      if (CX && typeof CX.painelPR === "function") {
+        try { corpo = CX.painelPR(c.pr, { completo: true }); } catch (eP) { corpo = null; falhou = String((eP && eP.message) || eP); }
+      }
+      if (corpo == null || corpo === "") {
+        corpo = (typeof ObraVitrine !== "undefined" && ObraVitrine.cronoReservaHtml)
+          ? "<style>" + ObraVitrine.CSS_CRONO + '</style><div class="card">' + ObraVitrine.cronoReservaHtml(c.dados || {}, falhou) + "</div>"
+          : '<div class="card"><p>' + esc("O desenho do painel (js/cronoexecui.js) não carregou — atualize o app.") + "</p></div>";
+      }
+      return html + corpo;
+    },
+
     // ================= LAST PLANNER (PPC) — planejamento enxuto (Lean Construction) =================
     _lpTarefas: function () { var o = this._lpObra; return Store.listar(eid(), "lp_tarefas").filter(function (t) { return !o || t.obraId === o; }); },
 
-    /* "Puxar do cronograma": as etapas do orçamento vinculado à obra cuja janela
-     * cruza ESTA semana viram tarefas do plano (não-comprometidas — comprometer é
-     * decisão do último planejador, LPS). Dedup por título+semana no motor. */
+    /* O cronograma que VALE para a obra: o PLANO DE EXECUÇÃO dela (crono_obra,
+       tipo "plano") quando existe — é o que se edita depois de o orçamento ser
+       aprovado —, senão o do orçamento. `CronoBase` vem de outro arquivo e pode
+       não estar carregado: aí vale o orçamento, como antes. */
+    _lpCronoLista: function () {
+      if (typeof CronoBase === "undefined" || !CronoBase.ENTIDADE) return [];
+      try { return Store.listar(eid(), CronoBase.ENTIDADE) || []; } catch (e) { return []; }
+    },
+    _lpOrcDoPlano: function (obra, orc, listaCrono) {
+      if (!obra || !orc || typeof CronoBase === "undefined" || !CronoBase.plano || !CronoBase.orcComPlano) return orc;
+      var pl = CronoBase.plano(listaCrono || this._lpCronoLista(), obra.id);
+      return (pl && CronoBase.orcComPlano(orc, pl)) || orc;
+    },
+
+    /* "Puxar do cronograma": os nós do cronograma cuja janela cruza ESTA semana
+     * viram tarefas do plano (não-comprometidas — comprometer é decisão do
+     * último planejador, LPS). Com o detalhe da aba Cronograma ≠ "etapa", as
+     * SUBETAPAS; senão as etapas. A regra (quais nós, carimbo, dedup) mora em
+     * `LastPlanner.puxarDoCronograma` — aqui só se busca, grava e avisa. */
     lpPuxarCronograma: function () {
       var obraId = this._lpObra;
       if (!obraId) { UI.toast("Selecione a obra no topo do Last Planner primeiro.", "erro"); return; }
@@ -29406,26 +29794,15 @@ renderFolha: function () {
       if (!obra || !obra.orcamentoId) { UI.toast("Vincule um orçamento à obra (em Obras → editar) pra puxar o cronograma.", "erro"); return; }
       var orc = Store.obterOrcamento ? Store.obterOrcamento(eid(), obra.orcamentoId) : null;
       if (!orc) { UI.toast("Orçamento vinculado não encontrado.", "erro"); return; }
-      // estimar() devolve offsets em DIAS ÚTEIS, mas também as DATAS reais (dataInicio/
-      // dataFim, já pulando fins de semana) — usamos as datas e convertemos pra dias
-      // corridos, que é o contrato do motor (gate v1.1.63: úteis≠corridos, erro ~40%).
-      var est;
-      try { est = Cronograma.estimar(orc, obra.inicio ? { dataInicio: obra.inicio } : null); } catch (e) { UI.toast("Falha ao estimar o cronograma: " + e.message, "erro"); return; }
-      var ancora = est.dataInicio;
-      var pad2 = function (n) { return (n < 10 ? "0" : "") + n; };
-      var ancoraISO = ancora.getFullYear() + "-" + pad2(ancora.getMonth() + 1) + "-" + pad2(ancora.getDate());
-      var etapas = (est.etapas || []).map(function (e) {
-        if (!e.dataInicio || !e.dataFim) return null;
-        return { nome: e.nome, categoria: e.categoria, categoriaNome: e.categoriaNome,
-          inicio: Math.round((e.dataInicio - ancora) / 86400000), fim: Math.round((e.dataFim - ancora) / 86400000) };
-      }).filter(function (x) { return x; });
       var semana = LastPlanner.chaveSemana(new Date());
       var existentes = Store.listar(eid(), "lp_tarefas").filter(function (t) { return t.obraId === obraId; });
-      var sugestoes = LastPlanner.sugerirDoCronograma(etapas, ancoraISO, semana, existentes);
-      if (!sugestoes.length) { UI.toast("Nada novo pra esta semana: ou as etapas do cronograma não caem nela, ou já estão no plano.", "ok"); return; }
-      sugestoes.forEach(function (s) { s.obraId = obraId; Store.salvar(eid(), "lp_tarefas", s); });
-      App.render();
-      UI.toast(sugestoes.length + " tarefa(s) do cronograma entraram no plano desta semana — gerencie as restrições e comprometa.", "ok");
+      var res = LastPlanner.puxarDoCronograma(this._lpOrcDoPlano(obra, orc), obra, semana, existentes,
+        { Cronograma: (typeof Cronograma !== "undefined") ? Cronograma : null });
+      var tx = LastPlanner.textoPuxar(res);
+      if (!res.ok) { UI.toast(tx.msg, "erro"); return; }
+      res.sugestoes.forEach(function (s) { s.obraId = obraId; Store.salvar(eid(), "lp_tarefas", s); });
+      if (res.sugestoes.length) App.render();
+      UI.toast(tx.msg, "ok");
     },
     _lpObter: function (id) { return Store.obter(eid(), "lp_tarefas", id); },
     _lpSalvar: function (t, msg) { Store.salvar(eid(), "lp_tarefas", t); App.render(); if (msg) UI.toast(msg, "ok"); },
@@ -29460,14 +29837,14 @@ renderFolha: function () {
       var ppcSem = res.ppcSemana == null ? "—" : Math.round(res.ppcSemana * 100) + "%";
       var ppcMed = res.ppcMedio == null ? "—" : Math.round(res.ppcMedio * 100) + "%";
       var corPpc = res.ppcSemana == null ? "var(--aco)" : (res.ppcSemana >= this._metas().ppc / 100 ? "var(--verde)" : (res.ppcSemana < .5 ? "#dc2626" : "#ea580c"));
-      // Aderência Previsto × Real (média dos desvios das obras com cronograma+medição)
+      /* Previsto × Real: com linha de base, o confronto da base; sem base, o
+         cartão se chama "Medido × prazo linear" — o nome diz a régua. As
+         regras e os textos moram em LastPlanner.kpiPrevReal; aqui só se
+         desenha, com o texto escapado (o recado pode citar nome de etapa). */
       var kpiPR = "";
       var prDados = this._lpPrevRealDados();
-      if (prDados.length) {
-        var desvio = prDados.reduce(function (s, d) { return s + (d.real - d.prev); }, 0) / prDados.length;
-        var dTxt = (desvio > 0 ? "+" : "") + (Math.round(desvio * 10) / 10).toFixed(1).replace(".", ",") + " pts";
-        kpiPR = this._lpKpi("Previsto × Real", dTxt, "média de " + prDados.length + " obra(s) medida(s)", desvio >= 0 ? "var(--verde)" : "#ea580c");
-      }
+      var kpiD = LP.kpiPrevReal ? LP.kpiPrevReal(prDados) : null;
+      if (kpiD) kpiPR = this._lpKpi(Util.esc(kpiD.titulo), Util.esc(kpiD.valor), Util.esc(kpiD.sub), kpiD.positivo ? "var(--verde)" : "#ea580c");
       html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px">' +
         this._lpKpi("PPC da semana", ppcSem, res.feitas + "/" + res.comprometidas + " tarefas", corPpc) +
         this._lpKpi("PPC médio (6 sem)", ppcMed, "meta ≥ 80%", "var(--texto)") +
@@ -29477,7 +29854,7 @@ renderFolha: function () {
 
       if (visao === "quadro") {
         html += this._lpQuadroHtml(ts, look);
-        html += this._lpGraficosHtml(ts, hist);
+        html += this._lpGraficosHtml(ts, hist, prDados);
         return html;
       }
 
@@ -29511,31 +29888,58 @@ renderFolha: function () {
       });
       html += '</div></div>';
 
-      html += this._lpGraficosHtml(ts, hist);
+      /* ⚠ os MESMOS dados do cartão (revisão 3, lente código): sem passar o
+         prDados a visão Semanal calculava o previsto × real DUAS vezes por
+         render — cada obra com base custa estimar + realizado + confronto
+         (~0,3 a 0,6 s por clique no Last Planner com 6 obras) */
+      html += this._lpGraficosHtml(ts, hist, prDados);
       return html;
     },
     // ===== Gráficos do Last Planner (Quadro e Semanal): PPC em linha c/ meta,
     // Previsto×Realizado por obra (cronograma × medições) e donut de pendências =====
-    /* Avanço por obra DERIVADO de dados reais: previsto = % do prazo do cronograma
-     * decorrido (a distribuição do Orcamento.cronograma é linear no total);
-     * realizado = % acumulado das medições não-rejeitadas. Obra sem orçamento
-     * vinculado ou sem data de início fica fora (sem inventar número). */
+    /* Avanço por obra, de dado real, em DUAS réguas que nunca se misturam
+     * (a regra mora em LastPlanner.prevRealObra):
+     *  - obra com LINHA DE BASE (CronoBase.ativa): previsto da base na data do
+     *    último diário publicável × executado sobre o orçamento
+     *    (CronoPlan.confrontoPorNo), com o plano de execução da obra;
+     *  - sem base: prazo decorrido (linear) × medido nos boletins.
+     * ⚠ O "real" sem base SOMAVA MEDIÇÃO PENDENTE (`status !== "rejeitada"`):
+     *   30% aprovado + 55% em análise davam 85% aqui e 30% no Painel. Agora
+     *   pendente e rejeitada não contam (doutrina BimAvanco.NAO_CONTA).
+     * Obra sem orçamento vinculado, ou sem base e sem início, fica fora (sem
+     * inventar número). Para no 6º resultado — o gráfico mostra 6, e cada
+     * obra com base custa um estimar + confronto. */
     _lpPrevRealDados: function () {
-      var out = [], meds = lista("medicoes"), hoje = new Date();
+      var out = [], meds = lista("medicoes"), hoje = new Date(), self = this;
+      var listaCrono = this._lpCronoLista();
+      var comBase = typeof CronoBase !== "undefined" && typeof CronoBase.ativa === "function";
+      var deps = { num: Util.num,
+        Cronograma: typeof Cronograma !== "undefined" ? Cronograma : null,
+        CronoPlan: typeof CronoPlan !== "undefined" ? CronoPlan : null,
+        Orcamento: typeof Orcamento !== "undefined" ? Orcamento : null,
+        Fisico: typeof Fisico !== "undefined" ? Fisico : null };
+      var rdosTodos = null, orcsTodos = null;
       lista("obras").forEach(function (o) {
-        if (!o || !o.orcamentoId || !o.inicio) return;
+        if (out.length >= 6 || !o || !o.orcamentoId) return;
         var orc = Store.obterOrcamento(eid(), o.orcamentoId); if (!orc) return;
-        var meses = parseInt(orc.cronogramaMeses || 6, 10) || 6;
-        var ini = new Date(String(o.inicio).slice(0, 10) + "T00:00:00");
-        if (isNaN(ini.getTime())) return;
-        var prev = Math.max(0, Math.min(100, ((hoje - ini) / (30.44 * 86400000)) / meses * 100));
-        var real = 0;
-        meds.forEach(function (m) { if (m && m.obraId === o.id && m.status !== "rejeitada") real += Util.num(m.percentual); });
-        real = Math.max(0, Math.min(100, real));
-        if (prev <= 0 && real <= 0) return;
-        out.push({ nome: o.nome, prev: Math.round(prev), real: Math.round(real) });
+        var base = comBase ? CronoBase.ativa(listaCrono, o.id) : null;
+        var ent = { obra: o, orc: orc, base: base, medicoes: meds, hoje: hoje };
+        if (base) {
+          if (!rdosTodos) rdosTodos = lista("rdo");
+          /* a cadeia de revisões: base de uma revisão ANTERIOR vale, de outro
+             orçamento não (CronoPlan.baseVale — a mesma regra do painel) */
+          if (!orcsTodos) { try { orcsTodos = Store.listarOrcamentos(eid()) || []; } catch (eLO) { orcsTodos = []; } }
+          ent.orcamentos = orcsTodos;
+          ent.orcPlano = self._lpOrcDoPlano(o, orc, listaCrono);
+          /* a MESMA seleção de diários do Portal e do PDF */
+          ent.rdosPublicaveis = rdosTodos.filter(function (r) {
+            return r && r.obraId === o.id && typeof RDO !== "undefined" && RDO.podeIrAoPortal(r);
+          });
+        }
+        var d = LastPlanner.prevRealObra(ent, deps);
+        if (d) out.push(d);
       });
-      return out.slice(0, 6);
+      return out;
     },
     _lpSvgPpc: function (h) {
       var pts = [], W = 340, H = 150, padL = 26, padR = 10, padT = 12, padB = 22;
@@ -29581,15 +29985,19 @@ renderFolha: function () {
       dados.forEach(function (d, i) {
         var cx = padL + gw * i + gw / 2;
         var nome = String(d.nome || ""); if (nome.length > 14) nome = nome.slice(0, 13) + "…";
-        svg += '<rect x="' + (cx - bw - 1.5) + '" y="' + y(d.prev) + '" width="' + bw + '" height="' + Math.max(1, y(0) - y(d.prev)) + '" rx="2" fill="var(--graf-prev)" opacity=".75"><title>Previsto ' + d.prev + '%</title></rect>' +
-          '<rect x="' + (cx + 1.5) + '" y="' + y(d.real) + '" width="' + bw + '" height="' + Math.max(1, y(0) - y(d.real)) + '" rx="2" fill="var(--graf-a)"><title>Realizado (medido) ' + d.real + '%</title></rect>' +
+        /* cada barra diz a SUA régua: obra com base e obra sem base convivem
+           no mesmo gráfico (ver LastPlanner.rotulosPrevReal) */
+        var rt = (typeof LastPlanner !== "undefined" && LastPlanner.rotulosPrevReal) ? LastPlanner.rotulosPrevReal(d) : { prev: "Previsto " + d.prev + "%", real: "Realizado " + d.real + "%" };
+        svg += '<rect x="' + (cx - bw - 1.5) + '" y="' + y(d.prev) + '" width="' + bw + '" height="' + Math.max(1, y(0) - y(d.prev)) + '" rx="2" fill="var(--graf-prev)" opacity=".75"><title>' + Util.esc(rt.prev) + '</title></rect>' +
+          '<rect x="' + (cx + 1.5) + '" y="' + y(d.real) + '" width="' + bw + '" height="' + Math.max(1, y(0) - y(d.real)) + '" rx="2" fill="var(--graf-a)"><title>' + Util.esc(rt.real) + '</title></rect>' +
           '<text x="' + cx + '" y="' + (H - 12) + '" text-anchor="middle" font-size="8.5" fill="var(--texto-fraco)">' + Util.esc(nome) + '</text>' +
           '<text x="' + cx + '" y="' + (H - 3) + '" text-anchor="middle" font-size="8.5" font-weight="700" fill="' + (d.real >= d.prev ? "var(--verde)" : "#ea580c") + '">' + (d.real >= d.prev ? "+" : "") + (d.real - d.prev) + ' pts</text>';
       });
       svg += "</svg>";
       svg += '<div style="display:flex;gap:14px;margin-top:4px;font-size:11px;color:var(--texto-fraco)">' +
-        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:2px;background:var(--aco-claro)"></span>Previsto (cronograma)</span>' +
-        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:2px;background:var(--graf-a)"></span>Realizado (medições)</span></div>';
+        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:2px;background:var(--aco-claro)"></span>Previsto</span>' +
+        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:2px;background:var(--graf-a)"></span>Realizado</span>' +
+        '<span>· passe o mouse na barra para ver a régua de cada obra</span></div>';
       return svg;
     },
     _lpDonutCores: ["#2563eb", "#b45309", "#15803d", "#7c3aed", "#be185d", "#64748b"],
@@ -29606,7 +30014,7 @@ renderFolha: function () {
       return svg;
     },
     // Gráfico PPC + Prev×Real + Donut + Causas (compartilhado entre Quadro e Semanal)
-    _lpGraficosHtml: function (ts, hist) {
+    _lpGraficosHtml: function (ts, hist, prDados) {
       var self = this, LP = window.LastPlanner;
       var h = LP.historicoPPC(ts, hist);
       var html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;align-items:start;margin-bottom:16px">';
@@ -29615,10 +30023,13 @@ renderFolha: function () {
       html += '<div class="card"><h3 style="margin:0 0 2px;font-size:14px">' + (typeof Icones !== 'undefined' ? Icones.get('grafico', 15) : '') + ' PPC — Percentual do Planejamento Concluído</h3><p class="muted" style="font-size:11.5px;margin:0 0 8px">Últimas 6 semanas · meta 85%</p>' + this._lpSvgPpc(h) + '</div>';
 
       // 2) Avanço físico — Previsto × Realizado por obra (só com dados reais)
-      var pr = this._lpPrevRealDados();
-      html += '<div class="card"><h3 style="margin:0 0 2px;font-size:14px">' + (typeof Icones !== 'undefined' ? Icones.get('graficos', 15) : '') + ' Avanço físico — Previsto × Realizado</h3><p class="muted" style="font-size:11.5px;margin:0 0 8px">Cronograma × medições acumuladas, por obra</p>';
+      /* os MESMOS dados do cartão (quem renderiza passa; sem isso, calcula) —
+         obra cujo confronto falhou fica fora do desenho e o cartão diz por quê */
+      var pr = (prDados || this._lpPrevRealDados()).filter(function (d) { return d && !d.erro; });
+      var lg = LP.legendaPrevReal ? LP.legendaPrevReal(pr) : { titulo: "Previsto × Realizado", sub: "" };
+      html += '<div class="card"><h3 style="margin:0 0 2px;font-size:14px">' + (typeof Icones !== 'undefined' ? Icones.get('graficos', 15) : '') + ' Avanço físico — ' + Util.esc(lg.titulo) + '</h3><p class="muted" style="font-size:11.5px;margin:0 0 8px">' + Util.esc(lg.sub) + '</p>';
       if (pr.length) html += this._lpSvgPrevReal(pr);
-      else html += '<p class="muted" style="font-size:12.5px;margin:6px 0">Vincule um orçamento à obra (com data de início) e lance medições — o gráfico compara o previsto do cronograma com o medido.</p>';
+      else html += '<p class="muted" style="font-size:12.5px;margin:6px 0">Vincule um orçamento à obra (com data de início) e lance medições — o gráfico compara o prazo decorrido com o medido nos boletins aprovados; com a linha de base congelada, compara o previsto da base com o executado nos diários.</p>';
       html += '</div>';
 
       // 3) Donut — pendências por frente (deriva do quadro ao vivo)
@@ -29946,6 +30357,10 @@ renderFolha: function () {
       /* a ficha da obra (palco de Obras) só LÊ e navega: abrir, trocar de
          aba, trocar mapa/satélite, pôr foto no fundo, ir ao módulo filtrado */
       "ov-ficha": 1, "ov-aba": 1, "ov-ficha-fechar": 1, "ov-mapa-tipo": 1, "ov-ir": 1, "ov-foto-cena": 1, "ov-rolar": 1,
+      /* o Cronograma da obra: trocar de obra e abrir o orçamento só LEEM.
+         Vincular o orçamento grava — e por isso NÃO está aqui: passa pela
+         trava da licença (congelar e histórico são do App, data-acao). */
+      "cronobra-obra": 1, "cronobra-orc": 1,
       /* ⚠ v1.2 — "ver todos os N" é LEITURA PURA e quase nasceu de fora desta
          lista. As tabelas longas passaram a desenhar as 300 mais recentes; sem
          esta linha, o cliente com licença vencida clicaria em "Ver todos os
@@ -30000,6 +30415,9 @@ renderFolha: function () {
         case "ov-foto-cena": return this.ovFotoCena(dataset);
         case "ov-rolar": return this.ovRolar(dataset);
         case "ov-resgate": return this.ovResgate(dataset);
+        case "cronobra-obra": return this.cronobraTrocaObra(dataset.value);
+        case "cronobra-orc": return this.cronobraAbrirOrc(id);
+        case "cronobra-vincular": return this.cronobraVincular(dataset);
         case "fin-rapido": return this.finRapido();
         case "vinculo-morto": return this.vinculoMortoModal();
         case "pr-troca-obra": return this.prTrocaObra(dataset.value);
@@ -30718,8 +31136,14 @@ case "nova-folha": return this.novoFolha();
           });
           /* SÓ OS DIÁRIOS PUBLICÁVEIS. Passar `rdosDaObra` faria o percentual
              do cliente contar rascunho e diário ainda parado na aprovação — um
-             número maior do que a soma do que está diante dele na tela. */
-          fisico = Fisico.pacote(rdosPublicaveis, id, { precos: precos });
+             número maior do que a soma do que está diante dele na tela.
+             ⚠ `mapaItens`: o % POR ETAPA agrupa pelo ID da etapa do orçamento
+             (item → etapa), não pelo nome escrito no diário — renomear a etapa
+             não pode trocar o medido pela estimativa no Gantt do cliente. A
+             RÉGUA não muda (Fisico.ponderar); o número grande também não (o
+             agrupamento não entra nele). Ver Fisico.porEtapaId. */
+          var mapaItens = (orcP && Fisico.mapaDoOrcamento) ? Fisico.mapaDoOrcamento(orcP) : null;
+          fisico = Fisico.pacote(rdosPublicaveis, id, { precos: precos, mapaItens: mapaItens });
         }
       } catch (e) { fisico = null; }
 
@@ -30824,17 +31248,27 @@ case "nova-folha": return this.novoFolha();
              * O avanço medido MANDA; a distribuição por custo continua só para
              * a etapa que ainda não teve lançamento nenhum no diário (senão
              * ela sumiria do Gantt e o cliente perderia a linha do tempo). */
-            var medidoPorEtapa = {};
+            /* ⚠ O VÍNCULO É PELO ID DA ETAPA (fisico.etapas[].etapaId, de
+               Fisico.porEtapaId). Pelo nome, renomear a etapa no orçamento
+               fazia a linha dela voltar para "estimado" com os mesmos
+               diários. O nome só vale para o grupo que não tem id (serviço
+               digitado no diário cujo nome não é o de UMA etapa do orçamento)
+               — como sempre valeu. Mesma régua, mesma partição do pacote: o
+               Gantt e o bloco de etapas não podem discordar. */
+            var medidoPorEtapaId = {}, medidoPorEtapa = {};
             if (fisico && fisico.etapas) {
               fisico.etapas.forEach(function (e) {
                 if (e.pct === null) return;
-                medidoPorEtapa[String(e.etapa || "").toLowerCase().trim()] = e.pct;
+                if (e.etapaId) medidoPorEtapaId[e.etapaId] = e.pct;
+                else medidoPorEtapa[String(e.etapa || "").toLowerCase().trim()] = e.pct;
               });
             }
             cronograma = (est.etapas || []).map(function (e) {
               var w0 = accW / totC, w1 = (accW + Util.num(e.custo)) / totC; accW += Util.num(e.custo);
               var pe = pctExec / 100, p = pe <= w0 ? 0 : (pe >= w1 ? 100 : (pe - w0) / ((w1 - w0) || 1) * 100);
-              var real = medidoPorEtapa[String(e.nome || "").toLowerCase().trim()];
+              var real = (e.id != null && Object.prototype.hasOwnProperty.call(medidoPorEtapaId, String(e.id)))
+                ? medidoPorEtapaId[String(e.id)]
+                : medidoPorEtapa[String(e.nome || "").toLowerCase().trim()];
               var medido = real !== undefined;
               return { etapa: e.nome, inicio: addDias(obra.inicio, e.inicio), fim: addDias(obra.inicio, e.fim),
                        pct: Math.round(medido ? Math.min(100, real) : p),
@@ -31372,7 +31806,7 @@ case "nova-folha": return this.novoFolha();
       var userSug = obra.portalUser || ((obra.clienteNome || obra.nome || "cliente").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, "").slice(0, 16) || "cliente");
       var senhaSug = obra.portalSenha || Math.random().toString(36).slice(2, 8);
       var corpo =
-        '<p style="color:#475569;font-size:14px;margin-bottom:12px">Crie um acesso pro seu cliente <b>acompanhar esta obra online</b> — andamento, medições e diário de obra (RDO) com fotos. Ele acessa pelo link com o usuário e senha abaixo. Clique em <b>Publicar</b> sempre que quiser atualizar as informações.</p>' +
+        '<p style="color:var(--texto-fraco,#475569);font-size:14px;margin-bottom:12px">Crie um acesso pro seu cliente <b>acompanhar esta obra online</b> — andamento, medições e diário de obra (RDO) com fotos. Ele acessa pelo link com o usuário e senha abaixo. Clique em <b>Publicar</b> sempre que quiser atualizar as informações.</p>' +
         '<div class="row">' + campo("Usuário do cliente", inp("g-puser", userSug)) + campo("Senha", inp("g-psenha", senhaSug)) + "</div>" +
         /* Acessos extras: uma obra costuma ter mais de uma pessoa olhando.
            Antes, criar um segundo usuário aqui REVOGAVA o primeiro. */
@@ -31605,7 +32039,7 @@ case "nova-folha": return this.novoFolha();
         var trocar = !obra.portalUser || senha !== (obra.portalSenha || "");
         fetch(url + "/api/portal/publicar", { method: "POST", headers: { "Content-Type": "application/json", "x-licenca": chave }, body: JSON.stringify({ user: user, senha: senha, trocarSenha: trocar, empresa: (typeof Empresa !== "undefined" && Empresa.nomeDoc && Empresa.nomeDoc()) || ((typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) ? Auth.usuario().empresa : ""), obra: snapshot }) })
           .then(function (r) { return r.json(); }).then(function (j) {
-            if (!j.ok) { el("portal-result").innerHTML = '<div style="color:#dc2626;font-size:14px">' + Util.esc(j.erro || "Falha ao publicar.") + "</div>"; return; }
+            if (!j.ok) { el("portal-result").innerHTML = '<div style="color:var(--vermelho,#dc2626);font-size:14px">' + Util.esc(j.erro || "Falha ao publicar.") + "</div>"; return; }
             /* ⚠ TROCAR O USUÁRIO NÃO REVOGAVA O ANTIGO.
              * Publicar como "clienteB" gravava o novo nome na obra — e o
              * registro de "clienteA" continuava no servidor, com esta obra
@@ -31674,7 +32108,9 @@ case "nova-folha": return this.novoFolha();
                   }).join("") + "</div>";
               }
               el("portal-result").innerHTML =
-                '<div style="background:#f0fdf4;border:1px solid #16a34a;border-radius:10px;padding:14px 16px;font-size:14px">' +
+                /* fundo claro FIXO pede texto escuro fixo: no tema escuro o texto
+                   herdado era claro, e usuário e senha do cliente sumiam (1,08:1) */
+                '<div style="background:#f0fdf4;border:1px solid #16a34a;border-radius:10px;padding:14px 16px;font-size:14px;color:#14532d">' +
                 '<b style="color:#15803d">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Publicado!</b> Envie estes dados pro seu cliente:<br>' +
                 listaAcessos +
                 '<button class="btn sm primary" id="portal-copy" style="margin-top:10px">Copiar mensagem pro cliente</button></div>';
@@ -31727,13 +32163,13 @@ case "nova-folha": return this.novoFolha();
             var caixa = el("portal-result");
             if (!caixa) return;
             if (ehRede) {
-              caixa.innerHTML = '<div style="color:#dc2626;font-size:14px">Sem conexão com o servidor. Tente de novo.</div>';
+              caixa.innerHTML = '<div style="color:var(--vermelho,#dc2626);font-size:14px">Sem conexão com o servidor. Tente de novo.</div>';
               return;
             }
             try { console.error("[portal] falha ao publicar:", err); } catch (e2) {}
-            caixa.innerHTML = '<div style="color:#dc2626;font-size:14px"><b>Falha no programa ao publicar</b> — não foi a sua internet.' +
-              '<div style="font-size:12.5px;margin-top:6px;color:#7f1d1d">' + Util.esc(msg || "erro sem descrição") + "</div>" +
-              '<div style="font-size:12px;margin-top:6px;color:#475569">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' A obra <b>pode já ter sido publicada</b> — o erro aconteceu depois do envio. ' +
+            caixa.innerHTML = '<div style="color:var(--vermelho,#dc2626);font-size:14px"><b>Falha no programa ao publicar</b> — não foi a sua internet.' +
+              '<div style="font-size:12.5px;margin-top:6px;color:var(--vermelho,#7f1d1d)">' + Util.esc(msg || "erro sem descrição") + "</div>" +
+              '<div style="font-size:12px;margin-top:6px;color:var(--texto-fraco,#475569)">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' A obra <b>pode já ter sido publicada</b> — o erro aconteceu depois do envio. ' +
               "Confira no Portal antes de tentar de novo, e avise o suporte com esta mensagem.</div></div>";
           });
       }

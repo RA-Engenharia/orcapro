@@ -96,6 +96,20 @@
   <script src="js/nfitens.js"></script>
   <script src="js/feriados.js"></script>
   <script src="js/cronograma.js"></script>
+  <!-- planejamento da obra (linha de base, realizado por nó, previsto × realizado):
+       motor puro; lê Cronograma já carregado e Fisico/Avanco na hora da chamada -->
+  <script src="js/cronoplan.js"></script>
+  <!-- a entidade crono_obra (linhas de base e plano de execução da obra):
+       motor puro; usa a régua de bytes e o resumo do cronoplan.js acima -->
+  <script src="js/cronobase.js"></script>
+  <!-- a TELA do cronograma executivo (aba Cronograma): desenho puro; o ui.js
+       delega o renderCronograma para ele e o cronPDF usa o Gantt hierárquico -->
+  <script src="js/cronoexecui.js"></script>
+  <!-- a IA que edita o orçamento ([Editar com IA]): motor puro que valida o que
+       a IA propõe antes de qualquer gravação. Lê Orcamento, Cronograma e
+       Proposta na hora da chamada, por isso vem depois deles; e antes do
+       app.js, que liga a tela (sem esta linha o recurso não existe no navegador) -->
+  <script src="js/iaedit.js"></script>
   <script src="js/cronopdf.js"></script>
   <script src="js/msproject.js"></script>
   <script src="js/execucao.js"></script>
@@ -205,6 +219,7 @@
   <script src="js/empresa.js"></script>
   <script src="js/licenca.js"></script>
   <script src="js/cobranca.js"></script>
+  <script src="js/assinatura.js"></script>
   <script src="js/laudo.js"></script>
   <script src="js/gestao.js"></script>
   <!-- Telas dos modulos sob demanda: dependem de Gestao.ui e

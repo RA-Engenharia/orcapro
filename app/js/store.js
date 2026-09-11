@@ -703,7 +703,13 @@
       var l = this.listar(empresaId, entidade), i = -1;
       for (var k = 0; k < l.length; k++) if (l[k].id === obj.id) { i = k; break; }
       if (i >= 0) l[i] = obj; else l.push(obj);
-      return this.adapter.gravar(empresaId, entidade, l) ? obj : null;
+      var gravou = this.adapter.gravar(empresaId, entidade, l);
+      /* ⚠ DADO DE GESTÃO TAMBÉM PEDE BACKUP. O backup automático só disparava
+         ao salvar orçamento ou composição própria: quem usava só obras e
+         diários nunca ganhava cópia em arquivo. backupAuto agrupa (15 s) e
+         espaça (5 min), então chamá-lo a cada gravação não gera arquivo a mais. */
+      if (gravou && entidade !== "_lapides") { try { if (typeof App !== "undefined" && App && App.backupAuto) App.backupAuto({ gestao: true }); } catch (eBk) {} }
+      return gravou ? obj : null;
     },
     /* =====================================================================
      * salvarVarios — O ESPELHO QUE FALTAVA DO `excluirVarios`.
@@ -763,7 +769,9 @@
         entrou++;
       }
       if (!entrou) return 0;
-      return this.adapter.gravar(empresaId, entidade, l) ? entrou : 0;
+      var gravouV = this.adapter.gravar(empresaId, entidade, l);
+      if (gravouV && entidade !== "_lapides") { try { if (typeof App !== "undefined" && App && App.backupAuto) App.backupAuto({ gestao: true }); } catch (eBk) {} }   // ver o `salvar`
+      return gravouV ? entrou : 0;
     },
     excluir: function (empresaId, entidade, id) {
       var l = this.listar(empresaId, entidade).filter(function (x) { return x.id !== id; });

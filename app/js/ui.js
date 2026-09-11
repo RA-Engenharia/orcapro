@@ -662,7 +662,16 @@
         html += '<div class="card"><b>⏰ Teste grátis encerrado</b><br>Seus orçamentos estão preservados. Ative sua licença com a chave da compra para voltar a salvar e exportar.</div>';
       } else if (st.expirada) {
         /* a renovação vale NESTA chave: o texto não pode sugerir chave nova */
-        html += '<div class="card"><b style="color:#b91c1c">Licença vencida</b>' + (st.expira ? ' em ' + new Date(st.expira).toLocaleDateString("pt-BR") : '') + '<br>' + Util.esc(st.email || "") + '. Para voltar a salvar e exportar, renove com a RA Engenharia. A renovação vale nesta mesma chave: depois do pagamento, basta abrir o OrçaPRO com internet. Seus dados continuam onde estão.</div>';
+        /* ⚠ NÃO DIZ MAIS "renove COM A RA ENGENHARIA". Enquanto renovar era
+           telefonema, mandar falar com a RA era o caminho verdadeiro. Com o
+           bloco de assinatura logo abaixo (js/assinatura.js), esta frase
+           passou a contradizer a porta que está na tela: a pessoa lia "fale
+           com a RA" e ligava, que é exatamente o que este trabalho existe
+           para acabar. Também NÃO promete "o botão abaixo": o botão depende
+           do servidor deixar assinar, e porta prometida que não existe é pior
+           que nenhuma. Quando o bloco não pode oferecer nada, é ele que
+           manda falar com a RA — com o motivo. */
+        html += '<div class="card"><b style="color:#b91c1c">Licença vencida</b>' + (st.expira ? ' em ' + new Date(st.expira).toLocaleDateString("pt-BR") : '') + '<br>' + Util.esc(st.email || "") + '. Para voltar a salvar e exportar, renove sua licença. A renovação vale nesta mesma chave: depois do pagamento, basta abrir o OrçaPRO com internet. Seus dados continuam onde estão.</div>';
       } else if (st.revalidar) {
         html += '<div class="card"><b style="color:#b45309">Reconecte à internet</b><br>A licença precisa ser confirmada com o servidor. Abra o OrçaPRO com internet e ela volta sozinha.</div>';
       } else if (st.outroDispositivo) {
@@ -679,6 +688,14 @@
           (st.equipe.indepMax != null && st.equipe.indepMax < st.equipe.max ? ', até ' + st.equipe.indepMax + ' pelo contrato' : '') + ')' +
           (st.equipe.usuariosPorIndependente ? '. Cada licença independente cadastra ' + st.equipe.usuariosPorIndependente + (st.equipe.usuariosPorIndependente === 1 ? ' usuário' : ' usuários') + ' da própria empresa' : '') + '.</div>';
       }
+      /* ⚠ A PORTA DA RENOVAÇÃO FICA AQUI, e não numa tela nova. Esta é a tela
+         onde o cliente vencido CAI: tentar salvar chama App._avisoTrial(), que
+         abre este modal. Um botão de pagar em qualquer outro lugar não seria
+         encontrado por quem precisa dele. Quem preenche é js/assinatura.js
+         (App.abrirLicenca chama Assinatura.montar), depois de perguntar ao
+         servidor — daí o espaço nascer vazio: sem módulo ou sem internet,
+         fica exatamente a tela que existia antes. */
+      html += '<div id="assin-box"></div>';
       html += '<div class="field" style="margin-top:12px"><label>Chave de licença</label><input id="lic-chave" placeholder="cole aqui a chave que você recebeu"></div>';
       return html;
     },
@@ -1086,7 +1103,25 @@
                   "Excel VIVO de 13 abas": o rótulo velho desmentia a venda na mesma tela.
                   tools/test-loja-home.js amarra os três — rótulo, promessa e exportador. */
                '<button class="btn sm" data-acao="exportar-excel" title="Workbook vivo com fórmulas: Resumo, Sintética, Analítica, Insumos, Curva ABC, Cronograma, Gantt e mais">' + Icones.get("excel") + 'Excel (13 abas)</button>' +
-               '<button class="btn sm" data-acao="reimportar-excel" title="Traz de volta as edições de Qtd/Custo feitas no Excel exportado">' + Icones.get("reimportar") + 'Reimportar</button>') + _sep +
+               '<button class="btn sm" data-acao="reimportar-excel" title="Traz de volta as edições de Qtd/Custo feitas no Excel exportado">' + Icones.get("reimportar") + 'Reimportar</button>' +
+               /* ⚠ EDITAR COM IA MORA NA LINHA 1, ao lado da planilha: é edição do
+                  ORÇAMENTO (planilha, cronograma, textos da proposta), não entrega
+                  ao cliente. Um botão só para os três alvos — o atalho [Refinar
+                  com IA] da aba Cronograma abre este MESMO modal (duas portas com
+                  validadores diferentes foi o defeito da crítica ia-seguranca). O
+                  Desfazer só aparece enquanto existe o retrato da última edição.
+                  ⚠ RÓTULO RESPONSIVO (revisão 4B, medido a 1366×768): a linha 1
+                  tem 1086 px e sobravam 79 px; o botão inteiro ocupa 127 px e
+                  empurrava Comparar cenários e Relatório completo para uma 2ª
+                  linha — a tela inteira descia 40 px. Abaixo de 1440 px o CSS
+                  (.ia-rot-largo, css/app.css) esconde "Editar com " e sobra "IA",
+                  como o [Refinar com IA] no cartão compacto do Cronograma. O nome
+                  inteiro fica no aria-label e no title.
+                  ⚠ O RÓTULO É UM ITEM FLEX SÓ (o span de fora): o .btn é flex
+                  com gap — "Editar com " e "IA" soltos viravam dois itens, com
+                  um vão a mais entre eles (visto na foto a 1440 px). */
+               '<button class="btn sm" data-acao="ia-editar" aria-label="Editar com IA" title="Editar com IA — escreva o que mudar: a IA propõe mudanças na planilha, no cronograma ou nos textos da proposta, e você confere cada uma antes de aplicar">' + Icones.get("ia") + '<span><span class="ia-rot-largo">Editar com </span>IA</span></button>' +
+               ((typeof App !== "undefined" && App._iaDesfazerBotao) ? App._iaDesfazerBotao(orc) : '')) + _sep +
           _grp('<button class="btn sm" data-acao="cenarios">' + Icones.get("cenarios") + 'Comparar cenários</button>' +
                '<button class="btn sm" data-acao="relatorio">' + Icones.get("relatorio") + 'Relatório completo</button>') +
         '</div>' +
@@ -2110,34 +2145,162 @@
     },
 
     // ----- Aba Cronograma (Gantt parametrizado pelo agente) -----
+    /* Desde o cronograma executivo (espec v2, Fase 2) a aba é desenhada por
+       js/cronoexecui.js (CronoExecUI, puro e testado em Node); aqui só se
+       juntam os dados (fiação fina). O que continua dono do ui.js: o cartão
+       de parâmetros (ids cron-*), o Gantt por etapa (UI._gantt — a proposta e
+       o PDF desenham o mesmo) e a tabela físico-financeira por etapa (a mesma
+       da aba Relatórios).
+       ⚠ Sem o CronoExecUI carregado (arquivo novo que um cache velho não
+       trouxe, ou um teste que monta só o ui.js num vm) a aba cai no desenho
+       por etapa de antes (_renderCronogramaEtapa) em vez de sumir. */
     renderCronograma: function (orc) {
       if (typeof Cronograma === "undefined") return '<div class="vazio card">Módulo de cronograma indisponível.</div>';
       if (!(orc.etapas || []).length) return '<div class="vazio card">Adicione etapas e itens para o agente montar o cronograma.</div>';
-      var r = Cronograma.estimar(orc), p = r.params;
-      var iaM = (orc.cronograma && orc.cronograma.iaMotivos) || {};
-      function ini() { try { return r.dataInicio.toISOString().slice(0, 10); } catch (e) { return ""; } }
+      var CX = this._cronoExecUI();
+      if (!CX) return this._renderCronogramaEtapa(orc);
+      var self = this, ap = (typeof App !== "undefined") ? App : null;
+      /* ⚠ O ALVO decide O QUE a aba desenha (Fase 3): orçamento APROVADO com a
+         obra e o plano de execução dela → o PLANO (CronoBase.orcComPlano), que
+         é para onde os handlers gravam (App._cronoAlvo). Desenhar a proposta e
+         gravar no plano seria a tela mostrando uma coisa e o salvar gravando
+         outra — o valor digitado "sumiria" a cada render. */
+      var alvo = null;
+      if (ap && ap.orcAtual === orc && typeof ap._cronoAlvo === "function") { try { alvo = ap._cronoAlvo(); } catch (eAl) { alvo = null; } }
+      var noPlano = !!(alvo && alvo.tipo === "plano" && alvo.orc);
+      var orcD = noPlano ? alvo.orc : orc;
+      // um cálculo por render (App._rtok): ver CronoExecUI.preparar
+      var d = CX.preparar(orcD, { tok: ap ? ap._rtok : null });
+      var r = d.r, crD = (orcD.cronograma && typeof orcD.cronograma === "object") ? orcD.cronograma : {};
+      d.orc = orcD;
+      d.exec = (crD.exec && typeof crD.exec === "object") ? crD.exec : {};
+      d.iaMotivos = crD.iaMotivos || {};
+      d.cartao = this._cronCartao(r, true, noPlano && alvo.inicioObra ? { inicioObra: alvo.inicioObra } : null);
+      // aprovado: o recado do motor "salve o orçamento" vira "crie uma revisão" (a trava recusa o salvar) — no PLANO não há trava
+      if (alvo) d.travado = !!alvo.travado;
+      else { try { d.travado = !!(typeof Orcamento !== "undefined" && Orcamento.travadoPorAprovacao && Orcamento.travadoPorAprovacao(orc)); } catch (eT) { d.travado = false; } }
+      d.pillFeriados = this._pillFeriados(r);
+      d.ganttEtapa = function (rr) { return self._gantt(rr); };
+      d.fisicoEtapa = function (modo) {
+        if (typeof Orcamento === "undefined" || !Orcamento.cronograma) return '<div class="vazio card">Físico-financeiro por etapa indisponível.</div>';
+        return self._fisicoFinanceiroEtapa(orcD, Orcamento.cronograma(orcD), { modo: modo, pico: true });
+      };
+      /* jornada: dona é a aba Execução (orc.execucao.params) — aqui só se mostra */
+      var jp = orc.execucao && orc.execucao.params;
+      d.jornada = (jp && jp.jornadaH) ? jp.jornadaH : ((typeof Execucao !== "undefined" && Execucao.DEFAULTS && Execucao.DEFAULTS.jornadaH) || null);
+      var dec = alvo && alvo.decisao ? alvo.decisao : null;
+      d.obra = (dec && dec.info) ? dec.info : this._cronoObraInfo(orc);
+      d.obra.alvo = dec || (CX.decidirAlvo ? CX.decidirAlvo({ info: d.obra, travado: !!d.travado }) : null);
+      var est = CX.estado(ap, orc), ao = d.obra.alvo;
+      /* os números reais da obra ligada A ESTE orçamento: o chip da faixa e a
+         sub-aba Previsto × Realizado saem da MESMA montagem (App._cronoPainelDados,
+         que a ficha da obra também usa) — duas montagens divergiriam na data de
+         corte, no plano ou na régua (memória "conserto que para no segundo
+         consumidor"). Falhou: a aba continua, sem os números. */
+      if (ao && ao.obra && ao.nivel === 0 && ap && typeof ap._cronoPainelDados === "function") {
+        var pd = null;
+        try { pd = ap._cronoPainelDados(ao.obra, orc, { comGantt: est.sub === "real" }); } catch (eP) { pd = null; }
+        if (pd && pd.painel) {
+          /* texto e porta SEPARADOS: na faixa o texto encolhe com reticências
+             (a 1366 ela divide a linha com as sub-abas) e a porta não pode sumir junto */
+          var cp = CX.chipPartes ? CX.chipPartes(pd.painel) : null;
+          d.obra.chip = cp ? cp.txt : (CX.chipNumeros ? CX.chipNumeros(pd.painel) : "");
+          d.obra.chipPorta = cp ? cp.porta : ""; d.obra.chipTitulo = cp ? cp.titulo : "";
+          d.pr = pd;
+        }
+      }
+      return CX.render(d, est);
+    },
+    _cronoExecUI: function () {
+      if (typeof CronoExecUI !== "undefined") return CronoExecUI;
+      /* Node: tools/test-cronograma-render.js carrega só o ui.js por require —
+         assim a suíte antiga continua medindo a TELA NOVA, e não a reserva. No
+         navegador `require` não existe e o arquivo vem pelo index.html. */
+      if (typeof require === "function" && typeof module !== "undefined") { try { return require("./cronoexecui.js"); } catch (e) { return null; } }
+      return null;
+    },
+    /* A obra deste orçamento pela cadeia de revisões, só com a Gestão (plano
+       Plus) e só o que o usuário pode ver (RBAC por módulo e por obra). */
+    _cronoObraInfo: function (orc) {
+      var podeG = typeof Gestao !== "undefined" && ((typeof App !== "undefined" && App._demo) || (Gestao.podeGestao && Gestao.podeGestao()));
+      if (!podeG || typeof CronoExecUI === "undefined") return { podeGestao: !!podeG, obras: [], ocultas: 0 };
+      var E = (typeof Auth !== "undefined" && Auth.empresaId) ? Auth.empresaId() : null, obras = [], orcs = [];
+      try { obras = Store.listar(E, "obras") || []; } catch (e) { obras = []; }
+      /* a lista de orçamentos é lida quando há revisão para subir na cadeia OU
+         obra ligada a outro orçamento — que pode ser uma revisão MAIS NOVA ou
+         irmã deste (a família inteira; ver CronoExecUI.obraDaCadeia). ⚠ Sem
+         isto, a R0 com a obra passada para a R1 oferecia [Criar obra]. */
+      var outraObra = obras.some(function (ob) { return !!ob && !!ob.orcamentoId && String(ob.orcamentoId) !== String(orc.id); });
+      if (orc.revisaoDe || outraObra) { try { orcs = (Store.listarOrcamentos && Store.listarOrcamentos(E)) || []; } catch (e2) { orcs = []; } }
+      var podeVer = function (ob) {
+        if (typeof Auth === "undefined") return true;
+        if (Auth.podeModulo && !Auth.podeModulo("obras")) return false;
+        return !(Auth.podeObra && !Auth.podeObra(ob.id));
+      };
+      var info = CronoExecUI.obraDaCadeia(orc, orcs, obras, podeVer);
+      info.podeGestao = true;
+      /* criar obra, passar a obra de revisão e iniciar o plano de execução
+         gravam no cadastro da obra: exigem o módulo Obras. O RBAC por obra
+         (Auth.podeObra) é conferido de novo NA FUNÇÃO, no clique — botão
+         escondido não é guarda. */
+      info.podeCriar = info.podeEditarObra = !(typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("obras"));
+      return info;
+    },
+    /* O cartão de parâmetros de HOJE (mesmos ids cron-*, Recalcular, Limpar
+       edições, Refinar com IA) — um só, para a tela nova e a de reserva. */
+    /* `compacto` (tela nova): o MESMO cartão numa linha só, com campos mais
+       estreitos. ⚠ Medido por foto a 1366×768: em duas linhas ele empurrava a
+       primeira barra do Gantt para y=832, abaixo da dobra — e o engenheiro
+       edita a tabela olhando a barra mexer. A reserva segue o de antes. */
+    /* ⚠ NUMA LINHA a 1366: medido por foto (revisão da Fase 2), o cartão
+       compacto ainda quebrava o [Refinar com IA] para uma 2ª linha (126 px de
+       altura) e, com a faixa da obra e os avisos, a 1ª barra do Gantt ia para
+       y=898. Por isso os campos mais estreitos e os dois botões secundários
+       com rótulo curto (o nome inteiro fica no title). */
+    /* `opts.inicioObra` ("AAAA-MM-DD"): o cartão desenha o PLANO DE EXECUÇÃO
+       da obra, que conta do início DELA — o campo Início fica só leitura, com
+       o motivo. ⚠ Editável, a pessoa digitaria outra data e o salvar seguinte
+       a trocaria de volta pela da obra: trava sem porta e sem recado. */
+    _cronCartao: function (r, compacto, opts) {
+      var p = r.params, c = !!compacto, iniObra = opts && opts.inicioObra ? String(opts.inicioObra) : "";
+      function lb(t) { return c ? '<label style="font-size:11px;margin-bottom:2px">' + t + '</label>' : '<label>' + t + '</label>'; }
+      /* ⚠ data LOCAL (Cronograma._ch), nunca toISOString: sem início gravado o
+         motor usa "agora", e das 21h à meia-noite (UTC-3) o ISO já é amanhã —
+         o campo mostrava o dia seguinte e o Recalcular o gravava assim. */
+      function ini() { try { return Cronograma._ch(r.dataInicio); } catch (e) { return ""; } }
       function opt(v, txt, sel) { return '<option value="' + v + '"' + (String(sel) === String(v) ? " selected" : "") + '>' + txt + '</option>'; }
-      var html = '<div class="card" style="margin-bottom:12px"><div class="flex" style="flex-wrap:wrap;gap:12px;align-items:flex-end">' +
-        '<div class="field" style="margin:0"><label>Início</label><input id="cron-inicio" type="date" value="' + ini() + '"></div>' +
-        '<div class="field" style="margin:0"><label>Equipes/frentes</label><input id="cron-equipes" type="number" min="1" value="' + p.equipes + '" style="width:80px"></div>' +
-        '<div class="field" style="margin:0"><label>Dias úteis/sem.</label><input id="cron-dias" type="number" min="1" max="7" value="' + p.diasUteisSemana + '" style="width:80px"></div>' +
-        '<div class="field" style="margin:0"><label>Paralelismo</label><select id="cron-paral">' + opt(0, "Nenhum", p.paralelismo) + opt(0.15, "Leve 15%", p.paralelismo) + opt(0.3, "Médio 30%", p.paralelismo) + opt(0.5, "Alto 50%", p.paralelismo) + '</select></div>' +
-        '<div class="field" style="margin:0"><label>R$/dia-equipe</label><input id="cron-custodia" type="number" value="' + p.custoDiaEquipe + '" style="width:100px"></div>' +
+      return '<div class="card' + (c ? ' cx-cartao' : '') + '" style="margin-bottom:' + (c ? '6px;padding:7px 12px' : '12px') + '"><div class="flex" style="flex-wrap:wrap;gap:' + (c ? 8 : 12) + 'px;align-items:flex-end">' +
+        '<div class="field" style="margin:0">' + lb(iniObra ? 'Início (obra)' : 'Início') + '<input id="cron-inicio" type="date" value="' + (iniObra ? Util.esc(iniObra) : ini()) + '"' + (c ? ' style="width:130px"' : '') +
+          (iniObra ? ' readonly aria-readonly="true" title="É o início da obra (cadastro da obra): o plano de execução, a linha de base e o previsto × realizado contam dele. Para mudar, edite a obra."' : '') + '></div>' +
+        '<div class="field" style="margin:0">' + lb(c ? 'Equipes' : 'Equipes/frentes') + '<input id="cron-equipes" type="number" min="1" value="' + p.equipes + '" style="width:' + (c ? 52 : 80) + 'px"' + (c ? ' title="Equipes/frentes trabalhando ao mesmo tempo"' : '') + '></div>' +
+        '<div class="field" style="margin:0">' + lb(c ? 'Dias/sem.' : 'Dias úteis/sem.') + '<input id="cron-dias" type="number" min="1" max="7" value="' + p.diasUteisSemana + '" style="width:' + (c ? 50 : 80) + 'px"' + (c ? ' title="Dias úteis por semana"' : '') + '></div>' +
+        '<div class="field" style="margin:0">' + lb('Paralelismo') + '<select id="cron-paral"' + (c ? ' style="width:100px"' : '') + '>' + opt(0, "Nenhum", p.paralelismo) + opt(0.15, "Leve 15%", p.paralelismo) + opt(0.3, "Médio 30%", p.paralelismo) + opt(0.5, "Alto 50%", p.paralelismo) + '</select></div>' +
+        '<div class="field" style="margin:0">' + lb('R$/dia-equipe') + '<input id="cron-custodia" type="number" value="' + p.custoDiaEquipe + '" style="width:' + (c ? 72 : 100) + 'px"></div>' +
         /* Feriado é prazo: uma obra de um ano atravessa uns 12 e o cronograma
            antigo os contava como dia de trabalho. O campo de locais fica ao
            lado do interruptor porque é a primeira pergunta de quem liga isso
            ("e o feriado da minha cidade?"). */
-        '<div class="field" style="margin:0"><label>Feriados</label>' +
+        '<div class="field" style="margin:0">' + lb('Feriados') +
           '<label style="display:flex;align-items:center;gap:6px;font-weight:400;cursor:pointer" title="Desconta feriados nacionais do prazo. Inclui Carnaval e Corpus Christi, que são ponto facultativo mas param a obra.">' +
           '<input id="cron-feriados" type="checkbox"' + (p.descontarFeriados !== false ? " checked" : "") + '> descontar</label></div>' +
-        '<div class="field" style="margin:0"><label>Feriados locais</label>' +
+        '<div class="field" style="margin:0">' + lb('Feriados locais') +
           '<input id="cron-feriados-extras" type="text" placeholder="2026-06-24; 2026-08-15" value="' +
           Util.esc(((p.feriadosExtras || []).map(function (x) { return (x && x.data) ? x.data : x; })).join("; ")) +
-          '" title="Feriados municipais/estaduais e paradas da empresa, em AAAA-MM-DD, separados por ; — o app não adivinha o feriado da sua cidade." style="width:170px"></div>' +
+          '" title="Feriados municipais/estaduais e paradas da empresa, em AAAA-MM-DD, separados por ; — o app não adivinha o feriado da sua cidade." style="width:' + (c ? 108 : 170) + 'px"></div>' +
         '<button class="btn sm primary" data-acao="cron-recalc">' + (typeof Icones !== 'undefined' ? Icones.get('ciclo', 15) : '') + ' Recalcular</button>' +
-        '<button class="btn sm" data-acao="cron-reset">Limpar edições</button>' +
-        '<button class="btn sm" data-acao="cron-ia" title="Refina as durações com a IA do ERP (planejador)">' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' Refinar com IA</button>' +
+        '<button class="btn sm" data-acao="cron-reset"' + (c ? ' title="Limpar edições: durações, dependências e marcos voltam à estimativa do agente"' : '') + '>' + (c ? 'Limpar' : 'Limpar edições') + '</button>' +
+        /* ⚠ o atalho abre o MESMO modal do [Editar com IA], no chip Cronograma e
+           com o pedido de refinar pronto: a resposta passa pelo diff com
+           checkbox antes de gravar (o Refinar antigo gravava direto) */
+        '<button class="btn sm" data-acao="cron-ia" title="Refinar com IA: abre o Editar com IA no cronograma com o pedido de refinar as durações pronto — você confere cada mudança antes de aplicar">' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + (c ? ' IA' : ' Refinar com IA') + '</button>' +
         '</div></div>';
+    },
+    /* A aba por ETAPA de antes do cronograma executivo — a reserva de
+       renderCronograma (ver o comentário lá). */
+    _renderCronogramaEtapa: function (orc) {
+      var r = Cronograma.estimar(orc);
+      var iaM = (orc.cronograma && orc.cronograma.iaMotivos) || {};
+      var html = this._cronCartao(r);
       var nCrit = (r.caminhoCritico || []).length;
       html += '<div class="flex" style="gap:18px;margin-bottom:8px;align-items:baseline;flex-wrap:wrap"><b style="font-size:16px">⏱ ' + r.totalDias + ' dias úteis (~' + r.totalSemanas + ' semanas)</b>' +
         '<span class="muted">' + r.dataInicio.toLocaleDateString("pt-BR") + ' → ' + r.dataFim.toLocaleDateString("pt-BR") + '</span>' +
@@ -2165,8 +2328,10 @@
         html += '<tr><td>' + Util.esc(e.codigo) + ' ' + Util.esc(e.nome) + (e.marco ? ' <span class="pill" style="background:#0f172a14;color:#0f172a;font-weight:700;font-size:11px" title="Marco: evento sem duração (entrega, vistoria, liberação).">◆ marco</span>' : '') + '</td>' +
           '<td><span class="pill" style="background:' + c.cor + '22;color:' + c.cor + '">' + Util.esc(c.nome) + '</span></td>' +
           '<td class="num">' + e.equipeDias + '</td>' +
-          '<td class="num"><input class="cell" type="number" min="0" data-cron-dur="' + e.id + '" value="' + e.duracao + '" title="Dias úteis · 0 = marco" style="width:60px;text-align:right' + (e.editado || e.marco ? ';border-color:var(--azul,#2563eb)' : '') + '">' + (iaM[e.id] ? ' <span title="🤖 IA: ' + Util.esc(iaM[e.id]) + '" style="cursor:help">' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + '</span>' : '') + '</td>' +
-          '<td class="num"><input class="cell" type="text" data-cron-pred="' + e.id + '" value="' + valPred + '" placeholder="' + (i > 0 ? i : '—') + '" title="Nº das etapas que precisam terminar antes (ex.: 1,3). Vazio = a anterior; 0 = começa no início da obra. 1+7 = espera 7 dias úteis; 1-3 = começa 3 dias antes." style="width:72px;text-align:right' + (e.predsExplicito ? ';border-color:var(--aco,#0d6ebd)' : '') + '"></td>' +
+          /* ⚠ esc no id: vem também de pacote, backup e sincronização — um id com
+             aspas fechava o atributo e injetava evento (revisão da Fase 2) */
+          '<td class="num"><input class="cell" type="number" min="0" data-cron-dur="' + Util.esc(e.id) + '" value="' + e.duracao + '" title="Dias úteis · 0 = marco" style="width:60px;text-align:right' + (e.editado || e.marco ? ';border-color:var(--azul,#2563eb)' : '') + '">' + (iaM[e.id] ? ' <span title="🤖 IA: ' + Util.esc(iaM[e.id]) + '" style="cursor:help">' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + '</span>' : '') + '</td>' +
+          '<td class="num"><input class="cell" type="text" data-cron-pred="' + Util.esc(e.id) + '" value="' + Util.esc(valPred) + '" placeholder="' + (i > 0 ? i : '—') + '" title="Nº das etapas que precisam terminar antes (ex.: 1,3). Vazio = a anterior; 0 = começa no início da obra. 1+7 = espera 7 dias úteis; 1-3 = começa 3 dias antes." style="width:72px;text-align:right' + (e.predsExplicito ? ';border-color:var(--aco,#0d6ebd)' : '') + '"></td>' +
           '<td class="num">' + (e.critico ? '<span class="pill" style="background:#b91c1c14;color:var(--graf-alerta,#b91c1c);font-weight:700" title="Sem folga: atrasar esta etapa atrasa a obra inteira.">crítica</span>' : '+' + e.folga + ' d') + '</td>' +
           '<td>' + e.dataInicio.toLocaleDateString("pt-BR") + '</td><td>' + e.dataFim.toLocaleDateString("pt-BR") + '</td></tr>';
       });
@@ -2398,23 +2563,20 @@
         svg += '<line x1="' + gx.toFixed(1) + '" y1="' + top + '" x2="' + gx.toFixed(1) + '" y2="' + (h - 8) + '" stroke="#e2e8f0" stroke-width="1"/>';
         if (s < r.totalSemanas) svg += '<text x="' + (gx + 3).toFixed(1) + '" y="' + (top - 7) + '" font-size="9" fill="#94a3b8">S' + (s + 1) + '</text>';
       }
-      // linha de HOJE — conta dias úteis com a MESMA régua do addDiasUteis
-      // (avança o calendário e só conta o dia que a semana de trabalho tem)
+      /* linha de HOJE — índice de dia útil COM FERIADOS, pelo motor
+         (Cronograma.diaUtilDoCorte, a mesma régua das barras).
+         ⚠ A conta daqui contava só fim de semana: numa obra que atravessou
+         Carnaval e Páscoa a linha ficava 3 dias à frente das barras, e "à
+         frente" se lê como atraso. `opts.hoje` (Date ou "AAAA-MM-DD") fixa a
+         data de corte; sem ele, hoje. Antes do início ou depois do fim: sem
+         marcador. */
       var hojeX = null;
       (function () {
         if (limpo) return;
-        if (!r.dataInicio || typeof r.dataInicio.getFullYear !== "function") return;
-        var d0 = new Date(r.dataInicio.getFullYear(), r.dataInicio.getMonth(), r.dataInicio.getDate());
-        var hj = new Date(); hj = new Date(hj.getFullYear(), hj.getMonth(), hj.getDate());
-        if (hj < d0) return;
-        var cur = new Date(d0.getTime()), wd = 0;
-        while (cur < hj && wd <= dias) {
-          cur.setDate(cur.getDate() + 1);
-          var dw = cur.getDay();
-          if (dpw >= 7 || (dpw === 6 ? dw !== 0 : (dw !== 0 && dw !== 6))) wd++;
-        }
-        if (wd > dias) return; // obra já passou do fim previsto: sem marcador
-        hojeX = X(wd);
+        var j = null;
+        try { j = Cronograma.diaUtilDoCorte(r, opts && opts.hoje); } catch (e) { j = null; }
+        if (j == null || j > dias) return;
+        hojeX = X(j);
       })();
       if (hojeX != null) svg += '<line x1="' + hojeX.toFixed(1) + '" y1="' + (top - 2) + '" x2="' + hojeX.toFixed(1) + '" y2="' + (h - 8) + '" stroke="' + HOJE + '" stroke-width="1.2" stroke-dasharray="4,3"><title>hoje</title></line>';
       // barras (+ folga tracejada depois da barra)
@@ -2636,9 +2798,27 @@
       html += '</tbody></table>';
 
       // Cronograma
-      html += '<div class="flex between" style="margin:26px 0 12px"><h3 style="margin:0">Cronograma Físico-Financeiro</h3>' +
+      html += this._fisicoFinanceiroEtapa(orc, cron, { link: true });
+      return html;
+    },
+
+    /* Cronograma FÍSICO-FINANCEIRO por etapa (Orcamento.cronograma) — a MESMA
+       tabela na aba Relatórios e na sub-aba Cronograma → Físico-financeiro.
+       ⚠ Um lugar só: duas cópias desta tabela já tinham dado duas
+       explicações opostas da mesma distribuição, e o campo "Prazo (meses)"
+       (#cron-meses) tem de ser o mesmo nas duas telas.
+       opts.modo "pct" = células em % do total; opts.pico = linha do mês de
+       maior desembolso; opts.link = porta para a sub-aba (só em Relatórios). */
+    _fisicoFinanceiroEtapa: function (orc, cron, opts) {
+      opts = opts || {};
+      var pctM = opts.modo === "pct", html = "";
+      /* modo R$ = exatamente as células de antes (a aba Relatórios não muda) */
+      function cel(v) { return pctM ? (cron.total ? Util.fmtPct((v / cron.total) * 100, 1) : "—") : (v > 0.005 ? Util.fmtMoeda(v) : "—"); }
+      function celT(v) { return pctM ? (cron.total ? Util.fmtPct((v / cron.total) * 100, 1) : "—") : Util.fmtMoeda(v); }
+      html += '<div class="flex between" style="margin:' + (opts.link ? '26px' : '0') + ' 0 12px"><h3 style="margin:0">Cronograma Físico-Financeiro</h3>' +
         '<div class="flex"><label class="muted" style="font-size:12px">Prazo (meses):</label>' +
         '<input id="cron-meses" class="cell" style="width:70px;border:1px solid var(--linha)" value="' + cron.meses + '"></div></div>';
+      if (opts.link) html += '<div style="font-size:12px;margin:-6px 0 10px"><a role="button" tabindex="0" style="cursor:pointer;text-decoration:underline" data-acao="crono-ir-ff">ver em Cronograma → Físico-financeiro</a> <span class="muted">(também por subetapa e por serviço, em R$ ou %)</span></div>';
       /* ⚠ De onde vieram estes meses. A distribuição passou a seguir a DURAÇÃO
          de cada etapa no Gantt (antes era fatia por peso, e punha dinheiro em
          mês sem serviço). Quando o prazo digitado é MENOR que a obra, o que
@@ -2658,18 +2838,32 @@
       html += '<th class="num">Total</th></tr></thead><tbody>';
       cron.etapas.forEach(function (e) {
         html += '<tr><td>' + Util.esc(e.codigo + " " + e.nome) + '</td>';
-        e.meses.forEach(function (v) { html += '<td class="num">' + (v > 0.005 ? Util.fmtMoeda(v) : "—") + '</td>'; });
-        html += '<td class="num"><b>' + Util.fmtMoeda(e.total) + '</b></td></tr>';
+        e.meses.forEach(function (v) { html += '<td class="num">' + cel(v) + '</td>'; });
+        html += '<td class="num"><b>' + celT(e.total) + '</b></td></tr>';
       });
       html += '</tbody><tfoot>';
       html += '<tr class="etapa-row"><td>Total mensal</td>';
-      cron.totaisMes.forEach(function (v) { html += '<td class="num">' + Util.fmtMoeda(v) + '</td>'; });
-      html += '<td class="num">' + Util.fmtMoeda(cron.total) + '</td></tr>';
+      cron.totaisMes.forEach(function (v) { html += '<td class="num">' + celT(v) + '</td>'; });
+      html += '<td class="num">' + celT(cron.total) + '</td></tr>';
       html += '<tr><td class="muted">Acumulado %</td>';
       cron.acumPct.forEach(function (p) { html += '<td class="num muted">' + Util.fmtPct(p, 1) + '</td>'; });
       html += '<td class="num muted">100%</td></tr>';
       html += '</tfoot></table></div>';
-      html += '<p class="watermark-hint mt">Distribuição sequencial proporcional ao peso de cada etapa (valores com BDI). Ajuste o prazo para recalcular.</p>';
+      /* mês de pico de DESEMBOLSO (o número que o cliente usa para o caixa);
+         com estouro, a última coluna soma meses — e isso já está dito acima */
+      if (opts.pico && cron.totaisMes.length) {
+        var iP = 0;
+        cron.totaisMes.forEach(function (v, i) { if (v > cron.totaisMes[iP]) iP = i; });
+        html += '<div class="muted" style="font-size:11.5px;margin-top:6px">Mês de maior desembolso: <b>' + Util.esc((cron.rotulos && cron.rotulos[iP]) || ('Mês ' + (iP + 1))) + '</b> (' + celT(cron.totaisMes[iP]) + ')' +
+          (cron.estouro && iP === cron.meses - 1 ? ' — é a coluna que soma os meses além do prazo digitado' : '') + '.</div>';
+      }
+      /* ⚠ o rodapé diz a régua que RESPONDEU (cron.base). Ele dizia sempre
+         "proporcional ao peso", logo abaixo do recado que diz "pela duração
+         de cada etapa no cronograma" — duas explicações opostas na mesma
+         tabela. Na régua do Gantt, o prazo (meses) só decide as colunas. */
+      html += cron.base === "gantt"
+        ? '<p class="watermark-hint mt">Valores com BDI distribuídos pela duração de cada etapa no cronograma (aba Cronograma). O prazo em meses define as colunas — para mudar a distribuição, ajuste as durações no cronograma.</p>'
+        : '<p class="watermark-hint mt">Distribuição sequencial proporcional ao peso de cada etapa (valores com BDI). Ajuste o prazo para recalcular.</p>';
       return html;
     },
 
