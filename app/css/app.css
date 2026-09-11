@@ -1842,20 +1842,25 @@ input.cell.cell-erro { border-color: #dc2626 !important; background: rgba(220,38
    ⚠ o topo (z 20) e o menu (z 15) pintam POR CIMA da aura, que mora dentro
    da cena — por isso ela aparece através deles, e não sobre eles. */
 .ov-aura { display: block !important; position: fixed; inset: 0; z-index: -1; pointer-events: none; background: var(--ov-fundo); }
-/* ⚠ o quanto a foto aparece foi medido no print: com brilho .55 e o vidro a
-   .66–.8 o menu saía igual ao azul de sempre — a "transição entre a cena e os
-   botões" não se via. Abaixo disso o texto do menu (#cfe0ef) perde contraste
-   sobre capacete branco; conferir no print ao mexer. */
-.ov-aura img { width: 100%; height: 100%; object-fit: cover; filter: blur(30px) saturate(1.3) brightness(.72); transform: scale(1.15); opacity: 0; transition: opacity .8s var(--ease); }
+/* ⚠ O QUANTO A FOTO APARECE É UMA CONTA, NÃO UM GOSTO. Com brilho .55 e vidro
+   a .66–.8 o menu saía igual ao azul de sempre e a "transição entre a cena e
+   os botões" não se via. Aí subi para brilho .72 e vidro .42 — e a revisão da
+   1.2.70 mediu o pior caso (céu branco no alto da foto, o normal em foto de
+   canteiro): item do menu 3,55:1, legenda do topo 2,38:1. Abaixo de 4,5.
+   Os números de agora (brilho .66, vidro ≥ .58 no topo e ≥ .62 no menu,
+   legenda a .86) dão ≥ 4,5 com a foto BRANCA; quem conta é
+   tools/test-obravitrine.js, que lê estes valores daqui e refaz a conta. */
+.ov-aura img { width: 100%; height: 100%; object-fit: cover; filter: blur(30px) saturate(1.3) brightness(.66); transform: scale(1.15); opacity: 0; transition: opacity .8s var(--ease); }
 .ov-aura img.on { opacity: 1; }
 .app:has(.ov-cena) > .topbar {
-  background: linear-gradient(180deg, rgba(8,20,33,.5), rgba(8,20,33,.3));
+  background: linear-gradient(180deg, rgba(8,20,33,.62), rgba(8,20,33,.58));
   -webkit-backdrop-filter: blur(18px) saturate(1.3); backdrop-filter: blur(18px) saturate(1.3);
   box-shadow: 0 1px 0 rgba(255,255,255,.08);
 }
 .app:has(.ov-cena) > .topbar::after { opacity: .45; }
+.app:has(.ov-cena) > .topbar .logo small { opacity: .86; }
 .app:has(.ov-cena) > .sidebar {
-  background: linear-gradient(180deg, rgba(8,20,33,.42) 0%, rgba(8,20,33,.58) 45%, rgba(8,20,33,.74) 100%);
+  background: linear-gradient(180deg, rgba(8,20,33,.62) 0%, rgba(8,20,33,.68) 45%, rgba(8,20,33,.76) 100%);
   -webkit-backdrop-filter: blur(18px) saturate(1.3); backdrop-filter: blur(18px) saturate(1.3);
   box-shadow: 1px 0 0 rgba(255,255,255,.08);
 }
@@ -2120,43 +2125,153 @@ input.cell.cell-erro { border-color: #dc2626 !important; background: rgba(220,38
    ⚠ A ALTURA DA CAPA (132/152 px) e o padding de 24px NÃO mudam aqui:
    tools/e2e-imagem-sem-css.js confere a altura exata, e o piso de
    UI.chaoDeEstilo() conta com a margem -24px. O que muda é pele, não caixa. */
-.ov-grade { gap: 20px; }
+/* ---------- A FILEIRA: um trilho só, no pé da cena, que anda para os lados ----------
+   Pedido de 11/09/2026: a grade rolando para baixo poluía a tela. A cena
+   vira coluna — o palco em cima, a fileira colada embaixo (margin-top:
+   auto) — e o card é só a foto e o nome.
+   ⚠ A ALTURA da capa continua a das regras de cima (132 / 152 px no
+   celular): não se escreve `height` aqui, senão o 152 do celular perde. */
+.ov-cena { display: flex; flex-direction: column; }
+/* a fileira vai de ponta a ponta da cena (como no Netflix) e as setas moram
+   na calha das pontas.
+   ⚠ --ov-calha tem de ser MAIOR que a largura da seta (76 px): é até ali
+   que a seta, a rodinha e o Tab trazem o card (Gestao._ovAlinhar e o
+   scroll-padding). Com 64 px o card parava 12 px embaixo da seta, e o
+   mouse na beira dele caía na seta (revisão da 1.2.71). */
+.ov-fila { position: relative; margin: auto calc(-1 * var(--ov-px)) 0; padding-top: 22px; --ov-calha: 84px; }
+.ov-cena.ficha-aberta .ov-fila { display: none !important; }
+.ov-cena.ficha-voltando .ov-fila { animation: ov-volta .5s var(--ease) both; }
+/* ⚠ UMA regra só para o trilho. Havia duas com a mesma especificidade, e a
+   de baixo (padding e scroll-padding de 2 px) anulava a da calha — visto
+   pela revisão da 1.2.71. position: relative faz o offsetLeft dos cards
+   ser contado a partir do trilho (é o que o Gestao._ovAlinhar usa). */
+.ov-fila .ov-grade {
+  display: flex; gap: 16px; margin: 0; padding: 8px var(--ov-px) 14px; position: relative;
+  overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity; scroll-padding-inline: var(--ov-calha);
+  scrollbar-width: none;
+}
+.ov-fila .ov-grade::-webkit-scrollbar { display: none; }
+/* o card deixa de ser caixa: sem fundo, sem borda, sem padding — quem tem
+   corpo é a foto. (0,2,0) vence o `.card`/`.orc-card` do resto do app. */
 .ov-grade .orc-card {
-  background: linear-gradient(180deg, rgba(16,32,48,.74), rgba(8,20,33,.86));
-  -webkit-backdrop-filter: blur(16px) saturate(1.2); backdrop-filter: blur(16px) saturate(1.2);
-  border: 1px solid rgba(255,255,255,.12);
-  box-shadow: 0 16px 40px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.06);
-  color: var(--ov-texto);
+  flex: 0 0 236px; scroll-snap-align: start; position: relative;
+  padding: 0; margin: 0; background: none; border: 0; border-radius: 0; box-shadow: none;
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+  color: var(--ov-texto); cursor: pointer; outline: none; transform: none;
 }
-.ov-grade .orc-card:hover {
-  border-color: rgba(255,255,255,.28); transform: translateY(-4px);
-  box-shadow: 0 24px 50px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,.08);
+.ov-grade .orc-card::before, .ov-grade .orc-card::after { display: none; }
+.ov-grade .orc-card:hover { transform: none; box-shadow: none; border-color: transparent; background: none; }
+.ov-grade .orc-card .obra-capa {
+  position: relative; margin: 0; border-radius: 12px;
+  background: linear-gradient(135deg, #163a5c 0%, #0b1a2a 100%);
+  box-shadow: 0 10px 26px rgba(0,0,0,.36), 0 0 0 1px rgba(255,255,255,.1);
+  transition: transform .35s var(--ease), box-shadow .35s var(--ease);
 }
-.ov-grade .orc-card h3 { color: var(--ov-texto); }
-.ov-grade .orc-card .meta { color: var(--ov-fraco); }
-/* o valor em verde CLARO: o verde do tema claro (#15803d) sobre o vidro
-   escuro não passaria de 3:1. O gradiente de texto do arquivo sai aqui. */
-.ov-grade .orc-card .valor { background: none; -webkit-text-fill-color: var(--ov-verde); color: var(--ov-verde); }
-/* o selo de status usa a cor de TEXTO do tema escuro — a do claro some no vidro */
-.ov-grade .orc-card .g-pill { color: var(--gp-td, var(--gp-t, var(--ov-texto))); }
-/* a capa: foto com um véu embaixo, e um zoom curto ao passar o mouse */
-.ov-grade .orc-card .obra-capa { position: relative; }
-.ov-grade .orc-card .obra-capa::after { content: ""; position: absolute; inset: 0; background: linear-gradient(0deg, rgba(8,20,33,.7) 0%, rgba(8,20,33,0) 55%); pointer-events: none; }
+.ov-grade .orc-card .obra-capa::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(0deg, rgba(8,20,33,.35) 0%, rgba(8,20,33,0) 45%); pointer-events: none; }
 .ov-grade .orc-card .obra-capa img { transition: transform .6s var(--ease); }
+.ov-grade .orc-card:hover .obra-capa { transform: translateY(-4px); box-shadow: 0 18px 38px rgba(0,0,0,.46), 0 0 0 1px rgba(255,255,255,.34); }
 .ov-grade .orc-card:hover .obra-capa img { transform: scale(1.06); }
-/* ⚠ A FILEIRA DE BOTÕES QUEBRA LINHA. Com três botões ("Aviso semanal",
-   "Documentos", "Portal do cliente ✓") ela passava da largura do card e o
-   primeiro saía cortado pela borda esquerda — visto na tela do Rogério em
-   11/09/2026. O `style=` da fileira não diz flex-wrap, então esta regra vale. */
-.ov-grade .orc-card > div:last-child { flex-wrap: wrap; }
-.ov-grade .orc-card .btn { background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.22); color: var(--ov-texto); }
-.ov-grade .orc-card .btn:hover { background: rgba(255,255,255,.2); border-color: rgba(255,255,255,.4); }
-.ov-grade .orc-card .btn.danger { color: var(--ov-alerta); }
-.ov-grade .orc-card.em-cena { box-shadow: 0 0 0 1px var(--ov-aco), 0 20px 46px rgba(0,0,0,.34), 0 0 36px rgba(143,192,227,.18); }
-/* o card que está no palco fica marcado: é o elo entre a grade e o topo */
-.ov-grade .orc-card.em-cena { border-color: var(--aco); }
-.ov-grade .orc-card.em-cena::before { opacity: 1; transform: scaleY(1); }
-.ov-grade .orc-card:focus-visible { outline: none; border-color: var(--aco); box-shadow: var(--anel), var(--sombra-hover); }
+/* o card que está no palco: o elo entre a fileira e o topo */
+.ov-grade .orc-card.em-cena .obra-capa { box-shadow: 0 0 0 2px var(--ov-aco), 0 18px 40px rgba(0,0,0,.46), 0 0 30px rgba(143,192,227,.28); }
+.ov-grade .orc-card:focus-visible .obra-capa { box-shadow: 0 0 0 3px #fff, 0 0 0 6px var(--ov-aco), 0 18px 40px rgba(0,0,0,.46); }
+/* ⚠ (0,2,1) vence o `.main h3` (0,1,1) — ver a nota do .main h2 no palco */
+.ov-grade .orc-card h3 {
+  margin: 10px 2px 0; font-size: var(--t-base); line-height: 1.3; font-weight: var(--p-forte); color: var(--ov-fraco);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  transition: color .2s;
+}
+.ov-grade .orc-card:hover h3, .ov-grade .orc-card.em-cena h3, .ov-grade .orc-card:focus-visible h3 { color: var(--ov-texto); }
+/* obra sem foto nenhuma: a marca no lugar da foto, apagada */
+.ov-grade .orc-card .obra-capa.sem-foto { display: flex; align-items: center; justify-content: center; }
+.ov-grade .orc-card .obra-capa.sem-foto svg { width: 54px; height: 54px; opacity: .5; }
+.ov-grade .obra-capa.sem-foto .ov-marca-fundo { fill: rgba(255,255,255,.08); }
+.ov-grade .obra-capa.sem-foto .ov-b1 { fill: rgba(255,255,255,.5); }
+.ov-grade .obra-capa.sem-foto .ov-b2 { fill: rgba(255,255,255,.8); }
+.ov-grade .obra-capa.sem-foto .ov-b3 { fill: var(--ov-verde); }
+
+/* AS SETAS — o logo da OrçaPRO. As barras sobem para a direita, então ele
+   aponta para a frente; espelhado (scaleX(-1)), para trás. Faixa da altura
+   da fileira, com o degradê do fundo, como no Netflix.
+   ⚠ o !important do .on vence o style="display:none" (ver ObraVitrine.fila) */
+.ov-seta {
+  position: absolute; top: 22px; bottom: 14px; z-index: 3; width: 76px;
+  align-items: center; justify-content: center;
+  margin: 0; padding: 0; border: 0; cursor: pointer; color: #fff;
+  opacity: .85; transition: opacity .25s var(--ease);
+}
+.ov-seta.on { display: flex !important; }
+.ov-fila:hover .ov-seta, .ov-seta:focus-visible { opacity: 1; }
+.ov-seta.esq { left: 0; padding-right: 12px; background: linear-gradient(90deg, rgba(8,20,33,.94) 0%, rgba(8,20,33,.6) 55%, rgba(8,20,33,0) 100%); }
+.ov-seta.dir { right: 0; padding-left: 12px; background: linear-gradient(270deg, rgba(8,20,33,.94) 0%, rgba(8,20,33,.6) 55%, rgba(8,20,33,0) 100%); }
+.ov-seta svg { width: 46px; height: 46px; overflow: visible; filter: drop-shadow(0 8px 18px rgba(0,0,0,.55)); transition: transform .25s var(--ease); }
+.ov-seta.esq svg { transform: scaleX(-1); }
+.ov-seta:hover svg { transform: scale(1.14); }
+.ov-seta.esq:hover svg { transform: scaleX(-1) scale(1.14); }
+.ov-seta .ov-marca-fundo { fill: #163a5c; stroke: rgba(255,255,255,.4); stroke-width: 2.5; transition: stroke .2s; }
+.ov-seta .ov-b1 { fill: rgba(255,255,255,.55); }
+.ov-seta .ov-b2 { fill: rgba(255,255,255,.92); }
+.ov-seta .ov-b3 { fill: var(--ov-verde); }
+.ov-seta:focus-visible { outline: none; }
+.ov-seta:focus-visible .ov-marca-fundo { stroke: var(--ov-aco); stroke-width: 7; }
+/* ao passar o mouse as barras sobem em onda, da menor para a maior: o
+   movimento corre no sentido da seta */
+.ov-seta rect { transform-box: fill-box; transform-origin: 50% 100%; }
+.ov-seta:hover .ov-b1 { animation: ov-barra .9s var(--ease) infinite; }
+.ov-seta:hover .ov-b2 { animation: ov-barra .9s var(--ease) .12s infinite; }
+.ov-seta:hover .ov-b3 { animation: ov-barra .9s var(--ease) .24s infinite; }
+@keyframes ov-barra { 0%, 100% { transform: scaleY(1); } 45% { transform: scaleY(1.22); } }
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-movimento="sempre"]) .ov-seta:hover rect { animation: none; }
+}
+@media screen and (max-width: 820px) {
+  /* no celular a fileira anda com o dedo; seta em cima de card de 210 px
+     tampa metade dele */
+  .ov-seta.on { display: none !important; }
+  .ov-grade .orc-card { flex-basis: 210px; }
+}
+
+/* ---------- O rodapé da ficha ganhou as ações do card ---------- */
+.ov-ficha-rodape .ov-rodape-vao { flex: 1 1 auto; }
+.ov-ficha-rodape .btn.ov-perigo { color: var(--ov-alerta); }
+.ov-ficha-rodape .btn.ov-perigo:hover { border-color: var(--ov-alerta); background: rgba(244,153,157,.14); }
+
+/* ---------- O Portal do cliente com a cara da ficha ----------
+   Pedido de 11/09/2026: "o painel da obra e o do portal do cliente com a
+   mesma configuração de layout". O modal do Portal ganha o vidro da ficha
+   e o tema escuro (data-tema="dark" no #modal-bg: as variáveis do tema
+   valem para tudo que está dentro dele, e os campos, avisos e caixas do
+   formulário se acertam sozinhos). Só o do Portal — os outros ~140
+   UI.modal do app continuam como são. */
+.modal-bg.ov-modal-vidro { background: rgba(3,9,16,.55); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+/* ⚠ O TEMA É O DE QUEM USA. A primeira versão punha data-tema="dark" no
+   #modal-bg sempre — e o formulário do Portal tem caixas com fundo claro
+   fixo (o resultado da publicação, as linhas que revelam custo, avisos com
+   cor no style=): no escuro forçado o texto delas ficou em 1,08:1 a 2,1:1
+   (revisão da 1.2.71). No tema claro, o padrão, o vidro é CLARO e tudo se
+   lê como até a 1.2.70; quem escolheu o escuro ganha o vidro escuro. */
+.modal-bg.ov-modal-vidro > .modal {
+  background: rgba(255,255,255,.9);
+  -webkit-backdrop-filter: blur(22px) saturate(1.3); backdrop-filter: blur(22px) saturate(1.3);
+  border: 1px solid rgba(255,255,255,.7); border-radius: 18px;
+  box-shadow: 0 30px 80px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.6);
+}
+.modal-bg.ov-modal-vidro > .modal > header { background: transparent; border-bottom: 1px solid var(--linha); }
+.modal-bg.ov-modal-vidro > .modal > .body { background: transparent; }
+.modal-bg.ov-modal-vidro > .modal > footer { background: rgba(15,39,64,.04); border-top: 1px solid var(--linha); }
+[data-tema="dark"] .modal-bg.ov-modal-vidro > .modal {
+  background: linear-gradient(180deg, rgba(12,27,42,.8), rgba(8,20,33,.9));
+  border-color: rgba(255,255,255,.14); color: var(--texto);
+  box-shadow: 0 30px 80px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.06);
+}
+[data-tema="dark"] .modal-bg.ov-modal-vidro > .modal > header { border-bottom-color: rgba(255,255,255,.1); }
+[data-tema="dark"] .modal-bg.ov-modal-vidro > .modal > footer { background: rgba(0,0,0,.16); border-top-color: rgba(255,255,255,.1); }
+/* as duas caixas de aviso do Portal têm a cor no style= (o tema claro não
+   as alcança); a classe ov-pt-caixa, posta pelo portalObra, deixa o vidro
+   pintá-las. ⚠ !important porque vence o style= da própria caixa. */
+[data-tema="dark"] .modal-bg.ov-modal-vidro .ov-pt-caixa { background: rgba(61,143,208,.14) !important; border-color: rgba(143,192,227,.34) !important; color: #dcebf8 !important; }
+[data-tema="dark"] .modal-bg.ov-modal-vidro .ov-pt-caixa.ov-pt-atencao { background: rgba(232,176,79,.13) !important; border-color: rgba(232,176,79,.42) !important; color: #f6dcae !important; }
+[data-tema="dark"] .modal-bg.ov-modal-vidro .ov-pt-caixa b { color: #fff; }
 @media screen and (max-width: 820px) {
   /* ⚠ o padding do .main no celular (14px 12px, na regra de 820px acima) */
   .ov-cena { --ov-py: 14px; --ov-px: 12px; }

@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.70",
+  "versao": "1.2.71",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.70.zip",
-  "notas": "Correcao: o aviso de parcela em atraso nao apaga mais o motivo que esta sendo digitado, envia a resposta uma vez so e volta a aparecer de 5 em 5 minutos. Novidades: a licenca de equipe independente passa a ver um aviso proprio quando a licenca de quem a contratou tiver pagamento em atraso; a ficha da obra abre em vidro sobre a foto, com o mapa do endereco.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.70/OrcaPRO-IA-Instalador-v1.2.70.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.71.zip",
+  "notas": "Novidades: a licenca independente de equipe passa a cadastrar os usuarios da propria empresa previstos no contrato; a tela de Obras mostra as obras numa fileira so, com foto e nome, e setas para os lados. Correcao: a ficha da obra fica legivel sobre fotos claras, o mapa do endereco so abre com clique e a tecla Esc fecha a ficha sem fechar outras janelas.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.71/OrcaPRO-IA-Instalador-v1.2.71.exe"
 }

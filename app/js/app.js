@@ -3516,7 +3516,7 @@
               } catch (eG) {}
             });
           }
-          if (nPulados) { try { var cotaT = (typeof Gestao !== "undefined" && Gestao._cotaUsuarios) ? Gestao._cotaUsuarios() : {}; UI.toast(nPulados + " usuário(s) do backup ficaram de fora: " + (cotaT.tipo === "equipe" ? "a licença independente não cadastra usuários." : "todas as vagas da sua equipe estão em uso."), "erro"); } catch (eTp) {} }
+          if (nPulados) { try { var cotaT = (typeof Gestao !== "undefined" && Gestao._cotaUsuarios) ? Gestao._cotaUsuarios() : {}; UI.toast(nPulados + " usuário(s) do backup ficaram de fora: " + (cotaT.tipo === "equipe" && !cotaT.max ? "a licença independente não cadastra usuários." : (cotaT.tipo === "equipe" ? "os usuários da empresa que o seu plano permite já estão cadastrados." : "todas as vagas da sua equipe estão em uso.")), "erro"); } catch (eTp) {} }
           if (dump.prefs && typeof dump.prefs === "object") {
             var atual = Store.lerPrefs(eid) || {};
             for (var k in dump.prefs) if (atual[k] == null) atual[k] = dump.prefs[k];

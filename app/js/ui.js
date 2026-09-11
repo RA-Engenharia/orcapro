@@ -669,8 +669,15 @@
         html += '<div class="card"><b style="color:#b91c1c">Licença de outro computador</b><br>Esta licença foi ativada em outro aparelho. Fale com a RA Engenharia para liberar este.</div>';
       } else {
         html += '<div class="card"><b style="color:var(--verde,#16a34a)">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Licenciado</b><br>' + Util.esc(st.email || "") + (st.expira ? ' · válida até ' + new Date(st.expira).toLocaleDateString("pt-BR") : ' · permanente') + '</div>';
-        if (st.tipoLicenca === "equipe") html += '<div class="card" style="margin-top:8px">Licença <b>independente</b>: uso individual, em até ' + (st.dispositivosMax || 3) + ' aparelhos, sem criar usuários.</div>';
-        else if (st.tipoLicenca === "titular" && st.equipe) html += '<div class="card" style="margin-top:8px">Titular com <b>' + st.equipe.max + '</b> vagas de equipe, entre usuários da empresa e licenças independentes (' + (st.equipe.independentes || 0) + ' independente(s) emitida(s)).</div>';
+        /* usuariosMax > 0: o titular liberou usuários da própria empresa para esta
+           licença independente (server/licencas-filhas.js, usuariosPorIndependente) */
+        var mxU = Number(st.usuariosMax) || 0;
+        if (st.tipoLicenca === "equipe") html += '<div class="card" style="margin-top:8px">Licença <b>independente</b>: ' + (mxU > 0
+          ? 'você e até ' + mxU + (mxU === 1 ? ' usuário' : ' usuários') + ' da sua empresa, em até ' + (st.dispositivosMax || 3) + ' aparelhos no total.'
+          : 'uso individual, em até ' + (st.dispositivosMax || 3) + ' aparelhos, sem criar usuários.') + '</div>';
+        else if (st.tipoLicenca === "titular" && st.equipe) html += '<div class="card" style="margin-top:8px">Titular com <b>' + st.equipe.max + '</b> vagas de equipe, entre usuários da empresa e licenças independentes (' + (st.equipe.independentes || 0) + ' independente(s) emitida(s)' +
+          (st.equipe.indepMax != null && st.equipe.indepMax < st.equipe.max ? ', até ' + st.equipe.indepMax + ' pelo contrato' : '') + ')' +
+          (st.equipe.usuariosPorIndependente ? '. Cada licença independente cadastra ' + st.equipe.usuariosPorIndependente + (st.equipe.usuariosPorIndependente === 1 ? ' usuário' : ' usuários') + ' da própria empresa' : '') + '.</div>';
       }
       html += '<div class="field" style="margin-top:12px"><label>Chave de licença</label><input id="lic-chave" placeholder="cole aqui a chave que você recebeu"></div>';
       return html;

@@ -471,9 +471,77 @@
       }).join("") + "</nav>" +
       '<div class="ov-ficha-corpo" role="tabpanel" data-ov-corpo>' + ObraVitrine.corpoAba(ctx) + "</div>" +
       '<footer class="ov-ficha-rodape">' +
+        /* ⚠ as ações que moravam no card (a lixeira, o Aviso semanal) vieram
+           para cá quando o card virou só foto e nome (pedido de 11/09/2026).
+           A lixeira segue só para quem pode excluir, e pede confirmação. */
+        (ctx.podeExcluir ? '<button type="button" class="btn ov-sec ov-perigo" data-gacao="excluir-obra" data-id="' + id + '" title="Excluir esta obra (pede confirmação)">Excluir obra</button>' : "") +
+        '<span class="ov-rodape-vao"></span>' +
+        (m.portal ? '<button type="button" class="btn ov-sec" data-gacao="aviso-semanal" data-id="' + id + '" title="Gera o resumo da semana pronto para mandar ao cliente">Aviso semanal</button>' : "") +
         '<button type="button" class="btn ov-sec" data-gopen="obras:' + id + '">Editar cadastro</button>' +
         '<button type="button" class="btn primary" data-gacao="portal-obra" data-id="' + id + '">Portal do cliente' + (m.portal ? " ✓" : "") + "</button>" +
       "</footer></section>";
+  };
+
+  /* ---------------------------------------------------------------
+   * A FILEIRA — as obras num trilho só, que anda para os lados
+   * Pedido de 11/09/2026: a grade rolando para baixo poluía a tela. É uma
+   * fileira no pé da cena, como no Netflix: a rodinha do mouse anda para os
+   * lados, as setas pulam uma página, e o card é só a foto e o nome.
+   * --------------------------------------------------------------- */
+
+  /* A seta é o LOGO da OrçaPRO: as três barras sobem da esquerda para a
+     direita, então ele já aponta para a frente; espelhado (no css), aponta
+     para trás. Sem gradiente com id: o mesmo svg entra várias vezes na
+     tela, e id repetido faz o segundo desenho herdar a pintura do primeiro. */
+  var MARCA = '<svg viewBox="0 0 100 100" aria-hidden="true" focusable="false">' +
+    '<rect class="ov-marca-fundo" x="4" y="4" width="92" height="92" rx="24"/>' +
+    '<rect class="ov-b1" x="24" y="52" width="13" height="22" rx="4"/>' +
+    '<rect class="ov-b2" x="44" y="38" width="13" height="36" rx="4"/>' +
+    '<rect class="ov-b3" x="64" y="24" width="13" height="50" rx="4"/></svg>';
+  ObraVitrine.MARCA = MARCA;
+
+  /* O card: a foto e o nome, mais nada. `m` é o que ObraVitrine.montar
+     devolve — então a foto é a mesma do palco (a capa, senão a do diário
+     mais recente), e obra sem foto nenhuma ganha a marca no lugar.
+     ⚠ `card orc-card` e a altura da `.obra-capa` ficam: são o que o piso de
+     UI.chaoDeEstilo() e tools/e2e-imagem-sem-css.js conhecem. */
+  ObraVitrine.card = function (m, emCena) {
+    var id = esc(m.id), nome = esc(m.nome || "Obra sem nome");
+    return '<div class="card orc-card ov-card' + (m.foto ? " com-foto" : "") + (emCena ? " em-cena" : "") + '"' +
+      ' data-gacao="ov-ficha" data-id="' + id + '" data-aba="resumo" data-ov="' + id + '" tabindex="0" aria-label="' + nome + ': abrir a obra">' +
+      (m.foto ? '<div class="obra-capa"><img data-obrafoto="' + id + '" alt=""></div>'
+              : '<div class="obra-capa sem-foto">' + MARCA + "</div>") +
+      "<h3>" + nome + "</h3></div>";
+  };
+
+  /* ⚠ as setas nascem com style="display:none": folha de estilo velha (o
+     tablet que ficou com o css da versão anterior) não desenha dois botões
+     soltos no meio da tela. Quem as mostra é a classe `on`, que o js põe
+     quando há para onde andar, e o css força com !important. */
+  ObraVitrine.fila = function (cardsHtml) {
+    function seta(lado, dir, rot) {
+      return '<button type="button" class="ov-seta ' + lado + '" style="display:none" data-gacao="ov-rolar" data-dir="' + dir + '" aria-label="' + rot + '" title="' + rot + '">' + MARCA + "</button>";
+    }
+    return '<div class="ov-fila" data-ov-fila>' + seta("esq", "-1", "Obras anteriores") +
+      '<div class="grid-cards ov-grade" aria-label="Obras">' + (cardsHtml || "") + "</div>" +
+      seta("dir", "1", "Próximas obras") + "</div>";
+  };
+
+  /* Quais setas aparecem: só a do lado para onde ainda há obra. A folga de
+     4 px é o arredondamento do navegador — sem ela a seta da direita fica
+     acesa no fim do trilho, apontando para o nada. */
+  ObraVitrine.setas = function (esquerda, larguraTotal, larguraVisivel) {
+    var e = num(esquerda), t = num(larguraTotal), v = num(larguraVisivel);
+    return { esq: e > 4, dir: e + v < t - 4 };
+  };
+
+  /* Quanto uma seta anda: uma página, menos um card — o último que se via
+     continua à vista, para a pessoa não perder o fio (é o que o Netflix faz).
+     Nunca menos que um card. */
+  ObraVitrine.passo = function (larguraVisivel, larguraCard, vao) {
+    var um = num(larguraCard) + num(vao);
+    if (um <= 0) return 0;
+    return Math.max(1, Math.floor((num(larguraVisivel) + num(vao)) / um) - 1) * um;
   };
 
   /* ---------------------------------------------------------------

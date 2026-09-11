@@ -120,7 +120,11 @@
       var foto = function () { return JSON.stringify([l.tipoLicenca || "", l.usuariosMax, l.equipe || null, l.dispositivosMax || null, l.upgrade || null]); };
       var antes = foto();
       if (t === "equipe") {
-        l.tipoLicenca = "equipe"; l.usuariosMax = 0; delete l.equipe;
+        /* usuariosMax: usuários da própria empresa que esta licença independente
+           cadastra (o titular libera no servidor). 0 = uso individual, e número
+           torto também vira 0: restringir por engano se desfaz na próxima
+           abertura com internet; liberar por engano, não */
+        l.tipoLicenca = "equipe"; l.usuariosMax = n(d.usuariosMax) || 0; delete l.equipe;
         l.dispositivosMax = n(d.dispositivosMax);
         var up = (d.upgrade && typeof d.upgrade === "object") ? d.upgrade : null;
         l.upgrade = up ? { nome: String(up.nome || ""), valor: Number(up.valor) || 0, periodo: String(up.periodo || "") } : null;
@@ -129,7 +133,7 @@
       } else if (t === "titular") {
         var e = d.equipe || {}, mx = n(e.max) || 0, ind = n(e.independentes) || 0;
         l.tipoLicenca = "titular";
-        l.equipe = { max: mx, independentes: ind, empresa: n(e.empresa), dispositivos: n(e.dispositivos) || 3 };
+        l.equipe = this._equipeDe(e);
         l.usuariosMax = (n(d.usuariosMax) != null) ? n(d.usuariosMax) : Math.max(0, mx - ind);
         delete l.dispositivosMax; delete l.upgrade;
       } else {
@@ -138,13 +142,24 @@
       l.equipeEm = agora();
       return antes !== foto();
     },
+    /* a equipe do titular como o servidor mandou, num lugar só: três caminhos
+       (ativar/revalidar, informarUso e atualizarEquipe) regravam este objeto,
+       e um campo esquecido em um deles some na próxima abertura de Usuários */
+    _equipeDe: function (e) {
+      e = e || {};
+      var n = function (x) { x = parseInt(x, 10); return (x >= 0 && x <= 999) ? x : null; };
+      var mx = n(e.max) || 0, o = { max: mx, independentes: n(e.independentes) || 0, empresa: n(e.empresa), dispositivos: n(e.dispositivos) || 3 };
+      if (n(e.indepMax) != null && n(e.indepMax) < mx) o.indepMax = n(e.indepMax);
+      if (n(e.usuariosPorIndependente)) o.usuariosPorIndependente = n(e.usuariosPorIndependente);
+      return o;
+    },
     /* os campos do tipo de licença que o status() expõe — em TODOS os
        retornos de chave verificada, inclusive carência vencida, para a
        licença independente nunca cair no fluxo do cliente padrão */
     _com: function (o, l) {
       var t = (l && (l.tipoLicenca === "equipe" || l.tipoLicenca === "titular")) ? l.tipoLicenca : "";
       o.tipoLicenca = t;
-      o.usuariosMax = t === "equipe" ? 0 : ((t === "titular" && typeof l.usuariosMax === "number") ? l.usuariosMax : null);
+      o.usuariosMax = t === "equipe" ? (Number(l.usuariosMax) || 0) : ((t === "titular" && typeof l.usuariosMax === "number") ? l.usuariosMax : null);
       o.equipe = t === "titular" ? (l.equipe || null) : null;
       o.dispositivosMax = t === "equipe" ? (l.dispositivosMax || null) : null;
       o.upgrade = t === "equipe" ? (l.upgrade || null) : null;
@@ -267,6 +282,7 @@
               if (typeof d.emitidas === "number") m.equipe.independentes = d.emitidas;
               if (typeof d.max === "number") m.equipe.max = d.max;
               if (typeof d.empresa === "number") m.equipe.empresa = d.empresa;
+              if (typeof d.indepMax === "number" && d.indepMax < (m.equipe.max || 0)) m.equipe.indepMax = d.indepMax;
               m.usuariosMax = Math.max(0, (m.equipe.max || 0) - (m.equipe.independentes || 0));
               self._gravar(m);
             }
@@ -288,7 +304,7 @@
           .then(function (d) {
             if (!d || !d.ok || d.ignorado) return;
             var m = self._ler() || {}; if (m.tipoLicenca !== "titular") return;
-            if (d.equipe) m.equipe = { max: Number(d.equipe.max) || 0, independentes: Number(d.equipe.independentes) || 0, empresa: Number(d.equipe.empresa) || 0, dispositivos: Number(d.equipe.dispositivos) || 3 };
+            if (d.equipe) m.equipe = self._equipeDe(d.equipe);
             if (typeof d.usuariosMax === "number") m.usuariosMax = d.usuariosMax;
             m.usoInformadoEm = agora(); self._gravar(m);
           })["catch"](function () {});
@@ -312,7 +328,7 @@
           .then(function (d) {
             if (!d || !d.ok || d.ignorado || !d.equipe) { fim(null); return; }
             var m = self._ler() || {}; if (m.tipoLicenca !== "titular") { fim(null); return; }
-            m.equipe = { max: Number(d.equipe.max) || 0, independentes: Number(d.equipe.independentes) || 0, empresa: Number(d.equipe.empresa) || 0, dispositivos: Number(d.equipe.dispositivos) || 3 };
+            m.equipe = self._equipeDe(d.equipe);
             if (typeof d.usuariosMax === "number") m.usuariosMax = d.usuariosMax;
             m.usoInformadoEm = agora(); self._gravar(m);
             fim(m.equipe);

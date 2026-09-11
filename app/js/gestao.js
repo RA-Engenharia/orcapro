@@ -34,9 +34,13 @@
   // Limite de usuários (RBAC) por licença. Padrão 10; parametrizável por máquina via
   // localStorage 'orcapro:limite-usuarios' (o dono/RA sobe p/ clientes que compram usuários
   // extras — sobrevive a updates, como o desbloqueio do Blocok). Teto de segurança 999.
+  /* o pacote completo: 10 usuários por empresa. É o número que o aviso da
+     licença independente promete ao oferecer o upgrade, então os dois saem
+     daqui e não podem divergir */
+  var USUARIOS_PACOTE_COMPLETO = 10;
   var LIMITE_PADRAO = (function () {
     try { var o = parseInt(localStorage.getItem("orcapro:limite-usuarios"), 10); if (o > 0 && o <= 999) return o; } catch (e) {}
-    return 10;
+    return USUARIOS_PACOTE_COMPLETO;
   })();
   /* ===== VAGAS DE USUÁRIO — lidas NA HORA, nunca no carregamento =====
      O tipo de licença chega pela revalidação do boot (js/app.js), DEPOIS de
@@ -45,8 +49,10 @@
      - titular com cota (licenças de equipe, server/licencas-filhas.js): as
        vagas são SOMADAS, usuários da empresa + licenças independentes <= cota.
        O ajuste por máquina não vale aqui: quem manda é a cota do contrato;
-     - licença independente: não cria usuários. O botão continua, e o clique
-       explica o pacote completo (_avisoPlanoSemUsuarios).
+     - licença independente: cria só os usuários da própria empresa que o
+       titular liberou (usuariosMax do servidor; 0 = uso individual). O botão
+       continua e, sem vaga, o clique explica o pacote completo
+       (_avisoPlanoSemUsuarios).
      typeof em tudo: 12 suítes carregam este arquivo sem o licenca.js. */
   function cotaUsuarios() {
     var s = null;
@@ -54,10 +60,17 @@
     var empresa = 0;
     try { empresa = (typeof listaTodas === "function" ? listaTodas("equipe") : lista("equipe")).length; } catch (eL) { empresa = 0; }
     var t = (s && (s.tipoLicenca === "equipe" || s.tipoLicenca === "titular")) ? s.tipoLicenca : "";
-    if (t === "equipe") return { tipo: "equipe", max: 0, empresa: empresa, indep: 0, usadas: empresa, podeCriar: false, dispositivos: Number(s.dispositivosMax) || 3 };
+    if (t === "equipe") {
+      var mxE = Math.max(0, Number(s.usuariosMax) || 0);
+      return { tipo: "equipe", max: mxE, empresa: empresa, indep: 0, usadas: empresa, podeCriar: empresa < mxE, dispositivos: Number(s.dispositivosMax) || 3 };
+    }
     if (t === "titular" && s.equipe && Number(s.equipe.max) > 0) {
       var mx = Number(s.equipe.max) || 0, ind = Number(s.equipe.independentes) || 0;
-      return { tipo: "titular", max: mx, empresa: empresa, indep: ind, usadas: empresa + ind, podeCriar: (empresa + ind) < mx, dispositivos: Number(s.equipe.dispositivos) || 3 };
+      /* indepMax: quantas vagas podem virar licença independente (o resto só
+         serve para usuário da empresa); ausente = todas */
+      var imT = (s.equipe.indepMax != null && Number(s.equipe.indepMax) < mx) ? Math.max(0, Number(s.equipe.indepMax) || 0) : mx;
+      return { tipo: "titular", max: mx, empresa: empresa, indep: ind, usadas: empresa + ind, podeCriar: (empresa + ind) < mx, dispositivos: Number(s.equipe.dispositivos) || 3,
+        indepMax: imT, podeIndep: ind < imT && (empresa + ind) < mx, usuariosPorIndependente: Math.max(0, Number(s.equipe.usuariosPorIndependente) || 0) };
     }
     return { tipo: "padrao", max: LIMITE_PADRAO, empresa: empresa, indep: 0, usadas: empresa, podeCriar: empresa < LIMITE_PADRAO };
   }
@@ -3319,6 +3332,14 @@
          usuário, e o palco não pode mostrar diário de obra que ele não vê. */
       /* com a ficha aberta, a obra dela é a do palco e a do fundo */
       if (this._ovFicha) this._ovLembrado = this._ovFicha.id;
+      /* ⚠ a ficha só se REDESENHA se estava na tela (a sincronização
+         redesenha Obras por baixo dela). Chegando de outra tela, ou de um
+         login, ela começa fechada. O reset do render() não bastava: Orçamentos
+         e o logout não passam por ele, e a revisão da 1.2.70 viu a ficha
+         reabrir sozinha na aba Mapa — mandando o endereço da obra ao Google
+         sem ninguém ter aberto o mapa nessa visita (política, item 4.11), e
+         para o próximo usuário do aparelho, numa obra que ele nem escolheu. */
+      if (this._ovFicha && !document.querySelector("[data-ov-ficha]")) this._ovFicha = null;
       var vit = this._ovPreparar(obras, clientes);
       /* a ficha sobrevive a um redesenho (salvar o cadastro por dentro dela,
          sincronizar): volta aberta, com os dados novos. Obra que sumiu fecha. */
@@ -3337,57 +3358,37 @@
       }
       html += vit.html;
       if (fichaCtx) html += ObraVitrine.fichaHtml(fichaCtx);
-      html += '<div class="grid-cards ov-grade">';
-      obras.forEach(function (o) {
-        var cli = clientes.filter(function (c) { return c.id === o.clienteId; })[0];
-        // lixeira visível no card (só admin): antes, excluir exigia abrir o cadastro e
-        // rolar até o rodapé do modal — no celular ninguém achava.
-        var podeExcluir = !(typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin());
-        /* tabindex: o card vira parada de teclado — Tab põe a obra no palco e
-           Enter abre (ver _ovLigar). Antes o card só existia para o mouse.
-           ⚠ O card abre a FICHA da obra (painel sobre a cena), não mais o
-           formulário branco de cadastro — pedido do Rogério em 11/09/2026.
-           O cadastro está a um clique dentro dela ("Editar cadastro"). */
-        html += '<div class="card orc-card' + (o.foto ? " com-foto" : "") + (o.id === vit.id ? " em-cena" : "") + '" data-gacao="ov-ficha" data-id="' + Util.esc(o.id) + '" data-aba="resumo" data-ov="' + Util.esc(o.id) + '" tabindex="0">' +
-          /* a capa entra ANTES do titulo e so existe se a obra tem foto: quem
-             nao cadastrou foto continua com o card exatamente como era. O src
-             chega depois (a foto mora no IndexedDB, leitura assincrona), por
-             isso o espaco ja nasce reservado — senao o card "pula" quando a
-             imagem carrega e a lista inteira dança. */
-          /* ⚠ tamanho embutido, pelo mesmo motivo do logo na barra do topo:
-             a foto vem do celular do cliente (1080x1440 e mais) e, se a folha
-             de estilo estiver velha ou ainda não tiver chegado, o cartão inteiro
-             é empurrado por uma imagem em tamanho natural. Foi o que aconteceu
-             num tablet: a `.obra-capa` nasceu na mesma versão em que o cache do
-             service worker deixou de ser purgado. */
-          (o.foto ? '<div class="obra-capa">' +
-            '<img data-obrafoto="' + Util.esc(o.id) + '" alt=""></div>' : "") +
-          '<div class="flex between"><h3>' + Util.esc(o.nome) + "</h3>" + pill(o.status) + "</div>" +
-          '<div class="meta">' + (cli ? "👤 " + Util.esc(cli.nome) + " · " : "") + (o.tipo ? rot(P.obraTipo, o.tipo) : "") + (o.local ? " · 📍 " + Util.esc(o.local) : "") + "</div>" +
-          '<div class="valor">' + Util.fmtMoeda(o.valor) + "</div>" +
-          // a lixeira fica no RODAPÉ, ao lado do Portal: no canto superior ela cobria o selo
-          // de status e um toque no selo abria o modal de excluir (achado do gate)
-          '<div style="margin-top:10px;display:flex;gap:8px;align-items:center;justify-content:flex-end">' +
-            (podeExcluir ? '<button class="btn sm ico danger" data-gacao="excluir-obra" data-id="' + Util.esc(o.id) + '" title="Excluir esta obra (pede confirmação)" style="margin-right:auto;min-width:44px;min-height:38px">' + Icones.get("lixeira", 15) + "</button>" : "") +
-            '<button class="btn sm ghost" data-gacao="docs-obra" data-id="' + o.id + '" style="font-size:12px;padding:6px 12px" title="ART/RRT, alvará, apólice — o que o cliente vê no Portal">' + (typeof Icones !== 'undefined' ? Icones.get('tabela', 15) : '') + ' Documentos' + ((o.portalDocumentos || []).length ? " (" + o.portalDocumentos.length + ")" : "") + "</button>" +
-            (o.portalUser ? '<button class="btn sm ghost" data-gacao="aviso-semanal" data-id="' + o.id + '" style="font-size:12px;padding:6px 12px" title="Gera o resumo da semana pronto para mandar ao cliente">' + (typeof Icones !== 'undefined' ? Icones.get('megafone', 15) : '') + ' Aviso semanal</button>' : "") +
-            '<button class="btn sm" data-gacao="portal-obra" data-id="' + o.id + '" style="font-size:12px;padding:6px 12px">' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' Portal do cliente' + (o.portalUser ? " ✓" : "") + "</button>" +
-          "</div></div>";
-      });
-      /* As fotos sao lidas do IndexedDB (Promise), entao entram depois que a
-         lista ja esta na tela. `setTimeout(0)` porque este metodo devolve HTML
-         que o App ainda vai inserir no DOM — procurar os <img> agora nao acha
-         nada. */
-      if (obras.some(function (o) { return o.foto; }) && typeof Fotos !== "undefined" && Fotos.dataURI) {
+      /* A FILEIRA (11/09/2026): um trilho só no pé da cena, e o card é a foto
+         e o nome — o motor escreve (ObraVitrine.card / fila). O que morava no
+         card (lixeira, Documentos, Aviso semanal, Portal) está na ficha.
+         ⚠ A foto do card é a MESMA do palco: a capa, senão a do diário mais
+         recente (ObraVitrine.foto), lida de `_ovDados`. */
+      var dadosOv = this._ovDados || {}, gsOv = this;
+      if (typeof ObraVitrine === "undefined") {
+        /* motor ausente (o arquivo não carregou): a lista simples, que abre o cadastro */
+        html += '<div class="grid-cards">' + obras.map(function (o) {
+          return '<div class="card orc-card" data-gopen="obras:' + Util.esc(o.id) + '"><h3>' + Util.esc(o.nome) + "</h3></div>";
+        }).join("") + "</div>";
+      } else {
+        html += ObraVitrine.fila(obras.map(function (o) {
+          return ObraVitrine.card(dadosOv[o.id] || { id: o.id, nome: o.nome, foto: null }, o.id === vit.id);
+        }).join(""));
+      }
+      /* As fotos são lidas do IndexedDB (Promise), então entram depois que a
+         lista já está na tela. `setTimeout(0)` porque este método devolve HTML
+         que o App ainda vai inserir no DOM — procurar os <img> agora não acha
+         nada. Foto que não chega (apagada, sem rede) vira a marca, não um
+         buraco com o ícone de imagem quebrada. */
+      if (typeof Fotos !== "undefined" && Fotos.dataURI && obras.some(function (o) { return dadosOv[o.id] && dadosOv[o.id].foto; })) {
         setTimeout(function () {
           obras.forEach(function (o) {
-            if (!o.foto) return;
+            var mo = dadosOv[o.id];
+            if (!mo || !mo.foto) return;
             var im = document.querySelector('[data-obrafoto="' + o.id + '"]');
             if (!im) return;
-            Fotos.dataURI(o.foto).then(function (d) {
-              if (!d) { var cap = im.parentNode; if (cap && cap.parentNode) cap.parentNode.removeChild(cap); return; }
-              im.src = d;
-            }).catch(function () {});
+            Fotos.dataURI(mo.foto.ref).then(function (d) {
+              if (d) im.src = d; else gsOv._ovCapaVazia(im);
+            }).catch(function () { gsOv._ovCapaVazia(im); });
           });
         }, 0);
       }
@@ -3395,9 +3396,9 @@
          setTimeout das capas logo acima */
       if (vit.id) {
         var selfOv = this;
-        setTimeout(function () { selfOv._ovLigar(); selfOv._ovMedir(); selfOv._ovMostrar(vit.id, true); selfOv._ovFichaDepois(); }, 0);
+        setTimeout(function () { selfOv._ovLigar(); selfOv._ovMedir(); selfOv._ovMostrar(vit.id, true); selfOv._ovFichaDepois(); selfOv._ovSetas(); }, 0);
       }
-      return html + "</div>" + (vit.id ? "</div>" : "");   /* fecha a grade e a cena */
+      return html + (vit.id ? "</div>" : "");   /* fecha a cena (a fileira se fecha sozinha) */
     },
     /* ---------- Palco da lista de Obras — fiação do js/obravitrine.js ---------- */
     _ovPreparar: function (obras, clientes) {
@@ -3463,16 +3464,67 @@
         if (!c || !c.matches || !c.matches(SEL)) return;
         e.preventDefault(); c.click();
       });
-      var medir = function () { gs._ovMedir(); };
+      /* A RODINHA DO MOUSE ANDA COM A FILEIRA (pedido de 11/09/2026: "rolar
+         para baixo move para um lado, para cima para o outro"). Sobre a
+         fileira, sempre; no resto da cena, só quando a tela não tem o que
+         rolar para baixo (notebook de tela baixa ainda precisa rolar) e a
+         ficha está fechada. Uma "casa" da rodinha anda um card; o touchpad,
+         que manda passos miúdos, soma até dar um card. O que já é de lado
+         (touchpad para o lado, Shift+rodinha) fica com o navegador.
+         ⚠ passive:false — sem ele o preventDefault é ignorado e a página
+         rola junto. */
+      var acum = 0, ultimo = 0;
+      document.addEventListener("wheel", function (e) {
+        var t = e.target, cena = t && t.closest ? t.closest(".ov-cena") : null;
+        if (!cena || cena.classList.contains("ficha-aberta") || document.getElementById("modal-bg")) return;
+        var g = cena.querySelector("[data-ov-fila] .ov-grade");
+        if (!g || g.scrollWidth <= g.clientWidth + 2) return;
+        /* ⚠ Ctrl/Meta+rodinha e a pinça do touchpad (que chega como wheel com
+           ctrlKey) são ZOOM: segurar aqui tirava o zoom da pessoa e ainda
+           andava a fileira (revisão da 1.2.71) */
+        if (e.ctrlKey || e.metaKey || e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+        var mn = document.getElementById("main");
+        if (!t.closest("[data-ov-fila]") && mn && mn.scrollHeight > mn.clientHeight + 2) return;
+        e.preventDefault();
+        acum += e.deltaMode === 1 ? e.deltaY * 40 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+        var agora = Date.now();
+        if (Math.abs(acum) < 50 || agora - ultimo < 160) return;
+        var c = g.querySelector(".orc-card");
+        gs._ovAndar(g, (acum > 0 ? 1 : -1) * ((c ? c.getBoundingClientRect().width : 236) + 16));   /* _ovAndar alinha o card depois da calha */
+        acum = 0; ultimo = agora;
+      }, { passive: false });
+      /* as setas acompanham a posição do trilho (rodinha, dedo, seta, Tab) */
+      document.addEventListener("scroll", function (e) {
+        var t = e.target;
+        if (t && t.matches && t.matches("[data-ov-fila] .ov-grade")) gs._ovSetas();
+      }, true);
+      var medir = function () { gs._ovMedir(); gs._ovSetas(); };
       try { if (typeof ResizeObserver !== "undefined") new ResizeObserver(medir).observe(document.getElementById("main")); } catch (eRo) {}
       window.addEventListener("resize", medir);
-      /* Esc fecha a ficha — mas o Esc de um modal aberto por cima dela (o
-         cadastro, o Portal) é do modal, não daqui */
-      document.addEventListener("keydown", function (e) {
-        if (e.key !== "Escape" || !gs._ovFicha) return;
-        if (document.getElementById("modal-bg") || !document.querySelector("[data-ov-ficha]")) return;
+      /* Esc fecha a ficha — mas o Esc de quem está POR CIMA dela é de quem
+         está por cima. ⚠ A primeira versão só respeitava o #modal-bg, e a
+         revisão da 1.2.70 mostrou o Esc que fecha a busca (Ctrl+K), o tour e
+         o aviso de cobrança fechando a ficha junto — no aviso, ainda tirava o
+         cursor da caixa de resposta, e com ela vazia o cartão podia sumir.
+         Por isso: escuta na CAPTURA da window, que roda antes de todos (o
+         tour fecha na captura do document, e depois dele não sobra rastro de
+         que estava aberto); e só fecha se o Esc nasceu na ficha ou na tela. */
+      function outroPorCima() {
+        var ms = document.querySelectorAll('#modal-bg, [aria-modal="true"], #busca-ov, #tour-overlay');
+        for (var q = 0; q < ms.length; q++) {
+          if (ms[q].closest && ms[q].closest("[data-ov-ficha]")) continue;
+          if (ms[q].getClientRects().length) return true;
+        }
+        return false;
+      }
+      window.addEventListener("keydown", function (e) {
+        if ((e.key !== "Escape" && e.key !== "Esc") || !gs._ovFicha) return;
+        if (!document.querySelector("[data-ov-ficha]") || outroPorCima()) return;
+        var t = e.target;
+        if (t && t.nodeType === 1 && t !== document.body && t !== document.documentElement &&
+            !(t.closest && t.closest("[data-ov-ficha], .ov-cena"))) return;
         gs.ovFichaFechar();
-      });
+      }, true);
     },
     _ovMostrar: function (id, inicial) {
       var pal = document.querySelector("[data-ov-palco]");
@@ -3498,6 +3550,19 @@
         }
       }
       if (cen) this._ovFoto(cen, pal, m, inicial ? "" : ObraVitrine.direcao(ordem, antes, id));
+      if (inicial) this._ovTrazerEmCena();
+    },
+    /* A obra do palco é a lembrada, e o card dela tem de estar à vista na
+       fileira — senão o elo entre o topo e a fileira some (visto no e2e: o
+       palco na obra A e o card A lá no fim do trilho, fora da tela). Pulo
+       seco: é a abertura da tela, não um gesto de quem usa. */
+    _ovTrazerEmCena: function () {
+      var g = document.querySelector("[data-ov-fila] .ov-grade"), c = g && g.querySelector(".orc-card.em-cena");
+      if (!g || !c) return;
+      var gr = g.getBoundingClientRect(), cr = c.getBoundingClientRect(), calha = this._ovCalha(g);
+      if (cr.left >= gr.left + calha - 1 && cr.right <= gr.right - calha + 1) return;
+      g.scrollLeft += cr.left - gr.left - calha;
+      this._ovSetas();
     },
     /* Duas CAMADAS que se revezam no cenário (a foto em tela cheia). Cada uma
        tem dois movimentos que não se misturam: a CAMADA desliza de lado na
@@ -3612,7 +3677,9 @@
       var o = lista("obras").filter(function (x) { return x && x.id === f.id; })[0];
       if (!m || !o) return null;
       var ctx = { m: m, obra: o, aba: f.aba, mapa: f.mapa || "mapa", abas: this._ovAbas(),
-        online: !(window.navigator && window.navigator.onLine === false) };
+        online: !(window.navigator && window.navigator.onLine === false),
+        /* a lixeira saiu do card para o rodapé da ficha: mesma regra de antes (só admin) */
+        podeExcluir: !(typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin()) };
       /* só a aba aberta junta os seus dados */
       if (f.aba === "diario") ctx.diarios = ObraVitrine.diariosDaObra(lista("rdo"), f.id, 8);
       if (f.aba === "medicoes") ctx.medicoes = ObraVitrine.medicoesDaObra(lista("medicoes"), f.id, 10).map(function (x) {
@@ -3721,6 +3788,69 @@
       this._ovFoto(cen, pal, { id: this._ovFicha.id + ":" + i, foto: f }, "direita");
       var ts = document.querySelectorAll("[data-ov-ficha] .ov-thumb");
       for (var k = 0; k < ts.length; k++) ts[k].classList.toggle("on", ts[k].getAttribute("data-i") === String(i));
+    },
+    /* A FILEIRA: a seta pula uma página (ObraVitrine.passo). O movimento é
+       suave, a não ser que a pessoa tenha pedido menos movimento — aí pula
+       seco (mesma regra da cena: "Sempre ligado" em Aparência passa na
+       frente do Windows). */
+    ovRolar: function (d) {
+      var g = document.querySelector("[data-ov-fila] .ov-grade");
+      if (!g || typeof ObraVitrine === "undefined") return;
+      var c = g.querySelector(".orc-card"), cs = getComputedStyle(g);
+      var vao = parseFloat(cs.columnGap || cs.gap) || 16;
+      var passo = ObraVitrine.passo(g.clientWidth, c ? c.getBoundingClientRect().width : 236, vao);
+      this._ovAndar(g, (parseInt(d && d.dir, 10) < 0 ? -1 : 1) * passo);
+    },
+    /* ⚠ ANDAR É PARAR COM UM CARD INTEIRO DEPOIS DA CALHA. scrollBy de N
+       cards deixava o trilho onde a conta caísse, e o card da ponta ficava
+       metade embaixo da seta — o mouse na beira dele caía na seta (revisão
+       da 1.2.71, medido: card em 2..238 px, seta em 0..76). Agora o destino
+       é o card mais perto do pedido, encostado na calha (--ov-calha). */
+    _ovAndar: function (g, dx) {
+      var alvo = this._ovAlinhar(g, g.scrollLeft + dx, dx);
+      var reduz = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+      var suave = ObraVitrine.movimentoLigado(reduz, document.documentElement.getAttribute("data-movimento"));
+      try { g.scrollTo({ left: alvo, behavior: suave ? "smooth" : "auto" }); } catch (e) { g.scrollLeft = alvo; }
+    },
+    _ovCalha: function (g) {
+      var f = g && g.parentNode, v = f ? parseFloat(getComputedStyle(f).getPropertyValue("--ov-calha")) : NaN;
+      return isFinite(v) && v > 0 ? v : 84;
+    },
+    _ovAlinhar: function (g, desejado, dx) {
+      var max = Math.max(0, g.scrollWidth - g.clientWidth), calha = this._ovCalha(g);
+      var cs = g.querySelectorAll(".orc-card"), melhor = null;
+      for (var i = 0; i < cs.length; i++) {
+        var p = cs[i].offsetLeft - calha;
+        if (dx > 0 && p <= g.scrollLeft + 1) continue;     /* para a frente: nunca ficar onde está */
+        if (dx < 0 && p >= g.scrollLeft - 1) continue;
+        if (melhor === null || Math.abs(p - desejado) < Math.abs(melhor - desejado)) melhor = p;
+      }
+      if (melhor === null) melhor = dx > 0 ? max : 0;
+      return Math.max(0, Math.min(max, melhor));
+    },
+    /* qual seta aparece: só a do lado para onde ainda há obra */
+    _ovSetas: function () {
+      var g = document.querySelector("[data-ov-fila] .ov-grade");
+      if (!g || typeof ObraVitrine === "undefined") return;
+      var st = ObraVitrine.setas(g.scrollLeft, g.scrollWidth, g.clientWidth);
+      var e = document.querySelector("[data-ov-fila] .ov-seta.esq"), di = document.querySelector("[data-ov-fila] .ov-seta.dir");
+      /* ⚠ quem navega pelo teclado não pode ficar sem foco quando a seta em
+         que estava apaga no fim do trilho (revisão da 1.2.71): o foco passa
+         para a outra seta, ou para o card da obra do palco */
+      var ativo = document.activeElement, sai = (ativo === e && !st.esq) || (ativo === di && !st.dir);
+      if (e) e.classList.toggle("on", st.esq);
+      if (di) di.classList.toggle("on", st.dir);
+      if (sai) {
+        var outra = ativo === e ? di : e, card = g.querySelector(".orc-card.em-cena") || g.querySelector(".orc-card");
+        try { ((outra && outra.classList.contains("on")) ? outra : card).focus({ preventScroll: true }); } catch (eF) {}
+      }
+    },
+    /* a foto do card não chegou (apagada, sem rede): a marca no lugar */
+    _ovCapaVazia: function (im) {
+      var cap = im && im.parentNode;
+      if (!cap || typeof ObraVitrine === "undefined") return;
+      cap.classList.add("sem-foto");
+      cap.innerHTML = ObraVitrine.MARCA;
     },
     novoObra: function () { this.formObra(null); },
     /* ---------- Excluir obra (v1.1.126) ----------
@@ -23964,7 +24094,7 @@
       if (!podeAdd) html += '<div class="card" style="background:#fffbeb;border-color:#fde68a;color:#92400e;margin-bottom:12px">' + (cota.tipo === "titular"
         ? 'As ' + cota.max + ' vagas da sua equipe estão em uso: ' + cota.empresa + ' usuário(s) da empresa e ' + cota.indep + ' licença(s) independente(s). Exclua um usuário da empresa para liberar uma vaga.'
         : 'Limite de ' + cota.max + ' usuários nesta versão. Exclua um usuário para criar outro.') + '</div>';
-      if (!us.length) return html + (cota.tipo === "equipe" ? vazioBox("Sua licença é de uso individual", "novo-usuario", "Ver como cadastrar usuários", true) : vazioBox("Nenhum usuário cadastrado", "novo-usuario", "Cadastrar primeiro usuário"));
+      if (!us.length) return html + ((cota.tipo === "equipe" && !cota.max) ? vazioBox("Sua licença é de uso individual", "novo-usuario", "Ver como cadastrar usuários", true) : vazioBox("Nenhum usuário cadastrado", "novo-usuario", "Cadastrar primeiro usuário"));
       html += '<table class="tbl"><thead><tr><th>Nome</th><th>Login</th><th>Departamento</th><th class="num">Módulos</th><th>Status</th><th></th></tr></thead><tbody>';
       us.forEach(function (u) {
         var nMod = (u.modulos && u.modulos.length) || 0;
@@ -23975,18 +24105,21 @@
     },
     _bannerMultiAparelho: function (cota) {
       /* licença independente: é a MESMA pessoa em até N aparelhos, não "cada usuário" */
-      var indiv = !!(cota && cota.tipo === "equipe"), nAp = (cota && cota.dispositivos) || 3;
+      var indiv = !!(cota && cota.tipo === "equipe" && !cota.max), nAp = (cota && cota.dispositivos) || 3;
+      /* independente COM usuário da empresa: pessoas diferentes dividindo os
+         mesmos N aparelhos da chave */
+      var tetoAp = (cota && cota.tipo === "equipe" && cota.max) ? ' Esta licença vale em até ' + nAp + ' aparelhos no total, somando os seus e os dos seus usuários.' : '';
       var lic = (typeof Licenca !== "undefined" && Licenca.status) ? Licenca.status() : null;
       if (!lic || !lic.ativo || lic.trial) return "";                       // só cliente licenciado
       if (typeof Nuvem === "undefined" || !Nuvem.disponivel()) return "";   // nuvem ligada no config
       var conta = (typeof Auth !== "undefined" && Auth.contaMestre) ? Auth.contaMestre() : null;
       if (conta) {
         return '<div class="card" style="background:#eafaf0;border-color:#b9e6c8;color:#0f5132;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">' +
-          '<span>📱 <b>Acesso multi-aparelho ATIVO.</b> Admin: <b>' + Util.esc(conta.email) + '</b> — ' + (indiv ? 'você entra com o mesmo login nos seus até ' + nAp + ' aparelhos.' : 'cada usuário entra no próprio celular/tablet com a mesma licença.') + '</span>' +
+          '<span>📱 <b>Acesso multi-aparelho ATIVO.</b> Admin: <b>' + Util.esc(conta.email) + '</b> — ' + (indiv ? 'você entra com o mesmo login nos seus até ' + nAp + ' aparelhos.' : 'cada usuário entra no próprio celular/tablet com a mesma licença.') + tetoAp + '</span>' +
           '<button class="btn sm" data-gacao="config-admin">Trocar senha de admin</button></div>';
       }
       return '<div class="card" style="background:#fffbeb;border-color:#fde68a;color:#92400e;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">' +
-        '<span>📱 <b>Ative o acesso multi-aparelho:</b> ' + (indiv ? 'defina sua conta de administrador para entrar com o mesmo login nos seus até ' + nAp + ' aparelhos.' : 'defina sua conta de administrador e cada usuário entra no próprio celular/tablet com a mesma licença.') + '</span>' +
+        '<span>📱 <b>Ative o acesso multi-aparelho:</b> ' + (indiv ? 'defina sua conta de administrador para entrar com o mesmo login nos seus até ' + nAp + ' aparelhos.' : 'defina sua conta de administrador e cada usuário entra no próprio celular/tablet com a mesma licença.') + tetoAp + '</span>' +
         '<button class="btn sm primary" data-gacao="config-admin">' + (typeof Icones !== 'undefined' ? Icones.get('link', 15) : '') + ' Configurar admin</button></div>';
     },
     configurarAdmin: function () {
@@ -24034,7 +24167,7 @@
     },
     novoUsuario: function () {
       var c = cotaUsuarios(), self = this;
-      if (c.tipo === "equipe") return this._avisoPlanoSemUsuarios();
+      if (c.tipo === "equipe" && !c.podeCriar) return this._avisoPlanoSemUsuarios();   // com vaga (usuário liberado pelo titular), segue para o formulário
       /* titular: confere a contagem com o servidor ANTES de abrir. Offline,
          segue com o que está gravado (cb recebe null) */
       if (c.tipo === "titular" && typeof Licenca !== "undefined" && Licenca.atualizarEquipe) {
@@ -24080,14 +24213,14 @@
       /* a guarda mora na FUNÇÃO, não no botão: vale para o despacho, para o
          "Cadastrar primeiro usuário" e para qualquer chamador futuro */
       var cota = cotaUsuarios();
-      if (ehNovo && cota.tipo === "equipe") return this._avisoPlanoSemUsuarios();
+      if (ehNovo && cota.tipo === "equipe" && !cota.podeCriar) return this._avisoPlanoSemUsuarios();
       if (ehNovo && cota.tipo !== "padrao" && !cota.podeCriar) { UI.toast(cota.tipo === "titular" ? "Sem vaga na sua equipe: " + cota.usadas + " de " + cota.max + " em uso." : "Limite de " + cota.max + " usuários atingido.", "erro"); return; }
       /* titular com cota: escolhe o TIPO de cada vaga */
       var ehTitular = ehNovo && cota.tipo === "titular";
       var seletorTipo = !ehTitular ? "" :
         '<div class="field"><label>Tipo de acesso</label>' +
         '<label class="opt-linha" style="align-items:flex-start;margin-bottom:6px"><input type="radio" name="g-tipo" value="empresa" checked style="margin-top:3px"> <span><b>Usuário da minha empresa</b><br><span class="muted" style="font-size:12px">Entra nos seus dados, com login e senha próprios e só os módulos que você liberar.</span></span></label>' +
-        '<label class="opt-linha" style="align-items:flex-start"><input type="radio" name="g-tipo" value="independente" style="margin-top:3px"> <span><b>Licença independente</b><br><span class="muted" style="font-size:12px">A pessoa recebe uma chave própria e trabalha separada, com a empresa e os dados dela: ela não vê os seus dados e você não vê os dela. Uso individual, em até ' + cota.dispositivos + ' aparelhos, sem cadastrar usuários. A licença dela vence no mesmo dia que a sua e, quando você renova a sua, a dela é renovada junto, na mesma chave. Esta vaga fica com ela e só volta para você se a pessoa contratar o pacote completo.</span></span></label></div>' +
+        '<label class="opt-linha" style="align-items:flex-start"><input type="radio" name="g-tipo" value="independente" style="margin-top:3px"' + (cota.podeIndep === false ? ' disabled' : '') + '> <span><b>Licença independente</b>' + (cota.podeIndep === false && cota.indepMax > 0 ? ' <span class="muted" style="font-size:12px">(as ' + cota.indepMax + ' do seu contrato já foram emitidas)</span>' : '') + '<br><span class="muted" style="font-size:12px">A pessoa recebe uma chave própria e trabalha separada, com a empresa e os dados dela: ela não vê os seus dados e você não vê os dela. ' + (cota.usuariosPorIndependente ? 'Ela administra a empresa dela e pode cadastrar ' + cota.usuariosPorIndependente + (cota.usuariosPorIndependente === 1 ? ' usuário' : ' usuários') + ' da própria empresa, em até ' + cota.dispositivos + ' aparelhos no total.' : 'Uso individual, em até ' + cota.dispositivos + ' aparelhos, sem cadastrar usuários.') + ' A licença dela vence no mesmo dia que a sua e, quando você renova a sua, a dela é renovada junto, na mesma chave. Esta vaga fica com ela e só volta para você se a pessoa contratar o pacote completo.</span></span></label></div>' +
         '<div id="us-bloco-indep" hidden>' +
         '<div class="row">' + campo("Nome da pessoa *", inp("g-ind-nome", "", "Ex.: João Lima")) + campo("E-mail da pessoa *", inp("g-ind-email", "", "pessoa@empresa.com")) + '</div>' +
         '<p class="muted" style="font-size:12px;margin:4px 0 0">A licença e a conta dela na nuvem nascem deste e-mail, que não pode ser trocado depois. Ao emitir, a chave aparece para você copiar e enviar só para a pessoa.</p></div>';
@@ -24159,7 +24292,7 @@
         if (emUso) { UI.toast('Já existe um usuário com o login "' + obj.login + '".', "erro"); return false; }
         if (ehNovo) {
           var cotaS = cotaUsuarios();
-          if (!cotaS.podeCriar) { UI.toast(cotaS.tipo === "equipe" ? "Sua licença independente não cria usuários." : (cotaS.tipo === "titular" ? "Sem vaga na sua equipe: " + cotaS.usadas + " de " + cotaS.max + " em uso." : "Limite de " + cotaS.max + " usuários atingido."), "erro"); return false; }
+          if (!cotaS.podeCriar) { UI.toast(cotaS.tipo === "equipe" ? (cotaS.max ? "Sua licença já tem " + cotaS.usadas + " de " + cotaS.max + " usuário(s) da empresa, o máximo do plano." : "Sua licença independente não cria usuários.") : (cotaS.tipo === "titular" ? "Sem vaga na sua equipe: " + cotaS.usadas + " de " + cotaS.max + " em uso." : "Limite de " + cotaS.max + " usuários atingido."), "erro"); return false; }
         }
         var senha = v("g-senha");
         if (ehNovo && !senha) { senha = self._gerarSenhaPadrao(); } // senha padrão automática se em branco
@@ -24245,12 +24378,13 @@
       return c.tipo === "padrao" ? null : Math.max(0, (Number(c.max) || 0) - (Number(c.usadas) || 0));
     },
     _rotuloCota: function (c, n, ativos) {
-      if (c.tipo === "titular") return c.usadas + " de " + c.max + " vagas · " + c.empresa + " na empresa · " + c.indep + (c.indep === 1 ? " independente" : " independentes");
-      if (c.tipo === "equipe") return "Licença individual · até " + (c.dispositivos || 3) + " aparelhos";
+      if (c.tipo === "titular") return c.usadas + " de " + c.max + " vagas · " + c.empresa + " na empresa · " + c.indep + (c.indepMax != null && c.indepMax < c.max ? " de " + c.indepMax : "") + (c.indep === 1 ? " independente" : " independentes");
+      if (c.tipo === "equipe") return c.max ? ("Licença independente · " + c.empresa + " de " + c.max + (c.max === 1 ? " usuário" : " usuários") + " da empresa · até " + (c.dispositivos || 3) + " aparelhos") : ("Licença individual · até " + (c.dispositivos || 3) + " aparelhos");
       return n + " de " + c.max + " usuários · " + ativos + " ativos";
     },
     _textoCota: function (c) {
-      if (c.tipo === "titular") return 'Você (dono da conta) é o <b>administrador</b>. Sua equipe tem <b>' + c.max + '</b> vagas, e cada uma pode ser um <b>usuário da sua empresa</b> (entra nos seus dados, com permissões por departamento) ou uma <b>licença independente</b> (a pessoa trabalha separada, com a própria empresa e os próprios dados). Você escolhe o tipo em <b>Novo usuário</b>.';
+      if (c.tipo === "titular") return 'Você (dono da conta) é o <b>administrador</b>. Sua equipe tem <b>' + c.max + '</b> vagas, e cada uma pode ser um <b>usuário da sua empresa</b> (entra nos seus dados, com permissões por departamento) ou uma <b>licença independente</b> (a pessoa trabalha separada, com a própria empresa e os próprios dados)' + (c.indepMax != null && c.indepMax < c.max ? ', até <b>' + c.indepMax + '</b> licenças independentes' : '') + '. ' + (c.usuariosPorIndependente ? 'Cada licença independente pode cadastrar <b>' + c.usuariosPorIndependente + '</b> ' + (c.usuariosPorIndependente === 1 ? 'usuário' : 'usuários') + ' da própria empresa. ' : '') + 'Você escolhe o tipo em <b>Novo usuário</b>.';
+      if (c.tipo === "equipe" && c.max) return 'Esta é uma <b>licença independente</b> e você é o <b>administrador</b> da sua empresa: pode cadastrar <b>' + c.max + '</b> ' + (c.max === 1 ? 'usuário, que entra' : 'usuários, que entram') + ' nos seus dados com login e senha próprios, em até <b>' + (c.dispositivos || 3) + '</b> aparelhos no total. Para cadastrar mais, o <b>pacote completo</b> dá direito a até <b>' + USUARIOS_PACOTE_COMPLETO + '</b> usuários na sua empresa.';
       if (c.tipo === "equipe") return 'Esta é uma <b>licença independente</b>: um acesso individual, com login e senha, em até <b>' + (c.dispositivos || 3) + '</b> aparelhos. Cadastrar usuários para a sua empresa faz parte do <b>pacote completo</b>.';
       return 'Você (dono da conta) é o <b>administrador</b>. Cadastre até <b>' + c.max + '</b> usuários e libere os módulos por <b>departamento</b> — cada um entra com o próprio login e senha e vê só o que foi liberado.';
     },
@@ -24267,14 +24401,19 @@
       var fone = String(s.whatsappRA || "").replace(/\D/g, "") || "553492869383";
       var valor = (up && up.valor) ? Number(up.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "";
       var planoTxt = (up && valor) ? (Util.esc(up.nome || "") + ", R$ " + valor + Util.esc(up.periodo || "")) : "";
-      var msg = "Olá, Rogério! Uso o OrçaPRO com uma licença independente (" + (s.email || "") + ") e quero contratar o pacote completo para cadastrar usuários da minha empresa.";
+      /* a licença independente que JÁ cadastra usuários (o titular liberou) só
+         chega aqui quando usou todos: o texto diz o limite dela, não "não permite" */
+      var mxU = Math.max(0, Number(s.usuariosMax) || 0);
+      var msg = "Olá, Rogério! Uso o OrçaPRO com uma licença independente (" + (s.email || "") + ") e quero contratar o pacote completo para cadastrar " + (mxU ? "mais " : "") + "usuários da minha empresa.";
       var wa = "https://wa.me/" + fone + "?text=" + encodeURIComponent(msg);
       var corpo =
-        '<p style="margin:0 0 10px">Sua licença é <b>independente</b>: um acesso individual, com login e senha, em até <b>' + (Number(s.dispositivosMax) || 3) + '</b> aparelhos. <b>Este tipo de plano não permite criar usuários para a sua empresa.</b></p>' +
+        (mxU
+          ? '<p style="margin:0 0 10px">Sua licença é <b>independente</b> e o plano dela inclui <b>' + mxU + '</b> ' + (mxU === 1 ? 'usuário' : 'usuários') + ' da sua empresa, já ' + (mxU === 1 ? 'cadastrado' : 'cadastrados') + '. <b>Para cadastrar mais, o pacote completo dá direito a até ' + USUARIOS_PACOTE_COMPLETO + ' usuários na sua empresa.</b></p>'
+          : '<p style="margin:0 0 10px">Sua licença é <b>independente</b>: um acesso individual, com login e senha, em até <b>' + (Number(s.dispositivosMax) || 3) + '</b> aparelhos. <b>Este tipo de plano não permite criar usuários para a sua empresa.</b></p>') +
         '<div class="card" style="background:#f0fdf4;border-color:#b9e6c8;color:#14532d;margin:0 0 12px"><b>Você não perde nada do que já lançou.</b> A contratação muda o seu plano na mesma licença: orçamentos, obras, diários, medições e todos os lançamentos continuam exatamente onde estão. Depois da liberação, basta abrir o OrçaPRO com internet.</div>' +
         '<p style="margin:0 0 6px"><b>Com o pacote completo você passa a:</b></p>' +
         '<ul style="margin:0 0 12px 18px;padding:0;font-size:13.5px;line-height:1.55">' +
-          '<li>cadastrar a sua equipe, cada pessoa com <b>login e senha próprios</b>, trocados no primeiro acesso;</li>' +
+          '<li>cadastrar a sua equipe, <b>até ' + USUARIOS_PACOTE_COMPLETO + ' usuários</b>, cada pessoa com <b>login e senha próprios</b>, trocados no primeiro acesso;</li>' +
           '<li>liberar os módulos <b>por departamento</b>: engenharia, compras, financeiro, RH, administrativo e diretoria;</li>' +
           '<li>trabalhar todos no <b>mesmo banco da empresa</b>, sincronizado entre os aparelhos de cada um;</li>' +
           '<li>escolher <b>quais obras</b> cada pessoa vê;</li>' +
@@ -24283,7 +24422,7 @@
           '<li>mandar o acesso de cada pessoa <b>por link no WhatsApp ou por QR na tela</b>, e tirar o acesso de alguém desativando o usuário.</li></ul>' +
         '<p style="margin:0 0 12px">O pacote completo é cobrado pelo <b>valor integral do plano que você usa, pela tabela da loja</b>' + (planoTxt ? ': <b>' + planoTxt + '</b>' : '') + '.' + (validade ? ' Hoje a sua licença vale até <b>' + validade + '</b>.' : '') + ' Com o pacote completo, ela passa a valer por mais um período completo' + (up && /ano/.test(up.periodo || '') ? ' de 12 meses' : (up && /m[eê]s/.test(up.periodo || '') ? ' de 1 mês' : ' do plano')) + ', contado da data da contratação, na mesma chave e com os mesmos dados.' + '</p>' +
         '<a class="btn primary" style="text-decoration:none" href="' + wa + '" target="_blank" rel="noopener">' + (typeof Icones !== 'undefined' ? Icones.get('mensagem', 15) : '') + ' Falar com o Rogério no WhatsApp</a>';
-      UI.modal("Criar usuários não faz parte do seu plano", corpo, [{ texto: "Agora não", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+      UI.modal(mxU ? "Mais usuários fazem parte do pacote completo" : "Criar usuários não faz parte do seu plano", corpo, [{ texto: "Agora não", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
     },
     /* titular emite uma licença independente de dentro do app */
     _emitirIndependente: function (nome, email) {
@@ -29690,7 +29829,7 @@ renderFolha: function () {
       "bim-drawer-fechar": 1,
       /* a ficha da obra (palco de Obras) só LÊ e navega: abrir, trocar de
          aba, trocar mapa/satélite, pôr foto no fundo, ir ao módulo filtrado */
-      "ov-ficha": 1, "ov-aba": 1, "ov-ficha-fechar": 1, "ov-mapa-tipo": 1, "ov-ir": 1, "ov-foto-cena": 1,
+      "ov-ficha": 1, "ov-aba": 1, "ov-ficha-fechar": 1, "ov-mapa-tipo": 1, "ov-ir": 1, "ov-foto-cena": 1, "ov-rolar": 1,
       /* ⚠ v1.2 — "ver todos os N" é LEITURA PURA e quase nasceu de fora desta
          lista. As tabelas longas passaram a desenhar as 300 mais recentes; sem
          esta linha, o cliente com licença vencida clicaria em "Ver todos os
@@ -29743,6 +29882,7 @@ renderFolha: function () {
         case "ov-mapa-tipo": return this.ovMapaTipo(dataset);
         case "ov-ir": return this.ovIr(dataset);
         case "ov-foto-cena": return this.ovFotoCena(dataset);
+        case "ov-rolar": return this.ovRolar(dataset);
         case "fin-rapido": return this.finRapido();
         case "vinculo-morto": return this.vinculoMortoModal();
         case "pr-troca-obra": return this.prTrocaObra(dataset.value);
@@ -31126,7 +31266,7 @@ case "nova-folha": return this.novoFolha();
             campo("Usuário", inp("pa-user", "", "ex.: fiscal")) +
             campo("Senha", inp("pa-senha", "")) + "</div>" +
           '<button type="button" class="btn sm ghost" id="pa-add">+ Adicionar acesso</button>') +
-        '<div style="background:#eef7ff;border:1px solid #d3e6fb;border-radius:10px;padding:11px 14px;font-size:13px;color:#143454">Vai publicar: <b>' + medicoes.length + "</b> medições · <b>" + rdos.length + "</b> diários" + (totFotos ? " · <b>" + totFotos + "</b> fotos" : "") + " · andamento <b>" + Util.fmtPct(pctExec, 0) + "</b>" + (curvaS ? " · Curva S + cronograma" : "") + ".</div>" +
+        '<div class="ov-pt-caixa" style="background:#eef7ff;border:1px solid #d3e6fb;border-radius:10px;padding:11px 14px;font-size:13px;color:#143454">Vai publicar: <b>' + medicoes.length + "</b> medições · <b>" + rdos.length + "</b> diários" + (totFotos ? " · <b>" + totFotos + "</b> fotos" : "") + " · andamento <b>" + Util.fmtPct(pctExec, 0) + "</b>" + (curvaS ? " · Curva S + cronograma" : "") + ".</div>" +
         /* DE ONDE VEM O ANDAMENTO — dito antes de publicar, porque é o número
            que o cliente vai repetir na reunião. Quando ele nasce do diário, a
            frase também conta o que ficou de fora da conta. */
@@ -31135,7 +31275,7 @@ case "nova-folha": return this.novoFolha();
           if (fonteExec === "manual") txt = "O andamento vai como <b>" + Util.fmtPct(pctExec, 0) + "</b> porque foi <b>digitado à mão</b> no cadastro da obra — o avanço calculado pelos diários não é usado enquanto esse campo estiver preenchido.";
           else if (fonteExec === "diario") txt = "O andamento vem do <b>avanço físico dos diários</b>. " + Util.esc((fisico && fisico.aviso) || "");
           else { txt = "O andamento vem do <b>acumulado das medições</b> — os diários desta obra ainda não têm serviço com <b>quantidade prevista</b>, e sem isso não há percentual a calcular a partir deles."; cor = "#7c2d12"; bg = "#fff7ed"; bd = "#fdba74"; }
-          return '<div style="background:' + bg + ";border:1px solid " + bd + ";border-radius:10px;padding:10px 14px;font-size:12.5px;color:" + cor + ';margin-top:8px">' + txt + "</div>";
+          return '<div class="ov-pt-caixa' + (bg === "#fff7ed" ? " ov-pt-atencao" : "") + '" style="background:' + bg + ";border:1px solid " + bd + ";border-radius:10px;padding:10px 14px;font-size:12.5px;color:" + cor + ';margin-top:8px">' + txt + "</div>";
         })() +
         /* ---------- PREVISÃO DE TÉRMINO: LIGA/DESLIGA ----------
            Fica FORA da lista de relatórios de propósito: não é um documento
@@ -31220,6 +31360,11 @@ case "nova-folha": return this.novoFolha();
         { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Publicar", classe: "success", onClick: publicar }
       ]);
+      /* o Portal com a cara da ficha da obra (pedido de 11/09/2026): o vidro.
+         ⚠ NÃO força tema: o formulário tem caixas de fundo claro fixo, e no
+         escuro forçado o texto delas sumia (1,08:1 — revisão da 1.2.71). O
+         tema é o de quem usa; o css pinta o vidro claro ou escuro. */
+      (function () { var mb = document.getElementById("modal-bg"); if (mb) mb.classList.add("ov-modal-vidro"); })();
       renderAcessos();
       (function () {
         var bAdd = document.getElementById("pa-add");
