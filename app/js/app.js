@@ -89,6 +89,10 @@
          e letra (Plex/Source). `aplicarTema` faz a migracao de quem ainda
          tem o `orcapro:tom` antigo gravado no aparelho. */
       this.aplicarTema(localStorage.getItem("orcapro:tema") || "light", null);
+      /* terceiro eixo da aparência: o movimento da cena de Obras (ver
+         aplicarMovimento). Aqui, e não depois, pelo mesmo motivo do tema: a
+         demo sai do iniciar logo abaixo e precisa dele aplicado também. */
+      this.aplicarMovimento(null);
 
       // MODO DEMO (?demo=1) — orçamento genérico para vitrine/teste na página de vendas
       if (/[?&]demo=1/.test(location.search || "")) { return this._iniciarDemo(location.search || ""); }
@@ -224,6 +228,9 @@
           else Licenca.revalidar(function (r) { if (r && r.bloqueado) { try { self.render(); UI.toast("Licença: " + (r.erro || "ativada em outra máquina."), "erro"); } catch (e) {} } else if (r && (r.mudouEquipe || r.mudouRenovacao)) { try { self.render(); } catch (e2) {} } });
         }
       } catch (e) {}
+      /* aviso de parcela vencida (js/cobranca.js): pergunta ao servidor ao abrir
+         e de 5 em 5 minutos. Sem licença verificada ele nem começa. */
+      try { if (typeof Cobranca !== "undefined") Cobranca.iniciar(); } catch (eCob) {}
       this.checarAtualizacao();
     },
 
@@ -1559,6 +1566,7 @@
            independentes — trocar uma não pode zerar a outra */
         case "tema-op": this.aplicarTema(t.dataset.temaVal, null); break;
         case "tema-fonte": this.aplicarTema(document.documentElement.getAttribute("data-tema"), t.dataset.fonteVal); break;
+        case "tema-mov": this.aplicarMovimento(t.dataset.movVal); break;
         case "esqueci-senha": this.redefinirSenhaUI(); break;
         case "empresa": this.abrirEmpresa(); break;
         case "licenca": this.abrirLicenca(); break;
@@ -4224,8 +4232,41 @@
       var ops = document.querySelectorAll(".tema-op");
       for (var i = 0; i < ops.length; i++) {
         var b = ops[i], t = b.getAttribute("data-tema-val"), f = b.getAttribute("data-fonte-val");
+        /* ⚠ o botão de MOVIMENTO também é .tema-op e não tem nenhum dos dois
+           atributos: sem esta linha, trocar o tema o desmarcava ("f === fonte"
+           com f nulo dá falso). Ele é de aplicarMovimento. */
+        if (!t && !f) continue;
         b.classList.toggle("on", t ? t === tema : f === fonte);
         b.setAttribute("aria-pressed", (t ? t === tema : f === fonte) ? "true" : "false");
+      }
+    },
+    /* =================================================================
+     * MOVIMENTO DA TELA DE OBRAS — o terceiro eixo da aparência
+     *
+     * A cena de Obras (foto em tela cheia, zoom lento, troca deslizando —
+     * css/app.css "Cena da lista de Obras") segue a preferência do SISTEMA:
+     * com as animações do Windows desligadas, o Chrome e o Edge pedem "menos
+     * movimento" às páginas e a foto fica parada. Medido em 11/09/2026: a
+     * própria máquina da RA está assim, e quem pediu o efeito não o via.
+     * "Sempre ligado" é a escolha da pessoa passando na frente da do sistema
+     * — só na cena de Obras; o resto do app continua seguindo o Windows.
+     * O padrão é seguir o sistema: quem desligou animação por enjoo não é
+     * surpreendido por uma foto se mexendo.
+     * ================================================================= */
+    _movimentoSalvo: function () {
+      var v = "";
+      try { v = localStorage.getItem("orcapro:movimento") || ""; } catch (e) {}
+      return v === "sempre" ? "sempre" : "sistema";
+    },
+    aplicarMovimento: function (v) {
+      v = (v === "sempre" || v === "sistema") ? v : this._movimentoSalvo();
+      document.documentElement.setAttribute("data-movimento", v);
+      try { localStorage.setItem("orcapro:movimento", v); } catch (e) {}
+      var ops = document.querySelectorAll(".tema-op[data-mov-val]");
+      for (var i = 0; i < ops.length; i++) {
+        var on = ops[i].getAttribute("data-mov-val") === v;
+        ops[i].classList.toggle("on", on);
+        ops[i].setAttribute("aria-pressed", on ? "true" : "false");
       }
     },
     // Seletor de tema: Claro (como o site) + 5 tons de escuro (cores do logo RA)
@@ -4371,12 +4412,33 @@
           "<b>" + o.nome + "</b><small>" + o.desc + "</small></button>";
       }
 
+      /* o movimento da cena de Obras. A frase da opção "Seguir o Windows" diz
+         o que ESTE aparelho está pedindo agora — sem ela a pessoa escolhe sem
+         saber por que a foto está parada. */
+      var movAtual = this._movimentoSalvo();
+      var sistemaReduz = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+      var movs = [
+        { v: "sistema", nome: "Seguir o Windows",
+          desc: sistemaReduz ? "Neste aparelho as animações do Windows estão desligadas: a foto fica parada"
+                             : "As animações do Windows estão ligadas neste aparelho: a foto se move" },
+        { v: "sempre", nome: "Sempre ligado",
+          desc: "Zoom lento na foto e troca deslizando, mesmo com as animações do Windows desligadas" }
+      ];
+      function cardMov(o) {
+        var on = o.v === movAtual;
+        return '<button type="button" class="tema-op' + (on ? " on" : "") + '" data-acao="tema-mov"' +
+          ' data-mov-val="' + o.v + '" aria-pressed="' + (on ? "true" : "false") + '">' +
+          "<b>" + o.nome + "</b><small>" + o.desc + "</small></button>";
+      }
+
       UI.modal("Aparência",
         '<p class="muted" style="margin:0 0 6px;font-size:var(--t-peq)">A mudança é na hora e fica salva neste aparelho. Cada pessoa da equipe tem a sua.</p>' +
         '<div class="tema-grupo"><span class="tema-rot">Iluminação da tela</span>' +
           '<div class="tema-ops">' + luz.map(cardLuz).join("") + "</div></div>" +
         '<div class="tema-grupo"><span class="tema-rot">Letra</span>' +
           '<div class="tema-ops">' + fontes.map(cardFonte).join("") + "</div></div>" +
+        '<div class="tema-grupo"><span class="tema-rot">Movimento da tela de Obras</span>' +
+          '<div class="tema-ops">' + movs.map(cardMov).join("") + "</div></div>" +
         '<p class="muted" style="margin:14px 0 0;font-size:var(--t-micro)">As quatro combinações são conferidas por medição de contraste a cada versão — nenhum texto, número ou botão fica apagado por causa da cor em nenhuma delas.</p>',
         [{ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
     },
@@ -8955,11 +9017,22 @@
       // bloqueia só quando expira. Antes: s.trial bloqueava sempre — ninguém
       // experimentava o entregável antes de pagar.
       if (s.trial) return !s.ativo;
+      /* suspensa por parcela vencida (js/cobranca.js): a licença segue VÁLIDA
+         (ver o ⚠ em Licenca.status), mas nada grava nem exporta */
+      if (s.suspensa) return true;
       return !s.ativo;                    // licenciado: bloqueia se não está ativo (vencida/carência/outra máquina)
     },
     _avisoTrial: function () {
       var s = (typeof Licenca !== "undefined") ? Licenca.status() : {};
       var msg;
+      /* SUSPENSA POR COBRANÇA: o caminho é pagar, não a tela de chave — mandar
+         para "ative sua licença" faria a pessoa colar a chave de novo e achar
+         que o sistema quebrou. Mostra o aviso com os links de pagamento. */
+      if (s.suspensa) {
+        UI.toast("Licença suspensa por falta de pagamento. Seus dados estão preservados; o acesso volta quando o pagamento compensar.", "erro");
+        try { if (typeof Cobranca === "undefined" || !Cobranca.mostrarAgora()) this.abrirLicenca(); } catch (eS) {}
+        return;
+      }
       if (s.expirada) msg = "Sua licença venceu. Renove para continuar salvando e exportando.";
       else if (s.outroDispositivo) msg = "Esta licença está ativada em outra máquina. Fale com o suporte para liberar.";
       else if (s.revalidar) msg = "Reconecte à internet para revalidar sua licença (alguns dias sem checar).";
@@ -8972,7 +9045,14 @@
     persistir: function () {
       if (!this.orcAtual) return;
       if (this._trialBloqueado()) {
-        if (!this._avisouSalvar) { this._avisouSalvar = true; UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("cadeado", 15) : "") + " Modo demonstração — para salvar, ative sua licença (🔑).", "erro"); }
+        /* ⚠ quem está SUSPENSO não está em "modo demonstração": esse texto
+           mandaria um cliente pagante ativar uma licença que ele já tem */
+        var sSus = (typeof Licenca !== "undefined") ? Licenca.status() : {};
+        if (!this._avisouSalvar) {
+          this._avisouSalvar = true;
+          if (sSus && sSus.suspensa) this._avisoTrial();
+          else UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("cadeado", 15) : "") + " Modo demonstração — para salvar, ative sua licença (🔑).", "erro");
+        }
         return;
       }
       /* ⚠ APROVADO NÃO GRAVA (fase 4). O aprovado é o preço que foi ao cliente

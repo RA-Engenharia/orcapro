@@ -255,17 +255,61 @@
       "</div>";
   };
 
-  /* ⚠ style="display:none" NO HTML, e o CSS o vence com !important.
-     Lição da .obra-capa (tools/e2e-imagem-sem-css.js): quando o service
-     worker serve a folha de estilo VELHA junto com o JS novo, elemento sem
-     regra nasce em tamanho natural — foto de 1600 px cobrindo a tela do
-     tablet. Aqui, sem a folha nova o palco simplesmente não aparece e a
-     lista fica exatamente como era; com ela, `display:grid !important`
-     vence o inline. Não troque por uma classe: é o inline que protege. */
-  ObraVitrine.palco = function (m) {
-    return '<section class="ov-palco' + (m.foto ? "" : " sem-foto") + '" style="display:none" data-ov-palco data-ov-id="' + esc(m.id) + '" aria-label="Obra em destaque">' +
-      '<div class="ov-fundo"><img class="ov-img" alt=""><img class="ov-img" alt=""></div>' +
+  /* ---------------------------------------------------------------
+   * A CENA — a foto da obra em tela cheia, atrás da lista inteira
+   * --------------------------------------------------------------- */
+
+  /* Movimentos de câmera do cenário (o zoom lento contínuo, "como se fosse um
+     vídeo"). Um por obra e sempre o mesmo para ela — sai do id —, para as
+     obras parecerem cenas diferentes e a mesma obra não mudar de cara cada
+     vez que volta ao palco. Os nomes são as classes kb-* do css/app.css. */
+  ObraVitrine.MOVIMENTOS = ["aproxima", "direita", "sobe", "afasta", "diagonal"];
+  /* duração do deslize na troca de obra — tem de ser a mesma do css (1s):
+     é depois dela que a camada que saiu é desligada */
+  ObraVitrine.TROCA_MS = 1000;
+
+  /* A cena se move? Sim, a menos que o SISTEMA peça menos movimento — e aí
+     só se a pessoa escolheu "Sempre ligado" em Aparência (App.aplicarMovimento).
+     A escolha dela passa na frente da do Windows; a falta de escolha segue o
+     Windows. É a mesma regra que o css aplica com :root[data-movimento]. */
+  ObraVitrine.movimentoLigado = function (sistemaReduz, preferencia) {
+    return preferencia === "sempre" || !sistemaReduz;
+  };
+
+  ObraVitrine.movimento = function (id) {
+    var s = String(id == null ? "" : id), h = 0;
+    for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 2147483647;
+    return ObraVitrine.MOVIMENTOS[h % ObraVitrine.MOVIMENTOS.length];
+  };
+
+  /* De que lado a foto nova entra: acompanha a posição do card na grade.
+     Card mais adiante → a foto nova vem da direita e a antiga sai pela
+     esquerda, como quem anda pela fileira; card para trás, o contrário. Sem
+     referência (primeira foto, obra fora da grade) → "", e aí só esmaece. */
+  ObraVitrine.direcao = function (ordem, de, para) {
+    ordem = ordem || [];
+    var a = ordem.indexOf(de), b = ordem.indexOf(para);
+    if (a < 0 || b < 0 || a === b) return "";
+    return b > a ? "direita" : "esquerda";
+  };
+
+  /* ⚠ style="display:none" NO HTML, e o CSS o vence com !important — no
+     palco E no cenário. Lição da .obra-capa (tools/e2e-imagem-sem-css.js):
+     quando o service worker serve a folha de estilo VELHA junto com o JS
+     novo, elemento sem regra nasce em tamanho natural — foto de 1600 px
+     cobrindo a tela do tablet. Aqui, sem a folha nova a cena simplesmente
+     não aparece e a lista fica exatamente como era; com ela, o
+     `display:... !important` vence o inline. Não troque por uma classe: é o
+     inline que protege. */
+  ObraVitrine.cenario = function (m) {
+    return '<div class="ov-cenario' + (m.foto ? "" : " sem-foto") + '" style="display:none" data-ov-cenario aria-hidden="true">' +
+      '<div class="ov-camada"><img class="ov-img" alt=""></div>' +
+      '<div class="ov-camada"><img class="ov-img" alt=""></div>' +
       '<div class="ov-veu"></div>' +
+      "</div>";
+  };
+  ObraVitrine.palco = function (m) {
+    return '<section class="ov-palco" style="display:none" data-ov-palco data-ov-id="' + esc(m.id) + '" aria-label="Obra em destaque">' +
       '<div class="ov-texto" data-ov-texto>' + ObraVitrine.texto(m) + "</div>" +
       '<p class="ov-credito" data-ov-credito></p>' +
       "</section>";

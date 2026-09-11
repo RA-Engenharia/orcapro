@@ -328,6 +328,17 @@
         .then(function (d) { cb(d || { ok: false, erro: "Resposta vazia do servidor de licença." }); }, function () { cb({ ok: false, erro: "Sem conexão com o servidor de licença." }); });
     },
 
+    /* SUSPENSÃO POR COBRANÇA. Quem grava a marca é js/cobranca.js, com a
+       resposta do servidor (server/vps/cobranca-srv.js decide). Vale só para a
+       MESMA chave que a recebeu: trocar de licença não herda a suspensão de
+       outra. Ilegível = não suspensa (nunca trava por defeito). */
+    _suspensaPorCobranca: function (chave) {
+      try {
+        var c = JSON.parse(localStorage.getItem("orcapro:cobranca") || "null");
+        return !!(c && c.suspensa === true && c.chaveRef && c.chaveRef === String(chave || "").slice(-16));
+      } catch (e) { return false; }
+    },
+
     status: function () {
       var l = this._ler() || {};
       if (l.chave) {
@@ -340,9 +351,16 @@
           if (l.deviceId && l.deviceId !== this.deviceId()) return this._com({ ativo: false, trial: false, outroDispositivo: true }, l);
           var dias = expEf ? Math.ceil((expEf - agora()) / 86400000) : null;
           if (agora() < (l.validadoEm || 0) + GRACE_MS) {
-            return this._com({ ativo: true, trial: false, email: l.email, expira: l.expira, diasRestantes: dias,
+            var stA = this._com({ ativo: true, trial: false, email: l.email, expira: l.expira, diasRestantes: dias,
               /* o maior entre o que a chave carrega e o que o servidor concedeu */
               tier: this._maiorTier((info && info.tier) || "", l.tierServidor || "") }, l);
+            /* ⚠ SUSPENSA CONTINUA `ativo: true`, DE PROPÓSITO. `ativo:false` faria
+               o podeGestao() trocar a Gestão e o BIM do cliente pela tela de VENDA
+               do Plus, e desligaria a nuvem — o cliente acharia que perdeu os
+               dados. Suspensa é só "não grava nem exporta", e quem barra é o
+               App._trialBloqueado, que olha esta marca. */
+            if (this._suspensaPorCobranca(l.chave)) stA.suspensa = true;
+            return stA;
           }
           return this._com({ ativo: false, trial: false, revalidar: true, email: l.email, diasRestantes: dias }, l); // carência vencida: reconectar
         }

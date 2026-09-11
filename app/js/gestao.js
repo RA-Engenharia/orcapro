@@ -3309,18 +3309,23 @@
       var obras = lista("obras"), clientes = lista("clientes");
       var html = this._head(svg("obras") + "Obras", "nova-obra", "Nova obra");
       if (!obras.length) return html + vazioBox("Nenhuma obra cadastrada", "nova-obra", "Criar primeira obra");
-      /* atalho para o que o cliente respondeu. Fica aqui, e não escondido dentro
-         do modal do Portal, porque a nota do cliente é informação de gestão:
-         quem abre Obras de manhã tem de topar com ela. */
-      if (obras.some(function (o) { return o.portalUser; })) {
-        html += '<div style="margin:-4px 0 12px"><button class="btn sm" data-gacao="avaliacoes-portal" style="font-size:12.5px">' + (typeof Icones !== 'undefined' ? Icones.get('estrela', 15) : '') + ' Avaliações dos clientes</button></div>';
-      }
       /* O PALCO (js/obravitrine.js): a obra em destaque no topo, trocada pelo
          mouse sobre o card. O motor escreve o texto; daqui saem os números da
          régua ÚNICA do engenheiro (_avancoMedido / _medidoEmValor) e as
          listas já passadas pelo funil de escopo — `lista()` filtra por obra do
          usuário, e o palco não pode mostrar diário de obra que ele não vê. */
       var vit = this._ovPreparar(obras, clientes);
+      /* A CENA ENVOLVE A TELA INTEIRA: o cenário (a foto em tela cheia, atrás
+         de tudo) é o primeiro filho e fica preso no topo da área de rolagem;
+         o título, o palco e a grade vêm por cima. Sem obra em destaque (motor
+         ausente), a tela fica exatamente como era. */
+      if (vit.id) html = '<div class="ov-cena">' + vit.cenario + html;
+      /* atalho para o que o cliente respondeu. Fica aqui, e não escondido dentro
+         do modal do Portal, porque a nota do cliente é informação de gestão:
+         quem abre Obras de manhã tem de topar com ela. */
+      if (obras.some(function (o) { return o.portalUser; })) {
+        html += '<div style="margin:-4px 0 12px"><button class="btn sm" data-gacao="avaliacoes-portal" style="font-size:12.5px">' + (typeof Icones !== 'undefined' ? Icones.get('estrela', 15) : '') + ' Avaliações dos clientes</button></div>';
+      }
       html += vit.html;
       html += '<div class="grid-cards ov-grade">';
       obras.forEach(function (o) {
@@ -3377,9 +3382,9 @@
          setTimeout das capas logo acima */
       if (vit.id) {
         var selfOv = this;
-        setTimeout(function () { selfOv._ovLigar(); selfOv._ovMostrar(vit.id, true); }, 0);
+        setTimeout(function () { selfOv._ovLigar(); selfOv._ovMedir(); selfOv._ovMostrar(vit.id, true); }, 0);
       }
-      return html + "</div>";
+      return html + "</div>" + (vit.id ? "</div>" : "");   /* fecha a grade e a cena */
     },
     /* ---------- Palco da lista de Obras — fiação do js/obravitrine.js ---------- */
     _ovPreparar: function (obras, clientes) {
@@ -3408,7 +3413,14 @@
         });
       });
       var id = ObraVitrine.destaque(obras, this._ovLembrado);
-      return { id: id, html: id ? ObraVitrine.palco(dados[id]) : "" };
+      return { id: id, html: id ? ObraVitrine.palco(dados[id]) : "", cenario: id ? ObraVitrine.cenario(dados[id]) : "" };
+    },
+    /* A altura do cenário é a da ÁREA DE ROLAGEM (#main), que o CSS não sabe:
+       100vh inclui a barra do topo, e a sobra viraria rolagem vazia no fim da
+       lista. Medida no render e sempre que #main muda de tamanho. */
+    _ovMedir: function () {
+      var mn = document.getElementById("main"), c = document.querySelector(".ov-cena");
+      if (mn && c) c.style.setProperty("--ov-alt", mn.clientHeight + "px");
     },
     /* Os ouvintes vão no document UMA vez e só agem dentro de `.ov-grade`:
        renderObras roda a cada App.render, e ligar a cada vez empilharia um
@@ -3438,16 +3450,24 @@
         if (!c || !c.matches || !c.matches(SEL)) return;
         e.preventDefault(); c.click();
       });
+      var medir = function () { gs._ovMedir(); };
+      try { if (typeof ResizeObserver !== "undefined") new ResizeObserver(medir).observe(document.getElementById("main")); } catch (eRo) {}
+      window.addEventListener("resize", medir);
     },
     _ovMostrar: function (id, inicial) {
       var pal = document.querySelector("[data-ov-palco]");
+      var cen = document.querySelector("[data-ov-cenario]");
       var m = this._ovDados && this._ovDados[id];
       if (!pal || !m) return;
-      if (!inicial && pal.getAttribute("data-ov-id") === id) return;
+      var antes = pal.getAttribute("data-ov-id");
+      if (!inicial && antes === id) return;
       pal.setAttribute("data-ov-id", id);
       this._ovLembrado = id;
-      var cards = document.querySelectorAll(".ov-grade .orc-card[data-ov]");
-      for (var i = 0; i < cards.length; i++) cards[i].classList.toggle("em-cena", cards[i].getAttribute("data-ov") === id);
+      var cards = document.querySelectorAll(".ov-grade .orc-card[data-ov]"), ordem = [];
+      for (var i = 0; i < cards.length; i++) {
+        cards[i].classList.toggle("em-cena", cards[i].getAttribute("data-ov") === id);
+        ordem.push(cards[i].getAttribute("data-ov"));
+      }
       if (!inicial) {
         var tx = pal.querySelector("[data-ov-texto]");
         if (tx) {
@@ -3457,28 +3477,58 @@
           tx.classList.remove("entra"); void tx.offsetWidth; tx.classList.add("entra");
         }
       }
-      this._ovFoto(pal, m);
+      if (cen) this._ovFoto(cen, pal, m, inicial ? "" : ObraVitrine.direcao(ordem, antes, id));
     },
-    /* Duas camadas de <img> que se revezam: a nova carrega por baixo e só
-       então aparece por cima da antiga (crossfade), nunca uma troca seca. */
-    _ovFoto: function (pal, m) {
+    /* Duas CAMADAS que se revezam no cenário (a foto em tela cheia). Cada uma
+       tem dois movimentos que não se misturam: a CAMADA desliza de lado na
+       troca de obra (entra-* / sai-*), e a FOTO dentro dela faz o zoom lento
+       contínuo (kb-*). Na mesma peça, um transform apagaria o outro.
+       A nova carrega por baixo e só entra quando está pronta — nunca uma
+       troca seca, nunca o texto de uma obra sobre a foto de outra. */
+    _ovFoto: function (cen, pal, m, dir) {
       var gs = this, tok = this._ovTok = (this._ovTok || 0) + 1;
-      var imgs = pal.querySelectorAll(".ov-img"), cred = pal.querySelector("[data-ov-credito]");
-      if (imgs.length < 2) return;
+      var cams = cen.querySelectorAll(".ov-camada"), cred = pal.querySelector("[data-ov-credito]");
+      if (cams.length < 2) return;
+      var ANIM = ["entra-direita", "entra-esquerda", "entra-fade", "sai-direita", "sai-esquerda", "sai-fade"];
+      function limpar(c) { for (var a = 0; a < ANIM.length; a++) c.classList.remove(ANIM[a]); }
+      /* a foto que sai vai para o lado OPOSTO ao que a nova vem */
+      var oposto = dir === "direita" ? "esquerda" : dir === "esquerda" ? "direita" : "";
+      var atual = cen._ovAtual || null;
+      /* ⚠ com "menos movimento" o css desliga as animações da troca, e a
+         camada que sai ficava acesa até o temporizador de 1s — visto na foto
+         da tela: a foto da obra anterior por cima da prancha da obra sem
+         foto. Aí a troca é imediata — a não ser que a pessoa tenha escolhido
+         "Sempre ligado" em Aparência, e aí o deslize volta (mesma regra do css). */
+      var reduz = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+      var ms = ObraVitrine.movimentoLigado(reduz, document.documentElement.getAttribute("data-movimento")) ? ObraVitrine.TROCA_MS : 0;
+      function sair(c) {
+        if (!c) return;
+        limpar(c); c.classList.add(oposto ? "sai-" + oposto : "sai-fade");
+        setTimeout(function () { if (cen._ovAtual !== c) { c.classList.remove("on"); limpar(c); } }, ms);
+      }
       function semFoto() {
-        pal.classList.add("sem-foto"); pal.classList.remove("carregando");
-        imgs[0].classList.remove("on"); imgs[1].classList.remove("on");
+        cen.classList.add("sem-foto"); cen.classList.remove("carregando");
+        if (atual) sair(atual);
+        cen._ovAtual = null;
         if (cred) cred.textContent = "";
       }
       var k = ObraVitrine.chaveFoto(m.foto);
       if (!k || typeof Fotos === "undefined" || !Fotos.dataURI) { semFoto(); return; }
-      var atual = pal.querySelector(".ov-img.on");
-      if (atual && atual.getAttribute("data-k") === k) { pal.classList.remove("carregando"); if (cred) cred.textContent = ObraVitrine.credito(m); return; }
-      var prox = atual === imgs[0] ? imgs[1] : imgs[0];
+      if (atual && atual.getAttribute("data-k") === k) { cen.classList.remove("carregando"); if (cred) cred.textContent = ObraVitrine.credito(m); return; }
+      var prox = atual === cams[0] ? cams[1] : cams[0];
+      var img = prox.querySelector(".ov-img");
       function mostrar() {
         if (tok !== gs._ovTok) return;           /* o mouse já foi para outra obra */
-        pal.classList.remove("sem-foto"); pal.classList.remove("carregando");
-        prox.classList.add("on"); if (atual && atual !== prox) atual.classList.remove("on");
+        cen.classList.remove("sem-foto"); cen.classList.remove("carregando");
+        /* o movimento de câmera é o DESTA obra (sempre o mesmo para ela);
+           tirar e repor a classe reinicia o zoom do começo */
+        for (var q = 0; q < ObraVitrine.MOVIMENTOS.length; q++) img.classList.remove("kb-" + ObraVitrine.MOVIMENTOS[q]);
+        void img.offsetWidth;
+        img.classList.add("kb-" + ObraVitrine.movimento(m.id));
+        limpar(prox); prox.classList.add("on"); prox.classList.add(dir ? "entra-" + dir : "entra-fade");
+        if (atual && atual !== prox) sair(atual);
+        cen._ovAtual = prox;
+        setTimeout(function () { if (cen._ovAtual === prox) limpar(prox); }, ms);
         if (cred) cred.textContent = ObraVitrine.credito(m);
       }
       function aplicar(src) {
@@ -3489,17 +3539,17 @@
            com um atalho para esse caso removido de propósito): o navegador
            dispara `load` de novo, como manda a especificação — não precisa
            de atalho aqui, e o que existia foi tirado por não segurar nada. */
-        prox.onload = mostrar;
-        prox.onerror = function () { if (tok === gs._ovTok) semFoto(); };
+        img.onload = mostrar;
+        img.onerror = function () { if (tok === gs._ovTok) semFoto(); };
         prox.setAttribute("data-k", k);
-        prox.src = src;
+        img.src = src;
       }
       var cache = this._ovCache || (this._ovCache = {});
       if (cache[k]) { aplicar(cache[k]); return; }
       /* foto que ainda vai chegar (IndexedDB, ou baixada do servidor): a
-         anterior fica esmaecida, e não intacta — senão o palco mostra o texto
+         anterior fica esmaecida, e não intacta — senão a cena mostra o texto
          de uma obra sobre a foto de outra enquanto a rede anda */
-      if (atual) pal.classList.add("carregando");
+      if (atual) cen.classList.add("carregando");
       Fotos.dataURI(m.foto.ref).then(function (d) {
         if (d) {
           /* teto de 16 fotos em memória: são dataURIs de centenas de KB */
@@ -26274,8 +26324,47 @@ renderFolha: function () {
 
     // ---------- FOLHA SEMANAL (diaristas por obra: favorecido + PIX + fechamento) ----------
     _fsSemana: null, _fsObra: "",
+    /* ⚠ DUAS LEITURAS, DOIS PAPÉIS — trocar uma pela outra ou vaza ou duplica.
+     *
+     * `_fsTodos` é a lista CRUA, de todas as obras. Serve para GUARDA: a cópia
+     * da semana e a importação procuram nela o que já existe. Com a lista
+     * podada, gravariam de novo a diária de uma obra que a pessoa não vê — e a
+     * Lista PIX soma por favorecido: a semana sairia em dobro.
+     *
+     * `_fsVisiveis` passa pelo funil do escopo por obra (`lista`). É o que se
+     * MOSTRA e o que se lança. Antes a tela inteira lia `_fsTodos`: o
+     * sub-usuário que o admin restringiu à obra A via nome, chave PIX e valor
+     * de quem trabalhou em TODAS as obras — com `fs_lancamentos` declarado em
+     * ENT_POR_OBRA. O funil existia; a Folha não passava por ele (achado em
+     * 11/09/2026, investigando um relato de cliente).
+     *
+     * Sem restrição (admin, e sub-usuário sem obras atribuídas) as duas
+     * devolvem a MESMA lista — nada muda para quem não foi restringido. */
     _fsTodos: function () { return Store.listar(eid(), "fs_lancamentos"); },
-    _fsLancs: function () { var s = this._fsSemana, o = this._fsObra; return this._fsTodos().filter(function (l) { return l.semana === s && (!o || l.obraId === o); }); },
+    _fsVisiveis: function () { return lista("fs_lancamentos"); },
+    _fsLancs: function () { var s = this._fsSemana, o = this._fsObra; return this._fsVisiveis().filter(function (l) { return l.semana === s && (!o || l.obraId === o); }); },
+    /* ⚠ PIX É POR PESSOA, E A PESSOA PODE TER LINHA NUMA OBRA ESCONDIDA.
+     * Para quem só vê a obra A, o total de quem trabalhou em A e B é PARCIAL.
+     * Dar baixa, colher assinatura ou emitir recibo/PIX com esse número grava
+     * dinheiro errado: o recibo diria "recebi R$ 600" de quem recebeu R$ 1.000.
+     * Então essas pessoas aparecem com a parte das obras visíveis e o motivo
+     * escrito, e a baixa fica com quem vê todas as obras delas — essa é a porta.
+     * Devolve as chaves nos DOIS formatos que o módulo usa (`listaPix` e
+     * `_fsFavKeyDe`): a baixa grava num, o relatório agrupa pelo outro. */
+    _fsParciais: function (semanas) {
+      var FS = window.FolhaSemanal, self = this, noPer = {}, vis = {}, out = {};
+      (typeof semanas === "string" ? [semanas] : (semanas || [])).forEach(function (s) { noPer[s] = 1; });
+      this._fsVisiveis().forEach(function (l) { if (l && l.id) vis[l.id] = 1; });
+      this._fsTodos().forEach(function (l) {
+        if (!l || !noPer[l.semana] || vis[l.id]) return;
+        if (!(FS.totalLinha(l) > 0)) return;          // linha zerada não muda o valor de ninguém
+        var g = FS.listaPix([l])[0];
+        if (g) out[g.favKey] = 1;
+        out[self._fsFavKeyDe(l)] = 1;
+      });
+      return out;
+    },
+    _FS_MSG_PARCIAL: "Esta pessoa também tem lançamento em obra fora do seu acesso — o valor que você vê é só a parte das suas obras. A baixa, a assinatura e o recibo dela ficam com quem vê todas as obras dessa pessoa (o administrador da conta, por exemplo).",
     _fsNomeObra: function (id) { var o = Store.obter(eid(), "obras", id); return o ? o.nome : (id || "— sem obra —"); },
     fsTroca: function (campo, val) { if (val == null) return; if (campo === "semana") this._fsSemana = val; else this._fsObra = val; App.render(); },
 
@@ -26991,8 +27080,9 @@ renderFolha: function () {
     renderFolhaSemanal: function () {
       var FS = window.FolhaSemanal; if (!FS) return this._head("Folha Semanal", "", "") + '<div class="card">Motor da Folha Semanal não carregado.</div>';
       var self = this;
-      if (!this._fsSemana) { var ts = this._fsTodos().map(function (l) { return l.semana; }).sort(); this._fsSemana = ts.length ? ts[ts.length - 1] : FS.chaveSemana(new Date()); }
-      var semanas = {}; this._fsTodos().forEach(function (l) { if (l.semana) semanas[l.semana] = 1; }); semanas[this._fsSemana] = 1; semanas[FS.chaveSemana(new Date())] = 1;
+      /* semanas só das obras visíveis: a que existe apenas numa obra escondida não aparece nem no seletor */
+      if (!this._fsSemana) { var ts = this._fsVisiveis().map(function (l) { return l.semana; }).sort(); this._fsSemana = ts.length ? ts[ts.length - 1] : FS.chaveSemana(new Date()); }
+      var semanas = {}; this._fsVisiveis().forEach(function (l) { if (l.semana) semanas[l.semana] = 1; }); semanas[this._fsSemana] = 1; semanas[FS.chaveSemana(new Date())] = 1;
       var selSem = '<select data-gacao="fs-semana" style="max-width:210px">' + Object.keys(semanas).sort().reverse().map(function (s) { return '<option value="' + s + '"' + (s === self._fsSemana ? " selected" : "") + ">Semana " + FS.periodoDaChave(s) + "</option>"; }).join("") + "</select>";
       var obras = lista("obras");
       var selObra = '<select data-gacao="fs-obra" style="max-width:180px"><option value="">Todas as obras</option>' + obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === self._fsObra ? " selected" : "") + ">" + Util.esc(o.nome) + "</option>"; }).join("") + "</select>";
@@ -27014,8 +27104,9 @@ renderFolha: function () {
          inteira — o valor na tela e o valor gravado não batiam. A tabela de
          pagamento passa a ser sempre da semana toda (o resto da tela continua
          obedecendo o filtro, que é para conferir obra por obra). */
-      var lancsSemana = this._fsTodos().filter(function (l) { return l.semana === self._fsSemana; });
-      var pix = FS.listaPix(lancsSemana);
+      /* ...e "a semana toda" é a das obras que ESTA pessoa vê (ver `_fsVisiveis`). */
+      var lancsSemana = this._fsVisiveis().filter(function (l) { return l.semana === self._fsSemana; });
+      var pix = FS.listaPix(lancsSemana), parciais = this._fsParciais(this._fsSemana);
       /* o KPI compara com `fechSemana`, nao com `fech` (que respeita o filtro):
          misturar os dois fazia "Falta pagar" zerar com gente por pagar. */
       var fechSemana = FS.fechamento(lancsSemana);
@@ -27026,6 +27117,8 @@ renderFolha: function () {
         '<div class="card kpi"><div class="rotulo">Obras com folha</div><div class="num">' + Object.keys(fech.porObra).length + '</div></div>' +
         '<div class="card kpi"><div class="rotulo">PIX pagos</div><div class="num">' + pagosN + ' / ' + pix.length + '</div></div>' +
         '<div class="card kpi ' + (fechSemana.total - pagoTotal > 0 ? 'custo' : 'destaque') + '"><div class="rotulo">Falta pagar</div><div class="num">' + Util.fmtMoeda(Math.max(0, fechSemana.total - pagoTotal)) + '</div></div></div>';
+      var nParc = pix.filter(function (p) { return parciais[p.favKey]; }).length;
+      if (nParc) html += '<div class="card" style="border-left:4px solid var(--amarelo);margin-bottom:14px;padding:10px 14px"><b>' + nParc + ' pessoa(s) desta semana também têm lançamento em obra fora do seu acesso.</b> <span class="muted">O valor delas aqui é só a parte das suas obras; a baixa, a assinatura e o recibo ficam com quem vê todas as obras dessas pessoas.</span></div>';
       var cfl = FS.conflitos(lancs);
       if (cfl.length) {
         html += '<div class="card" style="border-left:4px solid var(--amarelo);margin-bottom:14px;padding:10px 14px"><b>' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Possível conflito de alocação:</b> ' +
@@ -27065,11 +27158,14 @@ renderFolha: function () {
       html += '<div class="card" style="padding:0;overflow:auto"><div style="padding:12px 14px 8px"><b>' + (typeof Icones !== 'undefined' ? Icones.get('dinheiro', 15) : '') + ' Pagamentos da semana (PIX)</b> <span class="muted" style="font-size:12px">— marque quem já recebeu; o recibo guarda a assinatura</span></div>' +
         '<table class="tbl"><thead><tr><th>Favorecido</th><th>Chave PIX</th><th class="num">Valor</th><th>Contato</th><th>Assinatura</th><th>Status</th></tr></thead><tbody>';
       pix.forEach(function (p) {
-        var pg = pagos[p.favKey], fone = FS.foneDaChave(p.chavePix);
-        var zap = fone ? '<a class="btn sm" target="_blank" rel="noopener" href="https://wa.me/' + fone + '?text=' + encodeURIComponent("Olá, " + p.favorecido + "! Seu pagamento da semana (" + FS.periodoDaChave(self._fsSemana) + ") foi enviado: " + Util.fmtMoeda(p.total) + " via PIX.") + '">' + (typeof Icones !== 'undefined' ? Icones.get('mensagem', 15) : '') + ' WhatsApp</a>' : '<span class="muted">—</span>';
-        var ass = pg && pg.assinatura ? '<span style="color:var(--verde);font-weight:700">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' assinado</span>' : '<button class="btn sm" data-gacao="fs-assinar" data-val="' + Util.esc(p.favKey) + '">' + (typeof Icones !== 'undefined' ? Icones.get('assinar', 15) : '') + ' Colher</button>';
-        var st = pg && pg.pago ? '<button class="btn sm success" data-gacao="fs-pago" data-val="' + Util.esc(p.favKey) + '">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Pago</button>' : '<button class="btn sm" data-gacao="fs-pago" data-val="' + Util.esc(p.favKey) + '" style="border-color:var(--amarelo)">Marcar pago</button>';
-        html += '<tr><td><b>' + Util.esc(p.favorecido) + '</b><br><span class="muted" style="font-size:11px">' + p.itens.map(function (i) { return Util.esc(i.nome || ""); }).join(", ") + '</span></td><td>' + Util.esc(p.chavePix || "—") + '</td><td class="num"><b>' + Util.fmtMoeda(p.total) + "</b></td><td>" + zap + "</td><td>" + ass + "</td><td>" + st + "</td></tr>";
+        var pg = pagos[p.favKey], fone = FS.foneDaChave(p.chavePix), parc = !!parciais[p.favKey];
+        /* ⚠ pessoa com obra escondida: nem WhatsApp com valor (o parcial iria
+           como se fosse o pagamento), nem baixa, nem assinatura — `_fsParciais` */
+        var zap = (fone && !parc) ? '<a class="btn sm" target="_blank" rel="noopener" href="https://wa.me/' + fone + '?text=' + encodeURIComponent("Olá, " + p.favorecido + "! Seu pagamento da semana (" + FS.periodoDaChave(self._fsSemana) + ") foi enviado: " + Util.fmtMoeda(p.total) + " via PIX.") + '">' + (typeof Icones !== 'undefined' ? Icones.get('mensagem', 15) : '') + ' WhatsApp</a>' : '<span class="muted">—</span>';
+        var ass = pg && pg.assinatura ? '<span style="color:var(--verde);font-weight:700">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' assinado</span>' : parc ? '<span class="muted">—</span>' : '<button class="btn sm" data-gacao="fs-assinar" data-val="' + Util.esc(p.favKey) + '">' + (typeof Icones !== 'undefined' ? Icones.get('assinar', 15) : '') + ' Colher</button>';
+        var st = parc ? '<span class="muted" title="' + Util.esc(self._FS_MSG_PARCIAL) + '">' + (pg && pg.pago ? "pago por quem vê todas as obras" : "fora do seu acesso") + '</span>'
+          : pg && pg.pago ? '<button class="btn sm success" data-gacao="fs-pago" data-val="' + Util.esc(p.favKey) + '">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Pago</button>' : '<button class="btn sm" data-gacao="fs-pago" data-val="' + Util.esc(p.favKey) + '" style="border-color:var(--amarelo)">Marcar pago</button>';
+        html += '<tr><td><b>' + Util.esc(p.favorecido) + '</b><br><span class="muted" style="font-size:11px">' + p.itens.map(function (i) { return Util.esc(i.nome || ""); }).join(", ") + (parc ? ' · <b>valor parcial — tem obra fora do seu acesso</b>' : "") + '</span></td><td>' + Util.esc(p.chavePix || "—") + '</td><td class="num"><b>' + Util.fmtMoeda(p.total) + "</b></td><td>" + zap + "</td><td>" + ass + "</td><td>" + st + "</td></tr>";
       });
       html += "</tbody></table></div>";
       return html;
@@ -27090,6 +27186,9 @@ renderFolha: function () {
        * existe. O que faltava não era trava, era registro: agora fica gravado
        * quem deu a baixa. */
       var FS = window.FolhaSemanal;
+      /* ⚠ pessoa com linha em obra fora do acesso: o total que se vê dela é
+         parcial (ver `_fsParciais`). Recusa ANTES de gravar qualquer coisa. */
+      if (this._fsParciais(this._fsSemana)[favKey]) { UI.toast(this._FS_MSG_PARCIAL, "erro"); return; }
       var p = this._fsPagos()[favKey] || { semana: this._fsSemana, favKey: favKey };
       p.pago = !p.pago; p.em = p.pago ? Util.agoraISO() : null;
       p.por = p.pago ? this._quemAprova() : "";   // sem isto, "quem deu baixa?" não tem resposta
@@ -27099,6 +27198,8 @@ renderFolha: function () {
          inteiro enquanto so a parte de uma obra estava na tela — e o valor
          guardado na baixa saia menor que o que foi pago de verdade. */
       var self = this;
+      /* CRUA de propósito: passada a guarda acima, toda linha desta pessoa é
+         visível — e o valor da baixa tem de ser o do PIX inteiro */
       var daSemana = this._fsTodos().filter(function (l) { return l.semana === self._fsSemana; });
       var grupo = FS.listaPix(daSemana).filter(function (g) { return g.favKey === favKey; })[0];
       if (grupo) { p.valor = grupo.total; p.obras = grupo.itens.map(function (i) { return i.obraId; }).filter(function (v, i, a) { return v && a.indexOf(v) === i; }); }
@@ -27106,6 +27207,8 @@ renderFolha: function () {
     },
     fsAssinar: function (favKey) {
       var self = this;
+      /* a assinatura vai para o recibo, que é assinado como o TOTAL: mesma guarda da baixa */
+      if (this._fsParciais(this._fsSemana)[favKey]) { UI.toast(this._FS_MSG_PARCIAL, "erro"); return; }
       UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("assinar", 15) : "") + " Assinatura do recebedor", '<p class="muted" style="margin:0 0 8px">Peça pra pessoa assinar com o dedo (celular) ou o mouse — fica guardada no recibo desta semana.</p>' +
         '<canvas id="fs-ass" width="600" height="190" style="width:100%;border:1.5px dashed var(--linha-forte);border-radius:10px;background:#fff;touch-action:none"></canvas>',
         [{ texto: "Limpar", classe: "ghost", onClick: function () { var c = UI.el("fs-ass"), x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); } },
@@ -27130,7 +27233,9 @@ renderFolha: function () {
     fsCopiarSemana: function () {
       var FS = window.FolhaSemanal, self = this;
       var ant = FS.semanaVizinha(this._fsSemana, -1);
-      var deLa = this._fsTodos().filter(function (l) { return l.semana === ant && l.tipo === "diaria"; });
+      /* a ORIGEM é o que a pessoa vê — senão ela criaria diária numa obra que
+         nem enxerga. A GUARDA `jaTem`, abaixo, continua crua (ver `_fsTodos`). */
+      var deLa = this._fsVisiveis().filter(function (l) { return l.semana === ant && l.tipo === "diaria"; });
       if (!deLa.length) { UI.toast("A semana anterior (" + FS.periodoDaChave(ant) + ") não tem diárias pra copiar.", "erro"); return; }
       if (!confirm("Copiar " + deLa.length + " diárias da semana " + FS.periodoDaChave(ant) + " pra esta semana? (Vêm com os mesmos valores de diária, sem faltas, sem hora extra — empreitas e fretes não são copiados.)")) return;
       /* ⚠ A GUARDA TEM QUE OLHAR A MESMA LISTA DA ORIGEM — pela terceira vez
@@ -27161,7 +27266,7 @@ renderFolha: function () {
     },
     fsResumoMes: function () {
       var FS = window.FolhaSemanal, self = this, mes = this._fsSemana.slice(0, 7);
-      var rm = FS.resumoMensal(this._fsTodos(), mes);
+      var rm = FS.resumoMensal(this._fsVisiveis(), mes);
       if (!rm.total) { UI.toast("Nenhuma folha no mês " + mes + ".", "erro"); return; }
       var rotMes = mes.split("-").reverse().join("/");
       var corpo = '<p style="margin:0 0 10px">Competência <b>' + rotMes + "</b> · " + rm.semanas.length + " semana(s): " + rm.semanas.map(function (s) { return FS.periodoDaChave(s); }).join(" · ") + "</p>";
@@ -27185,14 +27290,18 @@ renderFolha: function () {
          tinha gente a pagar. (`fsCsv` segue o filtro de proposito: exporta o
          que esta na tela.) */
       var FS = window.FolhaSemanal, self = this;
-      var lancs = this._fsTodos().filter(function (l) { return l.semana === self._fsSemana; });
+      var lancs = this._fsVisiveis().filter(function (l) { return l.semana === self._fsSemana; });
       if (!lancs.length) { UI.toast("Sem lançamentos nesta semana.", "erro"); return; }
       /* PIX e recibo sao por PESSOA: semana inteira, igual a tela e a baixa.
-         Filtrado por obra, o papel pagava menos do que o sistema registrou. */
-      var self0 = this;
-      var pix = FS.listaPix(this._fsTodos().filter(function (l) { return l.semana === self0._fsSemana; })), pagos = this._fsPagos(), periodo = FS.periodoDaChave(this._fsSemana);
+         Filtrado por obra, o papel pagava menos do que o sistema registrou.
+         ⚠ E quem tem linha em obra fora do acesso NÃO ganha recibo daqui: o
+         valor que se vê dela é parcial, e o recibo é assinado como TOTAL. */
+      var self0 = this, parcR = this._fsParciais(this._fsSemana), foraR = 0;
+      var pix = FS.listaPix(this._fsVisiveis().filter(function (l) { return l.semana === self0._fsSemana; }))
+        .filter(function (g) { if (parcR[g.favKey]) { foraR++; return false; } return true; }), pagos = this._fsPagos(), periodo = FS.periodoDaChave(this._fsSemana);
+      if (!pix.length && foraR) { UI.toast("Todas as pessoas desta semana têm lançamento em obra fora do seu acesso — o recibo delas sai de quem vê todas as obras.", "erro"); return; }
       var emp = (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : {};
-      var corpo = "";
+      var corpo = foraR ? '<p style="margin:0 0 12px;font-size:11px;color:#92400e">' + foraR + ' pessoa(s) não entram nestes recibos: têm lançamento em obra fora do seu acesso, e o recibo delas sai de quem vê todas as obras.</p>' : "";
       pix.forEach(function (p, i) {
         var pg = pagos[p.favKey];
         var ref = p.itens.map(function (it) { return (it.nome || "") + " (" + self._fsNomeObra(it.obraId) + ")"; }).join(", ");
@@ -27225,7 +27334,7 @@ renderFolha: function () {
     fsEntregaveis: function () {
       var FS = window.FolhaSemanal, self = this;
       var obras = lista("obras");
-      var favs = FS.listaPix(this._fsTodos());
+      var favs = FS.listaPix(this._fsVisiveis());
       var corpo =
         '<div class="row">' +
         campo("Gerar um bloco para cada", sel("g-rel-grp", opts([["fav", "Favorecido (pessoa que recebe)"], ["obra", "Obra"]], "fav"))) +
@@ -27286,7 +27395,7 @@ renderFolha: function () {
     _fsFavKeyDe: function (l) { var FS = window.FolhaSemanal; var fav = (l.favorecido || l.nome || "—"); return String(fav).toUpperCase().replace(/\s+/g, " ").trim() + "|" + String(l.chavePix || "").trim(); },
     _fsRelDados: function (p) {
       var FS = window.FolhaSemanal, self = this;
-      var todos = this._fsTodos().filter(function (l) {
+      var todos = this._fsVisiveis().filter(function (l) {
         if (p.obraId && l.obraId !== p.obraId) return false;
         if (p.favKey && self._fsFavKeyDe(l) !== p.favKey) return false;
         return true;
@@ -27305,7 +27414,11 @@ renderFolha: function () {
         grupos[k].porSemana[l.semana] = (grupos[k].porSemana[l.semana] || 0) + FS.totalFinal(l);
         if (!grupos[k].chavePix && l.chavePix) grupos[k].chavePix = l.chavePix;
       });
-      return { todos: todos, doPer: doPer, grupos: grupos, med: med, pagos: pagos };
+      /* ⚠ quem tem obra fora do acesso: o "pago" gravado é o TOTAL da pessoa, e
+         o relatório só vê a parte visível. Comparar os dois exibiria o valor
+         das obras escondidas e um "em aberto" falso — o relatório omite pago e
+         aberto dessas pessoas e diz por quê (ver `_fsParciais`). */
+      return { todos: todos, doPer: doPer, grupos: grupos, med: med, pagos: pagos, parciais: this._fsParciais(p.semanas) };
     },
     _fsBarra: function (val, max, cor) { // barra de gráfico via TABELA (imprime no PDF e abre no Word)
       var pct = max > 0 ? Math.max(2, Math.round(val / max * 100)) : 0;
@@ -27325,7 +27438,7 @@ renderFolha: function () {
           '<h2 style="font-size:15px;margin:0 0 2px;border-left:5px solid #16a34a;padding-left:9px">' + Util.esc(g.nome) + "</h2>" +
           (p.grp === "fav" && g.chavePix ? '<div style="font-size:10px;color:#555;margin:0 0 8px;padding-left:14px">Chave PIX: ' + Util.esc(g.chavePix) + "</div>" : '<div style="height:8px"></div>');
         if (p.med) {
-          corpo += '<table style="border-collapse:collapse;width:100%;margin:6px 0 12px"><tr>' + kpi("Anterior (acumulado até o período)", m.anterior) + kpi("Atual (este período)", m.atual, "#16a34a") + kpi("Acumulado total", m.acumulado) + (p.pag && p.grp === "fav" ? kpi("Pago no período", pagoV, "#2e6f9e") + kpi("Em aberto", Math.max(0, m.atual - pagoV), m.atual - pagoV > 0 ? "#dc2626" : "#16a34a") : "") + "</tr></table>";
+          corpo += '<table style="border-collapse:collapse;width:100%;margin:6px 0 12px"><tr>' + kpi("Anterior (acumulado até o período)", m.anterior) + kpi("Atual (este período)", m.atual, "#16a34a") + kpi("Acumulado total", m.acumulado) + (p.pag && p.grp === "fav" ? ((d.parciais && d.parciais[k]) ? '<td style="border:1px solid #ccc;padding:7px 10px;font-size:9px;color:#92400e">Pago / em aberto: esta pessoa tem lançamento em obra fora do seu acesso — o pagamento dela se confere com quem vê todas as obras.</td>' : kpi("Pago no período", pagoV, "#2e6f9e") + kpi("Em aberto", Math.max(0, m.atual - pagoV), m.atual - pagoV > 0 ? "#dc2626" : "#16a34a")) : "") + "</tr></table>";
         }
         // por semana
         corpo += '<h3 style="font-size:11.5px;margin:8px 0 4px">Valores por semana</h3><table style="border-collapse:collapse;width:100%;font-size:10.5px">';
@@ -27414,7 +27527,7 @@ renderFolha: function () {
           /* ⚠ a coluna do Total virou P (entrou "Fechado" em O). Toda fórmula que
              soma o total de lançamentos aponta para P — somar O pagaria só o
              valor fechado, e a aba Pagamentos é a que vira PIX de verdade. */
-          var row = wp.addRow([g.favorecido, g.chavePix || "", { formula: 'SUMIFS(Lancamentos!P:P,Lancamentos!E:E,A' + rn + ",Lancamentos!F:F,B" + rn + ")" }, (pg && pg.pago) ? "PAGO" : "ABERTO", "", (pg && pg.assinatura) ? "SIM" : "—"]);
+          var row = wp.addRow([g.favorecido, g.chavePix || "", { formula: 'SUMIFS(Lancamentos!P:P,Lancamentos!E:E,A' + rn + ",Lancamentos!F:F,B" + rn + ")" }, (d.parciais && d.parciais[g.favKey]) ? "PARCIAL (obra fora do seu acesso)" : ((pg && pg.pago) ? "PAGO" : "ABERTO"), "", (pg && pg.assinatura) ? "SIM" : "—"]);
           if (fone) { var cel = row.getCell(5); cel.value = { text: "" + (typeof Icones !== "undefined" ? Icones.get("mensagem", 15) : "") + " WhatsApp", hyperlink: "https://wa.me/" + fone + "?text=" + encodeURIComponent("Olá, " + g.favorecido + "! Seu pagamento (" + p.rot + ") foi enviado via PIX.") }; cel.font = { color: { argb: "FF2E6F9E" }, underline: true }; }
           if (pg && pg.pago) row.getCell(4).font = { color: { argb: VERDE }, bold: true };
         });
@@ -27599,11 +27712,15 @@ renderFolha: function () {
          tinha gente a pagar. (`fsCsv` segue o filtro de proposito: exporta o
          que esta na tela.) */
       var FS = window.FolhaSemanal, self = this;
-      var lancs = this._fsTodos().filter(function (l) { return l.semana === self._fsSemana; });
+      var lancs = this._fsVisiveis().filter(function (l) { return l.semana === self._fsSemana; });
       if (!lancs.length) { UI.toast("Sem lançamentos nesta semana.", "erro"); return; }
       var periodo = FS.periodoDaChave(this._fsSemana), corpo = "";
       if (qual === "pix") {
-        var pix = FS.listaPix(self._fsTodos().filter(function (l) { return l.semana === self._fsSemana; })), tot = 0;
+        /* ⚠ Lista PIX é ordem de pagamento: pessoa com obra fora do acesso não
+           entra com valor parcial (ver `_fsParciais`) */
+        var parcP = this._fsParciais(this._fsSemana), foraP = 0;
+        var pix = FS.listaPix(self._fsVisiveis().filter(function (l) { return l.semana === self._fsSemana; }))
+          .filter(function (g) { if (parcP[g.favKey]) { foraP++; return false; } return true; }), tot = 0;
         corpo = '<p style="margin:0 0 10px">Semana <b>' + periodo + "</b> · pagamentos agrupados por favorecido</p><table style=\"width:100%;border-collapse:collapse;font-size:11px\"><tr style=\"background:#f0f4f8\"><th style=\"text-align:left;padding:6px;border:1px solid #ccc\">Favorecido</th><th style=\"text-align:left;padding:6px;border:1px solid #ccc\">Chave PIX</th><th style=\"text-align:left;padding:6px;border:1px solid #ccc\">Referente a</th><th style=\"text-align:right;padding:6px;border:1px solid #ccc\">Valor</th><th style=\"padding:6px;border:1px solid #ccc\">Pago ✓</th></tr>";
         pix.forEach(function (p) {
           tot += p.total;
@@ -27611,6 +27728,7 @@ renderFolha: function () {
           corpo += '<tr><td style="padding:6px;border:1px solid #ccc"><b>' + Util.esc(p.favorecido) + '</b></td><td style="padding:6px;border:1px solid #ccc">' + Util.esc(p.chavePix || "—") + '</td><td style="padding:6px;border:1px solid #ccc">' + Util.esc(ref) + '</td><td style="padding:6px;border:1px solid #ccc;text-align:right"><b>' + Util.fmtMoeda(p.total) + '</b></td><td style="padding:6px;border:1px solid #ccc;text-align:center">☐</td></tr>';
         });
         corpo += '<tr style="background:#0f2740;color:#fff"><td colspan="3" style="padding:7px;border:1px solid #0f2740"><b>TOTAL DA SEMANA</b></td><td style="padding:7px;border:1px solid #0f2740;text-align:right"><b>' + Util.fmtMoeda(tot) + '</b></td><td style="border:1px solid #0f2740"></td></tr></table>';
+        if (foraP) corpo += '<p style="margin:10px 0 0;font-size:11px;color:#92400e">' + foraP + ' pessoa(s) não entram nesta lista: têm lançamento em obra fora do seu acesso, e o PIX delas sai de quem vê todas as obras.</p>';
         App._abrirPrint("Lista de Pagamento PIX — " + periodo, this._docShell("LISTA DE PAGAMENTO — PIX", "#16a34a", corpo, "fs_pix"));
         return;
       }
@@ -27659,8 +27777,11 @@ renderFolha: function () {
          semana com o filtro numa obra lançava SÓ AQUELA e o toast dizia que
          estava tudo lançado — as outras obras ficavam sem o custo de mão de
          obra, sem nada na tela denunciando. Fechamento é da SEMANA INTEIRA;
-         o filtro serve para olhar, não para decidir o que sai. */
-      var lancs = this._fsTodos().filter(function (l) { return l.semana === self._fsSemana; });
+         o filtro serve para olhar, não para decidir o que sai.
+         ⚠ E "semana inteira" é a das obras que ESTA pessoa vê. Cada obra tem a
+         própria despesa ([Folha semanal …] + obraId), então as escondidas não
+         são tocadas — nem lançadas por quem não as enxerga. */
+      var lancs = this._fsVisiveis().filter(function (l) { return l.semana === self._fsSemana; });
       if (!lancs.length) { UI.toast("Sem lançamentos nesta semana.", "erro"); return; }
       var fech = FS.fechamento(lancs), periodo = FS.periodoDaChave(this._fsSemana);
       var nObras = Object.keys(fech.porObra).filter(function (o) { return o && o !== "—"; }).length;
@@ -28812,6 +28933,10 @@ renderFolha: function () {
     // Modo demonstração: abrir formulários é livre; QUALQUER gravação exige licença ativa.
     _bloqueado: function () {
       if (typeof App !== "undefined" && App._trialBloqueado && App._trialBloqueado()) {
+        /* ⚠ suspenso por cobrança não é "modo demonstração": o texto certo e
+           os links de pagamento moram no App._avisoTrial */
+        var sB = (typeof Licenca !== "undefined" && Licenca.status) ? (Licenca.status() || {}) : {};
+        if (sB.suspensa && App._avisoTrial) { App._avisoTrial(); return true; }
         UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("cadeado", 15) : "") + " Modo demonstração — ative sua licença (🔓, no topo) para salvar.", "erro");
         return true;
       }

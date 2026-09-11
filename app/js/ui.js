@@ -266,6 +266,7 @@
               if (lic.trial && lic.ativo) { lbl = "Teste grátis: " + (lic.rotulo || "") + " restantes"; alerta = (lic.restanteMs || 0) < 2 * 86400000; }
               else if (lic.trial) { lbl = "Teste encerrado (ativar licença)"; alerta = true; }
               else if (lic.expirada) { lbl = "Licença vencida"; alerta = true; }
+              else if (lic.suspensa) { lbl = "Licença suspensa (pagamento)"; alerta = true; }
               else if (lic.outroDispositivo) { lbl = "Ativada em outra máquina"; alerta = true; }
               else if (lic.revalidar) { lbl = "Reconecte para validar"; alerta = true; }
               else if (lic.diasRestantes != null) { lbl = "Licença: " + lic.diasRestantes + " dias"; alerta = lic.diasRestantes <= 7; }
