@@ -37,6 +37,12 @@
     if (global.Util && global.Util.fmtMoeda) return global.Util.fmtMoeda(n);
     return "R$ " + num(n).toFixed(2).replace(".", ",");
   }
+  /* percentual na grafia do módulo Medições (Util.fmtPct, 1 casa): "30,3%",
+     e não o "30.27%" cru que a aba Medições da ficha escrevia (revisão da 1.2.70) */
+  function pct(n) {
+    if (global.Util && global.Util.fmtPct) return global.Util.fmtPct(n, 1);
+    return num(n).toFixed(1).replace(".", ",") + "%";
+  }
   /* dia sem fuso: "2026-09-09" -> "09/09/2026" montado em partes, pelo mesmo
      motivo do Util.fmtDia — passar por Date lê meia-noite UTC e, em Brasília,
      a tela escreveria o dia anterior */
@@ -259,7 +265,8 @@
      módulo): o palco e a ficha não oferecem atalho para o que ela não abre. */
   ObraVitrine.ABAS = [
     { id: "resumo", rot: "Resumo" },
-    { id: "mapa", rot: "Mapa" },
+    /* a única aba que manda dado para fora: o título avisa ANTES do clique */
+    { id: "mapa", rot: "Mapa", dica: "O mapa é do Google: abrir esta aba envia o endereço da obra ao Google Maps (Política de Privacidade, item 4.11)" },
     { id: "diario", rot: "Diário" },
     { id: "medicoes", rot: "Medições" },
     { id: "fotos", rot: "Fotos" },
@@ -285,7 +292,7 @@
       "</div>" +
       (atalhos.length ? '<div class="ov-atalhos" role="group" aria-label="Ver na ficha da obra">' +
         atalhos.map(function (a) {
-          return '<button type="button" class="ov-chip" data-gacao="ov-ficha" data-id="' + esc(m.id) + '" data-aba="' + a.id + '">' + esc(a.rot) + "</button>";
+          return '<button type="button" class="ov-chip" data-gacao="ov-ficha" data-id="' + esc(m.id) + '" data-aba="' + a.id + '"' + (a.dica ? ' title="' + esc(a.dica) + '"' : "") + ">" + esc(a.rot) + "</button>";
         }).join("") + "</div>" : "");
   };
 
@@ -351,21 +358,98 @@
   /* As fotos da obra: a capa primeiro, depois as dos diários FINALIZADOS do
      mais novo para o mais antigo, sem repetir a mesma imagem. Rascunho não
      empresta foto — mesma regra do cenário. */
+  ObraVitrine.FONTE_RESGATE = "RA Gestão de Obras";
   ObraVitrine.fotosDaObra = function (obra, rdos, max) {
     var out = [], vistas = {};
-    function por(ref, data, origem) {
+    function por(ref, data, origem, fonte) {
       if (!ref) return;
       var f = { ref: ref, data: data || "", origem: origem };
+      if (fonte) f.fonte = fonte;
       var k = ObraVitrine.chaveFoto(f);
       if (!k || vistas[k]) return;
       vistas[k] = 1; out.push(f);
     }
     por(obra ? refDeFoto(obra.foto) : null, "", "capa");
+    /* os diários (sem rascunho) e o ÁLBUM da obra — as fotos que vieram de
+       fora do diário (o resgate do RA Gestão de Obras), cada uma com a data
+       dela — numa fila só, da mais nova para a mais antiga */
     var ds = (rdos || []).filter(function (r) { return r && obra && r.obraId === obra.id && r.status !== "rascunho"; })
-      .map(function (r) { return { data: String(r.data || "").slice(0, 10), fotos: r.fotos || [] }; });
+      .map(function (r) { return { data: String(r.data || "").slice(0, 10), fotos: r.fotos || [], origem: "diario" }; });
+    ((obra && obra.album) || []).forEach(function (a) {
+      if (a) ds.push({ data: String(a.data || "").slice(0, 10), fotos: [a], origem: "album", fonte: a.fonte || "" });
+    });
     ds.sort(porDataDesc);
-    ds.forEach(function (d) { d.fotos.forEach(function (x) { por(refDeFoto(x), d.data, "diario"); }); });
+    ds.forEach(function (d) { d.fotos.forEach(function (x) { por(refDeFoto(x), d.data, d.origem, d.fonte); }); });
     return out.slice(0, max || 24);
+  };
+
+  /* ---------------------------------------------------------------
+   * O RESGATE DAS FOTOS DO RA GESTÃO DE OBRAS
+   * As fotos que o sistema antigo tinha nos registros de produção e que a
+   * importação de 07/2026 não trouxe (o antigo ainda apagava foto antiga
+   * quando o armazenamento enchia). Foram copiadas para uma pasta com um
+   * manifesto.json (arquivo, dataRegistro, legenda, sha256…). Aqui só se
+   * PLANEJA — o que entra, o que já está, o que não confere; quem grava é a
+   * tela, depois de a pessoa confirmar.
+   * ⚠ Elas entram no ÁLBUM da obra, com a data original — nunca num diário:
+   * pendurar foto em diário de outro dia é ligar por semelhança, e criar
+   * diário para o dia seria inventar um documento que vai ao Portal.
+   * --------------------------------------------------------------- */
+  /* manifesto ilegível devolve null — nunca uma lista vazia calada, que a
+     tela leria como "nenhuma foto para trazer" */
+  ObraVitrine.lerManifesto = function (json) {
+    var m = json;
+    if (typeof m === "string") { try { m = JSON.parse(m); } catch (e) { return null; } }
+    if (!m || typeof m !== "object") return null;
+    var itens = Array.isArray(m) ? m : m.fotos;
+    if (!Array.isArray(itens)) return null;
+    return {
+      origem: String(m.origem || ""),
+      fotos: itens.filter(Boolean).map(function (x) {
+        return { arquivo: String(x.arquivo || ""), data: String(x.dataRegistro || "").slice(0, 10), leg: String(x.legenda || ""),
+          sha: String(x.sha256 || "").toLowerCase(), bytes: num(x.bytes), idErp: String(x.idRegistroProducaoErp || "") };
+      })
+    };
+  };
+  /* `arquivos`: [{ nome, sha }] com o sha256 MEDIDO no aparelho; `album`: o
+     que a obra já tem. ⚠ A conferência é pelo sha do manifesto: arquivo
+     trocado ou corrompido na pasta fica de fora, e é dito. E é o sha que
+     impede duplicar ao rodar de novo. */
+  ObraVitrine.planoResgate = function (man, arquivos, album) {
+    var p = { entram: [], repetidas: [], jaNoAlbum: [], semArquivo: [], divergentes: [], semData: [] };
+    if (!man || !man.fotos) return p;
+    var porNome = {}, noAlbum = {}, visto = {};
+    (arquivos || []).forEach(function (a) { if (a && a.nome) porNome[String(a.nome).toLowerCase()] = a; });
+    (album || []).forEach(function (a) { if (a && a.sha) noAlbum[String(a.sha).toLowerCase()] = 1; });
+    man.fotos.forEach(function (f) {
+      var a = porNome[String(f.arquivo).toLowerCase()];
+      if (!a) { p.semArquivo.push(f); return; }
+      if (!f.sha || String(a.sha || "").toLowerCase() !== f.sha) { p.divergentes.push(f); return; }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(f.data)) { p.semData.push(f); return; }
+      if (noAlbum[f.sha]) { p.jaNoAlbum.push(f); return; }
+      if (visto[f.sha]) { p.repetidas.push(f); return; }
+      visto[f.sha] = 1; p.entram.push(f);
+    });
+    return p;
+  };
+  /* o que a tela diz ANTES de gravar — com número, e com o nome do arquivo
+     que ficou de fora (número a pessoa confere; aviso genérico ela ignora) */
+  ObraVitrine.resumoResgate = function (p) {
+    function nomes(l) { return l.slice(0, 4).map(function (f) { return f.arquivo; }).join(", ") + (l.length > 4 ? "…" : ""); }
+    var n = p.entram.length, out = [];
+    if (n) {
+      var dias = {}, ordem = [];
+      p.entram.forEach(function (f) { if (!dias[f.data]) { dias[f.data] = 0; ordem.push(f.data); } dias[f.data]++; });
+      ordem.sort();
+      out.push(n + (n === 1 ? " foto entra" : " fotos entram") + " no álbum da obra, cada uma com a data original: " +
+        ordem.map(function (d) { return dia(d) + " (" + dias[d] + ")"; }).join(", ") + ".");
+    } else out.push("Nenhuma foto nova para trazer.");
+    if (p.jaNoAlbum.length) out.push(p.jaNoAlbum.length + (p.jaNoAlbum.length === 1 ? " já está no álbum e fica como está." : " já estão no álbum e ficam como estão."));
+    if (p.repetidas.length) out.push(p.repetidas.length + " é a mesma imagem de outra da lista (estava em dois registros) e entra uma vez só: " + nomes(p.repetidas) + ".");
+    if (p.divergentes.length) out.push("⚠ " + p.divergentes.length + " não conferem com o manifesto (o arquivo não é o que foi copiado) e ficam de fora: " + nomes(p.divergentes) + ".");
+    if (p.semArquivo.length) out.push("⚠ " + p.semArquivo.length + " estão no manifesto mas não foram escolhidas: " + nomes(p.semArquivo) + ".");
+    if (p.semData.length) out.push("⚠ " + p.semData.length + " sem data no manifesto ficam de fora: " + nomes(p.semData) + ".");
+    return out;
   };
 
   function vazio(txt, botao) {
@@ -396,9 +480,13 @@
           '<button type="button" class="ov-chip' + (ctx.mapa === "satelite" ? "" : " on") + '" data-gacao="ov-mapa-tipo" data-tipo="mapa" aria-pressed="' + (ctx.mapa === "satelite" ? "false" : "true") + '">Mapa</button>' +
           '<button type="button" class="ov-chip' + (ctx.mapa === "satelite" ? " on" : "") + '" data-gacao="ov-mapa-tipo" data-tipo="satelite" aria-pressed="' + (ctx.mapa === "satelite" ? "true" : "false") + '">Satélite</button>' +
         "</div>" +
-        '<a class="ov-link" href="' + esc(ObraVitrine.linkMapa(o.local)) + '" target="_blank" rel="noopener">Abrir no Google Maps</a></div>' +
-        '<iframe class="ov-mapa-frame' + (ctx.mapa === "satelite" ? " satelite" : "") + '" src="' + esc(url) + '" title="Mapa da obra: ' + esc(o.local) + '" loading="lazy" referrerpolicy="no-referrer"></iframe>' +
-        '<p class="ov-nota">Localização pelo endereço cadastrado: ' + esc(o.local) + "</p></div>";
+        '<a class="ov-link" href="' + esc(ObraVitrine.linkMapa(o.local)) + '" target="_blank" rel="noopener noreferrer">Abrir no Google Maps</a></div>' +
+        /* ⚠ O AVISO MORA AQUI, e não só no item 4.11 da política: o app nunca
+           abre o .txt, e é nesta tela que o endereço sai (mesma regra da foto
+           da conta, em js/app.js). Acima do mapa, para não cair fora da tela. */
+        '<p class="ov-nota ov-aviso-mapa">O mapa é do Google: ao abrir esta aba, o endereço cadastrado — ' + esc(o.local) +
+          " — vai ao Google Maps (Política de Privacidade, item 4.11).</p>" +
+        '<iframe class="ov-mapa-frame' + (ctx.mapa === "satelite" ? " satelite" : "") + '" src="' + esc(url) + '" title="Mapa da obra: ' + esc(o.local) + '" loading="lazy" referrerpolicy="no-referrer"></iframe></div>';
     }
     if (aba === "diario") {
       var ds = ctx.diarios || [];
@@ -417,24 +505,32 @@
       var ms = ctx.medicoes || [];
       if (!ms.length) return vazio("Nenhuma medição nesta obra ainda.");
       return '<div class="ov-lista">' + ms.map(function (x) {
-        var quanto = x.percentual !== null ? x.percentual + "%" : moeda(x.valor);
+        /* ⚠ havendo %, o dinheiro continua na linha — a 1ª versão o escondia.
+           Sem %, é medição POR VALOR: só o dinheiro, nunca "0%". Valor zerado
+           não vira "R$ 0,00" embaixo de um percentual. */
+        var quanto = x.percentual !== null
+          ? "<b>" + esc(pct(x.percentual)) + "</b>" + (x.valor > 0 ? "<small>" + esc(moeda(x.valor)) + "</small>" : "")
+          : "<b>" + esc(moeda(x.valor)) + "</b>";
         return '<button type="button" class="ov-linha" data-gopen="medicoes:' + esc(x.id) + '">' +
           '<span class="ov-linha-data">' + esc(dia(x.data) || "sem data") + "</span>" +
           '<span class="ov-linha-corpo"><b>Medição ' + esc(x.numero || "") + "</b>" +
             '<small><span class="ov-st" data-st="' + esc(x.status) + '">' + esc(x.statusRot || x.status || "") + "</span></small></span>" +
-          '<span class="ov-linha-num">' + esc(quanto) + "</span></button>";
+          '<span class="ov-linha-num">' + quanto + "</span></button>";
       }).join("") + "</div>" +
       '<div class="ov-mais"><button type="button" class="ov-chip" data-gacao="ov-ir" data-mod="medicoes" data-id="' + id + '">Ver todas em Medições</button></div>';
     }
     if (aba === "fotos") {
       var fs = ctx.fotos || [];
-      if (!fs.length) return vazio("Nenhuma foto nesta obra ainda — elas chegam pela capa da obra e pelos diários.");
+      /* o resgate só aparece em obra que VEIO do RA Gestão de Obras: o id
+         carrega a marca da importação (erp-) — não é palpite pelo nome */
+      var resgate = /^erp-/.test(String(m.id)) ? '<button type="button" class="ov-chip" data-gacao="ov-resgate" data-id="' + id + '" title="Escolha as fotos resgatadas do sistema antigo e o manifesto.json da mesma pasta">Trazer fotos do RA Gestão de Obras</button>' : "";
+      if (!fs.length) return vazio("Nenhuma foto nesta obra ainda — elas chegam pela capa da obra e pelos diários.", resgate);
       return '<div class="ov-galeria">' + fs.map(function (f, i) {
-        var leg = f.origem === "capa" ? "Capa da obra" : "Diário de " + dia(f.data);
+        var leg = f.origem === "capa" ? "Capa da obra" : f.origem === "album" ? (f.fonte || "Álbum da obra") + " · " + dia(f.data) : "Diário de " + dia(f.data);
         return '<button type="button" class="ov-thumb" data-gacao="ov-foto-cena" data-i="' + i + '" title="Pôr esta foto no fundo">' +
           '<img data-ov-thumb="' + i + '" alt="' + esc(leg) + '"><span>' + esc(leg) + "</span></button>";
       }).join("") + "</div>" +
-      '<div class="ov-mais"><button type="button" class="ov-chip" data-gacao="ov-ir" data-mod="galeria" data-id="' + id + '">Ver na Galeria</button></div>';
+      '<div class="ov-mais">' + resgate + '<button type="button" class="ov-chip" data-gacao="ov-ir" data-mod="galeria" data-id="' + id + '">Ver na Galeria</button></div>';
     }
     if (aba === "documentos") {
       var dc = ctx.documentos || [];
@@ -467,7 +563,7 @@
         '<button type="button" class="ov-ficha-fechar" data-gacao="ov-ficha-fechar" title="Voltar para as obras (Esc)">Voltar às obras</button></header>' +
       '<nav class="ov-abas" role="tablist" aria-label="Dados da obra">' + abas.map(function (a) {
         var on = a.id === aba;
-        return '<button type="button" role="tab" class="ov-aba' + (on ? " on" : "") + '" aria-selected="' + (on ? "true" : "false") + '" data-gacao="ov-aba" data-aba="' + a.id + '">' + esc(a.rot) + "</button>";
+        return '<button type="button" role="tab" class="ov-aba' + (on ? " on" : "") + '" aria-selected="' + (on ? "true" : "false") + '" data-gacao="ov-aba" data-aba="' + a.id + '"' + (a.dica ? ' title="' + esc(a.dica) + '"' : "") + ">" + esc(a.rot) + "</button>";
       }).join("") + "</nav>" +
       '<div class="ov-ficha-corpo" role="tabpanel" data-ov-corpo>' + ObraVitrine.corpoAba(ctx) + "</div>" +
       '<footer class="ov-ficha-rodape">' +

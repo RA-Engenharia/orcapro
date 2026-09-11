@@ -3852,6 +3852,105 @@
       cap.classList.add("sem-foto");
       cap.innerHTML = ObraVitrine.MARCA;
     },
+    /* ---------- O RESGATE DAS FOTOS DO RA GESTÃO DE OBRAS ----------
+       Motor: ObraVitrine.lerManifesto / planoResgate / resumoResgate.
+       A pessoa escolhe as fotos resgatadas e o manifesto.json; cada foto é
+       conferida pelo sha256 do manifesto, a tela diz o que entra e onde, e só
+       grava depois do "Trazer". Rodar de novo não duplica (o álbum guarda o
+       sha). Cada foto leva de onde veio, quando e por quem foi trazida — é o
+       rastro desta importação, no próprio registro. */
+    ovResgate: function (d) {
+      if (this._bloqueado()) return;
+      var self = this, id = d && d.id;
+      if (!id || typeof ObraVitrine === "undefined") return;
+      if (!(window.crypto && window.crypto.subtle && window.FileReader)) {
+        UI.toast("Este navegador não consegue conferir as fotos. Abra o OrçaPRO pelo aplicativo instalado e tente de novo.", "erro");
+        return;
+      }
+      var inp = document.createElement("input");
+      inp.type = "file"; inp.accept = ".json,image/jpeg"; inp.multiple = true; inp.style.display = "none";
+      inp.onchange = function () {
+        var fsel = Array.prototype.slice.call(inp.files || []);
+        if (inp.parentNode) inp.parentNode.removeChild(inp);
+        if (fsel.length) self._ovResgatar(id, fsel);
+      };
+      document.body.appendChild(inp);
+      inp.click();
+    },
+    _ovResgatar: function (obraId, files) {
+      var self = this, man = null, jpgs = [];
+      (files || []).forEach(function (f) { if (/\.json$/i.test(f.name)) man = f; else if (/\.jpe?g$/i.test(f.name)) jpgs.push(f); });
+      if (!man) { UI.toast("Escolha também o manifesto.json da pasta resgatada — é ele que diz a data de cada foto.", "erro"); return Promise.resolve(null); }
+      function ler(f, como) { return new Promise(function (res, rej) { var r = new FileReader(); r.onload = function () { res(r.result); }; r.onerror = rej; r[como](f); }); }
+      function hex(ab) { var b = new Uint8Array(ab), h = ""; for (var i = 0; i < b.length; i++) h += (b[i] < 16 ? "0" : "") + b[i].toString(16); return h; }
+      return ler(man, "readAsText").then(function (t) {
+        var m = ObraVitrine.lerManifesto(t);
+        if (!m) throw new Error("manifesto");
+        return Promise.all(jpgs.map(function (f) {
+          return ler(f, "readAsArrayBuffer").then(function (ab) { return window.crypto.subtle.digest("SHA-256", ab); })
+            .then(function (h) { return { nome: f.name, sha: hex(h), file: f }; });
+        })).then(function (arqs) { return { m: m, arqs: arqs }; });
+      }).then(function (r) {
+        var obra = Store.obter(eid(), "obras", obraId);
+        if (!obra) { UI.toast("Obra não encontrada.", "erro"); return null; }
+        var plano = ObraVitrine.planoResgate(r.m, r.arqs, obra.album);
+        self._ovResgateConfirmar(obra, plano, r.arqs);
+        return plano;
+      }).catch(function (e) {
+        UI.toast(e && e.message === "manifesto" ? "O manifesto.json não foi reconhecido — use o da pasta resgatada, sem editar." : "Não consegui ler os arquivos escolhidos.", "erro");
+        return null;
+      });
+    },
+    _ovResgateConfirmar: function (obra, plano, arqs) {
+      var self = this, n = plano.entram.length;
+      var corpo = "<p>Destino: o <b>álbum da obra “" + Util.esc(obra.nome || "") + "”</b>. As fotos aparecem na aba Fotos da ficha com a data original e a marca “" +
+        Util.esc(ObraVitrine.FONTE_RESGATE) + "”. Nenhum diário é criado nem alterado.</p>" +
+        '<ul style="margin:10px 0 0;padding-left:18px;line-height:1.6">' + ObraVitrine.resumoResgate(plano).map(function (l) { return "<li>" + Util.esc(l) + "</li>"; }).join("") + "</ul>";
+      var botoes = [{ texto: n ? "Cancelar" : "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }];
+      if (n) botoes.push({ texto: "Trazer " + n + (n === 1 ? " foto" : " fotos"), classe: "primary", onClick: function () { self._ovResgateGravar(obra.id, plano, arqs); } });
+      UI.modal("Fotos do RA Gestão de Obras", corpo, botoes);
+      /* o vidro da ficha, SEM forçar tema (a lição do Portal na 1.2.71) */
+      var mb = document.getElementById("modal-bg");
+      if (mb) mb.classList.add("ov-modal-vidro");
+    },
+    _ovResgateGravar: function (obraId, plano, arqs) {
+      var self = this, porNome = {}, novos = [], semIDB = false;
+      var quem = (typeof Auth !== "undefined" && Auth.nome) ? Auth.nome() : "";
+      (arqs || []).forEach(function (a) { porNome[String(a.nome).toLowerCase()] = a; });
+      UI.fecharModal();
+      function comoDataURI(f) { return new Promise(function (res, rej) { var r = new FileReader(); r.onload = function () { res(r.result); }; r.onerror = rej; r.readAsDataURL(f); }); }
+      var cadeia = Promise.resolve();
+      plano.entram.forEach(function (f) {
+        cadeia = cadeia.then(function () {
+          if (semIDB) return;
+          var a = porNome[String(f.arquivo).toLowerCase()];
+          return comoDataURI(a.file).then(function (d) { return Fotos.guardar(d, f.leg); }).then(function (ref) {
+            /* ⚠ sem IndexedDB o guardar devolve a foto DENTRO da referência
+               ({ d: base64 }) — 15 fotos assim no registro da obra estouram o
+               documento da sincronização. Para tudo e avisa. */
+            if (!ref || ref.semIDB || !ref.id) { semIDB = true; return; }
+            novos.push({ id: ref.id, remoto: "", leg: ref.leg, bytes: ref.bytes, w: ref.w, h: ref.h,
+              data: f.data, fonte: ObraVitrine.FONTE_RESGATE, sha: f.sha, idErp: f.idErp,
+              trazidaEm: new Date().toISOString(), trazidaPor: quem });
+          });
+        });
+      });
+      return cadeia.then(function () {
+        if (semIDB) { UI.toast("Este navegador não guarda fotos separadamente (janela anônima?). Nada foi gravado — abra o OrçaPRO numa janela normal e tente de novo.", "erro"); return 0; }
+        var obra = Store.obter(eid(), "obras", obraId);
+        if (!obra) return 0;
+        var ja = {};
+        (obra.album || []).forEach(function (x) { if (x && x.sha) ja[x.sha] = 1; });
+        var entra = novos.filter(function (x) { return !ja[x.sha]; });
+        obra.album = (obra.album || []).concat(entra);
+        /* ⚠ carimba ANTES de gravar, como a capa e o diário (ver formObra) */
+        if (Fotos.carimbarRemotos) Fotos.carimbarRemotos(obra.album);
+        Store.salvar(eid(), "obras", obra);
+        UI.toast(entra.length + (entra.length === 1 ? " foto entrou" : " fotos entraram") + " no álbum da obra. Elas sobem para a nuvem em seguida.", "ok");
+        if (self._ovFicha && self._ovFicha.id === obraId) self.ovAba({ aba: "fotos" });
+        return entra.length;
+      }).catch(function () { UI.toast("Não consegui guardar as fotos. Nada foi gravado na obra.", "erro"); return 0; });
+    },
     novoObra: function () { this.formObra(null); },
     /* ---------- Excluir obra (v1.1.126) ----------
      * A obra é o centro do sistema: medição, diário, folha, compras e o Portal do
@@ -18412,6 +18511,18 @@
               return;
             }
           }
+          /* e o ÁLBUM da obra (as fotos resgatadas do RA Gestão de Obras):
+             sem este carimbo elas só existiriam no aparelho que as trouxe */
+          for (var w2 = 0; w2 < obs.length; w2++) {
+            var al = (obs[w2] && obs[w2].album) || [];
+            for (var a2 = 0; a2 < al.length; a2++) {
+              if (al[a2] && al[a2].id === idLocal && !al[a2].remoto) {
+                al[a2].remoto = idRemoto; al[a2].tenant = tenant;
+                Store.salvar(eid(), "obras", obs[w2]);
+                return;
+              }
+            }
+          }
         } catch (e) {}
       };
       setTimeout(function () { self._repararFotosDeObra(0); }, 6000);
@@ -18444,9 +18555,14 @@
       var semPar = [];
       try {
         (Store.listar(e, "obras") || []).forEach(function (o) {
-          if (!o || !o.foto || !o.foto.id || o.foto.remoto) return;
-          if (Fotos.carimbarRemotos && Fotos.carimbarRemotos([o.foto])) { Store.salvar(e, "obras", o); return; }
-          semPar.push(o.foto.id);
+          if (!o) return;
+          /* a capa e o ÁLBUM da obra (as fotos resgatadas) — o mesmo conserto */
+          var refs = [];
+          if (o.foto && o.foto.id && !o.foto.remoto) refs.push(o.foto);
+          (o.album || []).forEach(function (a) { if (a && a.id && !a.remoto) refs.push(a); });
+          if (!refs.length) return;
+          if (Fotos.carimbarRemotos && Fotos.carimbarRemotos(refs)) Store.salvar(e, "obras", o);
+          refs.forEach(function (r) { if (!r.remoto) semPar.push(r.id); });
         });
       } catch (er2) {}
       if (semPar.length && Fotos.reenviar) Fotos.reenviar(semPar);
@@ -29883,6 +29999,7 @@ renderFolha: function () {
         case "ov-ir": return this.ovIr(dataset);
         case "ov-foto-cena": return this.ovFotoCena(dataset);
         case "ov-rolar": return this.ovRolar(dataset);
+        case "ov-resgate": return this.ovResgate(dataset);
         case "fin-rapido": return this.finRapido();
         case "vinculo-morto": return this.vinculoMortoModal();
         case "pr-troca-obra": return this.prTrocaObra(dataset.value);

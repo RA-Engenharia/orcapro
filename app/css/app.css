@@ -1936,6 +1936,18 @@ input.cell.cell-erro { border-color: #dc2626 !important; background: rgba(220,38
     linear-gradient(90deg, rgba(8,20,33,.9) 0%, rgba(8,20,33,.72) 28%, rgba(8,20,33,.26) 58%, rgba(8,20,33,.16) 100%),
     linear-gradient(180deg, rgba(8,20,33,.34) 0%, rgba(8,20,33,0) 20%, rgba(8,20,33,.18) 40%, rgba(8,20,33,.76) 62%, rgba(8,20,33,.9) 100%);
 }
+/* ⚠ COM A FICHA ABERTA, O VÉU GANHA UM PISO (.4). O véu de cima é fino à
+   direita (.16) e some a 20% da altura — é por ali que a foto aparece no
+   palco. Com a ficha por cima, esse vão passava através do vidro dela: sobre
+   foto clara, o link "Abrir no Google Maps" e o texto fraco da ficha caíam
+   abaixo de 4,5:1 (revisão da 1.2.70; medido nos pixels com foto branca:
+   link 4,21:1, aba inativa 4,42:1; na conta do pior ponto, 3,14:1).
+   O piso escurece a cena só enquanto a ficha está aberta, como o fundo de um
+   diálogo; o palco continua com a foto clara. A conta é refeita a partir
+   destes números em tools/test-obravitrine.js (seção 11), e a medida nos
+   pixels mora em tools/e2e-obras-vitrine.js (seção 8h). */
+.ov-veu::after { content: ""; position: absolute; inset: 0; background: rgba(8,20,33,.4); opacity: 0; transition: opacity .5s var(--ease); }
+.ov-cena.ficha-aberta .ov-veu::after { opacity: 1; }
 /* sem foto: papel milimetrado de prancha, andando devagar. A obra ainda não
    tem imagem, mas a cena continua sendo de engenharia — e não o cinza de
    "imagem faltando" */
@@ -2077,7 +2089,10 @@ input.cell.cell-erro { border-color: #dc2626 !important; background: rgba(220,38
 .ov-linha-corpo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .ov-linha-corpo b { font-weight: var(--p-medio); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ov-linha-corpo small { color: var(--ov-fraco); font-size: var(--t-micro); }
-.ov-linha-num { flex: none; font-weight: var(--p-forte); font-variant-numeric: tabular-nums; }
+.ov-linha-num { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; text-align: right; font-weight: var(--p-forte); font-variant-numeric: tabular-nums; }
+.ov-linha-num b { font-weight: inherit; }
+/* o valor em R$ embaixo do % da medição */
+.ov-linha-num small { font-weight: var(--p-normal); font-size: var(--t-micro); color: var(--ov-fraco); }
 .ov-marca { font-style: normal; color: var(--ov-ambar); }
 .ov-mais { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
 .ov-vazio { padding: 28px 0; color: var(--ov-fraco); }
@@ -2099,6 +2114,9 @@ input.cell.cell-erro { border-color: #dc2626 !important; background: rgba(220,38
 .ov-mapa-frame:hover { opacity: 1; }
 @keyframes ov-mapa-entra { from { opacity: 0; transform: scale(.975); } to { transform: none; } }
 .ov-nota { margin: 10px 0 0; color: var(--ov-fraco); font-size: var(--t-micro); }
+/* o aviso de que o endereço vai ao Google fica ACIMA do mapa: embaixo de um
+   quadro de 520 px, num notebook, ele caía fora da tela */
+.ov-aviso-mapa { margin: 0 0 12px; font-size: var(--t-peq); }
 /* Fotos: a miniatura clicada vai para o fundo da cena */
 .ov-galeria { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
 .ov-thumb {
@@ -2307,7 +2325,13 @@ input.cell.cell-erro { border-color: #dc2626 !important; background: rgba(220,38
   :root[data-movimento="sempre"] .ov-texto.entra > * { animation-duration: .3s !important; }
   :root[data-movimento="sempre"] .ov-texto.entra .ov-trena-med { animation-duration: .55s !important; }
 }
-@media print { .ov-palco, .ov-cenario, .ov-ficha { display: none !important; } .ov-cena { margin: 0; padding: 0; min-height: 0; } }
+/* ⚠ A AURA TAMBÉM SAI DO PAPEL. Ela é fixa, cobre a janela e o
+   `display: block !important` dela vale na impressão — sem esta linha, a
+   foto desfocada se repetiria atrás de cada folha. Medido em 11/09/2026
+   (tools/e2e-obras-vitrine.js, 8i): hoje ela não chega à folha porque o
+   `body > *:not(#proposta-print)` do bloco de impressão já tira o .app
+   inteiro; esta linha é a que segura no dia em que a lista for impressa. */
+@media print { .ov-palco, .ov-cenario, .ov-ficha, .ov-aura { display: none !important; } .ov-cena { margin: 0; padding: 0; min-height: 0; } }
 
 /* =====================================================================
  * APARÊNCIA — o seletor de dois eixos (v1.1.188)

@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.71",
+  "versao": "1.2.72",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.71.zip",
-  "notas": "Novidades: a licenca independente de equipe passa a cadastrar os usuarios da propria empresa previstos no contrato; a tela de Obras mostra as obras numa fileira so, com foto e nome, e setas para os lados. Correcao: a ficha da obra fica legivel sobre fotos claras, o mapa do endereco so abre com clique e a tecla Esc fecha a ficha sem fechar outras janelas.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.71/OrcaPRO-IA-Instalador-v1.2.71.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.72.zip",
+  "notas": "Novidades: a aba Fotos da ficha da obra passa a mostrar o album da obra; obras importadas do RA Gestao de Obras podem trazer de volta as fotos antigas dos diarios, conferidas uma a uma e sem duplicar. Correcao: na ficha da obra, a aba Mapa avisa que o endereco vai ao Google Maps, as medicoes aparecem com virgula e com o valor em reais, o texto e os links ficam legiveis sobre fotos brancas e a foto de fundo nao sai na impressao.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.72/OrcaPRO-IA-Instalador-v1.2.72.exe"
 }
