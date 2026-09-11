@@ -1,6 +1,10 @@
 ﻿POLÍTICA DE PRIVACIDADE — OrçaPRO IA
-Versão 1.3 — vigente a partir de 09/08/2026
+Versão 1.4 — vigente a partir de 11/09/2026
 Elaborada conforme a Lei nº 13.709/2018 (LGPD)
+
+O que mudou na 1.4: entrou o item 4.11 — o MAPA DA OBRA. Ao abrir a aba Mapa
+de uma obra, o endereço dela vai ao Google Maps para desenhar o mapa. E o
+Google entrou, por isso, na lista de terceiros (item 8).
 
 O que mudou na 1.3: entrou o item 4.10 — a REUNIÃO POR VÍDEO do OrçaPRO
 (atendimento, treinamento e apresentação), com o que sai, o que não sai e como
@@ -424,6 +428,31 @@ Para não usar: não peça reunião e não entre em sala nenhuma. Nada aqui func
 em segundo plano — sem alguém clicando, não existe reunião.
 
 
+4.11 MAPA DA OBRA
+Na tela de Obras, a aba "Mapa" de uma obra mostra onde ela fica. Quem desenha o
+mapa é o Google Maps (Google LLC), embutido na tela. Quando você ABRE essa aba,
+vai para o Google:
+
+  · o ENDEREÇO da obra, do jeito que está no cadastro dela — é por ele que o
+    mapa encontra o lugar.
+
+Junto vai o que acompanha qualquer página aberta no navegador: o seu IP e o
+identificador do navegador. Dentro do mapa, o Google pode usar os cookies dele,
+pela política de privacidade dele: o mapa é uma janela do Google dentro do
+programa.
+
+Não vão: o nome da obra, o cliente, valores, diários nem qualquer outro dado.
+Não é a sua localização — é o endereço que você cadastrou na obra. Lembre que
+esse endereço costuma ser do SEU cliente: é dado dele que vai ao Google quando
+o mapa abre.
+
+O botão "Abrir no Google Maps" leva o mesmo endereço ao site do Google, numa
+aba nova, só quando você clica nele.
+
+Sem abrir a aba Mapa, nada é consultado: o resumo, os diários, as medições e as
+fotos da ficha da obra não falam com o Google. Obra sem endereço não tem mapa.
+
+
 5. O QUE NUNCA FAZEMOS
 
   · Não vendemos, alugamos nem cedemos os seus dados.
@@ -463,6 +492,8 @@ em segundo plano — sem alguém clicando, não existe reunião.
     são apagados. Imagem, som e tela NÃO são gravados — não há o que guardar.
   · Ata da reunião (item 4.10): 90 dias no nosso servidor. A cópia que virar
     tarefa ou anexo dentro do seu OrçaPRO é sua e fica com você.
+  · Mapa da obra (item 4.11): nada é guardado por nós — o endereço vai direto
+    do seu navegador ao Google, que o trata pela política dele.
   · Licença e faturamento: pelo prazo legal aplicável (fiscal e prescricional).
 
 
@@ -484,6 +515,8 @@ Boa parte disso você resolve sozinho e na hora, dentro do programa — exportan
   · Meta Platforms — recebe o que você manda pelos botões de WhatsApp (4.4).
   · Open-Meteo (Alemanha) — recebe município e coordenada da obra ao buscar o
     clima do diário (item 4.9).
+  · Google LLC — Google Maps: recebe o endereço da obra quando você abre a
+    aba Mapa dela (item 4.11).
   · consultaca.com — site público aberto por você para consultar o CA do EPI
     (item 4.6); nenhum dado seu acompanha, só o número do CA.
   · Asaas Gestão Financeira S.A. — processa o PAGAMENTO quando você compra o

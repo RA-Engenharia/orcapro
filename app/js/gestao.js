@@ -1272,6 +1272,9 @@
 
     // ---------- Dispatcher de view ----------
     render: function (view) {
+      /* a ficha da obra é um estado DA TELA DE OBRAS: saiu dela, fechou.
+         Sem isto, voltar a Obras dias depois reabria a ficha da última obra. */
+      if (view !== "obras") this._ovFicha = null;
       // RBAC: guarda em função (não só ocultar) — sub-usuário sem permissão vê aviso
       if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo(view)) return this._semPermissao(view);
       switch (view) {
@@ -3314,12 +3317,18 @@
          régua ÚNICA do engenheiro (_avancoMedido / _medidoEmValor) e as
          listas já passadas pelo funil de escopo — `lista()` filtra por obra do
          usuário, e o palco não pode mostrar diário de obra que ele não vê. */
+      /* com a ficha aberta, a obra dela é a do palco e a do fundo */
+      if (this._ovFicha) this._ovLembrado = this._ovFicha.id;
       var vit = this._ovPreparar(obras, clientes);
+      /* a ficha sobrevive a um redesenho (salvar o cadastro por dentro dela,
+         sincronizar): volta aberta, com os dados novos. Obra que sumiu fecha. */
+      var fichaCtx = this._ovFicha ? this._ovFichaCtx() : null;
+      if (this._ovFicha && !fichaCtx) this._ovFicha = null;
       /* A CENA ENVOLVE A TELA INTEIRA: o cenário (a foto em tela cheia, atrás
          de tudo) é o primeiro filho e fica preso no topo da área de rolagem;
          o título, o palco e a grade vêm por cima. Sem obra em destaque (motor
          ausente), a tela fica exatamente como era. */
-      if (vit.id) html = '<div class="ov-cena">' + vit.cenario + html;
+      if (vit.id) html = '<div class="ov-cena' + (fichaCtx ? " ficha-aberta" : "") + '">' + vit.cenario + html;
       /* atalho para o que o cliente respondeu. Fica aqui, e não escondido dentro
          do modal do Portal, porque a nota do cliente é informação de gestão:
          quem abre Obras de manhã tem de topar com ela. */
@@ -3327,6 +3336,7 @@
         html += '<div style="margin:-4px 0 12px"><button class="btn sm" data-gacao="avaliacoes-portal" style="font-size:12.5px">' + (typeof Icones !== 'undefined' ? Icones.get('estrela', 15) : '') + ' Avaliações dos clientes</button></div>';
       }
       html += vit.html;
+      if (fichaCtx) html += ObraVitrine.fichaHtml(fichaCtx);
       html += '<div class="grid-cards ov-grade">';
       obras.forEach(function (o) {
         var cli = clientes.filter(function (c) { return c.id === o.clienteId; })[0];
@@ -3334,8 +3344,11 @@
         // rolar até o rodapé do modal — no celular ninguém achava.
         var podeExcluir = !(typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin());
         /* tabindex: o card vira parada de teclado — Tab põe a obra no palco e
-           Enter abre (ver _ovLigar). Antes o card só existia para o mouse. */
-        html += '<div class="card orc-card' + (o.foto ? " com-foto" : "") + (o.id === vit.id ? " em-cena" : "") + '" data-gopen="obras:' + o.id + '" data-ov="' + Util.esc(o.id) + '" tabindex="0">' +
+           Enter abre (ver _ovLigar). Antes o card só existia para o mouse.
+           ⚠ O card abre a FICHA da obra (painel sobre a cena), não mais o
+           formulário branco de cadastro — pedido do Rogério em 11/09/2026.
+           O cadastro está a um clique dentro dela ("Editar cadastro"). */
+        html += '<div class="card orc-card' + (o.foto ? " com-foto" : "") + (o.id === vit.id ? " em-cena" : "") + '" data-gacao="ov-ficha" data-id="' + Util.esc(o.id) + '" data-aba="resumo" data-ov="' + Util.esc(o.id) + '" tabindex="0">' +
           /* a capa entra ANTES do titulo e so existe se a obra tem foto: quem
              nao cadastrou foto continua com o card exatamente como era. O src
              chega depois (a foto mora no IndexedDB, leitura assincrona), por
@@ -3382,7 +3395,7 @@
          setTimeout das capas logo acima */
       if (vit.id) {
         var selfOv = this;
-        setTimeout(function () { selfOv._ovLigar(); selfOv._ovMedir(); selfOv._ovMostrar(vit.id, true); }, 0);
+        setTimeout(function () { selfOv._ovLigar(); selfOv._ovMedir(); selfOv._ovMostrar(vit.id, true); selfOv._ovFichaDepois(); }, 0);
       }
       return html + "</div>" + (vit.id ? "</div>" : "");   /* fecha a grade e a cena */
     },
@@ -3413,7 +3426,7 @@
         });
       });
       var id = ObraVitrine.destaque(obras, this._ovLembrado);
-      return { id: id, html: id ? ObraVitrine.palco(dados[id]) : "", cenario: id ? ObraVitrine.cenario(dados[id]) : "" };
+      return { id: id, html: id ? ObraVitrine.palco(dados[id], { abas: this._ovAbas() }) : "", cenario: id ? ObraVitrine.cenario(dados[id]) : "" };
     },
     /* A altura do cenário é a da ÁREA DE ROLAGEM (#main), que o CSS não sabe:
        100vh inclui a barra do topo, e a sobra viraria rolagem vazia no fim da
@@ -3453,6 +3466,13 @@
       var medir = function () { gs._ovMedir(); };
       try { if (typeof ResizeObserver !== "undefined") new ResizeObserver(medir).observe(document.getElementById("main")); } catch (eRo) {}
       window.addEventListener("resize", medir);
+      /* Esc fecha a ficha — mas o Esc de um modal aberto por cima dela (o
+         cadastro, o Portal) é do modal, não daqui */
+      document.addEventListener("keydown", function (e) {
+        if (e.key !== "Escape" || !gs._ovFicha) return;
+        if (document.getElementById("modal-bg") || !document.querySelector("[data-ov-ficha]")) return;
+        gs.ovFichaFechar();
+      });
     },
     _ovMostrar: function (id, inicial) {
       var pal = document.querySelector("[data-ov-palco]");
@@ -3471,7 +3491,7 @@
       if (!inicial) {
         var tx = pal.querySelector("[data-ov-texto]");
         if (tx) {
-          tx.innerHTML = ObraVitrine.texto(m);
+          tx.innerHTML = ObraVitrine.texto(m, { abas: this._ovAbas() });
           /* a entrada curta do texto é a resposta ao gesto: mostra que o palco
              trocou de obra. Tirar e repor a classe reinicia a animação. */
           tx.classList.remove("entra"); void tx.offsetWidth; tx.classList.add("entra");
@@ -3501,6 +3521,13 @@
          "Sempre ligado" em Aparência, e aí o deslize volta (mesma regra do css). */
       var reduz = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
       var ms = ObraVitrine.movimentoLigado(reduz, document.documentElement.getAttribute("data-movimento")) ? ObraVitrine.TROCA_MS : 0;
+      /* a aura (a foto desfocada atrás do topo e do menu) acompanha o fundo */
+      function aura(src) {
+        var a = document.querySelector(".ov-aura img");
+        if (!a) return;
+        if (src) { if (a.getAttribute("src") !== src) a.setAttribute("src", src); a.classList.add("on"); }
+        else a.classList.remove("on");
+      }
       function sair(c) {
         if (!c) return;
         limpar(c); c.classList.add(oposto ? "sai-" + oposto : "sai-fade");
@@ -3510,6 +3537,7 @@
         cen.classList.add("sem-foto"); cen.classList.remove("carregando");
         if (atual) sair(atual);
         cen._ovAtual = null;
+        aura("");
         if (cred) cred.textContent = "";
       }
       var k = ObraVitrine.chaveFoto(m.foto);
@@ -3528,6 +3556,7 @@
         limpar(prox); prox.classList.add("on"); prox.classList.add(dir ? "entra-" + dir : "entra-fade");
         if (atual && atual !== prox) sair(atual);
         cen._ovAtual = prox;
+        aura(img.getAttribute("src"));
         setTimeout(function () { if (cen._ovAtual === prox) limpar(prox); }, ms);
         if (cred) cred.textContent = ObraVitrine.credito(m);
       }
@@ -3558,6 +3587,140 @@
         }
         aplicar(d || "");
       }).catch(function () { aplicar(""); });
+    },
+    /* ---------- A ficha da obra — o painel de vidro sobre a cena ----------
+       No lugar do formulário branco que o "Abrir obra" abria. Enquanto ela
+       está aberta, a grade das outras obras some; volta ao sair. O motor
+       (ObraVitrine.fichaHtml / corpoAba) escreve; aqui só se juntam os dados,
+       já passados pelo funil de escopo (`lista()`), e as permissões. */
+    _ovFicha: null,          /* { id, aba, mapa } aberta; null = grade à vista */
+    /* as abas que ESTA pessoa pode ver — RBAC por módulo em função, não só no
+       botão: sem Medições, nem a aba nem o atalho do palco (é dinheiro) */
+    _ovAbas: function () {
+      var pode = function (mod) { return !(typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo(mod)); };
+      var a = ["resumo", "mapa"];
+      if (pode("rdo")) a.push("diario");
+      if (pode("medicoes")) a.push("medicoes");
+      if (pode("galeria") || pode("rdo")) a.push("fotos");
+      a.push("documentos");
+      return a;
+    },
+    _ovFichaCtx: function () {
+      var f = this._ovFicha;
+      if (!f || typeof ObraVitrine === "undefined") return null;
+      var m = this._ovDados && this._ovDados[f.id];
+      var o = lista("obras").filter(function (x) { return x && x.id === f.id; })[0];
+      if (!m || !o) return null;
+      var ctx = { m: m, obra: o, aba: f.aba, mapa: f.mapa || "mapa", abas: this._ovAbas(),
+        online: !(window.navigator && window.navigator.onLine === false) };
+      /* só a aba aberta junta os seus dados */
+      if (f.aba === "diario") ctx.diarios = ObraVitrine.diariosDaObra(lista("rdo"), f.id, 8);
+      if (f.aba === "medicoes") ctx.medicoes = ObraVitrine.medicoesDaObra(lista("medicoes"), f.id, 10).map(function (x) {
+        x.statusRot = x.status ? rot(P.medicaoStatus, x.status) : ""; return x;
+      });
+      if (f.aba === "fotos") ctx.fotos = this._ovFotosFicha = ObraVitrine.fotosDaObra(o, lista("rdo"), 24);
+      if (f.aba === "documentos") ctx.documentos = (o.portalDocumentos || []).slice();
+      return ctx;
+    },
+    ovFicha: function (d) {
+      var id = d && d.id;
+      if (!id || !this._ovDados || !this._ovDados[id]) return;
+      var antes = this._ovFicha;
+      this._ovFicha = { id: id, aba: (d && d.aba) || "resumo", mapa: antes ? antes.mapa : "mapa" };
+      this._ovFichaMontar(true);
+    },
+    _ovFichaMontar: function (entrando) {
+      var cena = document.querySelector(".ov-cena"), ctx = this._ovFichaCtx();
+      if (!cena || !ctx) return;
+      var velha = cena.querySelector("[data-ov-ficha]"), html = ObraVitrine.fichaHtml(ctx);
+      if (velha) velha.outerHTML = html;
+      else {
+        var pal = cena.querySelector("[data-ov-palco]");
+        if (pal) pal.insertAdjacentHTML("afterend", html); else cena.insertAdjacentHTML("beforeend", html);
+      }
+      cena.classList.remove("ficha-voltando");
+      cena.classList.add("ficha-aberta");
+      this._ovMostrar(ctx.m.id);        /* o fundo é a foto DESTA obra */
+      this._ovFichaDepois();
+      if (entrando) {
+        var mn = document.getElementById("main");
+        if (mn) mn.scrollTop = 0;
+        /* o foco vai para dentro do painel: quem navega por teclado continua
+           de onde a tela foi, e o leitor de tela anuncia a obra */
+        var bt = cena.querySelector("[data-ov-ficha] .ov-aba.on");
+        try { if (bt) bt.focus({ preventScroll: true }); } catch (eF) {}
+      }
+    },
+    /* depois de pôr a aba na tela: as miniaturas das fotos (IndexedDB ou
+       servidor, por Fotos.dataURI — a mesma fila de download do resto) */
+    _ovFichaDepois: function () {
+      if (!this._ovFicha || this._ovFicha.aba !== "fotos" || typeof Fotos === "undefined" || !Fotos.dataURI) return;
+      (this._ovFotosFicha || []).forEach(function (f, i) {
+        var im = document.querySelector('[data-ov-thumb="' + i + '"]');
+        if (!im) return;
+        Fotos.dataURI(f.ref).then(function (dd) {
+          if (dd) im.src = dd;
+          else if (im.parentNode) im.parentNode.classList.add("sem");
+        }).catch(function () {});
+      });
+    },
+    ovAba: function (d) {
+      if (!this._ovFicha || !d || !d.aba) return;
+      this._ovFicha.aba = d.aba;
+      var corpo = document.querySelector("[data-ov-corpo]"), ctx = this._ovFichaCtx();
+      if (!corpo || !ctx) { this._ovFichaMontar(false); return; }
+      corpo.innerHTML = ObraVitrine.corpoAba(ctx);
+      var abas = document.querySelectorAll("[data-ov-ficha] .ov-aba");
+      for (var i = 0; i < abas.length; i++) {
+        var on = abas[i].getAttribute("data-aba") === ctx.aba;
+        abas[i].classList.toggle("on", on);
+        abas[i].setAttribute("aria-selected", on ? "true" : "false");
+      }
+      /* a entrada curta da aba é a resposta ao clique */
+      corpo.classList.remove("entra"); void corpo.offsetWidth; corpo.classList.add("entra");
+      this._ovFichaDepois();
+    },
+    ovMapaTipo: function (d) {
+      if (!this._ovFicha) return;
+      this._ovFicha.mapa = (d && d.tipo === "satelite") ? "satelite" : "mapa";
+      this.ovAba({ aba: "mapa" });
+    },
+    ovFichaFechar: function () {
+      var f = this._ovFicha;
+      this._ovFicha = null;
+      var cena = document.querySelector(".ov-cena");
+      if (!cena) return;
+      var el = cena.querySelector("[data-ov-ficha]");
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+      cena.classList.remove("ficha-aberta");
+      /* a grade volta com uma entrada curta — a resposta a "Voltar às obras" */
+      cena.classList.add("ficha-voltando");
+      setTimeout(function () { cena.classList.remove("ficha-voltando"); }, 700);
+      if (f) {
+        var c = document.querySelector('.ov-grade .orc-card[data-ov="' + f.id + '"]');
+        try { if (c) c.focus({ preventScroll: true }); } catch (eF) {}
+      }
+    },
+    /* "Ver todos no Diário", "Ver todas em Medições", "Ver na Galeria": o
+       módulo abre JÁ filtrado nesta obra, pelo mesmo filtro que ele usa */
+    ovIr: function (d) {
+      var id = d && d.id, mod = d && d.mod;
+      if (!mod) return;
+      if (mod === "medicoes") this._medObra = id || "todas";
+      if (mod === "rdo") this._rdoObraFiltro = id || "todas";
+      if (mod === "galeria") { this._galSel = id; this._galFiltro = ""; }
+      this._ovFicha = null;
+      App.irPara(mod);
+    },
+    /* clicar numa miniatura põe a foto no fundo, com o mesmo deslize e um
+       movimento de câmera próprio dela */
+    ovFotoCena: function (d) {
+      var i = parseInt(d && d.i, 10), f = (this._ovFotosFicha || [])[i];
+      var cen = document.querySelector("[data-ov-cenario]"), pal = document.querySelector("[data-ov-palco]");
+      if (!f || !cen || !pal || !this._ovFicha) return;
+      this._ovFoto(cen, pal, { id: this._ovFicha.id + ":" + i, foto: f }, "direita");
+      var ts = document.querySelectorAll("[data-ov-ficha] .ov-thumb");
+      for (var k = 0; k < ts.length; k++) ts[k].classList.toggle("on", ts[k].getAttribute("data-i") === String(i));
     },
     novoObra: function () { this.formObra(null); },
     /* ---------- Excluir obra (v1.1.126) ----------
@@ -29525,6 +29688,9 @@ renderFolha: function () {
       "bim-troca-obra": 1, "lp-obra": 1, "lp-visao": 1, "fs-semana": 1, "fs-obra": 1, "prod-obra": 1,
       "galeria-abrir": 1, "galeria-fechar": 1, "galeria-nav": 1, "galeria-troca-obra": 1,
       "bim-drawer-fechar": 1,
+      /* a ficha da obra (palco de Obras) só LÊ e navega: abrir, trocar de
+         aba, trocar mapa/satélite, pôr foto no fundo, ir ao módulo filtrado */
+      "ov-ficha": 1, "ov-aba": 1, "ov-ficha-fechar": 1, "ov-mapa-tipo": 1, "ov-ir": 1, "ov-foto-cena": 1,
       /* ⚠ v1.2 — "ver todos os N" é LEITURA PURA e quase nasceu de fora desta
          lista. As tabelas longas passaram a desenhar as 300 mais recentes; sem
          esta linha, o cliente com licença vencida clicaria em "Ver todos os
@@ -29571,6 +29737,12 @@ renderFolha: function () {
         return extra.fn.call(this, dataset, app);
       }
       switch (gacao) {
+        case "ov-ficha": return this.ovFicha(dataset);
+        case "ov-aba": return this.ovAba(dataset);
+        case "ov-ficha-fechar": return this.ovFichaFechar();
+        case "ov-mapa-tipo": return this.ovMapaTipo(dataset);
+        case "ov-ir": return this.ovIr(dataset);
+        case "ov-foto-cena": return this.ovFotoCena(dataset);
         case "fin-rapido": return this.finRapido();
         case "vinculo-morto": return this.vinculoMortoModal();
         case "pr-troca-obra": return this.prTrocaObra(dataset.value);

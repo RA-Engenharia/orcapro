@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.69",
+  "versao": "1.2.70",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.69.zip",
-  "notas": "Correcao: a Folha Semanal passa a respeitar a restricao de acesso por obra e so da baixa com o valor integral. Novidades: a vitrine de obras abre a foto em tela cheia, com zoom lento e troca deslizando de lado, e em Aparencia da para deixar esse movimento sempre ligado, mesmo com as animacoes do Windows desligadas; quem tiver parcela em atraso passa a ver um aviso na tela, com o prazo para regularizar.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.69/OrcaPRO-IA-Instalador-v1.2.69.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.70.zip",
+  "notas": "Correcao: o aviso de parcela em atraso nao apaga mais o motivo que esta sendo digitado, envia a resposta uma vez so e volta a aparecer de 5 em 5 minutos. Novidades: a licenca de equipe independente passa a ver um aviso proprio quando a licenca de quem a contratou tiver pagamento em atraso; a ficha da obra abre em vidro sobre a foto, com o mapa do endereco.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.70/OrcaPRO-IA-Instalador-v1.2.70.exe"
 }

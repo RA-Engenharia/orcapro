@@ -28,6 +28,11 @@
  * ⚠ SÓ RESPOSTA CERTA MUDA O ESTADO. Sem internet, servidor fora ou resposta
  *   torta: fica o que havia. Nem suspende por defeito, nem solta a suspensão
  *   porque o Wi-Fi caiu.
+ * ⚠ LICENÇA DE EQUIPE (`equipe` no aviso): texto próprio, sem nada do
+ *   titular e sem caixa de resposta; aparece ao abrir o app, nunca de 5 em 5
+ *   minutos. O servidor já não manda nome, parcelas nem links para ela.
+ * ⚠ O CICLO NÃO APAGA O MOTIVO: com texto na caixa (ou o cursor nela), o
+ *   aviso aberto não é recriado — só se anota que foi exibido.
  * ===================================================================== */
 (function (global) {
   "use strict";
@@ -35,6 +40,10 @@
   var KEY = "orcapro:cobranca";      // ⚠ o mesmo nome é lido por js/licenca.js (_suspensaPorCobranca)
   var ID_TELA = "cobranca-aviso";
   var TICK_MS = 60000;
+  /* folga de meio tick nas contas de "já deu 5 min?": a consulta é marcada no
+     COMEÇO e a exibição no FIM (depois da resposta do servidor), e sem folga o
+     tick dos 5 min sempre caía uns segundos antes — o aviso vinha de 10 em 10 */
+  var FOLGA_MS = TICK_MS / 2;
   var SEM_AVISO_MIN = 15;            // sem cobrança conhecida, pergunta de 15 em 15 min
 
   function agora() { return new Date().getTime(); }
@@ -76,11 +85,37 @@
     _numeroDe: function (rotulo) { var m = /Parcela\s+(\d+)/i.exec(String(rotulo || "")); return m ? m[1] : ""; },
     _juntar: function (l) { return l.length <= 1 ? l.join("") : l.slice(0, -1).join(", ") + " e " + l[l.length - 1]; },
 
+    /* ⚠ LICENÇA DE EQUIPE: o servidor manda só estado e prazo, nada do
+       titular. O texto diz o que acontece com ESTE acesso e com quem falar;
+       não há parcela para listar nem resposta a dar — quem deve é quem contratou. */
+    _textoEquipe: function (av) {
+      var susp = av.estado === "suspensa", dh = av.prazoEm ? this._dh(av.prazoEm) : null;
+      var preservado = "Os dados ficam preservados e o acesso volta automaticamente quando o pagamento for regularizado.";
+      var titulo, conseq;
+      if (susp) titulo = "LICENÇA DA EQUIPE SUSPENSA POR PAGAMENTO EM ATRASO";
+      else if (dh) titulo = "ATENÇÃO: LICENÇA DA EQUIPE SERÁ SUSPENSA EM " + dh.data + " ÀS " + dh.hora;
+      else titulo = "ATENÇÃO: LICENÇA DA EQUIPE COM PAGAMENTO EM ATRASO";
+      if (susp) conseq = (dh ? "Desde " + dh.data + " às " + dh.hora + ", o" : "O") + " sistema não salva nem exporta neste acesso. " + preservado;
+      else if (dh) conseq = "Sem a regularização até a data acima, o sistema para de salvar e exportar neste acesso. " + preservado;
+      else conseq = "Sem a regularização, o sistema pode parar de salvar e exportar neste acesso. " + preservado;
+      return {
+        titulo: titulo,
+        saudacao: "",
+        intro: "A licença de equipe a que este acesso pertence tem pagamento em atraso com quem a contratou.",
+        linhas: [],
+        total: "",
+        consequencia: conseq,
+        instrucao: "Para regularizar, fale com quem contratou a licença da sua equipe.",
+        assinatura: "RA Engenharia — Setor Financeiro"
+      };
+    },
+
     /* O texto do aviso, pedaço por pedaço: a tela monta, o teste lê.
        ⚠ O PRAZO SAI COMO DATA E HORA, NUNCA "EM 24 HORAS". O aviso volta de 5
        em 5 minutos; "24 horas" repetido às 22h do dia seguinte seria mentira. */
     texto: function (av) {
       av = av || {};
+      if (av.equipe) return this._textoEquipe(av);
       var self = this, susp = av.estado === "suspensa";
       var nums = (av.parcelas || []).map(function (p) { return self._numeroDe(p.rotulo); }).filter(Boolean);
       var produto = av.produto ? "da licença " + av.produto : "da sua licença do OrçaPRO";
@@ -129,12 +164,15 @@
        suspensa — aí a pessoa precisa saber por que não consegue salvar. */
     deveExibir: function (loc, av, t, noBoot) {
       if (!av || !av.id) return false;
+      /* licença de equipe: ao ABRIR o app, sempre (é como a pessoa fica
+         sabendo); de 5 em 5 minutos, nunca — ela não tem o que responder */
+      if (av.equipe) return !!noBoot;
       loc = loc || {};
       var respondido = !!av.respondido || loc.respondidoId === av.id;
       if (respondido) return !!(noBoot && av.estado === "suspensa");
       if (noBoot) return true;
       var ult = (loc.exibidoId === av.id) ? (Number(loc.ultimaExibicao) || 0) : 0;
-      return t - ult >= (Number(av.repetirMin) || 5) * 60000;
+      return t - ult >= (Number(av.repetirMin) || 5) * 60000 - FOLGA_MS;
     },
 
     /* ---------------- fiação ---------------- */
@@ -163,7 +201,7 @@
       /* `exibindo` avisa o servidor que, havendo aviso, ele vai para a tela
          AGORA — é o que liga o prazo na primeira vez. Aba escondida não conta:
          30 s num lugar que ninguém olha não é aviso. */
-      var exibindo = !oculto && (!!noBoot || t - (Number(loc.ultimaExibicao) || 0) >= ciclo);
+      var exibindo = !oculto && (!!noBoot || t - (Number(loc.ultimaExibicao) || 0) >= ciclo - FOLGA_MS);
       this._consultando = true; this._ultimaConsulta = t;
       this._post("/api/licenca/aviso", { licenca: chave, deviceId: Licenca.deviceId(), exibindo: exibindo })
         .then(function (resp) {
@@ -257,24 +295,65 @@
       document.head.appendChild(s);
     },
 
+    /* o que o cartão desenha, numa string: compara o que está na tela com o
+       aviso que acabou de chegar (ver a proteção do ciclo em mostrar) */
+    _assinatura: function (av) {
+      var self = this;
+      try {
+        return JSON.stringify([String(av.id || ""), String(av.estado || ""), this.texto(av),
+          (av.parcelas || []).map(function (p) { return self.urlSegura(p && p.url); })]);
+      } catch (e) { return "sem-assinatura-" + agora(); }
+    },
+
     mostrar: function (av) {
       if (!av || typeof document === "undefined" || !document.body) return;
       var self = this;
+      /* ⚠ O CICLO DE 5 MIN NÃO RECRIA O AVISO EM CIMA DE QUEM ESCREVE. Recriar
+         jogava fora o motivo que a pessoa estava digitando (achado na revisão
+         da 1.2.69). Com texto na caixa, ou o cursor nela, o aviso aberto fica
+         como está e só se anota que foi exibido — desde que seja o MESMO aviso
+         no MESMO estado: um aviso que virou "suspensa" não pode ficar dizendo
+         "será suspensa em". Aí redesenha, e o motivo que estava sendo escrito
+         para ESTE aviso vai junto para o cartão novo. */
+      var telaAberta = document.getElementById(ID_TELA), taAberto = document.getElementById("cob-motivo");
+      var escrevendoJa = !!(telaAberta && taAberto && !taAberto.readOnly &&
+          (String(taAberto.value || "").trim() || document.activeElement === taAberto));
+      var mesmoAviso = !!(telaAberta && telaAberta.getAttribute("data-id") === String(av.id));
+      /* "o mesmo aviso" é o mesmo DESENHO: mesmo id e o mesmo texto, parcelas,
+         total, prazo e links. Pagar uma parcela ou ganhar prorrogação mantém o
+         id e o estado, e o cartão velho ficaria mostrando o que já não vale.
+         Com a resposta A CAMINHO o cartão fica sempre: trocá-lo liberaria um
+         segundo envio (achado na verificação da segunda rodada). */
+      var assin = this._assinatura(av);
+      var enviando = !!(telaAberta && telaAberta.getAttribute("data-enviando"));
+      if (mesmoAviso && (enviando || (escrevendoJa && telaAberta.getAttribute("data-assin") === assin))) {
+        var locE = this._ler() || {};
+        locE.exibidoId = av.id; locE.ultimaExibicao = agora();
+        this._gravar(locE);
+        return;
+      }
+      var rascunho = (escrevendoJa && mesmoAviso) ? String(taAberto.value || "") : "";
+      var focoNaCaixa = !!(taAberto && document.activeElement === taAberto);
+      /* o texto ANTES de tirar o cartão da tela: um aviso torto que faça
+         texto() lançar sai com o cartão antigo (e o rascunho) intactos */
+      var tx = this.texto(av);
       this.fechar();
       this._css();
-      var tx = this.texto(av);
       var respondido = !!av.respondido || ((this._ler() || {}).respondidoId === av.id);
 
-      var bg = el("div", { id: ID_TELA, role: "alertdialog", "aria-modal": "true", "aria-labelledby": "cob-titulo", "aria-describedby": "cob-corpo" });
+      var bg = el("div", { id: ID_TELA, role: "alertdialog", "aria-modal": "true", "aria-labelledby": "cob-titulo", "aria-describedby": "cob-corpo",
+        "data-id": String(av.id || ""), "data-estado": String(av.estado || ""), "data-assin": assin });
       var card = el("div", { className: "cob-card" + (av.estado === "suspensa" ? " suspensa" : ""), tabindex: "-1" });
       card.appendChild(el("h2", { id: "cob-titulo" }, tx.titulo));
       var corpo = el("div", { id: "cob-corpo", className: "cob-corpo" });
       if (tx.saudacao) corpo.appendChild(el("p", { className: "cob-saud" }, tx.saudacao));
       corpo.appendChild(el("p", null, tx.intro));
-      var ul = el("ul", { className: "cob-parcelas" });
-      tx.linhas.forEach(function (l) { ul.appendChild(el("li", null, l)); });
-      corpo.appendChild(ul);
-      corpo.appendChild(el("p", { className: "cob-total" }, tx.total));
+      if (tx.linhas.length) {
+        var ul = el("ul", { className: "cob-parcelas" });
+        tx.linhas.forEach(function (l) { ul.appendChild(el("li", null, l)); });
+        corpo.appendChild(ul);
+      }
+      if (tx.total) corpo.appendChild(el("p", { className: "cob-total" }, tx.total));
       corpo.appendChild(el("p", null, tx.consequencia));
       card.appendChild(corpo);
 
@@ -287,7 +366,7 @@
       if (pag.childNodes.length) card.appendChild(pag);
 
       var ta = null;
-      if (!respondido) {
+      if (!respondido && !av.equipe) {
         card.appendChild(el("label", { "for": "cob-motivo", className: "cob-lbl" }, tx.instrucao));
         ta = el("textarea", { id: "cob-motivo", maxlength: "1000", rows: "3", placeholder: "Ex.: pagamento previsto para o dia 15; ou: já pagamos no dia 10." });
         card.appendChild(ta);
@@ -297,22 +376,33 @@
         linha.appendChild(btn); linha.appendChild(st);
         card.appendChild(linha);
         ta.addEventListener("input", function () {
+          if (ta.readOnly) return;   // envio em curso ou já enviado: o botão fica como está
           if (String(ta.value || "").trim().length >= 10) btn.removeAttribute("disabled"); else btn.setAttribute("disabled", "disabled");
         });
+        if (rascunho) { ta.value = rascunho; if (rascunho.trim().length >= 10) btn.removeAttribute("disabled"); }
         btn.addEventListener("click", function () {
           var texto = String(ta.value || "").trim();
           if (texto.length < 10) return;
           btn.setAttribute("disabled", "disabled");
           st.className = "cob-status"; st.textContent = "Enviando…";
+          bg.setAttribute("data-enviando", "1");
+          /* a caixa trava durante o envio: digitar reacendia o Enviar e saía um
+             segundo POST (cada um vira uma mensagem no WhatsApp do financeiro) */
+          ta.setAttribute("readonly", "readonly");
           self.responder(av, texto, function (r) {
+            /* este retorno é DESTE cartão: se ele já saiu da tela, não mexe no
+               que estiver lá agora nem o fecha */
+            if (!bg.parentNode) return;
+            bg.removeAttribute("data-enviando");
             if (r && (r.ok || r.encerrada)) {
               st.className = "cob-status ok";
               st.textContent = r.ok ? "Resposta enviada ao setor financeiro. Obrigado." : (r.erro || "");
               ta.setAttribute("readonly", "readonly");
-              setTimeout(function () { self.fechar(); }, 2500);
+              setTimeout(function () { if (bg.parentNode) self.fechar(); }, 2500);
               return;
             }
             st.className = "cob-status erro"; st.textContent = (r && r.erro) || "Não foi possível enviar.";
+            ta.removeAttribute("readonly");
             btn.removeAttribute("disabled");
           });
         });
@@ -331,6 +421,7 @@
       bg.appendChild(card);
       document.body.appendChild(bg);
       try { card.focus(); } catch (eF) {}
+      if ((rascunho || focoNaCaixa) && ta) { try { ta.focus(); } catch (eT) {} }
 
       var loc = this._ler() || {};
       loc.exibidoId = av.id; loc.ultimaExibicao = agora();
@@ -339,7 +430,10 @@
       /* 30 s na tela; sem ✕ antes disso. No fim, se a pessoa está no meio do
          motivo, o aviso fica e ganha o botão Fechar (ver o ⚠ do topo). */
       var fim = agora() + Math.max(5, Number(av.segundos) || 30) * 1000;
-      var escrevendo = function () { return !!(ta && !ta.readOnly && (String(ta.value || "").trim() || document.activeElement === ta)); };
+      var escrevendo = function () {
+        if (bg.getAttribute("data-enviando")) return true;   // a resposta está a caminho: não some antes do retorno
+        return !!(ta && !ta.readOnly && (String(ta.value || "").trim() || document.activeElement === ta));
+      };
       var passo = function () {
         var resta = Math.ceil((fim - agora()) / 1000);
         if (resta > 0) { cont.textContent = "Esta mensagem fecha em " + resta + " s"; return; }

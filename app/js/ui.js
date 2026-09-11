@@ -3097,7 +3097,7 @@
       st.id = "ui-chao-imagens";
       st.textContent = [
         ".conta-logo{height:22px;max-width:84px;width:auto;object-fit:contain;border-radius:4px;background:rgba(255,255,255,.92);padding:1px 3px;flex:none}",
-        ".conta-foto{width:26px;height:26px;border-radius:50%;object-fit:cover;flex:none}",
+        ".conta-foto{width:30px;height:30px;border-radius:50%;object-fit:cover;flex:none}",
         ".orc-card .obra-capa{margin:-24px -24px 14px;height:132px;overflow:hidden;background:var(--surface-2,#eef1f5)}",
         ".orc-card .obra-capa img{width:100%;height:100%;object-fit:cover;display:block}",
         "@media screen and (max-width:820px){.orc-card .obra-capa{height:152px}}",

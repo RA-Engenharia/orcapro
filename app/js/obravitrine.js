@@ -230,7 +230,7 @@
       "</div>";
   }
 
-  ObraVitrine.texto = function (m) {
+  function cabecalho(m, idTitulo) {
     var l1 = [];
     if (m.statusRot) l1.push('<span class="ov-st" data-st="' + esc(m.status) + '">' + esc(m.statusRot) + "</span>");
     if (m.faseRot) l1.push("<span>Fase: " + esc(m.faseRot) + "</span>");
@@ -239,20 +239,241 @@
     if (m.cliente) onde.push("<span>" + esc(m.cliente) + "</span>");
     if (m.local) onde.push("<span>" + esc(m.local) + "</span>");
     return (l1.length ? '<p class="ov-linha1">' + l1.join("") + "</p>" : "") +
-      '<h2 class="ov-nome">' + esc(m.nome) + "</h2>" +
-      (onde.length ? '<p class="ov-onde">' + onde.join("") + "</p>" : "") +
-      '<dl class="ov-numeros">' +
+      '<h2 class="ov-nome"' + (idTitulo ? ' id="' + idTitulo + '"' : "") + ">" + esc(m.nome) + "</h2>" +
+      (onde.length ? '<p class="ov-onde">' + onde.join("") + "</p>" : "");
+  }
+  /* os números da obra (contrato, medido, calendário, trena, último diário):
+     o palco e o Resumo da ficha mostram o MESMO bloco, saído daqui */
+  ObraVitrine.numerosHtml = function (m) {
+    return '<dl class="ov-numeros">' +
         bloco("Contrato", m.valor > 0 ? moeda(m.valor) : "—", m.valor > 0 ? "" : "valor do contrato não cadastrado", "") +
         /* a amostra de cor é a legenda da trena: sem trena, sem legenda */
         bloco((temTrena(m) && m.avanco.pct !== null ? '<i class="ov-sw ov-sw-med"></i>' : "") + "Medido", m.avanco.texto, m.avanco.nota, "") +
         blocoCalendario(m.prazo) +
       "</dl>" +
       trena(m) +
-      '<p class="ov-diario">' + esc(m.diario.texto) + "</p>" +
+      '<p class="ov-diario">' + esc(m.diario.texto) + "</p>";
+  };
+
+  /* As abas da ficha. A fiação manda só as que a pessoa pode ver (RBAC por
+     módulo): o palco e a ficha não oferecem atalho para o que ela não abre. */
+  ObraVitrine.ABAS = [
+    { id: "resumo", rot: "Resumo" },
+    { id: "mapa", rot: "Mapa" },
+    { id: "diario", rot: "Diário" },
+    { id: "medicoes", rot: "Medições" },
+    { id: "fotos", rot: "Fotos" },
+    { id: "documentos", rot: "Documentos" }
+  ];
+  function abasPermitidas(lista) {
+    if (!lista) return ObraVitrine.ABAS.slice();
+    return ObraVitrine.ABAS.filter(function (a) { return lista.indexOf(a.id) >= 0; });
+  }
+
+  ObraVitrine.texto = function (m, opts) {
+    /* atalhos direto para uma aba da ficha — o palco é a porta; "Abrir obra"
+       entra pelo Resumo. Resumo e Documentos ficam só na ficha: no palco
+       sobrariam botões demais para uma olhada. */
+    var atalhos = abasPermitidas(opts && opts.abas).filter(function (a) {
+      return a.id === "mapa" || a.id === "diario" || a.id === "medicoes" || a.id === "fotos";
+    });
+    return cabecalho(m) +
+      ObraVitrine.numerosHtml(m) +
       '<div class="ov-acoes">' +
-        '<button type="button" class="btn primary" data-gopen="obras:' + esc(m.id) + '">Abrir obra</button>' +
+        '<button type="button" class="btn primary" data-gacao="ov-ficha" data-id="' + esc(m.id) + '" data-aba="resumo">Abrir obra</button>' +
         '<button type="button" class="btn ov-sec" data-gacao="portal-obra" data-id="' + esc(m.id) + '">Portal do cliente' + (m.portal ? " ✓" : "") + "</button>" +
-      "</div>";
+      "</div>" +
+      (atalhos.length ? '<div class="ov-atalhos" role="group" aria-label="Ver na ficha da obra">' +
+        atalhos.map(function (a) {
+          return '<button type="button" class="ov-chip" data-gacao="ov-ficha" data-id="' + esc(m.id) + '" data-aba="' + a.id + '">' + esc(a.rot) + "</button>";
+        }).join("") + "</div>" : "");
+  };
+
+  /* ---------------------------------------------------------------
+   * A FICHA DA OBRA — o painel de vidro que abre sobre a cena
+   * No lugar do formulário branco de cadastro, que era o que o "Abrir obra"
+   * abria: a obra VISTA, com o fundo da foto atrás. O cadastro continua a
+   * um clique ("Editar cadastro").
+   * --------------------------------------------------------------- */
+
+  /* O mapa é o do Google, embutido pelo ENDEREÇO: não precisa de chave nem de
+     um passo de geocodificação nosso. ⚠ O endereço da obra só sai do aparelho
+     quando alguém ABRE a aba Mapa — é o próprio iframe que pede. */
+  ObraVitrine.urlMapa = function (endereco, satelite) {
+    var e = String(endereco == null ? "" : endereco).trim();
+    if (!e) return "";
+    return "https://maps.google.com/maps?q=" + encodeURIComponent(e) + "&z=16&t=" + (satelite ? "k" : "m") + "&output=embed";
+  };
+  ObraVitrine.linkMapa = function (endereco) {
+    var e = String(endereco == null ? "" : endereco).trim();
+    return e ? "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(e) : "";
+  };
+
+  function porDataDesc(a, b) { return a.data < b.data ? 1 : a.data > b.data ? -1 : 0; }
+
+  /* Os diários desta obra, do mais novo para o mais antigo. O RASCUNHO
+     aparece (é trabalho real esperando conferência) mas marcado — ao
+     contrário do "último diário" do palco, que só conta o finalizado. */
+  ObraVitrine.diariosDaObra = function (rdos, obraId, max) {
+    var out = [];
+    (rdos || []).forEach(function (r) {
+      if (!r || r.obraId !== obraId) return;
+      var ef = 0;
+      if (typeof r.efetivo === "number") ef = r.efetivo;
+      else (r.efetivo || []).forEach(function (e) { ef += num(e && e.qtd); });
+      out.push({
+        id: r.id, data: String(r.data || "").slice(0, 10), status: r.status || "",
+        rascunho: r.status === "rascunho",
+        atividades: String(r.atividades || "").replace(/\s+/g, " ").trim(),
+        efetivo: ef, fotos: (r.fotos || []).length
+      });
+    });
+    out.sort(porDataDesc);
+    return out.slice(0, max || 8);
+  };
+
+  /* As medições desta obra, da mais nova para a mais antiga. `percentual`
+     vazio é medição POR VALOR — fica null, e a tela mostra o dinheiro. */
+  ObraVitrine.medicoesDaObra = function (meds, obraId, max) {
+    var out = [];
+    (meds || []).forEach(function (m) {
+      if (!m || m.obraId !== obraId) return;
+      out.push({
+        id: m.id, numero: m.numero == null ? "" : String(m.numero), data: String(m.data || "").slice(0, 10),
+        status: m.status || "", percentual: (m.percentual == null || m.percentual === "") ? null : num(m.percentual),
+        valor: num(m.valor)
+      });
+    });
+    out.sort(porDataDesc);
+    return out.slice(0, max || 10);
+  };
+
+  /* As fotos da obra: a capa primeiro, depois as dos diários FINALIZADOS do
+     mais novo para o mais antigo, sem repetir a mesma imagem. Rascunho não
+     empresta foto — mesma regra do cenário. */
+  ObraVitrine.fotosDaObra = function (obra, rdos, max) {
+    var out = [], vistas = {};
+    function por(ref, data, origem) {
+      if (!ref) return;
+      var f = { ref: ref, data: data || "", origem: origem };
+      var k = ObraVitrine.chaveFoto(f);
+      if (!k || vistas[k]) return;
+      vistas[k] = 1; out.push(f);
+    }
+    por(obra ? refDeFoto(obra.foto) : null, "", "capa");
+    var ds = (rdos || []).filter(function (r) { return r && obra && r.obraId === obra.id && r.status !== "rascunho"; })
+      .map(function (r) { return { data: String(r.data || "").slice(0, 10), fotos: r.fotos || [] }; });
+    ds.sort(porDataDesc);
+    ds.forEach(function (d) { d.fotos.forEach(function (x) { por(refDeFoto(x), d.data, "diario"); }); });
+    return out.slice(0, max || 24);
+  };
+
+  function vazio(txt, botao) {
+    return '<div class="ov-vazio"><p>' + esc(txt) + "</p>" + (botao || "") + "</div>";
+  }
+  function linhaDado(rot, valor) {
+    return valor ? "<div><dt>" + esc(rot) + "</dt><dd>" + esc(valor) + "</dd></div>" : "";
+  }
+  function numBR(v) {
+    var n = num(v);
+    return n > 0 ? (global.Util && global.Util.fmtNum ? global.Util.fmtNum(n, 2) : String(n)) + " m²" : "";
+  }
+
+  /* o corpo de UMA aba — separado para a troca de aba não redesenhar a ficha */
+  ObraVitrine.corpoAba = function (ctx) {
+    var m = ctx.m, o = ctx.obra || {}, id = esc(m.id), aba = ctx.aba || "resumo";
+    var editar = '<button type="button" class="btn ov-sec" data-gopen="obras:' + id + '">Editar cadastro</button>';
+    if (aba === "mapa") {
+      var url = ObraVitrine.urlMapa(o.local, ctx.mapa === "satelite");
+      if (!url) return vazio("Cadastre o endereço da obra para ver onde ela fica no mapa.", editar);
+      if (ctx.online === false) return vazio("Sem internet agora — o mapa aparece quando a conexão voltar.");
+      /* ⚠ referrerpolicy="no-referrer": sem isso o iframe manda ao Google o
+         endereço COMPLETO desta página, com a query — e o link ?lic= carrega a
+         chave de licença, que é a credencial da nuvem. Ao Google vai só o
+         endereço da obra (item 4.11 da política; tools/test-privacidade.js). */
+      return '<div class="ov-mapa">' +
+        '<div class="ov-mapa-barra"><div class="ov-seg" role="group" aria-label="Tipo de mapa">' +
+          '<button type="button" class="ov-chip' + (ctx.mapa === "satelite" ? "" : " on") + '" data-gacao="ov-mapa-tipo" data-tipo="mapa" aria-pressed="' + (ctx.mapa === "satelite" ? "false" : "true") + '">Mapa</button>' +
+          '<button type="button" class="ov-chip' + (ctx.mapa === "satelite" ? " on" : "") + '" data-gacao="ov-mapa-tipo" data-tipo="satelite" aria-pressed="' + (ctx.mapa === "satelite" ? "true" : "false") + '">Satélite</button>' +
+        "</div>" +
+        '<a class="ov-link" href="' + esc(ObraVitrine.linkMapa(o.local)) + '" target="_blank" rel="noopener">Abrir no Google Maps</a></div>' +
+        '<iframe class="ov-mapa-frame' + (ctx.mapa === "satelite" ? " satelite" : "") + '" src="' + esc(url) + '" title="Mapa da obra: ' + esc(o.local) + '" loading="lazy" referrerpolicy="no-referrer"></iframe>' +
+        '<p class="ov-nota">Localização pelo endereço cadastrado: ' + esc(o.local) + "</p></div>";
+    }
+    if (aba === "diario") {
+      var ds = ctx.diarios || [];
+      if (!ds.length) return vazio("Nenhum diário nesta obra ainda.");
+      return '<div class="ov-lista">' + ds.map(function (d) {
+        return '<button type="button" class="ov-linha" data-gopen="rdo:' + esc(d.id) + '">' +
+          '<span class="ov-linha-data">' + esc(dia(d.data) || "sem data") + "</span>" +
+          '<span class="ov-linha-corpo"><b>' + esc(d.atividades || "Sem atividades descritas") + "</b>" +
+            "<small>" + (d.rascunho ? '<i class="ov-marca">Rascunho — esperando conferência</i>' : "Finalizado") +
+            (d.efetivo ? " · " + d.efetivo + (d.efetivo === 1 ? " pessoa" : " pessoas") : "") +
+            (d.fotos ? " · " + d.fotos + (d.fotos === 1 ? " foto" : " fotos") : "") + "</small></span></button>";
+      }).join("") + "</div>" +
+      '<div class="ov-mais"><button type="button" class="ov-chip" data-gacao="ov-ir" data-mod="rdo" data-id="' + id + '">Ver todos no Diário</button></div>';
+    }
+    if (aba === "medicoes") {
+      var ms = ctx.medicoes || [];
+      if (!ms.length) return vazio("Nenhuma medição nesta obra ainda.");
+      return '<div class="ov-lista">' + ms.map(function (x) {
+        var quanto = x.percentual !== null ? x.percentual + "%" : moeda(x.valor);
+        return '<button type="button" class="ov-linha" data-gopen="medicoes:' + esc(x.id) + '">' +
+          '<span class="ov-linha-data">' + esc(dia(x.data) || "sem data") + "</span>" +
+          '<span class="ov-linha-corpo"><b>Medição ' + esc(x.numero || "") + "</b>" +
+            '<small><span class="ov-st" data-st="' + esc(x.status) + '">' + esc(x.statusRot || x.status || "") + "</span></small></span>" +
+          '<span class="ov-linha-num">' + esc(quanto) + "</span></button>";
+      }).join("") + "</div>" +
+      '<div class="ov-mais"><button type="button" class="ov-chip" data-gacao="ov-ir" data-mod="medicoes" data-id="' + id + '">Ver todas em Medições</button></div>';
+    }
+    if (aba === "fotos") {
+      var fs = ctx.fotos || [];
+      if (!fs.length) return vazio("Nenhuma foto nesta obra ainda — elas chegam pela capa da obra e pelos diários.");
+      return '<div class="ov-galeria">' + fs.map(function (f, i) {
+        var leg = f.origem === "capa" ? "Capa da obra" : "Diário de " + dia(f.data);
+        return '<button type="button" class="ov-thumb" data-gacao="ov-foto-cena" data-i="' + i + '" title="Pôr esta foto no fundo">' +
+          '<img data-ov-thumb="' + i + '" alt="' + esc(leg) + '"><span>' + esc(leg) + "</span></button>";
+      }).join("") + "</div>" +
+      '<div class="ov-mais"><button type="button" class="ov-chip" data-gacao="ov-ir" data-mod="galeria" data-id="' + id + '">Ver na Galeria</button></div>';
+    }
+    if (aba === "documentos") {
+      var dc = ctx.documentos || [];
+      var gerenciar = '<button type="button" class="btn ov-sec" data-gacao="docs-obra" data-id="' + id + '">Gerenciar documentos</button>';
+      if (!dc.length) return vazio("Nenhum documento cadastrado — ART/RRT, alvará, apólice e o que o cliente vê no Portal.", gerenciar);
+      return '<div class="ov-lista">' + dc.map(function (d) {
+        return '<div class="ov-linha ov-linha-fixa"><span class="ov-linha-corpo"><b>' + esc(d.nome || "Documento") + "</b>" +
+          "<small>" + esc([d.tipo, d.numero ? "nº " + d.numero : "", d.emissao ? "emitido em " + dia(d.emissao) : ""].filter(Boolean).join(" · ")) + "</small></span></div>";
+      }).join("") + "</div>" + '<div class="ov-mais">' + gerenciar + "</div>";
+    }
+    /* resumo */
+    var dados = linhaDado("Endereço", o.local) +
+      linhaDado("Início", o.inicio ? dia(o.inicio) : "") +
+      linhaDado("Previsão de término", o.termino ? dia(o.termino) : "") +
+      linhaDado("Área construída", numBR(o.areaConstruida)) +
+      linhaDado("Área do terreno", numBR(o.areaTerreno)) +
+      linhaDado("Entrega de materiais", o.enderecoEntrega && o.enderecoEntrega !== o.local ? o.enderecoEntrega : "") +
+      linhaDado("Observações", o.obs);
+    return '<div class="ov-resumo">' + ObraVitrine.numerosHtml(m) + "</div>" +
+      (dados ? '<dl class="ov-dados">' + dados + "</dl>" : "");
+  };
+
+  /* ⚠ display:none inline, como o palco e o cenário (ver ObraVitrine.palco). */
+  ObraVitrine.fichaHtml = function (ctx) {
+    var m = ctx.m, id = esc(m.id), abas = abasPermitidas(ctx.abas), aba = ctx.aba || "resumo";
+    if (!abas.some(function (a) { return a.id === aba; })) aba = "resumo";
+    ctx.aba = aba;
+    return '<section class="ov-ficha" style="display:none" data-ov-ficha data-ov-id="' + id + '" role="dialog" aria-labelledby="ov-ficha-tit">' +
+      '<header class="ov-ficha-cab"><div class="ov-ficha-tit">' + cabecalho(m, "ov-ficha-tit") + "</div>" +
+        '<button type="button" class="ov-ficha-fechar" data-gacao="ov-ficha-fechar" title="Voltar para as obras (Esc)">Voltar às obras</button></header>' +
+      '<nav class="ov-abas" role="tablist" aria-label="Dados da obra">' + abas.map(function (a) {
+        var on = a.id === aba;
+        return '<button type="button" role="tab" class="ov-aba' + (on ? " on" : "") + '" aria-selected="' + (on ? "true" : "false") + '" data-gacao="ov-aba" data-aba="' + a.id + '">' + esc(a.rot) + "</button>";
+      }).join("") + "</nav>" +
+      '<div class="ov-ficha-corpo" role="tabpanel" data-ov-corpo>' + ObraVitrine.corpoAba(ctx) + "</div>" +
+      '<footer class="ov-ficha-rodape">' +
+        '<button type="button" class="btn ov-sec" data-gopen="obras:' + id + '">Editar cadastro</button>' +
+        '<button type="button" class="btn primary" data-gacao="portal-obra" data-id="' + id + '">Portal do cliente' + (m.portal ? " ✓" : "") + "</button>" +
+      "</footer></section>";
   };
 
   /* ---------------------------------------------------------------
@@ -306,11 +527,15 @@
       '<div class="ov-camada"><img class="ov-img" alt=""></div>' +
       '<div class="ov-camada"><img class="ov-img" alt=""></div>' +
       '<div class="ov-veu"></div>' +
-      "</div>";
+      "</div>" +
+      /* a AURA: a mesma foto, muito desfocada, fixa atrás da janela inteira —
+         é ela que aparece através do topo e do menu lateral de vidro, e faz a
+         cena passar por trás deles (pedido de 11/09/2026) */
+      '<div class="ov-aura" style="display:none" aria-hidden="true"><img alt=""></div>';
   };
-  ObraVitrine.palco = function (m) {
+  ObraVitrine.palco = function (m, opts) {
     return '<section class="ov-palco" style="display:none" data-ov-palco data-ov-id="' + esc(m.id) + '" aria-label="Obra em destaque">' +
-      '<div class="ov-texto" data-ov-texto>' + ObraVitrine.texto(m) + "</div>" +
+      '<div class="ov-texto" data-ov-texto>' + ObraVitrine.texto(m, opts) + "</div>" +
       '<p class="ov-credito" data-ov-credito></p>' +
       "</section>";
   };
