@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.65",
+  "versao": "1.2.66",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.65.zip",
-  "notas": "Novidade na tela de Obras: no topo aparece a obra em destaque, com a foto, o valor do contrato, quanto ja foi medido, quanto do prazo ja passou e a data do ultimo diario. Pare o mouse sobre uma obra da lista para ve-la ali.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.65/OrcaPRO-IA-Instalador-v1.2.65.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.66.zip",
+  "notas": "Ajustes internos no cadastro do teste gratis.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.66/OrcaPRO-IA-Instalador-v1.2.66.exe"
 }

@@ -1,6 +1,6 @@
 /* =====================================================================
  * telemetria.js — Cadastro do TESTE GRÁTIS + uso do app (trial e licenciado)
- * TRIAL: nome+telefone (com consentimento LGPD) antes de liberar.
+ * TRIAL: nome+telefone+e-mail (com consentimento LGPD) antes de liberar.
  * Enquanto o app roda, manda pings leves (só metadados de USO — nada do
  * conteúdo dos orçamentos): boot + heartbeat a cada 5 min + contador de
  * módulos usados. O painel de vendas agrega: quem testa/usa, online agora,
@@ -115,14 +115,24 @@
 
     /* true = bloqueou (modal de cadastro na tela); false = segue o boot. Só TRIAL. */
     gate: function (aoLiberar) {
-      if (!this.ehTrial() || this.reg()) return false;
+      if (!this.ehTrial()) return false;
+      /* ⚠ E-MAIL AGORA E OBRIGATORIO — o painel de vendas mapeia o lead por ele.
+         Quem ja cadastrou SEM e-mail valido (fase em que o e-mail era opcional)
+         e repedido na proxima abertura: so o e-mail, com nome e telefone ja
+         preenchidos. Quem ja tem e-mail valido nao e incomodado. */
+      var emailOk = function (v) { return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(v || "").trim()); };
+      var rPre = this.reg();
+      if (rPre && emailOk(rPre.email)) return false;
       var self = this;
-      var emailPre = ""; try { if (typeof Auth !== "undefined" && Auth.usuario) emailPre = (Auth.usuario() || {}).email || ""; } catch (e) {}
+      var nomePre = (rPre && rPre.nome) || "";
+      var fonePre = (rPre && rPre.telefone) || "";
+      var emailPre = (rPre && rPre.email) || "";
+      try { if (!emailPre && typeof Auth !== "undefined" && Auth.usuario) emailPre = (Auth.usuario() || {}).email || ""; } catch (e) {}
       var corpo =
         '<p class="muted" style="margin:0 0 12px">Bem-vindo ao <b>teste grátis de 7 dias</b> — sistema completo, sem cartão. Só precisamos saber quem está testando:</p>' +
-        '<div class="field"><label>Seu nome *</label><input id="tg-nome" placeholder="Nome e sobrenome" autocomplete="name"></div>' +
-        '<div class="field"><label>WhatsApp / telefone *</label><input id="tg-fone" placeholder="(34) 90000-0000" inputmode="tel" autocomplete="tel"></div>' +
-        '<div class="field"><label>E-mail</label><input id="tg-email" value="' + String(emailPre).replace(/"/g, "&quot;") + '" placeholder="voce@empresa.com.br" autocomplete="email"></div>' +
+        '<div class="field"><label>Seu nome *</label><input id="tg-nome" value="' + String(nomePre).replace(/"/g, "&quot;") + '" placeholder="Nome e sobrenome" autocomplete="name"></div>' +
+        '<div class="field"><label>WhatsApp / telefone *</label><input id="tg-fone" value="' + String(fonePre).replace(/"/g, "&quot;") + '" placeholder="(34) 90000-0000" inputmode="tel" autocomplete="tel"></div>' +
+        '<div class="field"><label>E-mail *</label><input id="tg-email" value="' + String(emailPre).replace(/"/g, "&quot;") + '" placeholder="voce@empresa.com.br" autocomplete="email"></div>' +
         '<label style="display:flex;gap:9px;align-items:flex-start;cursor:pointer;font-size:12.5px;color:var(--texto-fraco);margin-top:6px"><input type="checkbox" id="tg-ok" style="margin-top:3px">Autorizo o contato da RA Engenharia sobre o meu teste e o uso dos meus dados para esse fim (LGPD).</label>';
       UI.modal("🚀 Liberar meu teste grátis", corpo, [
         { texto: "Liberar meu teste grátis →", classe: "primary", onClick: function () {
@@ -130,6 +140,7 @@
           var email = (UI.el("tg-email") || {}).value || "", ok = (UI.el("tg-ok") || {}).checked;
           if (nome.replace(/\s+/g, " ").trim().length < 3) { UI.toast("Informe o seu nome.", "erro"); return; }
           if (fone.replace(/\D/g, "").length < 10) { UI.toast("Informe um telefone válido com DDD.", "erro"); return; }
+          if (!emailOk(email)) { UI.toast("Informe um e-mail válido.", "erro"); return; }
           if (!ok) { UI.toast("Marque o consentimento pra liberar o teste.", "erro"); return; }
           self.salvarReg({ nome: nome.trim(), telefone: fone.trim(), email: email.trim(), em: new Date().toISOString() });
           UI.fecharModal();
