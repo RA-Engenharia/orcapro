@@ -956,10 +956,14 @@
          contrato e a curva ABC leem, e mudar o seu significado aqui trocaria
          o total de doze telas para resolver um problema de uma. O que nasce
          aqui são DOIS acumuladores a mais, que só quem quiser usa: a proposta
-         imprime o obrigatório no total e os opcionais como "adicionais". */
-      var vendaOpc = 0, custoOpc = 0;
+         imprime o obrigatório no total e os opcionais como "adicionais".
+         ⚠ O QUE SE ACUMULA AQUI É POR ETAPA, não por linha: o valor de venda
+         da etapa opcional sai de `_resumoEtapas` (a MESMA conta do sintético),
+         logo abaixo. Somar `pt` linha a linha era o defeito — ver lá. */
+      var custoPorEtapa = [], vendaPorEtapa = [];
       var self = this;
       Util.arr(orc && orc.etapas).forEach(function (e, ei) {
+        custoPorEtapa[ei] = 0; vendaPorEtapa[ei] = 0;
         /* NUMERAÇÃO DO 2º NÍVEL — um contador só, compartilhado: os itens SOLTOS
          * ocupam 1..N e cada sub etapa vem depois, na ordem de e.subetapas.
          * Sem sub etapa isso DEGENERA no número de sempre (1.1, 1.2, 1.3) — não é
@@ -1003,7 +1007,7 @@
           var pu = bdiNoPU ? A0.unitario(Util.num(it.custoUnitario) * (1 + pct / 100), modo) : cu;
           var pt = A0.valor(q * pu, modo);
           custoDireto += ct; somaVenda += pt;
-          if (e.opcional) { vendaOpc += pt; custoOpc += ct; }
+          custoPorEtapa[ei] += ct; vendaPorEtapa[ei] += pt;
           /* v1.1.233 — MO/MAT/EQ do orçamento respeitam o modo de custo do
              item: "só MO" não soma o material que o cliente fornece. É este
              agregado que alimenta o Resumo, a pizza do xlsx e o laudo — somar
@@ -1030,10 +1034,21 @@
       });
       // subtotal do grupo no MESMO critério de arredondamento das linhas
       grupos.forEach(function (g) { g.custoTotal = A0.valor(g.custoTotal, modo); g.precoTotal = A0.valor(g.precoTotal, modo); });
-      vendaOpc = A0.valor(vendaOpc, modo); custoOpc = A0.valor(custoOpc, modo);
       custoDireto = A0.valor(custoDireto, modo);
       somaVenda = A0.valor(somaVenda, modo);
       var precoVenda = bdiNoPU ? somaVenda : A0.valor(Bdi.aplicar(custoDireto, pct), modo);
+      /* ⚠ UMA conta só para o valor da ETAPA: `sintetico` (o que a planilha, o
+         cronograma, a linha de base e `valoresEAP` leem) e os acumuladores de
+         opcional (o que a proposta imprime) saem daqui — ver `_resumoEtapas`. */
+      var porEtapa = self._resumoEtapas(custoPorEtapa, vendaPorEtapa, custoDireto, precoVenda, modo, bdiNoPU, pct);
+      var vendaOpc = 0, custoOpc = 0;
+      Util.arr(orc && orc.etapas).forEach(function (e, ei) {
+        if (!e || !e.opcional || !porEtapa[ei]) return;
+        vendaOpc += porEtapa[ei].precoVenda; custoOpc += porEtapa[ei].custoDireto;
+      });
+      /* valores já em centavos exatos: `valor` aqui só limpa o ruído do float
+         (e no modo "nenhum" é identidade, como sempre foi) */
+      vendaOpc = A0.valor(vendaOpc, modo); custoOpc = A0.valor(custoOpc, modo);
       return {
         cfg: cfg, modo: modo, incidencia: inc, bdiNoPU: bdiNoPU, pct: pct,
         linhas: linhas,
@@ -1046,10 +1061,16 @@
         precoVenda: precoVenda,
         /* separação para a PROPOSTA (ver a nota dos acumuladores lá em cima).
            Sem nenhuma etapa opcional, `precoObrigatorio === precoVenda` e
-           `precoOpcional` é zero — tudo continua exatamente como era. */
+           `precoOpcional` é zero — tudo continua exatamente como era.
+           ⚠ `precoObrigatorio` sai POR DIFERENÇA: é assim que
+           obrigatório + opcional fecha com `precoVenda` ao centavo nos dois
+           modos de incidência e em qualquer arredondamento. */
         precoOpcional: vendaOpc,
         precoObrigatorio: Math.round((precoVenda - vendaOpc) * 100) / 100,
         custoOpcional: custoOpc,
+        /* valor de venda e custo de CADA etapa, na ordem de `orc.etapas` —
+           `sintetico` só põe nome e peso em cima disto */
+        porEtapa: porEtapa,
         mo: A0.valor(mo, modo), mat: A0.valor(mat, modo), eq: A0.valor(eq, modo),
         // cabeçalho de sub etapa NÃO entra em `linhas` (senão qtdItens mentiria e a
         // curva ABC ganharia linha fantasma): vai aqui, com o subtotal do bloco.
@@ -1097,6 +1118,19 @@
           itemId: L.itemId, etapa: L.etapaNome || L.etapaCodigo || "", codigo: L.codigo,
           descricao: L.descricao, unidade: L.unidade,
           qtdContratada: L.quantidade, precoUnit: L.precoUnit, valorContratado: L.precoTotal,
+          /* ⚠ O CARIMBO DE ADICIONAL ATRAVESSA PARA A MEDIÇÃO. A etapa marcada
+             como opcional fica FORA do "Valor total" que a proposta imprime
+             (Orcamento.calcular → precoObrigatorio/precoOpcional), mas o
+             boletim media essas linhas como qualquer outra e nada na tela
+             dizia que eram adicionais: medir 100% de tudo dava um boletim
+             R$ X acima do total do papel, dizendo "100% do orçamento".
+             O carimbo já existia em `L.opcional` e parava aqui — dinheiro se
+             liga por carimbo, nunca por semelhança (skill dinheiro).
+             ⚠ NÃO muda número nenhum: `pctDoOrcamento` continua sobre
+             `precoVenda` (o orçamento inteiro, adicionais dentro), que é o que
+             o Portal e o contrato leem. Quem decide se o adicional foi
+             contratado é a pessoa, marcando ou não a linha. */
+          opcional: !!L.opcional,
           bdiNoPU: c.bdiNoPU
         };
       });
@@ -1216,23 +1250,33 @@
       return (orc && orc.desonerado) ? "desonerado" : "onerado";
     },
 
-    // Resumo sintético: uma linha por etapa — somando as MESMAS linhas da planilha
-    sintetico: function (orc) {
-      var c = this.calcular(orc), A0 = A(), modo = c.modo;
-      var totalGeral = c.precoVenda || 1;
-      var rows = Util.arr(orc && orc.etapas).map(function (e) {
-        return { codigo: e.codigo, nome: e.nome, qtdItens: Util.arr(e.itens).length, custoDireto: 0, precoVenda: 0, peso: 0, opcional: !!e.opcional };
-      });
-      c.linhas.forEach(function (L) {
-        var r = rows[L.etapaIdx]; if (!r) return;
-        r.custoDireto += L.custoTotal;
-        r.precoVenda += L.precoTotal;
-      });
-      rows.forEach(function (r) {
-        r.custoDireto = A0.valor(r.custoDireto, modo);
+    /* =================================================================
+     * VALOR DE CADA ETAPA — UMA conta só (11/09/2026)
+     *
+     * ⚠ POR QUE EXISTE: o valor da etapa era calculado em DOIS lugares com
+     * réguas diferentes. `sintetico` (que a planilha, a proposta clássica, o
+     * `Orcamento.cronograma`, o `valoresEAP` e a linha de base leem) aplicava
+     * o BDI sobre o CUSTO da etapa quando a incidência é "final"; `calcular`,
+     * para separar a etapa OPCIONAL, somava o `precoTotal` das linhas — que no
+     * "final" é CUSTO, sem BDI nenhum. Roteiro do defeito: duas etapas de
+     * R$ 100, BDI de 10%, a segunda marcada como opcional. A proposta saía com
+     * "valor total R$ 120" (o BDI da etapa opcional cobrado dentro do
+     * obrigatório) e "adicionais R$ 100" (a opcional sem BDI), enquanto o
+     * cronograma dizia R$ 110 para a MESMA etapa. O certo é 110 e 110.
+     * Com os dois lados saindo daqui, fechar Σ etapas === `precoVenda` é o
+     * mesmo ato de fechar precoObrigatorio + precoOpcional === `precoVenda`.
+     *
+     * `custos`/`vendas` são as somas CRUAS por etapa (índice = ordem de
+     * `orc.etapas`); devolve `[{custoDireto, precoVenda}]` já arredondado e
+     * reconciliado. Puro: não lê nem grava o orçamento.
+     * ================================================================= */
+    _resumoEtapas: function (custos, vendas, custoDireto, precoVenda, modo, bdiNoPU, pct) {
+      var A0 = A(), rows = [], i, cd;
+      for (i = 0; i < custos.length; i++) {
+        cd = A0.valor(custos[i], modo);
         // BDI apartado: a etapa mostra o preço de venda com o BDI proporcional
-        r.precoVenda = c.bdiNoPU ? A0.valor(r.precoVenda, modo) : A0.valor(Bdi.aplicar(r.custoDireto, c.pct), modo);
-      });
+        rows.push({ custoDireto: cd, precoVenda: bdiNoPU ? A0.valor(vendas[i], modo) : A0.valor(Bdi.aplicar(cd, pct), modo) });
+      }
       // LOTE 2: reconciliação de centavos — a soma das etapas arredondadas TEM
       // que bater ao centavo com o total geral (licitação rejeita por 1 cent).
       // A diferença residual do arredondamento vai para a maior etapa.
@@ -1243,13 +1287,29 @@
         // truncar uma diferença de 0,00999999 (que é 1 centavo com ruído de float)
         // devolveria 0,00 e a soma das etapas ficaria 1 centavo abaixo do total.
         var _res = function (v) { return Math.round(v * 100) / 100; };
-        var difC = _res(c.custoDireto - A0.valor(somaC, modo));
-        var difV = _res(c.precoVenda - A0.valor(somaV, modo));
+        var difC = _res(custoDireto - A0.valor(somaC, modo));
+        var difV = _res(precoVenda - A0.valor(somaV, modo));
         if (difC) maior.custoDireto = _res(maior.custoDireto + difC);
         if (difV) maior.precoVenda = _res(maior.precoVenda + difV);
       }
-      rows.forEach(function (r) { r.peso = (r.precoVenda / totalGeral) * 100; });
       return rows;
+    },
+
+    // Resumo sintético: uma linha por etapa — somando as MESMAS linhas da planilha
+    sintetico: function (orc) {
+      var c = this.calcular(orc);
+      var totalGeral = c.precoVenda || 1;
+      /* ⚠ o valor da etapa vem de `calcular().porEtapa` (`_resumoEtapas`), que
+         é a MESMA conta de `precoObrigatorio`/`precoOpcional`. Refazê-la aqui
+         foi o que fez a proposta e o cronograma darem números diferentes para
+         a mesma etapa opcional — não "simplifique" de volta. */
+      var por = Util.arr(c.porEtapa);
+      return Util.arr(orc && orc.etapas).map(function (e, i) {
+        var r = por[i] || { custoDireto: 0, precoVenda: 0 };
+        return { codigo: e.codigo, nome: e.nome, qtdItens: Util.arr(e.itens).length,
+          custoDireto: r.custoDireto, precoVenda: r.precoVenda,
+          peso: (r.precoVenda / totalGeral) * 100, opcional: !!e.opcional };
+      });
     },
 
     /* =================================================================

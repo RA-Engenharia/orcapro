@@ -154,6 +154,41 @@
   var TETO_BASE = 40000;            // bytes UTF-8 por versão de linha de base
   var TETO_ENTIDADE = 900 * 1024;   // o mesmo aviso de 900 KB da nuvem (nuvem.js:965), antes do 1 MiB do Firestore
 
+  /* =====================================================================
+     O TETO DO PLANO DA OBRA É O TEXTO DA IA, NÃO A REDE.
+
+     ⚠ MEDIDO (tools/test-crono-obra-sync.js, fase 3): 20 planos de execução
+     com todos os mapas preenchidos e um motivo da IA de 120 caracteres em
+     cada um dos 120 nós ocupavam 877 KB — a entidade `crono_obra` INTEIRA
+     (teto de 900 KB), e nenhuma linha de base cabia mais: 100 congelamentos
+     recusados, todos honestos, e a obra ficava sem com que se comparar.
+     Quase metade do peso de um plano assim é TEXTO QUE EXPLICA, não decide:
+     a rede (duração, predecessora, lag, marco, equipe, tipo) e a MARCA DE
+     ORIGEM de cada nó ficam inteiras — nada disso se corta nunca. O que se
+     corta é o motivo.
+
+     A RÉGUA, declarada:
+       - cada motivo guardado no plano cabe em MOTIVO_MAX caracteres (é o
+         mesmo corte que o app.js já faz ao gravar a resposta da IA);
+       - o plano guarda no máximo MOTIVOS_MAX motivos, nesta ordem: ETAPA
+         primeiro, depois subetapa, depois os que o modo executivo guardou em
+         `exec.anterior` (também de etapa). Dentro de cada mapa vale a ordem
+         em que as chaves estão — dois aparelhos podem guardar subconjuntos
+         diferentes, e tudo bem: quem grava por último manda, como em qualquer
+         edição do plano, e a rede é a mesma nos dois;
+       - ⚠ O MOTIVO DE ETAPA QUE PASSAR DO LIMITE PERDE O TEXTO, MAS NÃO A
+         CHAVE. A tabela do cronograma desenha a marca de que a duração veio
+         da IA A PARTIR DO MOTIVO (cronoexecui.js, `fonteEt`; ui.js,
+         `_renderCronogramaEtapa`) — apagar a chave apagaria da tela, sem
+         aviso, a informação de quem escolheu aquele prazo. Na subetapa a
+         marca vem de `sub.agente`, e ali a chave sai inteira.
+     O texto completo continua no ORÇAMENTO: o plano é uma cópia, e o corte
+     não toca no cronograma da proposta.
+     ===================================================================== */
+  var MOTIVO_MAX = 120;
+  var MOTIVOS_MAX = 60;
+  var MOTIVO_SEM_TEXTO = "motivo não guardado (limite do plano)";
+
   /* % de um conjunto de serviços pela régua do Portal (`Fisico.ponderar`),
      com o orçamento inteiro no denominador — o MESMO cálculo para o nó do
      realizado e para a folha da linha de base remontada no confronto (uma
@@ -709,10 +744,76 @@
     return out;
   }
 
+  /* mapa de verdade (o motor lê objeto; lista ou null não têm chave com nome) */
+  function mapaDe(o, k) {
+    var m = o && typeof o === "object" && !Array.isArray(o) ? o[k] : null;
+    return (m && typeof m === "object" && !Array.isArray(m)) ? m : null;
+  }
+  /* espaço colapsado e pontas aparadas: o motivo vem de um modelo de IA, que
+     devolve quebra de linha e espaço dobrado — bytes que ninguém lê */
+  function motivoLimpo(v) { return String(v == null ? "" : v).replace(/\s+/g, " ").trim(); }
+
+  /* Ver "O TETO DO PLANO DA OBRA É O TEXTO DA IA" acima.
+     ⚠ MEXE NO OBJETO RECEBIDO (é o `cronograma` do plano, o mesmo que a tela
+     edita pelo `_cronoAlvo`): cortar numa cópia deixaria a tela com um texto
+     que o disco não tem e faria o recado voltar a cada gravação.
+     Idempotente: rodar de novo não muda nada e não tem o que contar. */
+  function cortarMotivos(cron) {
+    var rep = { mexeu: false, total: 0, guardados: 0, encurtados: 0, semTexto: 0, removidos: 0, msg: null };
+    if (!cron || typeof cron !== "object" || Array.isArray(cron)) return rep;
+    function trata(dono, chave, ehEtapa) {
+      /* ⚠ SÓ MEXE NO QUE ENTENDE. Motivo é texto; valor de outro formato veio
+         de uma versão mais nova do app pelo sync e passa INTACTO, como o
+         resto do cronograma desconhecido (a mesma doutrina do `iniciarPlano`:
+         chave que esta versão não conhece viaja junto). */
+      if (typeof dono[chave] !== "string") return;
+      var t = motivoLimpo(dono[chave]);
+      if (!t) { delete dono[chave]; rep.mexeu = true; return; }   // motivo em branco não é motivo
+      rep.total++;
+      if (rep.guardados < MOTIVOS_MAX) {
+        rep.guardados++;
+        if (t.length > MOTIVO_MAX) { t = t.slice(0, MOTIVO_MAX - 1) + "…"; rep.encurtados++; }
+        if (t !== dono[chave]) { dono[chave] = t; rep.mexeu = true; }
+        return;
+      }
+      if (ehEtapa) {
+        // ⚠ a chave FICA: é dela que a tabela tira a marca de IA da etapa
+        if (dono[chave] !== MOTIVO_SEM_TEXTO) { dono[chave] = MOTIVO_SEM_TEXTO; rep.semTexto++; rep.mexeu = true; }
+      } else { delete dono[chave]; rep.removidos++; rep.mexeu = true; }
+    }
+    var mE = mapaDe(cron, "iaMotivos");
+    if (mE) Object.keys(mE).forEach(function (k) { trata(mE, k, true); });
+    var sub = mapaDe(cron, "sub"), mS = sub ? mapaDe(sub, "iaMotivos") : null;
+    if (mS) Object.keys(mS).forEach(function (k) { trata(mS, k, false); });
+    /* `exec.anterior[etapaId].ia` é o motivo da duração guardada ao ligar o
+       modo executivo: ele volta para `iaMotivos` ao desligar, então é motivo
+       de ETAPA e segue a mesma regra da marca */
+    var ex = mapaDe(cron, "exec"), ant = ex ? mapaDe(ex, "anterior") : null;
+    if (ant) Object.keys(ant).forEach(function (k) {
+      var a = ant[k];
+      if (a && typeof a === "object" && !Array.isArray(a) && a.ia != null) trata(a, "ia", true);
+    });
+    if (rep.encurtados || rep.semTexto || rep.removidos) {
+      var partes = [];
+      if (rep.encurtados) partes.push(rep.encurtados + " motivo(s) encurtado(s) em " + MOTIVO_MAX + " caracteres");
+      if (rep.semTexto) partes.push(rep.semTexto + " etapa(s) ficaram com a marca da IA sem o texto");
+      if (rep.removidos) partes.push(rep.removidos + " motivo(s) de subetapa saíram");
+      rep.msg = "O plano de execução guarda no máximo " + MOTIVOS_MAX + " motivos da IA (o planejamento de todas as obras da empresa sincroniza num documento só de 1 MiB, e sem espaço não dá para congelar linha de base): " +
+        partes.join("; ") + ". As durações, as dependências e a marca de quem definiu cada prazo continuam inteiras, e o texto completo segue no orçamento.";
+    }
+    return rep;
+  }
+
   var CronoPlan = {
     SITUACOES: SITUACOES,
     TETO_BASE: TETO_BASE,
     TETO_ENTIDADE: TETO_ENTIDADE,
+    MOTIVO_MAX: MOTIVO_MAX,
+    MOTIVOS_MAX: MOTIVOS_MAX,
+    MOTIVO_SEM_TEXTO: MOTIVO_SEM_TEXTO,
+    /* corta os TEXTOS de motivo da IA de um `cronograma` de plano de obra —
+       nunca a rede. Quem chama: CronoBase.salvarPlano (ver lá). */
+    cortarMotivos: cortarMotivos,
     bytes: function (x) { return bytesUtf8(typeof x === "string" ? x : JSON.stringify(x)); },
     calendarioDaBase: calDaBase,
     /* a linha de base vale para este orçamento? (dele ou de uma revisão

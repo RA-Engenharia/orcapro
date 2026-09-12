@@ -1346,15 +1346,26 @@
           + ' <span class="muted">— os totais acima continuam sendo do orçamento inteiro</span>'
           + ' <button class="btn sm ghost" data-etapa-foco="">Ver todas</button></div>';
       }
-      html += '<table class="tbl tbl-plan' + (_cmpOn ? ' tbl-compacta' : '') + '"><thead><tr>' +
-        '<th>Item</th><th>Código</th><th>Descrição</th><th>Unid</th>' +
-        '<th class="num">Qtd</th><th class="num">Custo Unit</th><th class="num">Custo Total</th>' +
-        '<th class="num">Preço Venda</th><th></th></tr></thead><tbody>';
-
       // Linhas e subtotais vêm da FONTE ÚNICA (Orcamento.calcular): a planilha da
       // tela precisa mostrar exatamente o mesmo número do Excel, do relatório e
       // do laudo — o critério de arredondamento é do orçamento, não da tela.
       var _c = Orcamento.calcular(orc);
+      /* ⚠ O RÓTULO DA COLUNA TEM DE DIZER O QUE ESTÁ NELA. Com o BDI incidindo
+         sobre o preço FINAL (`bdiIncidencia: "final"`), `L.precoTotal` é CUSTO
+         — o BDI é uma parcela única no fim — e a coluna chamada "Preço Venda"
+         mostrava custo, na etapa e no item. O subtotal da etapa continua sendo
+         a SOMA DAS LINHAS IMPRESSAS (trocá-lo pelo sintético faria a etapa não
+         bater com os próprios itens e o BDI aparecer duas vezes no documento):
+         o que estava errado era o nome, não o número. Mesmo critério que o
+         boletim de medição já usa (js/gestao.js: "Preço c/BDI" × "Preço de
+         custo"). Achado na revisão de 11/09/2026: a seção 1 do laudo mostrava
+         110,00 na etapa e a seção 2 do MESMO laudo, 100,00. */
+      var _rotPreco = _c.bdiNoPU ? "Preço Venda" : "Preço de custo";
+      html += '<table class="tbl tbl-plan' + (_cmpOn ? ' tbl-compacta' : '') + '"><thead><tr>' +
+        '<th>Item</th><th>Código</th><th>Descrição</th><th>Unid</th>' +
+        '<th class="num">Qtd</th><th class="num">Custo Unit</th><th class="num">Custo Total</th>' +
+        '<th class="num"' + (_c.bdiNoPU ? '' : ' title="Neste orçamento o BDI incide sobre o preço final: as linhas saem a custo e o BDI é uma parcela única. O preço de venda por etapa está no Resumo Sintético."') + '>' + _rotPreco + '</th><th></th></tr></thead><tbody>';
+
       var _porEtapa = [], _porItem = {}, _porSub = {};
       _c.linhas.forEach(function (L) {
         var s = _porEtapa[L.etapaIdx] || (_porEtapa[L.etapaIdx] = { custo: 0, venda: 0 });
@@ -2944,11 +2955,19 @@
          e o quadro só existe se houve alteração) — numerar por contador evita
          o relatório sair "1, 2, 4" quando uma delas não aparece */
       var _secRel = 2;
-      html += '<h2 class="rel-tit">2. Planilha Analítica (detalhada)</h2>';
-      html += '<table class="prop-tbl"><thead><tr><th>Item</th><th>Código</th><th>Descrição</th><th>Un</th>' +
-        '<th class="r">Qtd</th><th class="r">Custo Unit.</th><th class="r">Custo Total</th><th class="r">Preço Venda</th></tr></thead><tbody>';
       // Linhas da FONTE ÚNICA: o documento assinado não pode divergir do Excel
       var calc = Orcamento.calcular(orc), porItem = {}, porEtapa = [];
+      /* ⚠ MESMO CASO DA PLANILHA DA TELA (ver o ⚠ em renderPlanilha): no BDI
+         "final" o que sai nesta coluna é CUSTO. O Resumo Sintético (seção 1
+         deste mesmo laudo) mostra o preço de venda da etapa, com o BDI
+         rateado; aqui o subtotal é a soma das linhas impressas. Eram os dois
+         certos com o mesmo rótulo — o documento assinado dizia "Preço Venda"
+         em cima de custo, e as duas seções pareciam brigar. */
+      var _rotPrecoRel = calc.bdiNoPU ? "Preço Venda" : "Preço de custo";
+      html += '<h2 class="rel-tit">2. Planilha Analítica (detalhada)</h2>';
+      if (!calc.bdiNoPU) html += '<p class="muted" style="font-size:11.5px;margin:-4px 0 6px">Neste orçamento o BDI incide sobre o preço final: as linhas abaixo saem a <b>custo</b> e o BDI é uma parcela única. O preço de venda por etapa está no <b>Resumo Sintético</b> (seção 1).</p>';
+      html += '<table class="prop-tbl"><thead><tr><th>Item</th><th>Código</th><th>Descrição</th><th>Un</th>' +
+        '<th class="r">Qtd</th><th class="r">Custo Unit.</th><th class="r">Custo Total</th><th class="r">' + _rotPrecoRel + '</th></tr></thead><tbody>';
       calc.linhas.forEach(function (L) {
         porItem[L.etapaIdx + "|" + L.itemIdx] = L;
         var s2 = porEtapa[L.etapaIdx] || (porEtapa[L.etapaIdx] = { custo: 0, venda: 0 });

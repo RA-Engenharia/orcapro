@@ -234,6 +234,20 @@
       var cronoHTML = this._cronograma(orc);
       if (cronoHTML) P.push(pg(sc("Cronograma de Execução"), cronoHTML));
 
+      /* ⚠ DIVERGÊNCIA CONHECIDA, DECLARADA, NÃO CONSERTADA (11/09/2026).
+         A proposta CLÁSSICA (esta) imprime a etapa marcada como opcional como
+         linha normal do Resumo Financeiro e fecha "VALOR TOTAL DA PROPOSTA"
+         com `precoVenda` — adicionais DENTRO. A proposta POR MODELO
+         (`blocosParaModelo` + js/proptpl.js) imprime "Valor total" =
+         `precoObrigatorio` e joga os adicionais num bloco à parte. No mesmo
+         orçamento (110 obrigatório + 110 opcional) uma sai R$ 220,00 e a
+         outra R$ 110,00.
+         Por que não foi mudado junto do conserto do BDI: separar os dois
+         blocos aqui muda um documento que `tools/test-proposta-campos-texto.js`
+         trava byte a byte, e a fixture dele TEM etapa opcional — é decisão de
+         produto (qual dos dois totais é o certo), não conserto de defeito, e
+         número já impresso não muda de carona. Enquanto não decidir: quem tem
+         etapa opcional deve usar a proposta POR MODELO. */
       // 6) RESUMO FINANCEIRO
       P.push(pg(sc("Resumo Financeiro"),
         '<table class="prop-tbl"><thead><tr><th>Etapa</th><th>Descrição</th><th class="r">Valor</th><th class="r">Peso</th></tr></thead>' +
@@ -506,21 +520,48 @@
    *   desenho criaria um segundo cronograma para a mesma obra — e seria o do
    *   papel que o cliente cobraria.
    * ⚠ SÓ PREÇO DE VENDA: `Orcamento.cronograma` distribui `precoVenda`.
+   *
+   * ⚠ E `precoVenda` INCLUI AS ETAPAS OPCIONAIS, enquanto o "Valor total" que
+   *   o mesmo papel imprime é o `precoObrigatorio` (ver `blocosParaModelo`).
+   *   Num orçamento com adicional, a tabela de desembolso somava mais que o
+   *   total da folha — medido em 11/09/2026: "Valor total R$ 110,00" e, duas
+   *   páginas depois, uma curva de caixa de R$ 220,00, sem nada explicando.
+   *   NÃO se mexeu na distribuição (mudar a curva de quem já recebeu proposta
+   *   é decisão do Rogério, e está em pendências): o desenho passou a
+   *   RECEBER a separação — `opcional` por etapa, `totalOpcional` e
+   *   `totalObrigatorio` — e imprime a linha honesta embaixo da tabela.
+   *   Sem etapa opcional, `totalOpcional` é 0 e o papel sai igual ao de antes.
+   *
+   * ⚠ O `opcional` é casado POR ÍNDICE com `orc.etapas`: `Orcamento.cronograma`
+   *   monta as linhas a partir de `sintetico(orc)`, que é um `map` sobre
+   *   `orc.etapas` (mesma ordem, mesmo tamanho, nos dois ramos da função).
+   *   Casar por NOME seria ligar por semelhança — duas etapas com o mesmo nome
+   *   marcariam a errada. E não se acrescentou campo no retorno de
+   *   `Orcamento.cronograma`: ele é comparado com o do master na régua de
+   *   paridade, e campo novo ali vira "diferença" no dia da publicação.
    * ===================================================================== */
   Proposta.cronogramaParaModelo = function (orc, meses) {
     var c;
     try { c = Orcamento.cronograma(orc, meses || (orc && orc.cronogramaMeses) || 6); }
     catch (e) { return null; }
     if (!c || !Util.arr(c.etapas).length) return null;
+    var etsOrc = Util.arr(orc && orc.etapas);
+    var tOpc = 0, tObr = 0;
+    try { var tt = Orcamento.totais(orc); tOpc = Util.num(tt.precoOpcional); tObr = Util.num(tt.precoObrigatorio != null ? tt.precoObrigatorio : tt.precoVenda); }
+    catch (e2) { tOpc = 0; tObr = Util.num(c.total); }
     return {
       meses: c.meses,
       total: Util.num(c.total),
+      /* o que a tabela está somando (`total`) × o que a folha fecha (`totalObrigatorio`) */
+      totalOpcional: tOpc,
+      totalObrigatorio: tObr,
       totaisMes: Util.arr(c.totaisMes).map(function (v) { return Util.num(v); }),
       acumPct: Util.arr(c.acumPct).map(function (v) { return Util.num(v); }),
-      etapas: Util.arr(c.etapas).map(function (e) {
+      etapas: Util.arr(c.etapas).map(function (e, i) {
         var tot = Util.num(e.total);
         return {
           codigo: e.codigo || "", nome: e.nome || "", total: tot,
+          opcional: !!(etsOrc[i] && etsOrc[i].opcional),
           meses: Util.arr(e.meses).map(function (v) { return Util.num(v); }),
           /* a barra do papel é o percentual DA ETAPA em cada mês */
           pcts: Util.arr(e.meses).map(function (v) { return tot ? (Util.num(v) / tot) * 100 : 0; })
@@ -550,7 +591,20 @@
        opcionais saem em `opcionais`, num bloco à parte com o próprio subtotal
        — somá-las no total faria o cliente ler como preço fechado um serviço
        que ele ainda vai decidir se quer. Sem nenhuma etapa opcional,
-       `precoObrigatorio === precoVenda` e nada muda (ver Orcamento.calcular). */
+       `precoObrigatorio === precoVenda` e nada muda (ver Orcamento.calcular).
+
+       ⚠ OS TRÊS NÚMEROS FECHAM: `total` + `totalOpcional` === `totalComOpcionais`
+       ao centavo, nos dois modos de incidência de BDI e em qualquer
+       arredondamento — o obrigatório sai POR DIFERENÇA em `Orcamento.calcular`.
+       E cada um deles é a soma das MESMAS etapas do sintético, que é o que o
+       cronograma, a linha de base e o `valoresEAP` leem.
+       Roteiro do defeito que isto impede (achado na Fase 4A, consertado em
+       11/09/2026): com o BDI no preço "final", `precoOpcional` somava o
+       precoTotal das LINHAS da etapa opcional — que nesse modo é CUSTO, sem
+       BDI. Duas etapas de R$ 100 com BDI de 10%, a segunda opcional, saíam no
+       papel do cliente como "Valor total R$ 120" e "Adicionais R$ 100": o BDI
+       da opcional cobrado dentro do obrigatório, e o adicional vendido sem BDI
+       nenhum. O certo é R$ 110 e R$ 110. */
     var todos = ordem.map(function (k) { return porEtapa[k]; });
     return {
       grupos: todos.filter(function (g) { return !g.opcional; }),

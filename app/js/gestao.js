@@ -6053,9 +6053,21 @@
         var _pctBdi = Util.num(orc.bdi && orc.bdi.percentual);
         var html = '<table class="tbl" style="font-size:12px;margin:6px 0"><thead><tr><th>Item</th><th>Und</th><th class="num">Qtd contr.</th><th class="num">' +
           (_bdiNoPU ? "Preço c/BDI" : "Preço de custo") + '</th><th class="num">% ant.</th><th class="num">% período</th><th class="num">Valor</th></tr></thead><tbody>';
+        /* ⚠ ADICIONAL OPCIONAL NA MEDIÇÃO. A etapa marcada como opcional no
+           orçamento fica FORA do "Valor total" da proposta (ela sai no bloco
+           "ADICIONAIS OPCIONAIS", com subtotal próprio). A linha dela aparece
+           aqui como qualquer outra, e nada dizia isso: medir 100% de tudo
+           fatura mais do que o total do papel que o cliente assinou. Marcar
+           não trava nada — quem sabe se o adicional foi contratado é a pessoa;
+           o que não pode é ela não ver a diferença. */
+        var _temOpc = linhas.some(function (L) { return L.opcional; });
+        // totais do MOTOR (fonte única): a tela nunca soma o que a proposta imprime
+        var _tOrc = _temOpc ? Orcamento.totais(orc) : null;
         linhas.forEach(function (L) {
           var a = Util.num(ant[L.itemId]);
-          html += '<tr><td>' + (L.codigo ? "<b>" + Util.esc(L.codigo) + "</b> " : "") + Util.esc(String(L.descricao).slice(0, 60)) + "</td>"
+          html += '<tr><td>' + (L.codigo ? "<b>" + Util.esc(L.codigo) + "</b> " : "") + Util.esc(String(L.descricao).slice(0, 60))
+            + (L.opcional ? ' <span class="pill" style="background:#f59e0b22;color:#b45309;font-weight:700;font-size:10.5px" title="Esta etapa está marcada como ADICIONAL OPCIONAL no orçamento: ela não entra no “Valor total” impresso na proposta. Só meça se o cliente contratou.">adicional</span>' : "")
+            + "</td>"
             + "<td>" + Util.esc(L.unidade) + "</td>"
             + '<td class="num">' + Util.fmtNum(L.qtdContratada, 2) + "</td>"
             + '<td class="num">' + Util.fmtMoeda(L.precoUnit) + "</td>"
@@ -6069,7 +6081,11 @@
             '<tr><td colspan="6" style="text-align:right">BDI ' + Util.fmtNum(_pctBdi, 2) + '% sobre o medido</td><td class="num" data-medbdi>—</td></tr>')
           + '<tr><td colspan="6" style="text-align:right"><b>Total medido neste boletim</b></td><td class="num"><b data-medtot>—</b></td></tr></tfoot></table>'
           + '<div class="muted" style="font-size:11px;margin-bottom:6px">Informe o % executado NO PERÍODO por item — valor e % da medição são calculados sozinhos. Vermelho = estourou 100% acumulado.'
-          + (_bdiNoPU ? '' : ' Neste orçamento o BDI incide sobre o preço final, então ele é faturado como parcela proporcional ao medido.') + '</div>';
+          + (_bdiNoPU ? '' : ' Neste orçamento o BDI incide sobre o preço final, então ele é faturado como parcela proporcional ao medido.')
+          /* o recado diz os DOIS números: o total do papel e o total com os
+             adicionais. Sem eles a pessoa lê "100% do orçamento" num boletim
+             que fatura acima do que o cliente aceitou. */
+          + (_temOpc ? ' <b>Este orçamento tem etapas marcadas como adicional opcional</b> (R$ ' + Util.fmtNum(Util.num(_tOrc.precoOpcional), 2) + '): elas <b>não</b> entram no “Valor total” da proposta (R$ ' + Util.fmtNum(Util.num(_tOrc.precoObrigatorio), 2) + '), mas contam no “% do orçamento”, que é sobre o total de R$ ' + Util.fmtNum(Util.num(_tOrc.precoVenda), 2) + '. Só meça linha marcada como <i>adicional</i> se o cliente contratou.' : '') + '</div>';
         box.innerHTML = html;
         function recalc() {
           // usa o MESMO motor do boletim salvo (Orcamento.medirItens): mesmo

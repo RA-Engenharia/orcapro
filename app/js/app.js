@@ -931,11 +931,29 @@
         if (lim && qtd >= lim) { UI.toast("Limite de " + lim + " orçamento(s) do seu plano atingido — a revisão é um orçamento novo.", "erro"); return; }
       } catch (eL) {}
       this._materializarSeExec(nova);   // a revisão nasce com o gravado igual ao prazo que ela mostra
+      /* ⚠ A REVISÃO PODE NASCER COM OUTRO PRAZO (12/09/2026). No aprovado a
+         data é a GRAVADA — a do contrato (Cronograma.congeladoPorAprovacao).
+         A revisão NÃO é aprovada: nela o modo executivo volta a contar o vão
+         das subetapas de HOJE (o _materializarSeExec acima acabou de gravá-lo).
+         Se os dois prazos diferem, a pessoa tem de saber agora, e não quando o
+         cliente comparar as duas propostas: ela não mexeu em duração nenhuma e
+         a entrega mudou. Só os NÚMEROS — quem decide o que fazer é ela. */
+      var prazoRev = "";
+      try {
+        if (typeof Cronograma !== "undefined" && Cronograma.estimar) {
+          var rAp = Cronograma.estimar(orc), rNv = Cronograma.estimar(nova);
+          var brR = function (d) { return ("0" + d.getDate()).slice(-2) + "/" + ("0" + (d.getMonth() + 1)).slice(-2) + "/" + d.getFullYear(); };
+          if (rAp && rNv && rAp.dataFim && rNv.dataFim && (rAp.totalDias !== rNv.totalDias || rAp.dataFim.getTime() !== rNv.dataFim.getTime()))
+            prazoRev = " Atenção ao prazo: esta revisão dá " + rNv.totalDias + " dias úteis (término " + brR(rNv.dataFim) +
+              "), e o aprovado " + (orc.numero || "") + " continua com " + rAp.totalDias + " (término " + brR(rAp.dataFim) +
+              ") — as subetapas mudaram depois da aprovação. Confira o cronograma antes de enviar.";
+        }
+      } catch (ePr) { prazoRev = ""; }
       Store.salvarOrcamento(eid, nova);
       this._avisouTravado = null;
       this.abrirOrcamento(nova.id);
       UI.toast("Revisão " + nova.numero + " criada a partir do aprovado " + (orc.numero || "") +
-        " — edite à vontade aqui; o aprovado continua intacto.", "ok");
+        " — edite à vontade aqui; o aprovado continua intacto." + prazoRev, "ok");
     },
     /* EXPORTAR A CARTEIRA como está na tela (fase 5, último item).
      * ⚠ O ARQUIVO DIZ QUE ESTÁ FILTRADO. Lista exportada que omite o recorte
@@ -4596,7 +4614,12 @@
         var pl = c.plano;
         pl.orcamentoId = String(paraId); pl.orcNumero = String(para.numero || "").slice(0, 40);
         var rp = CronoBase.salvarPlano(c.lista, pl, { agora: Util.agoraISO(), por: this._cronoPor() });
-        if (rp.ok && Store.salvarVarios(c.eid, CronoBase.ENTIDADE, rp.gravar, true)) extra = " O plano de execução da obra passou junto.";
+        /* ⚠ `rp.msg` VAI JUNTO. O `salvarPlano` corta os motivos da IA que
+           passam do teto e devolve o recado com os números; os outros dois
+           chamadores mostram (cronoPlanoIniciar, cronoPlanoSalvar) e este
+           jogava fora — a pessoa passava a obra para outra revisão e perdia
+           texto sem nenhum aviso. */
+        if (rp.ok && Store.salvarVarios(c.eid, CronoBase.ENTIDADE, rp.gravar, true)) extra = " O plano de execução da obra passou junto." + (rp.msg ? " " + rp.msg : "");
         else extra = " Atenção: o plano de execução da obra continua marcado com a revisão anterior (" + ((rp && rp.erro) || "o armazenamento recusou") + "); ele segue valendo (as etapas têm os mesmos ids), e o painel avisa.";
       }
       UI.toast("A obra " + String(obra.nome || "") + " passou do " + (deNum || "orçamento anterior") + " para o " + String(para.numero || "") +

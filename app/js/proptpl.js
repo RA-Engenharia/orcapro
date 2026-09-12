@@ -1305,6 +1305,21 @@
           + '</td><td class="tp-num">' + esc(moeda(l.total)) + "</td></tr>";
       });
     });
+    /* ⚠ POR QUE AS LINHAS NÃO SOMAM O SUBTOTAL NO BDI "FINAL" (e por que NÃO
+       se conserta com uma nota aqui). Quando `bdiIncidencia === "final"`, o
+       `l.total` de cada linha é CUSTO — o BDI é uma parcela única no fim — e o
+       subtotal impresso (`totalOpcional`, como o "Valor total" do bloco
+       obrigatório) já tem o BDI dentro: 100,00 nas linhas sob "Adicionais:
+       110,00". É uma propriedade do modo, vale igual nos dois blocos, e o
+       conserto do BDI de 11/09/2026 só alinhou o opcional ao obrigatório.
+       A tentação é escrever "os itens acima estão a custo; o BDI de X% está no
+       total" — e ISSO NÃO PODE: "custo unit", "custo direto", "bdi de" e
+       "lucro" estão em `Proposta.PALAVRAS_PROIBIDAS` e a auditoria trava o
+       documento. O papel do cliente não revela custo nem BDI, de propósito.
+       A saída de verdade é outro FORMATO de proposta (itens a custo + linha de
+       BDI, do jeito que alguns editais pedem) — decisão de produto, não
+       conserto, e mexe em documento impresso. Medido: 0 dos 310 orçamentos
+       dos backups reais usa o modo "final". */
     return '<h3 class="tp-h1c tp-h3pag">' + esc(txt(p.tituloOpcionais) || "ADICIONAIS OPCIONAIS") + "</h3>"
       + (txt(p.textoOpcionais) ? '<p class="tp-p tp-opc-txt">' + escML(p.textoOpcionais) + "</p>" : "")
       + '<table class="tp-tbl tp-opc"><tbody>' + linhas + "</tbody></table>"
@@ -1444,7 +1459,12 @@
         tds += '<td class="tp-cr-c">' + barra
           + (mostrar && val > 0 ? '<span class="tp-cr-v">' + esc(moeda(val)) + "</span>" : "") + "</td>";
       }
+      /* ⚠ A ETAPA OPCIONAL SAI MARCADA. Ela entra na curva de desembolso (que
+         distribui o preço de venda inteiro) mas NÃO no "Valor total" da folha
+         anterior — sem a marca, o cliente lê duas somas diferentes para a
+         mesma proposta e nenhuma das duas diz por quê. */
       return "<tr><td>" + (txt(e.codigo) ? "<b>" + esc(e.codigo) + "</b> " : "") + esc(e.nome)
+        + (e.opcional ? ' <span class="tp-qtd">(adicional opcional)</span>' : "")
         + '</td><td class="tp-num">' + esc(moeda(e.total)) + "</td>" + tds + "</tr>";
     }).join("");
 
@@ -1458,8 +1478,20 @@
     for (var k = 0; k < n; k++) tds3 += '<td class="tp-cr-c tp-num">' + n2(num(arr(cr.acumPct)[k])) + "%</td>";
     rodape += "<tr><td>Acumulado</td>" + '<td class="tp-num">100,00%</td>' + tds3 + "</tr>";
 
+    /* ⚠ O RECADO QUE FALTAVA. `cr.total` (a linha "Previsto no mês" e o
+       acumulado) distribui o preço de venda COM os adicionais; o "Valor total"
+       impresso antes é o obrigatório. Quando existe adicional, a diferença é
+       inteira — e sem esta linha o cliente lê uma tabela de caixa que promete
+       o dobro do preço que acabou de ler. Os dois números vêm prontos de
+       `Proposta.cronogramaParaModelo`: aqui não se faz conta (regra do motor
+       do modelo, travada por tools/test-proptpl.js). Sem adicional,
+       `totalOpcional` é 0 e nada é impresso — o papel de hoje não muda. */
+    var notaOpc = num(cr.totalOpcional) > 0
+      ? '<p class="tp-p tp-opc-nota" style="font-size:11px">Este cronograma de desembolso inclui os <b>adicionais opcionais</b> ('
+        + esc(moeda(cr.totalOpcional)) + '). Sem eles, o valor total da proposta é <b>' + esc(moeda(cr.totalObrigatorio)) + "</b>.</p>"
+      : "";
     return '<table class="tp-tbl tp-cr"><thead><tr><th>Etapa</th><th class="tp-num">Valor</th>' + cab + "</tr></thead>"
-      + "<tbody>" + linhas + "</tbody><tfoot>" + rodape + "</tfoot></table>";
+      + "<tbody>" + linhas + "</tbody><tfoot>" + rodape + "</tfoot></table>" + notaOpc;
   }
 
   PropTpl.css = function (formato) {

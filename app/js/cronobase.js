@@ -40,12 +40,13 @@
   "use strict";
 
   var ENTIDADE = "crono_obra";
-  /* ⚠ 60 KB por plano, em bytes UTF-8. Medido: um plano de 30 etapas × 90
-     subetapas com TODOS os mapas cheios (durações, dependências, lags,
-     equipes, marcas e motivo da IA de 120 caracteres em cada nó) dá ~46 KB;
-     copiado de um orçamento comum, ~4 KB. O teto existe para um plano sozinho
-     não comer o documento das outras obras — o limite que manda de verdade é
-     o da entidade (ver `abrirEspaco`). */
+  /* ⚠ 60 KB por plano, em bytes UTF-8. Medido (tools/test-crono-obra-sync.js):
+     um plano de 30 etapas × 90 subetapas com TODOS os mapas cheios (durações,
+     dependências, lags, equipes, marcas e motivo da IA em cada um dos 120
+     nós) dava 44.928 B; com o corte dos motivos (`CronoPlan.cortarMotivos`,
+     ver `salvarPlano`) dá ~30 KB. Copiado de um orçamento comum, ~3,5 KB.
+     O teto existe para um plano sozinho não comer o documento das outras
+     obras — o limite que manda de verdade é o da entidade (`abrirEspaco`). */
   var TETO_PLANO = 60 * 1024;
 
   /* A régua de bytes, o teto de uma base, o teto da entidade e o resumo de
@@ -458,7 +459,16 @@
         por: str(por).slice(0, 60)
       };
       var b = bytesPlano(rec);
-      if (b > TETO_PLANO) return { erro: msgTetoPlano(rec, b), codigo: "teto-plano", bytes: b };
+      if (b > TETO_PLANO) {
+        /* ⚠ o teto se mede no que VAI FICAR GRAVADO: o `salvarPlano` corta os
+           textos de motivo da IA, e recusar antes disso barraria um plano que
+           cabe. Só na beira do teto (a cópia é cara) e SEM mexer no registro:
+           o corte de verdade, com o recado, é o do salvar. */
+        var prova = clone(rec);
+        P.cortarMotivos(prova.cronograma);
+        var b2 = bytesPlano(prova);
+        if (b2 > TETO_PLANO) return { erro: msgTetoPlano(prova, b2), codigo: "teto-plano", bytes: b2 };
+      }
       return rec;
     },
 
@@ -466,12 +476,13 @@
        salvarPlano — grava (cria ou atualiza) o plano de execução.
        `opts` = {agora, por, novo (é o "Iniciar": recusa se já houver
        plano), substituir (com `novo`: reiniciar de propósito)}.
-       Mede o teto do plano (sem `_conflitoDe`) e o da entidade (com tudo,
-       pela porta de `abrirEspaco`). O `cronograma` vai por REFERÊNCIA (é o
-       objeto que a tela edita pelo `_cronoAlvo`); o registro é uma cópia
-       rasa com carimbo novo.
-       Devolve {ok, plano, lista, gravar, resumidas, arquivadas, bytes, msg}
-       ou {ok:false, erro, codigo?}.
+       Corta os TEXTOS de motivo da IA (`CronoPlan.cortarMotivos`, ver
+       abaixo), mede o teto do plano (sem `_conflitoDe`) e o da entidade (com
+       tudo, pela porta de `abrirEspaco`). O `cronograma` vai por REFERÊNCIA
+       (é o objeto que a tela edita pelo `_cronoAlvo`) — e é nele que o corte
+       acontece, de propósito: assim a tela mostra o que o disco guardou.
+       Devolve {ok, plano, lista, gravar, resumidas, arquivadas, bytes,
+       motivos (o relatório do corte), msg} ou {ok:false, erro, codigo?}.
        ================================================================= */
     salvarPlano: function (lista, plano, opts) {
       opts = opts || {};
@@ -498,11 +509,23 @@
       rec.atualizadoEm = iso(opts.agora);
       if (!rec.criadoEm) rec.criadoEm = rec.atualizadoEm;
       if (opts.por != null) rec.por = str(opts.por).slice(0, 60);
+      /* ⚠ O CORTE DOS MOTIVOS DA IA — A ÚNICA PORTA POR ONDE ELE PASSA.
+         Medido na fase 3: 20 planos com motivo da IA em cada nó enchiam
+         sozinhos os 900 KB da entidade e nenhuma linha de base cabia mais
+         (100 recusas). A régua e o porquê estão no `CronoPlan.cortarMotivos`;
+         aqui fica o lugar: TODO plano gravado passa por este ponto, e por
+         isso o corte mora aqui e não em cada chamador. Corta o TEXTO, nunca a
+         rede nem a marca de origem. O recado vai no `msg` junto com o do
+         espaço (o app já mostra os dois: app.js, `_cronoGravarPlano` e
+         `cronoIniciarPlano`). */
+      var cm = P.cortarMotivos(rec.cronograma);
       var b = bytesPlano(rec);
       if (b > TETO_PLANO) return falha(msgTetoPlano(rec, b), { codigo: "teto-plano", bytes: b });
       var r = abrirEspaco(lista, rec, rec.atualizadoEm);
       if (!r.ok) return r;
       r.plano = rec;
+      r.motivos = cm;
+      if (cm.msg) r.msg = r.msg ? (r.msg + " " + cm.msg) : cm.msg;
       return r;
     },
 

@@ -676,8 +676,11 @@
        reescreve: etapa, total e datas de etapa ficam os do caminho de sempre.
        `vivo` = o `_vaosExec` que o próprio `estimar` usou para a duração das
        etapas (null com o modo desligado) — o aviso compara com ELE, nunca com
-       uma segunda conta do vão. */
-    _arvore: function (orc, r, ctx, vivo) {
+       uma segunda conta do vão.
+       `cong` = `{vaos}` quando o orçamento está APROVADO e a duração veio da
+       GRAVADA (`congeladoPorAprovacao`): o vão de hoje está aí só para o
+       recado dizer os dois números. */
+    _arvore: function (orc, r, ctx, vivo, cong) {
       var self = this, params = r.params, cron = (orc && orc.cronograma) || {}, ex = cron.exec || {};
       var agEt = cron.duracoesAgente || {}, durEt = cron.duracoes || {}, rede = ex.rede === true;
       var nos = this.eap(orc, ctx.calc), P = this._preparar(orc, params, nos, false), cal = this.calendario(r);
@@ -754,14 +757,44 @@
           if (rede && !et.marco) {
             /* o vão da MESMA conta que deu a duração da etapa acima (params
                GRAVADOS, sem override — é o que o materializar grava); só sem
-               `vivo` (a conta ao vivo falhou) cai no desta árvore */
-            var x0 = vivo && vivo.grupos[gi], S0 = x0 ? x0.bruto : g.rede.S;
+               `vivo` (a conta ao vivo falhou) cai no desta árvore. No aprovado
+               a duração NÃO veio do vão, mas o vão de hoje veio junto (`cong`)
+               para o recado poder dizer os dois números. */
+            var vR = vivo || (cong && cong.vaos), x0 = vR && vR.grupos[gi], S0 = x0 ? x0.bruto : g.rede.S;
             /* ⚠ o número do recado é o GRAVADO em `duracoes`, nunca `et.duracao`:
                com o cálculo ao vivo (A1) `et.duracao` já é o vão, e o recado
                sairia "a duração gravada (12 dias) não é a das subetapas (12)" */
             var grav = own(durEt, n.id) && num(durEt[n.id]) > 0 ? num(durEt[n.id]) : null;
+            /* ⚠ A MARCA DO CONGELAMENTO VEM ANTES DE SEPARAR OS CASOS. Ela
+               estava dentro do `else if (cong)`, e por isso a etapa aprovada
+               cujas subetapas são TODAS marco (vão zero) não recebia
+               `congelado` — a tela caía no ramo antigo e o `title` do campo
+               voltava a dizer "a duração desta etapa é o vão das subetapas
+               (3 dias). Edite as subetapas abaixo, ou desligue 'Detalhar o
+               prazo pelas subetapas'": duas portas fechadas num aprovado
+               (editar subetapa não muda mais a data, e desligar o interruptor
+               é recusado pela trava de aprovação). Achado na revisão de
+               11/09/2026, executando o motor. */
+            if (cong) { n.congelado = true; n.vaoHoje = S0; }
             if (!(S0 > 0)) avisos.push({ tipo: "sem-vao", etapaId: n.id,
               msg: "Etapa " + n.numero + ": todas as subetapas são marco — a duração da etapa não vem delas." });
+            /* ⚠ APROVADO: esta tela mostra a data APROVADA (a gravada), e ela
+               não muda. O recado só existe quando os DOIS números divergem —
+               dizer "aprovado com 9, as subetapas dão 9" é ruído. Nada de
+               "salve o orçamento": a trava do aprovado recusa o salvar, e
+               mandar por uma porta fechada é o que faz a pessoa procurar
+               saída errada. A porta é a revisão (ou, com obra, o plano de
+               execução dela). */
+            else if (cong) {
+              /* a marca `congelado`/`vaoHoje` já subiu (ver o ⚠ acima): a TELA
+                 precisa dela para não rotular a linha "a duração desta etapa é
+                 o vão das subetapas (6 dias)" enquanto o ícone diz "vão de 15
+                 dia(s)" — dois números discordando na mesma linha, num campo
+                 que mostra o 6. */
+              if (num(et.duracao) !== S0) avisos.push({ tipo: "aprovado-gravado", etapaId: n.id, duracao: grav, duracaoUsada: et.duracao, vao: S0,
+                msg: "Etapa " + n.numero + ": esta é a data aprovada (" + (grav != null ? "gravada, " + grav + " dias" : "sem duração gravada — a etapa vale a estimativa por categoria, " + et.duracao + " dias") +
+                  "); as subetapas hoje dariam " + S0 + " dias. O orçamento aprovado não muda — nem aqui, nem na proposta, nem para os outros aparelhos." });
+            }
             else if (!(own(agEt, n.id) && agEt[n.id] === "subetapas" && num(durEt[n.id]) === S0))
               avisos.push({ tipo: "nao-materializado", etapaId: n.id, duracao: grav, vao: S0,
                 msg: "Etapa " + n.numero + ": a duração gravada no orçamento (" + (grav != null ? grav + " dias" : "nenhuma") +
@@ -887,6 +920,15 @@
       var out = { mudou: false, gravadas: [], apagadas: [], avisos: [], mudancas: [], semVao: [], restauradas: [] };
       var cron = orc && orc.cronograma;
       if (!cron || typeof cron !== "object") return out;
+      /* ⚠ APROVADO NÃO SE REGRAVA — nem por aqui (12/09/2026). No aprovado a
+         data é a GRAVADA (`congeladoPorAprovacao`): materializar sobre ele
+         trocaria no DISCO a entrega que já foi ao cliente, e a tela passaria a
+         mostrar a troca (ela lê `duracoes`). Os caminhos do app já param
+         antes (persistir, o interruptor, `materializarSeExec`); esta é a
+         última porta. `_opts.simulacao` é o "e se" do `simularExec`, que
+         trabalha em CÓPIA e nunca grava. O plano de execução da obra leva a
+         marca `_planoDaObra` e passa — é ele que a obra replaneja. */
+      if (!(_opts && _opts.simulacao) && this.congeladoPorAprovacao(orc)) { out.aprovado = true; return out; }
       var ligado = !!(cron.exec && cron.exec.rede === true), k;
       /* ⚠ mapa que voltou como LISTA ([]): chave com nome posta num array
          some no JSON do salvar — o vão "gravado" não chegaria ao disco e o
@@ -1002,6 +1044,37 @@
       return { porId: porId, grupos: grupos };
     },
 
+    /* ⚠ A DATA DO ORÇAMENTO APROVADO É A GRAVADA (12/09/2026).
+       Com o vão ao vivo (adendo A1) a duração de uma etapa COM subetapas passa
+       a ser o vão calculado AGORA. Num orçamento APROVADO isso reabre pela
+       janela o que a trava de aprovação fecha na porta: qualquer coisa que
+       mexa nas subetapas por fora — reprecificação em lote, EAP do BIM,
+       vínculo do BIM, Hh da Execução, importação — mudaria a ENTREGA impressa
+       numa proposta que já virou contrato, sem ninguém salvar nada e sem
+       recado. Medido antes desta trava: a mesma aprovada dava 217 dias úteis
+       nesta versão e 124 na anterior.
+       No aprovado, então, `estimar` volta a ler `duracoes` como está GRAVADA:
+       é o número materializado no momento da aprovação (`App.orcAprovar`
+       materializa ANTES de virar o estado) e é o que o PDF já entregue, a
+       proposta, o Portal e o aparelho com a versão anterior têm na mão.
+       ⚠ O PLANO DE EXECUÇÃO DA OBRA NÃO É O APROVADO. O clone que
+       `CronoBase.orcComPlano` entrega leva a marca `_planoDaObra` e continua
+       AO VIVO — é nele que a obra se replaneja (chuva, atraso, outra
+       sequência) sem tocar na proposta. Por isso a marca é conferida aqui: o
+       clone copia `estadoAprovacao` do orçamento e, sem ela, o plano da obra
+       nasceria congelado no prazo do contrato.
+       ⚠ REGRA REPLICADA de `Orcamento.travadoPorAprovacao` (orcamento.js), de
+       propósito: o motor é PURO (I4) e roda onde o Orcamento pode não estar
+       carregado — no vm da paridade, no Node das suítes, no PDF. A réplica é
+       UMA expressão, e as duas são comparadas EXECUTANDO em
+       tools/test-crono-vivo.js sobre a mesma lista de estados: se uma mudar
+       sem a outra, a suíte reprova. */
+    congeladoPorAprovacao: function (orc) {
+      if (!orc || typeof orc !== "object") return false;
+      if (own(orc, "_planoDaObra")) return false;
+      return String((orc && orc.estadoAprovacao) || "").trim() === "aprovado";
+    },
+
     /* Para os GRAVADORES DIRETOS (os que gravam o orçamento sem passar pelo
        App.persistir). Com o cálculo ao vivo a versão nova já dá a data certa;
        isto só mantém o que fica GRAVADO igual a ela, para o aparelho com a
@@ -1053,7 +1126,11 @@
         var c = clone(orc); c.cronograma = c.cronograma || {};
         var ex = {}, k; for (k in (c.cronograma.exec || {})) ex[k] = c.cronograma.exec[k];
         ex.rede = liga; c.cronograma.exec = ex;
-        var m = self.materializar(c, { semPiso: semPiso });
+        /* `simulacao`: a CÓPIA é materializada mesmo num orçamento aprovado —
+           senão o "antes → depois" de um aprovado sairia "não muda nada", que
+           é falso. Nada daqui é gravado; o orçamento de verdade continua com a
+           data aprovada (ver `congeladoPorAprovacao`). */
+        var m = self.materializar(c, { semPiso: semPiso, simulacao: true });
         /* ⚠ SEM PISO, a cópia DESLIGA o modo depois de gravar: ligado, o
            `estimar` ao vivo (A1) recalcularia o vão COM o piso de 1 dia e a
            parcela de arredondamento sairia sempre 0 — "+4 dias, mais
@@ -1119,6 +1196,11 @@
        agente" mentia: a duração "subetapas" e a rede interna continuavam. */
     limparEdicoes: function (orc) {
       if (!orc) return null;
+      /* ⚠ no APROVADO não se limpa nada: a duração gravada É a data aprovada
+         (`congeladoPorAprovacao`), e zerá-la jogaria a entrega do contrato na
+         estimativa por categoria. A tela já para antes (cronReset olha
+         `alvo.travado`); esta é a segunda porta. O plano da obra passa. */
+      if (this.congeladoPorAprovacao(orc)) return { aprovado: true, materializacao: null };
       var c = orc.cronograma;
       if (c && typeof c === "object") {
         c.duracoes = {}; c.iaMotivos = {}; c.duracoesAgente = {}; c.predecessoras = {}; c.lags = {}; c.marcos = {};
@@ -1277,10 +1359,17 @@
          Desligado: `vivo` fica null e o laço abaixo é o de sempre (I2).
          O try: um orçamento torto que derrube a árvore não pode derrubar a
          data de etapa — cai no gravado, que é o que a versão antiga mostra. */
-      var vivo = null, agVivo = null;
+      var vivo = null, agVivo = null, cong = null;
       if (orc.cronograma && orc.cronograma.exec && orc.cronograma.exec.rede === true) {
         try { vivo = self._vaosExec(orc); } catch (eVivo) { vivo = null; }
         agVivo = (orc.cronograma.duracoesAgente && typeof orc.cronograma.duracoesAgente === "object") ? orc.cronograma.duracoesAgente : {};
+        /* ⚠ APROVADO: a data é a GRAVADA (ver `congeladoPorAprovacao`). O vão
+           de hoje continua sendo calculado — mas SÓ para o recado da tela
+           mostrar os dois números; ele não entra na duração da etapa. Com isto
+           o aprovado volta a dar exatamente o que a versão anterior do app dá,
+           que é o prazo impresso na proposta. O plano de execução da obra
+           (marca `_planoDaObra`) não entra aqui: ele é ao vivo. */
+        if (self.congeladoPorAprovacao(orc)) { cong = { vaos: vivo }; vivo = null; agVivo = null; }
       }
       // Marco = etapa de duração ZERO (entrega, vistoria, liberação). Vive num
       // mapa próprio porque um 0 em `duracoes` já significa "não estimável, cai
@@ -1418,7 +1507,7 @@
          aba já desenhava — a tela recebe `exec.erro` e diz que não conseguiu,
          em vez de sumir com o cronograma inteiro. */
       if (ctx && ctx.eap === true) {
-        try { self._arvore(orc, res, ctx, vivo); }
+        try { self._arvore(orc, res, ctx, vivo, cong); }
         catch (errArv) {
           res.atividades = null;
           res.exec = { rede: false, paralelismoSub: 0, toleranciaPP: 1, detalhe: "etapa", avisos: [],

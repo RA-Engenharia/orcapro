@@ -882,19 +882,42 @@
       /* ⚠ os avisos das subetapas vão LOGO ABAIXO do Gantt, antes da tabela:
          em cima dele custavam ~60 px e, somados à faixa e ao cartão, a 1ª barra
          caía abaixo da dobra a 1366×768 (medido: y=898). */
-      var avisos = arr(r.exec && r.exec.avisos), htmlAv = "", numEtA = {}, temAprov = false;
-      r.etapas.forEach(function (e, i) { numEtA[e.id] = i + 1; });
+      /* ⚠ O AVISO DO APROVADO VAI NA FRENTE DA FILA, E A PORTA É DECIDIDA SOBRE
+         A LISTA INTEIRA. Roteiro do defeito (medido na revisão de 11/09/2026):
+         num aprovado com 6 etapas em dependência circular, os avisos saíam
+         `ciclo × 6, comprimida, aprovado-gravado` — o do aprovado era o 8º,
+         caía no "e mais 3 aviso(s)", e como `temAprov` só era marcado DENTRO
+         do `slice(0, 5)` o botão [Criar revisão] nem era desenhado. A pessoa
+         ficava com a data divergindo, sem recado e sem porta: trava sem saída
+         é o que faz a pessoa procurar saída errada (skill dinheiro, regra 6).
+         Sem `sort` de propósito — ordenação estável não é garantida em ES5, e
+         a ordem relativa dos outros avisos é a do motor. */
+      var todosAv = arr(r.exec && r.exec.avisos), htmlAv = "", temAprov = false;
+      var avisos = [], _outros = [];
+      todosAv.forEach(function (a) {
+        if (a && a.tipo === "aprovado-gravado") { temAprov = true; avisos.push(a); }
+        else _outros.push(a);
+      });
+      avisos = avisos.concat(_outros);
+      /* a frase da obra só sai quando a faixa da obra EXISTE nesta tela: sem
+         Gestão (ou sem obra ligada) ela é desenhada como texto morto e manda
+         por um caminho que não está ali (memória "porta prometida precisa
+         existir") */
+      var _temFaixaObra = !!(d.obra && d.obra.podeGestao && arr(d.obra.obras).length);
       if (avisos.length) {
         htmlAv += '<div class="cx-aviso"><b>Subetapas:</b><ul class="cx-lista">';
         avisos.slice(0, 5).forEach(function (a) {
           var msg = a.msg;
-          /* ⚠ APROVADO não se regrava: o recado do motor ("salve o orçamento")
-             mandava a pessoa a um salvar que a trava recusa. Diz os números e
-             a porta que existe (a revisão). */
-          if (d.travado && a.tipo === "nao-materializado") {
-            temAprov = true;
-            msg = "Etapa " + (numEtA[a.etapaId] || "?") + ": este orçamento foi aprovado com " + (a.duracao != null ? a.duracao + " dias gravados" : "outra duração gravada") +
-              " nesta etapa, e as subetapas hoje dão " + a.vao + " — esta tela usa " + a.vao + ", mas aparelhos com versão anterior do app imprimem a proposta com o gravado. Aprovado não se regrava: para alinhar, crie uma revisão.";
+          /* ⚠ APROVADO: a data é a GRAVADA e ela NÃO muda (o motor congela —
+             Cronograma.congeladoPorAprovacao, 12/09/2026). O recado do motor
+             já diz os dois números; aqui entra só a PORTA que existe, porque
+             recado de trava sem saída faz a pessoa procurar saída errada.
+             Antes deste passo a tela dizia "esta tela usa o vão novo, mas os
+             outros aparelhos imprimem o gravado" — duas entregas para a mesma
+             proposta aprovada; agora é uma só, a do contrato. */
+          if (a.tipo === "aprovado-gravado") {
+            msg = String(a.msg || "") + " Para trabalhar com o prazo novo, crie uma revisão" +
+              (_temFaixaObra ? " (com obra ligada, a porta de replanejar a obra está na linha de cima)." : ".");
           }
           htmlAv += '<li>' + esc(msg) + '</li>';
         });
@@ -947,9 +970,13 @@
         if (n.tipo === "subetapa" || n.tipo === "soltos") { if (!own(folhasEt, n.etapaId)) folhasEt[n.etapaId] = []; folhasEt[n.etapaId].push(n); }
       });
       function crit(n) { return '<span class="pill" style="background:#b91c1c14;color:var(--graf-alerta,#b91c1c);font-weight:700" title="Sem folga: atrasar isto atrasa a obra inteira.">crítica</span>'; }
-      function fonte(f, extra) {
+      /* `base` troca a frase padrão da fonte mantendo o MESMO símbolo: no
+         orçamento aprovado o ∑ continua valendo (a duração veio das subetapas),
+         mas "Duração = vão das subetapas" passaria a mentir — ali o número é o
+         do dia da aprovação, não o de hoje. */
+      function fonte(f, extra, base) {
         var F = FONTES[f]; if (!F) return "";
-        return ' <span class="cx-fonte" title="' + esc(F[1] + (extra ? " — " + extra : "")) + '">' + esc(F[0]) + '</span>';
+        return ' <span class="cx-fonte" title="' + esc((base || F[1]) + (extra ? " — " + extra : "")) + '">' + esc(F[0]) + '</span>';
       }
       var html = '';
       if (o.temF) html += '<div class="flex" style="gap:8px;margin-top:12px;justify-content:flex-end;font-size:12px"><button class="btn sm ghost" data-acao="crono-abrir" data-etapa="*" data-valor="1">Expandir tudo</button><button class="btn sm ghost" data-acao="crono-abrir" data-etapa="*" data-valor="0">Recolher tudo</button></div>';
@@ -975,9 +1002,31 @@
             if (!resumo) ctrl += '<button class="cx-detsub" data-acao="crono-detalhar" data-etapa="' + esc(e.id) + '" title="Detalhar em subetapas: abre a planilha para criar uma subetapa nesta etapa. O cronograma detalha até onde a planilha detalha." aria-label="Detalhar em subetapas">+ subetapa</button>';
           }
           var numEap = (no && codNum(e.codigo) !== String(i + 1)) ? '<span class="cx-n">' + (i + 1) + '</span>' : '';
+          /* ⚠ APROVADO (12/09/2026): a duração da etapa é a data APROVADA, não
+             o vão de hoje (o motor marca `congelado`/`vaoHoje`). Sem separar os
+             dois casos, a linha que mostra 6 dias dizia "é o vão das subetapas
+             (6 dias)" e o ícone dizia "vão de 15 dia(s)" — dois números
+             discordando na mesma linha, e o da proposta não era nenhum deles. */
+          var congEt = !!(noEt && noEt.congelado);
+          /* ⚠ VÃO ZERO NÃO SE ESCREVE COMO NÚMERO. Com todas as subetapas em
+             marco o vão é 0, e "as subetapas hoje dariam 0 dias" se lê como
+             defeito do sistema — é o caso da etapa aprovada que a revisão de
+             11/09/2026 encontrou caindo no recado errado. */
+          var _vh = congEt ? (noEt.vaoHoje != null ? noEt.vaoHoje : e.duracao) : 0;
+          var vaoHojeTxt = congEt && _vh === 0
+            ? "hoje as subetapas são todas marco — elas não dão vão nenhum"
+            : "as subetapas hoje dariam " + _vh + " dia(s)";
           var fonteEt = iaM[e.id] ? ' <span title="🤖 IA: ' + esc(iaM[e.id]) + '" style="cursor:help">' + ic('ia') + '</span>'
-            : (noEt && (noEt.fonte === "usuario" || noEt.fonte === "exec" || noEt.fonte === "subetapas") ? fonte(noEt.fonte, noEt.fonte === "subetapas" ? "vão de " + (noEt.vao != null ? noEt.vao : e.duracao) + " dia(s)" : "") : "");
-          var motivoTrava = travada ? "No modo executivo a duração desta etapa é o vão das subetapas (" + e.duracao + " dias). Edite as subetapas abaixo, ou desligue “Detalhar o prazo pelas subetapas”." : "Dias úteis · 0 = marco";
+            : (noEt && (noEt.fonte === "usuario" || noEt.fonte === "exec" || noEt.fonte === "subetapas")
+              ? (congEt && noEt.fonte === "subetapas"
+                ? fonte("subetapas", vaoHojeTxt,
+                  "Duração = a data aprovada (o vão das subetapas no dia em que o orçamento foi aprovado)")
+                : fonte(noEt.fonte, noEt.fonte === "subetapas" ? "vão de " + (noEt.vao != null ? noEt.vao : e.duracao) + " dia(s)" : "")) : "");
+          var motivoTrava = congEt
+            ? "Orçamento aprovado: esta é a data aprovada (" + e.duracao + " dias) e ela não muda — nem aqui, nem na proposta. " +
+              (_vh === 0 ? "Hoje as subetapas são todas marco e não dão vão nenhum" : "As subetapas hoje dariam " + _vh + " dias") +
+              "; para trabalhar com outro prazo, crie uma revisão."
+            : (travada ? "No modo executivo a duração desta etapa é o vão das subetapas (" + e.duracao + " dias). Edite as subetapas abaixo, ou desligue “Detalhar o prazo pelas subetapas”." : "Dias úteis · 0 = marco");
           // ⚠ `<tr>` puro, data-cron-dur/data-cron-pred e a célula "codigo nome"</td>: ver a regra 1 do cabeçalho
           // ⚠ esc no id: ele vem também de pacote, backup e sincronização (dado de outro aparelho)
           html += '<tr><td class="cx-nome">' + ctrl + numEap + esc(e.codigo) + ' ' + esc(e.nome) + (e.marco ? ' <span class="pill" style="background:#0f172a14;color:#0f172a;font-weight:700;font-size:11px" title="Marco: evento sem duração (entrega, vistoria, liberação).">◆ marco</span>' : '') + '</td>' +
