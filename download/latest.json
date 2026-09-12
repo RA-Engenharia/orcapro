@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.74",
+  "versao": "1.2.75",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.74.zip",
-  "notas": "Novidades: o cronograma detalha etapa, subetapa e servico, com Gantt, PDF e MS Project por subetapa e a opcao de o prazo sair das subetapas. A obra ganha cronograma proprio: linha de base, plano de execucao e o previsto x realizado na ficha da obra e no menu Canteiro. A IA passa a editar planilha, cronograma e textos da proposta, sempre com uma tela de conferencia antes de gravar. Correcao: com BDI no preco final e etapa opcional, o valor total e os adicionais da proposta saiam trocados; e o servidor local so aceita pedido de atualizacao, de backup e do Revit vindo do proprio computador.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.74/OrcaPRO-IA-Instalador-v1.2.74.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.75.zip",
+  "notas": "Novidades: entrar pelo celular ficou mais simples. A tela de acesso pede so o e-mail (ou usuario) e a senha; a senha tem um botao para conferir o que foi digitado; o celular passa a oferecer a senha salva; e o campo da empresa, que so serve para criar conta nova, saiu da frente de quem so quer entrar. Quem ja usa o OrcaPRO no computador entra no celular com a MESMA conta, sem criar outra. Correcao: no iPhone a tela nao salta mais quando se toca no campo para digitar.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.75/OrcaPRO-IA-Instalador-v1.2.75.exe"
 }

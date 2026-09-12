@@ -804,13 +804,64 @@
             '<div class="slogan">Entre ou crie sua conta para começar.</div></div>' +
             '<div id="login-form">' +
             chips +
-            '<div class="field"><label>Empresa / Escritório</label><input id="lg-empresa" placeholder="Ex.: Studio Arq + Eng"></div>' +
-            '<div class="field"><label>E-mail ou usuário</label><input id="lg-email" type="text" value="' + String(sugLogin).replace(/"/g, "&quot;") + '" placeholder="voce@empresa.com (ou seu login de usuário)"></div>' +
-            '<div class="field"><label>Senha</label><input id="lg-senha" type="password" placeholder="••••••"></div>' +
+            /* ⚠ ENTRAR PELO CELULAR ERA O QUE MAIS GERAVA CHAMADO (11/09/2026).
+               Três coisas faziam a pessoa errar sem saber por quê, e as três
+               só aparecem no telefone:
+
+               1. O TECLADO DO CELULAR CAPITALIZA E CORRIGE. Um login em letra
+                  minúscula chega ao campo com a inicial maiúscula, antes mesmo
+                  de a pessoa sair dele. O login é normalizado no Auth
+                  (trim+toLowerCase), então isso não derrubava a entrada — mas
+                  ela VIA o próprio usuário escrito errado na tela e concluía
+                  que o sistema não a reconhecia. autocapitalize e autocorrect
+                  desligados param de sujar o que ela digitou.
+               2. SENHA ÀS CEGAS. Num teclado de vidro não há tato: erro de uma
+                  letra é invisível, e a única resposta é "senha inválida". O
+                  olho resolve — e é por isso que ele existe em todo app de
+                  banco.
+               3. O GERENCIADOR DE SENHAS NÃO PREENCHIA. Sem <form> e sem
+                  autocomplete username/current-password, nem o iPhone nem o
+                  Android ofereciam a senha salva; a pessoa tinha de lembrar e
+                  digitar à mão toda vez.
+
+               ⚠ O <form> tem onsubmit que CANCELA o envio: sem isso a página
+                 recarregaria (GET com os campos na URL — a senha iria parar no
+                 histórico do navegador). Ele existe para o teclado do celular
+                 mostrar "Ir" e para o gerenciador de senhas reconhecer o
+                 conjunto, não para navegar. */
+            '<form id="lg-form" onsubmit="return false" autocomplete="on">' +
+            '<div class="field"><label>E-mail ou usuário</label><input id="lg-email" type="text" name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" value="' + String(sugLogin).replace(/"/g, "&quot;") + '" placeholder="voce@empresa.com (ou seu login de usuário)"></div>' +
+            '<div class="field"><label>Senha</label><div class="lg-senha-wrap">' +
+              '<input id="lg-senha" type="password" name="password" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="••••••">' +
+              /* ⚠ type=button: dentro de um <form>, um <button> sem type é
+                 submit — o olho enviaria o formulário em vez de mostrar a senha */
+              '<button type="button" class="lg-olho" data-acao="ver-senha" aria-label="Mostrar a senha" title="Mostrar a senha">' + (typeof Icones !== 'undefined' ? Icones.get('olho', 17) : 'ver') + '</button>' +
+            '</div></div>' +
             '<button class="btn primary" style="width:100%" data-acao="entrar">Entrar / Criar conta</button>' +
+            /* ⚠ A EMPRESA SAIU DO TOPO E VIROU OPCIONAL. Ela só é usada por
+               Auth.registrar — para quem JÁ tem conta o campo não faz nada, e
+               mesmo assim era o primeiro da tela: no celular, o primeiro
+               obstáculo entre a pessoa e o login era um campo que não servia
+               para ela. Agora fica depois do botão, aberto só por quem vai
+               criar conta. Quem não abrir cria com "Minha Empresa", que é o
+               que App.entrar já usava quando o campo vinha vazio, e o nome se
+               corrige depois em Cadastro da Empresa. */
+            '<details class="lg-nova"><summary>Primeira vez aqui? Criar conta da empresa</summary>' +
+              '<div class="field" style="margin-top:8px"><label>Empresa / Escritório</label><input id="lg-empresa" autocomplete="organization" placeholder="Ex.: Studio Arq + Eng"></div>' +
+              '<p class="muted" style="font-size:12px;margin:0">Preencha só se esta for a primeira conta da sua empresa. Para entrar numa conta que já existe, use o e-mail ou o usuário acima.</p>' +
+            '</details>' +
+            '</form>' +
+            /* ⚠ O RODAPÉ DIZIA "Conta nova é criada automaticamente no 1º
+               acesso (modo demo PRO)" — jargão de dentro de casa ("modo demo
+               PRO" não quer dizer nada para quem usa), e desde que a caixa
+               "Primeira vez aqui?" existe, o mesmo recado apareceria duas
+               vezes na mesma tela. No lugar entra a dúvida que a pessoa
+               realmente tem quando abre no telefone: se precisa de outra
+               conta. Não precisa — é a mesma do computador, e é isso que os
+               relatos de "não consigo entrar pelo celular" costumavam ser. */
             (contas.length
               ? '<p class="muted mt" style="font-size:12px;text-align:center"><a href="#" data-acao="esqueci-senha" style="color:var(--aco)">Esqueci a senha</a> · seus orçamentos ficam salvos neste navegador</p>'
-              : '<p class="muted mt" style="font-size:12px;text-align:center">Conta nova é criada automaticamente no 1º acesso (modo demo PRO).</p>') +
+              : '<p class="muted mt" style="font-size:12px;text-align:center">Já usa o OrçaPRO no computador? Entre com o <b>mesmo e-mail (ou usuário) e senha</b> — não precisa criar outra conta.</p>') +
             '</div>' +
           '</div></div>' +
         '</div>';

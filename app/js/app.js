@@ -1608,6 +1608,7 @@
         case "cp-salvar-insumo": this._cpSalvarInsumoInline(); break;
         case "cp-voltar-busca": this._cpBuscar(this._cp && this._cp.busca); break;
         case "entrar": this.entrar(); break;
+        case "ver-senha": this._verSenha(t); break;
         case "logout":
           // Na VITRINE (?demo=1): sair = recarregar a página LIMPA (sem ?demo=1). Sem isso,
           // (a) o seed assíncrono da OBRA TESTE poderia gravar no tenant errado após o logout
@@ -2226,6 +2227,40 @@
         } }
       ]);
     },
+    /* Mostra/esconde a senha digitada. No celular é a diferença entre errar
+       três vezes sem saber onde e ver a letra que saiu torta — num teclado de
+       vidro não existe tato, e a única resposta que o sistema dava era "senha
+       inválida".
+       ⚠ VOLTA A ESCONDER SOZINHA. A senha não pode ficar aberta na tela de
+       quem se distraiu: quem está com o celular na obra o entrega para o
+       encarregado, mostra a tela para o cliente, ou simplesmente o apoia na
+       mesa. O olho é para conferir, não para deixar aberto. */
+    _verSenha: function (botao) {
+      var i = UI.el("lg-senha");
+      if (!i) return;
+      var abrindo = i.type === "password";
+      i.type = abrindo ? "text" : "password";
+      if (botao) {
+        var rot = abrindo ? "Esconder a senha" : "Mostrar a senha";
+        botao.setAttribute("aria-label", rot);
+        botao.setAttribute("title", rot);
+        try {
+          if (typeof Icones !== "undefined") botao.innerHTML = Icones.get(abrindo ? "olhoFechado" : "olho", 17);
+        } catch (eI) {}
+      }
+      clearTimeout(this._verSenhaT);
+      if (abrindo) {
+        var self = this;
+        this._verSenhaT = setTimeout(function () {
+          var el = UI.el("lg-senha");
+          /* só fecha se ainda estiver aberta E a tela for a de login: sem isso
+             um setTimeout pendente mexeria num campo de outra tela */
+          if (el && el.type === "text" && self.tela === "login") self._verSenha(document.querySelector(".lg-olho"));
+        }, 15000);
+      }
+      try { i.focus(); } catch (eF) {}
+    },
+
     entrar: function () {
       var empresa = (UI.el("lg-empresa") || {}).value || "Minha Empresa";
       var email = (UI.el("lg-email") || {}).value;

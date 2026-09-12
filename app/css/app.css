@@ -159,6 +159,14 @@
   --t-med:   17px;   /* subtítulo, valor de indicador */
   --t-tit:   20px;   /* título de tela e de modal */
   --t-hero:  32px;   /* o número grande do painel e o nome da obra no palco de Obras — só os dois */
+  /* ⚠ ESTE NÃO É UM TAMANHO DE DESIGN, É UM LIMIAR DO SAFARI. Campo de
+     formulário com menos de 16px faz o Safari do iPhone DAR ZOOM sozinho ao
+     receber foco: a tela salta, o resto do formulário sai de vista, e a
+     pessoa relata que "desconfigurou" — foi uma das causas da dificuldade de
+     entrar pelo celular (11/09/2026). O --t-base é 15px, meio pixel abaixo do
+     que basta para disparar o zoom. Use SÓ em campo que se digita no celular;
+     para texto, a régua acima continua mandando. */
+  --t-campo-toque: 16px;
   /* ⚠ REGUA SEPARADA, E POR UM MOTIVO TECNICO. Dentro de um <svg> com
      viewBox, "px" nao e pixel de tela: o desenho e escalado pela largura do
      cartao. O eixo do fluxo de caixa mede 440 unidades e e desenhado em
@@ -1168,10 +1176,42 @@ input[type="checkbox"], input[type="radio"] { flex: 0 0 auto; }
 .login-card .brand .nome .ia { display: inline-block; margin-left: 4px; padding: 1px 6px; border-radius: var(--raio-sm); background: #15803d; color: #fff; font-size: var(--t-peq); font-weight: var(--p-forte); letter-spacing: .5px; vertical-align: 2px; }
 .login-card .brand .slogan { color: var(--texto-fraco); font-size: var(--t-base); }
 .login-card .field input { padding: 11px 13px; }
+
+/* ---- Entrar pelo celular (11/09/2026) ----
+   O olho da senha e a caixa de criar conta. ⚠ O campo precisa de padding à
+   direita do tamanho do botão: sem isso a senha passa POR BAIXO do olho e a
+   pessoa não lê justamente o que o olho existe para mostrar. */
+.lg-senha-wrap { position: relative; }
+.lg-senha-wrap input { width: 100%; padding-right: 44px; }
+.lg-olho {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  /* ⚠ 40x40: alvo de toque de dedo. Ícone de 17px num botão de 20px é o que
+     faz a pessoa errar o clique três vezes e desistir. */
+  width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;
+  background: none; border: 0; padding: 0; cursor: pointer;
+  color: var(--texto-fraco); border-radius: var(--raio-sm);
+}
+.lg-olho:hover { color: var(--texto); background: var(--surface-2, rgba(127,127,127,.12)); }
+.lg-olho:focus-visible { outline: 2px solid var(--aco); outline-offset: 1px; }
+.lg-nova { margin-top: 14px; }
+.lg-nova > summary {
+  cursor: pointer; font-size: var(--t-peq); color: var(--texto-fraco);
+  /* alvo de toque: no celular um <summary> de uma linha é difícil de acertar */
+  padding: 8px 2px; list-style: none; text-align: center;
+}
+.lg-nova > summary::-webkit-details-marker { display: none; }
+.lg-nova > summary:hover { color: var(--aco); }
+
 @media (max-width: 860px) {
   .login-wrap { grid-template-columns: 1fr; }
   .login-hero { display: none; }
   .login-formside { padding: 28px 22px; align-items: flex-start; padding-top: 56px; }
+  /* ⚠ 16px NO CAMPO, E NÃO É ESTÉTICA: abaixo de 16px o Safari do iPhone DÁ
+     ZOOM sozinho ao focar o campo, a tela salta, e a pessoa perde de vista o
+     resto do formulário. É o comportamento que faz "o site desconfigurar"
+     quando se vai digitar a senha. */
+  .login-card .field input { font-size: var(--t-campo-toque); padding: 13px 13px; }
+  .lg-senha-wrap input { padding-right: 46px; }
 }
 
 /* ========== Mobile / Tablet (app instalável no celular) ========== */
