@@ -73,9 +73,44 @@
        Uma obra de um ano atravessa uns 12 feriados; o prazo saía quase duas
        semanas e meia otimista. Quem trabalha em feriado desmarca na aba, e a
        tela conta quantos foram descontados para o número ser conferível. */
+    /* ⚠ `opcionaisNoPrazo` — A ETAPA OPCIONAL NO PRAZO (12/09/2026, defeito D4).
+       Ligado (o padrão DESTE MOTOR) é o comportamento de sempre: a etapa
+       marcada `opcional` entra na duração, na rede e no caminho crítico.
+       Desligado, ela sai do prazo: fica no array com `duracao: 0` e
+       `foraDoPrazo: true`, o elo padrão a PULA, e o total passa a ser o do
+       escopo CONTRATADO — com `totalDiasComOpcionais`/`dataFimComOpcionais` ao
+       lado, para a tela mostrar os dois números.
+
+       POR QUE ISSO É UM DEFEITO. O preço já separa o opcional
+       (`precoObrigatorio`, js/orcamento.js:1046), a linha de base já pergunta
+       quais opcionais entram (js/cronoplan.js:876) e o PDF já marca "opcional"
+       (js/cronopdf.js:373). Só a DATA não separava: a entrega impressa na
+       proposta contava um escopo que o "Valor total" não cobra. MEDIDO numa
+       fixture com 1 etapa opcional: 70 dias úteis com ela, 31 sem — e ela saía
+       no `caminhoCritico`.
+
+       ⚠ POR QUE O MOTOR NASCE LIGADO E NÃO DESLIGADO. A decisão de produto é o
+       contrário — o prazo padrão é o do escopo contratado, opcional FORA —, e
+       o blast radius dela é zero na base da RA: MEDIDO em 12/09/2026 nos 34
+       arquivos de OrcaPRO-Backups, 0 de 51 orçamentos distintos têm
+       `e.opcional`. ⚠ A RÉGUA DA CONTAGEM VAI JUNTO porque foi ela que mudou o
+       número: 51 é a contagem por md5 do JSON inteiro do orçamento, que é o
+       que tools/test-crono-honestidade.js (bloco 6) imprime; por `id` dariam
+       22. Uma revisão anterior escreveu "55" aqui de cabeça — número escrito de
+       cabeça é número errado, e num arquivo de regras ele é obedecido. Mas o padrão do
+       MOTOR não pode carregar essa decisão: `tools/test-cronograma-paridade.js`
+       compara toda a saída com o master b8907ef em 15 fixtures + 500 gerados
+       (a fixture `bdi-final-negativo-opcional-estouro` e ~8% dos gerados TÊM
+       etapa opcional), e mudar o número no caminho padrão é exatamente o que a
+       trava existe para impedir nas 38 instalações. Então o interruptor nasce
+       aqui no número de hoje e o PADRÃO DE PRODUTO é da fiação: quem monta a
+       tela grava `orc.cronograma.params.opcionaisNoPrazo = false`. Fora da
+       base da RA vale o precedente do `descontarFeriados` logo abaixo — nasce
+       ligado na tela, com o motivo escrito e os dois números conferíveis. */
     DEFAULTS: {
       equipes: 1, diasUteisSemana: 5, custoDiaEquipe: 700, paralelismo: 0.15, dataInicio: null,
-      descontarFeriados: true, feriadosFacultativos: true, feriadosExtras: null
+      descontarFeriados: true, feriadosFacultativos: true, feriadosExtras: null,
+      opcionaisNoPrazo: true
     },
 
     classificar: function (desc) {
@@ -235,7 +270,28 @@
       var valores = opts.valores || null;   // {etapaId: valor} — sem isso, o custo da etapa
       var y0 = r.dataInicio.getFullYear(), m0 = r.dataInicio.getMonth();
       function bal(d) { return (d.getFullYear() - y0) * 12 + (d.getMonth() - m0); }
-      var nMax = Math.max(1, bal(r.dataFim) + 1), lista = [], i;
+      /* ⚠ A RÉGUA VAI ATÉ A ÚLTIMA ETAPA, NÃO ATÉ O FIM CONTRATADO (12/09/2026).
+         Com `opcionaisNoPrazo` desligado a etapa opcional tem duração 0 e o
+         `maiorFim` a tira do `totalDias` — então a data dela pode cair DEPOIS
+         do último mês da régua, e o laço abaixo só soma quando o mês existe
+         (`if (lista[bm])` / `if (lista[bi])`). Resultado MEDIDO na fixture
+         `rNia` de tools/test-crono-honestidade.js (opcional fixada em
+         01/12/2026): total DECLARADO R$ 82.400,00, soma das COLUNAS
+         R$ 39.200,00 — R$ 43.200,00 (52,4% do orçamento) sumiam CALADOS, a
+         curva fechava em 47,57% e a linha do desembolso saía com total próprio
+         e meses [0,0]. Não precisa de restrição: um "1+60" de espera na coluna
+         "Depende de" faz igual.
+         ⚠ E NÃO SE USA O CLAMP DO `_periodosCamada`: empilhar o valor no
+         último mês contratado troca um buraco por uma mentira (dinheiro num mês
+         em que não há serviço). Os meses entre o fim contratado e o opcional
+         saem com 0 valor e 0 dia útil, que é a verdade.
+         ⚠ SÓ COM `r.opcionais` — a chave nasce apenas com o interruptor
+         desligado E etapa opcional no orçamento. No caminho de sempre esta
+         linha devolve `r.dataFim` e a saída sai bit a bit igual (a paridade
+         com o master b8907ef cobra isso). */
+      var fimReg = r.dataFim;
+      if (r.opcionais) r.etapas.forEach(function (e) { if (e.dataFim && e.dataFim > fimReg) fimReg = e.dataFim; });
+      var nMax = Math.max(1, bal(fimReg) + 1), lista = [], i;
       var MES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
       for (i = 0; i < nMax; i++) {
         var dRef = new Date(y0, m0 + i, 1);
@@ -243,6 +299,26 @@
           rotulo: MES[dRef.getMonth()] + "/" + String(dRef.getFullYear()).slice(2),
           valor: 0, equipeDias: 0, diasUteis: 0, frentes: 0, etapas: [] });
       }
+      /* ⚠ AQUI O DIA A DIA FICA, E ISSO FOI MEDIDO (12/09/2026). A auditoria
+         propôs trocar este laço (e o das etapas, abaixo) pela tabela
+         `Cronograma.calendario`, como se fez no `estimar`. FEITO E MEDIDO —
+         e a troca sai MAIS LENTA, em todas as cinco fixturas:
+
+           periodos, ms          dia a dia   pela tabela
+           8 etapas · 1.390 d ..... 1,06 ....... 2,22
+           30 etapas · 1.539 d .... 1,77 ....... 2,10
+           50 etapas · 1.706 d .... 1,33 ....... 2,71
+           100 etapas paralelas ... 2,23 ....... 2,66   (diaUtil 8.787 → 88)
+
+         Contar chamadas de `diaUtil()` NÃO é medir: mesmo com 100× menos
+         chamadas o relógio subiu. O motivo é a diferença entre os dois
+         lugares. No `estimar`, cada `addDiasUteis` refazia a varredura DESDE
+         O DIA 0, três vezes por etapa — a tabela amortiza isso (é quadrático
+         virando linear). Aqui cada etapa anda só o PRÓPRIO trecho, uma vez:
+         não há nada para amortizar, e `cal.dia(k)` (chamada de closure +
+         guarda + um `new Date` por dia) custa mais do que andar o dia.
+         Antes de trocar isto, meça — tools/test-crono-desempenho.js, bloco 4,
+         imprime os dois números. */
       // dias úteis de cada mês DENTRO da obra (denominador do histograma)
       var cur = new Date(r.dataInicio.getTime());
       while (cur < r.dataFim) {
@@ -261,6 +337,7 @@
           if (lista[bm]) { lista[bm].valor += v; col[bm] += v; if (lista[bm].etapas.indexOf(e.id) < 0) lista[bm].etapas.push(e.id); }
           return;
         }
+        // ⚠ pela mesma medição do ⚠ lá em cima, este laço também fica dia a dia
         var vDia = v / dias, edDia = (e.equipeDias || 0) / dias;
         var d = new Date(e.dataInicio.getTime()), contados = 0, giros = 0;
         while (contados < dias && giros++ < dias * 8 + 400) {
@@ -483,6 +560,98 @@
       return Math.max(0, Math.min(0.9, n || 0));
     },
 
+    /* O CONTEXTO DA ÁRVORE — `{nos, P}` (a EAP achatada mais o `_preparar`
+       dela), memoizado DENTRO DE UMA CHAMADA de `estimar`.
+
+       POR QUE EXISTE (12/09/2026). Com `exec.rede` ligado + `ctx.eap`,
+       `eap()` e `_preparar()` rodavam DUAS vezes por `estimar`: o `_vaosExec`
+       monta a árvore inteira para achar o vão da rede interna e o `_arvore` a
+       monta de novo logo em seguida. MEDIDO no motor de 11/09: a 3.000
+       serviços o `estimar(eap+rede)` custava 267,06 ms; a 11.250, 1.153 ms —
+       com metade da conta jogada fora.
+
+       ⚠ NUNCA ENTRE CHAMADAS. O memo é uma lista LOCAL, criada em cada
+       `estimar` e esquecida no fim. `estimar` é chamado com `override`
+       diferente (o Last Planner passa `obra.inicio`; um cenário passa 3
+       equipes), e o `_vaosExec` usa params GRAVADOS DE PROPÓSITO — o aparelho
+       com a versão anterior lê o vão MATERIALIZADO, que não sabe de override.
+       Memo que atravessasse chamadas devolveria a árvore de outro cenário.
+
+       ⚠ A CHAVE CARREGA OS PARAMS POR VALOR — menos os do CALENDÁRIO, que são
+       lista preta declarada (ver `PARAMS_CALENDARIO` abaixo). Chavear por "os
+       params que hoje importam" apodrece calada no dia em que `_preparar`
+       passar a ler mais um: a conta velha voltaria com cara de nova. `orc` e
+       `calc` entram por IDENTIDADE — dois objetos iguais em conteúdo só PERDEM
+       o memo (refazem a conta), nunca devolvem a conta de outro orçamento.
+       A invariante que isto não pode quebrar está executada em
+       tools/test-crono-desempenho.js, bloco 5 (o vão sai dos params gravados,
+       a folha sai dos params do override).
+
+       ⚠ OS NÓS SÃO ESCRITOS pelo `_arvore` (ele pendura duração, data, cor e
+       fonte em cada nó). Quem viesse DEPOIS dele na mesma chamada receberia
+       os nós já preenchidos — hoje não há ninguém: o `_vaosExec` roda ANTES e
+       só lê. E AGORA A ÁRVORE É COMPARTILHADA entre duas entradas do memo
+       (ver os DOIS NÍVEIS abaixo), o que continua seguro pelo MESMO motivo: só
+       o `_arvore` escreve, e ele roda uma vez, por último. Quem acrescentar um
+       segundo escritor precisa reler esta linha antes de qualquer outra. */
+    _contexto: function (mem, orc, params, calc, semPiso) {
+      var ch = this._chaveParams(params), i, e, nos = null;
+      semPiso = !!semPiso;
+      calc = calc || null;
+      if (mem) for (i = 0; i < mem.length; i++) {
+        e = mem[i];
+        if (e.orc !== orc || e.calc !== calc) continue;
+        /* ⚠ DOIS NÍVEIS (12/09/2026). A ÁRVORE não depende de `params`:
+           `eap(orc, calc)` lê etapas, subetapas e itens, e `calc` muda só a
+           NUMERAÇÃO. Com um nível só, qualquer override fazia chave nova e a
+           árvore inteira nascia DE NOVO. MEDIDO num orçamento de 20 etapas ·
+           160 subetapas · 1.280 serviços (modo executivo + ctx.eap, média de
+           20 com aquecimento): sem override eap()=1×, _preparar()=1×,
+           16,56 ms; com `{dataInicio}` eap()=2×, _preparar()=2×, 25,12 ms
+           (+52%). E `{dataInicio}` é o override do PLANO DE EXECUÇÃO DA OBRA —
+           js/cronoplan.js (congelar a linha de base), js/app.js e
+           js/cronosaude.js passam exatamente esse. Agora a árvore é
+           reaproveitada por (orc, calc) e só o `_preparar` refaz. */
+        nos = e.nos;
+        if (e.semPiso === semPiso && e.ch === ch) return e;
+      }
+      if (!nos) nos = this.eap(orc, calc);
+      e = { orc: orc, calc: calc, semPiso: semPiso, ch: ch, nos: nos, P: this._preparar(orc, params, nos, semPiso) };
+      if (mem) mem.push(e);
+      return e;
+    },
+
+    /* ⚠ OS PARAMS QUE SÃO DO CALENDÁRIO, E NUNCA DO TRABALHO (12/09/2026).
+       Lista PRETA declarada, usada só na chave do memo do `_contexto`. O que o
+       `_preparar` realmente lê é `equipes`, `paralelismo` e `custoDiaEquipe`
+       (este por baixo, no `_itemEd` → `estimarItem`), mais `exec.paralelismoSub`,
+       que nem está em `params`. Estes seis mexem em DATA, não em quanto
+       trabalho cada folha tem — e mantê-los na chave fazia o override mais
+       comum do produto (`{dataInicio}`) perder o memo inteiro por nada: MEDIDO,
+       a linha de base de 1.280 serviços caía de 21,53 para 29,28 ms (+36%) só
+       por causa disso.
+       ⚠ LISTA PRETA APODRECE CALADA, e por isso ela NÃO fica só escrita:
+       tools/test-crono-desempenho.js (bloco 5b) roda `_preparar` com DOIS
+       valores diferentes de CADA um destes seis, sobre a MESMA árvore, e exige
+       saída idêntica. No dia em que o `_preparar` passar a ler um deles aquele
+       assert cai — e a correção é tirar o nome DAQUI, nunca "ajustar" o teste. */
+    PARAMS_CALENDARIO: ["dataInicio", "diasUteisSemana", "descontarFeriados", "feriadosFacultativos", "feriadosExtras", "opcionaisNoPrazo"],
+
+    /* Os params em texto, chaves em ordem — a chave do memo acima, MENOS os do
+       calendário (⚠ acima). O tipo entra junto do valor: sem ele `1` e `"1"`
+       (ou `null` e `"null"`) dariam a mesma chave, e o cenário do chamador
+       comeria o do orçamento. */
+    _chaveParams: function (p) {
+      var ks = [], out = [], k, i, v, fora = this.PARAMS_CALENDARIO;
+      for (k in p) if (own(p, k) && fora.indexOf(k) < 0) ks.push(k);
+      ks.sort();
+      for (i = 0; i < ks.length; i++) {
+        v = p[ks[i]];
+        out.push(ks[i] + "=" + (v && typeof v === "object" ? "o:" + JSON.stringify(v) : typeof v + ":" + String(v)));
+      }
+      return out.join("");
+    },
+
     /* Agrupa a árvore por etapa e roda a REDE INTERNA de cada etapa com
        folhas. `semPiso` = a mesma rede sem o arredondamento (duração
        fracionária, sem o mínimo de 1 dia) — é o que separa, no "antes →
@@ -492,6 +661,34 @@
       var subDur = sub.duracoes || {}, subMarco = sub.marcos || {}, subEq = sub.equipes || {}, subAg = sub.agente || {};
       var parSub = this._parSub(orc, params), eqPadrao = num(params && params.equipes) > 0 ? num(params.equipes) : 1;
       var grupos = [], gE = null, gF = null, infos = [];
+      /* ⚠ TODAS as folhas do orçamento, com o número EAP e a etapa de cada uma
+         — é o que deixa o `_redeInterna` DIZER por que recusou um elo. Ele roda
+         por etapa e só enxerga as folhas da própria; sem este mapa ele não tem
+         como distinguir "a subetapa 2.1 é de outra etapa" de "essa subetapa não
+         existe mais", e as duas saíam iguais: caladas (defeito D6). */
+      var folhaDe = {};
+      nos.forEach(function (n) {
+        if (n.tipo === "subetapa" || n.tipo === "soltos") folhaDe[n.id] = { numero: n.numero, nome: n.nome, etapaIdx: n.etapaIdx, etapaId: n.etapaId };
+      });
+      /* ⚠ E O ÍNDICE DE **TODOS** OS NÓS, PREGUIÇOSO (12/09/2026). Sem ele,
+         `folhaDe` só conhece folhas e TUDO que não é folha caía no motivo
+         `inexistente`: EXECUTADO com `sub.predecessoras = {b1:["e2"], b2:["j3"]}`
+         — um id de ETAPA e um id de SERVIÇO, os dois EXISTINDO no orçamento —
+         os dois produziam "aponta para uma subetapa que não existe mais". A
+         pessoa digitou um número EAP que está na tela e o sistema disse que ele
+         não existe: é o "erro educado esconde defeito" com o diagnóstico
+         trocado justamente para quem acertou o número.
+         ⚠ PREGUIÇOSO DE PROPÓSITO: são 12.250 nós num orçamento de escala
+         executiva, e elo recusado é raro (0 dos 51 orçamentos reais têm
+         `sub.predecessoras` gravado). Montar o mapa em toda chamada pagaria uma
+         passada extra sobre a árvore inteira para um caso que quase nunca
+         acontece; a função monta UMA vez, na primeira recusa, e nunca se o
+         orçamento estiver são. */
+      var noDe = null;
+      function idxNo() {
+        if (!noDe) { noDe = {}; nos.forEach(function (n) { if (!own(noDe, n.id)) noDe[n.id] = n; }); }
+        return noDe;
+      }
       nos.forEach(function (n, i) {
         if (n.tipo === "etapa") { gE = { i: i, no: n, folhas: [], servicos: [] }; gF = null; grupos.push(gE); return; }
         if (n.tipo === "subetapa" || n.tipo === "soltos") { gF = { i: i, no: n, servicos: [] }; gE.folhas.push(gF); return; }
@@ -517,27 +714,58 @@
           return { id: id, dur: dur, marco: marco, override: !marco && ov > 0, ov: ov, eq: eq, ed: ed, temBase: temBase,
             fonte: fonte, catC: catC, g: gf };
         });
-        g.rede = self._redeInterna(g.folhasRede, sub, parSub, semPiso);
+        g.rede = self._redeInterna(g.folhasRede, sub, parSub, semPiso, folhaDe, idxNo);
       });
-      return { grupos: grupos, infos: infos, parSub: parSub };
+      // `noDe` é FUNÇÃO (o índice preguiçoso acima), não mapa: quem usar chama.
+      return { grupos: grupos, infos: infos, parSub: parSub, folhaDe: folhaDe, noDe: idxNo };
     },
 
     /* CPM entre as folhas de UMA etapa — o mesmo algoritmo da rede externa
        (ida por Kahn, volta, folga), com um tipo a mais: "II" (início-início,
        `ini_s ≥ ini_p + lag`). Padrão = cascata (cada folha depois da anterior
        da etapa), com sobreposição `floor(paralelismoSub × dur_anterior)`.
-       Elo para folha de OUTRA etapa, apagada ou para si mesma morre calado
-       (não há elo entre folhas de etapas diferentes — o elo macro é da etapa).
+       ⚠ ELO QUE NÃO CABE NESTA REDE NÃO MORRE MAIS CALADO (12/09/2026,
+       defeito D6). A rede é POR ETAPA, então `porId` só tem as folhas da
+       própria etapa e um elo para folha de OUTRA etapa virava `[]` sem uma
+       linha de aviso — "o reboco do 2º pavimento depende da laje do 3º" é
+       exatamente esse caso, e é o que a obra real tem. O elo continua NÃO
+       sendo aplicado (aceitá-lo aqui mudaria datas, e o elo macro é da etapa),
+       mas agora sai em `rede.invalidos` com o motivo, e o `_arvore` vira isso
+       num recado com a PORTA. Elo que some calado é pior que elo recusado: a
+       pessoa desenha a dependência, o Gantt desenha outra coisa, e ninguém
+       tem como saber. `folhaDe` (o mapa de TODAS as folhas do orçamento,
+       montado no `_preparar`) é quem separa "é de outra etapa" de "não existe
+       mais" — dois defeitos com consertos diferentes.
        ⚠ Ciclo NÃO trava: quem sobra entra em ordem de lista ignorando o elo
        não resolvido, sai `cicloDep` e a tela avisa. */
-    _redeInterna: function (fs, sub, parSub, semPiso) {
-      var porId = {}, pc = sub.predecessoras || {}, lc = sub.lags || {}, tc = sub.tipos || {};
+    _redeInterna: function (fs, sub, parSub, semPiso, folhaDe, noDe) {
+      var porId = {}, pc = sub.predecessoras || {}, lc = sub.lags || {}, tc = sub.tipos || {}, invalidos = [];
       fs.forEach(function (f) { porId[f.id] = f; });
+      /* ⚠ QUATRO MOTIVOS, NÃO DOIS — consertos diferentes, recados diferentes.
+         `folhaDe` só conhece FOLHAS, então tudo que não é folha (etapa,
+         serviço) saía como "não existe mais". `noDe` é a função preguiçosa do
+         `_preparar` e só roda aqui, na recusa: `outraEtapa` é o D6 de verdade
+         ("ligue as ETAPAS"); `etapa` e `servico` são número EAP que EXISTE na
+         tela e a pessoa pôs no campo errado; `inexistente` é o que sobrou de
+         uma subetapa apagada. */
+      function motivoDe(f, pid) {
+        if (pid === f.id) return "propria";
+        if (folhaDe && own(folhaDe, pid)) return "outraEtapa";
+        var mapa = typeof noDe === "function" ? noDe() : noDe;
+        var alvo = mapa && own(mapa, pid) ? mapa[pid] : null;
+        if (alvo && alvo.tipo === "etapa") return "etapa";
+        if (alvo && alvo.tipo === "servico") return "servico";
+        return "inexistente";
+      }
       fs.forEach(function (f, i) {
-        var cfg = own(pc, f.id) ? pc[f.id] : null, out = [], k;
+        var cfg = own(pc, f.id) ? pc[f.id] : null, out = [], k, pid;
         f.predsExplicito = Object.prototype.toString.call(cfg) === "[object Array]";
         if (f.predsExplicito) {
-          for (k = 0; k < cfg.length; k++) if (cfg[k] !== f.id && own(porId, cfg[k]) && out.indexOf(cfg[k]) < 0) out.push(cfg[k]);
+          for (k = 0; k < cfg.length; k++) {
+            pid = cfg[k];
+            if (pid !== f.id && own(porId, pid)) { if (out.indexOf(pid) < 0) out.push(pid); continue; }
+            invalidos.push({ folhaId: f.id, predId: pid, motivo: motivoDe(f, pid) });
+          }
         } else if (i > 0) out.push(fs[i - 1].id);
         f.preds = out; f.predLag = {}; f.predTipo = {};
         var lf = own(lc, f.id) && lc[f.id] ? lc[f.id] : {}, tf = own(tc, f.id) && tc[f.id] ? tc[f.id] : {};
@@ -588,7 +816,13 @@
         });
         fv.folga = Math.max(0, lfim - fv.fim);
       }
-      return { S: S, temCiclo: ciclo.length > 0, ciclo: ciclo };
+      /* ⚠ `invalidos` só nasce quando há elo recusado — chave a mais no
+         retorno é contrato novo, e quem só lê `S` (o `_vaosExec`, e por trás
+         dele o prazo de etapa que o aparelho antigo materializa) não pode
+         sentir nada desta entrega. */
+      var r = { S: S, temCiclo: ciclo.length > 0, ciclo: ciclo };
+      if (invalidos.length) r.invalidos = invalidos;
+      return r;
     },
 
     /* ESCALONAMENTO para dentro de uma janela [iniW, fimW] (a da etapa, para
@@ -670,6 +904,12 @@
         n.inicio = e.ini; n.fim = e.fim; n.duracao = e.fim - e.ini; n.escala = e.escala;
         n.dataInicio = dataDe(e.ini); n.dataFim = dataDe(e.fim);
       });
+      /* ⚠ DEVOLVE A LISTA para a segunda passada da JANELA PLENA (etapa
+         opcional fora do prazo, `_arvore`): a distribuição interna
+         (`iniInt`/`fimInt`) é a mesma, muda só a janela em que ela é escalada,
+         e refazê-la aqui custa duas contas do mesmo número. Quem não precisa
+         simplesmente ignora o retorno. */
+      return esc;
     },
 
     /* Monta `r.atividades` e `r.exec` (só com ctx.eap). Lê `r` e nunca o
@@ -680,10 +920,27 @@
        `cong` = `{vaos}` quando o orçamento está APROVADO e a duração veio da
        GRAVADA (`congeladoPorAprovacao`): o vão de hoje está aí só para o
        recado dizer os dois números. */
-    _arvore: function (orc, r, ctx, vivo, cong) {
+    _arvore: function (orc, r, ctx, vivo, cong, cal, mem) {
       var self = this, params = r.params, cron = (orc && orc.cronograma) || {}, ex = cron.exec || {};
       var agEt = cron.duracoesAgente || {}, durEt = cron.duracoes || {}, rede = ex.rede === true;
-      var nos = this.eap(orc, ctx.calc), P = this._preparar(orc, params, nos, false), cal = this.calendario(r);
+      /* quantas vezes o vão da rede interna pode passar da duração da etapa
+         antes do aviso de escala. 1,25 é o começo, parametrizável como o
+         `exec.toleranciaPP` já é; valor ≤ 1 (ou torto) cai no padrão, senão
+         um "1" digitado avisaria em toda etapa escalada e a pessoa aprenderia
+         a ignorar o aviso — que é como um aviso morre. */
+      var tolEscala = num(ex.toleranciaEscala) > 1 ? num(ex.toleranciaEscala) : 1.25;
+      /* ⚠ APROVADO: muda a PORTA dos recados desta árvore, não o número. Com o
+         modo executivo ligado ele já chega por `cong`; com o modo desligado não
+         chegava por caminho nenhum, e o aviso de escala saía mandando ligar o
+         interruptor (recusado pela trava) ou aumentar a duração (congelada). */
+      var aprovOrc = this.congeladoPorAprovacao(orc);
+      /* a árvore e o `_preparar` vêm do memo da chamada (ver `_contexto`): com
+         `exec.rede` ligado o `_vaosExec` já montou os dois, e montá-los de
+         novo era metade do custo do `estimar` num orçamento grande. E o
+         calendário é o do `estimar` — uma tabela só por chamada. */
+      var cx = this._contexto(mem, orc, params, (ctx && ctx.calc) ? ctx.calc : null, false);
+      var nos = cx.nos, P = cx.P;
+      if (!cal) cal = this.calendario(r);
       var avisos = [];
       var V = ctx.valores ? (ctx.valores.porId || ctx.valores) : null;
       if (ctx.valores && ctx.valores.ok === false) {
@@ -692,6 +949,15 @@
       }
       function dataDe(k) { return (k == null || !cal) ? null : cal.dia(k); }
       function copia(o) { var c = {}; for (var k in o) if (own(o, k)) c[k] = o[k]; return c; }
+      /* cópia rasa de uma lista de itens do `_escalar`, só com o que ELE lê
+         (`iniInt`/`fimInt`/`folgaInt`/`marco`/`preds`) — é o que deixa a mesma
+         distribuição ser escalada numa segunda janela (a PLENA da etapa
+         opcional) sem contaminar `ini`/`fim`/`escala`/`comprimida` já lidos. */
+      function escCopia(lst) {
+        return (lst || []).map(function (x) {
+          return { id: x.id, i: x.i, iniInt: x.iniInt, fimInt: x.fimInt, folgaInt: x.folgaInt, marco: x.marco, preds: x.preds };
+        });
+      }
       function catMaior(catC) {
         var c = Object.keys(catC).sort(function (a, b) { return catC[b] - catC[a]; })[0] || "outros";
         return self.cat(c);
@@ -702,6 +968,9 @@
         n.categoria = et.categoria; n.categoriaNome = et.categoriaNome; n.cor = et.cor; n.equipeDias = et.equipeDias;
         n.duracao = et.duracao; n.inicio = et.inicio; n.fim = et.fim; n.folga = et.folga; n.critico = !!et.critico; n.marco = !!et.marco;
         if (et.cicloDep) n.cicloDep = true;
+        // data fixada pelo arrasto no Gantt: a tela desenha a âncora e recusa o
+        // arrasto para a esquerda de `inicioRede` (⚠ só existe com restrição gravada)
+        if (et.restricao) n.restricao = et.restricao;
         n.editado = !!et.editado;
         var temBase = g.servicos.concat.apply(g.servicos, g.folhas.map(function (f) { return f.servicos; }))
           .some(function (i) { return P.infos[i].base; });
@@ -754,6 +1023,129 @@
             msg: "Etapa " + n.numero + " curta demais para as subetapas — " + comp.length + " de " + fs.length + " se sobrepõem no desenho (a rede pede " + g.rede.S + " dias; a etapa tem " + et.duracao + ")." });
           if (g.rede.temCiclo) avisos.push({ tipo: "ciclo", etapaId: n.id, folhas: g.rede.ciclo,
             msg: "Etapa " + n.numero + ": dependência circular entre subetapas — " + g.rede.ciclo.length + " subetapa(s) desenhada(s) ignorando o elo de volta. Corrija o \"Depende de\"." });
+          /* ⚠ O AVISO DE ESCALA PASSA A MEDIR O FATOR (12/09/2026, defeito D8).
+             O `comprimida` acima só dispara quando a ESCALA DESFAZ A ORDEM (o
+             sucessor passa na frente do predecessor). Compressão que preserva
+             a ordem passava calada, e o Gantt desenhado é uma mentira por um
+             fator que ninguém vê. MEDIDO nos 34 arquivos de OrcaPRO-Backups
+             (51 orçamentos distintos por md5 do JSON — ⚠ a régua da contagem
+             vai junto porque foi ela que mudou o número; por `id` dariam 22):
+             19 etapas-resumo com duração > 0, das quais 4 desenham acima de
+             1,25× e só 2 já tinham aviso `comprimida` — as outras 2 saíam
+             mudas. (Uma revisão anterior escreveu aqui "55 / 6 / 3" de cabeça,
+             contradizendo a própria suíte: tools/test-crono-honestidade.js,
+             bloco 6, imprime 51 / 4 / 2 e é quem confere isto.) No
+             corpus da auditoria havia uma etapa de 15 dias cujas subetapas
+             pediam 134 (9×) com UM único aviso, e outra de 4 pedindo 10 com
+             NENHUM. Os dois números e a porta vão no texto: aviso sem número a
+             pessoa lê como formalidade, e trava sem porta faz procurar saída
+             errada.
+             ⚠ É aviso SEPARADO do `comprimida`, de propósito: o `comprimida` é
+             reescrito e vai ao PAPEL do cliente (js/cronopdf.js `_avisosPapel`)
+             e este é só da TELA — "ligue o modo executivo" é instrução ao
+             engenheiro, não recado de proposta. Com o modo executivo ligado e
+             materializado a duração É o vão, o fator dá 1 e ele não aparece.
+
+             ⚠ DUAS GUARDAS, AS DUAS ACHADAS EXECUTANDO O MOTOR (12/09/2026) —
+             porque o recado saía por PORTA FECHADA, que é o defeito que este
+             arquivo mais documenta:
+
+             (1) NO ORÇAMENTO APROVADO as duas portas do texto não existem.
+                 EXECUTADO: `Cronograma.materializar(orc)` num aprovado devolve
+                 {aprovado:true, mudou:false, gravadas:0} com o modo ligado E
+                 com ele desligado — "ligue Detalhar o prazo pelas subetapas"
+                 não faz nada; e `Cronograma.limparEdicoes(orc)` devolve
+                 {aprovado:true} e `congeladoPorAprovacao` congela a duração —
+                 não há como "aumentar a duração da etapa". É o MESMO defeito
+                 que o ⚠ do `nao-materializado`, logo abaixo, já conserta.
+                 Alcance MEDIDO nos 34 backups: marcando os 51 orçamentos como
+                 aprovados, 4 avisos de `escala` em 3 orçamentos saem com as
+                 duas portas fechadas; com o modo executivo ligado esses 3
+                 recebem TAMBÉM o `aprovado-gravado`, que já diz os dois números
+                 com a porta certa — dois recados sobre o mesmo fato, um deles
+                 impossível de obedecer. Então: com `cong` o aviso não sai (o
+                 fator vira campo do `aprovado-gravado`), e no aprovado sem
+                 `cong` (modo desligado) ele sai com a PORTA CERTA — a revisão.
+
+             (2) COM O MODO EXECUTIVO AO VIVO o fator compara DUAS RÉGUAS.
+                 `et.duracao` vem do `_vaosExec`, que usa os params GRAVADOS de
+                 propósito (ver o ⚠ de lá); `g.rede.S` vem do `_contexto` com os
+                 params do OVERRIDE. Sem override os dois são o mesmo número e o
+                 fator dá 1. Com override — e `js/cronoia.js` e
+                 `js/cronosaude.js` chamam `estimar(orc, opts.override, {eap})` —
+                 eles divergem: EXECUTADO com `equipes:5` gravado e override
+                 `{equipes:1}`, a etapa dura 4 (gravados), a árvore pede 29
+                 (override), sai "4,1× fora de escala" e o recado manda LIGAR o
+                 interruptor que já está ligado. Com o modo ligado a duração É o
+                 vão por construção: não há o que este aviso diga. */
+          var dEt = num(et.duracao);
+          /* a duração desta etapa veio do vão ao vivo (modo executivo): fator 1
+             por construção, e qualquer diferença é só a troca de régua acima */
+          var vaoVivo = !!(vivo && own(vivo.porId, et.id));
+          if (!cong && !vaoVivo && !et.marco && g.rede.S > 0 && dEt > 0 && g.rede.S / dEt > tolEscala) {
+            var fatEsc = Math.round((g.rede.S / dEt) * 10) / 10;
+            /* no APROVADO a porta é a revisão do orçamento (nem ligar o modo
+               nem editar a duração passam pela trava de aprovação) */
+            var portaEsc = aprovOrc
+              ? "O orçamento está APROVADO: a duração não muda por aqui — nem ligando \"Detalhar o prazo pelas subetapas\", nem editando o campo. " +
+                "Para mudar o desenho, faça uma revisão do orçamento; com obra aberta, replaneje pelo plano de execução dela."
+              : "Ligue \"Detalhar o prazo pelas subetapas\" (a etapa passa a durar " + g.rede.S + " dias) ou aumente a duração da etapa.";
+            avisos.push({ tipo: "escala", etapaId: n.id, vao: g.rede.S, duracao: dEt, fator: fatEsc, tolerancia: tolEscala,
+              aprovado: !!aprovOrc,
+              msg: "Etapa " + n.numero + " dura " + dEt + " dia(s) útil(eis) e as subetapas dela pedem " + g.rede.S +
+                " — o desenho está " + String(fatEsc).replace(".", ",") + "× fora de escala, e as barras abaixo não são o tempo real de cada uma. " +
+                portaEsc });
+          }
+          /* ⚠ ELO RECUSADO PELA REDE INTERNA (defeito D6) — um recado por
+             SUBETAPA, não um por elo: um mapa torto com dez elos quebrados
+             empurraria os avisos de ciclo e de escala para fora dos 5 que a
+             tela desenha. */
+          if (g.rede.invalidos) {
+            var porFolhaInv = {}, ordemInv = [];
+            g.rede.invalidos.forEach(function (x) {
+              if (!own(porFolhaInv, x.folhaId)) { porFolhaInv[x.folhaId] = []; ordemInv.push(x.folhaId); }
+              porFolhaInv[x.folhaId].push(x);
+            });
+            var ND = P.noDe ? (typeof P.noDe === "function" ? P.noDe() : P.noDe) : {};
+            ordemInv.forEach(function (fid) {
+              var lst = porFolhaInv[fid], meu = P.folhaDe[fid] || {}, cita = [], outra = [], citaEt = [], citaSv = [];
+              lst.forEach(function (x) {
+                var alvoF = P.folhaDe[x.predId], alvoN = own(ND, x.predId) ? ND[x.predId] : null;
+                if (x.motivo === "outraEtapa" && alvoF) { cita.push(alvoF.numero); outra.push(alvoF.etapaIdx + 1); }
+                else if (x.motivo === "propria") cita.push("ela mesma");
+                else if (x.motivo === "etapa" && alvoN) { citaEt.push(alvoN.numero); cita.push("a ETAPA " + alvoN.numero); }
+                else if (x.motivo === "servico" && alvoN) { citaSv.push(alvoN.numero); cita.push("o SERVIÇO " + alvoN.numero); }
+                else cita.push("uma subetapa que não existe mais");
+              });
+              var msg;
+              if (outra.length) {
+                msg = "A subetapa " + meu.numero + " não pode depender de " + cita.slice(0, 2).join(" nem de ") +
+                  (cita.length > 2 ? " (e mais " + (cita.length - 2) + ")" : "") + ", que " + (outra.length > 1 ? "são de outras etapas" : "é de outra etapa") +
+                  " — o elo foi IGNORADO no cálculo das datas. Ligue as ETAPAS " + (meu.etapaIdx + 1) + " e " + outra[0] +
+                  " no \"Depende de\" da etapa, ou fixe a data de início de " + meu.numero + ".";
+              /* ⚠ NÚMERO EAP QUE EXISTE, NO CAMPO ERRADO (12/09/2026). Sem este
+                 ramo os dois casos abaixo saíam com "aponta para uma subetapa
+                 que não existe mais" — dizer que não existe um número que está
+                 na tela manda a pessoa procurar no lugar errado. O "Depende de"
+                 da SUBETAPA só aceita subetapa da MESMA etapa; etapa se liga a
+                 etapa, no campo da etapa; serviço não tem elo próprio. */
+              } else if (citaEt.length || citaSv.length) {
+                msg = "O \"Depende de\" da subetapa " + meu.numero + " aponta para " + cita.slice(0, 2).join(" e ") +
+                  (cita.length > 2 ? " (e mais " + (cita.length - 2) + ")" : "") +
+                  " — o elo foi IGNORADO no cálculo das datas. " +
+                  (citaEt.length
+                    ? "Etapa se liga a etapa: ponha " + citaEt[0] + " no \"Depende de\" da ETAPA " + (meu.etapaIdx + 1) +
+                      ", ou ligue " + meu.numero + " a uma subetapa da própria etapa."
+                    : "No \"Depende de\" da subetapa só entra subetapa da MESMA etapa — o serviço não tem elo próprio. Ligue " +
+                      meu.numero + " à subetapa que contém " + citaSv[0] + ", ou fixe a data de início de " + meu.numero + ".");
+              } else {
+                msg = "O \"Depende de\" da subetapa " + meu.numero + " aponta para " + cita.slice(0, 2).join(" e ") +
+                  " — o elo foi IGNORADO no cálculo das datas. Corrija o \"Depende de\" de " + meu.numero + ".";
+              }
+              avisos.push({ tipo: "elo-invalido", etapaId: n.id, folhaId: fid,
+                preds: lst.map(function (x) { return x.predId; }), motivos: lst.map(function (x) { return x.motivo; }), msg: msg });
+            });
+          }
           if (rede && !et.marco) {
             /* o vão da MESMA conta que deu a duração da etapa acima (params
                GRAVADOS, sem override — é o que o materializar grava); só sem
@@ -791,18 +1183,92 @@
                  o vão das subetapas (6 dias)" enquanto o ícone diz "vão de 15
                  dia(s)" — dois números discordando na mesma linha, num campo
                  que mostra o 6. */
+              /* ⚠ `fator` VEM PARA CÁ porque o aviso de `escala` não sai no
+                 aprovado (ver o ⚠ (1) dele): a informação do desenho fora de
+                 escala não pode sumir junto com o recado impossível — ela vira
+                 campo deste, que já tem a porta certa. */
               if (num(et.duracao) !== S0) avisos.push({ tipo: "aprovado-gravado", etapaId: n.id, duracao: grav, duracaoUsada: et.duracao, vao: S0,
+                fator: num(et.duracao) > 0 ? Math.round((S0 / num(et.duracao)) * 10) / 10 : null,
                 msg: "Etapa " + n.numero + ": esta é a data aprovada (" + (grav != null ? "gravada, " + grav + " dias" : "sem duração gravada — a etapa vale a estimativa por categoria, " + et.duracao + " dias") +
                   "); as subetapas hoje dariam " + S0 + " dias. O orçamento aprovado não muda — nem aqui, nem na proposta, nem para os outros aparelhos." });
             }
-            else if (!(own(agEt, n.id) && agEt[n.id] === "subetapas" && num(durEt[n.id]) === S0))
-              avisos.push({ tipo: "nao-materializado", etapaId: n.id, duracao: grav, vao: S0,
+            /* ⚠ ETAPA FORA DO PRAZO: O RECADO DE SEMPRE AFIRMA UM NÚMERO QUE
+               ESTA TELA NÃO USA (12/09/2026). Com `opcionaisNoPrazo` desligado
+               a opcional é desenhada com duração 0 — mas o texto dizia "Esta
+               tela já usa 15" e mandava salvar "para que aparelhos com versão
+               anterior vejam o mesmo prazo". As duas afirmações são falsas: a
+               tela usa 0, e o aparelho antigo não conhece `opcionaisNoPrazo` —
+               ele vai contar os 15 dias DENTRO do prazo, que é o contrário de
+               "o mesmo prazo". Recado que mente é pior que recado nenhum. */
+            else if (!(own(agEt, n.id) && agEt[n.id] === "subetapas" && num(durEt[n.id]) === S0)) {
+              if (et.foraDoPrazo) avisos.push({ tipo: "nao-materializado", etapaId: n.id, duracao: grav, vao: S0, foraDoPrazo: true,
+                msg: "Etapa " + n.numero + " é opcional e está fora do prazo contratado — esta tela a desenha com 0 dia (a barra tracejada usa " +
+                  (et.duracaoPlena != null ? et.duracaoPlena : S0) + "). As subetapas dela pedem " + S0 +
+                  " dia(s) útil(eis); aparelhos com a versão anterior do app não conhecem \"opcional fora do prazo\" e vão contar esses " + S0 +
+                  " dias DENTRO do prazo. Para os dois verem o mesmo, tire o \"opcional\" da etapa — ou deixe como está e trate-a como adicional." });
+              else avisos.push({ tipo: "nao-materializado", etapaId: n.id, duracao: grav, vao: S0,
                 msg: "Etapa " + n.numero + ": a duração gravada no orçamento (" + (grav != null ? grav + " dias" : "nenhuma") +
                   ") não é a das subetapas (" + S0 + " dias). Esta tela já usa " + S0 +
                   "; salve o orçamento para que aparelhos com versão anterior do app vejam o mesmo prazo." });
+            }
           }
         }
-        alvo.forEach(function (a) { self._distribuir(a.no, a.servicos, nos, P.infos, P.parSub, dataDe); });
+        alvo.forEach(function (a) { a.esc = self._distribuir(a.no, a.servicos, nos, P.infos, P.parSub, dataDe); });
+        /* ⚠ A MARCA `foraDoPrazo` DESCE A ÁRVORE INTEIRA. Sem isto o Gantt
+           desenharia a etapa opcional tracejada e as subetapas e serviços dela
+           sólidos, no mesmo dia, como se fossem escopo contratado — e é o nó
+           filho que a pessoa clica.
+           ⚠ E A JANELA PLENA DESCE JUNTO (12/09/2026). `duracaoPlena` ficava só
+           no nó da ETAPA: MEDIDO numa etapa opcional de 3 subetapas e 3
+           serviços, com o interruptor ligado os nós saem 2.1 dur=5 ini=5,
+           2.2 dur=5 ini=10, 2.3 dur=4 ini=15; desligado, os SETE nós saíam
+           `duracao=0 ini=5 fim=5 escala="sem-vao"` e SEM `duracaoPlena` — as
+           três subetapas empilhadas no mesmo dia útil, e no detalhe "serviço"
+           o bloco opcional inteiro virando uma coluna de um dia sem nada
+           desenhável. A tela teria de INVENTAR o tamanho da barra tracejada, e
+           inventar número de data é o que este arquivo inteiro existe para
+           impedir.
+           CONTRATO PARA A TELA: todo nó com `foraDoPrazo` leva
+           `duracaoPlena`/`inicioPlena`/`fimPlena` (índices de dia útil, na
+           mesma régua de `inicio`/`fim`). Serviço sem base fica com
+           `inicioPlena`/`fimPlena` null e `duracaoPlena` 0 — o mesmo que ele já
+           tem em `inicio`/`fim`: barra que nenhum diário poderá realizar não
+           ganha barra em janela nenhuma.
+           ⚠ É A MESMA CONTA, OUTRA JANELA: `_escalar` sobre CÓPIAS das mesmas
+           listas (`iniInt`/`fimInt` intactos), nunca uma segunda régua. Cópias
+           porque `_escalar` ESCREVE `ini`/`fim`/`escala`/`comprimida` no item —
+           reusar os objetos contaminaria o que já foi lido acima. */
+        if (et.foraDoPrazo) {
+          n.foraDoPrazo = true;
+          if (et.duracaoPlena != null) n.duracaoPlena = et.duracaoPlena;
+          var iniP = n.inicio, fimP = n.inicio + num(et.duracaoPlena), janela = {};
+          n.inicioPlena = iniP; n.fimPlena = fimP;
+          if (g.folhas.length) {
+            var escP = escCopia(esc);
+            self._escalar(escP, iniP, fimP);
+            fs.forEach(function (f, j) {
+              var e3 = escP[j], fn = f.g.no;
+              fn.inicioPlena = e3.ini; fn.fimPlena = e3.fim; fn.duracaoPlena = e3.fim - e3.ini;
+              janela[fn.id] = e3;
+            });
+          }
+          alvo.forEach(function (a) {
+            a.no.foraDoPrazo = true;
+            var w = own(janela, a.no.id) ? janela[a.no.id] : { ini: iniP, fim: fimP };
+            a.servicos.forEach(function (i) {
+              if (!nos[i]) return;
+              nos[i].foraDoPrazo = true;
+              nos[i].inicioPlena = null; nos[i].fimPlena = null; nos[i].duracaoPlena = 0;
+            });
+            var escS = escCopia(a.esc || []);
+            self._escalar(escS, w.ini, w.fim);
+            escS.forEach(function (e4) {
+              var ns = nos[e4.i];
+              if (!ns) return;
+              ns.inicioPlena = e4.ini; ns.fimPlena = e4.fim; ns.duracaoPlena = e4.fim - e4.ini;
+            });
+          });
+        }
       });
       var tot = 0;
       if (V) nos.forEach(function (n) { if (n.tipo === "etapa" && own(V, n.id) && V[n.id] != null) tot += num(V[n.id]); });
@@ -812,6 +1278,7 @@
       });
       r.atividades = nos;
       r.exec = { rede: rede, paralelismoSub: P.parSub, toleranciaPP: num(ex.toleranciaPP) > 0 ? num(ex.toleranciaPP) : 1,
+        toleranciaEscala: tolEscala,
         detalhe: this.DETALHES.indexOf(ex.detalhe) > -1 ? ex.detalhe : "subetapa", avisos: avisos };
       return r;
     },
@@ -1028,10 +1495,16 @@
        temFolhas, marco, vale, S, bruto}] na ordem das etapas}.
        `semPiso`: S sem o mínimo de 1 dia por subetapa (arredondado para cima
        só no fim) — é o que separa o arredondamento no "antes → depois". */
-    _vaosExec: function (orc, semPiso) {
+    _vaosExec: function (orc, semPiso, mem, calc) {
       var cron = orc && orc.cronograma;
       if (!cron || typeof cron !== "object" || !cron.exec || cron.exec.rede !== true) return null;
-      var P = this._preparar(orc, this._params(orc), this.eap(orc), !!semPiso);
+      /* ⚠ `mem`/`calc` só existem quando quem chama é o `estimar` (ver
+         `_contexto`): ele já vai montar esta MESMA árvore no `_arvore` logo
+         adiante. O `calc` muda SÓ a numeração EAP dos nós — nem o id, nem o
+         agrupamento, nem a rede —, então recebê-lo aqui não move um número
+         deste retorno e faz a árvore nascer uma vez para os dois usos.
+         Os params continuam sendo os GRAVADOS (o ⚠ acima). */
+      var P = this._contexto(mem, orc, this._params(orc), calc, !!semPiso).P;
       var marcos = cron.marcos || {}, porId = {}, grupos = [];
       P.grupos.forEach(function (g) {
         var id = g.no.id, ehMarco = own(marcos, id) && marcos[id] === true, bruto = g.rede ? g.rede.S : 0;
@@ -1100,16 +1573,92 @@
        (com o modo desligado o motor novo é o master — a paridade prova). É o
        "antes" honesto do recado do salvar: com o cálculo ao vivo, o prazo
        desta tela não muda no salvar; o que muda é o dos outros aparelhos.
-       Não toca no orçamento (cópia rasa só do caminho até `exec`). */
+       Não toca no orçamento (cópia rasa só do caminho até `exec`).
+
+       ⚠ A CÓPIA TEM DE APAGAR **TUDO** O QUE A VERSÃO ANTERIOR NÃO LÊ
+       (12/09/2026). Ela zerava só `exec.rede`. Quando a 1.2.76 acrescentou
+       dois campos que o motor da 1.2.75 ignora — o mapa `cronograma.restricoes`
+       (a data fixada pelo arrasto da barra no Gantt) e o parâmetro
+       `params.opcionaisNoPrazo` (a etapa opcional fora do prazo) — a cópia
+       continuou LENDO os dois, e a função passou a responder o prazo DESTA
+       versão com a etiqueta da anterior. MEDIDO numa obra de 4 etapas (1
+       opcional, restrição "não iniciar antes de" na Pintura): a função dizia
+       103 dias úteis e o motor de 24fa087 (a 1.2.75 instalada) dá 111 — o
+       recado do salvar (js/app.js, `_cronoMaterializar`) afirmava ao usuário
+       que o outro aparelho ia ver 103. Recado que mente é pior que recado
+       nenhum: quem confere o prazo com o sócio no celular vê outro número.
+       Por isso a cópia agora nasce também quando NÃO há modo executivo — os
+       dois campos novos mudam a data em qualquer modo, e a função é pública
+       (a tela, a e2e e o `alinhado` do test-crono-fiacao chamam).
+       ⚠ O `override` entra na mesma régua: params passados pelo chamador
+       vencem os do orçamento (`_params`), e um `opcionaisNoPrazo` vindo de lá
+       reabriria o mesmo buraco por outra porta.
+       ⚠ UMA CÓPIA SÓ PARA OS DOIS USOS (`_semCamposNovos`): `estimarFrota`
+       precisa exatamente da mesma limpeza, e duas rotinas de cópia do mesmo
+       contrato divergem na primeira manutenção — aqui divergir é a mesma obra
+       com duas datas de entrega. */
     estimarVersaoAnterior: function (orc, override) {
-      var cr = orc && orc.cronograma;
-      if (!cr || typeof cr !== "object" || !cr.exec || cr.exec.rede !== true) return this.estimar(orc, override);
-      var c = {}, c2 = {}, ex = {}, k;
+      return this.estimar(this._semCamposNovos(orc, true), this._ovSemCamposNovos(override));
+    },
+
+    /* O prazo que TODA a frota calcula IGUAL: a limpeza acima sem desligar o
+       modo executivo — porque a 1.2.75 CONHECE o modo e calcula o vão ao vivo
+       igualzinho a esta versão (o que ela não conhece são os dois campos
+       novos). É a régua de qualquer número que vá para campo PERSISTIDO e
+       SINCRONIZADO (hoje `cronogramaMeses`, via `Orcamento.mesesSugeridos`).
+       ⚠ POR QUE NÃO SERVE O `estimarVersaoAnterior` AQUI (medido em
+       12/09/2026, corpus de 600 orçamentos gerados, 465 com campo novo):
+       `mesesSugeridos` como estava divergia da 1.2.75 em 293 deles; pela régua
+       do `estimarVersaoAnterior` (que desliga o `exec.rede`) ainda divergia em
+       33 — o dia de diferença do modo desligado cai em cima da virada do mês e
+       vira uma COLUNA de desembolso a mais na proposta; por esta régua,
+       0 de 600. Campo que a nuvem carrega e que duas versões calculam
+       diferente fica em pingue-pongue a cada abertura. */
+    estimarFrota: function (orc, override) {
+      return this.estimar(this._semCamposNovos(orc, false), this._ovSemCamposNovos(override));
+    },
+
+    /* A cópia RASA do orçamento sem o que a versão anterior do app não lê.
+       `desligarExec` = também fingir que o modo executivo está desligado (só o
+       `estimarVersaoAnterior` pede isso; ver o ⚠ dele).
+       ⚠ Devolve o PRÓPRIO orçamento quando não há nada a tirar: é o caminho de
+       quase todo orçamento da base, e nele esta função não custa nem uma
+       alocação. NUNCA escreve no original — quem chama passa o orçamento vivo
+       da tela. */
+    _semCamposNovos: function (orc, desligarExec) {
+      var cr = orc && orc.cronograma, k;
+      if (!cr || typeof cr !== "object") return orc;
+      var pr = cr.params && typeof cr.params === "object" ? cr.params : null;
+      var temExec = !!desligarExec && !!(cr.exec && cr.exec.rede === true);
+      var temRestr = own(cr, "restricoes") && cr.restricoes != null;
+      var temOpc = !!(pr && pr.opcionaisNoPrazo != null && pr.opcionaisNoPrazo !== true);
+      if (!temExec && !temRestr && !temOpc) return orc;
+      var c = {}, c2 = {};
       for (k in orc) if (own(orc, k)) c[k] = orc[k];
       for (k in cr) if (own(cr, k)) c2[k] = cr[k];
-      for (k in cr.exec) if (own(cr.exec, k)) ex[k] = cr.exec[k];
-      ex.rede = false; c2.exec = ex; c.cronograma = c2;
-      return this.estimar(c, override);
+      if (temExec) {
+        var ex = {};
+        for (k in cr.exec) if (own(cr.exec, k)) ex[k] = cr.exec[k];
+        ex.rede = false; c2.exec = ex;
+      }
+      // a versão anterior ignora o mapa: ela desenha a etapa na posição da REDE
+      if (temRestr) delete c2.restricoes;
+      if (temOpc) {
+        var p2 = {};
+        for (k in pr) if (own(pr, k)) p2[k] = pr[k];
+        p2.opcionaisNoPrazo = true; c2.params = p2;
+      }
+      c.cronograma = c2;
+      return c;
+    },
+
+    /* O mesmo para o `override` do chamador (ver o ⚠ de `estimarVersaoAnterior`). */
+    _ovSemCamposNovos: function (override) {
+      if (!override || override.opcionaisNoPrazo == null || override.opcionaisNoPrazo === true) return override;
+      var o2 = {}, k;
+      for (k in override) if (own(override, k)) o2[k] = override[k];
+      delete o2.opcionaisNoPrazo;
+      return o2;
     },
 
     /* "Antes → depois" de ligar (ou desligar) o modo executivo, sem tocar no
@@ -1156,6 +1705,17 @@
         prazoTexto: this._prazoTexto(orc && orc.comercial && orc.comercial.prazoExecucao, rD) };
     },
 
+    /* ⚠ QUAL DOS DOIS PRAZOS VAI AO PAPEL (decidido em 12/09/2026, defeito D4).
+       Com `opcionaisNoPrazo` desligado o motor devolve DOIS números:
+       `r.totalDias` (escopo contratado) e `r.totalDiasComOpcionais`. Esta
+       função — e `Orcamento.sincronizarPrazo`, que grava `cronogramaMeses` — só
+       leem `r.totalDias`, DE PROPÓSITO: o texto "Prazo de execução" fica na
+       mesma folha do "Valor total", e o "Valor total" cobra o
+       `precoObrigatorio` (js/orcamento.js:1046), que não inclui opcional.
+       Prometer no papel a data do escopo maior e cobrar o menor é a promessa
+       que não fecha — é justamente o que este aviso existe para pegar.
+       O número COM opcionais é da TELA (os dois lado a lado) e do bloco de
+       "adicionais" da proposta, nunca do prazo contratual. */
     /* "90 dias" / "4 meses" no texto livre da proposta × o prazo do cronograma.
        ⚠ O QUALIFICADOR MANDA. "90 dias corridos" só se compara com os dias
        CORRIDOS do cronograma; "90 dias úteis", só com os ÚTEIS. Antes os dois
@@ -1183,11 +1743,23 @@
       } else difere = unidade === "semanas" ? (n !== r.totalSemanas && n !== Math.ceil(corridos / 7)) : n !== meses;
       var f = r.dataFim, fim = ("0" + f.getDate()).slice(-2) + "/" + ("0" + (f.getMonth() + 1)).slice(-2) + "/" + f.getFullYear();
       var dois = r.totalDias + " dias úteis (" + corridos + " corridos, " + meses + " " + (meses === 1 ? "mês" : "meses") + ", término " + fim + ")";
+      /* ⚠ PRAZO CONTRATADO ZERO NÃO MANDA CORRIGIR A PROPOSTA PARA ZERO
+         (12/09/2026). Num orçamento em que TODAS as etapas são opcionais e o
+         interruptor está desligado, `r.totalDias` é 0 — e o texto de sempre
+         saía "o cronograma passa a dar 0 dias úteis (0 corridos, 1 mês,
+         término 08/09/2026)", que é mandar a pessoa por uma porta fechada:
+         ninguém escreve "prazo: 0 dias" numa proposta. `r.opcionais` só existe
+         com o interruptor desligado E etapa opcional — no caminho de sempre
+         esta guarda não roda e o texto é o de antes (a paridade cobra). */
+      var semEscopo = r.totalDias === 0 && !!r.opcionais;
       return { texto: m[0], numero: n, unidade: unidade, qualificador: qual, cronograma: { diasUteis: r.totalDias, corridos: corridos, semanas: r.totalSemanas, meses: meses },
-        difere: difere, ambiguo: ambiguo,
-        msg: difere ? "O texto da proposta diz \"" + m[0] + "\"; o cronograma passa a dar " + dois + "."
+        difere: difere, ambiguo: ambiguo, semEscopo: semEscopo,
+        msg: semEscopo ? "O texto da proposta diz \"" + m[0] + "\", mas este orçamento não tem prazo CONTRATADO: todas as etapas estão marcadas como opcionais" +
+            (r.totalDiasComOpcionais != null ? " (com elas dentro, a obra pede " + r.totalDiasComOpcionais + " dias úteis)" : "") +
+            ". Desmarque \"opcional\" no que o \"Valor total\" cobra antes de comparar o prazo."
+          : (difere ? "O texto da proposta diz \"" + m[0] + "\"; o cronograma passa a dar " + dois + "."
           : (ambiguo ? "O texto da proposta diz \"" + m[0] + "\" sem dizer se são úteis ou corridos; o cronograma dá " + dois +
-            ". Escreva \"dias úteis\" ou \"dias corridos\" no prazo da proposta." : null) };
+            ". Escreva \"dias úteis\" ou \"dias corridos\" no prazo da proposta." : null)) };
     },
 
     /* "Limpar edições" (cronReset) em função pura: zera as edições de etapa E
@@ -1205,6 +1777,11 @@
       if (c && typeof c === "object") {
         c.duracoes = {}; c.iaMotivos = {}; c.duracoesAgente = {}; c.predecessoras = {}; c.lags = {}; c.marcos = {};
         c.sub = {};
+        /* ⚠ a DATA FIXADA pelo arrasto também é edição. Ficando, "Limpar
+           edições" devolvia a estimativa do agente e mantinha a etapa presa
+           no dia que alguém arrastou — o recado dizia que tudo voltou ao
+           automático e a entrega continuava sendo a de antes. */
+        c.restricoes = {};
         /* ⚠ a marca de proveniência da IA no "Depende de" (js/iaedit.js) sai
            junto (a das subetapas já saiu com `sub`). Ficando, um "Depende de"
            refeito à mão IGUAL ao que a IA tinha gravado passaria por "da IA"
@@ -1283,7 +1860,17 @@
       var y0 = r.dataInicio.getFullYear(), m0 = r.dataInicio.getMonth();
       r.atividades.forEach(function (n) { if (!own(porId, n.id)) porId[n.id] = n; });
       function bal(d) { return (d.getFullYear() - y0) * 12 + (d.getMonth() - m0); }
-      var nMax = Math.max(1, bal(r.dataFim) + 1), lista = [], i;
+      /* ⚠ A MESMA RÉGUA ESTICADA DO `periodos` (12/09/2026). Aqui o valor não
+         SUMIA — o clamp abaixo o punha no último mês contratado —, mas isso é
+         pior: MEDIDO na fixture `rNia` (opcional fixada em 01/12/2026, régua de
+         2 meses) os R$ 43.200,00 da piscina caíam em out/26, um mês em que não
+         há serviço nenhum dela. Buraco a pessoa vê; mês errado ela confere e
+         acredita. Com a régua até a última etapa o valor cai em dez/26, que é
+         onde a barra está. `r.opcionais` só existe com o interruptor desligado
+         e etapa opcional — sem ela isto devolve `r.dataFim`, o de sempre. */
+      var fimReg = r.dataFim;
+      if (r.opcionais) r.atividades.forEach(function (n) { if (n.dataFim && n.dataFim > fimReg) fimReg = n.dataFim; });
+      var nMax = Math.max(1, bal(fimReg) + 1), lista = [], i;
       // ⚠ mês fora da régua cai no 1º/último: valor não pode sumir da soma
       function idx(d) { return Math.max(0, Math.min(nMax - 1, bal(d))); }
       var MES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
@@ -1340,6 +1927,113 @@
         camada: camada, rotulo: this.ROTULO_CAMADA, nos: sel.length };
     },
 
+    /* =================================================================
+       RESTRIÇÕES DE DATA DA ETAPA (12/09/2026) — o que a barra arrastada
+       no Gantt grava.
+
+       `orc.cronograma.restricoes = { etapaId: {tipo, data} }`, com
+         "nia" — NÃO INICIAR ANTES DE: piso na ida do CPM (`inicio =
+                 max(rede, restrição)`). É o "Não iniciar antes de" do MS
+                 Project (SNET), e é o único jeito honesto de fixar uma
+                 barra no calendário sem mentir sobre a rede: a dependência
+                 continua mandando quando ela EMPURRA para a direita; a
+                 restrição só proíbe começar antes.
+         "tae" — TERMINAR ATÉ: só AVISA (`res.restricoes.avisos`), nunca
+                 empurra nem encolhe nada. Prazo contratual de uma etapa é
+                 recado para a pessoa decidir, não licença para o motor
+                 inventar uma duração menor que a obra precisa.
+
+       ⚠ POR QUE MAPA NOVO, E NÃO LAG (a decisão, 12/09/2026). Arrastar uma
+       barra podia virar lag na cascata (`lags[id][predId] += N`). Três coisas
+       reprovaram o lag para a ETAPA:
+        (a) a 1ª etapa (e toda etapa com "Depende de" = 0) não tem elo onde
+            pendurar o lag — a barra simplesmente não se moveria, e o recurso
+            nasceria com um buraco sem explicação;
+        (b) lag ACOMPANHA o predecessor: encurtou a etapa de cima, a barra que
+            a pessoa fixou no dia 03/11 anda sozinha — ela fixou uma DATA, não
+            uma distância;
+        (c) o MS Project (js/msproject.js) já exporta SNET; lag mentiria na
+            exportação.
+       ⚠ E A VERSÃO ANTERIOR DO APP LÊ SEM CAIR: o mapa é NOVO e SEPARADO
+       (I3), `duracoes`/`predecessoras`/`lags`/`marcos` não são tocados. O
+       aparelho antigo ignora `restricoes` e desenha a etapa na posição da
+       REDE — a mesma que ele desenhava antes do arrasto. Ele nunca vê um
+       número errado; vê o número de antes. (A porta para igualar os dois é
+       materializar a restrição em lag quando ela couber — pendência.)
+
+       Devolve null quando não há mapa (ou ele voltou como lista): sem isto o
+       cronograma de todo orçamento que já existe mudaria de forma. */
+    _restricoes: function (orc, etapas) {
+      var cron = orc && orc.cronograma, m = cron && cron.restricoes, out = [], inv = [], k;
+      if (!m || typeof m !== "object" || Array.isArray(m)) return null;
+      var existe = {};
+      arr(etapas).forEach(function (e) { if (e && e.id != null) existe[e.id] = true; });
+      for (k in m) {
+        if (!own(m, k)) continue;
+        var v = m[k];
+        if (!v || typeof v !== "object" || Array.isArray(v)) { inv.push({ id: k, motivo: "forma" }); continue; }
+        var tipo = String(v.tipo == null ? "" : v.tipo).toLowerCase().trim();
+        var data = String(v.data == null ? "" : v.data).slice(0, 10);
+        if (tipo !== "nia" && tipo !== "tae") { inv.push({ id: k, motivo: "tipo" }); continue; }
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) { inv.push({ id: k, motivo: "data" }); continue; }
+        // etapa apagada depois de fixada: a restrição é lixo, e some sem mexer em nada
+        if (!own(existe, k)) { inv.push({ id: k, motivo: "etapa" }); continue; }
+        out.push({ id: k, tipo: tipo, data: data });
+      }
+      if (!out.length && !inv.length) return null;
+      return { lista: out, invalidos: inv };
+    },
+
+    /* Converte cada restrição em ÍNDICE de dia útil (pelo calendário do
+       motor, com feriado), roda a ida de novo com o piso e devolve o novo
+       totalDias + o que a tela precisa dizer.
+       ⚠ A data largada num domingo (ou num feriado) sobe para o PRÓXIMO dia
+       útil, nunca desce: "não iniciar antes de domingo" com o índice da
+       sexta-feira anterior permitiria começar ANTES do que a pessoa pediu. */
+    _aplicarRestricoes: function (restr, etapas, porId, ini, params, fer, totalDias, folgaRest, ida, cal) {
+      var self = this, piso = {}, temPiso = false, avisos = [], redeOut = null;
+      /* ⚠ A TABELA VEM DO `estimar` (12/09/2026): esta função montava a sua
+         própria, e duas tabelas do mesmo calendário divergem na primeira
+         manutenção — a restrição cairia num índice de dia útil e a etapa em
+         outro. O argumento é opcional só para não deixar chamador de fora sem
+         saída; dentro do motor ele sempre vem. */
+      if (!cal) cal = this.calendario({ dataInicio: ini, params: params, feriados: { mapa: fer.mapa } });
+      var maxR = Math.ceil(totalDias + folgaRest) + 10;
+      function dmaS(s) { var p = String(s).split("-"); return p[2] + "/" + p[1] + "/" + p[0]; }
+      function numEt(id) { for (var i = 0; i < etapas.length; i++) if (etapas[i].id === id) return i + 1; return "?"; }
+      restr.lista.forEach(function (x) {
+        var t = new Date(x.data + "T00:00:00");
+        if (isNaN(t.getTime()) || !cal) { restr.invalidos.push({ id: x.id, motivo: "data" }); return; }
+        var ms = meiaNoite(t), j = cal.indice(ms, maxR);
+        if (j < 0) j = 0;                                   // antes do início da obra: sem efeito
+        else if (meiaNoite(cal.dia(j)) < ms) j = j + 1;      // domingo/feriado sobe para o próximo dia útil
+        x.indice = j;
+        if (x.tipo === "nia") { piso[x.id] = j; temPiso = true; }
+      });
+      if (temPiso) { redeOut = {}; ida(piso, redeOut); }
+      /* ⚠ mesma guarda do `maiorFim` do `estimar`: etapa fora do prazo
+         (opcional, duração 0) não estica o total mesmo com data fixada nela.
+         `foraDoPrazo` é undefined no caminho de sempre. */
+      var novoTotal = etapas.reduce(function (m, e) { return e.foraDoPrazo ? m : Math.max(m, e.fim); }, 0);
+      restr.lista.forEach(function (x) {
+        var et = porId[x.id];
+        if (!et || x.indice == null) return;
+        var rede = redeOut && own(redeOut, x.id) ? redeOut[x.id] : et.inicio;
+        var estourada = x.tipo === "tae" && et.fim > x.indice;
+        et.restricao = { tipo: x.tipo, data: x.data, indice: x.indice, inicioRede: rede,
+          ativa: x.tipo === "nia" && et.inicio === x.indice && x.indice > rede, estourada: estourada };
+        if (estourada) avisos.push({ tipo: "tae", etapaId: x.id, data: x.data, fim: et.fim, indice: x.indice,
+          msg: "Etapa " + numEt(x.id) + ": a restrição “terminar até " + dmaS(x.data) + "” não é cumprida — o plano de hoje termina " +
+            (et.fim - x.indice) + " dia(s) útil(eis) depois. A restrição avisa; ela não encurta a etapa nem empurra as outras." });
+      });
+      restr.invalidos.forEach(function (v) {
+        avisos.push({ tipo: "invalida", etapaId: v.id, motivo: v.motivo,
+          msg: v.motivo === "etapa" ? "Uma data fixada aponta para uma etapa que não existe mais neste orçamento — ela foi ignorada."
+            : "Data fixada em formato inválido (" + v.motivo + ") — ela foi ignorada; o cronograma seguiu pela rede." });
+      });
+      return { totalDias: novoTotal, saida: { lista: restr.lista, invalidos: restr.invalidos, avisos: avisos } };
+    },
+
     /* Estima o cronograma inteiro. Retorna etapas com duração/início/fim + datas.
        `ctx` (3º argumento, opcional) — ver o bloco CRONOGRAMA EXECUTIVO acima:
        só `ctx.eap === true` acrescenta `r.atividades` e `r.exec`, DEPOIS de o
@@ -1359,9 +2053,13 @@
          Desligado: `vivo` fica null e o laço abaixo é o de sempre (I2).
          O try: um orçamento torto que derrube a árvore não pode derrubar a
          data de etapa — cai no gravado, que é o que a versão antiga mostra. */
+      /* memo de UMA chamada: a árvore EAP + o `_preparar` que o `_vaosExec`
+         monta aqui em cima e o `_arvore` refazia lá embaixo. Ver `_contexto` —
+         inclusive o ⚠ de por que ele NÃO pode atravessar chamadas. */
+      var mem = [], calcCtx = (ctx && ctx.eap === true && ctx.calc) ? ctx.calc : null;
       var vivo = null, agVivo = null, cong = null;
       if (orc.cronograma && orc.cronograma.exec && orc.cronograma.exec.rede === true) {
-        try { vivo = self._vaosExec(orc); } catch (eVivo) { vivo = null; }
+        try { vivo = self._vaosExec(orc, false, mem, calcCtx); } catch (eVivo) { vivo = null; }
         agVivo = (orc.cronograma.duracoesAgente && typeof orc.cronograma.duracoesAgente === "object") ? orc.cronograma.duracoesAgente : {};
         /* ⚠ APROVADO: a data é a GRAVADA (ver `congeladoPorAprovacao`). O vão
            de hoje continua sendo calculado — mas SÓ para o recado da tela
@@ -1375,6 +2073,11 @@
       // mapa próprio porque um 0 em `duracoes` já significa "não estimável, cai
       // no cálculo" (ver abaixo) — reaproveitar o 0 confundiria os dois.
       var marcos = (orc.cronograma && orc.cronograma.marcos) || {};
+      /* ⚠ ETAPA OPCIONAL FORA DO PRAZO (ver `opcionaisNoPrazo` no DEFAULTS).
+         `opcFora` só é true quando alguém DESLIGOU o parâmetro — com ele
+         ligado (o padrão do motor) nenhuma linha nova roda e a saída é a do
+         master, bit a bit, que é o que a paridade cobra. */
+      var opcFora = params.opcionaisNoPrazo === false, temFora = false;
       var etapas = (orc.etapas || []).map(function (e) {
         var ed = 0, catCusto = {}, custo = 0;
         (e.itens || []).forEach(function (it) {
@@ -1392,7 +2095,14 @@
         var temOverride = mEt != null && num(mEt) > 0;
         var marco = marcos[e.id] === true;
         var dur = marco ? 0 : (temOverride ? num(mEt) : Math.max(1, Math.ceil(ed / (params.equipes || 1))));
-        return { id: e.id, codigo: e.codigo, nome: e.nome, categoria: catPred, categoriaNome: catO.nome, cor: catO.cor, custo: custo, equipeDias: Math.round(ed * 10) / 10, duracao: dur, editado: temOverride, marco: marco };
+        var out = { id: e.id, codigo: e.codigo, nome: e.nome, categoria: catPred, categoriaNome: catO.nome, cor: catO.cor, custo: custo, equipeDias: Math.round(ed * 10) / 10, duracao: dur, editado: temOverride, marco: marco };
+        /* ⚠ I2: A OPCIONAL NÃO SAI DO ARRAY. `r.etapas` é 1:1 com `orc.etapas`
+           e cinco consumidores casam por ÍNDICE (ver o bloco CRONOGRAMA
+           EXECUTIVO). Ela fica com duração 0 e a marca `foraDoPrazo`; quem
+           desenha usa `duracaoPlena` para a barra tracejada — o tamanho que
+           ela teria SE fosse comprada, ancorado no `inicio` que a cascata deu. */
+        if (opcFora && e.opcional === true) { out.duracaoPlena = dur; out.duracao = 0; out.foraDoPrazo = true; temFora = true; }
+        return out;
       });
       // ---- rede de precedência (CPM: ida, volta, folga e caminho crítico) ----
       // O padrão continua a cascata de sempre: cada etapa depois da ANTERIOR,
@@ -1410,12 +2120,28 @@
       var lagsCfg = (orc.cronograma && orc.cronograma.lags) || {};
       var porId = {};
       etapas.forEach(function (et) { porId[et.id] = et; });
+      var opcDependida = [];
       etapas.forEach(function (et, i) {
         var cfg = predsCfg[et.id], out = [], k, lagEt = lagsCfg[et.id] || {};
         et.predsExplicito = Object.prototype.toString.call(cfg) === "[object Array]";
         if (et.predsExplicito) {
           for (k = 0; k < cfg.length; k++) if (cfg[k] !== et.id && porId[cfg[k]] && out.indexOf(cfg[k]) < 0) out.push(cfg[k]);
-        } else if (i > 0) out.push(etapas[i - 1].id);
+          /* ⚠ ELO EXPLÍCITO PARA UMA ETAPA QUE SAIU DO PRAZO. O elo CONTINUA
+             valendo (apagá-lo mudaria a rede que a pessoa desenhou), mas o
+             predecessor dura 0: na prática o sucessor começa onde o opcional
+             começa. Isso precisa ser DITO — a pessoa ligou a etapa 5 à piscina
+             e o plano contratado a ignora. Vai em `r.opcionais.avisos`. */
+          if (opcFora) for (k = 0; k < out.length; k++) if (porId[out[k]].foraDoPrazo && opcDependida.indexOf(et.id + "|" + out[k]) < 0) opcDependida.push(et.id + "|" + out[k]);
+        } else if (i > 0) {
+          /* ⚠ A CASCATA PULA A ETAPA FORA DO PRAZO. Sem isto, `etapas[i-1].id`
+             pendura a etapa seguinte numa barra de duração 0 e o plano
+             contratado fica preso à posição de um escopo que não foi vendido.
+             Se TODAS as anteriores estiverem fora, não há predecessora e a
+             etapa começa no dia 0 — que é o certo: nada contratado a segura. */
+          var j = i - 1;
+          while (opcFora && j >= 0 && etapas[j].foraDoPrazo) j--;
+          if (j >= 0) out.push(etapas[j].id);
+        }
         et.preds = out;
         et.predLag = {};
         out.forEach(function (pid) { var l = lagEt[pid]; if (l != null && isFinite(num(l))) et.predLag[pid] = Math.round(num(l)); });
@@ -1440,16 +2166,85 @@
       }
       var temCiclo = ordem.length < etapas.length;
       if (temCiclo) etapas.forEach(function (et) { if (ordem.indexOf(et.id) < 0) { et.cicloDep = true; ordem.push(et.id); } });
-      var resolvido = {};
-      ordem.forEach(function (id) {
-        var et = porId[id], ini0 = 0;
-        et.preds.forEach(function (pid) {
-          if (!resolvido[pid]) return; // só dentro de ciclo: o elo de volta é ignorado
-          var p = porId[pid]; ini0 = Math.max(ini0, p.fim + desloc(p, et));
+      /* A IDA virou função para poder rodar DUAS vezes: a 1ª sem piso nenhum
+         (o caminho de sempre, linha a linha) e a 2ª com o piso das RESTRIÇÕES
+         DE DATA, que só existe quando há restrição gravada. Duas cópias do
+         mesmo laço divergiriam na primeira manutenção — e aqui divergir
+         significa a mesma obra com duas datas de entrega. */
+      function ida(piso, redeOut) {
+        var resolvido = {};
+        ordem.forEach(function (id) {
+          var et = porId[id], ini0 = 0;
+          et.preds.forEach(function (pid) {
+            if (!resolvido[pid]) return; // só dentro de ciclo: o elo de volta é ignorado
+            var p = porId[pid]; ini0 = Math.max(ini0, p.fim + desloc(p, et));
+          });
+          // o início que a REDE pede, antes do piso — é o que o Gantt precisa para
+          // recusar um arrasto para a esquerda dizendo de quem é a culpa
+          if (redeOut) redeOut[id] = Math.max(0, ini0);
+          if (piso && own(piso, id) && piso[id] > ini0) ini0 = piso[id];
+          et.inicio = Math.max(0, ini0); et.fim = et.inicio + et.duracao; resolvido[id] = true;
         });
-        et.inicio = Math.max(0, ini0); et.fim = et.inicio + et.duracao; resolvido[id] = true;
+      }
+      ida(null, null);
+      /* ⚠ O TOTAL É O DA ÚLTIMA ETAPA CONTRATADA. A etapa fora do prazo tem
+         duração 0, mas o `fim` dela ainda é uma posição no calendário — e uma
+         DATA FIXADA nela (o mapa `restricoes`, o que a barra arrastada no
+         Gantt grava) a joga para frente. Sem esta guarda, arrastar a barra da
+         piscina para dezembro esticava o prazo CONTRATADO junto: medido, 20
+         dias úteis viravam 57. `foraDoPrazo` é undefined no caminho padrão,
+         então esta linha continua sendo a de sempre (a paridade cobra). */
+      function maiorFim(m, e) { return e.foraDoPrazo ? m : Math.max(m, e.fim); }
+      var totalDias = etapas.reduce(maiorFim, 0);
+      var ini = params.dataInicio ? new Date(params.dataInicio + (String(params.dataInicio).length <= 10 ? "T00:00:00" : "")) : new Date();
+      /* ⚠ RESTRIÇÕES DE DATA (mapa novo `orc.cronograma.restricoes`) — ver o
+         bloco `_restricoes`. Nada daqui roda sem restrição gravada: `restr`
+         fica null e o cronograma sai bit a bit igual ao de sempre (a paridade
+         com o master cobra isso). O feriado precisa cobrir até a restrição
+         mais distante, senão uma etapa fixada em 2029 cairia fora do mapa. */
+      var restr = self._restricoes(orc, etapas), folgaRest = 0;
+      if (restr) restr.lista.forEach(function (x) {
+        var t = new Date(x.data + "T00:00:00");
+        if (isNaN(t.getTime())) return;
+        var corr = Math.round((meiaNoite(t) - meiaNoite(ini)) / 86400000);
+        if (corr > folgaRest) folgaRest = corr;
       });
-      var totalDias = etapas.reduce(function (m, e) { return Math.max(m, e.fim); }, 0);
+      var fer = self._feriadosDe(params, ini, totalDias + Math.ceil(folgaRest * ((params.diasUteisSemana || 5) / 7)));
+      /* ⚠ O DIA 0 TEM DE SER DIA DE OBRA. Sem isto, quem escolhia um domingo
+         (ou 07/09, que é feriado) via a primeira etapa "começando" num dia em
+         que não há ninguém no canteiro, e todas as datas seguintes herdavam o
+         deslocamento. Empurra para o primeiro dia útil e guarda o ajuste, para
+         a tela poder dizer POR QUE a data mudou — data que muda sozinha e sem
+         explicação faz a pessoa achar que o sistema errou. */
+      var iniPedido = new Date(ini.getTime()), ajusteInicio = null, giros = 0;
+      while (!self.diaUtil(ini, params.diasUteisSemana, fer.mapa) && giros++ < 40) ini.setDate(ini.getDate() + 1);
+      if (ini.getTime() !== iniPedido.getTime()) {
+        ajusteInicio = { de: self._ch(iniPedido), para: self._ch(ini), motivo: fer.mapa[self._ch(iniPedido)] || "fim de semana" };
+      }
+      /* ⚠ UMA TABELA DE CALENDÁRIO POR `estimar` (12/09/2026), montada aqui —
+         DEPOIS do ajuste do dia 0, porque é dele que ela parte.
+         POR QUE: cada etapa era datada por TRÊS `addDiasUteis`, e cada um anda
+         o calendário dia a dia desde o dia 0 chamando `diaUtil()`. MEDIDO no
+         motor de 11/09: 69.635 chamadas num orçamento de 30 etapas / 1.539
+         dias úteis (19,71 ms) e 126.980 num de 50 etapas / 1.706 (32,46 ms) —
+         o custo é da RÉGUA do calendário, não do tamanho do orçamento: o mesmo
+         orçamento com prazo curto custava 0,8 ms. A tabela faz a varredura UMA
+         vez e responde por índice, e a data é EXATAMENTE a mesma (ela anda com
+         os mesmos passos do `addDiasUteis` e cai NELE quando o giro passaria
+         da guarda de 10 anos — ver `calendario`). Conferido em 17.359 datas,
+         zero divergência: tools/test-crono-desempenho.js, bloco 1.
+         ⚠ UMA SÓ, E COMPARTILHADA: o `_aplicarRestricoes` e o `_arvore`
+         montavam cada um a sua. Duas tabelas do mesmo calendário divergem na
+         primeira manutenção — e aqui divergir é a mesma obra com duas datas de
+         entrega. Início inválido (Invalid Date) devolve null, e aí vale o
+         `addDiasUteis` de sempre: o contrato não muda. */
+      var cal = self.calendario({ dataInicio: ini, params: params, feriados: { mapa: fer.mapa } });
+      function dataDeIdx(k) { return cal ? cal.dia(k) : self.addDiasUteis(ini, k, params.diasUteisSemana, fer.mapa); }
+      var infoRestr = null;
+      if (restr) {
+        infoRestr = self._aplicarRestricoes(restr, etapas, porId, ini, params, fer, totalDias, folgaRest, ida, cal);
+        totalDias = infoRestr.totalDias;
+      }
       // volta: um sucessor exige que eu termine até (início tardio dele + a
       // minha sobreposição); folga = quanto posso atrasar sem mudar o fim da
       // obra. Folga zero = caminho crítico. Isso vale também na cascata
@@ -1465,25 +2260,20 @@
         etv.folga = Math.max(0, lf - etv.fim);
         etv.critico = etv.folga === 0;
       }
-      var ini = params.dataInicio ? new Date(params.dataInicio + (String(params.dataInicio).length <= 10 ? "T00:00:00" : "")) : new Date();
-      var fer = self._feriadosDe(params, ini, totalDias);
-      /* ⚠ O DIA 0 TEM DE SER DIA DE OBRA. Sem isto, quem escolhia um domingo
-         (ou 07/09, que é feriado) via a primeira etapa "começando" num dia em
-         que não há ninguém no canteiro, e todas as datas seguintes herdavam o
-         deslocamento. Empurra para o primeiro dia útil e guarda o ajuste, para
-         a tela poder dizer POR QUE a data mudou — data que muda sozinha e sem
-         explicação faz a pessoa achar que o sistema errou. */
-      var iniPedido = new Date(ini.getTime()), ajusteInicio = null, giros = 0;
-      while (!self.diaUtil(ini, params.diasUteisSemana, fer.mapa) && giros++ < 40) ini.setDate(ini.getDate() + 1);
-      if (ini.getTime() !== iniPedido.getTime()) {
-        ajusteInicio = { de: self._ch(iniPedido), para: self._ch(ini), motivo: fer.mapa[self._ch(iniPedido)] || "fim de semana" };
-      }
+      /* ⚠ A ETAPA FORA DO PRAZO NÃO É CAMINHO CRÍTICO. Com duração 0 ela cai
+         na conta de folga como qualquer marco e, quando fica na ponta do
+         plano, sai com folga 0 — e apareceria no `caminhoCritico` pintada de
+         vermelho no Gantt, dizendo que o escopo NÃO vendido atrasa a obra.
+         Era metade do defeito D4: medido na fixture, a opcional saía no
+         caminho crítico. Caminho crítico é do que foi contratado. */
+      if (temFora) etapas.forEach(function (et) { if (et.foraDoPrazo) et.critico = false; });
+      // as três datas de cada etapa saem da tabela (ver o ⚠ de `cal` acima)
       etapas.forEach(function (et) {
-        et.dataInicio = self.addDiasUteis(ini, et.inicio, params.diasUteisSemana, fer.mapa);
-        et.dataFim = self.addDiasUteis(ini, et.fim, params.diasUteisSemana, fer.mapa);
-        et.dataLimite = et.folga ? self.addDiasUteis(ini, et.fim + et.folga, params.diasUteisSemana, fer.mapa) : et.dataFim;
+        et.dataInicio = dataDeIdx(et.inicio);
+        et.dataFim = dataDeIdx(et.fim);
+        et.dataLimite = et.folga ? dataDeIdx(et.fim + et.folga) : et.dataFim;
       });
-      var dataFim = self.addDiasUteis(ini, totalDias, params.diasUteisSemana, fer.mapa);
+      var dataFim = dataDeIdx(totalDias);
       /* só os feriados que REALMENTE custaram dia de obra: um Natal que cai no
          domingo não atrasa nada, e contá-lo daria um número que não fecha com
          a diferença entre as datas. */
@@ -1501,13 +2291,114 @@
         temCiclo: temCiclo,
         feriados: { mapa: fer.mapa, lista: fer.lista, noPeriodo: noPeriodo, invalidos: fer.invalidos, ajusteInicio: ajusteInicio }
       };
+      /* ⚠ A CHAVE SÓ NASCE COM RESTRIÇÃO GRAVADA. Chave a mais no resultado é
+         mudança de contrato e a paridade com o master reprova — por isso
+         `infoRestr` é null quando `orc.cronograma.restricoes` está ausente,
+         vazio ou é uma lista (mapa que voltou torto da sincronização). */
+      if (infoRestr) res.restricoes = infoRestr.saida;
+      /* ⚠ OS DOIS NÚMEROS DO PRAZO (defeito D4). `totalDias`/`dataFim` são o
+         escopo CONTRATADO; `totalDiasComOpcionais`/`dataFimComOpcionais` são o
+         mesmo plano com os opcionais dentro. A tela tem de mostrar os dois —
+         um número só, aqui, é o que fazia a proposta prometer data de um
+         escopo que o "Valor total" não cobra.
+         ⚠ O SEGUNDO NÚMERO SAI DA MESMA FUNÇÃO, chamada com o interruptor
+         LIGADO — nunca de uma segunda cópia da regra. Duas contas do mesmo
+         prazo divergem na primeira manutenção, e aqui divergir é a mesma obra
+         com duas entregas. A recursão não se repete (lá dentro
+         `params.opcionaisNoPrazo` é true e `temFora` fica false) e só acontece
+         quando o interruptor está desligado E existe etapa opcional — na base
+         da RA isso é 0 de 51 orçamentos distintos, medido (a régua da contagem
+         está no ⚠ de `opcionaisNoPrazo`, lá em cima).
+         ⚠ `dataInicio` VAI EXPLÍCITA: sem início gravado o motor usa
+         `new Date()`, e duas chamadas em lados diferentes da meia-noite
+         datariam obras diferentes. Vai a data PEDIDA (antes do ajuste do dia
+         0), que é de onde a chamada de cima também partiu. */
+      if (temFora) {
+        var ovPleno = {}, kOv;
+        if (override) for (kOv in override) if (own(override, kOv)) ovPleno[kOv] = override[kOv];
+        ovPleno.opcionaisNoPrazo = true;
+        ovPleno.dataInicio = self._ch(iniPedido);
+        var pleno = null;
+        try { pleno = self.estimar(orc, ovPleno, null); } catch (ePl) { pleno = null; }
+        var avOpc = [];
+        etapas.forEach(function (et, i) {
+          if (!et.foraDoPrazo) return;
+          avOpc.push({ tipo: "fora-do-prazo", etapaId: et.id, numero: i + 1, duracaoPlena: et.duracaoPlena,
+            msg: "Etapa " + (i + 1) + " é opcional: ela está FORA do prazo de " + totalDias + " dia(s) útil(eis) e fora do caminho crítico, " +
+              "porque o \"Valor total\" não a cobra. Se o cliente comprá-la, ela pede " + et.duracaoPlena + " dia(s) útil(eis)" +
+              (pleno ? " e a obra inteira passa a " + pleno.totalDias : "") + "." });
+        });
+        opcDependida.forEach(function (par) {
+          var p = par.split("|"), sN = "?", pN = "?";
+          etapas.forEach(function (et, i) { if (et.id === p[0]) sN = i + 1; if (et.id === p[1]) pN = i + 1; });
+          avOpc.push({ tipo: "depende-de-opcional", etapaId: p[0], predId: p[1],
+            msg: "Etapa " + sN + " depende da etapa " + pN + ", que é opcional e está fora do prazo contratado — o elo continua, mas com duração 0. " +
+              "Ligue a etapa " + sN + " a uma etapa contratada no \"Depende de\", ou traga a " + pN + " para o escopo." });
+        });
+        /* ⚠ A DATA SEPARA; O DINHEIRO, AINDA NÃO — e isso é DITO, não escondido.
+           `periodos` continua distribuindo o valor de TODA etapa, inclusive a
+           que saiu do prazo: com duração 0 ela cai no ramo do marco e o valor
+           inteiro dela pousa num dia só. MEDIDO (12/09/2026, fixture de 3
+           etapas): com o interruptor ligado a obra dá 53 dias úteis em 3 meses;
+           desligado, 14 dias úteis em 1 mês — e nos DOIS a soma da curva é a
+           mesma, com 56% dela sendo a etapa opcional, agora empilhada no
+           primeiro mês. Tirar esse dinheiro da curva é outra decisão de
+           produto (o desembolso, o Portal, o físico-financeiro e o
+           `Orcamento.cronograma` leem isto, e o chamador é quem passa os
+           valores), e mudar número calado é exatamente o que não se faz aqui.
+           Então o motor AVISA. Sem valor em R$ no texto: o que o motor tem à
+           mão é CUSTO DIRETO, e ele não sai do motor. */
+        /* ⚠ ESTE ERA O ÚNICO AVISO NOVO SEM NENHUM NÚMERO — e é o que fala de
+           DINHEIRO. Texto constante, igual em todo orçamento, enquanto os
+           outros três citam etapa e prazo. "Aviso genérico a pessoa lê como
+           formalidade; número ela confere" (CLAUDE.md §7), e aqui o número
+           existe e está à mão: quais etapas saíram, quantas são, e quantos
+           meses a curva mensal continua ocupando contra os do prazo
+           contratado. Sem cifra em R$: o que o motor tem à mão é CUSTO DIRETO,
+           e custo direto não sai do motor. */
+        if (avOpc.length) {
+          var numFora = [];
+          etapas.forEach(function (et, i) { if (et.foraDoPrazo) numFora.push(i + 1); });
+          // expressão, não declaração: declaração de função dentro de bloco é
+          // erro em ES5 estrito, e o produto roda em WebView de instalador antigo
+          var mesesAte = function (d) { return (d.getFullYear() - ini.getFullYear()) * 12 + (d.getMonth() - ini.getMonth()) + 1; };
+          var fimCurva = dataFim;
+          etapas.forEach(function (et) { if (et.dataFim && et.dataFim > fimCurva) fimCurva = et.dataFim; });
+          var mC = mesesAte(dataFim), mT = mesesAte(fimCurva);
+          avOpc.push({ tipo: "curva-com-opcional", etapas: numFora, mesesContratado: mC, mesesCurva: mT,
+            msg: "A distribuição mensal (desembolso, curva S e físico-financeiro) ainda conta o valor " +
+              (numFora.length > 1 ? "das etapas opcionais " + numFora.slice(0, 3).join(", ") + (numFora.length > 3 ? " (e mais " + (numFora.length - 3) + ")" : "")
+                : "da etapa opcional " + numFora[0]) +
+              " — só o PRAZO foi separado: a obra CONTRATADA cabe em " + mC + " mês(es) e a curva mensal continua espalhada por " + mT + ". " +
+              "O \"Valor total\" da proposta já separa (os opcionais saem como adicionais); a curva mensal, não. " +
+              "Confira o desembolso antes de mandá-lo ao cliente." });
+        }
+        /* ⚠ ORÇAMENTO SEM NENHUM ESCOPO CONTRATADO (12/09/2026). Com TODAS as
+           etapas marcadas `opcional` e o interruptor desligado o motor devolve
+           `totalDias: 0`, `dataFim === dataInicio` e `caminhoCritico: []` — e
+           nada dizia por quê. Pior: `Orcamento.mesesSugeridos` devolve 0 e o
+           `_prazoTexto` monta "o cronograma passa a dar 0 dias úteis", que é
+           mandar corrigir a proposta para ZERO — porta fechada. O "orçamento de
+           adicionais" tem exatamente essa forma, então isto não é teórico. */
+        var nFora = etapas.filter(function (e) { return e.foraDoPrazo; }).length;
+        if (totalDias === 0 && nFora === etapas.length) avOpc.push({ tipo: "sem-escopo-contratado", opcionais: nFora,
+          totalDiasComOpcionais: pleno ? pleno.totalDias : null,
+          msg: "Todas as " + etapas.length + " etapa(s) deste orçamento estão marcadas como opcionais — não há prazo contratado (0 dia útil), " +
+            "porque o \"Valor total\" não cobra nenhuma delas" + (pleno ? ". Com os opcionais dentro, a obra pede " + pleno.totalDias + " dia(s) útil(eis)" : "") +
+            ". Desmarque \"opcional\" no que o \"Valor total\" cobra, ou trate este orçamento como proposta de adicionais (e leia o prazo pelo número COM opcionais)." });
+        res.opcionais = { fora: etapas.filter(function (e) { return e.foraDoPrazo; }).map(function (e) { return e.id; }), avisos: avOpc };
+        if (pleno) {
+          res.totalDiasComOpcionais = pleno.totalDias;
+          res.dataFimComOpcionais = pleno.dataFim;
+        }
+      }
       /* ⚠ A árvore do cronograma executivo entra DEPOIS, só com `ctx.eap`, e
          só LÊ `res` (nunca reescreve etapa, data ou total). O try é a guarda do
          I1: um defeito na árvore nova não pode derrubar o Gantt de etapas que a
          aba já desenhava — a tela recebe `exec.erro` e diz que não conseguiu,
          em vez de sumir com o cronograma inteiro. */
       if (ctx && ctx.eap === true) {
-        try { self._arvore(orc, res, ctx, vivo, cong); }
+        try { self._arvore(orc, res, ctx, vivo, cong, cal, mem); }
         catch (errArv) {
           res.atividades = null;
           res.exec = { rede: false, paralelismoSub: 0, toleranciaPP: 1, detalhe: "etapa", avisos: [],

@@ -542,7 +542,27 @@
    * ===================================================================== */
   Proposta.cronogramaParaModelo = function (orc, meses) {
     var c;
-    try { c = Orcamento.cronograma(orc, meses || (orc && orc.cronogramaMeses) || 6); }
+    /* ⚠ SÓ PASSA O 2º ARGUMENTO QUANDO ALGUÉM PEDIU O NÚMERO — e isto é
+     * dinheiro com data (12/09/2026).
+     *
+     * `Orcamento.cronograma(orc, n)` com `n` preenchido trava o nº de COLUNAS
+     * em `n` e ACUMULA na última tudo que passar dela (`estouro`). Sem o
+     * argumento, a régua é o próprio Gantt — e a trava manual da pessoa
+     * continua valendo, porque a conta lá dentro é
+     * `(mesesPedido || orc.cronogramaMesesManual) ? meses : nG`.
+     *
+     * Passar `orc.cronogramaMeses` aqui parecia inofensivo, e não é: aquele
+     * campo é DERIVADO e regravado a cada abertura. Quando ele passou a
+     * guardar o prazo da FROTA (a régua que o aparelho na versão anterior
+     * enxerga), a tela seguiu desenhando o Gantt certo — 9 colunas, estouro 0 —
+     * e a PROPOSTA saiu com 6, empilhando R$ 262.300,00 de maio e junho de 2027
+     * numa coluna de março. Medido em 400 orçamentos: 113 de 314 piorariam,
+     * pior caso R$ 1.325.731,00 numa coluna que antes tinha R$ 0.
+     *
+     * É o defeito da memória "conserto que para no segundo consumidor": o
+     * engenheiro confere uma tabela e o cliente recebe outra, calado. E o
+     * cliente planeja o caixa dele pelo "Mês 6" que leu aqui. */
+    try { c = Orcamento.cronograma(orc, meses || undefined); }
     catch (e) { return null; }
     if (!c || !Util.arr(c.etapas).length) return null;
     var etsOrc = Util.arr(orc && orc.etapas);

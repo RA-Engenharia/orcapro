@@ -1698,7 +1698,13 @@
               credito: (typeof Empresa !== "undefined" && Empresa.creditoTexto) ? Empresa.creditoTexto() : "",
               creator: (typeof Empresa !== "undefined" && Empresa.excelCreator) ? Empresa.excelCreator() : "",
               abc: (typeof Orcamento.curvaABC === "function") ? Orcamento.curvaABC(orc) : null,
-              crono: (typeof Orcamento.cronograma === "function") ? Orcamento.cronograma(orc, orc.cronogramaMeses) : null,
+              /* ⚠ SEM o 2º argumento: ele trava o nº de colunas e acumula na
+                 última tudo que passar. `orc.cronogramaMeses` é campo DERIVADO
+                 e regravado a cada abertura — forçá-lo aqui fazia a planilha
+                 divergir da tela, com meses de desembolso empilhados numa
+                 coluna só. A trava manual da pessoa continua valendo lá dentro
+                 (`cronogramaMesesManual`). Ver o ⚠ de js/proposta.js. */
+              crono: (typeof Orcamento.cronograma === "function") ? Orcamento.cronograma(orc) : null,
               cronoAgente: (typeof Cronograma !== "undefined") ? Cronograma.estimar(orc) : null,
               insumosMap: insumosMap,
               analiticoComp: (typeof Analitico !== "undefined" && Analitico.carregado) ? (Analitico.competencia + "/" + Analitico.uf) : "",

@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.75",
+  "versao": "1.2.76",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.75.zip",
-  "notas": "Novidades: entrar pelo celular ficou mais simples. A tela de acesso pede so o e-mail (ou usuario) e a senha; a senha tem um botao para conferir o que foi digitado; o celular passa a oferecer a senha salva; e o campo da empresa, que so serve para criar conta nova, saiu da frente de quem so quer entrar. Quem ja usa o OrcaPRO no computador entra no celular com a MESMA conta, sem criar outra. Correcao: no iPhone a tela nao salta mais quando se toca no campo para digitar.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.75/OrcaPRO-IA-Instalador-v1.2.75.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.76.zip",
+  "notas": "Novidades: o cronograma virou ferramenta de planejamento. As barras agora se arrastam para mudar data, duracao e dependencia; da para aproximar e afastar (dia, semana, mes, trimestre) e rolar para os lados com os nomes das etapas parados na esquerda. Novo histograma de mao de obra: quantas pessoas de cada profissao a obra pede por semana, e onde esta o pico - o grafico diz sempre de onde veio cada numero. Novo fluxograma da rede: o que trava o que. Quatro documentos novos para imprimir: cronograma fisico-financeiro em matriz, relatorio mensal de acompanhamento, programacao de 3 semanas para o canteiro e resumo de uma pagina para a diretoria. O arquivo para o MS Project passou a levar mao de obra, custo, linha de base e avanco; em computador com o MS Project instalado, o OrcaPRO gera o .mpp direto (e confere o arquivo antes de entregar). O cronograma tambem avisa quando a sequencia das etapas contraria a pratica de obra e sugere o que pode andar junto, dizendo quantos dias isso economiza. Correcoes: a etapa marcada como opcional nao entra mais no prazo sem voce mandar - o prazo passa a ser o do escopo que o Valor total cobra; dependencia entre subetapas de etapas diferentes deixou de sumir sem aviso; e o cronograma ficou bem mais rapido em obra longa.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.76/OrcaPRO-IA-Instalador-v1.2.76.exe"
 }

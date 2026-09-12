@@ -798,6 +798,14 @@
       ok: true, concluida: false, pct: pctAtual,
       foraDeEscala: foraDeEscala,
       ritmoSemanal: Math.round(provavel * 100) / 100,
+      /* ⚠ O MESMO RITMO SEM ARREDONDAR — não é duplicata, é o conserto de raiz.
+         `ritmoSemanal` é número de TELA (2 casas). Obra na reta final avança
+         menos de 0,01% por semana e o arredondado vira 0,00 — aí quem projeta a
+         curva S não tem ritmo nenhum e passava a DERIVAR o ritmo da
+         `dataProvavel`, que é arredondada ao DIA: arredondamento em cima de
+         arredondamento. Este campo é aditivo (ninguém que lê `ritmoSemanal`
+         muda de comportamento) e existe só para quem calcula, nunca para exibir. */
+      ritmoSemanalExato: provavel,
       ritmoOtimista: Math.round(otimista * 100) / 100,
       semanasRestantes: semRest,
       dataProvavel: foraDeEscala ? "" : dProv,

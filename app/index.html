@@ -105,14 +105,62 @@
   <!-- a TELA do cronograma executivo (aba Cronograma): desenho puro; o ui.js
        delega o renderCronograma para ele e o cronPDF usa o Gantt hierárquico -->
   <script src="js/cronoexecui.js"></script>
+  <!-- o MOTOR do Gantt interativo (zoom, rolagem, virtualização e arrastar):
+       geometria e estado puros, sem DOM. Vem depois do cronograma.js porque o
+       arrasto casa em dia ÚTIL pelo calendário do motor (nunca reimplementa
+       feriado) — e antes do app.js, que liga a tela. ⚠ motor sem esta linha é
+       recurso inerte: passa no gate e não existe no navegador -->
+  <script src="js/ganttui.js"></script>
   <!-- a IA que edita o orçamento ([Editar com IA]): motor puro que valida o que
        a IA propõe antes de qualquer gravação. Lê Orcamento, Cronograma e
        Proposta na hora da chamada, por isso vem depois deles; e antes do
        app.js, que liga a tela (sem esta linha o recurso não existe no navegador) -->
   <script src="js/iaedit.js"></script>
+  <!-- os QUATRO PAPÉIS do cronograma (físico-financeiro, relatório mensal,
+       lookahead, resumo executivo): motor puro. ⚠ A POSIÇÃO AQUI É LIVRE de
+       propósito — ele resolve Cronograma, Orcamento, LastPlanner (que só
+       carrega na linha 145!), RDO e Util por dep() NA HORA DA CHAMADA, nunca
+       no carregamento. Fica antes do cronopdf.js só por leitura: motor → papel. -->
+  <script src="js/cronodocs.js"></script>
   <script src="js/cronopdf.js"></script>
   <script src="js/msproject.js"></script>
   <script src="js/execucao.js"></script>
+  <!-- ==================================================================
+       OS MOTORES DO CRONOGRAMA PRO. ⚠ SEM ESTAS LINHAS ELES SÃO RECURSO
+       INERTE: 6.105 linhas que passam no gate em Node, viajam nos três
+       pipelines que copiam js/ inteira (o pacote dos 38 clientes, o
+       tools/sync-pwa.js para a URL pública e o catálogo) — e NÃO EXECUTAM no
+       navegador. Medido por sonda CDP em 12/09/2026: os seis saíam
+       `undefined` em window. É o mesmo preço que esta base já pagou com 52
+       asserts verdes e o recurso inexistente na tela.
+       ================================================================== -->
+  <!-- histograma de mão de obra e de equipamento. DEPOIS do execucao.js: o
+       dono do provedor de hora-homem (Execucao.hhDoItem) e do Analitico é
+       ele. ⚠ O provedor vai por ARGUMENTO (opc.hhDoItem), resolvido dentro do
+       handler — quem o resolver no topo de um IIFE quebra. -->
+  <script src="js/histograma.js"></script>
+  <!-- linha de balanço (obra repetitiva): motor puro, não lê módulo nenhum -->
+  <script src="js/lob.js"></script>
+  <!-- ⚠ cronoseq.js TEM de vir ANTES do cronosaude.js: a 18ª checagem da saúde
+       (sequenciaConstrutiva) é a única que depende de outro módulo, e sem ele
+       sai NÃO AVALIADA com a ressalva "esta nota NÃO diz que a rede respeita a
+       ordem da obra" (está escrito no cabeçalho do cronosaude.js). -->
+  <script src="js/cronoseq.js"></script>
+  <script src="js/cronosaude.js"></script>
+  <!-- o MACROFLUXO (a rede desenhada como rede): motor puro de GEOMETRIA — ele
+       recebe o resultado pronto de Cronograma.estimar e devolve caixas e
+       arestas com x/y/w/h, sem recalcular CPM. Posição livre (não lê módulo
+       nenhum no carregamento); fica aqui, junto dos outros motores do
+       cronograma pro, porque quem o desenha é a mesma aba.
+       ⚠ ELE FICOU DE FORA DA PRIMEIRA FIAÇÃO e era o SÉTIMO motor inerte: 52 KB
+       que viajavam nos três pipelines (pacote dos 38 clientes, sync-pwa para a
+       URL pública e catálogo) com `typeof window.Fluxograma === "undefined"`
+       (medido por sonda CDP em 12/09/2026), tendo suíte própria verde — que é
+       exatamente o que dá a impressão de pronto. -->
+  <script src="js/fluxograma.js"></script>
+  <!-- por ÚLTIMO do bloco: o contexto da IA lê Cronograma, CronoSeq,
+       CronoSaude e CronoPlan na hora da chamada — os quatro já carregados. -->
+  <script src="js/cronoia.js"></script>
   <script src="js/revit.js"></script>
   <script src="js/paredecebola.js"></script>
   <!-- B0: identidade duravel do elemento BIM. Antes de TODO bim*, e antes do

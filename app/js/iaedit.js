@@ -12,6 +12,10 @@
  *       RETRATO (snapshot) que fica NO CLIENTE, guardado por reqId.
  *   validar(orc, ops, snapshot, opts) → aceitas (com o `de` tirado do
  *       retrato), recusadas (com motivo), efeito antes → depois, avisos.
+ *       ⚠ toda op aceita `op.dependeDe = [posição, …]` — posições da PRÓPRIA
+ *       lista, MENORES que a da op, sem repetir. Quem monta a lista (CronoSeq)
+ *       declara assim "a 5 só vale depois da 1", e desmarcar a 1 desmarca a 5
+ *       junto (fechoDesmarcar). Fora do contrato a op é recusada, não ignorada.
  *   efeito(orc, aceitasMarcadas, opts) → totalProposta (o obrigatório),
  *       totalOpcional, totalComOpcionais (o que a proposta clássica imprime),
  *       prazo e término, antes → depois.
@@ -721,7 +725,55 @@
     var motivo = motivoLimpo(op.motivo);
     var A = { idx: idx, op: null, rotulo: "", grupo: cat.grupo, chave: null, de: null, para: null, deTexto: "", paraTexto: "",
       marcadaPorPadrao: true, motivo: motivo, dependeDe: [] };
-    var declara = null;
+    var declara = null, depDecl = [], depSoltas = [];
+    /* ================= DEPENDÊNCIA DECLARADA (op.dependeDe) =================
+       ⚠ POR QUE ISTO EXISTE. Quem monta a lista — hoje o CronoSeq, em ordem
+       topológica — SABE que a ligação 5 só vale depois da 1: aplicada sozinha
+       ela fecha laço e o produto a recusa com "cria dependência circular",
+       recado que ninguém entende olhando o diff (medido pela frente da
+       sequência: 69 de 185 ligações fecham laço sozinhas). A máquina de
+       arrastar o fecho (fechoDesmarcar) já existia inteira, mas a dependência
+       só nascia de REFERÊNCIA a nó novo ("novo:N") — não havia como um
+       chamador DECLARAR a sua. A ordem topológica resolve o "marcar tudo";
+       isto aqui é o que resolve o "marcar parte": desmarcar a 1 desmarca a 5
+       junto, em vez de deixá-la ir e voltar recusada.
+       ⚠ ÍNDICE DA PRÓPRIA LISTA E MENOR QUE O DESTA OP. A lista é aplicada em
+       ordem (aplicarLista percorre por idx), então depender do que vem DEPOIS
+       não é declarável — é defeito de quem montou. Fora do contrato a op
+       inteira é RECUSADA com o motivo: declaração errada não tem "resto"
+       confiável, e ignorar calado é justamente o que faz a op sumir do fecho
+       sem ninguém ver.
+       ⚠ HONRAR ISTO NÃO ABRE PORTA MESMO SE VIER DO MODELO: dependeDe só TIRA
+       op do conjunto marcado (fechoDesmarcar desmarca; nunca marca), nunca faz
+       gravar nada a mais. */
+    if (op.dependeDe !== undefined && op.dependeDe !== null) {
+      var dd = op.dependeDe;
+      if (!Array.isArray(dd)) return recusa("\"dependeDe\" tem de ser uma lista de posições desta mesma resposta ([] = nenhuma)");
+      if (dd.length > TETOS.opsPorResposta) return recusa("\"dependeDe\" traz " + dd.length + " posições — o teto é " + TETOS.opsPorResposta + ", o tamanho máximo da resposta");
+      var jaDep = {}, ddi, dv;
+      for (ddi = 0; ddi < dd.length; ddi++) {
+        dv = dd[ddi];
+        if (typeof dv !== "number" || !isFinite(dv) || Math.floor(dv) !== dv) {
+          return recusa("\"dependeDe\" só aceita a posição da mudança na lista (número inteiro, contando de 0) — veio \"" + cortar(String(dv), 30) + "\"");
+        }
+        if (dv < 0) return recusa("\"dependeDe\" traz a posição " + dv + " — posição na lista de mudanças começa em 0");
+        if (dv >= idx) return recusa("\"dependeDe\" aponta para a posição " + dv + ", que não vem antes desta (posição " + idx + ") — a lista é aplicada em ordem, e depender do que vem depois não existe");
+        if (own(jaDep, dv)) return recusa("\"dependeDe\" repete a posição " + dv);
+        jaDep[dv] = true;
+      }
+      /* ⚠ POSIÇÃO DECLARADA QUE FOI RECUSADA NÃO VIRA DEPENDÊNCIA. Ela não vai
+         ser aplicada de jeito nenhum, e o fechoDesmarcar desmarca quem depende
+         de quem não está marcado: guardá-la faria ESTA op sumir do conjunto
+         sempre, calada, com o recado errado ("ficou de fora junto com a
+         criação de que depende"). Quem responde pelo laço é a simulação no
+         clone, logo abaixo — ela roda com tudo o que foi aceito até aqui, e
+         recusa se esta op sozinha fechar o laço. Sai do fecho, mas sai na
+         NOTA do diff: nunca calado. */
+      for (ddi = 0; ddi < dd.length; ddi++) {
+        if (own(X.aceitasIdx, dd[ddi])) depDecl.push(dd[ddi]);
+        else depSoltas.push(dd[ddi]);
+      }
+    }
     /* presença no retrato (o `de` e a prova de que a IA RECEBEU aquilo),
        duas ops no mesmo ponto, e "ficou velho" contra o orçamento ORIGINAL */
     function conferir(chave) {
@@ -1025,6 +1077,13 @@
     var rx;
     try { rx = _executar(work, work.cronograma, A.op, X.exec); } catch (eX) { rx = falha("falhou ao simular: " + String((eX && eX.message) || eX)); }
     if (!rx.ok) return recusa(rx.erro);
+    /* a declarada soma à que nasceu de "novo:N" (a criação do pai), sem
+       repetir; ordenada para o res.dependencias sair igual a cada chamada */
+    depDecl.forEach(function (p) { if (A.dependeDe.indexOf(p) < 0) A.dependeDe.push(p); });
+    A.dependeDe.sort(function (a, b) { return a - b; });
+    if (depSoltas.length) {
+      A.nota = (A.nota ? A.nota + " · " : "") + depSoltas.length + " mudança(s) de que esta dependia não entraram no diff (foram recusadas) — esta foi conferida SOZINHA, e sozinha ela vale";
+    }
     if (A.chave) X.usadas[A.chave] = true;
     if (declara) X.refMeta[declara.ref] = { idx: idx, tipo: declara.tipo, nome: declara.nome };
     return { aceita: A };
@@ -1483,7 +1542,9 @@
       var cron0 = opts.cronAlvo || orc.cronograma || {};
       var work = copia(orc);
       work.cronograma = copia(opts.cronAlvo || orc.cronograma || {});
-      var X = { S: S, orc: orc, cron0: cron0, opts: opts, pedido: String(S.pedido || ""), usadas: {}, refs: {}, refMeta: {},
+      /* aceitasIdx = as posições JÁ ACEITAS desta lista. Só quem está aqui pode
+         virar dependência declarada (op.dependeDe) — ver _validarUma. */
+      var X = { S: S, orc: orc, cron0: cron0, opts: opts, pedido: String(S.pedido || ""), usadas: {}, refs: {}, refMeta: {}, aceitasIdx: {},
         info: arvore(vista(orc, opts.cronAlvo || null), S.alvo === "cronograma") };
       X.exec = { refs: X.refs, ordemFeita: {}, cic: null, registrar: null };
       lista.forEach(function (op, idx) {
@@ -1492,6 +1553,7 @@
         try { v = _validarUma(work, op, idx, X); } catch (e) { v = { recusa: "não consegui conferir esta mudança (" + String((e && e.message) || e) + ")" }; }
         if (v.recusa) { res.recusadas.push({ idx: idx, op: resumoOp(op), motivo: v.recusa }); return; }
         res.aceitas.push(v.aceita);
+        X.aceitasIdx[idx] = true;
         if (v.aceita.dependeDe.length) res.dependencias[idx] = v.aceita.dependeDe.slice();
       });
       res.travado = !!(O().travadoPorAprovacao && O().travadoPorAprovacao(orc));
@@ -1538,7 +1600,14 @@
       }
       var travado = !!(O().travadoPorAprovacao && O().travadoPorAprovacao(orc));
       var F = fechoLista(aceitas);
-      F.removidas.forEach(function (a) { res.naoAplicadas.push({ idx: a.idx, rotulo: cortar(a.rotulo, 90), motivo: "ficou de fora junto com a criação de que depende (desmarcada)" }); });
+      /* ⚠ O RECADO NÃO PODE DIZER "CRIAÇÃO". Era "ficou de fora junto com a
+         criação de que depende"; desde que o chamador pode DECLARAR a
+         dependência (op.dependeDe — o CronoSeq arrastando as companheiras de
+         uma ligação), na maior parte dos casos não houve criação nenhuma, e
+         recado que mente é pior que recado nenhum. O nome do pai não dá para
+         pôr aqui: `aceitas` são só as MARCADAS, e o pai, por definição, está
+         desmarcado — então o recado diz o que fazer, que é a porta. */
+      F.removidas.forEach(function (a) { res.naoAplicadas.push({ idx: a.idx, rotulo: cortar(a.rotulo, 90), motivo: "ficou de fora junto com a mudança de que ela depende (essa está desmarcada) — marque aquela de volta para esta entrar" }); });
       /* aprovado e sem o plano: NADA grava — sai antes de pôr o retrato do
          desfazer no orçamento (a trava do aplicarLista abaixo é a 2ª camada) */
       if (travado && !opts.cronAlvo) {

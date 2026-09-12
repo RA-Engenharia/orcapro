@@ -2237,7 +2237,13 @@
       d.orc = orcD;
       d.exec = (crD.exec && typeof crD.exec === "object") ? crD.exec : {};
       d.iaMotivos = crD.iaMotivos || {};
-      d.cartao = this._cronCartao(r, true, noPlano && alvo.inicioObra ? { inicioObra: alvo.inicioObra } : null);
+      d.cartao = this._cronCartao(r, true, {
+        inicioObra: (noPlano && alvo.inicioObra) ? alvo.inicioObra : "",
+        /* ⚠ o sinal vem do ORÇAMENTO, não de `r`: o motor não publica `opcional`
+           em `r.etapas[i]` (medido — as chaves são id/codigo/nome/…/dataLimite) e
+           acrescentá-lo reprovaria a paridade com o master. */
+        temOpcional: this._temEtapaOpcional(orcD)
+      });
       // aprovado: o recado do motor "salve o orçamento" vira "crie uma revisão" (a trava recusa o salvar) — no PLANO não há trava
       if (alvo) d.travado = !!alvo.travado;
       else { try { d.travado = !!(typeof Orcamento !== "undefined" && Orcamento.travadoPorAprovacao && Orcamento.travadoPorAprovacao(orc)); } catch (eT) { d.travado = false; } }
@@ -2323,8 +2329,17 @@
        da obra, que conta do início DELA — o campo Início fica só leitura, com
        o motivo. ⚠ Editável, a pessoa digitaria outra data e o salvar seguinte
        a trocaria de volta pela da obra: trava sem porta e sem recado. */
+    /* A etapa marcada como OPCIONAL fica fora do "Valor total" que a proposta
+       cobra — e é por isso que ela pode ficar fora do PRAZO também. Ver o
+       interruptor `cron-opcionais` abaixo e CronoExecUI.pillOpcionais. */
+    _temEtapaOpcional: function (orc) {
+      var ets = (orc && orc.etapas) || [];
+      for (var i = 0; i < ets.length; i++) if (ets[i] && ets[i].opcional) return true;
+      return false;
+    },
     _cronCartao: function (r, compacto, opts) {
       var p = r.params, c = !!compacto, iniObra = opts && opts.inicioObra ? String(opts.inicioObra) : "";
+      var temOpc = !!(opts && opts.temOpcional);
       function lb(t) { return c ? '<label style="font-size:11px;margin-bottom:2px">' + t + '</label>' : '<label>' + t + '</label>'; }
       /* ⚠ data LOCAL (Cronograma._ch), nunca toISOString: sem início gravado o
          motor usa "agora", e das 21h à meia-noite (UTC-3) o ISO já é amanhã —
@@ -2345,6 +2360,27 @@
         '<div class="field" style="margin:0">' + lb('Feriados') +
           '<label style="display:flex;align-items:center;gap:6px;font-weight:400;cursor:pointer" title="Desconta feriados nacionais do prazo. Inclui Carnaval e Corpus Christi, que são ponto facultativo mas param a obra.">' +
           '<input id="cron-feriados" type="checkbox"' + (p.descontarFeriados !== false ? " checked" : "") + '> descontar</label></div>' +
+        /* ⚠ SÓ APARECE QUANDO HÁ ETAPA OPCIONAL, e a caixa reflete o valor REAL
+           de hoje (`p.opcionaisNoPrazo !== false`), não o que eu gostaria que
+           fosse. Desmarcar e Recalcular tira a opcional do prazo — a mesma porta
+           do "descontar feriados". Não troquei o padrão por conta própria: mudar
+           a data calada foi o que aconteceu quando o feriado nasceu ligado, e
+           aqui o cartaz melhor é o prazo ao lado dizendo os dois números. */
+        /* ⚠ O TEXTO DESTE INTERRUPTOR É UMA PORTA PROMETIDA (12/09/2026).
+           A etiqueta do prazo em js/cronoexecui.js (`pillOpcionais`) manda a
+           pessoa marcar “Contar opcionais no prazo” em Parâmetros. O controle
+           dizia "Opcionais / contar no prazo": quem lê a etiqueta procura uma
+           frase que não está escrita em lugar nenhum, no meio de uma fileira
+           de oito campos. Porta prometida que não existe já custou quatro
+           recados nesta base. O rótulo da coluna virou "Escopo" (é do que se
+           trata, e é o par de "Feriados / descontar" ao lado) para a frase
+           inteira caber sem gaguejar "opcionais … opcionais".
+           ⚠ Mexeu aqui, mexa lá: tools/test-crono-fiacao.js tira a frase
+           entre aspas do próprio js/cronoexecui.js e exige que ela apareça
+           neste HTML — os dois textos não podem andar separados. */
+        (temOpc ? ('<div class="field" style="margin:0">' + lb('Escopo') +
+          '<label style="display:flex;align-items:center;gap:6px;font-weight:400;cursor:pointer" title="A etapa marcada como opcional fica fora do “Valor total” que a proposta cobra. Desmarque para que ela fique fora do PRAZO também — assim a data de entrega passa a ser a do escopo contratado.">' +
+          '<input id="cron-opcionais" type="checkbox"' + (p.opcionaisNoPrazo !== false ? " checked" : "") + '> contar opcionais no prazo</label></div>') : '') +
         '<div class="field" style="margin:0">' + lb('Feriados locais') +
           '<input id="cron-feriados-extras" type="text" placeholder="2026-06-24; 2026-08-15" value="' +
           Util.esc(((p.feriadosExtras || []).map(function (x) { return (x && x.data) ? x.data : x; })).join("; ")) +
@@ -2362,7 +2398,7 @@
     _renderCronogramaEtapa: function (orc) {
       var r = Cronograma.estimar(orc);
       var iaM = (orc.cronograma && orc.cronograma.iaMotivos) || {};
-      var html = this._cronCartao(r);
+      var html = this._cronCartao(r, false, { temOpcional: this._temEtapaOpcional(orc) });
       var nCrit = (r.caminhoCritico || []).length;
       html += '<div class="flex" style="gap:18px;margin-bottom:8px;align-items:baseline;flex-wrap:wrap"><b style="font-size:16px">⏱ ' + r.totalDias + ' dias úteis (~' + r.totalSemanas + ' semanas)</b>' +
         '<span class="muted">' + r.dataInicio.toLocaleDateString("pt-BR") + ' → ' + r.dataFim.toLocaleDateString("pt-BR") + '</span>' +

@@ -636,10 +636,30 @@
     // agente (Cronograma.estimar -> totalDias -> meses cheios) enquanto o usuário
     // não travar manualmente (orc.cronogramaMesesManual). Fim do xlsx que dizia
     // "15 dias úteis" no Gantt e distribuía 6 meses no Cronograma.
+    /* ⚠ AQUI O PRAZO É O DA FROTA, NÃO O DESTA VERSÃO (12/09/2026).
+       `cronogramaMeses` é campo PERSISTIDO e SINCRONIZADO, e é o nº de colunas
+       de desembolso que a proposta comercial imprime para o cliente quando o
+       prazo está travado. Quem grava esse campo é o `sincronizarPrazo` logo
+       abaixo, chamado a CADA abertura do orçamento (js/app.js:12947) — em
+       qualquer aparelho, em qualquer versão. A frota nunca está toda na mesma
+       versão: se duas versões calcularem o número diferente, cada abertura
+       regrava e empurra para a nuvem, e a MESMA proposta sai com números
+       diferentes conforme o aparelho que a abriu.
+       MEDIDO em 12/09/2026 (corpus de 600 orçamentos gerados, 465 com campo
+       novo): com `Cronograma.estimar` aqui, 293 divergiam do motor da 1.2.75 —
+       e no orçamento de teste a 1.2.76 gravava 7 e a 1.2.75 regravava 6, de ida
+       e volta. Com `estimarFrota` (que neutraliza só `cronograma.restricoes` e
+       `params.opcionaisNoPrazo`, os dois campos que a 1.2.75 não lê), 0 de 600.
+       ⚠ O prazo COM a data fixada e COM os opcionais fora continua existindo —
+       ele fica na TELA e no PDF desta versão, que leem `Cronograma.estimar`
+       direto (`Orcamento.cronograma`, aqui mesmo, monta as colunas pelo Gantt
+       ao vivo). O que não pode é ele virar dado gravado que a versão anterior
+       desfaz. O `estimar` de reserva é só para ordem de carga: sem o módulo
+       novo, o número de antes é melhor que zero. */
     mesesSugeridos: function (orc) {
       if (typeof Cronograma === "undefined" || !Cronograma.estimar) return 0;
       try {
-        var est = Cronograma.estimar(orc);
+        var est = Cronograma.estimarFrota ? Cronograma.estimarFrota(orc) : Cronograma.estimar(orc);
         if (!est || !est.totalDias) return 0;
         var duSem = (est.params && est.params.diasUteisSemana) || 5;
         return Math.max(1, Math.ceil(est.totalDias / (duSem * 4.345))); // dias úteis/mês

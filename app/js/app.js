@@ -576,6 +576,11 @@
            HTML inteiro; o listener do render anterior morreu junto com o
            elemento, e o que nao e religado vira campo que nao responde. */
         if (this.aba === "insumos") this._ligarFiltroInsumos();
+        /* ⚠ o Gantt interativo pelo MESMO motivo: o desenho sai puro do
+           CronoExecUI, e o que dá zoom, rolagem e arrasto a ele é ligado aqui,
+           a cada render. Motor sem fiação é recurso inerte — já houve recurso
+           inteiro passando no gate e não existindo no navegador. */
+        if (this.aba === "cronograma") this._cronoGanttLigar(); else this._gx = null;
       } else {
         this.tela = "lista";
         var r = Sinapi.resumo();
@@ -1659,6 +1664,43 @@
         case "crono-abrir": this._cronoAbrirEtapa(t.dataset.etapa, t.dataset.valor); break;
         case "crono-ff": this._cronoFFEstado(t.dataset.camada, t.dataset.modo); break;
         case "crono-exec": this.cronExecAlternar(t.dataset.ligar === "1"); break;
+        // Gantt interativo: zoom pelos botões do canto e o desfazer de um arrasto
+        /* `data-dir` é "1" / "-1" / o NOME de um nível ("auto" no botão que só
+           existe na tela estreita, onde o seletor não cabe) — o motor aceita os
+           três, e converter aqui em número perderia o "auto" */
+        case "crono-zoom": this._gxZoom(t.dataset.dir === "1" ? 1 : (t.dataset.dir === "-1" ? -1 : String(t.dataset.dir || "auto")), null); break;
+        case "crono-arrasto-desfazer": this.cronoArrastoDesfazer(); break;
+        /* HISTOGRAMA DE MÃO DE OBRA e LINHA DE BALANÇO (os dois painéis abaixo
+           do Gantt). O desenho manda o estado ALVO em `data-hx-abrir` porque o
+           padrão do painel da LOB depende do que o motor achou (aberto quando
+           há repetição, fechado quando não há) — o handler não sabe, e não
+           pode supor. Estado de TELA, como o zoom e a sub-aba.
+           ⚠ NUNCA `data-abrir`: esse atributo JÁ É "abrir o orçamento de id X"
+           e é tratado ANTES deste switch (js/app.js:1511). Medido no
+           navegador: com `data-abrir="1"` o clique no painel não abria nada e
+           saía o toast "Orçamento não encontrado." — o painel parecia quebrado
+           e o recado mandava procurar no lugar errado. */
+        case "crono-hist": this._cronoHistAbrir(t.dataset.hxAbrir === "1"); break;
+        case "crono-hist-per": this._cronoHistEstado({ periodo: t.dataset.per === "mes" ? "mes" : "semana" }); break;
+        case "crono-hist-base": this._cronoHistBase(); break;
+        case "crono-hist-fora": this._cronoHistEstado({ fora: !(this._cronoHistEstado(null, true) || {}).fora }); break;
+        case "crono-lob": this._cronoHistEstado({ lob: t.dataset.hxAbrir === "1" }); break;
+        /* o macrofluxo (js/fluxograma.js) mora no mesmo saco de estado dos
+           outros dois painéis de baixo — é um recolhimento, não um cálculo */
+        case "crono-fluxo": this._cronoHistEstado({ fluxo: t.dataset.hxAbrir === "1" }); break;
+        /* ---- CRONOGRAMA PRO: saúde, sequência, replanejamento, documentos,
+           MS Project completo e a ponte .mpp (a fiação dos motores que até
+           12/09/2026 eram recurso inerte — passavam no gate em Node e saíam
+           `undefined` no navegador). ---- */
+        case "crono-saude": this._cronoSaudeEstado({ aberto: t.dataset.csAbrir === "1" }); break;
+        case "crono-saude-fundo": this.cronoSaudeFundo(t.dataset.fundo === "1"); break;
+        case "crono-ir-no": this.cronoIrAoNo(t.dataset.no, t.dataset.etapa); break;
+        case "crono-seq": this.cronoSeqAbrir(); break;
+        case "crono-replan": this.cronoReplanAbrir(); break;
+        case "crono-docs": this.cronoDocsAbrir(); break;
+        case "crono-doc": this.cronoDocGerar(t.dataset.doc); break;
+        case "crono-mpp-status": this.cronoMppStatus(true); break;
+        case "crono-mpp": this.cronoMppGerar(); break;
         case "crono-params": this.cronParamsAvancados(); break;
         case "crono-detalhar": this.cronDetalharEtapa(t.dataset.etapa); break;
         // porta do aviso "aprovado com o gravado velho": a revisão é o caminho que existe (o aprovado não se regrava)
@@ -1778,6 +1820,37 @@
          redesenhar o modal perderia o que foi digitado) */
       if (e.target && e.target.getAttribute && e.target.getAttribute("data-ia-idx") != null) {
         this._iaAlternarTela(parseInt(e.target.getAttribute("data-ia-idx"), 10), !!e.target.checked);
+        return;
+      }
+      /* escala de tempo do Gantt interativo. É <select>, então fala por CHANGE
+         (o onClick retorna cedo em "select, option"). O nome do nível vai
+         direto ao motor: "auto" | "dia" | "semana" | "mes" | "trimestre". */
+      if (e.target && e.target.getAttribute && e.target.getAttribute("data-crono-zoom") != null) {
+        this._gxZoom(String(e.target.value || "auto"), null);
+        return;
+      }
+      /* TETO DE PESSOAS do histograma. Vai em TEXTO ao motor de propósito: é o
+         js/histograma.js que aceita "12" e "12,5" (BR) e que recusa o que não é
+         número, com o motivo. Um parser aqui seria mais uma réplica do
+         Util.parseNum — e duas réplicas desta base já erraram em direções
+         opostas movendo dinheiro. */
+      if (e.target && e.target.getAttribute && e.target.getAttribute("data-crono-hist-teto") != null) {
+        this._cronoHistEstado({ teto: String(e.target.value == null ? "" : e.target.value).trim() });
+        return;
+      }
+      /* CAIXAS DO MODAL DA SEQUÊNCIA CONSTRUTIVA. ⚠ Marcar uma ligação que
+         depende de outra ARRASTA as companheiras, e desmarcar arrasta quem
+         depende dela: sem esse fecho, a op aplicada sozinha é recusada pelo
+         produto com "cria dependência circular" (medido pelo motor: 65 de 174
+         ligações fechavam laço sozinhas, em 27 de 55 orçamentos) — e trava sem
+         porta faz a pessoa procurar saída errada. */
+      if (e.target && e.target.getAttribute && e.target.getAttribute("data-sq-idx") != null) {
+        this._cronoSeqAlternar(e.target.getAttribute("data-sq-idx"), !!e.target.checked);
+        return;
+      }
+      // caixas do modal de replanejamento (sem fecho: cada opção é independente)
+      if (e.target && e.target.getAttribute && e.target.getAttribute("data-rp-idx") != null) {
+        if (this._rp) this._rp.marc[Number(e.target.getAttribute("data-rp-idx"))] = !!e.target.checked;
         return;
       }
       if (e.target && e.target.getAttribute && e.target.getAttribute("data-ia-alvo-chip") != null) {
@@ -4269,6 +4342,13 @@
       /* pontos facultativos: o controle que faltava (sub-aba Parâmetros). Antes
          não havia input, e o Recalcular antigo apagava a chave a cada clique. */
       x = pega("cron-facult"); if (x) f.feriadosFacultativos = !!x.checked;
+      /* ⚠ A ETAPA OPCIONAL NO PRAZO (defeito D4, 12/09/2026). O campo só é
+         desenhado quando o orçamento TEM etapa opcional — e isso não é economia
+         de pixel: `Cronograma.mesclarParams` conserva chave AUSENTE de propósito,
+         então, sem o input, a chave não é gravada e o orçamento segue com o
+         comportamento de sempre. Num orçamento sem opcional não há o que decidir,
+         e um interruptor que não muda nada ensina a pessoa a ignorar o painel. */
+      x = pega("cron-opcionais"); if (x) f.opcionaisNoPrazo = !!x.checked;
       /* ⚠ o que não é AAAA-MM-DD NÃO é gravado como feriado: o motor devolve
          o texto em `invalidos` e a tela mostra em vermelho. Aceitar um
          "24/06" silenciosamente deslocaria a entrega da obra por causa de um
@@ -4295,13 +4375,25 @@
          recado saía "o prazo total continua 134 dias úteis" logo depois de a
          pessoa ver o prazo subir de 124 para 134 (medido no navegador; o
          Recalcular com 2 equipes, 124 → 70, dizia "continua 70").
-         - `antesVA`: o que o aparelho com a VERSÃO ANTERIOR mostra (lê o
-           gravado) — é o prazo que ESTE salvar muda;
+         - `antesVA`: o que o aparelho com a VERSÃO ANTERIOR mostra — é o prazo
+           que ESTE salvar muda (ou não: ver o ⚠ logo abaixo);
          - `antesTela`: o prazo desta tela antes da edição — só o handler que
            mexeu sabe (mede antes de mexer) e passa pelo persistir.
          Custa dois estimar, e só no modo executivo (o único em que o salvar
-         regrava duração de etapa). */
-      if (cr && cr.exec && cr.exec.rede === true && Cronograma.estimarVersaoAnterior) { try { antesVA = Cronograma.estimarVersaoAnterior(o); } catch (eA) { antesVA = null; } }
+         regrava duração de etapa).
+         ⚠ `estimarFrota`, NÃO `estimarVersaoAnterior` (12/09/2026). A versão
+         anterior de HOJE é a 1.2.75, que JÁ calcula o vão das subetapas ao
+         vivo (o adendo A1 saiu nela): o que ela não conhece são os dois campos
+         que a 1.2.76 acrescentou. O `estimarVersaoAnterior` desliga o modo
+         executivo — ele modela a 1.2.68, sete versões atrás — e por isso o
+         recado inventava um número que aparelho nenhum da frota mostra.
+         MEDIDO em 12/09/2026 na fixture do `cenPersistirMudanca`, rodando o
+         motor de 24fa087 (a 1.2.75 empacotada) num vm: ela via 186 dias úteis
+         antes do salvar e 186 depois — e o recado dizia "viam 85 e passam a
+         ver 186". Num corpus de 600 orçamentos gerados, o
+         `estimarVersaoAnterior` divergiu do motor da 1.2.75 em 161 (pior caso
+         17 dias úteis) e o `estimarFrota`, em 0. */
+      if (cr && cr.exec && cr.exec.rede === true && Cronograma.estimarFrota) { try { antesVA = Cronograma.estimarFrota(o); } catch (eA) { antesVA = null; } }
       try { m = Cronograma.materializar(o); } catch (e) { return null; }
       var nomes = {};
       (o.etapas || []).forEach(function (et, i) { nomes[et.id] = (i + 1) + ". " + String(et.nome || "").slice(0, 40); });
@@ -4323,10 +4415,26 @@
         else if (antesTela && depois && depois.dataFim)
           t = "Modo executivo: mudou a duração de " + etTxt + ", mas o prazo total continua " + depois.totalDias + " dias úteis (término " + br(depois.dataFim) + ").";
         else t = "Modo executivo: a duração gravada de " + etTxt + " foi atualizada para o vão das subetapas.";
-        // o que este salvar muda de verdade: o prazo dos aparelhos com a versão anterior
-        if (antesVA && depois && antesVA.dataFim && depois.dataFim && !igual(antesVA, depois))
-          t += " Aparelhos com versão anterior do app viam " + antesVA.totalDias + " dias úteis (término " + br(antesVA.dataFim) + ") e passam a ver " + depois.totalDias + " (término " + br(depois.dataFim) + "), o mesmo desta tela.";
-        else if (depois && depois.dataFim) t += " Aparelhos com versão anterior do app veem o mesmo prazo desta tela.";
+        /* o que este salvar muda de verdade: o prazo dos aparelhos com a versão
+           anterior — medido com a MESMA régua nos dois lados do salvar.
+           ⚠ O "DEPOIS" DELES NÃO É O DESTA TELA (12/09/2026). O recado
+           afirmava "passam a ver <o número desta tela>, o mesmo desta tela" —
+           duas coisas que o salvar não garante: a 1.2.75 ignora
+           `cronograma.restricoes` e `params.opcionaisNoPrazo`, então ela pode
+           continuar exatamente onde estava. São três recados diferentes, e o
+           terceiro é o que faltava: "continuam vendo X", com o MOTIVO, para
+           quem confere o prazo com o sócio no celular não achar que um dos dois
+           aparelhos está com defeito. */
+        var depoisVA = null;
+        if (Cronograma.estimarFrota) { try { depoisVA = Cronograma.estimarFrota(o); } catch (eB) { depoisVA = null; } }
+        if (antesVA && depoisVA && antesVA.dataFim && depoisVA.dataFim && !igual(antesVA, depoisVA))
+          t += " Aparelhos com versão anterior do app viam " + antesVA.totalDias + " dias úteis (término " + br(antesVA.dataFim) + ") e passam a ver " + depoisVA.totalDias + " (término " + br(depoisVA.dataFim) + ")" +
+            (depois && igual(depoisVA, depois) ? ", o mesmo desta tela." : ".");
+        else if (antesVA && depoisVA && depois && depois.dataFim && igual(depoisVA, depois))
+          t += " Aparelhos com versão anterior do app veem o mesmo prazo desta tela.";
+        else if (antesVA && depoisVA && depoisVA.dataFim)
+          t += " Aparelhos com versão anterior do app continuam vendo " + depoisVA.totalDias + " dias úteis (término " + br(depoisVA.dataFim) + "): eles não leem a data fixada no Gantt nem o interruptor de opcionais no prazo.";
+        else t += " Não deu para conferir o prazo que os aparelhos com versão anterior do app mostram.";
         UI.toast(t + " Confira o cronograma antes de enviar a proposta.", "info");
       }
       if (m && m.avisos && m.avisos.length) {
@@ -4808,7 +4916,7 @@
     cronReset: function () {
       var alvo = this._cronoAlvo(); if (!alvo || typeof Cronograma === "undefined") return;
       if (alvo.travado) { this._cronoTravado(alvo); return; }
-      var c = alvo.cron, k, nDur = 0, nDep = 0, nMarco = 0, folhas = {}, nSub = 0;
+      var c = alvo.cron, k, nDur = 0, nDep = 0, nMarco = 0, folhas = {}, nSub = 0, nFix = 0;
       var ag = (c.duracoesAgente && typeof c.duracoesAgente === "object") ? c.duracoesAgente : {};
       // o que conta como EDIÇÃO: materialização "subetapas" não é edição de ninguém (volta sozinha)
       for (k in (c.duracoes || {})) if (Object.prototype.hasOwnProperty.call(c.duracoes, k) && ag[k] !== "subetapas") nDur++;
@@ -4819,6 +4927,31 @@
         var mp = sub[m]; if (!mp || typeof mp !== "object") return;
         for (var id in mp) if (Object.prototype.hasOwnProperty.call(mp, id) && !folhas[id]) { folhas[id] = true; nSub++; }
       });
+      /* ⚠ A DATA FIXADA PELO ARRASTO NO GANTT TAMBÉM É EDIÇÃO, e é a mais cara
+         de perder: as outras voltam à estimativa do agente (uma conta que se
+         refaz), esta é uma decisão de prazo que ninguém recupera — e este botão
+         não tem desfazer. Roteiro do defeito (12/09/2026): `limparEdicoes`
+         passou a zerar `c.restricoes`, a contagem daqui ficou para trás, e um
+         orçamento cuja ÚNICA edição era uma barra arrastada perdia a data
+         ouvindo "Não havia duração, dependência nem marco editados". Pior: com
+         a restrição no meio da rede o prazo pode nem mudar, e aí nem a frase do
+         prazo denunciava. */
+      for (k in (c.restricoes || {})) if (Object.prototype.hasOwnProperty.call(c.restricoes, k)) nFix++;
+      /* ⚠ E SÓ AÍ SE PERGUNTA: porta antes de agir, e só quando há o que
+         perder — um modal no caminho de quem só quer voltar à estimativa seria
+         atrito sem motivo. Sem `confirm` disponível (Node, WebView capada) o
+         botão SEGUE: travar a limpeza por falta de um diálogo deixaria a pessoa
+         sem a única saída que ela tem. */
+      if (nFix) {
+        var segue = true;
+        try {
+          if (typeof window !== "undefined" && typeof window.confirm === "function") {
+            segue = window.confirm("Limpar edições vai remover também " + nFix + " data(s) fixada(s) no Gantt — as barras que você arrastou.\n\n" +
+              "Duração, dependências e marcos voltam à estimativa do agente; as datas fixadas simplesmente somem, e isto não tem desfazer.\n\nLimpar mesmo assim?");
+          }
+        } catch (eF) { segue = true; }
+        if (!segue) { UI.toast("Nada foi limpo — as " + nFix + " data(s) fixada(s) no Gantt continuam valendo.", ""); return; }
+      }
       /* ⚠ Limpar edições zera etapa E subetapa (sub.*) e REMATERIALIZA; mantém
          params e exec (são parâmetros, não edições). Antes limpava só 6 mapas
          de etapa: com o modo executivo a rede das subetapas continuava e o
@@ -4831,7 +4964,7 @@
       var o = alvo.orc;
       if (alvo.tipo === "orc" && o) { o.cronogramaMesesManual = false; try { Orcamento.sincronizarPrazo(o); } catch (e) {} }
       if (alvo.salvar({ cronoAntes: rAntes })) {
-        var nada = !nDur && !nDep && !nMarco && !nSub;
+        var nada = !nDur && !nDep && !nMarco && !nSub && !nFix;
         var mat = res && res.materializacao, nMat = mat && mat.gravadas ? mat.gravadas.length : 0;
         var rDep = null; try { rDep = Cronograma.estimar(alvo.orc); } catch (eD) { rDep = null; }
         var fmt = function (d) { return d && d.toLocaleDateString ? d.toLocaleDateString("pt-BR") : "—"; };
@@ -4839,7 +4972,9 @@
           ? " O prazo passou de " + rAntes.totalDias + " para " + rDep.totalDias + " dias úteis (término " + fmt(rAntes.dataFim) + " → " + fmt(rDep.dataFim) + ")."
           : " O prazo continua " + rDep.totalDias + " dias úteis (término " + fmt(rDep.dataFim) + ").") : "";
         UI.toast((nada ? "Não havia duração, dependência nem marco editados" :
-          "Limpas: " + nDur + " duração(ões), " + nDep + " dependência(s), " + nMarco + " marco(s) e " + nSub + " subetapa(s) editada(s)") +
+          "Limpas: " + nDur + " duração(ões), " + nDep + " dependência(s), " + nMarco + " marco(s) e " + nSub + " subetapa(s) editada(s)" +
+          // ⚠ só aparece quando existiu: número zero no recado vira ruído e deixa de ser lido
+          (nFix ? " · " + nFix + " data(s) fixada(s) no Gantt também saíram" : "")) +
           " — o cronograma segue a estimativa do agente e o prazo (meses) voltou a acompanhar o cronograma." +
           (c.exec && c.exec.rede === true ? " O modo executivo continua ligado: " + nMat + " etapa(s) com subetapas duram o vão das subetapas." : "") + prazoR, "ok");
       }
@@ -4868,6 +5003,592 @@
       else m[etapaId] = false;
       this.render();
     },
+    /* ---- histograma de mão de obra e linha de balanço: estado de TELA ----
+       Mesma régua do zoom e da sub-aba: aberto/fechado, período, teto e a
+       lista do que ficou fora são de quem está OLHANDO, nunca do orçamento.
+       Gravados lá, mudariam o `atualizadoEm` a cada clique de visualização,
+       sincronizariam à toa e esbarrariam na trava do aprovado. */
+    _cronoHistEstado: function (patch, semRender, oid) {
+      var id = oid || (this.orcAtual && this.orcAtual.id); if (!id) return null;
+      this._cronoHist = (this._cronoHist && typeof this._cronoHist === "object") ? this._cronoHist : {};
+      var h = this._cronoHist[id];
+      if (!h || typeof h !== "object" || Array.isArray(h)) h = this._cronoHist[id] = { aberto: false, periodo: "semana", teto: "", carregando: false, fora: false, lob: null };
+      if (patch) { for (var k in patch) if (Object.prototype.hasOwnProperty.call(patch, k)) h[k] = patch[k]; }
+      // só redesenha se ainda for ESTE orçamento na tela (o carregamento é assíncrono)
+      if (!semRender && this.orcAtual && this.orcAtual.id === id) this.render();
+      return h;
+    },
+
+    /* ⚠ ABRIR O HISTOGRAMA BAIXA A BASE ANALÍTICA DO ESTADO (~18 MB). Ela NÃO
+       é baixada no render da aba, de propósito: quem só quer ver o cronograma
+       (ou está no celular do canteiro) não paga a franquia por ter passado por
+       aqui. E o estado "carregando" existe porque sem ele a tela fica muda por
+       dezenas de segundos — e tela muda a pessoa clica de novo. */
+    _cronoHistAbrir: function (abrir) {
+      if (!abrir) { this._cronoHistEstado({ aberto: false }); return; }
+      var temBase = (typeof Analitico !== "undefined") && Analitico.carregado;
+      this._cronoHistEstado({ aberto: true, carregando: !temBase });
+      if (!temBase) this._cronoHistBase();
+    },
+
+    _cronoHistBase: function () {
+      var self = this, o = this.orcAtual; if (!o) return;
+      var oid = o.id;
+      if (typeof Analitico === "undefined") {
+        this._cronoHistEstado({ carregando: false }, false, oid);
+        UI.toast("Base analítica indisponível nesta instalação.", "erro");
+        return;
+      }
+      if (Analitico.carregado) { this._cronoHistEstado({ aberto: true, carregando: false }, false, oid); return; }
+      var ufAtivo = String((typeof Sinapi !== "undefined" && Sinapi.uf) || "").toUpperCase();
+      var urls = this._prepararAnalitico();
+      if (!urls.local && !urls.live) {
+        this._cronoHistEstado({ carregando: false }, false, oid);
+        /* ⚠ o recado diz O QUE FAZER, não só o que falhou: sem UF ativa não há
+           analítico nenhum para baixar, e a porta é a aba Tabelas de Preço. */
+        UI.toast("Sem UF ativa. Escolha um estado em Tabelas de Preço e volte ao cronograma.", "erro");
+        return;
+      }
+      if (Analitico.reset && Analitico.uf && ufAtivo && Analitico.uf !== ufAtivo) Analitico.reset();
+      this._cronoHistEstado({ aberto: true, carregando: true }, true, oid);
+      Analitico.carregarArquivo(urls.alts).then(function () {
+        self._cronoHistEstado({ carregando: false }, false, oid);
+      }).catch(function (e) {
+        self._cronoHistEstado({ carregando: false }, false, oid);
+        if (e && e.message === "cancelado") return;
+        UI.toast("Não consegui carregar a base analítica de " + (ufAtivo || "") + ". Confira a internet ou baixe a base do estado em Tabelas de Preço.", "erro");
+      });
+    },
+
+    /* ==================================================================
+       CRONOGRAMA PRO — a fiação da saúde, da sequência, do replanejamento,
+       dos documentos e da ponte .mpp
+       ==================================================================
+       POR QUE ESTE BLOCO EXISTE (12/09/2026). Seis motores (js/histograma.js,
+       js/lob.js, js/cronodocs.js, js/cronoseq.js, js/cronosaude.js e
+       js/cronoia.js — 6.105 linhas) passavam no gate em Node, viajavam nos
+       três pipelines que copiam `js/` inteira (o pacote dos 38 clientes, o
+       sync-pwa para a URL pública e o catálogo) e saíam `undefined` em
+       `window`: nenhuma tag no index.html, nenhuma chamada na tela. Motor sem
+       fiação é recurso inerte — a mesma cicatriz de 52 asserts verdes com o
+       recurso inexistente no navegador (memória "motor puro não cobre a
+       fiação"). As tags entraram; daqui para baixo está o que CHAMA.
+
+       ⚠ NENHUMA DESTAS AÇÕES GRAVA SOZINHA. A sequência e o replanejamento
+       produzem ops e vão para a porta de sempre — o diff do IAEdit, com
+       caixa de marcar, efeito antes → depois e desfazer. */
+
+    /* estado de TELA da saúde (como a sub-aba e o zoom): nunca vai ao
+       orçamento — gravado lá, mudaria o atualizadoEm a cada clique de
+       visualização e esbarraria na trava do aprovado. */
+    _cronoSaudeEstado: function (patch, semRender, oid) {
+      var id = oid || (this.orcAtual && this.orcAtual.id); if (!id) return null;
+      this._cronoSaude = (this._cronoSaude && typeof this._cronoSaude === "object") ? this._cronoSaude : {};
+      var s = this._cronoSaude[id];
+      if (!s || typeof s !== "object" || Array.isArray(s)) s = this._cronoSaude[id] = { aberto: false, fundo: false, calculando: false };
+      if (patch) { for (var k in patch) if (Object.prototype.hasOwnProperty.call(patch, k)) s[k] = patch[k]; }
+      if (!semRender && this.orcAtual && this.orcAtual.id === id) this.render();
+      return s;
+    },
+
+    /* [Conferir a fundo] — liga o teste do caminho crítico do CronoSaude.
+       ⚠ ELE CUSTA ATÉ 21 `Cronograma.estimar` INTEIROS (medido pelo motor:
+       4.839 ms de 4.854 ms num orçamento de 2.400 serviços — 98% do custo), e
+       isso é SÍNCRONO: a aba congela enquanto roda. Por isso o estado
+       "Conferindo a fundo…" é pintado ANTES, num render próprio, e a conta só
+       começa no setTimeout seguinte. Sem esse intervalo o navegador nunca
+       chega a desenhar o aviso — a tela fica muda por segundos, e tela muda a
+       pessoa clica de novo. */
+    cronoSaudeFundo: function (ligar) {
+      var self = this, o = this.orcAtual; if (!o) return;
+      var oid = o.id;
+      /* ⚠ conferir a fundo ABRE o cartão: pedir o teste caro e não ver o
+         resultado (o cartão nasce fechado) é o botão que "não faz nada" */
+      if (!ligar) { this._cronoSaudeEstado({ fundo: false, calculando: false, aberto: true }); return; }
+      this._cronoSaudeEstado({ calculando: true, aberto: true });
+      setTimeout(function () {
+        // ⚠ o orçamento pode ter mudado enquanto o navegador desenhava o aviso
+        if (!self.orcAtual || self.orcAtual.id !== oid) { self._cronoSaudeEstado({ calculando: false }, true, oid); return; }
+        self._cronoSaudeEstado({ fundo: true, calculando: false, aberto: true });
+      }, 30);
+    },
+
+    /* A PORTA DO ACHADO: levar a pessoa até o nó que o cartão apontou.
+       Expande a etapa (um achado dentro de uma etapa recolhida apontaria para
+       uma linha que não está na tela), põe a sub-aba no Cronograma e
+       centraliza a barra no Gantt. ⚠ A linha da TABELA não recebe âncora: o
+       `<tr>` dela é lido por posição pelas suítes (e2e-cronograma-gantt lê
+       `tds[5]`, test-cronograma-render acha a linha por `lastIndexOf("<tr>")`)
+       e um atributo novo quebraria as duas. */
+    cronoIrAoNo: function (noId, etapaId) {
+      var self = this, o = this.orcAtual; if (!o || !noId) return;
+      if (etapaId) {
+        this._cronoAbertas = (this._cronoAbertas && typeof this._cronoAbertas === "object") ? this._cronoAbertas : {};
+        var m = this._cronoAbertas[o.id] = this._cronoAbertas[o.id] || {};
+        if (m[etapaId] === false) delete m[etapaId];
+      }
+      this._cronoSub = (this._cronoSub && typeof this._cronoSub === "object") ? this._cronoSub : {};
+      this._cronoSub[o.id] = "cronograma";
+      this.render();
+      // depois do render: achar a linha e centralizar o dia em que a barra começa
+      setTimeout(function () {
+        var g = self._gx; if (!g || typeof GanttUI === "undefined") return;
+        var p = self._gxPro(); if (!p || !p.e) return;
+        var lin = -1, i;
+        for (i = 0; i < p.ids.length; i++) if (String(p.ids[i]) === String(noId)) { lin = i; break; }
+        if (lin < 0) {
+          /* recado que não mente: o nó pode não estar desenhado neste detalhe
+             (serviço no detalhe "Etapa", por exemplo) */
+          UI.toast("Este item não está desenhado no detalhe que está na tela — troque o detalhe (Etapa · Subetapa · Serviço) para vê-lo no Gantt.", "");
+          return;
+        }
+        var l = p.L[lin], no = l && (l.no || l.et);
+        g.z.sel = lin;
+        if (no && no.inicio != null) {
+          var res = GanttUI.centralizarDia(p.e, Math.max(0, Math.round(no.inicio)));
+          if (res && res.scrollLeft != null) { g.z.scrollLeft = res.scrollLeft; g.plot.scrollLeft = res.scrollLeft; }
+        }
+        // a linha tem de estar na janela vertical também
+        var alvoTop = Math.max(0, lin * CronoExecUI.GX_ROWH - (g.plot.clientHeight || 120) / 2);
+        g.plot.scrollTop = alvoTop; g.nomes.scrollTop = alvoTop;
+        g.z.scrollTop = alvoTop;
+        self._gxPintar(true);
+        g.regua.scrollLeft = g.plot.scrollLeft;
+      }, 20);
+    },
+
+    /* ---------------- SEQUÊNCIA CONSTRUTIVA (CronoSeq) ----------------
+       ⚠ A REGRA QUE NÃO PODE CAIR: a ligação que, SOZINHA, fecha laço nasce
+       DESMARCADA — e marcá-la arrasta as companheiras de `dependeDe`. Medido
+       pelo motor: 65 de 174 ligações fechavam laço aplicadas sozinhas, em 27
+       de 55 orçamentos. Sem isto o produto recusa a op com "cria dependência
+       circular" e a pessoa fica com uma trava sem porta.
+       As ops saem em ORDEM TOPOLÓGICA do motor e vão para o IAEdit, que já
+       honra `op.dependeDe` (o índice da própria lista). */
+    cronoSeqAbrir: function () {
+      var self = this, o = this._cronoOrcDoc(); if (!o) return;
+      if (typeof CronoSeq === "undefined" || !CronoSeq.sugerir) {
+        UI.toast("O motor da sequência construtiva (js/cronoseq.js) não está carregado nesta instalação. Atualize o OrçaPRO.", "erro"); return;
+      }
+      if (typeof IAEdit === "undefined") { UI.toast("O motor que aplica as mudanças (js/iaedit.js) não está carregado. Atualize o OrçaPRO.", "erro"); return; }
+      var d = null, sug = null;
+      try { d = CronoExecUI.preparar(o, { tok: this._rtok }); } catch (eD) { d = null; }
+      try { sug = CronoSeq.sugerir(o, d ? d.r : null, {}); } catch (eS) { sug = { ok: false, erro: "não consegui montar as sugestões: " + String((eS && eS.message) || eS) }; }
+      if (!sug || sug.ok !== true) { UI.toast(String((sug && sug.erro) || "Não consegui montar as sugestões de sequência."), "erro"); return; }
+      /* ⚠ NASCE COM AS QUE FECHAM LAÇO DESMARCADAS. As demais nascem marcadas:
+         são a proposta da matriz, e desmarcar é mais rápido que marcar 40. */
+      var marc = {};
+      Util.arr(sug.ligacoes).forEach(function (g, i) {
+        marc[i] = !(g.sozinha && g.sozinha.fechaLaco === true);
+      });
+      this._seq = { orcId: o.id, sug: sug, marc: marc };
+      this._cronoSeqModal();
+    },
+    _cronoSeqModal: function () {
+      var self = this, st = this._seq; if (!st) return;
+      var bts = [{ texto: "Cancelar", classe: "ghost", onClick: function () { self._seq = null; UI.fecharModal(); } }];
+      if (Util.arr(st.sug.ligacoes).length) bts.push({ texto: "Aplicar as marcadas", classe: "primary", onClick: function () { self.cronoSeqAplicar(); } });
+      UI.modal("Sequência de obra — heurística, confira antes de aplicar", CronoExecUI.seqHtml(st.sug, st.marc), bts);
+    },
+    /* checkbox do modal: marcar uma que depende de outra ARRASTA as
+       companheiras; desmarcar uma arrasta quem depende dela. O fecho é feito
+       aqui (e não no IAEdit) porque o índice do `dependeDe` do CronoSeq é o da
+       LISTA DE LIGAÇÕES, e a lista de ops que vai ao IAEdit é montada só das
+       marcadas — os índices não são os mesmos. */
+    _cronoSeqAlternar: function (idx, marcado) {
+      var st = this._seq; if (!st) return;
+      var ligs = Util.arr(st.sug.ligacoes), i = Number(idx);
+      if (!ligs[i]) return;
+      st.marc[i] = !!marcado;
+      /* ⚠ A DIREÇÃO DO ARRASTO É DECIDIDA PELA AÇÃO DA PESSOA, e não por uma
+         varredura que vale nos dois sentidos ao mesmo tempo. Roteiro do
+         defeito (achado por esta suíte, bloco 3): com as duas regras no mesmo
+         laço — "marcada puxa as companheiras para cima" e "companheira
+         desmarcada derruba quem depende dela" — as duas brigavam, a primeira
+         remarcava o que a segunda acabara de desmarcar, e desmarcar uma
+         companheira simplesmente não fazia nada. A pessoa via a caixa voltar
+         sozinha.
+         MARCAR puxa para cima (as companheiras de `dependeDe`, em fecho
+         transitivo); DESMARCAR empurra para baixo (todo mundo que depende
+         dela, direta ou indiretamente) — senão o IAEdit recebe a op órfã e o
+         produto a recusa com "cria dependência circular". */
+      var voltas = 0, mudou = true;
+      if (marcado) {
+        while (mudou && voltas++ < 60) {
+          mudou = false;
+          ligs.forEach(function (g, j) {
+            if (!st.marc[j]) return;
+            Util.arr(g.dependeDe).forEach(function (p) { if (!st.marc[p]) { st.marc[p] = true; mudou = true; } });
+          });
+        }
+      } else {
+        while (mudou && voltas++ < 60) {
+          mudou = false;
+          ligs.forEach(function (g, j) {
+            if (!st.marc[j]) return;
+            Util.arr(g.dependeDe).forEach(function (p) { if (!st.marc[p]) { st.marc[j] = false; mudou = true; } });
+          });
+        }
+      }
+      this._cronoSeqModal();
+    },
+    cronoSeqAplicar: function () {
+      var self = this, st = this._seq, o = this.orcAtual;
+      if (!st || !o || o.id !== st.orcId) { UI.fecharModal(); this._seq = null; UI.toast("O orçamento mudou — nada foi aplicado.", "erro"); return; }
+      if (this._trialBloqueado()) { this._avisoTrial(); return; }
+      var ligs = Util.arr(st.sug.ligacoes), ops = [], mapaIdx = {}, n = 0, i;
+      /* ⚠ A ORDEM DAS OPS É A DO MOTOR (topológica) — o IAEdit aplica op a op
+         e recusa a que fecha laço no meio. E o `dependeDe` é REMAPEADO para o
+         índice DESTA lista: mandar o índice da lista de ligações faria o
+         IAEdit apontar para a op errada, ou recusar a op inteira. */
+      for (i = 0; i < ligs.length; i++) {
+        if (!st.marc[i]) continue;
+        mapaIdx[i] = n; n++;
+        var op = JSON.parse(JSON.stringify(ligs[i].op));
+        var dep = [];
+        Util.arr(ligs[i].dependeDe).forEach(function (p) { if (mapaIdx[p] != null) dep.push(mapaIdx[p]); });
+        if (dep.length) op.dependeDe = dep;
+        ops.push(op);
+      }
+      if (!ops.length) { UI.toast("Nenhuma ligação marcada — marque as que quer aplicar.", "erro"); return; }
+      UI.fecharModal();
+      this._seq = null;
+      this._cronoOpsNoDiff(ops, "Sequência de obra (CronoSeq): " + ops.length + " ligação(ões) marcadas por você");
+    },
+
+    /* ---------------- REPLANEJAR DEPOIS DE UM ATRASO (CronoIA) --------- */
+    cronoReplanAbrir: function () {
+      var self = this, o = this._cronoOrcDoc(); if (!o) return;
+      if (typeof CronoIA === "undefined" || !CronoIA.replanejar) {
+        UI.toast("O motor de replanejamento (js/cronoia.js) não está carregado nesta instalação. Atualize o OrçaPRO.", "erro"); return;
+      }
+      UI.modal("Replanejar depois de um atraso",
+        '<p style="font-size:13px">Quantos <b>dias úteis</b> a obra atrasou? O motor vai rodar o cronograma inteiro com e sem cada opção de recuperação — só entra na lista o que ele <b>mediu</b>.</p>' +
+        '<div class="field"><label for="rp-dias">Atraso (dias úteis)</label><input id="rp-dias" type="text" inputmode="numeric" value="10" style="max-width:120px"></div>' +
+        '<p class="muted" style="font-size:12px;margin:8px 0 0">Nada é gravado agora: as opções que você marcar passam pelo mesmo conferir-antes-de-aplicar das edições com IA, com desfazer.</p>',
+        [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Medir as opções", classe: "primary", onClick: function () { self._cronoReplanMedir(); } }]);
+    },
+    _cronoReplanMedir: function () {
+      var self = this, o = this._cronoOrcDoc(); if (!o) return;
+      var el = UI.el("rp-dias"), dias = Math.round(Util.num(el ? el.value : ""));
+      if (!isFinite(dias) || dias <= 0) { UI.toast("Informe quantos dias úteis a obra atrasou (um número maior que zero).", "erro"); return; }
+      UI.fecharModal();
+      var d = null, rep = null;
+      try { d = this._cronoDadosDaAba(o); } catch (eD) { d = null; }
+      /* ⚠ O REALIZADO TEM DE IR. Sem ele o motor NÃO descarta as frentes que
+         já estão em andamento — e a tela ofereceria "comprimir a fundação de
+         38 para 26 dias" numa fundação que já está 100% feita, o que é
+         reescrever fato, não plano. O próprio motor avisa isso em `avisos[]`,
+         e o aviso é instrução à fiação (ele cita `CronoPlan.realizadoPorNo`),
+         não recado para o cliente: com o realizado passado, ele nem aparece.
+         ⚠ A fonte é o MESMO painel que a aba já montou (`d.pr.painel.nos`, de
+         App._cronoPainelDados): uma segunda apuração divergiria na data de
+         corte (memória "conserto que para no segundo consumidor"). */
+      var real = null, nosR = Util.arr(d && d.pr && d.pr.painel && d.pr.painel.nos);
+      if (nosR.length) {
+        real = {};
+        nosR.forEach(function (x) { if (x && x.id && x.realPct != null) real[x.id] = Number(x.realPct); });
+      }
+      try { rep = CronoIA.replanejar(o, { dias: dias }, { r: d ? d.r : null, realizado: real }); }
+      catch (eR) { rep = { ok: false, erro: "não consegui medir as opções: " + String((eR && eR.message) || eR) }; }
+      if (!rep || rep.ok !== true) { UI.toast(String((rep && rep.erro) || "Não consegui medir as opções de recuperação."), "erro"); return; }
+      this._rp = { orcId: o.id, rep: rep, marc: {} };
+      this._cronoReplanModal();
+    },
+    _cronoReplanModal: function () {
+      var self = this, st = this._rp; if (!st) return;
+      var bts = [{ texto: "Fechar", classe: "ghost", onClick: function () { self._rp = null; UI.fecharModal(); } }];
+      if (Util.arr(st.rep.opcoes).length) bts.push({ texto: "Aplicar as marcadas", classe: "primary", onClick: function () { self.cronoReplanAplicar(); } });
+      UI.modal("Recuperar " + Util.arr(st.rep.opcoes).length + " opção(ões) medida(s)", CronoExecUI.replanHtml(st.rep), bts);
+      // as caixas marcadas sobrevivem ao redesenho do modal
+      Util.arr(st.rep.opcoes).forEach(function (x, i) {
+        var el = document.querySelector('[data-rp-idx="' + i + '"]');
+        if (el) el.checked = st.marc[i] === true;
+      });
+    },
+    cronoReplanAplicar: function () {
+      var st = this._rp, o = this.orcAtual;
+      if (!st || !o || o.id !== st.orcId) { UI.fecharModal(); this._rp = null; UI.toast("O orçamento mudou — nada foi aplicado.", "erro"); return; }
+      if (this._trialBloqueado()) { this._avisoTrial(); return; }
+      var ops = [];
+      Util.arr(st.rep.opcoes).forEach(function (x, i) { if (st.marc[i] && x.op) ops.push(JSON.parse(JSON.stringify(x.op))); });
+      if (!ops.length) { UI.toast("Nenhuma opção marcada — marque as que quer aplicar.", "erro"); return; }
+      UI.fecharModal();
+      this._rp = null;
+      this._cronoOpsNoDiff(ops, "Replanejamento depois de atraso (CronoIA): " + ops.length + " opção(ões) marcadas por você");
+    },
+
+    /* A PORTA ÚNICA das ops produzidas nesta aba (sequência e replanejamento):
+       o MESMO validar → diff com caixa → aplicar → desfazer das edições com
+       IA. ⚠ Nada aqui fala com provedor nenhum — `IAEdit.contexto` é chamado
+       só para tirar o RETRATO (snapshot) contra o qual o `validar` compara. */
+    _cronoOpsNoDiff: function (ops, pedido) {
+      var o = this.orcAtual; if (!o || !ops || !ops.length) return;
+      if (typeof IAEdit === "undefined") { UI.toast("O motor que aplica as mudanças (js/iaedit.js) não está carregado.", "erro"); return; }
+      var prep = this._iaPreparar(o, { alvo: "cronograma", pedido: pedido });
+      if (!prep.ok) { UI.toast(prep.erro, "erro"); return; }
+      var st = { orcId: o.id, alvo: "cronograma", pedido: pedido, fase: "diff", carimbo: prep.carimbo,
+        pronto: "", recado: "", memoria: false, etapasIdx: {} };
+      var v = this._iaValidar(st, o, ops);
+      if (v.erro) { UI.toast(v.erro, "erro"); return; }
+      st.dec = { tipo: "diff", ops: ops, descartadas: [], perguntas: [], premissas: [] };
+      st.ops = ops; st.res = v.res; st.efOpts = v.efOpts;
+      var marc = [];
+      v.res.aceitas.forEach(function (a) { if (a.marcadaPorPadrao) marc.push(a.idx); });
+      var fc = IAEdit.fechoDesmarcar(v.res.aceitas, marc);
+      st.marcados = {};
+      fc.marcados.forEach(function (i) { st.marcados[i] = true; });
+      st.efeito = this._iaEfeitoAgora(st, o);
+      this._iaEd = st;
+      if (!v.res.aceitas.length) {
+        /* ⚠ RECUSA INTEIRA NÃO PODE SAIR CALADA. O `recusadas[].motivo` é o
+           que diz por quê — sem ele o botão "não faz nada" e a pessoa conclui
+           que o app travou. */
+        var mot = Util.arr(v.res.recusadas).slice(0, 3).map(function (x) { return x.motivo; }).join(" · ");
+        this._iaEd = null;
+        UI.toast("Nenhuma das " + ops.length + " mudanças passou na conferência — nada foi aplicado. " + (mot || "O motor não disse por quê."), "erro");
+        return;
+      }
+      this._iaModalDiff(st);
+    },
+
+    /* ---------------- DOCUMENTOS (CronoDocs → CronoPDF) ---------------- */
+    cronoDocsAbrir: function () {
+      var self = this, o = this._cronoOrcDoc(); if (!o) return;
+      if (typeof CronoDocs === "undefined" || typeof CronoPDF === "undefined" || !CronoPDF.gerarDocumento) {
+        UI.toast("Os motores dos documentos do cronograma (js/cronodocs.js, js/cronopdf.js) não estão carregados nesta instalação. Atualize o OrçaPRO.", "erro"); return;
+      }
+      var d = this._cronoDadosDaAba(o);
+      UI.modal("Documentos do cronograma", CronoExecUI.docsHtml(d),
+        [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+    },
+    /* o MESMO `d` que a aba desenha (obra ligada, painel previsto × realizado,
+       cálculo do cronograma) — sem uma segunda montagem, que divergiria na
+       data de corte (memória "conserto que para no segundo consumidor") */
+    _cronoDadosDaAba: function (o) {
+      var d = null;
+      try { d = CronoExecUI.preparar(o, { tok: this._rtok }); } catch (e) { d = { r: null }; }
+      d.orc = o;
+      try { d.obra = (typeof UI !== "undefined" && UI._cronoObraInfo) ? UI._cronoObraInfo(o) : { obras: [] }; } catch (eO) { d.obra = { obras: [] }; }
+      try { d.obra.alvo = CronoExecUI.decidirAlvo ? CronoExecUI.decidirAlvo({ info: d.obra, travado: false }) : null; } catch (eA) { d.obra.alvo = null; }
+      var ao = d.obra && d.obra.alvo;
+      if (ao && ao.obra && ao.nivel === 0) {
+        try { d.pr = this._cronoPainelDados(ao.obra, o, { comGantt: true }); } catch (eP) { d.pr = null; }
+      }
+      return d;
+    },
+    cronoDocGerar: function (tipo) {
+      var o = this._cronoOrcDoc(); if (!o || !tipo) return;
+      if (this._trialBloqueado()) { this._avisoTrial(); return; }
+      if (typeof CronoDocs === "undefined" || typeof CronoPDF === "undefined") { UI.toast("Motores dos documentos indisponíveis.", "erro"); return; }
+      var sel = document.querySelector('[data-dx-papel="' + tipo + '"]');
+      var papel = (sel && sel.value) || null;
+      /* ⚠ O PÚBLICO É ESCOLHIDO, e o padrão vem do próprio documento (DOCS).
+         Forçar "cliente" nos três documentos da obra — como esta tela fazia na
+         1ª rodada — corta do resumo executivo e do lookahead informação que
+         nem sai da empresa. E o inverso é pior: o `interno` no papel da
+         fiscalização já aconteceu nesta base. */
+      var selP = document.querySelector('[data-dx-publico="' + tipo + '"]');
+      var pub = (selP && selP.value) || null;
+      if (!pub) CronoExecUI.DOCS.forEach(function (x) { if (x.id === tipo) pub = x.publico; });
+      var d = this._cronoDadosDaAba(o), dados = null, pay = null;
+      var obra = (d.obra && d.obra.alvo && d.obra.alvo.obra) || null;
+      var painel = (d.pr && d.pr.painel) || null;
+      var hoje = new Date();
+      try {
+        if (tipo === "fisico-financeiro") {
+          var V = null;
+          try { V = Orcamento.valoresEAP(o); } catch (eV) { V = null; }
+          pay = CronoDocs.fisicoFinanceiro(o, d.r, { valores: V, publico: pub,
+            opcionaisIncluidos: this._cronoOpcionaisIncluidos(o) });
+        } else if (tipo === "relatorio-mensal") {
+          dados = this._cronoDocDados(d, obra, painel, hoje, pub);
+          dados.mes = this._cronoMesDoRelatorio(dados, hoje);
+          pay = CronoDocs.relatorioMensal(dados);
+        } else if (tipo === "lookahead") {
+          dados = this._cronoDocDados(d, obra, painel, hoje, pub);
+          dados.plano = this._cronoLastPlannerPlano(obra);
+          pay = CronoDocs.lookahead(dados, 3);
+        } else if (tipo === "resumo-executivo") {
+          dados = this._cronoDocDados(d, obra, painel, hoje, pub);
+          pay = CronoDocs.resumoExecutivo(dados);
+        } else { UI.toast("Documento desconhecido: " + tipo, "erro"); return; }
+      } catch (eG) {
+        UI.toast("Não consegui montar o documento: " + String((eG && eG.message) || eG) + ". Nada foi impresso.", "erro"); return;
+      }
+      if (!pay || pay.ok !== true) {
+        /* ⚠ o motor diz POR QUÊ em PT-BR, e é isso que a pessoa lê — nunca um
+           "documento indisponível" genérico, que se lê como formalidade */
+        UI.toast(String((pay && pay.erro) || "O motor recusou o documento e não disse por quê."), "erro"); return;
+      }
+      var nomeObra = obra ? String(obra.nome || "") : String(o.cliente || o.numero || "");
+      var html;
+      /* ⚠ `opc.empresa` DO CronoPDF É UM NOME (string), NÃO O CADASTRO. E
+         `opc.emissao` é o texto da data já formatado. Roteiro do defeito
+         (achado na FOTO da e2e, 12/09/2026): eu passava `Empresa.dados()` — um
+         objeto — e o cabeçalho de TODOS os quatro documentos saía com
+         "[object Object]" logo abaixo do [LOGO], no papel que vai ao cliente.
+         A saída certa é NÃO passar: o CronoPDF já resolve o nome por
+         `Empresa.nomeDoc()` (que é a fonte certa — a empresa do cliente,
+         nunca o fabricante) e a data por `toLocaleDateString("pt-BR")`.
+         O cadastro EM OBJETO continua indo, mas para o CronoDocs, que é quem
+         lê `capa.empresa.nome` (ver _cronoDocDados). */
+      try {
+        html = CronoPDF.gerarDocumento(tipo, pay, { papel: papel, obra: nomeObra });
+      } catch (eP) { UI.toast("Não consegui desenhar o documento: " + String((eP && eP.message) || eP), "erro"); return; }
+      UI.fecharModal();
+      var rot = null;
+      CronoExecUI.DOCS.forEach(function (x) { if (x.id === tipo) rot = x.nome; });
+      this._abrirPrint((rot || "Documento") + (nomeObra ? " — " + nomeObra : ""), html, "relatorio");
+      /* ⚠ `ok:true` NÃO quer dizer "o documento está completo". `foraDaConta[]`
+         é a lista do que NÃO entrou e por quê — inclusive o que o público
+         tirou. Ela vai à TELA (não ao papel que sai da mão do cliente): quem
+         imprime sem ler promete o que o documento não tem. */
+      var fdc = Util.arr(pay.foraDaConta);
+      if (fdc.length) {
+        UI.toast(fdc.length + " informação(ões) não entraram neste documento: " +
+          fdc.slice(0, 2).map(function (x) { return String((x && x.msg) || x); }).join(" · ") +
+          (fdc.length > 2 ? " (e mais " + (fdc.length - 2) + ")" : ""), "");
+      }
+    },
+    // etapas opcionais que o orçamento inclui hoje (o mesmo critério do total)
+    _cronoOpcionaisIncluidos: function (o) {
+      var ids = [];
+      Util.arr(o && o.etapas).forEach(function (e) { if (e && e.opcional && e.incluirNoTotal !== false) ids.push(e.id); });
+      return ids;
+    },
+    /* o pacote comum dos três documentos DA OBRA. ⚠ Diários e medições vão
+       CRUS: quem filtra pelo Portal é o próprio CronoDocs (RDO.podeIrAoPortal),
+       e uma cópia dessa regra aqui apodreceria calada. */
+    _cronoDocDados: function (d, obra, painel, hoje, publico) {
+      var eid = Auth.empresaId();
+      function ler(ent) { try { return Store.listar(eid, ent) || []; } catch (e) { return []; } }
+      var oid = obra ? obra.id : null;
+      return { obra: obra, orc: d.orc, r: d.r, painel: painel, hoje: hoje,
+        rdos: ler("rdo").filter(function (x) { return x && String(x.obraId) === String(oid); }),
+        medicoes: ler("medicoes").filter(function (x) { return x && String(x.obraId) === String(oid); }),
+        contrato: null, equipe: null, numero: null,
+        empresa: (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : null,
+        fotos: [], fotoIds: [], consideracoes: "", publico: publico || "cliente" };
+    },
+    /* o mês do relatório: o do último diário publicável da obra, e não "o mês
+       de hoje" — no dia 2 do mês seguinte o relatório do mês fechado é o que a
+       pessoa quer, e um mês vazio se lê como obra parada */
+    _cronoMesDoRelatorio: function (dados, hoje) {
+      var mx = "";
+      Util.arr(dados.rdos).forEach(function (r) {
+        var dt = String((r && (r.data || r.dataISO)) || "").slice(0, 7);
+        if (/^\d{4}-\d{2}$/.test(dt) && dt > mx) mx = dt;
+      });
+      if (mx) return mx;
+      return hoje.getFullYear() + "-" + ("0" + (hoje.getMonth() + 1)).slice(-2);
+    },
+    /* o plano semanal do Last Planner desta obra (o lookahead o exige).
+       ⚠ A ENTIDADE É `lp_tarefas`, E CADA REGISTRO É UMA TAREFA — não existe
+       um "plano" com uma lista dentro. É como a Gestão lê (js/gestao.js
+       `_lpTarefas`, e o filtro `t.obraId === obra.id`), e é o formato que o
+       `LastPlanner.tarefasDe` espera receber embrulhado em `{tarefas:[…]}`.
+       Não existe `LastPlanner.ENTIDADE`: eu havia deduzido esse nome e o
+       lookahead saía SEMPRE vazio, calado.
+       Sem tarefa nenhuma devolve a forma vazia e o CronoDocs recusa COM O
+       MOTIVO — nunca um papel de 3 semanas em branco. */
+    _cronoLastPlannerPlano: function (obra) {
+      if (!obra) return { tarefas: [] };
+      var tar = [];
+      try {
+        tar = Util.arr(Store.listar(Auth.empresaId(), "lp_tarefas")).filter(function (t) {
+          return t && String(t.obraId) === String(obra.id);
+        });
+      } catch (e) { tar = []; }
+      return { obraId: obra.id, tarefas: tar };
+    },
+
+    /* ---------------- A PONTE .mpp (server/mpp.js) ----------------
+       ⚠ O `GET /__mpp/status` SOBE UM MS PROJECT INVISÍVEL por alguns
+       segundos. Por isso ele NÃO roda no render da aba: quem só quer ver o
+       cronograma não paga esse preço por ter passado por aqui. O botão
+       [.mpp — verificar] é a porta explícita, e ele promete só o que faz.
+       ⚠ E `verificou:false` NÃO É `temProject:false`: transformar "não
+       consegui medir" em "este computador não tem MS Project" é afirmar sobre
+       a máquina do cliente uma coisa que ninguém apurou. */
+    cronoMppStatus: function (pedido) {
+      var self = this;
+      this._cronoMpp = { carregando: true };
+      if (pedido) this.render();
+      fetch("/__mpp/status", { method: "GET" }).then(function (r) {
+        return r.json().then(function (j) { return { s: r.status, j: j }; }, function () { return { s: r.status, j: null }; });
+      }).then(function (x) {
+        if (!x.j || typeof x.j !== "object") {
+          self._cronoMpp = { erro: "o servidor local respondeu " + x.s + " sem conteúdo — não dá para saber se este computador gera .mpp." };
+        } else self._cronoMpp = x.j;
+        self.render();
+      }).catch(function (e) {
+        /* ⚠ falha de rede aqui é o servidor local do OrçaPRO, não a internet:
+           o recado tem de mandar para o lugar certo */
+        self._cronoMpp = { erro: "não consegui falar com o servidor local do OrçaPRO (" + String((e && e.message) || e) + "). O arquivo XML ao lado continua funcionando." };
+        self.render();
+      });
+    },
+    cronoMppGerar: function () {
+      var self = this, o = this._cronoOrcDoc(); if (!o) return;
+      if (this._trialBloqueado()) { this._avisoTrial(); return; }
+      if (typeof MSProject === "undefined") { UI.toast("Módulo do MS Project indisponível.", "erro"); return; }
+      var X = this._cronoMSPXml(o);
+      if (!X.xml) { UI.toast(X.erro || "Nada a exportar: o cronograma está vazio.", "erro"); return; }
+      /* ⚠ A GERAÇÃO DEMORA ~20 s — é a resposta mais lenta do produto, e dá
+         tempo de a pessoa achar que travou. O modal fica na tela dizendo o que
+         está acontecendo e o que NÃO fazer (fechar o Project no meio). */
+      UI.modal("Gerando o .mpp com o MS Project deste computador",
+        '<p style="font-size:13px">O OrçaPRO está abrindo o <b>MS Project</b> em segundo plano, montando o arquivo e <b>reabrindo o arquivo gerado para conferir</b> o que entrou nele. ' +
+        'Isso leva cerca de <b>20 segundos</b>.</p>' +
+        '<p style="font-size:13px;margin:0"><b>Não abra o MS Project</b> enquanto isso — a ponte precisa da automação livre. Nada do seu orçamento é alterado.</p>',
+        [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+      fetch("/__mpp/gerar", { method: "POST", headers: { "Content-Type": "application/xml;charset=utf-8" }, body: X.xml })
+        .then(function (r) {
+          if (r.status !== 200) {
+            return r.json().then(function (j) { throw { recado: (j && j.erro) || ("o servidor local respondeu " + r.status), detalhe: (j && j.detalhe) || "" }; },
+              function () { throw { recado: "o servidor local respondeu " + r.status + " e não disse por quê", detalhe: "" }; });
+          }
+          var tarefas = r.headers.get("X-Mpp-Tarefas");
+          var conf = null, faltou = null;
+          /* ⚠ os dois vêm PERCENT-ENCODED (cabeçalho HTTP é ASCII e o conteúdo
+             tem acento): `JSON.parse(decodeURIComponent(...))` é o contrato
+             escrito no server/static.js. */
+          try { conf = JSON.parse(decodeURIComponent(r.headers.get("X-Mpp-Conferido") || "%7B%7D")); } catch (eC) { conf = null; }
+          try { faltou = JSON.parse(decodeURIComponent(r.headers.get("X-Mpp-Faltou") || "%5B%5D")); } catch (eF) { faltou = null; }
+          var nome = self._cronoNomeDoCD(r.headers.get("Content-Disposition")) || (MSProject.nomeArquivo(o) || "Cronograma").replace(/\.xml$/i, "") + ".mpp";
+          return r.blob().then(function (b) { return { blob: b, nome: nome, tarefas: tarefas, conf: conf, faltou: faltou }; });
+        })
+        .then(function (res) {
+          Util.baixar(res.nome, res.blob, "application/vnd.ms-project");
+          UI.modal("Arquivo .mpp gerado — " + res.nome,
+            '<p style="font-size:13px;margin:0 0 8px">O arquivo foi salvo em <b>Downloads</b> e abre com duplo clique no MS Project.</p>' +
+            CronoExecUI.mppConferidoHtml(res.tarefas, res.conf, res.faltou) +
+            CronoExecUI.mspRelatoHtml(X.relato),
+            [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+        })
+        .catch(function (e) {
+          /* ⚠ O `erro` DO SERVIDOR JÁ VEM EM PORTUGUÊS E PRONTO PARA A PESSOA
+             — é ele que vai à tela, nunca o `codigo`. E a porta que sempre
+             existe vai junto: o XML abre no Project do mesmo jeito. */
+          var rec = (e && e.recado) ? String(e.recado) : ("não consegui falar com o servidor local do OrçaPRO (" + String((e && e.message) || e) + ")");
+          UI.modal("Não consegui gerar o .mpp",
+            '<p style="font-size:13px">' + Util.esc(rec) + '</p>' +
+            (e && e.detalhe ? '<p class="muted" style="font-size:12px">' + Util.esc(String(e.detalhe)) + '</p>' : '') +
+            '<p style="font-size:13px;margin:0">O caminho que <b>sempre</b> funciona é o botão <b>MS Project (XML)</b>: o Project, o ProjectLibre e o GanttProject abrem o XML direto ' +
+            '(Arquivo → Abrir → Procurar → tipo <b>Todos os arquivos</b>).</p>',
+            [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+        });
+    },
+    // o nome que o servidor mandou no Content-Disposition (filename*=UTF-8''…)
+    _cronoNomeDoCD: function (cd) {
+      var s = String(cd || ""), m = /filename\*=UTF-8''([^;]+)/i.exec(s);
+      if (m) { try { return decodeURIComponent(m[1]); } catch (e) { return null; } }
+      m = /filename="([^"]+)"/i.exec(s);
+      return m ? m[1] : null;
+    },
+
     _cronoFFEstado: function (camada, modo) {
       var o = this.orcAtual; if (!o) return;
       this._cronoFF = (this._cronoFF && typeof this._cronoFF === "object") ? this._cronoFF : {};
@@ -4875,6 +5596,678 @@
       if (camada) f.camada = camada;
       if (modo) f.modo = modo;
       this.render();
+    },
+
+    /* ==================================================================
+       GANTT INTERATIVO — a fiação (arrastar, zoom, rolagem, teclado)
+       ==================================================================
+       O pedido do dono (12/09/2026): "onde mostra as barras do cronograma
+       precisa ter a opção de edição por arrastar e opção de dar zoom, rolar
+       para um lado e para o outro".
+
+       A divisão de trabalho, e o porquê dela:
+         js/ganttui.js  — a CONTA (quantos dias andou, que dia fica embaixo do
+                          cursor depois do zoom, o que a soltura GRAVA). Pura,
+                          testada em Node: errar um dia aqui muda a data que
+                          vai impressa na proposta.
+         CronoExecUI    — o DESENHO (ganttPro*), também puro.
+         daqui para cá  — só o que precisa de DOM: eventos, rolagem, o quadro
+                          em requestAnimationFrame e o gravar pelo _cronoAlvo.
+
+       ⚠ O CPM NÃO RODA A CADA PIXEL. Durante o arrasto só a barra-fantasma e
+       a dica se mexem (um quadro por rAF); `Cronograma.estimar` — que é o que
+       custa — roda UMA vez, ao SOLTAR. Arrastar com recálculo por pixel numa
+       obra de 300 serviços trava o mouse, e a pessoa solta no lugar errado.
+
+       ⚠ ESTADO DE TELA, NUNCA NO ORÇAMENTO: nível de zoom, rolagem e linha
+       escolhida moram em App._cronoZoom[orc.id]. Gravados no orçamento,
+       mudariam o `atualizadoEm` a cada roda do mouse, sincronizariam à toa e
+       esbarrariam na trava do aprovado.
+       ------------------------------------------------------------------ */
+    _cronoZoomEstado: function (o) {
+      this._cronoZoom = (this._cronoZoom && typeof this._cronoZoom === "object") ? this._cronoZoom : {};
+      var z = this._cronoZoom[o.id];
+      if (!z || typeof z !== "object" || Array.isArray(z)) z = this._cronoZoom[o.id] = { nivel: "auto", scrollLeft: 0, scrollTop: 0, sel: -1 };
+      return z;
+    },
+
+    /* o que o Gantt da aba está desenhando AGORA. ⚠ Sai das MESMAS funções que
+       a tela usou para desenhar (preparar + estado + detalheEfetivo): duas
+       contas de detalhe dariam duas listas de linhas, e a pessoa arrastaria uma
+       barra para ver outra se mexer. O `preparar` reaproveita o memo do render
+       em curso — não é um segundo `estimar`. */
+    _cronoGanttCtx: function () {
+      if (typeof CronoExecUI === "undefined" || typeof Cronograma === "undefined") return null;
+      var o = this.orcAtual; if (!o) return null;
+      var alvo = null;
+      try { alvo = this._cronoAlvo(); } catch (eA) { alvo = null; }
+      var orcD = (alvo && alvo.tipo === "plano" && alvo.orc) ? alvo.orc : o;
+      var d = null;
+      try { d = CronoExecUI.preparar(orcD, { tok: this._rtok }); } catch (eP) { d = null; }
+      if (!d || !d.r) return null;
+      var est = CronoExecUI.estado(this, o);
+      return { orc: o, orcD: orcD, r: d.r, det: CronoExecUI.detalheEfetivo(d.r, est.detalhe),
+        abertas: est.abertas, hoje: est.hoje, travado: !!(alvo && alvo.travado) };
+    },
+
+    /* RELIGADO A CADA RENDER (como o filtro de insumos): o render reescreve o
+       HTML da aba inteiro, e o listener do render anterior morreu com o
+       elemento. O que NÃO se religa aqui são os listeners de `document`
+       (mousemove/mouseup) — esses entram uma vez só, senão cada render
+       empilharia mais um e o arrasto passaria a ser tratado N vezes. */
+    _cronoGanttLigar: function () {
+      var self = this;
+      this._gx = null;
+      /* ⚠ um render no MEIO de um arrasto (um salvar assíncrono, a nuvem
+         voltando) leva o controlador embora e deixaria o cursor de "arrastando"
+         grudado na página inteira — cursor errado se lê como app travado */
+      if (document.body && document.body.classList) document.body.classList.remove("gx-arrastando");
+      if (typeof CronoExecUI === "undefined" || typeof GanttUI === "undefined") return;
+      var wrap = document.querySelector("#aba-conteudo [data-gx-wrap]");
+      if (!wrap) return;
+      var plot = wrap.querySelector('[data-gx="plot"]'), nomes = wrap.querySelector('[data-gx="nomes"]'), regua = wrap.querySelector('[data-gx="regua"]');
+      if (!plot || !nomes || !regua) return;
+      var ctx = this._cronoGanttCtx(); if (!ctx) return;
+      var z = this._cronoZoomEstado(ctx.orc);
+      var corpo = wrap.querySelector(".gx-corpo");
+      var g = this._gx = { wrap: wrap, plot: plot, nomes: nomes, regua: regua, corpo: corpo,
+        dica: wrap.querySelector(".gx-dica"), fant: wrap.querySelector(".gx-fantasma"),
+        ctx: ctx, z: z, pro: null, proCh: "", arrasto: null, pan: null, mouse: null, raf: 0, pintado: "",
+        /* ⚠ ESTA LINHA FORÇA O LAYOUT (é o 1º `offsetHeight` depois do
+           `main.innerHTML = …`) e, num perfil de CPU por linha, ela aparece com
+           94% dos ticks do `_cronoGanttLigar`. NÃO ADIANTA EMPURRÁ-LA PARA UM
+           requestAnimationFrame: duas linhas abaixo o `_gxPintar(true)` chama o
+           `_gxPro`, que lê `g.plot.clientWidth` — o layout aconteceria ali do
+           mesmo jeito. O que a régua honesta mede (do render ATÉ O QUADRO
+           PINTADO) diz que a aba não ficou mais lenta: 84,2 ms a 400 serviços e
+           121,9 ms a 2.400, contra 86,8 e 125,5 do HEAD (medido em 12/09/2026,
+           mediana de 9 renders cada). Medir só a duração de App.render()
+           premiaria quem empurra o layout para depois. Se um dia isto for
+           mexido, a régua é a do quadro pintado. */
+        caixa: corpo ? corpo.offsetHeight : 0,
+        /* OS PAINÉIS DE BAIXO (histograma de mão de obra e linha de balanço).
+           Eles são irmãos da `.gx`, não filhos: cada um tem o seu painel de
+           tempo, e é o scrollLeft DESTE Gantt que manda nos deles. */
+        hxWraps: this._cronoHxLista("[data-hx-wrap]"), hxPlots: this._cronoHxLista('[data-hx="plot"]'), hxPx: "" };
+
+      /* a rolagem de antes do render volta ANTES do 1º pintar: sem isso, quem
+         arrastou uma barra no mês 7 era jogado de volta para o começo da obra
+         a cada edição (o render redesenha a aba inteira) */
+      plot.scrollLeft = z.scrollLeft || 0;
+      plot.scrollTop = z.scrollTop || 0;
+      nomes.scrollTop = plot.scrollTop; regua.scrollLeft = plot.scrollLeft;
+      /* ⚠ e só AGORA a janela real (largura e altura em px) existe: a 1ª
+         pintura saiu do desenho PURO, com o padrão. É aqui que o "Ajustar"
+         passa a caber de verdade na tela desta pessoa. */
+      this._gxPintar(true);
+      plot.scrollLeft = z.scrollLeft || 0; plot.scrollTop = z.scrollTop || 0;
+      nomes.scrollTop = plot.scrollTop; regua.scrollLeft = plot.scrollLeft;
+      this._cronoHxRolar();
+
+      plot.addEventListener("scroll", function () {
+        var gg = self._gx; if (!gg) return;
+        gg.nomes.scrollTop = gg.plot.scrollTop;      // as duas camadas andam juntas
+        gg.regua.scrollLeft = gg.plot.scrollLeft;
+        gg.z.scrollLeft = gg.plot.scrollLeft; gg.z.scrollTop = gg.plot.scrollTop;
+        /* ⚠ O HISTOGRAMA ROLA COM O GANTT, no MESMO evento e não num listener
+           próprio: os painéis de baixo têm `overflow:hidden` e nenhum scroll
+           por conta. Dois painéis rolando sozinhos dessincronizam no primeiro
+           toque de roda — e um gráfico de gente deslocado do cronograma diz
+           que o pico é numa semana em que ele não é. */
+        self._cronoHxRolar();
+        self._gxAgendar();
+      });
+      /* Ctrl/⌘ + roda = zoom com âncora no cursor; Shift + roda = rolar de
+         lado. A roda pelada continua rolando na vertical (o navegador faz).
+         ⚠ `true` no 3º argumento (fase de captura) e não `{passive:false}`: o
+         produto roda em WebView de instalador antigo, onde o objeto de opções
+         vira `useCapture` — e aí o preventDefault do zoom deixaria de valer
+         justo na máquina mais velha. Na captura do próprio elemento o efeito é
+         o mesmo e funciona nos dois. */
+      plot.addEventListener("wheel", function (ev) {
+        var gg = self._gx; if (!gg) return;
+        if (ev.ctrlKey || ev.metaKey) {
+          ev.preventDefault();
+          var q = gg.plot.getBoundingClientRect();
+          self._gxZoom(ev.deltaY < 0 ? 1 : -1, ev.clientX - q.left);
+          return;
+        }
+        if (ev.shiftKey) { ev.preventDefault(); gg.plot.scrollLeft += (ev.deltaY || ev.deltaX || 0); }
+      }, true);
+      plot.addEventListener("mousedown", function (ev) { self._gxDown(ev); });
+      plot.addEventListener("keydown", function (ev) { self._gxTecla(ev); });
+      /* TOQUE (celular e tablet): o MESMO arrasto, com o dedo.
+         ⚠ Só abre arrasto quando o dedo cai numa ALÇA. Em qualquer outro ponto
+         o toque não é interceptado — e é isso que deixa a rolagem nativa (que
+         é como se lê um cronograma no celular) funcionando como sempre. Um
+         `preventDefault` largado no touchstart travaria a rolagem da obra
+         inteira para ganhar um arrasto que quase ninguém faz no telefone. */
+      plot.addEventListener("touchstart", function (ev) {
+        var d = (ev.target && ev.target.getAttribute) ? ev.target.getAttribute("data-gx-drag") : null;
+        if (!d || !ev.touches || ev.touches.length !== 1) return;
+        self._gxDown(self._gxDoToque(ev, ev.touches[0]));
+        if (self._gx && self._gx.arrasto) ev.preventDefault();
+      }, true);
+      plot.addEventListener("touchmove", function (ev) {
+        var g = self._gx;
+        if (!g || !g.arrasto || !ev.touches || !ev.touches.length) return;
+        ev.preventDefault();
+        g.mouse = { x: ev.touches[0].clientX, y: ev.touches[0].clientY };
+        self._gxAgendarArrasto();
+      }, true);
+      plot.addEventListener("touchend", function () { if (self._gx && self._gx.arrasto) self._gxUp(); }, true);
+      plot.addEventListener("touchcancel", function () { if (self._gx && self._gx.arrasto) self._gxUp(); }, true);
+      this._gxLigarGlobal();
+    },
+    /* ==================================================================
+       OS PAINÉIS DE BAIXO (histograma de mão de obra e linha de balanço)
+       ==================================================================
+       Eles compartilham o EIXO DE TEMPO do Gantt: o mesmo `pxDia`, a mesma
+       largura de conteúdo e o mesmo `scrollLeft`. O desenho é do CronoExecUI
+       (puro); daqui para cá só o que precisa de DOM.
+
+       ⚠ O MODELO NÃO É RECALCULADO NO ZOOM. `CronoExecUI.hxUltimo()` devolve o
+       que o render acabou de desenhar (o memo do módulo) — e é só o desenho
+       que muda quando a escala muda. Refazer `Histograma.montar` a cada roda
+       do mouse leria a composição analítica de todos os serviços por quadro,
+       que é a conta cara desta tela. */
+    _cronoHxLista: function (sel) {
+      var out = [];
+      try {
+        var ns = document.querySelectorAll("#aba-conteudo " + sel), i;
+        for (i = 0; i < ns.length; i++) out.push(ns[i]);
+      } catch (e) {}
+      return out;
+    },
+    _cronoHxRolar: function () {
+      var g = this._gx; if (!g || !g.hxPlots) return;
+      for (var i = 0; i < g.hxPlots.length; i++) g.hxPlots[i].scrollLeft = g.plot.scrollLeft;
+    },
+    _cronoHxPintar: function (p) {
+      var g = this._gx;
+      if (!g || !g.hxWraps || !g.hxWraps.length || !p || !p.e || typeof CronoExecUI === "undefined") return;
+      /* só o pxDia e a largura da coluna de nomes mexem nestes desenhos: os
+         dois painéis desenham a obra INTEIRA (são ~100 barras, não 300 linhas),
+         então rolar não os repinta — mudar o zoom, sim */
+      var ch = p.e.pxDia + "|" + p.labelW;
+      if (g.hxPx === ch) return;
+      g.hxPx = ch;
+      var largura = Math.max(1, p.e.larguraConteudo);
+      for (var i = 0; i < g.hxWraps.length; i++) {
+        var w = g.hxWraps[i], tipo = w.getAttribute("data-hx-wrap");
+        var mod = (tipo === "lob") ? CronoExecUI.lxUltimo() : CronoExecUI.hxUltimo();
+        if (!mod) continue;
+        /* a MESMA variável da `.gx`: é ela que faz o dia 0 do gráfico de baixo
+           cair no mesmo x do dia 0 da barra de cima */
+        if (w.style && w.style.setProperty) w.style.setProperty("--gx-lw", p.labelW + "px");
+        var eixo = w.querySelector(".hx-eixo-in"), pin = w.querySelector(".hx-plot-in");
+        try {
+          if (eixo) eixo.innerHTML = (tipo === "lob") ? CronoExecUI.lxEixo(mod, p) : CronoExecUI.hxEixo(mod, p);
+          if (pin) { pin.style.width = largura + "px"; pin.innerHTML = (tipo === "lob") ? CronoExecUI.lxPlot(mod, p) : CronoExecUI.hxPlot(mod, p); }
+        } catch (e) {}
+      }
+      this._cronoHxRolar();
+    },
+
+    // o toque vestido de evento de mouse: o _gxDown não precisa saber a diferença
+    _gxDoToque: function (ev, toque) {
+      return { button: 0, clientX: toque.clientX, clientY: toque.clientY, target: ev.target, preventDefault: function () {} };
+    },
+
+    _gxLigarGlobal: function () {
+      if (this._gxGlobal) return;
+      this._gxGlobal = true;
+      var self = this;
+      /* no `document`, não no painel: soltar o botão FORA do Gantt (ou fora da
+         janela) tem de terminar o arrasto — senão a barra-fantasma fica
+         pendurada e o próximo clique grava uma data que ninguém pediu */
+      document.addEventListener("mousemove", function (ev) {
+        var g = self._gx; if (!g) return;
+        if (g.pan) {
+          g.plot.scrollLeft = g.pan.sl - (ev.clientX - g.pan.x);
+          g.plot.scrollTop = g.pan.st - (ev.clientY - g.pan.y);
+          return;
+        }
+        if (!g.arrasto) return;
+        g.mouse = { x: ev.clientX, y: ev.clientY };
+        self._gxAgendarArrasto();
+      });
+      document.addEventListener("mouseup", function () { self._gxUp(); });
+      /* ⚠ REDIMENSIONAR TEM DE REAJUSTAR. "Ajustar" promete que a obra inteira
+         cabe na LARGURA DA TELA — e essa largura muda quando a pessoa maximiza
+         a janela, liga o modo foco (que devolve a coluna da sidebar) ou gira o
+         tablet. Sem isto o desenho continuava com a escala da largura ANTIGA:
+         medido a 1920×1080 com o Gantt ainda desenhado para 1366 (784 px de
+         1336 disponíveis), metade do painel do tempo sobrando em branco. */
+      if (global.addEventListener) {
+        var reTimer = 0;
+        global.addEventListener("resize", function () {
+          if (!self._gx) return;
+          if (reTimer) clearTimeout(reTimer);
+          // um respiro: arrastar a borda da janela dispara dezenas de eventos
+          reTimer = setTimeout(function () {
+            reTimer = 0;
+            var g = self._gx; if (!g) return;
+            g.caixa = g.corpo ? g.corpo.offsetHeight : g.caixa;
+            g.nomes.scrollTop = g.plot.scrollTop; g.regua.scrollLeft = g.plot.scrollLeft;
+            self._gxPintar(true);
+          }, 120);
+        });
+      }
+    },
+
+    /* o ESTADO do desenho, com memo por quadro. ⚠ Durante o arrasto o estado
+       só muda quando a rolagem muda: remontar as linhas e as permissões a cada
+       movimento do mouse era a conta cara da tela (o CPM só roda ao soltar). */
+    _gxPro: function (ovr) {
+      var g = this._gx; if (!g) return null;
+      ovr = ovr || {};
+      var sl = ovr.scrollLeft != null ? ovr.scrollLeft : g.plot.scrollLeft;
+      var st = ovr.scrollTop != null ? ovr.scrollTop : g.plot.scrollTop;
+      var desf = (this._cronoDesf && this._cronoDesf[g.ctx.orc.id]) ? this._cronoDesf[g.ctx.orc.id].resumo : "";
+      /* ⚠ painel ainda sem tamanho (aba desenhada e não medida, contêiner
+         oculto): NÃO se remede com zero. Zero de largura faz o "Ajustar" cair
+         no piso de 3 px por dia e o desenho nascer com a escala de uma obra
+         de 10 anos — o padrão do desenho puro é melhor que uma medida falsa.
+         ("Aba oculta não desenha" já custou uma tarde no viewer 3D.) */
+      var lw = g.plot.clientWidth || CronoExecUI.GX_LABELW * 2, lh = g.plot.clientHeight || g.caixa;
+      var ch = [g.z.nivel, sl, st, lw, lh, g.z.sel, g.caixa, desf].join("|");
+      if (g.pro && g.proCh === ch) return g.pro;
+      g.proCh = ch;
+      g.pro = CronoExecUI.ganttProEstado(g.ctx.r, {
+        detalhe: g.ctx.det, abertas: g.ctx.abertas, travado: g.ctx.travado, hoje: g.ctx.hoje,
+        nivel: g.z.nivel, scrollLeft: sl, scrollTop: st, sel: g.z.sel, desfazer: desf,
+        largura: lw, altura: lh, alturaCaixa: g.caixa,
+        /* a largura do WIDGET manda na coluna de nomes (ganttProLabelW): a 1ª
+           pintura sai do desenho puro, que não tem DOM para perguntar, e é
+           aqui que ela encolhe de verdade no celular */
+        larguraWidget: g.wrap.clientWidth || 0
+      });
+      return g.pro;
+    },
+
+    // um quadro por rAF: rolar dispara dezenas de eventos por segundo
+    _gxAgendar: function () {
+      var self = this, g = this._gx; if (!g || g.raf) return;
+      var pede = (typeof requestAnimationFrame === "function") ? requestAnimationFrame : function (f) { return setTimeout(f, 16); };
+      g.raf = pede(function () { g.raf = 0; self._gxPintar(false); });
+    },
+    _gxAgendarArrasto: function () {
+      var self = this, g = this._gx; if (!g || g.rafA) return;
+      var pede = (typeof requestAnimationFrame === "function") ? requestAnimationFrame : function (f) { return setTimeout(f, 16); };
+      g.rafA = pede(function () { g.rafA = 0; self._gxArrastoQuadro(); });
+    },
+
+    /* REDESENHA as três peças. Só troca o que mudou de janela (virtualização):
+       rolar dentro da mesma faixa de linhas e dias não redesenha nada. */
+    _gxPintar: function (forcar, ovr) {
+      var g = this._gx; if (!g) return;
+      /* ⚠ A LARGURA DA COLUNA DE NOMES ENTRA ANTES DE MEDIR O PAINEL DO TEMPO:
+         ela decide quanto sobra, e é sobre essa sobra que o "Ajustar" calcula
+         os px por dia. Na ordem inversa a escala sairia com a largura da
+         coluna anterior — e num telefone, onde a coluna cai de 300 para ~140,
+         a obra ficaria 160 px mais larga que o painel. */
+      if (g.wrap.style && g.wrap.style.setProperty) {
+        var lwCol = CronoExecUI.ganttProLabelW(g.wrap.clientWidth || 0);
+        if (lwCol !== g.labelW) { g.labelW = lwCol; g.wrap.style.setProperty("--gx-lw", lwCol + "px"); }
+      }
+      var p = this._gxPro(ovr); if (!p || !p.e) return;
+      /* ⚠ O MÊS DA BORDA ESQUERDA É ATUALIZADO ANTES DO CORTE DE REPINTURA. Ele
+         muda a cada pixel de rolagem; a repintura só acontece quando a JANELA DE
+         DIAS muda (28 px no zoom "Dia"). Preso ao corte, o mês da borda ficaria
+         até um dia atrasado — e um rótulo de data errado é pior que rótulo
+         nenhum. Custa um textContent comparado por quadro. */
+      var elFixa = g.wrap.querySelector('[data-gx="fixa"]');
+      if (elFixa) {
+        var txFixa = CronoExecUI.ganttProRotuloFixo(p);
+        if (elFixa.textContent !== txFixa) elFixa.textContent = txFixa;   // ⚠ texto puro: é rótulo de data, não HTML
+        elFixa.hidden = !txFixa;
+      }
+      // os painéis de baixo acompanham a escala (ver _cronoHxPintar)
+      this._cronoHxPintar(p);
+      var ch = [p.e.nivel, p.e.pxDia, p.jan.primeiraLinha, p.jan.ultimaLinha, p.jan.primeiroDia, p.jan.ultimoDia, p.sel, p.desfazer].join("|");
+      if (!forcar && ch === g.pintado) return;
+      g.pintado = ch;
+      var partes = CronoExecUI.ganttProPartes(g.ctx.r, p, { abertas: g.ctx.abertas, hoje: g.ctx.hoje });
+      var pin = g.plot.querySelector(".gx-plot-in"), nin = g.nomes.querySelector(".gx-nomes-in"), rin = g.regua.querySelector(".gx-regua-in");
+      if (rin) { rin.style.width = partes.larguraConteudo + "px"; rin.innerHTML = partes.regua; }
+      if (nin) { nin.style.height = partes.alturaConteudo + "px"; nin.innerHTML = partes.nomes; }
+      if (pin) {
+        pin.style.width = partes.larguraConteudo + "px";
+        pin.style.height = partes.alturaConteudo + "px";
+        /* ⚠ só o SVG é trocado, nunca o innerHTML do `-in`: a barra-fantasma é
+           irmã do SVG, e um innerHTML inteiro a apagaria no meio do arrasto (a
+           rolagem automática na borda repinta enquanto se arrasta). */
+        var svg = pin.querySelector('[data-gx="plot-svg"]');
+        if (svg) svg.outerHTML = partes.plot;
+        else pin.insertAdjacentHTML("afterbegin", partes.plot);
+      }
+      /* ⚠ O CANTO SÓ É REESCRITO QUANDO MUDA DE FORMA. A 1ª pintura sai do
+         desenho puro, que ainda não sabe a largura da tela: num celular ele
+         desenha o SELETOR de escala e só aqui se descobre que a coluna cabe
+         138 px e ele vira botão. Reescrever o canto a cada quadro, porém,
+         fecharia o seletor no meio do clique e tiraria o foco de quem navega
+         por teclado — por isso a chave de forma. */
+      var forma = (p.labelW < 200 ? "estreito" : "largo") + "|" + (p.desfazer ? "1" : "0");
+      var canto = g.wrap.querySelector(".gx-canto");
+      if (canto && forma !== g.cantoCh) { g.cantoCh = forma; canto.innerHTML = CronoExecUI.ganttProTopo(p); }
+      var sel = g.wrap.querySelector("[data-crono-zoom]");
+      if (sel && sel.value !== p.e.nivel) sel.value = p.e.nivel;
+    },
+
+    /* ZOOM. `dir` = 1 aproxima, −1 afasta, ou o nome do nível. `ancora` = px a
+       partir da borda esquerda da janela (onde o cursor está) — é o dia que
+       não pode se mexer. ⚠ Recusa do motor VIRA RECADO: botão que não faz nada
+       e não diz nada é lido como app travado. */
+    _gxZoom: function (dir, ancora) {
+      var g = this._gx; if (!g || typeof GanttUI === "undefined") return;
+      var p = this._gxPro(); if (!p || !p.e) return;
+      var res = GanttUI.zoom(p.e, dir, ancora);
+      if (!res.mudou) { if (res.motivo) UI.toast(this._gxMotivoHonesto(res.motivo, p), ""); return; }
+      g.z.nivel = res.nivel; g.z.scrollLeft = res.scrollLeft;
+      /* pinta com a rolagem NOVA já na conta (o `-in` só ganha a largura nova
+         aqui) e só depois mexe no scrollLeft do painel: na ordem inversa o
+         navegador cortaria o valor pela largura ANTIGA e o dia debaixo do
+         cursor pularia de lugar. */
+      this._gxPintar(true, { scrollLeft: res.scrollLeft });
+      g.plot.scrollLeft = res.scrollLeft;
+      g.nomes.scrollTop = g.plot.scrollTop; g.regua.scrollLeft = g.plot.scrollLeft;
+    },
+
+    /* ⚠ A RECUSA DO ZOOM NÃO PODE AFIRMAR O QUE A TELA DESMENTE. O motor
+       (js/ganttui.js, `zoom`) recusa o último nível com "Já está no menor zoom
+       (trimestre) — a obra inteira cabe na tela.", e isso é FALSO quando ela
+       não cabe: medido a 1366×768 na OBRA TESTE, afastando até o trimestre o
+       desenho ficava com 1.034 px num painel de 784 e o clique seguinte em [−]
+       dizia que a obra inteira cabia. Aqui a frase é cortada no ponto e
+       substituída pelo fato MEDIDO. PENDÊNCIA no motor (contrato): que `zoom`
+       devolva `cabe:false` (ou o motivo já montado com `dias*px` × `largura`)
+       para a tela não precisar reescrever texto de motor. */
+    _gxMotivoHonesto: function (motivo, p) {
+      var m = String(motivo || "");
+      if (!/cabe na (tela|largura da tela)/.test(m)) return m;
+      if (typeof CronoExecUI === "undefined" || !CronoExecUI.ganttProCabe || CronoExecUI.ganttProCabe(p)) return m;
+      var cabem = Math.round(p.e.largura / Math.max(0.0001, p.e.pxDia));
+      return m.replace(/\s*—\s*a obra inteira cabe na (tela|largura da tela)\.?/, ".") +
+        " Nesta largura a obra inteira ainda NÃO cabe: cabem " + Util.fmtNum(cabem, 0) + " dos " +
+        Util.fmtNum(p.e.dias, 0) + " dias úteis — role o painel do tempo para o lado.";
+    },
+
+    _gxDown: function (ev) {
+      var g = this._gx; if (!g || ev.button !== 0 || typeof GanttUI === "undefined") return;
+      var alvo = (ev.target && ev.target.getAttribute) ? ev.target.getAttribute("data-gx-drag") : null;
+      if (!alvo) {
+        /* ⚠ BARRA QUE NÃO SE ARRASTA DIZ POR QUÊ — ANTES DE VIRAR PAN. Roteiro
+           do defeito (medido com mouse real no navegador, 12/09/2026, orçamento
+           aprovado): a pessoa pega a barra, o `mousedown` cai aqui (a `.gx-hit`
+           existe, mas sem `data-gx-drag`), o desenho rola de lado e a tela não
+           diz NADA — 0 toast, 0 modal. O motivo e a porta existem no `<title>`
+           da barra, e `title` não existe no toque nem antes do primeiro gesto.
+           Trava sem recado é lida como app quebrado. */
+        var hit = (ev.target && ev.target.getAttribute) ? ev.target.getAttribute("data-gx-id") : null;
+        if (hit) {
+          var pr = this._gxPro();
+          var perm = pr && pr.perm ? pr.perm[String(hit)] : null;
+          /* o mesmo motivo não se repete a cada quadro de um arrasto só: a
+             guarda é por barra E por tempo (4 s), não "uma vez para sempre" —
+             quem tenta de novo depois precisa do recado de novo */
+          var agora = Date.now();
+          if (perm && perm.motivo && (this._gxAvisouId !== String(hit) || agora - (this._gxAvisouEm || 0) > 4000)) {
+            this._gxAvisouId = String(hit); this._gxAvisouEm = agora;
+            UI.toast(perm.motivo, "");
+          }
+        }
+        // PAN: arrastar o fundo rola o desenho (o gesto que todo mapa tem)
+        g.pan = { x: ev.clientX, y: ev.clientY, sl: g.plot.scrollLeft, st: g.plot.scrollTop };
+        g.plot.classList.add("gx-pegando");
+        if (g.plot.focus) g.plot.focus();
+        ev.preventDefault();
+        return;
+      }
+      var p = this._gxPro(); if (!p || !p.e) return;
+      var lin = parseInt(ev.target.getAttribute("data-gx-lin"), 10);
+      var l = p.L[lin]; if (!l) return;
+      var no = l.no || l.et;
+      var q = g.plot.getBoundingClientRect();
+      var a = GanttUI.iniciarArrasto(no, alvo, GanttUI.xConteudo(p.e, ev.clientX - q.left), p.ctx[String(no.id)] || {});
+      if (!a.valido) { UI.toast(a.motivo || "Esta barra não se arrasta.", ""); return; }
+      g.z.sel = lin;
+      g.arrasto = { a: a, no: no, lin: lin, res: null };
+      g.mouse = { x: ev.clientX, y: ev.clientY };
+      document.body.classList.add("gx-arrastando");
+      if (g.plot.focus) g.plot.focus();
+      ev.preventDefault();
+      this._gxArrastoQuadro();
+    },
+
+    /* UM QUADRO do arrasto: a barra-fantasma e a dica. Nada é gravado e nada é
+       recalculado aqui — a rede só é refeita ao soltar. */
+    _gxArrastoQuadro: function () {
+      var g = this._gx; if (!g || !g.arrasto || !g.mouse || typeof GanttUI === "undefined") return;
+      var q = g.plot.getBoundingClientRect();
+      var xJ = g.mouse.x - q.left, yJ = g.mouse.y - q.top;
+      /* rolagem automática na borda: arrastar para fora do que se vê tem de
+         andar com o desenho, senão só dá para mover uma barra até onde a tela
+         alcança (é por isso que o `x` do motor é px de CONTEÚDO e não de
+         janela — ver o cabeçalho do ganttui.js) */
+      var borda = 30;
+      if (xJ < borda) g.plot.scrollLeft -= Math.min(40, (borda - xJ) * 0.7);
+      else if (xJ > q.width - borda) g.plot.scrollLeft += Math.min(40, (xJ - (q.width - borda)) * 0.7);
+      if (yJ < borda) g.plot.scrollTop -= Math.min(30, (borda - yJ) * 0.5);
+      else if (yJ > q.height - borda) g.plot.scrollTop += Math.min(30, (yJ - (q.height - borda)) * 0.5);
+      var p = this._gxPro(); if (!p || !p.e) return;
+      var res = GanttUI.moverArrasto(p.e, GanttUI.xConteudo(p.e, xJ), GanttUI.yConteudo(p.e, yJ), g.arrasto.a);
+      g.arrasto.res = res;
+      this._gxFantasma(p, res);
+      this._gxDica(p, res);
+    },
+
+    _gxFantasma: function (p, res) {
+      var g = this._gx, e = p.e, f = g.fant; if (!f) return;
+      if (res.tipo === "ligar") {
+        // ligar: o realce é a LINHA ALVO inteira — é nela que a dependência cai
+        if (!res.valido || res.linhaAlvo < 0) { f.hidden = true; return; }
+        f.hidden = false;
+        f.style.left = "0px"; f.style.top = (res.linhaAlvo * e.rowH) + "px";
+        f.style.width = e.larguraConteudo + "px"; f.style.height = e.rowH + "px";
+        f.style.borderColor = "#0d6ebd";
+        f.style.background = "rgba(13,110,189,.10)";
+        return;
+      }
+      f.hidden = false;
+      f.style.left = GanttUI.xDoDia(e, res.novoInicio) + "px";
+      f.style.top = (g.arrasto.lin * e.rowH + 3) + "px";
+      f.style.width = Math.max(3, (res.novoFim - res.novoInicio) * e.pxDia) + "px";
+      f.style.height = (e.rowH - 6) + "px";
+      // recusado fica VERMELHO: a barra para na borda, e sem a cor isso se lê como travamento
+      f.style.borderColor = res.valido ? "#0f172a" : "#b91c1c";
+      f.style.background = res.valido ? "rgba(15,23,42,.10)" : "rgba(185,28,28,.12)";
+    },
+
+    _gxDica: function (p, res) {
+      var g = this._gx, d = g.dica; if (!d || !g.wrap) return;
+      var txt = CronoExecUI.ganttProDica(res, g.arrasto.no);
+      if (!txt) { d.hidden = true; return; }
+      var q = g.wrap.getBoundingClientRect();
+      d.hidden = false;
+      d.textContent = txt;   // ⚠ TEXTO PURO: o nome da etapa é dado do cliente
+      d.style.background = res.valido ? "#0f172a" : "#7f1d1d";
+      /* ⚠ a dica é posicionada DEPOIS de ter o texto, e com o tamanho dela na
+         conta: arrastando perto da borda direita ela saía da tela, e o número
+         de dias — a informação que a pessoa está olhando — ficava fora do
+         quadro. Mede-se o que ela ficou, não o que se imagina que ela seja. */
+      var dw = d.offsetWidth || 180, dh = d.offsetHeight || 40;
+      var x = g.mouse.x - q.left + 16, y = g.mouse.y - q.top + 18;
+      if (x + dw > q.width - 4) x = Math.max(2, g.mouse.x - q.left - dw - 12);
+      /* ⚠ E A DICA SOBE QUANDO HÁ LINHA DESENHADA ABAIXO DO PONTEIRO. Embaixo
+         do cursor ela cobria justamente a barra VIZINHA — que é a referência de
+         quem está posicionando uma etapa (visto na foto a 1366 e a 1920:
+         arrastando "04 Alvenaria", a caixa com as datas tapava "05 Cobertura" e
+         o fim da legenda). Até aqui o recuo só existia para a borda DIREITA: o
+         código tratava x e nunca y. Na última linha ela continua embaixo, que é
+         onde há espaço. */
+      var ref = g.arrasto.lin;
+      if (res && res.linhaAlvo != null && res.linhaAlvo > ref) ref = res.linhaAlvo;
+      if (p.L && ref + 1 < p.L.length) y = g.mouse.y - q.top - dh - 10;
+      d.style.left = Math.max(2, x) + "px";
+      d.style.top = Math.max(-dh - 4, y) + "px";
+    },
+
+    _gxUp: function () {
+      var g = this._gx; if (!g) return;
+      if (g.pan) { g.pan = null; g.plot.classList.remove("gx-pegando"); return; }
+      if (!g.arrasto) return;
+      var ar = g.arrasto;
+      g.arrasto = null; g.mouse = null;
+      document.body.classList.remove("gx-arrastando");
+      if (g.fant) g.fant.hidden = true;
+      if (g.dica) g.dica.hidden = true;
+      this._gxSoltar(ar);
+    },
+
+    /* SOLTAR — a única hora em que algo é gravado. A lista de operações e o
+       recado saem do motor (GanttUI.opsDoArrasto / resumoOps): decidir campo
+       ou mapa aqui seria a segunda cabeça decidindo o que o motor já decide.
+       Grava pelo _cronoAlvo — no aprovado com obra, isso é o PLANO DE EXECUÇÃO
+       da obra, e a proposta aprovada fica intacta. */
+    _gxSoltar: function (ar) {
+      var g = this._gx;
+      if (!g || !ar || !ar.res || typeof GanttUI === "undefined") { if (g) this._gxPintar(true); return; }
+      var res = ar.res;
+      if (res.tipo !== "ligar" && res.mudou === false) { this._gxPintar(true); return; }
+      if (res.tipo === "ligar" && !res.valido) { UI.toast(res.motivo || "Solte a ligação em cima de outra barra.", ""); this._gxPintar(true); return; }
+      var alvo = null;
+      try { alvo = this._cronoAlvo(); } catch (eA) { alvo = null; }
+      if (!alvo) { UI.toast("Não consegui identificar onde gravar esta edição — nada foi alterado.", "erro"); return; }
+      if (alvo.travado) {
+        UI.toast("Orçamento aprovado: esta é a data que foi ao cliente e ela não muda aqui. Crie uma revisão — ou, com a obra ligada, inicie o plano de execução dela.", "erro");
+        this._gxPintar(true); return;
+      }
+      var ops = GanttUI.opsDoArrasto(g.ctx.r, ar.no, res);
+      if (!ops.length) {
+        UI.toast(res.motivo || (res.tipo === "ligar" ? "Esta ligação não pode ser criada (elo repetido, de outra etapa, ou laço na rede)." : "Nada mudou nesta barra."), "");
+        this._gxPintar(true); return;
+      }
+      var antes = { dias: g.ctx.r.totalDias, fim: g.ctx.r.dataFim };
+      /* a FOTO de antes, para o [Desfazer] de um nível. ⚠ Cópia profunda: o
+         objeto do cronograma é o mesmo que o motor lê, e guardar a referência
+         guardaria o estado DEPOIS da mudança. */
+      var foto = null;
+      try { foto = JSON.parse(JSON.stringify(alvo.cron)); } catch (eC) { foto = null; }
+      var ap = GanttUI.aplicarOps(alvo.cron, ops);
+      if (!ap.mudou) {
+        UI.toast(ap.erros.length ? ("Não consegui aplicar o arrasto: " + ap.erros[0]) : "Nada mudou nesta barra.", ap.erros.length ? "erro" : "");
+        this._gxPintar(true); return;
+      }
+      if (!alvo.salvar()) { this.render(); return; }   // o salvar já explica por que recusou
+      if (foto) {
+        this._cronoDesf = (this._cronoDesf && typeof this._cronoDesf === "object") ? this._cronoDesf : {};
+        /* ⚠ `depois` é a FOTO DE COMO FICOU, tirada DEPOIS do salvar (o
+           persistir ainda materializa o modo executivo e sincroniza o prazo).
+           É ela que o desfazer confere antes de agir: sem essa conferência, o
+           [Desfazer] continuaria valendo depois de a pessoa digitar uma
+           duração na tabela — e voltaria o cronograma para antes do arrasto,
+           apagando calado a edição que veio depois. */
+        var depois = null;
+        try { depois = JSON.stringify(alvo.cron); } catch (eD) { depois = null; }
+        this._cronoDesf[this.orcAtual.id] = { cron: foto, depois: depois, resumo: GanttUI.resumoOps(ops, ar.no, g.ctx.r) };
+      }
+      /* o ANTES → DEPOIS DO PRAZO, quando a ENTREGA muda: arrastar uma etapa
+         do meio pode empurrar a data final, e essa é a data que vai na
+         proposta. Número a pessoa confere; "pronto" ela não. */
+      /* ⚠ O NOME DO RECADO SAI DO RESULTADO (`g.ctx.r`), não da barra de onde o
+         arrasto partiu: no "ligar" quem muda é a SUCESSORA, e sem o `r` o
+         recado acusava a barra errada e lia-se como dependência invertida. */
+      var msg = GanttUI.resumoOps(ops, ar.no, g.ctx.r) || "Cronograma atualizado.";
+      /* ⚠ RECUSA QUE, MESMO ASSIM, GRAVA: a barra-fantasma vermelha parou na
+         borda (duração mínima de 1 dia, piso da rede, teto de 10 anos) e a
+         soltura gravou esse valor GRUDADO na trava — o número sai no recado, e
+         é o mesmo que a pessoa viu na tela. O que faltava era o PORQUÊ de ter
+         parado ali: a cor prometeu "recusado" e a gravação aconteceu calada. */
+      if (res.valido === false && res.motivo) msg += " · " + res.motivo;
+      var dep = null;
+      try { dep = Cronograma.estimar(alvo.orc, null, { eap: true }); } catch (eE) { dep = null; }
+      if (dep && dep.totalDias !== antes.dias) {
+        msg += " · Prazo da obra: " + antes.dias + " → " + dep.totalDias + " dias úteis" +
+          ((antes.fim && dep.dataFim) ? " (entrega " + antes.fim.toLocaleDateString("pt-BR") + " → " + dep.dataFim.toLocaleDateString("pt-BR") + ")" : "") + ".";
+      }
+      if (ap.erros.length) msg += " · " + ap.erros.length + " operação(ões) recusada(s): " + ap.erros[0];
+      /* ⚠ o render vem ANTES do toast: é ele que redesenha o Gantt com a rede
+         nova e traz o [[Desfazer]] para o canto. O botão mora ali, e não no
+         toast, porque o toast some em 2,6 s — e o arrependimento costuma vir
+         depois de olhar o que mudou. É um nível só: o arrasto seguinte
+         substitui a foto. */
+      this.render();
+      UI.toast(msg, ap.erros.length ? "" : "ok");
+    },
+
+    /* DESFAZER o último arrasto (um nível, por arrasto). ⚠ Troca-se o CONTEÚDO
+       do objeto do cronograma, nunca a referência: o orçamento (e o plano da
+       obra) apontam para ele, e trocar a referência deixaria os dois olhando
+       para o objeto velho — o desfazer não chegaria ao disco. */
+    cronoArrastoDesfazer: function () {
+      var o = this.orcAtual; if (!o) return;
+      var d = (this._cronoDesf && typeof this._cronoDesf === "object") ? this._cronoDesf[o.id] : null;
+      if (!d || !d.cron) { UI.toast("Não há arrasto para desfazer.", ""); return; }
+      var alvo = null;
+      try { alvo = this._cronoAlvo(); } catch (eA) { alvo = null; }
+      if (!alvo || alvo.travado) { UI.toast("Não consigo desfazer aqui: o cronograma está travado pela aprovação.", "erro"); return; }
+      /* ⚠ O CRONOGRAMA MUDOU DEPOIS DO ARRASTO? Então desfazer aqui apagaria a
+         edição de depois (uma duração digitada na tabela, um Recalcular, o
+         modo executivo). Recusa com o motivo e some com o botão — é mais
+         honesto que desfazer duas coisas quando se pediu uma. */
+      var agora = null;
+      try { agora = JSON.stringify(alvo.cron); } catch (eJ) { agora = null; }
+      if (d.depois && agora && agora !== d.depois) {
+        delete this._cronoDesf[o.id];
+        UI.toast("O cronograma mudou depois daquele arrasto — desfazer agora apagaria a edição que veio depois. Ajuste a etapa pela tabela, ou arraste a barra de volta.", "erro");
+        this.render();
+        return;
+      }
+      var k;
+      for (k in alvo.cron) if (Object.prototype.hasOwnProperty.call(alvo.cron, k)) delete alvo.cron[k];
+      for (k in d.cron) if (Object.prototype.hasOwnProperty.call(d.cron, k)) alvo.cron[k] = d.cron[k];
+      delete this._cronoDesf[o.id];
+      var gravou = alvo.salvar();
+      this.render();
+      UI.toast(gravou ? "Arrasto desfeito." : "Desfiz na tela, mas não consegui gravar — confira antes de sair.", gravou ? "ok" : "erro");
+    },
+
+    /* TECLADO no painel do tempo: setas movem a linha escolhida e rolam o
+       tempo; Home/End vão ao início e ao fim da obra; + e − dão zoom.
+       ⚠ Sem isso o Gantt seria uma tela só de mouse — e a aba inteira é
+       navegável por teclado. */
+    _gxTecla: function (ev) {
+      var g = this._gx; if (!g || typeof GanttUI === "undefined") return;
+      if (ev.ctrlKey || ev.altKey || ev.metaKey) return;
+      var p = this._gxPro(); if (!p || !p.e) return;
+      var k = ev.key, n = p.L.length, e = p.e;
+      if (k === "ArrowDown" || k === "ArrowUp") {
+        ev.preventDefault();
+        if (!n) return;
+        var s = (g.z.sel < 0) ? 0 : g.z.sel + (k === "ArrowDown" ? 1 : -1);
+        g.z.sel = Math.max(0, Math.min(n - 1, s));
+        var y = g.z.sel * e.rowH;
+        if (y < g.plot.scrollTop) g.plot.scrollTop = y;
+        else if (y + e.rowH > g.plot.scrollTop + e.altura) g.plot.scrollTop = y + e.rowH - e.altura;
+        g.nomes.scrollTop = g.plot.scrollTop;
+        this._gxPintar(true);
+        return;
+      }
+      if (k === "ArrowRight" || k === "ArrowLeft") {
+        ev.preventDefault();
+        // Shift = uma tela inteira; sem Shift, uma semana de trabalho
+        var passo = ev.shiftKey ? e.largura : e.pxDia * e.dpw;
+        g.plot.scrollLeft += (k === "ArrowRight" ? 1 : -1) * passo;
+        return;
+      }
+      if (k === "Home" || k === "End") {
+        ev.preventDefault();
+        g.plot.scrollLeft = (k === "Home") ? 0 : GanttUI.limites(e).maxScrollLeft;
+        return;
+      }
+      if (k === "+" || k === "=") { ev.preventDefault(); this._gxZoom(1, e.largura / 2); return; }
+      if (k === "-" || k === "_") { ev.preventDefault(); this._gxZoom(-1, e.largura / 2); return; }
     },
 
     /* Interruptor "Detalhar o prazo pelas subetapas": primeiro o ANTES →
@@ -5091,18 +6484,88 @@
       }
       return { oQue: oQue, fora: fora, depois: fora.length ? '<p class="muted" style="margin:0 0 10px;font-size:12.5px">' + Util.esc(fora.join(" · ")) + '.</p>' : '' };
     },
+    /* O XML COMPLETO — a mesma montagem para o botão [MS Project (XML)] e para
+       a ponte .mpp.
+       ⚠ ATÉ 12/09/2026 A TELA PASSAVA SÓ `{detalhe}`, e o arquivo saía sem
+       dinheiro, sem gente, sem linha de base, sem avanço e sem data fixada —
+       enquanto o botão prometia "o cronograma". Cada opção tem a sua e nenhuma
+       roda sozinha (contrato do js/msproject.js):
+         custos     → `no.valor`, que é PREÇO DE VENDA (nunca `e.custo`, que é
+                      custo direto: mandá-lo ao Project entregaria a margem do
+                      escritório de bandeja);
+         recursos   → o MESMO contrato do histograma (`Execucao.hhDoItem` +
+                      `Analitico`), e sem a base analítica carregada NÃO sai
+                      bloco nenhum — em vez de sair vazio, fica fora e o relato
+                      diz por quê;
+         base       → a base ATIVA do CronoBase: as datas da barra cinza saem
+                      do calendário DA BASE, nunca do cronograma de hoje;
+         avanco     → o `confrontoPorNo` que o painel JÁ montou, com a MESMA
+                      data de corte (`painel.dataCorte`). Uma segunda apuração
+                      divergiria do que a tela mostra ao lado;
+         restricoes → as datas fixadas no Gantt viram ConstraintType/Deadline.
+       ⚠ E `opts.relato` é a ÚNICA fonte do que ENTROU: `gerarXML` devolvendo
+       string não quer dizer que o detalhe saiu (detalhe pedido com plano que
+       não fecha cai no XML por etapa, calado). */
+    _cronoMSPXml: function (o, Dx) {
+      Dx = Dx || this._cronoDocs(o);
+      var r = Dx.r, rel = {};
+      var opts = { detalhe: Dx.detalhe, custos: true, restricoes: true, relato: rel };
+      /* ⚠ O MAPA DE VALORES VAI EXPLÍCITO, e não `custos:true` sozinho.
+         `custos:true` lê `no.valor`, que só existe quando o `estimar` recebeu
+         `ctx.valores` — e o `_cronoDocs` cai em `Cronograma.estimar(o)` CRU no
+         detalhe "etapa" (o caminho que mantém o documento de sempre byte a
+         byte). Medido: num orçamento sem subetapa o XML saía com `<Cost>` zero
+         em TODAS as tarefas, e o relato dizia "nenhuma tarefa recebeu valor" —
+         o arquivo prometia dinheiro e entregava zero.
+         ⚠ `valoresEAP` é PREÇO DE VENDA. Nunca `e.custo`: mandar custo direto
+         ao Project entrega a margem do escritório de bandeja. */
+      try {
+        var V = Orcamento.valoresEAP(o);
+        if (V && V.ok === true && V.porId) opts.custos = { porId: V.porId };
+      } catch (eV) { /* segue com custos:true — o relato dirá se não achou valor */ }
+      /* ⚠ CLOSURE, e nunca `Execucao.hhDoItem` solto: passado como valor, o
+         `this` de dentro do provedor vira o próprio `opc` e a busca do
+         analítico lança TypeError no 1º serviço (o mesmo defeito do histograma). */
+      var A = (typeof Analitico !== "undefined" && Analitico.carregado) ? Analitico : null;
+      if (A && typeof Execucao !== "undefined" && Execucao.hhDoItem) {
+        opts.recursos = { hhDoItem: function (it, an) { return Execucao.hhDoItem(it, an || A); }, analitico: A };
+      }
+      var d = null;
+      try { d = this._cronoDadosDaAba(o); } catch (eD) { d = null; }
+      var pr = d && d.pr, painel = pr && pr.painel;
+      if (pr && pr.ativa && pr.ativa.cal && Util.arr(pr.ativa.nos).length) opts.base = pr.ativa;
+      if (painel && Util.arr(painel.nos).length && painel.dataCorte) {
+        var porNo = {}, n = 0;
+        Util.arr(painel.nos).forEach(function (x) {
+          /* ⚠ SÓ O QUE FOI APURADO. Nó sem percentual não recebe 0% — no
+             Project, 0% desenhado é "não começou", e é diferente de "ninguém
+             mediu esta frente". */
+          if (!x || x.realPct == null) return;
+          var e = { pct: Number(x.realPct) };
+          if (x.real && x.real.ini) e.inicioReal = x.real.ini;
+          if (x.real && x.real.fim) e.fimReal = x.real.fim;
+          porNo[x.id] = e; n++;
+        });
+        if (n) opts.avanco = { dataStatus: painel.dataCorte, porNo: porNo };
+      }
+      var xml = "";
+      try { xml = MSProject.gerarXML(o, r, opts); } catch (eX) { return { xml: "", erro: "Não consegui montar o XML: " + String((eX && eX.message) || eX), relato: rel }; }
+      return { xml: xml, relato: rel, r: r, detalhe: Dx.detalhe,
+        semAnalitico: !A, semObra: !painel };
+    },
     cronMSProject: function () {
       var o = this._cronoOrcDoc(); if (!o) return;   // no plano de execução: o plano
       if (this._trialBloqueado()) { this._avisoTrial(); return; }
       if (typeof Cronograma === "undefined" || typeof MSProject === "undefined") { UI.toast("Módulo de cronograma indisponível.", "erro"); return; }
       if (!(o.etapas || []).length) { UI.toast("Adicione etapas para exportar o cronograma.", "erro"); return; }
       var Dx = this._cronoDocs(o), r = Dx.r;
-      // sem opts.detalhe o XML é o de sempre; com ele, tarefas-resumo e subetapas (passo dos documentos)
-      var xml = MSProject.gerarXML(o, r, { detalhe: Dx.detalhe });
-      if (!xml) { UI.toast("Nada a exportar: o cronograma está vazio.", "erro"); return; }
+      // com as opções: dinheiro, gente, linha de base, avanço e datas fixadas (ver _cronoMSPXml)
+      var X = this._cronoMSPXml(o, Dx), xml = X.xml;
+      if (!xml) { UI.toast(X.erro || "Nada a exportar: o cronograma está vazio.", "erro"); return; }
       var nomeArq = MSProject.nomeArquivo(o);
       Util.baixar(nomeArq, xml, "application/xml;charset=utf-8");
       var RS = this._cronMSPResumo(r, Dx.detalhe);
+      RS.depois += CronoExecUI.mspRelatoHtml(X.relato);
       /* ⚠ TOAST NÃO SERVE AQUI, e isso foi medido no uso real: o Windows não
          associa `.xml` ao Project (o MSPDI é XML puro, e a associação padrão é
          o navegador ou o bloco de notas). Quem dá duplo clique — que é o que
@@ -11386,7 +12849,30 @@
         '<button class="btn sm success" data-acao="proposta-imprimir">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Imprimir / Salvar PDF</button>' +
         '<button class="btn sm" data-acao="proposta-fechar">Fechar</button></div>' +
         htmlConteudo;
+      /* ⚠ A PRÉ-VISUALIZAÇÃO TEM QUE SER O PAPEL, NÃO A MESA.
+       * A proposta e o relatório trazem folha própria (`.pg`, `.rel-doc`:
+       * branco, A4, sombra) e o cinza do overlay em volta é a mesa. Mas TODO
+       * o resto — RDO, solicitação, pedido de compra, ficha de EPI, recibo,
+       * ponto, tour 360 — sai do `Gestao._docShell`, que NÃO pinta fundo:
+       * o documento herdava o `#5b6b7b` do overlay e a pessoa via um diário
+       * de obra cinza-azulado, com os blocos "vazados", sem nada parecido com
+       * o PDF que o botão ao lado gera (lá o `@media print` repõe o branco).
+       * Quem conferia antes de imprimir não conseguia conferir.
+       * A folha entra AQUI, medindo o DOM montado (não adivinhando pelo
+       * texto do HTML): só quando o documento não trouxe papel próprio.
+       * `10mm` de recuo é a margem do `@page` — assim a largura útil da tela
+       * é a mesma do PDF (190mm), e o que couber na linha aqui cabe lá. */
       document.body.appendChild(overlay);
+      try {
+        if (!overlay.querySelector(".pg, .rel-doc")) {
+          var folha = document.createElement("div");
+          folha.className = "doc-folha";
+          /* o primeiro filho é a barra de ferramentas (no-print) e fica fora
+             da folha — ela é da tela, não do documento */
+          while (overlay.childNodes.length > 1) folha.appendChild(overlay.childNodes[1]);
+          overlay.appendChild(folha);
+        }
+      } catch (eF) {}
       window.scrollTo(0, 0);
     },
     fecharProposta: function () {

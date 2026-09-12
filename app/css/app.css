@@ -1374,6 +1374,18 @@ input[type="checkbox"], input[type="radio"] { flex: 0 0 auto; }
   background: var(--navy); color: #fff; display: flex; align-items: center; gap: 12px; padding: 0 18px;
 }
 .prop-toolbar .ttl { font-weight: var(--p-forte); flex: 1; }
+/* FOLHA DOS DOCUMENTOS SEM PAPEL PRÓPRIO (ver js/app.js `_abrirPrint`).
+   ⚠ O RECUO É A MARGEM DO @page (10mm, l.1515): a largura útil aqui tem que
+   ser a MESMA do PDF (190mm), senão a pré-visualização quebra a linha num
+   lugar e o papel noutro — e aí ela deixa de servir para conferir.
+   As tintas são fixas de propósito: o documento é o entregável, não segue o
+   tema escuro da tela (o `@media print` faz o mesmo, l.1468). */
+.doc-folha {
+  width: 210mm; max-width: 100%; min-height: 297mm; box-sizing: border-box;
+  margin: 0 auto; padding: 10mm; background: #fff; color: #1a2632;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .3);
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
 .pg {
   width: 210mm; min-height: 297mm; background: #fff; color: #1a2632; margin: 0 auto 18px;
   box-shadow: 0 6px 24px rgba(0,0,0,.3); padding: 24mm 20mm; position: relative;
@@ -1547,6 +1559,12 @@ table.prop-tbl tbody tr.grp-lau.subetapa td {
   .pg.capa { min-height: 277mm; overflow: hidden; }
   /* Relatório: flui em várias páginas; cabeçalho de tabela repete, linhas não quebram */
   .rel-doc { box-shadow: none; margin: 0; width: auto; max-width: none; padding: 0; }
+  /* ⚠ A FOLHA DA TELA NÃO PODE IR PARA O PAPEL. Ela existe para a
+     pré-visualização parecer o PDF (js/app.js `_abrirPrint`); na impressão o
+     recuo dela SOMARIA aos 10mm do @page — 20mm de margem, o documento
+     estreitando e paginando num lugar diferente do que a tela mostrou. Aqui
+     ela vira um invólucro sem efeito nenhum. */
+  .doc-folha { box-shadow: none; margin: 0; width: auto; max-width: none; padding: 0; min-height: 0; background: #fff; }
   .rel-doc table.prop-tbl thead { display: table-header-group; }
   .rel-doc table.prop-tbl tr { page-break-inside: avoid; }
   /* títulos de seção não órfãos no rodapé; cabeçalho/KPIs não partem no meio */

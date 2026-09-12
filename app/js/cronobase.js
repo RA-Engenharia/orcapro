@@ -288,7 +288,9 @@
      ONDE está o peso, não só que passou */
   var ROT_CRON = { duracoes: "durações das etapas", marcos: "marcos das etapas", predecessoras: "dependências das etapas",
     lags: "esperas entre etapas", duracoesAgente: "marcas de origem das durações", iaMotivos: "motivos da IA das etapas",
-    params: "parâmetros", exec: "modo executivo (inclui as durações guardadas ao ligar)" };
+    params: "parâmetros", exec: "modo executivo (inclui as durações guardadas ao ligar)",
+    // ⚠ mapa novo (12/09/2026): as datas que o arrasto no Gantt fixa (não iniciar antes de)
+    restricoes: "datas fixadas das etapas" };
   var ROT_SUB = { duracoes: "durações das subetapas", marcos: "marcos das subetapas", predecessoras: "dependências das subetapas",
     lags: "esperas entre subetapas", tipos: "tipos de dependência das subetapas", equipes: "equipes das subetapas",
     agente: "marcas de origem das subetapas", iaMotivos: "motivos da IA das subetapas" };
@@ -320,7 +322,10 @@
   /* mapas que o motor lê como objeto. Um mapa que voltou como LISTA ([])
      não segura chave com nome — o JSON a descarta —, então a edição feita no
      plano sumiria no salvar. [] vira {} (mesmo conteúdo: nenhum). */
-  var MAPAS_CRON = ["params", "duracoes", "marcos", "predecessoras", "lags", "duracoesAgente", "iaMotivos", "exec"];
+  /* ⚠ `restricoes` entrou aqui junto com o arrasto no Gantt (12/09/2026): é
+     mapa etapaId → {tipo, data} e, voltando da nuvem como [], perderia a data
+     que alguém fixou arrastando a barra — sem erro nenhum na tela. */
+  var MAPAS_CRON = ["params", "duracoes", "marcos", "predecessoras", "lags", "duracoesAgente", "iaMotivos", "exec", "restricoes"];
   var MAPAS_SUB = ["duracoes", "marcos", "predecessoras", "lags", "tipos", "equipes", "agente", "iaMotivos"];
   function normalizarCron(cr) {
     MAPAS_CRON.forEach(function (k) { if (own(cr, k) && !ehObj(cr[k])) cr[k] = {}; });

@@ -86,7 +86,31 @@
     return (isFinite(d.getTime()) && ch(d) === String(s).slice(0, 10)) ? d : null;
   }
   function br(iso) { var p = String(iso || "").split("-"); return p.length === 3 ? p[2] + "/" + p[1] + "/" + p[0] : String(iso || ""); }
+  /* dias de calendário entre duas datas ISO (null se alguma não for data) */
+  function diasEntre(isoA, isoB) {
+    var a = dataLocal(isoA), b = dataLocal(isoB);
+    return (a && b) ? Math.round((b.getTime() - a.getTime()) / 86400000) : null;
+  }
+  /* último dia do mês "AAAA-MM" — é o instante que cada ponto da curva mensal
+     representa (o acumulado AO FIM do mês, como em `periodos().lista`) */
+  function fimDoMes(k) { return ch(new Date(+String(k).slice(0, 4), +String(k).slice(5, 7), 0)); }
   function brNum(v) { return String(Math.round(v * 100) / 100).replace(".", ","); }
+  /* ⚠ RITMO POSITIVO QUE ARREDONDA A ZERO NÃO PODE SER ESCRITO COMO "0".
+     `brNum` corta em 2 casas, e obra na reta final anda 0,004 ponto por
+     semana: o texto saía "ritmo medido: 0% por semana … a obra termina em
+     22/03/2027" — o número se desmente na PRÓPRIA linha, que é pior que não
+     ter número nenhum. Quem lê conclui que o sistema está com defeito e passa
+     a duvidar também do que está certo. A saída não é esconder o ritmo (a
+     data depende dele): é dizer o que se sabe — "menos de 0,01". É a mesma
+     frase que o `vazio()` da projeção já usava quando nem reta havia, agora
+     num lugar só, para as três telas do painel escreverem igual.
+     ⚠ Não remover achando que é enfeite de formatação: o zero aqui é a
+     contradição, não um arredondamento qualquer. */
+  function brRitmo(v) {
+    v = n0(v);
+    if (v > 0 && Math.round(v * 100) / 100 === 0) return "menos de 0,01";
+    return brNum(v);
+  }
   // "12.345,60" — dinheiro no recado vai com centavo e milhar, como na planilha
   function brMoeda(v) {
     var s = Math.abs(v).toFixed(2).split("."), i = s[0], o = "";
@@ -259,6 +283,375 @@
     });
   }
 
+  /* =====================================================================
+     CURVA PROJETADA — a terceira curva, a que responde "e se continuar assim?"
+
+     A curva S do painel tinha três traçados, mas NENHUM deles respondia a
+     pergunta que o dono da obra faz: linha de base (o que foi combinado),
+     plano atual (o que está combinado agora) e executado (o que foi feito).
+     "Plano atual" não é projeção: ele não sabe nada do ritmo medido — é o
+     mesmo CPM de sempre, que entrega na data que a rede diz, atrasado ou não.
+
+     ⚠ A PROJEÇÃO NÃO É UMA RETA DESENHADA POR CIMA DO PLANO. Ela sai do
+     ritmo MEDIDO nos diários publicados (`Fisico.previsao`), que já resolveu
+     a armadilha que torna toda projeção de obra mentirosa: medir o ritmo só
+     pelas semanas em que se trabalhou. O denominador de lá é o calendário
+     inteiro, paradas incluídas — ver o ⚠ de js/fisico.js. Aqui só se
+     transporta aquele modelo para o eixo de meses da curva.
+
+     ⚠ SEM RITMO, NÃO SAI NADA. Obra sem percentual, com menos de 3 semanas
+     de histórico, sem avanço nas últimas semanas ou com ritmo tão baixo que
+     o término cairia daqui a mais de 5 anos (`foraDeEscala`): `projetado`
+     volta `null` e o MOTIVO vai para a lista de avisos, em PT-BR. Inventar
+     uma reta ali seria pôr na tela do cliente uma data que ninguém mediu —
+     e projeção com cara de dado é o que vira discussão contratual.
+     ⚠ MEDIDO NOS BACKUPS REAIS (34 arquivos, 11/09/2026): das 6 obras com
+     diário publicado, NENHUMA tem 3 semanas distintas de lançamento. Ou
+     seja: hoje, na base real, o produto desta função é o MOTIVO, não a
+     curva. Por isso o motivo é frase inteira e diz o que fazer.
+
+     O ponto da ÂNCORA (o mês do último executado) é o valor MEDIDO, para a
+     linha continuar exatamente de onde o executado parou; os pontos
+     seguintes saem do modelo do `Fisico.previsao` (mesma origem das datas
+     provável/otimista/pessimista, para a curva e as datas nunca discordarem).
+     ⚠ CONSEQUÊNCIA ACEITA: o primeiro trecho é mais inclinado que os demais,
+     porque carrega os dias já corridos entre o último lançamento e o fim do
+     mês da âncora. A alternativa — pôr no mês da âncora o valor do modelo —
+     abriria um degrau vertical entre o executado e a projeção no mesmo mês, e
+     a alternativa seguinte — contar as semanas a partir do fim do mês — faria
+     a linha chegar a 100% um mês depois da data que a própria tela escreve
+     como "término provável". Duas telas com dois prazos é o defeito caro; um
+     trecho mais inclinado, não.
+     ===================================================================== */
+  var PROJ_BASE = "diarios";
+  function projetarCurva(pv, eixo, executado) {
+    function vazio(motivo) { return { projetado: null, projecao: null, motivo: motivo }; }
+    if (!pv || typeof pv !== "object") return vazio("o motor do avanço físico não trouxe a projeção de término (Fisico.previsao) — recarregue o app.");
+    if (!arr(eixo).length || !arr(executado).length) return vazio("nenhum serviço do orçamento foi lançado nos diários publicados até a data de corte — a projeção aparece assim que o executado começar.");
+    if (pv.ok === false) return vazio(pv.explicacao || "sem ritmo medido nos diários para projetar.");
+    if (pv.concluida) return vazio("os serviços acompanhados já chegaram a 100% — não há o que projetar.");
+    if (pv.foraDeEscala) return vazio(pv.explicacao || "o ritmo medido não dá término previsível.");
+    var D0 = iso10(pv.baseCalculo), P0 = n0(pv.pct);
+    /* ⚠ O RITMO DE TELA NÃO SERVE PARA A CONTA — é a mesma correção que a ENT
+       já tinha ("O IDC ARREDONDADO É PARA A TELA, NÃO PARA A CONTA", abaixo
+       neste arquivo). `pv.ritmoSemanal` vem arredondado em 2 casas pelo
+       `Fisico.previsao`, enquanto `pv.dataProvavel` foi calculada com a taxa
+       EXATA. Obra na reta final: ritmo verdadeiro abaixo de 0,005 %/semana →
+       o arredondado vira 0 e a projeção some, mas a data continua lá.
+       MEDIDO: série 99,888 / 99,892 / 99,896 % dava `ritmoSemanal: 0` e
+       `dataProvavel: 2027-03-22` — a pessoa lia "término provável 22/03/2027"
+       numa tela e "sem ritmo medido nos diários" na outra. Duas telas com dois
+       prazos é o defeito caro que o ⚠ acima declara evitar.
+       A recuperação usa a PRÓPRIA data que o motor publicou, e não uma segunda
+       cópia da fórmula do ritmo (memória "réplica de parser apodrece"): a reta
+       que liga (D0, P0) a (dataProvavel, 100) É a mesma que o ritmo exato
+       desenha — o `Fisico` calcula a data como base + (restante ÷ ritmo) × 7.
+       Ela só entra quando o arredondado zerou; no caminho normal nada muda. */
+    var ritmo = n0(pv.ritmoSemanal), ritmoFonte = "medido";
+    if (!(ritmo > 0) && n0(pv.ritmoSemanalExato) > 0) { ritmo = n0(pv.ritmoSemanalExato); ritmoFonte = "exato"; }
+    if (!(ritmo > 0) && D0 && P0 < 100) {
+      var dFim = diasEntre(D0, iso10(pv.dataProvavel));
+      if (dFim > 0) { ritmo = (100 - P0) / (dFim / 7); ritmoFonte = "recuperado-da-data"; }
+    }
+    if (!(ritmo > 0) || !D0) {
+      /* ⚠ e se nem assim: o motivo não pode ser "sem ritmo medido" quando a
+         outra tela mostra uma data. Ele DIZ que o ritmo é baixo demais e
+         REPETE a data, para as duas telas não se contradizerem. */
+      if (iso10(pv.dataProvavel)) {
+        return vazio("o ritmo medido nos diários é baixo demais para desenhar a projeção no gráfico (menos de 0,01% por semana). "
+          + "O término provável pelo mesmo ritmo continua sendo " + br(iso10(pv.dataProvavel)) + ".");
+      }
+      return vazio("sem ritmo medido nos diários para projetar.");
+    }
+    var a = executado.length - 1, pA = n0(executado[a]), mesA = eixo[a];
+    if (!mesA) return vazio("o executado tem mais meses que o eixo da curva — recarregue o painel.");
+    if (!(pA < 100)) return vazio("o executado já está em 100% no último mês com lançamento — não há o que projetar.");
+
+    /* até onde a projeção vai: o mês do término provável, e nunca menos que o
+       fim do eixo já desenhado (senão a projeção sumiria antes do plano) */
+    var ultEixo = eixo[eixo.length - 1], fimP = iso10(pv.dataProvavel);
+    var mesFim = fimP ? fimP.slice(0, 7) : ultEixo;
+    if (mesFim < ultEixo) mesFim = ultEixo;
+    if (mesFim < mesA) mesFim = mesA;
+    /* ⚠ O TETO DE 100 TINHA PISO NENHUM, e a projeção podia DESPENCAR ou ficar
+       negativa. A âncora do desenho é `pA` (o último executado do gráfico) e o
+       ponto de partida da conta é `P0` (`pv.pct`); hoje a fiação alimenta os
+       dois do mesmo `real.obra.pct` e eles batem — medido em 6 fixtures,
+       diferença 0 —, mas `projetarCurva` é função pública e as três réguas de
+       avanço do mesmo painel já divergiram 9,2 pontos entre si. Com P0 abaixo
+       de pA, o cliente via a curva cair de 80% para 43% no mês seguinte; com a
+       base de cálculo depois do mês da âncora, percentual NEGATIVO.
+       Duas guardas: a projeção NUNCA desenha a obra andando para trás (piso em
+       pA, que é o que já está feito), e quando as duas réguas discordam além
+       da tolerância o motor devolve o MOTIVO em vez do número — uma linha que
+       parte de um ponto que não está no gráfico é pior que linha nenhuma. */
+    var TOL_ANCORA = 0.5;
+    if (Math.abs(pA - P0) > TOL_ANCORA) {
+      return vazio("o avanço do gráfico (" + brNum(pA) + "%) e o avanço que a projeção usa como partida (" + brNum(P0)
+        + "%) não são a mesma régua — a diferença é de " + brNum(Math.abs(pA - P0))
+        + " pontos. Projetar a partir de um ponto que não está no gráfico desenharia a obra andando para trás; confira qual régua de avanço o painel está usando.");
+    }
+    var eixoP = mesesDe(mesA, mesFim), valores = [], cheio = -1, i, d, v;
+    for (i = 0; i < eixoP.length; i++) {
+      if (i === 0) { valores.push(r2(pA)); continue; }
+      d = diasEntre(D0, fimDoMes(eixoP[i]));
+      v = d == null ? null : Math.max(pA, Math.min(100, P0 + ritmo * (d / 7)));
+      valores.push(v == null ? null : r2(v));
+      if (cheio < 0 && v != null && v >= 100) cheio = i;
+    }
+    // chegou a 100: a linha PARA ali (uma reta deitada em 100 fingiria plano)
+    if (cheio > -1) { eixoP = eixoP.slice(0, cheio + 1); valores = valores.slice(0, cheio + 1); }
+
+    var projetado = eixo.map(function (k, j) {
+      if (j < a) return null;                       // antes da âncora quem fala é o executado
+      var p = j - a;
+      return p < valores.length ? valores[p] : null;
+    });
+    var alem = 0;
+    for (i = 0; i < eixoP.length; i++) if (a + i >= eixo.length) alem++;
+    return {
+      projetado: projetado,
+      projecao: {
+        base: PROJ_BASE,
+        rotulo: "Projeção pelo ritmo medido nos diários (" + brRitmo(ritmo) + "% por semana"
+          + (ritmoFonte === "medido" ? "" : ", ritmo abaixo do arredondamento de tela — "
+            + (ritmoFonte === "exato" ? "a conta usou o ritmo sem arredondar" : "recuperado da data de término provável")) + ")",
+        /* ⚠ `ritmoSemanal` continua sendo o do `Fisico` (é o número que a tela
+           já escreve); `ritmoUsado` e `ritmoFonte` dizem o que ENTROU na conta.
+           Número sem origem declarada volta como discussão contratual.
+           ⚠ E A RESSALVA VALIA SÓ PARA "recuperado-da-data", QUE FICOU
+           INALCANÇÁVEL: quando o `Fisico.previsao` passou a publicar
+           `ritmoSemanalExato`, o ramo "exato" entrou NA FRENTE e o
+           "recuperado-da-data" só sobra para pv de outro produtor (foi o que
+           manteve a fixture da suíte verde enquanto as três telas mentiam).
+           MEDIDO com a série 99,888 / 99,892 / 99,896: ritmoFonte "exato",
+           rótulo "0% por semana" e dataProvavel 22/03/2027 na mesma saída.
+           `ritmoTexto` é a escrita honesta do ritmo QUE ENTROU NA CONTA, e é
+           ela que as três telas usam — uma regra, um dono (o aviso do
+           `montarPainel` e a frase do `CronoIA.narrativa` leem daqui, em vez
+           de cada um formatar o seu, que é como parser replicado apodrece). */
+        ritmoSemanal: pv.ritmoSemanal, ritmoUsado: Math.round(ritmo * 1e6) / 1e6, ritmoFonte: ritmoFonte,
+        ritmoTexto: brRitmo(ritmo),
+        ritmoOtimista: pv.ritmoOtimista,
+        dataProvavel: pv.dataProvavel || "", dataOtimista: pv.dataOtimista || "", dataPessimista: pv.dataPessimista || "",
+        semanasRestantes: pv.semanasRestantes == null ? null : pv.semanasRestantes,
+        semanasHistorico: pv.semanasHistorico == null ? null : pv.semanasHistorico,
+        ancora: { mes: mesA, pct: r2(pA), data: D0 },
+        eixo: eixoP, rotulos: eixoP.map(rotMes), valores: valores, mesesAlemDoEixo: alem,
+        terminoReferencia: pv.terminoContrato || "", desvioDias: pv.desvioDias == null ? null : pv.desvioDias,
+        situacao: pv.situacao || "", explicacao: pv.explicacao || ""
+      },
+      motivo: ""
+    };
+  }
+
+  /* =====================================================================
+     VALOR AGREGADO COMPLETO (EVM) — e a régua de cada metade.
+
+     O painel já tinha VP, VA e IDP: "estou atrasado?". Faltava a outra
+     metade: "estou caro?". VC, IDC e ENT respondem isso, e "no ritmo de
+     gasto de hoje esta obra termina custando R$ X" é a frase que muda
+     decisão de diretoria.
+
+     ⚠ AS DUAS METADES NÃO ESTÃO NA MESMA RÉGUA, E ISSO NÃO PODE FICAR
+     IMPLÍCITO (skill `dinheiro`). O previsto do cronograma é PREÇO DE VENDA
+     (é o que a proposta cobra, BDI dentro); o custo real do `CustoEtapa` é
+     CUSTO DIRETO, sem BDI (é o que o Financeiro lança). Dividir VA de venda
+     por CR de custo daria um IDC inflado pelo BDI inteiro — numa obra com
+     BDI de 25% um desempenho exatamente no orçado apareceria como IDC 1,25,
+     "sobrando dinheiro", que é a direção errada de errar.
+     A CONVERSÃO, e por que ela é exata: `Orcamento.valoresEAP` rateia o valor
+     de venda da etapa entre as folhas PROPORCIONALMENTE AO CUSTO DIRETO. Logo
+     custo_folha = custo_etapa × (venda_folha ÷ venda_etapa) por construção —
+     a razão k = custo direto da etapa ÷ venda da etapa vale igual em toda
+     folha dela. É essa razão que traz o VA para a régua do custo.
+     LIMITE DECLARADO: o custo direto vem do orçamento de HOJE e a venda pode
+     vir de uma linha de base congelada antes de uma edição — mudou o custo de
+     uma etapa depois de congelar, o k dela fica velho. Por isso `ontCusto`
+     volta junto: a tela mostra o orçado em custo ao lado do orçado em venda.
+
+     ⚠ O CR É O GASTO INTEIRO DA OBRA, APROPRIADO OU NÃO. `CustoEtapa` já
+     filtra por obra; o que ele separa é o que tem ETIQUETA DE ETAPA. Somar
+     só o etiquetado deixaria de fora justamente material e mão de obra (que
+     entram por compra, nota e folha, e nenhum desses caminhos carimba etapa)
+     e o IDC sairia otimista — o erro na direção que faz alguém autorizar a
+     próxima compra. ⚠ MEDIDO nos backups reais (11/09/2026): 46 despesas com
+     obra, 7 com etapa; 15 pedidos de compra, 0 com etapa; nas 4 obras com
+     gasto a cobertura de apropriação é 0%. Com CR = só o apropriado, o IDC
+     dessas quatro obras seria 0 ÷ 0 ou infinito. Com o gasto inteiro, ele
+     sai certo no nível da OBRA — e é só nesse nível que ele sai.
+     ⚠ POR ISSO NÃO HÁ IDC POR ETAPA. Com a cobertura no chão, custo por etapa
+     é a tela que "responde errado com cara de certa" (ver o cabeçalho do
+     js/custoetapa.js). A cobertura volta em `cobertura.pctApropriado` e a
+     tela a diz; abaixo de COBERTURA_MIN sai aviso.
+     ⚠ COMPROMETIDO NÃO ENTRA NO IDC. Pedido aprovado e não recebido ainda não
+     é despesa; ele volta separado (e somado em `exposicao`), como no
+     `CustoEtapa`.
+     ⚠ ÍNDICE SÓ CONTRA LINHA DE BASE, a mesma trava do IDP: contra o plano
+     atual (que se edita) todo índice tende a 1 sozinho depois de reprogramar.
+     ===================================================================== */
+  var COBERTURA_MIN = 60;   // a mesma régua de 60% que o `Fisico.ponderar` já usa para decidir se pondera por dinheiro
+  var ROT_EVM = {
+    vp: "Valor Previsto (VP) — quanto do contrato o plano dizia que já estaria entregue na data de corte, em preço de venda",
+    va: "Valor Agregado (VA) — quanto do contrato já está entregue, medido pelo mesmo preço de venda do plano",
+    ont: "Orçamento no Término, em venda (ONT) — o preço de venda do escopo que está sendo medido",
+    idp: "Índice de Desempenho de Prazo (IDP = VA ÷ VP) — abaixo de 1, a obra entregou menos do que o plano previa para a data",
+    vpr: "Variação de Prazo (VPR = VA − VP, em R$ de venda) — negativo é obra entregando menos do que o previsto para a data",
+    cr: "Custo Real (CR) — as despesas desta obra no Financeiro, em custo direto, apropriadas em etapa ou não",
+    ontCusto: "Orçamento no Término, em custo direto (ONT) — o custo direto orçado do escopo que está sendo medido",
+    vaCusto: "Valor Agregado em custo direto — o VA trazido para a régua do custo, que é a única em que ele pode ser comparado com o CR",
+    idc: "Índice de Desempenho de Custo (IDC = VA em custo ÷ CR) — abaixo de 1, cada real gasto rende menos obra do que o orçado",
+    vc: "Variação de Custo (VC = VA em custo − CR) — negativo é dinheiro já gasto além do orçado para o que está feito",
+    ent: "Estimativa no Término (ENT = ONT em custo ÷ IDC) — quanto a obra deve custar se o desempenho de custo continuar o mesmo",
+    vnt: "Variação no Término (VNT = ONT em custo − ENT) — negativo é o estouro projetado",
+    ept: "Estimativa para Terminar (EPT = ENT − CR) — quanto ainda falta gastar, no mesmo desempenho",
+    crCaixa: "Custo Real em caixa — a parte do gasto que JÁ SAIU DA CONTA e tem etapa carimbada (o CustoEtapa só acompanha caixa no que está apropriado; o resto aparece no Custo Real, não aqui)",
+    comprometido: "Comprometido — pedidos de compra aprovados e ainda não recebidos: não é despesa, e por isso não entra no IDC",
+    exposicao: "Exposição — Custo Real + Comprometido: o que já saiu somado ao que já está empenhado"
+  };
+  var REGUA_EVM = {
+    venda: "VP, VA, ONT (venda), IDP e VPR estão em PREÇO DE VENDA — a régua do cronograma e da proposta.",
+    custo: "CR, VC, IDC, ENT e EPT estão em CUSTO DIRETO, sem BDI — a régua do Financeiro. As duas metades nunca se somam; o VA é convertido para o custo pela razão custo ÷ venda de cada etapa."
+  };
+
+  function evmDaObra(conf, custo, opts) {
+    opts = opts || {};
+    var comBase = !!opts.comBase;
+    var out = {
+      ok: false, motivo: "", comBase: comBase, contra: "",
+      regua: REGUA_EVM, rotulos: ROT_EVM,
+      vp: null, va: null, ont: null, idp: null, vpr: null, idpMotivo: "",
+      ontCusto: null, vpCusto: null, vaCusto: null,
+      cr: null, crApropriado: null, crNaoApropriado: null, crCaixa: null,
+      comprometido: null, exposicao: null,
+      idc: null, vc: null, ent: null, vnt: null, ept: null, idcMotivo: "",
+      cobertura: null, avisosCusto: [],
+      ate: iso10(opts.ate) || "", dataCorte: iso10(opts.dataCorte) || ""
+    };
+    if (!conf || !conf.totais || conf.totais.camada !== "folha" || !Array.isArray(conf.nos)) {
+      out.motivo = "sem o previsto × realizado por nó — o valor agregado sai do CronoPlan.confrontoPorNo, na camada folha.";
+      return out;
+    }
+    out.ok = true;
+    var T = conf.totais;
+    out.vp = T.VP; out.va = T.VA; out.ont = T.valorBase; out.contra = T.idpRotulo || "";
+    if (comBase) {
+      out.idp = T.IDP;
+      out.vpr = (typeof T.VA === "number" && typeof T.VP === "number") ? r2(T.VA - T.VP) : null;
+    } else {
+      out.idpMotivo = "sem linha de base congelada — o IDP e o IDC só se comparam contra um plano congelado (o plano atual muda a cada edição, e aí o índice fica perto de 1 sozinho). Congele a linha de base da obra.";
+      out.idcMotivo = out.idpMotivo;
+    }
+
+    /* ---- o CUSTO REAL, e a conversão do VA para a régua dele ---- */
+    if (!custo || typeof custo !== "object" || !Array.isArray(custo.linhas) || !custo.totais || !custo.naoApropriado) {
+      out.idcMotivo = "o custo real da obra não chegou ao painel — ele vem de CustoEtapa.consolidar({obraId, orcamento, financeiro, compras}). Sem ele não há CR, IDC nem ENT.";
+      return out;
+    }
+    var crAp = r2(n0(custo.totais.realizadoCompetencia)), crNa = r2(n0(custo.naoApropriado.valor));
+    out.crApropriado = crAp; out.crNaoApropriado = crNa; out.cr = r2(crAp + crNa);
+    out.crCaixa = r2(n0(custo.totais.realizadoCaixa));
+    out.comprometido = r2(n0(custo.totais.comprometido) + n0(custo.comprometidoSemEtapa && custo.comprometidoSemEtapa.valor));
+    out.exposicao = r2(out.cr + out.comprometido);
+    out.avisosCusto = (custo.cobertura && Array.isArray(custo.cobertura.avisos)) ? custo.cobertura.avisos.slice() : [];
+
+    var custoE = {};
+    arr(custo.linhas).forEach(function (l) { if (l && l.nivel === 1) custoE[String(l.etapaId)] = n0(l.previsto); });
+    /* ⚠ O DENOMINADOR DA RAZÃO É A VENDA DA ETAPA INTEIRA, NÃO A SOMA DAS
+       FOLHAS QUE ENTRARAM NO TOTAL. O `custo.linhas` de nível 1 traz o custo
+       direto de TODOS os itens da etapa; dividi-lo pela venda de um
+       subconjunto de folhas jogaria o custo da etapa inteira em cima desse
+       subconjunto. MEDIDO na suíte (tools/test-crono-evm.js, bloco 5): etapa
+       de R$ 12.500 de venda e R$ 10.000 de custo direto, com duas subetapas —
+       a linha de base guardou as duas e depois a quantidade de uma virou
+       PENDENTE, então ela deixa de ter serviço mensurável e sai do VP/VA.
+       Pela soma das folhas que sobraram, o ONT em custo daria os R$ 10.000
+       inteiros em cima da subetapa que ficou, em vez de R$ 6.000, e o IDC
+       saltaria de 0,75 para 1,25 — a obra apareceria GASTANDO MENOS do que o
+       orçado, que é a direção errada de errar (é com esse número que alguém
+       autoriza a próxima compra). A venda da ETAPA vem do próprio confronto
+       (o nó de tipo "etapa"); a soma das folhas é só o plano B para o caso de
+       esse nó não existir na referência. */
+    var vendaEtapa = {}, vendaFolhas = {}, folhas = [];
+    conf.nos.forEach(function (n) {
+      if (!n || n.previstoPct == null) return;
+      if (n.tipo === "etapa" && n.valor > 0) vendaEtapa[String(n.id)] = n0(n.valor);
+      // exatamente o conjunto que o confronto somou em VP/VA (camada folha, com valor e com % apurado)
+      if (!n.folha || n.realPct == null || !(n.valor > 0)) return;
+      folhas.push(n);
+      vendaFolhas[String(n.etapaId)] = n0(vendaFolhas[String(n.etapaId)]) + n0(n.valor);
+    });
+    var ONTc = 0, VAc = 0, VPc = 0, semC = {}, comC = {}, vSemC = 0;
+    folhas.forEach(function (n) {
+      var E = String(n.etapaId), ce = own(custoE, E) ? custoE[E] : 0;
+      var ve = n0(vendaEtapa[E]) > 0 ? n0(vendaEtapa[E]) : n0(vendaFolhas[E]);
+      if (!(ve > 0) || !(ce > 0)) { semC[E] = true; vSemC += n0(n.valor); return; }
+      var vc = n0(n.valor) * (ce / ve);
+      comC[E] = true;
+      ONTc += vc; VAc += vc * n0(n.realPct) / 100; VPc += vc * n0(n.previstoPct) / 100;
+    });
+    out.ontCusto = r2(ONTc); out.vaCusto = r2(VAc); out.vpCusto = r2(VPc);
+    var pctAp = (custo.cobertura && typeof custo.cobertura.pctApropriado === "number") ? Math.round(custo.cobertura.pctApropriado * 10) / 10 : null;
+    out.cobertura = {
+      pctApropriado: pctAp, minimo: COBERTURA_MIN,
+      suficiente: pctAp != null && pctAp >= COBERTURA_MIN,
+      etapasComCusto: Object.keys(comC).length, etapasSemCusto: Object.keys(semC).length,
+      valorVendaSemCusto: r2(vSemC),
+      rotulo: "Cobertura de apropriação: a fração do gasto da obra que tem etapa carimbada. O IDC acima é da OBRA INTEIRA (todo o gasto entra no CR); é o custo POR ETAPA que depende desta cobertura."
+    };
+
+    /* ⚠ TRÊS CASOS, TRÊS RECADOS. A guarda era `if (!(out.cr > 0))` com uma
+       frase só — "nenhuma despesa desta obra lançada no Financeiro" —, e ela
+       saía também para custo real NEGATIVO (estorno maior que a despesa: HÁ
+       despesa) e para número corrompido chegando como NaN (que o `n0` zera,
+       apagando o fato de ter chegado torto). §7 do CLAUDE.md: recado que mente
+       é pior que recado nenhum, e este é lido por quem vai autorizar a próxima
+       compra. A entrada torta é conferida ANTES do `n0` zerar. */
+    /* ⚠ CAMPO AUSENTE NÃO É CAMPO TORTO. `undefined`/`null`/"" é "não veio" e
+       vale zero (é o que o `n0` sempre fez); torto é o valor que ESTÁ lá e não
+       é número (NaN, texto). Confundir os dois faria toda obra sem despesa
+       aparecer como dado corrompido — foi o defeito que este próprio conserto
+       introduziu na primeira escrita, achado rodando o repro. */
+    function tortoCru(v) { return v != null && v !== "" && !isFinite(Number(v)); }
+    if (tortoCru(custo.totais.realizadoCompetencia) || tortoCru(custo.naoApropriado.valor)) {
+      out.crCorrompido = true;
+      out.idcMotivo = "o custo real desta obra chegou ao painel em formato inválido (não é um número) — o IDC não sai enquanto isso não for corrigido. "
+        + "Não é o mesmo que não haver despesa: confira os lançamentos do Financeiro desta obra.";
+      return out;
+    }
+    if (out.cr < 0) {
+      out.idcMotivo = "o custo real desta obra está NEGATIVO (R$ " + brMoeda(out.cr) + ") — há estorno maior que a despesa lançada. "
+        + "HÁ lançamento nesta obra; o que não fecha é a soma. Confira os estornos antes de ler o IDC.";
+      return out;
+    }
+    if (!(out.cr > 0)) {
+      out.idcMotivo = "nenhuma despesa desta obra lançada no Financeiro" + (out.ate ? " até " + br(out.ate) : "") +
+        " — o IDC e a ENT saem quando o custo estiver lançado. Lance as despesas da obra (ou vincule as compras e as notas a ela).";
+      return out;
+    }
+    if (!(ONTc > 0)) {
+      out.idcMotivo = "o orçamento vinculado não tem custo direto nas etapas que estão sendo medidas — sem o orçado não dá para dizer se o gasto está alto ou baixo.";
+      return out;
+    }
+    if (!comBase) return out;   // `idcMotivo` já diz que falta a linha de base
+    /* ⚠ O IDC ARREDONDADO É PARA A TELA, NÃO PARA A CONTA. A ENT dividida
+       pelo índice de 3 casas erra em dinheiro: num escopo de R$ 20.000 com
+       IDC 0,714285…, a ENT exata é 28.000,00 e a calculada sobre 0,714 sai
+       28.011,20 — R$ 11 de diferença que ninguém consegue explicar de onde
+       vem, e que cresce com o tamanho da obra. A conta usa a razão inteira. */
+    var idcExato = VAc / out.cr;
+    out.idc = Math.round(idcExato * 1000) / 1000;
+    out.vc = r2(VAc - out.cr);
+    if (!(idcExato > 0)) {
+      out.idcMotivo = "nada do escopo medido foi executado ainda — a estimativa no término só sai depois do primeiro serviço lançado nos diários.";
+      return out;
+    }
+    out.ent = r2(ONTc / idcExato);
+    out.vnt = r2(ONTc - out.ent);
+    out.ept = r2(out.ent - out.cr);
+    return out;
+  }
+
   /* ⚠ RÉPLICA DA RÉGUA DE `Gestao._avancoMedido` (gestao.js) — o "Medido" do
      palco e do cartão da obra, que o engenheiro já vê. O gestao.js não carrega
      fora do app e o painel é motor puro, então a regra vem copiada — e a
@@ -363,7 +756,11 @@
       for (var k in m) if (own(m, k) && !own(ids, k) && !own(vistos, k)) { vistos[k] = true; n++; }
     }
     var s = (cron && cron.sub) || {};
-    [cron.duracoes, cron.predecessoras, cron.marcos, cron.lags, s.duracoes, s.predecessoras, s.marcos, s.equipes].forEach(varre);
+    /* ⚠ `cron.restricoes` (as datas que o arrasto no Gantt fixa) entra na
+       varredura: uma data fixada apontando para etapa apagada é órfã como
+       qualquer outra, e sem ela aqui a única pista da perda era o aviso do
+       motor — que até 12/09/2026 não chegava a tela nenhuma. */
+    [cron.duracoes, cron.predecessoras, cron.marcos, cron.lags, cron.restricoes, s.duracoes, s.predecessoras, s.marcos, s.equipes].forEach(varre);
     return n;
   }
   function nomesEtapas(orc, ids) {
@@ -385,8 +782,8 @@
       estado: "ok", obra: null, orcamento: null, plano: null, base: null, baseAlheia: null, termino: null, dataCorte: null, fonteCorte: null, ancora: null,
       kpis: { executadoOrcamento: { pct: null, base: "indisponivel", rotulo: ROT_EXEC },
         portal: { pct: null, rotulo: ROT_PORTAL, fonte: null }, medido: { pct: null, rotulo: ROT_MEDIDO },
-        previstoNaData: null, idp: null, situacao: null, situacaoContra: null, desvioTerminoDias: null },
-      curva: { rotulos: [], eixo: [], base: [], atual: [], executado: [] },
+        previstoNaData: null, idp: null, evm: null, situacao: null, situacaoContra: null, desvioTerminoDias: null },
+      curva: { rotulos: [], eixo: [], base: [], atual: [], executado: [], projetado: null, projecao: null, projecaoMotivo: "" },
       nos: [], atencao: [],
       foraDaConta: { naoApropriadas: [], semQuantidade: [], opcionaisFora: [], escopoForaDaBase: [], valorForaDaBase: 0, msgForaDaBase: null,
         sumiramDoAtual: [], reagrupadas: [] },
@@ -740,6 +1137,78 @@
     out.curva.fonteBase = base ? "linha de base v" + base.versao : null;
     out.curva.fonteAtual = out.plano.fonte === "plano" ? "plano de execução da obra" : "cronograma do orçamento";
 
+    /* ---- CURVA PROJETADA: o ritmo MEDIDO nos diários levado ao eixo de meses.
+       ⚠ A série semanal vem do `realizadoPorNo` (régua "executado sobre o
+       orçamento"), a MESMA da curva executada. Medir o ritmo na régua do
+       Portal (só os serviços já lançados) e desenhá-lo em cima de uma curva na
+       régua do orçamento faria a projeção sair de um ponto que não existe no
+       gráfico. ⚠ `tRef` é o término de referência (base, senão plano): é
+       contra ele que a projeção diz adiantada/atrasada — nunca contra a data
+       da proposta, que a obra pode ter deixado para trás. ---- */
+    var pv = null;
+    if (typeof F.previsao === "function") {
+      pv = F.previsao({ periodos: arr(real.serieSemana), base: real.obra.base, pct: real.obra.pct },
+        { pct: real.obra.pct, termino: tRef || "" });
+    }
+    var pj = projetarCurva(pv, out.curva.eixo, out.curva.executado);
+    out.curva.projetado = pj.projetado;
+    out.curva.projecao = pj.projecao;
+    out.curva.projecaoMotivo = pj.motivo;
+    if (!pj.projetado) {
+      /* ⚠ o motivo fica SEMPRE em `curva.projecaoMotivo` (a legenda da curva
+         precisa dele), mas o aviso só sobe quando há diário publicado: em obra
+         sem diário nenhum o painel já diz isso em cima, e repetir vira ruído —
+         aviso que a pessoa lê como formalidade é aviso que ela deixa de ler. */
+      if (pub.length) {
+        aviso("sem-projecao", "Curva projetada indisponível: " + pj.motivo +
+          " A projeção sai do ritmo medido nos diários publicados — nunca de uma reta desenhada por cima do plano.");
+      }
+    } else {
+      var PJ = pj.projecao;
+      if (PJ.mesesAlemDoEixo) {
+        /* ⚠ O RITMO DO AVISO É O QUE ENTROU NA CONTA, NÃO O DE TELA. Este
+           aviso escreve o ritmo e a data de término na MESMA frase: com
+           `PJ.ritmoSemanal` (2 casas do `Fisico`) uma obra na reta final dizia
+           "No ritmo medido (0% por semana), a obra termina em 12/07/2027" —
+           ritmo zero não termina obra nenhuma, e quem lê conclui que a conta
+           está quebrada. `ritmoTexto` é a escrita honesta do `ritmoUsado`,
+           publicada pelo `projetarCurva` logo acima. */
+        aviso("projecao-alem", "No ritmo medido (" + PJ.ritmoTexto + "% por semana), a obra termina em " + br(PJ.dataProvavel) +
+          " — " + PJ.mesesAlemDoEixo + " mês(es) além do último mês do plano desenhado.");
+      }
+      if (PJ.terminoReferencia && PJ.desvioDias != null && Math.abs(PJ.desvioDias) > 7) {
+        aviso("projecao-desvio", "Término provável pelo ritmo medido: " + br(PJ.dataProvavel) + "; " + (tFonte || "a referência") + " termina em " + br(PJ.terminoReferencia) +
+          " (" + Math.abs(PJ.desvioDias) + " dia(s) corridos " + (PJ.desvioDias > 0 ? "depois" : "antes") + "). Faixa: " +
+          br(PJ.dataOtimista) + " (otimista) a " + br(PJ.dataPessimista) + " (pessimista).");
+      }
+    }
+
+    /* ---- VALOR AGREGADO COMPLETO (VP/VA/IDP/VPR + CR/IDC/VC/ENT).
+       O custo real chega INJETADO (`entrada.custoEtapa` = saída de
+       `CustoEtapa.consolidar`): este arquivo é motor puro e não lê Store. ---- */
+    if (conf) {
+      var ceIn = e.custoEtapa;
+      if (ceIn != null && (typeof ceIn !== "object" || !Array.isArray(ceIn.linhas))) {
+        aviso("custo-formato", "o custo real da obra veio num formato que não é o de CustoEtapa.consolidar — o CR, o IDC e a ENT não saíram.");
+        ceIn = null;
+      }
+      K.evm = evmDaObra(conf, ceIn || null, { comBase: !!base, ate: e.custoEtapaAte, dataCorte: corte });
+      var EV = K.evm;
+      if (base && EV.idcMotivo) aviso("sem-idc", "IDC e ENT indisponíveis: " + EV.idcMotivo);
+      if (EV.cr > 0) {
+        /* ⚠ o custo real NÃO é cortado na data: o `CustoEtapa` soma as
+           despesas da obra inteiras. Mesma doutrina do "medido" por boletins —
+           o recado diz a régua em vez de fingir que as duas datas batem. */
+        if (!EV.ate) aviso("custo-corte", "o Custo Real não foi cortado na data: é o acumulado das despesas da obra até hoje, enquanto o previsto e o executado acima param em " + br(corte) + ".");
+        else if (EV.ate !== corte) aviso("custo-corte", "o Custo Real foi apurado até " + br(EV.ate) + " e o previsto × executado até " + br(corte) + " — as duas metades não estão na mesma data.");
+        if (EV.cobertura && EV.cobertura.pctApropriado != null && !EV.cobertura.suficiente) {
+          aviso("custo-cobertura", "Só " + brNum(EV.cobertura.pctApropriado) + "% do gasto desta obra está apropriado em etapa (o mínimo para uma leitura por etapa é " + COBERTURA_MIN +
+            "%). O CR, o IDC e a ENT acima valem para a obra INTEIRA — todo o gasto entra no Custo Real —, mas o custo por etapa não: as etapas aparecem com mais saldo do que têm." +
+            (EV.avisosCusto.length ? " " + EV.avisosCusto.join(" ") : ""));
+        }
+      }
+    }
+
     out.estado = !ancora ? "sem-inicio" : (!pub.length ? "sem-diarios" : "ok");
     return out;
   }
@@ -808,6 +1277,18 @@
     SITUACOES: SITUACOES,
     TETO_BASE: TETO_BASE,
     TETO_ENTIDADE: TETO_ENTIDADE,
+    COBERTURA_MIN: COBERTURA_MIN,
+    ROTULOS_EVM: ROT_EVM,
+    /* CURVA PROJETADA (pura): recebe a saída de `Fisico.previsao`, o eixo de
+       meses da curva e o executado truncado; devolve
+       `{projetado (alinhado ao eixo, null quando não dá), projecao, motivo}`.
+       Ver o comentário grande acima — sem ritmo medido, `projetado` é null e
+       o motivo é o produto. */
+    projetarCurva: projetarCurva,
+    /* VALOR AGREGADO COMPLETO (pura): `confrontoPorNo` + `CustoEtapa.consolidar`
+       → VP/VA/IDP/VPR em venda e CR/VC/IDC/ENT/EPT em custo direto, cada um
+       com o rótulo do que significa. Ver o ⚠ das duas réguas acima. */
+    valorAgregado: evmDaObra,
     MOTIVO_MAX: MOTIVO_MAX,
     MOTIVOS_MAX: MOTIVOS_MAX,
     MOTIVO_SEM_TEXTO: MOTIVO_SEM_TEXTO,
@@ -989,7 +1470,7 @@
       opts = opts || {};
       function falha(msg) {
         return { ok: false, erro: msg, obra: { pct: null, base: "indisponivel", itens: 0, itensSemPeso: 0, inicioReal: null, fimReal: null },
-          porNo: {}, ordem: [], naoApropriadas: [], semQuantidade: [], serieMes: [], opcionaisFora: [], dataCorte: null, ultimoLancamento: null };
+          porNo: {}, ordem: [], naoApropriadas: [], semQuantidade: [], serieMes: [], serieSemana: [], opcionaisFora: [], dataCorte: null, ultimoLancamento: null };
       }
       var C = Cr(), A = Av(), F = Fi();
       if (!C || !A || !F || !F.ponderar || !A.chaveServico) return falha("módulos do avanço não carregados (cronograma.js, avancoservico.js, fisico.js).");
@@ -1131,13 +1612,20 @@
         s.lancamentos.forEach(function (x) { if (x.data) eventos.push({ s: s, w: w, data: x.data, qtd: x.qtd }); });
       });
       eventos.sort(function (a, b) { return a.data < b.data ? -1 : (a.data > b.data ? 1 : 0); });
-      var acumS = {}, balde = {}, meses = [];
+      var acumS = {}, balde = {}, baldeS = {}, ordemS = [], meses = [];
       eventos.forEach(function (ev) {
         if (!(ev.w > 0)) return;
         var q = ev.s.quantidade, antes = acumS[ev.s.id] || 0, depois = antes + ev.qtd;
         acumS[ev.s.id] = depois;
+        var ganho = ev.w * (Math.min(1, depois / q) - Math.min(1, antes / q));
         var m = ev.data.slice(0, 7);
-        balde[m] = (balde[m] || 0) + ev.w * (Math.min(1, depois / q) - Math.min(1, antes / q));
+        balde[m] = (balde[m] || 0) + ganho;
+        /* ⚠ a SEMANA usa a chave do `Fisico` (a data da segunda-feira), que é
+           a mesma do Last Planner e da série do Portal. Duas numerações de
+           semana no mesmo app fariam o ritmo da projeção discordar do PPC da
+           equipe sobre a mesma semana. */
+        var sk = typeof F.balde === "function" ? F.balde(ev.data, "semana") : "";
+        if (sk) { if (!own(baldeS, sk)) ordemS.push(sk); baldeS[sk] = (baldeS[sk] || 0) + ganho; }
       });
       var chavesM = Object.keys(balde).sort(), serieMes = [];
       if (chavesM.length && pesoTot > 0) {
@@ -1154,12 +1642,34 @@
         meses = serieMes;
       }
 
+      /* SÉRIE SEMANAL — o insumo do ritmo medido (`Fisico.previsao`, a curva
+         projetada). ⚠ SÓ AS SEMANAS COM LANÇAMENTO, sem preencher buraco:
+         é a forma que o `Fisico.serie` produz e para a qual a `previsao` foi
+         escrita. Ela conta quantas semanas COM lançamento existem para decidir
+         se há histórico (mínimo 3) e mede o ritmo pelo CALENDÁRIO entre a
+         primeira e a última (as paradas ficam no denominador, que é o que
+         impede a projeção bonita e falsa). Herdar o acumulado nos meses, como
+         a série mensal faz, é certo para desenhar a curva e ERRADO aqui: uma
+         obra com 2 lançamentos e 8 semanas de parada pareceria ter 10 semanas
+         de histórico e passaria no mínimo de 3. */
+      var serieSem = [];
+      if (ordemS.length && pesoTot > 0) {
+        ordemS.sort();
+        var acumW = 0;
+        ordemS.forEach(function (kw) {
+          var pw = baldeS[kw] || 0;
+          acumW += pw;
+          serieSem.push({ chave: kw, rotulo: typeof F.rotuloBalde === "function" ? F.rotuloBalde(kw, "semana") : kw,
+            pctPeriodo: pct1((pw / pesoTot) * 100), pctAcumulado: pct1((acumW / pesoTot) * 100) });
+        });
+      }
+
       return {
         ok: true, regua: "orcamento",
         rotulo: "Executado sobre o orçamento (diários publicáveis)",
         dataCorte: corte || null, ultimoLancamento: ult || null,
         obra: obra, porNo: porNo, ordem: ordem,
-        naoApropriadas: nao, semQuantidade: semQtd, serieMes: meses,
+        naoApropriadas: nao, semQuantidade: semQtd, serieMes: meses, serieSemana: serieSem,
         opcionaisFora: opcFora, opcionaisIncluidos: opcIncl, lancamentosSemData: semData
       };
     },
@@ -1427,6 +1937,15 @@
          medicoes     boletins (filtrados aqui por obraId);
          atividadesDaObra  `Gestao._atividadesDaObra(obra.id)` — só entra no
                       número do Portal, que também pesa por ela;
+         custoEtapa   saída de `CustoEtapa.consolidar({obraId, orcamento,
+                      financeiro, compras})` — o CUSTO REAL da obra. Sem ela
+                      o painel sai inteiro, só sem CR/IDC/ENT (com o motivo).
+                      ⚠ Este arquivo é motor puro: o custo chega INJETADO,
+                      nunca lido do Store aqui;
+         custoEtapaAte  "AAAA-MM-DD" até quando o custo acima foi apurado.
+                      Ausente = "até hoje", e o painel DIZ isso — o
+                      `CustoEtapa` não corta na data, e previsto numa data com
+                      custo noutra é a comparação torta de sempre;
          hoje         relógio injetável (Date | "AAAA-MM-DD"); padrão: agora;
          dataCorte    "AAAA-MM-DD"; padrão: o último diário publicável, senão hoje;
          opcionaisIncluidos  [etapaIds] — só sem base (com base vale a dela);
@@ -1447,6 +1966,12 @@
        liga com o número da tela DELE (memória "seis réguas para o avanço").
        ⚠ Realizado, Portal e previsto saem da MESMA data de corte.
        ⚠ IDP só com linha de base; previsto sem base sai rotulado "plano atual".
+       ⚠ `curva.projetado` é a TERCEIRA CURVA (o ritmo medido nos diários) e
+       vem `null` — com o motivo em `avisos` — sempre que não houver ritmo:
+       nunca uma reta desenhada por cima do plano.
+       ⚠ `kpis.evm` traz o valor agregado completo, com as DUAS RÉGUAS
+       separadas e rotuladas: VP/VA/IDP/VPR em preço de venda, CR/VC/IDC/ENT
+       em custo direto. Ver o ⚠ do `evmDaObra`.
        ================================================================= */
     montarPainel: function (entrada) {
       var e = (entrada && typeof entrada === "object") ? entrada : {}, antes = INJ;
