@@ -859,7 +859,12 @@
                realmente tem quando abre no telefone: se precisa de outra
                conta. Não precisa — é a mesma do computador, e é isso que os
                relatos de "não consigo entrar pelo celular" costumavam ser. */
-            (contas.length
+            /* ⚠ O LINK SÓ APARECIA COM CONTA REGISTRADA NESTE NAVEGADOR. No
+               celular e no segundo computador o administrador entra pela conta
+               mestre que desceu da nuvem (`orcapro:<empresa>:conta`), a lista
+               de contas registradas é vazia — e justamente ali, onde é mais
+               fácil esquecer a senha, não havia "Esqueci a senha". */
+            ((contas.length || (typeof Auth !== "undefined" && Auth.contasAdminNoAparelho && Auth.contasAdminNoAparelho().length))
               ? '<p class="muted mt" style="font-size:12px;text-align:center"><a href="#" data-acao="esqueci-senha" style="color:var(--aco)">Esqueci a senha</a> · seus orçamentos ficam salvos neste navegador</p>'
               : '<p class="muted mt" style="font-size:12px;text-align:center">Já usa o OrçaPRO no computador? Entre com o <b>mesmo e-mail (ou usuário) e senha</b> — não precisa criar outra conta.</p>') +
             '</div>' +
@@ -1219,7 +1224,9 @@
         var _fx = orc.fechamento, _dl = Util.num(_fx.delta);
         html += '<div style="margin:-4px 0 12px;font-size:12px;padding:7px 12px;border-radius:8px;' +
           'background:rgba(46,111,158,.10);border:1px solid rgba(46,111,158,.30)">' +
-          "Este orçamento foi <b>fechado em " + Util.fmtMoeda(_fx.alvo) + "</b> — " +
+          "Este orçamento foi <b>fechado em " + Util.fmtMoeda(_fx.alvo) + "</b>" +
+          /* alvo sem os adicionais (js/fechamento.js): ao lado de um preço de venda que os soma */
+          (_fx.base === "semOpcionais" ? " (valor da proposta, sem os adicionais opcionais)" : "") + " — " +
           (_dl >= 0 ? "acréscimo" : "desconto") + " de <b>" + Util.fmtMoeda(Math.abs(_dl)) + "</b> sobre os " +
           Util.fmtMoeda(_fx.valorAnterior) + " originais, " +
           /* no combinado o interessante é a DIVISÃO, não a palavra "combinado":
@@ -2455,7 +2462,23 @@
       var p = sim.params;
       function d10(v) { try { var x = new Date(v); return x.getFullYear() + "-" + ("0" + (x.getMonth() + 1)).slice(-2) + "-" + ("0" + x.getDate()).slice(-2); } catch (e) { return ""; } }
       function moeda(v) { return Util.fmtMoeda(Math.round(v || 0)); }
-      function curto(prof) { var w = String(prof).split(" ")[0].toLowerCase(); return w.charAt(0).toUpperCase() + w.slice(1); }
+      /* ⚠ A 1ª PALAVRA SÓ BASTA QUANDO NINGUÉM MAIS A TEM. MEDIDO na obra de
+         demonstração: "Operador" aparecia 5 vezes (escavadeira, betoneira,
+         guincho, guindaste, máquinas), "Ajudante" 3 e "Auxiliar" 2 — a equipe
+         lia como postos repetidos, e o revisor contou 23 "postos" iguais.
+         Palavra repetida entre as profissões da obra mostra o nome inteiro. */
+      var nPrimeira = {};
+      (function () {
+        var vistos = {};
+        function marca(pf) { if (vistos[pf]) return; vistos[pf] = 1; var w = String(pf).split(" ")[0]; nPrimeira[w] = (nPrimeira[w] || 0) + 1; }
+        for (var kp in sim.equipePico) marca(kp);
+        sim.etapas.forEach(function (et) { for (var kq in et.prof) marca(kq); });
+      })();
+      function curto(prof) {
+        var s = String(prof), w = s.split(" ")[0];
+        var t = (nPrimeira[w] > 1 ? s : w).toLowerCase();
+        return t.charAt(0).toUpperCase() + t.slice(1);
+      }
       var COR = { dentro: "#16a34a", acima: "#dc2626", abaixo: "#2563eb", "sem-base": "#64748b" };
       var ROT = { dentro: "DENTRO DO ORÇADO", acima: "ACIMA DO ORÇADO", abaixo: "ABAIXO DO ORÇADO", "sem-base": "SEM BASE P/ RECONCILIAR" };
       var cor = COR[sim.status] || "#64748b";
@@ -2483,6 +2506,8 @@
         var parcial = sim.nEtapasSemBase > 0; // prazo cobre só as etapas estimáveis; as estaduais ficam de fora
         html += '<b style="font-size:16px">⏱ ' + sim.prazoDias + ' dias úteis (~' + sim.prazoSemanas + ' semanas)' + (parcial ? ' <span style="color:#b45309">*parcial</span>' : '') + '</b>' +
           (sim.dataFim ? '<span class="muted">' + sim.dataInicio.toLocaleDateString("pt-BR") + ' → ' + sim.dataFim.toLocaleDateString("pt-BR") + (parcial ? ' (só etapas estimáveis)' : '') + '</span>' : '') +
+          /* a premissa no próprio número: sem entrega, é 1 pessoa por profissão (ver `recados` do motor) */
+          (sim.modo === "equipe" ? '<span class="pill" style="background:#64748b18;color:#475569;font-weight:600" title="Sem “Entrega desejada”, o agente põe 1 pessoa de cada profissão em cada etapa, com as etapas em fila. Preencha a entrega para ele dimensionar a equipe.">com a equipe mínima (1 por profissão)</span>' : '') +
           (sim.metaAtingida === false ? '<span class="pill" style="background:#dc262622;color:#dc2626;font-weight:700">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' não bate a entrega pedida</span>' : '') +
           (parcial ? '<span class="pill" style="background:#f59e0b22;color:#b45309;font-weight:700">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' prazo parcial — ' + sim.nEtapasSemBase + ' etapa(s) sem base de MO fora da conta</span>' : '');
       }
@@ -2507,19 +2532,34 @@
         } else {
           html += '<div style="font-size:13px">' + (sim.orcadoMOExato > 0 ? 'Há itens SINAPI, mas nenhuma <b>diária real</b> no RH que case as profissões — comparar SINAPI × SINAPI daria sempre 0%. Cadastre sua equipe em RH para reconciliar custo real × orçado.' : 'Nenhum item com composição SINAPI para reconciliar o custo de MO — a base é própria/estadual.') + '</div>';
         }
-        html += '<div class="muted" style="font-size:11px;margin-top:8px">Custo total de MO simulado (obra inteira): <b>' + moeda(sim.custoMOSimulado) + '</b> · MO total orçada: ' + moeda(sim.orcadoMO) + (sim.orcadoMOExato ? ' · com produtividade SINAPI: ' + moeda(sim.orcadoMOExato) : '') + '.</div>';
+        html += '<div class="muted" style="font-size:11px;margin-top:8px">Custo total de MO simulado (obra inteira): <b>' + moeda(sim.custoMOSimulado) + '</b> · MO total orçada: ' + moeda(sim.orcadoMO) +
+          /* de onde veio parte do número: a base desses itens não separa MO (ver Execucao._moUnit) */
+          (sim.orcadoMODerivado > 0 ? ' (' + moeda(sim.orcadoMODerivado) + ' pela proporção de mão de obra da composição, em ' + sim.nItensMODerivado + ' item(ns) cuja base não separa MO)' : '') +
+          (sim.orcadoMOExato ? ' · com produtividade SINAPI: ' + moeda(sim.orcadoMOExato) : '') + '.</div>';
         html += '</div>';
       }
 
       // observações do agente (sempre)
       html += '<div class="card" style="margin-bottom:12px"><ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.6">';
+      // `recados` é a chave nova do motor (a premissa da equipe mínima e as opcionais fora); some quando o motor é antigo
+      (Array.isArray(sim.recados) ? sim.recados : []).forEach(function (s) { html += '<li>' + Util.esc(s) + '</li>'; });
       sim.sugestoes.forEach(function (s) { html += '<li>' + Util.esc(s) + '</li>'; });
       html += '</ul></div>';
 
-      // equipe de pico
+      /* ⚠ PICO SIMULTÂNEO × MAIOR EQUIPE DE CADA PROFISSÃO. O título dizia
+         "máximo simultâneo no canteiro" sobre a lista `equipePico`, que é o
+         maior número de cada profissão em ALGUMA etapa — 23 pessoas que nunca
+         estiveram juntas na obra de demonstração. O simultâneo vem do motor
+         (`picoSimultaneo`); a lista ganha o rótulo do que ela é. */
       var picoKeys = Object.keys(sim.equipePico);
       if (picoKeys.length) {
-        html += '<div class="card" style="margin-bottom:12px"><h3 style="margin:0 0 8px;font-size:14px">' + (typeof Icones !== 'undefined' ? Icones.get('capacete', 15) : '') + ' Equipe de pico (máximo simultâneo no canteiro)</h3><div class="flex" style="gap:8px;flex-wrap:wrap">';
+        var ps = sim.picoSimultaneo;
+        html += '<div class="card" style="margin-bottom:12px">';
+        if (ps && ps.pessoas > 0) {
+          html += '<h3 style="margin:0 0 4px;font-size:14px">' + (typeof Icones !== 'undefined' ? Icones.get('capacete', 15) : '') + ' Pico simultâneo no canteiro: ' + ps.pessoas + ' pessoa(s)' + (ps.data ? ' a partir de ' + ps.data.toLocaleDateString("pt-BR") : '') + '</h3>' +
+            '<div class="muted" style="font-size:12px;margin-bottom:10px">Etapas ao mesmo tempo nesse dia: ' + Util.esc(ps.etapas.join(" + ")) + '. ' + (sim.modo === "prazo" ? 'Com a equipe dimensionada para a entrega pedida.' : 'Com a equipe mínima deste prazo (1 pessoa por profissão).') + '</div>';
+        }
+        html += '<h3 style="margin:0 0 8px;font-size:13px">Maior equipe de cada profissão ao longo da obra <span class="muted" style="font-weight:400">(não ficam todas ao mesmo tempo)</span></h3><div class="flex" style="gap:8px;flex-wrap:wrap">';
         picoKeys.sort(function (a, b) { return sim.equipePico[b] - sim.equipePico[a]; }).forEach(function (pf) {
           var estim = pf.indexOf("estimada") >= 0;
           var lbl = estim ? (sim.equipePico[pf] + '× equipe geral (est.)') : (sim.equipePico[pf] + '× ' + curto(pf));
@@ -2543,7 +2583,8 @@
           return '<span class="pill" title="' + Util.esc(pf) + ' · R$' + Math.round(s.custoDia) + '/dia ' + (ref ? '(ref. SINAPI)' : '(diária real)') + '" style="background:' + (ref ? '#94a3b822' : '#16a34a1a') + ';color:' + (ref ? '#64748b' : '#16a34a') + ';font-size:11px">' + s.equipe + '× ' + Util.esc(curto(pf)) + '</span>';
         }).join(" ");
         if (et.homensDiaEstim > 0) chips += ' <span class="pill" style="background:#f59e0b22;color:#b45309;font-size:11px" title="itens sem código SINAPI mas com custoMO — equipe/produtividade estimada pela MO do orçamento">~' + (et.equipeEstim || 1) + '× equipe geral (est.)</span>';
-        html += '<tr><td><b>' + Util.esc(et.nome) + '</b>' + (et.dataInicio ? '<br><span class="muted" style="font-size:11px">' + et.dataInicio.toLocaleDateString("pt-BR") + ' → ' + et.dataFim.toLocaleDateString("pt-BR") + '</span>' : '') + '</td>' +
+        html += '<tr><td><b>' + Util.esc(et.nome) + '</b>' + (et.dataInicio ? '<br><span class="muted" style="font-size:11px">' + et.dataInicio.toLocaleDateString("pt-BR") + ' → ' + et.dataFim.toLocaleDateString("pt-BR") + '</span>' : '') +
+          (et.foraDoPrazo ? '<br><span class="pill" style="background:#64748b18;color:#475569;font-size:11px" title="Etapa opcional: o Cronograma está com “contar opcionais no prazo” desligado, então ela não entra na data de entrega. A duração e a equipe ao lado são o que ela pede se for contratada.">opcional · fora do prazo</span>' : '') + '</td>' +
           '<td class="num">' + et.duracao + ' d</td>' +
           '<td>' + (chips || '<span class="muted">—</span>') + '</td>' +
           '<td class="num">' + moeda(et.custoMO) + '</td></tr>';
@@ -3024,18 +3065,31 @@
         '<div><span>BDI</span><b>' + Util.fmtPct(t.bdiPercentual) + '</b></div>' +
         '<div><span>Valor BDI</span><b>' + Util.fmtMoeda(t.bdiValor) + '</b></div>' +
         '<div class="dest"><span>Preço de Venda</span><b>' + Util.fmtMoeda(t.precoVenda) + '</b></div></div>';
+      /* ⚠ ADICIONAL OPCIONAL NO RELATÓRIO (revisão de 13/09/2026). O "Preço de
+         Venda" deste documento é o `precoVenda` — COM as etapas marcadas como
+         adicional opcional — e nada dizia isso, ao lado de uma proposta que as
+         imprime fora do valor total. O número não muda (é o da planilha e do
+         Excel); a etapa sai marcada e os dois subtotais saem escritos. Sem
+         etapa opcional, o documento é o de antes. */
+      var _opcRel = Util.arr(orc.etapas).some(function (e) { return e && e.opcional; });
+      var _marcaOpc = ' <i data-opcional="1" style="font-weight:400;color:#b45309">(adicional opcional)</i>';
+      if (_opcRel) html += '<p class="muted" data-nota="rel-opcional" style="font-size:11.5px;margin:-4px 0 8px">O preço de venda inclui <b>' + Util.fmtMoeda(t.precoOpcional) +
+        '</b> de etapas marcadas como <b>adicional opcional</b>, que a proposta imprime fora do valor total. Valor total da proposta, sem elas: <b>' + Util.fmtMoeda(t.precoObrigatorio) + '</b>.</p>';
 
       // 1) Planilha SINTÉTICA
       html += '<h2 class="rel-tit">1. Planilha Sintética (por etapa)</h2>';
       html += '<table class="prop-tbl"><thead><tr><th>Cód</th><th>Etapa</th>' +
         '<th class="r">Itens</th><th class="r">Custo Direto</th><th class="r">Preço Venda</th><th class="r">Peso</th></tr></thead><tbody>';
       sint.forEach(function (s) {
-        html += '<tr><td>' + Util.esc(s.codigo) + '</td><td>' + Util.esc(s.nome) + '</td>' +
+        html += '<tr><td>' + Util.esc(s.codigo) + '</td><td>' + Util.esc(s.nome) + (s.opcional ? _marcaOpc : '') + '</td>' +
           '<td class="r">' + s.qtdItens + '</td><td class="r">' + Util.fmtMoeda(s.custoDireto) + '</td>' +
           '<td class="r">' + Util.fmtMoeda(s.precoVenda) + '</td><td class="r">' + Util.fmtPct(s.peso, 1) + '</td></tr>';
       });
       html += '</tbody><tfoot><tr><td colspan="3">TOTAL</td><td class="r">' + Util.fmtMoeda(t.custoDireto) +
-        '</td><td class="r">' + Util.fmtMoeda(t.precoVenda) + '</td><td class="r">100%</td></tr></tfoot></table>';
+        '</td><td class="r">' + Util.fmtMoeda(t.precoVenda) + '</td><td class="r">100%</td></tr>' +
+        (_opcRel ? '<tr><td colspan="4">Adicionais opcionais (incluídos no total acima)</td><td class="r">' + Util.fmtMoeda(t.precoOpcional) + '</td><td></td></tr>' +
+          '<tr><td colspan="4">Valor total da proposta (sem os adicionais opcionais)</td><td class="r">' + Util.fmtMoeda(t.precoObrigatorio) + '</td><td></td></tr>' : '') +
+        '</tfoot></table>';
 
       // 2) Planilha ANALÍTICA (detalhada, item a item, por etapa)
       /* as seções 3 e 4 são condicionais (a analítica pode não estar carregada,
@@ -3066,7 +3120,7 @@
         // subtotal = soma das linhas impressas (ver comentário em renderPlanilha)
         var sm2 = porEtapa[ei] || { custo: 0, venda: 0 };
         var se = { custoDireto: Arred.valor(sm2.custo, calc.modo), precoVenda: Arred.valor(sm2.venda, calc.modo) };
-        html += '<tr class="grp"><td><b>' + (ei + 1) + '</b></td><td colspan="7">' + Util.esc(e.nome) + '</td></tr>';
+        html += '<tr class="grp"><td><b>' + (ei + 1) + '</b></td><td colspan="7">' + Util.esc(e.nome) + (e.opcional ? _marcaOpc : '') + '</td></tr>';
         if (!e.itens.length) html += '<tr><td colspan="8" class="muted">(sem itens)</td></tr>';
         var _subRelAtual = null;
         e.itens.forEach(function (it, ii) {

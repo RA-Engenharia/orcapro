@@ -227,6 +227,73 @@
   var MOTIVO_SUBETAPAS = "duração vem das subetapas";
   var MOTIVO_SEM_BASE = "não estimável (sem base de mão de obra)";
 
+  /* ================= COMPOSIÇÃO PRÓPRIA (13/09/2026) =================
+   * ⚠ ROTEIRO DO DEFEITO. O `hhDoItem` só procurava o código no ANALÍTICO
+   * SINAPI. A composição própria mora em outra base (`Bases` "PROPRIA", o
+   * blob do IndexedDB que o criador grava em `_propriaGravar`), e o criador
+   * só aceita insumo REAL: a mão de obra entra com o código do SINAPI
+   * (88278 montador, 88316 servente…), em hora, com coeficiente. Ou seja, a
+   * hora-homem ESTÁ no orçamento — só não era lida. MEDIDO na obra de
+   * demonstração (galpão 18×9, R$ 504 mil): o histograma mostrava pico de
+   * 10,68 pessoas com 77,3% das equipe-dias FORA, porque a estrutura
+   * metálica (RA-EM-01, 31% do custo) e o canteiro eram composições
+   * próprias; a mesma conta lendo a própria dava 16,69. Pelo fluxo do app
+   * (criar → gravar → lançar), a própria com 88278 × 0,0731927 h/kg saía
+   * `{prof:{}, exato:false}` e o histograma a mandava "baixar a base da UF".
+   *
+   * ⚠ O CRITÉRIO É O MESMO DO ANALÍTICO, de propósito: linha em hora COM
+   * "COM ENCARGOS…/(HORISTA)/(MENSALISTA)" (RE_MO acima). MEDIDO nos backups
+   * da RA (121 composições próprias distintas): 182 de 190 linhas de mão de
+   * obra passam nele; as que não passam são "CURSO DE CAPACITAÇÃO… HORISTA"
+   * (hora de curso, não de canteiro — o analítico também não as conta).
+   * Insumo de MO que alguém digitou sem código SINAPI NÃO vira hora-homem:
+   * não há produtividade medida atrás dele, e inventar Hh é o que este módulo
+   * promete não fazer.
+   *
+   * ⚠ ANALÍTICO PRIMEIRO. O criador recusa código próprio igual a código
+   * oficial (ComposicaoPropria.validar → existeOficial), então consultar a
+   * própria só quando o analítico não tem o código não muda NENHUM item
+   * SINAPI — e a Execução e o histograma (que não recebem `baseFonte`)
+   * decidem igual.
+   *
+   * ⚠ LIDO POR CLOSURE, NUNCA POR `this`: o histograma recebe o provedor
+   * solto em alguns caminhos (tools/test-histograma.js, bloco 1), e aí o
+   * `this` é o `opc` — `this._P()` lançaria no 1º serviço. */
+  function propriaDe() {
+    var d = Execucao._deps;
+    if (d && d.Propria) return d.Propria;
+    if (typeof Bases !== "undefined" && Bases && typeof Bases.obter === "function") {
+      /* ⚠ SÓ HÁ BASE PRÓPRIA PARA CONSULTAR SE ELA ESTÁ REGISTRADA (revisão 3,
+         13/09/2026). Devolver o provedor sempre que `Bases` existe — e ele
+         existe em TODO navegador — fazia `propriaConsultada` ser true numa
+         máquina sem composição própria nenhuma, e o histograma mandava
+         "restaure o backup que tem a base própria ou entre na conta da nuvem"
+         por causa de item IOPES, ORSE, SETOP, SUDECAP, SEINFRA e até de um
+         insumo SINAPI (medido em 7 dos 12 orçamentos reais sem própria). */
+      var temP = (typeof Bases.extras === "function")
+        ? Bases.extras().some(function (b) { return b && String(b.fonte).toUpperCase() === "PROPRIA"; })
+        : true;
+      if (!temP) return null;
+      return { obter: function (cod) { return Bases.obter("PROPRIA", String(cod)); } };
+    }
+    return null;
+  }
+  // linha que é SUB-COMPOSIÇÃO (e não material): o criador grava "COMPOSICAO"
+  // (vindo da referência analítica) ou "COMPOSICAO AUXILIAR" (vindo da busca)
+  function ehComposicao(ins) { return /COMPOSI/.test(norm(ins && ins.tipo)) || /COMPOSI/.test(norm(ins && ins.categoria)); }
+  /* Proporção de mão de obra de uma composição (analítico ou própria), para
+     o item que NÃO traz a separação MO/MAT/EQ. ⚠ O SINAPI sintético não
+     publica a separação: 0 de 12.815 itens de MG têm o campo (medido no
+     _prodMO de js/gestao.js, que usa a mesma régua via Analitico.quebra) —
+     pelo fluxo do app o item lançado nasce com custoMO 0 e a aba dizia "MO
+     total orçada: R$ 0,00" para uma obra de 75 itens com hora-homem. A
+     proporção é da base e o custo é o do orçamento: não inventa número. */
+  function razaoMO(comp) {
+    if (!comp) return 0;
+    var mo = num(comp.custoMO), t = mo + num(comp.custoMAT) + num(comp.custoEQ);
+    return (t > 0 && mo > 0) ? mo / t : 0;
+  }
+
   var Execucao = {
     DEFAULTS: {
       jornadaH: 8,            // horas por dia de trabalho
@@ -241,7 +308,7 @@
       coberturaMin: 55,       // abaixo disso a reconciliação é rotulada "parcial" (não confiável)
       colaboradores: []       // [{funcao, remuneracao, unidadeRem, tipoContrato, status}]
     },
-    _deps: { Analitico: null, Cronograma: null }, // injetável em teste
+    _deps: { Analitico: null, Cronograma: null, Propria: null }, // injetável em teste (Propria = {obter(codigo)}; padrão: Bases "PROPRIA")
     _A: function () { return this._deps.Analitico || global.Analitico || null; },
     _C: function () { return this._deps.Cronograma || global.Cronograma || null; },
     profDe: profDe, ehMoPura: ehMoPura, _score: scoreMatch,
@@ -249,30 +316,91 @@
     MOTIVO_SUBETAPAS: MOTIVO_SUBETAPAS, MOTIVO_SEM_BASE: MOTIVO_SEM_BASE,
 
     // Horas-homem por profissão de UM item (recursa nas sub-composições não-MO,
-    // multiplicando coeficientes). Retorna {prof:{HH,custoHora}}, exato:bool.
+    // multiplicando coeficientes). Retorna {prof:{HH,custoHora}}, exato:bool,
+    // origem: "analitico" | "propria" | null (onde a composição foi LIDA) e
+    // propriaConsultada: bool (havia base própria para procurar — é o que
+    // separa "não está na máquina" de "não está na base analítica").
     hhDoItem: function (item, A) {
       A = A || this._A();
-      var qtd = num(item.quantidade), acc = {}, exato = false;
-      if (A && item.codigo != null && A.tem && A.tem(item.codigo)) {
-        var self = this;
-        (function rec(cod, mult, trilha) {
-          var comp = A.obter(String(cod)); if (!comp || !comp.insumos) return;
-          comp.insumos.forEach(function (ins) {
-            var coef = num(ins.coeficiente);
-            // comparacao crua com "H" quebraria com "h" (SICRO/SETOP) e o agente
-            // dimensionaria equipe e prazo com ZERO hora-homem, sem erro na tela
-            if (unKeyEx(ins.unidade) === "h" && ehMoPura(ins.descricao)) {
-              var p = profDe(ins.descricao), s = acc[p] || (acc[p] = { hh: 0, custoHora: 0 });
-              s.hh += coef * mult;
-              if (!s.custoHora) s.custoHora = num(ins.custoUnitario);
-              exato = true;
-            } else if (ins.tipo === "COMPOSICAO" && !ehMoPura(ins.descricao) && A.tem(ins.codigo) && !trilha[ins.codigo]) {
-              trilha[ins.codigo] = 1; rec(ins.codigo, mult * coef, trilha); delete trilha[ins.codigo];
-            }
-          });
-        })(item.codigo, qtd, {});
+      var qtd = num(item.quantidade), acc = {}, exato = false, origem = null;
+      var P = propriaDe();
+      /* ⚠ item de OUTRA base declarada (SETOP, ORSE, SICRO…) não é procurado na
+         própria: código homônimo daria a hora-homem de outro serviço, e a frase
+         do histograma ("nem na base própria") falaria de uma base que nunca foi
+         a dele. Sem declaração (o serviço do cronograma não carrega a base) ou
+         declarada PRÓPRIA, procura — é o que dá para saber. */
+      var bfItem = norm(item && (item.baseFonte || item.origem));
+      if (bfItem && !/^PROPRI/.test(bfItem)) P = null;
+      function soma(ins, mult) {
+        var p = profDe(ins.descricao), s = acc[p] || (acc[p] = { hh: 0, custoHora: 0 });
+        s.hh += num(ins.coeficiente) * mult;
+        if (!s.custoHora) s.custoHora = num(ins.custoUnitario);
+        exato = true;
       }
-      return { prof: acc, exato: exato };
+      function rec(cod, mult, trilha) {
+        var comp = A.obter(String(cod)); if (!comp || !comp.insumos) return;
+        comp.insumos.forEach(function (ins) {
+          var coef = num(ins.coeficiente);
+          // comparacao crua com "H" quebraria com "h" (SICRO/SETOP) e o agente
+          // dimensionaria equipe e prazo com ZERO hora-homem, sem erro na tela
+          if (unKeyEx(ins.unidade) === "h" && ehMoPura(ins.descricao)) {
+            soma(ins, mult);
+          } else if (ins.tipo === "COMPOSICAO" && !ehMoPura(ins.descricao) && A.tem(ins.codigo) && !trilha[ins.codigo]) {
+            trilha[ins.codigo] = 1; rec(ins.codigo, mult * coef, trilha); delete trilha[ins.codigo];
+          }
+        });
+      }
+      /* a PRÓPRIA: MO do SINAPI dentro dela conta; sub-composição SINAPI desce
+         no analítico (a mesma recursão de cima, que traz o operador de uma CHP);
+         sub-composição PRÓPRIA desce na própria. ⚠ Sub-composição de OUTRA base
+         (SETOP, SICRO…) NÃO desce no analítico SINAPI: código numérico homônimo
+         de outra base daria a hora-homem de outro serviço. A trilha usa "P:"
+         para a própria e o código cru para o analítico — são espaços de nome
+         diferentes, e um ciclo própria→própria não trava a aba. */
+      function recP(comp, mult, trilha) {
+        (Array.isArray(comp.insumos) ? comp.insumos : []).forEach(function (ins) {
+          if (!ins) return;
+          var coef = num(ins.coeficiente);
+          if (unKeyEx(ins.unidade) === "h" && ehMoPura(ins.descricao)) { soma(ins, mult); return; }
+          if (!ehComposicao(ins) || ehMoPura(ins.descricao) || !(coef > 0) || ins.codigo == null) return;
+          var cod = String(ins.codigo), f = norm(ins.fonte);
+          if (f === "PROPRIA") {
+            var sub = P && P.obter(cod);
+            if (sub && Array.isArray(sub.insumos) && !trilha["P:" + cod]) { trilha["P:" + cod] = 1; recP(sub, mult * coef, trilha); delete trilha["P:" + cod]; }
+          } else if ((!f || f.indexOf("SINAPI") === 0) && A && A.tem && A.tem(cod) && !trilha[cod]) {
+            trilha[cod] = 1; rec(cod, mult * coef, trilha); delete trilha[cod];
+          }
+        });
+      }
+      if (A && item.codigo != null && A.tem && A.tem(item.codigo)) {
+        origem = "analitico";
+        rec(item.codigo, qtd, {});
+      } else if (P && item.codigo != null && String(item.codigo) !== "") {
+        var cp = null;
+        try { cp = P.obter(String(item.codigo)); } catch (eP) { cp = null; }
+        if (cp && Array.isArray(cp.insumos)) {
+          origem = "propria";
+          var tr = {}; tr["P:" + String(item.codigo)] = 1;
+          recP(cp, qtd, tr);
+        }
+      }
+      return { prof: acc, exato: exato, origem: origem, propriaConsultada: !!P };
+    },
+
+    /* R$ de mão de obra orçada POR UNIDADE do item. Item que traz a separação
+       (custoMO/MAT/EQ > 0) usa o que traz — exatamente a conta de antes. Item
+       sem separação usa a proporção da composição que o hhDoItem leu (ver
+       razaoMO). Devolve {valor, derivado}. */
+    _moUnit: function (it, r, A) {
+      var mo = num(it.custoMO);
+      if (mo + num(it.custoMAT) + num(it.custoEQ) > 0) return { valor: mo, derivado: false };
+      var comp = null;
+      try {
+        if (r && r.origem === "analitico" && A && A.obter) comp = A.obter(String(it.codigo));
+        else if (r && r.origem === "propria") { var P = propriaDe(); comp = P ? P.obter(String(it.codigo)) : null; }
+      } catch (e) { comp = null; }
+      var rz = razaoMO(comp);
+      return rz > 0 ? { valor: num(it.custoUnitario) * rz, derivado: true } : { valor: 0, derivado: false };
     },
 
     // custo/dia de uma profissão a partir dos colaboradores reais; fallback = custo-hora SINAPI × jornada.
@@ -320,6 +448,22 @@
       // diária de referência p/ converter MO-R$ estimada em homens-dia (servente real ou fallback)
       var diariaRef = self.custoDiaProf("SERVENTE", 0, params).valor || 220;
 
+      /* ⚠ ETAPA OPCIONAL FORA DO PRAZO — A DECISÃO É DO CRONOGRAMA (13/09/2026).
+         A aba Cronograma tem "contar opcionais no prazo" e grava
+         `orc.cronograma.params.opcionaisNoPrazo = false`; o motor dela tira a
+         etapa opcional da rede. A Execução ignorava e empilhava as opcionais
+         na cascata: MEDIDO na obra de demonstração, as 4 opcionais somavam 19
+         dos 146 dias úteis e empurravam a entrega para 02/03/2027, enquanto o
+         Cronograma da mesma obra não as contava. É a mesma regra dos feriados
+         logo abaixo: duas telas dando datas diferentes para a mesma obra é
+         pior que as duas errarem igual. Só `=== false` desliga — o padrão do
+         motor do cronograma é LIGADO (js/cronograma.js, DEFAULTS). A etapa
+         continua com equipe, duração e custo (se contratada, é isso que ela
+         pede); só não entra na cascata nem nas datas. */
+      var cpO = (orc && orc.cronograma && orc.cronograma.params) || {};
+      var opcFora = cpO.opcionaisNoPrazo === false;
+      var moDerivadoTot = 0, nMODerivado = 0;
+
       // 1) por etapa: agrega Hh por profissão (exato) + MO-R$ estimada (fallback honesto) +
       //    marca itens de base estadual/própria SEM custo de MO (GOINFRA/SEINFRA só têm preço total).
       var etapas = (orc.etapas || []).map(function (e) {
@@ -329,7 +473,11 @@
           var q = num(it.quantidade);
           custoDireto += q * num(it.custoUnitario);
           var r = self.hhDoItem(it, A);
-          if (q > 0) { nComQtd++; if (r.exato) { nExatos++; orcadoMOExato += q * num(it.custoMO); } } // MO orçada só da porção com Hh
+          /* MO orçada: a do item quando ele traz a separação (a conta de sempre);
+             senão a proporção da composição lida (ver _moUnit). */
+          var mu = (q > 0) ? self._moUnit(it, r, A) : { valor: 0, derivado: false };
+          if (q > 0 && mu.derivado && !it.qtdPendente) { moDerivadoTot += q * mu.valor; nMODerivado++; }
+          if (q > 0) { nComQtd++; if (r.exato) { nExatos++; orcadoMOExato += q * mu.valor; } } // MO orçada só da porção com Hh
           if (r.exato) {
             for (var p in r.prof) { var s = prof[p] || (prof[p] = { hh: 0, custoHora: 0 }); s.hh += r.prof[p].hh; if (!s.custoHora) s.custoHora = r.prof[p].custoHora; }
           } else if (q > 0) {
@@ -351,7 +499,8 @@
           prof: prof, moEstimR: moEstimR, homensDiaEstim: hdEstim, custoDireto: custoDireto,
           nComQtd: nComQtd, nExatos: nExatos, orcadoMOExato: orcadoMOExato,
           custoSemBaseMO: custoSemBaseMO, nSemBaseMO: nSemBaseMO,
-          folhas: fl ? fl.lista : [] // espec 1.5 — campo NOVO; [] = a etapa é a própria folha
+          folhas: fl ? fl.lista : [], // espec 1.5 — campo NOVO; [] = a etapa é a própria folha
+          opcional: !!e.opcional, foraDoPrazo: opcFora && !!e.opcional // ver o ⚠ da etapa opcional acima
         };
       });
 
@@ -366,12 +515,18 @@
       });
 
       // 3) sequência natural (cascata c/ paralelismo) -> prazo natural
+      /* ⚠ `prev` é a etapa anterior QUE ESTÁ NO PRAZO. Sem opcional fora, é
+         exatamente etapas[i-1] — a conta de sempre (a paridade com o master em
+         tools/test-execucao-folhas.js cobra). A opcional fora fica sem _ini/_fim
+         e a seguinte encosta na anterior a ela, como o elo padrão do Cronograma. */
       function sequencia(dursKey) {
-        var t = 0;
-        etapas.forEach(function (et, i) {
+        var t = 0, prev = null;
+        etapas.forEach(function (et) {
+          if (et.foraDoPrazo) { et._ini = null; et._fim = null; return; }
           var dur = et[dursKey];
-          if (i === 0) et._ini = 0; else { var prev = etapas[i - 1]; var ov = Math.floor((num(params.paralelismo) || 0) * prev[dursKey]); et._ini = Math.max(0, prev._ini + prev[dursKey] - ov); }
+          if (!prev) et._ini = 0; else { var ov = Math.floor((num(params.paralelismo) || 0) * prev[dursKey]); et._ini = Math.max(0, prev._ini + prev[dursKey] - ov); }
           et._fim = et._ini + dur; if (et._fim > t) t = et._fim;
+          prev = et;
         });
         return t;
       }
@@ -430,7 +585,11 @@
       if (C && C.addDiasUteis) {
         var giroE = 0;
         while (C.diaUtil && !C.diaUtil(ini, params.diasUteisSemana, ferE.mapa) && giroE++ < 40) ini.setDate(ini.getDate() + 1);
-        etapas.forEach(function (et) { et.dataInicio = C.addDiasUteis(ini, et._ini, params.diasUteisSemana, ferE.mapa); et.dataFim = C.addDiasUteis(ini, et._fim, params.diasUteisSemana, ferE.mapa); });
+        etapas.forEach(function (et) {
+          // opcional fora do prazo não tem data: inventar uma seria pôr no calendário o que o Cronograma tirou
+          if (et.foraDoPrazo) { et.dataInicio = null; et.dataFim = null; return; }
+          et.dataInicio = C.addDiasUteis(ini, et._ini, params.diasUteisSemana, ferE.mapa); et.dataFim = C.addDiasUteis(ini, et._fim, params.diasUteisSemana, ferE.mapa);
+        });
       }
 
       // 5) equipe de PICO + custos. Separa: EXATO (profissões SINAPI), REAL (só profissões com
@@ -446,6 +605,33 @@
         if (et.equipeEstim) equipePico["equipe geral (estimada)"] = Math.max(equipePico["equipe geral (estimada)"] || 0, et.equipeEstim);
       });
 
+      /* 5b) PICO SIMULTÂNEO DE VERDADE.
+         ⚠ `equipePico` é o MAIOR número de cada profissão em ALGUMA etapa — e a
+         tela o rotulava "máximo simultâneo no canteiro". MEDIDO na obra de
+         demonstração: 23 profissões com "1×" cada, que nunca estiveram juntas
+         (com sobreposição 0 as etapas vêm uma depois da outra; a maior etapa
+         tinha 13). Quem dimensiona vestiário e refeitório por esse número
+         pede 23 vagas para 13 pessoas. `equipePico` fica como está (a lista de
+         profissões que a obra pede); o simultâneo é contado aqui, dia a dia da
+         cascata: o pico só pode começar no início de alguma etapa, então basta
+         medir nesses dias. Etapa fora do prazo (opcional) e não estimável não
+         estão na linha do tempo e não entram. */
+      var picoSimultaneo = null;
+      etapas.forEach(function (et0) {
+        if (et0.foraDoPrazo || !(et0.duracao > 0) || et0._ini == null) return;
+        var k = et0._ini, n = 0, comp = {}, nomes = [];
+        etapas.forEach(function (et) {
+          if (et.foraDoPrazo || !(et.duracao > 0) || et._ini == null || !(et._ini <= k && k < et._fim)) return;
+          nomes.push(et.nome);
+          for (var p in et.equipe) { n += et.equipe[p]; comp[p] = (comp[p] || 0) + et.equipe[p]; }
+          if (et.equipeEstim) { n += et.equipeEstim; comp["equipe geral (estimada)"] = (comp["equipe geral (estimada)"] || 0) + et.equipeEstim; }
+        });
+        if (!picoSimultaneo || n > picoSimultaneo.pessoas) {
+          picoSimultaneo = { pessoas: n, dia: k, etapas: nomes, equipe: comp,
+            data: (C && C.addDiasUteis) ? C.addDiasUteis(ini, k, params.diasUteisSemana, ferE.mapa) : null };
+        }
+      });
+
       // 6) reconciliação SÓ sobre a porção com DIÁRIA REAL (real×orçado-SINAPI da mesma profissão).
       //    Sem colaborador que case a profissão, o custo cai no fallback SINAPI (custo≡orçado) e o
       //    "0% dentro do orçado" seria SINAPI comparado consigo mesmo — mentira verde. status "sem-base".
@@ -456,6 +642,17 @@
       var desvioPct = reconConfiavel ? (desvio / orcadoMOReal) * 100 : 0;
       var status = !reconConfiavel ? "sem-base" : (Math.abs(desvioPct) <= tol ? "dentro" : (desvioPct > 0 ? "acima" : "abaixo"));
       // cobertura da RECONCILIAÇÃO = quanto da MO-SINAPI tem diária real (NÃO arredonda antes do corte)
+      /* ⚠ ESTE NÚMERO PASSA DE 100, E ISSO NÃO É DEFEITO NOVO (revisão 3,
+         13/09/2026). As duas pontas são réguas DIFERENTES: `orcadoMOReal` é
+         Hh × custo-hora da linha de MO do SINAPI, e `orcadoMOExato` é quantidade
+         × MO do PREÇO do item (o custoMO dele, ou a proporção da composição —
+         `_moUnit`). A revisão viu 100,1% num orçamento real; o master já dava
+         até 576% no corpus gerado de tools/test-execucao-folhas.js.
+         NÃO foi cortado em 100 de propósito: a única tela que o escreve (js/ui.js,
+         "Cobre só X% do custo de MO-SINAPI") só aparece com `coberturaBaixa`,
+         ou seja, abaixo de `coberturaMin` (55) — acima disso ele nunca chega ao
+         usuário, e cortar mudaria 16 casos da paridade sem mudar uma tela.
+         O bloco 4b daquela suíte escreve o 105,47 esperado. */
       var reconCobPct = orcadoMOExato > 0 ? (orcadoMOReal / orcadoMOExato) * 100 : 0;
       var coberturaBaixa = reconConfiavel && reconCobPct < (num(params.coberturaMin) || 55);
       var semBaseMO = nEtapasComBase === 0;             // NENHUMA etapa dimensionável (100% estadual/sem MO)
@@ -464,6 +661,11 @@
       var orcadoMOTotal = 0;
       if (typeof Orcamento !== "undefined" && Orcamento.totais) { try { orcadoMOTotal = num(Orcamento.totais(orc).mo); } catch (e) {} }
       if (!orcadoMOTotal) { (orc.etapas || []).forEach(function (e) { (e.itens || []).forEach(function (it) { orcadoMOTotal += num(it.custoMO) * num(it.quantidade); }); }); }
+      /* + a MO dos itens que não trazem separação, pela proporção da composição
+         (ver _moUnit). Eles entram com custoMO 0 nas duas somas acima, então
+         não há conta em dobro. Sai à parte em `orcadoMODerivado` para a tela
+         dizer de onde veio o número. */
+      orcadoMOTotal += moDerivadoTot;
 
       var entregaInvalida = !!(params.dataEntrega && (!prazoAlvo || prazoAlvo <= 0));
       var metaAtingida = (modo !== "prazo" || semBaseMO) ? null : (prazoFinal <= prazoAlvo + 0.5);
@@ -494,7 +696,30 @@
         else sugestoes.push("⚠ A data de entrega NÃO é alcançável com este dimensionamento: o mínimo é ~" + prazoFinal + " dias úteis (você pediu " + prazoAlvo + "). Reveja o escopo, o paralelismo, ou a data.");
       }
 
+      /* RECADOS NOVOS (13/09/2026) — numa chave própria, e não em `sugestoes`,
+         porque o texto de `sugestoes` é cobrado bit a bit contra o master em
+         tools/test-execucao-folhas.js (a trava das 38 instalações). A tela
+         mostra os dois.
+         ⚠ O PRIMEIRO É O QUE FALTAVA: sem entrega desejada, cada profissão
+         entra com UMA pessoa por etapa e as etapas vêm em fila. MEDIDO na obra
+         de demonstração: 146 dias úteis na aba Execução contra 62 no
+         Cronograma da mesma obra — e o número saía como "o prazo", sem dizer
+         a premissa. O revisor leu como defeito de conta; é premissa calada. */
+      var recados = [], nOpcFora = 0, diasOpcFora = 0;
+      etapas.forEach(function (et) { if (et.foraDoPrazo) { nOpcFora++; diasOpcFora += num(et.duracao); } });
+      if (modo === "equipe" && !semBaseMO) {
+        recados.push("Este prazo usa a equipe MÍNIMA: 1 pessoa de cada profissão em cada etapa, e as etapas uma depois da outra (sobreposição de " + Math.round((num(params.paralelismo) || 0) * 100) + "%). Não é o prazo do Cronograma. Para o agente dizer quantas pessoas de cada profissão cabem numa data, preencha “Entrega desejada” e clique em Recalcular.");
+      }
+      if (nOpcFora > 0) {
+        recados.push(nOpcFora + " etapa(s) opcional(is) ficaram FORA do prazo, como no Cronograma (lá, “contar opcionais no prazo” está desligado). Se forem contratadas, pedem mais ~" + diasOpcFora + " dia(s) útil(eis) de trabalho com a equipe mínima.");
+      }
+      if (nMODerivado > 0) {
+        recados.push("A MO orçada de " + nMODerivado + " item(ns) saiu da PROPORÇÃO de mão de obra da composição (R$ " + Math.round(moDerivadoTot) + "): a base de preços desses itens não separa mão de obra de material, e a proporção vem da composição analítica ou própria que foi lida.");
+      }
+
       return {
+        picoSimultaneo: picoSimultaneo, recados: recados,
+        orcadoMODerivado: moDerivadoTot, nItensMODerivado: nMODerivado,
         etapas: etapas, params: params, modo: modo, metaAtingida: metaAtingida, entregaInvalida: entregaInvalida,
         prazoNatural: prazoNatural, prazoAlvo: prazoAlvo, prazoDias: prazoFinal,
         prazoSemanas: Math.max(1, Math.ceil(prazoFinal / (num(params.diasUteisSemana) || 5))),

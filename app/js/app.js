@@ -1167,7 +1167,19 @@
       document.body.addEventListener("click", function (e) { self.onClick(e); });
       document.body.addEventListener("change", function (e) { self.onChange(e); });
       document.body.addEventListener("keydown", function (e) {
-        if (e.key === "Enter" && self.tela === "login") self.entrar();
+        /* ⚠ ENTER DENTRO DE MODAL NÃO É O FORMULÁRIO DE LOGIN (12/09/2026).
+           Isto disparava `entrar()` para QUALQUER Enter com a tela de login
+           por baixo — e a recuperação de senha abre modais justamente ali. O
+           Enter no campo do código tentava logar com o que estivesse nos
+           campos de trás; a foto da e2e-recuperar-senha mostrou o "Informe
+           e-mail e senha." aparecendo no meio da conferência. */
+        if (e.key === "Enter" && self.tela === "login") {
+          var noModal = false;
+          for (var nd = e.target; nd && nd !== document.body; nd = nd.parentNode) {
+            if (nd.id === "modal-bg" || (nd.classList && nd.classList.contains("modal-bg"))) { noModal = true; break; }
+          }
+          if (!noModal) self.entrar();
+        }
         // Busca universal: Ctrl+K / Cmd+K de qualquer tela logada — modificadores
         // EXATOS (não sequestra Ctrl+Shift+K/AltGr+K) e nunca por cima de
         // apresentação fullscreen ou tour (gate v1.1.63)
@@ -2358,13 +2370,25 @@
            bateu na porta de uma empresa que já mora aqui.
            Achado na auditoria de permissão de 15/08/2026, mesma família da
            v1.1.240. */
-        var _temEmpresa = false;
+        /* ⚠ A CONTA MESTRE EM QUALQUER EMPRESA DO APARELHO (12/09/2026).
+           `contaMestre()` olha só a empresa da SESSÃO — e aqui não há sessão,
+           então olhava "default". No aparelho secundário a conta mestre mora
+           em "local": a trava não via empresa nenhuma, e o administrador que
+           errava a senha ganhava uma CONTA NOVA, vazia, com o mesmo e-mail e a
+           senha errada — entrava num sistema sem nada e achava que tinha
+           perdido os dados. Achado pela e2e-recuperar-senha, com a senha
+           antiga depois de redefinir. */
+        var _temEmpresa = false, _ehAdminAqui = false;
         try {
+          _ehAdminAqui = !!(Auth.ehAdminNoAparelho && Auth.ehAdminNoAparelho(email));
           _temEmpresa = !!((Auth._temEquipeLocal && Auth._temEquipeLocal()) ||
-                           (Auth.contaMestre && Auth.contaMestre()));
+                           (Auth.contaMestre && Auth.contaMestre()) ||
+                           (Auth.contasAdminNoAparelho && Auth.contasAdminNoAparelho().some(function (c) { return c.onde === "mestre"; })));
         } catch (eE) {}
         if (_temEmpresa) {
-          UI.toast("Usuário ou senha inválidos. Se você é da equipe, confira com o administrador da conta.", "erro");
+          UI.toast(_ehAdminAqui
+            ? "Senha incorreta para " + email + ". Se esqueceu, use “Esqueci a senha” logo abaixo — o código vai para o e-mail do administrador."
+            : "Usuário ou senha inválidos. Se você é da equipe, confira com o administrador da conta.", "erro");
           return;
         }
         // e-mail novo, aparelho sem empresa → cria conta (1º acesso de verdade)
@@ -2434,8 +2458,23 @@
     // Esqueci a senha (redefinição local — é o próprio navegador/dados do usuário)
     redefinirSenhaUI: function () {
       var email = ((UI.el("lg-email") || {}).value || "").trim();
-      if (!Util.naoVazio(email)) { UI.toast("Digite (ou clique) o e-mail da conta primeiro.", "erro"); return; }
-      if (!Auth.existeEmail(email)) { UI.toast("Não há conta com esse e-mail neste navegador.", "erro"); return; }
+      if (!Util.naoVazio(email)) { UI.toast("Digite no campo acima o e-mail do administrador e clique de novo em “Esqueci a senha”.", "erro"); return; }
+      /* ⚠ ADMINISTRADOR COM LICENÇA → CÓDIGO NO E-MAIL (12/09/2026).
+         O caminho de baixo (prompt e troca direta) só atende o navegador SEM
+         licença e sem equipe, onde "é o seu próprio navegador" é verdade. Com
+         licença, a prova de que é o administrador é o código que o servidor
+         manda para o e-mail dele — ver `Auth.pedirCodigoSenha`. */
+      if (Auth.ehAdminNoAparelho && Auth.ehAdminNoAparelho(email) && Auth.recuperacaoPorCodigoDisponivel()) {
+        this._recupSenhaPasso1(email.toLowerCase());
+        return;
+      }
+      if (email.indexOf("@") < 0 && Auth.existeLoginEquipe && (Auth.existeLoginEquipe(email) || (Auth._temEquipeLocal && Auth._temEquipeLocal()))) {
+        UI.toast("A senha de usuário da equipe é trocada pelo administrador da conta, na tela Usuários. Peça a ele.", "erro"); return;
+      }
+      if (Auth.ehAdminNoAparelho && Auth.ehAdminNoAparelho(email) && !Auth.existeEmail(email)) {
+        UI.toast("A recuperação por código usa a licença deste aparelho, e ele está sem licença ativa. Ative a licença e tente de novo — ou fale com o suporte.", "erro"); return;
+      }
+      if (!Auth.existeEmail(email)) { UI.toast("Não há conta de administrador com esse e-mail neste aparelho. Confira o e-mail — se você é da equipe, peça ao administrador para trocar sua senha.", "erro"); return; }
       var nova = window.prompt("Defina uma NOVA senha para " + email + "\n(é o seu próprio navegador — seus orçamentos continuam salvos):");
       if (nova === null) return;
       if (!Util.naoVazio(nova)) { UI.toast("Senha vazia.", "erro"); return; }
@@ -2446,6 +2485,140 @@
          dono. Redefiniu, entra pelo login com a senha nova. */
       UI.toast("Senha redefinida. Entre com a senha nova.", "ok");
       this.tela = "login"; this.render();
+    },
+
+    /* ---------- Recuperar a senha do administrador: 3 passos num modal ----------
+       1) enviar o código  2) digitar o código  3) senha nova.
+       ⚠ O erro aparece DENTRO do modal, não em toast: a pessoa está olhando
+       para o campo do código, e o toast some antes de ela ler "restam 2
+       tentativas". A regra mora no Auth; aqui só se orquestra. */
+    _recupErro: function (msg) {
+      var el = document.getElementById("rs-erro");
+      if (el) { el.textContent = msg || ""; el.hidden = !msg; }
+    },
+    _recupOcupado: function (btn, ocupado, texto) {
+      if (!btn) return;
+      btn.disabled = !!ocupado;
+      if (texto) btn.textContent = texto;
+    },
+    _recupSenhaPasso1: function (email) {
+      var self = this;
+      var botoes = [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Enviar código", classe: "primary", onClick: function () {
+          var btn = this;
+          self._recupErro("");
+          self._recupOcupado(btn, true, "Enviando…");
+          Auth.pedirCodigoSenha(email).then(function (r) {
+            if (r && r.ok === true) { self._recupSenhaPasso2(email, r.destino || email, r.validadeMin || 15); return; }
+            self._recupOcupado(btn, false, "Enviar código");
+            self._recupErro((r && r.erro) || "Não foi possível enviar o código agora.");
+          });
+        } }
+      ];
+      UI.modal("Recuperar a senha do administrador",
+        '<p>Vamos enviar um <b>código de 6 dígitos</b> para o e-mail do administrador:</p>' +
+        '<p style="font-size:16px;margin:10px 0"><b>' + Util.esc(email) + '</b></p>' +
+        '<p class="muted" style="font-size:13px">O código vale por 15 minutos. Seus dados continuam salvos — só a senha muda.</p>' +
+        '<p id="rs-erro" role="alert" hidden style="color:var(--vermelho);font-size:13px;margin-top:10px"></p>',
+        botoes);
+    },
+    _recupSenhaPasso2: function (email, destino, validadeMin) {
+      var self = this, espera = 60, relogio = null;
+      function conferir() {
+        var btn = document.getElementById("rs-conferir");
+        var cod = ((document.getElementById("rs-codigo") || {}).value || "");
+        self._recupErro("");
+        self._recupOcupado(btn, true, "Conferindo…");
+        Auth.conferirCodigoSenha(email, cod).then(function (r) {
+          if (r && r.ok === true) { clearInterval(relogio); self._recupSenhaPasso3(email); return; }
+          self._recupOcupado(btn, false, "Conferir");
+          self._recupErro((r && r.erro) || "Não foi possível conferir o código.");
+          if (r && r.vencido) { espera = 0; tique(); }
+          var inp = document.getElementById("rs-codigo"); if (inp) { inp.focus(); inp.select(); }
+        });
+      }
+      function tique() {
+        var a = document.getElementById("rs-reenviar");
+        if (!a) { clearInterval(relogio); return; }
+        if (espera > 0) { a.textContent = "Reenviar código em " + espera + " s"; a.setAttribute("aria-disabled", "true"); espera--; }
+        else { a.textContent = "Reenviar código"; a.removeAttribute("aria-disabled"); clearInterval(relogio); }
+      }
+      UI.modal("Digite o código",
+        '<p>Enviamos o código para <b>' + Util.esc(destino) + '</b>. Confira também a caixa de spam.</p>' +
+        '<div class="field" style="margin-top:12px"><label for="rs-codigo">Código de 6 dígitos</label>' +
+        '<input id="rs-codigo" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="9" placeholder="000000" style="font-size:22px;letter-spacing:6px;text-align:center"></div>' +
+        '<p style="font-size:13px"><a href="#" id="rs-reenviar" aria-disabled="true">Reenviar código em 60 s</a></p>' +
+        '<p class="muted" style="font-size:12px">Vale por ' + Number(validadeMin || 15) + ' minutos e só pode ser usado uma vez.</p>' +
+        '<p id="rs-erro" role="alert" hidden style="color:var(--vermelho);font-size:13px;margin-top:10px"></p>',
+        [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { clearInterval(relogio); UI.fecharModal(); } },
+          { texto: "Conferir", classe: "primary", onClick: conferir }
+        ]);
+      var btns = document.querySelectorAll("#modal-footer .btn");
+      if (btns.length) btns[btns.length - 1].id = "rs-conferir";
+      var inp = document.getElementById("rs-codigo");
+      if (inp) {
+        inp.focus();
+        inp.addEventListener("keydown", function (ev) { if (ev.key === "Enter") { ev.preventDefault(); ev.stopPropagation(); conferir(); } });
+      }
+      var re = document.getElementById("rs-reenviar");
+      if (re) re.addEventListener("click", function (ev) {
+        ev.preventDefault();
+        if (re.getAttribute("aria-disabled") === "true") return;
+        self._recupErro("");
+        re.setAttribute("aria-disabled", "true"); re.textContent = "Enviando…";
+        Auth.pedirCodigoSenha(email).then(function (r) {
+          if (r && r.ok === true) {
+            espera = 60; tique(); clearInterval(relogio); relogio = setInterval(tique, 1000);
+            var c = document.getElementById("rs-codigo"); if (c) { c.value = ""; c.focus(); }
+            UI.toast("Código novo enviado. O anterior deixou de valer.", "ok");
+            return;
+          }
+          espera = (r && r.espereSeg) || 0; tique(); clearInterval(relogio); if (espera > 0) relogio = setInterval(tique, 1000);
+          self._recupErro((r && r.erro) || "Não foi possível reenviar agora.");
+        });
+      });
+      tique(); relogio = setInterval(tique, 1000);
+    },
+    _recupSenhaPasso3: function (email) {
+      var self = this;
+      function salvar() {
+        var n1 = ((document.getElementById("rs-nova") || {}).value || "");
+        var n2 = ((document.getElementById("rs-nova2") || {}).value || "");
+        self._recupErro("");
+        if (n1 !== n2) { self._recupErro("As duas senhas não são iguais. Digite a mesma senha nos dois campos."); return; }
+        var r = Auth.aplicarSenhaRecuperada(email, n1);
+        if (!r.ok) {
+          self._recupErro(r.erro);
+          if (r.vencido) setTimeout(function () { self._recupSenhaPasso1(email); }, 2500);
+          return;
+        }
+        UI.fecharModal();
+        /* ⚠ NÃO entra sozinho: redefinir não é autenticar. Volta ao login com
+           o e-mail já preenchido, e o login com a senha nova abre a sessão. */
+        self.tela = "login"; self.render();
+        var e = UI.el("lg-email"), s = UI.el("lg-senha");
+        if (e) e.value = email;
+        if (s) { s.value = ""; s.focus(); }
+        UI.toast("Senha redefinida. Entre agora com a senha nova.", "ok");
+      }
+      UI.modal("Crie a senha nova",
+        '<p>Código confirmado. Defina a nova senha do administrador <b>' + Util.esc(email) + '</b>.</p>' +
+        '<form onsubmit="return false" autocomplete="on">' +
+        '<input type="text" name="username" autocomplete="username" value="' + Util.esc(email) + '" hidden>' +
+        '<div class="field" style="margin-top:12px"><label for="rs-nova">Nova senha</label><input id="rs-nova" type="password" autocomplete="new-password" placeholder="mínimo 4 caracteres"></div>' +
+        '<div class="field"><label for="rs-nova2">Repita a nova senha</label><input id="rs-nova2" type="password" autocomplete="new-password"></div>' +
+        '</form>' +
+        '<p class="muted" style="font-size:12px">Nos outros aparelhos da empresa a senha nova passa a valer quando eles sincronizarem.</p>' +
+        '<p id="rs-erro" role="alert" hidden style="color:var(--vermelho);font-size:13px;margin-top:10px"></p>',
+        [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Salvar nova senha", classe: "primary", onClick: salvar }
+        ]);
+      var a = document.getElementById("rs-nova"), b = document.getElementById("rs-nova2");
+      if (a) a.focus();
+      [a, b].forEach(function (el) { if (el) el.addEventListener("keydown", function (ev) { if (ev.key === "Enter") { ev.preventDefault(); ev.stopPropagation(); salvar(); } }); });
     },
 
     // URLs do analítico da UF ativa: {local} no disco + {live} no VPS (fallback garantido).
@@ -7053,9 +7226,11 @@
 
     /* o antes → depois do conjunto MARCADO. ⚠ OS TRÊS TOTAIS (revisão 4A): o
        da proposta (sem opcionais), o dos opcionais, e o total com opcionais —
-       que é o "VALOR TOTAL DA PROPOSTA" da proposta CLÁSSICA. Mostrar um só
-       fazia "R$ X → R$ X" enquanto a clássica subia 42%. O que muda leva
-       "(muda)" escrito (cor não é a única pista). */
+       que era o "VALOR TOTAL DA PROPOSTA" da proposta CLÁSSICA até 13/09/2026
+       (desde então ela também imprime o obrigatório; o total com opcionais é
+       o da planilha e do Excel). Mostrar um só fazia "R$ X → R$ X" enquanto a
+       clássica subia 42%. O que muda leva "(muda)" escrito (cor não é a única
+       pista). */
     _iaEfeitoHtml: function (ef, nMarc, nTotal) {
       var esc = Util.esc, self = this;
       var h = '<div class="muted" style="font-size:12px;margin-bottom:4px">' + esc(nMarc + " de " + nTotal + " mudança(s) marcada(s) — o efeito abaixo é só o das marcadas") + '</div>';
@@ -7067,7 +7242,7 @@
       var linhas = [
         ["Total da proposta (sem opcionais)", din(a.totalProposta), din(b.totalProposta), a.totalProposta !== b.totalProposta],
         ["Opcionais (adicionais)", din(a.totalOpcional), din(b.totalOpcional), a.totalOpcional !== b.totalOpcional],
-        ["Total com opcionais (o que a proposta clássica imprime)", din(a.totalComOpcionais), din(b.totalComOpcionais), a.totalComOpcionais !== b.totalComOpcionais],
+        ["Total com opcionais (o da planilha e do Excel)", din(a.totalComOpcionais), din(b.totalComOpcionais), a.totalComOpcionais !== b.totalComOpcionais],
         ["Prazo", pz(a.prazoDiasUteis), pz(b.prazoDiasUteis), a.prazoDiasUteis !== b.prazoDiasUteis],
         ["Término", dia(a.termino), dia(b.termino), a.termino !== b.termino]
       ];
@@ -8840,10 +9015,20 @@
           "</span></label></div>";
       });
 
+      /* ⚠ COM ETAPA OPCIONAL O QUE SE FECHA É O VALOR DA PROPOSTA, sem os
+         adicionais (js/fechamento.js, "O VALOR QUE SE FECHA"). Esta frase
+         dizia `precoVenda` — com eles dentro — e a pessoa digitava o alvo
+         contra um número que a capa não imprime. */
+      var _fxOpc = Util.arr(orc.etapas).some(function (e) { return e && e.opcional; });
+      var _fxAtual = _fxOpc ? t.precoObrigatorio : t.precoVenda;
       var body =
-        '<div class="muted" style="font-size:12px;margin-top:0">O orçamento está hoje em ' +
-          "<b>" + Util.fmtMoeda(t.precoVenda) + "</b> " +
-          '<span style="font-size:11px">(custo ' + Util.fmtMoeda(t.custoDireto) + " + BDI " + Util.fmtPct(t.bdiPercentual) + ")</span></div>" +
+        '<div class="muted" style="font-size:12px;margin-top:0">' + (_fxOpc ? "O valor da proposta (sem os adicionais opcionais) está hoje em " : "O orçamento está hoje em ") +
+          "<b>" + Util.fmtMoeda(_fxAtual) + "</b> " +
+          (_fxOpc
+            ? '<span style="font-size:11px">(BDI ' + Util.fmtPct(t.bdiPercentual) + ")</span>" +
+              '<div data-fx-opc="1" style="margin-top:4px">Os adicionais opcionais (<b>' + Util.fmtMoeda(t.precoOpcional) + "</b>) ficam fora do valor que você digitar — é o mesmo total que a capa da proposta imprime. Os itens deles não recebem a diferença.</div>"
+            : '<span style="font-size:11px">(custo ' + Util.fmtMoeda(t.custoDireto) + " + BDI " + Util.fmtPct(t.bdiPercentual) + ")</span>") +
+        "</div>" +
 
         '<div style="margin-top:12px">' +
           '<label style="font-weight:600;font-size:12px;display:block">Quanto você quer que o orçamento dê?</label>' +
@@ -9030,6 +9215,7 @@
         if (!r.ok) { UI.toast(r.erro, "erro"); return; }
         self.persistir(); UI.fecharModal(); self.render();
         var msg = "Orçamento fechado em " + Util.fmtMoeda(r.atingido);
+        if (s.semOpcionais) msg += " sem os adicionais opcionais (eles estão em " + Util.fmtMoeda(Orcamento.totais(orc).precoOpcional) + ")";
         if (r.sobra && Math.abs(r.sobra) >= 0.01) msg += " (o mais perto possível de " + Util.fmtMoeda(alvo) + ")";
         if (r.itensAfetados) msg += " — " + r.itensAfetados + " item(ns) ajustado(s), com justificativa registrada.";
         else msg += " — BDI ajustado, nenhum custo alterado.";
@@ -9069,7 +9255,8 @@
               var r = Fechamento.desfazer(orc);
               if (!r.ok) { UI.toast(r.erro, "erro"); return; }
               self.persistir(); UI.fecharModal(); self.render();
-              UI.toast("Fechamento desfeito — o orçamento voltou a " + Util.fmtMoeda(r.voltouPara) + ".", "ok");
+              UI.toast("Fechamento desfeito — o orçamento voltou a " + Util.fmtMoeda(r.voltouPara) +
+                (Util.arr(orc.etapas).some(function (e) { return e && e.opcional; }) ? " (valor da proposta, sem os adicionais opcionais)" : "") + ".", "ok");
             } }
         ]);
     },
@@ -12021,7 +12208,11 @@
       if (!Auth.podeUsar("proposta")) { UI.toast("Proposta Comercial é recurso PRO.", "erro"); return; }
       var val = Proposta.validar(this.orcAtual);
       if (!val.ok) {
-        UI.toast("Faltam dados: " + val.faltando.join(", ") + ". Abra " + (typeof Icones !== "undefined" ? Icones.get("ajustes", 15) : "") + " Dados.", "erro");
+        /* "Abra Dados" é a porta do cliente e das condições; a do escopo todo
+           opcional é a planilha (desmarcar a etapa) — mandar a Dados era
+           mandar para onde não se resolve */
+        var _soEscopo = val.escopoTodoOpcional && val.faltando.length === 1;
+        UI.toast("Faltam dados: " + val.faltando.join(", ") + "." + (_soEscopo ? "" : " Abra " + (typeof Icones !== "undefined" ? Icones.get("ajustes", 15) : "") + " Dados."), "erro");
         return;
       }
       // LOTE 4: avisos NÃO-bloqueantes de acabamento — proposta sai, mas o usuário sabe

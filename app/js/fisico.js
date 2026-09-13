@@ -489,22 +489,59 @@
   }
 
   /* -------------------------------------------------------------------
-   * O NÚMERO DO CABEÇALHO — "Execução física: X% concluído do total previsto"
+   * O NÚMERO DO CABEÇALHO — "Execução física: X% concluído nos serviços já
+   * iniciados". ⚠ Era "do total previsto", e não é: o denominador são só
+   * os serviços que aparecem nos diários (ver `avisoDaBase`).
    * ----------------------------------------------------------------- */
   function pctObra(rdos, obraId, opc) {
     var linhas = consolidar(rdos, obraId, opc);
     var p = ponderar(linhas);
     p.servicos = linhas.length;
+    p.doOrcamento = contagem(opc && opc.servicosDoOrcamento, 1);
+    p.semApontamento = p.doOrcamento === null ? null : contagem(opc && opc.semApontamentoNoOrcamento, 0);
     p.aviso = avisoDaBase(p);
     return p;
   }
+  /* `opc.servicosDoOrcamento`: quantos serviços MENSURÁVEIS o orçamento tem;
+     `opc.semApontamentoNoOrcamento`: quantos DESSES nenhum diário publicado
+     cita. Quem sabe é quem tem o orçamento (Gestao._snapshotPortal, pela
+     mesma função do painel do engenheiro). Número inválido vira null: a frase
+     sai sem a contagem, nunca com uma inventada. */
+  function contagem(v, minimo) {
+    return (typeof v === "number" && isFinite(v) && v >= minimo) ? Math.round(v) : null;
+  }
   /* A frase honesta sobre COMO o número foi feito. Vai à tela do cliente —
-     quem compara dois meses precisa saber se a régua mudou no meio. */
+     quem compara dois meses precisa saber se a régua mudou no meio.
+
+     ⚠ ELA DIZIA "ponderado pelo peso de cada serviço NO ORÇAMENTO", embaixo
+     de "concluído do total previsto" — e a conta só tem os serviços que JÁ
+     TIVERAM apontamento no diário (`ponderar` não conhece o que não começou).
+     Numa obra de demonstração com 36 dos 75 serviços iniciados, o contratante
+     lia 91,1% "da obra" onde o executado sobre o orçamento era 54,5% (97,9%
+     sem preço unitário nos itens, que é o caso comum). O número está certo
+     para o que mede; a frase prometia outra coisa. Esta frase é também a que
+     chega ao portal.html JÁ PUBLICADO (ele escreve `fisico.aviso` no ⓘ) — por
+     isso ela carrega o recado inteiro. ⚠ MAS ELA NÃO RESOLVE A TELA
+     PUBLICADA: lá o subtítulo fixo continua "concluído do total previsto" e
+     a linha "N serviço(s) acompanhado(s)", na MESMA caixa do ⓘ que diz "não é
+     o avanço da obra inteira" — medido com o portal.html de b8953c8. A tela
+     só fica coerente quando o loja/portal.html desta entrega for ao VPS: é
+     dependência da entrega, não detalhe de publicação.
+     A régua NÃO mudou aqui (decisão do dono do produto, com os números). */
   function avisoDaBase(p) {
     if (!p || p.pct === null) return "Ainda não há serviço com quantidade prevista lançada — sem isso não existe percentual a calcular.";
+    var n = typeof p.itens === "number" ? p.itens : 0;
+    var m = (typeof p.doOrcamento === "number" && p.doOrcamento > 0) ? p.doOrcamento : null;
+    var quem = n + " serviço(s)" + (m ? "; o orçamento tem " + m : "");
     var f = p.base === "financeira"
-      ? "Percentual ponderado pelo peso de cada serviço no orçamento."
-      : "Percentual pela média dos serviços (esta obra não tem preço unitário cadastrado para ponderar).";
+      ? "Percentual só dos serviços já lançados no diário (" + quem + "), ponderado pelo peso de cada um no orçamento."
+      : "Percentual pela média dos serviços já lançados no diário (" + quem + ") — esta obra não tem preço unitário cadastrado para ponderar.";
+    /* quando NENHUM serviço do orçamento está fora dos diários o denominador
+       é o orçamento inteiro, e o alerta seria falso. Comparar `n >= m` não
+       serve: serviço avulso (fora do orçamento) conta em `n` e esconderia um
+       serviço do orçamento que nunca apareceu. Sem a contagem não dá para
+       saber — e aí o alerta vai. */
+    if (p.semApontamento !== 0 || !m) f += " Serviço que ainda não apareceu em nenhum diário não entra na conta — este número não é o avanço da obra inteira.";
     var extras = [];
     if (p.itensSemPrevisto) extras.push(p.itensSemPrevisto + " serviço(s) sem quantidade prevista ficaram de fora da conta");
     if (p.base === "financeira" && p.itensSemPeso) extras.push(p.itensSemPeso + " sem preço cadastrado ficaram de fora da ponderação");
@@ -652,6 +689,8 @@
     var linhas = consolidar(rdos, obraId, o);
     var geral = ponderar(linhas);
     geral.servicos = linhas.length;
+    geral.doOrcamento = contagem(o.servicosDoOrcamento, 1);
+    geral.semApontamento = geral.doOrcamento === null ? null : contagem(o.semApontamentoNoOrcamento, 0);
     geral.aviso = avisoDaBase(geral);
 
     var financeira = geral.base === "financeira";
@@ -673,6 +712,12 @@
     var gruposEt = comId ? porEtapaId(linhas, o.mapaItens) : porEtapa(linhas, obraId, o);
     return {
       pct: geral.pct, base: geral.base, aviso: geral.aviso,
+      /* aditivos (o portal.html publicado ignora o que não conhece): `itens`
+         = quantos serviços ENTRAM no percentual; `doOrcamento` = quantos o
+         orçamento tem e `semApontamento` = quantos desses nenhum diário cita
+         (null quando não se sabe). É o denominador que a tela do cliente
+         escreve ao lado do número. */
+      itens: geral.itens, doOrcamento: geral.doOrcamento, semApontamento: geral.semApontamento,
       servicos: geral.servicos, itensSemPrevisto: geral.itensSemPrevisto,
       itensSemPeso: geral.itensSemPeso, excedentes: geral.excedentes,
       etapas: gruposEt.map(function (e) {

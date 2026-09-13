@@ -35,9 +35,24 @@
           semQtd.slice(0, 3).map(function (x) { return (x.item.codigo || x.item.descricao.slice(0, 18)); }).join(", ") +
           (semQtd.length > 3 ? "…" : "") + " — use o botao Calcular na linha");
       }
+      /* ⚠ TUDO OPCIONAL = PROPOSTA DE R$ 0,00 (revisão de 13/09/2026). Desde
+         que o papel imprime o escopo contratado (`_totalDoPapel`), marcar como
+         adicional opcional TODAS as etapas com valor fazia a capa sair com
+         "Valor total R$ 0,00", o resumo com "VALOR TOTAL DA PROPOSTA R$ 0,00 ·
+         100%" e o WhatsApp sem a linha de valor — e `validar` dizia ok. Pelo
+         fluxo do app (addEtapa → addItem → marcarEtapaOpcional nas duas).
+         Recusa com o caminho: não há proposta sem escopo contratado. */
+      var temOpcV = Util.arr(orc.etapas).some(function (e) { return e && e.opcional; });
+      var semEscopo = temOpcV && totais.qtdItens >= 1 && !(Util.num(totais.precoObrigatorio) > 0) && Util.num(totais.precoOpcional) > 0;
+      if (semEscopo) {
+        faltando.push("Escopo contratado: todas as etapas com valor estão marcadas como adicional opcional, e a proposta sairia com valor total R$ 0,00 — desmarque “opcional” nas etapas que fazem parte do serviço contratado");
+      }
       Orcamento.garantirComercial(orc);
       if (!Util.naoVazio(orc.comercial.condicoesPagamento)) faltando.push("Condições de pagamento");
-      return { ok: faltando.length === 0, faltando: faltando };
+      var r = { ok: faltando.length === 0, faltando: faltando };
+      /* o caminho dessa pendência é a planilha, não "⚙ Dados" (ver app.js gerarProposta) */
+      if (semEscopo) r.escopoTodoOpcional = true;
+      return r;
     },
 
     /* Converte texto multilinha em <li> (cada linha = um item). */
@@ -73,8 +88,14 @@
       var r;
       try { r = Cronograma.estimar(orc); } catch (e) { return ""; }
       if (!r || !r.etapas.length || !r.totalDias) return "";
-      var linhas = r.etapas.map(function (e) {
-        return '<tr><td>' + Util.esc(((e.codigo ? e.codigo + " " : "") + (e.nome || "")).trim()) + '</td>' +
+      var etsOrc = orc.etapas || [];   /* sem Util.arr: esta função também roda com Util mínimo (tools/test-cronopdf.js) */
+      var linhas = r.etapas.map(function (e, i) {
+        /* a etapa opcional sai MARCADA também no quadro de prazos: é "0 d"
+           quando fica fora do prazo, e sem a marca o cliente lê um serviço
+           que não dura nada. Casado POR ÍNDICE (`r.etapas` é 1:1 com
+           `orc.etapas`, ver Cronograma.estimar) — nunca por nome. */
+        return '<tr><td>' + Util.esc(((e.codigo ? e.codigo + " " : "") + (e.nome || "")).trim()) +
+          (etsOrc[i] && etsOrc[i].opcional ? ' <i>(adicional opcional)</i>' : '') + '</td>' +
           '<td>' + Util.esc(e.categoriaNome || "") + '</td>' +
           '<td class="r">' + (e.marco ? "marco" : e.duracao + " d") + '</td>' +
           '<td class="r">' + e.dataInicio.toLocaleDateString("pt-BR") + '</td>' +
@@ -129,13 +150,26 @@
           '<td class="r">' + Util.fmtPct(p.pct, 1) + '</td>' +
           '<td class="r">' + Util.fmtPct(p.acumPct, 1) + '</td></tr>';
       }).join("");
+      /* ⚠ A CURVA CONTINUA COM OS ADICIONAIS DENTRO (mudar a distribuição de
+         quem já recebeu proposta é decisão pendente — ver
+         `cronogramaParaModelo`), mas agora o TOTAL dela não fica calado ao
+         lado de um "Valor total" menor: a mesma frase que o modelo imprime
+         (js/proptpl.js, `tabelaCronograma`). Sem etapa opcional, nada. */
+      var notaOpc = "";
+      try {
+        var TP = _totalDoPapel(orc, Orcamento.totais(orc));
+        if (TP.adicionais > 0) {
+          notaOpc = '<p class="nota">Este cronograma de desembolso inclui os <b>adicionais opcionais</b> (' +
+            Util.fmtMoeda(TP.adicionais) + '). Sem eles, o valor total da proposta é <b>' + Util.fmtMoeda(TP.total) + '</b>.</p>';
+        }
+      } catch (eO) { notaOpc = ""; }
       return '<h3 style="margin-top:16px">Cronograma físico-financeiro</h3>' +
         '<table class="prop-tbl"><thead><tr><th>Mês</th><th class="r">Previsão de desembolso</th>' +
         '<th class="r">% do mês</th><th class="r">% acumulado</th></tr></thead><tbody>' + linhas + '</tbody>' +
         '<tfoot><tr><td>TOTAL</td><td class="r">' + Util.fmtMoeda(per.total) + '</td>' +
         '<td class="r">100,0%</td><td class="r"></td></tr></tfoot></table>' +
         '<p class="nota">Distribuição estimada a partir da duração de cada etapa no cronograma acima. ' +
-        'A medição e o faturamento seguem as condições comerciais desta proposta.</p>';
+        'A medição e o faturamento seguem as condições comerciais desta proposta.</p>' + notaOpc;
     },
 
     /* Gera o documento completo (innerHTML do container de impressão). */
@@ -151,10 +185,20 @@
       var hoje = new Date().toLocaleDateString("pt-BR");
       function hoje2ISO() { return Util.agoraISO(); }
 
-      var linhasSint = sint.map(function (s) {
+      /* ⚠ O "VALOR TOTAL" DESTE PAPEL É O DO ESCOPO CONTRATADO — ver
+         `_totalDoPapel`. As etapas opcionais saem SEPARADAS (escopo, resumo)
+         e rotuladas como adicionais; sem nenhuma, `sintObr` é o `sint`
+         inteiro, o peso é o de sempre e o documento sai byte a byte igual. */
+      var TP = _totalDoPapel(orc, t);
+      var sintObr = TP.temOpc ? sint.filter(function (s) { return !s.opcional; }) : sint;
+      var sintOpc = TP.temOpc ? sint.filter(function (s) { return s.opcional; }) : [];
+      var linhasSint = sintObr.map(function (s) {
+        /* peso sobre o total QUE A FOLHA IMPRIME: com adicional, `s.peso` é
+           sobre o total com opcionais e a coluna não fecharia 100% */
+        var peso = TP.temOpc ? (TP.total > 0 ? (Util.num(s.precoVenda) / TP.total) * 100 : 0) : s.peso;
         return '<tr><td>' + Util.esc(s.codigo) + '</td><td>' + Util.esc(s.nome) + '</td>' +
           '<td class="r">' + Util.fmtMoeda(s.precoVenda) + '</td>' +
-          '<td class="r">' + Util.fmtPct(s.peso, 1) + '</td></tr>';
+          '<td class="r">' + Util.fmtPct(peso, 1) + '</td></tr>';
       }).join("");
 
       var apresentacao = Util.naoVazio(c.apresentacao) ? Util.esc(c.apresentacao) :
@@ -186,7 +230,15 @@
             /* a data vence a frase: "15 dias corridos" não diz ao cliente
                até quando ele pode aceitar (ver Proposta.validade) */
             row("Validade", (function () { var v = Proposta.validade(orc, hoje2ISO()); return v.temData ? v.texto.replace(/^Válida até /, "") : v.frase; })()) +
-            rowRaw("Valor total", '<b style="color:var(--p-verde)">' + Util.fmtMoeda(t.precoVenda) + '</b>') +
+            /* ⚠ A CAPA É A PÁGINA QUE O CLIENTE DECORA. Ela imprimia
+               `precoVenda` (adicionais DENTRO) enquanto o resto do papel os
+               excluía — ver o roteiro no Resumo Financeiro. A linha dos
+               adicionais vem ANTES do "Valor total" de propósito: o CSS da
+               capa (`.ci-row:last-child b`) destaca a última linha, e o
+               destaque é do valor contratado. */
+            (TP.adicionais > 0 ? rowRaw("Adicionais opcionais", Util.fmtMoeda(TP.adicionais) +
+              ' <span style="font-weight:400;font-size:9pt">(não incluídos no valor total)</span>') : '') +
+            rowRaw("Valor total", '<b style="color:var(--p-verde)">' + Util.fmtMoeda(TP.total) + '</b>') +
           '</div>' +
           '<div class="capa-rod">' + Util.esc(empresa) +
             (emp && Util.naoVazio(emp.cnpj) ? ' · CNPJ ' + Util.esc(emp.cnpj) : '') +
@@ -201,9 +253,14 @@
         'acrescidas de BDI de <b>' + Util.fmtPct(t.bdiPercentual) + '</b>.</p>'));
 
       // 3) ENTENDIMENTO DO ESCOPO
-      var escopoLi = sint.map(function (s) { return '<li><b>' + Util.esc(s.codigo) + '</b> — ' + Util.esc(s.nome) + ' (' + s.qtdItens + ' itens)</li>'; }).join("");
+      function liEscopo(s) { return '<li><b>' + Util.esc(s.codigo) + '</b> — ' + Util.esc(s.nome) + ' (' + s.qtdItens + ' itens)</li>'; }
+      var escopoLi = sintObr.map(liEscopo).join("");
+      var escopoOpcLi = sintOpc.map(liEscopo).join("");
+      /* "contempla as seguintes etapas" com a opcional na lista é a proposta
+         dizendo que o escopo a inclui — e três seções depois, que não */
       P.push(pg(sc("Entendimento do Escopo"),
-        '<p>O escopo dos serviços contempla as seguintes etapas:</p><ul>' + (escopoLi || '<li>—</li>') + '</ul>'));
+        '<p>O escopo dos serviços contempla as seguintes etapas:</p><ul>' + (escopoLi || '<li>—</li>') + '</ul>' +
+        (escopoOpcLi ? '<p>Orçadas à parte, como <b>adicionais opcionais</b> (não incluídas no valor total):</p><ul>' + escopoOpcLi + '</ul>' : '')));
 
       // 4) INCLUSO / EXCLUSO
       P.push(pg(sc("Está Incluso / Não Está Incluso"),
@@ -234,26 +291,52 @@
       var cronoHTML = this._cronograma(orc);
       if (cronoHTML) P.push(pg(sc("Cronograma de Execução"), cronoHTML));
 
-      /* ⚠ DIVERGÊNCIA CONHECIDA, DECLARADA, NÃO CONSERTADA (11/09/2026).
-         A proposta CLÁSSICA (esta) imprime a etapa marcada como opcional como
-         linha normal do Resumo Financeiro e fecha "VALOR TOTAL DA PROPOSTA"
-         com `precoVenda` — adicionais DENTRO. A proposta POR MODELO
-         (`blocosParaModelo` + js/proptpl.js) imprime "Valor total" =
-         `precoObrigatorio` e joga os adicionais num bloco à parte. No mesmo
-         orçamento (110 obrigatório + 110 opcional) uma sai R$ 220,00 e a
-         outra R$ 110,00.
-         Por que não foi mudado junto do conserto do BDI: separar os dois
-         blocos aqui muda um documento que `tools/test-proposta-campos-texto.js`
-         trava byte a byte, e a fixture dele TEM etapa opcional — é decisão de
-         produto (qual dos dois totais é o certo), não conserto de defeito, e
-         número já impresso não muda de carona. Enquanto não decidir: quem tem
-         etapa opcional deve usar a proposta POR MODELO. */
+      /* ⚠ O VALOR TOTAL NÃO SOMA O QUE A PROPOSTA DECLARA NÃO INCLUSO
+         (consertado em 13/09/2026 — era a "divergência conhecida" de 11/09).
+         Roteiro do defeito: a proposta CLÁSSICA (esta) listava a etapa
+         marcada como opcional como linha normal do Resumo Financeiro e
+         fechava a capa e o "VALOR TOTAL DA PROPOSTA" com `precoVenda` —
+         adicionais DENTRO —, enquanto a proposta POR MODELO
+         (`blocosParaModelo` + js/proptpl.js) já imprimia `precoObrigatorio`
+         com os adicionais num bloco à parte, e o próprio botão que marca a
+         etapa promete "sai fora do valor total" (js/app.js, data-opc-etapa).
+         Numa obra de demonstração montada de ponta a ponta (galpão, 16
+         etapas, 13 a 16 opcionais) a capa e o resumo disseram R$ 534.516,58
+         e a seção "Não incluso" da MESMA proposta excluía as etapas
+         opcionais: o contrato era R$ 504.501,10. O cliente decora a capa.
+         O decidido: o total impresso é o do escopo contratado
+         (`precoObrigatorio`); os adicionais saem numa tabela própria, com o
+         subtotal deles e a frase "não incluídos". O "Custo direto de
+         referência" acompanha — com o custo dos adicionais dentro ele não
+         seria a referência DAQUELE total.
+         ⚠ SEM ETAPA OPCIONAL, NADA MUDA: `_totalDoPapel` devolve o próprio
+         `precoVenda` (e não o `precoObrigatorio`, que é arredondado a 2 casas
+         e no modo "nenhum" poderia virar 1 centavo no papel) —
+         tools/test-proposta-total-opcional.js compara com o master byte a
+         byte. */
+      var custoRef = t.custoDireto;
+      if (TP.temOpc) {
+        try { custoRef = Math.round((Util.num(t.custoDireto) - Util.num(Orcamento.calcular(orc).custoOpcional)) * 100) / 100; }
+        catch (eCR) { custoRef = t.custoDireto; }
+      }
+      var tabOpc = "";
+      if (sintOpc.length) {
+        tabOpc = '<h3 style="margin-top:16px">Adicionais opcionais</h3>' +
+          '<p class="nota">Etapas orçadas à parte, <b>não incluídas no valor total acima</b>.</p>' +
+          '<table class="prop-tbl"><thead><tr><th>Etapa</th><th>Descrição</th><th class="r">Valor</th></tr></thead><tbody>' +
+          sintOpc.map(function (s) {
+            return '<tr><td>' + Util.esc(s.codigo) + '</td><td>' + Util.esc(s.nome) + '</td>' +
+              '<td class="r">' + Util.fmtMoeda(s.precoVenda) + '</td></tr>';
+          }).join("") + '</tbody>' +
+          '<tfoot><tr><td colspan="2">TOTAL DOS ADICIONAIS OPCIONAIS</td><td class="r">' + Util.fmtMoeda(TP.adicionais) + '</td></tr></tfoot></table>';
+      }
       // 6) RESUMO FINANCEIRO
       P.push(pg(sc("Resumo Financeiro"),
         '<table class="prop-tbl"><thead><tr><th>Etapa</th><th>Descrição</th><th class="r">Valor</th><th class="r">Peso</th></tr></thead>' +
         '<tbody>' + (linhasSint || '<tr><td colspan="4">—</td></tr>') + '</tbody>' +
-        '<tfoot><tr><td colspan="2">VALOR TOTAL DA PROPOSTA</td><td class="r">' + Util.fmtMoeda(t.precoVenda) + '</td><td class="r">100%</td></tr></tfoot></table>' +
-        '<p class="nota">Valores com BDI de ' + Util.fmtPct(t.bdiPercentual) + ' incluso. Custo direto de referência: ' + Util.fmtMoeda(t.custoDireto) + '.</p>'));
+        '<tfoot><tr><td colspan="2">VALOR TOTAL DA PROPOSTA</td><td class="r">' + Util.fmtMoeda(TP.total) + '</td><td class="r">100%</td></tr></tfoot></table>' +
+        tabOpc +
+        '<p class="nota">Valores com BDI de ' + Util.fmtPct(t.bdiPercentual) + ' incluso. Custo direto de referência: ' + Util.fmtMoeda(custoRef) + '.</p>'));
 
       // 7) CONDIÇÕES COMERCIAIS
       P.push(pg(sc("Condições Comerciais"),
@@ -293,6 +376,35 @@
   function row(k, v) { return '<div class="ci-row"><span>' + Util.esc(k) + '</span><b>' + Util.esc(v) + '</b></div>'; }
   function rowRaw(k, v) { return '<div class="ci-row"><span>' + Util.esc(k) + '</span><b>' + v + '</b></div>'; }
   function bloco(titulo, txt) { return '<div class="bloco"><h3>' + Util.esc(titulo) + '</h3><p>' + Util.esc(txt) + '</p></div>'; }
+
+  /* =====================================================================
+   * O TOTAL QUE VAI PARA O CLIENTE — uma regra para todo papel deste arquivo
+   *
+   * ⚠ `precoVenda` INCLUI AS ETAPAS OPCIONAIS (js/orcamento.js, `calcular`:
+   *   "etapa opcional é separação de papel, não de conta"). O número que o
+   *   cliente lê como preço é o do escopo contratado, `precoObrigatorio`; os
+   *   adicionais são `precoOpcional`, impressos à parte. Capa, resumo,
+   *   desembolso e WhatsApp perguntam AQUI — o defeito de 13/09/2026 foi
+   *   justamente um consumidor (a capa) ficar para trás quando o corpo
+   *   passou a separar.
+   * ⚠ SEM ETAPA OPCIONAL DEVOLVE O PRÓPRIO `precoVenda`, não o
+   *   `precoObrigatorio`: este sai arredondado a 2 casas por diferença e, no
+   *   arredondamento "nenhum", pode diferir de `precoVenda` no terceiro
+   *   decimal — o que mudaria um centavo em papel já entregue.
+   * ⚠ "Tem opcional" é a MARCA na etapa (o que `calcular` também lê), não o
+   *   valor: etapa opcional ainda vazia continua sendo opcional.
+   * ===================================================================== */
+  function _totalDoPapel(orc, t) {
+    t = t || {};
+    var ets = (orc && Array.isArray(orc.etapas)) ? orc.etapas : [];
+    var temOpc = ets.filter(function (e) { return e && e.opcional; }).length > 0;
+    if (!temOpc) return { temOpc: false, total: t.precoVenda, adicionais: 0 };
+    return {
+      temOpc: true,
+      total: Util.num(t.precoObrigatorio != null ? t.precoObrigatorio : t.precoVenda),
+      adicionais: Util.num(t.precoOpcional)
+    };
+  }
   function pg(titulo, corpo) {
     // White-label: marca d'água e rodapé são da EMPRESA DO CLIENTE (configurável em ⚙ Empresa)
     var temEmp = typeof Empresa !== "undefined";
@@ -321,7 +433,8 @@
    *   `precoUnit`/`precoTotal` atravessam, e `auditar` abaixo é a segunda
    *   trava — a primeira é esta função nunca ler o campo errado.
    *
-   * ⚠ E O MOTOR NÃO SOMA. `total` vem de `Orcamento.totais().precoVenda`, a
+   * ⚠ E O MOTOR NÃO SOMA. `total` vem de `Orcamento.totais()` (o
+   *   `precoObrigatorio`; ver `blocosParaModelo` e `_totalDoPapel`), a
    *   mesma conta da tela, do Excel e do laudo. Somar de novo aqui criaria um
    *   quarto número para a mesma pergunta — e é o do papel que o cliente
    *   confere.
@@ -427,7 +540,13 @@
     linhas.push((quem ? "Olá, " + quem + "! " : "Olá! ") + "Segue a nossa proposta"
       + (Util.naoVazio(orc && orc.nome) ? " para " + orc.nome : "") + ".");
     if (Util.naoVazio(orc && orc.numero)) linhas.push("Proposta " + orc.numero + ".");
-    if (t.precoVenda) linhas.push("Valor: " + Util.fmtMoeda(t.precoVenda) + ".");
+    /* o valor da mensagem é o MESMO da capa do PDF que vai anexado: com
+       adicional, o do escopo contratado, e os adicionais numa linha à parte */
+    var TP = _totalDoPapel(orc, t);
+    if (TP.total) linhas.push("Valor: " + Util.fmtMoeda(TP.total) + ".");
+    /* "fora desse valor" sem linha de valor antes (tudo marcado opcional) era
+       uma frase apontando para nada — ali os adicionais vão ditos à parte */
+    if (TP.adicionais > 0) linhas.push((TP.total ? "Adicionais opcionais, fora desse valor: " : "Adicionais opcionais, orçados à parte: ") + Util.fmtMoeda(TP.adicionais) + ".");
     if (v.temData) linhas.push(v.texto.replace(/ —.*$/, "") + ".");
     var c = (orc && orc.comercial) || {};
     if (Util.naoVazio(c.prazoExecucao)) linhas.push("Prazo: " + String(c.prazoExecucao).trim().replace(/\.$/, "") + ".");

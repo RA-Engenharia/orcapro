@@ -83,6 +83,9 @@
 
   function fmtMoeda(n) { return "R$ " + fmtBR(n, 2); }
 
+  /* limpa o ruído de float de uma diferença entre valores já em centavos */
+  function r2(n) { return Math.round(num(n) * 100) / 100; }
+
   /* Mesma fórmula de Bdi.aplicar (js/bdi.js): custo × (1 + pct/100). */
   function aplicarBdi(custo, pct) { return num(custo) * (1 + num(pct) / 100); }
 
@@ -136,7 +139,7 @@
       if (dados && dados.etapas) {
         for (var di = 0; di < dados.etapas.length; di++) {
           var de = dados.etapas[di] || {};
-          linhas.push({ codigo: de.codigo, nome: de.nome, custo: num(de.custoDireto), preco: num(de.precoVenda) });
+          linhas.push({ codigo: de.codigo, nome: de.nome, custo: num(de.custoDireto), preco: num(de.precoVenda), opcional: !!de.opcional });
         }
         custoTotal = num(dados.custoDireto);
         precoTotal = num(dados.precoVenda);
@@ -149,12 +152,54 @@
           (Array.isArray(e.itens) ? e.itens : []).forEach(function (it) {
             if (it) c += num(it.quantidade) * num(it.custoUnitario);
           });
-          linhas.push({ codigo: e.codigo, nome: e.nome, custo: c, preco: aplicarBdi(c, pct) });
+          linhas.push({ codigo: e.codigo, nome: e.nome, custo: c, preco: aplicarBdi(c, pct), opcional: !!e.opcional });
           custoTotal += c;
         });
         precoTotal = aplicarBdi(custoTotal, pct);
         valorBdi = precoTotal - custoTotal;
       }
+
+      /* =================================================================
+       * ⚠ O PREÇO DO SLIDE É O DO ESCOPO CONTRATADO (13/09/2026)
+       *
+       * Roteiro do defeito: o slide "Investimento" mostrava `precoVenda`, que
+       * inclui as etapas marcadas como opcionais — as mesmas que o botão da
+       * planilha promete tirar "do valor total" e que a proposta põe em "Não
+       * incluso". Numa obra de demonstração (galpão, 4 etapas opcionais) o
+       * slide projetado na reunião disse R$ 534.516,58 para um contrato de
+       * R$ 504.501,10, com os três números (custo, BDI, preço) somando os
+       * adicionais. É o número que o cliente anota.
+       *
+       * Com etapa opcional: custo, BDI e preço passam a ser os do obrigatório
+       * (os três continuam fechando: custo + BDI = preço), os adicionais
+       * aparecem numa linha própria embaixo, e as etapas opcionais saem da
+       * tabela de etapas para slide(s) "Adicionais opcionais", com subtotal.
+       * Os números vêm prontos de `abrir()` (Orcamento.totais/calcular); o
+       * fallback sem `dados` separa pelas linhas, com a mesma fórmula.
+       * ⚠ SEM ETAPA OPCIONAL NENHUMA VARIÁVEL É TOCADA: o deck sai idêntico
+       * (tools/test-proposta-total-opcional.js compara com o de antes).
+       * ================================================================= */
+      var temOpc = false, custoOpcL = 0, precoOpcL = 0, precoAdic = 0;
+      for (var li = 0; li < linhas.length; li++) {
+        if (linhas[li].opcional) { temOpc = true; custoOpcL += linhas[li].custo; precoOpcL += linhas[li].preco; }
+      }
+      if (temOpc) {
+        var custoOpc, precoObr;
+        if (dados && dados.precoObrigatorio != null) {
+          precoObr = num(dados.precoObrigatorio);
+          precoAdic = num(dados.precoOpcional);
+          custoOpc = dados.custoOpcional != null ? num(dados.custoOpcional) : custoOpcL;
+        } else {
+          precoAdic = precoOpcL;
+          precoObr = precoTotal - precoOpcL;
+          custoOpc = custoOpcL;
+        }
+        custoTotal = r2(custoTotal - custoOpc);
+        precoTotal = r2(precoObr);
+        valorBdi = r2(precoTotal - custoTotal);
+      }
+      var linhasObr = temOpc ? linhas.filter(function (l) { return !l.opcional; }) : linhas;
+      var linhasOpc = temOpc ? linhas.filter(function (l) { return l.opcional; }) : [];
 
       var out = [];
 
@@ -182,13 +227,14 @@
         '<div class="ap-num ap-venda"><div class="ap-num-rotulo">Preço de venda</div>' +
         '<div class="ap-num-valor">' + fmtMoeda(precoTotal) + "</div></div>" +
         "</div>" +
+        (precoAdic > 0 ? '<div class="ap-opc">+ Adicionais opcionais: ' + fmtMoeda(precoAdic) + " — não incluídos no preço de venda</div>" : "") +
         (basesTxt ? '<div class="ap-bases">Bases de preço: ' + esc(basesTxt) + "</div>" : "");
       out.push({ id: "numeros", titulo: "Investimento", html: htmlNums });
 
       // ---- 3) ETAPAS (visão executiva, sem itens; quebra a cada 14 linhas) ----
-      if (linhas.length) {
+      if (linhasObr.length) {
         var blocos = [];
-        for (var i = 0; i < linhas.length; i += MAX_LINHAS) blocos.push(linhas.slice(i, i + MAX_LINHAS));
+        for (var i = 0; i < linhasObr.length; i += MAX_LINHAS) blocos.push(linhasObr.slice(i, i + MAX_LINHAS));
         blocos.forEach(function (bloco, bi) {
           var titulo = blocos.length > 1 ? "Etapas (" + (bi + 1) + "/" + blocos.length + ")" : "Etapas";
           var rows = "";
@@ -209,6 +255,36 @@
             '<th class="ap-dir">% do total</th>' +
             "</tr></thead><tbody>" + rows + "</tbody></table>";
           out.push({ id: blocos.length > 1 ? "etapas-" + (bi + 1) : "etapas", titulo: titulo, html: html });
+        });
+      }
+
+      // ---- 3b) ADICIONAIS OPCIONAIS (só existe com etapa opcional) ----
+      /* fora da tabela de etapas: lá o "% do total" é sobre o preço de venda
+         contratado, e uma linha de adicional ali seria somada de cabeça pelo
+         cliente. O subtotal vai no último slide do bloco. */
+      if (linhasOpc.length) {
+        var blocosO = [];
+        for (var oi = 0; oi < linhasOpc.length; oi += MAX_LINHAS) blocosO.push(linhasOpc.slice(oi, oi + MAX_LINHAS));
+        blocosO.forEach(function (bloco, bi) {
+          var tituloO = blocosO.length > 1 ? "Adicionais opcionais (" + (bi + 1) + "/" + blocosO.length + ")" : "Adicionais opcionais";
+          var rowsO = "";
+          bloco.forEach(function (l) {
+            rowsO += '<tr data-opcional="1">' +
+              '<td class="ap-cod">' + esc(l.codigo) + "</td>" +
+              "<td>" + esc(l.nome) + "</td>" +
+              '<td class="ap-dir">' + fmtMoeda(l.custo) + "</td>" +
+              '<td class="ap-dir">' + fmtMoeda(l.preco) + "</td></tr>";
+          });
+          var rodO = bi === blocosO.length - 1
+            ? '<tfoot><tr><td colspan="3">Total dos adicionais</td><td class="ap-dir">' + fmtMoeda(precoAdic) + "</td></tr></tfoot>"
+            : "";
+          var htmlO = '<h2 class="ap-h2">' + esc(tituloO) + "</h2>" +
+            '<div class="ap-opc-nota">Orçados à parte — não incluídos no preço de venda.</div>' +
+            '<table class="ap-tbl"><thead><tr>' +
+            "<th>Código</th><th>Etapa</th>" +
+            '<th class="ap-dir">Custo direto</th><th class="ap-dir">Preço c/ BDI</th>' +
+            "</tr></thead><tbody>" + rowsO + "</tbody>" + rodO + "</table>";
+          out.push({ id: blocosO.length > 1 ? "adicionais-" + (bi + 1) : "adicionais", titulo: tituloO, html: htmlO });
         });
       }
 
@@ -298,6 +374,11 @@
           var T = global.Orcamento.totais(orc), S = global.Orcamento.sintetico(orc);
           dados = {
             custoDireto: T.custoDireto, bdiValor: T.bdiValor, precoVenda: T.precoVenda,
+            /* a separação do escopo contratado × adicionais (ver slides) — a
+               MESMA conta que a proposta imprime; `custoOpcional` só existe
+               em `calcular` */
+            precoObrigatorio: T.precoObrigatorio, precoOpcional: T.precoOpcional,
+            custoOpcional: global.Orcamento.calcular(orc).custoOpcional,
             pct: T.bdiPercentual, etapas: S
           };
         }
@@ -460,6 +541,10 @@
         ".ap-num-valor{font-size:clamp(30px,4.6vw,64px);font-weight:800;letter-spacing:-1px;white-space:nowrap}" +
         ".ap-venda .ap-num-valor{font-size:clamp(44px,8vw,110px);color:var(--verde-claro,#22c55e)}" +
         ".ap-bases{margin-top:6vh;font-size:clamp(12px,1.3vw,17px);color:#7f99b3}" +
+        // adicionais opcionais: fora do preço de venda, e dito com outra cor
+        ".ap-opc{margin-top:4vh;font-size:clamp(15px,1.9vw,26px);color:#fbbf24;font-weight:700;text-align:center}" +
+        ".ap-opc-nota{margin:-16px 0 22px;font-size:clamp(13px,1.5vw,19px);color:#fbbf24}" +
+        ".ap-tbl tfoot td{padding:12px 16px;border-top:2px solid rgba(255,255,255,.18);font-weight:800}" +
         // tabela de etapas (legível a 3 metros)
         ".ap-tbl{border-collapse:collapse;font-size:clamp(16px,1.7vw,22px);width:min(92vw,1280px)}" +
         ".ap-tbl th{font-size:clamp(12px,1.2vw,15px);text-transform:uppercase;letter-spacing:.1em;color:#8fa9c2;" +

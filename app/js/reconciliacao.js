@@ -52,6 +52,11 @@
     return isFinite(n) ? n : 0;
   }
   function texto(s) { return String(s == null ? "" : s).trim(); }
+  /* módulo puro, sem `Util`: "R$ 24.827,61" à mão — só para o texto do achado */
+  function moeda(v) {
+    var p = (Math.round(num(v) * 100) / 100).toFixed(2).split(".");
+    return "R$ " + p[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".") + "," + p[1];
+  }
 
   /* a segunda-feira da semana de uma data ISO — mesma chave da Folha Semanal */
   function semanaDe(iso) {
@@ -69,7 +74,114 @@
   }
 
   /* --------------------------------------------------------------------
-   * `d`: { fsLancamentos, financeiro, producaoMed, medicoes, obras, hoje }
+   * BOLETIM PAGO QUE NÃO ESTÁ NO FINANCEIRO
+   *
+   * ⚠ O ROTEIRO (revisão do orçamentista, 13/09/2026). Na mesma obra, o
+   *   boletim 01a com status PAGA; a tela de Medições dizendo "Recebido
+   *   R$ 24.827,61"; o Painel dizendo "Recebido R$ 0,00"; o Financeiro vazio.
+   *   Três telas, três respostas para "quanto entrou".
+   *   Pelo fluxo do app isso NÃO acontece: o botão "Registrar pgto" (e o
+   *   select do formulário) lança a receita com o carimbo `docTipo:"MED"` +
+   *   `docId`. O boletim da revisão foi gravado "pago" por fora — e é
+   *   exatamente o que chega por backup antigo, importação, dado de outro
+   *   aparelho ou baixa registrada antes de 01/09/2026. O Painel lê o
+   *   Financeiro e estava CERTO em somar zero; o que mentia era o silêncio:
+   *   nada na tela dizia que havia um boletim pago que o caixa não conhece.
+   *
+   * ⚠ O QUE ESTA FUNÇÃO NÃO FAZ: não lança, não liga e não conserta. Dinheiro
+   *   se liga por carimbo ou não se liga (skill `dinheiro`). Casar a receita
+   *   pelo valor, pela descrição "Recebimento medição 01a" ou pela data é o
+   *   palpite que um dia trava um pagamento legítimo ou libera um duplicado.
+   *
+   * ⚠ POR QUE O CARIMBO SOZINHO NÃO BASTA — MEDIDO, NÃO DEDUZIDO. O carimbo
+   *   da receita da medição só existe desde 01/09/2026 (a6ff289). Na base de
+   *   trabalho da RA (backup de 12/09) havia 4 boletins pagos e os 4 SEM
+   *   receita carimbada — com as 5 receitas de medição lá, lançadas pela
+   *   versão antiga. Um aviso "pago sem receita pelo carimbo" acenderia para
+   *   todo boletim histórico das 38 instalações: alarme que toca sempre e
+   *   que ensina a ignorar o dia em que ele está certo.
+   *   Por isso o aviso só afirma o que dá para afirmar sem palpite: o
+   *   boletim NÃO tem receita com o carimbo dele E a obra dele NÃO tem
+   *   nenhuma receita viva sem carimbo que pudesse ser a dele. Não se compara
+   *   valor. Quando existe receita sem carimbo na obra, o aviso cala — ele
+   *   não tem como saber de qual boletim ela é, e não finge saber. O preço
+   *   aceito: obra com 3 boletins pagos e só 1 receita antiga lançada fica
+   *   quieta. Calar ali não afirma que está tudo bem; o cartão continua
+   *   dizendo que mostra só o que está no Financeiro.
+   *
+   * `receitaDoBoletim(m)` é INJETADA: devolve o lançamento vivo com o carimbo
+   *   do boletim, ou null. Quem responde é `Gestao._lancVivoDoDoc` — a MESMA
+   *   função que trava o "Registrar pgto" em dobro. Uma cópia dela aqui
+   *   divergiria na primeira vez que o conceito de "lançamento anulado"
+   *   crescer, e o Painel diria "sem receita" do mesmo boletim cujo pagamento
+   *   a trava recusa por "já tem receita". Sem a função, não há como conferir
+   *   pelo carimbo — e então não se afirma nada (lista vazia, `verificado`
+   *   false).
+   * ------------------------------------------------------------------ */
+  function statusAnulado(f) {
+    var st = f && f.status;
+    /* pergunta ao FinStatus quando ele está carregado — a lista de estados
+       mora lá; sem ele, a mesma comparação que `Gestao._finAnulado` faz */
+    if (typeof FinStatus !== "undefined" && FinStatus && FinStatus.norm) return FinStatus.norm(st) === "cancelado";
+    return String(st == null ? "" : st).trim().toLowerCase() === "cancelado";
+  }
+  function pagasSemReceita(medicoes, financeiro, receitaDoBoletim) {
+    var r = { verificado: typeof receitaDoBoletim === "function", total: 0, valor: 0, liquido: 0, itens: [] };
+    if (!r.verificado) return r;
+    var fin = financeiro || [];
+    /* o espelho do estorno aponta para o original: estornado = anulado */
+    var estornados = {};
+    fin.forEach(function (f) { if (f && f.estornoDe) estornados[texto(f.estornoDe)] = 1; });
+    /* obras com ALGUMA receita viva sem carimbo — as que podem ser de boletim
+       antigo. Fica de fora: o espelho do estorno (é crédito, não recebimento),
+       o lançamento estornado ou cancelado (registro morto) e a devolução de
+       retenção (`retencaoDe`: é outro dinheiro, nasce só DEPOIS de o boletim
+       estar pago, e calaria justamente o caso que este aviso existe para
+       mostrar). */
+    var obraComReceitaSemCarimbo = {}, semCarimboPorObra = {}, nSemCarimbo = 0;
+    fin.forEach(function (f) {
+      if (!f || texto(f.tipo) !== "receita") return;
+      if (texto(f.docTipo)) return;
+      if (f.estornoDe || f.retencaoDe) return;
+      if (f.id != null && estornados[texto(f.id)]) return;
+      if (statusAnulado(f)) return;
+      obraComReceitaSemCarimbo[texto(f.obraId)] = 1;
+      semCarimboPorObra[texto(f.obraId)] = (semCarimboPorObra[texto(f.obraId)] || 0) + 1;
+      nSemCarimbo++;
+    });
+    /* ⚠ A RECEITA ANTIGA QUE ESTÁ FORA DA OBRA DO BOLETIM (revisão de
+       13/09/2026). Receita sem carimbo lançada SEM obra, ou numa obra
+       diferente (o boletim trocou de obra depois), não cala o aviso — e nem
+       deve: pela obra não dá para dizer que é dela. Mas o dinheiro dela ESTÁ
+       no Recebido do Painel sem filtro de obra, e o cartão afirmava "não estão
+       neste número"; pior, a ação mandava "Registrar pgto", cuja trava só
+       enxerga carimbo — e lançava o mesmo dinheiro de novo.
+       Aqui se CONTA quantas existem (nunca se compara valor, descrição ou
+       data: seria ligar por semelhança). O texto usa a contagem para mandar
+       conferir ANTES de registrar, e para não afirmar o que não sabe. */
+    function foraDaObra(obraId) { return nSemCarimbo - (semCarimboPorObra[texto(obraId)] || 0); }
+    (medicoes || []).forEach(function (m) {
+      if (!m || texto(m.status) !== "paga") return;   /* mesma régua do PorObra.totaisMedicoes e do Atencao.retencaoPresa */
+      if (receitaDoBoletim(m)) return;
+      if (obraComReceitaSemCarimbo[texto(m.obraId)]) return;
+      var bruto = num(m.valor);
+      if (!(bruto > 0)) return;
+      /* o caixa recebe o LÍQUIDO: é o que o "Registrar pgto" lança */
+      var liq = bruto * (1 - num(m.retencao) / 100);
+      r.total++; r.valor += bruto; r.liquido += liq;
+      r.itens.push({ id: m.id, numero: texto(m.numero), obraId: texto(m.obraId),
+        valor: bruto, liquido: liq, dataPgto: texto(m.dataPgto).slice(0, 10),
+        semCarimboForaDaObra: foraDaObra(m.obraId) });
+    });
+    /* quantas receitas sem carimbo fora da obra de ALGUM boletim listado —
+       é o número que o cartão do Painel usa para não afirmar "não estão aqui" */
+    r.semCarimboForaDaObra = r.itens.reduce(function (mx, it) { return Math.max(mx, it.semCarimboForaDaObra); }, 0);
+    return r;
+  }
+
+  /* --------------------------------------------------------------------
+   * `d`: { fsLancamentos, financeiro, producaoMed, medicoes, obras, hoje,
+   *        receitaDoBoletim }
    * `opc.diasMedicao`: quantos dias uma medição aprovada pode ficar sem o
    *    recebimento registrado antes de virar achado (padrão 15).
    * ------------------------------------------------------------------ */
@@ -172,6 +284,46 @@
       });
     });
 
+    /* ---- 3b) BOLETIM PAGO QUE NÃO ESTÁ NO FINANCEIRO ----
+       Ver `pagasSemReceita`. Sem prazo, ao contrário do 3): aqui não existe
+       estado normal de passagem — pelo fluxo do app a receita nasce no mesmo
+       clique que marca o boletim como pago. Se ela não está lá, não vai
+       chegar sozinha.
+       Gravidade 3: o documento AFIRMA que o dinheiro entrou e o caixa não o
+       tem. É mais grave que o 3), onde ninguém afirma nada ainda. */
+    var semRec = pagasSemReceita(d.medicoes, fin, d.receitaDoBoletim);
+    semRec.itens.forEach(function (it) {
+      var bruto = it.valor, liq = it.liquido;
+      achados.push({
+        tipo: "medicao-paga-sem-receita", gravidade: 3,
+        /* "sem receita encontrada", não "que não está": ver o ⚠ do `porque` */
+        titulo: "Boletim marcado como pago sem receita encontrada no Financeiro",
+        detalhe: "Medição " + (it.numero || "—")
+          + (nomeObra[it.obraId] ? " · " + nomeObra[it.obraId] : "")
+          + (it.dataPgto ? " · pago em " + it.dataPgto.split("-").reverse().join("/") : "")
+          + (Math.abs(bruto - liq) > 0.005 ? " · valor líquido de retenção (bruto " + moeda(bruto) + ")" : ""),
+        /* ⚠ "NÃO ENCONTREI", nunca "não está": receita antiga sem carimbo sem
+           obra (ou de outra obra) pode ser este dinheiro, e ela está no
+           Recebido do Painel — ver `semCarimboForaDaObra` em pagasSemReceita. */
+        porque: "O boletim diz que foi pago, mas não encontrei a receita dele no Financeiro: nenhuma com o carimbo do boletim, e nenhuma receita sem carimbo nesta obra."
+          + (it.semCarimboForaDaObra > 0
+            ? " Há " + it.semCarimboForaDaObra + " receita(s) sem carimbo sem obra ou de outra obra — se uma delas é este recebimento, o dinheiro já está no Recebido do Painel."
+            : ""),
+        valor: liq, obraId: it.obraId, view: "medicoes",
+        /* ⚠ A PORTA NÃO PODE DUPLICAR NEM APAGAR A DATA. A trava do "Registrar
+           pgto" só enxerga carimbo: com a receita antiga fora da obra, ele
+           lançaria o mesmo dinheiro de novo. E ele grava a data de HOJE
+           (gestao.js, "pagar-medicao"), enquanto o boletim foi pago em outro dia
+           — a data original se perde na reabertura, que limpa `dataPgto`. */
+        acao: (it.semCarimboForaDaObra > 0
+            ? "ANTES de registrar: no Financeiro, confira as " + it.semCarimboForaDaObra + " receita(s) sem carimbo sem obra ou de outra obra. Se uma delas é o recebimento deste boletim, ponha nela a obra certa e NÃO registre de novo — o aviso some. "
+            : "")
+          + "Se o cliente pagou e a receita não está lá: abra a medição, volte o Status para Aprovada e use “Registrar pgto” — a receita entra com o carimbo do boletim, mas com a data de HOJE"
+          + (it.dataPgto ? "; depois, no Financeiro, troque a data dela para " + it.dataPgto.split("-").reverse().join("/") + ", a do pagamento que o boletim registrava" : "")
+          + ". Se não pagou, volte o Status para Aprovada: é cobrança em aberto."
+      });
+    });
+
     /* ---- 4) APURAÇÃO DA REMUNERAÇÃO VARIÁVEL APROVADA E NÃO ENVIADA À FOLHA ----
        ⚠ ESTA É A PONTE MAIS SILENCIOSA DAS QUATRO. `rv-folha` grava
        `fsLancamentos` na apuração e muda o estado para "paga". Uma apuração que
@@ -221,15 +373,24 @@
       /* separado porque a leitura muda: um é custo que falta (a margem está
          mentindo para cima), o outro é receita que falta (o caixa está
          mentindo para baixo) */
-      custoQueFalta: achados.filter(function (a) { return a.tipo !== "medicao-sem-recebimento"; })
+      /* ⚠ o custo era "tudo que não é medição sem recebimento" — pela
+         negação. O boletim pago sem receita, que é RECEITA, cairia no custo e
+         a frase do Painel diria "de custo que ainda não entrou na obra" sobre
+         dinheiro do cliente. Lista positiva de receita, então. */
+      custoQueFalta: achados.filter(function (a) { return !RECEITA[a.tipo]; })
         .reduce(function (s, a) { return s + a.valor; }, 0),
       receitaQueFalta: achados.filter(function (a) { return a.tipo === "medicao-sem-recebimento"; })
+        .reduce(function (s, a) { return s + a.valor; }, 0),
+      /* separado do de cima porque a frase é outra: lá ninguém afirmou que
+         recebeu; aqui o boletim afirma e o caixa não tem */
+      pagoSemReceita: achados.filter(function (a) { return a.tipo === "medicao-paga-sem-receita"; })
         .reduce(function (s, a) { return s + a.valor; }, 0),
       itens: achados
     };
   }
+  var RECEITA = { "medicao-sem-recebimento": 1, "medicao-paga-sem-receita": 1 };
 
-  var Reconciliacao = { achar: achar, semanaDe: semanaDe, diasEntre: diasEntre };
+  var Reconciliacao = { achar: achar, semanaDe: semanaDe, diasEntre: diasEntre, pagasSemReceita: pagasSemReceita };
   global.Reconciliacao = Reconciliacao;
   if (typeof module !== "undefined" && module.exports) module.exports = Reconciliacao;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

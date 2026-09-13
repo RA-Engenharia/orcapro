@@ -283,6 +283,16 @@
     var credito = deps.credito || "";
     var bdiPct = num(orc.bdi && orc.bdi.percentual) || 0;
     var etapas = Array.isArray(orc.etapas) ? orc.etapas : [];
+    /* ⚠ ADICIONAL OPCIONAL NA PLANILHA (revisão de 13/09/2026). O xlsx soma
+       as etapas marcadas como opcionais no TOTAL (é o `precoVenda`, o mesmo
+       da tela) e nenhuma célula dizia isso — a única ocorrência da palavra
+       era o JSON da aba _meta. Pelo fluxo do app, orçamento com R$ 11.681,35
+       de adicionais: Sintética com TOTAL R$ 163.380,35 e a proposta ao lado
+       dizendo R$ 151.699,00. O total NÃO muda (as fórmulas continuam as de
+       sempre); a etapa sai marcada e os dois subtotais saem escritos.
+       Sem etapa opcional, nenhuma célula nova — o arquivo é o de antes. */
+    var _temOpcX = etapas.some(function (e) { return e && e.opcional; });
+    var ROT_OPC_X = 'adicional opcional (fora do valor total da proposta)';
 
     /* ---- Política de ARREDONDAMENTO (Passo 2 do assistente) ----
      * A planilha é VIVA (fórmulas). Se as fórmulas não seguirem o mesmo
@@ -407,7 +417,7 @@
       // nome (ou sem codigo) casavam no mesmo SUMIFS e DOBRAVAM o valor da etapa.
       var etKey = (etIdx + 1) + '|' + (et.codigo || et.nome || 'Etapa');
       wa.mergeCells('A' + r + ':J' + r);
-      var bc = wa.getCell('A' + r); bc.value = (etIdx + 1) + '  ' + (et.nome || 'Etapa'); bc.font = { bold: true, color: { argb: branco } }; bc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: aco } }; bc.border = thin();
+      var bc = wa.getCell('A' + r); bc.value = (etIdx + 1) + '  ' + (et.nome || 'Etapa') + (et.opcional ? '  —  ' + ROT_OPC_X : ''); bc.font = { bold: true, color: { argb: branco } }; bc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: aco } }; bc.border = thin();
       r++;
       var first = r, etCusto = 0, etVenda = 0, _subAtual = null;
       // mapa id→nome das sub etapas desta etapa (o banner precisa do nome)
@@ -626,6 +636,30 @@
     if (etInfo.length) wsi.addConditionalFormatting({ ref: 'G' + s0 + ':G' + (sintTot - 1), rules: [
       { type: 'dataBar', priority: 1, cfvo: [{ type: 'min' }, { type: 'max' }], color: { argb: aco }, gradient: true, showValue: true, minLength: 0, maxLength: 100 }
     ] });
+    /* os adicionais: marca na etapa (coluna H) e os dois subtotais embaixo do
+       TOTAL, por FÓRMULA (seguem a Qtd editada no xlsx). `etInfo` é 1:1 com
+       `orc.etapas` (o mesmo índice que `_sintApp[i]` acima usa). */
+    var sintOpcRow = 0;
+    if (_temOpcX) {
+      wsi.getColumn(8).width = 30;
+      hStyle(wsi.getRow(6).getCell(8)); wsi.getRow(6).getCell(8).value = 'Na proposta';
+      var opcCells = [], tObr = (global.Orcamento && Orcamento.totais) ? Orcamento.totais(orc) : null;
+      etapas.forEach(function (e, i) {
+        if (!e || !e.opcional || !etInfo[i]) return;
+        opcCells.push('F' + (s0 + i));
+        var c8 = wsi.getCell('H' + (s0 + i)); c8.value = ROT_OPC_X; c8.font = { italic: true, size: 9, color: { argb: 'FFB45309' } };
+      });
+      sintOpcRow = sintTot + 1;
+      var ro = wsi.getRow(sintOpcRow), rp = wsi.getRow(sintOpcRow + 1);
+      ro.getCell(2).value = 'Adicionais opcionais (incluídos no TOTAL acima, fora do valor total da proposta)';
+      ro.getCell(6).value = { formula: opcCells.length ? opcCells.join('+') : '0', result: tObr ? num(tObr.precoOpcional) : 0 };
+      rp.getCell(2).value = 'Valor total da proposta (TOTAL sem os adicionais opcionais)';
+      rp.getCell(6).value = { formula: 'F' + sintTot + '-F' + sintOpcRow, result: tObr ? num(tObr.precoObrigatorio) : 0 };
+      [ro, rp].forEach(function (rr0) {
+        rr0.getCell(2).font = { bold: true }; rr0.getCell(6).font = { bold: true }; rr0.getCell(6).numFmt = MOEDA;
+        [2, 6].forEach(function (k) { rr0.getCell(k).border = thin(); });
+      });
+    }
 
     // ===================== RESUMO (B6 = BDI parâmetro) =====================
     /* Coluna B larga + quebra de linha: "Bases de preços" e "Licitação" são
@@ -682,6 +716,12 @@
     // BDI em R$ = venda − custo (com truncamento, "custo × BDI%" não fecha com a soma dos itens)
     lin(11, 'BDI (R$)', { formula: 'B12-B10', result: Math.round((totVenda - grandCusto) * 100) / 100 }, MOEDA, { bold: true });
     lin(12, 'PREÇO DE VENDA', { formula: ref(SH_SINT, 'F' + sintTot), result: totVenda }, MOEDA, { head: true, bold: true, size: 13 });
+    /* linha 16 é livre (a dica ocupa 14-15; a composição começa na 17) */
+    if (sintOpcRow) {
+      var _tR = (global.Orcamento && Orcamento.totais) ? Orcamento.totais(orc) : null;
+      lin(16, 'Adicionais opcionais (no preço acima)', { formula: ref(SH_SINT, 'F' + sintOpcRow), result: _tR ? num(_tR.precoOpcional) : 0 }, MOEDA, { bold: true });
+      wr.getCell('B16').note = 'Etapas marcadas como adicional opcional: estão somadas no PREÇO DE VENDA, mas a proposta as imprime FORA do valor total. Valor total da proposta: Sintética, linha ' + (sintOpcRow + 1) + '.';
+    }
     lin(13, 'Critério de arredondamento', (_A ? _A.rotulo(modoArr) : modoArr) + (_A && _A.ehPadraoTcu(modoArr) ? '  (Padrão do TCU)' : '')
       + ' · BDI ' + (bdiNoPU ? 'no preço unitário' : 'no preço final'));
     wr.getCell('A14').value = 'Dica: as células AMARELAS são editáveis (BDI aqui · Qtd e Custo na Analítica · % em Parâmetros · Dias, Início e regime na aba Gantt) — tudo recalcula sozinho. A planilha é protegida só contra edição acidental (senha: raeng). Detalhes na aba Leia-me.';

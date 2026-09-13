@@ -165,6 +165,15 @@
   var MOTIVO_SEM_CODIGO = "o serviço não tem código de composição";
   var MOTIVO_NAO_CONFERIDO = "sem hora-homem, e não deu para conferir a composição (nenhuma base analítica chegou a este motor)";
   var MOTIVO_FALHA_PROVEDOR = "a leitura da composição falhou";
+  /* ⚠ OS DOIS DA COMPOSIÇÃO PRÓPRIA (13/09/2026). O `Execucao.hhDoItem` passou
+     a ler a composição própria (base "PROPRIA") e devolve `origem` e
+     `propriaConsultada`. Sem estes textos, a própria lida e sem linha de mão
+     de obra saía "o código não está na base analítica carregada", e a que não
+     está nesta máquina mandava baixar a base da UF — MEDIDO na obra de
+     demonstração: 24 serviços fora, quase todos próprios (RA-…), com a porta
+     errada. Baixar a SINAPI de novo não traz composição própria. */
+  var MOTIVO_PROPRIA_SEM_HH = "a composição própria foi lida e não tem linha de mão de obra do SINAPI (em hora, com coeficiente)";
+  var MOTIVO_FORA_DAS_BASES = "o código não está na base analítica carregada nem na base própria desta máquina";
   var MOTIVO_SEM_EQ = "sem hora de equipamento na composição";
   var SEM_PROVEDOR_EQ = "não deu para separar equipamento: nenhum provedor de insumos foi informado (opc.analitico ou opc.eqDoItem). O histograma de pessoas acima continua valendo, e o operador de máquina aparece nele como profissão.";
 
@@ -179,13 +188,15 @@
     PERIODOS: ["semana", "mes"],
     JORNADA_PADRAO: 8,
     CRITERIO_EQ: "horas CHP (produtiva) + CHI (improdutiva) do analítico",
-    FONTE_HH: "hora-homem do analítico SINAPI (js/execucao.js)",
+    // ⚠ a composição própria entra só pela mão de obra do SINAPI que ela carrega (ver MOTIVO_PROPRIA_SEM_HH)
+    FONTE_HH: "hora-homem do SINAPI — analítico, ou a mão de obra SINAPI dentro da composição própria (js/execucao.js)",
     FONTE_PRAZO: FONTE_PRAZO,
     MOTIVO_SEM_QTD: MOTIVO_SEM_QTD, MOTIVO_QTD_PENDENTE: MOTIVO_QTD_PENDENTE,
     MOTIVO_SEM_BARRA: MOTIVO_SEM_BARRA,
     MOTIVO_SEM_HH: MOTIVO_SEM_HH, MOTIVO_FORA_DA_BASE: MOTIVO_FORA_DA_BASE,
     MOTIVO_SEM_CODIGO: MOTIVO_SEM_CODIGO, MOTIVO_NAO_CONFERIDO: MOTIVO_NAO_CONFERIDO,
     MOTIVO_FALHA_PROVEDOR: MOTIVO_FALHA_PROVEDOR, MOTIVO_SEM_EQ: MOTIVO_SEM_EQ,
+    MOTIVO_PROPRIA_SEM_HH: MOTIVO_PROPRIA_SEM_HH, MOTIVO_FORA_DAS_BASES: MOTIVO_FORA_DAS_BASES,
     _deps: { Cronograma: null }, // injetável em teste
     _C: function () { return this._deps.Cronograma || global.Cronograma || null; },
     _unKey: unKey, _ehMoPura: ehMoPura, _nomeEquip: nomeEquip, _segundaDe: segundaDe,
@@ -315,6 +326,8 @@
          mudo — exceção engolida sem contador é o defeito. */
       var A = opc.analitico || null, temA = baseUtil(A);
       var nComCodigo = 0, nNaBase = 0, nForaBase = 0, nSemCodigo = 0, nSemHhReal = 0, nNaoConferido = 0;
+      // própria: lida na base própria (nNaPropria) e fora das DUAS bases com a própria consultada (nForaDasBases ⊂ nForaBase)
+      var nNaPropria = 0, nForaDasBases = 0;
       var falhasHh = 0, erroHh = "", falhasEq = 0, erroEq = "", nEqLido = 0;
       /* fonte do PRAZO: a janela vem do PAI (etapa/subetapa) e a fatia dentro
          dela vem das equipe-dias do próprio serviço. Só é "não heurística" o
@@ -407,6 +420,8 @@
         try { rh = opc.hhDoItem(item, A); } catch (e1) { rh = null; falhouHh = true; falhasHh++; if (!erroHh) erroHh = String((e1 && e1.message) || e1); }
         var prof = (rh && rh.prof) || {}, somaHh = 0, p;
         for (p in prof) if (own(prof, p)) somaHh += fin(prof[p] && prof[p].hh);
+        var lidaPropria = !!(rh && rh.origem === "propria");
+        if (temCod && lidaPropria) nNaPropria++;
         if (somaHh > 0) {
           nComHh++; edCom += ed; if (vl != null) vlCom += vl;
           if (ehOpc) { nOpcServ++; hhOpc += somaHh; }
@@ -417,9 +432,14 @@
         } else {
           // o motivo CERTO, entre os quatro — ver o ⚠ das constantes
           if (falhouHh) { nNaoConferido++; fora(MOTIVO_FALHA_PROVEDOR + " (" + erroHh + ")"); }
+          // a composição própria FOI lida (com ou sem analítico): a frase é sobre ela
+          else if (lidaPropria) { nSemHhReal++; fora(MOTIVO_PROPRIA_SEM_HH); }
           else if (!temA) { nNaoConferido++; fora(MOTIVO_NAO_CONFERIDO); }
           else if (!temCod) { nSemCodigo++; fora(MOTIVO_SEM_CODIGO); }
-          else if (naBase === false) { nForaBase++; fora(MOTIVO_FORA_DA_BASE); }
+          else if (naBase === false) {
+            nForaBase++;
+            if (rh && rh.propriaConsultada) { nForaDasBases++; fora(MOTIVO_FORA_DAS_BASES); } else fora(MOTIVO_FORA_DA_BASE);
+          }
           else { nSemHhReal++; fora(MOTIVO_SEM_HH); }
           prof = {};
           if (!eqs) return; // não tem gente nem máquina: nada a espalhar
@@ -586,22 +606,25 @@
           fonte: FONTE_PRAZO
         },
         falhasProvedor: falhasHh, erroProvedor: erroHh,
-        naBase: { comCodigo: nComCodigo, naBaseCarregada: nNaBase, foraDaBase: nForaBase, semCodigo: nSemCodigo, baseInformada: temA },
+        /* `naBaseCarregada` continua sendo SÓ o analítico (o extrator de
+           equipamento lê só ele); a composição própria lida vai à parte. */
+        naBase: { comCodigo: nComCodigo, naBaseCarregada: nNaBase, naBasePropria: nNaPropria, foraDaBase: nForaBase, foraDasBases: nForaDasBases, semCodigo: nSemCodigo, baseInformada: temA },
         motivos: { semHhReal: nSemHhReal, foraDaBase: nForaBase, semCodigo: nSemCodigo, naoConferido: nNaoConferido },
         fonteHh: this.FONTE_HH,
         fontePrazo: FONTE_PRAZO,
         fonte: "horas: " + this.FONTE_HH + " | prazo: " + FONTE_PRAZO,
         msg: nServ === 0 ? "O cronograma não tem serviço nenhum."
-          : (nComHh + " de " + nServ + " serviços (" + pctServ + "%) têm hora-homem no analítico e formam o histograma"
+          : (nComHh + " de " + nServ + " serviços (" + pctServ + "%) têm hora-homem " + (nNaPropria > 0 ? "de composição (analítico SINAPI ou composição própria)" : "no analítico") + " e formam o histograma"
             + (nSem > 0 ? "; " + nSem + " ficaram FORA (" + (edTot > 0 ? (Math.round((edSem / edTot) * 1000) / 10) + "% das equipe-dias do cronograma" : "sem equipe-dias") + ")" : "")
-            + (nForaBase > 0 ? ", dos quais " + nForaBase + " por o código não estar na base analítica carregada" : "")
+            + (nForaBase > 0 ? ", dos quais " + nForaBase + " por o código não estar na base analítica carregada" + (nForaDasBases > 0 ? " (" + nForaDasBases + " também não estão na base própria desta máquina)" : "") : "")
             + (nNaoConferido > 0 ? ", e " + nNaoConferido + " que NÃO deu para conferir" : "") + ".")
       };
       if (nSem > 0) {
         out.avisos.push(nSem + " serviço(s) ficaram fora do histograma — eles existem no cronograma"
           + (edTot > 0 ? " e valem " + r2(edSem) + " equipe-dias (" + (Math.round((edSem / edTot) * 1000) / 10) + "% do total)" : "")
           + (nSemHhReal > 0 ? ". " + nSemHhReal + " sem hora-homem na composição (a composição foi lida)" : "")
-          + (nForaBase > 0 ? ". " + nForaBase + " com código FORA da base analítica carregada — baixe a base da UF do orçamento" : "")
+          + (nForaBase > 0 ? ". " + nForaBase + " com código FORA da base analítica carregada — baixe a base da UF do orçamento"
+            + (nForaDasBases > 0 ? " (" + nForaDasBases + " deles também não estão na base própria desta máquina: se forem composições próprias, traga-as — restaure o backup que tem a base própria ou entre na conta da nuvem — porque baixar a SINAPI não as traz)" : "") : "")
           + (nSemCodigo > 0 ? ". " + nSemCodigo + " sem código de composição" : "")
           + (nNaoConferido > 0 ? ". ⚠ " + nNaoConferido + " NÃO foram conferidos" : "")
           + ". Um serviço sem produtividade rastreável não vira pessoa aqui.");
@@ -651,9 +674,11 @@
           out.motivoVazio = "sem-base";
           out.avisos.push("⚠ NÃO DEU PARA CONFERIR: nenhuma base analítica chegou a este motor, então a composição dos " + nComBarra
             + " serviço(s) não foi lida. Carregue a base da UF do orçamento (aba SINAPI) e abra o histograma de novo" + fim);
-        } else if (nComCodigo > 0 && nNaBase === 0) {
+        } else if (nComCodigo > 0 && nNaBase === 0 && nNaPropria === 0) {
+          // ⚠ `nNaPropria === 0`: composição própria LIDA é conferida — sem isto a própria sem MO caía aqui e mandava baixar a base da UF
           out.motivoVazio = "base-nao-carregada";
-          out.avisos.push("⚠ NÃO DEU PARA CONFERIR: nenhum dos " + nComCodigo + " código(s) deste orçamento está na base analítica carregada — provavelmente a base da UF não foi baixada. "
+          out.avisos.push("⚠ NÃO DEU PARA CONFERIR: nenhum dos " + nComCodigo + " código(s) deste orçamento está na base analítica carregada — provavelmente a base da UF não foi baixada"
+            + (nForaDasBases > 0 ? ", e " + nForaDasBases + " também não estão na base própria desta máquina (composição própria não vem com a SINAPI: restaure o backup que a tem ou entre na conta da nuvem)" : "") + ". "
             + "Não dá para afirmar que os serviços não têm hora-homem" + fim);
         } else {
           out.motivoVazio = "sem-hora-homem";

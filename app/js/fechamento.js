@@ -94,6 +94,46 @@
   };
   var ORDEM_MODOS = ["bdi", "total", "mo", "mat", "eq"];
 
+  /* ===================================================================
+   * O VALOR QUE SE FECHA — o da PROPOSTA, sem os adicionais opcionais
+   *
+   * ⚠ ROTEIRO DO DEFEITO (revisão de 13/09/2026). A proposta clássica, o
+   *   WhatsApp e o slide passaram a imprimir `precoObrigatorio` (o escopo
+   *   contratado; os adicionais saem à parte). Este módulo continuava mirando
+   *   `precoVenda`, que SOMA as etapas opcionais. Pelo fluxo do app
+   *   (Orcamento.novo → addEtapa → addItem → marcarEtapaOpcional), um
+   *   orçamento de R$ 163.380,35 com R$ 11.681,35 de adicionais, "Fechar em
+   *   R$ 150.000": a tela confirmava "Orçamento fechado em R$ 150.000,66" e a
+   *   capa da proposta saía com R$ 139.274,96 — o número que a pessoa digitou
+   *   não aparecia em papel nenhum.
+   *
+   * ⚠ A MESMA REGRA DE `_totalDoPapel` (js/proposta.js): "tem opcional" é a
+   *   MARCA na etapa, e sem etapa opcional o alvo é o próprio `precoVenda` —
+   *   nenhum orçamento sem opcional muda um centavo (tools/test-fechamento.js
+   *   continua cobrando os mesmos alvos).
+   *
+   * ⚠ OS ITENS DAS ETAPAS OPCIONAIS NÃO RECEBEM O RATEIO: mexer no custo
+   *   deles não move o valor da proposta, e distribuir ali seria dar desconto
+   *   (ou acréscimo) num adicional que ninguém pediu para mudar. O BDI é um
+   *   só para o orçamento inteiro — no modo BDI os adicionais mudam junto, e
+   *   a simulação DIZ quanto eles passam a valer.
+   * =================================================================== */
+  function temOpcional(orc) {
+    var ets = (orc && orc.etapas) || [];
+    for (var i = 0; i < ets.length; i++) if (ets[i] && ets[i].opcional) return true;
+    return false;
+  }
+  function precoAlvoDe(orc, t) {
+    return temOpcional(orc) ? num(t.precoObrigatorio) : num(t.precoVenda);
+  }
+  /* custo direto que forma o valor da proposta: sem opcional, o de sempre */
+  function custoAlvoDe(orc, t) {
+    if (!temOpcional(orc)) return num(t.custoDireto);
+    var Orc = O(), c = 0;
+    try { c = num(Orc.calcular(orc).custoOpcional); } catch (e) { c = 0; }
+    return Math.round((num(t.custoDireto) - c) * 100) / 100;
+  }
+
   /* Item entra no rateio? Fora ficam os que não têm o que ratear e os que o
      usuário travou. Item pendente de quantidade não pode participar: ele não
      soma no total hoje, então distribuir nele é jogar dinheiro num buraco. */
@@ -128,6 +168,7 @@
   function baseDe(orc, parcela) {
     var soma = 0;
     ((orc && orc.etapas) || []).forEach(function (e) {
+      if (e && e.opcional) return;   // ver "O VALOR QUE SE FECHA"
       (e.itens || []).forEach(function (it) {
         if (!elegivel(it, parcela)) return;
         soma += num(it.quantidade) * num(parcela ? it[parcela] : it.custoUnitario);
@@ -139,6 +180,7 @@
   function itensElegiveis(orc, parcela) {
     var out = [];
     ((orc && orc.etapas) || []).forEach(function (e) {
+      if (e && e.opcional) return;   // ver "O VALOR QUE SE FECHA"
       (e.itens || []).forEach(function (it) { if (elegivel(it, parcela)) out.push({ etapa: e, item: it }); });
     });
     return out;
@@ -156,10 +198,15 @@
     if (!modo) return { ok: false, erro: "Forma de distribuição desconhecida." };
 
     var t = Orc.totais(orc);
-    var atual = num(t.precoVenda), custo = num(t.custoDireto);
+    var opc = temOpcional(orc);
+    var atual = precoAlvoDe(orc, t), custo = custoAlvoDe(orc, t);
     alvo = num(alvo);
 
     if (!(alvo > 0)) return { ok: false, erro: "Informe o valor final desejado." };
+    if (opc && !(custo > 0) && num(t.custoDireto) > 0) {
+      return { ok: false, erro: "Todas as etapas com custo estão marcadas como opcionais: o valor da proposta (sem os adicionais) é " +
+        fmt(atual) + " e não há o que fechar. Desmarque “opcional” nas etapas que fazem parte do escopo contratado e tente de novo." };
+    }
     if (!(custo > 0)) return { ok: false, erro: "O orçamento não tem custo lançado — não há o que distribuir." };
     if (Math.abs(alvo - atual) < 0.01) return { ok: false, erro: "O orçamento já está nesse valor." };
 
@@ -170,6 +217,8 @@
       sentido: delta > 0 ? "acrescimo" : "desconto",
       custoAtual: custo, bdiAtual: num(t.bdiPercentual)
     };
+    /* com adicional: a tela diz que o alvo é o valor da proposta SEM eles */
+    if (opc) { out.semOpcionais = true; out.opcionaisAtual = num(t.precoOpcional); }
 
     if (modoId === "bdi") {
       /* pct' tal que custo × (1+pct'/100) = alvo.
@@ -189,6 +238,18 @@
       }
       if (orc && orc.config && orc.config.licitacao && orc.config.licitacao.ativo && novoPct > 30) {
         avisos.push("Este orçamento está marcado como LICITAÇÃO e o BDI passaria de 30% — prepare a justificativa.");
+      }
+      /* o BDI é um só: os adicionais opcionais mudam junto, e isso não pode
+         aparecer só depois, na capa. Conta numa CÓPIA, pelo motor. */
+      if (opc && novoPct >= 0 && num(t.precoOpcional) > 0) {
+        try {
+          var cp = JSON.parse(JSON.stringify(orc));
+          cp.bdi = cp.bdi || {}; cp.bdi.percentual = Math.round(novoPct * 1e6) / 1e6;
+          var opcDepois = num(Orc.totais(cp).precoOpcional);
+          out.opcionaisDepois = opcDepois;
+          avisos.push("O BDI vale para o orçamento inteiro: os adicionais opcionais, que ficam fora deste valor, passam de " +
+            fmt(num(t.precoOpcional)) + " para cerca de " + fmt(opcDepois) + ". Para não mexer neles, distribua nos itens em vez do BDI.");
+        } catch (eO) {}
       }
       out.avisos = avisos; out.bloqueios = bloqueios;
       return out;
@@ -269,12 +330,15 @@
   function pesosSugeridos(orc, modos) {
     var Orc = O();
     var t = Orc ? Orc.totais(orc) : { custoDireto: 0, bdiValor: 0 };
+    /* o peso é o do que se fecha: sem opcional, bdiValor e custoDireto de sempre */
+    var cAlvo = Orc ? custoAlvoDe(orc, t) : 0;
+    var bdiAlvo = (Orc && temOpcional(orc)) ? (precoAlvoDe(orc, t) - cAlvo) : num(t.bdiValor);
     var pesos = {}, soma = 0;
     modos.forEach(function (id) {
       var M = MODOS[id], p;
       if (!M) return;
-      if (id === "bdi") p = num(t.bdiValor);
-      else if (id === "total") p = num(t.custoDireto);
+      if (id === "bdi") p = num(bdiAlvo);
+      else if (id === "total") p = Orc ? cAlvo : num(t.custoDireto);
       else p = baseDe(orc, M.parcela);
       p = Math.max(p, 0.01);            // base zerada ainda participa, com peso mínimo
       pesos[id] = p; soma += p;
@@ -302,7 +366,7 @@
     if (criterios.length === 1) return simular(orc, alvo, criterios[0].modo);
 
     var t = Orc.totais(orc);
-    var atual = num(t.precoVenda);
+    var atual = precoAlvoDe(orc, t);   // ver "O VALOR QUE SE FECHA"
     alvo = num(alvo);
     if (!(alvo > 0)) return { ok: false, erro: "Informe o valor final desejado." };
     if (Math.abs(alvo - atual) < 0.01) return { ok: false, erro: "O orçamento já está nesse valor." };
@@ -337,13 +401,15 @@
       partes.push(parte);
     });
 
-    return {
+    var outM = {
       ok: true, multi: true, alvo: alvo, atual: atual, delta: delta,
       sentido: delta > 0 ? "acrescimo" : "desconto",
-      custoAtual: num(t.custoDireto), bdiAtual: num(t.bdiPercentual),
+      custoAtual: custoAlvoDe(orc, t), bdiAtual: num(t.bdiPercentual),
       partes: partes, previsto: tr2(acumulado),
       avisos: avisos, bloqueios: bloqueios
     };
+    if (temOpcional(orc)) { outM.semOpcionais = true; outM.opcionaisAtual = num(t.precoOpcional); }
+    return outM;
   }
 
   function aplicarMulti(orc, alvo, criterios, opts) {
@@ -402,13 +468,14 @@
       criterios: ordem.map(function (c) { return { modo: c.modo, pct: num(c.pct) }; }),
       valorAnterior: num(sim.atual), delta: delta, por: opts.por || ""
     };
+    if (sim.semOpcionais) orc.fechamento.base = "semOpcionais";
 
     /* AJUSTE FINO NO FIM DA CASCATA. O BDI fecha por último e tem degraus (o
        preço é a soma de unitários truncados), então sobram alguns reais. Se
        algum critério de CUSTO estiver na combinação, ele consegue o ajuste ao
        centavo que o percentual não alcança — o troco do troco. */
     var fim = Orc.totais(orc);
-    var sobra = tr2(num(sim.alvo) - num(fim.precoVenda));
+    var sobra = tr2(num(sim.alvo) - precoAlvoDe(orc, fim));
     if (Math.abs(sobra) >= 0.01) {
       var deCusto = ordem.filter(function (c) { return MODOS[c.modo].mexeEmCusto; });
       if (deCusto.length) {
@@ -418,16 +485,16 @@
         if (listaU.length) {
           _resolverResiduo(orc, { alvo: num(sim.alvo) }, parcelaU, listaU);
           fim = Orc.totais(orc);
-          sobra = tr2(num(sim.alvo) - num(fim.precoVenda));
+          sobra = tr2(num(sim.alvo) - precoAlvoDe(orc, fim));
         }
       }
     }
     if (Math.abs(sobra) >= 0.01) {
-      avisos.push("Cheguei a " + fmt(num(fim.precoVenda)) + " — " + fmt(Math.abs(sobra)) +
+      avisos.push("Cheguei a " + fmt(precoAlvoDe(orc, fim)) + " — " + fmt(Math.abs(sobra)) +
         (sobra > 0 ? " abaixo" : " acima") + " do alvo. É o degrau de arredondamento do orçamento; " +
         "incluir a opção “distribuído em todos os itens” na combinação costuma fechar exato.");
     }
-    return { ok: true, modo: "combinado", alvo: num(sim.alvo), atingido: num(fim.precoVenda),
+    return { ok: true, modo: "combinado", alvo: num(sim.alvo), atingido: precoAlvoDe(orc, fim),
              sobra: sobra, partes: aplicadas, avisos: avisos,
              itensAfetados: aplicadas.reduce(function (s, a) { return s + (a.itens || 0); }, 0) };
   }
@@ -465,18 +532,18 @@
       orc.bdi.percentual = achado.pct;
       var depoisB = Orc.totais(orc);
       orc.fechamento = registro(sim, modoId, antes, motivo, opts);
-      var resB = { ok: true, modo: modoId, alvo: sim.alvo, atingido: num(depoisB.precoVenda),
+      var resB = { ok: true, modo: modoId, alvo: sim.alvo, atingido: precoAlvoDe(orc, depoisB),
                    bdiNovo: achado.pct, itensAfetados: 0, avisos: (sim.avisos || []).slice() };
       /* Quando o BDI incide no unitário, o preço final é a SOMA de valores
          truncados item a item — uma função ESCADA do percentual. Pode
          simplesmente não existir um BDI que dê o alvo ao centavo. Nesse caso
          entrega-se o degrau mais próximo e DIZ-SE isso, em vez de mostrar o
          alvo na tela e gravar outro número na planilha. */
-      var sobraB = tr2(sim.alvo - num(depoisB.precoVenda));
+      var sobraB = tr2(sim.alvo - precoAlvoDe(orc, depoisB));
       if (Math.abs(sobraB) >= 0.01) {
         resB.sobra = sobraB;
         resB.avisos.push("Com o BDI embutido no preço unitário, o total é a soma de valores arredondados item a item — o mais perto que dá deste alvo é " +
-          fmt(num(depoisB.precoVenda)) + " (" + (sobraB > 0 ? "faltam " : "passou ") + fmt(Math.abs(sobraB)) +
+          fmt(precoAlvoDe(orc, depoisB)) + " (" + (sobraB > 0 ? "faltam " : "passou ") + fmt(Math.abs(sobraB)) +
           "). Para bater exato ao centavo, distribua nos itens em vez do BDI.");
       }
       return resB;
@@ -542,7 +609,7 @@
     var melhor = { pct: base, erro: Infinity };
     var testar = function (p) {
       orc.bdi.percentual = Math.round(p * 1e6) / 1e6;
-      var v = num(Orc.totais(orc).precoVenda);
+      var v = precoAlvoDe(orc, Orc.totais(orc));
       var e = Math.abs(alvo - v);
       if (e < melhor.erro) melhor = { pct: orc.bdi.percentual, erro: e };
       return v;
@@ -559,12 +626,16 @@
   }
 
   function registro(sim, modoId, antes, motivo, opts) {
-    return {
+    var r = {
       em: opts.agora || (U() && U().agoraISO ? U().agoraISO() : new Date().toISOString()),
       alvo: sim.alvo, antes: antes, modo: modoId, motivo: motivo,
       valorAnterior: sim.atual, delta: sim.delta,
       por: opts.por || ""
     };
+    /* o selo da planilha (js/ui.js) diz que alvo e valor anterior são SEM os
+       adicionais — ao lado de um "Preço de venda" que os soma */
+    if (sim.semOpcionais) r.base = "semOpcionais";
+    return r;
   }
 
   /* ⚠ O CORAÇÃO. Por que iterar em vez de multiplicar uma vez:
@@ -580,7 +651,7 @@
 
     for (voltas = 1; voltas <= MAX; voltas++) {
       var t = Orc.totais(orc);
-      var falta = sim.alvo - num(t.precoVenda);
+      var falta = sim.alvo - precoAlvoDe(orc, t);
       if (Math.abs(falta) < 0.005) break;
 
       var fatorBdi = 1 + num(t.bdiPercentual) / 100;
@@ -634,7 +705,7 @@
 
     var sobra = _resolverResiduo(orc, sim, parcela, lista);
     var fim = Orc.totais(orc);
-    return { atingido: num(fim.precoVenda), sobra: sobra, voltas: voltas };
+    return { atingido: precoAlvoDe(orc, fim), sobra: sobra, voltas: voltas };
   }
 
   /* Os centavos que sobram depois da convergência. Um fator multiplicativo
@@ -661,12 +732,12 @@
     var moedas = lista.map(function (x) {
       return { it: x.item, q: num(x.item.quantidade) };
     }).filter(function (m) { return m.q > 0; });
-    if (!moedas.length) return num(sim.alvo) - num(Orc.totais(orc).precoVenda);
+    if (!moedas.length) return num(sim.alvo) - precoAlvoDe(orc, Orc.totais(orc));
     moedas.sort(function (a, b) { return a.q - b.q; }); // moeda pequena primeiro
 
     for (var passada = 0; passada < 4; passada++) {
       var t = Orc.totais(orc);
-      var falta = num(sim.alvo) - num(t.precoVenda);
+      var falta = num(sim.alvo) - precoAlvoDe(orc, t);
       if (Math.abs(falta) < 0.005) return 0;
       var fatorBdi = 1 + num(t.bdiPercentual) / 100;
       var faltaCusto = fatorBdi > 0 ? (falta / fatorBdi) : falta;
@@ -700,13 +771,13 @@
         }
         /* relê do motor em vez de deduzir: o truncamento por item faz o efeito
            real diferir da conta de guardanapo, e é o motor que manda */
-        var novoFalta = num(sim.alvo) - num(Orc.totais(orc).precoVenda);
+        var novoFalta = num(sim.alvo) - precoAlvoDe(orc, Orc.totais(orc));
         faltaCusto = fatorBdi > 0 ? (novoFalta / fatorBdi) : novoFalta;
         mexeu = true;
       }
       if (!mexeu) break;
     }
-    return tr2(num(sim.alvo) - num(Orc.totais(orc).precoVenda));
+    return tr2(num(sim.alvo) - precoAlvoDe(orc, Orc.totais(orc)));
   }
 
   /* Cada item que mudou de preço ganha o registro do PORQUÊ. Sem isto, seis
@@ -769,7 +840,7 @@
     var alvoAntigo = f.alvo;
     delete orc.fechamento;
     var Orc = O();
-    return { ok: true, voltouPara: Orc ? num(Orc.totais(orc).precoVenda) : 0, alvoDesfeito: alvoAntigo };
+    return { ok: true, voltouPara: Orc ? precoAlvoDe(orc, Orc.totais(orc)) : 0, alvoDesfeito: alvoAntigo };
   }
 
   function ativo(orc) { return !!(orc && orc.fechamento); }

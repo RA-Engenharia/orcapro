@@ -1162,8 +1162,8 @@
       var a = copia(o);
       /* ⚠ OS TRÊS TOTAIS (revisão 4A). O total DA PROPOSTA é o obrigatório,
          mas a etapa opcional sai num bloco de adicionais com subtotal próprio,
-         e a proposta CLÁSSICA imprime "VALOR TOTAL DA PROPOSTA" com as
-         opcionais (Orcamento.totais().precoVenda). Mudar a grama do
+         e a planilha e o Excel somam as opcionais (Orcamento.totais().precoVenda;
+         a proposta CLÁSSICA também somava até 13/09/2026). Mudar a grama do
          paisagismo opcional mostrava R$ X → R$ X no diff enquanto a proposta
          clássica subia 42%. A tela mostra os três e destaca o que muda. */
       if (P() && P().blocosParaModelo) {

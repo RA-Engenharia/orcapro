@@ -639,6 +639,136 @@
       return false;
     },
 
+    /* =====================================================================
+     * RECUPERAR A SENHA DO ADMINISTRADOR POR CÓDIGO NO E-MAIL (12/09/2026)
+     *
+     * Quem esquecia a senha de administrador não tinha porta quando o e-mail
+     * dele não era o da compra da licença: `redefinirSenha` (acima) só libera
+     * o dono DA LICENÇA. Agora a prova é um código de seis dígitos que o
+     * servidor manda para o e-mail do administrador (server/senha-srv.js).
+     *
+     * ⚠ O SERVIDOR DECIDE PARA ONDE VAI O CÓDIGO, NÃO ESTE ARQUIVO. Ele lê o
+     *   e-mail da conta de admin na NUVEM da licença. Se o aparelho dissesse
+     *   "o admin é fulano@", um funcionário trocaria esse campo no navegador
+     *   e receberia o código. O e-mail digitado aqui só é conferido lá.
+     *
+     * ⚠ A GUARDA ESTÁ NA FUNÇÃO, NÃO NO BOTÃO. `aplicarSenhaRecuperada` só
+     *   grava depois de `conferirCodigoSenha` ter recebido `ok` do servidor
+     *   para o MESMO e-mail, há menos de 10 minutos. Tela escondida não é
+     *   trava: qualquer código que chame a função sem a conferência é recusado.
+     *
+     * ⚠ REDEFINIR NÃO É AUTENTICAR (mesma doutrina de `redefinirSenha`): grava
+     *   a senha nova e manda para o login. Quem abre a sessão é o login.
+     * ===================================================================== */
+    _RECUP_JANELA_MS: 10 * 60 * 1000,
+    _recuperacao: null,
+    /* toda conta de administrador que mora NESTE aparelho: a registrada
+       (`orcapro:usuarios`) e a conta mestre de cada empresa
+       (`orcapro:<empresaId>:conta`). O login tenta as duas (ver `login`),
+       então a senha nova tem de valer nas duas. */
+    contasAdminNoAparelho: function () {
+      var out = [], vistos = {};
+      var add = function (eid, email, onde) {
+        email = String(email || "").trim().toLowerCase();
+        if (!email || vistos[onde + "|" + eid + "|" + email]) return;
+        vistos[onde + "|" + eid + "|" + email] = 1;
+        out.push({ empresaId: eid, email: email, onde: onde });
+      };
+      try { (this.backend._lerUsuarios() || []).forEach(function (u) { add(u.empresaId, u.email, "registrada"); }); } catch (e) {}
+      try {
+        var n = localStorage.length || 0;
+        for (var i = 0; i < n; i++) {
+          var k = localStorage.key(i), m = /^orcapro:(.+):conta$/.exec(String(k || ""));
+          if (!m) continue;
+          var c = null; try { c = JSON.parse(localStorage.getItem(k) || "null"); } catch (e2) { c = null; }
+          if (c && c.email) add(m[1], c.email, "mestre");
+        }
+      } catch (e3) {}
+      return out;
+    },
+    ehAdminNoAparelho: function (email) {
+      var alvo = String(email || "").trim().toLowerCase();
+      if (!alvo) return false;
+      return this.contasAdminNoAparelho().some(function (c) { return c.email === alvo; });
+    },
+    /* a recuperação por código precisa da licença deste aparelho: é ela que
+       diz ao servidor qual empresa e qual nuvem conferir */
+    recuperacaoPorCodigoDisponivel: function () {
+      try {
+        return !!(typeof Licenca !== "undefined" && Licenca.chave && Licenca.chave() && Licenca.deviceId && this._servidorRecup());
+      } catch (e) { return false; }
+    },
+    _servidorRecup: function () {
+      try {
+        if (typeof Licenca !== "undefined" && Licenca._servidor) return Licenca._servidor();
+        return (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : "";
+      } catch (e) { return ""; }
+    },
+    _postRecup: function (rota, corpo) {
+      var srv = this._servidorRecup();
+      if (!srv || typeof fetch === "undefined") return Promise.resolve({ ok: false, erro: "Sem conexão com o servidor de licenças neste aparelho." });
+      return fetch(srv + rota, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo) })
+        .then(function (r) { return r.json().catch(function () { return { ok: false, erro: "O servidor respondeu de um jeito inesperado (" + r.status + "). Tente de novo em instantes." }; }); })
+        .catch(function () {
+          return { ok: false, semRede: true, erro: "Sem internet agora — o código precisa do servidor. Confira a conexão e tente de novo." };
+        });
+    },
+    pedirCodigoSenha: function (email) {
+      var alvo = String(email || "").trim().toLowerCase();
+      if (!alvo || alvo.indexOf("@") < 1) return Promise.resolve({ ok: false, erro: "Digite o e-mail do administrador." });
+      if (!this.recuperacaoPorCodigoDisponivel()) {
+        return Promise.resolve({ ok: false, semLicenca: true, erro: "A recuperação por código usa a licença deste aparelho, e ele está sem licença ativa. Ative a licença e tente de novo — ou fale com o suporte." });
+      }
+      this._recuperacao = null;               // pedir código novo invalida a liberação anterior
+      return this._postRecup("/api/senha/codigo", { chave: Licenca.chave(), deviceId: Licenca.deviceId(), email: alvo });
+    },
+    conferirCodigoSenha: function (email, codigo) {
+      var self = this, alvo = String(email || "").trim().toLowerCase();
+      var cod = String(codigo || "").replace(/\D/g, "");
+      if (cod.length !== 6) return Promise.resolve({ ok: false, erro: "O código tem 6 dígitos. Confira o e-mail e digite os seis." });
+      if (!this.recuperacaoPorCodigoDisponivel()) return Promise.resolve({ ok: false, semLicenca: true, erro: "Este aparelho ficou sem licença ativa. Ative a licença e peça um código novo." });
+      return this._postRecup("/api/senha/conferir", { chave: Licenca.chave(), deviceId: Licenca.deviceId(), email: alvo, codigo: cod })
+        .then(function (r) {
+          /* ⚠ SÓ `ok === true` LIBERA. Resposta torta, 500 com corpo esquisito
+             ou `ok: "sim"` não abrem a troca de senha. */
+          if (r && r.ok === true) self._recuperacao = { email: alvo, ate: Date.now() + self._RECUP_JANELA_MS };
+          return r || { ok: false, erro: "Sem resposta do servidor." };
+        });
+    },
+    aplicarSenhaRecuperada: function (email, nova) {
+      var alvo = String(email || "").trim().toLowerCase();
+      var lib = this._recuperacao;
+      if (!lib || lib.email !== alvo) return { ok: false, erro: "Confirme o código enviado ao e-mail antes de definir a senha nova." };
+      if (Date.now() > lib.ate) { this._recuperacao = null; return { ok: false, vencido: true, erro: "Passaram mais de 10 minutos desde a confirmação do código. Peça um código novo." }; }
+      if (!Util.naoVazio(nova) || String(nova).length < 4) return { ok: false, erro: "A nova senha precisa de ao menos 4 caracteres." };
+
+      var self = this, gravou = 0, falhou = 0, agora = Util.agoraISO();
+      /* 1) conta registrada neste navegador (`orcapro:usuarios`) */
+      try {
+        if (this.backend.existe(alvo)) { var rb = this.backend.redefinirSenha(alvo, nova); if (rb && rb.ok) gravou++; else falhou++; }
+      } catch (e) { falhou++; }
+      /* 2) a conta mestre de CADA empresa deste aparelho com esse e-mail.
+         ⚠ `atualizadoEm` é o que faz a senha nova atravessar a nuvem: o merge
+         de `conta` (js/nuvem.js) deixa a nuvem vencer quando ELA é mais nova.
+         Sem carimbo novo, o próximo sync traria a senha esquecida de volta. */
+      var a = this._adapter();
+      this.contasAdminNoAparelho().forEach(function (c) {
+        if (c.onde !== "mestre" || c.email !== alvo || !a) return;
+        try {
+          var conta = a.ler(c.empresaId, "conta", {});
+          if (!conta || String(conta.email || "").trim().toLowerCase() !== alvo) return;
+          conta.senhaHash = self._hashSenha(nova);
+          conta.trocarSenha = false;
+          conta.atualizadoEm = agora;
+          if (a.gravar(c.empresaId, "conta", conta) === false) falhou++; else gravou++;
+        } catch (e2) { falhou++; }
+      });
+      if (!gravou) return { ok: false, erro: falhou ? "Não consegui gravar a senha nova neste aparelho (armazenamento cheio ou bloqueado). Faça backup e fale com o suporte." : "Não achei a conta de administrador " + alvo + " neste aparelho. Abra o sistema num aparelho onde esse administrador já entrou." };
+      /* uso único, como o código: a mesma conferência não troca a senha duas vezes */
+      this._recuperacao = null;
+      return { ok: true, contas: gravou, falhou: falhou };
+    },
+
     // Auto-entrada (uso solo/local): abre o app direto, sem a barreira de login.
     // Regras: já há sessão -> nada; algum dono com sub-usuários (RBAC) -> mantém o login;
     // 1 dono solo já cadastrado -> entra nele; primeiro uso -> sessão local direta (namespace estável "local").

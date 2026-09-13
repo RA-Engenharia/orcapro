@@ -1586,13 +1586,32 @@
       if (_hmemo.chave === chave && _hmemo.v) return _hmemo.v;
       var cal = null;
       try { cal = (Cr && Cr.calendario) ? Cr.calendario(r) : null; } catch (eC) { cal = null; }
+      /* ⚠ A BASE DECLARADA DO ITEM VAI JUNTO (revisão 3, 13/09/2026). O serviço
+         do cronograma não carrega `baseFonte`, e o `hhDoItem` só deixa de
+         procurar na base própria o item de OUTRA base declarada (SETOP, ORSE…).
+         Sem isto, numa máquina com base própria, todo código estadual fora do
+         analítico saía "nem na base própria desta máquina — restaure o backup",
+         sobre um item que nunca foi próprio. Liga pelo ID do item no orçamento,
+         nunca pelo código ou pela descrição. */
+      var baseDoItem = {};
+      try {
+        ((d && d.orc && d.orc.etapas) || []).forEach(function (et) {
+          ((et && et.itens) || []).forEach(function (it) {
+            if (it && it.id != null) baseDoItem[String(it.id)] = it.baseFonte || it.origem || "";
+          });
+        });
+      } catch (eBf) { baseDoItem = {}; }
       var h = null;
       try {
         h = H.montar(r, {
           /* ⚠ CLOSURE, e NUNCA `Execucao.hhDoItem` solto: passado direto como
              valor, o `this` de dentro do provedor vira o próprio `opc` e a
              busca do analítico (`this._A()`) lança TypeError no 1º serviço. */
-          hhDoItem: function (it, an) { return E.hhDoItem(it, an || A); },
+          hhDoItem: function (it, an) {
+            var bf = (it && it.id != null) ? baseDoItem[String(it.id)] : "";
+            if (bf && it && !it.baseFonte) { var c = {}; for (var k in it) if (Object.prototype.hasOwnProperty.call(it, k)) c[k] = it[k]; c.baseFonte = bf; it = c; }
+            return E.hhDoItem(it, an || A);
+          },
           analitico: A,
           periodo: e.periodo,
           jornadaH: d.jornada,

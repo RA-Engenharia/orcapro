@@ -1736,7 +1736,14 @@
           remunApur: lista("remun_apur").filter(naObra),
           medicoes: esc.medicoes,
           obras: esc.obras,
-          hoje: String(this._hojeISO()).slice(0, 10)
+          hoje: String(this._hojeISO()).slice(0, 10),
+          /* ⚠ o boletim pago sem receita (regra 3b) confere o carimbo pela
+             MESMA função que trava o "Registrar pgto" em dobro, e na lista
+             INTEIRA do Financeiro: carimbo é carimbo em qualquer obra. Sem
+             esta linha a regra não roda — não afirma nada sem poder conferir. */
+          receitaDoBoletim: (function (g, todo) {
+            return function (m) { return g._lancVivoDoDoc("medicoes", m && m.id, todo); };
+          })(this, lista("financeiro"))
         });
       } catch (e) { return ""; }
       if (!r.total) return "";
@@ -1762,6 +1769,10 @@
         + '</b> de custo que ainda não entrou na obra</span>');
       if (r.receitaQueFalta > 0) resumo.push('<span style="color:#7c3aed"><b>' + Util.fmtMoeda(r.receitaQueFalta)
         + '</b> aprovado e não recebido</span>');
+      /* ⚠ não entra no "aprovado e não recebido": aqui o boletim JÁ AFIRMA
+         que recebeu, e o caixa não tem — é o contrário daquele */
+      if (r.pagoSemReceita > 0) resumo.push('<span style="color:#c2410c"><b>' + Util.fmtMoeda(r.pagoSemReceita)
+        + '</b> de boletim pago sem receita encontrada no Financeiro</span>');
 
       return '<div class="card mt" style="border-left:3px solid #c2410c">'
         + '<h3 style="margin:0 0 4px">&#9888; Dinheiro fechado que ninguém lançou</h3>'
@@ -1867,7 +1878,35 @@
       var receitas = fin.filter(function (f) { return f.tipo === "receita" && FinStatus.realizado(f); }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
       var despesas = fin.filter(function (f) { return f.tipo === "despesa"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
       var aReceber = fin.filter(function (f) { return f.tipo === "receita" && FinStatus.emAberto(f); }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
-      var medPend = med.filter(function (m) { return m.status !== "paga" && m.status !== "rejeitada"; }).length;
+      /* ⚠ "RECEBIDO R$ 0,00" AO LADO DE UM BOLETIM PAGO — revisão de 13/09/2026.
+       * Medições dizia "Recebido R$ 24.827,61", este cartão "R$ 0,00" e o
+       * Financeiro estava vazio. Os dois números estavam certos na regra de
+       * cada um (Medições lê o STATUS do boletim; aqui é o CAIXA), e o boletim
+       * tinha sido gravado "pago" sem passar pelo botão que lança a receita.
+       * O defeito era o cartão afirmar o caixa calado, sem dizer que existe
+       * boletim pago que o caixa não conhece — e sem dizer nada, quem compara
+       * as duas telas não tem como saber qual delas mente.
+       * ⚠ NÃO SE LANÇA NADA DAQUI e não se soma o boletim ao caixa: dinheiro
+       * se liga por carimbo ou não se liga. O cartão só diz o que falta, e a
+       * regra de quando dá para afirmar isso (e por que ela cala diante de
+       * receita antiga sem carimbo) mora em `Reconciliacao.pagasSemReceita`.
+       * O carimbo é conferido pela MESMA `_lancVivoDoDoc` que trava o
+       * "Registrar pgto" em dobro — duas respostas para a mesma pergunta
+       * seriam o Painel dizendo "sem receita" do boletim que a trava diz ter. */
+      var _gDash = this, _finTodo = lista("financeiro");
+      var _pagoSemRec = (typeof Reconciliacao !== "undefined" && Reconciliacao.pagasSemReceita)
+        ? Reconciliacao.pagasSemReceita(med, _finTodo, function (m) { return _gDash._lancVivoDoDoc("medicoes", m.id, _finTodo); })
+        : null;
+      /* ⚠ O MESMO SILÊNCIO NO "A RECEBER". O subtítulo dizia "faturado e ainda
+       * não pago", mas o número é só a receita EM ABERTO no Financeiro — e
+       * aprovar um boletim não lança receita nenhuma (`_aprovar`): ela nasce
+       * no pagamento. Na obra da revisão, R$ 161.155,36 aprovados e não pagos
+       * em Medições e "A receber R$ 0,00, faturado e ainda não pago" aqui.
+       * O boletim aprovado vai ESCRITO ao lado, nunca somado: se alguém lançou
+       * à mão a receita pendente dele, somar contaria o mesmo dinheiro 2x. */
+      var _aprovNaoPaga = med.filter(function (m) { return m && m.status === "aprovada"; });
+      var _vAprovNaoPaga = _aprovNaoPaga.reduce(function (t, m) { return t + Util.num(m.valor); }, 0);
+      var medPend =med.filter(function (m) { return m.status !== "paga" && m.status !== "rejeitada"; }).length;
       /* ⚠ O SUBTITULO NAO E ENFEITE: e onde o cartao diz DE ONDE o numero
        * sai. Sem ele, dois cartoes vizinhos com regimes diferentes parecem
        * comparaveis — e quem subtrai um do outro obtem um numero que nao e o
@@ -1909,8 +1948,24 @@
                  "Recebido" lado a lado sem ninguem fechar a conta entre eles. */
               k("Saldo a faturar", Util.fmtMoeda(saldoFaturar), "destaque",
                 "contratado menos " + Util.fmtMoeda(faturado) + " já medido — acumulado, não do período") +
-              k("Recebido", Util.fmtMoeda(receitas), "destaque", "regime de CAIXA: só o que entrou") +
-              k("A receber", Util.fmtMoeda(aReceber), "", "faturado e ainda não pago") +
+              k("Recebido", Util.fmtMoeda(receitas), "destaque", "regime de CAIXA: só o que entrou no Financeiro"
+                + (_pagoSemRec && _pagoSemRec.total
+                  ? '<span data-aviso="pago-sem-receita" style="display:block;margin-top:4px;color:var(--vermelho,#dc2626);font-weight:600">&#9888; '
+                    /* ⚠ "NÃO ENCONTREI", nunca "não estão neste número": receita
+                       antiga sem carimbo SEM obra (ou de outra obra) pode ser este
+                       dinheiro, e ela ESTÁ somada aqui (revisão de 13/09/2026) */
+                    + _pagoSemRec.total + " boletim(ns) marcado(s) como pago(s), " + Util.fmtMoeda(_pagoSemRec.liquido)
+                    + " líquido, e não encontrei a receita deles no Financeiro."
+                    + (_pagoSemRec.semCarimboForaDaObra > 0
+                      ? " Há " + _pagoSemRec.semCarimboForaDaObra + " receita(s) sem carimbo sem obra ou de outra obra: confira se é este dinheiro antes de registrar de novo."
+                      : "")
+                    + " Veja “Dinheiro fechado que ninguém lançou”, abaixo.</span>"
+                  : "")) +
+              k("A receber", Util.fmtMoeda(aReceber), "", "receita em aberto no Financeiro"
+                + (_aprovNaoPaga.length
+                  ? '<span data-aviso="aprovada-nao-paga" style="display:block;margin-top:4px">Fora deste número: ' + Util.fmtMoeda(_vAprovNaoPaga) + " em "
+                    + _aprovNaoPaga.length + " boletim(ns) aprovado(s) e não pago(s) — a receita só entra no Financeiro quando o pagamento é registrado em Medições.</span>"
+                  : "")) +
               /* ⚠ O REGIME PRECISA ESTAR ESCRITO. Este cartao soma despesa PAGA
                  mais PENDENTE, e o cartao "Despesas (pago)" do bloco de cima
                  soma so a paga. Sao dois numeros diferentes com a mesma
@@ -4505,6 +4560,8 @@
         '<div class="row">' + campo("Nome da obra *", inp("g-nome", o.nome, "Ex.: Residência Silva")) + campo("Cliente", sel("g-cliente", optsRec(clientes, "nome", o.clienteId, "— nenhum —"))) + "</div>" +
         '<div class="row">' + campo("Tipo", sel("g-tipo", '<option value="">—</option>' + opts(P.obraTipo, o.tipo))) + campo("Fase atual", sel("g-fase", '<option value="">—</option>' + opts(P.obraFase, o.fase))) + "</div>" +
         '<div class="row">' + campo("Status", sel("g-status", opts(P.obraStatus, o.status || "planejamento"))) + campo("Valor do contrato (R$)", inp("g-valor", o.valor)) + "</div>" +
+        /* os dois totais do orçamento vinculado quando ele tem adicional opcional — ver `_avisoValorOpcional` */
+        '<div id="g-valor-opc">' + selfObra._avisoValorOpcional(o.orcamentoId) + "</div>" +
         campo("Local / Endereço", inp("g-local", o.local, "Rua, nº, bairro, cidade")) +
         /* ENTREGA E CONFERÊNCIA — vão impressos no pedido de compra. Sem estes
            campos o pedido saía dizendo só o NOME da obra, e o motorista do
@@ -4819,6 +4876,39 @@
         if (inFoto) inFoto.value = "";
         pintarPrev("");
       };
+      /* trocar o orçamento vinculado troca os dois números do aviso */
+      var selOrcOpc = document.getElementById("g-orc");
+      if (selOrcOpc) selOrcOpc.addEventListener("change", function () {
+        var bx = document.getElementById("g-valor-opc");
+        if (bx) bx.innerHTML = selfObra._avisoValorOpcional(selOrcOpc.value);
+      });
+    },
+
+    /* =================================================================
+     * O VALOR DA OBRA × OS ADICIONAIS OPCIONAIS DO ORÇAMENTO
+     *
+     * ⚠ POR QUE EXISTE (revisão de 13/09/2026). A etapa marcada como
+     *   adicional opcional fica FORA do valor total da proposta, mas continua
+     *   dentro do `precoVenda` que a medição sem contrato usa como base
+     *   (`_baseDoTeto`, ramo "orcamento" — decisão de 4A: quem decide se o
+     *   adicional foi contratado é a pessoa, medindo ou não a linha). A obra
+     *   é o "Valor contratado" do Portal. Sem estes dois números lado a lado,
+     *   quem cria a obra não tem como saber que o valor do campo e o total do
+     *   orçamento são perguntas diferentes.
+     * Sem orçamento, ou orçamento sem etapa opcional: "" (nada muda na tela).
+     * ================================================================= */
+    _avisoValorOpcional: function (orcId) {
+      if (!orcId || typeof Orcamento === "undefined" || !Store.obterOrcamento) return "";
+      var orc = null;
+      try { orc = Store.obterOrcamento(eid(), orcId); } catch (e) { orc = null; }
+      if (!orc || !Util.arr(orc.etapas).some(function (e) { return e && e.opcional; })) return "";
+      var t;
+      try { t = Orcamento.totais(orc); } catch (e2) { return ""; }
+      return '<div data-aviso="obra-opcional" class="muted" style="font-size:12px;margin:-4px 0 10px;padding:7px 10px;border-radius:6px;background:#f59e0b14;border:1px solid #f59e0b55">' +
+        "O orçamento vinculado tem <b>adicionais opcionais de " + Util.fmtMoeda(t.precoOpcional) + "</b>, que a proposta imprime <b>fora</b> do valor total. " +
+        "Valor total da proposta: <b>" + Util.fmtMoeda(t.precoObrigatorio) + "</b> · total com os adicionais: <b>" + Util.fmtMoeda(t.precoVenda) + "</b>. " +
+        "Ponha no “Valor do contrato” o que o cliente contratou — ele é o valor contratado que o Portal mostra ao cliente: " + Util.fmtMoeda(t.precoObrigatorio) + " se os adicionais ficaram de fora, " + Util.fmtMoeda(t.precoVenda) + " se ele contratou todos." +
+        "</div>";
     },
 
     // =================== CLIENTES ===================
@@ -5352,7 +5442,11 @@
         '<div class="fin-kpi"><span class="fin-lbl">Medido</span><b>' + Util.fmtMoeda(t.medido) + '</b>' +
           '<span class="fin-sub">pendente + aprovada + paga</span></div>' +
         '<div class="fin-kpi"><span class="fin-lbl">Recebido</span><b style="color:var(--verde)">' + Util.fmtMoeda(t.paga) + '</b>' +
-          '<span class="fin-sub">' + t.nPaga + ' paga(s)</span></div>' +
+          /* ⚠ É O BRUTO DO BOLETIM, e o Painel mostra o LÍQUIDO que entrou no
+             caixa. Na revisão de 13/09/2026: R$ 24.827,61 aqui e R$ 23.586,23
+             no Financeiro, o mesmo "Recebido" nas duas telas e nenhuma dizendo
+             de onde vinha. A diferença é a retenção — que não foi recebida. */
+          '<span class="fin-sub">' + t.nPaga + ' paga(s) · bruto, antes da retenção</span></div>' +
         '<div class="fin-kpi"><span class="fin-lbl">A receber</span><b style="color:var(--amarelo)">' + Util.fmtMoeda(t.aReceber) + '</b>' +
           '<span class="fin-sub">' + t.nAprovada + ' aprovada(s), não paga(s)</span></div>' +
         '<div class="fin-kpi"><span class="fin-lbl">Em aprovação</span><b>' + Util.fmtMoeda(t.pendente) + '</b>' +
@@ -6257,6 +6351,45 @@
       return { valor: 0, fonte: "" };
     },
 
+    /* =================================================================
+     * O "VALOR CONTRATADO" DO BOLETIM SEM CONTRATO, COM ADICIONAL OPCIONAL
+     *
+     * ⚠ ROTEIRO (revisão de 13/09/2026). Sem contrato cadastrado, a base do
+     *   boletim é o `precoVenda` do orçamento (ramo "orcamento" acima, ou o
+     *   mesmo número congelado no boletim por itens). Ele SOMA as etapas
+     *   marcadas como adicional opcional — que a proposta imprime fora do
+     *   valor total. Na obra de demonstração, o boletim impresso dizia
+     *   "Valor contratado R$ 534.516,58" e a proposta R$ 504.501,10: o papel
+     *   que o fiscal assina contradizendo o que o cliente aceitou, calado.
+     * ⚠ O NÚMERO NÃO MUDA AQUI. Trocar a base para o valor da proposta mexe
+     *   no teto da trava (`_cabeNoTeto`) e no percentual já congelado nos
+     *   boletins — quem mede um adicional contratado sem contrato cadastrado
+     *   ficaria travado. É decisão do dono do produto; até lá o papel DIZ o
+     *   que o número é e mostra a porta: cadastrar o contrato com o valor
+     *   fechado, que passa a ser a base (primeira fonte de `_baseDoTeto`).
+     * Com contrato, sem orçamento, ou orçamento sem etapa opcional: "".
+     * ================================================================= */
+    _notaBaseOpcional: function (m, c) {
+      if (!c || (c.baseFonte !== "orcamento" && c.baseFonte !== "congelado")) return "";
+      if (!m || !m.orcamentoId || typeof Orcamento === "undefined" || !Store.obterOrcamento) return "";
+      /* ⚠ o congelado também pode ter vindo de um CONTRATO (o boletim por itens
+         congela o vigente quando aponta um). "Sem contrato cadastrado" só se
+         afirma sem contrato apontado e sem contrato vivo na obra — a mesma
+         régua de `_baseDoTeto`, pelo vínculo, nunca comparando valores. */
+      if (m.contratoId) return "";
+      if (m.obraId && this._contratosVivosDaObra(m.obraId).some(function (ct) { return Util.num(ct.valor) > 0; })) return "";
+      var orc = null;
+      try { orc = Store.obterOrcamento(eid(), m.orcamentoId); } catch (e) { orc = null; }
+      if (!orc || !Util.arr(orc.etapas).some(function (e) { return e && e.opcional; })) return "";
+      var t;
+      try { t = Orcamento.totais(orc); } catch (e2) { return ""; }
+      return "<p data-nota=\"base-opcional\" style='font-size:10px;color:#555;margin:4px 0 0'>Sem contrato cadastrado, o valor contratado acima é o total do orçamento"
+        + (c.baseFonte === "congelado" ? " registrado quando este boletim foi medido" : "")
+        + ", que inclui as etapas marcadas como adicionais opcionais (hoje " + Util.fmtMoeda(t.precoOpcional) + "). "
+        + "A proposta imprime como valor total só o escopo sem os adicionais (hoje " + Util.fmtMoeda(t.precoObrigatorio) + "). "
+        + "Se o cliente não contratou os adicionais, cadastre o contrato com o valor fechado: o percentual e o saldo passam a ser medidos contra ele.</p>";
+    },
+
     _cabeNoTeto: function (obj, mOriginal) {
       if (typeof Aditivo === "undefined" || !Aditivo.podeMedir) return true;
       var ctr = obj.contratoId ? Store.obter(eid(), "contratos", obj.contratoId) : null;
@@ -6403,7 +6536,9 @@
         saldo: _sld.saldo, excedeu: _sld.excedeu, excedente: _sld.excedente, saldoRotulo: _sld.rotulo,
         retencao: ret, retVal: retVal, liquido: liquido, pctAcum: pctAcum, pctAnt: pctAnt, obra: obra,
         /* a tela usa estes dois para explicar de onde veio a sequência */
-        porContrato: porContrato, contratosDaObra: ctrsDaObra.length, medSemContrato: ambiguas };
+        porContrato: porContrato, contratosDaObra: ctrsDaObra.length, medSemContrato: ambiguas,
+        /* de onde veio o contratado (contrato | congelado | orcamento | obra): o impresso avisa quando é o orçamento com adicionais — ver _notaBaseOpcional */
+        baseFonte: _bt.fonte };
     },
     /* QR de verificação nos impressos: aponta pro Portal do Cliente com o
      * usuário pré-preenchido e a obra do documento (senha continua exigida —
@@ -6459,6 +6594,7 @@
                 + (c.medSemContrato ? " " + c.medSemContrato + " medição(ões) da obra não apontam contrato e ficaram de fora desta soma — vincule-as ao contrato correspondente." : "")
                 + "</p>"
               : "")
+            + this._notaBaseOpcional(m, c)
           : "<table style='width:100%;border-collapse:collapse;font-size:12px'><thead><tr style='background:#0f2740;color:#fff'><th style='border:1px solid #bbb;padding:6px;text-align:left'>Descrição</th><th style='border:1px solid #bbb;padding:6px;text-align:right'>Valor (R$)</th></tr></thead><tbody>"
             + lin("Medição anterior (acumulado)", c.anterior, null)
             + lin("Medição atual (Nº " + Util.esc(m.numero || "") + ")", c.atual, null)
@@ -29437,6 +29573,18 @@ renderFolha: function () {
        centro: é do início DELA que a linha de base congela. */
     obraDeOrcamento: function (orc, datas) {
       var t = Orcamento.totais(orc);
+      /* ⚠ O VALOR QUE NASCE AQUI É `precoVenda` — COM os adicionais opcionais —
+         e isso NÃO foi trocado de carona (13/09/2026). Pelo fluxo do app,
+         orçamento de R$ 163.380,35 com R$ 11.681,35 de adicionais: a capa da
+         proposta diz R$ 151.699,00 e "Criar obra" preenche R$ 163.380,35, que
+         o Portal mostra ao contratante como "Valor contratado". A mesma cadeia
+         (boletim por itens congelando `precoVenda`, `pctDoOrcamento`, teto da
+         medição sem contrato em `_baseDoTeto`) foi mantida em `precoVenda` por
+         decisão registrada em tools/test-opcional-consumidores.js; trocar só
+         esta ponta faria a obra e o boletim da mesma obra discordarem. Qual
+         total é o contratado quando há adicional é decisão do dono do produto.
+         Até lá, o formulário mostra os DOIS números e diz qual pôr no campo
+         (`_avisoValorOpcional`). */
       var o = { nome: orc.nome || "Obra do orçamento", status: "planejamento", valor: t.precoVenda, orcamentoId: orc.id,
         clienteNome: (orc.cliente && orc.cliente.nome) || "", local: (orc.obra && orc.obra.nome) || "" };
       if (datas && /^\d{4}-\d{2}-\d{2}$/.test(String(datas.inicio || ""))) o.inicio = datas.inicio;
@@ -31159,7 +31307,47 @@ case "nova-folha": return this.novoFolha();
              RÉGUA não muda (Fisico.ponderar); o número grande também não (o
              agrupamento não entra nele). Ver Fisico.porEtapaId. */
           var mapaItens = (orcP && Fisico.mapaDoOrcamento) ? Fisico.mapaDoOrcamento(orcP) : null;
-          fisico = Fisico.pacote(rdosPublicaveis, id, { precos: precos, mapaItens: mapaItens });
+          /* ⚠ QUANTOS SERVIÇOS O ORÇAMENTO TEM — o denominador que a tela do
+             cliente passa a escrever ao lado do número.
+             O Portal dizia "91,1% concluído do total previsto" numa obra com
+             36 dos 75 serviços do orçamento lançados no diário: `Fisico.ponderar`
+             só enxerga o que já apareceu no diário, e o executado sobre o
+             orçamento era 54,5%. A RÉGUA NÃO MUDA AQUI (trocar o denominador
+             muda o número de toda obra de todo cliente — é decisão do dono do
+             produto); o que muda é a tela dizer o que o número é.
+             A contagem sai da MESMA função do painel do engenheiro
+             (`CronoPlan.realizadoPorNo`, `obra.itens`), com as opcionais da
+             linha de base ativa: contar aqui por conta própria faria o
+             engenheiro ler "o orçamento tem 75" e o cliente "99". (A base de
+             outro orçamento, que o painel descarta, só mudaria a contagem se
+             os ids das etapas opcionais coincidissem.)
+             Falhou (sem valor de venda, módulo não carregado): null, e a
+             frase sai sem a contagem. Nada daqui entra em percentual. */
+          var contOrc = {};
+          try {
+            if (orcP && typeof CronoPlan !== "undefined" && CronoPlan.realizadoPorNo && typeof Orcamento !== "undefined" && Orcamento.valoresEAP) {
+              var opcIncl = [];
+              if (typeof CronoBase !== "undefined" && CronoBase.ativa && CronoBase.ENTIDADE) {
+                var baseAt = CronoBase.ativa(lista(CronoBase.ENTIDADE) || [], id);
+                if (baseAt && Array.isArray(baseAt.opcionaisIncluidos)) opcIncl = baseAt.opcionaisIncluidos;
+              }
+              var realP = CronoPlan.realizadoPorNo(orcP, Fisico.porServico(rdosPublicaveis, id, { precos: precos }),
+                { valores: Orcamento.valoresEAP(orcP), opcionaisIncluidos: opcIncl });
+              if (realP && realP.ok && realP.obra && realP.obra.itens > 0) {
+                /* sem apontamento = serviço que conta no total da obra (o mesmo
+                   filtro de `obraServs` no realizadoPorNo) e que nenhuma linha
+                   de diário publicado cita */
+                var semAp = 0;
+                (realP.ordem || []).forEach(function (nid) {
+                  var sv = realP.porNo[nid];
+                  if (sv && sv.tipo === "servico" && !sv.semBase && !sv.ligado && !(realP.porNo[sv.etapaId] || {}).foraDoTotal) semAp++;
+                });
+                contOrc = { servicosDoOrcamento: realP.obra.itens, semApontamentoNoOrcamento: semAp };
+              }
+            }
+          } catch (eCont) { contOrc = {}; }
+          fisico = Fisico.pacote(rdosPublicaveis, id, { precos: precos, mapaItens: mapaItens,
+            servicosDoOrcamento: contOrc.servicosDoOrcamento, semApontamentoNoOrcamento: contOrc.semApontamentoNoOrcamento });
         }
       } catch (e) { fisico = null; }
 
@@ -31279,18 +31467,86 @@ case "nova-folha": return this.novoFolha();
                 else medidoPorEtapa[String(e.etapa || "").toLowerCase().trim()] = e.pct;
               });
             }
+            /* ⚠ ETAPA MEDIDA EM BOLETIM, SEM DIÁRIO (revisão de 13/09/2026).
+               Com a etapa sem apontamento indo a 0% (logo abaixo), a etapa que o
+               fiscal MEDIU e o cliente PAGOU num boletim por itens, mas que a
+               equipe de campo não lançou no diário, virava "0% aguardando" no
+               Cronograma e nos Marcos — ao lado de "Medições: 01 paga 60%" na
+               mesma tela. Trocou-se uma mentira ("100% concluída" sem
+               apontamento) por outra.
+               O boletim por itens diz exatamente o que mediu: `m.itens[].itemId`
+               e o acumulado de cada item (`pctAnterior + pctPeriodo`). O item
+               liga à etapa pelo ID no orçamento — pelo vínculo, nunca pelo nome —
+               e o peso é o valor contratado do item (`Orcamento.calcular`, o
+               mesmo `precoTotal` que o boletim fatura). Só boletim APROVADO ou
+               PAGO (`_ehAprovado`, a mesma régua do acumulado acima) e do MESMO
+               orçamento. Boletim por valor (sem itens) não diz etapa nenhuma:
+               ali a etapa segue sem número, marcada `semApontamento`.
+               Só vale quando o andamento vem dos diários; com as medições ou o
+               manual, a distribuição de sempre. */
+            var medidoBolPorEtapaId = {};
+            if (fonteExec === "diario") {
+              try {
+                var linhasOrc = Orcamento.calcular(orc).linhas, itemEt = {}, valEt = {};
+                linhasOrc.forEach(function (L) {
+                  if (L.itemId == null) return;
+                  itemEt[String(L.itemId)] = { et: String(L.etapaId), v: Util.num(L.precoTotal) };
+                  valEt[String(L.etapaId)] = (valEt[String(L.etapaId)] || 0) + Util.num(L.precoTotal);
+                });
+                var acumItem = {};
+                meds.forEach(function (m) {
+                  if (!_snap._ehAprovado(m.status) || String(m.orcamentoId || "") !== String(orc.id) || !Array.isArray(m.itens)) return;
+                  m.itens.forEach(function (it) {
+                    if (!it || it.itemId == null || !itemEt[String(it.itemId)]) return;
+                    var ac = Math.min(100, Util.num(it.pctAnterior) + Util.num(it.pctPeriodo));
+                    if (!(String(it.itemId) in acumItem) || ac > acumItem[String(it.itemId)]) acumItem[String(it.itemId)] = ac;
+                  });
+                });
+                var somaEt = {};
+                Object.keys(acumItem).forEach(function (iid) {
+                  var x = itemEt[iid];
+                  somaEt[x.et] = (somaEt[x.et] || 0) + x.v * acumItem[iid] / 100;
+                });
+                Object.keys(somaEt).forEach(function (eid0) {
+                  if (valEt[eid0] > 0) medidoBolPorEtapaId[eid0] = Math.min(100, somaEt[eid0] / valEt[eid0] * 100);
+                });
+              } catch (eMb) { medidoBolPorEtapaId = {}; }
+            }
             cronograma = (est.etapas || []).map(function (e) {
               var w0 = accW / totC, w1 = (accW + Util.num(e.custo)) / totC; accW += Util.num(e.custo);
               var pe = pctExec / 100, p = pe <= w0 ? 0 : (pe >= w1 ? 100 : (pe - w0) / ((w1 - w0) || 1) * 100);
+              /* ⚠ COM O ANDAMENTO DOS DIÁRIOS, ETAPA SEM APONTAMENTO É 0%.
+                 A distribuição acima trata `pctExec` como fração da obra
+                 INTEIRA — e isso só vale para o acumulado das medições (ou o
+                 digitado à mão). O dos diários é sobre os serviços que já
+                 apareceram no diário: na obra de demonstração, 91,1% "da obra"
+                 pintava Cobertura, Fechamento em alvenaria e Fechamento em
+                 telha — nenhuma com um apontamento sequer — como "✓ concluída"
+                 no Cronograma e nos Marcos do contratante. E as etapas
+                 apontadas já carregam a parte delas daquele percentual:
+                 distribuí-lo de novo contaria duas vezes.
+                 O que os diários dizem de uma etapa que nunca apareceu neles é
+                 "nada apontado ainda" — 0%, marcada "estimado". Com as
+                 medições ou o manual, a distribuição continua a de antes. */
+              if (fonteExec === "diario") p = 0;
               var real = (e.id != null && Object.prototype.hasOwnProperty.call(medidoPorEtapaId, String(e.id)))
                 ? medidoPorEtapaId[String(e.id)]
                 : medidoPorEtapa[String(e.nome || "").toLowerCase().trim()];
               var medido = real !== undefined;
-              return { etapa: e.nome, inicio: addDias(obra.inicio, e.inicio), fim: addDias(obra.inicio, e.fim),
-                       pct: Math.round(medido ? Math.min(100, real) : p),
-                       /* o cliente precisa saber qual das duas está lendo: uma
-                          é o que foi apontado, a outra é uma estimativa */
-                       fonte: medido ? "diario" : "estimado" };
+              var noBoletim = !medido && fonteExec === "diario" && e.id != null &&
+                Object.prototype.hasOwnProperty.call(medidoBolPorEtapaId, String(e.id));
+              var linhaCr = { etapa: e.nome, inicio: addDias(obra.inicio, e.inicio), fim: addDias(obra.inicio, e.fim),
+                       pct: Math.round(medido ? Math.min(100, real) : (noBoletim ? medidoBolPorEtapaId[String(e.id)] : p)),
+                       /* o cliente precisa saber qual das três está lendo: o
+                          apontado no diário, o medido em boletim, ou uma
+                          estimativa. "medicao" é novo: o portal.html publicado
+                          só marca "estimado", e trata o resto como medido. */
+                       fonte: medido ? "diario" : (noBoletim ? "medicao" : "estimado") };
+              /* aditivo: com os diários, etapa sem apontamento e sem item medido
+                 não tem número — o 0% acima é "nada apontado", não "não começou".
+                 A tela nova escreve isso no lugar do percentual. */
+              if (fonteExec === "diario" && !medido && !noBoletim) linhaCr.semApontamento = true;
+              return linhaCr;
             });
           }
         }
@@ -31328,6 +31584,25 @@ case "nova-folha": return this.novoFolha();
         try {
           previsao = Fisico.previsao(fisico.serieSemana, { pct: fisico.pct, termino: obra.termino || "" });
         } catch (e) { previsao = null; }
+        /* ⚠ PROJEÇÃO DE METADE DA OBRA COM CARA DE OBRA INTEIRA (revisão de
+           13/09/2026). O ritmo e o "faltam X%" saem do percentual dos diários,
+           que só enxerga os serviços já lançados. Na obra de demonstração, com
+           39 dos 75 serviços do orçamento sem diário e R$ 318 mil a faturar, o
+           contratante lia "data provável 12/09/2026 · faltam cerca de 1
+           semana · ▼ 45 dias adiantada" (e com 100% nos iniciados leria
+           "Serviços concluídos"). A nota que a tela nova põe no fim do
+           parágrafo não desfaz a etiqueta em destaque.
+           Com serviço do orçamento fora dos diários (contagem CONHECIDA, a
+           mesma do número de andamento), não se projeta: vai `ok:false` com o
+           porquê — o portal.html JÁ PUBLICADO desenha isso como aviso, sem
+           data e sem etiqueta, e mostra o término do contrato. Contagem
+           desconhecida (null) mantém a projeção de antes. */
+        if (previsao && fonteExec === "diario" && fisico && typeof fisico.semApontamento === "number" && fisico.semApontamento > 0) {
+          previsao = { ok: false, motivo: "servicos-fora-do-diario", pct: fisico.pct,
+            explicacao: "Ainda não dá para projetar o término da obra: " + fisico.semApontamento + " dos " + (fisico.doOrcamento || "—") +
+              " serviços do orçamento ainda não apareceram em nenhum diário, e o ritmo medido é só o dos serviços já iniciados. " +
+              "A projeção volta quando todos os serviços do orçamento tiverem aparecido nos diários. Até lá, o prazo que vale é o do contrato." };
+        }
       }
 
       /* ---------- RELATÓRIOS QUE ESTE CLIENTE PODE GERAR ----------
@@ -31381,9 +31656,42 @@ case "nova-folha": return this.novoFolha();
              mostravam "R$ 15,00" retidos ao cliente — número sem sentido no
              documento que ele confere. O valor retido de cada boletim é
              valor × retenção%, somado. */
-          retencao: Math.round(medicoes.reduce(function (s, m) { return s + Util.num(m.valor) * Util.num(m.retencao) / 100; }, 0) * 100) / 100,
+          /* ⚠ E A CONTA ACIMA VIROU R$ × R$ (achado em 13/09/2026, medindo o
+             Portal da obra de demonstração). `medicoes` aqui NÃO é o registro:
+             é a linha já montada para o Portal, onde `retencao` passou a ser o
+             VALOR retido em reais (`_retVal`, b8c23d6) e o percentual foi para
+             `retencaoPct`. Esta soma continuou multiplicando `valor ×
+             retencao / 100` — um boletim de R$ 24.827,61 com 5% mostrava ao
+             contratante "Retenção acumulada R$ 308.204,99" em vez de
+             R$ 1.241,38. Soma-se o valor em reais que a própria linha já traz. */
+          retencao: Math.round(medicoes.reduce(function (s, m) { return s + Util.num(m.retencao); }, 0) * 100) / 100,
           proxima: proxima, parcelas: parcelas
         };
+      }
+      /* ⚠ "PAGA" AO LADO DE "VOCÊ JÁ PAGOU R$ 0,00" (revisão de 13/09/2026).
+         Com o relatório financeiro liberado, o contratante via a medição 01a
+         "Paga" e, na mesma tela, "Você já pagou R$ 0,00": o boletim fora
+         marcado pago sem a receita no Financeiro, e esta posição só lê o
+         caixa. O aviso de boletim pago sem receita existia só para o
+         engenheiro — e a publicação é automática a cada diário.
+         O número não pode ser consertado aqui (somar o boletim ao caixa é
+         ligar dinheiro sem carimbo). Enquanto a regra de
+         `Reconciliacao.pagasSemReceita` — a MESMA do cartão do Painel, pelo
+         carimbo de `_lancVivoDoDoc` — achar boletim desta obra pago sem
+         receita, a posição financeira NÃO vai: o portal.html publicado apenas
+         não desenha o bloco. `financeiroRetido` (aditivo) diz à tela nova e ao
+         formulário de publicar o porquê e a porta (registrar a receita).
+         Silêncio aqui é melhor que o cliente ler que não pagou o que pagou. */
+      var financeiroRetido = null;
+      if (financeiro && typeof Reconciliacao !== "undefined" && Reconciliacao.pagasSemReceita) {
+        try {
+          var _finTodoPortal = lista("financeiro");
+          var _psr = Reconciliacao.pagasSemReceita(meds, _finTodoPortal, function (m) { return _snap._lancVivoDoDoc("medicoes", m.id, _finTodoPortal); });
+          if (_psr.total > 0) {
+            financeiroRetido = { boletins: _psr.total, numeros: _psr.itens.map(function (x) { return x.numero; }) };
+            financeiro = null;
+          }
+        } catch (eRet) { financeiroRetido = null; }
       }
 
       /* ---------- DOCUMENTOS DA OBRA ----------
@@ -31418,9 +31726,14 @@ case "nova-folha": return this.novoFolha();
       if (podeRel("marcos")) {
         marcos = cronograma.map(function (c) {
           var p = Util.num(c.pct);
-          return { nome: c.etapa || "", previstoFim: c.fim || "", previstoInicio: c.inicio || "",
+          var mc = { nome: c.etapa || "", previstoFim: c.fim || "", previstoInicio: c.inicio || "",
                    pct: p, fonte: c.fonte || "estimado",
                    situacao: p >= 100 ? "concluido" : (p > 0 ? "andamento" : "aguardando") };
+          /* ver `semApontamento` no cronograma: "aguardando" afirmaria que não
+             começou, e o diário não sabe disso. `situacao` fica (o portal.html
+             publicado a lê); a tela nova diz "sem apontamento no diário". */
+          if (c.semApontamento) mc.semApontamento = true;
+          return mc;
         });
       }
 
@@ -31508,6 +31821,8 @@ case "nova-folha": return this.novoFolha();
            assim, legíveis no JSON por qualquer um com o link. O gate agora
            vale na CAMADA DO DADO para todo relatório que carrega conteúdo. */
         compras: compras, financeiro: financeiro, documentos: documentos, marcos: marcos,
+        /* aditivo: a posição financeira foi retida (ver `financeiroRetido` acima) */
+        financeiroRetido: financeiroRetido,
         curvaS: curvaS, cronograma: cronograma,
         medicoes: podeRel("medicoes") ? medicoes : [],
         rdos: (podeRel("diario") || podeRel("semanal") || podeRel("mensal") || podeRel("ocorrencias") ||
@@ -31527,7 +31842,7 @@ case "nova-folha": return this.novoFolha();
                segurados: segurados, fotosPendentes: fotosPendentes, pctExec: pctExec, curvaS: curvaS,
                fisico: fisico, fonteExec: fonteExec, relatorios: relPermitidos, compras: compras,
                previsao: previsao, mostrarPrevisao: mostrarPrevisao, financeiro: financeiro,
-               documentos: documentos, marcos: marcos };
+               documentos: documentos, marcos: marcos, financeiroRetido: financeiroRetido };
     },
 
     /* ---------- DOCUMENTOS DA OBRA (o que vai ao Portal) ----------
@@ -31902,6 +32217,8 @@ case "nova-folha": return this.novoFolha();
            saber que o diário de ontem ficou de fora porque ninguém aprovou. */
         (segurados ? '<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:10px 14px;font-size:13px;color:#7c2d12;margin-top:8px"><b>' + segurados + "</b> diário(s) NÃO vão: ainda não foram aprovados e publicados. O cliente só vê diário que passou pelo gestor.</div>" : "") +
         (fotosPendentes ? '<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:10px 14px;font-size:13px;color:#7c2d12;margin-top:8px"><b>' + fotosPendentes + "</b> foto(s) ainda estão subindo para a nuvem e não vão aparecer no Portal nesta publicação. Publique de novo com internet boa.</div>" : "") +
+        /* a posição financeira retida por boletim pago sem receita — ver `financeiroRetido` em _snapshotPortal */
+        (_s.financeiroRetido ? '<div data-aviso="portal-financeiro-retido" style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:10px 14px;font-size:13px;color:#7c2d12;margin-top:8px"><b>A posição financeira NÃO vai ao Portal:</b> ' + _s.financeiroRetido.boletins + ' boletim(ns) desta obra (' + Util.esc(_s.financeiroRetido.numeros.join(", ")) + ') estão marcados como pagos e não encontrei a receita deles no Financeiro. Sem isso o cliente leria "Você já pagou" menor do que pagou. Registre a receita (Painel › “Dinheiro fechado que ninguém lançou”) e publique de novo.</div>' : "") +
         /* acidente é dado pessoal (envolvido, causa, afastamento). Quem decide
            se o cliente lê o texto é o responsável técnico, não o programa. */
         (temAcidente ? '<label class="opt-linha" style="margin-top:10px;font-size:12.5px"><input type="checkbox" id="g-pacid"><span>Incluir <b>nesta publicação</b> o <b>texto dos registros de acidente/dano</b>. Sem marcar, o cliente vê apenas que houve registro no dia e é orientado a consultar o diário oficial (o texto costuma trazer nome de envolvido e informação de saúde). <b>A caixa nasce desmarcada de propósito</b>: autorização dada hoje vale para o acidente de hoje, não para os próximos.</span></label>' : "") +
