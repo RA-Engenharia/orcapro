@@ -94,6 +94,16 @@
          demo sai do iniciar logo abaixo e precisa dele aplicado também. */
       this.aplicarMovimento(null);
 
+      /* JANELA DESTACADA (#janela=v1/<orc>/<aba>[/<sub>], js/janelas.js): a
+         mesma aplicação numa segunda janela, só com o orçamento, para ir ao
+         outro monitor. ⚠ Ela NÃO conecta a nuvem, não faz backup, não manda
+         telemetria nem procura atualização: cada janela dobraria os ouvintes
+         do Firestore e cortaria pela metade a rotação dos 30 backups. O que
+         ela grava sobe pela janela principal, que recebe o evento `storage`
+         e empurra para a nuvem (bindGlobal). */
+      var rotaJan = (typeof Janelas !== "undefined" && !/[?&]demo=1/.test(location.search || "")) ? Janelas.lerRota(location.hash || "") : null;
+      if (rotaJan) { this._janela = rotaJan; try { document.body.classList.add("modo-janela"); } catch (eMj) {} }
+
       // MODO DEMO (?demo=1) — orçamento genérico para vitrine/teste na página de vendas
       if (/[?&]demo=1/.test(location.search || "")) { return this._iniciarDemo(location.search || ""); }
 
@@ -114,7 +124,7 @@
       // TESTE GRÁTIS: cadastro obrigatório (nome+telefone+consentimento) antes de liberar,
       // e telemetria de uso (boot + heartbeat 5min + módulos usados).
       try {
-        if (typeof Telemetria !== "undefined" && !this._ativandoPorLink) {
+        if (typeof Telemetria !== "undefined" && !this._ativandoPorLink && !this._janela) {
           var _app = this;
           if (Telemetria.gate(function () { Telemetria.iniciar(); _app.iniciar(); })) return;
           Telemetria.iniciar();
@@ -123,11 +133,13 @@
 
       // Modo nuvem multi-aparelho: conecta na conta-tenant da licença (dados + usuários
       // compartilhados) e, se este aparelho for secundário, pede login. Async/offline-first.
-      try { this._conectarNuvemLicenca(); } catch (eCn) {}
+      if (!this._janela) { try { this._conectarNuvemLicenca(); } catch (eCn) {} }
       /* fila de fotos: sobe o que ficou pendente quando houve obra sem sinal.
          Instala o gatilho de rede uma vez e anda sozinha. */
-      try { if (typeof Fotos !== "undefined" && Fotos.iniciar) Fotos.iniciar(); } catch (eFt) {}
-      try { if (typeof Gestao !== "undefined" && Gestao._ligarRetornoDeFoto) Gestao._ligarRetornoDeFoto(); } catch (eFr) {}
+      if (!this._janela) {
+        try { if (typeof Fotos !== "undefined" && Fotos.iniciar) Fotos.iniciar(); } catch (eFt) {}
+        try { if (typeof Gestao !== "undefined" && Gestao._ligarRetornoDeFoto) Gestao._ligarRetornoDeFoto(); } catch (eFr) {}
+      }
 
       var self = this;
       // Carrega base SINAPI (própria da empresa, se houver; senão a padrão).
@@ -137,7 +149,7 @@
         // v1.1.122 — checagem automática das BASES no servidor OrçaPRO (1×/dia,
         // silenciosa): saiu SINAPI nova → baixa e aplica sozinha, só informa depois.
         // (O check antigo via ERP local ficou obsoleto: o servidor cobre a frota toda.)
-        if (typeof Atualizacao !== "undefined" && Atualizacao.checarAuto) {
+        if (typeof Atualizacao !== "undefined" && Atualizacao.checarAuto && !self._janela) {
           setTimeout(function () { try { Atualizacao.checarAuto(); } catch (eAu) {} }, 9000);
         }
         /* v1.1.185 — AUTO-RECUPERAÇÃO DO PORTAL DO CLIENTE.
@@ -151,7 +163,7 @@
          * fotos: quem acabou de abrir o programa tem de conseguir trabalhar
          * primeiro. Falha aqui é silenciosa por definição — tenta de novo na
          * próxima abertura, e desiste depois de 3 (PortalSync). */
-        if (typeof Gestao !== "undefined" && Gestao._recuperarPortais) {
+        if (typeof Gestao !== "undefined" && Gestao._recuperarPortais && !self._janela) {
           setTimeout(function () {
             try {
               Gestao._recuperarPortais(function (res) {
@@ -171,6 +183,7 @@
 
       this.bindGlobal();
       if (Auth.usuario()) { this.tela = "lista"; }
+      if (this._janela) return this._iniciarJanela();
       // LOTE 1: aviso preventivo de armazenamento — evita o QuotaExceeded silencioso
       try {
         var u0 = Auth.usuario();
@@ -232,6 +245,44 @@
          e de 5 em 5 minutos. Sem licença verificada ele nem começa. */
       try { if (typeof Cobranca !== "undefined") Cobranca.iniciar(); } catch (eCob) {}
       this.checarAtualizacao();
+    },
+
+    /* Segunda parte do boot da janela destacada (ver o começo do iniciar).
+       Recados em texto puro: a janela não tem menu para a pessoa se achar. */
+    _iniciarJanela: function () {
+      var j = this._janela, main = document.getElementById("main");
+      var recado = function (t) { if (main) { main.innerHTML = '<div class="card" style="margin:24px;max-width:640px"></div>'; main.firstChild.textContent = t; } };
+      if (!Auth.usuario()) { recado("Entre na janela principal do OrçaPRO para continuar."); return; }
+      if (!Janelas.podeEditar(Store)) { recado("Esta versão ainda não protege a edição em duas janelas ao mesmo tempo. Use a janela principal."); return; }
+      this.view = "orcamentos";
+      this.abrirOrcamento(j.orcId);
+      if (this.tela !== "editor" || !this.orcAtual) { recado("Este orçamento não foi encontrado nesta máquina (pode ter sido excluído). Feche esta janela."); return; }
+      this.aba = j.aba;
+      if (j.aba === "cronograma") { this._cronoSub = (this._cronoSub && typeof this._cronoSub === "object") ? this._cronoSub : {}; this._cronoSub[this.orcAtual.id] = j.sub || "cronograma"; }
+      try { document.title = Janelas.titulo(j, this.orcAtual); } catch (eT) {}
+      var self = this;
+      if (!document.getElementById("jan-cab")) {
+        var cab = document.createElement("div");
+        cab.id = "jan-cab";
+        cab.innerHTML = '<span class="jan-t"></span><span class="jan-vivo">ao vivo</span><button class="btn sm" type="button" data-jan="principal">Ir para a janela principal</button>';
+        cab.querySelector(".jan-t").textContent = "Janela destacada · " + Janelas.titulo(j, this.orcAtual);
+        cab.querySelector("button").onclick = function () {
+          try { if (window.opener && !window.opener.closed) { window.opener.focus(); return; } } catch (eO) {}
+          UI.toast("A janela principal foi fechada. Abra o OrçaPRO pelo atalho de sempre.", "erro");
+        };
+        document.body.insertBefore(cab, document.body.firstChild);
+        /* principal fechada: o que se grava aqui fica neste computador, mas só
+           vai para a nuvem e para o backup com a principal aberta */
+        setInterval(function () {
+          var viva = true;
+          try { viva = !!(window.opener && !window.opener.closed); } catch (eV) { viva = false; }
+          var v = cab.querySelector(".jan-vivo");
+          if (v) v.textContent = viva ? "ao vivo" : "janela principal fechada — o que gravar aqui só vai para a nuvem e o backup com ela aberta";
+          if (viva) cab.className = ""; else cab.className = "jan-orfa";
+        }, 2000);
+      }
+      this.render();
+      setTimeout(function () { try { self.render(); } catch (eR) {} }, 400);
     },
 
     // ---------- Modo demonstração (vitrine) ----------
@@ -1842,6 +1893,11 @@
         case "cron-msproject": this.cronMSProject(); break;
         // cronograma executivo (Fase 2): estado de TELA (nunca do orçamento) e os handlers que gravam pelo _cronoAlvo
         case "crono-sub": this._cronoEstado("_cronoSub", t.dataset.sub); break;
+        case "janela-abrir":
+          if (this.orcAtual && typeof Janelas !== "undefined") {
+            Janelas.abrir(this.orcAtual.id, this.aba || "planilha", (this._cronoSub && this._cronoSub[this.orcAtual.id]) || "cronograma");
+          }
+          break;
         case "crono-det": this._cronoEstado("_cronoDet", t.dataset.det); break;
         case "crono-ir-ff": this.aba = "cronograma"; this._cronoEstado("_cronoSub", "fisico"); break;
         case "crono-abrir": this._cronoAbrirEtapa(t.dataset.etapa, t.dataset.valor); break;
@@ -3852,6 +3908,7 @@
      * ================================================================== */
     _bkpTimer: null, _bkpUltimo: 0, _bkpInfo: null,
     backupAuto: function (opts) {
+      if (this._janela) return;   // a janela destacada não faz backup: a principal faz (ver _iniciarJanela)
       opts = opts || {};
       var self = this;
       /* composição própria é dado AUTORAL e insubstituível: fura a espera de

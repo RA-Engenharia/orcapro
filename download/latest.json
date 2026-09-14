@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.78",
+  "versao": "1.2.79",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.78.zip",
-  "notas": "Cronograma: agora da para digitar a duracao e o Depende de direto ao lado das barras do Gantt (clique na coluna ou duplo clique na barra; Enter, Tab e Esc funcionam), alem de arrastar. A altura do Gantt, do histograma e do macrofluxo e a largura da coluna de nomes podem ser ajustadas com o mouse, e o tamanho fica guardado. Botoes e letras da tela do orcamento e do cronograma foram padronizados. Correcao: com o mesmo orcamento aberto em duas abas, a gravacao de uma podia apagar a da outra sem aviso; agora a segunda gravacao e recusada com recado e a tela mostra o que esta salvo.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.78/OrcaPRO-IA-Instalador-v1.2.78.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.79.zip",
+  "notas": "Nova opcao Abrir em outra janela (botao no fim da linha das abas do orcamento): abre a aba atual - Planilha, Cronograma, Graficos e as outras - numa janela separada, para levar ao segundo monitor. O que se grava numa janela aparece na outra na hora. Inclui tudo da 1.2.78: digitar a duracao e o Depende de ao lado das barras do Gantt, paineis redimensionaveis com o mouse, botoes padronizados e a trava que impede uma aba de apagar a gravacao da outra.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.79/OrcaPRO-IA-Instalador-v1.2.79.exe"
 }

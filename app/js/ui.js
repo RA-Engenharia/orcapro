@@ -1301,6 +1301,14 @@
       abas.forEach(function (a) {
         html += '<div class="tab ' + (abaAtiva === a[0] ? "ativa" : "") + '" data-aba="' + a[0] + '">' + Icones.get(a[2], 14) + a[1] + '</div>';
       });
+      /* ⧉ abre a aba de agora numa janela separada (js/janelas.js), para o
+         segundo monitor. Some na demo, dentro da própria janela destacada, e
+         sem a trava de carimbo entre janelas (sem ela duas janelas perdiam dado). */
+      var apJ = (typeof App !== "undefined") ? App : null;
+      var abasJan = { planilha: 1, sintetico: 1, insumos: 1, cronograma: 1, execucao: 1, graficos: 1, relatorios: 1 };
+      if (typeof Janelas !== "undefined" && Janelas.suportado() && Janelas.podeEditar(typeof Store !== "undefined" ? Store : null) && apJ && !apJ._janela && !apJ._demo && abasJan[abaAtiva]) {
+        html += '<button type="button" class="btn sm jan-abrir" data-acao="janela-abrir" title="Abrir esta aba numa janela separada, para levar ao outro monitor. O que gravar numa aparece na outra." aria-label="Abrir em outra janela">⧉ Abrir em outra janela</button>';
+      }
       html += '</div>';
 
       html += '<div id="aba-conteudo">';

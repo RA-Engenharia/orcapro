@@ -3012,3 +3012,14 @@ table.tbl tbody tr:hover .btn:not(.primary):not(.success):not(.danger) {
     }
   }
 }
+
+/* ---- Janela destacada (js/janelas.js): só o orçamento, sem menu e sem topo ---- */
+.tabs .jan-abrir { margin-left: auto; align-self: center; white-space: nowrap; }
+body.modo-janela #sidebar, body.modo-janela #topbar { display: none !important; }
+body.modo-janela .app, body.modo-janela .app.com-sidebar { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); grid-template-areas: "main"; height: calc(100vh - 34px); height: calc(100dvh - 34px); }
+body.modo-janela .main { grid-area: main; padding: 14px 18px; }
+#jan-cab { display: flex; align-items: center; gap: 12px; height: 34px; padding: 0 14px; background: var(--navy, #0f2740); color: #dbe8f5; font-size: 13px; }
+#jan-cab .jan-t { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+#jan-cab .jan-vivo { color: #86efac; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#jan-cab.jan-orfa .jan-vivo { color: #fcd34d; }
+#jan-cab .btn { margin-left: auto; }
