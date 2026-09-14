@@ -3023,3 +3023,9 @@ body.modo-janela .main { grid-area: main; padding: 14px 18px; }
 #jan-cab .jan-vivo { color: #86efac; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #jan-cab.jan-orfa .jan-vivo { color: #fcd34d; }
 #jan-cab .btn { margin-left: auto; }
+
+/* ---- Foco no cronograma: a aba Cronograma sem as ações e os KPIs do orçamento ---- */
+body.foco-crono #main > .barra-acoes, body.foco-crono #main > .kpis, body.foco-crono #main > .faixa-pend { display: none !important; }
+body.foco-crono #main > .tela-titulo { margin-bottom: 6px; }
+/* ---- Janela destacada: só o painel (sem título, ações, KPIs nem abas) ---- */
+body.modo-janela #main > :not(#aba-conteudo) { display: none !important; }

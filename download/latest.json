@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.79",
+  "versao": "1.2.80",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.79.zip",
-  "notas": "Nova opcao Abrir em outra janela (botao no fim da linha das abas do orcamento): abre a aba atual - Planilha, Cronograma, Graficos e as outras - numa janela separada, para levar ao segundo monitor. O que se grava numa janela aparece na outra na hora. Inclui tudo da 1.2.78: digitar a duracao e o Depende de ao lado das barras do Gantt, paineis redimensionaveis com o mouse, botoes padronizados e a trava que impede uma aba de apagar a gravacao da outra.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.79/OrcaPRO-IA-Instalador-v1.2.79.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.80.zip",
+  "notas": "Cronograma: ao abrir a aba Cronograma, a tela passa a mostrar so o planejamento e o Gantt ocupa a altura da janela. A janela destacada (Abrir em outra janela) mostra so o grafico, e selecionar uma etapa numa janela destaca a mesma etapa na outra. Correcao: um clique parado na bolinha da ponta de uma barra do Gantt podia criar uma dependencia sem querer.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.80/OrcaPRO-IA-Instalador-v1.2.80.exe"
 }

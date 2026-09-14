@@ -1388,6 +1388,11 @@
         } else if (o.alturaPref != null) {
           escolhida = P.limitar("gxAltura", o.alturaPref, { linhas: L.length, rowH: this.GX_ROWH, barra: this.GX_BARRA,
             janelaAltura: o.janelaAltura, cabecalho: this.GX_CABECALHO });
+        } else if (o.modo === "tela") {
+          /* a janela inteira menos o cabeçalho do Gantt, a legenda e uma folga
+             para as sub-abas: rolando até o Gantt, ele e a legenda cabem */
+          escolhida = P.alturaPreencher({ janelaAltura: o.janelaAltura, linhas: L.length, rowH: this.GX_ROWH, barra: this.GX_BARRA,
+            topoCorpo: this.GX_TELA_TOPO, legenda: this.GX_LEGENDA });
         }
       }
       var caixa = Math.max(120, Math.round(Number(o.alturaCaixa) > 0 ? Number(o.alturaCaixa)
@@ -3600,10 +3605,25 @@
         '<button class="btn sm n3" data-acao="crono-mpp-status" title="Verificar de novo (a resposta anterior vale por 10 minutos)">verificar de novo</button>';
     },
 
+    /* topo reservado no modo "tela": cabeçalho do Gantt + sub-abas visíveis */
+    GX_TELA_TOPO: 150,
+
     render: function (d, est) {
       est = est || this.estado(null, d.orc);
       // sem Gestão de Obras não há obra para comparar: a sub-aba some (ver SUBS)
       if (!(d.obra && d.obra.podeGestao)) { est.semReal = true; if (est.sub === "real") est.sub = "cronograma"; }
+      /* JANELA DESTACADA (js/janelas.js): só o painel pedido — o Gantt sem a
+         barra de sub-abas e sem o cartão de parâmetros; Físico-financeiro e
+         Previsto × Realizado sozinhos. Quem quer mexer nos parâmetros usa a
+         janela principal. */
+      if (d.painel === "gantt" || d.painel === "fisico" || d.painel === "real" || d.painel === "parametros") {
+        var hp = '<style>' + CSS + '</style><div class="cx cx-painel-so" data-cx-sub="' + esc(d.painel) + '">';
+        if (d.painel === "fisico") hp += this.fisico(d, est);
+        else if (d.painel === "real") hp += this.real(d);
+        else if (d.painel === "parametros") hp += this.parametros(d, est);
+        else { d.cartao = ""; hp += this.cronograma(d, est); }
+        return hp + '</div>';
+      }
       var html = '<style>' + CSS + '</style><div class="cx" data-cx-sub="' + esc(est.sub) + '">';
       /* ⚠ a faixa da obra mora NA LINHA das sub-abas: numa linha própria ela
          empurrava o Gantt 42 px para baixo — medido a 1366×768, a 1ª barra

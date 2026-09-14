@@ -2353,7 +2353,7 @@
       }
       d.paineis = prefsPn || {};
       d.gx = PNs ? PNs.opcoesGantt(d.paineis, {
-        alcas: typeof PaineisUI !== "undefined", grade: typeof GanttGradeUI !== "undefined", janela: janAp,
+        alcas: typeof PaineisUI !== "undefined", grade: typeof GanttGradeUI !== "undefined", janela: janAp, tela: !janAp,
         janelaAltura: typeof window !== "undefined" ? window.innerHeight : null, janelaLargura: typeof window !== "undefined" ? window.innerWidth : null
       }) : null;
       d.alcas = !!(d.gx && d.gx.alcas);

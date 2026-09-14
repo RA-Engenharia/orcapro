@@ -280,7 +280,11 @@
         // ⚠ a alça de NOMES some abaixo de 820 px (celular); a de altura fica
         alcaNomes: alcas && (larg === null || larg >= 820),
         colunas: amb.grade === true && prefs.gxColunas !== false,
-        modo: jan ? "preencher" : "px",
+        /* "tela" (aba Cronograma na janela principal): o Gantt ocupa a altura
+           da janela, e não os 520 px de antes — o dono mediu o Gantt
+           "comprimido" num monitor de 1080. Preferência arrastada na alça
+           vence (ver ganttProEstado). */
+        modo: jan ? "preencher" : (amb.tela === true ? "tela" : "px"),
         painel: (jan && typeof jan.painel === "string") ? jan.painel : "",
         janelaAltura: med(amb.janelaAltura),
         labelPref: alcas ? tam(prefs.gxNomes) : null,

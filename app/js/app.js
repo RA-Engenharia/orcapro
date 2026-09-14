@@ -182,6 +182,7 @@
       });
 
       this.bindGlobal();
+      try { this._selCanal(); } catch (eSc) {}
       if (Auth.usuario()) { this.tela = "lista"; }
       if (this._janela) return this._iniciarJanela();
       // LOTE 1: aviso preventivo de armazenamento — evita o QuotaExceeded silencioso
@@ -625,6 +626,11 @@
       }
       // view = Orçamentos (fluxo original)
       if (this.tela === "editor" && this.orcAtual) {
+        /* FOCO NO CRONOGRAMA: na aba Cronograma somem as ações e os KPIs do
+           orçamento (CSS body.foco-crono) — a tela fica com o que é do
+           planejamento e o Gantt ganha a altura (modo "tela"). Pedido do dono
+           com o Gantt medido "comprimido" embaixo dos cards. */
+        try { document.body.classList.toggle("foco-crono", this.aba === "cronograma"); } catch (eFc) {}
         main.innerHTML = UI.renderEditor(this.orcAtual, this.aba);
         /* ⚠ RELIGADO A CADA RENDER, como o filtro da lista. A aba reescreve o
            HTML inteiro; o listener do render anterior morreu junto com o
@@ -6451,7 +6457,15 @@
           legenda: CronoExecUI.GX_LEGENDA, linhas: (g.pro && g.pro.L) ? g.pro.L.length : null, rowH: CronoExecUI.GX_ROWH, barra: CronoExecUI.GX_BARRA });
         if (alt > 0 && g.corpo.style.height !== Math.round(alt) + "px") g.corpo.style.height = Math.round(alt) + "px";
       }
-      var med = { w: g.wrap ? (g.wrap.clientWidth || 0) : 0, h: g.corpo ? g.corpo.offsetHeight : g.caixa, j: jan ? (global.innerHeight || 0) : 0 };
+      /* modo "tela" (aba Cronograma da principal): redimensionar a janela
+         muda a altura do Gantt junto — sem preferência arrastada na alça */
+      var ogT = (!jan && P && g.corpo && g.corpo.style && typeof CronoExecUI !== "undefined") ? this._gxOpcoes() : null;
+      if (ogT && ogT.modo === "tela" && ogT.alturaPref == null) {
+        var altT = P.alturaPreencher({ janelaAltura: global.innerHeight, topoCorpo: CronoExecUI.GX_TELA_TOPO, legenda: CronoExecUI.GX_LEGENDA,
+          linhas: (g.pro && g.pro.L) ? g.pro.L.length : null, rowH: CronoExecUI.GX_ROWH, barra: CronoExecUI.GX_BARRA });
+        if (altT > 0 && g.corpo.style.height !== Math.round(altT) + "px") g.corpo.style.height = Math.round(altT) + "px";
+      }
+      var med = { w: g.wrap ? (g.wrap.clientWidth || 0) : 0, h: g.corpo ? g.corpo.offsetHeight : g.caixa, j: (jan || (ogT && ogT.modo === "tela")) ? (global.innerHeight || 0) : 0 };
       if (auto && g.medida && g.medida.w === med.w && g.medida.h === med.h && g.medida.j === med.j) return false;
       g.medida = med;
       g.caixa = g.corpo ? g.corpo.offsetHeight : g.caixa;
@@ -6485,6 +6499,7 @@
       return Paineis.opcoesGantt(this._gxPaineis(), {
         alcas: typeof PaineisUI !== "undefined", grade: typeof GanttGradeUI !== "undefined",
         janela: (this._janela && typeof this._janela === "object") ? this._janela : null,
+        tela: !(this._janela && typeof this._janela === "object") && this.tela === "editor" && this.aba === "cronograma",
         janelaAltura: global.innerHeight, janelaLargura: global.innerWidth
       });
     },
@@ -6540,8 +6555,61 @@
 
     /* REDESENHA as três peças. Só troca o que mudou de janela (virtualização):
        rolar dentro da mesma faixa de linhas e dias não redesenha nada. */
+    /* SELEÇÃO SINCRONIZADA ENTRE JANELAS: selecionar uma linha do Gantt numa
+       janela seleciona e mostra a mesma linha na outra (principal × janela
+       destacada). ⚠ Estado de TELA: nada é gravado, nada vai ao Store nem à
+       nuvem — só um aviso pelo BroadcastChannel da mesma origem. */
+    _selCanal: function () {
+      if (this._selBC !== undefined) return this._selBC;
+      var self = this;
+      this._selBC = null;
+      try {
+        if (typeof BroadcastChannel === "function") {
+          this._selBC = new BroadcastChannel("orcapro-sel");
+          this._selBC.onmessage = function (ev) { try { self._selRecebida(ev && ev.data); } catch (eR) {} };
+        }
+      } catch (eB) { this._selBC = null; }
+      return this._selBC;
+    },
+    _selPublicar: function () {
+      var g = this._gx, o = this.orcAtual;
+      if (!g || !o || this._selAplicando) return;
+      var p = this._gxPro(); if (!p || !p.ids) return;
+      var id = (g.z.sel >= 0 && g.z.sel < p.ids.length) ? String(p.ids[g.z.sel]) : "";
+      if (id === (g.selPub || "")) return;
+      g.selPub = id;
+      if (!id) return;
+      var bc = this._selCanal();
+      if (bc) { try { bc.postMessage({ orcId: o.id, id: id, eid: Auth.empresaId() }); } catch (eP) {} }
+    },
+    _selRecebida: function (m) {
+      var o = this.orcAtual, g = this._gx;
+      if (!m || !o || !g || m.orcId !== o.id || m.eid !== Auth.empresaId()) return;
+      var p = this._gxPro(); if (!p || !p.e || !p.ids) return;
+      var lin = -1, i;
+      for (i = 0; i < p.ids.length; i++) if (String(p.ids[i]) === String(m.id)) { lin = i; break; }
+      if (lin < 0 || g.z.sel === lin) return;   // não desenhada neste detalhe: calado (é só destaque)
+      g.selPub = String(m.id);                  // não devolve o aviso (sem pingue-pongue)
+      g.z.sel = lin;
+      var rowH = CronoExecUI.GX_ROWH, hC = g.plot.clientHeight || 120;
+      if (lin * rowH < g.plot.scrollTop || (lin + 1) * rowH > g.plot.scrollTop + hC) {
+        var alvoTop = Math.max(0, lin * rowH - hC / 2);
+        g.plot.scrollTop = alvoTop; g.nomes.scrollTop = alvoTop; g.z.scrollTop = alvoTop;
+      }
+      var l = p.L[lin], no = l && (l.no || l.et);
+      if (no && no.inicio != null && typeof GanttUI !== "undefined" && GanttUI.centralizarDia) {
+        var res = GanttUI.centralizarDia(p.e, Math.max(0, Math.round(no.inicio)));
+        var x0 = g.plot.scrollLeft, wC = g.plot.clientWidth || 600, xb = res && res.scrollLeft != null ? res.scrollLeft : null;
+        if (xb != null && (xb < x0 - wC / 2 || xb > x0 + wC / 2)) { g.plot.scrollLeft = xb; g.z.scrollLeft = xb; g.regua.scrollLeft = xb; }
+      }
+      this._selAplicando = true;
+      try { this._gxPintar(true); } finally { this._selAplicando = false; }
+    },
+
     _gxPintar: function (forcar, ovr) {
       var g = this._gx; if (!g) return;
+      var selfSel = this;
+      if (!this._selAplicando) setTimeout(function () { try { selfSel._selPublicar(); } catch (eS) {} }, 0);
       /* ⚠ A LARGURA DA COLUNA DE NOMES ENTRA ANTES DE MEDIR O PAINEL DO TEMPO:
          ela decide quanto sobra, e é sobre essa sobra que o "Ajustar" calcula
          os px por dia. Na ordem inversa a escala sairia com a largura da
@@ -6695,7 +6763,7 @@
       var a = GanttUI.iniciarArrasto(no, alvo, GanttUI.xConteudo(p.e, ev.clientX - q.left), p.ctx[String(no.id)] || {});
       if (!a.valido) { UI.toast(a.motivo || "Esta barra não se arrasta.", ""); return; }
       g.z.sel = lin;
-      g.arrasto = { a: a, no: no, lin: lin, res: null };
+      g.arrasto = { a: a, no: no, lin: lin, res: null, x0: ev.clientX, y0: ev.clientY };
       g.mouse = { x: ev.clientX, y: ev.clientY };
       document.body.classList.add("gx-arrastando");
       if (g.plot.focus) g.plot.focus();
@@ -6805,6 +6873,16 @@
         }
         g.ultUp = { id: ar.no.id, t: agora, x: px, y: py };
       } else g.ultUp = null;
+      /* ⚠ CLIQUE PARADO NÃO GRAVA, em NENHUMA alça. Roteiro do defeito (medido
+         com mouse real em 14/09/2026, e2e-janela-destacada [10]): um clique sem
+         mover na bolinha da ponta de uma barra ("ligar") gravava uma
+         dependência nova — e3 passou a depender de e2 — com o toast de sucesso,
+         só por selecionar a linha. Menos de 3 px entre apertar e soltar é
+         clique: repinta (a seleção fica) e não passa pelo _gxSoltar. */
+      if (pos && ar.x0 != null && Math.abs(pos.x - ar.x0) < 3 && Math.abs(pos.y - ar.y0) < 3) {
+        this._gxPintar(true);
+        return;
+      }
       this._gxSoltar(ar);
     },
 
