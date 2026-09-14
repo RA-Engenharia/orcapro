@@ -141,6 +141,17 @@
   --raio-sm: 6px;
   --raio: 10px;
   --raio-lg: 16px;
+  /* ⚠ A RÉGUA DO CONTROLE (padrão visual, 14/09/2026 — "deixa as letras
+     padronizadas, a tela está uma bagunça de padrão"). Medido na 1.2.77 só
+     acima do Gantt: 16 jeitos de botão, 8 alturas (22 · 24,6 · 26 · 27 ·
+     27,4 · 30 · 32,1 · 36) e 5 raios. A régua saiu do SEGMENTADO que o dono
+     aprovou (as sub-abas do Cronograma): 32 px, raio 8, borda clara, sem
+     sombra, o estado dito pelo preenchimento. Os números moram aqui uma vez;
+     botão, segmentado, interruptor e campo compacto leem daqui.
+     32 = line-height 18 + padding 6+6 + borda 1+1 — escrito, nunca derivado
+     de `line-height: normal` (que é o que dava 26/27/30 conforme a fonte). */
+  --raio-ctl: 8px;
+  --h-ctl: 32px;
 
   /* ---------------------------------------------------------------
    * TIPOGRAFIA — seis degraus e três pesos.
@@ -293,6 +304,12 @@ body {
  * Foi assim que o orçamentista viu "letras difíceis de ler" só em duas
  * colunas, e só no escuro. Reportado na 1.1.191. */
 button, input, select, textarea { font-family: inherit; font-size: inherit; color: var(--texto); }
+/* ⚠ `<b>` E `<strong>` EM 600, DECLARADO (14/09/2026). O navegador os pinta em
+   700, e as duas faces do app (Plex Sans e Source Sans 3) só têm 400–600: o
+   700 desenha IGUAL ao 600 — medido em tinta de pixel, 4714 nos dois. Não
+   muda um pixel; faz o CSS parar de mentir o peso e a régua (400/500/600)
+   valer para o texto que vem em `<b>` de dentro dos componentes. */
+b, strong { font-weight: var(--p-forte); }
 
 /* ⚠ COR SEM FUNDO É COMO SE FABRICA TEXTO INVISÍVEL — e foi o que aconteceu.
  * A regra acima dava `color: var(--texto)` (quase branco, no escuro) ao
@@ -579,14 +596,31 @@ table.tbl tr.lin:hover td { background: rgba(46,111,158,.06); }
    `.main`, e por isso a fileira de botões dele nunca quebrava. */
 .main .flex, .modal .flex { flex-wrap: wrap; }
 .btn.longo { white-space: normal; text-align: center; line-height: 1.25; }
+/* ⚠ N2 — O SECUNDÁRIO MORA AQUI, NA DECLARAÇÃO ORIGINAL (D3: a régua vale
+   para o app inteiro, 751 `class="btn` em js/). Roteiro do defeito: os
+   valores do secundário estavam em DOIS lugares que brigavam — este `.btn`
+   (borda --linha-forte 3,1:1, --sombra-sm, sobe 1 px no hover) e a regra
+   `.barra-acoes .btn:not(…)` (especificidade 0,6,0: borda --linha, sem
+   sombra). O MESMO `class="btn sm"` desenhava dois botões conforme o avô:
+   "Parâmetros" do topo e "Limpar" do cartão, lado a lado na mesma tela, não
+   pareciam da mesma família. Os valores daquela regra vieram para cá e ela
+   foi APAGADA — um terceiro bloco "unificado" no fim do arquivo perderia
+   para as regras escritas depois (memória "regra de unificação nasce
+   perdendo").
+   Sem sombra e sem `translateY`: o que diz "clicável" é a borda e o cursor;
+   o que diz o estado é o preenchimento. Botão que dependia da sombra para
+   aparecer foi conferido em foto (Planilha, Obras, Financeiro, Medições,
+   modais, nos dois temas) antes de entrar.
+   ⚠ `line-height: 20px` escrito: 9+9+20+2 = 40, o mesmo alvo de toque que o
+   celular já exige (@media 820px). O `.btn.sm` abaixo é o controle de 32. */
 .btn {
   display: inline-flex; align-items: center; gap: 7px; justify-content: center;
-  border: 1px solid var(--linha-forte); background: var(--surface); color: var(--texto);
-  padding: 9px 15px; border-radius: var(--raio-sm); cursor: pointer; font-weight: var(--p-medio);
-  transition: .14s cubic-bezier(.4,0,.2,1); white-space: nowrap; box-shadow: var(--sombra-sm);
+  border: 1px solid var(--linha); background: var(--surface); color: var(--texto);
+  padding: 9px 15px; line-height: 20px; border-radius: var(--raio-ctl); cursor: pointer; font-weight: var(--p-medio);
+  transition: .14s cubic-bezier(.4,0,.2,1); white-space: nowrap; box-shadow: none;
 }
-.btn:hover { border-color: var(--aco); box-shadow: var(--sombra); transform: translateY(-1px); }
-.btn:active { transform: translateY(0); box-shadow: var(--sombra-sm); }
+.btn:hover { border-color: var(--linha-forte); background-color: var(--surface-2); }
+.btn:active { transform: none; }
 /* ⚠ SOLIDO, NAO GRADIENTE — e por dois motivos, nao por gosto.
    1) O gradiente vertical com brilho interno (`inset 0 1px 0 branco`) e a
       gramatica de botao de 2010: imita um plastico iluminado de cima. Nada
@@ -597,8 +631,12 @@ table.tbl tr.lin:hover td { background: rgba(46,111,158,.06); }
    A sombra tambem carregava o rgb do azul ANTIGO (46,111,158) escrito a
    mao: sombra colorida que nao acompanha o token e um descolamento que
    ninguem ve acontecer. */
-.btn.primary { background: var(--aco); border-color: var(--aco); color: #fff; box-shadow: 0 1px 2px rgba(13,110,189,.24), 0 2px 8px rgba(13,110,189,.20); }
-.btn.primary:hover { background: var(--aco-claro); border-color: var(--aco-claro); box-shadow: 0 2px 6px rgba(13,110,189,.28), 0 6px 16px rgba(13,110,189,.24); }
+/* ⚠ N1 SEM SOMBRA COLORIDA E COM PESO 600 AQUI (e não só dentro da
+   `.barra-acoes`, que era onde o 600 morava). A sombra azul de 2 camadas era
+   o que fazia o primário e o [Passar a obra] parecerem dois "ativos"
+   disputando com a sub-aba ativa a 72 px deles. */
+.btn.primary { background: var(--aco); border-color: var(--aco); color: #fff; box-shadow: none; font-weight: var(--p-forte); }
+.btn.primary:hover { background: var(--aco-claro); border-color: var(--aco-claro); box-shadow: none; }
 /* ⚠ CHAPADO, NÃO GRADIENTE — e é por contraste, não por gosto.
    Era `linear-gradient(180deg, #22b95d, var(--verde))`. O texto branco cruza o
    gradiente inteiro, então quem manda é o ponto MAIS CLARO: #22b95d dá
@@ -619,13 +657,35 @@ table.tbl tr.lin:hover td { background: rgba(46,111,158,.06); }
  * apagando no fundo do próprio botão.
  * #15803d com branco dá 5,02:1, e não muda com o tema — que é o ponto: quem
  * manda no par é o botão, não a superfície atrás dele. */
-.btn.success { background: #15803d; border-color: #139345; color: #fff; box-shadow: 0 2px 8px rgba(21,128,61,.34), inset 0 1px 0 rgba(255,255,255,.28); }
-.btn.success:hover { background: #15803d; box-shadow: 0 5px 16px rgba(21,128,61,.44), inset 0 1px 0 rgba(255,255,255,.32); }
+/* [Gerar Proposta] continua verde (D2): é a ÚNICA cor diferente da tela, e o
+   hover deixa de "acender" por sombra — o realce é o `filter` lá embaixo. */
+.btn.success { background: #15803d; border-color: #139345; color: #fff; box-shadow: none; font-weight: var(--p-forte); }
+.btn.success:hover { background: #15803d; box-shadow: none; }
 .btn.ghost { background: transparent; box-shadow: none; border-color: var(--linha); }
-.btn.ghost:hover { box-shadow: none; }
+.btn.ghost:hover { box-shadow: none; background-color: var(--surface-2); }
 .btn.danger { color: var(--vermelho); border-color: transparent; background: transparent; box-shadow: none; }
 .btn.danger:hover { background: rgba(220,38,38,.08); border-color: transparent; transform: none; box-shadow: none; }
-.btn.sm { padding: 5px 10px; font-size: var(--t-peq); }
+/* N2-FORTE — a ação consequente de uma faixa, que não é o primário da tela.
+   Era `.barra-acoes .btn.acao-forte` (só valia dentro da barra do editor); o
+   [Passar a obra para esta revisão] mora na faixa da obra do Cronograma e
+   era azul cheio, colado na sub-aba ativa (D2). Ele abre confirmação e mexe
+   em quantidade medida: precisa ser ACHÁVEL, não gritar igual ao estado. */
+.btn.acao-forte { color: var(--texto); border-color: var(--linha-forte); font-weight: var(--p-forte); box-shadow: none; }
+/* o controle de 32 px: 18 + 6 + 6 + 1 + 1 (ver --h-ctl). ⚠ O lado continua
+   10 px, como era: com 12 a linha 1 da barra do editor (13 botões, 79 px de
+   folga a 1366 com o menu aberto) quebrou e desceu a tela inteira 42 px. */
+.btn.sm { padding: 6px 10px; line-height: 18px; font-size: var(--t-peq); }
+/* N3 — AÇÃO DE APOIO SÓ COM ÍCONE: transparente em repouso, 32×32 quadrado,
+   ícone 16. `title` e `aria-label` são obrigatórios no HTML (o nome da ação
+   só existe neles). Hover pinta o fundo; o foco usa o anel do `.btn`.
+   Usado na barra do Cronograma (Imprimir, Documentos, MS Project) e é o
+   mesmo que o ⧉ "Abrir em outra janela" deve usar. */
+.btn.sm.icone { width: var(--h-ctl); height: var(--h-ctl); padding: 0; background: transparent; border-color: transparent; color: var(--texto); }
+.btn.sm.icone:hover { background: var(--surface-2); border-color: var(--linha); }
+.btn.sm.icone .ic-svg { width: 16px; height: 16px; }
+/* N3 com texto (← Voltar, ".mpp?"): mesma pele do ícone, largura do rótulo */
+.btn.sm.n3 { background: transparent; border-color: transparent; }
+.btn.sm.n3:hover { background: var(--surface-2); border-color: var(--linha); }
 .btn:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; transform: none; }
 
 /* ---------- Cards ---------- */
@@ -892,7 +952,7 @@ table.tbl input.cell:focus { border-color: var(--aco); background: var(--surface
 table.tbl td.right { text-align: right; white-space: nowrap; }
 table.tbl td.num-item { white-space: nowrap; text-align: center; font-variant-numeric: tabular-nums; color: var(--aco); font-weight: var(--p-forte); }
 .acoes { display: inline-flex; align-items: center; gap: 5px; flex-wrap: nowrap; justify-content: flex-end; }
-.btn.sm.ico { padding: 5px 7px; min-width: 28px; font-size: var(--t-base); }
+.btn.sm.ico { padding: 6px 7px; min-width: 28px; font-size: var(--t-base); }
 /* =====================================================================
  * PÍLULA DE FONTE DE PREÇO (SINAPI, SEINFRA, ORSE, SUDECAP…)
  *
@@ -917,7 +977,12 @@ table.tbl td.num-item { white-space: nowrap; text-align: center; font-variant-nu
  * A régua roda em tools/test-contraste-selos.js, que deriva a lista deste
  * próprio bloco: base nova entra já coberta.
  * ===================================================================== */
-.pill { display: inline-block; font-size: var(--t-micro); font-weight: var(--p-forte); padding: 3px 9px; border-radius: 999px; letter-spacing: .2px; line-height: 1.4; box-shadow: inset 0 0 0 1px rgba(127,127,127,.14); }
+/* ⚠ PILL É SANS, 24 px, SEM SOMBRA INTERNA (régua, 14/09/2026). Sem
+   `font-family` a pill herdava o Mono do `td.num` onde mora: a "crítica" da
+   coluna Folga pedia 700 e desenhava 500 (o Mono só tem 400–500), mais leve
+   que o texto normal ao lado — hierarquia falsa. `line-height` escrito:
+   18 + 3 + 3 = 24, e não 1.4 × 12 = 16,8 → 22,8. */
+.pill { display: inline-block; font-family: var(--fonte); font-size: var(--t-micro); font-weight: var(--p-forte); padding: 3px 9px; border-radius: 999px; letter-spacing: .2px; line-height: 18px; box-shadow: none; }
 /* ⚠ sinapi é a pílula PADRÃO (`r.cor || "sinapi"` no render do item), e era a
    única sem cor própria: usava `var(--aco)`, token tematizado, e por isso
    PARECEU resolvida nos dois lados. Reprovava nos dois — 4,41:1 no claro e
@@ -1052,9 +1117,17 @@ tr.tr-aviso-insumo b { cursor: pointer; text-decoration: underline; text-underli
    transformava a checkbox num retângulo de largura total com borda, e o texto
    ao lado era empurrado para fora do container: no celular e no iPad virava
    uma caixa enorme e vazia com o texto espremido numa coluna cortada. */
+/* ⚠ `background-color`, NUNCA o atalho `background` (14/09/2026). Esta regra
+   tem a MESMA especificidade de `select:not(.cell)` (lá em cima, que desenha
+   a seta com `background-repeat: no-repeat`) e vem depois: o atalho zerava a
+   imagem e o repeat. No claro a seta do <select> sumia (o "Nenhum" do
+   Paralelismo parecia caixa de texto); no escuro o `:root[data-tema="dark"]
+   select:not(.cell)` devolvia só a imagem, e o `repeat` que o atalho deixou
+   LADRILHAVA a seta pelo campo inteiro (medido: background-repeat: repeat).
+   e2e-padrao-cronograma confere `no-repeat` + imagem nos dois temas. */
 .field input:not([type="checkbox"]):not([type="radio"]), .field select, .field textarea {
   width: 100%; padding: 10px 12px; border: 1px solid var(--linha-forte);
-  border-radius: var(--raio-sm); background: var(--surface); color: var(--texto);
+  border-radius: var(--raio-sm); background-color: var(--surface); color: var(--texto);
   transition: border-color .14s, box-shadow .14s;
 }
 .field input[type="checkbox"], .field input[type="radio"] { width: auto; margin: 3px 0 0; }
@@ -1339,6 +1412,9 @@ input[type="checkbox"], input[type="radio"] { flex: 0 0 auto; }
   .modal { max-width: 100%; max-height: 92vh; }
   /* botões e campos com alvo de toque confortável */
   .btn { min-height: 40px; }
+  /* ⚠ o N3 de 32×32 vira 40×40 no dedo: sem isto a altura subia pelo
+     min-height acima e a largura ficava em 32 — alvo estreito e torto */
+  .btn.sm.icone { width: 40px; }
   /* login cabe na largura da tela */
   .login-formside { padding: 24px 16px; }
   .login-card { max-width: 100%; }
@@ -1351,7 +1427,15 @@ input[type="checkbox"], input[type="radio"] { flex: 0 0 auto; }
 }
 
 /* ---------- Toast ---------- */
-.toasts { position: fixed; bottom: 20px; right: 20px; z-index: 100; display: flex; flex-direction: column; gap: 8px; }
+.toasts { position: fixed; bottom: 20px; right: 20px; z-index: 100; display: flex; flex-direction: column; gap: 8px; max-width: 560px; max-width: min(560px, calc(100vw - 40px)); pointer-events: none; }
+/* ⚠ RECADO LONGO NÃO TAMPA O RODAPÉ DO QUADRO. O recado da recusa fica 8 a
+   20 s (App._msRecado) e, sem largura máxima, ia de x=0 a 1346 cobrindo
+   Cancelar/Salvar/Avançar — justo quando manda fechar o quadro (medido na
+   revisão da F2: elementFromPoint no Cancelar = DIV.toast por 14 s). Com
+   quadro aberto o recado sobe para o topo, sobre o título; e o contêiner não
+   pega clique (pointer-events), para nada por baixo ficar inalcançável.
+   UI.toast põe a classe quando há #modal-bg no momento do recado. */
+.toasts.sobre-modal { bottom: auto; top: 12px; right: 50%; transform: translateX(50%); }
 .toast { background: var(--navy); color: #fff; padding: 11px 16px; border-radius: var(--raio); box-shadow: var(--sombra); font-size: var(--t-base); animation: slidein .2s; }
 .toast.ok { background: var(--verde); }
 .toast.erro { background: var(--vermelho); }
@@ -2579,20 +2663,15 @@ input.coef-edit.mexido { border-color: var(--amarelo); background: rgba(170, 98,
    soma e abre um vao de 18px entre botoes. A alternativa era editar 37
    trechos a mao e torcer para a proxima tela lembrar do padrao. */
 .tela-acoes .btn { margin-right: 0 !important; align-self: center !important; }
-.tela-acoes .btn:not(.primary):not(.success):not(.danger) {
-  background: var(--surface);
-  border-color: var(--linha);
-  color: var(--texto-fraco);
-  box-shadow: none;
-  font-weight: var(--p-medio);
-}
-.tela-acoes .btn:not(.primary):not(.success):not(.danger):hover {
-  color: var(--texto);
-  border-color: var(--linha-forte);
-  box-shadow: var(--sombra-sm);
-}
-/* o principal ganha o unico destaque da area */
-.tela-acoes .btn.primary { font-weight: var(--p-forte); }
+/* ⚠ O SECUNDÁRIO DO CABEÇALHO DE TELA NÃO TEM MAIS REGRA PRÓPRIA (14/09/2026).
+   Aqui morava um `.tela-acoes .btn:not(.primary):not(.success):not(.danger)`
+   (0,4,0) com a pele do secundário — superfície, borda --linha, sem sombra,
+   texto --texto-fraco — e um hover com --sombra-sm. Era a mesma pele que o
+   `.btn` passou a ter na declaração original (a régua N2), escrita uma
+   segunda vez com especificidade que vence qualquer componente. Duas
+   declarações do mesmo botão é o defeito que a régua conserta; o texto
+   volta a --texto (N2), e a hierarquia continua dita pelo preenchimento do
+   `.primary`, que é o único cheio da área. */
 
 /* =====================================================================
  * A BARRA DO EDITOR DE ORCAMENTO — DUAS LINHAS, GRUPOS POR PROXIMIDADE
@@ -2606,8 +2685,9 @@ input.coef-edit.mexido { border-color: var(--amarelo); background: rgba(170, 98,
  * ⚠ NAO USA `.btn.ghost` PARA O SECUNDARIO. Neste app `ghost` ja significa
  *   voltar/desfazer (ver `.btn.ghost` la em cima e o botao Voltar no topo
  *   desta mesma tela). Pintar "Parametros" de ghost daria a nove botoes de
- *   acao a roupa de um botao de saida. O secundario aqui e uma superficie
- *   propria, sem sombra, com o rotulo em `--texto-fraco`.
+ *   acao a roupa de um botao de saida. O secundario aqui e o `.btn` cru (N2:
+ *   superficie, borda --linha, sem sombra, rotulo --texto) — desde 14/09/2026
+ *   sem regra propria, ver a nota logo abaixo.
  *
  * ⚠ `!important` na margem: as 37 telas carregam `margin-right` INLINE nos
  *   botoes, e `_aprovBotoesOrc` monta a pilula com `margin-right:6px` inline.
@@ -2615,33 +2695,26 @@ input.coef-edit.mexido { border-color: var(--amarelo); background: rgba(170, 98,
  *   quebra justamente a leitura de grupo. Mesma decisao do `.tela-acoes`.
  * ===================================================================== */
 .tela-titulo { margin-bottom: 12px; }
+/* o nome do orçamento: 20/600. Era `style="font-size:20px;font-weight:800"`
+   em linha (ui.js renderEditor), e o 800 desenhava 600 — o Plex Sans só tem
+   400–600 (memória "peso de fonte que não existe"). Continua <span> e não
+   <h2>: `.main h2` (0,1,1) venceria esta classe calado (memória ".main h2
+   vence o componente"). Duas classes, para ninguém "simplificar" para uma. */
+.tela-titulo .tela-nome { font-size: var(--t-tit); font-weight: var(--p-forte); margin-left: 8px; }
 .barra-acoes { display: flex; flex-direction: column; gap: 8px; }
 .acoes-linha { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 /* o grupo NAO quebra por dentro: quem quebra e a linha, entre grupos */
 .acoes-grp { display: flex; align-items: center; flex-wrap: nowrap; gap: 6px; }
 .acoes-grp > * { margin-right: 0 !important; align-self: center !important; }
 .acoes-sep { width: 1px; align-self: stretch; min-height: 18px; background: var(--linha); flex: 0 0 auto; }
-.barra-acoes .btn:not(.primary):not(.success):not(.danger):not(.acao-forte) {
-  background: var(--surface);
-  border-color: var(--linha);
-  color: var(--texto-fraco);
-  box-shadow: none;
-  font-weight: var(--p-medio);
-}
-.barra-acoes .btn:not(.primary):not(.success):not(.danger):not(.acao-forte):hover {
-  color: var(--texto);
-  border-color: var(--linha-forte);
-  box-shadow: var(--sombra-sm);
-}
-/* o forte de cada linha: um so, e sem cor propria — a cor ja esta ocupada
-   por "Gerar Proposta" (verde) na mesma linha. Aqui o destaque e PESO. */
-.barra-acoes .btn.acao-forte {
-  color: var(--texto);
-  border-color: var(--linha-forte);
-  font-weight: var(--p-forte);
-  box-shadow: var(--sombra-sm);
-}
-.barra-acoes .btn.primary, .barra-acoes .btn.success { font-weight: var(--p-forte); }
+/* ⚠ APAGADAS AQUI (14/09/2026): `.barra-acoes .btn:not(.primary):not(.success)
+   :not(.danger):not(.acao-forte)` (0,6,0), o hover dela, `.barra-acoes
+   .btn.acao-forte` e `.barra-acoes .btn.primary/.success {600}`. Os valores
+   foram para as declarações originais (`.btn`, `.btn.acao-forte`,
+   `.btn.primary`, `.btn.success`, perto da linha 600). Com a regra de 0,6,0
+   viva, o mesmo `btn sm` desenhava um botão aqui e outro na barra do
+   Cronograma — e qualquer correção no `.btn` perdia calada para ela.
+   ⚠ Não recrie: e2e-padrao-cronograma lista cada botão fora da régua. */
 /* no celular o traco sai e sobra a quebra de linha; o grupo passa a poder
    quebrar por dentro para nenhum botao vazar da tela. */
 @media (max-width: 640px) {
@@ -2658,6 +2731,24 @@ input.coef-edit.mexido { border-color: var(--amarelo); background: rgba(170, 98,
 @media (max-width: 1439px) {
   .barra-acoes .ia-rot-largo { display: none; }
 }
+/* ⚠ AS FAIXAS DE PENDÊNCIA DO EDITOR (item sem preço / sem quantidade), entre
+   os KPIs e as abas: 12 px, 6×12 de vão e raio 8 — a mesma pele do selo
+   "Este orçamento foi fechado em…" logo acima. Eram `style=` em linha com 13 px
+   (fora da régua), 10×14 de vão e raio 10.
+   Roteiro do defeito (14/09/2026, revisão da fatia F5): a 2ª linha da barra do
+   Cronograma (D1) custa ~34 px, e com a faixa "1 item(ns) sem quantidade"
+   aberta a 1ª barra do Gantt foi a y 771–787 numa janela de 768 — a
+   e2e-cronograma-executivo reprovou. Medido a 1366 com o menu aberto: em 13 px
+   o texto tem 1123 px para 1060 úteis (2 linhas, 62 px); em 12 px, 1038 px
+   (1 linha, 33 px). A faixa inteira (altura + margem) devolve 34 px: a 1ª
+   barra voltou a y 737–753 (na 1.2.77, 740–756). Com o estilo antigo de volta
+   ela vai de novo a 771–787 e a e2e reprova (controle negativo executado).
+   Com mais itens listados o texto volta a quebrar em 2 linhas — ainda 15 px
+   menor que antes. O texto não mudou: é recado de bloqueio, e o número e a
+   porta ([Calcular]) continuam nele. */
+.faixa-pend { padding: 6px 12px; border-radius: var(--raio-ctl); font-size: var(--t-micro); margin-bottom: 8px; }
+.faixa-pend.erro { background: rgba(220,38,38,.10); border: 1px solid rgba(220,38,38,.3); }
+.faixa-pend.aviso { background: rgba(234,88,12,.10); border: 1px solid rgba(234,88,12,.35); }
 
 /* =====================================================================
  * GRAFICOS — MARCAS FINAS, MOLDURA RECUADA, LEITURA NO HOVER
@@ -2720,7 +2811,13 @@ input.coef-edit.mexido { border-color: var(--amarelo); background: rgba(170, 98,
  * FITA HORIZONTAL em vez de sumir: em tablet a lista de etapas continua
  * valendo, so nao cabe em coluna.
  * ===================================================================== */
-.pl-com-indice { display: grid; grid-template-columns: 232px minmax(0, 1fr); gap: 14px; align-items: start; }
+/* ⚠ a largura do índice é a variável `--idx-w` (padrão 232px), que a alça da
+   borda (js/paineisui.js) muda em linha. Variável, e não
+   `grid-template-columns` no atributo style: o atributo venceria a media query
+   de 1100px abaixo e o índice deixaria de virar fita no tablet. O
+   `position:relative` é a âncora da alça, que é absoluta para não entrar no
+   grid (como filho comum ela tomaria a 2ª coluna e empurraria a tabela). */
+.pl-com-indice { --idx-w: 232px; position: relative; display: grid; grid-template-columns: var(--idx-w) minmax(0, 1fr); gap: 14px; align-items: start; }
 .pl-tabela { min-width: 0; overflow-x: auto; }
 .idx-etapas { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 8px;
   max-height: calc(100vh - 120px); overflow-y: auto;

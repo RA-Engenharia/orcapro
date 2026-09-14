@@ -66,6 +66,10 @@
     if (typeof require === "function" && typeof module !== "undefined") { try { return require(arq); } catch (e) { return null; } }
     return null;
   }
+  /* o motor do TAMANHO dos painéis (js/paineis.js, F3 crono-janelas). Sem ele
+     (cache antigo, suíte que não o carrega) tudo cai na fórmula da 1.2.77:
+     preferência que não se consegue prender à tela não se usa. */
+  function PN() { var p = MOD("Paineis", "./paineis.js"); return (p && typeof p.limitar === "function") ? p : null; }
   function num0(v) { var x = Number(v); return isFinite(x) ? x : 0; }
   function esc(s) {
     var u = Ut();
@@ -243,17 +247,59 @@
      deixaria o ponto quase invisível no tema escuro do resto do app. */
   var AZUL_ELO = "#0d6ebd";
 
+  /* ⚠ A RÉGUA DO CONTROLE TAMBÉM MORA AQUI, E NÃO SÓ NO app.css (14/09/2026).
+     Esta folha é injetada pelo `render` DENTRO da aba, depois do app.css: com
+     especificidade igual, ela VENCE. Um `.cx-sub`, `.cx-seg button` ou `.gx-zb`
+     com os valores antigos aqui continuaria fora da régua mesmo com o app.css
+     certo (memória "regra de unificação nasce perdendo").
+     A régua: controle 32 px (lh 18 + 6 + 6 + 1 + 1), raio 8; chip 24 px, raio
+     999; controle dentro do papel do Gantt 28 px, raio 8; letra 12 · 13,5 · 15
+     · 17 · 20 e pesos 400/500/600 (o Plex Sans não tem 700/800 e o Mono não
+     passa de 500 — pedir mais desenha igual e mente a hierarquia).
+     ⚠ Os tokens levam o valor claro como reserva (`var(--raio-ctl,8px)`): a
+     ficha da obra e o módulo "Cronograma da obra" usam partes desta tela sem
+     garantia de que o token existe no documento.
+     tools/e2e-padrao-cronograma.js lista, com seletor e valor, quem sai. */
   var CSS =
-    ".cx-barra{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 8px}" +
+    ".cx-barra{display:flex;justify-content:space-between;align-items:center;gap:4px 8px;flex-wrap:wrap;margin:0 0 6px}" +
     ".cx-subs,.cx-acoes{display:flex;gap:6px;flex-wrap:wrap;align-items:center}" +
-    ".cx-sub{border:1px solid var(--linha,#c9d6e4);background:transparent;color:inherit;border-radius:8px;padding:5px 12px;font:inherit;font-size:13px;cursor:pointer}" +
+    /* a linha 1 é SÓ segmentado (esquerda) e ícones N3 (direita): as ações
+       ficam juntas (2 px) e empurradas para a borda direita */
+    ".cx-acoes{gap:2px;margin-left:auto}" +
+    ".cx-sub{border:1px solid var(--linha,#c9d6e4);background:transparent;color:inherit;border-radius:var(--raio-ctl,8px);padding:6px 12px;font:inherit;font-size:13.5px;line-height:18px;font-weight:400;cursor:pointer}" +
+    ".cx-sub:not(.on):hover{background:var(--surface-2,#eef2f7);border-color:var(--linha-forte,#7e95aa)}" +
     ".cx-sub.on{background:var(--aco,#0d6ebd);border-color:var(--aco,#0d6ebd);color:#fff;font-weight:600}" +
     ".cx-faixa{font-size:12px;margin:0 0 6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}" +
-    ".cx-chip{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--linha,#c9d6e4);border-radius:99px;padding:2px 4px 2px 10px}" +
-    ".cx-seg{display:inline-flex;border:1px solid var(--linha,#c9d6e4);border-radius:8px;overflow:hidden;vertical-align:middle}" +
-    ".cx-seg button{border:0;background:transparent;padding:4px 10px;font:inherit;font-size:12.5px;cursor:pointer;color:inherit}" +
-    ".cx-seg button.on{background:var(--aco,#0d6ebd);color:#fff;font-weight:600}" +
-    ".cx-toggle{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--linha,#c9d6e4);background:transparent;color:inherit;border-radius:99px;padding:3px 12px 3px 4px;font:inherit;font-size:12.5px;cursor:pointer}" +
+    /* ⚠ O CHIP É SÓ TEXTO, NUNCA EMBRULHA BOTÃO (a raiz dos dois defeitos da
+       1.2.77: botão dentro do texto que encolhe) — ver faixaObra */
+    ".cx-chip{display:inline-flex;align-items:center;border:1px solid var(--linha,#c9d6e4);border-radius:999px;padding:2px 10px;line-height:18px}" +
+    /* SEGMENTADO: as peças têm a forma das sub-abas que o dono aprovou — cada
+       uma com a sua borda e raio 8, juntas por 4 px — e o grupo é o `role`.
+       O Detalhe (Etapa/Subetapa/Serviço) era outro componente: 27,4 px,
+       12,5 px e raio 0 dentro de uma moldura; lado a lado com as sub-abas,
+       dois segmentados que não pareciam o mesmo. */
+    ".cx-seg{display:inline-flex;gap:4px;flex-wrap:wrap;vertical-align:middle}" +
+    ".cx-seg button{border:1px solid var(--linha,#c9d6e4);background:transparent;border-radius:var(--raio-ctl,8px);padding:6px 12px;font:inherit;font-size:13.5px;line-height:18px;font-weight:400;cursor:pointer;color:inherit}" +
+    ".cx-seg button:not(.on):hover{background:var(--surface-2,#eef2f7);border-color:var(--linha-forte,#7e95aa)}" +
+    ".cx-seg button.on{background:var(--aco,#0d6ebd);border-color:var(--aco,#0d6ebd);color:#fff;font-weight:600}" +
+    ".cx-toggle{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--linha,#c9d6e4);background:transparent;color:inherit;border-radius:var(--raio-ctl,8px);padding:6px 12px 6px 6px;font:inherit;font-size:13.5px;line-height:18px;font-weight:400;cursor:pointer}" +
+    /* ⚠ no dedo o segmentado e o interruptor seguem o alvo do `.btn` (40 px,
+       app.css @media 820): eles não são `.btn` e a régua de 32 não chegaria lá */
+    "@media (max-width:820px){.cx-sub,.cx-seg button,.cx-toggle{min-height:40px}}" +
+    ".cx-prazo{font-size:var(--t-med,17px);font-weight:600}" +
+    ".cx-rotulo{font-size:12px;font-weight:500}" +
+    ".cx-nota{font-size:12px}" +
+    /* pills da linha do prazo e da tabela: cor por TOKEN (o hex cravado em
+       linha dava 2,41:1 no escuro para "com as opcionais") */
+    ".cx .pill.cx-pill-crit{background:rgba(185,28,28,.08);color:var(--graf-alerta,#b91c1c)}" +
+    ".cx .pill.cx-pill-ciclo{background:rgba(245,158,11,.13);color:var(--graf-aviso,#b45309)}" +
+    ".cx .pill.cx-pill-opc{background:rgba(100,116,139,.12);color:var(--texto-fraco,#516375)}" +
+    ".cx .pill.cx-pill-marco{background:rgba(100,116,139,.12);color:var(--texto,#111d2b)}" +
+    /* ⚠ o badge de categoria leva a COR da categoria no fundo e o texto em
+       --texto: com o texto na cor da categoria, o cinza da Demolição dava
+       ~2,5:1 no branco (e a 11 px, em linha) */
+    ".cx .pill.cx-cat{color:var(--texto,#111d2b)}" +
+    ".cx-mini{font-size:12px}" +
     ".cx-toggle .cx-knob{width:28px;height:16px;border-radius:99px;background:var(--linha,#c9d6e4);position:relative;flex:none}" +
     ".cx-toggle .cx-knob:after{content:'';position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#fff}" +
     ".cx-toggle.on{border-color:var(--aco,#0d6ebd)}" +
@@ -269,10 +315,10 @@
     ".cx .cs{padding:12px 14px;margin:0 0 10px}" +
     ".cs-cab{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}" +
     ".cs-nota{flex:0 0 auto;border:2px solid var(--linha,#c9d6e4);border-radius:12px;padding:8px 14px;text-align:center;min-width:132px}" +
-    ".cs-num{font-size:30px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}" +
-    ".cs-den{font-size:14px;color:var(--texto-fraco,#64748b)}" +
+    ".cs-num{font-size:var(--t-hero,32px);font-weight:600;line-height:1;font-variant-numeric:tabular-nums}" +
+    ".cs-den{font-size:13.5px;color:var(--texto-fraco,#64748b)}" +
     ".cs-rot{display:block;font-size:12px;font-weight:600;margin-top:2px}" +
-    ".cs-sub{display:block;font-size:11px;color:var(--texto-fraco,#64748b);margin-top:2px}" +
+    ".cs-sub{display:block;font-size:12px;color:var(--texto-fraco,#64748b);margin-top:2px}" +
     /* ⚠ a fórmula ocupa a COLUNA QUE SOBRA e não some num "ver mais": é ela
        que impede a pessoa de ler 87 como "87% da obra pronta" */
     ".cs-formula{flex:1 1 320px;min-width:0;font-size:12px;line-height:1.45}" +
@@ -281,21 +327,21 @@
     ".cs-res,.cs-na,.cs-crit{margin:6px 0 0;padding:6px 10px;border-radius:8px;background:var(--surface-2,#eef2f7)}" +
     ".cs-acoes{flex:0 0 auto;display:flex;flex-direction:column;gap:6px;align-items:stretch}" +
     ".cs-piores{margin-top:10px;border-top:1px solid var(--linha,#c9d6e4);padding-top:8px}" +
-    ".cs-piores h5{margin:0 0 2px;font-size:13px}" +
-    ".cs-criterio{margin:0 0 6px;font-size:11.5px;color:var(--texto-fraco,#64748b)}" +
-    ".cs-lista{margin:0;padding-left:20px;font-size:12.5px}" +
+    ".cs-piores h5{margin:0 0 2px;font-size:13.5px}" +
+    ".cs-criterio{margin:0 0 6px;font-size:12px;color:var(--texto-fraco,#64748b)}" +
+    ".cs-lista{margin:0;padding-left:20px;font-size:13.5px}" +
     ".cs-lista li{margin-bottom:7px;line-height:1.45}" +
-    ".cs-pill{display:inline-block;border-radius:99px;padding:0 7px;font-size:10.5px;font-weight:700;vertical-align:middle}" +
-    ".cs-ir{border:0;background:transparent;color:var(--aco,#0d6ebd);font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;padding:0;text-decoration:underline}" +
+    ".cs-pill{display:inline-block;border-radius:999px;padding:0 7px;font-size:12px;font-weight:600;vertical-align:middle}" +
+    ".cs-ir{border:0;background:transparent;color:var(--aco,#0d6ebd);font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;padding:0;text-decoration:underline}" +
     ".cs-dias{white-space:nowrap;font-variant-numeric:tabular-nums}" +
-    ".cs-acao,.cs-heu{font-size:11.5px;color:var(--texto-fraco,#64748b)}" +
+    ".cs-acao,.cs-heu{font-size:12px;color:var(--texto-fraco,#64748b)}" +
     /* ⚠ FECHADO, O CARTÃO NÃO EXISTE: quem fica é o CHIP, na linha do prazo
        (ver CronoExecUI.csChip). Aberto, ele ocupa quase uma tela e empurra a
        1ª barra do Gantt para y=1723 numa janela de 768 px (medido no navegador
        a 1366×768, 12/09/2026) — por isso ele nasce fechado. E fechado não é
        calado: o chip leva a nota e quantos avisos existem, e o `title` leva a
        frase inteira. */
-    ".cs-chip{border:1.5px solid var(--linha,#c9d6e4);background:transparent;font:inherit;font-size:12px;font-weight:600;cursor:pointer;padding:2px 10px;font-variant-numeric:tabular-nums}" +
+    ".cx .cs-chip{border:1px solid var(--linha,#c9d6e4);background:transparent;font:inherit;font-size:12px;font-weight:600;line-height:18px;cursor:pointer;padding:2px 10px;font-variant-numeric:tabular-nums}" +
     ".cs-chip:hover{background:rgba(13,110,189,.08)}" +
     /* ⚠ O `wrap` E O `min-width:0` NÃO SÃO ENFEITE. Roteiro do defeito (medido
        a 390×844 em 12/09/2026): com a fila de ações em linha e o `nowrap` que
@@ -306,13 +352,13 @@
        do projeto proíbe. O `flex-wrap` do PAI não resolve: o filho sozinho já
        é maior que o contêiner. */
     ".cs-acoes{flex-wrap:wrap;min-width:0}" +
-    ".cs-tog{border:0;background:transparent;color:inherit;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;padding:0;margin-right:8px}" +
+    ".cs-tog{border:0;background:transparent;color:inherit;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;padding:0;margin-right:8px}" +
     ".cs-det{margin:2px 0 4px}" +
     ".cs-det>summary{cursor:pointer;font-size:12px;font-weight:600;color:var(--aco,#0d6ebd)}" +
     /* ⚠ os DIAS vêm antes do texto, e em caixa própria: é por eles que a
        lista está ordenada, e no fim de um parágrafo de 3 linhas (como saíam na
        1ª foto) o número que ordena a lista some do olho */
-    ".cs-dias{display:inline-block;background:var(--surface-2,#eef2f7);border-radius:6px;padding:0 6px;font-weight:700;margin-right:4px}" +
+    ".cs-dias{display:inline-block;background:var(--surface-2,#eef2f7);border-radius:6px;padding:0 6px;font-weight:600;margin-right:4px}" +
     /* NARRATIVA EXECUTIVA (.nr) — o parágrafo em português acima dos KPIs */
     ".nr{margin:0 0 10px;padding:9px 12px;border-left:3px solid var(--aco,#0d6ebd);border-radius:0 8px 8px 0;background:var(--surface-2,#eef2f7)}" +
     ".nr-cab{font-size:12px;font-weight:600;margin-bottom:3px}" +
@@ -323,7 +369,7 @@
        botões da barra é escondido, e [MS Project (XML)] e [Gerar .mpp] usam o
        MESMO ícone de exportar — medido na foto a 1500 px, os dois viravam
        botões idênticos lado a lado. A etiqueta fica sempre. */
-    ".cx-mpp-tag{font-weight:700;font-size:11px;letter-spacing:.2px}" +
+    ".cx-mpp-tag{font-weight:600;font-size:12px;letter-spacing:.2px}" +
     /* SEQUÊNCIA CONSTRUTIVA (.sq) e REPLANEJAMENTO (.rp): moram em UI.modal,
        fora do `.cx` — por isso os seletores não são aninhados nele. */
     ".sq-carimbo,.sq-eco{font-size:12.5px;margin:0 0 8px;padding:7px 10px;border-radius:8px;background:var(--surface-2,#eef2f7);line-height:1.45}" +
@@ -336,9 +382,9 @@
     ".sq-cat,.sq-niv{font-size:10.5px;border:1px solid var(--linha,#c9d6e4);border-radius:99px;padding:0 6px;color:var(--texto-fraco,#64748b)}" +
     ".sq-porque{color:var(--texto-fraco,#64748b);line-height:1.4}" +
     ".sq-linha{display:flex;gap:10px;flex-wrap:wrap;align-items:baseline;font-size:11.5px}" +
-    ".sq-dias{font-weight:700}.sq-dias.bom{color:#15803d}.sq-dias.ruim{color:#b45309}" +
+    ".sq-dias{font-weight:600}.sq-dias.bom{color:#15803d}.sq-dias.ruim{color:#b45309}" +
     ".sq-nd,.sq-conf,.sq-hoje{color:var(--texto-fraco,#64748b)}" +
-    ".sq-laco{color:#b45309;font-weight:700}" +
+    ".sq-laco{color:#b45309;font-weight:600}" +
     ".sq-dep,.sq-aviso,.sq-espera{font-size:11.5px;color:#b45309}" +
     ".sq-mais,.rp-mais{margin-top:8px;font-size:12.5px}" +
     ".sq-mais summary,.rp-mais summary{cursor:pointer;font-weight:600}" +
@@ -361,19 +407,19 @@
     ".dx-acao{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px}" +
     ".dx-bloq{font-size:12px;color:#b45309}" +
     ".dx-relato{margin:8px 0;padding:8px 11px;border-radius:8px;background:var(--surface-2,#eef2f7);font-size:12.5px;line-height:1.45}" +
-    ".cx-mpp-sem{font-size:11.5px;color:var(--texto-fraco,#64748b);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
+    ".cx-mpp-sem{font-size:12px;color:var(--texto-fraco,#64748b);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
     ".cx-aviso{font-size:12px;margin:6px 0;padding:6px 10px;border-radius:8px;background:rgba(245,158,11,.10);border:1px solid rgba(245,158,11,.35)}" +
     ".cx-tabela{overflow:auto;max-width:100%}" +
     "table.tbl.cx-eap th,table.tbl.cx-eap td,table.tbl.cx-ff th,table.tbl.cx-ff td{padding:6px 8px;white-space:nowrap}" +
     "table.tbl.cx-eap td.cx-nome{width:100%;min-width:300px;white-space:normal}" +
-    "table.tbl.cx-eap tr.cx-f td{font-size:12.5px}" +
+    "table.tbl.cx-eap tr.cx-f td{font-size:13.5px}" +
     "table.tbl.cx-eap tr.cx-s td{font-size:12px;color:var(--texto-fraco,#64748b)}" +
     "table.tbl.cx-ff tr.cx-grupo td{font-weight:600;background:var(--surface-2,#eef2f7)}" +
     ".cx-n{color:var(--texto-fraco,#64748b);font-variant-numeric:tabular-nums;margin-right:4px}" +
     ".cx-chev{border:0;background:transparent;cursor:pointer;color:inherit;font:inherit;font-size:12px;width:20px;padding:0;margin-right:2px}" +
     /* ⚠ a porta "Detalhar em subetapas" é um RÓTULO, não um "+" solto na
        coluna do chevron: ali ela parecia "expandir" e o clique saía da aba */
-    ".cx-detsub{border:1px dashed var(--aco,#0d6ebd);background:transparent;color:var(--aco,#0d6ebd);border-radius:99px;font:inherit;font-size:10.5px;line-height:16px;padding:0 7px;margin-right:6px;cursor:pointer;white-space:nowrap}" +
+    ".cx-detsub{border:1px dashed var(--aco,#0d6ebd);background:transparent;color:var(--aco,#0d6ebd);border-radius:999px;font:inherit;font-size:12px;line-height:18px;padding:0 7px;margin-right:6px;cursor:pointer;white-space:nowrap}" +
     /* ⚠ campo editável da subetapa com borda EM REPOUSO: com a borda
        transparente do .cell ele parecia texto, igual à etapa só leitura — e
        editar a folha é o que o modo executivo existe para fazer */
@@ -382,28 +428,87 @@
     /* coluna do nome FIXA ao rolar os meses (obra de 13 meses não cabe a 1366) */
     "table.tbl.cx-ff th:first-child,table.tbl.cx-ff td:first-child{position:sticky;left:0;z-index:1;background:var(--surface,#fff)}" +
     "table.tbl.cx-ff tr.cx-grupo td:first-child{background:var(--surface-2,#eef2f7)}" +
-    ".cx-barra .cx-faixa{margin:0;flex:1 1 260px;min-width:0}" +
-    /* ⚠ A FAIXA DA OBRA EM UMA LINHA a 1366 (revisão 3 da Fase 3, lentes UX e
-       navegador). O chip com os números era espremido numa coluna de 302 px e
-       virava uma oval de 8 linhas: a faixa ia a 225–243 px, a 1ª barra do
-       Gantt caía em y 791–886 de 768 (o critério de aceite da Fase 2) e, na
-       revisão, [Passar a obra] saía cortado e por baixo de [Imprimir / PDF].
-       Agora: o texto do chip é UMA linha que encolhe com reticências (o texto
-       inteiro vai no title) — `width:0` + `flex:1` faz o texto não impor
-       largura, só ocupar a que sobra; botão não encolhe nem quebra; o aviso
-       "editando o PLANO" tem linha própria dentro da faixa (1 linha); e abaixo
-       de 1600 px as duas ações ficam só com o ícone. */
-    ".cx-faixa{row-gap:4px}" +
+    ".cx-barra .cx-faixa{margin:0;flex:1 1 100%;min-width:0}" +
+    /* ⚠ A FAIXA DA OBRA É A LINHA 2 DA BARRA (decisão D1 do dono, 14/09/2026).
+       Roteiro do defeito que isto fecha (medido na 1.2.77): a faixa dividia a
+       linha com as 4 sub-abas e as 4 ações, e os botões [Passar a obra] e
+       [Cadastro da obra] moravam DENTRO do chip, cujo texto tinha `width:0` e
+       ficava só com a sobra. A 1366 o nome da obra tinha 48 px ("Obra: G…",
+       o `min-width:4em`), justo antes de uma ação que mexe em medição; e a
+       1600 o `@media (max-width:1599px)` devolvia os rótulos das ações, a
+       `.cx-acoes` saltava de 181 para 535 px NUM PIXEL e o chip, que não
+       encolhia abaixo do conteúdo, deixava [Cadastro da obra] POR BAIXO de
+       [Imprimir / PDF] entre 1600 e ~1700 px (e a 1280): o clique no terço
+       direito ia para o PDF.
+       Agora: linha 1 = segmentado + ícones N3 (sem rótulo em largura nenhuma,
+       sem degrau); linha 2 = o chip (só texto, nome inteiro, no mínimo 16 em)
+       e os botões FORA dele, que quebram de linha antes de cobrir alguém.
+       Custa ~38 px acima do Gantt, devolvidos pelo cartão de parâmetros numa
+       linha só (campos de 32 px e o `.cx-fer` abaixo). */
+    ".cx-faixa{row-gap:6px}" +
     ".cx-faixa .btn{flex:0 0 auto;white-space:nowrap}" +
-    ".cx-chip{flex:1 1 auto;min-width:0;max-width:100%}" +
-    ".cx-chip-txt{flex:1 1 auto;width:0;min-width:4em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
+    ".cx-chip{flex:0 1 auto;min-width:0;max-width:100%}" +
+    ".cx-chip-txt{min-width:16em;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
     ".cx-modo{flex:1 1 100%;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
-    ".cx-faixa-nota{flex:1 1 auto;width:0;min-width:4em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
-    "@media (max-width:1599px){.cx-acoes .cx-rot{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}}" +
-    /* cartão compacto: campos mais baixos só com mouse (acima de 820 px) — o
-       alvo de 44 px do toque (app.css) continua valendo no celular. Medido a
-       1366×768: a 1ª barra do Gantt passava 3 px da dobra com os campos de 38 px. */
-    "@media (min-width:821px){.cx .card.cx-cartao .field input:not([type=checkbox]),.cx .card.cx-cartao .field select{padding:5px 8px}}" +
+    ".cx-faixa-nota{flex:0 1 auto;min-width:8em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
+    /* cartão compacto: campo de 32 px e 13,5 px só com mouse (acima de 820 px)
+       — o alvo de 44 px do toque (app.css) continua valendo no celular. Era
+       31, 33 e 35 px com 15 px dentro (número, select e data). */
+    "@media (min-width:821px){.cx .card.cx-cartao .field input:not([type=checkbox]),.cx .card.cx-cartao .field select{padding:6px 8px;height:32px;font-size:13.5px;line-height:18px;border-radius:var(--raio-ctl,8px)}}" +
+    /* ⚠ a seta do select (12 px) a 7 px da borda e 20 px de vão à direita:
+       com 26 px sobravam 64 px de texto no Paralelismo de 100 px e "Médio 30%"
+       (69 px em 13,5) saía "Médio 309" — o % cortado lia como um 9 (achado
+       na foto da revisão da F5). Agora 72 px; e2e-padrao-cronograma mede cada
+       opção contra a área útil. Largura do campo igual: o cartão continua
+       numa linha a 1366. */
+    ".cx .card.cx-cartao .field select{padding-right:20px;background-position:right 7px center}" +
+    "@media (min-width:821px){.cx .card.cx-cartao .field select{padding-left:6px}}" +
+    ".cx .card.cx-cartao .field label.cx-lb{font-size:12px;font-weight:500;margin-bottom:2px}" +
+    /* as larguras que moravam em `style=` no ui.js (_cronCartao): em linha elas
+       escapavam de toda folha */
+    ".cx .card.cx-cartao .field .cx-c-ini{width:130px}.cx .card.cx-cartao .field .cx-c-eq{width:52px}.cx .card.cx-cartao .field .cx-c-dias{width:50px}" +
+    ".cx .card.cx-cartao .field .cx-c-paral{width:100px}.cx .card.cx-cartao .field .cx-c-custo{width:72px}" +
+    /* ⚠ FERIADOS LOCAIS: um botão com a contagem que abre as datas UMA POR
+       LINHA. Era um campo de 108 px que mostrava 1 de 4 datas
+       ("2026-10-11;") — a pessoa não conferia o que tinha digitado.
+       `<details>` e não modal: a MESMA `#cron-feriados-extras` continua no DOM
+       (fechada, só não é desenhada) e o Recalcular a lê como sempre — o
+       `split(/[;,\n]+/)` de App._cronDoForm já aceita uma data por linha.
+       Nada de fiação nova no app.js, nada gravado sem [Recalcular]. */
+    /* ⚠ O QUADRO SE ANCORA NA ESQUERDA DO GRUPO, NUNCA NA DIREITA DO BOTÃO.
+       `.cx-fer-grupo` = [N datas] + [Recalcular] [Limpar] [IA], sem quebra por
+       dentro: o grupo tem ~312 px e o quadro 260, então ancorado em `left:0`
+       dele o quadro não passa da borda direita do cartão, e como o grupo
+       começa dentro do cartão, não entra por baixo do menu lateral.
+       Com `right:0` no `.cx-fer` (a 1ª entrega) o botão que quebrava para o
+       começo da linha, a 1024–1100 px com o menu aberto, jogava o quadro para
+       x 67–327 e o menu (até 212) cobria as datas (medido na revisão).
+       e2e-padrao-cronograma clica de verdade a 1024 e 1100 e confere com
+       elementFromPoint que o pixel da 1ª data é a textarea. */
+    ".cx-fer-grupo{display:flex;align-items:flex-end;flex-wrap:nowrap;gap:6px;position:relative}" +
+    ".cx-fer{display:inline-block}" +
+    ".cx-fer>summary{list-style:none}" +
+    ".cx-fer>summary::-webkit-details-marker{display:none}" +
+    ".cx-fer-quadro{position:absolute;z-index:30;top:calc(100% + 4px);left:0;width:260px;background:var(--surface,#fff);color:var(--texto,#111d2b);border:1px solid var(--linha,#c9d6e4);border-radius:10px;box-shadow:var(--sombra-lg,0 10px 24px rgba(15,39,64,.15));padding:10px}" +
+    ".cx .cx-fer-quadro textarea{display:block;width:100%;min-height:128px;font:inherit;font-family:var(--fonte-num,monospace);font-size:13.5px;line-height:1.5;padding:6px 8px;border:1px solid var(--linha-forte,#7e95aa);border-radius:var(--raio-ctl,8px);background-color:var(--surface,#fff);color:var(--texto,#111d2b)}" +
+    ".cx-fer-dica{font-size:12px;color:var(--texto-fraco,#516375);margin:6px 0 0;line-height:1.45}" +
+    /* celular: o grupo se desfaz (`display:contents`, os quatro voltam a ser
+       itens da linha do cartão, como na 1ª entrega) e o quadro abre em fluxo */
+    "@media (max-width:820px){.cx-fer-grupo{display:contents}.cx-fer{display:block}.cx-fer-quadro{position:static;width:auto;margin-top:6px}}" +
+    /* os 5 campos da tabela (a fatia F6 troca o `style=` deles por estas
+       classes): UMA borda só em repouso (--linha-forte) e --aco quando o valor
+       foi digitado. Na 1.2.77 saíam três azuis na mesma linha (#7e95aa a 60%,
+       #2563eb e #0d6ebd). Especificidade acima de `tr.cx-f input.cell` e do
+       `[readonly]` desta folha — e o foco reescrito por isso. */
+    "table.tbl.cx-eap input.cell.cx-in{box-sizing:border-box;height:32px;padding:6px 7px;font-size:13.5px;line-height:18px;text-align:right;border:1px solid var(--linha-forte,#7e95aa);border-radius:var(--raio-ctl,8px);background:var(--surface,#fff)}" +
+    "table.tbl.cx-eap input.cell.cx-in.cx-in-dig{border-color:var(--aco,#0d6ebd)}" +
+    "table.tbl.cx-eap input.cell.cx-in[readonly]{border-color:transparent;background:var(--surface-2,#eef2f7)}" +
+    "table.tbl.cx-eap input.cell.cx-in:focus{border-color:var(--aco,#0d6ebd);box-shadow:0 0 0 3px rgba(46,111,158,.13);outline:none}" +
+    "table.tbl.cx-eap input.cx-in[data-cron-dur],table.tbl.cx-eap input.cx-in[data-crono-sub-dur]{width:60px}" +
+    "table.tbl.cx-eap input.cx-in[data-crono-sub-eq]{width:48px}" +
+    "table.tbl.cx-eap input.cx-in[data-cron-pred]{width:84px}table.tbl.cx-eap input.cx-in[data-crono-sub-pred]{width:96px}" +
+    ".cx-legenda{font-size:12px;margin-top:6px}" +
+    ".cx-legenda .cx-fonte{cursor:default;margin:0 3px 0 0}" +
     /* ------------------------------------------------------------------
        GANTT INTERATIVO (.gx) — duas camadas: a coluna de NOMES fixa e a área
        do TEMPO que rola. ⚠ TUDO AQUI É PAPEL BRANCO, com as tintas cravadas
@@ -435,7 +540,7 @@
        três controles somam ~166 — sem o recorte eles vazavam POR CIMA da régua
        de datas (visto na foto do aparelho). O seletor encolhe junto (`flex`
        com `min-width:0`) em vez de empurrar. */
-    ".gx-canto{flex:0 0 var(--gx-lw);box-sizing:border-box;display:flex;gap:4px;align-items:center;padding:3px 6px;border-right:1px solid #e2e8f0;min-width:0;overflow:hidden}" +
+    ".gx-canto{flex:0 0 var(--gx-lw);box-sizing:border-box;display:flex;gap:4px;align-items:center;padding:4px 6px;border-right:1px solid #e2e8f0;min-width:0;overflow:hidden}" +
     ".gx-regua{flex:1 1 auto;min-width:0;overflow:hidden}" +
     ".gx-regua-in{height:30px}" +
     ".gx-corpo{display:flex;align-items:stretch;position:relative;border-radius:0 0 7px 7px;overflow:hidden}" +
@@ -454,9 +559,14 @@
     ".gx-hit[data-gx-drag],.gx-alca,.gx-liga{touch-action:none}" +
     ".gx-fantasma{position:absolute;z-index:3;pointer-events:none;border:1.5px dashed #0f172a;background:rgba(15,23,42,.10);border-radius:3px;box-sizing:border-box}" +
     ".gx-dica{position:absolute;z-index:5;pointer-events:none;background:#0f172a;color:#fff;font-size:11.5px;line-height:1.4;padding:4px 8px;border-radius:6px;white-space:pre-line;max-width:300px;box-shadow:0 2px 8px rgba(15,23,42,.35)}" +
-    ".gx-zb{flex:0 0 auto;border:1px solid #cbd5e1;background:#fff;color:#0f172a;border-radius:6px;width:24px;height:22px;padding:0;line-height:1;font:inherit;font-size:15px;cursor:pointer}" +
-    ".gx-zs{flex:1 1 auto;min-width:0;border:1px solid #cbd5e1;background:#fff;color:#0f172a;border-radius:6px;font:inherit;font-size:11.5px;padding:2px 3px;max-width:98px}" +
-    ".gx-undo{flex:1 1 auto;min-width:0;border:1px solid var(--aco,#0d6ebd);background:#fff;color:var(--aco,#0d6ebd);border-radius:6px;font:inherit;font-size:11.5px;padding:2px 6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+    /* ⚠ o canto do Gantt é o controle "dentro do papel": 28 px e raio 8 (a
+       régua de 32 não cabe no cabeçalho de 36 px sem crescer o cabeçalho, e o
+       corpo do Gantt desceria). `.gx .gx-zs` com duas classes porque
+       `select:not(.cell)` do app.css (0,1,1) ganhava o padding e a altura
+       (medido 30,1 px com 11,5 px dentro). */
+    ".gx-zb{flex:0 0 auto;border:1px solid #cbd5e1;background:#fff;color:#0f172a;border-radius:var(--raio-ctl,8px);width:28px;height:28px;padding:0;line-height:1;font:inherit;font-size:15px;cursor:pointer}" +
+    ".gx .gx-zs{flex:1 1 auto;min-width:0;border:1px solid #cbd5e1;background-color:#fff;color:#0f172a;border-radius:var(--raio-ctl,8px);font:inherit;font-size:12px;line-height:18px;height:28px;min-height:0;padding:0 22px 0 8px;background-position:right 7px center;max-width:98px}" +
+    ".gx-undo{flex:1 1 auto;min-width:0;border:1px solid var(--aco,#0d6ebd);background:#fff;color:var(--aco,#0d6ebd);border-radius:var(--raio-ctl,8px);font:inherit;font-size:12px;line-height:18px;height:28px;padding:0 8px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
     /* ⚠ durante o arrasto o cursor é o mesmo em TODA a página: sem o !important
        o `cursor:grab` da alça de baixo do ponteiro vencia, e a mão continuava
        "aberta" enquanto a barra já estava sendo arrastada. */
@@ -468,10 +578,10 @@
        300 px e sobravam 64 px para a obra inteira (medido no navegador). O
        número tem de sair de um lugar só porque é o MESMO em dois: a largura da
        coluna no CSS e a largura do SVG dos nomes. */
-    ".cx-fonte{display:inline-block;min-width:14px;font-size:10.5px;font-weight:700;color:var(--aco,#0d6ebd);cursor:help;margin-left:3px}" +
+    ".cx-fonte{display:inline-block;min-width:14px;font-family:var(--fonte,sans-serif);font-size:12px;font-weight:600;color:var(--aco,#0d6ebd);cursor:help;margin-left:3px}" +
     ".cx-card{margin-bottom:12px}" +
-    ".cx-card h4{margin:0 0 8px;font-size:14px}" +
-    ".cx-lista{margin:4px 0 0;padding-left:18px;font-size:12.5px;line-height:1.6}" +
+    ".cx-card h4{margin:0 0 8px;font-size:15px}" +
+    ".cx-lista{margin:4px 0 0;padding-left:18px;font-size:13.5px;line-height:1.6}" +
     /* ⚠ a faixa "editando o PLANO DE EXECUÇÃO" tem de se ver: editar o plano
        achando que é a proposta (ou o contrário) é o erro que ela impede */
     ".cx-modo{background:rgba(13,110,189,.10);border:1px solid rgba(13,110,189,.40);border-radius:8px;padding:2px 8px}" +
@@ -1159,6 +1269,15 @@
     GX_ALTURA: 520,
     // a calha da barra de rolagem horizontal do painel do tempo (ver `caixa`)
     GX_BARRA: 14,
+    /* AS COLUNAS Dur. e Depende de, à direita dos nomes (quem as desenha é a
+       grade da F6; a LARGURA é daqui, porque é ela que empurra o dia 0). */
+    GX_GRADE_DUR: 50,
+    GX_GRADE_PRED: 84,
+    // abaixo desta largura de widget as colunas não cabem ao lado do tempo
+    GX_GRADE_LARGURA: 1000,
+    // o cabeçalho do Gantt (canto + régua) e a legenda: o que não é corpo
+    GX_CABECALHO: 38,
+    GX_LEGENDA: 50,
 
     /* o detalhe que o Gantt REALMENTE desenha: sem árvore (ou sem nenhuma
        linha abaixo da etapa) cai para "etapa".
@@ -1178,12 +1297,39 @@
        no meio ou flutuando por cima da barra.
        ⚠ E ele encolhe: num telefone de 390 px, 300 px de nome deixavam 64 px
        para a obra inteira — o cronograma virava uma faixa cinza. O nome
-       completo continua no <title> de cada rótulo. */
-    ganttProLabelW: function (larguraWidget) {
+       completo continua no <title> de cada rótulo.
+       ⚠ `preferido` (a largura que a pessoa arrastou, F7) passa SEMPRE por
+       `Paineis.limitar` contra a largura de AGORA; abaixo de 560 ela é
+       ignorada (a proporção manda no celular) e sem medida também (aba
+       oculta mede 0: o padrão é melhor que uma conta sobre zero).
+       ⚠ Isto é a largura do NOME. Onde começa o dia 0 é `colW` (nome +
+       colunas Dur./Depende de): ver `ganttProEstado`. */
+    ganttProLabelW: function (larguraWidget, preferido, gradeW) {
       var w = Number(larguraWidget);
       if (!isFinite(w) || w <= 0) return this.GX_LABELW;
       if (w < 560) return Math.max(96, Math.round(w * 0.38));
+      var P = (preferido != null) ? PN() : null;
+      if (P) {
+        var v = P.limitar("gxNomes", preferido, { larguraWidget: w, gradeW: Number(gradeW) > 0 ? Number(gradeW) : 0 });
+        if (v != null && isFinite(v) && v > 0) return v;
+      }
       if (w < 920) return 200;
+      return this.GX_LABELW;
+    },
+    /* A LARGURA DAS COLUNAS Dur./Depende de: 0 sem a grade ou abaixo de
+       GX_GRADE_LARGURA. Sem medida (1ª pintura, pura) assume a tela de mesa —
+       a fiação remede antes de o quadro ser pintado (_cronoGanttLigar). */
+    ganttProGradeW: function (colunas, larguraWidget) {
+      if (colunas !== true) return 0;
+      var w = Number(larguraWidget);
+      if (isFinite(w) && w > 0 && w < this.GX_GRADE_LARGURA) return 0;
+      return this.GX_GRADE_DUR + this.GX_GRADE_PRED;
+    },
+    /* onde começa o dia 0 num `pro` qualquer (inclusive um montado fora do
+       ganttProEstado, sem `colW`): colW → labelW → padrão */
+    ganttProColW: function (pro) {
+      if (pro && Number(pro.colW) > 0) return Number(pro.colW);
+      if (pro && Number(pro.labelW) > 0) return Number(pro.labelW);
       return this.GX_LABELW;
     },
     // quantos caracteres cabem na coluna (fonte 10px: ~6,25 px por caractere)
@@ -1193,26 +1339,66 @@
        permissões de arrasto das linhas visíveis. Puro (roda em Node).
        opts: detalhe, abertas, travado, hoje, nivel, scrollLeft, scrollTop,
              largura, altura (a JANELA em px — no 1º pintar, o padrão),
-             alturaCaixa (a altura em CSS do corpo), labelW, sel, desfazer. */
+             alturaCaixa (a altura em CSS do corpo), labelW, sel, desfazer.
+       F3 (crono-janelas): labelPref (largura do nome que a pessoa escolheu),
+             colunas (true = há as colunas Dur./Depende de), alturaPref,
+             janelaAltura, modo ("px" | "preencher"), alcas, alcaNomes,
+             hxAltura, fxAltura, topoCorpo, legenda.
+       Devolve, além do de sempre: labelW (NOME), gradeW (colunas), colW
+       (= labelW + gradeW: ONDE COMEÇA O DIA 0), hxAltura, fxPref, alcas. */
     ganttProEstado: function (r, o) {
       o = o || {};
-      var Gu = GU(), Cr = C(), i;
+      var Gu = GU(), Cr = C(), P = PN(), i;
       var det = this.detalheEfetivo(r, o.detalhe);
       var L = ehArr(o.L) ? o.L : this.linhas(r, { detalhe: det, abertas: o.abertas });
       var cal = null;
       try { cal = (Cr && Cr.calendario) ? Cr.calendario(r) : null; } catch (eC) { cal = null; }
       var ids = [];
       for (i = 0; i < L.length; i++) ids.push(L[i].no ? L[i].no.id : L[i].et.id);
-      var labelW = (Number(o.labelW) > 0) ? Number(o.labelW) : this.ganttProLabelW(o.larguraWidget);
+      var gradeW = this.ganttProGradeW(o.colunas === true, o.larguraWidget);
+      var labelW = (Number(o.labelW) > 0) ? Number(o.labelW) : this.ganttProLabelW(o.larguraWidget, o.labelPref, gradeW);
+      /* ⚠ DUAS LARGURAS, DOIS DONOS DE LEITURA. `labelW` é quanto cabe de NOME
+         (o corte do texto); `colW` é onde começa o DIA 0 — a moldura
+         (`--gx-lw`), o eixo do histograma e o da linha de balanço. Roteiro do
+         defeito (experimento E′ da REDIMENSIONAR.md, medido no navegador):
+         com a coluna mudada só no CSS e o estado ainda em 300, o dia 0 do
+         histograma saía 160 px fora do dia 0 do Gantt logo acima — o pico de
+         gente apontando para a semana errada. Quem quer "onde começa o
+         tempo" lê `colW`; nunca `labelW`. */
+      var colW = labelW + gradeW;
       /* ⚠ +GX_BARRA na altura: quando a obra não cabe na largura nasce uma
          barra de rolagem horizontal DENTRO do painel do tempo, e ela come
          altura — sem a folga, a ÚLTIMA linha do cronograma ficava cortada ao
          meio por ela (visto na foto do navegador, com o zoom em "Dia"). O
          gasto quando não há barra é uma calha em branco de 14 px; o gasto sem
          a folga é uma etapa que a pessoa não vê. */
+      var natural = Math.min(this.GX_ALTURA, Math.max(3, L.length) * this.GX_ROWH + this.GX_BARRA);
+      /* A ALTURA ESCOLHIDA (F3). ⚠ `alturaCaixa` medido vence tudo: é a altura
+         que o corpo TEM na tela agora (a fiação passa o offsetHeight). Sem
+         medida: janela destacada → preenche a janela; preferência da pessoa →
+         presa à janela de agora e às linhas da obra, em linha inteira. Roteiro
+         do defeito que isto fecha (experimento C): o corpo arrastado para 700
+         voltava a 520 no primeiro render, porque o desenho puro não sabia da
+         escolha — digitar uma duração desfazia o tamanho. */
+      var escolhida = null;
+      if (!(Number(o.alturaCaixa) > 0) && P) {
+        if (o.modo === "preencher") {
+          escolhida = P.alturaPreencher({ janelaAltura: o.janelaAltura, linhas: L.length, rowH: this.GX_ROWH, barra: this.GX_BARRA,
+            topoCorpo: o.topoCorpo != null ? o.topoCorpo : this.GX_CABECALHO, legenda: o.legenda != null ? o.legenda : this.GX_LEGENDA });
+        } else if (o.alturaPref != null) {
+          escolhida = P.limitar("gxAltura", o.alturaPref, { linhas: L.length, rowH: this.GX_ROWH, barra: this.GX_BARRA,
+            janelaAltura: o.janelaAltura, cabecalho: this.GX_CABECALHO });
+        }
+      }
       var caixa = Math.max(120, Math.round(Number(o.alturaCaixa) > 0 ? Number(o.alturaCaixa)
-        : Math.min(this.GX_ALTURA, Math.max(3, L.length) * this.GX_ROWH + this.GX_BARRA)));
-      var out = { e: null, L: L, cal: cal, det: det, labelW: labelW, alturaCaixa: caixa,
+        : (Number(escolhida) > 0 ? Number(escolhida) : natural)));
+      var hxAlt = P ? P.limitar("hxAltura", o.hxAltura) : null;
+      var out = { e: null, L: L, cal: cal, det: det, labelW: labelW, gradeW: gradeW, colW: colW, alturaCaixa: caixa,
+        hxAltura: (Number(hxAlt) > 0) ? Number(hxAlt) : this.HX_ALTURA,
+        // o macrofluxo prende contra o tamanho NATURAL do desenho, que só ele conhece
+        fxPref: (o.fxAltura != null) ? o.fxAltura : null,
+        alcas: o.alcas === true, alcaNomes: o.alcaNomes !== false,
+        janelaAltura: (Number(o.janelaAltura) > 0) ? Number(o.janelaAltura) : null, modo: o.modo === "preencher" ? "preencher" : "px",
         sel: (o.sel == null || !isFinite(Number(o.sel))) ? -1 : Math.round(Number(o.sel)),
         /* ⚠ `travado` sobe para o estado porque a LEGENDA precisa dele: sem
            saber que o orçamento está aprovado, ela escreveria "nenhuma barra
@@ -1222,7 +1408,7 @@
       if (!Gu) { out.motivo = "O motor do Gantt interativo (js/ganttui.js) não carregou — o cronograma está sendo desenhado no modo simples."; return out; }
       var e = Gu.estado({
         nivel: o.nivel, dias: Math.max(1, Math.round(r.totalDias || 1)), linhas: L.length, rowH: this.GX_ROWH,
-        largura: o.largura, altura: (Number(o.altura) > 0 ? o.altura : caixa), labelW: labelW,
+        largura: o.largura, altura: (Number(o.altura) > 0 ? o.altura : caixa), labelW: colW,
         dpw: (r.params && r.params.diasUteisSemana) || 5, cal: cal, idPorLinha: ids,
         scrollLeft: o.scrollLeft, scrollTop: o.scrollTop
       });
@@ -1284,12 +1470,23 @@
     /* A COLUNA DE NOMES — o painel que NÃO rola de lado. Mesma altura de linha
        e mesmo y absoluto do desenho do tempo (linha i em i × rowH): é isso que
        faz o nome ficar na frente da barra dele. */
+    /* ⚠ AS COLUNAS Dur./Depende de MORAM AQUI DENTRO (F6, crono-janelas).
+       O SVG tem a largura de ONDE COMEÇA O DIA 0 (`colW` = nome + colunas), e
+       não a do nome: com o SVG em `labelW` e a coluna CSS em `colW` sobrava
+       uma faixa branca de 134 px entre o nome e o tempo (foto da F3,
+       "geometria-1366-colunas-falsas-gantt"). O texto do nome continua
+       cortado pela largura do NOME (`labelW`) — é quanto cabe dele.
+       ⚠ As células são TEXTO no SVG virtualizado, nunca `<input>`: o painel
+       é recriado a cada 24 px de rolagem (medido na EDICAO.md: sempre um nó
+       novo em 24, 48, 72, 120 e 240) e um campo aqui dentro morreria no meio
+       da digitação. O campo é UM só, sobreposto (js/ganttgradeui.js). */
     ganttProNomes: function (r, pro) {
       if (!pro || !pro.e) return "";
-      var e = pro.e, L = pro.L, jan = pro.jan, W = pro.labelW;
+      var e = pro.e, L = pro.L, jan = pro.jan, W = this.ganttProColW(pro), NW = pro.labelW;
+      var gradeW = Number(pro.gradeW) > 0 ? Number(pro.gradeW) : 0;
       var H = Math.max(e.rowH, e.alturaConteudo), temFilhos = L.length > arr(r.etapas).length, i;
       // o corte do texto acompanha a coluna: o SVG recorta no pixel, sem reticências
-      var corteN = this.ganttProCorte(W);
+      var corteN = this.ganttProCorte(NW);
       var s = '<svg class="gantt gx-nomes-svg" data-gx="nomes-svg" width="' + f1(W) + '" height="' + f1(H) +
         '" viewBox="0 0 ' + f1(W) + ' ' + f1(H) + '" style="display:block;background:#fff;font-family:inherit">';
       for (i = jan.primeiraLinha; i <= jan.ultimaLinha; i++) {
@@ -1310,8 +1507,126 @@
         var cor = l.tipo === "servico" ? "#64748b" : (l.tipo === "etapa" ? "#0f172a" : "#334155");
         s += '<text x="' + (6 + prof * 14) + '" y="' + f1(y0 + e.rowH / 2 + 3.5) + '" font-size="' + (l.tipo === "servico" ? 9.5 : 10) +
           '" fill="' + cor + '"' + peso + '><title>' + esc(rot) + '</title>' + esc(corta(rot, corteN)) + '</text>';
+        /* as células vêm DEPOIS do nome e com fundo opaco: o corte do nome é
+           por caractere (≈6,25 px), e um nome em negrito que passasse do
+           `labelW` escreveria por cima do número da duração */
+        if (gradeW > 0) s += this._gxCelulasSvg(r, l, i, pro, NW, y0, e.rowH, (l.tipo === "etapa" && temFilhos) ? "#f1f5f9" : "#fff");
       }
       return s + '</svg>';
+    },
+
+    /* A CÉLULA Dur. ou Depende de de UMA linha — {valor, vazio, dig, ro,
+       motivo, porta, portaId, dica, id, alvo}. Dono único do que a grade do
+       Gantt mostra E do que o campo sobreposto abre (js/ganttgradeui.js lê
+       daqui o valor inicial e a trava): dois lugares decidindo "o que esta
+       célula mostra" dariam o campo abrindo com um número e a célula
+       mostrando outro.
+       ⚠ O VALOR E A SINTAXE SÃO OS DA TABELA (a mesma regra de `tabela`,
+       logo abaixo): duração da etapa = `e.duracao`; da subetapa no modo
+       executivo = a da REDE (`duracaoRede`, marco = 0); "Depende de" pelos
+       formatadores do motor (`predsTexto`/`predsTextoSub`). Um formatador
+       próprio aqui divergiria da tabela na primeira manutenção.
+       ⚠ A TRAVA É A DO MOTOR DA DIGITAÇÃO (`GanttUI.celulaEditavel`), a
+       mesma que recusa ao gravar: célula que parece editável e recusa ao
+       digitar é trava sem aviso; célula cinza que gravaria é porta escondida.
+       Sem o motor carregado: só leitura, com o motivo dito. */
+    ganttProCelula: function (r, l, campo, pro) {
+      var Cr = C(), Gu = (pro && pro.Gu) || GU(), self = this;
+      var out = { valor: "", vazio: "", dig: false, ro: true, motivo: "", porta: "", portaId: null, dica: "", id: null, alvo: "etapa" };
+      if (!l || !r || !Cr) { out.motivo = "O motor do cronograma não carregou nesta tela."; return out; }
+      var nos = arr(r.atividades), m = this._gxNums(r);
+      var et = l.tipo === "etapa" ? l.et : null, no = l.no || null;
+      // a etapa no detalhe "Etapa" vem sem nó: o da árvore ainda diz a fonte (a trava do vão lê `fonte`)
+      if (et && !no && own(m.noEtapa, et.id)) no = m.noEtapa[et.id];
+      var alvoNo = no || et;
+      if (!alvoNo) { out.motivo = "Esta linha não existe mais neste cronograma."; return out; }
+      out.id = alvoNo.id;
+      var rede = !!(r.exec && r.exec.rede === true);
+      if (et) {
+        var i = own(m.numEt, et.id) ? m.numEt[et.id] - 1 : 0;
+        if (campo === "dur") { out.valor = String(et.duracao == null ? "" : et.duracao); out.dig = !!(et.editado || et.marco); }
+        else { out.valor = et.predsExplicito ? Cr.predsTexto(et, m.numEt) : ""; out.vazio = i > 0 ? String(i) : "—"; out.dig = !!et.predsExplicito; }
+      } else if (l.tipo === "folha") {
+        out.alvo = "folha";
+        var durRede = no.marco ? 0 : (no.duracaoRede != null ? no.duracaoRede : no.duracao);
+        var irmas = m.folhas[no.etapaId] || [], pos = irmas.indexOf(no);
+        if (campo === "dur") { out.valor = String(rede ? durRede : (no.duracao == null ? "" : no.duracao)); out.dig = rede && !!(no.editado || no.marco); }
+        else if (rede) { out.valor = no.predsExplicito ? Cr.predsTextoSub(no, m.numF) : ""; out.vazio = pos > 0 ? String(irmas[pos - 1].numero) : "—"; out.dig = !!no.predsExplicito; }
+        // no modo padrão a tabela mostra o que a rede usa, em cinza (só leitura): o mesmo aqui
+        else out.valor = (no.preds && no.preds.length) ? Cr.predsTextoSub(no, m.numF) : "início";
+      } else {
+        out.alvo = "servico";
+        var sb = no.semBase || no.inicio == null;
+        out.valor = campo === "dur" ? (sb ? "—" : String(no.duracao == null ? "" : no.duracao)) : "—";
+      }
+      if (!Gu || typeof Gu.celulaEditavel !== "function") {
+        out.motivo = "O motor da digitação (js/ganttui.js) não carregou — digite na tabela abaixo.";
+        return out;
+      }
+      var cel = null;
+      try {
+        cel = Gu.celulaEditavel(alvoNo, campo, { travado: !!(pro && pro.travado), cron: { exec: { rede: rede } }, nos: nos,
+          motivoEtapaTravada: function (c, n2, id) { return self.motivoEtapaTravada(c, n2, id); } });
+      } catch (eC) { cel = { ok: false, motivo: "Não consegui conferir se esta célula se edita — por segurança ela fica só leitura." }; }
+      if (cel && cel.ok) {
+        out.ro = false;
+        out.dica = campo === "dur"
+          ? "Dias úteis · 0 = marco · vazio = volta à estimativa. Clique (ou Enter na linha) para digitar."
+          : (out.alvo === "folha"
+            ? "Nº de subetapas da MESMA etapa: 2.1, 2.g; 2.1+3 espera; 2.1-1 avanço; 2.1II começa junto; 0 = início da etapa; vazio = a anterior."
+            : "Nº das etapas que precisam terminar antes (ex.: 1,3). Vazio = a anterior; 0 = começa no início da obra. 1+7 = espera 7 dias úteis; 1-3 = começa 3 dias antes.");
+      } else {
+        out.dig = false;
+        out.motivo = String((cel && cel.motivo) || "Esta célula não se edita.");
+        out.porta = String((cel && cel.porta) || "");
+        out.portaId = (cel && cel.portaId != null) ? cel.portaId : null;
+      }
+      return out;
+    },
+    /* os números de linha que o "Depende de" escreve (etapa = posição; folha =
+       nº EAP) e os nós por etapa, UMA vez por resultado do motor: a grade pede
+       isso por célula visível, e varrer as 2.400 atividades de um orçamento
+       grande por célula a cada 24 px de rolagem é a conta que a virtualização
+       existe para não pagar */
+    _gxNumsMemo: null,
+    _gxNums: function (r) {
+      var mm = this._gxNumsMemo;
+      if (mm && mm.r === r && mm.v) return mm.v;
+      var v = { numEt: {}, numF: {}, folhas: {}, noEtapa: {} };
+      arr(r && r.etapas).forEach(function (e, i) { if (e) v.numEt[e.id] = i + 1; });
+      arr(r && r.atividades).forEach(function (n) {
+        if (!n) return;
+        if (n.tipo === "etapa") v.noEtapa[n.id] = n;
+        if (n.numero) v.numF[n.id] = n.numero;
+        if (n.tipo === "subetapa" || n.tipo === "soltos") { if (!own(v.folhas, n.etapaId)) v.folhas[n.etapaId] = []; v.folhas[n.etapaId].push(n); }
+      });
+      this._gxNumsMemo = { r: r, v: v };
+      return v;
+    },
+    /* O SVG das duas células de uma linha. ⚠ Tintas CRAVADAS (regra 4 do
+       cabeçalho: o Gantt é papel branco nos dois temas) — com os tokens, o
+       número estimado sairia com a tinta clara do tema escuro sobre o papel
+       branco. As mesmas do resto do papel: #0f172a texto, #0d6ebd digitado
+       (o --aco do claro), #64748b só leitura, #94a3b8 o implícito.
+       ⚠ `esc()` em TUDO: o id da etapa vem de pacote, backup e sincronização. */
+    _gxCelulasSvg: function (r, l, i, pro, x0, y0, rowH, fundo) {
+      var s = '<rect x="' + f1(x0) + '" y="' + f1(y0) + '" width="' + f1(Number(pro.gradeW)) + '" height="' + f1(rowH) + '" fill="' + fundo + '"/>';
+      if (i === pro.sel) s += '<rect x="' + f1(x0) + '" y="' + f1(y0) + '" width="' + f1(Number(pro.gradeW)) + '" height="' + f1(rowH) + '" fill="#0d6ebd" fill-opacity="0.10"/>';
+      s += '<line x1="' + f1(x0 + 0.5) + '" y1="' + f1(y0) + '" x2="' + f1(x0 + 0.5) + '" y2="' + f1(y0 + rowH) + '" stroke="#e2e8f0" stroke-width="1"/>';
+      var cols = [["dur", x0, this.GX_GRADE_DUR], ["pred", x0 + this.GX_GRADE_DUR, this.GX_GRADE_PRED]], k;
+      for (k = 0; k < cols.length; k++) {
+        var campo = cols[k][0], cx = cols[k][1], cw = cols[k][2], c = this.ganttProCelula(r, l, campo, pro);
+        var cls = "gx-cel" + (c.ro ? " gx-cel-ro" : (c.dig ? " gx-cel-dig" : ""));
+        var txt = c.valor !== "" ? c.valor : c.vazio;
+        var tinta = c.ro ? "#64748b" : (c.valor === "" ? "#94a3b8" : (c.dig ? "#0d6ebd" : "#0f172a"));
+        s += '<g class="' + cls + '" data-gx-cel="' + campo + '" data-gx-id="' + esc(c.id == null ? "" : c.id) + '" data-gx-linha="' + i + '"' + (c.ro ? '' : ' style="cursor:text"') + '>' +
+          '<rect x="' + f1(cx + 2) + '" y="' + f1(y0 + 3) + '" width="' + f1(cw - 4) + '" height="' + f1(rowH - 6) + '" rx="4" fill="' + (c.ro ? "transparent" : "#fff") + '"' +
+          (c.ro ? '' : ' stroke="' + (c.dig ? "#0d6ebd" : "#cbd5e1") + '" stroke-width="1"') + '/>' +
+          '<text x="' + f1(cx + cw - 7) + '" y="' + f1(y0 + rowH / 2 + 3.5) + '" font-size="10" text-anchor="end" fill="' + tinta + '"' + (c.dig ? ' font-weight="600"' : '') + '>' +
+          esc(corta(txt, campo === "dur" ? 6 : 13)) + '</text>' +
+          '<title>' + esc(c.ro ? c.motivo : (c.valor !== "" ? c.valor + " · " : "") + c.dica) + '</title></g>';
+      }
+      return s;
     },
 
     /* A RÉGUA DE TEMPO em duas faixas (a de cima mais larga que a de baixo):
@@ -1405,8 +1720,45 @@
         for (i = 0; i < ns.length; i++) h += '<option value="' + esc(ns[i].id) + '"' + (niv === ns[i].id ? ' selected' : '') + '>' + esc(ns[i].nome) + '</option>';
         h += '</select>';
       }
-      if (pro.desfazer) h += '<button type="button" class="gx-undo" data-acao="crono-arrasto-desfazer" title="' + esc("Desfaz o último arrasto — " + pro.desfazer) + '">↶ Desfazer</button>';
-      return h;
+      if (pro.desfazer) h += '<button type="button" class="gx-undo" data-acao="crono-arrasto-desfazer" title="' + esc("Desfaz a última alteração do cronograma, digitada ou arrastada (também Ctrl+Z no Gantt) — " + pro.desfazer) + '">↶ Desfazer</button>';
+      return this._gxCantoGrade(pro, h);
+    },
+    /* O CANTO COM A GRADE Dur./Depende de (F6). ⚠ Sem o js/ganttgradeui.js
+       carregado devolve o canto de sempre, byte a byte (paridade com a 1.2.77
+       em tools/test-crono-geometria.js): o botão [Colunas] sem a fiação seria
+       porta que não abre.
+       ⚠ O CRITÉRIO DO SELETOR × BOTÃO CONTINUA SENDO A LARGURA DO NOME
+       (`labelW < 200`), e não a do canto inteiro (`colW`). A F3 deixou anotado
+       que "o canto agora mede colW" — mas os controles NÃO usam o canto
+       inteiro: acima das colunas moram os títulos "Dur." e "Depende de",
+       alinhados às células. Decidir por colW (434 a 1366) desenharia o
+       seletor espremido nos 300 px de cima do nome, junto com [Colunas], e
+       ele empurraria os títulos para fora do alinhamento. O `_gxPintar` (F3)
+       usa a MESMA regra na chave `forma`: se mudar aqui, mude lá.
+       ⚠ O botão só aparece com o Gantt a partir de GX_GRADE_LARGURA (1000 px):
+       abaixo disso as colunas não cabem ligadas nem desligadas, e o botão
+       mudaria uma preferência sem mudar nada na tela. Ali o duplo clique na
+       barra abre o cartão com os dois campos. */
+    _gxCantoGrade: function (pro, h) {
+      if (!G("GanttGradeUI")) return h;
+      var gradeW = Number(pro.gradeW) > 0 ? Number(pro.gradeW) : 0;
+      var ww = (pro.e && Number(pro.e.largura) > 0) ? Number(pro.e.largura) + this.ganttProColW(pro) : 0;
+      var cabe = gradeW > 0 || !(ww > 0) || ww >= this.GX_GRADE_LARGURA;
+      if (!cabe) return h;
+      var liga = gradeW > 0;
+      var ico = '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" style="display:block;margin:auto"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/>' +
+        '<line x1="8" y1="2.5" x2="8" y2="13.5" stroke="currentColor" stroke-width="1.3"/><line x1="11" y1="2.5" x2="11" y2="13.5" stroke="currentColor" stroke-width="1.3"/></svg>';
+      var rot = "Mostrar ou esconder as colunas Dur. e Depende de";
+      var bt = '<button type="button" class="gx-zb gx-col-bt" data-acao="gx-colunas" data-ligar="' + (liga ? "0" : "1") + '" aria-pressed="' + (liga ? "true" : "false") +
+        '" aria-label="' + esc(rot) + '" title="' + esc(rot + (liga ? " (ligadas: clique para dar a largura ao tempo)" : " (escondidas: duplo clique na barra abre os dois campos)")) + '">' + ico + '</button>';
+      if (!liga) return h + bt;
+      /* os controles ficam na largura do NOME (menos o recuo do canto) e os
+         títulos começam EXATAMENTE em labelW: o `margin-right` negativo come
+         o recuo direito e a borda do canto, que são da coluna e não do título */
+      return '<span class="gx-canto-ctl" style="width:' + f1(Math.max(0, pro.labelW - 10)) + 'px">' + h + bt + '</span>' +
+        '<span class="gx-cab-cols" style="width:' + f1(gradeW) + 'px">' +
+        '<span class="gx-cab-t" style="width:' + this.GX_GRADE_DUR + 'px" title="Duração em dias úteis (0 = marco)">Dur.</span>' +
+        '<span class="gx-cab-t" style="width:' + this.GX_GRADE_PRED + 'px" title="Nº das etapas (ou subetapas) que precisam terminar antes">Depende de</span></span>';
     },
 
     /* O RECADO do arrasto em andamento, em TEXTO PURO (a dica é escrita por
@@ -1430,6 +1782,36 @@
       return t.join("\n");
     },
 
+    /* AS ALÇAS DE REDIMENSIONAR do Gantt (F3 desenha, F7 liga os eventos por
+       delegação em [data-pn-alca]).
+       ⚠ SÓ COM `pro.alcas === true` — que só é verdade com a fiação da F7
+       carregada (Paineis.opcoesGantt). Pega desenhada sem ninguém ouvindo é
+       porta que não abre: a pessoa arrasta, nada acontece, e ela conclui que o
+       app travou. Sem alça, o HTML é byte a byte o da 1.2.77
+       (tools/test-crono-geometria.js).
+       ⚠ A alça de NOMES fica na borda do NOME (labelW), não em colW: ela mora
+       entre o nome e as colunas Dur./Depende de. A fiação reposiciona o
+       `left` quando a largura real muda (_gxPintar). */
+    ganttProAlcas: function (pro) {
+      var P = PN();
+      if (!pro || pro.alcas !== true || !P || typeof P.alcaHtml !== "function") return "";
+      var fA = (typeof P.faixa === "function") ? P.faixa("gxAltura", { linhas: pro.L ? pro.L.length : 0, rowH: this.GX_ROWH, barra: this.GX_BARRA,
+        janelaAltura: pro.janelaAltura, cabecalho: this.GX_CABECALHO }) : null;
+      /* ⚠ SEM FAIXA, SEM ALÇA DE ALTURA (F7, achado da revisão da F3). Obra
+         que cabe inteira no mínimo (até 5 linhas: 14 + 5×24 = 134 px) não tem
+         altura para escolher — a pega aparecia, a pessoa arrastava e nada se
+         mexia: porta que não abre. E na janela destacada (modo "preencher")
+         quem manda na altura é a janela: o `_gxRemedir` desfaria o arrasto no
+         quadro seguinte. */
+      var s = (fA && fA.max > fA.min && pro.modo !== "preencher")
+        ? P.alcaHtml("gxAltura", "horizontal", "Altura do cronograma", pro.alturaCaixa, fA.min, fA.max) : "";
+      if (pro.alcaNomes !== false) {
+        var n = P.alcaHtml("gxNomes", "vertical", "Largura da coluna de nomes", pro.labelW, P.NOMES_MIN, P.NOMES_TETO);
+        s += n.replace('<div class="pn-alca pn-alca-v"', '<div class="pn-alca pn-alca-v" style="left:' + f1(pro.labelW) + 'px"');
+      }
+      return s;
+    },
+
     /* A CASCA: cabeçalho (canto + régua) e corpo (nomes + tempo). A 1ª pintura
        sai daqui já desenhada — a fiação só remede a janela e repinta.
        ⚠ Sem o motor carregado cai no Gantt de sempre: a aba não pode ficar sem
@@ -1441,7 +1823,10 @@
       if (!pro || !pro.e) return this.gantt(r, { detalhe: o.detalhe, abertas: o.abertas, hoje: o.hoje, rotHoje: o.rotHoje });
       var e = pro.e, p = this.ganttProPartes(r, pro, o);
       var lc = f1(p.larguraConteudo) + "px", ac = f1(p.alturaConteudo) + "px", fixo = this.ganttProRotuloFixo(pro);
-      var h = '<div class="gx" data-gx-wrap="1" style="--gx-lw:' + f1(pro.labelW) + 'px">' +
+      /* ⚠ `--gx-lw` é ONDE COMEÇA O DIA 0 (colW), não a largura do nome: a
+         régua, o mês fixo da borda e o painel do tempo começam depois das
+         colunas Dur./Depende de. Sem colunas, colW === labelW (a 1.2.77). */
+      var h = '<div class="gx" data-gx-wrap="1" style="--gx-lw:' + f1(this.ganttProColW(pro)) + 'px">' +
         '<div class="gx-cab"><div class="gx-canto">' + this.ganttProTopo(pro) + '</div>' +
         '<div class="gx-regua" data-gx="regua"><div class="gx-regua-in" style="width:' + lc + '">' + p.regua + '</div></div>' +
         /* ⚠ O MÊS DA BORDA ESQUERDA mora AQUI, no cabeçalho que NÃO rola — e
@@ -1456,6 +1841,7 @@
         esc("Cronograma: arraste as barras para mudar as datas, Ctrl com a roda do mouse para o zoom, setas para navegar, Home e End para o início e o fim da obra") + '">' +
         '<div class="gx-plot-in" style="width:' + lc + ';height:' + ac + '">' + p.plot +
         '<div class="gx-fantasma" hidden></div></div></div></div>' +
+        this.ganttProAlcas(pro) +
         // ⚠ a dica é filha da .gx (não do corpo): o corpo recorta, e ela precisa sair por baixo
         '<div class="gx-dica" hidden></div></div>';
       return h + (pro.motivo ? '<div class="cx-aviso">' + esc(pro.motivo) + '</div>' : '') + this.ganttProLegenda(pro, o);
@@ -1493,6 +1879,15 @@
         : '<span>' + esc(pro.travado
           ? "cronograma aprovado — as barras não se movem aqui: crie uma revisão (ou, se a obra existe, replaneje pelo plano de execução dela) · Ctrl + roda = zoom"
           : "nenhuma barra desta tela se arrasta — o motivo de cada uma está no toque/parada do ponteiro sobre ela · Ctrl + roda = zoom") + '</span>';
+      /* ⚠ A GRADE Dur./Depende de SÓ É ENSINADA QUANDO EXISTE (F6): com o
+         js/ganttgradeui.js ausente a legenda é a da 1.2.77 (paridade em
+         tools/test-crono-geometria.js); no aprovado as células são só leitura
+         e a frase mandaria digitar onde nada se grava. */
+      if (G("GanttGradeUI") && !pro.travado) {
+        h += '<span>' + (Number(pro.gradeW) > 0
+          ? "digite a duração e o Depende de nas colunas do Gantt (duplo clique na barra) ou na tabela"
+          : "duplo clique na barra abre a duração e o Depende de dela (ou digite na tabela)") + '</span>';
+      }
       /* ⚠ E DIZ QUANDO O DESENHO CONTINUA À DIREITA: com o zoom em "auto" e a
          obra maior que o piso de 3 px/dia, 3 de 6 barras ficavam 100% fora da
          janela e a tela não dizia nada (medido a 1366×768 na OBRA TESTE). */
@@ -1556,6 +1951,15 @@
     HX_OUTRAS: "#94a3b8",
     HX_MAXPROF: 8,
     HX_TETO_COR: "#b91c1c",
+    /* a ALTURA do desenho do histograma: a preferência da pessoa (já presa a
+       [100, 420] pelo ganttProEstado) ou os 142 de sempre. ⚠ Ela entra no
+       SVG como parâmetro, e não por CSS: medido (experimento G), o quadro
+       esticado para 320 px deixava o SVG com height=142 — o gráfico não
+       estica, tem de ser redesenhado com a altura. */
+    hxAlt: function (pro) {
+      var a = pro ? Number(pro.hxAltura) : NaN;
+      return (isFinite(a) && a > 0) ? a : this.HX_ALTURA;
+    },
 
     /* O MODELO do histograma, memoizado pela assinatura de conteúdo.
        Estados possíveis (cada um com a sua frase e a sua PORTA):
@@ -1755,7 +2159,7 @@
          "esc is not a function" — o render inteiro da aba estoura e a tela
          fica com o DESENHO ANTERIOR, sem erro visível. Custou uma sonda. */
       var g = this.hxGeo(pro, h.diasUteis), sc = hx.escala;
-      var A = this.HX_ALTURA, T = this.HX_TOPO, Bt = this.HX_BASE, plotH = A - T - Bt;
+      var A = this.hxAlt(pro), T = this.HX_TOPO, Bt = this.HX_BASE, plotH = A - T - Bt;
       var cor = hx.cores.cor, ordem = hx.cores.ordem, ext = hx.ext;
       function Y(v) { return T + plotH * (1 - (num0(v) / sc.topo)); }
       var s = '<svg class="hx-svg" data-hx="plot-svg" width="' + f1(g.W) + '" height="' + A + '" viewBox="0 0 ' + f1(g.W) + ' ' + A +
@@ -1814,9 +2218,12 @@
     // A COLUNA DA ESQUERDA: a escala de pessoas, na largura da coluna de nomes
     hxEixo: function (hx, pro) {
       if (!hx || !hx.escala) return "";
-      var W = (pro && pro.labelW > 0) ? pro.labelW : this.GX_LABELW;
+      /* ⚠ a coluna da esquerda tem a largura de ONDE COMEÇA O DIA 0 do Gantt
+         (colW), não a do nome: com as colunas Dur./Depende de, largura de nome
+         aqui poria o dia 0 do histograma 134 px antes do dia 0 da barra */
+      var W = this.ganttProColW(pro);
       // ⚠ `sc` e não `esc`: ver o porquê em `hxPlot`
-      var A = this.HX_ALTURA, T = this.HX_TOPO, Bt = this.HX_BASE, plotH = A - T - Bt, sc = hx.escala;
+      var A = this.hxAlt(pro), T = this.HX_TOPO, Bt = this.HX_BASE, plotH = A - T - Bt, sc = hx.escala;
       function Y(v) { return T + plotH * (1 - (num0(v) / sc.topo)); }
       var s = '<svg class="hx-eixo-svg" data-hx="eixo-svg" width="' + f1(W) + '" height="' + A + '" viewBox="0 0 ' + f1(W) + ' ' + A +
         '" style="display:block;background:#fff;font-family:inherit">';
@@ -1907,7 +2314,7 @@
        `estado`): uma linha com a porta, e nada mais. */
     histogramaPainel: function (d, est, pro) {
       var e = (est && est.hist) || {}, r = d && d.r;
-      var lw = (pro && pro.labelW > 0) ? pro.labelW : this.GX_LABELW;
+      var lw = this.ganttProColW(pro);
       var cab = '<button type="button" class="hx-tog" data-acao="crono-hist" data-hx-abrir="' + (e.aberto ? '0' : '1') + '" aria-expanded="' + (e.aberto ? 'true' : 'false') +
         '" title="Quantas pessoas de cada profissão a obra pede em cada semana (ou mês) — o gráfico com que se dimensiona alojamento, refeição, EPI e ônibus. Abrir baixa a base analítica do estado (~18 MB), uma vez só.">' +
         (e.aberto ? '▾' : '▸') + ' Mão de obra (histograma)</button>';
@@ -1971,7 +2378,11 @@
           corpo += '</ul></div>';
         }
       }
-      return '<div class="hx" data-hx-wrap="mo" style="--gx-lw:' + f1(lw) + 'px"><div class="hx-cab">' + cab + ctrl + '</div>' + pe + '</div>' + corpo;
+      /* a alça de altura só existe com desenho (pe) e com a fiação da F7
+         (pro.alcas): sem gráfico não há o que esticar */
+      var PNx = (pe && pro && pro.alcas === true) ? PN() : null;
+      var alcaHx = PNx ? PNx.alcaHtml("hxAltura", "horizontal", "Altura do histograma", this.hxAlt(pro), PNx.HX[0], PNx.HX[1]) : "";
+      return '<div class="hx" data-hx-wrap="mo" style="--gx-lw:' + f1(lw) + 'px"><div class="hx-cab">' + cab + ctrl + '</div>' + pe + alcaHx + '</div>' + corpo;
     },
 
     /* ==================================================================
@@ -2064,7 +2475,8 @@
     lxEixo: function (lx, pro) {
       var m = lx && lx.m;
       if (!m || !m.temLob) return "";
-      var W = (pro && pro.labelW > 0) ? pro.labelW : this.GX_LABELW, locais = arr(m.locais);
+      // a coluna dos locais começa e acaba onde a do Gantt: dia 0 em colW
+      var W = this.ganttProColW(pro), locais = arr(m.locais);
       // ⚠ a MESMA altura do `lxPlot` (T + corpo + 12): eixo e desenho com
       // alturas diferentes deslocam o rótulo do local da linha dele
       var rowH = this.LX_ROWH, T = this.LX_TOPO, A = T + Math.max(1, locais.length) * rowH + 12;
@@ -2083,7 +2495,7 @@
        - com repetição: o gráfico, as duas parcelas da confiança e o resumo;
        - sem repetição (o caso NORMAL): a explicação do que foi procurado. */
     lobPainel: function (d, est, pro) {
-      var self = this, e = (est && est.hist) || {}, lw = (pro && pro.labelW > 0) ? pro.labelW : this.GX_LABELW;
+      var self = this, e = (est && est.hist) || {}, lw = this.ganttProColW(pro);
       /* ⚠ O MOTOR RODA MESMO COM O PAINEL FECHADO, de propósito: é o que
          permite a linha de uma linha só dizer o ESTADO ("esta obra não tem
          repetição por local detectável") em vez de um rótulo mudo que obriga
@@ -2254,8 +2666,30 @@
       });
       return s + '</svg>';
     },
+    /* O QUADRO do macrofluxo (rola no próprio quadro) e, com a fiação da F7,
+       a altura escolhida + a alça.
+       ⚠ SEM `pro.alcas` o quadro é o da 1.2.77 (altura natural, sem `style`).
+       O teto de 60% da janela só entra JUNTO com a alça: uma rede de 4.000 px
+       empurra a tabela para longe, mas prender a altura sem dar a pega para
+       esticar de volta seria trava sem porta.
+       ⚠ `natural` soma a calha da barra de rolagem horizontal (GX_BARRA): a
+       rede é quase sempre mais larga que a tela, e sem a folga a última fileira
+       de caixas nasceria cortada pela barra. */
+    fxQuadro: function (m, pro) {
+      var inner = '<div class="fx-in" style="width:' + f1(m.largura) + 'px">' + this.fxSvg(m) + '</div>';
+      var P = (pro && pro.alcas === true) ? PN() : null;
+      if (!P || typeof P.alcaHtml !== "function") return '<div class="fx-plot">' + inner + '</div>';
+      var natural = Math.max(1, Math.round(num0(m.altura))) + this.GX_BARRA;
+      var H = (pro.fxPref != null) ? P.limitar("fxAltura", pro.fxPref, { natural: natural }) : null;
+      if (H == null && pro.janelaAltura > 0) {
+        var teto = Math.round(0.6 * pro.janelaAltura);
+        if (natural > teto) H = Math.max(P.FX[0], teto);
+      }
+      return '<div class="fx-plot"' + (H != null ? ' style="height:' + Math.round(H) + 'px"' : '') + '>' + inner + '</div>' +
+        P.alcaHtml("fxAltura", "horizontal", "Altura do macrofluxo", H != null ? H : natural, P.FX[0], Math.max(P.FX[0], Math.min(P.FX[1], natural)));
+    },
     fluxoPainel: function (d, est, pro) {
-      var e = (est && est.hist) || {}, lw = (pro && pro.labelW > 0) ? pro.labelW : this.GX_LABELW;
+      var e = (est && est.hist) || {}, lw = this.ganttProColW(pro);
       var aberto = e.fluxo === true;
       var fx = aberto ? this.fxDados(d, est) : null;
       /* fechado, a linha diz o ESTADO da rede sem montar o layout: a contagem
@@ -2285,7 +2719,7 @@
         h += '<div class="cx-aviso"><b>Esta rede é grande demais para ser lida como figura.</b> ' + esc(String(m.motivoDenso || "")) +
           (fx.nivel === "folha" ? ' Troque o <b>Detalhe</b> para <b>Etapa</b>: o macrofluxo passa a desenhar uma caixa por etapa.' : '') + '</div>';
       }
-      h += '<div class="fx-plot"><div class="fx-in" style="width:' + f1(m.largura) + 'px">' + this.fxSvg(m) + '</div></div>';
+      h += this.fxQuadro(m, pro);
       /* AS LEITURAS DA REDE — o que a figura mostra em números. O gargalo é o
          nó por onde passa mais de um caminho: é ele que, atrasando, atrasa
          duas frentes de uma vez. */
@@ -2468,6 +2902,13 @@
           (aberto ? "Clique para fechar o cartão (aberto ele empurra o Gantt para baixo da dobra)."
             : "Clique para abrir a nota inteira: a fórmula, todas as ressalvas, as checagens que não deram para avaliar, os três achados que mais custam prazo — e as três ações (conferir a fundo, sugerir a sequência de obra, replanejar depois de um atraso).");
       }
+      /* ⚠ A TINTA DO CHIP VAI POR TOKEN (14/09/2026). O `csCor` devolve o hex
+         do tema claro (é o mesmo da nota dentro do cartão), e cravado aqui o
+         #b45309 dava 3,63:1 sobre o fundo do tema escuro — o chip que resume a
+         saúde ficava apagado justo no escuro. O token tem o par do escuro
+         (--graf-aviso #e8a75c), e o hex fica de reserva. */
+      var TINTA = { "#15803d": "var(--verde,#15803d)", "#b45309": "var(--graf-aviso,#b45309)", "#b91c1c": "var(--graf-alerta,#b91c1c)", "#64748b": "var(--texto-fraco,#64748b)" };
+      if (cor && own(TINTA, cor)) cor = TINTA[cor];
       return '<button type="button" class="pill cs-chip" data-acao="crono-saude" data-cs-abrir="' + (aberto ? '0' : '1') +
         '" aria-expanded="' + (aberto ? 'true' : 'false') + '" title="' + esc(dica) + '"' +
         (cor ? ' style="border-color:' + cor + ';color:' + cor + '"' : '') + '>' +
@@ -3131,26 +3572,32 @@
        diferentes de propósito. Transformar "não sei" em "este computador não
        tem" manda o cliente procurar o defeito no lugar errado. */
     mppAcoes: function (mp) {
+      /* ⚠ N3 COM TEXTO (14/09/2026): a etiqueta ".mpp" é o rótulo inteiro, e o
+         resto da frase mora no `title` e no `aria-label`. O " verificar" /
+         " Gerar" em `.cx-rot` sumia abaixo de 1600 px e voltava acima — era
+         metade do degrau que fazia a linha saltar 354 px num pixel. A
+         etiqueta continua existindo porque [MS Project (XML)] e o .mpp usam o
+         MESMO ícone de exportar (e2e-crono-pro cobra a etiqueta visível). */
       if (!mp) {
-        return '<button class="btn sm ghost" data-acao="crono-mpp-status" aria-label="Gerar .mpp — verificar" ' +
-          'title="Este computador pode gerar o .mpp nativo do MS Project, se o Project estiver instalado aqui. Verificar sobe um Project invisível por alguns segundos — por isso não é feito sozinho ao abrir a aba.">' +
-          '<span class="cx-mpp-tag">.mpp?</span><span class="cx-rot"> verificar</span></button>';
+        return '<button class="btn sm n3" data-acao="crono-mpp-status" aria-label="Gerar .mpp — verificar" ' +
+          'title="Gerar .mpp — verificar: este computador pode gerar o .mpp nativo do MS Project, se o Project estiver instalado aqui. Verificar sobe um Project invisível por alguns segundos — por isso não é feito sozinho ao abrir a aba.">' +
+          '<span class="cx-mpp-tag">.mpp?</span></button>';
       }
-      if (mp.carregando) return '<button class="btn sm ghost" disabled><span class="cx-mpp-tag">.mpp</span> verificando o MS Project…</button>';
+      if (mp.carregando) return '<button class="btn sm n3" disabled><span class="cx-mpp-tag">.mpp</span> verificando o MS Project…</button>';
       if (mp.erro) {
         return '<span class="cx-mpp-sem" title="' + esc(String(mp.erro)) + '">.mpp: ' + esc(corta(String(mp.erro), 70)) + '</span>' +
-          '<button class="btn sm ghost" data-acao="crono-mpp-status">tentar de novo</button>';
+          '<button class="btn sm n3" data-acao="crono-mpp-status">tentar de novo</button>';
       }
       if (mp.temProject && mp.automacao === "ok") {
-        return '<button class="btn sm" data-acao="crono-mpp" aria-label="Gerar .mpp" title="' +
-          esc("Gera o arquivo .mpp nativo com o MS Project" + (mp.versao ? " " + mp.versao : "") + " deste computador. Demora cerca de 20 segundos.") + '">' +
-          '<span class="cx-mpp-tag">.mpp</span><span class="cx-rot"> Gerar</span></button>';
+        return '<button class="btn sm n3" data-acao="crono-mpp" aria-label="Gerar .mpp" title="' +
+          esc("Gerar .mpp — gera o arquivo .mpp nativo com o MS Project" + (mp.versao ? " " + mp.versao : "") + " deste computador. Demora cerca de 20 segundos.") + '">' +
+          '<span class="cx-mpp-tag">.mpp</span></button>';
       }
       /* ⚠ o `motivo` do servidor é o que a pessoa lê — ele nunca vem vazio, e
          com `verificou:false` ele já diz "não consegui verificar" */
       var mot = String(mp.motivo || (mp.verificou === false ? "não consegui verificar se este computador tem o MS Project." : "a automação do MS Project não respondeu neste computador."));
       return '<span class="cx-mpp-sem" title="' + esc(mot + " O arquivo XML ao lado abre no Project, no ProjectLibre e no GanttProject.") + '">.mpp indisponível: ' + esc(corta(mot, 70)) + '</span>' +
-        '<button class="btn sm ghost" data-acao="crono-mpp-status" title="Verificar de novo (a resposta anterior vale por 10 minutos)">verificar de novo</button>';
+        '<button class="btn sm n3" data-acao="crono-mpp-status" title="Verificar de novo (a resposta anterior vale por 10 minutos)">verificar de novo</button>';
     },
 
     render: function (d, est) {
@@ -3238,31 +3685,43 @@
         if (info.ocultas) html += '<span class="muted">' + info.ocultas + ' obra(s) ligada(s) que o seu usuário não vê</span>';
         return html + '</div>';
       }
-      var ob = a.obra, nomeC = esc(corta(ob.nome || "sem nome", 32));
+      /* ⚠ O NOME INTEIRO (14/09/2026): era `corta(…, 32)` e, dentro do chip
+         espremido, sobravam 48 px. A pessoa precisa ler QUAL obra vai passar
+         antes de [Passar a obra], que mexe em quantidade medida; o corte, se
+         faltar espaço, é do CSS (reticências depois de 16 em) e o `title` tem
+         o nome todo. */
+      var ob = a.obra, nomeC = esc(ob.nome || "sem nome");
       if (dec.tipo === "plano") html += '<span class="cx-modo" title="Este orçamento está aprovado: o que se edita aqui (durações, dependências, parâmetros, modo executivo, Execução → Enviar) vai para o plano de execução da obra. A proposta aprovada, o PDF da proposta e o desembolso dela ficam como foram.">Editando o <b>PLANO DE EXECUÇÃO</b> da obra <b>' + nomeC + '</b> — a proposta aprovada não muda.</span>';
+      /* ⚠ O CHIP É SÓ TEXTO; OS BOTÕES VÊM DEPOIS DELE, NUNCA DENTRO. Botão
+         dentro do texto que encolhe foi a raiz dos dois defeitos da 1.2.77 (o
+         nome sumindo e [Cadastro da obra] por baixo de [Imprimir / PDF]). Fora
+         do chip, o botão que não cabe QUEBRA A LINHA em vez de cobrir alguém.
+         [Passar a obra] é N2-forte (`acao-forte`) e não azul cheio (decisão D2):
+         o azul cheio fica para a sub-aba ativa e o primário da área. */
       if (a.nivel > 0) {
         html += '<span class="cx-chip" title="' + esc(ob.nome || "") + '"><span class="cx-chip-txt">Obra: <b>' + nomeC + '</b>';
-        html += ' <span class="muted">· ligada à revisão anterior ' + esc(a.orcNumero || "") + '</span></span>';
-        if (info.podeEditarObra) html += '<button class="btn sm primary" data-acao="crono-obra-passar" data-obra="' + esc(ob.id) + '" title="Mostra o antes → depois das quantidades e pede confirmação. Diários e medições continuam na mesma obra.">Passar a obra para esta revisão</button>';
-        html += '<button class="btn sm" data-gopen="obras:' + esc(ob.id) + '" title="Abrir cadastro da obra — na Gestão de Obras">Cadastro da obra</button></span>';
+        html += ' <span class="muted">· ligada à revisão anterior ' + esc(a.orcNumero || "") + '</span></span></span>';
+        if (info.podeEditarObra) html += '<button class="btn sm acao-forte" data-acao="crono-obra-passar" data-obra="' + esc(ob.id) + '" title="Mostra o antes → depois das quantidades e pede confirmação. Diários e medições continuam na mesma obra.">Passar a obra para esta revisão</button>';
+        html += '<button class="btn sm" data-gopen="obras:' + esc(ob.id) + '" title="Abrir cadastro da obra — na Gestão de Obras">Cadastro da obra</button>';
       } else {
         /* os NÚMEROS primeiro: na linha que encolhe com reticências é o que
            ainda aparece; o texto inteiro (com as três réguas) vai no title do
            chip. A porta [Informar início] fica FORA do texto que encolhe (um
            botão dentro do texto cortado sumiria junto). */
         html += '<span class="cx-chip" title="' + esc("Obra " + (ob.nome || "") + (info.chipTitulo ? " — " + info.chipTitulo : "")) + '"><span class="cx-chip-txt">' +
-          (info.chip ? '<span class="cx-chipnum">' + info.chip + '</span> <span class="muted">·</span> ' : '') + 'Obra <b>' + nomeC + '</b></span>';
-        html += (info.chipPorta || '') + '<button class="btn sm" data-acao="crono-planejamento" data-obra="' + esc(ob.id) + '" title="Abrir planejamento da obra — o cronograma da obra: previsto × realizado, linha de base e histórico">Abrir planejamento</button></span>';
+          (info.chip ? '<span class="cx-chipnum">' + info.chip + '</span> <span class="muted">·</span> ' : '') + 'Obra <b>' + nomeC + '</b></span></span>';
+        html += (info.chipPorta || '') + '<button class="btn sm" data-acao="crono-planejamento" data-obra="' + esc(ob.id) + '" title="Abrir planejamento da obra — o cronograma da obra: previsto × realizado, linha de base e histórico">Abrir planejamento</button>';
         if (dec.planoAlheio) {
           /* ⚠ plano iniciado sobre OUTRO orçamento (a obra foi religada pelo
              cadastro): as etapas não são as mesmas, e editar aqui gravaria
              durações em ids que este orçamento não tem. A porta é reiniciar,
              com confirmação que diz o que se perde (App.cronoIniciarPlano). */
           html += '<span class="muted cx-faixa-nota" title="O plano de execução da obra foi iniciado a partir do orçamento ' + esc(dec.planoAlheio.orcNumero || dec.planoAlheio.orcamentoId || "") + ', que não é este nem uma revisão dele.">Plano da obra: de outro orçamento (' + esc(corta(dec.planoAlheio.orcNumero || dec.planoAlheio.orcamentoId || "", 20)) + ')</span>';
-          if (info.podeEditarObra) html += '<button class="btn sm primary" data-acao="crono-plano-iniciar" data-obra="' + esc(ob.id) + '" data-reiniciar="1" title="Copia o cronograma deste orçamento para o plano da obra. Mostra antes o que se perde e pede confirmação.">Reiniciar plano a partir deste orçamento</button>';
+          /* N2-forte pelo mesmo motivo do [Passar a obra]: ação consequente da faixa, não o primário da tela */
+          if (info.podeEditarObra) html += '<button class="btn sm acao-forte" data-acao="crono-plano-iniciar" data-obra="' + esc(ob.id) + '" data-reiniciar="1" title="Copia o cronograma deste orçamento para o plano da obra. Mostra antes o que se perde e pede confirmação.">Reiniciar plano a partir deste orçamento</button>';
         } else if (dec.travado && !dec.plano) {
           html += '<span class="muted cx-faixa-nota" title="Aprovado: o cronograma da proposta não muda — para replanejar a obra, inicie o plano de execução dela.">Aprovado: o cronograma da proposta não muda.</span>';
-          if (info.podeEditarObra) html += '<button class="btn sm primary" data-acao="crono-plano-iniciar" data-obra="' + esc(ob.id) + '" title="Copia este cronograma para a obra: a partir daí as edições desta aba vão para o plano da obra e a proposta aprovada fica intacta.">Iniciar plano de execução da obra</button>';
+          if (info.podeEditarObra) html += '<button class="btn sm acao-forte" data-acao="crono-plano-iniciar" data-obra="' + esc(ob.id) + '" title="Copia este cronograma para a obra: a partir daí as edições desta aba vão para o plano da obra e a proposta aprovada fica intacta.">Iniciar plano de execução da obra</button>';
         } else if (!dec.aprovado && !dec.travado && dec.plano) {
           /* ⚠ só SEM aprovação (revisão 3, lente UX): no aprovado o decidirAlvo
              destrava (o alvo é o plano) e o seletor aparecia com [Proposta]
@@ -3299,23 +3758,27 @@
         if (s.id === "real" && est.semReal) return;   // sem Gestão de Obras: ver render
         html += '<button class="cx-sub' + (est.sub === s.id ? ' on' : '') + '" role="tab" aria-selected="' + (est.sub === s.id ? 'true' : 'false') + '" data-acao="crono-sub" data-sub="' + s.id + '">' + esc(s.nome) + '</button>';
       });
-      /* o rótulo das duas ações vai num span que some abaixo de 1600 px (fica
-         o ícone, com title e aria-label): a 1366 são ~200 px que a faixa da
-         obra precisa para mostrar os números numa linha só (ver CSS) */
-      html += '</div>' + (faixa || '') + '<div class="cx-acoes">' +
-        '<button class="btn sm" data-acao="cron-pdf" aria-label="Imprimir / PDF" title="Imprimir / PDF — abre o cronograma pronto para imprimir ou salvar em PDF (A4 paisagem), no detalhe que está na tela">' + ic('imprimir') + '<span class="cx-rot"> Imprimir / PDF</span></button>' +
+      /* ⚠ DUAS LINHAS (decisão D1, 14/09/2026). Linha 1: o segmentado e as
+         ações N3 (só ícone, SEMPRE — o `title` e o `aria-label` dizem o nome;
+         o rótulo que voltava a partir de 1600 px era o degrau que fazia a
+         linha saltar 354 px num pixel). Linha 2: a faixa da obra, com o nome
+         inteiro e os botões dela (o CSS dá `flex-basis:100%` à `.cx-faixa`).
+         A faixa vem DEPOIS de `.cx-acoes` no HTML: é a ordem de leitura e de
+         Tab (sub-aba → ações da aba → a obra). Ver o CSS da `.cx-faixa`. */
+      html += '</div><div class="cx-acoes">' +
+        '<button class="btn sm icone" data-acao="cron-pdf" aria-label="Imprimir / PDF" title="Imprimir / PDF — abre o cronograma pronto para imprimir ou salvar em PDF (A4 paisagem), no detalhe que está na tela">' + ic('imprimir') + '</button>' +
         /* os QUATRO PAPÉIS do js/cronodocs.js. Ficam num botão próprio, e não
            dentro do [Imprimir / PDF]: aquele imprime O QUE ESTÁ NA TELA (o
            Gantt), estes são documentos de obra com público e papel próprios. */
-        '<button class="btn sm" data-acao="crono-docs" aria-label="Documentos" title="Físico-financeiro em matriz, relatório mensal da obra, lookahead de 3 semanas e resumo executivo de 1 página — com papel e orientação escolhíveis.">' + ic('relatorio') + '<span class="cx-rot"> Documentos</span></button>' +
-        '<button class="btn sm" data-acao="cron-msproject" aria-label="MS Project (XML)" title="MS Project (XML) — exporta as etapas, durações e dependências, no detalhe que está na tela, com o dinheiro (preço de venda), as profissões e horas, a linha de base, o avanço da obra e as datas fixadas. Abre também no Project Libre e no GanttProject.">' + ic('exportar') + '<span class="cx-rot"> MS Project (XML)</span></button>' +
+        '<button class="btn sm icone" data-acao="crono-docs" aria-label="Documentos" title="Documentos — físico-financeiro em matriz, relatório mensal da obra, lookahead de 3 semanas e resumo executivo de 1 página, com papel e orientação escolhíveis.">' + ic('relatorio') + '</button>' +
+        '<button class="btn sm icone" data-acao="cron-msproject" aria-label="MS Project (XML)" title="MS Project (XML) — exporta as etapas, durações e dependências, no detalhe que está na tela, com o dinheiro (preço de venda), as profissões e horas, a linha de base, o avanço da obra e as datas fixadas. Abre também no Project Libre e no GanttProject.">' + ic('exportar') + '</button>' +
         this.mppAcoes(est.mpp) +
-        '</div></div>';
+        '</div>' + (faixa || '') + '</div>';
       return html;
     },
 
     seletorDetalhe: function (det) {
-      var html = '<span style="font-size:12.5px" class="muted">Detalhe:</span> <span class="cx-seg" role="group" aria-label="Detalhe do cronograma">';
+      var html = '<span class="muted cx-rotulo">Detalhe:</span> <span class="cx-seg" role="group" aria-label="Detalhe do cronograma">';
       DETALHES.forEach(function (k) {
         html += '<button class="' + (det === k ? 'on' : '') + '" data-acao="crono-det" data-det="' + k + '" aria-pressed="' + (det === k ? 'true' : 'false') + '">' + DET_ROT[k] + '</button>';
       });
@@ -3355,7 +3818,9 @@
       var quais = fora.length ? fora.join(" · ") : "";
       var dFim = r.dataFimComOpcionais && r.dataFimComOpcionais.toLocaleDateString
         ? r.dataFimComOpcionais.toLocaleDateString("pt-BR") : "";
-      return '<span class="pill" style="background:#64748b1f;color:#475569;font-weight:600" title="' +
+      /* ⚠ classe e não `style=` (14/09/2026): o #475569 cravado dava 2,41:1 no
+         tema escuro; o token --texto-fraco tem o par do escuro */
+      return '<span class="pill cx-pill-opc" title="' +
         esc("O prazo acima é o do escopo que o Valor total cobra. Com a" + (fora.length === 1 ? "" : "s") +
             " etapa" + (fora.length === 1 ? "" : "s") + " opcional" + (fora.length === 1 ? "" : "is") +
             (quais ? " (" + quais + ")" : "") + " a obra iria a " + r.totalDiasComOpcionais + " dias úteis" +
@@ -3371,10 +3836,17 @@
       if (!temArv) det = "etapa";
       var nCrit = (r.caminhoCritico || []).length;
       // cabeçalho de sempre (as e2e e a suíte de render leem estes textos)
-      html += '<div class="flex" style="gap:18px;margin-bottom:4px;align-items:baseline;flex-wrap:wrap"><b style="font-size:16px">⏱ ' + r.totalDias + ' dias úteis (~' + r.totalSemanas + ' semanas)</b>' +
+      /* ⚠ o prazo é 17/600 por CLASSE (era `<b style="font-size:16px">`: 16 não
+         existe na régua e o `<b>` pedia 700, que desenha 600).
+         ⚠ `gap: 6px 12px`, e não `18px`. (1) Quando a linha quebra, o `gap`
+         único abria 18 px ENTRE AS LINHAS. (2) Com o prazo em 17 px, na OBRA
+         TESTE a 1366 o chip da Saúde deixava de caber e descia — 30 px a mais.
+         Somados à 2ª linha da barra (D1), punham a 1ª barra do Gantt a 2 px da
+         dobra a 1366×768 (medido 750–766; na 1.2.77, 666–682). */
+      html += '<div class="flex" style="gap:6px 12px;margin-bottom:4px;align-items:baseline;flex-wrap:wrap"><b class="cx-prazo">⏱ ' + r.totalDias + ' dias úteis (~' + r.totalSemanas + ' semanas)</b>' +
         '<span class="muted">' + r.dataInicio.toLocaleDateString("pt-BR") + ' → ' + r.dataFim.toLocaleDateString("pt-BR") + '</span>' +
-        '<span class="pill" style="background:#b91c1c14;color:var(--graf-alerta,#b91c1c);font-weight:600" title="Etapas sem folga: atrasar qualquer uma delas atrasa a entrega da obra.">caminho crítico: ' + nCrit + ' de ' + r.etapas.length + ' etapa' + (r.etapas.length === 1 ? '' : 's') + '</span>' +
-        (r.temCiclo ? '<span class="pill" style="background:#f59e0b22;color:#b45309;font-weight:700" title="Uma etapa depende de outra que, por sua vez, depende dela. O elo que fecha o laço foi ignorado no cálculo.">dependência circular — elo ignorado; revise a coluna “Depende de”</span>' : '') +
+        '<span class="pill cx-pill-crit" title="Etapas sem folga: atrasar qualquer uma delas atrasa a entrega da obra.">caminho crítico: ' + nCrit + ' de ' + r.etapas.length + ' etapa' + (r.etapas.length === 1 ? '' : 's') + '</span>' +
+        (r.temCiclo ? '<span class="pill cx-pill-ciclo" title="Uma etapa depende de outra que, por sua vez, depende dela. O elo que fecha o laço foi ignorado no cálculo.">dependência circular — elo ignorado; revise a coluna “Depende de”</span>' : '') +
         (d.pillFeriados || '') +
         this.pillOpcionais(r) +
         /* ⚠ O CHIP DA SAÚDE MORA AQUI, e não num bloco próprio: esta linha
@@ -3392,8 +3864,8 @@
       html += this.saudePainel(d, est);
       /* seletor + interruptor + a nota do agente numa linha só: em três
          linhas (medido por foto a 1366×768) o Gantt começava abaixo da dobra */
-      html += '<div class="flex" style="gap:12px;margin-bottom:6px;align-items:center;flex-wrap:wrap">' + (temArv ? this.seletorDetalhe(det) + (temF ? this.interruptor(r) : '') : '') +
-        '<span class="muted" style="font-size:12px">' + ic('ia') + ' estimado pelo agente · edite duração e dependências na tabela</span></div>';
+      html += '<div class="flex" style="gap:6px 12px;margin-bottom:4px;align-items:center;flex-wrap:wrap">' + (temArv ? this.seletorDetalhe(det) + (temF ? this.interruptor(r) : '') : '') +
+        '<span class="muted cx-nota">' + ic('ia') + ' estimado pelo agente · edite duração e dependências na tabela</span></div>';
       if (r.exec && r.exec.erro) html += '<div class="cx-aviso">' + esc(r.exec.erro) + '</div>';
       /* ⚠ os avisos das subetapas vão LOGO ABAIXO do Gantt, antes da tabela:
          em cima dele custavam ~60 px e, somados à faixa e ao cartão, a 1ª barra
@@ -3449,10 +3921,33 @@
          Caixa separada, e não a de "Subetapas:", porque o assunto não é
          subetapa: rótulo que mente manda procurar no lugar errado. */
       var avRest = arr(r.restricoes && r.restricoes.avisos), htmlRest = "";
-      if (avRest.length) {
+      /* ⚠ A DATA FIXADA QUE MANDA TAMBÉM ENTRA NA CAIXA, COM A PORTA (F6).
+         Roteiro do defeito (EDICAO.md, foto 09, OBRA TESTE): arrastar a etapa 4
+         gravou "não iniciar antes de 12/01/2028" — um campo que a tabela não
+         mostra —, e digitar "Depende de = 1" gravou, mas a etapa CONTINUOU em
+         12/01/2028, sem recado e sem caixa (a data era válida, então não havia
+         aviso). Quem digita acha que o campo não funciona. O recado da
+         digitação cita [Soltar a data] "na caixa abaixo do Gantt": a porta
+         prometida tem de existir (memória "porta prometida precisa existir").
+         No aprovado não há botão: a soltura seria recusada pela trava. */
+      var fixas = [], GuR = GU();
+      if (GuR && typeof GuR.dataFixadaDomina === "function") {
+        arr(r.etapas).forEach(function (et, ix) {
+          var dom = null;
+          try { dom = et ? GuR.dataFixadaDomina(r, et.id) : null; } catch (eDF) { dom = null; }
+          if (dom) fixas.push({ et: et, n: ix + 1, dom: dom });
+        });
+      }
+      if (avRest.length || fixas.length) {
         htmlRest += '<div class="cx-aviso"><b>Datas fixadas no Gantt:</b><ul class="cx-lista">';
         avRest.slice(0, 5).forEach(function (a) { htmlRest += '<li>' + esc((a && a.msg) || "") + '</li>'; });
         if (avRest.length > 5) htmlRest += '<li>e mais ' + (avRest.length - 5) + ' aviso(s)</li>';
+        fixas.forEach(function (fx) {
+          htmlRest += '<li>' + esc(fx.n + " " + String(fx.et.nome || "") + ": começa em " + fx.dom.dataBR + " porque a data foi fixada no Gantt (não iniciar antes de " + fx.dom.dataBR +
+            "). Sem ela, a etapa seguiria o “Depende de”.") +
+            (d.travado ? '' : ' <button type="button" class="btn sm" data-acao="crono-soltar-data" data-id="' + esc(fx.et.id) + '" title="' +
+              esc("Apaga a data fixada de " + fx.n + " " + String(fx.et.nome || "") + ": a etapa volta para onde a rede (o “Depende de” e as durações) a põe.") + '">Soltar a data</button>') + '</li>';
+        });
         htmlRest += '</ul></div>';
       }
       /* GANTT INTERATIVO (12/09/2026): a aba passou a desenhar o `ganttPro` —
@@ -3469,8 +3964,18 @@
          de nomes. Montado duas vezes (um para o Gantt, outro para o
          histograma), um zoom aplicado no primeiro deixaria o segundo na escala
          anterior — e o gráfico de gente sairia deslocado do cronograma. */
+      /* ⚠ AS PREFERÊNCIAS DE TAMANHO ENTRAM AQUI, NO DESENHO PURO (F3). Roteiro
+         do defeito (experimento C da REDIMENSIONAR.md): o corpo arrastado para
+         700 px voltava a 520 no primeiro render — digitar uma duração redesenha
+         a aba e o desenho puro não sabia da escolha. `d.gx` é montado pelo
+         ui.js com `Paineis.opcoesGantt` (a MESMA conta que a fiação usa ao
+         remedir); sem as fatias que criam PaineisUI/GanttGradeUI/App._janela
+         tudo aqui é vazio e o desenho é o da 1.2.77. */
+      var og = (d.gx && typeof d.gx === "object") ? d.gx : {};
       var oGx = { detalhe: det, abertas: est.abertas, hoje: est.hoje,
-        travado: !!d.travado, nivel: est.zoom.nivel, sel: est.zoom.sel, desfazer: est.zoom.desfazer };
+        travado: !!d.travado, nivel: est.zoom.nivel, sel: est.zoom.sel, desfazer: est.zoom.desfazer,
+        labelPref: og.labelPref, alturaPref: og.alturaPref, colunas: d.colunas === true, janelaAltura: d.janelaAltura,
+        modo: d.modo, alcas: d.alcas === true, alcaNomes: og.alcaNomes, hxAltura: og.hxAltura, fxAltura: og.fxAltura };
       var proGx = this.ganttProEstado(r, oGx);
       oGx.pro = proGx;
       html += this.ganttPro(r, oGx);
@@ -3490,12 +3995,19 @@
       html += htmlAv + htmlRest;
       if (temArv && det !== "etapa") {
         var semSub = r.atividades.filter(function (n) { return n.tipo === "etapa" && n.papel === "folha"; }).length;
-        if (semSub) html += '<div class="muted" style="font-size:11.5px;margin-top:8px">' + semSub + ' etapa(s) sem subetapas: o cronograma detalha até onde a planilha detalha — use <b>+ subetapa</b> na linha da etapa para criar subetapas na planilha.</div>';
+        if (semSub) html += '<div class="muted cx-legenda" style="margin-top:8px">' + semSub + ' etapa(s) sem subetapas: o cronograma detalha até onde a planilha detalha — use <b>+ subetapa</b> na linha da etapa para criar subetapas na planilha.</div>';
       }
       html += this.tabela(r, d, { detalhe: det, abertas: est.abertas, temF: temF && det !== "etapa" });
-      html += '<div class="muted" style="font-size:11px;margin-top:6px"><b>Depende de:</b> nº das etapas que precisam terminar antes (ex.: <code>1,3</code>). Vazio = a etapa anterior · <code>0</code> = começa no início da obra · <code>1+7</code> = espera 7 dias úteis depois da 1ª (cura, secagem) · <code>1-3</code> = começa 3 dias antes de a 1ª acabar · sem lag, vale a sobreposição do paralelismo. <b>Duração 0</b> = marco (◆). <b>Folga:</b> quanto a etapa pode atrasar sem mudar a entrega — folga zero é o caminho crítico.' +
+      /* ⚠ A LEGENDA DOS ÍCONES DA COLUNA DURAÇÃO (14/09/2026): ∑ ✎ ≈ R$ só
+         existiam no `title` de cada célula, e ninguém passa o mouse em 40
+         linhas para descobrir o que um símbolo quer dizer. Os símbolos e as
+         frases saem do próprio FONTES — a legenda não tem como discordar da
+         célula. */
+      var legF = [["subetapas", "vão das subetapas"], ["usuario", "digitada"], ["estimado", "estimada pelo agente"], ["custoMO", "pelo custo de mão de obra"], ["ia", "sugerida pela IA"], ["exec", "do Hh SINAPI"]]
+        .map(function (p) { return '<span class="cx-fonte">' + esc(FONTES[p[0]][0]) + '</span>' + esc(p[1]); }).join(' · ');
+      html += '<div class="muted cx-legenda"><b>Duração:</b> ' + legF + '.<br><b>Depende de:</b> nº das etapas que precisam terminar antes (ex.: <code>1,3</code>). Vazio = a etapa anterior · <code>0</code> = começa no início da obra · <code>1+7</code> = espera 7 dias úteis depois da 1ª (cura, secagem) · <code>1-3</code> = começa 3 dias antes de a 1ª acabar · sem lag, vale a sobreposição do paralelismo. <b>Duração 0</b> = marco (◆). <b>Folga:</b> quanto a etapa pode atrasar sem mudar a entrega — folga zero é o caminho crítico.' +
         (temF ? '<br><b>Subetapas:</b> com “Detalhar o prazo pelas subetapas” ligado, duração, equipes e “Depende de” das subetapas são editáveis e a etapa passa a durar o vão delas; desligado, elas são desenhadas dentro da duração da etapa (só leitura). “Depende de” da subetapa usa o nº da MESMA etapa: <code>2.1</code>, <code>2.g</code> (serviços gerais da etapa), <code>2.1+3</code> espera, <code>2.1-1</code> avanço, <code>2.1II</code> começa junto (início-início), <code>0</code> = início da etapa. Não há elo entre subetapas de etapas diferentes — o elo entre etapas fica na linha da etapa.' : '') + '</div>';
-      html += '<div class="muted" style="font-size:11.5px;margin-top:8px">A planilha Excel do orçamento leva este cronograma por etapa, com fórmulas vivas (aba Gantt).</div>';
+      html += '<div class="muted cx-legenda" style="margin-top:8px">A planilha Excel do orçamento leva este cronograma por etapa, com fórmulas vivas (aba Gantt).</div>';
       return html;
     },
 
@@ -3527,7 +4039,10 @@
         if (n.numero) numF[n.id] = n.numero;
         if (n.tipo === "subetapa" || n.tipo === "soltos") { if (!own(folhasEt, n.etapaId)) folhasEt[n.etapaId] = []; folhasEt[n.etapaId].push(n); }
       });
-      function crit(n) { return '<span class="pill" style="background:#b91c1c14;color:var(--graf-alerta,#b91c1c);font-weight:700" title="Sem folga: atrasar isto atrasa a obra inteira.">crítica</span>'; }
+      /* ⚠ a "crítica" pedia 700 em linha e herdava o Mono do `td.num`: o Mono
+         só tem 400–500, e ela desenhava MAIS LEVE que o texto ao lado. Classe
+         + `.pill` em Sans (app.css) = 600 de verdade. */
+      function crit(n) { return '<span class="pill cx-pill-crit" title="Sem folga: atrasar isto atrasa a obra inteira.">crítica</span>'; }
       /* `base` troca a frase padrão da fonte mantendo o MESMO símbolo: no
          orçamento aprovado o ∑ continua valendo (a duração veio das subetapas),
          mas "Duração = vão das subetapas" passaria a mentir — ali o número é o
@@ -3537,7 +4052,7 @@
         return ' <span class="cx-fonte" title="' + esc((base || F[1]) + (extra ? " — " + extra : "")) + '">' + esc(F[0]) + '</span>';
       }
       var html = '';
-      if (o.temF) html += '<div class="flex" style="gap:8px;margin-top:12px;justify-content:flex-end;font-size:12px"><button class="btn sm ghost" data-acao="crono-abrir" data-etapa="*" data-valor="1">Expandir tudo</button><button class="btn sm ghost" data-acao="crono-abrir" data-etapa="*" data-valor="0">Recolher tudo</button></div>';
+      if (o.temF) html += '<div class="flex" style="gap:8px;margin-top:12px;justify-content:flex-end"><button class="btn sm ghost" data-acao="crono-abrir" data-etapa="*" data-valor="1">Expandir tudo</button><button class="btn sm ghost" data-acao="crono-abrir" data-etapa="*" data-valor="0">Recolher tudo</button></div>';
       html += '<div class="cx-tabela"><table class="tbl cx-eap" style="margin-top:' + (o.temF ? 4 : 12) + 'px"><thead><tr><th>Etapa</th><th>Categoria (agente)</th><th class="num" title="Equipe-dias estimados. Na subetapa, no modo executivo: o nº de equipes trabalhando nela.">Eq-dias</th><th class="num" title="Dias úteis. 0 = marco (entrega, vistoria, liberação): sem barra, um losango no Gantt.">Duração (d)</th>' +
         '<th class="num" title="Nº das etapas que precisam terminar antes desta (ex.: 1,3). Vazio = a anterior; 0 = começa no início da obra. 1+7 = 7 dias úteis depois da 1ª; 1-3 = começa 3 dias antes de a 1ª acabar.">Depende de</th>' +
         '<th class="num" title="Quanto a etapa pode atrasar sem mudar a entrega. Folga zero = caminho crítico.">Folga</th><th>Início' + ano + '</th><th>Fim</th></tr></thead><tbody>';
@@ -3587,11 +4102,24 @@
             : (travada ? "No modo executivo a duração desta etapa é o vão das subetapas (" + e.duracao + " dias). Edite as subetapas abaixo, ou desligue “Detalhar o prazo pelas subetapas”." : "Dias úteis · 0 = marco");
           // ⚠ `<tr>` puro, data-cron-dur/data-cron-pred e a célula "codigo nome"</td>: ver a regra 1 do cabeçalho
           // ⚠ esc no id: ele vem também de pacote, backup e sincronização (dado de outro aparelho)
-          html += '<tr><td class="cx-nome">' + ctrl + numEap + esc(e.codigo) + ' ' + esc(e.nome) + (e.marco ? ' <span class="pill" style="background:#0f172a14;color:#0f172a;font-weight:700;font-size:11px" title="Marco: evento sem duração (entrega, vistoria, liberação).">◆ marco</span>' : '') + '</td>' +
-            '<td><span class="pill" style="background:' + c.cor + '22;color:' + c.cor + '">' + esc(c.nome) + '</span></td>' +
+          /* ⚠ DURAÇÃO EM `type="text" inputmode="numeric"`, NUNCA `type="number"`
+             (F6). Roteiro do defeito (medido no navegador na F4): o campo
+             number entrega "" ao handler quando a pessoa digita "abc" e troca
+             "2,5" por "2.5" antes de alguém ler. Com o contrato único da
+             digitação (GanttUI.opsDaDigitacao), "" quer dizer "volta à
+             estimativa": o "abc" digitado APAGARIA a duração calado, em vez de
+             ser recusado com recado. `inputmode` mantém o teclado numérico no
+             celular. A borda e a largura saem das classes `cx-in`/`cx-in-dig`
+             da F5 (larguras por [data-*] no CSS); os `data-*` e o `readonly`
+             são lidos por 9 suítes e ficam como estavam. */
+          html += '<tr><td class="cx-nome">' + ctrl + numEap + esc(e.codigo) + ' ' + esc(e.nome) + (e.marco ? ' <span class="pill cx-pill-marco" title="Marco: evento sem duração (entrega, vistoria, liberação).">◆ marco</span>' : '') + '</td>' +
+            /* ⚠ badge de categoria: a COR vai no fundo e o texto é --texto
+               (.cx-cat) — com o texto na cor da categoria, os tons claros
+               (Demolição #9ca3af) davam ~2,5:1 */
+            '<td><span class="pill cx-cat" style="background:' + c.cor + '22">' + esc(c.nome) + '</span></td>' +
             '<td class="num" title="Equipe-dias estimados da etapa">' + nBR(e.equipeDias, 1) + '</td>' +
-            '<td class="num"><input class="cell" type="number" min="0" data-cron-dur="' + esc(e.id) + '" value="' + e.duracao + '" title="' + esc(motivoTrava) + '"' + (travada ? ' readonly aria-readonly="true"' : '') + ' style="width:60px;text-align:right' + (travada ? '' : (e.editado || e.marco ? ';border-color:var(--azul,#2563eb)' : '')) + '">' + fonteEt + '</td>' +
-            '<td class="num"><input class="cell" type="text" data-cron-pred="' + esc(e.id) + '" value="' + esc(valPred) + '" placeholder="' + (i > 0 ? i : '—') + '" title="Nº das etapas que precisam terminar antes (ex.: 1,3). Vazio = a anterior; 0 = começa no início da obra. 1+7 = espera 7 dias úteis; 1-3 = começa 3 dias antes." style="width:72px;text-align:right' + (e.predsExplicito ? ';border-color:var(--aco,#0d6ebd)' : '') + '"></td>' +
+            '<td class="num"><input class="cell cx-in' + (travada ? '' : (e.editado || e.marco ? ' cx-in-dig' : '')) + '" type="text" inputmode="numeric" data-cron-dur="' + esc(e.id) + '" value="' + e.duracao + '" title="' + esc(motivoTrava) + '"' + (travada ? ' readonly aria-readonly="true"' : '') + '>' + fonteEt + '</td>' +
+            '<td class="num"><input class="cell cx-in' + (e.predsExplicito ? ' cx-in-dig' : '') + '" type="text" data-cron-pred="' + esc(e.id) + '" value="' + esc(valPred) + '" placeholder="' + (i > 0 ? i : '—') + '" title="Nº das etapas que precisam terminar antes (ex.: 1,3). Vazio = a anterior; 0 = começa no início da obra. 1+7 = espera 7 dias úteis; 1-3 = começa 3 dias antes."></td>' +
             '<td class="num">' + (e.critico ? crit(e) : '+' + e.folga + ' d') + '</td>' +
             '<td>' + dm(e.dataInicio, multi) + '</td><td>' + dm(e.dataFim, multi) + '</td></tr>';
           return;
@@ -3608,21 +4136,21 @@
              editarFolha devolve o recado ao gravar */
           var durDigF = n.duracaoDigitada != null;
           var celEq = rede
-            ? '<input class="cell" type="number" min="1" max="50" data-crono-sub-eq="' + esc(n.id) + '" value="' + (n.equipes || 1) + '" title="' + esc(durDigF
+            ? '<input class="cell cx-in" type="number" min="1" max="50" data-crono-sub-eq="' + esc(n.id) + '" value="' + (n.equipes || 1) + '" title="' + esc(durDigF
               ? "A duração digitada nesta subetapa (" + n.duracaoDigitada + " d) manda — as equipes só contam depois de apagar a duração. Equipe-dias: " + nBR(n.equipeDias, 1)
-              : "Equipes trabalhando nesta subetapa (vazio = as da obra). Equipe-dias: " + nBR(n.equipeDias, 1)) + '" style="width:44px;text-align:right' + (durDigF ? ';opacity:.6' : '') + '"><span class="muted" style="font-size:10px"> eq.</span>'
+              : "Equipes trabalhando nesta subetapa (vazio = as da obra). Equipe-dias: " + nBR(n.equipeDias, 1)) + '"' + (durDigF ? ' style="opacity:.6"' : '') + '><span class="muted" style="font-size:10px"> eq.</span>'
             : '<span title="' + esc("Equipe-dias: " + nBR(n.equipeDias, 1) + " · equipes: " + (n.equipes || 1)) + '">' + nBR(n.equipeDias, 1) + '</span>';
           var celDur = rede
-            ? '<input class="cell" type="number" min="0" data-crono-sub-dur="' + esc(n.id) + '" value="' + durRede + '" title="Dias úteis da subetapa · 0 = marco · vazio = volta à estimativa" style="width:56px;text-align:right' + (n.editado || n.marco ? ';border-color:var(--azul,#2563eb)' : '') + '">' + fonte(n.fonte === "estimado" ? "" : n.fonte)
-            : '<span title="' + esc(tituloLeitura) + '">' + n.duracao + (n.escala === "escalada" && durRede !== n.duracao ? ' <span class="muted" style="font-size:10.5px">(rede ' + durRede + ')</span>' : '') + '</span>' + fonte(n.fonte === "estimado" ? "" : n.fonte);
+            ? '<input class="cell cx-in' + (n.editado || n.marco ? ' cx-in-dig' : '') + '" type="text" inputmode="numeric" data-crono-sub-dur="' + esc(n.id) + '" value="' + durRede + '" title="Dias úteis da subetapa · 0 = marco · vazio = volta à estimativa">' + fonte(n.fonte === "estimado" ? "" : n.fonte)
+            : '<span title="' + esc(tituloLeitura) + '">' + n.duracao + (n.escala === "escalada" && durRede !== n.duracao ? ' <span class="muted cx-mini">(rede ' + durRede + ')</span>' : '') + '</span>' + fonte(n.fonte === "estimado" ? "" : n.fonte);
           var celPred = rede
-            ? '<input class="cell" type="text" data-crono-sub-pred="' + esc(n.id) + '" value="' + esc(predTxt) + '" placeholder="' + (pos > 0 ? esc(irmas[pos - 1].numero) : '—') + '" title="Nº de subetapas da MESMA etapa: 2.1, 2.g; 2.1+3 espera; 2.1-1 avanço; 2.1II começa junto; 0 = início da etapa; vazio = a anterior." style="width:96px;text-align:right' + (n.predsExplicito ? ';border-color:var(--aco,#0d6ebd)' : '') + '">'
+            ? '<input class="cell cx-in' + (n.predsExplicito ? ' cx-in-dig' : '') + '" type="text" data-crono-sub-pred="' + esc(n.id) + '" value="' + esc(predTxt) + '" placeholder="' + (pos > 0 ? esc(irmas[pos - 1].numero) : '—') + '" title="Nº de subetapas da MESMA etapa: 2.1, 2.g; 2.1+3 espera; 2.1-1 avanço; 2.1II começa junto; 0 = início da etapa; vazio = a anterior.">'
             : '<span class="muted" title="Só leitura no modo padrão">' + esc((n.preds && n.preds.length) ? Cr.predsTextoSub(n, mp) : "início") + '</span>';
           html += '<tr class="cx-f"><td class="cx-nome"><span style="padding-left:22px"></span><span class="cx-n">' + esc(n.numero) + '</span>' + esc(n.nome) +
-            (n.marco ? ' <span class="pill" style="font-size:10.5px">◆ marco</span>' : '') +
+            (n.marco ? ' <span class="pill cx-pill-marco">◆ marco</span>' : '') +
             (n.comprimida ? ' <span title="A etapa é curta demais para as subetapas: no desenho elas se sobrepõem além do que a rede pede." style="color:#b45309;cursor:help">⚠</span>' : '') +
             (n.cicloDep ? ' <span title="Dependência circular entre subetapas — o elo de volta foi ignorado." style="color:#b45309;cursor:help">⟲</span>' : '') + '</td>' +
-            '<td><span class="pill" style="background:' + cat.cor + '22;color:' + cat.cor + ';font-size:11px">' + esc(cat.nome) + '</span></td>' +
+            '<td><span class="pill cx-cat" style="background:' + cat.cor + '22">' + esc(cat.nome) + '</span></td>' +
             '<td class="num">' + celEq + '</td><td class="num">' + celDur + '</td><td class="num">' + celPred + '</td>' +
             '<td class="num">' + (n.critico ? crit(n) : '+' + (n.folga || 0) + ' d') + '</td>' +
             '<td>' + dm(n.dataInicio, multi) + '</td><td>' + dm(n.dataFim, multi) + '</td></tr>';
@@ -3630,8 +4158,8 @@
         }
         // serviço: sempre só leitura (a duração dele é a parte da janela da subetapa)
         var sb = n.semBase || n.inicio == null;
-        html += '<tr class="cx-s"><td class="cx-nome" title="' + esc((n.codigo ? n.codigo + " · " : "") + n.nome) + '"><span style="padding-left:' + (n.prof >= 2 ? 44 : 22) + 'px"></span><span class="cx-n">' + esc(n.numero) + '</span>' + esc(corta(n.nome, 110)) + (sb ? ' <span class="muted" style="font-size:10.5px">(sem quantidade)</span>' : '') + '</td>' +
-          '<td><span style="font-size:11px">' + esc(cat.nome) + '</span></td>' +
+        html += '<tr class="cx-s"><td class="cx-nome" title="' + esc((n.codigo ? n.codigo + " · " : "") + n.nome) + '"><span style="padding-left:' + (n.prof >= 2 ? 44 : 22) + 'px"></span><span class="cx-n">' + esc(n.numero) + '</span>' + esc(corta(n.nome, 110)) + (sb ? ' <span class="muted cx-mini">(sem quantidade)</span>' : '') + '</td>' +
+          '<td><span class="cx-mini">' + esc(cat.nome) + '</span></td>' +
           '<td class="num">' + nBR(n.equipeDias || 0, 1) + '</td>' +
           '<td class="num" title="Parte da janela da subetapa, pelo peso em equipe-dias. Só leitura.">' + (sb ? '—' : n.duracao) + fonte(n.fonte) + '</td>' +
           '<td class="num">—</td><td class="num" title="Herdada da subetapa">—</td>' +
@@ -3789,41 +4317,39 @@
        ⚠ Inválido NUNCA vira "sem predecessora" nem "1 dia": nada é gravado
        e a tela devolve o valor anterior (como a etapa faz hoje).
        Devolve {ok, mudou, msg?}.
+       ⚠ DURAÇÃO E "DEPENDE DE" NÃO SE DECIDEM MAIS AQUI (14/09/2026): este
+       método DELEGA para `GanttUI.opsDaDigitacao` + `GanttUI.aplicarOps`, o
+       contrato único da digitação (etapa, subetapa e a grade do Gantt). O
+       roteiro do defeito está lá: eram dois contratos para o mesmo campo, e
+       uma cópia do parser aqui voltaria a divergir na primeira manutenção
+       (memória "réplica de parser apodrece"). Só as EQUIPES ficam aqui.
+       Mudanças visíveis na subetapa, declaradas: decimal na duração é
+       RECUSADO com recado (antes "2,5" gravava 3 calado); "1.000" é mil e é
+       recusado (antes gravava 1); "2.1 + 2" com espaços grava a espera
+       (antes era recusado); o recado nomeia "2.2 Tapume" (antes "a subetapa
+       2.2 (Tapume)"). A forma gravada é a mesma.
        ------------------------------------------------------------------ */
     editarFolha: function (cron, nos, campo, id, valor) {
       var Cr = C(), no = null;
       arr(nos).forEach(function (n) { if (n.id === id && (n.tipo === "subetapa" || n.tipo === "soltos")) no = n; });
       if (!no) return { ok: false, mudou: false, msg: "Essa subetapa não existe mais neste orçamento — nada foi gravado. A tela foi atualizada." };
+      if (campo === "dur" || campo === "pred") {
+        var Gu = GU();
+        // ⚠ motor ausente não vira "grava do jeito antigo": não grava e diz por quê
+        if (!Gu || typeof Gu.opsDaDigitacao !== "function" || typeof Gu.aplicarOps !== "function")
+          return { ok: false, mudou: false, msg: "O motor da digitação (js/ganttui.js) não carregou nesta tela — nada foi gravado. Recarregue a página (Ctrl+F5)." };
+        var dig = Gu.opsDaDigitacao({ atividades: arr(nos), etapas: [] }, no, campo, valor, { travado: false, cron: cron, Cronograma: Cr, CronoExecUI: this });
+        if (!dig.ok) return { ok: false, mudou: false, msg: dig.msg };
+        if (!dig.ops.length) return { ok: true, mudou: false };
+        return { ok: true, mudou: Gu.aplicarOps(cron, dig.ops).mudou };
+      }
       if (!(cron && cron.exec && cron.exec.rede === true))
         return { ok: false, mudou: false, msg: "As subetapas só se editam com “Detalhar o prazo pelas subetapas” ligado (aba Cronograma). No modo padrão elas são desenhadas dentro da duração da etapa — nada foi gravado." };
       if (!cron.sub || typeof cron.sub !== "object" || ehArr(cron.sub)) cron.sub = {};
       var sub = cron.sub;
       function mapa(k) { if (!sub[k] || typeof sub[k] !== "object" || ehArr(sub[k])) sub[k] = {}; return sub[k]; }
       var antes = JSON.stringify(sub), s = String(valor == null ? "" : valor).trim(), nome = no.numero + " (" + corta(no.nome, 40) + ")";
-      if (campo === "dur") {
-        var n = numTxt(s);
-        if (s !== "" && (isNaN(n) || n < 0 || n > 999)) return { ok: false, mudou: false, msg: "“" + s + "” não é duração válida para a subetapa " + nome + " — use dias úteis de 1 a 999 (0 = marco; vazio = volta à estimativa). Nada foi gravado." };
-        var dur = mapa("duracoes"), mc = mapa("marcos");
-        if (s === "") { delete dur[id]; delete mc[id]; }
-        else if (n === 0) { mc[id] = true; delete dur[id]; }
-        else { dur[id] = Math.max(1, Math.round(n)); delete mc[id]; }
-        // virou decisão do USUÁRIO: a marca de agente e o motivo da IA saem
-        if (sub.agente && typeof sub.agente === "object") delete sub.agente[id];
-        if (sub.iaMotivos && typeof sub.iaMotivos === "object") delete sub.iaMotivos[id];
-      } else if (campo === "pred") {
-        var irmas = [];
-        arr(nos).forEach(function (x) { if ((x.tipo === "subetapa" || x.tipo === "soltos") && x.etapaId === no.etapaId) irmas.push({ id: x.id, numero: x.numero }); });
-        var pr = Cr.parsePredsSub(s, irmas, id);
-        if (pr.invalidos.length) return { ok: false, mudou: false, msg: "“" + pr.invalidos.join(", ") + "” não é subetapa válida em “Depende de” da " + nome +
-          " — use o nº de outra subetapa da MESMA etapa (" + irmas.filter(function (x) { return x.id !== id; }).map(function (x) { return x.numero; }).join(", ") + "); 0 = início da etapa; espera 2.1+3, avanço 2.1-1, começa junto 2.1II. Nada foi gravado." };
-        var pc = mapa("predecessoras"), lc = mapa("lags"), tc = mapa("tipos");
-        if (pr.preds === null) { delete pc[id]; delete lc[id]; delete tc[id]; }
-        else {
-          pc[id] = pr.preds;
-          if (Object.keys(pr.lags).length) lc[id] = pr.lags; else delete lc[id];
-          if (Object.keys(pr.tipos).length) tc[id] = pr.tipos; else delete tc[id];
-        }
-      } else if (campo === "eq") {
+      if (campo === "eq") {
         var q = numTxt(s);
         if (s !== "" && (isNaN(q) || q < 1 || q > 50 || Math.round(q) !== q)) return { ok: false, mudou: false, msg: "“" + s + "” não é nº de equipes válido para a subetapa " + nome + " — use um inteiro de 1 a 50 (vazio = as equipes da obra). Nada foi gravado." };
         var eq = mapa("equipes");

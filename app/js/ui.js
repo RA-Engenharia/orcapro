@@ -50,13 +50,25 @@
     },
 
     // ---------- Toast ----------
-    toast: function (msg, tipo) {
+    /* `ms` (opcional): quanto tempo o recado fica na tela. Sem ele, os 2,6 s de
+       sempre — os ~400 toasts do app continuam iguais.
+       ⚠ EXISTE POR CAUSA DA RECUSA DA TRAVA DE CARIMBO (F2, 14/09/2026): o
+       recado "Este orçamento foi alterado em outra janela… às 10:32:05. A sua
+       última alteração não foi gravada…" tem ~190 caracteres, e em 2,6 s
+       ninguém lê isso — a pessoa via uma faixa vermelha sumir e seguia
+       achando que tinha salvo. Recado de dado NÃO gravado tem de durar o
+       tempo de ler (App._msRecado). */
+    toast: function (msg, tipo, ms) {
       var wrap = this.el("toasts");
+      /* com quadro aberto o recado vai para o topo (ver .toasts.sobre-modal em
+         css/app.css): no canto de baixo ele tampava o rodapé do quadro */
+      try { if (wrap && wrap.classList) wrap.classList.toggle("sobre-modal", !!document.getElementById("modal-bg")); } catch (eSm) {}
       var t = document.createElement("div");
       t.className = "toast " + (tipo || "");
       this._rotulo(t, msg);
       wrap.appendChild(t);
-      setTimeout(function () { t.style.opacity = "0"; setTimeout(function () { t.remove(); }, 250); }, 2600);
+      var dura = (typeof ms === "number" && ms > 0) ? ms : 2600;
+      setTimeout(function () { t.style.opacity = "0"; setTimeout(function () { t.remove(); }, 250); }, dura);
     },
 
     // ---------- Modal ----------
@@ -1139,8 +1151,12 @@
       var _sep = '<span class="acoes-sep" aria-hidden="true"></span>';
 
       var html = '<div class="flex between tela-titulo">' +
-        '<div><button class="btn ghost sm" data-acao="voltar">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Voltar</button> ' +
-        '<span style="font-size:20px;font-weight:800;margin-left:8px">' + Util.esc(orc.nome) + '</span> ' +
+        /* ⚠ o nome é `.tela-nome` (20/600, app.css) e não `style="…font-weight:800"`:
+           em linha ele escapava de toda folha, e o 800 desenhava 600. Continua
+           <span>: um <h2> perderia cor e tamanho para `.main h2`. ← Voltar é N3
+           com texto (transparente em repouso). */
+        '<div><button class="btn ghost sm n3" data-acao="voltar">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Voltar</button> ' +
+        '<span class="tela-nome">' + Util.esc(orc.nome) + '</span> ' +
         '<span class="muted">' + Util.esc(orc.numero) + '</span></div>' +
         '</div>';
 
@@ -1245,7 +1261,8 @@
       // Pendência de preço: faixa de erro ANTES das abas (não finaliza zerado)
       var _semPreco = Orcamento.itensSemPreco ? Orcamento.itensSemPreco(orc) : [];
       if (_semPreco.length) {
-        html += '<div style="padding:10px 14px;border-radius:10px;background:rgba(220,38,38,.10);border:1px solid rgba(220,38,38,.3);font-size:13px;margin-bottom:12px">' +
+        /* ⚠ classe `faixa-pend` (app.css): 12 px e vão 6×12 — ver lá o roteiro da dobra a 1366×768 */
+        html += '<div class="faixa-pend erro">' +
           '⛔ <b>' + _semPreco.length + ' item(ns) sem preço:</b> ' +
           _semPreco.slice(0, 5).map(function (i) { return '<b>' + Util.esc(i.numero) + '</b>' + (i.codigo ? ' (' + Util.esc(i.codigo) + ')' : ''); }).join(', ') +
           (_semPreco.length > 5 ? '…' : '') +
@@ -1257,7 +1274,7 @@
          orçamento de 60 itens, e a proposta agora bloqueia por causa dele. */
       var _semQtd = Orcamento.itensSemQuantidade ? Orcamento.itensSemQuantidade(orc) : [];
       if (_semQtd.length) {
-        html += '<div style="padding:10px 14px;border-radius:10px;background:rgba(234,88,12,.10);border:1px solid rgba(234,88,12,.35);font-size:13px;margin-bottom:12px">' +
+        html += '<div class="faixa-pend aviso">' +
           '⚠ <b>' + _semQtd.length + ' item(ns) sem quantidade:</b> ' +
           _semQtd.slice(0, 5).map(function (x) { return '<b>' + Util.esc(x.item.codigo || String(x.item.descricao || '').slice(0, 18)) + '</b>'; }).join(', ') +
           (_semQtd.length > 5 ? '…' : '') +
@@ -1357,6 +1374,26 @@
       });
       return h + '</aside>';
     },
+    /* A LARGURA ESCOLHIDA DO ÍNDICE e a ALÇA de puxar a borda dele (espec
+       crono-janelas, F7). Devolve {estilo, alca} para o `.pl-com-indice`.
+       ⚠ Só com a fiação das alças (js/paineisui.js): sem ela ninguém consegue
+       voltar ao padrão, e uma largura esquecida no disco viraria trava sem
+       porta (a mesma regra do Paineis.opcoesGantt). Sem ela sai "" e "" — a
+       Planilha da 1.2.77.
+       ⚠ A largura vai na variável `--idx-w`, e não em `grid-template-columns`
+       em linha: o atributo `style` venceria a media query de 1100 px do
+       app.css e, no tablet, a tabela ficaria espremida ao lado de um índice
+       que deveria ter virado fita horizontal. */
+    _indiceAlca: function () {
+      var out = { estilo: "", alca: "" };
+      if (typeof PaineisUI === "undefined" || typeof Paineis === "undefined" || !Paineis || typeof Paineis.alcaHtml !== "function") return out;
+      var prefs = {};
+      try { prefs = (typeof App !== "undefined" && typeof App._gxPaineis === "function") ? (App._gxPaineis() || {}) : {}; } catch (e) { prefs = {}; }
+      var w = Paineis.limitar("idxLargura", prefs.idxLargura, {});
+      if (w != null) out.estilo = ' style="--idx-w:' + w + 'px"';
+      out.alca = Paineis.alcaHtml("idxLargura", "vertical", "Largura do índice de etapas", w, Paineis.IDX[0], Paineis.IDX[1]);
+      return out;
+    },
 
     renderPlanilha: function (orc) {
       var recTudo = (typeof App !== "undefined" && App._etapasRecolhidas && orc.etapas.length)
@@ -1391,7 +1428,8 @@
       /* a tabela SEMPRE mora num container que rola de lado (.pl-tabela):
          sem isso, no caminho sem índice, dar min-width à Descrição empurraria
          a página inteira em vez de rolar só a planilha. */
-      if (_idx) html += '<div class="pl-com-indice">' + _idx + '<div class="pl-tabela">';
+      var _idxA = _idx ? this._indiceAlca() : null;
+      if (_idx) html += '<div class="pl-com-indice"' + _idxA.estilo + '>' + _idx + _idxA.alca + '<div class="pl-tabela">';
       else html += '<div class="pl-tabela">';
       var _foco = (typeof App !== "undefined") ? App._etapaFoco : "";
       if (_foco) {
@@ -2284,6 +2322,37 @@
           d.pr = pd;
         }
       }
+      /* A GEOMETRIA DO GANTT (espec crono-janelas, F3): as preferências de
+         tamanho da pessoa, se há colunas Dur./Depende de, alças e janela
+         destacada. Monta `d.paineis`, `d.gx` (Paineis.opcoesGantt — a MESMA
+         conta que App._gxPro usa ao remedir), `d.alcas`, `d.colunas`,
+         `d.janelaAltura`, `d.painel` e `d.modo`.
+         ⚠ Os globais PaineisUI (F7), GanttGradeUI (F6) e App._janela (F8) são
+         das outras fatias e são procurados AQUI, na hora do render: enquanto
+         não existem, tudo sai vazio e a aba é a da 1.2.77 (sem alça, sem
+         grade, sem janela) — de propósito. Motor sem fiação não vira porta
+         que não abre. */
+      var PNs = (typeof Paineis !== "undefined") ? Paineis : null;
+      if (!PNs && typeof require === "function" && typeof module !== "undefined") { try { PNs = require("./paineis.js"); } catch (eRq) { PNs = null; } }
+      var janAp = (ap && ap._janela && typeof ap._janela === "object") ? ap._janela : null;
+      var prefsPn = {};
+      if (PNs) {
+        try {
+          prefsPn = (ap && typeof ap._gxPaineis === "function") ? ap._gxPaineis()
+            : PNs.ler(typeof localStorage !== "undefined" ? localStorage : null,
+              PNs.hashUsuario(typeof Auth !== "undefined" && Auth.empresaId ? Auth.empresaId() : "", typeof Auth !== "undefined" && Auth.usuario && Auth.usuario() ? Auth.usuario().email : ""));
+        } catch (ePn) { prefsPn = {}; }
+      }
+      d.paineis = prefsPn || {};
+      d.gx = PNs ? PNs.opcoesGantt(d.paineis, {
+        alcas: typeof PaineisUI !== "undefined", grade: typeof GanttGradeUI !== "undefined", janela: janAp,
+        janelaAltura: typeof window !== "undefined" ? window.innerHeight : null, janelaLargura: typeof window !== "undefined" ? window.innerWidth : null
+      }) : null;
+      d.alcas = !!(d.gx && d.gx.alcas);
+      d.colunas = !!(d.gx && d.gx.colunas);
+      d.janelaAltura = d.gx ? d.gx.janelaAltura : null;
+      d.painel = (janAp && typeof janAp.painel === "string") ? janAp.painel : "";
+      d.modo = janAp ? "preencher" : "px";
       return CX.render(d, est);
     },
     _cronoExecUI: function () {
@@ -2347,19 +2416,27 @@
     _cronCartao: function (r, compacto, opts) {
       var p = r.params, c = !!compacto, iniObra = opts && opts.inicioObra ? String(opts.inicioObra) : "";
       var temOpc = !!(opts && opts.temOpcional);
-      function lb(t) { return c ? '<label style="font-size:11px;margin-bottom:2px">' + t + '</label>' : '<label>' + t + '</label>'; }
+      /* ⚠ compacto: rótulo 12/500 e larguras por CLASSE (CSS da aba, js/cronoexecui.js).
+         Eram `style="font-size:11px"` e `style="width:52px"` em linha: 11 px não
+         existe na régua, e em linha nenhuma folha alcança (14/09/2026). */
+      function lb(t) { return c ? '<label class="cx-lb">' + t + '</label>' : '<label>' + t + '</label>'; }
+      function larg(cls, px) { return c ? ' class="' + cls + '"' : ' style="width:' + px + 'px"'; }
       /* ⚠ data LOCAL (Cronograma._ch), nunca toISOString: sem início gravado o
          motor usa "agora", e das 21h à meia-noite (UTC-3) o ISO já é amanhã —
          o campo mostrava o dia seguinte e o Recalcular o gravava assim. */
       function ini() { try { return Cronograma._ch(r.dataInicio); } catch (e) { return ""; } }
       function opt(v, txt, sel) { return '<option value="' + v + '"' + (String(sel) === String(v) ? " selected" : "") + '>' + txt + '</option>'; }
-      return '<div class="card' + (c ? ' cx-cartao' : '') + '" style="margin-bottom:' + (c ? '6px;padding:7px 12px' : '12px') + '"><div class="flex" style="flex-wrap:wrap;gap:' + (c ? 8 : 12) + 'px;align-items:flex-end">' +
-        '<div class="field" style="margin:0">' + lb(iniObra ? 'Início (obra)' : 'Início') + '<input id="cron-inicio" type="date" value="' + (iniObra ? Util.esc(iniObra) : ini()) + '"' + (c ? ' style="width:130px"' : '') +
+      /* ⚠ compacto numa LINHA SÓ a 1366 (menu aberto, com o campo "Escopo"): o
+         vão de 6 px e o [N datas] no lugar do campo de 108 px pagam os ~38 px
+         da 2ª linha da barra do Cronograma (D1) — com o [IA] quebrando, a 1ª
+         barra do Gantt ia a y 836 de 768 (medido). */
+      return '<div class="card' + (c ? ' cx-cartao' : '') + '" style="margin-bottom:' + (c ? '4px;padding:5px 12px' : '12px') + '"><div class="flex" style="flex-wrap:wrap;gap:' + (c ? 6 : 12) + 'px;align-items:flex-end">' +
+        '<div class="field" style="margin:0">' + lb(iniObra ? 'Início (obra)' : 'Início') + '<input id="cron-inicio" type="date" value="' + (iniObra ? Util.esc(iniObra) : ini()) + '"' + (c ? ' class="cx-c-ini"' : '') +
           (iniObra ? ' readonly aria-readonly="true" title="É o início da obra (cadastro da obra): o plano de execução, a linha de base e o previsto × realizado contam dele. Para mudar, edite a obra."' : '') + '></div>' +
-        '<div class="field" style="margin:0">' + lb(c ? 'Equipes' : 'Equipes/frentes') + '<input id="cron-equipes" type="number" min="1" value="' + p.equipes + '" style="width:' + (c ? 52 : 80) + 'px"' + (c ? ' title="Equipes/frentes trabalhando ao mesmo tempo"' : '') + '></div>' +
-        '<div class="field" style="margin:0">' + lb(c ? 'Dias/sem.' : 'Dias úteis/sem.') + '<input id="cron-dias" type="number" min="1" max="7" value="' + p.diasUteisSemana + '" style="width:' + (c ? 50 : 80) + 'px"' + (c ? ' title="Dias úteis por semana"' : '') + '></div>' +
-        '<div class="field" style="margin:0">' + lb('Paralelismo') + '<select id="cron-paral"' + (c ? ' style="width:100px"' : '') + '>' + opt(0, "Nenhum", p.paralelismo) + opt(0.15, "Leve 15%", p.paralelismo) + opt(0.3, "Médio 30%", p.paralelismo) + opt(0.5, "Alto 50%", p.paralelismo) + '</select></div>' +
-        '<div class="field" style="margin:0">' + lb('R$/dia-equipe') + '<input id="cron-custodia" type="number" value="' + p.custoDiaEquipe + '" style="width:' + (c ? 72 : 100) + 'px"></div>' +
+        '<div class="field" style="margin:0">' + lb(c ? 'Equipes' : 'Equipes/frentes') + '<input id="cron-equipes" type="number" min="1" value="' + p.equipes + '"' + larg("cx-c-eq", 80) + (c ? ' title="Equipes/frentes trabalhando ao mesmo tempo"' : '') + '></div>' +
+        '<div class="field" style="margin:0">' + lb(c ? 'Dias/sem.' : 'Dias úteis/sem.') + '<input id="cron-dias" type="number" min="1" max="7" value="' + p.diasUteisSemana + '"' + larg("cx-c-dias", 80) + (c ? ' title="Dias úteis por semana"' : '') + '></div>' +
+        '<div class="field" style="margin:0">' + lb('Paralelismo') + '<select id="cron-paral"' + (c ? ' class="cx-c-paral"' : '') + '>' + opt(0, "Nenhum", p.paralelismo) + opt(0.15, "Leve 15%", p.paralelismo) + opt(0.3, "Médio 30%", p.paralelismo) + opt(0.5, "Alto 50%", p.paralelismo) + '</select></div>' +
+        '<div class="field" style="margin:0">' + lb('R$/dia-equipe') + '<input id="cron-custodia" type="number" value="' + p.custoDiaEquipe + '"' + larg("cx-c-custo", 100) + '></div>' +
         /* Feriado é prazo: uma obra de um ano atravessa uns 12 e o cronograma
            antigo os contava como dia de trabalho. O campo de locais fica ao
            lado do interruptor porque é a primeira pergunta de quem liga isso
@@ -2388,17 +2465,51 @@
         (temOpc ? ('<div class="field" style="margin:0">' + lb('Escopo') +
           '<label style="display:flex;align-items:center;gap:6px;font-weight:400;cursor:pointer" title="A etapa marcada como opcional fica fora do “Valor total” que a proposta cobra. Desmarque para que ela fique fora do PRAZO também — assim a data de entrega passa a ser a do escopo contratado.">' +
           '<input id="cron-opcionais" type="checkbox"' + (p.opcionaisNoPrazo !== false ? " checked" : "") + '> contar opcionais no prazo</label></div>') : '') +
+        /* ⚠ COMPACTO: [N datas] e os três botões num GRUPO que não quebra por
+           dentro (`.cx-fer-grupo`, CSS da aba). O quadro das datas se ancora na
+           ESQUERDA do grupo, e o grupo sempre tem 68 + ~244 px (Recalcular,
+           Limpar, IA) — mais que os 260 do quadro: ele nunca passa da borda
+           direita do cartão nem por baixo do menu lateral.
+           Roteiro do defeito (revisão da F5, 14/09/2026): o quadro era
+           ancorado à DIREITA do [N datas]; a 1024 e a 1100 px com o menu aberto
+           o botão quebrava para o começo da 2ª linha do cartão, o quadro crescia
+           para a esquerda (x 67–327) e o menu (até x 212) cobria as datas — o
+           elementFromPoint na 1ª data devolvia `button.sb-item`, e a textarea
+           parecia vazia na foto. */
+        (c ? '<div class="cx-fer-grupo">' + this._cronFeriadosLocais(p) :
         '<div class="field" style="margin:0">' + lb('Feriados locais') +
           '<input id="cron-feriados-extras" type="text" placeholder="2026-06-24; 2026-08-15" value="' +
           Util.esc(((p.feriadosExtras || []).map(function (x) { return (x && x.data) ? x.data : x; })).join("; ")) +
-          '" title="Feriados municipais/estaduais e paradas da empresa, em AAAA-MM-DD, separados por ; — o app não adivinha o feriado da sua cidade." style="width:' + (c ? 108 : 170) + 'px"></div>' +
+          '" title="Feriados municipais/estaduais e paradas da empresa, em AAAA-MM-DD, separados por ; — o app não adivinha o feriado da sua cidade." style="width:170px"></div>') +
         '<button class="btn sm primary" data-acao="cron-recalc">' + (typeof Icones !== 'undefined' ? Icones.get('ciclo', 15) : '') + ' Recalcular</button>' +
         '<button class="btn sm" data-acao="cron-reset"' + (c ? ' title="Limpar edições: durações, dependências e marcos voltam à estimativa do agente"' : '') + '>' + (c ? 'Limpar' : 'Limpar edições') + '</button>' +
         /* ⚠ o atalho abre o MESMO modal do [Editar com IA], no chip Cronograma e
            com o pedido de refinar pronto: a resposta passa pelo diff com
            checkbox antes de gravar (o Refinar antigo gravava direto) */
         '<button class="btn sm" data-acao="cron-ia" title="Refinar com IA: abre o Editar com IA no cronograma com o pedido de refinar as durações pronto — você confere cada mudança antes de aplicar">' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + (c ? ' IA' : ' Refinar com IA') + '</button>' +
+        (c ? '</div>' : '') +
         '</div></div>';
+    },
+    /* ⚠ FERIADOS LOCAIS NO CARTÃO COMPACTO: um botão com a CONTAGEM que abre
+       as datas UMA POR LINHA (14/09/2026). Roteiro do defeito: o campo tinha
+       108 px e 15 px de letra; o valor da obra de demonstração, com 4 datas,
+       tem 543 px — a tela mostrava "2026-10-11;" e a pessoa não tinha como
+       conferir o que digitou (o `title` explicava o formato, não o valor).
+       É um `<details>`: a MESMA `#cron-feriados-extras` fica no DOM fechada, e
+       o [Recalcular] a lê como sempre (`App._cronDoForm` já separa por `;`, `,`
+       e quebra de linha). Nenhuma fiação nova, nada gravado sem Recalcular.
+       O cartão cabe numa linha a 1366 por causa disto — é o espaço que paga a
+       2ª linha da barra do Cronograma (decisão D1). */
+    _cronFeriadosLocais: function (p) {
+      var datas = ((p.feriadosExtras || []).map(function (x) { return (x && x.data) ? x.data : x; })).filter(function (x) { return x; });
+      var n = datas.length;
+      var rot = n ? n + (n === 1 ? ' data' : ' datas') : 'Incluir';
+      return '<div class="field" style="margin:0"><label class="cx-lb">Feriados locais</label>' +
+        '<details class="cx-fer"><summary class="btn sm" title="' + (n ? Util.esc(datas.join(" · ")) + ' — clique para conferir ou editar' : 'Incluir feriados municipais/estaduais e paradas da empresa') + '">' + rot + '</summary>' +
+        '<div class="cx-fer-quadro">' +
+          '<textarea id="cron-feriados-extras" rows="6" spellcheck="false" placeholder="2026-06-24' + String.fromCharCode(10) + '2026-08-15">' + Util.esc(datas.join(String.fromCharCode(10))) + '</textarea>' +
+          '<p class="cx-fer-dica">Uma data por linha, em AAAA-MM-DD: feriado municipal, estadual ou parada da empresa — o app não adivinha o feriado da sua cidade. Vale depois de <b>Recalcular</b>.</p>' +
+        '</div></details></div>';
     },
     /* A aba por ETAPA de antes do cronograma executivo — a reserva de
        renderCronograma (ver o comentário lá). */

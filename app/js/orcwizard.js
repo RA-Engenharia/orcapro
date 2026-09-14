@@ -153,6 +153,16 @@
         if (typeof UI !== "undefined") UI.toast("Orçamento aprovado não muda — crie uma revisão.", "erro");
         return;
       }
+      /* ⚠ RETRATO ANTES DE MUTAR (achado da revisão da F2). Os campos abaixo
+         vão direto no objeto do editor. Se o Store não gravar (cota cheia ou
+         outra janela), o recado diz "NÃO salvos… os totais continuam como
+         estavam" — mas a memória ficava com o digitado, e a próxima edição
+         comum (renomear etapa) gravava tudo, BDI incluído, sem aviso
+         nenhum: medido, BDI 44,4 recusado virou 44,4 no disco no Salvar
+         seguinte. Na falha, volta o objeto ao retrato NO LUGAR (as
+         referências continuam); o quadro segue aberto com o que foi digitado
+         em `this._st`, e o próximo Salvar reaplica. */
+      var retrato = JSON.stringify(orc);
       orc.numero = s.numero; orc.nome = s.nome;
       orc.cliente = orc.cliente || {}; orc.cliente.nome = s.cliente;
       orc.obra = orc.obra || {}; orc.obra.nome = s.obra;
@@ -183,12 +193,70 @@
         this._lerTabela3();
         cfg.basesExcluidas = BasesUI.coletar(s._p3, this._ctx3()).excluir;
       }
-      orc.atualizadoEm = Util.agoraISO();
-      Store.salvarOrcamento(Auth.empresaId(), orc);
+      /* ⚠ F2 (14/09/2026) — SEM PRÉ-CARIMBO, E O RETORNO É CONFERIDO.
+         Aqui havia `orc.atualizadoEm = Util.agoraISO()` antes de gravar. Com a
+         trava de carimbo do Store, "agora" nunca é o carimbo do disco: TODO
+         Salvar de ⚙ Parâmetros era recusado, com o toast "Parâmetros salvos —
+         totais recalculados" por cima e nada gravado (medido na sonda da F1).
+         Quem carimba é o Store, depois de conferir.
+         Recusa de verdade (outra janela gravou enquanto este quadro estava
+         aberto): o quadro FICA aberto, com o que a pessoa digitou à vista, e o
+         recado diz para fechá-lo — a releitura troca a tela quando ele fechar.
+         Nada de "Parâmetros salvos". */
+      var gravou = Store.salvarOrcamento(Auth.empresaId(), orc);
+      if (!gravou) {
+        try {
+          if (app && typeof app._iaRestaurar === "function") app._iaRestaurar(orc, retrato);
+          else { var vRt = JSON.parse(retrato), kRt; for (kRt in orc) if (Object.prototype.hasOwnProperty.call(orc, kRt)) delete orc[kRt]; for (kRt in vRt) if (Object.prototype.hasOwnProperty.call(vRt, kRt)) orc[kRt] = vRt[kRt]; }
+        } catch (eRt) {}
+        var rec = Store.ultimaRecusa, txt;
+        if (rec && app && typeof app._recadoRecusa === "function") {
+          txt = app._recadoRecusa(rec, { rotulo: "parâmetros do orçamento" });
+          UI.toast(txt, "erro", (typeof app._msRecado === "function") ? app._msRecado(txt) : 12000);
+          try { if (typeof app._relerAberto === "function") app._relerAberto("recusa"); } catch (eRl) {}
+        } else {
+          txt = "Parâmetros NÃO salvos: o armazenamento deste aparelho recusou (cheio?). Os totais continuam como estavam — faça 💾 Backup e veja o que ocupa espaço em 🗂 Tabelas › Saúde do armazenamento.";
+          UI.toast(txt, "erro", 10000);
+        }
+        return;
+      }
       UI.fecharModal();
       if (app) { app.orcAtual = orc; app.render(); }
       UI.toast("Parâmetros salvos — totais recalculados (" + Arred.rotulo(cfg.arredondamento).toLowerCase() + ").", "ok");
       this._st = null;
+    },
+
+    /* =================================================================
+     * ⚠ F2 — GRAVAR NA VERSÃO VIVA DO ORÇAMENTO, NUNCA NUM OBJETO VELHO.
+     *
+     * Duas gravações do assistente acontecem DEPOIS de um tempo: o selo das
+     * bases (`_selarBases`, que roda quando as bases terminam de instalar —
+     * segundos ou minutos) e a UF/competência confirmada (`trocarBaseSinapi`).
+     * Nesse meio-tempo a pessoa já está editando o orçamento (cada edição
+     * grava), pode tê-lo reaberto (objeto novo) ou outra janela pode ter
+     * gravado. Gravar o objeto do closure trocava o registro inteiro por uma
+     * cópia velha — apagando as edições de agora — e, com a trava de carimbo,
+     * passou a ser recusado calado (o `_selarBases` tinha pré-carimbo e
+     * try/catch: `config.bases` ficava sem selo, sem ninguém saber).
+     *
+     * Aqui: lê o disco NESTA pilha; aplica a mudança no objeto que está igual
+     * ao disco (o `orcAtual` do app, o objeto de quem chamou, ou a cópia
+     * lida); grava. Se o `orcAtual` ficou para trás, o app relê o disco (que
+     * já tem a mudança). Devolve {ok, alvo, recusa, sumiu}.
+     * ================================================================= */
+    _gravarNoVivo: function (orc, aplicar) {
+      var eid = Auth.empresaId(), app = this._app || global.App, id = orc && orc.id;
+      var disco = null;
+      try { disco = id ? Store.obterOrcamento(eid, id) : null; } catch (eD) { disco = null; }
+      if (!disco) return { ok: false, sumiu: true, alvo: null, recusa: null };
+      var carimbo = String(disco.atualizadoEm || "");
+      var mem = (app && app.orcAtual && app.orcAtual.id === id) ? app.orcAtual : null;
+      var alvo = (mem && String(mem.atualizadoEm || "") === carimbo) ? mem
+        : (String(orc.atualizadoEm || "") === carimbo ? orc : disco);
+      aplicar(alvo);
+      var g = Store.salvarOrcamento(eid, alvo);
+      if (g && mem && alvo !== mem) { try { if (typeof app._relerAberto === "function") app._relerAberto("gravador"); } catch (eRl) {} }
+      return { ok: !!g, sumiu: false, alvo: alvo, recusa: g ? null : Store.ultimaRecusa };
     },
 
     /* ---------------- cabeçalho de passos ---------------- */
@@ -748,8 +816,25 @@
       } catch (eA) {}
       Store.salvarOrcamento(Auth.empresaId(), orc);
       UI.fecharModal();
-      this._instalarMarcadas(orc, s);
-      if (this._st.aoCriar) { try { this._st.aoCriar(orc); } catch (e) {} }
+      /* ⚠ F2 — O RESTO DO CRIAR RODA DEPOIS DO `confirm` DAS DIVERGÊNCIAS.
+         `_resolverDivergencias` pode abrir um `window.confirm` por tempo de
+         gente; na MESMA tarefa o `localStorage` desta página ainda é o de antes
+         do diálogo (ver App._aposDialogo). O selo (`_selarBases`) e a UF
+         (`Store.salvarOrcamento` mais abaixo) regravam a LISTA INTEIRA de
+         orçamentos a partir desse cache velho — e a trava só compara o
+         carimbo do orçamento gravado, não os outros. Medido na revisão da F2:
+         outra janela renomeou OUTRO orçamento com o confirm aberto, e a edição
+         dela sumiu calada. Por isso o diálogo sai aqui, com o relógio, e todo
+         o resto vai para `_aposDialogo` (resposta instantânea = mesma pilha). */
+      var t0Dv = Date.now(), trocarDv = null;
+      try { trocarDv = this._resolverDivergencias(orc, s) || []; } catch (eDv) { trocarDv = false; }
+      var fimCriar = function () { self._criarFim(orc, s, trocarDv); };
+      if (app && typeof app._aposDialogo === "function") app._aposDialogo(t0Dv, fimCriar); else fimCriar();
+    },
+    _criarFim: function (orc, s, trocarDv) {
+      var self = this, app = this._app;
+      this._instalarMarcadas(orc, s, trocarDv);
+      if (s.aoCriar) { try { s.aoCriar(orc); } catch (e) {} }
       if (app) {
         /* view = "orcamentos", não null: com Gestão ligada o app resolve view nula
            como "dashboard" e o editor abriria por baixo do Painel. */
@@ -760,7 +845,7 @@
            Guardas: só se ninguém pediu outro destino (aoCriar), só se o editor
            ainda estiver com ESTE orçamento na tela e ainda sem etapa. Quem vai
            importar planilha só cancela. */
-        if (!this._st.aoCriar && !Util.arr(orc.etapas).length && app.addEtapa) {
+        if (!s.aoCriar && !Util.arr(orc.etapas).length && app.addEtapa) {
           setTimeout(function () {
             if (app.tela !== "editor" || app.view !== "orcamentos" || app.orcAtual !== orc) return;
             if (Util.arr(orc.etapas).length) return;
@@ -791,12 +876,23 @@
           app.trocarBaseSinapi(ufPedida, precisaComp ? compPedida : "", function (ok) {
             var ufReal = (app._baseUf || (global.Sinapi ? Sinapi.uf : "") || "").toUpperCase();
             /* grava na versão VIVA do orçamento: o usuário pode ter reaberto o
-               registro nesses segundos, e o objeto do closure ficaria obsoleto. */
+               registro nesses segundos, e o objeto do closure ficaria obsoleto.
+               ⚠ F2: "vivo" = o que está igual ao DISCO agora (_gravarNoVivo); o
+               `orcAtual` de antes podia estar velho (outra janela) e a gravação
+               era recusada calada, com o orçamento declarando a base antiga. */
             var vivo = (app.orcAtual && app.orcAtual.id === orcId) ? app.orcAtual : orc;
             if (ok && ufReal === ufPedida) {
-              vivo.uf = ufPedida;
-              if (global.Sinapi && Sinapi.competencia) vivo.competenciaSinapi = Sinapi.competencia;
-              Store.salvarOrcamento(Auth.empresaId(), vivo);
+              var compReal = (global.Sinapi && Sinapi.competencia) || "";
+              var gv = self._gravarNoVivo(orc, function (alvo) {
+                alvo.uf = ufPedida;
+                if (compReal) alvo.competenciaSinapi = compReal;
+              });
+              if (!gv.ok) {
+                UI.toast("A base de " + ufPedida + " carregou, mas o orçamento NÃO foi atualizado para declará-la: " +
+                  (gv.sumiu ? "ele não está mais neste aparelho (excluído em outra janela?)." :
+                    (gv.recusa ? "não consegui conferir o que está gravado — recarregue o app (F5) e troque em Tabelas." : "o armazenamento deste aparelho recusou (cheio?).")) +
+                  " Ele continua declarando " + (vivo.uf || "—") + " · " + (vivo.competenciaSinapi || "—") + ".", "erro", 12000);
+              }
             } else {
               UI.toast("Não deu para carregar a base de " + ufPedida + (precisaComp ? " · " + compPedida : "") +
                 ". O orçamento continua em " + (vivo.uf || "—") + " · " + (vivo.competenciaSinapi || "—") +
@@ -808,7 +904,7 @@
       }
       var selo = Arred.ehPadraoTcu(orc.config.arredondamento) ? " (padrão do TCU)" : "";
       UI.toast("Orçamento criado — " + Arred.rotulo(orc.config.arredondamento).toLowerCase() + selo + ".", "ok");
-      self._st = null;
+      if (self._st === s) self._st = null;   // outro assistente aberto no intervalo não perde o estado dele
     },
 
     /* ==================================================================
@@ -907,11 +1003,15 @@
       return divs.filter(function (d) { return d.trocar; });
     },
 
-    _instalarMarcadas: function (orc, s) {
+    /* `pre`: as divergências já resolvidas pelo `_criar` ANTES do
+       `_aposDialogo` (array), ou `false` se o resolver falhou. Sem ele
+       pergunta aqui mesmo, como antes. */
+    _instalarMarcadas: function (orc, s, pre) {
       var falta = [];
       try {
         var trocar = {};
-        (this._resolverDivergencias(orc, s) || []).forEach(function (d) { trocar[d.catId] = 1; });
+        if (pre === false) return;
+        ((pre && typeof pre.length === "number") ? pre : (this._resolverDivergencias(orc, s) || [])).forEach(function (d) { trocar[d.catId] = 1; });
         var ctx = this._ctx3();
         (s.basesUsar || []).forEach(function (u) {
           var e = BasesCat.get(u.catId); if (!e) return;
@@ -945,28 +1045,43 @@
     /* Carimba em basesV2 o que REALMENTE está carregado, e deriva o
        config.bases (forma antiga) só das confirmadas. */
     _selarBases: function (orc, s) {
+      var r = null;
       try {
-        var cfg = orc.config || {};
-        var v2 = cfg.basesV2; if (!v2) return;
+        if (!orc || !(orc.config && orc.config.basesV2)) return;
         var inst = {};
         (Bases.lista() || []).forEach(function (b) { inst[b.fonte] = b; });
-        var ufReal = (inst.SINAPI && inst.SINAPI.uf) || "";
-        v2.principal.confirmado = !!(inst.SINAPI && String(ufReal).toUpperCase() === String(v2.principal.uf || "").toUpperCase());
-        var novas = [];
-        if (v2.principal.confirmado) novas.push({ fonte: "SINAPI", uf: v2.principal.uf, competencia: (inst.SINAPI && inst.SINAPI.competencia) || v2.principal.competencia });
-        v2.extras.forEach(function (x) {
-          var b = inst[x.catId];
-          x.confirmado = !!b;
-          /* o registro acompanha o que REALMENTE ficou instalado: se a carga
-             caiu no arquivo do pacote, ou se o usuário optou por manter a
-             variante que já estava, é ISSO que o laudo vai declarar */
-          if (b && b.sel) x.sel = b.sel;
-          if (b) novas.push({ fonte: x.catId, uf: b.uf || "", competencia: b.competencia || "" });
+        /* ⚠ F2: o selo vai na versão VIVA (ver _gravarNoVivo). Aqui havia
+           `orc.atualizadoEm = Util.agoraISO()` + gravar o objeto do closure:
+           com a trava de carimbo, recusado SEMPRE — e calado (try/catch), com
+           `config.bases` sem o selo no disco (medido na sonda da F1). */
+        r = this._gravarNoVivo(orc, function (alvo) {
+          var cfg = alvo.config || {};
+          var v2 = cfg.basesV2; if (!v2) return;
+          var ufReal = (inst.SINAPI && inst.SINAPI.uf) || "";
+          v2.principal.confirmado = !!(inst.SINAPI && String(ufReal).toUpperCase() === String(v2.principal.uf || "").toUpperCase());
+          var novas = [];
+          if (v2.principal.confirmado) novas.push({ fonte: "SINAPI", uf: v2.principal.uf, competencia: (inst.SINAPI && inst.SINAPI.competencia) || v2.principal.competencia });
+          v2.extras.forEach(function (x) {
+            var b = inst[x.catId];
+            x.confirmado = !!b;
+            /* o registro acompanha o que REALMENTE ficou instalado: se a carga
+               caiu no arquivo do pacote, ou se o usuário optou por manter a
+               variante que já estava, é ISSO que o laudo vai declarar */
+            if (b && b.sel) x.sel = b.sel;
+            if (b) novas.push({ fonte: x.catId, uf: b.uf || "", competencia: b.competencia || "" });
+          });
+          cfg.bases = novas;
         });
-        cfg.bases = novas;
-        orc.atualizadoEm = Util.agoraISO();
-        Store.salvarOrcamento(Auth.empresaId(), orc);
-      } catch (e) {}
+      } catch (e) { r = { ok: false, erro: String((e && e.message) || e) }; }
+      /* o selo que não gravou é dito: é ele que decide qual base o laudo e a
+         planilha declaram (orçamento sumido não tem o que avisar) */
+      if (r && !r.ok && !r.sumiu) {
+        try {
+          UI.toast("As bases de preço deste orçamento NÃO foram registradas nele: " +
+            (r.recusa ? "não consegui conferir o que está gravado — recarregue o app (F5) e confira em ⚙ Parâmetros." :
+              (r.erro ? "falha ao registrar (" + r.erro.slice(0, 80) + ")." : "o armazenamento deste aparelho recusou (cheio?).")), "erro", 12000);
+        } catch (eT) {}
+      }
     },
 
     /* ---------------- css do assistente ---------------- */

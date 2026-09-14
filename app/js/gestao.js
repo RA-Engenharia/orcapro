@@ -14353,7 +14353,24 @@
             Orcamento.atualizarItem(orc, vin.etapaId, itemId, { quantidade: inst.quantidade });
             // ⚠ a quantidade move o vão das subetapas: o gravado acompanha (versão anterior do app) — ver App._materializarSeExec
             if (typeof App !== "undefined" && App._materializarSeExec) App._materializarSeExec(orc);
-            Store.salvarOrcamento(eid(), orc);
+            /* ⚠ F2 (14/09/2026): o elo abaixo só registra "conferido" se o
+               orçamento GRAVOU. Antes o retorno era ignorado: com o
+               armazenamento recusando, o elo dizia quantidade = modelo e o
+               orçamento continuava com a antiga — a diferença sumia da
+               conferência sem ter sido aplicada. (Lido do disco nesta mesma
+               pilha: a trava de carimbo não recusa; sobra a cota.) */
+            if (!Store.salvarOrcamento(eid(), orc)) {
+              UI.toast("A quantidade NÃO foi trocada: " + (Store.ultimaRecusa
+                ? "não consegui conferir o orçamento gravado — recarregue o app (F5) e tente de novo."
+                : "o armazenamento deste aparelho recusou (cheio?).") + " O orçamento e a conferência continuam como estavam.", "erro", 10000);
+              UI.fecharModal();
+              return;
+            }
+            /* ⚠ E O EDITOR ABERTO NESTE MESMO ORÇAMENTO, NESTA JANELA, fica com a
+               versão de antes: gravação na mesma janela não dispara `storage`.
+               A próxima edição dele seria recusada pela trava como "outra
+               janela" (achado da F1). Ele passa a ser a versão gravada. */
+            try { if (typeof App !== "undefined" && App.orcAtual && App.orcAtual.id === orc.id) App.orcAtual = orc; } catch (eAt) {}
             /* o elo guarda o que foi conferido: da próxima vez a tela sabe
                dizer se a diferença é nova ou é a mesma de sempre */
             vin.qtdModelo = inst.quantidade; vin.qtdOrcada = inst.quantidade;

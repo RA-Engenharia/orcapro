@@ -457,6 +457,7 @@
         if (app) { app.classList.add("tela-login"); app.classList.remove("com-sidebar"); }
         topbar.innerHTML = ""; topbar.style.display = "none";
         if (sidebar) sidebar.innerHTML = "";
+        this._gxDesligar();
         main.innerHTML = UI.renderLogin();
         return;
       }
@@ -565,6 +566,8 @@
         // Último recurso: módulo no menu SEM case no dispatcher devolve "" e a tela
         // fica branca. afterRender só roda se o módulo renderizou de verdade.
         var htmlG = Gestao.render(view), okG = !!(htmlG && String(htmlG).trim());
+        // ⚠ o #main troca de tela aqui: o Gantt que estava nele é solto (ver _gxDesligar)
+        this._gxDesligar();
         main.innerHTML = okG ? htmlG : this._viewVazia(view);
         if (okG && Gestao.afterRender) Gestao.afterRender(view);
         return;
@@ -580,7 +583,7 @@
            CronoExecUI, e o que dá zoom, rolagem e arrasto a ele é ligado aqui,
            a cada render. Motor sem fiação é recurso inerte — já houve recurso
            inteiro passando no gate e não existindo no navegador. */
-        if (this.aba === "cronograma") this._cronoGanttLigar(); else this._gx = null;
+        if (this.aba === "cronograma") this._cronoGanttLigar(); else this._gxDesligar();
       } else {
         this.tela = "lista";
         var r = Sinapi.resumo();
@@ -598,6 +601,7 @@
         }
         var baseInfo = { competencia: r.competencia, uf: r.uf, total: r.total,
           personalizada: Store.temBaseSinapi(Auth.empresaId()), ufs: _ufs };
+        this._gxDesligar();
         main.innerHTML = UI.renderLista(Store.listarOrcamentos(Auth.empresaId()), baseInfo);
         this._ligarFiltroLista();
       }
@@ -683,8 +687,8 @@
              UI.fecharModal();
              if (marcar) {
                Proposta.registrarEnvio(o, { canal: "whatsapp", quando: Util.agoraISO(), por: (Empresa.nomeUsuario && Empresa.nomeUsuario()) || "" });
-               self.persistir(); self.render();
-               UI.toast("Proposta marcada como enviada hoje.", "ok");
+               var gW = self.persistir(); self.render();
+               if (self._gravou(gW)) UI.toast("Proposta marcada como enviada hoje.", "ok");   // ⚠ F2: sucesso só se gravou
              }
              try { window.open(url, "_blank", "noopener"); } catch (e2) { location.href = url; }
          } }]);
@@ -774,7 +778,8 @@
              var d = (UI.el("pe-data") || {}).value || hoje;
              Proposta.registrarEnvio(o, { canal: (UI.el("pe-canal") || {}).value || "outro",
                quando: d + "T12:00:00.000Z", por: (Empresa && Empresa.nomeUsuario && Empresa.nomeUsuario()) || "" });
-             self.persistir(); UI.fecharModal(); self.render();
+             var gE = self.persistir(); UI.fecharModal(); self.render();
+             if (!self._gravou(gE)) return;   // ⚠ F2: sucesso só se gravou
              var v = Proposta.validade(o, Util.agoraISO());
              UI.toast("Envio registrado." + (v.temData ? " Esta proposta vale até " + v.ateBR + "." : ""), "ok");
          } }]);
@@ -804,7 +809,8 @@
                quando: d + "T12:00:00.000Z", motivo: (UI.el("pr-motivo") || {}).value || "",
                por: (Empresa && Empresa.nomeUsuario && Empresa.nomeUsuario()) || "" });
              if (!r) { UI.toast("Escolha uma resposta.", "erro"); return; }
-             self.persistir(); UI.fecharModal(); self.render(); UI.toast("Resposta registrada.", "ok");
+             var gR = self.persistir(); UI.fecharModal(); self.render();
+             if (self._gravou(gR)) UI.toast("Resposta registrada.", "ok");   // ⚠ F2: sucesso só se gravou
          } }]);
     },
 
@@ -869,13 +875,34 @@
         dados.exigirOutroAprovador = !!(prefsAp && prefsAp.exigirOutroAprovador);
         if (Aprovacao.semOutroAprovador) dados.semOutroAprovador = Aprovacao.semOutroAprovador(eu, Store.listar(eidAp, "equipe"));
       } catch (eCtx) {}
+      var t0Dlg = null;
       if (acao === "revisar" || acao === "rejeitar") {
+        t0Dlg = Date.now();
         var m = window.prompt("Escreva o motivo — é essa mensagem que chega a quem preencheu:", "");
         if (m === null) return;                       // desistiu
         dados.motivo = String(m || "").trim();
       }
+      /* ⚠ F2: com o prompt aberto por tempo de gente, o resto roda na próxima
+         tarefa — senão a trava compara com o disco de ANTES do prompt (ver
+         _aposDialogo; medido na e2e-gravadores-cas [2]) */
+      var self = this;
+      return this._aposDialogo(t0Dlg, function () { return self._orcAprovarExecuta(orc, acao, eu, dados); });
+    },
+    /* a transição, a trilha e a gravação da ação de aprovação (o prompt do
+       motivo, quando há, já foi respondido) */
+    _orcAprovarExecuta: function (orc, acao, eu, dados) {
       var r = Aprovacao.transicionar(orc, acao, eu, dados);
       if (!r || !r.ok) { UI.toast((r && r.erro) || "Ação não permitida agora.", "erro"); return; }
+      /* ⚠ RETRATO ANTES DE MEXER NA MEMÓRIA (F2, 14/09/2026). As quatro linhas
+         abaixo mudam o orçamento ABERTO (estado, trilha, prazo gravado, desfazer
+         da IA) antes de o disco aceitar. Com a trava de carimbo o disco pode
+         recusar — outra janela gravou por cima — e aí a memória tem de voltar
+         a ser exatamente o que era: senão a tela mostra o selo "Aprovado", a
+         trava do aprovado passa a valer NA MEMÓRIA (a edição fica bloqueada
+         por um aprovado que não existe) e, ao recarregar, o orçamento está em
+         rascunho. Medido na sonda da F1 com o pré-carimbo antigo: memória
+         `aprovado`, disco sem estado, toast verde "→ Aprovado". */
+      var retratoAprov = JSON.stringify(orc);
       /* ⚠ ANTES de mudar o estado (o orçamento ainda está destravado): a
          proposta sela com o prazo gravado igual ao desta tela. Sem isto, no
          modo executivo, o aprovado ficava com o vão velho no disco — a versão
@@ -887,14 +914,95 @@
       /* ⚠ mudou o estado de aprovação: o desfazer da IA não atravessa (um
          clique depois reverteria o que acabou de ser aprovado ou devolvido) */
       if (typeof IAEdit !== "undefined") IAEdit.limparDesfazer(orc);
-      orc.atualizadoEm = Util.agoraISO();
+      /* ⚠ SEM PRÉ-CARIMBO. Aqui havia `orc.atualizadoEm = Util.agoraISO()`
+         antes de gravar. Com a trava de carimbo isso fazia TODA aprovação ser
+         recusada — o carimbo "agora" nunca é o do disco —, com o retorno
+         ignorado e o toast de sucesso por cima (e2e-planejamento-obra e
+         e2e-carteira-orcamentos vermelhas só com a F1; a carteira oscilava 7/9
+         conforme o pré-carimbo caía ou não no mesmo milissegundo da gravação).
+         Quem carimba é o Store, depois de conferir. */
       /* grava DIRETO: o persistir() recusa aprovado, e é justamente aprovar
          que precisa gravar o aprovado. */
-      Store.salvarOrcamento(Auth.empresaId(), orc);
+      var gravou = Store.salvarOrcamento(Auth.empresaId(), orc);
+      if (!gravou) {
+        /* ⚠ DINHEIRO (skill `dinheiro`, "a guarda decide antes; o save
+           executa"): nada de obra, contrato, medição ou financeiro é gravado
+           neste caminho — nem antes (tudo acima é memória) nem depois (este
+           `return` vem antes de qualquer efeito). Recusado, a memória volta ao
+           retrato e a pessoa lê o que aconteceu. */
+        var recAp = Store.ultimaRecusa;
+        this._iaRestaurar(orc, retratoAprov);
+        var rotAc = (Aprovacao.ROTULO_ACAO && Aprovacao.ROTULO_ACAO[acao]) || acao;
+        if (recAp) {
+          var txtAp = this._recadoRecusa(recAp, { rotulo: rotAc });
+          UI.toast(txtAp, "erro", this._msRecado(txtAp));
+          try { this._relerAberto("recusa"); } catch (eRl) {}
+        } else {
+          UI.toast("\"" + rotAc + "\" NÃO foi gravado: o armazenamento deste aparelho recusou (cheio?). " + (orc.numero || "O orçamento") +
+            " continua como estava — faça 💾 Backup e veja o que ocupa espaço em 🗂 Tabelas › Saúde do armazenamento.", "erro", 10000);
+          this.render();
+        }
+        return false;
+      }
       this._avisouTravado = null;
       this.render();
       var rot = (Aprovacao.ESTADOS[r.estado] || {}).rotulo || r.estado;
       UI.toast(orc.numero + " → " + rot + (acao === "aprovar" ? ". A partir de agora só muda por revisão." : "."), "ok");
+      return true;
+    },
+    /* =====================================================================
+     * ⚠ F2 — O RECADO DE SUCESSO SÓ SAI SE GRAVOU
+     *
+     * Com a trava de carimbo (Store.salvarOrcamento), `persistir()` devolve
+     * false também quando outra janela (ou outro aparelho) gravou por cima.
+     * Mais de vinte chamadores ignoravam o retorno e anunciavam sucesso logo
+     * depois: a foto da F1 (A-recusa-1366.png) mostrou o toast vermelho "…não
+     * foi gravada, para não apagar a outra" e, embaixo dele, o verde "Etapa
+     * renomeada." — a pessoa lê o último e acredita. O mesmo já acontecia no
+     * modo demonstração e com a cota cheia, calado.
+     *
+     * `_gravou(g)`: devolve se gravou. Quando NÃO gravou, aplica na hora a
+     * releitura que o persistir deixou pendente (o quadro segurava a
+     * referência antiga): o chamador acabou de fechar o quadro e redesenhar
+     * com a memória velha, e sem isto a tela mostraria por até 500 ms o que
+     * não está no disco. É a mesma tarefa do render, então o navegador nem
+     * chega a pintar a versão velha.
+     * ===================================================================== */
+    _gravou: function (g) {
+      if (!g) { try { this._relerAplicarPendente(); } catch (e) {} }
+      return !!g;
+    },
+    /* quanto tempo um recado de dado NÃO gravado fica na tela: o de 2,6 s não
+       se lê (~190 caracteres). ~15 caracteres por segundo, entre 8 e 20 s. */
+    _msRecado: function (txt) {
+      var n = String(txt == null ? "" : txt).length;
+      return Math.max(8000, Math.min(20000, n * 65));
+    },
+    /* =====================================================================
+     * ⚠ F2 — A GRAVAÇÃO LOGO DEPOIS DE UM DIÁLOGO NATIVO NÃO ENXERGA A OUTRA
+     *   JANELA.
+     *
+     * Medido (sonda `prompt-cache`, 14/09/2026, 6 de 6 rodadas, `prompt` e
+     * `confirm`): a página A abre o diálogo; com ele aberto, a janela B grava;
+     * A responde. NA MESMA TAREFA, o `localStorage.getItem` de A ainda devolve
+     * o valor de antes do diálogo — o navegador só entrega a gravação de B à
+     * página A quando a tarefa atual termina. A trava de carimbo compara com
+     * esse disco velho, PASSA, e A grava por cima: a edição de B some calada.
+     * Medido na e2e-gravadores-cas [2]: A clicou [Pedir revisão], B renomeou
+     * o orçamento com o prompt de A aberto, A confirmou → disco "em_revisao"
+     * com o nome de antes — o de B sumiu, sem recado nenhum. Um `setTimeout(0)`
+     * depois do diálogo já lê o valor de B (6 de 6).
+     *
+     * Por isso: diálogo aberto por tempo de gente (≥ 40 ms) → `fn` roda na
+     * PRÓXIMA tarefa. Resposta instantânea (o `prompt`/`confirm` substituído
+     * nas suítes, WebView sem diálogo) → roda já, na mesma pilha, como sempre
+     * foi — o resultado de `fn` volta ao chamador só nesse caso.
+     * `t0` null/undefined = não houve diálogo → roda já.
+     * ===================================================================== */
+    _aposDialogo: function (t0, fn) {
+      if (t0 == null || !(Date.now() - t0 >= 40)) return fn();
+      setTimeout(fn, 0);
+      return undefined;
     },
     /* O agente lê a descrição, faz a conta e PROPÕE. Nunca lança sozinho:
      * quem confere é o orçamentista, e é por isso que a conta aparece
@@ -1188,6 +1296,69 @@
           if (document.fullscreenElement || document.getElementById("tour-overlay")) return;
           e.preventDefault(); BuscaUI.abrir();
         }
+      });
+      this._relerOuvir();
+    },
+
+    /* ⚠ OUVINTES DA RELEITURA ENTRE JANELAS (ver `_relerAberto`, no fim do App).
+     *
+     * `storage`: o navegador avisa as OUTRAS janelas da mesma origem quando uma
+     * grava no localStorage (medido: chega na outra com `key`/`newValue`; NÃO
+     * chega na que gravou). Sem ouvinte nenhum — era o caso até a 1.2.77 —, a
+     * janela A continuava mostrando e1=10 depois de B gravar 23, e a edição
+     * seguinte de A apagava o 23.
+     *
+     * Uma vez por documento: `bindGlobal` roda de novo em caminhos de boot (a
+     * demo, o gate do teste grátis), e ouvinte duplicado relê duas vezes. */
+    _relerOuvir: function () {
+      if (this._relerOuvindo || typeof window === "undefined" || !window.addEventListener) return;
+      this._relerOuvindo = true;
+      var self = this;
+      var ENTS = { orcamentos: 1, _lapides: 1, crono_obra: 1, obras: 1, rdo: 1, medicoes: 1 };
+      window.addEventListener("storage", function (ev) {
+        try {
+          if (!ev || ev.key === null || ev.key === undefined) return;   // clear() de outra janela: nada a comparar por chave
+          var eid = (typeof Auth !== "undefined" && Auth.empresaId) ? Auth.empresaId() : null;
+          if (!eid || !Auth.usuario()) return;
+          /* comparação por prefixo, e não regex montada com o empresaId: o id
+             entra no padrão e um caractere especial nele mudaria o casamento */
+          var pre = "orcapro:" + eid + ":", k = String(ev.key);
+          if (k.indexOf(pre) !== 0) return;
+          var ent = k.slice(pre.length);
+          if (!Object.prototype.hasOwnProperty.call(ENTS, ent)) return;
+          self._relerAgendar(ent);
+          /* ⚠ A JANELA DESTACADA NÃO SOBE PARA A NUVEM NEM FAZ BACKUP (F8), e o
+             `Nuvem._patch` só empurra o que passa pelo `adapter.gravar` DA
+             PRÓPRIA janela. Sem isto, a edição feita na janela destacada
+             ficaria só neste computador: a principal a vê no disco e nunca a
+             manda. A principal empurra ao receber o aviso; o `_ultimoEnviado`
+             do push não repete conteúdo que ESTA janela já mandou.
+             ⚠ Custo medido (tools/test-nuvem-duas-janelas.js, bloco [5]): com
+             DUAS janelas principais conectadas (duas abas comuns, sem janela
+             destacada), cada uma tem o seu `_ultimoEnviado` e uma edição vira
+             2 escritas iguais no Firestore — e cada aba agenda o próprio
+             backup. Não perde dado; gasta cota. Eleger uma única principal
+             (F8) é o que tira isto. */
+          if (!self._janela && typeof Nuvem !== "undefined" && Nuvem.ENTIDADES && Nuvem.ENTIDADES.indexOf(ent) >= 0) {
+            try { if (Nuvem.ligado && Nuvem.push) Nuvem.push(eid, ent); } catch (eP) {}
+            try { self.backupAuto(ent === "orcamentos" ? {} : { gestao: true }); } catch (eB) {}
+          }
+        } catch (e) {}
+      });
+      /* saiu do campo (ou do arrasto): a releitura que ficou pendente aplica
+         agora. `setTimeout(0)` porque o foco ainda está no campo durante o
+         próprio `focusout`, e o `change` do campo roda depois dele. */
+      if (document.body) document.body.addEventListener("focusout", function () {
+        setTimeout(function () {
+          if ((self._relerPendente || self._relerRenderPendente) && !self._relModalAberto() && !self._relOcupado()) {
+            try { self._relerAplicarPendente(); } catch (e) {}
+          }
+        }, 0);
+      });
+      /* janela que volta do segundo plano confere o disco: navegador que não
+         entrega `storage` entre janelas ainda se atualiza aqui */
+      document.addEventListener("visibilitychange", function () {
+        try { if (document.visibilityState === "visible") self._relerAgendar("visivel"); } catch (e) {}
       });
     },
 
@@ -1514,8 +1685,8 @@
         if (!_et) return;
         var virou = !_et.opcional;
         Orcamento.marcarEtapaOpcional(_oe, t.dataset.opcEtapa, virou);
-        this.persistir(); this.render();
-        UI.toast(virou
+        var gOp = this.persistir(); this.render();
+        if (this._gravou(gOp)) UI.toast(virou   // ⚠ F2: sucesso só se gravou
           ? '"' + (_et.nome || "Etapa") + '" vira ADICIONAL na proposta: sai fora do valor total, num bloco de opcionais. Na planilha e no Excel ela continua somando.'
           : '"' + (_et.nome || "Etapa") + '" voltou para o valor fechado da proposta.', "ok");
         return;
@@ -1682,6 +1853,10 @@
            três, e converter aqui em número perderia o "auto" */
         case "crono-zoom": this._gxZoom(t.dataset.dir === "1" ? 1 : (t.dataset.dir === "-1" ? -1 : String(t.dataset.dir || "auto")), null); break;
         case "crono-arrasto-desfazer": this.cronoArrastoDesfazer(); break;
+        /* F6 (crono-janelas): a porta que o recado da data fixada cita, e o
+           interruptor das colunas Dur./Depende de do Gantt */
+        case "crono-soltar-data": this._cronoSoltarData(t.dataset.id); break;
+        case "gx-colunas": if (typeof GanttGradeUI !== "undefined" && GanttGradeUI.colunas) GanttGradeUI.colunas(this, t.dataset.ligar === "1"); break;
         /* HISTOGRAMA DE MÃO DE OBRA e LINHA DE BALANÇO (os dois painéis abaixo
            do Gantt). O desenho manda o estado ALVO em `data-hx-abrir` porque o
            padrão do painel da LOB depende do que o motor achou (aberto quando
@@ -1877,8 +2052,8 @@
         var destino = e.target.value || "";
         Orcamento.moverItemParaSub(this.orcAtual, ps[0], ps[1], destino);
         this.expandirEtapa(ps[0], destino);
-        this.persistir(); this.render();
-        UI.toast(destino ? "Item movido para a sub etapa." : "Item solto na etapa.", "ok");
+        var gMs = this.persistir(); this.render();
+        if (this._gravou(gMs)) UI.toast(destino ? "Item movido para a sub etapa." : "Item solto na etapa.", "ok");   // ⚠ F2
         return;
       }
       // Parede-Cebola: trocar o candidato SINAPI de uma camada no preview → atualiza escolhido,
@@ -1921,17 +2096,37 @@
       if (e.target.id === "fs-file") { var ff = e.target.files && e.target.files[0]; if (ff && typeof Gestao !== "undefined") Gestao.fsImportarArquivo(ff); return; }
       // ligar/desligar base de preço
       if (e.target.matches("[data-base-toggle]")) { Bases.setAtiva(e.target.dataset.baseToggle, e.target.checked); return; }
-      /* editar uma SUBETAPA (duração, "Depende de", equipes) no cronograma
-         executivo. A decisão (validação, o que apagar, o que nunca gravar) é
-         pura em CronoExecUI.editarFolha — testada executando em
+      /* ⚠ DURAÇÃO E "DEPENDE DE" DA TABELA (etapa E subetapa) GRAVAM PELO
+         CAMINHO ÚNICO (F6, crono-janelas): _cronoGravarDigitado →
+         GanttUI.opsDaDigitacao → _cronoGravarOps, o MESMO da grade do Gantt e
+         do arrasto. Roteiro do defeito (EDICAO.md, medido com teclas reais na
+         1.2.77): o handler inline da etapa gravava 1 DIA calado para vazio,
+         negativo ou texto (128 → 1 sem uma palavra), truncava "2,5" em 2,
+         aceitava 1000, gravava só o 1 de "1,99" com toast de erro por cima do
+         dado já gravado e, de "1 + 7", perdia a espera. A subetapa tinha outro
+         contrato (o bom). Dois contratos para o mesmo campo = a pessoa aprende
+         um e é traída pelo outro. As equipes seguem no editarFolha (fora do
+         contrato da digitação). */
+      if (e.target.matches("[data-crono-sub-dur]") || e.target.matches("[data-crono-sub-pred]") || e.target.matches("[data-cron-dur]") || e.target.matches("[data-cron-pred]")) {
+        var dsT = e.target.dataset;
+        var campoT = (dsT.cronoSubDur != null || dsT.cronDur != null) ? "dur" : "pred";
+        var idT = dsT.cronoSubDur != null ? dsT.cronoSubDur : (dsT.cronoSubPred != null ? dsT.cronoSubPred : (dsT.cronDur != null ? dsT.cronDur : dsT.cronPred));
+        var resT = this._cronoGravarDigitado({ id: idT, campo: campoT, texto: e.target.value, origem: "tabela" });
+        // recusado ou sem mudança: o render devolve ao campo o valor GRAVADO (o _cronoGravarOps já redesenhou quando gravou)
+        if (!resT || !resT.ok || resT.mudou === false) this.render();
+        return;
+      }
+      /* as EQUIPES de uma subetapa no cronograma executivo. A decisão
+         (validação, o que apagar, o que nunca gravar) é pura em
+         CronoExecUI.editarFolha — testada executando em
          tools/test-cronoexecui.js; aqui só o alvo único, a trava e o salvar.
          ⚠ inválido não grava: o recado diz e o render devolve o valor anterior. */
-      if (e.target.matches("[data-crono-sub-dur]") || e.target.matches("[data-crono-sub-pred]") || e.target.matches("[data-crono-sub-eq]")) {
+      if (e.target.matches("[data-crono-sub-eq]")) {
         var alvoS = this._cronoAlvo(); if (!alvoS || typeof Cronograma === "undefined" || typeof CronoExecUI === "undefined") return;
         if (alvoS.travado) { this._cronoTravado(alvoS); return; }
         var dsS = e.target.dataset;
-        var campoS = dsS.cronoSubDur != null ? "dur" : (dsS.cronoSubPred != null ? "pred" : "eq");
-        var idS = dsS.cronoSubDur != null ? dsS.cronoSubDur : (dsS.cronoSubPred != null ? dsS.cronoSubPred : dsS.cronoSubEq);
+        var campoS = "eq";
+        var idS = dsS.cronoSubEq;
         // o prazo desta tela ANTES de mexer: é o "antes" do recado (ver _cronoMaterializar)
         var antesS = null; try { antesS = Cronograma.estimar(alvoS.orc); } catch (eA) { antesS = null; }
         var resS = CronoExecUI.editarFolha(alvoS.cron, Cronograma.eap(alvoS.orc), campoS, idS, e.target.value);
@@ -1949,62 +2144,6 @@
         this._cronoCorte = (this._cronoCorte && typeof this._cronoCorte === "object") ? this._cronoCorte : {};
         if (/^\d{4}-\d{2}-\d{2}$/.test(vC)) this._cronoCorte[obC] = vC; else delete this._cronoCorte[obC];
         this._cronoRepintar(); return;
-      }
-      // editar duração de etapa no cronograma
-      // ⚠ grava pelo ALVO ÚNICO (_cronoAlvo), nunca direto em orcAtual.cronograma: ver o comentário de _cronoAlvo
-      if (e.target.matches("[data-cron-dur]")) {
-        var alvoD = this._cronoAlvo(); if (!alvoD) return;
-        if (alvoD.travado) { this._cronoTravado(alvoD); return; }
-        /* ⚠ modo executivo: a etapa com subetapas dura o VÃO delas — o número
-           digitado aqui seria regravado no próximo salvar (a pessoa veria 10 e
-           o PDF sairia com 14). A tela já deixa só leitura; isto é a trava na
-           função, para o campo que escapar (teclado, versão velha da tela). */
-        /* ⚠ a trava vale só onde o VÃO manda (nó com fonte "subetapas", a mesma
-           conta do motor): a etapa cujas subetapas são todas marco não tem vão,
-           o motor usa o que se digita nela — travá-la era trava sem porta com
-           recado falso ("é o vão das subetapas (4 dias)"). */
-        var bloqD = null;
-        if (typeof CronoExecUI !== "undefined" && typeof Cronograma !== "undefined" && alvoD.cron.exec && alvoD.cron.exec.rede === true) {
-          try { bloqD = CronoExecUI.motivoEtapaTravada(alvoD.cron, Cronograma.estimar(alvoD.orc, null, { eap: true }).atividades, e.target.dataset.cronDur); } catch (eB) { bloqD = null; }
-        }
-        if (bloqD) { UI.toast(bloqD, "erro"); this.render(); return; }
-        var cD = alvoD.cron;
-        /* ⚠ mapa que voltou da sincronização como LISTA ([]): a chave posta
-           nele some no JSON do salvar — a duração digitada não chegava ao disco
-           (a mesma régua do obj() do Refinar com IA) */
-        function objD(m) { return (m && typeof m === "object" && !Array.isArray(m)) ? m : {}; }
-        cD.duracoes = objD(cD.duracoes);
-        var idDur = e.target.dataset.cronDur, durDig = parseInt(Util.num(e.target.value), 10);
-        // "0" digitado pela PESSOA = marco (entrega, vistoria). Vai para `marcos`,
-        // nunca para `duracoes`: lá o 0 já significa "não estimável" e o motor o ignora.
-        cD.marcos = objD(cD.marcos);
-        if (String(e.target.value).trim() === "0") { cD.marcos[idDur] = true; delete cD.duracoes[idDur]; }
-        else { delete cD.marcos[idDur]; cD.duracoes[idDur] = Math.max(1, durDig || 1); }
-        if (cD.duracoesAgente) delete cD.duracoesAgente[idDur]; // virou edição do USUÁRIO
-        if (cD.iaMotivos) delete cD.iaMotivos[idDur]; // remove justificativa IA órfã
-        alvoD.salvar(); this.render(); return;
-      }
-      // editar "Depende de" no cronograma (rede de precedência do Gantt / caminho crítico)
-      if (e.target.matches("[data-cron-pred]")) {
-        var alvoP = this._cronoAlvo(); if (!alvoP || typeof Cronograma === "undefined") return;
-        if (alvoP.travado) { this._cronoTravado(alvoP); return; }
-        var cP = alvoP.cron;
-        var idPred = e.target.dataset.cronPred;
-        var ordemIds = (alvoP.orc.etapas || []).map(function (et) { return et.id; });
-        var pr = Cronograma.parsePreds(e.target.value, ordemIds, idPred);
-        if (pr.invalidos.length) UI.toast("“" + pr.invalidos.join(", ") + "” não é etapa válida em “Depende de” — use o nº da linha (1 a " + ordemIds.length + "), sem apontar para a própria etapa. Espera: 1+7 · avanço: 1-3.", "erro");
-        if (pr.preds !== null) {
-          cP.predecessoras = cP.predecessoras || {};
-          cP.predecessoras[idPred] = pr.preds;
-          // lag por elo vive em mapa próprio (a lista de ids fica legível para a versão anterior do app)
-          cP.lags = cP.lags || {};
-          if (Object.keys(pr.lags).length) cP.lags[idPred] = pr.lags; else delete cP.lags[idPred];
-        } else if (!pr.invalidos.length && cP.predecessoras) {
-          delete cP.predecessoras[idPred]; // vazio = volta ao padrão (depende da anterior)
-          if (cP.lags) delete cP.lags[idPred];
-        }
-        // ⚠ só inválidos: não grava nada — erro de digitação não muda o cronograma em silêncio; o render devolve o valor anterior
-        alvoP.salvar(); this.render(); return;
       }
       // preço de insumo NÃO COLETADO informado pelo usuário (detalhamento) —
       // salva por empresa e re-renderiza o modal para a soma/aviso atualizarem
@@ -2206,6 +2345,45 @@
     _nuvemTimer: null,
     _nuvemGatilhoRede: false,
 
+    /* =====================================================================
+     * ⚠ O QUE A JANELA FAZ QUANDO A NUVEM AVISA QUE UMA ENTIDADE MUDOU —
+     *   UMA FUNÇÃO SÓ PARA AS TRÊS PORTAS QUE LIGAM O `Nuvem.escutar`.
+     *
+     * São três caminhos que registram o ouvinte: o boot com licença
+     * (`_conectarNuvemLicenca`), o login por e-mail/senha sem licença e o
+     * botão "Sincronizar agora" (quadro Nuvem). O `Nuvem.escutar` é
+     * idempotente — VALE O PRIMEIRO QUE REGISTRAR. A F1 pôs a releitura só no
+     * callback do boot; no login por e-mail (sem licença) e no religar pelo
+     * quadro Nuvem depois de desligar, o ouvinte registrado era o antigo, sem
+     * releitura: o merge da nuvem gravava a edição do outro aparelho no disco,
+     * a tela seguia com a versão velha, e a edição seguinte era recusada pela
+     * trava como "outra janela" (ou, sem a trava, apagava a do outro). Três
+     * portas com três ouvintes diferentes é o defeito das "portas que têm de
+     * concordar" (skill `dinheiro`, item 3) em outro lugar: por isso uma só.
+     * ===================================================================== */
+    _aoMudarNaNuvem: function (eid, ent) {
+      if (ent === "pesos_bloco" && window.Blocos) Blocos.usarOverrides(eid);
+      if (typeof PropriaSync !== "undefined" && (ent === PropriaSync.ENTIDADE || ent === "_lapides")) this._propriaDaNuvem();
+      /* v1.1.232 — o EDITOR reage à exclusão vinda do outro aparelho.
+         Antes só a lista re-renderizava: quem estivesse com o orçamento
+         excluído ABERTO continuava editando um fantasma, e o próximo
+         persistir() o regravava — ressuscitando em todos os aparelhos
+         o que o outro usuário tinha acabado de apagar.
+         ⚠ E A EDIÇÃO que chega da nuvem também: a nuvem grava o merge
+         no Store e NÃO trocava o orcAtual aberto, então o persistir
+         seguinte apagava o que o outro aparelho gravou. A janela que
+         recebe da nuvem NÃO recebe evento `storage` (ele só dispara
+         nas outras janelas; medido `[]`): a releitura tem de ser
+         chamada daqui. `_relerAberto` fecha o editor na exclusão (o
+         recado de 1.1.232 mora lá agora), troca o objeto na edição e
+         redesenha o cronograma quando é a obra que mudou. */
+      if (ent === "orcamentos" || ent === "_lapides" || ent === "crono_obra" || ent === "obras" || ent === "rdo" || ent === "medicoes") {
+        this._relerAgendar(ent);
+        return;
+      }
+      if (this.tela === "lista") this.render();
+    },
+
     _conectarNuvemLicenca: function () {
       var self = this;
       try {
@@ -2252,25 +2430,9 @@
           .then(function () { if (window.Blocos) Blocos.usarOverrides(eid); try { self._propriaDaNuvem(); } catch (e) {} })
           .then(function () {
             self._nuvemTentativa = 0;
-            try { Nuvem.escutar(eid, function (ent) {
-              if (ent === "pesos_bloco" && window.Blocos) Blocos.usarOverrides(eid);
-              if (typeof PropriaSync !== "undefined" && (ent === PropriaSync.ENTIDADE || ent === "_lapides")) self._propriaDaNuvem();
-              /* v1.1.232 — o EDITOR reage à exclusão vinda do outro aparelho.
-                 Antes só a lista re-renderizava: quem estivesse com o orçamento
-                 excluído ABERTO continuava editando um fantasma, e o próximo
-                 persistir() o regravava — ressuscitando em todos os aparelhos
-                 o que o outro usuário tinha acabado de apagar. */
-              if ((ent === "orcamentos" || ent === "_lapides") && self.orcAtual && self.tela === "editor") {
-                var aindaExiste = !!Store.obterOrcamento(eid, self.orcAtual.id);
-                if (!aindaExiste) {
-                  var numExc = self.orcAtual.numero || "";
-                  self.orcAtual = null; self.tela = "lista"; self.render();
-                  UI.toast("O orçamento " + numExc + " foi excluído em outro aparelho — o editor foi fechado. Se precisar dele de volta, restaure do backup.", "erro");
-                  return;
-                }
-              }
-              if (self.tela === "lista") self.render();
-            }); } catch (e) {}
+            /* ⚠ o corpo do ouvinte mora em `_aoMudarNaNuvem` (as três portas do
+               `Nuvem.escutar` usam o mesmo — ver lá por quê) */
+            try { Nuvem.escutar(eid, function (ent) { self._aoMudarNaNuvem(eid, ent); }); } catch (e) {}
             // aparelho secundário (o tenant já tem admin, mas aqui a sessão é anônima) → exige login
             if (Auth.precisaLoginNuvem && Auth.precisaLoginNuvem()) { Auth.logout(); self.tela = "login"; self.render(); return; }
             if (self.tela === "lista") self.render(); // equipe/dados sincronizados
@@ -2438,7 +2600,7 @@
             .then(function () { return Nuvem.sincronizar(eid); })
             .then(function () { if (window.Blocos) Blocos.usarOverrides(eid); try { self._propriaDaNuvem(); } catch (e) {} })
             .then(function () {
-              Nuvem.escutar(eid, function (ent) { if (ent === "pesos_bloco" && window.Blocos) Blocos.usarOverrides(eid); if (typeof PropriaSync !== "undefined" && (ent === PropriaSync.ENTIDADE || ent === "_lapides")) self._propriaDaNuvem(); if (self.tela === "lista") self.render(); });
+              Nuvem.escutar(eid, function (ent) { self._aoMudarNaNuvem(eid, ent); });   // ⚠ F2: o mesmo ouvinte das outras portas (releitura do editor)
               if (self.tela === "lista") self.render();
               UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("nuvem", 15) : "") + " Dados sincronizados na nuvem.", "ok");
             })
@@ -3476,7 +3638,7 @@
                 return okSync;
               })
               .then(function (okSync) {
-                Nuvem.escutar(eid, function (ent) { if (ent === "pesos_bloco" && window.Blocos) Blocos.usarOverrides(eid); if (typeof PropriaSync !== "undefined" && (ent === PropriaSync.ENTIDADE || ent === "_lapides")) self._propriaDaNuvem(); if (self.tela === "lista") self.render(); });
+                Nuvem.escutar(eid, function (ent) { self._aoMudarNaNuvem(eid, ent); });   // ⚠ F2: o mesmo ouvinte das outras portas (releitura do editor)
                 // a marca só cai DEPOIS de a reconexão dar certo: se falhar, o
                 // desligamento continua valendo e o boot seguinte não reconecta sozinho
                 if (Nuvem.marcarDesligada) Nuvem.marcarDesligada(false);
@@ -4426,7 +4588,13 @@
         return false;
       }
       if (r.msg) UI.toast(r.msg, "info");
-      if (antes && antes.dataFim && typeof antes.dataFim.getTime === "function") {
+      /* ⚠ `opts.silencioso` (F6): quem grava pelo caminho único
+         (_cronoGravarOps — grade, tabela, arrasto) monta UM recado com o que
+         mudou E o prazo antes → depois. Roteiro do defeito (EDICAO.md, achado
+         4): o arrasto no plano mostrava DOIS toasts empilhados, este do prazo
+         e o do arrasto, e o de cima tapava o de baixo em 2,6 s. O recado do
+         espaço (r.msg, logo acima) não é prazo e continua saindo. */
+      if (!(opts && opts.silencioso) && antes && antes.dataFim && typeof antes.dataFim.getTime === "function") {
         var dep = null;
         try { dep = Cronograma.estimar(oP); } catch (eD) { dep = null; }
         var br = function (d) { return ("0" + d.getDate()).slice(-2) + "/" + ("0" + (d.getMonth() + 1)).slice(-2) + "/" + d.getFullYear(); };
@@ -4647,10 +4815,57 @@
       if (m && m.mudou) { try { Orcamento.sincronizarPrazo(o); } catch (eS) {} }
       return m;
     },
-    // grava cada orçamento afetado por uma troca de preço em lote (composição própria, insumo)
+    /* grava cada orçamento afetado por uma troca de preço em lote (composição
+       própria, insumo) e DEVOLVE o que aconteceu com cada um.
+       ⚠ F2 (14/09/2026) — O LAÇO LÊ A LISTA ANTES DE UM `confirm`. A varredura
+       lê os orçamentos, pergunta "Atualizar o preço desses itens agora?" e só
+       grava depois da resposta — e o `confirm` pode ficar aberto o tempo que
+       a pessoa quiser, com outra janela gravando por baixo. O orçamento aberto
+       é o `orcAtual`, que o quadro da composição segura (com quadro aberto a
+       releitura não troca o objeto). Com a trava de carimbo esses gravam
+       `null`; antes deste retorno o chamador dizia "N item(ns) reprecificado(s)
+       em M orçamento(s)" contando os recusados. Cada orçamento é independente:
+       um recusado não impede os outros (não há dinheiro nem obra aqui, só o
+       custo unitário do item), mas o recado diz QUAIS não mudaram. */
     _salvarOrcsAfetados: function (eid, afetados) {
-      var self = this;
-      (afetados || []).forEach(function (a) { self._materializarSeExec(a.orc); Store.salvarOrcamento(eid, a.orc); });
+      var self = this, res = { n: 0, itens: 0, recusados: [], falhos: [], abertoRecusado: false, abertoGravado: false };
+      (afetados || []).forEach(function (a) {
+        self._materializarSeExec(a.orc);
+        var g = Store.salvarOrcamento(eid, a.orc);
+        var rot = String((a.orc && (a.orc.numero || a.orc.nome || a.orc.id)) || "");
+        if (g) { res.n++; res.itens += (a.n || 0); if (a.mesmoAberto) res.abertoGravado = true; return; }
+        if (Store.ultimaRecusa) res.recusados.push(rot); else res.falhos.push(rot);
+        if (a.mesmoAberto) res.abertoRecusado = true;
+        /* ⚠ ARMAZENAMENTO RECUSOU O ABERTO → A MEMÓRIA VOLTA AO DISCO. A
+           releitura abaixo não serve aqui: o Store não carimba quando a
+           gravação falha, então disco e memória têm o MESMO carimbo e o
+           `_relerAberto` sai no ramo "não mudou". Medido na revisão da F2:
+           recado "NÃO gravado(s): ORC-…", memória com o preço novo (99),
+           disco com o antigo (10) — e a próxima edição comum gravava 99
+           calada. Volta NO LUGAR (o quadro da composição segura a
+           referência do `orcAtual`). Na recusa da trava a releitura resolve. */
+        if (a.mesmoAberto && !Store.ultimaRecusa && a.orc && a.orc.id) {
+          try {
+            var dFl = Store.obterOrcamento(eid, a.orc.id);
+            if (dFl) self._iaRestaurar(a.orc, JSON.stringify(dFl));
+          } catch (eFl) {}
+        }
+      });
+      /* o aberto não gravou: a tela relê o disco (com o quadro ainda aberto
+         fica pendente e aplica quando ele fechar) */
+      if (res.abertoRecusado) { try { this._relerAberto("recusa"); } catch (eRl) {} }
+      return res;
+    },
+    /* o recado do lote: o que gravou, e QUAIS não gravaram e por quê */
+    _recadoOrcsAfetados: function (res, extraOk) {
+      res = res || { n: 0, itens: 0, recusados: [], falhos: [] };
+      var partes = [];
+      if (res.n) partes.push(res.itens + " item(ns) reprecificado(s) em " + res.n + " orçamento(s)" + (extraOk || "") + ".");
+      else if (extraOk) partes.push(String(extraOk).replace(/^[ ,e]+/, "") + ".");
+      if (res.recusados.length) partes.push("NÃO atualizado(s): " + res.recusados.join(", ") + " — foi(ram) alterado(s) em outra janela (ou em outro aparelho) enquanto a pergunta estava aberta, e gravar por cima apagaria a outra alteração. Abra e confira o preço dele(s).");
+      if (res.falhos.length) partes.push("NÃO gravado(s): " + res.falhos.join(", ") + " — o armazenamento deste aparelho recusou (cheio?).");
+      var txt = partes.join(" ");
+      return { txt: txt, tipo: (res.recusados.length || res.falhos.length) ? "erro" : "ok", ms: (res.recusados.length || res.falhos.length) ? this._msRecado(txt) : 0 };
     },
 
     /* ================================================================
@@ -5115,8 +5330,8 @@
          atrito sem motivo. Sem `confirm` disponível (Node, WebView capada) o
          botão SEGUE: travar a limpeza por falta de um diálogo deixaria a pessoa
          sem a única saída que ela tem. */
-      if (nFix) {
-        var segue = true;
+      if (nFix && !this._cronResetConfirmado) {
+        var segue = true, t0Rs = Date.now();
         try {
           if (typeof window !== "undefined" && typeof window.confirm === "function") {
             segue = window.confirm("Limpar edições vai remover também " + nFix + " data(s) fixada(s) no Gantt — as barras que você arrastou.\n\n" +
@@ -5124,6 +5339,15 @@
           }
         } catch (eF) { segue = true; }
         if (!segue) { UI.toast("Nada foi limpo — as " + nFix + " data(s) fixada(s) no Gantt continuam valendo.", ""); return; }
+        /* ⚠ F2: respondido por tempo de gente, a limpeza roda de novo na
+           PRÓXIMA tarefa, já confirmada, relendo o alvo — senão a trava do
+           orçamento compara com o disco de antes do `confirm` e passa por cima
+           da outra janela (ver _aposDialogo) */
+        if (Date.now() - t0Rs >= 40) {
+          var selfRs = this;
+          setTimeout(function () { selfRs._cronResetConfirmado = true; try { selfRs.cronReset(); } finally { selfRs._cronResetConfirmado = false; } }, 0);
+          return;
+        }
       }
       /* ⚠ Limpar edições zera etapa E subetapa (sub.*) e REMATERIALIZA; mantém
          params e exec (são parâmetros, não edições). Antes limpava só 6 mapas
@@ -5831,10 +6055,14 @@
     _cronoGanttLigar: function () {
       var self = this;
       this._gx = null;
+      /* o observador de tamanho olhava a moldura do render ANTERIOR (já fora da
+         página): solto aqui e religado no fim, na moldura nova */
+      if (this._gxRO) { try { this._gxRO.disconnect(); } catch (eRO) {} }
       /* ⚠ um render no MEIO de um arrasto (um salvar assíncrono, a nuvem
          voltando) leva o controlador embora e deixaria o cursor de "arrastando"
-         grudado na página inteira — cursor errado se lê como app travado */
-      if (document.body && document.body.classList) document.body.classList.remove("gx-arrastando");
+         grudado na página inteira — cursor errado se lê como app travado.
+         O `pn-redim` é o mesmo defeito na alça de redimensionar (F7). */
+      if (document.body && document.body.classList) { document.body.classList.remove("gx-arrastando"); document.body.classList.remove("pn-redim"); }
       if (typeof CronoExecUI === "undefined" || typeof GanttUI === "undefined") return;
       var wrap = document.querySelector("#aba-conteudo [data-gx-wrap]");
       if (!wrap) return;
@@ -5871,8 +6099,12 @@
       nomes.scrollTop = plot.scrollTop; regua.scrollLeft = plot.scrollLeft;
       /* ⚠ e só AGORA a janela real (largura e altura em px) existe: a 1ª
          pintura saiu do desenho PURO, com o padrão. É aqui que o "Ajustar"
-         passa a caber de verdade na tela desta pessoa. */
-      this._gxPintar(true);
+         passa a caber de verdade na tela desta pessoa.
+         ⚠ Pela porta única (_gxRemedir), que também anota a medida de agora:
+         é contra ela que o observador de tamanho decide se algo mudou — sem a
+         anotação, o primeiro aviso do observador (que chega ao ligar, com o
+         tamanho que já está desenhado) repintaria tudo à toa a cada render. */
+      this._gxRemedir("ligar");
       plot.scrollLeft = z.scrollLeft || 0; plot.scrollTop = z.scrollTop || 0;
       nomes.scrollTop = plot.scrollTop; regua.scrollLeft = plot.scrollLeft;
       this._cronoHxRolar();
@@ -5931,6 +6163,13 @@
       plot.addEventListener("touchend", function () { if (self._gx && self._gx.arrasto) self._gxUp(); }, true);
       plot.addEventListener("touchcancel", function () { if (self._gx && self._gx.arrasto) self._gxUp(); }, true);
       this._gxLigarGlobal();
+      if (this._gxRO) { try { this._gxRO.observe(wrap); } catch (eObs) {} }
+      /* OS GANCHOS das fatias que vêm depois (espec crono-janelas): a grade
+         Dur./Depende de (F6) e as alças de redimensionar (F7). ⚠ Procurados
+         AQUI, na hora do render, e não no carregamento: sem o arquivo delas o
+         Gantt é o da 1.2.77, e a ordem dos <script> não importa. */
+      if (typeof GanttGradeUI !== "undefined" && GanttGradeUI && typeof GanttGradeUI.ligar === "function") GanttGradeUI.ligar(this, g);
+      if (typeof PaineisUI !== "undefined" && PaineisUI && typeof PaineisUI.ligarGantt === "function") PaineisUI.ligarGantt(this, g);
     },
     /* ==================================================================
        OS PAINÉIS DE BAIXO (histograma de mão de obra e linha de balanço)
@@ -5959,10 +6198,15 @@
     _cronoHxPintar: function (p) {
       var g = this._gx;
       if (!g || !g.hxWraps || !g.hxWraps.length || !p || !p.e || typeof CronoExecUI === "undefined") return;
-      /* só o pxDia e a largura da coluna de nomes mexem nestes desenhos: os
-         dois painéis desenham a obra INTEIRA (são ~100 barras, não 300 linhas),
-         então rolar não os repinta — mudar o zoom, sim */
-      var ch = p.e.pxDia + "|" + p.labelW;
+      /* só o pxDia, ONDE COMEÇA O DIA 0 (colW) e a ALTURA do histograma mexem
+         nestes desenhos: os dois painéis desenham a obra INTEIRA (são ~100
+         barras, não 300 linhas), então rolar não os repinta — mudar o zoom, a
+         coluna de nomes ou a altura, sim.
+         ⚠ A altura NA CHAVE (F3): sem ela, a alça do histograma mudava a
+         preferência e a chave igual devolvia o desenho antigo — o quadro
+         esticava e o SVG ficava com 142 px (experimento G). */
+      var colW = CronoExecUI.ganttProColW ? CronoExecUI.ganttProColW(p) : p.labelW;
+      var ch = p.e.pxDia + "|" + colW + "|" + (p.hxAltura || "");
       if (g.hxPx === ch) return;
       g.hxPx = ch;
       var largura = Math.max(1, p.e.larguraConteudo);
@@ -5972,7 +6216,7 @@
         if (!mod) continue;
         /* a MESMA variável da `.gx`: é ela que faz o dia 0 do gráfico de baixo
            cair no mesmo x do dia 0 da barra de cima */
-        if (w.style && w.style.setProperty) w.style.setProperty("--gx-lw", p.labelW + "px");
+        if (w.style && w.style.setProperty) w.style.setProperty("--gx-lw", colW + "px");
         var eixo = w.querySelector(".hx-eixo-in"), pin = w.querySelector(".hx-plot-in");
         try {
           if (eixo) eixo.innerHTML = (tipo === "lob") ? CronoExecUI.lxEixo(mod, p) : CronoExecUI.hxEixo(mod, p);
@@ -5987,10 +6231,44 @@
       return { button: 0, clientX: toque.clientX, clientY: toque.clientY, target: ev.target, preventDefault: function () {} };
     },
 
+    /* ⚠ SOLTA O GANTT QUANDO O RENDER TROCA O #main POR OUTRA TELA (F7, achado
+       da revisão adversarial). Antes só a troca de ABA dentro do editor zerava
+       `_gx`, e sem desligar o observador; indo para a LISTA de orçamentos ou
+       para um módulo da Gestão, `_gx` e o ResizeObserver seguiam presos à `.gx`
+       que já saiu da página (medido: 0 desconexão e 1 repintura do Gantt fora
+       da tela). Chamado em TODO ramo do render que não religa o cronograma; o
+       `gxVivo` do _gxLigarGlobal é a segunda rede para quem avisa sozinho. */
+    _gxDesligar: function () {
+      this._gx = null;
+      if (this._gxRO) { try { this._gxRO.disconnect(); } catch (eS) {} }
+    },
+
     _gxLigarGlobal: function () {
       if (this._gxGlobal) return;
       this._gxGlobal = true;
       var self = this;
+      /* ⚠ O GANTT QUE SAIU DA PÁGINA É SOLTO AQUI, e não só no render (F7,
+         achado da revisão adversarial). Só o render do EDITOR com outra aba
+         zera `_gx`; a LISTA de orçamentos e os módulos da Gestão (o `return`
+         logo depois do `Gestao.render`) trocam o #main e deixam `_gx` vivo,
+         apontando para a `.gx` que já saiu da página. Medido no Chrome, com
+         espião: indo para a lista e para Obras, 0 `disconnect` e o Gantt fora
+         da página REPINTADO uma vez (a moldura removida mede 0 de largura e o
+         observador leu isso como "o tamanho mudou") — o SVG, o histograma e o
+         estado inteiro presos na memória enquanto a pessoa usa outro módulo.
+         Conferir "está na página" em quem avisa (observador, `resize`,
+         `visibilitychange`) cobre todos os caminhos de saída de uma vez, sem
+         depender de cada ramo do render lembrar de zerar.
+         Devolve o `_gx` vivo, ou null depois de soltar. */
+      var gxVivo = function () {
+        var g = self._gx;
+        if (!g) return null;
+        var raiz = document.documentElement;
+        if (g.wrap && raiz && raiz.contains(g.wrap)) return g;
+        self._gx = null;
+        if (self._gxRO) { try { self._gxRO.disconnect(); } catch (eD) {} }
+        return null;
+      };
       /* no `document`, não no painel: soltar o botão FORA do Gantt (ou fora da
          janela) tem de terminar o arrasto — senão a barra-fantasma fica
          pendurada e o próximo clique grava uma data que ninguém pediu */
@@ -6015,18 +6293,143 @@
       if (global.addEventListener) {
         var reTimer = 0;
         global.addEventListener("resize", function () {
-          if (!self._gx) return;
+          if (!gxVivo()) return;
           if (reTimer) clearTimeout(reTimer);
           // um respiro: arrastar a borda da janela dispara dezenas de eventos
           reTimer = setTimeout(function () {
             reTimer = 0;
-            var g = self._gx; if (!g) return;
-            g.caixa = g.corpo ? g.corpo.offsetHeight : g.caixa;
-            g.nomes.scrollTop = g.plot.scrollTop; g.regua.scrollLeft = g.plot.scrollLeft;
-            self._gxPintar(true);
+            if (gxVivo()) self._gxRemedir("janela");
           }, 120);
         });
       }
+      /* ⚠ JANELA QUE VOLTA DO SEGUNDO PLANO REMEDE DIRETO, sem rAF. O navegador
+         estrangula o requestAnimationFrame de janela oculta (memória "aba oculta
+         não desenha"): a janela destacada redimensionada enquanto estava atrás
+         de outra voltaria com a escala velha e a faixa branca até o próximo
+         toque. `_gxRemedir` não repinta se nada mudou de tamanho. */
+      if (document.addEventListener) {
+        document.addEventListener("visibilitychange", function () {
+          if (document.visibilityState && document.visibilityState !== "visible") return;
+          if (gxVivo()) self._gxRemedir("visivel");
+        });
+      }
+      /* ⚠ O PAINEL MUDA DE TAMANHO SEM A JANELA MUDAR: a alça de outro painel,
+         o modo foco devolvendo a coluna da sidebar, a barra de rolagem do #main
+         aparecendo. Roteiro do defeito (experimentos A e D da
+         REDIMENSIONAR.md): a moldura encolheu de 1086 para 760 px sem evento de
+         janela e o "Ajustar" continuou com a escala de 784 px — a obra deixou de
+         caber e a régua cortou em 21/09. Só com `typeof` (a WebView antiga dos
+         instaladores não tem ResizeObserver; ali o `resize` de cima segue
+         valendo). ⚠ SEM LAÇO: só remede quando a LARGURA mudou ≥ 1 px desde a
+         última medida — a repintura mexe no conteúdo e na coluna de nomes, não
+         na largura da moldura, então ela não realimenta o observador. */
+      if (typeof ResizeObserver === "function" && !this._gxRO) {
+        try {
+          this._gxRO = new ResizeObserver(function () {
+            /* ⚠ SAIU DO CRONOGRAMA: solta a moldura antiga (F7, achado da
+               revisão da F3). O observador seguia preso à `.gx` que já saiu da
+               página — segurando o Gantt inteiro (SVG, histograma) na memória
+               até a pessoa voltar ao cronograma. A moldura removida manda um
+               último aviso (tamanho zero), e é nele que se solta. ⚠ Não basta
+               `!_gx`: a lista e a Gestão deixam `_gx` vivo (ver `gxVivo`). */
+            var g = gxVivo();
+            if (!g) { try { self._gxRO.disconnect(); } catch (eD) {} return; }
+            /* ⚠ ARRASTANDO A BORDA DA JANELA, QUEM REMEDE É A ESPERA DE 120 MS
+               DO `resize` (F7, achado da revisão da F3). O observador avisa a
+               cada quadro do arrasto e passava por cima da espera: o Gantt
+               inteiro era repintado dezenas de vezes por segundo enquanto a
+               pessoa só redimensionava a janela. Com a espera armada, o aviso
+               é dela; sem evento de janela (alça de outro painel, modo foco),
+               o observador segue remedindo na hora. */
+            if (reTimer) return;
+            var w = g.wrap.clientWidth || 0;
+            if (g.medida && Math.abs(w - g.medida.w) < 1) return;
+            self._gxRemedir("ro");
+          });
+        } catch (eRO) { this._gxRO = null; }
+      }
+    },
+
+    /* A ÚNICA PORTA ENTRE "O TAMANHO MUDOU" E "REPINTA" (espec crono-janelas,
+       F3). Chamada pelo render (`ligar`), pelo `resize` da janela (`janela`),
+       pela janela que volta do segundo plano (`visivel`), pelo observador de
+       tamanho (`ro`) e pela alça de redimensionar da F7 (`alca`).
+       ⚠ Roteiro do defeito (experimento A, medido no navegador): o corpo do
+       Gantt passou de 520 para 700 px sem avisar a fiação e ficou uma FAIXA
+       BRANCA de ~180 px no fim — o estado seguia com altura 520 e janela de
+       linhas 0–24; parecia que as barras tinham sumido. Três coisas tinham de
+       acontecer juntas, e é por isso que moram numa função só: `g.caixa` lido
+       de novo, nomes e régua sincronizados com o painel do tempo, e
+       `_gxPintar(true)`.
+       ⚠ Motivos automáticos (janela/visivel/ro) NÃO repintam se nada mudou:
+       o `resize` e o observador avisam do MESMO arrasto de borda, e sem a
+       medida anotada cada um repintaria o Gantt inteiro de novo. A alça e o
+       render repintam sempre (a preferência mudou mesmo com o tamanho igual).
+       Devolve true quando repintou. */
+    _gxRemedir: function (motivo) {
+      var g = this._gx; if (!g) return false;
+      var auto = motivo === "janela" || motivo === "visivel" || motivo === "ro";
+      var P = (typeof Paineis !== "undefined") ? Paineis : null;
+      var jan = (this._janela && typeof this._janela === "object") ? this._janela : null;
+      /* JANELA DESTACADA (modo "preencher", F8): o corpo acompanha a altura da
+         janela. Medido aqui, e não no desenho puro: o topo real do corpo só o
+         navegador sabe.
+         ⚠ O TOPO É O DO CORPO NO CONTEÚDO (rolagem zerada), NUNCA A POSIÇÃO NA
+         JANELA VISÍVEL. Roteiro do defeito (revisão da F3, galpão a 1366×768,
+         nenhum tamanho mudando, só a pessoa rolando o #main e a janela voltando
+         do segundo plano): rolagem 0 → corpo 134 px (topo na hora 758);
+         rolagem 660 → 614 px (topo 98); rolagem 1120 → 710 px (topo −362, que
+         o motor lê como 0). Rolando de volta até o Gantt, o fundo do corpo em
+         808 + a legenda de 50 passavam dos 768 da janela: a legenda sumia e o
+         Gantt deixava de caber justamente no modo que promete caber. A altura
+         dependia de ONDE a pessoa estava, e não do tamanho da janela.
+         Somar o `scrollTop` de cada ancestral devolve o topo "com tudo rolado
+         ao começo", o mesmo em qualquer rolagem — e cobre os dois roladores do
+         app: o #main (mesa) e o documento (celular, onde `.app` vira
+         `auto 1fr` e quem rola é o html/body). */
+      if (jan && P && g.corpo && g.corpo.style && typeof g.corpo.getBoundingClientRect === "function" && typeof CronoExecUI !== "undefined") {
+        var topoCorpo = g.corpo.getBoundingClientRect().top;
+        for (var anc = g.corpo.parentNode; anc && anc.nodeType === 1; anc = anc.parentNode) topoCorpo += anc.scrollTop || 0;
+        var alt = P.alturaPreencher({ janelaAltura: global.innerHeight, topoCorpo: topoCorpo,
+          legenda: CronoExecUI.GX_LEGENDA, linhas: (g.pro && g.pro.L) ? g.pro.L.length : null, rowH: CronoExecUI.GX_ROWH, barra: CronoExecUI.GX_BARRA });
+        if (alt > 0 && g.corpo.style.height !== Math.round(alt) + "px") g.corpo.style.height = Math.round(alt) + "px";
+      }
+      var med = { w: g.wrap ? (g.wrap.clientWidth || 0) : 0, h: g.corpo ? g.corpo.offsetHeight : g.caixa, j: jan ? (global.innerHeight || 0) : 0 };
+      if (auto && g.medida && g.medida.w === med.w && g.medida.h === med.h && g.medida.j === med.j) return false;
+      g.medida = med;
+      g.caixa = g.corpo ? g.corpo.offsetHeight : g.caixa;
+      if (g.plot && g.nomes && g.regua) { g.nomes.scrollTop = g.plot.scrollTop; g.regua.scrollLeft = g.plot.scrollLeft; }
+      this._gxPintar(true);
+      return true;
+    },
+
+    /* As preferências de tamanho DESTA pessoa (js/paineis.js), lidas do disco
+       uma vez e relidas quando a pessoa logada muda. ⚠ Estado de TELA: nunca
+       no orçamento, nunca nas `prefs` (que viajam para a nuvem e para outro
+       computador). A F7 muda este objeto durante o arrasto e grava ao soltar. */
+    _gxPaineis: function () {
+      var P = (typeof Paineis !== "undefined") ? Paineis : null;
+      if (!P) return {};
+      var u = null, eid = "";
+      try { u = (typeof Auth !== "undefined" && Auth.usuario) ? Auth.usuario() : null; eid = (typeof Auth !== "undefined" && Auth.empresaId) ? Auth.empresaId() : ""; } catch (eU) { u = null; }
+      var hash = P.hashUsuario(eid, u ? u.email : "");
+      if (this._paineisHash !== hash || !this._paineis || typeof this._paineis !== "object") {
+        var st = null;
+        try { st = global.localStorage; } catch (eS) { st = null; }
+        this._paineis = P.ler(st, hash);
+        this._paineisHash = hash;
+      }
+      return this._paineis;
+    },
+    /* o que o desenho recebe — a MESMA conta do ui.js (Paineis.opcoesGantt).
+       null sem o motor: o Gantt fica no padrão da 1.2.77. */
+    _gxOpcoes: function () {
+      if (typeof Paineis === "undefined" || !Paineis || typeof Paineis.opcoesGantt !== "function") return null;
+      return Paineis.opcoesGantt(this._gxPaineis(), {
+        alcas: typeof PaineisUI !== "undefined", grade: typeof GanttGradeUI !== "undefined",
+        janela: (this._janela && typeof this._janela === "object") ? this._janela : null,
+        janelaAltura: global.innerHeight, janelaLargura: global.innerWidth
+      });
     },
 
     /* o ESTADO do desenho, com memo por quadro. ⚠ Durante o arrasto o estado
@@ -6044,7 +6447,12 @@
          de 10 anos — o padrão do desenho puro é melhor que uma medida falsa.
          ("Aba oculta não desenha" já custou uma tarde no viewer 3D.) */
       var lw = g.plot.clientWidth || CronoExecUI.GX_LABELW * 2, lh = g.plot.clientHeight || g.caixa;
-      var ch = [g.z.nivel, sl, st, lw, lh, g.z.sel, g.caixa, desf].join("|");
+      /* ⚠ as preferências de tamanho (F3) entram na CHAVE do memo: a alça da
+         F7 muda a largura do nome ou a altura do histograma sem mudar a rolagem
+         nem o tamanho do painel, e sem elas aqui o memo devolveria o estado
+         antigo — a alça mexeria e nada se redesenharia. */
+      var og = this._gxOpcoes() || {}, ww = g.wrap.clientWidth || 0;
+      var ch = [g.z.nivel, sl, st, lw, lh, g.z.sel, g.caixa, desf, ww, og.labelPref, og.colunas, og.hxAltura].join("|");
       if (g.pro && g.proCh === ch) return g.pro;
       g.proCh = ch;
       g.pro = CronoExecUI.ganttProEstado(g.ctx.r, {
@@ -6054,7 +6462,9 @@
         /* a largura do WIDGET manda na coluna de nomes (ganttProLabelW): a 1ª
            pintura sai do desenho puro, que não tem DOM para perguntar, e é
            aqui que ela encolhe de verdade no celular */
-        larguraWidget: g.wrap.clientWidth || 0
+        larguraWidget: ww,
+        labelPref: og.labelPref, colunas: og.colunas === true, hxAltura: og.hxAltura,
+        alcas: og.alcas === true, alcaNomes: og.alcaNomes, janelaAltura: og.janelaAltura, modo: og.modo
       });
       return g.pro;
     },
@@ -6080,9 +6490,23 @@
          os px por dia. Na ordem inversa a escala sairia com a largura da
          coluna anterior — e num telefone, onde a coluna cai de 300 para ~140,
          a obra ficaria 160 px mais larga que o painel. */
+      /* ⚠ `--gx-lw` é ONDE COMEÇA O DIA 0 (colW = nome + colunas Dur./Depende
+         de), decidido pelas MESMAS funções do desenho puro e com a MESMA
+         preferência que o `_gxPro` passa logo abaixo. Roteiro do defeito
+         (experimento E′ da REDIMENSIONAR.md): coluna mudada só no CSS e estado
+         em 300 — nome cortado, faixa branca ao lado e o histograma 160 px fora
+         do Gantt. */
       if (g.wrap.style && g.wrap.style.setProperty) {
-        var lwCol = CronoExecUI.ganttProLabelW(g.wrap.clientWidth || 0);
-        if (lwCol !== g.labelW) { g.labelW = lwCol; g.wrap.style.setProperty("--gx-lw", lwCol + "px"); }
+        var ogP = this._gxOpcoes() || {}, wwP = g.wrap.clientWidth || 0;
+        var gradeP = CronoExecUI.ganttProGradeW ? CronoExecUI.ganttProGradeW(ogP.colunas === true, wwP) : 0;
+        var lwCol = CronoExecUI.ganttProLabelW(wwP, ogP.labelPref, gradeP), colP = lwCol + gradeP;
+        if (colP !== g.labelW) { g.labelW = colP; g.wrap.style.setProperty("--gx-lw", colP + "px"); }
+        /* a alça de NOMES (F7) mora na borda do NOME, não em colW */
+        if (lwCol !== g.nomeW) {
+          g.nomeW = lwCol;
+          var alN = g.wrap.querySelector ? g.wrap.querySelector('[data-pn-alca="gxNomes"]') : null;
+          if (alN && alN.style) alN.style.left = lwCol + "px";
+        }
       }
       var p = this._gxPro(ovr); if (!p || !p.e) return;
       /* ⚠ O MÊS DA BORDA ESQUERDA É ATUALIZADO ANTES DO CORTE DE REPINTURA. Ele
@@ -6099,7 +6523,11 @@
       // os painéis de baixo acompanham a escala (ver _cronoHxPintar)
       this._cronoHxPintar(p);
       var ch = [p.e.nivel, p.e.pxDia, p.jan.primeiraLinha, p.jan.ultimaLinha, p.jan.primeiroDia, p.jan.ultimoDia, p.sel, p.desfazer].join("|");
-      if (!forcar && ch === g.pintado) return;
+      /* GANCHO da grade Dur./Depende de (F6): o campo aberto acompanha a linha
+         a cada quadro. ⚠ Também no quadro que NÃO repinta: rolar 1 px não muda a
+         janela de linhas, mas muda o y da célula — preso só ao fim da função, o
+         campo ficaria parado enquanto a linha dele rola para baixo. */
+      if (!forcar && ch === g.pintado) { this._gxGanchoPintar(g); return; }
       g.pintado = ch;
       var partes = CronoExecUI.ganttProPartes(g.ctx.r, p, { abertas: g.ctx.abertas, hoje: g.ctx.hoje });
       var pin = g.plot.querySelector(".gx-plot-in"), nin = g.nomes.querySelector(".gx-nomes-in"), rin = g.regua.querySelector(".gx-regua-in");
@@ -6126,6 +6554,11 @@
       if (canto && forma !== g.cantoCh) { g.cantoCh = forma; canto.innerHTML = CronoExecUI.ganttProTopo(p); }
       var sel = g.wrap.querySelector("[data-crono-zoom]");
       if (sel && sel.value !== p.e.nivel) sel.value = p.e.nivel;
+      this._gxGanchoPintar(g);
+    },
+    // ⚠ procurado na hora da chamada: sem o js/ganttgradeui.js (F6), nada
+    _gxGanchoPintar: function (g) {
+      if (typeof GanttGradeUI !== "undefined" && GanttGradeUI && typeof GanttGradeUI.reposicionar === "function") GanttGradeUI.reposicionar(this, g);
     },
 
     /* ZOOM. `dir` = 1 aproxima, −1 afasta, ou o nome do nível. `ancora` = px a
@@ -6290,11 +6723,31 @@
       var g = this._gx; if (!g) return;
       if (g.pan) { g.pan = null; g.plot.classList.remove("gx-pegando"); return; }
       if (!g.arrasto) return;
-      var ar = g.arrasto;
+      var ar = g.arrasto, pos = g.mouse;
       g.arrasto = null; g.mouse = null;
       document.body.classList.remove("gx-arrastando");
       if (g.fant) g.fant.hidden = true;
       if (g.dica) g.dica.hidden = true;
+      /* ⚠ DUPLO CLIQUE NUMA BARRA QUE SE ARRASTA É DETECTADO AQUI, e não por
+         `addEventListener("dblclick")`. Roteiro (EDICAO.md, medido com mouse
+         real): o `dblclick` NÃO chega — 0 eventos no documento — porque o
+         1º `mouseup` passa pelo `_gxPintar(true)`, que troca o `<svg>` por
+         `outerHTML`, e o alvo do 1º clique some antes do 2º. Dois `mouseup`
+         SEM movimento (res.mudou === false: o arrasto não andou um dia útil),
+         na MESMA barra, a menos de 400 ms e 4 px um do outro = duplo clique:
+         abre a Dur. da linha e NÃO grava nada (clique parado nunca gravou).
+         Sem o js/ganttgradeui.js a soltura é a de sempre. */
+      var parado = !!(ar.res && ar.res.tipo !== "ligar" && ar.res.mudou === false && ar.no && typeof GanttGradeUI !== "undefined" && GanttGradeUI.abrir);
+      if (parado) {
+        var agora = Date.now(), u = g.ultUp, px = pos ? pos.x : 0, py = pos ? pos.y : 0;
+        if (u && u.id === ar.no.id && agora - u.t < 400 && Math.abs(px - u.x) < 4 && Math.abs(py - u.y) < 4) {
+          g.ultUp = null;
+          this._gxPintar(true);
+          GanttGradeUI.abrir(this, g, ar.no.id, "dur", { origem: "duplo" });
+          return;
+        }
+        g.ultUp = { id: ar.no.id, t: agora, x: px, y: py };
+      } else g.ultUp = null;
       this._gxSoltar(ar);
     },
 
@@ -6321,67 +6774,32 @@
         UI.toast(res.motivo || (res.tipo === "ligar" ? "Esta ligação não pode ser criada (elo repetido, de outra etapa, ou laço na rede)." : "Nada mudou nesta barra."), "");
         this._gxPintar(true); return;
       }
-      var antes = { dias: g.ctx.r.totalDias, fim: g.ctx.r.dataFim };
-      /* a FOTO de antes, para o [Desfazer] de um nível. ⚠ Cópia profunda: o
-         objeto do cronograma é o mesmo que o motor lê, e guardar a referência
-         guardaria o estado DEPOIS da mudança. */
-      var foto = null;
-      try { foto = JSON.parse(JSON.stringify(alvo.cron)); } catch (eC) { foto = null; }
-      var ap = GanttUI.aplicarOps(alvo.cron, ops);
-      if (!ap.mudou) {
-        UI.toast(ap.erros.length ? ("Não consegui aplicar o arrasto: " + ap.erros[0]) : "Nada mudou nesta barra.", ap.erros.length ? "erro" : "");
-        this._gxPintar(true); return;
-      }
-      if (!alvo.salvar()) { this.render(); return; }   // o salvar já explica por que recusou
-      if (foto) {
-        this._cronoDesf = (this._cronoDesf && typeof this._cronoDesf === "object") ? this._cronoDesf : {};
-        /* ⚠ `depois` é a FOTO DE COMO FICOU, tirada DEPOIS do salvar (o
-           persistir ainda materializa o modo executivo e sincroniza o prazo).
-           É ela que o desfazer confere antes de agir: sem essa conferência, o
-           [Desfazer] continuaria valendo depois de a pessoa digitar uma
-           duração na tabela — e voltaria o cronograma para antes do arrasto,
-           apagando calado a edição que veio depois. */
-        var depois = null;
-        try { depois = JSON.stringify(alvo.cron); } catch (eD) { depois = null; }
-        this._cronoDesf[this.orcAtual.id] = { cron: foto, depois: depois, resumo: GanttUI.resumoOps(ops, ar.no, g.ctx.r) };
-      }
-      /* o ANTES → DEPOIS DO PRAZO, quando a ENTREGA muda: arrastar uma etapa
-         do meio pode empurrar a data final, e essa é a data que vai na
-         proposta. Número a pessoa confere; "pronto" ela não. */
-      /* ⚠ O NOME DO RECADO SAI DO RESULTADO (`g.ctx.r`), não da barra de onde o
-         arrasto partiu: no "ligar" quem muda é a SUCESSORA, e sem o `r` o
-         recado acusava a barra errada e lia-se como dependência invertida. */
-      var msg = GanttUI.resumoOps(ops, ar.no, g.ctx.r) || "Cronograma atualizado.";
       /* ⚠ RECUSA QUE, MESMO ASSIM, GRAVA: a barra-fantasma vermelha parou na
          borda (duração mínima de 1 dia, piso da rede, teto de 10 anos) e a
          soltura gravou esse valor GRUDADO na trava — o número sai no recado, e
          é o mesmo que a pessoa viu na tela. O que faltava era o PORQUÊ de ter
          parado ali: a cor prometeu "recusado" e a gravação aconteceu calada. */
+      var msg = "";
       if (res.valido === false && res.motivo) msg += " · " + res.motivo;
-      var dep = null;
-      try { dep = Cronograma.estimar(alvo.orc, null, { eap: true }); } catch (eE) { dep = null; }
-      if (dep && dep.totalDias !== antes.dias) {
-        msg += " · Prazo da obra: " + antes.dias + " → " + dep.totalDias + " dias úteis" +
-          ((antes.fim && dep.dataFim) ? " (entrega " + antes.fim.toLocaleDateString("pt-BR") + " → " + dep.dataFim.toLocaleDateString("pt-BR") + ")" : "") + ".";
-      }
-      if (ap.erros.length) msg += " · " + ap.erros.length + " operação(ões) recusada(s): " + ap.erros[0];
-      /* ⚠ o render vem ANTES do toast: é ele que redesenha o Gantt com a rede
-         nova e traz o [[Desfazer]] para o canto. O botão mora ali, e não no
-         toast, porque o toast some em 2,6 s — e o arrependimento costuma vir
-         depois de olhar o que mudou. É um nível só: o arrasto seguinte
-         substitui a foto. */
-      this.render();
-      UI.toast(msg, ap.erros.length ? "" : "ok");
+      /* ⚠ o resto (foto do desfazer, salvar, prazo antes → depois, render e o
+         toast) é o CAMINHO ÚNICO de gravação do cronograma pela tela (F6): o
+         mesmo da grade Dur./Depende de e da tabela. O nome do recado sai do
+         resultado (`g.ctx.r`), não da barra de onde o arrasto partiu: no
+         "ligar" quem muda é a SUCESSORA. */
+      this._cronoGravarOps(alvo, ops, ar.no, g.ctx.r, { origem: "arrasto", sufixo: msg, semMudanca: "Nada mudou nesta barra.", erroAplicar: "Não consegui aplicar o arrasto: " });
     },
 
-    /* DESFAZER o último arrasto (um nível, por arrasto). ⚠ Troca-se o CONTEÚDO
-       do objeto do cronograma, nunca a referência: o orçamento (e o plano da
-       obra) apontam para ele, e trocar a referência deixaria os dois olhando
-       para o objeto velho — o desfazer não chegaria ao disco. */
+    /* DESFAZER a última alteração do cronograma (um nível). ⚠ Troca-se o
+       CONTEÚDO do objeto do cronograma, nunca a referência: o orçamento (e o
+       plano da obra) apontam para ele, e trocar a referência deixaria os dois
+       olhando para o objeto velho — o desfazer não chegaria ao disco.
+       Desde a F6 (crono-janelas) a foto é tirada pelo caminho único
+       (_cronoGravarOps): vale para o que foi ARRASTADO e para o que foi
+       DIGITADO (grade do Gantt ou tabela) — e o Ctrl+Z do Gantt chega aqui. */
     cronoArrastoDesfazer: function () {
       var o = this.orcAtual; if (!o) return;
       var d = (this._cronoDesf && typeof this._cronoDesf === "object") ? this._cronoDesf[o.id] : null;
-      if (!d || !d.cron) { UI.toast("Não há arrasto para desfazer.", ""); return; }
+      if (!d || !d.cron) { UI.toast("Não há alteração do cronograma para desfazer.", ""); return; }
       var alvo = null;
       try { alvo = this._cronoAlvo(); } catch (eA) { alvo = null; }
       if (!alvo || alvo.travado) { UI.toast("Não consigo desfazer aqui: o cronograma está travado pela aprovação.", "erro"); return; }
@@ -6393,7 +6811,7 @@
       try { agora = JSON.stringify(alvo.cron); } catch (eJ) { agora = null; }
       if (d.depois && agora && agora !== d.depois) {
         delete this._cronoDesf[o.id];
-        UI.toast("O cronograma mudou depois daquele arrasto — desfazer agora apagaria a edição que veio depois. Ajuste a etapa pela tabela, ou arraste a barra de volta.", "erro");
+        UI.toast("O cronograma mudou depois daquela alteração — desfazer agora apagaria a edição que veio depois. Ajuste a etapa pela tabela, ou arraste a barra de volta.", "erro");
         this.render();
         return;
       }
@@ -6403,7 +6821,198 @@
       delete this._cronoDesf[o.id];
       var gravou = alvo.salvar();
       this.render();
-      UI.toast(gravou ? "Arrasto desfeito." : "Desfiz na tela, mas não consegui gravar — confira antes de sair.", gravou ? "ok" : "erro");
+      UI.toast(gravou ? "Alteração desfeita." : "Desfiz na tela, mas não consegui gravar — confira antes de sair.", gravou ? "ok" : "erro");
+    },
+
+    /* O CAMINHO ÚNICO QUE GRAVA O CRONOGRAMA PELA TELA (F6, crono-janelas):
+       a grade Dur./Depende de do Gantt, a tabela (etapa e subetapa) e o
+       arrasto passam TODOS por aqui — ops → aplicarOps → salvar → foto do
+       desfazer → UM recado (o que mudou + prazo antes → depois) → render.
+       Roteiro do defeito (EDICAO.md, parte c): eram quatro caminhos gravando
+       os mesmos mapas no mesmo objeto, cada um com recado próprio — a etapa
+       pela tabela sem recado nenhum (128 → 2 dias sem uma palavra), a folha
+       com o info do salvar, o arrasto no plano com DOIS toasts empilhados — e
+       o [Desfazer] valia só para o arrasto.
+       `rAntes` = o estimar {eap:true} de ANTES (dá o "antes" do prazo e o
+       nome da linha). opts: {origem: "grade"|"tabela"|"arrasto"|"soltar",
+       rotulo, sufixo (texto logo depois do resumo), semMudanca, erroAplicar}.
+       Devolve {ok, mudou, msg}. */
+    _cronoGravarOps: function (alvo, ops, no, rAntes, opts) {
+      opts = opts || {};
+      var arrasto = opts.origem === "arrasto", g = this._gx;
+      if (!alvo) { UI.toast("Não consegui identificar onde gravar esta edição — nada foi alterado.", "erro"); return { ok: false }; }
+      // ⚠ a trava do aprovado vem ANTES de tocar no objeto: no aprovado nada muda nem em memória
+      if (alvo.travado) { this._cronoTravado(alvo); return { ok: false }; }
+      if (typeof GanttUI === "undefined" || typeof Cronograma === "undefined") {
+        UI.toast("O motor do cronograma não carregou nesta tela — nada foi gravado. Recarregue a página (Ctrl+F5).", "erro");
+        return { ok: false };
+      }
+      var antes = { dias: rAntes ? rAntes.totalDias : null, fim: rAntes ? rAntes.dataFim : null };
+      /* a FOTO de antes, para o [Desfazer] de um nível. ⚠ Cópia profunda: o
+         objeto do cronograma é o mesmo que o motor lê, e guardar a referência
+         guardaria o estado DEPOIS da mudança. */
+      var foto = null;
+      try { foto = JSON.parse(JSON.stringify(alvo.cron)); } catch (eC) { foto = null; }
+      var ap = GanttUI.aplicarOps(alvo.cron, ops);
+      if (!ap.mudou) {
+        UI.toast(ap.erros.length ? ((opts.erroAplicar || "Não consegui aplicar a alteração: ") + ap.erros[0]) : (opts.semMudanca || "Nada mudou no cronograma."), ap.erros.length ? "erro" : "");
+        if (arrasto && g) this._gxPintar(true);
+        return { ok: !ap.erros.length, mudou: false };
+      }
+      /* ⚠ `silencioso`: o plano da obra não mostra o toast de prazo dele — o
+         recado de prazo sai AQUI, junto com o que mudou (um toast só). */
+      if (!alvo.salvar({ cronoAntes: rAntes, rotulo: opts.rotulo, silencioso: true })) {
+        /* ⚠ NÃO GRAVOU → a MEMÓRIA volta a ser o que está gravado. Sem isto a
+           tela seguia mostrando a duração nova (o objeto já tinha mudado) e a
+           pessoa lia como salvo o que não foi a lugar nenhum — recado que
+           mente. O salvar já explicou por que recusou. Troca-se o CONTEÚDO,
+           nunca a referência (ver cronoArrastoDesfazer). */
+        /* ⚠ (integração F1/F2 × F6) NÃO devolver a foto aqui. A primeira
+           versão trocava o conteúdo do cronograma pela foto de antes — e,
+           somada à trava de carimbo, apagava do disco uma duração que JÁ
+           estava gravada: e2e-duas-janelas [8], cota cheia uma vez, edição
+           seguinte → disco {e2:17} sem o e1=10 de antes. Quem decide o que a
+           memória vira numa falha é o persistir: recusa de outra janela relê
+           o disco (_relerAberto); cota cheia mantém a edição e avisa em
+           vermelho, e a gravação seguinte leva as duas. */
+        this.render();
+        return { ok: false };
+      }
+      var dep = null;
+      try { dep = Cronograma.estimar(alvo.orc, null, { eap: true }); } catch (eE) { dep = null; }
+      if (foto) {
+        this._cronoDesf = (this._cronoDesf && typeof this._cronoDesf === "object") ? this._cronoDesf : {};
+        /* ⚠ `depois` é a FOTO DE COMO FICOU, tirada DEPOIS do salvar (o
+           persistir ainda materializa o modo executivo e sincroniza o prazo).
+           É ela que o desfazer confere antes de agir: sem essa conferência, o
+           [Desfazer] continuaria valendo depois de a pessoa digitar uma
+           duração na tabela — e voltaria o cronograma para antes do arrasto,
+           apagando calado a edição que veio depois. */
+        var depois = null;
+        try { depois = JSON.stringify(alvo.cron); } catch (eD) { depois = null; }
+        this._cronoDesf[this.orcAtual.id] = { cron: foto, depois: depois, resumo: GanttUI.resumoOps(ops, no, rAntes) };
+      }
+      /* ⚠ O NOME DO RECADO SAI DO RESULTADO (`rAntes`), não da barra: no
+         "ligar" do arrasto quem muda é a SUCESSORA. `rDepois` dá o número da
+         estimativa quando a duração volta a ela. */
+      // (o ponto final do resumo sai: o recado continua com " · Prazo da obra…" e fecha com um ponto só)
+      var msg = String(GanttUI.resumoOps(ops, no, rAntes, { rDepois: dep }) || "Cronograma atualizado").replace(/\.\s*$/, "") + (opts.sufixo || "");
+      /* o ANTES → DEPOIS DO PRAZO, quando a ENTREGA muda: a data final é a
+         que vai na proposta. Número a pessoa confere; "pronto" ela não. */
+      if (dep && antes.dias != null && dep.totalDias !== antes.dias) {
+        msg += " · Prazo da obra: " + antes.dias + " → " + dep.totalDias + " dias úteis" +
+          ((antes.fim && dep.dataFim) ? " (entrega " + antes.fim.toLocaleDateString("pt-BR") + " → " + dep.dataFim.toLocaleDateString("pt-BR") + ")" : "") + ".";
+        /* ⚠ NO PLANO DA OBRA o recado diz ONDE mudou: o toast próprio do
+           _cronoSalvarPlano (silenciado para não empilhar) dizia "a proposta
+           aprovada não muda" — sem isso quem replaneja a obra lê "Prazo da
+           obra: 60 → 145" e acha que mexeu no contrato. */
+        if (alvo.tipo === "plano") {
+          var aprovP = false;
+          try { aprovP = !!(typeof Orcamento !== "undefined" && Orcamento.travadoPorAprovacao && Orcamento.travadoPorAprovacao(this.orcAtual)); } catch (eAp) { aprovP = false; }
+          msg += " Plano de execução da obra " + String((alvo.obra && alvo.obra.nome) || "sem nome") + ": a proposta " + (aprovP ? "aprovada " : "") + "não muda.";
+        }
+      }
+      /* ⚠ A DATA FIXADA QUE MANDA SOBRE O QUE SE DIGITOU. Roteiro (EDICAO.md,
+         foto 09, OBRA TESTE): a etapa 4 arrastada ("não iniciar antes de
+         12/01/2028") e "Depende de = 1" digitado — gravou, e a etapa continuou
+         em 12/01/2028, sem recado. Quem digita acha que o campo quebrou. O
+         recado diz por que ela não andou e a PORTA, que existe na caixa
+         "Datas fixadas no Gantt" logo abaixo (desenhada pelo cronoexecui.js
+         com a mesma GanttUI.dataFixadaDomina). No arrasto não: ali é o próprio
+         gesto que fixou a data. */
+      if (!arrasto && dep && typeof GanttUI.dataFixadaDomina === "function") {
+        var vistos = {};
+        for (var io = 0; io < ops.length; io++) {
+          var op = ops[io];
+          if (!op || op.alvo !== "etapa" || op.campo === "restricaoData" || vistos[op.id]) continue;
+          vistos[op.id] = true;
+          var dom = GanttUI.dataFixadaDomina(dep, op.id), eA = GanttUI.acharNo(rAntes, op.id), eD = GanttUI.acharNo(dep, op.id);
+          if (dom && eA && eD && Math.round(Number(eA.inicio)) === Math.round(Number(eD.inicio))) {
+            msg += " · A etapa continua em " + dom.dataBR + " porque tem data fixada no Gantt (não iniciar antes de " + dom.dataBR +
+              "). Para soltar, use [Soltar a data] na caixa “Datas fixadas no Gantt”, abaixo do Gantt.";
+          }
+        }
+      }
+      if (ap.erros.length) msg += " · " + ap.erros.length + " operação(ões) recusada(s): " + ap.erros[0];
+      if (!/[.!?]$/.test(msg)) msg += ".";
+      /* ⚠ o render vem ANTES do toast: é ele que redesenha o Gantt com a rede
+         nova e traz o [[Desfazer]] para o canto. O botão mora ali, e não no
+         toast, porque o toast some em 2,6 s — e o arrependimento costuma vir
+         depois de olhar o que mudou. É um nível só: a alteração seguinte
+         substitui a foto. */
+      this.render();
+      UI.toast(msg, ap.erros.length ? "" : "ok");
+      return { ok: true, mudou: true, msg: msg };
+    },
+
+    /* DIGITAR uma duração ou um "Depende de" (grade do Gantt, cartão do duplo
+       clique ou tabela). p: {id, campo: "dur"|"pred", texto, origem}.
+       A decisão inteira é do motor (GanttUI.opsDaDigitacao — contrato estrito,
+       testado em tools/test-ganttui-digitacao.js); aqui só o alvo, o motor com
+       a árvore e o caminho único de gravação.
+       ⚠ `Cronograma.estimar(orc, null, {eap:true})`, NUNCA sem `{eap:true}`:
+       a trava do vão (etapa no modo executivo) lê a `fonte` dos nós da
+       árvore; sem eles o motor recusa TODA Dur. de etapa no modo executivo
+       com "Não consegui conferir" (pendência da F4, de propósito: na dúvida,
+       recusa). E `ctx.CronoExecUI` injetado pelo mesmo motivo.
+       Devolve {ok, mudou?, msg?, porta?}. */
+    _cronoGravarDigitado: function (p) {
+      p = p || {};
+      var alvo = null;
+      try { alvo = this._cronoAlvo(); } catch (eA) { alvo = null; }
+      if (!alvo) { UI.toast("Não consegui identificar onde gravar esta edição — nada foi alterado.", "erro"); return { ok: false, msg: "sem alvo" }; }
+      if (typeof GanttUI === "undefined" || !GanttUI.opsDaDigitacao || typeof Cronograma === "undefined" || typeof CronoExecUI === "undefined") {
+        var mm = "O motor da digitação não carregou nesta tela (js/ganttui.js) — nada foi gravado. Recarregue a página (Ctrl+F5).";
+        UI.toast(mm, "erro"); return { ok: false, msg: mm };
+      }
+      var r = null;
+      try { r = Cronograma.estimar(alvo.orc, null, { eap: true }); } catch (eR) { r = null; }
+      var no = r ? GanttUI.acharNo(r, p.id) : null;
+      if (!no) {
+        var mn = "Esta linha não existe mais neste cronograma (outra janela ou a planilha mudou as etapas) — nada foi gravado.";
+        UI.toast(mn, "erro"); return { ok: false, msg: mn };
+      }
+      var ctxD = {
+        travado: alvo.travado, cron: alvo.cron,
+        ordemEtapas: (alvo.orc.etapas || []).map(function (et) { return et.id; }),
+        Cronograma: Cronograma, CronoExecUI: CronoExecUI
+      };
+      /* `p.campos` = [{campo, texto}]: o CARTÃO do duplo clique (colunas
+         escondidas) grava Dur. e Depende de de uma vez — UMA gravação, UM
+         recado e UMA foto de desfazer. ⚠ Qualquer um recusado recusa os dois
+         (o mesmo "nada parcial" do motor): gravar só a duração e recusar o
+         Depende de deixaria a pessoa sem saber o que entrou. */
+      var pedidos = (p.campos && p.campos.length) ? p.campos : [{ campo: p.campo, texto: p.texto }];
+      var ops = [], rotulos = [];
+      for (var ip = 0; ip < pedidos.length; ip++) {
+        var res = GanttUI.opsDaDigitacao(r, no, pedidos[ip].campo, pedidos[ip].texto, ctxD);
+        if (!res.ok) {
+          // aprovado: a trava tem modal com a porta (criar revisão / plano da obra), não um toast
+          if (res.travadoAprovacao) this._cronoTravado(alvo);
+          else UI.toast(res.msg, "erro");
+          return { ok: false, msg: res.msg, porta: res.porta, campo: pedidos[ip].campo, travadoAprovacao: !!res.travadoAprovacao };
+        }
+        for (var jo = 0; jo < res.ops.length; jo++) ops.push(res.ops[jo]);
+        if (res.msg) rotulos.push(res.msg);
+      }
+      if (!ops.length) return { ok: true, mudou: false };
+      return this._cronoGravarOps(alvo, ops, no, r, { origem: p.origem || "grade", rotulo: rotulos.join(" ") });
+    },
+
+    /* [Soltar a data] da caixa "Datas fixadas no Gantt": apaga a restrição
+       "não iniciar antes de" que o arrasto gravou — a etapa volta para onde a
+       rede a põe. Pelo caminho único (entra no desfazer e no recado). */
+    _cronoSoltarData: function (id) {
+      var alvo = null;
+      try { alvo = this._cronoAlvo(); } catch (eA) { alvo = null; }
+      if (!alvo || !id || typeof Cronograma === "undefined" || typeof GanttUI === "undefined") return;
+      if (alvo.travado) { this._cronoTravado(alvo); return; }
+      var r = null;
+      try { r = Cronograma.estimar(alvo.orc, null, { eap: true }); } catch (eR) { r = null; }
+      var no = r ? GanttUI.acharNo(r, id) : null;
+      var rs = alvo.cron && alvo.cron.restricoes && typeof alvo.cron.restricoes === "object" ? alvo.cron.restricoes[id] : null;
+      if (!no || !rs) { UI.toast("Esta etapa não tem mais data fixada — nada a soltar.", ""); this.render(); return; }
+      this._cronoGravarOps(alvo, [{ alvo: "etapa", id: id, campo: "restricaoData", de: { tipo: rs.tipo, data: rs.data }, para: null }], no, r, { origem: "soltar" });
     },
 
     /* TECLADO no painel do tempo: setas movem a linha escolhida e rolam o
@@ -6412,9 +7021,32 @@
        navegável por teclado. */
     _gxTecla: function (ev) {
       var g = this._gx; if (!g || typeof GanttUI === "undefined") return;
+      /* ⚠ Ctrl+Z (sem Shift/Alt) desfaz a última alteração do cronograma —
+         digitada OU arrastada (F6). É a única combinação com modificador que
+         entra: Ctrl + roda é zoom (outro ouvinte), e Ctrl+C/Ctrl+F e os
+         atalhos do navegador seguem livres. */
+      if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && !ev.shiftKey && String(ev.key).toLowerCase() === "z") {
+        ev.preventDefault();
+        this.cronoArrastoDesfazer();
+        return;
+      }
       if (ev.ctrlKey || ev.altKey || ev.metaKey) return;
       var p = this._gxPro(); if (!p || !p.e) return;
       var k = ev.key, n = p.L.length, e = p.e;
+      /* A GRADE Dur./Depende de PELO TECLADO (F6, o teclado do MS Project):
+         com uma linha escolhida (↑↓), Enter ou F2 abre a Dur.; UM DÍGITO abre
+         a Dur. já com ele. ⚠ Só dígito, nunca "qualquer tecla": `+` e `-` são
+         zoom aqui e são também sintaxe do "Depende de" (1+7, 1-3) — abrir o
+         campo por qualquer tecla trocaria o zoom por uma edição. */
+      if (typeof GanttGradeUI !== "undefined" && GanttGradeUI.abrir && g.z.sel >= 0 && g.z.sel < n &&
+          (k === "Enter" || k === "F2" || /^[0-9]$/.test(String(k)))) {
+        var lS = p.L[g.z.sel], noS = lS ? (lS.no || lS.et) : null;
+        if (noS) {
+          ev.preventDefault();
+          GanttGradeUI.abrir(this, g, noS.id, "dur", { origem: "tecla", texto: /^[0-9]$/.test(String(k)) ? String(k) : null });
+          return;
+        }
+      }
       if (k === "ArrowDown" || k === "ArrowUp") {
         ev.preventDefault();
         if (!n) return;
@@ -6895,8 +7527,8 @@
       this.expandirEtapa(etapaId); // camadas novas não podem nascer escondidas numa etapa recolhida
       this._pcPreview = null;  // limpa o preview após aplicar
       this.aba = "planilha";  // leva o usuário pro orçamento pra ver as camadas
-      this.persistir(); this.render();
-      UI.toast(out.adicionadas + " camada(s) adicionada(s) ao orçamento" + (out.puladas ? " · " + out.puladas + " pulada(s) (sem código/unidade divergente)" : "") + ".", out.adicionadas ? "ok" : "info");
+      var gPc = this.persistir(); this.render();
+      if (this._gravou(gPc)) UI.toast(out.adicionadas + " camada(s) adicionada(s) ao orçamento" + (out.puladas ? " · " + out.puladas + " pulada(s) (sem código/unidade divergente)" : "") + ".", out.adicionadas ? "ok" : "info");
     },
     /* Refina as durações com a IA do ERP (planejador) — fonte de verdade =
        backend (a chave da IA fica lá). Nesta fase só as TRAVAS (espec 1.10);
@@ -7694,6 +8326,16 @@
       try { adm = !(typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin()); } catch (eA) { adm = true; }
       if (trial) return "este aparelho está em modo demonstração ou com a licença suspensa — ative a licença em 🔑";
       if (ehPlano) return "o motivo está no aviso ao pé da tela";
+      /* ⚠ F2: com a trava de carimbo o `false` do persistir também é "outra
+         janela gravou por cima" — dizer "armazenamento cheio?" mandaria a
+         pessoa apagar base por um problema que não existe */
+      try {
+        if (typeof Store !== "undefined" && Store.ultimaRecusa) {
+          return Store.ultimaRecusa.tipo === "incerto"
+            ? "não consegui conferir se este orçamento foi alterado em outra janela (ou em outro aparelho) — recarregue o app (F5)"
+            : "este orçamento foi alterado em outra janela (ou em outro aparelho) depois que a IA o leu — feche este quadro, confira o que está salvo e peça de novo";
+        }
+      } catch (eU) {}
       return adm ? "o armazenamento deste aparelho recusou (cheio?) — faça 💾 Backup e veja o que ocupa espaço em 🗂 Tabelas › Saúde do armazenamento"
         : "o armazenamento deste aparelho recusou (cheio?) — avise o administrador da conta";
     },
@@ -7837,7 +8479,11 @@
       }
       try { this._materializarSeExec(rev); } catch (eM) {}   // a revisão nasce com o gravado igual ao prazo que ela mostra (como no criarRevisao)
       if (!Store.salvarOrcamento(eid, rev)) {
-        m = "A revisão NÃO foi gravada — o armazenamento deste aparelho recusou (cheio?). Nada foi criado; o aprovado continua intacto.";
+        /* revisão tem id novo: a trava de carimbo só a recusa se não conseguir
+           conferir o disco ("incerto") — e aí o motivo não é cota (F2) */
+        m = (Store.ultimaRecusa
+          ? "A revisão NÃO foi gravada — não consegui conferir o armazenamento deste aparelho (recarregue o app, F5)."
+          : "A revisão NÃO foi gravada — o armazenamento deste aparelho recusou (cheio?).") + " Nada foi criado; o aprovado continua intacto.";
         this._iaAvisoDiff(m); return;
       }
       this._avisouTravado = null;
@@ -8797,7 +9443,8 @@
               if (elT) c[kT] = Orcamento.normalizarTextoComercial(kT, elT.value);
             }
             self._edSalvarBase(o, function () {
-              self.persistir(); UI.fecharModal(); self.render(); UI.toast("Dados salvos.", "ok");
+              var gD = self.persistir(); UI.fecharModal(); self.render();
+              if (self._gravou(gD)) UI.toast("Dados salvos.", "ok");   // ⚠ F2: sucesso só se gravou
             });
           } }
         ]);
@@ -8838,7 +9485,10 @@
           { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
           { texto: "Salvar", classe: "primary", onClick: function () {
             Orcamento.renomearEtapa(o, etapaId, (UI.el("et-nome") || {}).value || e.nome);
-            self.persistir(); UI.fecharModal(); self.render(); UI.toast("Etapa renomeada.", "ok");
+            /* ⚠ F2: o verde "Etapa renomeada." saía logo depois do vermelho da
+               recusa (foto A-recusa-1366.png da F1) — a pessoa lê o último */
+            var gN = self.persistir(); UI.fecharModal(); self.render();
+            if (self._gravou(gN)) UI.toast("Etapa renomeada.", "ok");
           } }
         ]);
       setTimeout(function () { var i = UI.el("et-nome"); if (i) { i.focus(); i.select(); } }, 50);
@@ -8882,8 +9532,8 @@
             var s = Orcamento.addSubEtapa(orc, etapaId, nome, mover);
             if (!s) { UI.fecharModal(); return; }
             if (self.expandirEtapa) self.expandirEtapa(etapaId, s.id);
-            self.persistir(); UI.fecharModal(); self.render();
-            UI.toast("Sub etapa criada." + (mover && nSoltos ? " " + nSoltos + " item(ns) foram para dentro dela." : ""), "ok");
+            var gS = self.persistir(); UI.fecharModal(); self.render();
+            if (self._gravou(gS)) UI.toast("Sub etapa criada." + (mover && nSoltos ? " " + nSoltos + " item(ns) foram para dentro dela." : ""), "ok");   // ⚠ F2
           } }
       ]);
       setTimeout(function () {
@@ -8906,7 +9556,8 @@
           { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
           { texto: "Salvar", classe: "primary", onClick: function () {
               Orcamento.renomearSubEtapa(orc, etapaId, subId, (UI.el("sub-nome") || {}).value || s.nome);
-              self.persistir(); UI.fecharModal(); self.render(); UI.toast("Sub etapa renomeada.", "ok");
+              var gSn = self.persistir(); UI.fecharModal(); self.render();
+              if (self._gravou(gSn)) UI.toast("Sub etapa renomeada.", "ok");   // ⚠ F2: sucesso só se gravou
             } }
         ]);
       setTimeout(function () { var i = UI.el("sub-nome"); if (i) { i.focus(); i.select(); } }, 50);
@@ -8925,8 +9576,8 @@
           { texto: "Remover sub etapa", classe: "", onClick: function () {
               UI.fecharModal();
               Orcamento.removerSubEtapa(orc, etapaId, subId);
-              self.persistir(); self.render();
-              UI.toast(n ? n + " item(ns) voltaram para a etapa." : "Sub etapa removida.", "ok");
+              var gSr = self.persistir(); self.render();
+              if (self._gravou(gSr)) UI.toast(n ? n + " item(ns) voltaram para a etapa." : "Sub etapa removida.", "ok");   // ⚠ F2
             } }
         ]);
     },
@@ -9213,7 +9864,8 @@
         var r = multi ? Fechamento.aplicarMulti(orc, alvo, crit, opts)
                       : Fechamento.aplicar(orc, alvo, crit[0].modo, opts);
         if (!r.ok) { UI.toast(r.erro, "erro"); return; }
-        self.persistir(); UI.fecharModal(); self.render();
+        var gFc = self.persistir(); UI.fecharModal(); self.render();
+        if (!self._gravou(gFc)) return;   // ⚠ F2: "Orçamento fechado em R$…" só se gravou
         var msg = "Orçamento fechado em " + Util.fmtMoeda(r.atingido);
         if (s.semOpcionais) msg += " sem os adicionais opcionais (eles estão em " + Util.fmtMoeda(Orcamento.totais(orc).precoOpcional) + ")";
         if (r.sobra && Math.abs(r.sobra) >= 0.01) msg += " (o mais perto possível de " + Util.fmtMoeda(alvo) + ")";
@@ -9254,8 +9906,8 @@
           { texto: "Desfazer", classe: "primary", onClick: function () {
               var r = Fechamento.desfazer(orc);
               if (!r.ok) { UI.toast(r.erro, "erro"); return; }
-              self.persistir(); UI.fecharModal(); self.render();
-              UI.toast("Fechamento desfeito — o orçamento voltou a " + Util.fmtMoeda(r.voltouPara) +
+              var gFd = self.persistir(); UI.fecharModal(); self.render();
+              if (self._gravou(gFd)) UI.toast("Fechamento desfeito — o orçamento voltou a " + Util.fmtMoeda(r.voltouPara) +
                 (Util.arr(orc.etapas).some(function (e) { return e && e.opcional; }) ? " (valor da proposta, sem os adicionais opcionais)" : "") + ".", "ok");
             } }
         ]);
@@ -9334,8 +9986,8 @@
       UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("nota", 15) : "") + " Memória de cálculo — " + (it.codigo || ""), body, [
         { texto: "Salvar só o texto", classe: "ghost", onClick: function () {
             it.memoriaCalculo = String((UI.el("mem-texto") || {}).value || "").trim();
-            self.persistir(); UI.fecharModal(); self.render();
-            UI.toast(it.memoriaCalculo ? "Memória de cálculo salva." : "Memória de cálculo removida.", "ok");
+            var gMm = self.persistir(); UI.fecharModal(); self.render();
+            if (self._gravou(gMm)) UI.toast(it.memoriaCalculo ? "Memória de cálculo salva." : "Memória de cálculo removida.", "ok");   // ⚠ F2
           } },
         { texto: "Usar a quantidade no orçamento", classe: "primary", onClick: function () { self.memSubir(); } }
       ]);
@@ -9497,8 +10149,8 @@
       var r = { ok: true, qtd: m.r.qtd, unidade: m.r.unidade, texto: textoTela || m.r.texto };
       var res = Orcamento.aplicarMemoriaQuantidade(orc, m.etapaId, m.itemId, r);
       if (!res.ok) { UI.toast(res.erro, "erro"); return; }
-      this.persistir(); UI.fecharModal(); this.render();
-      UI.toast("Quantidade " + Util.fmtNum(res.qtd, 2) + " " + Util.unidadeExibir(it.unidade) +
+      var gMq = this.persistir(); UI.fecharModal(); this.render();
+      if (this._gravou(gMq)) UI.toast("Quantidade " + Util.fmtNum(res.qtd, 2) + " " + Util.unidadeExibir(it.unidade) +
                " lançada com a memória de cálculo.", "ok");
     },
 
@@ -9573,8 +10225,8 @@
         { texto: "Salvar justificativa", classe: "primary", onClick: function () {
             var m = String((UI.el("aj-motivo") || {}).value || "").trim();
             (it.ajustes ? Object.keys(it.ajustes) : []).forEach(function (k) { it.ajustes[k].motivo = m; });
-            self.persistir(); UI.fecharModal(); self.render();
-            UI.toast(m ? "Justificativa salva." : "Justificativa removida.", "ok");
+            var gJ = self.persistir(); UI.fecharModal(); self.render();
+            if (self._gravou(gJ)) UI.toast(m ? "Justificativa salva." : "Justificativa removida.", "ok");   // ⚠ F2
           } }
       ]);
     },
@@ -9607,8 +10259,8 @@
         if (!Object.keys(it.coeficientes).length) delete it.coeficientes;
       }
       this._aplicarDeltaCoef(it, ins, atualAntes, novo);
-      this.persistir();
-      UI.toast("Coeficiente de " + cod + " ajustado — o custo unitário do item foi recalculado.", "ok");
+      var gCf = this.persistir();
+      if (gCf) UI.toast("Coeficiente de " + cod + " ajustado — o custo unitário do item foi recalculado.", "ok");   // ⚠ F2: sucesso só se gravou
       this.verInsumos(ctx.codigo, ctx.etapaId + "|" + ctx.itemId);   /* redesenha o modal */
       this.render();
     },
@@ -9656,8 +10308,8 @@
         if (insR) this._aplicarDeltaCoef(it, insR, atual, base);
         if (it.coeficientes) { delete it.coeficientes[cod]; if (!Object.keys(it.coeficientes).length) delete it.coeficientes; }
       }
-      this.persistir(); UI.fecharModal(); this.render();
-      UI.toast("Valor da base restaurado.", "ok");
+      var gVb = this.persistir(); UI.fecharModal(); this.render();
+      if (this._gravou(gVb)) UI.toast("Valor da base restaurado.", "ok");   // ⚠ F2: sucesso só se gravou
     },
 
     abrirAjustesLista: function () {
@@ -9694,19 +10346,23 @@
       UI.modal("Alterações sobre o preço da base (" + r.n + ")", body, [
         { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Restaurar TODOS os preços da base", classe: "ghost danger", onClick: function () {
+            var t0Tb = Date.now();
             if (!window.confirm("Restaurar os " + r.n + " itens para o preço da base?\n\n" +
               "As suas alterações E as justificativas escritas serão perdidas. Não há como desfazer.")) return;
-            r.itens.forEach(function (i) {
-              var et = (orc.etapas || []).filter(function (e) { return e.id === i.etapaId; })[0];
-              var it = et && (et.itens || []).filter(function (x) { return x.id === i.itemId; })[0];
-              if (!it) return;
-              Ajustes.restaurarTudo(it).forEach(function (c) {
-                if (c.campo === "custoUnitario") it.custoUnitario = c.base;
+            /* ⚠ F2: depois do `confirm`, a próxima tarefa (ver _aposDialogo) */
+            self._aposDialogo(t0Tb, function () {
+              r.itens.forEach(function (i) {
+                var et = (orc.etapas || []).filter(function (e) { return e.id === i.etapaId; })[0];
+                var it = et && (et.itens || []).filter(function (x) { return x.id === i.itemId; })[0];
+                if (!it) return;
+                Ajustes.restaurarTudo(it).forEach(function (c) {
+                  if (c.campo === "custoUnitario") it.custoUnitario = c.base;
+                });
+                if (it.coeficientes) delete it.coeficientes;
               });
-              if (it.coeficientes) delete it.coeficientes;
+              var gTb = self.persistir(); UI.fecharModal(); self.render();
+              if (self._gravou(gTb)) UI.toast("Todos os preços voltaram para a base.", "ok");   // ⚠ F2
             });
-            self.persistir(); UI.fecharModal(); self.render();
-            UI.toast("Todos os preços voltaram para a base.", "ok");
           } }
       ]);
     },
@@ -10014,7 +10670,10 @@
         /* item novo em etapa (ou sub etapa) recolhida nasceria invisível — o
            usuário reporta como "não lançou". */
         if (self.expandirEtapa) self.expandirEtapa(etapaAlvo, subAlvo);
-        self.persistir(); UI.fecharModal(); self.render();
+        var gIt = self.persistir(); UI.fecharModal(); self.render();
+        /* ⚠ F2: não gravou → nem "Item adicionado" nem reabrir a busca para
+           "continuar lançando" num orçamento que a tela acabou de reler */
+        if (!self._gravou(gIt)) return;
         if (continuar) {
           UI.toast("Item adicionado — continue lançando.", "ok");
           self.abrirBuscaSinapi(etapaAlvo, termoBusca, subAlvo);
@@ -10072,7 +10731,8 @@
       var p = {};
       ["AC", "S", "R", "G", "DF", "L", "I"].forEach(function (k) { p[k] = Util.num((UI.el("bdi-" + k) || {}).value); });
       Orcamento.aplicarBdi(this.orcAtual, modeloSel, p);
-      this.persistir(); this.render();
+      var gBdi = this.persistir(); this.render();
+      if (!this._gravou(gBdi)) return;   // ⚠ F2: "BDI aplicado" (e o aviso da faixa TCU) só se gravou
       UI.toast("BDI aplicado: " + Util.fmtPct(this.orcAtual.bdi.percentual), "ok");
       // LOTE 4: aviso não-bloqueante da faixa TCU 2.622/2013 (default: edificações)
       try {
@@ -10121,8 +10781,8 @@
       if (!isFinite(L)) L = Util.num(base.L);
       base.L = Math.round(L * 10000) / 10000; // 4 casas: com 2, cenário de 20 % gravava 20,01 %
       Orcamento.aplicarBdi(o, "custom", base); // grava params + percentual + modeloId juntos
-      this.persistir(); UI.fecharModal(); this.render();
-      UI.toast("Cenário aplicado — BDI " + Util.fmtNum(o.bdi.percentual, 2) + "%.", "ok");
+      var gCn = this.persistir(); UI.fecharModal(); this.render();
+      if (this._gravou(gCn)) UI.toast("Cenário aplicado — BDI " + Util.fmtNum(o.bdi.percentual, 2) + "%.", "ok");   // ⚠ F2
     },
 
     // Excel profissional: workbook vivo com 3 abas (Resumo/Sintética/Analítica) + fórmulas
@@ -10232,8 +10892,8 @@
           UI.fecharModal();
           if (!aceitas.length) { UI.toast("Nada selecionado — nada aplicado.", "ok"); return; }
           var n = Roundtrip.aplicar(self.orcAtual, aceitas);
-          self.persistir(); self.render();
-          UI.toast("✅ " + n + " mudança(s) do Excel aplicadas ao orçamento.", "ok");
+          var gRx = self.persistir(); self.render();
+          if (self._gravou(gRx)) UI.toast("✅ " + n + " mudança(s) do Excel aplicadas ao orçamento.", "ok");   // ⚠ F2
         } }
       ]);
     },
@@ -11020,9 +11680,10 @@
            (só excluindo e re-adicionando), enquanto o detalhamento já
            mostrava o novo. A varredura cobre TODOS os orçamentos da
            empresa; o código antigo também casa (edição pode renomear). */
+        var abertoRecusadoRp = false, t0Rp = null, simRp = false, afetadosRp = null, eidRp = null;
         if (st.editando && !self._trialBloqueado()) { /* trial bloqueado nao grava orcamento por NENHUM caminho */
           try {
-            var eidRp = Auth.empresaId();
+            eidRp = Auth.empresaId();
             var afetados = [], listaRp = Store.listarOrcamentos(eidRp);
             listaRp.forEach(function (o) {
               var alvo = (self.orcAtual && self.orcAtual.id === o.id) ? self.orcAtual : o;
@@ -11031,13 +11692,13 @@
             });
             if (afetados.length) {
               var totRp = afetados.reduce(function (s, a) { return s + a.n; }, 0);
-              if (window.confirm("Esta composição está lançada em " + totRp + " item(ns) de " +
+              t0Rp = Date.now();
+              simRp = !!window.confirm("Esta composição está lançada em " + totRp + " item(ns) de " +
                   afetados.length + " orçamento(s). Atualizar o preço desses itens agora?\n\n" +
                   "OK = atualiza para " + Util.fmtMoeda(item.custoUnitario) + "/" + item.unidade +
-                  " · Cancelar = mantém como está")) {
-                self._salvarOrcsAfetados(eidRp, afetados);   // ⚠ materializa o modo executivo antes (ver _materializarSeExec)
-                UI.toast(totRp + " item(ns) reprecificado(s) em " + afetados.length + " orçamento(s).", "ok");
-                if (afetados.some(function (a) { return a.mesmoAberto; })) self.render();
+                  " · Cancelar = mantém como está");
+              if (simRp) {
+                afetadosRp = afetados;
               } else {
                 /* recusou: recarrega os orçamentos do disco para desfazer a
                    mutação em memória (a varredura mexeu nos objetos) */
@@ -11051,35 +11712,56 @@
             }
           } catch (eRp) {}
         }
-        // veio da busca do editor ("não achei o serviço") → a composição recém-
-        // criada JÁ entra na etapa de onde o orçamentista partiu, quantidade 1.
-        // Respeita o limite de itens do plano (mesma régua do escolherItemSinapi).
-        var addOk = false, limEstourado = false;
-        if (st.addNaEtapa && self.orcAtual && (self.orcAtual.etapas || []).some(function (e) { return e.id === st.addNaEtapa; })) {
-          self.expandirEtapa(st.addNaEtapa, st.addNaSub || ""); // senão o item nasce escondido numa etapa (ou sub etapa) recolhida
-          var limCp = Auth.limite("limiteItensPorOrcamento");
-          if (Orcamento.totais(self.orcAtual).qtdItens >= limCp) {
-            limEstourado = true;
-          } else {
-            /* ⚠ ENTRA SEM QUANTIDADE, de propósito (v1.1.226).
-               Aqui era `1` cravado, e o toast pedia "ajuste" — um metro
-               quadrado que ninguém digitou somando no total até alguém
-               reparar. Agora entra PENDENTE: não soma, aparece marcado na
-               planilha e o botão da memória vira "Calcular". É o fluxo de
-               montar a composição primeiro e levantar a metragem depois. */
-            Orcamento.addItem(self.orcAtual, st.addNaEtapa, {
-              codigo: item.codigo, descricao: item.descricao, unidade: item.unidade,
-              custoUnitario: item.custoUnitario, custoMO: item.custoMO, custoMAT: item.custoMAT,
-              custoEQ: item.custoEQ, baseFonte: "PROPRIA"
-            }, 0, st.addNaSub || "");
-            self.persistir();
-            addOk = true;
+        /* ⚠ F2: respondido o `confirm` por tempo de gente, o que grava orçamento
+           roda na PRÓXIMA tarefa — senão a trava compara com o disco de antes
+           do diálogo e passa por cima da outra janela (ver _aposDialogo) */
+        self._aposDialogo(simRp ? t0Rp : null, function () {
+          if (afetadosRp) {
+            try {
+              var resRp = self._salvarOrcsAfetados(eidRp, afetadosRp);   // ⚠ materializa o modo executivo antes (ver _materializarSeExec)
+              /* ⚠ F2: o recado conta o que GRAVOU e nomeia o que não gravou */
+              var rcRp = self._recadoOrcsAfetados(resRp);
+              if (rcRp.txt) UI.toast(rcRp.txt, rcRp.tipo, rcRp.ms);
+              abertoRecusadoRp = !!resRp.abertoRecusado;
+              if (resRp.abertoGravado) self.render();
+            } catch (eRp2) {}
           }
-        }
-        self._cp = null;
-        UI.fecharModal();
-        if (addOk) self.render();
-        UI.toast("Composição " + item.codigo + " gravada na base própria (" + Util.fmtMoeda(item.custoUnitario) + "/" + item.unidade + ")" + (addOk ? " e adicionada à planilha. Clique em Calcular na linha dela para levantar a quantidade." : (limEstourado ? ". Não entrou na planilha: limite de itens do plano atingido — faça upgrade." : " — já aparece na busca de itens.")), "ok");
+          // veio da busca do editor ("não achei o serviço") → a composição recém-
+          // criada JÁ entra na etapa de onde o orçamentista partiu, quantidade 1.
+          // Respeita o limite de itens do plano (mesma régua do escolherItemSinapi).
+          var addOk = false, limEstourado = false, addRecusado = false;
+          /* ⚠ F2: o orçamento aberto acabou de ser RECUSADO no lote acima (outra
+             janela gravou por cima): o `orcAtual` é a versão velha. Pôr o item
+             nele e gravar seria recusado de novo (segundo recado vermelho) — e,
+             sem a trava, apagaria a outra alteração. Nada mais é gravado nele. */
+          if (!abertoRecusadoRp && st.addNaEtapa && self.orcAtual && (self.orcAtual.etapas || []).some(function (e) { return e.id === st.addNaEtapa; })) {
+            self.expandirEtapa(st.addNaEtapa, st.addNaSub || ""); // senão o item nasce escondido numa etapa (ou sub etapa) recolhida
+            var limCp = Auth.limite("limiteItensPorOrcamento");
+            if (Orcamento.totais(self.orcAtual).qtdItens >= limCp) {
+              limEstourado = true;
+            } else {
+              /* ⚠ ENTRA SEM QUANTIDADE, de propósito (v1.1.226).
+                 Aqui era `1` cravado, e o toast pedia "ajuste" — um metro
+                 quadrado que ninguém digitou somando no total até alguém
+                 reparar. Agora entra PENDENTE: não soma, aparece marcado na
+                 planilha e o botão da memória vira "Calcular". É o fluxo de
+                 montar a composição primeiro e levantar a metragem depois. */
+              Orcamento.addItem(self.orcAtual, st.addNaEtapa, {
+                codigo: item.codigo, descricao: item.descricao, unidade: item.unidade,
+                custoUnitario: item.custoUnitario, custoMO: item.custoMO, custoMAT: item.custoMAT,
+                custoEQ: item.custoEQ, baseFonte: "PROPRIA"
+              }, 0, st.addNaSub || "");
+              /* ⚠ F2: "e adicionada à planilha" só se o orçamento gravou */
+              addOk = !!self.persistir();
+              addRecusado = !addOk;
+            }
+          }
+          self._cp = null;
+          UI.fecharModal();
+          if (addOk) self.render();
+          else if (addRecusado || abertoRecusadoRp) self._gravou(false);   // aplica a releitura pendente agora que o quadro fechou
+          UI.toast("Composição " + item.codigo + " gravada na base própria (" + Util.fmtMoeda(item.custoUnitario) + "/" + item.unidade + ")" + (addOk ? " e adicionada à planilha. Clique em Calcular na linha dela para levantar a quantidade." : (limEstourado ? ". Não entrou na planilha: limite de itens do plano atingido — faça upgrade." : ((addRecusado || (abertoRecusadoRp && st.addNaEtapa)) ? " — já aparece na busca de itens, mas NÃO entrou na planilha (veja o aviso vermelho)." : " — já aparece na busca de itens."))), "ok");
+        });
       };
       if (r.avisos.length) {
         // avisos não bloqueiam, mas exigem decisão EXPLÍCITA (sem margem p/ erro escondido)
@@ -11399,6 +12081,7 @@
         (atualizadas.length ? "· " + atualizadas.length + " composição(ões) própria(s) (" + atualizadas.slice(0, 5).map(function (c) { return c.codigo; }).join(", ") + (atualizadas.length > 5 ? "…" : "") + ")\n" : "") +
         (afetados.length ? "· " + totItens + " item(ns) de " + afetados.length + " orçamento(s)\n" : "") +
         "\nOK = atualiza tudo agora · Cancelar = só o insumo muda (o resto fica com o valor antigo)";
+      var t0In = Date.now();
       if (!window.confirm(pergunta)) {
         /* recusou: os orçamentos foram mexidos EM MEMÓRIA pela varredura —
            recarrega do disco, senão o "não" viraria "sim" no próximo salvar.
@@ -11414,11 +12097,23 @@
         if (atualizadas.length) UI.toast(atualizadas.length + " composição(ões) continuam com o preço antigo deste insumo — reabra e regrave quando quiser atualizar.", "erro");
         return;
       }
-      atualizadas.forEach(function (c) { self._propriaGravar(c, null, null); });
-      this._salvarOrcsAfetados(eid, afetados);   // ⚠ materializa o modo executivo antes (ver _materializarSeExec)
-      if (afetados.some(function (a) { return a.mesmoAberto; })) this.render();
-      UI.toast("Atualizado: " + (atualizadas.length ? atualizadas.length + " composição(ões)" : "") + (atualizadas.length && totItens ? " e " : "") +
-        (totItens ? totItens + " item(ns) de orçamento" : "") + ".", "ok");
+      /* ⚠ F2: respondido o `confirm` por tempo de gente, a gravação roda na
+         PRÓXIMA tarefa — senão a trava compara com o disco de antes do diálogo
+         e passa por cima da outra janela (ver _aposDialogo) */
+      this._aposDialogo(t0In, function () {
+        atualizadas.forEach(function (c) { self._propriaGravar(c, null, null); });
+        var resIn = self._salvarOrcsAfetados(eid, afetados);   // ⚠ materializa o modo executivo antes (ver _materializarSeExec)
+        if (resIn.abertoGravado) self.render();
+        /* ⚠ F2: "Atualizado: … N item(ns) de orçamento" contava os recusados pela
+           trava de carimbo; agora conta o que gravou e nomeia o que não gravou */
+        if (!resIn.recusados.length && !resIn.falhos.length) {
+          UI.toast("Atualizado: " + (atualizadas.length ? atualizadas.length + " composição(ões)" : "") + (atualizadas.length && totItens ? " e " : "") +
+            (totItens ? totItens + " item(ns) de orçamento" : "") + ".", "ok");
+        } else {
+          var rcIn = self._recadoOrcsAfetados(resIn, atualizadas.length ? " e " + atualizadas.length + " composição(ões) própria(s) atualizada(s)" : "");
+          UI.toast(rcIn.txt, rcIn.tipo, rcIn.ms);
+        }
+      });
     },
     /* ==================================================================
      * ELABORAR COMPOSIÇÃO — o agente, chamável de qualquer lugar (v1.1.220)
@@ -12081,8 +12776,8 @@
         add++;
       }
       this._escopoIA = false;
-      this.persistir(); UI.fecharModal(); this.render();
-      UI.toast(add + " itens adicionados" + (pend ? " · " + pend + " pendentes ignorados" : "") + ".", "ok");
+      var gEs = this.persistir(); UI.fecharModal(); this.render();
+      if (this._gravou(gEs)) UI.toast(add + " itens adicionados" + (pend ? " · " + pend + " pendentes ignorados" : "") + ".", "ok");
     },
 
     // Escopo via IA: prosa livre -> IA estrutura -> casa c/ bases -> IA escolhe o código certo (/ia/casar)
@@ -12521,12 +13216,43 @@
         UI.toast("A planilha tem " + nIt + " itens e o seu plano permite " + limIt + " por orçamento. Restauração cancelada para não entregar um orçamento pela metade.", "erro");
         return;
       }
-      orc.atualizadoEm = Util.agoraISO();
       orc.restauradoEm = Util.agoraISO();       // rastro: este orçamento voltou de um Excel
       this._materializarSeExec(orc);             // gravação NOVA deste aparelho (não é dado recebido da nuvem)
+      /* ⚠ F2 — RESTAURAR É GRAVAR UMA VERSÃO ANTIGA DE PROPÓSITO (categoria D
+         da trava de carimbo). O retrato da planilha traz o `atualizadoEm` da
+         exportação, que nunca é o do disco; e aqui havia um pré-carimbo
+         "agora", que também nunca é. Com a trava, TODA restauração era
+         recusada — e o retorno ignorado: toast "Orçamento … substituído da
+         planilha" com nada gravado, ou, com o orçamento excluído, "Orçamento
+         não encontrado." seguido de "…restaurado da planilha" (medido na
+         sonda da F1; e2e-restaurar-planilha 0 → 7 falhas).
+         A pessoa ACABOU de confirmar ("Substituir pelo da planilha" /
+         "Restaurar este orçamento"): o disco é lido AGORA, nesta pilha, e o
+         carimbo dele vai como `baseEm` — a gravação só passa se ninguém gravar
+         entre esta leitura e a gravação logo abaixo. Sem registro no disco
+         (excluído, ou nunca existiu aqui), `baseEm: ""` diz "parti do nada",
+         que passa mesmo com lápide: desfazer a exclusão é o que a pessoa
+         pediu. Quem carimba é o Store. */
+      var discoRs = null;
+      try { discoRs = Store.obterOrcamento(eid, orc.id); } catch (eD) { discoRs = null; }
+      var gravouRs = null;
       try {
-        Store.salvarOrcamento(eid, orc);
+        gravouRs = Store.salvarOrcamento(eid, orc, false, { baseEm: discoRs ? String(discoRs.atualizadoEm || "") : "" });
       } catch (eS) { UI.toast("Falhou ao gravar o orçamento restaurado: " + ((eS && eS.message) || eS), "erro"); return; }
+      if (!gravouRs) {
+        /* nada mais é gravado (nem as composições próprias abaixo) e nada
+           de "restaurado" na tela */
+        var recRs = Store.ultimaRecusa;
+        var txtRs = recRs
+          ? "O orçamento " + (orc.numero || "") + " NÃO foi restaurado: " + (recRs.tipo === "incerto" ? "não consegui conferir se ele foi alterado em outra janela (ou em outro aparelho) — recarregue o app (F5) e tente de novo." : "ele foi alterado em outra janela (ou em outro aparelho) no mesmo instante. Nada foi gravado — confira o que está no app e restaure de novo, se ainda for preciso.")
+          : "O orçamento " + (orc.numero || "") + " NÃO foi restaurado: o armazenamento deste aparelho recusou (cheio?). Nada foi gravado — faça 💾 Backup e veja o que ocupa espaço em 🗂 Tabelas › Saúde do armazenamento.";
+        UI.toast(txtRs, "erro", this._msRecado(txtRs));
+        return;
+      }
+      /* (a lápide de um orçamento excluído fica: o Store carimbou "agora", mais
+         novo que ela, e o merge da nuvem o mantém — como na 1.2.77. O
+         `desenterrar` só é preciso para quem grava com o carimbo ANTIGO, o
+         backup e o pacote.) */
       /* ===== AS COMPOSIÇÕES PRÓPRIAS VOLTAM ANTES DO ORÇAMENTO =====
          O item lançado é snapshot e sozinho já mostra o preço certo — mas sem a
          estrutura ele é um preço fixo: não abre no detalhamento e não dá para
@@ -13172,6 +13898,37 @@
          elaboração de ninguém. */
       try { Orcamento.marcarDiaEdicao(this.orcAtual, Util.agoraISO()); } catch (e) {}
       var ok = Store.salvarOrcamento(Auth.empresaId(), this.orcAtual);
+      /* ⚠ RECUSA DA TRAVA DE CARIMBO NÃO É ARMAZENAMENTO CHEIO. Antes da trava,
+         `null` só vinha da cota, e este ramo dizia "armazenamento cheio" e
+         abria o modal de Backup. Com a trava, `null` também quer dizer "outra
+         janela (ou outro aparelho) gravou por cima desde que esta tela abriu"
+         — e o recado de cota, medido na prova do desenho, mandava a pessoa
+         fazer backup e apagar base por um problema que não existia, enquanto
+         a tela seguia mostrando um valor que NÃO estava no disco. Aqui: o
+         recado do que aconteceu, com a hora, a releitura do que está salvo, e
+         nada de `_avisouQuota` nem de `abrirBackup`. */
+      if (!ok && Store.ultimaRecusa) {
+        var rec = Store.ultimaRecusa;
+        /* duração pelo tamanho do texto (F2): o de 2,6 s sumia antes de ser lido */
+        try { this._relerAberto("recusa"); } catch (eRl) {}
+        /* ⚠ COM QUADRO ABERTO, O TEXTO SE DECIDE NA TAREFA SEGUINTE. Quase
+           todos os ~20 chamadores fecham o quadro na linha DEPOIS deste
+           `persistir` e aplicam a releitura na hora (`_gravou(false)`).
+           Decidido aqui, o recado mandava "Feche este quadro: a tela será
+           atualizada" com o quadro já fechado e a tela já atualizada (medido
+           na revisão: renomear etapa, modal aberto? false). Na tarefa
+           seguinte o `#modal-bg` diz a verdade: quem deixou o quadro aberto
+           recebe "Feche este quadro"; quem fechou, "A tela foi atualizada". */
+        var selfRc = this;
+        var recadoRc = function () {
+          try {
+            if (!selfRc._relModalAberto()) { try { selfRc._relerAplicarPendente(); } catch (eAp) {} }
+            var txtRc = selfRc._recadoRecusa(rec, opts); UI.toast(txtRc, "erro", selfRc._msRecado(txtRc));
+          } catch (eRc) {}
+        };
+        if (this._relModalAberto()) setTimeout(recadoRc, 0); else recadoRc();
+        return false;
+      }
       if (!ok && !this._avisouQuota) {
         this._avisouQuota = true;
         /* ⚠ o backup agora é só do administrador (leva a empresa inteira).
@@ -13187,6 +13944,173 @@
         if (_adm && !(opts && opts.semBackupModal)) { try { this.abrirBackup(); } catch (e) {} }
       } else if (ok) { this._avisouQuota = false; try { this.backupAuto(); } catch (e) {} }
       return !!ok;
+    },
+
+    /* =====================================================================
+     * ⚠ RELEITURA ENTRE JANELAS — a única rotina que troca o `orcAtual` por
+     *   causa de fora (outra janela, outro aparelho, a recusa da trava).
+     *
+     * Por que existe: a trava de carimbo (Store.salvarOrcamento) impede que a
+     * janela velha apague o trabalho da outra — mas sem releitura a janela
+     * velha ficaria recusando cada edição, com a tela mostrando o que não
+     * está no disco. A prova do desenho (14/09/2026) mediu as regras abaixo
+     * nas duas janelas, com teclado real:
+     *
+     * - ⚠ MODAL ABERTO → NÃO TROCA. O modal segura a referência antiga (há
+     *   dezenas de `var o = this.orcAtual` em callbacks de modal). Trocar por
+     *   baixo faria o `persistir` gravar o objeto NOVO, a trava passar, e a
+     *   edição do modal sumir SEM recusa nenhuma. Com o modal aberto, deixa a
+     *   trava recusar e relê quando ele fechar.
+     * - ⚠ CAMPO FOCADO OU ARRASTO → TROCA O OBJETO SEM REDESENHAR. Redesenhar
+     *   por cima de quem digita apaga o que está no campo. Trocar sem render
+     *   é seguro porque os handlers aplicam DELTA sobre `this.orcAtual`
+     *   (`cD.duracoes[id] = …`, `Orcamento.atualizarItem(this.orcAtual, …)`,
+     *   `_gxSoltar` relê o alvo): medido, A com "44" digitado no campo quando
+     *   B gravou e1=21 manteve foco e valor, e o Tab gravou as duas.
+     * - sem modal e sem foco → troca e redesenha.
+     * ===================================================================== */
+    _REL_OBRA: { crono_obra: 1, obras: 1, rdo: 1, medicoes: 1 },
+    _relModalAberto: function () {
+      try { return !!(document.getElementById("modal-bg") || document.querySelector(".modal-bg")); } catch (e) { return false; }
+    },
+    _relOcupado: function () {
+      try {
+        var b = document.body;
+        if (b && b.classList && (b.classList.contains("gx-arrastando") || b.classList.contains("pn-redim"))) return true;
+        var ae = document.activeElement;
+        if (!ae || ae === b) return false;
+        var tag = String(ae.tagName || "").toUpperCase();
+        if (tag === "TEXTAREA" || tag === "SELECT") return true;
+        /* caixa de marcar e botão não têm texto a perder: foco neles não pode
+           segurar a tela velha até alguém clicar em outro lugar */
+        if (tag === "INPUT") return !/^(checkbox|radio|button|submit|reset|image|range|color|file)$/i.test(String(ae.type || ""));
+        return !!(ae.isContentEditable || (ae.getAttribute && ae.getAttribute("contenteditable") != null && ae.getAttribute("contenteditable") !== "false"));
+      } catch (e) { return false; }
+    },
+    /* `obraTambem`: a entidade de obra que chegou na MESMA rajada de um
+       orçamento (ver `_relerAgendar`) */
+    _relerAberto: function (motivo, obraTambem) {
+      if (!Auth.usuario() || this.tela === "login" || this._janelaSemDado) return;
+      if (this.tela === "lista") {
+        if (!this._relModalAberto() && !this._relOcupado()) { this._relerRenderPendente = false; try { this.render(); } catch (eL) {} }
+        else this._relerDeverRender();
+        return;
+      }
+      if (this.tela !== "editor" || !this.orcAtual) return;
+      var eid = Auth.empresaId(), atual = this.orcAtual, disco = null;
+      try { disco = Store.obterOrcamento(eid, atual.id); } catch (eD) { return; }
+      var modal = this._relModalAberto();
+      if (!disco) {
+        if (modal) { this._relerPendente = motivo || "orcamentos"; this._relerVigiar(); return; }
+        var numExc = atual.numero || "";
+        this.orcAtual = null; this.tela = "lista";
+        this._relerPendente = null; this._relerRenderPendente = false;
+        try { this.render(); } catch (eR0) {}
+        /* a recusa do persistir já disse isto com a hora; não empilha outro */
+        if (motivo !== "recusa") { var txtExc = "O orçamento " + numExc + " foi excluído em outra janela (ou em outro aparelho) — o editor foi fechado. Se precisar dele de volta, restaure do backup."; UI.toast(txtExc, "erro", this._msRecado(txtExc)); }
+        return;
+      }
+      var mesmo = String(disco.atualizadoEm || "") === String(atual.atualizadoEm || "");
+      if (mesmo) {
+        /* o orçamento não mudou; mas o plano da obra, a obra, o diário ou a
+           medição podem ter mudado, e a aba Cronograma desenha a partir deles
+           (o plano de execução é relido a cada render por _cronoAlvo) */
+        var mObra = this._REL_OBRA[motivo] ? motivo : ((obraTambem && this._REL_OBRA[obraTambem]) ? obraTambem : null);
+        if (!(mObra && this.aba === "cronograma")) return;
+        if (modal) { this._relerPendente = mObra; this._relerVigiar(); return; }
+        if (this._relOcupado()) { this._relerDeverRender(); return; }
+        this._relerPendente = null; this._relerRenderPendente = false;
+        try { this.render(); } catch (eR1) {}
+        return;
+      }
+      if (modal) { this._relerPendente = motivo || "orcamentos"; this._relerVigiar(); return; }
+      this.orcAtual = disco;
+      if (this._relOcupado()) { this._relerPendente = null; this._relerDeverRender(); return; }
+      this._relerPendente = null; this._relerRenderPendente = false;
+      try { this.render(); } catch (eR2) {}
+    },
+    /* fica devendo UM render. Guarda o contador de renders (`_rtok`, que o
+       render incrementa): se o handler que vier depois já redesenhar — o caso
+       comum, o `change` do campo chama persistir + render —, a dívida está
+       paga e o intervalo não redesenha de novo por cima do que a pessoa faz. */
+    _relerDeverRender: function () {
+      this._relerRenderPendente = true;
+      this._relerRenderTok = this._rtok || 0;
+      this._relerVigiar();
+    },
+    /* Pendência (modal aberto ou campo focado): um intervalo de 500 ms que só
+       existe enquanto houver pendência, e morre quando ela zera. ⚠ Não é
+       redesenho em loop: `_relerAberto` só chama render quando consegue
+       aplicar, e aplicar zera a pendência — um render por pendência. */
+    _relerVigiar: function () {
+      var self = this;
+      if (this._relerTimer || !(this._relerPendente || this._relerRenderPendente)) return;
+      this._relerTimer = setInterval(function () { self._relerAplicarPendente(); }, 500);
+    },
+    _relerAplicarPendente: function () {
+      if (this._relerRenderPendente && (this._rtok || 0) !== this._relerRenderTok) this._relerRenderPendente = false;   // já redesenhou
+      if (!(this._relerPendente || this._relerRenderPendente)) { if (this._relerTimer) { clearInterval(this._relerTimer); this._relerTimer = null; } return; }
+      if (this._relModalAberto() || this._relOcupado()) return;
+      if (this._relerTimer) { clearInterval(this._relerTimer); this._relerTimer = null; }
+      var m = this._relerPendente;
+      this._relerPendente = null;
+      if (m) { try { this._relerAberto(m); } catch (e) {} }
+      /* o objeto já tinha sido trocado (campo focado) e ninguém redesenhou
+         depois: o render devido sai aqui, uma vez */
+      if (this._relerRenderPendente && (this._rtok || 0) === this._relerRenderTok && !this._relModalAberto() && !this._relOcupado()) {
+        this._relerRenderPendente = false;
+        if (this.tela === "editor" || this.tela === "lista") { try { this.render(); } catch (eR) {} }
+      }
+    },
+    /* Uma releitura por rajada: o `storage` chega uma vez por chave, e uma
+       gravação de orçamento com lápide chega em duas (orcamentos + _lapides).
+       120 ms juntam a rajada; o motivo que pesa é o do orçamento. */
+    _relerAgendar: function (motivo) {
+      var self = this;
+      if (!this._relerMotivos) this._relerMotivos = {};
+      this._relerMotivos[motivo || "?"] = 1;
+      if (this._relerEspera) return;
+      this._relerEspera = setTimeout(function () {
+        var ms = self._relerMotivos || {}, m = null, obra = null, k;
+        self._relerMotivos = {}; self._relerEspera = null;
+        for (k in ms) { if (Object.prototype.hasOwnProperty.call(ms, k) && self._REL_OBRA[k]) { obra = k; break; } }
+        if (ms.orcamentos || ms._lapides) m = "orcamentos";
+        else m = obra;
+        if (!m) m = ms.visivel ? "visivel" : "?";
+        /* ⚠ a entidade de obra VAI JUNTO quando a rajada também trouxe
+           orçamento. Sem ela, medido pela sonda da revisão (14/09/2026): outra
+           janela grava o plano da obra (disco e1=44) e, na mesma rajada, um
+           orçamento qualquer; o motivo virava só "orcamentos", o orçamento
+           aberto não tinha mudado ("mesmo carimbo" → sai) e a tela do plano
+           ficou em 33 até alguém tocar. Assert: e2e-duas-janelas [6b]. */
+        try { self._relerAberto(m, obra); } catch (e) {}
+      }, 120);
+    },
+    /* O recado da recusa. Texto puro (UI.toast escreve por textContent). Diz o
+       que aconteceu, a hora do que está salvo e o que fazer — "erro ao salvar"
+       a pessoa lê como formalidade; hora ela confere na outra janela. */
+    _recadoRecusa: function (rec, opts) {
+      rec = rec || {};
+      var hora = "";
+      try {
+        var iso = rec.tipo === "apagado" ? rec.lapideEm : rec.discoEm;
+        var d = iso ? new Date(iso) : null;
+        if (d && !isNaN(d.getTime())) hora = " às " + d.toLocaleTimeString("pt-BR");
+      } catch (eH) { hora = ""; }
+      var rot = (opts && opts.rotulo) ? " (" + String(opts.rotulo) + ")" : "";
+      var modal = this._relModalAberto();
+      if (rec.tipo === "apagado") {
+        return "O orçamento " + (rec.numero || "") + " foi excluído em outra janela (ou em outro aparelho)" + hora + ". Nada foi gravado" +
+          (modal ? ". Feche este quadro: o editor será fechado." : " e o editor foi fechado.") + " Se precisar dele de volta, restaure do backup.";
+      }
+      if (rec.tipo === "incerto") {
+        return "Não consegui conferir se este orçamento foi alterado em outra janela (ou em outro aparelho). A sua última alteração" + rot +
+          " não foi gravada, para não arriscar apagar a outra. Recarregue o app (F5) e refaça.";
+      }
+      return "Este orçamento foi alterado em outra janela (ou em outro aparelho)" + hora + ". A sua última alteração" + rot +
+        " não foi gravada, para não apagar a outra. " +
+        (modal ? "Feche este quadro: a tela será atualizada com o que está salvo."
+               : "A tela foi atualizada com o que está salvo: confira e refaça, se ainda for preciso.");
     }
   };
 

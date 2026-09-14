@@ -150,7 +150,23 @@
       var e6 = addE("Acabamentos");
       addB(e6, "87263", 180, "Revestimento cerâmico para piso", "m2", 68.5);
       addB(e6, "88489", 920, "Pintura látex acrílica, duas demãos", "m2", 16);
-      if (Store.salvarOrcamento(eid(), orc) == null) throw new Error("Sem espaço no armazenamento do navegador (orçamento) — faça um backup/limpeza e tente de novo.");
+      /* ⚠ F2 (14/09/2026) — RECRIAR A DEMONSTRAÇÃO É DESFAZER A PRÓPRIA EXCLUSÃO.
+         O `remover` logo acima exclui o orçamento de id fixo `demo-ot-orc` e
+         deixa lápide; o `Orcamento.novo` já nasce com carimbo. Para a trava de
+         carimbo do Store isso é "orçamento que esta tela abriu e foi excluído
+         depois" → recusa "apagado". Resultado medido na sonda da F1: a
+         exceção "Sem espaço no armazenamento" (mentira: não era cota) e o
+         rollback apagando a demonstração inteira. A 1ª criação num perfil
+         limpo passava (sem lápide), por isso ninguém via.
+         A lápide sai ANTES (é a mesma id que esta chamada acabou de excluir
+         de propósito, como o pacote faz) e a recusa, se vier, diz o motivo
+         dela — não o de cota. */
+      try { Store.desenterrar(eid(), "orcamentos", [orc.id]); } catch (eDs) {}
+      if (Store.salvarOrcamento(eid(), orc) == null) {
+        var rec = Store.ultimaRecusa;
+        if (rec) throw new Error("O orçamento da demonstração foi alterado em outra janela (ou em outro aparelho) enquanto ela era recriada — nada foi gravado por cima. Feche a outra janela e tente de novo.");
+        throw new Error("Sem espaço no armazenamento do navegador (orçamento) — faça um backup/limpeza e tente de novo.");
+      }
       var precoVenda = Math.round(Orcamento.totais(orc).precoVenda);
 
       // ---------- 5) Obra (hub de tudo) ----------

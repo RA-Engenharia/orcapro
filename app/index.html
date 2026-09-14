@@ -56,6 +56,11 @@
   <script src="js/icones.js"></script>
   <script src="js/idb.js"></script>
   <script src="js/store.js"></script>
+  <!-- paineis.js: o tamanho dos painéis (Gantt, histograma, macrofluxo,
+       índice) e a preferência de cada pessoa — motor puro, sem DOM. ⚠ Motor
+       sem esta linha é recurso inerte: o ui.js e o app.js procuram `Paineis`
+       na hora da chamada e, sem ele, ficam no padrão calados. -->
+  <script src="js/paineis.js"></script>
   <script src="js/auth.js"></script>
   <script src="js/perfis.js"></script>
   <!-- o menu de dois niveis: motor puro, sem DOM (ver o cabecalho do arquivo) -->
@@ -111,11 +116,23 @@
        feriado) — e antes do app.js, que liga a tela. ⚠ motor sem esta linha é
        recurso inerte: passa no gate e não existe no navegador -->
   <script src="js/ganttui.js"></script>
+  <!-- paineisui.js: as alças de redimensionar com o mouse (altura do Gantt,
+       coluna de nomes, histograma, macrofluxo, índice da Planilha). Instala-se
+       sozinho por delegação no document. ⚠ Motor sem esta linha é recurso
+       inerte: sem o global PaineisUI o desenho não emite nenhuma alça e o
+       tamanho escolhido não vale — a tela fica a da 1.2.77, calada. -->
+  <script src="js/paineisui.js"></script>
   <!-- a IA que edita o orçamento ([Editar com IA]): motor puro que valida o que
        a IA propõe antes de qualquer gravação. Lê Orcamento, Cronograma e
        Proposta na hora da chamada, por isso vem depois deles; e antes do
        app.js, que liga a tela (sem esta linha o recurso não existe no navegador) -->
   <script src="js/iaedit.js"></script>
+  <!-- ganttgradeui.js: as colunas Dur./Depende de do Gantt (digitar a duração
+       e o "Depende de" ao lado da barra), o duplo clique na barra, o teclado e
+       o cartão. Fiação da tela: o app.js e o cronoexecui.js procuram
+       `GanttGradeUI` NA HORA DA CHAMADA, então a posição entre eles é livre.
+       ⚠ motor sem esta linha é recurso inerte: sem ela o Gantt é o da 1.2.77 -->
+  <script src="js/ganttgradeui.js"></script>
   <!-- os QUATRO PAPÉIS do cronograma (físico-financeiro, relatório mensal,
        lookahead, resumo executivo): motor puro. ⚠ A POSIÇÃO AQUI É LIVRE de
        propósito — ele resolve Cronograma, Orcamento, LastPlanner (que só

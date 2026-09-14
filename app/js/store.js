@@ -329,18 +329,127 @@
       return lista;
     },
 
+    /* =====================================================================
+     * ⚠ TRAVA DE CARIMBO (compare-and-set) — DUAS JANELAS NÃO SE APAGAM MAIS
+     *
+     * O DEFEITO, reproduzido com teclado real em duas abas do mesmo navegador
+     * (14/09/2026, 1.2.77): as duas abrem o mesmo orçamento; a aba B grava a
+     * duração da etapa 1 = 23; a aba A, aberta antes, grava a etapa 2 = 17 — e
+     * o disco fica com {e2:17}: o 23 de B SUMIU, calado. Vale Gantt × Gantt,
+     * Planilha × Gantt e Gantt × Planilha. E pior: B exclui o orçamento, A
+     * edita qualquer coisa e o orçamento EXCLUÍDO VOLTA ({existe:false} →
+     * {existe:true}), em todos os aparelhos, porque o carimbo novo vence a
+     * lápide no merge da nuvem. A nuvem não salva nada: a versão perdida
+     * nunca chega ao Firestore (o push lê o disco na hora de mandar).
+     * A causa: `abrirOrcamento` carrega o objeto UMA vez e esta função trocava
+     * o registro inteiro pelo da memória, sem conferir nada. O mesmo furo
+     * existe entre dois aparelhos (a nuvem grava o merge e não troca o aberto).
+     *
+     * A REGRA: só grava quem partiu da versão que está no disco. O chamador
+     * leu o registro com um carimbo (`atualizadoEm`); se o disco não tem mais
+     * esse carimbo, alguém gravou por cima desde então, e esta gravação
+     * apagaria o trabalho do outro. Recusa, devolve null e diz por quê em
+     * `Store.ultimaRecusa` — quem chamou mostra o recado e relê a tela.
+     *
+     * ⚠ COMPARA ANTES DE CARIMBAR. A linha que carimbava "agora" era a
+     *   primeira da função. Se ela continuar antes da comparação, o objeto
+     *   velho ganha carimbo novo NA MEMÓRIA mesmo recusado, a gravação
+     *   seguinte passa, e a trava vira decoração. Por isso a recusa não toca
+     *   em `orc.atualizadoEm` (assert próprio em tools/test-store-cas.js).
+     *
+     * ⚠ IGUALDADE (!==), E NÃO "O DISCO É MAIS NOVO" (>). A prova do desenho
+     *   usou `>`, e ele deixa passar dois casos reais: (a) restaurar backup
+     *   grava com `manterCarimbo` um carimbo MAIS ANTIGO — a janela que ficou
+     *   com o editor aberto sobrescreveria o backup recém-restaurado; (b) o
+     *   relógio de outro aparelho atrasado, trazido pelo merge da nuvem.
+     *
+     * ⚠ A BRECHA QUE SOBRA: o `localStorage` não tem trava entre processos do
+     *   navegador. Duas abas que gravam no mesmo instante (dentro do atraso de
+     *   sincronização entre elas, ou no mesmo milissegundo de carimbo) podem
+     *   as duas ler o disco antigo e passar. Em edição de gente, na velocidade
+     *   de gente, isso não acontece; ficou anotado para não ser vendido como
+     *   garantia absoluta.
+     *
+     * `manterCarimbo` (backup, pacote) é isento: é dado recebido, gravado de
+     * propósito com o carimbo dele. O merge da nuvem grava por
+     * `adapter.gravar` direto (js/nuvem.js), fora daqui — a trava não bloqueia
+     * o que desce da nuvem, e é isso que se quer.
+     *
+     * `opts.baseEm`: o carimbo que o CHAMADOR leu do disco nesta mesma pilha,
+     * para quem grava de propósito uma versão antiga (desfazer da IA,
+     * restaurar retrato): quando vem, é ele que se compara.
+     *
+     * Rollback: `Store.CAS_ATIVO = false` (a forma no disco não mudou; nada a
+     * migrar). ⚠ A janela destacada (F8) exige `CAS_ATIVO === true`.
+     * ===================================================================== */
+    CAS_ATIVO: true,
+    /* {tipo:"conflito"|"apagado"|"incerto", id, numero, base, discoEm, lapideEm}
+       — null depois de toda gravação que não foi recusada pela trava. `null`
+       devolvido com `ultimaRecusa === null` continua sendo falha do
+       armazenamento (cota cheia), como sempre foi. */
+    ultimaRecusa: null,
+
     /* `manterCarimbo` existe para UM caso: restaurar backup. O registro que vem
        do arquivo tem que entrar com o atualizadoEm DELE — carimbar "agora" num
        conteúdo de semana passada faz o merge da nuvem tratar o retrocesso como
        a versão mais recente e propagá-lo para os outros aparelhos. Em todo o
        resto do app o carimbo é sempre agora, que é o comportamento padrão. */
-    salvarOrcamento: function (empresaId, orc, manterCarimbo) {
-      if (!(manterCarimbo && orc && orc.atualizadoEm)) orc.atualizadoEm = Util.agoraISO();
+    salvarOrcamento: function (empresaId, orc, manterCarimbo, opts) {
+      this.ultimaRecusa = null;
       var lista = this.listarOrcamentos(empresaId);
       var idx = -1;
-      for (var i = 0; i < lista.length; i++) { if (lista[i].id === orc.id) { idx = i; break; } }
+      for (var i = 0; i < lista.length; i++) { if (orc && lista[i] && lista[i].id === orc.id) { idx = i; break; } }
+      if (this.CAS_ATIVO === true && !manterCarimbo && orc) {
+        var recusa = null, base = null;
+        /* ⚠ NA DÚVIDA, RECUSA: a trava não pode derrubar a gravação com uma
+           exceção, e também não pode deixar passar o que não conseguiu
+           conferir — passar calado é exatamente o defeito que ela fecha. */
+        try {
+          base = (opts && opts.baseEm !== undefined) ? opts.baseEm : orc.atualizadoEm;
+          if (idx >= 0) {
+            if (String(lista[idx].atualizadoEm || "") !== String(base || "")) {
+              recusa = { tipo: "conflito", discoEm: String(lista[idx].atualizadoEm || "") };
+            }
+          } else if (base) {
+            /* não está no disco, mas o objeto já foi lido de lá um dia (tem
+               carimbo) e há lápide: foi excluído depois que esta tela o abriu.
+               Orçamento NOVO não tem lápide (id novo) e passa. */
+            var lp = this.lapidesDe(empresaId, "orcamentos");
+            if (lp[orc.id] !== undefined) recusa = { tipo: "apagado", lapideEm: String(lp[orc.id] || "") };
+          }
+        } catch (eCas) {
+          recusa = { tipo: "incerto", erro: String((eCas && eCas.message) || eCas) };
+        }
+        if (recusa) {
+          recusa.id = orc.id; recusa.numero = orc.numero || ""; recusa.base = String(base == null ? "" : base);
+          this.ultimaRecusa = recusa;
+          try { console.warn("[store] gravação do orçamento " + orc.id + " RECUSADA (" + recusa.tipo + "): esta tela partiu de " + recusa.base + " e o disco tem " + (recusa.discoEm || (recusa.lapideEm ? "lápide de " + recusa.lapideEm : "?"))); } catch (eW) {}
+          return null;   // ⚠ sem carimbar: ver "COMPARA ANTES DE CARIMBAR"
+        }
+      }
+      /* ⚠ GRAVAÇÃO QUE FALHA DEVOLVE O CARIMBO. O carimbo "agora" vai para o
+         objeto ANTES de o adapter gravar (é ele que vai para o disco). Se a
+         gravação falha — cota cheia, `QuotaExceededError` —, o disco fica com
+         o carimbo antigo e a memória com o novo; e a trava, na gravação
+         seguinte, compara os dois e recusa como "outra janela".
+         Roteiro medido na revisão da F1 (14/09/2026), UMA janela só, teclado
+         real: e1=23 + Tab com a cota cheia (abre o Backup), a pessoa libera
+         espaço, e2=17 + Tab → recusa "alterado em outra janela (ou em outro
+         aparelho)", a releitura troca a tela pelo disco e as DUAS edições
+         somem (disco {e1:10, e2:11}). Na 1.2.77 o mesmo roteiro gravava
+         {e1:23, e2:17}. Assert em tools/test-store-cas.js [7b] e na
+         e2e-duas-janelas [8]. */
+      var carimboAntes = orc.atualizadoEm, tinhaCarimbo = Object.prototype.hasOwnProperty.call(orc, "atualizadoEm");
+      if (!(manterCarimbo && orc && orc.atualizadoEm)) orc.atualizadoEm = Util.agoraISO();
       if (idx >= 0) lista[idx] = orc; else lista.push(orc);
+      /* o LocalAdapter pega a exceção do setItem e devolve false; o embrulho do
+         Nuvem._patch devolve o mesmo `ok`. Por isso a falha chega aqui como
+         valor, e não como exceção — e não se põe `try` que devolveria o
+         carimbo de uma gravação que CHEGOU ao disco. */
       var ok = this.adapter.gravar(empresaId, "orcamentos", lista);
+      if (!ok) {
+        if (tinhaCarimbo) orc.atualizadoEm = carimboAntes; else delete orc.atualizadoEm;
+      }
       return ok ? orc : null; // null = falhou ao gravar (cota cheia) — caller deve avisar
     },
 
