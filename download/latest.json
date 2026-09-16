@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.80",
+  "versao": "1.2.81",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.80.zip",
-  "notas": "Cronograma: ao abrir a aba Cronograma, a tela passa a mostrar so o planejamento e o Gantt ocupa a altura da janela. A janela destacada (Abrir em outra janela) mostra so o grafico, e selecionar uma etapa numa janela destaca a mesma etapa na outra. Correcao: um clique parado na bolinha da ponta de uma barra do Gantt podia criar uma dependencia sem querer.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.80/OrcaPRO-IA-Instalador-v1.2.80.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.81.zip",
+  "notas": "Logo e icones do sistema redesenhados. Cronograma: a aba passou a ter os botoes Gerar Proposta e Apresentar no topo, o botao Abrir em outra janela fica sempre visivel, e a janela destacada abre tambem o Fisico-financeiro e o Previsto x Realizado. Dias por semana aceita 5, 6 ou 7. Correcoes: depois de abrir o Cronograma, os numeros do Painel e da lista de orcamentos sumiam; o Gantt de obra pequena ficava com a tela em branco; ao digitar e arrastar no Gantt o arrasto podia se perder. Protecao: se a lista de orcamentos gravada no computador ficar ilegivel, ela e guardada a parte e nada e gravado por cima ate restaurar o backup.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.81/OrcaPRO-IA-Instalador-v1.2.81.exe"
 }

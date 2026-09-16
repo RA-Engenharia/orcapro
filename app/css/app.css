@@ -10,6 +10,14 @@
   color-scheme: light;
   --navy: #0f2740;
   --navy-2: #15324f;
+  /* TEXTO SOBRE O NAVY — faixas que ficam escuras nos DOIS temas (a barra da
+     janela destacada). ⚠ Não usar --verde/--amarelo ali: são do tema e, no
+     claro, somem sobre o navy. Medidos contra #0f2740: 12,19:1 · 10,80:1 ·
+     10,52:1 (mínimo 4,5). O escuro não redeclara o navy, então não
+     redeclara estes. */
+  --sobre-navy: #dbe8f5;
+  --sobre-navy-ok: #86efac;
+  --sobre-navy-aviso: #fcd34d;
   /* ⚠ ESTE AZUL ESTAVA QUASE CINZA, E ISSO E MEDIVEL: o #2e6f9e anterior
      tinha croma 0,099 em OKLab — ABAIXO do piso 0,1 a partir do qual uma cor
      deixa de ser lida como cor. E ele e a tinta mais presente do sistema
@@ -3014,18 +3022,62 @@ table.tbl tbody tr:hover .btn:not(.primary):not(.success):not(.danger) {
 }
 
 /* ---- Janela destacada (js/janelas.js): só o orçamento, sem menu e sem topo ---- */
-.tabs .jan-abrir { margin-left: auto; align-self: center; white-space: nowrap; }
+/* ⚠ o ⧉ mora na LINHA DO TÍTULO do editor (ui.js renderEditor, `_bJanela`):
+   no fim da `.tabs`, que rola, ele ficava fora da vista abaixo de ~1650 px.
+   O lado direito do título não encolhe (`flex: none`); quem cede é o nome do
+   orçamento, com reticências — só na mesa: no celular o título quebra em
+   duas linhas (regra de 820 px) e o nome inteiro continua legível. */
+.orc-titulo { gap: 12px; }
+.orc-titulo-acoes { display: flex; align-items: center; gap: 6px; flex: none; }
+.jan-abrir { white-space: nowrap; }
+/* ⚠ NA MESA, UMA LINHA SÓ — e quem cede é o NOME, não o número nem as portas.
+   Roteiro do defeito (revisão adversarial da 1.2.81, nome de 110 caracteres):
+   `.main .flex { flex-wrap: wrap }` (lá em cima) vencia o comentário acima; as
+   portas desciam para uma 2ª linha a 1280, 1366 e 1920, o modo foco perdia
+   ~44 px de Gantt, e a 1280/1366 o "ORC-2026-099" sumia dentro do corte.
+   ⚠ E O CORTE MORA NO `.tela-nome`, NÃO NO CONTÊINER: com `overflow: hidden`
+   no `.orc-titulo-nome` o anel de foco do [← Voltar] (box-shadow de 3 px) saía
+   cortado em três lados — o botão encosta no contêiner. */
+@media (min-width: 821px) {
+  .main .flex.orc-titulo { flex-wrap: nowrap; }
+  .orc-titulo-nome { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; }
+  .orc-titulo-nome > .btn { flex: none; }
+  .orc-titulo-nome > .tela-nome { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .orc-titulo-nome > .muted { flex: none; margin-left: 8px; white-space: nowrap; }
+}
+/* ⚠ NO CELULAR AS PORTAS OCUPAM A LINHA DE BAIXO E QUEBRAM. Com `flex: none`
+   os três botões (Gerar Proposta, Apresentar, ⧉) somavam ~430 px e o #main
+   rolava de lado a 390 px (442 × 390, revisão adversarial da 1.2.81). */
+@media (max-width: 820px) {
+  .orc-titulo-acoes { flex: 1 1 100%; min-width: 0; flex-wrap: wrap; }
+  body.foco-crono #main > .orc-titulo .orc-foco-acoes { flex-wrap: wrap; }
+}
 body.modo-janela #sidebar, body.modo-janela #topbar { display: none !important; }
 body.modo-janela .app, body.modo-janela .app.com-sidebar { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); grid-template-areas: "main"; height: calc(100vh - 34px); height: calc(100dvh - 34px); }
 body.modo-janela .main { grid-area: main; padding: 14px 18px; }
-#jan-cab { display: flex; align-items: center; gap: 12px; height: 34px; padding: 0 14px; background: var(--navy, #0f2740); color: #dbe8f5; font-size: 13px; }
-#jan-cab .jan-t { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-#jan-cab .jan-vivo { color: #86efac; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#jan-cab.jan-orfa .jan-vivo { color: #fcd34d; }
+/* ⚠ tamanhos e pesos pela régua (--t-*, --p-*) e cores pelos tokens: o
+   13px/12px/600 crus deste bloco deixaram o test-contraste vermelho desde a
+   1.2.79 — e o gate padrão (sem --e2e) junto */
+#jan-cab { display: flex; align-items: center; gap: 12px; height: 34px; padding: 0 14px; background: var(--navy); color: var(--sobre-navy); font-size: var(--t-peq); }
+#jan-cab .jan-t { font-weight: var(--p-forte); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+#jan-cab .jan-vivo { color: var(--sobre-navy-ok); font-size: var(--t-micro); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#jan-cab .jan-atu { color: var(--sobre-navy); font-size: var(--t-micro); font-weight: var(--p-normal); font-variant-numeric: tabular-nums; white-space: nowrap; }
+#jan-cab.jan-orfa .jan-vivo { color: var(--sobre-navy-aviso); }
 #jan-cab .btn { margin-left: auto; }
+#jan-recado { margin: 24px; max-width: 640px; }
 
 /* ---- Foco no cronograma: a aba Cronograma sem as ações e os KPIs do orçamento ---- */
-body.foco-crono #main > .barra-acoes, body.foco-crono #main > .kpis, body.foco-crono #main > .faixa-pend { display: none !important; }
-body.foco-crono #main > .tela-titulo { margin-bottom: 6px; }
+/* ⚠ SÓ O QUE É DO EDITOR (`.orc-cab`, ui.js renderEditor). A regra era
+   `#main > .kpis`, e com a classe do body vazando para fora do editor (1.2.80)
+   ela apagava os cartões da lista e o bloco OPERAÇÃO do Painel. Duas travas:
+   o App.render tira a classe no topo, e esta regra não alcança KPI de outra tela. */
+body.foco-crono #main > .orc-cab { display: none !important; }
+body.foco-crono #main > .orc-titulo { margin-bottom: 6px; }
+/* as portas [Gerar Proposta] e [Apresentar] do modo foco: só com ele ligado
+   (fora dele a barra de ações já as mostra) */
+.orc-foco-acoes { display: none; }
+body.foco-crono #main > .orc-titulo .orc-foco-acoes { display: flex; align-items: center; gap: 6px; }
 /* ---- Janela destacada: só o painel (sem título, ações, KPIs nem abas) ---- */
-body.modo-janela #main > :not(#aba-conteudo) { display: none !important; }
+/* ⚠ o recado (#jan-recado) é a exceção: escondido por esta regra, orçamento
+   excluído e endereço inválido viravam janela EM BRANCO (ver App._janelaRecado) */
+body.modo-janela #main > :not(#aba-conteudo):not(#jan-recado) { display: none !important; }

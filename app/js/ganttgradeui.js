@@ -103,6 +103,8 @@
 
   var GanttGradeUI = {
     CSS: CSS_GRADE,
+    // o limiar do duplo clique, o MESMO nos dois caminhos (dblclick nativo e App._gxUp)
+    DUPLO_MS: DUPLO_MS,
 
     /* ------------------------------------------------------------------
        LIGAR — chamado pelo gancho da F3 no fim de App._cronoGanttLigar, a
@@ -165,6 +167,12 @@
            outra aba não chama o `ligar`) voltava dias depois com uma célula
            abrindo sozinha. */
         if (ed.rtok != null && (app._rtok || 0) - ed.rtok > 1) { z.ed = null; return; }
+        // ⚠ sem colunas não há onde reabrir: um campo ali seria o <input> solto sobre o tempo (ver `reposicionar`)
+        if (!(Number(g.pro && g.pro.gradeW) > 0)) {
+          z.ed = null;
+          if (ed.texto != null && ed.orig != null && norm(ed.texto) !== norm(ed.orig)) this._avisoSemColunas(ed.texto);
+          return;
+        }
         this._abrirEm(app, g, ed.id, ed.campo, { texto: ed.texto, orig: ed.orig, erro: ed.erro, reabrir: true });
       }
     },
@@ -179,13 +187,25 @@
       var inp = g.gradeEd, ed = g.z && g.z.ed;
       if (!inp || inp.hidden || !ed) { if (g.gradeCard && ed) this._posCard(app, g, ed.id); return; }
       if (!(Number(g.pro && g.pro.gradeW) > 0)) {
-        // as colunas sumiram com o campo aberto (a janela estreitou): o mesmo pedido vai para o cartão
-        var t = inp.value;
-        inp.hidden = true;
-        this._abrirCard(app, g, ed.id, ed.campo, { texto: t });
+        /* ⚠ AS COLUNAS SUMIRAM COM O CAMPO ABERTO (a janela estreitou): FECHA
+           SEM GRAVAR e diz. Roteiro do defeito (revisão da F6): o campo ia para
+           o cartão, que perdia o texto do Depende de ("2.1+3" virava vazio), e
+           o `z.ed` ficava esquecido — Esc no cartão e qualquer render depois
+           (nuvem, outra edição) reabriam um <input> SOLTO por cima das barras,
+           sem coluna embaixo, roubando o foco; "0" + Enter ali gravou
+           "Depende de: 0" na 2.3. Gravar sozinho o que a pessoa não confirmou
+           seria pior; o recado diz o que ficou para trás. */
+        var mudou = norm(inp.value) !== norm(ed.orig), t = inp.value;
+        this.fechar(app, g, true);
+        if (mudou) this._avisoSemColunas(t);
         return;
       }
       this._pos(app, g, inp, ed.id, ed.campo);
+    },
+
+    _avisoSemColunas: function (t) {
+      if (typeof UI !== "undefined" && UI.toast)
+        UI.toast("As colunas Dur./Depende de saíram da tela (a janela ficou estreita) e o campo fechou: “" + t + "” NÃO foi gravado. Alargue a janela, ou dê duplo clique na barra para digitar.", "");
     },
 
     /* O CANTO acompanha a grade. O `_gxPintar` (F3) só reescreve o canto
@@ -196,6 +216,12 @@
     _conferirCanto: function (app, g) {
       var C = CX(); if (!C || !g.pro || !g.pro.e || !g.wrap || !g.wrap.querySelector) return;
       var p = g.pro, sig = [p.gradeW, p.labelW, p.desfazer, (Number(p.e.largura) + C.ganttProColW(p)) >= C.GX_GRADE_LARGURA ? 1 : 0, p.labelW < 200 ? 1 : 0].join("|");
+      /* a frase da grade na legenda segue a MESMA largura medida (ver
+         CronoExecUI.ganttProLegGrade): recado que manda digitar em colunas
+         que não estão na tela é recado que mente. Fora da assinatura do canto:
+         o repintar pode trocar a legenda sem mudar a forma do canto. */
+      var raiz = g.wrap.parentNode, leg = raiz && raiz.querySelector ? raiz.querySelector("[data-gx-leg-grade]") : null;
+      if (leg && C.ganttProLegGrade) { var fr = C.ganttProLegGrade(p.gradeW); if (leg.textContent !== fr) leg.textContent = fr; }
       if (g.gradeCantoSig === sig) return;
       g.gradeCantoSig = sig;
       var canto = g.wrap.querySelector(".gx-canto"); if (!canto) return;
@@ -395,9 +421,17 @@
       var z = g.z;
       z.ed = destino ? { id: destino.id, campo: destino.campo, rtok: app._rtok } : null;
       g.gradeGravando = true;
-      var res = null;
+      /* ⚠ UM TOAST SÓ POR VEZ PARA A GRADE (revisão da F6, plano da obra do
+         galpão): o Tab corrido de 4.1 a 5.1 empilhou os toasts verdes de duas
+         linhas — no modo executivo o dobro — por cima das linhas que estavam
+         sendo digitadas. Digitar como no MS Project são N alterações seguidas;
+         quem digita não pode perder a vista da própria grade. O recado desta
+         gravação (inclusive a RECUSA, que sai antes do caminho único) vira UM
+         e tira o da gravação anterior: a mesma chave "crono" do caminho único
+         (UI.toastJuntar — um dono só, e não uma segunda pilha aqui). */
+      var res = null, marcaT = (typeof UI !== "undefined" && UI.toastMarca) ? UI.toastMarca() : null;
       try { res = app._cronoGravarDigitado({ id: ed.id, campo: ed.campo, texto: txt, origem: "grade" }); }
-      finally { g.gradeGravando = false; }
+      finally { g.gradeGravando = false; if (marcaT && UI.toastJuntar) UI.toastJuntar(marcaT, "crono", 420); }
       var g2 = app._gx;
       if (res && res.ok) {
         if (res.mudou === false) {
@@ -441,9 +475,17 @@
       }
     },
 
-    /* o foco saiu do campo. ⚠ Adiado um tique: o mousedown numa barra chama
-       `plot.focus()` no MEIO do _gxDown, e gravar (render) ali dentro trocaria
-       a moldura por baixo do arrasto que está começando.
+    /* o foco saiu do campo. Adiado um tique para o `activeElement` já ser o
+       destino (clique na célula do cartão, janela que perdeu o foco).
+       ⚠ E NUNCA GRAVA NO MEIO DE UM ARRASTO OU PAN. Roteiro do defeito
+       (revisão da F6, mouse real, galpão R1 a 1366): "5" digitado na Dur. da
+       2.1 sem Enter e a pessoa pega a barra da 2.3. O mousedown chama
+       `plot.focus()` (blur aqui), e o setTimeout(0) roda ENTRE o mousedown e o
+       1º mousemove — são tarefas separadas. Gravar ali redesenhava a aba,
+       trocava o App._gx por baixo do gesto: o arrasto sumia calado (s2c
+       continuou 1) e o foco caía no <body>. Com gesto em curso o commit fica
+       PENDENTE e é o App._gxUp que o roda, antes da soltura (ver
+       `pendenteNoUp`): o que se digitou primeiro grava primeiro.
        ⚠ Janela que perdeu o foco inteiro (a pessoa foi para outro programa)
        NÃO grava: ela volta e continua digitando. */
     _saiu: function (app, inp) {
@@ -457,8 +499,26 @@
         if (doc.activeElement === inp) return;
         if (doc.hasFocus && !doc.hasFocus()) return;
         if (g.gradeCard && g.gradeCard.contains && g.gradeCard.contains(doc.activeElement)) return;
+        if (g.arrasto || g.pan) { g.gradePendente = inp; return; }
         self.commit(app, { mover: "fora" });
       }, 0);
+    },
+
+    /* chamado pelo App._gxUp ANTES de soltar o arrasto/pan: grava o campo que
+       o blur deixou pendente (ver `_saiu`). Devolve true se gravou/fechou algo
+       (o App._gx pode ter sido trocado pelo render). */
+    pendenteNoUp: function (app, g) {
+      if (!app || !g || !g.gradePendente) return false;
+      var inp = g.gradePendente;
+      g.gradePendente = null;
+      if (g.gradeEd !== inp || inp.hidden || !g.z || !g.z.ed) return false;
+      this.commit(app, { mover: "fora" });
+      /* o gesto era no Gantt: o foco volta ao painel do tempo (o render da
+         gravação deixou o foco no <body>, e o Ctrl+Z/setas seguintes iam para
+         lugar nenhum) */
+      var g2 = app._gx;
+      if (g2 && g2.plot && g2.plot.focus) { try { g2.plot.focus(); } catch (eP) {} }
+      return true;
     },
 
     /* a próxima célula EDITÁVEL: ↑↓ na mesma coluna; Tab Dur. → Depende de →
@@ -564,7 +624,8 @@
       if (g.z && g.z.sel !== i) { g.z.sel = i; if (app._gxPintar) app._gxPintar(true); }
       this._posCard(app, g, cD.id);
       var foco = (campo === "pred" && !cP.ro) || cD.ro ? campos.pred : campos.dur;
-      if (opts.texto != null && foco === campos.dur) foco.value = String(opts.texto);
+      // o texto vai para o campo PEDIDO (antes só a Dur. recebia: o "Depende de" abria vazio)
+      if (opts.texto != null && !foco._ro) foco.value = String(opts.texto);
       try { foco.focus(); if (opts.texto != null) foco.setSelectionRange(foco.value.length, foco.value.length); else foco.select(); } catch (eF) {}
       return true;
     },

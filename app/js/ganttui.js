@@ -172,7 +172,22 @@
         idPorLinha: arr(o.idPorLinha),
         arrasto: o.arrasto || null
       };
-      e.pxDia = this.pxDeNivel(e.nivel, e.dias, e.largura);
+      /* ⚠ A ESCALA DO "AJUSTAR" NÃO ANDA ENQUANTO SE EDITA (frente cf-grade,
+         16/09/2026). Roteiro do defeito (auditoria de tela da 1.2.80, galpão a
+         1920, mouse real): o "auto" é largura ÷ dias da obra, e cada edição
+         que muda o prazo muda os dias — o rótulo nov/26 foi de x=1714 para
+         1651 na 1ª edição e para 1606 na 2ª; a barra do fim da obra andou
+         ~100 px sem ninguém tocar nela, pulou para longe do mouse e o segundo
+         arrasto errou. `diasAjuste` = os dias da obra QUANDO a edição começou
+         (a fiação guarda no estado de TELA): o "auto" segue cabendo na
+         largura (a janela que muda de tamanho ainda reajusta), mas para
+         aquela obra — e só um comando de zoom (Ajustar, −, +, a escala)
+         solta. `escalaMantida` diz à tela que o desenho já não é o "Ajustar"
+         da obra de agora (sem isso o seletor afirmaria "Ajustar" mentindo). */
+      var dA = Math.round(fin(o.diasAjuste, 0));
+      e.diasAjuste = (nv === "auto" && dA >= 1) ? dA : null;
+      e.pxDia = this.pxDeNivel(e.nivel, e.diasAjuste || e.dias, e.largura);
+      e.escalaMantida = e.diasAjuste != null && Math.abs(e.pxDia - this.pxDeNivel(e.nivel, e.dias, e.largura)) > 1e-9;
       var lim = this.limites(e);
       e.scrollLeft = clamp(fin(o.scrollLeft, 0), 0, lim.maxScrollLeft);
       e.scrollTop = clamp(fin(o.scrollTop, 0), 0, lim.maxScrollTop);

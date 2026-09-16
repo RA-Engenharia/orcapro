@@ -194,6 +194,9 @@
       for (k in this.DEFAULTS) d[k] = this.DEFAULTS[k];
       if (orc && orc.cronograma && orc.cronograma.params) for (k in orc.cronograma.params) if (orc.cronograma.params[k] != null) d[k] = orc.cronograma.params[k];
       if (p) for (k in p) if (p[k] != null) d[k] = p[k];
+      /* ⚠ o regime que o calendário realmente usa (ver diasSemanaEfetivo):
+         sem isto, 1 a 4 gravado dava datas de 5 e semanas de 4 */
+      d.diasUteisSemana = this.diasSemanaEfetivo(d.diasUteisSemana);
       return d;
     },
 
@@ -215,6 +218,52 @@
     // chave local "AAAA-MM-DD" (nunca toISOString: em UTC-3 ele volta um dia)
     _ch: function (d) {
       return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2);
+    },
+
+    /* =================================================================
+       DIAS ÚTEIS POR SEMANA: SÓ 5, 6 OU 7 (16/09/2026)
+       ⚠ O CALENDÁRIO SÓ CONHECE TRÊS REGIMES: `diaUtil` logo abaixo folga
+       sábado e domingo (5), só domingo (6) ou nenhum dia (7). Qualquer outro
+       número cai no ramo de 5.
+       Roteiro do defeito: a tela aceitava de 1 a 7 e gravava o número
+       digitado. Com 4, as DATAS saíam do calendário de 5 dias e as SEMANAS do
+       `totalSemanas` (dias ÷ 4): medido na obra de demonstração, "73 dias
+       úteis (~19 semanas)" com as mesmas datas que no regime de 5 dão ~15 —
+       prazo contraditório na tela que alimenta a proposta, que ainda escrevia
+       "4 dias por semana" ao lado das datas de 5.
+       ⚠ POR QUE TRAVAR E NÃO MODELAR 1 A 4: seriam dias de folga a escolher
+       (qual dia para?) em seis consumidores que repetem a regra — `diaUtil`,
+       `Execucao._diasUteisEntre`, o calendário do XML do MS Project, as
+       semanas do Gantt, do Excel e do PDF — mais a paridade com o master
+       b8907ef. Quem para mais dias lança esses dias como feriado local.
+       `diasSemanaEfetivo` devolve o número que o calendário REALMENTE usa, e
+       `_params` o aplica: quem já gravou 1 a 4 passa a ver as mesmas datas de
+       sempre com as semanas e o texto da proposta concordando com elas.
+       ⚠ SÓ NÚMERO. O texto "6" o calendário também lê como 5 (a comparação
+       ali é `=== 6`), mas a paridade com o master sorteia esse texto de
+       propósito e cobra a saída de antes, bit a bit — e o formulário sempre
+       gravou número (parseInt). Mexer nele é outra decisão, com outra prova. */
+    diasSemanaEfetivo: function (v) {
+      if (typeof v !== "number" || !isFinite(v)) return v;
+      return v >= 7 ? 7 : (v === 6 ? 6 : 5);   // 0 e negativo também são 5 no calendário (`|| 5`)
+    },
+    /* O que a pessoa DIGITOU no campo "Dias/sem." → {ok, valor, erro}.
+       Vazio = null (o motor usa o padrão, 5). Acima de 7 continua virando 7,
+       como sempre foi (7 = obra sem folga; tools/test-crono-fiacao.js cobra
+       isso). Abaixo de 5, fração que não é 5/6/7 e texto são RECUSADOS com o
+       motivo — nunca trocados calados por 5, que seria gravar um número
+       diferente do digitado sem dizer. */
+    validarDiasSemana: function (txt) {
+      var s = String(txt == null ? "" : txt).trim();
+      if (s === "") return { ok: true, valor: null, erro: "" };
+      var n = Number(s.replace(",", "."));
+      var porque = "o calendário do OrçaPRO conta 5 (folga sábado e domingo), 6 (folga só domingo) ou 7 (sem folga). " +
+        "Com outro número as datas sairiam como 5 dias e as semanas pelo número digitado, e a proposta mostraria um prazo que não fecha. " +
+        "Se a obra para mais dias, use 5 e lance os dias parados em Feriados locais.";
+      if (!isFinite(n)) return { ok: false, valor: null, erro: "Dias úteis por semana: “" + s + "” não é número. Use 5, 6 ou 7 — " + porque };
+      if (n > 7) return { ok: true, valor: 7, erro: "" };
+      if (n !== 5 && n !== 6 && n !== 7) return { ok: false, valor: null, erro: "Dias úteis por semana aceita só 5, 6 ou 7 (você digitou " + s + "): " + porque };
+      return { ok: true, valor: n, erro: "" };
     },
 
     diaUtil: function (d, diasSemana, feriados) {

@@ -13,19 +13,206 @@
     return NS + ":" + (empresaId || "default") + ":" + entidade;
   }
 
+  /* =====================================================================
+   * ⚠ LEITURA QUE FALHA NÃO É LISTA VAZIA — QUARENTENA E RECUSA
+   *
+   * O DEFEITO (auditoria do Cronograma 1.2.80, item D7, 16/09/2026): `ler`
+   * devolvia o `fallback` quando o JSON do disco não abria, e
+   * `listarOrcamentos` usa `[]` de fallback. Como TODA gravação desta camada
+   * reescreve a lista inteira, o `salvarOrcamento` seguinte — de qualquer
+   * orçamento — gravava uma lista com UM orçamento, e os outros sumiam do
+   * disco para sempre. Roteiro medido na bancada
+   * (tools/test-store-corrompido.js, bloco [0]): 3 orçamentos no disco, a
+   * string perde o último caractere, a tela mostra "Nenhum orçamento ainda",
+   * a pessoa cria um → disco com 1. O mesmo buraco existia nas entidades da
+   * Gestão (`salvar`, `excluir`, `salvarVarios`), nas lápides e no merge da
+   * nuvem, que grava por `adapter.gravar`.
+   *
+   * A REGRA: conteúdo que não abriu não é apagado por ninguém.
+   *  1) na leitura, a string original é COPIADA para
+   *     `orcapro:<empresa>:<entidade>:corrompido:<quando>` (uma cópia por
+   *     conteúdo, ver `_quarentenar`) e a entidade fica marcada;
+   *  2) enquanto a marca existir, `gravar` RECUSA a entidade (devolve false):
+   *     quem leu `[]` não pode gravar por cima do que não conseguiu ler;
+   *  3) a tela continua funcionando (a leitura devolve o fallback, como
+   *     sempre — travar a interface seria pior) e avisa. A saída é `liberar`,
+   *     chamada pela restauração do backup e pelo aviso da lista, e ela só
+   *     remove o original DEPOIS de conferir a cópia caractere a caractere.
+   *
+   * ⚠ A MARCA MORA EM MEMÓRIA E É REFEITA A CADA LEITURA. Toda reescrita desta
+   *   camada lê e grava na mesma pilha, sem nada assíncrono no meio, então a
+   *   marca que o `gravar` consulta é a da leitura que montou a lista. Uma
+   *   leitura que volta a abrir (outra janela restaurou o backup) apaga a marca.
+   *
+   * ⚠ OBJETO ÚNICO (prefs, conta, _syncmarcas) NÃO TRAVA DEPOIS DA CÓPIA.
+   *   Ali não existem "os outros registros" a proteger: o objeto inteiro já
+   *   não abria. Travar `conta` impediria recriar o administrador e deixaria
+   *   a pessoa sem entrar no sistema, uma trava sem porta. Com a cópia
+   *   conferida, a gravação passa (e a nuvem pode devolver a versão boa). Sem
+   *   cópia (armazenamento cheio), trava como as listas: o original é a
+   *   única cópia que existe.
+   * ===================================================================== */
+  var SUFIXO_QUAR = ":corrompido:";
+  var OBJETO_UNICO = { prefs: 1, conta: 1, _syncmarcas: 1 };
+  var _ilegivel = {};        // chave -> marca (com a string original, só em memória)
+  var _avisoIlegivelEm = {}; // chave -> ms do último recado na tela
+  var _lidas = {};           // chave -> 1: já passou por `ler` nesta sessão
+
+  /* vazio de verdade: nada a proteger. "undefined" é o que o localStorage
+     guarda de `setItem(k, JSON.stringify(undefined))` — não é dado de
+     ninguém, e tratá-lo como corrompido travaria a entidade à toa.
+     ⚠ SÓ EM TEXTO CURTO: esta regex retrocede em tempo quadrático num texto
+     longo de espaços (medido: 3 MB de espaços prendeu o Node por minutos), e
+     `ler` roda em toda leitura. Conteúdo vazio de verdade é sempre curto. */
+  function _vazio(raw) { return raw == null || (raw.length <= 64 && /^\s*(undefined)?\s*$/.test(raw)); }
+
+  /* `forma === "lista"`: JSON válido que NÃO é lista (nem null) também é
+     conteúdo que a tela não sabe ler — `Util.arr` o transformaria em `[]` e a
+     gravação seguinte o apagaria do mesmo jeito. */
+  function _abre(raw, forma) {
+    var v = JSON.parse(raw);   // lança se o texto não abre
+    if (forma === "lista" && v !== null && !Array.isArray(v)) throw new Error("o conteúdo não é uma lista (" + typeof v + ")");
+    return v;
+  }
+
+  /* cópia já existente com o MESMO conteúdo: a mesma string lida mil vezes
+     (cada render lê a lista) não pode virar mil cópias */
+  function _copiaExistente(k, raw) {
+    var pre = k + SUFIXO_QUAR;
+    try {
+      for (var i = 0; i < localStorage.length; i++) {
+        var q = localStorage.key(i);
+        if (!q || q.indexOf(pre) !== 0) continue;
+        var v = localStorage.getItem(q);
+        if (v != null && v.length === raw.length && v === raw) return q;
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  function _quarentenar(k, raw) {
+    var ja = _copiaExistente(k, raw);
+    if (ja) return { chave: ja, ok: true };
+    var base = k + SUFIXO_QUAR + new Date().toISOString().replace(/[:.]/g, "-"), nome = base, s = 2;
+    try {
+      while (localStorage.getItem(nome) != null && s < 50) nome = base + "-" + (s++);
+      localStorage.setItem(nome, raw);
+      /* ⚠ confere o que ficou: cópia que não confere não é cópia, e é a
+         conferência que autoriza o `liberar` a remover o original */
+      if (localStorage.getItem(nome) === raw) return { chave: nome, ok: true };
+      try { localStorage.removeItem(nome); } catch (eR) {}
+      return { chave: null, ok: false, erro: "a cópia gravada não confere com o original" };
+    } catch (e) {
+      return { chave: null, ok: false, erro: String((e && (e.name || e.message)) || e) };
+    }
+  }
+
+  /* quando a leitura falhou PELA PRIMEIRA VEZ: vem do nome da cópia, que
+     sobrevive a fechar o app (a memória não). É a data que o recado usa para
+     dizer QUAL backup restaurar — "o mais recente" pode ser um arquivo feito
+     depois de a pessoa recomeçar a lista. Todo backup automático anterior a
+     ela foi feito com a lista legível (depois, ele fica suspenso). */
+  function _desdeDaCopia(q) {
+    var p = q ? String(q).lastIndexOf(SUFIXO_QUAR) : -1;
+    if (p < 0) return "";
+    var mm = /^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z/.exec(String(q).slice(p + SUFIXO_QUAR.length));
+    return mm ? mm[1] + "T" + mm[2] + ":" + mm[3] + ":" + mm[4] + "." + mm[5] + "Z" : "";
+  }
+
+  function _marcarIlegivel(empresaId, entidade, k, raw, erro) {
+    var m = _ilegivel[k], agora = Date.now();
+    /* mesmo conteúdo já tratado: não refaz a cópia a cada leitura. Sem cópia
+       (cota cheia), tenta de novo a cada 30 s, e não a cada render. */
+    if (m && m.raw === raw && (m.copiaOk || agora - m.tentouEm < 30000)) return m;
+    var q = _quarentenar(k, raw);
+    m = {
+      empresaId: String(empresaId || "default"), entidade: String(entidade), chave: k, raw: raw, bytes: raw.length,
+      quarentena: q.chave || "", copiaOk: !!q.ok, erroCopia: q.erro || "",
+      em: (m && m.raw === raw && m.em) || new Date().toISOString(), tentouEm: agora,
+      erro: String((erro && erro.message) || erro || "")
+    };
+    m.desde = _desdeDaCopia(m.quarentena) || m.em;
+    m.bloqueia = !(OBJETO_UNICO[entidade] && m.copiaOk);
+    _ilegivel[k] = m;
+    /* o registro técnico: uma linha por conteúdo, não por leitura */
+    try {
+      console.error("[store] \"" + entidade + "\" ILEGÍVEL no disco (" + raw.length + " caracteres): " + m.erro +
+        " — cópia " + (m.copiaOk ? "em " + m.quarentena : "NÃO gravada (" + m.erroCopia + ")") +
+        "; gravações " + (m.bloqueia ? "RECUSADAS" : "liberadas (objeto único)") + " até a leitura voltar a abrir.");
+    } catch (eL) {}
+    return m;
+  }
+
+  function _publico(m) {
+    return { entidade: m.entidade, empresaId: m.empresaId, bytes: m.bytes, quarentena: m.quarentena,
+             copiaOk: m.copiaOk, bloqueia: m.bloqueia, em: m.em, desde: m.desde, erro: m.erro };
+  }
+
+  /* recado de uma gravação recusada, no máximo um a cada 20 s por entidade:
+     o merge da nuvem e as lápides batem aqui em rajada */
+  function _avisarIlegivel(m) {
+    var agora = Date.now();
+    if (_avisoIlegivelEm[m.chave] && agora - _avisoIlegivelEm[m.chave] < 20000) return;
+    _avisoIlegivelEm[m.chave] = agora;
+    try {
+      if (global.UI && global.UI.toast) {
+        var adm = true;
+        try { adm = !(global.Auth && global.Auth.ehAdmin && !global.Auth.ehAdmin()); } catch (eA) { adm = true; }
+        var txt = global.Store.recadoIlegivel(_publico(m), { recusou: true, admin: adm });
+        global.UI.toast(txt, "erro", Math.max(8000, Math.min(20000, txt.length * 65)));
+      }
+    } catch (e) {}
+  }
+
+  /* a forma de leitura de cada entidade (ver `_abre`).
+     ⚠ MORA AQUI, NO ADAPTER, E VALE PARA QUEM NÃO PASSA FORMA. Roteiro do
+     defeito (revisão adversarial da 1.2.81, sonda no navegador): com
+     `orcamentos = {"a":…}`, o `listarOrcamentos` (forma "lista") marcava a
+     entidade; o `Store.lerParaSync` (sem forma) lia o MESMO objeto como
+     válido, APAGAVA a marca e devolvia `[]`; em seguida `adapter.gravar`
+     passava e o disco era sobrescrito. O `ilegivelLocal` da nuvem, que
+     consulta a marca depois dessa leitura, dizia "legível" — a guarda do
+     sync ficava inerte. Todos os leitores têm de concordar sobre o que é
+     ilegível. */
+  var FORMA_PADRAO = { orcamentos: "lista" };
+
   /* ---------- Adapter local (localStorage) ---------- */
   var LocalAdapter = {
-    ler: function (empresaId, entidade, fallback) {
+    /* `forma` (opcional): "lista" = JSON válido que não é lista também conta
+       como ilegível (ver `_abre`). Sem ela, vale a de FORMA_PADRAO. */
+    ler: function (empresaId, entidade, fallback, forma) {
+      if (!forma && Object.prototype.hasOwnProperty.call(FORMA_PADRAO, entidade)) forma = FORMA_PADRAO[entidade];
+      var k = chave(empresaId, entidade), raw;
+      try { raw = localStorage.getItem(k); }
+      catch (e) {
+        /* armazenamento inacessível (navegador bloqueando): não é conteúdo
+           corrompido — a gravação também vai falhar, e avisa sozinha */
+        console.warn("[store] leitura impossível em", entidade, e);
+        return fallback;
+      }
+      _lidas[k] = 1;
+      if (_vazio(raw)) { delete _ilegivel[k]; return fallback; }
       try {
-        var raw = localStorage.getItem(chave(empresaId, entidade));
-        if (!raw) return fallback;
-        return JSON.parse(raw);
+        var v = _abre(raw, forma);
+        delete _ilegivel[k];
+        return v;
       } catch (e) {
-        console.warn("[store] leitura corrompida em", entidade, e);
+        /* ⚠ NÃO É LISTA VAZIA: ver a nota da quarentena lá em cima */
+        _marcarIlegivel(empresaId, entidade, k, raw, e);
         return fallback;
       }
     },
     gravar: function (empresaId, entidade, valor) {
+      /* ⚠ A RECUSA. Quem montou `valor` leu o fallback no lugar do conteúdo
+         que não abriu; gravar aqui apagaria esse conteúdo. Ver a nota da
+         quarentena. Não sai sem entender: foi assim que a lista de
+         orçamentos virava um orçamento só. */
+      var kG = chave(empresaId, entidade), mG = _ilegivel[kG];
+      if (mG && mG.bloqueia) {
+        try { console.error("[store] gravação de \"" + entidade + "\" RECUSADA: o conteúdo do disco está ilegível e seria apagado (" + (mG.copiaOk ? "cópia em " + mG.quarentena : "sem cópia à parte") + ")."); } catch (eC) {}
+        _avisarIlegivel(mG);
+        return false;
+      }
       try {
         localStorage.setItem(chave(empresaId, entidade), JSON.stringify(valor));
         return true;
@@ -48,6 +235,68 @@
     apagar: function (empresaId, entidade) {
       try { localStorage.removeItem(chave(empresaId, entidade)); return true; }
       catch (e) { return false; }
+    },
+
+    /* ---- o estado da quarentena (ver a nota lá em cima) ---- */
+    ilegivel: function (empresaId, entidade) {
+      var m = _ilegivel[chave(empresaId, entidade)];
+      return m ? _publico(m) : null;
+    },
+    ilegiveis: function (empresaId) {
+      var pre = chave(empresaId, ""), out = [];
+      for (var k in _ilegivel) {
+        if (Object.prototype.hasOwnProperty.call(_ilegivel, k) && k.indexOf(pre) === 0) out.push(_publico(_ilegivel[k]));
+      }
+      return out;
+    },
+    jaLida: function (empresaId, entidade) { return !!_lidas[chave(empresaId, entidade)]; },
+    /* as cópias guardadas, do disco (e não da memória): sobrevivem a fechar o app */
+    quarentenas: function (empresaId) {
+      var pre = chave(empresaId, ""), out = [];
+      try {
+        for (var i = 0; i < localStorage.length; i++) {
+          var q = localStorage.key(i);
+          if (!q || q.indexOf(pre) !== 0) continue;
+          var p = q.indexOf(SUFIXO_QUAR, pre.length);
+          if (p < 0) continue;
+          out.push({ chave: q, entidade: q.slice(pre.length, p), bytes: (localStorage.getItem(q) || "").length });
+        }
+      } catch (e) {}
+      return out;
+    },
+    /* =================================================================
+     * ⚠ A PORTA DA TRAVA. Sem ela, a lista ilegível recusaria toda gravação
+     *   para sempre, e a pessoa sem backup não conseguiria nem criar um
+     *   orçamento novo — o tipo de trava que empurra para a gambiarra.
+     *
+     * Remove o original ilegível SÓ DEPOIS de conferir que a cópia à parte
+     * tem exatamente o mesmo conteúdo. Sem cópia conferida (cota cheia),
+     * recusa: nesse caso o original é a única cópia que existe.
+     * Conteúdo que voltou a abrir (outra janela restaurou) não é tocado.
+     * ================================================================= */
+    liberar: function (empresaId, entidade, forma) {
+      if (!forma && Object.prototype.hasOwnProperty.call(FORMA_PADRAO, entidade)) forma = FORMA_PADRAO[entidade];
+      var k = chave(empresaId, entidade), raw;
+      try { raw = localStorage.getItem(k); }
+      catch (e) { return { ok: false, motivo: "leitura", erro: String((e && e.message) || e) }; }
+      if (_vazio(raw)) { delete _ilegivel[k]; return { ok: true, nada: true }; }
+      var abriu = true;
+      try { _abre(raw, forma); } catch (eA) { abriu = false; }
+      if (abriu) { delete _ilegivel[k]; return { ok: true, legivel: true }; }
+      var m = _marcarIlegivel(empresaId, entidade, k, raw, new Error("liberar"));
+      if (!m.copiaOk) {                       // a porta tenta a cópia de novo, sem esperar os 30 s
+        var q = _quarentenar(k, raw);
+        m.copiaOk = !!q.ok; m.quarentena = q.chave || ""; m.erroCopia = q.erro || "";
+        m.desde = _desdeDaCopia(m.quarentena) || m.desde;
+      }
+      var confere = false;
+      try { confere = m.copiaOk && localStorage.getItem(m.quarentena) === raw; } catch (eQ) { confere = false; }
+      if (!confere) return { ok: false, motivo: "copia", bytes: raw.length, erro: m.erroCopia || "" };
+      try { localStorage.removeItem(k); }
+      catch (eR) { return { ok: false, motivo: "remover", erro: String((eR && eR.message) || eR) }; }
+      delete _ilegivel[k];
+      try { console.warn("[store] \"" + entidade + "\" liberada: original ilegível removido; cópia conferida em " + m.quarentena); } catch (eL) {}
+      return { ok: true, quarentena: m.quarentena, bytes: raw.length };
     }
   };
 
@@ -324,9 +573,91 @@
 
     // ----- Orçamentos -----
     listarOrcamentos: function (empresaId) {
-      var lista = this.adapter.ler(empresaId, "orcamentos", []);
+      /* "lista": um objeto no lugar da lista também é ilegível (ver `_abre`) */
+      var lista = this.adapter.ler(empresaId, "orcamentos", [], "lista");
       lista = Util.arr(lista).map(migrarOrcamento);
       return lista;
+    },
+
+    /* ---- Conteúdo ilegível no disco (ver a nota da quarentena, no topo) ----
+       Adapter sem quarentena (um FirebaseAdapter futuro) responde "nada". */
+    ilegivel: function (empresaId, entidade) {
+      return (this.adapter && this.adapter.ilegivel) ? this.adapter.ilegivel(empresaId, entidade) : null;
+    },
+    ilegiveis: function (empresaId) {
+      return (this.adapter && this.adapter.ilegiveis) ? this.adapter.ilegiveis(empresaId) : [];
+    },
+    quarentenas: function (empresaId) {
+      return (this.adapter && this.adapter.quarentenas) ? this.adapter.quarentenas(empresaId) : [];
+    },
+    /* a forma de leitura de cada entidade, a mesma da leitura normal: a porta
+       tem de concordar com quem marcou */
+    _FORMA_LEITURA: FORMA_PADRAO,
+    liberarIlegivel: function (empresaId, entidade) {
+      if (!(this.adapter && this.adapter.liberar)) return { ok: true, nada: true };
+      return this.adapter.liberar(empresaId, entidade, this._FORMA_LEITURA[entidade]);
+    },
+    /* Confere de uma vez as entidades que ninguém leu ainda nesta sessão (o
+       boot só lê o que a primeira tela usa). Quem já foi lido tem a marca em
+       dia e não é relido — é JSON.parse de lista inteira. */
+    verificarIlegiveis: function (empresaId, entidades) {
+      var self = this, a = this.adapter;
+      if (!(a && a.ilegiveis)) return [];
+      Util.arr(entidades).forEach(function (ent) {
+        if (!ent || (a.jaLida && a.jaLida(empresaId, ent))) return;
+        try { a.ler(empresaId, ent, null, self._FORMA_LEITURA[ent]); } catch (e) {}
+      });
+      return this.ilegiveis(empresaId);
+    },
+    /* =====================================================================
+     * O RECADO DO CONTEÚDO ILEGÍVEL — texto puro (UI.toast usa textContent).
+     * Diz o que aconteceu, que nada foi apagado, onde está a cópia e o que
+     * fazer. `opts.recusou`: uma gravação acabou de ser recusada; `opts.rotulo`:
+     * o que era; `opts.aberto`: há um orçamento aberto na tela (ele só existe
+     * ali, e o Excel o devolve inteiro); `opts.admin === false`: quem restaura
+     * backup é o administrador.
+     * ===================================================================== */
+    /* o nome que a PESSOA lê para cada entidade. O recado mostrava a chave
+       técnica ("Pronto: orcamentos recomeçou", "Os dados de \"medicoes\"") —
+       revisão adversarial da 1.2.81. Entidade fora do mapa sai com a chave,
+       que ainda é melhor que nada. */
+    _NOME_ENT: { orcamentos: "Orçamentos", financeiro: "Financeiro", medicoes: "Medições", obras: "Obras",
+      compras: "Compras", contratos: "Contratos", clientes: "Clientes", fornecedores: "Fornecedores",
+      requisicoes: "Requisições", rdo: "Diário de Obra", colaboradores: "Equipe", estoque: "Almoxarifado",
+      crono_obra: "Cronograma da obra", aditivos: "Termos aditivos", _lapides: "registro de exclusões" },
+    nomeEntidade: function (entidade) {
+      var e = String(entidade == null ? "" : entidade);
+      if (e === "orcamentos") return "lista de orçamentos";
+      return Object.prototype.hasOwnProperty.call(this._NOME_ENT, e) ? this._NOME_ENT[e] : e;
+    },
+    recadoIlegivel: function (info, opts) {
+      info = info || {}; opts = opts || {};
+      var orc = info.entidade === "orcamentos";
+      var kb = Math.max(1, Math.round((Number(info.bytes) || 0) / 1024));
+      var txt = (orc ? "A lista de orçamentos gravada neste aparelho está ilegível"
+                     : "Os dados de \"" + Store.nomeEntidade(info.entidade || "?") + "\" gravados neste aparelho estão ilegíveis") +
+        " (arquivo corrompido)";
+      if (opts.recusou) {
+        txt += ", e por isso " + (opts.rotulo ? "a sua última alteração (" + String(opts.rotulo).replace(/[.\s]+$/, "") + ")" : "a sua última alteração") +
+          " NÃO foi gravada: gravar agora apagaria " + (orc ? "os outros orçamentos" : "os outros registros") +
+          ", que ainda estão " + (orc ? "dentro dela" : "dentro deles") + ".";
+      } else {
+        txt += ". Nada foi apagado, e nada " + (orc ? "de orçamento " : "") + "é gravado aqui enquanto isso: gravar por cima apagaria o que ainda está " + (orc ? "dentro dela" : "dentro deles") + ".";
+      }
+      txt += info.copiaOk
+        ? " Uma cópia do conteúdo ilegível (" + kb + " KB) foi guardada à parte neste aparelho."
+        : " NÃO houve espaço para guardar uma cópia à parte (" + kb + " KB): não limpe os dados do navegador.";
+      var antes = "";
+      try {
+        var d = info.desde ? new Date(info.desde) : null;
+        var p2 = function (x) { return (x < 10 ? "0" : "") + x; };
+        if (d && !isNaN(d.getTime())) antes = " de antes de " + p2(d.getDate()) + "/" + p2(d.getMonth() + 1) + "/" + d.getFullYear() + " " + p2(d.getHours()) + ":" + p2(d.getMinutes());
+      } catch (eD) { antes = ""; }
+      txt += opts.admin === false
+        ? " O que fazer: avise o administrador da conta — só ele pode restaurar o backup."
+        : " O que fazer: abra 💾 Backup e restaure o backup mais recente" + antes + " (a restauração guarda o conteúdo ilegível e refaz " + (orc ? "a lista" : "os dados") + " a partir do arquivo).";
+      if (opts.aberto) txt += " Antes de fechar este orçamento, exporte o Excel dele (aba Planilha): \"Recuperar de uma planilha\" o devolve inteiro.";
+      return txt;
     },
 
     /* =====================================================================
@@ -383,7 +714,10 @@
      * migrar). ⚠ A janela destacada (F8) exige `CAS_ATIVO === true`.
      * ===================================================================== */
     CAS_ATIVO: true,
-    /* {tipo:"conflito"|"apagado"|"incerto", id, numero, base, discoEm, lapideEm}
+    /* {tipo:"conflito"|"apagado"|"incerto"|"corrompido", id, numero, base, discoEm, lapideEm}
+       ("corrompido" vem da quarentena, não da trava: vale mesmo com
+       `CAS_ATIVO` desligado e com `manterCarimbo`; traz `quarentena`,
+       `copiaOk` e `bytes`)
        — null depois de toda gravação que não foi recusada pela trava. `null`
        devolvido com `ultimaRecusa === null` continua sendo falha do
        armazenamento (cota cheia), como sempre foi. */
@@ -397,6 +731,20 @@
     salvarOrcamento: function (empresaId, orc, manterCarimbo, opts) {
       this.ultimaRecusa = null;
       var lista = this.listarOrcamentos(empresaId);
+      /* ⚠ LISTA ILEGÍVEL NO DISCO → RECUSA (ver a nota da quarentena, no
+         topo). `lista` aqui é o `[]` de quem não conseguiu ler: gravar — até
+         com `manterCarimbo`, que é o backup — apagaria todos os outros
+         orçamentos. Vem ANTES da trava de carimbo e ANTES de carimbar, pelo
+         mesmo motivo de lá ("COMPARA ANTES DE CARIMBAR"). A porta é
+         `liberarIlegivel`, que a restauração do backup chama. */
+      var ileg = this.ilegivel(empresaId, "orcamentos");
+      if (ileg && ileg.bloqueia) {
+        this.ultimaRecusa = { tipo: "corrompido", entidade: "orcamentos", id: orc && orc.id, numero: (orc && orc.numero) || "",
+          base: String(orc && orc.atualizadoEm != null ? orc.atualizadoEm : ""),
+          quarentena: ileg.quarentena, copiaOk: ileg.copiaOk, bytes: ileg.bytes, em: ileg.em, desde: ileg.desde };
+        try { console.warn("[store] gravação do orçamento " + (orc && orc.id) + " RECUSADA (corrompido): a lista do disco está ilegível e seria apagada."); } catch (eW) {}
+        return null;
+      }
       var idx = -1;
       for (var i = 0; i < lista.length; i++) { if (orc && lista[i] && lista[i].id === orc.id) { idx = i; break; } }
       if (this.CAS_ATIVO === true && !manterCarimbo && orc) {
@@ -594,7 +942,8 @@
         var l = Util.arr(this.adapter.ler(empresaId, "_lapides", []));
         var restou = l.filter(function (t) { return !(t && alvo[t.id]); });
         if (restou.length === l.length) return 0;
-        this.adapter.gravar(empresaId, "_lapides", restou);
+        /* gravação recusada (lápides ilegíveis, cota): não desenterrou nada */
+        if (this.adapter.gravar(empresaId, "_lapides", restou) === false) return 0;
         return l.length - restou.length;
       } catch (e) { return 0; }
     },
@@ -753,10 +1102,21 @@
       } catch (e) {}
     },
 
+    /* devolve false quando NÃO excluiu por causa da lista ilegível (e aí nem
+       lápide: uma lápide de exclusão que não aconteceu apagaria o orçamento
+       depois, no primeiro sync, quando a lista fosse restaurada). */
     excluirOrcamento: function (empresaId, id) {
+      this.ultimaRecusa = null;
       var lista = this.listarOrcamentos(empresaId).filter(function (o) { return o.id !== id; });
-      this.adapter.gravar(empresaId, "orcamentos", lista);
+      var ileg = this.ilegivel(empresaId, "orcamentos");
+      if (ileg && ileg.bloqueia) {
+        this.ultimaRecusa = { tipo: "corrompido", entidade: "orcamentos", id: id, numero: "", base: "",
+          quarentena: ileg.quarentena, copiaOk: ileg.copiaOk, bytes: ileg.bytes, em: ileg.em, desde: ileg.desde };
+        return false;
+      }
+      var ok = this.adapter.gravar(empresaId, "orcamentos", lista);
       this.lapidar(empresaId, "orcamentos", id);
+      return ok !== false;
     },
 
     // ----- CRUD genérico de entidades da Gestão (obras, clientes, contratos, medicoes, financeiro) -----
@@ -884,8 +1244,12 @@
     },
     excluir: function (empresaId, entidade, id) {
       var l = this.listar(empresaId, entidade).filter(function (x) { return x.id !== id; });
-      this.adapter.gravar(empresaId, entidade, l);
+      var ok = this.adapter.gravar(empresaId, entidade, l);
+      /* ⚠ recusada pela quarentena: sem lápide (ver `excluirOrcamento`) */
+      var ileg = ok ? null : this.ilegivel(empresaId, entidade);
+      if (ileg && ileg.bloqueia) return false;
       this.lapidar(empresaId, entidade, id);
+      return ok !== false;
     },
 
     // ----- Preferências/empresa -----
@@ -927,7 +1291,11 @@
           if (localStorage.hasOwnProperty(k) && k.indexOf(NS + ":") === 0) {
             var b = (localStorage.getItem(k) || "").length;
             bytes += b;
-            porChave.push({ chave: k.split(":").pop(), kb: Math.round(b / 1024) });
+            /* a cópia da quarentena tem a data no fim do nome: sem isto o
+               aviso de armazenamento diria que o maior é "2026-09-16T…" */
+            var pq = k.indexOf(SUFIXO_QUAR);
+            var rot = pq > 0 ? k.slice(0, pq).split(":").pop() + " (cópia ilegível guardada)" : k.split(":").pop();
+            porChave.push({ chave: rot, kb: Math.round(b / 1024) });
           }
         }
       } catch (e) {}
@@ -939,6 +1307,9 @@
       try { migr = JSON.parse(localStorage.getItem(NS + ":migracoes") || "[]"); } catch (e) {}
       return { orcamentos: orcs.length, tamanhoKB: Math.round(bytes / 1024), usoPct: usoPct,
         migracoes: migr.length, schemaVersao: CONFIG.schemaVersao,
+        /* `orcamentos: 0` com a lista ilegível NÃO é carteira vazia: quem lê
+           a saúde confere aqui antes (e as cópias guardadas ficam à vista) */
+        ilegiveis: this.ilegiveis(empresaId), quarentenas: this.quarentenas(empresaId),
         /* o que de fato ocupa o espaço, do maior para o menor — é isso que a
            pessoa precisa saber para decidir o que fazer */
         maiores: porChave.slice(0, 5) };

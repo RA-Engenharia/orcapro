@@ -28,6 +28,18 @@
       if (typeof Tour !== "undefined") f.push({ tipo: "acao", id: "tour", titulo: "Rever o tour guiado", subtitulo: "conheça o sistema em 60 segundos", palavras: "ajuda tutorial guia" });
       // backup é ação de DONO (sub-usuário não tem o menu — sem beco sem saída)
       if (logado.papel !== "usuario") f.push({ tipo: "acao", id: "backup", titulo: "Backup dos dados", subtitulo: "exportar ou restaurar", palavras: "exportar salvar restaurar seguranca" });
+      /* ⚠ AS AÇÕES DO ORÇAMENTO ABERTO (16/09/2026). No modo foco da aba
+         Cronograma a barra de ações some, e "gerar proposta" no Ctrl+K dava
+         "Nada encontrado" — medido. Só entram com um orçamento aberto no
+         editor (sem ele não há DE QUEM gerar), e rodam pelo MESMO método do
+         botão, com as mesmas guardas (App.gerarProposta confere o plano PRO;
+         App.apresentarOrcamento, item sem preço e sem quantidade). */
+      var ap = (typeof App !== "undefined") ? App : null;
+      if (ap && ap.tela === "editor" && ap.orcAtual && this._pode("orcamentos")) {
+        var numO = ap.orcAtual.numero ? String(ap.orcAtual.numero) : "orçamento aberto";
+        f.push({ tipo: "acao", id: "orc-proposta", titulo: "Gerar Proposta Comercial", subtitulo: numO, palavras: "proposta comercial gerar pdf cliente orcamento" });
+        f.push({ tipo: "acao", id: "orc-apresentar", titulo: "Apresentar ao cliente", subtitulo: numO + " · tela cheia", palavras: "apresentar apresentacao reuniao tela cheia cliente orcamento" });
+      }
 
       // módulos (nome real da sidebar, já respeitando RBAC) + aliases da linguagem
       // do canteiro (quem digita "diário" quer o RDO; "cronograma" mora no orçamento)
@@ -96,6 +108,16 @@
 
     abrir: function () {
       if (this._aberto) { this.fechar(); return; }
+      /* ⚠ A JANELA DESTACADA NÃO TEM BUSCA. Ela mostra UM painel (o CSS
+         esconde o resto do #main). Roteiro do defeito (revisão adversarial da
+         1.2.81): Ctrl+K "painel" + Enter na janela do Gantt deixava o #main
+         vazio, com o cabeçalho ainda dizendo "Gantt · ao vivo"; e "Gerar
+         Proposta Comercial" abria a proposta dentro da janela do Gantt. Módulo
+         e ação do orçamento moram na janela principal. */
+      if (typeof App !== "undefined" && App._janela) {
+        if (typeof UI !== "undefined" && UI.toast) UI.toast("Esta janela mostra só um painel do orçamento. A busca (Ctrl+K) e os outros módulos ficam na janela principal — use o botão \"Ir para a janela principal\", no topo.", "erro", 7000);
+        return;
+      }
       var logado = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario());
       if (!logado || typeof Busca === "undefined") return;
       this._indice = Busca.indexar(this.fontes());
@@ -184,6 +206,11 @@
         // re-checa no clique (a permissão pode ter mudado com a equipe sincronizando)
         if (r.id === "novo-orcamento" && !this._pode("orcamentos")) { if (typeof UI !== "undefined") UI.toast("Sem permissão para o módulo Orçamentos.", "erro"); return; }
         if (r.id === "novo-orcamento" && typeof App !== "undefined") { if (App.irPara("orcamentos") === false) return; App.novoOrcamento(); }
+        else if (r.id === "orc-proposta" || r.id === "orc-apresentar") {
+          /* re-checa na hora: o índice foi montado ao abrir a busca */
+          if (typeof App === "undefined" || App.tela !== "editor" || !App.orcAtual) { if (typeof UI !== "undefined") UI.toast("Abra um orçamento primeiro.", "erro"); return; }
+          if (r.id === "orc-proposta") App.gerarProposta(); else App.apresentarOrcamento();
+        }
         else if (r.id === "tour" && typeof Tour !== "undefined") Tour.iniciar(true);
         else if (r.id === "backup") { var b = document.querySelector('[data-acao="backup"]'); if (b) b.click(); else if (typeof UI !== "undefined") UI.toast("Abra ⚙ (menu da conta) → " + (typeof Icones !== "undefined" ? Icones.get("salvar", 15) : "") + " Backup.", "ok"); }
         return;

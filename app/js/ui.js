@@ -71,6 +71,69 @@
       setTimeout(function () { t.style.opacity = "0"; setTimeout(function () { t.remove(); }, 250); }, dura);
     },
 
+    /* ⚠ UM RECADO SÓ POR ASSUNTO (frente cf-grade, 16/09/2026). Roteiro do
+       defeito (revisão da F6 e auditoria de tela da 1.2.80, galpão): cada
+       gravação do cronograma soltava o seu toast. O Tab corrido pela grade do
+       Gantt empilhou 12 toasts verdes (o modo executivo soma o "Modo
+       executivo: o prazo passou…" do persistir); três arrastos seguidos
+       deixaram três toasts de 560 × 115 px por 2,6 s em cima das barras que
+       tinham acabado de mudar; o Desfazer mostrava dois. Quem edita em série
+       perdia a vista do que estava editando.
+       `toastMarca()` fotografa a pilha ANTES da ação; `toastJuntar(marca,
+       chave, largura)` junta num toast só o que a ação criou e tira o toast
+       anterior da MESMA chave (o recado velho sai, o novo fica).
+       ⚠ Pela FOTO, e não por índice: a chamada de dentro (o caminho único)
+       tira o recado anterior e os índices da de fora andariam. Chamadas
+       aninhadas com a mesma chave dão o mesmo resultado.
+       ⚠ Recado de erro vence: ele fica (com o tempo de leitura dele) e o resto
+       entra no texto. ⚠ Texto puro ao juntar (textContent), nunca innerHTML:
+       por aqui passa nome de obra e mensagem de servidor. */
+    toastMarca: function () {
+      var w = this.el("toasts");
+      return (w && w.children) ? [].slice.call(w.children) : [];
+    },
+    toastJuntar: function (marca, chave, largura) {
+      var w = this.el("toasts");
+      if (!w || !w.children) return null;
+      marca = marca || [];
+      this._toastChave = this._toastChave || {};
+      var todos = [].slice.call(w.children), novos = [], i;
+      for (i = 0; i < todos.length; i++) if (marca.indexOf(todos[i]) < 0) novos.push(todos[i]);
+      var velho = this._toastChave[chave];
+      if (velho && velho.parentNode && novos.indexOf(velho) < 0) { try { velho.parentNode.removeChild(velho); } catch (eR) {} }
+      this._toastChave[chave] = null;
+      if (!novos.length) return null;
+      var fica = null;
+      for (i = 0; i < novos.length && !fica; i++) if (/(^|\s)erro(\s|$)/.test(novos[i].className)) fica = novos[i];
+      for (i = 0; i < novos.length && !fica; i++) if (/(^|\s)ok(\s|$)/.test(novos[i].className)) fica = novos[i];
+      fica = fica || novos[0];
+      if (novos.length > 1) {
+        var partes = [fica.textContent];
+        for (i = 0; i < novos.length; i++) {
+          if (novos[i] === fica) continue;
+          partes.push(novos[i].textContent);
+          try { novos[i].parentNode.removeChild(novos[i]); } catch (eX) {}
+        }
+        fica.textContent = partes.join(" · ");
+      }
+      fica.setAttribute("data-toast-chave", String(chave));
+      if (Number(largura) > 0) fica.style.maxWidth = Number(largura) + "px";
+      this._toastChave[chave] = fica;
+      return fica;
+    },
+    /* ⚠ O RECADO ATUAL DA CHAVE DEIXA DE SER SUBSTITUÍVEL. Para um gesto que
+       grava DUAS vezes (App._gxUp: o campo pendente e a soltura do arrasto).
+       Roteiro do defeito (revisão adversarial da 1.2.81, MutationObserver no
+       #toasts): "abc" digitado na Dur. da 2.2 sem Enter e a pessoa arrasta a
+       4.3. A 1ª gravação recusava o "abc" com toast de erro e o registrava na
+       chave "crono"; a 2ª (a soltura) juntava de novo e TIRAVA o toast anterior
+       da mesma chave — erro incluído. Ele vivia 0 ms, ficava só o verde, e o
+       campo fechava descartando o texto. Solto da chave, ele entra como "novo"
+       na junção de fora do gesto, e lá o erro vence. */
+    toastSoltar: function (chave) {
+      if (this._toastChave) this._toastChave[chave] = null;
+    },
+
     // ---------- Modal ----------
     modal: function (titulo, corpoHTML, rodapeBotoes) {
       this.fecharModal();
@@ -191,7 +254,8 @@
       return '' +
         '<button class="topbar-burger" data-acao="menu" aria-label="Menu de módulos" title="Módulos">☰</button>' +
         '<div class="logo" style="display:flex;align-items:center;gap:10px">' +
-          '<svg width="34" height="34" viewBox="0 0 100 100" style="flex:none"><defs><linearGradient id="tbg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#163a5c"/><stop offset="1" stop-color="#2e6f9e"/></linearGradient></defs><rect x="2" y="2" width="96" height="96" rx="24" fill="url(#tbg)"/><rect x="24" y="52" width="13" height="22" rx="4" fill="#fff" opacity=".55"/><rect x="44" y="38" width="13" height="36" rx="4" fill="#fff" opacity=".9"/><rect x="64" y="24" width="13" height="50" rx="4" fill="#6fd08a"/><path d="M73 10 l2.4 5.1 5.6 .7 -4.1 3.9 1 5.6 -4.9 -2.7 -4.9 2.7 1 -5.6 -4.1 -3.9 5.6 -.7z" fill="#9be7af"/></svg>' +
+          /* ⚠ Marca "Refinado" (16/09/2026): a mesma geometria de img/logo-icon.svg, em grade de 512. Mudar a marca é mudar juntos: img/logo-icon.svg, loja/logo-icon.svg, js/ui.js (topo e entrada), js/gestao.js (lateral), js/obravitrine.js (barras) e os PNG/ICO. O id do gradiente é diferente em cada cópia: id repetido faz a segunda herdar a pintura da primeira. */
+          '<svg width="34" height="34" viewBox="0 0 512 512" style="flex:none"><defs><linearGradient id="tbg" x1="0" y1="0" x2=".35" y2="1"><stop offset="0" stop-color="#2d6a9c"/><stop offset="1" stop-color="#143a5e"/></linearGradient></defs><path d="M504 256 L504 354 L502 385 L500 407 L496 425 L492 440 L486 452 L480 463 L472 472 L463 480 L452 486 L440 492 L425 496 L407 500 L385 502 L354 504 L256 504 L158 504 L127 502 L105 500 L87 496 L72 492 L60 486 L49 480 L40 472 L32 463 L26 452 L20 440 L16 425 L12 407 L10 385 L8 354 L8 256 L8 158 L10 127 L12 105 L16 87 L20 72 L26 60 L32 49 L40 40 L49 32 L60 26 L72 20 L87 16 L105 12 L127 10 L158 8 L256 8 L354 8 L385 10 L407 12 L425 16 L440 20 L452 26 L463 32 L472 40 L480 49 L486 60 L492 72 L496 87 L500 105 L502 127 L504 158 Z" fill="url(#tbg)"/><path d="M502 256 L502 353 L500 384 L498 406 L494 424 L490 438 L484 450 L478 461 L470 470 L461 478 L450 484 L438 490 L424 494 L406 498 L384 500 L353 502 L256 502 L159 502 L128 500 L106 498 L88 494 L74 490 L62 484 L51 478 L42 470 L34 461 L28 450 L22 438 L18 424 L14 406 L12 384 L10 353 L10 256 L10 159 L12 128 L14 106 L18 88 L22 74 L28 62 L34 51 L42 42 L51 34 L62 28 L74 22 L88 18 L106 14 L128 12 L159 10 L256 10 L353 10 L384 12 L406 14 L424 18 L438 22 L450 28 L461 34 L470 42 L478 51 L484 62 L490 74 L494 88 L498 106 L500 128 L502 159 Z" fill="none" stroke="#fff" stroke-opacity=".14" stroke-width="3"/><g><path d="M120 306 L120 372 Q120 380 128 380 L180 380 Q188 380 188 372 L188 306 Q188 288 170 288 L138 288 Q120 288 120 306 Z" fill="#fff" fill-opacity=".42"/><path d="M222 238 L222 372 Q222 380 230 380 L282 380 Q290 380 290 372 L290 238 Q290 220 272 220 L240 220 Q222 220 222 238 Z" fill="#fff" fill-opacity=".78"/><path d="M324 170 L324 372 Q324 380 332 380 L384 380 Q392 380 392 372 L392 170 Q392 152 374 152 L342 152 Q324 152 324 170 Z" fill="#3ccf73"/><path d="M402 72 C408 100 408 100 436 106 C408 112 408 112 402 140 C396 112 396 112 368 106 C396 100 396 100 402 72 Z" fill="#9be7af"/></g></svg>' +
           '<div style="display:flex;flex-direction:column;line-height:1.05">' + CONFIG.marca.logoTexto + '<small>' + CONFIG.marca.slogan + ' · <span style="opacity:.85">v' + CONFIG.versao + '</span></small></div>' +
         '</div>' +
         '<span class="badge-plano ' + freeCls + '">' + (CONFIG.planos[plano] ? CONFIG.planos[plano].nome : plano) + '</span>' +
@@ -798,7 +862,7 @@
             contas.map(function (c) { return '<button type="button" class="btn sm" data-conta="' + Util.esc(c.email) + '">👤 ' + Util.esc(c.email) + '</button>'; }).join("") +
           '</div></div>'
         : '';
-      var badge = '<svg width="46" height="46" viewBox="0 0 100 100" style="flex:none"><defs><linearGradient id="lgg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#163a5c"/><stop offset="1" stop-color="#2e6f9e"/></linearGradient></defs><rect x="2" y="2" width="96" height="96" rx="24" fill="url(#lgg)"/><rect x="24" y="52" width="13" height="22" rx="4" fill="#fff" opacity=".55"/><rect x="44" y="38" width="13" height="36" rx="4" fill="#fff" opacity=".9"/><rect x="64" y="24" width="13" height="50" rx="4" fill="#6fd08a"/><path d="M73 10 l2.4 5.1 5.6 .7 -4.1 3.9 1 5.6 -4.9 -2.7 -4.9 2.7 1 -5.6 -4.1 -3.9 5.6 -.7z" fill="#9be7af"/></svg>';
+      var badge = '<svg width="46" height="46" viewBox="0 0 512 512" style="flex:none"><defs><linearGradient id="lgg" x1="0" y1="0" x2=".35" y2="1"><stop offset="0" stop-color="#2d6a9c"/><stop offset="1" stop-color="#143a5e"/></linearGradient></defs><path d="M504 256 L504 354 L502 385 L500 407 L496 425 L492 440 L486 452 L480 463 L472 472 L463 480 L452 486 L440 492 L425 496 L407 500 L385 502 L354 504 L256 504 L158 504 L127 502 L105 500 L87 496 L72 492 L60 486 L49 480 L40 472 L32 463 L26 452 L20 440 L16 425 L12 407 L10 385 L8 354 L8 256 L8 158 L10 127 L12 105 L16 87 L20 72 L26 60 L32 49 L40 40 L49 32 L60 26 L72 20 L87 16 L105 12 L127 10 L158 8 L256 8 L354 8 L385 10 L407 12 L425 16 L440 20 L452 26 L463 32 L472 40 L480 49 L486 60 L492 72 L496 87 L500 105 L502 127 L504 158 Z" fill="url(#lgg)"/><path d="M502 256 L502 353 L500 384 L498 406 L494 424 L490 438 L484 450 L478 461 L470 470 L461 478 L450 484 L438 490 L424 494 L406 498 L384 500 L353 502 L256 502 L159 502 L128 500 L106 498 L88 494 L74 490 L62 484 L51 478 L42 470 L34 461 L28 450 L22 438 L18 424 L14 406 L12 384 L10 353 L10 256 L10 159 L12 128 L14 106 L18 88 L22 74 L28 62 L34 51 L42 42 L51 34 L62 28 L74 22 L88 18 L106 14 L128 12 L159 10 L256 10 L353 10 L384 12 L406 14 L424 18 L438 22 L450 28 L461 34 L470 42 L478 51 L484 62 L490 74 L494 88 L498 106 L500 128 L502 159 Z" fill="none" stroke="#fff" stroke-opacity=".14" stroke-width="3"/><g><path d="M120 306 L120 372 Q120 380 128 380 L180 380 Q188 380 188 372 L188 306 Q188 288 170 288 L138 288 Q120 288 120 306 Z" fill="#fff" fill-opacity=".42"/><path d="M222 238 L222 372 Q222 380 230 380 L282 380 Q290 380 290 372 L290 238 Q290 220 272 220 L240 220 Q222 220 222 238 Z" fill="#fff" fill-opacity=".78"/><path d="M324 170 L324 372 Q324 380 332 380 L384 380 Q392 380 392 372 L392 170 Q392 152 374 152 L342 152 Q324 152 324 170 Z" fill="#3ccf73"/><path d="M402 72 C408 100 408 100 436 106 C408 112 408 112 402 140 C396 112 396 112 368 106 C396 100 396 100 402 72 Z" fill="#9be7af"/></g></svg>';
       return '' +
         '<div class="login-wrap">' +
           '<div class="login-hero"><div class="lh-grid"></div><div class="lh-content">' +
@@ -885,8 +949,75 @@
     },
 
     // ---------- Tela: Lista de orçamentos ----------
+    /* =====================================================================
+     * ⚠ O AVISO FIXO DO CONTEÚDO ILEGÍVEL (js/store.js, nota da quarentena).
+     *   A lista vazia que ele substitui dizia "Nenhum orçamento ainda — crie
+     *   o primeiro" a quem tinha trinta orçamentos num arquivo que não abriu:
+     *   o convite exato para gravar por cima. Aqui diz o que houve, que nada
+     *   foi apagado, e dá as duas portas (restaurar e recomeçar).
+     *   `lista`: as marcas que travam (App._ilegiveisTravando). Texto do
+     *   Store, escapado aqui.
+     * ===================================================================== */
+    renderAvisoIlegivel: function (lista, admin) {
+      lista = lista || [];
+      if (!lista.length) return "";
+      var orc = null, outras = [];
+      lista.forEach(function (m) { if (m.entidade === "orcamentos" && !orc) orc = m; else outras.push(m); });
+      var prim = orc || lista[0];
+      if (!orc) outras = lista.slice(1);
+      var ic = typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "⚠";
+      var tit = orc ? "A lista de orçamentos deste aparelho não pôde ser lida" : "Há dados deste aparelho que não puderam ser lidos";
+      var h = '<div class="card mb" id="aviso-ilegivel" role="alert" style="padding:14px 16px;border:1px solid rgba(220,38,38,.45);background:rgba(220,38,38,.07)">' +
+        '<div style="font-weight:600;margin-bottom:6px">' + ic + ' ' + Util.esc(tit) + '</div>' +
+        '<p style="margin:0 0 6px;line-height:1.45">' + Util.esc(Store.recadoIlegivel(prim, { admin: admin !== false })) + '</p>';
+      if (outras.length) {
+        h += '<p class="muted" style="margin:0 0 6px;font-size:12.5px">Também ilegíveis: ' + Util.esc(outras.map(function (m) {
+          return (Store.nomeEntidade ? Store.nomeEntidade(m.entidade) : m.entidade) + " (" + Math.max(1, Math.round((m.bytes || 0) / 1024)) + " KB)";
+        }).join(", ")) + '.</p>';
+      }
+      if (admin !== false) {
+        h += '<div class="flex" style="gap:8px;flex-wrap:wrap;margin-top:8px">' +
+          '<button class="btn primary sm" data-acao="backup">' + (typeof Icones !== 'undefined' ? Icones.get('salvar', 15) : '') + ' Restaurar um backup</button>' +
+          '<button class="btn sm" data-acao="liberar-ilegivel" title="Guarda o conteúdo ilegível à parte (nada é apagado) e deixa esta parte recomeçar vazia. Use quando não houver backup — com a nuvem ligada, ela traz de volta o que tem.">Guardar à parte e recomeçar</button>' +
+          '</div>';
+      }
+      return h + '</div>';
+    },
+
+    /* =====================================================================
+     * ⚠ O AVISO DA PAUSA DO BACKUP (App._bkpPausa). Depois do "recomeçar" o
+     *   aviso vermelho some — a lista voltou a abrir — e com ele sumia a data
+     *   do arquivo a restaurar. Este fica até a pessoa restaurar ou dizer que
+     *   não tem backup, com as duas portas.
+     * `pausa`: {desde, entidades}; `antes`: "de antes de dd/mm/aaaa hh:mm".
+     * ===================================================================== */
+    renderAvisoPausa: function (pausa, admin, antes) {
+      if (!pausa) return "";
+      var ic = typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "⚠";
+      var partes = Util.arr(pausa.entidades).map(function (e) { return Store.nomeEntidade ? Store.nomeEntidade(e) : e; }).join(", ");
+      var h = '<div class="card mb" id="aviso-bkp-pausa" role="status" style="padding:12px 16px;border:1px solid rgba(217,119,6,.5);background:rgba(217,119,6,.08)">' +
+        '<div style="font-weight:600;margin-bottom:6px">' + ic + ' Backup automático parado: falta restaurar o arquivo ' + Util.esc(antes || "de antes do problema") + '</div>' +
+        '<p style="margin:0 0 6px;line-height:1.45">' + Util.esc(
+          (partes ? "Recomeçou sem o conteúdo ilegível: " + partes + ". " : "") +
+          "O que só existia nele volta restaurando, em 💾 Backup, o arquivo " + (antes || "de antes do problema") +
+          " (o nome do arquivo traz a data). Até lá o backup automático não grava, para esse arquivo não sair da rotação da pasta.") + '</p>';
+      if (admin !== false) {
+        h += '<div class="flex" style="gap:8px;flex-wrap:wrap;margin-top:8px">' +
+          '<button class="btn primary sm" data-acao="backup">' + (typeof Icones !== 'undefined' ? Icones.get('salvar', 15) : '') + ' Restaurar um backup</button>' +
+          '<button class="btn sm" data-acao="backup-pausa-fim" title="Use se não houver backup de antes do problema: o backup automático volta a gravar, e com o tempo os arquivos antigos saem da pasta.">Não tenho backup: voltar a fazer backup automático</button>' +
+          '</div>';
+      } else {
+        h += '<p class="muted" style="margin:0;font-size:12.5px">Avise o administrador da conta — só ele restaura o backup.</p>';
+      }
+      return h + '</div>';
+    },
+
     renderLista: function (orcamentos, baseInfo) {
       var html = "";
+      var ilegiveis = (baseInfo && baseInfo.ilegiveis) || [];
+      var listaIlegivel = ilegiveis.some(function (m) { return m && m.entidade === "orcamentos"; });
+      html += this.renderAvisoIlegivel(ilegiveis, !(baseInfo && baseInfo.admin === false));
+      if (!ilegiveis.length && baseInfo && baseInfo.pausa) html += this.renderAvisoPausa(baseInfo.pausa, baseInfo.admin, baseInfo.pausaAntes);
       // Banner da base SINAPI ativa
       if (baseInfo) {
         var origem = baseInfo.personalizada ? "base própria importada" : "base para novos orçamentos";
@@ -921,6 +1052,9 @@
                  '<button class="btn" data-acao="importar-planilha" title="Importe uma planilha de orçamento (Excel/CSV) de QUALQUER formato — o agente detecta as etapas e itens e casa o código SINAPI">' + Icones.get("importar") + 'Importar planilha</button>' +
                  '<button class="btn" data-acao="copiar-orc" title="Criar um orçamento a partir de outro que já existe">⧉ Copiar de outro</button> ' +
                  '<button class="btn primary" data-acao="novo">+ Novo Orçamento</button></div></div>';
+      /* lista ilegível: o aviso lá em cima já diz tudo, e "crie o primeiro" é o
+         convite para gravar por cima (ver renderAvisoIlegivel) */
+      if (!orcamentos.length && listaIlegivel) return html;
       if (!orcamentos.length) {
         /* A LISTA VAZIA É EXATAMENTE A TELA DE QUEM PERDEU O ORÇAMENTO.
            Oferecer só "criar o primeiro" a quem acabou de perder o dele é a
@@ -1150,17 +1284,55 @@
       var _comercial = (typeof App !== "undefined" && App._propComercialBotoes) ? App._propComercialBotoes(orc) : "";
       var _sep = '<span class="acoes-sep" aria-hidden="true"></span>';
 
-      var html = '<div class="flex between tela-titulo">' +
+      /* ⧉ abre a aba de agora numa janela separada (js/janelas.js), para o
+         segundo monitor. Some na demo, dentro da própria janela destacada, e
+         sem a trava de carimbo entre janelas (sem ela duas janelas perdiam dado).
+         ⚠ MORA NA LINHA DO TÍTULO, E NÃO NO FIM DA `.tabs` (16/09/2026).
+         Roteiro do defeito: a `.tabs` rola na horizontal e o botão era o último
+         item dela (`margin-left:auto`). Medido na 1.2.80: x 1469–1639 contra a
+         faixa visível até 1322 a 1366 px e até 1556 a 1600 px — abaixo de
+         ~1650 px o recurso da 1.2.79 simplesmente não aparecia, e a rolagem da
+         faixa volta a zero a cada render. A e2e passava porque rolava até ele
+         (`scrollIntoView`) antes de medir. A linha do título não rola e tem o
+         lado direito vazio. tools/e2e-crono-foco-sai.js mede por
+         elementFromPoint, SEM rolar, a 1280, 1366, 1674 e 1920. */
+      var apJ = (typeof App !== "undefined") ? App : null;
+      var abasJan = { planilha: 1, sintetico: 1, insumos: 1, cronograma: 1, execucao: 1, graficos: 1, relatorios: 1 };
+      var _bJanela = (typeof Janelas !== "undefined" && Janelas.suportado() && Janelas.podeEditar(typeof Store !== "undefined" ? Store : null) && apJ && !apJ._janela && !apJ._demo && abasJan[abaAtiva])
+        ? '<button type="button" class="btn sm jan-abrir" data-acao="janela-abrir" title="Abrir esta aba numa janela separada, para levar ao outro monitor. O que gravar numa aparece na outra." aria-label="Abrir em outra janela">⧉ Abrir em outra janela</button>'
+        : '';
+      /* ⚠ AS PORTAS DO MODO FOCO (16/09/2026). Na aba Cronograma o CSS esconde
+         a `.barra-acoes` inteira (body.foco-crono .orc-cab), e ela era o ÚNICO
+         lugar de [Gerar Proposta] e [Apresentar] — medido: quem apresentava o
+         cronograma ao cliente não tinha como fechar com a proposta, e o Ctrl+K
+         dizia "Nada encontrado". Aqui ficam só as duas, em N2 (32 px, raio 8),
+         e aparecem SÓ com o foco ligado (`.orc-foco-acoes`, app.css) — fora
+         dele a barra de sempre já as mostra, e duas cópias à vista confundem.
+         Os `data-acao` são os MESMOS da barra: um despacho só (App.onClick),
+         com as mesmas guardas de item sem preço e sem quantidade. */
+      var _bFoco = (abaAtiva === "cronograma")
+        ? '<span class="orc-foco-acoes">' +
+            '<button type="button" class="btn sm" data-acao="proposta" title="Gerar a proposta comercial deste orçamento">' + Icones.get("proposta") + 'Gerar Proposta</button>' +
+            '<button type="button" class="btn sm" data-acao="apresentar" title="Modo apresentação: tela cheia pra reunião com o cliente (setas navegam, Esc sai)">' + Icones.get("apresentar") + 'Apresentar</button>' +
+          '</span>'
+        : '';
+      var html = '<div class="flex between tela-titulo orc-titulo">' +
         /* ⚠ o nome é `.tela-nome` (20/600, app.css) e não `style="…font-weight:800"`:
            em linha ele escapava de toda folha, e o 800 desenhava 600. Continua
            <span>: um <h2> perderia cor e tamanho para `.main h2`. ← Voltar é N3
            com texto (transparente em repouso). */
-        '<div><button class="btn ghost sm n3" data-acao="voltar">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Voltar</button> ' +
-        '<span class="tela-nome">' + Util.esc(orc.nome) + '</span> ' +
+        '<div class="orc-titulo-nome"><button class="btn ghost sm n3" data-acao="voltar">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Voltar</button> ' +
+        /* o `title` devolve o nome inteiro quando a mesa o corta com reticências */
+        '<span class="tela-nome" title="' + Util.esc(orc.nome) + '">' + Util.esc(orc.nome) + '</span> ' +
         '<span class="muted">' + Util.esc(orc.numero) + '</span></div>' +
+        ((_bFoco || _bJanela) ? '<div class="orc-titulo-acoes">' + _bFoco + _bJanela + '</div>' : '') +
         '</div>';
 
-      html += '<div class="barra-acoes mb">' +
+      /* ⚠ `orc-cab` marca o que o modo foco do Cronograma esconde (app.css).
+         A regra antiga mirava `#main > .kpis` — qualquer KPI de qualquer tela —
+         e, com a classe do body vazando, apagava os cartões da lista e do
+         Painel. Marca no próprio bloco: só o que É do editor some. */
+      html += '<div class="barra-acoes mb orc-cab">' +
         /* LINHA 1 — O ORCAMENTO: montar → ajustar → planilha → conferir */
         '<div class="acoes-linha" aria-label="O orcamento">' +
           _grp(_bEscopo) + _sep +
@@ -1212,8 +1384,8 @@
         '</div>' +
       '</div>';
 
-      // KPIs
-      html += '<div class="kpis">' +
+      // KPIs (⚠ `orc-cab`: ver a nota da barra acima)
+      html += '<div class="kpis orc-cab">' +
         kpi("Custo Direto", Util.fmtMoeda(t.custoDireto), "custo") +
         kpi("BDI", Util.fmtPct(t.bdiPercentual) + " (" + Util.fmtMoeda(t.bdiValor) + ")", "") +
         /* FECHAR EM UM VALOR — DENTRO do card de Preço de Venda, porque é a
@@ -1262,7 +1434,7 @@
       var _semPreco = Orcamento.itensSemPreco ? Orcamento.itensSemPreco(orc) : [];
       if (_semPreco.length) {
         /* ⚠ classe `faixa-pend` (app.css): 12 px e vão 6×12 — ver lá o roteiro da dobra a 1366×768 */
-        html += '<div class="faixa-pend erro">' +
+        html += '<div class="faixa-pend erro orc-cab">' +
           '⛔ <b>' + _semPreco.length + ' item(ns) sem preço:</b> ' +
           _semPreco.slice(0, 5).map(function (i) { return '<b>' + Util.esc(i.numero) + '</b>' + (i.codigo ? ' (' + Util.esc(i.codigo) + ')' : ''); }).join(', ') +
           (_semPreco.length > 5 ? '…' : '') +
@@ -1274,7 +1446,7 @@
          orçamento de 60 itens, e a proposta agora bloqueia por causa dele. */
       var _semQtd = Orcamento.itensSemQuantidade ? Orcamento.itensSemQuantidade(orc) : [];
       if (_semQtd.length) {
-        html += '<div class="faixa-pend aviso">' +
+        html += '<div class="faixa-pend aviso orc-cab">' +
           '⚠ <b>' + _semQtd.length + ' item(ns) sem quantidade:</b> ' +
           _semQtd.slice(0, 5).map(function (x) { return '<b>' + Util.esc(x.item.codigo || String(x.item.descricao || '').slice(0, 18)) + '</b>'; }).join(', ') +
           (_semQtd.length > 5 ? '…' : '') +
@@ -1301,14 +1473,8 @@
       abas.forEach(function (a) {
         html += '<div class="tab ' + (abaAtiva === a[0] ? "ativa" : "") + '" data-aba="' + a[0] + '">' + Icones.get(a[2], 14) + a[1] + '</div>';
       });
-      /* ⧉ abre a aba de agora numa janela separada (js/janelas.js), para o
-         segundo monitor. Some na demo, dentro da própria janela destacada, e
-         sem a trava de carimbo entre janelas (sem ela duas janelas perdiam dado). */
-      var apJ = (typeof App !== "undefined") ? App : null;
-      var abasJan = { planilha: 1, sintetico: 1, insumos: 1, cronograma: 1, execucao: 1, graficos: 1, relatorios: 1 };
-      if (typeof Janelas !== "undefined" && Janelas.suportado() && Janelas.podeEditar(typeof Store !== "undefined" ? Store : null) && apJ && !apJ._janela && !apJ._demo && abasJan[abaAtiva]) {
-        html += '<button type="button" class="btn sm jan-abrir" data-acao="janela-abrir" title="Abrir esta aba numa janela separada, para levar ao outro monitor. O que gravar numa aparece na outra." aria-label="Abrir em outra janela">⧉ Abrir em outra janela</button>';
-      }
+      /* o ⧉ "Abrir em outra janela" saiu daqui para a linha do título (ver
+         `_bJanela` no começo desta função) */
       html += '</div>';
 
       html += '<div id="aba-conteudo">';
@@ -2442,7 +2608,11 @@
         '<div class="field" style="margin:0">' + lb(iniObra ? 'Início (obra)' : 'Início') + '<input id="cron-inicio" type="date" value="' + (iniObra ? Util.esc(iniObra) : ini()) + '"' + (c ? ' class="cx-c-ini"' : '') +
           (iniObra ? ' readonly aria-readonly="true" title="É o início da obra (cadastro da obra): o plano de execução, a linha de base e o previsto × realizado contam dele. Para mudar, edite a obra."' : '') + '></div>' +
         '<div class="field" style="margin:0">' + lb(c ? 'Equipes' : 'Equipes/frentes') + '<input id="cron-equipes" type="number" min="1" value="' + p.equipes + '"' + larg("cx-c-eq", 80) + (c ? ' title="Equipes/frentes trabalhando ao mesmo tempo"' : '') + '></div>' +
-        '<div class="field" style="margin:0">' + lb(c ? 'Dias/sem.' : 'Dias úteis/sem.') + '<input id="cron-dias" type="number" min="1" max="7" value="' + p.diasUteisSemana + '"' + larg("cx-c-dias", 80) + (c ? ' title="Dias úteis por semana"' : '') + '></div>' +
+        /* ⚠ SÓ 5, 6 OU 7 (Cronograma.validarDiasSemana): o calendário não sabe
+           folgar outros dias, e 1 a 4 davam datas de 5 com semanas de 4. O
+           `title` diz por quê e o Recalcular recusa com o mesmo texto. */
+        '<div class="field" style="margin:0">' + lb(c ? 'Dias/sem.' : 'Dias úteis/sem.') + '<input id="cron-dias" type="number" min="5" max="7" step="1" value="' + p.diasUteisSemana + '"' + larg("cx-c-dias", 80) +
+          ' title="Dias úteis por semana: 5 (folga sábado e domingo), 6 (folga só domingo) ou 7 (sem folga). Se a obra para mais dias, use 5 e lance os dias parados em Feriados locais."></div>' +
         '<div class="field" style="margin:0">' + lb('Paralelismo') + '<select id="cron-paral"' + (c ? ' class="cx-c-paral"' : '') + '>' + opt(0, "Nenhum", p.paralelismo) + opt(0.15, "Leve 15%", p.paralelismo) + opt(0.3, "Médio 30%", p.paralelismo) + opt(0.5, "Alto 50%", p.paralelismo) + '</select></div>' +
         '<div class="field" style="margin:0">' + lb('R$/dia-equipe') + '<input id="cron-custodia" type="number" value="' + p.custoDiaEquipe + '"' + larg("cx-c-custo", 100) + '></div>' +
         /* Feriado é prazo: uma obra de um ano atravessa uns 12 e o cronograma
@@ -2607,7 +2777,8 @@
         '<div class="field" style="margin:0"><label>Início da obra</label><input id="exec-inicio" type="date" value="' + d10(sim.dataInicio) + '"></div>' +
         '<div class="field" style="margin:0"><label>Entrega desejada</label><input id="exec-entrega" type="date" value="' + (p.dataEntrega || "") + '"></div>' +
         '<div class="field" style="margin:0"><label>Jornada (h/dia)</label><input id="exec-jornada" type="number" min="1" max="12" value="' + p.jornadaH + '" style="width:80px"></div>' +
-        '<div class="field" style="margin:0"><label>Dias úteis/sem.</label><input id="exec-dias" type="number" min="1" max="7" value="' + p.diasUteisSemana + '" style="width:80px"></div>' +
+        /* ⚠ só 5, 6 ou 7 — a mesma régua do cartão do Cronograma (App.execRecalc recusa o resto) */
+        '<div class="field" style="margin:0"><label>Dias úteis/sem.</label><input id="exec-dias" type="number" min="5" max="7" step="1" value="' + p.diasUteisSemana + '" style="width:80px" title="Dias úteis por semana: 5 (folga sábado e domingo), 6 (folga só domingo) ou 7 (sem folga). Se a obra para mais dias, use 5 e lance os dias parados em Feriados locais, na aba Cronograma."></div>' +
         '<div class="field" style="margin:0"><label title="Onera a diária de colaboradores CLT p/ comparar com o SINAPI (que já vem onerado). Diarista/autônomo/PJ entram cheios.">Encargos CLT (%)</label><input id="exec-encargos" type="number" min="0" max="150" value="' + (p.encargosPct || 0) + '" style="width:90px"></div>' +
         '<button class="btn sm primary" data-acao="exec-recalc">' + (typeof Icones !== 'undefined' ? Icones.get('ciclo', 15) : '') + ' Recalcular</button>' +
         '<button class="btn sm" data-acao="exec-cronograma" title="Usar estas durações no Cronograma">' + Icones.get("cronograma") + 'Enviar ao cronograma</button>' +

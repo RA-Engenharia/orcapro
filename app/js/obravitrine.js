@@ -772,9 +772,9 @@
      tela, e id repetido faz o segundo desenho herdar a pintura do primeiro. */
   var MARCA = '<svg viewBox="0 0 100 100" aria-hidden="true" focusable="false">' +
     '<rect class="ov-marca-fundo" x="4" y="4" width="92" height="92" rx="24"/>' +
-    '<rect class="ov-b1" x="24" y="52" width="13" height="22" rx="4"/>' +
-    '<rect class="ov-b2" x="44" y="38" width="13" height="36" rx="4"/>' +
-    '<rect class="ov-b3" x="64" y="24" width="13" height="50" rx="4"/></svg>';
+    '<rect class="ov-b1" x="23.4" y="56.2" width="13.3" height="18.0" rx="3.5"/>' +
+    '<rect class="ov-b2" x="43.4" y="43.0" width="13.3" height="31.2" rx="3.5"/>' +
+    '<rect class="ov-b3" x="63.3" y="29.7" width="13.3" height="44.5" rx="3.5"/></svg>';
   ObraVitrine.MARCA = MARCA;
 
   /* O card: a foto e o nome, mais nada. `m` é o que ObraVitrine.montar

@@ -204,6 +204,16 @@
           }
         }
       } catch (eSd) {}
+      /* ⚠ CONTEÚDO ILEGÍVEL NO DISCO (js/store.js, nota da quarentena). A
+         `saude()` acima já leu a lista de orçamentos: o aviso dela sai agora.
+         O resto das entidades é conferido depois da primeira tela, porque é um
+         JSON.parse de cada lista e a pessoa precisa ver o app antes. */
+      try {
+        if (Auth.usuario()) {
+          this._avisarIlegiveis(false);
+          setTimeout(function () { try { if (Auth.usuario()) self._avisarIlegiveis(true); } catch (eIv) {} }, 2500);
+        }
+      } catch (eIl) {}
       // LOTE 5: CTA de upgrade quando o teste grátis está acabando (últimos 2 dias)
       try {
         if (typeof Licenca !== "undefined") {
@@ -249,24 +259,89 @@
     },
 
     /* Segunda parte do boot da janela destacada (ver o começo do iniciar).
-       Recados em texto puro: a janela não tem menu para a pessoa se achar. */
+       Recados em texto puro: a janela não tem menu para a pessoa se achar.
+       Roda de novo quando o endereço muda (ver `_janelaHash`). */
     _iniciarJanela: function () {
-      var j = this._janela, main = document.getElementById("main");
-      var recado = function (t) { if (main) { main.innerHTML = '<div class="card" style="margin:24px;max-width:640px"></div>'; main.firstChild.textContent = t; } };
-      if (!Auth.usuario()) { recado("Entre na janela principal do OrçaPRO para continuar."); return; }
-      if (!Janelas.podeEditar(Store)) { recado("Esta versão ainda não protege a edição em duas janelas ao mesmo tempo. Use a janela principal."); return; }
+      var j = this._janela;
+      if (!Auth.usuario()) { this._janelaRecado("Entre na janela principal do OrçaPRO para continuar."); return; }
+      if (!Janelas.podeEditar(Store)) { this._janelaRecado("Esta versão ainda não protege a edição em duas janelas ao mesmo tempo. Use a janela principal."); return; }
+      this._janelaSemDado = false; this._janelaTexto = "";
       this.view = "orcamentos";
       this.abrirOrcamento(j.orcId);
-      if (this.tela !== "editor" || !this.orcAtual) { recado("Este orçamento não foi encontrado nesta máquina (pode ter sido excluído). Feche esta janela."); return; }
+      if (this.tela !== "editor" || !this.orcAtual) {
+        /* lista ilegível (o `abrirOrcamento` acabou de lê-la): "não encontrado
+           (pode ter sido excluído)" seria mentira */
+        if (this._listaIlegivel(Auth.empresaId())) { this._janelaRecado("A lista de orçamentos deste aparelho está ilegível (arquivo corrompido). Feche esta janela e veja o aviso na janela principal."); return; }
+        this._janelaRecado("Este orçamento não foi encontrado nesta máquina (pode ter sido excluído). Feche esta janela."); return;
+      }
       this.aba = j.aba;
       if (j.aba === "cronograma") { this._cronoSub = (this._cronoSub && typeof this._cronoSub === "object") ? this._cronoSub : {}; this._cronoSub[this.orcAtual.id] = j.sub || "cronograma"; }
       try { document.title = Janelas.titulo(j, this.orcAtual); } catch (eT) {}
       var self = this;
-      if (!document.getElementById("jan-cab")) {
-        var cab = document.createElement("div");
+      this._janelaCab(true);
+      /* ⚠ O ENDEREÇO PODE MUDAR SEM RECARREGAR: o navegador que reaproveita a
+         janela (mesmo nome) ou a pessoa que edita o fragmento só trocam o
+         hash. Roteiro do defeito (auditoria da 1.2.80): o endereço dizia
+         /fisico e a tela seguia no Gantt, porque ninguém ouvia `hashchange`.
+         Uma vez por documento. */
+      if (!this._janelaOuvindoHash && window.addEventListener) {
+        this._janelaOuvindoHash = true;
+        window.addEventListener("hashchange", function () { try { self._janelaHash(); } catch (eH) {} });
+      }
+      this.render();
+      setTimeout(function () { try { self.render(); } catch (eR) {} }, 400);
+    },
+
+    /* O hash mudou com a janela aberta: outra rota válida remonta a janela
+       nela mesma; rota inválida vira recado (e não a lista escondida, que
+       seria tela em branco). */
+    _janelaHash: function () {
+      var nova = Janelas.lerRota(location.hash || "");
+      if (!nova) { this._janelaRecado("Este endereço não abre nenhuma parte do orçamento. Feche esta janela e use o botão ⧉ da janela principal."); return; }
+      var j = this._janela || {};
+      if (!this._janelaSemDado && nova.orcId === j.orcId && nova.aba === j.aba && nova.sub === j.sub) return;
+      this._janela = nova;
+      this._iniciarJanela();
+    },
+
+    /* ⚠ RECADO DA JANELA DESTACADA — texto puro, e SÓ ele.
+       Roteiro do defeito (auditoria da 1.2.80, sonda-janela-excluida): com o
+       orçamento excluído na principal, `_relerAberto` mandava a janela para a
+       LISTA, que o CSS da janela esconde (`body.modo-janela #main >
+       :not(#aba-conteudo)`) — a janela ficava EM BRANCO, o cabeçalho seguia
+       nomeando o orçamento excluído e o recado ia num toast que some. Os
+       recados do boot tinham o mesmo buraco: o card nascia escondido pelo
+       mesmo CSS, e o render seguinte (um `storage` qualquer) o trocava pela
+       lista escondida.
+       `_janelaSemDado` segura o recado: todo render seguinte o redesenha
+       (ver o começo do render) e `_relerAberto` não mexe mais na tela. */
+    _janelaRecado: function (texto) {
+      this._janelaSemDado = true;
+      this._janelaTexto = String(texto == null ? "" : texto);
+      this.orcAtual = null; this.tela = "lista";
+      this._gxDesligar();
+      try { document.body.classList.remove("foco-crono"); } catch (eFc) {}
+      var main = document.getElementById("main");
+      if (main) {
+        main.innerHTML = '<div id="jan-recado" class="card" role="status"></div>';
+        main.firstChild.textContent = this._janelaTexto;   // ⚠ texto puro: o id do endereço pode chegar aqui
+      }
+      try { document.title = "OrçaPRO — janela destacada"; } catch (eT) {}
+      this._janelaCab(false);
+    },
+
+    /* O cabeçalho da janela destacada: nome do painel e do orçamento, "ao
+       vivo" e a hora do último carimbo gravado. Atualizado A CADA RENDER
+       (quem grava em qualquer janela troca o `atualizadoEm`, e o render
+       vem logo depois da releitura). `criar`: monta se ainda não existe
+       (no boot); sem ele só atualiza o que já está na tela. */
+    _janelaCab: function (criar) {
+      var j = this._janela, cab = document.getElementById("jan-cab");
+      if (!j || typeof j !== "object") return;
+      if (!cab && criar) {
+        cab = document.createElement("div");
         cab.id = "jan-cab";
-        cab.innerHTML = '<span class="jan-t"></span><span class="jan-vivo">ao vivo</span><button class="btn sm" type="button" data-jan="principal">Ir para a janela principal</button>';
-        cab.querySelector(".jan-t").textContent = "Janela destacada · " + Janelas.titulo(j, this.orcAtual);
+        cab.innerHTML = '<span class="jan-t"></span><span class="jan-vivo">ao vivo</span><span class="jan-atu"></span><button class="btn sm" type="button" data-jan="principal">Ir para a janela principal</button>';
         cab.querySelector("button").onclick = function () {
           try { if (window.opener && !window.opener.closed) { window.opener.focus(); return; } } catch (eO) {}
           UI.toast("A janela principal foi fechada. Abra o OrçaPRO pelo atalho de sempre.", "erro");
@@ -282,8 +357,34 @@
           if (viva) cab.className = ""; else cab.className = "jan-orfa";
         }, 2000);
       }
-      this.render();
-      setTimeout(function () { try { self.render(); } catch (eR) {} }, 400);
+      if (!cab) return;
+      var sem = !!this._janelaSemDado, orc = sem ? null : this.orcAtual;
+      var tt = cab.querySelector(".jan-t"), vv = cab.querySelector(".jan-vivo"), at = cab.querySelector(".jan-atu");
+      /* ⚠ sem dado, o cabeçalho NÃO nomeia o orçamento (ele pode ter sido
+         excluído) nem diz "ao vivo" — não há nada vivo para ver */
+      var txt = sem ? "Janela destacada" : "Janela destacada · " + Janelas.titulo(j, orc);
+      if (tt && tt.textContent !== txt) tt.textContent = txt;
+      if (vv) vv.hidden = sem;
+      /* ⚠ O CARIMBO É O DO QUE A JANELA MOSTRA. No Cronograma de orçamento
+         aprovado com obra, a janela desenha o PLANO DA OBRA (`_cronoAlvo`), e
+         a edição grava no plano — o carimbo do orçamento não se mexe. Roteiro
+         (revisão adversarial da 1.2.81, galpão da demo): a principal gravou a
+         1.2 às 13:45, a janela já mostrava o valor novo e o cabeçalho seguia
+         "atualizado às 11:05:00", que era o orçamento, de 15/07. */
+      var carimbo = orc ? orc.atualizadoEm : "", doPlano = false;
+      if (orc && j.aba === "cronograma") {
+        try {
+          var alvoJ = this._cronoAlvo();
+          if (alvoJ && alvoJ.tipo === "plano" && alvoJ.plano) { carimbo = alvoJ.plano.atualizadoEm || ""; doPlano = true; }
+        } catch (eAl) {}
+      }
+      var hora = orc ? Janelas.horaAtualizado(carimbo) : "";
+      if (at) {
+        if (at.textContent !== hora) at.textContent = hora;
+        at.hidden = !hora;
+        at.title = hora ? (doPlano ? "Hora da última gravação do planejamento da obra (é ele que esta janela mostra), feita em qualquer janela"
+                                   : "Hora da última gravação deste orçamento, feita em qualquer janela") : "";
+      }
     },
 
     // ---------- Modo demonstração (vitrine) ----------
@@ -501,6 +602,27 @@
       /* contador de renders: o CronoExecUI.preparar reaproveita o cálculo do
          cronograma DENTRO do mesmo render e o refaz no seguinte (algo mudou) */
       this._rtok = (this._rtok || 0) + 1;
+      /* ⚠ FOCO NO CRONOGRAMA SAI EM TODO RENDER, antes de qualquer ramo ou
+         return, e só volta no ramo do editor com a aba Cronograma (lá embaixo).
+         Roteiro do defeito (1.2.80, no ar): o toggle morava SÓ dentro do ramo
+         do editor. Cronograma → [← Voltar] caía no ramo da lista, e Cronograma
+         → Painel caía no ramo da Gestão, que retorna antes: nenhum dos dois
+         tirava a classe, e a regra do CSS escondia os 5 cartões da lista e o
+         bloco OPERAÇÃO inteiro do Painel (medido com clique real: kpisLista
+         "none"), sem erro nenhum na tela. A e2e só conferia a volta pela aba
+         Planilha, que passa pelo MESMO ramo que liga a classe. Tirar aqui cobre
+         login, Gestão, lista e qualquer ramo que nasça depois.
+         ⚠ A segunda trava é do CSS: a regra só alcança blocos marcados
+         `.orc-cab` (UI.renderEditor), nunca um `.kpis` de outra tela.
+         tools/e2e-crono-foco-sai.js prova as duas, cada uma com o seu controle
+         negativo. */
+      try { document.body.classList.remove("foco-crono"); } catch (eFc0) {}
+      /* janela destacada: o recado (orçamento excluído, endereço inválido…)
+         vence qualquer tela; com dado, o cabeçalho acompanha o carimbo */
+      if (this._janela) {
+        if (this._janelaSemDado) { this._janelaRecado(this._janelaTexto); return; }
+        try { this._janelaCab(false); } catch (eJc) {}
+      }
       var topbar = UI.el("topbar");
       var main = UI.el("main");
       var sidebar = UI.el("sidebar");
@@ -620,17 +742,18 @@
         var htmlG = Gestao.render(view), okG = !!(htmlG && String(htmlG).trim());
         // ⚠ o #main troca de tela aqui: o Gantt que estava nele é solto (ver _gxDesligar)
         this._gxDesligar();
-        main.innerHTML = okG ? htmlG : this._viewVazia(view);
+        main.innerHTML = okG ? this._avisosDadoGestao() + htmlG : this._viewVazia(view);
         if (okG && Gestao.afterRender) Gestao.afterRender(view);
         return;
       }
       // view = Orçamentos (fluxo original)
       if (this.tela === "editor" && this.orcAtual) {
         /* FOCO NO CRONOGRAMA: na aba Cronograma somem as ações e os KPIs do
-           orçamento (CSS body.foco-crono) — a tela fica com o que é do
+           orçamento (CSS body.foco-crono .orc-cab) — a tela fica com o que é do
            planejamento e o Gantt ganha a altura (modo "tela"). Pedido do dono
-           com o Gantt medido "comprimido" embaixo dos cards. */
-        try { document.body.classList.toggle("foco-crono", this.aba === "cronograma"); } catch (eFc) {}
+           com o Gantt medido "comprimido" embaixo dos cards.
+           ⚠ Aqui só se LIGA: quem desliga é o topo do render (ver o ⚠ lá). */
+        if (this.aba === "cronograma") { try { document.body.classList.add("foco-crono"); } catch (eFc) {} }
         main.innerHTML = UI.renderEditor(this.orcAtual, this.aba);
         /* ⚠ RELIGADO A CADA RENDER, como o filtro da lista. A aba reescreve o
            HTML inteiro; o listener do render anterior morreu junto com o
@@ -659,7 +782,14 @@
         var baseInfo = { competencia: r.competencia, uf: r.uf, total: r.total,
           personalizada: Store.temBaseSinapi(Auth.empresaId()), ufs: _ufs };
         this._gxDesligar();
-        main.innerHTML = UI.renderLista(Store.listarOrcamentos(Auth.empresaId()), baseInfo);
+        /* a leitura vem ANTES do aviso: é ela que renova a marca de conteúdo
+           ilegível (js/store.js, quarentena) que o aviso fixo mostra */
+        var orcsLista = Store.listarOrcamentos(Auth.empresaId());
+        baseInfo.ilegiveis = this._ilegiveisTravando(Auth.empresaId(), false);
+        baseInfo.admin = this._ehAdminAqui();
+        baseInfo.pausa = this._bkpPausa(Auth.empresaId());
+        baseInfo.pausaAntes = baseInfo.pausa ? this._antesDeTxt(baseInfo.pausa.desde) : "";
+        main.innerHTML = UI.renderLista(orcsLista, baseInfo);
         this._ligarFiltroLista();
       }
     },
@@ -1462,6 +1592,13 @@
         try { if (typeof UI !== "undefined" && UI.toast) UI.toast('Módulo "' + view + '" não existe — abrindo o Painel.', "erro"); } catch (eT2) {}
         view = this.viewPadrao();
       }
+      /* ⚠ A JANELA DESTACADA NÃO NAVEGA: o CSS dela esconde tudo no #main
+         menos o painel, e a tela de outro módulo nascia EM BRANCO (ver
+         BuscaUI.abrir). Ação que abre modal (acima) continua valendo. */
+      if (this._janela) {
+        try { UI.toast("Esta janela mostra só um painel do orçamento. Para abrir outro módulo, use a janela principal.", "erro", 6000); } catch (eJn) {}
+        return false;
+      }
       return this._navegar(view);
     },
 
@@ -1901,7 +2038,11 @@
         case "crono-sub": this._cronoEstado("_cronoSub", t.dataset.sub); break;
         case "janela-abrir":
           if (this.orcAtual && typeof Janelas !== "undefined") {
-            Janelas.abrir(this.orcAtual.id, this.aba || "planilha", (this._cronoSub && this._cronoSub[this.orcAtual.id]) || "cronograma");
+            /* ⚠ a sub-aba que a pessoa está VENDO (o render corrige a guardada:
+               sem Gestão, "real" vira "cronograma") — é ela que o ⧉ promete */
+            var subJ = (this._cronoSub && this._cronoSub[this.orcAtual.id]) || "cronograma";
+            try { var cxJ = document.querySelector("#aba-conteudo .cx[data-cx-sub]"); if (cxJ) subJ = cxJ.getAttribute("data-cx-sub") || subJ; } catch (eSj) {}
+            Janelas.abrir(this.orcAtual.id, this.aba || "planilha", subJ);
           }
           break;
         case "crono-det": this._cronoEstado("_cronoDet", t.dataset.det); break;
@@ -1971,6 +2112,8 @@
         case "parede-explodir": this.paredeExplodir(); break;
         case "parede-aplicar": this.paredeAplicar(); break;
         case "novo": this.novoOrcamento(); break;
+        case "liberar-ilegivel": this.liberarIlegiveis(); break;
+        case "backup-pausa-fim": this.backupPausaFim(); break;
         case "copiar-orc": this.copiarOrcamento(); break;
         case "importar-sinapi": this.abrirImportSinapi(); break;
         case "base-oficial": this.voltarBaseOficial(); break;
@@ -2038,29 +2181,36 @@
         case "proposta-whatsapp": this.abrirPropostaWhatsApp(); break;
         case "comercial-salvar-padrao": this.salvarComercialPadrao(); break;
         case "comercial-usar-padrao": this.usarComercialPadrao(); break;
-        case "apresentar": {
-          if (!this.orcAtual || typeof Apresentacao === "undefined") { UI.toast("Abra um orçamento primeiro.", "erro"); break; }
-          // apresentação é cara ao cliente: não projeta orçamento com item zerado
-          var _sp = Orcamento.itensSemPreco(this.orcAtual);
-          if (_sp.length) {
-            UI.toast("⛔ " + _sp.length + " item(ns) sem preço (" + _sp.slice(0, 3).map(function (i) { return i.numero; }).join(", ") + (_sp.length > 3 ? "…" : "") + "). Preencha o custo na planilha antes de apresentar.", "erro");
-            break;
-          }
-          // v1.1.232 — quantidade pendente vale o mesmo que preço zerado aqui:
-          // projetar um total que não contém um dos serviços listados é pior
-          // que não apresentar
-          var _sq = Orcamento.itensSemQuantidade ? Orcamento.itensSemQuantidade(this.orcAtual) : [];
-          if (_sq.length) {
-            UI.toast("⚠ " + _sq.length + " item(ns) sem quantidade. Clique em Calcular na linha para levantar a metragem antes de apresentar.", "erro");
-            break;
-          }
-          Apresentacao.abrir(this.orcAtual); break;
-        }
+        case "apresentar": this.apresentarOrcamento(); break;
         case "laudo": this.gerarLaudo(); break;
         case "relatorio": this.gerarRelatorio(); break;
         case "proposta-imprimir": window.print(); break;
         case "proposta-fechar": this.fecharProposta(); break;
       }
+    },
+
+    /* [Apresentar] do orçamento aberto. Era um `case` do onClick; virou método
+       porque tem DUAS portas — o botão (barra de ações, e a linha do título no
+       modo foco do Cronograma) e o Ctrl+K (js/busca-ui.js) — e as guardas de
+       item sem preço e sem quantidade não podem existir numa porta e faltar
+       na outra. */
+    apresentarOrcamento: function () {
+      if (!this.orcAtual || typeof Apresentacao === "undefined") { UI.toast("Abra um orçamento primeiro.", "erro"); return; }
+      // apresentação é cara ao cliente: não projeta orçamento com item zerado
+      var _sp = Orcamento.itensSemPreco(this.orcAtual);
+      if (_sp.length) {
+        UI.toast("⛔ " + _sp.length + " item(ns) sem preço (" + _sp.slice(0, 3).map(function (i) { return i.numero; }).join(", ") + (_sp.length > 3 ? "…" : "") + "). Preencha o custo na planilha antes de apresentar.", "erro");
+        return;
+      }
+      // v1.1.232 — quantidade pendente vale o mesmo que preço zerado aqui:
+      // projetar um total que não contém um dos serviços listados é pior
+      // que não apresentar
+      var _sq = Orcamento.itensSemQuantidade ? Orcamento.itensSemQuantidade(this.orcAtual) : [];
+      if (_sq.length) {
+        UI.toast("⚠ " + _sq.length + " item(ns) sem quantidade. Clique em Calcular na linha para levantar a metragem antes de apresentar.", "erro");
+        return;
+      }
+      Apresentacao.abrir(this.orcAtual);
     },
 
     onChange: function (e) {
@@ -3711,7 +3861,12 @@
                    mesmo com a sincronização parada. Cliente lia "Sincronizado!"
                    e ia dormir com os dados só na máquina dele. */
                 var st = (Nuvem.estado && Nuvem.estado()) || {};
-                if (okSync === false || st.cotaEstourada || st.semPermissao) {
+                /* ⚠ parte parada por conteúdo local ilegível: o `sincronizar` já deu o
+                   recado dela; "Sincronizado! Seus orçamentos agora aparecem em todos
+                   os aparelhos" seria mentira (js/nuvem.js, `ilegivelLocal`) */
+                if (st.dadoLocalIlegivel && st.dadoLocalIlegivel.length) {
+                  /* nada: o recado próprio já saiu */
+                } else if (okSync === false || st.cotaEstourada || st.semPermissao) {
                   UI.toast(st.cotaEstourada
                     ? "" + (typeof Icones !== "undefined" ? Icones.get("nuvem", 15) : "") + " A nuvem recusou as gravações agora (limite do serviço). Seu trabalho está salvo neste aparelho e sobe sozinho mais tarde."
                     : "" + (typeof Icones !== "undefined" ? Icones.get("nuvem", 15) : "") + " NÃO consegui sincronizar. Seu trabalho está salvo neste aparelho — vou tentando sozinho.", "erro");
@@ -3745,7 +3900,27 @@
       var n = Store.listarOrcamentos(eid).length;
       var prop = this._propriasDoDisco(eid);
       var nProp = (prop && prop.dados.length) || 0;
-      var html = '<p>Você tem <b>' + n + '</b> orçamento(s) salvos nesta conta (' + Util.esc((Auth.usuario() || {}).email || "") + ')'
+      var ilgBk = this._ilegiveisTravando(eid, false);
+      /* ⚠ O QUADRO DIZ A DATA, E A LINHA DE STATUS NÃO O CONTRADIZ (revisão
+         adversarial da 1.2.81): o quadro dizia "o backup automático fica
+         parado" e, logo abaixo, "✅ Backup automático ligado — Última:
+         2026-09-16 17:06:21" — em UTC, três horas à frente do relógio e do
+         nome do arquivo (…_14-06-21). Quem comparava "17:06" com "antes de
+         14:07" concluía que todos os arquivos eram de depois do problema. */
+      var pausaBk = ilgBk.length ? null : this._bkpPausa(eid);
+      var antesBk = this._antesDeTxt(ilgBk.length ? this._desdeIlegivel(ilgBk) : (pausaBk && pausaBk.desde));
+      var paradoBk = !!(ilgBk.length || pausaBk);
+      var html = (ilgBk.length
+          /* com a lista ilegível, "0 orçamento(s)" seria mentira: diz o que houve e o caminho */
+          ? '<div role="alert" style="margin:0 0 10px;padding:9px 12px;border-radius:8px;background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.35)">⚠ <b>Há conteúdo ilegível neste aparelho</b> (' +
+            Util.esc(ilgBk.map(function (m) { return Store.nomeEntidade(m.entidade); }).join(", ")) + '). Escolha abaixo, em <b>Restaurar de um backup</b>, o arquivo mais recente <b>' + Util.esc(antesBk || "de antes do problema") + '</b> ' +
+            '(o nome do arquivo traz a data e a hora) — a restauração guarda o conteúdo ilegível à parte e refaz a lista a partir do arquivo. O backup automático fica parado até lá.</div>'
+          : (pausaBk
+            ? '<div role="status" style="margin:0 0 10px;padding:9px 12px;border-radius:8px;background:rgba(217,119,6,.08);border:1px solid rgba(217,119,6,.4)">⚠ <b>Falta restaurar o arquivo ' + Util.esc(antesBk || "de antes do problema") + '</b>. ' +
+              'A lista recomeçou sem o conteúdo ilegível; o que só existia nele volta restaurando esse arquivo abaixo (o nome traz a data e a hora). O backup automático fica parado até lá. ' +
+              '<button class="btn sm" data-acao="backup-pausa-fim" style="margin-top:6px">Não tenho backup: voltar a fazer backup automático</button></div>'
+            : '')) +
+        '<p>Você tem <b>' + n + '</b> orçamento(s)' + (this._listaIlegivel(eid) ? ' <b>legíveis</b>' : '') + ' salvos nesta conta (' + Util.esc((Auth.usuario() || {}).email || "") + ')'
         + (nProp ? ' e <b>' + nProp + '</b> composição(ões)/insumo(s) <b>próprios</b>' : '') + '.</p>' +
         '<p class="muted">Exporte um arquivo <b>.json</b> para guardar/transferir. Importar <b>restaura/mescla</b> o conteúdo do arquivo nesta conta — nada é apagado.</p>' +
         /* o estado do backup automático fica ESCRITO: backup que ninguém vê é
@@ -3786,9 +3961,19 @@
             return;
           }
           if (!j || !j.ok) { box.innerHTML = "⚠ <b>Backup automático desligado</b> — o app foi aberto sem o servidor local. Exporte o backup à mão, por enquanto."; return; }
+          /* ⚠ hora LOCAL: `ultimoEm` vem em UTC do servidor, e o nome do
+             arquivo que a pessoa escolhe traz a hora local */
+          var ultLoc = j.ultimoEm ? Util.fmtData(j.ultimoEm) : "";
+          if (paradoBk) {
+            box.innerHTML = "⏸ <b>Backup automático PARADO</b> (" + (ilgBk.length ? "conteúdo ilegível neste aparelho" : "falta restaurar o arquivo " + Util.esc(antesBk || "de antes do problema")) + ") — "
+              + (j.total ? j.total + " cópia(s) guardadas" + (ultLoc && ultLoc !== "—" ? ", a mais nova de <b>" + Util.esc(ultLoc) + "</b>" : "") + ". Nenhuma cópia nova é feita até lá." : "nenhuma cópia guardada.")
+              + '<br><span class="mono" style="font-size:11px">' + Util.esc(j.pasta || "") + "</span>";
+            try { App._bkpNuvem(j); } catch (eN0) {}
+            return;
+          }
           box.innerHTML = (j.total
             ? "✅ <b>Backup automático ligado</b> — " + j.total + " cópia(s) guardadas " + (j.destino === "nuvem" ? "na pasta do " + Util.esc(j.nuvem || "") : "em disco") + ". Última: <b>"
-              + Util.esc(String(j.ultimoEm || "").slice(0, 19).replace("T", " ")) + "</b>."
+              + Util.esc(ultLoc) + "</b>."
               + (j.melhorComposicoes ? " A melhor cópia das composições próprias tem <b>" + j.melhorComposicoes + "</b> item(ns) e nunca é apagada." : "")
             : "✅ <b>Backup automático ligado</b> — ainda sem cópia gravada (a primeira sai depois da próxima alteração).")
             + '<br><span class="mono" style="font-size:11px">' + Util.esc(j.pasta || "") + "</span>";
@@ -3952,6 +4137,25 @@
          para ser recusada (revisão, 11/09/2026). */
       if (!this._hostLocal()) { this._bkpSemServidor = true; return; }
       try { dump = this._dumpBackup(eid); } catch (e) { return; }
+      /* ⚠ CONTEÚDO ILEGÍVEL NÃO VAI PARA A FILA DE BACKUP (js/store.js,
+         quarentena). O dump leria a parte ilegível como vazia — um arquivo com
+         0 orçamentos — e ele viraria a "última cópia", a que a pessoa restaura
+         primeiro, empurrando para fora da rotação as cópias boas de antes da
+         corrupção. Checado DEPOIS do dump, que é a leitura que renova a marca.
+         Nada é enviado até a pessoa restaurar ou recomeçar (o aviso diz). */
+      if (this._ilegiveisTravando(eid, false).length) {
+        try { console.warn("[backup] automático SUSPENSO: há conteúdo ilegível neste aparelho — o arquivo sairia sem ele"); } catch (eW) {}
+        this._bkpUltimo = Date.now();
+        return;
+      }
+      /* ⚠ E CONTINUA PARADO DEPOIS DO "RECOMEÇAR" — ver `_bkpPausa`. Sem isto
+         o primeiro arquivo depois da porta (com a lista recomeçada) virava o
+         "mais recente" que o recado mandava restaurar. */
+      if (this._bkpPausa(eid)) {
+        try { console.warn("[backup] automático PARADO: a lista recomeçou sem o conteúdo ilegível e o backup de antes do problema ainda não foi restaurado"); } catch (eP) {}
+        this._bkpUltimo = Date.now();
+        return;
+      }
       /* ⚠ e a GESTÃO conta como motivo para gravar. Antes, uma conta que só
          usasse obras e diários — sem orçamento e sem base própria — nunca
          gerava backup nenhum: o arquivo simplesmente não nascia. */
@@ -3991,7 +4195,11 @@
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
       var nProp = (dump.basePropria && dump.basePropria.dados.length) || 0;
-      UI.toast(dump.orcamentos.length + " orçamento(s)" + (nProp ? " e " + nProp + " composição(ões) própria(s)" : "") + " exportado(s).", "ok");
+      /* exportar à mão continua valendo (leva o que abre), mas diz o que NÃO foi */
+      var ilgEx = this._ilegiveisTravando(eid, false).map(function (m) { return m.entidade; });
+      UI.toast(dump.orcamentos.length + " orçamento(s)" + (nProp ? " e " + nProp + " composição(ões) própria(s)" : "") + " exportado(s)." +
+        (ilgEx.length ? " Atenção: NÃO foram no arquivo, porque estão ilegíveis neste aparelho: " + ilgEx.join(", ") + " — não use este arquivo para substituir o backup de antes." : ""),
+        ilgEx.length ? "erro" : "ok", ilgEx.length ? 14000 : undefined);
     },
 
     /* Restaura a base PRÓPRIA do backup SOMANDO ao que já existe.
@@ -4154,6 +4362,30 @@
              orçamento nenhum era rejeitada aqui com o próprio arquivo na mão. */
           if (!orcs.length && !temPropria && !temGestao) { UI.toast("Backup sem orçamentos, sem composições próprias e sem dados da Gestão.", "erro"); return; }
           var eid = Auth.empresaId();
+          /* ===== ⚠ A RESTAURAÇÃO É A PORTA DA QUARENTENA (js/store.js) =====
+             Com a lista (ou um módulo) ilegível, o Store recusa gravar — é o
+             que impede o "0 orçamentos + 1 novo" de apagar o resto. Quem
+             escolheu o arquivo de backup escolheu refazer a partir dele: aqui
+             o conteúdo ilegível vai para a cópia à parte (conferida antes de
+             o original sair) e a entidade recomeça pelo arquivo. Só as partes
+             que o arquivo TRAZ são liberadas; as outras continuam travadas. */
+          var entsArq = [];
+          if (orcs.length) entsArq.push("orcamentos");
+          if (temGestao) Object.keys(dump.gestao).forEach(function (eg) { if (Util.arr(dump.gestao[eg]).length) entsArq.push(eg); });
+          if (temGestao || orcs.length) entsArq.push("_lapides");   // a restauração desenterra
+          var libOk = [], libNao = [];
+          /* a data do problema, antes de a porta apagar as marcas (ver `_bkpPausa`) */
+          var ilgR = self._ilegiveisTravando(eid, true).filter(function (m) { return entsArq.indexOf(m.entidade) >= 0; });
+          var pausaR = self._bkpPausa(eid);
+          var desdeR = self._desdeIlegivel(ilgR.concat(pausaR && pausaR.desde ? [{ desde: pausaR.desde }] : []));
+          ilgR.forEach(function (m) {
+            var rl = Store.liberarIlegivel(eid, m.entidade);
+            if (rl && rl.ok) libOk.push(m.entidade);
+            else libNao.push(Store.nomeEntidade(m.entidade) + (rl && rl.motivo === "copia"
+              ? " (não houve espaço para guardar a cópia do conteúdo ilegível — libere espaço em 🗂 Tabelas › Saúde do armazenamento e restaure de novo)"
+              : " (não consegui mexer no armazenamento deste aparelho — recarregue o app, F5, e restaure de novo)"));
+          });
+          self._ilegAvisado = null;
           /* ===== v1.1.236 — O MAIS NOVO VENCE, TAMBÉM AQUI =====
              O modal promete, com estas palavras: "Importar restaura/mescla o
              conteúdo do arquivo nesta conta — nada é apagado." As outras duas
@@ -4168,12 +4400,13 @@
              merge da nuvem e viajaria para os outros aparelhos. */
           var _idxOrc = {};
           try { Store.listarOrcamentos(eid).forEach(function (x) { if (x && x.id) _idxOrc[x.id] = String(x.atualizadoEm || ""); }); } catch (eI) {}
-          var nOrc = 0, orcMantidos = 0;
+          var nOrc = 0, orcMantidos = 0, orcNao = 0;
           orcs.forEach(function (o) {
             if (!o || !o.id) return;
             if (_idxOrc[o.id] != null && _idxOrc[o.id] >= String(o.atualizadoEm || "")) { orcMantidos++; return; }
-            Store.salvarOrcamento(eid, o, true);
-            nOrc++;
+            /* contado pelo RETORNO: com a lista ainda ilegível (a cópia não coube)
+               o Store recusa, e "N restaurado(s)" seria mentira */
+            if (Store.salvarOrcamento(eid, o, true)) nOrc++; else orcNao++;
           });
           var rProp = temPropria ? self._restaurarPropria(eid, dump.basePropria) : null;
           /* ===== v1.1.232 — A GESTÃO VOLTA. O _dumpBackup grava `gestao` com
@@ -4261,6 +4494,32 @@
             var atual = Store.lerPrefs(eid) || {};
             for (var k in dump.prefs) if (atual[k] == null) atual[k] = dump.prefs[k];
             Store.salvarPrefs(eid, atual);
+          }
+          if (libOk.length || libNao.length || orcNao) {
+            var tLib = (libOk.length ? "Conteúdo ilegível guardado à parte e refeito a partir do arquivo: " + libOk.map(function (e) { return Store.nomeEntidade(e); }).join(", ") + ". O que só existia nele (depois da data deste backup) fica na cópia guardada — fale com o suporte da RA se sentir falta de algo. " : "") +
+              (libNao.length ? "NÃO restaurado(s): " + libNao.join("; ") + ". O conteúdo ilegível continua no lugar. " : "") +
+              (orcNao ? orcNao + " orçamento(s) do arquivo NÃO foram gravados." : "");
+            setTimeout(function () { UI.toast(tLib, libNao.length || orcNao ? "erro" : "aviso", self._msRecado(tLib)); }, 2600);
+          }
+          /* ⚠ A PAUSA DO BACKUP AUTOMÁTICO SÓ ACABA COM O ARQUIVO CERTO.
+             Arquivo de DEPOIS do problema não traz o que estava no conteúdo
+             ilegível — religar o backup aqui empurraria o bom para fora da
+             rotação do mesmo jeito. Sem data no arquivo (pacote avulso),
+             também não religa: a porta "voltar a fazer backup" decide. */
+          if (pausaR || libOk.length) {
+            var emArq = new Date(String(dump.exportadoEm || "")).getTime(), emProb = new Date(desdeR || "").getTime();
+            var arqAntes = isFinite(emArq) && isFinite(emProb) && emArq < emProb;
+            if (arqAntes) {
+              if (pausaR) { self._bkpRetomar(eid); self._bkpUltimo = 0; }
+            } else if (isFinite(emProb)) {
+              self._bkpPausar(eid, desdeR, libOk.length ? libOk : (pausaR && pausaR.entidades));
+              var tDep = (isFinite(emArq)
+                  ? "Este arquivo é de " + Util.fmtData(dump.exportadoEm) + ", DEPOIS do problema: ele não traz o que estava no conteúdo ilegível. "
+                  : "Não encontrei a data deste arquivo, então não sei se ele é de antes do problema. ") +
+                "Se tiver, restaure também o backup " + self._antesDeTxt(desdeR) + ". O backup automático continua parado até lá " +
+                "(se não houver, use \"Voltar a fazer backup automático\" no aviso).";
+              setTimeout(function () { UI.toast(tDep, "erro", self._msRecado(tDep)); }, 5200);
+            }
           }
           UI.toast(nOrc + " orçamento(s) restaurado(s)" + (nPulados ? " · " + nPulados + " usuário(s) do backup ficaram de fora por falta de vaga" : "")
             + (orcMantidos ? " (" + orcMantidos + " já estava(m) mais novo(s) aqui e foi(ram) mantido(s))" : "")
@@ -4733,7 +4992,17 @@
       function vazio(e) { return String(e.value == null ? "" : e.value).trim() === ""; }
       x = pega("cron-inicio"); if (x) f.dataInicio = vazio(x) ? null : x.value;
       x = pega("cron-equipes"); if (x) f.equipes = vazio(x) ? null : Math.max(1, parseInt(Util.num(x.value), 10) || 1);
-      x = pega("cron-dias"); if (x) f.diasUteisSemana = vazio(x) ? null : Math.min(7, Math.max(1, parseInt(Util.num(x.value), 10) || 5));
+      /* ⚠ SÓ 5, 6 OU 7 (Cronograma.validarDiasSemana). Era `max(1, …)`: gravava
+         4, o calendário contava 5 e as semanas contavam 4. Valor RECUSADO não
+         entra no objeto — o mesclarParams conserva o gravado — e quem chama já
+         mostrou o motivo (_diasSemanaRecusa). Sem o motor novo carregado, a
+         régua antiga, com o piso em 5. */
+      x = pega("cron-dias");
+      if (x) {
+        var vDias = (typeof Cronograma !== "undefined" && Cronograma.validarDiasSemana) ? Cronograma.validarDiasSemana(x.value) : null;
+        if (vDias) { if (vDias.ok) f.diasUteisSemana = vDias.valor; }
+        else f.diasUteisSemana = vazio(x) ? null : Math.min(7, Math.max(5, parseInt(Util.num(x.value), 10) || 5));
+      }
       /* ⚠ PARALELISMO VAZIO = 0, não null. Nos outros números o vazio sempre
          virou o padrão do motor (equipes `|| 1`, dias `|| 5`, custo `|| 700`),
          então null dá o mesmo número de antes. No paralelismo o vazio valia 0
@@ -4891,13 +5160,15 @@
        um recusado não impede os outros (não há dinheiro nem obra aqui, só o
        custo unitário do item), mas o recado diz QUAIS não mudaram. */
     _salvarOrcsAfetados: function (eid, afetados) {
-      var self = this, res = { n: 0, itens: 0, recusados: [], falhos: [], abertoRecusado: false, abertoGravado: false };
+      var self = this, res = { n: 0, itens: 0, recusados: [], falhos: [], ilegivel: [], abertoRecusado: false, abertoGravado: false };
       (afetados || []).forEach(function (a) {
         self._materializarSeExec(a.orc);
         var g = Store.salvarOrcamento(eid, a.orc);
         var rot = String((a.orc && (a.orc.numero || a.orc.nome || a.orc.id)) || "");
         if (g) { res.n++; res.itens += (a.n || 0); if (a.mesmoAberto) res.abertoGravado = true; return; }
-        if (Store.ultimaRecusa) res.recusados.push(rot); else res.falhos.push(rot);
+        /* lista ilegível não é "alterado em outra janela" (js/store.js, quarentena) */
+        if (Store.ultimaRecusa && Store.ultimaRecusa.tipo === "corrompido") res.ilegivel.push(rot);
+        else if (Store.ultimaRecusa) res.recusados.push(rot); else res.falhos.push(rot);
         if (a.mesmoAberto) res.abertoRecusado = true;
         /* ⚠ ARMAZENAMENTO RECUSOU O ABERTO → A MEMÓRIA VOLTA AO DISCO. A
            releitura abaixo não serve aqui: o Store não carimba quando a
@@ -4927,8 +5198,10 @@
       else if (extraOk) partes.push(String(extraOk).replace(/^[ ,e]+/, "") + ".");
       if (res.recusados.length) partes.push("NÃO atualizado(s): " + res.recusados.join(", ") + " — foi(ram) alterado(s) em outra janela (ou em outro aparelho) enquanto a pergunta estava aberta, e gravar por cima apagaria a outra alteração. Abra e confira o preço dele(s).");
       if (res.falhos.length) partes.push("NÃO gravado(s): " + res.falhos.join(", ") + " — o armazenamento deste aparelho recusou (cheio?).");
-      var txt = partes.join(" ");
-      return { txt: txt, tipo: (res.recusados.length || res.falhos.length) ? "erro" : "ok", ms: (res.recusados.length || res.falhos.length) ? this._msRecado(txt) : 0 };
+      var ileg = res.ilegivel || [];
+      if (ileg.length) partes.push("NÃO gravado(s): " + ileg.join(", ") + " — a lista de orçamentos deste aparelho está ilegível (arquivo corrompido); veja o aviso na lista de orçamentos.");
+      var txt = partes.join(" "), ruim = res.recusados.length || res.falhos.length || ileg.length;
+      return { txt: txt, tipo: ruim ? "erro" : "ok", ms: ruim ? this._msRecado(txt) : 0 };
     },
 
     /* ================================================================
@@ -5360,9 +5633,24 @@
          Recalcular). Ver _cronDoForm e Cronograma.mesclarParams. */
       // modo executivo: o prazo de ANTES desta tela, para o recado (equipes mudam o vão das subetapas)
       var antesR = null;
+      if (this._diasSemanaRecusa("cron-dias")) return;
       if (alvo.cron.exec && alvo.cron.exec.rede === true) { try { antesR = Cronograma.estimar(alvo.orc); } catch (eA) { antesR = null; } }
       alvo.cron.params = Cronograma.mesclarParams(alvo.cron.params, this._cronDoForm(function (id) { return UI.el(id); }));
       alvo.salvar({ cronoAntes: antesR }); this.render();
+    },
+    /* "Dias úteis/sem." fora de 5, 6 ou 7: recusa com o motivo e NÃO grava
+       nada (devolve true). Trava com porta: o recado diz os três valores que
+       servem e onde lançar os dias parados de quem trabalha menos. Campo
+       ausente ou valor aceito: false, e quem chamou segue. */
+    _diasSemanaRecusa: function (idCampo) {
+      var e = UI.el(idCampo);
+      if (!e || typeof Cronograma === "undefined" || !Cronograma.validarDiasSemana) return false;
+      var v = Cronograma.validarDiasSemana(e.value);
+      if (v.ok) return false;
+      var txt = v.erro + " Nada foi gravado.";
+      UI.toast(txt, "erro", this._msRecado ? this._msRecado(txt) : 0);
+      try { if (e.focus) e.focus(); } catch (eF) {}
+      return true;
     },
     cronReset: function () {
       var alvo = this._cronoAlvo(); if (!alvo || typeof Cronograma === "undefined") return;
@@ -6434,6 +6722,16 @@
       var auto = motivo === "janela" || motivo === "visivel" || motivo === "ro";
       var P = (typeof Paineis !== "undefined") ? Paineis : null;
       var jan = (this._janela && typeof this._janela === "object") ? this._janela : null;
+      /* ⚠ AS LINHAS DA OBRA, MESMO ANTES DO 1º PINTAR. Roteiro do defeito
+         (regressão da 1.2.80, auditoria gate.md): o `ligar` chega aqui com
+         `g.pro` ainda nulo, e as duas contas abaixo iam ao
+         Paineis.alturaPreencher com `linhas: null` — sem linhas, ele não
+         limita pela obra. Obra de 5 linhas ganhava corpo de 566 px a 1366
+         (878 a 1920) e o detalhe Etapa do galpão, ~480 px de grade vazia; a
+         obra que cabe no mínimo ficava sem alça para encolher. O desenho
+         puro acertava (134 / 398) e a fiação sobrescrevia.
+         Guarda: e2e-paineis-redim, bloco 9a. */
+      var nLin = this._gxNLinhas();
       /* JANELA DESTACADA (modo "preencher", F8): o corpo acompanha a altura da
          janela. Medido aqui, e não no desenho puro: o topo real do corpo só o
          navegador sabe.
@@ -6454,7 +6752,7 @@
         var topoCorpo = g.corpo.getBoundingClientRect().top;
         for (var anc = g.corpo.parentNode; anc && anc.nodeType === 1; anc = anc.parentNode) topoCorpo += anc.scrollTop || 0;
         var alt = P.alturaPreencher({ janelaAltura: global.innerHeight, topoCorpo: topoCorpo,
-          legenda: CronoExecUI.GX_LEGENDA, linhas: (g.pro && g.pro.L) ? g.pro.L.length : null, rowH: CronoExecUI.GX_ROWH, barra: CronoExecUI.GX_BARRA });
+          legenda: CronoExecUI.GX_LEGENDA, linhas: nLin, rowH: CronoExecUI.GX_ROWH, barra: CronoExecUI.GX_BARRA });
         if (alt > 0 && g.corpo.style.height !== Math.round(alt) + "px") g.corpo.style.height = Math.round(alt) + "px";
       }
       /* modo "tela" (aba Cronograma da principal): redimensionar a janela
@@ -6462,7 +6760,7 @@
       var ogT = (!jan && P && g.corpo && g.corpo.style && typeof CronoExecUI !== "undefined") ? this._gxOpcoes() : null;
       if (ogT && ogT.modo === "tela" && ogT.alturaPref == null) {
         var altT = P.alturaPreencher({ janelaAltura: global.innerHeight, topoCorpo: CronoExecUI.GX_TELA_TOPO, legenda: CronoExecUI.GX_LEGENDA,
-          linhas: (g.pro && g.pro.L) ? g.pro.L.length : null, rowH: CronoExecUI.GX_ROWH, barra: CronoExecUI.GX_BARRA });
+          linhas: nLin, rowH: CronoExecUI.GX_ROWH, barra: CronoExecUI.GX_BARRA });
         if (altT > 0 && g.corpo.style.height !== Math.round(altT) + "px") g.corpo.style.height = Math.round(altT) + "px";
       }
       var med = { w: g.wrap ? (g.wrap.clientWidth || 0) : 0, h: g.corpo ? g.corpo.offsetHeight : g.caixa, j: (jan || (ogT && ogT.modo === "tela")) ? (global.innerHeight || 0) : 0 };
@@ -6472,6 +6770,25 @@
       if (g.plot && g.nomes && g.regua) { g.nomes.scrollTop = g.plot.scrollTop; g.regua.scrollLeft = g.plot.scrollLeft; }
       this._gxPintar(true);
       return true;
+    },
+
+    /* Quantas linhas o Gantt desenha: as do estado já montado, ou — no
+       `ligar`, antes do 1º pintar — a MESMA conta do ganttProEstado
+       (CronoExecUI.linhas com o detalhe efetivo e as etapas abertas do
+       contexto). Guardada no `_gx`, que nasce de novo a cada render. */
+    _gxNLinhas: function () {
+      var g = this._gx; if (!g) return null;
+      if (g.pro && g.pro.L) return g.pro.L.length;
+      if (g.nLin !== undefined) return g.nLin;
+      g.nLin = null;
+      try {
+        var cx = g.ctx;
+        if (cx && cx.r && typeof CronoExecUI !== "undefined" && CronoExecUI.linhas) {
+          var L = CronoExecUI.linhas(cx.r, { detalhe: CronoExecUI.detalheEfetivo(cx.r, cx.det), abertas: cx.abertas });
+          if (L && typeof L.length === "number") g.nLin = L.length;
+        }
+      } catch (eL) { g.nLin = null; }
+      return g.nLin;
     },
 
     /* As preferências de tamanho DESTA pessoa (js/paineis.js), lidas do disco
@@ -6524,12 +6841,12 @@
          nem o tamanho do painel, e sem elas aqui o memo devolveria o estado
          antigo — a alça mexeria e nada se redesenharia. */
       var og = this._gxOpcoes() || {}, ww = g.wrap.clientWidth || 0;
-      var ch = [g.z.nivel, sl, st, lw, lh, g.z.sel, g.caixa, desf, ww, og.labelPref, og.colunas, og.hxAltura].join("|");
+      var ch = [g.z.nivel, g.z.diasAjuste, sl, st, lw, lh, g.z.sel, g.caixa, desf, ww, og.labelPref, og.colunas, og.hxAltura].join("|");
       if (g.pro && g.proCh === ch) return g.pro;
       g.proCh = ch;
       g.pro = CronoExecUI.ganttProEstado(g.ctx.r, {
         detalhe: g.ctx.det, abertas: g.ctx.abertas, travado: g.ctx.travado, hoje: g.ctx.hoje,
-        nivel: g.z.nivel, scrollLeft: sl, scrollTop: st, sel: g.z.sel, desfazer: desf,
+        nivel: g.z.nivel, diasAjuste: g.z.diasAjuste, scrollLeft: sl, scrollTop: st, sel: g.z.sel, desfazer: desf,
         largura: lw, altura: lh, alturaCaixa: g.caixa,
         /* a largura do WIDGET manda na coluna de nomes (ganttProLabelW): a 1ª
            pintura sai do desenho puro, que não tem DOM para perguntar, e é
@@ -6674,11 +6991,14 @@
          138 px e ele vira botão. Reescrever o canto a cada quadro, porém,
          fecharia o seletor no meio do clique e tiraria o foco de quem navega
          por teclado — por isso a chave de forma. */
-      var forma = (p.labelW < 200 ? "estreito" : "largo") + "|" + (p.desfazer ? "1" : "0");
+      /* a escala mantida (ver _gxManterEscala) também é FORMA: o seletor ganha
+         e perde a opção "Escala mantida", e o botão estreito troca o recado */
+      var mantida = !!p.e.escalaMantida;
+      var forma = (p.labelW < 200 ? "estreito" : "largo") + "|" + (p.desfazer ? "1" : "0") + "|" + (mantida ? "m" : "");
       var canto = g.wrap.querySelector(".gx-canto");
       if (canto && forma !== g.cantoCh) { g.cantoCh = forma; canto.innerHTML = CronoExecUI.ganttProTopo(p); }
-      var sel = g.wrap.querySelector("[data-crono-zoom]");
-      if (sel && sel.value !== p.e.nivel) sel.value = p.e.nivel;
+      var sel = g.wrap.querySelector("[data-crono-zoom]"), querSel = mantida ? "mantida" : p.e.nivel;
+      if (sel && sel.value !== querSel) sel.value = querSel;
       this._gxGanchoPintar(g);
     },
     // ⚠ procurado na hora da chamada: sem o js/ganttgradeui.js (F6), nada
@@ -6692,9 +7012,20 @@
        e não diz nada é lido como app travado. */
     _gxZoom: function (dir, ancora) {
       var g = this._gx; if (!g || typeof GanttUI === "undefined") return;
+      // a opção "Escala mantida" DESCREVE o estado de agora: escolhê-la não é comando
+      if (dir === "mantida") return;
       var p = this._gxPro(); if (!p || !p.e) return;
       var res = GanttUI.zoom(p.e, dir, ancora);
-      if (!res.mudou) { if (res.motivo) UI.toast(this._gxMotivoHonesto(res.motivo, p), ""); return; }
+      /* ⚠ TODO COMANDO DE ZOOM SOLTA A ESCALA MANTIDA (ver _gxManterEscala).
+         O `res` sai do desenho de AGORA (a escala mantida): o "Ajustar" compara
+         o px de caber a obra de hoje com o px mantido e diz `mudou`; o − e o +
+         partem do px que a pessoa está vendo. Só depois a trava sai.
+         Com o foco no seletor, ele volta ao seletor novo (o canto é reescrito
+         quando a opção "Escala mantida" some). */
+      var tinha = g.z.diasAjuste != null, dAtivo = document.activeElement;
+      var noSel = !!(dAtivo && dAtivo.getAttribute && dAtivo.getAttribute("data-crono-zoom") != null);
+      g.z.diasAjuste = null;
+      if (!res.mudou) { if (tinha) this._gxPintar(true); if (res.motivo) UI.toast(this._gxMotivoHonesto(res.motivo, p), ""); return; }
       g.z.nivel = res.nivel; g.z.scrollLeft = res.scrollLeft;
       /* pinta com a rolagem NOVA já na conta (o `-in` só ganha a largura nova
          aqui) e só depois mexe no scrollLeft do painel: na ordem inversa o
@@ -6703,6 +7034,22 @@
       this._gxPintar(true, { scrollLeft: res.scrollLeft });
       g.plot.scrollLeft = res.scrollLeft;
       g.nomes.scrollTop = g.plot.scrollTop; g.regua.scrollLeft = g.plot.scrollLeft;
+      if (noSel && tinha) { var selN = g.wrap.querySelector("[data-crono-zoom]"); if (selN && selN !== dAtivo && selN.focus) { try { selN.focus(); } catch (eF) {} } }
+    },
+
+    /* ⚠ A ESCALA DO "AJUSTAR" FICA PARADA DEPOIS DE EDITAR (frente cf-grade,
+       16/09/2026; o porquê está em GanttUI.estado, `diasAjuste`). Chamado pelo
+       caminho único e pelo desfazer ANTES do render: guarda os dias da obra
+       que o desenho de AGORA usa. Só no "auto" (nível nomeado já tem px fixo)
+       e só na primeira edição da série — a série inteira fica na escala em que
+       a pessoa começou. Solta em qualquer comando de zoom (_gxZoom).
+       Estado de TELA (App._cronoZoom), nunca no orçamento: gravado ali, cada
+       edição mudaria o que vai à nuvem e ao cliente. */
+    _gxManterEscala: function () {
+      var g = this._gx, o = this.orcAtual;
+      if (!g || !g.z || !g.pro || !g.pro.e || !o || !g.ctx || !g.ctx.orc || g.ctx.orc.id !== o.id) return;
+      if ((g.z.nivel || "auto") !== "auto" || Number(g.z.diasAjuste) >= 1) return;
+      if (Number(g.pro.e.dias) >= 1) g.z.diasAjuste = Number(g.pro.e.dias);
     },
 
     /* ⚠ A RECUSA DO ZOOM NÃO PODE AFIRMAR O QUE A TELA DESMENTE. O motor
@@ -6846,26 +7193,59 @@
 
     _gxUp: function () {
       var g = this._gx; if (!g) return;
-      if (g.pan) { g.pan = null; g.plot.classList.remove("gx-pegando"); return; }
+      var GG = (typeof GanttGradeUI !== "undefined" && GanttGradeUI.pendenteNoUp) ? GanttGradeUI : null;
+      if (g.pan) { g.pan = null; g.plot.classList.remove("gx-pegando"); if (GG) GG.pendenteNoUp(this, g); return; }
       if (!g.arrasto) return;
       var ar = g.arrasto, pos = g.mouse;
       g.arrasto = null; g.mouse = null;
       document.body.classList.remove("gx-arrastando");
       if (g.fant) g.fant.hidden = true;
       if (g.dica) g.dica.hidden = true;
+      /* ⚠ O CAMPO DA GRADE QUE O BLUR DEIXOU PENDENTE GRAVA AQUI, ANTES da
+         soltura (ver GanttGradeUI._saiu): digitou-se primeiro, grava primeiro;
+         se o arrasto mexeu na mesma barra, ele (o gesto de depois) é que fica.
+         A gravação redesenha: a soltura segue com a moldura NOVA e o nó
+         relido dela, senão as ops sairiam da rede de antes do número digitado. */
+      /* ⚠ UM RECADO SÓ PARA O GESTO INTEIRO, E O ERRO VENCE. As duas gravações
+         (o campo pendente e a soltura) juntavam cada uma o seu toast na chave
+         "crono", e a segunda tirava o da primeira — inclusive a RECUSA do
+         número digitado, que vivia 0 ms (ver UI.toastSoltar). A marca vem
+         ANTES do pendente; o recado dele é solto da chave; e a junção de fora,
+         no `finally`, faz dos dois um toast só, com o erro na frente. */
+      var marcaUp = null, juntarUp = false;
+      try {
+        if (GG && typeof UI !== "undefined" && UI.toastMarca) marcaUp = UI.toastMarca();
+        if (GG && GG.pendenteNoUp(this, g)) {
+          juntarUp = !!marcaUp;
+          if (juntarUp && UI.toastSoltar) UI.toastSoltar("crono");
+          g = this._gx; if (!g) return;
+          var noN = (g.ctx && g.ctx.r && GanttUI.acharNo) ? GanttUI.acharNo(g.ctx.r, ar.no.id) : null;
+          if (noN) ar.no = noN;
+        }
+        this._gxUpSoltura(g, ar, pos);
+      } finally {
+        if (juntarUp && UI.toastJuntar) UI.toastJuntar(marcaUp, "crono", 420);
+      }
+    },
+    /* a soltura propriamente dita (o resto do _gxUp): duplo clique, clique
+       parado e o _gxSoltar */
+    _gxUpSoltura: function (g, ar, pos) {
       /* ⚠ DUPLO CLIQUE NUMA BARRA QUE SE ARRASTA É DETECTADO AQUI, e não por
          `addEventListener("dblclick")`. Roteiro (EDICAO.md, medido com mouse
          real): o `dblclick` NÃO chega — 0 eventos no documento — porque o
          1º `mouseup` passa pelo `_gxPintar(true)`, que troca o `<svg>` por
          `outerHTML`, e o alvo do 1º clique some antes do 2º. Dois `mouseup`
          SEM movimento (res.mudou === false: o arrasto não andou um dia útil),
-         na MESMA barra, a menos de 400 ms e 4 px um do outro = duplo clique:
+         na MESMA barra, a menos de GanttGradeUI.DUPLO_MS (500 ms, o padrão do
+         Windows e o mesmo da barra que não se arrasta — com 400 aqui, quem
+         tem o duplo clique no padrão abria uma barra e não a outra) e 4 px um
+         do outro = duplo clique:
          abre a Dur. da linha e NÃO grava nada (clique parado nunca gravou).
          Sem o js/ganttgradeui.js a soltura é a de sempre. */
       var parado = !!(ar.res && ar.res.tipo !== "ligar" && ar.res.mudou === false && ar.no && typeof GanttGradeUI !== "undefined" && GanttGradeUI.abrir);
       if (parado) {
         var agora = Date.now(), u = g.ultUp, px = pos ? pos.x : 0, py = pos ? pos.y : 0;
-        if (u && u.id === ar.no.id && agora - u.t < 400 && Math.abs(px - u.x) < 4 && Math.abs(py - u.y) < 4) {
+        if (u && u.id === ar.no.id && agora - u.t < (GanttGradeUI.DUPLO_MS || 500) && Math.abs(px - u.x) < 4 && Math.abs(py - u.y) < 4) {
           g.ultUp = null;
           this._gxPintar(true);
           GanttGradeUI.abrir(this, g, ar.no.id, "dur", { origem: "duplo" });
@@ -6932,6 +7312,14 @@
        (_cronoGravarOps): vale para o que foi ARRASTADO e para o que foi
        DIGITADO (grade do Gantt ou tabela) — e o Ctrl+Z do Gantt chega aqui. */
     cronoArrastoDesfazer: function () {
+      /* ⚠ UM RECADO SÓ (ver UI.toastJuntar): no plano da obra o salvar solta o
+         toast do prazo e aqui sai o "Alteração desfeita." — eram dois
+         empilhados, e o do arrasto que se desfez ainda estava na tela */
+      var marca = (typeof UI !== "undefined" && UI.toastMarca) ? UI.toastMarca() : null;
+      try { this._cronoDesfazerCorpo(); }
+      finally { if (marca && UI.toastJuntar) UI.toastJuntar(marca, "crono", 420); }
+    },
+    _cronoDesfazerCorpo: function () {
       var o = this.orcAtual; if (!o) return;
       var d = (this._cronoDesf && typeof this._cronoDesf === "object") ? this._cronoDesf[o.id] : null;
       if (!d || !d.cron) { UI.toast("Não há alteração do cronograma para desfazer.", ""); return; }
@@ -6955,6 +7343,7 @@
       for (k in d.cron) if (Object.prototype.hasOwnProperty.call(d.cron, k)) alvo.cron[k] = d.cron[k];
       delete this._cronoDesf[o.id];
       var gravou = alvo.salvar();
+      this._gxManterEscala();   // o desfazer também é edição: a barra não pula (ver _gxManterEscala)
       this.render();
       UI.toast(gravou ? "Alteração desfeita." : "Desfiz na tela, mas não consegui gravar — confira antes de sair.", gravou ? "ok" : "erro");
     },
@@ -6971,8 +7360,16 @@
        `rAntes` = o estimar {eap:true} de ANTES (dá o "antes" do prazo e o
        nome da linha). opts: {origem: "grade"|"tabela"|"arrasto"|"soltar",
        rotulo, sufixo (texto logo depois do resumo), semMudanca, erroAplicar}.
-       Devolve {ok, mudou, msg}. */
+       Devolve {ok, mudou, msg}.
+       ⚠ UM RECADO SÓ POR GRAVAÇÃO, e ele SUBSTITUI o da gravação anterior
+       (UI.toastJuntar, chave "crono"): o que o persistir e o plano da obra
+       disserem entra no mesmo toast. O corpo é `_cronoGravarOpsCorpo`. */
     _cronoGravarOps: function (alvo, ops, no, rAntes, opts) {
+      var marca = (typeof UI !== "undefined" && UI.toastMarca) ? UI.toastMarca() : null;
+      try { return this._cronoGravarOpsCorpo(alvo, ops, no, rAntes, opts); }
+      finally { if (marca && UI.toastJuntar) UI.toastJuntar(marca, "crono", 420); }
+    },
+    _cronoGravarOpsCorpo: function (alvo, ops, no, rAntes, opts) {
       opts = opts || {};
       var arrasto = opts.origem === "arrasto", g = this._gx;
       if (!alvo) { UI.toast("Não consegui identificar onde gravar esta edição — nada foi alterado.", "erro"); return { ok: false }; }
@@ -6997,11 +7394,12 @@
       /* ⚠ `silencioso`: o plano da obra não mostra o toast de prazo dele — o
          recado de prazo sai AQUI, junto com o que mudou (um toast só). */
       if (!alvo.salvar({ cronoAntes: rAntes, rotulo: opts.rotulo, silencioso: true })) {
-        /* ⚠ NÃO GRAVOU → a MEMÓRIA volta a ser o que está gravado. Sem isto a
-           tela seguia mostrando a duração nova (o objeto já tinha mudado) e a
-           pessoa lia como salvo o que não foi a lugar nenhum — recado que
-           mente. O salvar já explicou por que recusou. Troca-se o CONTEÚDO,
-           nunca a referência (ver cronoArrastoDesfazer). */
+        /* NÃO GRAVOU: o salvar já explicou por que recusou, e o render abaixo
+           redesenha a partir do que a MEMÓRIA tem depois da recusa. (Até a
+           revisão da F6 este comentário dizia que a memória voltava ao
+           gravado — o código abaixo não faz isso desde o 10a2ac0, e o teste
+           que cobrava a devolução, "(d3) opsRecusaDevolve", saiu na entrega
+           da frente cf-grade por contradizer esta decisão.) */
         /* ⚠ (integração F1/F2 × F6) NÃO devolver a foto aqui. A primeira
            versão trocava o conteúdo do cronograma pela foto de antes — e,
            somada à trava de carimbo, apagava do disco uma duração que JÁ
@@ -7075,6 +7473,7 @@
          toast, porque o toast some em 2,6 s — e o arrependimento costuma vir
          depois de olhar o que mudou. É um nível só: a alteração seguinte
          substitui a foto. */
+      this._gxManterEscala();   // ⚠ ANTES do render: a barra não pula para longe do mouse (ver _gxManterEscala)
       this.render();
       UI.toast(msg, ap.erros.length ? "" : "ok");
       return { ok: true, mudou: true, msg: msg };
@@ -7283,6 +7682,7 @@
     cronParamsAvancados: function () {
       var alvoA = this._cronoAlvo(); if (!alvoA || typeof Cronograma === "undefined" || typeof CronoExecUI === "undefined") return;
       if (alvoA.travado) { this._cronoTravado(alvoA); return; }
+      if (this._diasSemanaRecusa("cron-dias")) return;
       var el = function (id) { return UI.el(id); };
       var antesTxt = JSON.stringify({ p: alvoA.cron.params || null, e: alvoA.cron.exec || null });
       var antesP = JSON.parse(antesTxt), rA = null;
@@ -7533,17 +7933,24 @@
     // lê os inputs do form da aba Execução e grava em o.execucao.params (sem render)
     _execLerParams: function (o) {
       o.execucao = o.execucao || {};
+      /* ⚠ dias por semana: só 5, 6 ou 7 (ver Cronograma.validarDiasSemana).
+         Recusado → fica o que estava gravado; o recado sai em _diasSemanaRecusa,
+         que execRecalc e execEnviarCronograma chamam ANTES daqui. */
+      var diasAnt = (o.execucao.params && o.execucao.params.diasUteisSemana) || 5;
+      var vDiasE = (typeof Cronograma !== "undefined" && Cronograma.validarDiasSemana) ? Cronograma.validarDiasSemana((UI.el("exec-dias") || {}).value) : null;
       o.execucao.params = {
         dataInicio: (UI.el("exec-inicio") || {}).value || null,
         dataEntrega: (UI.el("exec-entrega") || {}).value || null,
         jornadaH: Math.min(12, Math.max(1, parseInt(Util.num((UI.el("exec-jornada") || {}).value), 10) || 8)),
-        diasUteisSemana: Math.min(7, Math.max(1, parseInt(Util.num((UI.el("exec-dias") || {}).value), 10) || 5)),
+        diasUteisSemana: vDiasE ? (vDiasE.ok ? (vDiasE.valor == null ? 5 : vDiasE.valor) : diasAnt)
+          : Math.min(7, Math.max(5, parseInt(Util.num((UI.el("exec-dias") || {}).value), 10) || 5)),
         encargosPct: UI.el("exec-encargos") ? Math.min(150, Math.max(0, Util.num((UI.el("exec-encargos") || {}).value))) : undefined
       };
     },
     // Agente de execução — recalcular equipe/prazo/custo com os parâmetros
     execRecalc: function () {
       var o = this.orcAtual; if (!o) return;
+      if (this._diasSemanaRecusa("exec-dias")) return;
       this._execLerParams(o);
       this.persistir(); this.render();
     },
@@ -7557,6 +7964,8 @@
          em memória: valem os parâmetros gravados. E o início do plano é o da
          obra (não o da Execução, que é o da proposta): ver o dataInicio abaixo. */
       var noPlanoE = alvo.tipo === "plano";
+      /* dias por semana fora de 5/6/7: recusa antes de mandar qualquer duração */
+      if (!noPlanoE && UI.el("exec-inicio") && this._diasSemanaRecusa("exec-dias")) return;
       if (!noPlanoE && UI.el("exec-inicio")) this._execLerParams(o); // usa os inputs ATUAIS (não os salvos/stale)
       // durações do agente dependem só do Hh (não da diária), então colaboradores não são necessários aqui
       var sim = Execucao.simular(noPlanoE ? alvo.orc : o, {});
@@ -8466,6 +8875,7 @@
          pessoa apagar base por um problema que não existe */
       try {
         if (typeof Store !== "undefined" && Store.ultimaRecusa) {
+          if (Store.ultimaRecusa.tipo === "corrompido") return "a lista de orçamentos deste aparelho está ilegível (arquivo corrompido) e nada é gravado nela até restaurar o backup — veja o aviso na lista de orçamentos";
           return Store.ultimaRecusa.tipo === "incerto"
             ? "não consegui conferir se este orçamento foi alterado em outra janela (ou em outro aparelho) — recarregue o app (F5)"
             : "este orçamento foi alterado em outra janela (ou em outro aparelho) depois que a IA o leu — feche este quadro, confira o que está salvo e peça de novo";
@@ -8616,7 +9026,9 @@
       if (!Store.salvarOrcamento(eid, rev)) {
         /* revisão tem id novo: a trava de carimbo só a recusa se não conseguir
            conferir o disco ("incerto") — e aí o motivo não é cota (F2) */
-        m = (Store.ultimaRecusa
+        m = (Store.ultimaRecusa && Store.ultimaRecusa.tipo === "corrompido"
+          ? "A revisão NÃO foi gravada — a lista de orçamentos deste aparelho está ilegível (arquivo corrompido); veja o aviso na lista de orçamentos."
+          : Store.ultimaRecusa
           ? "A revisão NÃO foi gravada — não consegui conferir o armazenamento deste aparelho (recarregue o app, F5)."
           : "A revisão NÃO foi gravada — o armazenamento deste aparelho recusou (cheio?).") + " Nada foi criado; o aprovado continua intacto.";
         this._iaAvisoDiff(m); return;
@@ -9292,6 +9704,13 @@
 
     novoOrcamento: function () {
       var lista = Store.listarOrcamentos(Auth.empresaId());
+      /* ⚠ LISTA ILEGÍVEL: a gravação seria recusada no FIM do assistente de 3
+         passos, com tudo preenchido. Diz antes (js/store.js, quarentena). */
+      if (this._listaIlegivel(Auth.empresaId())) {
+        var txtNv = Store.recadoIlegivel(Store.ilegivel(Auth.empresaId(), "orcamentos"), { recusou: true, rotulo: "criar orçamento", admin: this._ehAdminAqui() });
+        UI.toast(txtNv, "erro", this._msRecado(txtNv));
+        return;
+      }
       var limite = Auth.limite("limiteOrcamentos");
       if (lista.length >= limite) {
         UI.toast("Plano " + CONFIG.planos[Auth.plano()].nome + " permite só " + limite + " orçamentos. Faça upgrade.", "erro");
@@ -9350,7 +9769,14 @@
         [
           { texto: "Cancelar", classe: "primary", onClick: function () { UI.fecharModal(); } },
           { texto: "" + (typeof Icones !== "undefined" ? Icones.get("lixeira", 15) : "") + " Excluir definitivamente", classe: "danger", onClick: function () {
-            Store.excluirOrcamento(Auth.empresaId(), orc.id);
+            /* ⚠ lista ilegível: NÃO excluiu (e o toast de "excluído" mentiria) */
+            if (Store.excluirOrcamento(Auth.empresaId(), orc.id) === false && Store.ultimaRecusa && Store.ultimaRecusa.tipo === "corrompido") {
+              UI.fecharModal();
+              var txtEx = self._recadoRecusa(Store.ultimaRecusa, { rotulo: "excluir " + (orc.numero || "o orçamento") });
+              UI.toast(txtEx, "erro", self._msRecado(txtEx));
+              self.render();
+              return;
+            }
             if (self.orcAtual && self.orcAtual.id === orc.id) { self.orcAtual = null; self.tela = "lista"; }
             UI.fecharModal();
             self.render();
@@ -12241,7 +12667,7 @@
         if (resIn.abertoGravado) self.render();
         /* ⚠ F2: "Atualizado: … N item(ns) de orçamento" contava os recusados pela
            trava de carimbo; agora conta o que gravou e nomeia o que não gravou */
-        if (!resIn.recusados.length && !resIn.falhos.length) {
+        if (!resIn.recusados.length && !resIn.falhos.length && !resIn.ilegivel.length) {
           UI.toast("Atualizado: " + (atualizadas.length ? atualizadas.length + " composição(ões)" : "") + (atualizadas.length && totItens ? " e " : "") +
             (totItens ? totItens + " item(ns) de orçamento" : "") + ".", "ok");
         } else {
@@ -13378,7 +13804,9 @@
         /* nada mais é gravado (nem as composições próprias abaixo) e nada
            de "restaurado" na tela */
         var recRs = Store.ultimaRecusa;
-        var txtRs = recRs
+        var txtRs = (recRs && recRs.tipo === "corrompido")
+          ? this._recadoRecusa(recRs, { rotulo: "restaurar a versão" })
+          : recRs
           ? "O orçamento " + (orc.numero || "") + " NÃO foi restaurado: " + (recRs.tipo === "incerto" ? "não consegui conferir se ele foi alterado em outra janela (ou em outro aparelho) — recarregue o app (F5) e tente de novo." : "ele foi alterado em outra janela (ou em outro aparelho) no mesmo instante. Nada foi gravado — confira o que está no app e restaure de novo, se ainda for preciso.")
           : "O orçamento " + (orc.numero || "") + " NÃO foi restaurado: o armazenamento deste aparelho recusou (cheio?). Nada foi gravado — faça 💾 Backup e veja o que ocupa espaço em 🗂 Tabelas › Saúde do armazenamento.";
         UI.toast(txtRs, "erro", this._msRecado(txtRs));
@@ -14105,6 +14533,187 @@
      * - sem modal e sem foco → troca e redesenha.
      * ===================================================================== */
     _REL_OBRA: { crono_obra: 1, obras: 1, rdo: 1, medicoes: 1 },
+    /* a lista de orçamentos deste aparelho não abriu e as gravações nela estão
+       recusadas (js/store.js, nota da quarentena) */
+    _listaIlegivel: function (eid) {
+      try { var m = Store.ilegivel ? Store.ilegivel(eid, "orcamentos") : null; return !!(m && m.bloqueia); }
+      catch (e) { return false; }
+    },
+    _ehAdminAqui: function () {
+      try { return !(typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin()); } catch (e) { return true; }
+    },
+    /* as entidades ilegíveis que TRAVAM gravação (a conta com cópia não trava) */
+    _ilegiveisTravando: function (eid, conferirTodas) {
+      if (!Store.ilegiveis) return [];
+      var l = conferirTodas && Store.verificarIlegiveis
+        ? Store.verificarIlegiveis(eid, ["orcamentos"].concat((typeof Nuvem !== "undefined" && Nuvem.ENTIDADES) ? Nuvem.ENTIDADES : []))
+        : Store.ilegiveis(eid);
+      return Util.arr(l).filter(function (m) { return m && m.bloqueia; });
+    },
+    /* =====================================================================
+     * ⚠ DEPOIS DO "RECOMEÇAR", O BACKUP AUTOMÁTICO CONTINUA PARADO.
+     *
+     * O DEFEITO (revisão adversarial da 1.2.81, clique real): a lista
+     * recomeçou, o recado mandava "restaurar o backup MAIS RECENTE" — e a
+     * primeira alteração seguinte já gerava um arquivo novo com 1 orçamento
+     * (orcapro-auto-…_14-08-29.json), que passava a ser o mais recente. O bom
+     * (…_14-06-21.json, com 3) deixava de ser o mais novo do dia e a rotação
+     * (server/static.js, 30 arquivos + o mais novo de cada dia) o apagaria
+     * depois de 30 backups. Sobrava só a cópia ":corrompido:", sem tela.
+     *
+     * A REGRA: a pausa fica GRAVADA neste aparelho (sobrevive a fechar o app)
+     * até a pessoa restaurar um arquivo de ANTES do problema ou dizer, na
+     * porta abaixo, que não tem backup. O recado diz a data ("de antes de
+     * dd/mm/aaaa hh:mm"), que é a do nome dos arquivos da pasta.
+     * Chave fora do Store de propósito: é estado do aparelho, não dado da
+     * empresa (não sincroniza, não vai no backup) — e uma marca ilegível dela
+     * não pode travar nada: lida como "parado, sem data".
+     * ===================================================================== */
+    _BKP_PAUSA: "_backup_pausa",
+    _bkpPausa: function (eid) {
+      var raw = null;
+      try { raw = localStorage.getItem("orcapro:" + eid + ":" + this._BKP_PAUSA); } catch (e) { return null; }
+      if (!raw) return null;
+      try { var o = JSON.parse(raw); return (o && typeof o === "object") ? o : { desde: "" }; }
+      catch (e2) { return { desde: "" }; }
+    },
+    _bkpPausar: function (eid, desde, entidades) {
+      try {
+        localStorage.setItem("orcapro:" + eid + ":" + this._BKP_PAUSA,
+          JSON.stringify({ desde: String(desde || ""), entidades: Util.arr(entidades), em: Util.agoraISO() }));
+        return true;
+      } catch (e) { return false; }
+    },
+    _bkpRetomar: function (eid) {
+      try { localStorage.removeItem("orcapro:" + eid + ":" + this._BKP_PAUSA); } catch (e) {}
+    },
+    /* a data mais antiga em que alguma das partes deixou de abrir */
+    _desdeIlegivel: function (lista) {
+      var d = "";
+      Util.arr(lista).forEach(function (m) {
+        var x = String((m && (m.desde || m.em)) || "");
+        if (x && (!d || x < d)) d = x;
+      });
+      return d;
+    },
+    /* "de antes de 16/09/2026 14:07" — o mesmo formato do nome dos arquivos */
+    _antesDeTxt: function (iso) {
+      if (!iso) return "";
+      var t = Util.fmtData(iso);
+      return t && t !== "—" ? "de antes de " + t : "";
+    },
+    /* ⚠ A PORTA DA PAUSA: sem ela, quem não tem backup ficaria sem backup
+       automático para sempre. Só o administrador (é a decisão de restaurar). */
+    backupPausaFim: function () {
+      if (!this._ehAdminAqui()) { UI.toast("Só o administrador da conta pode religar o backup automático. Avise-o.", "erro"); return; }
+      var eid = Auth.empresaId(), p = this._bkpPausa(eid);
+      if (!p) { UI.toast("O backup automático já está ligado.", "ok"); this.render(); return; }
+      var antes = this._antesDeTxt(p.desde), NL = String.fromCharCode(10);
+      var ok = false;
+      try {
+        ok = window.confirm("Voltar a fazer backup automático?" + NL + NL +
+          "Faça isso só se NÃO houver um backup " + (antes || "de antes do problema") + " para restaurar." + NL + NL +
+          "Os próximos backups automáticos vão entrar na pasta e, com o tempo, os arquivos antigos saem da rotação — inclusive o de antes do problema, se ele existir.");
+      } catch (eC) { ok = false; }
+      if (!ok) return;
+      this._bkpRetomar(eid);
+      this._bkpUltimo = 0;
+      try { console.warn("[backup] pausa encerrada pelo administrador (sem backup de antes do problema)"); } catch (eL) {}
+      this.render();
+      UI.toast("Backup automático ligado de novo. A próxima alteração gera uma cópia.", "ok");
+    },
+    /* =====================================================================
+     * ⚠ O AVISO FIXO TAMBÉM NAS TELAS DA GESTÃO. Ele morava só na lista de
+     *   orçamentos: com as OBRAS ilegíveis a tela dizia "Nenhuma obra
+     *   cadastrada · + Criar primeira obra" — o convite exato para gravar por
+     *   cima (revisão adversarial da 1.2.81). O render da tela acabou de ler o
+     *   que ela usa; as marcas de outras entidades são relidas aqui (só as
+     *   marcadas: costuma ser nenhuma), para uma restauração feita em outra
+     *   janela não deixar aviso velho na tela.
+     * ===================================================================== */
+    _avisosDadoGestao: function () {
+      var eid, adm = this._ehAdminAqui();
+      try { eid = Auth.empresaId(); } catch (e) { return ""; }
+      var l = this._ilegiveisTravando(eid, false);
+      if (l.length) {
+        l.forEach(function (m) { try { if (m.entidade === "orcamentos") Store.listarOrcamentos(eid); else Store.listar(eid, m.entidade); } catch (eL) {} });
+        l = this._ilegiveisTravando(eid, false);
+      }
+      if (l.length) return UI.renderAvisoIlegivel(l, adm);
+      var p = this._bkpPausa(eid);
+      return p ? UI.renderAvisoPausa(p, adm, this._antesDeTxt(p.desde)) : "";
+    },
+    /* =====================================================================
+     * O AVISO NA TELA do conteúdo ilegível (js/store.js, nota da quarentena).
+     * Um recado por conjunto de entidades por sessão: o aviso fixo mora na
+     * lista de orçamentos, e o toast é para quem abre direto na Gestão.
+     * ===================================================================== */
+    _avisarIlegiveis: function (conferirTodas) {
+      var eid = Auth.empresaId();
+      var l = this._ilegiveisTravando(eid, conferirTodas);
+      if (!l.length) return;
+      var assin = l.map(function (m) { return m.entidade; }).sort().join(",");
+      if (this._ilegAvisado === assin) return;
+      this._ilegAvisado = assin;
+      var prim = l.filter(function (m) { return m.entidade === "orcamentos"; })[0] || l[0];
+      var outras = l.filter(function (m) { return m !== prim; }).map(function (m) { return Store.nomeEntidade ? Store.nomeEntidade(m.entidade) : m.entidade; });
+      var txt = "⚠ " + Store.recadoIlegivel(prim, { admin: this._ehAdminAqui() }) + (outras.length ? " Também ilegíveis: " + outras.join(", ") + "." : "");
+      UI.toast(txt, "erro", this._msRecado(txt));
+      if (this.tela === "lista") { try { this.render(); } catch (eR) {} }
+    },
+    /* =====================================================================
+     * ⚠ A PORTA DA TRAVA, NA TELA. Sem ela, quem não tem backup ficaria sem
+     *   conseguir criar nem um orçamento novo neste aparelho, para sempre.
+     *   Guarda à parte (o Store confere a cópia antes de remover) e deixa a
+     *   lista recomeçar; com a nuvem ligada, o sync traz de volta o que ela
+     *   tem. Só o administrador: é a mesma decisão de restaurar backup.
+     * ===================================================================== */
+    liberarIlegiveis: function () {
+      if (!this._ehAdminAqui()) { UI.toast("Só o administrador da conta pode recomeçar a lista (é a mesma decisão de restaurar o backup). Avise-o.", "erro"); return; }
+      var self = this, eid = Auth.empresaId();
+      var l = this._ilegiveisTravando(eid, true);
+      if (!l.length) { this._ilegAvisado = null; UI.toast("Não há dado ilegível neste aparelho agora.", "ok"); this.render(); return; }
+      var nomes = l.map(function (m) { return Store.nomeEntidade(m.entidade) + " (" + Math.max(1, Math.round((m.bytes || 0) / 1024)) + " KB)"; }).join(", ");
+      /* a data do problema sai das marcas ANTES de liberar: a porta as apaga */
+      var desdeL = this._desdeIlegivel(l), antesL = this._antesDeTxt(desdeL);
+      var nuvemOn = !!(typeof Nuvem !== "undefined" && Nuvem.ligado);
+      var NL = String.fromCharCode(10);
+      var texto = "Recomeçar sem o conteúdo ilegível?" + NL + NL + "Parte(s): " + nomes + "." + NL + NL +
+        "O conteúdo ilegível fica GUARDADO À PARTE neste aparelho — nada é apagado — e essa parte passa a começar vazia." + NL + NL +
+        (nuvemOn ? "A sincronização traz de volta o que estiver na nuvem. " : "") +
+        "O que só existia no conteúdo ilegível volta restaurando o backup " + (antesL ? antesL + " " : "") + "(💾) ou com o suporte da RA, a partir da cópia guardada. " +
+        "O backup automático fica parado até você restaurar, para esse arquivo não sair da rotação.";
+      var segue = false;
+      try { segue = window.confirm(texto); } catch (eC) { segue = false; }
+      if (!segue) return;
+      var foi = [], nao = [];
+      l.forEach(function (m) {
+        var r = Store.liberarIlegivel(eid, m.entidade);
+        if (r && r.ok) foi.push(m.entidade);
+        else nao.push(Store.nomeEntidade(m.entidade) + (r && r.motivo === "copia" ? " (sem espaço para guardar a cópia)" : ""));
+      });
+      /* ⚠ ANTES do render e do primeiro backup: ver `_bkpPausa` */
+      if (foi.length) this._bkpPausar(eid, desdeL, foi);
+      this._ilegAvisado = null;
+      try { console.warn("[app] recomeçar sem o conteúdo ilegível: liberadas " + JSON.stringify(foi) + ", recusadas " + JSON.stringify(nao)); } catch (eL) {}
+      this.render();
+      if (foi.length) {
+        var partesPr = foi.map(function (e) { return e === "orcamentos" ? "a lista de orçamentos" : "os dados de \"" + Store.nomeEntidade(e) + "\""; });
+        var tPr = "Pronto: " + (partesPr.length > 1 ? partesPr.slice(0, -1).join(", ") + " e " + partesPr[partesPr.length - 1] : partesPr[0]) +
+          (partesPr.length > 1 ? " recomeçaram" : " recomeçou") + "; a cópia do conteúdo ilegível continua guardada neste aparelho. " +
+          (nuvemOn ? "A nuvem está trazendo de volta o que ela tem. " : "") +
+          "Para trazer o resto, abra 💾 Backup e restaure o arquivo " + (antesL || "de antes do problema") +
+          " (o nome do arquivo traz a data). O backup automático fica parado até lá, para esse arquivo não sair da rotação.";
+        UI.toast(tPr, "ok", this._msRecado(tPr));
+        if (nuvemOn && Nuvem.sincronizar) {
+          try { Nuvem.sincronizar(eid).then(function () { try { self.render(); } catch (eR) {} }, function () {}); } catch (eS) {}
+        }
+      }
+      if (nao.length) {
+        var tn = "NÃO recomeçou: " + nao.join(", ") + ". O conteúdo ilegível continua no lugar (ele é a única cópia). Libere espaço (🗂 Tabelas › Saúde do armazenamento) e fale com o suporte da RA.";
+        UI.toast(tn, "erro", this._msRecado(tn));
+      }
+    },
     _relModalAberto: function () {
       try { return !!(document.getElementById("modal-bg") || document.querySelector(".modal-bg")); } catch (e) { return false; }
     },
@@ -14134,9 +14743,22 @@
       if (this.tela !== "editor" || !this.orcAtual) return;
       var eid = Auth.empresaId(), atual = this.orcAtual, disco = null;
       try { disco = Store.obterOrcamento(eid, atual.id); } catch (eD) { return; }
+      /* ⚠ LISTA ILEGÍVEL (js/store.js, quarentena): `disco` null aqui NÃO quer
+         dizer "excluído em outra janela", e sim que a lista não abriu. Fechar o
+         editor jogaria fora a única cópia legível deste orçamento — a da
+         memória, que o recado manda exportar em Excel. Fica tudo como está. */
+      if (!disco && this._listaIlegivel(eid)) return;
       var modal = this._relModalAberto();
       if (!disco) {
         if (modal) { this._relerPendente = motivo || "orcamentos"; this._relerVigiar(); return; }
+        /* ⚠ JANELA DESTACADA: a lista que o ramo de baixo desenha é escondida
+           pelo CSS da janela — ela ficava EM BRANCO (ver `_janelaRecado`).
+           O recado fica na tela, e nada mais (sem toast por cima). */
+        if (this._janela) {
+          this._relerPendente = null; this._relerRenderPendente = false;
+          this._janelaRecado("Este orçamento foi excluído em outra janela.");
+          return;
+        }
         var numExc = atual.numero || "";
         this.orcAtual = null; this.tela = "lista";
         this._relerPendente = null; this._relerRenderPendente = false;
@@ -14234,6 +14856,16 @@
       } catch (eH) { hora = ""; }
       var rot = (opts && opts.rotulo) ? " (" + String(opts.rotulo) + ")" : "";
       var modal = this._relModalAberto();
+      /* ⚠ LISTA ILEGÍVEL NÃO É "OUTRA JANELA" (js/store.js, nota da
+         quarentena). O recado de conflito mandaria conferir a outra janela e
+         diria "a tela foi atualizada" — nada disso aconteceu. O texto é do
+         Store, o mesmo do aviso da lista. */
+      if (rec.tipo === "corrompido") {
+        var admC = true;
+        try { admC = !(typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin()); } catch (eAd) { admC = true; }
+        return Store.recadoIlegivel({ entidade: rec.entidade || "orcamentos", bytes: rec.bytes, copiaOk: rec.copiaOk, desde: rec.desde },
+          { recusou: true, rotulo: opts && opts.rotulo, aberto: this.tela === "editor" && !!this.orcAtual, admin: admC });
+      }
       if (rec.tipo === "apagado") {
         return "O orçamento " + (rec.numero || "") + " foi excluído em outra janela (ou em outro aparelho)" + hora + ". Nada foi gravado" +
           (modal ? ". Feche este quadro: o editor será fechado." : " e o editor foi fechado.") + " Se precisar dele de volta, restaure do backup.";

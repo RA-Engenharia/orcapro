@@ -153,7 +153,12 @@
       /* a lápide de uma exclusão anterior tem de ser desfeita, senão o
          primeiro sync apaga de novo o que acabou de entrar (ver Store.desenterrar) */
       try { Store.desenterrar(eid, "orcamentos", entramOrc.map(function (x) { return x.id; })); } catch (e) {}
-      entramOrc.forEach(function (c) { if (Store.salvarOrcamento(eid, c, true)) res.nOrc++; });
+      entramOrc.forEach(function (c) {
+        if (Store.salvarOrcamento(eid, c, true)) { res.nOrc++; return; }
+        /* lista de orçamentos ilegível neste aparelho (js/store.js, quarentena):
+           o recado diz por que não entrou, em vez de só "0 importado(s)" */
+        if (Store.ultimaRecusa && Store.ultimaRecusa.tipo === "corrompido") res.orcIlegivel = (res.orcIlegivel || 0) + 1;
+      });
 
       // ---- gestão: só o que a validação deixou passar ----
       ENT_PERMITIDAS.forEach(function (ent) {
@@ -191,6 +196,7 @@
       if (!res || !res.ok) return "Pacote não importado.";
       var partes = [res.nOrc + " orçamento(s) importado(s)"];
       if (res.orcMantidos) partes.push(res.orcMantidos + " já estava(m) mais novo(s) aqui e foi(ram) mantido(s)");
+      if (res.orcIlegivel) partes.push(res.orcIlegivel + " NÃO entrou(aram): a lista de orçamentos deste aparelho está ilegível (arquivo corrompido) — veja o aviso na lista de orçamentos");
       ENT_PERMITIDAS.forEach(function (ent) {
         var g = res.gestao[ent]; if (!g) return;
         partes.push(ent + ": " + g.novos + " novo(s)/atualizado(s)" + (g.mantidos ? ", " + g.mantidos + " mantido(s)" : ""));
@@ -227,7 +233,7 @@
         { texto: "Importar", classe: "primary", onClick: function () {
           var res = self.aplicar(dump, origem);
           UI.fecharModal();
-          UI.toast(self.mensagem(res), res.ok ? "ok" : "erro");
+          UI.toast(self.mensagem(res), res.ok && !res.orcIlegivel ? "ok" : "erro", res.orcIlegivel ? 12000 : undefined);
           /* mesmo caminho da busca global (js/busca-ui.js): primeiro a visão
              Orçamentos, depois o editor — senão o Painel da Gestão fica na frente */
           if (res.ok && typeof App !== "undefined") {

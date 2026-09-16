@@ -238,6 +238,24 @@
                              : Store.adapter.ler(empresaId, ent, vazioDe(ent));
   }
 
+  /* ⚠ CONTEÚDO LOCAL ILEGÍVEL NÃO ENTRA NO MERGE NEM SOBE (js/store.js, nota
+   * da quarentena). O `lerEnt` de uma entidade corrompida devolve `[]`, e:
+   *  - o `push` mandaria esse `[]` para o documento da nuvem, por cima da
+   *    lista boa que os outros aparelhos sincronizam;
+   *  - o merge gravaria o resultado por cima do original ilegível (o Store
+   *    recusa, mas cada snapshot viraria um recado de gravação recusada).
+   * A entidade fica PARADA neste aparelho até a pessoa restaurar o backup ou
+   * liberar a lista (a porta do Store); depois disso o sync seguinte traz de
+   * volta o que a nuvem tem. Chamar DEPOIS do `lerEnt`: é a leitura que
+   * renova a marca. Objeto único com cópia guardada (`bloqueia: false`)
+   * passa — ali o merge é justamente a recuperação. */
+  function ilegivelLocal(empresaId, ent) {
+    try {
+      var m = (Store.ilegivel && Store.ilegivel(empresaId, ent)) || null;
+      return !!(m && m.bloqueia);
+    } catch (e) { return false; }
+  }
+
   /* ===================================================================
    * A NUVEM NÃO TOCA EM NAMESPACE DE PRÉVIA
    *
@@ -719,12 +737,20 @@
       var self = this;
       self._conflitosUltimoMerge = 0;
       self._conflitosCrono = [];
+      self._ilegiveisUltimoSync = [];
       var falhou = 0, tentadas = 0;
       var uma = function (ent) {
         tentadas++;
         return self._doc(ent).get().then(function (snap) {
           var cloud = snap.exists ? snap.data().v : null;
           var local = lerEnt(empresaId, ent);
+          /* ⚠ ver `ilegivelLocal`: nem merge, nem marca, nem subida */
+          if (ilegivelLocal(empresaId, ent)) {
+            falhou++;
+            self._ilegiveisUltimoSync.push(ent);
+            self._registrarFalha(ent, { code: "dado-local-ilegivel", message: "o conteúdo desta entidade neste aparelho não abre (arquivo corrompido)" });
+            return false;
+          }
           var merged = self._merge(local, cloud, ent, empresaId);
           /* cercado: o gravar está monkey-patched e, sem a cerca, dispararia um
              push por entidade — 27 escritas extras a cada sincronização */
@@ -787,9 +813,15 @@
            32 entidades reprovadas, e quem chamou anunciava "☁ Sincronizado!"
            sem um único byte ter subido. */
         if (falhou >= tentadas && tentadas > 0) return false;
+        /* ⚠ a parte ilegível NÃO "vai de novo sozinha": sem a pessoa agir, ela
+           fica parada para sempre — o recado geral mentiria sobre ela */
+        var nIleg = (self._ilegiveisUltimoSync || []).length;
         if (falhou > 0) {
           try {
-            if (global.UI && global.UI.toast) global.UI.toast("☁ Sincronização parcial: " + falhou + " de " + tentadas + " partes não subiram. O trabalho está salvo neste aparelho e vai de novo sozinho.", "erro");
+            if (global.UI && global.UI.toast) {
+              if (falhou > nIleg) global.UI.toast("☁ Sincronização parcial: " + (falhou - nIleg) + " de " + tentadas + " partes não subiram. O trabalho está salvo neste aparelho e vai de novo sozinho.", "erro");
+              if (nIleg) global.UI.toast("☁ " + nIleg + " parte(s) NÃO sincronizam: " + self._ilegiveisUltimoSync.join(", ") + " — o conteúdo delas neste aparelho está ilegível (arquivo corrompido) e foi guardado à parte. Restaure o backup (💾); depois disso a nuvem volta a sincronizar essa parte.", "erro", 16000);
+            }
           } catch (e) {}
         }
         return true;
@@ -839,6 +871,8 @@
        * cada snapshot de cada uma das outras entidades — dois aparelhos ligados
        * entram num laço de escrita que não converge. */
       var deFora = function (ent2, valor) {
+        /* ⚠ ver `ilegivelLocal` (a leitura que renovou a marca é do chamador) */
+        if (ilegivelLocal(empresaId, ent2)) return;
         self._aplicandoDaNuvem = true;
         try { Store.adapter.gravar(empresaId, ent2, valor); }
         finally { self._aplicandoDaNuvem = false; }
@@ -857,6 +891,7 @@
           var cloud = snap.data().v;
           var aplicar = function () {
             var local = lerEnt(empresaId, ent);
+            if (ilegivelLocal(empresaId, ent)) return;   // ⚠ ver `ilegivelLocal`
             var merged = self._merge(local, cloud, ent, empresaId);
             /* nada mudou depois do merge? então não grava e não avisa a tela —
                gravar aqui acionaria o patch e reabriria o caminho do laço */
@@ -918,6 +953,9 @@
         semPermissao: permissao,
         listaGrandeDemais: grande,
         bloqueadoOutraEmpresa: !!bloq,
+        /* entidades paradas no último sync por conteúdo local ilegível: quem
+           anuncia "Sincronizado!" confere aqui antes */
+        dadoLocalIlegivel: (this._ilegiveisUltimoSync || []).slice(),
         donoDoBalde: bloq ? (bloq.dono && (bloq.dono.empresa || "")) : "",
         ok: !!this.ligado && !bloq && !!(this._un && this._un.length) && !cota && !permissao && !grande
       };
@@ -981,6 +1019,9 @@
       var mandar = function () {
         try {
           var v = lerEnt(empresaId, ent);
+          /* ⚠ o `[]` de uma leitura ilegível NÃO sobe: ele substituiria na
+             nuvem a lista que os outros aparelhos ainda têm (ver `ilegivelLocal`) */
+          if (ilegivelLocal(empresaId, ent)) return;
           var carga = "";
           try { carga = JSON.stringify(v); } catch (e) { carga = ""; }
           var chave = empresaId + "|" + ent;

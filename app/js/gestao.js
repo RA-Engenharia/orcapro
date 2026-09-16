@@ -603,7 +603,22 @@
       return (o && o.length) ? o : null;
     } catch (e) { return null; }
   }
-  function vazioBox(txt, gacao, btn, semMais) { return '<div class="vazio card"><h3>' + txt + "</h3>" + (gacao ? '<button class="btn primary mt" data-gacao="' + gacao + '">' + (semMais ? "" : "+ ") + btn + "</button>" : "") + "</div>"; }
+  function vazioBox(txt, gacao, btn, semMais) {
+    /* ⚠ LISTA VAZIA POR LEITURA QUE FALHOU NÃO É LISTA VAZIA (js/store.js,
+       quarentena). Com as obras ilegíveis esta caixa dizia "Nenhuma obra
+       cadastrada · + Criar primeira obra" a quem tinha vinte — o convite para
+       gravar por cima, que o Store recusa (revisão adversarial da 1.2.81).
+       A entidade da tela é a da view (obras, requisicoes, cotacoes…); o aviso
+       fixo com as portas vem no topo (App._avisosDadoGestao). */
+    var entV = "", mV = null;
+    try { entV = (typeof App !== "undefined" && App.view) ? String(App.view) : ""; } catch (eV) { entV = ""; }
+    try { mV = (entV && typeof Store !== "undefined" && Store.ilegivel) ? Store.ilegivel(eid(), entV) : null; } catch (eI) { mV = null; }
+    if (mV && mV.bloqueia) {
+      return '<div class="vazio card"><h3>Os dados de "' + Util.esc(Store.nomeEntidade ? Store.nomeEntidade(entV) : entV) + '" deste aparelho não puderam ser lidos</h3>' +
+        '<p class="muted">Nada foi apagado. Veja o aviso acima para restaurar o backup — criar registro novo agora está bloqueado, porque gravar apagaria os que estão no arquivo ilegível.</p></div>';
+    }
+    return '<div class="vazio card"><h3>' + txt + "</h3>" + (gacao ? '<button class="btn primary mt" data-gacao="' + gacao + '">' + (semMais ? "" : "+ ") + btn + "</button>" : "") + "</div>";
+  }
 
   // Ícones profissionais (monoline SVG, estilo Lucide) — sem emoji.
   var ICON = {
@@ -1293,7 +1308,7 @@
         + ".app.foco > .sidebar .sb-item{white-space:nowrap;overflow:hidden}"
         + "}"
         + "</style>";
-      return '<div class="sb-top"><svg width="34" height="34" viewBox="0 0 100 100"><defs><linearGradient id="sbg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#163a5c"/><stop offset="1" stop-color="#2e6f9e"/></linearGradient></defs><rect x="2" y="2" width="96" height="96" rx="24" fill="url(#sbg)"/><rect x="24" y="52" width="13" height="22" rx="4" fill="#fff" opacity=".55"/><rect x="44" y="38" width="13" height="36" rx="4" fill="#fff" opacity=".9"/><rect x="64" y="24" width="13" height="50" rx="4" fill="#6fd08a"/></svg></div>' +
+      return '<div class="sb-top"><svg width="34" height="34" viewBox="0 0 512 512"><defs><linearGradient id="sbg" x1="0" y1="0" x2=".35" y2="1"><stop offset="0" stop-color="#2d6a9c"/><stop offset="1" stop-color="#143a5e"/></linearGradient></defs><path d="M504 256 L504 354 L502 385 L500 407 L496 425 L492 440 L486 452 L480 463 L472 472 L463 480 L452 486 L440 492 L425 496 L407 500 L385 502 L354 504 L256 504 L158 504 L127 502 L105 500 L87 496 L72 492 L60 486 L49 480 L40 472 L32 463 L26 452 L20 440 L16 425 L12 407 L10 385 L8 354 L8 256 L8 158 L10 127 L12 105 L16 87 L20 72 L26 60 L32 49 L40 40 L49 32 L60 26 L72 20 L87 16 L105 12 L127 10 L158 8 L256 8 L354 8 L385 10 L407 12 L425 16 L440 20 L452 26 L463 32 L472 40 L480 49 L486 60 L492 72 L496 87 L500 105 L502 127 L504 158 Z" fill="url(#sbg)"/><path d="M502 256 L502 353 L500 384 L498 406 L494 424 L490 438 L484 450 L478 461 L470 470 L461 478 L450 484 L438 490 L424 494 L406 498 L384 500 L353 502 L256 502 L159 502 L128 500 L106 498 L88 494 L74 490 L62 484 L51 478 L42 470 L34 461 L28 450 L22 438 L18 424 L14 406 L12 384 L10 353 L10 256 L10 159 L12 128 L14 106 L18 88 L22 74 L28 62 L34 51 L42 42 L51 34 L62 28 L74 22 L88 18 L106 14 L128 12 L159 10 L256 10 L353 10 L384 12 L406 14 L424 18 L438 22 L450 28 L461 34 L470 42 L478 51 L484 62 L490 74 L494 88 L498 106 L500 128 L502 159 Z" fill="none" stroke="#fff" stroke-opacity=".14" stroke-width="3"/><g><path d="M120 306 L120 372 Q120 380 128 380 L180 380 Q188 380 188 372 L188 306 Q188 288 170 288 L138 288 Q120 288 120 306 Z" fill="#fff" fill-opacity=".42"/><path d="M222 238 L222 372 Q222 380 230 380 L282 380 Q290 380 290 372 L290 238 Q290 220 272 220 L240 220 Q222 220 222 238 Z" fill="#fff" fill-opacity=".78"/><path d="M324 170 L324 372 Q324 380 332 380 L384 380 Q392 380 392 372 L392 170 Q392 152 374 152 L342 152 Q324 152 324 170 Z" fill="#3ccf73"/><path d="M402 72 C408 100 408 100 436 106 C408 112 408 112 402 140 C396 112 396 112 368 106 C396 100 396 100 402 72 Z" fill="#9be7af"/></g></svg></div>' +
         est + '<div class="sb-lbl">Módulos</div><nav class="sb-nav">' + itens + mais
         + '<button class="sb-org sb-foco" data-gacao="menu-foco" title="Recolher a barra para sobrar tela; o menu volta ao encostar o mouse">'
         + (this.menuFoco() ? "⇥ Mostrar menu fixo" : "⇤ Modo foco (mais tela)") + "</button>"
@@ -5388,20 +5403,39 @@
       });
       return html;
     },
-    /* devolve a retenção de UMA medição. Idempotente pelo carimbo. */
+    /* devolve a retenção de UMA medição. Idempotente pelo carimbo.
+       Devolve o valor lançado, 0 (nada a devolver) ou -1 (NÃO gravou — o
+       recado já saiu). ⚠ É a quinta porta que lança receita depois de
+       carimbar o documento, e tinha o mesmo buraco das quatro de baixa
+       (ver `_dinheiroIlegivel`): com o Financeiro ilegível a medição ficava
+       "devolvida" sem receita, e o [Devolver] sumia. */
     _retencaoLiberar: function (m) {
       if (!m || m.retencaoLiberadaEm) return 0;
       if (String(m.status || "").trim().toLowerCase() !== "paga") return 0;
       var v = Util.num(m.valor) * Util.num(m.retencao) / 100;
       if (!(v > 0)) return 0;
+      var ilegR = this._dinheiroIlegivel("medicoes");
+      if (ilegR) { UI.toast(ilegR.replace(/^Pagamento NÃO registrado/, "Retenção NÃO devolvida"), "erro", Math.max(9000, Math.min(22000, ilegR.length * 60))); return -1; }
       var hoje = this._hojeISO();
       m.retencaoLiberadaEm = hoje;
-      Store.salvar(eid(), "medicoes", m);
-      Store.salvar(eid(), "financeiro", {
+      if (this._naoGravou(Store.salvar(eid(), "medicoes", m))) {
+        m.retencaoLiberadaEm = "";
+        UI.toast("Retenção NÃO devolvida: a medição " + (m.numero || "") + " não pôde ser gravada neste aparelho (veja o aviso vermelho). Nada entrou no Financeiro.", "erro", 12000);
+        return -1;
+      }
+      var lancR = Store.salvar(eid(), "financeiro", {
         data: hoje, desc: "Devolução de retenção — medição " + (m.numero || ""),
         tipo: "receita", categoria: "medicao", valor: v, status: "pendente",
         obraId: m.obraId, contratoId: m.contratoId, medicaoId: m.id, retencaoDe: m.id
       });
+      if (this._naoGravou(lancR)) {
+        m.retencaoLiberadaEm = "";
+        var volta = !this._naoGravou(Store.salvar(eid(), "medicoes", m));
+        UI.toast(volta
+          ? "Retenção NÃO devolvida: a receita de " + Util.fmtMoeda(v) + " não pôde ser gravada no Financeiro deste aparelho (veja o aviso vermelho). A medição " + (m.numero || "") + " continua com a retenção em aberto; resolva o aviso e devolva de novo."
+          : "ATENÇÃO: a medição " + (m.numero || "") + " ficou marcada com a retenção devolvida, mas a receita de " + Util.fmtMoeda(v) + " NÃO entrou no Financeiro. Lance esse valor à mão no Financeiro.", "erro", 16000);
+        return -1;
+      }
       return v;
     },
 
@@ -14360,7 +14394,9 @@
                conferência sem ter sido aplicada. (Lido do disco nesta mesma
                pilha: a trava de carimbo não recusa; sobra a cota.) */
             if (!Store.salvarOrcamento(eid(), orc)) {
-              UI.toast("A quantidade NÃO foi trocada: " + (Store.ultimaRecusa
+              UI.toast("A quantidade NÃO foi trocada: " + (Store.ultimaRecusa && Store.ultimaRecusa.tipo === "corrompido"
+                ? "a lista de orçamentos deste aparelho está ilegível (arquivo corrompido) — veja o aviso na lista de orçamentos."
+                : Store.ultimaRecusa
                 ? "não consegui conferir o orçamento gravado — recarregue o app (F5) e tente de novo."
                 : "o armazenamento deste aparelho recusou (cheio?).") + " O orçamento e a conferência continuam como estavam.", "erro", 10000);
               UI.fecharModal();
@@ -28611,7 +28647,30 @@ renderFolha: function () {
          * falsificação de autoria no documento que serve de prova.
          * Fica antes do Store.salvar: `aposSalvar` roda DEPOIS e exigiria uma
          * segunda gravação. */
-        Store.salvar(eid(), entidade, obj);
+        /* ⚠ GRAVAÇÃO RECUSADA NÃO É "CRIADO". O retorno era ignorado: com a
+           entidade ilegível (js/store.js, quarentena) o Store recusava, a tela
+           mostrava o vermelho da recusa E o verde "Obra criado.", fechava o
+           formulário e o que a pessoa digitou sumia — e na segunda tentativa,
+           com o recado do Store limitado a um a cada 20 s, sobrava só o verde
+           (revisão adversarial da 1.2.81, clique real). Pior no dinheiro: o
+           lançamento agendado pelo gate seguia e gravava a receita de uma
+           medição que não foi gravada. Aqui nada mais acontece: sem dinheiro,
+           sem estoque, sem rejeição, e o formulário fica aberto com o que foi
+           preenchido. */
+        var gravadoF = Store.salvar(eid(), entidade, obj);
+        if (self._naoGravou(gravadoF)) {
+          self._lancFinPendente = null; self._lancFinRecalc = ""; self._estoquePendente = false; self._aprovRejPendente = null;
+          var ilegF = null;
+          try { ilegF = Store.ilegivel ? Store.ilegivel(eid(), entidade) : null; } catch (eIF) { ilegF = null; }
+          /* sem "criado/criada": o `nome` vem do título do formulário e tem gênero */
+          var txtNG = "NADA foi gravado (" + nome + "): " +
+            (ilegF && ilegF.bloqueia
+              ? "os dados de \"" + (Store.nomeEntidade ? Store.nomeEntidade(entidade) : entidade) + "\" deste aparelho estão ilegíveis, e gravar agora apagaria os outros registros (veja o aviso vermelho)."
+              : "o armazenamento deste aparelho recusou a gravação (veja o aviso vermelho).") +
+            " O formulário continua aberto com o que você preencheu.";
+          UI.toast(txtNG, "erro", Math.max(9000, Math.min(20000, txtNG.length * 60)));
+          return;
+        }
         /* ⚠ O DINHEIRO SÓ ENTRA DEPOIS DO DOCUMENTO. Este lançamento era feito
          * lá dentro do `_gateStatusForm`, que é validação e roda ANTES das
          * outras — então todo `return false` posterior deixava receita órfã no
@@ -28623,8 +28682,32 @@ renderFolha: function () {
            material. A segunda gravação da compra é para carimbar esse guarda —
            é o preço de o estoque só poder entrar depois de o documento existir. */
         var _ep = self._estoquePendente; self._estoquePendente = false;
+        var _lf = self._lancFinPendente; self._lancFinPendente = null;
+        /* ⚠ O LANÇAMENTO VEM ANTES DO ESTOQUE, e a gravação dele é conferida.
+           Se o Financeiro recusar (cota cheia entre as duas gravações; o
+           conteúdo ilegível já foi barrado no gate, ver `_dinheiroIlegivel`),
+           a baixa do documento é desfeita e NADA entra no almoxarifado: pedido
+           voltado para Aprovado com material lançado cairia no
+           `_transcreveEntregaLegada` e nunca mais receberia a despesa.
+           ⚠ Sem `return` e sem método de `self` fora do ramo de falha: a
+           bancada tools/test-v12-dinheiro-dado.js roda esta fatia numa VM. */
+        var _semLanc = "";
+        if (_lf) {
+          /* ⚠ O VALOR E REFEITO AQUI, com o `obj` que o coletor terminou de
+             preencher — ver a nota no gate. Este ponto so e alcancado se o
+             save aconteceu, entao refazer aqui nao cria lancamento novo:
+             corrige o numero do que ja estava agendado. */
+          if (self._lancFinRecalc === "medicaoLiquido") {
+            _lf.valor = Util.num(obj.valor) * (1 - Util.num(obj.retencao) / 100);
+          }
+          var _lfG = Store.salvar(eid(), "financeiro", _lf);
+          if (_lfG === null || _lfG === false) {
+            _semLanc = self._desfazBaixaSemLanc(entidade, obj,
+              { status: registro.status, data: entidade === "compras" ? registro.dataRecebimento : registro.dataPgto }, _lf);
+          }
+        }
         var _estMsg = "";
-        if (_ep && entidade === "compras") {
+        if (_ep && entidade === "compras" && !_semLanc) {
           try {
             var _est = self._estoqueDaCompra(obj);
             if (_est && _est.lancados) {
@@ -28638,21 +28721,17 @@ renderFolha: function () {
             }
           } catch (eEst) {}
         }
-        var _lf = self._lancFinPendente; self._lancFinPendente = null;
-        if (_lf) {
-          /* ⚠ O VALOR E REFEITO AQUI, com o `obj` que o coletor terminou de
-             preencher — ver a nota no gate. Este ponto so e alcancado se o
-             save aconteceu, entao refazer aqui nao cria lancamento novo:
-             corrige o numero do que ja estava agendado. */
-          if (self._lancFinRecalc === "medicaoLiquido") {
-            _lf.valor = Util.num(obj.valor) * (1 - Util.num(obj.retencao) / 100);
-          }
-          Store.salvar(eid(), "financeiro", _lf);
-          if (self._lancFinToast) {
-            try { UI.toast(self._lancFinToast.replace(/\.$/, "") + _estMsg + ".", "ok"); } catch (eLF) {}
-          }
+        if (_lf && !_semLanc && self._lancFinToast) {
+          try { UI.toast(self._lancFinToast.replace(/\.$/, "") + _estMsg + ".", "ok"); } catch (eLF) {}
         }
         self._lancFinToast = ""; self._lancFinRecalc = "";
+        if (_semLanc) {
+          /* o resto do formulário foi gravado; a baixa não. Nada de verde. */
+          self._aprovRejPendente = null;
+          UI.fecharModal(); App.render();
+          UI.toast(_semLanc, "erro", Math.max(10000, Math.min(22000, _semLanc.length * 60)));
+          return;
+        }
         UI.fecharModal(); App.render();
         if (typeof aposSalvar === "function") aposSalvar(obj, ehNovo);
         else UI.toast(nome + (ehNovo ? " criado." : " salvo."), "ok");
@@ -29070,7 +29149,105 @@ renderFolha: function () {
         UI.toast("Dar baixa lança no Financeiro, e seu usuário não tem esse módulo. Peça ao Financeiro para registrar.", "erro");
         return false;
       }
+      /* ⚠ AS QUATRO PORTAS PASSAM AQUI ANTES DE CARIMBAR A DATA — por isso a
+         recusa do conteúdo ilegível mora aqui, e não em cada porta. Ver
+         `_dinheiroIlegivel`. */
+      var ilegB = this._dinheiroIlegivel(entidade);
+      if (ilegB) {
+        /* redesenha para o aviso fixo com as portas aparecer no topo (a
+           leitura que achou o problema foi esta). Com formulário aberto, não:
+           o que a pessoa preencheu fica onde está. */
+        try { if (!document.getElementById("modal-bg") && typeof App !== "undefined" && App.render) App.render(); } catch (eRd) {}
+        UI.toast(ilegB, "erro", Math.max(9000, Math.min(22000, ilegB.length * 60)));
+        return false;
+      }
       return true;
+    },
+    /* =====================================================================
+     * ⚠ DINHEIRO NÃO SE MOVE SOBRE UMA LEITURA QUE FALHOU (js/store.js, nota
+     *   da quarentena).
+     *
+     * O DEFEITO (revisão adversarial do branch da 1.2.81, clique real): a
+     * chave `financeiro` perde o último caractere; [Registrar pgto] da
+     * medição 02a. A medição ficava `paga` com `dataPgto` de hoje, o Store
+     * RECUSAVA a receita (o Financeiro não abre, gravar apagaria o resto), e
+     * a tela dizia em verde "Medição paga e receita lançada no Financeiro".
+     * Restaurado o backup, o Financeiro voltava sem a receita da 02a, a 02a
+     * continuava paga, `_travaLancDoDoc` respondia "nada lançado" e o botão
+     * [Registrar pgto] tinha sumido: R$ 153.109,80 que nunca entram no caixa,
+     * sem aviso nenhum. O gêmeo pelo formulário (a lista de MEDIÇÕES ilegível
+     * com o formulário aberto) fazia o contrário: gravava a receita e não
+     * gravava a medição.
+     *
+     * A causa de fundo: `_lancVivoDoDoc` lê o Financeiro ilegível como lista
+     * VAZIA e responde "não há lançamento" quando na verdade NÃO CONSEGUE
+     * VERIFICAR — e recado que não verificou não pode afirmar (skill
+     * `dinheiro`, regra 2: "não encontrou", nunca "não existe").
+     *
+     * A REGRA: documento que lança dinheiro (`_DOC_CARIMBO`) só dá baixa com o
+     * Financeiro E a própria entidade legíveis. A leitura é feita AQUI, na
+     * hora (a marca do Store é refeita a cada leitura; uma marca velha diria
+     * "legível" sobre um disco que corrompeu depois). Requisição não lança
+     * dinheiro e não pergunta ao Financeiro (regra 9).
+     * Devolve o recado (texto puro, `UI.toast` usa textContent) ou null.
+     * Sem `Store.ilegivel` (adapter sem quarentena, bancadas com stub): null.
+     * ===================================================================== */
+    _dinheiroIlegivel: function (entidade) {
+      if (!this._DOC_CARIMBO[entidade]) return null;
+      if (typeof Store === "undefined" || typeof Store.ilegivel !== "function") return null;
+      var e = eid(), ruins = [];
+      [entidade, "financeiro"].forEach(function (ent) {
+        try { Store.listar(e, ent); } catch (eL) {}
+        var m = null;
+        try { m = Store.ilegivel(e, ent); } catch (eI) { m = null; }
+        if (m && m.bloqueia) ruins.push(m);
+      });
+      if (!ruins.length) return null;
+      var ehCompra = entidade === "compras";
+      var fin = ruins.filter(function (m) { return m.entidade === "financeiro"; })[0];
+      var adm = true;
+      try { adm = !(typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin()); } catch (eA) { adm = true; }
+      var porque = fin
+        ? "sem ler o Financeiro não há como conferir se " + (ehCompra ? "a despesa desta compra já foi lançada" : "o dinheiro desta medição já entrou")
+        : "as " + (ehCompra ? "compras" : "medições") + " deste aparelho não abrem, e a baixa seria gravada por cima delas";
+      return (ehCompra ? "Recebimento" : "Pagamento") + " NÃO registrado, e nada foi gravado: " + porque + ". " +
+        (Store.recadoIlegivel ? Store.recadoIlegivel(ruins[0], { admin: adm }) : "") +
+        (ruins.length > 1 ? " Também ilegíveis: " + ruins.slice(1).map(function (m) { return Store.nomeEntidade ? Store.nomeEntidade(m.entidade) : m.entidade; }).join(", ") + "." : "");
+    },
+    /* Gravação do Store que falhou: `salvar` devolve null (quarentena, cota
+       cheia). ⚠ SÓ null/false: as bancadas usam `salvar: function () {}`,
+       que devolve undefined, e o app real devolve o objeto. */
+    _naoGravou: function (r) { return r === null || r === false; },
+    /* =====================================================================
+     * ⚠ O DOCUMENTO GRAVOU COMO PAGO/RECEBIDO E O LANÇAMENTO NÃO — DESFAZ A
+     *   BAIXA DO DOCUMENTO. A guarda acima cobre o Financeiro ilegível; isto
+     *   cobre a gravação do lançamento que falha por outro motivo (cota cheia
+     *   entre as duas gravações). Documento pago sem receita some do caixa e
+     *   ainda esconde o botão que o pagaria: é o pior dos dois mundos.
+     * `ant`: o status e a data que o documento tinha antes da baixa.
+     * Devolve o recado (erro) — nunca verde.
+     * ===================================================================== */
+    _desfazBaixaSemLanc: function (entidade, doc, ant, lanc) {
+      var ehCompra = entidade === "compras";
+      var campo = ehCompra ? "dataRecebimento" : "dataPgto";
+      doc.status = ant.status;
+      doc[campo] = ant.data || "";
+      var voltou = !this._naoGravou(Store.salvar(eid(), entidade, doc));
+      var valor = Util.fmtMoeda(Math.abs(Util.num(lanc && lanc.valor)));
+      var oque = ehCompra ? "a despesa de " + valor + " desta compra" : "a receita de " + valor + " desta medição";
+      if (voltou) {
+        return (ehCompra ? "Recebimento" : "Pagamento") + " NÃO registrado: " + oque + " não pôde ser gravada no Financeiro deste aparelho " +
+          "(veja o aviso vermelho), e " + (ehCompra ? "o pedido voltou" : "a medição voltou") + " para " + this._rotuloStatus(entidade, ant.status) +
+          ". Resolva o aviso e registre de novo.";
+      }
+      return "ATENÇÃO: " + (ehCompra ? "o pedido ficou como Recebido" : "a medição ficou como Paga") + ", mas " + oque +
+        " NÃO entrou no Financeiro, e não consegui voltar o status. Resolva o aviso vermelho, volte o status para " +
+        this._rotuloStatus(entidade, ant.status) + " e registre de novo — ou lance esse valor à mão no Financeiro.";
+    },
+    _rotuloStatus: function (entidade, st) {
+      var s = String(st || "");
+      var m = { aprovada: "Aprovada", aprovado: "Aprovado", enviado: "Enviado", confirmado: "Confirmado", pendente: "Pendente" };
+      return m[s] || (s ? s.charAt(0).toUpperCase() + s.slice(1) : "o status anterior");
     },
     /* estado em que cada modulo nasce — usado quando nao ha estado anterior */
     _APROV_INICIAL: { medicoes: "pendente", compras: "cotacao", requisicoes: "aberta", producao_med: "pendente" },
@@ -30840,10 +31017,25 @@ renderFolha: function () {
              dinheiro já está lançado?" — e essa só o Financeiro responde. */
           var travaB = this._travaLancDoDoc(md, "medicoes");
           if (travaB) { UI.toast(travaB, "erro"); return; }
-          md.status = "paga"; md.dataPgto = this._hojeISO(); Store.salvar(eid(), "medicoes", md);
+          var antMd = { status: md.status, data: md.dataPgto };
+          md.status = "paga"; md.dataPgto = this._hojeISO();
+          /* ⚠ O RETORNO DAS DUAS GRAVAÇÕES DECIDE O RECADO. Ele era ignorado, e
+             com a quarentena do Store (js/store.js) `salvar` passou a recusar
+             devolvendo null — a tela dizia "receita lançada" em verde por cima
+             do vermelho da recusa. Ver `_dinheiroIlegivel`. */
+          if (this._naoGravou(Store.salvar(eid(), "medicoes", md))) {
+            App.render();
+            UI.toast("Pagamento NÃO registrado: a medição não pôde ser gravada neste aparelho (veja o aviso vermelho). Nada entrou no Financeiro.", "erro", 12000);
+            return;
+          }
           // gera receita no financeiro (líquido de retenção)
           var liq = Util.num(md.valor) * (1 - Util.num(md.retencao) / 100);
-          Store.salvar(eid(), "financeiro", { data: md.dataPgto, desc: "Recebimento medição " + (md.numero || ""), tipo: "receita", categoria: "medicao", valor: liq, status: "pago", obraId: md.obraId, contratoId: md.contratoId, /* ⚠ CARIMBO DE ORIGEM: é ele que torna esta receita ENCONTRÁVEL. Sem ele não há como saber que o dinheiro desta medição já entrou, e a única defesa volta a ser um campo do documento que a reabertura apaga. Igual ao `docTipo:"PC"` da compra e ao `"NF"` da nota. */ docTipo: this._DOC_CARIMBO.medicoes, docId: md.id, docNumero: md.numero || "" });
+          var lancB = { data: md.dataPgto, desc: "Recebimento medição " + (md.numero || ""), tipo: "receita", categoria: "medicao", valor: liq, status: "pago", obraId: md.obraId, contratoId: md.contratoId, /* ⚠ CARIMBO DE ORIGEM: é ele que torna esta receita ENCONTRÁVEL. Sem ele não há como saber que o dinheiro desta medição já entrou, e a única defesa volta a ser um campo do documento que a reabertura apaga. Igual ao `docTipo:"PC"` da compra e ao `"NF"` da nota. */ docTipo: this._DOC_CARIMBO.medicoes, docId: md.id, docNumero: md.numero || "" };
+          if (this._naoGravou(Store.salvar(eid(), "financeiro", lancB))) {
+            var txtSL = this._desfazBaixaSemLanc("medicoes", md, antMd, lancB);
+            App.render(); UI.toast(txtSL, "erro", Math.max(10000, Math.min(22000, txtSL.length * 60)));
+            return;
+          }
           App.render(); UI.toast("Medição paga e receita lançada no Financeiro.", "ok"); return;
         }
         case "novo-fornecedor": return this.novoFornecedor();
@@ -30868,6 +31060,7 @@ renderFolha: function () {
           var mr = Store.obter(eid(), "medicoes", id); if (!mr) return;
           var vr = this._retencaoLiberar(mr);
           App.render();
+          if (vr < 0) return;   // não gravou: o recado já saiu
           UI.toast(vr > 0 ? "Retenção de " + Util.fmtMoeda(vr) + " devolvida e lançada como receita." : "Esta retenção já foi devolvida.", vr > 0 ? "ok" : "erro");
           return;
         }
@@ -30878,14 +31071,26 @@ renderFolha: function () {
               && String(m.status || "").toLowerCase() === "paga" && Util.num(m.retencao) > 0;
           });
           if (!alvo.length) { UI.toast("Não há retenção a devolver nesta obra.", "erro"); return; }
+          /* antes da pergunta: com o Financeiro ilegível não há o que confirmar */
+          var ilegLote = this._dinheiroIlegivel("medicoes");
+          if (ilegLote) { UI.toast(ilegLote.replace(/^Pagamento NÃO registrado/, "Retenção NÃO devolvida"), "erro", Math.max(9000, Math.min(22000, ilegLote.length * 60))); return; }
           var soma = alvo.reduce(function (t, m) { return t + Util.num(m.valor) * Util.num(m.retencao) / 100; }, 0);
           /* ⚠ devolver em lote mexe em dinheiro de várias medições de uma vez:
              confirma com o VALOR na frente, não com "tem certeza?". */
           if (!window.confirm("Devolver a retenção de " + alvo.length + " medição(ões), somando " + Util.fmtMoeda(soma) + "?\n\nIsso lança uma receita no Financeiro para cada uma.")) return;
-          var tot = 0;
-          alvo.forEach(function (m) { tot += self_._retencaoLiberar(m); });
+          var tot = 0, nOk = 0, nFalha = 0;
+          for (var iR = 0; iR < alvo.length; iR++) {
+            var vR = self_._retencaoLiberar(alvo[iR]);
+            if (vR < 0) { nFalha++; break; }   // a primeira recusa para o lote: as seguintes dariam o mesmo recado
+            if (vR > 0) { tot += vR; nOk++; }
+          }
           App.render();
-          UI.toast("Devolvida a retenção de " + alvo.length + " medição(ões): " + Util.fmtMoeda(tot) + ".", "ok");
+          /* ⚠ o resumo conta o que GRAVOU — "devolvida a de 5" depois de uma recusa seria mentira */
+          if (nFalha) {
+            if (nOk) UI.toast("Devolvida a retenção de " + nOk + " de " + alvo.length + " medição(ões): " + Util.fmtMoeda(tot) + ". As outras NÃO foram (veja o aviso).", "erro", 12000);
+            return;
+          }
+          UI.toast("Devolvida a retenção de " + nOk + " medição(ões): " + Util.fmtMoeda(tot) + ".", "ok");
           return;
         }
         case "abrir-kardex": this._estoqueAba = "extrato"; this._kardexFiltro = { itemId: "", obraId: "", de: "", ate: "" }; App.render(); return;

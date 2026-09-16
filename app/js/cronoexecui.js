@@ -802,7 +802,9 @@
       var mp = (app && app._cronoMpp && typeof app._cronoMpp === "object") ? app._cronoMpp : null;
       return { sub: sub, detalhe: det, abertas: ab, mpp: mp,
         saude: { aberto: sa.aberto === true, fundo: sa.fundo === true, calculando: sa.calculando === true },
-        zoom: { nivel: zm.nivel || "auto", sel: zm.sel == null ? -1 : zm.sel, desfazer: (df && df.resumo) ? String(df.resumo) : "" },
+        zoom: { nivel: zm.nivel || "auto", sel: zm.sel == null ? -1 : zm.sel, desfazer: (df && df.resumo) ? String(df.resumo) : "",
+          // a escala do "Ajustar" mantida enquanto se edita (ver GanttUI.estado): estado de TELA, como o nível
+          diasAjuste: (Number(zm.diasAjuste) >= 1) ? Number(zm.diasAjuste) : null },
         /* ⚠ `lob` é TRI-ESTADO (true / false / null): o padrão dele depende do
            que o motor achou — aberto quando HÁ repetição, fechado quando não
            há. Com um booleano, "nunca clicou" e "clicou para fechar" seriam a
@@ -1412,7 +1414,7 @@
         desfazer: String(o.desfazer == null ? "" : o.desfazer), Gu: Gu, perm: {}, ctx: {}, ids: ids, temHoje: false };
       if (!Gu) { out.motivo = "O motor do Gantt interativo (js/ganttui.js) não carregou — o cronograma está sendo desenhado no modo simples."; return out; }
       var e = Gu.estado({
-        nivel: o.nivel, dias: Math.max(1, Math.round(r.totalDias || 1)), linhas: L.length, rowH: this.GX_ROWH,
+        nivel: o.nivel, diasAjuste: o.diasAjuste, dias: Math.max(1, Math.round(r.totalDias || 1)), linhas: L.length, rowH: this.GX_ROWH,
         largura: o.largura, altura: (Number(o.altura) > 0 ? o.altura : caixa), labelW: colW,
         dpw: (r.params && r.params.diasUteisSemana) || 5, cal: cal, idPorLinha: ids,
         scrollLeft: o.scrollLeft, scrollTop: o.scrollTop
@@ -1712,16 +1714,26 @@
          aproximar, ajustar) cabem, e "Ajustar" continua a um toque: sem ele,
          quem afastou até o trimestre não tinha como voltar (no telefone não há
          Ctrl + roda). */
+      /* ⚠ ESCALA MANTIDA DEPOIS DE EDITAR (ver GanttUI.estado, `diasAjuste`):
+         o desenho segue na escala de quando a edição começou, e o seletor diz
+         isso em vez de afirmar "Ajustar". Com "Ajustar" já marcado, escolher
+         "Ajustar" de novo não dispara `change` — sem a opção própria a pessoa
+         não teria como reajustar pela escala. Texto puro (só números). */
+      var mantida = !!(pro.e && pro.e.escalaMantida);
+      var txMant = mantida ? ("Escala mantida enquanto você edita: ela foi ajustada para " + nBR(pro.e.diasAjuste, 0) + " dias úteis, e a obra agora tem " +
+        nBR(pro.e.dias, 0) + " — as barras não saem de baixo do mouse. Escolha Ajustar para caber a obra de agora.") : "";
       if (pro.labelW < 200) {
         h += '<button type="button" class="gx-zb" data-acao="crono-zoom" data-dir="auto" aria-label="' +
-          esc(cabe ? "Ajustar o cronograma à largura da tela" : "Ajustar — o máximo que cabe nesta largura; a obra inteira não cabe, role para o lado") +
-          '" title="' + esc(cabe ? "Ajustar — a obra inteira cabe na largura da tela"
-            : "Ajustar — o máximo que cabe sem a barra de um dia sumir." + quanto) + '">⤢</button>';
+          esc(mantida ? "Ajustar o cronograma à obra de agora (a escala está mantida desde a última edição)"
+            : (cabe ? "Ajustar o cronograma à largura da tela" : "Ajustar — o máximo que cabe nesta largura; a obra inteira não cabe, role para o lado")) +
+          '" title="' + esc(mantida ? txMant : (cabe ? "Ajustar — a obra inteira cabe na largura da tela"
+            : "Ajustar — o máximo que cabe sem a barra de um dia sumir." + quanto)) + '">⤢</button>';
       } else {
         h += '<select class="gx-zs" data-crono-zoom="1" aria-label="Escala de tempo do cronograma" title="' +
-          esc(cabe ? "Escala de tempo: Ajustar faz a obra inteira caber na largura da tela"
-            : "Escala de tempo. Ajustar mostra o máximo que cabe sem a barra de um dia sumir." + quanto) + '">' +
-          '<option value="auto"' + (niv === "auto" ? ' selected' : '') + '>Ajustar</option>';
+          esc(mantida ? txMant : (cabe ? "Escala de tempo: Ajustar faz a obra inteira caber na largura da tela"
+            : "Escala de tempo. Ajustar mostra o máximo que cabe sem a barra de um dia sumir." + quanto)) + '">' +
+          (mantida ? '<option value="mantida" selected>Mantida</option>' : '') +
+          '<option value="auto"' + (niv === "auto" && !mantida ? ' selected' : '') + '>Ajustar</option>';
         for (i = 0; i < ns.length; i++) h += '<option value="' + esc(ns[i].id) + '"' + (niv === ns[i].id ? ' selected' : '') + '>' + esc(ns[i].nome) + '</option>';
         h += '</select>';
       }
@@ -1856,6 +1868,12 @@
        etapa de sempre ("dependência", "folga"): é o mesmo desenho lido pela
        mesma pessoa, e trocar a palavra por "dependência entre etapas" numa
        tela sem subetapa nenhuma só inventaria uma distinção que não existe. */
+    // a frase da grade na legenda: só fala das colunas quando elas EXISTEM na tela (texto puro, sem dado do cliente)
+    ganttProLegGrade: function (gradeW) {
+      return Number(gradeW) > 0
+        ? "digite a duração e o Depende de nas colunas do Gantt (duplo clique na barra) ou na tabela"
+        : "duplo clique na barra abre a duração e o Depende de dela (ou digite na tabela)";
+    },
     ganttProLegenda: function (pro, o) {
       o = o || {};
       if (o.semLegenda) return "";
@@ -1888,10 +1906,12 @@
          js/ganttgradeui.js ausente a legenda é a da 1.2.77 (paridade em
          tools/test-crono-geometria.js); no aprovado as células são só leitura
          e a frase mandaria digitar onde nada se grava. */
+      /* ⚠ `data-gx-leg-grade`: o desenho puro ainda não sabe a largura medida
+         do Gantt. A 1280 px (998 px de Gantt, sem colunas e sem [Colunas]) a
+         frase mandava digitar "nas colunas do Gantt", que não existiam — o
+         GanttGradeUI._conferirCanto a reescreve pela `gradeW` MEDIDA. */
       if (G("GanttGradeUI") && !pro.travado) {
-        h += '<span>' + (Number(pro.gradeW) > 0
-          ? "digite a duração e o Depende de nas colunas do Gantt (duplo clique na barra) ou na tabela"
-          : "duplo clique na barra abre a duração e o Depende de dela (ou digite na tabela)") + '</span>';
+        h += '<span data-gx-leg-grade="1">' + this.ganttProLegGrade(pro.gradeW) + '</span>';
       }
       /* ⚠ E DIZ QUANDO O DESENHO CONTINUA À DIREITA: com o zoom em "auto" e a
          obra maior que o piso de 3 px/dia, 3 de 6 barras ficavam 100% fora da
@@ -3619,7 +3639,7 @@
       if (d.painel === "gantt" || d.painel === "fisico" || d.painel === "real" || d.painel === "parametros") {
         var hp = '<style>' + CSS + '</style><div class="cx cx-painel-so" data-cx-sub="' + esc(d.painel) + '">';
         if (d.painel === "fisico") hp += this.fisico(d, est);
-        else if (d.painel === "real") hp += this.real(d);
+        else if (d.painel === "real") hp += this.real(d, { janela: true });
         else if (d.painel === "parametros") hp += this.parametros(d, est);
         else { d.cartao = ""; hp += this.cronograma(d, est); }
         return hp + '</div>';
@@ -3639,8 +3659,15 @@
     /* Sub-aba Previsto × Realizado do orçamento: o MESMO painel da ficha da
        obra (painelPR completo), com os dados de App._cronoPainelDados. Sem
        painel, diz por quê e a porta que existe — nunca um quadro vazio. */
-    real: function (d) {
-      var info = d.obra || {}, a = info.alvo || {};
+    /* `opts.janela` (janela destacada, só o painel): ali não há "linha de
+       cima" nem troca de orçamento — o recado manda à janela principal, e a
+       porta que abriria OUTRO orçamento dentro da janela some (ela trocaria
+       o conteúdo que o endereço da janela promete). */
+    real: function (d, opts) {
+      var info = d.obra || {}, a = info.alvo || {}, jan = !!(opts && opts.janela);
+      if (jan && !info.podeGestao) {
+        return '<div class="card cx-card"><p style="margin:0 0 8px;font-size:13px">' + esc("O previsto × realizado compara o cronograma com a obra, e isso é da Gestão de Obras — que não está liberada nesta conta. O Gantt e o físico-financeiro continuam valendo.") + '</p></div>';
+      }
       /* ⚠ A NARRATIVA VEM ACIMA DOS KPIs: ela é a leitura em português dos
          MESMOS números que estão logo abaixo, e lida depois deles vira
          repetição. `d.narrativa` é montada pela fiação (App._cronoPainelDados
@@ -3656,14 +3683,15 @@
       if (!arr(info.obras).length && !info.ocultas && outs.length) {
         // a obra é de outra revisão da família: o previsto × realizado dela mora no orçamento ligado a ela
         msg = "A obra " + (outs[0].obra.nome || "") + " está ligada à revisão " + (outs[0].maisNova ? "mais nova " : "") + (outs[0].orcNumero || outs[0].orcId) + " deste orçamento — o previsto × realizado dela é medido sobre aquele orçamento.";
-        porta = '<button class="btn sm" data-acao="crono-abrir-orc" data-orc="' + esc(outs[0].orcId) + '">Abrir o orçamento ligado à obra</button>';
+        porta = jan ? "" : '<button class="btn sm" data-acao="crono-abrir-orc" data-orc="' + esc(outs[0].orcId) + '">Abrir o orçamento ligado à obra</button>';
+        if (jan) msg += " Abra aquele orçamento na janela principal.";
       } else if (!arr(info.obras).length) {
         msg = info.ocultas || info.ocultasOutras ? (Number(info.ocultas) || 0) + (Number(info.ocultasOutras) || 0) + " obra(s) ligada(s) a este orçamento (ou a uma revisão dele) que o seu usuário não vê — o previsto × realizado é da obra, e fica com quem pode vê-la."
-          : "Nenhuma obra ligada a este orçamento. O previsto × realizado compara o planejado com os diários e as medições de uma obra: crie a obra deste orçamento (botão na linha de cima) para acompanhar.";
-      } else if (!a.obra) msg = arr(info.obras).length + " obras ligadas a este orçamento — escolha na linha de cima qual acompanhar.";
+          : "Nenhuma obra ligada a este orçamento. O previsto × realizado compara o planejado com os diários e as medições de uma obra: crie a obra deste orçamento (" + (jan ? "na janela principal, aba Cronograma" : "botão na linha de cima") + ") para acompanhar.";
+      } else if (!a.obra) msg = arr(info.obras).length + " obras ligadas a este orçamento — escolha " + (jan ? "na janela principal (aba Cronograma)" : "na linha de cima") + " qual acompanhar.";
       else if (a.nivel > 0) {
-        msg = "A obra " + (a.obra.nome || "") + " está ligada a uma revisão anterior deste orçamento — o previsto × realizado mede sobre o orçamento ligado a ela. Passe a obra para esta revisão (linha de cima) ou abra o orçamento ligado a ela.";
-        if (a.obra.orcamentoId) porta = '<button class="btn sm" data-acao="crono-abrir-orc" data-orc="' + esc(a.obra.orcamentoId) + '">Abrir o orçamento ligado à obra</button>';
+        msg = "A obra " + (a.obra.nome || "") + " está ligada a uma revisão anterior deste orçamento — o previsto × realizado mede sobre o orçamento ligado a ela. Passe a obra para esta revisão (" + (jan ? "na janela principal" : "linha de cima") + ") ou abra o orçamento ligado a ela.";
+        if (a.obra.orcamentoId && !jan) porta = '<button class="btn sm" data-acao="crono-abrir-orc" data-orc="' + esc(a.obra.orcamentoId) + '">Abrir o orçamento ligado à obra</button>';
       } else msg = "Não consegui montar o previsto × realizado da obra " + (a.obra.nome || "") + " agora — a sub-aba Cronograma continua valendo. Se persistir, avise o suporte.";
       return '<div class="card cx-card"><p style="margin:0 0 8px;font-size:13px">' + esc(msg) + '</p>' + porta + '</div>';
     },
@@ -3993,7 +4021,7 @@
          tudo aqui é vazio e o desenho é o da 1.2.77. */
       var og = (d.gx && typeof d.gx === "object") ? d.gx : {};
       var oGx = { detalhe: det, abertas: est.abertas, hoje: est.hoje,
-        travado: !!d.travado, nivel: est.zoom.nivel, sel: est.zoom.sel, desfazer: est.zoom.desfazer,
+        travado: !!d.travado, nivel: est.zoom.nivel, diasAjuste: est.zoom.diasAjuste, sel: est.zoom.sel, desfazer: est.zoom.desfazer,
         labelPref: og.labelPref, alturaPref: og.alturaPref, colunas: d.colunas === true, janelaAltura: d.janelaAltura,
         modo: d.modo, alcas: d.alcas === true, alcaNomes: og.alcaNomes, hxAltura: og.hxAltura, fxAltura: og.fxAltura };
       var proGx = this.ganttProEstado(r, oGx);
@@ -4299,9 +4327,16 @@
         '<li><b>R$/dia-equipe: ' + moeda(p.custoDiaEquipe || 700) + '</b> — informado por você (cartão da sub-aba Cronograma). Converte custo de mão de obra em equipe-dias quando o serviço não tem categoria.</li>' +
         '<li><b>Jornada: ' + (d.jornada != null ? esc(d.jornada) + ' h/dia' : 'a da aba Execução') + '</b> — da aba Execução, que transforma o Hh SINAPI em duração (<a role="button" tabindex="0" style="cursor:pointer;text-decoration:underline" data-aba="execucao">abrir Execução</a>).</li>' +
         '<li><b>Produtividade por categoria</b> — heurística do agente (≈ na tabela); a duração digitada por você (✎), pela IA ou pelo Hh da Execução (Hh) manda sobre ela.</li></ul></div>';
+      /* ⚠ O CARTÃO DIZ O QUE A TELA NÃO FAZ — E SÓ ISSO. Roteiro do defeito
+         (auditoria da 1.2.80, sub-aba Parâmetros): desde o arrasto (1.2.76) a
+         etapa arrastada grava "não iniciar antes de" (Cronograma._restricoes,
+         a caixa "Datas fixadas no Gantt" com [Soltar a data]), e este cartão
+         seguia dizendo que restrição de data não existia e que "a data sai da
+         rede". Recado que mente sobre o próprio sistema faz a pessoa não
+         procurar o que existe. O que continua faltando está listado. */
       html += '<div class="card cx-card"><h4>Não modelado nesta versão</h4><ul class="cx-lista">' +
         '<li>Sábado meio período (6 dias/semana conta o sábado inteiro).</li><li>Turnos.</li>' +
-        '<li>Restrição de data (“não iniciar antes de”) — a data sai da rede.</li>' +
+        '<li>Restrição de data só existe como “não iniciar antes de”, só na etapa e só arrastando a barra no Gantt (para tirar: [Soltar a data], na caixa “Datas fixadas no Gantt”). Ainda não há data digitada, restrição em subetapa, “iniciar em” nem “terminar até”.</li>' +
         '<li>Término-término e início-término (há término-início com espera/avanço, e início-início só entre subetapas).</li>' +
         '<li>Dependência entre subetapas de etapas diferentes — o elo entre etapas fica na linha da etapa.</li></ul></div>';
       return html;

@@ -164,6 +164,8 @@
       try { Store.desenterrar(eid(), "orcamentos", [orc.id]); } catch (eDs) {}
       if (Store.salvarOrcamento(eid(), orc) == null) {
         var rec = Store.ultimaRecusa;
+        /* lista ilegível (js/store.js, quarentena) não é "outra janela" */
+        if (rec && rec.tipo === "corrompido") throw new Error("A lista de orçamentos deste aparelho está ilegível (arquivo corrompido) — nada foi gravado por cima. Restaure o backup (💾) antes de criar a demonstração.");
         if (rec) throw new Error("O orçamento da demonstração foi alterado em outra janela (ou em outro aparelho) enquanto ela era recriada — nada foi gravado por cima. Feche a outra janela e tente de novo.");
         throw new Error("Sem espaço no armazenamento do navegador (orçamento) — faça um backup/limpeza e tente de novo.");
       }

@@ -15,6 +15,7 @@
  *
  * A rota vai no hash: #janela=v1/<orcId>/<aba>[/<sub>]. O hash é entrada de
  * quem digita a URL, e o id vai para seletor e atributo: lista branca.
+ * Prova: tools/test-janelas.js (com os controles negativos da lista branca).
  * ===================================================================== */
 (function (global) {
   "use strict";
@@ -24,21 +25,46 @@
   var ROTULO = { planilha: "Planilha", sintetico: "Sintético", insumos: "Insumos", cronograma: "Cronograma", execucao: "Execução", graficos: "Gráficos", relatorios: "Relatórios" };
   var ROTULO_SUB = { cronograma: "Gantt", fisico: "Físico-financeiro", real: "Previsto × Realizado", parametros: "Parâmetros" };
 
+  /* ⚠ hasOwnProperty, e não `ABAS[aba]`: "#janela=v1/x/constructor" casa
+     [a-z]{1,20}, e `ABAS.constructor` é o construtor do Object — truthy.
+     Medido antes deste conserto: a rota voltava com aba "constructor". */
+  function own(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+
+  /* ⚠ A LISTA BRANCA DO ID mora AQUI, num lugar só (montar e ler usam a
+     mesma). A classe de caracteres aceita ponto (há ids importados com
+     ponto), e por isso "." e ".." passavam: "#janela=v1/../cronograma"
+     virava orcId ".." (medido em 16/09/2026). Id começa por letra, dígito,
+     _ : ou -, e nunca tem "..". */
+  function idOk(id) {
+    var s = (typeof id === "string" || typeof id === "number") ? String(id) : "";
+    return /^[A-Za-z0-9_:-][A-Za-z0-9_.:-]{0,79}$/.test(s) && s.indexOf("..") < 0;
+  }
+
+  /* o painel que a janela mostra — é ele que vai no nome da janela */
+  function painelDe(sub) { return (own(SUBS, sub) && sub !== "cronograma") ? sub : "gantt"; }
+
+  function dois(n) { return (n < 10 ? "0" : "") + n; }
+
   var Janelas = {
     VERSAO: "v1",
 
     montarRota: function (orcId, aba, sub) {
-      if (!/^[A-Za-z0-9_.:-]{1,80}$/.test(String(orcId || "")) || !ABAS[aba]) return null;
+      if (!idOk(orcId) || !own(ABAS, aba)) return null;
       var r = "#janela=" + this.VERSAO + "/" + orcId + "/" + aba;
-      if (aba === "cronograma" && SUBS[sub]) r += "/" + sub;
+      if (aba === "cronograma" && own(SUBS, sub)) r += "/" + sub;
       return r;
     },
 
     lerRota: function (hash) {
-      var m = /^#janela=v1\/([A-Za-z0-9_.:-]{1,80})\/([a-z]{1,20})(?:\/([a-z]{1,20}))?$/.exec(String(hash || ""));
-      if (!m || !ABAS[m[2]]) return null;
-      var sub = (m[2] === "cronograma" && m[3] && SUBS[m[3]]) ? m[3] : (m[2] === "cronograma" ? "cronograma" : "");
-      if (m[3] && !sub) return null;
+      /* o segmento do id é largo de propósito: quem decide se ele vale é o
+         idOk, o mesmo do montarRota (duas listas brancas divergem) */
+      var m = /^#janela=v1\/([^\/]{1,200})\/([a-z]{1,20})(?:\/([a-z]{1,20}))?$/.exec(typeof hash === "string" ? hash : "");
+      if (!m || !idOk(m[1]) || !own(ABAS, m[2])) return null;
+      /* ⚠ sub-aba escrita e fora da lista (ou em aba que não tem sub) → null.
+         Antes caía no Gantt calada: "/cronograma/historico" abria o Gantt com
+         o endereço mentindo o painel (o mesmo sintoma do nome sem a sub). */
+      if (m[3] && !(m[2] === "cronograma" && own(SUBS, m[3]))) return null;
+      var sub = m[2] === "cronograma" ? (m[3] || "cronograma") : "";
       return {
         orcId: m[1], aba: m[2], sub: sub,
         // o Gantt ocupa a altura da janela (modo "preencher" do js/paineis.js)
@@ -47,9 +73,18 @@
     },
 
     /* mesmo nome = o navegador REUSA a janela: clicar de novo traz a que já
-       está aberta, em vez de empilhar cópias */
-    nome: function (orcId, aba) {
-      return ("orcapro_" + orcId + "_" + aba).replace(/[^A-Za-z0-9_]/g, "_");
+       está aberta, em vez de empilhar cópias.
+       ⚠ UMA JANELA POR PAINEL: no Cronograma o nome leva o painel (gantt,
+       fisico, real, parametros). Roteiro do defeito (auditoria da 1.2.80,
+       tela.md item 3): com o Gantt aberto numa janela, ⧉ no Físico-financeiro
+       chamava window.open com o MESMO nome; o navegador reaproveitava a
+       janela do Gantt e trocava só o fragmento — sem recarregar e sem
+       ninguém ouvindo `hashchange`. O endereço dizia /fisico, a tela seguia
+       no Gantt e o recado dizia "Janela aberta". E o uso prometido (Gantt
+       num monitor, físico no outro) não existia. */
+    nome: function (orcId, aba, sub) {
+      var pn = aba === "cronograma" ? "_" + painelDe(sub) : "";
+      return ("orcapro_" + orcId + "_" + aba + pn).replace(/[^A-Za-z0-9_]/g, "_");
     },
 
     /* ⚠ sem o `search`: ?demo, ?lic e ?importar seriam reprocessados na janela */
@@ -71,6 +106,26 @@
       return !!(Store && Store.CAS_ATIVO === true);
     },
 
+    /* "atualizado às 14:03:22" a partir do carimbo (ISO). Hora LOCAL: é a do
+       relógio que a pessoa olha. Carimbo que não é data → "" (o cabeçalho
+       esconde a linha em vez de mostrar "NaN:NaN").
+       ⚠ E A DATA QUANDO NÃO É HOJE. Roteiro do defeito (revisão adversarial
+       da 1.2.81): o galpão tinha carimbo de 15/07/2026 11:05, e o cabeçalho
+       dizia "atualizado às 11:05:00" em 16/09 — lido como "hoje de manhã".
+       `agora` (Date ou ms, opcional) existe para a bancada fixar o "hoje". */
+    horaAtualizado: function (iso, agora) {
+      if (typeof iso !== "string" || !iso) return "";
+      var d = new Date(iso), ms = d.getTime();
+      if (!isFinite(ms)) return "";
+      var h = dois(d.getHours()) + ":" + dois(d.getMinutes()) + ":" + dois(d.getSeconds());
+      var n = agora == null ? new Date() : new Date(typeof agora === "number" ? agora : agora.getTime());
+      if (!isFinite(n.getTime()) || (n.getFullYear() === d.getFullYear() && n.getMonth() === d.getMonth() && n.getDate() === d.getDate())) {
+        return "atualizado às " + h;
+      }
+      var dia = dois(d.getDate()) + "/" + dois(d.getMonth() + 1) + (n.getFullYear() === d.getFullYear() ? "" : "/" + d.getFullYear());
+      return "atualizado em " + dia + " às " + h;
+    },
+
     /* ⚠ SÍNCRONO dentro do clique: qualquer espera antes do window.open
        consome o gesto e o bloqueador de pop-up barra a janela. A mudança de
        monitor vem DEPOIS, com a janela já aberta. */
@@ -82,7 +137,7 @@
       var h = Math.max(600, Math.min(950, (s.availHeight || 768) - 80));
       var feat = "popup=yes,width=" + w + ",height=" + h + ",left=" + Math.round(((s.availLeft || 0) + ((s.availWidth || w) - w) / 2)) + ",top=" + Math.round((s.availTop || 0) + 40);
       var win = null;
-      try { win = global.open(this.url(global.location, rota), this.nome(orcId, aba), feat); } catch (e) { win = null; }
+      try { win = global.open(this.url(global.location, rota), this.nome(orcId, aba, sub), feat); } catch (e) { win = null; }
       if (!win) {
         this._toast("O navegador bloqueou a janela nova. Libere as janelas pop-up para " + (global.location ? global.location.host : "este endereço") + " (ícone na barra de endereço) e clique de novo.", "erro");
         return null;

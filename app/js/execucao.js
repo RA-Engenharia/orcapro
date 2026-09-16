@@ -443,6 +443,12 @@
       var params = {}; for (var k in this.DEFAULTS) params[k] = this.DEFAULTS[k];
       if (orc && orc.execucao && orc.execucao.params) for (k in orc.execucao.params) if (orc.execucao.params[k] != null) params[k] = orc.execucao.params[k];
       if (override) for (k in override) if (override[k] != null) params[k] = override[k];
+      /* ⚠ O MESMO REGIME DO CRONOGRAMA (Cronograma.diasSemanaEfetivo): a aba
+         Execução aceitava 1 a 7, as datas saíam de `addDiasUteis` (que só
+         conhece 5, 6 e 7) e o `prazoSemanas` dividia pelo número digitado —
+         o "conserto que para no segundo consumidor". Sem o Cronograma
+         injetado (testes antigos), fica como era. */
+      if (C && C.diasSemanaEfetivo) params.diasUteisSemana = C.diasSemanaEfetivo(params.diasUteisSemana);
       var jorn = num(params.jornadaH) || 8;
 
       // diária de referência p/ converter MO-R$ estimada em homens-dia (servente real ou fallback)
