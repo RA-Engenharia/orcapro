@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.81",
+  "versao": "1.2.82",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.81.zip",
-  "notas": "Logo e icones do sistema redesenhados. Cronograma: a aba passou a ter os botoes Gerar Proposta e Apresentar no topo, o botao Abrir em outra janela fica sempre visivel, e a janela destacada abre tambem o Fisico-financeiro e o Previsto x Realizado. Dias por semana aceita 5, 6 ou 7. Correcoes: depois de abrir o Cronograma, os numeros do Painel e da lista de orcamentos sumiam; o Gantt de obra pequena ficava com a tela em branco; ao digitar e arrastar no Gantt o arrasto podia se perder. Protecao: se a lista de orcamentos gravada no computador ficar ilegivel, ela e guardada a parte e nada e gravado por cima ate restaurar o backup.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.81/OrcaPRO-IA-Instalador-v1.2.81.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.82.zip",
+  "notas": "Correcao: ao relancar no Financeiro uma folha semanal que tinha sido estornada, o sistema regravava o lancamento antigo e a semana ficava com o valor errado (no caso medido, R$ 100 em vez de R$ 1.900). Agora a folha encontra o proprio lancamento pelo documento que o gerou, ignora o que foi estornado e lanca de novo pelo valor certo. Lancamento cancelado deixou de entrar nas somas do Painel e dos Relatorios, e o relatorio executivo passou a mostrar o boletim pendente em linha separada, fora do total.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.82/OrcaPRO-IA-Instalador-v1.2.82.exe"
 }

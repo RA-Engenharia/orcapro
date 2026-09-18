@@ -1891,7 +1891,11 @@
       var saldoFaturar = Math.max(0, valorContratado - faturado);
       // "Recebido" = só o que ENTROU (pendente fica no "A receber" — não conta 2x)
       var receitas = fin.filter(function (f) { return f.tipo === "receita" && FinStatus.realizado(f); }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
-      var despesas = fin.filter(function (f) { return f.tipo === "despesa"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
+      /* ⚠ "pago + pendente" (o subtítulo do cartão) não inclui CANCELADO: o
+         registro morto entrava na despesa do Painel e em nenhuma outra régua
+         (K30, mapa D-M1). Estorno fica: o espelho negativo zera o par. */
+      var _gDesp = this;
+      var despesas = fin.filter(function (f) { return f.tipo === "despesa" && !_gDesp._finAnulado(f); }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
       var aReceber = fin.filter(function (f) { return f.tipo === "receita" && FinStatus.emAberto(f); }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
       /* ⚠ "RECEBIDO R$ 0,00" AO LADO DE UM BOLETIM PAGO — revisão de 13/09/2026.
        * Medições dizia "Recebido R$ 24.827,61", este cartão "R$ 0,00" e o
@@ -2363,6 +2367,11 @@
           var despEt = {}, semEtapa = 0;
           finTudo.forEach(function (f) {
             if (f.obraId !== obraSel || f.tipo !== "despesa") return;
+            /* ⚠ CANCELADO NÃO É GASTO (K30, mapa D-M1). Esta soma contava a
+               despesa cancelada como custo da etapa, e o Previsto × Realizado
+               (`CustoEtapa`) não — duas telas, dois números para a mesma obra.
+               Estorno não sai daqui: o espelho negativo zera o par sozinho. */
+            if (self._finAnulado(f)) return;
             if (f.etapaId) despEt[f.etapaId] = (despEt[f.etapaId] || 0) + Util.num(f.valor);
             else semEtapa += Util.num(f.valor);
           });
@@ -2388,7 +2397,8 @@
           if (!o.orcamentoId) { _obrasSemOrc++; return; }
           var orc2 = Store.obterOrcamento(eid(), o.orcamentoId); if (!orc2) return;
           var prev = Orcamento.totais(orc2).custoDireto;
-          var real = finTudo.filter(function (f) { return f.obraId === o.id && f.tipo === "despesa"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
+          /* ⚠ cancelado fora — mesma regra da soma por etapa acima (K30) */
+          var real = finTudo.filter(function (f) { return f.obraId === o.id && f.tipo === "despesa" && !self._finAnulado(f); }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
           if (prev <= 0 && real <= 0) return;
           prevReal.push({ rotulo: o.nome, previsto: prev, real: real, estourou: prev > 0 && real > prev,
             avanco: self._avancoMedido(o.id, medsTudo), semAvanco: "sem-percentual" });
@@ -3358,7 +3368,9 @@
       fin = fin.filter(function (f) { return self._dashNaObra(f.obraId); });
       obras = obras.filter(function (o) { return self._dashNaObra(o.id); });
       var porCat = {};
-      fin.forEach(function (f) { if (f.tipo === "despesa") { var c = f.categoria || "outros"; porCat[c] = (porCat[c] || 0) + Util.num(f.valor); } });
+      /* ⚠ cancelado fora da rosca de categorias (K30): o registro morto
+         engordava a fatia da categoria dele sem ser gasto */
+      fin.forEach(function (f) { if (f.tipo === "despesa" && !self._finAnulado(f)) { var c = f.categoria || "outros"; porCat[c] = (porCat[c] || 0) + Util.num(f.valor); } });
       /* ⚠ CATEGORIA NEGATIVA É POSSÍVEL DESDE O ESTORNO (fase 1.4): no MÊS da
          reversão a categoria pode ter só o lançamento espelho, de sinal
          oposto. O donut faz `off += frac * C` para encadear as fatias — com
@@ -26610,8 +26622,12 @@ renderCentrocusto: function () {
       if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro")) return this._semPermissao("financeiro");
       var ccs = lista("centrocusto"), obras = lista("obras"), fin = lista("financeiro");
       var totOrcado = ccs.reduce(function (s, c) { return s + Util.num(c.valorOrcado); }, 0);
-      var realPorObra = {};
+      var realPorObra = {}, selfCC = this;
       fin.forEach(function (f) {
+        /* ⚠ CANCELADO NÃO É GASTO (K30, mapa D-M1): esta coluna somava a
+           despesa cancelada e dava R$ 130.693 onde o Previsto × Realizado da
+           mesma obra dava R$ 125.693 */
+        if (selfCC._finAnulado(f)) return;
         if (f.tipo === "despesa" && f.obraId) { realPorObra[f.obraId] = (realPorObra[f.obraId] || 0) + Util.num(f.valor); }
       });
       // 2+ centros na mesma obra: rateio proporcional ao orçado (sem orçado → partes iguais), senão duplicaria o realizado
@@ -26800,12 +26816,28 @@ renderFolha: function () {
       var orc = (obra.orcamentoId && Store.obterOrcamento) ? Store.obterOrcamento(eid(), obra.orcamentoId) : null;
       var orcado = 0; if (orc) (orc.etapas || []).forEach(function (e) { (e.itens || []).forEach(function (it) { orcado += Util.num(it.quantidade) * Util.num(it.custoUnitario); }); });
 
+      /* ⚠ BOLETIM PENDENTE NÃO É MEDIDO (K30, mapa D-M2/P0-2). O filtro era
+         `status !== "rejeitada"`: o boletim ainda em análise entrava no avanço
+         acumulado e no "Medido no mês". Medido na obra de demonstração: 01ª
+         paga (18%) + 02ª pendente (14%) → este documento dizia 32,0% enquanto
+         o Painel dizia 18% — e ele vai à diretoria e ao CLIENTE, que ainda nem
+         aprovou a 02ª. Agora conta só aprovado/pago (`_ehAprovado`, a mesma
+         régua do Portal) e o pendente sai À PARTE, como "Em análise", em vez
+         de sumir: o boletim existe e quem lê precisa saber dele.
+         A tabela "Medições do mês" continua listando os não rejeitados, com a
+         coluna de status — ela é inventário, não soma. */
+      var selfRx = this;
       var meds = lista("medicoes").filter(function (m) { return m.obraId === obraId && m.status !== "rejeitada"; });
-      var medMes = 0, medAcum = 0, medsDoMes = [];
+      var medMes = 0, medAcum = 0, medsDoMes = [], emAnaliseValor = 0, emAnaliseN = 0;
       meds.forEach(function (m) {
         var d = m.periodoFim || m.criadoEm, v = Util.num(m.valor);
+        if (noMes(d)) medsDoMes.push(m);
+        if (!selfRx._ehAprovado(m.status)) {
+          if (ateFim(d)) { emAnaliseValor += v; emAnaliseN++; }
+          return;
+        }
         if (ateFim(d)) medAcum += v;
-        if (noMes(d)) { medMes += v; medsDoMes.push(m); }
+        if (noMes(d)) medMes += v;
       });
       /* v1.1.234 — TODOS os contratos vivos da obra, não só o primeiro. Obra
          com 2 contratos (execução + complementar) media contra a base do
@@ -26831,7 +26863,9 @@ renderFolha: function () {
          ReferenceError justamente nas obras que tinham o que relatar. */
       var sobreContrato = temContratoVivo;
 
-      var finO = lista("financeiro").filter(function (f) { return f.obraId === obraId && f.tipo === "despesa"; });
+      /* ⚠ cancelado não é custo real (K30, mapa D-M1) — o "Custo acum. ×
+         orçado" deste documento somava a despesa cancelada */
+      var finO = lista("financeiro").filter(function (f) { return f.obraId === obraId && f.tipo === "despesa" && !selfRx._finAnulado(f); });
       var despMes = 0, despAcum = 0;
       finO.forEach(function (f) { if (ateFim(f.data)) despAcum += Util.num(f.valor); if (noMes(f.data)) despMes += Util.num(f.valor); });
 
@@ -26869,7 +26903,13 @@ renderFolha: function () {
         "<table style='width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px'><tbody>" +
         "<tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc;width:45%'><b>Custo orçado (total da obra)</b></td><td style='border:1px solid #bbb;padding:6px;text-align:right'>" + (orcado > 0 ? Util.fmtMoeda(orcado) : "sem orçamento vinculado") + "</td></tr>" +
         "<tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Custo real acumulado (despesas lançadas)</b></td><td style='border:1px solid #bbb;padding:6px;text-align:right'>" + Util.fmtMoeda(despAcum) + "</td></tr>" +
-        "<tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Medido acumulado (a faturar/faturado)</b></td><td style='border:1px solid #bbb;padding:6px;text-align:right'>" + Util.fmtMoeda(medAcum) + "</td></tr></tbody></table>";
+        "<tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Medido acumulado (a faturar/faturado)</b></td><td style='border:1px solid #bbb;padding:6px;text-align:right'>" + Util.fmtMoeda(medAcum) + "</td></tr>" +
+        /* a linha à parte do pendente (ver o ⚠ no filtro das medições): fica
+           FORA do acumulado e do avanço, e só aparece quando existe */
+        (emAnaliseN
+          ? "<tr data-rex='em-analise'><td style='border:1px solid #bbb;padding:6px;background:#fffbeb'><b>Em análise</b> <span style='color:#5a6b7b'>(" + emAnaliseN + " boletim(ns) pendente(s), fora do avanço e do medido)</span></td><td style='border:1px solid #bbb;padding:6px;text-align:right;color:#b45309'>" + Util.fmtMoeda(emAnaliseValor) + "</td></tr>"
+          : "") +
+        "</tbody></table>";
       corpo += "<h3 style='border-bottom:2px solid #0f2740;padding-bottom:4px;font-size:13px'>MEDIÇÕES DO MÊS (" + medsDoMes.length + ")</h3>";
       corpo += medsDoMes.length
         ? "<table style='width:100%;border-collapse:collapse;font-size:11.5px;margin-bottom:14px'><thead><tr style='background:#0f2740;color:#fff'><th style='border:1px solid #bbb;padding:5px;text-align:left'>Nº</th><th style='border:1px solid #bbb;padding:5px;text-align:left'>Período</th><th style='border:1px solid #bbb;padding:5px;text-align:right'>Valor</th><th style='border:1px solid #bbb;padding:5px'>Status</th></tr></thead><tbody>" +
@@ -26942,7 +26982,14 @@ renderFolha: function () {
          Mesmo gate do Painel (js/gestao.js:837): o modulo Financeiro e que
          manda no numero, nao a porta por onde se chegou nele. */
       var _podeFin = !(typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro"));
-      var fin = lista("financeiro"), obras = lista("obras"), contratos = lista("contratos");
+      /* ⚠ CANCELADO SAI DE TODAS AS SOMAS DESTA TELA (K30, mapa D-M1). Os
+         totais, o resultado por obra e as categorias somavam lançamento
+         cancelado — registro morto, que não é receita nem despesa
+         (`FinStatus`: "não são dívida nem crédito"). Filtrado UMA vez aqui,
+         para as três somas abaixo não divergirem entre si.
+         Estorno continua: o par original + espelho negativo soma zero. */
+      var selfRel = this;
+      var fin = lista("financeiro").filter(function (l) { return !selfRel._finAnulado(l); }), obras = lista("obras"), contratos = lista("contratos");
       var totRec = 0, totDesp = 0;
       fin.forEach(function (l) {
         if (l.tipo === "receita") totRec += Util.num(l.valor);
@@ -28461,6 +28508,52 @@ renderFolha: function () {
         '<div style="display:flex;gap:40px;margin-top:44px"><div style="flex:1;border-top:1px solid #333;text-align:center;padding-top:4px;font-size:10px">Responsável pela obra</div><div style="flex:1;border-top:1px solid #333;text-align:center;padding-top:4px;font-size:10px">Financeiro</div></div>';
       App._abrirPrint("Fechamento de Folha Semanal — " + periodo, this._docShell("FECHAMENTO DE FOLHA SEMANAL", "#16a34a", corpo, "fs_fechamento"));
     },
+    /* O documento da folha semanal no Financeiro é "a semana DESTA obra": uma
+       despesa por obra. `~` não aparece na chave da semana (AAAA-MM-DD) e é o
+       separador que a ESPEC-medicao-cc §1.9 fixou. */
+    _fsDocId: function (semana, obraId) { return String(semana || "") + "~" + String(obraId || ""); },
+    /* =====================================================================
+     * O LANÇAMENTO DE PÉ DA SEMANA NUMA OBRA → { vivo, mortos }
+     *
+     * ⚠ PULA O QUE JÁ MORREU. Roteiro medido (D7/K37, 16/09/2026): semana de
+     *   R$ 1.800 lançada, paga e ESTORNADA; relançada com R$ 1.900. A busca
+     *   antiga devolvia o original estornado e o `fsFinanceiro` regravava o
+     *   valor dele — L1 = 1.900 + espelho −1.800 = R$ 100 de custo na semana.
+     *   Estornado e cancelado não são "o lançamento desta semana": são
+     *   história. Quem tem `estornoDe` é o espelho (um crédito), nunca o
+     *   original (skill dinheiro, §7).
+     *
+     * 1º pelo CARIMBO (`FSM` + `<semana>~<obra>`), na mesma régua das portas
+     *    de baixa (`_lancVivoDoDoc`).
+     * 2º LEGADO SEM CARIMBO (lançado pela 1.2.81 ou antes): a marca que o
+     *    próprio app escreveu no começo da descrição, na mesma obra. Só vale
+     *    para despesa SEM `docTipo` — nunca para lançamento com outro carimbo.
+     *    ⚠ Não é casamento por semelhança de texto livre: é a chave que a
+     *    versão antiga gravou, e sem ela todo relançamento de semana antiga
+     *    DUPLICARIA a despesa (era o que o "não duplica" da caixa prometia).
+     *    Se alguém apagou a marca da descrição, não achar é a resposta
+     *    honesta — e aí entra um lançamento novo.
+     * `mortos` conta os estornados/cancelados desta semana nesta obra, para a
+     * caixa de confirmação dizer por que entra um lançamento novo.
+     * ===================================================================== */
+    _fsLancDaSemana: function (semana, obraId, fin) {
+      var l = fin || lista("financeiro");
+      var docId = this._fsDocId(semana, obraId), marca = "[Folha semanal " + semana + "]";
+      var tipo = this._CARIMBO_CUSTO.fs_semana;
+      var vivo = this._lancVivoDoDoc("fs_semana", docId, l), legado = null, mortos = 0;
+      for (var i = 0; i < l.length; i++) {
+        var f = l[i];
+        if (!f || f.estornoDe) continue;
+        var doCarimbo = String(f.docTipo || "") === tipo && String(f.docId || "") === docId;
+        var doLegado = !f.docTipo && f.tipo === "despesa" && f.obraId === obraId
+          && String(f.desc || "").indexOf(marca) === 0;
+        if (!doCarimbo && !doLegado) continue;
+        if (this._finEstornado(f, l) || this._finAnulado(f)) { mortos++; continue; }
+        /* o ÚLTIMO da lista, como a busca da 1.2.81 fazia */
+        if (doLegado) legado = f;
+      }
+      return { vivo: vivo || legado, mortos: mortos };
+    },
     fsFinanceiro: function () {
       /* Quem mexe na folha é quem tem o módulo — ver a explicação em
          `fsTogglePago`, onde eu tinha posto uma trava que barrava o próprio
@@ -28499,6 +28592,45 @@ renderFolha: function () {
         var v = Util.num((fech.porObra[ob] || {}).total);
         if (!ob || ob === "—") foraDeObra += v; else totalAlancar += v;
       });
+      /* ⚠ O PLANO SAI ANTES DA PERGUNTA — é ele que a pergunta mostra.
+       * Roteiro do defeito (D7/K37, medido em 16/09/2026 na 1.2.81): a semana
+       * de R$ 1.800 foi lançada (paga) e ESTORNADA; a folha foi corrigida para
+       * R$ 1.900 e lançada de novo. A busca antiga achava o lançamento pela
+       * descrição, sem pular o estornado, e REGRAVAVA o valor dele: ficavam
+       * L1 = 1.900 e o espelho = −1.800 — custo da semana R$ 100. R$ 1.800 de
+       * mão de obra sumiam da obra, sem nada na tela denunciando.
+       * Agora cada obra acha o SEU lançamento pelo carimbo (`_fsLancDaSemana`),
+       * o que já morreu (estornado ou cancelado) fica como está e entra um
+       * lançamento NOVO; e regravar um lançamento PAGO com outro valor só
+       * acontece com o OK dado em cima dos dois números. */
+      var semana = this._fsSemana, fin = lista("financeiro");
+      var ehPago = function (f) {
+        return (typeof FinStatus !== "undefined" && FinStatus.realizado)
+          ? FinStatus.realizado(f) : (!f.status || f.status === "pago");
+      };
+      var plano = [], avisoPago = [], avisoNovo = [];
+      Object.keys(fech.porObra).forEach(function (ob) {
+        if (!ob || ob === "—") return;
+        var valor = Util.num(fech.porObra[ob].total);
+        var ach = self._fsLancDaSemana(semana, ob, fin);
+        var nomeOb = self._fsNomeObra(ob);
+        if (ach.vivo) {
+          var antes = Util.num(ach.vivo.valor);
+          /* centavos inteiros: 1800.0000001 não é "outro valor" */
+          var igual = Math.round(antes * 100) === Math.round(valor * 100);
+          if (!igual && ehPago(ach.vivo)) {
+            var quando = ach.vivo.dataPgto || ach.vivo.lancadoEm || ach.vivo.data;
+            avisoPago.push("• " + nomeOb + ": " + Util.fmtMoeda(antes) + " → " + Util.fmtMoeda(valor)
+              + " (lançamento pago" + (quando ? " em " + Util.fmtDia(quando) : "") + ")");
+          }
+          plano.push({ ob: ob, valor: valor, obj: ach.vivo, igual: igual });
+        } else {
+          if (ach.mortos) {
+            avisoNovo.push("• " + nomeOb + ": o lançamento anterior desta semana foi estornado ou cancelado e fica como está — entra um lançamento NOVO de " + Util.fmtMoeda(valor) + ".");
+          }
+          plano.push({ ob: ob, valor: valor, obj: null });
+        }
+      });
       if (!confirm("Lançar a folha desta semana (" + periodo + ") como despesa de Mão de obra no Financeiro?\n\n"
         + nObras + " obra(s) · total " + Util.fmtMoeda(totalAlancar)
         + (foraDeObra > 0
@@ -28506,21 +28638,48 @@ renderFolha: function () {
             + "\nEles continuam na folha; vincule a uma obra e lance de novo."
           : "")
         + (this._fsObra ? "\n\nA semana INTEIRA entra, não só a obra que está filtrada na tela." : "")
-        + "\n\nSe já existir o lançamento da semana, ele é atualizado (não duplica).")) return;
-      var fin = lista("financeiro"), n = 0;
-      Object.keys(fech.porObra).forEach(function (ob) {
-        if (!ob || ob === "—") return;
-        var marca = "[Folha semanal " + self._fsSemana + "]";
-        var desc = marca + " Diaristas — " + periodo;
-        var exist = null; fin.forEach(function (f) { if (f.obraId === ob && (f.desc || "").indexOf(marca) === 0) exist = f; });
-        var obj = exist || { tipo: "despesa", categoria: "mao_obra", obraId: ob, status: "pago", data: self._fsSemana };
-        obj.desc = desc; obj.valor = fech.porObra[ob].total;
+        + (avisoPago.length
+          ? "\n\n⚠ Já está lançado e PAGO com outro valor — confirmar REGRAVA o valor:\n" + avisoPago.join("\n")
+          : "")
+        + (avisoNovo.length ? "\n\n" + avisoNovo.join("\n") : "")
+        + "\n\nLançamento desta semana que já está de pé é atualizado (não duplica).")) return;
+      var novos = 0, atualizados = 0, iguais = 0, falhou = 0;
+      plano.forEach(function (p) {
+        /* mesmo valor, nada a regravar: regravar trocaria `lancadoPor` de quem
+           lançou de verdade e mexeria num pago à toa */
+        if (p.obj && p.igual) { iguais++; return; }
+        /* ⚠ O PREFIXO "[Folha semanal AAAA-MM-DD]" NÃO MUDA. A 1.2.81 (e as
+           instalações que ainda não atualizaram, sincronizando pela mesma
+           nuvem) acha o lançamento só por ele — texto novo aqui faria a versão
+           antiga DUPLICAR a despesa da semana. O `reconciliacao.js` também lê
+           a mesma marca para dizer "semana fechada e não lançada". */
+        var desc = "[Folha semanal " + semana + "] Diaristas — " + periodo;
+        var obj = p.obj || {
+          tipo: "despesa", categoria: "mao_obra", obraId: p.ob, status: "pago", data: semana,
+          /* ⚠ CARIMBO DE ORIGEM: é ele que acha ESTE lançamento no relançamento
+             (ver `_fsLancDaSemana`). Sem ele a única pista volta a ser a
+             descrição, que qualquer pessoa edita. */
+          docTipo: self._CARIMBO_CUSTO.fs_semana, docId: self._fsDocId(semana, p.ob), docNumero: semana
+        };
+        obj.desc = desc; obj.valor = p.valor;
         /* a despesa nasce como PAGA: sem isto, "quem lançou este custo na
            obra?" não tem resposta em lugar nenhum */
         obj.lancadoPor = self._quemAprova(); obj.lancadoEm = self._hojeISO();
-        Store.salvar(eid(), "financeiro", obj); n++;
+        /* ⚠ recado que mente é pior que nenhum: sem espaço no aparelho o
+           `Store.salvar` devolve null, e o toast contava a despesa assim mesmo */
+        if (self._naoGravou(Store.salvar(eid(), "financeiro", obj))) { falhou++; return; }
+        if (p.obj) atualizados++; else novos++;
       });
-      UI.toast("💸 " + n + " despesa(s) de mão de obra lançada(s) — " + Util.fmtMoeda(totalAlancar) + " na(s) obra(s) certa(s)."
+      var partes = [];
+      if (novos) partes.push(novos + " despesa(s) nova(s)");
+      if (atualizados) partes.push(atualizados + " atualizada(s)");
+      if (iguais) partes.push(iguais + " já lançada(s) com o mesmo valor");
+      if (falhou) {
+        UI.toast("⚠ " + falhou + " despesa(s) da folha NÃO foram gravadas no Financeiro (armazenamento cheio?)"
+          + (partes.length ? " · " + partes.join(" · ") : "") + ". Libere espaço e lance de novo — o que já entrou não duplica.", "erro");
+        return;
+      }
+      UI.toast("💸 Folha no Financeiro: " + (partes.join(" · ") || "nada a lançar") + " — " + Util.fmtMoeda(totalAlancar) + " na(s) obra(s) certa(s)."
         + (foraDeObra > 0 ? " " + Util.fmtMoeda(foraDeObra) + " sem obra ficaram de fora." : ""), "ok");
     },
 
@@ -29305,6 +29464,17 @@ renderFolha: function () {
        dando respostas diferentes para a mesma pergunta, que é o jeito mais
        caro de consertar: quem usa aprende que a regra é aleatória. */
     _DOC_CARIMBO: { medicoes: "MED", compras: "PC" },
+    /* Carimbo dos CUSTOS lançados por documento que NÃO é porta de baixa (não
+       passam por `_travaLancDoDoc`). ⚠ Tabela separada de propósito: o
+       `_DOC_CARIMBO` decide quem tem trava de baixa e quem recebe o recado de
+       reabertura — pôr a folha lá mudaria essas duas respostas. A pergunta
+       "o dinheiro deste documento está de pé?" é a mesma, por isso as duas
+       tabelas respondem na MESMA `_lancVivoDoDoc`.
+       `fs_semana` não é entidade gravada: o documento é a semana de uma obra,
+       e o `docId` é `<semana>~<obraId>` (ver `_fsDocId`).
+       (Folha mensal, ponto e frota ganham FOL/PON/FRT na entrega dos
+       carimbos, ESPEC-medicao-cc §1.9 — ainda não carimbam.) */
+    _CARIMBO_CUSTO: { fs_semana: "FSM" },
     /* ⚠ A CONDIÇÃO DE PAGAMENTO DO FORNECEDOR NÃO CABE NUM SELECT — e era
        engolida em DOIS saltos. O Mapa de Cotação gravava `formaPgto:
        p.condPgto`, texto livre do fornecedor ("30 dias após a entrega"), num
@@ -29353,7 +29523,9 @@ renderFolha: function () {
         : "Abra esse lançamento no Financeiro e marque o Status como “Cancelado” (ele ainda está em aberto, e o Estornar só vale para o que já foi pago)";
     },
     _lancVivoDoDoc: function (entidade, docId, fin) {
-      var tipo = this._DOC_CARIMBO[entidade];
+      /* `|| {}`: as bancadas que recortam só o `_DOC_CARIMBO` não têm a outra
+         tabela, e entidade sem carimbo tem de continuar respondendo null */
+      var tipo = this._DOC_CARIMBO[entidade] || (this._CARIMBO_CUSTO || {})[entidade];
       var id = String(docId == null ? "" : docId);
       if (!tipo || !id) return null;
       var l = fin || lista("financeiro");
