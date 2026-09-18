@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.82",
+  "versao": "1.2.83",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.82.zip",
-  "notas": "Correcao: ao relancar no Financeiro uma folha semanal que tinha sido estornada, o sistema regravava o lancamento antigo e a semana ficava com o valor errado (no caso medido, R$ 100 em vez de R$ 1.900). Agora a folha encontra o proprio lancamento pelo documento que o gerou, ignora o que foi estornado e lanca de novo pelo valor certo. Lancamento cancelado deixou de entrar nas somas do Painel e dos Relatorios, e o relatorio executivo passou a mostrar o boletim pendente em linha separada, fora do total.",
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.83.zip",
+  "notas": "Agente Orcamentista: ao importar uma planilha orcamentaria, o sistema passa a reconhecer a coluna Fonte e o codigo de qualquer base (SINAPI, CPOS/CDHU, tabela municipal importada), casa cada item pelo codigo na base indicada e depois pela descricao, precifica na competencia ativa e, para o que nao existe em nenhuma base, elabora a composicao propria com insumos e coeficientes a partir da base analitica; o que nao tem correspondencia fica pendente, sem inventar codigo nem preco. Tela de revisao item a item com fonte, codigo, confianca e motivo, e o Orcamentista tambem roda num orcamento ja aberto (botao na aba Planilha). Correcoes na importacao: a coluna Fonte nao rouba mais a coluna Codigo, codigos com pontos (02.06.020) deixam de ser descartados, a hierarquia de etapas vira sub etapa, e a tabela oficial importada em Tabelas com preco com BDI passa a gravar o custo direto (sem o BDI dobrar).",
   "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.82/OrcaPRO-IA-Instalador-v1.2.82.exe"
 }
