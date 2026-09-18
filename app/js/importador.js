@@ -20,14 +20,26 @@
 (function (global) {
   "use strict";
 
+  /* v1.2.83 — "fonte"/"banco" SAÍRAM dos sinônimos de código e viraram papel
+     próprio. Na planilha real de um cliente (Dois Córregos) o cabeçalho era
+     Item · Fonte · Código · Descrição…: a coluna "Fonte" (SINAPI/vazio) era
+     tomada como CÓDIGO e a coluna "Código" de verdade ficava sem papel — os
+     189 itens entravam sem código, inclusive os 60 que eram SINAPI legítimos.
+     "item" também ganhou papel (numeração hierárquica), para o código da
+     etapa (3.1, 9.2) não se perder. */
   var HDR = {
-    codigo: ["codigo", "cod", "referencia", "ref", "banco", "fonte", "codigo sinapi", "cod sinapi", "item sinapi", "codigo do servico", "code"],
+    codigo: ["codigo", "cod", "referencia", "ref", "codigo sinapi", "cod sinapi", "item sinapi", "codigo do servico", "codigo da composicao", "code"],
+    fonte: ["fonte", "banco", "base", "tabela", "origem", "banco de dados", "fonte de preco", "referencia de preco"],
+    item: ["item", "n", "no", "num", "numero", "ordem", "seq"],
     descricao: ["descricao", "servico", "servicos", "discriminacao", "descriminacao", "especificacao", "atividade", "insumo", "composicao", "descricao dos servicos", "descricao do servico", "description", "service"],
     unidade: ["un", "und", "unid", "unidade", "medida", "um"],
     quantidade: ["qtd", "qtde", "quant", "quantidade", "qty", "quantity"],
-    custoUnit: ["unitario", "preco unit", "preco unitario", "valor unit", "valor unitario", "custo unit", "custo unitario", "p unit", "punit", "vlr unit", "unit price", "unit cost", "price"],
+    custoUnit: ["unitario", "unit", "preco unit", "preco unitario", "valor unit", "valor unitario", "custo unit", "custo unitario", "p unit", "punit", "vlr unit", "r$ unit", "unit price", "unit cost", "price"],
     custoTotal: ["total", "valor total", "custo total", "preco total", "vlr total", "subtotal", "amount"]
   };
+  /* Nomes de banco de preço que uma coluna "Fonte" costuma trazer. Serve para
+     DEDUZIR o papel fonte pelo conteúdo quando o cabeçalho não diz. */
+  var FONTES_CONHECIDAS = ["sinapi", "sicro", "sudecap", "seinfra", "setop", "orse", "iopes", "cpos", "cdhu", "fde", "emop", "sbc", "siurb", "agetop", "goinfra", "sedop", "cehop", "deinfra", "der", "propria", "proprio", "cotacao", "composicao propria", "mercado"];
   var UNID = { "m2": 1, "m²": 1, "m3": 1, "m³": 1, "m": 1, "ml": 1, "kg": 1, "un": 1, "und": 1, "unid": 1, "pc": 1, "vb": 1, "cj": 1, "l": 1, "t": 1, "h": 1, "dia": 1, "mes": 1, "gl": 1, "pt": 1, "cx": 1, "par": 1, "km": 1, "ha": 1 };
   var UNID_NORM = { "m2": "m²", "m²": "m²", "m3": "m³", "m³": "m³", "und": "un", "unid": "un", "ml": "m" };
   /* v1.1.234 — as grafias de total que apareciam em planilha REAL e passavam:
@@ -89,6 +101,51 @@
     return neg ? -Math.abs(n) : n;
   }
   function ehCodSinapi(v) { var s = txt(v).trim(); return /^\d{5,8}$/.test(s) ? s : null; }
+  /* v1.2.83 — CÓDIGO DE QUALQUER BASE, não só SINAPI. Até aqui `ehCodSinapi`
+     era o único reconhecedor, e a planilha do cliente com CPOS (02.06.020),
+     FDE/Sabesp (C.04.000.064086) ou SBC (003247) perdia TODOS os códigos —
+     o agente orçamentista não tinha por onde casar. Regras:
+       · hierarquia de etapa/item (1, 1.1, 3.2.1) NÃO é código;
+       · decimal curto (52,42 · 12.5) é quantidade, não código;
+       · 1–2 dígitos puros é numeração, não código;
+       · o resto (dígitos ≥3, ou com letra/separador) é código CRU — quem diz
+         de que base ele é, é a coluna Fonte ou o orçamentista (js/orcamentista.js).
+     `pesoCodigo` gradua a certeza para a DETECÇÃO de coluna: 5–8 dígitos ou
+     formato com separador/letra pesam 1; 3–4 dígitos puros pesam 0,35 (pode
+     ser quantidade inteira — a coluna de quantidade continua ganhando). */
+  var RE_HIER = /^\d{1,2}(\.\d{1,2}){0,3}\.?$/;
+  function ehCodigo(v) {
+    var s = txt(v).trim();
+    if (/^\d+\.0+$/.test(s)) s = s.replace(/\.0+$/, "");         // célula numérica: 101567.0
+    if (!s || s.length > 24 || /\s/.test(s) || !/\d/.test(s)) return null;
+    if (RE_HIER.test(s)) return null;
+    if (/^\d{1,2}$/.test(s)) return null;
+    if (/^\d+[.,]\d{1,2}$/.test(s)) return null;                 // 52,42 · 12.5 → quantidade
+    if (/^\d{1,3}\.\d{3}$/.test(s)) return null;                 // 1.234 / 0.750 → número
+    if (/^[\d.,]+$/.test(s) && /,/.test(s)) return null;        // vírgula = número BR
+    return s;
+  }
+  function pesoCodigo(v) {
+    var s = ehCodigo(v); if (!s) return 0;
+    if (/^\d{5,8}$/.test(s)) return 1;
+    if (/^\d+\.\d{3,4}$/.test(s)) return 0.2;                    // 4114.620: pode ser CPOS mal digitado OU quantidade
+    if (/[A-Za-z]/.test(s) || /[.\-\/]/.test(s)) return 1;
+    return 0.35;
+  }
+  /* Normaliza o código cru: tira ".0" de célula numérica, espaços, e conserta
+     o CPOS digitado sem os pontos certos (4114.620 → 41.14.620, 411.0.112 →
+     41.10.112): 7 dígitos com ponto em posição errada é sempre CPOS. Não
+     inventa dígito — só reposiciona separador. */
+  function normCodigo(s) {
+    s = String(s == null ? "" : s).trim().replace(/\s+/g, "");
+    if (/^\d+\.0+$/.test(s)) s = s.replace(/\.0+$/, "");
+    if (/\./.test(s) && /^[\d.]+$/.test(s)) {
+      var dig = s.replace(/\./g, "");
+      if (dig.length === 7 && !/^\d{2}\.\d{2}\.\d{3}$/.test(s)) s = dig.slice(0, 2) + "." + dig.slice(2, 4) + "." + dig.slice(4);
+    }
+    return s;
+  }
+  function ehFonteConhecida(v) { var k = norm(v); return !!k && FONTES_CONHECIDAS.indexOf(k) > -1; }
   function ehUnid(v) { return !!UNID[norm(v)]; }
   function normUnid(v) { var k = norm(v); return UNID_NORM[k] || (UNID[k] ? k : txt(v).trim()); }
   function ehMoeda(v) { var t = txt(v); return /r\$/i.test(t) || (/\d/.test(t) && /[.,]\d{2}\b/.test(t) && !ehUnid(v)); }
@@ -171,31 +228,55 @@
   }
 
   function detectarColunas(linhas, headerIdx, nCols) {
-    var roles = { codigo: null, descricao: null, unidade: null, quantidade: null, custoUnit: null, custoTotal: null }, fonte = {};
+    var roles = { codigo: null, fonte: null, item: null, descricao: null, unidade: null, quantidade: null, custoUnit: null, custoTotal: null }, fonte = {};
     var hdr = headerIdx >= 0 ? linhas[headerIdx] : null;
     var sample = [], start = headerIdx >= 0 ? headerIdx + 1 : 0;
     for (var i = start; i < linhas.length && sample.length < 50; i++) sample.push(linhas[i]);
     var stat = [];
     for (var c = 0; c < nCols; c++) {
       var vals = sample.map(function (r) { return r[c]; }).filter(function (v) { return txt(v).trim() !== ""; });
-      var n = vals.length || 1, cod = 0, unid = 0, moeda = 0, numero = 0, texto = 0, totLen = 0;
+      var n = vals.length || 1, cod = 0, unid = 0, moeda = 0, numero = 0, texto = 0, totLen = 0, fonteK = 0;
       vals.forEach(function (v) {
         var s = txt(v).trim();
-        if (ehCodSinapi(v)) cod++;
+        cod += pesoCodigo(v);
         if (ehUnid(v)) unid++;
         if (ehMoeda(v)) moeda++;
         if (ehNum(v)) numero++;
+        if (ehFonteConhecida(v)) fonteK++;
         if (s && isNaN(num(v)) && !ehUnid(v)) { texto++; totLen += s.length; }
       });
       stat.push({ c: c, h: hdr ? norm(txt(hdr[c])) : "", n: n, vals: vals,
-        f: { cod: cod / n, unid: unid / n, moeda: moeda / n, numero: numero / n, texto: texto / n }, avgLen: texto ? totLen / texto : 0 });
+        f: { cod: cod / n, unid: unid / n, moeda: moeda / n, numero: numero / n, texto: texto / n, fonteK: fonteK / n }, avgLen: texto ? totLen / texto : 0 });
     }
     function usado(c) { for (var r in roles) if (roles[r] === c) return true; return false; }
-    // 1) cabeçalho manda
-    stat.forEach(function (s) { var role = achaHdr(s.h); if (role && roles[role] == null) { roles[role] = s.c; fonte[role] = "cabecalho"; } });
+    /* 1) cabeçalho manda — mas cabeçalho REPETIDO se resolve pelo conteúdo.
+       v1.2.83 — a tabela sintética da prefeitura (SBC) traz "Serviço" e
+       "Descrição do Serviço" lado a lado: as duas casam `descricao`, a
+       primeira (que é o CÓDIGO) ficava com o papel e a descrição de verdade
+       virava quantidade. Agora cada papel recebe a coluna cujo conteúdo
+       mais parece com ele; a que sobra cai na dedução por conteúdo. */
+    var reiv = {};
+    stat.forEach(function (s) { var role = achaHdr(s.h); if (role) (reiv[role] = reiv[role] || []).push(s); });
+    var afinidade = {
+      codigo: function (s) { return s.f.cod; }, fonte: function (s) { return s.f.fonteK + s.f.texto * 0.1; }, item: function (s) { return pareceIndice(s.vals) ? 1 : 0; },
+      descricao: function (s) { return s.f.texto + Math.min(1, s.avgLen / 40); }, unidade: function (s) { return s.f.unid; },
+      quantidade: function (s) { return s.f.numero; }, custoUnit: function (s) { return s.f.moeda + s.f.numero * 0.5; }, custoTotal: function (s) { return s.f.moeda + s.f.numero * 0.5; }
+    };
+    for (var role in reiv) {
+      var cands = reiv[role].filter(function (s) { return !usado(s.c); });
+      if (!cands.length) continue;
+      if (cands.length > 1) cands.sort(function (a, b) { return afinidade[role](b) - afinidade[role](a); });
+      roles[role] = cands[0].c; fonte[role] = "cabecalho";
+      /* a coluna preterida de "descricao" que é cheia de código vira código (caso SBC) */
+      for (var k = 1; k < cands.length; k++) {
+        if (role === "descricao" && roles.codigo == null && cands[k].f.cod >= 0.5) { roles.codigo = cands[k].c; fonte.codigo = "cabecalho"; }
+      }
+    }
     function assign(role, scorer, min) { if (roles[role] != null) return; var best = null, bs = 0; stat.forEach(function (s) { if (usado(s.c)) return; var v = scorer(s); if (v > bs) { bs = v; best = s; } }); if (best && bs >= (min || 0.5)) { roles[role] = best.c; fonte[role] = "conteudo"; } }
+    assign("fonte", function (s) { return s.f.fonteK; }, 0.3);
     assign("codigo", function (s) { return s.f.cod; }, 0.5);
     assign("unidade", function (s) { return s.f.unid; }, 0.4);
+    assign("item", function (s) { return (s.f.cod < 0.3 && pareceIndice(s.vals)) ? 1 : 0; }, 0.5);
     // 2a) RELAÇÃO total≈qtd×unit — só se NENHUM dos 3 papéis veio do cabeçalho (evita o swap por magnitude
     // em planilha de material sem cabeçalho: preço baixo × qtd grande faria soma(qtd)>soma(unit)).
     if (roles.quantidade == null && roles.custoUnit == null && roles.custoTotal == null) {
@@ -248,7 +329,7 @@
   function classificar(row, cols) {
     var desc = cols.descricao != null ? txt(row[cols.descricao]).trim() : "";
     if (ehTotal(desc)) return "ignorar";
-    var temCod = cols.codigo != null && !!ehCodSinapi(row[cols.codigo]);
+    var temCod = cols.codigo != null && !!ehCodigo(row[cols.codigo]);
     var temQtd = cols.quantidade != null && num(row[cols.quantidade]) > 0;
     var temUnit = cols.custoUnit != null && num(row[cols.custoUnit]) > 0;
     var temTot = cols.custoTotal != null && num(row[cols.custoTotal]) > 0;
@@ -268,9 +349,20 @@
     return "ignorar";
   }
   function codigoEtapaDe(row, cols) {
-    if (cols.codigo == null) return "";
-    var s = txt(row[cols.codigo]).trim();
-    return (/^\d{1,2}(\.\d{1,2})*$/.test(s) && !ehCodSinapi(row[cols.codigo])) ? s : "";
+    /* v1.2.83 — a numeração da etapa mora na coluna "Item" quando ela existe
+       (3.0, 3.1, 9.2); só na falta dela cai na coluna de código. */
+    var cs = [cols.item, cols.codigo];
+    for (var k = 0; k < cs.length; k++) {
+      if (cs[k] == null) continue;
+      var s = txt(row[cs[k]]).trim();
+      if (/^\d{1,2}(\.\d{1,2})*\.?$/.test(s) && !ehCodigo(row[cs[k]])) return s.replace(/\.$/, "");
+    }
+    return "";
+  }
+  function numeroItemDe(row, cols) {
+    if (cols.item == null) return "";
+    var s = txt(row[cols.item]).trim();
+    return /^\d{1,3}(\.\d{1,3})*\.?$/.test(s) ? s.replace(/\.$/, "") : "";
   }
   // 'mil' se a coluna usa vírgula decimal (ponto=milhar); 'dec' se só pontos (ponto=decimal, ex.: 0.750)
   function dotModeCol(linhas, start, col) {
@@ -303,7 +395,37 @@
       }).filter(function (a) { return a.matriz.length; });
     },
 
-    _num: num, _txt: txt, _norm: norm, _ehCodSinapi: ehCodSinapi, _ehMoeda: ehMoeda, _pareceIndice: pareceIndice, _detectarColunas: detectarColunas, _acharCabecalho: acharCabecalho, _etapaEmbutida: etapaEmbutida,
+    _num: num, _txt: txt, _norm: norm, _ehCodSinapi: ehCodSinapi, _ehCodigo: ehCodigo, _normCodigo: normCodigo, _ehMoeda: ehMoeda, _pareceIndice: pareceIndice, _detectarColunas: detectarColunas, _acharCabecalho: acharCabecalho, _etapaEmbutida: etapaEmbutida,
+    ROLES: ["codigo", "fonte", "item", "descricao", "unidade", "quantidade", "custoUnit", "custoTotal"],
+
+    /* v1.2.83 — METADADOS DO CABEÇALHO DA TABELA. A planilha oficial de uma
+       base (ex.: composição sintética da prefeitura) diz nas primeiras linhas
+       "Data Base: MAIO/26" e "Custo Unitário com BDI 20,81%". Quem importa
+       essa tabela como base precisa saber os dois: a competência (para não
+       misturar mês) e, principalmente, se o PREÇO JÁ TEM BDI — aplicar BDI
+       de novo em cima é orçar com BDI dobrado. Devolve { competencia:"2026-05",
+       bdiIncluso: 20.81 } (null quando não encontra). Nunca inventa. */
+    metaCabecalho: function (matriz) {
+      var out = { competencia: null, bdiIncluso: null, rotulo: "" };
+      var MESES = { jan: "01", fev: "02", mar: "03", abr: "04", mai: "05", jun: "06", jul: "07", ago: "08", set: "09", out: "10", nov: "11", dez: "12" };
+      var lim = Math.min((matriz || []).length, 15);
+      for (var i = 0; i < lim; i++) {
+        var row = matriz[i] || [];
+        for (var c = 0; c < row.length; c++) {
+          var s = txt(row[c]).trim(); if (!s) continue;
+          var ns = norm(s);
+          if (!out.rotulo && /composicao|tabela|referencia|boletim/.test(ns) && s.length > 12) out.rotulo = s.slice(0, 120);
+          var mb = ns.match(/(?:data ?base|competencia|referencia|mes)(?:\s+de|\s+da|\s+do)?\s+([a-z]{3})[a-z]*\s*(\d{2,4})\b/);
+          if (mb && MESES[mb[1]] && !out.competencia) { var ano = mb[2].length === 2 ? "20" + mb[2] : mb[2]; out.competencia = ano + "-" + MESES[mb[1]]; }
+          var mn = ns.match(/(?:data ?base|competencia|referencia)\D{0,12}(\d{2})\s*[\/ ]\s*(\d{4})/);
+          if (mn && !out.competencia) out.competencia = mn[2] + "-" + mn[1];
+          var mbdi = s.match(/com\s+bdi\s*(?:de)?\s*(\d{1,2}(?:[.,]\d{1,2})?)\s*%/i);
+          if (mbdi && out.bdiIncluso == null) out.bdiIncluso = parseFloat(mbdi[1].replace(",", "."));
+          if (/sem\s+bdi/i.test(s) && out.bdiIncluso == null) out.bdiIncluso = 0;
+        }
+      }
+      return out;
+    },
 
     analisar: function (matriz, opts) {
       opts = opts || {};
@@ -339,14 +461,38 @@
         if (!(qtd > 0)) { qtd = 1; semQtd++; }
         if (!(unit >= 0) || isNaN(unit)) unit = 0;
         if (!(unit > 0)) semCusto++;
-        atual.itens.push({
-          codigo: cols.codigo != null ? (ehCodSinapi(row[cols.codigo]) || "") : "",
+        var codCru = cols.codigo != null ? (ehCodigo(row[cols.codigo]) || "") : "";
+        var fonteLinha = cols.fonte != null ? txt(row[cols.fonte]).trim().toUpperCase() : "";
+        var itemNovo = {
+          codigo: codCru ? normCodigo(codCru) : "",
           descricao: desc || "(sem descrição)",
           unidade: cols.unidade != null ? normUnid(row[cols.unidade]) : "un",
           quantidade: Math.round(qtd * 10000) / 10000,
           custoUnitario: Math.round(unit * 100) / 100
-        });
+        };
+        /* v1.2.83 — o que a planilha DIZ sobre a origem viaja com o item: a
+           coluna Fonte (SINAPI/CPOS/…), o número do item (9.2.14) e o código
+           como veio escrito (antes da normalização). É a matéria-prima do
+           orçamentista — sem isso ele teria de adivinhar a base. */
+        if (fonteLinha) itemNovo.fonte = fonteLinha;
+        if (codCru && itemNovo.codigo !== codCru) itemNovo.codigoOriginal = codCru;
+        var numItem = numeroItemDe(row, cols); if (numItem) itemNovo.numero = numItem;
+        atual.itens.push(itemNovo);
         nItens++;
+      }
+      /* v1.2.83 — HIERARQUIA: "3.0 FUNDAÇÃO E ESTRUTURA" seguida de "3.1
+         FUNDAÇÃO" e "3.2 ESTRUTURA". A etapa-mãe não tem item (só título) e
+         era descartada abaixo; a filha entrava solta e a estrutura da planilha
+         se perdia. Cada etapa com código de 2+ níveis carrega o nome da mãe
+         (`pai`) — quem monta o orçamento decide se vira sub etapa. */
+      for (var ei = 0; ei < etapas.length; ei++) {
+        var cod = String(etapas[ei].codigo || ""), partes = cod.split(".").filter(function (p) { return p !== ""; });
+        if (partes.length < 2) continue;
+        var prefixo = partes.slice(0, -1).join(".");
+        for (var pj = ei - 1; pj >= 0; pj--) {
+          var cp = String(etapas[pj].codigo || "").replace(/\.0+$/, "");
+          if (cp === prefixo || cp === prefixo + ".0") { etapas[ei].pai = etapas[pj].nome; etapas[ei].paiCodigo = etapas[pj].codigo; break; }
+        }
       }
       etapas = etapas.filter(function (e) { return e.itens.length; });
 
@@ -361,7 +507,7 @@
       if (headerIdx < 0) { conf *= 0.55; avisos.push("Não reconheci uma linha de cabeçalho — deduzi as colunas pelo conteúdo. ⚠️ Revise o mapeamento antes de importar."); }
       else if (porConteudo > 0) { conf *= 0.82; avisos.push("Algumas colunas foram deduzidas pelo conteúdo (cabeçalho parcial) — confira o mapeamento."); }
       if (!nItens) avisos.push("Nenhum item reconhecido — confira o mapeamento das colunas.");
-      if (semCusto && nItens) avisos.push(semCusto + " item(ns) sem custo na planilha — o preço virá do SINAPI ao casar o código, ou entram como R$ 0,00 p/ você preencher.");
+      if (semCusto && nItens) avisos.push(semCusto + " item(ns) sem custo na planilha — o Orçamentista casa o código/descrição nas bases escolhidas e precifica; o que não casar fica pendente ou vira composição própria.");
 
       return {
         etapas: etapas, colunas: cols, headerRow: headerIdx,

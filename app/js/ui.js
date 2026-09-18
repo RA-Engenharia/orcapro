@@ -1279,7 +1279,10 @@
          ele desce a secundario: destaque permanente em botao que ja cumpriu o
          papel e ruido. `t.qtdItens` (do motor) e nao `orc.itens` — os itens
          moram em orc.etapas[].itens[], a lista de primeiro nivel nao existe. */
-      var _bEscopo = '<button class="btn sm' + (t.qtdItens ? '' : ' primary') + '" data-acao="escopo">' + Icones.get("escopo") + 'Escopo Inteligente</button>';
+      var _bEscopo = '<button class="btn sm' + (t.qtdItens ? '' : ' primary') + '" data-acao="escopo">' + Icones.get("escopo") + 'Escopo Inteligente</button>' +
+        /* v1.2.83 — o orçamentista também roda num orçamento JÁ montado: pega
+           os itens sem preço (ou todos) e casa/precifica/elabora. */
+        '<button class="btn sm" data-acao="orcamentista-orcamento" title="Casa os itens desta planilha nas bases escolhidas (código, depois descrição), precifica e elabora composição própria com insumos e coeficientes para o que não existir">' + Icones.get("ia") + 'Orçamentista</button>';
       var _aprov = (typeof App !== "undefined" && App._aprovBotoesOrc) ? App._aprovBotoesOrc(orc) : "";
       var _comercial = (typeof App !== "undefined" && App._propComercialBotoes) ? App._propComercialBotoes(orc) : "";
       var _sep = '<span class="acoes-sep" aria-hidden="true"></span>';
@@ -3590,7 +3593,7 @@
       var hdr = (res.headerRow >= 0) ? (matNV[res.headerRow] || []) : [];
       function letra(i) { var s = ""; i++; while (i > 0) { var m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; }
       function colLabel(i) { var h = hdr[i] != null ? String(Importador._txt(hdr[i])).trim() : ""; return letra(i) + (h ? ": " + h : ""); }
-      var roles = [["codigo", "Código"], ["descricao", "Descrição"], ["unidade", "Unidade"], ["quantidade", "Quantidade"], ["custoUnit", "Custo unit."], ["custoTotal", "Custo total"]];
+      var roles = [["item", "Nº do item"], ["fonte", "Fonte / banco"], ["codigo", "Código"], ["descricao", "Descrição"], ["unidade", "Unidade"], ["quantidade", "Quantidade"], ["custoUnit", "Custo unit."], ["custoTotal", "Custo total"]];
       function selCol(role) {
         var cur = res.colunas ? res.colunas[role[0]] : null, opts = '<option value="">— nenhuma —</option>';
         for (var i = 0; i < nCols; i++) opts += '<option value="' + i + '"' + (cur === i ? " selected" : "") + ">" + Util.esc(colLabel(i)) + "</option>";
@@ -3607,12 +3610,13 @@
       var prev = [], nP = 0, LIMP = 40, cortou = false;
       Util.arr(res.etapas).forEach(function (e) {
         if (nP >= LIMP) { cortou = true; return; }   // não empurra cabeçalho de etapa depois do limite (senão sobram etapas vazias)
-        prev.push('<tr class="etapa-row"><td colspan="5"><b>' + Util.esc((e.codigo ? e.codigo + " · " : "") + e.nome) + "</b></td></tr>");
-        Util.arr(e.itens).forEach(function (it) { if (nP >= LIMP) { cortou = true; return; } prev.push("<tr><td>" + Util.esc(it.codigo || "—") + "</td><td>" + Util.esc(it.descricao) + "</td><td>" + Util.esc(Util.unidadeExibir(it.unidade)) + '</td><td class="num">' + Util.fmtNum(it.quantidade, 2) + '</td><td class="num">' + Util.fmtMoeda(it.custoUnitario) + "</td></tr>"); nP++; });
+        prev.push('<tr class="etapa-row"><td colspan="6"><b>' + Util.esc((e.codigo ? e.codigo + " · " : "") + e.nome) + "</b></td></tr>");
+        Util.arr(e.itens).forEach(function (it) { if (nP >= LIMP) { cortou = true; return; } prev.push("<tr><td>" + Util.esc(it.fonte || "—") + "</td><td>" + Util.esc(it.codigo || "—") + "</td><td>" + Util.esc(it.descricao) + "</td><td>" + Util.esc(Util.unidadeExibir(it.unidade)) + '</td><td class="num">' + Util.fmtNum(it.quantidade, 2) + '</td><td class="num">' + Util.fmtMoeda(it.custoUnitario) + "</td></tr>"); nP++; });
       });
-      if (cortou) prev.push('<tr><td colspan="5" class="muted" style="text-align:center">… e mais ' + Math.max(0, res.resumo.itens - nP) + ' item(ns) — mostrando os ' + nP + ' primeiros</td></tr>');
-      html += '<div style="max-height:300px;overflow:auto;border:1px solid var(--linha);border-radius:8px"><table class="tbl"><thead><tr><th>Código</th><th>Descrição</th><th>Un</th><th class="num">Qtd</th><th class="num">Custo unit.</th></tr></thead><tbody>' + (prev.join("") || '<tr><td colspan="5" class="muted">Nada detectado — ajuste o mapeamento.</td></tr>') + "</tbody></table></div>";
-      html += '<p class="muted" style="font-size:11px;margin:8px 0 0">Ao importar: itens com <b>código SINAPI válido</b> são casados na base (o preço oficial preenche o que estiver vazio na planilha); os demais entram como <b>itens próprios</b> com os valores da planilha. Nenhum código é inventado.</p>';
+      if (cortou) prev.push('<tr><td colspan="6" class="muted" style="text-align:center">… e mais ' + Math.max(0, res.resumo.itens - nP) + ' item(ns) — mostrando os ' + nP + ' primeiros</td></tr>');
+      html += '<div style="max-height:300px;overflow:auto;border:1px solid var(--linha);border-radius:8px"><table class="tbl"><thead><tr><th>Fonte</th><th>Código</th><th>Descrição</th><th>Un</th><th class="num">Qtd</th><th class="num">Custo unit.</th></tr></thead><tbody>' + (prev.join("") || '<tr><td colspan="6" class="muted">Nada detectado — ajuste o mapeamento.</td></tr>') + "</tbody></table></div>";
+      html += '<p class="muted" style="font-size:11px;margin:8px 0 0"><b>Importar como orçamento</b>: itens com código SINAPI são casados na base; os demais entram com os valores da planilha. ' +
+        '<b>Orçamentista</b>: casa cada item pelo código na base que a planilha indica (SINAPI, CPOS, tabela importada…), depois pela descrição, precifica na competência ativa e, sem correspondência, elabora a <b>composição própria com insumos e coeficientes</b> a partir da base analítica. Nenhum código é inventado.</p>';
       return semWrap ? html : '<div id="imp-body">' + html + "</div>";
     },
 
