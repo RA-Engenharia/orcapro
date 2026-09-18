@@ -2128,6 +2128,8 @@
         case "exportar": this.exportar(); break;
         case "cenarios": this.compararCenarios(); break;
         case "criar-composicao": this.criarComposicao(); break;
+        case "orcamentista-importacao": this.orcamentistaDaImportacao(); break;
+        case "orcamentista-orcamento": this.orcamentistaDoOrcamento(); break;
         case "cp-agente": this.cpAgente(); break;
         case "cp-passo1": this._cp.passo = 1; this._cpRender(); break;
         case "cp-passo2": this._cpColeta1(); this._cp.passo = 2; this._cpRender(); break;
@@ -9335,9 +9337,15 @@
           if (erro || !matriz || !matriz.length) { UI.toast("Não consegui ler a planilha: " + (erro || "vazia"), "erro"); return; }
           var dados = self._baseItensDaMatriz(matriz, fonte);
           if (!dados.length) { UI.toast("Nenhum item de preço reconhecido (preciso de código/descrição + custo).", "erro"); return; }
-          Bases.registrar(fonte, { dados: dados, uf: uf });
+          var metaB = self._ultimaBaseMeta || {};
+          Bases.registrar(fonte, { dados: dados, uf: uf, mes: metaB.competencia || undefined });
           var grav = Bases.persistir(Auth.empresaId());
-          UI.toast(dados.length.toLocaleString("pt-BR") + " itens de " + String(fonte).toUpperCase() + " importados da planilha" + (grav.ok ? "." : " — " + grav.erro), grav.ok ? "ok" : "erro");
+          var semPreco = dados.filter(function (d) { return !(d.custoUnitario > 0); }).length;
+          UI.toast(dados.length.toLocaleString("pt-BR") + " itens de " + String(fonte).toUpperCase() + " importados da planilha" +
+            (metaB.competencia ? " (competência " + metaB.competencia + ")" : "") +
+            (metaB.bdiIncluso > 0 ? " — preços publicados com BDI " + metaB.bdiIncluso + "%: gravado o custo direto (sem BDI)" : "") +
+            (semPreco ? " — " + semPreco + " sem preço (só catálogo)" : "") +
+            (grav.ok ? "." : " — " + grav.erro), grav.ok ? "ok" : "erro");
           self.abrirTabelas();
         });
         return;
@@ -9359,14 +9367,26 @@
       if (cols.descricao == null && cols.codigo == null) return [];
       var start = hIdx >= 0 ? hIdx + 1 : 0, itens = [], f = String(fonte || "PROPRIA").toUpperCase();
       var col = function (row, c) { return c != null ? String(Importador._txt(row[c])).trim() : ""; };
+      /* v1.2.83 — o cabeçalho da tabela oficial diz a competência e se o
+         preço JÁ VEM COM BDI ("Custo Unitário com BDI 20,81%", tabela
+         municipal de SP). Preço com BDI gravado como custo direto e orçado
+         com o BDI do cliente por cima é BDI em dobro — erro clássico de
+         orçamento. O custo direto entra deflacionado e o preço publicado
+         fica guardado (precoComBDI/bdiIncluso) para conferência. */
+      var meta = Importador.metaCabecalho ? Importador.metaCabecalho(matriz) : { competencia: null, bdiIncluso: null };
+      var fatorBdi = meta.bdiIncluso > 0 ? 1 + meta.bdiIncluso / 100 : 1;
       for (var i = start; i < linhas.length; i++) {
         var row = linhas[i];
         var cod = col(row, cols.codigo), desc = col(row, cols.descricao);
         if (!cod && !desc) continue;
         var custo = cols.custoUnit != null ? Importador._num(row[cols.custoUnit]) : (cols.custoTotal != null ? Importador._num(row[cols.custoTotal]) : 0);
         if (!(custo > 0) && !cod) continue; // linha sem custo e sem código = provável total/rodapé
-        itens.push({ codigo: cod, descricao: desc, unidade: col(row, cols.unidade) || "un", custoUnitario: custo > 0 ? Math.round(custo * 100) / 100 : 0, origem: f, tipoItem: "composicao" });
+        var it = { codigo: Importador._normCodigo ? Importador._normCodigo(cod) : cod, descricao: desc, unidade: col(row, cols.unidade) || "un", custoUnitario: custo > 0 ? Math.round(custo * 100) / 100 : 0, origem: f, tipoItem: "composicao" };
+        if (fatorBdi > 1 && it.custoUnitario > 0) { it.precoComBDI = it.custoUnitario; it.bdiIncluso = meta.bdiIncluso; it.custoUnitario = Math.round(it.custoUnitario / fatorBdi * 100) / 100; }
+        itens.push(it);
       }
+      if (itens.length) { itens._meta = meta; }
+      this._ultimaBaseMeta = meta;
       return itens;
     },
 
@@ -14219,6 +14239,10 @@
       UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("graficos", 15) : "") + " Importar planilha — " + Util.esc(imp.nome || ""), picker + UI.renderImportPreview(imp), [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "" + (typeof Icones !== "undefined" ? Icones.get("ciclo", 15) : "") + " Reanalisar", classe: "", onClick: function () { self.importRemapear(); } },
+        /* v1.2.83 — o caminho do orçamentista: casa código/descrição nas bases
+           escolhidas, precifica e elabora composição própria (com insumos e
+           coeficientes) para o que não existir. Ver js/orcamentista.js. */
+        { texto: "" + (typeof Icones !== "undefined" ? Icones.get("ia", 15) : "") + " Orçamentista: casar e precificar", classe: "primary", onClick: function () { self.orcamentistaDaImportacao(); } },
         { texto: "" + (typeof Icones !== "undefined" ? Icones.get("check", 15) : "") + " Importar como orçamento", classe: "success", onClick: function () { self.criarOrcamentoDaImportacao(); } }
       ]);
     },
@@ -14236,7 +14260,7 @@
           return;
         }
       }
-      var roles = ["codigo", "descricao", "unidade", "quantidade", "custoUnit", "custoTotal"], cols = {};
+      var roles = (typeof Importador !== "undefined" && Importador.ROLES) || ["codigo", "fonte", "item", "descricao", "unidade", "quantidade", "custoUnit", "custoTotal"], cols = {};
       roles.forEach(function (r) { var s = document.getElementById("imp-col-" + r); cols[r] = (s && s.value !== "") ? parseInt(s.value, 10) : null; });
       var hr = document.getElementById("imp-header"), headerRow = (hr && hr.value !== "") ? parseInt(hr.value, 10) : imp.res.headerRow;
       imp.res = Importador.analisar(imp.matriz, { colunas: cols, headerRow: headerRow });
