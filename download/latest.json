@@ -2,6 +2,6 @@
   "versao": "1.2.85",
   "tipo": "silenciosa",
   "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.85.zip",
-  "notas": "Centros de custo: o sistema monta os centros de custo a partir de um orcamento, se voce quiser, com a descricao editavel, e voce tambem pode criar o seu. Ao tentar apagar um centro que tem lancamento dentro, o aviso diz quanto esta preso e leva ao botao que resolve. Centros antigos podem ser convertidos, com o antes e o depois na tela.",
+  "notas": "Centros de custo: o sistema monta os centros de custo a partir de um orcamento, se voce quiser, com a descricao editavel, e voce tambem pode criar o seu. Ao tentar apagar um centro que tem lancamento dentro, o aviso diz quanto esta preso e leva ao botao que resolve. Centros antigos podem ser convertidos, com o antes e o depois na tela. Orcamentista: planilha importada com a base CDHU-SP saia inteira pendente, com 0 por cento reconhecido, mesmo com a base certa na maquina; corrigido. E ao aplicar num orcamento, quando a gravacao e recusada a planilha deixa de mostrar codigo e preco que nao foram salvos: a revisao fica aberta dizendo o motivo.",
   "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.85/OrcaPRO-IA-Instalador-v1.2.85.exe"
 }
