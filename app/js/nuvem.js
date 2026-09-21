@@ -148,6 +148,22 @@
      *   `horas_extras` grava, e era apagada. Corrigido na v1.2. */
     // cadastros da EMPRESA (sem obraId)
     "fornecedores", "familias", "centrocusto",
+    /* ⚠ AS DUAS LISTAS DO AGENTE DE APROPRIAÇÃO (ESPEC-medicao-cc §1.1): a
+     * REGRA que manda um lançamento para um centro automaticamente e a
+     * DECISÃO que a pessoa tomou sobre um lançamento específico. As duas são
+     * trabalho dela, não dado derivado — decidir um a um de novo, no outro
+     * aparelho, é refazer o serviço; e a regra que o escritório escreve tem
+     * de valer para quem lança no celular da obra, senão os dois aparelhos
+     * contam o mesmo gasto em centros diferentes.
+     * ⚠ Sem esta linha elas não entrariam no BACKUP (App._dumpGestao deriva a
+     *   lista DESTE array) e a exclusão não deixaria lápide: o registro
+     *   apagado num aparelho ressuscitaria no primeiro merge — é a mesma
+     *   história das doze entidades da v1.1.231, logo acima.
+     * Elas TÊM obraId (a regra pode ser "sem obra", que é o centro da
+     * empresa), então a cascata da obra as leva: ver `_ENT_DA_OBRA` em
+     * js/gestao.js. Nunca em `Store._IMUNES_CASCATA` — as duas regras juntas
+     * devolvem o registro órfão no sync seguinte. */
+    "cc_regras", "cc_aprop",
     // compras e planejamento (têm obraId → entram na cascata da obra)
     "cotacoes", "lp_tarefas", "tarefas", "bim_edicoes",
     /* ⚠ PLANEJAMENTO DA OBRA (cronograma executivo, js/cronobase.js): as
@@ -209,6 +225,50 @@
     // no aparelho A o registro que o aparelho B tinha acabado de apagar.
     "_lapides"
   ];
+  /* ⚠ QUEM PERDE O CONFLITO DEIXA RESUMO, NUNCA A CÓPIA INTEIRA — e a tabela
+   * é FIXA aqui, como a lista de entidades acima.
+   *
+   * O merge genérico guarda `_conflitoDe.copia` com o registro perdedor
+   * inteiro (até 50 KB). Isso é aceitável numa entidade cujos registros são
+   * pequenos e cujo documento tem folga; é destrutivo nas quatro abaixo, em
+   * que a entidade inteira mora num único documento de 1 MiB:
+   *
+   *   · `crono_obra` — planos e linhas de base de TODAS as obras. Medido:
+   *     três conflitos de planos cheios levaram o documento a 1.033.669 B e
+   *     seis o passavam de 1 MiB; o Firestore recusa e o planejamento de
+   *     todas as obras para de sincronizar (revisão 3 da Fase 3).
+   *   · `cc_aprop` — decisão de apropriação. Medido na ESPEC §1.7: pior caso
+   *     875 B; com o resumo de conflito 1.045 B; com a CÓPIA do merge
+   *     genérico 1.843 B. Com o teto de 2.000 decisões, o pior caso COM
+   *     resumo projeta 870 KB (abaixo do aviso de 900 KB); com cópia passa de
+   *     1 MiB e a entidade para de sincronizar EM SILÊNCIO.
+   *   · `cc_regras` e `centrocusto` — mesmo documento único, mesma conta.
+   *
+   * O recado ao usuário NÃO diz "não se perdeu nada": aqui se perdeu, e a
+   * pessoa precisa conferir. Resumo de até 60 caracteres — o suficiente para
+   * reconhecer o que foi, curto o bastante para caber 2.000 vezes. */
+  var SEM_COPIA = { crono_obra: 1, centrocusto: 1, cc_regras: 1, cc_aprop: 1 };
+  function _resumoPerdedor(ent, p) {
+    var r = "";
+    if (!p) return "";
+    if (ent === "crono_obra") r = String(p.tipo || "") + " da obra " + String(p.obraId || "");
+    else if (ent === "cc_aprop") {
+      var destino = String(p.cc || "");
+      if (!destino && p.pt && p.pt.length) destino = p.pt.length + " partes";
+      if (!destino && p.rs) destino = "resto do boletim";
+      r = "decisão para " + (destino || "sem destino") + (p.por ? " — " + String(p.por) : "");
+    } else if (ent === "cc_regras") {
+      var e = p.entao || {};
+      var alvo = String(e.cc || "");
+      if (!alvo && e.partes && e.partes.length) alvo = e.partes.length + " partes";
+      r = "regra para " + (alvo || String(e.t || "sem destino"));
+    } else {
+      r = (p.codigo ? String(p.codigo) + " " : "") + String(p.nome || p.id || "") +
+        (p.ativo === false ? " (desativado)" : "");
+    }
+    return r.length > 60 ? r.slice(0, 60) : r;
+  }
+
   var SDK = [
     "https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js",
     "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js",
@@ -388,6 +448,11 @@
     /* obras cujo planejamento (`crono_obra`) teve conflito no último merge —
        recado próprio, porque ali a versão perdedora NÃO é guardada (ver _merge) */
     _conflitosCrono: [],
+    /* registros de centro de custo (`centrocusto`, `cc_regras`, `cc_aprop`)
+       com conflito no último merge — mesmo motivo do `_conflitosCrono`: ali a
+       versão perdedora também NÃO é guardada (ver SEM_COPIA no _merge), e o
+       recado geral diria "não se perdeu nada" sobre dinheiro */
+    _conflitosCc: [],
 
     /* ===== v1.1.232 — MARCAS DA ÚLTIMA SINCRONIZAÇÃO =====
        O merge antigo tratava QUALQUER diferença de atualizadoEm como "editado
@@ -555,21 +620,27 @@
         var marca = String(marcas[o.id] || "");
         if (marca && (tl === marca || tc === marca)) { byId[o.id] = venc; return; }
         try {
-          if (ent === "crono_obra") {
-            /* ⚠ O PLANEJAMENTO DA OBRA NÃO GUARDA A CÓPIA DO PERDEDOR (revisão 3
-               da Fase 3, lente sync). A entidade inteira — planos e linhas de
-               base de TODAS as obras — mora num documento só, que o CronoBase
-               mantém abaixo de 900 KB ANTES do sync; a cópia (até 50 KB por
-               registro) entrava DEPOIS, sem passar pela porta: três conflitos
-               de planos cheios levaram o documento a 1.033.669 B e seis o
-               passavam de 1 MiB — o Firestore recusa e o planejamento de todas
-               as obras para de sincronizar. Fica o resumo (quem perdeu e
-               quando) e o recado próprio abaixo, que NÃO diz "não se perdeu
-               nada": aqui se perdeu, e a pessoa precisa conferir o plano. */
+          if (SEM_COPIA[ent]) {
+            /* ⚠ SÓ O RESUMO — ver a tabela SEM_COPIA lá em cima, que traz a
+               medição de cada uma das quatro. A cópia do perdedor entrava
+               DEPOIS da porta que mantém o documento abaixo de 900 KB, sem
+               passar por ela. O recado da tela NÃO diz "não se perdeu nada":
+               aqui se perdeu, e a pessoa precisa conferir. */
             venc._conflitoDe = { em: perd.atualizadoEm || "", quando: new Date().toISOString(),
-              resumo: String(perd.tipo || "") + " da obra " + String(perd.obraId || ""), obraId: String(perd.obraId || "") };
-            if (!self._conflitosCrono) self._conflitosCrono = [];
-            self._conflitosCrono.push(String(perd.obraId || perd.id));
+              resumo: _resumoPerdedor(ent, perd) };
+            if (ent === "crono_obra") {
+              venc._conflitoDe.obraId = String(perd.obraId || "");
+              if (!self._conflitosCrono) self._conflitosCrono = [];
+              self._conflitosCrono.push(String(perd.obraId || perd.id));
+            } else {
+              /* centro de custo: é desta lista que sai o recado próprio no
+                 fim do sync (ver `nCc` no `_sincronizarAgora`). Ela existe
+                 separada do contador geral porque o recado geral promete que
+                 "a anterior ficou guardada dentro do registro" — e aqui não
+                 ficou. */
+              if (!self._conflitosCc) self._conflitosCc = [];
+              self._conflitosCc.push(String(perd.obraId || perd.id));
+            }
           } else {
             /* cópia SEM o _conflitoDe do perdedor: aninhar a cadeia inteira fazia
                o registro crescer a cada ida-e-volta (provado em Node: 2ª rodada
@@ -737,6 +808,7 @@
       var self = this;
       self._conflitosUltimoMerge = 0;
       self._conflitosCrono = [];
+      self._conflitosCc = [];
       self._ilegiveisUltimoSync = [];
       var falhou = 0, tentadas = 0;
       var uma = function (ent) {
@@ -797,6 +869,17 @@
            mente — a pessoa precisa conferir o plano das obras que vieram aqui */
         var nCrono = (self._conflitosCrono || []).length;
         var nGeral = self._conflitosUltimoMerge - nCrono;
+        /* ⚠ O CENTRO DE CUSTO SAI DO RECADO GERAL PELO MESMO MOTIVO DO
+           CRONOGRAMA: lá a cópia do perdedor também não é guardada, e dizer
+           "não se perdeu nada" sobre uma decisão de apropriação é mentir
+           sobre dinheiro — quem lê para de conferir. */
+        var nCc = (self._conflitosCc || []).length;
+        nGeral -= nCc;
+        if (nCc > 0) {
+          try {
+            if (global.UI && global.UI.toast) global.UI.toast("⚠ " + nCc + " registro(s) de centro de custo foram editados em 2 aparelhos ao mesmo tempo — valeu a versão gravada por último, e a do outro aparelho NÃO foi guardada. Abra Centros de Custo e confira.", "erro");
+          } catch (eC) {}
+        }
         if (nGeral > 0) {
           try {
             if (global.UI && global.UI.toast) global.UI.toast("⚠ " + nGeral + " registro(s) editados em 2 aparelhos ao mesmo tempo — a versão mais recente venceu e a anterior ficou guardada dentro do registro (não se perdeu nada).", "erro");

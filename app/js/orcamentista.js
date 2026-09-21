@@ -192,13 +192,42 @@
       };
     },
 
+    /* ⚠ O APELIDO INTERPRETA A PLANILHA; NÃO RENOMEIA A BASE DO CLIENTE
+       (21/09/2026). Aqui o `normalizarFonte` passava por TODAS as fontes,
+       inclusive pelos nomes das bases carregadas (`ctx.fontes`). "CDHU" é
+       apelido de "CPOS" — e também é um rótulo REAL da lista de bases
+       (js/bases.js: "CDHU-SP"), o nome que o boletim tem hoje. Quem importava
+       o boletim dele como CDHU-SP tinha a base procurada sob o nome "CPOS",
+       que não existia: `ctx.obter("CPOS", cod)` → null em todo item, e a
+       planilha inteira saía PENDENTE, 0%, com a base certa carregada. Medido
+       nas seis combinações (base CPOS|CDHU × planilha CPOS|CDHU|nada): as três
+       com a base como CDHU davam pendente.
+       Agora: nome de base carregada entra COMO ESTÁ (é o que o `ctx.obter`
+       conhece); a fonte declarada e a provável puxam primeiro as bases
+       carregadas da MESMA família, pelo nome real, e depois o nome canônico. */
     _fontesParaVarrer: function (rec, ctx) {
-      var ordem = [], add = function (f) { f = this.normalizarFonte(f); if (f && ordem.indexOf(f) < 0) ordem.push(f); }.bind(this);
-      if (rec.fonteDeclarada) add(rec.fonteDeclarada);
-      if (rec.fonteProvavel) add(rec.fonteProvavel);
-      (ctx.fontes || []).forEach(add);
+      var self = this, ordem = [], add = function (f) { if (f && ordem.indexOf(f) < 0) ordem.push(f); };
+      var carregadas = this._nomesDeBase(ctx.fontes);
+      [rec.fonteDeclarada, rec.fonteProvavel].forEach(function (alvo) {
+        if (!alvo) return;
+        carregadas.forEach(function (f) { if (self.normalizarFonte(f) === alvo) add(f); });
+        add(alvo);
+      });
+      carregadas.forEach(add);
       return ordem;
     },
+    /* ⚠ NOME DE BASE CARREGADA NÃO PASSA PELO APELIDO. O `planejar` e o
+       `planejarAsync` faziam `ctx.fontes.map(normalizarFonte)` na entrada: a
+       base "CDHU" virava "CPOS" para o motor INTEIRO — código, índice por
+       descrição e busca por termos procuravam numa base que não existia. O
+       nome vale como veio: é a chave que o `ctx.obter`/`ctx.buscar` conhecem. */
+    _nomesDeBase: function (fontes) {
+      var out = [];
+      (fontes || []).forEach(function (f) { f = String(f == null ? "" : f).trim(); if (f && out.indexOf(f) < 0) out.push(f); });
+      return out;
+    },
+    /* a MESMA base com dois nomes (CPOS e CDHU): "declarada" se decide pela família */
+    _mesmaFonte: function (a, b) { return !!a && !!b && this.normalizarFonte(a) === this.normalizarFonte(b); },
 
     /* Aplica um candidato à linha (usado pelo motor e pela UI quando a pessoa troca). */
     aplicarCandidato: function (linha, idx, via, ctx) {
@@ -237,12 +266,12 @@
             var item = ctx.obter(fontes[f], vars[v]);
             if (item) { achou.push({ fonte: fontes[f], item: item, variante: vars[v] }); break; }
           }
-          if (achou.length && (rec.fonteDeclarada === fontes[f])) break; // declarada e achou: não procura mais
+          if (achou.length && self._mesmaFonte(rec.fonteDeclarada, fontes[f])) break; // declarada (pela família) e achou: não procura mais
         }
         if (achou.length) {
           achou.forEach(function (a) {
             var sim = desc ? self.similaridade(desc, a.item.descricao, it.unidade, a.item.unidade, ctx) : 1;
-            var declarada = rec.fonteDeclarada === a.fonte, bate = sim >= lim.codigoDescricao || !desc;
+            var declarada = self._mesmaFonte(rec.fonteDeclarada, a.fonte), bate = sim >= lim.codigoDescricao || !desc;
             var score = declarada ? (bate ? 1 : 0.5) : (bate ? 0.95 : 0.35);
             var motivo = declarada ? (bate ? "código informado na base declarada (" + a.fonte + ")" : "código " + rec.codigo + " existe na base " + a.fonte + " mas descreve OUTRO serviço — confira") :
               (bate ? "código encontrado na base " + a.fonte + " (descrição compatível)" : "código existe em " + a.fonte + " mas descreve outro serviço");
@@ -394,7 +423,7 @@
 
     /* Planeja todos os itens. `etapas` no formato do Importador. */
     planejar: function (etapas, ctx) {
-      ctx = ctx || {}; ctx.fontes = (ctx.fontes || []).map(this.normalizarFonte).filter(Boolean);
+      ctx = ctx || {}; ctx.fontes = this._nomesDeBase(ctx.fontes);
       var self = this, plano = [], n = 0;
       (etapas || []).forEach(function (et, ei) {
         (et.itens || []).forEach(function (it) { plano.push(self.decidir(it, ei, n++, ctx)); });
@@ -406,7 +435,7 @@
        itens travariam a tela. `aoProgredir(feitos, total)` a cada fatia. */
     planejarAsync: function (etapas, ctx, aoProgredir) {
       var self = this;
-      ctx = ctx || {}; ctx.fontes = (ctx.fontes || []).map(this.normalizarFonte).filter(Boolean);
+      ctx = ctx || {}; ctx.fontes = this._nomesDeBase(ctx.fontes);
       var fila = [];
       (etapas || []).forEach(function (et, ei) { (et.itens || []).forEach(function (it) { fila.push({ it: it, ei: ei }); }); });
       var plano = [], pos = 0, FATIA = 8;
@@ -465,7 +494,8 @@
 
     /* ==================================================================
      * IA NO RESÍDUO — contrato do endpoint POST <iaBackend>/ia/compor
-     * (servidor: repositório do app, server/ia-compor.js — pendência).
+     * (servidor: server/ia-compor.js + a rota em server/orcapro-ia.js, desde 21/09/2026;
+     * guardado por tools/test-ia-compor-srv.js, que passa a resposta de lá por ESTE validador).
      *   pedido:   { itens:[{ i, descricao, unidade }] }
      *   resposta: { ok:true, composicoes:[{ i, unidade, insumos:[{ descricao,
      *               unidade, coeficiente, categoria:"MO"|"MAT"|"EQ", memoria }] }] }

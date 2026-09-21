@@ -8865,8 +8865,14 @@
        motivos (módulo, lista ilegível, teto), e cada um já saiu no aviso dele.
        A porta do armazenamento é a do aviso do Store (js/store.js, gravar) —
        não "apague a base SINAPI": ela mora no IndexedDB e não ocupa o que
-       está cheio. */
-    _iaPorqueNaoGravou: function (ehPlano) {
+       está cheio.
+       `quem` (opcional) troca só as duas pontas da frase do conflito, para o
+       Orçamentista (js/orcamentistaui.js) dizer o MESMO motivo sem replicar
+       esta decisão lá — réplica de diagnóstico apodrece: o ramo da trava de
+       carimbo (F2) nasceu aqui e uma cópia teria ficado dizendo "cheio?". Sem
+       `quem` o texto é o de sempre, o da tela da IA. */
+    _iaPorqueNaoGravou: function (ehPlano, quem) {
+      var leu = (quem && quem.leu) || "a IA o leu", refazer = (quem && quem.refazer) || "peça de novo";
       var trial = false, adm = true;
       try { trial = !!this._trialBloqueado(); } catch (eT) { trial = false; }
       try { adm = !(typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin()); } catch (eA) { adm = true; }
@@ -8880,7 +8886,7 @@
           if (Store.ultimaRecusa.tipo === "corrompido") return "a lista de orçamentos deste aparelho está ilegível (arquivo corrompido) e nada é gravado nela até restaurar o backup — veja o aviso na lista de orçamentos";
           return Store.ultimaRecusa.tipo === "incerto"
             ? "não consegui conferir se este orçamento foi alterado em outra janela (ou em outro aparelho) — recarregue o app (F5)"
-            : "este orçamento foi alterado em outra janela (ou em outro aparelho) depois que a IA o leu — feche este quadro, confira o que está salvo e peça de novo";
+            : "este orçamento foi alterado em outra janela (ou em outro aparelho) depois que " + leu + " — feche este quadro, confira o que está salvo e " + refazer;
         }
       } catch (eU) {}
       return adm ? "o armazenamento deste aparelho recusou (cheio?) — faça 💾 Backup e veja o que ocupa espaço em 🗂 Tabelas › Saúde do armazenamento"

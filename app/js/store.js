@@ -174,7 +174,20 @@
      consulta a marca depois dessa leitura, dizia "legível" — a guarda do
      sync ficava inerte. Todos os leitores têm de concordar sobre o que é
      ilegível. */
-  var FORMA_PADRAO = { orcamentos: "lista" };
+  /* ⚠ ENTIDADE QUE ENTRA NO SYNC ENTRA AQUI NO MESMO COMMIT — quarentena
+     primeiro, sync depois. Roteiro do defeito (revisão adversarial da mc-6A,
+     medido no js/store.js real sobre um localStorage de mentira): `cc_aprop`
+     com um OBJETO no disco devolvia `[]` em `lerParaSync`, NÃO marcava a
+     quarentena, e o `Store.salvar` seguinte PASSAVA e sobrescrevia o disco —
+     as decisões da pessoa sumiam sem cópia e sem aviso. Com a entidade já em
+     `Nuvem.ENTIDADES`, esse `[]` ainda subia para a nuvem e o merge o
+     empurrava para todos os aparelhos. É textualmente o defeito do
+     `precosinsumos` que o comentário de `lerParaSync` registra mais abaixo.
+     ⚠ `centrocusto` já sincronizava sem forma declarada desde a v1.1.231 — o
+     mesmo buraco, aberto há mais tempo. Entra junto: ela sempre foi gravada
+     como lista, então declarar a forma não muda nada para quem está são e
+     põe de quarentena quem está corrompido, em vez de apagar. */
+  var FORMA_PADRAO = { orcamentos: "lista", centrocusto: "lista", cc_regras: "lista", cc_aprop: "lista" };
 
   /* ---------- Adapter local (localStorage) ---------- */
   var LocalAdapter = {

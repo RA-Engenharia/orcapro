@@ -57,7 +57,12 @@
     var P = st.plano || [], r = (typeof Orcamentista !== "undefined") ? Orcamentista.resumo(P) : {};
     var pill = function (k) { return '<span class="g-pill" style="background:' + COR[k] + '22;color:' + COR[k] + '">' + ROTULO[k] + ': <b>' + (r[k] || 0) + '</b></span>'; };
     var filtro = st.filtro || "todos";
-    var html = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">' + pill("casado") + pill("revisar") + pill("propria") + pill("pendente") +
+    /* o recado da recusa mora DENTRO da revisão (App._orcmRecado). Nasce
+       sempre, escondido quando vazio: quem escreve nele não pode depender de a
+       revisão ter sido redesenhada. Texto por esc()/textContent, nunca HTML —
+       por aqui passa mensagem de exceção. */
+    var html = '<p id="orcm-recado" role="alert" style="color:#b91c1c;font-weight:600;font-size:12.5px;margin:0 0 8px' + (st.recado ? "" : ";display:none") + '">' + esc(st.recado || "") + "</p>";
+    html += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">' + pill("casado") + pill("revisar") + pill("propria") + pill("pendente") +
       '<span class="muted" style="font-size:12.5px">' + r.total + " itens · custo direto " + Util.fmtMoeda(r.custoDireto || 0) + (r.semPreco ? " · " + r.semPreco + " sem preço" : "") + "</span>" +
       '<span style="flex:1"></span><select id="orcm-filtro" style="font-size:12px;padding:3px 6px">' +
       ["todos", "revisar", "pendente", "propria", "casado"].map(function (k) { return '<option value="' + k + '"' + (filtro === k ? " selected" : "") + ">" + (k === "todos" ? "Todos" : ROTULO[k]) + "</option>"; }).join("") + "</select></div>";
@@ -99,6 +104,11 @@
 
   App.orcamentistaDoOrcamento = function () {
     var orc = this.orcAtual; if (!orc) return;
+    /* a mesma porta do orcamentistaDaImportacao: com a licença bloqueada o
+       persistir() recusa no fim, e a pessoa teria rodado e revisado tudo (e
+       talvez pago o Refinar com IA) para nada. Recusa na entrada, com o aviso
+       que leva à licença. */
+    if (this._trialBloqueado && this._trialBloqueado()) { this._avisoTrial(); return; }
     /* ⚠ APROVADO NÃO PASSA NEM POR AQUI (21/09/2026, revisão da fusão da
        1.2.83). Roteiro do defeito: o botão "Orçamentista" aparece sempre; num
        orçamento aprovado o _orcmAplicar trocava código e preço dos itens NA
@@ -144,7 +154,9 @@
     });
     var total = 0; etapas.forEach(function (e) { total += e.itens.length; });
     if (!total) { UI.toast("O orçamento não tem itens.", "erro"); return; }
-    this._orcm = { modo: "orcamento", etapas: etapas, nome: orc.nome, total: total, orcId: orc.id };
+    /* `carimboEm`: o atualizadoEm do orçamento que o agente LEU. O _orcmAplicar
+       confere antes de gravar qualquer coisa — ver a nota de lá. */
+    this._orcm = { modo: "orcamento", etapas: etapas, nome: orc.nome, total: total, orcId: orc.id, carimboEm: orc.atualizadoEm };
     this._orcmAbrirConfig();
   };
 
@@ -345,9 +357,70 @@
     };
   };
 
+  /* O recado da recusa, DENTRO da revisão — o mesmo desenho da tela da IA
+     (App.iaEditarAplicar): nada gravado = nada mudado, e as decisões (que
+     podem ter custado chamada paga de IA) continuam no quadro. ⚠ Nunca estado
+     sem tela: se outro quadro tomou o lugar da revisão (o da licença, que o
+     persistir abre para o suspenso), a revisão volta com o recado. */
+  App._orcmRecado = function (msg) {
+    var st = this._orcm; if (!st) return;
+    st.recado = String(msg == null ? "" : msg);
+    var el = document.getElementById("orcm-recado");
+    if (el) { el.textContent = st.recado; el.style.display = st.recado ? "" : "none"; try { el.scrollIntoView({ block: "nearest" }); } catch (e) {} }
+    else if (st.recado) this._orcmAbrirRevisao();
+  };
+
+  /* as duas pontas da frase do conflito — o diagnóstico é o do app.js, um só */
+  var QUEM = { leu: "o Orçamentista o leu", refazer: "rode o Orçamentista de novo" };
+
+  /* ⚠ APLICA NUMA CÓPIA; A MEMÓRIA SÓ TROCA DEPOIS DE GRAVAR (21/09/2026).
+     Roteiro do defeito: no modo "orçamento" as decisões entravam direto nos
+     itens do `orcAtual` (pelo `_ref`) e SÓ DEPOIS vinha o persistir(). Ele
+     recusa em cinco ramos — licença, plano da obra, aprovado, outra janela,
+     armazenamento — e em todos a planilha ficava mostrando código e preço que
+     o disco não tinha; a saída era um recado mandando recarregar a página. E
+     o recado mentia num deles: na recusa da trava de carimbo o persistir JÁ
+     relê a tela do disco, então "a tela mostra valores não salvos" era falso.
+     Agora: (1) nada é gravado — nem a base PRÓPRIA — antes das guardas que dá
+     para conferir de antemão; (2) as decisões entram numa CÓPIA, que é o que o
+     persistir recebe; (3) recusou, a cópia é descartada, o `orcAtual` é o
+     mesmo objeto de antes e a revisão fica aberta com o motivo.
+     ⚠ `if (this.orcAtual === copia)` na volta: se a releitura do persistir já
+     trocou o `orcAtual` pelo do disco, devolver o objeto velho faria a tela
+     regredir e TODA edição seguinte ser recusada pela trava.
+     Guardado por tools/test-orcamentista-fiacao.js (blocos 3 a 7) e, no
+     navegador, por tools/e2e-orcamentista-ia.js (bloco 6). */
   App._orcmAplicar = function () {
     var self = this, st = this._orcm, plano = st.plano || [];
     if (!plano.length) return;
+    var porque = function () { return self._iaPorqueNaoGravou ? self._iaPorqueNaoGravou(false, QUEM) : "o motivo está no aviso que apareceu"; };
+    this._orcmRecado("");
+    if (this._trialBloqueado && this._trialBloqueado()) { this._orcmRecado("Nada foi aplicado: " + porque() + ". As decisões continuam neste quadro."); return; }
+    var orcA = null, copia = null, pares = [];
+    if (st.modo !== "importacao") {
+      orcA = this.orcAtual;
+      if (!orcA || orcA.id !== st.orcId) { UI.fecharModal(); this._orcm = null; UI.toast("Você saiu do orçamento em que o Orçamentista rodou — nada foi aplicado.", "erro"); return; }
+      /* ⚠ O PLANO É DO ORÇAMENTO QUE O AGENTE LEU. Enquanto o motor roda não há
+         quadro aberto (só o "carregando"), e a releitura entre janelas troca o
+         `orcAtual` pelo do disco. Os `_ref` do plano ficavam apontando para o
+         objeto DESCARTADO: as decisões iam para lá, o persistir gravava o
+         objeto novo sem elas e o toast saía verde. Carimbo diferente = o plano
+         é de outra versão; recusa antes de gravar qualquer coisa. */
+      if (String(orcA.atualizadoEm || "") !== String(st.carimboEm || "")) {
+        this._orcmRecado("Nada foi aplicado: este orçamento foi alterado depois que o Orçamentista o leu — feche este quadro, confira o que está salvo e rode o Orçamentista de novo.");
+        return;
+      }
+      copia = Util.clone(orcA);
+      /* Util.clone devolve o PRÓPRIO objeto quando não consegue copiar — e aí
+         "aplicar na cópia" seria aplicar no original, calado */
+      if (!copia || copia === orcA) { this._orcmRecado("Nada foi aplicado: não consegui preparar a cópia de segurança deste orçamento. Recarregue o app (F5) e rode o Orçamentista de novo."); return; }
+      /* original → cópia pela POSIÇÃO (a cópia acabou de sair deste objeto);
+         por id deixaria de fora item antigo que não tem id */
+      Util.arr(orcA.etapas).forEach(function (e, ei) {
+        var ec = Util.arr(copia.etapas)[ei];
+        Util.arr(e.itens).forEach(function (it, ii) { pares.push([it, (ec && Util.arr(ec.itens)[ii]) || null]); });
+      });
+    }
     // 1) composições próprias (elaboradas E cascas dos pendentes) → base PROPRIA, uma gravação só
     var cods = this._cpCodigosExistentes(), comps = {}, ordem = [];
     plano.forEach(function (L) {
@@ -403,13 +476,24 @@
         n[L.status]++;
       });
       orc.orcamentista = { em: new Date().toISOString(), fontes: st.fontes, resumo: n, versao: (typeof CONFIG !== "undefined" ? CONFIG.versao : "") };
-      Store.salvarOrcamento(Auth.empresaId(), orc);
+      /* ⚠ o retorno importa aqui também: sem gravar (armazenamento cheio, lista
+         ilegível) o editor abria um orçamento que só existia na memória, com o
+         toast verde por cima. Recusou: nada troca de tela e a revisão fica. */
+      if (!Store.salvarOrcamento(Auth.empresaId(), orc)) {
+        this._orcmRecado("O orçamento NÃO foi criado: " + porque() + ". " +
+          (gravadas ? gravadas + " composição(ões) própria(s) já ficaram na sua base PRÓPRIA. " : "") + "As decisões continuam neste quadro.");
+        return;
+      }
       UI.fecharModal();
       this.orcAtual = orc; this.tela = "editor"; this.aba = "planilha"; this.render();
     } else {
-      var orcA = this.orcAtual;
+      var fora = 0;
       plano.forEach(function (L) {
-        var ref = L.item._ref; if (!ref) return;
+        var orig = L.item._ref; if (!orig) return;
+        var ref = null;
+        for (var k = 0; k < pares.length; k++) { if (pares[k][0] === orig) { ref = pares[k][1]; break; } }
+        /* item do plano que o orçamento não tem mais: fica de fora E É DITO */
+        if (!ref) { fora++; return; }
         var item = Orcamentista.itemParaOrcamento(L);
         if (L.status === "pendente") { ref.codigo = item.codigo || ref.codigo; ref.baseFonte = item.baseFonte || ref.baseFonte; ref.orcamentista = item.orcamentista; n.pendente++; return; }
         ref.codigo = item.codigo; ref.baseFonte = item.baseFonte;
@@ -418,25 +502,48 @@
         if (!(L.item.custoPlanilha > 0) || !planilhaVence) { ref.custoUnitario = custoNovo; ref.custoMO = Number(L.custoMO) || 0; ref.custoMAT = Number(L.custoMAT) || 0; ref.custoEQ = Number(L.custoEQ) || 0; }
         ref.orcamentista = item.orcamentista; n[L.status]++;
       });
-      orcA.orcamentista = { em: new Date().toISOString(), fontes: st.fontes, resumo: n, versao: (typeof CONFIG !== "undefined" ? CONFIG.versao : "") };
-      UI.fecharModal();
+      copia.orcamentista = { em: new Date().toISOString(), fontes: st.fontes, resumo: n, versao: (typeof CONFIG !== "undefined" ? CONFIG.versao : "") };
       /* ⚠ O RECADO SÓ AFIRMA O QUE O persistir() CONFIRMOU (21/09/2026). Ele
          devolve false em cinco ramos — licença suspensa, plano da obra,
-         orçamento alterado em outra janela, aprovado… — e cada um já explica o
-         próprio motivo. Esta tela ignorava o retorno e soltava o toast verde
-         "N casados" em todos: recado que mente é pior que recado nenhum. O
-         mesmo padrão do resto do app (`var gW = self.persistir()`). */
-      var gravou = this.persistir ? this.persistir() : (Store.salvarOrcamento(Auth.empresaId(), orcA), true);
-      this.render();
-      if (gravou === false) {
-        var recN = "As decisões do Orçamentista NÃO foram gravadas neste orçamento — o motivo está no aviso que apareceu. " +
-          (gravadas ? gravadas + " composição(ões) própria(s) já ficaram na sua base PRÓPRIA. " : "") +
-          "A tela mostra valores que não estão salvos: recarregue a página antes de continuar.";
-        UI.toast(recN, "erro", this._msRecado ? this._msRecado(recN) : 12000);
+         orçamento alterado em outra janela, aprovado… Esta tela ignorava o
+         retorno e soltava o toast verde "N casados" em todos: recado que mente
+         é pior que recado nenhum.
+         ⚠ O quadro fica ABERTO durante o persistir (como na tela da IA): a
+         recusa precisa de onde pousar. `semBackupModal` pelo mesmo motivo de
+         lá — o quadro de Backup, por cima, levava a revisão embora. */
+      var gravou = false, excecao = null;
+      this.orcAtual = copia;
+      try { gravou = this.persistir ? this.persistir({ semBackupModal: true, rotulo: "decisões do Orçamentista" }) : !!Store.salvarOrcamento(Auth.empresaId(), copia); }
+      catch (eP) { excecao = eP; gravou = false; }
+      if (!gravou) {
+        if (this.orcAtual === copia) this.orcAtual = orcA;
+        var motivo = excecao ? "a gravação falhou (" + String((excecao && excecao.message) || excecao).slice(0, 120) + ")" : porque();
+        /* quando o motivo já manda FECHAR o quadro (outra janela gravou: o plano é de
+           uma versão que não existe mais), "as decisões continuam aqui" seria um
+           segundo caminho, contrário ao primeiro, no mesmo recado */
+        this._orcmRecado("As decisões do Orçamentista NÃO foram gravadas: " + motivo + ". " +
+          "O orçamento ficou como estava" + (gravadas ? "; " + gravadas + " composição(ões) própria(s) já ficaram na sua base PRÓPRIA" : "") + "." +
+          (/feche este quadro/i.test(motivo) ? "" : " As decisões continuam neste quadro."));
         return;
       }
+      UI.fecharModal();
+      this.render();
     }
-    try { if (typeof Telemetria !== "undefined" && Telemetria.evento) Telemetria.evento("orcamentista", { modo: st.modo, resumo: n, fontes: st.fontes }); } catch (e) {}
-    UI.toast("Orçamentista: " + n.casado + " casados · " + n.revisar + " para revisar · " + n.propria + " composições próprias · " + n.pendente + " pendentes" + (gravadas ? " · " + gravadas + " composição(ões) gravada(s) na base PRÓPRIA" : "") + ".", n.pendente ? "erro" : "ok");
+    /* ⚠ O USO SE CONTA PELO CONTRATO QUE EXISTE (21/09/2026). Aqui havia
+       `Telemetria.evento("orcamentista", {modo, resumo, fontes})` atrás de uma
+       guarda `&& Telemetria.evento` — e `evento` NUNCA existiu no
+       js/telemetria.js. A guarda calava o erro e o painel de vendas nunca
+       soube que o Orçamentista era usado: medição que não mede, com cara de
+       medição. O contrato que existe é o contador de módulos, que viaja no
+       ping de 5 min e o painel soma em "Módulos mais usados"; o servidor
+       (server/vps/telemetria-srv.js) aceita qualquer chave. Conta UMA vez por
+       aplicação GRAVADA — as recusas saem por `return` antes daqui. Só o
+       contador: nada do orçamento sai da máquina (cabeçalho do telemetria.js).
+       ⚠ Sem `&& Telemetria.contaModulo` na guarda, de propósito: se o método
+       sumir, o try/catch segura a tela e a suíte acusa — guarda que testa a
+       existência do método é o que escondeu este defeito. */
+    try { if (typeof Telemetria !== "undefined") Telemetria.contaModulo("orcamentista"); } catch (e) {}
+    UI.toast("Orçamentista: " + n.casado + " casados · " + n.revisar + " para revisar · " + n.propria + " composições próprias · " + n.pendente + " pendentes" + (gravadas ? " · " + gravadas + " composição(ões) gravada(s) na base PRÓPRIA" : "") +
+      (fora ? " · ⚠ " + fora + " item(ns) do plano não estão mais neste orçamento e ficaram de fora" : "") + ".", (n.pendente || fora) ? "erro" : "ok");
   };
 })(typeof window !== "undefined" ? window : this);

@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.84",
+  "versao": "1.2.85",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.84.zip",
-  "notas": "Agente Orcamentista: ao importar uma planilha orcamentaria, o sistema passa a reconhecer a coluna Fonte e o codigo de qualquer base (SINAPI, CPOS/CDHU, tabela municipal importada), casa cada item pelo codigo na base indicada e depois pela descricao, precifica na competencia ativa e, para o que nao existe em nenhuma base, elabora a composicao propria com insumos e coeficientes a partir da base analitica; o que nao tem correspondencia fica pendente, sem inventar codigo nem preco. Tela de revisao item a item com fonte, codigo, confianca e motivo, e o Orcamentista tambem roda num orcamento ja aberto (botao Orcamentista, na barra do orcamento). Nesta versao: num orcamento aprovado o Orcamentista passa a oferecer a criacao de uma revisao, e o aprovado fica intacto. Correcao do aviso de conclusao do Orcamentista. Correcao da barra de botoes do orcamento em telas de notebook.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.84/OrcaPRO-IA-Instalador-v1.2.84.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.85.zip",
+  "notas": "Centros de custo: o sistema monta os centros de custo a partir de um orcamento, se voce quiser, com a descricao editavel, e voce tambem pode criar o seu. Ao tentar apagar um centro que tem lancamento dentro, o aviso diz quanto esta preso e leva ao botao que resolve. Centros antigos podem ser convertidos, com o antes e o depois na tela.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.85/OrcaPRO-IA-Instalador-v1.2.85.exe"
 }

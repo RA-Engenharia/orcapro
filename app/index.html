@@ -224,6 +224,11 @@
   <script src="js/fechamento.js"></script>
   <script src="js/porobra.js"></script>
   <script src="js/custoetapa.js"></script>
+  <!-- ⚠ LOGO DEPOIS do custoetapa.js: o motor dos centros de custo usa a
+       régua de previsto DELE (CustoEtapa._montarLinhas) quando a tela não
+       passa as linhas. Carregado antes, o orçado do centro sairia pela foto
+       e a tela mostraria o valor da geração, não o do orçamento de hoje. -->
+  <script src="js/centrocusto.js"></script>
   <script src="js/aditivo.js"></script>
   <script src="js/medicaoseguinte.js"></script>
   <script src="js/rdocanal.js"></script>
