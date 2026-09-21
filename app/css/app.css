@@ -2736,8 +2736,16 @@ input.coef-edit.mexido { border-color: var(--amarelo); background: rgba(170, 98,
    abaixo (KPIs, abas, Gantt) descia 40 px. Abaixo de 1440 px o botão diz "IA"
    (o nome inteiro fica no aria-label e no title). Sem este CSS — cache velho —
    o rótulo inteiro aparece: degrada para a quebra de linha, nunca some. */
+/* ⚠ .rot-largo — O MESMO APERTO, DE NOVO (21/09/2026). O botão Orçamentista
+   entrou nessa linha na 1.2.83 com 127 px e ela voltou a quebrar. Medido no
+   navegador: só coube encurtando "Escopo Inteligente" e "Relatório completo"
+   abaixo de 1440 px (sobram 15 px). Classe separada da .ia-rot-largo porque a
+   e2e mede o PRIMEIRO .ia-rot-largo da página. A história está em js/ui.js,
+   em "O ORÇAMENTISTA ENTROU NA LINHA 1 SEM CABER". Mesma degradação: sem este
+   CSS o nome inteiro aparece e a linha quebra — nunca some. */
 @media (max-width: 1439px) {
-  .barra-acoes .ia-rot-largo { display: none; }
+  .barra-acoes .ia-rot-largo,
+  .barra-acoes .rot-largo { display: none; }
 }
 /* ⚠ AS FAIXAS DE PENDÊNCIA DO EDITOR (item sem preço / sem quantidade), entre
    os KPIs e as abas: 12 px, 6×12 de vão e raio 8 — a mesma pele do selo

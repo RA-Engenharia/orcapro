@@ -1,6 +1,12 @@
 ﻿POLÍTICA DE PRIVACIDADE — OrçaPRO IA
-Versão 1.4 — vigente a partir de 11/09/2026
+Versão 1.5 — vigente a partir de 18/09/2026
 Elaborada conforme a Lei nº 13.709/2018 (LGPD)
+
+O que mudou na 1.5: entrou o item 4.12 — a MEDIÇÃO DE VISITAS NO NOSSO SITE.
+Passamos a medir, nas páginas públicas do site, quais páginas são vistas e por
+qual caminho as pessoas chegam. É medição nossa, feita no nosso servidor: não
+guarda IP, não guarda o que você buscou e não usa cookie nem rastreador de
+terceiro. Nada muda dentro do programa instalado.
 
 O que mudou na 1.4: entrou o item 4.11 — o MAPA DA OBRA. Ao abrir a aba Mapa
 de uma obra, o endereço dela vai ao Google Maps para desenhar o mapa. E o
@@ -453,6 +459,44 @@ Sem abrir a aba Mapa, nada é consultado: o resumo, os diários, as medições e
 fotos da ficha da obra não falam com o Google. Obra sem endereço não tem mapa.
 
 
+4.12 MEDIÇÃO DE VISITAS NO NOSSO SITE (fora do programa)
+Nas páginas públicas do nosso site (a loja, os planos, a página de teste)
+medimos a visita, para saber quais páginas são úteis e por qual caminho as
+pessoas chegam até nós. Isso acontece no SITE, nunca dentro do programa
+instalado, e não tem nenhuma relação com os dados das suas obras.
+
+O que é registrado a cada visita:
+
+  · Um identificador aleatório criado no seu próprio navegador (algo como
+    "vm3k9x2p"). Ele não carrega nome, e-mail nem telefone, e serve só para
+    não contarmos a mesma pessoa como dez visitantes diferentes.
+  · A página visitada, a data e a hora.
+  · Se o acesso veio de computador ou de celular.
+  · De onde você chegou: o endereço da campanha (quando você clica num anúncio
+    nosso) ou apenas o DOMÍNIO do site anterior — "google.com", por exemplo.
+
+O que NÃO é registrado, e isto é limite de projeto, não promessa vaga:
+
+  · O seu endereço de IP não é gravado em lugar nenhum.
+  · O que você digitou numa busca não é gravado. Quando alguém chega pelo
+    Google, guardamos "google.com" e descartamos o resto do endereço — que é
+    justamente onde o texto da busca viaja.
+  · Nenhum nome, e-mail ou telefone é ligado a essa medição. Os seus dados de
+    contato só existem para nós quando você mesmo os escreve num formulário
+    (itens 4.5 e 4.7) ou numa compra.
+
+Base legal: legítimo interesse (art. 7º, IX, da LGPD) — medir o próprio site
+para entendê-lo e melhorá-lo, com dado que não identifica pessoa.
+
+Como recusar: não usamos cookie para isso. O identificador fica no
+armazenamento local do seu navegador e desaparece quando você limpa os dados
+do site, ou se você navegar numa janela anônima.
+
+Por quanto tempo: o registro detalhado de cada visita é apagado depois de
+4 meses; o resumo por dia (quantas visitas, de quais canais) é mantido por
+até 25 meses. A pedido, apagamos antes — mesmo canal do item 7.
+
+
 5. O QUE NUNCA FAZEMOS
 
   · Não vendemos, alugamos nem cedemos os seus dados.
@@ -487,6 +531,9 @@ fotos da ficha da obra não falam com o Google. Obra sem endereço não tem mapa
     depois de o OrçaPRO baixar; no máximo 200 mensagens pendentes por conta.
   · Cadastro e consultas da busca de composições do site (item 4.5): enquanto
     você não pedir a exclusão.
+  · Medição de visitas ao site (item 4.12): o registro detalhado de cada
+    visita, 4 meses; o resumo por dia, até 25 meses. Apagados automaticamente
+    depois disso, e antes, a pedido.
   · Reunião por vídeo (item 4.10): o registro da reunião (código da sala,
     horários, nome de quem entrou) e o pedido de agendamento ficam 90 dias e
     são apagados. Imagem, som e tela NÃO são gravados — não há o que guardar.

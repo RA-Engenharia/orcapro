@@ -99,6 +99,32 @@
 
   App.orcamentistaDoOrcamento = function () {
     var orc = this.orcAtual; if (!orc) return;
+    /* ⚠ APROVADO NÃO PASSA NEM POR AQUI (21/09/2026, revisão da fusão da
+       1.2.83). Roteiro do defeito: o botão "Orçamentista" aparece sempre; num
+       orçamento aprovado o _orcmAplicar trocava código e preço dos itens NA
+       MEMÓRIA, o persistir() recusava gravar — o aprovado é o preço que foi
+       ao cliente — e o toast final saía verde, "N casados…". A tela ficava
+       com preço que não existia no disco, e na segunda rodada nem o aviso do
+       cadeado aparecia (ele avisa uma vez por abertura). É o defeito da
+       v1.1.234 em ⚙ Parâmetros de novo: a trava valia numa porta e não na
+       outra. A regra do persistir é "o aprovado não é tocado nem em memória",
+       então a recusa é AQUI, antes de montar qualquer estado.
+       ⚠ Modal com o botão, e não toast mandando "criar revisão": a revisão
+       não tem botão permanente na tela — recado que aponta para um caminho
+       que a pessoa não acha é trava sem porta.
+       Guardado por tools/test-orcamentista-fiacao.js. */
+    if (typeof Orcamento !== "undefined" && Orcamento.travadoPorAprovacao && Orcamento.travadoPorAprovacao(orc)) {
+      var selfT = this;
+      UI.modal(ic("cadeado") + " Orçamento aprovado — o Orçamentista não roda nele",
+        '<p style="font-size:13px">O <b>' + esc(orc.numero || orc.nome || "") + '</b> está <b>aprovado</b>. ' +
+        'O Orçamentista troca código e preço dos itens, e o que foi aprovado é o preço que chegou ao cliente.</p>' +
+        '<p class="muted" style="font-size:12.5px">O caminho é a <b>revisão</b>: ela nasce como orçamento próprio, com todo o conteúdo copiado, e o aprovado fica intacto para consulta. Dentro dela, clique em Orçamentista de novo.</p>',
+        [
+          { texto: "Voltar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: ic("mais") + " Criar revisão", classe: "success", onClick: function () { UI.fecharModal(); selfT.criarRevisao(orc); } }
+        ]);
+      return;
+    }
     var etapas = [];
     Util.arr(orc.etapas).forEach(function (e) {
       var et = { nome: e.nome, codigo: e.codigo, itens: [] };
@@ -394,8 +420,21 @@
       });
       orcA.orcamentista = { em: new Date().toISOString(), fontes: st.fontes, resumo: n, versao: (typeof CONFIG !== "undefined" ? CONFIG.versao : "") };
       UI.fecharModal();
-      if (this.persistir) this.persistir(); else Store.salvarOrcamento(Auth.empresaId(), orcA);
+      /* ⚠ O RECADO SÓ AFIRMA O QUE O persistir() CONFIRMOU (21/09/2026). Ele
+         devolve false em cinco ramos — licença suspensa, plano da obra,
+         orçamento alterado em outra janela, aprovado… — e cada um já explica o
+         próprio motivo. Esta tela ignorava o retorno e soltava o toast verde
+         "N casados" em todos: recado que mente é pior que recado nenhum. O
+         mesmo padrão do resto do app (`var gW = self.persistir()`). */
+      var gravou = this.persistir ? this.persistir() : (Store.salvarOrcamento(Auth.empresaId(), orcA), true);
       this.render();
+      if (gravou === false) {
+        var recN = "As decisões do Orçamentista NÃO foram gravadas neste orçamento — o motivo está no aviso que apareceu. " +
+          (gravadas ? gravadas + " composição(ões) própria(s) já ficaram na sua base PRÓPRIA. " : "") +
+          "A tela mostra valores que não estão salvos: recarregue a página antes de continuar.";
+        UI.toast(recN, "erro", this._msRecado ? this._msRecado(recN) : 12000);
+        return;
+      }
     }
     try { if (typeof Telemetria !== "undefined" && Telemetria.evento) Telemetria.evento("orcamentista", { modo: st.modo, resumo: n, fontes: st.fontes }); } catch (e) {}
     UI.toast("Orçamentista: " + n.casado + " casados · " + n.revisar + " para revisar · " + n.propria + " composições próprias · " + n.pendente + " pendentes" + (gravadas ? " · " + gravadas + " composição(ões) gravada(s) na base PRÓPRIA" : "") + ".", n.pendente ? "erro" : "ok");

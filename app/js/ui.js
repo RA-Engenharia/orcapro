@@ -1279,10 +1279,29 @@
          ele desce a secundario: destaque permanente em botao que ja cumpriu o
          papel e ruido. `t.qtdItens` (do motor) e nao `orc.itens` — os itens
          moram em orc.etapas[].itens[], a lista de primeiro nivel nao existe. */
-      var _bEscopo = '<button class="btn sm' + (t.qtdItens ? '' : ' primary') + '" data-acao="escopo">' + Icones.get("escopo") + 'Escopo Inteligente</button>' +
+      /* ⚠ O ORÇAMENTISTA ENTROU NA LINHA 1 SEM CABER (21/09/2026). Roteiro do
+         defeito: a 1.2.83 pôs o botão aqui e foi à frota sem passar pelo gate
+         deste repo. A 1366×768 a linha tem 1086 px e já vivia com ~13 px de
+         folga (ver o RÓTULO RESPONSIVO do [Editar com IA], abaixo); o botão novo
+         ocupa 127. A linha quebrou, Comparar cenários e Relatório completo
+         desceram e a tela inteira desceu 40 px — o mesmo defeito da revisão 4B,
+         e foi a e2e dela (tools/e2e-ia-editar.js) que acusou.
+         Medido no navegador, variante por variante: nem o Orçamentista só com
+         o ícone cabia (36 px). Cabe, com 15 px de folga, encurtando DOIS
+         vizinhos abaixo de 1440 px — "Escopo" e "Relatório" (.rot-largo,
+         css/app.css) — e o nome do recurso novo fica INTEIRO: esconder atrás
+         de um ícone o botão que a pessoa acabou de receber é escondê-lo.
+         O nome inteiro dos dois segue no aria-label e no title.
+         ⚠ Classe própria, e não .ia-rot-largo: a e2e mede o PRIMEIRO
+         .ia-rot-largo da página, e o Escopo vem antes do [Editar com IA].
+         ⚠ ORÇAMENTO VAZIO NÃO TEM O BOTÃO: sem itens ele só respondia "O
+         orçamento não tem itens" — botão morto, e bem na tela em que o Escopo
+         Inteligente é o primário. Ali o Escopo fica com o nome inteiro. */
+      var _bEscopo = '<button class="btn sm' + (t.qtdItens ? '' : ' primary') + '" data-acao="escopo" aria-label="Escopo Inteligente" title="Escopo Inteligente">' + Icones.get("escopo") +
+          (t.qtdItens ? '<span>Escopo<span class="rot-largo"> Inteligente</span></span>' : 'Escopo Inteligente') + '</button>' +
         /* v1.2.83 — o orçamentista também roda num orçamento JÁ montado: pega
            os itens sem preço (ou todos) e casa/precifica/elabora. */
-        '<button class="btn sm" data-acao="orcamentista-orcamento" title="Casa os itens desta planilha nas bases escolhidas (código, depois descrição), precifica e elabora composição própria com insumos e coeficientes para o que não existir">' + Icones.get("ia") + 'Orçamentista</button>';
+        (t.qtdItens ? '<button class="btn sm" data-acao="orcamentista-orcamento" title="Casa os itens desta planilha nas bases escolhidas (código, depois descrição), precifica e elabora composição própria com insumos e coeficientes para o que não existir">' + Icones.get("ia") + 'Orçamentista</button>' : '');
       var _aprov = (typeof App !== "undefined" && App._aprovBotoesOrc) ? App._aprovBotoesOrc(orc) : "";
       var _comercial = (typeof App !== "undefined" && App._propComercialBotoes) ? App._propComercialBotoes(orc) : "";
       var _sep = '<span class="acoes-sep" aria-hidden="true"></span>';
@@ -1370,7 +1389,8 @@
                '<button class="btn sm" data-acao="ia-editar" aria-label="Editar com IA" title="Editar com IA — escreva o que mudar: a IA propõe mudanças na planilha, no cronograma ou nos textos da proposta, e você confere cada uma antes de aplicar">' + Icones.get("ia") + '<span><span class="ia-rot-largo">Editar com </span>IA</span></button>' +
                ((typeof App !== "undefined" && App._iaDesfazerBotao) ? App._iaDesfazerBotao(orc) : '')) + _sep +
           _grp('<button class="btn sm" data-acao="cenarios">' + Icones.get("cenarios") + 'Comparar cenários</button>' +
-               '<button class="btn sm" data-acao="relatorio">' + Icones.get("relatorio") + 'Relatório completo</button>') +
+               /* rótulo responsivo: ver ⚠ O ORÇAMENTISTA ENTROU NA LINHA 1 SEM CABER, acima */
+               '<button class="btn sm" data-acao="relatorio" aria-label="Relatório completo" title="Relatório completo">' + Icones.get("relatorio") + '<span>Relatório<span class="rot-largo"> completo</span></span></button>') +
         '</div>' +
         /* LINHA 2 — O CLIENTE: aprovar → entregar → acompanhar.
            FASE 4 — o ciclo de aprovacao vem ANTES da proposta: e o preco
