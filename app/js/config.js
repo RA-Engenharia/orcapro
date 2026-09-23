@@ -37,7 +37,7 @@
        novo. Com as duas fontes, vale sempre a MAIOR. */
     manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
 
-    versao: "1.2.86",
+    versao: "1.2.87",
     schemaVersao: 3, // usado nas migrações de persistência
 
     // Oferta de lançamento do Plus — data/hora que a condição termina (após isso, a urgência some sozinha)
@@ -100,44 +100,45 @@
          `o:"medicao"` descartaria a entrada inteira e o realizado da obra
          sumiria lá. Nesta árvore as duas emendas estão no
          `js/cronoavanco.js`, então ela nasce ligada.
-       ⚠ `ccIA` nasce DESLIGADA (§1.10): nenhuma chamada nesta leva.
-       ⚠⚠ `medAvancoAuto` NASCE DESLIGADA NA 1.2.86, E NÃO PODE SER RELIGADA
-         SEM CONSERTAR O CARIMBO. NÃO REMOVA ESTA LINHA SEM LER O ROTEIRO.
+       ⚠⚠ `medAvancoAuto` FICOU DESLIGADA NA 1.2.86 E VOLTOU NA 1.2.87, COM O
+         CARIMBO CONSERTADO. NÃO APAGUE ESTE ROTEIRO: ele é o que impede
+         alguém de "simplificar" o sufixo do carimbo e reabrir o buraco.
          Roteiro do defeito (revisão de publicação da 1.2.86, medido em
          bancada com o `App._cronoAvancoDaMedicao`, o `CronoBase.salvarAvanco`
          e o `Nuvem._merge` REAIS — tools/test-medavanco-dois-aparelhos.js):
            dois aparelhos EM DIA (mesmo registro de avanço no disco, mesma
            marca de sync) aprovam o MESMO boletim, cada um no seu relógio
            (14:00 e 14:31). O carimbo fraco (E-MC4, js/app.js
-           `_cronoGravarAvanco`) é `max(carimbo do disco, marca de sync) + 1
+           `_cronoGravarAvanco`) era `max(carimbo do disco, marca de sync) + 1
            ms` — uma conta feita só com valores JÁ SINCRONIZADOS. Os dois
-           saem com o MESMO `atualizadoEm` (2026-09-20T12:00:00.001Z) e
+           saíam com o MESMO `atualizadoEm` (2026-09-20T12:00:00.001Z) e
            conteúdos DIFERENTES (A: e3=40% e4=12% · B: e3=100% e4=36,5%,
-           porque B tinha um boletim aprovado no campo que ainda não subiu).
+           porque B tinha um boletim aprovado no campo que ainda não subira).
            O `Nuvem._merge` trata carimbo igual como "mesma versão"
-           (js/nuvem.js, `if (tl === tc) { byId[o.id] = o; return; }`) e fica
+           (js/nuvem.js, `if (tl === tc) { byId[o.id] = o; return; }`) e ficava
            com o LOCAL dos dois lados. Seis rodadas de sync depois cada
-           aparelho continua mostrando o seu número, a tela conta ZERO
-           conflito e ninguém é avisado — o avanço da obra diverge calado,
+           aparelho continuava mostrando o seu número, a tela contava ZERO
+           conflito e ninguém era avisado — o avanço da obra divergia calado,
            para sempre.
-         A chave desligada fecha o caminho INTEIRO: o único produtor de
-         `carimboFraco` em js/ é `opts.gatilho` (js/app.js:19900), e o único
-         chamador com `gatilho` é o `Gestao._medAvancoAposAprovar`, que só
-         chega lá depois deste `_medcc("medAvancoAuto")`. O caminho MANUAL
-         ([Puxar das medições] da faixa, js/app.js `_medccPuxar`) passa `{}` e
-         carimba com `Util.agoraISO()`, que difere entre aparelhos — esse
-         continua ligado, está correto, e é a PORTA que esta trava deixa
-         aberta (ela fica sob `medAvanco`, que segue ligada).
-         ⚠ NADA É APAGADO: `lancarAvanco` continua sendo gravado no boletim, e
-           quem aprova lê um recado que NÃO promete lançamento (o ramo
-           "o lançamento automático ao aprovar está desligado nesta
-           instalação" do `_medAvancoAposAprovar`).
-         O conserto de verdade fica para a 1.2.87: o carimbo precisa carregar
-         algo do APARELHO (id do dispositivo, aleatório) para dois aparelhos
-         nunca empatarem. Quem religar esta chave antes disso reprova a suíte
-         `tools/test-medavanco-dois-aparelhos.js`, que é exatamente o ponto. */
+         O CONSERTO (1.2.87): o carimbo fraco passou a carregar o APARELHO,
+         num sufixo de 6 dígitos DENTRO da fração de segundo, derivado do
+         `Licenca.deviceId()` por FNV-1a — `...T12:00:00.001042317Z`. Dois
+         aparelhos não empatam mais, e o `_merge` volta a enxergar duas
+         versões: quem perde vira conflito CONTADO, com o resumo guardado, em
+         vez de sumir calado.
+         ⚠ O sufixo entra na FRAÇÃO, nunca somando milissegundos: o merge
+           compara STRING, e `.001042317Z` < `.001Z` < `.002Z`. O carimbo
+           ficou ainda mais fraco do que era, então a edição humana feita
+           depois da marca de sync continua ganhando — que é a razão de ser do
+           E-MC4. Somar milissegundos abriria uma janela de até 1 s em que o
+           automático venceria a pessoa.
+         ⚠ Quem religar isto tem de manter as duas propriedades ao mesmo
+           tempo: DIVERGIR entre aparelhos e PERDER para a pessoa. A suíte
+           tools/test-medavanco-dois-aparelhos.js mede as duas, e o controle
+           negativo [6-1] devolve o carimbo antigo e exige a reprovação.
+       ⚠ `ccIA` nasce DESLIGADA (§1.10): nenhuma chamada nesta leva. */
     medccRecursos: {
-      medAvanco: true, medAvancoAuto: false, medOrigem: true,
+      medAvanco: true, medAvancoAuto: true, medOrigem: true,
       ccGerar: true, ccAgente: true, ccDocumentos: true, ccSino: true, ccIA: false
     },
 

@@ -16438,11 +16438,50 @@
         return { ok: false, erro: "o avanço desta obra foi alterado em outra janela ou aparelho desde que você abriu esta tela. Nada foi gravado.",
           recarregar: true, obraId: obraId };
       }
-      /* ---- O CARIMBO FRACO (E-MC4) ----
+      /* ---- O CARIMBO FRACO (E-MC4) + O APARELHO (1.2.87) ----
          A gravação AUTOMÁTICA (o canal da medição) precisa PERDER para
          qualquer edição humana feita depois da última marca de sync: o número
          que uma pessoa digitou vale mais que o que o sistema deduziu. Por
-         isso o `atualizadoEm` sai 1 ms depois da marca, e não "agora". */
+         isso o `atualizadoEm` sai 1 ms depois da marca, e não "agora".
+         ⚠⚠ E PRECISA CARREGAR O APARELHO — foi o que faltou na 1.2.86, e
+           custou o canal automático desligado numa versão inteira.
+           Roteiro do defeito: `base` é `max(carimbo do disco, marca de sync)`,
+           uma conta feita SÓ com valores já sincronizados. Dois aparelhos em
+           dia aprovando o MESMO boletim, cada um no seu relógio, chegavam ao
+           mesmo `base` e saíam com o MESMO `atualizadoEm`
+           (2026-09-20T12:00:00.001Z) e conteúdos DIFERENTES. O `_merge` lê
+           carimbo igual como "mesma versão" (`if (tl === tc)`) e fica com o
+           local dos dois lados: seis syncs depois A mostrava 80%, B 35%, a
+           conta de conflitos em ZERO e ninguém era avisado.
+           O desempate é um sufixo de 6 dígitos DENTRO da fração de segundo,
+           derivado do id do aparelho:  ...T12:00:00.001042317Z.
+           ⚠ POR QUE DENTRO DA FRAÇÃO, e não somando milissegundos: o `_merge`
+             compara `String(atualizadoEm)` (nunca `Date`), e nessa comparação
+             `.001042317Z` < `.001Z` < `.002Z` — o sufixo torna o carimbo ainda
+             MAIS FRACO que o de antes, então a edição humana continua
+             ganhando. Somar milissegundos faria o contrário: abriria uma
+             janela de até 1 s em que o automático venceria a pessoa.
+           ⚠ E o formato continua sendo data: `Date.parse` de 9 dígitos de
+             fração devolve o MESMO milissegundo (medido). Ainda assim, quem
+             lê o carimbo de volta aqui usa o `_cronoMsDe`, que corta a fração
+             em 3 dígitos antes de parsear — um motor mais rígido que devolvesse
+             NaN faria `base` cair para a marca e o carimbo novo nasceria
+             MAIS VELHO que o que já está no disco.
+           ⚠ Aparelho velho (1.2.86) × novo no mesmo milissegundo: `.001Z` vence
+             `.001042317Z` em string, os dois lados decidem IGUAL e convergem —
+             com conflito CONTADO, que é o que faltava.
+           ⚠ `base` VALER ZERO NÃO É DEFEITO, E NÃO SE "CONSERTA" COM `agora`.
+             Acontece no PRIMEIRO lançamento de uma obra: o
+             `_cronoAlvoSemTela` devolve `avancoRec: null`, não há carimbo no
+             disco nem marca de sync, e o registro sai carimbado em 1970
+             (`1970-01-01T00:00:00.001…Z`). Parece errado e é o certo: o id do
+             registro é derivado da obra (`avanco_<obraId>`), então ESTE
+             aparelho pode estar criando um registro que já existe na nuvem,
+             cheio de trabalho de outro aparelho que ele nunca baixou. Com
+             1970 o lançamento automático perde e o trabalho do outro fica de
+             pé, com o conflito CONTADO e o resumo guardado; com `agora` ele
+             venceria e apagaria um avanço que nunca foi lido. Máxima fraqueza
+             é a resposta certa para "não sei o que existe do outro lado". */
       var sOpts = { agora: opts.agora, por: opts.por, numeroB: opts.numeroB };
       if (opts.carimboFraco) {
         var marca = null;
@@ -16451,8 +16490,8 @@
           var marcas = (typeof Nuvem !== "undefined" && Nuvem && typeof Nuvem._marcasDe === "function") ? Nuvem._marcasDe(eid, CronoBase.ENTIDADE) : null;
           marca = (marcas && marcas[rec.id]) || null;
         } catch (eM) { marca = null; }
-        var base = Math.max(Date.parse(emDisco || 0) || 0, Date.parse(marca || 0) || 0);
-        sOpts.carimbo = new Date(base + 1).toISOString();
+        var base = Math.max(this._cronoMsDe(emDisco), this._cronoMsDe(marca));
+        sOpts.carimbo = this._cronoCarimboDoAparelho(base + 1);
       }
       /* ⚠ A FOTO "ANTES" SAI AQUI, COM O AVANÇO AINDA ANTIGO (achado da 2B,
          21/09/2026). Sem ela, o `_cronoDepoisDeSalvar` recebia `null, null` e
@@ -16554,6 +16593,76 @@
        passaria a vencer a edição humana feita depois, que é exatamente o que
        o carimbo fraco existe para impedir. É a mesma chamada que o
        `salvarPlano` já faz desde a 1.2.79. */
+    /* ===== O APARELHO DENTRO DO CARIMBO (1.2.87) =====
+       Os três ajudantes do carimbo fraco. O roteiro do defeito que eles
+       fecham está no `_cronoGravarAvanco`, no bloco que os chama; aqui fica
+       só o que cada um garante.
+       ⚠ NENHUM deles é motor: o motor (`CronoBase.salvarAvanco`) recebe o
+         carimbo PRONTO, por parâmetro, e não sabe de aparelho nenhum. */
+
+    /* Milissegundo de um carimbo que PODE ter a fração estendida.
+       ⚠ Corta a fração em 3 dígitos ANTES de parsear. `Date.parse` de
+         `...001042317Z` devolve o mesmo milissegundo que `...001Z` no V8
+         (medido), mas um motor mais rígido devolveria NaN — e aí `base`
+         cairia para a marca de sync e o carimbo novo nasceria MAIS VELHO que
+         o que já está no disco, perdendo o lançamento no primeiro merge. */
+    _cronoMsDe: function (iso) {
+      var s = String(iso == null ? "" : iso);
+      if (!s) return 0;
+      s = s.replace(/(\.\d{3})\d+/, "$1");
+      var ms = Date.parse(s);
+      return ms > 0 ? ms : 0;
+    },
+
+    _cronoAparelhoSessao: null,
+    /* A identidade do APARELHO. É o mesmo id que a licença já usa, para não
+       criar uma segunda noção de "máquina" no produto.
+       ⚠ `"nodev"` é o que o `Licenca.deviceId` devolve quando o localStorage
+         LANÇA (janela anônima, dados do site bloqueados). Aí os DOIS
+         aparelhos responderiam a mesma coisa — que é exatamente a colisão que
+         este sufixo existe para acabar. Sem id no disco vale um id sorteado
+         UMA VEZ por sessão: ele não sobrevive ao recarregar, e não precisa —
+         o desempate exige que dois APARELHOS nunca coincidam, não que o mesmo
+         aparelho repita o sufixo de ontem. */
+    _cronoAparelho: function () {
+      var d = "";
+      try {
+        if (typeof Licenca !== "undefined" && Licenca && typeof Licenca.deviceId === "function") d = String(Licenca.deviceId() || "");
+      } catch (e) { d = ""; }
+      if (!d || d === "nodev") {
+        if (!this._cronoAparelhoSessao) this._cronoAparelhoSessao = "s" + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+        d = this._cronoAparelhoSessao;
+      }
+      return d;
+    },
+
+    /* FNV-1a de 32 bits → 6 dígitos. Sem dependência e com o mesmo resultado
+       em qualquer motor; a multiplicação por 16777619 é feita com somas de
+       deslocamento porque `*` estoura a precisão de 32 bits em JS. */
+    _cronoSufixoAparelho: function () {
+      var s = this._cronoAparelho(), h = 2166136261, i;
+      for (i = 0; i < s.length; i++) {
+        h ^= s.charCodeAt(i);
+        h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+      }
+      var n = String(h % 1000000);
+      while (n.length < 6) n = "0" + n;
+      return n;
+    },
+
+    /* O carimbo fraco COM o aparelho: `...T12:00:00.001042317Z`.
+       ⚠ O sufixo entra DENTRO da fração de segundo, nunca somando
+         milissegundos. O `Nuvem._merge` compara `String(atualizadoEm)`, e
+         nessa comparação `.001042317Z` < `.001Z` < `.002Z`: o sufixo deixa o
+         carimbo ainda MAIS FRACO que o de antes, então a edição humana feita
+         depois da marca de sync continua ganhando. Somar milissegundos faria
+         o contrário — abriria uma janela de até 1 s em que o automático
+         venceria a pessoa, que é a propriedade que o E-MC4 existe para dar. */
+    _cronoCarimboDoAparelho: function (ms) {
+      var iso = new Date(ms).toISOString();
+      return iso.slice(0, iso.length - 1) + this._cronoSufixoAparelho() + "Z";
+    },
+
     _cronoGravarLista: function (obraId, lista) {
       void obraId;
       try {
