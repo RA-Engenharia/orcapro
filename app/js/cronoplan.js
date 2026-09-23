@@ -174,6 +174,24 @@
     return Math.max(0, Math.min(1, (k + 1 - i) / (f - i))) * 100;
   }
 
+  /* LINHA DE BASE × TAREFAS SEM PREÇO (planejador, fatia 1B). `lista` =
+     `r.extras` do motor, na forma da fixture T21 ("r.extras[]": id, nome,
+     marco, inicio, fim, resp…). Item torto (sem id, janela que não é
+     inteiro) fica fora — nunca meia linha gravada para sempre. */
+  var RESP_BASE = { cliente: "c", construtora: "e", terceiro: "t" };
+  function extrasDaBase(lista) {
+    var out = [];
+    arr(lista).forEach(function (x) {
+      if (!x || typeof x !== "object" || x.id == null || String(x.id) === "") return;
+      var i = x.inicio, f = x.fim;
+      if (!(typeof i === "number" && isFinite(i) && i % 1 === 0 && typeof f === "number" && isFinite(f) && f % 1 === 0)) return;
+      var nm = String(x.nome == null ? "" : x.nome).replace(/\s+/g, " ").trim();
+      if (nm.length > 60) nm = nm.slice(0, 59) + "…";
+      out.push({ id: String(x.id), nm: nm, m: x.marco ? 1 : 0, r: own(RESP_BASE, x.resp) ? RESP_BASE[x.resp] : RESP_BASE.construtora, i: i, f: f });
+    });
+    return out;
+  }
+
   var SITUACOES = ["concluida", "adiantada", "no prazo", "atrasada", "nao iniciada", "atrasada (não iniciada)"];
   var TETO_BASE = 40000;            // bytes UTF-8 por versão de linha de base
   var TETO_ENTIDADE = 900 * 1024;   // o mesmo aviso de 900 KB da nuvem (nuvem.js:965), antes do 1 MiB do Firestore
@@ -706,14 +724,26 @@
           snapshot monta — itens do orçamento por `valorUnitario ??
           precoUnitario` (campos que nenhum item grava hoje: por isso o Portal
           costuma cair na média simples) + a tabela de atividades da obra;
-       3) senão o acumulado das medições aprovadas por `_ehAprovado` (mais
-          largo que o `_avancoMedido`: aceita também aprovado/enviado/
-          confirmado/recebido/comprada), sem as rejeitadas, preso em 100.
+       3) senão o acumulado das medições que CONTAM COMO OBRA FEITA, sem as
+          rejeitadas, preso em 100.
      O rótulo diz qual das três está na tela do cliente: "serviços lançados
      nos diários" em cima de um número digitado seria recado que mente. A
      test-crono-painel executa o trecho REAL do snapshot e exige o mesmo
-     número nas três fontes. */
-  var APROV_PORTAL = { aprovada: 1, aprovado: 1, enviado: 1, confirmado: 1, paga: 1, recebido: 1, comprada: 1 };
+     número nas três fontes.
+
+     ⚠ ESTA LISTA ERA MAIS LARGA QUE A DO PAINEL, E A DIFERENÇA IA AO CLIENTE.
+     Ela replicava o `_ehAprovado` do `_snapshotPortal` — `_APROV_OK`
+     {aprovada, aprovado, enviado, confirmado} mais `_APROV_TERM` {paga,
+     recebido, comprada} —, enquanto `Gestao._avancoMedido` e o
+     `medidoDaObra` logo acima exigiam `aprovada` ou `paga`. Medido em
+     21/09/2026 com a MESMA entrada: boletim gravado no masculino
+     ("aprovado") dava 0% no Painel e 18% no Portal; "recebido", 0% × 25%.
+     O `_snapshotPortal` passou a perguntar ao `Gestao._medContaNoAvanco`, a
+     régua única, e esta réplica acompanha — `tools/test-reguas-avanco.js`
+     roda as quatro réguas com a mesma entrada e reprova a divergência, e a
+     test-crono-painel executa o trecho REAL do snapshot contra esta cópia
+     (foi ela que pegou a cópia ficando para trás). */
+  var APROV_PORTAL = { aprovada: 1, paga: 1 };
   function precosDoPortal(orcP, atividades, Ut, obraId) {
     var precos = [];
     if (orcP && orcP.etapas) {
@@ -745,7 +775,7 @@
   /* edições do plano que apontam para etapa/subetapa que não existe mais no
      orçamento: não quebram nada (o motor as ignora), mas a pessoa precisa
      saber que o que ela digitou ali não está valendo */
-  function orfasDoPlano(orc, cron) {
+  function orfasDoPlano(orc, cron, avRec) {
     var ids = {}, vistos = {}, n = 0;
     arr(orc.etapas).forEach(function (e) {
       ids[e.id] = true; ids[e.id + "~g"] = true;
@@ -761,6 +791,28 @@
        qualquer outra, e sem ela aqui a única pista da perda era o aviso do
        motor — que até 12/09/2026 não chegava a tela nenhuma. */
     [cron.duracoes, cron.predecessoras, cron.marcos, cron.lags, cron.restricoes, s.duracoes, s.predecessoras, s.marcos, s.equipes].forEach(varre);
+    /* ⚠ planejador 1A: a rede digitada e o registro da sombra também apontam
+       para nós — a entrada de uma etapa apagada é órfã como as outras (a
+       projeção seguinte a apaga; aqui ela é CONTADA, para o recado não mentir) */
+    var rd = (cron && cron.rede && typeof cron.rede === "object" && !Array.isArray(cron.rede)) ? cron.rede : {};
+    var mt = (cron && cron.mat && typeof cron.mat === "object" && !Array.isArray(cron.mat)) ? cron.mat : {};
+    [rd.etapas, rd.folhas, rd.datas, mt.etapas, mt.folhas, mt.restricoes, mt.pend].forEach(varre);
+    /* a atribuição de calendário e a duração da frente também apontam para nó */
+    var cl = (cron && cron.cal && typeof cron.cal === "object" && !Array.isArray(cron.cal)) ? cron.cal : {};
+    [cl.de, cl.dur, cl.agente].forEach(varre);
+    /* ⚠ O AVANÇO LANÇADO também fica órfão (planejador 1A, AVANÇO §c.5-7): a
+       subetapa apagada do orçamento deixa a entrada dela apontando para o
+       nada. Ela mora num REGISTRO PRÓPRIO, então só entra na conta quando
+       quem chama o passa — e é por isso que ele é um argumento, e não um
+       campo do cronograma. A entrada não é apagada aqui: ela é CONTADA, para
+       o recado não mentir sobre o que entrou na conta.
+       ⚠ A `rs:1` é de ETAPA (a porta [Resumir]), e o id dela é o da etapa —
+         conta pela mesma régua. */
+    if (avRec && typeof avRec === "object" && Array.isArray(avRec.nos)) {
+      var mAv = {};
+      avRec.nos.forEach(function (q) { if (q && typeof q === "object" && q.id != null) mAv[q.id] = true; });
+      varre(mAv);
+    }
     return n;
   }
   function nomesEtapas(orc, ids) {
@@ -768,11 +820,22 @@
     arr(orc.etapas).forEach(function (e, i) { nm[e.id] = (i + 1) + " " + String(e.nome || ""); });
     return arr(ids).map(function (id) { return own(nm, id) ? nm[id] : String(id); }).join(", ");
   }
+  /* ⚠ ESTA FUNÇÃO COPIA CAMPO A CAMPO, E É DE PROPÓSITO: o painel é o que
+     viaja para o PDF, para o Portal e para o MS Project, e devolver o nó do
+     confronto inteiro levaria junto tudo o que ele usa para contar. Quem
+     acrescenta um campo no `confrontoPorNo` tem de acrescentá-lo AQUI também.
+     Roteiro do defeito (planejador 2B, 21/09/2026): o `realOrigem` e o
+     `avanco` nasceram no confronto, a `celPR` já os escrevia, e a tabela do
+     P×R continuou sem a origem — porque ela lê `painel.nos`, que passa por
+     aqui. 80 asserts verdes na test-crono-confronto e nada na tela. */
   function noPainel(n) {
-    return { id: n.id, tipo: n.tipo, etapaId: n.etapaId, numero: n.numero, nome: n.nome, folha: !!n.folha, valor: n.valor,
+    var o = { id: n.id, tipo: n.tipo, etapaId: n.etapaId, numero: n.numero, nome: n.nome, folha: !!n.folha, valor: n.valor,
       base: n.base, atual: n.atual, real: n.real, previstoPct: n.previstoPct, realPct: n.realPct, desvioPP: n.desvioPP,
       desvioTerminoDias: n.desvioTerminoDias, situacao: n.situacao,
       foraDaBase: !!n.foraDaBase, sumiuDoAtual: !!n.sumiuDoAtual, reagrupada: !!n.reagrupada, opcionalFora: !!n.opcionalFora };
+    if (n.realOrigem) o.realOrigem = n.realOrigem;
+    if (n.avanco) o.avanco = n.avanco;
+    return o;
   }
 
   /* a forma INTEIRA do painel, com tudo vazio: é o que volta também no erro
@@ -782,9 +845,12 @@
       estado: "ok", obra: null, orcamento: null, plano: null, base: null, baseAlheia: null, termino: null, dataCorte: null, fonteCorte: null, ancora: null,
       kpis: { executadoOrcamento: { pct: null, base: "indisponivel", rotulo: ROT_EXEC },
         portal: { pct: null, rotulo: ROT_PORTAL, fonte: null }, medido: { pct: null, rotulo: ROT_MEDIDO },
-        previstoNaData: null, idp: null, evm: null, situacao: null, situacaoContra: null, desvioTerminoDias: null },
+        previstoNaData: null, idp: null, evm: null, situacao: null, situacaoContra: null, desvioTerminoDias: null,
+        /* o card "Término previsto" (planejador 2B): a data que a REDE dá com
+           o avanço lançado. `null` = sem plano calculável */
+        previsaoTermino: null },
       curva: { rotulos: [], eixo: [], base: [], atual: [], executado: [], projetado: null, projecao: null, projecaoMotivo: "" },
-      nos: [], atencao: [],
+      nos: [], atencao: [], extras: [], extrasMsg: null, avancoCorteDiferente: null,
       foraDaConta: { naoApropriadas: [], semQuantidade: [], opcionaisFora: [], escopoForaDaBase: [], valorForaDaBase: 0, msgForaDaBase: null,
         sumiramDoAtual: [], reagrupadas: [] },
       avisos: []
@@ -833,8 +899,13 @@
       if (pl.obraId != null && String(pl.obraId) !== String(obra.id)) return falha("plano-invalido", "o plano de execução passado é da obra " + pl.obraId + ", não desta (" + obra.id + ") — nada foi comparado.");
       if (!pl.cronograma || typeof pl.cronograma !== "object") return falha("plano-invalido", "o plano de execução da obra está sem cronograma — inicie o plano de novo a partir do orçamento.");
       // o plano sobre o orçamento é regra do CronoBase (espec 3.1) — uma só, sem cópia local que apodreça
-      if (!CB || typeof CB.orcComPlano !== "function") return falha("modulos", SEM_CB);
-      try { orcAt = CB.orcComPlano(orc, pl); } catch (eP) { orcAt = null; }
+      /* ⚠ PELA PORTA ÚNICA `orcDaObra` (planejador, Onda 0, T2): o clone sai
+         sempre com `_avancoDaObra` (o avanço da entrada, ou null), e o motor
+         distingue "carregado sem avanço" de "ninguém carregou" (espec O25).
+         O painel recebe o plano PRONTO e não tem a lista da entidade: vai a
+         forma {plano, avanco} (as conferências do plano estão logo acima). */
+      if (!CB || typeof CB.orcDaObra !== "function") return falha("modulos", SEM_CB);
+      try { orcAt = CB.orcDaObra(orc, { plano: pl, avanco: e.avanco || null }, obra.id); } catch (eP) { orcAt = null; }
       if (!orcAt || orcAt.erro || !orcAt.cronograma || !arr(orcAt.etapas).length) {
         return falha("plano-invalido", (orcAt && orcAt.erro) || "não consegui aplicar o plano de execução da obra ao orçamento — abra o cronograma da obra e salve o plano de novo.");
       }
@@ -847,7 +918,11 @@
       if (pl.orcamentoId != null && pl.orcamentoId !== "" && String(pl.orcamentoId) !== String(orc.id)) {
         aviso("plano-outro-orcamento", "o plano de execução foi iniciado sobre outro orçamento (" + pl.orcamentoId + "); este painel mede sobre o " + rotOrc + " — valem só as edições das etapas e subetapas que existem nos dois.");
       }
-      var orf = orfasDoPlano(orc, pl.cronograma);
+      /* ⚠ `e.avancoRec` é OPCIONAL: o avanço mora num registro próprio
+         (`avanco_<obraId>`), e quem monta o painel o passa quando o tem (a
+         fiação é da 2B). Sem ele, a conta continua a de sempre — nunca um
+         número menor apresentado como completo. */
+      var orf = orfasDoPlano(orc, pl.cronograma, e && e.avancoRec);
       if (orf) aviso("plano-orfas", orf + " edição(ões) do plano de execução apontam para etapas ou subetapas que não existem neste orçamento — não entram na conta.");
     }
 
@@ -920,16 +995,33 @@
     pub.forEach(function (d) { var k = iso10(d.data); if (k > ult) ult = k; });
     var segurados = doObra.length - pub.length;
 
-    // ---- DATA DE CORTE: a escolhida; senão o último diário publicável; senão hoje (relógio injetável)
+    /* ---- DATA DE CORTE: a escolhida; senão a do AVANÇO LANÇADO; senão o
+       último diário publicável; senão hoje (relógio injetável) ---- */
+    var avCorteRec = (e.avanco && typeof e.avanco === "object") ? iso10(e.avanco.corte) : "";
     var corte = "", fCorte;
     if (e.dataCorte != null && e.dataCorte !== "") {
       corte = iso10(e.dataCorte);
       if (!corte) return falha("corte-invalido", "data de corte inválida (" + e.dataCorte + ") — escolha uma data no calendário.");
       fCorte = "informada";
       if (corte > hoje) aviso("corte-futuro", "a data de corte (" + br(corte) + ") é depois de hoje (" + br(hoje) + ") — o executado só tem o que foi lançado até agora.");
+    } else if (avCorteRec) {
+      /* ⚠ COM AVANÇO LANÇADO, O CORTE PADRÃO É O DELE (planejador 2B, §3.4).
+         O avanço descreve a obra até aquele dia e é dele que saem as datas
+         reprogramadas. Cortando no último diário (que pode ser outro dia), o
+         previsto sairia de uma data e o real de outra — a comparação torta
+         que este arquivo existe para impedir. */
+      corte = avCorteRec; fCorte = "avanco";
     } else if (ult) { corte = ult; fCorte = "ultimoDiario"; }
     else { corte = hoje; fCorte = "hoje"; }
     out.dataCorte = corte; out.fonteCorte = fCorte;
+    /* o avanço vale até o corte DELE: em qualquer outra data o real por nó
+       volta a ser só o dos diários, e a tela precisa dizer isso com as duas
+       portas (voltar ao corte do avanço, ou atualizar o avanço) */
+    if (avCorteRec && corte !== avCorteRec) {
+      out.avancoCorteDiferente = { avanco: avCorteRec, corte: corte };
+      aviso("avanco-corte", "o avanço lançado vale até " + br(avCorteRec) + "; nesta data de corte (" + br(corte) +
+        ") o previsto × realizado usa só os diários. Volte para " + br(avCorteRec) + ", ou atualize o avanço para " + br(corte) + ".");
+    }
     if (!pub.length) {
       aviso("sem-diarios", "nenhum diário desta obra foi ao Portal ainda" + (segurados ? " (" + segurados + " em rascunho ou aguardando aprovação não contam)" : "") +
         " — o executado sai só dos diários publicados; sem eles, tudo aparece como não iniciado. Publique os diários da obra.");
@@ -984,7 +1076,11 @@
     /* ---- PREVISTO × REALIZADO (confronto na mesma data) ---- */
     var conf = null;
     if (rA) {
-      conf = CronoPlan.confrontoPorNo(base || null, rA, real, { dataCorte: corte, hoje: hoje, ultimoDiario: ult || null });
+      /* o avanço só entra na conta quando o corte é o DELE (ver o aviso
+         `avanco-corte` acima): num corte diferente, o lançado descreveria
+         outro dia */
+      conf = CronoPlan.confrontoPorNo(base || null, rA, real, { dataCorte: corte, hoje: hoje, ultimoDiario: ult || null,
+        avanco: (avCorteRec && corte === avCorteRec) ? e.avanco : null, numeroB: e.numeroB || null });
       if (conf && conf.erro) { aviso("confronto", conf.erro); conf = null; }
     }
     if (conf && conf.totais) {
@@ -1002,9 +1098,28 @@
          valor de hoje. Quando divergem, a tela diz os dois — senão "54% ×
          previsto 60%" ao lado de "no prazo" parece conta errada. */
       if (T.realPct != null && real.obra.pct != null && Math.abs(T.realPct - real.obra.pct) >= 0.5) {
+        /* MEDCC 6B: A COMPOSIÇÃO ENTRA NO TEXTO (§3.1). Com o avanço lançado
+           mesclado por nó, o número da esquerda pode ter dentro dele pontos
+           que vieram de um BOLETIM APROVADO, e não de um diário. Dizer só
+           "pesado pelo valor da subetapa" deixaria quem discute o número com
+           a fiscalização sem a informação que decide a conversa — são
+           leituras diferentes da mesma obra no mesmo dia. */
+        /* ⚠ `conf.nos`, NÃO `out.nos`: o `out.nos` só é preenchido umas cem
+           linhas abaixo (`out.nos = conf.nos.map(noPainel)`), e lido aqui ele
+           é lista vazia — a composição nunca apareceria no texto, e o aviso
+           passaria verde na suíte que só confere que ele existe. */
+        var comp = [], cn = { medicao: 0, diario: 0, digitado: 0 }, ck;
+        arr(conf.nos).forEach(function (n) {
+          if (!n || !n.avanco) return;
+          var oA = n.avanco.origem === "medicao" ? "medicao" : (n.avanco.origem === "diario" ? "diario" : "digitado");
+          cn[oA]++;
+        });
+        var ROTC = { medicao: "de medição aprovada", diario: "puxadas dos diários", digitado: "digitadas no planejamento" };
+        for (ck in cn) if (own(cn, ck) && cn[ck] > 0) comp.push(cn[ck] + " " + ROTC[ck]);
         aviso("regua-da-comparacao", "o previsto e a situação comparam o executado pesado pelo valor de cada subetapa" + (base ? " na linha de base v" + base.versao : "") +
           " (" + brNum(T.realPct) + "%); o executado de cima pesa cada serviço pelo valor de hoje (" + brNum(real.obra.pct) + "%" +
-          (real.obra.base === "simples" ? ", em média simples — menos de 60% dos serviços têm valor" : "") + ").");
+          (real.obra.base === "simples" ? ", em média simples — menos de 60% dos serviços têm valor" : "") + ")." +
+          (comp.length ? " Do lado do lançado entram " + comp.join(", ") + "." : ""));
       }
       /* desvio de término da OBRA em dias úteis do calendário da base (+ =
          atraso): concluída → dia do diário que fechou o último serviço contra
@@ -1017,6 +1132,37 @@
           else if (rA && rA.dataFim) K.desvioTerminoDias = indiceDe(calB, ch(rA.dataFim), base.totalDias) - base.totalDias;
         }
       }
+    }
+
+    /* ==================================================================
+       "TÉRMINO PREVISTO" (planejador 2B; avanco.md passo 6) — a data que a
+       REDE dá, com o avanço lançado dentro.
+
+       ⚠ POR QUE ELE EXISTE, E POR QUE A PROJEÇÃO PELO RITMO VIRA LINHA
+         SECUNDÁRIA: a tela mostrava DOIS términos em destaque, um "10 DU
+         depois" (a rede) e outro "25 dias antes da base" (o ritmo medido nos
+         diários), sem dizer que são contas diferentes — e quem lia escolhia
+         o que preferia. A rede sabe as dependências e o que já aconteceu; o
+         ritmo é uma reta. O card responde "quando entrega", e o ritmo fica
+         embaixo, rotulado como outra conta (`curva.projecao`).
+       ⚠ SEM AVANÇO ELE TAMBÉM SAI: a data da rede é a resposta mesmo quando
+         nada foi lançado. O que muda é o `comAvanco`, que a tela escreve.
+       ================================================================== */
+    if (rA && rA.dataFim) {
+      var pvT = { data: ch(rA.dataFim), diasUteis: rA.totalDias, fonte: "rede",
+        comAvanco: !!(avCorteRec && corte === avCorteRec && conf && conf.avanco), corte: avCorteRec || null,
+        base: null, desvioDU: null };
+      if (base && base.dataFim) {
+        pvT.base = { data: iso10(base.dataFim), versao: base.versao, diasUteis: base.totalDias };
+        /* o desvio em DIAS ÚTEIS do calendário congelado na base — a mesma
+           régua do resto do painel, nunca dias corridos */
+        var calP = calDaBase(base);
+        if (calP) {
+          var iP = indiceDe(calP, pvT.data, base.totalDias);
+          if (iP != null) pvT.desvioDU = iP - (base.totalDias - 1);
+        }
+      }
+      K.previsaoTermino = pvT;
     }
 
     /* ---- TÉRMINO: o do cadastro da obra × o da linha de base (sem base, o do
@@ -1051,6 +1197,61 @@
       while (filaR.length && gR++ < 500) { arr(filhosR[filaR.shift()]).forEach(function (o) { novasR.push(String(o.numero || o.id)); filaR.push(String(o.id)); }); }
       if (novasR.length) aviso("revisao-mais-nova", "o orçamento " + rotOrc + " tem revisão mais nova (" + novasR.slice(0, 3).join(", ") + (novasR.length > 3 ? " e mais " + (novasR.length - 3) : "") +
         ") — a obra planeja e mede pelo " + rotOrc + ", que é o ligado a ela. Para medir pela revisão, abra-a na aba Cronograma e use [Passar a obra para esta revisão] (a passagem é recusada enquanto houver boletim feito sobre o " + rotOrc + ").");
+    }
+
+    /* ==================================================================
+       MEDCC 6B — OS AVISOS DA MEDIÇÃO (ESPEC-medicao-cc §3.1)
+
+       ⚠ ESTA FUNÇÃO CONTINUA PURA. Ela NÃO chama o `MedAvanco`: o estado já
+         vem apurado em `e.medcc` (o `App._medccFaixas` o monta uma vez e o
+         memoriza por obra + corte + carimbo). Apurar aqui daria uma segunda
+         resposta para "quantas tarefas a medição completa" na mesma tela —
+         e duas respostas para a mesma pergunta é como a base já perdeu
+         dinheiro antes (memória "seis réguas para o avanço").
+       ⚠ TODOS SÃO AVISO, nenhum é ação: as portas clicáveis ficam na linha
+         do prazo (as faixas da 6B no `cronoexecui.js`). O painel é lido em
+         tela que também vai a papel.
+       ================================================================== */
+    var MC = (e.medcc && typeof e.medcc === "object" && !Array.isArray(e.medcc)) ? e.medcc : null;
+    if (MC) {
+      /* ⚠ expressão de função, nunca `function nomeB(...)` dentro do bloco:
+         declaração de função em bloco não é ES5 válido, e o WebView do
+         instalador antigo — que é onde este produto já quebrou por sintaxe —
+         não é obrigado a aceitá-la. */
+      var nomeB = function (x) { return String(x.numero || x.bNumero || x.b || x.id || ""); };
+      if (MC.sugerir) {
+        aviso("medicao-sugere", MC.sugerir + " tarefa(s) sem lançamento nos diários têm número nos boletins aprovados" +
+          (MC.corte ? " até " + br(MC.corte) : "") + " — o cronograma da obra oferece [Puxar das medições]. Nada é lançado sozinho aqui.");
+      }
+      if (arr(MC.aprovadaSemLancar).length) {
+        /* D-MX1: aprovar numa 1.2.81 NÃO lança (ela não conhece o canal), e a
+           gravação daqui pode ter sido recusada. Sem este aviso a pessoa
+           ficaria achando que o avanço já tem o boletim que ela aprovou. */
+        aviso("medicao-aprovada-sem-lancar", "a(s) medição(ões) " + arr(MC.aprovadaSemLancar).map(nomeB).join(", ") +
+          " foram aprovadas com “usar no avanço” e o avanço da obra ainda não tem estes números — use [Puxar das medições] no cronograma da obra.");
+      }
+      if (arr(MC.semLastro).length) {
+        aviso("medicao-sem-lastro", arr(MC.semLastro).length + " tarefa(s) têm avanço lançado por um boletim que deixou de contar (reaberto, rejeitado ou excluído). " +
+          "Nada foi mudado no avanço: use [Rever] no cronograma da obra para decidir tarefa a tarefa.");
+      }
+      if (arr(MC.diarioChegou).length) {
+        aviso("medicao-diario-chegou", arr(MC.diarioChegou).length + " tarefa(s) lançadas pela medição passaram a ter lançamento nos diários — " +
+          "o diário mede o que foi feito, e o cronograma da obra oferece [Usar o diário] ou [Manter a medição].");
+      }
+      /* ⚠ E O QUE NÃO SE CONSEGUIU MEDIR TAMBÉM É RECADO (achado da revisão
+         da Onda 6, 22/09/2026). Sem os diários lidos, o canal não sabe quais
+         tarefas eles já cobrem, e não completa tarefa sobre a qual não
+         conseguiu perguntar. Calar aqui deixaria a tela dizendo "nada novo"
+         sobre uma leitura que falhou. */
+      if (MC.diarioIlegivel) {
+        aviso("medicao-diario-ilegivel", "não consegui ler os diários desta obra: " + MC.diarioIlegivel +
+          " tarefa(s) da medição ficaram como estão. Nada foi lançado e nada foi apagado.");
+      }
+      if (arr(MC.pendenteCorte).length) {
+        aviso("medicao-pendente-corte", arr(MC.pendenteCorte).length + " boletim(ns) aprovado(s) são de depois da data de corte do avanço" +
+          (MC.corte ? " (" + br(MC.corte) + ")" : "") + " e não entram nesta conta — o canal da medição nunca move o corte. " +
+          "Para incluí-los, use [Atualizar avanço] e escolha a data.");
+      }
     }
 
     /* ---- tabela por nó e os 5 que pedem atenção ---- */
@@ -1209,6 +1410,25 @@
       }
     }
 
+    /* ==================================================================
+       MARCOS E TAREFAS SEM PREÇO (planejador 2B; espec §4)
+
+       ⚠ FORA DO IDP E DA CURVA, e é por isso que este bloco existe. A tarefa
+         sem preço ("aprovação da prefeitura", "chegada das telhas") não tem
+         valor de venda: se entrasse no VP/VA, mudaria o IDP de uma obra sem
+         ter movido um tijolo. Mas ela segura data — e sumir da tela fazia o
+         planejador procurar no Gantt por que a entrega andou. Aqui ela
+         aparece com a data e a folga, dizendo que está fora da conta.
+       ================================================================== */
+    if (rA && Array.isArray(rA.extras) && rA.extras.length) {
+      out.extras = rA.extras.map(function (x) {
+        return { id: x.id, numero: x.numero == null ? "" : String(x.numero), nome: String(x.nome == null ? "" : x.nome),
+          inicio: x.dataInicio ? ch(x.dataInicio) : null, fim: x.dataFim ? ch(x.dataFim) : null,
+          marco: !!x.marco, folga: x.folga == null ? null : x.folga, resp: x.resp == null ? null : String(x.resp) };
+      });
+      out.extrasMsg = out.extras.length + " marco(s) e tarefa(s) sem preço seguram datas do plano e ficam FORA do previsto × realizado e da curva S (não têm valor de venda).";
+    }
+
     out.estado = !ancora ? "sem-inicio" : (!pub.length ? "sem-diarios" : "ok");
     return out;
   }
@@ -1226,11 +1446,97 @@
      ⚠ MEXE NO OBJETO RECEBIDO (é o `cronograma` do plano, o mesmo que a tela
      edita pelo `_cronoAlvo`): cortar numa cópia deixaria a tela com um texto
      que o disco não tem e faria o recado voltar a cada gravação.
-     Idempotente: rodar de novo não muda nada e não tem o que contar. */
-  function cortarMotivos(cron) {
+     Idempotente: rodar de novo não muda nada e não tem o que contar.
+
+     ⚠ REVISÃO 4 DO PLANEJADOR (O31, D31) — `opts`, e o que mudou sem ele:
+       - SEM `opts` (o corte da versão nova): o corte de sempre E, além dele,
+         sai o `m` de `iaProv[k]` e de `sub.iaProv[k]` (a justificativa da IA
+         para ligação e equipe). O `v` FICA, no formato da 1.2.81 (o JSON do
+         `sigDep`): é ele que as duas versões comparam para saber se a IA pode
+         trocar o valor sem perguntar. O `m` não tem leitor em versão nenhuma
+         (a 1.2.81 só compara o `v`, js/iaedit.js:999-1000, :1023-1024) e,
+         medido na sonda D31, o `iaProv` real em todo nó ocupa 114,2 KB com o
+         `m` e 29,7 KB sem ele.
+       - `opts.regua === "1281"`: EXATAMENTE o corte da 1.2.81 (o `iaProv`
+         intacto). É a régua do `CronoBase.medirIniciar` — o plano que o
+         `iniciarPlano` DELA montaria (tools/test-crono-teto.js confere byte a
+         byte contra o código da 1.2.81).
+       - `opts.soMarca` + `opts.cronOrc` (a porta (1) do teto, "guardar no
+         plano só a marca da IA"): ANTES do corte, vira marca só o texto IGUAL
+         ao do orçamento de origem — `mesmoTexto(p, o)`: o do plano é o do
+         orçamento limpo, ou o do orçamento limpo cortado em 120. O texto que
+         só existe no plano FICA. Por isso a porta é sem perda: a tela mostra o
+         texto do orçamento pelo `textoIA`, e nada que só o plano sabia sai.
+       - `opts.semOrigem` (a porta (2)): `iaProv` e `sub.iaProv` saem inteiros
+         (o orçamento guarda a origem das dele); o `iaedit` passa a dizer "a
+         origem desta ligação não ficou guardada no plano" e nunca "você
+         definiu".
+       - `opts.cronOrc` sem `soMarca`: só serve para o RECADO dizer a verdade
+         (R4-11). O recado da 1.2.81 dizia "o texto completo segue no
+         orçamento" também para o texto que a IA escreveu NO PLANO — e esse,
+         além do 60º, não está em lugar nenhum.
+     ⚠ A MARCA OCUPA VAGA DOS 60, como na 1.2.81. Sem isso o plano gravado
+     aqui não seria ponto fixo do corte da 1.2.81: um aparelho antigo que
+     salvasse o mesmo plano contaria as marcas, cortaria textos reais depois
+     do 60º e os bytes mudariam (tools/test-crono-portas-1281.js cobra os
+     bytes iguais). */
+  function corte120(s) { return s.length > MOTIVO_MAX ? s.slice(0, MOTIVO_MAX - 1) + "…" : s; }
+  function mesmoTexto(p, o) {
+    var lo = motivoLimpo(o), lp = motivoLimpo(p);
+    if (!lo || !lp) return false;
+    return lp === lo || lp === corte120(lo);
+  }
+  function cortarMotivos(cron, opts) {
+    opts = opts || {};
+    var r1281 = opts.regua === "1281";
     var rep = { mexeu: false, total: 0, guardados: 0, encurtados: 0, semTexto: 0, removidos: 0, msg: null };
+    if (!r1281) { rep.marcados = 0; rep.soNoPlano = 0; rep.perdidos = 0; rep.semOrigem = 0; rep.mRemovidos = 0; }
     if (!cron || typeof cron !== "object" || Array.isArray(cron)) return rep;
-    function trata(dono, chave, ehEtapa) {
+    var orc = (!r1281 && opts.cronOrc && typeof opts.cronOrc === "object" && !Array.isArray(opts.cronOrc)) ? opts.cronOrc : null;
+    var soMarca = !r1281 && !!opts.soMarca && !!orc;
+    /* o texto do ORÇAMENTO para o mesmo nó (null = não há) */
+    function doOrc(tipo, chave) {
+      if (!orc) return null;
+      var m, a;
+      if (tipo === "etapa") { m = mapaDe(orc, "iaMotivos"); return m && typeof m[chave] === "string" ? m[chave] : null; }
+      if (tipo === "sub") { var so = mapaDe(orc, "sub"); m = so ? mapaDe(so, "iaMotivos") : null; return m && typeof m[chave] === "string" ? m[chave] : null; }
+      /* exec.anterior: o texto guardado ao ligar o modo executivo veio do
+         iaMotivos da etapa — no orçamento, pode estar em qualquer dos dois */
+      var ex0 = mapaDe(orc, "exec"), an0 = ex0 ? mapaDe(ex0, "anterior") : null;
+      a = an0 && own(an0, chave) ? an0[chave] : null;
+      if (a && typeof a === "object" && typeof a.ia === "string") return a.ia;
+      m = mapaDe(orc, "iaMotivos");
+      return m && typeof m[chave] === "string" ? m[chave] : null;
+    }
+    var mE = mapaDe(cron, "iaMotivos");
+    var sub = mapaDe(cron, "sub"), mS = sub ? mapaDe(sub, "iaMotivos") : null;
+    var ex = mapaDe(cron, "exec"), ant = ex ? mapaDe(ex, "anterior") : null;
+    /* PORTA (2): a origem da IA sai do plano */
+    if (!r1281 && opts.semOrigem) {
+      if (own(cron, "iaProv")) { delete cron.iaProv; rep.semOrigem++; rep.mexeu = true; }
+      if (sub && own(sub, "iaProv")) { delete sub.iaProv; rep.semOrigem++; rep.mexeu = true; }
+    }
+    /* PORTA (1): o texto igual ao do orçamento vira marca (ANTES do corte:
+       a marca ocupa vaga como qualquer texto, ver ⚠ acima) */
+    if (soMarca) {
+      if (mE) Object.keys(mE).forEach(function (k) {
+        var v = mE[k];
+        if (typeof v !== "string" || !motivoLimpo(v) || motivoLimpo(v) === MOTIVO_SEM_TEXTO) return;
+        if (mesmoTexto(v, doOrc("etapa", k))) { mE[k] = MOTIVO_SEM_TEXTO; rep.marcados++; rep.mexeu = true; }
+      });
+      if (mS) Object.keys(mS).forEach(function (k) {
+        var v = mS[k];
+        if (typeof v !== "string" || !motivoLimpo(v)) return;
+        // a marca da subetapa mora em sub.agente: o texto sai inteiro
+        if (mesmoTexto(v, doOrc("sub", k))) { delete mS[k]; rep.marcados++; rep.mexeu = true; }
+      });
+      if (ant) Object.keys(ant).forEach(function (k) {
+        var a = ant[k];
+        if (!a || typeof a !== "object" || Array.isArray(a) || typeof a.ia !== "string" || !motivoLimpo(a.ia) || motivoLimpo(a.ia) === MOTIVO_SEM_TEXTO) return;
+        if (mesmoTexto(a.ia, doOrc("anterior", k))) { a.ia = MOTIVO_SEM_TEXTO; rep.marcados++; rep.mexeu = true; }
+      });
+    }
+    function trata(dono, chave, ehEtapa, tipo) {
       /* ⚠ SÓ MEXE NO QUE ENTENDE. Motivo é texto; valor de outro formato veio
          de uma versão mais nova do app pelo sync e passa INTACTO, como o
          resto do cronograma desconhecido (a mesma doutrina do `iniciarPlano`:
@@ -1239,38 +1545,140 @@
       var t = motivoLimpo(dono[chave]);
       if (!t) { delete dono[chave]; rep.mexeu = true; return; }   // motivo em branco não é motivo
       rep.total++;
+      var ehMarca = t === MOTIVO_SEM_TEXTO;
+      var soAqui = !r1281 && !!orc && !ehMarca && !mesmoTexto(t, doOrc(tipo, chave));
       if (rep.guardados < MOTIVOS_MAX) {
         rep.guardados++;
-        if (t.length > MOTIVO_MAX) { t = t.slice(0, MOTIVO_MAX - 1) + "…"; rep.encurtados++; }
+        if (t.length > MOTIVO_MAX) { t = corte120(t); rep.encurtados++; }
         if (t !== dono[chave]) { dono[chave] = t; rep.mexeu = true; }
+        if (soAqui) rep.soNoPlano++;
         return;
       }
+      if (soAqui) rep.perdidos++;
       if (ehEtapa) {
         // ⚠ a chave FICA: é dela que a tabela tira a marca de IA da etapa
         if (dono[chave] !== MOTIVO_SEM_TEXTO) { dono[chave] = MOTIVO_SEM_TEXTO; rep.semTexto++; rep.mexeu = true; }
       } else { delete dono[chave]; rep.removidos++; rep.mexeu = true; }
     }
-    var mE = mapaDe(cron, "iaMotivos");
-    if (mE) Object.keys(mE).forEach(function (k) { trata(mE, k, true); });
-    var sub = mapaDe(cron, "sub"), mS = sub ? mapaDe(sub, "iaMotivos") : null;
-    if (mS) Object.keys(mS).forEach(function (k) { trata(mS, k, false); });
+    if (mE) Object.keys(mE).forEach(function (k) { trata(mE, k, true, "etapa"); });
+    if (mS) Object.keys(mS).forEach(function (k) { trata(mS, k, false, "sub"); });
     /* `exec.anterior[etapaId].ia` é o motivo da duração guardada ao ligar o
        modo executivo: ele volta para `iaMotivos` ao desligar, então é motivo
        de ETAPA e segue a mesma regra da marca */
-    var ex = mapaDe(cron, "exec"), ant = ex ? mapaDe(ex, "anterior") : null;
     if (ant) Object.keys(ant).forEach(function (k) {
       var a = ant[k];
-      if (a && typeof a === "object" && !Array.isArray(a) && a.ia != null) trata(a, "ia", true);
+      if (a && typeof a === "object" && !Array.isArray(a) && a.ia != null) trata(a, "ia", true, "anterior");
     });
-    if (rep.encurtados || rep.semTexto || rep.removidos) {
-      var partes = [];
-      if (rep.encurtados) partes.push(rep.encurtados + " motivo(s) encurtado(s) em " + MOTIVO_MAX + " caracteres");
-      if (rep.semTexto) partes.push(rep.semTexto + " etapa(s) ficaram com a marca da IA sem o texto");
-      if (rep.removidos) partes.push(rep.removidos + " motivo(s) de subetapa saíram");
+    /* o `m` do iaProv (O31): sai do plano na versão nova, NUNCA na régua 1281 */
+    if (!r1281) {
+      [mapaDe(cron, "iaProv"), sub ? mapaDe(sub, "iaProv") : null].forEach(function (pv) {
+        if (!pv) return;
+        Object.keys(pv).forEach(function (k) {
+          var x = pv[k];
+          if (x && typeof x === "object" && !Array.isArray(x) && own(x, "m")) { delete x.m; rep.mRemovidos++; rep.mexeu = true; }
+        });
+      });
+    }
+    if (r1281) {
+      // ⚠ o recado da 1.2.81, sem tirar uma vírgula: é a régua dela
+      if (rep.encurtados || rep.semTexto || rep.removidos) {
+        var partes81 = [];
+        if (rep.encurtados) partes81.push(rep.encurtados + " motivo(s) encurtado(s) em " + MOTIVO_MAX + " caracteres");
+        if (rep.semTexto) partes81.push(rep.semTexto + " etapa(s) ficaram com a marca da IA sem o texto");
+        if (rep.removidos) partes81.push(rep.removidos + " motivo(s) de subetapa saíram");
+        rep.msg = "O plano de execução guarda no máximo " + MOTIVOS_MAX + " motivos da IA (o planejamento de todas as obras da empresa sincroniza num documento só de 1 MiB, e sem espaço não dá para congelar linha de base): " +
+          partes81.join("; ") + ". As durações, as dependências e a marca de quem definiu cada prazo continuam inteiras, e o texto completo segue no orçamento.";
+      }
+      return rep;
+    }
+    var partes = [];
+    if (rep.marcados) partes.push(rep.marcados + " texto(s) da IA iguais aos do orçamento ficaram só lá (a tela continua mostrando cada um, com a origem)");
+    if (rep.encurtados) partes.push(rep.encurtados + " motivo(s) encurtado(s) em " + MOTIVO_MAX + " caracteres");
+    if (rep.semTexto) partes.push(rep.semTexto + " etapa(s) além do " + MOTIVOS_MAX + "º texto ficaram com a marca da IA sem o texto");
+    if (rep.removidos) partes.push(rep.removidos + " motivo(s) de subetapa além do " + MOTIVOS_MAX + "º saíram");
+    if (rep.semOrigem) partes.push("a origem das ligações e equipes definidas pela IA não fica mais no plano (o orçamento guarda a dele)");
+    if (rep.mRemovidos) partes.push(rep.mRemovidos + " justificativa(s) da IA para ligações e equipes não ficam no plano (nenhuma tela as mostra)");
+    if (partes.length) {
+      var cauda = "";
+      if (rep.semTexto || rep.removidos) {
+        if (!orc) cauda = " O texto dos motivos que vieram do orçamento continua nele; o que a IA escreveu só neste plano, além do " + MOTIVOS_MAX + "º, não fica guardado.";
+        else if (rep.perdidos) cauda = " " + rep.perdidos + " desses texto(s) existiam só neste plano (não estão no orçamento) e saíram.";
+        else cauda = " O texto completo desses motivos segue no orçamento.";
+      }
       rep.msg = "O plano de execução guarda no máximo " + MOTIVOS_MAX + " motivos da IA (o planejamento de todas as obras da empresa sincroniza num documento só de 1 MiB, e sem espaço não dá para congelar linha de base): " +
-        partes.join("; ") + ". As durações, as dependências e a marca de quem definiu cada prazo continuam inteiras, e o texto completo segue no orçamento.";
+        partes.join("; ") + ". As durações, as dependências e a marca de quem definiu cada prazo continuam inteiras." + cauda;
     }
     return rep;
+  }
+
+  /* O MOTIVO DA IA QUE A TELA MOSTRA NO PLANO (revisão 4, O31, §2.8) —
+     {texto, fonte, motivo?}, com `fonte` "plano" | "orcamento" | null.
+     `nivel`: "etapa" (iaMotivos), "sub" (sub.iaMotivos) ou "anterior"
+     (exec.anterior[id].ia, o motivo guardado ao ligar o modo executivo).
+     ⚠ RECADO QUE MENTE É PIOR QUE RECADO NENHUM (R26). Com a porta (1), o
+     plano guarda só a MARCA e o texto mora no orçamento. Mas o orçamento
+     pode ter sido editado depois (pela IA, pela pessoa): o texto dele então
+     explica OUTRA duração. Por isso o texto do orçamento só volta quando o
+     nó dele AINDA é da IA e tem a MESMA duração planejada do plano; fora
+     disso sai `motivo: "orcamento-mudou"` e a tela diz "motivo não guardado
+     no plano". A duração planejada é a GUARDADA em `mat` quando a sombra
+     está intacta (a sombra de duração não tem marca, O1): sem isto, um plano
+     reprogramado pelo avanço perderia o texto que continua valendo.
+     Pura; a única leitora do motivo da IA na tela (2A). */
+  function planejadoDoNo(cron, nivel, id) {
+    var base = nivel === "sub" ? mapaDe(cron, "sub") : cron;
+    var dur = base ? mapaDe(base, "duracoes") : null, ag = base ? mapaDe(base, nivel === "sub" ? "agente" : "duracoesAgente") : null;
+    var v = dur && own(dur, id) ? dur[id] : null, a = ag && own(ag, id) ? ag[id] : null;
+    var mat = mapaDe(cron, "mat"), mm = mat ? mapaDe(mat, nivel === "sub" ? "folhas" : "etapas") : null, e = mm && own(mm, id) ? mm[id] : null;
+    if (e && typeof e === "object" && !Array.isArray(e) && own(e, "s") && e.s !== "m" && v === e.s && a == null) {
+      return { d: own(e, "d") ? e.d : null, a: own(e, "a") ? e.a : (own(e, "d") ? "usuario" : null) };
+    }
+    return { d: v, a: a == null && v != null ? "usuario" : a };
+  }
+  function textoIA(cronPlano, cronOrc, nivel, id) {
+    var nv = (nivel === "sub" || nivel === "subetapa" || nivel === "folha") ? "sub" : (nivel === "anterior" ? "anterior" : "etapa");
+    function nada(m) { return { texto: null, fonte: null, motivo: m }; }
+    if (!cronPlano || typeof cronPlano !== "object" || id == null) return nada("sem-texto");
+    var txt = null, marcado = false, anP = null;
+    if (nv === "etapa") {
+      var mE = mapaDe(cronPlano, "iaMotivos");
+      if (mE && typeof mE[id] === "string") txt = mE[id];
+    } else if (nv === "sub") {
+      var sp = mapaDe(cronPlano, "sub"), mS = sp ? mapaDe(sp, "iaMotivos") : null;
+      if (mS && typeof mS[id] === "string") txt = mS[id];
+      else if (planejadoDoNo(cronPlano, "sub", id).a === "ia") marcado = true;   // a marca da subetapa mora em sub.agente (ou em mat, com sombra)
+    } else {
+      var ex = mapaDe(cronPlano, "exec"), an = ex ? mapaDe(ex, "anterior") : null;
+      anP = an && own(an, id) && an[id] && typeof an[id] === "object" && !Array.isArray(an[id]) ? an[id] : null;
+      if (anP && typeof anP.ia === "string") txt = anP.ia;
+    }
+    var limpo = txt == null ? "" : motivoLimpo(txt);
+    if (limpo && limpo !== MOTIVO_SEM_TEXTO) return { texto: limpo, fonte: "plano" };
+    if (limpo === MOTIVO_SEM_TEXTO) marcado = true;
+    if (!marcado) return nada("sem-texto");
+    if (!cronOrc || typeof cronOrc !== "object" || Array.isArray(cronOrc)) return nada("orcamento-mudou");
+    var tO = null, iaO = false, dO = null, dP = null;
+    if (nv === "etapa" || nv === "sub") {
+      var baseO = nv === "sub" ? mapaDe(cronOrc, "sub") : cronOrc, mo = baseO ? mapaDe(baseO, "iaMotivos") : null;
+      tO = mo && typeof mo[id] === "string" ? mo[id] : null;
+      var po = planejadoDoNo(cronOrc, nv, id);
+      iaO = po.a === "ia"; dO = po.d;
+      dP = planejadoDoNo(cronPlano, nv, id).d;
+    } else {
+      var exo = mapaDe(cronOrc, "exec"), ano = exo ? mapaDe(exo, "anterior") : null;
+      var aO = ano && own(ano, id) && ano[id] && typeof ano[id] === "object" && !Array.isArray(ano[id]) ? ano[id] : null;
+      if (aO) { tO = typeof aO.ia === "string" ? aO.ia : null; iaO = aO.agente === "ia"; dO = aO.dur != null ? aO.dur : null; }
+      else {
+        var mo2 = mapaDe(cronOrc, "iaMotivos");
+        tO = mo2 && typeof mo2[id] === "string" ? mo2[id] : null;
+        var po2 = planejadoDoNo(cronOrc, "etapa", id);
+        iaO = po2.a === "ia"; dO = po2.d;
+      }
+      dP = anP && anP.dur != null ? anP.dur : null;
+    }
+    var lo = tO == null ? "" : motivoLimpo(tO);
+    if (!lo || lo === MOTIVO_SEM_TEXTO || !iaO || dO == null || dP == null || Number(dO) !== Number(dP)) return nada("orcamento-mudou");
+    return { texto: corte120(lo), fonte: "orcamento" };
   }
 
   var CronoPlan = {
@@ -1295,11 +1703,47 @@
     /* corta os TEXTOS de motivo da IA de um `cronograma` de plano de obra —
        nunca a rede. Quem chama: CronoBase.salvarPlano (ver lá). */
     cortarMotivos: cortarMotivos,
+    /* o motivo da IA que a tela mostra no plano (revisão 4, O31): ver lá */
+    textoIA: textoIA,
+    mesmoTexto: mesmoTexto,
     bytes: function (x) { return bytesUtf8(typeof x === "string" ? x : JSON.stringify(x)); },
     calendarioDaBase: calDaBase,
     /* a linha de base vale para este orçamento? (dele ou de uma revisão
        anterior dele). O painel e o KPI do Last Planner usam a MESMA regra. */
     baseVale: baseVale,
+    /* ---- AS DUAS RÉGUAS DE CADEIA DE REVISÕES, PURAS (MC8 da
+       ESPEC-medicao-cc; tomada T-MC4) ----
+       `cadeiaIds(orc, orcamentos)` = ESTE orçamento e os ANCESTRAIS dele
+       (a subida por `revisaoDe`): é o que responde "esta linha de base / este
+       plano é deste orçamento?".
+       `familiaIds(orc, orcamentos)` = a FAMÍLIA INTEIRA: os ancestrais e
+       todos os descendentes deles, o próprio incluído.
+       ⚠ A FAMÍLIA NÃO É A CADEIA, e confundi-las já custou medição em dobro.
+         Com a obra passada para a R1 — que é o que [Passar a obra para esta
+         revisão] produz —, abrir a R0 subia a cadeia a partir da R0, não
+         achava obra e oferecia [Criar obra]: a segunda obra nascia com o
+         acumulado anterior ZERADO nos itens que a primeira já mediu. O mesmo
+         entre revisões irmãs. Por isso o boletim que alimenta o avanço é
+         aceito por FAMÍLIA (§3.2), e o plano/base, por CADEIA.
+       ⚠ Isto é a MESMA regra que o `CronoExecUI.obraDaCadeia` já aplicava
+         dentro de um módulo de TELA. Ela desceu para cá, pura, porque o motor
+         da medição precisa dela e motor não depende de módulo de tela; o
+         `obraDaCadeia` continua sendo o dono da parte que fala de obras
+         visíveis. A invariante I-CAD (os dois dão o mesmo conjunto) é
+         medida em `tools/test-medavanco.js`, com controle negativo. */
+    cadeiaIds: function (orc, orcamentos) { return Object.keys(cadeiaIdsDe(orc, orcamentos)); },
+    familiaIds: function (orc, orcamentos) {
+      var ids = cadeiaIdsDe(orc, orcamentos), filhos = {}, familia = {}, fila = [], k, g = 0;
+      arr(orcamentos).forEach(function (o) {
+        if (o && o.id != null && o.revisaoDe) (filhos[String(o.revisaoDe)] = filhos[String(o.revisaoDe)] || []).push(String(o.id));
+      });
+      for (k in ids) if (own(ids, k)) { familia[k] = true; fila.push(k); }
+      while (fila.length && g++ < 5000) {
+        var pk = fila.shift();
+        arr(filhos[pk]).forEach(function (fid) { if (!own(familia, fid)) { familia[fid] = true; fila.push(fid); } });
+      }
+      return familia;
+    },
     /* data ("AAAA-MM-DD") do k-ésimo dia útil de uma base */
     dataDaBase: function (base, k) { var c = calDaBase(base); return c && k != null ? ch(c.dia(k)) : null; },
     previstoLinear: previsto,
@@ -1408,12 +1852,31 @@
         opcionaisIncluidos: opcIncl, opcionaisFora: opcFora,
         nos: nos, curva: curva
       };
+      /* ⚠ AS TAREFAS SEM PREÇO VÃO EM `base.extras`, NUNCA EM `base.nos`
+         (planejador, fatia 1B; espec §1.4, EXTRAS §b.3). A 1.2.81 lê todo nó
+         com `t` diferente de "e" como FOLHA (confrontoPorNo): uma extra ali
+         entraria no previsto e no IDP com valor 0 e janela própria — o
+         número da obra mudaria nos aparelhos antigos. A forma é a da fixture
+         T21 (tools/fixtures/planejador-formas.js): {id, nm, m, r, i, f}, e o
+         `r.extras` que o motor da 1A produz é lido na forma da mesma fixture. */
+      var ex = extrasDaBase(r.extras);
+      if (ex.length) base.extras = ex;
       var b = bytesUtf8(JSON.stringify(base));
       if (b > TETO_BASE) {
+        /* ⚠ OBRA GRANDE (fatia 1B): com `opts.semTeto` o registro COMPLETO
+           volta mesmo acima de 40 KB, com `grande: true` — quem chama sela o
+           detalhe (CronoSelo.selar) e grava no `crono_obra` só o cabeçalho
+           resumido (`resumirBase` + `detalheNoSelo`). Sem a opção, o de
+           sempre: a obra de indústria que não cabe é recusada com o tamanho. */
+        if (opts.semTeto === true) { base.grande = true; return base; }
         return { erro: "linha de base grande demais (" + kb(b) + " KB; o limite é " + kb(TETO_BASE) + " KB por versão, porque todas as linhas de base da empresa sincronizam juntas num documento de 1 MiB). Agrupe subetapas pequenas ou encurte os nomes das etapas e subetapas e congele de novo.", bytes: b };
       }
       return base;
     },
+    /* o código curto do responsável da tarefa sem preço na linha de base
+       (`base.extras[].r`): contratante, construtora, terceiro. Ausente ou
+       outro valor conta como construtora (a regra da EXTRAS §b.1). */
+    RESP_BASE: RESP_BASE,
 
     /* Resumo de uma versão ANTIGA da base — a PORTA da trava de espaço
        (`cabeNaEntidade`). Fica: cabeçalho, calendário, prazo, valor e as
@@ -1432,6 +1895,11 @@
         .map(function (n) { return { id: n.id, t: n.t, e: n.e, n: n.n, i: n.i, f: n.f, v: n.v }; });
       c.resumida = true; c.folhasResumidas = nF; c.mesesResumidos = arr(c.curva).length;
       delete c.curva;
+      /* ⚠ as tarefas sem preço saem junto com as subetapas (fatia 1B): o
+         resumo existe para caber, e o selo guarda a lista inteira */
+      delete c.extras;
+      /* o `grande` do congelarBase nunca vai ao disco (ver congelarBase) */
+      delete c.grande;
       return c;
     },
 
@@ -1813,6 +2281,50 @@
         });
       }
 
+      /* ==================================================================
+         O AVANÇO LANÇADO, MESCLADO POR NÓ (planejador 2B; espec §3.4, E-MC5)
+
+         `opts.avanco` = o registro `avanco_<obraId>` cru (ou já lido). Quando
+         a obra tem avanço lançado, o `real %` do nó é o que a pessoa (ou o
+         canal) LANÇOU, e não o que os diários apuraram: o lançamento é a
+         decisão de quem planeja, e é dele que saem as datas reprogramadas.
+         ⚠ A LEITURA É SEMPRE DO `CronoAvanco.ler` (nunca uma cópia da regra
+           aqui). É ele que aplica a E-MC1: `o` desconhecido e `o:"medicao"`
+           sem `b` viram DIGITADO, e a entrada nunca é descartada por causa
+           disso. Uma segunda leitura, escrita à mão neste arquivo, envelhece
+           sozinha — e a origem errada vira "medição 01a" num número que
+           ninguém mediu (memória "réplica de parser apodrece").
+         ⚠ SEM O MÓDULO, NADA SE MESCLA e sai aviso: inventar aqui o estado da
+           entrada daria um `real %` que nenhuma outra tela mostra.
+         ================================================================== */
+      var avPorId = {}, avCorte = null, nAv = 0;
+      (function () {
+        var rec = opts.avanco;
+        if (!rec || typeof rec !== "object") return;
+        var A = dep("CronoAvanco", "./cronoavanco.js");
+        if (!A || typeof A.ler !== "function") { avisos.push({ tipo: "avanco-sem-modulo", msg: "o módulo do avanço lançado não carregou (cronoavanco.js) — o real por nó sai só dos diários." }); return; }
+        var L = A.ler(rec, {});
+        avCorte = L.corte || null;
+        var num = (opts.numeroB && typeof opts.numeroB === "object" && !Array.isArray(opts.numeroB)) ? opts.numeroB : {};
+        arr(L.lista).forEach(function (en) {
+          var est = A.estadoDe(en);
+          /* E-MC5: O RÓTULO DA ORIGEM SAI DA ENTRADA, nunca de um padrão fixo.
+             `o:"diario"` → "diários"; `o:"medicao"` ou lastro `b` (alguém
+             anotou o boletim à mão) → "medição NNa" pelo mapa `opts.numeroB`
+             que a fiação passa, ou pelo id do boletim quando o mapa falta;
+             sem os dois → "digitado". Rótulo fixo aqui faria o P×R dizer
+             "digitado" sobre um número que a medição aprovada lançou. */
+          var rot;
+          if (en.o === "diario") rot = "dos diários";
+          else if (en.o === "medicao" || en.b) rot = "medição " + (en.b ? (own(num, en.b) ? num[en.b] : en.b) : "sem número");
+          else rot = "digitado";
+          avPorId[en.id] = { estado: est, pct: est === "concluida" ? 100 : (en.p == null ? 0 : en.p),
+            origem: en.o || "digitado", lastro: en.b || null, rotulo: rot, ini: en.i || null, fim: en.f || null, em: en.em || null };
+          nAv++;
+        });
+        arr(L.avisos).forEach(function (a) { if (a && a.tipo) avisos.push({ tipo: a.tipo, msg: "avanço lançado: " + a.tipo + (a.id ? " (" + a.id + ")" : "") + "." }); });
+      })();
+      var etapaComAvanco = {};
       var lista = [], sumiram = [], reagrupadas = [], semValor = [], VP = 0, VA = 0, vTot = 0, nF = 0;
       ref.forEach(function (n) {
         var rn = own(real.porNo, n.id) ? real.porNo[n.id] : null, an = own(porAtiv, n.id) ? porAtiv[n.id] : null;
@@ -1827,14 +2339,24 @@
         else if (!rr) { rp = 0; sit = situacao(prev, 0, tol); }
         else if (rr.pct == null) { rp = null; sit = "sem serviço mensurável"; }
         else { rp = rr.pct; sit = situacao(prev, rp, tol); }
+        /* o LANÇADO manda sobre o apurado nos diários (mescla por nó) */
+        var av = own(avPorId, n.id) ? avPorId[n.id] : null;
+        if (av && n.v > 0) {
+          rp = av.pct; sit = situacao(prev, rp, tol);
+          if (n.t === "f") etapaComAvanco[n.e] = true;
+        }
         var o = {
           id: n.id, tipo: n.t === "e" ? "etapa" : "folha", etapaId: n.e, numero: n.n, nome: n.nm, folha: own(folhaRef, n.id),
           valor: n.v, previstoPct: pct1(prev), realPct: rp, desvioPP: rp == null ? null : pct1(rp - prev),
           base: semBase ? null : { ini: dataDe(n.i), fim: dataDe(n.f) },
           atual: an && rComData && an.dataInicio ? { ini: ch(an.dataInicio), fim: ch(an.dataFim) } : null,
-          real: { ini: rr ? rr.inicioReal : null, fim: rr ? rr.fimReal : null },
+          real: { ini: (av && av.ini) || (rr ? rr.inicioReal : null), fim: (av && av.fim) || (rr ? rr.fimReal : null) },
           desvioTerminoDias: null, situacao: sit
         };
+        /* a ORIGEM viaja com o nó: a tabela do P×R escreve "60% (digitado)" ou
+           "60% (medição 01a)". Sem isto o número aparece sem dono, e quem lê
+           não sabe se pode discutir com ele (E-MC5). */
+        if (av) { o.avanco = av; o.realOrigem = av.rotulo; }
         /* desvio de término em DIAS ÚTEIS do calendário de referência
            (positivo = atraso): concluído → dia do diário que fechou o nó
            contra o último dia útil planejado; em andamento → fim do plano
@@ -1852,6 +2374,31 @@
         }
         lista.push(o);
       });
+
+      /* ⚠ A ETAPA PELO VALOR DAS FOLHAS quando alguma folha tem avanço
+         lançado. Roteiro do defeito que isto impede: com o lançamento na
+         subetapa e a etapa lida só dos diários, a mesma tela mostrava a
+         subetapa 7.3 com 60% (digitado) e a etapa 7 com 12% (dos diários) —
+         a linha de cima contradizendo a de baixo, sem nenhuma explicação.
+         A conta é a mesma do IDP (peso pelo valor da referência), e não toca
+         em VP/VA: esses só somam a camada folha. */
+      (function () {
+        if (!nAv) return;
+        var porEtapa = {};
+        lista.forEach(function (o) {
+          if (o.tipo !== "folha" || !own(etapaComAvanco, o.etapaId) || o.realPct == null || !(o.valor > 0)) return;
+          var a = porEtapa[o.etapaId] || (porEtapa[o.etapaId] = { v: 0, r: 0 });
+          a.v += o.valor; a.r += o.valor * o.realPct / 100;
+        });
+        lista.forEach(function (o) {
+          if (o.tipo !== "etapa" || own(avPorId, o.id) || !own(porEtapa, o.id)) return;
+          var a = porEtapa[o.id];
+          if (!(a.v > 0)) return;
+          o.realPct = pct1((a.r / a.v) * 100);
+          o.realOrigem = "pelas subetapas";
+          if (o.previstoPct != null) { o.desvioPP = pct1(o.realPct - o.previstoPct); o.situacao = situacao(o.previstoPct, o.realPct, tol); }
+        });
+      })();
 
       /* escopo que está no orçamento de hoje e não na base: fora do IDP,
          listado com o valor. Folha nova cuja etapa era, na base, uma folha
@@ -1915,7 +2462,10 @@
         msgForaDaBase: !fora.length ? null : (semBase
           ? "etapa(s) opcional(is) não incluída(s) (R$ " + brMoeda(r2(vFora)) + ") — fora do avanço e do IDP; para contar, apure o realizado e o confronto com opcionaisIncluidos."
           : "escopo fora da linha de base (R$ " + brMoeda(r2(vFora)) + ") — não entra no IDP."),
-        sumiramDoAtual: sumiram, reagrupadas: reagrupadas, semValor: semValor, avisos: avisos
+        sumiramDoAtual: sumiram, reagrupadas: reagrupadas, semValor: semValor, avisos: avisos,
+        /* o que o avanço lançado trouxe para esta conta (a tela escreve
+           "real por nó: 10 lançados até 11/09"); `null` = nenhum */
+        avanco: nAv ? { corte: avCorte, nos: nAv, porId: avPorId } : null
       };
     },
 
@@ -1947,7 +2497,16 @@
                       `CustoEtapa` não corta na data, e previsto numa data com
                       custo noutra é a comparação torta de sempre;
          hoje         relógio injetável (Date | "AAAA-MM-DD"); padrão: agora;
-         dataCorte    "AAAA-MM-DD"; padrão: o último diário publicável, senão hoje;
+         avanco       (planejador 2B) o registro `avanco_<obraId>` da obra, ou
+                      null. Entra em DUAS pontas: o motor o recebe por
+                      `CronoBase.orcDaObra` (e reprograma o que falta) e o
+                      `confrontoPorNo` o mescla por nó, com a origem de cada
+                      entrada (E-MC5). O corte padrão do painel passa a ser o
+                      dele;
+         numeroB      (E-MC5) `{idDoBoletim: "01a"}` — só para o rótulo
+                      "medição NNa" da origem; sem ele vale o id do boletim;
+         dataCorte    "AAAA-MM-DD"; padrão: o do avanço lançado, senão o último
+                      diário publicável, senão hoje;
          opcionaisIncluidos  [etapaIds] — só sem base (com base vale a dela);
          Cronograma, Fisico, RDO, Orcamento, Util, CronoBase — injetáveis
                       (teste); ausentes = os globais.

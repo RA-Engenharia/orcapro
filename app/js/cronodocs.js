@@ -149,6 +149,13 @@
      ⚠ NOME DE TRABALHADOR: `false` em TODOS os níveis, inclusive interno —
        não há nível que o ligue, de propósito (js/producao.js, regra 1).
      ===================================================================== */
+  /* Quantos dias o corte do avanço pode ter para ainda reger a janela do
+     lookahead (planejador 3A). Duas semanas: é o horizonte que o próprio
+     lookahead imprime, e um corte mais velho que isso descreve uma obra que
+     já andou. O número está aqui, com nome, porque ele é uma escolha — e
+     escolha escondida dentro de um `if` é a que ninguém revisa. */
+  var CORTE_VELHO_DIAS = 14;
+
   var NIVEIS = ["interno", "canteiro", "fiscalizacao", "cliente"];
   var PERMS = {
     interno:      { custoDireto: true,  margem: true,  folga: true,  caminhoCritico: true,  restricoes: true,  causasPPC: true,  avisosInternos: true },
@@ -156,6 +163,11 @@
     fiscalizacao: { custoDireto: false, margem: false, folga: false, caminhoCritico: false, restricoes: false, causasPPC: false, avisosInternos: false },
     cliente:      { custoDireto: false, margem: false, folga: false, caminhoCritico: false, restricoes: false, causasPPC: false, avisosInternos: false }
   };
+  /* O responsável da tarefa sem preço em português de documento (planejador
+     3A): "cliente" é a chave no disco (js/cronoextras.js:50) e "Contratante"
+     é a palavra do contrato. A mesma régua do js/cronopdf.js. */
+  var ROTULO_RESP_DOC = { cliente: "Contratante", construtora: "Construtora", terceiro: "Terceiro" };
+
   var ROTULO_NIVEL = {
     interno: "USO INTERNO",
     canteiro: "QUADRO DO CANTEIRO",
@@ -174,6 +186,83 @@
     ultimoDiario: "último diário publicado",
     hoje: "data de hoje"
   };
+
+  /* =====================================================================
+     A LEGENDA DO VALOR AGREGADO (planejador 3A, decisão D5)
+
+     Desde esta versão o VA e o IDP saem do % LANÇADO NO PLANEJAMENTO
+     (`CronoPlan.confrontoPorNo` mescla o avanço lançado por nó) sempre que a
+     obra tem lançamento na data de corte. Antes, saíam do que os diários
+     apuravam.
+
+     ⚠ POR QUE A FOLHA TEM DE DIZER ISSO. Os dois números convivem na mesma
+       empresa, e o relatório mensal vai à fiscalização com carimbo: um IDP
+       de 0,92 "pelos diários" e um de 1,03 "pelo lançado" são leituras
+       diferentes da mesma obra no mesmo dia. Quem recebe a folha precisa
+       saber por qual régua ela foi feita para poder discutir o número — e
+       quem guardou a folha do mês passado precisa saber que a régua mudou.
+       Sem a legenda, a mudança de régua aconteceria calada entre dois
+       relatórios consecutivos.
+
+     Ela nasce SÓ quando o lançado entrou na conta (`painel.nos[].avanco`, que
+     o `noPainel` copia campo a campo) — em obra sem lançamento nenhum nada
+     muda, e a folha não ganha uma linha. */
+  function vaLancadoDe(painel) {
+    if (!painel || !Array.isArray(painel.nos)) return null;
+    var n = 0, origens = {}, semLastro = 0, porBoletim = {};
+    painel.nos.forEach(function (x) {
+      if (!x || !x.avanco) return;
+      n++;
+      var o = txt(x.avanco.origem) || "digitado";
+      origens[o] = (origens[o] || 0) + 1;
+      /* MEDCC 6B: a CONTAGEM POR BOLETIM e a das que perderam o lastro.
+         ⚠ A folha nomeia o boletim, e por isso precisa dizer quando NÃO
+           consegue nomear: sem esta contagem a legenda diria "3 de medição
+           aprovada · medição 01a" sobre quatro tarefas, e quem levasse a
+           folha à fiscalização atribuiria a um boletim uma tarefa que não é
+           dele. Recado que mente é pior que recado nenhum.
+         ⚠ HOJE ESTE RAMO É CINTO, e não o caso do dia a dia (medido em
+           22/09/2026): o `CronoAvanco.ler` (E-MC1) só deixa o `o` passar
+           quando há `b`, e o `CronoBase.salvarAvanco` recusa a gravação do
+           par incompleto no portão. Ele fica porque a folha vai à
+           fiscalização e porque o registro viaja pela nuvem entre versões —
+           o dia em que um leitor novo deixar o par passar, a legenda conta à
+           parte em vez de mentir. `tools/test-cronodocs.js` prova o ramo com
+           um painel montado à mão, e diz lá que é assim de propósito. */
+      if (o !== "medicao") return;
+      var b = txt(x.avanco.lastro);
+      if (!b) { semLastro++; return; }
+      var rot = txt(x.avanco.rotulo).replace(/^medição\s+/, "") || b;
+      porBoletim[rot] = (porBoletim[rot] || 0) + 1;
+    });
+    if (!n) return null;
+    var corte = iso10(painel.dataCorte);
+    var dm = corte ? corte.slice(8, 10) + "/" + corte.slice(5, 7) : "";
+    /* ⚠ A ORIGEM VAI EM PORTUGUÊS E CONTADA (D5: "sim, com a origem em cada
+       linha"). O papel não tem espaço para a coluna por linha que o P×R tem,
+       mas quem recebe a folha precisa saber se aqueles pontos vieram de
+       alguém digitando ou de uma medição aprovada — são conversas
+       diferentes com a fiscalização. Contado aqui, no motor, para a folha
+       só escrever. */
+    var ROT_O = { digitado: "digitado no planejamento", diario: "puxado dos diários", medicao: "de medição aprovada" };
+    var porOrigem = [];
+    Object.keys(origens).sort().forEach(function (k) {
+      porOrigem.push({ origem: k, rotulo: ROT_O[k] || k, nos: origens[k] });
+    });
+    /* MEDCC 6B: os boletins que sustentam o VA, contados e NOMEADOS, mais as
+       tarefas de medição que ficaram sem boletim identificável. */
+    var bol = [];
+    Object.keys(porBoletim).sort().forEach(function (k) { bol.push({ numero: k, nos: porBoletim[k] }); });
+    var txtMed = "";
+    if (bol.length) {
+      txtMed = " · dos pontos de medição aprovada: " + bol.map(function (b) { return "medição " + b.numero + " (" + b.nos + ")"; }).join(", ");
+    }
+    if (semLastro) txtMed += (txtMed ? " · " : " · ") + semLastro + " sem o boletim de origem identificado";
+    return { corte: corte || null, nos: n, origens: origens, porOrigem: porOrigem,
+      porBoletim: bol, semLastro: semLastro,
+      texto: "VA pelo % lançado no planejamento" + (dm ? " em " + dm : "") + " (não pelos diários)" + txtMed,
+      fonte: "avanço lançado no planejamento da obra, mesclado por nó no previsto × realizado" };
+  }
 
   /* Campos que a guarda retira quando o nível não permite. O nome do campo é
      o contrato: quem criar um campo novo com dinheiro de custo ou com folga
@@ -737,12 +826,42 @@
            como “1,0” — obra atrasada com a mesma cara de obra no ritmo, na
            folha da diretoria. O `casas` viaja com o número, e a `leitura`
            vai junto: número sozinho perto de 1,00 não diz nada. */
+        /* D5 (planejador 3A): de onde saiu o VA deste mês. Ver `vaLancadoDe`. */
+        sa.vaLancado = vaLancadoDe(painel);
         if (K.idp) sa.idp = kpi("idp", txt(K.idp.rotulo) || "IDP (índice de desempenho de prazo)", r2(K.idp.valor), "",
           "EVM: VA ÷ VP, os dois da linha de base",
           { vp: r2(K.idp.vp), va: r2(K.idp.va), casas: 2,
+            legendaVA: sa.vaLancado ? sa.vaLancado.texto : null,
             leitura: K.idp.valor >= 1 ? "no ritmo ou à frente do previsto" : "abaixo do ritmo previsto" });
+        if (sa.vaLancado) {
+          sa.reguas.forEach(function (x) { if (x.id === "executadoOrcamento") x.nota = "este número continua saindo dos diários — o lançado entra no VA e no IDP."; });
+          checar("Origem do valor agregado declarada na folha", true, sa.vaLancado.nos + " tarefa(s) com lançamento até " + (sa.vaLancado.corte || "—"), "");
+        }
         else fora("idp", "sem IDP: ele só existe com linha de base congelada (sem base, o índice compara o plano com ele mesmo e fica perto de 1 sozinho).");
         if (ehNum(K.desvioTerminoDias)) sa.desvioTerminoDias = kpi("desvioTerminoDias", "Desvio de término", K.desvioTerminoDias, "dias úteis", "fim do plano atual × fim da linha de base, no calendário da base");
+        /* O TÉRMINO PREVISTO PELA REDE (planejador 3A; decisão D3).
+           ⚠ POR QUE PELA REDE, E NÃO PELO RITMO DOS DIÁRIOS. A obra tinha
+             DUAS datas de término em destaque na mesma tela — uma "10 DU
+             depois" (a rede, que sabe as dependências e o que já aconteceu) e
+             outra "25 dias antes da base" (uma reta traçada sobre o ritmo
+             medido) — sem dizer que eram contas diferentes, e quem lia
+             escolhia a que preferia. No relatório mensal, que vai à
+             fiscalização, isso é pior: a data vira compromisso. A resposta a
+             "quando entrega" é a da rede; o ritmo continua existindo, na
+             curva S, rotulado como projeção. */
+        if (K.previsaoTermino) {
+          var pt = K.previsaoTermino;
+          sa.terminoPrevisto = { data: iso10(pt.data), diasUteis: pt.diasUteis,
+            comAvanco: !!pt.comAvanco, corte: iso10(pt.corte) || null,
+            base: pt.base ? { data: iso10(pt.base.data), versao: pt.base.versao, diasUteis: pt.base.diasUteis } : null,
+            desvioDU: ehNum(pt.desvioDU) ? pt.desvioDU : null,
+            fonte: pt.comAvanco
+              ? "a rede do plano, com o avanço lançado até " + (iso10(pt.corte) || "a data de corte") + " dentro"
+              : "a rede do plano atual (nenhum avanço lançado entrou nesta conta)",
+            regua: "é a data que as dependências do plano dão — não a projeção do ritmo medido nos diários, que fica na curva S, rotulada." };
+          checar("Término previsto apurado pela rede do plano", !!sa.terminoPrevisto.data,
+            sa.terminoPrevisto.data || "—", sa.terminoPrevisto.data ? "" : "o plano não fechou uma data de fim");
+        } else fora("termino-previsto", "o painel não trouxe o término previsto pela rede — o capítulo de avanço sai sem a data de entrega, e nenhuma é estimada aqui.");
       }
       checar("Avanço físico apurado com a régua declarada", !!(painel && sa.reguas.length), painel ? sa.reguas.length + " régua(s)" : "0", painel ? "" : "painel da obra indisponível");
       out.secoes.push(sa);
@@ -981,7 +1100,24 @@
          depois), o papel sai com `comprometida:false`, `conflito:true` e o
          aviso; o REGISTRO no Store não é tocado (motor puro).
 
-       dados = { obra, plano:{tarefas}, hoje, publico, LastPlanner }
+       ⚠ A JANELA COMEÇA NA DATA DE CORTE DO AVANÇO, NÃO EM "HOJE"
+         (planejador 3A; avanco.md, fase C). Quando a obra tem avanço lançado,
+         o corte é o dia que o plano descreve: as datas reprogramadas saem
+         dele. Montando a janela a partir de "hoje" com um corte de seis dias
+         atrás, a primeira semana do quadro já estaria com serviço que o plano
+         colocou na semana anterior, e o encarregado leria como atraso uma
+         diferença que é só de régua. O corte VELHO não serve: passado
+         `CORTE_VELHO_DIAS` ele descreve outra obra, e aí vale "hoje" — com o
+         motivo declarado em `out.referencia`, nunca calado.
+
+       ⚠ AS TAREFAS SEM PREÇO ENTRAM NA JANELA (EXTRAS, fase C). Liberação de
+         área, aprovação em órgão e comissionamento não têm serviço no
+         orçamento e não aparecem na lista do Last Planner — mas é por elas
+         que o canteiro para. O quadro as lista à parte, com o responsável, e
+         não as mistura com as tarefas comprometidas: elas não são
+         comprometíveis pela equipe da obra.
+
+       dados = { obra, plano:{tarefas}, hoje, corte, r, publico, LastPlanner }
        ================================================================= */
     lookahead: function (dados, semanas) {
       dados = dados || {};
@@ -1026,8 +1162,32 @@
       var hojeISO = iso10(hojeD);
       out.hoje = hojeISO;
 
+      /* A REFERÊNCIA DA JANELA (planejador 3A): o corte do avanço quando ele
+         é recente; senão, hoje. Ver o ⚠ do cabeçalho. */
+      var corteISO = iso10(dados.corte) || (dados.painel ? iso10(dados.painel.dataCorte) : "");
+      var refD = hojeD, refISO = hojeISO;
+      out.referencia = { data: hojeISO, fonte: "hoje", corte: corteISO || null, motivo: "" };
+      if (corteISO && corteISO <= hojeISO) {
+        var dC = dataLocal(corteISO);
+        var idade = dC ? Math.round((hojeD.getTime() - dC.getTime()) / 86400000) : null;
+        out.referencia.diasDesdeOCorte = idade;
+        if (idade != null && idade <= CORTE_VELHO_DIAS) {
+          refD = dC; refISO = corteISO;
+          out.referencia.data = corteISO; out.referencia.fonte = "corte do avanço";
+          out.referencia.motivo = "a janela começa na data de corte do avanço lançado (" +
+            corteISO.slice(8, 10) + "/" + corteISO.slice(5, 7) + "), que é o dia descrito pelo plano — as datas reprogramadas saem dela.";
+        } else {
+          out.referencia.motivo = "o avanço lançado é de " + corteISO.slice(8, 10) + "/" + corteISO.slice(5, 7) +
+            " (" + idade + " dias atrás): velho demais para reger a janela, que fica em hoje.";
+          aviso("corte-velho", out.referencia.motivo + " Atualize o avanço para o quadro voltar a sair pela data do plano.", true);
+        }
+      } else if (corteISO) {
+        out.referencia.motivo = "a data de corte recebida (" + corteISO + ") é posterior a hoje — a janela fica em hoje.";
+        aviso("corte-futuro", out.referencia.motivo, true);
+      }
+
       var tarefas = arr(dados.plano && dados.plano.tarefas);
-      var lista = LP.semanas(hojeD, n);
+      var lista = LP.semanas(refD, n);
       var chaveAtual = lista.length ? lista[0].chave : "";
 
       var conflitos = 0, totComp = 0, totLivres = 0, totTravadas = 0;
@@ -1062,10 +1222,26 @@
           if (linha.comprometida) totComp++;
           return linha;
         });
+        /* AS TAREFAS SEM PREÇO DA JANELA (planejador 3A; ver o ⚠ do
+           cabeçalho). Entra a que TOCA a semana: começa antes e termina
+           dentro, começa dentro, ou atravessa a semana inteira. */
+        var sIni = iso10(s.ini), sFim = iso10(s.fim);
+        var tsp = arr(dados.r && dados.r.extras).map(function (x) {
+          var xi = iso10(x && x.dataInicio), xf = iso10(x && x.dataFim);
+          if (!xi || !xf || xf < sIni || xi > sFim) return null;
+          return { id: txt(x.id), numero: txt(x.numero), nome: txt(x.nome),
+            inicio: xi, fim: xf, marco: !!x.marco,
+            responsavel: ROTULO_RESP_DOC[txt(x.resp)] || txt(x.resp) || null,
+            venceNaSemana: xf >= sIni && xf <= sFim,
+            atrasada: !!(xf < refISO),
+            fonte: "tarefa sem preço do cronograma (T) — não tem serviço no orçamento" };
+        }).filter(function (x) { return !!x; });
         return { idx: s.idx, chave: s.chave, rotulo: s.rotulo, periodo: s.periodo,
           inicio: iso10(s.ini), fim: iso10(s.fim),
           tarefas: linhas,
+          tarefasSemPreco: tsp,
           nTarefas: linhas.length,
+          nTarefasSemPreco: tsp.length,
           nComprometidas: linhas.filter(function (L) { return L.comprometida; }).length,
           nTravadas: linhas.filter(function (L) { return !L.podeComprometer; }).length };
       });
@@ -1240,8 +1416,13 @@
         out.situacao = { texto: txt(K.situacao), contra: txt(K.situacaoContra),
           fonte: "executado × previsto na mesma régua" };
       } else fora("situacao", "a obra não tem situação apurada (falta linha de base ou realizado) — a folha não diz “no prazo” nem “atrasada”.");
+      /* D5 (planejador 3A): a MESMA legenda da folha mensal, na folha da
+         diretoria. Ela é a que vira decisão — e não pode dizer um IDP com
+         régua diferente da do relatório do mesmo mês sem avisar. */
+      out.vaLancado = vaLancadoDe(painel);
       if (K.idp) out.idp = { valor: r2(K.idp.valor), vp: r2(K.idp.vp), va: r2(K.idp.va), rotulo: txt(K.idp.rotulo),
         leitura: K.idp.valor >= 1 ? "no ritmo ou à frente do previsto" : "abaixo do ritmo previsto",
+        legendaVA: out.vaLancado ? out.vaLancado.texto : null,
         fonte: "EVM: IDP = VA ÷ VP, os dois na régua da linha de base" };
 
       /* ---- TENDÊNCIA: projeção EXPLÍCITA, nunca somada ao acumulado real.
@@ -1340,6 +1521,226 @@
       out.ok = true;
       return _guardar(out, P, out.foraDaConta);
     },
+
+    /* =================================================================
+       BASES B4 — COMPARATIVO DE LINHAS DE BASE (o impresso do pleito)
+
+       POR QUE ELE EXISTE: a comparação entre versões já existe na TELA
+       (sub-aba "Linhas de base"), e é nela que se decide reprogramar. Mas
+       quem pede prorrogação de prazo não manda um print: manda uma folha A3
+       com as janelas lado a lado, de onde a fiscalização confere etapa por
+       etapa. Sem ela, a reprogramação fica provada só dentro do app.
+
+       ⚠ A COLUNA DE REFERÊNCIA É A CONTRATUAL, e não "a versão anterior".
+         O que se pleiteia é prazo contra o CONTRATO. Comparar a v4 com a v3
+         mostra o último remendo; o contratante quer ver a v4 contra a v1 que
+         ele assinou. A versão anterior continua na folha, ao lado, porque é
+         ela que explica de onde veio o último movimento.
+
+       ⚠ AS DATAS SAEM DE `CronoPlan.dataDaBase`, NUNCA DE Date GRAVADO. A
+         base guarda deslocamento em dias úteis + o calendário dela; refazer
+         a conta aqui daria outro dia em toda obra com feriado — e é o dia
+         que a fiscalização confere contra o diário.
+
+       ⚠ O TÉRMINO É O ÚLTIMO DIA TRABALHADO (D9), a mesma convenção da tela
+         e do MS Project; o motor guarda o dia SEGUINTE. Uma folha com o dia
+         seguinte ao lado de um diário que fecha no dia certo vira discussão
+         de um dia em cada etapa.
+
+       dados = { obra, bases:[registros de base], ativaId, contratualId,
+                 r (plano atual, opcional), contrato:{numero, prazoDias,
+                 aditivos}, publico, hoje, CronoPlan }
+       ================================================================= */
+    comparativoBases: function (dados) {
+      dados = dados || {};
+      var P = this.publico(dados.publico || "fiscalizacao");
+      var out = { ok: false, publico: P, obra: null, hoje: null, colunas: [], linhas: [],
+        totais: null, prazoContratual: null, avisos: [], foraDaConta: [] };
+      function aviso(tipo, msg, interno) { out.avisos.push({ tipo: tipo, msg: msg, interno: !!interno }); }
+      function fora(tipo, msg, extra) {
+        var x = { tipo: tipo, msg: msg };
+        if (extra) Object.keys(extra).forEach(function (k) { x[k] = extra[k]; });
+        out.foraDaConta.push(x);
+      }
+      function falha(msg) { out.erro = msg; return out; }
+
+      var obra = dados.obra;
+      if (!obra || typeof obra !== "object" || obra.id == null || obra.id === "") return falha("sem obra — o comparativo de linhas de base é de uma obra.");
+      out.obra = { id: obra.id, nome: txt(obra.nome) };
+      out.hoje = iso10(dados.hoje) || null;
+
+      var CP = dados.CronoPlan || dep("CronoPlan", "./cronoplan.js");
+      if (!CP || typeof CP.dataDaBase !== "function") {
+        return falha("motor do planejamento não carregado (js/cronoplan.js) — sem ele as datas de cada versão não saem do calendário congelado dela, e refazer a conta aqui daria outro dia em obra com feriado.");
+      }
+      var bases = arr(dados.bases).filter(function (b) {
+        return b && typeof b === "object" && txt(b.obraId) === txt(obra.id) && arr(b.nos).length > 0;
+      });
+      if (!bases.length) return falha("esta obra não tem linha de base congelada com detalhe — o comparativo compara versões, e não há nenhuma para comparar.");
+      bases.sort(function (a, b) { return (n0(a.versao) - n0(b.versao)) || (txt(a.id) < txt(b.id) ? -1 : 1); });
+
+      function dia(b, k) { return (k == null) ? null : CP.dataDaBase(b, k); }
+      // ⚠ D9: o último dia TRABALHADO (o motor guarda o índice do dia seguinte)
+      function ultimoDia(b, k) { return (k == null) ? null : (k > 0 ? dia(b, k - 1) : dia(b, k)); }
+      function difDias(a, b) {
+        var da = dataLocal(a), db = dataLocal(b);
+        return (da && db) ? Math.round((db.getTime() - da.getTime()) / 86400000) : null;
+      }
+
+      var contratualId = txt(dados.contratualId), ativaId = txt(dados.ativaId);
+      var colunas = [], porCol = {}, i;
+      function coluna(b, papel) {
+        var c = { id: txt(b.id), versao: n0(b.versao), papel: papel,
+          rotulo: "v" + n0(b.versao) + (papel ? " (" + papel + ")" : ""),
+          inicio: b.cal ? iso10(b.cal.dataInicio) : null,
+          prazoDU: n0(b.totalDias),
+          termino: ultimoDia(b, n0(b.totalDias)),
+          valor: ehNum(b.valor) ? r2(b.valor) : null,
+          criadaEm: iso10(b.criadaEm) || null, por: txt(b.por), motivo: txt(b.motivo),
+          fonte: "linha de base congelada v" + n0(b.versao) };
+        colunas.push(c); porCol[c.id] = b;
+        return c;
+      }
+      var bContr = null, bAtiva = null, bAnterior = null;
+      for (i = 0; i < bases.length; i++) {
+        if (contratualId && txt(bases[i].id) === contratualId) bContr = bases[i];
+        if (ativaId && txt(bases[i].id) === ativaId) bAtiva = bases[i];
+      }
+      if (!bContr) {
+        bContr = bases[0];
+        fora("sem-contratual", "nenhuma versão está marcada como contratual — a coluna de referência é a v" + n0(bContr.versao) +
+          " (a mais antiga guardada). Num pleito a referência tem de ser a versão do contrato assinado: marque-a antes de enviar esta folha.");
+      }
+      if (!bAtiva) bAtiva = bases[bases.length - 1];
+      for (i = 0; i < bases.length; i++) {
+        if (txt(bases[i].id) !== txt(bAtiva.id) && txt(bases[i].id) !== txt(bContr.id)) bAnterior = bases[i];
+      }
+      coluna(bContr, "contratual");
+      if (bAnterior) coluna(bAnterior, "anterior");
+      if (txt(bAtiva.id) !== txt(bContr.id)) coluna(bAtiva, "ativa");
+      if (colunas.length < 2) aviso("uma-versao", "esta obra tem uma versão só de linha de base: a folha compara a contratual com o plano atual.", false);
+
+      /* O PLANO ATUAL como coluna, quando o chamador passa o `r` calculado —
+         é o que a obra está executando hoje, e é o que o pleito pede. */
+      var rPl = dados.r || null, colPlano = null;
+      if (rPl && rPl.dataFim && arr(rPl.etapas).length) {
+        /* ⚠ MESMA CONVENÇÃO DAS OUTRAS COLUNAS (D9): `r.dataFim` é o dia
+           SEGUINTE ao último trabalhado, e as colunas das versões mostram o
+           último dia trabalhado. Medido em 21/09/2026, obra de 45 DU começando
+           em 05/01/2026: por `dataFim` a coluna do plano saiu 09/03 (segunda)
+           contra o último dia real, 06/03 (sexta) — três dias corridos de
+           diferença com as outras colunas da MESMA folha, num documento cuja
+           coluna Δ fim é exatamente a diferença entre elas.
+           `dataUltimoDia` só existe com frente em calendário próprio; sem ela,
+           a régua é o calendário do próprio cálculo. */
+        var ultPlano = iso10(rPl.dataUltimoDia);
+        if (!ultPlano) {
+          var Cm = dados.Cronograma || dep("Cronograma", "./cronograma.js");
+          if (Cm && typeof Cm.calendario === "function" && n0(rPl.totalDias) > 0) {
+            try { ultPlano = iso10(Cm.calendario(rPl).dia(n0(rPl.totalDias) - 1)); } catch (eC) { ultPlano = ""; }
+          }
+        }
+        if (!ultPlano) {
+          ultPlano = iso10(rPl.dataFim);
+          fora("termino-plano", "não consegui apurar o último dia trabalhado do plano atual: a coluna dele mostra o dia seguinte ao fim, e a diferença com as outras colunas pode sair um dia útil maior.");
+        }
+        colPlano = { id: "__plano", versao: null, papel: "plano atual", rotulo: "Plano atual",
+          inicio: iso10(rPl.dataInicio), prazoDU: n0(rPl.totalDias),
+          termino: ultPlano, valor: null,
+          criadaEm: null, por: "", motivo: "",
+          fonte: "cronograma do plano da obra, como está hoje" };
+        colunas.push(colPlano);
+      } else fora("plano-atual", "o cronograma do plano atual não veio — a folha compara só as versões congeladas.");
+
+      /* o último dia trabalhado de UM nó do plano, na régua do cálculo */
+      var calPl = null;
+      if (rPl) {
+        var Cm2 = dados.Cronograma || dep("Cronograma", "./cronograma.js");
+        if (Cm2 && typeof Cm2.calendario === "function") { try { calPl = Cm2.calendario(rPl); } catch (eK) { calPl = null; } }
+      }
+      function ultDiaDoNo(n) {
+        if (calPl && typeof n.fim === "number" && n.fim > n.inicio) { try { return iso10(calPl.dia(n.fim - 1)); } catch (eD) { return iso10(n.dataFim); } }
+        return iso10(n.dataFim);
+      }
+
+      // as LINHAS: todo nó que exista em alguma coluna
+      var linhas = {}, ordem = [];
+      colunas.forEach(function (c) {
+        var b = porCol[c.id];
+        if (!b) return;
+        arr(b.nos).forEach(function (n) {
+          if (!n || n.id == null) return;
+          var k = txt(n.id);
+          if (!linhas[k]) { linhas[k] = { id: k, numero: txt(n.n), nome: txt(n.nm), tipo: n.t === "e" ? "etapa" : "folha", janelas: {} }; ordem.push(k); }
+          linhas[k].janelas[c.id] = { inicio: dia(b, n.i), fim: ultimoDia(b, n.f) };
+        });
+      });
+      if (colPlano) {
+        arr(rPl.atividades).forEach(function (n) {
+          if (!n || n.id == null || (n.tipo !== "etapa" && n.tipo !== "subetapa" && n.tipo !== "soltos")) return;
+          var k = txt(n.id);
+          if (!linhas[k]) { linhas[k] = { id: k, numero: txt(n.numero), nome: txt(n.nome), tipo: n.tipo === "etapa" ? "etapa" : "folha", janelas: {} }; ordem.push(k); }
+          /* ⚠ o mesmo último dia trabalhado da coluna (ver acima): por
+             `dataFim` a linha do plano ficava um dia útil à frente das
+             mesmas linhas das versões congeladas */
+          linhas[k].janelas.__plano = { inicio: iso10(n.dataInicio), fim: iso10(n.dataUltimoDia) || ultDiaDoNo(n) };
+        });
+      }
+      var refId = colunas[0].id, ultId = colunas[colunas.length - 1].id;
+      function ordemEAP(s) {
+        var p = txt(s).split("."), v = 0, k;
+        for (k = 0; k < 3; k++) v = v * 1000 + (parseInt(p[k], 10) || 0);
+        return v;
+      }
+      out.linhas = ordem.map(function (k) { return linhas[k]; }).sort(function (a, b) {
+        return (ordemEAP(a.numero) - ordemEAP(b.numero)) || (a.numero < b.numero ? -1 : (a.numero > b.numero ? 1 : 0));
+      });
+      var nMoveu = 0, nEntrou = 0, nSaiu = 0;
+      out.linhas.forEach(function (L) {
+        var jr = L.janelas[refId] || null, ju = L.janelas[ultId] || null;
+        L.naReferencia = !!jr;
+        L.naUltima = !!ju;
+        L.moveu = !!(jr && ju && (jr.inicio !== ju.inicio || jr.fim !== ju.fim));
+        L.difFimDias = (jr && ju) ? difDias(jr.fim, ju.fim) : null;
+        if (L.moveu) nMoveu++;
+        if (!L.naReferencia && L.naUltima) nEntrou++;
+        if (L.naReferencia && !L.naUltima) nSaiu++;
+      });
+      var cRef = colunas[0], cUlt = colunas[colunas.length - 1];
+      out.totais = { referencia: cRef.rotulo, ultima: cUlt.rotulo,
+        prazoDU: [cRef.prazoDU, cUlt.prazoDU], difPrazoDU: cUlt.prazoDU - cRef.prazoDU,
+        termino: [cRef.termino, cUlt.termino],
+        difTerminoDiasCorridos: difDias(cRef.termino, cUlt.termino),
+        movidas: nMoveu, entraram: nEntrou, sairam: nSaiu, linhas: out.linhas.length,
+        fonte: "janelas congeladas em cada versão, cada uma no calendário dela" };
+      out.colunas = colunas;
+
+      /* O PRAZO CONTRATUAL (D17): o do contrato mais os aditivos aprovados.
+         Ele NÃO se calcula a partir das bases — é o que está assinado. */
+      var ct = dados.contrato || null;
+      if (ct && typeof ct === "object") {
+        var somaAdit = 0;
+        var adits = arr(ct.aditivos).map(function (a) {
+          somaAdit += n0(a && a.prazoDias);
+          return { numero: txt(a && a.numero), data: iso10(a && a.data), prazoDias: n0(a && a.prazoDias), objeto: txt(a && a.objeto) };
+        });
+        out.prazoContratual = { numero: txt(ct.numero), prazoDias: n0(ct.prazoDias), aditivos: adits,
+          somaAditivosDias: somaAdit, prazoComAditivos: n0(ct.prazoDias) + somaAdit,
+          /* ⚠ D18 CONTINUA ABERTA: o cadastro NÃO diz se o prazo do contrato e
+             o dos aditivos estão em dias corridos ou em dias úteis, e este
+             comparativo mede dias úteis de obra. Sem saber a unidade a folha
+             não afirma "coberta" nem "não coberta": mostra os dois números e
+             pede a conferência. Afirmar cobertura com a unidade errada num
+             pleito é o erro caro desta folha. */
+          unidade: "não declarada no cadastro",
+          avisoUnidade: "confira a unidade do prazo no contrato (dias corridos ou dias úteis): o comparativo acima está em dias úteis de obra, e esta folha não afirma se o atraso está coberto pelos aditivos.",
+          fonte: "contrato e termos aditivos cadastrados na obra" };
+      } else fora("contrato", "o contrato da obra não veio — a folha compara as versões, mas não diz contra qual prazo assinado.");
+
+      out.ok = true;
+      return _guardar(out, P, out.foraDaConta);
+    },
+
 
     // expostos para a fiação e para a suíte (nada aqui desenha)
     _guardar: _guardar,

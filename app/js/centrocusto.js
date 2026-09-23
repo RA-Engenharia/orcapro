@@ -1253,6 +1253,24 @@
       var d = cloneCC(alvo);
       d.fmt = 2; d.apura = val; d.atualizadoEm = txt(agora);
       d._mudanca = ehFmt2(alvo) ? "apura" : "adocao";
+      /* ⚠ `cnv:1` É O QUE TORNA A CONVERSÃO REVERSÍVEL, e ela precisa ser.
+         Roteiro do defeito (revisão adversarial da Onda 5, clique real):
+         obra com dois centros antigos e R$ 47.000 de gasto → [Converter os
+         centros antigos…] → tudo vai a R$ 0,00 e "Sem centro R$ 47.000,00",
+         porque centro antigo não tem `origem` e nada cai nele pelo vínculo
+         do orçamento. A única porta oferecida era [Ver a fila], e a aba Fila
+         responde que o motor (`js/ccagente.js`) ainda não está no aparelho.
+         Sem caminho de volta: com `fmt:2` gravado, o cadastro não oferece
+         mais "Estimativa: dividido pelo orçado (antigo)" — a opção só é
+         montada quando `normalizar` devolve `apura:"rateio"`, o que exige
+         que NENHUM centro da obra tenha `fmt:2`. Skill `dinheiro` §6 ao pé
+         da letra: trava sem saída.
+         Este carimbo diz "este centro ERA antigo e virou novo por conversão"
+         — e só quem o tem pode voltar (`desconverter`). Sem ele não dá para
+         distinguir o centro convertido do centro PRÓPRIO criado já na régua
+         nova, e devolver um centro próprio para o rateio seria rebaixar o que
+         a pessoa cadastrou de propósito. */
+      if (d._mudanca === "adocao") d.cnv = 1;
       gravar.push(d);
     }
     if (recusa) return { gravar: [], recusa: recusa };
@@ -1264,6 +1282,61 @@
     var r = converterDados(ccsCrus, escolhas, agora, quem, obraId);
     var limpos = arr(r.gravar).map(function (c) { var d = cloneCC(c); delete d._mudanca; return d; });
     return { gravar: limpos, mudancas: arr(r.gravar).map(function (c) { return { id: txt(c.id), mudanca: txt(c._mudanca) }; }), recusa: r.recusa };
+  }
+
+  /* ------------------------------------------------------------------
+   * A VOLTA DA CONVERSÃO (skill `dinheiro` §6: toda trava precisa de porta)
+   * ------------------------------------------------------------------
+   * ⚠ SÓ A OBRA INTEIRA VOLTA, NUNCA UM CENTRO SOZINHO. O modo da obra é
+   * derivado da LISTA (`modoDaObra`): basta UM centro `fmt:2` para a obra
+   * inteira sair do rateio. Devolver um centro e deixar o outro não repõe
+   * nada — a obra continua em "novo" e o centro devolvido passa a apurar por
+   * lançamento, que é justamente o que mostrava R$ 0,00. Por isso
+   * `podeDesconverter` só responde quando TODOS os `fmt:2` da obra trazem o
+   * carimbo `cnv` da conversão: aí a volta reconstrói exatamente o estado de
+   * antes. Com um centro gerado do orçamento (tem `origem`) ou um centro
+   * próprio no meio, a volta não existe — e ali ela também não faz falta,
+   * porque esses centros recebem gasto pelo vínculo do orçamento. */
+  function podeDesconverter(obraId, ccsCrus) {
+    var listaObra = daObra(ccsCrus, obraId);
+    var novos = [], i;
+    for (i = 0; i < listaObra.length; i++) if (ehFmt2(listaObra[i])) novos.push(listaObra[i]);
+    if (!novos.length) return [];
+    for (i = 0; i < novos.length; i++) if (num(novos[i].cnv) !== 1) return [];
+    return novos;
+  }
+  function desconverter(ccsCrus, ids, agora, quem, obraId) {
+    void quem;
+    if (temLeitura(ccsCrus)) {
+      return { gravar: [], recusa: { motivo: "lista-normalizada", msg: "A lista de centros veio normalizada para leitura — gravar a partir dela mudaria a régua da obra sem ninguém pedir." } };
+    }
+    var podem = {}, elegiveis = podeDesconverter(obraId, ccsCrus);
+    elegiveis.forEach(function (c) { podem[txt(c.id)] = c; });
+    if (!elegiveis.length) {
+      return { gravar: [], recusa: { motivo: "volta-indisponivel", msg: "Esta obra tem centro de custo que não veio de conversão — a volta para a estimativa antiga não vale aqui." } };
+    }
+    var gravar = [], recusa = null;
+    arr(ids).forEach(function (k) {
+      if (recusa) return;
+      var alvo = podem[txt(k)];
+      if (!alvo) { recusa = { motivo: "volta-sumiu", id: txt(k), msg: "Um dos centros escolhidos não é mais um centro convertido. Recarregue antes de voltar." }; return; }
+      var d = cloneCC(alvo);
+      /* ⚠ SAEM OS TRÊS JUNTOS. `apura` sem `fmt:2` é campo órfão: o
+         `normalizar` o ignora com aviso, e o registro ficaria carregando uma
+         forma de apurar que ninguém honra. */
+      delete d.fmt; delete d.apura; delete d.cnv;
+      d.atualizadoEm = txt(agora);
+      gravar.push(d);
+    });
+    if (recusa) return { gravar: [], recusa: recusa };
+    /* ⚠ OU VOLTAM TODOS, OU NENHUM: deixar um `fmt:2` de pé mantém a obra em
+       modo "novo" e a volta não teria efeito nenhum — a pessoa veria os
+       números continuarem zerados depois de uma ação que disse tê-los
+       devolvido. */
+    if (gravar.length !== elegiveis.length) {
+      return { gravar: [], recusa: { motivo: "volta-parcial", msg: "A volta para a estimativa antiga vale para os " + elegiveis.length + " centros da obra de uma vez: com um só convertido, a obra continua na régua nova e os números não voltam." } };
+    }
+    return { gravar: gravar, recusa: null };
   }
 
   /* ------------------------------------------------------------------
@@ -1677,6 +1750,8 @@
     movimentos: movimentos,
     aplicarPrevia: aplicarPrevia,
     converter: converter,
+    podeDesconverter: podeDesconverter,
+    desconverter: desconverter,
     diffRevisao: diffRevisao,
     aplicarDiff: aplicarDiff,
     doDocumento: doDocumento,

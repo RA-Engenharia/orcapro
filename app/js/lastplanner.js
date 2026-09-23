@@ -40,6 +40,12 @@
   // Chave de semana = data ISO (YYYY-MM-DD) da SEGUNDA. Única e ordenável.
   function chaveSemana(d) { var s = segundaDe(d); return s.getFullYear() + "-" + pad2(s.getMonth() + 1) + "-" + pad2(s.getDate()); }
   function fmtDia(d) { return pad2(d.getDate()) + "/" + pad2(d.getMonth() + 1); }
+  /* "2026-09-10" -> "10/09/2026". ⚠ Sem `new Date(iso)`: a string sem fuso é
+     lida como UTC e vira o dia anterior a oeste de Greenwich. */
+  function dmaISO(v) {
+    var p = String(v == null ? "" : v).slice(0, 10).split("-");
+    return p.length === 3 ? p[2] + "/" + p[1] + "/" + p[0] : String(v == null ? "" : v);
+  }
 
   // Janela do Lookahead: n semanas a partir da semana de 'base' (default: a atual = idx 0).
   function semanas(base, n) {
@@ -244,21 +250,23 @@
         var tit = n.tipo === "etapa" ? (n.nome || eNome) : ((eNome ? eNome + " › " : "") + (n.nome || ""));
         out.push({ cronoNoId: String(n.id), etapaId: n.etapaId != null ? String(n.etapaId) : "", etapaNome: eNome,
           tipo: n.tipo, titulo: tit, categoria: n.categoria || "", categoriaNome: n.categoriaNome || "",
-          ini: isoLocal(n.dataInicio), fim: isoLocal(n.dataFim) });
+          ini: isoLocal(n.dataInicio), fim: isoLocal(n.dataFim),
+          estado: (n.avanco && n.avanco.estado) ? String(n.avanco.estado) : "" });
       });
     } else {
       r.etapas.forEach(function (e) {
         if (!e) return;
         out.push({ cronoNoId: e.id != null ? String(e.id) : "", etapaId: e.id != null ? String(e.id) : "", etapaNome: e.nome || "",
           tipo: "etapa", titulo: e.nome || "", categoria: e.categoria || "", categoriaNome: e.categoriaNome || "",
-          ini: isoLocal(e.dataInicio), fim: isoLocal(e.dataFim) });
+          ini: isoLocal(e.dataInicio), fim: isoLocal(e.dataFim),
+          estado: (e.avanco && e.avanco.estado) ? String(e.avanco.estado) : "" });
       });
     }
     return { nos: out, detalhe: det, avisos: avisos };
   }
 
   function sugerirDoCronogramaNos(nos, semanaISO, existentes) {
-    var res = { sugestoes: [], jaNoPlano: 0, cobertas: [] };
+    var res = { sugestoes: [], jaNoPlano: 0, cobertas: [], concluidas: 0 };
     var seg = isoLocal(semanaISO);
     if (!seg) return res;
     var fimSem = somaDiasISO(seg, 6);
@@ -271,6 +279,15 @@
     arr(nos).forEach(function (n) {
       if (!n || !n.titulo || !n.ini || !n.fim) return;
       if (n.fim < seg || n.ini > fimSem) return;           // fora da janela da semana
+      /* ⚠ O QUE JÁ ACABOU NÃO ENTRA NO PLANO DA SEMANA (planejador 3C).
+         Com o plano da obra (`CronoBase.orcDaObra`), o cronograma que chega
+         aqui já traz o AVANÇO lançado dentro: uma etapa concluída continua
+         com barra no calendário (ela aconteceu), e a janela dela pode cruzar
+         esta semana. Sem esta linha, "Puxar do cronograma" enfiava tarefa
+         concluída no Plano da Semana — e o PPC da semana passaria a medir
+         trabalho que ninguém vai fazer. O Last Planner compromete o que
+         FALTA; o que foi feito é assunto do avanço. */
+      if (n.estado === "concluida") { res.concluidas++; return; }
       if ((n.cronoNoId && porNo[n.cronoNoId]) || porTit[normTit(n.titulo)]) { res.jaNoPlano++; return; }
       if (n.tipo !== "etapa" && ((n.etapaId && porNo[n.etapaId]) || (n.etapaNome && porTit[normTit(n.etapaNome)]))) {
         if (!cob[n.etapaNome]) { cob[n.etapaNome] = []; ordemCob.push(n.etapaNome); }
@@ -302,6 +319,16 @@
     var nd = nosDoCronograma(r);
     var s = sugerirDoCronogramaNos(nd.nos, semanaISO, existentes);
     s.ok = true; s.detalhe = nd.detalhe; s.avisos = nd.avisos;
+    /* ⚠ DE ONDE VIERAM ESTAS DATAS (planejador 3C). A view manda o PLANO da
+       obra (`CronoBase.orcDaObra`, que acha o plano E o avanço na mesma
+       lista) quando ele existe, e o ORÇAMENTO quando não existe. São datas
+       diferentes: o plano tem a rede digitada, os calendários das frentes e
+       a reprogramação do avanço; o orçamento, não. Puxar a semana das datas
+       do orçamento achando que são as do plano é comprometer equipe para a
+       semana errada — e nada na tela dizia qual das duas chegou. */
+    s.fonte = orc && orc._planoDaObra ? "plano" : "orcamento";
+    s.comAvanco = !!(r && r.avanco && r.avanco.corte);
+    s.corte = s.comAvanco ? String(r.avanco.corte).slice(0, 10) : null;
     return s;
   }
 
@@ -313,6 +340,11 @@
     if (res.sugestoes.length) partes.push(res.sugestoes.length + " tarefa(s) do cronograma entraram no plano desta semana (por " + (res.detalhe === "etapa" ? "etapa" : "subetapa") + ") — gerencie as restrições e comprometa.");
     else partes.push("Nada novo para esta semana: nenhuma " + unid.replace("(s)", "") + " do cronograma cai nela, ou já está no plano.");
     if (res.jaNoPlano) partes.push(res.jaNoPlano + " já estava(m) no plano.");
+    if (res.concluidas) partes.push(res.concluidas + " " + unid + " desta semana já estão CONCLUÍDAS no avanço e não entraram — o Plano da Semana compromete o que falta.");
+    /* o recado diz de onde vieram as datas: as do plano e as do orçamento
+       não são as mesmas, e quem compromete equipe precisa saber qual leu */
+    if (res.fonte === "orcamento") partes.push("⚠ Estas datas são as do ORÇAMENTO: esta obra ainda não tem plano de execução iniciado, então a rede, os calendários das frentes e o avanço lançado não entram nelas.");
+    else if (res.fonte === "plano") partes.push(res.comAvanco ? "Datas do plano de execução, com o avanço lançado até " + dmaISO(res.corte) + "." : "Datas do plano de execução (sem avanço lançado).");
     res.cobertas.forEach(function (c) {
       partes.push(c.folhas.length + " subetapa(s) de \"" + c.etapa + "\" não entraram porque a etapa inteira já está no plano desta semana — para planejar por subetapa, abra a tarefa \"" + c.etapa + "\", clique em Excluir e puxe de novo.");
     });

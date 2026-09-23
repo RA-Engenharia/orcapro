@@ -70,6 +70,107 @@
       return '<p><b>' + Util.esc(rotulo) + '</b></p><ul>' + this._lista(txt) + '</ul>';
     },
 
+    /* =================================================================
+       AS PREMISSAS DE PRAZO A CARGO DO CONTRATANTE (planejador 3A, D1)
+
+       A tarefa sem preço com `resp:"cliente"` e a caixa "Mostrar na proposta"
+       marcada (`proposta:true`) é uma obrigação DELE que segura o nosso
+       prazo: aprovação de projeto, liberação de área, escolha de acabamento.
+
+       ⚠ POR QUE ELA VAI NA PROPOSTA, E POR QUE SÓ ELA. O prazo que o cliente
+         assina já conta com esses dias. Se a aprovação atrasa duas semanas, a
+         obra atrasa duas semanas — e sem esta tabela a conversa vira "a
+         construtora estourou o prazo". A tarefa da CONSTRUTORA (resp
+         "construtora") não entra: ela é problema nosso, e listá-la na
+         proposta seria entregar o nosso planejamento interno.
+
+       ⚠ O GANTT DA PROPOSTA CONTINUA SEM AS LINHAS T (decisão k2 do desenho
+         EXTRAS): o desenho do cliente é limpo — sem folga, sem setas e sem
+         caminho crítico —, e uma linha tracejada sem explicação no meio dele
+         levanta a pergunta errada. O vão sem barra é explicado por esta
+         tabela, em palavras.
+
+       Devolve `[]` quando não há nenhuma: a proposta de quem não usa tarefa
+       sem preço não ganha um caractere. */
+    premissasDoContratante: function (r) {
+      var out = [];
+      if (!r || !r.extras || !r.extras.length) return out;
+      r.extras.forEach(function (x) {
+        if (!x || x.resp !== "cliente" || x.proposta !== true) return;
+        out.push({ numero: String(x.numero == null ? "" : x.numero), nome: String(x.nome == null ? "" : x.nome),
+          prazoDias: x.marco ? 0 : Util.num(x.duracao), marco: !!x.marco,
+          inicio: (x.dataInicio && x.dataInicio.toLocaleDateString) ? x.dataInicio.toLocaleDateString("pt-BR") : "",
+          fim: (x.dataFim && x.dataFim.toLocaleDateString) ? x.dataFim.toLocaleDateString("pt-BR") : "" });
+      });
+      return out;
+    },
+    FRASE_PREMISSAS: "Atraso nestas premissas desloca o cronograma na mesma medida.",
+
+    /* =================================================================
+       O RODAPÉ ‡ DAS FRENTES EM CALENDÁRIO PRÓPRIO (planejador 3A, D10)
+
+       ⚠ O PRAZO DA PROPOSTA CONTINUA EM DIAS ÚTEIS DA OBRA. É a régua em que
+         as etapas se somam, é a que está no contrato e é a que a medição usa.
+         A frente que trabalha 7×7 tem OUTRA contagem de dias: dizer "12 dias"
+         numa etapa que ocupa 9 dias úteis da obra, sem explicar, faz o
+         cliente concluir que a conta está errada — e dizer só "9" esconde que
+         a equipe vai estar lá no sábado e no domingo.
+       Devolve `[]` sem calendário atribuído. */
+    rodapeCalendarios: function (r) {
+      var C = r && r.calendarios, out = [];
+      if (!C || !(C.usados || []).length) return out;
+      var porCal = {}, nomes = {}, dias = {};
+      (C.lista || []).forEach(function (c) {
+        if (!c || c.id == null) return;
+        var k = String(c.id), d = 0;
+        nomes[k] = String(c.nome || k);
+        (c.h || []).forEach(function (h) { if (h > 0) d++; });
+        dias[k] = d;
+      });
+      function junta(no, rotulo) {
+        if (!no || !no.calendarioId) return;
+        var k = String(no.calendarioId);
+        if (!porCal[k]) porCal[k] = [];
+        porCal[k].push({ rotulo: rotulo, dias: no.duracaoFrente,
+          de: (no.dataInicioFrente && no.dataInicioFrente.toLocaleDateString) ? no.dataInicioFrente.toLocaleDateString("pt-BR") : "",
+          ate: (no.dataUltimoDia && no.dataUltimoDia.toLocaleDateString) ? no.dataUltimoDia.toLocaleDateString("pt-BR") : "" });
+      }
+      (r.etapas || []).forEach(function (e, i) { junta(e, "etapa " + (i + 1)); });
+      (C.usados || []).forEach(function (id) {
+        var k = String(id), itens = porCal[k] || [];
+        if (!itens.length) return;
+        out.push({ id: k, nome: nomes[k] || k, diasPorSemana: dias[k] || 0, frentes: itens });
+      });
+      return out;
+    },
+    _rodapeCalHTML: function (r) {
+      var lista = this.rodapeCalendarios(r);
+      if (!lista.length) return "";
+      var linhas = lista.map(function (c) {
+        return '<b>‡ ' + Util.esc(c.nome) + '</b>' + (c.diasPorSemana ? ' — ' + c.diasPorSemana + ' dia' + (c.diasPorSemana === 1 ? '' : 's') + ' por semana' : '') + ': ' +
+          c.frentes.map(function (f) {
+            return Util.esc(f.rotulo) + ' (' + (f.dias != null ? f.dias + ' dia' + (f.dias === 1 ? '' : 's') + ' de trabalho' : '') +
+              (f.de && f.ate ? ', de ' + Util.esc(f.de) + ' a ' + Util.esc(f.ate) : '') + ')';
+          }).join(' · ') + '.';
+      }).join('<br>');
+      return '<p class="nota"><b>Frentes em regime próprio:</b> os prazos acima estão em <b>dias úteis da obra</b> — ' +
+        'é a régua do contrato e da medição. Onde há <b>‡</b>, a frente trabalha no calendário dela:<br>' + linhas + '</p>';
+    },
+    _premissasHTML: function (r) {
+      var lista = this.premissasDoContratante(r);
+      if (!lista.length) return "";
+      var linhas = lista.map(function (p) {
+        return '<tr><td>' + Util.esc(p.numero) + '</td><td>' + Util.esc(p.nome) + '</td>' +
+          '<td class="r">' + (p.marco ? 'na data' : p.prazoDias + ' d') + '</td>' +
+          '<td class="r">' + Util.esc(p.fim) + '</td></tr>';
+      }).join("");
+      return '<h3 style="margin:14px 0 6px">Premissas de prazo a cargo do contratante</h3>' +
+        '<table class="prop-tbl"><thead><tr><th>Nº</th><th>Premissa</th><th class="r">Prazo</th><th class="r">Até</th></tr></thead>' +
+        '<tbody>' + linhas + '</tbody></table>' +
+        '<p class="nota"><b>' + Util.esc(this.FRASE_PREMISSAS) + '</b> ' +
+        'Estas linhas não têm preço nesta proposta: elas ocupam prazo e dependem do contratante.</p>';
+    },
+
     /* Cronograma para a PROPOSTA: o Gantt em versão de cliente (UI._gantt com
        `limpo`) mais um quadro de etapa/prazo/entrega.
 
@@ -115,6 +216,10 @@
         '<div class="nota" style="margin:6px 0 10px">' + leg + '</div>' +
         '<table class="prop-tbl"><thead><tr><th>Etapa</th><th>Frente</th><th class="r">Prazo</th>' +
         '<th class="r">Início</th><th class="r">Término</th></tr></thead><tbody>' + linhas + '</tbody></table>' +
+        /* planejador 3A: as duas seções novas nascem VAZIAS quando o
+           orçamento não tem tarefa do contratante nem calendário próprio —
+           a proposta de sempre sai byte a byte igual */
+        this._premissasHTML(r) +
         this._desembolso(orc, r) +
         /* ⚠ Esta é a data que o cliente lê como PROMESSA. A frase acompanha o
            que o cálculo fez de verdade: com o desconto ligado diz quantos
@@ -125,7 +230,8 @@
           ? ' e <b>sem desconto de feriados</b>'
           : (nFer ? ', já descontados <b>' + nFer + ' feriado' + (nFer === 1 ? '' : 's') + '</b> do período' : ', com os feriados nacionais descontados')) +
         '. O cronograma pode ser reajustado em função de ' +
-        'condições climáticas, liberação de frentes de serviço e fornecimento de materiais.</p>';
+        'condições climáticas, liberação de frentes de serviço e fornecimento de materiais.</p>' +
+        this._rodapeCalHTML(r);
     },
 
     /* Cronograma físico-financeiro: quanto sai por mês, seguindo o Gantt.
@@ -688,7 +794,27 @@
     var tOpc = 0, tObr = 0;
     try { var tt = Orcamento.totais(orc); tOpc = Util.num(tt.precoOpcional); tObr = Util.num(tt.precoObrigatorio != null ? tt.precoObrigatorio : tt.precoVenda); }
     catch (e2) { tOpc = 0; tObr = Util.num(c.total); }
-    return {
+    /* PLANEJADOR 3A (D1 e D10): as premissas do contratante e o rodapé ‡
+       viajam JUNTO com o cronograma, porque é na página de cronograma do
+       modelo que eles fazem sentido.
+       ⚠ ELES NÃO ENTRAM NA CONTA. `meses`, `total`, `totaisMes`, `acumPct`
+         e `etapas` continuam vindo inteiros de `Orcamento.cronograma` — a
+         tarefa sem preço não tem valor (D2) e o prazo contratual continua
+         sendo o das etapas. Os dois campos abaixo são TEXTO ao lado.
+       ⚠ CHAVE NOVA SÓ NASCE COM DADO (a regra I2 da espec, e aqui ela é
+         dinheiro): orçamento sem tarefa do contratante e sem calendário
+         próprio devolve o payload de hoje, CHAVE POR CHAVE — uma
+         `premissas: []` a mais já seria "a proposta de quem não usa a função
+         mudou", e este payload é comparado com o do master na paridade. */
+    var premissas = [], rodapeCal = [];
+    try {
+      if (typeof Cronograma !== "undefined" && Cronograma.estimar) {
+        var rP = Cronograma.estimar(orc);
+        premissas = Proposta.premissasDoContratante(rP);
+        rodapeCal = Proposta.rodapeCalendarios(rP);
+      }
+    } catch (e3) { premissas = []; rodapeCal = []; }
+    var saida = {
       meses: c.meses,
       total: Util.num(c.total),
       /* o que a tabela está somando (`total`) × o que a folha fecha (`totalObrigatorio`) */
@@ -707,6 +833,9 @@
         };
       })
     };
+    if (premissas.length) { saida.premissas = premissas; saida.fraseDasPremissas = Proposta.FRASE_PREMISSAS; }
+    if (rodapeCal.length) saida.rodapeCalendarios = rodapeCal;
+    return saida;
   };
 
   Proposta.blocosParaModelo = function (orc) {

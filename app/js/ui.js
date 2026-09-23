@@ -280,7 +280,7 @@
         '<button class="topo-ic-btn" data-busca-abrir aria-label="Busca universal (Ctrl+K)" title="Busca universal — pule pra qualquer obra, orçamento ou ação (Ctrl+K)">' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + '<span class="topo-kbd">Ctrl+K</span></button>' +
         (function () {
           var n = (typeof AvisosUI !== "undefined") ? AvisosUI.contar() : 0;
-          return '<button class="topo-ic-btn" data-avisos-abrir aria-label="Central de avisos" title="Central de avisos — medições a aprovar, tarefas atrasadas e restrições">' + (typeof Icones !== "undefined" ? Icones.solo("sino", 17) : "") +
+          return '<button class="topo-ic-btn" data-avisos-abrir aria-label="Central de avisos" title="Central de avisos — medições a aprovar, tarefas atrasadas, restrições e atrasos do cronograma das obras">' + (typeof Icones !== "undefined" ? Icones.solo("sino", 17) : "") +
             (n ? '<span class="aviso-badge">' + (n > 99 ? "99+" : n) + "</span>" : "") + "</button>";
         })() +
         '<div class="topbar-conta">' +
@@ -2479,6 +2479,56 @@
       d.orc = orcD;
       d.exec = (crD.exec && typeof crD.exec === "object") ? crD.exec : {};
       d.iaMotivos = crD.iaMotivos || {};
+      /* ⚠ PLANEJADOR 2A — A FIAÇÃO FINA DAS QUATRO FUNÇÕES DE DATA.
+         Tudo aqui é LEITURA: o cronograma gravado (que diz a origem de cada
+         restrição e o calendário de cada linha), o cronograma do orçamento de
+         origem (para o `CronoPlan.textoIA` achar o texto que a porta do teto
+         deixou lá), as camadas do Gantt e o modo Planejar | Avançar. Nada
+         disso muda o resultado do motor; sem App, tudo fica vazio e a aba é a
+         de sempre, byte a byte (tools/test-crono-tomadas.js). */
+      d.cron = crD;
+      d.plano = noPlano ? (alvo.plano || true) : null;
+      try { d.cronOrc = (noPlano && orcD._iaOrc) ? orcD._iaOrc : null; } catch (eIa) { d.cronOrc = null; }
+      d.orcOrigemNumero = (noPlano && orc && orc.numero) ? String(orc.numero) : "";
+      /* o carimbo do registro de avanço que esta tela está desenhando: é ele
+         que, comparado com `mat.avEm`, diz se a janela `D-AVANCO-PENDENTE`
+         está aberta (ver `CronoExecUI.compatItens`) */
+      d.avancoEm = (noPlano && alvo.avancoRec && alvo.avancoRec.atualizadoEm) ? String(alvo.avancoRec.atualizadoEm) : null;
+      if (ap) {
+        try { d.camadas = (typeof ap._cronoCamadasLer === "function") ? ap._cronoCamadasLer() : null; } catch (eCm) { d.camadas = null; }
+        var chv = (alvo && alvo.chave) ? alvo.chave : ("orc:" + orc.id);
+        try { d.compatAberto = !!(ap._cronoCompat && ap._cronoCompat[chv]); } catch (eCa) { d.compatAberto = false; }
+        if (noPlano) {
+          var obId = String((alvo.plano && alvo.plano.obraId) || (alvo.obra && alvo.obra.id) || "");
+          var tel = (ap._cronoAvancoTela && ap._cronoAvancoTela[obId]) || null;
+          d.modoAv = (tel && tel.modo === "avancar") ? "avancar" : "planejar";
+          /* ⚠ A PORTA DA FAIXA DE COMPATIBILIDADE, LIGADA NA FUSÃO DA ONDA 2.
+             A faixa é da 2A e o handler `crono-avanco-frota` é da 2B: cada
+             fatia tinha metade, e sozinha nenhuma podia ligar a outra. Até
+             aqui a faixa dizia só "entram no próximo salvar do plano" —
+             verdade, mas sem saída: quem queria fechar a janela
+             `D-AVANCO-PENDENTE` hoje tinha de achar o botão dentro do modal
+             do avanço, que já estava fechado.
+             ⚠ Quem decide MOSTRAR é a faixa (só com o item
+             `D-AVANCO-PENDENTE` na lista), e quem decide DEIXAR GRAVAR são
+             as guardas de `_cronoAtualizarDatasFrota` — esconder botão não é
+             guarda. Aqui é só a fiação. */
+          if (obId) {
+            d.portaAtualizarDatas = '<p class="cx-compat-porta"><button type="button" class="btn sm primary" data-acao="crono-avanco-frota" data-obra="' +
+              Util.esc(obId) + '">' + Util.esc("Atualizar as datas para aparelhos de versão anterior") + '</button></p>';
+          }
+        }
+        /* a faixa D-PENDENTE fica SEMPRE à vista: sem início fixo, as datas
+           das tarefas sem preço, dos calendários, do "o mais tarde possível" e
+           do avanço NÃO ficam gravadas para quem tem versão anterior — e essa
+           é a única pendência que muda o que o outro aparelho desenha. */
+        if (r && r.compat && r.compat.pendente === "sem-inicio" && typeof ap._cronoPortaInicioHtml === "function") {
+          try {
+            d.portaInicio = ap._cronoPortaInicioHtml(alvo, null,
+              "Sem data de início fixa, as tarefas sem preço, os calendários das frentes e o avanço lançado NÃO ficam gravados para aparelhos com uma versão anterior do app — eles mostram outras datas desta obra.");
+          } catch (ePi) { d.portaInicio = ""; }
+        }
+      }
       d.cartao = this._cronCartao(r, true, {
         inicioObra: (noPlano && alvo.inicioObra) ? alvo.inicioObra : "",
         /* ⚠ o sinal vem do ORÇAMENTO, não de `r`: o motor não publica `opcional`
@@ -2501,7 +2551,9 @@
       var dec = alvo && alvo.decisao ? alvo.decisao : null;
       d.obra = (dec && dec.info) ? dec.info : this._cronoObraInfo(orc);
       d.obra.alvo = dec || (CX.decidirAlvo ? CX.decidirAlvo({ info: d.obra, travado: !!d.travado }) : null);
-      var est = CX.estado(ap, orc), ao = d.obra.alvo;
+      /* ⚠ a chave do ALVO (1C): busca, filtro e pilha são do orçamento OU do
+         plano da obra — os dois têm o mesmo id de orçamento */
+      var est = CX.estado(ap, orc, alvo && alvo.chave ? alvo.chave : null), ao = d.obra.alvo;
       /* os números reais da obra ligada A ESTE orçamento: o chip da faixa e a
          sub-aba Previsto × Realizado saem da MESMA montagem (App._cronoPainelDados,
          que a ficha da obra também usa) — duas montagens divergiriam na data de
@@ -2550,6 +2602,15 @@
       d.janelaAltura = d.gx ? d.gx.janelaAltura : null;
       d.painel = (janAp && typeof janAp.painel === "string") ? janAp.painel : "";
       d.modo = janAp ? "preencher" : "px";
+      /* A BUSCA, O FILTRO E A PILHA (planejador, 1C). A foto de AGORA vai ao
+         estado para os botões ↶ ↷ dizerem, no título, se dá para desfazer; e o
+         filtro é resolvido UMA vez por render, com o painel da obra (`pd`) —
+         a mesma resolução que a fiação do arrasto lê (`App._cronoGanttCtx`). */
+      if (est.uso && ap && CX.filtroDoRender) {
+        try { est.uso.atual = (alvo && typeof alvo.foto === "function") ? alvo.foto() : null; } catch (eFo) { est.uso.atual = null; }
+        est.uso.restricoes = (crD.restricoes && typeof crD.restricoes === "object") ? crD.restricoes : null;
+        try { d.filtroUso = CX.filtroDoRender(ap, r, est, typeof pd !== "undefined" ? pd : null); } catch (eFu) { d.filtroUso = null; }
+      }
       return CX.render(d, est);
     },
     _cronoExecUI: function () {
@@ -2717,6 +2778,24 @@
     _renderCronogramaEtapa: function (orc) {
       var r = Cronograma.estimar(orc);
       var iaM = (orc.cronograma && orc.cronograma.iaMotivos) || {};
+      /* ⚠ O MOTIVO DA IA PASSA PELO `CronoPlan.textoIA` (planejador 2A, O31).
+         Esta é a tabela de RESERVA (sem o CronoExecUI), e ela também é lida
+         pelo cliente quando o cache não trouxe o arquivo novo. Com a porta (1)
+         do teto de 60 KB, `iaMotivos[id]` guarda só a MARCA ("motivo não
+         guardado (limite do plano)") e o texto mora no orçamento de origem:
+         lido cru, o aviso da marca apareceria como se fosse a justificativa.
+         Aqui não há plano (é a aba do orçamento), então o texto de origem é o
+         do próprio cronograma — mas a marca continua tendo de ser filtrada.
+         Sem o módulo, cai na leitura de sempre. */
+      var _CP2A = (typeof CronoPlan !== "undefined") ? CronoPlan : (typeof window !== "undefined" ? window.CronoPlan : null);
+      function motivoIA2A(id) {
+        if (_CP2A && typeof _CP2A.textoIA === "function" && orc.cronograma) {
+          var res = null;
+          try { res = _CP2A.textoIA(orc.cronograma, orc.cronograma, "etapa", id); } catch (e2a) { res = null; }
+          return (res && res.texto) ? res.texto : "";
+        }
+        return iaM[id] ? String(iaM[id]) : "";
+      }
       var html = this._cronCartao(r, false, { temOpcional: this._temEtapaOpcional(orc) });
       var nCrit = (r.caminhoCritico || []).length;
       html += '<div class="flex" style="gap:18px;margin-bottom:8px;align-items:baseline;flex-wrap:wrap"><b style="font-size:16px">⏱ ' + r.totalDias + ' dias úteis (~' + r.totalSemanas + ' semanas)</b>' +
@@ -2741,13 +2820,16 @@
            sistema assumiu — some o placeholder que ensina o padrão, e a tabela
            inteira passa a parecer customizada. Elo para etapa apagada já caiu
            no motor, então o texto vem do resultado, não do que está gravado. */
-        var valPred = e.predsExplicito ? Cronograma.predsTexto(e, numPorId) : "";
+        /* ⚠ com a T que segura a etapa (Cronograma.textoDependeDe): o texto
+           que a pessoa corrige e devolve precisa ter a T, senão o caminho
+           único da digitação a solta calada */
+        var valPred = (typeof Cronograma.textoDependeDe === "function") ? Cronograma.textoDependeDe(e, numPorId) : (e.predsExplicito ? Cronograma.predsTexto(e, numPorId) : "");
         html += '<tr><td>' + Util.esc(e.codigo) + ' ' + Util.esc(e.nome) + (e.marco ? ' <span class="pill" style="background:#0f172a14;color:#0f172a;font-weight:700;font-size:11px" title="Marco: evento sem duração (entrega, vistoria, liberação).">◆ marco</span>' : '') + '</td>' +
           '<td><span class="pill" style="background:' + c.cor + '22;color:' + c.cor + '">' + Util.esc(c.nome) + '</span></td>' +
           '<td class="num">' + e.equipeDias + '</td>' +
           /* ⚠ esc no id: vem também de pacote, backup e sincronização — um id com
              aspas fechava o atributo e injetava evento (revisão da Fase 2) */
-          '<td class="num"><input class="cell" type="number" min="0" data-cron-dur="' + Util.esc(e.id) + '" value="' + e.duracao + '" title="Dias úteis · 0 = marco" style="width:60px;text-align:right' + (e.editado || e.marco ? ';border-color:var(--azul,#2563eb)' : '') + '">' + (iaM[e.id] ? ' <span title="🤖 IA: ' + Util.esc(iaM[e.id]) + '" style="cursor:help">' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + '</span>' : '') + '</td>' +
+          '<td class="num"><input class="cell" type="number" min="0" data-cron-dur="' + Util.esc(e.id) + '" value="' + e.duracao + '" title="Dias úteis · 0 = marco" style="width:60px;text-align:right' + (e.editado || e.marco ? ';border-color:var(--azul,#2563eb)' : '') + '">' + (motivoIA2A(e.id) ? ' <span title="🤖 IA: ' + Util.esc(motivoIA2A(e.id)) + '" style="cursor:help">' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + '</span>' : '') + '</td>' +
           '<td class="num"><input class="cell" type="text" data-cron-pred="' + Util.esc(e.id) + '" value="' + Util.esc(valPred) + '" placeholder="' + (i > 0 ? i : '—') + '" title="Nº das etapas que precisam terminar antes (ex.: 1,3). Vazio = a anterior; 0 = começa no início da obra. 1+7 = espera 7 dias úteis; 1-3 = começa 3 dias antes." style="width:72px;text-align:right' + (e.predsExplicito ? ';border-color:var(--aco,#0d6ebd)' : '') + '"></td>' +
           '<td class="num">' + (e.critico ? '<span class="pill" style="background:#b91c1c14;color:var(--graf-alerta,#b91c1c);font-weight:700" title="Sem folga: atrasar esta etapa atrasa a obra inteira.">crítica</span>' : '+' + e.folga + ' d') + '</td>' +
           '<td>' + e.dataInicio.toLocaleDateString("pt-BR") + '</td><td>' + e.dataFim.toLocaleDateString("pt-BR") + '</td></tr>';
@@ -3059,29 +3141,31 @@
         else svg += '<text x="' + Math.min(W - 24, x + w + 3).toFixed(1) + '" y="' + (y + 13) + '" font-size="9" fill="#64748b" pointer-events="none">' + e.duracao + 'd</text>';
         if (folga > 0 && !limpo) svg += '<text x="' + Math.min(W - 24, X(e.fim + folga) + 3).toFixed(1) + '" y="' + (y + 13) + '" font-size="9" fill="#64748b" pointer-events="none">+' + folga + '</text>';
       });
-      // setas de dependência, por cima das barras (como no MS Project). Fica
-      // vermelho só o elo que APERTA duas etapas críticas — entre duas críticas
-      // pode haver elo com sobra, e pintá-lo de vermelho mentiria o caminho.
-      if (!limpo) r.etapas.forEach(function (e, si) {
+      /* setas de dependência, por cima das barras (como no MS Project). Fica
+         vermelho só o elo que APERTA duas etapas críticas — entre duas críticas
+         pode haver elo com sobra, e pintá-lo de vermelho mentiria o caminho.
+         ⚠ O CAMINHO E O “APERTA” NÃO MORAM MAIS AQUI (planejador 2A): são
+         `CronoExecUI.caminhoElo` (Onda 0, T7) e `GanttUI.eloAperta`. A cópia
+         local saiu porque este SVG é o do PDF e o da proposta, e o da aba é
+         outro: com duas cópias, um TT desenhado na tela sairia como TI no
+         papel do cliente (memória “réplica de parser apodrece”; a mesma
+         razão do `conserto que para no segundo consumidor`).
+         ⚠ `corredor: 15` é o `rowH / 2` deste desenho (rowH 30) escrito com
+         todas as letras: o `caminhoElo` usa `rowH / 2` quando ele falta, e
+         aqui o rowH não é passado. Byte a byte contra
+         tools/fixtures/ui-gantt-pre2a.js (60 orçamentos, 174 setas). */
+      var CXg = (typeof CronoExecUI !== "undefined") ? CronoExecUI : (typeof window !== "undefined" ? window.CronoExecUI : null);
+      var GUg = (typeof GanttUI !== "undefined") ? GanttUI : (typeof window !== "undefined" ? window.GanttUI : null);
+      if (!limpo && CXg && GUg) r.etapas.forEach(function (e, si) {
         (e.preds || []).forEach(function (pid) {
           var pi = idx[pid]; if (pi == null) return;
           var p = r.etapas[pi];
           // o deslocamento do elo vem do MOTOR (lag explícito ou sobreposição do paralelismo)
-          var off = (e.predDesloc && e.predDesloc[pid] != null) ? e.predDesloc[pid] : -Math.floor((r.params.paralelismo || 0) * p.duracao);
-          var aperta = e.inicio === Math.max(0, p.fim + off);
-          var verm = aperta && e.critico && p.critico;
+          var verm = GUg.eloAperta(e, p, pid, r.params) && e.critico && p.critico;
           var px = X(p.fim), py = yc(pi), sx = X(e.inicio), sy = yc(si);
-          var corD = verm ? CRIT : CINZA, d;
-          if (sx >= px + 12) {
-            d = "M" + px.toFixed(1) + "," + py + " H" + (sx - 5).toFixed(1) + " V" + sy + " H" + (sx - 1).toFixed(1);
-          } else {
-            // sucessora começa antes do fim da predecessora (sobreposição):
-            // sai pela direita, corre pelo corredor entre as linhas e entra pela esquerda
-            var faixa = py + (sy > py ? 15 : -15), volta = Math.max(labelW + 2, sx - 6);
-            d = "M" + px.toFixed(1) + "," + py + " H" + (px + 5).toFixed(1) + " V" + faixa + " H" + volta.toFixed(1) + " V" + sy + " H" + (sx - 1).toFixed(1);
-          }
-          svg += '<path class="gantt-dep' + (verm ? ' gantt-dep-critica' : '') + '" d="' + d + '" fill="none" stroke="' + corD + '" stroke-width="' + (verm ? 1.8 : 1.1) + '" opacity="0.9"/>';
-          svg += '<polygon points="' + sx.toFixed(1) + ',' + sy + ' ' + (sx - 5).toFixed(1) + ',' + (sy - 3) + ' ' + (sx - 5).toFixed(1) + ',' + (sy + 3) + '" fill="' + corD + '"/>';
+          var corD = verm ? CRIT : CINZA;
+          svg += CXg.caminhoElo("TI", px, py, sx, sy, { cor: corD, cls: "gantt-dep" + (verm ? " gantt-dep-critica" : ""),
+            larg: verm ? 1.8 : 1.1, tracejada: false, labelW: labelW, corredor: 15 });
           // lag explícito ("1+7") vira rótulo no elo — a espera pedida tem de ser visível, senão a barra parece solta
           var lagE = e.predLag && e.predLag[pid];
           if (lagE != null && sx >= px + 12) svg += '<text class="gantt-lag" x="' + ((px + sx) / 2).toFixed(1) + '" y="' + (py - 4) + '" font-size="8.5" fill="' + corD + '" text-anchor="middle" pointer-events="none">' + (lagE >= 0 ? '+' : '') + lagE + 'd</text>';

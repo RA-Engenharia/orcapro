@@ -421,6 +421,24 @@
     v.cronograma = cron;
     return v;
   }
+  /* O CRONOGRAMA PLANEJADO (planejador 1A, §1.3.1): a IA LÊ e SIMULA sobre
+     a cópia com a sombra desfeita — nunca sobre o valor que a projeção
+     escreveu para a versão anterior (atraso lido como planejado conta duas
+     vezes). ⚠ Sem sombra (o caso de hoje), devolve o PRÓPRIO cronograma —
+     o caminho e as cópias de sempre (quem vai escrever copia depois). */
+  function cronPlanejado(orc, cron) {
+    var Cr = C();
+    if (!cron || !Cr || typeof Cr.prepararEdicao !== "function" || typeof Cr._temSombra !== "function" || !Cr._temSombra({ cronograma: cron })) return cron;
+    var c = copia(cron);
+    try { Cr.prepararEdicao(c, { orc: orc }); } catch (e) {}
+    return c;
+  }
+  /* `orc` (opcional) leva o `_avancoDaObra`: é por ele que a trava sabe se o
+     nó já tem real lançado (§2.10, commit AVANÇO) */
+  function travaDoNo(cron, id, nivel, orc) {
+    var Cr = C();
+    return (Cr && typeof Cr.travaGravador === "function") ? Cr.travaGravador(cron, id, nivel, orc) : null;
+  }
   /* nível de um id do cronograma pelo DADO (sem montar árvore): etapa, ou
      folha (subetapa / grupo de soltos "etapaId~g") */
   function nivelDe(orc, id) {
@@ -437,9 +455,40 @@
     if (tf && typeof tf === "object") Object.keys(tf).forEach(function (k) { if (String(tf[k]).toUpperCase() === "II") t[k] = "II"; });
     return { preds: preds, lags: ordenar(own(lc, id) ? lc[id] : null), tipos: ordenar(t) };
   }
+  /* ⚠ O FORMATO DO `sigDep` É CONTRATO ENTRE VERSÕES (revisão 4 do
+     planejador, O31, R4-3): o `iaProv[k].v` GRAVADO é este JSON, e a 1.2.81
+     compara o `v` com ele (js/iaedit.js da 1.2.81 :999-1000, :1023-1024) para
+     saber se a IA pode trocar a ligação sem perguntar. Trocar por um hash
+     (a assinatura do CronoRede) faria as duas versões lerem a ligação que a IA
+     da outra definiu como "você definiu". */
   function sigDep(d) {
     if (!d) return "";
     return J({ p: d.preds === null || d.preds === undefined ? null : d.preds.slice().sort(), l: ordenar(d.lags), t: ordenar(d.tipos) });
+  }
+
+  /* O LIMITE DE 60 TEXTOS DA IA NO PLANO (revisão 4, O31, R4-11). O
+     `CronoPlan.cortarMotivos` guarda no plano no máximo 60 motivos (etapa,
+     subetapa e os guardados pelo modo executivo, nessa ordem) — o que passa
+     disso vira marca (etapa) ou sai (subetapa). O recado da 1.2.81 dizia "o
+     texto completo segue no orçamento", mas o texto que a IA escreve NO PLANO
+     não está no orçamento: além do 60º ele sumia sem estar em lugar nenhum.
+     Por isso a IA não GRAVA o 61º texto no plano (a mudança entra, com a
+     marca), e o diff avisa antes. A contagem é a mesma do corte (a marca
+     ocupa vaga). */
+  var MOTIVOS_PLANO = 60;
+  var MOTIVO_SEM_TEXTO_PLANO = "motivo não guardado (limite do plano)";
+  function contarTextosIA(cron) {
+    var n = 0;
+    function conta(m) { if (m && typeof m === "object" && !Array.isArray(m)) Object.keys(m).forEach(function (k) { if (typeof m[k] === "string" && m[k].trim()) n++; }); }
+    conta(ler(cron, "iaMotivos"));
+    conta(ler(ler(cron, "sub"), "iaMotivos"));
+    var an = ler(ler(cron, "exec"), "anterior");
+    Object.keys(an).forEach(function (k) { if (an[k] && typeof an[k].ia === "string" && an[k].ia.trim()) n++; });
+    return n;
+  }
+  function temTextoIA(cron, nivel, id) {
+    var m = nivel === "etapa" ? ler(cron, "iaMotivos") : ler(ler(cron, "sub"), "iaMotivos");
+    return own(m, id) && typeof m[id] === "string" && !!m[id].trim();
   }
 
   /* O VALOR ATUAL de um ponto endereçável — é o que entra no retrato (o `de`)
@@ -629,7 +678,13 @@
         var d = mapa(m2, "duracoes"), ag = mapa(m2, nv === "etapa" ? "duracoesAgente" : "agente"), mot = mapa(m2, "iaMotivos");
         reg({ t: "dur", nivel: nv, id: id, antes: { v: foto(d, id), ag: foto(ag, id), m: foto(mot, id) }, para: op.dias });
         d[id] = op.dias; ag[id] = "ia";
-        if (op.motivo) mot[id] = op.motivo; else delete mot[id];
+        /* ⚠ no PLANO, o 61º texto não é gravado (ver MOTIVOS_PLANO): a etapa
+           fica com a marca (é dela que a tabela tira "da IA"), a subetapa sem
+           texto (a marca dela é `sub.agente`) */
+        var cabeTexto = !X.plano || temTextoIA(cron, nv, id) || contarTextosIA(cron) < MOTIVOS_PLANO;
+        if (op.motivo && cabeTexto) mot[id] = op.motivo;
+        else if (op.motivo && nv === "etapa") mot[id] = MOTIVO_SEM_TEXTO_PLANO;
+        else delete mot[id];
         return { ok: true };
 
       case "definir_dependencia":
@@ -649,7 +704,10 @@
         pc[id] = op.preds.slice();
         if (Object.keys(op.lags || {}).length) lc[id] = copia(op.lags); else delete lc[id];
         if (tc) { if (Object.keys(op.tipos || {}).length) tc[id] = copia(op.tipos); else delete tc[id]; }
-        pv["p:" + id] = { v: inv.para, m: op.motivo || "" };
+        /* ⚠ no PLANO, só o `v` (O31): o `m` não tem leitor em versão nenhuma e,
+           com ele em todo nó, o plano passava de 60 KB sozinho (sonda D31:
+           114,2 KB de iaProv). O diff mostrou a justificativa antes. */
+        pv["p:" + id] = X.plano ? { v: inv.para } : { v: inv.para, m: op.motivo || "" };
         var depois = contarCiclos(orc, cron);
         var novoCiclo = nv === "etapa" ? depois.etapas > antesC.etapas : (depois.folhas[etId] || 0) > (antesC.folhas[etId] || 0);
         if (novoCiclo) {
@@ -675,7 +733,7 @@
         if (!rede) return falha("equipes por subetapa só valem no cronograma executivo");
         var sb = mapa(cron, "sub"), eq = mapa(sb, "equipes"), pv2 = mapa(sb, "iaProv");
         reg({ t: "eq", id: id, antes: { v: foto(eq, id), prov: foto(pv2, "eq:" + id) }, para: op.n });
-        eq[id] = op.n; pv2["eq:" + id] = { v: op.n, m: op.motivo || "" };
+        eq[id] = op.n; pv2["eq:" + id] = X.plano ? { v: op.n } : { v: op.n, m: op.motivo || "" };
         return { ok: true };
 
       case "alterar_texto":
@@ -710,6 +768,12 @@
     }).join(", ");
   }
 
+  /* a escolha da porta (2) do teto no plano (`plano.iaResumo.origem`, O31):
+     quem chama passa `opts.iaResumo` (o do registro do plano) */
+  function semOrigemPlano(X) {
+    var ia = X && X.opts ? X.opts.iaResumo : null;
+    return !!(X && X.opts && X.opts.cronAlvo && ia && typeof ia === "object" && ia.origem === 1);
+  }
   function _validarUma(work, op, idx, X) {
     var S = X.S, info = X.info, pedido = X.pedido;
     function recusa(m) { return { recusa: m }; }
@@ -921,6 +985,9 @@
         if (!own(S.ids.etapas, id) && !own(S.ids.folhas, id)) return recusa("fora do contexto enviado à IA");
         nv = nivelNo(info, id); no = info.porId[id];
         if (!nv) return recusa("não existe no cronograma (subetapa sem serviços não tem prazo próprio)");
+        // ⚠ planejador 1A (§2.10): o nó que a IA não sabe regravar sem apagar a rede digitada ou a escolha pendente
+        var trv = travaDoNo(X.cron0, id, nv, X.orc);
+        if (trv) return recusa(trv);
         if (nome === "definir_equipes" && nv !== "folha") return recusa("equipes são por subetapa (a da obra fica nos Parâmetros)");
         if (nv === "folha" && !rede) return recusa("subetapa só se edita no cronograma executivo — ligue \"Detalhar o prazo pelas subetapas\" e peça de novo");
         var rotNo = (info.num[id] || "") + " " + cortar(no.nome, 50);
@@ -946,6 +1013,8 @@
              todas as etapas): medido na foto, "Hoje: 9 d (estimado) → Proposto:
              9 d", e depois de aplicar duracoesAgente.etC === "ia". */
           if (de.v == null && ef != null && Number(ef) === dias) return recusa("já está assim — a estimativa já dá " + dias + " dia(s); gravar igual só fixaria a duração, que hoje acompanha as quantidades");
+          if (X.opts.cronAlvo && motivo && !temTextoIA(X.cron0, nv, id) && contarTextosIA(X.cron0) >= MOTIVOS_PLANO)
+            A.nota = "o motivo desta mudança não fica guardado no plano: limite de " + MOTIVOS_PLANO + " textos (a marca de que a IA definiu a duração fica)";
           A.op = { op: nome, alvoId: id, dias: dias, motivo: motivo };
           A.chave = "d:" + id; A.de = de; A.para = dias;
           A.rotulo = "Duração · " + rotNo;
@@ -998,7 +1067,11 @@
             var mProv = nv === "etapa" ? ler(X.cron0, "iaProv") : ler(ler(X.cron0, "sub"), "iaProv");
             var prov = own(mProv, "p:" + id) ? mProv["p:" + id] : null;
             if (!prov || prov.v !== sigDep(de)) { A.marcadaPorPadrao = false; A.motivoDesmarcada = "você definiu o \"Depende de\" (" + textoDep(de, info, nv) + ") — a IA não passa por cima sem você marcar"; }
+            /* ⚠ PORTA (2) DO TETO (O31): o plano não guarda a origem das
+               ligações — sem `iaProv`, não dá para dizer que foi a pessoa */
+            if (!prov && A.marcadaPorPadrao === false && semOrigemPlano(X)) A.motivoDesmarcada = "a origem desta ligação não ficou guardada no plano (pode ter sido a IA) — a IA não passa por cima sem você marcar";
           }
+          if (X.opts.cronAlvo && motivo) A.nota = "no plano fica só a marca de que a IA definiu esta ligação — a justificativa acima não é guardada";
           A.op = { op: nome, alvoId: id, preds: preds, lags: para.lags, tipos: nv === "folha" ? para.tipos : {}, motivo: motivo };
           A.chave = "p:" + id; A.de = de; A.para = para;
           A.rotulo = "Depende de · " + rotNo;
@@ -1022,8 +1095,10 @@
           if (de != null) {
             var pvE = ler(ler(X.cron0, "sub"), "iaProv"), provE = own(pvE, "eq:" + id) ? pvE["eq:" + id] : null;
             if (!provE || provE.v !== de) { A.marcadaPorPadrao = false; A.motivoDesmarcada = "você definiu " + de + " equipe(s) — a IA não passa por cima sem você marcar"; }
+            if (!provE && A.marcadaPorPadrao === false && semOrigemPlano(X)) A.motivoDesmarcada = "a origem destas equipes não ficou guardada no plano (pode ter sido a IA) — a IA não passa por cima sem você marcar";
           }
           if (S.v["d:" + id] && S.v["d:" + id].v != null) A.nota = "a duração digitada desta subetapa manda — mudar equipes não muda o prazo dela";
+          if (X.opts.cronAlvo && motivo && !A.nota) A.nota = "no plano fica só a marca de que a IA definiu as equipes — a justificativa acima não é guardada";
           A.op = { op: nome, folhaId: id, n: n, motivo: motivo };
           A.chave = "eq:" + id; A.de = de; A.para = n;
           A.rotulo = "Equipes · " + rotNo; A.deTexto = de != null ? de + " (você/IA)" : "da obra"; A.paraTexto = String(n);
@@ -1132,7 +1207,7 @@
 
   /* aplica a lista em ORDEM (quem cria vem antes de quem usa) */
   function aplicarLista(orc, cron, lista, cfg) {
-    var X = { refs: {}, ordemFeita: {}, cic: null, registrar: null, rotulo: "" };
+    var X = { refs: {}, ordemFeita: {}, cic: null, registrar: null, rotulo: "", plano: !!cfg.cronAlvo };
     var n = 0, nao = [];
     X.registrar = function (inv) { if (cfg.ed) { inv.r = X.rotulo; cfg.ed.inversos.push(inv); } };
     lista.forEach(function (a) {
@@ -1418,8 +1493,8 @@
       var ped = limparTexto(pedido, true);
       if (!ped) return { ok: false, erro: "escreva o que você quer mudar" };
       if (ped.length > TETOS.pedidoCaracteres) return { ok: false, erro: "pedido longo demais (" + ped.length + " caracteres; o teto é " + TETOS.pedidoCaracteres + ") — divida em pedidos menores" };
-      var cron = opts.cronAlvo || orc.cronograma || {};
-      var base = vista(orc, opts.cronAlvo || null);
+      var cron = cronPlanejado(orc, opts.cronAlvo || orc.cronograma || {});
+      var base = vista(orc, cron === orc.cronograma ? null : cron);
       var info = arvore(base, alvo === "cronograma");
       var filtro = null, porque = "todas";
       if (Array.isArray(opts.etapaIds) && opts.etapaIds.length) { filtro = opts.etapaIds.slice(); porque = "escolhidas"; }
@@ -1539,13 +1614,13 @@
       if (!S || typeof S !== "object" || !S.v || !S.ids) return recusarTodas("sem o retrato do pedido — a resposta não tem com o que ser comparada; peça de novo");
       if (S.orcId && orc.id && S.orcId !== orc.id) return recusarTodas("a resposta é de outro orçamento");
       if (!!S.cronAlvo !== !!opts.cronAlvo) return recusarTodas("o pedido foi feito sobre " + (S.cronAlvo ? "o plano da obra" : "o orçamento") + " e a resposta chegou para o outro — peça de novo");
-      var cron0 = opts.cronAlvo || orc.cronograma || {};
+      var cron0 = cronPlanejado(orc, opts.cronAlvo || orc.cronograma || {});
       var work = copia(orc);
-      work.cronograma = copia(opts.cronAlvo || orc.cronograma || {});
+      work.cronograma = copia(cron0);
       /* aceitasIdx = as posições JÁ ACEITAS desta lista. Só quem está aqui pode
          virar dependência declarada (op.dependeDe) — ver _validarUma. */
       var X = { S: S, orc: orc, cron0: cron0, opts: opts, pedido: String(S.pedido || ""), usadas: {}, refs: {}, refMeta: {}, aceitasIdx: {},
-        info: arvore(vista(orc, opts.cronAlvo || null), S.alvo === "cronograma") };
+        info: arvore(vista(orc, cron0 === orc.cronograma ? null : cron0), S.alvo === "cronograma") };
       X.exec = { refs: X.refs, ordemFeita: {}, cic: null, registrar: null };
       lista.forEach(function (op, idx) {
         if (idx >= TETOS.opsPorResposta) { res.recusadas.push({ idx: idx, op: resumoOp(op), motivo: "a resposta passou de " + TETOS.opsPorResposta + " mudanças — peça menos coisa por vez" }); return; }
@@ -1573,7 +1648,7 @@
       opts = opts || {};
       var antes = medir(vista(orc, opts.cronAlvo || null));
       var dep = copia(orc);
-      dep.cronograma = copia(opts.cronAlvo || orc.cronograma || {});
+      dep.cronograma = copia(cronPlanejado(orc, opts.cronAlvo || orc.cronograma || {}));
       var F = fechoLista(aceitas), ed = { inversos: [] };
       var r = aplicarLista(dep, dep.cronograma, F.aplicar, { ed: ed, conferirDe: false, travado: false, cronAlvo: !!opts.cronAlvo });
       return { antes: antes, depois: medir(dep), n: r.n, naoAplicadas: r.naoAplicadas, desfazerBytes: J(ed).length + 400,
@@ -1629,6 +1704,11 @@
          inverso é empilhado antes da escrita que ele desfaz: se algo quebrar no
          meio, o que já foi escrito tem como voltar. */
       destino.iaEdicao = ed;
+      /* ⚠ planejador 1A: a edição vai ao PLANEJADO (§2.7-P0) — a sombra sai
+         antes, e o salvar a refaz; sem isto a mudança da IA cairia em cima do
+         valor da sombra e o próximo salvar a leria como edição de aparelho
+         antigo */
+      if (F.aplicar.some(function (a) { return a.grupo === "cronograma"; }) && C() && typeof C().prepararEdicao === "function") C().prepararEdicao(cron, { orc: orc });
       var r = aplicarLista(orc, cron, F.aplicar, { ed: ed, conferirDe: true, travado: travado, cronAlvo: !!opts.cronAlvo });
       /* a ORDEM que a IA deixou em cada etapa em que moveu serviço: o desfazer
          compara com a de agora antes de devolver a de antes (ver "ordem") */

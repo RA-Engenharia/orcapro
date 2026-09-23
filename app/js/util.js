@@ -364,6 +364,48 @@
     setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
   };
 
+  /* ---- Lista dentro de lista (regra O18 do planejador, Onda 0, T18) ----
+   * `true` quando NENHUMA lista, em qualquer profundidade, tem outra lista
+   * como elemento direto. Lista de objetos e lista de escalares passam;
+   * objeto dentro de lista dentro de objeto é conferido até o fim.
+   *
+   * ⚠ POR QUE EXISTE (espec do planejador, O18 e R17). A entidade sobe para a
+   * nuvem como `_doc(ent).set({v: lista})`, e o Firestore RECUSA lista
+   * aninhada. No `Nuvem.push` a recusa é um erro SÍNCRONO, e até a Onda 0 ele
+   * caía no `catch (e) {}` depois de `_ultimoEnviado[chave] = carga`: o
+   * aparelho dizia "Sincronizado" sem ter subido nada, e nunca tentava de
+   * novo. Os gravadores novos (plano com extensões, selo, histórico, avanço)
+   * chamam esta régua ANTES de gravar e recusam com erro de programação.
+   * ⚠ RÉGUA ÚNICA: o Cronograma, o CronoSelo e o CronoAlt chamam esta, e não
+   * uma cópia própria (memória "réplica de parser apodrece").
+   * ⚠ `Object.prototype.toString`, e não `Array.isArray` sozinho nem
+   * `instanceof`: o registro pode vir de outro realm (o vm dos testes, a
+   * janela destacada), e ali `instanceof Array` responde false.
+   * Sem recursão: pilha explícita, para um registro fundo (a árvore do
+   * cronograma) não estourar a pilha de chamadas de um WebView antigo.
+   * ⚠ Sem lista de "já vistos" (custaria n² num plano de 60 KB, e esta régua
+   * roda a cada salvar): registro com CICLO não serializa em JSON e não pode
+   * ser gravado de jeito nenhum — o teto de visitas devolve false ("não
+   * posso garantir"), nunca trava a aba. */
+  Util.semListaAninhada = function (x) {
+    function ehLista(v) { return Object.prototype.toString.call(v) === "[object Array]"; }
+    var pilha = [x], visitas = 0, i, k, v;
+    while (pilha.length) {
+      v = pilha.pop();
+      if (!v || typeof v !== "object") continue;
+      if (++visitas > 2000000) return false;
+      if (ehLista(v)) {
+        for (i = 0; i < v.length; i++) {
+          if (ehLista(v[i])) return false;
+          if (v[i] && typeof v[i] === "object") pilha.push(v[i]);
+        }
+      } else {
+        for (k in v) if (Object.prototype.hasOwnProperty.call(v, k) && v[k] && typeof v[k] === "object") pilha.push(v[k]);
+      }
+    }
+    return true;
+  };
+
   global.Util = Util;
   /* ⚠ ALCANCAVEL PELO GATE, E ESTA E A RAZAO.
    * Este arquivo se chama "nucleo unico de helpers" e fechava em `})(window)`,

@@ -173,7 +173,18 @@
      passava e o disco era sobrescrito. O `ilegivelLocal` da nuvem, que
      consulta a marca depois dessa leitura, dizia "legível" — a guarda do
      sync ficava inerte. Todos os leitores têm de concordar sobre o que é
-     ilegível. */
+     ilegível.
+     ⚠ O PLANEJAMENTO DA OBRA ENTRA NA MESMA REGRA (Onda 0 do planejador, T17;
+     crítica 1, achado 14). `crono_obra` guarda plano, linhas de base e o
+     avanço lançado; `crono_selo` e `crono_alt` são as entidades novas da
+     leva. As três são LISTA no disco (memória "a forma no disco decide se
+     sincroniza"). Sem a linha, um `{...}` válido no disco era lido como
+     válido por quem não passa forma, o `Util.arr` o transformava em `[]` e
+     o sync gravava e SUBIA o vazio por cima do planejamento das obras — o
+     mesmo roteiro dos orçamentos acima. Com a linha, o objeto vai para a
+     quarentena e a entidade fica parada até alguém restaurar.
+     Prova: tools/test-nuvem-push-falha.js (bloco FORMA; CN: sem a linha, o
+     `[]` sobe). */
   /* ⚠ ENTIDADE QUE ENTRA NO SYNC ENTRA AQUI NO MESMO COMMIT — quarentena
      primeiro, sync depois. Roteiro do defeito (revisão adversarial da mc-6A,
      medido no js/store.js real sobre um localStorage de mentira): `cc_aprop`
@@ -186,8 +197,11 @@
      ⚠ `centrocusto` já sincronizava sem forma declarada desde a v1.1.231 — o
      mesmo buraco, aberto há mais tempo. Entra junto: ela sempre foi gravada
      como lista, então declarar a forma não muda nada para quem está são e
-     põe de quarentena quem está corrompido, em vez de apagar. */
-  var FORMA_PADRAO = { orcamentos: "lista", centrocusto: "lista", cc_regras: "lista", cc_aprop: "lista" };
+     põe de quarentena quem está corrompido, em vez de apagar.
+     ⚠ FUSÃO DA ONDA 5 (21/09/2026): as duas listas são UMA SÓ. Ficar com a
+     de um lado apagaria a quarentena do outro — e entidade fora daqui é o
+     buraco que os dois comentários acima descrevem. */
+  var FORMA_PADRAO = { orcamentos: "lista", crono_obra: "lista", crono_selo: "lista", crono_alt: "lista", centrocusto: "lista", cc_regras: "lista", cc_aprop: "lista" };
 
   /* ---------- Adapter local (localStorage) ---------- */
   var LocalAdapter = {
@@ -637,7 +651,10 @@
     _NOME_ENT: { orcamentos: "Orçamentos", financeiro: "Financeiro", medicoes: "Medições", obras: "Obras",
       compras: "Compras", contratos: "Contratos", clientes: "Clientes", fornecedores: "Fornecedores",
       requisicoes: "Requisições", rdo: "Diário de Obra", colaboradores: "Equipe", estoque: "Almoxarifado",
-      crono_obra: "Cronograma da obra", aditivos: "Termos aditivos", _lapides: "registro de exclusões" },
+      crono_obra: "Cronograma da obra", aditivos: "Termos aditivos", _lapides: "registro de exclusões",
+      /* as duas entidades novas do planejador (Onda 0, T10): o recado da
+         quarentena diz o nome que a pessoa reconhece, não a chave técnica */
+      crono_selo: "Linhas de base seladas", crono_alt: "Histórico de alterações do cronograma" },
     nomeEntidade: function (entidade) {
       var e = String(entidade == null ? "" : entidade);
       if (e === "orcamentos") return "lista de orçamentos";
@@ -736,11 +753,29 @@
        armazenamento (cota cheia), como sempre foi. */
     ultimaRecusa: null,
 
-    /* `manterCarimbo` existe para UM caso: restaurar backup. O registro que vem
+    /* ⚠ `manterCarimbo` existe para DUAS razões (a segunda é do planejador
+       1A; a primeira era a única até aqui, e o comentário dizia "UM caso"
+       enquanto o `js/gestao.js:11112` já usava a segunda por outro motivo):
+
+       1) RESTAURAR BACKUP. O registro que vem
        do arquivo tem que entrar com o atualizadoEm DELE — carimbar "agora" num
        conteúdo de semana passada faz o merge da nuvem tratar o retrocesso como
-       a versão mais recente e propagá-lo para os outros aparelhos. Em todo o
-       resto do app o carimbo é sempre agora, que é o comportamento padrão. */
+       a versão mais recente e propagá-lo para os outros aparelhos.
+
+       2) O CARIMBO FRACO DE UMA GRAVAÇÃO AUTOMÁTICA (planejador 1A, E-MC4).
+       O canal das medições grava avanço sozinho, na aprovação do boletim, sem
+       ninguém na tela. Essa gravação precisa PERDER para qualquer edição que
+       uma pessoa tenha feito depois da última marca de sync: o número que
+       alguém digitou olhando a obra vale mais que o que o sistema deduziu de
+       um boletim. Por isso o `CronoBase.salvarAvanco` calcula um
+       `atualizadoEm` de 1 ms depois da marca — e não "agora" — e pede
+       `manterCarimbo` para que ele chegue ao disco. Com o carimbo de agora, a
+       automática venceria a humana no merge, e o lançamento da pessoa sumiria
+       sem aviso (o roteiro está em tools/test-crono-obra-sync.js [13]).
+       ⚠ Quem grava com carimbo fraco NUNCA pode recarimbar depois: veja
+         `App._cronoGravarLista`.
+
+       Fora essas duas, o carimbo é sempre agora — o comportamento padrão. */
     salvarOrcamento: function (empresaId, orc, manterCarimbo, opts) {
       this.ultimaRecusa = null;
       var lista = this.listarOrcamentos(empresaId);
@@ -1018,6 +1053,71 @@
         });
         this.adapter.gravar(empresaId, "_lapides", this._podarLapides(l));
       } catch (e) {}
+    },
+    /* =====================================================================
+     * ⚠ LÁPIDE DE LOTE — UMA LÁPIDE PARA N REGISTROS DE QUALQUER ENTIDADE
+     *   (ESPEC-medicao-cc §1.12-4, T-MC10)
+     *
+     * O problema é o mesmo da cascata do teste de compatibilização, agora
+     * sem um "pai" para pendurar a lápide: apagar 1.500 decisões de
+     * apropriação, compactar decisões repetidas em regra, limpar as órfãs de
+     * documentos excluídos ou mover um lote para outro centro grava, pelo
+     * caminho normal, UMA LÁPIDE POR REGISTRO. O bloco `_lapides` tem teto
+     * (`_LAPIDES_MAX = 3000`) e a poda expulsa as MAIS ANTIGAS de QUALQUER
+     * entidade: a limpeza de um módulo ressuscita a exclusão de outro, e o
+     * lançamento financeiro que alguém apagou semana passada volta da nuvem
+     * sem nada na tela ligando uma coisa à outra.
+     *
+     * ⚠ E NÃO DÁ PARA SIMPLESMENTE NÃO GRAVAR LÁPIDE: sem ela o registro
+     *   volta do outro aparelho no primeiro sync e a limpeza se desfaz
+     *   sozinha — pior que não ter limpado, porque quem limpou conta com o
+     *   espaço liberado.
+     *
+     * Então: uma lápide com a lista de ids dentro, `cascata:"lote"` (imune à
+     * poda, ver `_podarLapides`) e o nome da entidade, que o `vivo()` do
+     * merge consulta para QUALQUER entidade. Mesmo molde do
+     * `lapidarClashPodaEmCascata`, inclusive o id por `Util.uid`: um id
+     * derivado do carimbo colide quando dois lotes caem no mesmo
+     * milissegundo, o `_porLapide` sobrescreve e os ids do primeiro lote
+     * voltam da nuvem — foi assim que a suíte da cascata ficou vermelha.
+     *
+     * Devolve quantos ids entraram na lápide (0 se não gravou).
+     * ===================================================================== */
+    lapidarLote: function (empresaId, entidade, ids, motivo) {
+      var lst = Util.arr(ids).filter(function (i) { return i != null && i !== ""; }).map(String);
+      if (!empresaId || !entidade || !lst.length) return 0;
+      /* entidade que não sincroniza nunca ressuscita: a lápide dela só
+         gastaria o teto (mesma regra do `lapidar`) */
+      if (!this._sincroniza(entidade)) return 0;
+      try {
+        var l = Util.arr(this.adapter.ler(empresaId, "_lapides", []));
+        this._porLapide(l, {
+          id: Util.uid("cascata:lote:" + String(entidade)), cascata: "lote",
+          ent: String(entidade), ids: lst, em: Util.agoraISO(),
+          /* o motivo é diagnóstico, não regra — cortado para não crescer o
+             documento que todas as entidades dividem na nuvem */
+          mot: String(motivo == null ? "" : motivo).slice(0, 40)
+        });
+        if (this.adapter.gravar(empresaId, "_lapides", this._podarLapides(l)) === false) return 0;
+        return lst.length;
+      } catch (e) { return 0; }
+    },
+    /* registros apagados em lote: { idDoRegistro: quando }, por entidade */
+    cascatasDeLote: function (empresaId, entidade) {
+      var m = Object.create(null), alvo = String(entidade || "");
+      try {
+        Util.arr(this.adapter.ler(empresaId, "_lapides", [])).forEach(function (t) {
+          if (!t || t.cascata !== "lote" || String(t.ent || "") !== alvo) return;
+          /* dois lotes da mesma entidade SOMAM: o mais recente vence no id
+             repetido, senão apagar em dois lotes perderia metade */
+          Util.arr(t.ids).forEach(function (id) {
+            if (!id) return;
+            var q = t.em || "";
+            if (!m[id] || String(q) > String(m[id])) m[id] = q;
+          });
+        });
+      } catch (e) {}
+      return m;
     },
     /* conflitos podados: { idDoRegistro: quando } */
     cascatasDeClashPoda: function (empresaId) {

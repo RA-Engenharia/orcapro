@@ -403,17 +403,24 @@
       var etFundacoes = e2.id, etEstrutura = e3.id, etAlvenaria = e4.id;
       var fin = [
         { id: PRE + "fin1", data: iso(dias(iniObra, 2)), tipo: "receita", desc: "Entrada do contrato CT-" + ano + "-OT1 (20%)", categoria: "obra", valor: Math.round(precoVenda * 0.2), status: "pago", fornecedor: "Construtora Horizonte Ltda", contratoId: PRE + "con" },
-        { id: PRE + "fin2", data: iso(dias(iniObra, 35)), tipo: "receita", desc: "Medição 01ª — líquido (retenção 5%)", categoria: "medicao", valor: Math.round(med1v * 0.95), status: "pago", fornecedor: "Construtora Horizonte Ltda", contratoId: PRE + "con" },
-        { id: PRE + "fin3", data: iso(diaUtil(1)), tipo: "despesa", desc: "PC-" + ano + "-OT1 — blocos e argamassa (Depósito São José)", categoria: "material", valor: Math.round(4200 * 2.28 + 90 * 13.9), status: "pendente", fornecedor: "Depósito São José", formaPgto: "parcelado" },
+        /* ⚠ A DEMO ENSINA A REGRA OU ENSINA O DEFEITO. Estes cinco lançamentos
+           nasciam SEM CARIMBO de origem: na obra de demonstração o sistema não
+           sabia que a receita era da 01ª medição, nem que a despesa era da
+           folha ou do veículo. Quem abrisse a demo para conferir "de onde veio
+           este dinheiro" via "sem origem identificada" — e a trava que impede
+           lançar a mesma medição duas vezes não acendia ali. Carimbo é
+           `docTipo` + `docId`, nunca descrição (skill `dinheiro`, §1 e §2). */
+        { id: PRE + "fin2", data: iso(dias(iniObra, 35)), tipo: "receita", desc: "Medição 01ª — líquido (retenção 5%)", categoria: "medicao", valor: Math.round(med1v * 0.95), status: "pago", fornecedor: "Construtora Horizonte Ltda", contratoId: PRE + "con", docTipo: "MED", docId: PRE + "med1", docNumero: "01ª" },
+        { id: PRE + "fin3", data: iso(diaUtil(1)), tipo: "despesa", desc: "PC-" + ano + "-OT1 — blocos e argamassa (Depósito São José)", categoria: "material", valor: Math.round(4200 * 2.28 + 90 * 13.9), status: "pendente", fornecedor: "Depósito São José", formaPgto: "parcelado", docTipo: "PC", docId: PRE + "com1", docNumero: "PC-" + ano + "-OT1" },
         { id: PRE + "fin4", data: iso(dias(iniObra, 20)), tipo: "despesa", desc: "Concreto usinado FCK 25 — fundações", categoria: "material", valor: 17360, status: "pago", fornecedor: "Concreteira Forte", etapaId: etFundacoes },
         { id: PRE + "fin10", data: iso(dias(iniObra, 12)), tipo: "despesa", desc: "Escavação e empreiteiro de fundações", categoria: "mao_obra", valor: 14800, status: "pago", fornecedor: "", etapaId: etFundacoes },
         { id: PRE + "fin11", data: iso(dias(iniObra, 34)), tipo: "despesa", desc: "Aço CA-50 — vergalhões da estrutura", categoria: "material", valor: 24900, status: "pago", fornecedor: "Depósito São José", etapaId: etEstrutura },
         { id: PRE + "fin12", data: iso(dias(iniObra, 45)), tipo: "despesa", desc: "Empreiteiro de estrutura (formas e concretagem)", categoria: "mao_obra", valor: 29800, status: "pago", fornecedor: "", etapaId: etEstrutura },
         { id: PRE + "fin13", data: iso(dias(iniObra, 40)), tipo: "despesa", desc: "Locação de escoras e formas metálicas", categoria: "equipamento", valor: 6400, status: "pago", fornecedor: "LocaMáquinas Equipamentos", etapaId: etEstrutura },
         { id: PRE + "fin14", data: iso(diaUtil(2)), tipo: "despesa", desc: "Blocos e argamassa — 1ª remessa alvenaria", categoria: "material", valor: 12600, status: "pago", fornecedor: "Depósito São José", etapaId: etAlvenaria },
-        { id: PRE + "fin5", data: iso(diaUtil(1)), tipo: "despesa", desc: "Folha " + comp + " — José Carlos Mendes (encargos)", categoria: "mao_obra", valor: Math.round(4200 + 4200 * 0.68 + 180), status: "pago", fornecedor: "" },
-        { id: PRE + "fin6", data: iso(diaUtil(2)), tipo: "despesa", desc: "Combustível - Caminhão Mercedes Atego", categoria: "equipamento", valor: 620, status: "pago", fornecedor: "Caminhão Mercedes Atego" },
-        { id: PRE + "fin7", data: iso(diaUtil(4)), tipo: "despesa", desc: "Manutenção - Betoneira 400L", categoria: "equipamento", valor: 260, status: "pago", fornecedor: "Betoneira 400L" },
+        { id: PRE + "fin5", data: iso(diaUtil(1)), tipo: "despesa", desc: "Folha " + comp + " — José Carlos Mendes (encargos)", categoria: "mao_obra", valor: Math.round(4200 + 4200 * 0.68 + 180), status: "pago", fornecedor: "", docTipo: "FOL", docId: PRE + "fol1", docNumero: comp },
+        { id: PRE + "fin6", data: iso(diaUtil(2)), tipo: "despesa", desc: "Combustível - Caminhão Mercedes Atego", categoria: "equipamento", valor: 620, status: "pago", fornecedor: "Caminhão Mercedes Atego", docTipo: "FRT", docId: PRE + "fmv1", docNumero: "" },
+        { id: PRE + "fin7", data: iso(diaUtil(4)), tipo: "despesa", desc: "Manutenção - Betoneira 400L", categoria: "equipamento", valor: 260, status: "pago", fornecedor: "Betoneira 400L", docTipo: "FRT", docId: PRE + "fmv2", docNumero: "" },
         { id: PRE + "fin8", data: iso(diaUtil(5)), tipo: "despesa", desc: "Taxas e ART da obra", categoria: "impostos", valor: 890, status: "pago", fornecedor: "CREA-MG" },
         // (fin9 removido: a Medição 02ª pendente JÁ representa esse recebível — o
         // registro duplicado no financeiro dobraria o "a receber" e nunca seria
@@ -427,7 +434,17 @@
       salvar("fiscal", { id: PRE + "nf2", numero: "126", serie: "1", tipo: "saida", status: "emitida", naturezaOp: "Prestação de serviço de construção", parceiro: "Construtora Horizonte Ltda", obraId: obraId, dataEmissao: iso(dias(iniObra, 35)), valorProdutos: Math.round(med1v * 0.95), valorImpostos: Math.round(med1v * 0.95 * 0.0865), valorTotal: Math.round(med1v * 0.95), chaveAcesso: "" });
 
       // ---------- 20) Centro de custo ----------
-      salvar("centrocusto", { id: PRE + "cc1", codigo: "CC-OT1", nome: "OBRA TESTE ORÇAPRO", tipo: "direto", obraId: obraId, valorOrcado: precoVenda, obs: "Centro de custo da obra de demonstração." });
+      /* ⚠ ORÇADO = CUSTO DIRETO, NUNCA PREÇO DE VENDA. O centro de custo
+         compara CUSTO REAL contra orçado; pôr o preço de venda ali embute o
+         BDI no denominador e a obra parece consumir muito menos do que
+         consome. Medido em 21/09/2026 na demo criada no navegador:
+             valorOrcado (= preço de venda) R$ 356.182   custo direto R$ 280.425
+             custo real da obra R$ 125.693  →  35% contra 45%
+         R$ 75.756 de BDI dentro do "orçado", e 10 pontos de consumo a menos.
+         A demo é o que o cliente abre para entender a tela: ela estava
+         ensinando a régua errada. ESPEC §8.3 `mc-5B`: "CC-OT1 com orçado =
+         custo direto (CN: preço de venda → reprova)". */
+      salvar("centrocusto", { id: PRE + "cc1", codigo: "CC-OT1", nome: "OBRA TESTE ORÇAPRO", tipo: "direto", obraId: obraId, valorOrcado: Math.round(Orcamento.totais(orc).custoDireto), obs: "Centro de custo da obra de demonstração." });
 
       /* ⚠ a digital é gravada AQUI, no fim da criação: é ela que permite
          distinguir depois o registro intocado do que a pessoa adotou. */
@@ -453,7 +470,32 @@
      * de demonstração que se apaga em dois cliques, contra perder um documento
      * que não volta.
      * ===================================================================== */
-    CHAVES: ["clientes", "fornecedores", "colaboradores", "obras", "contratos", "medicoes", "lp_tarefas", "tarefas", "rdo", "requisicoes", "cotacoes", "compras", "estoque", "estoque_mov", "epi", "ponto", "faltas", "folha", "fs_lancamentos", "fs_pagamentos", "frota", "frota_mov", "patrimonio", "financeiro", "fiscal", "centrocusto"],
+    CHAVES: ["clientes", "fornecedores", "colaboradores", "obras", "contratos", "medicoes", "lp_tarefas", "tarefas", "rdo", "requisicoes", "cotacoes", "compras", "estoque", "estoque_mov", "epi", "ponto", "faltas", "folha", "fs_lancamentos", "fs_pagamentos", "frota", "frota_mov", "patrimonio", "financeiro", "fiscal", "centrocusto", "cc_regras", "cc_aprop"],
+
+    /* =====================================================================
+     * ⚠ O QUE A DEMO NÃO CRIOU, MAS APONTA PARA A OBRA DELA.
+     *
+     * A varredura de cima é por PREFIXO DE ID (`demo-ot-`), e ela é suficiente
+     * para o que a demonstração escreve. Só que três entidades ganham
+     * registros NOVOS, com id próprio, enquanto a pessoa conhece o programa
+     * na obra de demonstração: o centro GERADO do orçamento
+     * (`CentroCusto.idGerado`), a REGRA (`cc_regras`) e a DECISÃO (`cc_aprop`).
+     * Nenhum deles começa com `demo-ot-`.
+     *
+     * Medido em 21/09/2026 no navegador, com uma regra, uma decisão e um
+     * centro gerado criados na obra da demo:
+     *     { sobrouRegra: 1, sobrouDecisao: 1, sobrouCentroGerado: 1,
+     *       obraSumiu: true }
+     * Três registros órfãos apontando para uma obra que não existe mais — e
+     * eles viajam pela nuvem para os outros aparelhos do cliente assim.
+     *
+     * ⚠ E SÓ QUANDO A OBRA SAI. Se a pessoa ADOTOU a obra de demonstração
+     * (renomeou e seguiu usando), ela fica em `mantem` — e aí os centros, as
+     * regras e as decisões dela são dados de verdade. A varredura acompanha a
+     * obra: a mesma doutrina do resto deste arquivo, que erra para o lado de
+     * MANTER porque o outro lado custa documento que não volta.
+     * ===================================================================== */
+    POR_OBRA: ["centrocusto", "cc_regras", "cc_aprop"],
 
     /* os campos que a pessoa mexe primeiro quando adota o registro para valer */
     _digital: function (r) {
@@ -496,15 +538,94 @@
           (mexido ? mantem : apaga).push({ ch: ch, id: r.id, rot: r.numero || r.nome || r.descricao || r.id });
         });
       });
+      /* ⚠ A VARREDURA POR `obraId` — ver o bloco do `POR_OBRA`. Ela só roda
+         quando a OBRA da demonstração está saindo: obra adotada leva os
+         centros, as regras e as decisões dela junto, porque aí são dados de
+         verdade. `jaVai` impede contar duas vezes o centro `demo-ot-cc1`, que
+         a varredura por prefixo acima já pegou. */
+      var saiObra = apaga.some(function (x) { return x.ch === "obras" && x.id === PRE + "obra"; });
+      if (saiObra) {
+        var jaVai = {};
+        apaga.concat(mantem).forEach(function (x) { jaVai[x.ch + "|" + x.id] = 1; });
+        this.POR_OBRA.forEach(function (ch) {
+          Store.listar(e, ch).forEach(function (r) {
+            if (!r || String(r.obraId || "") !== PRE + "obra") return;
+            if (jaVai[ch + "|" + r.id]) return;
+            apaga.push({ ch: ch, id: r.id, rot: r.nome || r.codigo || r.id, porObra: true });
+          });
+        });
+      }
       return { apaga: apaga, mantem: mantem, temMapa: temMapa };
     },
 
     remover: function (opts) {
       opts = opts || {};
       var e = eid(), plano = this.planoDeRemocao(), n = 0;
-      plano.apaga.forEach(function (x) { Store.excluir(e, x.ch, x.id); n++; });
+      /* ⚠ LÁPIDE DE LOTE, POR ENTIDADE (ESPEC-medicao-cc §1.12-4 e §5.2).
+         A versão um-a-um chamava `Store.excluir` 86 vezes numa demonstração
+         inteira — 86 leituras e 86 gravações, e 86 lápides simples
+         empurrando as de verdade para fora do teto (`_podarLapides`).
+         ⚠ E TROCAR SÓ O `excluir` PELO `excluirVarios` NÃO RESOLVE A
+         SEGUNDA METADE: ele faz 1 leitura + 1 gravação por entidade, mas
+         continua gravando UMA LÁPIDE POR ID — medido no navegador na revisão
+         da Onda 5: `ObraDemo.remover({})` → 89 removidos, 89 lápides
+         simples, 0 de cascata. A pressão sobre o `_LAPIDES_MAX = 3000` era
+         idêntica à da versão antiga, e este comentário dizia o contrário —
+         num ⚠, que é o marcador de "não remova sem entender". Comentário que
+         credita um ganho inexistente é pior que comentário nenhum: ele
+         encerra a pergunta.
+         Agora uma `Store.lapidarLote` cobre o lote inteiro — imune à poda e
+         honrada pelo `vivo()` do merge. ⚠ Sem lápide NENHUMA o registro volta
+         pela nuvem do outro aparelho; por isso a lápide de lote é gravada
+         logo abaixo, e só quando a exclusão de fato saiu.
+         ⚠ E AS INDIVIDUAIS CONTINUAM SAINDO (`semLapide` NÃO é passado) —
+         NÃO REMOVA ISTO PARA "ECONOMIZAR LÁPIDE".
+         ROTEIRO DO DEFEITO (revisão de publicação da 1.2.86, bloqueador 3,
+         medido em bancada com `git show master:js/store.js` e
+         `git show master:js/nuvem.js` carregados como módulos de verdade):
+         a lápide de LOTE é forma NOVA, que só a 1.2.86 entende. O aparelho
+         que ficou na 1.2.85 — e são as QUATRO MAIORES INSTALAÇÕES — lê o
+         bloco `_lapides` pela `Store.lapidesDe`, que exige `t.ref`; a de lote
+         não tem `ref` (tem `ent` + `ids`), e o `vivo()` de lá não conhece
+         `cascatasDeLote`. Medido no mesmo `_merge` do master, trocando SÓ a
+         forma da lápide: com a de lote sobraram 3 de 3 diários (a
+         demonstração inteira VOLTA pela nuvem e reaparece no aparelho que
+         acabou de removê-la); com as individuais, 0 de 3; com as duas, 0 de 3
+         nos dois lados.
+         MEDIDO NO NAVEGADOR (demonstração de verdade criada pelo app, 85 no
+         plano de remoção + o orçamento = 86 removidos, 26 entidades):
+                                     antes        depois
+             bloco `_lapides`        27 / 6.105 B  112 / 18.368 B
+             de lote                 26            26
+             simples                 1             86
+             ids que a 1.2.85 VÊ      0            85
+             ids SEM ponte p/ 1.2.85  85            0
+         (`erros de console: 0` nas duas.) Em bancada, com o bloco JÁ NO TETO
+         de 3.000, a poda passa a expulsar ~87 lápides simples antigas a mais
+         — 2,9% do teto. ⚠ E o teto NÃO aperta para quem manda:
+         `Store._podarLapides` guarda TODAS as cascatas e poda só as simples,
+         então a de lote nunca é expulsa e continua sendo ela a decidir na
+         1.2.86. As individuais são a ponte para a 1.2.85 e podem ser podadas
+         sem prejuízo aqui.
+         Prova e controle negativo: tools/test-lapide-lote.js, blocos 7 a 10. */
+      var porEnt = {};
+      var junta = function (x) { (porEnt[x.ch] = porEnt[x.ch] || []).push(x.id); };
+      plano.apaga.forEach(junta);
       /* só leva o que foi mexido quando a pessoa disser, com todas as letras */
-      if (opts.apagarMexidos === true) plano.mantem.forEach(function (x) { Store.excluir(e, x.ch, x.id); n++; });
+      if (opts.apagarMexidos === true) plano.mantem.forEach(junta);
+      for (var ch in porEnt) {
+        if (!Object.prototype.hasOwnProperty.call(porEnt, ch)) continue;
+        /* ⚠ o retorno é quantos SAÍRAM de fato: com a cota cheia o
+           `excluirVarios` devolve 0, e somar o pedido em vez do feito faria o
+           resumo final mentir para a pessoa. */
+        var saiu = Store.excluirVarios(e, ch, porEnt[ch], false);
+        /* ⚠ A LÁPIDE SÓ DEPOIS DE A EXCLUSÃO TER ACONTECIDO. Com a cota
+           cheia o `excluirVarios` devolve 0 e nada saiu do disco: gravar a
+           lápide ali mataria no OUTRO aparelho registros que continuam vivos
+           neste. */
+        if (saiu) Store.lapidarLote(e, ch, porEnt[ch], "obra-demo");
+        n += saiu;
+      }
       try { if (Store.obterOrcamento(e, PRE + "orc")) { Store.excluirOrcamento(e, PRE + "orc"); n++; } } catch (err) {}
       return { removidos: n, mantidos: (opts.apagarMexidos === true ? [] : plano.mantem) };
     }

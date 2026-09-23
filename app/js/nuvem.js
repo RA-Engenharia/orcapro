@@ -180,6 +180,16 @@
      *   o js/cronobase.js mede em bytes antes de gravar e resume as versões
      *   antigas para a lista nunca passar de 900 KB. */
     "crono_obra",
+    /* ⚠ AS LINHAS DE BASE SELADAS (planejador, fatia 1B; espec §1.5): a cópia
+     * imutável de cada versão, com as subetapas, a curva e o detalhe por
+     * serviço, e os eventos de aprovação. LISTA, `obraId` em todos (cascata
+     * e escopo do sub-usuário, `Gestao._ENT_DA_OBRA`/`ENT_POR_OBRA`), nunca
+     * imune. O conflito é decidido pelo `CronoSelo.mergeNuvem`, consultado
+     * na hora (`_merge`, MERGE_ESPECIAL): sem cópia do perdedor.
+     * ⚠ Sem esta linha o selo não chega ao outro aparelho, não entra no
+     *   backup e a exclusão da obra não deixa lápide que o alcance — e a
+     *   1.2.81, que não a tem, nunca baixa nem apaga o documento. */
+    "crono_selo",
     // folha de diaristas e ponto: DINHEIRO e JORNADA DE PESSOA (imunes à cascata)
     "folha", "fs_lancamentos", "fs_pagamentos", "ponto",
     // movimento de frota: a frota já era imune; o movimento dela também é
@@ -221,6 +231,15 @@
        prefs deixa o local vencer: o celular do dono desfazia no sync o
        enxugamento feito no computador. Ver js/perfis.js. */
     "perfil_impl",
+    /* ⚠ O HISTÓRICO DE ALTERAÇÕES DO CRONOGRAMA (planejador, fatia 1C; espec
+       O8, §1.6): "quem mudou a montagem de 5 para 9" só se responde juntando
+       escritório e obra — histórico só no aparelho seria recado que mente
+       (decisão D22). É LISTA de eventos (`m` em objetos: o Firestore recusa
+       lista dentro de lista) e o conflito dela é o `CronoAlt.mergeNuvem`
+       (união por id, poda por contagem, sem cópia do perdedor), pela tabela
+       MERGE_ESPECIAL do `_merge`. Tem `obraId` (menos o evento de
+       orçamento), e por isso entra na cascata e no escopo por obra. */
+    "crono_alt",
     // v1.1.126 — lápides das exclusões: sem isso o merge (união por id) ressuscitava
     // no aparelho A o registro que o aparelho B tinha acabado de apagar.
     "_lapides"
@@ -539,6 +558,15 @@
          para sair do teto. */
       var podados = (semLapide || ent !== "bim_clash_resultados" || !Store.cascatasDeClashPoda)
         ? Object.create(null) : Store.cascatasDeClashPoda(empresaId);
+      /* ⚠ E A LÁPIDE DE LOTE, QUE VALE PARA QUALQUER ENTIDADE (§1.12-4).
+         Sem esta consulta, apagar 1.500 decisões de apropriação de uma vez
+         não propaga: o outro aparelho devolve tudo no primeiro sync e a
+         limpeza se desfaz sozinha. Uma lápide por registro propagaria, mas
+         comeria o teto de `_lapides` e expulsaria as das OUTRAS entidades —
+         é a troca que `Store.lapidarLote` evita. O desempate é o mesmo do
+         `podados`: quem foi EDITADO depois do lote, noutro aparelho, tem
+         razão e volta. */
+      var emLote = (semLapide || !Store.cascatasDeLote) ? Object.create(null) : Store.cascatasDeLote(empresaId, ent);
       /* ⚠ O ADITIVO É FILHO DO CONTRATO, NÃO DA OBRA — e por isso a cascata da
        * obra não pode julgá-lo pelo `obraId` que ele carrega.
        *
@@ -580,7 +608,29 @@
          * O empate agora favorece o REGISTRO, e é a escolha certa: uma exclusão
          * que não pega é visível (a pessoa apaga de novo); um registro que some
          * calado, não. */
-        if (t) return String(o.atualizadoEm || "") >= String(t); // recriado depois de excluir → mantém
+        if (t) {
+          if (String(o.atualizadoEm || "") < String(t)) return false;
+          /* ⚠ O EMPATE NÃO ENCERRA A PERGUNTA QUANDO A MESMA EXCLUSÃO TAMBÉM
+             DEIXOU LÁPIDE DE LOTE. Medido em bancada na revisão de publicação
+             da 1.2.86, ao fazer a remoção da demonstração gravar AS DUAS
+             formas de lápide (a de lote, que a 1.2.86 entende, e as
+             individuais, que a 1.2.85 entende): `ObraDemo.remover` apaga no
+             MESMO milissegundo em que os registros acabaram de ser gravados —
+             então `atualizadoEm` e o `em` da lápide simples saem iguais, o
+             `>=` acima devolvia "vivo" e o `return` pulava a consulta do lote
+             logo abaixo, que julga por `>` estrito e teria matado.
+             Resultado medido: 6 de 90 registros da demonstração SOBREVIVIAM
+             ao merge no aparelho que acabou de removê-la — e o de lote, que é
+             quem manda na 1.2.86, nunca era ouvido.
+             ⚠ NÃO TROQUE ISTO POR UM `return` DIRETO: o `>=` continua valendo
+             para quem NÃO está em lote (o registro apagado e regravado na
+             mesma volta do laço pelo `_prodSalvarPrecos` — ver o comentário
+             acima), e o resto do `vivo()` continua fora do caminho. Só o
+             lote, e só quando cobre o MESMO id, tem direito de reverter o
+             empate. */
+          if (emLote[o.id]) return String(o.atualizadoEm || "") > String(emLote[o.id]);
+          return true; // recriado depois de excluir → mantém
+        }
         if (o.obraId && obrasMortas[o.obraId]) {
           /* cadastro da empresa (equipe, patrimônio, frota): a obra morreu, ele não. Faz aqui o
            * mesmo que a exclusão faz localmente — solta o vínculo — em vez de deixá-lo apontando
@@ -604,8 +654,42 @@
            volta — quem escreveu responsavel num conflito que aqui era só um
            `resolvido_auto` sem dono tem razão, e a poda aqui não sabia disso. */
         if (podados[o.id]) return String(o.atualizadoEm || "") > String(podados[o.id]);
+        /* mesmo desempate, para o lote de qualquer entidade */
+        if (emLote[o.id]) return String(o.atualizadoEm || "") > String(emLote[o.id]);
         return true;
       };
+      /* ===== MERGE ESPECIAL POR CONSULTA NA HORA (planejador, Onda 0, T9) =====
+         Entidade → NOME do módulo global que decide o conflito dela: o merge
+         procura `global[nome].mergeNuvem` A CADA CHAMADA — os módulos NUNCA
+         registram nada no Nuvem.
+         ⚠ POR QUE TABELA FIXA E CONSULTA NA HORA (espec O19, risco R18): este
+           arquivo carrega no index.html ~200 linhas DEPOIS do js/cronobase.js e
+           dos módulos do planejador, e termina com `global.Nuvem = Nuvem` — um
+           objeto NOVO. Um `Nuvem.registrarMerge(...)` feito pelo módulo morreria
+           ali (ou lançaria, com o Nuvem ainda inexistente): em Node a suíte
+           passaria e no navegador o ramo especial não existiria.
+         ⚠ A TABELA MORA DENTRO DO `_merge`, e não no topo do arquivo: as
+           suítes da lixeira do balde (tools/test-limpar-balde.js) recortam SÓ
+           este método e o executam sozinho — uma referência ao topo virava
+           ReferenceError lá. Fora do app (sem `global`), vale o "módulo
+           ausente" abaixo.
+         ⚠ AS DUAS ENTIDADES NUNCA GUARDAM CÓPIA DO PERDEDOR NEM CONTAM
+           CONFLITO: `crono_selo` é imutável (o maior `atualizadoEm` vence, com a
+           qualidade no milissegundo) e `crono_alt` é união por id (id igual →
+           o mais novo). Uma cópia de 50 KB pendurada num selo de 300 KB
+           estouraria o documento de 1 MiB — o mesmo defeito do `crono_obra`
+           (ver o ramo abaixo). Com o módulo AUSENTE (cache velho, arquivo que
+           não carregou), vale o mais novo, sem cópia — nunca o ramo genérico.
+         Entidade fora da tabela: `esp` null, e o merge de sempre, linha a linha. */
+      var MERGE_ESPECIAL = { crono_selo: "CronoSelo", crono_alt: "CronoAlt" };
+      var esp = null;
+      if (Object.prototype.hasOwnProperty.call(MERGE_ESPECIAL, ent)) {
+        var modEsp = null;
+        try { modEsp = (typeof global !== "undefined" && global) ? (global[MERGE_ESPECIAL[ent]] || null) : null; } catch (eMod) { modEsp = null; }
+        var mnEsp = (modEsp && modEsp.mergeNuvem && typeof modEsp.mergeNuvem === "object") ? modEsp.mergeNuvem : null;
+        esp = { nome: MERGE_ESPECIAL[ent], vencedor: (mnEsp && typeof mnEsp.vencedor === "function") ? mnEsp.vencedor : null,
+          depois: (mnEsp && typeof mnEsp.depois === "function") ? mnEsp.depois : null };
+      }
       Util.arr(cloud).forEach(function (o) { if (o && o.id && vivo(o)) byId[o.id] = o; });
       Util.arr(local).forEach(function (o) {
         if (!o || !o.id || !vivo(o)) return;
@@ -614,6 +698,16 @@
         var tl = String(o.atualizadoEm || ""), tc = String(c.atualizadoEm || "");
         if (tl === tc) { byId[o.id] = o; return; } // mesma versão: sem conflito
         var venc = tl > tc ? o : c, perd = tl > tc ? c : o;
+        /* ⚠ ENTIDADE COM MERGE ESPECIAL: o módulo decide quem vence, e NUNCA
+           há cópia do perdedor nem conta de conflito (ver MERGE_ESPECIAL).
+           Módulo ausente, ou que devolve algo que não é um dos dois lados, ou
+           que lança: vale o mais novo — sem cópia, nunca o ramo genérico. */
+        if (esp) {
+          var vEsp = null;
+          if (esp.vencedor) { try { vEsp = esp.vencedor(o, c); } catch (eV) { vEsp = null; } }
+          byId[o.id] = (vEsp === o || vEsp === c) ? vEsp : venc;
+          return;
+        }
         /* Um dos lados ainda está na marca do último sync? Então SÓ o outro
            editou — propagação normal, o mais novo vence e ponto. O ramo de
            conflito fica reservado para o caso real: os dois saíram da marca. */
@@ -656,7 +750,18 @@
         } catch (e) {}
         byId[o.id] = venc;
       });
-      return Object.keys(byId).map(function (k) { return byId[k]; });
+      var listaM = Object.keys(byId).map(function (k) { return byId[k]; });
+      /* o passo final do módulo (poda do histórico, descarte do que aponta
+         para orçamento com lápide). ⚠ Só aceita LISTA de volta: um `depois`
+         com defeito que devolvesse outra coisa gravaria o vazio por cima da
+         entidade (memória "a forma no disco decide se sincroniza"). */
+      if (esp && esp.depois) {
+        try {
+          var l2 = esp.depois(listaM, empresaId);
+          if (Object.prototype.toString.call(l2) === "[object Array]") listaM = l2;
+        } catch (eD) { try { console.warn("[nuvem] " + ent + ": o passo final do merge (" + esp.nome + ") falhou — a lista mesclada foi mantida", eD); } catch (_) {} }
+      }
+      return listaM;
     },
 
     // 1ª carga: baixa a nuvem, mescla com o local e grava nos dois (não perde nada).
@@ -813,6 +918,19 @@
       var falhou = 0, tentadas = 0;
       var uma = function (ent) {
         tentadas++;
+        /* ⚠ O TAMANHO DA CARGA VIVE AQUI, FORA DO `then` (revisão adversarial
+           da Onda 0 do planejador, achado 2). Roteiro do defeito: a T16 ensinou
+           o `push` a dizer o tamanho da carga recusada, e o `estado()` passou a
+           separar "formato recusado" (lista dentro de lista, carga pequena) de
+           "lista grande demais" — mas só com o tamanho em mãos. Este caminho,
+           que roda a CADA conexão, registrava a falha sem ele: a mesma recusa
+           por lista aninhada (80 bytes) saía como `listaGrandeDemais`, e a
+           pessoa ouvia "faça backup e fale com o suporte sobre tamanho".
+           `null` = a falha veio antes de a carga existir (a leitura da nuvem),
+           e aí o tamanho não vai — não se inventa um.
+           Prova: tools/test-nuvem-push-falha.js, bloco [1b] (CN: sem o
+           tamanho no catch → reprova). */
+        var cargaU = null;
         return self._doc(ent).get().then(function (snap) {
           var cloud = snap.exists ? snap.data().v : null;
           var local = lerEnt(empresaId, ent);
@@ -839,6 +957,7 @@
           self._marcarSync(empresaId, ent, merged);
           var carga = "";
           try { carga = JSON.stringify(merged); } catch (e) { carga = ""; }
+          cargaU = carga;
           /* nada mudou dos dois lados? não sobe. Antes subia sempre, e o
              `em: Date.now()` fazia o outro aparelho reagir a uma escrita que
              não trazia dado nenhum — o começo do laço. */
@@ -854,7 +973,7 @@
           /* NÃO engolir: 32 de 32 entidades reprovadas viravam "sincronizado". */
           falhou++;
           delete self._ultimoEnviado[empresaId + "|" + ent];
-          self._registrarFalha(ent, e);
+          self._registrarFalha(ent, e, cargaU == null ? undefined : cargaU.length);
           return false;
         });
       };
@@ -999,12 +1118,17 @@
      * Sem isto o app dizia "☁ Sincronizado!" sem ter feito uma única leitura
      * ou escrita. Agora toda falha fica registrada e a tela tem o que mostrar. */
     _falhas: [],
-    _registrarFalha: function (ent, err) {
+    _registrarFalha: function (ent, err, tamCarga) {
       var cod = (err && (err.code || err.message)) || "erro";
       /* guarda também a mensagem: o Firestore diz "invalid-argument" no
          `code` para várias coisas, e só o texto separa documento grande demais
-         de campo mal formado — e são duas conversas diferentes com o usuário */
-      this._falhas.push({ entidade: ent, codigo: String(cod), msg: String((err && err.message) || "") });
+         de campo mal formado — e são duas conversas diferentes com o usuário.
+         `tam` (Onda 0 do planejador, T16) = o tamanho da carga que foi
+         recusada, quando quem registra o sabe: é o que separa "formato
+         recusado" de "lista grande demais" no `estado()`. */
+      var reg = { entidade: ent, codigo: String(cod), msg: String((err && err.message) || "") };
+      if (typeof tamCarga === "number" && isFinite(tamCarga)) reg.tam = tamCarga;
+      this._falhas.push(reg);
       if (this._falhas.length > 40) this._falhas.shift();
       try { console.warn("[nuvem] " + ent + ": " + cod); } catch (e) {}
     },
@@ -1020,7 +1144,21 @@
          toda tentativa seguinte refalha. Sem estar aqui, `ok` continuava true e
          a tela dizia "Sincronizado" com a lista de conflitos parada no
          aparelho. Mesmo modo de falha do bloqueio, por um caminho novo. */
-      var grande = f.some(function (x) { return /invalid-argument|too large|exceeds the maximum|maximum size/i.test(x.codigo + " " + (x.msg || "")); });
+      /* ⚠ FORMATO RECUSADO NÃO É LISTA GRANDE (planejador, Onda 0, T16). O
+         Firestore responde `invalid-argument` também para lista dentro de
+         lista (regra O18) — e com a carga BEM abaixo de 900 KB. Contar isso
+         como "grande demais" mandava a pessoa fazer backup e falar com o
+         suporte sobre tamanho, quando o que parou foi a FORMA de um registro.
+         A régua: `invalid-argument` com a carga conhecida e abaixo de 900 KB,
+         sem texto de tamanho na mensagem, é formato. Os dois continuam
+         derrubando o `ok`. */
+      function ehFormato(x) {
+        var txt = x.codigo + " " + (x.msg || "");
+        return /invalid-argument/i.test(txt) && !/too large|exceeds the maximum|maximum size/i.test(txt) &&
+          typeof x.tam === "number" && x.tam < 900 * 1024;
+      }
+      var formato = f.some(ehFormato);
+      var grande = f.some(function (x) { return !ehFormato(x) && /invalid-argument|too large|exceeds the maximum|maximum size/i.test(x.codigo + " " + (x.msg || "")); });
       /* ⚠ O BLOQUEIO TEM DE APARECER AQUI. Ele não passa por `_registrarFalha`,
          então `falhas` continuava 0 e `ok` continuava true — e a tela dizia
          "Conectado, sincronizam sozinhos" com o aparelho sem sincronizar nada.
@@ -1035,12 +1173,13 @@
         cotaEstourada: cota,
         semPermissao: permissao,
         listaGrandeDemais: grande,
+        formatoRecusado: formato,
         bloqueadoOutraEmpresa: !!bloq,
         /* entidades paradas no último sync por conteúdo local ilegível: quem
            anuncia "Sincronizado!" confere aqui antes */
         dadoLocalIlegivel: (this._ilegiveisUltimoSync || []).slice(),
         donoDoBalde: bloq ? (bloq.dono && (bloq.dono.empresa || "")) : "",
-        ok: !!this.ligado && !bloq && !!(this._un && this._un.length) && !cota && !permissao && !grande
+        ok: !!this.ligado && !bloq && !!(this._un && this._un.length) && !cota && !permissao && !grande && !formato
       };
     },
 
@@ -1100,26 +1239,39 @@
       if (_ehPrevia(empresaId)) return Promise.resolve(false);   // nem lápide
       var self = this;
       var mandar = function () {
+        var chave = empresaId + "|" + ent, carga = "", marcou = false;
         try {
           var v = lerEnt(empresaId, ent);
           /* ⚠ o `[]` de uma leitura ilegível NÃO sobe: ele substituiria na
              nuvem a lista que os outros aparelhos ainda têm (ver `ilegivelLocal`) */
           if (ilegivelLocal(empresaId, ent)) return;
-          var carga = "";
           try { carga = JSON.stringify(v); } catch (e) { carga = ""; }
-          var chave = empresaId + "|" + ent;
           if (carga && self._ultimoEnviado[chave] === carga) return;   // nada mudou: não escreve
           self._avisarTamanho(ent, carga);
-          self._ultimoEnviado[chave] = carga;
+          self._ultimoEnviado[chave] = carga; marcou = true;
           self._doc(ent).set({ v: v, em: Date.now() }).then(function () {
             self._marcarSync(empresaId, ent, v); // o que subiu vira a base comum
           }).catch(function (e) {
             /* a escrita falhou: esquece a marca, senão a próxima tentativa
                acharia que já subiu e o dado ficaria só no aparelho */
             delete self._ultimoEnviado[chave];
-            self._registrarFalha(ent, e);
+            self._registrarFalha(ent, e, carga.length);
           });
-        } catch (e) {}
+        } catch (e) {
+          /* ⚠ A RECUSA SÍNCRONA É A MESMA FALHA QUE A REJEIÇÃO (planejador,
+             Onda 0, T16; crítica 1, achado 1). O SDK do Firestore recusa
+             documento com lista dentro de lista LANÇANDO na hora, dentro do
+             `set(...)` — antes da promessa existir. Este `catch` era vazio e
+             vinha DEPOIS de `_ultimoEnviado[chave] = carga`: o aparelho
+             guardava a carga como "já subiu", a próxima tentativa com o MESMO
+             conteúdo saía cedo pelo "nada mudou", nenhuma falha era registrada
+             e `estado().ok` continuava true — a tela dizia "Sincronizado" com
+             a entidade parada neste aparelho para sempre.
+             Prova: tools/test-nuvem-push-falha.js (CN: este catch vazio de
+             novo → reprova). */
+          if (marcou) delete self._ultimoEnviado[chave];
+          try { self._registrarFalha(ent, e, carga.length); } catch (eR) {}
+        }
       };
       /* ⚠ RECONFERE NA HORA DE MANDAR. A guarda de cima roda no AGENDAMENTO;
          o envio acontece 900 ms depois (150 ms para as lápides). Um bloqueio que

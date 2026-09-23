@@ -457,6 +457,10 @@
   function ligacoesDoNivel(nivel, nos, numPorId, pendentes) {
     var presentes = {}, out = [];
     nos.forEach(function (n) {
+      /* ⚠ planejador 1A (§2.10): a sequência não regrava o "Depende de" de um
+         nó com rede digitada (TT/IT, elo cruzado, restrição) ou com escolha
+         pendente — a categoria dele ainda conta para os outros */
+      if (n.trava) { pendentes.push({ nivel: nivel, id: n.id, num: n.num, nome: n.nome, porque: n.trava }); if (n.cat && n.cat !== "outros" && !n.marco) presentes[n.cat] = true; return; }
       if (n.marco) { pendentes.push({ nivel: nivel, id: n.id, num: n.num, nome: n.nome,
         porque: "é marco (duração zero) — a posição dele é decisão de contrato, não sequência construtiva" }); return; }
       if (!n.cat || n.cat === "outros") { pendentes.push({ nivel: nivel, id: n.id, num: n.num, nome: n.nome,
@@ -464,10 +468,13 @@
       presentes[n.cat] = true;
     });
     var uteis = nos.filter(function (n) { return !n.marco && n.cat && n.cat !== "outros"; });
+    var alvos = {};
+    uteis.forEach(function (n) { if (!n.trava) alvos[n.id] = true; });
     var primeiroDaCat = {}, ultimoDaCat = {};
     uteis.forEach(function (n) { if (!own(primeiroDaCat, n.cat)) primeiroDaCat[n.cat] = n; ultimoDaCat[n.cat] = n; });
 
     uteis.forEach(function (alvo, iAlvo) {
+      if (!alvos[alvo.id]) return;
       var cx = alvo.cat, candidatas = [];
       chaves(presentes).forEach(function (cy) { if (cy !== cx && dep(cy, cx)) candidatas.push(cy); });
       /* REDUÇÃO TRANSITIVA: se cy já chega em cx passando por cz (e cz também
@@ -625,6 +632,10 @@
     return cortar("Sequência de obra (heurística, confira): " + base, TETOS.motivo);
   }
 
+  function travaDe(orc, id, nivel) {
+    var Cr = C();
+    return (Cr && typeof Cr.travaGravador === "function") ? Cr.travaGravador(orc && orc.cronograma, id, nivel, orc) : null;
+  }
   function coletarNos(orc, r) {
     var nivelFolha = !!(r && r.exec && r.exec.rede === true && arr(r.atividades).length);
     var numPorId = {}, etapas = [], porEtapa = {};
@@ -635,7 +646,8 @@
       etapas.push({ id: e.id, num: String(i + 1), nome: String(e.nome || ""), cat: e.categoria,
         dur: num(e.duracao), marco: !!e.marco, ordem: i, inicio: num(e.inicio), fim: num(e.fim),
         predsHoje: arr(e.preds).slice(), lagsHoje: copia(e.predLag) || {}, tiposHoje: {},
-        predsExplicito: !!e.predsExplicito, pureza: pureza(itens, params, e.categoria), etapaId: e.id });
+        predsExplicito: !!e.predsExplicito, pureza: pureza(itens, params, e.categoria), etapaId: e.id,
+        trava: travaDe(orc, e.id, "etapa") });
     });
     if (nivelFolha) {
       arr(r.atividades).forEach(function (n) { if (n.numero != null) numPorId[n.id] = String(n.numero); });
@@ -650,7 +662,7 @@
             dur: num(n.duracaoRede != null ? n.duracaoRede : n.duracao), marco: !!n.marco, ordem: j,
             inicio: num(n.inicio), fim: num(n.fim), etapaId: e.id,
             predsHoje: arr(n.preds).slice(), lagsHoje: copia(n.predLag) || {}, tiposHoje: copia(n.predTipo) || {},
-            predsExplicito: !!n.predsExplicito, pureza: pureza(itens, params, n.categoria) };
+            predsExplicito: !!n.predsExplicito, pureza: pureza(itens, params, n.categoria), trava: travaDe(orc, n.id, "folha") };
         });
       });
     }

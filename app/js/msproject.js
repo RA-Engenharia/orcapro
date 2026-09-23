@@ -136,9 +136,9 @@
      Trocar 3 por 0 faz "a laje começa quando o pilar começa" virar "a laje
      termina quando o pilar termina": o arquivo abre, ninguém vê erro, e o
      Project desenha outro cronograma.
-     ⚠ HOJE O MOTOR SÓ PRODUZ "TI" E "II" (js/cronograma.js, `predTipo`). TT e
-     IT estão no mapa para o dia em que ele aprender — o mapa traduz, não
-     inventa elo. */
+     ⚠ DESDE O PLANEJADOR (20/09/2026) O MOTOR PRODUZ OS QUATRO: a rede
+     digitada sai em `predTipoRede` (o tipo, com TI omitido) e `predLagTipo` (a
+     espera NA RÉGUA DO TIPO). Ver `eloDe`, logo abaixo. */
   var TIPO_ELO = { TT: 0, TI: 1, IT: 2, II: 3 };
   function tipoElo(t) {
     var k = String(t == null ? "" : t).toUpperCase();
@@ -154,9 +154,64 @@
      ⚠ 4 e 5 se parecem e fazem o contrário um do outro: 4 é um PISO (a tarefa
      não desce dali), 5 é um TETO no início (empurra para trás). O "não iniciar
      antes de" dos serviços, que segura a entrega igual à do PDF, é o 4. */
-  var CT_ASAP = 0, CT_NIA = 4, CT_TAE = 7;
+  var CT_ASAP = 0, CT_ALAP = 1, CT_DIA = 2, CT_DTA = 3, CT_NIA = 4, CT_NID = 5, CT_NTA = 6, CT_TAE = 7;
+  /* As datas do planejador (`rede.datas` + as duas de sempre) e o
+     ConstraintType de cada uma. ⚠ O `mtp` ("o mais tarde possível") está no
+     mapa com o número oficial e NÃO É EMITIDO — ver `_restrDe`. */
+  var CT_DE = { nia: CT_NIA, dia: CT_DIA, nid: CT_NID, nta: CT_NTA, dta: CT_DTA, tae: CT_TAE, mtp: CT_ALAP };
+  // os tipos cujo alvo é o TÉRMINO (o instante é 17 h do último dia trabalhado)
+  var RESTR_FIM = { nta: 1, dta: 1, tae: 1 };
+  /* Os tipos cuja data digitada RECUA para o último dia de trabalho ≤ ela.
+     São os TETOS (`nid`, `tae`) e o piso de TÉRMINO (`nta`) — o motor os
+     converte assim (§2.3-E6 da espec: `tetoIniO = phi(u + 1 dia) − 1`,
+     `fimMinR = k(u') + 1`, `recuar(cal, u, D)`), e escrever a data crua faria
+     o Project julgar por um instante que o calendário do próprio arquivo
+     declara parado. O `nia` NÃO entra: ele é piso de início e a data crua é a
+     que a pessoa digitou — o Project sobe sozinho para a segunda-feira, do
+     mesmo jeito que o motor (js/cronograma.js `_aplicarRestricoes`: "a data
+     largada num domingo sobe, nunca desce"). O `dia` e o `dta` também não
+     entram: neles sai a posição do PRÓPRIO motor, que já é dia de trabalho. */
+  var RESTR_RECUA = { nid: 1, nta: 1, tae: 1, dta: 1 };
 
   function own(o, k) { return !!o && typeof o === "object" && Object.prototype.hasOwnProperty.call(o, k); }
+
+  /* O ELO COMO O MSPDI O QUER: o TIPO da rede digitada e a espera NA RÉGUA
+     DESSE TIPO. Devolve {tipo (número do formato), dias, rede}.
+
+     ⚠ NUNCA MANDE `predDesloc` NUM TT/IT/II. O `predDesloc` é, por contrato do
+     motor (O20 da espec do planejador), o deslocamento EQUIVALENTE DE
+     TÉRMINO-INÍCIO — `inicio(sucessora) ≥ fim(predecessora) + predDesloc` —
+     justamente para que a versão anterior do app, que só conhece
+     término-início, desenhe a mesma data. Num TT de +2 dias entre uma etapa de
+     10 e uma de 6, ele vale 2 − 6 = −4. Emitido ao lado de `<Type>0</Type>`, o
+     Project lê "termine 4 dias ANTES do fim da predecessora": a conta entra
+     duas vezes, o arquivo abre, nenhum erro aparece, e o cronograma do
+     contratante é outro. `tools/test-msproject-releitura.js` tem o controle
+     negativo que troca um pelo outro e mede as datas que saem.
+
+     ⚠ SEM REDE DIGITADA SAI EXATAMENTE O DE SEMPRE — o tipo LEGADO
+     (`predTipo`, que na folha ainda é só "TI"/"II") e o `predDesloc`. É o que
+     mantém o arquivo byte a byte igual ao do master em todo orçamento que não
+     usou o planejador (tools/test-crono-documentos.js). */
+  function eloDe(no, pid) {
+    var tpR = (no.predTipoRede && own(no.predTipoRede, pid)) ? no.predTipoRede[pid] : null;
+    var lgR = (no.predLagTipo && no.predLagTipo[pid] != null) ? Number(no.predLagTipo[pid]) : null;
+    /* a rede digitada: `predTipoRede` só carrega o que NÃO é TI, e
+       `predLagTipo` só carrega a espera EXPLÍCITA — um TT sem espera não tem
+       entrada em nenhum dos dois mapas além do tipo, e vale 0 (§1.3 da espec:
+       "`l` ausente = … 0 nos outros tipos") */
+    if (tpR || lgR != null) return { tipo: tipoElo(tpR || "TI"), dias: lgR == null ? 0 : lgR, rede: true };
+    return { tipo: tipoElo((no.predTipo && no.predTipo[pid]) || "TI"),
+      dias: (no.predDesloc && no.predDesloc[pid] != null) ? no.predDesloc[pid] : 0, rede: false };
+  }
+  /* A TAREFA SEM PREÇO tem contrato PRÓPRIO e ele é outro: `predTipo` dela já
+     é o tipo de verdade (os quatro) e `predLag` já é a espera na régua do tipo
+     (js/cronograma.js `_saidaExtras`). Ela não tem `predDesloc` nenhum — usar
+     o `eloDe` aqui devolveria espera 0 em todo elo com espera. */
+  function eloDeExtra(x, pid) {
+    return { tipo: tipoElo((x.predTipo && x.predTipo[pid]) || "TI"),
+      dias: (x.predLag && x.predLag[pid] != null) ? Number(x.predLag[pid]) : 0, rede: true };
+  }
 
   /* duração do MSPDI: PT{h}H{m}M{s}S. ⚠ o `Work` sai FRACIONÁRIO (12,5 h de
      pedreiro num serviço), e "PT12.5H0M0S" não é duração válida — o Project
@@ -200,6 +255,38 @@
     var d = new Date(dataFim.getTime()), guarda = 0;
     do { d.setDate(d.getDate() - 1); guarda++; } while (ehParado(d, dpw, feriados) && guarda < 40);
     return d;
+  }
+  /* AS DUAS CORREÇÕES DE DATA DIGITADA, e elas vão em SENTIDOS OPOSTOS — é a
+     decisão D9 da espec do planejador ("a data digitada nos tipos de término é
+     o ÚLTIMO DIA TRABALHADO, como o MS Project mostra"):
+       · data de INÍCIO ("não iniciar antes de", "deve iniciar em") largada num
+         domingo sobe para a segunda — descer permitiria começar ANTES do que a
+         pessoa pediu (é a mesma regra do motor, js/cronograma.js
+         `_aplicarRestricoes`: "a data largada num domingo sobe, nunca desce");
+       · data de TÉRMINO ("terminar até", "deve terminar em", "não terminar
+         antes de") largada num domingo DESCE para a sexta — o motor a converte
+         em `recuar(cal, u, D)`/`k(u') + 1`, ou seja, o último dia de trabalho
+         ≤ a data. Subir faria o Project aceitar um plano que termina na
+         segunda enquanto o OrçaPRO o acusa de estourado: duas verdades para o
+         mesmo prazo, e a do contratante é a otimista.
+     ⚠ Até 20/09/2026 o "terminar até" saía CRU (`dtIso(R.data, "17:00:00")`).
+     Num prazo-limite caído no sábado, o Project lia sábado 17 h — um instante
+     que o calendário do arquivo declara PARADO. */
+  function recuarUtil(d, dpw, feriados) {
+    var x = new Date(d.getTime()), g = 0;
+    while (ehParado(x, dpw, feriados) && g++ < 400) x.setDate(x.getDate() - 1);
+    return x;
+  }
+  function avancarUtil(d, dpw, feriados) {
+    var x = new Date(d.getTime()), g = 0;
+    while (ehParado(x, dpw, feriados) && g++ < 400) x.setDate(x.getDate() + 1);
+    return x;
+  }
+  // n dias ÚTEIS a partir de `d` (n = 0 devolve o próprio dia, sem ajustar)
+  function andarUtil(d, n, dpw, feriados) {
+    var x = new Date(d.getTime()), passo = n < 0 ? -1 : 1, faltam = Math.abs(n), g = 0;
+    while (faltam > 0 && g++ < 4000) { x.setDate(x.getDate() + passo); if (!ehParado(x, dpw, feriados)) faltam--; }
+    return x;
   }
 
   /* ---------------------------------------------------------------------
@@ -258,6 +345,7 @@
   }
 
   function num0(v) { var n = Number(v); return isFinite(n) ? n : 0; }
+  function arr(v) { return Array.isArray(v) ? v : []; }
 
   /* AS ETAPAS FORA DO PRAZO CONTRATADO — ver o ⚠ do cabeçalho.
      Devolve {tem, ids:{noId:1}, etapas:[{id, numero, nome, dias}]}.
@@ -358,7 +446,7 @@
         return { ok: false, motivo: (r && r.exec && r.exec.erro) || "o cronograma veio sem a árvore EAP — chame Cronograma.estimar(orc, override, {eap: true})" };
       }
       var dpw = (r.params && r.params.diasUteisSemana) || 5, fer = (r.feriados && r.feriados.mapa) || {};
-      var porId = {}, cont = { etapas: 0, resumos: 0, folhas: 0, servicos: 0, semBase: 0, elosInternos: 0, elosCortados: 0, foraDoPrazo: 0 };
+      var porId = {}, cont = { etapas: 0, resumos: 0, folhas: 0, servicos: 0, semBase: 0, elosInternos: 0, elosCruzados: 0, elosCortados: 0, foraDoPrazo: 0 };
       var recolhidas = [], problema = null, FORA = forasDe(r);
       r.atividades.forEach(function (n) { if (!Object.prototype.hasOwnProperty.call(porId, n.id)) porId[n.id] = n; });
       function filhosDe(n) { return (n.filhos || []).map(function (id) { return porId[id]; }).filter(function (x) { return !!x; }); }
@@ -458,7 +546,9 @@
           (no.preds || []).forEach(function (pid) {
             if (fora(pid)) return;
             if (!uidEt[pid]) return;
-            links.push({ uid: uidEt[pid], tipo: 1, dias: (no.predDesloc && no.predDesloc[pid] != null) ? no.predDesloc[pid] : 0 });
+            // ⚠ `tipo: 1` fixo era o de antes do planejador — ver `eloDe`
+            var E1 = eloDe(no, pid);
+            links.push({ uid: uidEt[pid], tipo: E1.tipo, dias: E1.dias });
           });
         } else if (no.tipo === "subetapa" || no.tipo === "soltos") {
           var irmas = (porId[no.paiId] && porId[no.paiId].filhos) || [];
@@ -472,17 +562,52 @@
                `tipoElo` era código MORTO até 11/09/2026 justamente porque esta
                linha tinha a própria conta — o controle negativo que troca II
                por TT no mapa saía com o arquivo IDÊNTICO, e o assert "o mapa
-               está certo" não provava nada. Hoje II → 3 e o resto → 1, como
-               antes (a saída é byte a byte a mesma); quando o motor aprender
-               TT/IT, sai o número certo sem ninguém lembrar deste ponto. */
-            links.push({ uid: uidDe[pid], tipo: tipoElo((no.predTipo && no.predTipo[pid]) || "TI"),
-              dias: (no.predDesloc && no.predDesloc[pid] != null) ? no.predDesloc[pid] : 0 });
+               está certo" não provava nada. */
+            var EF1 = eloDe(no, pid);
+            links.push({ uid: uidDe[pid], tipo: EF1.tipo, dias: EF1.dias });
             cont.elosInternos++;
+          });
+          /* O ELO CRUZADO (O26): a subetapa que depende de uma subetapa de
+             OUTRA etapa. Ele não está em `preds` — o motor o guarda como
+             chave a mais em `predTipoRede`/`predLagTipo`, porque na sombra da
+             versão anterior ele vira elo entre as ETAPAS ("a etapa anda em
+             bloco", D7). No arquivo detalhado as duas folhas existem, então o
+             elo vai inteiro: ele já está satisfeito na posição em que o motor
+             pôs a folha, e emiti-lo é o que impede o Project de puxá-la para o
+             começo da etapa se alguém mexer na rede lá dentro. */
+          var jaLig = {};
+          links.forEach(function (k2) { jaLig[k2.uid] = 1; });
+          /* ⚠ REDE CIRCULAR ENTRE ETAPAS: o elo cruzado NÃO SAI. Quando o
+             motor não conseguiu ordenar as etapas ele marca `cicloDep` e
+             desenha ignorando o elo de volta — mas mantém a lista de
+             predecessoras. No arquivo, um elo entre folhas de duas etapas que
+             dependem uma da outra fecha o laço por dentro dos resumos (o
+             resumo herda o fim dos filhos) e o Project recusa a REDE INTEIRA,
+             que é pior que uma folha sem elo. É a mesma decisão do ciclo
+             INTERNO, logo acima, e conta no mesmo `elosCortados`. */
+          var paiN = porId[no.paiId];
+          [no.predTipoRede, no.predLagTipo].forEach(function (mp) {
+            if (!mp) return;
+            Object.keys(mp).forEach(function (fid) {
+              if ((no.preds || []).indexOf(fid) >= 0) return;         // já saiu acima
+              if (fora(fid) || !uidDe[fid] || jaLig[uidDe[fid]]) return;
+              // ⚠ marcar ANTES de decidir: os dois mapas (`predTipoRede` e
+              //   `predLagTipo`) têm a mesma chave, e sem isto o mesmo elo
+              //   cortado era contado DUAS vezes no relato
+              jaLig[uidDe[fid]] = 1;
+              var alvo = porId[fid], paiA = alvo ? porId[alvo.paiId] : null;
+              if ((paiN && paiN.cicloDep) || (paiA && paiA.cicloDep) || (alvo && alvo.cicloDep)) { cont.elosCortados++; return; }
+              var EX = eloDe(no, fid);
+              links.push({ uid: uidDe[fid], tipo: EX.tipo, dias: EX.dias });
+              cont.elosCruzados++;
+            });
           });
         }
         l.links = links;
       });
-      return { ok: true, detalhe: detalhe, linhas: linhas, contagens: cont, recolhidas: recolhidas, fora: FORA.etapas };
+      // `proxUid` = o maior UID já usado; as tarefas sem preço começam depois
+      return { ok: true, detalhe: detalhe, linhas: linhas, contagens: cont, recolhidas: recolhidas, fora: FORA.etapas,
+        proxUid: Math.max(prox, r.etapas.length) };
     },
 
     /* =================================================================
@@ -541,12 +666,19 @@
        ================================================================= */
     _opcs: function (opts) {
       var o = opts || {};
-      var e = { recursos: o.recursos || null, base: o.base || null, avanco: o.avanco || null,
+      var e = { recursos: o.recursos || null, base: null, bases: null, avanco: o.avanco || null,
         restricoes: o.restricoes === true, custos: null,
         relato: (o.relato && typeof o.relato === "object") ? o.relato : null };
+      /* `opts.base` continua aceitando UM registro (é o que os chamadores de
+         antes passam, e o arquivo deles não muda). A lista
+         `[{numero, reg, rotulo}]` é a das 11 linhas de base do formato. */
+      if (Array.isArray(o.base)) e.bases = o.base.filter(function (b) { return b && typeof b === "object"; });
+      else if (Array.isArray(o.bases)) e.bases = o.bases.filter(function (b) { return b && typeof b === "object"; });
+      else e.base = o.base || null;
+      if (e.bases && !e.bases.length) e.bases = null;
       if (o.custos === true) e.custos = { porId: null };
       else if (o.custos && typeof o.custos === "object") e.custos = { porId: o.custos.porId || o.custos };
-      e.algum = !!(e.recursos || e.base || e.avanco || e.restricoes || e.custos);
+      e.algum = !!(e.recursos || e.base || e.bases || e.avanco || e.restricoes || e.custos);
       return e;
     },
 
@@ -812,7 +944,7 @@
     /* AVANÇO apurado. {dataStatus, porNo:{noId:{pct, pctTrabalho, inicioReal,
        fimReal}}} -> mapa normalizado. Nó ausente = SEM avanço escrito. */
     _avanco: function (av) {
-      var rel = { ok: false, motivo: "", nos: 0, comInicio: 0, comFim: 0, dataStatus: null }, porId = {};
+      var rel = { ok: false, motivo: "", nos: 0, comInicio: 0, comFim: 0, partidas: 0, pinos: 0, dataStatus: null }, porId = {};
       if (!av || typeof av !== "object") { rel.motivo = "sem avanço apurado."; return { ok: false, porId: porId, dataStatus: null, relato: rel }; }
       var ds = dataDe(av.dataStatus);
       var m = av.porNo || av.porId || null;
@@ -823,17 +955,26 @@
         var p = Number(v.pct);
         if (!isFinite(p)) continue;
         var o = { pct: pctInt(p), pctTrabalho: isFinite(Number(v.pctTrabalho)) ? pctInt(v.pctTrabalho) : null,
-          a: dataDe(v.inicioReal), b: dataDe(v.fimReal) };
+          a: dataDe(v.inicioReal), b: dataDe(v.fimReal),
+          // a partida da tarefa em andamento e o pino do que o corte empurrou
+          parou: dataDe(v.parouEm), retoma: dataDe(v.retomaEm), piso: dataDe(v.pisoEm),
+          dias: (typeof v.diasTrabalho === "number" && v.diasTrabalho > 0) ? v.diasTrabalho : null };
+        // ⚠ meia partida não existe: sem os DOIS lados o Project não sabe onde recomeçar
+        if (!o.parou || !o.retoma) { o.parou = null; o.retoma = null; o.dias = null; }
         porId[k] = o; rel.nos++;
         if (o.a) rel.comInicio++;
         if (o.b) rel.comFim++;
+        if (o.retoma) rel.partidas++;
+        if (o.piso) rel.pinos++;
       }
       rel.ok = rel.nos > 0; rel.dataStatus = ds ? ch(ds) : null;
       /* ⚠ sem StatusDate o Project NÃO desenha a linha de andamento: o avanço
          fica nas barras e o gráfico que o contratante olha na reunião some. */
       rel.motivo = !rel.nos ? "o mapa de avanço não trouxe nó com percentual."
         : rel.nos + " nó(s) com avanço" + (ds ? ", data de status " + ch(ds) : " — ⚠ SEM data de status: o Project não desenha a linha de andamento") +
-          " (" + rel.comInicio + " com início real, " + rel.comFim + " com término real).";
+          " (" + rel.comInicio + " com início real, " + rel.comFim + " com término real" +
+          (rel.partidas ? ", " + rel.partidas + " partida(s) Parar/Retomar" : "") +
+          (rel.pinos ? ", " + rel.pinos + " empurrada(s) presa(s) na data de corte" : "") + ").";
       return { ok: rel.ok, porId: porId, dataStatus: ds, relato: rel };
     },
 
@@ -842,8 +983,15 @@
     _enriquecer: function (r, plano, opts) {
       var O = this._opcs(opts);
       if (!O.algum) return null;
-      var E = { custos: null, valores: null, rec: null, base: null, avanco: null, restricoes: O.restricoes,
-        relato: { recursos: null, custo: null, base: null, avanco: null, restricoes: null } };
+      var E = { custos: null, valores: null, rec: null, base: null, bases: null, avanco: null, restricoes: O.restricoes,
+        /* ⚠ O CALENDÁRIO DO ARQUIVO FICA AQUI, e não é enfeite: a correção da
+           data digitada de término (D9, `recuarUtil`) e o dia em que o
+           restante do avanço recomeça precisam saber quais dias a obra
+           trabalha. Sem isso um prazo-limite no sábado sairia num instante que
+           o próprio `<Calendar>` do arquivo declara parado. */
+        dpw: (r && r.params && r.params.diasUteisSemana) || 5,
+        fer: (r && r.feriados && r.feriados.mapa) || {},
+        relato: { recursos: null, custo: null, base: null, avanco: null, restricoes: null, conferencia: null } };
       if (O.custos) {
         E.valores = O.custos.porId || null;   // null = ler `no.valor` do próprio nó
         E.custos = true;
@@ -854,18 +1002,142 @@
         E.rec = R.ok ? R : null; E.relato.recursos = R.relato;
       }
       if (O.custos) E.relato.custo.folhasSemValor = 0;
-      if (O.base) {
+      if (O.bases) {
+        /* AS LINHAS DE BASE 0 a 10 (§3.5 da espec do planejador: 0 = a ATIVA,
+           1 = a CONTRATUAL pelo selo, 2 a 10 = as demais, da mais nova para a
+           mais velha). O MSPDI guarda cada uma num `<Baseline>` próprio,
+           separado pelo `<Number>`; o Project mostra a 0 como "Linha de Base"
+           e as outras como "Linha de Base 1..10".
+           ⚠ O TETO DE 11 É DO FORMATO, não escolha nossa: `Number` vai de 0 a
+           10. Base a mais não vira erro — fica de fora e o relato diz quantas,
+           porque um arquivo recusado pelo Project é pior que uma barra cinza
+           a menos. */
+        E.bases = []; E.relato.base = { ok: false, motivo: "", pedidas: O.bases.length, escritas: 0, emResumo: 0, fora: 0, numeros: [] };
+        var self0 = this;
+        O.bases.forEach(function (b) {
+          var n = Math.round(Number(b.numero));
+          if (!(n >= 0 && n <= 10) || E.bases.length > 10) { E.relato.base.fora++; return; }
+          var Bx = self0._base(b.reg || b);
+          if (!Bx.ok) { E.relato.base.fora++; return; }
+          Bx.numero = n; Bx.rotulo = String(b.rotulo || "");
+          self0._baseSemDobra(Bx, r, plano);
+          E.bases.push(Bx); E.relato.base.numeros.push(n);
+          if (!E.base) E.base = Bx;   // a 1ª da lista responde pelo relato de custo de sempre
+        });
+        E.relato.base.ok = E.bases.length > 0;
+        E.relato.base.motivo = E.bases.length
+          ? E.bases.length + " linha(s) de base no arquivo (Number " + E.relato.base.numeros.join(", ") + ")"
+          : "nenhuma linha de base entrou.";
+        if (!E.bases.length) E.bases = null;
+      } else if (O.base) {
         var B = this._base(O.base); E.base = B.ok ? B : null; E.relato.base = B.relato;
         B.relato.escritas = 0; B.relato.emResumo = 0;
-        if (E.base) this._baseSemDobra(E.base, r, plano);
+        if (E.base) { B.numero = 0; B.rotulo = ""; this._baseSemDobra(E.base, r, plano); E.bases = [B]; }
       }
       if (O.avanco) {
-        var A = this._avanco(O.avanco); E.avanco = A.ok ? A : null; E.relato.avanco = A.relato;
-        A.relato.escritos = 0; A.relato.emResumo = 0;
+        /* `opts.avanco === true` = LEIA O MOTOR. É a fonte única: o `r.avanco`
+           e o `no.avanco` de cada nó já são o resultado apurado que a tela
+           mostra ao lado. Uma segunda apuração aqui divergiria do que o
+           cliente viu (memória `conserto-que-para-no-segundo-consumidor`). */
+        var A = this._avanco(O.avanco === true ? this._avancoDoMotor(r, E.dpw, E.fer) : O.avanco);
+        E.avanco = A.ok ? A : null; E.relato.avanco = A.relato;
+        A.relato.escritos = 0; A.relato.emResumo = 0; A.relato.partidas = 0; A.relato.pinos = 0;
       }
-      if (O.restricoes) E.relato.restricoes = { nia: 0, tae: 0, estouradas: 0, deadlines: 0 };
+      /* ⚠ `ok: false` DE SAÍDA, e ele vira `true` em `_fecharRelato` quando
+         alguma data entrou. Ele FALTAVA: a tela lê `x.ok === true` para
+         separar "o que foi" de "o que NÃO foi" (`js/cronoexecui.js`,
+         `mspRelatoHtml`), e sem a chave as datas fixadas caíam SEMPRE em "o
+         que NÃO foi" — inclusive num arquivo que as levava todas. MEDIDO na
+         foto da e2e: o quadro dizia "Datas fixadas e prazos-limite: 0
+         data(s)…" na lista do que não entrou. */
+      if (O.restricoes) E.relato.restricoes = { ok: false, nia: 0, tae: 0, dia: 0, nid: 0, nta: 0, dta: 0, mtp: 0, estouradas: 0, ancoras: 0, deadlines: 0 };
+      /* ⚠ O QUE NINGUÉM ABRIU NO MS PROJECT REAL. O assistente de importação
+         de MSPDI é um diálogo modal que não se automatiza (memória
+         `msproject-assistente-modal`), então nada do que está nesta lista foi
+         VISTO dentro do Project — foi lido de volta por um leitor
+         independente, que é outra coisa. A tela mostra este texto; recado que
+         mente é pior que recado nenhum. */
+      E.relato.conferencia = {
+        ok: false,
+        motivo: "Nada deste arquivo foi aberto no MS Project real — o assistente de importação é modal e não se automatiza. " +
+          "O que está provado é a releitura por um leitor independente (tools/test-msproject-releitura.js) e, quando a ponte .mpp roda, " +
+          "a conferência das datas dentro do próprio .mpp.",
+        pendentes: ["linhas de base 1 a 10 (Baseline1Start e o Number)", "ConstraintType 1 (o mais tarde possível), que por isso NÃO é emitido",
+          "restrição em tarefa-resumo", "a opção \"as tarefas sempre respeitam as datas de restrição\""]
+      };
       E._destino = O.relato;
       return E;
+    },
+
+    /* O AVANÇO DIRETO DO MOTOR (§3.5 da espec: `PercentComplete`,
+       `ActualStart`, `StatusDate` = corte, `Stop`/`Resume`, SNET em C).
+       Devolve o MESMO contrato do provedor injetado, com três campos a mais.
+
+       ⚠ `Stop`/`Resume` EXISTEM PORQUE A TAREFA EM ANDAMENTO É PARTIDA. O
+       motor põe o que já foi feito onde ele foi feito e joga o RESTANTE para
+       depois da data de corte (o "C"): entre as duas partes fica um vão de
+       dias úteis em que ninguém trabalhou. Sem declarar a partida, o
+       `<Duration>` (que é a duração de TRABALHO) não explica o `<Finish>`, e
+       quem reler o arquivo — o Project ou o leitor da suíte — recalcula um fim
+       mais cedo. Medido no leitor independente: a tarefa fechava no dia do
+       `Stop` e as sucessoras andavam junto.
+       `Stop` = 17 h do último dia trabalhado da parte feita.
+       `Resume` = 8 h do primeiro dia de trabalho DEPOIS do corte. */
+    _avancoDoMotor: function (r, dpw, fer) {
+      var A = r && r.avanco;
+      if (!A || !A.corte) return null;
+      var corte = dataDe(A.corte);
+      if (!corte) return null;
+      var cd = new Date(corte.getTime()); cd.setDate(cd.getDate() + 1);
+      var C = avancarUtil(cd, dpw, fer), cIso = ch(C), porNo = {}, n = 0;
+      /* ⚠ `r.etapas` E `r.atividades` REPETEM OS IDS DE ETAPA, e a varredura
+         passa pelas duas de propósito: só `r.atividades` tem as FOLHAS, que o
+         arquivo detalhado precisa. A repetição é inofensiva porque o destino é
+         um MAPA por id e o relato conta as chaves dele — MEDIDO: tirar uma
+         guarda de duplicata não muda `relato.avanco.nos` nem os contadores de
+         partida e de pino. ⚠ Não "otimize" isto para varrer só `atividades`:
+         sem a árvore EAP carregada ela não existe, e o avanço sumiria do XML
+         por etapa. */
+      function poe(no) {
+        var a = no && no.avanco;
+        if (!a || !no.dataInicio) return;
+        if (a.estado === "nao-iniciada" && !a.empurradoDias) return;
+        var e = { pct: pctInt(a.pct) };
+        if (a.iniReal) e.inicioReal = a.iniReal;
+        /* ⚠ `fimReal` SÓ NA CONCLUÍDA. O motor preenche `fimReal` em todo nó
+           que já tem posição — na tarefa EM ANDAMENTO ele é o término
+           PREVISTO, não o realizado. Emitido como `<ActualFinish>`, ele
+           fecharia no Project uma tarefa que está 40% feita, e o Gantt de
+           Controle do contratante mostraria a obra pronta. */
+        if (a.estado === "concluida" && a.fimReal) e.fimReal = a.fimReal;
+        if (a.estado === "andamento" && a.feito > 0 && a.rest > 0) {
+          var ini = dataDe(a.iniReal) || no.dataInicio;
+          var parou = andarUtil(avancarUtil(ini, dpw, fer), a.feito - 1, dpw, fer);
+          // ⚠ só é PARTIDA se o restante recomeça DEPOIS do que já foi feito
+          if (parou < C) {
+            e.parouEm = ch(parou); e.retomaEm = cIso;
+            /* ⚠ E A DURAÇÃO DA TAREFA PARTIDA É O TRABALHO, NÃO O VÃO. O
+               `no.duracao` de uma tarefa reprogramada é o VÃO (o que já foi
+               feito + os dias parados + o que falta): na sonda, 13 dias para
+               uma etapa de 6. No MS Project, partir uma tarefa MANTÉM a
+               duração e empurra o fim — a duração é a soma dos pedaços
+               trabalhados. Emitir o vão faria o Project calcular 13 dias de
+               trabalho, a `ActualDuration` (que ele tira do percentual) sairia
+               errada e o pedaço que falta não bateria com o `Resume`. */
+            e.diasTrabalho = a.feito + a.rest;
+          }
+        }
+        /* SNET EM C: a tarefa que o corte EMPURROU (não começou, e o motor a
+           jogou para depois do corte) não tem elo que explique a posição nova
+           — sem o pino ela volta para onde a rede a deixaria, que é antes de
+           hoje. É a mesma técnica do serviço e do elo cortado. */
+        if (a.estado !== "concluida" && a.empurradoDias > 0 && !e.parouEm) e.pisoEm = cIso;
+        porNo[no.id] = e; n++;
+      }
+      arr(r.etapas).forEach(poe);
+      arr(r.extras).forEach(poe);
+      arr(r.atividades).forEach(poe);
+      return n ? { dataStatus: A.corte, porNo: porNo, doMotor: true } : null;
     },
 
     // valor de VENDA de um nó (nunca custo direto — ver o bloco acima)
@@ -889,15 +1161,39 @@
        escreve o piso sozinho é o emissor da tarefa. */
     _campos: function (L, E, no, uid, resumo, zero, dpwFmt, piso) {
       var self = this;
+      /* ⚠ A DECISÃO SOBRE A DATA REAL É TOMADA UMA VEZ, AQUI — antes da nota e
+         antes dos campos. Enquanto `estado()` decidia sozinho, a `nota()`
+         (que corre ANTES dele) não tinha como dizer o que o arquivo ia deixar
+         de fora, e o relato contava o mesmo nó duas vezes. */
+      var AV = self._avancoReal(E, no, resumo, zero);
       return {
         trabalho: function () {
-          if (!E || !E.rec) return;
-          var T = E.rec.porTarefa[uid];
-          if (T && T.horas > 0 && !resumo) L.push('<Work>' + durISO(T.horas) + '</Work>');
+          if (!E) return;
+          if (E.rec) {
+            var T = E.rec.porTarefa[uid];
+            if (T && T.horas > 0 && !resumo) L.push('<Work>' + durISO(T.horas) + '</Work>');
+          }
+          /* ⚠ `<Stop>`/`<Resume>` ENTRAM AQUI, entre `<Work>` e
+             `<EffortDriven>`, porque é onde a sequência do schema os põe
+             (ver a ORDEM no cabeçalho e em tools/test-msproject-releitura.js).
+             Elemento fora de ordem = arquivo recusado pelo Project, e nenhum
+             assert de valor pega isso.
+             A tarefa em andamento é PARTIDA: o que foi medido fica onde foi
+             feito e o restante vai para depois da data de corte. Sem declarar
+             a partida, o `<Duration>` (que é duração de TRABALHO) não explica
+             o `<Finish>`, e quem reler o arquivo fecha a tarefa no dia do
+             `Stop` — medido no leitor independente: as sucessoras andaram
+             junto, para trás. */
+          var A = (E.avanco && own(E.avanco.porId, no.id)) ? E.avanco.porId[no.id] : null;
+          if (A && A.retoma && !resumo) {
+            L.push('<Stop>' + dt(A.parou, "17:00:00") + '</Stop>');
+            L.push('<Resume>' + dt(A.retoma, "08:00:00") + '</Resume>');
+            E.relato.avanco.partidasEscritas = (E.relato.avanco.partidasEscritas || 0) + 1;
+          }
           /* ⚠ EffortDriven 0 em TODA tarefa quando há recurso: sem ele, quem
              acrescentar um pedreiro DENTRO do Project encurta a tarefa, e o
              cronograma deixa de bater com o PDF que o cliente recebeu. */
-          L.push('<EffortDriven>0</EffortDriven>');
+          if (E.rec) L.push('<EffortDriven>0</EffortDriven>');
         },
         estado: function () {
           /* ⚠ NUNCA CUSTO EM TAREFA-RESUMO. MEDIDO no Project (12/09/2026): com
@@ -926,57 +1222,23 @@
             if (A.pctTrabalho != null) L.push('<PercentWorkComplete>' + A.pctTrabalho + '</PercentWorkComplete>');
           }
           if (v != null) L.push('<Cost>' + dec2(v) + '</Cost>');
-          if (A && !resumo) {
-            if (A.a) L.push('<ActualStart>' + dt(A.a, "08:00:00") + '</ActualStart>');
-            if (A.b) L.push('<ActualFinish>' + dt(A.b, zero ? "08:00:00" : "17:00:00") + '</ActualFinish>');
+          if (AV) {
+            if (AV.a) L.push('<ActualStart>' + AV.a + '</ActualStart>');
+            if (AV.b) L.push('<ActualFinish>' + AV.b + '</ActualFinish>');
           }
         },
         // devolve true quando escreveu ConstraintType (o chamador não escreve o dele)
         restricao: function () {
-          if (!E || !E.restricoes || !no.restricao) return false;
-          var R = no.restricao, rel = E.relato.restricoes;
-          if (R.tipo === "nia") {
-            var d4 = dtIso(R.data, "08:00:00");
-            if (!d4) return false;
-            rel.nia++;
-            // ⚠ as duas são PISO: vale a mais tarde. Escrever a do motor por
-            //   cima de um piso maior deixaria a tarefa andar para trás.
-            if (piso && piso > d4) d4 = piso;
-            L.push('<ConstraintType>' + CT_NIA + '</ConstraintType><CalendarUID>1</CalendarUID><ConstraintDate>' + d4 + '</ConstraintDate>');
-            return true;
-          }
-          if (R.tipo === "tae") {
-            var d7 = dtIso(R.data, "17:00:00");
-            if (!d7) return false;
-            rel.tae++;
-            /* ⚠ "TERMINAR ATÉ" + ELO CORTADO: o piso VENCE o teto. O
-               ConstraintType 7 é teto no FIM — ele não impede a tarefa de
-               começar antes, e sem o piso ela voltaria para o começo da obra e
-               levaria a rede inteira junto. O prazo-limite continua no
-               `<Deadline>`, que é a seta de aviso e não mexe na rede — a mesma
-               régua do "tae" estourado, logo abaixo. */
-            if (piso) {
-              rel.deadlines++;
-              L.push('<ConstraintType>' + CT_NIA + '</ConstraintType><CalendarUID>1</CalendarUID><ConstraintDate>' + piso + '</ConstraintDate>');
-              L.push('<Deadline>' + d7 + '</Deadline>');
-              return true;
-            }
-            if (R.estourada) {
-              /* ⚠ o plano de hoje já passa da data. Emitir o ConstraintType 7
-                 aqui faria o Project recalcular contra a restrição e mostrar
-                 datas diferentes das do PDF (a restrição VENCE a rede lá
-                 dentro; aqui ela só avisa). Vai só o Deadline — que alerta e
-                 não empurra ninguém. */
-              rel.estouradas++;
-              L.push('<ConstraintType>' + CT_ASAP + '</ConstraintType><CalendarUID>1</CalendarUID>');
-            } else {
-              L.push('<ConstraintType>' + CT_TAE + '</ConstraintType><CalendarUID>1</CalendarUID><ConstraintDate>' + d7 + '</ConstraintDate>');
-            }
-            L.push('<Deadline>' + d7 + '</Deadline>');
-            rel.deadlines++;
-            return true;
-          }
-          return false;
+          var D = self._restrDe(E, no, piso);
+          if (!D) return false;
+          var rel = E.relato.restricoes;
+          if (own(rel, D.tipo)) rel[D.tipo]++;
+          if (no.restricao.estourada) rel.estouradas++;
+          if (D.ancora) rel.ancoras++;
+          L.push('<ConstraintType>' + D.ct + '</ConstraintType><CalendarUID>1</CalendarUID>' +
+            (D.data ? '<ConstraintDate>' + D.data + '</ConstraintDate>' : ''));
+          if (D.deadline) { L.push('<Deadline>' + D.deadline + '</Deadline>'); rel.deadlines++; }
+          return true;
         },
         valorAgregado: function () {
           var A = (E && E.avanco && own(E.avanco.porId, no.id)) ? E.avanco.porId[no.id] : null;
@@ -987,19 +1249,27 @@
           L.push('<PhysicalPercentComplete>' + A.pct + '</PhysicalPercentComplete>');
           L.push('<EarnedValueMethod>1</EarnedValueMethod>');
         },
+        /* ⚠ UM `<Baseline>` POR LINHA DE BASE, separados pelo `<Number>` (0 a
+           10). A ordem entre eles é a da lista; o Project lê pelo Number, não
+           pela posição, e `server/mpp.js` faz o mesmo — até 20/09/2026 ele
+           pegava o PRIMEIRO bloco do documento, o que só funcionava enquanto
+           existisse um só. */
         linhaBase: function () {
-          if (!E || !E.base || !own(E.base.porId, no.id)) return;
-          var b = E.base.porId[no.id], marco = b.dias <= 0;
-          if (resumo) E.relato.base.emResumo++; else E.relato.base.escritas++;
-          L.push('<Baseline><Number>0</Number>');
-          L.push('<Start>' + dt(b.a, "08:00:00") + '</Start>');
-          L.push('<Finish>' + dt(b.b, marco ? "08:00:00" : "17:00:00") + '</Finish>');
-          L.push('<Duration>' + durISO(b.dias * H_DIA) + '</Duration><DurationFormat>' + dpwFmt + '</DurationFormat>');
-          // ⚠ `custoVai` é decidido em `_baseSemDobra` — ver o comentário de lá:
-          //   o custo sai só no nó de base mais fundo do ramo, senão a coluna
-          //   soma a etapa e as subetapas dela e dá o dobro da obra.
-          if (b.custo != null && b.custoVai) L.push('<Cost>' + dec2(b.custo) + '</Cost>');
-          L.push('</Baseline>');
+          if (!E || !E.bases) return;
+          E.bases.forEach(function (B) {
+            if (!own(B.porId, no.id)) return;
+            var b = B.porId[no.id], marco = b.dias <= 0;
+            if (resumo) E.relato.base.emResumo++; else E.relato.base.escritas++;
+            L.push('<Baseline><Number>' + B.numero + '</Number>');
+            L.push('<Start>' + dt(b.a, "08:00:00") + '</Start>');
+            L.push('<Finish>' + dt(b.b, marco ? "08:00:00" : "17:00:00") + '</Finish>');
+            L.push('<Duration>' + durISO(b.dias * H_DIA) + '</Duration><DurationFormat>' + dpwFmt + '</DurationFormat>');
+            // ⚠ `custoVai` é decidido em `_baseSemDobra` — ver o comentário de lá:
+            //   o custo sai só no nó de base mais fundo do ramo, senão a coluna
+            //   soma a etapa e as subetapas dela e dá o dobro da obra.
+            if (b.custo != null && b.custoVai) L.push('<Cost>' + dec2(b.custo) + '</Cost>');
+            L.push('</Baseline>');
+          });
         },
         nota: function (base) {
           if (!E) return base;
@@ -1008,14 +1278,316 @@
           var T = (E.rec && E.rec.porTarefa[uid]) || null;
           if (T && T.horas > 0 && !resumo) extra += " | " + (Math.round(T.horas * 10) / 10) + " Hh alocada(s)";
           var A = (E.avanco && own(E.avanco.porId, no.id)) ? E.avanco.porId[no.id] : null;
-          if (A && !resumo) extra += " | avanco fisico apurado: " + A.pct + "%";
-          if (E.restricoes && no.restricao && no.restricao.tipo === "tae" && no.restricao.estourada) {
-            extra += " | prazo-limite " + String(no.restricao.data).slice(0, 10) +
-              " NAO cumprido pelo plano: foi como Deadline (aviso), nao como restricao — a restricao mudaria as datas dentro do Project";
+          if (A && !resumo) {
+            extra += " | avanco fisico apurado: " + A.pct + "%";
+            /* ⚠ A TAREFA PARTIDA PRECISA DIZER QUE ESTÁ PARTIDA. Sem isto a
+               pessoa vê a barra com um vão no meio e acha que o arquivo veio
+               errado; o vão é o intervalo em que ninguém trabalhou, entre o
+               que foi medido e a data de corte. */
+            if (A.retoma) extra += " | tarefa PARTIDA: o feito vai ate " + ch(A.parou) +
+              " e o restante recomeca em " + ch(A.retoma) + " (o primeiro dia de trabalho depois da data de corte)";
+            else if (A.piso) extra += " | nao comecou ate a data de corte: o inicio foi fixado em " + ch(A.piso) +
+              " (nao iniciar antes de), que e onde o OrcaPRO a reprogramou";
           }
+          /* ⚠ O QUE O ARQUIVO DEIXOU DE FORA TEM DE SER DITO NA TAREFA, e não
+             só no relato: quem abre o .xml no Project não vê o relato. */
+          if (AV && (AV.fora || AV.foraFim)) {
+            extra += " | ⚠ o realizado apurado NAO entrou como data real neste arquivo (" +
+              (AV.fora ? "inicio real " + AV.fora : "") + (AV.fora && AV.foraFim ? ", " : "") +
+              (AV.foraFim ? "termino real " + AV.foraFim : "") +
+              "): ele nao bate com a data que este cronograma programa, e no Project a data real MANDA — a tarefa e tudo depois dela sairiam do lugar. " +
+              "Reprograme o plano no OrcaPRO e exporte de novo.";
+          }
+          /* ⚠ A NOTA E O ConstraintType SAEM DA MESMA DECISÃO (`_restrDe`).
+             Enquanto eram duas contas, a nota falava de "Deadline" em casos em
+             que o arquivo emitia outra coisa. */
+          var D = self._restrDe(E, no, piso);
+          if (D && D.nota) extra += D.nota;
           return base + extra;
         }
       };
+    },
+
+    /* =================================================================
+       A DATA FIXADA DO NÓ TRADUZIDA UMA VEZ SÓ — para o `<ConstraintType>` e
+       para a `<Notes>` dizerem a MESMA coisa. Devolve null (nada a escrever)
+       ou {ct, data, deadline, ancora, nota, tipo}.
+
+       A REGRA QUE MANDA AQUI É UMA: **a entrega que o Project calcula tem de
+       ser a do PDF**. É a mesma que escolhe o ConstraintType 4 do serviço e a
+       omissão da etapa opcional. Dela saem as três decisões abaixo.
+
+       1. A RESTRIÇÃO CUMPRIDA SAI INTEIRA, com o número dela:
+            "deve iniciar em"        (dia) -> 2   · "não iniciar depois de" (nid) -> 5
+            "não terminar antes de"  (nta) -> 6   · "deve terminar em"      (dta) -> 3
+            "terminar até"           (tae) -> 7 + Deadline
+            "não iniciar antes de"   (nia) -> 4
+          Cumprida, ela está satisfeita EXATAMENTE onde o motor pôs a tarefa —
+          então o Project não a move, e o arquivo NÃO DEPENDE da opção "as
+          tarefas sempre respeitam as datas de restrição" (§2.4 da espec do
+          planejador): ligada ou desligada, a data é a mesma.
+
+       2. A RESTRIÇÃO VIOLADA VIRA ÂNCORA (4) NA DATA DO MOTOR, mais o
+          `<Deadline>` quando ela é de TÉRMINO. No OrçaPRO a restrição
+          violada só AVISA — ela não encurta a etapa nem empurra as outras
+          (js/cronograma.js). No Project, emitida como restrição, ela MANDA: o
+          plano seria recalculado contra ela e o contratante veria datas que
+          não estão em documento nenhum. A âncora prende a tarefa onde o PDF a
+          mostra, e o Deadline é a seta que alerta sem mexer na rede.
+          ⚠ O `<Deadline>` do MSPDI é prazo de TÉRMINO. Numa restrição de
+          INÍCIO violada ("deve iniciar em", "não iniciar depois de") ele NÃO
+          sai: a seta do Project apontaria para o prazo errado, e um cronograma
+          que aponta a seta errada é pior que um sem seta. O que a pessoa lê
+          nesses dois casos é a nota da tarefa.
+
+       3. "O MAIS TARDE POSSÍVEL" (mtp) NÃO SAI COMO ConstraintType 1. O
+          número oficial está no mapa `CT_DE` e é deliberadamente não usado: o
+          1 é ALAP, e ALAP num projeto agendado a partir do início reprograma a
+          tarefa pelo caminho de volta DO PROJECT, que não é o nosso (o nosso
+          já pôs a tarefa no lugar, com a sombra `nia` — O5 da espec). Ninguém
+          abriu isso no MS Project real (§6.4-1 da espec: "ConstraintType 1
+          (mtp)" é pendência declarada), e o que não se pode provar não vira o
+          padrão. Sai a âncora, com a nota dizendo o que era.
+       ================================================================= */
+    _restrDe: function (E, no, piso) {
+      if (!E || !E.restricoes || !no.restricao) return null;
+      var R = no.restricao, tipo = String(R.tipo || ""), dpw = E.dpw, fer = E.fer;
+      if (!own(CT_DE, tipo)) return null;
+      var ancora = no.dataInicio ? dt(no.dataInicio, "08:00:00") : "";
+      if (piso && (!ancora || piso > ancora)) ancora = piso;
+      function ancorar(motivo) {
+        if (!ancora) return null;
+        return { tipo: tipo, ct: CT_NIA, data: ancora, deadline: "", ancora: true, nota: motivo };
+      }
+      // a data digitada corrigida para dia de trabalho (D9 — ver RESTR_RECUA)
+      var bruta = dataDe(R.data), corrigida = null;
+      if (bruta) corrigida = own(RESTR_RECUA, tipo) ? recuarUtil(bruta, dpw, fer) : bruta;
+      var dmaTxt = bruta ? ch(bruta).split("-").reverse().join("/") : "";
+
+      if (tipo === "mtp") {
+        return ancorar(" | esta tarefa esta marcada \"o mais tarde possivel\" no OrcaPRO: ela saiu com a data do plano fixada " +
+          "(nao iniciar antes de), e NAO como a restricao 1 do Project — a conta de \"mais tarde\" do Project e a do caminho de volta dele, " +
+          "que nao e a do OrcaPRO, e ninguem conferiu isso no Project real");
+      }
+      if (!corrigida) return null;
+
+      if (tipo === "nia") {
+        /* ⚠ as duas são PISO: vale a mais tarde. Escrever a do motor por cima
+           de um piso maior deixaria a tarefa andar para trás. */
+        var d4 = dt(corrigida, "08:00:00");
+        if (piso && piso > d4) d4 = piso;
+        return { tipo: tipo, ct: CT_NIA, data: d4, deadline: "", ancora: false, nota: "" };
+      }
+
+      var ehFim = own(RESTR_FIM, tipo);
+      var dFim = dt(corrigida, "17:00:00"), dIni = dt(corrigida, "08:00:00");
+
+      if (R.estourada) {
+        var nomes = { dia: "deve iniciar em", nid: "nao iniciar depois de", nta: "nao terminar antes de",
+          dta: "deve terminar em", tae: "prazo-limite" };
+        var a = ancorar(" | \"" + nomes[tipo] + " " + dmaTxt + "\" NAO e cumprida pelo plano: a tarefa saiu na data do OrcaPRO (ancora) e " +
+          (ehFim ? "a data foi so como Deadline (aviso)" : "a data ficou so nesta nota") +
+          " — como restricao ela mudaria as datas dentro do Project");
+        if (a && ehFim) a.deadline = dFim;
+        return a;
+      }
+      /* ⚠ "TERMINAR ATÉ" (e qualquer teto de término) + ELO CORTADO: o piso
+         VENCE o teto. O ConstraintType 7 é teto no FIM — ele não impede a
+         tarefa de começar antes, e sem o piso ela voltaria para o começo da
+         obra e levaria a rede inteira junto. O prazo-limite continua no
+         `<Deadline>`, que alerta e não mexe na rede. */
+      if (piso && ehFim) return { tipo: tipo, ct: CT_NIA, data: piso, deadline: dFim, ancora: true, nota: "" };
+      /* Restrição de INÍCIO com piso: o piso é um "não iniciar antes de" que o
+         motor não conhecia (ele nasce da etapa opcional omitida). Emitir a
+         restrição de início por cima dele deixaria a tarefa voltar; vai a
+         âncora, que já é o maior dos dois. */
+      if (piso && !ehFim) return ancorar("");
+
+      if (tipo === "dia") {
+        /* "deve iniciar em", cumprida: o motor JÁ pôs a tarefa nesse dia (a
+           data é piso e teto de início ao mesmo tempo). Sai a posição do
+           motor, que é a data corrigida para dia de trabalho. */
+        return { tipo: tipo, ct: CT_DIA, data: no.dataInicio ? dt(no.dataInicio, "08:00:00") : dIni, deadline: "", ancora: false, nota: "" };
+      }
+      if (tipo === "nid") return { tipo: tipo, ct: CT_NID, data: dIni, deadline: "", ancora: false, nota: "" };
+      if (tipo === "nta") return { tipo: tipo, ct: CT_NTA, data: dFim, deadline: "", ancora: false, nota: "" };
+      if (tipo === "dta") {
+        /* "deve terminar em", cumprida: o fim do motor É a data. Sai o ÚLTIMO
+           DIA TRABALHADO dele, às 17 h — o `dataFim` do motor é o dia em que a
+           etapa já não ocupa ninguém (ver `ultimoDiaUtil`). */
+        var uD = no.dataFim ? ultimoDiaUtil(no.dataFim, dpw, fer) : corrigida;
+        return { tipo: tipo, ct: CT_DTA, data: dt(uD, "17:00:00"), deadline: "", ancora: false, nota: "" };
+      }
+      // tae cumprida: o teto sai inteiro, com a seta de prazo ao lado
+      return { tipo: tipo, ct: CT_TAE, data: dFim, deadline: dFim, ancora: false, nota: "" };
+    },
+
+    /* =================================================================
+       AS TAREFAS SEM PREÇO ("T1", "T2"…) NO ARQUIVO DO CLIENTE.
+
+       ⚠ ELAS SAEM SEM `opts` NENHUM, como a etapa opcional omitida e pelo
+       MESMO motivo: NÃO SÃO ENFEITE, SÃO A REDE. Uma tarefa sem preço
+       ("aprovação do projeto pelo cliente", 10 dias) segura a etapa que vem
+       depois dela — o motor já empurrou a etapa, o PDF já mostra a data
+       empurrada, e um XML sem a tarefa T deixaria o Project puxar a etapa 10
+       dias para trás. O arquivo mostraria uma entrega que não existe em
+       documento nenhum. Nenhum orçamento anterior ao planejador tem tarefa
+       sem preço, então isto não muda um byte de documento antigo
+       (tools/test-crono-documentos.js).
+
+       ⚠ ELAS NÃO LEVAM DINHEIRO. É o que o nome diz: não têm preço, não estão
+       no "Valor total" e não podem aparecer com `<FixedCost>` — a coluna de
+       custo do Project somaria um valor que a proposta não cobra.
+
+       UID: depois de todas as tarefas que já estavam no arquivo (etapas, e as
+       subetapas/serviços quando há detalhe). Renumerar as outras para abrir
+       espaço mudaria o `<PredecessorUID>` de quem já estava lá.
+       ================================================================= */
+    _extrasDe: function (r, baseUid) {
+      var lista = [], uid = {};
+      arr(r && r.extras).forEach(function (x) {
+        if (!x || !x.id || !x.dataInicio || !x.dataFim) return;
+        lista.push(x);
+      });
+      lista.forEach(function (x, k) { uid[x.id] = baseUid + 1 + k; });
+      return { lista: lista, uid: uid, tem: lista.length > 0,
+        conta: { escritas: 0, doContratante: 0, depoisDaEntrega: 0 } };
+    },
+    /* Os elos que ENTRAM numa etapa vindos de tarefa sem preço. O motor os
+       guarda em `et.porExtras` (e NÃO em `et.preds`, que por contrato só tem
+       id de etapa — I3 da espec). Sem esta lista, a etapa segurada pela T1
+       sairia sem nenhum elo que explique a data dela. */
+    _linksExtras: function (no, X) {
+      var out = [];
+      arr(no && no.porExtras).forEach(function (q) {
+        if (!q || !X.uid[q.id]) return;
+        out.push({ uid: X.uid[q.id], tipo: tipoElo(q.tipo || "TI"), dias: q.lag != null ? Number(q.lag) : 0 });
+      });
+      return out;
+    },
+    RESP_T: { cliente: "a cargo do CONTRATANTE", construtora: "a cargo da construtora", terceiro: "a cargo de um terceiro" },
+    _tarefasExtras: function (L, X, uidTudo, r, dpw, mapaFer, E, idIni, nivel, outIni, FORA) {
+      var self = this;
+      FORA = FORA || { ids: {}, etapas: [] };
+      X.lista.forEach(function (xt, k) {
+        var marco = !!xt.marco || !xt.duracao;
+        var fim = marco ? xt.dataInicio : ultimoDiaUtil(xt.dataFim, dpw, mapaFer);
+        var horas = Math.round((xt.duracao || 0) * 8);
+        var num = xt.numero || ("T" + (k + 1));
+        var nome = num + " " + (xt.nome || "Tarefa sem preco");
+        var nota = "TAREFA SEM PRECO — " + (self.RESP_T[xt.resp] || self.RESP_T.construtora) +
+          " | ela NAO tem custo no orcamento e NAO entra no \"Valor total\": entra no PRAZO" +
+          (xt.critico ? " | CAMINHO CRITICO (sem folga)" : " | folga: " + (xt.folga || 0) + " dia(s)") +
+          (xt.depoisDaEntrega ? " | ATENCAO: termina DEPOIS da entrega das etapas contratadas" : "") +
+          (xt.cicloDep ? " | ATENCAO: dependencia circular — o OrcaPRO ignorou um elo de volta para conseguir programar" : "");
+        /* ⚠ SEM `_campos` AQUI, DE PROPÓSITO: a tarefa sem preço não leva
+           dinheiro, recurso, linha de base nem avanço — só a data. Passar por
+           `_campos` abriria a porta para um `<FixedCost>` nela. */
+        var pisoT = null;
+        if (xt.restricao && xt.restricao.tipo === "nia" && xt.dataInicio) {
+          /* "não iniciar antes de" digitado na tarefa sem preço: sai a posição
+             do MOTOR (que já inclui o piso), porque é ela que o PDF mostra. */
+          pisoT = dt(xt.dataInicio, "08:00:00");
+          nota += " | inicio fixado (nao iniciar antes de) em " + ch(xt.dataInicio);
+        }
+        /* ⚠ ELO DA TAREFA T PARA UMA ETAPA OPCIONAL OMITIDA: o mesmo caso das
+           etapas (ver o ⚠ do cabeçalho). O elo some — ele apontaria para um
+           UID que não está no arquivo, e o Project recusa a rede inteira — e a
+           data do motor vira "não iniciar antes de". Sem o pino, a T voltaria
+           para o começo da obra levando a etapa que ela segura junto. */
+        var cortT = [];
+        arr(xt.preds).forEach(function (pid) { if (FORA.ids[pid]) cortT.push(pid); });
+        if (cortT.length && xt.dataInicio) {
+          var pc = dt(xt.dataInicio, "08:00:00");
+          if (!pisoT || pc > pisoT) pisoT = pc;
+          nota += self._notaCortada(cortT, FORA);
+        }
+        L.push('<Task>');
+        L.push('<UID>' + X.uid[xt.id] + '</UID><ID>' + (idIni + k) + '</ID>');
+        L.push('<Name>' + x(nomeCurto(nome)) + '</Name>');
+        L.push('<Active>1</Active><Manual>0</Manual><Type>1</Type><IsNull>0</IsNull>');
+        L.push('<WBS>' + x(num) + '</WBS>' +
+          (outIni ? '<OutlineNumber>' + (outIni + k) + '</OutlineNumber>' : '') + '<OutlineLevel>' + nivel + '</OutlineLevel>');
+        L.push('<Start>' + dt(xt.dataInicio, "08:00:00") + '</Start>');
+        L.push('<Finish>' + dt(fim, marco ? "08:00:00" : "17:00:00") + '</Finish>');
+        L.push('<Duration>PT' + horas + 'H0M0S</Duration><DurationFormat>7</DurationFormat>');
+        L.push('<Milestone>' + (marco ? 1 : 0) + '</Milestone><Summary>0</Summary><Critical>' + (xt.critico ? 1 : 0) + '</Critical>');
+        L.push('<ConstraintType>' + (pisoT ? CT_NIA : CT_ASAP) + '</ConstraintType><CalendarUID>1</CalendarUID>' +
+          (pisoT ? '<ConstraintDate>' + pisoT + '</ConstraintDate>' : ''));
+        L.push('<Notes>' + x(nota) + '</Notes>');
+        arr(xt.preds).forEach(function (pid) {
+          // o elo de uma T pode vir de uma ETAPA ou de outra T
+          var up = FORA.ids[pid] ? null : (uidTudo[pid] || X.uid[pid]);
+          if (!up) return;                // ⚠ elo pendurado: o Project recusa a rede inteira
+          var q = eloDeExtra(xt, pid);
+          L.push('<PredecessorLink><PredecessorUID>' + up + '</PredecessorUID>' +
+            '<Type>' + q.tipo + '</Type><CrossProject>0</CrossProject>' +
+            '<LinkLag>' + Math.round(q.dias * DEC_POR_DIA) + '</LinkLag><LagFormat>7</LagFormat></PredecessorLink>');
+        });
+        L.push('</Task>');
+        X.conta.escritas++;
+        if (xt.resp === "cliente") X.conta.doContratante++;
+        if (xt.depoisDaEntrega) X.conta.depoisDaEntrega++;
+      });
+    },
+
+    /* AS DATAS REAIS QUE CABEM NO ARQUIVO. Devolve null, ou
+       {a, b, fora, foraFim} com os instantes prontos.
+
+       ⚠ DATA REAL QUE NÃO BATE COM A DATA DO PLANO NÃO SAI — E O ARQUIVO DIZ
+       QUE NÃO SAIU. Descoberto em 20/09/2026 pelo leitor independente, que
+       passou a modelar o `ActualStart` como o MS Project o modela: ele MANDA.
+       Uma tarefa que o arquivo declara começando em 16/09 com
+       `<ActualStart>2026-09-21` abre no Project em 21/09, e tudo que vem
+       depois dela anda junto — o contratante lê um cronograma que não é o do
+       PDF, e nenhuma mensagem aparece. MEDIDO na fixture desta suíte: uma
+       subetapa com início real 5 dias à frente do plano empurrou a etapa
+       inteira, e o fim dela passou de 06/10 para 09/10.
+
+       Quando o avanço vem do MOTOR (`opts.avanco === true`) isto nunca
+       dispara: lá o nó JÁ está reprogramado na data real, e as duas batem. O
+       caso que dispara é o mapa injetado por um chamador que apurou o
+       realizado sem reprogramar o plano — e aí o certo é reprogramar, não
+       entregar duas verdades no mesmo arquivo. */
+    _avancoReal: function (E, no, resumo, zero) {
+      if (!E || !E.avanco || resumo || !own(E.avanco.porId, no.id)) return null;
+      var A = E.avanco.porId[no.id], out = { a: null, b: null, fora: null, foraFim: null };
+      var iniPlano = no.dataInicio ? dt(no.dataInicio, "08:00:00") : null;
+      var fimPlano = no.dataFim ? dt(zero ? no.dataInicio : ultimoDiaUtil(no.dataFim, E.dpw, E.fer), zero ? "08:00:00" : "17:00:00") : null;
+      if (A.a) {
+        var iA = dt(A.a, "08:00:00");
+        if (!iniPlano || iA === iniPlano) out.a = iA;
+        else { out.fora = ch(A.a); E.relato.avanco.foraDoPlano = (E.relato.avanco.foraDoPlano || 0) + 1; }
+      }
+      if (A.b) {
+        var fA = dt(A.b, zero ? "08:00:00" : "17:00:00");
+        if (!fimPlano || fA === fimPlano) out.b = fA;
+        else { out.foraFim = ch(A.b); E.relato.avanco.foraDoPlano = (E.relato.avanco.foraDoPlano || 0) + 1; }
+      }
+      return out;
+    },
+
+    /* A DURAÇÃO que vai no `<Duration>`: a do motor, ou — na tarefa PARTIDA
+       pelo avanço — a soma dos pedaços trabalhados (ver `_avancoDoMotor`). */
+    _diasDaTarefa: function (E, no, resumo) {
+      var d = Number(no.duracao) || 0;
+      if (!E || !E.avanco || resumo || !own(E.avanco.porId, no.id)) return d;
+      var A = E.avanco.porId[no.id];
+      return (A.retoma && A.dias != null) ? A.dias : d;
+    },
+
+    /* O PINO DO AVANÇO (SNET em C). A tarefa que a data de corte EMPURROU não
+       começou e não tem elo que explique a posição nova: o motor a jogou para
+       depois do corte porque ninguém trabalhou nela, e a rede sozinha a
+       devolveria para uma data JÁ PASSADA. O pino é a mesma técnica do serviço
+       e do elo cortado, pelo mesmo motivo — a entrega do Project tem de ser a
+       do PDF. Devolve o instante ou null. */
+    _pisoAvanco: function (E, no, resumo) {
+      if (!E || !E.avanco || resumo || !own(E.avanco.porId, no.id)) return null;
+      var A = E.avanco.porId[no.id];
+      if (!A.piso) return null;
+      E.relato.avanco.pinosEscritos = (E.relato.avanco.pinosEscritos || 0) + 1;
+      return dt(A.piso, "08:00:00");
     },
 
     // o pedaço de nota da tarefa que perdeu elo para uma etapa omitida
@@ -1030,11 +1602,15 @@
     },
 
     // tarefas do XML hierárquico (a partir do plano de `detalhar`)
-    _tarefasHier: function (L, plano, r, dpw, mapaFer, E, FORA) {
-      var self = this, rede = !!(r.exec && r.exec.rede);
+    _tarefasHier: function (L, plano, r, dpw, mapaFer, E, FORA, X) {
+      var self = this, rede = !!(r.exec && r.exec.rede), nivel1 = 0;
+      X = X || { tem: false, lista: [], uid: {} };
+      var uidEt = {};
+      r.etapas.forEach(function (e, i) { uidEt[e.id] = i + 1; });
       plano.linhas.forEach(function (l) {
+        if (l.nivel === 1) nivel1++;
         var no = l.no, serv = no.tipo === "servico", fl = no.tipo === "subetapa" || no.tipo === "soltos";
-        var horas = Math.round((no.duracao || 0) * 8), nome, nota;
+        var horas = Math.round(self._diasDaTarefa(E, no, !!l.resumo) * 8), nome, nota;
         if (l.nivel === 1) nome = ((no.codigo ? no.codigo + " " : "") + (no.nome || "Etapa " + l.outline));
         else if (fl) nome = no.numero + " " + (no.nome || "");
         else nome = no.numero + " " + (no.codigo ? no.codigo + " " : "") + (no.nome || "");
@@ -1058,6 +1634,10 @@
            basta para o bloco inteiro ficar no lugar. */
         var piso = l.cortouFora ? dt(no.dataInicio, "08:00:00") : null;
         if (piso) nota += self._notaCortada(l.cortouFora, FORA);
+        // ⚠ dois pisos na mesma tarefa: vale o mais TARDE (piso é sempre "não
+        //   desce daqui"; o menor deles não segura nada)
+        var pAv = self._pisoAvanco(E, no, !!l.resumo);
+        if (pAv && (!piso || pAv > piso)) piso = pAv;
         // ⚠ os campos novos entram pelos três pontos que a sequência do schema
         //   permite; com E null nenhum deles escreve nada (XML de sempre)
         var C = E ? self._campos(L, E, no, l.uid, !!l.resumo, zero, 7, piso) : null;
@@ -1090,8 +1670,10 @@
         else L.push('<ConstraintType>0</ConstraintType><CalendarUID>1</CalendarUID>');
         L.push('<Notes>' + x(nota) + '</Notes>');
         if (C) C.valorAgregado();
-        l.links.forEach(function (k) {
-          // Type: 1 = término-início · 3 = início-início (o "II" da subetapa) — ver TIPO_ELO
+        // a tarefa sem preço segura a ETAPA (nível 1); ela não está em `preds`
+        var lks = l.nivel === 1 ? l.links.concat(self._linksExtras(no, X)) : l.links;
+        lks.forEach(function (k) {
+          // Type: os quatro do formato, pelo TIPO_ELO — ver `eloDe`
           L.push('<PredecessorLink><PredecessorUID>' + k.uid + '</PredecessorUID>' +
             '<Type>' + k.tipo + '</Type><CrossProject>0</CrossProject>' +
             '<LinkLag>' + Math.round(k.dias * DEC_POR_DIA) + '</LinkLag><LagFormat>7</LagFormat></PredecessorLink>');
@@ -1099,6 +1681,9 @@
         if (C) C.linhaBase();
         L.push('</Task>');
       });
+      /* As tarefas sem preço fecham o arquivo, no nível 1, com o número de
+         estrutura logo depois da última etapa. */
+      if (X.tem) this._tarefasExtras(L, X, uidEt, r, dpw, mapaFer, E, plano.linhas.length + 1, 1, nivel1 + 1, FORA);
     },
 
     /* Os blocos <Resources> e <Assignments> — DEPOIS de </Tasks>, que é onde a
@@ -1170,6 +1755,11 @@
          que o `<PredecessorUID>` liga a rede. O `<ID>`, esse sim, é a LINHA da
          planilha e tem de ser 1..n sem furo. */
       var FORA = forasDe(r);
+      /* AS TAREFAS SEM PREÇO entram DEPOIS de tudo que já existia, e os UIDs
+         delas começam onde os de lá terminam (ver `_extrasDe`). No caminho
+         hierárquico o teto é o maior UID de folha/serviço; no caminho por
+         etapa, o número de etapas. */
+      var X = MSProject._extrasDe(r, (plano && plano.ok && plano.proxUid) ? plano.proxUid : r.etapas.length);
       // ⚠ null sem opção nenhuma — é o que devolve o arquivo de sempre, byte a byte
       var E = MSProject._enriquecer(r, plano && plano.ok ? plano : null, opts);
 
@@ -1246,22 +1836,27 @@
 
       // ---- tarefas ----
       L.push('<Tasks>');
-      if (plano && plano.ok) MSProject._tarefasHier(L, plano, r, dpw, mapaFer, E, FORA);
+      if (plano && plano.ok) MSProject._tarefasHier(L, plano, r, dpw, mapaFer, E, FORA, X);
       else { var idSeq = 0; r.etapas.forEach(function (e, i) {
         // ⚠ etapa opcional fora do prazo contratado não vira tarefa — ver o ⚠
         //   do cabeçalho. Sem isto ela saía como marco mudo no Gantt do cliente.
         if (FORA.ids[e.id]) return;
         idSeq++;
         var marco = !!e.marco || !e.duracao;
-        var horas = Math.round((e.duracao || 0) * 8);
+        var horas = Math.round(MSProject._diasDaTarefa(E, e, false) * 8);
         var fim = marco ? e.dataInicio : ultimoDiaUtil(e.dataFim, dpw, mapaFer);
         var cortou = [];
         (e.preds || []).forEach(function (pid) { if (FORA.ids[pid]) cortou.push(pid); });
         var piso = cortou.length ? dt(e.dataInicio, "08:00:00") : null;
+        var pisoAv = MSProject._pisoAvanco(E, e, false);
+        if (pisoAv && (!piso || pisoAv > piso)) piso = pisoAv;
         var nota = "Frente: " + (e.categoriaNome || e.categoria || "—") +
           (e.critico ? " | CAMINHO CRITICO (sem folga)" : " | folga: " + (e.folga || 0) + " dia(s)") +
           (e.editado ? " | duracao informada pela equipe" : "") +
-          (piso ? MSProject._notaCortada(cortou, FORA) : "");
+          // ⚠ `cortou.length`, nunca `piso`: desde o pino do avanço o `piso`
+          //   pode existir sem elo cortado nenhum, e a nota acusaria uma
+          //   predecessora opcional que não existe
+          (cortou.length ? MSProject._notaCortada(cortou, FORA) : "");
         /* ⚠ SEM RECURSO NESTE CAMINHO: o provedor responde por SERVIÇO, e aqui
            a tarefa é a etapa inteira. O `relato.recursos.motivo` diz isso; o
            bloco não sai vazio nem com equipe inventada. */
@@ -1275,6 +1870,13 @@
         L.push('<Start>' + dt(e.dataInicio, "08:00:00") + '</Start>');
         L.push('<Finish>' + dt(fim, marco ? "08:00:00" : "17:00:00") + '</Finish>');
         L.push('<Duration>PT' + horas + 'H0M0S</Duration><DurationFormat>7</DurationFormat>');
+        /* ⚠ `trabalho()` TAMBÉM NESTE CAMINHO, e não é o bloco de recursos: é
+           aqui que a sequência do schema põe `<Stop>`/`<Resume>` (a tarefa
+           PARTIDA pelo avanço). Neste caminho `E.rec` é sempre nulo — o
+           provedor de hora-homem responde por SERVIÇO e aqui a tarefa é a
+           etapa inteira —, então sem avanço ele não escreve nada e o arquivo
+           continua byte a byte o de sempre. */
+        if (C) C.trabalho();
         L.push('<Milestone>' + (marco ? 1 : 0) + '</Milestone>');
         /* ⚠ ORDEM HERDADA DO MASTER, NÃO MEXIDA AQUI: neste caminho o
            `<Critical>` sai DEPOIS de `<CalendarUID>`, e a sequência oficial o
@@ -1294,16 +1896,27 @@
         L.push('<Critical>' + (e.critico ? 1 : 0) + '</Critical>');
         L.push('<Notes>' + x(nota) + '</Notes>');
         if (C) C.valorAgregado();
+        var linksEt = [];
         (e.preds || []).forEach(function (pid) {
           if (FORA.ids[pid] || !uid[pid]) return;   // ⚠ elo pendurado: o Project recusa a rede
-          var dias = (e.predDesloc && e.predDesloc[pid] != null) ? e.predDesloc[pid] : 0;
-          L.push('<PredecessorLink><PredecessorUID>' + uid[pid] + '</PredecessorUID>' +
-            '<Type>' + tipoElo((e.predTipo && e.predTipo[pid]) || "TI") + '</Type><CrossProject>0</CrossProject>' +
-            '<LinkLag>' + Math.round(dias * DEC_POR_DIA) + '</LinkLag><LagFormat>7</LagFormat></PredecessorLink>');
+          var q = eloDe(e, pid);
+          linksEt.push({ uid: uid[pid], tipo: q.tipo, dias: q.dias });
+        });
+        // a tarefa sem preço que segura esta etapa (ela NÃO está em `e.preds`)
+        MSProject._linksExtras(e, X).forEach(function (q) { linksEt.push(q); });
+        linksEt.forEach(function (q) {
+          L.push('<PredecessorLink><PredecessorUID>' + q.uid + '</PredecessorUID>' +
+            '<Type>' + q.tipo + '</Type><CrossProject>0</CrossProject>' +
+            '<LinkLag>' + Math.round(q.dias * DEC_POR_DIA) + '</LinkLag><LagFormat>7</LagFormat></PredecessorLink>');
         });
         if (C) C.linhaBase();
         L.push('</Task>');
-      }); }
+      });
+      /* ⚠ sem `<OutlineNumber>` aqui: neste caminho as ETAPAS também não o
+         têm, e uma tarefa com número de estrutura no meio de tarefas sem
+         número faria outro leitor MSPDI montar meia árvore. */
+      if (X.tem) MSProject._tarefasExtras(L, X, uid, r, dpw, mapaFer, E, idSeq + 1, 1, 0, FORA);
+      }
       L.push('</Tasks>');
       MSProject._blocosRecursos(L, E);
       L.push('</Project>');
@@ -1314,6 +1927,17 @@
          precisa saber também quando não há nada a declarar, senão o silêncio
          vira "está tudo lá". */
       if (opts && opts.relato && typeof opts.relato === "object") {
+        /* ⚠ o relato das TAREFAS T também não depende de opção nenhuma, pelo
+           mesmo motivo: elas entram sem `opts`, e a tela precisa dizer o que
+           está no arquivo. */
+        var xc = X.conta;
+        opts.relato.extras = { ok: xc.escritas > 0, escritas: xc.escritas, doContratante: xc.doContratante,
+          depoisDaEntrega: xc.depoisDaEntrega,
+          motivo: xc.escritas
+            ? xc.escritas + " tarefa(s) sem preco no arquivo (" + xc.doContratante + " a cargo do contratante" +
+              (xc.depoisDaEntrega ? ", " + xc.depoisDaEntrega + " terminando depois da entrega das etapas" : "") +
+              "). Elas entram no PRAZO e nao no dinheiro: nenhuma leva custo."
+            : "nenhuma tarefa sem preco neste cronograma." };
         opts.relato.opcionais = FORA.tem
           ? { fora: FORA.etapas.length, etapas: FORA.etapas, texto: fraseFora(FORA, r.etapas.length),
               motivo: FORA.etapas.length + " etapa(s) opcional(is) NAO foi/foram para o arquivo, porque o prazo e o valor deste cronograma sao os do escopo contratado. " +
@@ -1386,8 +2010,16 @@
       }
       if (E.relato.restricoes) {
         var s = E.relato.restricoes;
-        s.motivo = s.nia + " data(s) \"nao iniciar antes de\" (ConstraintType 4) e " + s.tae + " prazo(s) \"terminar ate\"" +
-          (s.estouradas ? ", " + s.estouradas + " ja estourado(s) — esse(s) foi/foram so como Deadline (aviso), porque a restricao venceria a rede dentro do Project e mudaria as datas do PDF" : "") + ".";
+        s.ok = (s.nia + s.tae + s.dia + s.nid + s.nta + s.dta + s.mtp) > 0;
+        s.motivo = (s.ok ? "" : "nenhuma data fixada neste cronograma — ") +
+          s.nia + " data(s) \"nao iniciar antes de\" (ConstraintType 4), " + s.tae + " prazo(s) \"terminar ate\"" +
+          (s.dia ? ", " + s.dia + " \"deve iniciar em\"" : "") + (s.nid ? ", " + s.nid + " \"nao iniciar depois de\"" : "") +
+          (s.nta ? ", " + s.nta + " \"nao terminar antes de\"" : "") + (s.dta ? ", " + s.dta + " \"deve terminar em\"" : "") +
+          (s.mtp ? ", " + s.mtp + " \"o mais tarde possivel\"" : "") +
+          (s.ancoras ? " — " + s.ancoras + " sairam como ANCORA (nao iniciar antes de, na data do OrcaPRO)" +
+            (s.estouradas ? ", sendo " + s.estouradas + " ja estourada(s)" : "") +
+            ", porque como restricao elas venceriam a rede dentro do Project e mudariam as datas do PDF" : "") +
+          (s.deadlines ? ". " + s.deadlines + " prazo(s) tambem como Deadline (a seta que alerta sem mexer na rede)" : "") + ".";
       }
       if (E._destino) {
         var k;

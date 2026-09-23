@@ -1021,7 +1021,7 @@
      * ⚠ Rede com CICLO não vira fórmula: referência circular trava o Excel
      * inteiro em aviso. Nesse caso (raro; a tela já avisa) saem os valores
      * fixos da emissão, e a linha 3 diz isso. */
-    var cronoAg = deps.cronoAgente, wg = null, wfer = null;
+    var cronoAg = deps.cronoAgente, wg = null, wfer = null, gantVivo = false;
     if (cronoAg && cronoAg.etapas && cronoAg.etapas.length) {
       var fmtData = function (d) { return (d && d.toLocaleDateString) ? d.toLocaleDateString('pt-BR') : ''; };
       // data "pura" em UTC: o ExcelJS grava serial pela hora UTC; meia-noite
@@ -1030,7 +1030,136 @@
       var dUTC = function (d) { return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); };
       var nSem = cronoAg.totalSemanas || 1, dpw = (cronoAg.params && cronoAg.params.diasUteisSemana) || 5;
       var parAg = (cronoAg.params && cronoAg.params.paralelismo != null) ? num(cronoAg.params.paralelismo) : 0.15;
-      var vivo = !cronoAg.temCiclo;
+      /* =================================================================
+         AS SETE DATAS FIXADAS E O QUE A COLUNA E SABE ESCREVER DE CADA UMA.
+
+         A coluna E é um MAX de PISOS de início: só entra nela a restrição
+         que seja, de fato, um piso de início. A régua, pelo `et.restricao`
+         que o motor devolve (js/cronograma.js):
+
+           nia · dia   `indice` JÁ É o índice de INÍCIO      → MAX(…, indice)
+           dta · nta   `indice` é o índice de TÉRMINO
+                       (`fimMinR`)                          → MAX(…, indice−C)
+           nid · tae   TETO: o motor só AVISA, não move nada → nada a escrever
+           mtp         caminho de VOLTA (seria E = E + G)   → sem fórmula
+
+         Até a revisão de publicação da 1.2.86 o piso aceitava DUAS destas
+         sete (`nia` e `dia`). O roteiro do defeito, os números medidos e o
+         motivo de a guarda MEDIR em vez de listar tipos estão no bloco ⚠
+         logo abaixo de `partesInicio` — leia-o antes de mexer em qualquer
+         coisa daqui.
+         ================================================================= */
+      var PISO_INI_R = { nia: 1, dia: 1 };     // `indice` = índice de INÍCIO
+      var PISO_FIM_R = { dta: 1, nta: 1 };     // `indice` = índice de TÉRMINO
+      var ROT_RESTR = { nia: 'não iniciar antes de', dia: 'deve iniciar em', nid: 'não iniciar depois de',
+        nta: 'não terminar antes de', dta: 'deve terminar em', tae: 'terminar até', mtp: 'o mais tarde possível' };
+      var rowDe = {}, porIdAg = {}, succAg = {};
+      cronoAg.etapas.forEach(function (e, i) { rowDe[e.id] = 7 + i; porIdAg[e.id] = e; succAg[e.id] = []; });
+      cronoAg.etapas.forEach(function (e) { (e.preds || []).forEach(function (pid) { if (succAg[pid]) succAg[pid].push(e.id); }); });
+
+      /* O PISO DA RESTRIÇÃO, como EXPRESSÃO e como NÚMERO na mesma linha.
+         `nia`/`dia`: o índice já é o do início. `dta`/`nta`: é o do TÉRMINO
+         (`fimMinR`, js/cronograma.js), e o piso desconta a duração da PRÓPRIA
+         linha — assim, encurtar ou alongar a etapa na célula mantém o
+         término na data pedida. `nid`/`tae` são TETO (o motor só avisa, não
+         move o início) e não entram. */
+      var pisoDaRestr = function (e, rr) {
+        var R = e.restricao; if (!R || typeof R.indice !== 'number') return null;
+        var t = String(R.tipo || '');
+        if (PISO_INI_R[t]) return { x: String(R.indice), v: R.indice };
+        if (PISO_FIM_R[t]) return { x: R.indice + '-C' + rr, v: R.indice - num(e.duracao) };
+        return null;
+      };
+      /* ⚠ A MESMA LINHA PRODUZ A FÓRMULA E O NÚMERO DELA.
+         Duas implementações da mesma régua apodrecem em direções opostas —
+         esta base já viu isso acontecer com o parser de número. Aqui cada
+         parte do MAX sai como `{x, v}`: `x` é o que vai para a célula e `v` é
+         quanto ela vale na emissão, os dois da mesma conta. É o `v` que deixa
+         a guarda abaixo MEDIR em vez de adivinhar. */
+      var partesInicio = function (e, rr) {
+        var P = [];
+        (e.preds || []).forEach(function (pid) {
+          var p = porIdAg[pid], pr = rowDe[pid];
+          if (!p || !pr) return;
+          var d = e.predDesloc ? e.predDesloc[pid] : 0, lagExp = e.predLag && e.predLag[pid] != null;
+          var tp = (e.predTipoRede && e.predTipoRede[pid]) || null;
+          if (tp) {
+            var L = (e.predLagTipo && e.predLagTipo[pid] != null) ? e.predLagTipo[pid] : 0;
+            var deIni = (tp === 'II' || tp === 'IT');
+            var base = deIni ? ('E' + pr) : ('F' + pr), baseV = deIni ? p.inicio : p.fim;
+            var sL = L === 0 ? '' : (L > 0 ? '+' + L : '-' + Math.abs(L));
+            var tiraC = (tp === 'TT' || tp === 'IT');
+            P.push({ x: base + sL + (tiraC ? ('-C' + rr) : ''), v: baseV + L - (tiraC ? num(e.duracao) : 0) });
+            return;
+          }
+          if (lagExp) P.push({ x: 'F' + pr + (d >= 0 ? '+' : '-') + Math.abs(d), v: p.fim + d });
+          else P.push({ x: 'F' + pr + '-INT($F$4*C' + pr + ')', v: p.fim - Math.floor(parAg * num(p.duracao)) });
+        });
+        var pR = pisoDaRestr(e, rr);
+        if (pR) P.push(pR);
+        /* O PISO DA TAREFA SEM PREÇO que segura esta etapa. Ela NÃO é uma
+           linha desta tabela (não tem valor e não entra no prazo contratual
+           — D2), então o início que ela impõe entra como NÚMERO FIXO, e o
+           rodapé do bloco das tarefas sem preço diz isso.
+           ⚠ SEM ISTO A PLANILHA VIVA CONTRADIZ O CRONOGRAMA ENTREGUE. Medido
+             em 21/09/2026: a liberação de área de 4 dias segurando a
+             Estrutura levava o motor a 12 dias úteis de prazo e a fórmula
+             recalculava 10. `redeEtapas` é o início que a rede das ETAPAS
+             pede; quando o início de verdade passa dele, quem empurrou foi a
+             tarefa sem preço. */
+        if (e.porExtras && e.porExtras.length && typeof e.redeEtapas === 'number' && typeof e.inicio === 'number' && e.inicio > e.redeEtapas) P.push({ x: String(e.inicio), v: e.inicio });
+        return P;
+      };
+      /* =================================================================
+         ⚠ A GUARDA MEDE, NÃO ADIVINHA — e é por isso que ela está aqui.
+
+         Antes de prometer "cronograma VIVO", esta aba confere se a fórmula
+         que ela vai escrever CHEGA no mesmo início do motor, etapa por
+         etapa, com os números da emissão. Se o MAX bate com `e.inicio` em
+         TODAS as etapas, a planilha reproduz o motor por indução na ordem
+         topológica (ciclo já foi excluído por `temCiclo`) e pode ser viva.
+         Se alguma não bate, a aba sai como FOTO e a linha 3 diz por quê.
+
+         ⚠ POR QUE MEDIR E NÃO LISTAR OS TIPOS DE RESTRIÇÃO. A primeira
+         versão desta guarda listava as restrições cobertas. Ela consertava o
+         que a revisão da 1.2.86 tinha achado e deixava passar o que ninguém
+         tinha olhado — MEDIDO no mesmo dia (22/09/2026): um "não iniciar
+         antes de 13/11" numa SUBETAPA desloca a ETAPA inteira em bloco
+         (js/cronograma.js, `n.pisoBloco`) e a etapa NÃO recebe
+         `et.restricao` nenhuma. Com a lista de tipos, a aba continuava
+         "viva" marcando prazo total 15 contra 59 do motor: QUARENTA E QUATRO
+         dias úteis a menos na planilha que vai anexada à proposta. A conta
+         acima pega essa porta e qualquer outra que apareça depois —
+         calendário próprio, avanço, o que for — sem precisar conhecê-la.
+
+         ROTEIRO DO DEFEITO QUE ORIGINOU TUDO (revisão de publicação da
+         1.2.86): o piso da coluna E só aceitava `nia` e `dia`, dois dos sete
+         tipos que o planejador oferece. "Deve terminar em 13/11" numa etapa
+         de 4 dias dava prazo total 28 na planilha contra 58 no motor, com a
+         etapa em 46/50 no motor e 16/20 na planilha. Passava despercebido
+         porque o `result` gravado na célula é o do MOTOR — e porque
+         `fullCalcOnLoad` está ligado (veja `wb.calcProperties`), o Excel
+         joga esse result fora e recalcula sozinho ao abrir: o cliente lê o
+         cronograma errado antes de tocar em nada.
+
+         ⚠ E O `mtp` NÃO TEM CONSERTO POR FÓRMULA. "O mais tarde possível"
+         anda com a etapa dentro da folga LIVRE dela, que é um passo do
+         caminho de VOLTA: na planilha seria E = E + G, referência circular,
+         exatamente o que esta aba evita desde o começo. O atalho de escrever
+         um piso FIXO em `e.inicio` (como o js/msproject.js faz na âncora)
+         fecha a emissão e MENTE na primeira edição — medido: o cliente
+         encurta a predecessora de 20 para 10 dias e a planilha marca prazo
+         38 contra 28 do motor. Planilha morta e honesta é melhor que
+         planilha viva que mente.
+         ================================================================= */
+      var semFormula = cronoAg.etapas.filter(function (e, i) {
+        var P = partesInicio(e, 7 + i);
+        if (!P.length) return false;             // sem parte nenhuma a célula sai com o número da emissão
+        var v = 0; P.forEach(function (q) { if (q.v > v) v = q.v; });
+        return v !== e.inicio;
+      });
+      var vivo = !cronoAg.temCiclo && !semFormula.length;
+      gantVivo = vivo;   // o Leia-me lê daqui: ele não pode prometer recálculo numa foto
       // 4 semanas de folga nas colunas: o cliente alonga uma etapa no Excel e a
       // barra ainda tem onde aparecer (a suíte confere que o total cabe).
       var nSemCols = nSem + 4, C0 = 11, gLast = 6 + cronoAg.etapas.length; // K = 1ª semana; linha 6 = header
@@ -1089,9 +1218,29 @@
       wg.mergeCells(1, 1, 1, gLastCol); wg.getCell('A1').value = empresa; wg.getCell('A1').font = { bold: true, size: 14, color: { argb: navy } };
       wg.mergeCells(2, 1, 2, gLastCol); wg.getCell('A2').value = 'CRONOGRAMA FÍSICO / GANTT (CPM) — ' + (orc.numero || '') + (orc.nome ? ' · ' + orc.nome : ''); wg.getCell('A2').font = { bold: true, size: 11 };
       wg.mergeCells(3, 1, 3, gLastCol);
+      /* ⚠ A LINHA 3 TEM DE DIZER A VERDADE SOBRE O QUE ESTÁ ABAIXO DELA.
+         São três estados, e o cliente precisa saber em qual está: vivo
+         (recalcula), rede circular (foto) e data fixada sem fórmula (foto).
+         Prometer "recalcula" numa aba que é foto é o pior dos três — a pessoa
+         mexe nas células, nada anda, e ela conclui que o número que está ali
+         responde à edição dela. */
+      /* ⚠ O RECADO NOMEIA AS ETAPAS. "Algumas etapas têm data fixada" a
+         pessoa lê como formalidade; o número e o nome ela confere. Quando a
+         etapa não tem restrição própria, quem a segurou foi uma SUBETAPA
+         (o bloco anda junto) — e o texto diz isso em vez de inventar um
+         tipo que não existe na etapa. */
+      var listaSemF = semFormula.slice(0, 4).map(function (e) {
+        var i2 = 0; cronoAg.etapas.forEach(function (x, k) { if (x.id === e.id) i2 = k + 1; });
+        var t2 = String((e.restricao || {}).tipo || '');
+        return i2 + ' ' + String(e.nome || '').slice(0, 40) + ' (' + (ROT_RESTR[t2] || 'data fixada numa subetapa') + ')';
+      }).join(' · ') + (semFormula.length > 4 ? ' · e mais ' + (semFormula.length - 4) : '');
       wg.getCell('A3').value = vivo
         ? 'Cronograma VIVO: edite Dias (coluna C, amarela), a data de início (B4), os dias úteis por semana (D4) e o paralelismo (F4) — início, fim, folga, datas, caminho crítico e barras recalculam. "Depende de" (#nº da etapa, +/−dias de defasagem) é a rede de precedência definida no app (informativa aqui). Emissão: ' + cronoAg.totalDias + ' dias úteis (~' + nSem + ' semanas), ' + fmtData(cronoAg.dataInicio) + ' → ' + fmtData(cronoAg.dataFim) + '.'
-        : '⚠ A rede de precedência deste orçamento tem dependência CIRCULAR — os valores abaixo são os da emissão (fixos). Corrija a rede no app (aba Cronograma) e exporte de novo para obter o Gantt recalculável.';
+        : (cronoAg.temCiclo
+          ? '⚠ A rede de precedência deste orçamento tem dependência CIRCULAR — os valores abaixo são os da emissão (fixos). Corrija a rede no app (aba Cronograma) e exporte de novo para obter o Gantt recalculável.'
+          : '⚠ ESTA ABA É UMA FOTO, NÃO RECALCULA. ' + semFormula.length + ' etapa(s) deste cronograma têm data fixada que a planilha não sabe recalcular sozinha: ' + listaSemF + '. ' +
+            'Os números abaixo são os da EMISSÃO — os mesmos do PDF e da proposta, e conferem. Mexer nas células NÃO muda nada aqui: para simular outro prazo, altere no app (aba Cronograma) e exporte de novo. ' +
+            'Emissão: ' + cronoAg.totalDias + ' dias úteis (~' + nSem + ' semanas), ' + fmtData(cronoAg.dataInicio) + ' → ' + fmtData(cronoAg.dataFim) + '.');
       wg.getCell('A3').font = { italic: true, size: 9, color: { argb: vivo ? muted : 'FFB45309' } }; wg.getCell('A3').alignment = { wrapText: true, vertical: 'top' };
       wg.getRow(3).height = 30;
       // ---- linha 4: PARÂMETROS (amarelos) · linha 5: TOTAIS (fórmula) ----
@@ -1125,10 +1274,7 @@
         dc.value = vivo ? { formula: '$B$4+7*(' + hcL + '$6-1)', result: new Date(dUTC(cronoAg.dataInicio).getTime() + gh * 7 * 86400000) } : new Date(dUTC(cronoAg.dataInicio).getTime() + gh * 7 * 86400000);
         dc.numFmt = 'dd/mm'; dc.font = { size: 7, color: { argb: muted } }; dc.alignment = { textRotation: 90, horizontal: 'center', vertical: 'bottom' };
       }
-      // ---- linhas das etapas ----
-      var rowDe = {}, porIdAg = {}, succAg = {};
-      cronoAg.etapas.forEach(function (e, i) { rowDe[e.id] = 7 + i; porIdAg[e.id] = e; succAg[e.id] = []; });
-      cronoAg.etapas.forEach(function (e) { (e.preds || []).forEach(function (pid) { if (succAg[pid]) succAg[pid].push(e.id); }); });
+      // ---- linhas das etapas ---- (`rowDe`/`porIdAg`/`succAg` sobem antes da guarda do `vivo`)
       var catsVistas = [], catPorNome = {};
       cronoAg.etapas.forEach(function (e, i) {
         var rr = 7 + i, row = wg.getRow(rr);
@@ -1143,18 +1289,47 @@
         // "Depende de": nº da etapa predecessora + lag explícito (+7 / −3 dias).
         // O "#" não é enfeite: "2" sozinho é texto que parece número, e o Excel
         // marca a célula com o triângulo verde de "número armazenado como texto".
+        /* PLANEJADOR 3A: o TIPO entra no texto ("#11TT+2d"), e a espera sai
+           de `predLagTipo` — a da régua do tipo, a que a pessoa digitou.
+           ⚠ `predLag` aqui é o DESLOCAMENTO EQUIVALENTE DE TI (O20): num
+             elo "11TT+2" ele vale −2, e escrevê-lo faria a planilha dizer
+             "#11TT-2d" onde a tela diz "11TT+2". Sem tipo digitado o texto é,
+             caractere por caractere, o de hoje. */
+        var naRede = !!(e.predTipoRede || e.predLagTipo);
         row.getCell(4).value = (e.preds || []).map(function (pid) {
-          var l = e.predLag && e.predLag[pid];
-          return '#' + String(rowDe[pid] - 6) + (l != null ? (l >= 0 ? '+' : '') + l + 'd' : '');
+          var tp = (e.predTipoRede && e.predTipoRede[pid]) || 'TI';
+          var l = naRede
+            ? ((e.predLagTipo && e.predLagTipo[pid] != null) ? e.predLagTipo[pid] : null)
+            : (e.predLag && e.predLag[pid]);
+          return '#' + String(rowDe[pid] - 6) + (tp !== 'TI' ? tp : '') + (l != null ? (l >= 0 ? '+' : '') + l + 'd' : '');
         }).join(', ') || (e.preds && e.preds.length === 0 && e.predsExplicito ? '— (dia 0)' : '');
         row.getCell(4).font = { size: 9, color: { argb: muted } }; row.getCell(4).alignment = { horizontal: 'center' };
         // E início
-        var fIni = null;
-        if (vivo && e.preds && e.preds.length) {
-          fIni = 'MAX(0,' + e.preds.map(function (pid) {
-            var pr = rowDe[pid], d = e.predDesloc ? e.predDesloc[pid] : 0, lagExp = e.predLag && e.predLag[pid] != null;
-            return lagExp ? ('F' + pr + (d >= 0 ? '+' : '-') + Math.abs(d)) : ('F' + pr + '-INT($F$4*C' + pr + ')');
-          }).join(',') + ')';
+        /* ⚠ A PLANILHA TEM DE CHEGAR NA MESMA DATA QUE O MOTOR (planejador
+           3A). A fórmula viva é o que o cliente edita depois de receber o
+           arquivo: se ela recalcular por outra regra, a planilha entregue
+           contradiz o cronograma entregue, e quem lê escolhe a que preferir.
+           As quatro réguas (REDE §c.1; `_redeInterna` do motor), com `C_s` = a
+           duração da PRÓPRIA linha:
+             TI  início(s) = fim(p)    + L
+             II  início(s) = início(p) + L
+             TT  início(s) = fim(p)    + L − C_s   (os dois terminam juntos)
+             IT  início(s) = início(p) + L − C_s
+           O −C_s do TT e do IT é o que transforma "termina junto" em "começa
+           quando der para terminar junto"; sem ele a etapa começaria no fim da
+           predecessora e terminaria C_s dias depois dela.
+           Sem tipo digitado, o ramo de sempre (`predDesloc`, a sobreposição do
+           paralelismo) continua intacto — byte a byte. */
+        /* ⚠ AS PARTES DO MAX SAEM DE `partesInicio`, A MESMA FUNÇÃO QUE A
+           GUARDA DO `vivo` USOU LÁ EM CIMA — e não de uma cópia daqui.
+           Se a célula e a guarda tivessem cada uma a sua conta, uma poderia
+           dizer "bate" enquanto a outra escreve outra coisa, e a planilha
+           voltaria a prometer "cronograma VIVO" mentindo. Ali estão as quatro
+           réguas de elo (TI/II/TT/IT), o piso da restrição e o piso da tarefa
+           sem preço, cada um com a expressão e o valor dela. */
+        var fIni = null, P_ini = partesInicio(e, rr);
+        if (vivo && P_ini.length) {
+          fIni = 'MAX(0,' + P_ini.map(function (q) { return q.x; }).join(',') + ')';
         }
         row.getCell(5).value = fIni ? { formula: fIni, result: e.inicio } : e.inicio;
         // F fim
@@ -1162,8 +1337,28 @@
         // G folga: MIN(prazo total, início tardio de cada sucessora − deslocamento do elo) − fim
         var fFolga = null;
         if (vivo) {
+          /* ⚠ A VOLTA TAMBÉM É POR TIPO (planejador 3A). A folga é o quanto
+             esta etapa pode atrasar sem empurrar as sucessoras — e cada
+             régua amarra um ponto diferente. Com `C_p` = a duração desta
+             linha e a partida tardia da sucessora = `E_s + G_s`:
+               TI  fim(p) ≤ início(s) − L
+               II  início(p) ≤ início(s) − L      → fim(p) ≤ … + C_p
+               TT  fim(p) ≤ fim(s) − L             (fim tardio = E_s + C_s + G_s)
+               IT  início(p) ≤ fim(s) − L        → fim(p) ≤ … + C_p
+             Roteiro do defeito (medido em 21/09/2026): só com a ida por tipo,
+             a folga da Fundação dava 23 na planilha e 28 no motor assim que o
+             cliente mexia numa duração — e o `result` gravado, que é o do
+             motor, escondia isso até o primeiro recalculo. */
           var partesS = succAg[e.id].map(function (sid) {
             var s = porIdAg[sid], sr2 = rowDe[sid], d = s.predDesloc ? s.predDesloc[e.id] : 0, lagExp = s.predLag && s.predLag[e.id] != null;
+            var tpS = (s.predTipoRede && s.predTipoRede[e.id]) || null;
+            if (tpS) {
+              var LS = (s.predLagTipo && s.predLagTipo[e.id] != null) ? s.predLagTipo[e.id] : 0;
+              var tarde = 'E' + sr2 + '+G' + sr2 + ((tpS === 'TT' || tpS === 'IT') ? ('+C' + sr2) : '');
+              var sLS = LS === 0 ? '' : (LS > 0 ? '-' + LS : '+' + Math.abs(LS));
+              var maisCp = (tpS === 'II' || tpS === 'IT') ? ('+C' + rr) : '';
+              return tarde + sLS + maisCp;
+            }
             return 'E' + sr2 + '+G' + sr2 + (lagExp ? ((d >= 0 ? '-' : '+') + Math.abs(d)) : ('+INT($F$4*C' + rr + ')'));
           });
           fFolga = 'MAX(0,MIN($B$5' + (partesS.length ? ',' + partesS.join(',') : '') + ')-F' + rr + ')';
@@ -1207,6 +1402,56 @@
       lg++; var cCrit = wg.getCell('A' + lg); cCrit.value = 'Caminho crítico (folga zero)'; cCrit.font = { bold: true, color: { argb: branco }, size: 9 };
       cCrit.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDC2626' } }; cCrit.alignment = { indent: 1 };
       lg++; wg.getCell('A' + lg).value = '◆ Marco = etapa de duração zero (entrega, vistoria, liberação): ocupa uma célula na semana em que cai.'; wg.getCell('A' + lg).font = { italic: true, size: 8, color: { argb: 'FF94A3B8' } };
+      /* ---- AS TAREFAS SEM PREÇO (planejador 3A; EXTRAS fase C) ----
+         ⚠ BLOCO SEPARADO E SEM FÓRMULA, de propósito. A tabela de cima fecha
+         o valor e o prazo das ETAPAS, e a fórmula viva recalcula a partir
+         dela; a tarefa sem preço não tem valor (D2) e não entra no prazo
+         contratual. Misturada às etapas, ela entraria na `MAX(F7:F...)` do
+         prazo total e no `COUNTIF` das críticas — o cliente abriria a
+         planilha e veria o prazo da obra mudar por causa de uma linha que
+         não tem preço. Aqui ela é LEITURA: as datas são as que o app
+         calculou.
+         Sem tarefa sem preço o bloco não existe e a aba sai byte a byte a
+         de hoje. */
+      var exG = (cronoAg.extras || []);
+      if (exG.length) {
+        var ROT_RESP_X = { cliente: 'Contratante', construtora: 'Construtora', terceiro: 'Terceiro' };
+        lg += 2;
+        wg.getCell('A' + lg).value = 'TAREFAS SEM PREÇO (não entram no valor nem no prazo contratual)';
+        wg.getCell('A' + lg).font = { bold: true, color: { argb: navy } };
+        lg++;
+        ['Nº', 'Tarefa', 'Responsável', 'Dias', 'Depende de', 'Data início', 'Data fim'].forEach(function (h, i) {
+          var c = wg.getRow(lg).getCell(i + 1); hStyle(c); c.value = h;
+        });
+        var numX = {};
+        cronoAg.etapas.forEach(function (e2, i2) { numX[e2.id] = String(i2 + 1); });
+        exG.forEach(function (x) { numX[x.id] = String(x.numero || ''); });
+        exG.forEach(function (x) {
+          lg++;
+          var rx = wg.getRow(lg);
+          rx.getCell(1).value = String(x.numero || '');
+          rx.getCell(2).value = String(x.nome || '');
+          rx.getCell(3).value = ROT_RESP_X[x.resp] || String(x.resp || '');
+          rx.getCell(4).value = x.marco ? 0 : num(x.duracao); rx.getCell(4).numFmt = '0';
+          rx.getCell(5).value = (x.preds || []).map(function (pid) {
+            var tp2 = (x.predTipo && x.predTipo[pid]) || 'TI', l2 = x.predLag && x.predLag[pid];
+            return '#' + (numX[pid] || '?') + (tp2 !== 'TI' ? tp2 : '') + (l2 ? (l2 > 0 ? '+' : '') + l2 + 'd' : '');
+          }).join(', ') || 'início da obra';
+          rx.getCell(6).value = x.dataInicio ? dUTC(x.dataInicio) : null;
+          rx.getCell(7).value = x.dataFim ? dUTC(x.dataFim) : null;
+          rx.getCell(6).numFmt = rx.getCell(7).numFmt = 'dd/mm/yyyy';
+          [1, 4, 6, 7].forEach(function (k2) { rx.getCell(k2).alignment = { horizontal: 'center' }; });
+          for (var k3 = 1; k3 <= 7; k3++) rx.getCell(k3).border = thin();
+        });
+        lg++;
+        wg.mergeCells('A' + lg + ':' + gLastL + lg);
+        wg.getCell('A' + lg).value = 'Estas linhas ocupam PRAZO e não têm valor no orçamento (liberação de área, aprovação, vistoria, comissionamento). ' +
+          'Elas não entram no prazo total de B5, no desembolso nem na medição — e não são recalculadas por fórmula: as datas acima são as que o app calculou. ' +
+          'Quando uma delas SEGURA uma etapa, o início que ela impõe entra na fórmula da etapa como número fixo: mexer nas durações aqui não move a tarefa sem preço — para isso, reexporte do app.' +
+          (cronoAg.totalDiasComExtras != null ? ' Com elas, a obra vai até o dia útil ' + cronoAg.totalDiasComExtras + '.' : '');
+        wg.getCell('A' + lg).font = { italic: true, size: 8, color: { argb: 'FF94A3B8' } };
+        wg.getCell('A' + lg).alignment = { wrapText: true, vertical: 'top' };
+      }
       lg++; wg.mergeCells('A' + lg + ':' + gLastL + lg);
       wg.getCell('A' + lg).value = 'Início/Fim/Folga em dias úteis contados a partir de B4 (dia 0). Folga = quanto a etapa pode atrasar sem mudar o fim da obra. As barras têm ' + nSemCols + ' semanas de largura (' + nSem + ' da emissão + 4 de reserva); se o prazo passar disso, aumente a área ou reexporte do app. A curva S da aba Gráficos e a matriz de desembolso (Parâmetros/Cronograma) são da emissão e não seguem esta aba.';
       wg.getCell('A' + lg).font = { italic: true, size: 8, color: { argb: 'FF94A3B8' } }; wg.getCell('A' + lg).alignment = { wrapText: true, vertical: 'top' };
@@ -1453,8 +1698,14 @@
       ['     • Analítica, colunas Qtd e Custo Unit — simule quantidades e preços negociados.'],
       ['     • Resumo, parcelas do quadro BDI — a linha "BDI pela fórmula TCU" confere na hora.'],
       ['     • Parâmetros — matriz de desembolso (% de cada etapa por mês): o Cronograma e a Curva S seguem.'],
-      wg ? ['     • Gantt — Dias de cada etapa (coluna C), data de início (B4), dias úteis/semana (D4) e paralelismo (F4):'] : null,
-      wg ? ['       início, fim, folga, datas, caminho crítico e as barras recalculam (CPM por fórmula). "Depende de" é informativo.'] : null,
+      (wg && gantVivo) ? ['     • Gantt — Dias de cada etapa (coluna C), data de início (B4), dias úteis/semana (D4) e paralelismo (F4):'] : null,
+      (wg && gantVivo) ? ['       início, fim, folga, datas, caminho crítico e as barras recalculam (CPM por fórmula). "Depende de" é informativo.'] : null,
+      /* ⚠ FOTO NÃO ENTRA NA LISTA DO QUE SE EDITA. A aba Gantt sai fixa quando
+         a rede é circular ou quando alguma etapa tem data fixada que a fórmula
+         não sabe recalcular — prometer aqui que "recalcula" faria a pessoa
+         mexer nas células e acreditar no número que não andou. A linha 3 da
+         própria aba diz o motivo. */
+      (wg && !gantVivo) ? ['     • Gantt — esta aba saiu como FOTO (não recalcula): a linha 3 dela explica o motivo. Para simular outro prazo, altere no app e exporte de novo.'] : null,
       wfer ? ['     • Feriados — a lista que as datas do Gantt consultam. Acrescente o feriado da sua cidade e o cronograma inteiro anda.'] : null,
       [''],
       ['🔒  PROTEÇÃO: as demais células têm fórmula e estão travadas só contra edição acidental.'],

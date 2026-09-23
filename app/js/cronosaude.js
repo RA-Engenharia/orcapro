@@ -95,6 +95,20 @@
       porque: "quantos elos a matriz de sequência de obra (CronoSeq) acusa como invertidos ou fora de ordem, contando só os de gravidade grave e alta. Limite zero: nenhum. O pior caso é 6 — medido nos orçamentos reais, onde a mediana dos que têm achado é 3 e o máximo num só orçamento é 22; com 6 a nota do item já está em zero e não há o que separar acima disso" },
     piorSequencia: { valor: 6, unidade: "elos", heuristica: true,
       porque: "onde a nota de \"rede contra a ordem da obra\" chega a zero (ver sequenciaAchados)" },
+    /* DCMA-14 #4 "Relationship Types": pelo menos 90% dos elos devem ser
+       T→I (Finish-to-Start). Aqui o medido é o COMPLEMENTO (% de elos que
+       NÃO são TI), para caber na mesma escala de nota das outras — onde
+       "quanto menor, melhor". `pctTI` sai ao lado, que é como a régua é
+       citada. ⚠ Orçamento sem rede digitada é 100% TI por construção (o
+       motor crava `predTipo[p] = "TI"`): esta checagem só começa a medir
+       alguma coisa quando alguém digita TT/IT/II. */
+    naoTIPct: { valor: 10, unidade: "% dos elos", fonte: "DCMA-14 (Relationship Types)",
+      porque: "II, TT e IT escondem o que a obra faz: a sucessora anda junto, ou termina junto, e quem lê o Gantt não vê onde está a corrente. A régua pública aceita até 10% deles" },
+    piorNaoTI: { valor: 50, unidade: "% dos elos", heuristica: true, porque: "metade da rede fora do T→I é rede que não se lê" },
+    /* datas do avanço que não podem existir: limite ZERO, porque não é
+       exceção aceitável — é dado impossível */
+    piorDatasInvalidas: { valor: 25, unidade: "% das tarefas com avanço", heuristica: true,
+      porque: "um quarto das tarefas com data impossível é registro que não se aproveita" },
     restricaoPct: { valor: 5, unidade: "% das tarefas", fonte: "DCMA-14 (Hard Constraints)",
       porque: "data fixada substitui a rede: com muitas, o cronograma para de reagir ao atraso e vira um desenho" },
     criticoPct: { valor: 50, unidade: "% das tarefas", heuristica: true,
@@ -142,6 +156,10 @@
     { id: "lagNegativo", nome: "Avanço (lag negativo)", peso: 1, pontua: true, limite: "lagNegativoPct",
       porque: "o avanço (\"1-5\" no Depende de) é recurso do produto e às vezes é o que a obra faz mesmo — por isso peso 1 e severidade baixa. A régua marca porque ele esconde a decisão real (quebrar a tarefa em duas) e porque, quando a obra atrasa, ninguém lembra que aquele elo tinha 5 dias de avanço embutidos. Medido: 17 dos 44 orçamentos reais com elo têm avanço explícito" },
     { id: "lagAlto", nome: "Espera longa demais", peso: 1, pontua: true, limite: "lagAltoPct", heuristica: true },
+    { id: "tiposDeElo", nome: "Tipos de ligação fora do T→I", peso: 1, pontua: true, limite: "naoTIPct",
+      porque: "a régua pública pede 90% dos elos em T→I. II/TT/IT existem no produto e às vezes são o que a obra faz — por isso peso 1 —, mas rede cheia deles não se lê no Gantt e ninguém sabe o que segura a entrega" },
+    { id: "datasInvalidas", nome: "Datas do avanço impossíveis", peso: 2, pontua: true, limite: null,
+      porque: "data REAL depois da data de corte é alguém relatando o futuro, e o plano estica a barra até lá sem uma linha de aviso (medido em 21/09/2026: fim real 10/09 com corte em 01/09 esticou a etapa de 5 para 29 dias úteis, com `r.avanco.avisos` vazio). Trabalho PREVISTO antes do corte é o contrário: o plano promete para um dia que já passou" },
     { id: "restricoes", nome: "Datas fixadas demais", peso: 2, pontua: true, limite: "restricaoPct" },
     { id: "folgaNegativa", nome: "Folga negativa (prazo estourado)", peso: 3, pontua: true, grave: true, limite: null,
       porque: "neste motor a folga é presa em zero (Math.max(0, …)) — o equivalente honesto é a restrição “terminar até” que o plano não cumpre" },
@@ -173,6 +191,12 @@
       porque: "o parâmetro `paralelismo` antecipa cada etapa em floor(p × duração da anterior). Pela DCMA isso seria um LEAD em 100% dos elos; aqui é um parâmetro declarado da obra, não uma decisão elo a elo — conta como informação, com o número à vista" }
   ];
   function checagem(id) { for (var i = 0; i < CHECAGENS.length; i++) if (CHECAGENS[i].id === id) return CHECAGENS[i]; return null; }
+
+  /* o nome de cada restrição na TELA — o mesmo texto do menu do Gantt.
+     ⚠ Um código cru ("dta") no achado manda a pessoa procurar o que ele
+     significa; o achado tem de dizer o que ela digitou. */
+  var ROT_RESTR = { nia: "não iniciar antes de", tae: "terminar até", dia: "deve iniciar em",
+    dta: "deve terminar em", nid: "não iniciar depois de", mtp: "o mais tarde possível" };
 
   var FORMULA_NOTA =
     "nota do item = 100 enquanto o medido cabe no limite; acima dele cai em linha reta até 0 num PIOR CASO declarado por checagem — 4× o limite onde o limite é percentual, e um valor próprio nas quatro de limite zero (duração sem base 25%, avanço 10%, já devia ter começado 50%, marco sem data 100%). O pior caso de cada uma sai na coluna \"pior\" de nota.itens e em `limites`. " +
@@ -210,7 +234,11 @@
           escopo: "@obra", duracao: num(e.duracao), inicio: num(e.inicio), fim: num(e.fim), folga: num(e.folga),
           critico: !!e.critico, marco: !!e.marco, fonte: null, preds: arr(e.preds), predLag: e.predLag || {},
           predTipo: {}, predsExplicito: !!e.predsExplicito, restricao: e.restricao || null, cicloDep: !!e.cicloDep,
-          dataInicio: e.dataInicio, rede: true, folha: true });
+          dataInicio: e.dataInicio, rede: true, folha: true,
+          /* planejador 3C: as chaves novas do motor (§1.8). Elas só NASCEM com
+             extensão; `null`/`{}` aqui é "este orçamento não tem", nunca zero. */
+          folgaReal: e.folgaReal == null ? null : num(e.folgaReal),
+          predTipoRede: e.predTipoRede || {}, predLagTipo: e.predLagTipo || {}, avanco: e.avanco || null });
       });
       return { camada: camada, nos: nos };
     }
@@ -222,7 +250,9 @@
         duracao: num(n.duracao), inicio: num(n.inicio), fim: num(n.fim), folga: num(n.folga),
         critico: !!n.critico, marco: !!n.marco, fonte: n.fonte || null, preds: arr(n.preds), predLag: n.predLag || {},
         predTipo: n.predTipo || {}, predsExplicito: !!n.predsExplicito, restricao: n.restricao || null,
-        cicloDep: !!n.cicloDep, dataInicio: n.dataInicio, rede: true, folha: ehFolha });
+        cicloDep: !!n.cicloDep, dataInicio: n.dataInicio, rede: true, folha: ehFolha,
+        folgaReal: n.folgaReal == null ? null : num(n.folgaReal),
+        predTipoRede: n.predTipoRede || {}, predLagTipo: n.predLagTipo || {}, avanco: n.avanco || null });
     });
     return { camada: camada, nos: nos };
   }
@@ -425,6 +455,35 @@
     var folhas = nos.filter(function (n) { return n.folha; });
     var totalDias = num(r.totalDias);
 
+    /* ---- o que o PLANEJADOR trouxe, lido uma vez só (planejador 3C) ----
+       ⚠ `AV` só existe no PLANO da obra com avanço lançado (§1.8): num
+       orçamento ele é nulo e todas as checagens abaixo se comportam como
+       sempre. `C` é o ÍNDICE do primeiro dia DEPOIS do corte, e a data do
+       corte é `AV.corte` — as duas réguas vêm do motor, nunca de uma
+       segunda conta de dia útil aqui dentro. */
+    var AV = (r.avanco && typeof r.avanco.C === "number" && isFinite(r.avanco.C)) ? r.avanco : null;
+    /* ⚠ A FORMA É CONFERIDA ANTES DE VIRAR TEXTO. `dma("")` devolve
+       "undefined/undefined/" — é o mesmo roteiro do "undefined" no rótulo do
+       Gantt. Registro sem corte legível não vira frase: `corteBR` fica com o
+       nome genérico e nenhuma data inventada aparece na tela. */
+    var corteISO = (AV && /^\d{4}-\d{2}-\d{2}$/.test(String(AV.corte || ""))) ? String(AV.corte).slice(0, 10) : "";
+    var corteBR = corteISO ? dma(corteISO) : "a data de corte";
+    /* ---- a RESTRIÇÃO QUE A MÁQUINA ESCREVEU (`origem:"mat"`, §1.3) ----
+       ⚠ ELA NÃO É "DATA FIXADA" DE NINGUÉM. A projeção grava um piso `nia`
+       em `restricoes[id]` para que um aparelho 1.2.81 desenhe a barra no
+       lugar certo; cobrar isso da pessoa como "o cronograma parou de reagir
+       ao atraso" é acusar o app do que o próprio app fez. MEDIDO em
+       21/09/2026: uma obra com UMA data fixada pela pessoa e uma sombra saía
+       com 66,7% de tarefas fixadas e nota ZERO na checagem.
+       ⚠ A origem NÃO vem do motor: `Cronograma._restricoes` devolve só
+       {id, tipo, data} (a 1.2.81 também só lê isso). Ela se lê do disco. */
+    var sombraR = {};
+    (function () {
+      var m = orc && orc.cronograma && orc.cronograma.restricoes;
+      if (!m || typeof m !== "object" || Array.isArray(m)) return;
+      Object.keys(m).forEach(function (k) { if (m[k] && m[k].origem === "mat") sombraR[k] = true; });
+    })();
+
     function reg(id, o) {
       var c = checagem(id) || {};
       o.check = id; o.nome = c.nome || id; o.peso = c.peso || 0; o.pontua = !!c.pontua;
@@ -544,28 +603,68 @@
        motivo e esconderia os avanços de verdade. Ela sai em `sobreposicaoAuto`,
        com o número à vista. */
     (function () {
-      var elos = 0, neg = [], altos = [], lim = LIMITES.lagDias.valor;
+      var elos = 0, neg = [], altos = [], lim = LIMITES.lagDias.valor, ancoradas = 0, porTipoNeg = 0;
+      /* ---- A ESPERA QUE A PESSOA ESCREVEU, NA RÉGUA DO TIPO (planejador 3C)
+         ⚠ `predLag` NÃO É A ESPERA DIGITADA quando há rede (O20): ele é o
+         deslocamento EQUIVALENTE de T→I, que a sombra grava para a 1.2.81
+         desenhar igual. Num TT de 10 dias com espera +2, `predLag` vale −8 —
+         e esta checagem acusava "começa 8 dias ANTES da predecessora
+         terminar" sobre um elo em que a pessoa escreveu ESPERAR dois dias.
+         MEDIDO em 21/09/2026: TT+2 numa rede de 2 elos = 50% de leads e nota
+         ZERO. A espera digitada está em `predLagTipo`; o tipo, em
+         `predTipoRede`.
+         ⚠ E A ÂNCORA DO INÍCIO REAL (O16) NÃO É LEAD DE NINGUÉM: quando um
+         nó começa fora de sequência, a projeção REBAIXA a espera de sombra
+         dos elos que chegam nele para que a 1.2.81 desenhe o início real.
+         MEDIDO: elo escrito "T→I +3" num nó que começou adiantado saía com
+         `predLag` −19 e a régua dizia "começa 19 dias ANTES" — número que a
+         MÁQUINA escreveu, cobrado da pessoa. Elas saem contadas à parte, em
+         `ancoradas`, nunca na nota. */
+      function esperaDoElo(n, pid) {
+        if (own(n.predLagTipo, pid)) return { l: num(n.predLagTipo[pid]), regua: "tipo" };
+        if (own(n.predTipoRede, pid)) return { l: 0, regua: "tipo" };   // tipo digitado sem espera: 0 (O6)
+        if (own(n.predLag, pid)) return { l: num(n.predLag[pid]), regua: "legado" };
+        return null;                                                     // sobreposição automática: sai em `sobreposicaoAuto`
+      }
       nos.forEach(function (n) {
+        var ancorado = !!(n.avanco && n.avanco.foraSeq);
         n.preds.forEach(function (pid) {
           elos++;
-          if (!own(n.predLag, pid)) return;
-          var l = num(n.predLag[pid]);
-          if (l < 0) neg.push({ no: n, pid: pid, lag: l });
-          else if (l > lim) altos.push({ no: n, pid: pid, lag: l });
+          var e = esperaDoElo(n, pid);
+          var efet = own(n.predLag, pid) ? num(n.predLag[pid]) : null;
+          if (efet != null && efet < (e ? e.l : 0)) {
+            if (ancorado) ancoradas++;
+            else if (e && e.regua === "tipo") porTipoNeg++;
+          }
+          if (!e) return;
+          if (e.l < 0) neg.push({ no: n, pid: pid, lag: e.l, regua: e.regua });
+          else if (e.l > lim) altos.push({ no: n, pid: pid, lag: e.l, regua: e.regua });
         });
       });
       var pctN = elos ? (neg.length / elos) * 100 : 0, pctA = elos ? (altos.length / elos) * 100 : 0;
       var oN = reg("lagNegativo", { medido: pct1(pctN), unidade: "% dos elos", quantos: neg.length, de: elos,
         limite: LIMITES.lagNegativoPct.valor, pior: LIMITES.piorLagNegativo.valor, avaliado: elos > 0, nota: notaDe(pctN, 0, LIMITES.piorLagNegativo.valor),
+        ancoradas: ancoradas, negativosPorTipo: porTipoNeg,
+        criterio: "a espera medida é a DIGITADA, na régua do tipo do elo (`predLagTipo`), nunca o deslocamento equivalente de T→I que a sombra grava",
         motivo: elos ? "" : "este cronograma não tem nenhum elo de dependência" });
       neg.forEach(function (x) {
         var p = L.porId[x.pid];
+        var tpX = (own(x.no.predTipoRede, x.pid) ? String(x.no.predTipoRede[x.pid]) : (own(x.no.predTipo, x.pid) ? String(x.no.predTipo[x.pid]) : "TI"));
+        /* ⚠ A FRASE MUDA COM O TIPO DO ELO. "começa N dias antes de X
+           terminar" é exato no T→I e ERRADO num TT, onde o que se antecipa é
+           o TÉRMINO. Com os quatro tipos no produto, um texto só descreveria
+           mal três deles — e achado que descreve mal a pessoa não confere. */
+        var ondeX = (tpX === "TT" || tpX === "IT") ? "termina" : "começa";
+        var deQueX = (tpX === "II" || tpX === "IT") ? "começar" : "terminar";
         achados.push(novoAchado("lagNegativo", x.no, "baixa",
-          x.no.tipo + " " + x.no.numero + " começa " + (-x.lag) + " dia(s) ANTES de " + (p ? p.numero + " (" + corta(p.nome, 30) + ")" : "a predecessora") + " terminar.",
+          x.no.tipo + " " + x.no.numero + " " + ondeX + " " + (-x.lag) + " dia(s) ANTES de " + (p ? p.numero + " (" + corta(p.nome, 30) + ")" : "a predecessora") + " " + deQueX + " (elo " + tpX + ").",
           "Se as duas correm juntas de verdade, quebre a predecessora em duas e ligue a parte certa — avanço escondido no elo ninguém enxerga no Gantt.",
           { diasCriticos: x.no.critico ? Math.abs(x.lag) : 0, lag: x.lag, predId: x.pid }));
       });
       oN.nota = notaDe(pctN, 0, LIMITES.piorLagNegativo.valor);
+      if (ancoradas > 0) {
+        oN.motivo = ancoradas + " elo(s) têm a espera rebaixada pela âncora do início real (tarefa que começou fora de sequência): esse número é do app, não da pessoa, e fica FORA desta conta.";
+      }
       var oA = reg("lagAlto", { medido: pct1(pctA), unidade: "% dos elos", quantos: altos.length, de: elos,
         limite: LIMITES.lagAltoPct.valor, limiteDias: lim, avaliado: elos > 0,
         motivo: elos ? "" : "este cronograma não tem nenhum elo de dependência" });
@@ -588,20 +687,74 @@
 
     /* ---------- 6) DATAS FIXADAS (DCMA-14: Hard Constraints) ---------- */
     (function () {
-      var fixadas = nos.filter(function (n) { return n.restricao && n.restricao.tipo === "nia"; });
+      /* ⚠ OS CINCO TIPOS DUROS, E NÃO SÓ O `nia` (planejador 3C). Com a REDE,
+         a pessoa passou a poder gravar "deve iniciar em" (`dia`), "não
+         iniciar depois de" (`nid`), "deve terminar em" (`dta`) e "terminar
+         até" (`tae`). Todos travam a barra no calendário do mesmo jeito que o
+         `nia`; contar só o `nia` fazia uma obra inteira de datas digitadas
+         sair com "0% de datas fixadas".
+         ⚠ O "mais tarde possível" (`mtp`) NÃO entra: ele não é data — é um
+         modo de posicionar dentro da folga, e a rede continua mandando. Sai
+         contado à parte. */
+      var DURAS = { nia: 1, tae: 1, dia: 1, dta: 1, nid: 1 };
+      var comRestr = nos.filter(function (n) { return n.restricao && own(DURAS, String(n.restricao.tipo)); });
+      var fixadas = comRestr.filter(function (n) { return !own(sombraR, n.id); });
+      var daSombra = comRestr.length - fixadas.length;
+      var mtps = nos.filter(function (n) { return n.restricao && n.restricao.tipo === "mtp"; }).length;
       var pct = nos.length ? (fixadas.length / nos.length) * 100 : 0;
+      var porTipo = {};
+      fixadas.forEach(function (n) { var t = String(n.restricao.tipo); porTipo[t] = (porTipo[t] || 0) + 1; });
       var o = reg("restricoes", { medido: pct1(pct), unidade: "% das tarefas", quantos: fixadas.length, de: nos.length,
-        limite: LIMITES.restricaoPct.valor, avaliado: true });
+        limite: LIMITES.restricaoPct.valor, avaliado: true, porTipo: porTipo, daSombra: daSombra, maisTardePossivel: mtps,
+        criterio: "contam as datas que a PESSOA fixou (não iniciar antes / deve iniciar em / não iniciar depois de / deve terminar em / terminar até). A data que o próprio app gravou para aparelhos de versão anterior (`origem:\"mat\"`) fica fora" });
+      if (daSombra > 0) {
+        o.motivo = daSombra + " data(s) deste cronograma foram gravadas pelo próprio app (compatibilidade com versões anteriores) e NÃO contam como data fixada por ninguém.";
+      }
       if (pct > LIMITES.restricaoPct.valor) {
         fixadas.forEach(function (n) {
           achados.push(novoAchado("restricoes", n, "media",
-            n.tipo + " " + n.numero + " tem data fixada (" + dma(n.restricao.data) + ") — com " + fixadas.length +
+            n.tipo + " " + n.numero + " tem data fixada (" + ROT_RESTR[String(n.restricao.tipo)] + " " + dma(n.restricao.data) + ") — com " + fixadas.length +
             " de " + nos.length + " tarefas fixadas (" + pct1(pct) + "%), o cronograma para de reagir ao atraso.",
             "Tire a data e deixe a rede mandar, onde a data não for contratual.",
-            { diasCriticos: 0, data: n.restricao.data }));
+            { diasCriticos: 0, data: n.restricao.data, restricao: String(n.restricao.tipo) }));
         });
       }
       o.nota = notaDe(pct, LIMITES.restricaoPct.valor, piorPct(LIMITES.restricaoPct.valor));
+    })();
+
+    /* ---------- 6b) TIPOS DE LIGAÇÃO (DCMA-14: Relationship Types) ----------
+       ⚠ O TIPO VEM DE `predTipoRede` (a rede digitada, §1.8) e, na FOLHA, do
+       `predTipo` legado — que lá é de verdade "II" ou "TI". Na ETAPA o
+       `predTipo` é cravado "TI" pelo motor (O20), então lê-lo sozinho diria
+       100% de T→I em toda obra, inclusive numa rede só de TT. */
+    (function () {
+      var elos = 0, porTipo = { TI: 0, II: 0, TT: 0, IT: 0 }, fora = [];
+      nos.forEach(function (n) {
+        n.preds.forEach(function (pid) {
+          var t = own(n.predTipoRede, pid) ? String(n.predTipoRede[pid])
+            : (own(n.predTipo, pid) ? String(n.predTipo[pid]) : "TI");
+          if (!own(porTipo, t)) porTipo[t] = 0;
+          porTipo[t]++; elos++;
+          if (t !== "TI") fora.push({ no: n, pid: pid, tipo: t });
+        });
+      });
+      var pctF = elos ? (fora.length / elos) * 100 : 0;
+      var o = reg("tiposDeElo", { medido: pct1(pctF), unidade: "% dos elos", quantos: fora.length, de: elos,
+        limite: LIMITES.naoTIPct.valor, pior: LIMITES.piorNaoTI.valor, avaliado: elos > 0,
+        pctTI: elos ? pct1((porTipo.TI / elos) * 100) : null, porTipo: porTipo,
+        criterio: "a régua pública pede pelo menos " + (100 - LIMITES.naoTIPct.valor) + "% dos elos em T→I; o medido aqui é quanto está FORA disso",
+        motivo: elos ? "" : "este cronograma não tem nenhum elo de dependência" });
+      if (pctF > LIMITES.naoTIPct.valor) {
+        fora.slice(0, 12).forEach(function (x) {
+          var p = L.porId[x.pid];
+          achados.push(novoAchado("tiposDeElo", x.no, "baixa",
+            x.no.tipo + " " + x.no.numero + " depende de " + (p ? p.numero + " (" + corta(p.nome, 30) + ")" : "a predecessora") + " por " + x.tipo +
+            " — com " + fora.length + " de " + elos + " elos fora do T→I (" + pct1(pctF) + "%), o Gantt deixa de mostrar onde está a corrente que segura a entrega.",
+            "Onde a sucessora só pode começar depois que a predecessora terminar, use T→I. Guarde II/TT/IT para o que a obra faz mesmo em paralelo.",
+            { diasCriticos: 0, eloTipo: x.tipo, predId: x.pid }));
+        });
+      }
+      o.nota = notaDe(pctF, LIMITES.naoTIPct.valor, LIMITES.piorNaoTI.valor);
     })();
 
     /* ---------- 7) FOLGA NEGATIVA ----------
@@ -612,21 +765,45 @@
        equivalente honesto é a restrição "terminar até" (tae) que o plano de
        hoje NÃO cumpre: o motor já mede quantos dias passou. */
     (function () {
-      var negs = [];
-      nos.forEach(function (n) { if (num(n.folga) < 0) negs.push({ no: n, dias: -num(n.folga) }); });
+      var negs = [], vistos = {}, porReal = 0;
+      function poe(x) { if (own(vistos, x.no.id)) return; vistos[x.no.id] = 1; negs.push(x); }
+      /* ⚠ A FOLGA REAL EXISTE AGORA (planejador 3C, O22). `folga` continua
+         presa em zero (`Math.max(0, …)`) para a 1.2.81 ler igual, mas o motor
+         publica `folgaReal`, que pode ser negativa, sempre que houver um teto
+         que entre na volta do CPM. MEDIDO em 21/09/2026: um plano com "deve
+         terminar em 14/08" estourado em 10 dias úteis saía com `folgaReal`
+         −10 em TRÊS etapas e esta checagem dizia "0 tarefas, nota 100" —
+         "sem prazo estourado" sobre um prazo estourado, que é exatamente a
+         mentira que esta régua existe para não contar.
+         ⚠ `folga < 0` continua sendo lido: é o caminho de quem passar um `r`
+         de outra fonte. */
+      nos.forEach(function (n) {
+        if (n.folgaReal != null && num(n.folgaReal) < 0) { porReal++; poe({ no: n, dias: -num(n.folgaReal), fonte: "folgaReal" }); }
+        else if (num(n.folga) < 0) poe({ no: n, dias: -num(n.folga), fonte: "folga" });
+      });
+      /* o `tae` SEM a marca desta versão segue a regra da 1.2.81 (O22): ele
+         só AVISA, e o aviso é o único sinal de que o prazo não fecha */
       var avisos = (r.restricoes && arr(r.restricoes.avisos)) || [];
       var estouradas = avisos.filter(function (a) { return a && a.tipo === "tae"; });
       estouradas.forEach(function (a) {
         var n = L.porId[a.etapaId];
-        if (n) negs.push({ no: n, dias: num(a.fim) - num(a.indice), data: a.data });
+        if (n) poe({ no: n, dias: num(a.fim) - num(a.indice), data: a.data, fonte: "tae" });
+      });
+      /* e a restrição de data NÃO CUMPRIDA que a rede publica em `r.rede.avisos`
+         — ela já vem com a folga real negativa, e o texto dela nomeia os dois
+         números; aqui ela só garante que o nó entre na lista */
+      arr(r.rede && r.rede.avisos).forEach(function (a) {
+        if (!a || a.tipo !== "restricao-nao-cumprida") return;
+        var n = L.porId[a.etapaId];
+        if (n) poe({ no: n, dias: num(a.dias), data: null, fonte: "restricao", restricao: a.restricao });
       });
       var o = reg("folgaNegativa", { medido: negs.length, unidade: "tarefas", limite: 0, avaliado: true,
-        clampado: true, restricoesTae: estouradas.length,
-        porque: "a folga deste motor é presa em zero (Math.max(0, …)); o que se mede aqui é a restrição “terminar até” não cumprida" });
+        clampado: true, restricoesTae: estouradas.length, porFolgaReal: porReal,
+        porque: "a folga de SEMPRE é presa em zero (Math.max(0, …)) para a versão anterior ler igual; o que se mede aqui é a `folgaReal` do motor e a restrição “terminar até” não cumprida" });
       negs.forEach(function (x) {
         achados.push(novoAchado("folgaNegativa", x.no, "alta",
           x.no.tipo + " " + x.no.numero + (x.data ? " tem \"terminar até " + dma(x.data) + "\" e o plano de hoje termina " + x.dias + " dia(s) útil(eis) depois."
-            : " está com folga negativa de " + x.dias + " dia(s)."),
+            : " está com folga negativa de " + x.dias + " dia(s) úteis da obra" + (x.restricao ? " (a restrição “" + (ROT_RESTR[x.restricao] || x.restricao) + "” não é cumprida)" : "") + "."),
           "Ou a data muda, ou a tarefa encolhe (mais equipe, menos escopo), ou o compromisso é renegociado — a restrição avisa, ela não encurta nada sozinha.",
           { diasCriticos: x.dias, dias: x.dias }));
       });
@@ -643,7 +820,7 @@
         maior: altas.reduce(function (m, n) { return Math.max(m, num(n.folga)); }, 0) });
       altas.forEach(function (n) {
         achados.push(novoAchado("folgaAlta", n, "media",
-          n.tipo + " " + n.numero + " tem " + num(n.folga) + " dias úteis de folga (limite da régua: " + lim + "). " +
+          n.tipo + " " + n.numero + " tem " + num(n.folga) + " dias úteis DA OBRA de folga (limite da régua: " + lim + "). " +
           "Folga desse tamanho quase sempre é elo que FALTA depois dela, não sobra de prazo.",
           "Confira quem deveria depender dessa tarefa — se ninguém depende, ela pode escorregar dois meses sem ninguém notar.",
           { diasCriticos: 0, folga: num(n.folga) }));
@@ -730,7 +907,49 @@
         return;
       }
       var ms = meiaNoite(hoje);
-      var vencidas = folhas.filter(function (n) { return n.dataInicio && n.dataInicio.getTime && meiaNoite(n.dataInicio) < ms; });
+      /* ⚠ A JANELA COMEÇA NA DATA DE CORTE (planejador 3C). Antes do corte a
+         pergunta já está respondida: a projeção EMPURROU para depois dele tudo
+         o que não começou, então uma tarefa com início previsto em março num
+         plano com corte em setembro não está "atrasada" — ela foi
+         replanejada. MEDIDO em 21/09/2026: sem o recorte, um plano com E1
+         concluída e E2 empurrada contava as DUAS como "já deviam ter
+         começado", inclusive a concluída. O que resta é a pergunta que o
+         plano de fato não responde: o que devia ter começado DEPOIS do
+         último corte e ninguém lançou ainda. */
+      var msC = null;
+      if (corteISO) { var dC = new Date(corteISO + "T00:00:00"); if (!isNaN(dC.getTime())) msC = meiaNoite(dC); }
+      var vencidas = folhas.filter(function (n) {
+        if (!n.dataInicio || !n.dataInicio.getTime) return false;
+        var d = meiaNoite(n.dataInicio);
+        return d < ms && (msC == null || d >= msC);
+      });
+      /* ⚠ COM AVANÇO LANÇADO, A CHECAGEM PASSA A TER RESPOSTA. O avanço É o
+         realizado do plano (§1.4): sem ele a checagem saía NÃO AVALIADA mesmo
+         num plano em que a pessoa tinha lançado tudo — "não comparado" sobre
+         um dado que estava na tela ao lado. */
+      if (AV) {
+        var paradasA = vencidas.filter(function (n) {
+          var a = n.avanco;
+          if (a && a.estado !== "nao-iniciada" && a.estado !== "empurrada") return false;
+          if (a && (a.iniReal || num(a.feito) > 0)) return false;
+          return !(opts.realizado && typeof opts.realizado === "object" && num(opts.realizado[n.id]) > 0);
+        });
+        var pctA2 = vencidas.length ? (paradasA.length / vencidas.length) * 100 : 0;
+        var oA2 = reg("comecouNoPassado", { medido: paradasA.length, unidade: "tarefas", de: vencidas.length, pct: pct1(pctA2),
+          limite: 0, pior: LIMITES.piorComecouNoPassado.valor, avaliado: true, hoje: chData(hoje),
+          corte: corteISO, fonte: "avanço lançado",
+          criterio: "só entram as tarefas com início previsto ENTRE a data de corte do avanço e hoje: antes do corte, o que não começou já foi empurrado pela projeção",
+          motivo: vencidas.length ? "" : "nenhuma tarefa tinha início previsto entre o corte (" + corteBR + ") e " + dataBR(hoje) + " — o avanço deste plano está em dia" });
+        paradasA.forEach(function (n) {
+          achados.push(novoAchado("comecouNoPassado", n, n.critico ? "alta" : "media",
+            n.tipo + " " + n.numero + " devia ter começado em " + dataBR(n.dataInicio) + ", depois da data de corte do avanço (" + corteBR + "), e nada foi lançado nela" +
+            (n.critico ? " — e ela está no caminho crítico." : "."),
+            "Lance o avanço até hoje (o corte deste plano é " + corteBR + "): ou ela começou e ninguém registrou, ou o plano precisa ser refeito a partir de hoje.",
+            { diasCriticos: n.critico ? n.duracao : 0, corte: corteISO }));
+        });
+        oA2.nota = notaDe(pctA2, 0, LIMITES.piorComecouNoPassado.valor);
+        return;
+      }
       if (!opts.realizado || typeof opts.realizado !== "object") {
         reg("comecouNoPassado", { avaliado: false, vencidas: vencidas.length,
           motivo: vencidas.length + " tarefa(s) têm início previsto antes de " + dataBR(hoje) +
@@ -749,6 +968,63 @@
           { diasCriticos: n.critico ? n.duracao : 0 }));
       });
       o.nota = notaDe(pct, 0, LIMITES.piorComecouNoPassado.valor);
+    })();
+
+    /* ---------- 11c) DATAS DO AVANÇO IMPOSSÍVEIS (planejador 3C) ----------
+       Duas contradições entre o que foi LANÇADO e a data de corte:
+
+       (a) DATA REAL DEPOIS DO CORTE. O corte é "até aqui eu sei o que
+           aconteceu"; um início ou fim REAL posterior a ele é alguém
+           relatando o futuro. MEDIDO em 21/09/2026: uma etapa de 5 dias úteis
+           com fim real em 10/09 e corte em 01/09 saiu com a barra esticada
+           até o índice 29 — 24 dias úteis a mais — e `r.avanco.avisos` VAZIO.
+           O prazo da obra inteira andou por causa de um dado que não pode
+           existir, e nada na tela dizia isso.
+
+       (b) TRABALHO PREVISTO ANTES DO CORTE. O que ainda falta não pode estar
+           marcado para um dia que já passou. Num plano são isto é ZERO por
+           construção (a projeção empurra para [C, fim) tudo o que não
+           começou); ele existe como guarda de que a projeção fez o trabalho
+           dela — e para pegar `r` vindo de outra fonte, que é o caminho por
+           onde entra dado de versão diferente. */
+    (function () {
+      if (!AV) {
+        reg("datasInvalidas", { avaliado: false,
+          motivo: "este cronograma não tem avanço lançado — não há data real para conferir contra a data de corte" });
+        return;
+      }
+      var comAv = nos.filter(function (n) { return !!n.avanco; });
+      var reais = [], previstas = [];
+      comAv.forEach(function (n) {
+        var a = n.avanco;
+        if (corteISO) {
+          if (a.iniReal && String(a.iniReal).slice(0, 10) > corteISO) reais.push({ no: n, campo: "início real", data: String(a.iniReal).slice(0, 10) });
+          if (a.fimReal && String(a.fimReal).slice(0, 10) > corteISO) reais.push({ no: n, campo: "fim real", data: String(a.fimReal).slice(0, 10) });
+        }
+        if (num(a.rest) > 0 && a.ini != null && num(a.ini) < num(AV.C) && !a.iniReal && !(num(a.feito) > 0)) {
+          previstas.push({ no: n, ini: num(a.ini) });
+        }
+      });
+      var total = reais.length + previstas.length;
+      var pctD = comAv.length ? (total / comAv.length) * 100 : 0;
+      var oD = reg("datasInvalidas", { medido: total, unidade: "tarefas", de: comAv.length, pct: pct1(pctD),
+        limite: 0, pior: LIMITES.piorDatasInvalidas.valor, avaliado: comAv.length > 0,
+        reais: reais.length, previstas: previstas.length, corte: corteISO,
+        criterio: "data real posterior à data de corte, e trabalho que falta marcado para antes dela",
+        motivo: comAv.length ? "" : "nenhuma tarefa deste plano tem avanço lançado" });
+      reais.forEach(function (x) {
+        achados.push(novoAchado("datasInvalidas", x.no, "alta",
+          x.no.tipo + " " + x.no.numero + " tem " + x.campo + " em " + dma(x.data) + ", DEPOIS da data de corte do avanço (" + corteBR + ") — o corte diz até quando se sabe o que aconteceu, e o plano esticou a barra até essa data.",
+          "Corrija a data lançada, ou mova a data de corte para " + dma(x.data) + " se o que foi relatado realmente aconteceu até lá.",
+          { diasCriticos: x.no.critico ? x.no.duracao : 0, campo: x.campo, data: x.data, corte: corteISO }));
+      });
+      previstas.forEach(function (x) {
+        achados.push(novoAchado("datasInvalidas", x.no, "alta",
+          x.no.tipo + " " + x.no.numero + " ainda tem trabalho por fazer marcado para ANTES da data de corte (" + corteBR + ") — o plano está prometendo para um dia que já passou.",
+          "Lance o avanço desta tarefa ou reprograme o plano a partir do corte: o que falta só pode começar depois dele.",
+          { diasCriticos: x.no.critico ? x.no.duracao : 0, inicio: x.ini, corte: corteISO }));
+      });
+      oD.nota = notaDe(pctD, 0, LIMITES.piorDatasInvalidas.valor);
     })();
 
     /* ---------- 11b) A REDE CONTRA A ORDEM DA OBRA (CronoSeq) ----------
@@ -936,7 +1212,14 @@
         modoExecutivo: !!(r.exec && r.exec.rede)
       },
       nota: { valor: nota, media: media, formula: FORMULA_NOTA, itens: itens, avaliadas: avaliadas, pontuaveis: total, reprovadas: reprovadas,
-        ressalvas: ressalvas, teto: tetoAplicado ? { valor: LIMITES.tetoComFalhaGrave.valor, por: tetoAplicado } : null },
+        /* ⚠ `por` SAI COMO TEXTO, e a lista vai ao lado em `porLista`. A tela
+           escreve `String(nt.teto.por)` (js/cronoexecui.js): com uma lista,
+           duas falhas graves saíam grudadas — "Folga negativa (prazo
+           estourado),Caminho crítico quebrado", sem espaço depois da vírgula.
+           Visto na foto da sonda de tela (21/09/2026), e ficou comum porque a
+           folga negativa passou a acusar de verdade. Quem precisa dos nomes
+           separados lê `porLista`. */
+        ressalvas: ressalvas, teto: tetoAplicado ? { valor: LIMITES.tetoComFalhaGrave.valor, por: tetoAplicado.join(", "), porLista: tetoAplicado.slice() } : null },
       achados: achados,
       piores: { criterio: "dias úteis de caminho crítico tocados pelo achado (medidos pelo motor) — NÃO é previsão de atraso", lista: piores },
       checagens: checagens,

@@ -520,12 +520,35 @@
        etapa: sem esta linha, o sub-usuário restrito à obra A abriria o
        previsto × realizado da obra B. */
     crono_obra: 1,
+    /* ⚠ AS DUAS ENTIDADES NOVAS DO PLANEJADOR (Onda 0, T10): as linhas de
+       base SELADAS (com prazo e valor de venda por serviço) e o histórico de
+       alterações do cronograma carregam obraId pelo mesmo motivo do
+       `crono_obra`. Nascem aqui ANTES de existir quem as grave: a fatia que
+       liga o sync não pode esquecer o funil — tools/test-v12-escopo.js cobra
+       que quem carrega obraId esteja nesta lista. */
+    crono_selo: 1, crono_alt: 1,
     /* ⚠ `horas_extras` entrou na v1.2 pelo outro lado (ela sincroniza e grava
        obraId, e o merge da nuvem a apagava junto com a obra). A invariante de
        tools/test-v12-escopo.js pegou o segundo efeito na mesma hora: quem
        carrega obraId e não está aqui é visível para quem não deveria vê-lo —
        o sub-usuário restrito via a hora extra das obras alheias. */
-    horas_extras: 1
+    horas_extras: 1,
+    /* ⚠ AS DUAS LISTAS DO AGENTE DE APROPRIAÇÃO (ESPEC-medicao-cc §1.12-5).
+       Elas entraram em `Nuvem.ENTIDADES`, em `Store.FORMA_PADRAO`, em
+       `_ENT_DA_OBRA` e no `ObraDemo.CHAVES` da Onda 5 — e ficaram de fora
+       DAQUI, que é o funil. Hoje o que vaza para o sub-usuário restrito é o
+       NÚMERO de regras e decisões de obras que ele não acompanha (a tela as
+       conta pela lista crua); com o `js/ccagente.js` na instalação, vaza o
+       conteúdo: "toda nota do fornecedor X nesta obra vai para o centro
+       4.1" diz o fornecedor e o centro de uma obra alheia.
+       É o mesmo erro do `centrocusto`, três linhas acima — que "além de
+       vazar, calculava ERRADO" —, e o mesmo do `crono_selo`/`crono_alt`:
+       nascem aqui ANTES de existir quem as leia pelo funil, porque a fatia
+       que liga o sync não pode esquecer o funil. `tools/test-v12-escopo.js`
+       [3] passou a cobrar isso de quem SINCRONIZA, e não só de quem já é
+       lido por `lista("<ent>")` — era por essa brecha que as duas passavam
+       com 31 asserts verdes. */
+    cc_regras: 1, cc_aprop: 1
   };
   /* ⚠ O FILTRO MORA AQUI, NUNCA NO `Store.listar`.
    * `Store.salvar` (js/store.js) LÊ a lista e REGRAVA ela inteira. Se o Store
@@ -1825,6 +1848,11 @@
       return esc.obras.length + " obras selecionadas";
     },
     renderDashboard: function () {
+      /* ⚠ O PAINEL É A PRIMEIRA TELA QUE ABRE, e desde a régua única ele soma
+         o gasto pelo `js/custoetapa.js` (`_dashFinExec`). Sem o arquivo, a
+         exceção deixaria a pessoa com a tela EM BRANCO no primeiro clique do
+         dia — que é o pior recado possível. Aqui ela lê o que falta. */
+      if (typeof CustoEtapa === "undefined" || !CustoEtapa.totalVivo) return this._moduloNaoCarregado("Painel de Gestão", "js/custoetapa.js");
       var esc = this._dashEscopo(), metas = this._metas();
       /* ⚠ RBAC EM FUNÇÃO, NÃO SÓ NO MENU — e definido AQUI, antes do primeiro
        * uso. Dinheiro (contratado, recebido, despesa, margem por obra) só sai
@@ -2210,7 +2238,26 @@
       var lista = plano.mantem.slice(0, 12).map(function (x) {
         return "<li><b>" + Util.esc(x.rot) + "</b> <span class='muted'>(" + Util.esc(x.ch) + ")</span></li>";
       }).join("");
-      var corpo = "<p>Vão sair <b>" + plano.apaga.length + "</b> registro(s) de demonstração.</p>" +
+      /* ⚠ OS REGISTROS VARRIDOS POR OBRA PRECISAM SER DECLARADOS (ESPEC §5.2).
+         Centro de custo, regra e decisão da obra da demonstração NÃO têm o
+         prefixo `demo-ot-` quando a própria pessoa os criou ali: eles entram
+         no plano pela varredura por `obraId` e, por isso, não passam pelo
+         teste de "mexido" — a lista "N registro(s) NÃO serão apagados porque
+         você mexeu neles", que é a promessa central deste modal, nunca vai
+         citá-los. Somados calados no total, a pessoa autoriza a remoção sem
+         saber que os centros de custo que ELA cadastrou saem junto. O modal
+         diz o número; a alternativa (fingir que o total agregado conta essa
+         história) é o formato em que esta tela já apagou diário de verdade. */
+      var porObra = { centrocusto: 0, cc_regras: 0, cc_aprop: 0 };
+      plano.apaga.forEach(function (x) { if (x && x.porObra && porObra[x.ch] !== undefined) porObra[x.ch]++; });
+      var rotPorObra = [];
+      if (porObra.centrocusto) rotPorObra.push("<b>" + porObra.centrocusto + "</b> centro(s) de custo");
+      if (porObra.cc_regras) rotPorObra.push("<b>" + porObra.cc_regras + "</b> regra(s) de apropriação");
+      if (porObra.cc_aprop) rotPorObra.push("<b>" + porObra.cc_aprop + "</b> decisão(ões) de centro de custo");
+      var corpo = "<p>Vão sair <b>" + plano.apaga.length + "</b> registro(s) de demonstração." +
+        (rotPorObra.length
+          ? " Entre eles, " + rotPorObra.join(", ") + " criados na obra da demonstração — eles saem junto com ela, mesmo tendo sido feitos por você."
+          : "") + "</p>" +
         (plano.mantem.length
           ? "<div style='background:rgba(34,197,94,.10);border:1px solid var(--linha-forte);border-radius:10px;padding:12px 14px;margin-top:10px'>" +
             "<b>" + plano.mantem.length + " registro(s) NÃO serão apagados</b> porque você mexeu neles — " +
@@ -2360,27 +2407,56 @@
       // Previsto×Realizado (acumulado da obra): global = por OBRA; filtrada = por ETAPA
       var prevReal = [], porEtapa = false, _obrasNoRecorte = 0, _obrasSemOrc = 0;
       if (obraSel !== "todas") {
-        var ob = obras.filter(function (o) { return o.id === obraSel; })[0];
-        var orc = ob && ob.orcamentoId ? Store.obterOrcamento(eid(), ob.orcamentoId) : null;
-        if (orc) {
+        /* ===============================================================
+         * ⚠ O PAINEL PASSOU A CHAMAR O MESMO MOTOR DO PREVISTO × REALIZADO.
+         *
+         * Roteiro do defeito (medido na bancada `tools/test-reguas-custo.js`,
+         * e no navegador pela `tools/e2e-painel-etapa.js`): a conta que
+         * ficava AQUI lia `f.etapaId` e procurava esse id entre as etapas de
+         * NÍVEL 1 do orçamento. Despesa carimbada numa SUBETAPA (que é o que
+         * o formulário do Financeiro oferece quando a etapa é detalhada)
+         * caía em `despEt["s11"]`, nenhuma etapa a consumia, e ela também
+         * não entrava em "Sem etapa apropriada" — porque ela TEM etapa.
+         * O dinheiro sumia do Painel sem aparecer em lugar nenhum: na base
+         * da prova, R$ 12.360 de R$ 125.693, e o card dizia R$ 113.333
+         * enquanto o Previsto × Realizado, os Relatórios, o relatório
+         * executivo e os Centros de Custo diziam R$ 125.693.
+         *
+         * ⚠ E NÃO SE CONSERTA COPIANDO A SUBIDA PARA CÁ. Já aconteceu nesta
+         * base de um conserto parar no segundo consumidor (o engenheiro via
+         * 50% e o cliente via 80%). Só há um jeito de duas telas não
+         * divergirem: elas perguntarem à MESMA função.
+         * =============================================================== */
+        /* obra sem orçamento vinculado (ou com orçamento sem etapas) não tem
+           com o que comparar: o card fica vazio e o texto dele manda vincular
+           — a MESMA resposta que o Previsto × Realizado dá, de propósito. O
+           gasto continua nos KPIs de Despesas acima. */
+        var dPR = this._previstoRealDados(obraSel);
+        if (!dPR.erro) {
           porEtapa = true;
-          var despEt = {}, semEtapa = 0;
-          finTudo.forEach(function (f) {
-            if (f.obraId !== obraSel || f.tipo !== "despesa") return;
-            /* ⚠ CANCELADO NÃO É GASTO (K30, mapa D-M1). Esta soma contava a
-               despesa cancelada como custo da etapa, e o Previsto × Realizado
-               (`CustoEtapa`) não — duas telas, dois números para a mesma obra.
-               Estorno não sai daqui: o espelho negativo zera o par sozinho. */
-            if (self._finAnulado(f)) return;
-            if (f.etapaId) despEt[f.etapaId] = (despEt[f.etapaId] || 0) + Util.num(f.valor);
-            else semEtapa += Util.num(f.valor);
+          Util.arr(dPR.etapas).forEach(function (l) {
+            /* só nível 1: a subetapa já subiu para a raiz dentro do motor, e
+               desenhá-la de novo contaria o mesmo dinheiro duas vezes */
+            if (l.nivel !== 1) return;
+            /* ⚠ SEM `Math.max(0, …)`, e de propósito. A conta de antes aparava
+               o negativo em zero; com um espelho de estorno cujo original já
+               foi excluído, a etapa fica negativa DE VERDADE e aparar isso
+               faria o total do Painel deixar de fechar com o Financeiro — que
+               é exatamente o que esta entrega está apagando. Número estranho
+               que soma certo é melhor que número bonito que não soma. */
+            prevReal.push({ rotulo: l.nome, previsto: l.previsto, real: l.realizado,
+              estourou: l.previsto > 0 && l.realizado > l.previsto });
           });
-          (orc.etapas || []).forEach(function (e) {
-            var prev = (e.itens || []).reduce(function (s, it) { return s + Util.num(it.quantidade) * Util.num(it.custoUnitario); }, 0);
-            var realE = Math.max(0, despEt[e.id] || 0);
-            prevReal.push({ rotulo: e.nome, previsto: prev, real: realE, estourou: prev > 0 && realE > prev });
-          });
-          if (semEtapa > 0) prevReal.push({ rotulo: "Sem etapa apropriada", previsto: 0, real: Math.max(0, semEtapa), estourou: false });
+          /* ⚠ O QUE NÃO TEM ETAPA CONTINUA DECLARADO, e agora com o balde
+             dos centros sem nó junto (invariante I9 da ESPEC): a soma das
+             linhas mais esta tem de fechar com o Financeiro da obra. */
+          var semEtapa = Util.num(dPR.naoApropriado);
+          if (dPR.apropriadoSemEtapa) semEtapa += Util.num(dPR.apropriadoSemEtapa.realizado.valor);
+          /* ⚠ `!== 0`, NÃO `> 0`: um espelho de estorno sem etapa cujo original
+             foi excluído deixa este balde NEGATIVO, e o teste `> 0` o
+             descartava — o total do Painel ficava ACIMA do Financeiro, que é
+             o lado errado para errar num número que autoriza compra. */
+          if (Math.abs(semEtapa) > 0.005) prevReal.push({ rotulo: "Sem etapa apropriada", previsto: 0, real: semEtapa, estourou: false });
         }
       } else {
         /* previsto × realizado por obra: só as obras do recorte */
@@ -2397,8 +2473,11 @@
           if (!o.orcamentoId) { _obrasSemOrc++; return; }
           var orc2 = Store.obterOrcamento(eid(), o.orcamentoId); if (!orc2) return;
           var prev = Orcamento.totais(orc2).custoDireto;
-          /* ⚠ cancelado fora — mesma regra da soma por etapa acima (K30) */
-          var real = finTudo.filter(function (f) { return f.obraId === o.id && f.tipo === "despesa" && !self._finAnulado(f); }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
+          /* ⚠ A MESMA RÉGUA DA OBRA FILTRADA, E DE TODAS AS OUTRAS TELAS.
+             Esta linha era um `filter().reduce()` próprio: cancelado fora,
+             espelho do estorno com o sinal dele. Escrita duas vezes, ela já
+             divergiu duas vezes — agora a pergunta é feita ao motor. */
+          var real = CustoEtapa.totalVivo(finTudo, { obraId: o.id, tipo: "despesa" }).valor;
           if (prev <= 0 && real <= 0) return;
           prevReal.push({ rotulo: o.nome, previsto: prev, real: real, estourou: prev > 0 && real > prev,
             avanco: self._avancoMedido(o.id, medsTudo), semAvanco: "sem-percentual" });
@@ -2741,13 +2820,33 @@
       var self = this, W = 440, H = 190, padL = 52, padR = 8, padT = 12, padB = 30;
       var iw = W - padL - padR, ih = H - padT - padB;
       var max = 1;
-      dados.forEach(function (d) { if (d.previsto > max) max = d.previsto; if (d.real > max) max = d.real; });
+      /* ⚠ O MÍNIMO EXISTE, E IGNORÁ-LO TIRAVA A BARRA DA TELA.
+       * O eixo era calculado só sobre positivos (`Escala.calcular(0, max, 4)`)
+       * e a barra usava `Math.max(1, y(0) - y(d.real))` — então valor NEGATIVO
+       * caía abaixo de y(0), virava 1 px e era posicionado FORA do viewBox.
+       * Medido em 21/09/2026, obra com "Sem etapa apropriada" de −R$ 8.400:
+       *     path da barra: "M363.5,192.08V192.08a1,1 0 0 1 1,-1h24…"
+       *     viewBox:       "0 0 440 190"   →  y = 192,08 está abaixo do desenho
+       * Na tela o terceiro slot aparecia com o NOME no eixo e NENHUMA barra —
+       * e nome sem barra se lê como zero, num rótulo que vale −R$ 8.400,00. O
+       * dado sobreviveu ao conserto do `9da8f46` (que o trouxe de volta ao
+       * motor); quem não sobreviveu foi o desenho.
+       * ⚠ Com todos os valores positivos este bloco dá EXATAMENTE a conta de
+       * antes (`min` fica 0 e `y(v) = padT + (1 - v/max) * ih`): a barra
+       * continua ancorada no zero, que é o que impede o gráfico de mentir. */
+      var min = 0;
+      dados.forEach(function (d) {
+        if (d.previsto > max) max = d.previsto; if (d.real > max) max = d.real;
+        if (d.previsto < min) min = d.previsto; if (d.real < min) min = d.real;
+      });
       /* mesmo eixo redondo do fluxo (js/escala.js). Barra SEMPRE contra o
          zero: eixo de barra que começa no meio faz 3% de diferença parecer o
-         dobro, que é a forma mais comum de mentir com gráfico verdadeiro. */
-      var eixo = (typeof Escala !== "undefined") ? Escala.calcular(0, max, 4) : null;
-      if (eixo) max = eixo.max;
-      var y = function (v) { return padT + (1 - v / max) * ih; };
+         dobro, que é a forma mais comum de mentir com gráfico verdadeiro.
+         (`Escala.calcular` já força o zero para dentro quando o dado o cruza.) */
+      var eixo = (typeof Escala !== "undefined") ? Escala.calcular(min, max, 4) : null;
+      if (eixo) { max = eixo.max; min = eixo.min; }
+      var amp = (max - min) || 1;
+      var y = function (v) { return padT + (max - v) / amp * ih; };
       var _tp = dados.reduce(function (t, d) { return t + d.previsto; }, 0);
       var _tr = dados.reduce(function (t, d) { return t + d.real; }, 0);
       /* ⚠ CONTA O CONJUNTO, NAO O DESENHO. Se dissesse "nenhuma acima do
@@ -2791,14 +2890,27 @@
            cantos arredondam, e a barra descola do eixo: sobra uma meia-lua de
            fundo entre o dado e o zero, que e justamente a linha contra a qual
            a barra esta sendo lida. Aqui a base fica reta e ancorada. */
-        var hP = Math.max(1, y(0) - y(d.previsto)), hR = Math.max(1, y(0) - y(d.real));
+        /* ⚠ ANCORADA EM y(0) NOS DOIS SENTIDOS. Antes a altura era
+           `y(0) - y(d.real)` e o topo era sempre `y(d.real)`: com valor
+           negativo a altura virava 1 px (pelo `Math.max`) e o topo ficava
+           ABAIXO do zero, fora do desenho. Agora a base fica reta no zero e a
+           barra cresce para cima OU para baixo, que é o que o número diz.
+           ⚠ `r = 0` na barra que desce: `_barraTopo` arredonda os cantos DE
+           CIMA, e numa barra negativa o lado de cima é justamente o que
+           encosta no zero — arredondar ali descolaria a barra da linha contra
+           a qual ela está sendo lida (é o mesmo motivo do ⚠ do `_barraTopo`,
+           pelo avesso). */
+        var yZero = y(0);
+        var yP = Math.min(y(d.previsto), yZero), hP = Math.max(1, Math.abs(yZero - y(d.previsto)));
+        var yR = Math.min(y(d.real), yZero), hR = Math.max(1, Math.abs(yZero - y(d.real)));
+        var rP = d.previsto < 0 ? 0 : undefined, rR = d.real < 0 ? 0 : undefined;
         /* ⚠ O PREVISTO PERDEU A `opacity: .8`. Transparencia como diferenca
            entre series pinta a barra com um tom que nao existe na paleta e
            muda conforme o fundo; agora a diferenca e a COR (o previsto e uma
            referencia neutra, ver --graf-prev) e a barra e solida. */
         svg += '<g class="g-bar">'
-          + '<path class="g-b-prev" d="' + self._barraTopo(cx - bw - 1.5, y(d.previsto), bw, hP) + '"/>'
-          + '<path class="g-b-real' + (d.estourou ? " estourou" : "") + '" d="' + self._barraTopo(cx + 1.5, y(d.real), bw, hR) + '"/>'
+          + '<path class="g-b-prev" d="' + self._barraTopo(cx - bw - 1.5, yP, bw, hP, rP) + '"/>'
+          + '<path class="g-b-real' + (d.estourou ? " estourou" : "") + '" d="' + self._barraTopo(cx + 1.5, yR, bw, hR, rR) + '"/>'
           + '<text class="g-eixo g-bar-nome" x="' + cx + '" y="' + yNome + '" text-anchor="middle">' + Util.esc(nome) + '</text>'
           + self._selo(d, cx, H)
           /* a leitura completa, no mesmo canto fixo do fluxo de caixa */
@@ -3240,9 +3352,43 @@
        Um nome so, com o fantasma aceito como legado para nao invalidar base
        antiga que por acaso o tenha. */
     _fimPrevisto: function (o) { return (o && (o.termino || o.previsaoFim)) || ""; },
+    /* =====================================================================
+     * ⚠ UMA RÉGUA SÓ PARA "ESTE BOLETIM CONTA COMO OBRA FEITA".
+     *
+     * Eram DUAS perguntas diferentes para a mesma coisa, e a diferença ia
+     * para o cliente. O Painel e o cartão da obra (`_avancoMedido`,
+     * `_medidoEmValor`) exigiam `aprovada` ou `paga`; o Portal
+     * (`_snapshotPortal`) perguntava ao `_ehAprovado`, que é `_APROV_OK`
+     * {aprovada, aprovado, enviado, confirmado} MAIS `_APROV_TERM` {paga,
+     * recebido, comprada}. Medido em 21/09/2026 com a mesma entrada:
+     *
+     *   CASO                                    Painel  CronoPlan  Portal
+     *   base de hoje (paga + pendente)             18       18       18
+     *   boletim gravado no MASCULINO (aprovado)     0        0       18  ←
+     *   boletim "recebido" (terminal do APROV)      0        0       25  ←
+     *
+     * É o engenheiro vendo um número e o CLIENTE vendo outro — o defeito que
+     * esta base já pagou ("conserto que para no segundo consumidor": 50% para
+     * um, 80% para o outro). `P.medicaoStatus` só oferece pendente, aprovada,
+     * rejeitada e paga, então nenhum dado que o app produz muda de resposta;
+     * o que muda é o boletim que chega torto pela nuvem ou de versão antiga,
+     * e aí as duas telas passam a dizer a MESMA coisa.
+     *
+     * ⚠ LISTA DE INCLUSÃO, de propósito, e é o contrário do `BimAvanco`
+     *   (lista de EXCLUSÃO: lá boletim ANTIGO sem `status` conta, porque
+     *   exigir "aprovada" apagaria o histórico dessas obras — está escrito e
+     *   medido em js/bimavanco.js). São duas perguntas diferentes; o que não
+     *   pode é haver duas respostas para a MESMA.
+     * `tools/test-reguas-avanco.js` roda as quatro réguas com a mesma entrada,
+     * imprime a tabela e reprova a divergência.
+     * ===================================================================== */
+    _medContaNoAvanco: function (m) {
+      return !!m && (m.status === "aprovada" || m.status === "paga");
+    },
     _avancoMedido: function (obraId, meds) {
+      var self0 = this;
       var minhas = (meds || []).filter(function (m) {
-        return m.obraId === obraId && (m.status === "aprovada" || m.status === "paga");
+        return m.obraId === obraId && self0._medContaNoAvanco(m);
       });
       /* ⚠ MEDICAO POR VALOR NAO E MEDICAO DE ZERO. Achado testando o cartao
          contra a base real do cliente (25/08/2026): a obra "Bossa Home Design"
@@ -3261,16 +3407,20 @@
     },
     /* quanto foi aprovado em dinheiro — o que a tela mostra quando nao ha % */
     _medidoEmValor: function (obraId, meds) {
+      var self1 = this;
       return (meds || []).filter(function (m) {
-        return m.obraId === obraId && (m.status === "aprovada" || m.status === "paga");
+        return m.obraId === obraId && self1._medContaNoAvanco(m);   /* a MESMA régua — ver `_medContaNoAvanco` */
       }).reduce(function (t, m) { return t + Util.num(m.valor); }, 0);
     },
-    _rotuloMes: function (mk) {
-      if (!mk) return "";
-      var N = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
-      var i = parseInt(String(mk).slice(5, 7), 10) - 1;
-      return (N[i] || String(mk).slice(5)) + "/" + String(mk).slice(2, 4);
-    },
+    /* ⚠ AQUI HAVIA UM SEGUNDO `_rotuloMes` (código morto, removido em
+       22/09/2026). Ele era o primeiro dos DOIS com o mesmo nome neste objeto
+       literal, e em JavaScript a última definição vence: quem rodava era
+       sempre o de baixo (o do "Sem data", ~5 mil linhas adiante). Os três
+       chamadores — o aviso do fluxo fora da frente, a galeria e o PDF dela —
+       já usavam aquele. Medido por AST antes de remover: as duas chaves
+       pertenciam ao MESMO ObjectExpression (mesmo início, 981 propriedades),
+       então a de cima nunca era alcançável. Ela também fazia o arquivo
+       reprovar num parser ES5 estrito ("Redefinition of property"). */
     _mesChave: function (d) { return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2); },
     /* ⚠ O EIXO DO TEMPO NASCIA DO DADO, NAO DO FILTRO — e por isso mentia
        duas vezes. Medido, com "6 meses" escolhido e lancamentos em 3 meses:
@@ -4089,7 +4239,15 @@
          Linha de base e plano de execução só existem para comparar AQUELA
          obra; sem ela não medem nada e ocupam o documento de 1 MiB que todas
          as obras dividem na nuvem. */
-      ["crono_obra", "registro(s) do cronograma da obra (linhas de base e plano de execução)"],
+      ["crono_obra", "registro(s) do cronograma da obra (linhas de base, plano de execução e avanço)"],
+      /* ⚠ AS LINHAS DE BASE SELADAS E O HISTÓRICO DO CRONOGRAMA (planejador,
+         Onda 0, T10) morrem com a obra pelo mesmo motivo — e, como o
+         `crono_obra`, saem TAMBÉM no "Excluir só a obra" (ver `_excluirObra`),
+         com lápide por registro. Nunca em `Store._IMUNES_CASCATA`. */
+      /* fatia 1B: o número conta as versões seladas E os registros de
+         aprovação/contratual — "4 linhas de base" para 2 versões enganava */
+      ["crono_selo", "registro(s) das linhas de base seladas (versões e aprovações)"],
+      ["crono_alt", "sessão(ões) de alteração do cronograma"],
       /* ⚠ AS DUAS LISTAS DO AGENTE DE APROPRIAÇÃO morrem com a obra
          (ESPEC-medicao-cc §6.3). A regra "toda nota do fornecedor X nesta obra
          vai para o centro 4.1" e a decisão tomada sobre um lançamento DAQUELA
@@ -4297,9 +4455,52 @@
       /* o cronograma da obra sai nas DUAS opções (ver _excluirObra): a escolha
          "só a obra" vale para o resto, e o diálogo diz isso com o número */
       var nCrono = 0;
-      v.itens.forEach(function (x) { if (x.ent === "crono_obra") nCrono = x.n; });
+      /* ⚠ as TRÊS entidades do planejamento saem nas duas opções (Onda 0, T10):
+         contadas aqui, senão os selos e o histórico entrariam no "escolha
+         abaixo se os N registro(s) vão junto" — um número que a escolha não
+         muda. (O texto que as nomeia é da 1B.) */
+      var nPorEnt = { crono_obra: 0, crono_selo: 0, crono_alt: 0 };
+      v.itens.forEach(function (x) { if (x.ent === "crono_obra" || x.ent === "crono_selo" || x.ent === "crono_alt") { nCrono += x.n; nPorEnt[x.ent] += x.n; } });
       var nEscolha = v.total - nCrono;
-      var cronoHtml = nCrono ? '<p style="margin:10px 0 0;font-size:12.5px">O <b>cronograma da obra</b> (' + nCrono + ' registro(s): linhas de base e plano de execução) sai junto nas duas opções — ele só existe para comparar esta obra e ocupa o espaço da nuvem que todas as obras dividem.</p>' : "";
+      /* ⚠ O TEXTO NAS DUAS OPÇÕES (planejador, fatia 1B; espec §1.10-3). As
+         linhas de base SELADAS (a cópia imutável de cada versão, com a
+         contratual e as aprovações) e o histórico de alterações saem junto em
+         "Excluir só a obra" também — a volta está no `_excluirObra`. E a
+         CONTRATUAL, que é a promessa do contrato e o que o pleito compara,
+         pede confirmação digitada: depois dela não há como imprimir o
+         comparativo (desenho BASES, decisão k8). A 1.2.81 não tem como ser
+         protegida (risco R12). */
+      var ctr = null;
+      try {
+        if (typeof CronoSelo !== "undefined" && CronoSelo && CronoSelo.pronto) {
+          ctr = CronoSelo.contratual(Store.listar(e, "crono_obra") || [], Store.listar(e, CronoSelo.ENTIDADE) || [], id);
+        }
+      } catch (eCt) { ctr = null; }
+      /* ⚠ UM NÚMERO POR COISA: o texto dizia "o cronograma da obra (7
+         registro(s): linhas de base, plano de execução e avanço)" com a soma
+         das três entidades, logo abaixo da lista que dizia "3 registro(s) do
+         cronograma" (foto da e2e linhas-de-base) — dois números para a mesma
+         coisa. A soma continua valendo só para o "escolha abaixo". */
+      var partesCr = [];
+      if (nPorEnt.crono_obra) partesCr.push("o <b>cronograma da obra</b> (" + nPorEnt.crono_obra + " registro(s): linhas de base, plano de execução e avanço)");
+      if (nPorEnt.crono_selo) partesCr.push("<b>" + nPorEnt.crono_selo + " registro(s) das linhas de base seladas</b>");
+      if (nPorEnt.crono_alt) partesCr.push("<b>" + nPorEnt.crono_alt + " sessão(ões) do histórico de alterações</b>");
+      var cronoHtml = nCrono ? '<p style="margin:10px 0 0;font-size:12.5px">Saem nas duas opções — também em "Excluir só a obra": ' +
+        (partesCr.length > 1 ? partesCr.slice(0, -1).join(", ") + " e " + partesCr[partesCr.length - 1] : partesCr[0]) +
+        '. Eles só existem para comparar esta obra e ocupam o espaço da nuvem que todas as obras dividem.</p>' : "";
+      if (ctr) {
+        cronoHtml += '<p data-exo-contratual="1" style="margin:10px 0 0;color:#b45309;font-size:12.5px">' + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") +
+          ' Inclui a linha de base <b>CONTRATUAL (v' + Util.esc(ctr.versao) + ')</b> — a do contrato assinado. Antes de excluir, imprima o comparativo e baixe o pacote de conferência (aba Cronograma → Linhas de base): depois não há como.</p>' +
+          '<div class="field" style="margin-top:8px"><label>Digite EXCLUIR para confirmar</label><input type="text" id="exo-conf" autocomplete="off" style="width:160px"></div>';
+      }
+      /* a conferência vale nos DOIS botões — guarda na função do clique, não no botão escondido */
+      function confirmado() {
+        if (!ctr) return true;
+        var el = document.getElementById("exo-conf");
+        if (String(el ? el.value : "").trim().toUpperCase() === "EXCLUIR") return true;
+        UI.toast("Esta obra tem linha de base CONTRATUAL: digite EXCLUIR para confirmar. Nada foi excluído.", "erro");
+        return false;
+      }
       var corpo =
         '<div style="padding:10px 12px;border-radius:10px;background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.25);margin-bottom:12px">' +
           "<b>" + Util.esc(obra.nome) + "</b><br>" +
@@ -4314,10 +4515,10 @@
 
       var botoes = [{ texto: "Cancelar", classe: "primary", onClick: function () { UI.fecharModal(); } }];
       if (nEscolha) {
-        botoes.push({ texto: "Excluir só a obra", classe: "ghost", onClick: function () { self._excluirObra(id, false); } });
-        botoes.push({ texto: "" + (typeof Icones !== "undefined" ? Icones.get("lixeira", 15) : "") + " Excluir a obra e os " + v.total + " registro(s)", classe: "danger", onClick: function () { self._excluirObra(id, true); } });
+        botoes.push({ texto: "Excluir só a obra", classe: "ghost", onClick: function () { if (confirmado()) self._excluirObra(id, false); } });
+        botoes.push({ texto: "" + (typeof Icones !== "undefined" ? Icones.get("lixeira", 15) : "") + " Excluir a obra e os " + v.total + " registro(s)", classe: "danger", onClick: function () { if (confirmado()) self._excluirObra(id, true); } });
       } else {
-        botoes.push({ texto: "" + (typeof Icones !== "undefined" ? Icones.get("lixeira", 15) : "") + " Excluir definitivamente", classe: "danger", onClick: function () { self._excluirObra(id, true); } });
+        botoes.push({ texto: "" + (typeof Icones !== "undefined" ? Icones.get("lixeira", 15) : "") + " Excluir definitivamente", classe: "danger", onClick: function () { if (confirmado()) self._excluirObra(id, true); } });
       }
       UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("lixeira", 15) : "") + " Excluir obra?", corpo, botoes);
     },
@@ -4418,6 +4619,22 @@
           var idsCr = this._idsDaObraPara("crono_obra", id);
           if (idsCr.length) apagados += Store.excluirVarios(e, "crono_obra", idsCr, false);
         } catch (eCr) {}
+        /* ⚠ AS LINHAS DE BASE SELADAS E O HISTÓRICO DO CRONOGRAMA TAMBÉM
+           (planejador, Onda 0, T10; crítica 1, achado 10). Mesmo roteiro do
+           `crono_obra` logo acima: sem esta volta, "Excluir só a obra" deixava
+           os selos — inclusive o da linha de base CONTRATUAL — e as sessões de
+           alteração com o obraId de uma obra morta, invisíveis e ocupando o
+           documento de 900 KB que todas as obras dividem. Lápide POR REGISTRO
+           (aqui não se grava a de cascata), para não voltarem pelo outro
+           aparelho. O texto do diálogo que diz isso é da 1B.
+           Prova: tools/test-crono-tomadas.js (CN: sem esta volta, o registro
+           da obra excluída fica). */
+        ["crono_selo", "crono_alt"].forEach(function (entC) {
+          try {
+            var idsC = self._idsDaObraPara(entC, id);
+            if (idsC.length) apagados += Store.excluirVarios(e, entC, idsC, false);
+          } catch (eC) {}
+        });
       }
       // cadastros da empresa (equipe, patrimônio, frota) apenas soltam o vínculo
       this._ENT_SO_DESVINCULA.forEach(function (par) {
@@ -4599,6 +4816,10 @@
         '<div class="row">' + campo("Status", sel("g-status", opts(P.obraStatus, o.status || "planejamento"))) + campo("Valor do contrato (R$)", inp("g-valor", o.valor)) + "</div>" +
         /* os dois totais do orçamento vinculado quando ele tem adicional opcional — ver `_avisoValorOpcional` */
         '<div id="g-valor-opc">' + selfObra._avisoValorOpcional(o.orcamentoId) + "</div>" +
+        /* o parâmetro da obra para a medição (§1.2), logo depois do valor do
+           contrato: é aqui que a pessoa decide se o boletim aprovado ANDA o
+           cronograma sozinho ou só sugere */
+        selfObra._medAvancoObraSelHtml(o) +
         campo("Local / Endereço", inp("g-local", o.local, "Rua, nº, bairro, cidade")) +
         /* ENTREGA E CONFERÊNCIA — vão impressos no pedido de compra. Sem estes
            campos o pedido saía dizendo só o NOME da obra, e o motorista do
@@ -4685,9 +4906,40 @@
         if (obj.foto && typeof Fotos !== "undefined" && Fotos.carimbarRemotos) Fotos.carimbarRemotos([obj.foto]);
         obj.clienteId = v("g-cliente"); obj.tipo = v("g-tipo"); obj.fase = v("g-fase"); obj.status = v("g-status");
         obj.valor = nv("g-valor"); obj.local = v("g-local"); obj.inicio = v("g-inicio"); obj.termino = v("g-termino");
+        /* ⚠ PLANEJADOR 1A (I13): o início da obra não se apaga enquanto o plano
+           de execução dela tiver função que precisa dele (tarefa sem preço,
+           calendário próprio, "o mais tarde possível", avanço lançado) — com o
+           início vazio, a data absoluta da versão anterior mudaria a cada dia.
+           O campo volta ao valor de antes e o recado diz as duas saídas. */
+        if (o.id && o.inicio && !obj.inicio && typeof App !== "undefined" && App._cronoPlanoPrecisaInicio && App._cronoPlanoPrecisaInicio(o.id)) {
+          var elIniO = document.getElementById("g-inicio");
+          if (elIniO) elIniO.value = o.inicio;
+          if (App._cronoRecusaSemInicio) App._cronoRecusaSemInicio(o.inicio);
+          return false;
+        }
         obj.enderecoEntrega = v("g-endentrega"); obj.responsavelRecebimento = v("g-receb");
         obj.telefoneRecebimento = v("g-recebtel"); obj.horarioRecebimento = v("g-recebhora");
         obj.areaConstruida = nv("g-areac"); obj.areaTerreno = nv("g-areat"); obj.orcamentoId = v("g-orc"); obj.obs = v("g-obs");
+        /* ⚠ O PARÂMETRO DA MEDIÇÃO PASSA PELO `_coletaMudou` (§1.15): numa
+           instalação com a chave `medAvanco` desligada o select não existe, e
+           um `obj.avancoMedicao = v(...)` cru apagaria a escolha que o
+           aparelho do escritório gravou — a obra voltaria calada para
+           "Sugerir" na frota inteira. Desligar esconde a porta; não apaga. */
+        var _selAv = selfObra._coletaMudou("g-avancomed");
+        if (_selAv.mudou) obj.avancoMedicao = _selAv.valor;
+        /* ⚠ TROCAR O ORÇAMENTO DA OBRA POR OUTRO FORA DA FAMÍLIA DESLIGA O
+           VÍNCULO DE ETAPA de tudo o que já foi lançado. O aviso tem NÚMEROS
+           (aviso genérico a pessoa lê como formalidade) e tem porta: cancelar
+           mantém o orçamento anterior e salva o resto. Não bloqueia — trocar
+           de orçamento é direito de quem administra a obra. */
+        if (o.id && String(o.orcamentoId || "") && String(obj.orcamentoId || "") !== String(o.orcamentoId || "")) {
+          var _avTr = selfObra._avisoTrocaOrcamento(o, obj.orcamentoId);
+          if (_avTr && !window.confirm(_avTr)) {
+            obj.orcamentoId = o.orcamentoId;
+            var _elOrc = document.getElementById("g-orc");
+            if (_elOrc) _elOrc.value = o.orcamentoId;
+          }
+        }
         var cli = lista("clientes").filter(function (c) { return c.id === obj.clienteId; })[0];
         obj.clienteNome = cli ? cli.nome : "";
 
@@ -4735,6 +4987,15 @@
             });
           }, 30);
         return true;
+      }, function (obj, ehNovo) {
+        UI.toast("Obra " + (ehNovo ? "criado." : "salvo."), "ok");
+        /* ⚠ PLANEJADOR 1A (§2.9): o início da obra mudou → o plano com extensão
+           é regravado com o início novo (os pisos de data absoluta da versão
+           anterior acompanham), com o recado dos dois prazos. Depois do save
+           da obra: o plano lê o início que acabou de ser gravado. */
+        if (!ehNovo && String(obj.inicio || "") !== String(o.inicio || "") && typeof App !== "undefined" && App._cronoInicioObraMudou) {
+          try { App._cronoInicioObraMudou(obj, o.inicio || null); } catch (eIn) {}
+        }
       });
 
       /* UI.modal ja colocou o form no DOM (sincrono) — mesma ordem usada no
@@ -5537,6 +5798,10 @@
           '</b>. <button class="btn sm" data-gacao="med-obra">Ver todas as obras</button></div>';
       }
       html += '<table class="tbl"><thead><tr><th>Nº</th><th>Obra</th><th>Período</th><th class="num">%</th><th class="num">Valor</th><th>Status</th><th></th></tr></thead><tbody>';
+      /* ⚠ UMA LEITURA DO PLANEJAMENTO PARA A LISTA INTEIRA. O selo "→ avanço"
+         e a linha do bloco expansível perguntam a mesma coisa por boletim;
+         sem este cache seriam duas leituras de `crono_obra` por LINHA. */
+      var _avC = {};
       ms.forEach(function (m) {
         var ob = obras.filter(function (o) { return String(o.id) === String(m.obraId); })[0];
         /* ✎ EDITAR de verdade, na linha. O pedido do cliente foi literalmente
@@ -5548,14 +5813,25 @@
         var docs = '<button class="btn sm" data-gopen="medicoes:' + m.id + '" title="' +
           (travadaEd ? "Ver a medição (aprovada — travada)" : "Editar a medição") + '">' + (travadaEd ? "🔒" : "✎") + '</button> ' +
           '<button class="btn sm" data-gacao="boletim-medicao" data-id="' + m.id + '" title="Boletim de medição">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + '</button> <button class="btn sm" data-gacao="excel-medicao" data-id="' + m.id + '" title="Excel de medição">' + (typeof Icones !== 'undefined' ? Icones.get('graficos', 15) : '') + '</button> ';
+        /* ⚠ [→ Avanço] SÓ PARA QUEM TEM O MÓDULO OBRAS E ESTA OBRA (crítica
+           F15): um botão que leva a uma tela que a pessoa não pode abrir é
+           uma promessa que o clique seguinte desmente. A permissão é
+           conferida de novo na função (`_cronoAvancoAbrirDoBoletim`). */
+        if (self._medAvancoPodeVer(m)) {
+          docs += '<button class="btn sm" data-gacao="med-avanco" data-id="' + m.id +
+            '" title="Abrir o avanço do cronograma desta obra com o que este boletim mede">→ Avanço</button> ';
+        }
         var acao = docs + (m.status === "pendente" ? '<button class="btn sm success" data-gacao="aprovar-medicao" data-id="' + m.id + '">Aprovar</button> <button class="btn sm" data-gacao="rejeitar-medicao" data-id="' + m.id + '" style="color:#dc2626">Rejeitar</button>' : (m.status === "aprovada" ? '<button class="btn sm primary" data-gacao="pagar-medicao" data-id="' + m.id + '">Registrar pgto</button>' : (m.status === "rejeitada" ? '<span class="muted" title="' + Util.esc(m.motivoRejeicao || "") + '">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' rejeitada</span>' : "✓")));
         var nIt = Util.arr(m.itens).length;
         var seta = '<button class="btn sm" data-gacao="med-itens" data-id="' + m.id + '" title="' +
           (nIt ? "Ver os " + nIt + " item(ns) medidos" : "Ver o que foi medido") + '" style="min-width:28px">▸</button> ';
         html += '<tr><td style="cursor:pointer" data-gopen="medicoes:' + m.id + '">' + seta + '<b>' + Util.esc(m.numero || "—") + "</b>" +
           (nIt ? ' <span class="muted" style="font-size:11px">' + nIt + " itens</span>" : "") +
+          /* o selo diz o que JÁ ESTÁ no cronograma por causa deste boletim —
+             é o que separa "aprovado" de "aprovado e lançado" */
+          (self._medAvancoSeloHtml(m, _avC)) +
           "</td><td>" + (ob ? Util.esc(ob.nome) : (String(m.obraId || "").trim() ? '<span style="color:var(--amarelo)">obra excluída</span>' : "—")) + "</td><td>" + Util.esc((m.periodoInicio || "") + (m.periodoFim ? " a " + m.periodoFim : "")) + '</td><td class="num">' + Util.fmtPct(m.percentual, 1) + '</td><td class="num">' + Util.fmtMoeda(m.valor) + "</td><td>" + pill(m.status) + self._aprovLinha(m) + '</td><td class="num">' + acao + "</td></tr>";
-        html += '<tr id="medi-' + m.id + '" style="display:none"><td colspan="7" style="background:rgba(46,111,158,.06);padding:10px 14px">' + self._medItensHtml(m) + "</td></tr>";
+        html += '<tr id="medi-' + m.id + '" style="display:none"><td colspan="7" style="background:rgba(46,111,158,.06);padding:10px 14px">' + self._medItensHtml(m, _avC) + "</td></tr>";
       });
       return html + "</tbody></table>";
     },
@@ -5564,8 +5840,11 @@
      * Vale para os dois tipos de medição: por itens do orçamento (a tabela) e
      * manual (a descrição dos serviços — que é tudo o que existe ali; dizer
      * "sem itens" e parar seria esconder a única informação que há). */
-    _medItensHtml: function (m) {
+    _medItensHtml: function (m, cache) {
       var its = Util.arr(m.itens);
+      /* o que este boletim JÁ lançou no cronograma — derivado, barato e
+         honesto (ver `_medAvancoTem`: aqui não há o número da tarefa) */
+      var _lnAv = this._medAvancoLinhaHtml(m, cache);
       /* Medição por PREÇOS UNITÁRIOS: não há % nem quantidade contratada —
          o acompanhamento é por quantidade executada de cada serviço. Mostrar
          a tabela do orçamento aqui exibiria colunas vazias e um percentual
@@ -5588,13 +5867,13 @@
         ha += '</tbody><tfoot><tr><td colspan="6" style="text-align:right"><b>Total do boletim</b></td><td class="num"><b>' + Util.fmtMoeda(m.valor) + "</b></td></tr>";
         if (Util.num(m.retencao) > 0) ha += '<tr><td colspan="6" style="text-align:right" class="muted">Retenção ' + Util.fmtNum(m.retencao, 1) + "%</td><td class=\"num muted\">− " + Util.fmtMoeda(Util.num(m.valor) * Util.num(m.retencao) / 100) + "</td></tr>";
         ha += "</tfoot></table>";
-        return ha;
+        return ha + _lnAv;
       }
       if (!its.length) {
         var d = String(m.descricao || "").trim();
         return '<div style="font-size:12px"><b>Medição por valor</b> (sem itens do orçamento).' +
           (d ? '<br><span class="muted">Serviços medidos:</span> ' + Util.esc(d) : ' <span class="muted">Nenhuma descrição foi preenchida nesta medição.</span>') +
-          (Util.num(m.retencao) > 0 ? '<br><span class="muted">Retenção:</span> ' + Util.fmtNum(m.retencao, 1) + "%" : "") + "</div>";
+          (Util.num(m.retencao) > 0 ? '<br><span class="muted">Retenção:</span> ' + Util.fmtNum(m.retencao, 1) + "%" : "") + "</div>" + _lnAv;
       }
       var h = '<table class="tbl" style="font-size:12px;margin:0"><thead><tr><th>Etapa</th><th>Item</th><th>Und</th>' +
         '<th class="num">Qtd contr.</th><th class="num">Qtd medida</th><th class="num">% ant.</th><th class="num">% período</th><th class="num">Valor</th></tr></thead><tbody>';
@@ -5615,7 +5894,7 @@
       h += '</tbody><tfoot><tr><td colspan="7" style="text-align:right"><b>Total do boletim</b></td><td class="num"><b>' + Util.fmtMoeda(m.valor) + "</b></td></tr>";
       if (Util.num(m.bdiValor) > 0) h += '<tr><td colspan="7" style="text-align:right" class="muted">(inclui BDI de ' + Util.fmtMoeda(m.bdiValor) + " faturado à parte)</td><td></td></tr>";
       h += "</tfoot></table>";
-      return h;
+      return h + _lnAv;
     },
       /* ---------------------------------------------------------------
        * PUXAR A MEDIÇÃO DO MÊS ANTERIOR
@@ -5872,8 +6151,14 @@
           ["atividades", "Por atividades da obra (preço unitário)"],
           ["valor", "Por valor (manual)"]
         ], self._medModo(m)))) + "</div>" +
+        /* a caixa do avanço vem LOGO ABAIXO de "Como medir" porque é o modo
+           que decide se ela vale: por itens alimenta o avanço, por valor e
+           por atividades não (§3.1). Ver `_medAvancoEstado`. */
+        self._medAvancoCaixaHtml(m, m.obraId || "", self._medModo(m), m.orcamentoId || "") +
+        '<div id="med-dica-itens"></div>' +
         '<div class="row" id="med-linha-orc">' + campo("Orçamento", sel("g-orcmed", optsRec(orcs, "nome", m.orcamentoId, "— selecione o orçamento —"))) + "</div>" +
         '<div id="med-itens"></div>' +
+        '<div id="med-centros"></div>' +
         '<div class="row">' + campo("Período (início)", inp("g-pini", m.periodoInicio, "", "date")) + campo("Período (fim)", inp("g-pfim", m.periodoFim, "", "date")) + "</div>" +
         '<div class="row">' + campo('% executado no período<span id="med-pct-ast">' + self._astPct(_estPct) + '</span>',
           inp("g-pct", m.percentual) + '<span id="med-pct-nota">' + self._notaPctHtml(_estPct) + '</span>') + campo("Valor medido (R$) *", inp("g-valor", m.valor)) + campo("Retenção (%)", inp("g-ret", m.retencao == null ? 5 : m.retencao)) + "</div>" +
@@ -5881,6 +6166,27 @@
       this._modalForm("medicoes", m, "Medição", corpo, function (obj) {
         obj.numero = v("g-num"); obj.status = v("g-status"); obj.obraId = v("g-obra");
         if (!obj.obraId) { UI.toast("Selecione a obra da medição.", "erro"); return false; }
+        /* ===== (a) A CAIXA DO AVANÇO, ANTES DO GATE (§3.7) =====
+         * ⚠ AQUI SÓ SE ESCREVE O CAMPO. Nada de avanço é LANÇADO no
+         *   `coletar`: ele roda antes de o documento existir no disco e
+         *   qualquer `return false` abaixo o abortaria — o avanço da obra
+         *   ficaria lançado por um boletim que não foi gravado. O canal mora
+         *   no `_modalForm`, depois do save conferido.
+         * ⚠ A COLETA PASSA PELO `_coletaMudou`: com a chave desligada, sem o
+         *   módulo Obras ou com a caixa desabilitada, o campo NÃO é escrito e
+         *   o valor que o `Util.clone(registro)` trouxe fica de pé. */
+        var _cxAv = self._coletaMudou("g-medavanco");
+        if (!m.id && !_cxAv.ausente && !_cxAv.desabilitado) obj.lancarAvanco = _cxAv.valor;
+        else if (_cxAv.mudou) obj.lancarAvanco = _cxAv.valor;
+        /* ⚠ SEM PERÍODO (fim) NÃO HÁ DATA DE TÉRMINO PARA A TAREFA. A entrada
+           de avanço nasce com `f` = data do boletim em que o item fechou
+           100%, e a validação da 1A recusa entrada sem data — o boletim
+           seria aprovado e o avanço, recusado calado. A trava tem porta: ela
+           diz o campo, e desmarcar a caixa também segue. */
+        if (obj.lancarAvanco === true && !_cxAv.ausente && !_cxAv.desabilitado && !v("g-pfim")) {
+          UI.toast("Para usar este boletim no avanço, informe o Período (fim): é ele que data o que foi executado. Preencha a data, ou desmarque “Usar este boletim no avanço da obra”.", "erro", 11000);
+          return false;
+        }
         if (!self._gateStatusForm(obj, stAntigo, "medicoes")) return false; // G3 fix: aprovar/rejeitar pelo form exige permissão + auditoria
         obj.contratoId = v("g-contrato"); obj.periodoInicio = v("g-pini"); obj.periodoFim = v("g-pfim");
         /* ⚠ O CONTRATO TEM DE SER DA OBRA DO BOLETIM. O `<select>` lista os
@@ -6083,6 +6389,381 @@
       });
       setTimeout(function () { self._ligarMedItens(m); }, 60); // pós-abertura do modal
     },
+    /* ==================================================================
+     * A CAIXA "Usar este boletim no avanço da obra" (§1.3 e §3.1)
+     *
+     * Três estados no dado (`true`, `false`, ausente) porque as três
+     * situações são diferentes e uma delas é dinheiro: o boletim de
+     * ADIANTAMENTO, de marco contratual ou de material entregue e não
+     * instalado mede VALOR e não mede execução. Tratar "não marcado" como
+     * "false" faria todo boletim antigo (que nasceu sem o campo) sair da
+     * conta de sugestões; tratar ausente como `true` faria a aprovação de um
+     * boletim legado lançar avanço sozinho, retroativamente, numa obra que
+     * ninguém preparou. Ausente é ausente: conta como sugestão, nunca lança.
+     *
+     * Devolve o ESTADO (nada de HTML), porque quem repinta (`_ligarMedItens`)
+     * precisa dos mesmos fatos sem remontar a caixa.
+     * ================================================================== */
+    _medAvancoEstado: function (m, obraId, modoMed, orcId) {
+      var st = { mostra: false, habilitada: false, marcada: false, motivo: "", modoObra: "sugerir",
+        temPlano: false, temAvanco: false, previa: false, foraFamilia: false };
+      if (!this._medcc("medAvanco")) return st;          // chave desligada: controle AUSENTE (§1.15-1)
+      st.mostra = true;
+      var o = String(obraId || "");
+      var ehAprov = !!(m && this._ehAprovado(m.status));
+      var ehNovoM = !(m && m.id);
+      var obra = null;
+      if (o) { try { obra = Store.obter(eid(), "obras", o); } catch (eO) { obra = null; } }
+      st.modoObra = this._medAvancoModoObra(obra);
+      /* ⚠ "LANÇAR AO APROVAR" COM A CHAVE `medAvancoAuto` DESLIGADA SE
+         COMPORTA COMO "SUGERIR" (§11.3). Sem isto a nota e a prévia
+         prometiam "ao aprovar, vai para as tarefas" numa instalação em que a
+         aprovação nunca lança — e o recado depois da aprovação diria o
+         contrário do que a caixa disse um minuto antes. */
+      st.autoDesligado = (st.modoObra === "aprovar" && !this._medcc("medAvancoAuto"));
+      /* ⚠ BOLETIM NOVO QUE JÁ TRAZ A ESCOLHA (o "puxar do mês anterior", K9)
+         MOSTRA A ESCOLHA HERDADA. Roteiro do defeito (revisão da mc-7A,
+         22/09/2026): o `MedicaoSeguinte.puxar` copia o `false` do boletim de
+         ADIANTAMENTO de agosto para o de setembro, e o formulário abre o
+         rascunho SEM id — a caixa de "boletim novo" nascia marcada pelo modo
+         e o Salvar gravava `true` por cima. O adiantamento voltava para a
+         conta do avanço sem ninguém ter decidido isso, e a cópia do campo
+         na `medicaoseguinte.js` virava decoração. Boletim novo de verdade
+         (sem campo nenhum) continua nascendo pelo modo, como a §1.3 manda. */
+      var herdou = !!(m && (m.lancarAvanco === true || m.lancarAvanco === false));
+      st.marcada = ehNovoM ? (herdou ? m.lancarAvanco === true : (String(modoMed || "") === "orcamento" && st.modoObra !== "nao"))
+                           : (m && m.lancarAvanco === true);
+      if (!o) { st.motivo = "Escolha a obra do boletim para usar esta medição no avanço."; return st; }
+      /* ⚠ A PERMISSÃO É DO MÓDULO OBRAS, e ela é conferida aqui E na função
+         que grava (`App._cronoAvancoDaMedicao`): esconder a caixa não é
+         guarda — o boletim pode ser aprovado pelo botão da lista, por outra
+         pessoa, em outro aparelho. */
+      var np = (typeof App !== "undefined" && App._cronoSemPermissao) ? App._cronoSemPermissao(o) : null;
+      if (np) { st.motivo = np + " O avanço do cronograma não é alimentado por este boletim."; return st; }
+      if (String(modoMed || "") !== "orcamento") {
+        st.motivo = "Só boletim medido POR ITENS do orçamento alimenta o avanço: é o item medido que diz quanto de cada tarefa foi feito. Boletim por valor ou por atividades entra pelo [→ Avanço], no Cronograma da obra.";
+        return st;
+      }
+      if (ehAprov) {
+        /* sem `Util.esc` aqui: quem escapa é a `_medAvancoNotaHtml`, e
+           escapar duas vezes escreveria "&amp;amp;" na cara da pessoa */
+        st.motivo = "Boletim " + String(m.status || "aprovado") + ": esta escolha já valeu e não muda mais aqui. Para mexer no avanço, use o Cronograma da obra.";
+        return st;
+      }
+      var sit = null;
+      if (typeof App !== "undefined" && typeof App._cronoAvancoSituacao === "function") {
+        try { sit = App._cronoAvancoSituacao(o); } catch (eS) { sit = null; }
+        st.temPlano = !!(sit && sit.temPlano); st.temAvanco = !!(sit && sit.temAvanco);
+      }
+      if (!st.temPlano) {
+        st.motivo = "Esta obra ainda não tem plano de execução: a medição aparece como sugestão quando o planejamento começar.";
+        return st;
+      }
+      /* ⚠ ORÇAMENTO FORA DA FAMÍLIA DO PLANO: o boletim NÃO conta, nunca
+         (`MedAvanco.contam`, §3.2) — as tarefas do plano são as de outro
+         orçamento. Roteiro do defeito (revisão adversarial da mc-7A,
+         22/09/2026): a caixa ficava marcada e habilitada, a prévia culpava
+         diário, número igual e corte (os três falsos) e a aprovação dizia "já
+         estava igual". A porta (§3.8) é a do planejador: ligar a obra ao
+         outro orçamento e reiniciar o plano a partir dele — o botão
+         [Reiniciar plano a partir deste orçamento] só aparece no Cronograma
+         do orçamento LIGADO à obra, por isso o texto diz os dois passos.
+         ⚠ Família que não se conseguiu apurar (`null`) não trava: o canal
+           confere de novo ao gravar, e a caixa não afirma o que não sabe. */
+      var oiF = String(orcId || "");
+      if (oiF && sit && sit.familia && typeof sit.familia === "object" && !Object.prototype.hasOwnProperty.call(sit.familia, oiF)) {
+        var orcB = null;
+        try { orcB = Store.obterOrcamento(eid(), oiF); } catch (eB) { orcB = null; }
+        var nomeB = (orcB && (orcB.nome || orcB.numero)) || oiF;
+        var nomeP = (sit.orcPlano && sit.orcPlano.nome) || "o orçamento do plano";
+        st.foraFamilia = true;
+        /* boletim novo sem escolha herdada: desabilitada e DESMARCADA — marcada
+           diria, na cara da pessoa, que ele vai ao avanço (ver `_medAvancoPintar`) */
+        if (ehNovoM && !herdou) st.marcada = false;
+        st.motivo = "Este boletim mede o orçamento “" + nomeB + "”, que não é o do plano de execução da obra (“" + nomeP +
+          "”) nem uma revisão dele: as tarefas do plano são outras, e ele não entra no avanço. " +
+          "Para o avanço seguir “" + nomeB + "”, ligue a obra a ele (Obras → editar → “Vincular a um orçamento”) e use " +
+          "[Reiniciar plano a partir deste orçamento] no Cronograma dele.";
+        return st;
+      }
+      if (st.modoObra === "nao") {
+        st.motivo = "Esta obra está em “Não usar” (Obras → editar → Medição alimenta o avanço do cronograma).";
+        return st;
+      }
+      st.habilitada = true;
+      st.previa = (st.modoObra === "aprovar" && !st.autoDesligado && st.temPlano && st.temAvanco);
+      return st;
+    },
+
+    /* a nota abaixo da caixa: ela DEPENDE do caso, e nenhum dos três textos
+       promete o que o caso não faz (§3.1). */
+    _medAvancoNotaHtml: function (st) {
+      if (!st.mostra) return "";
+      if (!st.habilitada) return Util.esc(st.motivo || "");
+      if (!st.temAvanco) return "A obra ainda não tem avanço lançado: a medição aparece como sugestão quando o planejamento começar.";
+      if (st.modoObra === "sugerir") return "Ao aprovar, o cronograma da obra mostra a sugestão; quem planeja decide.";
+      if (st.autoDesligado) return "O lançamento automático ao aprovar está desligado nesta instalação: ao aprovar, o cronograma da obra mostra a sugestão; quem planeja decide.";
+      return "Ao aprovar, o acumulado dos itens vai para as tarefas sem diário. <span data-medav-previa>calculando…</span>";
+    },
+
+    _medAvancoCaixaHtml: function (m, obraId, modoMed, orcId) {
+      var st = this._medAvancoEstado(m, obraId, modoMed, orcId);
+      if (!st.mostra) return "";
+      var ehNovoM = !(m && m.id);
+      /* ⚠ `data-mostrado` SÓ NO BOLETIM QUE JÁ EXISTE (§1.15-3): é ele que
+         faz "não mexi" significar "não grave". No documento novo o valor
+         inicial do controle habilitado É a escolha. */
+      return '<div class="row" id="med-linha-avanco"><div class="field" style="flex:1 1 100%">' +
+        '<label style="display:flex;gap:8px;align-items:center;font-size:13px;font-weight:600">' +
+        '<input type="checkbox" id="g-medavanco"' +
+        (ehNovoM ? "" : ' data-mostrado="' + (st.marcada ? "1" : "0") + '"') +
+        (st.marcada ? " checked" : "") + (st.habilitada ? "" : " disabled") + "> " +
+        "Usar este boletim no avanço da obra</label>" +
+        '<div class="muted" id="med-avanco-nota" style="font-size:11.5px;margin-top:4px;line-height:1.35">' +
+        this._medAvancoNotaHtml(st) + "</div></div></div>";
+    },
+
+    /* ==================================================================
+     * A PRÉVIA HONESTA (§3.1: "prévia ao vivo só nos casos em que algo será
+     * lançado").
+     *
+     * ⚠ ELA USA O MOTOR DE VERDADE, com um RASCUNHO deste boletim no lugar
+     *   do que está no disco. A alternativa — somar os % da tela por conta
+     *   própria — seria uma segunda régua da mesma pergunta, e duas réguas
+     *   da mesma pergunta divergem na primeira manutenção (memória "réplica
+     *   de parser apodrece"). Aqui o rascunho entra na MESMA
+     *   `MedAvanco.porNo` que a aprovação vai rodar, então a prévia e o
+     *   resultado nascem da mesma conta.
+     * ⚠ NADA É GRAVADO: a lista de medições é uma CÓPIA em memória. O
+     *   rascunho nunca chega ao `Store`.
+     * ================================================================== */
+    _medAvancoPrevia: function (m, obraId, orcId) {
+      var out = { ok: false, n: 0, linhas: [], corte: "" };
+      if (typeof App === "undefined" || typeof App._medccCtx !== "function" ||
+          typeof App._medccDados !== "function" || typeof MedAvanco === "undefined") return out;
+      var o = String(obraId || ""), oi = String(orcId || "");
+      if (!o || !oi) return out;
+      var ctx = null;
+      try { ctx = App._medccCtx(o); } catch (eC) { ctx = null; }
+      if (!ctx || ctx.erro || !ctx.rec || !ctx.plano) return out;
+      var orc = null;
+      try { orc = Store.obterOrcamento(eid(), oi); } catch (eOr) { orc = null; }
+      if (!orc) return out;
+      var pcts = {};
+      try {
+        Array.prototype.forEach.call(document.querySelectorAll("[data-medpct]"), function (i2) {
+          var p = Util.num(i2.value); if (p > 0) pcts[i2.getAttribute("data-medpct")] = p;
+        });
+      } catch (eP) { return out; }
+      var res = null;
+      try { res = Orcamento.medirItens(orc, pcts, this._pctAnterioresPorItem(o, oi, m.id)); } catch (eM) { res = null; }
+      if (!res || !Util.arr(res.itens).length) return out;
+      var rid = String((m && m.id) || "__previa_medavanco__");
+      var rascunho = { id: rid, obraId: o, contratoId: (m && m.contratoId) || "", modo: "orcamento",
+        orcamentoId: oi, status: "aprovada", lancarAvanco: true, numero: v("g-num"),
+        periodoInicio: v("g-pini"), periodoFim: v("g-pfim"), valor: Util.num(res.total), itens: res.itens };
+      var meds = [];
+      Util.arr(ctx.meds).forEach(function (x) { if (x && String(x.id) !== rid) meds.push(x); });
+      meds.push(rascunho);
+      var c2 = {}, k;
+      for (k in ctx) if (Object.prototype.hasOwnProperty.call(ctx, k)) c2[k] = ctx[k];
+      c2.meds = meds;
+      var d = null;
+      try { d = App._medccDados(c2, { gatilho: rid }); } catch (eD) { d = null; }
+      if (!d || d.erro) return out;
+      Util.arr(d.sugs).forEach(function (s) {
+        if (!s || !s.marcada) return;
+        if (s.acao !== "criar" && s.acao !== "recalcular") return;
+        out.linhas.push({ numero: s.numero || s.nome || s.id, p: s.pMed, f: s.f || "" });
+      });
+      out.n = out.linhas.length; out.corte = String(ctx.rec.corte || ""); out.ok = true;
+      return out;
+    },
+
+    /* o texto da prévia, em PT-BR e com os números — "vai para 2 tarefas" sem
+       dizer QUAIS é o tipo de aviso que a pessoa lê como formalidade. */
+    _medAvancoPreviaTxt: function (p, per) {
+      if (!p.ok) return "Não consegui calcular a prévia agora — o que vale é o que o Cronograma da obra mostrar depois de aprovar.";
+      if (!p.n) return "Nenhuma tarefa sem diário seria alterada por este boletim (as tarefas que ele mede já têm lançamento nos diários, número igual, ou estão fora do corte do avanço).";
+      var l = [], i;
+      for (i = 0; i < p.linhas.length && i < 4; i++) {
+        l.push(String(p.linhas[i].numero) + " → " + String(p.linhas[i].p == null ? "?" : p.linhas[i].p).replace(".", ",") + "%");
+      }
+      return "Ao aprovar, o acumulado dos itens vai para " + p.n + " tarefa(s) sem diário (" +
+        l.join(", ") + (p.n > l.length ? ", …" : "") + ")" +
+        (per ? ", até " + Util.fmtDia(per) : "") + ".";
+    },
+
+    /* ==================================================================
+     * "CENTROS DE CUSTO DESTE BOLETIM" — SÓ LEITURA, e só no boletim por
+     * itens (§6.2).
+     *
+     * O que ele responde: "o que eu estou medindo cai em qual centro?". A
+     * resposta vem do VÍNCULO (item → nó do orçamento → centro gerado
+     * daquele nó), que é a régua do `CentroCusto` — nunca de semelhança de
+     * descrição, de valor ou de nome (skill `dinheiro`, §2).
+     *
+     * ⚠ O ÍNDICE DOS CENTROS É O DA TELA CENTRO DE CUSTO (`_ccCtx`), e não
+     *   um montado aqui. A primeira versão calculava a família pelo
+     *   `CronoPlan.familiaIds` do orçamento DO BOLETIM, e a tela a calcula
+     *   pela `CentroCusto.raizDaCadeia` do orçamento DA OBRA: duas réguas da
+     *   mesma pergunta ("quais centros são desta obra?"), que discordam no
+     *   primeiro boletim que mede uma revisão de fora da família — e o
+     *   boletim diria "cai no 4.1" enquanto a tela de Centros põe o mesmo
+     *   item em "sem centro". O orçamento do BOLETIM fica só onde a §0.2
+     *   MC9 manda: `noDoItem`, para achar o nó de cada item.
+     * ⚠ SÓ NA OBRA QUE ADOTOU os centros novos (`modo === "novo"`). Na obra
+     *   em rateio antigo, o Realizado do centro é uma ESTIMATIVA dividida
+     *   pelo orçado: mostrar um "por centro" ao lado dela faria a tela
+     *   afirmar duas coisas diferentes sobre o mesmo dinheiro.
+     * ⚠ NADA AQUI GRAVA, E O TEXTO NÃO PROMETE A FILA. A decisão por boletim
+     *   (`cc_aprop`) e a Fila são do agente (`js/ccagente.js`), que não
+     *   existe ainda; a aba Fila da tela responde "ainda não disponível". Um
+     *   "o que está sem centro entra na Fila" mandaria a pessoa a uma porta
+     *   que o clique seguinte fecha.
+     * `memo` (opcional) guarda o contexto da obra entre as repinturas do
+     * MESMO formulário — o `_ccCtx` calcula o orçamento inteiro, e o % de
+     * cada item repinta este bloco a cada tecla.
+     * ================================================================== */
+    _medCentrosHtml: function (obraId, orcId, itens, memo) {
+      if (!this._medcc("ccAgente")) return "";
+      if (typeof CentroCusto === "undefined" || typeof CentroCusto.centroDoNo !== "function") return "";
+      var o = String(obraId || ""), oi = String(orcId || "");
+      if (!o || !oi) return "";
+      var linhas = Util.arr(itens).filter(function (it) { return it && Util.num(it.valor) > 0; });
+      if (!linhas.length) return "";
+      var orc = null;
+      try { orc = Store.obterOrcamento(eid(), oi); } catch (eO) { orc = null; }
+      if (!orc) return "";
+      var ctx = (memo && memo.obraId === o) ? memo.ctx : null;
+      if (!ctx) {
+        try { ctx = this._ccCtx(o); } catch (eC) { ctx = null; }
+        if (memo) { memo.obraId = o; memo.ctx = ctx; }
+      }
+      if (!ctx || !ctx.modo || ctx.modo.modo !== "novo") return "";
+      var mapaNo = null;
+      try { mapaNo = CentroCusto.noDoItem(orc); } catch (eI) { return ""; }
+      /* centavos, para a soma por centro fechar com a soma dos itens */
+      var porCc = {}, ordem = [], nomes = {}, semCentro = 0, dois = 0, total = 0;
+      linhas.forEach(function (it) {
+        var val = Math.round(Util.num(it.valor) * 100);
+        total += val;
+        var no = mapaNo[String(it.itemId || "")] || null;
+        var noId = no ? (no.subEtapaId || no.etapaId) : "";
+        var r = noId ? CentroCusto.centroDoNo(ctx.indice, noId) : { cc: null, motivo: "item-sem-etapa" };
+        if (r && r.cc) {
+          if (!Object.prototype.hasOwnProperty.call(porCc, r.cc.id)) { porCc[r.cc.id] = 0; ordem.push(r.cc.id); nomes[r.cc.id] = r.cc; }
+          porCc[r.cc.id] += val;
+        } else {
+          semCentro += val;
+          if (r && r.motivo === "no-dois-centros") dois++;
+        }
+      });
+      if (!ordem.length && !(semCentro > 0)) return "";
+      var h = '<div style="margin:10px 0 4px"><h4 style="margin:0 0 6px;font-size:13px">Centros de custo deste boletim</h4>' +
+        '<table class="tbl" style="font-size:12px;margin:0" data-med-centros><tbody>';
+      ordem.forEach(function (id2) {
+        var c = nomes[id2];
+        h += "<tr><td>" + (c.codigo ? "<b>" + Util.esc(c.codigo) + "</b> " : "") + Util.esc(String(c.nome || "—").slice(0, 60)) +
+          (c.ativo === false ? ' <span class="muted">(desativado)</span>' : "") +
+          '</td><td class="num">' + Util.fmtMoeda(porCc[id2] / 100) + "</td></tr>";
+      });
+      if (semCentro > 0) {
+        h += '<tr><td><span style="color:var(--amarelo)">Em etapas sem centro de custo</span>' +
+          (dois ? ' <span class="muted">(' + dois + " item(ns) numa etapa com dois centros)</span>" : "") +
+          '</td><td class="num">' + Util.fmtMoeda(semCentro / 100) + "</td></tr>";
+      }
+      h += '<tr><td class="muted">Soma dos itens medidos</td><td class="num muted">' + Util.fmtMoeda(total / 100) + "</td></tr>";
+      h += "</tbody></table>" +
+        '<p class="muted" style="font-size:11px;margin:4px 0 0">Pelo vínculo do item com a etapa do orçamento, a mesma régua da tela Centro de custo. Informativo: nada disto é gravado no boletim.' +
+        (semCentro > 0 ? " “Em etapas sem centro” são itens cuja etapa ainda não tem centro de custo nesta obra." : "") + "</p></div>";
+      return h;
+    },
+
+    /* a dica da §3.1, UMA VEZ POR OBRA e sem prometer "sozinho": quem mede
+       por valor não sabe que medir por itens liga o boletim ao cronograma.
+       ⚠ O "já vi" é local (por aparelho) e em try/catch: em janela anônima o
+         acessor LANÇA, e uma dica não pode derrubar o formulário. */
+    _medDicaItensHtml: function (obraId, st, modoMed) {
+      var o = String(obraId || "");
+      if (!o || !st.mostra || !st.temPlano) return "";
+      if (String(modoMed || "") === "orcamento") return "";
+      /* ⚠ A ÚLTIMA ORAÇÃO DEPENDE DA CHAVE AUTOMÁTICA (1.2.86). Com
+         `medAvancoAuto` desligada, "a obra pode ser configurada para lançar
+         ao aprovar" é promessa que o clique seguinte não cumpre: configurar
+         a obra assim não lança nada (ver o roteiro no js/config.js). Aqui a
+         dica para na parte que continua verdadeira — a sugestão no
+         Cronograma —, que é justamente o que ela veio ensinar. */
+      var txt = '<div class="muted" style="font-size:11.5px;margin:-4px 0 8px;padding:6px 8px;border-left:3px solid var(--borda);line-height:1.35">' +
+        "Medindo <b>por itens do orçamento</b>, este boletim pode alimentar o avanço do cronograma desta obra: " +
+        (this._medcc("medAvancoAuto")
+          ? "quem planeja vê a sugestão no Cronograma, e a obra pode ser configurada para lançar ao aprovar.</div>"
+          : "quem planeja vê a sugestão no Cronograma da obra e lança por lá.</div>");
+      if (String(this._medDicaSessao || "") === o) return txt;
+      var vistas = null;
+      try { vistas = JSON.parse((typeof localStorage !== "undefined" && localStorage.getItem("orcapro:tela:med-dica-itens:v1")) || "{}"); } catch (eL) { vistas = null; }
+      if (!vistas || typeof vistas !== "object" || Array.isArray(vistas)) vistas = {};
+      if (vistas[o]) return "";
+      vistas[o] = 1;
+      try { if (typeof localStorage !== "undefined") localStorage.setItem("orcapro:tela:med-dica-itens:v1", JSON.stringify(vistas)); } catch (eS) {}
+      this._medDicaSessao = o;
+      return txt;
+    },
+    _medDicaSessao: null,
+
+    /* repinta a caixa, a nota e a dica quando o modo, a obra ou a própria
+       caixa mudam.
+       ⚠ O `checked` SÓ É REESCRITO quando o controle está (ou acabou de
+         ficar) desabilitado, e sempre a partir do `data-mostrado`. Reescrever
+         a marcação de um controle habilitado apagaria a escolha que a pessoa
+         acabou de fazer; e deixar um controle desabilitado marcado diria, na
+         cara dela, que o boletim vai ao avanço quando ele não vai. */
+    _medAvancoPintar: function (m) {
+      var cx = UI.el("g-medavanco");
+      /* o orçamento MEDIDO entra junto: fora da família do plano a caixa trava
+         com o motivo (ver `_medAvancoEstado`), e trocar o select repinta aqui */
+      var st = this._medAvancoEstado(m, v("g-obra"), v("g-medmodo"), v("g-orcmed"));
+      var dica = UI.el("med-dica-itens");
+      if (dica) dica.innerHTML = this._medDicaItensHtml(v("g-obra"), st, v("g-medmodo"));
+      if (!cx) return;
+      var estavaHab = !cx.disabled;
+      cx.disabled = !st.habilitada;
+      var mostrado = null;
+      try { mostrado = cx.getAttribute("data-mostrado"); } catch (eA) { mostrado = null; }
+      if (!st.habilitada || !estavaHab) cx.checked = (mostrado == null) ? !!st.marcada : (String(mostrado) === "1");
+      var nota = UI.el("med-avanco-nota");
+      if (nota) nota.innerHTML = this._medAvancoNotaHtml(st);
+      /* guardado para o recálculo por digitação não ter de reler o
+         planejamento a cada tecla (ver `recalc` em `_ligarMedItens`) */
+      this._medAvStUlt = st;
+      this._medAvancoPreviaPintar(m, st, cx.checked);
+    },
+    _medAvStUlt: null,
+
+    /* ⚠ A PRÉVIA É CARA (lê plano, orçamento e diários), então ela é
+       ADIADA e só roda no caso em que algo SERÁ lançado. Sem o adiamento,
+       digitar o % de 40 itens rodaria o motor 40 vezes. */
+    _medAvancoPreviaPintar: function (m, st, marcada) {
+      var self = this;
+      var alvo = null;
+      try { alvo = document.querySelector("[data-medav-previa]"); } catch (eQ) { alvo = null; }
+      if (!alvo) return;
+      if (!st.previa || !marcada) { alvo.textContent = ""; return; }
+      if (self._medAvPrevTimer) { try { clearTimeout(self._medAvPrevTimer); } catch (eT) {} }
+      self._medAvPrevTimer = setTimeout(function () {
+        self._medAvPrevTimer = null;
+        var el = null;
+        try { el = document.querySelector("[data-medav-previa]"); } catch (eQ2) { el = null; }
+        if (!el) return;
+        var p;
+        try { p = self._medAvancoPrevia(m, v("g-obra"), v("g-orcmed")); } catch (eP) { p = { ok: false }; }
+        /* texto puro: a prévia diz números, e número dentro de innerHTML com
+           nome de tarefa vindo do orçamento é porta de entrada de HTML alheio */
+        el.textContent = self._medAvancoPreviaTxt(p, v("g-pfim"));
+      }, 350);
+    },
+    _medAvPrevTimer: null,
+
     /* Painel do modo ATIVIDADES: a tabela de preços da obra com um campo de
        quantidade por linha. O valor do boletim NASCE daqui (qtd × preço) e o
        campo "Valor medido" fica travado — digitar um total que não fecha com
@@ -6128,6 +6809,17 @@
       var self = this;
       var selOrc = UI.el("g-orcmed"), box = UI.el("med-itens");
       if (!selOrc || !box) return;
+      /* o quadro "Centros de custo deste boletim" acompanha o que está na
+         tabela de itens: ele e a tabela leem a MESMA saída do motor
+         (`Orcamento.medirItens`), e não duas contas parecidas.
+         ⚠ O memo vive NESTE formulário (nasce aqui, morre com ele): trocar a
+         obra no select troca a chave, e abrir o formulário de novo começa
+         vazio — nada de cache pendurado no objeto Gestao. */
+      var memoCc = { obraId: null, ctx: null };
+      function pintarCentros(itensCc) {
+        var elCc = UI.el("med-centros");
+        if (elCc) elCc.innerHTML = self._medCentrosHtml(v("g-obra"), selOrc.value, itensCc, memoCc);
+      }
       /* soma ao vivo do modo atividades */
       function somarAtividades() {
         if (typeof Atividades === "undefined") return;
@@ -6160,17 +6852,22 @@
         var modo = v("g-medmodo"), gv = UI.el("g-valor"), gp = UI.el("g-pct");
         var linhaOrc = UI.el("med-linha-orc");
         if (linhaOrc) linhaOrc.style.display = (modo === "orcamento") ? "" : "none";
+        /* a caixa do avanço depende do MODO e da OBRA: trocar qualquer um dos
+           dois muda quem pode alimentar o avanço, e a nota tem de acompanhar
+           (senão ela promete o que o modo novo não faz) */
+        self._medAvancoPintar(m);
         if (modo === "atividades") {
           box.innerHTML = self._medAtividadesHtml(m, v("g-obra"));
+          pintarCentros([]);
           notaPct("atividades");
           if (gp) { gp.readOnly = true; gp.value = ""; }
           Array.prototype.forEach.call(document.querySelectorAll("[data-medqtd],[data-medvu]"), function (i2) { i2.oninput = somarAtividades; });
           somarAtividades();
           return;
         }
-        if (modo === "valor") { box.innerHTML = ""; notaPct("obrigatorio"); if (gv) gv.readOnly = false; if (gp) gp.readOnly = false; return; }
+        if (modo === "valor") { box.innerHTML = ""; pintarCentros([]); notaPct("obrigatorio"); if (gv) gv.readOnly = false; if (gp) gp.readOnly = false; return; }
         var orcId = selOrc.value;
-        if (!orcId) { box.innerHTML = '<div class="muted" style="margin:8px 0">Selecione o orçamento que será medido.</div>'; notaPct("obrigatorio"); if (gv) gv.readOnly = false; if (gp) gp.readOnly = false; return; }
+        if (!orcId) { box.innerHTML = '<div class="muted" style="margin:8px 0">Selecione o orçamento que será medido.</div>'; pintarCentros([]); notaPct("obrigatorio"); if (gv) gv.readOnly = false; if (gp) gp.readOnly = false; return; }
         var orc = Store.obterOrcamento(eid(), orcId);
         if (!orc) { box.innerHTML = '<div class="muted">Orçamento não encontrado.</div>'; return; }
         // Boletim APROVADO/PAGO: mostra os valores SALVOS, travados — a prévia não
@@ -6188,6 +6885,7 @@
           });
           h2 += '</tbody><tfoot><tr><td colspan="5" style="text-align:right"><b>Total medido neste boletim</b></td><td class="num"><b>' + Util.fmtMoeda(m.valor) + "</b></td></tr></tfoot></table>";
           box.innerHTML = h2;
+          pintarCentros(Util.arr(m.itens));
           if (gv) { gv.value = Util.num(m.valor).toFixed(2).replace(".", ","); gv.readOnly = true; }
           notaPct("itens"); if (gp) { gp.value = Util.num(m.percentual).toFixed(1).replace(".", ","); gp.readOnly = true; }
           return;
@@ -6260,6 +6958,11 @@
           var t = box.querySelector("[data-medtot]"); if (t) t.textContent = Util.fmtMoeda(b.total);
           if (gv) { gv.value = Util.num(b.total).toFixed(2).replace(".", ","); gv.readOnly = true; }
           notaPct("itens"); if (gp) { gp.value = Util.num(b.pctDoOrcamento).toFixed(1).replace(".", ","); gp.readOnly = true; }
+          /* a prévia do avanço acompanha o % digitado — adiada, e sem reler o
+             planejamento a cada tecla (o estado veio do `_medAvancoPintar`) */
+          pintarCentros(Util.arr(b.itens));
+          var _cxA = UI.el("g-medavanco");
+          self._medAvancoPreviaPintar(m, self._medAvStUlt || { previa: false }, !!(_cxA && _cxA.checked));
         }
         Array.prototype.forEach.call(box.querySelectorAll("[data-medpct]"), function (i2) { i2.oninput = recalc; });
         recalc();
@@ -6267,6 +6970,10 @@
       selOrc.addEventListener("change", pintar);
       var gModo = UI.el("g-medmodo");
       if (gModo) gModo.addEventListener("change", pintar);
+      /* marcar/desmarcar a caixa muda o que a nota promete: com ela
+         desmarcada a prévia some, porque nada será lançado */
+      var gAv = UI.el("g-medavanco");
+      if (gAv) gAv.addEventListener("change", function () { self._medAvancoPintar(m); });
       var gObra = UI.el("g-obra");
       if (gObra) gObra.addEventListener("change", function () {
         // obra criada a partir de orçamento já aponta o orçamento certo
@@ -7020,7 +7727,14 @@
           { label: "Categoria", get: function (x) { return rot(P.finCategoria, x.categoria); } },
           { label: "Valor", key: "valor" },
           { label: "Status", get: function (x) { return rot(P.finStatus, x.status); } }];
+        /* ⚠ ETAPA E CENTRO DE CUSTO (mc-8B), só com Financeiro E Centro de
+           Custo e a chave `ccAgente`: o arquivo não pode levar o que a pessoa
+           não vê na tela. O centro é DERIVADO — nada disso existe no
+           lançamento (MC1: nenhum centro é gravado no Financeiro) — e sai
+           da mesma régua da tela de Centros (`_ccCustoColunasFin`). */
+        cols = cols.concat(this._ccCustoColunasFin());
       }
+      else if (modulo === "centrocusto") return this._ccCustoExportarCentros();
       else if (modulo === "compras") {
         /* mesmo contrato do financeiro: exporta o RECORTE da tela e diz de qual
            obra e cada pedido — a coluna Obra tambem nao existia aqui. */
@@ -7141,6 +7855,25 @@
             tipo: atual.tipo, categoria: atual.categoria || "outros",
             valor: -vAbs, status: "pago",
             obraId: atual.obraId || "", contratoId: atual.contratoId || "", etapaId: atual.etapaId || "",
+            /* ⚠ O CARIMBO VIAJA COM O ESPELHO — e sem ele o crédito perdia o
+               centro de custo. Roteiro do defeito (medido no navegador em
+               22/09/2026): a despesa do pedido recebido NÃO tem `etapaId`
+               próprio; ela é apropriada por HERANÇA do carimbo
+               (`docTipo:"PC"` + `docId`). Copiando só obra/contrato/etapa, o
+               espelho nascia sem nada que o ligasse ao pedido: a despesa de
+               R$ 30.000 ficava no centro "2 Estrutura" e o crédito caía em
+               "Sem centro de custo" — R$ 30.000 a menos no saldo do centro,
+               na tela, nos dois CSV, nos Relatórios e no Previsto × Realizado.
+               ⚠ COPIAR O CARIMBO NÃO TRAVA BAIXA NENHUMA: `_lancVivoDoDoc`
+               pula quem tem `estornoDe` ("o espelho do estorno copia obra e
+               categoria mas é OUTRO lançamento") e `CompraNota.despesaViva`
+               descarta espelho e original-com-espelho. Os dois foram lidos
+               antes de acrescentar estes campos.
+               ⚠ E ISTO SOZINHO NÃO CONSERTA A BASE INSTALADA: os espelhos já
+               gravados nasceram sem carimbo. Quem os salva é o degrau do
+               espelho no `_ccFatos` e no `CustoEtapa.resolverNo`. */
+            docTipo: atual.docTipo || "", docId: atual.docId || "",
+            docNumero: atual.docNumero || "", compraId: atual.compraId || "",
             fornecedor: atual.fornecedor || "", formaPgto: atual.formaPgto || "",
             obs: "Estorno automático do lançamento " + atual.id + (atual.obs ? " · " + atual.obs : ""),
             estornoDe: atual.id
@@ -7344,9 +8077,47 @@
       });
       return out;
     },
+    /* ⚠ A OPÇÃO QUE PRESERVA A ETAPA INDISPONÍVEL NÃO PODE SAIR DAQUI (D12).
+       O roteiro do defeito, medido no código de produção em 22/09/2026:
+       `_etapasDaObra` devolve `[]` quando o orçamento da obra não está NESTE
+       aparelho (obra nova vinda da nuvem antes do orçamento, revisão feita em
+       outra máquina, orçamento excluído). O select então nascia só com
+       "— não apropriado —"; `v("g-etapa")` devolvia `""`; e a coleta do
+       `formFinanceiro` gravava `obj.etapaId = ""`. Abrir um lançamento e
+       salvar SEM MEXER EM NADA apagava o vínculo com o orçamento — e
+       `etapaId` é a ÚNICA chave entre custo e orçamento neste app: perdida
+       ela, o dinheiro sai do Previsto × Realizado, do Painel por etapa e do
+       centro de custo, sem nada avisar.
+       Medido no backup real de 12/09 (`orcapro-auto-2026-09-12_15-18-27`):
+       1 dos 52 lançamentos tinha `etapaId`, e a etapa dele já não existia em
+       orçamento nenhum do disco; 2 das 11 obras apontam um `orcamentoId` que
+       não está no disco — toda despesa delas cairia no mesmo buraco.
+       O molde é o `optsRec` (:307), que já resolvia isto para obra, contrato
+       e medição e parou antes de chegar aqui: mantém o id e DIZ que o vínculo
+       não foi achado, em vez de esconder o dado apagando-o.
+       O mesmo select repovoado pelo `onchange` da obra (:7737) passa `""` de
+       propósito: aí a pessoa TROCOU a obra, e a etapa da obra antiga não vale
+       mesmo — §1.15-3, "controle intocado não escreve; tocado, escreve". */
     _etapaOptsHtml: function (etapas, selId) {
       var o = '<option value="">— não apropriado —</option>';
-      Util.arr(etapas).forEach(function (e) { o += '<option value="' + Util.esc(e.id) + '"' + (e.id === selId ? " selected" : "") + ">" + Util.esc(e.nome) + "</option>"; });
+      var achou = false;
+      Util.arr(etapas).forEach(function (e) {
+        if (e.id === selId) achou = true;
+        o += '<option value="' + Util.esc(e.id) + '"' + (e.id === selId ? " selected" : "") + ">" + Util.esc(e.nome) + "</option>";
+      });
+      /* ⚠ O TEXTO É CURTO PORQUE O SELECT NÃO CRESCE, e um recado cortado no
+         meio não é recado. Medido no navegador (CDP, `#g-etapa` do
+         `formFinanceiro`, IBM Plex Sans 15px): o select mede **412 px**
+         (388 úteis) TANTO a 1366×768 quanto a 1920×1080 — ele não acompanha a
+         largura do modal. A primeira redação, "(etapa de outro orçamento ou
+         indisponível neste aparelho — não foi apagada)", renderiza **519 px**
+         e aparecia na tela como "…neste aparelh⌄": sumia justamente o
+         "não foi apagada", que é a única coisa que a pessoa precisa ler ali.
+         Esta redação mede **310 px** e cabe nas duas larguras com folga.
+         Ao mexer aqui, meça de novo — não conte caracteres. */
+      if (selId && !achou) {
+        o += '<option value="' + Util.esc(selId) + '" selected>(etapa de outro orçamento — não foi apagada)</option>';
+      }
       return o;
     },
     /* ==================================================================
@@ -7399,7 +8170,13 @@
           });
           UI.fecharModal();
           App.render();
-          UI.toast(salvo ? "Gasto lançado: " + Util.fmtMoeda(valor) + "." : "Não consegui gravar o lançamento.", salvo ? "ok" : "erro");
+          /* ⚠ SEM O SELECT DE CENTRO AINDA (mc-8B, entrega parcial): o
+             "Pela regra…" grava `cc_aprop FIN_` pela `_ccGravarEscolha`, que
+             depende do agente (`js/ccagente.js`), inexistente — ver o
+             cabeçalho da região "MEDCC: custos (8B)". O recado diz onde o
+             gasto caiu pela régua da tela de Centros. */
+          if (salvo) Gestao._ccCustoToast("Gasto lançado: " + Util.fmtMoeda(valor) + ".", [salvo], "ok");
+          else UI.toast("Não consegui gravar o lançamento.", "erro");
         } }
       ]);
     },
@@ -7547,14 +8324,46 @@
           saldo: l.saldo, pct: l.pct, estouro: l.estouro, semPrevisto: l.semPrevisto
         };
       });
-      return {
+      /* =================================================================
+       * ⚠ O BALDE DOS CENTROS SEM NÓ ATRAVESSA ESTA FUNÇÃO — E NÃO
+       *   ATRAVESSAVA.
+       *
+       * `js/gestao.js` já LIA `dPR.apropriadoSemEtapa` no card do Painel
+       * (a linha "Sem etapa apropriada"), e esta função nunca devolveu essa
+       * chave: consumidor nascido antes do mantenedor. Hoje é inerte, porque
+       * `apropriar` ainda não é passado ao motor; no dia em que a `mc-5D`
+       * ligar o agente, Painel e Previsto × Realizado ficariam ABAIXO dos
+       * outros três consumidores EXATAMENTE pelo valor do balde — Relatórios,
+       * Centro de Custo e relatório executivo perguntam ao `totalVivo`, que
+       * lê o Financeiro inteiro. É a divergência que esta entrega existe para
+       * apagar, agendada para acontecer sozinha.
+       *
+       * Medido na bancada em 21/09/2026: `consolidar` com um `apropriar` de
+       * mentira devolve `apropriadoSemEtapa.realizado.valor = 600`, e as
+       * chaves de saída desta função eram obra, naoApropriado,
+       * naoApropriadoPorOrigem, comprometidoSemEtapa, cobertura,
+       * totalPrevisto, totalRealizado, totalComprometido, saldoTotal — sem
+       * ele, e com `totalRealizado` sem somá-lo.
+       *
+       * ⚠ Dinheiro em centro sem nó ESTÁ apropriado; só não tem linha de
+       *   etapa onde aparecer. Por isso ele entra nos TOTAIS (invariante I9
+       *   da ESPEC) e não em `naoApropriado` — tratá-lo como "sem etiqueta"
+       *   faria a cobertura despencar no dia em que a obra adotasse um
+       *   centro de administração local.
+       * ⚠ A chave só é devolvida quando o motor a criou, como lá: sem o
+       *   agente a saída desta função continua idêntica, campo a campo.
+       * ================================================================= */
+      var balde = pac.apropriadoSemEtapa || null;
+      var baldeReal = balde ? Util.num(balde.realizado.valor) : 0;
+      var baldeComp = balde ? Util.num(balde.comprometido.valor) : 0;
+      var saidaPR = {
         obra: obra, orc: orc, etapas: etapasOut,
         naoApropriado: pac.naoApropriado.valor,
         naoApropriadoPorOrigem: pac.naoApropriado.porOrigem,
         comprometidoSemEtapa: pac.comprometidoSemEtapa,
         cobertura: pac.cobertura,
         totalPrevisto: pac.totais.previsto,
-        totalRealizado: pac.totais.realizadoCompetencia + pac.naoApropriado.valor,
+        totalRealizado: pac.totais.realizadoCompetencia + pac.naoApropriado.valor + baldeReal,
         /* ⚠ INCLUI O COMPROMETIDO SEM ETAPA. `compras` não tem campo
            `etapaId` — nenhuma, nunca — então o comprometido POR ETAPA é
            sempre zero e este KPI nascia R$ 0,00 em toda obra, com o Saldo
@@ -7563,11 +8372,13 @@
            está empenhado. A tabela por etapa continua mostrando só o que tem
            etiqueta, e o aviso de cobertura diz quanto ficou de fora. */
         totalComprometido: pac.totais.comprometido +
-                           ((pac.comprometidoSemEtapa && pac.comprometidoSemEtapa.valor) || 0),
+                           ((pac.comprometidoSemEtapa && pac.comprometidoSemEtapa.valor) || 0) + baldeComp,
         saldoTotal: pac.totais.previsto - pac.totais.comprometido -
-                    ((pac.comprometidoSemEtapa && pac.comprometidoSemEtapa.valor) || 0) -
-                    (pac.totais.realizadoCompetencia + pac.naoApropriado.valor)
+                    ((pac.comprometidoSemEtapa && pac.comprometidoSemEtapa.valor) || 0) - baldeComp -
+                    (pac.totais.realizadoCompetencia + pac.naoApropriado.valor + baldeReal)
       };
+      if (balde) saidaPR.apropriadoSemEtapa = balde;
+      return saidaPR;
     },
     renderPrevistoReal: function () {
       /* ⚠ Esta tela É o Financeiro por outro caminho: a coluna "Realizado" é a
@@ -7659,7 +8470,19 @@
           "<td>" + (subSemDado ? '<span class="muted" style="font-size:11px">—</span>' : barra) + '</td>' +
           '<td class="num' + (subSemDado ? ' muted">—' : '" style="color:' + (e.saldo >= 0 ? "var(--verde)" : "var(--vermelho)") + ';font-weight:600">' + Util.fmtMoeda(e.saldo)) + "</td></tr>";
       });
-      if (d.naoApropriado > 0.005) {
+      /* ⚠ `Math.abs(…) > 0.005`, NÃO `> 0` — E É O MESMO CONSERTO QUE O PAINEL
+         GANHOU EM `9da8f46`, que não foi repetido aqui, no consumidor irmão do
+         mesmo arquivo. Roteiro medido em 21/09/2026, obra com um espelho de
+         estorno órfão de −R$ 8.400 sem etapa, lido do HTML renderizado:
+             1 FUNDACAO   R$ 30.000,00  —  R$ 6.300,00  21%  R$ 23.700,00
+             2 ESTRUTURA  R$ 40.000,00  —  R$ 2.500,00   6%  R$ 37.500,00
+             TOTAL        R$ 70.000,00  R$ 0,00  R$ 400,00
+         Soma visível das linhas de nível 1 = R$ 8.800,00; o rodapé da PRÓPRIA
+         tabela diz R$ 400,00. Faltavam R$ 8.400,00 entre as linhas e o total,
+         sem nenhuma linha e sem nenhum aviso, numa tela cuja função é dizer se
+         ainda cabe a próxima compra. O `> 0` descartava o balde negativo e
+         deixava o buraco calado. */
+      if (Math.abs(Util.num(d.naoApropriado)) > 0.005) {
         /* ⚠ POR QUAL PORTA o dinheiro entrou sem etiqueta. Sem esta quebra,
            "Não apropriado: R$ 84.000" e uma reclamacao; com ela, e uma lista
            de consertos — e e o numero que prova, depois, que o carimbo novo
@@ -7668,9 +8491,18 @@
         var ROT = { compra: "compra recebida", nota: "nota fiscal", folha: "folha", medicao: "medição", frota: "frota", semCarimbo: "sem origem" };
         var detalhe = Object.keys(portas).sort(function (a, b) { return portas[b] - portas[a]; })
           .map(function (k) { return (ROT[k] || k) + " " + Util.fmtMoeda(portas[k]); }).join(" · ");
-        html += '<tr style="background:#fff7ed"><td><b>Não apropriado</b> <span class="muted" title="Despesas da obra sem etapa escolhida no lançamento">ⓘ</span></td>' +
+        /* ⚠ E O RECADO MUDA DE LADO QUANDO O BALDE É NEGATIVO. "Escolha a
+           etapa ao lançar no Financeiro" manda consertar um lançamento que
+           não existe: o que está ali é CRÉDITO (espelho de estorno cujo
+           lançamento original já não está na base). Mandar a pessoa procurar
+           o que não existe ensina a ignorar o aviso. */
+        var negativo = Util.num(d.naoApropriado) < 0;
+        var dica = detalhe ? "entrou por: " + Util.esc(detalhe)
+          : (negativo ? "crédito sem etapa (estorno cujo lançamento original não está mais na base) — some as linhas acima e a diferença é esta"
+            : "escolha a etapa ao lançar no Financeiro");
+        html += '<tr style="background:#fff7ed"><td><b>Não apropriado</b> <span class="muted" title="Despesas (ou créditos) da obra sem etapa escolhida no lançamento">ⓘ</span></td>' +
           '<td class="num muted">—</td><td class="num muted">—</td><td class="num">' + Util.fmtMoeda(d.naoApropriado) + '</td>' +
-          '<td><span class="muted" style="font-size:12px">' + (detalhe ? "entrou por: " + Util.esc(detalhe) : "escolha a etapa ao lançar no Financeiro") + '</span></td><td class="num muted">—</td></tr>';
+          '<td><span class="muted" style="font-size:12px">' + dica + '</span></td><td class="num muted">—</td></tr>';
       }
       html += '</tbody><tfoot><tr class="tot"><td><b>TOTAL</b></td><td class="num"><b>' + Util.fmtMoeda(d.totalPrevisto) + '</b></td>' +
         '<td class="num"><b>' + Util.fmtMoeda(d.totalComprometido || 0) + '</b></td>' +
@@ -15977,9 +16809,14 @@
           }
           UI.fecharModal(); App.render();
           var faltamAgora = ComprasLinha.recebimento(vivo).comFalta;
+          /* MEDCC 8A — onde a despesa caiu, pela mesma conta da tela Centro
+             de custo. ⚠ Em try: a entrega e a despesa JÁ ESTÃO gravadas; uma
+             exceção aqui mataria o recado que diz isso, que é dinheiro. */
+          var fraseCC = "";
+          try { fraseCC = valorViagem > 0 ? self._ccFraseReceber(vivo) : ""; } catch (eCC) { fraseCC = ""; }
           UI.toast((fechou ? "Entrega registrada e pedido fechado." : "Entrega parcial registrada.")
             + (est.lancados ? " " + est.lancados + " item(ns) entraram no almoxarifado." : "")
-            + (msgDin ? " " + msgDin : "")
+            + (msgDin ? " " + msgDin : "") + fraseCC
             /* ⚠ o que FALTA é dito com item e quantidade — "parcial" sozinho não
                diz atrás de que ir */
             + (faltamAgora.length ? " Ainda falta: " + faltamAgora.slice(0, 3).map(function (l) { return Util.fmtNum(l.falta, 2) + " " + Util.unidadeExibir(l.unidade || "") + " de " + l.descricao; }).join("; ") + (faltamAgora.length > 3 ? " e mais " + (faltamAgora.length - 3) : "") + "." : "")
@@ -17138,6 +17975,16 @@
           '</b>. <button class="btn sm" data-gacao="compras-obra">Ver todas as obras</button></div>';
       }
       html += '<table class="tbl"><thead><tr><th>Nº</th><th>Fornecedor</th><th>Obra</th><th>Descrição</th><th class="num">Valor</th><th>Status</th><th style="min-width:140px">Entrega</th><th></th></tr></thead><tbody>';
+      /* MEDCC 8A — índices montados UMA vez por desenho (a lista pode ter
+         centenas de pedidos): centros e decisões `PC_` por id, lista crua */
+      var ccPorId = {}, decPC = {};
+      listaTodas("centrocusto").forEach(function (x) { if (x && x.id) ccPorId[String(x.id)] = x; });
+      listaTodas("cc_aprop").forEach(function (x) { if (x && x.id && String(x.id).indexOf("ap_PC_") === 0) decPC[String(x.id)] = x; });
+      var rotCC = function (id) {
+        var x = ccPorId[String(id || "")];
+        if (!x) return "(centro apagado)";
+        return ((x.codigo ? String(x.codigo) + " " : "") + String(x.nome || "")).trim() || String(id);
+      };
       cs.forEach(function (c) {
         var ob = obras.filter(function (o) { return String(o.id) === String(c.obraId); })[0];
         /* A AÇÃO MORA NA LINHA, POR ESTADO. Cada status tem os botões que
@@ -17204,10 +18051,390 @@
            excluída passar por compra do escritório, que é outra coisa */
         var celObraC = ob ? Util.esc(ob.nome)
           : (String(c.obraId || "").trim() ? '<span style="color:var(--amarelo)">obra excluída</span>' : "—");
+        /* MEDCC 8A — o centro do pedido, como LINHA da célula Obra e não como
+           coluna nova: a coluna de ações já sai da tela em 1400 px (ver os ⚠
+           dos rótulos curtos acima), e uma coluna a mais empurraria o Receber
+           para fora. Só nome — o comprador não vê valor de centro (K20). */
+        var ccLin = decPC["ap_PC_" + String(c.id)];
+        var ccTxt = ccLin ? (Util.arr(ccLin.pt).length ? "dividido em " + Util.arr(ccLin.pt).length + " centros" : rotCC(ccLin.cc)) + " (decisão)"
+          : (c.ccId ? rotCC(c.ccId) : "");
+        if (ccTxt) celObraC += '<div class="muted" style="font-size:11px" data-cc-pedido="' + Util.esc(String(c.id)) + '">Centro: ' + Util.esc(ccTxt) + "</div>";
         html += '<tr><td style="cursor:pointer" data-gopen="compras:' + c.id + '"><b>' + Util.esc(c.numero || "—") + "</b></td><td>" + Util.esc(c.fornecedorNome || "—") + "</td><td>" + celObraC + "</td><td>" + Util.esc(c.descricao || "—") + '</td><td class="num">' + Util.fmtMoeda(c.valor) + "</td><td>" + pill(c.status) + self._aprovLinha(c) + '</td><td data-ct-entrega="' + c.id + '" style="min-width:140px">' + celEntrega + '</td><td class="num">' + acao + "</td></tr>";
       });
       return html + "</tbody></table>";
     },
+
+    /* =====================================================================
+     * MEDCC 8A — O CENTRO DE CUSTO NOS DOCUMENTOS DE COMPRA
+     * (ESPEC-medicao-cc §1.8, §1.15, §4.10 e K20 — fatia mc-8A, dono DINHEIRO)
+     *
+     * Requisição, cotação e pedido carregam `ccId` (o centro que a pessoa
+     * escolheu) e `etapaId` (DERIVADO dele: o nó do orçamento de onde o centro
+     * gerado nasceu). Quem escreve os dois é SÓ `CentroCusto.doDocumento`,
+     * chamado por aqui em dois momentos: a coleta do formulário (quando a
+     * pessoa mexeu no select, §1.15) e a cópia da cadeia requisição → cotação
+     * → pedido. É o `etapaId` do pedido que leva o comprometido e a despesa da
+     * entrega à etapa certa no Previsto × Realizado e na tela Centro de custo.
+     *
+     * ⚠ PEDIDO COM DESPESA, NOTA OU ENTREGA NÃO MUDA DE CENTRO POR AQUI.
+     *   A despesa da entrega não carrega centro nenhum (MC1): ela herda o do
+     *   pedido pelo carimbo `docTipo:"PC"`. Trocar o centro do pedido depois
+     *   disso MOVE dinheiro já lançado — pago, às vezes — de um centro para
+     *   outro sem ninguém confirmar o valor (skill `dinheiro` §5 e §6, D20). E
+     *   o recebimento regrava o pedido inteiro em outro aparelho: a troca
+     *   daqui e a entrega de lá disputariam o mesmo registro no merge.
+     *   A porta que a espec prevê é [Mudar centro] (decisão `cc_aprop PC_`,
+     *   confirmando o valor pago). Ela grava pela `_ccGravarEscolha`, que
+     *   confere pago pela `CCAgente.pagosAfetados` — e o `js/ccagente.js` não
+     *   existe em branch nenhum (22/09/2026). Gravar decisão sem o motor que a
+     *   aplica faria a tela Centro de custo de TODAS as obras dizer "não posso
+     *   afirmar" (`_ccNumeros`). Por isso o select trava, DIZ por quê e aponta
+     *   a porta que existe hoje: a Etapa da despesa, no Financeiro (a etapa
+     *   própria do lançamento manda sobre a do pedido — régua do `CustoEtapa`).
+     *
+     * ⚠ A CÓPIA DA CADEIA NUNCA RECUSA (crítica D21). Recusar ali travaria a
+     *   criação do PEDIDO por causa de um centro que alguém desativou meses
+     *   depois da requisição — a pessoa ficaria sem conseguir comprar, com o
+     *   motivo num campo que nem estava olhando. O documento novo nasce SEM
+     *   centro e o recado diz qual centro ficou para trás e por quê.
+     *
+     * ⚠ REQUISIÇÃO NÃO PERGUNTA AO FINANCEIRO (skill `dinheiro` §9): ela nunca
+     *   lançou dinheiro, e procurar lançamento dela manda a pessoa atrás do que
+     *   não existe. Só o pedido tem trava.
+     * ===================================================================== */
+    _CC_DOC_CONTROLE: { requisicoes: "g-cc", compras: "g-cc", cotacoes: "ct-cc" },
+    _CC_DOC_OBRA: { requisicoes: "g-obra", compras: "g-obra", cotacoes: "ct-obra" },
+    _CC_DOC_NOME: { requisicoes: "requisição", compras: "pedido", cotacoes: "cotação" },
+    _CC_DOC_ART: { requisicoes: "a", compras: "o", cotacoes: "a" },
+
+    /* o centro no DISCO (lista crua): a guarda confere o que existe, e não o
+       recorte que a tela do sub-usuário mostra */
+    _ccDocCentro: function (ccId) {
+      var id = String(ccId || ""), l, i;
+      if (!id) return null;
+      l = listaTodas("centrocusto");
+      for (i = 0; i < l.length; i++) if (l[i] && String(l[i].id) === id) return l[i];
+      return null;
+    },
+    /* o nome que a pessoa lê — código e nome, NUNCA valor (K20: o comprador
+       escolhe o centro vendo nomes, sem enxergar o dinheiro da obra) */
+    _ccDocRotulo: function (ccId) {
+      var id = String(ccId || "");
+      if (!id) return "";
+      var c = this._ccDocCentro(id);
+      if (!c) return "(centro apagado — id " + id.slice(0, 6) + "…)";
+      return ((c.codigo ? String(c.codigo) + " " : "") + String(c.nome || "")).trim() || id;
+    },
+    /* decisão `cc_aprop PC_<id do pedido>` — SÓ LEITURA. Nenhuma versão
+       publicada grava decisão (quem grava é o [Mudar centro], que espera o
+       agente); se uma chegar pela nuvem de uma versão mais nova, é ela o centro
+       que vale, e o select não pode fingir que o do pedido manda. */
+    _ccDocDecisao: function (ent, doc) {
+      if (ent !== "compras" || !doc || !doc.id) return null;
+      var alvo = "ap_PC_" + String(doc.id), l = listaTodas("cc_aprop"), i;
+      for (i = 0; i < l.length; i++) if (l[i] && String(l[i].id) === alvo) return l[i];
+      return null;
+    },
+    /* por que o centro deste PEDIDO não muda mais pelo formulário — ou null.
+       ⚠ A NOTA ENTRA JUNTO da despesa e da entrega: a despesa da nota chega ao
+       centro pelos pedidos dela (§4.3, 4f); trocar o centro do pedido moveria
+       o dinheiro da nota do mesmo jeito que o da entrega. */
+    _ccDocTrava: function (ent, doc) {
+      if (ent !== "compras" || !doc || !doc.id) return null;
+      var lanc = null;
+      try { lanc = this._lancVivoDoDoc("compras", doc.id); } catch (eL) { lanc = null; }
+      if (lanc) return { motivo: "despesa", lanc: lanc };
+      var nts = (typeof CompraNota !== "undefined" && CompraNota.notasDoPedido) ? CompraNota.notasDoPedido(doc) : [];
+      if (nts.length) return { motivo: "nota", notas: nts };
+      var rec = (typeof ComprasLinha !== "undefined" && ComprasLinha.recebimento) ? ComprasLinha.recebimento(doc) : null;
+      if ((rec && rec.iniciado) || String(doc.status || "") === "recebido" || doc.dataRecebimento) return { motivo: "entrega" };
+      return null;
+    },
+    /* ⚠ A PERMISSÃO É CONFERIDA NA FUNÇÃO QUE GRAVA, e não só no desenho: o
+       select some para quem não acompanha a obra, mas a coleta pergunta de
+       novo (o formulário pode ter sido aberto por outro caminho). */
+    _ccDocPode: function (obraId) {
+      if (!this._medcc("ccDocumentos")) return { ok: false, motivo: "chave", msg: "A escolha de centro de custo nos documentos de compra está desligada nesta instalação — nada foi mudado." };
+      if (typeof CentroCusto === "undefined" || !CentroCusto.doDocumento || !CentroCusto.optsDados) {
+        return { ok: false, motivo: "motor", msg: "O módulo de centros de custo (js/centrocusto.js) não carregou neste aparelho — o centro não foi mudado. Recarregue o app." };
+      }
+      var A = (typeof Auth !== "undefined" && Auth.podeObra) ? Auth : null;
+      if (obraId && A && !A.podeObra(obraId)) {
+        return { ok: false, motivo: "obra", msg: "Você não acompanha esta obra — só quem a acompanha escolhe o centro de custo dos documentos dela." };
+      }
+      return { ok: true, motivo: "" };
+    },
+    /* o conteúdo da caixa do centro: o select e a nota.
+       `opc.obraId` = a obra que o formulário mostra AGORA (muda quando a pessoa
+       troca a obra); `opc.mostrado` = o valor mostrado ao ABRIR (vai no
+       `data-mostrado`, e é contra ele que a coleta decide se a pessoa mexeu);
+       `opc.selecionado`/`opc.perdido` só vêm da troca de obra. */
+    _ccDocMiolo: function (ent, doc, opc) {
+      opc = opc || {}; doc = doc || {};
+      var idc = this._CC_DOC_CONTROLE[ent], nome = this._CC_DOC_NOME[ent] || "documento", art = this._CC_DOC_ART[ent] || "o";
+      var obraId = String(opc.obraId != null ? opc.obraId : (doc.obraId || ""));
+      var atual = String(doc.ccId || "");
+      var mostrado = String(opc.mostrado != null ? opc.mostrado : atual);
+      /* ⚠ `data-mostrado` SÓ NO DOCUMENTO QUE JÁ EXISTE (§1.15-3): o novo grava
+         o valor inicial do controle habilitado */
+      var attrM = doc.id ? ' data-mostrado="' + Util.esc(mostrado) + '"' : "";
+      var nota = "";
+      var dec = this._ccDocDecisao(ent, doc);
+      var trava = dec ? null : this._ccDocTrava(ent, doc);
+      if (dec || trava) {
+        var ef;
+        if (dec) {
+          var nPt = Util.arr(dec.pt).length;
+          ef = (nPt ? "Dividido em " + nPt + " centros" : this._ccDocRotulo(dec.cc)) + " — por decisão de " + (dec.por || "alguém") +
+            ((dec.atualizadoEm || dec.criadoEm) ? " em " + Util.fmtDia(dec.atualizadoEm || dec.criadoEm) : "");
+          nota = "Esta escolha foi gravada por uma versão mais nova do sistema, com a confirmação do valor. Mudá-la exige o motor de apropriação, que não está neste aparelho — atualize o sistema.";
+        } else {
+          ef = atual ? this._ccDocRotulo(atual) + " — pelo pedido" : "— sem centro de custo —";
+          var porQue = trava.motivo === "despesa"
+            ? "este pedido já tem despesa no Financeiro (" + Util.fmtMoeda(Math.abs(Util.num(trava.lanc.valor))) +
+              (trava.lanc.data ? ", lançada em " + Util.fmtDia(trava.lanc.data) : "") + ")"
+            : (trava.motivo === "nota"
+              ? "este pedido já foi faturado pela nota " + trava.notas.map(function (n) { return n.numero || n.id; }).join(", ")
+              : "este pedido já tem entrega registrada");
+          nota = "O centro não muda mais por aqui: " + porQue + ". Trocar agora levaria " +
+            (trava.motivo === "entrega" ? "o que já chegou" : "esse dinheiro") + " a outro centro sem confirmar o valor — e a troca com confirmação ([Mudar centro]) ainda não está neste aparelho.";
+          /* ⚠ A PORTA QUE EXISTE HOJE, e só para quem a abre (crítica F15):
+             porta citada para quem não tem o Financeiro manda a pessoa a uma
+             tela que ela não abre.
+             ⚠ E VALE TAMBÉM PARA A NOTA (fusão 8A × 8B). O dinheiro da nota
+             chega ao centro pelo pedido dela (§4.3-4f), pelo MESMO caminho da
+             despesa do pedido — então a mesma porta o move. MEDIDO no
+             `_ccFatos`: despesa `docTipo:"NF"` + `compraId` de um pedido com
+             centro próprio cai em e2 (`viaCc:true`); com a Etapa e3 gravada
+             na despesa ela passa a cair em e3 (`viaCc:false`), porque a etapa
+             PRÓPRIA do lançamento manda sobre o centro do pedido (4a antes de
+             4e). Sem esta frase a trava da nota ficava sem saída nenhuma — e
+             trava sem porta empurra a pessoa a desfazer o documento para se
+             livrar dela (skill `dinheiro` §6). */
+          if (trava.motivo === "despesa" || trava.motivo === "nota") {
+            var qual = trava.motivo === "nota" ? "a despesa da nota" : "a despesa";
+            nota += (typeof Auth !== "undefined" && Auth.podeModulo && Auth.podeModulo("financeiro"))
+              ? " Para levar " + qual + " a outra etapa do orçamento, mude a Etapa dela no Financeiro."
+              : " Para levar " + qual + " a outra etapa do orçamento, peça a quem cuida do Financeiro.";
+          }
+          /* ⚠ E A ENTREGA TAMBÉM TEM PORTA — ela só não estava escrita. A
+             `comprasDesfazerEntrega` ([Desf. entrega], na linha do pedido)
+             tira a última viagem, e quando o pedido estava "recebido" ela
+             devolve o status e limpa a `dataRecebimento` — que são as TRÊS
+             coisas que esta trava lê. Desfeita a única entrega, o select
+             volta a abrir. Deixar esta sem porta enquanto a da despesa e a da
+             nota têm uma é a meia correção que a skill `dinheiro` chama de
+             pior que nenhuma: a pessoa aprende que o aviso é aleatório.
+             ⚠ E SÓ APROVADOR DESFAZ (a própria função recusa): prometer o
+             botão a quem não pode clicar é porta que o clique seguinte fecha. */
+          if (trava.motivo === "entrega") {
+            nota += (typeof Auth !== "undefined" && Auth.podeAprovar && !Auth.podeAprovar())
+              ? " Se a entrega foi registrada errada, peça a um aprovador para desfazê-la — aí o centro volta a mudar por aqui."
+              : " Se a entrega foi registrada errada, desfaça-a primeiro em [Desf. entrega], na linha do pedido — aí o centro volta a mudar por aqui.";
+          }
+        }
+        return { ro: true, vazio: false,
+          html: campo("Centro de custo", '<select id="' + idc + '" disabled' + attrM + '><option value="' + Util.esc(atual) + '" selected>' + Util.esc(ef) + "</option></select>") +
+            '<div class="muted" id="' + idc + '-nota" style="font-size:12px;margin:-4px 0 8px">' + Util.esc(nota) + "</div>" };
+      }
+      var ccs = listaTodas("centrocusto");
+      var modo = CentroCusto.modoDaObra(obraId, ccs).modo;
+      var sel0 = String(opc.selecionado != null ? opc.selecionado : atual);
+      /* ⚠ CENTRO QUE CONTA A OBRA INTEIRA (cabeçalho, `apura:"obra"`) NÃO É
+         DESTINO (§4.3): ele já soma todo o gasto da obra, e um pedido apontado
+         para ele sairia das linhas da tabela sem cair em "sem centro". Só fica
+         na lista se já for o do documento — select que não sabe mostrar o valor
+         gravado APAGA o valor no primeiro Salvar (§1.15-4). */
+      var usar = ccs.filter(function (c) {
+        if (!c || !c.id) return false;
+        if (String(c.id) === sel0 || String(c.id) === atual) return true;
+        var mo = String(c.obraId || "") === obraId ? modo : "sem-centros";
+        return CentroCusto.normalizar(c, mo).apura !== "obra";
+      });
+      var d = CentroCusto.optsDados(usar, obraId, sel0, {});
+      var escolhiveis = d.opts.filter(function (o) { return o.v !== ""; }).length;
+      /* obra sem centro nenhum (a base instalada inteira, hoje): o formulário
+         fica como era — caixa vazia, controle AUSENTE, nada gravado */
+      if (!escolhiveis && !atual && !opc.perdido) return { ro: false, vazio: true, html: "" };
+      var h = d.opts.map(function (o) {
+        return '<option value="' + Util.esc(o.v) + '"' + (o.sel ? " selected" : "") + ">" + Util.esc(o.t) + "</option>";
+      }).join("");
+      if (opc.perdido) nota = "O centro " + this._ccDocRotulo(opc.perdido) + " era da obra anterior — " + art + " " + nome + " fica sem centro de custo. Escolha um desta obra, se quiser.";
+      else if (ent === "requisicoes" && String(doc.status || "") === "comprada") nota = "O pedido levou uma cópia do centro quando foi gerado — mudar aqui não muda o pedido.";
+      else if (d.avisos.length) nota = d.avisos[0].msg + " Ele continua gravado até você escolher outro.";
+      return { ro: false, vazio: false,
+        html: campo("Centro de custo", '<select id="' + idc + '"' + attrM + ">" + h + "</select>") +
+          (nota ? '<div class="muted" id="' + idc + '-nota" style="font-size:12px;margin:-4px 0 8px">' + Util.esc(nota) + "</div>" : "") };
+    },
+    /* a caixa inteira, para o `corpo` do formulário. Some (string vazia =
+       controle AUSENTE, §1.15-1) com a chave desligada, sem o motor ou para
+       quem não acompanha a obra do documento. */
+    _ccDocCampoHtml: function (ent, doc) {
+      doc = doc || {};
+      if (!this._ccDocPode(String(doc.obraId || "")).ok) return "";
+      var idc = this._CC_DOC_CONTROLE[ent];
+      var m = this._ccDocMiolo(ent, doc, { mostrado: doc._ccMostrado });
+      return '<div id="' + idc + '-caixa" data-cc-doc="' + ent + '"' + (m.ro ? ' data-ro="1"' : "") +
+        (m.vazio ? ' style="display:none"' : "") + ">" + m.html + "</div>";
+    },
+    /* ⚠ O SELECT REPOVOA QUANDO A OBRA MUDA. Os centros são DA obra: trocar a
+       obra e deixar a lista antiga faria a pessoa escolher o centro de outra
+       obra (a coleta recusaria no Salvar, sem ela entender por quê). O que ela
+       tinha escolhido fica, se valer na obra nova; senão cai para "sem centro"
+       e a nota diz qual centro ficou para trás. */
+    _ccDocFiar: function (ent, doc) {
+      var self = this, idc = this._CC_DOC_CONTROLE[ent];
+      var caixa = document.getElementById(idc + "-caixa"), so = document.getElementById(this._CC_DOC_OBRA[ent]);
+      if (!caixa || !so || caixa.getAttribute("data-ro") === "1") return;
+      doc = doc || {};
+      var mostrado = String(doc._ccMostrado != null ? doc._ccMostrado : (doc.ccId || ""));
+      so.addEventListener("change", function () {
+        var s = document.getElementById(idc);
+        var escolhido = s ? String(s.value || "") : "";
+        var novaObra = String(so.value || "");
+        var vale = function (id) {
+          if (!id) return false;
+          var cc = self._ccDocCentro(id);
+          return !!cc && (!String(cc.obraId || "") || String(cc.obraId) === novaObra);
+        };
+        var selecionado = vale(escolhido) ? escolhido : (vale(doc.ccId) ? String(doc.ccId) : "");
+        var perdido = (escolhido && !vale(escolhido)) ? escolhido : "";
+        var m = self._ccDocMiolo(ent, doc, { obraId: novaObra, mostrado: mostrado, selecionado: selecionado, perdido: selecionado ? "" : perdido });
+        caixa.innerHTML = m.html;
+        caixa.style.display = m.vazio ? "none" : "";
+      });
+    },
+    /* A COLETA (§1.15): só escreve quando a pessoa mexeu no select. Devolve
+       `{ok}`; `ok:false` traz o recado — o formulário recusa o Salvar com ele
+       e NADA foi gravado (é validação: roda no `coletar`, antes do gate). */
+    _ccDocColetar: function (ent, obj, registro) {
+      var r = this._coletaMudou(this._CC_DOC_CONTROLE[ent]);
+      if (!r.mudou) return { ok: true, mudou: false };
+      var pd = this._ccDocPode(String(obj.obraId || ""));
+      if (!pd.ok) return { ok: false, msg: pd.msg };
+      var valor = String(r.valor == null ? "" : r.valor);
+      var gravado = String((registro && registro.ccId) || "");
+      var cc = null;
+      if (valor) {
+        cc = this._ccDocCentro(valor);
+        if (!cc) {
+          /* a opção que PRESERVA o centro apagado: escolhê-la é "deixar como está" */
+          if (valor === gravado) return { ok: true, mudou: false };
+          return { ok: false, msg: "O centro de custo escolhido não existe mais neste aparelho (foi apagado enquanto o formulário estava aberto?). Escolha outro." };
+        }
+        if (valor !== gravado) {
+          var ccs = listaTodas("centrocusto");
+          var mo = String(cc.obraId || "") === String(obj.obraId || "") ? CentroCusto.modoDaObra(String(obj.obraId || ""), ccs).modo : "sem-centros";
+          if (CentroCusto.normalizar(cc, mo).apura === "obra") {
+            return { ok: false, msg: "O centro " + this._ccDocRotulo(valor) + " conta a obra inteira — ele não recebe pedido. Escolha um centro de etapa." };
+          }
+        }
+      }
+      var ctx = { obraId: String(obj.obraId || "") };
+      if (ent === "compras") {
+        /* ⚠ A TRAVA LÊ O PEDIDO DO DISCO, não o do modal: uma entrega
+           registrada em outro aparelho enquanto o formulário estava aberto
+           tem de valer aqui. E a despesa é perguntada AO FINANCEIRO (skill
+           `dinheiro` §5), nunca ao status do pedido. */
+        var vivoDisco = (registro && registro.id) ? Store.obter(eid(), "compras", registro.id) : null;
+        var trava = this._ccDocTrava("compras", vivoDisco || registro);
+        if (trava && trava.motivo === "despesa") {
+          var L = trava.lanc;
+          var pago = (typeof FinStatus !== "undefined" && FinStatus.realizado) ? FinStatus.realizado(L) : String(L.status || "") === "pago";
+          ctx.despesaDoPedido = { valor: Math.abs(Util.num(L.valor)), dataPgto: pago ? Util.fmtDia(L.dataPgto || L.data) : "" };
+          /* ⚠ TIRAR O CENTRO TAMBÉM MOVE O DINHEIRO. O `doDocumento` confere a
+             despesa só quando há centro novo: com "— sem centro —" ele apaga
+             `ccId`/`etapaId` e devolve ok — e a despesa lançada (paga, às
+             vezes) iria para "Sem centro de custo" sem confirmação nenhuma.
+             Roteiro medido na bancada desta fatia (test-cc-documentos [3]):
+             select forçado para "" num pedido com despesa → centro apagado.
+             A recusa aqui fecha o caminho; o motor fica como pendência. */
+          if (!cc) {
+            return { ok: false, msg: "Este pedido já tem despesa no Financeiro (" + Util.fmtMoeda(ctx.despesaDoPedido.valor) +
+              (ctx.despesaDoPedido.dataPgto ? ", paga em " + ctx.despesaDoPedido.dataPgto : "") +
+              "): tirar o centro levaria esse dinheiro para \"sem centro\" sem a confirmação do valor. Nada foi mudado." };
+          }
+        } else if (trava) {
+          /* ⚠ A RECUSA TAMBÉM CARREGA A PORTA, e não só a nota do select: a
+             pessoa que forçou o valor por outro caminho lê ESTA frase, não
+             aquela. Recusa sem saída é o que ensina a desfazer o documento
+             para se livrar da trava (skill `dinheiro` §6). */
+          return { ok: false, msg: trava.motivo === "nota"
+            ? "Este pedido já foi faturado por nota fiscal: o centro não muda mais pelo formulário, para o dinheiro da nota não ir a outro centro sem a confirmação do valor. Para levar a despesa da nota a outra etapa do orçamento, mude a Etapa dela no Financeiro."
+            : "Este pedido já tem entrega registrada: o centro não muda mais pelo formulário, para o que já chegou não ir a outro centro sem a confirmação do valor. Se a entrega foi registrada errada, desfaça-a primeiro em [Desf. entrega], na linha do pedido." };
+        }
+      }
+      var res = CentroCusto.doDocumento(obj, cc, ctx);
+      if (!res || !res.ok) return { ok: false, msg: (res && res.recusa) || "O centro de custo não foi aceito — nada foi gravado." };
+      return { ok: true, mudou: true };
+    },
+    /* A CÓPIA DA CADEIA: requisição → cotação → pedido. Nunca recusa (D21):
+       devolve "" quando o centro veio junto, ou o recado de por que o
+       documento novo nasceu sem centro. `etapaId` NUNCA é copiado cru — sai do
+       centro, pelo `doDocumento`, que é o único dono dele (§1.8). */
+    /* ⚠ A CÓPIA NÃO CONSULTA A CHAVE `ccDocumentos`: ela não cria escolha
+       nova, carrega a que a pessoa já fez na requisição (§11.3: o que foi
+       gravado fica e continua lido). Parar a cópia com a chave desligada faria
+       o pedido perder o centro da requisição calado — o D-CC9 da 1.2.81. */
+    _ccDocCopiar: function (entOrigem, origem, destino, obraIdDestino, entDestino) {
+      if (!destino || typeof destino !== "object") return "";
+      delete destino.ccId; delete destino.etapaId;
+      var id = String((origem && origem.ccId) || "");
+      if (!id) return "";
+      var nomeO = (this._CC_DOC_NOME[entOrigem] || "documento") + ((origem && origem.numero) ? " " + origem.numero : "");
+      var deO = (this._CC_DOC_ART[entOrigem] === "a" ? "da " : "do ") + nomeO;
+      var novoD = (this._CC_DOC_ART[entDestino] || "o") + " " + (this._CC_DOC_NOME[entDestino] || "documento") + " novo";
+      novoD = novoD.charAt(0).toUpperCase() + novoD.slice(1);
+      if (typeof CentroCusto === "undefined" || !CentroCusto.doDocumento) {
+        return "O centro de custo " + deO + " não foi copiado: o módulo de centros (js/centrocusto.js) não carregou neste aparelho. " + novoD + " nasceu sem centro.";
+      }
+      var rot = this._ccDocRotulo(id);
+      var cc = this._ccDocCentro(id);
+      if (!cc) return "O centro de custo " + deO + " foi apagado. " + novoD + " nasceu sem centro.";
+      var ativo = !(cc.ativo === false || cc.ativo === 0 || cc.ativo === "0");
+      var outra = !!String(cc.obraId || "") && String(cc.obraId || "") !== String(obraIdDestino || "");
+      var res = CentroCusto.doDocumento(destino, cc, { copia: true, obraId: String(obraIdDestino || "") });
+      if (res && res.ok && destino.ccId) return "";
+      delete destino.ccId; delete destino.etapaId;
+      return "O centro de custo " + rot + " " + deO + (!ativo ? " está desativado" : (outra ? " é de outra obra" : " não pôde ser copiado")) +
+        ". " + novoD + " nasceu sem centro.";
+    },
+    /* a frase do centro no recado do Receber (§4.10). Pela MESMA conta da tela
+       Centro de custo (`_ccFatos`), e não por uma cópia dela: duas réguas
+       para "onde caiu esta despesa" já deram duas respostas nesta base.
+       Só para quem abre a tela (Financeiro + Centro de custo) e só em obra que
+       usa os centros novos; com regra ou decisão no disco e sem o agente, a
+       conta não é completa — e aí nada é afirmado. */
+    _ccFraseReceber: function (pc) {
+      if (!pc || !pc.id || !String(pc.obraId || "")) return "";
+      /* ⚠ O MESMO PORTÃO DA 8B, E NÃO UMA CÓPIA PELA METADE. Roteiro do
+         defeito (revisão adversarial da Onda 8, clique real no [Receber]):
+         com `ccAgente:false` — a chave que o cartão "Compatibilidade" (EM-9)
+         lista como desligada — o `_ccCustoPode` calava a frase do toast de
+         quem lança, as colunas do CSV do Financeiro e o quadro dos
+         Relatórios, e ESTA porta continuava dizendo "Centro de custo: 1
+         FUNDACAO" sobre o MESMO lançamento. Interruptor que deixa uma porta
+         falando é pior que nenhum: quem o desliga acredita que o recurso
+         está desligado. `_ccCustoPode` empacota a chave + o motor +
+         `_ccPode` — abaixo fica só o que é próprio da 8A. */
+      if (!this._ccCustoPode()) return "";
+      if (CentroCusto.modoDaObra(String(pc.obraId), listaTodas("centrocusto")).modo !== "novo") return "";
+      if (typeof CCAgente === "undefined" && (listaTodas("cc_regras").length + listaTodas("cc_aprop").length) > 0) return "";
+      var lanc = this._lancVivoDoDoc("compras", pc.id);
+      if (!lanc) return "";
+      var fatos = this._ccFatos(this._ccCtx(String(pc.obraId))).fatos, f = null, i;
+      for (i = 0; i < fatos.length; i++) if (fatos[i].t === "lanc" && fatos[i].id === String(lanc.id)) f = fatos[i];
+      if (!f) return "";
+      if (!f.cc) return " Sem centro de custo: esta despesa está na linha “Sem centro de custo” da tela Centro de custo.";
+      /* ⚠ A MESMA FRASE DO `comoCaiu` DA 8B para o mesmo fato. As duas portas
+         diziam "(pelo pedido)" aqui e "(pelo centro do pedido)" lá sobre a
+         mesma despesa, e é a mesma pessoa que lê as duas na mesma semana.
+         Quem decidiu vem do `viaCc` do PRÓPRIO fato — ler `pc.ccId` aqui
+         seria a segunda régua para a mesma pergunta. */
+      var fonte = lanc.etapaId ? "pela etapa do lançamento" : (f.viaCc ? "pelo centro do pedido" : "pela etapa do pedido");
+      return " Centro de custo: " + this._ccDocRotulo(f.cc) + " (" + fonte + ").";
+    },
+
     novoCompra: function () { this.formCompra(null); },
     formCompra: function (c) {
       var self = this;
@@ -17234,6 +18461,8 @@
           return (o[0] !== "enviado" && o[0] !== "confirmado") || o[0] === c.status;
         }), c.status || "cotacao"))) + "</div>" +
         '<div class="row">' + campo("Fornecedor", sel("g-forn", optsRec(forn, "nome", c.fornecedorId, "— selecionar —"))) + campo("Obra", sel("g-obra", optsRec(obras, "nome", c.obraId, "— nenhuma —"))) + "</div>" +
+        /* MEDCC 8A — centro de custo do pedido (ver `_ccDocMiolo`) */
+        this._ccDocCampoHtml("compras", c) +
         campo("Descrição do que será comprado *", inp("g-desc", c.descricao, "Ex.: 200 sacos de cimento CP-II 50kg")) +
         '<div class="row">' + campo("Valor total (R$) *", inp("g-valor", c.valor)) + campo("Categoria", sel("g-cat", opts(P.fornCategoria, c.categoria || "material"))) + "</div>" +
         '<div class="row">' + campo("Forma de pagamento", sel("g-forma", '<option value="">—</option>' + opts(P.formaPgto, formaSel))) + campo("Condição de pagamento (como o fornecedor escreveu)", inp("g-condtxt", condTxt, "Ex.: 30 dias após a entrega")) + "</div>" +
@@ -17324,10 +18553,20 @@
            recebeu entrega a tabela é leitura, e ler de lá apagaria os itens. */
         var itensForm = self._lerItensPedido(c.itens);
         if (itensForm) obj.itens = itensForm;
+        /* ⚠ centro de custo: validação ANTES do gate (ver `_ccDocColetar`) */
+        var rCC = self._ccDocColetar("compras", obj, c);
+        if (!rCC.ok) { UI.toast(rCC.msg, "erro", 9000); return false; }
         obj.status = v("g-status");
         if (!self._gateStatusForm(obj, stAntigo, "compras")) return false; // G3 fix: aprovar/rejeitar pelo form exige permissão + auditoria
         return true;
       }, function (obj) {
+        /* a frase do centro na SEGUNDA porta do Receber (o select de Status):
+           as duas portas dizem a mesma coisa sobre onde a despesa caiu */
+        if (obj && stAntigo !== "recebido" && obj.status === "recebido") {
+          var fraseCC = "";
+          try { fraseCC = self._ccFraseReceber(obj); } catch (eFr) { fraseCC = ""; }
+          if (fraseCC) UI.toast("Pedido " + (obj.numero || "") + " —" + fraseCC, "ok", 7000);
+        }
         /* ⚠ DEPOIS DO SAVE, e só aqui. O coletor roda ANTES de gravar: soltar a
            requisição lá a devolveria para a fila mesmo quando uma validação
            seguinte recusasse o save — e o pedido continuaria vivo. Ver
@@ -17364,6 +18603,7 @@
         }
       });
       _fiar();
+      this._ccDocFiar("compras", c);
     },
     /* liga o "+ item" e o × da tabela de itens do pedido. Trabalha no DOM que
        o `_itensPedidoBloco` acabou de desenhar — sem re-renderizar o modal
@@ -22225,7 +23465,7 @@
     },
     novoPonto: function () { this.formPonto(null); },
     formPonto: function (p) {
-      p = p || {}; var colabs = lista("colaboradores"), obras = lista("obras");
+      p = p || {}; var stAntigoPt = p.status || ""; var colabs = lista("colaboradores"), obras = lista("obras");
       var comp = p.competencia || mesLocal();
       var corpo =
         '<div class="row">' + campo("Competência (mês)", inp("g-comp", comp, "", "month")) + campo("Colaborador *", sel("g-colab", optsRec(colabs, "nome", p.colaboradorId, "— selecionar —"))) + "</div>" +
@@ -22240,6 +23480,10 @@
         obj.valor = nv("g-valor"); obj.status = v("g-status"); obj.obs = v("g-obs");
         var col = lista("colaboradores").filter(function (x) { return x.id === obj.colaboradorId; })[0];
         obj.colaboradorNome = col ? col.nome : "";
+        /* ⚠ A QUINTA PORTA DE CUSTO, gêmea da folha — ver `_gateStatusCusto`.
+           No FIM porque `colaboradorNome` (que vai na descrição) e o valor só
+           existem aqui, e porque nenhuma validação recusa o save depois. */
+        if (!Gestao._gateStatusCusto(obj, stAntigoPt, "ponto")) return false;
         return true;
       });
     },
@@ -22289,10 +23533,46 @@
           if (Gestao._bloqueado()) return;
           var valor = nv("g-cvalor"); if (!(valor > 0)) { UI.toast("Informe o valor do custo.", "erro"); return; }
           var ct = v("g-ctipo"), data = v("g-data"), km = nv("g-ckm"), obraId = v("g-cobra"), desc = v("g-cdesc");
-          Store.salvar(eid(), "frota_mov", { frotaId: fr.id, frotaNome: fr.nome, tipo: ct, valor: valor, km: km, data: data, obraId: obraId, descricao: desc });
+          /* ⚠ O USO DO VEÍCULO É O DOCUMENTO; A DESPESA É O DINHEIRO DELE.
+             As duas gravações eram cegas nos dois sentidos: ninguém conferia
+             se o `frota_mov` entrou (disco cheio → despesa órfã, sem nada que
+             dissesse de que veículo ela veio) e ninguém conferia se a despesa
+             entrou (uso registrado e custo fora da obra). E o toast dizia
+             "Custo lançado" nos dois casos — recado que mente é pior que
+             recado nenhum. */
+          var mov = { frotaId: fr.id, frotaNome: fr.nome, tipo: ct, valor: valor, km: km, data: data, obraId: obraId, descricao: desc };
+          if (Gestao._naoGravou(Store.salvar(eid(), "frota_mov", mov))) {
+            /* modal fica ABERTO: nada foi gravado, e o que a pessoa digitou
+               ainda está aqui para o clique seguinte */
+            UI.toast("Nada foi gravado: o uso do veículo não coube no armazenamento deste aparelho (veja o aviso vermelho). Libere espaço e lance de novo — o Financeiro não foi tocado.", "erro");
+            return;
+          }
+          /* o hodômetro FICA mesmo que a despesa seja recusada lá embaixo: a
+             leitura do KM é um fato do veículo, não do lançamento, e
+             desfazê-la faria a próxima leitura parecer um salto */
           if (km) { fr.km = km; Store.salvar(eid(), "frota", fr); }
-          Store.salvar(eid(), "financeiro", { data: data, desc: rot(P.frotaCusto, ct) + " - " + fr.nome + (desc ? " (" + desc + ")" : ""), tipo: "despesa", categoria: "equipamento", valor: valor, status: "pago", obraId: obraId, fornecedor: fr.nome });
-          UI.fecharModal(); App.render(); UI.toast("Custo lançado no Financeiro.", "ok");
+          /* ⚠ CARIMBO DE ORIGEM (`FRT` + id do `frota_mov`): sem ele esta
+             despesa é INVISÍVEL — não há como saber que o dinheiro deste uso
+             de veículo já entrou, nem ligar o custo ao veículo que o gerou.
+             Cada [Registrar custo] cria um `frota_mov` NOVO, então aqui não
+             existe relançamento para travar (ao contrário da folha e do
+             ponto, que têm documento fixo e são relançáveis). */
+          var lancFr = { data: data, desc: rot(P.frotaCusto, ct) + " - " + fr.nome + (desc ? " (" + desc + ")" : ""), tipo: "despesa", categoria: "equipamento", valor: valor, status: "pago", obraId: obraId, fornecedor: fr.nome, docTipo: Gestao._CARIMBO_CUSTO.frota_mov, docId: mov.id, docNumero: "" };
+          if (Gestao._naoGravou(Store.salvar(eid(), "financeiro", lancFr))) {
+            /* despesa recusada: o uso do veículo sai junto (com lápide, para
+               não voltar pela nuvem), senão fica um documento dizendo que o
+               custo existe sem custo nenhum no Financeiro */
+            var tirou = false;
+            try { tirou = Store.excluir(eid(), "frota_mov", mov.id) !== false; } catch (eEx) { tirou = false; }
+            UI.fecharModal(); App.render();
+            UI.toast(tirou
+              ? "Nada foi lançado: a despesa de " + Util.fmtMoeda(valor) + " não pôde ser gravada no Financeiro deste aparelho (veja o aviso vermelho), e o uso do veículo foi desfeito. Resolva o aviso e lance de novo."
+              : "ATENÇÃO: a despesa de " + Util.fmtMoeda(valor) + " NÃO entrou no Financeiro e o uso do veículo NÃO pôde ser desfeito. Resolva o aviso vermelho e apague esse uso na ficha do veículo, ou lance a despesa à mão no Financeiro.", "erro");
+            return;
+          }
+          /* ⚠ o select de centro (`cc_aprop FRT_`) espera o agente — ver o
+             ⚠ do gasto rápido e a região "MEDCC: custos (8B)" */
+          UI.fecharModal(); App.render(); Gestao._ccCustoToast("Custo lançado no Financeiro.", [lancFr], "ok");
         } }
       ]);
     },
@@ -22484,7 +23764,13 @@
          para conteúdo, que é palpite — mas palpite que se sabe palpite. */
       var itens = this._reqItens(r).map(function (it) { return { codigo: it.codigo || "", descricao: it.descricao, unidade: it.unidade, quantidade: Util.num(it.quantidade), precoRef: Util.num(it.precoRef), reqItemId: it.id || "" }; });
       if (!itens.length) { UI.toast("A requisição não tem itens pra cotar.", "erro"); return; }
-      this.formCotacao({ numero: this._proxNumeroCot(), data: hojeLocal(), obraId: r.obraId || "", requisicaoId: r.id, descricao: r.descricao || "", status: "rascunho", itens: itens, fornecedores: [] });
+      var novaCot = { numero: this._proxNumeroCot(), data: hojeLocal(), obraId: r.obraId || "", requisicaoId: r.id, descricao: r.descricao || "", status: "rascunho", itens: itens, fornecedores: [] };
+      /* MEDCC 8A — o centro da requisição vai para a cotação (e dela para o
+         pedido). A cotação ainda não está gravada: o Salvar do Mapa é quem a
+         grava, com o centro que o select mostrar. */
+      var avisoCC = this._ccDocCopiar("requisicoes", r, novaCot, novaCot.obraId, "cotacoes");
+      this.formCotacao(novaCot);
+      if (avisoCC) UI.toast(avisoCC, "aviso", 10000);
     },
     // lê a grade do modal -> objeto de cotação (itens + fornecedores + preços)
     _cotDoForm: function (base, soGrade) {
@@ -22546,6 +23832,38 @@
          de cima já devolveu a resposta certa, e unir ali seria reordenar o log
          à toa a cada Salvar. */
       if (vivo && vivo.historico && vivo.historico.length && base && base.historico && base.historico.length) cot.historico = this._cotUnirHistorico(base.historico, vivo.historico);
+      /* ⚠ MEDCC 8A — O CENTRO DE CUSTO NÃO PODE MORRER NESTA MONTAGEM. Este
+         objeto é construído do zero a cada Salvar (não é o registro clonado),
+         então campo que não é copiado aqui é campo APAGADO no primeiro Salvar
+         — a cotação vinda da requisição perderia o centro sem ninguém tocar
+         nele. Vem do registro (vivo, senão o do modal) e só muda se a pessoa
+         mexeu no select (§1.15). Recusa da coleta (rara: centro apagado com
+         o Mapa aberto) fica em `_cotCcRecusa` para o Salvar e o Concluir.
+         ⚠ E ISTO SÓ PROTEGE ESTE APARELHO — PERDA DECLARADA (ESPEC §11.5).
+         Medido com o código real da 1.2.81 (`git show 1e04763:js/gestao.js`,
+         `tools/test-cc-compat-1281.js` [E]): o `_cotDoForm` DELA monta a
+         cotação do zero e não conhece `ccId` nem `etapaId` — um Salvar no
+         Mapa de um aparelho ainda na 1.2.81 apaga os dois, calado, e a nuvem
+         leva a perda para os aparelhos novos. Depois disso o pedido gerado
+         dessa cotação nasce sem centro e a despesa da entrega cai em "Sem
+         centro de custo". O PEDIDO e a REQUISIÇÃO não têm esse problema (a
+         1.2.81 os edita por cima do registro clonado, e os campos que ela não
+         conhece sobrevivem). Não se reconstrói o `ccId` da requisição aqui de
+         propósito: "— sem centro de custo —" é escolha legítima, e nada no
+         registro distingue a escolha da perda — reconstruir desfaria a decisão
+         de quem escolheu. Com 38 instalações, a frota nunca está toda na
+         mesma versão; quem for mexer aqui leia a §11.5 antes. */
+      if (fonte && fonte.ccId) cot.ccId = fonte.ccId;
+      if (fonte && fonte.etapaId) cot.etapaId = fonte.etapaId;
+      if (!soGrade) {
+        this._cotCcRecusa = "";
+        var rCC = this._ccDocColetar("cotacoes", cot, fonte);
+        if (!rCC.ok) {
+          this._cotCcRecusa = rCC.msg;
+          if (fonte && fonte.ccId) cot.ccId = fonte.ccId; else delete cot.ccId;
+          if (fonte && fonte.etapaId) cot.etapaId = fonte.etapaId; else delete cot.etapaId;
+        }
+      }
       /* Se a publicação veio do `base`, o `status` do vivo também não sabe
          dela e diria "rascunho": registro contraditório — publicação viva com
          o status de quem nunca publicou, e a lista escondendo isso.
@@ -23002,7 +24320,9 @@
      * do segundo colocado diz por que aquele pedido nasceu depois.
      * Devolve o registro gravado, ou null quando o disco recusou.
      * ================================================================= */
-    _pcDaCotacao: function (cot, p, hojePed, modo, obsExtra) {
+    /* `avisosCC` (opcional): lista onde cai o recado da cópia do centro de
+       custo — quando o pedido nasce sem o centro da cotação (MEDCC 8A). */
+    _pcDaCotacao: function (cot, p, hojePed, modo, obsExtra, avisosCC) {
       var self = this;
       var pc = proxNumero("compras", { prefixo: "PC-" + new Date().getFullYear() + "-", casas: 3 });
       /* a autoria vai junto: sem ela quem gerou o pedido aprova o proprio
@@ -23047,7 +24367,7 @@
           origemBase = "mapa-antes-da-negociacao";
         }
       }
-      var rec = Store.salvar(eid(), "compras", self._aprovCarimbar({ numero: pc, data: hojePed, descricao: (cot.descricao || "Cotação " + cot.numero) + " — " + p.fornecedorNome, obraId: cot.obraId, fornecedorId: p.fornecedorId, fornecedorNome: p.fornecedorNome, valor: p.total, status: "cotacao", categoria: "material", itens: p.itens, cotacaoId: cot.id || null,
+      var novoPc = self._aprovCarimbar({ numero: pc, data: hojePed, descricao: (cot.descricao || "Cotação " + cot.numero) + " — " + p.fornecedorNome, obraId: cot.obraId, fornecedorId: p.fornecedorId, fornecedorNome: p.fornecedorNome, valor: p.total, status: "cotacao", categoria: "material", itens: p.itens, cotacaoId: cot.id || null,
         /* ⚠ `formaPgto` só recebe CHAVE de P.formaPgto; o texto livre do
            fornecedor vai em `condPgtoTexto` — ver `_formaPgtoChave`.
            Gravar o texto em `formaPgto` era o que o select do
@@ -23083,7 +24403,13 @@
            requisição, e ela fica presa em "Comprada" para sempre
            (ver `_liberaRequisicaoSemPedido`). */
         requisicaoId: cot.requisicaoId || null,
-        obs: (prazo ? "Prazo de entrega: " + prazo + " dia(s). " : "") + "Gerado pelo Mapa de Cotação " + cot.numero + " (cenário " + (modo === "misto" ? "misto" : modo === "parcial" ? "parcial — só os itens já cotados" : "fornecedor único") + ")." }, true));
+        obs: (prazo ? "Prazo de entrega: " + prazo + " dia(s). " : "") + "Gerado pelo Mapa de Cotação " + cot.numero + " (cenário " + (modo === "misto" ? "misto" : modo === "parcial" ? "parcial — só os itens já cotados" : "fornecedor único") + ")." }, true);
+      /* MEDCC 8A — o centro da cotação vai para o pedido pela `_ccDocCopiar`,
+         que deriva o `etapaId` do centro (nunca copia cru) e nunca recusa: o
+         pedido nasce sem centro, com o recado, se o da cotação não valer mais. */
+      var avisoCC = self._ccDocCopiar("cotacoes", cot, novoPc, cot.obraId, "compras");
+      var rec = Store.salvar(eid(), "compras", novoPc);
+      if (rec && avisoCC && avisosCC && avisosCC.push) avisosCC.push(avisoCC);
       if (rec && obsExtra) { rec.obs = (rec.obs || "") + " " + obsExtra; Store.salvar(eid(), "compras", rec); }
       return rec || null;
     },
@@ -23191,12 +24517,14 @@
             condPgto: o.condPgto, prazoDias: o.prazoDias, itens: o.itens, frete: o.frete,
             total: Math.round((o.soma + o.frete) * 100) / 100 };
           /* MESMO montador do "Concluir e gerar pedidos" — ver `_pcDaCotacao` */
+          var avisosOF = [];
           var rec = self._pcDaCotacao(cot, pReg, hojeLocal(), "unico",
-            "Emitido depois da conclusão, para os itens que ficaram sem pedido vivo.");
+            "Emitido depois da conclusão, para os itens que ficaram sem pedido vivo.", avisosOF);
           if (!rec) { UI.toast("Não consegui gravar o pedido: o armazenamento do navegador recusou. Nada foi emitido.", "erro"); return; }
           UI.fecharModal(); App.render();
           UI.toast("Pedido " + (rec.numero || "") + " emitido para " + o.nome + " (" + o.itens.length + " item(ns), "
-            + Util.fmtMoeda(rec.valor) + "). Ele nasce em \"Aguardando aprovação\" — aprove em Compras para poder enviar ao fornecedor.", "ok");
+            + Util.fmtMoeda(rec.valor) + "). Ele nasce em \"Aguardando aprovação\" — aprove em Compras para poder enviar ao fornecedor."
+            + (avisosOF.length ? " " + avisosOF[0] : ""), avisosOF.length ? "aviso" : "ok", avisosOF.length ? 12000 : undefined);
         } }
       ]);
     },
@@ -23334,6 +24662,8 @@
         + ' <button type="button" class="btn sm" id="ct-encerrar-trava" style="margin-left:4px">Encerrar a cotação online</button></div>' : "";
       var corpo =
         '<div class="row">' + campo("Nº", inp("ct-num", c.numero)) + campo("Data", inp("ct-data", c.data, "", "date")) + campo("Obra", sel("ct-obra", optsRec(obras, "nome", c.obraId, "— nenhuma —"))) + "</div>" +
+        /* MEDCC 8A — centro de custo da cotação (vai para os pedidos dela) */
+        self._ccDocCampoHtml("cotacoes", c) +
         campo("Descrição", inp("ct-desc", c.descricao || "", "ex.: Materiais da alvenaria — Bloco B")) +
         (c.requisicaoId ? '<p class="muted" style="font-size:12px">Vinculada à requisição ' + Util.esc((Store.obter(eid(), "requisicoes", c.requisicaoId) || {}).numero || "") + "</p>" : "") +
         '<div class="row" style="gap:10px;flex-wrap:wrap;margin:6px 0">' + cabF + "</div>" + faixaTrava +
@@ -23376,6 +24706,8 @@
           var jaTemS = self._cotPedidosGerados(c && c.id);
           if (jaTemS.length) { UI.toast(self._cotMsgSalvarComPedidos(jaTemS), "erro"); return; }
           var cot = self._cotDoForm(c);
+          /* MEDCC 8A — recusa da coleta do centro (ver `_cotDoForm`): nada é gravado */
+          if (self._cotCcRecusa) { UI.toast(self._cotCcRecusa, "erro", 9000); self._cotCcRecusa = ""; return; }
           var erros = (typeof Cotacoes !== "undefined") ? Cotacoes.validar(cot) : [];
           if (erros.length) { UI.toast(erros[0], "erro"); return; }
           Store.salvar(eid(), "cotacoes", cot);
@@ -23407,6 +24739,7 @@
             UI.toast(self._cotMsgPedidosJaGerados(jaTem0, c && c.id), "erro"); UI.fecharModal(); App.render(); return;
           }
           var cot = self._cotDoForm(c);
+          if (self._cotCcRecusa) { UI.toast(self._cotCcRecusa, "erro", 9000); self._cotCcRecusa = ""; return; }
           var erros = (typeof Cotacoes !== "undefined") ? Cotacoes.validar(cot) : ["Motor de cotações não carregado."];
           if (erros.length) { UI.toast(erros[0], "erro"); return; }
           Store.salvar(eid(), "cotacoes", cot);
@@ -23424,6 +24757,8 @@
         };
         var box = document.getElementById("ct-linhas"); if (!box) return;
         var raiz = box.closest(".modal") || document;
+        /* MEDCC 8A — o select do centro repovoa quando a obra muda */
+        self._ccDocFiar("cotacoes", c);
         /* bloco "Cotar online" (#ct-online) — só em cotação aberta */
         if (!ehConcluida && typeof CotOnlineUI !== "undefined" && CotOnlineUI.wireForm) { try { CotOnlineUI.wireForm(c, raiz); } catch (eCo) { console.warn("cotonline", eCo); } }
         if (ehConcluida) { Array.prototype.forEach.call(raiz.querySelectorAll("input,select"), function (el2) { el2.disabled = true; }); atualiza(); return; }
@@ -23485,6 +24820,14 @@
         function _ctRefazer() {
           var atual = self._cotDoForm(c);
           atual._nF = Math.max(2, atual.fornecedores.length);
+          /* ⚠ MEDCC 8A — O "MOSTRADO AO ABRIR" ATRAVESSA O REDESENHO. O Mapa se
+             redesenha inteiro ao tirar item ou fornecedor, e o objeto novo já
+             traz o centro que a pessoa escolheu. Sem isto, o redesenho tomaria
+             a escolha por "o que estava gravado" e o Salvar seguinte a leria
+             como intocada — e voltaria ao centro do disco. Campo de memória,
+             como o `_nF`: o `_cotDoForm` monta o registro do zero e não o leva
+             ao disco. */
+          atual._ccMostrado = c._ccMostrado != null ? c._ccMostrado : String(c.ccId || "");
           UI.fecharModal(); self.formCotacao(atual);
         }
         raiz.addEventListener("click", function (ev) {
@@ -23525,6 +24868,7 @@
           // re-renderiza com +1 coluna preservando o que já foi digitado (colunas sem nome se perdem — nomeie antes)
           var atual = self._cotDoForm(c);
           atual._nF = Math.min(maxF, Math.max(nF + 1, atual.fornecedores.length + 1));
+          atual._ccMostrado = c._ccMostrado != null ? c._ccMostrado : String(c.ccId || "");   // ver `_ctRefazer`
           UI.fecharModal(); self.formCotacao(atual);
         };
         atualiza();
@@ -23662,6 +25006,9 @@
              desfazer funcionou: `Store.excluir` não devolve resultado, e
              prometer um desfazer que não aconteceu seria a mesma mentira. */
           var gravados = [], naoEntraram = 0;
+          /* MEDCC 8A — recados da cópia do centro de custo (pedido que nasceu
+             sem o centro da cotação), ditos no toast final */
+          var avisosCC = [];
           /* a data do pedido é a de HOJE, no fuso de quem clica (ver
              `hojeLocal`): é dela que a previsão de entrega é contada */
           var hojePed = hojeLocal();
@@ -23676,7 +25023,7 @@
                pedido errado. `proxNumero` lê o maior gravado a cada volta do
                laço, e o `Store.salvar` de baixo já entrou quando a próxima
                volta pergunta. */
-            var rec = self._pcDaCotacao(cot, p, hojePed, modo);
+            var rec = self._pcDaCotacao(cot, p, hojePed, modo, "", avisosCC);
             if (rec) gravados.push(rec); else naoEntraram++;
           });
           if (naoEntraram) {
@@ -23744,6 +25091,9 @@
               }),
               fornecedores: []
             };
+            /* MEDCC 8A — a cotação dos pendentes leva o centro da original */
+            var avisoPendCC = self._ccDocCopiar("cotacoes", cot, novaPend, cot.obraId || "", "cotacoes");
+            if (avisoPendCC) avisosCC.push(avisoPendCC);
             novaPend = Store.salvar(eid(), "cotacoes", novaPend);
           }
           /* ⚠ REQUISIÇÃO SÓ VIRA "COMPRADA" QUANDO A COMPRA ACABOU. Com itens
@@ -23760,12 +25110,15 @@
             }
           }
           UI.fecharModal(); App.render();
+          /* o mesmo recado para N pedidos vira UM, com a contagem */
+          var avisoUnico = [];
+          avisosCC.forEach(function (a) { if (avisoUnico.indexOf(a) < 0) avisoUnico.push(a); });
           UI.toast(peds.length + " pedido(s) de compra criado(s) a partir da cotação."
             + (modo === "parcial" && pendNaConclusao.length
               ? (novaPend
                 ? " Os " + pendNaConclusao.length + " item(ns) sem preço foram para a cotação " + (novaPend.numero || "") + " (rascunho) — cote e conclua ela para fechar a requisição."
                 : " ATENÇÃO: " + pendNaConclusao.length + " item(ns) ficaram sem preço e SEM cotação nova — eles não estão comprados nem sendo cotados.")
-              : ""), "ok");
+              : "") + (avisoUnico.length ? " " + avisoUnico.join(" ") : ""), avisoUnico.length ? "aviso" : "ok", avisoUnico.length ? 12000 : undefined);
         } }
       ]);
     },
@@ -24223,6 +25576,8 @@
         : "";
       var corpo = avisoComprada +
         '<div class="row">' + campo("Número", inp("g-numero", numero)) + campo("Data", inp("g-data", r.data || hoje, "", "date")) + campo("Obra", sel("g-obra", optsRec(obras, "nome", r.obraId, "— nenhuma —"))) + "</div>" +
+        /* MEDCC 8A — centro de custo da requisição (viaja para a cotação e o pedido) */
+        this._ccDocCampoHtml("requisicoes", r) +
         '<div class="row">' + campo("Solicitante", inp("g-solic", r.solicitante)) + campo("Prioridade", sel("g-prioridade", opts(P.reqPrioridade, r.prioridade || "normal"))) + campo("Status", sel("g-status", opts(P.reqStatus, r.status || "aberta"))) + "</div>" +
         campo("Itens da solicitação *",
           '<input id="ri-q" placeholder="🔍 Buscar no banco de insumos (código ou descrição)" autocomplete="off" style="margin-bottom:6px">' +
@@ -24253,6 +25608,10 @@
         if (!itensBuf.length) { UI.toast("Adicione ao menos um item (busque no banco ou use item manual).", "erro"); return false; }
         obj.numero = v("g-numero"); obj.data = v("g-data"); obj.obraId = v("g-obra"); obj.solicitante = v("g-solic");
         obj.prioridade = v("g-prioridade"); obj.status = v("g-status"); obj.observacoes = v("g-obs");
+        /* MEDCC 8A — antes do gate, e só se a pessoa mexeu (§1.15). A
+           requisição NÃO pergunta ao Financeiro: ela nunca lançou dinheiro. */
+        var rCC = self._ccDocColetar("requisicoes", obj, r);
+        if (!rCC.ok) { UI.toast(rCC.msg, "erro", 9000); return false; }
         if (!self._gateStatusForm(obj, stAntigo, "requisicoes")) return false; // G3 fix: aprovar/rejeitar pelo form exige permissão + auditoria
         obj.itens = itensBuf.slice();
         obj.descricao = self._reqResumo(itensBuf);
@@ -24329,6 +25688,7 @@
         var dIn = document.getElementById("rin-desc"); if (dIn) dIn.focus();
       };
       renderItens();
+      this._ccDocFiar("requisicoes", r);
     },
     comprarRequisicao: function (id) {
       var self = this;
@@ -24377,10 +25737,25 @@
              desenha e o que sobra se o cadastro for excluído depois. Gravar só
              um dos dois é como o pedido fica meio ligado. */
           var fornPed = lista("fornecedores").filter(function (x) { return String(x.id) === String(v("g-pforn")); })[0];
-          Store.salvar(eid(), "compras", self._aprovCarimbar({ numero: pc, descricao: desc, obraId: v("g-pobra"), valor: nv("g-pvalor"), status: "cotacao", categoria: "material", itens: r.itens || [], requisicaoId: r.id, precoOrigem: "banco",
-            fornecedorId: fornPed ? fornPed.id : "", fornecedorNome: fornPed ? fornPed.nome : "" }, true));
+          var obraPed = v("g-pobra");
+          var novoPed = self._aprovCarimbar({ numero: pc, descricao: desc, obraId: obraPed, valor: nv("g-pvalor"), status: "cotacao", categoria: "material", itens: r.itens || [], requisicaoId: r.id, precoOrigem: "banco",
+            fornecedorId: fornPed ? fornPed.id : "", fornecedorNome: fornPed ? fornPed.nome : "" }, true);
+          /* MEDCC 8A — o centro da requisição vai junto, pela obra ESCOLHIDA
+             neste modal (ela pode ser outra). ⚠ A cópia nunca recusa: centro
+             desativado ou de outra obra faz o pedido nascer SEM centro, e o
+             recado diz qual ficou para trás (crítica D21). */
+          var avisoCC = self._ccDocCopiar("requisicoes", r, novoPed, obraPed, "compras");
+          /* ⚠ GRAVAÇÃO RECUSADA NÃO É "CRIADO". O retorno era ignorado: com o
+             disco recusando, a requisição virava "comprada" sem pedido nenhum —
+             sumia da fila de compras e o toast verde dizia que o pedido
+             existia. Sem o pedido, a requisição fica como estava. */
+          if (self._naoGravou(Store.salvar(eid(), "compras", novoPed))) {
+            UI.toast("NÃO consegui gravar o pedido: o armazenamento deste aparelho recusou. A requisição continua aprovada, e nada foi criado.", "erro", 10000);
+            return;
+          }
           r.status = "comprada"; Store.salvar(eid(), "requisicoes", r);
-          UI.fecharModal(); App.render(); UI.toast("Pedido " + pc + " criado.", "ok");
+          UI.fecharModal(); App.render();
+          UI.toast("Pedido " + pc + " criado." + (avisoCC ? " " + avisoCC : ""), avisoCC ? "aviso" : "ok", avisoCC ? 10000 : undefined);
         } }
       ]);
     },
@@ -26107,6 +27482,9 @@
 
       var temRateio = rateadas.length > plano.parcelas.length;
       var obras = lista("obras");
+      /* os pedidos que a nota JÁ cobre, na ordem da gravação — a obra deles
+         vale para a parcela sem obra (ver `_nfObraDaParcela`) */
+      var _pedIni = this._nfPedidosPrevistos(nf, []);
       function nomeObra(id) { var o = obras.filter(function (x) { return x.id === id; })[0]; return o ? o.nome : "sem obra"; }
       var brd = function (d) { return d ? String(d).split("-").reverse().join("/") : "sem data"; };
       var nP = plano.parcelas.length;
@@ -26141,15 +27519,32 @@
         ? "O boleto desta nota tem <b>" + nP + " vencimentos</b>. Cada um vira uma conta a pagar na data certa:"
         : "Vai entrar como <b>" + (isEntrada ? "despesa" : "receita") + "</b> no Financeiro:") + "</p>";
       corpo += '<table class="tbl" style="font-size:12.5px"><thead><tr><th>Vencimento</th><th>Descrição</th><th>Obra</th><th class="num">Valor</th></tr></thead><tbody>' +
-        rateadas.map(function (r) {
+        rateadas.map(function (r, iR) {
+          /* ⚠ A OBRA DA LINHA É A QUE O [Lançar] VAI GRAVAR, pela mesma
+             `_nfObraDaParcela`. Roteiro do defeito (medido na e2e da mc-8B):
+             nota já vinculada a dois pedidos da obra A, sem obra própria e sem
+             rateio — esta tabela dizia "sem obra" pelo `r.obraId`, e o clique
+             gravava a despesa na obra A pelo `_obraPC`. A pessoa confirmava
+             "sem obra" e o custo caía numa obra. A célula acompanha as caixas
+             dos pedidos (`_nfFiarObraParcelas`), porque marcar um pedido pode
+             dar obra a uma parcela que não tinha. */
           return "<tr><td>" + brd(r.vencimento) + "</td><td>NF " + Util.esc(numTxt) + (nP > 1 ? " (" + r.num + "/" + nP + ")" : "") +
-            "</td><td>" + Util.esc(nomeObra(r.obraId)) + '</td><td class="num">' + Util.fmtMoeda(r.valor) + "</td></tr>";
+            '</td><td data-nf-obra-parcela="' + iR + '">' + Util.esc(nomeObra(self._nfObraDaParcela(r, temRateio, nf, _pedIni.obraPC))) + '</td><td class="num">' + Util.fmtMoeda(r.valor) + "</td></tr>";
         }).join("") + "</tbody></table>";
       if (plano.ajuste && Math.abs(plano.ajuste) >= 0.01) {
         corpo += '<p class="muted" style="font-size:12px">As duplicatas do XML somavam ' + Util.fmtMoeda(valor - plano.ajuste) +
           " e a nota vale " + Util.fmtMoeda(valor) + " — a diferença de " + Util.fmtMoeda(Math.abs(plano.ajuste)) + " entrou na última parcela.</p>";
       }
       if (temRateio) corpo += '<p class="muted" style="font-size:12px">Os itens estão em mais de uma obra, então cada parcela foi rateada na proporção do valor dos itens de cada uma.</p>';
+      /* onde cada parcela vai cair nos centros de custo — só leitura (mc-8B,
+         ver `_ccCustoPreviaNota`); a caixa fica mesmo vazia, para as caixas
+         dos pedidos poderem preenchê-la */
+      /* ⚠ A PRÉVIA NUNCA IMPEDE O MODAL DE ABRIR: ela é informação; lançar a
+         nota é dinheiro. Uma exceção aqui (orçamento ilegível, motor em cache
+         velho) sem o try deixaria a pessoa sem a porta de lançar a nota. */
+      var _prevCc = "";
+      try { _prevCc = this._ccCustoPreviaNota(nf, rateadas, temRateio, []); } catch (ePcc) { _prevCc = ""; }
+      corpo += '<div id="nf-cc-previa">' + _prevCc + "</div>";
       corpo += '<p class="muted" style="font-size:12px">Categoria sugerida: <b>' + rot(P.finCategoria, categoria) +
         "</b> (a que pesa mais em dinheiro nesta nota). Entram como <b>pendente</b>, na data de vencimento — marque como pago quando pagar.</p>";
 
@@ -26293,7 +27688,7 @@
           /* substituir = apagar as PENDENTES desta mesma nota, nunca somar —
              e nunca tocar no que já foi pago */
           if (subst.length) subst.forEach(function (f) { Store.excluir(eid(), "financeiro", f.id); });
-          var gravadas = 0, falhou = false, pulou = 0;
+          var gravadas = 0, falhou = false, pulou = 0, _gravadosNf = [];
           rateadas.forEach(function (r) {
             /* a obra resolvida AQUI é a mesma que vai ser gravada logo abaixo —
                conferir por uma e gravar por outra é como o dinheiro sumia */
@@ -26310,7 +27705,10 @@
                ⚠ COM rateio o vazio continua valendo: a fatia "sem obra" tem
                `obraId` vazio de propósito, e cair para a obra ali faria a
                gravação divergir da divisão que o modal mostrou. */
-            var obraLinha = temRateio ? (r.obraId || "") : (r.obraId || nf.obraId || _obraPC || "");
+            /* ⚠ A REGRA MORA EM `_nfObraDaParcela`, que a prévia de centros
+               também chama: a prévia e a gravação não podem pôr a mesma
+               parcela em obras diferentes (mc-8B). */
+            var obraLinha = self._nfObraDaParcela(r, temRateio, nf, _obraPC);
             if (pagoNotaInteira || numsPagos[chaveParcela(r.num, obraLinha)]) { pulou++; return; } /* essa parcela já foi paga — ou a nota inteira já foi, sem parcelas (ver `pagoNotaInteira`) */
             var reg = Store.salvar(eid(), "financeiro", {
               data: r.vencimento || nf.dataEmissao || hojeLocal(),
@@ -26337,7 +27735,7 @@
               valorPedido: _pcs.length ? _valPed : undefined,
               parcelaNum: r.num, parcelaTotal: nP
             });
-            if (reg) gravadas++; else falhou = true;
+            if (reg) { gravadas++; _gravadosNf.push(reg); } else falhou = true;
           });
           nf.lancadoEm = new Date().toISOString();
           Store.salvar(eid(), "fiscal", nf);
@@ -26347,14 +27745,627 @@
              é o da NOTA, e quem aprovou o pedido precisa saber que mudou. */
           var _sufDif = _avisoDif ? " " + _avisoDif : "";
           if (falhou) UI.toast("Só " + gravadas + " de " + rateadas.length + " conta(s) foram gravadas (armazenamento cheio). Confira o Financeiro." + _sufDif, "erro");
-          else if (pulou) UI.toast("✔ " + gravadas + " conta(s) refeita(s); " + pulou + " já paga(s) mantida(s) como estavam." + _sufDif, _avisoDif ? "aviso" : "ok");
-          else UI.toast("✔ " + gravadas + " conta(s) a pagar lançada(s)" + (nP > 1 ? " — vencimentos de " + brd(rateadas[0].vencimento) + " a " + brd(rateadas[rateadas.length - 1].vencimento) : "") + "." + _sufDif, _avisoDif ? "aviso" : "ok");
+          else if (pulou) self._ccCustoToast("✔ " + gravadas + " conta(s) refeita(s); " + pulou + " já paga(s) mantida(s) como estavam." + _sufDif, _gravadosNf, _avisoDif ? "aviso" : "ok");
+          else self._ccCustoToast("✔ " + gravadas + " conta(s) a pagar lançada(s)" + (nP > 1 ? " — vencimentos de " + brd(rateadas[0].vencimento) + " a " + brd(rateadas[rateadas.length - 1].vencimento) : "") + "." + _sufDif, _gravadosNf, _avisoDif ? "aviso" : "ok");
         } }
       ]);
       /* ⚠ a busca da lista de pedidos só existe depois que o modal desenha —
          campo que aparece e não filtra é pior que campo ausente, porque a pessoa
          confia nele e conclui que o pedido não existe. */
       this._fiarBuscaPedido();
+      /* a obra de cada parcela e a prévia de centros acompanham as caixas
+         dos pedidos (mc-8B) */
+      try { this._nfFiarObraParcelas(nf, rateadas, temRateio, obras); } catch (eFo) {}
+      try { this._ccCustoFiarPreviaNota(nf, rateadas, temRateio); } catch (eFp) {}
+    },
+
+    /* =================================================================
+     * MEDCC: custos (8B) — ONDE O DINHEIRO QUE ACABOU DE ENTRAR CAI NOS
+     * CENTROS DE CUSTO: no recado de quem lança, na nota antes de lançar,
+     * no CSV e no quadro dos Relatórios Gerenciais.
+     *
+     * ⚠ TUDO AQUI LÊ, NADA GRAVA. A régua é a da tela Centro de Custo
+     *   (`_ccCtx` + `_ccFatos` + `_ccLinhasDaObra`): o lançamento cai no
+     *   centro pela etapa (a dele, ou a do pedido pelo carimbo) e pelo
+     *   centro gerado daquele nó. O recado que diz "Centro de custo: 4.1" e
+     *   a tela que mostra o 4.1 não podem ser duas contas — esta base já
+     *   teve cinco réguas de "quanto custou" discordando (mapa D-M1), e a
+     *   mc-7A achou o bloco do boletim montando a família por outra régua
+     *   que a tela.
+     *
+     * ⚠ ENTREGA PARCIAL, DECLARADA (ESPEC-medicao-cc §8.6). NÃO ESTÃO AQUI:
+     *   o select "Pela regra…" do gasto rápido e do custo de frota (com o
+     *   `cc_aprop FIN_`/`FRT_` gravado depois do save) e a divisão da nota
+     *   pelo valor de cada pedido (K21). Os dois dependem do agente de
+     *   apropriação — `_ccGravarEscolha`, `CCAgente.pagosAfetados`,
+     *   `CCAgente.consolidar` —, e o `js/ccagente.js` não existe em branch
+     *   nenhum (22/09/2026). Gravar a decisão sem o motor que a aplica faria
+     *   a tela Centro de Custo de TODAS as obras dizer "não posso afirmar que
+     *   está completo" (`_ccNumeros`), e o toast "Centro de custo: CC-05"
+     *   apontaria para um centro onde a tela não mostra o dinheiro. Mesmo
+     *   motivo e mesma saída da mc-7A no centro do boletim.
+     *
+     * ⚠ O RECADO NÃO PROMETE A FILA. A aba Fila responde "ainda não
+     *   disponível" enquanto o agente não existir; "está na Fila" mandaria a
+     *   pessoa a uma porta que o clique seguinte fecha. O recado diz onde o
+     *   dinheiro aparece HOJE: a linha "Sem centro de custo" da obra.
+     *
+     * ⚠ SÓ NA OBRA QUE ADOTOU OS CENTROS NOVOS (`modo === "novo"`), só para
+     *   quem tem Financeiro E Centro de Custo (`_ccPode`), e com a chave
+     *   `ccAgente` ligada — o mesmo portão do bloco de centros do boletim
+     *   (`_medCentrosHtml`). Na obra antiga o centro é "obra inteira" ou um
+     *   rateio pelo orçado: dizer "sem centro" ali é falso, e dizer o nome de
+     *   um centro antigo é afirmar uma apropriação que não houve. (O CSV e o
+     *   quadro, que repetem a TABELA da tela, seguem os modos como ela.)
+     * ================================================================= */
+    _ccCustoPode: function () {
+      if (!this._medcc("ccAgente")) return false;
+      if (typeof CentroCusto === "undefined" || typeof CentroCusto.centroDoNo !== "function") return false;
+      return this._ccPode("", "ler").ok;
+    },
+
+    /* o contexto e os fatos da obra, UMA vez por recado/arquivo (`memo`):
+       `_ccCtx` calcula o orçamento inteiro, e uma nota rateada ou uma folha
+       semanal com dez obras chamariam isto por lançamento */
+    _ccCustoObra: function (obraId, memo) {
+      var o = String(obraId || "");
+      if (memo && Object.prototype.hasOwnProperty.call(memo, o)) return memo[o];
+      var r = null;
+      try {
+        var ctx = this._ccCtx(o);
+        var porId = {};
+        this._ccFatos(ctx).fatos.forEach(function (f) { if (f && f.t === "lanc") porId[String(f.id)] = f; });
+        r = { ctx: ctx, porId: porId,
+          abraca: CentroCusto.abracaAObra(o, ctx.ccsCrus, ctx.modo ? ctx.modo.modo : "") };
+      } catch (e) { r = null; }
+      if (memo) memo[o] = r;
+      return r;
+    },
+
+    _ccCustoRotulo: function (cc) {
+      if (!cc) return "";
+      var r = ((cc.codigo ? String(cc.codigo) + " " : "") + String(cc.nome || "")).trim() || String(cc.id || "");
+      return r + (cc.ativo === false || cc.ativo === 0 ? " (desativado)" : "");
+    },
+
+    /* ⚠ O CENTRO APAGADO TEM UM NOME, E É O MESMO NAS TRÊS TELAS. O pedido
+       guarda o `ccId` mesmo depois de o centro sumir do disco (o formulário
+       preserva o que não sabe representar, §1.15-4), então o dinheiro dele
+       continua caindo em algum lugar — a linha "Em centros da empresa ou de
+       outra obra". Medido nas três leituras do MESMO fato: a tela e o toast
+       diziam "centro apagado (id cc_que_f…)" e a prévia da nota despejava o
+       id cru "cc_que_foi_apagado_123" na cara da pessoa, justo na tela onde
+       ela decide se lança. Um identificador não é um nome. */
+    _ccCustoRotuloOuApagado: function (cc, id) {
+      return cc ? this._ccCustoRotulo(cc) : "centro apagado (id " + String(id || "").slice(0, 8) + "…)";
+    },
+
+    /* onde a tela de Centros põe UM lançamento JÁ GRAVADO.
+       → null (não se diz nada) | {cc, rot, via, motivo, valor} */
+    _ccCustoDoLanc: function (f, memo) {
+      if (!f || String(f.tipo || "") !== "despesa") return null;
+      var o = String(f.obraId || "");
+      if (!o) return null;
+      var ob = this._ccCustoObra(o, memo);
+      if (!ob || !ob.ctx || !ob.ctx.modo || ob.ctx.modo.modo !== "novo") return null;
+      var fa = ob.porId[String(f.id || "")];
+      /* cancelado (a tela não o soma) ou ainda fora do disco: nada a dizer */
+      if (!fa) return null;
+      var cc = null;
+      Util.arr(ob.ctx.ccsCrus).forEach(function (c) { if (c && String(c.id) === String(fa.cc)) cc = c; });
+      /* ⚠ O ABRAÇO NÃO ALCANÇA O DINHEIRO QUE ESTÁ EM CENTRO DE FORA. Mesma
+         I1 do `_ccLinhasDaObra`: a tela põe esse valor na linha "Em centros da
+         empresa ou de outra obra", e o toast dizendo "CC-01 Obra toda (obra
+         inteira)" seria a tela e o recado discordando sobre o MESMO
+         lançamento — medido na revisão da Onda 8, obra em modo `novo` com um
+         único centro `apura:"obra"` e um pedido no centro da empresa. */
+      var fora = !!fa.cc && !(cc && String(cc.obraId || "") === String(o));
+      /* ⚠ O CENTRO QUE ABRAÇA A OBRA INTEIRA TEM O DINHEIRO TODO — é a regra
+         da tela (`abracaAObra`, ver o ⚠ em `_ccLinhasDaObra`). Obra em modo
+         novo cujos centros são todos "obra inteira" mostra ali "todo o gasto
+         desta obra está no centro X"; o recado dizendo "sem centro" seria a
+         tela e o toast discordando sobre o mesmo lançamento. */
+      if (ob.abraca && !fora) return { cc: ob.abraca, rot: this._ccCustoRotulo(ob.abraca), via: "obra", motivo: "", valor: Util.num(f.valor) };
+      if (!fa.cc) return { cc: null, rot: "", via: "", motivo: fa.motivo || "sem-etapa", valor: Util.num(f.valor) };
+      /* ⚠ TRÊS FONTES, NÃO DUAS (fusão 8A × 8B): a etapa do lançamento, a
+         etapa do pedido e o CENTRO do pedido (`compra.ccId`, §4.3-4e). Quem
+         decidiu vem do `viaCc` do próprio fato — inferir aqui pelo `no`
+         erraria no pedido de centro gerado, que tem `ccId` E `etapaId`. */
+      return { cc: cc || { id: fa.cc }, rot: this._ccCustoRotuloOuApagado(cc, fa.cc),
+        via: String(f.etapaId || "") ? "etapa" : (fa.viaCc ? "pedido-cc" : "pedido"), motivo: "", valor: Util.num(f.valor) };
+    },
+
+    _CC_CUSTO_MOTIVO: {
+      "sem-etapa": "o lançamento não tem etapa do orçamento",
+      "etapa-sem-centro": "a etapa do orçamento dele não tem centro de custo nesta obra",
+      "no-dois-centros": "a etapa dele tem dois centros ativos, e nenhum vale até alguém escolher",
+      /* ⚠ OS DOIS CASOS EM QUE O ESPELHO DO ESTORNO NÃO SEGUE O ORIGINAL
+         (ESPEC-medicao-cc §4.9). Sem motivo próprio o crédito aparecia como
+         "o lançamento não tem etapa do orçamento" — e mandava a pessoa
+         apropriar à mão um estorno, em vez de olhar o original. */
+      "estorno-orfao": "é o estorno de um lançamento que não está mais na base",
+      "estorno-outra-obra": "é o estorno de um lançamento que hoje está em outra obra"
+    },
+
+    _ccCustoMotivo: function (m) { return this._CC_CUSTO_MOTIVO[m] || String(m || "sem motivo registrado"); },
+
+    /* a frase que entra no fim do toast de quem lança. `lancs` = os
+       lançamentos que ESTE clique gravou (com id — o `Store.salvar` o põe no
+       próprio objeto). Devolve "" quando não há nada honesto a dizer.
+       ⚠ TEXTO PURO: o `UI.toast` escreve por `textContent` (memória "toast
+       é texto puro") — marcação aqui sairia literal na tela. */
+    _ccCustoFrase: function (lancs) {
+      if (!this._ccCustoPode()) return "";
+      var self = this, memo = {}, grupos = {}, ordem = [], contados = 0;
+      Util.arr(lancs).forEach(function (f) {
+        var r = null;
+        try { r = self._ccCustoDoLanc(f, memo); } catch (e) { r = null; }
+        if (!r) return;
+        contados++;
+        var k = r.cc ? "cc:" + String(r.cc.id) + "|" + r.via : "sem:" + r.motivo;
+        if (!grupos[k]) { grupos[k] = { r: r, valor: 0 }; ordem.push(k); }
+        grupos[k].valor += r.valor;
+      });
+      if (!ordem.length) return "";
+      function comoCaiu(r) {
+        if (r.via === "obra") return r.rot + " (obra inteira)";
+        if (r.via === "pedido-cc") return r.rot + " (pelo centro do pedido)";
+        return r.rot + (r.via === "pedido" ? " (pela etapa do pedido)" : " (pela etapa do lançamento)");
+      }
+      /* ⚠ A FRASE NO SINGULAR SÓ VALE PARA UM LANÇAMENTO. A folha semanal
+         lança uma despesa POR OBRA e a nota, uma por parcela: com duas obras
+         caindo no mesmo destino, "ele fica na linha…" faria a pessoa ler o
+         recado como se fosse de um lançamento só — e as outras obras
+         sumiriam do recado sem nada dizendo. Com mais de um, a frase lista o
+         VALOR de cada destino. */
+      if (ordem.length === 1 && contados === 1) {
+        var g = grupos[ordem[0]];
+        return g.r.cc
+          ? " · Centro de custo: " + comoCaiu(g.r) + "."
+          : " · Sem centro de custo: " + this._ccCustoMotivo(g.r.motivo) + " — ele fica na linha “Sem centro de custo” da obra, na tela Centros de Custo.";
+      }
+      return " · Centros de custo: " + ordem.map(function (k) {
+        var gg = grupos[k];
+        return Util.fmtMoeda(gg.valor) + " → " + (gg.r.cc ? comoCaiu(gg.r) : "sem centro (" + self._ccCustoMotivo(gg.r.motivo) + ")");
+      }).join(" · ") + ".";
+    },
+
+    /* ⚠ ESPELHO DO `noDoLanc` DO `_ccFatos` (e do `CustoEtapa.etapaHerdada`)
+       PARA UM LANÇAMENTO QUE AINDA NÃO EXISTE — é o que a prévia da nota
+       precisa, antes do [Lançar]. O `_ccFatos` só lê o que está no disco, e
+       não há como perguntar a ele sobre a parcela que vai nascer.
+       ⚠ RÉPLICA VIGIADA, e só por isso aceita: a `tools/test-export-cc.js`
+       roda esta função e o `_ccFatos` REAL sobre o mesmo corpus (etapa
+       própria, carimbo PC, `compraId`, pedido de centro próprio, nota, nada)
+       e reprova se discordarem em um lançamento — com CN que tira o ramo do
+       `compraId` e CN que tira o ramo do `ccId` daqui. Mudou a regra lá, esta
+       suíte fica vermelha até mudar aqui também.
+       ⚠ `ped` é o `_ccPedidosMapa` do PRODUTO ({etapa, cc}) — o mesmo objeto
+       que o `_ccFatos` usa. Montar a tabela de novo aqui foi o que deixou a
+       prévia da nota discordar da tela na fusão 8A × 8B (ver o ⚠ do
+       `_ccPedidosMapa`). */
+    _ccCustoResolveHip: function (ctx, f, ped) {
+      var etapaDoPedido = (ped && ped.etapa) || {}, ccDoPedido = (ped && ped.cc) || {};
+      var no = "", cc = "";
+      if (f.etapaId) no = String(f.etapaId);
+      else if (String(f.docTipo || "") === "PC" && etapaDoPedido[String(f.docId || "")]) no = etapaDoPedido[String(f.docId)];
+      else if (f.compraId && etapaDoPedido[String(f.compraId)]) no = etapaDoPedido[String(f.compraId)];
+      /* mesma ordem do `ccDoLanc` do `_ccFatos`: a etapa PRÓPRIA do lançamento
+         manda (4a); sem ela, o centro do pedido (4e) vence o nó do pedido */
+      if (!f.etapaId) {
+        if (String(f.docTipo || "") === "PC" && ccDoPedido[String(f.docId || "")]) cc = ccDoPedido[String(f.docId)];
+        else if (f.compraId && ccDoPedido[String(f.compraId)]) cc = ccDoPedido[String(f.compraId)];
+      }
+      if (cc) return { no: no, cc: cc, motivo: "", viaCc: true };
+      var d = no ? CentroCusto.centroDoNo(ctx.indice, no) : { cc: null, motivo: "sem-etapa" };
+      return { no: no, cc: (d && d.cc && d.cc.id) ? String(d.cc.id) : "", motivo: (d && d.motivo) || (no ? "" : "sem-etapa"), viaCc: false };
+    },
+
+    /* a obra de cada parcela da nota — UMA regra para a prévia e para a
+       gravação do [Lançar] (ver o ⚠ "SEM RATEIO, A OBRA DO PEDIDO VALE MAIS
+       QUE O VAZIO DA NOTA" no `lancarFiscal`, que chama esta mesma função) */
+    _nfObraDaParcela: function (r, temRateio, nf, obraPC) {
+      return temRateio ? (r.obraId || "") : (r.obraId || nf.obraId || obraPC || "");
+    },
+
+    /* ⚠ OS PEDIDOS NA ORDEM EM QUE O [Lançar] VAI GRAVÁ-LOS: os que a nota
+       já cobre primeiro, depois os marcados na caixa, na ordem da tela — é o
+       `CompraNota.aplicarVinculo` (`pedidosDaNota(nf).concat(novos)`, com os
+       novos na ordem do `planoVinculo`, que é a da lista marcada). O primeiro
+       dessa lista é o `compraId` de TODAS as parcelas, e é por ele que a
+       régua de hoje acha a etapa. */
+    _nfPedidosPrevistos: function (nf, idsMarcados) {
+      var out = [], vistos = {};
+      function poe(id) {
+        id = String(id || "");
+        if (!id || vistos[id]) return;
+        vistos[id] = 1;
+        var c = Store.obter(eid(), "compras", id);
+        if (c) out.push(c);
+      }
+      if (typeof CompraNota !== "undefined" && CompraNota.pedidosDaNota) CompraNota.pedidosDaNota(nf).forEach(function (c) { poe(c.id); });
+      Util.arr(idsMarcados).forEach(poe);
+      var obras = {};
+      out.forEach(function (c) { if (String(c.obraId || "").trim()) obras[String(c.obraId)] = 1; });
+      var ks = Object.keys(obras);
+      return { pcs: out, obraPC: ks.length === 1 ? ks[0] : "" };
+    },
+
+    /* PRÉVIA DE CENTROS DA NOTA (só leitura), por obra. `idsMarcados` =
+       pedidos marcados na caixa "Esta nota cobre algum pedido recebido?". */
+    _ccCustoPreviaNota: function (nf, rateadas, temRateio, idsMarcados) {
+      if (!nf || nf.tipo !== "entrada" || !this._ccCustoPode()) return "";
+      var self = this;
+      var ped = this._nfPedidosPrevistos(nf, idsMarcados);
+      var primeiro = ped.pcs[0] || null;
+      var mapaPed = this._ccPedidosMapa(Store.listar(eid(), "compras"));
+      var etapaDoPedido = mapaPed.etapa;
+      var porObra = {}, ordem = [];
+      Util.arr(rateadas).forEach(function (r) {
+        var o = self._nfObraDaParcela(r, temRateio, nf, ped.obraPC);
+        if (!Object.prototype.hasOwnProperty.call(porObra, o)) { porObra[o] = 0; ordem.push(o); }
+        porObra[o] += Util.num(r.valor);
+      });
+      var memo = {}, linhas = [];
+      ordem.forEach(function (o) {
+        if (!o) return;
+        var ob = self._ccCustoObra(o, memo);
+        if (!ob || !ob.ctx || !ob.ctx.modo || ob.ctx.modo.modo !== "novo") return;
+        var nomeO = (ob.ctx.obra && ob.ctx.obra.nome) || o;
+        var numP = primeiro ? String(primeiro.numero || primeiro.id) : "";
+        var destino;
+        if (ob.abraca) destino = self._ccCustoRotulo(ob.abraca) + " (obra inteira)";
+        else {
+          var hip = self._ccCustoResolveHip(ob.ctx, { tipo: "despesa", obraId: o, docTipo: "NF", compraId: primeiro ? primeiro.id : undefined }, mapaPed);
+          if (hip.cc) {
+            var cc = null;
+            Util.arr(ob.ctx.ccsCrus).forEach(function (c) { if (c && String(c.id) === hip.cc) cc = c; });
+            /* `ccsCrus` traz também os centros da empresa e de outras obras
+               (é com eles que o `_ccEmpresaDaObra` monta a linha de fora) */
+            var daObra = !!(cc && String(cc.obraId || "") === String(o));
+            /* ⚠ QUEM DECIDIU, não onde caiu (ver `viaCc` no `_ccFatos`): com o
+               centro vindo do `compra.ccId`, "pela etapa do pedido" nomearia
+               uma etapa que o pedido não tem. */
+            destino = self._ccCustoRotuloOuApagado(cc, hip.cc) +
+              (hip.viaCc ? " (pelo centro do pedido " + numP + ")" : " (pela etapa do pedido " + numP + ")");
+            /* ⚠ CENTRO QUE NÃO É DESTA OBRA PRECISA DIZER EM QUE LINHA ELE
+               APARECE. Medido na bancada (nota rateada, parcela da obra D
+               carimbada com um pedido da obra A que tem centro próprio): a
+               tela da obra D põe os R$ 9.000 em "Em centros da empresa ou de
+               outra obra" (`_ccEmpresaDaObra`), e NÃO numa linha chamada
+               "e2 E2" — que ali não existe. Sem esta frase a prévia mandava a
+               pessoa procurar, na tabela da obra, um centro que ela nunca vai
+               achar; a linha existe, o nome dela é que é outro. */
+            if (!daObra) destino += " — não é centro desta obra; na tela Centros de Custo ele entra na linha “Em centros da empresa ou de outra obra”";
+          } else if (!primeiro) destino = "sem centro de custo (a nota não cobre pedido nenhum, e a parcela não tem etapa do orçamento)";
+          else if (!etapaDoPedido[String(primeiro.id)]) destino = "sem centro de custo (o pedido " + numP + " não tem etapa do orçamento nem centro próprio)";
+          else destino = "sem centro de custo (" + self._ccCustoMotivo(hip.motivo) + ")";
+          if (primeiro && String(primeiro.obraId || "") && String(primeiro.obraId) !== o) destino += " — o pedido " + numP + " é de outra obra";
+        }
+        var li = "<li><b>" + Util.esc(nomeO) + ":</b> " + Util.fmtMoeda(porObra[o]) + " → " + Util.esc(destino);
+        /* ⚠ A DIVISÃO PELOS PEDIDOS (K21) É DO AGENTE, QUE NÃO EXISTE AINDA.
+           Hoje a parcela inteira vai para o centro do PRIMEIRO pedido — é o
+           que a tela de Centros e o Previsto × Realizado vão mostrar depois
+           do [Lançar]. Mostrar aqui "R$ 30.000 → 4.1 · R$ 9.000 → 4.2" seria
+           prometer uma divisão que nenhuma tela faz; calar seria deixar a
+           pessoa descobrir no fim do mês. Diz o que acontece. */
+        if (!ob.abraca) {
+          var outros = {}, nOut = 0;
+          ped.pcs.forEach(function (c) {
+            if (String(c.obraId || "") && String(c.obraId) !== o) return;
+            var h = self._ccCustoResolveHip(ob.ctx, { tipo: "despesa", obraId: o, docTipo: "NF", compraId: c.id }, mapaPed);
+            var k = h.cc || "(sem centro)";
+            if (!outros[k]) { outros[k] = []; nOut++; }
+            outros[k].push(String(c.numero || c.id));
+          });
+          if (nOut > 1) {
+            li += '<br><span style="color:var(--ambar, #b45309)">Os pedidos desta nota apontam centros diferentes (' +
+              Object.keys(outros).map(function (k) {
+                var ccK = null;
+                Util.arr(ob.ctx.ccsCrus).forEach(function (c) { if (c && String(c.id) === k) ccK = c; });
+                /* ⚠ APAGADO NÃO É "SEM CENTRO". A chave `k` é `h.cc` ou a
+                   marca "(sem centro)": só esta última é sem centro de
+                   verdade. Um `ccId` que aponta centro apagado NÃO cai em
+                   "Sem centro de custo" na tela — ele vai para "Em centros da
+                   empresa ou de outra obra" (`_ccEmpresaDaObra` trata o `!c`
+                   assim, "o dinheiro existe"). Chamá-lo de "sem centro" aqui
+                   mandaria a pessoa procurar na linha errada. */
+                return Util.esc(outros[k].join(", ")) + " → " +
+                  Util.esc(k === "(sem centro)" ? "sem centro" : self._ccCustoRotuloOuApagado(ccK, k));
+              }).join(" · ") +
+              "). Nesta versão a parcela inteira vai para o centro do primeiro pedido (" + Util.esc(numP) +
+              ") — a divisão pelo valor de cada pedido ainda não existe.</span>";
+          }
+        }
+        linhas.push(li + "</li>");
+      });
+      if (!linhas.length) return "";
+      return '<div style="margin:10px 0;padding:8px 12px;border-left:3px solid var(--aco)" data-nf-cc-previa>' +
+        '<b style="font-size:12.5px">Centro de custo</b> <span class="muted" style="font-size:12px">— prévia, pela mesma régua da tela Centros de Custo; nada disto é gravado na nota</span>' +
+        '<ul style="margin:4px 0 0 18px;padding:0;font-size:12.5px">' + linhas.join("") + "</ul></div>";
+    },
+
+    /* liga a prévia às caixas dos pedidos: marcar um pedido pode trocar o
+       primeiro da lista, e com ele o centro. As caixas são estáticas (a busca
+       só esconde linha), então um `change` em cada uma basta. */
+    _ccCustoFiarPreviaNota: function (nf, rateadas, temRateio) {
+      if (typeof document === "undefined" || !document.getElementById) return;
+      var self = this, box = document.getElementById("nf-cc-previa");
+      if (!box || !document.querySelectorAll) return;
+      function marcados() {
+        var ids = [];
+        Array.prototype.forEach.call(document.querySelectorAll('input[name="cn-pc"]:checked'), function (el) { if (el && el.value) ids.push(el.value); });
+        return ids;
+      }
+      Array.prototype.forEach.call(document.querySelectorAll('input[name="cn-pc"]'), function (el) {
+        el.addEventListener("change", function () {
+          try { box.innerHTML = self._ccCustoPreviaNota(nf, rateadas, temRateio, marcados()); } catch (e) { box.innerHTML = ""; }
+        });
+      });
+    },
+
+    /* a obra de cada parcela na tabela do modal da nota, refeita quando a
+       pessoa marca ou desmarca um pedido (a regra é `_nfObraDaParcela`; ver o
+       ⚠ na tabela do `lancarFiscal`) */
+    _nfFiarObraParcelas: function (nf, rateadas, temRateio, obras) {
+      if (typeof document === "undefined" || !document.querySelectorAll) return;
+      var self = this;
+      function nomeObra(id) { var o = Util.arr(obras).filter(function (x) { return x.id === id; })[0]; return o ? o.nome : "sem obra"; }
+      function refaz() {
+        var ids = [];
+        Array.prototype.forEach.call(document.querySelectorAll('input[name="cn-pc"]:checked'), function (el) { if (el && el.value) ids.push(el.value); });
+        var obraPC = self._nfPedidosPrevistos(nf, ids).obraPC;
+        Util.arr(rateadas).forEach(function (r, iR) {
+          var td = document.querySelector('[data-nf-obra-parcela="' + iR + '"]');
+          if (td) td.textContent = nomeObra(self._nfObraDaParcela(r, temRateio, nf, obraPC));
+        });
+      }
+      Array.prototype.forEach.call(document.querySelectorAll('input[name="cn-pc"]'), function (el) {
+        el.addEventListener("change", function () { try { refaz(); } catch (e) {} });
+      });
+    },
+
+    /* ---------------------------------------------------------------
+     * A TABELA DE UMA OBRA, COMO A TELA A MOSTRA — para o CSV e o quadro
+     * ------------------------------------------------------------- */
+    _ccCustoTabela: function (obraId, mostrarDesat) {
+      var ctx = this._ccCtx(obraId);
+      var num = this._ccNumeros(ctx);
+      var L = this._ccLinhasDaObra(ctx, num, mostrarDesat);
+      var linhas = [];
+      function linha(l, naSoma) {
+        var sit = !l.n._ativo ? "desativado" : (l.n._arquivado ? "arquivado" : (l.estimado ? "estimativa (dividido pelo orçado)" : ""));
+        var como = l.n.apura === "obra" ? "obra inteira" : (l.n.apura === "rateio" ? "rateio pelo orçado (estimativa)" : "pelos lançamentos");
+        linhas.push({ cc: l.cc, codigo: String(l.cc.codigo || ""), nome: String(l.cc.nome || ""), situacao: sit, como: como,
+          orcado: l.orcado, fonte: l.fonte, comp: l.comp, real: l.real, saldo: l.orcado - l.comp - l.real, naSoma: naSoma });
+      }
+      L.cabecalho.forEach(function (l) { linha(l, !!l.abraca); });
+      L.corpo.forEach(function (l) { linha(l, true); });
+      /* ⚠ SOMA E "FECHA?" SAEM DO `_ccSomaVista` — a conta do que foi
+         IMPRESSO. Somar `l.real` cru aqui deixava a linha "Soma" do quadro
+         discordando da coluna acima dela por um centavo (ver lá). */
+      var sv = this._ccSomaVista(L, num);
+      return { ctx: ctx, num: num, L: L, linhas: linhas, soma: sv.soma,
+        orcTotal: L.totOrc + num.orcadoDigitado,
+        fecha: sv.fecha };
+    },
+
+    /* [Exportar] da tela Centros de Custo: o RECORTE da tela (a obra
+       escolhida, ou todas as que a pessoa acompanha), uma linha por centro +
+       "Em centros da empresa ou de outra obra" + "Sem centro de custo" + o
+       realizado da obra. Cada número sai de `_ccCustoTabela`, que é a conta
+       da tabela na tela. */
+    _ccCustoExportarCentros: function () {
+      var pd = this._ccPode("", "ler");
+      if (!pd.ok) { UI.toast(pd.msg, "erro"); return; }
+      if (typeof CentroCusto === "undefined") { UI.toast("O motor dos centros de custo (js/centrocusto.js) não carregou neste aparelho — recarregue o app.", "erro"); return; }
+      var self = this, st = this._ccEstado();
+      var obras = lista("obras");
+      var sel = st.obra || "todas";
+      var alvo = sel === "todas" ? obras : obras.filter(function (o) { return String(o.id) === String(sel); });
+      if (!alvo.length) { UI.toast("Nenhuma obra para exportar.", "erro"); return; }
+      function c2(v) { return Math.round(Util.num(v) * 100) / 100; }
+      /* o modo da obra na linha do total — os mesmos rótulos da visão "Todas"
+         da tela: numa obra sem centros, "Sem centro de custo" sozinho leria
+         como gasto esquecido, e é só uma obra que ainda não usa centros */
+      var ROT_MODO = { "novo": "pelos lançamentos apropriados", "legado-cabecalho": "obra inteira (antigo)",
+        "legado-rateio": "dividido pelo orçado (estimativa)", "sem-centros": "a obra ainda não usa centros de custo" };
+      var dados = [], naoFecha = [];
+      alvo.forEach(function (o) {
+        var t = self._ccCustoTabela(String(o.id), st.desativados);
+        var nomeO = o.nome || o.id;
+        t.linhas.forEach(function (l) {
+          dados.push({ obra: nomeO, codigo: l.codigo, centro: l.nome, situacao: l.situacao, como: l.como + (l.naSoma ? "" : " (fora da soma)"),
+            orcado: c2(l.orcado), comp: c2(l.comp), real: c2(l.real), saldo: c2(l.saldo) });
+        });
+        if (t.L.empresa.total > 0.005) {
+          dados.push({ obra: nomeO, codigo: "", centro: "Em centros da empresa ou de outra obra", situacao: t.L.empresa.nomes, como: "",
+            orcado: "", comp: c2(t.L.empresa.comp), real: c2(t.L.empresa.valor), saldo: "" });
+        }
+        /* ⚠ UM −R$ 25.000,00 SOZINHO NUMA PLANILHA NÃO SE EXPLICA. O balde
+           negativo (crédito de estorno sem centro) chegava ao Excel como um
+           número solto, e quem confere lá não tem a tela ao lado: a MESMA
+           frase da tela vem junto, pela mesma função. */
+        dados.push({ obra: nomeO, codigo: "", centro: "Sem centro de custo", situacao: "", como: self._ccTxtSemCentro(t.L.semReal, t.num, false),
+          orcado: "", comp: c2(t.num.semCentroComp), real: c2(t.L.semReal), saldo: "" });
+        dados.push({ obra: nomeO, codigo: "", centro: "Realizado da obra", situacao: t.num.conferido ? "" : "número não conferido — veja a tela", como: ROT_MODO[t.ctx.modo.modo] || "",
+          orcado: c2(t.orcTotal), comp: c2(t.num.compObra), real: c2(t.num.realObra), saldo: c2(t.orcTotal - t.num.compObra - t.num.realObra) });
+        if (!t.fecha) naoFecha.push(nomeO);
+      });
+      /* ⚠ A DESPESA SEM OBRA NÃO PODE SUMIR DO ARQUIVO. Ela existe (energia
+         do escritório, frota parada), a visão "Todas" da tela a mostra numa
+         linha própria, e um CSV que lista só as obras deixaria esse dinheiro
+         fora sem nada dizendo — quem confere no Excel não tem como desconfiar
+         de uma linha que não está lá. */
+      if (sel === "todas") {
+        var tSem = self._ccCustoTabela("", st.desativados);
+        if (Util.num(tSem.num.realObra) > 0.005 || Util.num(tSem.num.compObra) > 0.005) {
+          tSem.linhas.forEach(function (l) {
+            dados.push({ obra: "Sem obra", codigo: l.codigo, centro: l.nome, situacao: l.situacao, como: l.como + (l.naSoma ? "" : " (fora da soma)"),
+              orcado: c2(l.orcado), comp: c2(l.comp), real: c2(l.real), saldo: c2(l.saldo) });
+          });
+          dados.push({ obra: "Sem obra", codigo: "", centro: "Sem centro de custo", situacao: "", como: self._ccTxtSemCentro(tSem.L.semReal, tSem.num, false),
+            orcado: "", comp: c2(tSem.num.semCentroComp), real: c2(tSem.L.semReal), saldo: "" });
+          dados.push({ obra: "Sem obra", codigo: "", centro: "Realizado sem obra", situacao: tSem.num.conferido ? "" : "número não conferido — veja a tela", como: "despesa que não é de obra nenhuma",
+            orcado: "", comp: c2(tSem.num.compObra), real: c2(tSem.num.realObra), saldo: "" });
+        }
+      }
+      var nome = "centros-de-custo" + (sel === "todas" ? "" : "-" + String((alvo[0] && alvo[0].nome) || sel).replace(/[^\w\-]+/g, "_"));
+      this._exportarCSV(dados, nome, [
+        { label: "Obra", key: "obra" }, { label: "Código", key: "codigo" }, { label: "Centro", key: "centro" },
+        { label: "Situação", key: "situacao" }, { label: "Como conta", key: "como" },
+        { label: "Orçado", key: "orcado" }, { label: "Comprometido", key: "comp" }, { label: "Realizado", key: "real" }, { label: "Saldo", key: "saldo" }
+      ]);
+      /* ⚠ o arquivo saiu; se alguma obra não fecha, o recado diz qual — o
+         Excel não tem como avisar */
+      if (naoFecha.length) UI.toast("Atenção: em " + naoFecha.join(", ") + " a soma dos centros não fecha com o realizado da obra — confira na tela antes de usar o arquivo.", "aviso", 12000);
+    },
+
+    /* as duas colunas do CSV do Financeiro (vazias sem os dois módulos: o
+       arquivo não pode carregar o que a pessoa não vê na tela) */
+    _ccCustoColunasFin: function () {
+      if (!this._ccCustoPode()) return [];
+      var self = this, memoE = {}, memoO = {};
+      function rotEtapa(f) {
+        var e = String(f.etapaId || "");
+        if (!e) return "";
+        var o = String(f.obraId || "");
+        if (!Object.prototype.hasOwnProperty.call(memoE, o)) {
+          var m = {};
+          try { Util.arr(self._etapasDaObra(o)).forEach(function (x) { m[String(x.id)] = String(x.nome || "").replace(/^↳\s*/, ""); }); } catch (eE) {}
+          memoE[o] = m;
+        }
+        return memoE[o][e] || "(etapa de outro orçamento — id " + e + ")";
+      }
+      /* ⚠ UMA LINHA QUE NÃO SE CALCULA NÃO DERRUBA O ARQUIVO do Financeiro
+         inteiro — ela diz que não calculou (e o resto do CSV sai) */
+      function rotCentro(f) {
+        try { return rotCentro0(f); } catch (eRc) { return "(não consegui calcular)"; }
+      }
+      function rotCentro0(f) {
+        if (String(f.tipo || "") !== "despesa") return "";
+        var o = String(f.obraId || "");
+        if (!o) return "";
+        var ob = self._ccCustoObra(o, memoO);
+        if (!ob || !ob.ctx || !ob.ctx.modo) return "";
+        var modo = ob.ctx.modo.modo;
+        var fa = ob.porId[String(f.id || "")];
+        if (!fa) return "";                                     // cancelado: a tela não o soma
+        /* ⚠ O CENTRO DE FORA VEM ANTES DO ABRAÇO E DO RATEIO (I1, ver
+           `_ccLinhasDaObra`). A tela põe este lançamento na linha "Em centros
+           da empresa ou de outra obra"; o arquivo dizendo "CC-01 Obra toda
+           (obra inteira)" ou "dividido entre os 2 centros" seria a planilha
+           contradizendo a tela sobre a MESMA despesa — e é a planilha que vai
+           para a reunião. */
+        if (fa.cc) {
+          var ccF = null;
+          Util.arr(ob.ctx.ccsCrus).forEach(function (c) { if (c && String(c.id) === String(fa.cc)) ccF = c; });
+          if (!(ccF && String(ccF.obraId || "") === o)) return self._ccRotuloDeFora(ccF, fa.cc);
+        }
+        if (ob.abraca) return self._ccCustoRotulo(ob.abraca) + " (obra inteira)";
+        if (modo === "legado-rateio") return "dividido entre os " + ob.ctx.modo.legados + " centros pelo orçado (estimativa)";
+        if (modo !== "novo") return "";
+        var r = self._ccCustoDoLanc(f, memoO);
+        if (!r) return "";
+        return r.cc ? r.rot : "(sem centro de custo)";
+      }
+      return [{ label: "Etapa", get: rotEtapa }, { label: "Centro de custo", get: rotCentro }];
+    },
+
+    /* ---------------------------------------------------------------
+     * RELATÓRIOS GERENCIAIS — quadro "Custo por centro de custo"
+     * ------------------------------------------------------------- */
+    _relCcObra: "",
+    relCcObra: function (d) {
+      /* ⚠ SÓ O `change` TRAZ `value`. O clique no <select> não chega aqui (o
+         `onClick` do js/app.js ignora select e option, justamente porque o
+         clique que ABRE a lista era tratado como ação e a tela redesenhava
+         embaixo do dedo); esta guarda é para qualquer outro caminho que
+         chame a ação sem valor — lido como "escolheu vazio", ele trocaria a
+         obra do quadro por nenhuma e redesenharia a tela à toa. */
+      if (!d || d.value == null || d.value === "") return;
+      this._relCcObra = String(d.value);
+      App.render();
+    },
+    _relCcQuadroHtml: function () {
+      if (!this._ccCustoPode()) return "";
+      var self = this, obras = lista("obras");
+      if (!obras.length) return "";
+      var ccs = lista("centrocusto");
+      var sel = this._relCcObra;
+      if (!sel || !obras.some(function (o) { return String(o.id) === sel; })) {
+        /* a primeira que adotou os centros novos; senão a primeira com centro; senão a primeira */
+        var achou = "";
+        obras.forEach(function (o) { if (!achou && CentroCusto.modoDaObra(String(o.id), ccs).modo === "novo") achou = String(o.id); });
+        if (!achou) obras.forEach(function (o) { if (!achou && CentroCusto.modoDaObra(String(o.id), ccs).modo !== "sem-centros") achou = String(o.id); });
+        sel = achou || String(obras[0].id);
+      }
+      var selHtml = '<select data-gacao="rel-cc-obra" id="rel-cc-obra" style="max-width:280px">' + obras.map(function (o) {
+        return '<option value="' + Util.esc(String(o.id)) + '"' + (String(o.id) === sel ? " selected" : "") + ">" + Util.esc(o.nome || o.id) + "</option>";
+      }).join("") + "</select>";
+      var h = '<div class="card" data-rel-cc><div class="flex between" style="gap:10px;align-items:center;flex-wrap:wrap"><h3 style="margin:0">Custo por centro de custo</h3>' + selHtml + "</div>";
+      var t;
+      try { t = this._ccCustoTabela(sel, false); } catch (e) {
+        return h + '<p class="muted">Não consegui montar os centros desta obra neste aparelho (' + Util.esc(String((e && e.message) || e)) + "). Os outros quadros desta tela não dependem dele.</p></div>";
+      }
+      var modo = t.ctx.modo.modo;
+      if (modo === "sem-centros") {
+        return h + '<p class="muted" style="margin:8px 0 0">Esta obra ainda não tem centro de custo. O gasto dela (' + Util.fmtMoeda(t.num.realObra) +
+          ") aparece nos quadros acima.</p></div>";
+      }
+      t.num.avisos.forEach(function (a) { h += '<p style="color:var(--vermelho);font-size:12.5px">' + Util.esc(a) + "</p>"; });
+      if (modo === "legado-rateio") h += '<p class="muted" style="font-size:12.5px;margin:8px 0">Estimativa: os centros desta obra dividem o gasto pelo valor orçado — não é o gasto de cada centro.</p>';
+      var real = t.num.realObra;
+      function pct(v) { return real > 0.005 ? Util.fmtPct(v / real * 100, 1) : "—"; }
+      h += '<table class="tbl"><thead><tr><th>Código</th><th>Centro</th><th class="num">Realizado</th><th class="num">% do gasto da obra</th></tr></thead><tbody>';
+      t.linhas.forEach(function (l) {
+        h += "<tr><td><b>" + Util.esc(l.codigo || "—") + "</b></td><td>" + Util.esc(l.nome || "—") +
+          (l.situacao ? ' <span class="muted">(' + Util.esc(l.situacao) + ")</span>" : "") +
+          (l.naSoma ? "" : ' <span class="muted">(obra inteira — fora da soma)</span>') +
+          '</td><td class="num">' + Util.fmtMoeda(l.real) + '</td><td class="num">' + (l.naSoma ? pct(l.real) : "—") + "</td></tr>";
+      });
+      if (t.L.empresa.valor > 0.005) {
+        h += '<tr><td></td><td>Em centros da empresa ou de outra obra<br><span class="muted">' + Util.esc(t.L.empresa.nomes) + '</span></td><td class="num">' +
+          Util.fmtMoeda(t.L.empresa.valor) + '</td><td class="num">' + pct(t.L.empresa.valor) + "</td></tr>";
+      }
+      /* ⚠ `Math.abs`: balde NEGATIVO também pede atenção — ver o ⚠ do
+         `_ccTxtSemCentro`. Com `> 0` o −R$ 25.000,00 saía sem destaque. */
+      /* ⚠ O QUADRO VAI PARA REUNIÃO IMPRESSO, e um −R$ 25.000,00 sozinho na
+         linha "Sem centro de custo" não se explica — ali ninguém tem a tela ao
+         lado. A MESMA frase da tela e do CSV vem junto, pela mesma função
+         (`_ccTxtSemCentro`), e só quando há o que dizer. */
+      var txtSemQ = self._ccTxtSemCentro(t.L.semReal, t.num, false);
+      h += '<tr><td></td><td>Sem centro de custo' +
+        (txtSemQ && txtSemQ !== "todo o gasto desta obra está em centro" ? '<br><span class="muted">' + Util.esc(txtSemQ) + "</span>" : "") +
+        '</td><td class="num"' + (Math.abs(t.L.semReal) > 0.005 ? ' style="color:var(--ambar, #b45309)"' : "") + ">" +
+        Util.fmtMoeda(t.L.semReal) + '</td><td class="num">' + pct(t.L.semReal) + "</td></tr>";
+      h += '<tr class="etapa-row"><td></td><td><b>Soma</b></td><td class="num"><b>' + Util.fmtMoeda(t.soma) + "</b></td><td></td></tr>";
+      h += '<tr><td></td><td class="muted">Realizado da obra (Financeiro)</td><td class="num muted">' + Util.fmtMoeda(real) + "</td><td></td></tr>";
+      h += "</tbody></table>";
+      /* ⚠ A SOMA TEM DE SER O REALIZADO DA OBRA (invariante I1 da espec). Se
+         não for, o quadro DIZ — um quadro de reunião com linha faltando e
+         total certo é o formato em que o número errado passa despercebido. */
+      if (!t.fecha) {
+        h += '<p style="color:var(--vermelho);font-size:12.5px">A soma dos centros (' + Util.fmtMoeda(t.soma) + ") não fecha com o realizado da obra (" +
+          Util.fmtMoeda(real) + "). Confira a tela Centros de Custo antes de usar este quadro.</p>";
+      }
+      h += '<p class="muted" style="font-size:11.5px;margin:6px 0 0">Mesma conta da tela Centros de Custo. Só despesa viva: cancelado fica de fora; estorno soma zero com o original.</p>';
+      void self;
+      return h + "</div>";
+    },
+
+    /* o toast de quem lança, com a frase do centro no fim. ⚠ NUNCA DERRUBA
+       O LANÇAMENTO: isto roda DEPOIS do dinheiro gravado; uma exceção aqui
+       (orçamento ilegível, motor em cache velho) não pode trocar o verde de
+       um lançamento que entrou pelo vermelho de uma frase que não montou. A
+       frase some; o recado de dinheiro fica. */
+    _ccCustoToast: function (base, lancs, tipo) {
+      var fr = "";
+      try { fr = this._ccCustoFrase(lancs); } catch (e) { fr = ""; }
+      var t = String(base || "") + fr;
+      /* com a frase, o recado cresce: 2,6 s não dão para ler "sem centro de
+         custo — …" e a pessoa ficaria só com o verde */
+      UI.toast(t, tipo || "ok", fr ? Math.max(6000, Math.min(14000, t.length * 55)) : undefined);
     },
 
     // ---------- Fiscal: XML em lote + consulta por chave de acesso (offline, sem IA) ----------
@@ -26703,7 +28714,12 @@ renderPatrimonio: function () {
     /* ---------------------------------------------------------------
      * _ccCtx(obraId) — tudo que o motor precisa, montado UMA vez
      * ------------------------------------------------------------- */
-    _ccCtx: function (obraId) {
+    /* `troca` (opcional) = {orcamentoId}: monta o contexto COMO SE a obra
+       estivesse ligada a outro orçamento, sem gravar nada. É o que o aviso de
+       troca de orçamento usa para dizer o que a TELA passaria a mostrar —
+       pela mesma conta dela, e não por uma cópia parecida (ver
+       `_avisoTrocaOrcamento`). */
+    _ccCtx: function (obraId, troca) {
       obraId = String(obraId || "");
       /* ⚠ LISTA CRUA (`listaTodas`), não `lista`. A guarda de exclusão e a
          conferência de id ocupado contam o DISCO INTEIRO: com a lista podada
@@ -26713,6 +28729,12 @@ renderPatrimonio: function () {
          O que a TELA mostra continua vindo de `lista`. */
       var ccsCrus = listaTodas("centrocusto");
       var obra = obraId ? Store.obter(eid(), "obras", obraId) : null;
+      if (obra && troca && typeof troca === "object" && Object.prototype.hasOwnProperty.call(troca, "orcamentoId")) {
+        var obraT = {}, kT;
+        for (kT in obra) if (Object.prototype.hasOwnProperty.call(obra, kT)) obraT[kT] = obra[kT];
+        obraT.orcamentoId = troca.orcamentoId || "";
+        obra = obraT;   // cópia em memória: nada disto vai ao disco
+      }
       var orcs = [];
       try { orcs = Util.arr(Store.listarOrcamentos(eid())); } catch (eL) { orcs = []; }
       var orc = null;
@@ -26745,6 +28767,27 @@ renderPatrimonio: function () {
       };
     },
 
+    /* ⚠ INTEGRAÇÃO 8A × 8B — UMA SÓ TABELA "PEDIDO → ETAPA / CENTRO".
+       Quem responde "onde cai esta despesa" é o `_ccFatos` (o dinheiro que já
+       está no disco) e o `_ccCustoResolveHip` (a prévia da nota, antes do
+       [Lançar]). Os dois precisam da MESMA tabela, e até a fusão das duas
+       fatias cada um montava a sua: a 8A ensinou o `compra.ccId` ao `_ccFatos`
+       e a prévia da 8B continuou só com a etapa — a prévia dizia "sem centro
+       de custo (o pedido PC-7 não tem etapa do orçamento)" e, depois do
+       [Lançar], a tela de Centros mostrava a despesa DENTRO do centro do
+       pedido. Recado que mente na tela onde a pessoa decide lançar.
+       Montar a tabela aqui, uma vez, tira a segunda cópia de circulação; a
+       paridade continua vigiada pela `tools/test-export-cc.js` [1]. */
+    _ccPedidosMapa: function (cps) {
+      var m = { etapa: {}, cc: {} };
+      Util.arr(cps).forEach(function (c) {
+        if (!c || !c.id) return;
+        if (c.etapaId) m.etapa[String(c.id)] = String(c.etapaId);
+        if (c.ccId) m.cc[String(c.id)] = String(c.ccId);
+      });
+      return m;
+    },
+
     /* ---------------------------------------------------------------
      * _ccFatos(ctx) — uma volta só pelo dinheiro da obra
      *
@@ -26758,13 +28801,78 @@ renderPatrimonio: function () {
       var self = this, obraId = String(ctx.obraId || "");
       var fin = Store.listar(eid(), "financeiro");
       var cps = Store.listar(eid(), "compras");
-      var etapaDoPedido = {};
-      cps.forEach(function (c) { if (c && c.id && c.etapaId) etapaDoPedido[String(c.id)] = String(c.etapaId); });
-      function noDoLanc(f) {
+      var ped = this._ccPedidosMapa(cps);
+      var etapaDoPedido = ped.etapa, ccDoPedido = ped.cc;
+      /* ⚠ O ESPELHO DO ESTORNO SEGUE O ORIGINAL — GÊMEO EXATO do
+         `CustoEtapa.resolverNo` (ESPEC-medicao-cc §4.3, degrau 1). Roteiro do
+         defeito, medido no navegador em 22/09/2026 com clique e tecla reais:
+         pedido recebido → despesa de R$ 30.000 apropriada por HERANÇA do
+         carimbo → baixa → [Estornar]. O espelho nasce sem `docTipo`/`docId`/
+         `compraId` (o `finEstornar` copiava só obra/contrato/etapa), então a
+         despesa ficava no centro "2 Estrutura" e o crédito caía em "Sem centro
+         de custo": o saldo do centro ficava R$ 30.000 menor do que é, e a
+         guarda de soma não acusava porque o TOTAL fechava em R$ 0,00.
+         ⚠ Se este degrau divergir do `CustoEtapa`, o `_ccNumeros` deixa de
+         afirmar — eles são gêmeos de propósito. Um salto só, e obra igual. */
+      var finPorId = {};
+      Util.arr(fin).forEach(function (f) { if (f && f.id) finPorId[String(f.id)] = f; });
+      function originalDoEspelho(f) {
+        if (!f || !f.estornoDe) return null;
+        var o = finPorId[String(f.estornoDe)];
+        if (!o) return null;
+        if (String(o.obraId || "") !== String(f.obraId || "")) return null;
+        return o;
+      }
+      function noDireto(f) {
         if (f.etapaId) return String(f.etapaId);
         if (String(f.docTipo || "") === "PC" && etapaDoPedido[String(f.docId || "")]) return etapaDoPedido[String(f.docId)];
         if (f.compraId && etapaDoPedido[String(f.compraId)]) return etapaDoPedido[String(f.compraId)];
         return "";
+      }
+      function noDoLanc(f) {
+        var direto = noDireto(f);
+        if (direto) return direto;
+        var o = originalDoEspelho(f);
+        return o ? noDireto(o) : "";
+      }
+      /* ⚠ MEDCC 8A — O CENTRO DO PEDIDO VALE PARA A DESPESA DELE (§4.3, 4e:
+         `compra.ccId` → centro; senão `compra.etapaId` → nó). Roteiro do
+         defeito que isto fecha: pedido com um centro PRÓPRIO (sem nó no
+         orçamento — o `doDocumento` apaga o `etapaId` dele de propósito) tinha
+         o comprometido na linha do centro e, depois do Receber, a MESMA
+         compra caía em "Sem centro de custo". O dinheiro trocava de linha só
+         por ter chegado. A etapa própria do lançamento continua mandando
+         primeiro (4a antes de 4e — a régua do `CustoEtapa`), e a ligação é
+         pelo CARIMBO (`docTipo:"PC"`+`docId`, ou `compraId`), nunca por
+         semelhança. */
+      /* ⚠ POR QUE ESTE LANÇAMENTO FICOU SEM ETAPA — e a resposta muda quando
+         ele é espelho de estorno (ESPEC-medicao-cc §4.9). Sem motivo próprio o
+         crédito aparecia como "o lançamento não tem etapa do orçamento", e isso
+         mandava a pessoa apropriar à mão um estorno em vez de olhar o
+         original. Função LOCAL de propósito: `finPorId` já está aqui, e um
+         método novo só para isto obrigaria as três bancadas vizinhas a
+         extraí-lo do fonte antes de a tela montar. */
+      function motivoSemEtapa(f) {
+        if (!f || !f.estornoDe) return "sem-etapa";
+        var o = finPorId[String(f.estornoDe)];
+        if (!o) return "estorno-orfao";
+        if (String(o.obraId || "") !== String(f.obraId || "")) return "estorno-outra-obra";
+        return "sem-etapa";
+      }
+      function ccDireto(f) {
+        if (f.etapaId) return "";
+        if (String(f.docTipo || "") === "PC" && ccDoPedido[String(f.docId || "")]) return ccDoPedido[String(f.docId)];
+        if (f.compraId && ccDoPedido[String(f.compraId)]) return ccDoPedido[String(f.compraId)];
+        return "";
+      }
+      /* mesmo degrau do espelho que o `noDoLanc`: o crédito do estorno pertence
+         ao centro do pedido que gerou a despesa, não a "sem centro" */
+      function ccDoLanc(f) {
+        var direto = ccDireto(f);
+        if (direto) return direto;
+        if (f.etapaId || noDireto(f)) return "";
+        var o = originalDoEspelho(f);
+        return o ? ccDireto(o) : "";
       }
       var fatos = [], somaReal = 0, somaComp = 0;
       fin.forEach(function (f) {
@@ -26773,10 +28881,17 @@ renderPatrimonio: function () {
         if (self._finAnulado(f)) return;
         var v = Util.num(f.valor);
         var no = noDoLanc(f);
-        var d = no ? CentroCusto.centroDoNo(ctx.indice, no) : { cc: null, motivo: "sem-etapa" };
+        var ccPed = ccDoLanc(f);
+        var d = ccPed ? { cc: { id: ccPed }, motivo: "" } : (no ? CentroCusto.centroDoNo(ctx.indice, no) : { cc: null, motivo: motivoSemEtapa(f) });
         somaReal += v;
-        fatos.push({ t: "lanc", id: String(f.id || ""), valor: v, no: no,
-          cc: (d.cc && d.cc.id) ? String(d.cc.id) : "", motivo: d.motivo || (no ? "" : "sem-etapa"),
+        /* ⚠ `viaCc` = QUEM DECIDIU, e não só onde caiu. Com `ccPed` o centro
+           veio do `compra.ccId`, e aí "pela etapa do pedido" é FALSO: o
+           pedido de centro próprio não tem etapa nenhuma (o `doDocumento`
+           apaga a dele de propósito). Sem este campo o recado da 8B teria de
+           adivinhar pelo `no` — e o pedido de centro GERADO tem os dois, o
+           `ccId` e o `etapaId`, então a adivinhação erraria justo ali. */
+        fatos.push({ t: "lanc", id: String(f.id || ""), valor: v, no: no, viaCc: !!ccPed,
+          cc: (d.cc && d.cc.id) ? String(d.cc.id) : "", motivo: d.motivo || (no || ccPed ? "" : motivoSemEtapa(f)),
           pago: (typeof FinStatus !== "undefined" && FinStatus.realizado) ? !!FinStatus.realizado(f) : String(f.status || "") === "pago",
           desc: String(f.descricao || "") });
       });
@@ -26842,10 +28957,21 @@ renderPatrimonio: function () {
       out.realObra = fatos.somaReal;
       out.compObra = fatos.somaComp;
 
-      /* ⚠ GUARDA-DO-GUARDA: a conta de cima é comparada com o motor que o
-         Previsto × Realizado já usa. Duas contas para o mesmo dinheiro foi o
-         que fez a mesma obra dar R$ 130.693 numa tela e R$ 125.693 noutra. Se
-         divergirem, a tela DIZ os dois números em vez de escolher um. */
+      /* ⚠ GUARDA-DO-GUARDA, E ELE VALE TAMBÉM NO CAMINHO LEGADO. A conferência
+         contra o `consolidar` abaixo só roda quando a obra TEM orçamento — e
+         a obra legada (um centro antigo, "obra inteira") é justamente a que
+         costuma não ter. Era o caminho sem nenhuma conferência, e é o dos 38
+         clientes de hoje. `totalVivo` é a mesma régua do Painel, dos
+         Relatórios e do relatório executivo, e não depende de orçamento:
+         divergiu, a tela DIZ os dois números em vez de escolher um. */
+      if (typeof CustoEtapa !== "undefined" && CustoEtapa.totalVivo && String(ctx.obraId || "")) {
+        var vivo = CustoEtapa.totalVivo(lista("financeiro"), { obraId: ctx.obraId, tipo: "despesa" }).valor;
+        if (Math.abs(vivo - out.realObra) > 0.011) {
+          out.conferido = false;
+          out.avisos.push("Não consegui conferir o Realizado desta obra: esta tela somou " + Util.fmtMoeda(out.realObra) +
+            " e o Financeiro da obra soma " + Util.fmtMoeda(vivo) + ". Os números por centro abaixo podem estar incompletos.");
+        }
+      }
       if (ctx.orc && typeof CustoEtapa !== "undefined" && CustoEtapa.consolidar) {
         var pac = CustoEtapa.consolidar({ obraId: ctx.obraId, orcamento: ctx.orc,
           financeiro: lista("financeiro"), compras: lista("compras") });
@@ -26904,7 +29030,10 @@ renderPatrimonio: function () {
         '<label for="cc-desat" class="muted" style="cursor:pointer">mostrar desativados</label></span>';
       var btnGerar = (podeGravar && sel !== "todas")
         ? '<button class="btn" data-gacao="cc-gerar" data-obra="' + Util.esc(sel) + '">Gerar do orçamento…</button>' : "";
-      var extra = '<span class="flex" style="gap:10px;align-items:center;margin-right:10px">' + selObra + chkDesat + btnGerar + "</span>";
+      /* [Exportar] (mc-8B): o recorte que está na tela, pela mesma conta dela */
+      var btnExp = st.aba === "centros"
+        ? '<button class="btn sm" data-gacao="export-centrocusto">' + (typeof Icones !== "undefined" ? Icones.get("baixar", 15) : "") + " Exportar CSV</button>" : "";
+      var extra = '<span class="flex" style="gap:10px;align-items:center;margin-right:10px">' + selObra + chkDesat + btnGerar + btnExp + "</span>";
 
       var html = this._head(svg("centrocusto") + "Centros de Custo", podeGravar ? "novo-centrocusto" : "", "Novo centro", extra);
       html += '<div class="tabs" style="margin-bottom:14px">' +
@@ -26959,10 +29088,25 @@ renderPatrimonio: function () {
       var obra = ctx.obra || {};
       var html = "";
 
+      /* ⚠ AS LINHAS DA TABELA SAEM DE `_ccLinhasDaObra`, e é a MESMA função
+         que o CSV desta tela e o quadro "Custo por centro" dos Relatórios
+         chamam (mc-8B). Roteiro do defeito que isto impede: o arquivo que a
+         pessoa leva para o Excel, ou o quadro que vai à reunião, somando por
+         uma conta parecida com a da tela — e a obra com R$ 47.000 de gasto
+         aparecendo como R$ 0,00 num e R$ 47.000,00 no outro, que foi
+         exatamente o que o `abraca` e o rateio desta tela já custaram.
+         ⚠ CALCULADA ANTES DAS FAIXAS de propósito: é o `L.foraDaObra` que diz
+         se a faixa pode afirmar "conta todo o gasto da obra". Ela afirmava
+         isso logo acima de uma tabela que mostrava R$ 10.000 fora do centro
+         (revisão adversarial da Onda 8, visto na foto a 1920). */
+      var L = this._ccLinhasDaObra(ctx, num, st && st.desativados);
+      var foraTxt = L.foraDaObra ? ", menos o que está em centro da empresa ou de outra obra" : "";
+
       /* faixa do modo (§4.0) — cada uma com a porta que resolve */
       var m = ctx.modo;
       if (m.modo === "legado-rateio") {
-        html += this._ccFaixa("aviso", "Os " + m.legados + " centros desta obra dividem o gasto pelo orçado (estimativa) — esse número não é o gasto de cada centro.",
+        html += this._ccFaixa("aviso", "Os " + m.legados + " centros desta obra dividem o gasto pelo orçado (estimativa) — esse número não é o gasto de cada centro" +
+          (L.foraDaObra ? ", e o que está em centro da empresa ou de outra obra fica fora dessa divisão." : "."),
           podeGravar ? '<button class="btn sm" data-gacao="cc-converter" data-obra="' + Util.esc(obraId) + '">Converter os centros antigos…</button>' : "");
       } else if (m.modo === "legado-cabecalho") {
         /* ⚠ A PORTA QUE A RECUSA MANDA PROCURAR TEM DE EXISTIR NESTA TELA.
@@ -26972,7 +29116,8 @@ renderPatrimonio: function () {
            desenhado no ramo `legado-rateio` — nesta obra ele não existia. A
            pessoa ficava no laço da skill `dinheiro` §6: a única saída visível
            é a que o app nega. */
-        html += this._ccFaixa("info", "Esta obra ainda não usa os centros de custo novos: o centro que ela tem conta todo o gasto da obra.",
+        html += this._ccFaixa("info", "Esta obra ainda não usa os centros de custo novos: o centro que ela tem conta todo o gasto da obra" +
+          (L.foraDaObra ? " que está em centro dela — o resto está em centro da empresa ou de outra obra." : "."),
           podeGravar ? '<button class="btn sm" data-gacao="cc-gerar" data-obra="' + Util.esc(obraId) + '">Gerar do orçamento…</button> ' +
             '<button class="btn sm" data-gacao="cc-converter" data-obra="' + Util.esc(obraId) + '">Converter os centros antigos…</button> ' +
             '<button class="btn sm ghost" data-gacao="novo-centrocusto">Novo centro</button>' : "");
@@ -26980,6 +29125,34 @@ renderPatrimonio: function () {
         html += this._ccFaixa("info", "Esta obra ainda não usa os centros de custo novos.",
           podeGravar ? '<button class="btn sm" data-gacao="cc-gerar" data-obra="' + Util.esc(obraId) + '">Gerar do orçamento…</button> ' +
             '<button class="btn sm ghost" data-gacao="novo-centrocusto">Novo centro</button>' : "");
+      } else if (m.modo === "novo") {
+        /* ⚠ A VOLTA DA CONVERSÃO — PORTA DE MÃO ÚNICA VIRA PORTA DOS DOIS
+           LADOS (skill `dinheiro` §6). Roteiro medido no navegador a 1366 e a
+           1920 (revisão adversarial da Onda 5): obra com 2 centros antigos e
+           R$ 47.000 de gasto → [Converter os centros antigos…] → toast "2
+           centro(s) antigo(s) convertido(s)", Realizado R$ 0,00 em cada um,
+           KPI "Sem centro R$ 47.000,00". A única porta era [Ver a fila], e a
+           aba Fila responde "ainda não disponível neste aparelho — o motor
+           (js/ccagente.js) ainda está sendo construído". E não havia volta: o
+           select "Como contar o realizado" do cadastro só oferece a opção
+           antiga quando NENHUM centro da obra tem `fmt:2`.
+           Ficava a terceira opção, que é a pior: converter, ver tudo ir a
+           zero e não ter nem Fila nem volta. */
+        /* ⚠ A GUARDA DE EXISTÊNCIA AQUI É CONTRA CACHE VELHO, não contra
+           método que nunca existiu (o `podeDesconverter` é exercido pelo
+           test-centrocusto-motor e pelo [22c] da suíte da tela, com CN). Um
+           `js/centrocusto.js` antigo em cache derrubaria a tela INTEIRA com
+           TypeError no meio do render, e sem a tela não há nem os números nem
+           as outras portas. Com a guarda, some só o botão da volta. */
+        var voltaCC = CentroCusto.podeDesconverter ? CentroCusto.podeDesconverter(obraId, ctx.ccsCrus) : [];
+        if (voltaCC.length) {
+          html += this._ccFaixa("info",
+            "Os " + voltaCC.length + " centros desta obra vieram da conversão dos antigos: o Realizado de cada um agora vem só do que for apropriado a ele" +
+            (typeof CCAgente === "undefined"
+              ? " — e o motor que faz essa apropriação (js/ccagente.js) ainda não está neste aparelho, então nada cai neles automaticamente."
+              : "."),
+            podeGravar ? '<button class="btn sm ghost" data-gacao="cc-desconverter" data-obra="' + Util.esc(obraId) + '">Voltar para a estimativa antiga…</button>' : "");
+        }
       }
 
       /* recado da primeira abertura por obra que já está no modo novo */
@@ -26992,8 +29165,177 @@ renderPatrimonio: function () {
 
       num.avisos.forEach(function (a) { html += self._ccFaixa("erro", a, ""); });
 
+      /* ⚠ UMA CHAMADA SÓ. O `_ccLinhasDaObra` ACUMULA em `num.orcadoDigitado`
+         (ele muta `num` de propósito, ver lá); chamá-lo duas vezes no mesmo
+         render dobraria o Orçado do KPI. Ele já rodou lá em cima, antes das
+         faixas, porque a faixa precisa do `L.foraDaObra`. */
+      var ccs = L.ccs, abraca = L.abraca, cabecalho = L.cabecalho, corpo = L.corpo;
+      var totOrc = L.totOrc, totReal = L.totReal, totComp = L.totComp;
+
+      /* KPIs */
+      /* ⚠ O SALDO DESCONTA O GASTO E O EMPENHO DA **OBRA**, não só o que caiu
+         em centro. Descontar apenas os R$ 42.000 apropriados e ignorar os
+         R$ 5.000 ainda sem centro faria o saldo nascer R$ 5.000 mais alto do
+         que é — e saldo para cima é o número que autoriza a próxima compra.
+         Entre errar para cima e errar para baixo num saldo de obra, erra-se
+         para baixo; e aqui não se erra: os dois KPIs dizem o seu escopo. */
+      /* ⚠ O SALDO USA O ORÇADO QUE A PESSOA ESTÁ VENDO. O cartão diz, com
+         estas palavras, "orçado − comprometido − gasto da obra"; ele somava
+         só o orçado de base CONFERIDA e descartava calado o digitado. Como
+         `fmt:2` não existe em versão publicada nenhuma, TODO centro da base
+         instalada tem orçado digitado: o cartão mostrava Saldo −R$ 47.000,00
+         com R$ 403.205,21 de orçado escrito na linha de baixo. Recado que
+         mente é pior que recado nenhum — o orçado entra inteiro e o cartão
+         diz quanto dele é base não conferida. */
+      var orcTotal = totOrc + num.orcadoDigitado;
+      var saldo = orcTotal - num.compObra - num.realObra;
+      /* "sem centro", rateio e quem abraça: contas de `_ccLinhasDaObra` (os
+         ⚠ do porquê moram lá, junto da conta) */
+      var rateado = L.rateado, semReal = L.semReal, quemAbraca = L.quemAbraca;
+      /* ⚠ O KPI NÃO PODE AFIRMAR "TODO O GASTO" COM GASTO FORA. Com um pedido
+         apontando centro da empresa, este cartão dizia "Sem centro R$ 0,00 —
+         todo o gasto desta obra está no centro CC-01" logo acima da linha que
+         mostrava os R$ 10.000 fora dele (ver o ⚠ da I1 em `_ccLinhasDaObra`).
+         O `foraTxt` é o mesmo da faixa lá em cima — declarado uma vez só. */
+      var subSemCentro = abraca
+        ? ((L.foraDaObra ? "o gasto" : "todo o gasto") + " desta obra está no centro " + (quemAbraca || "único") + " (obra inteira)" + foraTxt)
+        : (rateado
+          ? ("o gasto desta obra está dividido entre os " + m.legados + " centros pelo orçado (estimativa)" + foraTxt)
+          : this._ccTxtSemCentro(semReal, num, true));
+      html += '<div class="kpis kpis-g" style="margin-bottom:14px">' +
+        '<div class="kpi kpi-compacto"><span class="kpi-lbl">Orçado (custo direto)</span><span class="kpi-val">' + Util.fmtMoeda(orcTotal) + "</span>" +
+        /* ⚠ "INCLUI R$ 403.205,21 DIGITADO" NUM ORÇADO DE R$ 403.205,21 lê-se
+           como se houvesse uma outra parte. Quando é tudo digitado — que é o
+           caso de toda obra que ainda não gerou os centros do orçamento — a
+           frase diz isso, e não uma fração que não existe. */
+        (num.orcadoDigitado > 0.005
+          ? '<span class="kpi-sub">' + (num.orcadoDigitado >= orcTotal - 0.005
+            ? "base digitada, não conferida com o orçamento"
+            : "inclui " + Util.fmtMoeda(num.orcadoDigitado) + " digitado (base não conferida)") + "</span>"
+          : "") + "</div>" +
+        '<div class="kpi kpi-compacto"><span class="kpi-lbl">Comprometido</span><span class="kpi-val">' + Util.fmtMoeda(num.compObra) + "</span>" +
+        '<span class="kpi-sub">pedidos desta obra ainda não recebidos</span></div>' +
+        /* ⚠ NO RATEIO ELE NÃO É "APROPRIADO", E O CARTÃO TEM DE DIZER ISSO.
+           A coluna da tabela já se chama "Realizado (estimativa)" no mesmo
+           render; o cartão dizia "apropriado" sobre o MESMO número — e essa é
+           a palavra que autoriza a pessoa a ler a divisão pelo orçado como
+           gasto medido de cada centro. Dois rótulos para o mesmo valor na
+           mesma tela é o formato em que esta base já entregou 50% para um e
+           80% para o outro. */
+        '<div class="kpi kpi-compacto"><span class="kpi-lbl">' + (rateado ? "Realizado (estimativa)" : "Realizado (apropriado)") + '</span><span class="kpi-val">' + Util.fmtMoeda(totReal) + "</span>" +
+        /* ⚠ APROPRIADO MAIOR QUE O GASTO NÃO É NORMAL, E O CARTÃO NÃO PODE
+           APRESENTÁ-LO COMO SE FOSSE. Medido na revisão final: "REALIZADO
+           (APROPRIADO) R$ 30.000,00 / de R$ 0,00 gastos na obra" — a frase
+           deixava a pessoa achar que a tela estava quebrada, quando a
+           diferença tem nome: é crédito de estorno que não caiu em centro
+           nenhum. Número ela confere; frase impossível ela ignora. */
+        '<span class="kpi-sub">' + Util.esc(rateado
+          ? "os " + Util.fmtMoeda(num.realObra) + " gastos na obra, divididos pelo orçado"
+          : ((totReal - Util.num(num.realObra)) > 0.005
+            ? "de " + Util.fmtMoeda(num.realObra) + " gastos na obra — os " +
+              Util.fmtMoeda(totReal - Util.num(num.realObra)) + " a mais são crédito de estorno fora de centro (veja “Sem centro”)"
+            : "de " + Util.fmtMoeda(num.realObra) + " gastos na obra")) + "</span></div>" +
+        '<div class="kpi kpi-compacto"><span class="kpi-lbl">Saldo</span><span class="kpi-val" style="color:' + (saldo >= 0 ? "var(--verde)" : "var(--vermelho)") + '">' + Util.fmtMoeda(saldo) + "</span>" +
+        '<span class="kpi-sub">orçado − comprometido − gasto da obra</span></div>' +
+        '<div class="kpi kpi-compacto"><span class="kpi-lbl">Sem centro</span><span class="kpi-val" style="color:' + (Math.abs(semReal) > 0.005 ? "var(--ambar, #b45309)" : "inherit") + '">' + Util.fmtMoeda(semReal) + "</span>" +
+        '<span class="kpi-sub">' + Util.esc(subSemCentro) + "</span></div>" +
+        "</div>";
+      void totComp;
+
+      if (!ccs.length) {
+        return html + vazioBox("Esta obra ainda não tem centro de custo", podeGravar ? "novo-centrocusto" : "", "Cadastrar o primeiro");
+      }
+
+      var rotReal = (m.modo === "legado-rateio") ? "Realizado (estimativa)" : "Realizado";
+      html += '<table class="tbl"><thead><tr><th>Código</th><th>Centro</th><th class="num">Orçado</th><th class="num">Comprometido</th><th class="num">' +
+        rotReal + '</th><th class="num">Consumo</th><th class="num">Saldo</th><th></th></tr></thead><tbody>';
+
+      cabecalho.forEach(function (l) { html += self._ccLinhaHtml(l, true, podeGravar); });
+      corpo.forEach(function (l) { html += self._ccLinhaHtml(l, false, podeGravar); });
+
+      /* linhas finais: o que não está em centro DESTA obra */
+      /* ⚠ AS TRÊS LINHAS FINAIS USAM AS MESMAS COLUNAS DA TABELA (3 + Comprometido
+         + Realizado + 3). Elas ficavam com o valor caindo na coluna errada, e
+         número de dinheiro embaixo do cabeçalho errado é número errado. */
+      var empresa = L.empresa;
+      if (empresa.total > 0.005) {
+        html += '<tr><td colspan="3"><b>Em centros da empresa ou de outra obra</b><br><span class="muted">' + Util.esc(empresa.nomes) + "</span></td>" +
+          '<td class="num">' + Util.fmtMoeda(empresa.comp) + '</td><td class="num">' + Util.fmtMoeda(empresa.valor) + '</td><td colspan="3"></td></tr>';
+      }
+      /* ⚠ A PORTA SAI DO `_ccPortaHtml`, e não de um <button> escrito à mão:
+         é ele que confere os DOIS módulos antes de desenhar (crítica F15). Um
+         botão cru aqui apareceria para quem não abre a Fila, e o clique
+         devolveria "sem permissão" — porta prometida que o clique seguinte
+         fecha. Com o agente ausente, a aba Fila diz o que falta; é isso que
+         ela promete, e é isso que ela entrega. */
+      /* ⚠ O EMPENHO NÃO É ABRAÇADO. `apura:"obra"` diz "todo o GASTO da obra";
+         pedido ainda não recebido não é gasto, e a coluna Comprometido do
+         cabeçalho traz só o que está carimbado nele. Zerar o comprometido sem
+         centro aqui esconderia empenho de verdade — por isso só a coluna do
+         Realizado se rende ao abraço. */
+      var portaFila = (Math.abs(semReal) > 0.005 || num.semCentroComp > 0.005)
+        ? " " + this._ccPortaHtml("cc-aba", "Ver a fila", obraId, ' data-aba="fila"') : "";
+      var txtSemCentro = abraca
+        ? ((L.foraDaObra ? "o gasto" : "todo o gasto") + " desta obra está no centro " + (quemAbraca || "único") + " (obra inteira)" + foraTxt +
+           (num.semCentroComp > 0.005 ? " — o comprometido ao lado ainda não tem centro" : ""))
+        /* ⚠ NO RATEIO ESTA LINHA NÃO REPETE O REALIZADO DA OBRA (ver o ⚠ do
+           `semReal`): ele já está inteiro nas linhas acima, por estimativa.
+           A frase diz que a divisão é estimativa em vez de afirmar que "todo
+           o gasto está em centro" — que seria prometer apropriação que não
+           houve. */
+        : (rateado
+          ? ("dividido entre os centros pelo orçado (estimativa) — nenhum lançamento foi apropriado" + foraTxt +
+             (num.semCentroComp > 0.005 ? "; o comprometido ao lado ainda não tem centro" : ""))
+          : this._ccTxtSemCentro(semReal, num, false));
+      html += '<tr><td colspan="3"><b>Sem centro de custo</b>' +
+        '<br><span class="muted">' + Util.esc(txtSemCentro) + "</span>" + portaFila + "</td>" +
+        '<td class="num"' + (num.semCentroComp > 0.005 ? ' style="color:var(--ambar, #b45309)"' : "") + ">" + Util.fmtMoeda(num.semCentroComp) + "</td>" +
+        '<td class="num"' + (Math.abs(semReal) > 0.005 ? ' style="color:var(--ambar, #b45309)"' : "") + ">" + Util.fmtMoeda(semReal) + "</td>" +
+        '<td colspan="3"></td></tr>';
+      /* ⚠ RODAPÉ = REALIZADO DA OBRA (invariante I1). Se esta linha deixar de
+         bater com o Financeiro da obra, o que está errado é a distribuição
+         acima — e é por isso que ela fica visível na tela, não num teste. */
+      html += '<tr class="etapa-row"><td colspan="3"><b>Realizado da obra</b>' +
+        (num.conferido ? "" : '<br><span class="muted">número não conferido — veja o aviso acima</span>') + "</td>" +
+        '<td class="num"><b>' + Util.fmtMoeda(num.compObra) + "</b></td>" +
+        '<td class="num"><b>' + Util.fmtMoeda(num.realObra) + "</b></td><td colspan=\"3\"></td></tr>";
+      html += "</tbody></table>";
+      /* ⚠ A TELA PRINCIPAL TAMBÉM DIZ QUANDO NÃO FECHA (invariante I1). O CSV
+         avisa por toast e o quadro dos Relatórios tem o parágrafo vermelho; a
+         tela — que é onde a pessoa OLHA — era a única das três que calava,
+         e a coluna com uma linha a mais e o rodapé certo é justamente o
+         formato em que o número errado passa. Medido na revisão adversarial
+         da Onda 8: coluna R$ 25.000,00 contra rodapé R$ 15.000,00, sem uma
+         palavra na tela. */
+      var sv = this._ccSomaVista(L, num);
+      if (!sv.fecha) {
+        html += '<p style="color:var(--vermelho);font-size:12.5px;margin:8px 0 0">A soma da coluna Realizado acima (' + Util.fmtMoeda(sv.soma) +
+          ") não fecha com o realizado da obra (" + Util.fmtMoeda(sv.real) + "): diferença de " +
+          Util.fmtMoeda(Math.abs(sv.soma - sv.real)) +
+          ". Confira as linhas “Em centros da empresa ou de outra obra” e “Sem centro de custo” antes de usar estes números — e não exporte este recorte enquanto não fechar.</p>";
+      }
+      return html;
+    },
+
+    /* ---------------------------------------------------------------
+     * _ccLinhasDaObra(ctx, num, mostrarDesat) — AS LINHAS DA TABELA DA OBRA
+     *
+     * ⚠ UMA CONTA SÓ PARA TRÊS LEITORES: a tabela da tela (`_ccObraHtml`), o
+     *   CSV [Exportar] desta tela e o quadro "Custo por centro" dos Relatórios
+     *   Gerenciais (mc-8B). O corpo abaixo ERA o miolo do `_ccObraHtml`, e
+     *   saiu dele sem mudar uma vírgula de regra: cada ⚠ aqui dentro é um
+     *   defeito que já foi medido na tela, e copiá-los para o CSV ou para o
+     *   quadro seria a quarta réplica esperando para divergir (memória
+     *   "réplica de parser apodrece"; esta base já mostrou R$ 130.693 numa
+     *   tela e R$ 125.693 na outra para a mesma obra).
+     * ⚠ MUTA `num` DE PROPÓSITO, como fazia no lugar antigo: `orcadoDigitado`
+     *   e `orcadoVivo` saem daqui para os KPIs.
+     * ------------------------------------------------------------- */
+    _ccLinhasDaObra: function (ctx, num, mostrarDesat) {
+      var obraId = ctx.obraId, m = ctx.modo;
       var ccs = lista("centrocusto").filter(function (c) { return c && String(c.obraId || "") === String(obraId); });
-      var mostrarDesat = st && st.desativados;
+      mostrarDesat = !!mostrarDesat;
+      function c2(v) { return Math.round(Util.num(v) * 100) / 100; }
       /* ⚠ O CENTRO QUE ABRAÇA A OBRA INTEIRA ENTRA NAS SOMAS (ver
          `CentroCusto.abracaAObra`). Quando ele é o ÚNICO centro da obra — que
          é a forma de toda a base instalada hoje — tirá-lo das somas não evita
@@ -27002,20 +29344,78 @@ renderPatrimonio: function () {
          de uma linha dizendo Orçado R$ 403.205,21 e Realizado R$ 47.000,00. */
       var abraca = CentroCusto.abracaAObra(obraId, ctx.ccsCrus, m.modo);
       var idAbraca = abraca ? String(abraca.id) : "";
+      /* ⚠ O QUE ESTÁ EM CENTRO DE FORA NÃO É ABRAÇADO NEM RATEADO — É A
+         INVARIANTE I1 (§4.11: em centros da obra + em centros da empresa +
+         sem centro = realizado da obra, em QUALQUER modo).
+         Roteiro do defeito, medido no navegador a 1366 e a 1920 (revisão
+         adversarial da Onda 8): obra legada com UM centro antigo CC-01 (modo
+         `legado-cabecalho`, a forma de toda a base instalada), despesa avulsa
+         de R$ 5.000 e um pedido de R$ 10.000 cujo `ccId` aponta um centro DA
+         EMPRESA — a única escolha que o select do pedido oferece nessa obra,
+         porque o centro dela é filtrado por `_ccDocMiolo`. A tela mostrava
+         CC-01 "obra inteira" com Realizado R$ 15.000,00 E a linha "Em centros
+         da empresa ou de outra obra" com R$ 10.000,00: coluna somando
+         R$ 25.000,00 contra um rodapé de R$ 15.000,00, e o quadro dos
+         Relatórios com porcentagens somando 166,7%. O mesmo no
+         `legado-rateio` (o rateio distribuía os R$ 15.000 inteiros).
+         Quem abriu o buraco: a 8A ensinou o `ccDoLanc` do `_ccFatos` a levar
+         `compra.ccId` CRU para `num.porCentro` — antes só entrava id vindo do
+         índice da PRÓPRIA obra. É a crítica D3 reaberta ("centro da empresa
+         quebra a I1"), e ela fechou no modo `novo` e reabriu nos dois legados.
+         ⚠ NÃO ESCONDER O DINHEIRO: o desconto sai do cabeçalho/do rateio, e a
+         linha "Em centros da empresa ou de outra obra" continua mostrando os
+         R$ 10.000. Quem "simplificar" este desconto de volta reabre a I1. */
+      var empresa = this._ccEmpresaDaObra(ctx, num);
+      var realDaObra = c2(Math.max(0, num.realObra - Util.num(empresa.valor)));
+      var foraDaObra = Util.num(empresa.valor) > 0.005;
       var cabecalho = [], corpo = [];
       var totOrc = 0, totReal = 0, totComp = 0;
       var rateioDen = 0;
       if (m.modo === "legado-rateio") ccs.forEach(function (c) { rateioDen += Util.num(c.valorOrcado); });
+      /* ⚠ O CENTAVO DA DIVISÃO MORA NA ÚLTIMA LINHA, como o `plano.ajuste` do
+         `lancarFiscal` já faz com a parcela. Roteiro do defeito (mesma revisão,
+         medido na bancada com o fonte real): obra em `legado-rateio` com dois
+         centros de orçado igual e UMA despesa de R$ 1.000,01 → cada linha dava
+         500,005 cru, e os três leitores imprimiam R$ 500,01 — coluna somando
+         R$ 1.000,02 contra "Realizado da obra" R$ 1.000,01. O guarda "a soma
+         fecha?" media o número CRU (|1000,01 − 1000,01| = 0) e ficava calado
+         nos três. Com N centros o desvio cresce com N, e `legado-rateio` é o
+         modo da base instalada. Arredondando aqui, o que o leitor vê fecha
+         sozinho — e o `_ccSomaVista` confere o que foi impresso, não o cru.
+         ⚠ SEM RECADO DE "AJUSTE DE CENTAVOS", de propósito: a coluna inteira
+         já se chama "Realizado (estimativa)" e cada linha traz o selo
+         "dividido pelo orçado — não é o gasto deste centro". Um aviso a mais
+         em TODA obra rateada (a maioria da base) para dizer que a última
+         linha absorveu um centavo seria ruído em cima de um número que já
+         está declarado como estimativa — e aviso que a pessoa aprende a
+         pular é aviso que não protege quando importa. */
+      var rateioReal = {};
+      if (m.modo === "legado-rateio" && ccs.length) {
+        var sobra = realDaObra;
+        ccs.forEach(function (c, i) {
+          var v;
+          if (i === ccs.length - 1) v = sobra;
+          else {
+            v = rateioDen > 0 ? c2(realDaObra * (Util.num(c.valorOrcado) / rateioDen)) : c2(realDaObra / ccs.length);
+            sobra = c2(sobra - v);
+          }
+          rateioReal[String(c.id)] = v;
+        });
+      }
 
       ccs.forEach(function (c) {
         var n = CentroCusto.normalizar(c, m.modo);
         var orc = Util.num(num.orcado[String(c.id)]);
         var fonte = num.fonteOrcado[String(c.id)] || "digitado";
         var real, estimado = false;
-        if (n.apura === "obra") real = num.realObra;
+        /* ⚠ SÓ O CABEÇALHO QUE ABRAÇA DESCONTA. Um `apura:"obra"` que NÃO
+           abraça fica fora da soma e é rotulado "obra inteira — fora da soma":
+           ali o número é o realizado da obra INTEIRO, e descontar faria a
+           linha mentir para o outro lado, num lugar que não entra na I1. */
+        if (n.apura === "obra") real = (idAbraca && String(c.id) === idAbraca) ? realDaObra : num.realObra;
         else if (n.apura === "rateio") {
           estimado = true;
-          real = rateioDen > 0 ? (num.realObra * (Util.num(c.valorOrcado) / rateioDen)) : (ccs.length ? num.realObra / ccs.length : 0);
+          real = Util.num(rateioReal[String(c.id)]);
         } else real = Util.num(num.porCentro[String(c.id)]);
         var comp = Util.num(num.comp[String(c.id)]);
         /* ⚠ CENTRO DESATIVADO COM DINHEIRO DENTRO NÃO SOME DA TELA (MC14).
@@ -27026,7 +29426,7 @@ renderPatrimonio: function () {
            nada que explique a diferença. O desativado aparece rotulado. */
         if (!n._ativo && !mostrarDesat && !(real > 0.005) && !(comp > 0.005)) return;
         var linha = { cc: c, n: n, orcado: orc, fonte: fonte, real: real, comp: comp, estimado: estimado,
-          abraca: !!(idAbraca && String(c.id) === idAbraca) };
+          abraca: !!(idAbraca && String(c.id) === idAbraca), foraDaObra: foraDaObra };
         /* ⚠ "OBRA INTEIRA" É CABEÇALHO, FORA DA SOMA. Ele repete o realizado
            da obra toda; somá-lo com os centros por lançamento contaria o mesmo
            dinheiro duas vezes e o rodapé deixaria de fechar com o Financeiro. */
@@ -27048,108 +29448,59 @@ renderPatrimonio: function () {
       });
       num.orcadoVivo = totOrc;
 
-      /* KPIs */
-      /* ⚠ O SALDO DESCONTA O GASTO E O EMPENHO DA **OBRA**, não só o que caiu
-         em centro. Descontar apenas os R$ 42.000 apropriados e ignorar os
-         R$ 5.000 ainda sem centro faria o saldo nascer R$ 5.000 mais alto do
-         que é — e saldo para cima é o número que autoriza a próxima compra.
-         Entre errar para cima e errar para baixo num saldo de obra, erra-se
-         para baixo; e aqui não se erra: os dois KPIs dizem o seu escopo. */
-      /* ⚠ O SALDO USA O ORÇADO QUE A PESSOA ESTÁ VENDO. O cartão diz, com
-         estas palavras, "orçado − comprometido − gasto da obra"; ele somava
-         só o orçado de base CONFERIDA e descartava calado o digitado. Como
-         `fmt:2` não existe em versão publicada nenhuma, TODO centro da base
-         instalada tem orçado digitado: o cartão mostrava Saldo −R$ 47.000,00
-         com R$ 403.205,21 de orçado escrito na linha de baixo. Recado que
-         mente é pior que recado nenhum — o orçado entra inteiro e o cartão
-         diz quanto dele é base não conferida. */
-      var orcTotal = totOrc + num.orcadoDigitado;
-      var saldo = orcTotal - num.compObra - num.realObra;
       /* ⚠ "SEM CENTRO" NÃO PODE CONTAR DINHEIRO QUE UM CENTRO JÁ ABRAÇA.
          Com um centro `apura:"obra"` sozinho na obra, o gasto todo está
          dentro dele — a própria tela o rotula "obra inteira". Dizer ali
          "gasto desta obra fora de centro" é falso, e é o número que manda a
          pessoa procurar na Fila o que não está faltando. */
-      var semReal = abraca ? 0 : num.semCentro;
+      /* ⚠ E O RATEIO É A IRMÃ EXATA DESTE DEFEITO — foi ela que ficou aberta
+         quando o `abraca` consertou o cabeçalho. Roteiro medido no navegador
+         (revisão adversarial da Onda 5, obra com DOIS centros antigos e
+         R$ 47.000 de despesa viva): as linhas mostravam CC-01 R$ 28.200,00 e
+         CC-02 R$ 18.800,00 (o rateio pelo orçado, que soma os R$ 47.000) e a
+         linha "Sem centro de custo" repetia os MESMOS R$ 47.000,00 — coluna
+         Realizado visível de R$ 94.000,00 contra um rodapé de R$ 47.000,00 —,
+         enquanto os KPIs diziam ao mesmo tempo "Realizado (apropriado)
+         R$ 47.000,00" e "Sem centro R$ 47.000,00 · gasto desta obra fora de
+         centro". Causa: `abracaAObra` devolve null no rateio (`apura` é
+         "rateio", nunca "obra") e `num.semCentro` vem do índice de nós, que
+         no rateio é VAZIO — centro antigo não tem `origem`.
+         No rateio o gasto da obra ESTÁ todo distribuído, por estimativa,
+         entre os centros: "sem centro" ali é zero, e a frase diz que a
+         divisão é estimativa para ninguém ler o número como apropriação.
+         ⚠ SÓ O REALIZADO SE RENDE — o comprometido não é rateado (a coluna
+         dos centros traz R$ 0,00 nele), então zerar `semCentroComp` aqui
+         esconderia empenho de verdade. Mesma regra do `abraca`, logo acima. */
+      var rateado = (m.modo === "legado-rateio");
+      var semReal = (abraca || rateado) ? 0 : num.semCentro;
       var quemAbraca = abraca ? ((abraca.codigo ? String(abraca.codigo) + " " : "") + String(abraca.nome || "")).trim() : "";
-      var subSemCentro = abraca
-        ? ("todo o gasto desta obra está no centro " + (quemAbraca || "único") + " (obra inteira)")
-        : (semReal > 0.005 ? "gasto desta obra fora de centro" : "todo o gasto desta obra está em centro");
-      html += '<div class="kpis kpis-g" style="margin-bottom:14px">' +
-        '<div class="kpi kpi-compacto"><span class="kpi-lbl">Orçado (custo direto)</span><span class="kpi-val">' + Util.fmtMoeda(orcTotal) + "</span>" +
-        /* ⚠ "INCLUI R$ 403.205,21 DIGITADO" NUM ORÇADO DE R$ 403.205,21 lê-se
-           como se houvesse uma outra parte. Quando é tudo digitado — que é o
-           caso de toda obra que ainda não gerou os centros do orçamento — a
-           frase diz isso, e não uma fração que não existe. */
-        (num.orcadoDigitado > 0.005
-          ? '<span class="kpi-sub">' + (num.orcadoDigitado >= orcTotal - 0.005
-            ? "base digitada, não conferida com o orçamento"
-            : "inclui " + Util.fmtMoeda(num.orcadoDigitado) + " digitado (base não conferida)") + "</span>"
-          : "") + "</div>" +
-        '<div class="kpi kpi-compacto"><span class="kpi-lbl">Comprometido</span><span class="kpi-val">' + Util.fmtMoeda(num.compObra) + "</span>" +
-        '<span class="kpi-sub">pedidos desta obra ainda não recebidos</span></div>' +
-        '<div class="kpi kpi-compacto"><span class="kpi-lbl">Realizado (apropriado)</span><span class="kpi-val">' + Util.fmtMoeda(totReal) + "</span>" +
-        '<span class="kpi-sub">de ' + Util.fmtMoeda(num.realObra) + " gastos na obra</span></div>" +
-        '<div class="kpi kpi-compacto"><span class="kpi-lbl">Saldo</span><span class="kpi-val" style="color:' + (saldo >= 0 ? "var(--verde)" : "var(--vermelho)") + '">' + Util.fmtMoeda(saldo) + "</span>" +
-        '<span class="kpi-sub">orçado − comprometido − gasto da obra</span></div>' +
-        '<div class="kpi kpi-compacto"><span class="kpi-lbl">Sem centro</span><span class="kpi-val" style="color:' + (semReal > 0.005 ? "var(--ambar, #b45309)" : "inherit") + '">' + Util.fmtMoeda(semReal) + "</span>" +
-        '<span class="kpi-sub">' + Util.esc(subSemCentro) + "</span></div>" +
-        "</div>";
-      void totComp;
+      return { ccs: ccs, abraca: abraca, cabecalho: cabecalho, corpo: corpo,
+        totOrc: totOrc, totReal: totReal, totComp: totComp,
+        rateado: rateado, semReal: semReal, quemAbraca: quemAbraca,
+        foraDaObra: foraDaObra, empresa: empresa };
+    },
 
-      if (!ccs.length) {
-        return html + vazioBox("Esta obra ainda não tem centro de custo", podeGravar ? "novo-centrocusto" : "", "Cadastrar o primeiro");
-      }
-
-      var rotReal = (m.modo === "legado-rateio") ? "Realizado (estimativa)" : "Realizado";
-      html += '<table class="tbl"><thead><tr><th>Código</th><th>Centro</th><th class="num">Orçado</th><th class="num">Comprometido</th><th class="num">' +
-        rotReal + '</th><th class="num">Consumo</th><th class="num">Saldo</th><th></th></tr></thead><tbody>';
-
-      cabecalho.forEach(function (l) { html += self._ccLinhaHtml(l, true, podeGravar); });
-      corpo.forEach(function (l) { html += self._ccLinhaHtml(l, false, podeGravar); });
-
-      /* linhas finais: o que não está em centro DESTA obra */
-      /* ⚠ AS TRÊS LINHAS FINAIS USAM AS MESMAS COLUNAS DA TABELA (3 + Comprometido
-         + Realizado + 3). Elas ficavam com o valor caindo na coluna errada, e
-         número de dinheiro embaixo do cabeçalho errado é número errado. */
-      var empresa = this._ccEmpresaDaObra(ctx, num);
-      if (empresa.total > 0.005) {
-        html += '<tr><td colspan="3"><b>Em centros da empresa ou de outra obra</b><br><span class="muted">' + Util.esc(empresa.nomes) + "</span></td>" +
-          '<td class="num">' + Util.fmtMoeda(empresa.comp) + '</td><td class="num">' + Util.fmtMoeda(empresa.valor) + '</td><td colspan="3"></td></tr>';
-      }
-      /* ⚠ A PORTA SAI DO `_ccPortaHtml`, e não de um <button> escrito à mão:
-         é ele que confere os DOIS módulos antes de desenhar (crítica F15). Um
-         botão cru aqui apareceria para quem não abre a Fila, e o clique
-         devolveria "sem permissão" — porta prometida que o clique seguinte
-         fecha. Com o agente ausente, a aba Fila diz o que falta; é isso que
-         ela promete, e é isso que ela entrega. */
-      /* ⚠ O EMPENHO NÃO É ABRAÇADO. `apura:"obra"` diz "todo o GASTO da obra";
-         pedido ainda não recebido não é gasto, e a coluna Comprometido do
-         cabeçalho traz só o que está carimbado nele. Zerar o comprometido sem
-         centro aqui esconderia empenho de verdade — por isso só a coluna do
-         Realizado se rende ao abraço. */
-      var portaFila = (semReal > 0.005 || num.semCentroComp > 0.005)
-        ? " " + this._ccPortaHtml("cc-aba", "Ver a fila", obraId, ' data-aba="fila"') : "";
-      var txtSemCentro = abraca
-        ? ("todo o gasto desta obra está no centro " + (quemAbraca || "único") + " (obra inteira)" +
-           (num.semCentroComp > 0.005 ? " — o comprometido ao lado ainda não tem centro" : ""))
-        : (semReal > 0.005 || num.semCentroComp > 0.005
-          ? "entrou por: " + this._ccMotivosTxt(num.motivos)
-          : "todo o gasto desta obra está em centro");
-      html += '<tr><td colspan="3"><b>Sem centro de custo</b>' +
-        '<br><span class="muted">' + Util.esc(txtSemCentro) + "</span>" + portaFila + "</td>" +
-        '<td class="num"' + (num.semCentroComp > 0.005 ? ' style="color:var(--ambar, #b45309)"' : "") + ">" + Util.fmtMoeda(num.semCentroComp) + "</td>" +
-        '<td class="num"' + (semReal > 0.005 ? ' style="color:var(--ambar, #b45309)"' : "") + ">" + Util.fmtMoeda(semReal) + "</td>" +
-        '<td colspan="3"></td></tr>';
-      /* ⚠ RODAPÉ = REALIZADO DA OBRA (invariante I1). Se esta linha deixar de
-         bater com o Financeiro da obra, o que está errado é a distribuição
-         acima — e é por isso que ela fica visível na tela, não num teste. */
-      html += '<tr class="etapa-row"><td colspan="3"><b>Realizado da obra</b>' +
-        (num.conferido ? "" : '<br><span class="muted">número não conferido — veja o aviso acima</span>') + "</td>" +
-        '<td class="num"><b>' + Util.fmtMoeda(num.compObra) + "</b></td>" +
-        '<td class="num"><b>' + Util.fmtMoeda(num.realObra) + "</b></td><td colspan=\"3\"></td></tr>";
-      html += "</tbody></table>";
-      return html;
+    /* ---------------------------------------------------------------
+     * _ccSomaVista(L, num) — A SOMA DA COLUNA QUE A PESSOA LÊ, e o "fecha?"
+     *
+     * ⚠ O GUARDA TEM DE MEDIR O NÚMERO IMPRESSO, NÃO O CRU. Os três leitores
+     *   arredondam: a tela e o quadro por `Util.fmtMoeda`, o CSV por `c2`. O
+     *   "fecha?" media `l.real` cru e por isso podia ficar calado com a coluna
+     *   impressa somando um centavo a mais (ver o ⚠ do rateio em
+     *   `_ccLinhasDaObra`). Promessa que confere outra conta é pior que
+     *   promessa nenhuma: o quadro de reunião diz "a soma é o realizado" e a
+     *   pessoa confere com a calculadora.
+     * ⚠ A MESMA CONTA PARA OS TRÊS: a tela (`_ccObraHtml`), o CSV e o quadro
+     *   (`_ccCustoTabela`). Réplica aqui seria a quarta.
+     * ------------------------------------------------------------- */
+    _ccSomaVista: function (L, num) {
+      function c2(v) { return Math.round(Util.num(v) * 100) / 100; }
+      var s = 0;
+      Util.arr(L.cabecalho).forEach(function (l) { if (l.abraca) s = c2(s + c2(l.real)); });
+      Util.arr(L.corpo).forEach(function (l) { s = c2(s + c2(l.real)); });
+      s = c2(s + c2(L.empresa.valor) + c2(L.semReal));
+      var real = c2(num.realObra);
+      return { soma: s, real: real, fecha: Math.abs(s - real) < 0.005 };
     },
 
     _ccLinhaHtml: function (l, ehCabecalho, podeGravar) {
@@ -27176,8 +29527,15 @@ renderPatrimonio: function () {
            ABAIXO. Sozinho na obra, este centro É a soma — e o rodapé fecha
            com ele. Dizer o contrário era o recado que combinava com os KPIs
            zerados: a pessoa lia "fora da soma" e aceitava o Orçado R$ 0,00. */
+        /* ⚠ COM DINHEIRO EM CENTRO DE FORA, ESTE CENTRO NÃO CONTA "TODO O
+           GASTO DESTA OBRA" — conta o que está em centro dela (ver o ⚠ da
+           I1 em `_ccLinhasDaObra`). A frase antiga ficava logo acima da linha
+           "Em centros da empresa ou de outra obra" que mostrava o resto: duas
+           afirmações contraditórias lado a lado. */
         (ehCabecalho ? '<br><span class="muted">' + (l.abraca
-          ? "obra inteira — conta todo o gasto desta obra"
+          ? (l.foraDaObra
+            ? "obra inteira — conta todo o gasto desta obra que está em centro dela"
+            : "obra inteira — conta todo o gasto desta obra")
           : "obra inteira — fora da soma dos centros abaixo") + "</span>" : "") + "</td>" +
         '<td class="num">' + Util.fmtMoeda(l.orcado) + "</td>" +
         '<td class="num">' + Util.fmtMoeda(l.comp) + "</td>" +
@@ -27187,9 +29545,43 @@ renderPatrimonio: function () {
         '<td class="num">' + acoes + "</td></tr>";
     },
 
+    /* ⚠ `> 0` CALAVA O CASO EM QUE O AVISO MAIS FAZIA FALTA — e o Painel já
+       tinha aprendido isso (ver o ⚠ do `Math.abs(semEtapa)` em `_dashFinExec`).
+       Roteiro do defeito, medido na revisão final (22/09/2026, no navegador):
+       com o balde "sem centro" em −R$ 30.000,00 (o crédito de um estorno), o
+       KPI dizia "SEM CENTRO −R$ 30.000,00 / todo o gasto desta obra está em
+       centro" e a linha da tabela repetia a mesma frase ao lado do mesmo
+       número. Três frases falsas ao lado do número que elas explicam — e o
+       texto vai junto para o CSV dos centros e para o quadro dos Relatórios.
+       ⚠ UMA FUNÇÃO SÓ para o KPI e para a linha: eram duas cópias do mesmo
+       `> 0.005`, e foi assim que as duas erraram igual. Quem quiser mudar a
+       régua muda aqui, e as duas mudam juntas.
+       `curto` = o subtítulo do cartão (cabe pouco); sem ele, a frase da linha. */
+    _ccTxtSemCentro: function (semReal, num, curto) {
+      var n = num || {};
+      if (semReal < -0.005) {
+        /* mesma linguagem do `naoApropriado` negativo em js/custoetapa.js: o
+           que a pessoa precisa saber é o VALOR e que ele não está em linha
+           nenhuma — porcentagem de um balde negativo é recado que mente */
+        return curto
+          ? "crédito de estorno sem centro (reduz o Realizado da obra)"
+          : Util.fmtMoeda(Math.abs(semReal)) + " de CRÉDITO sem centro (estorno cujo lançamento " +
+            "original está apropriado a um centro, ou não está mais na base) — ele reduz o Realizado da " +
+            "obra e não aparece em linha de centro nenhuma";
+      }
+      if (semReal > 0.005 || Util.num(n.semCentroComp) > 0.005) {
+        return curto ? "gasto desta obra fora de centro" : "entrou por: " + this._ccMotivosTxt(n.motivos);
+      }
+      return "todo o gasto desta obra está em centro";
+    },
+
     _ccMotivosTxt: function (motivos) {
       var rot = { "sem-etapa": "lançamento sem etapa do orçamento", "etapa-sem-centro": "etapa do orçamento sem centro",
-        "no-dois-centros": "item com dois centros ativos (nenhum vale até você escolher)" };
+        "no-dois-centros": "item com dois centros ativos (nenhum vale até você escolher)",
+        /* ⚠ chave nova do degrau do espelho — rótulo JUNTO com a chave, senão a
+           tela volta a escrever "estorno-orfao" na frase do usuário */
+        "estorno-orfao": "estorno cujo lançamento original não está mais na base",
+        "estorno-outra-obra": "estorno de um lançamento que hoje está em outra obra" };
       var ks = Object.keys(motivos).sort(function (a, b) { return motivos[b] - motivos[a]; });
       return ks.slice(0, 3).map(function (k) { return (rot[k] || k) + " (" + Util.fmtMoeda(motivos[k]) + ")"; }).join(" · ") || "—";
     },
@@ -27203,7 +29595,15 @@ renderPatrimonio: function () {
        também não cai em "Sem centro" — ele simplesmente some da tela, e o
        Comprometido da obra fica MENOR do que é. Saldo para cima é o erro que
        convida a gastar o que já está gasto. */
+    /* ⚠ UM NOME SÓ PARA O CENTRO DE FORA, nas três leituras do mesmo fato (a
+       linha da tela, o CSV do Financeiro e o toast). Duas grafias para o
+       mesmo centro fazem a pessoa procurar dois centros que são um. */
+    _ccRotuloDeFora: function (c, id) {
+      return c ? ((c.codigo ? c.codigo + " " : "") + (c.nome || id) + (String(c.obraId || "") ? " (de outra obra)" : " (da empresa)"))
+        : ("centro apagado (id " + String(id).slice(0, 8) + "…)");
+    },
     _ccEmpresaDaObra: function (ctx, num) {
+      var self = this;
       var nomes = [], real = 0, comp = 0, daObra = String(ctx.obraId || "");
       var porId = {};
       Util.arr(ctx.ccsCrus).forEach(function (c) { if (c && c.id) porId[String(c.id)] = c; });
@@ -27213,8 +29613,7 @@ renderPatrimonio: function () {
            Entra aqui do mesmo jeito — o dinheiro existe. */
         if (c && String(c.obraId || "") === daObra) return;
         if (onde === "real") real += v; else comp += v;
-        var rot = c ? ((c.codigo ? c.codigo + " " : "") + (c.nome || k) + (String(c.obraId || "") ? " (de outra obra)" : " (da empresa)"))
-          : ("centro apagado (id " + String(k).slice(0, 8) + "…)");
+        var rot = self._ccRotuloDeFora(c, k);
         if (nomes.indexOf(rot) < 0) nomes.push(rot);
       }
       var k;
@@ -27284,9 +29683,17 @@ renderPatrimonio: function () {
            vínculo de etapa; o centro que abraça a obra inteira não aparece
            nele, e a linha dizia "Em centros da obra R$ 0,00 · Sem centro
            R$ 47.000,00" para uma obra cujo único centro mostra R$ 47.000,00. */
+        /* ⚠ E A OBRA EM RATEIO CAI NA MESMA ARMADILHA, pelo mesmo motivo: o
+           `abracaAObra` devolve null ali (`apura` é "rateio") e o índice de
+           nós é vazio, então esta linha dizia "Em centros da obra R$ 0,00 ·
+           Sem centro R$ 47.000,00" para uma obra cujos dois centros mostram,
+           na tela de dentro, R$ 28.200,00 e R$ 18.800,00 — que somam os
+           mesmos R$ 47.000. Medido no navegador na revisão da Onda 5. A
+           coluna "Como conta" já diz que é estimativa; o que não pode é o
+           gasto aparecer como fora de centro depois de dividido. */
         var abr = CentroCusto.abracaAObra(String(o.id), ctx.ccsCrus, ctx.modo.modo);
         var semC = num.semCentro;
-        if (abr) { emCentros = num.realObra; semC = 0; }
+        if (abr || ctx.modo.modo === "legado-rateio") { emCentros = num.realObra; semC = 0; }
         totReal += num.realObra;
         html += '<tr style="cursor:pointer" data-gacao="cc-obra" data-obra="' + Util.esc(String(o.id)) + '"><td><b>' + Util.esc(o.nome || o.id) + "</b></td>" +
           "<td>" + Util.esc(rot[ctx.modo.modo] || ctx.modo.modo) + "</td>" +
@@ -27647,6 +30054,27 @@ renderPatrimonio: function () {
           '<td class="num">' + Util.fmtMoeda(antes) + '</td><td class="num">' + Util.fmtMoeda(depois) + "</td></tr>";
       });
       corpo += "</tbody></table>";
+      /* ⚠ O QUE SOBRA FORA DE CENTRO TEM DE APARECER ANTES DO CLIQUE.
+         Roteiro medido (revisão adversarial da Onda 5): a prévia mostrava
+         honestamente "R$ 28.200,00 → R$ 0,00" linha a linha, e a pessoa
+         clicava assim mesmo — porque nenhum lugar somava os zeros e dizia
+         que os R$ 47.000 da obra inteira iriam para "Sem centro", nem que a
+         Fila que os receberia não existe neste aparelho. Números por linha
+         não são a conta; a conta é esta. */
+      var somaDepois = 0;
+      antigos.forEach(function (c) {
+        somaDepois += padrao === "obra" ? num.realObra : Util.num(num.porCentro[String(c.id)]);
+      });
+      var sobra = num.realObra - somaDepois;
+      if (sobra > 0.005) {
+        corpo += '<div class="card" style="padding:12px 14px;margin-top:10px;border-left:3px solid var(--ambar, #b45309)">' +
+          "<b>" + Util.fmtMoeda(sobra) + " ficam sem centro</b>" +
+          '<p class="muted" style="margin:6px 0 0">Com as escolhas acima como estão, esse gasto sai das linhas dos centros e passa a aparecer em <b>Sem centro de custo</b>. ' +
+          (typeof CCAgente === "undefined"
+            ? "A Fila que receberia esse dinheiro para você apropriar depende do motor <code>js/ccagente.js</code>, que ainda não está neste aparelho — então ele fica sem centro até a atualização chegar. "
+            : "Ele vai para a Fila, onde você escolhe o centro de cada lançamento. ") +
+          "Se não for isso que você quer, a faixa da tela passa a oferecer <b>[Voltar para a estimativa antiga…]</b>, com a mesma prévia antes → depois.</p></div>";
+      }
       var escolhas = {};
       antigos.forEach(function (c) { escolhas[String(c.id)] = padrao; });
       UI.modal("Converter os centros antigos desta obra", corpo, [
@@ -27659,6 +30087,62 @@ renderPatrimonio: function () {
       this._ccCada(box, "[data-cc-conv]", function (el) {
         el.onchange = function () { escolhas[el.getAttribute("data-cc-conv")] = el.value; };
       });
+    },
+    /* [Voltar para a estimativa antiga…] — o desfazer da conversão (§4.0 e
+       skill `dinheiro` §6). Mesma prévia antes → depois da ida. */
+    ccDesconverter: function (d) {
+      var self = this, obraId = String((d && d.obra) || "");
+      var p = this._ccPode(obraId, "gravar");
+      if (!p.ok) { UI.toast(p.msg, "erro"); return; }
+      var ctx = this._ccCtx(obraId);
+      var num = this._ccNumeros(ctx);
+      var alvos = CentroCusto.podeDesconverter(obraId, ctx.ccsCrus);
+      if (!alvos.length) {
+        UI.toast("Esta obra tem centro de custo que não veio de conversão — a volta para a estimativa antiga não vale aqui.", "erro", 12000);
+        return;
+      }
+      var den = 0;
+      alvos.forEach(function (c) { den += Util.num(c.valorOrcado); });
+      /* ⚠ O "DEPOIS" É A MESMA CONTA DO `_ccObraHtml` NO RATEIO (um centro
+         sozinho vira cabeçalho e conta a obra inteira; dois ou mais dividem
+         pelo orçado). Reescrever a régua aqui daria dois números para a mesma
+         pergunta — e é a prévia que autoriza a gravação. */
+      var corpo = '<p>A obra volta a dividir o gasto entre os centros pelo valor orçado (estimativa), como antes da conversão. <b>Nenhum lançamento é alterado.</b> Confira o antes → depois:</p>' +
+        '<table class="tbl"><thead><tr><th>Código</th><th>Centro</th><th class="num">Realizado antes</th><th class="num">Depois (estimativa)</th></tr></thead><tbody>';
+      alvos.forEach(function (c) {
+        var antes = Util.num(num.porCentro[String(c.id)]);
+        var depois = alvos.length === 1 ? num.realObra
+          : (den > 0 ? num.realObra * (Util.num(c.valorOrcado) / den) : num.realObra / alvos.length);
+        corpo += "<tr><td>" + Util.esc(c.codigo || "—") + "</td><td>" + Util.esc(c.nome || "—") + "</td>" +
+          '<td class="num">' + Util.fmtMoeda(antes) + '</td><td class="num">' + Util.fmtMoeda(depois) + "</td></tr>";
+      });
+      corpo += "</tbody></table>" +
+        '<p class="muted">Depois de voltar, o botão [Converter os centros antigos…] aparece de novo — a ida e a volta continuam abertas.</p>';
+      var ids = alvos.map(function (c) { return String(c.id); });
+      UI.modal("Voltar para a estimativa antiga", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Voltar os " + alvos.length + " centros", classe: "primary", onClick: function () { self._ccDesconverterAplicar(obraId, ids); } }
+      ]);
+    },
+    _ccDesconverterAplicar: function (obraId, ids) {
+      var p = this._ccPode(obraId, "gravar");
+      if (!p.ok) { UI.toast(p.msg, "erro"); return; }
+      if (this._bloqueado()) return;
+      var ctx = this._ccCtx(obraId);
+      var quem = "";
+      try { quem = (Auth.usuario && Auth.usuario() && (Auth.usuario().nome || Auth.usuario().email)) || ""; } catch (e) {}
+      var r = CentroCusto.desconverter(ctx.ccsCrus, ids, Util.agoraISO(), quem, obraId);
+      if (r.recusa) { UI.toast(r.recusa.msg, "erro", 12000); return; }
+      if (!r.gravar.length) { UI.toast("Nada a voltar.", "erro"); return; }
+      /* ⚠ UMA GRAVAÇÃO SÓ, como na ida: uma falha entre duas deixaria a obra
+         com metade dos centros na régua nova — e basta um `fmt:2` para a obra
+         inteira continuar em modo novo, com os números zerados que a volta
+         prometeu devolver. */
+      var n = Store.salvarVarios(eid(), "centrocusto", r.gravar);
+      if (!n) { UI.toast("NADA foi gravado: o armazenamento recusou (veja o aviso vermelho). Os centros continuam como estavam.", "erro", 12000); return; }
+      UI.fecharModal();
+      UI.toast(n + " centro(s) voltaram para a estimativa antiga (divisão pelo orçado). Nenhum lançamento foi alterado por esta ação.", "ok", 10000);
+      App.render();
     },
     _ccConverterAplicar: function (obraId, escolhas) {
       var p = this._ccPode(obraId, "gravar");
@@ -27992,7 +30476,7 @@ renderFolha: function () {
     },
     novoFolha: function () { this.formFolha(null); },
     formFolha: function (f) {
-      f = f || {}; var cols = lista("colaboradores"), obras = lista("obras");
+      f = f || {}; var stAntigoFl = f.status || ""; var cols = lista("colaboradores"), obras = lista("obras");
       var mesAtual = mesLocal();
       var corpo =
         '<div class="row">' + campo("Competência *", inp("g-comp", f.competencia || mesAtual, "", "month")) + campo("Colaborador", sel("g-col", optsRec(cols, "nome", f.colaboradorId, "— nenhum —"))) + campo("Obra", sel("g-obra", optsRec(obras, "nome", f.obraId, "— nenhuma —"))) + "</div>" +
@@ -28016,6 +30500,15 @@ renderFolha: function () {
         obj.salarioBase = nv("g-base"); obj.encargosPct = nv("g-enc"); obj.horasExtras = nv("g-he"); obj.descontos = nv("g-descontos");
         obj.status = v("g-status");
         obj.custoTotal = Gestao.calcFolha(obj);
+        /* ⚠ A QUINTA PORTA DE CUSTO — e ela fica no FIM do coletor de
+           propósito. Ver o bloco inteiro em `_gateStatusCusto`: marcar
+           "Lançada" aqui deixava R$ 5.040,00 de custo fora do Financeiro sem
+           botão nenhum para lançá-lo depois, e voltar para "Aberta" com a
+           despesa viva não perguntava nada. No fim porque aqui `custoTotal`,
+           obra e colaborador já estão preenchidos — o lançamento sai com o
+           número certo — e porque não sobra validação depois dele capaz de
+           recusar o save com dinheiro já agendado. */
+        if (!Gestao._gateStatusCusto(obj, stAntigoFl, "folha")) return false;
         return true;
       });
     },
@@ -28029,16 +30522,62 @@ renderFolha: function () {
       var col = cols.filter(function (c) { return c.id === fl.colaboradorId; })[0];
       var nomeCol = col ? col.nome : "Sem colaborador";
       var custo = Gestao.calcFolha(fl);
-      UI.modal("Lançar folha — " + Util.esc(fl.competencia || ""), '<p>Confirmar lançamento da folha de <b>' + Util.esc(nomeCol) + '</b> (' + Util.esc(fl.competencia || "") + ') no Financeiro?</p><p class="muted">Despesa (mão de obra): <b>' + Util.fmtMoeda(custo) + "</b></p>", [
+      /* ⚠ A PERGUNTA É AO FINANCEIRO, NÃO AO `fl.status` (D21; ver o bloco
+         do `_travaLancCusto`). Reabrir a folha apaga o "lancada", e sem esta
+         guarda o clique seguinte criava a SEGUNDA despesa do mesmo mês. */
+      var travaFl = this._travaLancCusto("folha", fl.id);
+      if (travaFl) { UI.toast(travaFl, "erro"); return; }
+      /* ⚠ RECADO HONESTO (skill `dinheiro`, §2), E SÃO DOIS CASOS DIFERENTES.
+         1) há lançamento desta folha, morto (estornado/cancelado): diz isso,
+            e diz que entra uma despesa NOVA — era o caso em que a primeira
+            versão deste bloco mentia (ver `_lancMortoDoDoc`);
+         2) não há carimbo nenhum e a folha já consta lançada: diz que NÃO
+            ENCONTROU, nunca que não existe. Numa folha aberta e nunca
+            lançada não aparece nada — formalidade ensina a ignorar aviso.
+         Em nenhum dos dois se procura por descrição ou valor: palpite errado
+         aqui ou trava um lançamento legítimo ou libera um duplicado. */
+      var mortosFl = this._lancMortoDoDoc("folha", fl.id);
+      /* ⚠ ÍCONE DA CASA, NÃO EMOJI: glifo abrindo um rótulo é posição de
+         ícone, e `tools/test-sem-emoji.js` reprova — a v1.1.190 trocou 733
+         emoji por SVG e sem a trava o próximo nasce com emoji de novo. */
+      var AVISO_ICO = (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "");
+      var jaLancFl = mortosFl
+        ? '<p class="muted" style="color:#b45309">' + AVISO_ICO + ' O lançamento anterior desta folha foi estornado ou cancelado e fica como está — entra uma despesa NOVA de ' + Util.esc(Util.fmtMoeda(custo)) + ".</p>"
+        : ((fl.status === "lancada" || fl.dataLancamento)
+          ? '<p class="muted" style="color:#b45309">' + AVISO_ICO + ' Esta folha já consta como lançada' + (fl.dataLancamento ? " em " + Util.esc(Util.fmtDia(fl.dataLancamento)) : "") + ", mas não encontrei a despesa dela no Financeiro — lançamentos anteriores a esta versão não têm carimbo de origem. Confira no Financeiro antes de lançar de novo.</p>"
+          : "");
+      UI.modal("Lançar folha — " + Util.esc(fl.competencia || ""), '<p>Confirmar lançamento da folha de <b>' + Util.esc(nomeCol) + '</b> (' + Util.esc(fl.competencia || "") + ') no Financeiro?</p><p class="muted">Despesa (mão de obra): <b>' + Util.fmtMoeda(custo) + "</b></p>" + jaLancFl, [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Lançar no Financeiro", classe: "primary", onClick: function () {
           if (Gestao._bloqueado()) return;
           if (!(custo > 0)) { UI.toast("Custo total inválido.", "erro"); return; }
+          /* de novo aqui: entre abrir o modal e clicar cabe uma sincronização
+             da nuvem, ou o mesmo botão clicado duas vezes */
+          var trava2 = Gestao._travaLancCusto("folha", fl.id);
+          if (trava2) { UI.fecharModal(); App.render(); UI.toast(trava2, "erro"); return; }
           var hoje = hojeLocal();
-          fl.status = "lancada"; fl.custoTotal = custo;
-          Store.salvar(eid(), "folha", fl);
-          Store.salvar(eid(), "financeiro", { data: hoje, desc: "Folha " + (fl.competencia || "") + " - " + nomeCol, tipo: "despesa", categoria: "mao_obra", valor: custo, status: "pago", obraId: fl.obraId });
-          UI.fecharModal(); App.render(); UI.toast("Folha lançada.", "ok");
+          /* ⚠ ORDEM: documento gravado e CONFERIDO → lançamento gravado e
+             conferido → lançamento recusado desfaz o documento. Gravar sem
+             conferir o retorno é como o app ficava: `Store.salvar` devolve
+             null com o disco cheio, e o toast dizia "Folha lançada". */
+          var antFl = { status: fl.status, data: fl.dataLancamento || "" };
+          fl.status = "lancada"; fl.custoTotal = custo; fl.dataLancamento = hoje;
+          if (Gestao._naoGravou(Store.salvar(eid(), "folha", fl))) {
+            UI.fecharModal(); App.render();
+            UI.toast("Nada foi lançado: a folha não coube no armazenamento deste aparelho (veja o aviso vermelho). O Financeiro não foi tocado.", "erro");
+            return;
+          }
+          /* ⚠ CARIMBO DE ORIGEM (`FOL` + id da folha + competência): é ele
+             que torna esta despesa ENCONTRÁVEL na pergunta lá de cima.
+             ⚠ MONTADO PELA MESMA FUNÇÃO QUE O SELECT DO FORMULÁRIO USA
+             (`_lancCustoDoDoc`): duas portas montando o mesmo lançamento cada
+             uma do seu jeito é como a v1.1.232 perdeu o estoque da compra. */
+          var lancFl = Gestao._lancCustoDoDoc("folha", fl, hoje);
+          if (Gestao._naoGravou(Store.salvar(eid(), "financeiro", lancFl))) {
+            var txtFl = Gestao._desfazLancCustoSemFin("folha", fl, antFl, lancFl);
+            UI.fecharModal(); App.render(); UI.toast(txtFl, "erro"); return;
+          }
+          UI.fecharModal(); App.render(); Gestao._ccCustoToast("Folha lançada.", [lancFl], "ok");
         } }
       ]);
     },
@@ -28054,6 +30593,13 @@ renderFolha: function () {
          Mesma doutrina do resto do app: quem decide é a função. */
       if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro")) {
         UI.toast("O relatório executivo traz custo real × orçado. Seu usuário não tem permissão no módulo Financeiro.", "erro");
+        return;
+      }
+      /* ⚠ MESMA RAZÃO DO GUARDA DOS RELATÓRIOS: o custo real deste documento
+         sai do motor único. Sem ele, o documento não é emitido — um PDF que
+         vai ao cliente com número de outra régua é pior que nenhum PDF. */
+      if (typeof CustoEtapa === "undefined" || !CustoEtapa.totalVivo) {
+        UI.toast("O motor que soma o custo da obra (js/custoetapa.js) não foi carregado neste aparelho. Atualize o sistema — o relatório sairia com número que não confere com o Painel.", "erro");
         return;
       }
       var obra = obraId ? Store.obter(eid(), "obras", obraId) : null;
@@ -28074,18 +30620,30 @@ renderFolha: function () {
          acumulado e no "Medido no mês". Medido na obra de demonstração: 01ª
          paga (18%) + 02ª pendente (14%) → este documento dizia 32,0% enquanto
          o Painel dizia 18% — e ele vai à diretoria e ao CLIENTE, que ainda nem
-         aprovou a 02ª. Agora conta só aprovado/pago (`_ehAprovado`, a mesma
-         régua do Portal) e o pendente sai À PARTE, como "Em análise", em vez
-         de sumir: o boletim existe e quem lê precisa saber dele.
+         aprovou a 02ª. O pendente sai À PARTE, como "Em análise", em vez de
+         sumir: o boletim existe e quem lê precisa saber dele.
          A tabela "Medições do mês" continua listando os não rejeitados, com a
-         coluna de status — ela é inventário, não soma. */
+         coluna de status — ela é inventário, não soma.
+         ⚠ E A RÉGUA É A ÚNICA, `_medContaNoAvanco` — NÃO O `_ehAprovado`.
+         Roteiro do defeito (revisão adversarial da Onda 5, medido no
+         navegador): a Onda 5 criou a régua única e migrou `_avancoMedido`,
+         `_medidoEmValor`, `_snapshotPortal` e a réplica do js/cronoplan.js;
+         este relatório ficou perguntando ao `_ehAprovado`, que é `_APROV_OK`
+         + `_APROV_TERM` — SETE estados, entre eles "recebido". Com a 01ª
+         aprovada de R$ 18.000 e a 02ª "recebido" de R$ 25.000, o Painel dizia
+         R$ 18.000,00 e este documento — que vai à diretoria e ao CLIENTE —
+         dizia "Medido no mês R$ 43.000,00". E o comentário aqui afirmava que
+         o `_ehAprovado` era "a mesma régua do Portal", que ele deixou de ser
+         na mesma integração. `tools/test-reguas-avanco.js` roda as réguas com
+         a mesma entrada e reprova quem divergir; este relatório está na
+         tabela de lá. */
       var selfRx = this;
       var meds = lista("medicoes").filter(function (m) { return m.obraId === obraId && m.status !== "rejeitada"; });
       var medMes = 0, medAcum = 0, medsDoMes = [], emAnaliseValor = 0, emAnaliseN = 0;
       meds.forEach(function (m) {
         var d = m.periodoFim || m.criadoEm, v = Util.num(m.valor);
         if (noMes(d)) medsDoMes.push(m);
-        if (!selfRx._ehAprovado(m.status)) {
+        if (!selfRx._medContaNoAvanco(m)) {
           if (ateFim(d)) { emAnaliseValor += v; emAnaliseN++; }
           return;
         }
@@ -28116,11 +30674,16 @@ renderFolha: function () {
          ReferenceError justamente nas obras que tinham o que relatar. */
       var sobreContrato = temContratoVivo;
 
-      /* ⚠ cancelado não é custo real (K30, mapa D-M1) — o "Custo acum. ×
-         orçado" deste documento somava a despesa cancelada */
-      var finO = lista("financeiro").filter(function (f) { return f.obraId === obraId && f.tipo === "despesa" && !selfRx._finAnulado(f); });
-      var despMes = 0, despAcum = 0;
-      finO.forEach(function (f) { if (ateFim(f.data)) despAcum += Util.num(f.valor); if (noMes(f.data)) despMes += Util.num(f.valor); });
+      /* ⚠ ESTE DOCUMENTO VAI À DIRETORIA E AO CLIENTE COM O MESMO NÚMERO QUE
+         O PAINEL E O CENTRO DE CUSTO MOSTRAM — e é por isso que a conta é
+         pedida ao motor (`CustoEtapa.totalVivo`), não repetida aqui.
+         Cancelado fora (K30, mapa D-M1: este documento somava a despesa
+         cancelada); espelho do estorno com o sinal dele, para o par somar
+         zero; lançamento SEM data continua fora do acumulado, que é o que o
+         `ateFim` sempre fez. */
+      var _finTudo = lista("financeiro");
+      var despAcum = CustoEtapa.totalVivo(_finTudo, { obraId: obraId, tipo: "despesa", ate: fim }).valor;
+      var despMes = CustoEtapa.totalVivo(_finTudo, { obraId: obraId, tipo: "despesa", de: mesISO + "-01", ate: fim }).valor;
 
       /* ⚠ ESTE DOCUMENTO VAI À DIRETORIA E AO CLIENTE. Ele contava TODO diário
        * do mês, inclusive o rascunho e o que o gestor mandou revisar — a
@@ -28160,7 +30723,7 @@ renderFolha: function () {
         /* a linha à parte do pendente (ver o ⚠ no filtro das medições): fica
            FORA do acumulado e do avanço, e só aparece quando existe */
         (emAnaliseN
-          ? "<tr data-rex='em-analise'><td style='border:1px solid #bbb;padding:6px;background:#fffbeb'><b>Em análise</b> <span style='color:#5a6b7b'>(" + emAnaliseN + " boletim(ns) pendente(s), fora do avanço e do medido)</span></td><td style='border:1px solid #bbb;padding:6px;text-align:right;color:#b45309'>" + Util.fmtMoeda(emAnaliseValor) + "</td></tr>"
+          ? "<tr data-rex='em-analise'><td style='border:1px solid #bbb;padding:6px;background:#fffbeb'><b>Em análise</b> <span style='color:#5a6b7b'>(" + emAnaliseN + " boletim(ns) ainda não aprovado(s), fora do avanço e do medido)</span></td><td style='border:1px solid #bbb;padding:6px;text-align:right;color:#b45309'>" + Util.fmtMoeda(emAnaliseValor) + "</td></tr>"
           : "") +
         "</tbody></table>";
       corpo += "<h3 style='border-bottom:2px solid #0f2740;padding-bottom:4px;font-size:13px'>MEDIÇÕES DO MÊS (" + medsDoMes.length + ")</h3>";
@@ -28235,6 +30798,11 @@ renderFolha: function () {
          Mesmo gate do Painel (js/gestao.js:837): o modulo Financeiro e que
          manda no numero, nao a porta por onde se chegou nele. */
       var _podeFin = !(typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro"));
+      /* ⚠ SEM O MOTOR, ESTA TELA DIZ QUE NÃO SABE — não inventa uma segunda
+         conta. Recado que mente é pior que recado nenhum: uma soma de
+         emergência escrita aqui voltaria a ser a régua paralela que esta
+         entrega existe para apagar. */
+      if (typeof CustoEtapa === "undefined" || !CustoEtapa.totalVivo) return this._moduloNaoCarregado("Relatórios Gerenciais", "js/custoetapa.js");
       /* ⚠ CANCELADO SAI DE TODAS AS SOMAS DESTA TELA (K30, mapa D-M1). Os
          totais, o resultado por obra e as categorias somavam lançamento
          cancelado — registro morto, que não é receita nem despesa
@@ -28243,11 +30811,12 @@ renderFolha: function () {
          Estorno continua: o par original + espelho negativo soma zero. */
       var selfRel = this;
       var fin = lista("financeiro").filter(function (l) { return !selfRel._finAnulado(l); }), obras = lista("obras"), contratos = lista("contratos");
-      var totRec = 0, totDesp = 0;
-      fin.forEach(function (l) {
-        if (l.tipo === "receita") totRec += Util.num(l.valor);
-        else if (l.tipo === "despesa") totDesp += Util.num(l.valor);
-      });
+      /* ⚠ A MESMA CONTA DO PAINEL, DO P×R, DO CENTRO DE CUSTO E DO RELATÓRIO
+         EXECUTIVO — pedida ao motor, não repetida aqui. Esta tela e o Centro
+         de Custo já discordaram sobre a mesma obra (R$ 130.693 × R$ 125.693)
+         justamente porque cada uma somava por conta própria. */
+      var totRec = CustoEtapa.totalVivo(fin, { tipo: "receita" }).valor;
+      var totDesp = CustoEtapa.totalVivo(fin, { tipo: "despesa" }).valor;
       var resultado = totRec - totDesp;
       var html = this._head(svg("relatorios") + "Relatórios Gerenciais", "", "", "");
       // Relatório executivo mensal em 1 clique (promessa do site)
@@ -28276,13 +30845,11 @@ renderFolha: function () {
       } else {
         html += '<table class="tbl"><thead><tr><th>Obra</th><th class="num">Contratado</th><th class="num">Custo</th><th class="num">Recebido</th><th class="num">Margem s/ recebido</th></tr></thead><tbody>';
         obras.forEach(function (o) {
-          var contratado = 0, custo = 0, recebido = 0;
+          var contratado = 0;
           contratos.forEach(function (c) { if (c.obraId === o.id) contratado += Util.num(c.valor); });
-          fin.forEach(function (l) {
-            if (l.obraId !== o.id) return;
-            if (l.tipo === "despesa") custo += Util.num(l.valor);
-            else if (l.tipo === "receita") recebido += Util.num(l.valor);
-          });
+          /* régua única, obra a obra — ver o ⚠ dos totais acima */
+          var custo = CustoEtapa.totalVivo(fin, { obraId: o.id, tipo: "despesa" }).valor;
+          var recebido = CustoEtapa.totalVivo(fin, { obraId: o.id, tipo: "receita" }).valor;
           /* mesma correcao do Painel: margem e sobre o RECEBIDO, e nao existe
              quando nao houve receita (ver Resumo por obra) */
           var margem = recebido > 0 ? (recebido - custo) / recebido * 100 : null;
@@ -28313,6 +30880,12 @@ renderFolha: function () {
         html += "</tbody></table>";
       }
       html += "</div>";
+      /* quadro "Custo por centro de custo" da obra escolhida (mc-8B): a mesma
+         conta da tela Centros de Custo, com a soma batendo com o realizado
+         da obra — e dizendo quando não bate */
+      try { html += this._relCcQuadroHtml(); } catch (eRcc) {
+        html += '<div class="card"><p class="muted" style="margin:0">Não consegui montar o quadro de centros de custo neste aparelho. Os quadros acima não dependem dele.</p></div>';
+      }
       } // fecha o gate do Financeiro
       else {
         /* honesto em vez de tela vazia: diz o que falta e a quem pedir */
@@ -29896,7 +32469,7 @@ renderFolha: function () {
           : "")
         + (avisoNovo.length ? "\n\n" + avisoNovo.join("\n") : "")
         + "\n\nLançamento desta semana que já está de pé é atualizado (não duplica).")) return;
-      var novos = 0, atualizados = 0, iguais = 0, falhou = 0;
+      var novos = 0, atualizados = 0, iguais = 0, falhou = 0, gravadosFs = [];
       plano.forEach(function (p) {
         /* mesmo valor, nada a regravar: regravar trocaria `lancadoPor` de quem
            lançou de verdade e mexeria num pago à toa */
@@ -29921,6 +32494,7 @@ renderFolha: function () {
         /* ⚠ recado que mente é pior que nenhum: sem espaço no aparelho o
            `Store.salvar` devolve null, e o toast contava a despesa assim mesmo */
         if (self._naoGravou(Store.salvar(eid(), "financeiro", obj))) { falhou++; return; }
+        gravadosFs.push(obj);
         if (p.obj) atualizados++; else novos++;
       });
       var partes = [];
@@ -29932,8 +32506,8 @@ renderFolha: function () {
           + (partes.length ? " · " + partes.join(" · ") : "") + ". Libere espaço e lance de novo — o que já entrou não duplica.", "erro");
         return;
       }
-      UI.toast("💸 Folha no Financeiro: " + (partes.join(" · ") || "nada a lançar") + " — " + Util.fmtMoeda(totalAlancar) + " na(s) obra(s) certa(s)."
-        + (foraDeObra > 0 ? " " + Util.fmtMoeda(foraDeObra) + " sem obra ficaram de fora." : ""), "ok");
+      this._ccCustoToast("💸 Folha no Financeiro: " + (partes.join(" · ") || "nada a lançar") + " — " + Util.fmtMoeda(totalAlancar) + " na(s) obra(s) certa(s)."
+        + (foraDeObra > 0 ? " " + Util.fmtMoeda(foraDeObra) + " sem obra ficaram de fora." : ""), gravadosFs, "ok");
     },
 
     // ---------- Modal genérico de formulário (salvar/excluir) ----------
@@ -30112,10 +32686,30 @@ renderFolha: function () {
           if (self._lancFinRecalc === "medicaoLiquido") {
             _lf.valor = Util.num(obj.valor) * (1 - Util.num(obj.retencao) / 100);
           }
+          /* ⚠ O `docId` SÓ EXISTE DEPOIS DO SAVE NUM REGISTRO NOVO. O gate
+             agenda com `obj.id` ainda vazio (é o `Store.salvar` logo acima que
+             carimba o id), então criar um documento JÁ em estado terminal —
+             uma medição nascendo "Paga", uma folha nascendo "Lançada" —
+             gravava o lançamento com `docId` vazio. Lançamento sem carimbo é
+             INVISÍVEL: o sistema deixa de ter como saber que aquele dinheiro
+             já entrou (skill `dinheiro`, §1), e a trava de relançamento
+             (`_lancVivoDoDoc`) nunca mais o acha. Medido em 21/09/2026 no
+             navegador, folha nova marcada "Lançada": docId "" antes, id da
+             folha depois. */
+          if (!_lf.docId && obj.id) _lf.docId = obj.id;
           var _lfG = Store.salvar(eid(), "financeiro", _lf);
           if (_lfG === null || _lfG === false) {
-            _semLanc = self._desfazBaixaSemLanc(entidade, obj,
-              { status: registro.status, data: entidade === "compras" ? registro.dataRecebimento : registro.dataPgto }, _lf);
+            /* ⚠ CADA FAMÍLIA DESFAZ COM O SEU: a folha e o ponto não têm
+               `dataPgto` nem `dataRecebimento` (o campo deles é
+               `dataLancamento`), e o texto do `_desfazBaixaSemLanc` fala em
+               "a medição ficou como Paga". Mandar a folha por lá devolveria o
+               status certo com o recado de outro módulo e sem limpar o campo
+               que interessa. */
+            _semLanc = self._TERM_CUSTO[entidade]
+              ? self._desfazLancCustoSemFin(entidade, obj,
+                  { status: registro.status, data: registro.dataLancamento || "" }, _lf)
+              : self._desfazBaixaSemLanc(entidade, obj,
+                  { status: registro.status, data: entidade === "compras" ? registro.dataRecebimento : registro.dataPgto }, _lf);
           }
         }
         var _estMsg = "";
@@ -30138,7 +32732,11 @@ renderFolha: function () {
         }
         self._lancFinToast = ""; self._lancFinRecalc = "";
         if (_semLanc) {
-          /* o resto do formulário foi gravado; a baixa não. Nada de verde. */
+          /* o resto do formulário foi gravado; a baixa não. Nada de verde.
+             ⚠ E NADA DE AVANÇO: com a baixa desfeita, o documento voltou de
+             estado — lançar avanço aqui diria que a obra andou por um
+             boletim cujo dinheiro não entrou. Este `return` vem ANTES do
+             canal de propósito, e o test-baixa-duplicada [f] guarda a ordem. */
           self._aprovRejPendente = null;
           UI.fecharModal(); App.render();
           UI.toast(_semLanc, "erro", Math.max(10000, Math.min(22000, _semLanc.length * 60)));
@@ -30147,6 +32745,43 @@ renderFolha: function () {
         UI.fecharModal(); App.render();
         if (typeof aposSalvar === "function") aposSalvar(obj, ehNovo);
         else UI.toast(nome + (ehNovo ? " criado." : " salvo."), "ok");
+        /* ⚠ A DECISÃO DE CENTRO DO BOLETIM (`_ccPendente`, §3.7 passo c) NÃO
+           MORA AQUI AINDA, e de propósito. Ela grava `cc_aprop` pela
+           `_ccGravarEscolha`, que confere pago pela `CCAgente.pagosAfetados`
+           — e o `js/ccagente.js` não existe em branch nenhum (22/09/2026).
+           Gravar decisão sem o motor que a aplica faria a tela Centro de custo
+           de TODAS as obras passar a dizer "não posso afirmar que está
+           completo" (`_ccNumeros`), por um boletim. O agendamento, os três
+           zeros e a execução entram juntos, com o motor. */
+        /* ===== O CANAL DO AVANÇO, PELA PORTA DO SELECT DE STATUS =====
+         * ⚠ DERIVADO DA TRANSIÇÃO GRAVADA, e não do que a tela mostrava.
+         *   `registro` é o boletim como ele estava no disco quando o
+         *   formulário abriu; `gravadoF` é o que acabou de ser gravado. O
+         *   canal só roda quando o documento ATRAVESSOU de não-aprovado para
+         *   aprovado nesta gravação — reabrir e salvar de novo não relança, e
+         *   salvar um boletim que já estava aprovado não faz nada.
+         * ⚠ E A CAIXA É LIDA DO GRAVADO (`gravadoF.lancarAvanco`), nunca do
+         *   `registro`: o caso B da crítica D4 é o boletim gravado COM a
+         *   caixa, que a pessoa DESMARCA e aprova no mesmo Salvar. Lendo o
+         *   registro, o canal lançaria avanço que ela acabou de recusar. */
+        /* ⚠ `gravadoF &&`: o `_naoGravou` trata `null`/`false` como recusa, e
+           um adaptador (ou uma bancada) que devolva `undefined` passaria por
+           ele. Estourar AQUI seria o pior momento possível — o documento já
+           está gravado e o modal, fechado. */
+        if (entidade === "medicoes" && gravadoF && !self._ehAprovado(registro.status) &&
+            self._ehAprovado(gravadoF.status) && gravadoF.lancarAvanco === true) {
+          self._medAvancoAposAprovar(gravadoF.id);
+        }
+        /* ===== REABERTURA: o que já foi lançado NÃO se desfaz sozinho =====
+         * Reabrir costuma ser temporário, e desfazer mexeria duas vezes no
+         * término da obra. O que não pode é ficar calado: o toast diz quantas
+         * tarefas continuam com o número deste boletim e onde revê-las. */
+        if (entidade === "medicoes" && gravadoF && self._ehAprovado(registro.status) && !self._ehAprovado(gravadoF.status)) {
+          var _rea = self._medAvancoTem(gravadoF.id, {});
+          if (_rea.n > 0) {
+            UI.toast("Este boletim foi reaberto, e " + _rea.n + " tarefa(s) do cronograma continuam com o avanço lançado por ele. Nada foi apagado: abra o Cronograma da obra e use [Rever] para decidir tarefa por tarefa.", "aviso", 13000);
+          }
+        }
         /* ⚠ A REJEIÇÃO PELO FORMULÁRIO SÓ ACONTECE AQUI, com o save JÁ FEITO.
          * Antes eu agendava um `setTimeout` lá dentro do `_gateStatusForm` —
          * e o `coletar` ainda podia recusar o save depois disso (em Compras a
@@ -30372,6 +33007,37 @@ renderFolha: function () {
     _aprovar: function (entidade, id, statusOk, msg) {
       if (!this._podeAprovarGuard()) return;
       var reg = Store.obter(eid(), entidade, id); if (!reg) return;
+      /* ⚠ O BOTÃO FOI DESENHADO SOBRE UM STATUS QUE PODE NÃO SER MAIS O DO
+         DISCO. Roteiro do defeito (revisão adversarial da mc-7A, 22/09/2026,
+         anterior à fatia — o `_aprovar` da base 3255036 já não tinha a
+         guarda): a janela A aprova e PAGA o boletim (receita lançada,
+         `dataPgto` carimbada); a janela B, com a lista velha, ainda mostra
+         [Aprovar]. O clique em B gravava "aprovada" por cima de "paga", sem
+         pergunta nenhuma, mantendo a data e a receita — o botão "Registrar
+         pgto" voltava a aparecer para um boletim já recebido — e rodava o
+         canal do avanço de novo. Aprovar é decidir sobre o que está
+         PENDENTE: o que já foi aprovado, pago, recebido ou rejeitado (em
+         outra janela ou aparelho) não se decide de novo por um botão que a
+         tela desenhou antes. Reabrir um documento pago tem porta própria, no
+         select de Status do formulário, que diz o valor lançado e pergunta
+         (skill `dinheiro`, itens 5 e 6).
+         ⚠ DUAS RÉGUAS, E A DIFERENÇA É DE PROPÓSITO. Medição e medição de
+         produção só desenham [Aprovar] no PENDENTE — ali, qualquer outro status
+         é lista velha. Nos outros documentos a regra é só "já aprovado, pago ou
+         recebido não se aprova de novo": o pedido REJEITADO que se reaprova
+         (limpando o motivo) é comportamento declarado e guardado pelo
+         `tools/test-gap3.js`, e mudá-lo não é desta correção. */
+      var stDisco = String(reg.status || "");
+      var soPendente = { medicoes: 1, producao_med: 1 };
+      if (this._ehAprovado(stDisco) || (soPendente[entidade] && stDisco !== "pendente")) {
+        /* o substantivo concorda com o status que vem do disco ("paga",
+           "aprovada" são femininos na medição; "aprovado", "recebido" no pedido) */
+        var qual = { medicoes: "Esta medição", producao_med: "Esta medição de produção", compras: "Este pedido",
+          requisicoes: "Esta requisição", aditivos: "Este termo aditivo" }[entidade] || "Este documento";
+        App.render();
+        UI.toast(qual + " já está " + stDisco + " (decidido em outra janela ou aparelho) — nada foi alterado. A lista foi atualizada.", "aviso", 9000);
+        return;
+      }
       if (!this._guardaAutor(reg, entidade)) return;
       /* ⚠ APROVAR TAMBÉM CONFERE O TETO. A trava vivia só no formulário, e
          aprovar é o ato que vira fatura: boletim gravado por versão anterior
@@ -30395,8 +33061,26 @@ renderFolha: function () {
       reg.aprovadoPor = this._quemAprova();
       reg.aprovadoEm = this._hojeISO();
       reg.motivoRejeicao = ""; reg.rejeitadoPor = ""; reg.rejeitadoEm = ""; // limpa rejeição anterior (reaprovação)
-      Store.salvar(eid(), entidade, reg);
+      /* ⚠ GRAVAÇÃO RECUSADA NÃO É "APROVADO" — a mesma lição do `_modalForm`.
+         O retorno era ignorado: com a entidade ilegível ou o armazenamento
+         cheio, o Store recusava, a tela mostrava o vermelho da recusa E o
+         verde "Medição aprovada.", e o documento continuava pendente no
+         disco. Daqui para baixo (canal do avanço, decisão de centro) tudo
+         depende de o documento EXISTIR aprovado. */
+      var g = Store.salvar(eid(), entidade, reg);
+      if (this._naoGravou(g)) {
+        App.render();
+        UI.toast("NADA foi aprovado: o armazenamento deste aparelho recusou a gravação (veja o aviso vermelho). O documento continua como estava.", "erro", 12000);
+        return;
+      }
       App.render(); UI.toast(msg || "Aprovado.", "ok");
+      /* ⚠ O CANAL DO AVANÇO VEM DEPOIS DO SAVE CONFERIDO, e esta é a SEGUNDA
+         porta de aprovar (a outra é o select de status, no `_modalForm`). As
+         duas têm de concordar: já houve conserto pela metade em porta de
+         dinheiro nesta base, e meia correção ensina que a regra é aleatória.
+         Aqui a caixa é lida do registro GRAVADO, que é o mesmo objeto que
+         acabou de ir ao disco. */
+      if (entidade === "medicoes" && g.lancarAvanco === true) this._medAvancoAposAprovar(g.id);
     },
     // Rejeita com motivo obrigatório + trilha rejeitadoPor/rejeitadoEm.
     _rejeitar: function (entidade, id, statusRej) {
@@ -30445,8 +33129,23 @@ renderFolha: function () {
             : "Não encontrei o lançamento deste documento pelo carimbo (baixas registradas em versões antigas não têm). Confira no Financeiro antes de seguir.")
           + "</p>";
       }
+      /* ⚠ LINHA INFORMATIVA, NÃO TRAVA (§3.6): rejeitar um boletim que já
+         alimentou o avanço não desfaz nada no cronograma — a entrada fica e
+         vira "sem lastro" na faixa, até alguém revê-la. Dizer isso ANTES é a
+         diferença entre a pessoa decidir e ela descobrir depois que o
+         cronograma continuava contando um boletim recusado.
+         Fica depois das guardas, e não recusa coisa nenhuma. */
+      var avisoAvanco = "";
+      if (entidade === "medicoes") {
+        var _av = this._medAvancoTem(reg.id, {});
+        if (_av.n > 0) {
+          avisoAvanco = '<p style="margin:0 0 10px;font-size:13px;line-height:1.4;background:rgba(245,158,11,.12);border-radius:6px;padding:8px 10px">' +
+            "<b>" + _av.n + " tarefa(s) do cronograma</b> têm avanço lançado por este boletim. Rejeitar <b>não</b> apaga esses números: " +
+            "abra o Cronograma da obra e use <b>[Rever]</b> para decidir tarefa por tarefa (manter, tirar do avanço, ou tirar e não sugerir de novo).</p>";
+        }
+      }
       UI.modal("Rejeitar — motivo obrigatório",
-        avisoBaixa +
+        avisoBaixa + avisoAvanco +
         '<p style="margin-top:0;font-size:13px">Escreva o motivo. Esta mensagem fica registrada e aparece para quem preencheu.</p>' +
         campo("Motivo *", '<textarea id="rej-motivo" rows="3" placeholder="Ex.: o quantitativo do item 3.2 não bate com a medição anterior"></textarea>'),
         [{ texto: "Rejeitar", classe: "danger", onClick: function () {
@@ -30553,8 +33252,36 @@ renderFolha: function () {
      *      lancamento la — ter Medicoes nao da acesso ao dinheiro.
      * Aprovar continua sendo outra coisa, com outra regra. */
     _guardaBaixa: function (reg, entidade) {
-      if (!this._APROV_OK[(reg || {}).status]) {
-        UI.toast("Este documento ainda não foi aprovado. A baixa só entra depois da aprovação.", "erro");
+      var stB = String((reg || {}).status || "");
+      if (!this._APROV_OK[stB]) {
+        /* ⚠ RECADO QUE MENTE É PIOR QUE RECADO NENHUM, e este mentia sobre
+           dinheiro. Roteiro do defeito (revisão final, 22/09/2026, medido
+           chamando as portas pelo despacho, que é por onde elas continuam
+           alcançáveis depois que o botão some da lista): com a medição JÁ
+           `paga` e a receita de R$ 102.600,00 de pé,
+           `Gestao.acao("pagar-medicao", {id})` respondia "Este documento ainda
+           não foi aprovado. A baixa só entra depois da aprovação." — sobre um
+           documento aprovado E pago. O mesmo com `receber-compra` num pedido
+           já `recebido`. O dinheiro não se movia (a trava segura, e os
+           lançamentos continuaram 4), mas o recado mandava a pessoa para uma
+           ação que não existe e não resolveria nada.
+           ⚠ A RECUSA CONTINUA IGUAL — só o texto muda. Nenhuma porta nova se
+           abre aqui: quem decide se o dinheiro entra de novo é o
+           `_travaLancDoDoc`, e é dele que sai a porta quando há lançamento
+           vivo (valor, data e o que fazer). */
+        var msgB;
+        if (this._APROV_TERM[stB]) {
+          var travaB = null;
+          try { travaB = this._travaLancDoDoc(reg, entidade); } catch (eTb) { travaB = null; }
+          msgB = travaB || ("Este documento já está com o status “" + stB + "”: a baixa dele já foi registrada e não entra duas vezes. " +
+            "Não achei lançamento vivo dele no Financeiro — o que havia foi estornado ou cancelado, ou ele é anterior ao carimbo de origem. " +
+            "Para lançar de novo, reabra o documento (volte o status para aprovado) e registre a baixa.");
+        } else if (this._APROV_REJ[stB]) {
+          msgB = "Este documento está REJEITADO: a baixa só entra depois da aprovação. Corrija o que foi apontado e mande aprovar de novo.";
+        } else {
+          msgB = "Este documento ainda não foi aprovado (está “" + (stB || "sem status") + "”). A baixa só entra depois da aprovação.";
+        }
+        UI.toast(msgB, "erro", msgB.length > 120 ? Math.max(9000, Math.min(22000, msgB.length * 60)) : undefined);
         return false;
       }
       if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro")) {
@@ -30656,9 +33383,356 @@ renderFolha: function () {
         " NÃO entrou no Financeiro, e não consegui voltar o status. Resolva o aviso vermelho, volte o status para " +
         this._rotuloStatus(entidade, ant.status) + " e registre de novo — ou lance esse valor à mão no Financeiro.";
     },
+    /* =====================================================================
+     * ⚠ CUSTO AUTOMÁTICO NÃO SE LANÇA DUAS VEZES — E QUEM RESPONDE É O
+     *   FINANCEIRO, NUNCA O STATUS DO DOCUMENTO.
+     *
+     * O ROTEIRO (D21, ESPEC-medicao-cc §1.9): folha de R$ 7.236,00 lançada
+     * → alguém reabre a folha para corrigir um desconto (status volta para
+     * "aberta") → [Lançar no Financeiro] de novo. A única defesa era
+     * `fl.status === "lancada"`, e a reabertura acabara de apagá-la: entrava
+     * a SEGUNDA despesa dos mesmos R$ 7.236,00, e nada no sistema era capaz
+     * de perceber. O mesmo no ponto. É o gêmeo do buraco que a receita da
+     * medição teve (R$ 190.000 lançados para R$ 95.000 recebidos).
+     *
+     * A pergunta certa é "o dinheiro deste documento está de pé?", e só o
+     * Financeiro responde — `_lancVivoDoDoc`, a MESMA régua das portas de
+     * baixa, agora pela tabela `_CARIMBO_CUSTO`.
+     *
+     * ⚠ E A TRAVA TEM PORTA: o texto diz QUANTO já está lançado, QUANDO, e
+     * qual botão abre a passagem (`_portaDoLanc`, que escolhe Estornar ou
+     * Cancelar pelo estado do lançamento). Trava sem saída empurra a pessoa
+     * a inventar um jeito de se livrar dela.
+     * Devolve o recado (texto puro) ou null quando nada está de pé.
+     * ===================================================================== */
+    /* [0] como a frase começa  [1] como ela aparece no meio  [2] gênero.
+       ⚠ O gênero vem da TABELA, não de um `entidade === "ponto"` escrito na
+       frase: a primeira porta de custo nova cairia no "a" e o recado sairia
+       "o custo ficou marcada como lançada". */
+    _ROT_DOC_CUSTO: { folha: ["Esta folha", "a folha", "a"], ponto: ["Este ponto", "o ponto", "o"], frota_mov: ["Este custo", "o custo", "o"] },
+    /* =====================================================================
+     * ⚠ O QUE JÁ MORREU DESTE DOCUMENTO — E POR QUE ISTO PRECISA EXISTIR.
+     *
+     * Achado na revisão do próprio trecho, antes de fechar: com só a
+     * `_travaLancCusto`, o roteiro "lançar → estornar → reabrir → lançar"
+     * levava a pessoa a um recado FALSO. O estorno faz a trava devolver
+     * `null` (é ele que abre a passagem, skill `dinheiro` §6-7), e aí o
+     * aviso que sobrava dizia "não encontrei a despesa dela no Financeiro —
+     * lançamentos anteriores a esta versão não têm carimbo". A despesa
+     * existe, tem carimbo e foi estornada de propósito: o recado mandava a
+     * pessoa procurar no lugar errado por um problema que não existe.
+     * Recado que mente é pior que recado nenhum.
+     *
+     * Conta os lançamentos DESTE documento que estão mortos (estornados ou
+     * cancelados). O `fsFinanceiro` já fazia a mesma conta com outro nome
+     * (`mortos`, em `_fsLancDaSemana`) — aqui ela vale para as três portas.
+     * ===================================================================== */
+    _lancMortoDoDoc: function (entidade, docId, fin) {
+      var tipo = this._DOC_CARIMBO[entidade] || (this._CARIMBO_CUSTO || {})[entidade];
+      var id = String(docId == null ? "" : docId);
+      if (!tipo || !id) return 0;
+      var l = fin || lista("financeiro"), n = 0;
+      for (var i = 0; i < l.length; i++) {
+        var f = l[i];
+        /* o espelho do estorno é outro lançamento (um crédito), nunca este */
+        if (!f || f.estornoDe) continue;
+        if (String(f.docTipo || "") !== tipo || String(f.docId || "") !== id) continue;
+        if (this._finEstornado(f, l) || this._finAnulado(f)) n++;
+      }
+      return n;
+    },
+    _travaLancCusto: function (entidade, docId, fin) {
+      var r = this._lancVivoDoDoc(entidade, docId, fin);
+      if (!r) return null;
+      var rot = this._ROT_DOC_CUSTO[entidade] || ["Este documento", "o documento"];
+      return rot[0] + " já tem uma despesa de " + Util.fmtMoeda(Math.abs(Util.num(r.valor)))
+        + (r.data ? " lançada em " + Util.fmtDia(r.data) : "") + " no Financeiro, e ela continua de pé. "
+        + this._portaDoLanc(r) + " antes de lançar de novo — senão a obra fica com o dobro deste custo.";
+    },
+    /* O estado "o dinheiro deste documento já saiu", por porta de custo.
+       ⚠ TABELA PRÓPRIA, NÃO O `_APROV_TERM`: aquele alimenta `_ehAprovado`,
+       que o Portal do cliente, a trava de edição do boletim e o acumulado das
+       medições leem. Pôr "lancada" lá mudaria essas três respostas para
+       consertar o select de um módulo que não é medição. */
+    _TERM_CUSTO: { folha: "lancada", ponto: "lancado" },
+    /* =====================================================================
+     * ⚠ O MESMO LANÇAMENTO NAS DUAS PORTAS DE CADA DOCUMENTO DE CUSTO.
+     *
+     * Enquanto cada porta montava o seu objeto, a do formulário simplesmente
+     * NÃO EXISTIA (ver `_gateStatusCusto`) — e duas cópias do mesmo lançamento
+     * divergindo é o defeito da v1.1.232, que copiou a despesa da compra para
+     * o formulário e deixou o estoque para trás. Daqui em diante o botão e o
+     * select montam o lançamento pela MESMA função.
+     *
+     * ⚠ O TEXTO DE CADA ENTIDADE É COPIADO AO PÉ DA LETRA, inclusive o hífen
+     * da folha (" - ") e o travessão do ponto (" — "): essas descrições já
+     * estão gravadas na base dos 38 clientes e é por elas que a pessoa acha o
+     * lançamento no Financeiro. Padronizar aqui mudaria o que ela procura sem
+     * que ninguém tenha pedido.
+     * ===================================================================== */
+    _lancCustoDoDoc: function (entidade, doc, data) {
+      var d = doc || {};
+      if (entidade === "folha") {
+        var col = lista("colaboradores").filter(function (c) { return c.id === d.colaboradorId; })[0];
+        return { data: data, desc: "Folha " + (d.competencia || "") + " - " + (col ? col.nome : "Sem colaborador"),
+          tipo: "despesa", categoria: "mao_obra", valor: Gestao.calcFolha(d), status: "pago", obraId: d.obraId,
+          docTipo: Gestao._CARIMBO_CUSTO.folha, docId: d.id, docNumero: d.competencia || "" };
+      }
+      if (entidade === "ponto") {
+        return { data: data, desc: "Folha " + (d.competencia || "") + " — " + (d.colaboradorNome || ""),
+          tipo: "despesa", categoria: "mao_obra", valor: Util.num(d.valor), status: "pago", obraId: d.obraId,
+          docTipo: Gestao._CARIMBO_CUSTO.ponto, docId: d.id, docNumero: d.competencia || "" };
+      }
+      return null;
+    },
+    /* =====================================================================
+     * ⚠ A QUINTA PORTA: O SELECT DE STATUS DA FOLHA E DO PONTO.
+     *
+     * ROTEIRO MEDIDO (21/09/2026, clique e digitação REAIS em Chrome headless
+     * sobre o app de verdade, com stub de `confirm` que guarda o texto e não
+     * responde sempre "sim"):
+     *   (a) folha NOVA com Status "Lançada" escolhido no próprio formulário:
+     *         {"statusFolha":"lancada","custoTotal":5040,"nFin":1,
+     *          "temBotaoLancar":false,"caixas":[]}
+     *       R$ 5.040,00 de custo no documento e ZERO despesa no Financeiro. E
+     *       `renderFolha` só desenha [Lançar] com a folha "aberta" — então não
+     *       sobrava caminho NENHUM na tela para lançá-la depois: o custo da
+     *       obra sumia calado, numa trava sem porta (skill `dinheiro`, §6).
+     *       O mesmo no ponto: {"status":"lancado","nFin":0,"caixas":[]}.
+     *   (b) folha "Lançada" com a despesa de R$ 7.236,00 DE PÉ, devolvida para
+     *       "Aberta" pelo mesmo select:
+     *         {"status":"aberta","nFin":1,"vivoAinda":true,"caixas":[]}
+     *       Nenhuma pergunta, nenhuma trilha. Medição e compra perguntam com o
+     *       valor e a data na cara (`_guardaReabertura`); a folha e o ponto
+     *       não perguntavam nada.
+     *
+     * A `mc-5B` carimbou e travou o BOTÃO ([Lançar] → `_travaLancCusto`) e
+     * deixou o SELECT de fora. A skill `dinheiro` §3 é explícita: cada
+     * documento que gera dinheiro tem DUAS portas — o botão da lista e o
+     * select do formulário — e "meia correção em dinheiro é pior que nenhuma",
+     * porque quem usa aprende que a regra é aleatória e para de ler o aviso.
+     *
+     * ⚠ POR QUE NÃO O `_gateStatusForm`/`_guardaReabertura`: os dois decidem
+     *   pelo `_DOC_CARIMBO`, que é a tabela de quem tem TRAVA DE BAIXA e
+     *   recado de reabertura. Pôr folha e ponto lá mudaria as respostas de
+     *   `_ehAprovado`, de `_travaLancDoDoc` e do `_APROV_TERM` — foi
+     *   exatamente por isso que o `_CARIMBO_CUSTO` nasceu em tabela separada
+     *   (ver a nota lá). A PERGUNTA é a mesma ("o dinheiro deste documento
+     *   está de pé?") e quem responde é o MESMO `_lancVivoDoDoc`.
+     *
+     * ⚠ ESTE GATE RODA NO FIM DO COLETOR, ao contrário do `_gateStatusForm`.
+     *   O motivo dos dois é o mesmo: nada pode ser agendado se uma validação
+     *   POSTERIOR recusar o save. Lá o coletor da medição tem `return true` no
+     *   meio e o gate teve de ficar na frente (com o valor refeito na hora de
+     *   gravar); aqui o coletor termina num `return true` único, então o lugar
+     *   seguro é o fim — e aí `obj` já tem competência, obra, colaborador e o
+     *   `custoTotal` recalculado, e o lançamento sai com o número CERTO sem
+     *   precisar ser refeito depois.
+     * ⚠ NADA É GRAVADO AQUI: o lançamento é AGENDADO em `_lancFinPendente` e
+     *   executado depois do save (skill `dinheiro`, §4 — gravar dinheiro
+     *   dentro de uma validação custou três receitas de R$ 228.000 para uma
+     *   medição que nunca foi paga).
+     *
+     * Devolve false para recusar o save.
+     * ===================================================================== */
+    _gateStatusCusto: function (obj, statusAntigo, entidade) {
+      var term = this._TERM_CUSTO[entidade];
+      if (!term) return true;
+      var novo = String((obj && obj.status) || "");
+      var velho = String(statusAntigo || "");
+      var rot = this._ROT_DOC_CUSTO[entidade] || ["Este documento", "o documento", "o"];
+      var g = rot[2] || "o";
+      var ok = false;
+
+      /* ---- O STATUS NÃO MUDOU, MAS O VALOR MUDOU ------------------------
+       * ⚠ ROTEIRO MEDIDO (21/09/2026, clique e digitação reais): folha
+       * lançada com despesa de R$ 7.236,00 no Financeiro; a pessoa abre o
+       * formulário, corrige o salário de R$ 4.200 para R$ 6.000 e salva sem
+       * tocar no Status. Resultado:
+       *     {"statusMantido":"lancada","custoTotalDoc":10260,
+       *      "nFin":1,"valorNoFinanceiro":7236,"caixas":[]}
+       * O documento passa a dizer R$ 10.260,00 e o caixa continua com
+       * R$ 7.236,00 — R$ 3.024,00 de diferença, sem uma palavra na tela. É o
+       * mesmo defeito que a medição teve (documento 120.000 e receita
+       * 95.000): o valor do documento anda e o dinheiro fica parado.
+       * ⚠ AQUI NÃO SE REGRAVA O LANÇAMENTO, de propósito: mexer sozinho num
+       * lançamento `pago` é o que a skill `dinheiro` §2 proíbe sem que a
+       * pessoa confirme sabendo o valor exato. O que se faz é DIZER os dois
+       * números e a porta — estornar, reabrir e lançar de novo, caminho que
+       * o ramo de cima já abre com a pergunta na cara.
+       * ------------------------------------------------------------------ */
+      if (novo === velho) {
+        if (velho !== term || !obj.id) return true;        // status não mudou e não é terminal → nada a validar
+        var vivoE = this._lancVivoDoDoc(entidade, obj.id);
+        if (!vivoE) return true;                            // sem dinheiro de pé, nada diverge
+        var lancE = this._lancCustoDoDoc(entidade, obj, "");
+        var vNovoE = Util.num(lancE && lancE.valor), vFinE = Math.abs(Util.num(vivoE.valor));
+        var difValor = Math.abs(vNovoE - vFinE) >= 0.005;
+        /* ⚠ A OBRA TAMBÉM É DINHEIRO, E ELA PASSAVA CALADA.
+           ROTEIRO MEDIDO (revisão adversarial da Onda 5, clique e digitação
+           reais em Chrome headless, com stub de `confirm` que GUARDA o texto
+           de cada caixa): folha de agosto do José Carlos na obra A, R$ 7.236
+           de custo, [Lançar no Financeiro] →
+               {"nFin":1,"lanc":[{"valor":7236,"obraId":"obr_A","docTipo":"FOL"}]}
+           A pessoa abre o formulário da MESMA folha, troca só o select "Obra"
+           para a obra B e salva:
+               caixas: []   ·   folha: {obraId:"obr_B", status:"lancada"}
+               Financeiro: 1 lançamento de R$ 7.236,00 na obra A
+               CustoEtapa.totalVivo(A) = 7.236  ·  totalVivo(B) = 0
+           R$ 7.236,00 de mão de obra ficam numa obra que já não é a da folha,
+           e a obra que recebeu a folha mostra R$ 0,00 — no Painel por etapa,
+           no Previsto × Realizado, nos Centros de Custo, nos Relatórios e no
+           relatório executivo, todos de uma vez. A guarda existia e só
+           comparava o VALOR.
+           ⚠ A DESCRIÇÃO ENTRA JUNTO porque é ela que carrega competência e
+           colaborador (`_lancCustoDoDoc`): trocar o mês da folha ou a pessoa
+           deixa no caixa uma despesa com o nome de outro mês ou de outra
+           pessoa, e é por esse texto que ela é achada no Financeiro.
+           ⚠ NADA É REGRAVADO AQUI (skill `dinheiro` §2, como no valor): o
+           que se faz é dizer os dois lados e abrir a porta. */
+        var obraDoc = String((obj && obj.obraId) || ""), obraFin = String(vivoE.obraId || "");
+        var difObra = obraDoc !== obraFin;
+        var descDoc = String((lancE && lancE.desc) || ""), descFin = String(vivoE.desc || "");
+        var difDesc = !!descDoc && !!descFin && descDoc !== descFin;
+        if (!difValor && !difObra && !difDesc) return true;  // nada diverge → nada a avisar
+        var nomeObra = function (idO) {
+          if (!idO) return "sem obra";
+          var o = lista("obras").filter(function (x) { return x && String(x.id) === idO; })[0];
+          /* obra que este usuário não acompanha: o id truncado é a única
+             pista honesta — inventar um nome seria pior que não ter nenhum */
+          return o ? String(o.nome || idO) : ("obra " + idO.slice(0, 8) + "… (você não acompanha)");
+        };
+        var mudou = [];
+        if (difObra) mudou.push("a obra passa de " + nomeObra(obraFin) + " para " + nomeObra(obraDoc));
+        if (difValor) mudou.push("o custo " + (entidade === "folha" ? "da folha" : "do ponto") + " passa de "
+          + Util.fmtMoeda(vFinE) + " para " + Util.fmtMoeda(vNovoE)
+          + " (" + Util.fmtMoeda(Math.abs(vNovoE - vFinE)) + " de diferença)");
+        if (difDesc) mudou.push("a descrição passa de “" + descFin + "” para “" + descDoc + "”");
+        try {
+          ok = confirm(rot[0] + " está " + this._rotuloStatus(entidade, velho) + " e a despesa dela no Financeiro é de "
+            + Util.fmtMoeda(vFinE) + (vivoE.data ? ", lançada em " + Util.fmtDia(vivoE.data) : "")
+            + ", na obra " + nomeObra(obraFin) + ".\n\n"
+            + "Com esta alteração " + mudou.join("; ") + " — e o Financeiro NÃO muda por aqui. O documento e o caixa "
+            + "vão contar histórias diferentes"
+            + (difObra ? ", e o custo continua inteiro em " + nomeObra(obraFin) : "") + ".\n\n"
+            + "Para acertar os dois: " + this._portaDoLanc(vivoE) + ", volte " + rot[1] + " para "
+            + this._rotuloStatus(entidade, entidade === "folha" ? "aberta" : "aberto") + " e lance de novo.\n\n"
+            + "Gravar " + rot[1] + " assim mesmo?");
+        } catch (eE) { ok = false; }
+        return !!ok;
+      }
+
+      /* ---- SAINDO de "Lançada"/"Lançado" — a porta que faltava perguntar -- */
+      if (velho === term) {
+        var vivo = obj.id ? this._lancVivoDoDoc(entidade, obj.id) : null;
+        if (vivo) {
+          /* ⚠ COM O NÚMERO NA CARA, não um aviso genérico: aviso genérico a
+             pessoa lê como formalidade e clica em seguir; valor e data ela
+             confere. É a mesma frase que `_guardaReabertura` dá na medição e
+             na compra — as portas têm de dar a MESMA resposta. */
+          try {
+            ok = confirm(rot[0] + " está " + this._rotuloStatus(entidade, velho)
+              + " e a despesa dela está no Financeiro: " + Util.fmtMoeda(Math.abs(Util.num(vivo.valor)))
+              + (vivo.data ? ", lançada em " + Util.fmtDia(vivo.data) : "") + ".\n\n"
+              + "Voltar para \"" + this._rotuloStatus(entidade, novo) + "\" muda só o documento — o lançamento "
+              + "no Financeiro NÃO é estornado por aqui, e o custo continua inteiro na obra.\n\n"
+              + "Enquanto ele estiver de pé, lançar " + rot[1] + " de novo vai ser RECUSADO. A saída: "
+              + this._portaDoLanc(vivo) + ".\n\nVoltar " + rot[1] + " assim mesmo?");
+          } catch (eC) { ok = false; }
+          if (!ok) return false;
+        }
+        /* ⚠ `dataLancamento` NÃO É LIMPA, ao contrário do `dataPgto` da
+           medição. Lá ela ERA a guarda de idempotência e precisava sair para o
+           documento poder ser pago de novo. Aqui quem guarda é o Financeiro
+           (`_travaLancCusto`), e esta data é a única memória de que o documento
+           já foi lançado ALGUMA vez — é ela que faz o [Lançar] avisar "já
+           consta lançada e não encontrei a despesa" quando o lançamento é
+           anterior ao carimbo. Limpá-la calaria esse aviso justamente no dado
+           antigo, que é o único que não tem outra defesa. */
+        this._trilhaAprov(obj, "desfazer-baixa", { de: velho, para: novo });
+        obj.reabertoPor = this._quemAprova(); obj.reabertoEm = this._hojeISO();
+        return true;
+      }
+
+      /* ---- ENTRANDO em "Lançada"/"Lançado" — lança junto, como o botão ---- */
+      if (novo !== term) return true;
+      /* mesma guarda do botão: lançar cria despesa no Financeiro. Esconder o
+         botão de quem não tem o módulo não basta enquanto o select faz o
+         mesmo — porta lateral que todo o resto do código fecha. */
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro")) {
+        UI.toast("Marcar " + rot[1] + " como lançad" + g + " cria uma despesa no Financeiro — módulo que seu usuário não tem. Peça a quem cuida do Financeiro.", "erro");
+        return false;
+      }
+      var trava = obj.id ? this._travaLancCusto(entidade, obj.id) : null;
+      if (trava) { UI.toast(trava, "erro"); return false; }
+      var lanc = this._lancCustoDoDoc(entidade, obj, hojeLocal());
+      var valor = Util.num(lanc && lanc.valor);
+      if (!(valor > 0)) {
+        UI.toast("Sem valor não há o que lançar: " + rot[1] + " está em " + Util.fmtMoeda(valor)
+          + ". Preencha o valor antes de marcar como lançad" + g + ".", "erro");
+        return false;
+      }
+      /* ⚠ DOIS CASOS DIFERENTES, E CONFUNDI-LOS É MENTIR (ver
+         `_lancMortoDoDoc`): ou o lançamento deste documento foi ESTORNADO — e
+         aí entra uma despesa NOVA —, ou nunca houve carimbo, e aí o certo é
+         dizer que NÃO ENCONTREI, nunca que não existe. São os dois recados do
+         botão, palavra por palavra. */
+      var mortos = obj.id ? this._lancMortoDoDoc(entidade, obj.id) : 0;
+      if (mortos) {
+        try {
+          ok = confirm("O lançamento anterior de " + rot[1] + " foi estornado ou cancelado e fica como está.\n\n"
+            + "Entra uma despesa NOVA de " + Util.fmtMoeda(valor) + ". Continuar?");
+        } catch (eM) { ok = false; }
+        if (!ok) return false;
+      } else if (obj.dataLancamento) {
+        try {
+          ok = confirm(rot[0] + " já consta como lançad" + g + " em " + Util.fmtDia(obj.dataLancamento)
+            + ", e não encontrei a despesa dela no Financeiro — lançamentos anteriores a esta versão não têm carimbo de origem.\n\n"
+            + "Confira no Financeiro antes de continuar. Lançar assim mesmo?");
+        } catch (eD) { ok = false; }
+        if (!ok) return false;
+      }
+      obj.dataLancamento = hojeLocal();
+      this._lancFinPendente = lanc;
+      this._lancFinToast = "Despesa de mão de obra lançada no Financeiro.";
+      return true;
+    },
+    /* =====================================================================
+     * ⚠ O DOCUMENTO FICOU "LANÇADO" E A DESPESA NÃO ENTROU — DESFAZ.
+     *   Irmão do `_desfazBaixaSemLanc` (acima) para os documentos de CUSTO,
+     *   que não passam pelas portas de baixa. Entre as duas gravações cabe
+     *   uma falha (cota cheia, quarentena): folha marcada como "Lançada" sem
+     *   despesa nenhuma é o pior dos dois mundos — o custo some da obra E o
+     *   botão que o lançaria desaparece da tela.
+     * `ant`: { status, data } que o documento tinha antes.
+     * Devolve o recado (erro) — nunca verde.
+     * ===================================================================== */
+    _desfazLancCustoSemFin: function (entidade, doc, ant, lanc) {
+      var rot = this._ROT_DOC_CUSTO[entidade] || ["Este documento", "o documento"];
+      doc.status = ant.status;
+      doc.dataLancamento = ant.data || "";
+      var voltou = !this._naoGravou(Store.salvar(eid(), entidade, doc));
+      var valor = Util.fmtMoeda(Math.abs(Util.num(lanc && lanc.valor)));
+      if (voltou) {
+        return "Nada foi lançado: a despesa de " + valor + " não pôde ser gravada no Financeiro deste aparelho "
+          + "(veja o aviso vermelho), e " + rot[1] + " voltou para " + this._rotuloStatus(entidade, ant.status)
+          + ". Resolva o aviso e lance de novo.";
+      }
+      var g = rot[2] || "o";
+      return "ATENÇÃO: " + rot[1] + " ficou marcad" + g + " como lançad"
+        + g + ", mas a despesa de " + valor + " NÃO entrou no Financeiro, e não consegui "
+        + "voltar o status. Resolva o aviso vermelho, volte o status para " + this._rotuloStatus(entidade, ant.status)
+        + " e lance de novo — ou lance esse valor à mão no Financeiro.";
+    },
     _rotuloStatus: function (entidade, st) {
       var s = String(st || "");
-      var m = { aprovada: "Aprovada", aprovado: "Aprovado", enviado: "Enviado", confirmado: "Confirmado", pendente: "Pendente" };
+      /* ⚠ "lancada"/"lancado"/"aberta" ENTRARAM AQUI, e não por capricho: o
+         fallback abaixo só troca a primeira letra de caixa, e a chave é ASCII
+         sem cedilha — o aviso da folha saía "Esta folha está Lancada", medido
+         no navegador em 21/09/2026. Num aviso de dinheiro a pessoa confere a
+         palavra que ela vê no select; "Lancada" não é nenhuma opção da tela. */
+      var m = { aprovada: "Aprovada", aprovado: "Aprovado", enviado: "Enviado", confirmado: "Confirmado", pendente: "Pendente",
+        lancada: "Lançada", lancado: "Lançado", aberta: "Aberta", aberto: "Aberto" };
       return m[s] || (s ? s.charAt(0).toUpperCase() + s.slice(1) : "o status anterior");
     },
     /* estado em que cada modulo nasce — usado quando nao ha estado anterior */
@@ -30725,9 +33799,16 @@ renderFolha: function () {
        tabelas respondem na MESMA `_lancVivoDoDoc`.
        `fs_semana` não é entidade gravada: o documento é a semana de uma obra,
        e o `docId` é `<semana>~<obraId>` (ver `_fsDocId`).
-       (Folha mensal, ponto e frota ganham FOL/PON/FRT na entrega dos
-       carimbos, ESPEC-medicao-cc §1.9 — ainda não carimbam.) */
-    _CARIMBO_CUSTO: { fs_semana: "FSM" },
+       ⚠ AS QUATRO PORTAS DE CUSTO ESTÃO AQUI, E SÓ AQUI. Antes desta tabela
+       a folha mensal, o ponto e o custo de frota nasciam CEGOS: o lançamento
+       ia ao Financeiro sem nada que dissesse de onde veio, e "esta folha já
+       foi lançada?" só tinha resposta no `status` da própria folha — um campo
+       que a reabertura apaga de propósito (skill `dinheiro`, §5). Reabrir e
+       lançar de novo criava a SEGUNDA despesa do mesmo dinheiro.
+       Quem lançar custo por um documento novo entra nesta tabela e passa a
+       responder à mesma pergunta — `tools/test-carimbo-portas.js` varre `js/`
+       inteira e reprova toda gravação nova em `financeiro` fora da lista. */
+    _CARIMBO_CUSTO: { folha: "FOL", ponto: "PON", frota_mov: "FRT", fs_semana: "FSM" },
     /* ⚠ A CONDIÇÃO DE PAGAMENTO DO FORNECEDOR NÃO CABE NUM SELECT — e era
        engolida em DOIS saltos. O Mapa de Cotação gravava `formaPgto:
        p.condPgto`, texto livre do fornecedor ("30 dias após a entrega"), num
@@ -30756,7 +33837,16 @@ renderFolha: function () {
       return txt ? " · " + String(txt).slice(0, 120) : "";
     },
     /* cancelado = registro morto (ver o ⚠ em `_lancVivoDoDoc`) */
+    /* ⚠ UMA DEFINIÇÃO SÓ DE "REGISTRO MORTO", E ELA MORA NO MOTOR PURO.
+       `CustoEtapa.ehMorto` é a mesma pergunta que o Previsto × Realizado, o
+       Painel, os Relatórios, o relatório executivo e os Centros de Custo
+       fazem — e enquanto cada um tinha a sua, a mesma obra deu R$ 130.693
+       numa tela e R$ 125.693 noutra. O fallback existe só para a bancada que
+       recorta este método sem carregar o motor; ele é a MESMA regra, e
+       `tools/test-reguas-custo.js` prova a paridade dos três caminhos
+       (motor, `FinStatus.norm` e o literal) num corpus de status. */
     _finAnulado: function (f) {
+      if (typeof CustoEtapa !== "undefined" && CustoEtapa.ehMorto) return CustoEtapa.ehMorto(f || {});
       var st = String((f && f.status) || "");
       if (typeof FinStatus !== "undefined" && FinStatus.norm) return FinStatus.norm(st) === "cancelado";
       return st.toLowerCase() === "cancelado";
@@ -30847,7 +33937,15 @@ renderFolha: function () {
        * ⚠ `requisicoes` fica de fora: ela também tem estado terminal
        *   ("comprada"), mas não gera lançamento no Financeiro. Não há o que
        *   desfazer, e barrar a saída dela seria mexer num fluxo que ninguém
-       *   reclamou a pretexto de consertar outro. */
+       *   reclamou a pretexto de consertar outro.
+       *
+       * ⚠ FOLHA E PONTO TAMBÉM FICAM DE FORA — MAS TÊM GUARDA PRÓPRIA, e ela
+       *   PRECISA existir: `_gateStatusCusto`. Eles lançam dinheiro pelo
+       *   `_CARIMBO_CUSTO`, não pelo `_DOC_CARIMBO`; trazê-los para cá mudaria
+       *   `_ehAprovado`, `_travaLancDoDoc` e `_APROV_TERM`, que o Portal e o
+       *   boletim leem. Quem procurar "onde a folha pergunta antes de sair de
+       *   Lançada" acha lá — e a resposta é a mesma daqui: valor, data e
+       *   porta. */
       var lancaDinheiro = entidade === "medicoes" || entidade === "compras";
       /* ⚠ SAIR DE UM ESTADO TERMINAL É SAIR, PARA QUALQUER LADO.
          A condição exigia que o status NOVO estivesse em `_APROV_OK` — então
@@ -31050,7 +34148,9 @@ renderFolha: function () {
          (sobre o status ANTERIOR, que e o estado real do documento); aprovacao
          usa a regra do autor. */
       if (ehTerm) {
-        if (!this._guardaBaixa({ status: statusAntigo }, entidade)) return false;
+        /* ⚠ o `id` vai junto: sem ele o `_travaLancDoDoc` do recado não acha
+           o lançamento vivo e a recusa perde o valor, a data e a porta */
+        if (!this._guardaBaixa({ id: obj && obj.id, status: statusAntigo }, entidade)) return false;
         /* ===== v1.1.232 — A BAIXA PELO FORMULÁRIO FAZ O MESMO QUE O BOTÃO =====
            Marcar "Paga"/"Recebido" pelo select passava no gate e gravava SÓ o
            status: a receita da medição e a despesa da compra nunca entravam no
@@ -31212,6 +34312,470 @@ renderFolha: function () {
       var cli = lista("clientes").filter(function (c) { return c.nome && orc.cliente && c.nome.toLowerCase() === (orc.cliente.nome || "").toLowerCase(); })[0];
       if (cli) o.clienteId = cli.id;
       this.formObra(o);
+    },
+
+    /* =====================================================================
+     * AS CHAVES DE DESLIGAR DA LEVA "medição × centros de custo"
+     * (ESPEC-medicao-cc §1.10 e §11.3; tomada T-MC1 da `mc-4-0`).
+     *
+     * `CONFIG.medccRecursos` (a frota inteira, por versão) com a chave local
+     * `orcapro:tela:medcc-recursos:v1` por cima (o suporte, numa instalação
+     * só). A leitura é a MESMA do `App._cronoRecursosBoot`, de propósito: são
+     * as duas chaves da mesma casa e o suporte não pode ter duas receitas.
+     *
+     * ⚠ MOTOR PURO NUNCA LÊ ESTAS CHAVES. `MedAvanco`, `CentroCusto` e
+     *   `CCAgente` recebem tudo por parâmetro; quem pergunta é a FIAÇÃO,
+     *   antes de desenhar a porta e dentro da função que grava.
+     * ⚠ CHAVE DESCONHECIDA responde `true` (ligada): a chave existe para
+     *   DESLIGAR uma função em produção, e uma pergunta escrita errada que
+     *   respondesse `false` apagaria a função inteira da tela em toda a frota
+     *   sem ninguém ter desligado nada.
+     * ⚠ try/catch em toda leitura de `localStorage`: em janela anônima, com
+     *   dados do site bloqueados ou durante a captura de miniatura o acessor
+     *   LANÇA — e a tela inteira pararia por causa de uma preferência.
+     * ===================================================================== */
+    /* =====================================================================
+     * §1.15 — A REGRA ÚNICA DE COLETA (crítica F2)
+     *
+     * TODO campo novo desta leva (a caixa do avanço, o select do centro, o
+     * select da obra) é lido POR AQUI, e por mais nada. A regra, em uma
+     * frase: o formulário só escreve o campo quando a PESSOA mexeu no
+     * controle.
+     *
+     * ⚠ ROTEIRO DO DEFEITO QUE ELA IMPEDE. Um `obj.x = v("g-x")` cru grava
+     *   o campo mesmo quando o controle não existe (chave desligada, módulo
+     *   sem permissão, modo que não desenha o campo) ou está desabilitado —
+     *   e o `_modalForm` clona o registro INTEIRO antes de coletar. Salvar
+     *   um boletim numa instalação com `medAvanco` desligada apagaria o
+     *   `lancarAvanco` que o aparelho do escritório gravou, e a frota veria
+     *   o avanço da obra mudar sozinho. Desligar um recurso esconde a porta;
+     *   NUNCA apaga dado gravado.
+     * ⚠ `data-mostrado` é o valor que foi MOSTRADO ao abrir o formulário. A
+     *   comparação é com ele, e não com o registro: o registro pode ter
+     *   mudado na nuvem enquanto o modal estava aberto, e nesse caso quem
+     *   não mexeu no controle não pode regravar o valor velho por cima.
+     * ⚠ Documento NOVO não tem `data-mostrado`: ali o valor inicial dos
+     *   controles habilitados é escrito (§1.15-3, exceção).
+     * ===================================================================== */
+    _coletaMudou: function (idControle) {
+      var el = null;
+      try { el = document.getElementById(String(idControle)); } catch (eD) { el = null; }
+      if (!el) return { mudou: false, valor: null, ausente: true };
+      if (el.disabled) return { mudou: false, valor: null, desabilitado: true };
+      var ehCaixa = String(el.type || "").toLowerCase() === "checkbox";
+      var atual = ehCaixa ? (el.checked ? "1" : "0") : String(el.value == null ? "" : el.value);
+      var valor = ehCaixa ? !!el.checked : atual;
+      var mostrado = null;
+      try { mostrado = el.getAttribute("data-mostrado"); } catch (eA) { mostrado = null; }
+      if (mostrado == null) return { mudou: true, valor: valor };
+      return { mudou: String(mostrado) !== atual, valor: valor };
+    },
+
+    /* o modo da obra (§1.2): ausente = "sugerir"; desconhecido = "sugerir",
+       com um aviso por obra no console (nunca na cara da pessoa: ela não tem
+       o que fazer com ele). */
+    _medAvancoModoObra: function (obra) {
+      var m = String((obra && obra.avancoMedicao) || "");
+      if (m === "sugerir" || m === "aprovar" || m === "nao") return m;
+      if (m) {
+        this._medAvModoAvisado = this._medAvModoAvisado || {};
+        var k = String((obra && obra.id) || "") + "|" + m;
+        if (!this._medAvModoAvisado[k]) {
+          this._medAvModoAvisado[k] = 1;
+          try { console.warn("[medcc] obra " + ((obra && obra.id) || "?") + " com avancoMedicao desconhecido (" + m + "): lida como \"sugerir\". Nada foi regravado."); } catch (eC) {}
+        }
+      }
+      return "sugerir";
+    },
+    _medAvModoAvisado: null,
+
+    /* ==================================================================
+     * O QUE ESTE BOLETIM JÁ LANÇOU NO AVANÇO — derivado, nunca gravado.
+     *
+     * ⚠ BARATO DE PROPÓSITO. Isto é chamado UMA VEZ POR LINHA da lista de
+     *   medições (o bloco expansível é montado no render, escondido), então
+     *   ele não pode chamar o motor do avanço: `_medccDados` lê orçamento,
+     *   diários e plano e monta o realizado por nó. Numa obra com 40
+     *   boletins isso seria 40 vezes o cálculo mais caro da tela.
+     *   Por isso ele conta as entradas com `b === <id do boletim>` no
+     *   registro, e nada mais.
+     * ⚠ POR ISSO O TEXTO NÃO PROMETE O NÚMERO DA TAREFA. A entrada guarda o
+     *   id do nó (`s3a`), não o "3.1" — o número mora no orçamento do plano.
+     *   Dizer "3.1 e 3.2" aqui exigiria o motor; dizer "2 tarefas" é
+     *   verdade e cabe. Quem quer os números clica em [→ Avanço].
+     * `cache` (opcional) guarda a leitura do planejamento entre as linhas do
+     * mesmo render.
+     * ⚠ `medOuId` ACEITA O BOLETIM, E A LISTA O PASSA. Roteiro do defeito
+     *   (revisão adversarial da mc-7A, 22/09/2026): com o id, cada chamada
+     *   fazia `Store.obter(eid(), "medicoes", id)` — que é listar + ler a
+     *   lista INTEIRA — duas vezes por linha (selo e bloco expansível). A
+     *   lista de medições ficou quadrática: 2N+5 leituras por render, 5 s com
+     *   400 boletins contra 0,65 s com o recurso desligado. Quem desenha a
+     *   lista já tem o boletim na mão; quem só tem o id (toast de reabertura,
+     *   modal de rejeitar) continua lendo fresco.
+     * ⚠ E O MAPA "lastro → entradas" É MONTADO UMA VEZ POR OBRA no cache do
+     *   render, não varrido por linha.
+     * ================================================================== */
+    _medAvancoTem: function (medOuId, cache) {
+      var out = { n: 0, em: "", nos: [], lido: false };
+      var med = null, id;
+      if (medOuId && typeof medOuId === "object") { med = medOuId; id = String(med.id || ""); }
+      else id = String(medOuId || "");
+      if (!id || typeof App === "undefined" || typeof CronoBase === "undefined") return out;
+      if (!med) {
+        try { med = Store.obter(eid(), "medicoes", id); } catch (eM) { med = null; }
+      }
+      if (!med || !String(med.obraId || "")) return out;
+      /* ⚠ SEM CACHE DO CHAMADOR, LEITURA FRESCA. Roteiro do defeito
+         (revisão da mc-7A): havia um `_medAvCacheLocal` guardado no próprio
+         objeto como reserva — a primeira chamada sem cache o enchia e TODAS
+         as seguintes liam o planejamento daquele instante, para sempre. O
+         toast de reabertura e a linha do modal de rejeitar passariam a dizer
+         "0 tarefas" sobre um avanço lançado depois. O cache só vale dentro de
+         UM desenho da lista, que é quem o cria e o joga fora. */
+      var c = cache || {};
+      var lista;
+      if (Object.prototype.hasOwnProperty.call(c, "lista")) lista = c.lista;
+      else {
+        var lp = null;
+        try { lp = App._cronoLerPlanejamento(eid()); } catch (eL) { lp = null; }
+        lista = (lp && lp.lista !== null) ? lp.lista : null;
+        c.lista = lista;
+      }
+      /* ilegível não é "não tem": devolve `lido:false` e quem chama cala a
+         boca em vez de afirmar que o boletim não alimentou avanço nenhum */
+      if (lista === null) return out;
+      if (!c.porObra || typeof c.porObra !== "object") c.porObra = {};
+      var ob = String(med.obraId);
+      var porB = Object.prototype.hasOwnProperty.call(c.porObra, ob) ? c.porObra[ob] : null;
+      if (!porB) {
+        var rec = null;
+        try { rec = CronoBase.avanco(lista, ob); } catch (eR) { rec = null; }
+        porB = {};
+        if (rec) {
+          Util.arr(rec.nos).forEach(function (e2) {
+            var b = e2 ? String(e2.b || "") : "";
+            if (!b) return;
+            if (!Object.prototype.hasOwnProperty.call(porB, b)) porB[b] = [];
+            porB[b].push(e2);
+          });
+        }
+        c.porObra[ob] = porB;
+      }
+      out.lido = true;
+      Util.arr(Object.prototype.hasOwnProperty.call(porB, id) ? porB[id] : null).forEach(function (e2) {
+        out.n++; out.nos.push({ id: e2.id, p: e2.p, em: e2.em || "", origem: e2.o || "" });
+        if (String(e2.em || "") > String(out.em || "")) out.em = String(e2.em || "");
+      });
+      return out;
+    },
+
+    /* ==================================================================
+     * O SELECT DA OBRA (§1.2): "Medição alimenta o avanço do cronograma".
+     *
+     * ⚠ AUSENTE = "sugerir", e o ausente NÃO é gravado ao abrir a obra. Uma
+     *   migração que carimbasse "sugerir" em 38 instalações mexeria em toda
+     *   a lista de obras da empresa para gravar o valor que o código já
+     *   assume — e a nuvem veria cada obra mudar sozinha.
+     * ⚠ SEM `data-mostrado` no valor mostrado, salvar a obra sem tocar neste
+     *   select escreveria o campo em toda obra salva por qualquer motivo
+     *   (trocar telefone do recebimento, anexar foto).
+     * ================================================================== */
+    _medAvancoObraSelHtml: function (o) {
+      if (!this._medcc("medAvanco")) return "";
+      if (typeof App === "undefined" || typeof App._cronoSemPermissao !== "function") return "";
+      if (App._cronoSemPermissao(String((o && o.id) || ""))) return "";
+      var atual = this._medAvancoModoObra(o);
+      var pares = [["sugerir", "Sugerir no cronograma (padrão)"],
+        ["aprovar", "Lançar ao aprovar o boletim (só tarefas sem diário)"],
+        ["nao", "Não usar"]], h = "", i;
+      for (i = 0; i < pares.length; i++) {
+        h += '<option value="' + pares[i][0] + '"' + (pares[i][0] === atual ? " selected" : "") + ">" + Util.esc(pares[i][1]) + "</option>";
+      }
+      /* ⚠ COM A CHAVE AUTOMÁTICA DESLIGADA, A AJUDA NÃO PODE PROMETER O
+         LANÇAMENTO. Roteiro do defeito (revisão de publicação da 1.2.86): a
+         1.2.86 desligou `medccRecursos.medAvancoAuto` porque o canal
+         automático carimba IGUAL nos dois aparelhos e o avanço da obra
+         diverge calado (o roteiro inteiro está no js/config.js). As outras
+         três telas já contavam a verdade — a nota da caixa do boletim
+         (`_medAvancoNotaHtml`), o toast da aprovação (`_medAvancoAposAprovar`)
+         e o próprio canal (`App._cronoAvancoDaMedicao`) —, mas ESTA linha
+         continuava dizendo "o acumulado dos itens medidos vai para as tarefas
+         sem lançamento nos diários" a quem acabava de escolher "Lançar ao
+         aprovar". Quem lê aqui, escolhe, aprova um boletim e vê o toast
+         dizendo o contrário aprende a não acreditar em nenhum dos dois.
+         ⚠ E o texto DIZ ONDE ESTÁ A PORTA: a faixa [Puxar das medições] do
+           Cronograma continua lançando (ela fica sob `medAvanco`, que segue
+           ligada). Trava sem saída empurra a pessoa a rejeitar boletim. */
+      var autoDesl = !this._medcc("medAvancoAuto");
+      return '<div class="field"><label>Medição alimenta o avanço do cronograma</label>' +
+        '<select id="g-avancomed" data-mostrado="' + atual + '">' + h + "</select>" +
+        '<div class="muted" style="font-size:11.5px;margin-top:4px;line-height:1.35">' +
+        "Com <b>Sugerir</b>, o boletim aprovado aparece como sugestão no Cronograma desta obra e quem planeja decide. " +
+        (autoDesl
+          ? "<b>Nesta instalação o lançamento automático ao aprovar está desligado</b>: escolhendo <b>Lançar ao aprovar</b>, " +
+            "o boletim aprovado também fica como sugestão, e quem planeja lança pela faixa [Puxar das medições] no Cronograma da obra."
+          : "Com <b>Lançar ao aprovar</b>, o acumulado dos itens medidos vai para as tarefas <b>sem lançamento nos diários</b> — " +
+            "tarefa que tem diário nunca é tocada pela medição.") +
+        "</div></div>";
+    },
+
+    /* ==================================================================
+     * O AVISO DE TROCA DE ORÇAMENTO DA OBRA (§6.2, 7A.3): o que muda nas
+     * DUAS telas que leem o vínculo de etapa, pela conta DELAS.
+     *
+     * ⚠ A RÉGUA É A DA TELA, RODADA DUAS VEZES: `_ccCtx` + `_ccFatos` com o
+     *   orçamento de hoje e com o novo trocado EM MEMÓRIA
+     *   (`_ccCtx(obra, {orcamentoId})`), fato por fato. Roteiro do defeito
+     *   (revisão adversarial da mc-7A, 22/09/2026): a primeira versão contava
+     *   por conta própria — valor em ABSOLUTO, cancelado incluído, o par
+     *   estornado contado duas vezes, e só a etapa que SOME. Com um par
+     *   estornado de R$ 1.000, uma despesa cancelada de R$ 500, R$ 300 vivos
+     *   na etapa que some e R$ 700 vivos numa etapa que EXISTE no outro
+     *   orçamento, o aviso dizia "4 lançamento(s) (R$ 2.800,00) … e 41
+     *   centro(s) … apontam etapas que não existem"; a tela de Centros,
+     *   depois da troca, punha R$ 1.000 em "sem centro" (os 300 E os 700: o
+     *   centro gerado sai da família, exista a etapa ou não), e os R$ 2.500
+     *   mortos não mexiam em nada. Dos 41 centros, 37 apontavam etapas que
+     *   existiam no novo. E a suíte ([11] da test-v12) gravava o erro como
+     *   regra ("o espelho conta pelo absoluto").
+     * ⚠ DUAS TELAS, DUAS FRASES, cada uma pela régua dela:
+     *   - Previsto × Realizado (`CustoEtapa.consolidar`): perde o lançamento
+     *     cuja ETAPA não existe no orçamento novo — vai a "Não apropriado". O
+     *     índice é o mesmo `CustoEtapa._montarLinhas` que o `_ccCtx` guarda;
+     *   - Centros de custo: os centros GERADOS do orçamento antigo deixam de
+     *     valer (todos, exista a etapa ou não), e o lançamento que só tinha
+     *     centro por eles vai a "sem centro".
+     *   A obra sem centros gerados (toda a frota de hoje) só vê a primeira.
+     * ⚠ CONTAGEM: despesa viva (o `_ccFatos` já tira o morto), valor COM
+     *   SINAL. O estorno e o original que já tem espelho não contam como
+     *   lançamento — o par soma zero —, mas entram na soma, e é por isso que
+     *   a soma fecha com a diferença da tela.
+     * Devolve "" quando nada muda: aviso sem número ninguém confere.
+     * ================================================================== */
+    _avisoTrocaOrcamento: function (o, novoId) {
+      try {
+        var oid = String((o && o.id) || ""), antigo = String((o && o.orcamentoId) || ""), novo = String(novoId || "");
+        if (!oid || !antigo) return "";
+        var orcs = [];
+        try { orcs = Store.listarOrcamentos(eid()) || []; } catch (eL) { orcs = []; }
+        var orcNovo = null, orcAnt = null;
+        try { orcNovo = novo ? Store.obterOrcamento(eid(), novo) : null; } catch (eN) { orcNovo = null; }
+        try { orcAnt = Store.obterOrcamento(eid(), antigo); } catch (eA) { orcAnt = null; }
+        var fam = {}, k;
+        if (orcNovo && typeof CronoPlan !== "undefined" && typeof CronoPlan.familiaIds === "function") {
+          var f = CronoPlan.familiaIds(orcNovo, orcs);
+          if (f) {
+            if (Object.prototype.toString.call(f) === "[object Array]") { for (k = 0; k < f.length; k++) fam[String(f[k])] = 1; }
+            else for (k in f) if (Object.prototype.hasOwnProperty.call(f, k)) fam[k] = f[k];
+          }
+        }
+        /* mesma família = as etapas são as mesmas (a revisão copia os ids):
+           a §6.2 manda avisar só na troca por orçamento de FORA dela */
+        if (fam[antigo]) return "";
+        var nomeA = (orcAnt && (orcAnt.nome || orcAnt.numero)) || antigo;
+        var nomeN = (orcNovo && (orcNovo.nome || orcNovo.numero)) || novo;
+        var cab = "Trocar o orçamento desta obra\n\nDe “" + nomeA + "” para " + (novo ? "“" + nomeN + "”" : "nenhum orçamento") +
+          " (outro orçamento, fora da família de revisões):\n\n";
+        var pe = "\n\nNada é apagado. OK troca o orçamento; Cancelar mantém o orçamento anterior e salva o resto.";
+        /* ⚠ SEM O MOTOR DOS CENTROS NÃO HÁ COMO CONTAR — e calar seria dizer
+           que nada muda. O recado diz que não conseguiu medir. */
+        if (typeof CentroCusto === "undefined") {
+          return cab + "O vínculo de etapa do que já foi lançado nesta obra deixa de valer para o que não existir no orçamento novo, e não consegui contar quanto neste aparelho." + pe;
+        }
+        var cA = this._ccCtx(oid), cD = this._ccCtx(oid, { orcamentoId: novo });
+        var fA = Util.arr(this._ccFatos(cA).fatos), fD = Util.arr(this._ccFatos(cD).fatos);
+        /* o par do estorno (skill `dinheiro`, item 7): o espelho tem
+           `estornoDe`; o original é quem é apontado por um espelho */
+        var espelho = {}, temEsp = {};
+        Util.arr(Store.listar(eid(), "financeiro")).forEach(function (f3) {
+          if (f3 && f3.estornoDe) { espelho[String(f3.id)] = 1; temEsp[String(f3.estornoDe)] = 1; }
+        });
+        function umLanc(fa) { return !espelho[fa.id] && !temEsp[fa.id]; }
+        var depois = {};
+        fD.forEach(function (fd) { depois[fd.t + ":" + fd.id] = fd; });
+        var etA = (cA.linhas && cA.linhas.porId) || {}, etD = (cD.linhas && cD.linhas.porId) || {};
+        var px = { n: 0, v: 0, pn: 0, pv: 0 }, cc = { n: 0, v: 0, pn: 0, pv: 0, gn: 0, gv: 0 };
+        fA.forEach(function (fa) {
+          var fd = depois[fa.t + ":" + fa.id];
+          if (!fd) return;
+          var ped = fa.t === "pedido";
+          if (fa.no && etA[fa.no] && !etD[fa.no]) {
+            if (ped) { px.pn++; px.pv += fa.valor; } else { if (umLanc(fa)) px.n++; px.v += fa.valor; }
+          }
+          if (fa.cc && !fd.cc) {
+            if (ped) { cc.pn++; cc.pv += fa.valor; } else { if (umLanc(fa)) cc.n++; cc.v += fa.valor; }
+          } else if (!fa.cc && fd.cc && !ped) { if (umLanc(fa)) cc.gn++; cc.gv += fa.valor; }
+        });
+        /* os centros GERADOS que deixam de valer: da família de antes, e não
+           da de depois — a MESMA pertinência do `CentroCusto.indicePorNo` */
+        var famA = {}, famD = {}, nC = 0;
+        Util.arr(cA.familia).forEach(function (x) { famA[String(x)] = 1; });
+        Util.arr(cD.familia).forEach(function (x) { famD[String(x)] = 1; });
+        Util.arr(cA.ccsCrus).forEach(function (c3) {
+          if (!c3 || String(c3.obraId || "") !== oid) return;
+          var og = CentroCusto.origemValida(c3.origem);
+          if (!og) return;
+          var dono = String(og.o || og.r || "");
+          if (dono && famA[dono] && !famD[dono]) nC++;
+        });
+        function r2(v) { return Math.round(v * 100) / 100; }
+        function lancs(n, v) {
+          if (n) return n + " lançamento(s) de despesa (" + Util.fmtMoeda(r2(v)) + ")";
+          return Math.abs(v) >= 0.005 ? "estorno(s) somando " + Util.fmtMoeda(r2(v)) : "";
+        }
+        var partes = [];
+        var tPx = lancs(px.n, px.v);
+        if (tPx || px.pn) {
+          partes.push("• Previsto × Realizado: " + [tPx, px.pn ? px.pn + " pedido(s) em aberto (" + Util.fmtMoeda(r2(px.pv)) + ")" : ""]
+            .filter(function (s) { return !!s; }).join(" e ") +
+            " estão em etapas de “" + nomeA + "” que não existem no orçamento novo — passam para “Não apropriado”.");
+        }
+        var tCc = lancs(cc.n, cc.v), sub = [];
+        if (nC) sub.push("os " + nC + " centro(s) de custo gerados de “" + nomeA + "” deixam de valer como centros do orçamento desta obra");
+        if (tCc) sub.push(tCc + " passam a contar como “sem centro”");
+        if (cc.pn) sub.push(cc.pn + " pedido(s) em aberto (" + Util.fmtMoeda(r2(cc.pv)) + ") ficam sem centro");
+        var tG = lancs(cc.gn, cc.gv);
+        if (tG) sub.push(tG + " passam a ter centro pelo orçamento novo");
+        if (sub.length) partes.push("• Centros de custo: " + sub.join("; ") + ".");
+        if (!partes.length) return "";
+        return cab + partes.join("\n") + pe;
+      } catch (e) { return ""; }
+    },
+
+    /* [→ Avanço] só aparece para quem TEM o módulo Obras e ESTA obra (crítica
+       F15). A função de destino confere de novo — esconder botão não é
+       guarda, e o boletim pode ser aberto por outra pessoa. */
+    _medAvancoPodeVer: function (m) {
+      if (!this._medcc("medAvanco")) return false;
+      if (!m || !this._ehAprovado(m.status)) return false;
+      var o = String(m.obraId || ""); if (!o) return false;
+      if (typeof App === "undefined" || typeof App._cronoSemPermissao !== "function") return false;
+      return !App._cronoSemPermissao(o);
+    },
+
+    _medAvancoSeloHtml: function (m, cache) {
+      if (!this._medcc("medAvanco")) return "";
+      /* ⚠ o BOLETIM, não o id: ver o roteiro do custo quadrático em `_medAvancoTem` */
+      var t = this._medAvancoTem(m, cache);
+      if (!t.n) return "";
+      return ' <span class="pill" title="' + t.n + " tarefa(s) do cronograma desta obra têm avanço lançado por este boletim" +
+        '" style="background:rgba(22,163,74,.14);color:#15803d;font-size:10.5px;font-weight:700">→ avanço</span>';
+    },
+
+    /* a linha do bloco expansível. ⚠ Ela diz QUANTAS tarefas, não QUAIS: o
+       número da tarefa ("3.1") mora no orçamento do plano, e buscá-lo aqui
+       custaria o motor inteiro por linha da lista. Número que não se tem não
+       se inventa — o [→ Avanço] leva a quem os tem. */
+    _medAvancoLinhaHtml: function (m, cache) {
+      if (!this._medcc("medAvanco")) return "";
+      /* ⚠ o BOLETIM, não o id: ver o roteiro do custo quadrático em `_medAvancoTem` */
+      var t = this._medAvancoTem(m, cache);
+      if (!t.lido || !t.n) return "";
+      return '<div class="muted" style="font-size:11.5px;margin-top:6px">No avanço da obra: <b>' + t.n +
+        " tarefa(s)</b>" + (t.em ? ", lançadas em " + Util.fmtDia(t.em) : "") +
+        ". Os números por tarefa ficam no Cronograma da obra (botão [→ Avanço] nesta linha).</div>";
+    },
+
+    /* ==================================================================
+     * O CANAL DA APROVAÇÃO (§3.7) — a única porta que a Gestão abre para o
+     * avanço, e ela é chamada pelas DUAS portas de aprovar (o botão
+     * `_aprovar` e o select do formulário, pelo `_modalForm`).
+     *
+     * ⚠ DEPOIS DO SAVE CONFERIDO, SEMPRE. Ela nunca é chamada de dentro do
+     *   `_gateStatusForm` nem do `coletar`: esses dois rodam ANTES de o
+     *   documento existir no disco e podem ser abortados por qualquer
+     *   `return false` posterior — o avanço da obra ficaria lançado por um
+     *   boletim que não foi gravado. É a mesma lição que a receita da
+     *   medição aprendeu em 21/09 (ver o bloco do dinheiro no `_modalForm`).
+     * ⚠ NUNCA LANÇA PARA FORA. Falha aqui não desfaz a aprovação (o boletim
+     *   é documento, e ele foi aprovado) e não mostra verde: o recado diz o
+     *   que ficou e o que não ficou, e a pendência continua visível na faixa
+     *   do Cronograma da obra.
+     * ⚠ O RECADO É TOAST, E TOAST É TEXTO PURO (memória "toast é texto
+     *   puro": `UI.toast` grava por textContent). Recusa com porta diz ONDE
+     *   a porta está, nunca desenha um botão (R3-5).
+     * ================================================================== */
+    _medAvancoAposAprovar: function (medId) {
+      try {
+        if (!this._medcc("medAvanco")) return;
+        var id = String(medId || ""); if (!id) return;
+        var med = null;
+        try { med = Store.obter(eid(), "medicoes", id); } catch (eM) { med = null; }
+        if (!med || !String(med.obraId || "")) return;
+        var obra = null;
+        try { obra = Store.obter(eid(), "obras", med.obraId); } catch (eO) { obra = null; }
+        var modo = this._medAvancoModoObra(obra);
+        if (modo === "nao") return;
+        var sit = { temPlano: false, temAvanco: false };
+        if (typeof App !== "undefined" && typeof App._cronoAvancoSituacao === "function") {
+          try { sit = App._cronoAvancoSituacao(String(med.obraId)) || sit; } catch (eS) {}
+        }
+        if (modo !== "aprovar" || !this._medcc("medAvancoAuto")) {
+          /* obra em "Sugerir": nada é lançado, e o recado NÃO promete que
+             foi — ele diz onde a sugestão aparece.
+             ⚠ "LANÇAR AO APROVAR" COM A CHAVE AUTOMÁTICA DESLIGADA TEM FRASE
+             PRÓPRIA. Dizer "esta obra está em Sugerir" a quem acabou de pôr a
+             obra em "Lançar ao aprovar" é recado que mente: a pessoa volta ao
+             cadastro, vê o contrário e aprende a não acreditar no aviso.
+             ⚠ O TEXTO DIZ ONDE, NÃO MANDA ABRIR: quem aprova pode não ter o
+             módulo Obras, e uma ordem para abrir uma tela que ele não abre é
+             porta prometida que o clique seguinte fecha. */
+          var ondeSug = "a medição aparece como sugestão no Cronograma da obra, e quem planeja a obra decide.";
+          var t = !(sit.temPlano && sit.temAvanco)
+            ? "O avanço não foi lançado por esta aprovação: esta obra ainda não tem planejamento com avanço lançado. Quando o planejamento começar, esta medição aparece como sugestão no Cronograma da obra."
+            : (modo === "aprovar"
+              ? "O avanço não foi lançado por esta aprovação: o lançamento automático ao aprovar está desligado nesta instalação — " + ondeSug
+              : "O avanço não foi lançado por esta aprovação: esta obra está em “Sugerir no cronograma” — " + ondeSug);
+          UI.toast(t, "info", Math.max(7000, Math.min(16000, t.length * 60)));
+          return;
+        }
+        if (typeof App === "undefined" || typeof App._cronoAvancoDaMedicao !== "function") return;
+        var r = App._cronoAvancoDaMedicao(String(med.obraId), { gatilho: id });
+        if (r && r.recado) UI.toast(String(r.recado), r.tipo || "info", Math.max(7000, Math.min(20000, String(r.recado).length * 60)));
+      } catch (ex) {
+        /* ⚠ NEM UM ERRO AQUI PODE DERRUBAR A APROVAÇÃO. O documento está
+           gravado; o que falhou foi o lançamento do avanço, e é isso que a
+           pessoa lê. */
+        try { UI.toast("O boletim foi aprovado, mas o avanço da obra NÃO foi lançado (erro ao calcular). Abra o Cronograma da obra e use [Puxar das medições].", "erro", 12000); } catch (eT) {}
+        try { if (window.console) console.error("[medcc] _medAvancoAposAprovar", ex); } catch (eC2) {}
+      }
+    },
+
+    _medccLido: null,
+    _medcc: function (nome) {
+      var k, m = this._medccLido;
+      if (!m) {
+        m = {};
+        var base = (typeof CONFIG !== "undefined" && CONFIG && CONFIG.medccRecursos) || null, loc = null;
+        if (base && typeof base === "object") for (k in base) if (Object.prototype.hasOwnProperty.call(base, k)) m[k] = base[k];
+        try {
+          var raw = (typeof localStorage !== "undefined" && localStorage) ? localStorage.getItem("orcapro:tela:medcc-recursos:v1") : null;
+          if (raw) loc = JSON.parse(raw);
+        } catch (eL) { loc = null; }
+        if (loc && typeof loc === "object" && !Array.isArray(loc)) for (k in loc) if (Object.prototype.hasOwnProperty.call(loc, k)) m[k] = loc[k];
+        this._medccLido = m;
+        var desl = [];
+        for (k in m) if (Object.prototype.hasOwnProperty.call(m, k) && m[k] === false) desl.push(k);
+        if (desl.length && this._medccAvisado !== desl.join(",")) {
+          this._medccAvisado = desl.join(",");
+          try {
+            console.info("[medcc] recursos DESLIGADOS nesta instalação: " + desl.join(", ") +
+              " (CONFIG.medccRecursos e a chave local orcapro:tela:medcc-recursos:v1). Nenhum dado gravado foi apagado.");
+          } catch (eC) {}
+        }
+      }
+      return Object.prototype.hasOwnProperty.call(m, nome) ? m[nome] !== false : true;
+    },
+    _medccAvisado: null,
+    /* as chaves DESLIGADAS, em ordem, para o cartão "Compatibilidade" (EM-9).
+       Devolve [] quando está tudo ligado — o cartão não ganha linha. */
+    _medccDesligadas: function () {
+      this._medcc("medAvanco");                       // força a leitura uma vez
+      var m = this._medccLido || {}, out = [], k;
+      for (k in m) if (Object.prototype.hasOwnProperty.call(m, k) && m[k] === false) out.push(k);
+      out.sort();
+      return out;
     },
 
     // Modo demonstração: abrir formulários é livre; QUALQUER gravação exige licença ativa.
@@ -31555,14 +35119,27 @@ renderFolha: function () {
        tipo "plano") quando existe — é o que se edita depois de o orçamento ser
        aprovado —, senão o do orçamento. `CronoBase` vem de outro arquivo e pode
        não estar carregado: aí vale o orçamento, como antes. */
+    /* ⚠ A LISTA COMPLETADA (planejador, fatia 1B), SÓ LEITURA: a versão que
+       um aparelho 1.2.81 resumiu para caber na nuvem — e a obra grande, que
+       nasce com o cabeçalho resumido — volta com as subetapas pelo selo
+       (CronoSelo.completar). Sem isso o previsto × realizado do Last Planner
+       sumia justo na obra grande. Os dois leitores daqui (a ativa e o plano)
+       só leem; ninguém grava esta lista. */
     _lpCronoLista: function () {
       if (typeof CronoBase === "undefined" || !CronoBase.ENTIDADE) return [];
-      try { return Store.listar(eid(), CronoBase.ENTIDADE) || []; } catch (e) { return []; }
+      var l = [];
+      try { l = Store.listar(eid(), CronoBase.ENTIDADE) || []; } catch (e) { return []; }
+      if (typeof CronoSelo === "undefined" || !CronoSelo || !CronoSelo.pronto) return l;
+      var sel = null;
+      try { sel = Store.listar(eid(), CronoSelo.ENTIDADE) || []; if (Store.ilegivel && Store.ilegivel(eid(), CronoSelo.ENTIDADE)) sel = null; } catch (eS) { sel = null; }
+      return sel ? CronoSelo.completar(l, sel) : l;
     },
+    /* ⚠ PELA PORTA ÚNICA `CronoBase.orcDaObra` (planejador, Onda 0, T2): ela
+       acha o plano E o avanço da obra na mesma lista, e o clone sai sempre com
+       `_avancoDaObra` — o Last Planner puxa as mesmas datas que a aba mostra. */
     _lpOrcDoPlano: function (obra, orc, listaCrono) {
-      if (!obra || !orc || typeof CronoBase === "undefined" || !CronoBase.plano || !CronoBase.orcComPlano) return orc;
-      var pl = CronoBase.plano(listaCrono || this._lpCronoLista(), obra.id);
-      return (pl && CronoBase.orcComPlano(orc, pl)) || orc;
+      if (!obra || !orc || typeof CronoBase === "undefined" || !CronoBase.orcDaObra) return orc;
+      return CronoBase.orcDaObra(orc, listaCrono || this._lpCronoLista(), obra.id) || orc;
     },
 
     /* "Puxar do cronograma": os nós do cronograma cuja janela cruza ESTA semana
@@ -32137,6 +35714,8 @@ renderFolha: function () {
       "bim-troca-obra": 1, "lp-obra": 1, "lp-visao": 1, "fs-semana": 1, "fs-obra": 1, "prod-obra": 1,
       "galeria-abrir": 1, "galeria-fechar": 1, "galeria-nav": 1, "galeria-troca-obra": 1,
       "bim-drawer-fechar": 1,
+      /* trocar a obra do quadro "Custo por centro" dos Relatórios só LÊ (mc-8B) */
+      "rel-cc-obra": 1,
       /* a ficha da obra (palco de Obras) só LÊ e navega: abrir, trocar de
          aba, trocar mapa/satélite, pôr foto no fundo, ir ao módulo filtrado */
       "ov-ficha": 1, "ov-aba": 1, "ov-ficha-fechar": 1, "ov-mapa-tipo": 1, "ov-ir": 1, "ov-foto-cena": 1, "ov-rolar": 1,
@@ -32166,7 +35745,7 @@ renderFolha: function () {
          obra gastou e o que a geração faria antes de decidir renovar; quem
          grava é o [Gerar]/[Converter], e esses chamam  dentro
          da própria função. */
-      "cc-gerar": 1, "cc-converter": 1
+      "cc-gerar": 1, "cc-converter": 1, "cc-desconverter": 1
     },
     _isentoDoBloqueio: function (gacao) {
       if (this._ISENTO_BLOQUEIO[gacao]) return true;
@@ -32417,6 +35996,20 @@ renderFolha: function () {
         }
         case "nova-medicao": return this.novoMedicao();
         case "novo-lancamento": return this.novoLancamento();
+        /* [→ Avanço]: leva ao Cronograma da obra deste boletim, no modal do
+           avanço. ⚠ A permissão é conferida NA FUNÇÃO de destino, não aqui:
+           o botão pode ter sido desenhado antes de o módulo ser tirado. */
+        case "med-avanco": {
+          if (!this._medcc("medAvanco")) {
+            UI.toast("O lançamento do avanço pela medição está desligado nesta instalação. Nenhum dado gravado foi apagado.", "erro", 9000);
+            return null;
+          }
+          if (typeof App === "undefined" || typeof App._cronoAvancoAbrirDoBoletim !== "function") {
+            UI.toast("O módulo do cronograma não carregou neste aparelho — recarregue o app.", "erro");
+            return null;
+          }
+          return App._cronoAvancoAbrirDoBoletim(id);
+        }
         case "aprovar-medicao": return this._aprovar("medicoes", id, "aprovada", "Medição aprovada.");
         case "rejeitar-medicao": return this._rejeitar("medicoes", id, "rejeitada");
         case "pagar-medicao": {
@@ -32587,6 +36180,8 @@ renderFolha: function () {
         case "export-compras": return this.exportarModulo("compras");
         case "puxar-medicao": return this.puxarMedicao();
         case "export-medicoes": return this.exportarModulo("medicoes");
+        case "export-centrocusto": return this.exportarModulo("centrocusto");
+        case "rel-cc-obra": return this.relCcObra(dataset);
         case "colab-doc": return this.cadastrarColaboradorDoc();
         case "novo-modelo": return this.novoModelo();
         case "seed-modelos": return this.seedModelos();
@@ -32803,9 +36398,41 @@ renderFolha: function () {
             UI.toast("Lançar a folha cria uma despesa no Financeiro — módulo que seu usuário não tem. Peça a quem cuida do Financeiro.", "erro"); return;
           }
           var pt = Store.obter(eid(), "ponto", id); if (!pt) return;
-          pt.status = "lancado"; pt.dataLancamento = hojeLocal(); Store.salvar(eid(), "ponto", pt);
-          Store.salvar(eid(), "financeiro", { data: pt.dataLancamento, desc: "Folha " + (pt.competencia || "") + " — " + (pt.colaboradorNome || ""), tipo: "despesa", categoria: "mao_obra", valor: Util.num(pt.valor), status: "pago", obraId: pt.obraId });
-          App.render(); UI.toast("Folha lançada no Financeiro (mão de obra).", "ok"); return;
+          /* ⚠ MESMA GUARDA DA FOLHA MENSAL, PELO MESMO MOTIVO (D21). Aqui o
+             `pt.dataLancamento` parecia a defesa, e não é: reabrir o ponto a
+             apaga, e o clique seguinte criava a segunda despesa do mesmo
+             dinheiro. Meia correção em dinheiro é pior que nenhuma — quem usa
+             aprende que a regra é aleatória e para de confiar no aviso. */
+          var travaPt = this._travaLancCusto("ponto", pt.id);
+          if (travaPt) { UI.toast(travaPt, "erro"); return; }
+          /* ⚠ DOIS CASOS, E CONFUNDI-LOS É MENTIR (ver `_lancMortoDoDoc`):
+             o lançamento deste ponto foi ESTORNADO, ou nunca teve carimbo. */
+          var mortosPt = this._lancMortoDoDoc("ponto", pt.id);
+          if (mortosPt && !confirm("O lançamento anterior deste ponto foi estornado ou cancelado e fica como está.\n\n"
+            + "Entra uma despesa NOVA de " + Util.fmtMoeda(Util.num(pt.valor)) + ". Continuar?")) return;
+          /* sem carimbo nenhum e já marcado como lançado: diz que NÃO
+             ENCONTROU (o lançamento é anterior ao carimbo), nunca que não
+             existe */
+          if (!mortosPt && pt.dataLancamento && !confirm("Este ponto já consta como lançado em " + Util.fmtDia(pt.dataLancamento)
+            + ", e não encontrei a despesa dele no Financeiro — lançamentos anteriores a esta versão não têm carimbo de origem.\n\n"
+            + "Confira no Financeiro antes de continuar. Lançar assim mesmo?")) return;
+          /* ⚠ ORDEM: ponto gravado e CONFERIDO → despesa gravada e conferida
+             → despesa recusada desfaz o ponto (`_desfazLancCustoSemFin`) */
+          var antPt = { status: pt.status, data: pt.dataLancamento || "" };
+          var hojePt = hojeLocal();
+          pt.status = "lancado"; pt.dataLancamento = hojePt;
+          if (this._naoGravou(Store.salvar(eid(), "ponto", pt))) {
+            App.render(); UI.toast("Nada foi lançado: o ponto não coube no armazenamento deste aparelho (veja o aviso vermelho). O Financeiro não foi tocado.", "erro"); return;
+          }
+          /* ⚠ CARIMBO DE ORIGEM (`PON` + id do ponto + competência), montado
+             pela MESMA `_lancCustoDoDoc` do select do formulário — ver a nota
+             na folha, logo acima. */
+          var lancPt = this._lancCustoDoDoc("ponto", pt, hojePt);
+          if (this._naoGravou(Store.salvar(eid(), "financeiro", lancPt))) {
+            var txtPt = this._desfazLancCustoSemFin("ponto", pt, antPt, lancPt);
+            App.render(); UI.toast(txtPt, "erro"); return;
+          }
+          App.render(); this._ccCustoToast("Folha lançada no Financeiro (mão de obra).", [lancPt], "ok"); return;
         }
         case "nova-frota": return this.novoFrota();
         case "custo-frota": return this.formCustoFrota(id);
@@ -32833,6 +36460,7 @@ case "novo-centrocusto": return this.novoCentrocusto();
         case "cc-gerar": return this.ccGerar(dataset);
         case "cc-gerar-aplicar": return this.ccGerarAplicar();
         case "cc-converter": return this.ccConverter(dataset);
+        case "cc-desconverter": return this.ccDesconverter(dataset);
         case "cc-desativar": return this.ccDesativar(dataset);
         case "cc-reativar": return this.ccReativar(dataset);
 case "nova-folha": return this.novoFolha();
@@ -32876,7 +36504,15 @@ case "nova-folha": return this.novoFolha();
       var _snap = this;
       var acum = 0, medidoAcum = 0, pctEmAnalise = 0, valorEmAnalise = 0;
       var medicoes = meds.map(function (m) {
-        var _aprov = _snap._ehAprovado(m.status);
+        /* ⚠ A MESMA RÉGUA DO PAINEL, e ela não era. Aqui a pergunta era ao
+           `_ehAprovado` (que é `_APROV_OK` + `_APROV_TERM`, sete estados,
+           incluindo "aprovado" no masculino, "enviado", "recebido" e
+           "comprada"); no cartão da obra e no Painel era `aprovada || paga`.
+           Medido com a mesma entrada: boletim gravado no masculino dava 0%
+           para o engenheiro e 18% para o CLIENTE, na mesma obra. Ver o bloco
+           inteiro em `_medContaNoAvanco` e a tabela em
+           `tools/test-reguas-avanco.js`. */
+        var _aprov = _snap._medContaNoAvanco(m);
         if (_aprov) { acum += Util.num(m.percentual); medidoAcum += Util.num(m.valor); }
         else { pctEmAnalise += Util.num(m.percentual); valorEmAnalise += Util.num(m.valor); }
         /* ⚠ RETENÇÃO VAI EM DINHEIRO, não em percentual. O Portal renderiza

@@ -33,7 +33,7 @@
       texto: "Aperte Ctrl+K em qualquer tela e pule direto para qualquer obra, orçamento ou ação do sistema." },
     { seletor: ".topbar [data-avisos-abrir]", posicao: "baixo",
       titulo: "Central de avisos",
-      texto: "Medições a aprovar, tarefas atrasadas e restrições da semana — tudo num sino só, para nada passar despercebido." },
+      texto: "Medições a aprovar, tarefas atrasadas, restrições da semana e atrasos do cronograma das obras — tudo num sino só, para nada passar despercebido." },
     { seletor: '[data-view="bim"]',
       titulo: "BIM 3D ao 7D",
       texto: "Arraste seus arquivos IFC e coordene a obra em 3D: cronograma 4D, custo 5D, ciclo de vida 6D/7D, trena, planta baixa, corte livre e vista de corte técnica — tudo ligado ao orçamento." },

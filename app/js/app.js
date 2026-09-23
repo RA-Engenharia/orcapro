@@ -85,6 +85,9 @@
     // ---------- Boot ----------
     iniciar: function () {
       Auth.init();
+      /* as chaves de desligar do cronograma (planejador, Onda 0, T12) ANTES de
+         qualquer desenho: o motor calcula a primeira tela já com elas */
+      this._cronoRecursosBoot();
       /* aparencia salva: dois eixos independentes — iluminacao (claro/escuro)
          e letra (Plex/Source). `aplicarTema` faz a migracao de quem ainda
          tem o `orcapro:tom` antigo gravado no aparelho. */
@@ -214,6 +217,9 @@
           setTimeout(function () { try { if (Auth.usuario()) self._avisarIlegiveis(true); } catch (eIv) {} }, 2500);
         }
       } catch (eIl) {}
+      /* o selo tardio das linhas de base antigas (planejador, fatia 1B): uma
+         vez por sessão, depois do sync — ver `_cronoSelarPendentes` */
+      try { if (Auth.usuario() && typeof this._cronoSelarPendentesAgendar === "function") this._cronoSelarPendentesAgendar(); } catch (eSt) {}
       // LOTE 5: CTA de upgrade quando o teste grátis está acabando (últimos 2 dias)
       try {
         if (typeof Licenca !== "undefined") {
@@ -1077,7 +1083,7 @@
     },
     /* a transição, a trilha e a gravação da ação de aprovação (o prompt do
        motivo, quando há, já foi respondido) */
-    _orcAprovarExecuta: function (orc, acao, eu, dados) {
+    _orcAprovarExecuta: function (orc, acao, eu, dados, optsAp) {
       var r = Aprovacao.transicionar(orc, acao, eu, dados);
       if (!r || !r.ok) { UI.toast((r && r.erro) || "Ação não permitida agora.", "erro"); return; }
       /* ⚠ RETRATO ANTES DE MEXER NA MEMÓRIA (F2, 14/09/2026). As quatro linhas
@@ -1097,6 +1103,57 @@
          trava do aprovado impedia o salvar que alinharia (ver _materializarSeExec). */
       this._materializarSeExec(orc);
       Aprovacao.registrar(orc, acao, eu, dados, Util.agoraISO());
+      /* (planejador 1A) o retorno da projeção acima: `_materializarSeExec` o
+         guarda em `_matUltimo` — a chamada fica colada ao `registrar`, como
+         sempre esteve. A recusa abaixo devolve a memória ao retrato, que
+         desfaz também a trilha que o `registrar` acabou de escrever. */
+      var mAp = this._matUltimo; this._matUltimo = null;
+      /* ⚠ A APROVAÇÃO CONFERE ANTES DE VIRAR O ESTADO (planejador 1A, §2.6;
+         crítica 1, achado 9). O aprovado não se regrava depois: o que ficar
+         gravado agora é o que a versão anterior vai mostrar para sempre.
+         - sem o início fixo, as funções de data não ficaram gravadas → recusa,
+           com a porta [Fixar início];
+         - divergência fora do catálogo → recusa, com os dois prazos e as
+           portas [Ver as diferenças] e [Aprovar com o prazo gravado];
+         - códigos do catálogo → aprova, e o recado lista os códigos.
+         Recusado, a memória volta ao retrato (o estado não muda). */
+      var codsAp = "";
+      if (acao === "aprovar" && mAp && !(optsAp && optsAp.aceitaDivergencia)) {
+        var CATa = (typeof Cronograma !== "undefined" && Cronograma.CATALOGO_DIV) || [], codsA = [];
+        (mAp.divergencias || []).forEach(function (x) { if (x && x.cod && codsA.indexOf(x.cod) < 0) codsA.push(x.cod); });
+        var foraA = codsA.filter(function (c) { return CATa.indexOf(c) < 0; });
+        if (mAp.pendente === "sem-inicio") {
+          this._iaRestaurar(orc, retratoAprov);
+          var altoP = { tipo: "orc", orc: orc, cron: orc.cronograma };
+          UI.modal("Para aprovar, fixe o início da obra",
+            '<p>Sem o início fixo, as datas das tarefas sem preço, dos calendários, do “o mais tarde possível” e do avanço não ficam gravadas para os aparelhos com versão anterior do app — e o aprovado não se regrava depois. Nada foi aprovado.</p>' +
+            this._cronoPortaInicioHtml(altoP, null, "Fixe o início e aprove de novo:"),
+            [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+          return false;
+        }
+        if (foraA.length) {
+          var legA = null, novA = null, selfAp = this;
+          try { legA = Cronograma.estimarLegado(orc); novA = Cronograma.estimar(orc); } catch (eLg) { legA = null; }
+          this._iaRestaurar(orc, retratoAprov);
+          var doisP = (legA && novA) ? "A proposta calculou " + novA.totalDias + " dias úteis; o que fica gravado para as versões anteriores é " + legA.totalDias + "." : "Não consegui medir os dois prazos.";
+          UI.modal("Aprovar com datas que não consegui garantir?",
+            '<p>' + Util.esc(doisP) + ' Diferenças sem explicação conhecida: ' + Util.esc(foraA.join(", ")) + '. Nada foi aprovado ainda.</p>',
+            [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+              { texto: "Ver as diferenças", classe: "ghost", onClick: function () {
+                UI.fecharModal();
+                UI.toast("Diferenças (etapa · campo · versão anterior → esta): " + (mAp.divergencias || []).slice(0, 6).map(function (x) {
+                  return (x.numero || "") + " · " + x.campo + " · " + x.legado + " → " + x.novo;
+                }).join("; "), "info", 15000);
+              } },
+              { texto: legA ? "Aprovar com o prazo gravado de " + legA.totalDias + " dias úteis" : "Aprovar assim mesmo", classe: "primary", onClick: function () {
+                UI.fecharModal();
+                selfAp._orcAprovarExecuta(orc, acao, eu, dados, { aceitaDivergencia: true });
+                UI.toast("Gere a proposta de novo antes de enviar: o prazo gravado para as versões anteriores é o da aprovação.", "info", 9000);
+              } }]);
+          return false;
+        }
+        if (codsA.length) codsAp = " Aparelhos com versão anterior: diferença declarada (" + codsA.join(", ") + ").";
+      }
       orc.estadoAprovacao = r.estado;
       /* ⚠ mudou o estado de aprovação: o desfazer da IA não atravessa (um
          clique depois reverteria o que acabou de ser aprovado ou devolvido) */
@@ -1134,7 +1191,7 @@
       this._avisouTravado = null;
       this.render();
       var rot = (Aprovacao.ESTADOS[r.estado] || {}).rotulo || r.estado;
-      UI.toast(orc.numero + " → " + rot + (acao === "aprovar" ? ". A partir de agora só muda por revisão." : "."), "ok");
+      UI.toast(orc.numero + " → " + rot + (acao === "aprovar" ? ". A partir de agora só muda por revisão." : ".") + codsAp, "ok");
       return true;
     },
     /* =====================================================================
@@ -1501,7 +1558,11 @@
       if (this._relerOuvindo || typeof window === "undefined" || !window.addEventListener) return;
       this._relerOuvindo = true;
       var self = this;
-      var ENTS = { orcamentos: 1, _lapides: 1, crono_obra: 1, obras: 1, rdo: 1, medicoes: 1 };
+      /* ⚠ `crono_selo` e `crono_alt` (planejador, Onda 0, T10): sem elas aqui,
+         o selo e o histórico que a JANELA DESTACADA grava nunca sobem — ela
+         não empurra para a nuvem, quem empurra é esta principal, ao receber o
+         aviso (o `push` abaixo só vale para entidade que o Nuvem conhece). */
+      var ENTS = { orcamentos: 1, _lapides: 1, crono_obra: 1, obras: 1, rdo: 1, medicoes: 1, crono_selo: 1, crono_alt: 1 };
       window.addEventListener("storage", function (ev) {
         try {
           if (!ev || ev.key === null || ev.key === undefined) return;   // clear() de outra janela: nada a comparar por chave
@@ -1975,6 +2036,10 @@
       if (t.dataset.atzBaixar) { this.carregarCompetencia(t.dataset.atzBaixar, false); return; }
 
       var acao = t.dataset.acao;
+      /* ⚠ AÇÕES DAS FUNÇÕES NOVAS DO CRONOGRAMA (planejador, Onda 0, T5): cada
+         fatia registra as suas na própria região (ver `_acaoCrono`), e NENHUMA
+         edita este `switch` — nove fatias no mesmo `switch` é merge perdido. */
+      if (acao && this._ACAO_CRONO_RE.test(acao)) { if (this._acaoCrono(acao, t, e)) return; }
       switch (acao) {
         case "etapas-recolher-todas": return this.recolherTodasEtapas();
         // v1.1.134 — ciclo completo de composições próprias
@@ -2216,6 +2281,10 @@
     },
 
     onChange: function (e) {
+      /* as ações das funções novas do cronograma que falam por CHANGE (<select>,
+         caixa, campo) — o mesmo despacho do onClick (planejador, T5) */
+      var acaoCh = (e.target && e.target.getAttribute) ? e.target.getAttribute("data-acao") : null;
+      if (acaoCh && this._ACAO_CRONO_RE.test(acaoCh)) { if (this._acaoCrono(acaoCh, e.target, e)) return; }
       /* Editar com IA: o checkbox do diff (só o NÚMERO da mudança — as ops
          ficam em memória) e o chip de alvo do pedido (troca só os exemplos;
          redesenhar o modal perderia o que foi digitado) */
@@ -2321,10 +2390,19 @@
          contrato (o bom). Dois contratos para o mesmo campo = a pessoa aprende
          um e é traída pelo outro. As equipes seguem no editarFolha (fora do
          contrato da digitação). */
-      if (e.target.matches("[data-crono-sub-dur]") || e.target.matches("[data-crono-sub-pred]") || e.target.matches("[data-cron-dur]") || e.target.matches("[data-cron-pred]")) {
+      /* ⚠ PLANEJADOR 2A: as três células da LINHA T (nome, duração, "Depende
+         de") entram no MESMO caminho único. Um handler próprio para elas
+         seria o segundo contrato do mesmo campo — que é exatamente o defeito
+         que o caminho único da F6 fechou (a etapa gravava 1 dia calado para
+         "abc" e a subetapa recusava). */
+      if (e.target.matches("[data-crono-sub-dur]") || e.target.matches("[data-crono-sub-pred]") || e.target.matches("[data-cron-dur]") || e.target.matches("[data-cron-pred]") ||
+        e.target.matches("[data-crono-extra-nome]") || e.target.matches("[data-crono-extra-dur]") || e.target.matches("[data-crono-extra-pred]")) {
         var dsT = e.target.dataset;
-        var campoT = (dsT.cronoSubDur != null || dsT.cronDur != null) ? "dur" : "pred";
-        var idT = dsT.cronoSubDur != null ? dsT.cronoSubDur : (dsT.cronoSubPred != null ? dsT.cronoSubPred : (dsT.cronDur != null ? dsT.cronDur : dsT.cronPred));
+        var campoT = (dsT.cronoSubDur != null || dsT.cronDur != null || dsT.cronoExtraDur != null) ? "dur"
+          : (dsT.cronoExtraNome != null ? "nome" : "pred");
+        var idT = dsT.cronoSubDur != null ? dsT.cronoSubDur : (dsT.cronoSubPred != null ? dsT.cronoSubPred
+          : (dsT.cronDur != null ? dsT.cronDur : (dsT.cronPred != null ? dsT.cronPred
+            : (dsT.cronoExtraNome != null ? dsT.cronoExtraNome : (dsT.cronoExtraDur != null ? dsT.cronoExtraDur : dsT.cronoExtraPred)))));
         var resT = this._cronoGravarDigitado({ id: idT, campo: campoT, texto: e.target.value, origem: "tabela" });
         // recusado ou sem mudança: o render devolve ao campo o valor GRAVADO (o _cronoGravarOps já redesenhou quando gravou)
         if (!resT || !resT.ok || resT.mudou === false) this.render();
@@ -2591,7 +2669,11 @@
          chamada daqui. `_relerAberto` fecha o editor na exclusão (o
          recado de 1.1.232 mora lá agora), troca o objeto na edição e
          redesenha o cronograma quando é a obra que mudou. */
-      if (ent === "orcamentos" || ent === "_lapides" || ent === "crono_obra" || ent === "obras" || ent === "rdo" || ent === "medicoes") {
+      /* as linhas de base seladas e o histórico do cronograma (planejador,
+         Onda 0, T10) relêem a aba como o plano da obra: a sub-aba de bases, a
+         comparação e o histórico desenham a partir delas */
+      if (ent === "orcamentos" || ent === "_lapides" || ent === "crono_obra" || ent === "obras" || ent === "rdo" || ent === "medicoes" ||
+        ent === "crono_selo" || ent === "crono_alt") {
         this._relerAgendar(ent);
         return;
       }
@@ -4488,6 +4570,15 @@
                   Store.desenterrar(eid, ent, entram.map(function (x) { return x.id; }));
                 } catch (eD) {}
                 nGest += Store.salvarVarios(eid, ent, entram, true);
+                /* ⚠ (1C) O HISTÓRICO DO CRONOGRAMA É PODADO depois de restaurar: o
+                   arquivo pode trazer mais que 60 sessões por cronograma (ou 800
+                   na empresa), e o funil do Store acrescenta `criadoEm`, que o
+                   evento não tem. A poda é a mesma do merge (determinística) —
+                   sem ela, o aparelho subiria uma lista que o outro podaria de
+                   volta. */
+                if (ent === "crono_alt" && typeof CronoAlt !== "undefined" && CronoAlt.podar && Store.adapter && Store.adapter.gravar) {
+                  try { Store.adapter.gravar(eid, ent, CronoAlt.podar(Store.listar(eid, ent))); } catch (eAp) {}
+                }
               } catch (eG) {}
             });
           }
@@ -4784,8 +4875,18 @@
        {tipo, orc (o que o motor calcula — no plano, o clone de
        CronoBase.orcComPlano, com o cronograma DO PLANO por referência), cron
        (o objeto que se grava — sempre existe), travado, salvar(opts) → true se
-       gravou, decisao, obra, plano, inicioObra}. */
+       gravou, decisao, obra, plano, inicioObra}.
+       ⚠ PLANEJADOR, ONDA 0 (T3): o alvo sai de `_cronoAlvoCru` (a decisão de
+       sempre, linha a linha) e ganha as TOMADAS em `_cronoAlvoTomadas`:
+       `chave` ("orc:<id>" | "plano:<obraId>"), `avancoRec` (null até a 1A),
+       `foto()`, `restaurar(foto, opts)` e o `salvar` envolvido, que chama
+       `_cronoDepoisDeSalvar` quando o conteúdo mudou. É o ponto único onde a
+       pilha do desfazer e o histórico (1C) se ligam sem editar esta função. */
     _cronoAlvo: function () {
+      var a = this._cronoAlvoCru();
+      return a ? this._cronoAlvoTomadas(a) : a;
+    },
+    _cronoAlvoCru: function () {
       var o = this.orcAtual; if (!o) return null;
       if (!o.cronograma || typeof o.cronograma !== "object" || Array.isArray(o.cronograma)) o.cronograma = {};
       var self = this;
@@ -4796,8 +4897,39 @@
         salvar: function (opts) { return self.persistir(opts); },
         decisao: dec, obra: dec ? dec.obra : null, plano: dec ? dec.plano : null
       };
-      if (!dec || dec.tipo !== "plano" || !dec.plano || typeof CronoBase === "undefined") return alvo;
-      var pl = dec.plano, oP = CronoBase.orcComPlano(o, pl);
+      if (!dec || dec.tipo !== "plano" || !dec.plano || typeof CronoBase === "undefined" || typeof CronoBase.orcDaObra !== "function") return alvo;
+      /* ⚠ PELA PORTA ÚNICA `orcDaObra` (planejador, Onda 0, T2): o plano é o
+         que a DECISÃO escolheu (ela já descartou o plano de outro orçamento),
+         passado pronto — e o clone sai sempre com `_avancoDaObra` (null até a
+         1A, que acha o avanço na mesma lista, `dec.lista`). */
+      /* ⚠ O AVANÇO LANÇADO ENTRA AQUI, DA MESMA LISTA (`dec.lista`, T2/T3) —
+         nunca de uma segunda leitura do Store. Ele ficou `null` desde a Onda 0
+         ("null até a 1A, que acha o avanço na mesma lista") e a 1A não o
+         ligou: o registro `avanco_<obraId>` era gravado e NUNCA chegava ao
+         motor. As duas fatias da Onda 2 acharam o mesmo buraco por lados
+         diferentes, e os dois roteiros ficam aqui porque cada um custa uma
+         sessão para reencontrar:
+         · 2A (e2e-crono-avanco-gantt, 21/09/2026): 60% gravado no registro e
+           `feito: 0`, `corte: 0`, `pilula: null` na tela — barra sem os três
+           trechos, sem a linha da data de corte e sem a pílula "Avanço até";
+         · 2B: a foto da pilha nunca guardava o registro, e [Desfazer] logo
+           depois de lançar recusava com "o cronograma mudou depois da última
+           alteração desta janela", porque a foto de agora (`a: null`) não era
+           a do cursor.
+         ⚠ `orcDaObra` só aceita o avanço DA MESMA OBRA (o id é a única amarra
+         entre os dois registros, e um avanço trocado reprogramaria a obra
+         errada) — a guarda é dela, não daqui.
+         ⚠ `pl` É DECLARADO ANTES DE SER LIDO, e a ordem destas duas linhas não
+         é estilo: a forma da fatia 2A calculava o id do `pl.obraId` ACIMA do
+         `var pl`, e com `dec.obra` nulo o hoisting entregava `undefined` —
+         `Cannot read properties of undefined (reading 'obraId')`, provado na
+         fusão em 21/09/2026.
+         `dec.lista === null` = planejamento ilegível: `null` de novo, e a
+         quarentena continua valendo (ler a lista de reserva aqui faria a aba
+         desenhar como se a obra não tivesse avanço). */
+      var pl = dec.plano, obraIdA = dec.obra ? dec.obra.id : pl.obraId;
+      var avRecA = (dec.lista && typeof CronoBase.avanco === "function") ? CronoBase.avanco(dec.lista, obraIdA) : null;
+      var oP = CronoBase.orcDaObra(o, { plano: pl, avanco: avRecA }, obraIdA);
       if (!oP) return alvo;   // plano sem cronograma: fica a trava de hoje
       /* ⚠ A OBRA É O CENTRO: o plano conta do início DA OBRA. Quem mais lê o
          plano (painel, linha de base, Last Planner) calcula com o override
@@ -4814,6 +4946,10 @@
       }
       return {
         tipo: "plano", orc: oP, cron: oP.cronograma, travado: false, decisao: dec, obra: dec.obra, plano: pl, inicioObra: ini,
+        /* o registro do avanço que a tela está desenhando (T3): a foto da
+           pilha e o desfazer precisam dele, e lê-lo de novo daria outro
+           carimbo */
+        avancoRec: avRecA,
         salvar: function (opts) { return self._cronoSalvarPlano(oP, pl, dec.obra, opts); }
       };
     },
@@ -4825,17 +4961,30 @@
       var info = null;
       try { info = UI._cronoObraInfo(o); } catch (eI) { info = null; }
       if (!info) return null;
-      var lista = [], nivel0 = false;
+      var lista = [], nivel0 = false, ileg = null;
       (info.obras || []).forEach(function (a) { if (a && a.nivel === 0) nivel0 = true; });
       // o planejamento das obras só é lido quando há obra ligada a ESTE orçamento (é a única que pode ter plano aqui)
       if (info.podeGestao && nivel0 && typeof CronoBase !== "undefined") {
-        try { lista = Store.listar(Auth.empresaId(), CronoBase.ENTIDADE) || []; } catch (eL) { lista = []; }
+        var lp = this._cronoLerPlanejamento(Auth.empresaId());
+        ileg = lp.ilegivel;
+        /* leitura impossível (exceção): a lista vazia de sempre. Ilegível: a
+           lista NÃO existe (null) — ver `_cronoLerPlanejamento` */
+        lista = ileg ? null : (lp.lista || []);
       }
       var sel = (this._cronoObraSel && typeof this._cronoObraSel === "object") ? this._cronoObraSel[o.id] : null;
       var ed = !!(this._cronoEditaPlano && typeof this._cronoEditaPlano === "object" && this._cronoEditaPlano[o.id] === true);
-      var dec = CronoExecUI.decidirAlvo({ info: info, travado: travado, escolha: sel, editaPlano: ed, lista: lista,
+      /* a decisão pura recebe a lista vazia no ilegível: sem plano conhecido, o
+         alvo é o orçamento (travado no aprovado) — nada vai para um plano que
+         não se consegue ler. A marca vai junto, e a faixa troca [Iniciar
+         plano] pelas portas da quarentena (CronoExecUI.faixaObra). */
+      var dec = CronoExecUI.decidirAlvo({ info: info, travado: travado, escolha: sel, editaPlano: ed, lista: lista || [],
         CronoBase: typeof CronoBase !== "undefined" ? CronoBase : null });
       dec.info = info;
+      /* a lista lida AQUI vai junto (planejador, T2/T3): a 1A acha nela o
+         avanço da obra, sem uma segunda leitura do Store por render.
+         ⚠ null = ilegível: quem a usa trata como "não sei", nunca como vazia */
+      dec.lista = lista;
+      if (ileg) dec.planoIlegivel = { recado: this._cronoRecadoIlegivel(ileg), admin: this._ehAdminAqui() };
       return dec;
     },
     _cronoInicioObra: function (obra) {
@@ -4844,9 +4993,22 @@
       var d = new Date(+m[1], +m[2] - 1, +m[3]);
       return (d.getFullYear() === +m[1] && d.getMonth() === +m[2] - 1 && d.getDate() === +m[3]) ? m[0] : null;
     },
+    /* ⚠ QUEM ASSINOU É A PESSOA, NUNCA A RAZÃO SOCIAL (1C; decisão D22 e
+       k11; memória "nome do usuário não existia"). Medido no perfil de
+       demonstração: `u.nome` era "Minha Empresa" e o plano saía assinado pela
+       empresa. Sem nome em Meu perfil, diz isso — e o que já foi gravado com a
+       razão social NÃO é regravado. Sem `Auth.nomePessoal` (bancada antiga), o
+       de antes. */
     _cronoPor: function () {
       var u = null;
       try { u = (typeof Auth !== "undefined" && Auth.usuario) ? Auth.usuario() : null; } catch (eU) { u = null; }
+      if (typeof Auth !== "undefined" && typeof Auth.nomePessoal === "function") {
+        var np = "";
+        try { np = String(Auth.nomePessoal() || "").trim(); } catch (eN) { np = ""; }
+        if (np) return np.slice(0, 60);
+        if (u && (u.usuarioId || u.papel === "usuario")) return String(u.nome || u.login || u.email || "").slice(0, 60);
+        return "Administrador da conta (sem nome em Meu perfil)";
+      }
       return String((u && (u.nome || u.email)) || "").slice(0, 60);
     },
     /* o orçamento que os DOCUMENTOS da aba (PDF, MS Project) imprimem: o que
@@ -4876,17 +5038,42 @@
         UI.toast("Módulo do planejamento da obra não carregado (cronobase.js) — o plano de execução não foi gravado. Recarregue o app.", "erro");
         return false;
       }
+      /* ⚠ A PERMISSÃO NA FUNÇÃO (planejador 1A; achado 16 do AVANÇO): o salvar
+         do plano só conferia a licença e dependia do filtro de obras da tela
+         (`UI._cronoObraInfo`) — botão escondido não é guarda. */
+      var npS = this._cronoSemPermissao(pl && pl.obraId);
+      if (npS) { UI.toast(npS + " O plano de execução da obra " + nome + " não foi gravado.", "erro"); return false; }
       /* ⚠ o desfazer da IA no PLANO segue a regra do orçamento: a primeira
          gravação que NÃO é da própria tela da IA apaga o retrato — edição de
          gente depois da IA viraria um desfazer que reverte o que ninguém lembra */
       if (!(opts && opts.daIA) && typeof IAEdit !== "undefined") IAEdit.limparDesfazer(pl);
       var m = null;
-      try { m = Cronograma.materializar(oP); } catch (eM) { m = null; }
-      var eid = Auth.empresaId(), lista = null;
-      try { lista = Store.listar(eid, CronoBase.ENTIDADE) || []; } catch (eL) { lista = null; }
+      /* ⚠ a PROJEÇÃO ÚNICA com o INÍCIO EFETIVO da obra (I13) e o TETO pela
+         régua do plano (O30; espec §2.9). `cronOrc` = o cronograma do orçamento
+         DE ORIGEM (o `orcComPlano` só o pendura quando é o mesmo orçamento):
+         é com ele que a porta (1) e o recado do corte sabem o que está lá. */
+      var cronOrcS = null;
+      try { cronOrcS = oP && oP._iaOrc ? oP._iaOrc : null; } catch (eO) { cronOrcS = null; }
+      var tetoCtx = { plano: pl, cronOrc: cronOrcS, obra: obra || null, bytesAntes: null };
+      try { m = Cronograma.materializarCrono(oP, { inicioEfetivo: this._cronoInicioObra(obra), teto: tetoCtx }); } catch (eM) { m = null; }
+      /* acima de 60 KB: o recado ÚNICO do teto, com as portas que a simulação
+         prova que resolvem — no lugar do "Avise o suporte" do salvarPlano */
+      if (m && m.teto) {
+        this._cronoTetoRecado({ tipo: "plano", orc: oP, cron: oP.cronograma, obra: obra, plano: pl, chave: "plano:" + String(pl.obraId || "") }, m.teto);
+        UI.toast("O plano de execução da obra " + nome + " NÃO foi gravado: ficaria com " + this._cronoKB(m.teto.bytes) + " KB (limite " + this._cronoKB(m.teto.teto) +
+          " KB). " + (m.teto.portas.length ? "O quadro mostra a porta que resolve." : "O quadro mostra o que ocupa o espaço."), "erro");
+        return false;
+      }
+      var eid = Auth.empresaId(), lp = this._cronoLerPlanejamento(eid), lista = lp.lista;
       /* ⚠ lista ilegível NÃO vira []: a porta do espaço mediria a entidade
-         vazia e deixaria passar o que não cabe */
-      if (lista === null) { UI.toast("Não consegui ler o planejamento das obras deste aparelho — o plano de execução da obra " + nome + " não foi gravado. Recarregue o app.", "erro"); return false; }
+         vazia e deixaria passar o que não cabe. E a quarentena (o disco virou
+         ilegível depois de a aba desenhar o plano — outra janela, a nuvem) é
+         dita pelo nome, com a porta dela: "recarregue" não a resolve. */
+      if (lista === null) {
+        UI.toast(this._cronoSemLista({ ilegivel: lp.ilegivel }, "gravar o plano de execução da obra " + nome,
+          "Não consegui ler o planejamento das obras deste aparelho — o plano de execução da obra " + nome + " não foi gravado. Recarregue o app."), "erro");
+        return false;
+      }
       var antes = opts && opts.cronoAntes;
       /* ⚠ O PRAZO DE ANTES SAI DO PLANO GRAVADO quando a tela não o mediu
          (revisão 3, navegador): a duração da Fundação ia de 20 para 30 no
@@ -4896,7 +5083,7 @@
          usa (senão o recado acusaria mudança que é só o alinhamento da data). */
       if (!antes) {
         try {
-          var velho = CronoBase.plano(lista, pl.obraId), oV = velho ? CronoBase.orcComPlano(oP, velho) : null;
+          var velho = CronoBase.plano(lista, pl.obraId), oV = velho ? CronoBase.orcDaObra(oP, lista, pl.obraId) : null;   // pela porta única (planejador, T2): plano e avanço da lista lida
           if (oV) {
             oV.cronograma = JSON.parse(JSON.stringify(oV.cronograma));
             var iniV = this._cronoInicioObra(obra);
@@ -4905,12 +5092,14 @@
           }
         } catch (eV) { antes = null; }
       }
-      var r = CronoBase.salvarPlano(lista, pl, { agora: Util.agoraISO(), por: this._cronoPor() });
+      var r = CronoBase.salvarPlano(lista, pl, { agora: Util.agoraISO(), por: this._cronoPor(), cronOrc: cronOrcS });
       if (!r.ok) { UI.toast("O plano de execução da obra " + nome + " NÃO foi gravado: " + r.erro, "erro"); return false; }
       if (!Store.salvarVarios(eid, CronoBase.ENTIDADE, r.gravar, true)) {
-        UI.toast("O plano de execução da obra " + nome + " NÃO foi gravado — o armazenamento deste aparelho recusou (cheio?). Nada mudou.", "erro");
+        UI.toast(this._cronoPorQueRecusou(eid, CronoBase.ENTIDADE, "gravar o plano de execução da obra " + nome) ||
+          ("O plano de execução da obra " + nome + " NÃO foi gravado — " + this._CRONO_RECUSA_ARMAZ + ". Nada mudou."), "erro");
         return false;
       }
+      try { this._cronoTetoLembrar({ chave: "plano:" + String(pl.obraId || "") }, { bytes: CronoBase.bytesPlano(r.plano) }); } catch (eL) {}
       if (r.msg) UI.toast(r.msg, "info");
       /* ⚠ `opts.silencioso` (F6): quem grava pelo caminho único
          (_cronoGravarOps — grade, tabela, arrasto) monta UM recado com o que
@@ -4927,7 +5116,8 @@
         if (dep && dep.dataFim && (dep.totalDias !== antes.totalDias || dep.dataFim.getTime() !== antes.dataFim.getTime()))
           UI.toast("Plano de execução da obra " + nome + ": o prazo passou de " + antes.totalDias + " para " + dep.totalDias + " dias úteis (término " + br(antes.dataFim) + " → " + br(dep.dataFim) + "). " + (aprov ? "A proposta aprovada não muda." : "A proposta não muda."), "info");
       }
-      void m;
+      // planejador 1A: a conferência com a versão anterior, a pendência sem início e as escolhas da §1.3.1
+      try { this._cronoRecadoProjecao({ tipo: "plano", orc: oP, cron: oP.cronograma, obra: obra, plano: pl }, m); } catch (eRp) {}
       try { if (this.backupAuto) this.backupAuto(); } catch (eB) {}
       return true;
     },
@@ -4937,12 +5127,36 @@
        não estavam gravadas em lugar nenhum. Aqui o persistir mostra o modal da
        revisão na 1ª vez; nas seguintes, um recado; e o render devolve o valor
        gravado ao campo. */
-    _cronoTravado: function (alvo) {
+    _cronoTravado: function (alvo, opts) {
+      opts = opts || {};
       var o = alvo && alvo.orc, jaAvisou = !!(o && this._avisouTravado === o.id), self = this;
+      /* ⚠ O CALENDÁRIO DA FRENTE É DA OBRA, NÃO DA PROPOSTA (planejador 2B;
+         calendario.md (f)). No aprovado, o recado genérico mandava "criar
+         revisão", e criar revisão de PREÇO para pôr a montagem em 7×7 é a
+         saída errada — a revisão nem recebe a obra quando já há boletim. O
+         recado nomeia a função e manda ao plano, que é onde ela mora. */
+      if (opts.oQue === "cal" && o) {
+        var dcC = alvo && alvo.decisao, obC = dcC && dcC.obra;
+        UI.toast("Orçamento " + (o.numero ? o.numero + " " : "") + "aprovado — o cronograma dele não muda, e o calendário da frente não foi gravado. " +
+          (obC && dcC.plano ? "Os calendários das frentes ficam no plano de execução da obra " + String(obC.nome || "") + ": abra o plano (linha de cima) e crie o calendário lá."
+            : (obC ? "Inicie o plano de execução da obra " + String(obC.nome || "") + " e crie o calendário nele — a proposta aprovada fica intacta."
+              : "Os calendários das frentes ficam no plano de execução da obra; ligue a obra a este orçamento para planejá-la.")), "erro", 12000);
+        this.render();
+        return;
+      }
       /* ⚠ a porta que o recado cita tem de EXISTIR na tela: [Iniciar plano de
          execução da obra] só aparece com a obra ligada a este orçamento, sem
          plano e com o módulo Obras (a mesma condição da faixa) */
-      var dcT = alvo && alvo.decisao, obT = dcT && dcT.obra, podeIni = !!(obT && dcT.nivel === 0 && !dcT.plano && !dcT.planoAlheio && dcT.info && dcT.info.podeEditarObra);
+      var dcT = alvo && alvo.decisao, obT = dcT && dcT.obra, podeIni = !!(obT && dcT.nivel === 0 && !dcT.plano && !dcT.planoAlheio && !dcT.planoIlegivel && dcT.info && dcT.info.podeEditarObra);
+      /* ⚠ PLANEJAMENTO ILEGÍVEL (revisão adversarial da Onda 0, achado 1): não
+         se sabe se a obra já tem plano, então nem o modal de [Iniciar plano]
+         nem o da revisão — o recado diz o que houve e a porta da quarentena */
+      if (dcT && dcT.planoIlegivel && o) {
+        this._avisouTravado = o.id;
+        UI.toast("Orçamento " + (o.numero ? o.numero + " " : "") + "aprovado — o cronograma dele não muda, e nada foi gravado. Não dá para replanejar a obra " + String((obT && obT.nome) || "") + " agora: " + dcT.planoIlegivel.recado, "erro");
+        this.render();
+        return;
+      }
       /* ⚠ 1ª EDIÇÃO NO APROVADO COM OBRA (revisão 3 da Fase 3, lente UX). O
          persistir abria o modal genérico "Criar revisão e editar nela" — que
          não cita o plano — e só a 2ª tentativa dizia [Iniciar plano]. Seguindo
@@ -5042,7 +5256,7 @@
        volta como aviso com os dois números. ⚠ Nunca derruba o salvar: se o
        motor falhar, grava o resto como antes. */
     _cronoMaterializar: function (o, antesTela) {
-      if (!o || typeof Cronograma === "undefined" || !Cronograma.materializar) return null;
+      if (!o || typeof Cronograma === "undefined" || !Cronograma.materializarCrono) return null;
       var m = null, antesVA = null, cr = o.cronograma;
       /* ⚠ DOIS "ANTES" (revisão da Fase 2, 11/09/2026). Com o cálculo ao vivo
          (adendo A1) o prazo DESTA tela já é o do vão novo antes de salvar: o
@@ -5069,7 +5283,14 @@
          `estimarVersaoAnterior` divergiu do motor da 1.2.75 em 161 (pior caso
          17 dias úteis) e o `estimarFrota`, em 0. */
       if (cr && cr.exec && cr.exec.rede === true && Cronograma.estimarFrota) { try { antesVA = Cronograma.estimarFrota(o); } catch (eA) { antesVA = null; } }
-      try { m = Cronograma.materializar(o); } catch (e) { return null; }
+      /* ⚠ a PROJEÇÃO ÚNICA (planejador, Onda 0, T4): todo salvar do orçamento
+         passa por `materializarCrono` — hoje o materializar de sempre; a 1A
+         acrescenta as quatro funções de data e o recado da conferência */
+      /* P7 (revisão 4): toda gravação do orçamento mede o plano que a 1.2.81
+         iniciaria dele (a medida fica lembrada para o "cresceu" do medidor);
+         quem RECUSA é a operação, no caminho de gravação — aqui só se mede */
+      try { m = Cronograma.materializarCrono(o, { teto: { obra: null, bytesAntes: null } }); } catch (e) { return null; }
+      if (m && m.bytes != null) this._cronoTetoLembrar({ chave: "orc:" + String(o.id || "") }, m);
       var nomes = {};
       (o.etapas || []).forEach(function (et, i) { nomes[et.id] = (i + 1) + ". " + String(et.nome || "").slice(0, 40); });
       function br(d) { return ("0" + d.getDate()).slice(-2) + "/" + ("0" + (d.getMonth() + 1)).slice(-2) + "/" + d.getFullYear(); }
@@ -5112,18 +5333,21 @@
         else t += " Não deu para conferir o prazo que os aparelhos com versão anterior do app mostram.";
         UI.toast(t + " Confira o cronograma antes de enviar a proposta.", "info");
       }
-      if (m && m.avisos && m.avisos.length) {
+      if (m && m.avisos && m.avisos.length && m.avisos.some(function (a) { return a && a.etapaId != null && a.vao != null; })) {
         /* ⚠ de ONDE vinha o número: "digitada" para a duração da IA ou do Hh da
            Execução fazia a pessoa achar que perdia um número dela — e ela perdia
            uma duração rastreável (I7) sem saber */
         var ORIG = { ia: "sugerida pela IA", exec: "do Hh SINAPI (aba Execução)" };
-        var partes = m.avisos.slice(0, 3).map(function (a) {
+        var avVao = m.avisos.filter(function (a) { return a && a.etapaId != null && a.vao != null; });
+        var partes = avVao.slice(0, 3).map(function (a) {
           return (nomes[a.etapaId] || "etapa") + ": " + a.digitado + " (" + (ORIG[a.agente] || "digitada") + ") → " + a.vao + " dia(s)";
         });
-        if (m.avisos.length > 3) partes.push("e mais " + (m.avisos.length - 3));
-        UI.toast("Modo executivo: " + m.avisos.length + " etapa(s) com subetapas passaram a durar o vão das subetapas — " +
+        if (avVao.length > 3) partes.push("e mais " + (avVao.length - 3));
+        UI.toast("Modo executivo: " + avVao.length + " etapa(s) com subetapas passaram a durar o vão das subetapas — " +
           partes.join("; ") + ". A duração de antes fica guardada e volta se o modo executivo for desligado; para mudar o prazo delas agora, edite as subetapas.", "info");
       }
+      // planejador 1A: a conferência com a versão anterior, a pendência sem início e as escolhas da §1.3.1
+      try { this._cronoRecadoProjecao({ tipo: "orc", orc: o, cron: o.cronograma }, m); } catch (eRp) {}
       return m;
     },
     /* ⚠ GRAVADORES DIRETOS (os que gravam o orçamento sem o App.persistir:
@@ -5142,11 +5366,14 @@
        gravam com o carimbo de origem, e mudar conteúdo sob o mesmo carimbo faz
        o merge da nuvem divergir entre aparelhos. */
     _materializarSeExec: function (o) {
-      if (!o || typeof Cronograma === "undefined" || !Cronograma.materializarSeExec) return null;
+      this._matUltimo = null;   // o retorno também fica aqui (a aprovação o confere, §2.6)
+      if (!o || typeof Cronograma === "undefined" || !Cronograma.materializarCrono) return null;
       try { if (typeof Orcamento !== "undefined" && Orcamento.travadoPorAprovacao && Orcamento.travadoPorAprovacao(o)) return null; } catch (eT) { return null; }
       var m = null;
-      try { m = Cronograma.materializarSeExec(o); } catch (e) { return null; }
+      // a projeção única, na regra BARATA dos gravadores em lote (planejador, T4): sem nada a fazer → null
+      try { m = Cronograma.materializarCrono(o, { seNecessario: true }); } catch (e) { return null; }
       if (m && m.mudou) { try { Orcamento.sincronizarPrazo(o); } catch (eS) {} }
+      this._matUltimo = m;
       return m;
     },
     /* grava cada orçamento afetado por uma troca de preço em lote (composição
@@ -5231,18 +5458,84 @@
       return null;
     },
     _cronoBrD: function (s) { s = String(s || ""); return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(8, 10) + "/" + s.slice(5, 7) + "/" + s.slice(0, 4) : s; },
+    /* ⚠ O PLANEJAMENTO DAS OBRAS ILEGÍVEL NÃO É LISTA VAZIA (revisão
+       adversarial da Onda 0 do planejador, achado 1).
+       Roteiro do defeito: desde a T17, um `crono_obra` que abre como JSON mas
+       não é lista vai para a quarentena, e `Store.listar` devolve o `[]` de
+       reserva — nem `null`, nem exceção. As guardas `lista === null` do
+       cronograma nunca disparavam: a aba do orçamento aprovado dizia "sem
+       linha de base" e oferecia [Iniciar plano de execução da obra]; o clique
+       respondia "o armazenamento recusou (cheio?)" junto do recado da
+       quarentena; e [Congelar] oferecia "Congelar a v1" com a v1 existindo.
+       Na 1.2.81 o mesmo clique regravava a entidade e APAGAVA a base v1: a
+       quarentena fechou a perda, esta leitura fecha a mentira.
+       ⚠ A marca da quarentena só existe DEPOIS de uma leitura (a leitura que
+       falha a põe, a que abre a tira) — por isso a consulta vem logo depois
+       do `listar`, nunca antes.
+       Devolve {lista: a lista, ou null (ilegível, ou armazenamento
+       inacessível), ilegivel: a marca pública do Store, ou null}.
+       Prova: tools/e2e-crono-planejamento-ilegivel.js (CN: sem esta consulta,
+       a porta falsa volta). */
+    _cronoLerPlanejamento: function (eid) {
+      var CB = (typeof CronoBase !== "undefined") ? CronoBase : null, lista = null, m = null;
+      if (!CB) return { lista: null, ilegivel: null };
+      try { lista = Store.listar(eid, CB.ENTIDADE) || []; } catch (eL) { lista = null; }
+      try { m = (typeof Store.ilegivel === "function") ? Store.ilegivel(eid, CB.ENTIDADE) : null; } catch (eI) { m = null; }
+      return { lista: m ? null : lista, ilegivel: m || null };
+    },
+    /* o recado de quem não conseguiu por causa da quarentena: o texto do Store
+       (o mesmo da lista de orçamentos), com o que a pessoa tentou (`rotulo`;
+       sem ele, o recado de leitura) e a porta de quem ela é — o administrador
+       restaura, os outros avisam o administrador */
+    _cronoRecadoIlegivel: function (m, rotulo) {
+      var adm = this._ehAdminAqui();
+      return Store.recadoIlegivel(m, rotulo ? { recusou: true, rotulo: rotulo, admin: adm } : { admin: adm });
+    },
+    /* o recado de "não consegui ler o planejamento": o da quarentena quando é
+       ela; senão o de sempre (armazenamento inacessível), que recarregar resolve */
+    _cronoSemLista: function (c, rotulo, padrao) {
+      return (c && c.ilegivel) ? this._cronoRecadoIlegivel(c.ilegivel, rotulo) : padrao;
+    },
+    /* O PORQUÊ de uma gravação recusada, dito sem chutar. `Store.salvar` e
+       `Store.salvarVarios` devolvem falso por dois motivos: a quarentena (a
+       entidade ilegível — e o recado é o dela) ou a exceção do armazenamento,
+       que o `LocalAdapter.gravar` (js/store.js) já anuncia com a causa, cota
+       cheia ou falha do navegador. Devolve o recado da quarentena, ou null
+       (e aí quem chama cita o aviso do armazenamento).
+       ⚠ Nunca "(cheio?)": com a entidade ilegível, a pessoa ia apagar coisa
+       para liberar um espaço que não faltava. */
+    _cronoPorQueRecusou: function (eid, ent, rotulo) {
+      var m = null;
+      try { m = (typeof Store.ilegivel === "function") ? Store.ilegivel(eid, ent) : null; } catch (eI) { m = null; }
+      return (m && m.bloqueia) ? this._cronoRecadoIlegivel(m, rotulo) : null;
+    },
+    _CRONO_RECUSA_ARMAZ: "o armazenamento deste aparelho recusou a gravação (o aviso do armazenamento, que saiu junto, diz o motivo)",
     /* obra + orçamento ligado a ela + planejamento, FRESCOS do Store (quem
        grava relê: o modal pode ter ficado aberto enquanto outro aparelho
-       sincronizava). `lista` null = ilegível (e aí ninguém grava). */
+       sincronizava). `lista` null = ilegível (e aí ninguém grava);
+       `ilegivel` = a marca da quarentena, quando é ela (ver
+       `_cronoLerPlanejamento`). */
+    /* ⚠ AS DUAS LISTAS (planejador, fatia 1B): `lista` é a CRUA do
+       `crono_obra` — é ela que se grava. `completa` é a mesma com o detalhe
+       das versões resumidas/arquivadas devolvido pelo selo (CronoSelo.completar)
+       — SÓ LEITURA: gravar a completada poria o detalhe de volta no documento
+       de 900 KB. `ativa` é a completada (é o que o "o que muda" lê).
+       `listaSelo` null = a entidade dos selos ilegível (e aí nada de selo se
+       grava); `seloIlegivel` = a marca da quarentena.
+       As leituras do `crono_obra` que a espec listou (o `_cronoAlvo`, o
+       `_cronoSalvarPlano` e o `_iaLerDisco`) só leem o PLANO: continuam na
+       lista crua, de propósito. */
     _cronoObraCtx: function (obraId) {
-      var eid = Auth.empresaId(), obra = null, lista = null, CB = (typeof CronoBase !== "undefined") ? CronoBase : null;
+      var eid = Auth.empresaId(), obra = null, lista = null, ileg = null, CB = (typeof CronoBase !== "undefined") ? CronoBase : null;
       try { obra = Store.obter(eid, "obras", obraId); } catch (eO) { obra = null; }
       if (!obra) return { erro: "Obra não encontrada neste aparelho — atualize a tela." };
       var orc = null;
       try { orc = obra.orcamentoId ? Store.obterOrcamento(eid, obra.orcamentoId) : null; } catch (eC) { orc = null; }
-      if (CB) { try { lista = Store.listar(eid, CB.ENTIDADE) || []; } catch (eL) { lista = null; } }
-      return { eid: eid, obra: obra, orc: orc, lista: lista,
-        plano: (CB && lista) ? CB.plano(lista, obra.id) : null, ativa: (CB && lista) ? CB.ativa(lista, obra.id) : null };
+      if (CB) { var lp = this._cronoLerPlanejamento(eid); lista = lp.lista; ileg = lp.ilegivel; }
+      var ls = (typeof this._cronoListaSelo === "function") ? this._cronoListaSelo(eid) : { lista: [], ilegivel: null, modulo: null };
+      var completa = (lista && ls.modulo && ls.lista) ? ls.modulo.completar(lista, ls.lista) : lista;
+      return { eid: eid, obra: obra, orc: orc, lista: lista, ilegivel: ileg, listaSelo: ls.lista, seloIlegivel: ls.ilegivel, completa: completa,
+        plano: (CB && lista) ? CB.plano(lista, obra.id) : null, ativa: (CB && completa) ? CB.ativa(completa, obra.id) : null };
     },
     /* depois de gravar: a ficha da obra (outra tela) redesenha pelo caminho
        dela quando está aberta; senão o render geral */
@@ -5262,10 +5555,23 @@
     _cronoPainelDados: function (obra, orc, opts) {
       opts = opts || {};
       if (!obra || typeof CronoPlan === "undefined" || !CronoPlan.montarPainel) return null;
-      var eid = Auth.empresaId(), CB = (typeof CronoBase !== "undefined") ? CronoBase : null, lista = [];
-      if (CB) { try { lista = Store.listar(eid, CB.ENTIDADE) || []; } catch (eL) { lista = []; } }
+      var eid = Auth.empresaId(), CB = (typeof CronoBase !== "undefined") ? CronoBase : null, lista = [], ileg = null;
+      /* ⚠ ilegível (ver `_cronoLerPlanejamento`): o painel NÃO mede contra o
+         orçamento como se a obra não tivesse plano nem base — "sem linha de
+         base" e [Congelar linha de base] seriam mentira. Sai o painel com o
+         estado de erro e o recado da quarentena (a tela desenha o erro no
+         lugar dos números e tira as ações que gravam). Leitura impossível
+         (exceção) continua como antes: lista vazia. */
+      if (CB) { var lp = this._cronoLerPlanejamento(eid); lista = lp.lista || []; ileg = lp.ilegivel; }
       var plano = CB ? CB.plano(lista, obra.id) : null;
-      var bases = lista.filter(function (x) { return !!x && x.tipo === "base" && String(x.obraId) === String(obra.id); });
+      /* ⚠ AS BASES COMPLETADAS (planejador, fatia 1B): a versão que um
+         aparelho 1.2.81 resumiu ou arquivou para caber na nuvem — e a obra
+         grande, que nasce com o cabeçalho resumido — voltam com as subetapas
+         e a curva pelo selo. Obra normal: o mesmo número de antes. Obra
+         grande: o IDP passa a existir. Só LEITURA (ver `_cronoObraCtx`). */
+      var ls = (typeof this._cronoListaSelo === "function") ? this._cronoListaSelo(eid) : { lista: [], modulo: null };
+      var listaL = (ls.modulo && ls.lista) ? ls.modulo.completar(lista, ls.lista) : lista;
+      var bases = listaL.filter(function (x) { return !!x && x.tipo === "base" && String(x.obraId) === String(obra.id); });
       function ler(ent) { try { return Store.listar(eid, ent) || []; } catch (e) { return []; } }
       var ativ = [];
       try { if (typeof Gestao !== "undefined" && typeof Gestao._atividadesDaObra === "function") ativ = Gestao._atividadesDaObra(obra.id) || []; } catch (eA) { ativ = []; }
@@ -5274,16 +5580,49 @@
          não vale — CronoPlan.baseVale) e o aviso de revisão mais nova */
       var orcsP = [];
       try { orcsP = Store.listarOrcamentos(eid) || []; } catch (eO) { orcsP = []; }
+      /* ⚠ O AVANÇO LANÇADO ENTRA AQUI (planejador 2B), e não em cada tela: o
+         painel é a montagem ÚNICA (o chip da faixa, a sub-aba do orçamento, a
+         ficha da obra e o módulo da obra saem daqui). Passado numa tela só, a
+         mesma obra mostraria dois "real %" e dois términos — o defeito que
+         esta função existe para impedir.
+         Ele vai para DUAS pontas dentro do painel: o motor (que reprograma o
+         que falta) e o `confrontoPorNo` (que mescla o real por nó, com a
+         origem de cada entrada). O corte padrão do painel passa a ser o dele. */
+      var avRec = (CB && lista) ? CB.avanco(lista, obra.id) : null;
       var p = CronoPlan.montarPainel({ orc: orc, obra: obra, plano: plano, bases: bases, rdos: ler("rdo"), medicoes: ler("medicoes"),
-        atividadesDaObra: ativ, hoje: new Date(), dataCorte: corte || null, orcamentos: orcsP });
-      var out = { painel: p, plano: plano, bases: bases, ativa: CB ? CB.ativa(lista, obra.id) : null, obra: obra,
+        atividadesDaObra: ativ, hoje: new Date(), dataCorte: corte || null, orcamentos: orcsP,
+        avanco: avRec, numeroB: this._cronoNumeroB(ler("medicoes"), obra.id),
+        /* MEDCC 6B (linha de passagem): o estado DERIVADO da medição, apurado
+           uma vez pelo `_medccFaixas` (memorizado por obra + corte + carimbo).
+           O `painel` é PURO — ele não chama o MedAvanco; recebe os números
+           prontos e só escreve os avisos. Uma segunda apuração dentro dele
+           daria dois "quantas tarefas a medição completa" na mesma tela. */
+        medcc: (typeof this._medccFaixas === "function") ? this._medccFaixas(String(obra.id)) : null });
+      if (ileg && p) {
+        /* fora do PR_OK (CronoExecUI): o chip diz "indisponível" com o recado
+           no title, e o painel mostra o recado sem [Congelar]/[Histórico] */
+        p.estado = "planejamento-ilegivel";
+        p.erro = "Previsto × realizado indisponível: " + this._cronoRecadoIlegivel(ileg);
+      }
+      /* o ESTADO da base ativa para o chip (fatia 1B) — lido do selo */
+      if (p && p.base && ls.modulo && ls.lista) {
+        try {
+          var cc = ls.modulo.contratual(lista, ls.lista, obra.id);
+          var eb = ls.modulo.estado(ls.lista, p.base.id, { contratualId: cc ? cc.baseId : null, cabecalho: p.base });
+          p.baseEstado = { estado: eb.estado, aprovacaoEstado: eb.aprovacaoEstado };
+        } catch (eEb) {}
+      }
+      var out = { painel: p, plano: plano, bases: bases, ativa: CB ? CB.ativa(listaL, obra.id) : null, obra: obra,
         podeMedicoes: !(typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("medicoes")),
         podeEditar: !this._cronoSemPermissao(obra.id) };
+      /* as portas da quarentena, para o painel desenhar onde não há faixa (a ficha da obra) */
+      if (ileg) out.planoIlegivel = { recado: this._cronoRecadoIlegivel(ileg), admin: this._ehAdminAqui() };
       if (opts.comGantt && p && (p.estado === "ok" || p.estado === "sem-diarios") && p.ancora && p.ancora.data && orc) {
         try {
           var oA = orc;
           if (plano && CB) {
-            oA = CB.orcComPlano(orc, plano);
+            // pela porta única (planejador, T2): o plano e o avanço da obra, da lista lida acima
+            oA = CB.orcDaObra(orc, lista, obra.id);
             // ⚠ cópia: o orcComPlano entrega o cronograma DO PLANO por referência, e desenhar não grava
             if (oA) oA.cronograma = JSON.parse(JSON.stringify(oA.cronograma)); else oA = orc;
           }
@@ -5308,7 +5647,7 @@
       var c = this._cronoObraCtx(obraId), self = this;
       if (c.erro) { UI.toast(c.erro, "erro"); return; }
       var nome = String(c.obra.nome || "");
-      if (c.lista === null) { UI.toast("Não consegui ler o planejamento das obras deste aparelho — nada foi criado. Recarregue o app.", "erro"); return; }
+      if (c.lista === null) { UI.toast(this._cronoSemLista(c, "iniciar o plano de execução da obra " + nome, "Não consegui ler o planejamento das obras deste aparelho — nada foi criado. Recarregue o app."), "erro"); return; }
       if (c.plano) {
         /* ⚠ PLANO DE OUTRO ORÇAMENTO (revisão 3, lente sync): a obra religada
            pelo cadastro a um orçamento de fora da cadeia ficava com o plano
@@ -5336,7 +5675,8 @@
        atualizadoEm do plano que o diálogo mostrou) = reiniciar um plano
        existente; ⚠ relido aqui: se o plano mudou com o diálogo aberto (outro
        aparelho editou ou reiniciou), nada é gravado. */
-    _cronoIniciarPlanoAplicar: function (obraId, marcaSubstituir) {
+    _cronoIniciarPlanoAplicar: function (obraId, marcaSubstituir, opts) {
+      opts = opts || {};
       var o = this.orcAtual; if (!o || !obraId) return false;
       if (this._trialBloqueado()) { this._avisoTrial(); return false; }
       var np = this._cronoSemPermissao(obraId); if (np) { UI.toast(np + " Nada foi criado.", "erro"); return false; }
@@ -5344,13 +5684,27 @@
       var c = this._cronoObraCtx(obraId), self = this;
       if (c.erro) { UI.toast(c.erro, "erro"); return false; }
       var nome = String(c.obra.nome || ""), substituir = marcaSubstituir != null;
-      if (c.lista === null) { UI.toast("Não consegui ler o planejamento das obras deste aparelho — nada foi criado. Recarregue o app.", "erro"); return false; }
+      if (c.lista === null) { UI.toast(this._cronoSemLista(c, (substituir ? "reiniciar" : "iniciar") + " o plano de execução da obra " + nome, "Não consegui ler o planejamento das obras deste aparelho — nada foi criado. Recarregue o app."), "erro"); return false; }
       if (substituir) {
         if (!c.plano || String(c.plano.atualizadoEm || "") !== String(marcaSubstituir)) {
           UI.toast("O plano de execução da obra " + nome + " mudou enquanto você conferia (outro aparelho ou outra tela) — nada foi gravado. Confira de novo.", "erro"); this.render(); return false;
         }
       } else if (c.plano) { UI.toast("A obra " + nome + " já tem plano de execução — nada foi criado. É ele que esta aba edita.", "info"); this.render(); return false; }
-      var rec = CronoBase.iniciarPlano(o, c.obra, Util.agoraISO(), this._cronoPor());
+      var rec = CronoBase.iniciarPlano(o, c.obra, Util.agoraISO(), this._cronoPor(), opts.iaResumo ? { iaResumo: opts.iaResumo } : null);
+      if (rec && rec.erro && rec.codigo === "teto-plano") {
+        /* ⚠ A RECUSA DO TETO TEM O MESMO RECADO DE SEMPRE (O30, revisão 4): o
+           `_cronoTetoRecado` da 1A é o ÚNICO lugar que escreve "o plano
+           ficaria com N KB, o limite é M KB" — dois textos para a mesma
+           recusa divergiriam no primeiro ajuste, e o cliente veria números
+           diferentes para o mesmo problema.
+           ⚠ AS PORTAS SÃO OUTRAS AQUI, E É POR ISSO QUE O MODAL É PRÓPRIO: as
+           portas do recado padrão mudam um plano QUE JÁ EXISTE
+           (`_cronoTetoAplicar` recusa com "esta obra não tem plano"). Aqui o
+           plano ainda vai nascer, então a porta é criá-lo já com a escolha —
+           e uma porta que abre um recado de recusa é pior que porta nenhuma
+           (memória "porta prometida precisa existir"). */
+        return this._cronoIniciarPlanoTeto(obraId, marcaSubstituir, o, c, rec);
+      }
       if (!rec || rec.erro) { UI.toast("O plano de execução não foi criado: " + ((rec && rec.erro) || "motor do planejamento indisponível."), "erro"); return; }
       var ini = this._cronoInicioObra(c.obra), cr = rec.cronograma;
       if (!cr.params || typeof cr.params !== "object" || Array.isArray(cr.params)) cr.params = {};
@@ -5358,7 +5712,11 @@
       if (ini) cr.params.dataInicio = ini;   // a obra é o centro (ver _cronoAlvo)
       var r = CronoBase.salvarPlano(c.lista, rec, { agora: Util.agoraISO(), por: this._cronoPor(), novo: true, substituir: substituir });
       if (!r.ok) { UI.toast("O plano de execução não foi criado: " + r.erro, "erro"); return false; }
-      if (!Store.salvarVarios(c.eid, CronoBase.ENTIDADE, r.gravar, true)) { UI.toast("O plano de execução NÃO foi criado — o armazenamento deste aparelho recusou (cheio?). Nada mudou.", "erro"); return false; }
+      if (!Store.salvarVarios(c.eid, CronoBase.ENTIDADE, r.gravar, true)) {
+        UI.toast(this._cronoPorQueRecusou(c.eid, CronoBase.ENTIDADE, (substituir ? "reiniciar" : "iniciar") + " o plano de execução da obra " + nome) ||
+          ("O plano de execução NÃO foi criado — " + this._CRONO_RECUSA_ARMAZ + ". Nada mudou."), "erro");
+        return false;
+      }
       UI.toast("Plano de execução da obra " + nome + (substituir ? " reiniciado" : " iniciado") + " a partir do " + (o.numero || "orçamento") + ": as edições desta aba vão para ele" +
         (substituir ? ". As linhas de base congeladas não mudaram: reprograme (nova base) para a obra passar a ser comparada com este orçamento." : ", e a proposta aprovada fica intacta.") +
         (ini ? " O plano conta do início da obra (" + self._cronoBrD(ini) + ")" + (pIni && pIni !== ini ? "; a proposta dizia " + self._cronoBrD(pIni) : "") + "."
@@ -5448,7 +5806,7 @@
       var prz = null;
       try { if (c.orc && typeof Cronograma !== "undefined") prz = { de: Cronograma.estimar(c.orc).totalDias, para: Cronograma.estimar(o).totalDias }; } catch (eP) { prz = null; }
       UI.modal("Passar a obra " + String(c.obra.nome || "") + " para a revisão " + (o.numero || ""),
-        CronoExecUI.passarObraHtml({ obra: c.obra, de: c.orc, deNumero: deNum, para: o, diff: c.orc ? CronoExecUI.diffQuantidades(c.orc, o) : null, temPlano: !!c.plano, prazo: prz }), [
+        CronoExecUI.passarObraHtml({ obra: c.obra, de: c.orc, deNumero: deNum, para: o, diff: c.orc ? CronoExecUI.diffQuantidades(c.orc, o) : null, temPlano: !!c.plano, planoIlegivel: !!c.ilegivel, prazo: prz }), [
           { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
           { texto: "Passar a obra para " + (o.numero || "esta revisão"), classe: "primary", onClick: function () { UI.fecharModal(); self._cronoPassarObraAplicar(obraId, c.obra.orcamentoId, o.id); } }
         ]);
@@ -5477,7 +5835,7 @@
       hist.push({ de: String(deId || ""), deNumero: deNum, para: String(paraId), paraNumero: String(para.numero || ""), em: Util.agoraISO(), por: this._cronoPor() });
       obra.vinculoOrcamento = hist;
       obra.orcamentoId = paraId;
-      if (!Store.salvar(c.eid, "obras", obra)) { UI.toast("A obra NÃO foi passada — o armazenamento deste aparelho recusou a gravação (cheio?). Nada mudou.", "erro"); return false; }
+      if (!Store.salvar(c.eid, "obras", obra)) { UI.toast(this._cronoPorQueRecusou(c.eid, "obras", "passar a obra " + String(obra.nome || "") + " para a revisão") || ("A obra NÃO foi passada — " + this._CRONO_RECUSA_ARMAZ + ". Nada mudou."), "erro"); return false; }
       var extra = "";
       if (c.plano && typeof CronoBase !== "undefined" && c.lista) {
         var pl = c.plano;
@@ -5491,6 +5849,10 @@
         if (rp.ok && Store.salvarVarios(c.eid, CronoBase.ENTIDADE, rp.gravar, true)) extra = " O plano de execução da obra passou junto." + (rp.msg ? " " + rp.msg : "");
         else extra = " Atenção: o plano de execução da obra continua marcado com a revisão anterior (" + ((rp && rp.erro) || "o armazenamento recusou") + "); ele segue valendo (as etapas têm os mesmos ids), e o painel avisa.";
       }
+      /* ⚠ planejamento ilegível (ver _cronoLerPlanejamento): o plano, se
+         existe, está na quarentena e NÃO passou junto — dizer nada seria o
+         silêncio que a 1.2.81 tinha (lista vazia = "sem plano") */
+      else if (c.ilegivel) extra = " Atenção: o planejamento das obras deste aparelho está ilegível — se a obra tem plano de execução, ele NÃO passou junto e continua marcado com a revisão anterior (as etapas têm os mesmos ids). " + this._cronoRecadoIlegivel(c.ilegivel);
       UI.toast("A obra " + String(obra.nome || "") + " passou do " + (deNum || "orçamento anterior") + " para o " + String(para.numero || "") +
         ". Os diários continuam valendo (os itens têm o mesmo id); o que foi lançado em item que saiu na revisão fica fora do avanço sobre o orçamento." + extra +
         " O Portal do cliente passa a mostrar o cronograma e a curva planejada do " + String(para.numero || "orçamento novo") + " na próxima publicação.", "ok");
@@ -5509,19 +5871,49 @@
       var c = this._cronoObraCtx(obraId);
       if (c.erro) { UI.toast(c.erro, "erro"); return; }
       if (!c.orc) { UI.toast("A obra " + String(c.obra.nome || "") + " não tem orçamento vinculado — vincule o orçamento da obra antes de congelar a linha de base.", "erro"); return; }
-      if (c.lista === null) { UI.toast("Não consegui ler o planejamento das obras deste aparelho — nada foi congelado. Recarregue o app.", "erro"); return; }
+      if (c.lista === null) { UI.toast(this._cronoSemLista(c, "congelar a linha de base da obra " + String(c.obra.nome || ""), "Não consegui ler o planejamento das obras deste aparelho — nada foi congelado. Recarregue o app."), "erro"); return; }
       var prox = CronoBase.proximaVersao(c.lista, obraId), ini = this._cronoInicioObra(c.obra) || "", opc = [];
       (c.orc.etapas || []).forEach(function (e, i) { if (e && e.opcional) opc.push({ id: e.id, numero: String(i + 1), nome: e.nome || "" }); });
       // o "o que muda" do diálogo: a base que sairia com o início da obra e as opcionais desmarcadas (o padrão)
       var sim = ini ? this._cronoCongelarCalc(c, { dataInicio: ini, opcionaisIncluidos: [], motivo: prox > 1 ? "simulação" : "" }, prox) : null;
       var crP = c.plano ? c.plano.cronograma : c.orc.cronograma;
       var pIni = crP && crP.params && crP.params.dataInicio ? String(crP.params.dataInicio).slice(0, 10) : "";
+      /* fatia 1B: a contratual e a aprovação no diálogo, só com o módulo dos
+         selos carregado (sem ele, o diálogo e o gravar de sempre) */
+      var CS = (typeof CronoSelo !== "undefined" && CronoSelo && CronoSelo.pronto) ? CronoSelo : null;
+      var extra = { aditivos: [], hoje: this._cronoHoje() }, dCt = null, dAp = null, dCb = null;
+      if (CS && c.listaSelo) {
+        var cAt = CS.contratual(c.lista, c.listaSelo, obraId);
+        /* ⚠ CONTRATUAL SÓ NASCE MARCADA NA v1 — marcar tem de ser um ATO.
+           Roteiro do defeito (revisão final, 22/09/2026): na obra do galpão o
+           cabeçalho dizia "2 versões · sem contratual marcada" e o modal
+           [Reprogramar (nova base)] abria com a caixa "Esta é a linha de base
+           CONTRATUAL" JÁ MARCADA — medido checkbox a checkbox. A reprogramação
+           mais comum é por atraso do próprio construtor, e com esse padrão ela
+           virava, sem ninguém decidir, a base contra a qual o pleito é medido
+           — um atributo que o próprio texto do modal diz que "não se apaga,
+           não se regrava e nunca é resumida". Na v1 o padrão continua marcado:
+           a primeira base É o combinado que se está congelando. */
+        dCt = cAt ? { mostrar: false, atual: { versao: cAt.versao, gemeas: cAt.gemeas.length } } : { mostrar: true, marcada: prox === 1, admin: this._ehAdminAqui() };
+        if (cAt && c.completa) dCb = c.completa.filter(function (x) { return x && x.id === cAt.baseId; })[0] || null;
+        var adts = this._cronoAditivosDaObra(c.eid, obraId);
+        extra.aditivos = adts.map(function (x) { return x.id; });
+        /* ⚠ E A APROVAÇÃO NASCE "INTERNA", TAMBÉM NA REPROGRAMAÇÃO. Era
+           `prox > 1 ? "contratante" : "interna"`: a v2 abria com "Aprovada
+           pelo contratante" escolhido, e quem só quisesse registrar um atraso
+           precisava DESMARCAR para não afirmar uma aprovação que não houve.
+           Afirmar aprovação de terceiro por padrão é o pior lado para errar;
+           quem tem o aditivo na mão marca em um clique, e a guarda do
+           `congelarDoForm` continua exigindo quem aprovou. */
+        dAp = { padrao: "interna", aditivos: adts };
+      }
       UI.modal(prox > 1 ? "Reprogramar a obra — linha de base v" + prox : "Congelar a linha de base da obra",
         CronoExecUI.congelarForm({ obra: c.obra, inicio: ini, inicioPlano: pIni, versao: prox, ativa: c.ativa, opcionais: opc, sim: sim,
-          fontePlano: c.plano ? "plano" : "orcamento", orcNumero: c.orc.numero || "", termino: c.obra.termino || "", semDinheiro: !this._cronoVeDinheiro() }), [
+          fontePlano: c.plano ? "plano" : "orcamento", orcNumero: c.orc.numero || "", termino: c.obra.termino || "", semDinheiro: !this._cronoVeDinheiro(),
+          contratual: dCt, aprovacao: dAp, contratualBase: dCb }), [
           { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
           { texto: prox > 1 ? "Gravar a linha de base v" + prox : "Congelar a v1", classe: "primary", onClick: function () {
-            var f = CronoExecUI.congelarDoForm(function (id) { return UI.el(id); }, opc.map(function (x) { return x.id; }), prox);
+            var f = CronoExecUI.congelarDoForm(function (id) { return UI.el(id); }, opc.map(function (x) { return x.id; }), prox, extra);
             if (f.erro) { UI.toast(f.erro, "erro"); return; }   // o modal fica aberto com o que foi digitado
             if (self._cronoCongelarAplicar(obraId, f, prox)) UI.fecharModal();
           } }
@@ -5531,35 +5923,77 @@
        gravar: plano da obra (quando existe) sobre o orçamento ligado, âncora
        no início pedido, valor de venda obrigatório (nunca custo) */
     _cronoCongelarCalc: function (c, f, versao) {
+      return this._cronoCongelarMontar(c, f, versao).base;
+    },
+    /* a base, a árvore e os valores do congelamento (fatia 1B: o selo precisa
+       dos três, e da MESMA árvore — CronoSelo.selar confere nó a nó).
+       ⚠ `semTeto` (obra grande): o registro volta completo mesmo acima de
+       40 KB, com `grande: true`; quem grava sela o detalhe e põe no
+       `crono_obra` só o cabeçalho resumido. Sem o módulo dos selos, a regra
+       de sempre (recusa com o tamanho). */
+    _cronoCongelarMontar: function (c, f, versao) {
       var V = null, calc = null, oA = c.orc;
       try { V = Orcamento.valoresEAP(c.orc); } catch (eV) { V = { ok: false, motivo: String((eV && eV.message) || eV) }; }
-      if (!V || V.ok === false || !V.porId) return { erro: "sem o valor de venda de cada etapa e subetapa não dá para congelar (" + ((V && V.motivo) || "valores indisponíveis") + ") — a linha de base pesa por preço de venda, nunca por custo." };
+      if (!V || V.ok === false || !V.porId) return { base: { erro: "sem o valor de venda de cada etapa e subetapa não dá para congelar (" + ((V && V.motivo) || "valores indisponíveis") + ") — a linha de base pesa por preço de venda, nunca por custo." } };
       try { calc = Orcamento.calcular(c.orc); } catch (eC) { calc = null; }
       if (c.plano) {
-        oA = CronoBase.orcComPlano(c.orc, c.plano);
-        if (!oA) return { erro: "o plano de execução da obra está sem cronograma — inicie o plano de novo a partir do orçamento." };
+        oA = CronoBase.orcDaObra(c.orc, c.lista, c.obra.id);   // porta única (planejador, T2): plano e avanço da mesma lista
+        if (!oA) return { base: { erro: "o plano de execução da obra está sem cronograma — inicie o plano de novo a partir do orçamento." } };
         oA.cronograma = JSON.parse(JSON.stringify(oA.cronograma));   // congelar lê; o plano vivo não é tocado
       }
       var ctx = { eap: true, valores: V };
       if (calc) ctx.calc = calc;
       var r = Cronograma.estimar(oA, { dataInicio: f.dataInicio }, ctx);
-      return CronoPlan.congelarBase(r, { obraId: c.obra.id, versao: versao, orcamentoId: c.orc.id, orcNumero: c.orc.numero || "", motivo: f.motivo, por: this._cronoPor() },
-        { valores: V, dataInicio: f.dataInicio, opcionaisIncluidos: f.opcionaisIncluidos || [], agora: Util.agoraISO() });
+      var comSelo = typeof CronoSelo !== "undefined" && !!CronoSelo && CronoSelo.pronto === true && c.listaSelo != null;
+      var base = CronoPlan.congelarBase(r, { obraId: c.obra.id, versao: versao, orcamentoId: c.orc.id, orcNumero: c.orc.numero || "", motivo: f.motivo, por: this._cronoPor() },
+        { valores: V, dataInicio: f.dataInicio, opcionaisIncluidos: f.opcionaisIncluidos || [], agora: Util.agoraISO(), semTeto: comSelo });
+      return { base: base, r: r, V: V };
     },
     /* grava a base do diálogo. true = fecha o modal. */
     _cronoCongelarAplicar: function (obraId, f, versaoMostrada) {
       if (this._trialBloqueado()) { this._avisoTrial(); return false; }
       var np = this._cronoSemPermissao(obraId); if (np) { UI.toast(np + " Nada foi congelado.", "erro"); return false; }
       var c = this._cronoObraCtx(obraId), self = this;
+      if (!c.erro && c.orc && c.lista === null && c.ilegivel) { UI.toast(this._cronoSemLista(c, "congelar a linha de base da obra " + String(c.obra.nome || ""), ""), "erro"); return false; }
       if (c.erro || !c.orc || c.lista === null) { UI.toast((c.erro || "A obra não tem orçamento vinculado, ou o planejamento das obras não pôde ser lido") + " — nada foi congelado.", "erro"); return false; }
       var prox = CronoBase.proximaVersao(c.lista, obraId), nome = String(c.obra.nome || "");
       // outro aparelho congelou enquanto o diálogo estava aberto: o "o que muda" que a pessoa leu não vale mais
       if (versaoMostrada != null && prox !== versaoMostrada) { UI.toast("Enquanto o diálogo estava aberto, outra linha de base foi gravada nesta obra (a próxima agora é a v" + prox + ") — nada foi gravado. Abra de novo para ver o que muda.", "erro"); this._cronoRepintar(); return true; }
       if (prox > 1 && !String(f.motivo || "").trim()) { UI.toast("Informe o motivo da reprogramação — a v" + prox + " substitui a v" + (prox - 1) + " na comparação da obra. Nada foi gravado.", "erro"); return false; }
-      var base = this._cronoCongelarCalc(c, f, prox);
+      /* ⚠ O SELO (planejador, fatia 1B; espec §1.5, §1.10-6). Ordem de
+         gravação: cadastro da obra → SELO → cabeçalho; o cabeçalho que falha
+         desfaz o selo. Sem o módulo dos selos (arquivo que não carregou), o
+         congelamento de sempre — e o selo tardio o sela na próxima abertura.
+         ⚠ A entidade dos selos ILEGÍVEL não vira "sem selo": nada é gravado,
+         com o recado da quarentena (gravar por cima apagaria as contratuais). */
+      var CS = (typeof CronoSelo !== "undefined" && CronoSelo && CronoSelo.pronto) ? CronoSelo : null;
+      if (CS && c.listaSelo === null) { UI.toast(c.seloIlegivel ? this._cronoRecadoIlegivel(c.seloIlegivel, "congelar a linha de base da obra " + nome) : "Não consegui ler as linhas de base seladas deste aparelho — nada foi congelado. Recarregue o app.", "erro"); return false; }
+      var montada = this._cronoCongelarMontar(c, f, prox), base = montada.base;
       if (!base || base.erro) { UI.toast("A linha de base não foi congelada: " + ((base && base.erro) || "o cálculo falhou."), "erro"); return false; }
-      var res = CronoBase.novaBase(c.lista, obraId, base, { agora: Util.agoraISO() });
-      if (!res.ok) { UI.toast("A linha de base não foi gravada: " + res.erro, "erro"); return false; }
+      var agora = Util.agoraISO(), grande = !!base.grande;
+      /* a contratual: a caixa (só o administrador a muda) ou, sem ela, nenhuma.
+         ⚠ Nunca uma SEGUNDA contratual: a obra que já tem uma não recebe outra
+         por aqui (a troca é a porta do administrador, com motivo). */
+      var cAt = CS ? CS.contratual(c.lista, c.listaSelo, obraId) : null;
+      var ehC = !!(CS && !cAt && f.contratual === true);
+      var aprov = null;
+      if (CS && f.aprovacao) {
+        var va = CS.validarAprovacao(f.aprovacao, this._cronoHoje());
+        if (va.erro) { UI.toast("Aprovação: " + va.erro, "erro"); return false; }
+        aprov = va.aprovacao;
+      }
+      var cab = base;
+      if (grande) { cab = CronoPlan.resumirBase(base); cab.detalheNoSelo = 1; }
+      var res = CronoBase.novaBase(c.lista, obraId, cab, { agora: agora, selos: CS ? c.listaSelo : undefined, selado: !!CS, contratual: ehC, aprovacao: aprov, seloGravado: grande });
+      if (!res.ok) { UI.toast(this._cronoRecusaEspaco("A linha de base não foi gravada: " + res.erro, res), "erro"); return false; }
+      var rsSel = null;
+      if (CS) {
+        var completo = JSON.parse(JSON.stringify(base)); completo.id = res.base.id; delete completo.grande;
+        var selo = CS.selar(completo, montada.r, montada.V, { contratual: ehC, aprovacao: aprov });
+        if (selo.erro) { UI.toast("A linha de base não foi congelada: " + selo.erro, "erro"); return false; }
+        rsSel = CS.novoSelo(c.listaSelo, selo, { agora: agora, listaCrono: c.lista, nomes: this._cronoNomesObras(c.eid) });
+        if (!rsSel.ok) { UI.toast("A linha de base não foi gravada: " + rsSel.erro, "erro"); return false; }
+      }
       /* ⚠ A OBRA É O CENTRO: a base congela do início DA OBRA. Data digitada
          diferente da do cadastro → o cadastro passa a ter ela, ANTES da base
          (se falhar, nada foi gravado; o contrário deixaria uma base contando
@@ -5572,19 +6006,42 @@
       if (mudouIni || mudouTerm) {
         c.obra.inicio = f.dataInicio;
         if (mudouTerm) c.obra.termino = termNovo;
-        if (!Store.salvar(c.eid, "obras", c.obra)) { UI.toast("Nada foi gravado: o armazenamento deste aparelho recusou gravar o cadastro da obra (cheio?).", "erro"); return false; }
+        if (!Store.salvar(c.eid, "obras", c.obra)) { UI.toast(this._cronoPorQueRecusou(c.eid, "obras", "gravar o cadastro da obra " + nome + " antes da linha de base") || ("Nada foi gravado: " + this._CRONO_RECUSA_ARMAZ + " no cadastro da obra."), "erro"); return false; }
+      }
+      /* o SELO antes do cabeçalho: um aparelho que visse o cabeçalho com
+         `selado` e sem o selo mostraria "o selo ainda não chegou" — o
+         contrário (selo sem cabeçalho) não aparece em tela nenhuma */
+      if (rsSel && !Store.salvarVarios(c.eid, CS.ENTIDADE, rsSel.gravar, true)) {
+        UI.toast((this._cronoPorQueRecusou(c.eid, CS.ENTIDADE, "selar a linha de base da obra " + nome) || ("A linha de base NÃO foi gravada — " + this._CRONO_RECUSA_ARMAZ + " (no selo).")) +
+          (mudouIni ? " O início da obra já ficou gravado como " + this._cronoBrD(f.dataInicio) + "." : "") + (mudouTerm ? " O término da obra já ficou gravado como " + this._cronoBrD(termNovo) + "." : ""), "erro");
+        return false;
       }
       if (!Store.salvarVarios(c.eid, CronoBase.ENTIDADE, res.gravar, true)) {
-        UI.toast("A linha de base NÃO foi gravada — o armazenamento deste aparelho recusou (cheio?)." + (mudouIni ? " O início da obra já ficou gravado como " + this._cronoBrD(f.dataInicio) + "." : "") +
+        /* ⚠ DESFAZ O SELO: o novo sai (com lápide — o push só sai 900 ms
+           depois, mas se tiver saído a lápide o alcança) e os reduzidos pela
+           porta voltam como estavam */
+        if (rsSel) {
+          try {
+            Store.excluirVarios(c.eid, CS.ENTIDADE, [rsSel.selo.id], false);
+            var velhos = (c.listaSelo || []).filter(function (x) { return x && rsSel.reduzidos.indexOf(x.id) > -1; });
+            if (velhos.length) Store.salvarVarios(c.eid, CS.ENTIDADE, velhos, true);
+          } catch (eDes) {}
+        }
+        UI.toast((this._cronoPorQueRecusou(c.eid, CronoBase.ENTIDADE, "congelar a linha de base da obra " + nome) || ("A linha de base NÃO foi gravada — " + this._CRONO_RECUSA_ARMAZ + ".")) + (mudouIni ? " O início da obra já ficou gravado como " + this._cronoBrD(f.dataInicio) + "." : "") +
           (mudouTerm ? " O término da obra já ficou gravado como " + this._cronoBrD(termNovo) + "." : ""), "erro");
         return false;
       }
       var b = res.base, fora = (b.opcionaisFora || []).length;
+      var rotV = "Linha de base v" + b.versao + (ehC ? " (contratual)" : "");
       // ⚠ o valor de venda só para quem vê dinheiro (a regra do painel da obra — ver _cronoVeDinheiro)
-      UI.toast("Linha de base v" + b.versao + " da obra " + nome + " congelada: " + b.totalDias + " dias úteis, de " + self._cronoBrD(b.cal && b.cal.dataInicio) + " a " + self._cronoBrD(b.dataFim) + (this._cronoVeDinheiro() ? ", " + Util.fmtMoeda(b.valor) : "") +
+      UI.toast(rotV + " da obra " + nome + " congelada" + (rsSel ? " e selada" : "") + ": " + b.totalDias + " dias úteis, de " + self._cronoBrD(b.cal && b.cal.dataInicio) + " a " + self._cronoBrD(b.dataFim) + (this._cronoVeDinheiro() ? ", " + Util.fmtMoeda(b.valor) : "") +
         (fora ? " (" + fora + " etapa(s) opcional(is) fora do avanço)" : "") + "." +
+        (aprov ? " Aprovada por " + aprov.por + " em " + self._cronoBrD(aprov.em) + "." : (b.versao > 1 ? " Interna: sai marcada assim até a aprovação ser registrada." : "")) +
+        (b.versao === 1 || ehC ? " A obra passa a ser comparada com ela." : "") +
+        (grande ? " Obra grande: o detalhe das subetapas mora no selo; os aparelhos ainda na versão 1.2.81 mostram esta obra sem o previsto × realizado até atualizar." : "") +
+        (!CS ? " (O selo não foi feito agora — o módulo das linhas de base seladas não carregou; ele é feito na próxima abertura do app.)" : "") +
         (mudouIni ? " O início da obra passou a ser " + self._cronoBrD(f.dataInicio) + (iniAntes ? " (era " + self._cronoBrD(iniAntes) + ")" : "") + "." : "") +
-        (mudouTerm ? " O término da obra passou a ser " + self._cronoBrD(termNovo) + (termAntes ? " (era " + self._cronoBrD(termAntes) + ")" : "") + "." : "") + (res.msg ? " " + res.msg : ""), "ok");
+        (mudouTerm ? " O término da obra passou a ser " + self._cronoBrD(termNovo) + (termAntes ? " (era " + self._cronoBrD(termAntes) + ")" : "") + "." : "") + (res.msg ? " " + res.msg : "") + (rsSel && rsSel.msg ? " " + rsSel.msg : ""), "ok");
       this._cronoRepintar();
       return true;
     },
@@ -5594,10 +6051,24 @@
       if (typeof CronoBase === "undefined") { UI.toast("Módulo do planejamento da obra não carregado (cronobase.js) — recarregue o app.", "erro"); return; }
       var c = this._cronoObraCtx(obraId);
       if (c.erro) { UI.toast(c.erro, "erro"); return; }
-      if (c.lista === null) { UI.toast("Não consegui ler o planejamento das obras deste aparelho — recarregue o app.", "erro"); return; }
+      if (c.lista === null) { UI.toast(c.ilegivel ? "O histórico da linha de base não pode ser mostrado. " + this._cronoRecadoIlegivel(c.ilegivel) : "Não consegui ler o planejamento das obras deste aparelho — recarregue o app.", "erro"); return; }
+      /* ⚠ LINHAS DE BASE (planejador, fatia 1B): com a aba Cronograma do
+         orçamento DESTA obra aberta, o botão leva à sub-aba "Linhas de base"
+         (a comparação mora lá); na ficha e no módulo da obra, o histórico em
+         modal, agora com o estado e o selo de cada versão. */
+      var sub = this._cronoBasesIrSub(obraId);
+      if (sub) return;
+      var CS = (typeof CronoSelo !== "undefined" && CronoSelo && CronoSelo.pronto) ? CronoSelo : null, self = this;
+      var bs = CronoBase.bases(c.lista, obraId), ests = null, ocS = null;
+      if (CS && c.listaSelo) {
+        var cc = CS.contratual(c.lista, c.listaSelo, obraId);
+        ests = {};
+        bs.forEach(function (b) { var e = CS.estado(c.listaSelo, b.id, { contratualId: cc ? cc.baseId : null, cabecalho: b }); ests[b.id] = { estado: e.estado, seloTexto: self._cronoSeloTexto(e.selo, b) }; });
+        ocS = CS.ocupacao(c.listaSelo);
+      }
       // título é texto (o UI.modal escapa); o valor de venda só para quem vê dinheiro
       UI.modal("Histórico da linha de base — " + String(c.obra.nome || ""),
-        CronoExecUI.historicoBases(CronoBase.bases(c.lista, obraId), c.ativa ? c.ativa.id : null, CronoBase.ocupacao(c.lista), { semDinheiro: !this._cronoVeDinheiro() }),
+        CronoExecUI.historicoBases(bs, c.ativa ? c.ativa.id : null, CronoBase.ocupacao(c.lista, c.listaSelo || undefined), { semDinheiro: !this._cronoVeDinheiro(), estados: ests, ocupSelo: ocS }),
         [{ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
     },
     /* [Abrir planejamento da obra]: o módulo "Cronograma da obra" (cronobra),
@@ -5637,8 +6108,30 @@
       var antesR = null;
       if (this._diasSemanaRecusa("cron-dias")) return;
       if (alvo.cron.exec && alvo.cron.exec.rede === true) { try { antesR = Cronograma.estimar(alvo.orc); } catch (eA) { antesR = null; } }
-      alvo.cron.params = Cronograma.mesclarParams(alvo.cron.params, this._cronDoForm(function (id) { return UI.el(id); }));
-      alvo.salvar({ cronoAntes: antesR }); this.render();
+      var novosP = Cronograma.mesclarParams(alvo.cron.params, this._cronDoForm(function (id) { return UI.el(id); }));
+      /* ⚠ I13 (planejador 1A): o início não se apaga enquanto houver função que
+         precisa dele (tarefa sem preço, calendário próprio, "o mais tarde
+         possível", avanço) — a sombra de data absoluta com o início em "hoje"
+         mudaria a cada dia nos aparelhos antigos */
+      var iniAntes = alvo.cron.params && alvo.cron.params.dataInicio;
+      if (iniAntes && !novosP.dataInicio && Cronograma._ext) {
+        var Xr = null;
+        try { Xr = Cronograma._ext(alvo.orc); } catch (eX) { Xr = null; }
+        if (Xr && Xr.precisaInicio) {
+          var elIni = UI.el("cron-inicio"), selfR = this;
+          if (elIni) { try { elIni.value = String(iniAntes).slice(0, 10); } catch (eV) {} }
+          this._cronoRecusaSemInicio(iniAntes, {
+            manter: function () {},
+            hoje: function (d) { var e2 = UI.el("cron-inicio"); if (e2) { try { e2.value = d; } catch (eH) {} } selfR.cronRecalc(); }
+          });
+          return;
+        }
+      }
+      alvo.cron.params = novosP;
+      /* (1C) a origem vai ao histórico ("por onde") e ao rótulo do ↶.
+         ⚠ depois da recusa da I13 acima: a recusa NÃO grava, e por isso não
+         pode deixar rastro no histórico nem passo empilhado para desfazer */
+      alvo.salvar({ cronoAntes: antesR, origem: "recalcular" }); this.render();
     },
     /* "Dias úteis/sem." fora de 5, 6 ou 7: recusa com o motivo e NÃO grava
        nada (devolve true). Trava com porta: o recado diz os três valores que
@@ -5677,7 +6170,33 @@
          ouvindo "Não havia duração, dependência nem marco editados". Pior: com
          a restrição no meio da rede o prazo pode nem mudar, e aí nem a frase do
          prazo denunciava. */
-      for (k in (c.restricoes || {})) if (Object.prototype.hasOwnProperty.call(c.restricoes, k)) nFix++;
+      /* ⚠ (planejador 2A, §2.9) A SOMBRA NÃO CONTA como data fixada. As
+         entradas com `origem:"mat"` foram escritas pelo APP (para aparelhos de
+         versão anterior desenharem a mesma data) e voltam sozinhas na projeção
+         seguinte: contadas aqui, o aviso diria "6 datas fixadas vão sair" num
+         orçamento em que a pessoa fixou UMA. Número que ela não reconhece ela
+         não confere — e este botão não tem desfazer. */
+      for (k in (c.restricoes || {})) if (Object.prototype.hasOwnProperty.call(c.restricoes, k) && !(c.restricoes[k] && c.restricoes[k].origem === "mat")) nFix++;
+      /* as restrições DESTA versão ("deve iniciar em", "deve terminar em", "o
+         mais tarde possível" e toda restrição de subetapa moram em
+         `rede.datas`, §1.3) e as ligações TT/IT também saem na limpeza */
+      var nRede = 0, _rd = (c.rede && typeof c.rede === "object" && !Array.isArray(c.rede)) ? c.rede : null;
+      if (_rd) {
+        for (k in (_rd.datas || {})) if (Object.prototype.hasOwnProperty.call(_rd.datas, k)) nFix++;
+        for (k in (_rd.etapas || {})) if (Object.prototype.hasOwnProperty.call(_rd.etapas, k)) nRede++;
+        for (k in (_rd.folhas || {})) if (Object.prototype.hasOwnProperty.call(_rd.folhas, k)) nRede++;
+      }
+      /* ⚠ O QUE FICA, DITO COM TODAS AS LETRAS (§2.9): tarefas sem preço,
+         calendários das frentes e o avanço lançado (que nem mora no
+         cronograma). Sem esta frase, quem tem 12 tarefas sem preço e uma obra
+         em andamento não clica no botão com medo de perder tudo — e trava sem
+         saída faz a pessoa procurar a saída errada. */
+      var _fica = [], nExtras2A = Array.isArray(c.extras) ? c.extras.length : 0;
+      var nCal2A = (c.cal && Array.isArray(c.cal.lista)) ? c.cal.lista.length : 0;
+      if (nExtras2A) _fica.push(nExtras2A + " tarefa(s) sem preço");
+      if (nCal2A) _fica.push(nCal2A + " calendário(s) das frentes");
+      if (alvo.tipo === "plano") _fica.push("o avanço lançado");
+      var ficaTxt = _fica.length ? " Ficam: " + _fica.join(", ") + "." : "";
       /* ⚠ E SÓ AÍ SE PERGUNTA: porta antes de agir, e só quando há o que
          perder — um modal no caminho de quem só quer voltar à estimativa seria
          atrito sem motivo. Sem `confirm` disponível (Node, WebView capada) o
@@ -5687,8 +6206,10 @@
         var segue = true, t0Rs = Date.now();
         try {
           if (typeof window !== "undefined" && typeof window.confirm === "function") {
-            segue = window.confirm("Limpar edições vai remover também " + nFix + " data(s) fixada(s) no Gantt — as barras que você arrastou.\n\n" +
-              "Duração, dependências e marcos voltam à estimativa do agente; as datas fixadas simplesmente somem, e isto não tem desfazer.\n\nLimpar mesmo assim?");
+            segue = window.confirm("Limpar edições vai remover também " + nFix + " data(s) fixada(s) no Gantt — as barras que você arrastou" +
+              (nRede ? " — e " + nRede + " ligação(ões) TT/IT ou cruzada(s) que você digitou." : ".") + "\n\n" +
+              "Duração, dependências e marcos voltam à estimativa do agente; as datas fixadas somem." + ficaTxt + "\n\n" +
+              "Para voltar atrás, só o Desfazer desta janela (Ctrl+Z), antes de fechar ou recarregar.\n\nLimpar mesmo assim?");
           }
         } catch (eF) { segue = true; }
         if (!segue) { UI.toast("Nada foi limpo — as " + nFix + " data(s) fixada(s) no Gantt continuam valendo.", ""); return; }
@@ -5713,7 +6234,9 @@
       // Só no orçamento: o nº de meses é do desembolso da PROPOSTA, não do plano da obra.
       var o = alvo.orc;
       if (alvo.tipo === "orc" && o) { o.cronogramaMesesManual = false; try { Orcamento.sincronizarPrazo(o); } catch (e) {} }
-      if (alvo.salvar({ cronoAntes: rAntes })) {
+      /* (1C) o rótulo do ↶ e a origem do histórico: "Limpar edições", e não a
+         primeira das dezenas de linhas que a limpeza mexe */
+      if (alvo.salvar({ cronoAntes: rAntes, origem: "limpar", resumo: "Limpar edições" })) {
         var nada = !nDur && !nDep && !nMarco && !nSub && !nFix;
         var mat = res && res.materializacao, nMat = mat && mat.gravadas ? mat.gravadas.length : 0;
         var rDep = null; try { rDep = Cronograma.estimar(alvo.orc); } catch (eD) { rDep = null; }
@@ -5726,7 +6249,7 @@
           // ⚠ só aparece quando existiu: número zero no recado vira ruído e deixa de ser lido
           (nFix ? " · " + nFix + " data(s) fixada(s) no Gantt também saíram" : "")) +
           " — o cronograma segue a estimativa do agente e o prazo (meses) voltou a acompanhar o cronograma." +
-          (c.exec && c.exec.rede === true ? " O modo executivo continua ligado: " + nMat + " etapa(s) com subetapas duram o vão das subetapas." : "") + prazoR, "ok");
+          (c.exec && c.exec.rede === true ? " O modo executivo continua ligado: " + nMat + " etapa(s) com subetapas duram o vão das subetapas." : "") + ficaTxt + prazoR, "ok");
       }
       this.render();
     },
@@ -5887,6 +6410,23 @@
         var lin = -1, i;
         for (i = 0; i < p.ids.length; i++) if (String(p.ids[i]) === String(noId)) { lin = i; break; }
         if (lin < 0) {
+          /* ⚠ (1C) FORA DO FILTRO desta janela: a porta limpa o filtro e vai */
+          var gm = g.ctx && g.ctx.manter;
+          if (gm && !gm[String(noId)]) {
+            var numN = "";
+            (g.ctx.r.atividades || []).forEach(function (n) { if (String(n.id) === String(noId)) numN = n.numero; });
+            (g.ctx.r.etapas || []).forEach(function (e, ie) { if (String(e.id) === String(noId)) numN = String(ie + 1); });
+            UI.modal("Linha fora do filtro", '<p style="font-size:13px">' + Util.esc((numN ? numN + " está" : "Esta linha está") + " fora do filtro desta janela.") + '</p>', [
+              { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+              { texto: "Limpar filtro e ir", classe: "primary", onClick: function () {
+                var chF = g.ctx.chave;
+                if (chF && self._cronoFiltro) self._cronoFiltro[chF] = { periodo: "tudo", categorias: [], fixos: {} };
+                if (chF && self._cronoBusca && self._cronoBusca[chF]) self._cronoBusca[chF].soAchados = false;
+                UI.fecharModal(); self.cronoIrAoNo(noId, etapaId);
+              } }
+            ]);
+            return;
+          }
           /* recado que não mente: o nó pode não estar desenhado neste detalhe
              (serviço no detalhe "Etapa", por exemplo) */
           UI.toast("Este item não está desenhado no detalhe que está na tela — troque o detalhe (Etapa · Subetapa · Serviço) para vê-lo no Gantt.", "");
@@ -5904,6 +6444,9 @@
         g.z.scrollTop = alvoTop;
         self._gxPintar(true);
         g.regua.scrollLeft = g.plot.scrollLeft;
+        /* (1C) e na JANELA: o sino e a busca chegam aqui com a página rolada
+           em qualquer ponto (ver `_cronoLinhaNaJanela`) */
+        if (self._cronoLinhaNaJanela) self._cronoLinhaNaJanela(g, lin);
       }, 20);
     },
 
@@ -6163,6 +6706,21 @@
         } else if (tipo === "resumo-executivo") {
           dados = this._cronoDocDados(d, obra, painel, hoje, pub);
           pay = CronoDocs.resumoExecutivo(dados);
+        } else if (tipo === "comparativo-bases") {
+          /* PLANEJADOR 3A (BASES B4): o comparativo não sai do `_cronoDocDados`
+             — ele precisa das linhas de base COMPLETAS da obra (com os nós
+             devolvidos pelo selo) e do contrato, que o pacote dos outros três
+             documentos não carrega. A montagem inteira mora no
+             `cronoCompImprimir`, que é o mesmo caminho do botão da sub-aba
+             "Linhas de base": um documento, uma montagem. */
+          if (!obra) { UI.toast("O comparativo de linhas de base é de uma OBRA: vincule o orçamento a uma obra antes de gerar.", "erro"); return; }
+          UI.fecharModal();
+          /* ⚠ O PÚBLICO E O PAPEL ESCOLHIDOS NO MODAL VÃO JUNTO. Sem isto a
+             pessoa escolhia "Cliente / contratante" no seletor e recebia o
+             documento de FISCALIZAÇÃO — seletor que não muda nada é pior que
+             seletor nenhum, e aqui ele decide o que o motor tira do papel. */
+          this.cronoCompImprimir(obra.id, { publico: pub, papel: papel });
+          return;
         } else { UI.toast("Documento desconhecido: " + tipo, "erro"); return; }
       } catch (eG) {
         UI.toast("Não consegui montar o documento: " + String((eG && eG.message) || eG) + ". Nada foi impresso.", "erro"); return;
@@ -6395,9 +6953,37 @@
       var d = null;
       try { d = CronoExecUI.preparar(orcD, { tok: this._rtok }); } catch (eP) { d = null; }
       if (!d || !d.r) return null;
-      var est = CronoExecUI.estado(this, o);
+      var chave = alvo && alvo.chave ? alvo.chave : null;
+      var est = CronoExecUI.estado(this, o, chave);
+      /* ⚠ (1C) O FILTRO DO RENDER: a mesma resolução que o ui.js usou para
+         desenhar (memo por render e por alvo). Duas contas dariam duas listas
+         de linhas — "a pessoa arrasta uma barra e vê outra se mexer". */
+      var fu = null;
+      if (est.uso && CronoExecUI.filtroDoRender) {
+        est.uso.restricoes = (alvo && alvo.cron && alvo.cron.restricoes && typeof alvo.cron.restricoes === "object") ? alvo.cron.restricoes : null;
+        try { fu = CronoExecUI.filtroDoRender(this, d.r, est, null); } catch (eF) { fu = null; }
+      }
+      this._cronoUsoLigarGlobal();
+      /* ⚠ PLANEJADOR 2A — O QUE O REPINTE PRECISA SABER.
+         ROTEIRO DO DEFEITO (medido em 21/09/2026 pela e2e-crono-camadas): o
+         `_gxPro` remonta o estado do Gantt a CADA quadro (rolar, zoom,
+         arrastar, depois de gravar) e chamava o `ganttProEstado` SEM as
+         portas da 2A. Resultado: a linha da tarefa sem preço, a barra dela, as
+         camadas e a coluna Calendário apareciam no primeiro desenho e sumiam
+         na primeira rolagem — e, pior, a LISTA DE LINHAS do repinte ficava
+         diferente da que a fiação do arrasto usa para achar o nó pelo índice:
+         a pessoa arrastaria uma barra e outra se moveria.
+         Por isso tudo o que a 2A acrescenta vem daqui, do contexto único. */
+      var cron2A = (alvo && alvo.cron && typeof alvo.cron === "object" && !Array.isArray(alvo.cron)) ? alvo.cron : null;
+      var obra2A = (alvo && alvo.tipo === "plano") ? String((alvo.plano && alvo.plano.obraId) || (alvo.obra && alvo.obra.id) || "") : "";
+      var tela2A = (obra2A && this._cronoAvancoTela) ? this._cronoAvancoTela[obra2A] : null;
+      var cam2A = null;
+      try { cam2A = (typeof this._cronoCamadasLer === "function") ? this._cronoCamadasLer() : null; } catch (eC2) { cam2A = null; }
       return { orc: o, orcD: orcD, r: d.r, det: CronoExecUI.detalheEfetivo(d.r, est.detalhe),
-        abertas: est.abertas, hoje: est.hoje, travado: !!(alvo && alvo.travado) };
+        abertas: est.abertas, hoje: est.hoje, travado: !!(alvo && alvo.travado), chave: chave,
+        manter: fu ? fu.manter : null, contexto: fu ? fu.contexto : null, fora: fu ? fu.fora : null,
+        cron: cron2A, plano: !!(alvo && alvo.tipo === "plano"), camadas: cam2A,
+        modoAv: (tela2A && tela2A.modo === "avancar") ? "avancar" : "planejar" };
     },
 
     /* RELIGADO A CADA RENDER (como o filtro de insumos): o render reescreve o
@@ -6494,6 +7080,38 @@
       }, true);
       plot.addEventListener("mousedown", function (ev) { self._gxDown(ev); });
       plot.addEventListener("keydown", function (ev) { self._gxTecla(ev); });
+      /* ⚠ O CTRL+Z PROMETIDO TEM DE FUNCIONAR ONDE O FOCO CAI DEPOIS DE
+         EDITAR. Roteiro do defeito (revisão final, 22/09/2026, medido com um
+         ouvinte instalado na própria página para provar que não era o teclado
+         sintético): "z ctrl=true alvo=BODY cancelado=false" — a tecla chegava
+         e ninguém a tratava. E BODY é exatamente onde o foco fica logo depois
+         de fechar o modal ⋯ que acabou de criar a tarefa, e depois de clicar
+         no nome de uma linha: o momento em que mais se quer desfazer. O título
+         do botão promete "(Ctrl+Z)" sem condição nenhuma.
+         ⚠ SÓ COM O FOCO EM BODY, e por isso este ouvinte não desfaz a decisão
+         do `_gxTecla` ("fora do Gantt ele é do navegador", USO §7-13): BODY
+         quer dizer que NINGUÉM quer o teclado — nenhum campo, nenhum botão,
+         nenhum outro painel. Com o foco em qualquer elemento, o atalho
+         continua sendo do navegador (ou do dono daquele elemento).
+         ⚠ E só com o Gantt DESTA tela vivo (`self._gx` e a moldura ainda no
+         documento): senão o Ctrl+F do navegador morreria numa aba que nem tem
+         cronograma. */
+      if (!this._gxTeclaDoc) {
+        this._gxTeclaDoc = function (ev) {
+          var gg = self._gx;
+          if (!gg || !gg.plot) return;
+          var al = document.activeElement;
+          if (al && al !== document.body) return;
+          if (!(ev.ctrlKey || ev.metaKey) || ev.altKey) return;
+          var kk = String(ev.key || "").toLowerCase();
+          if (kk !== "z" && kk !== "y" && kk !== "f") return;
+          /* a moldura saiu da página (outra aba, outro render): não é mais o
+             Gantt de ninguém, e o atalho volta a ser do navegador */
+          if (document.documentElement && document.documentElement.contains && !document.documentElement.contains(gg.plot)) return;
+          self._gxTecla(ev);
+        };
+        document.addEventListener("keydown", this._gxTeclaDoc, true);
+      }
       /* TOQUE (celular e tablet): o MESMO arrasto, com o dedo.
          ⚠ Só abre arrasto quando o dedo cai numa ALÇA. Em qualquer outro ponto
          o toque não é interceptado — e é isso que deixa a rolagem nativa (que
@@ -6786,7 +7404,9 @@
       try {
         var cx = g.ctx;
         if (cx && cx.r && typeof CronoExecUI !== "undefined" && CronoExecUI.linhas) {
-          var L = CronoExecUI.linhas(cx.r, { detalhe: CronoExecUI.detalheEfetivo(cx.r, cx.det), abertas: cx.abertas });
+          /* ⚠ (1C) com o MESMO `manter` do render: sem ele a altura sairia do
+             número de linhas sem filtro (USO §3.1; test-crono-linhas-filtro) */
+          var L = CronoExecUI.linhas(cx.r, { detalhe: CronoExecUI.detalheEfetivo(cx.r, cx.det), abertas: cx.abertas, manter: cx.manter || null });
           if (L && typeof L.length === "number") g.nLin = L.length;
         }
       } catch (eL) { g.nLin = null; }
@@ -6831,7 +7451,17 @@
       ovr = ovr || {};
       var sl = ovr.scrollLeft != null ? ovr.scrollLeft : g.plot.scrollLeft;
       var st = ovr.scrollTop != null ? ovr.scrollTop : g.plot.scrollTop;
-      var desf = (this._cronoDesf && this._cronoDesf[g.ctx.orc.id]) ? this._cronoDesf[g.ctx.orc.id].resumo : "";
+      /* (1C) o rótulo do próximo desfazer vem da pilha do ALVO (só entra na
+         chave de forma do canto); a busca AO VIVO dá o realce e o atual */
+      var pil = (this._cronoPilha && g.ctx.chave) ? this._cronoPilha[g.ctx.chave] : null;
+      var desf = (pil && pil.cursor > 0 && typeof CronoPilha !== "undefined") ? CronoPilha.rotulo(pil, "desfazer") : "";
+      var bv = this._cronoBuscaViva(g), bIdx = 0, realce = null, atualB = null, bNav = this._cronoBuscaNav(g, bv);
+      if (bv && bv.total) {
+        var bs = this._cronoBusca[g.ctx.chave];
+        realce = {};
+        for (var ib = 0; ib < bv.ids.length; ib++) realce[bv.ids[ib]] = true;
+        if (bNav.ids.length) { bIdx = Math.min(bs ? bs.idx : 0, bNav.ids.length - 1); atualB = bNav.ids[bIdx]; }
+      }
       /* ⚠ painel ainda sem tamanho (aba desenhada e não medida, contêiner
          oculto): NÃO se remede com zero. Zero de largura faz o "Ajustar" cair
          no piso de 3 px por dia e o desenho nascer com a escala de uma obra
@@ -6843,10 +7473,25 @@
          nem o tamanho do painel, e sem elas aqui o memo devolveria o estado
          antigo — a alça mexeria e nada se redesenharia. */
       var og = this._gxOpcoes() || {}, ww = g.wrap.clientWidth || 0;
-      var ch = [g.z.nivel, g.z.diasAjuste, sl, st, lw, lh, g.z.sel, g.caixa, desf, ww, og.labelPref, og.colunas, og.hxAltura].join("|");
+      /* ⚠ (2A) AS CAMADAS E O MODO ENTRAM NA CHAVE DO MEMO. Sem isso, marcar
+         uma caixa não redesenharia nada: o memo devolveria o estado anterior
+         e a pessoa clicaria numa caixa que "não faz nada" — que é como se lê
+         um app travado. */
+      var cam2A = g.ctx.camadas, camCh = cam2A ? JSON.stringify(cam2A) : "";
+      var ch = [g.z.nivel, g.z.diasAjuste, sl, st, lw, lh, g.z.sel, g.caixa, desf, ww, og.labelPref, og.colunas, og.hxAltura, bv ? bv.texto + "#" + bIdx + "#" + bv.total + "#" + bNav.ids.length : "", camCh, g.ctx.modoAv].join("|");
       if (g.pro && g.proCh === ch) return g.pro;
       g.proCh = ch;
+      /* as tomadas da 2A, montadas do MESMO `r` e do MESMO contexto que o
+         render usou (CronoExecUI.intercalarExtras / barraDoPlanejador /
+         camadaDoPlanejador devolvem `null` sem dado novo, e aí o desenho é o
+         de sempre, byte a byte) */
+      var cxE = CronoExecUI;
       g.pro = CronoExecUI.ganttProEstado(g.ctx.r, {
+        intercalar: cxE.intercalarExtras ? cxE.intercalarExtras(g.ctx.r) : null,
+        barraDe: cxE.barraDoPlanejador ? cxE.barraDoPlanejador(g.ctx.r, cam2A) : null,
+        camadas2A: cxE.camadaDoPlanejador ? cxE.camadaDoPlanejador(g.ctx.r, cam2A, { cron: g.ctx.cron }) : null,
+        eloRotulos: cam2A == null ? true : cxE.camadasNorm(cam2A).rotulos,
+        modoAv: g.ctx.modoAv, plano: !!g.ctx.plano, cron: g.ctx.cron,
         detalhe: g.ctx.det, abertas: g.ctx.abertas, travado: g.ctx.travado, hoje: g.ctx.hoje,
         nivel: g.z.nivel, diasAjuste: g.z.diasAjuste, scrollLeft: sl, scrollTop: st, sel: g.z.sel, desfazer: desf,
         largura: lw, altura: lh, alturaCaixa: g.caixa,
@@ -6855,7 +7500,10 @@
            aqui que ela encolhe de verdade no celular */
         larguraWidget: ww,
         labelPref: og.labelPref, colunas: og.colunas === true, hxAltura: og.hxAltura,
-        alcas: og.alcas === true, alcaNomes: og.alcaNomes, janelaAltura: og.janelaAltura, modo: og.modo
+        alcas: og.alcas === true, alcaNomes: og.alcaNomes, janelaAltura: og.janelaAltura, modo: og.modo,
+        /* ⚠ (1C) a MESMA lista filtrada do render (g.ctx.manter, memo por
+           render): a fiação do arrasto acha o nó pelo índice da linha */
+        manter: g.ctx.manter || null, contexto: g.ctx.contexto || null, fora: g.ctx.fora || null, realce: realce, atual: atualB
       });
       return g.pro;
     },
@@ -6942,7 +7590,24 @@
          do Gantt. */
       if (g.wrap.style && g.wrap.style.setProperty) {
         var ogP = this._gxOpcoes() || {}, wwP = g.wrap.clientWidth || 0;
-        var gradeP = CronoExecUI.ganttProGradeW ? CronoExecUI.ganttProGradeW(ogP.colunas === true, wwP) : 0;
+        /* ⚠ AS COLUNAS DO MODO ATIVO, NÃO AS DE SEMPRE — e a diferença saía
+           na tela como data cortada. O `ganttProGradeW` sem o 3º argumento cai
+           no `colunasGrade(null, null)`, que devolve [Dur., Depende de] = 134
+           px; o desenho puro, que recebe as colunas de verdade, usa 178 px no
+           modo Avançar (% + Início real + Fim real) e 212 com a coluna
+           Calendário. Medido no navegador em 22/09/2026: o SVG do painel dos
+           nomes saía com width=478 dentro de um recorte `overflow:hidden` de
+           434, e 16 das 44 datas apareciam cortadas ("07/0" de "07/08/2026",
+           21 px visíveis de 58) — igual a 1366 e a 1920. A coluna Calendário
+           ficava INTEIRA fora (8 valores em x=731, recorte terminando em 681),
+           enquanto o toast mandava atribuir por ela.
+           ⚠ Assert que CONTA elemento não pega isto: eles existem no DOM, só
+           não cabem. Mede-se por `getBoundingClientRect` contra o `right` do
+           painel (tools/test-crono-geometria.js). */
+        var colsP = CronoExecUI.colunasGrade
+          ? CronoExecUI.colunasGrade(g.ctx.r, { modoAv: CronoExecUI.modoGrade(g.ctx.r, { plano: !!g.ctx.plano, modoAv: g.ctx.modoAv }), cron: g.ctx.cron })
+          : null;
+        var gradeP = CronoExecUI.ganttProGradeW ? CronoExecUI.ganttProGradeW(ogP.colunas === true, wwP, colsP) : 0;
         var lwCol = CronoExecUI.ganttProLabelW(wwP, ogP.labelPref, gradeP), colP = lwCol + gradeP;
         if (colP !== g.labelW) { g.labelW = colP; g.wrap.style.setProperty("--gx-lw", colP + "px"); }
         /* a alça de NOMES (F7) mora na borda do NOME, não em colW */
@@ -7287,6 +7952,14 @@
         this._gxPintar(true); return;
       }
       var ops = GanttUI.opsDoArrasto(g.ctx.r, ar.no, res);
+      /* ⚠ PLANEJADOR 2A: arrastar no modo Avançar mexe no REGISTRO DE AVANÇO,
+         nunca no cronograma (O17). Sem este desvio, o `aplicarOps` receberia
+         `alvo:"avanco"` e devolveria "campo desconhecido" depois de a barra
+         já ter andado na tela. */
+      if (ops.length && ops[0] && ops[0].alvo === "avanco" && typeof this._cronoGravarAvancoOps === "function") {
+        this._cronoGravarAvancoOps(alvo, ops, GanttUI.resumoOps(ops, ar.no, g.ctx.r));
+        return;
+      }
       if (!ops.length) {
         UI.toast(res.motivo || (res.tipo === "ligar" ? "Esta ligação não pode ser criada (elo repetido, de outra etapa, ou laço na rede)." : "Nada mudou nesta barra."), "");
         this._gxPintar(true); return;
@@ -7306,49 +7979,26 @@
       this._cronoGravarOps(alvo, ops, ar.no, g.ctx.r, { origem: "arrasto", sufixo: msg, semMudanca: "Nada mudou nesta barra.", erroAplicar: "Não consegui aplicar o arrasto: " });
     },
 
-    /* DESFAZER a última alteração do cronograma (um nível). ⚠ Troca-se o
+    /* DESFAZER a última alteração do cronograma — agora em VÁRIOS NÍVEIS,
+       pela pilha por alvo (planejador, 1C; `_cronoPilhaPasso`). ⚠ Troca-se o
        CONTEÚDO do objeto do cronograma, nunca a referência: o orçamento (e o
        plano da obra) apontam para ele, e trocar a referência deixaria os dois
        olhando para o objeto velho — o desfazer não chegaria ao disco.
-       Desde a F6 (crono-janelas) a foto é tirada pelo caminho único
-       (_cronoGravarOps): vale para o que foi ARRASTADO e para o que foi
-       DIGITADO (grade do Gantt ou tabela) — e o Ctrl+Z do Gantt chega aqui. */
+       O nome fica (os atalhos da grade e do cartão e o `data-acao` o chamam):
+       vale para o que foi ARRASTADO, DIGITADO, recalculado, limpo, pela IA… */
     cronoArrastoDesfazer: function () {
       /* ⚠ UM RECADO SÓ (ver UI.toastJuntar): no plano da obra o salvar solta o
          toast do prazo e aqui sai o "Alteração desfeita." — eram dois
          empilhados, e o do arrasto que se desfez ainda estava na tela */
       var marca = (typeof UI !== "undefined" && UI.toastMarca) ? UI.toastMarca() : null;
-      try { this._cronoDesfazerCorpo(); }
+      try { return this._cronoDesfazerCorpo(); }
       finally { if (marca && UI.toastJuntar) UI.toastJuntar(marca, "crono", 420); }
     },
-    _cronoDesfazerCorpo: function () {
-      var o = this.orcAtual; if (!o) return;
-      var d = (this._cronoDesf && typeof this._cronoDesf === "object") ? this._cronoDesf[o.id] : null;
-      if (!d || !d.cron) { UI.toast("Não há alteração do cronograma para desfazer.", ""); return; }
-      var alvo = null;
-      try { alvo = this._cronoAlvo(); } catch (eA) { alvo = null; }
-      if (!alvo || alvo.travado) { UI.toast("Não consigo desfazer aqui: o cronograma está travado pela aprovação.", "erro"); return; }
-      /* ⚠ O CRONOGRAMA MUDOU DEPOIS DO ARRASTO? Então desfazer aqui apagaria a
-         edição de depois (uma duração digitada na tabela, um Recalcular, o
-         modo executivo). Recusa com o motivo e some com o botão — é mais
-         honesto que desfazer duas coisas quando se pediu uma. */
-      var agora = null;
-      try { agora = JSON.stringify(alvo.cron); } catch (eJ) { agora = null; }
-      if (d.depois && agora && agora !== d.depois) {
-        delete this._cronoDesf[o.id];
-        UI.toast("O cronograma mudou depois daquela alteração — desfazer agora apagaria a edição que veio depois. Ajuste a etapa pela tabela, ou arraste a barra de volta.", "erro");
-        this.render();
-        return;
-      }
-      var k;
-      for (k in alvo.cron) if (Object.prototype.hasOwnProperty.call(alvo.cron, k)) delete alvo.cron[k];
-      for (k in d.cron) if (Object.prototype.hasOwnProperty.call(d.cron, k)) alvo.cron[k] = d.cron[k];
-      delete this._cronoDesf[o.id];
-      var gravou = alvo.salvar();
-      this._gxManterEscala();   // o desfazer também é edição: a barra não pula (ver _gxManterEscala)
-      this.render();
-      UI.toast(gravou ? "Alteração desfeita." : "Desfiz na tela, mas não consegui gravar — confira antes de sair.", gravou ? "ok" : "erro");
-    },
+    /* ⚠ O CRONOGRAMA MUDOU POR FORA DEPOIS DO ÚLTIMO PASSO? Desfazer apagaria
+       aquela edição (outra janela, a nuvem, a planilha, um aparelho 1.2.81):
+       recusa com o motivo e zera a pilha — é mais honesto que desfazer duas
+       coisas quando se pediu uma (a regra de sempre, agora em vários níveis). */
+    _cronoDesfazerCorpo: function () { return this._cronoPilhaPasso("desfazer"); },
 
     /* O CAMINHO ÚNICO QUE GRAVA O CRONOGRAMA PELA TELA (F6, crono-janelas):
        a grade Dur./Depende de do Gantt, a tabela (etapa e subetapa) e o
@@ -7382,11 +8032,11 @@
         return { ok: false };
       }
       var antes = { dias: rAntes ? rAntes.totalDias : null, fim: rAntes ? rAntes.dataFim : null };
-      /* a FOTO de antes, para o [Desfazer] de um nível. ⚠ Cópia profunda: o
-         objeto do cronograma é o mesmo que o motor lê, e guardar a referência
-         guardaria o estado DEPOIS da mudança. */
-      var foto = null;
-      try { foto = JSON.parse(JSON.stringify(alvo.cron)); } catch (eC) { foto = null; }
+      /* ⚠ (1C) A FOTO DO DESFAZER NÃO É MAIS TIRADA AQUI: o `salvar` do alvo
+         (T3) tira a de antes na criação do alvo e empilha na pilha de vários
+         níveis POR ALVO — o desfazer de um nível guardava a foto em
+         `_cronoDesf[orcAtual.id]` mesmo no plano da obra (achado 12.1 do
+         desenho USO). Daqui vai só o rótulo do passo (`resumo`) e a origem. */
       var ap = GanttUI.aplicarOps(alvo.cron, ops);
       if (!ap.mudou) {
         UI.toast(ap.erros.length ? ((opts.erroAplicar || "Não consegui aplicar a alteração: ") + ap.erros[0]) : (opts.semMudanca || "Nada mudou no cronograma."), ap.erros.length ? "erro" : "");
@@ -7395,7 +8045,7 @@
       }
       /* ⚠ `silencioso`: o plano da obra não mostra o toast de prazo dele — o
          recado de prazo sai AQUI, junto com o que mudou (um toast só). */
-      if (!alvo.salvar({ cronoAntes: rAntes, rotulo: opts.rotulo, silencioso: true })) {
+      if (!alvo.salvar({ cronoAntes: rAntes, rotulo: opts.rotulo, silencioso: true, resumo: GanttUI.resumoOps(ops, no, rAntes), origem: opts.origem || "grade" })) {
         /* NÃO GRAVOU: o salvar já explicou por que recusou, e o render abaixo
            redesenha a partir do que a MEMÓRIA tem depois da recusa. (Até a
            revisão da F6 este comentário dizia que a memória voltava ao
@@ -7415,23 +8065,15 @@
       }
       var dep = null;
       try { dep = Cronograma.estimar(alvo.orc, null, { eap: true }); } catch (eE) { dep = null; }
-      if (foto) {
-        this._cronoDesf = (this._cronoDesf && typeof this._cronoDesf === "object") ? this._cronoDesf : {};
-        /* ⚠ `depois` é a FOTO DE COMO FICOU, tirada DEPOIS do salvar (o
-           persistir ainda materializa o modo executivo e sincroniza o prazo).
-           É ela que o desfazer confere antes de agir: sem essa conferência, o
-           [Desfazer] continuaria valendo depois de a pessoa digitar uma
-           duração na tabela — e voltaria o cronograma para antes do arrasto,
-           apagando calado a edição que veio depois. */
-        var depois = null;
-        try { depois = JSON.stringify(alvo.cron); } catch (eD) { depois = null; }
-        this._cronoDesf[this.orcAtual.id] = { cron: foto, depois: depois, resumo: GanttUI.resumoOps(ops, no, rAntes) };
-      }
       /* ⚠ O NOME DO RECADO SAI DO RESULTADO (`rAntes`), não da barra: no
          "ligar" do arrasto quem muda é a SUCESSORA. `rDepois` dá o número da
          estimativa quando a duração volta a ela. */
       // (o ponto final do resumo sai: o recado continua com " · Prazo da obra…" e fecha com um ponto só)
-      var msg = String(GanttUI.resumoOps(ops, no, rAntes, { rDepois: dep }) || "Cronograma atualizado").replace(/\.\s*$/, "") + (opts.sufixo || "");
+      /* ⚠ `cal` no resumo (2A): a lista de calendários do cronograma, para o
+         recado dizer o NOME da frente e não o id — id no recado é a pessoa
+         conferindo uma coisa que ela nunca escolheu. */
+      var calLista = (alvo.cron && alvo.cron.cal && Array.isArray(alvo.cron.cal.lista)) ? alvo.cron.cal.lista : null;
+      var msg = String(GanttUI.resumoOps(ops, no, rAntes, { rDepois: dep, cal: calLista }) || "Cronograma atualizado").replace(/\.\s*$/, "") + (opts.sufixo || "");
       /* o ANTES → DEPOIS DO PRAZO, quando a ENTREGA muda: a data final é a
          que vai na proposta. Número a pessoa confere; "pronto" ela não. */
       if (dep && antes.dias != null && dep.totalDias !== antes.dias) {
@@ -7471,10 +8113,9 @@
       if (ap.erros.length) msg += " · " + ap.erros.length + " operação(ões) recusada(s): " + ap.erros[0];
       if (!/[.!?]$/.test(msg)) msg += ".";
       /* ⚠ o render vem ANTES do toast: é ele que redesenha o Gantt com a rede
-         nova e traz o [[Desfazer]] para o canto. O botão mora ali, e não no
-         toast, porque o toast some em 2,6 s — e o arrependimento costuma vir
-         depois de olhar o que mudou. É um nível só: a alteração seguinte
-         substitui a foto. */
+         nova e atualiza o ↶ ↷ da barra de uso (1C). O botão mora ali, e não
+         no toast, porque o toast some em 2,6 s — e o arrependimento costuma
+         vir depois de olhar o que mudou. A pilha guarda até 50 passos. */
       this._gxManterEscala();   // ⚠ ANTES do render: a barra não pula para longe do mouse (ver _gxManterEscala)
       this.render();
       UI.toast(msg, ap.erros.length ? "" : "ok");
@@ -7511,7 +8152,51 @@
       var ctxD = {
         travado: alvo.travado, cron: alvo.cron,
         ordemEtapas: (alvo.orc.etapas || []).map(function (et) { return et.id; }),
-        Cronograma: Cronograma, CronoExecUI: CronoExecUI
+        Cronograma: Cronograma, CronoExecUI: CronoExecUI,
+        /* planejador 1A (I13): ligar tarefa sem preço a uma etapa exige o
+           início fixo — a recusa vem com `porta: "inicio"` */
+        inicioFixo: !!this._cronoInicioEfetivo(alvo),
+        /* planejador 2A: o modo Avançar só existe no PLANO (§1.4) e a trava da
+           etapa com subetapas depende do modo executivo — as duas são
+           conferidas pelo `celulaEditavel`, na função, e não pela tela */
+        plano: alvo.tipo === "plano", orc: alvo.orc,
+        exec: !!(alvo.cron && alvo.cron.exec && alvo.cron.exec.rede === true),
+        /* ⚠ A FIAÇÃO PARA O REGISTRO `avanco_<obraId>` — e ela é o conserto
+           de um defeito CRÍTICO, não conveniência. O motor precisa saber se a
+           tarefa JÁ TEM início (ou fim) real lançado antes de decidir o que
+           gravar com o %, e a única resposta honesta está no registro. A
+           guarda antiga perguntava ao nó da árvore (`no.avanco.iniReal`), que
+           o `Cronograma._avancoDoNo` preenche com a data PLANEJADA da
+           reprogramação: ela achava que havia início real em toda tarefa e
+           não disparava nunca. Resultado medido em 22/09/2026: o % ia para o
+           disco sem `i`, o `CronoAvanco.ler` o descartava
+           (`motivo:"pct-sem-inicio"`) e a célula continuava em 0,0% — duas
+           verdades no mesmo aparelho.
+           ⚠ Devolve `{corte, no}` — `no: null` só quando a tarefa não tem
+           entrada; se nem o registro der para ler, devolve `undefined` e o
+           motor RECUSA em voz alta (lá). O `corte` vai junto porque início
+           planejado DEPOIS do corte também não serve de âncora: era o caso da
+           tarefa 1.1 do galpão, empurrada para 23/09 com corte em 22/09. */
+        avancoAtual: (function (self) {
+          return function (id) {
+            var obraId = String((alvo.plano && alvo.plano.obraId) || (alvo.obra && alvo.obra.id) || "");
+            /* ⚠ `undefined` = "não consegui ler", e o motor recusa em voz
+               alta. `{corte, no: null}` = "li, e esta tarefa não tem entrada"
+               — são respostas diferentes, e confundi-las faria o % entrar por
+               cima de um início real que a pessoa informou. */
+            if (!obraId || typeof CronoBase === "undefined" || typeof CronoBase.avanco !== "function") return undefined;
+            var rec = null;
+            try { rec = CronoBase.avanco(self._cronoListaCrono(obraId), obraId); } catch (eAv) { return undefined; }
+            /* a MESMA data de corte que o `_cronoGravarAvancoOps` carimba no
+               `em` das operações — duas contas do mesmo corte divergem na
+               primeira manutenção, e a diferença aqui é entre recusar e gravar */
+            var corte = "";
+            try { corte = String((rec && rec.corte) || self._cronoCorteDaTela(obraId) || ""); } catch (eC) { corte = ""; }
+            var nos = (rec && Util.arr(rec.nos)) || [];
+            for (var i = 0; i < nos.length; i++) if (nos[i] && String(nos[i].id) === String(id)) return { corte: corte, no: nos[i] };
+            return { corte: corte, no: null };
+          };
+        })(this)
       };
       /* `p.campos` = [{campo, texto}]: o CARTÃO do duplo clique (colunas
          escondidas) grava Dur. e Depende de de uma vez — UMA gravação, UM
@@ -7525,13 +8210,23 @@
         if (!res.ok) {
           // aprovado: a trava tem modal com a porta (criar revisão / plano da obra), não um toast
           if (res.travadoAprovacao) this._cronoTravado(alvo);
-          else UI.toast(res.msg, "erro");
+          else if (res.porta === "inicio") {
+            // ⚠ a trava tem porta (CLAUDE.md §3): o recado abre o [Fixar início], não só um toast
+            UI.modal("Fixe o início da obra", '<p>' + Util.esc(res.msg) + '</p>' + this._cronoPortaInicioHtml(alvo, null, "Fixe o início e digite de novo:"),
+              [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+          } else UI.toast(res.msg, "erro");
           return { ok: false, msg: res.msg, porta: res.porta, campo: pedidos[ip].campo, travadoAprovacao: !!res.travadoAprovacao };
         }
         for (var jo = 0; jo < res.ops.length; jo++) ops.push(res.ops[jo]);
         if (res.msg) rotulos.push(res.msg);
       }
       if (!ops.length) return { ok: true, mudou: false };
+      /* ⚠ AS OPERAÇÕES DE AVANÇO NÃO VÃO PARA O CRONOGRAMA (O17): elas moram
+         no registro `avanco_<obraId>`, e SÓ ele é gravado quando se lança
+         avanço. Gravar o plano junto apagaria, num conflito de nuvem, o TT que
+         o escritório tinha digitado — o merge do `crono_obra` é por registro
+         inteiro, sem cópia do perdedor. */
+      if (ops[0] && ops[0].alvo === "avanco") return this._cronoGravarAvancoOps(alvo, ops, rotulos.join(" "));
       return this._cronoGravarOps(alvo, ops, no, r, { origem: p.origem || "grade", rotulo: rotulos.join(" ") });
     },
 
@@ -7547,8 +8242,24 @@
       try { r = Cronograma.estimar(alvo.orc, null, { eap: true }); } catch (eR) { r = null; }
       var no = r ? GanttUI.acharNo(r, id) : null;
       var rs = alvo.cron && alvo.cron.restricoes && typeof alvo.cron.restricoes === "object" ? alvo.cron.restricoes[id] : null;
-      if (!no || !rs) { UI.toast("Esta etapa não tem mais data fixada — nada a soltar.", ""); this.render(); return; }
-      this._cronoGravarOps(alvo, [{ alvo: "etapa", id: id, campo: "restricaoData", de: { tipo: rs.tipo, data: rs.data }, para: null }], no, r, { origem: "soltar" });
+      /* ⚠ PLANEJADOR 2A: a data também pode morar em `rede.datas` — é lá que
+         vivem "deve iniciar em", "deve terminar em", "não terminar antes de",
+         "não iniciar depois de", o "o mais tarde possível", TODA restrição de
+         SUBETAPA (§1.3) e a MARCA do "terminar até" da O22. Sem esta leitura,
+         [Soltar a data] respondia "esta etapa não tem mais data fixada" numa
+         etapa que a tela mostrava empurrada por uma — trava com porta que
+         não abre.
+         ⚠ Soltar um "terminar até" apaga também a marca da O22 (é o mesmo
+         `restricaoData: null` do `aplicarOps`, que tira a entrada dos dois
+         mapas): sem isso a folga real continuaria contando um teto que a
+         pessoa acabou de soltar. */
+      var rd = (alvo.cron && alvo.cron.rede && alvo.cron.rede.datas && typeof alvo.cron.rede.datas === "object") ? alvo.cron.rede.datas[id] : null;
+      if (!no || (!rs && !rd)) { UI.toast("Esta tarefa não tem mais data fixada — nada a soltar.", ""); this.render(); return; }
+      var folha = no.tipo === "subetapa" || no.tipo === "soltos";
+      var de = rs ? { tipo: rs.tipo, data: rs.data } : { tipo: rd.t, data: rd.d || null };
+      var op = { alvo: folha ? "folha" : "etapa", id: id, campo: "restricaoData", de: de, para: null };
+      if (folha) op.etapaId = no.etapaId;
+      this._cronoGravarOps(alvo, [op], no, r, { origem: "soltar" });
     },
 
     /* TECLADO no painel do tempo: setas movem a linha escolhida e rolam o
@@ -7558,14 +8269,32 @@
     _gxTecla: function (ev) {
       var g = this._gx; if (!g || typeof GanttUI === "undefined") return;
       /* ⚠ Ctrl+Z (sem Shift/Alt) desfaz a última alteração do cronograma —
-         digitada OU arrastada (F6). É a única combinação com modificador que
-         entra: Ctrl + roda é zoom (outro ouvinte), e Ctrl+C/Ctrl+F e os
-         atalhos do navegador seguem livres. */
-      if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && !ev.shiftKey && String(ev.key).toLowerCase() === "z") {
+         digitada OU arrastada (F6); Ctrl+Y e Ctrl+Shift+Z refazem (1C, pilha
+         de vários níveis); Ctrl+F leva à busca da barra de uso (1C) — SÓ aqui
+         dentro: fora do Gantt ele é do navegador (USO §7-13). Ctrl + roda é
+         zoom (outro ouvinte), e Ctrl+C e os outros atalhos seguem livres. */
+      var kz = String(ev.key).toLowerCase(), modC = (ev.ctrlKey || ev.metaKey) && !ev.altKey;
+      if (modC && !ev.shiftKey && kz === "z") {
         ev.preventDefault();
         this.cronoArrastoDesfazer();
         return;
       }
+      if (modC && ((!ev.shiftKey && kz === "y") || (ev.shiftKey && kz === "z"))) {
+        ev.preventDefault();
+        this.cronoRefazer();
+        return;
+      }
+      if (modC && !ev.shiftKey && kz === "f") {
+        if (this._cronoBuscaAbrirCampo()) ev.preventDefault();
+        return;
+      }
+      /* ⚠ AS TECLAS DA LINHA (planejador 2A: Ins, Del, Alt+↑↓) são do
+         js/ganttgradeui.js — esta é a ÚNICA linha da 2A nesta função (que é
+         da 1C), e ela só pergunta. Escritas aqui dentro, o teclado do Gantt
+         teria dois donos; escritas em outro ouvinte, dois `keydown` no mesmo
+         elemento disputariam o `preventDefault` (o Alt+↑ rolaria a página
+         E moveria a tarefa). Devolve `true` = ela tratou. */
+      if (typeof GanttGradeUI !== "undefined" && GanttGradeUI.teclaLinha && GanttGradeUI.teclaLinha(this, ev, g)) return;
       if (ev.ctrlKey || ev.altKey || ev.metaKey) return;
       var p = this._gxPro(); if (!p || !p.e) return;
       var k = ev.key, n = p.L.length, e = p.e;
@@ -7875,8 +8604,24 @@
       var d = null;
       try { d = this._cronoDadosDaAba(o); } catch (eD) { d = null; }
       var pr = d && d.pr, painel = pr && pr.painel;
-      if (pr && pr.ativa && pr.ativa.cal && Util.arr(pr.ativa.nos).length) opts.base = pr.ativa;
-      if (painel && Util.arr(painel.nos).length && painel.dataCorte) {
+      /* AS LINHAS DE BASE: 0 = a ativa, 1 = a contratual pelo selo, 2 a 10 =
+         as demais (planejador, fatia 3B). Ver `_cronoBasesMSP`, na região
+         `msproject`. Sem o módulo dos selos sai só a ativa, como antes. */
+      var Bs = this._cronoBasesMSP(pr);
+      if (Bs.length) opts.base = Bs;
+      /* ⚠ O AVANÇO VEM DO MOTOR quando ele o apurou (`opts.avanco === true`).
+         O `r.avanco` e o `no.avanco` de cada nó JÁ são a reprogramação que a
+         tela mostra ao lado, com o nó em andamento posicionado no início REAL
+         e o que o corte empurrou na data nova. O mapa do painel, que era a
+         fonte até 20/09/2026, trazia o percentual e as datas reais mas NÃO a
+         reprogramação: o arquivo saía com `<ActualStart>` numa data e
+         `<Start>` em outra, e no MS Project a data real MANDA — a tarefa e
+         tudo depois dela saíam do lugar (medido: o fim de uma etapa foi de
+         06/10 para 09/10). Ele continua como caminho de trás para o orçamento
+         sem obra, e lá o próprio `js/msproject.js` recusa a data real que não
+         bate com o plano, dizendo na nota da tarefa. */
+      if (Dx.r && Dx.r.avanco && Dx.r.avanco.corte) opts.avanco = true;
+      else if (painel && Util.arr(painel.nos).length && painel.dataCorte) {
         var porNo = {}, n = 0;
         Util.arr(painel.nos).forEach(function (x) {
           /* ⚠ SÓ O QUE FOI APURADO. Nó sem percentual não recebe 0% — no
@@ -8925,6 +9670,17 @@
            motor recusa com {erro}, que é mostrado */
         opts = { cronAlvo: alvoP.cron, destinoDesfazer: alvoP.plano };
       }
+      /* ⚠ (1C) O ORÇAMENTO TAMBÉM GRAVA PELO `salvar` DO ALVO (USO §3.2):
+         só assim a edição da IA entra na pilha ("Edição pela IA", D21) e no
+         histórico. O alvo nasce ANTES de aplicar (a foto de antes é tirada
+         na criação). Para o alvo "orc" o `salvar` é o mesmo `persistir`; se o
+         alvo desta aba não for o orçamento (não deveria), o persistir de
+         sempre. */
+      var alvoO = null;
+      if (!ehPlano) {
+        try { alvoO = this._cronoAlvo(); } catch (eAo) { alvoO = null; }
+        if (!alvoO || alvoO.tipo !== "orc" || alvoO.orc !== o) alvoO = null;
+      }
       var bkO = JSON.stringify(o), bkP = alvoP ? JSON.stringify(alvoP.plano) : null, res;
       try { res = IAEdit.aplicar(o, marcadas, this._iaCarimbo(st), opts); }
       catch (eX) {
@@ -8942,7 +9698,9 @@
          a resposta já paga, e o _iaEd ficava em "diff" sem tela nenhuma
          (medido na e2e). Aqui o diff fica, com o recado dizendo o que fazer; o
          aviso do persistir (toast) continua. */
-      var salvou = ehPlano ? alvoP.salvar({ daIA: true }) : this.persistir({ daIA: true, semBackupModal: true });
+      var rotIA = "Edição pela IA (" + res.n + " mudança" + (res.n === 1 ? "" : "s") + ")";
+      var salvou = ehPlano ? alvoP.salvar({ daIA: true, origem: "ia", resumo: rotIA })
+        : (alvoO ? alvoO.salvar({ daIA: true, semBackupModal: true, origem: "ia", resumo: rotIA }) : this.persistir({ daIA: true, semBackupModal: true }));
       if (!salvou) {
         /* ⚠ NADA GRAVADO = NADA MUDADO NA TELA: a memória volta ao retrato, senão
            a planilha mostraria a edição que o disco não tem */
@@ -14562,7 +15320,9 @@
      *   B gravou e1=21 manteve foco e valor, e o Tab gravou as duas.
      * - sem modal e sem foco → troca e redesenha.
      * ===================================================================== */
-    _REL_OBRA: { crono_obra: 1, obras: 1, rdo: 1, medicoes: 1 },
+    /* `crono_selo`/`crono_alt` (planejador, T10): mudaram noutra janela →
+       a aba Cronograma redesenha (bases, comparação e histórico leem delas) */
+    _REL_OBRA: { crono_obra: 1, obras: 1, rdo: 1, medicoes: 1, crono_selo: 1, crono_alt: 1 },
     /* a lista de orçamentos deste aparelho não abriu e as gravações nela estão
        recusadas (js/store.js, nota da quarentena) */
     _listaIlegivel: function (eid) {
@@ -14753,6 +15513,10 @@
         if (b && b.classList && (b.classList.contains("gx-arrastando") || b.classList.contains("pn-redim"))) return true;
         var ae = document.activeElement;
         if (!ae || ae === b) return false;
+        /* ⚠ (1C) o campo de BUSCA do Gantt não segura a releitura: ali não se
+           edita o cronograma, e segurar deixaria a tela velha enquanto a pessoa
+           procura uma linha */
+        if (ae.getAttribute && ae.getAttribute("data-rel-livre") != null) return false;
         var tag = String(ae.tagName || "").toUpperCase();
         if (tag === "TEXTAREA" || tag === "SELECT") return true;
         /* caixa de marcar e botão não têm texto a perder: foco neles não pode
@@ -14804,6 +15568,9 @@
            (o plano de execução é relido a cada render por _cronoAlvo) */
         var mObra = this._REL_OBRA[motivo] ? motivo : ((obraTambem && this._REL_OBRA[obraTambem]) ? obraTambem : null);
         if (!(mObra && this.aba === "cronograma")) return;
+        /* ⚠ (1C) o plano desta aba mudou por fora: a pilha ganha a marca com a
+           hora (regra 2 da USO §3.2) — só se a foto mudou de fato */
+        if (mObra === "crono_obra") { try { this._cronoPilhaConferir("outra-janela"); } catch (eP) {} }
         if (modal) { this._relerPendente = mObra; this._relerVigiar(); return; }
         if (this._relOcupado()) { this._relerDeverRender(); return; }
         this._relerPendente = null; this._relerRenderPendente = false;
@@ -14812,6 +15579,9 @@
       }
       if (modal) { this._relerPendente = motivo || "orcamentos"; this._relerVigiar(); return; }
       this.orcAtual = disco;
+      /* ⚠ (1C) o orçamento veio de outra janela ou aparelho: a pilha desta
+         tela ganha a marca com a hora (regra 2 da USO §3.2) */
+      try { this._cronoPilhaConferir("outra-janela"); } catch (eP2) {}
       if (this._relOcupado()) { this._relerPendente = null; this._relerDeverRender(); return; }
       this._relerPendente = null; this._relerRenderPendente = false;
       try { this.render(); } catch (eR2) {}
@@ -14908,7 +15678,4789 @@
         " não foi gravada, para não apagar a outra. " +
         (modal ? "Feche este quadro: a tela será atualizada com o que está salvo."
                : "A tela foi atualizada com o que está salvo: confira e refaça, se ainda for preciso.");
-    }
+    },
+
+    /* =====================================================================
+     * PLANEJADOR — TOMADAS DA ONDA 0 (dono MOTOR). Nada visível muda.
+     *
+     * As funções novas do cronograma (rede TT/IT, tarefas sem preço,
+     * calendários, avanço, linhas de base, busca/filtro/desfazer/histórico)
+     * chegam em nove fatias. Cada uma se liga AQUI, sem editar a mesma
+     * função que a outra: as regiões ficam no fim deste objeto, uma por
+     * fatia, e o despacho de ações, o alvo e o boot consultam o que elas
+     * registrarem. Espec: ESPEC-planejador.md, §3.2.
+     * ===================================================================== */
+
+    /* O despacho das ações `crono-<prefixo>-…` (T5). ⚠ A FATIA REGISTRA NA
+       PRÓPRIA REGIÃO, declarando `_acoesCrono_<prefixo>: { "crono-<prefixo>-x":
+       function (t, ev) {…} }` — nunca edita esta função, o `switch` do
+       onClick nem o objeto `_acoesCrono` (que é para registro em tempo de
+       execução, por módulo ou teste). O handler roda com `this` = App; devolver
+       `false` explícito = "não tratei" (o switch de sempre segue). Prefixo sem
+       ninguém registrado → false: o clique cai no switch, como hoje.
+       ⚠ `teto` (revisão 4 da espec, O30): as portas do recado único do teto de
+       60 KB (`crono-teto-marca-ia`, `-sem-origem-ia`, `-sem-sombra`,
+       `-sem-iniciar1281`, `-ver`) são da 1A. Sem a palavra aqui, o clique na
+       porta cairia no `switch`, que não a conhece: a pessoa veria o recado da
+       recusa com uma porta que não abre (memória "porta prometida precisa
+       existir"). Conferido com grep em js/: nenhuma ação de hoje começa com
+       nenhum destes prefixos, então o despacho não rouba clique antigo.
+       ⚠ `compat` (1A): as portas de escolha da §1.3.1 ("a duração foi alterada
+       num aparelho de versão anterior" → [Usar]/[Manter]; a restrição
+       substituída → [Restaurar]/[Descartar]). Mesmo motivo do `teto`. */
+    /* ⚠ `comp` (fatia 3A) CONVIVE COM `compat` (1A) — e isto foi MEDIDO
+       (21/09/2026), não deduzido. A leitura intuitiva diz que `comp` roubaria
+       `crono-compat-escolher`, porque a alternância é da esquerda para a
+       direita; ela está errada. O `-` obrigatório depois do grupo faz o motor
+       RETROCEDER: `comp` casa "comp", o `-` não encontra o "a" de "at-", a
+       tentativa é desfeita e `compat` casa. `crono-compat-escolher` → compat
+       e `crono-comp-imprimir` → comp nos DOIS sentidos, com a tela de verdade
+       (tools/test-crono-tomadas.js, bloco das ações).
+       A primeira versão deste comentário afirmava o contrário, de cabeça. Fica
+       escrito para ninguém "consertar" a ordem por causa dela. */
+    _ACAO_CRONO_RE: /^crono-(rede|extra|cal|avanco|bases|alt|busca|filtro|pilha|sino|uso|inicio|camadas|teto|compat|comp)-/,
+    _acoesCrono: {},
+    _acaoCrono: function (acao, t, ev) {
+      var m = this._ACAO_CRONO_RE.exec(String(acao == null ? "" : acao));
+      if (!m) return false;
+      var p = m[1], reg = null;
+      if (this._acoesCrono && Object.prototype.hasOwnProperty.call(this._acoesCrono, p)) reg = this._acoesCrono[p];
+      if (!reg) reg = this["_acoesCrono_" + p] || null;
+      if (!reg) return false;
+      var fn = typeof reg === "function" ? reg : (Object.prototype.hasOwnProperty.call(reg, acao) ? reg[acao] : null);
+      if (typeof fn !== "function") return false;
+      return fn.call(this, t, ev, acao) !== false;
+    },
+
+    /* O que o alvo ganha (T3) — ver o ⚠ do `_cronoAlvo`.
+       ⚠ A FOTO "ANTES" É TIRADA NA CRIAÇÃO DO ALVO: todo handler cria o alvo,
+       mexe em `alvo.cron` e chama `alvo.salvar` — no salvar já é tarde para
+       saber como estava. Custa um `canon` do cronograma (a USO mediu 0,008 ms
+       para 2,6 KB). Um segundo salvar no mesmo alvo compara com o gravado.
+       ⚠ O `salvar` devolve EXATAMENTE o que o de sempre devolve, e
+       `_cronoDepoisDeSalvar` nunca derruba o salvar (try). Sem o CronoPilha
+       carregado não há foto (null) e nada é comparado. */
+    _cronoAlvoTomadas: function (alvo) {
+      var self = this, salvarCru = alvo.salvar;
+      var dono = alvo.tipo === "plano" ? String((alvo.plano && alvo.plano.obraId) || (alvo.obra && alvo.obra.id) || "") : String((alvo.orc && alvo.orc.id) || "");
+      alvo.chave = (alvo.tipo === "plano" ? "plano:" : "orc:") + dono;
+      // o registro do avanço lançado da obra (1A preenche pelo `orcDaObra`)
+      if (!Object.prototype.hasOwnProperty.call(alvo, "avancoRec")) alvo.avancoRec = null;
+      alvo.foto = function () { return self._cronoFoto(alvo); };
+      alvo.restaurar = function (foto, opts) { return self._cronoRestaurar(alvo, foto, opts); };
+      var antes = null;
+      try { antes = alvo.foto(); } catch (eF) { antes = null; }
+      alvo.salvar = function (opts) {
+        var ok = salvarCru(opts);
+        if (!ok || antes === null) return ok;
+        var depois = null;
+        try { depois = alvo.foto(); } catch (eD) { depois = null; }
+        if (depois !== null && depois !== antes) {
+          try { self._cronoDepoisDeSalvar(alvo, antes, depois, opts || {}); }
+          catch (eP) { try { console.warn("[cronograma] depois do salvar falhou (o cronograma foi gravado):", eP); } catch (eC) {} }
+          antes = depois;
+        }
+        return ok;
+      };
+      return alvo;
+    },
+    /* a foto CANÔNICA do alvo: `{c: cronograma, a: avanço (nos + corte) | null}`
+       (espec §1.7). Chaves ordenadas pelo `CronoPilha.canon` — a ordem de
+       inserção muda entre aparelhos e depois de um desfazer. */
+    _cronoFoto: function (alvo) {
+      if (!alvo || typeof CronoPilha === "undefined" || typeof CronoPilha.canon !== "function") return null;
+      var av = alvo.avancoRec, a = (av && typeof av === "object") ? { nos: av.nos, corte: av.corte } : null;
+      return CronoPilha.canon({ c: alvo.cron, a: a });
+    },
+    /* volta o alvo a uma foto e grava pelo `salvar` do alvo. ⚠ TROCA O
+       CONTEÚDO do cronograma, nunca a referência (o orçamento e o plano
+       apontam para o mesmo objeto — ver `_cronoDesfazerCorpo`). Foto com
+       AVANÇO diferente do atual precisa gravar avanço e plano encadeados
+       (espec §1.10-6): esse ramo é da 1A (`_cronoRestaurarAvanco`); sem ele a
+       restauração é RECUSADA (false), nunca feita pela metade. */
+    _cronoRestaurar: function (alvo, foto, opts) {
+      if (!alvo || alvo.travado) return false;
+      var obj = null;
+      try { obj = typeof foto === "string" ? JSON.parse(foto) : foto; } catch (eJ) { obj = null; }
+      if (!obj || typeof obj !== "object" || !obj.c || typeof obj.c !== "object" || Array.isArray(obj.c)) return false;
+      var atual = null;
+      try { atual = JSON.parse(this._cronoFoto(alvo) || "null"); } catch (eA) { atual = null; }
+      var P = typeof CronoPilha !== "undefined" ? CronoPilha : null;
+      var avDif = !!P && P.canon(obj.a || null) !== P.canon((atual && atual.a) || null);
+      if (avDif) return typeof this._cronoRestaurarAvanco === "function" ? this._cronoRestaurarAvanco(alvo, obj, opts) : false;
+      var cron = alvo.cron, k, c = JSON.parse(JSON.stringify(obj.c));
+      for (k in cron) if (Object.prototype.hasOwnProperty.call(cron, k)) delete cron[k];
+      for (k in c) if (Object.prototype.hasOwnProperty.call(c, k)) cron[k] = c[k];
+      return alvo.salvar(opts);
+    },
+    /* ⚠ CORPO DA 1C (pilha do desfazer e histórico de alterações). Chamado
+       só quando o salvar GRAVOU e o conteúdo mudou. Nunca pode derrubar o
+       salvar (quem chama já cerca com try). O corpo mora na região `uso`
+       (`_cronoUsoDepois`); com `opts.semTela` (E-MC3) só o histórico. */
+    _cronoDepoisDeSalvar: function (alvo, antes, depois, opts) {
+      return (typeof this._cronoUsoDepois === "function") ? this._cronoUsoDepois(alvo, antes, depois, opts || {}) : null;
+    },
+
+    /* AS CHAVES DE DESLIGAR DO CRONOGRAMA NO BOOT (T12; espec §6.2):
+       `CONFIG.cronoRecursos` (a frota inteira, por versão) com a chave local
+       `orcapro:tela:crono-recursos:v1` por cima (o suporte, numa instalação).
+       O motor é puro e só recebe o resultado. ⚠ Não existe "Painel de Saúde"
+       no OrçaPRO: as chaves desligadas aparecem no console (aqui), na faixa da
+       aba e no cartão "Compatibilidade" da sub-aba Parâmetros (2B). */
+    _cronoRecursosBoot: function () {
+      try {
+        if (typeof Cronograma === "undefined" || typeof Cronograma.definirRecursos !== "function") return null;
+        var mescla = {}, k, base = (typeof CONFIG !== "undefined" && CONFIG && CONFIG.cronoRecursos) || null, loc = null;
+        if (base && typeof base === "object") for (k in base) if (Object.prototype.hasOwnProperty.call(base, k)) mescla[k] = base[k];
+        try {
+          var raw = (typeof localStorage !== "undefined" && localStorage) ? localStorage.getItem("orcapro:tela:crono-recursos:v1") : null;
+          if (raw) loc = JSON.parse(raw);
+        } catch (eL) { loc = null; }
+        if (loc && typeof loc === "object" && !Array.isArray(loc)) for (k in loc) if (Object.prototype.hasOwnProperty.call(loc, k)) mescla[k] = loc[k];
+        var ef = Cronograma.definirRecursos(mescla), desl = [];
+        for (k in ef) if (Object.prototype.hasOwnProperty.call(ef, k) && ef[k] === false) desl.push(k);
+        var txt = desl.length ? "[cronograma] recursos DESLIGADOS nesta instalação: " + desl.join(", ") +
+          (desl.indexOf("motor") > -1 ? " — as datas são as que a versão 1.2.81 calcula" : "") +
+          " (CONFIG.cronoRecursos e a chave local orcapro:tela:crono-recursos:v1)" : "";
+        if (txt && this._cronoRecursosAvisado !== txt) {
+          this._cronoRecursosAvisado = txt;
+          try { console.info(txt); } catch (eC) {}
+        }
+        return ef;
+      } catch (e) { return null; }
+    },
+
+    /* ===== PLANEJADOR: motor (1A) ===== */
+    _regMotor: 1,
+
+    /* ------------------------------------------------------------------
+       O TETO DE 60 KB DO CRONOGRAMA — UM RECADO SÓ (revisão 4 da espec,
+       O30, §2.8). Toda recusa de teto (a 1C no caminho único de gravação, a
+       2A ao criar tarefa sem preço, a 2B no modal de calendário e no iniciar
+       plano, e o salvar do plano) chama `_cronoTetoRecado`; ninguém desenha
+       outro. As portas vêm SIMULADAS do motor (`Cronograma.medirTeto`): só
+       aparece a que resolve de verdade (memória "porta prometida precisa
+       existir"). A porta NÃO refaz a operação recusada: grava só a mudança de
+       forma, diz quanto liberou, e a pessoa refaz — sem operação pendente em
+       memória, uma recusa nunca vira gravação dupla.
+       ------------------------------------------------------------------ */
+    _cronoTetoBytes: null,
+    /* o contexto da medida para o `materializarCrono` (opts.teto) */
+    _cronoTetoCtx: function (alvo) {
+      if (!alvo) return null;
+      if (!this._cronoTetoBytes || typeof this._cronoTetoBytes !== "object") this._cronoTetoBytes = {};
+      var ant = Object.prototype.hasOwnProperty.call(this._cronoTetoBytes, alvo.chave || "") ? this._cronoTetoBytes[alvo.chave] : null;
+      if (alvo.tipo === "plano") {
+        var io = null;
+        try { io = alvo.orc && alvo.orc._iaOrc ? alvo.orc._iaOrc : null; } catch (eI) { io = null; }
+        return { plano: alvo.plano || null, cronOrc: io, obra: alvo.obra || null, bytesAntes: ant };
+      }
+      /* ⚠ ORÇAMENTO: sempre a obra-sonda do `medirIniciar` (id de 21 e `por`
+         de 60, o lado seguro, R4-9). Uma régua só no medidor e no salvar: com a
+         obra real num e a sonda no outro, o "cresceu" compararia dois números
+         de réguas diferentes. */
+      return { obra: null, bytesAntes: ant };
+    },
+    _cronoTetoLembrar: function (alvo, m) {
+      if (!alvo || !m || m.bytes == null) return;
+      if (!this._cronoTetoBytes || typeof this._cronoTetoBytes !== "object") this._cronoTetoBytes = {};
+      this._cronoTetoBytes[alvo.chave || ""] = m.bytes;
+    },
+    /* O MEDIDOR para quem aplica operações (`GanttUI.aplicarOps(cron, ops,
+       {medirTeto})`): projeta uma CÓPIA do cronograma depois das operações e
+       devolve o `teto` quando a operação faria passar — e só quando ela faz
+       crescer (a operação que diminui nunca é recusada, nem num cronograma que
+       já passou por outro caminho). */
+    _cronoMedidorTeto: function (alvo) {
+      var self = this;
+      return function (cronDepois) {
+        if (!alvo || !alvo.orc || typeof Cronograma === "undefined" || !Cronograma.materializarCrono) return null;
+        var o2 = {}, k, src = alvo.orc;
+        for (k in src) if (Object.prototype.hasOwnProperty.call(src, k)) o2[k] = src[k];
+        o2.cronograma = JSON.parse(JSON.stringify(cronDepois || {}));
+        var ctx = self._cronoTetoCtx(alvo), m = null;
+        try { m = Cronograma.materializarCrono(o2, { teto: ctx, inicioEfetivo: self._cronoInicioEfetivo(alvo) }); } catch (eM) { m = null; }
+        return (m && m.teto && m.teto.cresceu !== false) ? m.teto : null;
+      };
+    },
+    /* o INÍCIO EFETIVO do alvo (I13): no plano, o da obra; no orçamento, o
+       campo Início (params.dataInicio) — null = "hoje" (flutuante) */
+    _cronoInicioEfetivo: function (alvo) {
+      if (!alvo) return null;
+      if (alvo.tipo === "plano") return alvo.inicioObra || this._cronoInicioObra(alvo.obra);
+      var p = alvo.cron && alvo.cron.params, s = p && p.dataInicio;
+      return (typeof s === "string" && /^\d{4}-\d{2}-\d{2}/.test(s)) ? s.slice(0, 10) : null;
+    },
+    _cronoKB: function (b) { return String(Math.round((Number(b) || 0) / 102.4) / 10).replace(".", ","); },
+    _CRONO_TETO_FUNCOES: [["rede", "tipos de ligação e restrições (TT/IT/datas)"], ["cal", "calendários das frentes"], ["extras", "tarefas sem preço"],
+      ["sombra", "datas guardadas para aparelhos de versão anterior"], ["textosIA", "textos da IA"], ["origemIA", "origem da IA nas ligações e equipes"],
+      ["mapas1281", "durações, dependências e demais mapas do cronograma"]],
+    /* "o que mais ocupa", em texto: as partes com bytes, da maior para a menor */
+    _cronoTetoOcupa: function (teto) {
+      var pf = (teto && teto.porFuncao) || {}, self = this;
+      var l = this._CRONO_TETO_FUNCOES.filter(function (f) { return (pf[f[0]] || 0) > 0; })
+        .sort(function (a, b) { return (pf[b[0]] || 0) - (pf[a[0]] || 0); });
+      return l.map(function (f) { return f[1] + " " + self._cronoKB(pf[f[0]]) + " KB"; }).join(" · ");
+    },
+    _cronoTetoPortaTexto: function (alvo, teto, porta) {
+      var orcNum = (alvo && alvo.orc && alvo.orc.numero) ? String(alvo.orc.numero) : "de origem";
+      if (porta.id === "marca-ia")
+        return { rotulo: "Guardar no plano só a marca da IA",
+          texto: (porta.marcados || 0) + " texto(s) da IA ficam só no orçamento " + orcNum + "; a tela continua mostrando cada um, com a origem. Os " +
+            (porta.soNoPlano || 0) + " texto(s) que só existem neste plano continuam aqui." };
+      if (porta.id === "sem-origem-ia")
+        return { rotulo: "Não guardar no plano quem definiu cada ligação e equipe",
+          texto: "A IA passa a tratar essas " + (porta.ligacoes || 0) + " ligações e equipes como decididas por alguém e não as troca sem você marcar; o orçamento guarda a origem das dele." +
+            (porta.aplica.indexOf("marca-ia") > -1 ? " Junto: " + (porta.marcados || 0) + " texto(s) da IA iguais aos do orçamento ficam só lá." : "") };
+      if (porta.id === "sem-sombra")
+        return { rotulo: "Gravar sem as datas para aparelhos de versão anterior nesta obra",
+          texto: "Aparelhos com a versão 1.2.81 vão mostrar outras datas nesta obra até serem atualizados." +
+            (porta.aplica.length > 1 ? " Junto: os textos da IA iguais aos do orçamento ficam só lá, e a origem das ligações da IA não fica no plano." : "") };
+      return { rotulo: "Aceitar que aparelhos 1.2.81 não iniciem o plano desta obra",
+        texto: "Nos aparelhos com a versão 1.2.81, “Iniciar plano de execução” e “Reiniciar a partir deste orçamento” vão recusar com “Avise o suporte”. Nada se perde, e as datas que eles mostram continuam as mesmas. Atualizar o app resolve." };
+    },
+    /* O RECADO (e as portas). Devolve o texto principal (as suítes o leem);
+       `opts.semModal` só monta. */
+    _cronoTetoRecado: function (alvo, teto, opts) {
+      opts = opts || {};
+      if (!teto) return "";
+      var self = this, E = (typeof Util !== "undefined" && Util.esc) ? Util.esc : function (s) { return String(s); };
+      var plano = (alvo && alvo.tipo === "plano") || teto.alvo === "plano";
+      var nome = plano ? String((alvo && alvo.obra && alvo.obra.nome) || "") : String((alvo && alvo.orc && (alvo.orc.numero || alvo.orc.nome)) || "");
+      var txt = plano
+        ? "O plano de execução da obra " + nome + " ficaria com " + this._cronoKB(teto.bytes) + " KB; o limite é " + this._cronoKB(teto.teto) +
+          " KB, porque o planejamento de todas as obras sincroniza num documento só. Nada foi gravado."
+        : "O cronograma do orçamento " + nome + " ficaria com " + this._cronoKB(teto.bytes) + " KB no plano que um aparelho com a versão 1.2.81 montaria a partir dele; o limite é " +
+          this._cronoKB(teto.teto) + " KB (a 1.2.81 recusa iniciar o plano de execução acima disso, porque o planejamento de todas as obras sincroniza num documento só). Nada foi gravado.";
+      var ocupa = this._cronoTetoOcupa(teto);
+      var ds = ' data-alvo="' + (plano ? "plano" : "orc") + '" data-obra="' + E(String((alvo && alvo.obra && alvo.obra.id) || (alvo && alvo.plano && alvo.plano.obraId) || "")) +
+        '" data-orc="' + E(String((alvo && alvo.orc && alvo.orc.id) || "")) + '"';
+      var html = '<p>' + E(txt) + '</p>' + (ocupa ? '<p class="muted">O que mais ocupa: ' + E(ocupa) + '.</p>' : "");
+      var portas = teto.portas || [];
+      if (portas.length) {
+        portas.forEach(function (p) {
+          var pt = self._cronoTetoPortaTexto(alvo, teto, p);
+          html += '<div class="card" style="margin:8px 0;padding:10px"><button class="btn primary sm" data-acao="crono-teto-' + E(p.id) + '"' + ds +
+            ' data-portas="' + E(p.aplica.join(",")) + '" data-libera="' + E(String(p.libera || 0)) + '">' + E(pt.rotulo) + '</button>' +
+            '<p class="muted" style="margin:6px 0 0">' + E(pt.texto) + ' Libera ' + self._cronoKB(p.libera) + ' KB (fica com ' + self._cronoKB(p.bytes) +
+            ' KB). Depois, refaça a operação.</p></div>';
+        });
+      } else {
+        html += '<p>Nenhuma mudança de forma resolve sozinha: escolha o que desfazer do que foi criado em [Ver o que ocupa espaço].</p>';
+      }
+      html += '<p><button class="btn ghost sm" data-acao="crono-teto-ver"' + ds + '>Ver o que ocupa espaço</button></p>';
+      this._cronoTetoUltimo = { alvo: alvo, teto: teto, texto: txt };
+      if (!opts.semModal && typeof UI !== "undefined" && UI.modal) {
+        UI.modal("Limite de espaço do cronograma", html, [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+      }
+      return txt + (ocupa ? " O que mais ocupa: " + ocupa + "." : "");
+    },
+    /* as guardas de TODA porta, na função (nunca só no botão): licença,
+       janela destacada sem trava e permissão da obra */
+    _cronoTetoGuardas: function (ds) {
+      if (this._trialBloqueado()) {
+        var stT = (typeof Licenca !== "undefined" && Licenca.status) ? (Licenca.status() || {}) : {};
+        if (stT.suspensa && this._avisoTrial) this._avisoTrial();
+        else UI.toast("Modo demonstração — para mudar a forma do cronograma, ative sua licença (🔑). Nada foi gravado.", "erro");
+        return false;
+      }
+      if (typeof Janelas !== "undefined" && Janelas.podeEditar && !Janelas.podeEditar(Store)) { UI.toast("Esta janela não grava o cronograma — use a janela principal. Nada foi gravado.", "erro"); return false; }
+      if (ds.alvo === "plano") {
+        var np = this._cronoSemPermissao(ds.obra);
+        if (np) { UI.toast(np + " Nada foi gravado.", "erro"); return false; }
+      }
+      return true;
+    },
+    _cronoTetoAplicar: function (ds, portas) {
+      var self = this;
+      if (!this._cronoTetoGuardas(ds)) return true;
+      if (ds.alvo !== "plano") return this._cronoTetoSemIniciar(ds);
+      var c = this._cronoObraCtx(ds.obra);
+      if (c.erro) { UI.toast(c.erro, "erro"); return true; }
+      if (c.lista === null) { UI.toast(this._cronoSemLista(c, "mudar a forma do plano da obra", "Não consegui ler o planejamento das obras deste aparelho — nada foi gravado. Recarregue o app."), "erro"); return true; }
+      if (!c.plano) { UI.toast("Esta obra não tem plano de execução — nada a mudar. Nada foi gravado.", "erro"); return true; }
+      var faz = function () {
+        var pl = c.plano, novo = {}, k;
+        for (k in pl) if (Object.prototype.hasOwnProperty.call(pl, k)) novo[k] = pl[k];
+        var ia = CronoBase.normalizarIaResumo(pl.iaResumo) || {};
+        if (portas.indexOf("marca-ia") > -1) ia.texto = 1;
+        if (portas.indexOf("sem-origem-ia") > -1) ia.origem = 1;
+        ia.em = Util.agoraISO().slice(0, 10);
+        if (ia.texto || ia.origem) novo.iaResumo = ia;
+        var antes = CronoBase.bytesPlano(pl);
+        var cronOrc = (c.orc && String(c.orc.id) === String(pl.orcamentoId)) ? c.orc.cronograma : null;
+        if (portas.indexOf("sem-sombra") > -1) {
+          novo.cronograma = JSON.parse(JSON.stringify(pl.cronograma || {}));
+          if (!novo.cronograma.mat || typeof novo.cronograma.mat !== "object") novo.cronograma.mat = { v: 1 };
+          novo.cronograma.mat.semSombra = true;
+          var oP = c.orc ? CronoBase.orcDaObra(c.orc, { plano: novo, avanco: CronoBase.avanco ? CronoBase.avanco(c.lista, pl.obraId) : null }, pl.obraId) : null;
+          if (oP) { try { Cronograma.materializarCrono(oP, { inicioEfetivo: self._cronoInicioObra(c.obra) }); } catch (eM) {} }
+        }
+        var r = CronoBase.salvarPlano(c.lista, novo, { agora: Util.agoraISO(), por: self._cronoPor(), cronOrc: cronOrc });
+        if (!r.ok) { UI.toast("A forma do plano da obra " + String(c.obra.nome || "") + " NÃO foi mudada: " + r.erro, "erro"); return; }
+        if (!Store.salvarVarios(c.eid, CronoBase.ENTIDADE, r.gravar, true)) {
+          UI.toast(self._cronoPorQueRecusou(c.eid, CronoBase.ENTIDADE, "mudar a forma do plano da obra " + String(c.obra.nome || "")) ||
+            ("A forma do plano NÃO foi mudada — " + self._CRONO_RECUSA_ARMAZ + ". Nada mudou."), "erro");
+          return;
+        }
+        var depois = CronoBase.bytesPlano(r.plano);
+        if (UI.fecharModal) UI.fecharModal();
+        UI.toast("Plano da obra " + String(c.obra.nome || "") + ": liberou " + self._cronoKB(antes - depois) + " KB (" + self._cronoKB(antes) + " → " + self._cronoKB(depois) +
+          " KB). Agora refaça a operação." + (r.msg ? " " + r.msg : ""), "ok");
+        try { self.render(); } catch (eR) {}
+      };
+      if (portas.indexOf("sem-sombra") > -1) {
+        UI.modal("Gravar sem as datas para aparelhos de versão anterior",
+          '<p>Aparelhos com a versão 1.2.81 vão mostrar <b>outras datas</b> nesta obra até serem atualizados. Nesta versão, as datas não mudam. Confirma?</p>',
+          [{ texto: "Voltar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+            { texto: "Gravar sem as datas", classe: "primary", onClick: function () { UI.fecharModal(); faz(); } }]);
+        return true;
+      }
+      faz();
+      return true;
+    },
+    /* a porta D-INICIAR-1281 (O30): só no orçamento aberto e não aprovado, com
+       confirmação DIGITADA (é uma recusa que os aparelhos antigos vão ver) */
+    _cronoTetoSemIniciar: function (ds) {
+      var self = this, o = this.orcAtual;
+      if (!o || String(o.id) !== String(ds.orc || "")) { UI.toast("Abra o orçamento para escolher esta porta. Nada foi gravado.", "erro"); return true; }
+      if (typeof Orcamento !== "undefined" && Orcamento.travadoPorAprovacao && Orcamento.travadoPorAprovacao(o)) {
+        UI.toast("Orçamento aprovado: ele não muda. Nada foi gravado.", "erro"); return true;
+      }
+      var txt = this._cronoTetoPortaTexto(null, null, { id: "sem-iniciar1281", aplica: [] }).texto;
+      UI.modal("Aceitar que aparelhos 1.2.81 não iniciem o plano desta obra",
+        '<p>' + Util.esc(txt) + '</p><p>Para confirmar, digite <b>ACEITO</b>:</p><input id="crono-teto-conf" class="input" autocomplete="off">',
+        [{ texto: "Voltar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Aceitar", classe: "primary", onClick: function () {
+            var v = (UI.el && UI.el("crono-teto-conf")) ? String(UI.el("crono-teto-conf").value || "").trim().toUpperCase() : "";
+            if (v !== "ACEITO") { UI.toast("Digite ACEITO para confirmar. Nada foi gravado.", "erro"); return; }
+            UI.fecharModal();
+            var cr = o.cronograma;
+            if (!cr || typeof cr !== "object") { UI.toast("Este orçamento não tem cronograma. Nada foi gravado.", "erro"); return; }
+            var antes = (typeof CronoBase !== "undefined") ? CronoBase.medirIniciar(o, null, { regua: "1281" }) : null;
+            if (!cr.mat || typeof cr.mat !== "object" || Array.isArray(cr.mat)) cr.mat = { v: 1 };
+            cr.mat.semIniciar1281 = 1;
+            if (!self.persistir()) { delete cr.mat.semIniciar1281; return; }
+            var dep = CronoBase.medirIniciar(o, null, { regua: "nova", iaResumo: { texto: 1 } });
+            UI.toast("Aceito: aparelhos com a versão 1.2.81 não vão iniciar o plano desta obra até serem atualizados. A medida do cronograma passou de " +
+              self._cronoKB(antes && antes.bytes) + " para " + self._cronoKB(dep && dep.bytes) + " KB. Agora refaça a operação.", "ok");
+            try { self.render(); } catch (eR) {}
+          } }]);
+      return true;
+    },
+    /* [Ver o que ocupa espaço]: a lista por função e, em cada função NOVA, o
+       que desfazer do que a pessoa criou — nunca apagar dado da 1.2.81 */
+    _cronoTetoVer: function (ds) {
+      var ult = this._cronoTetoUltimo, teto = ult && ult.teto, self = this;
+      if (!teto) { UI.toast("Refaça a operação para medir o espaço de novo.", "info"); return true; }
+      var pf = teto.porFuncao || {}, cr = (ult.alvo && ult.alvo.cron) || {};
+      var nRede = cr.rede && typeof cr.rede === "object" ? Object.keys(cr.rede.etapas || {}).length + Object.keys(cr.rede.folhas || {}).length + Object.keys(cr.rede.datas || {}).length : 0;
+      var nCal = cr.cal && cr.cal.de && typeof cr.cal.de === "object" ? Object.keys(cr.cal.de).length : 0;
+      var nX = Array.isArray(cr.extras) ? cr.extras.length : 0;
+      var linhas = this._CRONO_TETO_FUNCOES.map(function (f) {
+        var desf = "";
+        if (f[0] === "rede" && nRede) desf = nRede + " ligação(ões) e restrição(ões) novas — solte as ligações TT/IT e as datas novas que não precisar (coluna Depende de e cartão da barra).";
+        else if (f[0] === "cal" && nCal) desf = nCal + " linha(s) em calendário próprio — volte ao calendário da obra as que não precisarem (coluna Calendário).";
+        else if (f[0] === "extras" && nX) desf = nX + " tarefa(s) sem preço — exclua as que já passaram (tecla Del na linha T).";
+        else if (f[0] === "mapas1281") desf = "O que a versão 1.2.81 já grava: não se apaga por aqui.";
+        return '<tr><td>' + Util.esc(f[1]) + '</td><td style="text-align:right">' + self._cronoKB(pf[f[0]] || 0) + ' KB</td><td class="muted">' + Util.esc(desf) + '</td></tr>';
+      }).join("");
+      UI.modal("O que ocupa o espaço do cronograma",
+        '<p>Medido agora: ' + this._cronoKB(teto.bytes) + ' KB de ' + this._cronoKB(teto.teto) + ' KB.</p><table class="tabela"><thead><tr><th>Parte</th><th>Tamanho</th><th>O que dá para desfazer</th></tr></thead><tbody>' +
+        linhas + '</tbody></table>',
+        [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+      void ds;
+      return true;
+    },
+    _acoesCrono_teto: {
+      "crono-teto-marca-ia": function (t) { return this._cronoTetoAplicar(t.dataset || {}, String((t.dataset && t.dataset.portas) || "marca-ia").split(",")); },
+      "crono-teto-sem-origem-ia": function (t) { return this._cronoTetoAplicar(t.dataset || {}, String((t.dataset && t.dataset.portas) || "sem-origem-ia").split(",")); },
+      "crono-teto-sem-sombra": function (t) { return this._cronoTetoAplicar(t.dataset || {}, String((t.dataset && t.dataset.portas) || "sem-sombra").split(",")); },
+      "crono-teto-sem-iniciar1281": function (t) { var ds = t.dataset || {}; if (!this._cronoTetoGuardas(ds)) return true; return this._cronoTetoSemIniciar(ds); },
+      "crono-teto-ver": function (t) { return this._cronoTetoVer(t.dataset || {}); }
+    },
+
+    /* ------------------------------------------------------------------
+       O RECADO DA PROJEÇÃO (planejador 1A; espec §1.3.1, §1.11, §2.6) — o
+       mesmo no salvar do orçamento e no do plano.
+       - `pendente: "sem-inicio"` (I13, `D-PENDENTE`): sem o início fixo, as
+         funções de data não ficam gravadas para a versão anterior — diz, e
+         diz onde está a porta.
+       - divergência FORA do catálogo: "não consegui garantir" (vermelho);
+         dentro do catálogo, a lista curta dos códigos (informativo).
+       - o que um aparelho com versão anterior mudou (§1.3.1): o quadro com
+         as PORTAS DE ESCOLHA — elas só resolvem `mat.pend`, nunca apagam o
+         valor planejado sem a pessoa ver.
+       ⚠ Recado que mente é pior que recado nenhum: sem conferência (motor
+       desligado, formato mais novo) nada é afirmado.
+       ------------------------------------------------------------------ */
+    _cronoRecadoProjecao: function (alvo, m) {
+      if (!m || typeof Cronograma === "undefined") return;
+      var CAT = Cronograma.CATALOGO_DIV || [], cods = [], self = this;
+      (m.divergencias || []).forEach(function (x) { if (x && x.cod && cods.indexOf(x.cod) < 0) cods.push(x.cod); });
+      var fora = cods.filter(function (c) { return CAT.indexOf(c) < 0; });
+      var ondeNome = alvo && alvo.tipo === "plano" ? "o plano de execução da obra" : "o cronograma deste orçamento";
+      if (m.pendente === "sem-inicio") {
+        UI.toast("Sem o início fixo, " + ondeNome + " foi gravado SEM as datas das tarefas sem preço, dos calendários, do “o mais tarde possível” e do avanço " +
+          "para aparelhos com versão anterior do app — eles mostram outras datas até o início ser fixado. Use [Fixar início] na linha do prazo.", "erro", 12000);
+      } else if (fora.length) {
+        UI.toast("Não consegui garantir que aparelhos com versão anterior do app vejam as mesmas datas deste cronograma (" + fora.join(", ") +
+          "). Confira o prazo num aparelho atualizado antes de enviar a proposta, e avise o suporte da RA com este código.", "erro", 12000);
+      } else if (cods.length) {
+        var TXT = { "D-FOLHA-INI": "o início desenhado de subetapas empurradas (o fim é o mesmo)", "D-SEM-SOMBRA": "as datas das subetapas (gravado sem elas, por escolha)",
+          "D-VAO0": "frente que só trabalha em dia sem obra aparece como marco",
+          /* ⚠ este não muda data nenhuma — veja o bloco do `ehData`, logo abaixo */
+          "D-ESPERA-AVANCO": "a espera mostrada no “Depende de” de uma tarefa que começou antes do que a rede permitia" };
+        var ds = cods.map(function (c) { return TXT[c] || c; });
+        /* ⚠ DIFERENÇA QUE NÃO É DATA NÃO FALA DE DATA (§1.11, 21/09/2026).
+           ROTEIRO DO DEFEITO: a projeção do avanço rebaixa de propósito a
+           espera dos elos que chegam a uma tarefa que começou fora de
+           sequência (o custo está declarado em js/cronograma.js). As DATAS
+           ficam iguais nas duas versões — medido na obra do galpão: 82 dias
+           úteis e 25/11/2026 no motor 1.2.81 REAL e nesta versão. Enquanto
+           essa diferença não teve código, toda obra com avanço lançado ouvia,
+           a cada salvar, "não consegui garantir que … vejam as mesmas datas
+           (sem-codigo) … avise o suporte da RA". Recado que mente é pior que
+           recado nenhum: a pessoa liga para o suporte por causa de datas que
+           não mudaram, e no salvar seguinte ouve tudo de novo. */
+        var ehData = !Cronograma.divEhData || Cronograma.divEhData(cods);
+        if (this._cronoRecadoCodsVisto !== cods.join(",")) {
+          this._cronoRecadoCodsVisto = cods.join(",");
+          UI.toast(ehData
+            ? "Aparelhos com versão anterior do app veem este cronograma com uma diferença declarada: " + ds.join("; ") + "."
+            : "Aparelhos com versão anterior do app veem as MESMAS datas deste cronograma. A única diferença declarada é de desenho: " + ds.join("; ") + ".", "info");
+        }
+      }
+      var esc = (m.leitura || []).filter(function (a) { return a && (a.tipo === "editado-versao-anterior" || a.tipo === "restricao-1281" || a.tipo === "limpeza-1281"); });
+      if (esc.length) { try { self._cronoCompatModal(alvo, esc); } catch (eM) {} }
+    },
+    /* o quadro das alterações feitas num aparelho com versão anterior, com
+       as portas de escolha (§1.3.1). Cada porta grava só a escolha. */
+    _cronoCompatModal: function (alvo, avisos) {
+      var self = this, nomes = {}, o = alvo && alvo.orc;
+      ((o && o.etapas) || []).forEach(function (e, i) {
+        nomes[e.id] = "etapa " + (i + 1) + " " + String(e.nome || "").slice(0, 40);
+        (e.subetapas || []).forEach(function (s) { if (s) nomes[s.id] = "subetapa " + String(s.nome || "").slice(0, 40); });
+      });
+      function dmaS(s) { var p = String(s || "").split("-"); return p.length === 3 ? p[2] + "/" + p[1] + "/" + p[0] : String(s || ""); }
+      function botao(id, esc, txt) { return '<button class="btn sm" data-acao="crono-compat-escolher" data-id="' + Util.esc(id) + '" data-escolha="' + esc + '">' + Util.esc(txt) + '</button>'; }
+      var NOMER = { nia: "não iniciar antes de", tae: "terminar até" };
+      var linhas = avisos.map(function (a) {
+        var quem = nomes[a.id] || "tarefa";
+        if (a.tipo === "limpeza-1281") return '<li>' + Util.esc(a.msg) + '</li>';
+        if (a.tipo === "restricao-1281") {
+          var u = a.u ? "“" + (NOMER[a.u.tipo] || a.u.tipo) + " " + dmaS(a.u.data) + "”" : "a restrição";
+          return '<li>A restrição ' + Util.esc(u) + ' da ' + Util.esc(quem) + ' foi ' + (a.acao === "solta" ? "solta" : "substituída") +
+            ' num aparelho de versão anterior. ' + botao(a.id, "restaurar", "Restaurar") + ' ' + botao(a.id, "descartar", "Descartar") + '</li>';
+        }
+        var plan = a.planejado != null ? a.planejado : "a estimativa";
+        var grav = a.gravado != null ? a.gravado : null;
+        var btns;
+        if (a.estimativa) btns = botao(a.id, "estimativa", "Usar a estimativa") + ' ' + botao(a.id, "manter", "Manter " + plan);
+        else if (a.marca === "ia" || a.marca === "exec") btns = botao(a.id, "manter", "Voltar à sua duração (" + plan + ")") + ' ' + botao(a.id, "usar", "Aceitar " + grav + " (" + (a.marca === "ia" ? "IA" : "Execução") + ")");
+        else btns = botao(a.id, "usar", "Usar " + grav + " como planejado") + ' ' + botao(a.id, "manter", "Manter " + plan);
+        return '<li>A duração da ' + Util.esc(quem) + ' foi alterada num aparelho de versão anterior (' + Util.esc(String(plan)) + ' → ' +
+          Util.esc(a.estimativa ? "estimativa" : String(grav)) + '). ' + btns + '</li>';
+      }).join("");
+      UI.modal("Alterações feitas num aparelho com versão anterior",
+        '<p style="margin-top:0">Até você escolher, vale o planejado desta versão — nada do que o outro aparelho gravou se perde.</p><ul style="margin:6px 0 0 18px">' + linhas + '</ul>',
+        [{ texto: "Decidir depois", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+      void self;
+    },
+    _cronoEscolher: function (ds) {
+      var alvo = null;
+      try { alvo = this._cronoAlvo(); } catch (eA) { alvo = null; }
+      if (!alvo || typeof Cronograma === "undefined" || !Cronograma.escolherPendencia) { UI.toast("Não consegui identificar o cronograma desta escolha — nada foi gravado.", "erro"); return true; }
+      if (alvo.travado) { this._cronoTravado(alvo); return true; }
+      if (this._trialBloqueado()) { this._avisoTrial(); return true; }
+      if (alvo.tipo === "plano") { var np = this._cronoSemPermissao(alvo.plano && alvo.plano.obraId); if (np) { UI.toast(np + " Nada foi gravado.", "erro"); return true; } }
+      var bk = JSON.stringify(alvo.cron);
+      var r = Cronograma.escolherPendencia(alvo.cron, String(ds.id || ""), String(ds.escolha || ""), { orc: alvo.orc });
+      if (!r.ok) { UI.toast(r.erro + " Nada foi gravado.", "erro"); return true; }
+      if (!alvo.salvar({ rotulo: "escolha de compatibilidade" })) {
+        this._iaRestaurar(alvo.cron, bk);
+        return true;
+      }
+      UI.fecharModal();
+      UI.toast("Escolha gravada: " + r.recado, "ok");
+      try { this.render(); } catch (eR) {}
+      return true;
+    },
+    _acoesCrono_compat: {
+      "crono-compat-escolher": function (t) { return this._cronoEscolher(t.dataset || {}); }
+    },
+
+    /* ------------------------------------------------------------------
+       A PORTA [Fixar início em dd/mm] (I13, §2.8) — uma só, com dono na 1A.
+       A 2A a mostra na recusa de ligar tarefa sem preço, atribuir
+       calendário e marcar "o mais tarde possível"; a 2B, no lançar avanço e
+       no modal de calendário. No orçamento grava `params.dataInicio`; no
+       plano, `obra.inicio` (e o plano é regravado com o recado dos dois
+       prazos). `sugestao` = "AAAA-MM-DD" (null = hoje).
+       ------------------------------------------------------------------ */
+    _cronoPortaInicioHtml: function (alvo, sugestao, motivo) {
+      var d = (typeof sugestao === "string" && /^\d{4}-\d{2}-\d{2}$/.test(sugestao)) ? sugestao : (typeof Cronograma !== "undefined" && Cronograma._ch ? Cronograma._ch(new Date()) : new Date().toISOString().slice(0, 10));
+      var br = d.slice(8, 10) + "/" + d.slice(5, 7) + "/" + d.slice(0, 4);
+      return '<div class="crono-porta-inicio" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+        '<span>' + Util.esc(motivo || "Para esta função, o cronograma precisa de data de início fixa — sem ela, aparelhos com a versão anterior calculariam outra data a cada dia.") + '</span>' +
+        '<button class="btn sm" data-acao="crono-inicio-fixar" data-data="' + d + '" data-alvo="' + Util.esc((alvo && alvo.tipo) || "orc") + '">Fixar início em ' + br + '</button></div>';
+    },
+    _cronoFixarInicio: function (ds) {
+      var data = String(ds.data || "");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) { UI.toast("Data de início inválida — nada foi gravado.", "erro"); return true; }
+      var alvo = null;
+      try { alvo = this._cronoAlvo(); } catch (eA) { alvo = null; }
+      if (!alvo) { UI.toast("Não consegui identificar o cronograma — nada foi gravado.", "erro"); return true; }
+      if (this._trialBloqueado()) { this._avisoTrial(); return true; }
+      if (alvo.tipo === "plano") {
+        var obra = alvo.obra;
+        var np = this._cronoSemPermissao(obra && obra.id);
+        if (np) { UI.toast(np + " O início da obra não foi gravado.", "erro"); return true; }
+        return this._cronoFixarInicioObra(obra && obra.id, data);
+      }
+      if (alvo.travado) { this._cronoTravado(alvo); return true; }
+      var bk = JSON.stringify(alvo.cron);
+      if (!alvo.cron.params || typeof alvo.cron.params !== "object" || Array.isArray(alvo.cron.params)) alvo.cron.params = {};
+      alvo.cron.params.dataInicio = data;
+      if (!alvo.salvar({ rotulo: "início fixado" })) { this._iaRestaurar(alvo.cron, bk); return true; }
+      // o quadro que abriu a porta (recusa da digitação, da aprovação) já cumpriu o papel
+      try { if (UI.fecharModal) UI.fecharModal(); } catch (eF) {}
+      UI.toast("Início do cronograma fixado em " + data.slice(8, 10) + "/" + data.slice(5, 7) + "/" + data.slice(0, 4) + ". Agora refaça a operação.", "ok");
+      try { this.render(); } catch (eR) {}
+      return true;
+    },
+    /* o início da OBRA (o do plano) pelo mesmo caminho do cadastro da obra */
+    _cronoFixarInicioObra: function (obraId, data) {
+      var eid = Auth.empresaId(), obra = null;
+      try { obra = (Store.listar(eid, "obras") || []).filter(function (x) { return x && x.id === obraId; })[0] || null; } catch (eL) { obra = null; }
+      if (!obra) { UI.toast("Não achei a obra deste plano — o início não foi gravado.", "erro"); return true; }
+      var antes = obra.inicio || null, nova = {}, k;
+      for (k in obra) if (Object.prototype.hasOwnProperty.call(obra, k)) nova[k] = obra[k];
+      nova.inicio = data;
+      var g = Store.salvar(eid, "obras", nova);
+      if (g === null || g === false) { UI.toast("O início da obra NÃO foi gravado — o armazenamento deste aparelho recusou.", "erro"); return true; }
+      try { if (UI.fecharModal) UI.fecharModal(); } catch (eF) {}
+      this._cronoInicioObraMudou(nova, antes);
+      try { this.render(); } catch (eR) {}
+      return true;
+    },
+    /* A OBRA MUDOU DE INÍCIO (o cadastro da obra, a porta [Fixar início]):
+       o plano com extensão é regravado com o início novo — os pisos de data
+       absoluta da versão anterior acompanham —, com o recado dos dois prazos
+       (§2.9). Plano sem extensão: nada a regravar (a 1.2.81 recalcula com o
+       início que ela lê da obra). */
+    _cronoInicioObraMudou: function (obra, inicioAntes) {
+      if (!obra || typeof CronoBase === "undefined" || typeof Cronograma === "undefined") return false;
+      var eid = Auth.empresaId(), lp = this._cronoLerPlanejamento(eid), lista = lp.lista;
+      if (!lista) return false;
+      var pl = CronoBase.plano(lista, obra.id);
+      if (!pl) return false;
+      var orc = null;
+      try { orc = Store.obterOrcamento(eid, pl.orcamentoId); } catch (eO) { orc = null; }
+      if (!orc) return false;
+      var oP = CronoBase.orcDaObra(orc, lista, obra.id);
+      if (!oP || !Cronograma._ext(oP)) return false;
+      var antes = null, ini = this._cronoInicioObra(obra);
+      try {
+        var oV = CronoBase.orcDaObra(orc, lista, obra.id);
+        oV.cronograma = JSON.parse(JSON.stringify(oV.cronograma));
+        if (!oV.cronograma.params || typeof oV.cronograma.params !== "object") oV.cronograma.params = {};
+        oV.cronograma.params.dataInicio = inicioAntes || null;
+        antes = Cronograma.estimar(oV);
+      } catch (eV) { antes = null; }
+      if (!oP.cronograma.params || typeof oP.cronograma.params !== "object" || Array.isArray(oP.cronograma.params)) oP.cronograma.params = {};
+      oP.cronograma.params.dataInicio = ini;
+      /* o recado dos DOIS prazos (§2.9), no lugar do "passou de N para N" do
+         salvar (o prazo em dias úteis não muda com o início; o término, sim) */
+      var gravou = this._cronoSalvarPlano(oP, pl, obra, { cronoAntes: antes, silencioso: true });
+      if (gravou) {
+        var dep = null;
+        try { dep = Cronograma.estimar(oP); } catch (eD) { dep = null; }
+        var br2 = function (d) { return ("0" + d.getDate()).slice(-2) + "/" + ("0" + (d.getMonth() + 1)).slice(-2) + "/" + d.getFullYear(); };
+        var dma2 = function (s) { s = String(s || ""); return s.slice(8, 10) + "/" + s.slice(5, 7) + "/" + s.slice(0, 4); };
+        if (dep && dep.dataFim) {
+          UI.toast("Início da obra " + String(obra.nome || "") + (inicioAntes ? " mudou de " + dma2(inicioAntes) + " para " + dma2(ini) : " fixado em " + dma2(ini)) +
+            ": o plano de execução foi regravado e termina em " + br2(dep.dataFim) + " (" + dep.totalDias + " dias úteis)" +
+            (antes && antes.dataFim && inicioAntes ? "; antes terminava em " + br2(antes.dataFim) + " (" + antes.totalDias + " dias úteis)" : "") + ".", "info");
+        }
+      }
+      return gravou;
+    },
+    /* o plano de execução desta obra tem função que precisa do início fixo?
+       (o cadastro da obra pergunta antes de deixar apagar o início — I13).
+       Leitura que falha responde "não sei" = false: a recusa só vale com a
+       extensão provada; o salvar do plano, depois, ainda diz D-PENDENTE. */
+    _cronoPlanoPrecisaInicio: function (obraId) {
+      if (!obraId || typeof CronoBase === "undefined" || typeof Cronograma === "undefined" || !Cronograma._ext) return false;
+      try {
+        var eid = Auth.empresaId(), lp = this._cronoLerPlanejamento(eid), lista = lp.lista;
+        if (!lista) return false;
+        var pl = CronoBase.plano(lista, obraId);
+        if (!pl) return false;
+        var orc = Store.obterOrcamento(eid, pl.orcamentoId);
+        var oP = orc ? CronoBase.orcDaObra(orc, lista, obraId) : null;
+        var X = oP ? Cronograma._ext(oP) : null;
+        return !!(X && X.precisaInicio);
+      } catch (e) { return false; }
+    },
+    _acoesCrono_inicio: {
+      "crono-inicio-fixar": function (t) { return this._cronoFixarInicio(t.dataset || {}); }
+    },
+    /* o início foi APAGADO com função que precisa dele (I13): recusa, e diz
+       as duas saídas. `valorAntes` = o início de antes. */
+    _cronoRecusaSemInicio: function (valorAntes, portas) {
+      function dma(s) { s = String(s || ""); return s.slice(8, 10) + "/" + s.slice(5, 7) + "/" + s.slice(0, 4); }
+      var br = valorAntes ? dma(valorAntes) : null;
+      var porque = "O início não pode ficar vazio: este cronograma tem tarefas sem preço, calendários, “o mais tarde possível” ou avanço lançado, que precisam de data fixa " +
+        "(sem ela, aparelhos com a versão anterior calculariam outra data a cada dia).";
+      /* ⚠ AS PORTAS DA §2.9 ([Manter dd/mm] e [Fixar em hoje]) só onde abrir um
+         quadro não destrói nada: na aba Cronograma. No cadastro da OBRA o
+         `UI.modal` trocaria o formulário aberto pelo quadro e a pessoa perderia
+         o que digitou — lá o campo volta sozinho e o recado diz as duas saídas. */
+      if (portas && typeof UI.modal === "function") {
+        var d0 = new Date(), hoje = d0.getFullYear() + "-" + ("0" + (d0.getMonth() + 1)).slice(-2) + "-" + ("0" + d0.getDate()).slice(-2);
+        UI.modal("O início não pode ficar vazio", "<p>" + Util.esc(porque) + " Nada foi gravado.</p>", [
+          { texto: br ? "Manter " + br : "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); if (portas.manter) portas.manter(); } },
+          { texto: "Fixar em hoje (" + dma(hoje) + ")", classe: "primary", onClick: function () { UI.fecharModal(); if (portas.hoje) portas.hoje(hoje); } }]);
+        return;
+      }
+      UI.toast(porque + (br ? " O campo voltou para " + br + "; para fixar em hoje, escolha a data de hoje e salve." : "") + " Nada foi gravado.", "erro", 12000);
+    },
+
+    /* ==================================================================
+       O AVANÇO LANÇADO — A GRAVAÇÃO (commit AVANÇO; espec §1.4, §2.9, O17,
+       e as emendas E-MC3 e E-MC4 da §3.9).
+
+       ⚠ GRAVA SÓ O REGISTRO DE AVANÇO, NUNCA O PLANO (O17). O merge do
+         `crono_obra` é por registro inteiro e o perdedor vira resumo: se o
+         aparelho que lança avanço regravasse o plano junto, o TT que o
+         escritório digitou em outro aparelho se perderia no conflito. O preço
+         é declarado: até o próximo salvar do plano, os aparelhos 1.2.81
+         mostram as datas do último salvar (`D-AVANCO-PENDENTE`), e a porta
+         [Atualizar as datas para aparelhos de versão anterior] fecha a
+         janela quando a pessoa quiser.
+       ================================================================== */
+    _cronoGravarAvanco: function (alvo, rec, opts) {
+      opts = opts || {};
+      var self = this;
+      if (!alvo || !rec || typeof rec !== "object") return { ok: false, erro: "avanço sem alvo ou sem registro" };
+      if (typeof CronoBase === "undefined" || typeof CronoBase.salvarAvanco !== "function") return { ok: false, erro: "o módulo do planejamento não carregou" };
+      var obraId = String(alvo.obraId || (alvo.plano && alvo.plano.obraId) || "");
+      if (!obraId) return { ok: false, erro: "avanço sem obra" };
+      /* ---- as guardas, TODAS NA FUNÇÃO (achado 16 do AVANÇO) ----
+         Esconder o botão não é guarda: a ação chega pelo teclado, pelo
+         desfazer e pelo canal da medição, que não passam pela tela. */
+      if (typeof this._exigirLicenca === "function" && !this._exigirLicenca("plus")) return { ok: false, erro: "licenca" };
+      var np = this._cronoSemPermissao(obraId);
+      if (np) { if (!opts.semToast) UI.toast(np + " O avanço não foi gravado.", "erro"); return { ok: false, erro: np }; }
+      /* ⚠ `Janelas.podeEditar()` SEM O STORE DEVOLVE SEMPRE FALSE, e com isso
+         LANÇAR AVANÇO NUNCA FUNCIONAVA — nem na janela principal. A função
+         pergunta `Store.CAS_ATIVO === true` sobre o argumento que recebe
+         (js/janelas.js:105); chamada vazia, `!!(undefined && …)` é false e a
+         guarda fecha a porta para todo mundo. As duas fatias da Onda 2 bateram
+         nela no mesmo dia: a 2A pelo Gantt (toast "esta janela está só para
+         leitura" numa página recém-aberta, nenhum lançamento gravado,
+         e2e-crono-avanco-gantt) e a 2B pelo modal ([Gravar e reprogramar]
+         respondia o mesmo, nada ia ao disco, e a recusa era MUDA porque o
+         modal já tinha fechado).
+         ⚠ É O MESMO DEFEITO QUE A 1B JÁ TINHA ENCONTRADO E ESCRITO no
+         `_cronoBasesGuarda` ("chamada sem o Store devolve SEMPRE false";
+         roteiro: [Encerrar planejamento] respondia "Esta janela destacada só
+         mostra" na janela principal) — ele voltou aqui, e não reprova suíte de
+         unidade nenhuma, porque todas injetam um `Janelas` de bancada.
+         ⚠ E SÃO DUAS RECUSAS DIFERENTES, com duas saídas diferentes: quem diz
+         "esta janela é destacada" é `this._janela` (a rota lida no boot), como
+         no `_cronoBasesGuarda`; o `podeEditar` responde por app velho sem a
+         trava de duas janelas. Juntá-las mandaria quem está na janela
+         principal procurar uma janela principal que já é a dele. */
+      if (typeof Janelas !== "undefined" && Janelas && typeof Janelas.podeEditar === "function" &&
+        !Janelas.podeEditar(typeof Store !== "undefined" ? Store : null)) {
+        return { ok: false, erro: "esta versão do app não protege a edição do avanço em duas janelas — o avanço não foi gravado." };
+      }
+      if (this._janela) {
+        return { ok: false, erro: "esta janela destacada só mostra — lance o avanço na janela principal. Nada foi gravado." };
+      }
+      /* ⚠ INÍCIO FIXO (I13/O14): o avanço vira piso de data ABSOLUTA na
+         sombra. Com o início em "hoje", a 1.2.81 recalcularia amanhã com o
+         piso de hoje e mostraria outra data, calada. */
+      var obra = alvo.obra || (typeof Store !== "undefined" ? this._cronoObraDe(obraId) : null);
+      /* ⚠ FAIL-CLOSED, e não `if (obra && !obra.inicio)` (18/09/2026, achado
+         A4). Escrito com o `obra &&` na frente, a exigência do início fixo
+         PULAVA justamente quando o cadastro da obra não podia ser lido — que é
+         o caso em que ninguém sabe se o início está fixo. A guarda que se
+         desliga sozinha na dúvida não é guarda: ela só protege quando não
+         precisa. Sem o cadastro não dá para oferecer [Fixar o início em
+         dd/mm], então a porta é outra, e o recado diz qual. */
+      var semCadastro = !obra;
+      if (semCadastro || !obra.inicio) {
+        return { ok: false, obraId: obraId, portaInicio: !semCadastro,
+          erro: semCadastro
+            ? "não consegui ler o cadastro desta obra para conferir se o início está fixo, e o avanço lançado vira piso de data absoluta. Nada foi gravado. Abra a obra em Gestão de Obras, confirme a data de início e tente de novo."
+            : "para lançar avanço, fixe o início da obra" };
+      }
+      /* ---- O CARIMBO (crítica 1, achado 11) ----
+         Lido QUANDO A TELA ABRE, nunca no clique: entre abrir e clicar cabe
+         um sync inteiro, e o carimbo lido no clique já seria o do outro
+         aparelho — a trava passaria e o lançamento dele sumiria. */
+      var lista = this._cronoListaCrono(obraId);
+      var disco = CronoBase.avanco(lista, obraId);
+      var baseEm = null;
+      if (alvo.semTela) {
+        /* E-MC3: gravação SEM TELA (o canal da medição, na aprovação do
+           boletim). Não há abertura de tela para ter lido o carimbo, então
+           quem chama o leu na MESMA função e o passa aqui. Sem ele é erro de
+           programação: gravar sem carimbo nenhum é gravar por cima do que
+           outro aparelho acabou de lançar. */
+        if (opts.baseEm === undefined) return { ok: false, erro: "gravação de avanço sem tela exige opts.baseEm (erro de programação)", programacao: true };
+        baseEm = opts.baseEm;
+      } else {
+        var tela = this._cronoAvancoTela && this._cronoAvancoTela[obraId];
+        /* ⚠ FAIL-CLOSED: SEM CARIMBO-BASE NÃO SE GRAVA (18/09/2026, achado A4).
+           O último ramo era `disco ? disco.atualizadoEm : null`, e ele fazia a
+           comparação de baixo virar `disco.atualizadoEm !== disco.atualizadoEm`
+           — o disco contra ele mesmo. A trava NUNCA disparava: era fail-open,
+           e passava despercebida porque só o teste escreve
+           `_cronoAvancoTela` hoje (o escritor legítimo, `_cronoAvancoAbrir`, é
+           da 2B). Medido: tirando as duas linhas que a suíte usa para registrar
+           a tela, a gravação de "outro aparelho gravou entre abrir e clicar"
+           era ACEITA em vez de recusada com [Recarregar o avanço].
+           É a memória "guarda em campo interno cala a bancada": se a 2B
+           esquecer de registrar o carimbo na abertura, isto reprova alto, em
+           vez de deixar a trava desligada em silêncio. */
+        if (!tela && opts.baseEm === undefined) {
+          return { ok: false, programacao: true, obraId: obraId,
+            erro: "a tela do avanço não registrou o carimbo ao abrir (App._cronoAvancoTela) e nenhum opts.baseEm foi passado — sem carimbo-base a trava de gravação simultânea não existe. Nada foi gravado. Feche e reabra o avanço desta obra." };
+        }
+        baseEm = tela ? tela.baseEm : opts.baseEm;
+      }
+      var emDisco = disco ? disco.atualizadoEm : null;
+      if (String(baseEm || "") !== String(emDisco || "")) {
+        return { ok: false, erro: "o avanço desta obra foi alterado em outra janela ou aparelho desde que você abriu esta tela. Nada foi gravado.",
+          recarregar: true, obraId: obraId };
+      }
+      /* ---- O CARIMBO FRACO (E-MC4) ----
+         A gravação AUTOMÁTICA (o canal da medição) precisa PERDER para
+         qualquer edição humana feita depois da última marca de sync: o número
+         que uma pessoa digitou vale mais que o que o sistema deduziu. Por
+         isso o `atualizadoEm` sai 1 ms depois da marca, e não "agora". */
+      var sOpts = { agora: opts.agora, por: opts.por, numeroB: opts.numeroB };
+      if (opts.carimboFraco) {
+        var marca = null;
+        try {
+          var eid = Auth.empresaId();
+          var marcas = (typeof Nuvem !== "undefined" && Nuvem && typeof Nuvem._marcasDe === "function") ? Nuvem._marcasDe(eid, CronoBase.ENTIDADE) : null;
+          marca = (marcas && marcas[rec.id]) || null;
+        } catch (eM) { marca = null; }
+        var base = Math.max(Date.parse(emDisco || 0) || 0, Date.parse(marca || 0) || 0);
+        sOpts.carimbo = new Date(base + 1).toISOString();
+      }
+      /* ⚠ A FOTO "ANTES" SAI AQUI, COM O AVANÇO AINDA ANTIGO (achado da 2B,
+         21/09/2026). Sem ela, o `_cronoDepoisDeSalvar` recebia `null, null` e
+         o `CronoPilha.empilhar` voltava na primeira linha (`antes == null`):
+         a pilha nunca ganhava o nível do avanço, e [Desfazer] logo depois de
+         lançar respondia "Nada para desfazer nesta janela" — com o avanço já
+         no disco. Medido na e2e: pilha com 0 estados depois de gravar 17
+         tarefas. A foto inclui o registro do avanço (`alvo.avancoRec`, ver
+         `_cronoFoto`), que é o que o `alvo.restaurar` usa para decidir entre
+         voltar só o plano ou os dois encadeados.
+         ⚠ SEM TELA não empilha: não há janela para desfazer, e o gancho já
+         trata `opts.semTela`. */
+      var fAntes = null;
+      if (!alvo.semTela && typeof alvo.foto === "function") { try { fAntes = alvo.foto(); } catch (eFa) { fAntes = null; } }
+      var r = CronoBase.salvarAvanco(lista, rec, sOpts);
+      if (!r.ok) return r;
+      var okG = this._cronoGravarLista(obraId, r.lista);
+      if (!okG) return { ok: false, erro: "o avanço não pôde ser gravado" };
+      var fDepois = null;
+      if (fAntes !== null) {
+        alvo.avancoRec = r.registro;          // a foto "depois" tem de ver o registro novo
+        try { fDepois = alvo.foto(); } catch (eFd) { fDepois = null; }
+      }
+      /* ⚠ O CARIMBO-BASE DESTA TELA ANDA JUNTO COM A GRAVAÇÃO DELA.
+         Roteiro do defeito (medido em 21/09/2026 pela e2e-crono-avanco-gantt):
+         a tela lê o carimbo na abertura (null, quando ainda não há registro);
+         o primeiro lançamento CRIA o registro; e o SEGUNDO lançamento da MESMA
+         tela comparava o `baseEm` velho com o `atualizadoEm` novo e recusava
+         com "o avanço desta obra foi alterado em outra janela ou aparelho" —
+         apontando para um aparelho que não existe. Quem lança três tarefas
+         seguidas na grade só conseguia a primeira.
+         ⚠ Só a tela DESTA obra, e só quando a gravação veio de uma tela: na
+         gravação sem tela (E-MC3) quem manda é o `opts.baseEm` de quem chamou,
+         e mexer aqui apagaria a trava da tela que estiver aberta ao lado — é
+         justamente ela que tem de recusar e oferecer [Recarregar o avanço]. */
+      if (!alvo.semTela && this._cronoAvancoTela && this._cronoAvancoTela[obraId]) {
+        var novoEm = null;
+        try {
+          var recG = CronoBase.avanco(r.lista, obraId);
+          novoEm = recG ? recG.atualizadoEm : null;
+        } catch (eB) { novoEm = null; }
+        this._cronoAvancoTela[obraId].baseEm = novoEm;
+      }
+      /* ---- DEPOIS DE GRAVAR ---- */
+      var chave = "plano:" + obraId;
+      if (this._cronoPilha && this._cronoPilha[chave]) {
+        /* ⚠ E-MC3: a pilha da tela aberta desta obra NESTE aparelho fica
+           INVALIDADA. Sem isto, o desfazer dela restauraria a foto de antes
+           POR CIMA do que o canal acabou de gravar — e o boletim aprovado
+           perderia o lançamento sem ninguém ver. A regra 1 da USO (a foto
+           atual difere da do cursor) já pegaria o caso; a marca acrescenta a
+           HORA e o MOTIVO ao recado, que é o que a pessoa precisa para
+           entender o que aconteceu. */
+        this._cronoPilha[chave].invalidada = { motivo: "avanco-sem-tela", em: new Date().toISOString() };
+      }
+      try { this._cronoDepoisDeSalvar(alvo, fAntes, fDepois, { origem: opts.origem || null, semTela: !!alvo.semTela, avanco: true,
+        resumo: "Avanço lançado até " + String(rec.corte || "").slice(8, 10) + "/" + String(rec.corte || "").slice(5, 7) }); }
+      catch (eH) { try { console.warn("[cronograma] gancho do avanço falhou (o avanço foi gravado):", eH); } catch (eC) {} }
+      /* ⚠ SEM TELA, O RECADO NÃO LEVA [Atualizar as datas…] (ESPEC-medicao-cc
+         F19): quem aprova um boletim não decidiu regravar o plano inteiro da
+         obra, e essa gravação pode perder a edição de outro aparelho (R10). */
+      r.recado = "Avanço gravado" + (opts.origem ? " (origem: " + opts.origem + ")" : "") + ".";
+      if (!alvo.semTela) r.portaFrota = true;
+      return r;
+    },
+
+    /* O ALVO DE QUEM GRAVA AVANÇO SEM TELA ABERTA (E-MC3, §2.8): o canal da
+       medição, na aprovação do boletim. Devolve a forma mínima que o
+       `_cronoGravarAvanco` precisa, SEMPRE fresca do disco.
+       ⚠ NUNCA lê `App._cronoAvancoTela`: não há tela, e ler o carimbo de uma
+         tela que outra pessoa abriu daria a trava errada. Quem chama lê o
+         `avancoRec.atualizadoEm` daqui e o passa em `opts.baseEm`, na MESMA
+         função — é isso que faz a trava valer sem tela.
+       ⚠ Sem `foto`/`restaurar`/`salvar`: isto não é um alvo de edição. */
+    _cronoAlvoSemTela: function (obraId) {
+      var o = String(obraId || "");
+      if (!o || typeof CronoBase === "undefined") return null;
+      var lista = this._cronoListaCrono(o);
+      var plano = CronoBase.plano(lista, o);
+      if (!plano) return null;                       // obra sem plano: não há o que reprogramar
+      var orc = null;
+      try { orc = this._cronoOrcDaObra(o); } catch (eO) { orc = null; }
+      return { tipo: "plano", obraId: o, chave: "plano:" + o, orc: orc, plano: plano,
+        obra: this._cronoObraDe(o), avancoRec: CronoBase.avanco(lista, o), semTela: true };
+    },
+
+    /* a lista da entidade `crono_obra` da empresa (uma leitura só por chamada) */
+    _cronoListaCrono: function () {
+      try {
+        var eid = Auth.empresaId();
+        var l = Store.listar(eid, CronoBase.ENTIDADE);
+        return CronoBase.ehLista(l) ? l : [];
+      } catch (e) { return []; }
+    },
+    /* ⚠ `manterCarimbo: true` SEMPRE. O `atualizadoEm` de quem vai ao disco
+       é o que o `CronoBase.salvarAvanco`/`salvarPlano` acabou de calcular —
+       ou o relógio normal, ou o CARIMBO FRACO (E-MC4). Deixar o `Store`
+       recarimbar com "agora" apagaria a escolha: a gravação automática
+       passaria a vencer a edição humana feita depois, que é exatamente o que
+       o carimbo fraco existe para impedir. É a mesma chamada que o
+       `salvarPlano` já faz desde a 1.2.79. */
+    _cronoGravarLista: function (obraId, lista) {
+      void obraId;
+      try {
+        return Store.salvarVarios(Auth.empresaId(), CronoBase.ENTIDADE, lista, true) !== false;
+      } catch (e) { return false; }
+    },
+    _cronoObraDe: function (obraId) {
+      try {
+        var eid = Auth.empresaId();
+        var l = Store.listar(eid, "obras"), i;
+        if (!CronoBase.ehLista(l)) return null;
+        for (i = 0; i < l.length; i++) if (l[i] && String(l[i].id) === String(obraId)) return l[i];
+      } catch (e) {}
+      return null;
+    },
+    /* `lista` (opcional): a lista de `crono_obra` que QUEM CHAMA já leu. O
+       clone devolvido compartilha o `cronograma` com o plano DESSA lista
+       (`orcComPlano`) — é assim que quem projeta e depois grava fala do
+       MESMO objeto. Sem ela, uma leitura nova: bom para quem só lê. */
+    _cronoOrcDaObra: function (obraId, lista) {
+      try {
+        var eid = Auth.empresaId();
+        var obra = this._cronoObraDe(obraId);
+        if (!obra) return null;
+        var orcs = Store.listar(eid, "orcamentos"), i, orc = null;
+        if (CronoBase.ehLista(orcs)) for (i = 0; i < orcs.length; i++) if (orcs[i] && String(orcs[i].id) === String(obra.orcamentoId)) orc = orcs[i];
+        if (!orc) return null;
+        return CronoBase.orcDaObra(orc, CronoBase.ehLista(lista) ? lista : this._cronoListaCrono(obraId), obraId);
+      } catch (e) { return null; }
+    },
+
+    /* A PORTA [Atualizar as datas para aparelhos de versão anterior] (O17).
+       Relê plano e avanço do DISCO, roda a projeção e grava os dois
+       ENCADEADOS (§1.10-6): `salvarAvanco` devolve a lista, `salvarPlano`
+       recebe essa lista, e o `Store` escreve UMA vez.
+       ⚠ AVISA ANTES: isto grava o plano INTEIRO. Uma edição do plano feita em
+         outro aparelho que ainda não chegou aqui se perde (R10) — o merge do
+         `crono_obra` é por registro. */
+    _cronoAtualizarDatasFrota: function (obraId, opts) {
+      opts = opts || {};
+      var o = String(obraId || "");
+      if (!o || typeof CronoBase === "undefined") return { ok: false, erro: "obra inválida" };
+      var np = this._cronoSemPermissao(o);
+      if (np) return { ok: false, erro: np };
+      var lista = this._cronoListaCrono(o);
+      var plano = CronoBase.plano(lista, o);
+      if (!plano) return { ok: false, erro: "esta obra não tem plano de execução" };
+      /* ⚠ A MESMA LISTA. Até 22/09/2026 o orçamento vinha de uma SEGUNDA
+         leitura do disco (`_cronoOrcDaObra(o)` sem a lista): o
+         `materializarCrono` escrevia a sombra do avanço no plano DAQUELA
+         leitura, e o `salvarPlano` gravava ESTE — intocado, só com o carimbo
+         novo. A porta dizia "Datas atualizadas: aparelhos com a versão
+         anterior passam a ver as datas reprogramadas pelo avanço" e os
+         aparelhos continuavam na janela `D-AVANCO-PENDENTE`, com `mat.avEm`
+         velho (medido pela e2e-planejador-completo, [4.porta], no galpão:
+         `mat.recursos` sem "avanco" depois da porta). Recado que mente. */
+      var orc = this._cronoOrcDaObra(o, lista);
+      if (!orc) return { ok: false, erro: "o orçamento de origem desta obra não foi encontrado" };
+      if (orc.cronograma !== plano.cronograma) return { ok: false, erro: "não consegui ligar o plano gravado ao orçamento desta obra — nada foi gravado" };
+      var obra = this._cronoObraDe(o);
+      /* o cronograma do orçamento DE ORIGEM (porta (1) do teto, O31): é o
+         `_iaOrc` do clone. `orc.cronograma` aqui é o do PLANO — passado como
+         "origem", a porta (1) acharia todo texto da IA "igual ao do
+         orçamento" e o tiraria do plano, inclusive o que só existe nele. */
+      var cronOrcO = null;
+      try { cronOrcO = orc._iaOrc || null; } catch (eO) { cronOrcO = null; }
+      var m = Cronograma.materializarCrono(orc, { inicioEfetivo: obra && obra.inicio, teto: { plano: plano, cronOrc: cronOrcO, obra: obra } });
+      if (m && m.teto) { this._cronoTetoRecado({ tipo: "plano", obraId: o, plano: plano }, m.teto); return { ok: false, erro: "teto", teto: m.teto }; }
+      var r = CronoBase.salvarPlano(lista, plano, { agora: opts.agora, por: opts.por, cronOrc: cronOrcO });
+      if (!r.ok) return r;
+      if (!this._cronoGravarLista(o, r.lista)) return { ok: false, erro: "o plano não pôde ser gravado" };
+      r.divergencias = m ? m.divergencias : [];
+      return r;
+    },
+
+    /* O ramo de AVANÇO do `alvo.restaurar` (o desfazer que volta o avanço
+       junto com o plano). Grava os DOIS encadeados (§1.10-6), com o `baseEm`
+       RELIDO do disco — a foto é de antes, e o carimbo tem de ser o de agora,
+       senão o desfazer sempre bateria na trava.
+       ⚠ Ou grava os dois, ou não grava nenhum: um desfazer que restaurasse só
+         o plano deixaria o avanço no estado de DEPOIS, e a tela mostraria uma
+         reprogramação que ninguém pediu. */
+    _cronoRestaurarAvanco: function (alvo, obj, opts) {
+      opts = opts || {};
+      var obraId = String(alvo.obraId || (alvo.plano && alvo.plano.obraId) || "");
+      if (!obraId || typeof CronoBase === "undefined") return false;
+      var lista = this._cronoListaCrono(obraId);
+      var disco = CronoBase.avanco(lista, obraId);
+      var alvoAv = obj.a && typeof obj.a === "object" ? obj.a : null;
+      var rec;
+      if (alvoAv) {
+        rec = {}; var k;
+        if (disco) for (k in disco) if (Object.prototype.hasOwnProperty.call(disco, k)) rec[k] = disco[k];
+        rec.id = CronoBase.idAvanco(obraId); rec.tipo = "avanco"; rec.obraId = obraId;
+        rec.nos = JSON.parse(JSON.stringify(alvoAv.nos || []));
+        rec.corte = alvoAv.corte || null;
+      } else if (disco) { rec = null; }              // a foto é "sem avanço": o registro sai
+      else rec = null;
+      var r1;
+      if (rec) {
+        r1 = CronoBase.salvarAvanco(lista, rec, { agora: opts.agora, baseEm: disco ? disco.atualizadoEm : null });
+        if (!r1.ok) { UI.toast(r1.erro, "erro"); return false; }
+      } else r1 = { ok: true, lista: CronoBase.limparAvanco(lista, obraId) };
+      /* o cronograma volta no MESMO objeto (a referência é compartilhada com
+         o plano; trocá-la deixaria a tela editando um objeto órfão) */
+      var cron = alvo.cron, kk, c = JSON.parse(JSON.stringify(obj.c));
+      for (kk in cron) if (Object.prototype.hasOwnProperty.call(cron, kk)) delete cron[kk];
+      for (kk in c) if (Object.prototype.hasOwnProperty.call(c, kk)) cron[kk] = c[kk];
+      var plano = CronoBase.plano(r1.lista, obraId);
+      if (!plano) { UI.toast("esta obra não tem plano de execução — nada foi restaurado.", "erro"); return false; }
+      var r2 = CronoBase.salvarPlano(r1.lista, plano, { agora: opts.agora });
+      if (!r2.ok) { UI.toast(r2.erro, "erro"); return false; }
+      if (!this._cronoGravarLista(obraId, r2.lista)) return false;
+      alvo.avancoRec = rec;
+      return true;
+    },
+    /*
+     * ↑ região 1A (motor): `_acoesCrono_inicio`, `_acoesCrono_teto` (O30),
+     *   `_acoesCrono_compat` (as portas de escolha da §1.3.1),
+     *   `_cronoGravarAvanco`, `_cronoAlvoSemTela`, `_cronoRestaurarAvanco` e
+     *   `_cronoAtualizarDatasFrota` (commit AVANÇO).
+     * Entre uma região e outra, estas quatro linhas: mudanças de fatias
+     * diferentes nunca ficam em linhas vizinhas (o merge não se atropela).
+     */
+    /* ===== PLANEJADOR: bases (1B) ===== */
+    _regBases: 1,
+    /* =====================================================================
+     * LINHAS DE BASE — a fiação da fatia 1B (espec §3.3; desenho BASES §a,
+     * §f). O motor é o CronoSelo/CronoComp/CronoBase; aqui só se lê o disco,
+     * se confere a permissão NA FUNÇÃO (botão escondido não é guarda) e se
+     * grava o que o motor mandou.
+     * ⚠ D20: congelar e registrar aprovação = a guarda do plano
+     *   (`_cronoSemPermissao`); marcar/trocar a contratual, anular aprovação,
+     *   encerrar o planejamento e apagar órfãos = só o administrador.
+     * ⚠ Toda gravação de `crono_selo` vai com `manterCarimbo` — o carimbo
+     *   determinístico (e o da redução) É o dado.
+     * ===================================================================== */
+    _cronoSeloMod: function () { return (typeof CronoSelo !== "undefined" && CronoSelo && CronoSelo.pronto === true) ? CronoSelo : null; },
+    /* hoje em "AAAA-MM-DD", no fuso do aparelho (nunca toISOString: em UTC-3
+       ele vira o dia seguinte às 21h e a aprovação de hoje sairia "futura") */
+    _cronoHoje: function () {
+      var d = new Date();
+      return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2);
+    },
+    /* a entidade dos selos, com a mesma leitura da quarentena do
+       `_cronoLerPlanejamento`: ilegível = null, NUNCA a lista vazia */
+    _cronoListaSelo: function (eid) {
+      var CS = this._cronoSeloMod(), lista = null, m = null;
+      if (!CS) return { lista: [], ilegivel: null, modulo: null };
+      try { lista = Store.listar(eid, CS.ENTIDADE) || []; } catch (eL) { lista = null; }
+      try { m = (typeof Store.ilegivel === "function") ? Store.ilegivel(eid, CS.ENTIDADE) : null; } catch (eI) { m = null; }
+      return { lista: m ? null : lista, ilegivel: m || null, modulo: CS };
+    },
+    _cronoNomesObras: function (eid) {
+      var m = {};
+      try { (Store.listar(eid, "obras") || []).forEach(function (o) { if (o && o.id != null) m[o.id] = o.nome || String(o.id); }); } catch (e) {}
+      return m;
+    },
+    /* o texto do selo de uma versão, para o cartão e o histórico */
+    _cronoSeloTexto: function (sel, base) {
+      if (!sel) return (base && (base.resumida || base.arquivada)) ? "sem selo neste aparelho — sincronize (o detalhe desta versão mora no selo)" : "sem selo ainda — é selada na próxima abertura do app";
+      if (sel.completo) return "selada · com o detalhe por serviço";
+      if (sel.soEtapas) return "selada · só as etapas (já estava resumida quando foi selada)";
+      return "selada · sem o detalhe por serviço" + (sel.semServico ? " — " + sel.semServico : "");
+    },
+    /* a recusa de espaço do crono_obra diz QUAIS obras ocupam (o motor só
+       conhece o id) */
+    _cronoRecusaEspaco: function (texto, r) {
+      var mai = r && r.ocupacao && r.ocupacao.maiores;
+      if (!mai || !mai.length) return texto;
+      var nomes = this._cronoNomesObras(Auth.empresaId());
+      return texto + " As obras que mais ocupam: " + mai.map(function (m) { return (nomes[m.obraId] || "obra que não existe mais neste aparelho") + " (" + String(Math.round(m.bytes / 102.4) / 10).replace(".", ",") + " KB)"; }).join(", ") + ".";
+    },
+    /* os aditivos dos contratos DA OBRA, para o diálogo (ligados por carimbo
+       `aditivoId`, nunca por semelhança — skill dinheiro) */
+    _cronoAditivosDaObra: function (eid, obraId) {
+      var cts = {}, out = [];
+      try { (Store.listar(eid, "contratos") || []).forEach(function (c) { if (c && c.id && String(c.obraId || "") === String(obraId)) cts[c.id] = c; }); } catch (e) {}
+      try {
+        (Store.listar(eid, "aditivos") || []).forEach(function (a) {
+          if (!a || !a.id || !cts[a.contratoId]) return;
+          var st = String(a.status || "pendente").toLowerCase();
+          if (/^(rejeitad|cancelad)/.test(st)) return;
+          var pz = Util.num(a.prazoDias);
+          out.push({ id: a.id, contratoId: a.contratoId, rotulo: (a.numero || "Termo aditivo") + " · " + (pz ? "+" + pz + " dia(s)" : "sem prazo") + " · " + (/^aprovad/.test(st) ? "aprovado" : st) });
+        });
+      } catch (e2) {}
+      return out;
+    },
+    /* o prazo dos aditivos (Aditivo.vigente de cada contrato da obra) — sem
+       veredito de cobertura (D18: a unidade do prazo não está no cadastro) */
+    _cronoAditivosVigente: function (eid, obraId) {
+      if (typeof Aditivo === "undefined" || !Aditivo.vigente) return null;
+      var cts = [], ads = [], tot = { prazoDiasAprovado: 0, prazoDiasPendente: 0, nAprovados: 0, nPendentes: 0 };
+      try { cts = (Store.listar(eid, "contratos") || []).filter(function (c) { return c && String(c.obraId || "") === String(obraId); }); } catch (e) { cts = []; }
+      if (!cts.length) return null;
+      try { ads = Store.listar(eid, "aditivos") || []; } catch (e2) { ads = []; }
+      cts.forEach(function (c) {
+        var v = Aditivo.vigente(c, ads);
+        tot.prazoDiasAprovado += v.prazoDiasAprovado; tot.prazoDiasPendente += v.prazoDiasPendente; tot.nAprovados += v.nAprovados; tot.nPendentes += v.nPendentes;
+      });
+      return tot;
+    },
+    /* [Linhas de base] com a aba Cronograma DESTA obra aberta → a sub-aba */
+    _cronoBasesIrSub: function (obraId) {
+      var o = this.orcAtual;
+      if (this.tela !== "editor" || !o || this.aba !== "cronograma") return false;
+      var a = null;
+      try { a = this._cronoAlvo(); } catch (eA) { a = null; }
+      var dec = a && a.decisao;
+      if (!dec || !dec.obra || String(dec.obra.id) !== String(obraId) || dec.nivel !== 0) return false;
+      this._cronoEstado("_cronoSub", "bases");
+      return true;
+    },
+    cronoBasesAbrir: function (obraId) { if (obraId) this.cronoHistorico(obraId); },
+
+    /* OS DADOS DA SUB-ABA (CronoExecUI.basesPainel). Lê o disco, monta os
+       cartões e a comparação escolhida (App._cronoComp[obraId], estado de
+       TELA — nunca no orçamento). O plano atual e o realizado saem da MESMA
+       montagem do previsto × realizado (`_cronoPainelDados`): uma segunda
+       apuração divergiria na data de corte. */
+    _cronoBasesDados: function (obraId) {
+      var CS = this._cronoSeloMod(), CC = (typeof CronoComp !== "undefined" && CronoComp && CronoComp.pronto) ? CronoComp : null, self = this;
+      if (!CS || !CC || typeof CronoBase === "undefined") return { erro: "O módulo das linhas de base (cronoselo.js / cronocomp.js) não carregou — recarregue o app.", obra: { id: obraId } };
+      var np = this._cronoSemPermissao(obraId);
+      if (np) return { erro: np, obra: { id: obraId } };
+      var c = this._cronoObraCtx(obraId);
+      if (c.erro) return { erro: c.erro, obra: { id: obraId } };
+      if (c.lista === null) return { erro: "As linhas de base não podem ser mostradas. " + (c.ilegivel ? this._cronoRecadoIlegivel(c.ilegivel) : "Não consegui ler o planejamento das obras deste aparelho — recarregue o app."), obra: c.obra };
+      if (c.listaSelo === null) return { erro: "As linhas de base seladas deste aparelho não podem ser lidas. " + (c.seloIlegivel ? this._cronoRecadoIlegivel(c.seloIlegivel) : "Recarregue o app."), obra: c.obra };
+      var eid = c.eid, obra = c.obra, admin = this._ehAdminAqui();
+      var rec = {};
+      try { rec = (typeof Cronograma !== "undefined" && Cronograma.recursos) ? Cronograma.recursos() : {}; } catch (eR) { rec = {}; }
+      var basesRaw = CronoBase.bases(c.lista, obraId), ativa = CronoBase.ativa(c.lista, obraId);
+      var cc = CS.contratual(c.lista, c.listaSelo, obraId);
+      var porV = {}, semSelo = 0;
+      basesRaw.forEach(function (b) { porV[b.versao] = (porV[b.versao] || 0) + 1; });
+      var completaDe = {};
+      (c.completa || []).forEach(function (x) { if (x && x.tipo === "base") completaDe[x.id] = x; });
+      var cards = basesRaw.map(function (b) {
+        var e = CS.estado(c.listaSelo, b.id, { contratualId: cc ? cc.baseId : null, cabecalho: b }), ult = e.aprovacao, bc = completaDe[b.id] || b;
+        var fim = b.totalDias > 0 && CronoPlan.dataDaBase ? CronoPlan.dataDaBase(bc, b.totalDias - 1) : (b.dataFim || "");
+        if (!e.selo && (b.resumida || b.arquivada)) semSelo++;
+        var gem = "";
+        if (cc && cc.gemeas.indexOf(b.id) > -1) gem = "(gêmea — não vale como contratual: outra v" + b.versao + " foi marcada ao mesmo tempo, e vale a mais antiga)";
+        else if (porV[b.versao] > 1 && ativa && b.id !== ativa.id && ativa.versao === b.versao) gem = "(gêmea — outra v" + b.versao + " foi congelada ao mesmo tempo em outro aparelho, e é ela que vale)";
+        var an = "";
+        if (!ult && e.anuladas.length) {
+          var ua = e.anuladas[e.anuladas.length - 1];
+          an = "aprovação de " + self._cronoBrD(ua.em) + " anulada (motivo: " + String(ua.anulada && ua.anulada.motivo || "—") + ")";
+        }
+        return { id: b.id, versao: b.versao, criadaEm: b.criadaEm, por: b.por, motivo: b.motivo, totalDias: b.totalDias,
+          inicio: b.cal ? b.cal.dataInicio : "", termino: fim, estado: e.estado, aprovacao: ult ? ult.aprovacao : null, aprovacaoId: ult && ult.origem !== "cabecalho" ? ult.id : null,   // ⚠ a cópia do cabeçalho só mostra: anular exige o selo
+          anulada: an, seloTexto: self._cronoSeloTexto(e.selo, b), gemea: gem, temServ: !!(e.selo && e.selo.completo) };
+      });
+      /* a comparação escolhida (estado de tela), com o padrão: contratual × ativa */
+      this._cronoComp = (this._cronoComp && typeof this._cronoComp === "object") ? this._cronoComp : {};
+      var est = this._cronoComp[obraId] || {}, idsOk = {};
+      cards.forEach(function (x) { idsOk[x.id] = 1; });
+      idsOk.plano = 1;
+      var aPad = cc && idsOk[cc.baseId] ? cc.baseId : (cards.length ? cards[0].id : "plano");
+      var bPad = ativa && ativa.id !== aPad ? ativa.id : "plano";
+      var esc0 = { a: idsOk[est.a] ? est.a : aPad, b: idsOk[est.b] ? est.b : bPad,
+        detalhe: /^(etapa|folha|servico)$/.test(est.detalhe || "") ? est.detalhe : "folha",
+        filtro: /^(tudo|mudou|critico|atrasadas)$/.test(est.filtro || "") ? est.filtro : "tudo", busca: String(est.busca || "") };
+      function rotDe(x) { return "v" + x.versao + (x.estado === "contratual" ? " — contratual" : (x.estado === "aprovada" ? " — aprovada" : (x.estado === "interna" ? " — interna" : " — aprovação anulada"))) + (ativa && x.id === ativa.id ? " (ativa)" : ""); }
+      var opc = cards.map(function (x) { return { id: x.id, rotulo: rotDe(x) }; }).concat([{ id: "plano", rotulo: "Plano atual (não congelado)" }]);
+      /* o plano atual e o realizado: a montagem única do painel */
+      var pd = null;
+      try { pd = c.orc ? this._cronoPainelDados(obra, c.orc, { comGantt: true }) : null; } catch (eP) { pd = null; }
+      var painel = pd && pd.painel, r = pd && pd.r ? pd.r : null, real = {}, realPct = {};
+      ((painel && painel.nos) || []).forEach(function (n) {
+        if (n && n.real && (n.real.ini || n.real.fim)) real[n.id] = { ini: n.real.ini || null, fim: n.real.fim || null, pct: n.realPct };
+        if (n && n.realPct != null) realPct[n.id] = n.realPct;
+      });
+      function lado(id) {
+        if (id === "plano") return r ? { tipo: "plano", r: r, rot: "plano atual", orcamentoId: c.orc ? c.orc.id : "" } : null;
+        var bc = completaDe[id];
+        if (!bc) return null;
+        var sel = CS.seloDe(c.listaSelo, id), ab = sel ? CS.abrir(sel) : null;
+        var cd = null;
+        cards.forEach(function (x) { if (x.id === id) cd = x; });
+        return { tipo: "base", base: bc, selo: ab && !ab.erro ? ab : null, rot: cd ? "v" + cd.versao : "base" };
+      }
+      var A = lado(esc0.a), B = lado(esc0.b), comp = null;
+      if (A && B) {
+        comp = CC.comparar({ A: A, B: B, real: Object.keys(real).length ? real : null, planoAtual: r, detalhe: esc0.detalhe, filtro: esc0.filtro, busca: esc0.busca,
+          dataCorte: painel ? painel.dataCorte : null, aditivos: this._cronoAditivosVigente(eid, obraId) });
+      } else if (cards.length && (esc0.a === "plano" || esc0.b === "plano") && !r) {
+        comp = { ok: false, erro: "O plano atual desta obra não pôde ser calculado agora (sem data de início ou sem valores de venda) — compare duas versões congeladas." };
+      }
+      var obrasIds = Object.keys(this._cronoNomesObras(eid)), orf = CS.orfaos(c.listaSelo, obrasIds);
+      var bOrf = 0;
+      orf.forEach(function (x) { bOrf += CronoPlan.bytes(x); });
+      return {
+        obra: obra, bases: cards.slice().sort(function (x, y) { return (x.versao - y.versao) || (String(x.criadaEm) < String(y.criadaEm) ? -1 : 1); }),
+        contratual: cc, ativaId: ativa ? ativa.id : null,
+        podeEditar: true, podeCongelar: !!c.orc && !this._trialBloqueado(), admin: admin,
+        obraConcluida: String(obra.status || "") === "concluida",
+        temSelo: c.listaSelo.some(function (s) { return s && s.tipo === "selo" && String(s.obraId) === String(obraId) && !!s.serv; }),
+        escolha: esc0, opcoesA: opc, opcoesB: opc, comp: comp, r: r, real: realPct, corte: painel ? painel.dataCorte : null,
+        ocupacao: { crono: CronoBase.ocupacao(c.lista, c.listaSelo), selo: CS.ocupacao(c.listaSelo) },
+        orfaos: { n: orf.length, bytes: bOrf }, seloNaoChegou: semSelo,
+        recursosDesligados: rec.seloTardio === false ? "O selo automático das linhas de base antigas está desligado nesta instalação (suporte)." : ""
+      };
+    },
+    /* estado de tela da comparação: muda e redesenha (nada é gravado) */
+    _cronoCompMudar: function (obraId, campo, valor) {
+      if (!obraId) return;
+      this._cronoComp = (this._cronoComp && typeof this._cronoComp === "object") ? this._cronoComp : {};
+      var e = this._cronoComp[obraId] = this._cronoComp[obraId] || {};
+      e[campo] = valor;
+      this.render();
+    },
+    _cronoGravarSelos: function (eid, r, rotulo) {
+      var CS = this._cronoSeloMod();
+      if (!r || !r.ok) { UI.toast((r && r.erro) || "Nada foi gravado.", "erro"); return false; }
+      if (!r.gravar || !r.gravar.length) return true;
+      if (!Store.salvarVarios(eid, CS.ENTIDADE, r.gravar, true)) {
+        UI.toast(this._cronoPorQueRecusou(eid, CS.ENTIDADE, rotulo) || ("Nada foi gravado: " + this._CRONO_RECUSA_ARMAZ + "."), "erro");
+        return false;
+      }
+      return true;
+    },
+    /* guardas comuns das portas das bases. `adm` = só o administrador (D20) */
+    _cronoBasesGuarda: function (obraId, adm, rotulo) {
+      if (this._trialBloqueado()) { this._avisoTrial(); return null; }
+      var np = this._cronoSemPermissao(obraId);
+      if (np) { UI.toast(np + " Nada foi gravado.", "erro"); return null; }
+      if (adm && !this._ehAdminAqui()) { UI.toast("Só o administrador da conta pode " + rotulo + " — peça a ele. Nada foi gravado.", "erro"); return null; }
+      /* ⚠ A JANELA DESTACADA É `this._janela` (a rota lida no boot), e não
+         `Janelas.podeEditar()`: aquela pergunta se o Store tem CAS, e chamada
+         sem o Store devolve SEMPRE false. Roteiro do defeito (e2e
+         linhas-de-base, 1ª rodada): na janela principal, [Encerrar
+         planejamento] respondia "Esta janela destacada só mostra" — e
+         aprovar, anular, marcar e trocar a contratual também. */
+      if (this._janela) { UI.toast("Esta janela destacada só mostra — " + rotulo + " na janela principal.", "erro"); return null; }
+      var CS = this._cronoSeloMod();
+      if (!CS) { UI.toast("O módulo das linhas de base seladas não carregou — recarregue o app. Nada foi gravado.", "erro"); return null; }
+      var c = this._cronoObraCtx(obraId);
+      if (c.erro) { UI.toast(c.erro, "erro"); return null; }
+      if (c.lista === null || c.listaSelo === null) {
+        var m = c.listaSelo === null ? c.seloIlegivel : c.ilegivel;
+        UI.toast(m ? this._cronoRecadoIlegivel(m, rotulo) : "Não consegui ler as linhas de base deste aparelho — recarregue o app. Nada foi gravado.", "erro");
+        return null;
+      }
+      c.CS = CS;
+      return c;
+    },
+    _cronoCampoAprovacao: function (aditivos) {
+      return '<div class="field"><label>Aprovada por *</label><input type="text" id="cxb-ev-por" maxlength="80" placeholder="nome e cargo de quem aprovou"></div>' +
+        '<div class="field"><label>Em *</label><input type="date" id="cxb-ev-em" style="width:160px"></div>' +
+        '<div class="field"><label>Documento</label><input type="text" id="cxb-ev-doc" maxlength="120" placeholder="ex.: Termo aditivo 01, carta 023/2026, e-mail de 18/09"></div>' +
+        (aditivos.length ? '<div class="field"><label>Termo aditivo</label><select id="cxb-ev-adt"><option value="">— nenhum —</option>' +
+          aditivos.map(function (x, i) { return '<option value="' + i + '">' + Util.esc(x.rotulo) + '</option>'; }).join("") + '</select></div>' : '');
+    },
+    cronoAprovarBase: function (obraId, baseId) {
+      var self = this, c = this._cronoBasesGuarda(obraId, false, "registrar a aprovação");
+      if (!c) return;
+      var b = CronoBase.bases(c.lista, obraId).filter(function (x) { return x.id === baseId; })[0];
+      if (!b) { UI.toast("Essa versão da linha de base não existe mais neste aparelho — atualize a tela.", "erro"); return; }
+      var adts = this._cronoAditivosDaObra(c.eid, obraId);
+      UI.modal("Registrar a aprovação da v" + b.versao,
+        '<p style="font-size:13px;margin:0 0 8px">A v' + b.versao + ' não muda: a aprovação fica registrada ao lado dela, no histórico e no impresso.</p>' + this._cronoCampoAprovacao(adts), [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Registrar aprovação", classe: "primary", onClick: function () {
+            var v = function (id) { var el = UI.el(id); return el ? String(el.value == null ? "" : el.value) : ""; };
+            var ia = v("cxb-ev-adt");
+            var ap = { por: v("cxb-ev-por"), em: v("cxb-ev-em").trim(), documento: v("cxb-ev-doc"), aditivoId: ia !== "" && adts[+ia] ? adts[+ia].id : null };
+            if (self._cronoAprovarAplicar(obraId, baseId, ap)) UI.fecharModal();
+          } }
+        ]);
+    },
+    _cronoAprovarAplicar: function (obraId, baseId, ap) {
+      var c = this._cronoBasesGuarda(obraId, false, "registrar a aprovação");
+      if (!c) return false;
+      var r = c.CS.novoEvento(c.listaSelo, { acao: "aprovar", obraId: obraId, baseId: baseId, aprovacao: ap, registradoPor: this._cronoPor() },
+        { agora: Util.agoraISO(), listaCrono: c.lista, hoje: this._cronoHoje() });
+      if (!r.ok) { UI.toast("Aprovação não registrada: " + r.erro, "erro"); return false; }
+      if (!this._cronoGravarSelos(c.eid, r, "registrar a aprovação")) return false;
+      UI.toast("Aprovação da v" + r.evento.versao + " registrada: " + r.evento.aprovacao.por + " em " + this._cronoBrD(r.evento.aprovacao.em) + ". A v" + r.evento.versao + " não mudou: o registro fica no histórico e no impresso.", "ok");
+      this._cronoRepintar();
+      return true;
+    },
+    cronoAnularAprovacao: function (obraId, baseId, eventoId) {
+      var self = this, c = this._cronoBasesGuarda(obraId, true, "anular uma aprovação");
+      if (!c) return;
+      var ap = c.CS.aprovacoes(c.listaSelo, baseId).vivas.filter(function (x) { return x.id === eventoId; })[0];
+      if (!ap) { UI.toast("Essa aprovação não existe mais (ou já foi anulada) — atualize a tela.", "erro"); return; }
+      UI.modal("Anular a aprovação de " + this._cronoBrD(ap.em),
+        '<p style="font-size:13px;margin:0 0 8px">Aprovada por <b>' + Util.esc(ap.aprovacao.por) + '</b> em ' + Util.esc(this._cronoBrD(ap.em)) + '. O registro original continua no histórico; a versão passa a constar como aprovação anulada.</p>' +
+        '<div class="field"><label>Motivo *</label><textarea id="cxb-ev-motivo" rows="2" maxlength="300" placeholder="Ex.: o documento anexado era de outra obra"></textarea></div>', [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Anular aprovação", classe: "danger", onClick: function () {
+            var el = UI.el("cxb-ev-motivo"), mot = el ? String(el.value || "") : "";
+            if (self._cronoAnularAplicar(obraId, baseId, eventoId, mot)) UI.fecharModal();
+          } }
+        ]);
+    },
+    _cronoAnularAplicar: function (obraId, baseId, eventoId, motivo) {
+      var c = this._cronoBasesGuarda(obraId, true, "anular uma aprovação");
+      if (!c) return false;
+      var r = c.CS.novoEvento(c.listaSelo, { acao: "anular-aprovacao", obraId: obraId, baseId: baseId, anula: eventoId, motivo: motivo, registradoPor: this._cronoPor() },
+        { agora: Util.agoraISO(), admin: true, listaCrono: c.lista });
+      if (!r.ok) { UI.toast("A aprovação não foi anulada: " + r.erro, "erro"); return false; }
+      if (!this._cronoGravarSelos(c.eid, r, "anular uma aprovação")) return false;
+      UI.toast("A aprovação foi anulada (motivo: " + r.evento.motivo + "). O registro original continua no histórico.", "ok");
+      this._cronoRepintar();
+      return true;
+    },
+    cronoMarcarContratual: function (obraId, baseId) {
+      var self = this, c = this._cronoBasesGuarda(obraId, true, "marcar a linha de base contratual");
+      if (!c) return;
+      var b = CronoBase.bases(c.lista, obraId).filter(function (x) { return x.id === baseId; })[0];
+      if (!b) { UI.toast("Essa versão da linha de base não existe mais neste aparelho — atualize a tela.", "erro"); return; }
+      UI.modal("Marcar a v" + b.versao + " como contratual",
+        '<p style="font-size:13px;margin:0">A contratual é a linha de base do contrato assinado: ela nunca é resumida e é contra ela que o comparativo de pleito mede. A marca só pode ser posta uma vez; para mudar depois, só a troca com motivo.</p>', [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Marcar a v" + b.versao + " como contratual", classe: "primary", onClick: function () {
+            var c2 = self._cronoBasesGuarda(obraId, true, "marcar a linha de base contratual");
+            if (!c2) return;
+            var r = c2.CS.novoEvento(c2.listaSelo, { acao: "marcar-contratual", obraId: obraId, baseId: baseId, registradoPor: self._cronoPor() }, { agora: Util.agoraISO(), admin: true, listaCrono: c2.lista });
+            if (!r.ok) { UI.toast("Nada foi marcado: " + r.erro, "erro"); return; }
+            if (!self._cronoGravarSelos(c2.eid, r, "marcar a linha de base contratual")) return;
+            UI.fecharModal();
+            UI.toast("A v" + b.versao + " passou a ser a linha de base contratual da obra.", "ok");
+            self._cronoRepintar();
+          } }
+        ]);
+    },
+    cronoTrocarContratual: function (obraId) {
+      var self = this, c = this._cronoBasesGuarda(obraId, true, "trocar a linha de base contratual");
+      if (!c) return;
+      var cAt = c.CS.contratual(c.lista, c.listaSelo, obraId);
+      if (!cAt) { UI.toast("Esta obra ainda não tem linha de base contratual — use [Marcar como contratual] na versão certa.", "erro"); return; }
+      var outras = CronoBase.bases(c.lista, obraId).filter(function (b) { return b.id !== cAt.baseId; });
+      if (!outras.length) { UI.toast("Não há outra versão para ser a contratual.", "erro"); return; }
+      UI.modal("Trocar a linha de base contratual",
+        '<p style="font-size:13px;margin:0 0 8px">Hoje a contratual é a <b>v' + Util.esc(cAt.versao) + '</b>. A troca fica registrada com o motivo, e a marca antiga continua no histórico.</p>' +
+        '<div class="field"><label>Nova contratual *</label><select id="cxb-tr-para">' + outras.map(function (b, i) { return '<option value="' + i + '">v' + b.versao + ' — congelada ' + Util.esc(self._cronoBrD(b.criadaEm)) + (b.motivo ? ' — ' + Util.esc(String(b.motivo).slice(0, 50)) : '') + '</option>'; }).join("") + '</select></div>' +
+        '<div class="field"><label>Motivo *</label><textarea id="cxb-tr-motivo" rows="2" maxlength="300"></textarea></div>' +
+        '<div class="field"><label>Digite TROCAR para confirmar *</label><input type="text" id="cxb-tr-conf" autocomplete="off" style="width:160px"></div>', [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Trocar a contratual", classe: "danger", onClick: function () {
+            var v = function (id) { var el = UI.el(id); return el ? String(el.value == null ? "" : el.value) : ""; };
+            var para = outras[+v("cxb-tr-para")];
+            if (self._cronoTrocarAplicar(obraId, para ? para.id : "", v("cxb-tr-motivo"), v("cxb-tr-conf"))) UI.fecharModal();
+          } }
+        ]);
+    },
+    _cronoTrocarAplicar: function (obraId, paraId, motivo, confirmacao) {
+      var c = this._cronoBasesGuarda(obraId, true, "trocar a linha de base contratual");
+      if (!c) return false;
+      var r = c.CS.novoEvento(c.listaSelo, { acao: "trocar-contratual", obraId: obraId, para: paraId, motivo: motivo, registradoPor: this._cronoPor() },
+        { agora: Util.agoraISO(), admin: true, listaCrono: c.lista, confirmacao: confirmacao });
+      if (!r.ok) { UI.toast("A contratual não foi trocada: " + r.erro, "erro"); return false; }
+      if (!this._cronoGravarSelos(c.eid, r, "trocar a linha de base contratual")) return false;
+      UI.toast("A linha de base contratual da obra passou a ser a v" + r.evento.versao + " (motivo: " + r.evento.motivo + "). A marca antiga continua no histórico.", "ok");
+      this._cronoRepintar();
+      return true;
+    },
+    /* o resumo em papel das linhas de base (o "PDF" da porta D16): versões,
+       estados, aprovações e o CÓDIGO DE CONFERÊNCIA de cada uma — nunca
+       chamado de assinatura (recado que mente) */
+    _cronoBasesResumoHtml: function (c, obraId) {
+      var CS = c.CS, self = this, cc = CS.contratual(c.lista, c.listaSelo, obraId), e = Util.esc;
+      var linhas = CronoBase.bases(c.lista, obraId).map(function (b) {
+        var st = CS.estado(c.listaSelo, b.id, { contratualId: cc ? cc.baseId : null, cabecalho: b }), s = CS.seloDe(c.listaSelo, b.id);
+        return '<tr><td>v' + e(b.versao) + '</td><td>' + e(st.estado) + '</td><td>' + e(self._cronoBrD(b.criadaEm)) + '</td><td>' + e(b.por || "—") + '</td><td>' + e(b.motivo || "—") +
+          '</td><td>' + e(b.totalDias) + ' d</td><td>' + (st.aprovacao ? e(st.aprovacao.aprovacao.por + " em " + self._cronoBrD(st.aprovacao.aprovacao.em)) : "—") + '</td><td class="cxb-cod">' +
+          e(s && s.hash ? s.hash : "sem selo") + (s && s.hashServ ? '<br>serviços: ' + e(s.hashServ) : '') + '</td></tr>';
+      }).join("");
+      return '<div class="rel-doc"><h2>Linhas de base — ' + e(c.obra.nome || "") + '</h2><p>Gerado em ' + e(this._cronoBrD(this._cronoHoje())) + ' por ' + e(this._cronoPor()) +
+        '. O código de conferência é o SHA-256 do conteúdo selado de cada versão: com o pacote exportado, qualquer um confere que o arquivo não mudou. Não é assinatura digital.</p>' +
+        /* ⚠ a folha é A4: largura fixa e o código (64 caracteres) em fonte
+           menor — sem isto a coluna do código passava da borda do papel
+           (foto da e2e linhas-de-base, 1ª rodada) */
+        '<style>.cxb-res{width:100%;table-layout:fixed;font-size:11px}.cxb-res th,.cxb-res td{padding:4px 5px;vertical-align:top;overflow-wrap:anywhere}.cxb-res .cxb-cod{font-family:monospace;font-size:9.5px;word-break:break-all}</style>' +
+        '<table class="tbl cxb-res"><colgroup><col style="width:7%"><col style="width:11%"><col style="width:11%"><col style="width:11%"><col style="width:14%"><col style="width:7%"><col style="width:13%"><col style="width:26%"></colgroup>' +
+        '<thead><tr><th>Versão</th><th>Estado</th><th>Congelada em</th><th>Por</th><th>Motivo</th><th>Prazo</th><th>Aprovação</th><th>Código de conferência</th></tr></thead><tbody>' + linhas + '</tbody></table></div>';
+    },
+    _cronoBasesPacote: function (c, obraId) {
+      var p = c.CS.pacote(c.lista, c.listaSelo, obraId, { obraNome: c.obra.nome || "", agora: Util.agoraISO(), por: this._cronoPor() });
+      var nome = "linhas-de-base-" + String(c.obra.nome || obraId).replace(/[^\w\-]+/g, "-").slice(0, 40) + "-" + this._cronoHoje() + ".json";
+      Util.baixar(nome, JSON.stringify(p, null, 2), "application/json;charset=utf-8");
+      return p;
+    },
+    /* ⚠ A PORTA D16 — "Encerrar planejamento de obra concluída". Só o
+       administrador, só obra com status Concluída, e só depois do resumo em
+       PDF e do pacote de conferência gerados NESTE diálogo, com "ENCERRAR"
+       digitado. Reduz o detalhe por serviço de todos os selos da obra, a
+       contratual inclusive; ficam as etapas, as subetapas, a curva e o
+       código. É a porta que os recados de espaço prometem — sem ela, a
+       recusa por falta de espaço seria trava sem saída. */
+    cronoBasesEncerrar: function (obraId) {
+      var self = this, c = this._cronoBasesGuarda(obraId, true, "encerrar o planejamento da obra");
+      if (!c) return;
+      if (String(c.obra.status || "") !== "concluida") {
+        UI.toast("Só o planejamento de obra com status Concluída pode ser encerrado — a obra " + (c.obra.nome || "") + " está como " + (c.obra.status || "planejamento") + ". Mude o status no cadastro da obra se ela terminou.", "erro");
+        return;
+      }
+      var comServ = c.listaSelo.filter(function (s) { return s && s.tipo === "selo" && String(s.obraId) === String(obraId) && !!s.serv; });
+      if (!comServ.length) { UI.toast("As linhas de base desta obra já não guardam o detalhe por serviço — não há o que encerrar.", "info"); return; }
+      /* o número do diálogo é o MESMO do recado final: o motor simula (não
+         grava) — somar só o `serv` dava 4,6 KB no diálogo e 4,2 KB no recado
+         (o texto do encerramento também ocupa) */
+      var sim = c.CS.encerrarObra(c.listaSelo, obraId, Util.agoraISO());
+      var kb = sim && sim.ok ? sim.liberados : 0;
+      var st = { pdf: false, pacote: false };
+      UI.modal("Encerrar o planejamento da obra " + String(c.obra.nome || ""),
+        '<p style="font-size:13px;margin:0 0 8px">' + comServ.length + ' versão(ões) da linha de base desta obra — a contratual inclusive — deixam de guardar o detalhe por serviço na nuvem, liberando ' + Util.esc(String(Math.round(kb / 102.4) / 10).replace(".", ",")) +
+        ' KB. Ficam as etapas, as subetapas, a curva e o código de conferência de cada versão. O detalhe fica no pacote que você baixa agora.</p>' +
+        '<p style="font-size:13px;margin:0 0 8px">Antes de encerrar: <b>1.</b> gere o resumo em PDF; <b>2.</b> baixe o pacote de conferência. Os dois botões estão abaixo.</p>' +
+        '<div class="field"><label>Digite ENCERRAR para confirmar *</label><input type="text" id="cxb-enc-conf" autocomplete="off" style="width:160px"></div>' +
+        '<p class="muted" id="cxb-enc-estado" style="font-size:12px;margin:0">Resumo: não gerado · pacote: não baixado</p>', [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "1. Gerar o resumo (PDF)", classe: "", onClick: function () {
+            var c2 = self._cronoBasesGuarda(obraId, true, "encerrar o planejamento da obra"); if (!c2) return;
+            st.pdf = true; self._cronoEncEstado(st);
+            self._abrirPrint("Linhas de base — " + String(c2.obra.nome || ""), self._cronoBasesResumoHtml(c2, obraId), "relatorio");
+          } },
+          { texto: "2. Baixar o pacote de conferência", classe: "", onClick: function () {
+            var c2 = self._cronoBasesGuarda(obraId, true, "encerrar o planejamento da obra"); if (!c2) return;
+            self._cronoBasesPacote(c2, obraId); st.pacote = true; self._cronoEncEstado(st);
+          } },
+          { texto: "Encerrar planejamento", classe: "danger", onClick: function () {
+            var el = UI.el("cxb-enc-conf");
+            if (self._cronoEncerrarAplicar(obraId, st, el ? el.value : "")) UI.fecharModal();
+          } }
+        ]);
+    },
+    _cronoEncEstado: function (st) {
+      var el = UI.el("cxb-enc-estado");
+      if (el) el.textContent = "Resumo: " + (st.pdf ? "gerado" : "não gerado") + " · pacote: " + (st.pacote ? "baixado" : "não baixado");
+    },
+    _cronoEncerrarAplicar: function (obraId, st, confirmacao) {
+      var c = this._cronoBasesGuarda(obraId, true, "encerrar o planejamento da obra");
+      if (!c) return false;
+      if (String(c.obra.status || "") !== "concluida") { UI.toast("A obra não está com status Concluída — nada foi encerrado.", "erro"); return false; }
+      if (!st || !st.pdf || !st.pacote) { UI.toast("Antes de encerrar, gere o resumo (PDF) e baixe o pacote de conferência — é nele que o detalhe por serviço fica. Nada foi encerrado.", "erro"); return false; }
+      if (String(confirmacao == null ? "" : confirmacao).trim().toUpperCase() !== "ENCERRAR") { UI.toast("Digite ENCERRAR para confirmar — nada foi encerrado.", "erro"); return false; }
+      var r = c.CS.encerrarObra(c.listaSelo, obraId, Util.agoraISO());
+      if (!r.ok) { UI.toast("Nada foi encerrado: " + r.erro, "erro"); return false; }
+      if (!r.n) { UI.toast("As linhas de base desta obra já não guardam o detalhe por serviço — nada a encerrar.", "info"); return true; }
+      if (!this._cronoGravarSelos(c.eid, r, "encerrar o planejamento da obra")) return false;
+      UI.toast("Planejamento da obra " + (c.obra.nome || "") + " encerrado: " + r.n + " versão(ões) deixaram de guardar o detalhe por serviço (" + String(Math.round(r.liberados / 102.4) / 10).replace(".", ",") +
+        " KB liberados). Ficam as etapas, as subetapas, a curva e o código de conferência; o detalhe está no pacote baixado. As versões antigas desta obra passam a poder ser resumidas quando faltar espaço.", "ok");
+      this._cronoRepintar();
+      return true;
+    },
+    /* ⚠ A VARREDURA DE ÓRFÃOS (crítica 1, achado 10; risco R12): selo e
+       evento de obra que não existe neste aparelho — a exclusão feita num
+       aparelho 1.2.81 não os leva. NUNCA apaga sozinha: a porta é do
+       administrador, com o pacote baixado antes e "APAGAR" digitado. */
+    _cronoSelosOrfaos: function (abrir) {
+      var CS = this._cronoSeloMod();
+      if (!CS) return { n: 0 };
+      var eid = Auth.empresaId(), ls = this._cronoListaSelo(eid);
+      if (!ls.lista) return { n: 0, ilegivel: true };
+      var nomes = this._cronoNomesObras(eid), orf = CS.orfaos(ls.lista, Object.keys(nomes));
+      if (!abrir) return { n: orf.length, registros: orf };
+      if (!this._ehAdminAqui()) { UI.toast("Só o administrador da conta decide o que fazer com as linhas de base de obras excluídas.", "erro"); return { n: orf.length }; }
+      if (!orf.length) { UI.toast("Nenhuma linha de base selada de obra excluída neste aparelho.", "info"); return { n: 0 }; }
+      var porObra = {}, self = this, st = { pacote: false };
+      orf.forEach(function (x) { var o = String(x.obraId); porObra[o] = porObra[o] || { selos: 0, eventos: 0, bytes: 0 }; porObra[o][x.tipo === "selo" ? "selos" : "eventos"]++; porObra[o].bytes += CronoPlan.bytes(x); });
+      UI.modal("Linhas de base de obras excluídas",
+        '<p style="font-size:13px;margin:0 0 8px">Estes registros são de obras que não existem mais neste aparelho (excluídas num aparelho de versão anterior, que não leva as linhas de base seladas). Nada é apagado sem você mandar.</p>' +
+        '<table class="tbl" style="font-size:12.5px"><thead><tr><th>Obra (id)</th><th class="num">Selos</th><th class="num">Aprovações</th><th class="num">KB</th></tr></thead><tbody>' +
+        Object.keys(porObra).map(function (o) { var p = porObra[o]; return '<tr><td>' + Util.esc(o) + '</td><td class="num">' + p.selos + '</td><td class="num">' + p.eventos + '</td><td class="num">' + Util.esc(String(Math.round(p.bytes / 102.4) / 10).replace(".", ",")) + '</td></tr>'; }).join("") + '</tbody></table>' +
+        '<div class="field"><label>Digite APAGAR para confirmar *</label><input type="text" id="cxb-orf-conf" autocomplete="off" style="width:160px"></div>', [
+          { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Baixar o pacote", classe: "", onClick: function () {
+            Util.baixar("linhas-de-base-de-obras-excluidas-" + self._cronoHoje() + ".json", JSON.stringify({ formato: "orcapro-linhas-de-base-orfas", fmt: 1, geradoEm: Util.agoraISO(), registros: orf }, null, 2), "application/json;charset=utf-8");
+            st.pacote = true;
+          } },
+          { texto: "Apagar", classe: "danger", onClick: function () {
+            var el = UI.el("cxb-orf-conf");
+            if (!st.pacote) { UI.toast("Baixe o pacote antes de apagar — é a única cópia. Nada foi apagado.", "erro"); return; }
+            if (String(el ? el.value : "").trim().toUpperCase() !== "APAGAR") { UI.toast("Digite APAGAR para confirmar — nada foi apagado.", "erro"); return; }
+            var ls2 = self._cronoListaSelo(eid);
+            if (!ls2.lista) { UI.toast("As linhas de base seladas deste aparelho estão ilegíveis — nada foi apagado.", "erro"); return; }
+            var ids = CS.orfaos(ls2.lista, Object.keys(self._cronoNomesObras(eid))).map(function (x) { return x.id; });
+            var n = Store.excluirVarios(eid, CS.ENTIDADE, ids, false);
+            UI.fecharModal();
+            UI.toast(n + " registro(s) de linha de base de obras excluídas apagado(s). O pacote baixado guarda o conteúdo.", "ok");
+            self._cronoRepintar();
+          } }
+        ]);
+      return { n: orf.length };
+    },
+    /* ⚠ O SELO TARDIO (BASES §f.10; espec §1.10-7): a única gravação "ao
+       abrir" declarada. Determinístico (dois aparelhos selam o MESMO
+       registro), UMA vez por sessão, depois do sync (ou 30 s de espera), 2,5 s
+       depois do boot, só na janela principal, só com Gestão, só em
+       `crono_selo` — nunca em `crono_obra` — e com a chave de desligar
+       `seloTardio`. Nunca no render. */
+    _cronoSelarPendentesAgendar: function () {
+      var self = this, tent = 0;
+      if (this._seloTardioAgendado) return;
+      this._seloTardioAgendado = true;
+      function tenta() {
+        tent++;
+        var esperaNuvem = typeof Nuvem !== "undefined" && Nuvem && Nuvem.ligado && !Nuvem._escutando && tent < 15;
+        if (esperaNuvem) { setTimeout(tenta, 2000); return; }
+        try { self._cronoSelarPendentes(); } catch (e) { try { console.warn("[bases] selo tardio falhou", e); } catch (_) {} }
+      }
+      setTimeout(tenta, 2500);
+    },
+    _cronoSelarPendentes: function () {
+      if (this._seloTardioFeito) return { n: 0, motivo: "já rodou nesta sessão" };
+      var CS = this._cronoSeloMod();
+      if (!CS || typeof CronoBase === "undefined") return { n: 0, motivo: "sem módulo" };
+      if (this._janela) return { n: 0, motivo: "janela destacada" };
+      var u = null;
+      try { u = Auth.usuario(); } catch (eU) { u = null; }
+      if (!u) return { n: 0, motivo: "sem usuário" };
+      if (typeof Gestao === "undefined" || !Gestao.podeGestao || !Gestao.podeGestao()) return { n: 0, motivo: "sem Gestão" };
+      var rec = {};
+      try { rec = (typeof Cronograma !== "undefined" && Cronograma.recursos) ? Cronograma.recursos() : {}; } catch (eR) { rec = {}; }
+      if (rec.seloTardio === false || rec.bases === false) return { n: 0, motivo: "desligado" };
+      if (this._trialBloqueado()) return { n: 0, motivo: "licença" };
+      this._seloTardioFeito = true;
+      var eid = Auth.empresaId(), lp = this._cronoLerPlanejamento(eid), ls = this._cronoListaSelo(eid);
+      if (!lp.lista || !ls.lista) return { n: 0, motivo: "ilegível" };
+      var pend = CS.pendentes(lp.lista, ls.lista);
+      if (!pend.length) return { n: 0 };
+      var L = ls.lista.slice(), gravar = [], n = 0, recusas = [], agora = Util.agoraISO(), nomes = this._cronoNomesObras(eid);
+      pend.forEach(function (s) {
+        /* o tardio melhor que um tardio pobre com o MESMO id substitui (o
+           conteúdo é determinístico: todo aparelho faz a mesma troca) */
+        var base0 = L.filter(function (x) { return !(x && x.id === s.id && x.origem === "tardio"); });
+        var r = CS.novoSelo(base0, s, { agora: agora, listaCrono: lp.lista, nomes: nomes });
+        if (!r.ok) { recusas.push(r.erro); return; }
+        L = r.lista; n++;
+        r.gravar.forEach(function (g) { gravar = gravar.filter(function (x) { return x.id !== g.id; }); gravar.push(g); });
+      });
+      if (gravar.length && !Store.salvarVarios(eid, CS.ENTIDADE, gravar, true)) return { n: 0, motivo: "armazenamento recusou" };
+      try { console.info("[bases] " + n + " linha(s) de base antiga(s) selada(s)" + (recusas.length ? "; " + recusas.length + " sem espaço: " + recusas[0] : "")); } catch (eC) {}
+      return { n: n, recusas: recusas };
+    },
+    /* as ações `crono-bases-*` (T5): o handler roda com `this` = App */
+    _acoesCrono_bases: {
+      "crono-bases-abrir": function (t) { this.cronoBasesAbrir(t.dataset.obra); },
+      "crono-bases-comp": function (t) { this._cronoCompMudar(t.dataset.obra, t.dataset.lado === "b" ? "b" : "a", t.dataset.base); },
+      "crono-bases-a": function (t, ev) { if (!ev || ev.type !== "change") return false; this._cronoCompMudar(t.dataset.obra, "a", String(t.value || "")); },
+      "crono-bases-b": function (t, ev) { if (!ev || ev.type !== "change") return false; this._cronoCompMudar(t.dataset.obra, "b", String(t.value || "")); },
+      "crono-bases-det": function (t) { this._cronoCompMudar(t.dataset.obra, "detalhe", t.dataset.valor); },
+      "crono-bases-filtro": function (t) { this._cronoCompMudar(t.dataset.obra, "filtro", t.dataset.valor); },
+      "crono-bases-busca": function (t, ev) { if (!ev || ev.type !== "change") return false; this._cronoCompMudar(t.dataset.obra, "busca", String(t.value || "").slice(0, 80)); },
+      "crono-bases-aprovar": function (t) { this.cronoAprovarBase(t.dataset.obra, t.dataset.base); },
+      "crono-bases-anular": function (t) { this.cronoAnularAprovacao(t.dataset.obra, t.dataset.base, t.dataset.evento); },
+      "crono-bases-marcar": function (t) { this.cronoMarcarContratual(t.dataset.obra, t.dataset.base); },
+      "crono-bases-trocar": function (t) { this.cronoTrocarContratual(t.dataset.obra); },
+      "crono-bases-encerrar": function (t) { this.cronoBasesEncerrar(t.dataset.obra); },
+      "crono-bases-orfaos": function () { this._cronoSelosOrfaos(true); }
+    },
+    /*
+     * ↑ região da fatia 1B (linhas de base): funções próprias e
+     * `_acoesCrono_bases`.
+     *
+     */
+    /* ===== PLANEJADOR: uso (1C) ===== */
+    _regUso: 1,
+    /* ---------------------------------------------------------------------
+       ESTADO DE TELA POR ALVO ("orc:<id>" | "plano:<obraId>"): a busca, o
+       filtro e a pilha do desfazer. ⚠ Nunca no orçamento, no plano ou nas
+       `prefs` (USO §7-1): gravado ali, cada clique mudaria o `atualizadoEm`,
+       subiria à nuvem e esbarraria na trava do aprovado. ⚠ Troca de empresa
+       ou de pessoa ZERA tudo (regra 5 da USO §3.2): a pilha de uma conta não
+       pode desfazer por cima da outra.
+       --------------------------------------------------------------------- */
+    _cronoUsoConta: function () {
+      var eid = "", em = "";
+      try { eid = String(Auth.empresaId() || ""); var u = Auth.usuario ? Auth.usuario() : null; em = String((u && (u.usuarioId || u.email)) || ""); } catch (e) { eid = ""; }
+      var k = eid + "|" + em;
+      if (this._cronoUsoDe !== k) {
+        this._cronoUsoDe = k;
+        this._cronoPilha = {}; this._cronoBusca = {}; this._cronoFiltro = {}; this._cronoFiltroAberto = null;
+      }
+      return k;
+    },
+    _cronoPilhaDe: function (chave) {
+      this._cronoUsoConta();
+      if (!this._cronoPilha || typeof this._cronoPilha !== "object") this._cronoPilha = {};
+      var P = (typeof CronoPilha !== "undefined") ? CronoPilha : null, k = String(chave || "");
+      if (!P) return null;
+      this._cronoPilha[k] = P.normalizar(this._cronoPilha[k]);
+      return this._cronoPilha[k];
+    },
+    _cronoUsoRec: function () {
+      try { return (typeof Cronograma !== "undefined" && Cronograma.recursos) ? Cronograma.recursos() : {}; } catch (e) { return {}; }
+    },
+
+    /* O CORPO DO GANCHO `_cronoDepoisDeSalvar` (T3): chamado SÓ quando o
+       salvar GRAVOU e o conteúdo mudou; `antes`/`depois` são as fotos do alvo.
+       ⚠ Nunca derruba o salvar (quem chama cerca com try, e aqui cada parte
+       tem o seu).
+       ⚠ E-MC3 (revisão 4): com `opts.semTela` (o canal da medição gravando o
+       avanço na aprovação do boletim, sem tela aberta) SÓ o histórico é
+       registrado, com a origem no texto — NUNCA empilha: a pilha é da tela
+       que a pessoa tem aberta, e o que o canal gravou não é passo dela. Quem
+       marca a pilha aberta como `invalidada` é o `_cronoGravarAvanco` (1A).
+       ⚠ `opts.pilha === false` (o próprio desfazer/refazer) também não
+       empilha: o cursor anda no `_cronoPilhaPasso`. */
+    _cronoUsoDepois: function (alvo, antes, depois, opts) {
+      opts = opts || {};
+      var rec = this._cronoUsoRec(), self = this, P = (typeof CronoPilha !== "undefined") ? CronoPilha : null;
+      if (!opts.semTela && opts.pilha !== false && P && alvo && alvo.chave) {
+        try {
+          var p = this._cronoPilhaDe(alvo.chave);
+          P.empilhar(p, antes, depois, this._cronoUsoRotulo(opts, antes, depois, alvo), rec.pilha === false ? { niveis: 1 } : null);
+          this._cronoFiltroFixar(alvo, opts, antes, depois);
+        } catch (eP) { try { console.warn("[cronograma] a pilha do desfazer falhou (o cronograma foi gravado):", eP); } catch (eC) {} }
+      }
+      if (rec.historico !== false) {
+        /* ⚠ DEPOIS da gravação e do redesenho (fila): o texto do histórico
+           precisa do nº e do nome das linhas e do prazo de depois, que o
+           render já calculou (memo) — no meio do salvar isso custaria um
+           `estimar` a mais em cada célula digitada (D29). */
+        var ctxH = { alvo: alvo, antes: antes, depois: depois, opts: opts, agora: Util.agoraISO(), rAntes: opts.cronoAntes || null };
+        setTimeout(function () {
+          try { self._cronoAltRegistrar(ctxH); }
+          catch (eH) { self._cronoAltFalhou(eH); }
+        }, 0);
+      }
+      if (!opts.semTela && typeof AvisosUI !== "undefined" && AvisosUI.agendarCrono) { try { AvisosUI.agendarCrono(2000); } catch (eS) {} }
+      return null;
+    },
+    /* o rótulo do passo na pilha: o do gravador (resumoOps), ou o do diff */
+    _cronoUsoRotulo: function (opts, antes, depois, alvo) {
+      if (opts && opts.resumo) return String(opts.resumo).replace(/\.\s*$/, "");
+      if (opts && opts.daIA) return "Edição pela IA";
+      var A = (typeof CronoAlt !== "undefined") ? CronoAlt : null;
+      if (!A) return "Alteração do cronograma";
+      try {
+        var d = A.diff(antes, depois, { etapas: (alvo && alvo.orc && alvo.orc.etapas) || [], r: this._cronoRUltimo(alvo) });
+        return A.resumir(d.m, d.nomes, 0);
+      } catch (e) { return "Alteração do cronograma"; }
+    },
+    /* o resultado do motor que a tela acabou de desenhar (sem novo cálculo) */
+    _cronoRUltimo: function (alvo) {
+      var g = this._gx;
+      if (g && g.ctx && g.ctx.r && (!alvo || !g.ctx.chave || g.ctx.chave === alvo.chave)) return g.ctx.r;
+      return null;
+    },
+    /* ⚠ LINHA EDITADA FICA NA TELA (USO §1.3): com o filtro ligado, a linha
+       que a pessoa acabou de editar pela grade, pela tabela ou pelo arrasto
+       continua visível mesmo que deixe de passar — ela não pode sumir debaixo
+       do cursor no meio de um Tab corrido. Só as que ESTAVAM na tela. */
+    _cronoFiltroFixar: function (alvo, opts, antes, depois) {
+      var f = this._cronoFiltro && this._cronoFiltro[alvo.chave], g = this._gx;
+      if (!f || !g || !g.ctx || g.ctx.chave !== alvo.chave || !g.ctx.manter) return;
+      if (!/^(grade|tabela|arrasto|soltar|tecla|duplo|cartao)$/.test(String(opts.origem || ""))) return;
+      var A = (typeof CronoAlt !== "undefined") ? CronoAlt : null;
+      if (!A) return;
+      var d = A.diff(antes, depois, {});
+      if (!f.fixos || typeof f.fixos !== "object") f.fixos = {};
+      d.m.forEach(function (x) { if (x.id && g.ctx.manter[x.id]) f.fixos[x.id] = true; });
+    },
+
+    /* O HISTÓRICO: registra a sessão de alteração em `crono_alt` (lista).
+       ⚠ Nunca recusa o cronograma: o cronograma JÁ foi gravado; se a
+       entidade está ilegível ou o armazenamento recusa, o recado é UM por
+       sessão e o cronograma segue. */
+    _cronoAltRegistrar: function (c) {
+      var A = (typeof CronoAlt !== "undefined") ? CronoAlt : null;
+      if (!A || !c || !c.alvo) return null;
+      var alvo = c.alvo, opts = c.opts || {}, eid = Auth.empresaId();
+      /* o motor de DEPOIS: sem a árvore (barato) para o prazo e o nº das etapas;
+         com ela só quando o diff tem subetapa ou avanço sem número */
+      var r = this._cronoAltR(alvo, false), etapasO = (alvo.orc && alvo.orc.etapas) || [];
+      var dif = A.diff(c.antes, c.depois, { etapas: etapasO, r: r });
+      if (dif.m.some(function (x) { return x.id && !x.n; })) {
+        var rE = this._cronoAltR(alvo, true);
+        if (rE) { r = rE; dif = A.diff(c.antes, c.depois, { etapas: etapasO, r: r }); }
+      }
+      var ha = A.hashVisivel(c.antes), h = A.hashVisivel(c.depois);
+      /* só a sombra mudou (a projeção, a marca "subetapas"): não é alteração
+         de ninguém, e o elo da cadeia de hashes continua inteiro */
+      if (ha === h && !dif.m.length) return null;
+      var lista = null, ileg = null;
+      try { lista = Store.listar(eid, A.ENTIDADE) || []; } catch (eL) { lista = null; }
+      try { ileg = (typeof Store.ilegivel === "function") ? Store.ilegivel(eid, A.ENTIDADE) : null; } catch (eI) { ileg = null; }
+      if (lista === null || ileg) {
+        this._cronoAltAvisar("O cronograma foi gravado, mas o histórico desta alteração não: " + (ileg ? this._cronoRecadoIlegivel(ileg) : "não consegui ler o histórico deste aparelho."));
+        return null;
+      }
+      var tipo = alvo.tipo === "plano" ? "p" : "o";
+      var obraId = tipo === "p" ? String((alvo.plano && alvo.plano.obraId) || (alvo.obra && alvo.obra.id) || alvo.obraId || "") : "";
+      var orcId = String((alvo.plano && alvo.plano.orcamentoId) || (alvo.orc && alvo.orc.id) || "");
+      var origem = String(opts.origem || (opts.daIA ? "ia" : "") || this._cronoAltOrigem(dif) || "tela");
+      var o = origem, sufixo = "";
+      if (opts.semTela) {
+        /* E-MC3: a origem do canal (ex.: "medição 01a") vai ao texto */
+        o = /^medi/i.test(origem) ? "medicao" : "avanco";
+        if (!/^(medicao|avanco)$/.test(origem)) sufixo = " · origem: " + origem;
+      }
+      if (!A.ORIGENS[o]) o = "tela";
+      var u = null;
+      try { u = Auth.usuario ? Auth.usuario() : null; } catch (eU) { u = null; }
+      var pz = [c.rAntes && c.rAntes.totalDias != null ? c.rAntes.totalDias : this._cronoAltPrazoAntes(alvo, c.antes), r && r.totalDias != null ? r.totalDias : null, null];
+      if (r && r.dataFim && r.dataFim.getFullYear) pz[2] = r.dataFim.getFullYear() + "-" + ("0" + (r.dataFim.getMonth() + 1)).slice(-2) + "-" + ("0" + r.dataFim.getDate()).slice(-2);
+      var resumo = opts.resumo ? String(opts.resumo).replace(/\.\s*$/, "") : A.resumir(dif.m, dif.nomes, 0);
+      var novo = A.evento({ t: tipo, obraId: obraId, orcId: orcId, agora: c.agora, por: this._cronoPor(), pid: (u && u.usuarioId) ? String(u.usuarioId) : "admin",
+        o: o, r: resumo + sufixo, m: dif.m, x: 0, pz: pz, ha: ha, h: h, ver: (typeof CONFIG !== "undefined" && CONFIG.versao) ? CONFIG.versao : "" });
+      var alvoK = A.alvoDe(novo), ult = A.doAlvo(lista, alvoK)[0] || null;
+      var j = (ult && !opts.semTela) ? A.juntar(ult, novo, { nomes: dif.nomes }) : null;
+      var out = lista.filter(function (e) { return !(j && e && e.id === j.id); });
+      out.push(j || novo);
+      out = A.podar(out);
+      /* ⚠ O18: nenhuma lista dentro de lista (o Firestore recusa e o push
+         antigo dizia "Sincronizado") — erro de programação, nada grava */
+      if (typeof Util.semListaAninhada === "function" && !Util.semListaAninhada(out)) {
+        try { console.error("[cronograma] histórico com lista aninhada — não gravado", out.slice(0, 2)); } catch (eC) {}
+        return null;
+      }
+      var gravou = (Store.adapter && typeof Store.adapter.gravar === "function") ? Store.adapter.gravar(eid, A.ENTIDADE, out) : false;
+      if (!gravou) { this._cronoAltAvisar("O cronograma foi gravado, mas o histórico desta alteração não (armazenamento cheio ou recusado)."); return null; }
+      return j || novo;
+    },
+    /* o resultado de depois, com a árvore (nº e nome das linhas, prazo): o do
+       render que acabou de acontecer (memo) — sem render, um cálculo */
+    /* ⚠ SEM o memo do render: a fila pode rodar antes do redesenho (mesmo
+       token), e o memo daria o resultado de ANTES da gravação */
+    _cronoAltR: function (alvo, comArvore) {
+      if (!alvo || !alvo.orc || typeof Cronograma === "undefined") return null;
+      try { return comArvore ? Cronograma.estimar(alvo.orc, null, { eap: true }) : Cronograma.estimar(alvo.orc); } catch (e) { return null; }
+    },
+    /* o prazo de ANTES quando o gravador não o passou: o mesmo orçamento com o
+       cronograma da foto de antes (cópia; nada se grava) */
+    _cronoAltPrazoAntes: function (alvo, antes) {
+      try {
+        var f = typeof antes === "string" ? JSON.parse(antes) : antes;
+        if (!f || !f.c || !alvo || !alvo.orc) return null;
+        var o = {}, k;
+        for (k in alvo.orc) if (Object.prototype.hasOwnProperty.call(alvo.orc, k)) o[k] = alvo.orc[k];
+        o.cronograma = f.c;
+        var r = Cronograma.estimar(o);
+        return r && r.totalDias != null ? r.totalDias : null;
+      } catch (e) { return null; }
+    },
+    /* a origem quando o gravador não disse (Recalcular, Limpar, modo executivo…) */
+    _cronoAltOrigem: function (dif) {
+      var m = (dif && dif.m) || [], i, soParam = m.length > 0;
+      for (i = 0; i < m.length; i++) {
+        if (m[i].c === "modo executivo") return "exec";
+        if (m[i].c === "eq") return "equipes";
+        if (String(m[i].c).indexOf("param:") !== 0) soParam = false;
+      }
+      return soParam ? "recalcular" : "";
+    },
+    _cronoAltAvisar: function (txt) {
+      if (this._cronoAltAvisou) return;
+      this._cronoAltAvisou = true;
+      try { UI.toast(txt, "erro"); } catch (e) {}
+    },
+    _cronoAltFalhou: function (e) {
+      try { console.warn("[cronograma] o histórico falhou (o cronograma foi gravado):", e); } catch (eC) {}
+    },
+
+    /* [🕘 Histórico] — o modal largo com as sessões do alvo, as lacunas e o
+       nº de hoje das tarefas sem preço. `soId` = só as sessões que mexeram
+       naquela linha. */
+    cronoAltAbrir: function (soId) {
+      var A = (typeof CronoAlt !== "undefined") ? CronoAlt : null, alvo = null;
+      if (!A || typeof CronoExecUI === "undefined") { UI.toast("O histórico do cronograma (js/cronoalt.js) não carregou — recarregue o app.", "erro"); return; }
+      try { alvo = this._cronoAlvo(); } catch (eA) { alvo = null; }
+      if (!alvo) { UI.toast("Abra um orçamento na aba Cronograma para ver o histórico.", ""); return; }
+      var ehPlano = alvo.tipo === "plano", obraId = ehPlano ? String((alvo.plano && alvo.plano.obraId) || "") : "";
+      if (ehPlano && typeof this._cronoSemPermissao === "function") {
+        var np = this._cronoSemPermissao(obraId);
+        if (np) { UI.toast(np, "erro"); return; }
+      }
+      var eid = Auth.empresaId(), lista = [], ileg = null;
+      try { lista = Store.listar(eid, A.ENTIDADE) || []; } catch (eL) { lista = []; }
+      try { ileg = (typeof Store.ilegivel === "function") ? Store.ilegivel(eid, A.ENTIDADE) : null; } catch (eI) { ileg = null; }
+      var alvoK = ehPlano ? "p:" + obraId : "o:" + String((alvo.orc && alvo.orc.id) || "");
+      var evs = A.doAlvo(lista, alvoK), hAtual = null;
+      try { hAtual = A.hashVisivel(alvo.foto()); } catch (eH) { hAtual = null; }
+      var lac = A.lacunas(evs, hAtual);
+      var r = this._cronoAltR(alvo, true), nomes = A.diff({}, {}, { etapas: (alvo.orc && alvo.orc.etapas) || [], r: r }).nomes;
+      var so = null;
+      if (soId) {
+        so = { id: String(soId), n: "" };
+        evs = evs.filter(function (e) { return (e.m || []).some(function (x) { return x && String(x.id) === String(soId); }); });
+        (r && r.atividades || []).forEach(function (n) { if (String(n.id) === String(soId)) so.n = n.numero; });
+      }
+      var nomeObra = ehPlano ? String((alvo.obra && alvo.obra.nome) || "") : "";
+      var tit = "Histórico do cronograma — " + (ehPlano ? "plano de execução da obra " + nomeObra : "orçamento " + String((alvo.orc && alvo.orc.numero) || ""));
+      UI.modal(tit, CronoExecUI.altHtml({ eventos: evs, lacunas: lac, r: r, nomes: nomes, soLinha: so,
+        semLeitura: ileg ? "O histórico não pode ser mostrado: " + this._cronoRecadoIlegivel(ileg) : null }), [
+        { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }
+      ]);
+      this._cronoAltAberto = { alvo: alvoK };
+    },
+
+    /* ---------------------------------------------------------------------
+       DESFAZER / REFAZER EM VÁRIOS NÍVEIS (USO §1.4 e §3.2)
+       --------------------------------------------------------------------- */
+    cronoRefazer: function () {
+      var marca = (typeof UI !== "undefined" && UI.toastMarca) ? UI.toastMarca() : null;
+      try { return this._cronoPilhaPasso("refazer"); }
+      finally { if (marca && UI.toastJuntar) UI.toastJuntar(marca, "crono", 420); }
+    },
+    /* UM PASSO da pilha, nos dois sentidos.
+       ⚠ A FOTO DE AGORA TEM DE SER A DO CURSOR: no plano, o `_cronoAlvo` RELÊ o
+       disco — é a conferência contra outra janela, a nuvem e o aparelho
+       1.2.81. Se não for, recusa COM A HORA (quando há marca), zera a pilha e
+       não grava nada: desfazer ali apagaria a gravação de outra pessoa.
+       ⚠ TROCA O CONTEÚDO, NUNCA A REFERÊNCIA (`alvo.restaurar`).
+       ⚠ O que FICOU (o persistir pode materializar) vira o estado do cursor. */
+    _cronoPilhaPasso: function (sentido) {
+      var P = (typeof CronoPilha !== "undefined") ? CronoPilha : null, alvo = null;
+      if (!P) { UI.toast("O desfazer em vários níveis (js/cronopilha.js) não carregou — recarregue o app.", "erro"); return false; }
+      try { alvo = this._cronoAlvo(); } catch (eA) { alvo = null; }
+      if (!alvo) { UI.toast("Não consegui identificar o cronograma desta tela — nada foi " + (sentido === "refazer" ? "refeito" : "desfeito") + ".", "erro"); return false; }
+      var p = this._cronoPilhaDe(alvo.chave), agoraIso = Util.agoraISO();
+      if (alvo.travado) {
+        /* a trava do aprovado: com passos guardados, o recado próprio (o
+           desfazer das alterações da proposta acabou); sem, a de sempre */
+        if (p && p.estados.length > 1) {
+          P.invalidar(p, "aprovado", agoraIso);
+          UI.toast(P.recadoRecusa(p, null, sentido), "erro");
+          P.zerar(p); this.render();
+        } else this._cronoTravado(alvo);
+        return false;
+      }
+      var atual = null;
+      try { atual = alvo.foto(); } catch (eF) { atual = null; }
+      var imp = P.impedimento(p, atual, sentido);
+      if (imp) {
+        UI.toast(P.recadoRecusa(p, atual, sentido), imp === "vazia" ? "" : "erro");
+        if (imp !== "vazia") { P.zerar(p); this.render(); }
+        return false;
+      }
+      var foto = P.alvo(p, sentido), rot = P.rotulo(p, sentido);
+      /* ⚠ o passo que mexe no AVANÇO grava avanço e plano encadeados, e esse
+         ramo é da 1A (`_cronoRestaurarAvanco`); sem ele, recusa COM recado,
+         nunca pela metade */
+      var obj = null, atualObj = null;
+      try { obj = JSON.parse(foto); atualObj = JSON.parse(atual); } catch (eJ) { obj = null; }
+      var avDif = !!obj && P.canon(obj.a || null) !== P.canon((atualObj && atualObj.a) || null);
+      if (avDif && typeof this._cronoRestaurarAvanco !== "function") {
+        UI.toast("Não dá para " + sentido + " este passo aqui: ele inclui o avanço lançado da obra, e esta versão ainda não restaura o avanço junto com o plano. Ajuste pela grade.", "erro");
+        return false;
+      }
+      var rAntes = null;
+      try { rAntes = Cronograma.estimar(alvo.orc); } catch (eR) { rAntes = null; }
+      var ok = false;
+      try { ok = alvo.restaurar(foto, { pilha: false, origem: sentido, silencioso: true, resumo: (sentido === "refazer" ? "Refeito: " : "Desfeito: ") + rot }); }
+      catch (eX) { ok = false; }
+      if (!ok) {
+        /* NADA GRAVADO = NADA MUDADO NA TELA: a memória volta à foto de agora
+           (o salvar já explicou por quê — licença, trava de carimbo, cota) */
+        try {
+          if (atualObj && atualObj.c && alvo.cron) {
+            var k, cron = alvo.cron, cc = atualObj.c;
+            for (k in cron) if (Object.prototype.hasOwnProperty.call(cron, k)) delete cron[k];
+            for (k in cc) if (Object.prototype.hasOwnProperty.call(cc, k)) cron[k] = cc[k];
+          }
+        } catch (eV) {}
+        this.render();
+        return false;
+      }
+      var ficou = null;
+      try { ficou = alvo.foto(); } catch (eF2) { ficou = null; }
+      P.confirmar(p, sentido, ficou);
+      var dep = null;
+      try { dep = Cronograma.estimar(alvo.orc); } catch (eD) { dep = null; }
+      var msg = (sentido === "refazer" ? "Refeito: " : "Desfeito: ") + rot;
+      if (rAntes && dep && rAntes.totalDias !== dep.totalDias) {
+        msg += " · Prazo da obra: " + rAntes.totalDias + " → " + dep.totalDias + " dias úteis" +
+          ((rAntes.dataFim && dep.dataFim) ? " (entrega " + rAntes.dataFim.toLocaleDateString("pt-BR") + " → " + dep.dataFim.toLocaleDateString("pt-BR") + ")" : "");
+      }
+      msg += "." + (sentido === "refazer" ? " Ctrl+Z desfaz." : " Ctrl+Y refaz.");
+      if (alvo.tipo === "plano") msg += " Plano de execução da obra " + String((alvo.obra && alvo.obra.nome) || "sem nome") + ": a proposta aprovada não muda.";
+      this._gxManterEscala();
+      this.render();
+      UI.toast(msg, "ok");
+      return true;
+    },
+    /* a pilha da tela aberta não descreve mais o disco (regra 2 da USO §3.2):
+       outra janela ou a nuvem trocaram o que esta tela mostra. A marca leva o
+       motivo e a HORA ao recado do próximo desfazer. Só marca quando a foto
+       mudou de fato — uma gravação de OUTRA obra não pode travar esta pilha. */
+    _cronoPilhaConferir: function (motivo) {
+      var P = (typeof CronoPilha !== "undefined") ? CronoPilha : null, alvo = null;
+      if (!P || !this._cronoPilha || this.aba !== "cronograma") return;
+      try { alvo = this._cronoAlvo(); } catch (e) { alvo = null; }
+      if (!alvo || !alvo.chave || !this._cronoPilha[alvo.chave]) return;
+      var p = this._cronoPilha[alvo.chave];
+      if (!p.estados || !p.estados.length) return;
+      var atual = null;
+      try { atual = alvo.foto(); } catch (eF) { atual = null; }
+      if (alvo.travado && p.estados.length > 1) { P.invalidar(p, "aprovado", Util.agoraISO()); return; }
+      if (p.estados[p.cursor] !== atual && !p.invalidada) P.invalidar(p, motivo || "outra-janela", Util.agoraISO());
+    },
+
+    /* ---------------------------------------------------------------------
+       BUSCA E FILTRO (USO §1.2 e §1.3)
+       --------------------------------------------------------------------- */
+    _cronoBuscaDe: function (chave) {
+      this._cronoUsoConta();
+      if (!this._cronoBusca || typeof this._cronoBusca !== "object") this._cronoBusca = {};
+      var b = this._cronoBusca[chave];
+      if (!b || typeof b !== "object") b = this._cronoBusca[chave] = { texto: "", idx: 0, soAchados: false };
+      return b;
+    },
+    _cronoFiltroDe: function (chave) {
+      this._cronoUsoConta();
+      if (!this._cronoFiltro || typeof this._cronoFiltro !== "object") this._cronoFiltro = {};
+      var f = this._cronoFiltro[chave];
+      if (!f || typeof f !== "object") f = this._cronoFiltro[chave] = { periodo: "tudo", categorias: [], fixos: {} };
+      return f;
+    },
+    _cronoChaveAtual: function () {
+      var g = this._gx;
+      if (g && g.ctx && g.ctx.chave) return g.ctx.chave;
+      var a = null;
+      try { a = this._cronoAlvo(); } catch (e) { a = null; }
+      return a ? a.chave : null;
+    },
+    /* a busca AO VIVO (sem render): os ids achados na lista inteira do
+       detalhe, memorizados pelo resultado do motor e pelo texto */
+    _cronoBuscaViva: function (g) {
+      var F = (typeof CronoFiltro !== "undefined") ? CronoFiltro : null;
+      if (!F || !g || !g.ctx || !g.ctx.chave) return null;
+      var b = this._cronoBusca && this._cronoBusca[g.ctx.chave];
+      if (!b || !String(b.texto || "").trim()) return null;
+      var mm = g.buscaMemo;
+      if (mm && mm.texto === b.texto && mm.det === g.ctx.det) return mm.v;
+      var Lt = CronoExecUI.linhas(g.ctx.r, { detalhe: g.ctx.det, abertas: {} });
+      var v = F.buscar(g.ctx.r, b.texto, Lt, { detalhe: g.ctx.det });
+      g.buscaMemo = { texto: b.texto, det: g.ctx.det, v: v };
+      return v;
+    },
+    /* os achados que Enter/F3/‹ › visitam: com o filtro ligado, só os da TELA
+       (o MESMO `manter` do render; ver `CronoFiltro.navegaveis`) */
+    _cronoBuscaNav: function (g, v) {
+      var F = (typeof CronoFiltro !== "undefined") ? CronoFiltro : null;
+      if (!F || !v) return { ids: [], fora: 0 };
+      return F.navegaveis(v, g && g.ctx ? g.ctx.manter : null);
+    },
+    /* DIGITAR NA BUSCA: só repinta (o render da aba no detalhe Serviço leva
+       163 ms com 168 linhas; por tecla ele travaria). Com "Só os achados",
+       o conjunto de linhas muda: aí é render, com espera, e o cursor volta ao
+       campo. */
+    _cronoBuscaDigitar: function (valor) {
+      var chave = this._cronoChaveAtual(); if (!chave) return;
+      var b = this._cronoBuscaDe(chave), self = this;
+      b.texto = String(valor == null ? "" : valor).slice(0, 120);
+      b.idx = 0;
+      if (b.soAchados) {
+        clearTimeout(this._cronoBuscaEspera);
+        this._cronoBuscaEspera = setTimeout(function () { self.render(); self._cronoBuscaFocar(); }, 250);
+        return;
+      }
+      clearTimeout(this._cronoBuscaEspera);
+      this._cronoBuscaEspera = setTimeout(function () { self._cronoBuscaIr(0); }, 60);
+    },
+    _cronoBuscaFocar: function () {
+      try {
+        var inp = document.querySelector("#aba-conteudo [data-crono-busca]");
+        if (inp) { inp.focus(); var n = inp.value.length; try { inp.setSelectionRange(n, n); } catch (eS) {} }
+      } catch (e) {}
+    },
+    /* IR AO ACHADO (delta: +1 próximo, −1 anterior, 0 o atual). A linha fica
+       selecionada, centralizada e VISÍVEL; numa etapa recolhida, a etapa abre
+       (o mesmo caminho do `cronoIrAoNo`). */
+    _cronoBuscaIr: function (delta) {
+      var g = this._gx, chave = this._cronoChaveAtual();
+      if (!chave) return;
+      var b = this._cronoBuscaDe(chave), v = g ? this._cronoBuscaViva(g) : null;
+      var nav = this._cronoBuscaNav(g, v), tot = nav.ids.length;
+      if (tot) b.idx = ((b.idx + (delta || 0)) % tot + tot) % tot;
+      else b.idx = 0;
+      this._cronoBuscaAtualizarTela(v, b);
+      if (!g) return;
+      var id = tot ? nav.ids[b.idx] : null;
+      if (!id) { this._gxPintar(true); return; }
+      var p = this._gxPro(), lin = -1, i;
+      for (i = 0; p && i < p.ids.length; i++) if (String(p.ids[i]) === String(id)) { lin = i; break; }
+      if (lin < 0) {
+        /* fora da tela: etapa recolhida (abre) ou fora do filtro (porta) */
+        var no = null;
+        (g.ctx.r.atividades || []).forEach(function (n) { if (String(n.id) === String(id)) no = n; });
+        this.cronoIrAoNo(id, no ? no.etapaId : null);
+        return;
+      }
+      g.z.sel = lin;
+      this._cronoCentralizar(g, p, lin);
+      this._gxPintar(true);
+      this._cronoLinhaNaJanela(g, lin);
+    },
+    _cronoCentralizar: function (g, p, lin) {
+      var l = p.L[lin], no = l && (l.no || l.et);
+      if (no && no.inicio != null && typeof GanttUI !== "undefined" && GanttUI.centralizarDia) {
+        var res = GanttUI.centralizarDia(p.e, Math.max(0, Math.round(no.inicio)));
+        if (res && res.scrollLeft != null) { g.z.scrollLeft = res.scrollLeft; g.plot.scrollLeft = res.scrollLeft; }
+      }
+      var rowH = CronoExecUI.GX_ROWH, hC = g.plot.clientHeight || 120;
+      if (lin * rowH < g.plot.scrollTop || (lin + 1) * rowH > g.plot.scrollTop + hC) {
+        var top = Math.max(0, lin * rowH - hC / 2);
+        g.plot.scrollTop = top; g.nomes.scrollTop = top; g.z.scrollTop = top;
+      }
+      g.regua.scrollLeft = g.plot.scrollLeft;
+    },
+    /* A LINHA NA JANELA, NÃO SÓ NO PAINEL DO GANTT.
+       ⚠ Roteiro do defeito (e2e-crono-busca, galpão a 1366×768, 17/09/2026):
+       a pessoa digita na barra de uso sem rolar a página — a barra fica em
+       y≈467 e o corpo do Gantt vai de 545 a 1063 px. Centralizar a linha NO
+       PAINEL a punha em y≈804, abaixo do pé da janela: "1 de 6" e nada à
+       vista. Quando a linha está fora da janela, a página (o #main) rola até
+       a moldura — no modo tela ela cabe inteira a partir do topo. */
+    _cronoLinhaNaJanela: function (g, lin) {
+      try {
+        if (!g || !g.plot || !g.wrap || lin == null || lin < 0 || typeof CronoExecUI === "undefined") return false;
+        var rowH = CronoExecUI.GX_ROWH, alt = global.innerHeight || 0;
+        var q = g.plot.getBoundingClientRect();
+        var y = q.top + lin * rowH - g.plot.scrollTop;
+        if (y >= Math.max(0, q.top) && y + rowH <= Math.min(alt, q.bottom)) return false;
+        if (g.wrap.scrollIntoView) g.wrap.scrollIntoView({ block: "start", inline: "nearest" });
+        return true;
+      } catch (e) { return false; }
+    },
+    /* o contador "2 de 4", os botões ‹ › e o recado, sem render (texto puro) */
+    _cronoBuscaAtualizarTela: function (v, b) {
+      try {
+        var w = document.querySelector("#aba-conteudo [data-gx-uso]"); if (!w) return;
+        var F = (typeof CronoFiltro !== "undefined") ? CronoFiltro : null, g = this._gx;
+        var nav = this._cronoBuscaNav(g, v), tot = nav.ids.length, cont = w.querySelector("[data-gx-busca-cont]");
+        if (cont) cont.textContent = F ? F.textoContador(b.texto, b.idx, nav) : "";
+        var bts = w.querySelectorAll('[data-acao="crono-busca-ant"],[data-acao="crono-busca-prox"]');
+        for (var i = 0; i < bts.length; i++) bts[i].disabled = tot < 2;
+        var rc = (F && v) ? F.recadoBusca(v, g && g.ctx ? g.ctx.det : "") : { texto: "", porta: null };
+        var el = w.parentNode ? w.parentNode.querySelector("[data-gx-busca-recado]") : null;
+        if (!rc.texto) { if (el) el.hidden = true; return; }
+        if (!el) {
+          el = document.createElement("div"); el.className = "gx-uso-recado"; el.setAttribute("data-gx-busca-recado", "1");
+          w.parentNode.insertBefore(el, w.nextSibling);
+        }
+        el.hidden = false;
+        el.textContent = rc.texto + " ";
+        if (rc.porta) {
+          var bt = document.createElement("button");
+          bt.type = "button"; bt.className = "gx-uso-link"; bt.setAttribute("data-acao", "crono-busca-detalhe"); bt.setAttribute("data-det", rc.porta);
+          bt.textContent = "Ver em " + (rc.porta === "servico" ? "Serviço" : "Subetapa");
+          el.appendChild(bt);
+        }
+      } catch (e) {}
+    },
+    /* os ouvintes da barra de uso, UMA vez por documento (delegação: o render
+       troca o HTML da aba e mataria ouvinte preso ao elemento).
+       ⚠ O Ctrl+F SÓ DENTRO DA MOLDURA DO GANTT (USO §7-13): fora dela é do
+       navegador; e o segundo Ctrl+F, com o cursor já no campo, também — assim
+       sempre existe caminho para a busca nativa. */
+    _cronoUsoLigarGlobal: function () {
+      if (this._cronoUsoLigado || typeof document === "undefined" || !document.addEventListener) return;
+      this._cronoUsoLigado = true;
+      var self = this;
+      document.addEventListener("input", function (ev) {
+        var t = ev.target;
+        if (t && t.getAttribute && t.getAttribute("data-crono-busca") != null) self._cronoBuscaDigitar(t.value);
+      });
+      document.addEventListener("keydown", function (ev) {
+        var t = ev.target;
+        if (!t || !t.closest) return;
+        var naBusca = t.getAttribute && t.getAttribute("data-crono-busca") != null;
+        if (naBusca) {
+          var k = ev.key;
+          if (k === "Enter" || k === "F3") { ev.preventDefault(); self._cronoBuscaIr(ev.shiftKey ? -1 : 1); return; }
+          if (k === "Escape" || k === "Esc") {
+            ev.preventDefault();
+            t.value = ""; self._cronoBuscaDigitar("");
+            var g = self._gx; if (g && g.plot && g.plot.focus) { try { g.plot.focus(); } catch (eF) {} }
+            return;
+          }
+          return;   // Ctrl+F no campo: do navegador
+        }
+        if (ev.defaultPrevented) return;
+        if (!t.closest("[data-gx-wrap],[data-gx-vazio]")) return;
+        if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && !ev.shiftKey && String(ev.key).toLowerCase() === "f") {
+          if (self._cronoBuscaAbrirCampo()) ev.preventDefault();
+          return;
+        }
+        if (ev.key === "F3") { ev.preventDefault(); self._cronoBuscaIr(ev.shiftKey ? -1 : 1); }
+      });
+    },
+    /* Ctrl+F dentro do Gantt: o cursor vai ao campo de busca. Devolve false
+       quando não há campo (recurso desligado) — aí o atalho é do navegador. */
+    _cronoBuscaAbrirCampo: function () {
+      var inp = null;
+      try { inp = document.querySelector("#aba-conteudo [data-crono-busca]"); } catch (e) { inp = null; }
+      if (!inp) return false;
+      try { inp.focus(); inp.select(); } catch (e2) {}
+      return true;
+    },
+    _cronoUsoRender: function () { this.render(); },
+
+    /* o que o clique de um ALERTA DO SINO faz: abre o orçamento da obra na
+       aba Cronograma (o plano, quando aprovado) com a linha selecionada e
+       centralizada. ⚠ Sem Orçamentos, o módulo "Cronograma da obra"; sem os
+       dois, o recado — nunca uma porta que não abre. */
+    cronoAbrirDoAviso: function (a) {
+      a = a || {};
+      var pode = function (m) { return !(typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo(m)); };
+      if (!pode("orcamentos")) {
+        if (pode("obras") && typeof Gestao !== "undefined" && Gestao.abrirCronobra) { Gestao.abrirCronobra(a.obraId); return; }
+        UI.toast("Seu usuário não tem permissão para abrir o cronograma desta obra — peça ao administrador.", "erro");
+        return;
+      }
+      if (typeof Gestao === "undefined" || !Gestao.cronobraAbrirOrc) return;
+      Gestao.cronobraAbrirOrc(a.obraId);
+      var self = this;
+      if (a.noId && this.aba === "cronograma") {
+        this._cronoSub = (this._cronoSub && typeof this._cronoSub === "object") ? this._cronoSub : {};
+        if (this.orcAtual) this._cronoSub[this.orcAtual.id] = "cronograma";
+        setTimeout(function () { self.cronoIrAoNo(a.noId, a.etapaId); }, 0);
+      }
+    },
+    /* OS ALERTAS DE UMA OBRA pelo sino: a MESMA montagem do chip e da ficha
+       (`_cronoPainelDados`, com o Gantt). ⚠ O corte é SEMPRE o padrão (último
+       diário): a data de corte escolhida numa tela é estado de outra pessoa ou
+       de outra hora (USO §7-8) — por isso a escolha da tela fica de fora
+       durante esta conta, e volta no `finally`. */
+    _cronoAlertasObra: function (obra, hoje) {
+      var CA = (typeof CronoAlertas !== "undefined") ? CronoAlertas : null;
+      if (!CA || !obra || !obra.orcamentoId) return [];
+      var eid = Auth.empresaId(), orc = null;
+      try { orc = Store.obterOrcamento(eid, obra.orcamentoId); } catch (eO) { orc = null; }
+      if (!orc) return [];
+      var guardado = this._cronoCorte, pd = null;
+      this._cronoCorte = null;
+      try { pd = this._cronoPainelDados(obra, orc, { comGantt: true }); }
+      catch (eP) { pd = null; }
+      finally { this._cronoCorte = guardado; }
+      return CA.daObra({ obra: obra, painel: pd && pd.painel, r: pd && pd.r, hoje: hoje });
+    },
+
+    /* AS AÇÕES DA FATIA (despacho da T5). ⚠ Caixa de marcar e seletor falam
+       por CHANGE: o clique neles é ignorado aqui (senão a ação rodaria duas
+       vezes e desmarcaria o que a pessoa acabou de marcar). */
+    _cronoUsoEhCampo: function (t, ev) {
+      var tag = String((t && t.tagName) || "").toUpperCase();
+      return (tag === "INPUT" || tag === "SELECT") && ev && ev.type === "click";
+    },
+    _acoesCrono_busca: {
+      "crono-busca-prox": function () { this._cronoBuscaIr(1); },
+      "crono-busca-ant": function () { this._cronoBuscaIr(-1); },
+      "crono-busca-so": function (t, ev) {
+        if (this._cronoUsoEhCampo(t, ev)) return true;
+        var ch = this._cronoChaveAtual(); if (!ch) return true;
+        this._cronoBuscaDe(ch).soAchados = !!t.checked;
+        this._cronoFiltroDe(ch).fixos = {};
+        this.render();
+      },
+      "crono-busca-detalhe": function (t) {
+        var o = this.orcAtual; if (!o) return true;
+        var det = t.getAttribute("data-det") === "subetapa" ? "subetapa" : "servico";
+        this._cronoDet = (this._cronoDet && typeof this._cronoDet === "object") ? this._cronoDet : {};
+        this._cronoDet[o.id] = det;
+        this.render();
+        this._cronoBuscaFocar();
+      }
+    },
+    _acoesCrono_filtro: {
+      "crono-filtro-abrir": function () {
+        var ch = this._cronoChaveAtual(); if (!ch) return true;
+        this._cronoFiltroAberto = this._cronoFiltroAberto === ch ? null : ch;
+        this.render();
+      },
+      "crono-filtro-fechar": function () { this._cronoFiltroAberto = null; this.render(); },
+      "crono-filtro-marcar": function (t, ev) {
+        if (this._cronoUsoEhCampo(t, ev)) return true;
+        var ch = this._cronoChaveAtual(); if (!ch) return true;
+        var k = String(t.getAttribute("data-crit") || ""), f = this._cronoFiltroDe(ch);
+        if (!/^(critico|atrasadas|naoConcluidas|marcos|fixadas)$/.test(k)) return true;
+        f[k] = !!t.checked; f.fixos = {};
+        this.render();
+      },
+      "crono-filtro-periodo": function (t, ev) {
+        if (this._cronoUsoEhCampo(t, ev)) return true;
+        var ch = this._cronoChaveAtual(); if (!ch) return true;
+        var v = String(t.getAttribute("data-per") || "tudo"), f = this._cronoFiltroDe(ch);
+        f.periodo = (v === "semana" || v === "2semanas") ? v : "tudo"; f.fixos = {};
+        this.render();
+      },
+      "crono-filtro-extras": function (t, ev) {
+        if (this._cronoUsoEhCampo(t, ev)) return true;
+        var ch = this._cronoChaveAtual(); if (!ch) return true;
+        var v = String(t.getAttribute("data-ext") || ""), f = this._cronoFiltroDe(ch);
+        f.extras = (v === "so" || v === "esconder") ? v : null; f.fixos = {};
+        this.render();
+      },
+      "crono-filtro-cat": function (t, ev) {
+        if (this._cronoUsoEhCampo(t, ev)) return true;
+        var ch = this._cronoChaveAtual(); if (!ch) return true;
+        var c = String(t.getAttribute("data-cat") || ""), f = this._cronoFiltroDe(ch);
+        var l = (f.categorias || []).filter(function (x) { return String(x) !== c; });
+        if (t.checked) l.push(c);
+        f.categorias = l; f.fixos = {};
+        this.render();
+      },
+      "crono-filtro-tirar": function (t) {
+        var ch = this._cronoChaveAtual(); if (!ch) return true;
+        var k = String(t.getAttribute("data-crit") || ""), f = this._cronoFiltroDe(ch);
+        if (k === "periodo") f.periodo = "tudo";
+        else if (k === "categorias") f.categorias = [];
+        else if (k === "extras") f.extras = null;
+        else if (k === "soAchados") this._cronoBuscaDe(ch).soAchados = false;
+        else f[k] = false;
+        f.fixos = {};
+        this.render();
+      },
+      "crono-filtro-limpar": function () {
+        var ch = this._cronoChaveAtual(); if (!ch) return true;
+        this._cronoFiltro[ch] = { periodo: "tudo", categorias: [], fixos: {} };
+        this._cronoBuscaDe(ch).soAchados = false;
+        this.render();
+      },
+      "crono-filtro-reaplicar": function () {
+        var ch = this._cronoChaveAtual(); if (!ch) return true;
+        this._cronoFiltroDe(ch).fixos = {};
+        this.render();
+      },
+      /* a porta do recado "fora do filtro": limpa e vai à linha */
+      "crono-filtro-limpar-ir": function (t) {
+        var ch = this._cronoChaveAtual(); if (!ch) return true;
+        this._cronoFiltro[ch] = { periodo: "tudo", categorias: [], fixos: {} };
+        this._cronoBuscaDe(ch).soAchados = false;
+        UI.fecharModal();
+        this.cronoIrAoNo(t.getAttribute("data-no"), t.getAttribute("data-etapa"));
+      }
+    },
+    _acoesCrono_pilha: {
+      "crono-pilha-desfazer": function () { this.cronoArrastoDesfazer(); },
+      "crono-pilha-refazer": function () { this.cronoRefazer(); }
+    },
+    _acoesCrono_alt: {
+      "crono-alt-abrir": function () { this.cronoAltAbrir(); },
+      "crono-alt-tudo": function () { UI.fecharModal(); this.cronoAltAbrir(); },
+      "crono-alt-ver": function (t) {
+        var id = t.getAttribute("data-no"), et = null, g = this._gx;
+        (g && g.ctx && g.ctx.r && g.ctx.r.atividades || []).forEach(function (n) { if (String(n.id) === String(id)) et = n.etapaId; });
+        UI.fecharModal();
+        this.cronoIrAoNo(id, et);
+      }
+    },
+    /*
+     * ↑ região da fatia 1C (busca, filtro, pilha, sino, histórico):
+     * `_acoesCrono_busca`, `_acoesCrono_filtro`, `_acoesCrono_pilha`,
+     * `_acoesCrono_alt`, `_acoesCrono_sino`.
+     */
+    /* ===== PLANEJADOR: gantt (2A) ===== */
+    _regGantt: 1,
+
+    /* ------------------------------------------------------------------
+       AS CAMADAS DO GANTT (D30, §1.7) — estado de TELA, no aparelho.
+       ⚠ NUNCA no orçamento nem no plano: o que eu escondo para apresentar ao
+       meu cliente não pode viajar pela nuvem e esconder a folga do
+       engenheiro do outro escritório. Mora em
+       `localStorage["orcapro:tela:crono-camadas:v1"]`, e TODA leitura e
+       escrita vai em try/catch: em janela anônima, com dados do site
+       bloqueados ou durante a captura de miniatura, o acessor LANÇA — e um
+       Gantt que não desenha porque o navegador recusou guardar uma
+       preferência seria o app inteiro parado por um enfeite.
+       ------------------------------------------------------------------ */
+    CHAVE_CAMADAS_2A: "orcapro:tela:crono-camadas:v1",
+    _cronoCamadas: null,
+    _cronoCompat: null,
+    _cronoCamadasLer: function () {
+      if (this._cronoCamadas && typeof this._cronoCamadas === "object") return this._cronoCamadas;
+      var o = {};
+      try {
+        var raw = (typeof localStorage !== "undefined" && localStorage) ? localStorage.getItem(this.CHAVE_CAMADAS_2A) : null;
+        if (raw) { var p = JSON.parse(raw); if (p && typeof p === "object" && !Array.isArray(p)) o = p; }
+      } catch (e) { o = {}; }
+      this._cronoCamadas = o;
+      return o;
+    },
+    _cronoCamadasGravar: function (o) {
+      this._cronoCamadas = o;
+      try { if (typeof localStorage !== "undefined" && localStorage) localStorage.setItem(this.CHAVE_CAMADAS_2A, JSON.stringify(o)); } catch (e) {}
+      try { this.render(); } catch (e2) {}
+      return true;
+    },
+    _acoesCrono_camadas: {
+      /* uma camada. ⚠ NADA é gravado no cronograma: camada desligada some só
+         do desenho — o motor, a tabela, o PDF e o prazo não mudam. */
+      "crono-camadas-uma": function (t) {
+        var k = String((t.dataset && t.dataset.camada) || "");
+        if (!k) return true;
+        var o = this._cronoCamadasLer(), c = {}, kk;
+        for (kk in o) if (Object.prototype.hasOwnProperty.call(o, kk)) c[kk] = o[kk];
+        var padrao = (typeof CronoExecUI !== "undefined" && CronoExecUI.CAMADAS_PADRAO) ? CronoExecUI.CAMADAS_PADRAO : {};
+        var atual = Object.prototype.hasOwnProperty.call(c, k) ? c[k] !== false : padrao[k] !== false;
+        c[k] = !atual;
+        return this._cronoCamadasGravar(c);
+      },
+      /* "Apresentar": esconde TODAS as camadas e o chip de compatibilidade,
+         sem apagar a escolha de cada uma (sair devolve o que estava ligado).
+         ⚠ Fica lembrado no aparelho de propósito: quem apresentou ontem abre
+         hoje no mesmo modo, e o botão DIZ isso ("Camadas: apresentar") —
+         senão a pessoa decidiria sobre um desenho que acha completo. */
+      "crono-camadas-apresentar": function (t) {
+        var lig = String((t.dataset && t.dataset.ligar) || "1") === "1";
+        var o = this._cronoCamadasLer(), c = {}, kk;
+        for (kk in o) if (Object.prototype.hasOwnProperty.call(o, kk)) c[kk] = o[kk];
+        c.apresentar = lig;
+        return this._cronoCamadasGravar(c);
+      },
+      /* o chip "Compatibilidade (N)": abre e fecha a faixa. Por ALVO (o
+         orçamento ou o plano da obra), em memória — é leitura de tela. */
+      "crono-camadas-compat": function (t) {
+        var alvo = null;
+        try { alvo = this._cronoAlvo(); } catch (eA) { alvo = null; }
+        var ch = (alvo && alvo.chave) ? alvo.chave : (this.orcAtual ? "orc:" + this.orcAtual.id : "");
+        if (!this._cronoCompat || typeof this._cronoCompat !== "object") this._cronoCompat = {};
+        this._cronoCompat[ch] = String((t.dataset && t.dataset.ligar) || "1") === "1";
+        try { this.render(); } catch (e) {}
+        return true;
+      },
+      /* Planejar | Avançar. ⚠ Só no plano da obra, e a guarda está NA FUNÇÃO:
+         sem obra não existe registro de avanço onde gravar (§1.4), e um modo
+         que abre colunas que recusam tudo é porta que não abre. */
+      "crono-camadas-modo": function (t) {
+        var alvo = null;
+        try { alvo = this._cronoAlvo(); } catch (eA) { alvo = null; }
+        if (!alvo || alvo.tipo !== "plano") {
+          UI.toast("O avanço é lançado no plano de execução da obra, não no orçamento — ligue a obra a este orçamento e inicie o plano.", "erro");
+          return true;
+        }
+        var obraId = String((alvo.plano && alvo.plano.obraId) || (alvo.obra && alvo.obra.id) || "");
+        if (!obraId) { UI.toast("Não consegui identificar a obra deste plano — o modo não mudou.", "erro"); return true; }
+        if (!this._cronoAvancoTela || typeof this._cronoAvancoTela !== "object") this._cronoAvancoTela = {};
+        var tela = this._cronoAvancoTela[obraId];
+        if (!tela || typeof tela !== "object") tela = this._cronoAvancoTela[obraId] = { modo: "planejar", corteEscolhido: null, baseEm: null };
+        tela.modo = String((t.dataset && t.dataset.modo) || "planejar") === "avancar" ? "avancar" : "planejar";
+        /* ⚠ O CARIMBO DO AVANÇO É LIDO AQUI, NA ABERTURA DA TELA (§1.4,
+           crítica 1, achado 11) — nunca no clique de gravar. Entre abrir o
+           modo Avançar e digitar um % cabe um sync inteiro: lido no clique, o
+           carimbo já seria o do outro aparelho, a trava passaria e o
+           lançamento dele sumiria sem ninguém ver. */
+        if (tela.modo === "avancar") {
+          var rec = null;
+          try {
+            if (typeof CronoBase !== "undefined" && CronoBase.avanco) rec = CronoBase.avanco(this._cronoListaCrono(obraId), obraId);
+          } catch (eR) { rec = null; }
+          tela.baseEm = rec ? rec.atualizadoEm : null;
+        }
+        try { this.render(); } catch (e) {}
+        return true;
+      }
+    },
+
+    /* ------------------------------------------------------------------
+       AS TAREFAS SEM PREÇO (linhas T) — criar, excluir e mover.
+       ⚠ TODA porta confere `_trialBloqueado()` ANTES do `aplicarOps` (e não
+       depois): em demonstração, aplicar e só então recusar deixaria o objeto
+       em memória com a tarefa criada, e o render seguinte a mostraria como se
+       tivesse sido gravada.
+       ⚠ A recusa de TETO é a da 1A (`_cronoTetoRecado`), com as portas que a
+       medição provou que resolvem. Nenhum recado próprio aqui: dois textos
+       para o mesmo limite divergem na primeira manutenção.
+       ------------------------------------------------------------------ */
+    _acoesCrono_extra: {
+      "crono-extra-nova": function (t) { return this._cronoExtraNova((t.dataset && t.dataset.apos) || null); },
+      "crono-extra-excluir": function (t) { return this._cronoExtraExcluir((t.dataset && t.dataset.id) || null); },
+      "crono-extra-mover": function (t) { return this._cronoExtraMover((t.dataset && t.dataset.id) || null, (t.dataset && t.dataset.dir) || "1"); },
+      "crono-extra-menu": function (t, ev) { return this._cronoMenuLinha((t.dataset && t.dataset.id) || null, t, ev); }
+    },
+    /* ------------------------------------------------------------------
+       O CARTÃO "NOVA TAREFA SEM PREÇO" (desenho EXTRAS a.2).
+       ⚠ NÃO É ENFEITE: SEM ELE A TAREFA NASCE SEM NOME E NINGUÉM CONSEGUE
+       NOMEÁ-LA. Até 21/09/2026 o `crono-extra-nova` criava direto, com
+       `nome: "Tarefa sem preço"` e 5 dias, e NENHUMA porta abria a célula
+       `nome` da linha T: a célula existe no `CronoExecUI.ganttProCelula`, mas
+       a grade só desenha Dur./Depende de, não há F2 e o menu ⋯ não tem
+       "Renomear". Medido pela `e2e-planejador-completo` (passo 2) na fusão da
+       Onda 3: toda tarefa sem preço ia ao PDF, à proposta e ao MS Project do
+       contratante como "Tarefa sem preço". E "Libera as etapas" — a porta que
+       faz a tarefa SEGURAR uma etapa, que é a razão de ela existir — não
+       existia em lugar nenhum (memória "porta prometida precisa existir").
+       "Depende de" nasce com a etapa de cima (decisão k6); "Libera", vazio
+       (EXTRAS a.2), porque criar não muda prazo nenhum.
+       ------------------------------------------------------------------ */
+    _cronoExtraNova: function (apos) {
+      var alvo = null;
+      try { alvo = this._cronoAlvo(); } catch (eA) { alvo = null; }
+      if (!alvo) { UI.toast("Não consegui identificar onde gravar esta tarefa — nada foi criado.", "erro"); return true; }
+      if (alvo.travado) { this._cronoTravado(alvo); return true; }
+      if (this._trialBloqueado()) { this._avisoTrial(); return true; }
+      if (typeof GanttUI === "undefined" || typeof CronoExtras === "undefined" || typeof Cronograma === "undefined") {
+        UI.toast("O módulo das tarefas sem preço não carregou nesta tela — nada foi criado. Recarregue a página (Ctrl+F5).", "erro"); return true;
+      }
+      var r = null;
+      try { r = Cronograma.estimar(alvo.orc, null, { eap: true }); } catch (eR) { r = null; }
+      var etapas = (r && Array.isArray(r.etapas)) ? r.etapas : [], numApos = "", i;
+      for (i = 0; i < etapas.length; i++) if (etapas[i] && String(etapas[i].id) === String(apos || "")) numApos = String(i + 1);
+      var E = Util.esc, self = this, aposId = apos || null;
+      UI.modal("Nova tarefa sem preço",
+        '<div class="field"><label>Nome</label><input id="crono-extra-nome" class="cell" maxlength="80" placeholder="' + E("Aprovação do projeto pelo cliente") + '"></div>' +
+        '<div class="field"><label>Duração (dias úteis)</label><input id="crono-extra-dur" class="cell" inputmode="numeric" value="5"></div>' +
+        '<label class="chk"><input type="checkbox" id="crono-extra-marco"> ' + E("Marco (evento, 0 dia)") + '</label>' +
+        '<div class="field"><label>Responsável</label><select id="crono-extra-resp" class="cell">' +
+          '<option value="cliente" selected>Contratante</option><option value="construtora">Construtora</option><option value="terceiro">Terceiro</option></select></div>' +
+        '<div class="field"><label>Depende de</label><input id="crono-extra-dep" class="cell" value="' + E(numApos) + '" placeholder="' + E("início da obra") + '"></div>' +
+        '<div class="field"><label>Libera as etapas</label><input id="crono-extra-lib" class="cell" placeholder="4, 5"></div>' +
+        '<div class="field"><label>Não começa antes de</label><input id="crono-extra-nia" class="cell" type="date"></div>' +
+        '<label class="chk"><input type="checkbox" id="crono-extra-prop" checked> ' + E("Mostrar na proposta, como premissa do contratante") + '</label>' +
+        '<p class="muted">' + E("Tarefa sem preço não é item do orçamento: ela entra na rede e nas datas, mas não tem valor e não muda o preço da proposta. " +
+          "“Depende de” aceita o nº da etapa (3), outra tarefa (T1), espera (3+5) e tipo (3TT). " +
+          "“Libera as etapas” é o que faz a tarefa SEGURAR uma etapa — vazio, nenhuma etapa se mexe.") + '</p>',
+        [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+         { texto: "Criar tarefa", classe: "primary", onClick: function () {
+           function v(id2) { try { var el = document.getElementById(id2); return el ? el.value : ""; } catch (e1) { return ""; } }
+           function c(id2) { try { var el = document.getElementById(id2); return !!(el && el.checked); } catch (e2) { return false; } }
+           self._cronoExtraCriar({ apos: aposId, nome: v("crono-extra-nome"), dur: v("crono-extra-dur"), marco: c("crono-extra-marco"),
+             resp: v("crono-extra-resp"), dep: v("crono-extra-dep"), lib: v("crono-extra-lib"), nia: v("crono-extra-nia"), proposta: c("crono-extra-prop") });
+         } }]);
+      return true;
+    },
+    /* o [Criar tarefa] do cartão. Recusa ANTES de tocar no cronograma, com o
+       texto que diz o que se aceita — a pessoa acabou de digitar e é aqui que
+       ela conserta. */
+    _cronoExtraCriar: function (ds) {
+      var alvo = null;
+      try { alvo = this._cronoAlvo(); } catch (eA) { alvo = null; }
+      if (!alvo) { UI.toast("Não consegui identificar onde gravar esta tarefa — nada foi criado.", "erro"); return true; }
+      if (alvo.travado) { this._cronoTravado(alvo); return true; }
+      if (this._trialBloqueado()) { this._avisoTrial(); return true; }
+      if (typeof GanttUI === "undefined" || typeof CronoExtras === "undefined" || typeof Cronograma === "undefined") {
+        UI.toast("O módulo das tarefas sem preço não carregou nesta tela — nada foi criado. Recarregue a página (Ctrl+F5).", "erro"); return true;
+      }
+      var nome = String(ds.nome == null ? "" : ds.nome).replace(/\s+/g, " ").trim().slice(0, 80);
+      if (!nome) { UI.toast("A tarefa sem preço precisa de nome — é ele que aparece no Gantt, no PDF e na proposta. Nada foi criado.", "erro"); return true; }
+      var marco = !!ds.marco, dur = marco ? 0 : GanttUI.lerDuracao(String(ds.dur == null ? "" : ds.dur));
+      if (!marco && (dur === null || dur < 1)) {
+        UI.toast("“" + String(ds.dur == null ? "" : ds.dur) + "” não é duração válida — use dias úteis inteiros de 1 a 999, ou marque “Marco (evento, 0 dia)”. Nada foi criado.", "erro"); return true;
+      }
+      var resp = (["cliente", "construtora", "terceiro"].indexOf(String(ds.resp || "")) >= 0) ? String(ds.resp) : "cliente";
+      var nia = /^\d{4}-\d{2}-\d{2}$/.test(String(ds.nia || "")) ? String(ds.nia) : "";
+      var r = null;
+      try { r = Cronograma.estimar(alvo.orc, null, { eap: true }); } catch (eR) { r = null; }
+      var ordem = (r && Array.isArray(r.etapas)) ? r.etapas.map(function (e) { return e && e.id; }) : [];
+      var idsX = (r && Array.isArray(r.extras)) ? r.extras.map(function (x) { return x && x.id; }) : [];
+      var cron = alvo.cron, usados = {};
+      (Array.isArray(cron.extras) ? cron.extras : []).forEach(function (x) { if (x && x.id) usados[x.id] = true; });
+      var id = CronoExtras.novoId(usados);
+      var ctxP = { etapas: ordem, extras: idsX };
+      var prD = Cronograma.parsePredsExtra(GanttUI.normalizarPreds(String(ds.dep == null ? "" : ds.dep)), id, ctxP);
+      if (prD.invalidos.length) {
+        UI.toast("“" + prD.invalidos.join(", ") + "” não vale em “Depende de” — use o nº da etapa (1 a " + ordem.length +
+          ") ou de outra tarefa sem preço (T1…); espera 3+5, tipo 3TT; vazio = começa no início da obra. Nada foi criado.", "erro"); return true;
+      }
+      var prL = Cronograma.parsePredsExtra(GanttUI.normalizarPreds(String(ds.lib == null ? "" : ds.lib)), id, ctxP);
+      if (prL.invalidos.length) {
+        UI.toast("“" + prL.invalidos.join(", ") + "” não vale em “Libera as etapas” — use o nº das etapas (1 a " + ordem.length + "), por exemplo “4, 5”. Nada foi criado.", "erro"); return true;
+      }
+      /* ⚠ `sucs` SÓ ACEITA ETAPA (CronoExtras: "sucs-so-etapa"). Uma T que
+         liberasse outra T seria gravada e o normalizador a jogaria fora com
+         um aviso que ninguém lê — a pessoa veria a tarefa nascer sem o elo
+         que ela pediu. Melhor recusar na cara, dizendo o caminho certo. */
+      var etMap = {}, sucs = [], ruimL = [];
+      ordem.forEach(function (q) { if (q) etMap[q] = true; });
+      prL.extras.forEach(function (x) {
+        if (!Object.prototype.hasOwnProperty.call(etMap, x.i)) { ruimL.push(x.i); return; }
+        sucs.push({ i: x.i, t: x.t, l: x.l });
+      });
+      if (ruimL.length) {
+        UI.toast("“Libera as etapas” só aceita nº de ETAPA. Para uma tarefa sem preço depender de outra, escreva o T dela em “Depende de”. Nada foi criado.", "erro"); return true;
+      }
+      var para = { nome: nome, dur: dur, resp: resp, apos: ds.apos || null,
+        preds: prD.extras.map(function (x) { return { i: x.i, t: x.t, l: x.l }; }), sucs: sucs };
+      if (resp === "cliente") para.proposta = !!ds.proposta;   // D1: a caixa só existe para o contratante
+      if (nia) para.nia = nia;
+      var ops = [{ alvo: "extra", id: id, campo: "criar", para: para }];
+      /* ⚠ O TETO É MEDIDO ANTES DE GRAVAR, numa CÓPIA (O30): a operação que
+         passaria de 60 KB é recusada com o recado único da 1A e as portas
+         que a medição provou que resolvem. Sem isto, a 31ª tarefa entraria no
+         objeto e o salvar recusaria com "Avise o suporte". */
+      var medir = this._cronoMedidorTeto(alvo), cronDepois = JSON.parse(JSON.stringify(cron));
+      var ensaio = GanttUI.aplicarOps(cronDepois, ops, { orc: alvo.orc, inicioFixo: !!this._cronoInicioEfetivo(alvo) });
+      if (ensaio.portaInicio) {
+        UI.modal("Fixe o início da obra", '<p>' + Util.esc("Para uma tarefa sem preço segurar uma etapa, o cronograma precisa de início fixo — sem ele, a data que ela segura mudaria a cada dia nos aparelhos de versão anterior.") + '</p>' +
+          this._cronoPortaInicioHtml(alvo, null, "Fixe o início e crie de novo:"),
+          [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+        return true;
+      }
+      if (ensaio.erros.length) { UI.toast(ensaio.erros[0] + " — nada foi criado.", "erro"); return true; }
+      var teto = medir ? medir(cronDepois) : null;
+      if (teto) { this._cronoTetoRecado(alvo, teto); return true; }
+      UI.fecharModal();
+      /* sem "Libera", criar não muda prazo nenhum — e o recado tem de dizer
+         ONDE fica a porta, senão a pessoa cria a tarefa e acha que o app a
+         ignorou (EXTRAS a.2-4) */
+      this._cronoGravarOps(alvo, ops, null, r, { origem: "extra", rotulo: "tarefa sem preço criada",
+        sufixo: sucs.length ? "" : " Nenhuma etapa depende dela ainda — para segurar uma etapa, preencha “Libera as etapas” ou escreva o nº T dela no “Depende de” da etapa." });
+      return true;
+    },
+    /* excluir: o efeito é MEDIDO numa cópia antes de perguntar. "Isso pode
+       mudar o prazo" é formalidade; "o prazo passa de 84 para 79 dias úteis"
+       é número que a pessoa confere. */
+    _cronoExtraExcluir: function (id) {
+      var alvo = null;
+      try { alvo = this._cronoAlvo(); } catch (eA) { alvo = null; }
+      if (!alvo || !id) { UI.toast("Não consegui identificar esta tarefa — nada foi excluído.", "erro"); return true; }
+      if (alvo.travado) { this._cronoTravado(alvo); return true; }
+      if (this._trialBloqueado()) { this._avisoTrial(); return true; }
+      if (typeof GanttUI === "undefined" || typeof Cronograma === "undefined") { UI.toast("O motor do cronograma não carregou nesta tela — nada foi excluído.", "erro"); return true; }
+      var rA = null;
+      try { rA = Cronograma.estimar(alvo.orc, null, { eap: true }); } catch (eR) { rA = null; }
+      var x = null;
+      (rA && Array.isArray(rA.extras) ? rA.extras : []).forEach(function (q) { if (q && q.id === id) x = q; });
+      var nome = x ? (String(x.numero || "T") + " " + String(x.nome || "")) : "esta tarefa";
+      var ops = [{ alvo: "extra", id: id, campo: "excluir" }];
+      // o efeito MEDIDO: aplica numa cópia do orçamento e estima de novo
+      var dias = null;
+      try {
+        var o2 = {}, k2;
+        for (k2 in alvo.orc) if (Object.prototype.hasOwnProperty.call(alvo.orc, k2)) o2[k2] = alvo.orc[k2];
+        var c2 = JSON.parse(JSON.stringify(alvo.cron));
+        GanttUI.aplicarOps(c2, ops, { orc: alvo.orc });
+        o2.cronograma = c2;
+        var r2 = Cronograma.estimar(o2, null, { eap: true });
+        if (r2 && rA) dias = { de: rA.totalDias, para: r2.totalDias, deX: rA.totalDiasComExtras || rA.totalDias, paraX: r2.totalDiasComExtras || r2.totalDias };
+      } catch (eM) { dias = null; }
+      var self = this;
+      var efeito = dias
+        ? (dias.de !== dias.para
+          ? "O prazo da obra passa de " + dias.de + " para " + dias.para + " dias úteis."
+          : (dias.deX !== dias.paraX
+            ? "O prazo da obra não muda (" + dias.de + " dias úteis); o prazo com as tarefas sem preço passa de " + dias.deX + " para " + dias.paraX + "."
+            : "O prazo da obra não muda (" + dias.de + " dias úteis)."))
+        : "Não consegui medir o efeito no prazo nesta tela — confira o prazo depois de excluir.";
+      UI.modal("Excluir a tarefa sem preço?",
+        '<p>' + Util.esc(nome) + '</p><p>' + Util.esc(efeito) + '</p>' +
+        '<p class="muted">' + Util.esc("As ligações das outras tarefas com esta também saem. Dá para desfazer (↶) enquanto esta janela estiver aberta.") + '</p>',
+        [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+         { texto: "Excluir", classe: "danger", onClick: function () {
+           UI.fecharModal();
+           self._cronoGravarOps(alvo, ops, null, rA, { origem: "extra", rotulo: "tarefa sem preço excluída" });
+         } }]);
+      return true;
+    },
+    /* mover na lista: o nº T é a POSIÇÃO (T1, T2…), como o nº da etapa —
+       reordenar renumera, e todo texto mostrado sai do id, então nunca fica
+       velho (O23) */
+    _cronoExtraMover: function (id, dir) {
+      var alvo = null;
+      try { alvo = this._cronoAlvo(); } catch (eA) { alvo = null; }
+      if (!alvo || !id) return true;
+      if (alvo.travado) { this._cronoTravado(alvo); return true; }
+      if (this._trialBloqueado()) { this._avisoTrial(); return true; }
+      var d = String(dir) === "-1" ? -1 : 1;
+      var rA = null;
+      try { rA = Cronograma.estimar(alvo.orc, null, { eap: true }); } catch (eR) { rA = null; }
+      /* ⚠ A OPERAÇÃO SE MONTA NO MOTOR, e a tela só diz a DIREÇÃO. Roteiro
+         do defeito (revisão final, 22/09/2026): aqui ia
+         `para: d` — um número — e o gravador espera `{apos, indice}`. Com o
+         número no lugar do objeto, `mv.apos == null` apagava a âncora e
+         `mv.indice == null` mandava a linha para o fim: os DOIS botões
+         faziam a mesma coisa, e não havia caminho de volta pela tela. A
+         direção nunca era lida. */
+      if (typeof GanttUI === "undefined" || !GanttUI.opsDoExtraMover) {
+        UI.toast("O motor do cronograma (js/ganttui.js) não carregou nesta tela — nada foi movido. Recarregue a página (Ctrl+F5).", "erro");
+        return true;
+      }
+      var mv = GanttUI.opsDoExtraMover(id, d, (alvo.orc.etapas || []).map(function (et) { return et.id; }),
+        (alvo.cron && alvo.cron.extras) || []);
+      if (!mv.ok) { UI.toast(mv.msg, "erro"); return true; }
+      if (!mv.ops.length) {
+        /* ⚠ TRAVA COM PORTA: "não dá para ir mais longe" é outra coisa de
+           "nada mudou", e a pessoa precisa saber qual das duas aconteceu. */
+        UI.toast(d > 0 ? "Esta tarefa já está na última etapa da lista — não há para onde descer."
+          : "Esta tarefa já está na primeira etapa da lista — não há para onde subir.", "");
+        return true;
+      }
+      this._cronoGravarOps(alvo, mv.ops, null, rA, { origem: "extra", rotulo: "tarefa sem preço movida" });
+      return true;
+    },
+
+    /* ------------------------------------------------------------------
+       O QUE A GRADE GRAVA NO MODO AVANÇAR (2A).
+       ⚠ SÓ O REGISTRO `avanco_<obraId>` É GRAVADO (O17). O plano NÃO é
+       regravado: o merge do `crono_obra` é por registro inteiro, sem cópia do
+       perdedor, e gravar os dois juntos apagava, no conflito, o TT que o
+       escritório tinha digitado. As datas do plano para aparelhos de versão
+       anterior entram no próximo salvar dele (ou na porta [Atualizar as
+       datas…], que é da 2B) — até lá o recado diz isso, e é verdade.
+       ⚠ A pilha do desfazer e a trava de carimbo são do `_cronoGravarAvanco`
+       (1A): aqui só se lê o registro, se aplicam as operações do motor e se
+       entrega. Uma segunda gravação de avanço seria a segunda cabeça
+       decidindo o que a primeira já decide.
+       ------------------------------------------------------------------ */
+    _cronoGravarAvancoOps: function (alvo, ops, rotulo) {
+      if (!alvo || alvo.tipo !== "plano") {
+        UI.toast("O avanço é lançado no plano de execução da obra — nada foi gravado.", "erro");
+        return { ok: false };
+      }
+      if (typeof CronoBase === "undefined" || typeof GanttUI === "undefined" || !GanttUI.aplicarAvanco) {
+        UI.toast("O módulo do avanço não carregou nesta tela — nada foi gravado. Recarregue a página (Ctrl+F5).", "erro");
+        return { ok: false };
+      }
+      var obraId = String((alvo.plano && alvo.plano.obraId) || (alvo.obra && alvo.obra.id) || "");
+      if (!obraId) { UI.toast("Não consegui identificar a obra deste plano — nada foi gravado.", "erro"); return { ok: false }; }
+      var rec = null;
+      try { rec = CronoBase.avanco(this._cronoListaCrono(obraId), obraId); } catch (eL) { rec = null; }
+      if (!rec) {
+        rec = { id: "avanco_" + obraId, tipo: "avanco", fmt: 1, obraId: obraId,
+          orcamentoId: String((alvo.plano && alvo.plano.orcamentoId) || (alvo.orc && alvo.orc.id) || ""),
+          corte: this._cronoCorteDaTela(obraId), nos: [], por: this._cronoQuem(),
+          criadoEm: new Date().toISOString(), atualizadoEm: new Date().toISOString() };
+      }
+      var hoje = (typeof Cronograma !== "undefined" && Cronograma._ch) ? Cronograma._ch(new Date()) : new Date().toISOString().slice(0, 10);
+      var corte = String(rec.corte || hoje);
+      ops.forEach(function (op) { if (op && !op.em) op.em = corte; });
+      var ap = GanttUI.aplicarAvanco(rec, ops);
+      if (ap.erros.length) { UI.toast(ap.erros[0] + " — nada foi gravado.", "erro"); return { ok: false }; }
+      if (!ap.mudou) { UI.toast("Nada mudou no avanço desta tarefa.", ""); return { ok: true, mudou: false }; }
+      var res = this._cronoGravarAvanco(alvo, ap.rec, { rotulo: rotulo || "avanço lançado" });
+      if (!res || !res.ok) {
+        if (res && res.portaInicio) {
+          UI.modal("Fixe o início da obra", '<p>' + Util.esc(res.erro || "") + '</p>' +
+            this._cronoPortaInicioHtml(alvo, null, "Fixe o início e lance de novo:"),
+            [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+        } else if (res && res.erro && res.erro !== "licenca") UI.toast(res.erro + (/nada foi gravado/i.test(res.erro) ? "" : " Nada foi gravado."), "erro");
+        try { this.render(); } catch (eR) {}
+        return { ok: false };
+      }
+      UI.toast((rotulo ? rotulo + " · " : "") + "avanço gravado (corte " + corte.slice(8, 10) + "/" + corte.slice(5, 7) + "). " +
+        "As datas do plano para aparelhos de versão anterior entram no próximo salvar dele.", "ok");
+      try { this.render(); } catch (eR2) {}
+      return { ok: true, mudou: true };
+    },
+    /* a data de corte que a tela está usando (a escolhida, ou o padrão puro
+       do motor — nunca uma segunda regra aqui) */
+    _cronoCorteDaTela: function (obraId) {
+      var tela = (this._cronoAvancoTela && this._cronoAvancoTela[obraId]) || null;
+      if (tela && tela.corteEscolhido) return String(tela.corteEscolhido);
+      var hoje = (typeof Cronograma !== "undefined" && Cronograma._ch) ? Cronograma._ch(new Date()) : new Date().toISOString().slice(0, 10);
+      if (typeof CronoAvanco === "undefined" || typeof CronoAvanco.cortePadrao !== "function") return hoje;
+      var obra = this._cronoObraDe ? this._cronoObraDe(obraId) : null;
+      var diarios = [];
+      /* ⚠ A ENTIDADE É `rdo`, NÃO `rdos`. Escrita no plural, a leitura voltava
+         sempre vazia e o corte padrão caía em "hoje" calado — e a
+         `test-sync-cobertura` reprovava com "grava no Store e NÃO sincroniza",
+         porque o nome novo não está na lista do `js/nuvem.js`. Nome de
+         entidade se confere no `nuvem.js`, nunca de cabeça. */
+      try { diarios = (typeof Store !== "undefined" && Store.listar) ? (Store.listar(Auth.empresaId(), "rdo") || []).filter(function (d) { return d && String(d.obraId) === String(obraId); }) : []; } catch (eD) { diarios = []; }
+      try { return String(CronoAvanco.cortePadrao(diarios, hoje, obra ? obra.inicio : null) || hoje); } catch (eC) { return hoje; }
+    },
+    _cronoQuem: function () {
+      var u = null;
+      try { u = (typeof Auth !== "undefined" && Auth.usuario) ? Auth.usuario() : null; } catch (e) { u = null; }
+      return String((u && (u.nome || u.email)) || "");
+    },
+
+    /* ------------------------------------------------------------------
+       O MENU ⋯ DA LINHA (crítica 2, achado 17).
+       "Restrição…", "Calendário…" e "Tarefa sem preço abaixo" não tinham
+       onde morar: a restrição de data só se via arrastando a barra (um campo
+       que a tabela nunca mostrou), e a tecla Ins ninguém descobre sozinho.
+       ⚠ CADA ITEM QUE NÃO SE APLICA APARECE COM O MOTIVO, e não some: item
+       que some não ensina nada, e a pessoa procura a função em outro lugar.
+       ------------------------------------------------------------------ */
+    _cronoMenuLinha: function (id, t, ev) {
+      if (ev && ev.preventDefault) { try { ev.preventDefault(); } catch (e0) {} }
+      var alvo = null;
+      try { alvo = this._cronoAlvo(); } catch (eA) { alvo = null; }
+      if (!alvo || !id) { UI.toast("Não consegui identificar esta linha — nada foi aberto.", "erro"); return true; }
+      var r = null;
+      try { r = Cronograma.estimar(alvo.orc, null, { eap: true }); } catch (eR) { r = null; }
+      var no = (r && typeof GanttUI !== "undefined") ? GanttUI.acharNo(r, id) : null;
+      if (!no) { UI.toast("Esta linha não existe mais neste cronograma.", "erro"); return true; }
+      var nome = String((no.numero ? no.numero + " " : "") + (no.nome || ""));
+      var ehExtra = no.tipo === "extra", ehEtapa = no.tipo === "etapa";
+      var self = this, E = Util.esc;
+      var temCal = !!(alvo.cron && alvo.cron.cal && Array.isArray(alvo.cron.cal.lista) && alvo.cron.cal.lista.length);
+      function item(acao, ds, rot, dica, motivo) {
+        if (motivo) return '<li class="cx-menu-off" title="' + E(motivo) + '"><span>' + E(rot) + '</span><span class="muted"> — ' + E(motivo) + '</span></li>';
+        return '<li><button class="btn sm" data-acao="' + acao + '"' + ds + ' title="' + E(dica) + '">' + E(rot) + '</button></li>';
+      }
+      var ds = ' data-id="' + E(String(id)) + '"';
+      var html = '<ul class="cx-menu-lista">' +
+        item("crono-rede-restricao", ds, "Restrição de data…",
+          "Não iniciar antes de, deve iniciar em, deve terminar em, não terminar antes de, ou o mais tarde possível.",
+          alvo.travado ? "orçamento aprovado: crie uma revisão" : (no.tipo === "servico" ? "a restrição é da tarefa, não do serviço" : "")) +
+        item("crono-rede-cal", ds, "Calendário da frente…",
+          "Em que calendário esta linha trabalha (7×7, turnos, sábado). Vazio = a régua da obra.",
+          alvo.travado ? "orçamento aprovado: crie uma revisão"
+            : (no.tipo === "servico" ? "o calendário é da tarefa, não do serviço"
+              : (temCal ? "" : "nenhum calendário criado ainda — crie um em Parâmetros › Calendários das frentes"))) +
+        item("crono-extra-nova", ' data-apos="' + E(String(ehEtapa ? id : (no.etapaId || ""))) + '"', "Tarefa sem preço abaixo",
+          "Cria uma tarefa sem preço pendurada nesta etapa (o mesmo que a tecla Ins).",
+          alvo.travado ? "orçamento aprovado: crie uma revisão" : "");
+      if (ehExtra) {
+        html += item("crono-extra-mover", ds + ' data-dir="-1"', "Subir na lista", "Reordena as tarefas sem preço (o nº T é a posição).", alvo.travado ? "orçamento aprovado" : "") +
+          item("crono-extra-mover", ds + ' data-dir="1"', "Descer na lista", "Reordena as tarefas sem preço (o nº T é a posição).", alvo.travado ? "orçamento aprovado" : "") +
+          item("crono-extra-excluir", ds, "Excluir esta tarefa", "Mede o efeito no prazo e pergunta antes.", alvo.travado ? "orçamento aprovado" : "");
+      }
+      html += '</ul>';
+      UI.modal(nome, html, [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+      void self;
+      return true;
+    },
+
+    /* ------------------------------------------------------------------
+       A RESTRIÇÃO DE DATA E O CALENDÁRIO DA LINHA (as duas portas do menu ⋯).
+       A gravação é o caminho único (`_cronoGravarOps`); as recusas (TT/IT em
+       calendário próprio, elo cruzado, início flutuante — O11/O14) moram no
+       `GanttUI.aplicarOps`, e é de lá que o recado sai.
+       ------------------------------------------------------------------ */
+    _acoesCrono_rede: {
+      "crono-rede-restricao": function (t) { return this._cronoRestricaoAbrir((t.dataset && t.dataset.id) || null); },
+      "crono-rede-restricao-gravar": function (t) { return this._cronoRestricaoGravar(t.dataset || {}); },
+      "crono-rede-cal": function (t) { return this._cronoCalLinhaAbrir((t.dataset && t.dataset.id) || null); },
+      "crono-rede-cal-gravar": function (t) { return this._cronoCalLinhaGravar(t.dataset || {}); }
+    },
+    TIPOS_RESTR_2A: [["", "sem restrição"], ["nia", "não iniciar antes de"], ["dia", "deve iniciar em"],
+      ["dta", "deve terminar em"], ["nta", "não terminar antes de"], ["nid", "não iniciar depois de"],
+      ["tae", "terminar até (só avisa)"], ["mtp", "o mais tarde possível"]],
+    _cronoRestricaoAbrir: function (id) {
+      var alvo = null;
+      try { alvo = this._cronoAlvo(); } catch (eA) { alvo = null; }
+      if (!alvo || !id) return true;
+      if (alvo.travado) { this._cronoTravado(alvo); return true; }
+      var r = null;
+      try { r = Cronograma.estimar(alvo.orc, null, { eap: true }); } catch (eR) { r = null; }
+      var no = (r && typeof GanttUI !== "undefined") ? GanttUI.acharNo(r, id) : null;
+      if (!no) { UI.toast("Esta linha não existe mais neste cronograma.", "erro"); return true; }
+      var rs = no.restricao || null, E = Util.esc, self = this;
+      var tipoAtual = rs ? String(rs.tipo || "") : "";
+      var dataAtual = (rs && rs.data) ? String(rs.data).slice(0, 10) : "";
+      var sel = '<select id="crono-restr-tipo" class="cell">';
+      this.TIPOS_RESTR_2A.forEach(function (p) { sel += '<option value="' + p[0] + '"' + (p[0] === tipoAtual ? ' selected' : '') + '>' + E(p[1]) + '</option>'; });
+      sel += '</select>';
+      UI.modal("Restrição de data — " + String((no.numero ? no.numero + " " : "") + (no.nome || "")),
+        '<div class="field"><label>O que a data manda</label>' + sel + '</div>' +
+        '<div class="field"><label>Data</label><input id="crono-restr-data" class="cell" type="date" value="' + E(dataAtual) + '"></div>' +
+        '<p class="muted">' + E("“não iniciar antes de”, “deve iniciar em”, “deve terminar em” e “não terminar antes de” EMPURRAM a tarefa. " +
+          "“não iniciar depois de” e “terminar até” só AVISAM quando o plano não as cumpre — elas não encurtam a tarefa nem empurram as outras. " +
+          "“o mais tarde possível” usa a folga livre sem mexer em ninguém.") + '</p>',
+        [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+         { texto: "Gravar", classe: "primary", onClick: function () {
+           var tp = "", dt = "";
+           try { tp = document.getElementById("crono-restr-tipo").value; } catch (e1) { tp = ""; }
+           try { dt = document.getElementById("crono-restr-data").value; } catch (e2) { dt = ""; }
+           self._cronoRestricaoGravar({ id: id, tipo: tp, data: dt });
+         } }]);
+      return true;
+    },
+    _cronoRestricaoGravar: function (ds) {
+      var alvo = null;
+      try { alvo = this._cronoAlvo(); } catch (eA) { alvo = null; }
+      var id = String(ds.id || "");
+      if (!alvo || !id) { UI.toast("Não consegui identificar esta linha — nada foi gravado.", "erro"); return true; }
+      if (alvo.travado) { this._cronoTravado(alvo); return true; }
+      if (this._trialBloqueado()) { this._avisoTrial(); return true; }
+      var tp = String(ds.tipo || ""), dt = String(ds.data || "");
+      if (tp && tp !== "mtp" && !/^\d{4}-\d{2}-\d{2}$/.test(dt)) { UI.toast("Escolha a data da restrição — nada foi gravado.", "erro"); return true; }
+      var r = null;
+      try { r = Cronograma.estimar(alvo.orc, null, { eap: true }); } catch (eR) { r = null; }
+      var no = (r && typeof GanttUI !== "undefined") ? GanttUI.acharNo(r, id) : null;
+      if (!no) { UI.toast("Esta linha não existe mais neste cronograma — nada foi gravado.", "erro"); return true; }
+      var folha = no.tipo === "subetapa" || no.tipo === "soltos";
+      var op = { alvo: folha ? "folha" : "etapa", id: id, campo: "restricaoData",
+        para: tp ? { tipo: tp, data: tp === "mtp" ? null : dt } : null };
+      if (folha) op.etapaId = no.etapaId;
+      var ensaio = JSON.parse(JSON.stringify(alvo.cron));
+      var ap = GanttUI.aplicarOps(ensaio, [op], { orc: alvo.orc, inicioFixo: !!this._cronoInicioEfetivo(alvo) });
+      if (ap.portaInicio) {
+        UI.modal("Fixe o início da obra", '<p>' + Util.esc(ap.erros[0] || "Esta restrição exige o início fixo da obra.") + '</p>' +
+          this._cronoPortaInicioHtml(alvo, null, "Fixe o início e grave de novo:"),
+          [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+        return true;
+      }
+      if (ap.erros.length) { UI.toast(ap.erros[0] + " — nada foi gravado.", "erro"); return true; }
+      UI.fecharModal();
+      this._cronoGravarOps(alvo, [op], no, r, { origem: "restricao", rotulo: "restrição de data" });
+      return true;
+    },
+    _cronoCalLinhaAbrir: function (id) {
+      var alvo = null;
+      try { alvo = this._cronoAlvo(); } catch (eA) { alvo = null; }
+      if (!alvo || !id) return true;
+      if (alvo.travado) { this._cronoTravado(alvo); return true; }
+      var lista = (alvo.cron && alvo.cron.cal && Array.isArray(alvo.cron.cal.lista)) ? alvo.cron.cal.lista : [];
+      if (!lista.length) { UI.toast("Nenhum calendário criado ainda — crie um em Parâmetros › Calendários das frentes.", ""); return true; }
+      var de = (alvo.cron.cal.de && typeof alvo.cron.cal.de === "object") ? alvo.cron.cal.de[id] : null;
+      var E = Util.esc, self = this;
+      var sel = '<select id="crono-cal-linha" class="cell"><option value=""' + (de ? '' : ' selected') + '>régua da obra</option>';
+      lista.forEach(function (c) { if (c && c.id) sel += '<option value="' + E(String(c.id)) + '"' + (String(c.id) === String(de) ? ' selected' : '') + '>' + E(String(c.nome || c.id)) + '</option>'; });
+      sel += '</select>';
+      UI.modal("Calendário da frente",
+        '<div class="field"><label>Esta linha trabalha em</label>' + sel + '</div>' +
+        '<p class="muted">' + E("O prazo continua contado na régua da obra: o calendário muda em que DIAS a frente trabalha, e o app guarda a data resultante para que aparelhos de versão anterior desenhem a mesma coisa.") + '</p>',
+        [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+         { texto: "Gravar", classe: "primary", onClick: function () {
+           var v = "";
+           try { v = document.getElementById("crono-cal-linha").value; } catch (e1) { v = ""; }
+           self._cronoCalLinhaGravar({ id: id, cal: v });
+         } }]);
+      return true;
+    },
+    _cronoCalLinhaGravar: function (ds) {
+      var alvo = null;
+      try { alvo = this._cronoAlvo(); } catch (eA) { alvo = null; }
+      var id = String(ds.id || "");
+      if (!alvo || !id) { UI.toast("Não consegui identificar esta linha — nada foi gravado.", "erro"); return true; }
+      if (alvo.travado) { this._cronoTravado(alvo); return true; }
+      if (this._trialBloqueado()) { this._avisoTrial(); return true; }
+      var r = null;
+      try { r = Cronograma.estimar(alvo.orc, null, { eap: true }); } catch (eR) { r = null; }
+      var no = (r && typeof GanttUI !== "undefined") ? GanttUI.acharNo(r, id) : null;
+      if (!no) { UI.toast("Esta linha não existe mais neste cronograma — nada foi gravado.", "erro"); return true; }
+      var res = GanttUI.opsDoCalendario(r, no, String(ds.cal || ""), {
+        travado: alvo.travado, cron: alvo.cron, orc: alvo.orc, inicioFixo: !!this._cronoInicioEfetivo(alvo)
+      });
+      if (!res.ok) {
+        if (res.porta === "inicio") {
+          UI.modal("Fixe o início da obra", '<p>' + Util.esc(res.msg) + '</p>' + this._cronoPortaInicioHtml(alvo, null, "Fixe o início e grave de novo:"),
+            [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+        } else UI.toast(res.msg, "erro");
+        return true;
+      }
+      UI.fecharModal();
+      if (!res.ops.length) { UI.toast("Esta linha já estava nesse calendário — nada mudou.", ""); return true; }
+      this._cronoGravarOps(alvo, res.ops, no, r, { origem: "calendario", rotulo: res.msg });
+      return true;
+    },
+    /*
+     * ↑ região da fatia 2A (Gantt): `_acoesCrono_rede`, `_acoesCrono_extra`,
+     * `_acoesCrono_camadas`.
+     *
+     */
+    /* ===== PLANEJADOR: paineis (2B) ===== */
+    _regPaineis: 1,
+
+    /* ==================================================================
+       A RECUSA DE TETO DO [Iniciar plano de execução] (O30, revisão 4)
+
+       O plano que nasceria passa de 60 KB. As portas (1) e (2) da O30 são
+       simuladas AQUI, na ordem, e só entra a primeira que resolve de verdade
+       — "porta prometida precisa existir": a M0 mediu que uma delas às vezes
+       PIORA o tamanho, e oferecê-la sem simular seria trava com porta falsa.
+       O texto da recusa vem do `_cronoTetoRecado` (1A), fonte única.
+       ================================================================== */
+    _cronoIniciarPlanoTeto: function (obraId, marcaSubstituir, o, c, rec) {
+      var self = this, CB = CronoBase, TET = Cronograma.TETO_PLANO;
+      var alvoT = { tipo: "plano", obraId: obraId, chave: "plano:" + obraId, obra: c.obra, orc: o, cron: o.cronograma, plano: null };
+      var porFuncao = {};
+      try { porFuncao = Cronograma._porFuncao(o.cronograma || {}) || {}; } catch (ePF) { porFuncao = {}; }
+      var portas = [], m1 = null, m2 = null;
+      try { m1 = CB.medirIniciar(o, c.obra, { regua: "nova", iaResumo: { texto: 1 } }); } catch (e1) { m1 = null; }
+      if (m1 && !m1.erro && m1.cabe) {
+        portas.push({ id: "marca-ia", bytes: m1.bytes, libera: rec.bytes - m1.bytes, aplica: ["marca-ia"], ia: { texto: 1 } });
+      } else {
+        try { m2 = CB.medirIniciar(o, c.obra, { regua: "nova", iaResumo: { texto: 1, origem: 1 } }); } catch (e2) { m2 = null; }
+        if (m2 && !m2.erro && m2.cabe) {
+          portas.push({ id: "sem-origem-ia", bytes: m2.bytes, libera: rec.bytes - m2.bytes, aplica: ["marca-ia", "sem-origem-ia"], ia: { texto: 1, origem: 1 } });
+        }
+      }
+      var teto = { alvo: "plano", regua: "plano", bytes: rec.bytes, teto: TET, excede: true, portas: [], porFuncao: porFuncao };
+      var txt = this._cronoTetoRecado(alvoT, teto, { semModal: true });
+      var html = '<p>' + Util.esc(txt) + '</p><p>' + Util.esc("Nada foi criado.") + '</p>';
+      var bts = [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }];
+      if (portas.length) {
+        var pt = portas[0], info = this._cronoTetoPortaTexto(alvoT, teto, { id: pt.id, aplica: pt.aplica, marcados: 0, soNoPlano: 0, ligacoes: 0 });
+        html += '<div class="card" style="margin:8px 0;padding:10px"><b>' + Util.esc(info.rotulo) + '</b>' +
+          '<p class="muted" style="margin:6px 0 0">' + Util.esc(info.texto + " Libera " + this._cronoKB(pt.libera) + " KB (o plano nasce com " + this._cronoKB(pt.bytes) + " KB).") + '</p></div>';
+        bts.push({ texto: info.rotulo, classe: "primary", onClick: function () {
+          UI.fecharModal();
+          self._cronoIniciarPlanoAplicar(obraId, marcaSubstituir, { iaResumo: pt.ia });
+        } });
+      } else {
+        html += '<p>' + Util.esc("Nenhuma mudança de forma resolve sozinha: escolha o que desfazer do que foi criado neste cronograma.") + '</p>';
+      }
+      html += '<p><button class="btn ghost sm" data-acao="crono-teto-ver" data-alvo="plano" data-obra="' + Util.esc(obraId) +
+        '" data-orc="' + Util.esc(String(o.id)) + '">Ver o que ocupa espaço</button></p>';
+      UI.modal("Limite de espaço do plano de execução", html, bts);
+      return false;
+    },
+
+    /* o mapa `{idDoBoletim: "01a"}` do rótulo "medição NNa" (E-MC5). Um NOME
+       SÓ para o mesmo mapa (`opts.numeroB`), usado pelo `confrontoPorNo`, pelo
+       `sugestoesDoDiario` e pelo `resumirConcluidas`. Leitura que falha
+       devolve `{}`: sem o mapa o rótulo cai no id do boletim, que é feio mas
+       verdadeiro — nunca "digitado", que seria mentira sobre a origem. */
+    /* ⚠ MEDCC 6B (linha de passagem, EM-4): o corpo delega ao
+       `MedAvanco.mapasB`, que é o DONO ÚNICO desta pergunta e monta os dois
+       mapas (`ordemB` e `numeroB`) com a mesma ordenação. A conta abaixo
+       continua como reserva para quando o `medavanco.js` não carregou — e só
+       para isso. Duas contagens vivas da mesma coisa divergiriam na primeira
+       manutenção, e o rótulo "medição 02a" passaria a discordar do lastro que
+       a porta [Resumir] grava. */
+    _cronoNumeroB: function (medicoes, obraId) {
+      if (typeof MedAvanco !== "undefined" && MedAvanco && typeof MedAvanco.mapasB === "function") {
+        try { return MedAvanco.mapasB(medicoes, obraId).numeroB; } catch (e) { /* cai na reserva */ }
+      }
+      var m = {}, i, x, l = Util.arr(medicoes);
+      for (i = 0; i < l.length; i++) {
+        x = l[i];
+        if (x && x.id != null && String(x.obraId || "") === String(obraId) && x.numero) m[String(x.id)] = String(x.numero);
+      }
+      return m;
+    },
+
+    /* ==================================================================
+       O AVANÇO LANÇADO — A TELA (planejador 2B; avanco.md passos 1 e 2)
+
+       ⚠ O CARIMBO-BASE É LIDO AQUI, NA ABERTURA (crítica 1, achado 11), e
+         NUNCA no clique de gravar: entre abrir o modal e clicar cabe um sync
+         inteiro, e o carimbo lido no clique já seria o do outro aparelho — a
+         trava passaria e o lançamento dele sumiria sem ninguém ver.
+         O `_cronoGravarAvanco` (1A) é FAIL-CLOSED: sem `App._cronoAvancoTela`
+         registrado aqui, ele recusa alto em vez de gravar com a trava
+         desligada em silêncio.
+       ================================================================== */
+    _cronoAvancoTela: null,
+    _cronoAvancoAbrir: function (ds) {
+      ds = ds || {};
+      var self = this, obraId = String(ds.obra || "");
+      if (!obraId) { var al0 = null; try { al0 = this._cronoAlvo(); } catch (eA0) { al0 = null; } obraId = String((al0 && al0.plano && al0.plano.obraId) || ""); }
+      if (!obraId) { UI.toast("Não consegui identificar a obra deste plano — nada foi aberto.", "erro"); return true; }
+      if (typeof CronoBase === "undefined" || typeof CronoAvanco === "undefined") { UI.toast("O módulo do avanço não carregou (cronoavanco.js) — recarregue o app.", "erro"); return true; }
+      /* as guardas ANTES de abrir (o modal que abre e não grava é pior que o
+         botão que não abre: a pessoa digita tudo e perde) */
+      if (this._trialBloqueado()) { this._avisoTrial(); return true; }
+      var np = this._cronoSemPermissao(obraId);
+      if (np) { UI.toast(np + " O avanço não foi aberto.", "erro"); return true; }
+      var c = this._cronoObraCtx(obraId);
+      if (c.erro) { UI.toast(c.erro, "erro"); return true; }
+      if (c.lista === null) { UI.toast(this._cronoSemLista(c, "lançar avanço na obra " + String(c.obra.nome || ""), "Não consegui ler o planejamento das obras deste aparelho — nada foi aberto. Recarregue o app."), "erro"); return true; }
+      /* ⚠ TRAVA COM PORTA, E A PORTA TEM DE EXISTIR NO ESTADO EM QUE A
+         PESSOA ESTÁ. Roteiro do defeito (revisão final, 22/09/2026): este
+         ramo respondia "Use [Iniciar plano de execução da obra]" — um botão
+         que só é renderizado no ramo `dec.travado && !dec.plano`, quer dizer,
+         com o orçamento APROVADO, e nunca nesta tela. Varri o documento
+         inteiro na obra medida: "Iniciar plano" não existia em lugar nenhum,
+         nem na aba Cronograma do orçamento
+         (`[data-acao=crono-plano-iniciar]` = nada no DOM). Recado que manda
+         usar um botão inexistente é pior que recado nenhum: a função de
+         lançar avanço simplesmente não começava naquela obra.
+         Agora o recado olha o estado: sem orçamento ligado, uma porta; com
+         orçamento não aprovado, outra; aprovado, a de sempre — e as três
+         abrem de verdade. */
+      if (!c.plano) { this._cronoAvancoSemPlano(c, obraId); return true; }
+      var rec = CronoBase.avanco(c.lista, obraId);
+      /* ⚠ O CARIMBO, NA ABERTURA */
+      if (!this._cronoAvancoTela || typeof this._cronoAvancoTela !== "object") this._cronoAvancoTela = {};
+      this._cronoAvancoTela[obraId] = { baseEm: rec ? rec.atualizadoEm : null, abertaEm: Util.agoraISO() };
+      var st = this._cronoAvancoEstado(c, rec, ds.corte != null ? String(ds.corte) : null);
+      this._cronoAvancoSt = st;
+      var bts = [{ texto: "Voltar sem gravar", classe: "ghost", onClick: function () { UI.fecharModal(); } }];
+      if (!st.semInicio) bts.push({ texto: "Gravar e reprogramar", classe: "primary", onClick: function () { self._cronoAvancoGravar(obraId); } });
+      if (rec) bts.unshift({ texto: "Limpar o avanço", classe: "ghost", onClick: function () { self._cronoAvancoLimpar(obraId); } });
+      UI.modal((rec ? "Atualizar avanço" : "Lançar avanço") + " — obra " + String(c.obra.nome || ""), CronoExecUI.avancoModalHtml(st), bts);
+      /* trocar a data de corte remonta o modal (o corte muda as sugestões e o
+         antes → depois); ⚠ o carimbo NÃO é relido: a tela é a mesma */
+      var el = UI.el && UI.el("av-corte");
+      if (el) el.addEventListener("change", function () { self._cronoAvancoCorte(obraId, String(this.value || "")); });
+      return true;
+    },
+    /* A PORTA DO "LANÇAR AVANÇO" NUMA OBRA SEM PLANO (revisão final).
+       O plano de execução nasce do orçamento APROVADO (é o que o
+       `CronoExecUI.decidirAlvo` decide e a faixa da aba Cronograma oferece).
+       Cada estado tem uma saída diferente, e o recado abre a que existe:
+         · sem orçamento ligado → o cadastro da obra;
+         · orçamento não aprovado → o orçamento, onde a aprovação acontece;
+         · aprovado e sem plano → o orçamento na aba Cronograma, onde o
+           [Iniciar plano de execução da obra] É renderizado.
+       ⚠ O botão do modal NÃO chama `cronoIniciarPlano` daqui: aquela função
+       começa em `this.orcAtual`, e nesta tela o orçamento aberto pode ser
+       outro (ou nenhum) — ela sairia calada. Levar à aba é a porta que abre. */
+    _cronoAvancoSemPlano: function (c, obraId) {
+      var self = this, nome = String((c.obra && c.obra.nome) || "esta obra");
+      var orc = c.orc || null;
+      function modal(titulo, corpo, botoes) {
+        UI.modal(titulo, '<p style="font-size:13px">' + corpo + "</p>",
+          (botoes || []).concat([{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]));
+      }
+      if (!orc) {
+        modal("A obra " + Util.esc(nome) + " ainda não tem plano de execução",
+          "O avanço é lançado no plano de execução, e o plano nasce do orçamento da obra — mas esta obra " +
+          "<b>não está ligada a nenhum orçamento</b>. Ligue-a a um no cadastro da obra e volte aqui.",
+          [{ texto: "Abrir o cadastro da obra", classe: "primary", onClick: function () {
+            UI.fecharModal();
+            /* a MESMA porta do botão [Editar cadastro da obra] da ficha
+               (`data-gopen="obras:<id>"`, js/gestao.js) — não uma segunda
+               receita que apodrece quando a primeira mudar */
+            try {
+              if (typeof Gestao !== "undefined" && Gestao.abrir) { Gestao.abrir("obras", obraId); return; }
+            } catch (eG) {}
+            UI.toast("Abra Canteiro › Obras e edite o cadastro da obra " + nome + " para ligar um orçamento.", "");
+          } }]);
+        return;
+      }
+      var est = "";
+      try { est = (typeof Aprovacao !== "undefined" && Aprovacao.estadoDe) ? String(Aprovacao.estadoDe(orc) || "") : ""; } catch (eA) { est = ""; }
+      var orcId = String(orc.id);
+      var irAoOrcamento = { texto: "Abrir o orçamento desta obra", classe: "primary", onClick: function () {
+        UI.fecharModal(); self.cronoAbrirOrcamento(orcId);
+      } };
+      if (est !== "aprovado") {
+        modal("A obra " + Util.esc(nome) + " ainda não tem plano de execução",
+          "O plano de execução nasce do orçamento <b>aprovado</b>, e o orçamento " + Util.esc(orc.numero || orcId) +
+          " está <b>" + Util.esc(est || "sem estado de aprovação") + "</b>. Aprove o orçamento desta obra e, " +
+          "na aba Cronograma dele, use [Iniciar plano de execução da obra] — depois disso o avanço é lançado aqui. " +
+          "Nada foi aberto.", [irAoOrcamento]);
+        return;
+      }
+      modal("A obra " + Util.esc(nome) + " ainda não tem plano de execução",
+        "O orçamento " + Util.esc(orc.numero || orcId) + " está aprovado, então o plano pode começar agora: " +
+        "na aba <b>Cronograma</b> dele, a faixa de cima traz [Iniciar plano de execução da obra]. " +
+        "O botão copia este cronograma para a obra, e a proposta aprovada fica intacta. Nada foi aberto.",
+        [{ texto: "Abrir o cronograma no orçamento", classe: "primary", onClick: function () {
+          UI.fecharModal(); self.cronoAbrirOrcamento(orcId);
+        } }]);
+    },
+
+    /* monta o estado do modal: corte padrão, contexto, sugestões e antes →
+       depois. Puro em relação ao disco (só lê) — nada aqui grava. */
+    _cronoAvancoEstado: function (c, rec, corteEscolhido) {
+      var self = this, obraId = String(c.obra.id), A = CronoAvanco;
+      var hoje = Cronograma._ch(new Date());
+      var st = { corte: null, hoje: hoje, proximoUtil: null, ultimoDiario: null, anterior: null, fontes: [], antesDepois: null, semBase: false, semInicio: null, erro: null };
+      if (!c.obra.inicio) {
+        /* a MESMA porta da 1A (nada de segunda porta): a data sugerida é o
+           início real mais antigo lançado, ou o início que o plano mostra */
+        var sug = null;
+        if (rec) Util.arr(rec.nos).forEach(function (e) { if (e && e.i && (sug == null || e.i < sug)) sug = e.i; });
+        st.semInicio = this._cronoPortaInicioHtml({ tipo: "plano", obra: c.obra }, sug, "Para lançar avanço, fixe o início da obra:");
+        return st;
+      }
+      var diarios = [];
+      try { diarios = (Store.listar(c.eid, "rdo") || []).filter(function (d) { return d && String(d.obraId) === obraId; }); } catch (eD) { diarios = []; }
+      var pub = diarios.filter(function (d) { return (typeof RDO !== "undefined" && RDO.podeIrAoPortal) ? RDO.podeIrAoPortal(d) : false; });
+      pub.forEach(function (d) { var k = String(d.data || "").slice(0, 10); if (k && (!st.ultimoDiario || k > st.ultimoDiario)) st.ultimoDiario = k; });
+      /* ⚠ O CORTE PADRÃO É A FUNÇÃO PURA DA 1A (`CronoAvanco.cortePadrao`): a
+         grade (2A) e este modal chamam a MESMA, porque duas contas do mesmo
+         padrão divergem na primeira manutenção (crítica 2, achado 16). */
+      st.corte = (corteEscolhido && /^\d{4}-\d{2}-\d{2}$/.test(corteEscolhido)) ? corteEscolhido : A.cortePadrao(pub, hoje, c.obra.inicio);
+      if (st.corte > hoje) { st.erro = "O avanço descreve o que já aconteceu — a data de corte não pode ser depois de hoje (" + this._cronoBrD(hoje) + ")."; st.corte = hoje; }
+      if (rec) st.anterior = { corte: rec.corte || null, nos: Util.arr(rec.nos).length };
+      st.semBase = !c.ativa;
+      /* AS SUGESTÕES, POR FONTE (E-MC5). Hoje só a do diário é montada; a da
+         medição chega pela fiação da ESPEC-medicao-cc, acrescentando outro
+         item nesta lista — sem editar o `avancoSugestoesHtml`. */
+      var linhas = this._cronoAvancoSugDiario(c, rec, st.corte);
+      if (linhas.length) st.fontes.push({ fonte: "diario", linhas: linhas });
+      /* MEDCC 6B (linha de passagem, E-MC5): a fonte da MEDIÇÃO entra como
+         outro item desta lista — a `avancoSugestoesHtml` desenha uma tabela
+         por fonte e não foi editada. Ordem: o diário primeiro, porque é ele
+         que manda quando os dois falam da mesma tarefa (E-MC7). */
+      if (typeof this._cronoAvancoSugMedicao === "function") {
+        var lm = this._cronoAvancoSugMedicao(c, st.corte);
+        if (lm && lm.length) st.fontes.push({ fonte: "medicao", linhas: lm });
+      }
+      return st;
+    },
+    /* as sugestões dos diários, pelo motor puro (`CronoAvanco.sugestoesDoDiario`
+       sobre o realizado por nó que o painel já apura) */
+    _cronoAvancoSugDiario: function (c, rec, corte) {
+      var out = [];
+      if (typeof CronoPlan === "undefined" || typeof CronoAvanco === "undefined") return out;
+      var pd = null;
+      try { pd = this._cronoPainelDados(c.obra, c.orc, {}); } catch (eP) { pd = null; }
+      var p = pd && pd.painel;
+      if (!p || !Util.arr(p.nos).length) return out;
+      /* ⚠ SÓ O NÓ QUE MANDA NA DATA (§1.4): a folha no modo executivo, a etapa
+         no modo padrão ou sem folha. Sugerir os dois níveis encheria o
+         registro de entradas INERTES — a leitura as descarta com o aviso
+         "avanco-nivel-errado", e a pessoa veria o número dela sumir do
+         cálculo sem entender por quê. Também é o que segura o registro dentro
+         do teto de 50 KB: na obra do galpão, 67 nós contra 33 que mandam. */
+      var execR = !!(c.plano && c.plano.cronograma && c.plano.cronograma.exec && c.plano.cronograma.exec.rede === true);
+      var real = {}, nome = {};
+      Util.arr(p.nos).forEach(function (n) {
+        if (!n || n.realPct == null) return;
+        var manda = execR ? (n.folha === true) : (n.tipo === "etapa");
+        if (!manda) return;
+        real[n.id] = { p: n.realPct, i: (n.real && n.real.ini) || null, f: (n.real && n.real.fim) || null };
+        nome[n.id] = { numero: n.numero, nome: n.nome };
+      });
+      var num = this._cronoNumeroB((function () { try { return Store.listar(c.eid, "medicoes") || []; } catch (e) { return []; } })(), c.obra.id);
+      var sug = CronoAvanco.sugestoesDoDiario(real, rec, { corte: corte, numeroB: num });
+      var L = CronoAvanco.ler(rec, { corte: corte });
+      sug.forEach(function (s) {
+        var at = L.porId[s.id] || null;
+        /* ⚠ NADA LANÇADO NÃO É SUGESTÃO. A tarefa sem início real e com 0%
+           não aconteceu: oferecê-la enche a tabela de linhas que não dizem
+           nada e, se marcadas, gravam 51 entradas vazias num registro que
+           tem teto de 50 KB. Medido no galpão: 51 linhas oferecidas, 41 com
+           conteúdo. A que já existe no avanço continua aparecendo, porque
+           voltar a 0% É uma mudança. */
+        if (!at && !(s.p > 0) && !s.i && !s.f) return;
+        /* linhas IGUAIS não aparecem: sugestão que não muda nada é ruído, e
+           ruído faz a pessoa desmarcar tudo sem ler */
+        if (at && at.p === s.p && (at.i || null) === (s.i || null) && (at.f || null) === (s.f || null)) return;
+        out.push({ id: s.id, numero: (nome[s.id] || {}).numero || "", nome: (nome[s.id] || {}).nome || s.id,
+          atual: at ? String(at.p).replace(".", ",") + "%" + (at.i ? " · início " + this._cronoBrD(at.i) : "") : null,
+          novo: (s.p == null ? "—" : String(s.p).replace(".", ",") + "%") + (s.i ? " · início " + this._cronoBrD(s.i) : ""),
+          marcada: !!s.marcada, rotulo: s.rotulo || null,
+          /* ⚠ O VALOR CRU VIAJA JUNTO DO TEXTO. A linha de tela é texto
+             formatado ("66,7% · início 31/08"); gravar a partir dela pediria
+             reanalisar o que já estava pronto — e um parser de tela é o
+             caminho mais curto para o número do disco divergir do número que
+             a pessoa marcou. */
+          cru: { p: s.p == null ? null : s.p, i: s.i || null, f: s.f || null } });
+      }, this);
+      /* ⚠ NA ORDEM DO CRONOGRAMA, não na do id. O `sugestoesDoDiario` ordena
+         por id (é função pura, e id é o que ela tem); na tela isso saía
+         "5.1, 6.1, 7.1, 1.1, 1.2" — a pessoa procura a tarefa pelo NÚMERO, e
+         uma lista fora de ordem faz ela desmarcar tudo em vez de conferir.
+         A comparação é por partes numéricas: "10.2" vem depois de "9.1". */
+      out.sort(function (a, b) {
+        var pa = String(a.numero || "").split("."), pb = String(b.numero || "").split("."), i, x, y;
+        for (i = 0; i < Math.max(pa.length, pb.length); i++) {
+          x = parseInt(pa[i] || 0, 10) || 0; y = parseInt(pb[i] || 0, 10) || 0;
+          if (x !== y) return x - y;
+        }
+        return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0);
+      });
+      return out;
+    },
+    _cronoAvancoCorte: function (obraId, corte) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(corte || ""))) return true;
+      /* ⚠ REABRE O MODAL SEM RELER O CARIMBO: `_cronoAvancoAbrir` regravaria
+         `_cronoAvancoTela[obraId].baseEm` com o do disco de AGORA, e a trava
+         de gravação simultânea passaria a comparar o disco com ele mesmo —
+         exatamente o fail-open que a 1A consertou do outro lado. */
+      var guardado = (this._cronoAvancoTela && this._cronoAvancoTela[obraId]) || null;
+      this._cronoAvancoAbrir({ obra: obraId, corte: corte });
+      if (guardado && this._cronoAvancoTela) this._cronoAvancoTela[obraId] = guardado;
+      return true;
+    },
+    /* GRAVA o que o modal montou. ⚠ Grava SÓ o registro de avanço (O17): quem
+       grava é o `_cronoGravarAvanco` da 1A, que já tem todas as guardas na
+       função. A tela não monta uma segunda gravação. */
+    _cronoAvancoGravar: function (obraId) {
+      var self = this, st = this._cronoAvancoSt;
+      if (!st || st.semInicio) return true;
+      var c = this._cronoObraCtx(obraId);
+      if (c.erro) { UI.toast(c.erro, "erro"); return true; }
+      if (c.lista === null) { UI.toast(this._cronoSemLista(c, "lançar avanço", "Não consegui ler o planejamento das obras deste aparelho — nada foi gravado."), "erro"); return true; }
+      var rec0 = CronoBase.avanco(c.lista, obraId);
+      /* o registro NOVO parte do que está no disco e recebe só as sugestões
+         MARCADAS: a entrada existente é copiada e alterada campo a campo,
+         nunca reconstruída com campos fixos (E-MC2 — reconstruir apagaria o
+         lastro `b` e todo campo que esta versão não conhece) */
+      var novo = {}, k;
+      if (rec0) for (k in rec0) if (Object.prototype.hasOwnProperty.call(rec0, k)) novo[k] = rec0[k];
+      novo.id = CronoBase.idAvanco(obraId); novo.tipo = "avanco"; novo.obraId = obraId;
+      if (c.plano && c.plano.orcamentoId) novo.orcamentoId = c.plano.orcamentoId;
+      novo.corte = st.corte;
+      novo.nos = rec0 ? JSON.parse(JSON.stringify(Util.arr(rec0.nos))) : [];
+      var porId = {};
+      novo.nos.forEach(function (e, i) { if (e && e.id) porId[e.id] = i; });
+      var marcadas = 0;
+      Util.arr(st.fontes).forEach(function (f) {
+        Util.arr(f.linhas).forEach(function (x) {
+          var cx = document.querySelector('[data-av-sug="' + String(x.id).replace(/"/g, "") + '"][data-av-fonte="' + String(f.fonte) + '"]');
+          if (!cx || !cx.checked) return;
+          var idx = Object.prototype.hasOwnProperty.call(porId, x.id) ? porId[x.id] : -1;
+          /* ⚠ A CHAVE `medOrigem` (contingência K36, §11.3) DECIDE AQUI, não
+             só no cartão "Compatibilidade": desligada, a fonte da medição
+             grava entrada DIGITADA (sem `o` e sem `b`) e SÓ CRIA. Até
+             22/09/2026 a chave era anunciada como desligada e não era lida
+             por ninguém — o suporte desligava, a tela confirmava, e o risco
+             que ela existia para conter continuava acontecendo. */
+          var semOrigem = String(f.fonte) === "medicao" && !self._medccOrigemLigada();
+          if (semOrigem && idx > -1) return;
+          marcadas++;
+          /* ⚠ A ENTRADA EXISTENTE É ALTERADA CAMPO A CAMPO (E-MC2), nunca
+             reconstruída: reconstruir com campos fixos apagaria o lastro `b`
+             e todo campo que esta versão não conhece — e o lastro é o que
+             sustenta "medição 01a" ao lado do número. */
+          var alvo = idx > -1 ? novo.nos[idx] : { id: x.id };
+          var s = x.cru || {};
+          if (s.p != null) alvo.p = s.p;
+          if (s.i) alvo.i = s.i;
+          alvo.f = s.f || null;
+          alvo.em = st.corte;
+          /* ⚠ A ORIGEM VEM COM O LASTRO, OU NÃO VEM (achado alto da revisão
+             da Onda 6, 22/09/2026). Esta porta gravava `alvo.o = "medicao"` e
+             nenhum `b`, porque o payload cru da fonte da medição não levava o
+             lastro. O leitor (`CronoAvanco.validarEntrada`, E-MC1) DESCARTA a
+             origem sem lastro: a entrada virava "digitada" com o aviso
+             `avanco-medicao-sem-lastro`, o `MedAvanco.lastro` não a enxergava,
+             e a faixa "sem lastro" com a porta [Rever] nunca aparecia — a
+             tarefa ficava 100% concluída sustentada por um boletim REABERTO,
+             sem aviso em lugar nenhum. A faixa [Puxar das medições] sempre
+             gravou certo (ela passa pelo `MedAvanco.aplicar`): as duas portas
+             do mesmo lançamento discordavam. A segunda metade é a mesma régua
+             do `aplicar` — melhor não escrever a origem do que escrever uma
+             que o leitor derruba. A guarda do portão está em
+             `CronoBase.salvarAvanco`. */
+          if (semOrigem) { delete alvo.o; delete alvo.b; }
+          else {
+            alvo.o = f.fonte;                     // veio da sugestão daquela fonte
+            if (s.b) alvo.b = String(s.b);
+            else if (String(f.fonte) === "medicao") delete alvo.o;
+          }
+          if (idx < 0) { novo.nos.push(alvo); porId[x.id] = novo.nos.length - 1; }
+        });
+      });
+      if (!marcadas && !Util.arr(novo.nos).length) { UI.toast("Nenhuma tarefa marcada e nenhum avanço anterior — nada foi gravado.", "info"); return true; }
+      var alvo2 = null;
+      try { alvo2 = this._cronoAlvo(); } catch (eA) { alvo2 = null; }
+      if (!alvo2 || alvo2.tipo !== "plano" || String((alvo2.plano && alvo2.plano.obraId) || "") !== obraId) {
+        alvo2 = { tipo: "plano", obraId: obraId, chave: "plano:" + obraId, obra: c.obra, plano: c.plano, orc: c.orc };
+      }
+      var r = this._cronoGravarAvanco(alvo2, novo, { agora: Util.agoraISO(), por: this._cronoPor() });
+      if (!r.ok) {
+        if (r.recarregar) {
+          UI.modal("O avanço mudou em outra janela", '<p>' + Util.esc(r.erro) + '</p>',
+            [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+              { texto: "Recarregar o avanço", classe: "primary", onClick: function () { UI.fecharModal(); self._cronoAvancoAbrir({ obra: obraId }); } }]);
+          return true;
+        }
+        if (r.portaInicio) {
+          UI.modal("Fixe o início da obra", '<p>' + Util.esc(r.erro) + '</p>' + this._cronoPortaInicioHtml({ tipo: "plano", obra: c.obra }, null, "Fixe o início e lance de novo:"),
+            [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+          return true;
+        }
+        /* ⚠ A RECUSA DO TETO PRECISA DA PORTA, E ELA SÓ EXISTIA NO PAPEL.
+           O `CronoBase.salvarAvanco` recusa acima de 50 KB (E-MC6) com o
+           texto "Resuma o avanço das etapas já concluídas" e o código
+           `teto-avanco`. O `_cronoAvancoResumir` e o handler
+           `crono-avanco-resumir` já existiam — mas nada os chamava: a recusa
+           saía num TOAST, e toast é texto puro (UI.toast escreve por
+           textContent, um `<button>` dentro dele sai literal). A pessoa lia
+           uma ordem sem botão para cumpri-la, com o avanço do dia na mão.
+           Trava sem porta empurra a inventar saída — e a saída errada aqui é
+           [Limpar o avanço], que joga fora o realizado que ninguém mandou
+           jogar. Achado e ligado na FUSÃO da Onda 2 (a fatia 2B deixou o
+           alinhamento escrito para cá). */
+        if (r.codigo === "teto-avanco") {
+          UI.modal("O avanço desta obra chegou ao limite",
+            '<p>' + Util.esc(r.erro) + '</p>',
+            [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+              { texto: "Resumir o avanço das concluídas", classe: "primary",
+                onClick: function () { UI.fecharModal(); self._cronoAvancoResumir(obraId); } }]);
+          return true;
+        }
+        if (r.erro !== "licenca") UI.toast(r.erro, "erro");
+        return true;
+      }
+      UI.fecharModal();
+      /* ⚠ A PORTA [Atualizar as datas…] VEM JUNTO DO RECADO (O17): até ela, os
+         aparelhos 1.2.81 mostram as datas do último salvar do plano
+         (`D-AVANCO-PENDENTE`). Trava sem porta empurra a pessoa a inventar
+         uma saída — e aqui a saída errada seria regravar o plano à mão. */
+      var bts = [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); self._cronoRepintar(); } }];
+      if (r.portaFrota) bts.push({ texto: "Atualizar as datas para aparelhos de versão anterior", classe: "primary",
+        onClick: function () { UI.fecharModal(); self._cronoAvancoFrota(obraId); } });
+      UI.modal("Avanço gravado", '<p>' + Util.esc("Avanço da obra " + String(c.obra.nome || "") + " gravado até " + this._cronoBrD(st.corte) + " (" + Util.arr(novo.nos).length + " tarefa(s)). O plano NÃO foi regravado: a proposta aprovada e as edições do plano feitas em outro aparelho ficam como estão.") + '</p>' +
+        '<p class="muted">' + Util.esc("Até você atualizar as datas, aparelhos com a versão anterior mostram as datas do último salvar deste plano.") + '</p>', bts);
+      this._cronoRepintar();
+      return true;
+    },
+    /* [Atualizar as datas para aparelhos de versão anterior] (O17): avisa
+       ANTES, porque grava o plano INTEIRO e uma edição de outro aparelho que
+       ainda não chegou aqui se perde (R10). */
+    _cronoAvancoFrota: function (obraId) {
+      var self = this;
+      UI.modal("Atualizar as datas para aparelhos de versão anterior",
+        '<p>' + Util.esc("Isto grava o plano de execução INTEIRO desta obra, com as datas já reprogramadas pelo avanço. Uma edição do plano feita em outro aparelho que ainda não chegou aqui se perde.") + '</p>',
+        [{ texto: "Voltar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Atualizar as datas", classe: "primary", onClick: function () {
+            UI.fecharModal();
+            var r = self._cronoAtualizarDatasFrota(obraId, { agora: Util.agoraISO(), por: self._cronoPor() });
+            if (!r.ok) { if (r.erro !== "teto") UI.toast(r.erro, "erro"); return; }
+            UI.toast("Datas atualizadas: aparelhos com a versão anterior passam a ver as datas reprogramadas pelo avanço." + (r.msg ? " " + r.msg : ""), "ok");
+            self._cronoRepintar();
+          } }]);
+      return true;
+    },
+    /* [Limpar o avanço] (avanco.md passo 7) — com os dois términos no recado */
+    _cronoAvancoLimpar: function (obraId) {
+      var self = this, c = this._cronoObraCtx(obraId);
+      if (c.erro) { UI.toast(c.erro, "erro"); return true; }
+      if (c.lista === null) { UI.toast(this._cronoSemLista(c, "limpar o avanço", "Não consegui ler o planejamento das obras deste aparelho — nada foi apagado."), "erro"); return true; }
+      var rec = CronoBase.avanco(c.lista, obraId);
+      if (!rec) { UI.toast("Esta obra não tem avanço lançado — nada a apagar.", "info"); return true; }
+      var de = null, para = null;
+      try {
+        var oP = CronoBase.orcDaObra(c.orc, c.lista, obraId), rCom = Cronograma.estimar(oP);
+        var sem = Cronograma.semAvanco ? Cronograma.semAvanco(oP) : null;
+        de = rCom && rCom.dataFim ? Cronograma._ch(rCom.dataFim) : null;
+        para = sem && sem.dataFim ? Cronograma._ch(sem.dataFim) : null;
+      } catch (eE) { de = para = null; }
+      UI.modal("Limpar o avanço lançado",
+        CronoExecUI.avancoLimparHtml({ nos: Util.arr(rec.nos).length, corte: rec.corte, de: de, para: para }),
+        [{ texto: "Voltar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Apagar o avanço", classe: "primary", onClick: function () {
+            UI.fecharModal();
+            if (self._trialBloqueado()) { self._avisoTrial(); return; }
+            var np = self._cronoSemPermissao(obraId);
+            if (np) { UI.toast(np + " Nada foi apagado.", "erro"); return; }
+            var c2 = self._cronoObraCtx(obraId);
+            if (c2.erro || c2.lista === null) { UI.toast(c2.erro || "Não consegui ler o planejamento — nada foi apagado.", "erro"); return; }
+            var l2 = CronoBase.limparAvanco(c2.lista, obraId);
+            if (!self._cronoGravarLista(obraId, l2)) { UI.toast("O avanço NÃO foi apagado — o armazenamento deste aparelho recusou.", "erro"); return; }
+            if (self._cronoAvancoTela) delete self._cronoAvancoTela[obraId];
+            UI.toast("Avanço apagado. Os diários e as medições não mudam.", "ok");
+            self._cronoRepintar();
+          } }]);
+      return true;
+    },
+    /* a porta [Resumir o avanço das etapas concluídas] (§1.4): a recusa do
+       teto de 50 KB tem saída, e a saída não apaga o realizado — só o detalhe
+       por subetapa das etapas 100% concluídas */
+    _cronoAvancoResumir: function (obraId) {
+      var self = this, c = this._cronoObraCtx(obraId);
+      if (c.erro || c.lista === null) { UI.toast(c.erro || "Não consegui ler o planejamento — nada foi gravado.", "erro"); return true; }
+      var rec = CronoBase.avanco(c.lista, obraId);
+      if (!rec) { UI.toast("Esta obra não tem avanço lançado — nada a resumir.", "info"); return true; }
+      var oP = null, folhasDe = {};
+      try {
+        oP = CronoBase.orcDaObra(c.orc, c.lista, obraId);
+        var rr = Cronograma.estimar(oP, null, { eap: true });
+        Util.arr(rr.atividades).forEach(function (n) {
+          if (n.tipo === "subetapa" || n.tipo === "soltos") (folhasDe[n.etapaId] = folhasDe[n.etapaId] || []).push(n.id);
+        });
+      } catch (eR) { folhasDe = {}; }
+      /* MEDCC 6B (linha de passagem, EM-3/E-MC8): os DOIS mapas, montados uma
+         vez. ⚠ O `ordemB` não é enfeite: sem ele a 1A escolhe o lastro da
+         etapa resumida pela folha de maior `f`, e a folha que terminou depois
+         pode ter sido medida por um boletim ANTERIOR. O `b` guardado
+         apontaria para o boletim errado, e o recado da porta diria o número
+         errado — sobre dinheiro já aprovado. */
+      var mp = this._medccMapasB(obraId), num = mp.numeroB;
+      var out = CronoAvanco.resumirConcluidas(rec, { etapas: Object.keys(folhasDe), folhasDe: function (e) { return folhasDe[e] || []; },
+        ordemB: mp.ordemB, numeroB: num });
+      if (!out.rec || !out.trocadas.length) { UI.toast("Nenhuma etapa 100% concluída com detalhe por subetapa — não há o que resumir.", "info"); return true; }
+      var msgs = out.recados.map(function (r) { return r.msg; }).filter(function (x) { return !!x; });
+      UI.modal("Resumir o avanço das etapas concluídas",
+        '<p>' + Util.esc(out.trocadas.length + " etapa(s) concluída(s) passam a guardar uma linha só. As datas por subetapa delas passam a ser as planejadas dentro da janela real — o realizado não é apagado.") + '</p>' +
+        (msgs.length ? '<ul class="cx-lista"><li>' + msgs.map(function (m) { return Util.esc(m); }).join('</li><li>') + '</li></ul>' : ''),
+        [{ texto: "Voltar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Resumir", classe: "primary", onClick: function () {
+            UI.fecharModal();
+            var alvo = { tipo: "plano", obraId: obraId, chave: "plano:" + obraId, obra: c.obra, plano: c.plano, orc: c.orc };
+            if (!self._cronoAvancoTela || typeof self._cronoAvancoTela !== "object") self._cronoAvancoTela = {};
+            self._cronoAvancoTela[obraId] = { baseEm: rec.atualizadoEm, abertaEm: Util.agoraISO() };
+            var r = self._cronoGravarAvanco(alvo, out.rec, { agora: Util.agoraISO(), por: self._cronoPor() });
+            if (!r.ok) { if (r.erro !== "licenca") UI.toast(r.erro, "erro"); return; }
+            UI.toast("Avanço resumido em " + out.trocadas.length + " etapa(s). O realizado continua: o que saiu foi o detalhe por subetapa.", "ok");
+            self._cronoRepintar();
+          } }]);
+      return true;
+    },
+    _acoesCrono_avanco: {
+      "crono-avanco-abrir": function (t) { return this._cronoAvancoAbrir(t.dataset || {}); },
+      "crono-avanco-frota": function (t) { return this._cronoAvancoFrota(String((t.dataset && t.dataset.obra) || "")); },
+      "crono-avanco-limpar": function (t) { return this._cronoAvancoLimpar(String((t.dataset && t.dataset.obra) || "")); },
+      "crono-avanco-resumir": function (t) { return this._cronoAvancoResumir(String((t.dataset && t.dataset.obra) || "")); },
+      /* ---- MEDCC 6B: CHAVES NOVAS, nenhuma das de cima tocada ----
+         ⚠ ELAS MORAM AQUI, e não num `App._acoesCrono.avanco` próprio: o
+           despacho `_acaoCrono` casa pelo PREFIXO (`crono-avanco-`) e
+           consulta `this._acoesCrono[prefixo]` ANTES de `_acoesCrono_avanco`.
+           Um segundo registro lá sombrearia este objeto inteiro, e [Lançar
+           avanço], [Limpar o avanço] e [Resumir] parariam de responder ao
+           clique — sem erro nenhum no console.
+         Os corpos ficam na região MEDCC 6B, no fim do objeto. */
+      "crono-avanco-med-puxar": function (t) { return this._medccPuxar(String((t.dataset && t.dataset.obra) || "")); },
+      "crono-avanco-med-rever": function (t) { return this._medccRever(String((t.dataset && t.dataset.obra) || "")); },
+      "crono-avanco-med-manter": function (t) { return this._medccDecidirNo(String((t.dataset && t.dataset.obra) || ""), String((t.dataset && t.dataset.no) || ""), "manter"); },
+      "crono-avanco-med-tirar": function (t) { return this._medccDecidirNo(String((t.dataset && t.dataset.obra) || ""), String((t.dataset && t.dataset.no) || ""), "tirar"); },
+      "crono-avanco-med-tirar-lapide": function (t) { return this._medccDecidirNo(String((t.dataset && t.dataset.obra) || ""), String((t.dataset && t.dataset.no) || ""), "lapide"); },
+      "crono-avanco-med-usar-diario": function (t) { return this._medccDecidirNo(String((t.dataset && t.dataset.obra) || ""), String((t.dataset && t.dataset.no) || ""), "diario"); },
+      "crono-avanco-med-manter-medicao": function (t) { return this._medccDecidirNo(String((t.dataset && t.dataset.obra) || ""), String((t.dataset && t.dataset.no) || ""), "medicao"); }
+    },
+
+    /* ==================================================================
+       OS CALENDÁRIOS DAS FRENTES — A TELA (planejador 2B; calendario.md)
+
+       ⚠ O CALENDÁRIO MORA NO CRONOGRAMA DO ALVO (`cron.cal`), e quem grava é
+         sempre `alvo.salvar` — nunca um `Store.salvar` próprio: o alvo é que
+         sabe se a aba está editando a proposta ou o plano da obra, e gravar
+         por fora poria o calendário do plano dentro da proposta aprovada.
+       ================================================================== */
+    _cronoCalAlvo: function () {
+      var alvo = null;
+      try { alvo = this._cronoAlvo(); } catch (eA) { alvo = null; }
+      if (!alvo) { UI.toast("Não consegui identificar o cronograma — nada foi gravado.", "erro"); return null; }
+      return alvo;
+    },
+    _cronoCalAbrir: function (ds) {
+      ds = ds || {};
+      var self = this, alvo = this._cronoCalAlvo();
+      if (!alvo) return true;
+      if (typeof CronoCal === "undefined") { UI.toast("O módulo dos calendários não carregou (cronocal.js) — recarregue o app.", "erro"); return true; }
+      var cron = alvo.cron || {}, cal = (cron.cal && typeof cron.cal === "object" && !Array.isArray(cron.cal)) ? cron.cal : null;
+      var nos = [];
+      try {
+        var r = Cronograma.estimar(alvo.orc, null, { eap: true });
+        Util.arr(r.atividades).forEach(function (n) {
+          if (n.tipo === "etapa" || n.tipo === "subetapa" || n.tipo === "soltos") nos.push({ id: n.id, numero: n.numero, nome: n.nome });
+        });
+      } catch (eR) { nos = []; }
+      var dados = { lista: cal ? Util.arr(cal.lista) : [], de: (cal && cal.de) || {}, nos: nos,
+        editando: ds.cal ? String(ds.cal) : null, novo: this._cronoCalNovo || null,
+        travado: alvo.travado ? "Este orçamento está aprovado: o cronograma dele não muda. Para planejar a obra, use o plano de execução dela." : null };
+      UI.modal("Calendários das frentes", CronoExecUI.calModalHtml(dados),
+        [{ texto: "Fechar", classe: "ghost", onClick: function () { self._cronoCalNovo = null; UI.fecharModal(); } }]);
+      return true;
+    },
+    _cronoCalNovo: null,
+    _cronoCalNovoModelo: function (ds) {
+      var m = null, id = String((ds && ds.modelo) || "");
+      CronoExecUI.CAL_MODELOS.forEach(function (x) { if (x.id === id) m = x; });
+      if (!m) { UI.toast("Modelo de calendário desconhecido — nada foi criado.", "erro"); return true; }
+      /* id determinístico e curto (a régua do `CronoCal.validar` é
+         `[A-Za-z0-9_-]{1,40}`); o registro só nasce no [Salvar calendário] */
+      this._cronoCalNovo = { id: "cal_" + String(Date.now()).slice(-9), nome: m.nome, h: m.h.slice(), turnos: m.turnos, fer: m.fer, exc: [] };
+      return this._cronoCalAbrir({ cal: this._cronoCalNovo.id });
+    },
+    _cronoCalSalvar: function (ds) {
+      var alvo = this._cronoCalAlvo();
+      if (!alvo) return true;
+      if (this._trialBloqueado()) { this._avisoTrial(); return true; }
+      if (alvo.travado) { this._cronoTravado(alvo, { oQue: "cal" }); return true; }
+      if (alvo.tipo === "plano") { var np = this._cronoSemPermissao(alvo.plano && alvo.plano.obraId); if (np) { UI.toast(np + " Nada foi gravado.", "erro"); return true; } }
+      function v(id) { var e = UI.el && UI.el(id); return e ? String(e.value == null ? "" : e.value) : ""; }
+      var id = String((ds && ds.cal) || ""), h = [], i;
+      for (i = 0; i < 7; i++) h.push(Number(String(v("cal-h" + i)).replace(",", ".")));
+      var cand = { id: id, nome: v("cal-nome"), h: h, turnos: Number(v("cal-turnos")) || 1, fer: v("cal-fer") === "trabalha" ? "trabalha" : "obra" };
+      var ant = null;
+      Util.arr(alvo.cron && alvo.cron.cal && alvo.cron.cal.lista).forEach(function (c) { if (c && String(c.id) === id) ant = c; });
+      if (ant && Util.arr(ant.exc).length) cand.exc = ant.exc;
+      var val = CronoCal.validar(cand);
+      if (!val.ok) { UI.toast(val.erros.map(function (e) { return e.msg; }).join(" ") + " Nada foi gravado.", "erro"); return true; }
+      var bk = JSON.stringify(alvo.cron);
+      var cron = alvo.cron;
+      if (!cron.cal || typeof cron.cal !== "object" || Array.isArray(cron.cal)) cron.cal = { v: 1, lista: [], de: {} };
+      if (!Array.isArray(cron.cal.lista)) cron.cal.lista = [];
+      var achou = -1;
+      cron.cal.lista.forEach(function (c, k) { if (c && String(c.id) === id) achou = k; });
+      var disco = CronoCal.itemDisco(val.valor);
+      if (achou > -1) cron.cal.lista[achou] = disco; else cron.cal.lista.push(disco);
+      if (!alvo.salvar({ rotulo: "calendário da frente" })) { this._iaRestaurar(alvo.cron, bk); return true; }
+      this._cronoCalNovo = null;
+      UI.fecharModal();
+      /* ⚠ O RECADO SÓ PODE OFERECER PORTA QUE ABRE. Ele mandava "pela coluna
+         Calendário do Gantt", e a coluna nascia FORA do recorte do painel dos
+         nomes (medido em 22/09/2026: 8 valores em x=731 com o `overflow:hidden`
+         acabando em 681, a 1366 e a 1920) — e some por inteiro com as colunas
+         escondidas. A largura foi consertada; a condição continua existindo,
+         então o recado a diz, e nomeia a porta que sempre abre ([Aplicar a],
+         dentro deste mesmo modal). */
+      UI.toast("Calendário “" + String(val.valor.nome) + "” gravado. Atribua as frentes por [Aplicar a], aqui mesmo, " +
+        "ou pela coluna Calendário do Gantt (se as colunas estiverem escondidas, ligue-as no botão do canto esquerdo do Gantt).", "ok");
+      this.render();
+      return true;
+    },
+    _cronoCalExcluir: function (ds) {
+      var alvo = this._cronoCalAlvo();
+      if (!alvo) return true;
+      if (this._trialBloqueado()) { this._avisoTrial(); return true; }
+      if (alvo.travado) { this._cronoTravado(alvo, { oQue: "cal" }); return true; }
+      var id = String((ds && ds.cal) || ""), cron = alvo.cron || {}, cal = cron.cal || {};
+      /* ⚠ TRAVA COM PORTA: não se exclui um calendário em uso — a frente
+         ficaria com um id que não existe, e a duração dela mudaria calada.
+         O recado DIZ quais frentes usam e onde trocar. */
+      var usadas = [], de = (cal.de && typeof cal.de === "object") ? cal.de : {}, k;
+      for (k in de) if (Object.prototype.hasOwnProperty.call(de, k) && String(de[k]) === id) usadas.push(k);
+      if (usadas.length) {
+        UI.toast("Não dá para excluir este calendário: " + usadas.length + " frente(s) o usam. Mude o calendário delas antes (coluna Calendário do Gantt, ou [Aplicar a] no modal). Nada foi gravado.", "erro", 10000);
+        return true;
+      }
+      var bk = JSON.stringify(alvo.cron);
+      cal.lista = Util.arr(cal.lista).filter(function (c) { return !(c && String(c.id) === id); });
+      if (!alvo.salvar({ rotulo: "calendário excluído" })) { this._iaRestaurar(alvo.cron, bk); return true; }
+      UI.fecharModal();
+      UI.toast("Calendário excluído.", "ok");
+      this.render();
+      return true;
+    },
+    /* atribuição EM LOTE, com o antes → depois antes de gravar (o mesmo padrão
+       do interruptor do modo executivo: nenhum prazo muda sem a pessoa ver) */
+    _cronoCalLote: function () {
+      var self = this, alvo = this._cronoCalAlvo();
+      if (!alvo) return true;
+      if (this._trialBloqueado()) { this._avisoTrial(); return true; }
+      if (alvo.travado) { this._cronoTravado(alvo, { oQue: "cal" }); return true; }
+      var sel = UI.el && UI.el("cal-lote-nos"), selC = UI.el && UI.el("cal-lote-cal");
+      var ids = [], i;
+      if (sel && sel.options) for (i = 0; i < sel.options.length; i++) if (sel.options[i].selected) ids.push(String(sel.options[i].value));
+      if (!ids.length) { UI.toast("Escolha pelo menos uma frente. Nada foi gravado.", "erro"); return true; }
+      var calId = selC ? String(selC.value || "") : "";
+      /* ⚠ A MEDIÇÃO SAI DE UMA CÓPIA; O OBJETO VIVO SÓ MUDA DENTRO DO [Aplicar].
+         ROTEIRO DO DEFEITO (revisão adversarial da Onda 2, 21/09/2026): este
+         bloco escrevia `cron.cal.de[id]` no objeto VIVO para medir o "depois",
+         e só desfazia (`_iaRestaurar`) dentro do onClick do botão [Voltar]. Só
+         que o `UI.modal` (js/ui.js) fecha TAMBÉM pelo ✕ do cabeçalho
+         (`data-fechar`, que todo modal do app tem) e pelo clique no véu —
+         nenhum dos dois passa pelo [Voltar]. Medido num orçamento em rascunho,
+         com clique de mouse real: marcar 2 frentes, ver a confirmação, fechar
+         no ✕ e mandar [Recalcular] gravava `cal.de = {e1:…, s1b:…}` no disco, e
+         a tela já mostrava 71 dias úteis no lugar de 73. No alvo "plano" não
+         aparecia (o `_cronoAlvo` devolve um clone novo a cada chamada); no
+         alvo "orc" — orçamento em preparo, o caso comum — `alvo.cron` É o
+         `App.orcAtual.cronograma`, e a mudança ficava.
+         ⚠ NÃO adianta tentar restaurar no fechamento: o `UI.modal` não tem
+         gancho de fechar. A única forma que não depende do gesto da pessoa é
+         não sujar o objeto vivo — o mesmo caminho do `_cronoExtraExcluir`. */
+      var antes = null, depois = null;
+      try { antes = Cronograma.estimar(alvo.orc); } catch (eA) { antes = null; }
+      /* ⚠ O ENSAIO NA CÓPIA TAMBÉM É QUEM RECUSA. Este botão escrevia
+         `cal.de` direto e por isso passava POR FORA de todas as travas do
+         `GanttUI.aplicarOps` — a do TT/IT, a do elo cruzado, a da subetapa com
+         término, a do início fixo (I13) e a da etapa detalhada pelas subetapas
+         em modo executivo (revisão adversarial da Onda 2, 21/09/2026). A
+         coluna Calendário do Gantt recusava; o [Aplicar a] do mesmo modal
+         gravava. Uma régua só, e ela mora no motor. */
+      var ensaio = this._cronoCalLotePor(JSON.parse(JSON.stringify(alvo.cron)), ids, calId, alvo);
+      if (!ensaio.ok) {
+        var msgR = ensaio.erro.charAt(0).toUpperCase() + ensaio.erro.slice(1) + ". Nada foi gravado.";
+        /* ⚠ TRAVA COM PORTA: quando o que falta é o início da obra, a recusa
+           traz o campo para fixá-lo — recusa sem saída empurra a pessoa a
+           desfazer o cronograma para se livrar dela */
+        if (ensaio.portaInicio) {
+          UI.modal("Fixe o início da obra", '<p>' + Util.esc(msgR) + '</p>' +
+            this._cronoPortaInicioHtml(alvo, null, "Fixe o início e aplique de novo:"),
+            [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+          return true;
+        }
+        UI.toast(msgR, "erro", 12000);
+        return true;
+      }
+      try {
+        var o2 = {}, k2;
+        for (k2 in alvo.orc) if (Object.prototype.hasOwnProperty.call(alvo.orc, k2)) o2[k2] = alvo.orc[k2];
+        o2.cronograma = ensaio.cron;
+        depois = Cronograma.estimar(o2);
+      } catch (eD) { depois = null; }
+      var txt = (antes && depois && antes.totalDias != null && depois.totalDias != null)
+        ? ids.length + " frente(s) passam para " + (calId ? "o calendário escolhido" : "o calendário da obra") + ": prazo da obra " + antes.totalDias + " → " + depois.totalDias +
+          " dias úteis" + (antes.dataFim && depois.dataFim ? ", término " + this._cronoBrD(Cronograma._ch(antes.dataFim)) + " → " + this._cronoBrD(Cronograma._ch(depois.dataFim)) : "") + "."
+        : ids.length + " frente(s) passam para " + (calId ? "o calendário escolhido" : "o calendário da obra") + ".";
+      UI.modal("Aplicar o calendário", '<p>' + Util.esc(txt) + '</p>',
+        [{ texto: "Voltar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Aplicar", classe: "primary", onClick: function () {
+            var bk = JSON.stringify(alvo.cron);
+            var ap = self._cronoCalLotePor(alvo.cron, ids, calId, alvo);
+            if (!ap.ok) { self._iaRestaurar(alvo.cron, bk); UI.fecharModal(); UI.toast(ap.erro.charAt(0).toUpperCase() + ap.erro.slice(1) + ". Nada foi gravado.", "erro", 12000); return; }
+            if (!alvo.salvar({ rotulo: "calendário das frentes" })) { self._iaRestaurar(alvo.cron, bk); UI.fecharModal(); return; }
+            UI.fecharModal();
+            UI.toast(txt, "ok");
+            self.render();
+          } }]);
+      return true;
+    },
+    /* a escrita do lote, numa função só: a cópia que MEDE e o objeto vivo que
+       GRAVA passam pela mesma régua (o "depois" que a pessoa leu é o que vai
+       ao disco) — e a régua é a do `GanttUI.aplicarOps`, a mesma da coluna
+       Calendário do Gantt. Devolve {ok, cron, erro, portaInicio}. */
+    _cronoCalLotePor: function (cron, ids, calId, alvo) {
+      if (!cron || typeof cron !== "object") return { ok: false, cron: cron, erro: "não consegui ler este cronograma" };
+      if (typeof GanttUI === "undefined" || typeof GanttUI.aplicarOps !== "function") return { ok: false, cron: cron, erro: "o motor do cronograma não carregou nesta tela" };
+      var de = (cron.cal && typeof cron.cal === "object" && !Array.isArray(cron.cal) && cron.cal.de && typeof cron.cal.de === "object" && !Array.isArray(cron.cal.de)) ? cron.cal.de : {};
+      var ops = Util.arr(ids).map(function (id) {
+        return { alvo: "calendario", id: String(id), campo: "de",
+          de: Object.prototype.hasOwnProperty.call(de, id) ? String(de[id]) : null, para: calId ? String(calId) : null };
+      });
+      var ap = GanttUI.aplicarOps(cron, ops, { orc: alvo && alvo.orc, inicioFixo: !!this._cronoInicioEfetivo(alvo) });
+      if (ap.portaInicio) return { ok: false, cron: cron, portaInicio: true,
+        erro: "para uma frente trabalhar num calendário próprio, fixe o início da obra: sem ele, a data em que ela começa mudaria a cada dia nos aparelhos de versão anterior" };
+      if (ap.erros.length) return { ok: false, cron: cron, erro: String(ap.erros[0]) };
+      return { ok: true, cron: cron };
+    },
+    _acoesCrono_cal: {
+      "crono-cal-abrir": function (t) { return this._cronoCalAbrir(t.dataset || {}); },
+      "crono-cal-novo": function (t) { return this._cronoCalNovoModelo(t.dataset || {}); },
+      "crono-cal-salvar": function (t) { return this._cronoCalSalvar(t.dataset || {}); },
+      "crono-cal-excluir": function (t) { return this._cronoCalExcluir(t.dataset || {}); },
+      "crono-cal-lote": function () { return this._cronoCalLote(); }
+    },
+    /*
+     * ↑ região da fatia 2B (painéis): `_acoesCrono_cal`, `_acoesCrono_avanco`.
+     *
+     *
+     */
+    /* ===== PLANEJADOR: papel (3A) ===== */
+    /* ⚠ ESTA REGIÃO REGISTRA O DOCUMENTO NOVO NO CATÁLOGO NA CARGA, e isto é
+       uma DECISÃO declarada, não um atalho. O catálogo dos documentos
+       (`CronoExecUI.DOCS`) não tem tomada de registro — ao contrário das
+       sub-abas (`registrarSub`) e da linha do prazo (`registrarPrazo`), que a
+       Onda 0 criou justamente para isto. Editar o array dentro do
+       js/cronoexecui.js seria mexer na fatia de outra pessoa; deixar o
+       documento sem entrada no catálogo seria motor sem fiação — o
+       comparativo existiria, passaria no gate e não teria botão nenhum no
+       navegador (a cicatriz "motor puro não cobre a fiação": 52 asserts
+       verdes e o recurso inerte).
+       O `push` é guardado por id: se a Onda 0 trouxer um `registrarDoc`, ou se
+       outra fatia acrescentar a mesma entrada, esta não duplica. Está na
+       PENDÊNCIA para virar tomada de verdade. */
+    _regPapel: (function () {
+      try {
+        var CX = (typeof CronoExecUI !== "undefined") ? CronoExecUI : (typeof window !== "undefined" ? window.CronoExecUI : null);
+        if (!CX || !CX.DOCS || typeof CX.DOCS.push !== "function") return 1;
+        for (var i = 0; i < CX.DOCS.length; i++) if (CX.DOCS[i] && CX.DOCS[i].id === "comparativo-bases") return 1;
+        CX.DOCS.push({ id: "comparativo-bases", nome: "Comparativo de linhas de base", papel: "a3-paisagem", publico: "fiscalizacao",
+          o: "As versões do plano lado a lado, etapa por etapa, contra a linha de base CONTRATUAL — mais o prazo do contrato e os aditivos. É a folha que acompanha um pedido de prorrogação.",
+          obra: true });
+      } catch (e) { /* catálogo indisponível: o documento continua pelo botão da sub-aba */ }
+      return 1;
+    })(),
+
+    /* AS AÇÕES DA FATIA (T5). Ver o ⚠ do `_acaoCrono`: prefixo `comp`, e a
+       palavra entra no `_ACAO_CRONO_RE` DEPOIS de `compat` — a alternância da
+       expressão regular é da esquerda para a direita, e `comp` antes de
+       `compat` roubaria todo `crono-compat-…` da fatia 1A. */
+    _acoesCrono_comp: {
+      "crono-comp-imprimir": function (t) { this.cronoCompImprimir(t.dataset.obra); },
+      "crono-comp-excel": function (t) { this.cronoCompExcel(t.dataset.obra); }
+    },
+
+    /* O PAYLOAD DO COMPARATIVO DE LINHAS DE BASE (BASES B4, D17).
+       ⚠ As bases vêm COMPLETAS (`_cronoObraCtx().completa`): a versão que um
+         aparelho antigo resumiu para caber na nuvem perde os nós, e sem eles
+         a folha sairia com a coluna vazia sem dizer por quê. O selo é quem
+         devolve o detalhe.
+       Devolve {erro} em PT-BR — nunca um payload pela metade. */
+    _cronoCompDados: function (obraId, opts) {
+      if (typeof CronoDocs === "undefined" || !CronoDocs.comparativoBases) {
+        return { erro: "O motor dos documentos do cronograma (js/cronodocs.js) não está carregado nesta instalação. Atualize o OrçaPRO." };
+      }
+      if (typeof CronoBase === "undefined" || typeof CronoPlan === "undefined") {
+        return { erro: "O módulo das linhas de base não carregou — recarregue o app." };
+      }
+      var np = this._cronoSemPermissao(obraId);
+      if (np) return { erro: np };
+      var c = this._cronoObraCtx(obraId);
+      if (c.erro) return { erro: c.erro };
+      if (c.lista === null || c.completa === null) {
+        return { erro: "O planejamento deste aparelho não pôde ser lido — o comparativo não sai com parte das versões." };
+      }
+      var bases = CronoBase.bases(c.completa, obraId) || [];
+      if (!bases.length) return { erro: "Esta obra ainda não tem linha de base congelada — o comparativo compara versões, e não há nenhuma para comparar." };
+      var CS = this._cronoSeloMod(), cc = (CS && c.listaSelo) ? CS.contratual(c.lista, c.listaSelo, obraId) : null;
+      var ativa = CronoBase.ativa(c.completa, obraId);
+      /* o PLANO ATUAL: o mesmo `estimar` que a aba desenha, na âncora da obra */
+      var r = null;
+      try {
+        if (c.orc) {
+          var alvo = this._cronoAlvoSemTela ? this._cronoAlvoSemTela(obraId) : null;
+          var orcPl = (alvo && alvo.orc) ? alvo.orc : (CronoBase.orcDaObra ? CronoBase.orcDaObra(c.lista, c.obra, c.orc) : c.orc);
+          r = Cronograma.estimar(orcPl, { dataInicio: c.obra.inicio || null }, { eap: true });
+        }
+      } catch (eR) { r = null; }
+      /* O CONTRATO E OS ADITIVOS DE PRAZO (D17).
+         ⚠ O CONTRATO NÃO MORA NA OBRA: ele é entidade própria (`contratos`),
+           ligada por `obraId`, e o aditivo pertence ao CONTRATO — o `obraId`
+           dele é uma cópia feita quando nasceu, e o campo Obra do contrato é
+           editável (o ⚠ do `Gestao._idsDaObraPara` conta o estrago).
+           Por isso o filtro é por `contratoId`, e o vínculo com a obra passa
+           pelo contrato.
+         ⚠ SÓ ADITIVO APROVADO ENTRA no prazo — e quem decide o que é
+           aprovado é o `js/aditivo.js`, não uma comparação de status escrita
+           aqui: pendente somado viraria prazo que ninguém assinou. */
+      var ct = null;
+      try {
+        var eid2 = c.eid, ctrs = Util.arr(Store.listar(eid2, "contratos")).filter(function (x) {
+          return x && String(x.obraId || "") === String(obraId) && x.status !== "cancelado" && x.status !== "rescindido";
+        });
+        if (ctrs.length) {
+          var ctr = ctrs[0], adTodos = Util.arr(Store.listar(eid2, "aditivos"));
+          var adCt = adTodos.filter(function (a) { return a && String(a.contratoId || "") === String(ctr.id); });
+          /* ⚠ SEM O MÓDULO, NENHUM ADITIVO ENTRA. Deixar passar a lista crua
+             levaria o aditivo PENDENTE para o prazo da folha do pleito —
+             prazo que ninguém assinou, num documento que abre negociação. O
+             motor recusa em vez de adivinhar, e o `foraDaConta` diz por quê. */
+          var aprovados = [];
+          if (typeof Aditivo !== "undefined" && Aditivo && typeof Aditivo.vigente === "function") {
+            aprovados = adCt.filter(function (a) {
+              var v = Aditivo.vigente(ctr, [a]);
+              return v && Util.num(v.prazoDiasAprovado) > 0;
+            });
+          } else if (adCt.length) {
+            UI.toast("O módulo dos termos aditivos (js/aditivo.js) não carregou: o comparativo sai SEM os " +
+              adCt.length + " aditivo(s) desta obra — só aditivo aprovado entra no prazo, e sem ele não dá para saber quais são. Recarregue o app.", "erro");
+          }
+          ct = { numero: String(ctr.numero || ""), prazoDias: Util.num(ctr.prazoDias),
+            aditivos: aprovados.map(function (a) {
+              return { numero: String(a.numero || ""), data: String(a.data || ""), prazoDias: Util.num(a.prazoDias), objeto: String(a.objeto || "") };
+            }) };
+          if (ctrs.length > 1) ct.numero = ct.numero + " (de " + ctrs.length + " contratos vivos nesta obra)";
+        }
+      } catch (eCt) { ct = null; }
+      return { pay: CronoDocs.comparativoBases({
+        obra: { id: c.obra.id, nome: c.obra.nome }, bases: bases,
+        ativaId: ativa ? ativa.id : null, contratualId: cc ? cc.baseId : null,
+        r: r, contrato: ct, hoje: this._cronoHojeISO(),
+        publico: (opts && opts.publico) || "fiscalizacao", Cronograma: Cronograma, CronoPlan: CronoPlan
+      }), obra: c.obra };
+    },
+    /* "AAAA-MM-DD" de hoje, em data LOCAL. ⚠ Nunca `toISOString`: em UTC-3
+       ele volta um dia depois das 21 h, e este documento carimba a emissão. */
+    _cronoHojeISO: function () {
+      var d = new Date();
+      return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2);
+    },
+
+    /* [Imprimir o comparativo] — a folha A3 do pleito. */
+    cronoCompImprimir: function (obraId, opts) {
+      opts = opts || {};
+      if (this._trialBloqueado()) { this._avisoTrial(); return; }
+      var d = this._cronoCompDados(obraId, opts);
+      if (d.erro) { UI.toast(d.erro, "erro"); return; }
+      var pay = d.pay;
+      if (!pay || pay.ok !== true) {
+        /* ⚠ o motor diz POR QUÊ em PT-BR: nunca um "documento indisponível"
+           genérico, que a pessoa lê como formalidade */
+        UI.toast(String((pay && pay.erro) || "O motor recusou o comparativo e não disse por quê."), "erro"); return;
+      }
+      var nome = String((d.obra && d.obra.nome) || "");
+      var html;
+      try { html = CronoPDF.gerarComparativoBases(pay, { papel: opts.papel || "a3-paisagem", obra: nome }); }
+      catch (eP) { UI.toast("Não consegui desenhar o comparativo: " + String((eP && eP.message) || eP), "erro"); return; }
+      UI.fecharModal();
+      this._abrirPrint("Comparativo de linhas de base" + (nome ? " — " + nome : ""), html, "relatorio");
+      var fdc = Util.arr(pay.foraDaConta);
+      if (fdc.length) {
+        UI.toast(fdc.length + " informação(ões) não entraram nesta folha: " +
+          fdc.slice(0, 2).map(function (x) { return String((x && x.msg) || x); }).join(" · ") +
+          (fdc.length > 2 ? " (e mais " + (fdc.length - 2) + ")" : ""), "");
+      }
+    },
+
+    /* [Exportar a tabela] — a MESMA tabela do comparativo, em CSV.
+       ⚠ CSV e não .xlsx, de propósito: a planilha do comparativo é leitura
+         (datas congeladas em cada versão), não tem fórmula viva e não precisa
+         do ExcelJS, que o app só carrega ao exportar o orçamento. O nome do
+         arquivo diz o que ele é, e o Excel abre direto.
+       ⚠ BOM na frente (`﻿`): sem ele o Excel do Windows lê "Fundação"
+         como "FundaÃ§Ã£o" — a mesma correção do CSV do orçamento. */
+    cronoCompExcel: function (obraId) {
+      if (this._trialBloqueado()) { this._avisoTrial(); return; }
+      var d = this._cronoCompDados(obraId);
+      if (d.erro) { UI.toast(d.erro, "erro"); return; }
+      var pay = d.pay;
+      if (!pay || pay.ok !== true) { UI.toast(String((pay && pay.erro) || "O motor recusou o comparativo."), "erro"); return; }
+      function cel(v) { var s = String(v == null ? "" : v); return /[;"\n]/.test(s) ? '"' + s.split('"').join('""') + '"' : s; }
+      function br(iso) { var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || "")); return m ? (m[3] + "/" + m[2] + "/" + m[1]) : ""; }
+      var cols = Util.arr(pay.colunas), linhas = [];
+      linhas.push(["Comparativo de linhas de base", String((d.obra && d.obra.nome) || "")].map(cel).join(";"));
+      linhas.push("");
+      linhas.push(["Versão", "Início", "Prazo (dias úteis)", "Término (último dia)", "Congelada em", "Motivo"].map(cel).join(";"));
+      cols.forEach(function (c) {
+        linhas.push([c.rotulo, br(c.inicio), c.prazoDU, br(c.termino), br(c.criadaEm), c.motivo || ""].map(cel).join(";"));
+      });
+      linhas.push("");
+      var cab = ["Nº", "Etapa / subetapa"];
+      cols.forEach(function (c) { cab.push(c.rotulo + " — início"); cab.push(c.rotulo + " — fim"); });
+      cab.push("Δ fim (dias corridos)");
+      linhas.push(cab.map(cel).join(";"));
+      Util.arr(pay.linhas).forEach(function (L) {
+        var ln = [L.numero, L.nome];
+        cols.forEach(function (c) {
+          var j = L.janelas ? L.janelas[c.id] : null;
+          ln.push(j ? br(j.inicio) : ""); ln.push(j ? br(j.fim) : "");
+        });
+        ln.push(L.difFimDias == null ? "" : L.difFimDias);
+        linhas.push(ln.map(cel).join(";"));
+      });
+      if (pay.prazoContratual) {
+        var pc = pay.prazoContratual;
+        linhas.push("");
+        linhas.push(["Prazo contratual", pc.numero || "", pc.prazoDias + " dias", "aditivos: " + pc.somaAditivosDias + " dias",
+          "com aditivos: " + pc.prazoComAditivos + " dias", pc.avisoUnidade].map(cel).join(";"));
+      }
+      var arq = "comparativo-bases-" + String((d.obra && d.obra.nome) || "obra").replace(/[^\w\-]+/g, "-").toLowerCase() + ".csv";
+      Util.baixar(arq, "﻿" + linhas.join("\r\n"), "text/csv;charset=utf-8");
+      UI.toast("Tabela do comparativo exportada (" + arq + ").", "ok");
+    },
+    /*
+     * ↑ região da fatia 3A (papel): `_regPapel` (o registro do documento no
+     *   catálogo), `_acoesCrono_comp`, `_cronoCompDados`, `cronoCompImprimir`
+     *   e `cronoCompExcel`. O `cronoDocGerar` (acima) ganhou o ramo
+     *   "comparativo-bases", que delega para o `cronoCompImprimir`.
+     */
+
+    /* ===== PLANEJADOR: msproject (3B) ===== */
+    _regMsproject: 1,
+    /* AS LINHAS DE BASE QUE VÃO AO ARQUIVO DO MS PROJECT, na numeração do
+       formato: 0 = a ATIVA (a barra cinza que o Project mostra como "Linha de
+       Base"), 1 = a CONTRATUAL pelo selo, 2 a 10 = as demais, da mais nova
+       para a mais velha.
+
+       ⚠ A CONTRATUAL É A DO SELO, NUNCA "a primeira" NEM "a v1". O selo é
+       quem guarda qual versão o contratante aprovou (`CronoSelo.contratual`);
+       deduzi-la da ordem das versões erraria em toda obra que reprogramou e
+       teve a nova aprovada. Sem o módulo dos selos carregado, sai só a ativa —
+       que é exatamente o que este arquivo mandava antes desta fatia.
+
+       ⚠ SÓ LEITURA. Esta função não grava nada e não muda painel nenhum.
+
+       ⚠ O DETALHE POR SERVIÇO VEM DO SELO, e ele já veio: `pr.ativa` e
+       `pr.bases` saem da lista COMPLETADA em `_cronoPainelDados`
+       (`CronoSelo.completar`). É o que devolve as subetapas e a curva de uma
+       versão que um aparelho de versão anterior resumiu ou arquivou para caber
+       na nuvem — sem isso, a obra grande entregaria ao contratante uma barra
+       cinza só de etapas. Não trocar `pr.bases` por uma leitura crua do
+       `crono_obra`.
+
+       O teto de 11 é do formato (`<Number>` vai de 0 a 10); o que passar disso
+       o `js/msproject.js` deixa de fora e conta no relato. */
+    _cronoBasesMSP: function (pr) {
+      if (!pr) return [];
+      function vale(b) { return !!b && !!b.cal && Util.arr(b.nos).length > 0; }
+      var out = [], vistos = {}, ativa = pr.ativa;
+      function poe(b, rotulo) {
+        if (!vale(b) || vistos[b.id]) return;
+        vistos[b.id] = 1;
+        out.push({ numero: out.length, reg: b, rotulo: rotulo + (b.versao != null ? " (v" + b.versao + ")" : "") });
+      }
+      var contratual = null;
+      try {
+        var CS = this._cronoSeloMod(), eid = Auth.empresaId();
+        if (CS && pr.obra) {
+          var lp = this._cronoLerPlanejamento(eid), ls = this._cronoListaSelo(eid);
+          if (ls.lista && lp.lista) {
+            var cc = CS.contratual(lp.lista, ls.lista, pr.obra.id);
+            if (cc && cc.baseId) contratual = Util.arr(pr.bases).filter(function (b) { return b && b.id === cc.baseId; })[0] || null;
+          }
+        }
+      } catch (e) { contratual = null; }
+      /* ⚠ quando a ativa JÁ É a contratual, o rótulo diz as duas coisas — um
+         "ativa" sozinho faria quem abre o Project procurar a contratual numa
+         segunda barra cinza que não existe */
+      poe(ativa, (contratual && ativa && contratual.id === ativa.id) ? "ativa e contratual (aprovada pelo contratante)" : "ativa");
+      if (!out.length) return [];          // sem base ativa não há barra cinza nenhuma
+      poe(contratual, "contratual (aprovada pelo contratante)");
+      /* as demais, da mais nova para a mais velha: quem reprogramou três vezes
+         quer ver a v3 antes da v1 no Project */
+      Util.arr(pr.bases).slice().sort(function (a, b) { return (Number(b.versao) || 0) - (Number(a.versao) || 0); })
+        .forEach(function (b) { if (out.length <= 10) poe(b, "versão"); });
+      return out;
+    },
+    /*
+     * ↑ região da fatia 3B (MS Project).
+     *
+     *
+     */
+    /* ===== PLANEJADOR: analise (3C) ===== */
+    _regAnalise: 1,
+    /*
+     * ↑ região da fatia 3C (análise). A âncora abaixo fecha o objeto: toda
+     * região termina com vírgula e nenhuma fatia edita a linha da outra.
+     *
+     */
+
+    /* ===== MEDCC: avanco (6B) ===== */
+    _regMedccAvanco: 1,
+
+    /* ==================================================================
+       O CANAL DA MEDIÇÃO PARA O AVANÇO LANÇADO (ESPEC-medicao-cc §3.7)
+
+       A medição por itens APROVADA é mais uma origem de entrada de avanço
+       (`o:"medicao"`, com o lastro `b`), ao lado do digitado e do diário.
+       Ela COMPLETA o que o diário não cobre — "projetos, mobilização,
+       licenças ficam perdidos" — e nunca manda onde o diário já fala.
+
+       ⚠ ESTE CANAL NUNCA GRAVA O PLANO (O17). Ele chama um caminho só,
+         `App._cronoGravarAvanco` (1A), que grava apenas o registro de
+         avanço. Regravar o plano aqui faria uma aprovação de boletim
+         apagar, pelo merge por registro inteiro do `crono_obra`, o TT que
+         o escritório digitou em outro aparelho — e ninguém veria.
+       ⚠ ELE NUNCA MOVE A DATA DE CORTE e nunca escreve no boletim. O
+         boletim aprovado é documento congelado; o lastro mora no avanço.
+       ⚠ ELE NUNCA BAIXA UM NÚMERO NA APROVAÇÃO. Quem aprova um boletim não
+         pediu para o avanço de uma tarefa CAIR; quando o recálculo baixaria,
+         a tarefa vira sugestão na faixa e a pessoa decide.
+       ⚠ AS GUARDAS ESTÃO NA FUNÇÃO, nunca só na tela: este caminho é
+         chamado pela aprovação (sem tela nenhuma), pelo select de status e
+         pelo clique da faixa.
+       ================================================================== */
+
+    /* o estado do planejamento da obra, para o recado honesto de quem
+       aprovou (a `mc-7A` escreve o texto; aqui só os fatos). */
+    _cronoAvancoSituacao: function (obraId) {
+      var o = String(obraId || ""), out = { temPlano: false, temAvanco: false, podeGravar: false, ilegivel: false };
+      if (!o || typeof CronoBase === "undefined") return out;
+      try {
+        var eid = Auth.empresaId(), lp = this._cronoLerPlanejamento(eid);
+        if (lp.lista === null) { out.ilegivel = true; return out; }
+        out.temPlano = !!CronoBase.plano(lp.lista, o);
+        out.temAvanco = !!CronoBase.avanco(lp.lista, o);
+      } catch (e) { return out; }
+      out.podeGravar = out.temPlano && out.temAvanco && !this._cronoSemPermissao(o) &&
+        !this._trialBloqueado() && (typeof Gestao === "undefined" || Gestao._medcc === undefined || Gestao._medcc("medAvanco"));
+      /* A FAMÍLIA DO ORÇAMENTO DO PLANO ({id: true}), pela MESMA régua que o
+         `_medccDados` passa ao `MedAvanco.contam`: boletim de orçamento fora
+         dela NÃO conta. A caixa do boletim precisa saber disso antes de
+         prometer alguma coisa. Roteiro do defeito (revisão adversarial da
+         mc-7A, 22/09/2026): um boletim medido no "Aditivo 01 (orçamento
+         separado)" — mesmos itens, fora da família — deixava a caixa marcada
+         e habilitada, a prévia dizia "as tarefas que ele mede já têm
+         lançamento nos diários, número igual, ou estão fora do corte" (os
+         três motivos falsos) e a aprovação respondia "já estava igual".
+         ⚠ `familia: null` = NÃO CONSEGUI APURAR, e quem lê não trava por
+           isso: o canal confere de novo na hora de gravar. */
+      out.familia = null; out.orcPlano = null;
+      if (out.temPlano && typeof CronoPlan !== "undefined" && typeof CronoPlan.familiaIds === "function") {
+        try {
+          var orcP = this._cronoOrcDaObra(o);
+          if (orcP) {
+            var orcsF = Store.listarOrcamentos ? (Store.listarOrcamentos(Auth.empresaId()) || []) : (Store.listar(Auth.empresaId(), "orcamentos") || []);
+            out.familia = CronoPlan.familiaIds(orcP, orcsF) || null;
+            out.orcPlano = { id: String(orcP.id || ""), nome: String(orcP.nome || orcP.numero || orcP.id || "") };
+          }
+        } catch (eF) { out.familia = null; out.orcPlano = null; }
+      }
+      return out;
+    },
+
+    /* OS DOIS MAPAS DOS BOLETINS DA OBRA (`ordemB` e `numeroB`, EM-3/EM-4),
+       montados UMA vez por abertura de tela ou por chamada do canal.
+       ⚠ UM MAPA SÓ, e o dono dele é o `MedAvanco.mapasB`. Sem isto haveria
+         duas contagens da mesma coisa (uma para o rótulo "medição NNa",
+         outra para a ordem do lastro) — e duas réguas da mesma pergunta
+         divergem na primeira manutenção (memória "réplica de parser
+         apodrece").
+       ⚠ Leitura que falha devolve mapas VAZIOS, nunca null: sem o mapa o
+         rótulo cai no id do boletim, que é feio mas verdadeiro. */
+    _medccMapasB: function (obraId) {
+      var o = String(obraId || "");
+      this._medccMapasN = (this._medccMapasN || 0) + 1;
+      if (!o || typeof MedAvanco === "undefined" || typeof MedAvanco.mapasB !== "function") return { ordemB: {}, numeroB: {} };
+      var meds = [];
+      try { meds = Store.listar(Auth.empresaId(), "medicoes") || []; } catch (e) { meds = []; }
+      try { return MedAvanco.mapasB(meds, o); } catch (e2) { return { ordemB: {}, numeroB: {} }; }
+    },
+    _medccMapasN: 0,
+
+    /* o que o canal precisa da obra, numa leitura só. Devolve `erro` em
+       PT-BR (o recado que vai ao toast) ou o contexto. */
+    _medccCtx: function (obraId) {
+      var o = String(obraId || "");
+      if (!o) return { erro: "Não consegui identificar a obra desta medição — nada foi lançado no avanço." };
+      if (typeof CronoBase === "undefined" || typeof CronoAvanco === "undefined" || typeof MedAvanco === "undefined" || typeof CronoPlan === "undefined") {
+        return { erro: "O módulo do avanço não carregou neste aparelho — nada foi lançado no avanço. Recarregue o app." };
+      }
+      var eid;
+      try { eid = Auth.empresaId(); } catch (eA) { return { erro: "Não consegui identificar a empresa — nada foi lançado no avanço." }; }
+      var lp = this._cronoLerPlanejamento(eid);
+      /* ⚠ ILEGÍVEL NÃO É "SEM AVANÇO" (a mesma armadilha do achado 1 da Onda
+         0): a quarentena devolve o `[]` de reserva, e tratar isso como "a
+         obra não tem avanço" faria o canal CRIAR entradas por cima de um
+         registro que existe e não pôde ser lido. */
+      if (lp.lista === null) return { erro: this._cronoRecadoIlegivel(lp.ilegivel, "lançar no avanço o que esta medição mede") };
+      var obra = this._cronoObraDe(o);
+      if (!obra) return { erro: "Obra não encontrada neste aparelho — nada foi lançado no avanço." };
+      var meds = [], rdos = [], orcs = [];
+      try { meds = Store.listar(eid, "medicoes") || []; } catch (eM) { return { erro: "Não consegui ler as medições deste aparelho — nada foi lançado no avanço." }; }
+      if (!CronoBase.ehLista(meds)) return { erro: "Não consegui ler as medições deste aparelho — nada foi lançado no avanço." };
+      try { rdos = Store.listar(eid, "rdo") || []; } catch (eR) { rdos = []; }
+      try { orcs = Store.listarOrcamentos ? (Store.listarOrcamentos(eid) || []) : (Store.listar(eid, "orcamentos") || []); } catch (eO) { orcs = []; }
+      return { eid: eid, obraId: o, obra: obra, lista: lp.lista, meds: meds, rdos: rdos, orcs: orcs,
+        plano: CronoBase.plano(lp.lista, o), rec: CronoBase.avanco(lp.lista, o) };
+    },
+
+    /* O QUE AS MEDIÇÕES DIZEM POR TAREFA, montado uma vez (a faixa, o modal
+       e o canal leem daqui). Devolve {erro} ou {medP, sugs, mapas, nomes,
+       lastro, orc, rec, nosDoGatilho}. Nada aqui grava. */
+    _medccDados: function (c, opts) {
+      opts = opts || {};
+      var self = this, orc = null;
+      try { orc = this._cronoOrcDaObra(c.obraId); } catch (eO) { orc = null; }
+      if (!orc) return { erro: "Não consegui ler o orçamento do plano desta obra — nada foi lançado no avanço." };
+      var corte = c.rec ? String(c.rec.corte || "") : "";
+      var mapas = this._medccMapasB(c.obraId);
+      /* A FAMÍLIA do orçamento do plano (MC8): a revisão irmã e a anterior
+         contam, porque a obra pode ter sido passada de revisão e os boletins
+         antigos continuam sendo desta obra. Orçamento de fora da família,
+         não — ali as etapas não são as mesmas. */
+      var familia = (typeof CronoPlan.familiaIds === "function") ? CronoPlan.familiaIds(orc, c.orcs) : null;
+      var reguas = {
+        ehAprovado: function (st) { return (typeof Gestao !== "undefined" && Gestao._ehAprovado) ? Gestao._ehAprovado(st) : false; },
+        modoDe: function (m) { return (typeof Gestao !== "undefined" && Gestao._medModo) ? Gestao._medModo(m) : ""; }
+      };
+      var V = null, calc = null;
+      try { V = Orcamento.valoresEAP(orc); } catch (eV) { V = null; }
+      try { calc = Orcamento.calcular(orc); } catch (eC) { calc = null; }
+      /* o realizado DOS DIÁRIOS, na MESMA régua e na MESMA data de corte que
+         o previsto × realizado usa: é ele que responde "esta tarefa tem
+         diário?" (§3.4-4) */
+      var realD = null;
+      try {
+        var pub = c.rdos.filter(function (d) {
+          return !!d && String(d.obraId) === c.obraId && ((typeof RDO !== "undefined" && RDO.podeIrAoPortal) ? RDO.podeIrAoPortal(d) : false);
+        });
+        var linhasD = Fisico.porServico(pub, c.obraId, { ate: corte });
+        realD = CronoPlan.realizadoPorNo(orc, linhasD, { valores: V, dataCorte: corte, calc: calc });
+      } catch (eD) { realD = null; }
+      /* O INÍCIO PLANEJADO DE CADA NÓ, pelo plano SEM o avanço lançado — a
+         primeira metade do `i` da §3.5 ("i = max(obra.inicio, min(início
+         planejado do nó, dataRef do 1º boletim))").
+         ⚠ É o `Cronograma.semAvanco`, e não o `estimar` de sempre: com o
+           avanço dentro, o "início planejado" já seria o que o próprio avanço
+           empurrou, e a conta se morderia. É a mesma régua que a 1A usa para
+           o "antes" da linha do prazo.
+         ⚠ SÓ COM O INÍCIO DA OBRA FIXO: sem ele o plano não tem data
+           absoluta, e a alternativa seria inventar uma. Sem o mapa, o motor
+           cai no comportamento anterior (a data do 1º boletim). */
+      var iniPlan = null;
+      if (c.obra && c.obra.inicio) {
+        try {
+          var rSem = Cronograma.semAvanco(orc, { dataInicio: c.obra.inicio }, { eap: true, calc: calc, valores: V });
+          if (rSem && Util.arr(rSem.atividades).length) {
+            iniPlan = {};
+            Util.arr(rSem.atividades).forEach(function (a) {
+              if (!a || a.id == null || !a.dataInicio) return;
+              try { iniPlan[String(a.id)] = Cronograma._ch(a.dataInicio); } catch (eCh) {}
+            });
+          }
+        } catch (eSA) { iniPlan = null; }
+      }
+      var medP = MedAvanco.porNo(c.meds, orc, { corte: corte, obraId: c.obraId, familia: familia,
+        ehAprovado: reguas.ehAprovado, modoDe: reguas.modoDe, valores: V, calc: calc,
+        realD: realD, ordemB: mapas.ordemB, numeroB: mapas.numeroB,
+        iniObra: (c.obra && c.obra.inicio) || null, iniPlan: iniPlan,
+        CronoPlan: CronoPlan, Cronograma: Cronograma, Avanco: Avanco });
+      if (!medP.ok) return { erro: (medP.avisos[0] && medP.avisos[0].msg) || "Não consegui apurar o que as medições dizem por tarefa." };
+      /* nomes e pais dos nós, para o texto da faixa e para a cobertura por
+         `rs:1` (o nó coberto é o da etapa resumida E o das folhas dela) */
+      var nomes = {}, paiDe = {};
+      (function () {
+        var r = medP.real;
+        Util.arr(r && r.ordem).forEach(function (id) {
+          var n = r.porNo[id];
+          if (!n) return;
+          nomes[id] = { numero: n.numero, nome: n.nome };
+          if (n.paiId) paiDe[id] = n.paiId;
+        });
+      })();
+      /* os boletins que AINDA contam, por id: é o que distingue a entrada
+         com lastro vivo da `sem-lastro` (§3.5 linha 3) */
+      var conta = {};
+      Util.arr(medP.boletins).forEach(function (m) { conta[String(m.id)] = true; });
+      /* os nós que o boletim do GATILHO mediu: na aprovação só eles gravam
+         (crítica D10 — aprovar a 02a não mexe na tarefa que só a 01a,
+         reaberta, sustentava) */
+      var nosDoGatilho = null;
+      if (opts.gatilho) {
+        nosDoGatilho = {};
+        var itensG = {};
+        Util.arr(c.meds).forEach(function (m) {
+          if (!m || String(m.id) !== String(opts.gatilho)) return;
+          Util.arr(m.itens).forEach(function (it) { if (it && it.itemId != null) itensG[String(it.itemId)] = true; });
+        });
+        var rr = medP.real;
+        Util.arr(rr && rr.ordem).forEach(function (id) {
+          var n = rr.porNo[id];
+          if (!n || n.tipo !== "servico" || n.itemId == null) return;
+          if (!Object.prototype.hasOwnProperty.call(itensG, String(n.itemId))) return;
+          var no = id, g = 0;
+          while (no && g++ < 60) { nosDoGatilho[no] = true; no = rr.porNo[no] ? rr.porNo[no].paiId : null; }
+        });
+      }
+      /* ⚠ SÓ O NÓ QUE MANDA NA DATA (§1.4 do planejador; a MESMA régua do
+         `_cronoAvancoSugDiario` da 2B): a folha no modo executivo, a etapa no
+         modo padrão. Sugerir os dois níveis encheria o registro de entradas
+         INERTES — a leitura as descarta com o aviso `avanco-nivel-errado`, e
+         a pessoa veria o número dela sumir do cálculo sem entender por quê.
+         É também o que segura o registro dentro do teto de 50 KB. */
+      var execR = !!(c.plano && c.plano.cronograma && c.plano.cronograma.exec && c.plano.cronograma.exec.rede === true);
+      (function () {
+        var so = {}, k, rr = medP.real;
+        for (k in medP.porNo) if (Object.prototype.hasOwnProperty.call(medP.porNo, k)) {
+          var n = rr.porNo[k];
+          if (!n) continue;
+          if (execR ? n.papel !== "folha" : n.tipo !== "etapa") continue;
+          so[k] = medP.porNo[k];
+        }
+        medP.porNo = so;
+      })();
+      var sugs = MedAvanco.sugestoes(c.rec, medP, realD, { modo: opts.gatilho ? "aprovar" : "puxar",
+        gatilho: opts.gatilho || null, nosDoGatilho: nosDoGatilho, marcadas: opts.marcadas || null,
+        nomes: nomes, numeroB: mapas.numeroB, contam: conta, paiDe: paiDe, CronoAvanco: CronoAvanco });
+      var lastro = MedAvanco.lastro(c.rec, c.meds, reguas, { numeroB: mapas.numeroB, CronoAvanco: CronoAvanco });
+      return { medP: medP, sugs: sugs, mapas: mapas, nomes: nomes, lastro: lastro, orc: orc, realD: realD, conta: conta,
+        familia: familia, reguas: reguas };
+    },
+
+    /* POR QUE O BOLETIM DA APROVAÇÃO NÃO ENTROU NA CONTA (§3.2) — o motivo
+       DELE, dito no recado, em vez do "já estava igual".
+       Roteiro do defeito (revisão adversarial da mc-7A, 22/09/2026): o canal
+       rodava o motor, o `MedAvanco.contam` descartava o boletim (orçamento
+       fora da família do plano; boletim por valor que guardou a caixa de
+       quando era por itens), nada mudava, e o `_medccRecadoNada` respondia
+       "O avanço da obra já estava igual ao que esta medição diz — nada foi
+       alterado." Recado que mente: a medição não foi nem lida.
+       Devolve o texto, ou null quando o boletim CONTA e cabe no corte. As
+       réguas são as que o `_medccDados` passou ao motor (`d.reguas`,
+       `d.familia`, `MedAvanco.dataRef`) — uma conta só. */
+    _medccGatilhoFora: function (c, d, gatilho) {
+      var g = String(gatilho || "");
+      if (!g || !d) return null;
+      var med = null;
+      Util.arr(c.meds).forEach(function (m) { if (m && String(m.id) === g) med = m; });
+      if (d.conta && Object.prototype.hasOwnProperty.call(d.conta, g)) {
+        /* ⚠ CONTA, MAS O PERÍODO PASSA DO CORTE: o acumulado só lê boletim
+           com `dataRef ≤ corte` (§3.3), e a aprovação nunca move o corte
+           (§3.6). Mesmo defeito, visto na sonda da correção (22/09/2026):
+           período até 25/09, corte em 22/09 — o recado dizia "já estava
+           igual", e a faixa, com razão, "pendente de corte". A porta é a
+           mesma que o painel do P×R já dá: [Atualizar avanço], com a data. */
+        var dr = med ? MedAvanco.dataRef(med) : "", corte = String((c.rec && c.rec.corte) || "");
+        if (dr && corte && dr > corte) {
+          return "O período desta medição (até " + this._cronoBrD(dr) + ") termina depois da data de corte do avanço da obra (" +
+            this._cronoBrD(corte) + "): ela não entra nesta conta, e nada foi lançado — a aprovação nunca move o corte. " +
+            "Quem planeja a obra a inclui pelo [Atualizar avanço] do Cronograma da obra, escolhendo a data.";
+        }
+        return null;
+      }
+      if (!med) return "Não encontrei este boletim entre as medições deste aparelho: nada foi lançado no avanço.";
+      var R = d.reguas || {};
+      var modo = typeof R.modoDe === "function" ? R.modoDe(med) : "";
+      if (modo !== "orcamento") {
+        /* ⚠ A PORTA É DE QUEM PLANEJA: [→ Avanço] só é desenhado para quem tem
+           o módulo Obras, e quem aprova pode não ter — o texto diz de quem é a
+           porta em vez de mandar a pessoa a um botão que ela não vê */
+        return "Esta medição é por " + (modo === "atividades" ? "atividades" : "valor") +
+          ", não por itens do orçamento: ela não alimenta o avanço sozinha, e nada foi lançado. " +
+          "Quem planeja a obra leva o que ela mede ao avanço pelo botão [→ Avanço] desta medição, na lista de Medições.";
+      }
+      if (med.lancarAvanco === false) return "Esta medição está marcada para não entrar no avanço: nada foi lançado.";
+      var oi = String(med.orcamentoId || "");
+      if (d.familia && typeof d.familia === "object" && !Object.prototype.hasOwnProperty.call(d.familia, oi)) {
+        var orcB = null;
+        Util.arr(c.orcs).forEach(function (o2) { if (o2 && String(o2.id) === oi) orcB = o2; });
+        var nomeB = (orcB && (orcB.nome || orcB.numero)) || oi || "sem orçamento";
+        var nomeP = (d.orc && (d.orc.nome || d.orc.numero)) || "o orçamento do plano";
+        return "Esta medição mede o orçamento “" + nomeB + "”, que não é o do plano de execução da obra (“" + nomeP +
+          "”) nem uma revisão dele: as tarefas do plano são outras, e nada foi lançado no avanço. " +
+          "Para o avanço seguir “" + nomeB + "”, ligue a obra a ele (Obras → editar → “Vincular a um orçamento”) e use " +
+          "[Reiniciar plano a partir deste orçamento] no Cronograma dele.";
+      }
+      /* conta por nenhuma das réguas acima e mesmo assim ficou de fora (status
+         relido que não é aprovado, obra trocada): não se inventa motivo */
+      return "Esta medição não entrou na conta do avanço desta obra (status, obra ou orçamento mudaram desde a aprovação): nada foi lançado. Abra o Cronograma da obra para conferir.";
+    },
+
+    /* O CAMINHO DA APROVAÇÃO E DO [Puxar das medições] (§3.7).
+       `opts.gatilho` = o id do boletim recém-aprovado (canal automático, sem
+       tela); sem ele é o clique da pessoa, com a tela aberta.
+       Devolve {gravou, n, recado, tipo} — quem chama só mostra o toast.
+       ⚠ NUNCA LANÇA PARA FORA: uma falha aqui não pode desfazer a aprovação
+         do boletim nem deixar a tela pela metade. */
+    _cronoAvancoDaMedicao: function (obraId, opts) {
+      opts = opts || {};
+      var o = String(obraId || "");
+      /* ---- AS GUARDAS, TODAS NA FUNÇÃO ----
+         Esconder a porta não é guarda: este caminho chega pela aprovação, que
+         não passa por tela nenhuma. */
+      if (typeof Gestao !== "undefined" && typeof Gestao._medcc === "function" && !Gestao._medcc("medAvanco")) {
+        return { gravou: false, n: 0, tipo: "info", recado: "O lançamento do avanço pela medição está desligado nesta instalação — nada foi lançado. Nenhum dado gravado foi apagado." };
+      }
+      var np = this._cronoSemPermissao(o);
+      if (np) return { gravou: false, n: 0, tipo: "erro", recado: np + " Nada foi lançado no avanço." };
+      if (this._trialBloqueado()) {
+        return { gravou: false, n: 0, tipo: "erro", recado: "Modo demonstração: o boletim foi aprovado, mas o avanço da obra não foi lançado. Ative a licença e use [Puxar das medições] no cronograma da obra." };
+      }
+      if (typeof Janelas !== "undefined" && Janelas && typeof Janelas.podeEditar === "function" &&
+        !Janelas.podeEditar(typeof Store !== "undefined" ? Store : null)) {
+        return { gravou: false, n: 0, tipo: "erro", recado: "Esta versão do app não protege a edição do avanço em duas janelas — o avanço não foi lançado." };
+      }
+      var c, d;
+      try { c = this._medccCtx(o); } catch (eC) { c = { erro: "Não consegui ler o planejamento desta obra — nada foi lançado no avanço." }; }
+      if (c.erro) return { gravou: false, n: 0, tipo: "erro", recado: c.erro };
+      /* sem plano: o primeiro plano é decisão de quem planeja, nunca de quem
+         aprova um boletim. O recado diz ONDE a porta fica — ele é toast, e
+         toast é texto puro (R3-5). */
+      if (!c.plano) {
+        return { gravou: false, n: 0, tipo: "info", semPlano: true,
+          recado: "Esta obra ainda não tem plano de execução: o avanço não foi lançado. Quem planeja a obra inicia o plano no Cronograma dela." };
+      }
+      if (!c.rec) {
+        return { gravou: false, n: 0, tipo: "info", semAvanco: true,
+          recado: "Esta obra ainda não tem avanço lançado: o avanço não foi lançado por esta medição. Abra o Cronograma da obra e use [Lançar avanço] — a medição aparece como sugestão lá." };
+      }
+      if (!c.obra.inicio) {
+        return { gravou: false, n: 0, tipo: "erro", semInicio: true,
+          recado: "Para lançar avanço, o início da obra precisa estar fixo: o avanço não foi lançado. Abra a obra em Gestão de Obras e informe a data de início." };
+      }
+      try { d = this._medccDados(c, opts); } catch (eD) { d = { erro: "Não consegui apurar o que as medições dizem por tarefa — nada foi lançado no avanço." }; }
+      if (d.erro) return { gravou: false, n: 0, tipo: "erro", recado: d.erro };
+      /* ⚠ O BOLETIM DA APROVAÇÃO QUE NÃO CONTA NÃO LANÇA NADA, e o recado diz
+         o motivo dele (§3.8). Sem isto o canal seguia: gravava nos nós que o
+         boletim cita o que OUTROS boletins dizem — efeito de uma aprovação que
+         o motor nem leu — ou, sem mudança, dizia "já estava igual". */
+      if (opts.gatilho) {
+        var foraG = this._medccGatilhoFora(c, d, opts.gatilho);
+        if (foraG) return { gravou: false, n: 0, tipo: "info", gatilhoFora: true, sugs: d.sugs, lastro: d.lastro, recado: foraG };
+      }
+      /* ---- O ALVO E O CARIMBO-BASE ----
+         ⚠ NA APROVAÇÃO NÃO HÁ TELA, então o alvo é o `_cronoAlvoSemTela` da
+           1A e o carimbo-base é lido AQUI, do registro fresco que esse alvo
+           traz. A 1A é fail-closed: sem `opts.baseEm` ela recusa como erro de
+           programação, em vez de gravar com a trava desligada.
+         ⚠ NO CLIQUE, o carimbo é o da TELA, lido quando o modal/a faixa
+           abriu (crítica F11). Relê-lo aqui seria ler o carimbo do OUTRO
+           aparelho que gravou nesse meio-tempo: a trava passaria e o
+           lançamento dele sumiria sem ninguém ver. */
+      var alvo = null, baseEm;
+      if (opts.gatilho) {
+        alvo = this._cronoAlvoSemTela(o);
+        if (!alvo) {
+          return { gravou: false, n: 0, tipo: "info", semPlano: true,
+            recado: "Esta obra ainda não tem plano de execução: o avanço não foi lançado. Quem planeja a obra inicia o plano no Cronograma dela." };
+        }
+        baseEm = alvo.avancoRec ? alvo.avancoRec.atualizadoEm : null;
+      } else {
+        try { alvo = this._cronoAlvo(); } catch (eA) { alvo = null; }
+        if (!alvo || alvo.tipo !== "plano" || String((alvo.plano && alvo.plano.obraId) || (alvo.obra && alvo.obra.id) || "") !== o) {
+          alvo = { tipo: "plano", obraId: o, chave: "plano:" + o, obra: c.obra, plano: c.plano, orc: d.orc };
+        }
+        var tela = this._cronoAvancoTela && this._cronoAvancoTela[o];
+        if (!tela) {
+          return { gravou: false, n: 0, tipo: "erro", recarregar: true,
+            recado: "A tela do avanço desta obra não registrou o carimbo ao abrir — nada foi lançado. Feche e reabra o cronograma da obra." };
+        }
+        baseEm = tela.baseEm;
+      }
+      /* ⚠ `semOrigem` é a contingência K36 (§11.3) LIDA AQUI, na fiação: o
+         motor é puro e não lê CONFIG. Ver `_medccOrigemLigada`. */
+      var ap = MedAvanco.aplicar(c.rec, d.sugs, { semOrigem: !this._medccOrigemLigada() });
+      if (!ap.mudou || !ap.rec) {
+        return { gravou: false, n: 0, tipo: "info", sugs: d.sugs, lastro: d.lastro,
+          recado: this._medccRecadoNada(d, opts) };
+      }
+      /* ⚠ `carimboFraco` SÓ NA APROVAÇÃO, e quem o CALCULA é o
+         `_cronoGravarAvanco` da 1A (EM-5). Esta região não tem, e não pode
+         ter, função de carimbo nem leitura de `Nuvem._marcasDe`: duas contas
+         do mesmo carimbo divergiriam, e o carimbo é o que faz a gravação
+         automática PERDER para a edição humana feita no campo, offline, em
+         outro aparelho. */
+      var r = this._cronoGravarAvanco(alvo, ap.rec, { baseEm: baseEm, origem: "medicao",
+        carimboFraco: !!opts.gatilho, agora: Util.agoraISO(), por: this._cronoPor(), numeroB: d.mapas.numeroB });
+      if (!r || !r.ok) {
+        return { gravou: false, n: 0, tipo: "erro", sugs: d.sugs, lastro: d.lastro,
+          recarregar: !!(r && r.recarregar), teto: !!(r && r.codigo === "teto-avanco"), portaInicio: !!(r && r.portaInicio),
+          recado: this._medccRecadoRecusa(r, opts) };
+      }
+      var n = ap.resumo.criadas + ap.resumo.recalculadas;
+      /* ⚠ OS NOMES SAEM DO QUE O `aplicar` GRAVOU (`resumo.ids`), nunca das
+         sugestões marcadas. Roteiro do defeito (revisão adversarial da mc-7A,
+         22/09/2026): o recado lia as sugestões `criar`/`recalcular` marcadas,
+         e entre elas iam as que o `aplicar` pulou (a entrada que já estava
+         igual, a sem início, o recálculo com a origem desligada) — "Avanço
+         lançado em 2 tarefa(s) (4.1, 4.2, 4.3)". Número que a pessoa confere
+         e não fecha ensina a não conferir. */
+      var nomes = [], i, idsG = Util.arr(ap.resumo.ids);
+      for (i = 0; i < idsG.length && nomes.length < 3; i++) {
+        var nmG = (d.nomes && d.nomes[idsG[i]]) || null;
+        nomes.push((nmG && (nmG.numero || nmG.nome)) || idsG[i]);
+      }
+      var rot = opts.gatilho ? this._medccNomeB(opts.gatilho, d.mapas) : null;
+      /* ⚠ SEM REGRESSÃO CALADA (§3.5). Roteiro do defeito (achado médio da
+         revisão da Onda 6, 22/09/2026): um boletim reaberto e remedido a
+         menos (glosa) fazia duas tarefas caírem de 100% para 40% — o término
+         da obra muda, a curva que vai ao Portal muda — e o recado era a mesma
+         frase VERDE de lançamento, sem um número. O `MedAvanco.aplicar` já
+         apurava as baixas em `resumo.baixadas`; ninguém as lia. Verde é a cor
+         de "deu certo": quando algo BAIXOU, o recado é de aviso, porque a
+         pessoa precisa conferir. */
+      var bx = Util.arr(ap.resumo.baixadas), txBx = "", j;
+      if (bx.length) {
+        var lst = [];
+        for (j = 0; j < bx.length && j < 3; j++) {
+          lst.push((bx[j].numero || bx[j].nome || bx[j].id) + " " + String(bx[j].de).replace(".", ",") + "% → " + String(bx[j].para).replace(".", ",") + "%");
+        }
+        txBx = " " + bx.length + " tarefa(s) BAIXARAM: " + lst.join("; ") + (bx.length > 3 ? ", …" : "") +
+          " — as medições aprovadas passaram a dizer menos do que o avanço tinha. Confira.";
+      }
+      /* ⚠ O RECADO DE QUEM APROVOU NÃO LEVA [Atualizar as datas…] (crítica
+         F19): quem aprovou um boletim não decidiu regravar o plano inteiro da
+         obra. Ele termina apontando para quem planeja. */
+      return { gravou: true, n: n, tipo: bx.length ? "aviso" : "ok", sugs: d.sugs, lastro: d.lastro, baixadas: bx,
+        recado: "Avanço lançado em " + n + " tarefa(s)" + (nomes.length ? " (" + nomes.join(", ") + (n > nomes.length ? ", …" : "") + ")" : "") +
+          (rot ? ", pela medição " + rot : "") + ", até " + this._cronoBrD(c.rec.corte) + "." + txBx +
+          (opts.gatilho ? " Quem planeja a obra vê o aviso de compatibilidade no cronograma." : "") };
+    },
+    /* A CHAVE `medOrigem` (contingência K36, §11.3), LIDA NA FIAÇÃO.
+       ⚠ Motor puro não lê CONFIG nem localStorage (§1.10): quem pergunta é
+         quem grava. Desligada, o canal e o modal gravam entradas DIGITADAS
+         (sem `o` e sem `b`) e só CRIAM — é o que se faz se uma versão sem as
+         emendas E-MC1/E-MC2 chegar à frota, porque lá um aparelho que não
+         sabe ler `o:"medicao"` descartaria a entrada inteira e o realizado da
+         obra sumiria.
+       ⚠ FAIL-OPEN DE PROPÓSITO (e só aqui): sem o `Gestao._medcc` a resposta
+         é "ligada", que é o estado normal desta árvore — as duas emendas
+         estão no `js/cronoavanco.js`. O contrário faria um erro de
+         carregamento apagar a procedência de toda entrada nova, calado. */
+    _medccOrigemLigada: function () {
+      if (typeof Gestao === "undefined" || typeof Gestao._medcc !== "function") return true;
+      try { return !!Gestao._medcc("medOrigem"); } catch (e) { return true; }
+    },
+    /* o nome do boletim ("01a"), nunca o id, quando o mapa o conhece */
+    _medccNomeB: function (b, mapas) {
+      var m = (mapas && mapas.numeroB) || {};
+      return Object.prototype.hasOwnProperty.call(m, String(b)) ? m[String(b)] : String(b || "");
+    },
+    /* "nada a lançar": o recado diz POR QUE, que é o que a pessoa precisa —
+       "nada foi lançado" sozinho ela lê como defeito */
+    _medccRecadoNada: function (d, opts) {
+      var por = { "coberta-rs": 0, "sem-lastro": 0, "diario-chegou": 0, "diario-ilegivel": 0, conflito: 0, lapide: 0, fora: 0 };
+      Util.arr(d.sugs).forEach(function (s) {
+        if (!s) return;
+        if (s.motivo === "fora-do-gatilho") { por.fora++; return; }
+        if (Object.prototype.hasOwnProperty.call(por, s.acao)) por[s.acao]++;
+      });
+      /* ⚠ PRIMEIRO O QUE NÃO SE CONSEGUIU MEDIR. Recado que mente é pior que
+         recado nenhum: sem o realizado dos diários, o canal não sabe quais
+         tarefas o diário já cobre — e não completa tarefa sobre a qual não
+         conseguiu perguntar. Dizer "nada novo" aqui esconderia uma falha de
+         leitura atrás de uma frase tranquila. */
+      if (por["diario-ilegivel"]) return "Não consegui ler os diários desta obra: " + por["diario-ilegivel"] + " tarefa(s) ficaram como estão. A medição não completa tarefa sobre a qual não consegui perguntar ao diário. Nada foi lançado e nada foi apagado.";
+      if (por["diario-chegou"]) return "Nada novo para o avanço: " + por["diario-chegou"] + " tarefa(s) passaram a ter lançamento nos diários, e o diário manda. Abra o Cronograma da obra para decidir.";
+      /* ⚠ A PORTA PROMETIDA PRECISA EXISTIR COM ESSE NOME. O texto anterior
+         mandava à "faixa da medição", que mostra só a contagem ("⚖ N
+         tarefa(s) com número diferente da medição"); os DOIS números estão no
+         modal [Atualizar avanço], na tabela "As medições aprovadas dizem". */
+      if (por.conflito) return "Nada foi lançado sozinho: " + por.conflito + " tarefa(s) têm número diferente do que já está no avanço. Abra o Cronograma da obra e use [Atualizar avanço]: a tabela da medição mostra o que está no avanço e o que a medição diz, lado a lado.";
+      if (por["sem-lastro"]) return "Nada novo para o avanço. " + por["sem-lastro"] + " tarefa(s) têm avanço lançado por um boletim que deixou de contar — abra o Cronograma da obra e use [Rever].";
+      if (opts.gatilho) return "O avanço da obra já estava igual ao que esta medição diz — nada foi alterado.";
+      return "Nada a lançar: o avanço da obra já está igual ao que as medições aprovadas dizem.";
+    },
+    /* a recusa da 1A, com ONDE fica a porta (R3-5: o toast é texto puro, e
+       porta prometida precisa existir) */
+    _medccRecadoRecusa: function (r, opts) {
+      var e = (r && r.erro) ? String(r.erro) : "o avanço não pôde ser gravado";
+      var onde = opts.gatilho ? " Abra o Cronograma da obra: a faixa “aprovada sem lançar” tem [Puxar das medições]." : "";
+      if (r && r.recarregar) {
+        return "O avanço desta obra mudou em outra janela ou aparelho desde que esta tela abriu: nada foi lançado." +
+          (opts.gatilho ? " Abra o Cronograma da obra e use [Puxar das medições]." : " Use [Recarregar o avanço].");
+      }
+      if (r && r.codigo === "teto-avanco") {
+        /* ⚠ O RECADO DIZ ONDE FICA A PORTA, e nunca "lançado" (R3-5): isto é
+           um toast, e toast é texto puro — um `<button>` aqui sairia escrito
+           na cara da pessoa (`UI.toast` grava por `textContent`). As duas
+           portas do teto (§3.8) são clicáveis no Cronograma da obra. */
+        /* ⚠ E O CAMINHO ATÉ ELA TEM DE SER O QUE A TELA MOSTRA. Na aprovação o
+           recado mandava "use [Resumir o avanço das etapas concluídas]" — um
+           botão que o cronograma não desenha; o que a pessoa acha lá é a faixa
+           "aprovada sem lançar" com [Puxar das medições], e é o clique nele
+           que abre a recusa com o [Resumir…] (ver `_medccRecusaComPorta`). */
+        if (opts.gatilho) {
+          return "O avanço desta obra chegou ao limite de espaço por obra: nada foi lançado. Abra o Cronograma da obra: a faixa “aprovada sem lançar” tem [Puxar das medições], que leva a [Resumir o avanço das etapas concluídas] — o realizado não é apagado por falta de espaço. Na obra já encerrada, a outra saída é [Encerrar planejamento].";
+        }
+        return "O avanço desta obra chegou ao limite de espaço por obra: nada foi lançado. Use [Resumir o avanço das etapas concluídas] — o realizado não é apagado por falta de espaço. Na obra já encerrada, a outra saída é [Encerrar planejamento].";
+      }
+      if (r && r.portaInicio) {
+        return "Para lançar avanço, o início da obra precisa estar fixo: nada foi lançado. Abra a obra em Gestão de Obras e informe a data de início.";
+      }
+      return "O avanço não foi lançado: " + e + onde;
+    },
+
+    /* [→ Avanço] da lista de medições (a `mc-7A` desenha o botão): abre o
+       cronograma da obra do boletim, no modal de avanço.
+       ⚠ A PERMISSÃO É CONFERIDA AQUI, não só no botão: o módulo Obras pode
+         ter sido tirado do usuário depois de a tela ter sido desenhada. */
+    _cronoAvancoAbrirDoBoletim: function (medId) {
+      var id = String(medId || "");
+      if (!id) { UI.toast("Não consegui identificar o boletim — nada foi aberto.", "erro"); return true; }
+      var med = null;
+      try { med = Store.obter(Auth.empresaId(), "medicoes", id); } catch (e) { med = null; }
+      if (!med) { UI.toast("Boletim não encontrado neste aparelho — nada foi aberto.", "erro"); return true; }
+      var o = String(med.obraId || "");
+      if (!o) { UI.toast("Este boletim não está ligado a uma obra — não há avanço para abrir.", "erro"); return true; }
+      var np = this._cronoSemPermissao(o);
+      if (np) { UI.toast(np + " O avanço não foi aberto.", "erro"); return true; }
+      if (typeof this.cronoAbrirPlanejamento === "function") { try { this.cronoAbrirPlanejamento(o); } catch (eA) {} }
+      return this._cronoAvancoAbrir({ obra: o });
+    },
+
+    /* AS SUGESTÕES DA MEDIÇÃO como FONTE do modal de avanço (E-MC5): a
+       `avancoSugestoesHtml` da 2B recebe uma LISTA de fontes e desenha uma
+       tabela por fonte. A da medição entra aqui, SEM editar aquela função.
+       ⚠ O VALOR CRU VIAJA JUNTO DO TEXTO (o mesmo contrato do diário): a
+         linha de tela é texto formatado, e gravar a partir dela pediria
+         reanalisar o que já estava pronto. */
+    _cronoAvancoSugMedicao: function (c, corte) {
+      var self = this, out = [];
+      if (typeof MedAvanco === "undefined" || typeof Gestao === "undefined") return out;
+      if (typeof Gestao._medcc === "function" && !Gestao._medcc("medAvanco")) return out;
+      var ctx = null;
+      try { ctx = this._medccCtx(String(c.obra.id)); } catch (eC) { ctx = null; }
+      if (!ctx || ctx.erro || !ctx.rec) return out;
+      /* o corte do modal manda: trocar a data no select remonta as duas
+         tabelas com a MESMA data, senão os diários diriam um dia e as
+         medições, outro */
+      if (corte && /^\d{4}-\d{2}-\d{2}$/.test(String(corte))) {
+        var cp = {}, k;
+        for (k in ctx.rec) if (Object.prototype.hasOwnProperty.call(ctx.rec, k)) cp[k] = ctx.rec[k];
+        cp.corte = String(corte);
+        ctx.rec = cp;
+      }
+      var d = null;
+      try { d = this._medccDados(ctx, {}); } catch (eD) { d = null; }
+      if (!d || d.erro) return out;
+      this._medccUltimo = d;
+      Util.arr(d.sugs).forEach(function (s) {
+        if (s.acao !== "criar" && s.acao !== "recalcular" && s.acao !== "conflito") return;
+        var at = s.pAvanco == null ? null : String(s.pAvanco).replace(".", ",") + "%";
+        var nv = (s.pMed == null ? "—" : String(s.pMed).replace(".", ",") + "%") + (s.i ? " · início " + self._cronoBrD(s.i) : "");
+        out.push({ id: s.id, numero: s.numero, nome: s.nome, atual: at, novo: nv, marcada: !!s.marcada,
+          rotulo: s.bNumero ? "medição " + s.bNumero : (s.b ? "medição " + s.b : null),
+          /* ⚠ O LASTRO VIAJA NO CRU, junto do % e das datas. Sem ele, a
+             gravação do modal escrevia `o:"medicao"` e nenhum `b` — e o
+             leitor derruba a origem inteira (E-MC1). Ver o roteiro do defeito
+             no `_cronoAvancoGravar` e a guarda em `CronoBase.salvarAvanco`. */
+          cru: { p: s.pMed == null ? null : s.pMed, i: s.i || null, f: s.f || null, b: s.b || null } });
+      });
+      out.sort(function (a, b) {
+        var pa = String(a.numero || "").split("."), pb = String(b.numero || "").split("."), i, x, y;
+        for (i = 0; i < Math.max(pa.length, pb.length); i++) {
+          x = parseInt(pa[i] || 0, 10) || 0; y = parseInt(pb[i] || 0, 10) || 0;
+          if (x !== y) return x - y;
+        }
+        return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0);
+      });
+      return out;
+    },
+    _medccUltimo: null,
+
+    /* O QUE A LINHA DO PRAZO PRECISA SABER (as faixas da §3.1), derivado —
+       nada disto é gravado. Devolve null quando não há o que dizer.
+       ⚠ CACHE POR REDESENHO, pela chave obra+corte+carimbo: a linha do prazo
+         é redesenhada a cada render, e apurar o realizado por nó de novo a
+         cada um custaria caro numa obra grande. */
+    _medccFaixas: function (obraId) {
+      var o = String(obraId || "");
+      if (!o || typeof Gestao === "undefined" || typeof Gestao._medcc !== "function" || !Gestao._medcc("medAvanco")) return null;
+      if (typeof MedAvanco === "undefined") return null;
+      var c = null;
+      try { c = this._medccCtx(o); } catch (eC) { return null; }
+      if (!c || c.erro || !c.rec || !c.plano) return null;
+      /* ⚠ O CARIMBO-BASE É REGISTRADO AQUI, AO DESENHAR A FAIXA (crítica F11)
+         — e do registro que ESTA leitura viu, nunca do disco no instante do
+         clique. Roteiro do defeito (achado alto da revisão da Onda 6,
+         22/09/2026): o comentário do `_medccPuxar` já dizia que "a faixa
+         registra o carimbo", mas quem registrava era só o MODAL
+         (`_cronoAvancoAbrir`). Quem olhava a faixa e clicava nunca passava
+         por ele — e o próprio `_medccPuxar` criava o carimbo NO CLIQUE, com o
+         `atualizadoEm` do disco de agora. Medido no navegador: com outro
+         aparelho gravando entre o desenho e o clique, o lançamento foi ACEITO
+         e saiu com `atualizadoEm` 53 s ANTERIOR ao do disco — no merge do
+         `crono_obra`, que é por registro inteiro e decide por carimbo, esse
+         lançamento perde no próximo sync, calado. A trava existia e o caminho
+         da faixa a pulava.
+         ⚠ NUNCA SOBRESCREVER o carimbo já registrado: é a mesma cautela do
+           `_cronoAvancoCorte`. Sobrescrever a cada render faria a comparação
+           virar "o disco contra ele mesmo" — fail-open, que é o que a 1A
+           consertou do outro lado. Quem o refaz é a gravação bem-sucedida (1A)
+           ou o [Recarregar o avanço], que o apaga.
+         ⚠ E ANTES DO CACHE: com o carimbo apagado e o memo ainda válido, o
+           render seguinte devolveria a faixa sem registrar nada, e o clique
+           cairia na recusa "a tela não registrou o carimbo". */
+      if (!this._cronoAvancoTela || typeof this._cronoAvancoTela !== "object") this._cronoAvancoTela = {};
+      if (!this._cronoAvancoTela[o]) this._cronoAvancoTela[o] = { baseEm: c.rec.atualizadoEm, abertaEm: Util.agoraISO() };
+      /* ⚠ A CHAVE INCLUI A ASSINATURA DAS MEDIÇÕES E DOS DIÁRIOS, e não só o
+         carimbo do registro de avanço. Roteiro do defeito (medido na e2e, em
+         22/09/2026): reabrir um boletim NÃO muda o `atualizadoEm` do avanço —
+         com a chave só do avanço, a faixa "N tarefas têm avanço de um boletim
+         que deixou de contar" continuava fora da tela até alguém lançar
+         avanço de novo. O estado derivado é função dos TRÊS. */
+      var ch = o + "|" + String(c.rec.corte || "") + "|" + String(c.rec.atualizadoEm || "") + "|" +
+        this._medccAssinatura(c.meds) + "|" + this._medccAssinatura(c.rdos);
+      if (this._medccFaixaMemo && this._medccFaixaMemo.chave === ch) return this._medccFaixaMemo.dados;
+      var d = null;
+      try { d = this._medccDados(c, {}); } catch (eD) { d = null; }
+      if (!d || d.erro) return null;
+      var sug = 0, conflito = 0, chegou = [], ilegivel = 0, i;
+      for (i = 0; i < d.sugs.length; i++) {
+        if (d.sugs[i].acao === "criar" || d.sugs[i].acao === "recalcular") sug++;
+        else if (d.sugs[i].acao === "conflito") conflito++;
+        else if (d.sugs[i].acao === "diario-chegou") chegou.push(d.sugs[i]);
+        /* "não consegui perguntar aos diários" (ver `MedAvanco.semDiario`):
+           conta, mas NÃO vira [Usar o diário] — a porta que ele ofereceria
+           recusa no clique seguinte */
+        else if (d.sugs[i].acao === "diario-ilegivel") ilegivel++;
+      }
+      /* D-MX1 — "aprovada sem lançar": o boletim foi aprovado COM "usar no
+         avanço" e os números dele ainda não estão no registro. É exatamente o
+         que um aparelho 1.2.81 deixa para trás (aprovar lá não lança nada) e
+         o que sobra quando a gravação daqui foi recusada. Sem esta contagem a
+         pessoa não tem como saber que faltou — e o canal é justamente o que
+         não deve ficar calado quando não conseguiu. */
+      /* ⚠ SÓ OS BOLETINS QUE APARECEM COMO LASTRO DE UMA SUGESTÃO PENDENTE.
+         Listar todo boletim aprovado sempre que sobrasse qualquer sugestão
+         poria na faixa o nome de um boletim cujos números JÁ estão no avanço
+         — e a pessoa procuraria, sem achar, o que faltou dele. */
+      var pendentes = {};
+      for (i = 0; i < d.sugs.length; i++) {
+        if ((d.sugs[i].acao === "criar" || d.sugs[i].acao === "recalcular") && d.sugs[i].b) pendentes[String(d.sugs[i].b)] = true;
+      }
+      var semLancar = [], pendCorte = [], corte = String(c.rec.corte || "");
+      Util.arr(d.medP.boletins).forEach(function (m) {
+        var dr = MedAvanco.dataRef(m);
+        if (corte && dr && dr > corte) { pendCorte.push({ id: String(m.id), numero: String(m.numero || ""), dataRef: dr }); return; }
+        if (m.lancarAvanco === true && Object.prototype.hasOwnProperty.call(pendentes, String(m.id))) {
+          semLancar.push({ id: String(m.id), numero: String(m.numero || "") });
+        }
+      });
+      /* ⚠ OS NOMES VÃO JUNTO, e não são lidos das sugestões (achado da e2e,
+         22/09/2026, visto na FOTO do [Rever]). Roteiro do defeito: quando o
+         boletim é reaberto, ele deixa de contar — e a tarefa some do
+         `porNo` da medição, porque não há mais medição que a sustente. A
+         tabela do [Rever], que buscava o nome nas sugestões, passava a
+         mostrar o ID CRU do nó ("s3a") no lugar de "3.1 Projeto executivo".
+         Despejo de banco de dados na cara de quem vai decidir o que fazer
+         com o avanço de uma tarefa. */
+      /* O ANTES → DEPOIS DE CADA DECISÃO DO [Rever] (§3.1): o que a tarefa
+         tem no avanço HOJE, e o que ela FICA se o boletim que caiu deixar de
+         contar (é o que as medições restantes dizem, pelo motor — a leitura
+         do `porNo` já exclui o boletim reaberto). Sem estas duas colunas a
+         pessoa escolhe entre [Manter], [Tirar] e [Tirar e não sugerir] sem
+         ver o que cada uma faz com o número. */
+      var atualNo = {};
+      Util.arr(c.rec.nos).forEach(function (e) {
+        if (e && e.id != null) atualNo[String(e.id)] = { p: e.p == null ? null : e.p, f: e.f || null, b: e.b || null, o: e.o || null };
+      });
+      var out = { obraId: o, sugerir: sug, conflito: conflito, diarioChegou: chegou, diarioIlegivel: ilegivel,
+        semLastro: d.lastro, aprovadaSemLancar: semLancar, pendenteCorte: pendCorte,
+        corte: c.rec.corte || null, mapas: d.mapas, sugs: d.sugs, nomes: d.nomes,
+        medNo: (d.medP && d.medP.porNo) || {}, atualNo: atualNo };
+      this._medccFaixaMemo = { chave: ch, dados: out };
+      return out;
+    },
+    _medccFaixaMemo: null,
+    /* tamanho + maior `atualizadoEm` de uma lista: barato (uma varredura, sem
+       JSON) e suficiente para saber que alguém mexeu. É a mesma régua do
+       `_ccAssinatura` da leva dos centros. */
+    _medccAssinatura: function (lista) {
+      var l = Util.arr(lista), i, mx = "";
+      for (i = 0; i < l.length; i++) {
+        var e = l[i] && l[i].atualizadoEm ? String(l[i].atualizadoEm) : "";
+        if (e > mx) mx = e;
+      }
+      return l.length + ":" + mx;
+    },
+
+    /* [Rever] — a tabela das tarefas cujo boletim deixou de contar. Por
+       tarefa: [Manter] · [Tirar do avanço] · [Tirar e não sugerir de novo].
+       ⚠ NADA É DECIDIDO SOZINHO (§3.6): reabrir costuma ser temporário, a
+         obra pode estar feita e o boletim recusado por preço, e desfazer e
+         refazer mexeria duas vezes no término e na frota antiga. */
+    _medccRever: function (obraId) {
+      var self = this, o = String(obraId || ""), f = this._medccFaixas(o);
+      if (!f || !f.semLastro.length) { UI.toast("Nenhuma tarefa com avanço de boletim que deixou de contar — nada a rever.", "info"); return true; }
+      var ROT = { reaberta: "reaberta", rejeitada: "rejeitada", excluida: "excluída", "fora-da-conta": "marcada para não entrar no avanço" };
+      /* ⚠ O ANTES → DEPOIS POR LINHA (§3.1). Sem ele a pessoa decidia entre
+         [Manter], [Tirar do avanço] e [Tirar e não sugerir de novo] sem ver o
+         que cada botão faz com o número da tarefa — e [Tirar] não zera a
+         tarefa: ele recalcula pelo que as medições que SOBRARAM dizem. */
+      var pctTxt = function (p, fim) {
+        if (p == null) return "—";
+        return String(fim ? 100 : p).replace(".", ",") + "%" + (fim ? " · concluída" : "");
+      };
+      var h = '<p>' + Util.esc("Estas tarefas têm avanço lançado por um boletim que deixou de contar. Nada foi mudado: o número pode estar certo — a obra pode ter sido feita e o boletim recusado por preço.") + '</p>' +
+        '<table class="tbl cx-av-rever"><thead><tr><th>Tarefa</th><th>Boletim</th><th>No avanço</th><th>Fica se tirar</th><th></th></tr></thead><tbody>';
+      f.semLastro.forEach(function (x) {
+        /* ⚠ o nome vem do mapa de NÓS, não das sugestões: o boletim reaberto
+           some das sugestões (deixou de contar) e a linha sairia com o id
+           cru do nó — ver o ⚠ do `_medccFaixas` */
+        var nm = (f.nomes && f.nomes[x.id]) || f.sugs.filter(function (s) { return s.id === x.id; })[0] || null;
+        var at = (f.atualNo && f.atualNo[x.id]) || null;
+        var fi = (f.medNo && f.medNo[x.id]) || null;
+        h += '<tr><td>' + Util.esc(((nm && nm.numero) ? nm.numero + " " : "") + ((nm && nm.nome) || x.id)) + '</td>' +
+          '<td>' + Util.esc("medição " + (x.bNumero || x.b) + " (" + (ROT[x.situacao] || x.situacao) + ")") + '</td>' +
+          '<td>' + Util.esc(at ? pctTxt(at.p, at.f) : "—") + '</td>' +
+          '<td>' + Util.esc(fi && fi.p != null ? pctTxt(fi.p, fi.f) + " (o que as outras medições medem)" : "sem avanço nesta tarefa") + '</td>' +
+          '<td style="white-space:nowrap">' +
+          '<button class="btn sm ghost" data-acao="crono-avanco-med-manter" data-obra="' + Util.esc(o) + '" data-no="' + Util.esc(x.id) + '">Manter</button> ' +
+          '<button class="btn sm ghost" data-acao="crono-avanco-med-tirar" data-obra="' + Util.esc(o) + '" data-no="' + Util.esc(x.id) + '">Tirar do avanço</button> ' +
+          '<button class="btn sm ghost" data-acao="crono-avanco-med-tirar-lapide" data-obra="' + Util.esc(o) + '" data-no="' + Util.esc(x.id) + '">Tirar e não sugerir de novo</button>' +
+          '</td></tr>';
+      });
+      h += '</tbody></table>';
+      UI.modal("Boletins que deixaram de contar", h, [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); self._cronoRepintar(); } }]);
+      return true;
+    },
+
+    /* a gravação de UMA decisão do [Rever] e do "diário chegou".
+       `como` ∈ manter | tirar | lapide | diario | medicao.
+       ⚠ TUDO PELO CAMINHO ÚNICO da 1A (`_cronoGravarAvanco`), com o carimbo
+         NORMAL: aqui é decisão de pessoa, e decisão de pessoa não perde para
+         ninguém. O carimbo fraco é só do canal automático. */
+    _medccDecidirNo: function (obraId, noId, como) {
+      var o = String(obraId || ""), id = String(noId || "");
+      if (!o || !id) { UI.toast("Não consegui identificar a tarefa — nada foi gravado.", "erro"); return true; }
+      var np = this._cronoSemPermissao(o);
+      if (np) { UI.toast(np + " Nada foi gravado.", "erro"); return true; }
+      if (this._trialBloqueado()) { this._avisoTrial(); return true; }
+      var c = this._medccCtx(o);
+      if (c.erro) { UI.toast(c.erro, "erro"); return true; }
+      if (!c.rec) { UI.toast("Esta obra não tem avanço lançado — nada foi gravado.", "info"); return true; }
+      var novo = {}, k;
+      for (k in c.rec) if (Object.prototype.hasOwnProperty.call(c.rec, k)) novo[k] = c.rec[k];
+      var nos = [], achou = null;
+      Util.arr(c.rec.nos).forEach(function (e) {
+        if (!e || typeof e !== "object") { nos.push(e); return; }
+        var cp = {}, kk;
+        for (kk in e) if (Object.prototype.hasOwnProperty.call(e, kk)) cp[kk] = e[kk];
+        if (String(cp.id) === id) achou = cp;
+        nos.push(cp);
+      });
+      /* a lápide vale mesmo sem entrada: ela é oferecida logo DEPOIS de um
+         [Tirar do avanço] que removeu a última medição da tarefa */
+      if (!achou && como !== "lapide") { UI.toast("Esta tarefa não tem avanço lançado — nada foi gravado.", "info"); return true; }
+      var rotulo, i, ofereceLapide = false;
+      if (como === "manter" || como === "medicao") {
+        /* [Manter] / [Manter a medição]: tira a ORIGEM e deixa o lastro. A
+           entrada passa a ser digitada com lastro — o canal não mexe mais
+           nela, e o número e a data continuam onde estavam. */
+        delete achou.o;
+        rotulo = "avanço mantido (a tarefa passa a ser lançamento seu, com o boletim anotado)";
+      } else if (como === "lapide") {
+        for (i = 0; i < nos.length; i++) if (nos[i] && String(nos[i].id) === id) { nos.splice(i, 1); break; }
+        /* a lápide: `p:0` sem `i`, sem `o` e sem `b`. É o que faz o canal
+           NUNCA recriar a entrada — e é por isso que ela fica gravada em
+           vez de a entrada simplesmente sumir. */
+        nos.push({ id: id, p: 0, f: null, em: novo.corte });
+        rotulo = "avanço tirado; esta tarefa não será sugerida de novo pela medição";
+      } else if (como === "tirar") {
+        /* ⚠ [Tirar do avanço] RECALCULA O NÓ SEM AQUELE BOLETIM — não apaga
+           (§3.6: "recalcula o nó sem aquele boletim; se nenhuma outra medição
+           o mede, remove a entrada (e oferece a lápide)").
+           Roteiro do defeito (achado alto da revisão da Onda 6, 22/09/2026):
+           este ramo fazia `splice` sempre. Medido no navegador com dois
+           boletins na mesma tarefa — a 01a medindo 60% e a 03a os 40%
+           restantes —, tirar a 03a (reaberta) levava o realizado da tarefa a
+           ZERO: 60% de serviço APROVADO E PAGO sumiam do cronograma, do
+           término e da curva que vai ao Portal, com o recado "Avanço tirado
+           desta tarefa." e nenhum número.
+           Quem responde "quanto sobra" é o motor: o boletim que caiu já não
+           conta (`MedAvanco.contam` o filtra), então o `porNo` de agora é
+           exatamente o nó SEM ele. Nenhuma régua nova aqui. */
+        var dT = null;
+        try { dT = this._medccDados(c, {}); } catch (eT) { dT = { erro: "não consegui recalcular esta tarefa sem o boletim que deixou de contar." }; }
+        if (!dT || dT.erro) { UI.toast("Nada foi gravado: " + ((dT && dT.erro) || "não consegui recalcular esta tarefa."), "erro"); return true; }
+        var mT = (dT.medP && dT.medP.porNo) ? dT.medP.porNo[id] : null;
+        var nmT = (dT.nomes && dT.nomes[id]) || {};
+        var rot0 = nmT.numero ? String(nmT.numero) : id;
+        var nbT = (dT.mapas && dT.mapas.numeroB) || {};
+        var bCaiu = achou.b && Object.prototype.hasOwnProperty.call(nbT, String(achou.b)) ? nbT[String(achou.b)] : String(achou.b || "");
+        var antesP = achou.f ? 100 : (achou.p == null ? null : achou.p);
+        if (mT && mT.p != null && mT.b) {
+          /* a MESMA garantia de datas do `MedAvanco.aplicar` (§3.5): fora
+             dela a entrada seria descartada na leitura seguinte e o realizado
+             sumiria — que é justamente o que este conserto impede */
+          var iT = String(mT.i || "").slice(0, 10), fT = String(mT.f || "").slice(0, 10);
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(iT) || iT > String(novo.corte || "")) {
+            UI.toast("Nada foi gravado: as medições que sobraram nesta tarefa têm data fora do corte do avanço (" + this._cronoBrD(novo.corte) + ").", "erro");
+            return true;
+          }
+          if (fT && (fT < iT || fT > String(novo.corte || ""))) fT = "";
+          var novoP = fT ? 100 : Math.round(mT.p * 10) / 10;
+          achou.p = novoP; achou.i = iT; achou.f = fT || null; achou.em = novo.corte;
+          achou.o = "medicao"; achou.b = String(mT.b);
+          var bFica = Object.prototype.hasOwnProperty.call(nbT, String(mT.b)) ? nbT[String(mT.b)] : String(mT.b);
+          rotulo = rot0 + ": " + (antesP == null ? "—" : String(antesP).replace(".", ",") + "%") + " → " + String(novoP).replace(".", ",") +
+            "% (a medição " + bCaiu + " deixou de contar; a " + bFica + " continua)";
+        } else {
+          for (i = 0; i < nos.length; i++) if (nos[i] && String(nos[i].id) === id) { nos.splice(i, 1); break; }
+          rotulo = rot0 + ": avanço tirado (nenhuma medição restante mede esta tarefa)";
+          ofereceLapide = true;
+        }
+      } else if (como === "diario") {
+        /* [Usar o diário]: o número passa a ser o do diário, com a origem
+           dele. Quem monta a sugestão é o `CronoAvanco.sugestoesDoDiario`
+           (1A), pela mesma porta do [Puxar dos diários] — nunca uma conta
+           daqui. */
+        var d = null;
+        try { d = this._medccDados(c, {}); } catch (eD) { d = null; }
+        var rn = (d && d.realD && d.realD.porNo) ? d.realD.porNo[id] : null;
+        if (!rn || rn.pct == null) { UI.toast("Os diários ainda não apuram esta tarefa — nada foi gravado.", "info"); return true; }
+        achou.p = rn.fimReal ? 100 : rn.pct;
+        if (rn.inicioReal) achou.i = rn.inicioReal;
+        achou.f = rn.fimReal || null;
+        achou.em = novo.corte;
+        achou.o = "diario";
+        delete achou.b;
+        rotulo = "a tarefa passa a seguir os diários";
+      } else { UI.toast("Decisão desconhecida — nada foi gravado.", "erro"); return true; }
+      novo.nos = nos;
+      var alvo = null;
+      try { alvo = this._cronoAlvo(); } catch (eA) { alvo = null; }
+      if (!alvo || alvo.tipo !== "plano" || String((alvo.plano && alvo.plano.obraId) || (alvo.obra && alvo.obra.id) || "") !== o) {
+        alvo = { tipo: "plano", obraId: o, chave: "plano:" + o, obra: c.obra, plano: c.plano, orc: null };
+      }
+      /* ⚠ O CARIMBO-BASE NÃO É CRIADO AQUI (crítica F11). Quem o registra é a
+         FAIXA, ao ser desenhada (`_medccFaixas`) — e estes botões só existem
+         dentro dela ou do [Rever] que ela abre. Criá-lo no clique, com o
+         `atualizadoEm` do disco de agora, era comparar o disco com ele mesmo:
+         a trava de gravação simultânea passava sempre. Sem carimbo
+         registrado, a 1A recusa alto como erro de programação, que é o
+         comportamento certo. */
+      var r = this._cronoGravarAvanco(alvo, novo, { agora: Util.agoraISO(), por: this._cronoPor(), origem: "medicao-rever" });
+      if (!r || !r.ok) {
+        if (r && r.erro === "licenca") return true;
+        if (this._medccRecusaComPorta(o, { recarregar: !!(r && r.recarregar), teto: !!(r && r.codigo === "teto-avanco") }, (r && r.erro) || "")) return true;
+        UI.toast((r && r.erro) || "O avanço não pôde ser gravado.", "erro");
+        return true;
+      }
+      this._medccFaixaMemo = null;
+      UI.toast(rotulo.charAt(0).toUpperCase() + rotulo.slice(1) + ".", "ok");
+      this._cronoRepintar();
+      /* ⚠ A LÁPIDE É OFERECIDA (§3.6), e só quando a tarefa ficou SEM medição
+         nenhuma: sem ela, o canal volta a sugerir a mesma tarefa no próximo
+         [Puxar das medições] e a pessoa tira de novo, para sempre. */
+      if (ofereceLapide) {
+        var selfD = this;
+        UI.modal("Esta tarefa ficou sem medição",
+          '<p>' + Util.esc(rotulo.charAt(0).toUpperCase() + rotulo.slice(1) + ".") + '</p>' +
+          '<p>' + Util.esc("Quer que a medição pare de sugerir esta tarefa? O avanço dela continua podendo ser lançado à mão.") + '</p>',
+          [{ texto: "Agora não", classe: "ghost", onClick: function () { UI.fecharModal(); selfD._cronoRepintar(); } },
+            { texto: "Não sugerir de novo", classe: "primary", onClick: function () { UI.fecharModal(); selfD._medccDecidirNo(o, id, "lapide"); } }]);
+      }
+      return true;
+    },
+
+    /* A RECUSA DE QUEM CLICOU NA FAIXA OU NO [Rever], COM A PORTA CLICÁVEL.
+       ⚠ TRAVA SEM PORTA, DUAS VEZES (achado da e2e-medicao-avanco da mc-7A,
+         22/09/2026, clique real):
+         1) o [Puxar das medições] no teto de 50 KB respondia com um TOAST
+            "use [Resumir o avanço das etapas concluídas]" — e esse botão não
+            existe na tela do cronograma (só dentro do modal de outro
+            caminho). Toast é texto puro: a pessoa lia uma ordem sem botão,
+            com o boletim aprovado e o avanço sem lançar;
+         2) o [Tirar do avanço] / [Manter] do [Rever], depois de uma
+            aprovação ter lançado avanço pelo canal (gravação SEM tela, que
+            de propósito não mexe no carimbo-base desta tela — E-MC3 e o ⚠ do
+            `_cronoGravarAvanco`), recusava com "Nada foi gravado." num toast
+            e mais nada. A 1A diz que a tela "tem de recusar e oferecer
+            [Recarregar o avanço]"; o [Puxar] oferecia, o [Rever] não. A
+            pessoa clicava de novo e levava a mesma recusa, para sempre.
+       Um lugar só para as duas, e o botão tem EXATAMENTE o nome que o recado
+       cita (porta prometida precisa existir com esse nome).
+       Devolve true quando tratou (modal aberto); false = o chamador segue
+       com o toast de sempre. */
+    _medccRecusaComPorta: function (obraId, r, texto) {
+      var self = this, o = String(obraId || "");
+      if (!r) return false;
+      if (r.recarregar) {
+        UI.modal("O avanço desta obra mudou desde que esta tela o leu",
+          '<p>' + Util.esc(texto || "O avanço desta obra foi gravado por outro caminho (uma aprovação de boletim, outra janela ou outro aparelho) depois que esta tela o leu. Nada foi gravado agora.") + '</p>' +
+          '<p>' + Util.esc("Recarregue o avanço para ver o que está gravado e decidir de novo — nada do que já está lá se perde.") + '</p>',
+          [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+            { texto: "Recarregar o avanço", classe: "primary", onClick: function () {
+              UI.fecharModal();
+              if (self._cronoAvancoTela) delete self._cronoAvancoTela[o];
+              self._medccFaixaMemo = null;
+              self._cronoRepintar();
+            } }]);
+        return true;
+      }
+      if (r.teto) {
+        UI.modal("O avanço desta obra chegou ao limite de espaço",
+          '<p>' + Util.esc(texto || "O avanço desta obra chegou ao limite de espaço por obra: nada foi lançado.") + '</p>' +
+          '<p>' + Util.esc("O resumo troca o detalhe por subetapa das etapas 100% concluídas por uma linha da etapa — o realizado não muda e não é apagado. Depois, use [Puxar das medições] de novo.") + '</p>',
+          [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+            { texto: "Resumir o avanço das etapas concluídas", classe: "primary", onClick: function () {
+              UI.fecharModal();
+              self._medccFaixaMemo = null;
+              self._cronoAvancoResumir(o);
+            } }]);
+        return true;
+      }
+      return false;
+    },
+
+    /* [Puxar das medições] da faixa: grava o que a medição diz, com o
+       carimbo NORMAL (é clique de pessoa) e com o carimbo-base DA TELA. */
+    _medccPuxar: function (obraId) {
+      var o = String(obraId || "");
+      /* ⚠ O CARIMBO-BASE NÃO É CRIADO AQUI, E ISTO É O CONSERTO (crítica
+         F11). Até 22/09/2026 este bloco criava `_cronoAvancoTela[o]` no
+         CLIQUE, com o `atualizadoEm` lido do disco naquele instante — o
+         comentário dizia que quem registrava era a faixa, e não era: só o
+         MODAL (`_cronoAvancoAbrir`) registrava. Quem olhava a faixa e clicava
+         comparava o disco com ele mesmo, a trava passava sempre, e o
+         lançamento saía com carimbo ANTERIOR ao do disco (medido: 53 s) —
+         perdendo no próximo merge do `crono_obra`, calado.
+         Agora quem registra é o `_medccFaixas`, ao desenhar a faixa. Sem
+         carimbo, a 1A recusa alto (erro de programação) em vez de gravar com
+         a trava desligada. */
+      var r = this._cronoAvancoDaMedicao(o, {});
+      this._medccFaixaMemo = null;
+      if (this._medccRecusaComPorta(o, r, r.recado)) return true;
+      UI.toast(r.recado, r.tipo);
+      if (r.gravou) this._cronoRepintar();
+      return true;
+    },
+
+    /*
+     * ↑ região da fatia MEDCC 6B (o canal da medição no avanço). A âncora
+     * abaixo fecha o objeto.
+     *
+     */
+    _regFim: 1
   };
 
   global.App = App;

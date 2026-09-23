@@ -754,6 +754,23 @@
     // contra a cópia do master b8907ef. Qualquer valor diferente de `true`
     // (inclusive "true" em texto) fica no caminho antigo: na dúvida, não muda data.
     aplicarNoCronograma: function (cron, etapas, opts) {
+      /* ⚠ planejador 1A (§2.10): a etapa com rede digitada ou com escolha
+         pendente não recebe a duração por aqui — vai em `travadas` com o
+         motivo. Sem nenhuma trava, o caminho e o retorno de sempre. */
+      var Cr = (typeof global !== "undefined" && global.Cronograma) ? global.Cronograma : null, travadas = [];
+      if (Cr && typeof Cr.travaGravador === "function" && cron && typeof cron === "object") {
+        var soltas = [];
+        (etapas || []).forEach(function (et) {
+          var mt = et ? Cr.travaGravador(cron, et.id, "etapa", (opts && opts.orc) || null) : null;
+          if (mt) travadas.push({ etapaId: et.id, motivo: mt }); else soltas.push(et);
+        });
+        if (travadas.length) {
+          var rT = this.aplicarNoCronograma(cron, soltas, opts);
+          rT.puladas += travadas.length;
+          rT.travadas = travadas;
+          return rT;
+        }
+      }
       if (opts && opts.rede === true) return this._aplicarRede(cron, etapas);
       cron.duracoes = cron.duracoes || {};
       cron.duracoesAgente = cron.duracoesAgente || {};

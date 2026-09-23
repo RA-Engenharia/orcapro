@@ -233,6 +233,27 @@
         arr.forEach(function (x) { delete x._d; });
       });
 
+      /* CRONOGRAMA DAS OBRAS (planejador, 1C): os grupos JÁ AGRUPADOS por
+         `CronoAlertas.agrupar` (uma unidade por obra e por tipo), que a fiação
+         monta em fatias (js/avisos-ui.js) e entrega aqui prontos. Cada item
+         leva `acao` (abre a obra na aba Cronograma com a linha), e não `view`.
+         ⚠ O rótulo começa por "Cronograma:" — o grupo "Tarefas atrasadas" é
+         do módulo Tarefas, e dois nomes iguais para coisas diferentes fazem a
+         pessoa procurar no lugar errado. */
+      var cronoP1 = [], cronoP2 = [];
+      (dados.crono || []).forEach(function (g) {
+        if (!g || !g.itens || !g.itens.length) return;
+        var its = [];
+        g.itens.forEach(function (it) {
+          if (!it || it.id == null) return;
+          its.push({ id: it.id, titulo: String(it.titulo || ""), detalhe: String(it.detalhe || ""), acao: it.acao || null, chave: it.chave || it.id,
+            chaves: it.chaves || null, nivel: it.nivel, niveis: it.niveis || null, n: it.n || 1, prioridade: g.prioridade === 1 ? 1 : 2, crono: true });
+        });
+        if (!its.length) return;
+        var gr = { tipo: String(g.tipo || "crono"), rotulo: String(g.rotulo || "Cronograma"), prioridade: g.prioridade === 1 ? 1 : 2, itens: its, crono: true };
+        (gr.prioridade === 1 ? cronoP1 : cronoP2).push(gr);
+      });
+
       // monta grupos (vazios ficam FORA), já em ordem de prioridade
       var grupos = [];
       if (itCompAtr.length) grupos.push({ tipo: "compra-atrasada", rotulo: "Compras atrasadas", prioridade: 1, itens: itCompAtr });
@@ -242,8 +263,10 @@
       if (itRdoApr.length) grupos.push({ tipo: "rdo-aprovar", rotulo: "Diários a aprovar", prioridade: 1, itens: itRdoApr });
       if (itMed.length) grupos.push({ tipo: "medicao-aprovar", rotulo: "Medições a aprovar", prioridade: 1, itens: itMed });
       if (itTar.length) grupos.push({ tipo: "tarefa-atrasada", rotulo: "Tarefas atrasadas", prioridade: 1, itens: itTar });
+      cronoP1.forEach(function (g) { grupos.push(g); });
       if (itRes.length) grupos.push({ tipo: "restricao-aberta", rotulo: "Restrições abertas", prioridade: 2, itens: itRes });
       if (itCompForn.length) grupos.push({ tipo: "compra-sem-confirmacao", rotulo: "Pedidos sem confirmação do fornecedor", prioridade: 2, itens: itCompForn });
+      cronoP2.forEach(function (g) { grupos.push(g); });
       if (itCompPar.length) grupos.push({ tipo: "compra-parada", rotulo: "Pedidos parados", prioridade: 3, itens: itCompPar });
       if (itCon.length) grupos.push({ tipo: "contrato-vencendo", rotulo: "Contratos vencendo", prioridade: 3, itens: itCon });
       var total = 0;

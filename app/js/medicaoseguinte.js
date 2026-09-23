@@ -271,6 +271,18 @@
       puxadaEm: d.hoje || ""
     };
 
+    /* ⚠ O "usar este boletim no avanço" VIAJA, e os TRÊS estados viajam
+       inteiros. Quem mede por itens todo mês e deixou a caixa marcada espera
+       que o boletim de setembro nasça como o de agosto; e quem a desmarcou
+       (adiantamento, marco contratual, material não instalado) espera o
+       mesmo, ao contrário. Copiar só o `true` faria o boletim de
+       adiantamento nascer LEGADO — que conta como sugestão — e o cronograma
+       passaria a sugerir avanço por um boletim que não mede execução.
+       ⚠ Ausente continua ausente: a chave só é escrita quando o boletim de
+       base tem uma escolha gravada. Inventar `false` num boletim antigo o
+       tiraria das sugestões sem ninguém ter decidido isso. */
+    if (base.lancarAvanco === true || base.lancarAvanco === false) medicao.lancarAvanco = base.lancarAvanco;
+
     return {
       ok: true, medicao: medicao, avisos: avisos,
       base: { id: base.id, numero: base.numero, periodoInicio: base.periodoInicio,

@@ -136,6 +136,18 @@
          gravar o que estava aberto e abrir o clicado é o `abrir`. */
       if (g.nomes) g.nomes.addEventListener("mousedown", function (ev) {
         if (ev.button !== 0) return;
+        /* ⚠ O MENU ⋯ DA LINHA (planejador 2A) É CONFERIDO ANTES DA CÉLULA: ele
+           mora no painel dos NOMES, dentro do SVG, e `closest` não é usado
+           aqui de propósito (regra 6 do cabeçalho: WebView antiga). Sem este
+           ramo, o clique nos três pontinhos caía no `data-gx-cel` da linha e
+           abria a duração — a porta abria a outra coisa. */
+        var mn = subir(ev.target, "data-gx-menu", g.nomes);
+        if (mn) {
+          ev.preventDefault();
+          var gm = app._gx; if (!gm || gm.nomes !== g.nomes) return;
+          if (typeof app._cronoMenuLinha === "function") app._cronoMenuLinha(mn.getAttribute("data-gx-menu"), mn, ev);
+          return;
+        }
         var cel = subir(ev.target, "data-gx-cel", g.nomes);
         if (!cel) return;
         ev.preventDefault();
@@ -143,7 +155,7 @@
         var lin = parseInt(cel.getAttribute("data-gx-linha"), 10);
         var l = gg.pro && gg.pro.L ? gg.pro.L[lin] : null, no = l ? (l.no || l.et) : null;
         if (!no || String(no.id) !== String(cel.getAttribute("data-gx-id"))) return;
-        self.abrir(app, gg, no.id, cel.getAttribute("data-gx-cel") === "pred" ? "pred" : "dur", { origem: "clique" });
+        self.abrir(app, gg, no.id, cel.getAttribute("data-gx-cel"), { origem: "clique" });
       });
       /* duplo clique numa barra que NÃO se arrasta (caminho do pan, que não
          repinta — ali o `dblclick` chega). A que se arrasta é detectada em
@@ -276,6 +288,18 @@
         if (!opts.reabrir) this._recusaAbrir(app, g, i, c, opts);
         return false;
       }
+      /* ⚠ A COLUNA CALENDÁRIO NÃO É UM CAMPO DE TEXTO (planejador 2A): ela é
+         uma ESCOLHA entre os calendários criados, e digitar o nome de um
+         calendário para o app adivinhar qual é seria convite a errar de
+         frente. O clique abre o seletor do App, que já tem a lista, o "régua
+         da obra" e a explicação. Sem o seletor (fiação ausente), a célula
+         diz isso em vez de abrir um campo que não grava. */
+      if (campo === "cal") {
+        z.ed = null; inp.hidden = true;
+        if (typeof app._cronoCalLinhaAbrir === "function") app._cronoCalLinhaAbrir(c.id);
+        else if (typeof UI !== "undefined" && UI.toast) UI.toast("O seletor de calendário não carregou nesta tela.", "erro");
+        return true;
+      }
       // a linha escolhida acompanha a célula: Esc devolve ao Gantt com ela marcada
       if (z.sel !== i) { z.sel = i; if (app._gxPintar) app._gxPintar(true); }
       this._trazerParaVista(app, g, i);
@@ -287,7 +311,9 @@
       var texto = (opts.texto != null && (!opts.reabrir || String(opts.orig) === String(c.valor))) ? String(opts.texto) : c.valor;
       z.ed = { id: c.id, campo: campo, orig: orig, texto: texto, rtok: app._rtok };
       inp.value = texto;
-      inp.setAttribute("aria-label", (campo === "dur" ? "Duração (dias úteis) de " : "Depende de de ") + this._nomeLinha(g, i));
+      var ROT_CEL = { dur: "Duração (dias úteis) de ", pred: "Depende de de ", nome: "Nome de ",
+        pct: "% concluído de ", ir: "Início real de ", fr: "Fim real de ", rest: "Dias que faltam em " };
+      inp.setAttribute("aria-label", (ROT_CEL[campo] || "") + this._nomeLinha(g, i));
       inp.title = c.dica || "";
       if (opts.erro) inp.classList.add("gx-ed-erro"); else inp.classList.remove("gx-ed-erro");
       inp.hidden = false;
@@ -341,8 +367,17 @@
       if (i < 0 || !C || !g.corpo) { inp.classList.add("gx-ed-fora"); return; }
       var rowH = g.pro.e.rowH || 24, pl = g.plot;
       var topo = g.corpo.offsetTop + i * rowH - (pl ? pl.scrollTop : 0);
-      var x = Number(g.pro.labelW) + (campo === "pred" ? C.GX_GRADE_DUR : 0);
-      var w = campo === "pred" ? C.GX_GRADE_PRED : C.GX_GRADE_DUR;
+      /* ⚠ A POSIÇÃO SAI DA MESMA LISTA QUE DESENHOU AS CÉLULAS
+         (`CronoExecUI.colunasGrade`, dono único). Escrita à mão aqui, a
+         coluna Calendário (ou o modo Avançar) abriria o campo em cima da
+         célula errada — e a pessoa digitaria a duração no lugar da data. */
+      var cols = (g.pro && g.pro.cols && g.pro.cols.length) ? g.pro.cols : C.colunasGrade(g.ctx && g.ctx.r, null);
+      var x = Number(g.pro.labelW), w = C.GX_GRADE_DUR, kc;
+      for (kc = 0; kc < cols.length; kc++) {
+        if (cols[kc].campo === campo) { w = Number(cols[kc].larg) || w; break; }
+        x += Number(cols[kc].larg) || 0;
+      }
+      if (kc >= cols.length) { inp.classList.add("gx-ed-fora"); return; }
       inp.style.left = (x + 1) + "px";
       inp.style.top = (topo + 1) + "px";
       inp.style.width = (w - 2) + "px";
@@ -396,7 +431,20 @@
         ev.preventDefault();
         ed.rtok = app._rtok;
         if (app.cronoArrastoDesfazer) app.cronoArrastoDesfazer();
+        return;
       }
+      /* (planejador, 1C) Ctrl+Y e Ctrl+Shift+Z refazem — com o texto SEM
+         alteração, pela mesma regra do Ctrl+Z; e Ctrl+F leva à busca da barra
+         de uso (o campo é do Gantt; o `stopPropagation` acima impede que o
+         ouvinte do documento o veja) */
+      var kk = String(k).toLowerCase(), cm = (ev.ctrlKey || ev.metaKey) && !ev.altKey;
+      if (cm && ((!ev.shiftKey && kk === "y") || (ev.shiftKey && kk === "z")) && norm(inp.value) === norm(ed.orig)) {
+        ev.preventDefault();
+        ed.rtok = app._rtok;
+        if (app.cronoRefazer) app.cronoRefazer();
+        return;
+      }
+      if (cm && !ev.shiftKey && kk === "f" && app._cronoBuscaAbrirCampo && app._cronoBuscaAbrirCampo()) ev.preventDefault();
     },
 
     /* ------------------------------------------------------------------
@@ -521,13 +569,72 @@
       return true;
     },
 
+    /* ------------------------------------------------------------------
+       AS TECLAS DA LINHA (planejador 2A) — o teclado do MS Project para as
+       tarefas sem preço, com a linha escolhida pelas setas:
+         Ins      → cria uma tarefa sem preço abaixo (pendurada na etapa da
+                    linha, ou nela mesma quando a linha É a etapa);
+         Del      → exclui a tarefa sem preço da linha (com o efeito no prazo
+                    medido antes de perguntar);
+         Alt+↑/↓  → sobe e desce a tarefa sem preço na lista (o nº T é a
+                    posição).
+       Devolve `true` quando tratou — é o contrato com o App._gxTecla (1C).
+
+       ⚠ Del NÃO apaga etapa nem subetapa. Elas vêm da planilha do orçamento,
+       e apagar item de planilha por uma tecla no Gantt é o tipo de gesto que
+       ninguém desfaz a tempo. Numa linha que não é tarefa sem preço, Del diz
+       isso em vez de não fazer nada — tecla muda é lida como app travado.
+       ⚠ Nada aqui grava: cada uma chama a porta do App, que tem a trava do
+       aprovado, a da licença e o caminho único da gravação.
+       ------------------------------------------------------------------ */
+    teclaLinha: function (app, ev, g) {
+      if (!app || !ev || !g || !g.pro || !g.pro.L) return false;
+      // com o campo da grade aberto, o teclado é dele (ver `_tecla`)
+      var inp = g.gradeEd;
+      if (inp && !inp.hidden) return false;
+      var k = String(ev.key || ""), alt = !!ev.altKey, mod = ev.ctrlKey || ev.metaKey;
+      if (mod) return false;
+      var ehIns = (k === "Insert" || k === "Ins"), ehDel = (k === "Delete" || k === "Del");
+      var ehMover = alt && (k === "ArrowUp" || k === "ArrowDown");
+      if (!ehIns && !ehDel && !ehMover) return false;
+      if (alt && !ehMover) return false;
+      var sel = g.z ? g.z.sel : -1, L = g.pro.L;
+      var l = (sel >= 0 && sel < L.length) ? L[sel] : null, no = l ? (l.no || l.et) : null;
+      if (ehIns) {
+        ev.preventDefault();
+        var apos = "";
+        if (no) apos = String(l.tipo === "etapa" ? no.id : (no.etapaId || (l.tipo === "extra" ? (no.apos || "") : "")));
+        if (typeof app._cronoExtraNova === "function") app._cronoExtraNova(apos || null);
+        return true;
+      }
+      if (!no) return false;
+      if (l.tipo !== "extra") {
+        if (ehDel) {
+          ev.preventDefault();
+          if (typeof UI !== "undefined" && UI.toast) UI.toast("Del apaga tarefa sem preço (as linhas T). Etapa e subetapa vêm da planilha do orçamento — apague por lá.", "");
+          return true;
+        }
+        return false;
+      }
+      ev.preventDefault();
+      if (ehDel) { if (typeof app._cronoExtraExcluir === "function") app._cronoExtraExcluir(no.id); return true; }
+      if (typeof app._cronoExtraMover === "function") app._cronoExtraMover(no.id, k === "ArrowUp" ? "-1" : "1");
+      return true;
+    },
+
     /* a próxima célula EDITÁVEL: ↑↓ na mesma coluna; Tab Dur. → Depende de →
        Dur. da linha de baixo; Shift+Tab volta. Linha só leitura é pulada
        (serviço nunca se edita: pulado sem perguntar ao motor). */
     _proxima: function (g, ed, mover) {
       var L = g.pro && g.pro.L; if (!L) return null;
       var i0 = this._linha(g, ed.id); if (i0 < 0) return null;
-      var campos = ["dur", "pred"], k0 = campos.indexOf(ed.campo), j, kk, c;
+      /* o Tab anda pelas colunas DO MODO (2A): no modo Avançar ele vai
+         % → Início real → Fim real, e não para Dur./Depende de, que nem
+         estão na tela */
+      var C0 = CX(), colsP = (g.pro && g.pro.cols && g.pro.cols.length) ? g.pro.cols : (C0 ? C0.colunasGrade(g.ctx && g.ctx.r, null) : []);
+      var campos = colsP.map(function (q) { return q.campo; });
+      if (!campos.length) campos = ["dur", "pred"];
+      var k0 = campos.indexOf(ed.campo), j, kk, c, nC = campos.length;
       if (mover === "baixo" || mover === "cima") {
         var passo = mover === "baixo" ? 1 : -1;
         for (j = i0 + passo; j >= 0 && j < L.length; j += passo) {
@@ -540,14 +647,14 @@
       if (mover === "tab") {
         for (j = i0; j < L.length; j++) {
           if (!L[j] || L[j].tipo === "servico") continue;
-          for (kk = (j === i0 ? k0 + 1 : 0); kk < 2; kk++) { c = this._celula(g, j, campos[kk]); if (c && !c.ro) return { id: c.id, campo: campos[kk] }; }
+          for (kk = (j === i0 ? k0 + 1 : 0); kk < nC; kk++) { c = this._celula(g, j, campos[kk]); if (c && !c.ro) return { id: c.id, campo: campos[kk] }; }
         }
         return null;
       }
       if (mover === "voltar") {
         for (j = i0; j >= 0; j--) {
           if (!L[j] || L[j].tipo === "servico") continue;
-          for (kk = (j === i0 ? k0 - 1 : 1); kk >= 0; kk--) { c = this._celula(g, j, campos[kk]); if (c && !c.ro) return { id: c.id, campo: campos[kk] }; }
+          for (kk = (j === i0 ? k0 - 1 : nC - 1); kk >= 0; kk--) { c = this._celula(g, j, campos[kk]); if (c && !c.ro) return { id: c.id, campo: campos[kk] }; }
         }
         return null;
       }
@@ -602,6 +709,11 @@
             norm(campos.dur.value) === norm(campos.dur._orig) && norm(campos.pred.value) === norm(campos.pred._orig)) {
             ev.preventDefault(); self.fecharCard(app, app._gx, false); if (app.cronoArrastoDesfazer) app.cronoArrastoDesfazer();
           }
+          /* (1C) refazer no cartão: a mesma regra (os dois campos sem alteração) */
+          else if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && ((!ev.shiftKey && String(ev.key).toLowerCase() === "y") || (ev.shiftKey && String(ev.key).toLowerCase() === "z")) &&
+            norm(campos.dur.value) === norm(campos.dur._orig) && norm(campos.pred.value) === norm(campos.pred._orig)) {
+            ev.preventDefault(); self.fecharCard(app, app._gx, false); if (app.cronoRefazer) app.cronoRefazer();
+          }
         });
         inp.addEventListener("input", function () { inp.classList.remove("gx-ed-erro"); });
         inp._orig = c.valor; inp._ro = !!c.ro;
@@ -609,6 +721,29 @@
       }
       linha("Dur. (dias úteis)", cD, "dur");
       linha("Depende de", cP, "pred");
+      /* ⚠ O CARTÃO É O CAMINHO DA TELA ESTREITA (as colunas não cabem), e
+         sem esta linha ele seria a ÚNICA tela do cronograma sem as portas
+         novas: restrição de data, calendário da frente e tarefa sem preço
+         abaixo. Quem trabalha no note de 13" ficaria sem elas — e "no meu
+         computador não tem" é o pior modo de um recurso não existir.
+         É o MESMO menu ⋯ da tabela e da coluna de nomes (`_cronoMenuLinha`),
+         nunca uma segunda lista de itens: duas listas divergem na primeira
+         manutenção, e a pessoa aprende uma e é traída pela outra. */
+      if (typeof app._cronoMenuLinha === "function") {
+        var linM = doc.createElement("div"); linM.className = "gx-card-lin";
+        var btM = doc.createElement("button"); btM.type = "button"; btM.className = "gx-card-bt";
+        btM.setAttribute("data-gx-card-menu", "1");
+        btM.textContent = "Mais opções ⋯";
+        btM.title = "Restrição de data, calendário da frente e tarefa sem preço abaixo.";
+        btM.addEventListener("click", function (ev) {
+          ev.stopPropagation();
+          var gg = app._gx;
+          self.fecharCard(app, gg, false);
+          app._cronoMenuLinha(id, btM, ev);
+        });
+        linM.appendChild(btM);
+        card.appendChild(linM);
+      }
       var acoes = doc.createElement("div"); acoes.className = "gx-card-acoes";
       var bC = doc.createElement("button"); bC.type = "button"; bC.className = "gx-card-bt"; bC.textContent = "Cancelar";
       var bG = doc.createElement("button"); bG.type = "button"; bG.className = "gx-card-bt gx-pri"; bG.textContent = "Gravar";

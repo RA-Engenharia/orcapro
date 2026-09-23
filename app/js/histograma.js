@@ -93,6 +93,35 @@
     return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2);
   }
   function dm(d) { return ("0" + d.getDate()).slice(-2) + "/" + ("0" + (d.getMonth() + 1)).slice(-2); }
+  /* "2026-08-18" -> "18/08/2026". ⚠ Sem `new Date(iso)`: a string sem fuso é
+     lida como UTC e vira o dia anterior a oeste de Greenwich — o corte do
+     avanço apareceria um dia antes do que a pessoa digitou. */
+  /* ⚠ NÚMERO DE TEXTO SAI EM BR. Visto na foto do e2e (21/09/2026): a
+     régua do painel escreve "total 2.467,8 Hh" e o recado logo abaixo dizia
+     "2467.81 hora(s)-homem" — duas grafias do MESMO número a três linhas de
+     distância, na mesma tela. O cliente confere número; grafia que muda no
+     meio da tela ele lê como erro.
+     ⚠ NÃO é um parser: não há `parseNum` neste arquivo, de propósito
+     (memória "réplica de parser apodrece"). Isto só ESCREVE, e só para os
+     recados que este commit acrescentou — os avisos antigos continuam como
+     estavam (trocar os 15 de uma vez é outra entrega, com outra regressão).
+     PENDÊNCIA declarada: unificar a grafia de todos os avisos deste motor. */
+  function brN(v, casas) {
+    var n = fin(v), c = casas == null ? 1 : casas;
+    var neg = n < 0; n = Math.abs(n);
+    /* ⚠ `inteiro`, e não `int`: `int` é palavra reservada para o futuro na
+       ES3, e este produto roda em WebView de instalador antigo — é o mesmo
+       motivo de não haver `const`/`let`/arrow neste arquivo. */
+    var s = n.toFixed(c), p = s.split("."), inteiro = p[0], dec = p.length > 1 ? p[1] : "";
+    var out = "", i, k = 0;
+    for (i = inteiro.length - 1; i >= 0; i--) { out = inteiro.charAt(i) + out; if (++k % 3 === 0 && i > 0) out = "." + out; }
+    return (neg ? "-" : "") + out + (dec ? "," + dec : "");
+  }
+
+  function dmaISO(v) {
+    var p = String(v == null ? "" : v).slice(0, 10).split("-");
+    return p.length === 3 ? p[2] + "/" + p[1] + "/" + p[0] : String(v == null ? "" : v);
+  }
 
   /* unidade em chave tolerante a grafia ("H", "h", "CHP", "chp."). Mesma ideia
      do `unKeyEx` do js/execucao.js; aqui sem acento nenhum a tratar, porque as
@@ -186,6 +215,16 @@
 
   var Histograma = {
     PERIODOS: ["semana", "mes"],
+    /* ⚠ O CORTE DO AVANÇO (planejador 3C, espec §4 "Histograma"). Com avanço
+       lançado, este gráfico mostra SÓ O QUE FALTA: as horas que caem em dias
+       ANTES do corte (`r.avanco.C`) são trabalho que já aconteceu, e
+       dimensionar alojamento por elas é contratar para a semana passada.
+       ROTEIRO DO DEFEITO (medido em 21/09/2026, obra de 3 etapas com E1
+       concluída e corte em 18/08): o gráfico somava 240 Hh e punha o PICO de
+       2 pessoas na semana de 03/08 — semana encerrada, etapa concluída. Com o
+       corte: 160 Hh e o pico nas semanas que ainda vão acontecer.
+       O que ficou para trás não some calado: sai em `out.avanco` e num aviso. */
+    ROTULO_CORTE: "só o que falta fazer: as horas anteriores à data de corte do avanço já foram trabalhadas",
     JORNADA_PADRAO: 8,
     CRITERIO_EQ: "horas CHP (produtiva) + CHI (improdutiva) do analítico",
     // ⚠ a composição própria entra só pela mão de obra do SINAPI que ela carrega (ver MOTIVO_PROPRIA_SEM_HH)
@@ -314,6 +353,15 @@
       }
       var eqFn = (typeof opc.eqDoItem === "function") ? opc.eqDoItem
         : (opc.analitico ? function (it, A) { return self.eqDoItem(it, A); } : null);
+
+      /* ⚠ O CORTE VEM DO MOTOR, NUNCA DE UMA DATA CALCULADA AQUI. `r.avanco.C`
+         é o índice de dia útil do corte na MESMA régua das barras (§1.8); uma
+         segunda conta de dia útil divergiria da primeira na primeira
+         manutenção (memória "réplica de parser apodrece"). Sem avanço, `AV` é
+         nulo e nada muda — a saída é a de sempre. */
+      var AV = (r.avanco && typeof r.avanco.C === "number" && isFinite(r.avanco.C)) ? r.avanco : null;
+      var kCorte = AV ? Math.max(0, Math.ceil(AV.C)) : 0;
+      var hhFeito = 0, hFeito = 0, nFeitos = 0, nParciais = 0;
 
       var B = this.baldes(r, periodo, cal), lista = B.lista;
       var semBase = [], hhProf = {}, eqTot = {}, totalHh = 0, totalH = 0;
@@ -452,9 +500,23 @@
         var ini = fin(no.inicio), fim = fin(no.fim);
         var k0 = Math.floor(ini), k1 = Math.ceil(fim), tam = fim - ini;
         if (k1 <= k0) k1 = k0 + 1;
+        if (AV) {
+          if (k1 <= kCorte) nFeitos++;
+          else if (k0 < kCorte) nParciais++;
+        }
         for (var k = k0; k < k1; k++) {
           var fr = (tam > 0) ? (Math.min(k + 1, fim) - Math.max(k, ini)) / tam : (k === k0 ? 1 : 0);
           if (!(fr > 0)) continue;
+          /* ⚠ DIA ANTERIOR AO CORTE = TRABALHO FEITO. A conta é a mesma do
+             físico-financeiro do plano (§4: "restante em [C, fim), feito em
+             [ini, C)"): o motor já pôs o que falta depois do corte e o que foi
+             feito antes dele, então cortar o LAÇO no índice do corte devolve
+             exatamente o restante — sem redistribuir hora nenhuma por fora. */
+          if (AV && k < kCorte) {
+            hhFeito += somaHh * fr;
+            if (eqs) for (var qF in eqs) if (own(eqs, qF)) hFeito += fin(eqs[qF].h) * fr;
+            continue;
+          }
           var bi = (k >= 0 && k < B.doDia.length) ? B.doDia[k] : -1;
           if (bi < 0) { // dia fora do calendário da obra: some do gráfico — e o resultado diz
             hhFora += somaHh * fr;
@@ -658,7 +720,12 @@
       }
 
       out.ok = true;
-      out.vazio = nComHh === 0;
+      /* ⚠ "TUDO FEITO" NÃO É "SEM HORA-HOMEM". Com o corte, uma obra cuja
+         última etapa já foi concluída sai com `totalHh` zero e `nComHh` > 0: o
+         recado de sempre acusaria o ORÇAMENTO de não ter hora-homem numa obra
+         que tem e já a gastou. Quatro frases, quatro ações — esta é a quinta. */
+      out.tudoFeito = !!(AV && nComHh > 0 && !(totalHh > 0) && hhFeito > 0);
+      out.vazio = nComHh === 0 || out.tudoFeito;
       /* ⚠ O RECADO DO GRÁFICO VAZIO SÓ AFIRMA O QUE FOI CONFERIDO. Ele dizia
          "Nenhum serviço deste orçamento tem hora-homem de composição" também
          quando a base da UF não estava carregada — e o serviço acusado era um
@@ -666,7 +733,11 @@
          ações diferentes; a última é a única que fala do orçamento. */
       if (out.vazio) {
         var fim = " — e inventar pessoas a partir de R$ seria número que a medição derruba.";
-        if (falhasHh > 0 && falhasHh >= nComBarra) {
+        if (out.tudoFeito) {
+          out.motivoVazio = "tudo-feito";
+          out.avisos.push("Não há mão de obra a dimensionar daqui para a frente: as " + brN(hhFeito, 1) + " hora(s)-homem deste plano caem todas em dias anteriores à data de corte do avanço"
+            + (AV && AV.corte ? " (" + dmaISO(AV.corte) + ")" : "") + " — ou seja, o trabalho já foi feito. Isto NÃO quer dizer que o orçamento não tem hora-homem.");
+        } else if (falhasHh > 0 && falhasHh >= nComBarra) {
           out.motivoVazio = "provedor-falhou";
           out.avisos.push("⚠ NÃO DEU PARA CONFERIR: a leitura da composição falhou nos " + falhasHh + " serviço(s) conferido(s) (primeiro erro: " + erroHh
             + "). Não dá para dizer que este orçamento não tem hora-homem — recarregue o app e tente de novo" + fim);
@@ -684,6 +755,58 @@
           out.motivoVazio = "sem-hora-homem";
           out.avisos.push("Nenhum dos " + nComBarra + " serviço(s) cuja composição foi LIDA tem hora-homem (base própria ou estadual, ou itens sem composição): não há histograma de mão de obra para mostrar" + fim);
         }
+      }
+      /* ---- o corte do avanço, dito em números (planejador 3C) ----
+         ⚠ O QUE SAIU DO GRÁFICO PRECISA APARECER EM ALGUM LUGAR. Sem este
+         bloco, o mesmo orçamento mostraria 160 Hh na aba do plano e 240 na do
+         orçamento, e nada na tela diria por quê — "número na interface
+         envelhece calado" com duas telas do mesmo app discordando. */
+      out.avanco = null;
+      if (AV) {
+        out.avanco = { corte: AV.corte || null, C: kCorte, criterio: this.ROTULO_CORTE,
+          hhFeito: r2(hhFeito), hhRestante: r2(totalHh), hFeito: r2(hFeito),
+          servicosFeitos: nFeitos, servicosParciais: nParciais,
+          contagem: AV.contagem || null };
+        /* ⚠ EM PRIMEIRO LUGAR NA LISTA, e não no fim. A tela mostra os
+           QUATRO primeiros avisos e resume o resto em "e mais N aviso(s)"
+           (js/cronoexecui.js, `avs.slice(0, 4)`). Este recado não é mais um
+           detalhe da obra: ele muda o SIGNIFICADO do gráfico inteiro — quem
+           não o ler acha que está vendo a obra toda e dimensiona equipe pelo
+           número errado. Num orçamento com quatro avisos próprios ele cairia
+           dentro do "e mais N" e ninguém o veria. */
+        /* ⚠ A FRASE DA COBERTURA DEIXAVA DE SER VERDADE. Ela diz "N de M
+           serviços têm hora-homem … e formam o histograma"; com o corte, os
+           que já foram feitos têm hora-homem e NÃO formam o gráfico. Visto
+           na foto do e2e: "7 de 8 serviços (87.5%) … formam o histograma"
+           num gráfico montado com 6. */
+        if (nFeitos > 0 || nParciais > 0) {
+          cobertura.msg += " Deste total, " + (nFeitos > 0 ? nFeitos + " serviço(s) já estão concluídos antes da data de corte e ficam FORA do gráfico" : "")
+            + (nFeitos > 0 && nParciais > 0 ? ", e " : "") + (nParciais > 0 ? nParciais + " serviço(s) entram só com a parte que falta" : "") + ".";
+        }
+        out.avisos.unshift("Este histograma mostra SÓ O QUE FALTA: " + brN(totalHh, 1) + " hora(s)-homem depois da data de corte do avanço"
+          + (AV.corte ? " (" + dmaISO(AV.corte) + ")" : "")
+          + (hhFeito > 0 ? ". " + brN(hhFeito, 1) + " hora(s)-homem ficaram de fora porque caem em dias já trabalhados"
+              + (nFeitos > 0 ? " (" + nFeitos + " serviço(s) inteiros" + (nParciais > 0 ? " e " + nParciais + " pela metade" : "") + ")" : "")
+              /* ⚠ a MORAL só entra quando alguma hora ficou de fora. Com o
+                 corte antes do 1º dia da obra nada foi trabalhado, e
+                 "dimensionar equipe pelo que já aconteceu" não descreve
+                 coisa nenhuma — é frase de efeito sobre um caso que não
+                 existe, e frase de efeito no lugar errado ensina a pular o
+                 aviso inteiro. */
+              + ". Dimensionar equipe pelo que já aconteceu é contratar para a semana passada." : "."));
+      }
+      /* ---- calendário próprio: a distribuição é pela régua da OBRA (CAL) ----
+         ⚠ ESTE GRÁFICO NÃO SABE DIA REAL (espec §3.6, Onda 4). A frente em
+         regime próprio (7×7, por exemplo) trabalha em dias que não são dias
+         úteis da obra; aqui as horas dela caem nos dias úteis da OBRA, que é a
+         régua dos baldes. O total de horas está certo; o dia em que cada uma
+         cai, para essas frentes, é aproximado — e a tela diz isso em vez de
+         deixar quem lê supor que o pico é do calendário dela. */
+      out.regua = "obra";
+      var frentes = (r.calendarios && Array.isArray(r.calendarios.usados)) ? r.calendarios.usados.length : 0;
+      out.frentesProprias = frentes;
+      if (frentes > 0) {
+        out.avisos.push("Esta obra tem " + frentes + " frente(s) em calendário próprio: as horas das frentes em regime próprio estão distribuídas pelos dias úteis da OBRA, não pelos dias em que elas trabalham. O total de horas é o mesmo; o dia em que cada uma cai é aproximado.");
       }
       out.periodo = periodo;
       out.jornadaH = jorn; out.fonteJornada = fonteJorn;

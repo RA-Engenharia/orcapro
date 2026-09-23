@@ -162,6 +162,12 @@
    *   obraId [opcional]     default obra.id; sem nenhum dos dois o dossiê soma
    *                         a lista inteira e AVISA (pleito é sempre de UMA obra)
    *   de / ate [opcional]   recorte ISO; default = primeiro e último diário
+   *   prazoContratual [opcional] (planejador 3A, decisão D17)
+   *          { base: {versao, dataInicio, dataFim, totalDias},  ← a linha de
+   *                  base marcada como CONTRATUAL da obra;
+   *            contrato: {numero, prazoDias, aditivos:[{numero, data,
+   *                       prazoDias, objeto}]} }
+   *          Sem ele o dossiê sai como hoje, confrontando só com o cadastro.
    * --------------------------------------------------------------- */
   Pleito.consolidar = function (params) {
     var p = params || {};
@@ -400,6 +406,64 @@
     };
     if (!pz && obra) {
       avisos.push("A obra não tem início e término contratuais cadastrados — sem eles o dossiê não confronta o pleito com o prazo, e não vai inventar as datas.");
+    }
+
+    /* ---------------------------------------------------------------
+     * O PRAZO CONTRATUAL DE VERDADE (planejador 3A, decisão D17)
+     *
+     * ⚠ O CADASTRO DA OBRA NÃO É O CONTRATO. `obra.inicio`/`obra.termino`
+     *   são dois campos que qualquer pessoa edita na ficha, e é contra eles
+     *   que este dossiê vinha medindo. Quando existe LINHA DE BASE
+     *   CONTRATUAL, ela é o plano que foi assinado: nunca se apaga, nunca se
+     *   regrava e nunca é resumida (D15/D16). Num pleito, medir contra a
+     *   ficha em vez da contratual é a diferença entre "sobraram 12 dias" e
+     *   "estourou há um mês" — e o documento vai à fiscalização.
+     *
+     * ⚠ E A FOLHA NÃO DIZ "COBERTA" NEM "NÃO COBERTA" (D18 segue ABERTA). O
+     *   cadastro não guarda se o prazo do contrato e o dos aditivos estão em
+     *   dias CORRIDOS ou em dias ÚTEIS, e a linha de base mede dias úteis de
+     *   obra. Somar as duas réguas daria um número plausível e errado numa
+     *   folha que abre negociação de aditivo. O dossiê mostra os números
+     *   lado a lado e pede a conferência — recado que mente é pior que
+     *   recado nenhum.
+     * --------------------------------------------------------------- */
+    var pcIn = p.prazoContratual || null;
+    if (pcIn && typeof pcIn === "object") {
+      var bs = pcIn.base || null, ct = pcIn.contrato || null;
+      var somaAdit = 0, adits = ((ct && ct.aditivos) || []).map(function (a) {
+        var dz = Math.round(Number(a && a.prazoDias) || 0);
+        somaAdit += dz;
+        return { numero: String((a && a.numero) || ""), data: String((a && a.data) || ""), prazoDias: dz, objeto: String((a && a.objeto) || "") };
+      });
+      prazo.contratual = {
+        temBase: !!(bs && bs.dataFim),
+        versao: bs ? bs.versao : null,
+        inicio: bs ? String(bs.dataInicio || "") : "",
+        termino: bs ? String(bs.dataFim || "") : "",
+        totalDiasUteis: bs && typeof bs.totalDias === "number" ? bs.totalDias : null,
+        novoTermino: (bs && bs.dataFim) ? somarDias(String(bs.dataFim), pedidoDias) : "",
+        contrato: ct ? { numero: String(ct.numero || ""), prazoDias: Math.round(Number(ct.prazoDias) || 0),
+          aditivos: adits, somaAditivosDias: somaAdit,
+          prazoComAditivos: Math.round(Number(ct.prazoDias) || 0) + somaAdit } : null,
+        /* ⚠ os dois términos lado a lado: a ficha da obra e a contratual */
+        terminoCadastro: (obra && obra.termino) || "",
+        divergeDoCadastro: !!(bs && bs.dataFim && obra && obra.termino && String(bs.dataFim) !== String(obra.termino)),
+        unidadeDoPrazo: "não declarada no cadastro",
+        cobertura: null,
+        motivoSemCobertura: "o cadastro não diz se o prazo do contrato e o dos aditivos estão em dias corridos ou em dias úteis, e a linha de base mede dias úteis de obra: confira a unidade no contrato antes de afirmar que o atraso está coberto.",
+        fonte: "linha de base marcada como contratual da obra, mais os termos aditivos cadastrados"
+      };
+      if (!prazo.contratual.temBase) {
+        avisos.push("A obra não tem linha de base marcada como CONTRATUAL — o confronto deste dossiê é com o término do cadastro, que qualquer pessoa edita na ficha. Marque a contratual antes de protocolar.");
+      } else if (prazo.contratual.divergeDoCadastro) {
+        avisos.push("O término da linha de base contratual (" + Pleito.dataBR(prazo.contratual.termino) +
+          ") é diferente do término cadastrado na ficha da obra (" + Pleito.dataBR(prazo.contratual.terminoCadastro) +
+          "). O dossiê mostra os dois: num pleito vale o que foi assinado.");
+      }
+      if (adits.length) {
+        avisos.push(adits.length + " termo(s) aditivo(s) de prazo somam " + somaAdit +
+          " dia(s). ⚠ O dossiê NÃO afirma se o atraso está coberto por eles: " + prazo.contratual.motivoSemCobertura);
+      }
     }
 
     /* ---------------------------------------------------------------

@@ -93,10 +93,10 @@
  *    o `lf` de cada nó, e joga fora. Se ele publicasse `et.predCritico` (ou
  *    `elosCriticos: [[de,para]]`), a aresta crítica deixaria de ser "as duas
  *    pontas são críticas" e passaria a ser o elo de verdade.
- * 4. TIPO DE ELO ENTRE ETAPAS. Hoje só existe TI entre etapas (o motor crava
- *    `predTipo[p] = "TI"`); II só existe entre folhas da mesma etapa. Quando
- *    TT/IT/II de etapa entrarem, `aresta.tipo` já os carrega sem mudança
- *    aqui — o campo lê o que o motor disser.
+ * 4. NÓS DE TAREFA SEM PREÇO (`r.extras`). Os quatro tipos de elo ENTRE
+ *    ETAPAS já estão desenhados (planejador 3C: `aresta.tipo` sai de
+ *    `predTipoRede` e o rótulo, de `predLagTipo`), mas as tarefas sem preço
+ *    ainda não viram nó deste desenho — elas são da Onda 4.
  * ===================================================================== */
 (function (global) {
   "use strict";
@@ -105,6 +105,30 @@
   function fin(v) { return (typeof v === "number" && isFinite(v)) ? v : 0; }
   function arr(v) { return Array.isArray(v) ? v : []; }
   function txt(v) { return String(v == null ? "" : v); }
+
+  /* ⚠ O TIPO DO ELO VEM DE `predTipoRede` (planejador 3C, espec §1.8).
+     `predTipo` NÃO serve sozinho: na ETAPA o motor o crava em "TI" (O20),
+     então lê-lo daria "TI" numa rede inteira de TT. Na FOLHA ele continua
+     valendo — lá é o tipo legado de verdade ("II" ou "TI"). */
+  function tipoDoElo(n, pid) {
+    if (n && n.predTipoRede && own(n.predTipoRede, pid)) return txt(n.predTipoRede[pid]);
+    if (n && n.predTipo && own(n.predTipo, pid)) return txt(n.predTipo[pid]);
+    return "TI";
+  }
+  /* ⚠ E A ESPERA É A DA RÉGUA DO TIPO (`predLagTipo`), NUNCA O `predLag`.
+     ROTEIRO DO DEFEITO (medido em 21/09/2026): num TT com espera digitada de
+     +2 dias, `predLag` vale −8 (o deslocamento EQUIVALENTE de T→I que a
+     sombra grava para a 1.2.81 desenhar igual) — e a seta saía rotulada
+     "TI −8d" sobre um elo em que a pessoa escreveu "TT +2d". Pior ainda com a
+     âncora do início real (O16): um elo "T→I +3" num nó que começou fora de
+     sequência aparecia como "−19d". Rótulo que mente é pior que rótulo
+     nenhum: é o mesmo ⚠ do `lag` × `desloc` logo acima, um passo adiante. */
+  function lagDoElo(n, pid) {
+    if (n && n.predLagTipo && own(n.predLagTipo, pid)) return fin(n.predLagTipo[pid]);
+    if (n && n.predTipoRede && own(n.predTipoRede, pid)) return null;   // tipo digitado sem espera: nada a rotular (O6)
+    if (n && n.predLag && own(n.predLag, pid)) return fin(n.predLag[pid]);
+    return null;
+  }
 
   /* ⚠ NÃO HÁ parseNum NESTE ARQUIVO, de propósito. A memória "réplica de
      parser apodrece" (33 módulos copiando Util.parseNum, dois errando em
@@ -467,8 +491,7 @@
       r.etapas.forEach(function (et) {
         arr(et.preds).forEach(function (pid) {
           elos.push({ de: pid, para: et.id,
-            tipo: (et.predTipo && et.predTipo[pid]) ? txt(et.predTipo[pid]) : "TI",
-            lag: (et.predLag && own(et.predLag, pid)) ? fin(et.predLag[pid]) : null,
+            tipo: tipoDoElo(et, pid), lag: lagDoElo(et, pid),
             desloc: (et.predDesloc && own(et.predDesloc, pid)) ? fin(et.predDesloc[pid]) : null,
             derivada: false });
         });
@@ -518,8 +541,7 @@
         fs.forEach(function (f) {
           arr(f.preds).forEach(function (pid) {
             elos.push({ de: pid, para: f.id,
-              tipo: (f.predTipo && f.predTipo[pid]) ? txt(f.predTipo[pid]) : "TI",
-              lag: (f.predLag && own(f.predLag, pid)) ? fin(f.predLag[pid]) : null,
+              tipo: tipoDoElo(f, pid), lag: lagDoElo(f, pid),
               desloc: (f.predDesloc && own(f.predDesloc, pid)) ? fin(f.predDesloc[pid]) : null,
               derivada: false });
           });
@@ -543,8 +565,7 @@
           if (!de || !para || de.id === para.id) return;
           derivadas++;
           elos.push({ de: de.id, para: para.id,
-            tipo: (et.predTipo && et.predTipo[pid]) ? txt(et.predTipo[pid]) : "TI",
-            lag: (et.predLag && own(et.predLag, pid)) ? fin(et.predLag[pid]) : null,
+            tipo: tipoDoElo(et, pid), lag: lagDoElo(et, pid),
             desloc: (et.predDesloc && own(et.predDesloc, pid)) ? fin(et.predDesloc[pid]) : null,
             derivada: true, viaEtapa: { de: pid, para: et.id } });
         });

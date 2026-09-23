@@ -47,6 +47,13 @@
   "use strict";
 
   function own(o, k) { return !!o && typeof o === "object" && Object.prototype.hasOwnProperty.call(o, k); }
+  /* módulo irmão resolvido NA CHAMADA (planejador 1A): o motor e a rede
+     carregam em outra ordem no index.html; em Node, o require relativo */
+  function depG(nome, arq) {
+    var g = (typeof global !== "undefined" && global) ? global : null, m = g ? g[nome] : null;
+    if (!m && typeof require !== "undefined") { try { m = require(arq); } catch (e) { m = null; } }
+    return m || null;
+  }
   function ehArr(v) { return Object.prototype.toString.call(v) === "[object Array]"; }
   function arr(v) { return ehArr(v) ? v : []; }
   /* ⚠ número que NÃO é número vira o padrão, nunca NaN (regra 2 do cabeçalho).
@@ -74,6 +81,9 @@
   }
   function diasTxt(n) { return n === 1 ? "1 dia útil" : n + " dias úteis"; }
   function ehFolha(no) { return !!no && (no.tipo === "subetapa" || no.tipo === "soltos"); }
+  function ehObj(v) { return !!v && typeof v === "object" && !ehArr(v); }
+  /* a linha T (planejador 1A): a tarefa sem preço, marcada pela tela ou pelo `acharNo` */
+  function ehExtra(no) { return !!no && no.tipo === "extra"; }
   /* ⚠ apagar NÃO cria mapa. `delete obj(raiz, "tipos")[id]` punha `tipos: {}`
      na raiz do cronograma de ETAPA (onde esse mapa não existe) só para apagar
      uma chave que não estava lá — a forma gravada mudava sem nada ter mudado,
@@ -416,7 +426,7 @@
        ARRASTAR
        ------------------------------------------------------------------ */
 
-    alvoDoNo: function (no) { return (no && (no.tipo === "subetapa" || no.tipo === "soltos")) ? "folha" : "etapa"; },
+    alvoDoNo: function (no) { return (no && (no.tipo === "subetapa" || no.tipo === "soltos")) ? "folha" : (ehExtra(no) ? "extra" : "etapa"); },
 
     /* O CONTEXTO da linha, lido do resultado do motor — para a tela não ter
        de decidir o que é resumo nem o que é vão. `detalhe` é o mesmo da
@@ -430,6 +440,8 @@
       var det = String(detalhe || (r && r.exec && r.exec.detalhe) || "etapa");
       var exec = !!(r && r.exec && r.exec.rede === true);
       var out = { exec: exec, detalhe: det, resumo: false, vao: false, escala: no ? no.escala : null, travado: false };
+      // a tarefa sem preço (planejador 1A): nunca resumo, nunca vão — nenhum modo a trava
+      if (ehExtra(no)) { out.extra = true; return out; }
       var nos = arr(r && r.atividades), id = no && no.id;
       for (var i = 0; i < nos.length; i++) {
         if (nos[i].id !== id) continue;
@@ -468,6 +480,25 @@
       }
       // ligar é a única coisa que um resumo aceita: o elo é da ETAPA, não do vão
       p.ligar = true;
+      /* ⚠ O QUE JÁ ACONTECEU NÃO SE ARRASTA (planejador 2A). A tarefa com
+         avanço lançado — concluída ou em andamento — tem data REAL, e data
+         real é fato, não plano: arrastar a barra dela reescreveria como
+         "planejado" um dia em que a equipe esteve na obra. Quem muda a data
+         real é o modo Avançar (as colunas Início real e Fim real), e o recado
+         diz isso — trava sem porta empurra a pessoa a procurar a saída errada.
+         ⚠ O estado vem do MOTOR (`no.avanco.estado`, §1.8), que já leu e
+         validou o registro (`f` preenchido ⇒ concluída, O24): ler o registro
+         de avanço aqui seria uma segunda validação, e a barra diria uma coisa
+         e o cálculo outra. */
+      var av = no.avanco;
+      if (av && (av.estado === "concluida" || av.estado === "andamento")) {
+        p.motivo = av.estado === "concluida"
+          ? "Esta tarefa está CONCLUÍDA (terminou em " + (av.fimReal ? dmaS(av.fimReal) : "data lançada") +
+            "): a data dela é fato, não plano. Para corrigir, use o modo Avançar e mude o início ou o fim real."
+          : "Esta tarefa JÁ COMEÇOU (em " + (av.iniReal ? dmaS(av.iniReal) : "data lançada") +
+            "): a data dela vem do que foi lançado. Para corrigir, use o modo Avançar e mude o início ou o fim real.";
+        return p;
+      }
       if (ctx.resumo) {
         p.motivo = "A etapa com subetapas é o resumo delas: ela começa com a primeira e termina com a última. Arraste as subetapas — ou desligue “Detalhar o prazo pelas subetapas” para a etapa voltar a ter duração própria.";
         return p;
@@ -687,14 +718,22 @@
        avisa), mas criar um por arrasto é criar um defeito com o mouse: o
        Gantt passaria a mostrar uma rede que ninguém pediu. */
     _dependeDe: function (r, no, id) {
-      var self = this, vistos = {}, fila = arr(no && no.preds).slice(), giros = 0;
+      var self = this, vistos = {}, giros = 0;
+      /* planejador 1A: a etapa também depende das tarefas sem preço que a
+         seguram (`porExtras`, fora de `preds` por I3), e a tarefa, das dela */
+      function predsDe(n) {
+        var l = arr(n && n.preds).slice();
+        arr(n && n.porExtras).forEach(function (x) { if (x && x.id != null) l.push(x.id); });
+        return l;
+      }
+      var fila = predsDe(no);
       while (fila.length && giros++ < 5000) {
         var pid = fila.shift();
         if (pid == null || own(vistos, pid)) continue;
         vistos[pid] = true;
         if (pid === id) return true;
         var p = self.acharNo(r, pid);
-        if (p) arr(p.preds).forEach(function (q) { if (!own(vistos, q)) fila.push(q); });
+        if (p) predsDe(p).forEach(function (q) { if (!own(vistos, q)) fila.push(q); });
       }
       return false;
     },
@@ -707,6 +746,14 @@
       for (i = 0; i < nos.length; i++) if (nos[i] && nos[i].id === id) return nos[i];
       var et = arr(r.etapas);
       for (i = 0; i < et.length; i++) if (et[i] && et[i].id === id) return et[i];
+      // a tarefa sem preço (r.extras): uma cópia rasa com `tipo: "extra"` (a linha T da tela)
+      var ex = arr(r.extras);
+      for (i = 0; i < ex.length; i++) if (ex[i] && ex[i].id === id) {
+        var c = {}, k;
+        for (k in ex[i]) if (own(ex[i], k)) c[k] = ex[i][k];
+        c.tipo = "extra";
+        return c;
+      }
       return null;
     },
 
@@ -728,15 +775,471 @@
        "volta à estimativa" é APAGAR as duas chaves — nunca um valor novo que
        a versão anterior não saberia ler.
        ------------------------------------------------------------------ */
-    aplicarOps: function (cron, ops) {
-      var out = { mudou: false, aplicadas: 0, erros: [] };
+    /* ⚠ PLANEJADOR 1A — `opts` = {orc (para saber de que etapa é cada
+       subetapa), medirTeto(cron) → teto|null (a recusa dos 60 KB ANTES de
+       gravar, O30), inicioFixo (I13: "o mais tarde possível" e LIGAR tarefa
+       sem preço a etapa exigem início; `false` recusa, com `out.portaInicio`
+       para a tela abrir a porta [Fixar início])}.
+       - A edição de nó com sombra ativa vai ao PLANEJADO: a sombra sai antes
+         (`Cronograma.prepararEdicao`), e o salvar a refaz.
+       - `campo: "rede"` grava a rede DIGITADA (`rede.etapas`/`rede.folhas`,
+         forma enxuta, O29) e a assina sobre os mapas de sempre de agora — a
+         projeção do salvar escreve a sombra e reassina. `para: null` só tira
+         a entrada (quem cabe no legado grava pelos campos de sempre).
+       - `restricaoData`: `nia`/`tae` de etapa no mapa de sempre (o `tae` com a
+         marca da O22); `dia`/`dta`/`nta`/`nid`/`mtp` e toda restrição de
+         SUBETAPA em `rede.datas` (a 1.2.81 diria "formato inválido" ou
+         "etapa que não existe mais", G4). Soltar tira as duas.
+       - ⚠ GRAVADOR ANTIGO EM NÓ COM REDE: `predecessoras`/`lags`/`tipos`
+         apagam a entrada de rede do nó (o mapa de sempre passa a ser a
+         verdade) e avisam — senão a `rede` ficaria mentindo. */
+    aplicarOps: function (cron, ops, opts) {
+      opts = opts || {};
+      var out = { mudou: false, aplicadas: 0, erros: [], avisos: [], teto: null };
       if (!cron || typeof cron !== "object" || ehArr(cron)) { out.erros.push("cronograma ausente"); return out; }
       function obj(o, k) { if (!o[k] || typeof o[k] !== "object" || ehArr(o[k])) o[k] = {}; return o[k]; }
+      var Cr = depG("Cronograma", "./cronograma.js"), CRd = depG("CronoRede", "./cronorede.js");
+      var fotoCru = JSON.stringify(cron);
+      var prep = (Cr && typeof Cr.prepararEdicao === "function") ? Cr.prepararEdicao(cron, { orc: opts.orc, folhaDe: opts.folhaDe }) : null;
+      var validas = prep ? prep.validas : null;
       var antes = JSON.stringify(cron);
+      function tiraRede(nv, id) {
+        var R = cron.rede && typeof cron.rede === "object" && !ehArr(cron.rede) ? cron.rede : null, m = R && R[nv];
+        if (!m || typeof m !== "object" || ehArr(m) || !own(m, id)) return false;
+        delete m[id];
+        if (validas && validas[nv]) delete validas[nv][id];
+        if (!Object.keys(m).length) delete R[nv];
+        if (!Object.keys(R).filter(function (k) { return k !== "v"; }).length) delete cron.rede;
+        return true;
+      }
+      function poeRede(nv, id, valor, dono) {
+        var R = obj(cron, "rede");
+        R.v = 1;
+        obj(R, nv)[id] = valor;
+        if (validas) { if (nv === "datas") validas.datas[id] = dono; else validas[nv][id] = true; }
+      }
+      var TIPOS_E = ["TI", "II", "TT", "IT"], TIPOS_D_ET = ["nia", "tae", "dia", "dta", "nta", "nid", "mtp"];
       var lista = arr(ops);
+      var CEx = depG("CronoExtras", "./cronoextras.js");
+      /* as tarefas sem preço: a LISTA do disco (lida uma vez; lista torta não
+         é regravada por cima — a operação é recusada) */
+      var etIds = {}, semEtapas = !(opts.orc && ehArr(opts.orc.etapas)) && !ehArr(opts.etapaIds);
+      arr(opts.orc && opts.orc.etapas).forEach(function (e) { if (e && e.id != null) etIds[e.id] = true; });
+      arr(opts.etapaIds).forEach(function (eid) { if (eid != null) etIds[eid] = true; });
+      /* as subetapas conhecidas (do orçamento e do mapa folha → etapa): a
+         recusa diz POR QUE ("se liga a etapa"), não "não existe" */
+      var foIds = {};
+      arr(opts.orc && opts.orc.etapas).forEach(function (e) { arr(e && e.subetapas).forEach(function (s) { if (s && s.id != null) foIds[s.id] = true; }); });
+      if (opts.folhaDe && typeof opts.folhaDe === "object") Object.keys(opts.folhaDe).forEach(function (f) { foIds[f] = true; });
+      function listaX() {
+        if (!own(cron, "extras")) cron.extras = [];
+        return ehArr(cron.extras) ? cron.extras : null;
+      }
+      function achaX(L, id) { for (var q = 0; q < L.length; q++) if (L[q] && L[q].id === id) return q; return -1; }
+      function eloOk(el, proprio, soEtapa) {
+        var z = CEx ? CEx.lerElo(el) : null;
+        if (!z || z.erro) return { erro: "ligação inválida" };
+        if (z.i === proprio) return { erro: "ligação para a própria tarefa" };
+        var L = ehArr(cron.extras) ? cron.extras : [];
+        /* ⚠ sem o orçamento nem a lista de etapas (o gravador de hoje chama
+           `aplicarOps(cron, ops)`), o id que não é tarefa conta como etapa: a
+           digitação já conferiu contra o motor antes de montar a operação */
+        var ehX = achaX(L, z.i) >= 0, ehEt = own(etIds, z.i) || (semEtapas && !ehX && z.i.indexOf("x_") !== 0);
+        // ⚠ §2.10: extra × subetapa é recusado nesta leva
+        if (own(foIds, z.i) && !own(etIds, z.i)) return { erro: "tarefa sem preço se liga a etapa, não a subetapa (" + z.i + ")" };
+        if (soEtapa && !ehEt) return { erro: ehX ? "a tarefa sem preço só segura ETAPA" : "etapa que não existe (" + z.i + ")" };
+        if (!ehEt && !ehX) return { erro: "tarefa ou etapa que não existe (" + z.i + ")" };
+        return { el: z };
+      }
+      /* ⚠ FORMA ENXUTA (O29) sem reconstruir o item: o que outra versão
+         acrescentar ao item fica; só os padrões conhecidos saem */
+      function enxugar(x) {
+        if (own(x, "nia") && !x.nia) delete x.nia;
+        if (own(x, "nota") && !x.nota) delete x.nota;
+        if (own(x, "proposta") && x.proposta !== true) delete x.proposta;
+        if (own(x, "proposta") && x.resp !== "cliente") delete x.proposta;
+        ["preds", "sucs"].forEach(function (k) {
+          if (!own(x, k)) return;
+          if (!ehArr(x[k]) || !x[k].length) { delete x[k]; return; }
+          x[k] = x[k].map(function (z) { return CEx.eloDisco(CEx.lerElo(z)); });
+        });
+        return x;
+      }
+      /* ⚠ I13 (O14): a tarefa sem preço que SEGURA etapa vira piso de data
+         absoluta na sombra; com o início flutuante, a 1.2.81 recalcularia no
+         dia seguinte com o piso velho (EXTRAS mediu 15 de 16 etapas fora uma
+         semana depois). Só o elo NOVO é recusado: soltar, renomear ou mexer
+         no que já existia continua livre (o registro da 1.2.81 sem início
+         ainda precisa de edição). */
+      var MSG_SEM_INICIO_X = "ligar tarefa sem preço a uma etapa exige o início fixo da obra";
+      function semInicioX(novos) {
+        if (opts.inicioFixo !== false || !novos) return null;
+        out.portaInicio = true;
+        return MSG_SEM_INICIO_X;
+      }
+      function opExtra(op) {
+        if (!CEx || !CEx.pronto) return "o módulo das tarefas sem preço não carregou";
+        var L = listaX();
+        if (!L) return "a lista de tarefas sem preço deste cronograma está ilegível — nada foi gravado";
+        var k = achaX(L, op.id), x = k >= 0 ? L[k] : null;
+        if (op.campo === "criar") {
+          if (k >= 0) return "já existe uma tarefa com o id " + op.id;
+          var validos = L.filter(function (z) { return ehObj(z); }).length;
+          if (validos >= CEx.TETO) return "este cronograma já tem " + CEx.TETO + " tarefas sem preço — o limite existe porque todos os orçamentos da empresa sincronizam num documento de 1 MB. Agrupe tarefas (ex.: “Aprovações do cliente”) ou exclua as que já passaram";
+          var novo = {}, kk, pa = op.para || {};
+          for (kk in pa) if (own(pa, kk)) novo[kk] = pa[kk];
+          novo.id = op.id;
+          if (novo.resp === "cliente" && !own(pa, "proposta")) novo.proposta = true;   // D1: a caixa vem marcada para o contratante
+          var outros = {};
+          if (opts.orc) arr(opts.orc.etapas).forEach(function (e) { arr(e && e.itens).forEach(function (it) { if (it && it.id) outros[it.id] = true; }); arr(e && e.subetapas).forEach(function (s) { if (s && s.id) outros[s.id] = true; }); });
+          var v = CEx.validarItem(novo, { etapas: etIds, outrosIds: outros });
+          if (!v.ok) return "tarefa sem preço inválida (" + v.motivo + ")";
+          var el2, j2;
+          for (j2 = 0; j2 < arr(novo.preds).length; j2++) { el2 = eloOk(novo.preds[j2], novo.id, false); if (el2.erro) return el2.erro; }
+          for (j2 = 0; j2 < arr(novo.sucs).length; j2++) { el2 = eloOk(novo.sucs[j2], novo.id, true); if (el2.erro) return el2.erro; }
+          var siC = semInicioX(arr(novo.sucs).length > 0);
+          if (siC) return siC;
+          var gr = CEx.itemDisco(v.item);
+          for (kk in novo) if (own(novo, kk) && !own(gr, kk) && ["nome", "dur", "resp", "proposta", "apos", "preds", "sucs", "nia", "nota", "id"].indexOf(kk) < 0) gr[kk] = novo[kk];
+          var pos = op.indice != null && isFinite(op.indice) ? Math.max(0, Math.min(L.length, Math.round(op.indice))) : L.length;
+          L.splice(pos, 0, gr);
+          return null;
+        }
+        if (!x || !ehObj(x)) return "esta tarefa sem preço não existe mais";
+        var cp = JSON.parse(JSON.stringify(x)), msg = null;
+        if (op.campo === "excluir") {
+          L.splice(k, 1);
+          // as outras tarefas que a citavam perdem o elo (as etapas que ela segurava estavam no `sucs` dela)
+          L.forEach(function (z) { if (ehObj(z) && ehArr(z.preds)) { z.preds = z.preds.filter(function (e) { return !(e && e.i === op.id); }); enxugar(z); } });
+          return null;
+        } else if (op.campo === "nome") {
+          var nm = String(op.para == null ? "" : op.para).replace(/\s+/g, " ").trim().slice(0, 80);
+          if (!nm) return "a tarefa precisa de nome";
+          cp.nome = nm;
+        } else if (op.campo === "duracao") {
+          if (!(typeof op.para === "number" && isFinite(op.para) && Math.floor(op.para) === op.para && op.para >= 0 && op.para <= 999)) return "duração inválida (inteiro de 0 a 999; 0 = marco)";
+          cp.dur = op.para;
+        } else if (op.campo === "resp") {
+          if (CEx.RESP.indexOf(op.para) < 0) return "responsável inválido";
+          cp.resp = op.para;
+        } else if (op.campo === "proposta") {
+          cp.proposta = op.para === true;
+        } else if (op.campo === "nia") {
+          if (op.para != null && !/^\d{4}-\d{2}-\d{2}$/.test(String(op.para))) return "data inválida";
+          if (op.para == null) delete cp.nia; else cp.nia = String(op.para);
+        } else if (op.campo === "nota") {
+          cp.nota = String(op.para == null ? "" : op.para).slice(0, 120);
+        } else if (op.campo === "predecessoras" || op.campo === "sucessoras") {
+          var soEt = op.campo === "sucessoras", nova = [], vistosX = {};
+          if (!ehArr(op.para)) return "a lista de ligações é obrigatória";
+          for (var q = 0; q < op.para.length; q++) {
+            var r2 = eloOk(op.para[q], op.id, soEt);
+            if (r2.erro) return r2.erro;
+            if (own(vistosX, r2.el.i)) return "a mesma ligação duas vezes";
+            vistosX[r2.el.i] = true;
+            nova.push(r2.el);
+          }
+          if (soEt) {
+            var jaSeg = {};
+            arr(x.sucs).forEach(function (z) { if (z && z.i != null) jaSeg[z.i] = true; });
+            var siS = semInicioX(nova.some(function (z) { return !own(jaSeg, z.i); }));
+            if (siS) return siS;
+          }
+          cp[soEt ? "sucs" : "preds"] = nova;
+        } else if (op.campo === "mover") {
+          var mv = op.para || {};
+          if (mv.apos != null && !own(etIds, mv.apos)) return "etapa que não existe (" + mv.apos + ")";
+          if (mv.apos == null) delete cp.apos; else cp.apos = mv.apos;
+          L.splice(k, 1);
+          var ix = mv.indice != null && isFinite(mv.indice) ? Math.max(0, Math.min(L.length, Math.round(mv.indice))) : L.length;
+          L.splice(ix, 0, enxugar(cp));
+          return msg;
+        } else return "campo desconhecido: " + op.campo;
+        L[k] = enxugar(cp);
+        return msg;
+      }
+      /* o "Depende de" da ETAPA na parte das tarefas sem preço (T1, T2II…):
+         reescreve o `sucs` de TODA tarefa que cita esta etapa (O6; a etapa
+         nunca recebe id de extra em `predecessoras`) */
+      function opPorExtras(op) {
+        if (!CEx || !CEx.pronto) return "o módulo das tarefas sem preço não carregou";
+        var para = op.para == null ? [] : op.para;
+        if (!ehArr(para)) return "a lista de tarefas é obrigatória";
+        var L = own(cron, "extras") ? cron.extras : [];
+        if (!ehArr(L)) return "a lista de tarefas sem preço deste cronograma está ilegível — nada foi gravado";
+        var porX = {}, vistosE = {};
+        for (var q = 0; q < para.length; q++) {
+          var z = CEx.lerElo(para[q]);
+          if (z.erro) return "ligação inválida";
+          if (achaX(L, z.i) < 0) return "tarefa sem preço que não existe (" + z.i + ")";
+          if (own(vistosE, z.i)) return "a mesma tarefa duas vezes";
+          vistosE[z.i] = true;
+          porX[z.i] = z;
+        }
+        var novoElo = false;
+        L.forEach(function (x) {
+          if (!ehObj(x) || !own(porX, x.id)) return;
+          if (!arr(x.sucs).some(function (e) { return e && e.i === op.id; })) novoElo = true;
+        });
+        var siP = semInicioX(novoElo);
+        if (siP) return siP;
+        L.forEach(function (x) {
+          if (!ehObj(x)) return;
+          var antes = ehArr(x.sucs) ? x.sucs : [], depois = antes.filter(function (e) { return !(e && e.i === op.id); });
+          if (own(porX, x.id)) depois.push({ i: op.id, t: porX[x.id].t, l: porX[x.id].l });
+          if (depois.length || own(x, "sucs")) { x.sucs = depois; enxugar(x); }
+        });
+        if (!L.length && !own(cron, "extras")) return null;
+        return null;
+      }
+
+      /* ============ O CALENDÁRIO DA FRENTE (commit CAL) ============
+         Três operações, e só três:
+           • `campo: "lista"`  → cria, edita ou exclui um calendário nomeado;
+           • `campo: "padrao"` → o calendário das linhas sem atribuição;
+           • `campo: "de"`     → atribui (ou tira) o calendário de uma linha.
+         ⚠ O ROTEADOR DA DURAÇÃO. Enquanto a linha está em calendário próprio,
+           a duração DIGITADA mora em `cal.dur` (dias de trabalho da frente) e
+           não em `duracoes`/`sub.duracoes` (dias úteis da obra): são unidades
+           diferentes, e trocar uma pela outra faria "10 dias" virar 10 dias de
+           7×7 sem ninguém pedir. Ao atribuir, o valor que estava no mapa da
+           obra vai para `mat` (a régua do O2: `cal.anterior` não existe mais)
+           e é devolvido quando a linha volta para "Obra".
+         ⚠ O11: atribuir calendário a uma linha que é SUCESSORA de um TT/IT, ou
+           que é etapa tocada por elo cruzado, é RECUSADO aqui — ninguém mediu
+           essas combinações, e a sombra delas não é exata. */
+      function calRaiz() { return obj(cron, "cal"); }
+      /* o cronograma executivo (a rede das subetapas) está ligado? */
+      function execLigado() { return !!(cron.exec && typeof cron.exec === "object" && !ehArr(cron.exec) && cron.exec.rede === true); }
+      /* o calendário EFETIVO da linha, do disco (a mesma herança do motor:
+         folha ← etapa, e o padrão no fim) */
+      function calDaLinha(id) {
+        var C = cron.cal && typeof cron.cal === "object" && !ehArr(cron.cal) ? cron.cal : null;
+        if (!C || id == null) return null;
+        var deM = (C.de && typeof C.de === "object" && !ehArr(C.de)) ? C.de : {};
+        if (own(deM, id)) return deM[id];
+        var dono = opts.folhaDe && opts.folhaDe[id];
+        if (dono && own(deM, dono)) return deM[dono];
+        return (typeof C.padrao === "string" && C.padrao) ? C.padrao : null;
+      }
+      function calDeAlgumaFolha(etapaId) {
+        var C = cron.cal && typeof cron.cal === "object" && !ehArr(cron.cal) ? cron.cal : null;
+        if (!C || !opts.folhaDe) return null;
+        var deM = (C.de && typeof C.de === "object" && !ehArr(C.de)) ? C.de : {}, achou = null;
+        Object.keys(deM).forEach(function (f) { if (!achou && opts.folhaDe[f] === etapaId) achou = deM[f]; });
+        return achou;
+      }
+      function calLista() {
+        var C = cron.cal && typeof cron.cal === "object" && !ehArr(cron.cal) ? cron.cal : null;
+        if (!C) return [];
+        return ehArr(C.lista) ? C.lista : [];
+      }
+      function achaCal(L, id) { for (var q = 0; q < L.length; q++) if (L[q] && L[q].id === id) return q; return -1; }
+      function eloDeTermino(id) {
+        /* o nó é sucessor de um TT/IT, ou tem restrição de término? (O11) */
+        var R = cron.rede && typeof cron.rede === "object" && !ehArr(cron.rede) ? cron.rede : null;
+        if (!R) return null;
+        var m = null, achou = null;
+        ["etapas", "folhas"].forEach(function (nv) {
+          var mm = R[nv];
+          if (!mm || typeof mm !== "object" || ehArr(mm) || !own(mm, id)) return;
+          m = mm[id];
+          arr(m && m.e).forEach(function (el) { if (!achou && el && (el.t === "TT" || el.t === "IT")) achou = el.t; });
+        });
+        var md = R.datas;
+        if (!achou && md && typeof md === "object" && !ehArr(md) && own(md, id) && (md[id].t === "dta" || md[id].t === "nta")) achou = md[id].t;
+        return achou;
+      }
+      function opCal(op) {
+        var CCa = depG("CronoCal", "./cronocal.js");
+        if (!CCa || !CCa.pronto) return "o módulo dos calendários não carregou";
+        var L = calLista();
+        if (op.campo === "lista") {
+          if (op.para === null) {
+            var k0 = achaCal(L, op.id);
+            if (k0 < 0) return "calendário que não existe";
+            var C0 = calRaiz(), usadoPor = [];
+            Object.keys((C0.de && typeof C0.de === "object" && !ehArr(C0.de)) ? C0.de : {}).forEach(function (nid) { if (C0.de[nid] === op.id) usadoPor.push(nid); });
+            if (usadoPor.length) return "este calendário está em " + usadoPor.length + " linha(s) — tire-o delas antes de excluir";
+            if (C0.padrao === op.id) return "este calendário é o padrão das linhas sem atribuição — troque o padrão antes de excluir";
+            L.splice(k0, 1);
+            if (!L.length) delete C0.lista; else C0.lista = L;
+            if (!Object.keys(C0).filter(function (q) { return q !== "v"; }).length) delete cron.cal;
+            return null;
+          }
+          /* ⚠ só as chaves PRESENTES vão ao validador: passar `exc: undefined`
+             o faria cobrar "as exceções precisam ser uma lista" de todo
+             calendário que não tem exceção nenhuma */
+          var pv = { id: op.id }, kv, pa0 = op.para || {};
+          for (kv in pa0) if (own(pa0, kv) && kv !== "id") pv[kv] = pa0[kv];
+          var v = CCa.validar(pv);
+          if (!v.ok) return v.erros[0].msg;
+          var C1 = calRaiz(); C1.v = 1;
+          var Lw = ehArr(C1.lista) ? C1.lista : (C1.lista = []);
+          var k1 = achaCal(Lw, op.id);
+          if (k1 < 0) Lw.push(CCa.itemDisco(v.valor)); else Lw[k1] = CCa.itemDisco(v.valor);
+          return null;
+        }
+        if (op.campo === "padrao") {
+          var C2 = calRaiz();
+          if (op.para == null) { delete C2.padrao; }
+          else { if (achaCal(L, op.para) < 0) return "calendário que não existe (" + op.para + ")"; C2.v = 1; C2.padrao = String(op.para); }
+          if (!Object.keys(C2).filter(function (q) { return q !== "v"; }).length) delete cron.cal;
+          return null;
+        }
+        if (op.campo !== "de") return "operação de calendário desconhecida (" + op.campo + ")";
+        var alvoId = op.id, C = calRaiz(), deM, durM, agM;
+        if (op.para != null && achaCal(L, op.para) < 0) return "calendário que não existe (" + op.para + ")";
+        deM = (C.de && typeof C.de === "object" && !ehArr(C.de)) ? C.de : null;
+        var jaTem = deM && own(deM, alvoId) ? deM[alvoId] : null;
+        if (op.para != null && op.para !== jaTem) {
+          /* ⚠ I13 (O14): a frente começa num dia REAL, e com o início
+             flutuante a 1.2.81 recalcularia amanhã com a sombra de hoje */
+          if (opts.inicioFixo === false) { out.portaInicio = true; return "atribuir calendário a uma linha exige o início fixo da obra"; }
+          var tt = eloDeTermino(alvoId);
+          if (tt) return "esta linha tem “" + (tt === "TT" ? "termina junto" : tt === "IT" ? "termina quando o outro começa" : "terminar em data") +
+            "”, que não vale em calendário próprio: o vão em dias úteis da obra muda com o dia da semana em que a frente começa. Solte a ligação (ou a data) antes de atribuir o calendário";
+          if (eloCruzadoToca(alvoId)) return "esta etapa tem ligação com subetapa de outra etapa, que não vale em calendário próprio — solte a ligação antes de atribuir o calendário";
+          if (folhaComTermino(alvoId)) return "esta etapa tem subetapa com “termina junto” ou “terminar em data” — em calendário próprio essa conta não é exata; solte a ligação da subetapa antes";
+          /* ⚠ RECUSA COM PORTA: ETAPA DETALHADA PELAS SUBETAPAS, MODO EXECUTIVO.
+             ROTEIRO DO DEFEITO (revisão adversarial da Onda 2, 21/09/2026): o
+             P4 sobrescreve a sombra de duração que o P2 escreveu pelo
+             calendário, e o aparelho na 1.2.81 passa a mostrar OUTRA data sem
+             código no catálogo (§1.11: "diferença sem código = defeito").
+             Medido na obra do galpão, calendário de frente na etapa 1 (3
+             subetapas) com `exec.rede` ligado, pelo motor 1.2.81 REAL sobre o
+             registro gravado: 1.2.81 = 75 DU (fim 13/11/2026) e esta versão =
+             77 DU (fim 17/11/2026), `conferirFrota` = 53 divergências, TODAS
+             com `cod: "sem-codigo"` (e1.fim, e1.dataFim, e2.dataInicio, …).
+             Dois dias de diferença na entrega conforme o aparelho que imprime
+             a proposta.
+             ⚠ A PORTA FOI MEDIDA — E A PRIMEIRA QUE SE ESCREVEU AQUI ERA FALSA.
+             A recusa dizia "atribua o calendário às subetapas dela", porque o
+             mesmo calendário numa SUBETAPA dá 0 divergências. Dá — mas por
+             NÃO FAZER NADA: 75 DU com e sem o calendário, e o nó da subetapa
+             sai com `calendarioId` e `duracaoFrente` NULOS (o motor só
+             publica esses campos em ETAPA). Porta que não abre é pior que
+             recusa seca: a pessoa faz o que o recado mandou e o 7×7 fica
+             inerte, sem uma linha de aviso.
+             A porta que a medição achou é a FRENTE NÃO DETALHADA: mesma obra,
+             mesmo calendário, numa etapa sem subetapas — 77 DU e 17/11/2026
+             NOS DOIS MOTORES, 0 divergências, `calendarioId` e `duracaoFrente`
+             preenchidos (medido em e1, e7 e e9 do galpão). É essa que a
+             recusa oferece, e é a que a e2e da 2A exercita.
+             PENDÊNCIA declarada (1A/2A): calendário em SUBETAPA é inerte.
+             Antes desta recusa o único retorno era um toast mandando avisar o
+             suporte, com o dado JÁ GRAVADO.
+             ⚠ AQUI é o lugar certo (e não em cada tela): as duas portas da
+             Onda 2 — o menu ⋯ da linha e o [Aplicar a] do modal — passam pelo
+             `aplicarOps`. Quando o motor parar de sobrescrever a sombra, os
+             asserts do bloco 1f de tools/test-crono-compat-1281.js reprovam de
+             propósito, e é lá que se tira a exclusão do `comCal`. */
+          if (execLigado() && own(etIds, alvoId) && etapaTemFolhas(alvoId))
+            return "esta etapa é detalhada pelas subetapas e o cronograma executivo está ligado — em calendário próprio a conta dela deixa de bater com a de um aparelho na versão anterior do app, que mostraria outro prazo sem aviso. " +
+              "Ponha o calendário numa frente que não seja detalhada pelas subetapas (ou tire o detalhamento desta), ou desligue o cronograma executivo antes";
+        }
+        if (op.para == null) {
+          if (!deM || !own(deM, alvoId)) return null;
+          delete deM[alvoId];
+          if (!Object.keys(deM).length) delete C.de;
+          // a duração DIGITADA volta para o mapa da obra, se a pessoa a tinha guardado lá
+          durM = (C.dur && typeof C.dur === "object" && !ehArr(C.dur)) ? C.dur : null;
+          agM = (C.agente && typeof C.agente === "object" && !ehArr(C.agente)) ? C.agente : null;
+          if (durM && own(durM, alvoId)) { delete durM[alvoId]; if (!Object.keys(durM).length) delete C.dur; }
+          if (agM && own(agM, alvoId)) { delete agM[alvoId]; if (!Object.keys(agM).length) delete C.agente; }
+          if (!Object.keys(C).filter(function (q) { return q !== "v"; }).length) delete cron.cal;
+          return null;
+        }
+        C.v = 1;
+        obj(C, "de")[alvoId] = String(op.para);
+        /* ROTEADOR: a duração digitada que estava na régua da obra vira a
+           duração da frente e SAI do mapa da obra (a projeção reescreve a
+           sombra no salvar) */
+        var ehFolha = own(foIds, alvoId) && !own(etIds, alvoId);
+        var mapaDur = ehFolha ? (cron.sub && cron.sub.duracoes) : cron.duracoes;
+        var mapaAg = ehFolha ? (cron.sub && cron.sub.agente) : cron.duracoesAgente;
+        if (mapaDur && typeof mapaDur === "object" && own(mapaDur, alvoId) && fin(mapaDur[alvoId], 0) > 0) {
+          var marca = (mapaAg && typeof mapaAg === "object" && own(mapaAg, alvoId)) ? mapaAg[alvoId] : null;
+          /* só a duração do USUÁRIO viaja: a sombra (sem marca, mas com `mat`)
+             e a marca "subetapas" são derivadas e a projeção as refaz */
+          var mt = cron.mat && typeof cron.mat === "object" && !ehArr(cron.mat) ? cron.mat : null;
+          var mm = mt && (ehFolha ? mt.folhas : mt.etapas);
+          var eDerivada = !!(mm && typeof mm === "object" && own(mm, alvoId)) || marca === "subetapas";
+          if (!eDerivada) {
+            obj(C, "dur")[alvoId] = Math.round(fin(mapaDur[alvoId], 0) * 100) / 100;
+            obj(C, "agente")[alvoId] = marca || "usuario";
+            delete mapaDur[alvoId];
+            if (mapaAg && typeof mapaAg === "object" && own(mapaAg, alvoId)) delete mapaAg[alvoId];
+          }
+        }
+        return null;
+      }
+      function eloCruzadoToca(etapaId) {
+        var R = cron.rede && typeof cron.rede === "object" && !ehArr(cron.rede) ? cron.rede : null;
+        if (!R || !opts.folhaDe) return false;
+        var achou = false;
+        ["etapas", "folhas"].forEach(function (nv) {
+          var mm = R[nv];
+          if (!mm || typeof mm !== "object" || ehArr(mm)) return;
+          Object.keys(mm).forEach(function (id) {
+            arr(mm[id] && mm[id].e).forEach(function (el) {
+              if (!el || typeof el.i !== "string") return;
+              var donoEl = opts.folhaDe[el.i], donoNo = nv === "folhas" ? opts.folhaDe[id] : id;
+              if (donoEl && donoNo && donoEl !== donoNo && (donoEl === etapaId || donoNo === etapaId)) achou = true;
+            });
+          });
+        });
+        return achou;
+      }
+      /* a etapa é DETALHADA pelas subetapas? (o orçamento e o mapa folha →
+         etapa dizem a mesma coisa; os dois entram porque nem todo chamador
+         passa os dois) */
+      function etapaTemFolhas(etapaId) {
+        var achou = false;
+        arr(opts.orc && opts.orc.etapas).forEach(function (e) {
+          if (!e || e.id !== etapaId) return;
+          if (arr(e.subetapas).length) achou = true;
+        });
+        if (!achou && opts.folhaDe && typeof opts.folhaDe === "object")
+          Object.keys(opts.folhaDe).forEach(function (f) { if (opts.folhaDe[f] === etapaId) achou = true; });
+        return achou;
+      }
+      function folhaComTermino(etapaId) {
+        var R = cron.rede && typeof cron.rede === "object" && !ehArr(cron.rede) ? cron.rede : null;
+        if (!R || !opts.folhaDe) return false;
+        var achou = false, mm = R.folhas, md = R.datas;
+        if (mm && typeof mm === "object" && !ehArr(mm)) Object.keys(mm).forEach(function (f) {
+          if (opts.folhaDe[f] !== etapaId) return;
+          arr(mm[f] && mm[f].e).forEach(function (el) { if (el && (el.t === "TT" || el.t === "IT")) achou = true; });
+        });
+        if (md && typeof md === "object" && !ehArr(md)) Object.keys(md).forEach(function (f) {
+          if (opts.folhaDe[f] !== etapaId) return;
+          if (md[f] && (md[f].t === "dta" || md[f].t === "nta")) achou = true;
+        });
+        return achou;
+      }
+
       for (var i = 0; i < lista.length; i++) {
         var op = lista[i];
         if (!op || op.id == null) { out.erros.push("operação sem id"); continue; }
+        if (op.alvo === "calendario") {
+          var ec = opCal(op);
+          if (ec) { out.erros.push(ec + " (" + op.id + ")"); continue; }
+          out.aplicadas++;
+          continue;
+        }
+        if (op.alvo === "extra") {
+          var ex = opExtra(op);
+          if (ex) { out.erros.push(ex + " (" + op.id + ")"); continue; }
+          out.aplicadas++;
+          continue;
+        }
+        if (op.alvo === "etapa" && op.campo === "porExtras") {
+          var pe = opPorExtras(op);
+          if (pe) { out.erros.push(pe + " (" + op.id + ")"); continue; }
+          out.aplicadas++;
+          continue;
+        }
         var folha = op.alvo === "folha";
         /* `raiz` só para LER/APAGAR; `W()` cria o `sub` só quando há o que gravar
            (apagar numa folha de cronograma sem `sub` não inventa `sub: {}`) */
@@ -768,8 +1271,16 @@
             tira(raiz, "lags", op.id);
             tira(raiz, "tipos", op.id);
           } else if (ehArr(op.para)) {
+            /* ⚠ I3: id de TAREFA SEM PREÇO nunca vai a `predecessoras`/`lags`
+               (a 1.2.81 o leria como "etapa que não existe" e o apagaria na
+               primeira digitação; o PDF e o XML imprimiriam "undefined"). A
+               ligação mora no `sucs` da tarefa (op `porExtras`). */
+            var LX = ehArr(cron.extras) ? cron.extras : [], xRuim = null;
+            op.para.forEach(function (pid) { if (!xRuim && (achaX(LX, pid) >= 0 || (typeof pid === "string" && pid.indexOf("x_") === 0 && !own(etIds, pid)))) xRuim = pid; });
+            if (xRuim) { out.erros.push("a tarefa sem preço " + xRuim + " não entra na lista de dependências da etapa — ligue-a pela própria tarefa (" + op.id + ")"); continue; }
             obj(W(), "predecessoras")[op.id] = op.para.slice();
           } else { out.erros.push("predecessoras precisa ser lista em " + op.id); continue; }
+          if (!op.daRede && tiraRede(folha ? "folhas" : "etapas", op.id)) out.avisos.push({ tipo: "rede-apagada", id: op.id });
         } else if (op.campo === "lags") {
           if (op.para == null || typeof op.para !== "object" || !Object.keys(op.para).length) tira(raiz, "lags", op.id);
           else {
@@ -777,6 +1288,7 @@
             for (j = 0; j < ks.length; j++) c[ks[j]] = Math.round(fin(op.para[ks[j]], 0));
             obj(W(), "lags")[op.id] = c;
           }
+          if (!op.daRede && tiraRede(folha ? "folhas" : "etapas", op.id)) out.avisos.push({ tipo: "rede-apagada", id: op.id });
         } else if (op.campo === "tipos") {
           /* "começa junto" (II) só existe entre subetapas: a rede de ETAPA é
              término-início e não lê este mapa — gravar ali seria dado que
@@ -789,16 +1301,104 @@
             if (ruim) { out.erros.push("tipo de elo inválido em " + op.id + " (só existe II)"); continue; }
             obj(W(), "tipos")[op.id] = tt;
           }
+          if (!op.daRede && tiraRede("folhas", op.id)) out.avisos.push({ tipo: "rede-apagada", id: op.id });
+        } else if (op.campo === "rede") {
+          var nvR = folha ? "folhas" : "etapas";
+          if (op.para == null) { tiraRede(nvR, op.id); out.aplicadas++; continue; }
+          var elos = op.para && ehArr(op.para.elos) ? op.para.elos : null, ruimR = null, vistosR = {};
+          if (!elos) ruimR = "rede sem a lista de ligações";
+          else elos.forEach(function (el) {
+            if (ruimR) return;
+            if (!el || typeof el.i !== "string" || !el.i) ruimR = "ligação sem o id";
+            else if (TIPOS_E.indexOf(String(el.t || "TI")) < 0) ruimR = "tipo de ligação inválido (" + el.t + ")";
+            else if (el.l != null && !(typeof el.l === "number" && isFinite(el.l) && Math.floor(el.l) === el.l && Math.abs(el.l) <= 999)) ruimR = "espera inválida";
+            else if (el.i === op.id) ruimR = "ligação para a própria tarefa";
+            else if (own(vistosR, el.i)) ruimR = "a mesma ligação duas vezes";
+            else vistosR[el.i] = true;
+          });
+          if (ruimR || !CRd) { out.erros.push((ruimR || "o módulo da rede não carregou") + " em " + op.id); continue; }
+          /* ⚠ O11 (o outro lado da recusa do calendário): TT/IT num nó que
+             JÁ está em calendário próprio, e elo CRUZADO tocando etapa com
+             calendário próprio. Ninguém mediu essas combinações; a sombra
+             delas não é exata, porque o vão em dias úteis da obra muda com o
+             dia da semana em que a frente começa. */
+          var ruimC = null;
+          elos.forEach(function (el) {
+            if (ruimC) return;
+            var t2 = String(el.t || "TI");
+            if ((t2 === "TT" || t2 === "IT") && (calDaLinha(op.id) || (!folha && calDeAlgumaFolha(op.id)))) {
+              ruimC = "“" + (t2 === "TT" ? "termina junto" : "termina quando o outro começa") + "” não vale em linha de calendário próprio: o vão em dias úteis da obra muda com o dia da semana em que a frente começa. Use “depois de”, ou tire o calendário da linha";
+              return;
+            }
+            var donoEl = opts.folhaDe && opts.folhaDe[el.i], donoNo = folha ? (opts.folhaDe && opts.folhaDe[op.id]) : op.id;
+            if (donoEl && donoNo && donoEl !== donoNo && (calDaLinha(donoEl) || calDaLinha(donoNo) || calDeAlgumaFolha(donoEl) || calDeAlgumaFolha(donoNo)))
+              ruimC = "ligação com subetapa de outra etapa não vale quando uma das duas etapas tem calendário próprio — a etapa anda em bloco, e o bloco em outro calendário não tem conta exata";
+          });
+          if (ruimC) { out.erros.push(ruimC + " (" + op.id + ")"); continue; }
+          poeRede(nvR, op.id, { e: elos.map(function (el) { return CRd.eloDisco({ i: el.i, t: el.t || "TI", l: el.l == null ? null : el.l }); }) });
         } else if (op.campo === "restricaoData") {
-          if (folha) { out.erros.push("restrição de data é da etapa, não da subetapa (" + op.id + ")"); continue; }
-          if (op.para == null) tira(cron, "restricoes", op.id);
-          else if (op.para.tipo !== "nia" && op.para.tipo !== "tae") { out.erros.push("tipo de restrição inválido em " + op.id); continue; }
-          else if (!/^\d{4}-\d{2}-\d{2}$/.test(String(op.para.data || ""))) { out.erros.push("data de restrição inválida em " + op.id); continue; }
-          else obj(cron, "restricoes")[op.id] = { tipo: op.para.tipo, data: String(op.para.data) };
+          var tp = op.para ? String(op.para.tipo || "") : null;
+          var dono = folha ? (op.etapaId != null ? String(op.etapaId) : null) : op.id;
+          if (op.para == null) {
+            // Soltar: a entrada do mapa de sempre e a data da rede saem juntas (e a marca `tae`, O22)
+            if (!folha) tira(cron, "restricoes", op.id);
+            tiraRede("datas", op.id);
+            out.aplicadas++;
+            continue;
+          }
+          if (TIPOS_D_ET.indexOf(tp) < 0) { out.erros.push("tipo de restrição inválido em " + op.id); continue; }
+          if (tp !== "mtp" && !/^\d{4}-\d{2}-\d{2}$/.test(String(op.para.data || ""))) { out.erros.push("data de restrição inválida em " + op.id); continue; }
+          /* ⚠ I13 (O5/O14): "o mais tarde possível" é piso de data absoluta —
+             com o início flutuante, a 1.2.81 recalcularia no dia seguinte */
+          if (tp === "mtp" && opts.inicioFixo === false) { out.portaInicio = true; out.erros.push("“o mais tarde possível” exige o início fixo da obra (" + op.id + ")"); continue; }
+          /* ⚠ O11: restrição de TÉRMINO em etapa com FOLHA em calendário
+             próprio é recusada — o vão em dias úteis da obra muda com o dia da
+             semana em que a frente começa, e não há conta exata. A restrição
+             de término na própria linha de calendário próprio VALE: ela é
+             julgada em data real, pelo `recuar` (O27). */
+          if ((tp === "dta" || tp === "nta") && !folha && calDeAlgumaFolha(op.id) && !calDaLinha(op.id)) {
+            out.erros.push("esta etapa tem subetapa em calendário próprio: “" + (tp === "dta" ? "deve terminar em" : "não terminar antes de") +
+              "” não tem conta exata aí. Ponha a data na própria subetapa, ou tire o calendário dela (" + op.id + ")");
+            continue;
+          }
+          if (folha) {
+            if (dono == null) { out.erros.push("restrição de subetapa sem a etapa dela (" + op.id + ")"); continue; }
+            var vf = { t: tp };
+            if (tp !== "mtp") vf.d = String(op.para.data);
+            poeRede("datas", op.id, vf, dono);
+          } else if (tp === "nia" || tp === "tae") {
+            obj(cron, "restricoes")[op.id] = { tipo: tp, data: String(op.para.data) };
+            // o "terminar até" digitado NESTA versão ganha a marca (O22): ele entra na folga real
+            if (tp === "tae") poeRede("datas", op.id, { t: "tae" }, op.id);
+            else tiraRede("datas", op.id);
+          } else {
+            tira(cron, "restricoes", op.id);
+            var ve = { t: tp };
+            if (tp !== "mtp") ve.d = String(op.para.data);
+            poeRede("datas", op.id, ve, op.id);
+          }
         } else { out.erros.push("campo desconhecido: " + op.campo); continue; }
         out.aplicadas++;
       }
+      // a lista de tarefas criada só para ler (e que ficou vazia) não vai ao disco
+      if (ehArr(cron.extras) && !cron.extras.length && antes.indexOf('"extras"') < 0) delete cron.extras;
+      // as entradas da rede que valem são assinadas sobre os mapas FINAIS (o salvar reprojeta e reassina)
+      if (Cr && typeof Cr._reassinar === "function" && validas) Cr._reassinar(cron, validas);
       out.mudou = JSON.stringify(cron) !== antes;
+      /* ⚠ O TETO ANTES DE GRAVAR (O30): a operação que faria o cronograma
+         passar dos 60 KB (e crescer) é desfeita aqui mesmo, com os números e
+         as portas para quem chama mostrar. A que diminui nunca é recusada. */
+      if (out.mudou && typeof opts.medirTeto === "function") {
+        var tt = null;
+        try { tt = opts.medirTeto(cron); } catch (eT) { tt = null; }
+        if (tt) {
+          var velho = JSON.parse(fotoCru), kk;
+          for (kk in cron) if (own(cron, kk)) delete cron[kk];
+          for (kk in velho) if (own(velho, kk)) cron[kk] = velho[kk];
+          out.teto = tt; out.mudou = false; out.aplicadas = 0;
+          out.erros.push("o cronograma ficaria com " + Math.round(tt.bytes / 102.4) / 10 + " KB (limite " + Math.round(tt.teto / 102.4) / 10 + " KB) — nada foi gravado");
+        }
+      }
       return out;
     },
 
@@ -826,22 +1426,180 @@
        (`Cronograma.predsTexto`/`predsTextoSub`, os mesmos da tabela),
        resolvido na hora da chamada — um segundo formatador aqui divergiria
        da tabela na primeira manutenção.
-       `opts` (opcional): {rDepois (o estimar DEPOIS de gravar: dá o número
+    /* ==================================================================
+       O AVANÇO LANÇADO — as operações sobre o REGISTRO (commit AVANÇO;
+       espec §1.4, O24 e a emenda E-MC2 da §3.9).
+
+       ⚠ ESTE GRAVADOR NÃO TOCA NO CRONOGRAMA. O avanço mora num registro
+         próprio (`avanco_<obraId>`), e é só ele que o `_cronoGravarAvanco`
+         escreve (O17).
+       ================================================================== */
+
+    /* "dd/mm/aaaa" (ou "dd/mm/aa", ou já "AAAA-MM-DD") → "AAAA-MM-DD", ou
+       null quando não é data.
+       ⚠ A DATA QUE NÃO EXISTE NO CALENDÁRIO (30/02) DEVOLVE null, e não o
+         março que o `new Date(2026, 1, 30)` produziria calado: um fim real em
+         "30/02" viraria 02/03 e a barra fecharia dois dias depois do que a
+         obra disse. */
+    lerDataBR: function (s) {
+      var v = String(s == null ? "" : s).trim();
+      if (!v) return null;
+      var iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+      var br = /^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/.exec(v);
+      var a, m, d;
+      if (iso) { a = +iso[1]; m = +iso[2]; d = +iso[3]; }
+      else if (br) { d = +br[1]; m = +br[2]; a = +br[3]; if (br[3].length === 2) a += a < 70 ? 2000 : 1900; }
+      else return null;
+      var dt = new Date(a, m - 1, d);
+      if (dt.getFullYear() !== a || dt.getMonth() !== m - 1 || dt.getDate() !== d) return null;
+      return a + "-" + ("0" + m).slice(-2) + "-" + ("0" + d).slice(-2);
+    },
+
+    /* A DIGITAÇÃO DA GRADE vira operação de avanço. `campo` ∈ pct | ir | fr |
+       rest. Devolve {ops, msg, ok}.
+       ⚠ FIM REAL ⇒ 100% (O24), e o recado DIZ ISSO ANTES DE GRAVAR. A grade
+         tem uma célula para o % e outra para o fim real: sem esta regra a
+         pessoa digitaria o fim e a barra continuaria aberta em 60%, ou
+         precisaria digitar o mesmo fato duas vezes. */
+    opsDoAvanco: function (no, campo, texto, ctx) {
+      ctx = ctx || {};
+      var id = no && no.id, v = String(texto == null ? "" : texto).trim();
+      if (!id) return { ok: false, msg: "tarefa sem identificação." };
+      var ops = [], msg = null;
+      function dataOuNulo(s) {
+        if (!s) return null;
+        var d = GanttUI.lerDataBR ? GanttUI.lerDataBR(s) : null;
+        if (d) return d;
+        return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : undefined;
+      }
+      if (campo === "pct") {
+        if (v === "") return { ok: true, ops: [{ alvo: "avanco", id: id, campo: "p", para: null }] };
+        var n = Number(v.replace(/%/g, "").replace(",", "."));
+        if (!isFinite(n) || n < 0 || n > 100) return { ok: false, msg: "o % concluído vai de 0 a 100." };
+        n = Math.round(n * 10) / 10;
+        ops.push({ alvo: "avanco", id: id, campo: "p", para: n });
+        if (n === 100) msg = "100% exige o fim real: informe a data em que a tarefa terminou.";
+      } else if (campo === "ir" || campo === "fr") {
+        var d = dataOuNulo(v);
+        if (d === undefined) return { ok: false, msg: "data inválida (use dd/mm/aaaa)." };
+        ops.push({ alvo: "avanco", id: id, campo: campo === "ir" ? "i" : "f", para: d });
+        if (campo === "fr" && d) {
+          /* ⚠ o `p: 100` sai JUNTO, e o recado mostra os dois antes de gravar:
+             "marquei também 100%" é informação, "a barra ficou aberta" é
+             defeito silencioso */
+          ops.push({ alvo: "avanco", id: id, campo: "p", para: 100 });
+          msg = "fim real em " + v + " — a tarefa fica como concluída (100%).";
+        }
+        if (campo === "fr" && !d) msg = "sem fim real, a tarefa volta a “em andamento”.";
+      } else if (campo === "rest") {
+        if (v === "") ops.push({ alvo: "avanco", id: id, campo: "r", para: null });
+        else {
+          var nr = Number(v.replace(",", "."));
+          if (!isFinite(nr) || nr < 0 || nr > 9999) return { ok: false, msg: "dias que faltam: um número de 0 a 9999." };
+          ops.push({ alvo: "avanco", id: id, campo: "r", para: nr });
+          msg = "com os dias que faltam informados, o % passa a ser só indicativo: quem manda na data é este número.";
+        }
+      } else return { ok: false, msg: "campo de avanço desconhecido (" + campo + ")." };
+      void ctx;
+      return { ok: true, ops: ops, msg: msg };
+    },
+
+    /* APLICA as operações no registro de avanço. Devolve
+       {mudou, aplicadas, erros, rec (a CÓPIA gravável)}.
+       ⚠ A ENTRADA É COPIADA E ALTERADA CAMPO A CAMPO, NUNCA RECONSTRUÍDA
+         (E-MC2). Reconstruir com uma lista fixa de campos apagaria o lastro
+         `b`, a origem `o` e qualquer campo que uma versão futura acrescente —
+         e o apagão só apareceria meses depois, quando alguém procurasse de
+         qual boletim veio aquele número.
+       ⚠ A EDIÇÃO HUMANA DE `p`/`i`/`f`/`r` TIRA `o:"medicao"` E `b` (E-MC2):
+         a partir do momento em que uma pessoa mudou o número, o boletim
+         deixou de sustentá-lo, e dizer "medição 01a" ao lado seria um recado
+         que mente. `o:"diario"` fica como está — esta revisão não muda a
+         regra da origem do diário. */
+    aplicarAvanco: function (rec, ops) {
+      var out = { mudou: false, aplicadas: 0, erros: [], rec: null };
+      if (!rec || typeof rec !== "object" || ehArr(rec)) { out.erros.push("registro de avanço ausente"); return out; }
+      if (!ehArr(rec.nos)) { out.erros.push("a lista de tarefas do avanço está ilegível — nada foi gravado"); return out; }
+      var c = {}, k;
+      for (k in rec) if (own(rec, k)) c[k] = rec[k];
+      c.nos = rec.nos.map(function (e) {
+        if (!e || typeof e !== "object" || ehArr(e)) return e;
+        var q = {}, kk;
+        for (kk in e) if (own(e, kk)) q[kk] = e[kk];
+        return q;
+      });
+      var antes = JSON.stringify(c.nos);
+      var CAMPOS = { p: 1, i: 1, f: 1, r: 1 };
+      function acha(id) { for (var q = 0; q < c.nos.length; q++) if (c.nos[q] && c.nos[q].id === id) return q; return -1; }
+      arr(ops).forEach(function (op) {
+        if (!op || op.alvo !== "avanco" || op.id == null) { out.erros.push("operação de avanço sem id"); return; }
+        var k2 = acha(op.id);
+        if (op.campo === "excluir") {
+          if (k2 < 0) { out.erros.push("não há avanço lançado em " + op.id); return; }
+          c.nos.splice(k2, 1); out.aplicadas++; return;
+        }
+        if (!own(CAMPOS, op.campo)) { out.erros.push("campo de avanço desconhecido: " + op.campo); return; }
+        var e;
+        if (k2 < 0) {
+          if (op.para == null) { out.aplicadas++; return; }       // apagar o que não existe: nada a fazer
+          e = { id: op.id }; c.nos.push(e);
+        } else e = c.nos[k2];
+        var valorAntes = own(e, op.campo) ? e[op.campo] : undefined;
+        if (op.para == null) delete e[op.campo]; else e[op.campo] = op.para;
+        var mudouCampo = JSON.stringify(valorAntes === undefined ? null : valorAntes) !== JSON.stringify(op.para == null ? null : op.para);
+        if (mudouCampo && e.o === "medicao") { delete e.o; delete e.b; }
+        if (mudouCampo) e.em = op.em || e.em;
+        out.aplicadas++;
+      });
+      out.mudou = JSON.stringify(c.nos) !== antes;
+      out.rec = c;
+      return out;
+    },
+
+    /* o resumo "antes → depois" do avanço, para o recado do salvar */
+    resumoAvanco: function (ops, nomes) {
+      var n = {}, linhas = [];
+      arr(ops).forEach(function (op) { if (op && op.id != null) n[op.id] = true; });
+      Object.keys(n).forEach(function (id) {
+        var campos = arr(ops).filter(function (op) { return op.id === id; }).map(function (op) { return op.campo; });
+        linhas.push(((nomes && nomes[id]) || id) + ": " + campos.join(", "));
+      });
+      return linhas;
+    },
+
+    /* `opts` (opcional): {rDepois (o estimar DEPOIS de gravar: dá o número
        da estimativa quando a duração volta a ela), Cronograma (injetado)}. */
     resumoOps: function (ops, no, r, opts) {
       opts = opts || {};
       var self = this, grupos = [], porId = {};
       var Cr = opts.Cronograma || ((typeof Cronograma !== "undefined") ? Cronograma : null);
+      /* ⚠ A TAREFA RECÉM-CRIADA SÓ EXISTE NO `rDepois`. `r` é o estimar de
+         ANTES da operação: numa op `criar` (tarefa sem preço) ele não tem o
+         nó, `nomeDoId` devolvia "" e o recado saía "tarefa sem preço criada
+         (10 dias úteis)." — sem o número T e sem o nome que a pessoa acabou
+         de digitar. Ela fecha o cartão sem saber QUAL linha nasceu, num
+         cronograma que pode ter 30 (medido em 21/09/2026 pela
+         e2e-planejador-completo, passo 2: o recado não continha "T1").
+         A ordem importa: `r` primeiro, para toda op de EDIÇÃO continuar
+         dizendo o nome de antes, byte a byte. */
       function nomeDoId(id) {
         if (no && no.id === id) return nomeDe(no);
         var n = r ? self.acharNo(r, id) : null;
+        if (!n && opts.rDepois) n = self.acharNo(opts.rDepois, id);
         return n ? nomeDe(n) : "";
       }
       arr(ops).forEach(function (op) {
         if (!op) return;
-        var txt = "", fam = op.campo === "predecessoras" || op.campo === "lags" || op.campo === "tipos";
-        if (op.campo === "duracao") txt = self._txtDuracao(op, opts.rDepois);
-        else if (op.campo === "restricaoData") txt = op.para ? "início fixado em " + dmaS(op.para.data) + " (não iniciar antes de)" : "data fixada removida — a etapa volta para onde a rede a põe";
+        var txt = "", fam = op.alvo !== "extra" && (op.campo === "predecessoras" || op.campo === "lags" || op.campo === "tipos" || op.campo === "rede" || op.campo === "porExtras");
+        if (op.alvo === "extra") txt = self._txtExtra(op);
+        /* ⚠ O CALENDÁRIO DA FRENTE (planejador 2A) TEM DE DIZER O NOME. Sem
+           este ramo o recado do salvar caía no "Cronograma atualizado." — a
+           pessoa acabava de escolher "Montagem 4x3" numa linha e o app
+           respondia como se nada de especial tivesse acontecido, num gesto que
+           MUDA O PRAZO. Medido em 21/09/2026 pela e2e-crono-calendario-gantt. */
+        else if (op.alvo === "calendario" && op.campo === "de") txt = self._txtCalendario(op, opts);
+        else if (op.campo === "duracao") txt = self._txtDuracao(op, opts.rDepois);
+        else if (op.campo === "restricaoData") txt = self._txtRestricao(op);
         if (!txt && !fam) return;
         var k = String(op.id);
         if (!own(porId, k)) { porId[k] = { nome: nomeDoId(op.id), t: [] }; grupos.push(porId[k]); }
@@ -865,6 +1623,49 @@
       return partes.join(" · ") + ".";
     },
 
+    /* o recado de cada operação da tarefa sem preço (texto puro) */
+    _txtExtra: function (op) {
+      var p = op.para;
+      switch (op.campo) {
+        case "criar": return "tarefa sem preço criada" + (p && p.dur === 0 ? " (marco)" : (p && p.dur ? " (" + diasTxt(p.dur) + ")" : ""));
+        case "excluir": return "tarefa sem preço excluída";
+        case "nome": return "nome: " + String(p == null ? "" : p);
+        case "duracao": return p === 0 ? "marco (duração 0)" : "duração: " + (op.de != null ? op.de + " → " : "") + diasTxt(p);
+        case "resp": return "responsável: " + ({ cliente: "contratante", construtora: "construtora", terceiro: "terceiro" }[p] || p);
+        case "proposta": return p ? "aparece na proposta" : "não aparece na proposta";
+        case "nia": return p ? "não começa antes de " + dmaS(p) : "sem data mínima";
+        case "nota": return "nota atualizada";
+        case "predecessoras": return "Depende de: " + (op.paraTxt ? op.paraTxt : (arr(p).length ? arr(p).length + " item(ns)" : "vazio, começa no início da obra")) + (op.de != null && op.de !== op.paraTxt ? " (era " + (op.de === "" ? "vazio" : op.de) + ")" : "");
+        case "sucessoras": return "segura " + arr(p).length + " etapa(s)";
+        case "mover": return "movida na lista";
+        default: return "";
+      }
+    },
+
+    /* o nome de cada restrição na tela (os do MS Project em português, REDE §a.3) */
+    NOMES_RESTRICAO: { nia: "não iniciar antes de", tae: "não terminar depois de", dia: "deve iniciar em", dta: "deve terminar em",
+      nta: "não terminar antes de", nid: "não iniciar depois de", mtp: "o mais tarde possível" },
+    /* "calendário: Montagem 4x3 (era a régua da obra)". O nome sai do
+       `opts.cal` (a lista do cronograma) quando quem chama a passa; sem ela,
+       o id — nunca um nome inventado. */
+    _txtCalendario: function (op, opts) {
+      var lista = arr(opts && opts.cal), nome = "", de = "";
+      lista.forEach(function (c) {
+        if (!c) return;
+        if (op.para != null && String(c.id) === String(op.para)) nome = String(c.nome || c.id);
+        if (op.de != null && String(c.id) === String(op.de)) de = String(c.nome || c.id);
+      });
+      var para = op.para == null ? "a régua da obra" : (nome || String(op.para));
+      var antes = op.de == null ? "a régua da obra" : (de || String(op.de));
+      return "calendário: " + para + " (era " + antes + ")";
+    },
+    _txtRestricao: function (op) {
+      if (!op.para) return "data fixada removida — volta para onde a rede põe";
+      var tp = op.para.tipo, nomeR = this.NOMES_RESTRICAO[tp] || tp;
+      if (tp === "nia") return "início fixado em " + dmaS(op.para.data) + " (não iniciar antes de)";
+      if (tp === "mtp") return "restrição: o mais tarde possível (usa só a folga livre; nenhuma outra tarefa muda)";
+      return "restrição: " + nomeR + " " + dmaS(op.para.data) + (/^(dta|nta|tae)$/.test(tp) ? " (último dia de trabalho)" : "");
+    },
     _txtDuracao: function (op, rDepois) {
       var de = (op.de == null || !isFinite(Number(op.de))) ? null : Math.round(Number(op.de));
       if (op.para === 0) return "marco (duração 0" + (de ? "; era " + diasTxt(de) : "") + ")";
@@ -904,7 +1705,14 @@
     },
 
     _txtPreds: function (g, no, r, Cr) {
-      var P = g.predecessoras, L = g.lags, T = g.tipos, folha = g.alvo === "folha";
+      var P = g.predecessoras, L = g.lags, T = g.tipos, RD = g.rede, PX = g.porExtras, folha = g.alvo === "folha";
+      // com as tarefas sem preço, o texto inteiro já veio montado (o `paraTxt` e o `de` da op `porExtras`)
+      if (PX && typeof PX.paraTxt === "string") return "Depende de: " + (PX.paraTxt === "" ? "vazio, " + this._vazioPred(r, (no && no.id === PX.id) ? no : (r ? this.acharNo(r, PX.id) : null), folha) : PX.paraTxt) +
+        (PX.de != null && PX.de !== PX.paraTxt ? " (era " + (PX.de === "" ? "vazio" : PX.de) + ")" : "");
+      if (PX && !P && !RD) return "tarefas sem preço que a seguram: " + arr(PX.para).length;
+      // a rede digitada: o texto já veio montado pelo formatador do motor (o `paraTxt` e o `de`)
+      if (RD && RD.para) return "Depende de: " + RD.paraTxt + (RD.de != null && RD.de !== RD.paraTxt ? " (era " + (RD.de === "" ? "vazio: " + this._vazioPred(r, (no && no.id === RD.id) ? no : (r ? this.acharNo(r, RD.id) : null), folha) : RD.de) + ")" : "");
+      if (!P && !L && !T) return "";
       var id = (P || L || T).id;
       var n = (no && no.id === id) ? no : (r ? this.acharNo(r, id) : null);
       var nums = r ? this._numsPred(r, folha) : null;
@@ -951,11 +1759,52 @@
              motivoEtapaTravada (função injetada: CronoExecUI.motivoEtapaTravada)}
        `porta`: "revisao" (aprovado) · "subetapa" (+ portaId) · "detalhar"
        (interruptor do modo executivo) · "subetapas" (edite as subetapas). */
+    /* os campos que a grade do Gantt abre. `dur` e `pred` são os de sempre; os
+       outros são da 2A: `nome` (só na linha T), `cal` (a coluna Calendário) e
+       os quatro do modo Avançar. */
+    CAMPOS_CEL: { dur: 1, pred: 1, nome: 1, cal: 1, pct: 1, ir: 1, fr: 1, rest: 1 },
+    CAMPOS_AV: { pct: 1, ir: 1, fr: 1, rest: 1 },
     celulaEditavel: function (no, campo, ctx) {
       ctx = ctx || {};
-      if (campo !== "dur" && campo !== "pred") return { ok: false, motivo: "Campo desconhecido: " + campo + "." };
+      if (!own(this.CAMPOS_CEL, campo)) return { ok: false, motivo: "Campo desconhecido: " + campo + "." };
       if (!no || no.id == null) return { ok: false, motivo: "Esta linha não existe mais neste cronograma." };
       if (ctx.travado) return { ok: false, porta: "revisao", motivo: MOTIVO_APROVADO };
+      /* ------ PLANEJADOR 2A: os campos novos ------
+         ⚠ O MODO AVANÇAR SÓ EXISTE NO PLANO DE EXECUÇÃO DA OBRA. Lançar
+         realizado num orçamento seria escrever o que aconteceu numa proposta
+         que ainda vai ao cliente — e o registro de avanço é por OBRA
+         (`avanco_<obraId>`, §1.4): sem obra não há onde gravar. A porta é a
+         de sempre: iniciar o plano de execução da obra. */
+      if (own(this.CAMPOS_AV, campo)) {
+        if (!ctx.plano) return { ok: false, porta: "plano",
+          motivo: "O avanço é lançado no plano de execução da obra, não no orçamento — ligue a obra a este orçamento e inicie o plano." };
+        if (no.tipo === "servico") return { ok: false, porta: "subetapa",
+          motivo: "O avanço é lançado na tarefa (etapa, subetapa ou tarefa sem preço), não no serviço — lance na linha de cima." };
+        /* ⚠ NO MODO EXECUTIVO QUEM MANDA NA DATA É A FOLHA (§1.4): lançar na
+           etapa que tem subetapas escreveria um número que o motor ignora, e a
+           pessoa veria 60% na tela e a barra parada. Com subetapa, a etapa só
+           se lança pela porta [Resumir] do modal (2B). */
+        if (no.tipo === "etapa" && ctx.exec && no.papel === "resumo")
+          return { ok: false, porta: "folha",
+            motivo: "No modo executivo quem manda na data é a subetapa: lance o avanço nas subetapas da etapa " + (no.numero || "") + ", ou desligue “Detalhar o prazo pelas subetapas”." };
+        return { ok: true };
+      }
+      if (campo === "nome") {
+        if (!ehExtra(no)) return { ok: false, porta: "planilha",
+          motivo: "O nome da etapa e o da subetapa se editam na planilha do orçamento — aqui só o da tarefa sem preço." };
+        return { ok: true };
+      }
+      if (campo === "cal") {
+        if (no.tipo === "servico") return { ok: false, porta: "subetapa",
+          motivo: "O calendário é da frente (etapa, subetapa ou tarefa sem preço), não do serviço — escolha na linha de cima." };
+        return { ok: true };
+      }
+      /* ⚠ A LINHA T NÃO É TRAVADA PELO MODO EXECUTIVO (O7): ela é nó de rede,
+         não tem subetapa e não tem vão — a trava da etapa com subetapas não
+         tem o que dizer sobre ela. Sem esta linha, a trava do vão recusava
+         toda célula da T com "não consegui conferir" (o nó não está em
+         `ctx.nos`), e a tarefa sem preço nascia só leitura. */
+      if (ehExtra(no)) return { ok: true };
       /* (⚠ escrito sem repetir o `if` do arrastavel: o controle negativo da
          tools/test-ganttui.js mira aquela linha pelo texto e exige achá-la 1×) */
       var ehServico = no.tipo === "servico";
@@ -1055,10 +1904,16 @@
        por espaço: sem isto "1 + 7" virava os tokens "1", "+", "7" — na etapa
        gravava [1] e PERDIA a espera, na subetapa recusava uma coisa que a
        pessoa escreveu certo. O "-" sozinho (começa no início) fica intacto. */
+    /* ⚠ PLANEJADOR 1A (O23): a digitação aceita o texto que a TELA MOSTRA —
+       o rótulo da seta diz "TT+2d" e "IT−1d" (U+2212), e o `d` e o sinal
+       tipográfico recusavam o próprio texto copiado da tela. Também "3 TT+2"
+       (o tipo separado por espaço, M8 da REDE). */
     normalizarPreds: function (texto) {
       return String(texto == null ? "" : texto).trim()
+        .replace(/[\u2212\u2013]/g, "-")
         .replace(/\s*([+\-])\s*(?=\d)/g, "$1")
-        .replace(/(\d|g)\s+(ii)(?=$|[\s,;+\-])/gi, "$1$2");
+        .replace(/([+\-]\d+)\s*d(?=$|[\s,;])/gi, "$1")
+        .replace(/(\d|g)\s+(ii|tt|it|ti)(?=$|[\s,;+\-])/gi, "$1$2");
     },
 
     /* O QUE A DIGITAÇÃO GRAVA — {ok, ops, msg, travadoAprovacao?, porta?}.
@@ -1077,6 +1932,99 @@
       function recusa(msg, extra) { var o = { ok: false, ops: [], msg: msg }, k; for (k in (extra || {})) if (own(extra, k)) o[k] = extra[k]; return o; }
       if (!Cr || typeof Cr.parsePreds !== "function" || typeof Cr.parsePredsSub !== "function")
         return recusa("O motor do cronograma não carregou nesta tela — nada foi gravado. Recarregue a página (Ctrl+F5).");
+      // a LINHA T (tarefa sem preço, planejador 1A): nome, duração e "Depende de" próprios
+      /* ⚠ PLANEJADOR 2A — UMA PORTA SÓ PARA A GRADE. A coluna Calendário e
+         os quatro campos do modo Avançar entram por aqui, com o mesmo
+         contrato {ok, ops, msg} de sempre: a grade (js/ganttgradeui.js) chama
+         `opsDaDigitacao` e não precisa saber de qual função veio a operação.
+         Com dois pontos de entrada, a trava (`celulaEditavel`) valeria num e
+         não no outro — que é exatamente como nasce célula que recusa ao
+         digitar e grava pelo teclado. */
+      if (campo === "cal") return this.opsDoCalendario(r, no, texto, ctx);
+      if (own(this.CAMPOS_AV, campo)) {
+        var celA = this.celulaEditavel(no, campo, { travado: ctx.travado, plano: ctx.plano, exec: ctx.exec });
+        if (!celA.ok) return recusa(celA.motivo + " Nada foi gravado.", celA.porta ? { porta: celA.porta } : null);
+        var av = this.opsDoAvanco(no, campo, texto, ctx);
+        if (!av.ok) return recusa(av.msg ? (av.msg.charAt(0).toUpperCase() + av.msg.slice(1) + " Nada foi gravado.") : "Não consegui ler este valor — nada foi gravado.");
+        /* ⚠ % SEM INÍCIO REAL NÃO É AVANÇO — É UM NÚMERO QUE O MOTOR IGNORA.
+           Pela §1.4, "não iniciada ⇔ sem `i`": uma entrada `{id, p: 60}` sem
+           `i` é lida como não iniciada, a leitura a DESCARTA e nada aparece na
+           tela. Medido em 21/09/2026 pela e2e-crono-avanco-gantt: 60% gravado
+           no registro, `lista: 0` no `CronoAvanco.ler`, `r.avanco` null, a
+           barra sem trechos e a pílula sem nascer — com o dado no disco.
+           Digitar % na grade leva junto o início REAL, que começa valendo o
+           PLANEJADO daquela tarefa, e o recado DIZ isso: quem começou em
+           outro dia corrige na coluna ao lado.
+
+           ⚠ A CONDIÇÃO PERGUNTA AO REGISTRO, NÃO AO NÓ DA ÁRVORE — e a
+           diferença era o defeito inteiro. Ela era `!(no.avanco &&
+           no.avanco.iniReal)`, e `no.avanco.iniReal` vem do
+           `Cronograma._avancoDoNo`, que o preenche com a data de início da
+           REPROGRAMAÇÃO (`fonteNo.iniD`) — quer dizer, com o PLANEJADO, para
+           toda tarefa, tenha ela começado ou não. A guarda achava que já
+           havia início real e não disparava. Medido na revisão final
+           (22/09/2026, tecla real por Input.dispatchKeyEvent, obra do galpão,
+           corte 22/09): digitei 50 na tarefa 1.1, o disco ganhou
+           `{"id":"s1a","p":50,"em":"2026-09-22"}` SEM `i`, o
+           `CronoAvanco.ler` devolveu `descartadas:[{id:"s1a",motivo:
+           "pct-sem-inicio"}]` e a célula continuou em "0,0%". Duas verdades no
+           mesmo aparelho, e nada avisando.
+
+           ⚠ SEM PODER CONFERIR, RECUSA. `ctx.avancoAtual(id)` é a fiação para
+           o registro `avanco_<obraId>` (App._cronoGravarDigitado) e devolve
+           `{corte, no}` — a entrada gravada daquela tarefa (ou null) e a data
+           de corte que vale. Sem ela não dá para saber se já existe início
+           lançado nem se a data planejada serve de âncora, e escrever por
+           cima do que a pessoa informou é pior que não gravar. */
+        if (campo === "pct" && av.ops.length && av.ops[0].para != null) {
+          var reg = (typeof ctx.avancoAtual === "function") ? ctx.avancoAtual(no.id) : undefined;
+          if (!reg || typeof reg !== "object")
+            return recusa("Não consegui conferir o que já está lançado de avanço nesta tarefa — nada foi gravado. Recarregue a página (Ctrl+F5).");
+          var jaAv = reg.no || {};
+          if (!jaAv.i) {
+            var dIni = no.dataInicio;
+            var iniTxt = (dIni && typeof dIni.getFullYear === "function")
+              ? dIni.getFullYear() + "-" + ("0" + (dIni.getMonth() + 1)).slice(-2) + "-" + ("0" + dIni.getDate()).slice(-2) : null;
+            /* ⚠ SEM DATA PARA ANCORAR, RECUSA EM VOZ ALTA. Gravar `{id, p}`
+               que o próprio leitor descarta é exatamente o defeito medido: o
+               número fica no disco e a tela nunca o mostra. */
+            if (!iniTxt)
+              return recusa("Sem início real o % não é avanço: o motor o descarta e a célula continua em 0,0%. " +
+                "Informe o Início real desta tarefa na coluna ao lado e digite o % de novo — nada foi gravado.");
+            /* ⚠ INÍCIO PLANEJADO DEPOIS DO CORTE NÃO SERVE DE ÂNCORA — E ERA O
+               CASO MEDIDO. A tarefa 1.1 do galpão foi empurrada pela
+               reprogramação para começar em 23/09, um dia DEPOIS do corte de
+               22/09; escrever esse planejado como início real faria o leitor
+               descartar de novo, agora por `inicio-depois-do-corte` — o mesmo
+               defeito com outro nome. Quem digita % numa tarefa assim está
+               dizendo que ela começou antes do planejado, e só a pessoa sabe
+               quando: a porta é a coluna Início real, e o recado a aponta. */
+            if (reg.corte && iniTxt > reg.corte)
+              return recusa("Esta tarefa está planejada para começar em " + dmaS(iniTxt) + ", DEPOIS da data de corte (" +
+                dmaS(reg.corte) + ") — e sem início real o % não é avanço: o motor o descarta e a célula continua em 0,0%. " +
+                "Se ela já começou, informe o Início real na coluna ao lado e digite o % de novo. Nada foi gravado.");
+            av.ops.push({ alvo: "avanco", id: no.id, campo: "i", para: iniTxt });
+            av.msg = (av.msg ? av.msg + " " : "") + "Marquei o início real em " + dmaS(iniTxt) +
+              " (a data planejada); se começou em outro dia, corrija na coluna Início real.";
+          }
+          /* ⚠ FIM REAL GRAVADO COM % MENOR QUE 100: O FIM SAI JUNTO.
+             Roteiro do defeito (revisão final, tarefa 1.2 do galpão, vinda do
+             diário com 100%): digitei 60, o registro gravou `p:60` ao lado do
+             `f:"2026-08-07"`, o leitor levantou `avisos:[{tipo:
+             "avanco-fim-sem-100"}]` — um aviso que morre dentro do motor — e
+             a célula continuou dizendo "100,0%", porque tarefa com fim real é
+             concluída e concluída é 100. É o SIMÉTRICO do que a coluna Fim
+             real já faz ao contrário (data → p:100), e o recado diz o que
+             aconteceu: número a pessoa confere. */
+          if (jaAv.f && Number(av.ops[0].para) < 100) {
+            av.ops.push({ alvo: "avanco", id: no.id, campo: "f", para: null });
+            av.msg = (av.msg ? av.msg + " " : "") + "Tirei o fim real de " + dmaS(jaAv.f) +
+              ": com menos de 100% a tarefa volta a “em andamento”. Se ela terminou, informe 100%.";
+          }
+        }
+        return { ok: true, ops: av.ops, msg: av.msg || "" };
+      }
+      if (ehExtra(no)) return this._digitarExtra(r, no, campo, texto, ctx, Cr);
       var cel = this.celulaEditavel(no, campo, { travado: ctx.travado, cron: ctx.cron, nos: arr(r && r.atividades),
         motivoEtapaTravada: (CX && typeof CX.motivoEtapaTravada === "function") ? function (c, n, id) { return CX.motivoEtapaTravada(c, n, id); } : null });
       if (!cel.ok) return recusa(cel.motivo + " Nada foi gravado.", ctx.travado ? { travadoAprovacao: true, porta: cel.porta } : (cel.porta ? { porta: cel.porta } : null));
@@ -1095,6 +2043,13 @@
           if (n === null) return recusa("“" + s + "” não é duração válida para " + nome + " — use dias úteis inteiros de 1 a 999 (0 = marco; vazio = volta à estimativa). Nada foi gravado.");
           ops = [{ alvo: alvo, id: id, campo: "duracao", de: deD, para: n }];
         }
+      } else if (ctx.cron && typeof ctx.cron === "object" && !ehArr(ctx.cron) && typeof Cr._parseRede === "function") {
+        /* planejador 1A: o "Depende de" com os quatro tipos (O23) — o ensaio
+           e o "não muda nada" já saem de lá, com o mapa das subetapas */
+        var dr = this._digitarRede(r, no, s, ctx, Cr);
+        if (!dr.ok) return recusa(dr.msg, dr.porta ? { porta: dr.porta } : null);
+        if (!dr.ops.length) return { ok: true, ops: dr.ops, msg: "" };
+        return { ok: true, ops: dr.ops, msg: String(self.resumoOps(dr.ops, no, r, { Cronograma: Cr }) || "").replace(/\.\s*$/, "") + dr.bloco + "." };
       } else {
         var sp = this.normalizarPreds(s), pr, nums = {}, deT = "", fmt;
         if (folha) {
@@ -1148,24 +2103,392 @@
       return { ok: true, ops: ops, msg: self.resumoOps(ops, no, r, { Cronograma: Cr }) };
     },
 
-    /* A DATA FIXADA MANDA? — {data, dataBR, inicioRede} ou null.
-       ROTEIRO DO DEFEITO (medido na 1.2.77, OBRA TESTE): arrastar a etapa 4
-       gravou "não iniciar antes de 12/01/2028" (um campo que a tabela não
-       mostra); digitar "Depende de = 1" (a 1 termina em 28/09/2026) gravou —
-       e a etapa CONTINUOU em 12/01/2028, sem recado nenhum. Quem digita acha
-       que o campo não funciona. `rDepois` é o estimar DEPOIS de gravar: manda
-       a data quando a etapa começa exatamente nela e a rede a poria antes
-       (`restricao.ativa` do motor). A tela junta o recado e a porta. */
-    dataFixadaDomina: function (rDepois, id) {
+    /* O "DEPENDE DE" COM OS QUATRO TIPOS (planejador 1A, O23) — {ok, ops, msg}.
+       A mesma sintaxe na grade, na tabela e no cartão; o parse e o formatador
+       são os do MOTOR (`Cronograma._parseRede`/`_textoRede`), uma régua só.
+       - A rede que CABE no legado (na etapa, só TI entre etapas; na subetapa,
+         TI/II entre irmãs) grava pelos mapas de sempre, como hoje, e tira a
+         entrada de `rede` do nó se havia (a 1.2.81 lê exatamente isso).
+       - O resto (TT, IT, II na etapa, elo para subetapa de outra etapa, "E5")
+         vira UMA operação `rede` com a lista digitada.
+       - Ciclo é recusado ANTES de gravar, pelo `_dependeDe` (hoje o ciclo
+         digitado passava e só o motor avisava).
+       - "5" sozinho na subetapa segue recusado, com a dica de hoje mais a
+         nova: "para a etapa 5 inteira, escreva E5".
+       - "#11" é recusado com o motivo (nº da linha da planilha). */
+    _digitarRede: function (r, no, texto, ctx, Cr) {
+      var self = this, folha = ehFolha(no), id = no.id, nome = nomeDe(no), cron = ctx.cron;
+      var sp = this.normalizarPreds(texto);
+      var ordem = (ehArr(ctx.ordemEtapas) && ctx.ordemEtapas.length) ? ctx.ordemEtapas : arr(r && r.etapas).map(function (e) { return e && e.id; });
+      var todas = [], nums = {}, etNum = {}, porFolhaEt = {};
+      arr(r && r.atividades).forEach(function (x) {
+        if (!x) return;
+        if (ehFolha(x)) { todas.push({ id: x.id, numero: x.numero, etapaId: x.etapaId }); porFolhaEt[x.id] = x.etapaId; }
+        if (x.numero != null) nums[x.id] = x.numero;
+      });
+      ordem.forEach(function (eid, i) { etNum[eid] = i + 1; if (!folha) nums[eid] = i + 1; });
+      var irmas = todas.filter(function (x) { return x.etapaId === no.etapaId; });
+      var idsX = arr(r && r.extras).map(function (x) { return x.id; });
+      arr(r && r.extras).forEach(function (x) { nums[x.id] = x.numero; });
+      var opts3 = { folhas: todas, etapaId: no.etapaId, etapas: ordem, extras: idsX };
+      var pr = folha ? Cr.parsePredsSub(sp, irmas, id, opts3) : Cr.parsePreds(sp, ordem, id, opts3);
+      function num(eid) { return own(etNum, eid) ? etNum[eid] : "?"; }
+      if (pr.invalidos.length) {
+        var m0 = pr.motivos[0] || {}, inv = pr.invalidos.join(", ");
+        var outras = irmas.filter(function (x) { return x.id !== id; }).map(function (x) { return x.numero; }).join(", ");
+        var msg;
+        if (m0.motivo === "repetido") msg = "A mesma tarefa aparece duas vezes em “" + sp + "” — entre duas tarefas só existe uma ligação.";
+        else if (m0.motivo === "linha") msg = "“" + m0.token + "” é o nº da linha da planilha; aqui use o nº da " + (folha ? "subetapa (" + outras + ")" : "etapa (1 a " + ordem.length + ")") + ".";
+        else if (m0.motivo === "tipo") msg = "“" + m0.token + "” não é tipo de ligação: use TI (termina → começa, o padrão), II (começam juntas), TT (terminam juntas) ou IT (começa → termina). Ex.: 11TT+2.";
+        else if (m0.motivo === "etapa-sem-e") {
+          var n5 = String(m0.token).replace(/\D.*$/, "");
+          msg = "“" + m0.token + "” não é subetapa válida em “Depende de” da subetapa " + nome + " — você quis dizer " + no.numero.split(".")[0] + "." + n5 +
+            "? Use o nº de outra subetapa (" + outras + "); " + m0.dica + ".";
+        } else if (m0.motivo === "propria-etapa") msg = "A subetapa " + nome + " não pode depender da etapa dela: use uma subetapa irmã (" + outras + ").";
+        else if (m0.motivo === "folha-da-propria") msg = "A etapa " + nome + " não pode depender de “" + m0.token + "”, que está dentro dela.";
+        else if (m0.motivo === "extra-folha") msg = "“" + m0.token + "”: tarefa sem preço se liga a etapa, não a subetapa.";
+        else if (folha) msg = "“" + inv + "” não é subetapa válida em “Depende de” da subetapa " + nome + " — use o nº de outra subetapa (" + outras +
+          "), de outra etapa (5.1) ou a etapa inteira (E5); 0 = início da etapa; espera 2.1+3, avanço 2.1-1, tipo 2.1II, 2.1TT, 2.1IT.";
+        else msg = "“" + inv + "” não é etapa válida em “Depende de” da etapa " + nome + " — use o nº da linha (1 a " + ordem.length +
+          "), sem apontar para a própria etapa, ou o nº de uma subetapa de outra etapa (5.2); 0 = começa no início da obra; espera 1+7, avanço 1-3; tipo 1II, 1TT, 1IT.";
+        return { ok: false, msg: msg + " Nada foi gravado." };
+      }
+      // ⚠ o CICLO é recusado antes de gravar (o elo de volta que o motor ignoraria)
+      for (var ix = 0; ix < arr(pr.extras).length; ix++) {
+        var xn = self.acharNo(r, pr.extras[ix].i);
+        if (xn && self._dependeDe(r, xn, id)) return { ok: false, msg: "“" + nums[pr.extras[ix].i] + "” fecharia um círculo: a tarefa " + nums[pr.extras[ix].i] + " já depende da etapa " + num(id) + ". Nada foi gravado." };
+      }
+      for (var i = 0; i < pr.elos.length; i++) {
+        var el = pr.elos[i], alvoEt = own(porFolhaEt, el.i) ? porFolhaEt[el.i] : el.i;
+        var meuEt = folha ? no.etapaId : id, circulo = null;
+        if (folha && alvoEt === no.etapaId) {
+          var irm = self.acharNo(r, el.i);
+          if (irm && self._dependeDe(r, irm, id)) circulo = "a subetapa " + (irm.numero || "") + " já depende da " + no.numero;
+        } else if (alvoEt !== meuEt) {
+          var pe = self.acharNo(r, alvoEt);
+          if (pe && self._dependeDe(r, pe, meuEt)) circulo = "a etapa " + num(alvoEt) + " já depende da etapa " + num(meuEt);
+        }
+        if (circulo) return { ok: false, msg: "“" + Cr._textoRede([el], nums, { etapasNum: folha ? etNum : null }) + "” fecharia um círculo: " + circulo + ". Nada foi gravado." };
+      }
+      /* o texto de HOJE: a rede digitada quando ela vale (assinatura), senão o legado */
+      var CRd = depG("CronoRede", "./cronorede.js"), nv = folha ? "folhas" : "etapas", efet = null;
+      var Rn = CRd ? CRd.normalizar(cron.rede) : null;
+      if (Rn && own(Rn[nv], id)) efet = CRd.efetiva(cron, Rn, nv, id);
+      var fmtLeg = function (x) { return folha ? Cr.predsTextoSub(x, nums) : Cr.predsTexto(x, nums); };
+      var fmtRede = function (elos) { return Cr._textoRede(elos, nums, { etapasNum: folha ? etNum : null }); };
+      var deT = (efet && efet.fonte === "rede") ? (efet.c ? "" : fmtRede(efet.elos)) : (no.predsExplicito ? fmtLeg(no) : "");
+      /* as T que seguram esta etapa hoje (o `porExtras` do motor) e as digitadas agora */
+      var xAntes = arr(no.porExtras).map(function (x) { return { i: x.id, t: x.tipo || "TI", l: x.lag || 0 }; });
+      if (!folha && xAntes.length) deT = Cr.predsTexto(no, nums, (efet && efet.fonte === "rede" && !efet.c) ? { elos: efet.elos, extras: xAntes } : { extras: xAntes });
+      var temEntrada = !!(Rn && own(Rn[nv], id));
+      var ops;
+      if (pr.preds === null) {
+        ops = [{ alvo: folha ? "folha" : "etapa", id: id, campo: "predecessoras", de: deT, para: null, paraTxt: "", daRede: true }];
+        if (temEntrada) ops.push({ alvo: folha ? "folha" : "etapa", id: id, campo: "rede", de: deT, para: null });
+        /* "T1" sozinho = a cascata continua, e a T1 passa a segurar a etapa
+           (EXTRAS §a, extras.md:227). ⚠ Sem esta op, o "T1" digitado sumia
+           calado: a lista virava "cascata" e nenhuma tarefa era ligada. */
+        if (!folha && (arr(pr.extras).length || xAntes.length)) {
+          var txtSoT = Cr.predsTexto({ preds: [], predsExplicito: false }, nums, { extras: arr(pr.extras) });
+          ops[0].paraTxt = txtSoT;
+          ops.push({ alvo: "etapa", id: id, campo: "porExtras", de: deT, para: arr(pr.extras).map(function (x) { return { i: x.i, t: x.t, l: x.l }; }), paraTxt: txtSoT });
+        }
+      } else {
+        var cabe = pr.elos.every(function (e) {
+          var mesmo = folha ? (porFolhaEt[e.i] === no.etapaId) : own(etNum, e.i);
+          return mesmo && (e.t === "TI" || (folha && e.t === "II"));
+        });
+        var paraTxt = fmtRede(pr.elos);
+        if (cabe) {
+          var raiz = folha ? (cron && cron.sub) : cron;
+          var gravado = function (k) { var mm = raiz && raiz[k]; return (mm && typeof mm === "object" && !ehArr(mm) && own(mm, id)) ? JSON.parse(JSON.stringify(mm[id])) : null; };
+          ops = [{ alvo: folha ? "folha" : "etapa", id: id, campo: "predecessoras", de: deT, para: pr.preds.slice(), paraTxt: paraTxt, daRede: true },
+            { alvo: folha ? "folha" : "etapa", id: id, campo: "lags", de: gravado("lags"), para: Object.keys(pr.lags).length ? pr.lags : null, daRede: true }];
+          if (folha) ops.push({ alvo: "folha", id: id, campo: "tipos", de: gravado("tipos"), para: Object.keys(pr.tipos).length ? pr.tipos : null, daRede: true });
+          if (temEntrada) ops.push({ alvo: folha ? "folha" : "etapa", id: id, campo: "rede", de: deT, para: null });
+        } else {
+          ops = [{ alvo: folha ? "folha" : "etapa", id: id, etapaId: no.etapaId, campo: "rede", de: deT, para: { elos: pr.elos }, paraTxt: paraTxt }];
+        }
+        /* as T: o `sucs` das tarefas sem preço (a etapa nunca recebe o id da
+           extra em `predecessoras`, I3). "0,T1" = sem etapa predecessora + T1 */
+        if (!folha && (arr(pr.extras).length || xAntes.length)) {
+          var txtNovo = Cr.predsTexto({ preds: pr.preds, predLag: pr.lags, predsExplicito: pr.preds !== null }, nums, { elos: pr.elos, extras: arr(pr.extras) });
+          ops.forEach(function (o2) { if (o2.paraTxt != null) o2.paraTxt = txtNovo; });
+          ops.push({ alvo: "etapa", id: id, campo: "porExtras", de: deT, para: arr(pr.extras).map(function (x) { return { i: x.i, t: x.t, l: x.l }; }), paraTxt: txtNovo });
+        }
+      }
+      /* ENSAIO numa cópia (o contrato de hoje): aplica sem erro? muda algo? */
+      var ensaio = JSON.parse(JSON.stringify(cron)), ap = this.aplicarOps(ensaio, ops, { folhaDe: porFolhaEt, etapaIds: ordem, inicioFixo: ctx.inicioFixo });
+      if (ap.portaInicio) return { ok: false, porta: "inicio", msg: "Para a tarefa sem preço segurar a etapa " + nome + ", fixe o início da obra: sem ele, a data que ela segura mudaria a cada dia nos aparelhos de versão anterior. Nada foi gravado." };
+      if (ap.erros.length) return { ok: false, msg: "Não consegui montar esta alteração (" + ap.erros.join("; ") + ") — nada foi gravado." };
+      if (!ap.mudou) return { ok: true, ops: [], bloco: "" };
+      var cruz = pr.elos.filter(function (e) { return folha ? porFolhaEt[e.i] !== no.etapaId : !own(etNum, e.i); });
+      var bloco = "";
+      if (cruz.length && folha) bloco = " · A etapa " + num(no.etapaId) + " anda inteira para a " + no.numero + " cumprir a ligação com outra etapa: a ordem das subetapas dentro dela não muda.";
+      return { ok: true, ops: ops, msg: "", bloco: bloco };
+    },
+
+    /* A COLUNA CALENDÁRIO DA GRADE (planejador 2A) — {ok, ops, msg}.
+       `calId` é o id escolhido no seletor, ou "" para voltar à régua da obra.
+       ⚠ TODAS as recusas (TT/IT em calendário próprio, elo cruzado, subetapa
+       com término, início flutuante — O11/O14) já moram no `aplicarOps`, e é
+       de lá que o recado sai: uma segunda lista de recusas aqui divergiria
+       da que grava na primeira manutenção, e a pessoa veria a porta abrir na
+       tela e fechar no salvar. Por isso o ENSAIO numa cópia é obrigatório. */
+    opsDoCalendario: function (r, no, calId, ctx) {
+      ctx = ctx || {};
+      var id = no && no.id, nome = nomeDe(no);
+      function recusa(msg, extra) { var o = { ok: false, ops: [], msg: msg }, k; for (k in (extra || {})) if (own(extra, k)) o[k] = extra[k]; return o; }
+      if (id == null) return recusa("Esta linha não existe mais neste cronograma.");
+      var cel = this.celulaEditavel(no, "cal", { travado: ctx.travado });
+      if (!cel.ok) return recusa(cel.motivo + " Nada foi gravado.", cel.porta ? { porta: cel.porta } : null);
+      var v = String(calId == null ? "" : calId).trim();
+      var de = (ctx.cron && ehObj(ctx.cron.cal) && ehObj(ctx.cron.cal.de) && own(ctx.cron.cal.de, id)) ? String(ctx.cron.cal.de[id]) : null;
+      var para = v ? v : null;
+      if (String(de == null ? "" : de) === String(para == null ? "" : para)) return { ok: true, ops: [], msg: "" };
+      var ops = [{ alvo: "calendario", id: id, campo: "de", de: de, para: para }];
+      if (ctx.cron && ehObj(ctx.cron)) {
+        var ensaio = JSON.parse(JSON.stringify(ctx.cron)), ap = this.aplicarOps(ensaio, ops, { orc: ctx.orc, inicioFixo: ctx.inicioFixo });
+        if (ap.portaInicio) return recusa("Para " + nome + " trabalhar num calendário próprio, fixe o início da obra: sem ele, a data em que a frente começa mudaria a cada dia nos aparelhos de versão anterior. Nada foi gravado.", { porta: "inicio" });
+        if (ap.erros.length) return recusa(ap.erros[0].charAt(0).toUpperCase() + ap.erros[0].slice(1) + ". Nada foi gravado.");
+        /* ⚠ escrito com o `mudou` NOMEADO, e não com o `if (!ap.mudou)` do
+           `opsDaDigitacao`: o controle negativo da test-ganttui-digitacao mira
+           aquela linha PELO TEXTO e exige achá-la uma vez só — duas cópias
+           idênticas desligam o controle sem reprovar nada (memória "controle
+           negativo não roda na árvore real"). */
+        var mudouCal = ap.mudou === true;
+        if (!mudouCal) return { ok: true, ops: [], msg: "" };
+      }
+      var nm = "";
+      if (para && ctx.cron && ehObj(ctx.cron.cal)) arr(ctx.cron.cal.lista).forEach(function (c) { if (c && c.id === para) nm = String(c.nome || para); });
+      return { ok: true, ops: ops, msg: nome + " — calendário: " + (para ? (nm || para) : "régua da obra") + (de ? "" : "") + "." };
+    },
+
+    /* A LINHA T (planejador 1A, EXTRAS §a) — {ok, ops, msg}. Nome, duração
+       (inteiro 0..999; 0 = marco; a tarefa sem preço não tem estimativa, então
+       vazio é recusado) e "Depende de" (etapas e outras T; subetapa recusada).
+       Nenhum modo trava a linha T; o aprovado trava (porta da revisão). */
+    /* ⚠ SUBIR E DESCER A TAREFA SEM PREÇO — A OPERAÇÃO SE MONTA AQUI, E NÃO
+       NA TELA. Roteiro do defeito (revisão final, 22/09/2026, medido com
+       clique real e lendo o disco a cada passo): a fiação mandava
+       `{alvo:"extra", campo:"mover", para: -1|1}`, e o gravador espera
+       `para = {apos, indice}`. Com um número no lugar do objeto,
+       `mv.apos == null` fazia `delete cp.apos` e `mv.indice == null` fazia
+       `ix = L.length` — quer dizer: os DOIS botões arrancavam a âncora da
+       tarefa e a jogavam para a última linha. Medido: um clique em "Descer"
+       levou a T1 da 2ª linha para depois de 6.0 Acabamentos e apagou o
+       `apos` do disco; "Subir" depois disso respondia "Nada mudou no
+       cronograma" três vezes seguidas — não havia caminho de volta pela
+       tela. Com duas tarefas, "Subir" na do meio a mandou para o FIM, igual
+       a "Descer". A direção (`data-dir`) nunca era lida por ninguém.
+
+       O MODELO DA POSIÇÃO: a linha T entra depois do BLOCO da etapa em que
+       foi pendurada (`x.apos`, ver `CronoExecUI.intercalarExtras`), e várias
+       na mesma etapa ficam na ordem da lista `extras`. Então a posição é o
+       par (etapa âncora, posição entre as irmãs), e mover é andar UM passo
+       nesse par. Descer na última irmã da etapa E passa para a PRIMEIRA
+       posição da etapa seguinte; subir na primeira passa para a ÚLTIMA da
+       anterior.
+
+       ⚠ `apos` NUNCA CAI PARA AUSENTE POR OMISSÃO. Campo ausente não quer
+       dizer "no começo": o `intercalarExtras` põe as sem âncora DEPOIS de
+       tudo (medido — e o comentário do `itemDisco` que dizia "antes da 1ª
+       etapa" estava errado). Por isso a última etapa é o fim da linha para o
+       Descer, e a tarefa que já está sem âncora sobe para a última etapa.
+
+       Devolve {ok, ops, msg} — o mesmo contrato da digitação.
+       `ordemEtapas` = ids das etapas na ordem da tela; `extras` = a lista
+       `cron.extras` como está no disco. */
+    opsDoExtraMover: function (id, dir, ordemEtapas, extras) {
+      var d = Number(dir) < 0 ? -1 : 1;
+      var L = arr(extras), ordem = arr(ordemEtapas).filter(function (e) { return e != null; });
+      var eu = null, k;
+      for (k = 0; k < L.length; k++) if (L[k] && L[k].id === id) eu = L[k];
+      if (!eu) return { ok: false, ops: [], msg: "Esta tarefa sem preço não existe mais neste cronograma — nada foi movido." };
+      if (!ordem.length) return { ok: false, ops: [], msg: "Este cronograma não tem etapas para pendurar a tarefa — nada foi movido." };
+      var ehEtapa = {};
+      ordem.forEach(function (e) { ehEtapa[e] = true; });
+      /* o slot de cada tarefa: o índice da etapa âncora, ou `ordem.length`
+         (sem âncora = depois de tudo). Âncora que aponta para etapa que não
+         existe mais conta como sem âncora — é o que a leitura já faz. */
+      function slotDe(x) {
+        var a = (x && x.apos != null) ? String(x.apos) : "";
+        var i = (a && own(ehEtapa, a)) ? ordem.indexOf(a) : -1;
+        return i >= 0 ? i : ordem.length;
+      }
+      var meuSlot = slotDe(eu);
+      /* as irmãs do MESMO slot, na ordem da lista `extras` */
+      var irmas = [];
+      for (k = 0; k < L.length; k++) if (L[k] && slotDe(L[k]) === meuSlot) irmas.push(L[k].id);
+      var posIrma = irmas.indexOf(id);
+      var novoSlot = meuSlot, novaPos;
+      if (d > 0) {
+        if (posIrma < irmas.length - 1) novaPos = posIrma + 1;
+        else if (meuSlot < ordem.length - 1) { novoSlot = meuSlot + 1; novaPos = 0; }
+        else return { ok: true, ops: [], msg: "" };
+      } else {
+        if (posIrma > 0) novaPos = posIrma - 1;
+        else if (meuSlot > 0) { novoSlot = meuSlot - 1; novaPos = -1; }   /* -1 = no fim do grupo de cima */
+        else return { ok: true, ops: [], msg: "" };
+      }
+      var aposNovo = ordem[novoSlot];
+      /* o `indice` é a posição na lista `extras` SEM esta tarefa — é assim
+         que o gravador aplica (`splice` para tirar, `splice` para pôr) */
+      var Lsem = [], iOriginal = 0;
+      for (k = 0; k < L.length; k++) {
+        if (L[k] && L[k].id === id) { iOriginal = Lsem.length; continue; }
+        Lsem.push(L[k]);
+      }
+      var irmasNovas = [];
+      for (k = 0; k < Lsem.length; k++) if (Lsem[k] && slotDe(Lsem[k]) === novoSlot) irmasNovas.push(k);
+      var indice;
+      if (!irmasNovas.length) indice = Math.min(iOriginal, Lsem.length);
+      else if (novaPos < 0 || novaPos >= irmasNovas.length) indice = irmasNovas[irmasNovas.length - 1] + 1;
+      else indice = irmasNovas[novaPos];
+      return { ok: true, ops: [{ alvo: "extra", id: id, campo: "mover",
+        de: { apos: (eu.apos != null ? String(eu.apos) : null), indice: iOriginal },
+        para: { apos: aposNovo, indice: indice } }], msg: "" };
+    },
+
+    _digitarExtra: function (r, no, campo, texto, ctx, Cr) {
+      var self = this, id = no.id, nome = nomeDe(no), s = String(texto == null ? "" : texto).trim(), ops;
+      function recusa(msg, extra) { var o = { ok: false, ops: [], msg: msg }, k; for (k in (extra || {})) if (own(extra, k)) o[k] = extra[k]; return o; }
+      if (ctx.travado) return recusa(MOTIVO_APROVADO + " Nada foi gravado.", { travadoAprovacao: true, porta: "revisao" });
+      var ordem = (ehArr(ctx.ordemEtapas) && ctx.ordemEtapas.length) ? ctx.ordemEtapas : arr(r && r.etapas).map(function (e) { return e && e.id; });
+      if (campo === "nome") {
+        var nm = s.replace(/\s+/g, " ").slice(0, 80);
+        if (!nm) return recusa("A tarefa " + (no.numero || "") + " precisa de nome — nada foi gravado.");
+        ops = [{ alvo: "extra", id: id, campo: "nome", de: no.nome, para: nm }];
+      } else if (campo === "dur") {
+        var n = s === "" ? null : this.lerDuracao(s);
+        if (n === null) return recusa("“" + s + "” não é duração válida para " + nome + " — a tarefa sem preço não tem estimativa: use dias úteis inteiros de 1 a 999 (0 = marco). Nada foi gravado.");
+        ops = [{ alvo: "extra", id: id, campo: "duracao", de: no.marco ? 0 : no.duracao, para: n }];
+      } else if (campo === "pred") {
+        var nums = {};
+        ordem.forEach(function (eid, i) { nums[eid] = i + 1; });
+        arr(r && r.extras).forEach(function (x) { nums[x.id] = x.numero; });
+        var todas = [];
+        arr(r && r.atividades).forEach(function (x) { if (x && ehFolha(x)) todas.push({ id: x.id, numero: x.numero, etapaId: x.etapaId }); });
+        var pr = Cr.parsePredsExtra(this.normalizarPreds(s), id, { folhas: todas, etapas: ordem, extras: arr(r && r.extras).map(function (x) { return x.id; }) });
+        if (pr.invalidos.length) {
+          var m0 = pr.motivos[0] || {};
+          return recusa(m0.motivo === "extra-folha" ? "“" + m0.token + "”: tarefa sem preço se liga a etapa, não a subetapa. Nada foi gravado."
+            : (m0.motivo === "repetido" ? "A mesma tarefa aparece duas vezes em “" + s + "” — entre duas tarefas só existe uma ligação. Nada foi gravado."
+              : "“" + pr.invalidos.join(", ") + "” não vale no “Depende de” da tarefa " + nome + " — use o nº da etapa (1 a " + ordem.length + ") ou de outra tarefa sem preço (T1…); vazio ou 0 = começa no início da obra; espera 3+5, tipo 3II, 3TT. Nada foi gravado."));
+        }
+        for (var k = 0; k < pr.extras.length; k++) {
+          var alvoN = self.acharNo(r, pr.extras[k].i);
+          if (alvoN && self._dependeDe(r, alvoN, id)) return recusa("“" + nums[pr.extras[k].i] + "” fecharia um círculo: " + nums[pr.extras[k].i] + " já depende da tarefa " + (no.numero || "") + ". Nada foi gravado.");
+        }
+        var deP = Cr._textoRede(arr(no.preds).map(function (p) { return { i: p, t: (no.predTipo && no.predTipo[p]) || "TI", l: (no.predLag && no.predLag[p]) || 0, x: true }; }), nums, { vazioExplicito: false });
+        var paraX = pr.extras.map(function (x) { return { i: x.i, t: x.t, l: x.l }; });
+        ops = [{ alvo: "extra", id: id, campo: "predecessoras", de: deP, para: paraX,
+          paraTxt: Cr._textoRede(paraX.map(function (x) { return { i: x.i, t: x.t, l: x.l, x: true }; }), nums, { vazioExplicito: false }) }];
+      } else return recusa("Campo desconhecido: " + campo + ".");
+      if (ctx.cron && typeof ctx.cron === "object" && !ehArr(ctx.cron)) {
+        var ensaio = JSON.parse(JSON.stringify(ctx.cron)), ap = this.aplicarOps(ensaio, ops, { etapaIds: ordem, inicioFixo: ctx.inicioFixo });
+        if (ap.portaInicio) return recusa("Para a tarefa " + (no.numero || "") + " segurar uma etapa, fixe o início da obra: sem ele, a data que ela segura mudaria a cada dia nos aparelhos de versão anterior. Nada foi gravado.", { porta: "inicio" });
+        if (ap.erros.length) return recusa("Não consegui montar esta alteração (" + ap.erros.join("; ") + ") — nada foi gravado.");
+        if (!ap.mudou) { return { ok: true, ops: [], msg: "" }; }
+      }
+      return { ok: true, ops: ops, msg: self.resumoOps(ops, no, r, { Cronograma: Cr }) };
+    },
+
+    /* O ELO QUE “APERTA” (planejador 2A, O20) — a sucessora começa EXATAMENTE
+       onde este elo a deixa começar. É o que decide a seta VERMELHA entre duas
+       críticas: entre duas críticas pode haver elo com sobra, e pintá-lo de
+       vermelho mentiria o caminho.
+       ⚠ DONO ÚNICO de propósito: a mesma conta vivia copiada no `UI._gantt` e
+       no `CronoExecUI.gantt`. As duas leem `predDesloc` como deslocamento
+       equivalente de TI (O20) — e assim continuam com TT, IT, cruzado e
+       tarefa sem preço, porque o motor converte todo tipo em `predDesloc`.
+       Com duas cópias da regra, um TT apertado sairia vermelho no PDF e cinza
+       na tela (memória “réplica de parser apodrece”).
+       `params` = r.params (o paralelismo, para o elo sem `predDesloc`). */
+    eloAperta: function (suc, pred, predId, params) {
+      if (!suc || !pred || predId == null) return false;
+      var off = (suc.predDesloc && suc.predDesloc[predId] != null) ? suc.predDesloc[predId]
+        : -Math.floor(((params && params.paralelismo) || 0) * fin(pred.duracao, 0));
+      return suc.inicio === Math.max(0, fin(pred.fim, 0) + off);
+    },
+
+    /* OS QUATRO PISOS DE DATA QUE MANDAM NA ETAPA (planejador 2A, O11/O29).
+       Devolve `null` quando a data não está mandando, ou
+       {tipo, data, dataBR, inicioRede, rotulo, motivo, daMaquina}.
+
+       ROTEIRO DO DEFEITO QUE ELA FECHA (medido na 1.2.77, OBRA TESTE):
+       arrastar a etapa 4 gravou "não iniciar antes de 12/01/2028" — um campo
+       que a tabela não mostra; digitar "Depende de = 1" (a 1 termina em
+       28/09/2026) gravou, e a etapa CONTINUOU em 12/01/2028, sem recado
+       nenhum. Quem digita acha que o campo não funciona. `rDepois` é o
+       estimar DEPOIS de gravar: a data manda quando a tarefa começa
+       exatamente nela e a rede a poria antes (`restricao.ativa` do motor). A
+       tela junta o recado e a porta.
+
+       ⚠ `nia` é a de sempre (“não iniciar antes de”, o arrasto do Gantt).
+       A 2A acrescentou `dia`, `dta` e `nta`: os três também EMPURRAM o início
+       (o motor marca `ativa` neles desde a 1A), e a caixa “Datas fixadas no
+       Gantt” só mostrava `nia` — a pessoa digitava “deve terminar em”, a
+       etapa andava, e nenhuma linha dizia por quê. `nid` e `tae` ficam de
+       fora de propósito: são TETOS, avisam e não empurram (O22).
+
+       ⚠ A RESTRIÇÃO ESCRITA PELA MÁQUINA (`origem:"mat"`, a sombra que faz a
+       1.2.81 desenhar a mesma data — O2) NÃO É “data fixada”: ninguém a
+       fixou. Sem esta guarda, a caixa ofereceria [Soltar a data] para um piso
+       que a próxima projeção reescreve — trava com porta falsa (memória
+       “porta prometida precisa existir”). Ela entra na camada “restrições” do
+       Gantt, com o ⌧, e `daMaquina` diz isso a quem chama.
+       `cron` = o cronograma GRAVADO (sem ele não dá para saber a origem, e a
+       função devolve a leitura de sempre).
+
+       ⚠ REVISÃO 4 (O29): o MOTIVO do piso da máquina sai do MOTOR —
+       `et.porExtras` (tarefa sem preço), `no.avanco.empurradoDias` (avanço),
+       `et.calendarioId` (frente própria), `restricao.tipo === "mtp"` (o mais
+       tarde possível) —, NUNCA do campo `por` do disco: ele deixou de ser
+       gravado (forma enxuta F1), e um `por` vindo de outro aparelho é
+       ignorado na leitura. Motivo lido do disco seria motivo velho. */
+    _ROT_RESTR: { nia: "não iniciar antes de", dia: "deve iniciar em", dta: "deve terminar em", nta: "não terminar antes de" },
+    dataFixadaDomina: function (rDepois, id, cron) {
       if (!rDepois || id == null) return null;
       var et = null, lista = arr(rDepois.etapas);
       for (var i = 0; i < lista.length; i++) if (lista[i] && lista[i].id === id) { et = lista[i]; break; }
       if (!et) et = this.acharNo(rDepois, id);
       var rs = et && et.restricao;
-      if (!rs || rs.tipo !== "nia") return null;
+      if (!rs || !own(this._ROT_RESTR, rs.tipo)) return null;
       var ativa = rs.ativa === true;
       if (rs.ativa == null) ativa = rs.indice != null && rs.inicioRede != null && Math.round(fin(et.inicio, -1)) === Math.round(fin(rs.indice, -2)) && fin(rs.indice, 0) > fin(rs.inicioRede, 0);
-      return ativa ? { data: String(rs.data), dataBR: dmaS(rs.data), inicioRede: rs.inicioRede } : null;
+      if (!ativa) return null;
+      var rd = cron && ehObj(cron.restricoes) && ehObj(cron.restricoes[id]) ? cron.restricoes[id] : null;
+      var daMaquina = !!rd && rd.origem === "mat";
+      return { tipo: String(rs.tipo), data: String(rs.data), dataBR: dmaS(rs.data), inicioRede: rs.inicioRede,
+        rotulo: this._ROT_RESTR[rs.tipo], daMaquina: daMaquina, motivo: daMaquina ? this.motivoDoPiso(rDepois, id) : "" };
+    },
+
+    /* POR QUE A MÁQUINA ESCREVEU ESTE PISO (planejador 2A, O29) — texto curto
+       para o ⌧ e para o recado. Sai do RESULTADO DO MOTOR desta renderização,
+       nunca do disco: o `por` foi tirado da forma gravada (F1), e um motivo
+       gravado envelhece calado (memória “número na interface envelhece”).
+       Ordem: tarefa sem preço → avanço → o mais tarde possível → frente
+       própria → rede. "" quando o motor não sabe dizer — e aí a tela diz
+       isso, em vez de inventar. */
+    motivoDoPiso: function (r, id) {
+      var et = null, i, lista = arr(r && r.etapas);
+      for (i = 0; i < lista.length; i++) if (lista[i] && lista[i].id === id) { et = lista[i]; break; }
+      var no = this.acharNo(r, id);
+      var alvo = et || no;
+      if (!alvo) return "";
+      var px = arr(alvo.porExtras);
+      if (px.length) {
+        var ns = px.map(function (x) { return String((x && x.numero) || "T"); });
+        return ns.length === 1 ? "a tarefa sem preço " + ns[0] + " segura esta etapa" : "as tarefas sem preço " + ns.join(", ") + " seguram esta etapa";
+      }
+      var av = (no && no.avanco) || (et && et.avanco);
+      if (av && fin(av.empurradoDias, 0) > 0) return "o avanço lançado empurrou " + av.empurradoDias + " dia(s) útil(eis)";
+      if (av && (av.estado === "andamento" || av.estado === "concluida")) return "o avanço lançado fixou o início real";
+      var rs = alvo.restricao;
+      if (rs && rs.tipo === "mtp") return "“o mais tarde possível”";
+      if (alvo.calendarioId) return "a frente tem calendário próprio";
+      return "";
     }
   };
 

@@ -673,6 +673,9 @@
           porque: "já concluída (100% no realizado) — comprimir o que já foi feito reescreve fato, não plano" });
         return false;
       }
+      // ⚠ planejador 1A (§2.10): o nó com rede digitada ou escolha pendente não é regravado por aqui
+      var trv = (C() && typeof C().travaGravador === "function") ? C().travaGravador(orc.cronograma, n.id, n.tipo === "etapa" ? "etapa" : "folha", orc) : null;
+      if (trv) { res.pendentes.push({ noId: n.id, num: n.numero, nome: n.nome, porque: trv }); return false; }
       return true;
     });
     if (!criticos.length && !res.pendentes.length) {
@@ -1057,8 +1060,26 @@
       res.naoDaParaDizer.push("IDP: " + mIdp);
     }
 
-    /* --- FRASE 4: término --- */
-    if (dizivel(K.desvioTerminoDias) && painel.base) {
+    /* --- FRASE 4: término ---
+       ⚠ O TÉRMINO EM DESTAQUE É O DA REDE, COM O AVANÇO (planejador 3C,
+       decisão D3). O painel publica duas respostas para "quando entrega":
+       `kpis.previsaoTermino`, que é o CPM com o que já aconteceu dentro, e
+       `curva.projecao`, que é uma reta traçada pelo ritmo dos diários. Elas
+       discordam — e discordam por construção, porque a rede sabe as
+       dependências e a reta não. Quando o parágrafo que vai ao diretor
+       trazia só a reta, quem lia escolhia o número que preferia. A rede vem
+       primeiro, e a reta vem embaixo, dita como OUTRA CONTA (frase 5). */
+    var pvT = K.previsaoTermino;
+    if (pvT && pvT.data) {
+      var dvT = dizivel(pvT.desvioDU) ? Math.round(num(pvT.desvioDU)) : null;
+      T.frase("O término previsto pela rede" +
+        (pvT.comAvanco && pvT.corte ? ", com o avanço lançado até " + T.n(dataBR(pvT.corte), "kpis.previsaoTermino.corte") : " (sem avanço lançado)") +
+        ", é " + T.n(dataBR(pvT.data), "kpis.previsaoTermino.data") +
+        (dvT == null ? "" : (dvT === 0 ? ", em cima da linha de base"
+          : " — " + T.n(Math.abs(dvT), "kpis.previsaoTermino.desvioDU", 0) + " " + plural(Math.abs(dvT), "dia útil", "dias úteis") +
+            " " + (dvT > 0 ? "depois" : "antes") + " da linha de base" + (pvT.base && pvT.base.versao ? " v" + T.n(pvT.base.versao, "kpis.previsaoTermino.base.versao", 0) : ""))) + ".");
+      if (!pvT.comAvanco) res.naoDaParaDizer.push("término com o realizado dentro: não há avanço lançado neste plano — a data é a da rede sobre o plano como ele está");
+    } else if (dizivel(K.desvioTerminoDias) && painel.base) {
       var dv = Math.round(num(K.desvioTerminoDias));
       T.frase(dv === 0
         ? "O término do plano bate com o da linha de base."
@@ -1097,12 +1118,19 @@
        ou montado à mão, sem o campo, continua caindo no número de tela — é
        fallback, não silêncio. */
     var ritmoTx = (proj && typeof proj.ritmoTexto === "string" && proj.ritmoTexto) ? proj.ritmoTexto : "";
+    /* ⚠ "OUTRA CONTA" NÃO É ENFEITE (planejador 3C, D3). A frase 4 já deu a
+       data da REDE; esta é uma reta pelo ritmo dos diários. Sem o rótulo, o
+       parágrafo entrega duas datas diferentes para a mesma obra e deixa quem
+       lê escolher — que é o defeito que a decisão D3 fechou na tela e que
+       aqui reaparecia na prosa. */
+    var outraConta = (K.previsaoTermino && K.previsaoTermino.data) ? "Por outra conta, a do ritmo medido nos diários" : "Pelo ritmo medido nos diários";
     if (proj && (ritmoTx || dizivel(proj.ritmoSemanal)) && dizivel(proj.semanasHistorico) && proj.dataProvavel) {
-      T.frase("Pelo ritmo medido nos diários, " +
+      T.frase(outraConta + ", " +
         (ritmoTx ? T.n(ritmoTx, "curva.projecao.ritmoTexto", 0, "%") : T.n(proj.ritmoSemanal, "curva.projecao.ritmoSemanal", 2, "%")) +
         " por semana em " + T.n(proj.semanasHistorico, "curva.projecao.semanasHistorico", 0) + " " +
         plural(num(proj.semanasHistorico), "semana", "semanas") + " de histórico, a conclusão cai em " +
-        T.n(dataBR(proj.dataProvavel), "curva.projecao.dataProvavel") + ".");
+        T.n(dataBR(proj.dataProvavel), "curva.projecao.dataProvavel") +
+        ((K.previsaoTermino && K.previsaoTermino.data) ? " — essa é uma reta, e não sabe das dependências" : "") + ".");
     } else {
       var mp = curva.projecaoMotivo ? String(curva.projecaoMotivo) : "sem ritmo medido nos diários.";
       T.frase("Ainda não dá para dizer para onde a obra caminha: " + T.cita(mp, "curva.projecaoMotivo"));

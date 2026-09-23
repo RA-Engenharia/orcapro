@@ -3089,3 +3089,316 @@ body.foco-crono #main > .orc-titulo .orc-foco-acoes { display: flex; align-items
 /* ⚠ o recado (#jan-recado) é a exceção: escondido por esta regra, orçamento
    excluído e endereço inválido viravam janela EM BRANCO (ver App._janelaRecado) */
 body.modo-janela #main > :not(#aba-conteudo):not(#jan-recado) { display: none !important; }
+
+/* =====================================================================
+   PLANEJADOR — BLOCOS DAS FATIAS (Onda 0, T13). Um bloco por fatia, no FIM
+   do arquivo: cada fatia escreve só no seu, e as três linhas de comentário
+   entre eles mantêm as mudanças de fatias diferentes longe uma da outra (o
+   merge não se atropela). ⚠ Tamanho, peso e cor pelos tokens (--t-*, --p-*,
+   cores do tema): o test-contraste reprova valor cru, e o bloco que padroniza
+   perde para regra escrita depois dele (memória "regra de unificação nasce
+   perdendo").
+   ===================================================================== */
+/* ===== PLANEJADOR: rede (2A) ===== */
+/* ⚠ O DESENHO É PAPEL BRANCO NOS DOIS TEMAS (regra 4 do cabeçalho do
+   js/cronoexecui.js): o que é pintado DENTRO do SVG do Gantt usa tinta
+   cravada, como o resto dele. O que é HTML em volta (chip, menu, faixa) usa
+   os tokens do tema. Tamanho e peso sempre por token — o test-contraste
+   reprova valor cru, e o bloco que padroniza perde para a regra escrita
+   depois dele. */
+/* o marcador da restrição que o APP escreveu (⧗) e o da que não é cumprida
+   (⚠). #6d28d9 sobre o papel branco = 7,4:1; #b91c1c = 6,9:1. */
+.cx-td-restr .cx-restr-mat-tx { color: #6d28d9; white-space: nowrap; }
+.cx-td-restr .cx-restr-nok-tx { color: var(--graf-alerta, #b91c1c); font-weight: var(--p-forte); white-space: nowrap; }
+.cx-folga-neg-tx { color: var(--graf-alerta, #b91c1c); font-weight: var(--p-forte); white-space: nowrap; }
+/* o ⋯ da linha (tabela). Alvo de 28 px: menor que isso não se acerta no
+   toque, e a coluna do nome é justamente onde o dedo já está. */
+.cx-menu-bt { border: 0; background: none; color: var(--muted, #64748b); font: inherit; font-size: var(--t-peq); line-height: 1; padding: 2px 7px; min-width: 28px; min-height: 24px; border-radius: var(--raio-ctl, 8px); cursor: pointer; }
+.cx-menu-bt:hover { background: var(--linha, #e2e8f0); color: var(--texto, #0f172a); }
+.cx-menu-bt:focus-visible { outline: 2px solid var(--aco, #0d6ebd); outline-offset: 1px; }
+.cx-menu-lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+/* ⚠ o item que NÃO se aplica continua na lista, com o motivo — item que some
+   não ensina nada, e a pessoa vai procurar a função em outro lugar */
+.cx-menu-off { color: var(--muted, #64748b); font-size: var(--t-peq); padding: 4px 0; }
+/* o chip "Compatibilidade (N)" da linha do prazo e a faixa que ele abre */
+/* ⚠ o registro [Calendários] da linha do prazo é PILL clicável: a régua do
+   cronograma (e2e-padrao-cronograma) mede todo clicável acima do Gantt, e o
+   gx-uso-link que ele usava saía com 18,6 px e raio 0 contra 24/999 da pill.
+   Herda o tamanho da classe .pill; aqui vem só o que faz dela um botão. */
+.cx-pill-cal-bt { border: 1px dashed var(--linha-forte, #94a3b8); background: none; color: var(--aco, #0d6ebd); cursor: pointer; padding: 2px 9px; }
+.cx-pill-cal-bt:hover { border-style: solid; border-color: var(--aco, #0d6ebd); }
+.cx-pill-cal-bt:focus-visible { outline: 2px solid var(--aco, #0d6ebd); outline-offset: 1px; }
+.cx-chip-compat { border: 1px dashed var(--linha-forte, #94a3b8); background: none; color: var(--muted, #64748b); font: inherit; font-size: var(--t-micro); font-weight: var(--p-medio); padding: 2px 9px; border-radius: 999px; cursor: pointer; }
+.cx-chip-compat:hover { border-color: var(--aco, #0d6ebd); color: var(--aco, #0d6ebd); }
+.cx-chip-compat:focus-visible { outline: 2px solid var(--aco, #0d6ebd); outline-offset: 1px; }
+.cx-chip-compat.cx-chip-on { border-style: solid; border-color: var(--aco, #0d6ebd); color: var(--aco, #0d6ebd); }
+.cx-compat-faixa { margin: 4px 0 8px; padding: 8px 10px; border: 1px solid var(--linha, #e2e8f0); border-radius: var(--raio-ctl, 8px); background: var(--card, transparent); font-size: var(--t-peq); }
+.cx-compat-faixa b { font-weight: var(--p-forte); }
+/* a faixa D-PENDENTE fica sempre à vista: ela muda o que o OUTRO aparelho
+   desenha, e a porta ([Fixar início]) não pode ficar escondida atrás de um
+   chip */
+.cx-aviso.cx-pendente { background: rgba(245, 158, 11, .14); border-color: rgba(245, 158, 11, .55); }
+/*
+ * ↑ setas TT/IT/cruzado, rótulos das ligações, restrições.
+ */
+/* ===== PLANEJADOR: extras (2A) ===== */
+/* a linha T: o número em roxo (a mesma tinta da barra tracejada) é o que
+   diz, sem ler, que aquela linha não é serviço do orçamento */
+.cx-eap tr.cx-t > td { background: rgba(109, 40, 217, .045); }
+.cx-eap .cx-n-t { color: #6d28d9; font-weight: var(--p-forte); }
+.cx-eap .cx-in-nome { width: min(320px, 46vw); text-align: left; }
+.cx-eap .pill.cx-pill-t { background: rgba(109, 40, 217, .12); color: #5b21b6; }
+/* as camadas: o botão e a caixa */
+.cx-cam { position: relative; display: inline-block; }
+.cx-cam > summary { list-style: none; cursor: pointer; }
+.cx-cam > summary::-webkit-details-marker { display: none; }
+.cx-cam > summary.cx-cam-ap { border-color: #b45309; color: #78350f; background: #fef3c7; }
+.cx-cam-caixa { position: absolute; z-index: 20; top: 100%; left: 0; margin-top: 4px; width: 300px; max-width: calc(100vw - 32px); box-sizing: border-box; padding: 8px 10px; background: var(--card, #fff); color: var(--texto, #0f172a); border: 1px solid var(--linha, #cbd5e1); border-radius: var(--raio-ctl, 8px); box-shadow: 0 6px 22px rgba(15, 23, 42, .22); }
+.cx-cam-lin { display: flex; align-items: center; gap: 6px; padding: 3px 0; font-size: var(--t-peq); cursor: pointer; }
+.cx-cam-ap-lin { margin-top: 6px; padding-top: 7px; border-top: 1px solid var(--linha, #e2e8f0); font-weight: var(--p-forte); }
+.cx-cam-nota { margin: 6px 0 0; font-size: var(--t-micro); color: var(--muted, #64748b); }
+/*
+ * ↑ linhas e barras das tarefas sem preço.
+ */
+/* ===== PLANEJADOR: cal-gantt (2A) ===== */
+/* o sombreado dos dias parados é desenhado NO SVG (fill-opacity .10 sobre o
+   papel branco): aqui só a pílula das frentes, que é HTML */
+.cx-pill-cal { background: rgba(13, 110, 189, .12); color: #0b5384; }
+/*
+ * ↑ sombreamento dos dias parados de cada frente no Gantt.
+ */
+/* ===== PLANEJADOR: avanco-gantt (2A) ===== */
+.cx-pill-av { background: rgba(180, 83, 9, .14); color: #78350f; }
+/* ⚠ o par escuro faltava: medido em 1,81:1 sobre o fundo composto da linha
+   do prazo (o pior número do conjunto), e é a pílula que a 6B copiou. Ver o
+   bloco MEDCC: avanco-med mais abaixo. */
+[data-tema="dark"] .cx-pill-av { color: #fdba74; }
+/* o seletor Planejar | Avançar e a faixa do modo */
+.cx-modo-bt { display: inline-flex; gap: 4px; }
+.cx-modo-av { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 0 6px; padding: 5px 10px; font-size: var(--t-peq); color: #78350f; background: #fef3c7; border: 1px solid #f59e0b; border-radius: var(--raio-ctl, 8px); }
+.cx-modo-av .muted { color: #78350f; }
+/*
+ * ↑ os três trechos da barra, a linha do corte, o modo Avançar.
+ */
+/* ===== PLANEJADOR: cal-painel (2B) ===== */
+/* Cartão e modal dos calendários das frentes. A primeira linha da tabela é a
+   régua da OBRA e é só leitura: ela fica em cinza para não parecer editável —
+   clicar nela e nada acontecer é o tipo de porta que não abre. */
+.cx-cal-painel .cx-cal-tab { width: 100%; }
+/* a coluna FRENTES nao quebra: "as demais" em duas linhas fazia a linha
+   da obra parecer dois registros (medido a 1366) */
+.cx-cal-painel .cx-cal-tab th:nth-child(3), .cx-cal-painel .cx-cal-tab td:nth-child(3) { white-space: nowrap; }
+.cx-cal-painel .cx-cal-tab td:last-child { width: 46%; }
+.cx-cal-painel .cx-cal-lead, .cx-cal-modal .cx-cal-lead { font-size: var(--t-peq); color: var(--texto-fraco); }
+.cx-cal-tab .cx-cal-obra > td { color: var(--texto-fraco); background: var(--surface-2, var(--surface)); }
+.cx-cal-modal .cx-cal-tit { font-size: var(--t-med); font-weight: var(--p-forte); color: var(--texto); margin: 0 0 8px; }
+.cx-cal-modal .cx-cal-dia { display: flex; flex-direction: column; font-weight: var(--p-normal); font-size: var(--t-micro); color: var(--texto-fraco); }
+.cx-cal-modal .cx-cal-dia input { width: 56px; }
+.cx-cal-modal .cx-cal-nota, .cx-cal-modal .cx-cal-vazio { font-size: var(--t-micro); color: var(--texto-fraco); }
+/* o seletor de lote nunca encolhe a ponto de esconder o número da frente: a
+   pessoa escolhe pelo número, e "7.3" cortado vira escolha errada */
+.cx-cal-modal .cx-cal-lote { min-width: 220px; }
+/*
+ * ↑ cartão e modal dos calendários das frentes.
+ */
+/* ===== PLANEJADOR: avanco-painel (2B) ===== */
+/* Modal do avanço, sugestões por fonte, card "Término previsto" e o cartão
+   "Compatibilidade". */
+.cx-avanco-painel .cx-av-nota, .cx-avanco-painel .cx-av-ctx, .cx-avanco-painel .cx-av-semsug { font-size: var(--t-peq); color: var(--texto-fraco); }
+/* uma tabela por FONTE (E-MC5): o título de cada uma precisa ficar colado na
+   tabela dela, senão duas fontes viram uma lista só na leitura */
+.cx-avanco-painel .cx-av-fonte { margin-top: 10px; }
+.cx-avanco-painel .cx-av-sug { width: 100%; }
+.cx-avanco-painel .cx-av-sug th:last-child, .cx-avanco-painel .cx-av-sug td:last-child { text-align: center; width: 56px; }
+.cx-avanco-painel .cx-av-diff { margin-top: 10px; }
+/* ⚠ o card do término leva a AÇÃO dentro (memória "ação mora no card do
+   número"): o botão fica no rodapé do card, não numa barra longe dele */
+.cx-kpi-termino .cx-kpi-acao { margin-top: 6px; }
+.cx-pr-org { font-size: var(--t-micro); }
+/* o cartão "Compatibilidade": o que um aparelho antigo vê de diferente.
+   ⚠ O vermelho é só para o que NÃO foi possível garantir (código fora do
+   catálogo, função desligada) — divergência declarada é informativa, e
+   pintar as duas de vermelho ensina a ignorar as duas. */
+.cx-compat .cx-compat-lead, .cx-compat .cx-compat-nada, .cx-compat .cx-compat-em { font-size: var(--t-peq); color: var(--texto-fraco); margin: 0 0 6px; }
+.cx-compat .cx-compat-em { font-size: var(--t-micro); margin: 6px 0 0; }
+/* ⚠ --graf-alerta, e NÃO --vermelho: este é TEXTO pequeno sobre o cartão, e
+   o vermelho puro reprova AA nos dois temas (medido em css/app.css:122). */
+.cx-compat .cx-compat-ruim { color: var(--graf-alerta); font-weight: var(--p-medio); }
+.cx-compat .cx-compat-pend { font-size: var(--t-peq); color: var(--texto); margin: 0 0 8px; }
+/*
+ * ↑ modal do avanço, sugestões dos diários, cartão "Compatibilidade".
+ */
+/* ===== PLANEJADOR: bases (1B) ===== */
+/* A sub-aba "Linhas de base" (CronoExecUI.basesPainel). Usa a largura toda
+   da janela (memória "tela usa o máximo da janela"): cartões em grade que
+   quebra, barra que quebra, tabela que rola na horizontal dentro do próprio
+   contêiner — a página nunca rola de lado. */
+.cxb { display: flex; flex-direction: column; gap: 10px; padding: 8px 0 16px; }
+.cxb-topo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.cxb-tit { font-size: var(--t-med); color: var(--texto); }
+.cxb-acoes { display: flex; flex-wrap: wrap; gap: 6px; }
+.cxb-vazio { font-size: var(--t-peq); color: var(--texto-fraco); margin: 4px 0; }
+.cxb-versoes { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
+.cxb-card { border: 1px solid var(--linha); border-left: 4px solid var(--linha-forte); border-radius: var(--raio); background: var(--surface); padding: 8px 10px; display: flex; flex-direction: column; gap: 3px; font-size: var(--t-peq); color: var(--texto); }
+.cxb-card.cxb-contratual { border-left-color: var(--navy); }
+.cxb-card.cxb-aprovada { border-left-color: var(--verde); }
+.cxb-card.cxb-interna { border-left-color: var(--amarelo); }
+.cxb-card.cxb-anulada { border-left-color: var(--texto-fraco); }
+.cxb-card.cxb-ativa { box-shadow: var(--anel); }
+.cxb-card.cxb-gemea { opacity: .82; }
+.cxb-card-cab { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--t-base); }
+.cxb-est { font-size: var(--t-micro); font-weight: var(--p-medio); letter-spacing: .02em; color: var(--texto-fraco); }
+.cxb-selo-ativa { font-size: var(--t-micro); font-weight: var(--p-medio); border-radius: 999px; padding: 0 8px; background: var(--aco); color: #fff; }
+.cxb-card-l { line-height: 1.35; }
+.cxb-selo-txt { color: var(--texto-fraco); }
+.cxb-aviso-linha { color: var(--graf-aviso); }
+.cxb-card-bt { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.cxb-card-bt .btn.on { background: var(--surface-3); border-color: var(--aco); }
+.cxb-barra { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 8px 10px; border: 1px solid var(--linha); border-radius: var(--raio); background: var(--surface-2); font-size: var(--t-peq); }
+.cxb-barra label { display: inline-flex; align-items: center; gap: 6px; }
+.cxb-barra select { max-width: 280px; }
+.cxb-grupo { display: inline-flex; align-items: center; gap: 6px; }
+.cxb-busca input { width: 180px; }
+.cxb-resumo { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 8px; }
+.cxb-kpi { border: 1px solid var(--linha); border-radius: var(--raio); background: var(--surface); padding: 8px 10px; }
+.cxb-kpi-rot { font-size: var(--t-micro); font-weight: var(--p-medio); color: var(--texto-fraco); text-transform: uppercase; letter-spacing: .03em; }
+.cxb-kpi-v { font-size: var(--t-peq); color: var(--texto); line-height: 1.45; margin-top: 2px; }
+.cxb-sec { font-size: var(--t-peq); color: var(--texto); margin-top: 4px; }
+.cxb-gantt { overflow-x: auto; }
+.cxb-leg { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--t-micro); color: var(--texto-fraco); margin-top: 4px; }
+.cxb-leg i { display: inline-block; width: 18px; height: 3px; vertical-align: middle; margin-right: 5px; }
+.cxb-leg .cxb-leg-a { background: #334155; }
+.cxb-leg .cxb-leg-b { background: #0d6ebd; }
+.cxb-tabela { overflow-x: auto; }
+table.tbl.cxb-tab { width: 100%; font-size: var(--t-peq); }
+table.tbl.cxb-tab th, table.tbl.cxb-tab td { padding: 4px 8px; white-space: nowrap; vertical-align: top; }
+table.tbl.cxb-tab td.cx-nome { white-space: normal; min-width: 220px; width: 100%; }
+table.tbl.cxb-tab tr.cxb-l-etapa td { font-weight: var(--p-medio); }
+table.tbl.cxb-tab tr.cxb-mudou td.num { color: var(--graf-aviso); }
+.cxb-rec { display: inline-block; width: 14px; }
+.cxb-rec2 { display: inline-block; width: 28px; }
+.cxb-fora { font-size: var(--t-peq); margin: 0; }
+.cxb-rodape { font-size: var(--t-micro); margin: 2px 0 0; }
+.cxb-f-linha { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 6px; }
+.cxb-f-linha label { display: inline-flex; flex-direction: column; gap: 3px; font-weight: var(--p-normal); }
+/*
+ * ↑ sub-aba "Linhas de base", comparação e selo.
+ */
+/* ===== PLANEJADOR: uso (1C) ===== */
+/* A BARRA DE USO mora DENTRO do papel do Gantt (.gx), que é branco nos DOIS
+   temas (regra 4 do cabeçalho do js/cronoexecui.js): as tintas aqui são
+   cravadas pelo mesmo motivo — um token de tema escuro sumiria no papel
+   branco. Tamanho e peso pelos tokens (test-contraste). Altura: 40 px
+   (CronoExecUI.GX_USO), controles de 28 px como os do canto. */
+.gx-uso { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: 40px; box-sizing: border-box; padding: 6px 8px; border-bottom: 1px solid #e2e8f0; background: #fff; color: #0f172a; border-radius: 7px 7px 0 0; position: relative; }
+/* com a barra em cima, o cabeçalho de datas deixa de ser a borda arredondada da moldura */
+.gx > .gx-uso ~ .gx-cab { border-radius: 0; }
+.gx-uso-busca { display: inline-flex; align-items: center; gap: 4px; flex: 1 1 320px; min-width: 0; }
+.gx .gx-uso-in { flex: 1 1 auto; min-width: 120px; max-width: 360px; height: 28px; min-height: 0; box-sizing: border-box; border: 1px solid #94a3b8; border-radius: var(--raio-ctl, 8px); padding: 0 8px; background-color: #fff; color: #0f172a; font: inherit; font-size: var(--t-micro); }
+.gx .gx-uso-in::placeholder { color: #64748b; }
+.gx .gx-uso-in:focus-visible { outline: 2px solid #0d6ebd; outline-offset: 1px; }
+.gx-uso-cont { font-size: var(--t-micro); color: #334155; min-width: 44px; white-space: nowrap; }
+.gx-uso-so { display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-micro); color: #0f172a; white-space: nowrap; cursor: pointer; }
+.gx-uso-so input { color: #0f172a; background-color: #fff; }
+/* ⚠ SEM position aqui: o painel do filtro se ancora na BARRA (.gx-uso), à
+   direita. Ancorado neste botão, que fica no meio-direita da barra, ele
+   passava da borda da janela a 1366 e as contagens saíam cortadas (foto da
+   e2e-crono-busca, 17/09/2026). */
+.gx-uso-filtro { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.gx-uso-dir { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
+.gx-uso-bt { height: 28px; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: var(--raio-ctl, 8px); background: #fff; color: #0f172a; padding: 0 10px; font: inherit; font-size: var(--t-micro); font-weight: var(--p-medio); cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
+.gx-uso-bt:hover { background: #f1f5f9; border-color: #7e95aa; }
+.gx-uso-bt:focus-visible, .gx-uso-chip:focus-visible, .gx-uso-link:focus-visible, .gx-uso-pilha:focus-visible { outline: 2px solid #0d6ebd; outline-offset: 1px; }
+.gx-uso-pilha[aria-disabled="true"] { color: #94a3b8; cursor: not-allowed; }
+.gx-uso-chip { height: 24px; box-sizing: border-box; border: 1px solid #b45309; border-radius: 999px; background: #fef3c7; color: #78350f; padding: 0 10px; font: inherit; font-size: var(--t-micro); cursor: pointer; white-space: nowrap; }
+.gx-uso-chip-ind { border-style: dashed; background: #fff; color: #475569; border-color: #94a3b8; }
+.gx-uso-link { border: 0; background: none; color: #0d6ebd; padding: 0; font: inherit; font-size: var(--t-micro); text-decoration: underline; cursor: pointer; }
+.gx-uso-recado { padding: 4px 10px; font-size: var(--t-micro); color: #334155; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
+/* a faixa âmbar do filtro (acima do Gantt e da tabela): #78350f sobre #fef3c7 = 8,6:1 */
+.gx-faixa-filtro { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 5px 10px; font-size: var(--t-micro); color: #78350f; background: #fef3c7; border-bottom: 1px solid #f59e0b; }
+.cx-tabela + .gx-faixa-filtro, .gx-faixa-filtro[data-gx-faixa="tabela"] { border: 1px solid #f59e0b; border-radius: var(--raio-ctl, 8px); margin: 10px 0 0; }
+.gx-faixa-filtro span { flex: 1 1 280px; }
+/* o painel do filtro: ancorado no botão, NÃO é modal */
+.gx-fp { position: absolute; top: 100%; right: 8px; left: auto; margin-top: 2px; z-index: 20; width: 380px; max-width: calc(100% - 16px); max-height: min(70vh, 560px); overflow: auto; box-sizing: border-box; padding: 10px 12px 0; background: #fff; color: #0f172a; border: 1px solid #cbd5e1; border-radius: var(--raio-ctl, 8px); box-shadow: 0 6px 22px rgba(15, 23, 42, .22); }
+.gx-fp-tit { font-size: var(--t-micro); font-weight: var(--p-forte); color: #334155; text-transform: uppercase; letter-spacing: .3px; margin: 8px 0 4px; }
+.gx-fp-tit:first-child { margin-top: 0; }
+.gx-fp-lin { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; padding: 3px 0; font-size: var(--t-peq); color: #0f172a; cursor: pointer; }
+.gx-fp-lin input { color: #0f172a; background-color: #fff; }
+.gx-fp-lin span:nth-child(2) { flex: 1 1 150px; }
+/* o motivo de uma opção desligada é frase ("nenhum neste cronograma"): quebra
+   dentro do painel em vez de sair por ele */
+.gx-fp-n, .gx-fp-dica { font-size: var(--t-micro); color: #475569; }
+.gx-fp-n { margin-left: auto; text-align: right; }
+.gx-fp-dica { flex-basis: 100%; padding-left: 22px; }
+.gx-fp-off { color: #64748b; cursor: not-allowed; }
+.gx-fp-cats { max-height: 160px; overflow: auto; }
+/* ⚠ [Limpar filtro] e [Fechar] SEMPRE à vista: com muitas categorias o painel
+   rola, e as ações no fim da rolagem ficavam fora do alcance */
+.gx-fp-acoes { position: sticky; bottom: 0; display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; padding: 8px 0 10px; background: #fff; border-top: 1px solid #e2e8f0; }
+.gx-vazio { padding: 0 0 12px; }
+.gx-vazio-txt { padding: 16px 12px 4px; font-size: var(--t-peq); color: #0f172a; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+/* o HISTÓRICO (modal largo) */
+.cx-alt td { vertical-align: top; }
+.cx-alt-m { margin: 4px 0 0; }
+.cx-alt-lac td { background: var(--surface-2, #eef2f7); }
+.cx-alt-rodape, .cx-alt-vazio, .cx-alt-so { font-size: var(--t-micro); }
+/* os ALERTAS DO CRONOGRAMA no sino (tema do app, não o papel do Gantt) */
+.avisos-crono { position: relative; }
+/* numa linha própria, embaixo do detalhe: inline, ele encostava no fim do
+   texto ("corte 11/09[Dispensar…]", foto da e2e-sino-crono) */
+.avisos-dispensar { display: table; margin-top: 6px; border: 1px solid var(--linha, #c9d6e4); border-radius: 999px; background: transparent; color: var(--texto); padding: 1px 10px; font: inherit; font-size: var(--t-micro); cursor: pointer; }
+.avisos-dispensar:hover { background: var(--surface-2, #eef2f7); }
+.avisos-rodape { padding: 8px 12px; font-size: var(--t-micro); color: var(--texto-fraco); border-top: 1px solid var(--linha, #e2e8f0); }
+@media (max-width: 760px) {
+  /* o campo na linha inteira e o contador, ‹ › e "Só os achados" embaixo: a
+     400 px o "3 de 4 · 2 fora do filtro" passava por cima dos botões */
+  .gx-uso-busca { flex-basis: 100%; flex-wrap: wrap; }
+  .gx .gx-uso-in { max-width: none; flex-basis: 100%; }
+}
+/*
+ * ↑ busca, filtro, desfazer/refazer, sino e histórico.
+ */
+
+/* ===== MEDCC: avanco-med (6B) ===== */
+/* As faixas da medição na linha do prazo. ⚠ Elas convivem, na MESMA linha,
+   com a pílula do avanço (.cx-pill-av) e a dos calendários: por isso são
+   pílula, e não botão — a régua do cronograma (e2e-padrao-cronograma) mede
+   todo clicável acima do Gantt e aceita 24 px/raio 999 para pílula.
+   ⚠ Cor DECLARADA, não herdada do .pill genérico: as três faixas dizem
+   coisas diferentes (há número novo · os números discordam · o boletim caiu)
+   e uma cor só faria a pessoa ler "aviso" três vezes sem distinguir qual.
+   O contraste é o de test-contraste (4.5:1 sobre o papel claro).
+   ⚠ E O PAR ESCURO EXISTE — ele faltava (achado da revisão da Onda 6,
+     22/09/2026). Medido nos PIXELS, na página real em `data-tema="dark"`,
+     com o fundo COMPOSTO (as pílulas são rgba sobre superfície escura, então
+     medir contra o token do fundo mente): sugere 2,02:1 · conflito 1,81:1 ·
+     sem lastro 2,18:1 · diário 2,98:1 — e a `.cx-pill-av` da 2A, de onde
+     este bloco copiou o padrão, já estava em 1,81:1. O mínimo é 4,5:1. Toda
+     a família `.pill` deste arquivo tem par escuro; esta nasceu sem, e
+     nenhuma suíte media pílula no escuro (o `test-contraste` mede no claro).
+     Quem confere: `tools/e2e-crono-medicao-sugere.js`, bloco [13] — na
+     página real, compondo o fundo por alfa. */
+.cx-pill-med { background: rgba(13, 110, 189, .12); color: #0b5384; }
+.cx-med-conflito { background: rgba(180, 83, 9, .14); color: #78350f; }
+.cx-med-semlastro { background: rgba(190, 18, 60, .12); color: #9f1239; }
+.cx-med-diario { background: rgba(15, 118, 110, .13); color: #0f766e; }
+/* "não consegui perguntar aos diários": cinza de propósito — não é alarme
+   nem novidade, é ausência de resposta */
+.cx-med-ilegivel { background: rgba(71, 85, 105, .14); color: #334155; }
+[data-tema="dark"] .cx-pill-med { color: #7dd3fc; }
+[data-tema="dark"] .cx-med-conflito { color: #fdba74; }
+[data-tema="dark"] .cx-med-semlastro { color: #fda4af; }
+[data-tema="dark"] .cx-med-diario { color: #5eead4; }
+[data-tema="dark"] .cx-med-ilegivel { color: #cbd5e1; }
+/* a tabela do [Rever]: a coluna das três decisões não quebra linha, e a
+   primeira coluna é a que encolhe (o nome da tarefa é o que dá para cortar) */
+.cx-av-rever td:last-child { white-space: nowrap; text-align: right; }
+.cx-av-rever td:first-child { word-break: break-word; }
+@media (max-width: 760px) {
+  /* a 400 px as três decisões empilham em vez de sair da tela: porta
+     prometida precisa existir, inclusive no celular */
+  .cx-av-rever td:last-child { white-space: normal; }
+}
+/*
+ * ↑ faixas da medição na linha do prazo e a tabela do [Rever].
+ */

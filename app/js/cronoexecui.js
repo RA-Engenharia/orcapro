@@ -189,7 +189,12 @@
     if (pv == null && rl == null) return '<span class="muted">—</span>';
     function cl(v) { var x = Number(v); return isFinite(x) ? Math.max(0, Math.min(100, x)) : 0; }
     var cor = d == null ? "" : (d < 0 ? "color:#b91c1c" : "color:#15803d");
-    return '<span>previsto ' + pctOu(pv) + ' · real ' + pctOu(rl) + (d != null ? ' · <b style="' + cor + '">' + esc(ppTxt(d)) + '</b>' : '') + '</span>' +
+    /* ⚠ O REAL VEM COM A ORIGEM (planejador 2B, E-MC5): "real 60% (digitado)"
+       e "real 60% (medição 01a)" se discutem de formas diferentes. Sem a
+       origem, o número aparece sem dono e quem lê não sabe se pode contestá-lo
+       nem onde ele foi lançado. */
+    var org = n.realOrigem ? ' <span class="muted cx-pr-org">(' + esc(String(n.realOrigem)) + ')</span>' : '';
+    return '<span>previsto ' + pctOu(pv) + ' · real ' + pctOu(rl) + org + (d != null ? ' · <b style="' + cor + '">' + esc(ppTxt(d)) + '</b>' : '') + '</span>' +
       '<div class="cx-mb" title="barra = executado; traço = previsto na data">' + (rl != null ? '<i style="width:' + f1(cl(rl)) + '%"></i>' : '') + (pv != null ? '<em style="left:' + f1(cl(pv)) + '%"></em>' : '') + '</div>';
   }
   /* número digitado pela pessoa: "5", "5,5", "1.500" (milhar BR com vírgula
@@ -246,6 +251,18 @@
      sobre o papel branco do Gantt (regra 4 do cabeçalho), e um token de tema
      deixaria o ponto quase invisível no tema escuro do resto do app. */
   var AZUL_ELO = "#0d6ebd";
+  /* ⚠ (planejador 2A) O ROXO DA TAREFA SEM PREÇO. Cravado como as outras
+     tintas deste arquivo: o Gantt é papel branco nos dois temas (regra 4 do
+     cabeçalho), e um token de tema deixaria a barra tracejada quase invisível
+     no tema escuro. Roxo, e não a cor de uma categoria, porque tarefa sem
+     preço NÃO é serviço do orçamento — e o contraste está medido em
+     tools/test-contraste.js. */
+  var ROXO_T = "#6d28d9";
+  function fin(v, d) { var n = Number(v); return isFinite(n) ? n : d; }
+  function ehObj(v) { return !!v && typeof v === "object" && !ehArr(v); }
+  /* a chave "AAAA-MM-DD" do dia LOCAL (a mesma do CronoCal): `toISOString`
+     daria o dia anterior no Brasil */
+  function chDia2A(ms) { var d = new Date(ms); return d.getFullYear() + "-" + dd(d.getMonth() + 1) + "-" + dd(d.getDate()); }
 
   /* ⚠ A RÉGUA DO CONTROLE TAMBÉM MORA AQUI, E NÃO SÓ NO app.css (14/09/2026).
      Esta folha é injetada pelo `render` DENTRO da aba, depois do app.css: com
@@ -666,7 +683,26 @@
     ".cx-sit{display:inline-block;border-radius:99px;padding:1px 8px;font-size:11.5px;font-weight:600}";
 
   function normDet(d) { return DETALHES.indexOf(d) > -1 ? d : "subetapa"; }
-  function subVisivel(id) { for (var i = 0; i < SUBS.length; i++) if (SUBS[i].id === id) return !(SUBS[i].fase && SUBS[i].fase > FASE); return false; }
+  /* ⚠ REGISTROS DO PLANEJADOR (Onda 0, T8 e T20). As fatias acrescentam
+     sub-abas e ações na linha do prazo POR REGISTRO — ninguém edita o
+     `render`, a `barra` nem o `cronograma`. Vazios = a tela de sempre, byte a
+     byte (tools/test-crono-tomadas.js). Moram no módulo, e não no App: o
+     desenho é puro e roda em Node sem ele. */
+  var _subsReg = [];
+  var _prazoReg = [];
+  var _dBarra = null;   // os dados do render corrente, para o `quando` das sub-abas registradas (ver `render`)
+  function subReg(id) {
+    for (var i = 0; i < _subsReg.length; i++) if (_subsReg[i].id === id) return _subsReg[i];
+    return null;
+  }
+  function subVisivel(id) { for (var i = 0; i < SUBS.length; i++) if (SUBS[i].id === id) return !(SUBS[i].fase && SUBS[i].fase > FASE); return !!subReg(id); }
+  /* a sub-aba registrada vale nesta tela? `quando` que lança = não vale (um
+     registro com defeito não derruba a aba inteira) */
+  function subVale(s, d, est) {
+    if (!s) return false;
+    if (typeof s.quando !== "function") return true;
+    try { return !!s.quando(d, est); } catch (e) { return false; }
+  }
 
   /* resultado com Date NOVOS: o memo entrega o mesmo cálculo a mais de um
      leitor no mesmo render, e um `setDate` num deles (addDiasUteis muda a
@@ -764,8 +800,12 @@
       return { r: r, valores: valores, ms: Date.now() - t0 };
     },
 
-    /* estado de TELA (nunca do orçamento) lido do App; tudo com padrão */
-    estado: function (app, orc) {
+    /* estado de TELA (nunca do orçamento) lido do App; tudo com padrão.
+       `chave` (planejador, 1C) = o alvo ("orc:<id>" | "plano:<obraId>"): a
+       busca, o filtro e a pilha são POR ALVO — o orçamento e o plano da obra
+       têm o mesmo id, e a pilha de um não pode desfazer o outro (achado 12.1
+       do desenho USO). */
+    estado: function (app, orc, chave) {
       var id = orc && orc.id, ex = (orc && orc.cronograma && orc.cronograma.exec) || {};
       function de(m) { return (app && app[m] && typeof app[m] === "object" && own(app[m], id)) ? app[m][id] : null; }
       var sub = de("_cronoSub"); if (!subVisivel(sub)) sub = "cronograma";
@@ -783,7 +823,12 @@
          ali, mudaria o `atualizadoEm` a cada roda do mouse, sincronizaria à toa
          e esbarraria na trava do aprovado. */
       var zm = de("_cronoZoom"); if (!zm || typeof zm !== "object" || ehArr(zm)) zm = {};
-      var df = de("_cronoDesf");
+      /* o desfazer de UM nível (`_cronoDesf`) virou a pilha por alvo (1C): o
+         rótulo do próximo desfazer vem dela e só serve de chave de forma ao
+         desenho (o ↶ saiu do canto e foi para a barra de uso) */
+      var uso = this.estadoUso(app, chave || (id != null ? "orc:" + id : ""));
+      var Pi = MOD("CronoPilha", "./cronopilha.js");
+      var df = (uso.pilha && Pi && uso.pilha.cursor > 0) ? { resumo: Pi.rotulo(uso.pilha, "desfazer") } : null;
       /* HISTOGRAMA e LINHA DE BALANÇO — estado de TELA como todo o resto desta
          função (regra 3 do cabeçalho). ⚠ `aberto:false` é o padrão de
          propósito: montar o histograma exige a base analítica de ~18 MB, e
@@ -800,7 +845,7 @@
       /* ⚠ A PONTE .mpp é da MÁQUINA, não do orçamento: o estado mora no app
          inteiro (App._cronoMpp), e por isso é lido fora do `de(...)`. */
       var mp = (app && app._cronoMpp && typeof app._cronoMpp === "object") ? app._cronoMpp : null;
-      return { sub: sub, detalhe: det, abertas: ab, mpp: mp,
+      return { sub: sub, detalhe: det, abertas: ab, mpp: mp, uso: uso,
         saude: { aberto: sa.aberto === true, fundo: sa.fundo === true, calculando: sa.calculando === true },
         zoom: { nivel: zm.nivel || "auto", sel: zm.sel == null ? -1 : zm.sel, desfazer: (df && df.resumo) ? String(df.resumo) : "",
           // a escala do "Ajustar" mantida enquanto se edita (ver GanttUI.estado): estado de TELA, como o nível
@@ -891,12 +936,23 @@
          servico  → tudo
        `abertas[etapaId] === false` recolhe a etapa (estado de tela).
        ------------------------------------------------------------------ */
+    /* ⚠ TOMADAS DO PLANEJADOR (Onda 0, T7), as duas AUSENTES = a lista de
+       sempre, byte a byte:
+         opts.intercalar(lista, r) → a lista com linhas a mais (a 2A põe as
+           tarefas sem preço depois do bloco da etapa `apos`); devolver algo
+           que não é lista = ignorado;
+         opts.manter = {id: true} → descarta as linhas cujo id não está nele (o
+           filtro da 1C). Roda DEPOIS do intercalar: o filtro vale também para
+           as linhas intercaladas.
+       ⚠ O Gantt, a tabela e a fiação do arrasto usam ESTA lista (o nó é achado
+       pelo índice da linha): filtrar em um só dos três faria a pessoa arrastar
+       uma barra e outra se mover. */
     linhas: function (r, opts) {
       opts = opts || {};
       var det = normDet(opts.detalhe), ab = opts.abertas || {}, out = [], nos = arr(r && r.atividades);
       if (!nos.length || det === "etapa") {
         arr(r && r.etapas).forEach(function (e, i) { out.push({ tipo: "etapa", i: i, et: e, no: null }); });
-        return out;
+        return CronoExecUI._linhasTomadas(out, r, opts);
       }
       var aberta = true;
       nos.forEach(function (n) {
@@ -905,6 +961,20 @@
         if (n.tipo === "subetapa" || n.tipo === "soltos") { out.push({ tipo: "folha", no: n }); return; }
         if (n.tipo === "servico" && det === "servico") out.push({ tipo: "servico", no: n });
       });
+      return CronoExecUI._linhasTomadas(out, r, opts);
+    },
+    _linhasTomadas: function (out, r, opts) {
+      if (typeof opts.intercalar === "function") {
+        var ic = opts.intercalar(out, r);
+        if (ehArr(ic)) out = ic;
+      }
+      var mt = opts.manter;
+      if (mt && typeof mt === "object") {
+        out = out.filter(function (l) {
+          var n = l && (l.no || l.et);
+          return !!n && own(mt, n.id) && !!mt[n.id];
+        });
+      }
       return out;
     },
     temFolhas: function (r) {
@@ -952,7 +1022,18 @@
          o que a suíte `ganttSemOptsIgual` cobra e o que segura as 38
          instalações, o PDF, a proposta e o painel da obra. */
       var pro = (opts.pro && typeof opts.pro === "object" && opts.pro.e) ? opts.pro : null;
-      var L = pro ? arr(pro.L) : this.linhas(r, { detalhe: det, abertas: opts.abertas });
+      /* ⚠ TOMADAS DO PLANEJADOR (Onda 0, T7) — cada uma AUSENTE = o desenho de
+         sempre, byte a byte (tools/test-crono-tomadas.js e `ganttSemOptsIgual`):
+           opts.manter / opts.intercalar → repassados ao `linhas` (filtro da 1C,
+             linhas das tarefas sem preço da 2A);
+           opts.camadas = {antes(ctx), depois(ctx)} → SVG por baixo e por cima
+             das barras (sombreamento, linha do corte, folgas, marcadores);
+           opts.barraDe(no, geo) → devolve o SVG que SUBSTITUI a barra daquela
+             linha, ou null para a barra de sempre.
+         Quem desenha o novo chama estas portas; ninguém edita este corpo. */
+      var L = pro ? arr(pro.L) : this.linhas(r, { detalhe: det, abertas: opts.abertas, manter: opts.manter, intercalar: opts.intercalar });
+      var gCam = (opts.camadas && typeof opts.camadas === "object") ? opts.camadas : null;
+      var gBarraDe = typeof opts.barraDe === "function" ? opts.barraDe : null;
       if (!pro && (opts.de != null || opts.ate != null)) L = L.slice(opts.de || 0, opts.ate == null ? L.length : opts.ate);
       /* PREVISTO × REALIZADO (Fase 3): `opts.base` = {id: {ini, fim}} (datas
          "AAAA-MM-DD" da linha de base) desenha a barra FANTASMA atrás da barra
@@ -1119,6 +1200,12 @@
         if (!(pr > 0)) return "";
         return '<rect class="gantt-real" x="' + f1(x) + '" y="' + y + '" width="' + f1(Math.max(1, w * pr / 100)) + '" height="' + hh + '" fill="#0f172a" opacity="0.6"><title>' + esc("executado: " + pct(pr, 1)) + '</title></rect>';
       }
+      /* a GEOMETRIA que as camadas e o `barraDe` recebem (planejador, T7): as
+         mesmas funções de posição deste desenho — uma camada que calculasse o
+         x por conta própria sairia deslocada da barra no primeiro zoom */
+      var gGeo = (gCam || gBarraDe) ? { r: r, L: L, X: X, yRow: yRow, yc: yc, rowH: rowH, pxDia: pxDia, dias: dias, W: W, h: h,
+        lin0: lin0, lin1: lin1, pro: pro, papel: papel, limpo: limpo, labelW: labelW, top: top, cal: cal, idx: idx, detalhe: det } : null;
+      if (gCam && typeof gCam.antes === "function") s += String(gCam.antes(gGeo) || "");
       /* barras. ⚠ Os números de duração ("61d") vão para `rotDur` e são
          desenhados DEPOIS das setas, com contorno branco: desenhados antes, a
          seta crítica vertical passava por cima do "61d" de Pilares e cortava o
@@ -1144,6 +1231,12 @@
         }
         var x = X(n.inicio), w = Math.max(3, (Math.min(dias, n.fim) - Math.max(0, n.inicio)) * pxDia);
         if (pro) gxAlca += self._gxAlcas(pro, l, n, i, x, w, y0, rowH, tituloBarra(n, rot, ehEtapa));
+        /* a barra SUBSTITUÍDA por quem a registrou (planejador, T7): a alça do
+           arrasto já saiu acima (ela é por linha, não por desenho) */
+        if (gBarraDe) {
+          var subst = gBarraDe(n, { geo: gGeo, l: l, i: i, x: x, w: w, y0: y0, rot: rot, ehEtapa: ehEtapa, resumo: resumo, crit: crit, titulo: tituloBarra(n, rot, ehEtapa) });
+          if (subst != null) { s += String(subst); return; }
+        }
         if (n.marco) {
           var cy = y0 + rowH / 2, rr = l.tipo === "servico" ? 5 : 7;
           s += '<polygon class="gantt-marco' + (crit ? ' gantt-critica' : '') + '" points="' + f1(x) + ',' + (cy - rr) + ' ' + f1(x + rr) + ',' + cy + ' ' + f1(x) + ',' + (cy + rr) + ' ' + f1(x - rr) + ',' + cy + '" fill="' + (crit ? CRIT : '#0f172a') + '"><title>' + tituloBarra(n, rot, ehEtapa) + '</title></polygon>';
@@ -1175,33 +1268,100 @@
         }
       });
       // setas, por cima das barras (como no MS Project)
+      /* ⚠ O CAMINHO DA SETA MORA EM `caminhoElo` (planejador, T7), extraído
+         SEM MUDAR UM BYTE: é lá que a 2A acrescenta TT, IT, cruzado e extra, e
+         o SVG das setas TI/II continua o de hoje em todas as ondas. */
       function seta(px, py, sx, sy, cor, cls, larg, tracejada) {
-        var d;
-        if (sx >= px + 12) d = "M" + f1(px) + "," + py + " H" + f1(sx - 5) + " V" + sy + " H" + f1(sx - 1);
-        else {
-          var faixa = py + (sy > py ? rowH / 2 : -rowH / 2), volta = Math.max(labelW + 2, sx - 6);
-          d = "M" + f1(px) + "," + py + " H" + f1(px + 5) + " V" + faixa + " H" + f1(volta) + " V" + sy + " H" + f1(sx - 1);
-        }
-        return '<path class="' + cls + '" d="' + d + '" fill="none" stroke="' + cor + '" stroke-width="' + larg + '"' + (tracejada ? ' stroke-dasharray="3,2"' : '') + ' opacity="0.9"/>' +
-          '<polygon points="' + f1(sx) + ',' + sy + ' ' + f1(sx - 5) + ',' + (sy - 3) + ' ' + f1(sx - 5) + ',' + (sy + 3) + '" fill="' + cor + '"/>';
+        return self.caminhoElo("TI", px, py, sx, sy, { cor: cor, cls: cls, larg: larg, tracejada: tracejada, labelW: labelW, rowH: rowH });
       }
       /* ⚠ no modo pro a seta sai quando QUALQUER uma das duas pontas está na
          janela — não só a sucessora. Cortada pela sucessora, a seta que vem de
          uma etapa lá em cima desaparecia ao rolar, e a linha visível ficava
          parecendo solta na rede. */
       function foraDaJanela(si, pi) { return pro && (si < lin0 || si > lin1) && (pi < lin0 || pi > lin1); }
+      /* ⚠ PLANEJADOR 2A — OS QUATRO TIPOS, O ELO CRUZADO E A TAREFA SEM PREÇO.
+         Sem `predTipoRede`, sem `porExtras` e sem linha T, TUDO abaixo cai nos
+         mesmos dois ramos de sempre (TI entre etapas, TI/II entre folhas) e o
+         SVG sai byte a byte o de hoje — é o que a `test-crono-tomadas` compara
+         com o desenho da 1.2.81 e a fixtura `ui-gantt-pre2a.js` confere.
+         De onde a seta SAI e onde ela CHEGA (O6):
+           TI → fim da predecessora → início da sucessora
+           II → início              → início
+           TT → fim                 → FIM
+           IT → início              → FIM
+         ⚠ O RÓTULO DO TI NÃO MUDA UM BYTE (é o de hoje, "+7d"). Os outros levam
+         o TIPO na frente ("TT+2d"), e a espera é a DIGITADA (`predLagTipo`, a
+         régua do tipo) — não a equivalente de TI que a sombra grava (O20).
+         Mostrar a equivalente faria a pessoa copiar da tela, para o campo, um
+         número que ela nunca digitou (O23).
+         `opts.eloRotulos === false` (a camada "Rótulos das ligações"
+         desligada, D30) tira TODOS os rótulos. */
+      var eloRot = opts.eloRotulos !== false, GuS = GU();
+      function pontaTipo(tp, p, sn) { return { px: X(tp === "II" || tp === "IT" ? p.inicio : p.fim), sx: X(tp === "TT" || tp === "IT" ? sn.fim : sn.inicio) }; }
+      function geomDe(tp, interna) { return (tp === "TT" || tp === "IT") ? tp : (interna && tp === "II" ? "II" : "TI"); }
+      function rotuloElo(tp, lagTipo, lagTI, px2, sx2) {
+        if (!eloRot) return null;
+        if (tp === "TI") return (lagTI != null && sx2 >= px2 + 12) ? ((lagTI >= 0 ? "+" : "") + lagTI + "d") : null;
+        var L2 = lagTipo != null ? lagTipo : 0;
+        return tp + (L2 > 0 ? "+" + L2 + "d" : (L2 < 0 ? L2 + "d" : ""));
+      }
+      function textoElo(txt, x1, x2, yy, cor2) {
+        return '<text class="gantt-lag" x="' + f1((x1 + x2) / 2) + '" y="' + (yy - 4) + '" font-size="8.5" fill="' + cor2 + '" text-anchor="middle" pointer-events="none">' + esc(txt) + '</text>';
+      }
       if (!limpo) L.forEach(function (l, si) {
         var sN = l.no || l.et;
-        if (l.tipo === "etapa") {
+        if (l.tipo === "etapa" || l.tipo === "extra") {
           // EXTERNA etapa → etapa: fica vermelho só o elo que APERTA duas críticas (ver UI._gantt)
           (sN.preds || []).forEach(function (pid) {
             var pi = idx[pid]; if (pi == null || foraDaJanela(si, pi)) return;
             var pL = L[pi], p = pL.no || pL.et;
-            var off = (sN.predDesloc && sN.predDesloc[pid] != null) ? sN.predDesloc[pid] : -Math.floor(((r.params && r.params.paralelismo) || 0) * p.duracao);
-            var verm = sN.inicio === Math.max(0, p.fim + off) && sN.critico && p.critico;
-            s += seta(X(p.fim), yc(pi), X(sN.inicio), yc(si), verm ? CRIT : CINZA, "gantt-dep" + (verm ? " gantt-dep-critica" : ""), verm ? 1.8 : 1.1, false);
+            var tp = (sN.predTipoRede && sN.predTipoRede[pid]) || ((l.tipo === "extra" && sN.predTipo && sN.predTipo[pid]) || "TI");
+            var verm = (GuS ? GuS.eloAperta(sN, p, pid, r.params)
+              : sN.inicio === Math.max(0, p.fim + ((sN.predDesloc && sN.predDesloc[pid] != null) ? sN.predDesloc[pid] : -Math.floor(((r.params && r.params.paralelismo) || 0) * p.duracao)))) && sN.critico && p.critico;
+            var ehT = l.tipo === "extra" || pL.tipo === "extra";
+            var cor = verm ? CRIT : (ehT ? ROXO_T : CINZA);
+            var pt = pontaTipo(tp, p, sN);
+            s += self.caminhoElo(geomDe(tp, false), pt.px, yc(pi), pt.sx, yc(si),
+              { cor: cor, cls: "gantt-dep" + (verm ? " gantt-dep-critica" : "") + (ehT ? " cx-dep-t" : ""), larg: verm ? 1.8 : 1.1, tracejada: ehT, labelW: labelW, rowH: rowH, limite: W - 2 });
             var lagE = sN.predLag && sN.predLag[pid];
-            if (lagE != null && X(sN.inicio) >= X(p.fim) + 12) s += '<text class="gantt-lag" x="' + f1((X(p.fim) + X(sN.inicio)) / 2) + '" y="' + (yc(pi) - 4) + '" font-size="8.5" fill="' + (verm ? CRIT : CINZA) + '" text-anchor="middle" pointer-events="none">' + (lagE >= 0 ? "+" : "") + lagE + 'd</text>';
+            var lagT = (sN.predLagTipo && sN.predLagTipo[pid] != null) ? sN.predLagTipo[pid] : null;
+            var rt = rotuloElo(tp, lagT, lagE == null ? null : lagE, pt.px, pt.sx);
+            if (rt) s += textoElo(rt, pt.px, pt.sx, yc(pi), cor);
+          });
+          /* O ELO CRUZADO (O26): a chave de `predTipoRede` que NÃO está em
+             `preds` é o id da SUBETAPA predecessora — o motor guarda o tipo
+             pela folha e o deslocamento pela etapa. A seta sai da linha da
+             subetapa, para a pessoa ver de onde vem o piso. */
+          if (sN.predTipoRede || sN.predLagTipo) {
+            var vistosC = {};
+            [sN.predTipoRede, sN.predLagTipo].forEach(function (mp) {
+              if (!mp) return;
+              Object.keys(mp).forEach(function (fid) {
+                if (own(vistosC, fid) || (sN.preds || []).indexOf(fid) > -1) return;
+                vistosC[fid] = 1;
+                var fi = idx[fid]; if (fi == null || foraDaJanela(si, fi)) return;
+                var pf = L[fi].no || L[fi].et; if (!pf || pf.inicio == null) return;
+                var tpc = (sN.predTipoRede && sN.predTipoRede[fid]) || "TI";
+                var ptc = pontaTipo(tpc, pf, sN);
+                s += self.caminhoElo(geomDe(tpc, false), ptc.px, yc(fi), ptc.sx, yc(si),
+                  { cor: AZUL_ELO, cls: "gantt-dep cx-dep-cruz", larg: 1.2, tracejada: true, labelW: labelW, rowH: rowH, limite: W - 2 });
+                var rtc = rotuloElo(tpc, sN.predLagTipo ? sN.predLagTipo[fid] : null, null, ptc.px, ptc.sx);
+                if (rtc) s += textoElo(rtc, ptc.px, ptc.sx, yc(fi), AZUL_ELO);
+              });
+            });
+          }
+          /* A TAREFA SEM PREÇO QUE SEGURA A ETAPA (`porExtras`): a seta sai da
+             linha T. Sem ela, a etapa andaria e nada na tela diria por quê —
+             que é exatamente o defeito da data fixada invisível. */
+          arr(sN.porExtras).forEach(function (q) {
+            if (!q || q.id == null) return;
+            var qi = idx[q.id]; if (qi == null || foraDaJanela(si, qi)) return;
+            var qn = L[qi].no || L[qi].et; if (!qn || qn.inicio == null) return;
+            var tpx = q.tipo || "TI", ptx = pontaTipo(tpx, qn, sN);
+            s += self.caminhoElo(geomDe(tpx, false), ptx.px, yc(qi), ptx.sx, yc(si),
+              { cor: ROXO_T, cls: "gantt-dep cx-dep-t", larg: 1.2, tracejada: true, labelW: labelW, rowH: rowH, limite: W - 2 });
+            var rtx = rotuloElo(tpx, q.lag != null ? q.lag : null, null, ptx.px, ptx.sx);
+            if (rtx) s += textoElo(rtx, ptx.px, ptx.sx, yc(qi), ROXO_T);
           });
           return;
         }
@@ -1210,15 +1370,32 @@
         (sN.preds || []).forEach(function (pid) {
           var pi = idx[pid]; if (pi == null || foraDaJanela(si, pi)) return;
           var p = L[pi].no; if (!p || p.inicio == null) return;
-          var ii = sN.predTipo && sN.predTipo[pid] === "II";
+          var tpf = (sN.predTipoRede && sN.predTipoRede[pid]) || ((sN.predTipo && sN.predTipo[pid] === "II") ? "II" : "TI");
           var verm = sN.critico && p.critico, cor = verm ? CRIT : INTERNA;
-          if (ii) {
+          if (tpf === "II") {
             var px = X(p.inicio), sx = X(sN.inicio), py = yRow(pi) + rowH - 4, sy = yc(si);
-            s += '<path class="gantt-dep gantt-dep-int" d="M' + f1(px) + ',' + py + ' V' + sy + ' H' + f1(sx - 1) + '" fill="none" stroke="' + cor + '" stroke-width="1" stroke-dasharray="3,2" opacity="0.9"/>' +
-              '<polygon points="' + f1(sx) + ',' + sy + ' ' + f1(sx - 5) + ',' + (sy - 3) + ' ' + f1(sx - 5) + ',' + (sy + 3) + '" fill="' + cor + '"/>';
-          } else s += seta(X(p.fim), yc(pi), X(sN.inicio), yc(si), cor, "gantt-dep gantt-dep-int", 1, true);
+            s += self.caminhoElo("II", px, py, sx, sy, { cor: cor, cls: "gantt-dep gantt-dep-int", larg: 1, tracejada: true, labelW: labelW, rowH: rowH });
+          } else if (tpf === "TI") s += seta(X(p.fim), yc(pi), X(sN.inicio), yc(si), cor, "gantt-dep gantt-dep-int", 1, true);
+          else {
+            var ptf = pontaTipo(tpf, p, sN);
+            s += self.caminhoElo(geomDe(tpf, true), ptf.px, yc(pi), ptf.sx, yc(si),
+              { cor: cor, cls: "gantt-dep gantt-dep-int", larg: 1, tracejada: true, labelW: labelW, rowH: rowH, limite: W - 2 });
+          }
+          /* ⚠ O RÓTULO DO TIPO SÓ SAI COM A REDE DESTA VERSÃO (`predTipoRede`).
+             Roteiro do defeito (medido em 21/09/2026 contra o desenho da
+             1.2.81): o II LEGADO (o de `sub.tipos`, que existe desde sempre)
+             passou a ganhar um rótulo "II" que nunca existiu — 6.914 bytes
+             contra 6.790 no mesmo orçamento. Dado velho desenha igual ao de
+             ontem; só o que foi digitado NESTA versão ganha marca nova. */
+          var tpNovo = (sN.predTipoRede && sN.predTipoRede[pid]) || null;
+          if (tpNovo && tpNovo !== "TI") {
+            var rtf = rotuloElo(tpNovo, sN.predLagTipo ? sN.predLagTipo[pid] : null, null, X(p.fim), X(sN.inicio));
+            if (rtf) s += textoElo(rtf, X(p.fim), X(sN.inicio), yc(pi), cor);
+          }
         });
       });
+      // a camada POR CIMA das barras e das setas, e ainda por baixo dos números e das alças (planejador, T7)
+      if (gCam && typeof gCam.depois === "function") s += String(gCam.depois(gGeo) || "");
       s += rotDur + gxAlca + '</svg>';   // os números de duração por cima das setas (ver `rotDur`), e as alças por cima de tudo
       // no modo pro quem monta a moldura, a régua e a legenda é o `ganttPro`
       if (pro) return s;
@@ -1236,6 +1413,61 @@
         (hojeX != null ? '<span>' + amostra('height:0;border-top:2px dashed ' + HOJE) + esc(rotHoje) + '</span>' : '') +
         (W > W0 ? '<span>role o desenho para o lado para ver a obra inteira</span>' : '') +
         '</div>';
+    },
+
+    /* O CAMINHO DE UMA SETA DE DEPENDÊNCIA (planejador, Onda 0, T7; ramos
+       TT e IT da 2A), com a ponta. Extraído do `gantt` SEM MUDAR UM BYTE
+       (crítica 2, achado 15: não há exceção de bytes): "TI" é o `seta()` de
+       sempre (sai do FIM da predecessora; volta pelo corredor quando a
+       sucessora começa antes) e "II" é o caminho entre subetapas que sai do
+       INÍCIO. Tipo desconhecido → "".
+       `geo` = {cor, cls, larg, tracejada, labelW, rowH, corredor?, limite?}.
+
+       ⚠ Para dado só com TI/II legado o SVG das setas é o de hoje em TODAS as
+       ondas: tools/test-crono-tomadas.js o compara com o motor da 1.2.81,
+       tools/test-ganttui.js compara o `UI._gantt` inteiro com a fixture
+       tools/fixtures/ui-gantt-pre2a.js (capturada ANTES da 2A) e a e2e
+       `e2e-gantt-rede` confere o SVG da tela.
+
+       ⚠ POR QUE TT E IT ENTRAM PELA DIREITA, COM A PONTA PARA A ESQUERDA
+       Os dois terminam no FIM da sucessora, não no início dela. Com a ponta
+       do TI (que aponta para a direita), a seta entraria por dentro da barra
+       da sucessora e o olho leria "começa aqui" no lugar de "termina junto" —
+       era o desenho do MS Project ao contrário. Por isso o caminho é o
+       espelho do TI: corre até 6 px à direita do ponto mais à direita dos
+       dois, desce (ou sobe) e volta para a ponta.
+       `geo.corredor` = o deslocamento vertical do corredor do TI (ausente =
+       `rowH / 2`, o valor de sempre — é assim que o `UI._gantt`, que tem
+       rowH 30 e conta 15 na mão, sai byte a byte). `geo.limite` = a borda
+       direita do desenho, para o corredor do TT não sair do SVG.
+
+       ⚠ "cruzado" e "extra" NÃO são geometria: um elo que sai da subetapa de
+       outra etapa, ou de uma tarefa sem preço, é um TI/II/TT/IT como qualquer
+       outro — o que muda é a CLASSE (`cls`) e o rótulo, e isso é de quem
+       chama. Um quinto ramo aqui seria um apelido de TI que apodreceria
+       contra ele (memória "réplica de parser apodrece"). */
+    caminhoElo: function (tipo, px, py, sx, sy, geo) {
+      geo = geo || {};
+      var cor = geo.cor, cls = geo.cls, larg = geo.larg, d, pta;
+      var corr = (geo.corredor != null && isFinite(Number(geo.corredor))) ? Number(geo.corredor) : geo.rowH / 2;
+      if (tipo === "II") d = "M" + f1(px) + "," + py + " V" + sy + " H" + f1(sx - 1);
+      else if (tipo === "TI") {
+        if (sx >= px + 12) d = "M" + f1(px) + "," + py + " H" + f1(sx - 5) + " V" + sy + " H" + f1(sx - 1);
+        else {
+          var faixa = py + (sy > py ? corr : -corr), volta = Math.max(geo.labelW + 2, sx - 6);
+          d = "M" + f1(px) + "," + py + " H" + f1(px + 5) + " V" + faixa + " H" + f1(volta) + " V" + sy + " H" + f1(sx - 1);
+        }
+      } else if (tipo === "TT" || tipo === "IT") {
+        if (sx <= px - 12) d = "M" + f1(px) + "," + py + " H" + f1(sx + 5) + " V" + sy + " H" + f1(sx + 1);
+        else {
+          var volT = Math.max(sx, px) + 6, lim = Number(geo.limite);
+          if (isFinite(lim) && lim > sx + 6) volT = Math.min(lim, volT);
+          d = "M" + f1(px) + "," + py + " H" + f1(volT) + " V" + sy + " H" + f1(sx + 1);
+        }
+        pta = '<polygon points="' + f1(sx) + ',' + sy + ' ' + f1(sx + 5) + ',' + (sy - 3) + ' ' + f1(sx + 5) + ',' + (sy + 3) + '" fill="' + cor + '"/>';
+      } else return "";
+      return '<path class="' + cls + '" d="' + d + '" fill="none" stroke="' + cor + '" stroke-width="' + larg + '"' + (geo.tracejada ? ' stroke-dasharray="3,2"' : '') + ' opacity="0.9"/>' +
+        (pta || '<polygon points="' + f1(sx) + ',' + sy + ' ' + f1(sx - 5) + ',' + (sy - 3) + ' ' + f1(sx - 5) + ',' + (sy + 3) + '" fill="' + cor + '"/>');
     },
 
     /* ==================================================================
@@ -1278,7 +1510,12 @@
     // abaixo desta largura de widget as colunas não cabem ao lado do tempo
     GX_GRADE_LARGURA: 1000,
     // o cabeçalho do Gantt (canto + régua) e a legenda: o que não é corpo
-    GX_CABECALHO: 38,
+    /* ⚠ +GX_USO (1C): a barra de uso (busca, filtro, ↶ ↷, Histórico) é a 1ª
+       faixa DENTRO da moldura. Sem somar aqui, o modo "preencher" da janela
+       destacada e a faixa da alça de altura contariam 40 px a menos e a
+       legenda sairia da tela (as regressões D2/M3 da 1.2.80 nasceram assim). */
+    GX_USO: 40,
+    GX_CABECALHO: 78,
     GX_LEGENDA: 50,
 
     /* o detalhe que o Gantt REALMENTE desenha: sem árvore (ou sem nenhuma
@@ -1321,11 +1558,63 @@
     /* A LARGURA DAS COLUNAS Dur./Depende de: 0 sem a grade ou abaixo de
        GX_GRADE_LARGURA. Sem medida (1ª pintura, pura) assume a tela de mesa —
        a fiação remede antes de o quadro ser pintado (_cronoGanttLigar). */
-    ganttProGradeW: function (colunas, larguraWidget) {
+    ganttProGradeW: function (colunas, larguraWidget, cols) {
       if (colunas !== true) return 0;
       var w = Number(larguraWidget);
       if (isFinite(w) && w > 0 && w < this.GX_GRADE_LARGURA) return 0;
-      return this.GX_GRADE_DUR + this.GX_GRADE_PRED;
+      var l = ehArr(cols) ? cols : this.colunasGrade(null, null), t = 0, i;
+      for (i = 0; i < l.length; i++) t += Number(l[i].larg) || 0;
+      return t;
+    },
+
+    /* AS COLUNAS DA GRADE, POR MODO (planejador 2A).
+         Planejar: Dur. · Depende de · Calendário
+         Avançar:  % · Início real · Fim real
+       ⚠ NO MODO AVANÇAR, "Dur." E "Depende de" SAEM. A pessoa está lançando
+       o que ACONTECEU; editar o plano na mesma linha em que se lança o real
+       é a origem do "eu só ia digitar 60%" — e o plano de uma obra em
+       andamento é o que sustenta medição e contrato. A faixa do modo diz
+       onde elas voltam.
+       ⚠ A COLUNA CALENDÁRIO SÓ NASCE COM CALENDÁRIO CRIADO: vazia, seriam 78
+       px roubados do tempo em toda obra do mundo que nunca vai usar frente
+       própria.
+       ⚠ DONO ÚNICO: o canto (títulos), as células do SVG, a posição do campo
+       sobreposto e o Tab leem ESTA lista. Em quatro lugares, uma coluna a
+       mais sairia com o cabeçalho de uma e o valor de outra. */
+    GX_GRADE_CAL: 78,
+    GX_GRADE_PCT: 46,
+    GX_GRADE_DATA: 66,
+    COL_DUR: { campo: "dur", titulo: "Dur.", dica: "Duração em dias úteis (0 = marco)" },
+    COL_PRED: { campo: "pred", titulo: "Depende de", dica: "Nº das etapas (ou subetapas) que precisam terminar antes" },
+    colunasGrade: function (r, o) {
+      o = o || {};
+      if (o.modoAv === "avancar") return [
+        { campo: "pct", larg: this.GX_GRADE_PCT, corte: 6, titulo: "%", dica: "% concluído na data de corte (0 a 100)" },
+        { campo: "ir", larg: this.GX_GRADE_DATA, corte: 10, titulo: "Início real", dica: "O dia em que a tarefa começou de verdade (dd/mm/aaaa)" },
+        { campo: "fr", larg: this.GX_GRADE_DATA, corte: 10, titulo: "Fim real", dica: "O ÚLTIMO DIA TRABALHADO. Preencher aqui marca a tarefa como concluída (100%)" }
+      ];
+      var cols = [
+        { campo: "dur", larg: this.GX_GRADE_DUR, corte: 6, titulo: this.COL_DUR.titulo, dica: this.COL_DUR.dica },
+        { campo: "pred", larg: this.GX_GRADE_PRED, corte: 13, titulo: this.COL_PRED.titulo, dica: this.COL_PRED.dica }
+      ];
+      /* ⚠ A COLUNA NASCE COM O CALENDÁRIO CRIADO, não com ele ATRIBUÍDO. O
+         motor só publica `r.calendarios` quando existe atribuição válida (I2:
+         sem dado, o código de hoje) — e, sem a coluna, não haveria de onde
+         atribuir o primeiro. Medido em 21/09/2026: calendário criado, coluna
+         ausente, e a única porta era o menu ⋯. `o.cron` é o cronograma
+         GRAVADO, que é quem sabe da lista. */
+      var temCalCron = !!(o && o.cron && o.cron.cal && ehArr(o.cron.cal.lista) && o.cron.cal.lista.length);
+      if (temCalCron || (r && r.calendarios && arr(r.calendarios.lista).length))
+        cols.push({ campo: "cal", larg: this.GX_GRADE_CAL, corte: 12, titulo: "Calendário", dica: "A frente em que esta linha trabalha (vazio = a régua da obra)" });
+      return cols;
+    },
+    /* o modo da grade (planejador 2A): "planejar" (o de sempre) ou "avancar".
+       ⚠ SÓ EXISTE NO PLANO: sem obra não há registro de avanço onde gravar
+       (§1.4), e um seletor que leva a uma coluna que recusa tudo é porta que
+       não abre. */
+    modoGrade: function (r, o) {
+      if (!o || !o.plano) return "planejar";
+      return o.modoAv === "avancar" ? "avancar" : "planejar";
     },
     /* onde começa o dia 0 num `pro` qualquer (inclusive um montado fora do
        ganttProEstado, sem `colW`): colW → labelW → padrão */
@@ -1352,12 +1641,24 @@
       o = o || {};
       var Gu = GU(), Cr = C(), P = PN(), i;
       var det = this.detalheEfetivo(r, o.detalhe);
-      var L = ehArr(o.L) ? o.L : this.linhas(r, { detalhe: det, abertas: o.abertas });
+      /* ⚠ `manter` (o filtro da 1C) entra AQUI, na mesma lista que a fiação do
+         arrasto e a tabela usam (ver `filtroDoRender`) */
+      /* ⚠ UMA LISTA SÓ (T7): o `intercalar` da 2A (as linhas das tarefas sem
+         preço) entra AQUI, na mesma lista que a fiação do arrasto, a grade e a
+         tabela usam — filtrado em um só dos três, a pessoa arrastaria uma
+         barra e outra se moveria. */
+      var L = ehArr(o.L) ? o.L : this.linhas(r, { detalhe: det, abertas: o.abertas, intercalar: o.intercalar,
+        manter: (o.manter && typeof o.manter === "object") ? o.manter : null });
       var cal = null;
       try { cal = (Cr && Cr.calendario) ? Cr.calendario(r) : null; } catch (eC) { cal = null; }
       var ids = [];
       for (i = 0; i < L.length; i++) ids.push(L[i].no ? L[i].no.id : L[i].et.id);
-      var gradeW = this.ganttProGradeW(o.colunas === true, o.larguraWidget);
+      /* PLANEJADOR 2A: o MODO da grade e as colunas dele. Sem plano e sem
+         calendário, `cols` é [Dur., Depende de] e `gradeW` dá os mesmos 134
+         px de sempre — a paridade da 1.2.77 (test-crono-geometria) sai
+         disso. */
+      var modoAv = this.modoGrade(r, o), cols = this.colunasGrade(r, { modoAv: modoAv, cron: o.cron });
+      var gradeW = this.ganttProGradeW(o.colunas === true, o.larguraWidget, cols);
       var labelW = (Number(o.labelW) > 0) ? Number(o.labelW) : this.ganttProLabelW(o.larguraWidget, o.labelPref, gradeW);
       /* ⚠ DUAS LARGURAS, DOIS DONOS DE LEITURA. `labelW` é quanto cabe de NOME
          (o corte do texto); `colW` é onde começa o DIA 0 — a moldura
@@ -1401,6 +1702,19 @@
         : (Number(escolhida) > 0 ? Number(escolhida) : natural)));
       var hxAlt = P ? P.limitar("hxAltura", o.hxAltura) : null;
       var out = { e: null, L: L, cal: cal, det: det, labelW: labelW, gradeW: gradeW, colW: colW, alturaCaixa: caixa,
+        /* 2A: a grade, o modo e o que as células precisam para decidir a trava
+           (o plano da obra e o cronograma GRAVADO, que diz a origem de cada
+           restrição e o calendário de cada linha) */
+        cols: cols, modoAv: modoAv, plano: !!o.plano, cron: (o.cron && typeof o.cron === "object" && !ehArr(o.cron)) ? o.cron : null,
+        barraDe: typeof o.barraDe === "function" ? o.barraDe : null, cam2A: typeof o.camadas2A === "function" ? o.camadas2A : null,
+        /* ⚠ A CAMADA "Rótulos das ligações" É A ÚNICA QUE NÃO CABE NUMA
+           CAMADA DE SVG: o rótulo é desenhado JUNTO com a seta, dentro do
+           `gantt`, e uma camada por cima não tem como apagá-lo. Ela desce
+           como opção até lá (`opts.eloRotulos`). Medido em 21/09/2026 pela
+           e2e-crono-camadas: sem esta linha, "Apresentar" deixava os 4
+           rótulos "+7d" na tela — e um modo que esconde quase tudo é pior que
+           um que não esconde nada, porque a pessoa acredita nele. */
+        eloRotulos: o.eloRotulos !== false,
         hxAltura: (Number(hxAlt) > 0) ? Number(hxAlt) : this.HX_ALTURA,
         // o macrofluxo prende contra o tamanho NATURAL do desenho, que só ele conhece
         fxPref: (o.fxAltura != null) ? o.fxAltura : null,
@@ -1412,6 +1726,18 @@
            se arrasta" sem dizer a porta (criar revisão / plano da obra) */
         travado: !!o.travado,
         desfazer: String(o.desfazer == null ? "" : o.desfazer), Gu: Gu, perm: {}, ctx: {}, ids: ids, temHoje: false };
+      /* o REALCE da busca e o CINZA do contexto (1C): desenhados pela camada
+         de uso (`camadaUso`, por baixo das barras), sem editar o `gantt` */
+      if (o.realce || o.contexto || o.fora) {
+        out.uso = { achados: (o.realce && typeof o.realce === "object") ? o.realce : null, atual: o.atual == null ? null : String(o.atual),
+          contexto: (o.contexto && typeof o.contexto === "object" && Object.keys(o.contexto).length) ? o.contexto : null,
+          fora: (o.fora && typeof o.fora === "object" && Object.keys(o.fora).length) ? o.fora : null };
+        out.camadas = this.camadaUso(out);
+      }
+      /* as DUAS camadas num objeto só: a da busca (1C) desenha POR BAIXO das
+         barras (`antes`) e a do planejador (2A) por CIMA delas (`depois`).
+         Duas chamadas de `gantt` seriam dois desenhos. */
+      if (out.cam2A) out.camadas = { antes: out.camadas ? out.camadas.antes : null, depois: out.cam2A };
       if (!Gu) { out.motivo = "O motor do Gantt interativo (js/ganttui.js) não carregou — o cronograma está sendo desenhado no modo simples."; return out; }
       var e = Gu.estado({
         nivel: o.nivel, diasAjuste: o.diasAjuste, dias: Math.max(1, Math.round(r.totalDias || 1)), linhas: L.length, rowH: this.GX_ROWH,
@@ -1468,7 +1794,12 @@
       return {
         regua: this.ganttProRegua(pro),
         nomes: this.ganttProNomes(r, pro),
-        plot: this.gantt(r, { detalhe: pro.det, abertas: o.abertas, hoje: o.hoje, rotHoje: o.rotHoje, pro: pro, semLegenda: true }),
+        /* `camadas` (T7) só quando o estado as montou (o realce da busca, 1C):
+           sem elas, a chamada de sempre */
+        plot: (pro.camadas || pro.barraDe)
+          ? this.gantt(r, { detalhe: pro.det, abertas: o.abertas, hoje: o.hoje, rotHoje: o.rotHoje, pro: pro, semLegenda: true,
+            camadas: pro.camadas || null, barraDe: pro.barraDe || null, eloRotulos: pro.eloRotulos !== false })
+          : this.gantt(r, { detalhe: pro.det, abertas: o.abertas, hoje: o.hoje, rotHoje: o.rotHoje, pro: pro, semLegenda: true }),
         larguraConteudo: Math.max(1, pro.e ? pro.e.larguraConteudo : 1),
         alturaConteudo: Math.max(pro.e ? pro.e.rowH : 24, pro.e ? pro.e.alturaConteudo : 24)
       };
@@ -1493,7 +1824,8 @@
       var gradeW = Number(pro.gradeW) > 0 ? Number(pro.gradeW) : 0;
       var H = Math.max(e.rowH, e.alturaConteudo), temFilhos = L.length > arr(r.etapas).length, i;
       // o corte do texto acompanha a coluna: o SVG recorta no pixel, sem reticências
-      var corteN = this.ganttProCorte(NW);
+      var menu = !!G("GanttGradeUI") && NW >= 150;
+      var corteN = this.ganttProCorte(NW) - (menu ? 2 : 0);
       var s = '<svg class="gantt gx-nomes-svg" data-gx="nomes-svg" width="' + f1(W) + '" height="' + f1(H) +
         '" viewBox="0 0 ' + f1(W) + ' ' + f1(H) + '" style="display:block;background:#fff;font-family:inherit">';
       for (i = jan.primeiraLinha; i <= jan.ultimaLinha; i++) {
@@ -1511,9 +1843,26 @@
            "undefined " na frente do nome — a foto de um e2e já pegou isso. */
         var rot = (l.no ? (l.no.numero ? l.no.numero + " " : "") : (n.codigo ? n.codigo + " " : "")) + nome;
         var peso = (l.tipo === "etapa" || n.critico) ? ' font-weight="600"' : "";
-        var cor = l.tipo === "servico" ? "#64748b" : (l.tipo === "etapa" ? "#0f172a" : "#334155");
+        /* 2A: a linha T em ROXO, a mesma tinta da barra tracejada — é o que
+           diz, sem ler, que aquela linha não é serviço do orçamento */
+        var cor = l.tipo === "servico" ? "#64748b" : (l.tipo === "etapa" ? "#0f172a" : (l.tipo === "extra" ? ROXO_T : "#334155"));
         s += '<text x="' + (6 + prof * 14) + '" y="' + f1(y0 + e.rowH / 2 + 3.5) + '" font-size="' + (l.tipo === "servico" ? 9.5 : 10) +
           '" fill="' + cor + '"' + peso + '><title>' + esc(rot) + '</title>' + esc(corta(rot, corteN)) + '</text>';
+        /* O MENU ⋯ DA LINHA (2A, crítica 2, achado 17). Ele existe porque
+           "Restrição…", "Calendário…" e "Tarefa sem preço abaixo" não têm
+           onde morar: a restrição de data só se via arrastando a barra (um
+           campo que a tabela não mostra), e a tecla Ins não se descobre
+           sozinha. Fica na borda do NOME, onde o olho já está — não no ponto
+           morto entre o cabeçalho e a grade (memória "ação mora no card do
+           número"). ⚠ Só com a fiação (GanttGradeUI) carregada: sem ela
+           seria três pontinhos que não abrem nada. */
+        if (menu && l.tipo !== "servico") {
+          var xm = NW - 13;
+          s += '<g class="gx-menu" data-gx-menu="' + esc(String(n.id)) + '" data-gx-linha="' + i + '" style="cursor:pointer">' +
+            '<rect x="' + f1(xm - 6) + '" y="' + f1(y0 + 3) + '" width="18" height="' + f1(e.rowH - 6) + '" rx="4" fill="transparent"/>' +
+            '<text x="' + f1(xm + 3) + '" y="' + f1(y0 + e.rowH / 2 + 4) + '" font-size="13" fill="#64748b" text-anchor="middle" pointer-events="none">⋯</text>' +
+            '<title>' + esc("Mais opções desta linha: restrição de data, calendário da frente e tarefa sem preço abaixo.") + '</title></g>';
+        }
         /* as células vêm DEPOIS do nome e com fundo opaco: o corte do nome é
            por caractere (≈6,25 px), e um nome em negrito que passasse do
            `labelW` escreveria por cima do número da duração */
@@ -1549,10 +1898,92 @@
       if (!alvoNo) { out.motivo = "Esta linha não existe mais neste cronograma."; return out; }
       out.id = alvoNo.id;
       var rede = !!(r.exec && r.exec.rede === true);
+      /* ------ PLANEJADOR 2A: as colunas novas ------
+         ⚠ O VALOR SAI DO MOTOR, sempre. O % e as datas reais vêm de
+         `no.avanco` (que a 1A montou a partir do registro `avanco_<obraId>`,
+         já validado: `f` preenchido = concluída, O24), e o calendário de
+         `no.calendarioId`. Ler o registro cru aqui daria uma segunda leitura
+         do avanço, com outra validação — e a célula mostraria 60% numa
+         tarefa que o motor desenhou como concluída. */
+      if (campo === "cal" || campo === "pct" || campo === "ir" || campo === "fr") {
+        out.alvo = l.tipo === "extra" ? "extra" : (l.tipo === "folha" ? "folha" : (l.tipo === "servico" ? "servico" : "etapa"));
+        if (campo === "cal") {
+          var cid = alvoNo.calendarioId ? String(alvoNo.calendarioId) : "";
+          var nomeC = "";
+          arr(r.calendarios && r.calendarios.lista).forEach(function (c2) { if (c2 && String(c2.id) === cid) nomeC = String(c2.nome || cid); });
+          out.valor = cid ? (nomeC || cid) : "";
+          out.vazio = "obra";
+          out.dig = !!cid;
+        } else {
+          var av = alvoNo.avanco || null;
+          if (campo === "pct") { out.valor = av && av.estado !== "nao-iniciada" ? nBR(fin(av.pct, 0), 1) + "%" : ""; out.dig = !!av && av.estado !== "nao-iniciada"; }
+          else if (campo === "ir") { out.valor = (av && av.iniReal) ? dmaS(av.iniReal) : ""; out.dig = !!(av && av.iniReal); }
+          else { out.valor = (av && av.fimReal) ? dmaS(av.fimReal) : ""; out.dig = !!(av && av.fimReal); }
+          out.vazio = "—";
+        }
+        var celN = null;
+        try {
+          celN = Gu && typeof Gu.celulaEditavel === "function"
+            ? Gu.celulaEditavel(alvoNo, campo, { travado: !!(pro && pro.travado), plano: !!(pro && pro.plano), exec: rede })
+            : { ok: false, motivo: "O motor da digitação (js/ganttui.js) não carregou — digite na tabela abaixo." };
+        } catch (eN) { celN = { ok: false, motivo: "Não consegui conferir se esta célula se edita — por segurança ela fica só leitura." }; }
+        if (celN && celN.ok) {
+          out.ro = false;
+          out.dica = campo === "cal" ? "Escolha a frente desta linha · vazio = a régua da obra."
+            : (campo === "pct" ? "% concluído na data de corte (0 a 100) · vazio = apaga o lançamento."
+              : (campo === "ir" ? "O dia em que começou de verdade (dd/mm/aaaa) · vazio = apaga."
+                : "O ÚLTIMO DIA TRABALHADO (dd/mm/aaaa). Ao preencher, a tarefa fica concluída (100%) — o recado mostra isso antes de gravar."));
+        } else {
+          out.dig = false;
+          out.motivo = String((celN && celN.motivo) || "Esta célula não se edita.");
+          out.porta = String((celN && celN.porta) || "");
+          out.portaId = (celN && celN.portaId != null) ? celN.portaId : null;
+        }
+        return out;
+      }
+      /* a LINHA T (tarefa sem preço): nome, duração e "Depende de" próprios.
+         ⚠ Ela NÃO passa pelo ramo da etapa: não tem `duracaoRede`, não tem
+         irmãs e o "Depende de" dela aceita etapa E outra T (`_textoRede` com
+         os números T). */
+      if (l.tipo === "extra") {
+        out.alvo = "extra";
+        var nmsX = {}, ordemX = arr(r.etapas).map(function (e3) { return e3 && e3.id; });
+        ordemX.forEach(function (eid, ix) { nmsX[eid] = ix + 1; });
+        arr(r.extras).forEach(function (x2) { if (x2) nmsX[x2.id] = x2.numero; });
+        if (campo === "nome") { out.valor = String(alvoNo.nome || ""); out.dig = true; }
+        else if (campo === "dur") { out.valor = String(alvoNo.marco ? 0 : (alvoNo.duracao == null ? "" : alvoNo.duracao)); out.dig = true; }
+        else {
+          var elosX = arr(alvoNo.preds).map(function (p2) {
+            return { i: p2, t: (alvoNo.predTipo && alvoNo.predTipo[p2]) || "TI", l: (alvoNo.predLag && alvoNo.predLag[p2]) || 0, x: true };
+          });
+          out.valor = (Cr && Cr._textoRede) ? String(Cr._textoRede(elosX, nmsX, { vazioExplicito: false }) || "") : "";
+          out.vazio = "início da obra";
+          out.dig = elosX.length > 0;
+        }
+        var celX = null;
+        try { celX = Gu && typeof Gu.celulaEditavel === "function" ? Gu.celulaEditavel(alvoNo, campo, { travado: !!(pro && pro.travado) }) : null; } catch (eX) { celX = null; }
+        if (celX && celX.ok) {
+          out.ro = false;
+          out.dica = campo === "nome" ? "O nome da tarefa sem preço (até 80 caracteres)."
+            : (campo === "dur" ? "Dias úteis · 0 = marco. A tarefa sem preço não tem estimativa: o número é seu."
+              : "Nº da etapa (1, 3), de outra tarefa sem preço (T1) · espera 3+5 · tipo 3TT · vazio = começa no início da obra.");
+        } else {
+          out.dig = false;
+          out.motivo = String((celX && celX.motivo) || "Esta célula não se edita.");
+          out.porta = String((celX && celX.porta) || "");
+        }
+        return out;
+      }
       if (et) {
         var i = own(m.numEt, et.id) ? m.numEt[et.id] - 1 : 0;
         if (campo === "dur") { out.valor = String(et.duracao == null ? "" : et.duracao); out.dig = !!(et.editado || et.marco); }
-        else { out.valor = et.predsExplicito ? Cr.predsTexto(et, m.numEt) : ""; out.vazio = i > 0 ? String(i) : "—"; out.dig = !!et.predsExplicito; }
+        /* ⚠ a T que segura a etapa entra no texto (Cronograma.textoDependeDe):
+           sem ela, devolver a célula corrigida soltava a T calada */
+        else {
+          var temXE = arr(et.porExtras).length > 0;
+          out.valor = (typeof Cr.textoDependeDe === "function") ? Cr.textoDependeDe(et, m.numEt) : (et.predsExplicito ? Cr.predsTexto(et, m.numEt) : "");
+          out.vazio = i > 0 ? String(i) : "—"; out.dig = !!et.predsExplicito || temXE;
+        }
       } else if (l.tipo === "folha") {
         out.alvo = "folha";
         var durRede = no.marco ? 0 : (no.duracaoRede != null ? no.duracaoRede : no.duracao);
@@ -1620,9 +2051,11 @@
       var s = '<rect x="' + f1(x0) + '" y="' + f1(y0) + '" width="' + f1(Number(pro.gradeW)) + '" height="' + f1(rowH) + '" fill="' + fundo + '"/>';
       if (i === pro.sel) s += '<rect x="' + f1(x0) + '" y="' + f1(y0) + '" width="' + f1(Number(pro.gradeW)) + '" height="' + f1(rowH) + '" fill="#0d6ebd" fill-opacity="0.10"/>';
       s += '<line x1="' + f1(x0 + 0.5) + '" y1="' + f1(y0) + '" x2="' + f1(x0 + 0.5) + '" y2="' + f1(y0 + rowH) + '" stroke="#e2e8f0" stroke-width="1"/>';
-      var cols = [["dur", x0, this.GX_GRADE_DUR], ["pred", x0 + this.GX_GRADE_DUR, this.GX_GRADE_PRED]], k;
+      /* as colunas são as do MODO (2A, `colunasGrade`): sem plano e sem
+         calendário, as duas de sempre, com as mesmas larguras */
+      var cols = ehArr(pro.cols) ? pro.cols : this.colunasGrade(r, null), k, cx = x0;
       for (k = 0; k < cols.length; k++) {
-        var campo = cols[k][0], cx = cols[k][1], cw = cols[k][2], c = this.ganttProCelula(r, l, campo, pro);
+        var campo = cols[k].campo, cw = Number(cols[k].larg) || 0, c = this.ganttProCelula(r, l, campo, pro);
         var cls = "gx-cel" + (c.ro ? " gx-cel-ro" : (c.dig ? " gx-cel-dig" : ""));
         var txt = c.valor !== "" ? c.valor : c.vazio;
         var tinta = c.ro ? "#64748b" : (c.valor === "" ? "#94a3b8" : (c.dig ? "#0d6ebd" : "#0f172a"));
@@ -1630,8 +2063,9 @@
           '<rect x="' + f1(cx + 2) + '" y="' + f1(y0 + 3) + '" width="' + f1(cw - 4) + '" height="' + f1(rowH - 6) + '" rx="4" fill="' + (c.ro ? "transparent" : "#fff") + '"' +
           (c.ro ? '' : ' stroke="' + (c.dig ? "#0d6ebd" : "#cbd5e1") + '" stroke-width="1"') + '/>' +
           '<text x="' + f1(cx + cw - 7) + '" y="' + f1(y0 + rowH / 2 + 3.5) + '" font-size="10" text-anchor="end" fill="' + tinta + '"' + (c.dig ? ' font-weight="600"' : '') + '>' +
-          esc(corta(txt, campo === "dur" ? 6 : 13)) + '</text>' +
+          esc(corta(txt, Number(cols[k].corte) > 0 ? Number(cols[k].corte) : 13)) + '</text>' +
           '<title>' + esc(c.ro ? c.motivo : (c.valor !== "" ? c.valor + " · " : "") + c.dica) + '</title></g>';
+        cx += cw;
       }
       return s;
     },
@@ -1737,7 +2171,9 @@
         for (i = 0; i < ns.length; i++) h += '<option value="' + esc(ns[i].id) + '"' + (niv === ns[i].id ? ' selected' : '') + '>' + esc(ns[i].nome) + '</option>';
         h += '</select>';
       }
-      if (pro.desfazer) h += '<button type="button" class="gx-undo" data-acao="crono-arrasto-desfazer" title="' + esc("Desfaz a última alteração do cronograma, digitada ou arrastada (também Ctrl+Z no Gantt) — " + pro.desfazer) + '">↶ Desfazer</button>';
+      /* ⚠ O "↶ Desfazer" SAIU DAQUI (1C): o desfazer virou pilha de vários
+         níveis, com ↶ ↷ na barra de uso, acima deste canto (USO §1.1: o canto
+         de 290 px não cabia os dois botões com o rótulo). */
       return this._gxCantoGrade(pro, h);
     },
     /* O CANTO COM A GRADE Dur./Depende de (F6). ⚠ Sem o js/ganttgradeui.js
@@ -1765,17 +2201,33 @@
       var liga = gradeW > 0;
       var ico = '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" style="display:block;margin:auto"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/>' +
         '<line x1="8" y1="2.5" x2="8" y2="13.5" stroke="currentColor" stroke-width="1.3"/><line x1="11" y1="2.5" x2="11" y2="13.5" stroke="currentColor" stroke-width="1.3"/></svg>';
-      var rot = "Mostrar ou esconder as colunas Dur. e Depende de";
+      /* ⚠ O RÓTULO LISTA AS COLUNAS DO MODO ATIVO. Ele dizia "Dur. e Depende
+         de" sempre — e no modo Avançar o botão esconde % · Início real · Fim
+         real, e com calendário esconde também Calendário. Número (e nome) na
+         interface envelhece: a pessoa clicava esperando uma coisa e sumia
+         outra. A lista vem do MESMO `pro.cols` que desenha as células. */
+      var nomesCols = arr(pro.cols).map(function (c) { return String(c.titulo || c.campo); });
+      var rot = "Mostrar ou esconder " + (nomesCols.length
+        ? "as colunas " + (nomesCols.length > 1
+          ? nomesCols.slice(0, -1).join(", ") + " e " + nomesCols[nomesCols.length - 1]
+          : nomesCols[0])
+        : "as colunas da grade");
       var bt = '<button type="button" class="gx-zb gx-col-bt" data-acao="gx-colunas" data-ligar="' + (liga ? "0" : "1") + '" aria-pressed="' + (liga ? "true" : "false") +
         '" aria-label="' + esc(rot) + '" title="' + esc(rot + (liga ? " (ligadas: clique para dar a largura ao tempo)" : " (escondidas: duplo clique na barra abre os dois campos)")) + '">' + ico + '</button>';
       if (!liga) return h + bt;
       /* os controles ficam na largura do NOME (menos o recuo do canto) e os
          títulos começam EXATAMENTE em labelW: o `margin-right` negativo come
          o recuo direito e a borda do canto, que são da coluna e não do título */
+      /* PLANEJADOR 2A: os títulos saem da MESMA lista que desenha as células
+         (`pro.cols`). Escritos à mão aqui, a coluna Calendário (ou o modo
+         Avançar) apareceria com o cabeçalho de Dur. sobre o valor de outra
+         coisa — e um cabeçalho que mente é pior que nenhum. */
+      var cols = ehArr(pro.cols) ? pro.cols : this.colunasGrade(null, null), i, th = "";
+      for (i = 0; i < cols.length; i++) {
+        th += '<span class="gx-cab-t" style="width:' + (Number(cols[i].larg) || 0) + 'px" title="' + esc(String(cols[i].dica || "")) + '">' + esc(String(cols[i].titulo || "")) + '</span>';
+      }
       return '<span class="gx-canto-ctl" style="width:' + f1(Math.max(0, pro.labelW - 10)) + 'px">' + h + bt + '</span>' +
-        '<span class="gx-cab-cols" style="width:' + f1(gradeW) + 'px">' +
-        '<span class="gx-cab-t" style="width:' + this.GX_GRADE_DUR + 'px" title="Duração em dias úteis (0 = marco)">Dur.</span>' +
-        '<span class="gx-cab-t" style="width:' + this.GX_GRADE_PRED + 'px" title="Nº das etapas (ou subetapas) que precisam terminar antes">Depende de</span></span>';
+        '<span class="gx-cab-cols" style="width:' + f1(gradeW) + 'px">' + th + '</span>';
     },
 
     /* O RECADO do arrasto em andamento, em TEXTO PURO (a dica é escrita por
@@ -1795,6 +2247,15 @@
       t.push(dmaS(res.dataInicio) + " → " + dmaS(res.dataFim));
       if (res.tipo === "fim" || res.tipo === "inicio") t.push(res.novaDuracao + " dia(s) útil(eis) de duração");
       t.push((d > 0 ? "+" : "") + d + " dia(s) útil(eis)");
+      /* ⚠ LINHA COM CALENDÁRIO PRÓPRIO (planejador 2A): o número acima está
+         em dias úteis da OBRA — é a régua do desenho. A duração na régua da
+         FRENTE (7×7, 4×3, turnos) é outra, e quem a recalcula é o motor ao
+         soltar. A dica DIZ isso em vez de converter aqui: uma conversão de
+         tela seria uma segunda conta de duração, e o número que a pessoa lê
+         enquanto arrasta não seria o que o motor grava.
+         (A conversão ao vivo pede `Cronograma.diasDaFrente`, que o motor
+         ainda não publica — pendência declarada da 1A.) */
+      if (no && no.calendarioId) t.push("⚠ esta linha tem calendário próprio: o número acima está em dias úteis da OBRA; a duração na régua da frente é refeita ao soltar");
       if (!res.valido && res.motivo) t.push(res.motivo);
       return t.join("\n");
     },
@@ -1843,7 +2304,10 @@
       /* ⚠ `--gx-lw` é ONDE COMEÇA O DIA 0 (colW), não a largura do nome: a
          régua, o mês fixo da borda e o painel do tempo começam depois das
          colunas Dur./Depende de. Sem colunas, colW === labelW (a 1.2.77). */
-      var h = '<div class="gx" data-gx-wrap="1" style="--gx-lw:' + f1(this.ganttProColW(pro)) + 'px">' +
+      /* ⚠ A BARRA DE USO (1C: busca, filtro, ↶ ↷, Histórico) é a PRIMEIRA
+         faixa DENTRO da moldura (USO §1.1): `o.topoUso`. Sem ela, a moldura de
+         sempre, byte a byte. A altura dela entra em GX_USO. */
+      var h = '<div class="gx" data-gx-wrap="1" style="--gx-lw:' + f1(this.ganttProColW(pro)) + 'px">' + (o.topoUso ? String(o.topoUso) : "") +
         '<div class="gx-cab"><div class="gx-canto">' + this.ganttProTopo(pro) + '</div>' +
         '<div class="gx-regua" data-gx="regua"><div class="gx-regua-in" style="width:' + lc + '">' + p.regua + '</div></div>' +
         /* ⚠ O MÊS DA BORDA ESQUERDA mora AQUI, no cabeçalho que NÃO rola — e
@@ -1886,6 +2350,23 @@
         '<span>' + amostra('height:5px;background:' + RESUMO) + 'resumo da etapa</span>';
       h += '<span>' + amostra('width:12px;height:10px;border:1px dashed ' + CINZA + ';border-radius:2px') + 'folga</span>';
       if (pro.temHoje) h += '<span>' + amostra('height:0;border-top:2px dashed ' + HOJE) + esc(o.rotHoje || "hoje") + '</span>';
+      /* ⚠ A LEGENDA SÓ ENSINA O QUE ESTA TELA DESENHA (a regra de baixo, na
+         mesma função): cada símbolo novo da 2A só entra quando EXISTE no
+         desenho. Um "⌧ = data guardada pelo app" numa obra sem sombra manda
+         a pessoa procurar um símbolo que não está lá — e ensina a não ler a
+         legenda. Os quatro saem do próprio `r` desta renderização. */
+      var rL = pro.L, temT2A = false, temAv2A = false, temCal2A = false, iL;
+      for (iL = 0; iL < rL.length && !(temT2A && temAv2A && temCal2A); iL++) {
+        var nL = rL[iL] && (rL[iL].no || rL[iL].et);
+        if (!nL) continue;
+        if (rL[iL].tipo === "extra") temT2A = true;
+        if (nL.avanco && nL.avanco.estado !== "nao-iniciada") temAv2A = true;
+        if (nL.calendarioId || (rL[iL].et && rL[iL].et.calendarioId)) temCal2A = true;
+      }
+      if (temT2A) h += '<span>' + amostra('width:12px;height:10px;border:1.5px dashed ' + ROXO_T + ';border-radius:2px') + 'tarefa sem preço (T) — prazo sem custo no orçamento</span>';
+      if (temAv2A) h += '<span>' + amostra('height:8px;background:' + CINZA + ';opacity:.35') + 'o que falta · ' + amostra('height:8px;background:' + CINZA) + 'o que já foi feito</span>' +
+        '<span>' + amostra('height:0;border-top:2px dashed #b45309') + 'data de corte do avanço (não é hoje)</span>';
+      if (temCal2A) h += '<span>' + amostra('width:12px;height:10px;background:rgba(15,23,42,.10)') + 'dia em que a frente daquela linha não trabalha</span>';
       /* ⚠ A LEGENDA SÓ ENSINA O QUE ESTA TELA FAZ. Roteiro do defeito (medido
          no navegador em 12/09/2026, orçamento APROVADO): o Gantt desenhava 6
          barras, `data-gx-drag` em ZERO delas, 0 alças e 0 pontos de ligar — e
@@ -3626,7 +4107,8 @@
     },
 
     /* topo reservado no modo "tela": cabeçalho do Gantt + sub-abas visíveis */
-    GX_TELA_TOPO: 150,
+    /* 150 + GX_USO (a barra de uso da 1C, dentro da moldura) */
+    GX_TELA_TOPO: 190,
 
     render: function (d, est) {
       est = est || this.estado(null, d.orc);
@@ -3648,11 +4130,22 @@
       /* ⚠ a faixa da obra mora NA LINHA das sub-abas: numa linha própria ela
          empurrava o Gantt 42 px para baixo — medido a 1366×768, a 1ª barra
          ficava em y=898, abaixo da dobra (critério de aceite da espec 2) */
-      html += this.barra(est, this.faixaObra(d.obra));
+      /* os dados deste render vão ao `quando` das sub-abas registradas (T8) por
+         uma variável do módulo, e não por argumento: a chamada da barra fica a
+         de sempre (tools/test-cronoexecui.js a sabota por este texto) */
+      _dBarra = d;
+      try { html += this.barra(est, this.faixaObra(d.obra)); } finally { _dBarra = null; }
       if (est.sub === "fisico") html += this.fisico(d, est);
       else if (est.sub === "parametros") html += this.parametros(d, est);
       else if (est.sub === "real") html += this.real(d);
-      else html += this.cronograma(d, est);
+      else {
+        /* a sub-aba REGISTRADA por uma fatia (planejador, T8), consultada
+           DEPOIS das três de sempre; sem registro (ou `quando` falso), o
+           cronograma, como hoje */
+        var sr = subReg(est.sub);
+        if (sr && subVale(sr, d, est) && typeof sr.render === "function") html += String(sr.render(d, est) || "");
+        else html += this.cronograma(d, est);
+      }
       return html + '</div>';
     },
 
@@ -3759,7 +4252,21 @@
         html += '<span class="cx-chip" title="' + esc("Obra " + (ob.nome || "") + (info.chipTitulo ? " — " + info.chipTitulo : "")) + '"><span class="cx-chip-txt">' +
           (info.chip ? '<span class="cx-chipnum">' + info.chip + '</span> <span class="muted">·</span> ' : '') + 'Obra <b>' + nomeC + '</b></span></span>';
         html += (info.chipPorta || '') + '<button class="btn sm" data-acao="crono-planejamento" data-obra="' + esc(ob.id) + '" title="Abrir planejamento da obra — o cronograma da obra: previsto × realizado, linha de base e histórico">Abrir planejamento</button>';
-        if (dec.planoAlheio) {
+        if (dec.planoIlegivel) {
+          /* ⚠ PLANEJAMENTO DAS OBRAS ILEGÍVEL (revisão adversarial da Onda 0 do
+             planejador, achado 1). A lista chega vazia, e sem este ramo a faixa
+             do aprovado oferecia [Iniciar plano de execução da obra] — um plano
+             que pode existir, na quarentena. A porta aqui é a da quarentena, a
+             mesma do aviso da lista de orçamentos (UI.renderAvisoIlegivel):
+             restaurar o backup ou guardar à parte e recomeçar. Sem ser o
+             administrador, só ele pode (o recado no title diz isso). O texto
+             inteiro vem da fiação (App._cronoDecisao), já montado pelo Store. */
+          html += '<span class="cx-faixa-nota" role="alert" data-cx-ilegivel="1" title="' + esc(dec.planoIlegivel.recado || "") + '">⚠ Planejamento da obra ilegível neste aparelho — nada dele é mostrado nem gravado aqui</span>';
+          if (dec.planoIlegivel.admin) {
+            html += '<button class="btn sm acao-forte" data-acao="backup" title="Abre o backup: restaure o arquivo de antes do problema — o planejamento das obras volta inteiro.">Restaurar um backup</button>' +
+              '<button class="btn sm" data-acao="liberar-ilegivel" title="Guarda o conteúdo ilegível à parte (nada é apagado) e deixa o planejamento das obras recomeçar vazio. Use quando não houver backup — com a nuvem ligada, ela traz de volta o que tem.">Guardar à parte e recomeçar</button>';
+          } else html += '<span class="muted">Avise o administrador da conta.</span>';
+        } else if (dec.planoAlheio) {
           /* ⚠ plano iniciado sobre OUTRO orçamento (a obra foi religada pelo
              cadastro): as etapas não são as mesmas, e editar aqui gravaria
              durações em ids que este orçamento não tem. A porta é reiniciar,
@@ -3800,12 +4307,29 @@
     },
 
     barra: function (est, faixa) {
-      var html = '<div class="cx-barra"><div class="cx-subs" role="tablist">';
+      var html = '<div class="cx-barra"><div class="cx-subs" role="tablist">', d = _dBarra;
+      function botao(s) {
+        return '<button class="cx-sub' + (est.sub === s.id ? ' on' : '') + '" role="tab" aria-selected="' + (est.sub === s.id ? 'true' : 'false') + '" data-acao="crono-sub" data-sub="' + esc(s.id) + '">' + esc(s.nome) + '</button>';
+      }
+      /* as sub-abas REGISTRADAS (planejador, T8) entram logo depois da que
+         elas pedem (`depoisDe`), e em cadeia; `depoisDe` que não existe → no
+         fim. Sem registro, a barra de sempre, byte a byte. */
+      var postas = {};
+      function depoisDe(id) {
+        _subsReg.forEach(function (x) {
+          if (x.depoisDe !== id || postas[x.id] || !subVale(x, d, est)) return;
+          postas[x.id] = 1; html += botao(x); depoisDe(x.id);
+        });
+      }
       SUBS.forEach(function (s) {
-        if (!subVisivel(s.id)) return;
-        if (s.id === "real" && est.semReal) return;   // sem Gestão de Obras: ver render
-        html += '<button class="cx-sub' + (est.sub === s.id ? ' on' : '') + '" role="tab" aria-selected="' + (est.sub === s.id ? 'true' : 'false') + '" data-acao="crono-sub" data-sub="' + s.id + '">' + esc(s.nome) + '</button>';
+        (function () {
+          if (!subVisivel(s.id)) return;
+          if (s.id === "real" && est.semReal) return;   // sem Gestão de Obras: ver render
+          html += '<button class="cx-sub' + (est.sub === s.id ? ' on' : '') + '" role="tab" aria-selected="' + (est.sub === s.id ? 'true' : 'false') + '" data-acao="crono-sub" data-sub="' + s.id + '">' + esc(s.nome) + '</button>';
+        })();
+        if (_subsReg.length) depoisDe(s.id);
       });
+      _subsReg.forEach(function (x) { if (!postas[x.id] && subVale(x, d, est)) { postas[x.id] = 1; html += botao(x); depoisDe(x.id); } });
       /* ⚠ DUAS LINHAS (decisão D1, 14/09/2026). Linha 1: o segmentado e as
          ações N3 (só ícone, SEMPRE — o `title` e o `aria-label` dizem o nome;
          o rótulo que voltava a partir de 1600 px era o degrau que fazia a
@@ -3901,7 +4425,23 @@
            tinha 209 px livres à direita a 1366 (medido: 877 de 1086), e o
            bloco fechado custava 42 px que puseram a 1ª barra do Gantt abaixo
            da dobra. Ver csChip. */
-        this.csChip(d, est) + '</div>';
+        this.csChip(d, est) +
+        /* PLANEJADOR 2A: o segundo número do prazo (tarefas sem preço), a
+           pílula das frentes, o avanço até a data de corte e o chip de
+           compatibilidade. Sem nenhuma extensão, tudo isso é "" e a linha
+           sai byte a byte a de hoje. */
+        this.prazoExtensoes(d, est) +
+        this.compatChip(d, est) +
+        /* as ações REGISTRADAS na linha do prazo (planejador, T20), DEPOIS do
+           conteúdo de hoje e na ordem do registro; sem registro, "" — a linha
+           de sempre, byte a byte */
+        this._prazoRegistrados(d, est) + '</div>';
+      /* a faixa D-PENDENTE fica SEMPRE à vista (ela muda as datas NESTA
+         versão: sem início fixo, tarefa sem preço, calendário, "o mais tarde
+         possível" e avanço não ficam gravados para quem tem versão anterior).
+         A de compatibilidade só abre pelo chip. */
+      if (d.portaInicio) html += '<div class="cx-aviso cx-pendente">' + d.portaInicio + '</div>';
+      html += this.compatFaixa(d, est);
       /* A SAÚDE DO CRONOGRAMA VEM ANTES DO GANTT, e não depois: ela é a
          resposta a "este cronograma fecha?", que é a pergunta de quem abre a
          aba. Embaixo do Gantt e da tabela, o cartão cairia abaixo da dobra a
@@ -3912,8 +4452,17 @@
       html += this.saudePainel(d, est);
       /* seletor + interruptor + a nota do agente numa linha só: em três
          linhas (medido por foto a 1366×768) o Gantt começava abaixo da dobra */
+      /* ⚠ (1C, auditoria A2) a nota "estimado pelo agente · edite duração e
+         dependências na tabela" SAIU: ela ignorava a grade do Gantt e mandava
+         editar só na tabela. A origem de cada duração está na legenda de
+         baixo (∑ ✎ ≈ R$), que sai das mesmas FONTES da célula. */
+      /* PLANEJADOR 2A: "Camadas ▾" e o seletor Planejar | Avançar entram
+         NESTA linha, ao lado do seletor de detalhe — e não numa barra nova:
+         a 1366 uma linha a mais punha a 1ª barra do Gantt abaixo da dobra
+         (o mesmo motivo do chip da Saúde morar na linha do prazo). */
       html += '<div class="flex" style="gap:6px 12px;margin-bottom:4px;align-items:center;flex-wrap:wrap">' + (temArv ? this.seletorDetalhe(det) + (temF ? this.interruptor(r) : '') : '') +
-        '<span class="muted cx-nota">' + ic('ia') + ' estimado pelo agente · edite duração e dependências na tabela</span></div>';
+        this.modoAvancoBotoes(d, est) + this.camadasBotao(d.camadas) + '</div>';
+      html += this.modoAvancoFaixa(d, est);
       if (r.exec && r.exec.erro) html += '<div class="cx-aviso">' + esc(r.exec.erro) + '</div>';
       /* ⚠ os avisos das subetapas vão LOGO ABAIXO do Gantt, antes da tabela:
          em cima dele custavam ~60 px e, somados à faixa e ao cartão, a 1ª barra
@@ -4020,13 +4569,51 @@
          remedir); sem as fatias que criam PaineisUI/GanttGradeUI/App._janela
          tudo aqui é vazio e o desenho é o da 1.2.77. */
       var og = (d.gx && typeof d.gx === "object") ? d.gx : {};
+      /* PLANEJADOR 2A — as TOMADAS (T7). Cada uma `null`/ausente = o desenho
+         de sempre, byte a byte: `intercalarExtras` devolve null sem tarefa
+         sem preço, `barraDoPlanejador` devolve null sem extra e sem avanço, e
+         `camadaDoPlanejador` devolve null quando nenhuma camada tem o que
+         desenhar. */
+      var cam2A = d.camadas;
       var oGx = { detalhe: det, abertas: est.abertas, hoje: est.hoje,
+        intercalar: this.intercalarExtras(r), barraDe: this.barraDoPlanejador(r, cam2A),
+        camadas2A: this.camadaDoPlanejador(r, cam2A, { cron: d.cron }),
+        eloRotulos: cam2A == null ? true : this.camadasNorm(cam2A).rotulos,
+        modoAv: d.modoAv, plano: !!d.plano, cron: d.cron,
         travado: !!d.travado, nivel: est.zoom.nivel, diasAjuste: est.zoom.diasAjuste, sel: est.zoom.sel, desfazer: est.zoom.desfazer,
         labelPref: og.labelPref, alturaPref: og.alturaPref, colunas: d.colunas === true, janelaAltura: d.janelaAltura,
         modo: d.modo, alcas: d.alcas === true, alcaNomes: og.alcaNomes, hxAltura: og.hxAltura, fxAltura: og.fxAltura };
+      /* A BUSCA E O FILTRO (1C). `d.filtroUso` é montado pelo ui.js com o
+         painel da obra (`filtroDoRender`); ⚠ a MESMA resolução vai ao Gantt,
+         à tabela e à fiação do arrasto (memo por render). Sem ele (o PDF, a
+         ficha, as suítes do desenho), nada muda. */
+      var fu = d.filtroUso || null, uso = est.uso || null;
+      if (fu) {
+        oGx.manter = fu.manter; oGx.contexto = fu.contexto; oGx.fora = fu.fora;
+        var bIds = fu.busca ? arr(fu.busca.ids) : [];
+        if (bIds.length) {
+          var rl = {}, Fn = MOD("CronoFiltro", "./cronofiltro.js");
+          /* o ATUAL é da lista que a navegação visita (só os da tela) */
+          var navI = Fn ? Fn.navegaveis(fu.busca, fu.manter).ids : bIds;
+          bIds.forEach(function (x) { rl[x] = true; });
+          oGx.realce = rl;
+          oGx.atual = navI.length ? navI[Math.min(uso ? uso.busca.idx : 0, navI.length - 1)] : null;
+        }
+        if (uso) {
+          var cats = {}, lsC = this.linhas(r, { detalhe: det, abertas: {} });
+          lsC.forEach(function (l) { var n = l.no || l.et; if (n && n.categoria != null && !own(cats, n.categoria)) cats[n.categoria] = n.categoriaNome || ((C() && C().cat) ? (C().cat(n.categoria) || {}).nome : "") || n.categoria; });
+          uso.categorias = Object.keys(cats).sort().map(function (k) { return { id: k, nome: String(cats[k]) }; });
+          oGx.topoUso = this.ganttBarraUso(uso, null, { fu: fu });
+        }
+      }
       var proGx = this.ganttProEstado(r, oGx);
       oGx.pro = proGx;
-      html += this.ganttPro(r, oGx);
+      if (fu && fu.res && fu.res.ativo && !fu.res.visiveis) {
+        /* ⚠ FILTRO QUE ZERA A LISTA: a moldura com a barra e o recado com a
+           porta — nunca uma moldura vazia (USO §3.1, casos de borda) */
+        html += '<div class="gx gx-vazio" data-gx-vazio="1">' + (oGx.topoUso || "") +
+          '<div class="gx-vazio-txt">Nenhuma linha passa neste filtro. <button type="button" class="gx-uso-bt" data-acao="crono-filtro-limpar">Limpar filtro</button></div></div>';
+      } else html += this.ganttPro(r, oGx);
       /* AS DUAS OUTRAS LEITURAS DO MESMO CRONOGRAMA, encostadas embaixo dele e
          no MESMO eixo de tempo: quantas pessoas por semana (histograma) e em
          que ritmo as equipes sobem (linha de balanço). Ficam aqui, e não em
@@ -4045,7 +4632,10 @@
         var semSub = r.atividades.filter(function (n) { return n.tipo === "etapa" && n.papel === "folha"; }).length;
         if (semSub) html += '<div class="muted cx-legenda" style="margin-top:8px">' + semSub + ' etapa(s) sem subetapas: o cronograma detalha até onde a planilha detalha — use <b>+ subetapa</b> na linha da etapa para criar subetapas na planilha.</div>';
       }
-      html += this.tabela(r, d, { detalhe: det, abertas: est.abertas, temF: temF && det !== "etapa" });
+      /* a TABELA mostra a mesma lista filtrada, com a mesma faixa (decisão k2) */
+      if (fu && fu.res && fu.res.ativo) html += this.filtroFaixaHtml(fu, "tabela");
+      html += this.tabela(r, d, fu && fu.manter ? { detalhe: det, abertas: est.abertas, temF: temF && det !== "etapa", manter: fu.manter }
+        : { detalhe: det, abertas: est.abertas, temF: temF && det !== "etapa" });
       /* ⚠ A LEGENDA DOS ÍCONES DA COLUNA DURAÇÃO (14/09/2026): ∑ ✎ ≈ R$ só
          existiam no `title` de cada célula, e ninguém passa o mouse em 40
          linhas para descobrir o que um símbolo quer dizer. Os símbolos e as
@@ -4077,8 +4667,66 @@
     },
 
     tabela: function (r, d, o) {
-      var Cr = C(), det = o.detalhe, L = this.linhas(r, { detalhe: det, abertas: o.abertas }), rede = !!(r.exec && r.exec.rede);
+      /* `o.manter` (1C): a MESMA lista filtrada do Gantt; ausente = a de sempre */
+      /* ⚠ A MESMA LISTA DO GANTT (T7): com `intercalar`, as linhas das tarefas
+         sem preço entram aqui também. Em um só dos dois, a pessoa veria a
+         barra T no desenho e não acharia a linha para digitar. */
+      var self2A = this;
+      var Cr = C(), det = o.detalhe;
+      var L = this.linhas(r, { detalhe: det, abertas: o.abertas, intercalar: this.intercalarExtras(r), manter: o.manter || null });
+      var rede = !!(r.exec && r.exec.rede);
       var iaM = d.iaMotivos || {}, ab = o.abertas || {}, multi = ehData(r.dataInicio) && ehData(r.dataFim) && r.dataInicio.getFullYear() !== r.dataFim.getFullYear();
+      /* PLANEJADOR 2A — as colunas que só nascem quando o dado existe:
+           "Data pedida": alguma tarefa com restrição de data;
+           % · Início real · Fim real: só no modo Avançar do plano da obra.
+         Coluna vazia é largura roubada de quem não usa a função — e a tabela
+         sem extensão nenhuma continua a de sempre, byte a byte. */
+      var temRestr2A = false, iR, _ets = arr(r.etapas), _nos = arr(r.atividades);
+      for (iR = 0; iR < _ets.length && !temRestr2A; iR++) if (_ets[iR] && _ets[iR].restricao) temRestr2A = true;
+      for (iR = 0; iR < _nos.length && !temRestr2A; iR++) if (_nos[iR] && _nos[iR].restricao) temRestr2A = true;
+      var colAv2A = !!(d.plano && d.modoAv === "avancar");
+      /* o ⋯ só com a fiação (`d.camadas` vem do App): três pontinhos que não
+         abrem nada são porta que não existe */
+      var menu2A = d.camadas != null;
+      function menuBt(id, nome) {
+        if (!menu2A) return "";
+        return ' <button type="button" class="cx-menu-bt" data-acao="crono-extra-menu" data-id="' + esc(String(id)) +
+          '" title="' + esc("Mais opções de " + String(nome || "") + ": restrição de data, calendário da frente e tarefa sem preço abaixo.") +
+          '" aria-label="Mais opções desta linha">⋯</button>';
+      }
+      function celRestr(no2) {
+        if (!temRestr2A) return "";
+        var rs2 = no2 && no2.restricao;
+        if (!rs2) return '<td class="num">—</td>';
+        var Gu2 = GU(), rot2 = (Gu2 && Gu2._ROT_RESTR && Gu2._ROT_RESTR[rs2.tipo]) ? Gu2._ROT_RESTR[rs2.tipo] : String(rs2.tipo || "");
+        var daMaq = !!(d.cron && ehObj(d.cron.restricoes) && ehObj(d.cron.restricoes[no2.id]) && d.cron.restricoes[no2.id].origem === "mat");
+        return '<td class="num cx-td-restr"><span class="' + (rs2.estourada ? "cx-restr-nok-tx" : (daMaq ? "cx-restr-mat-tx" : "")) + '" title="' +
+          esc(rot2 + " " + (rs2.data ? dmaS(rs2.data) : "—") +
+            (rs2.estourada ? " — NÃO é cumprida: o plano de hoje termina depois. A restrição avisa; ela não encurta a tarefa nem empurra as outras." : "") +
+            (daMaq ? " — escrita pelo app para que aparelhos de versão anterior desenhem a mesma data; o próximo salvar a reescreve." : "")) + '">' +
+          (rs2.estourada ? "⚠ " : (daMaq ? "⧗ " : "")) + esc(rs2.data ? dmaS(rs2.data) : rot2) + '</span></td>';
+      }
+      function celAv(no2) {
+        if (!colAv2A) return "";
+        var av2 = no2 && no2.avanco;
+        if (!av2 || av2.estado === "nao-iniciada") return '<td class="num">—</td><td class="num">—</td><td class="num">—</td>';
+        return '<td class="num" title="' + esc((self2A.AV_FONTE[av2.fonte] || "digitado") + (av2.em ? " · lançado em " + dmaS(av2.em) : "")) + '">' + nBR(fin(av2.pct, 0), 1) + '%</td>' +
+          '<td class="num">' + (av2.iniReal ? esc(dmaS(av2.iniReal)) : "—") + '</td>' +
+          '<td class="num">' + (av2.fimReal ? esc(dmaS(av2.fimReal)) : "—") + '</td>';
+      }
+      /* a folga LIVRE ao lado da total: "posso atrasar 8 dias" e "posso
+         atrasar 8 dias SEM empurrar ninguém" são decisões diferentes, e é a
+         segunda que responde "dá para tirar a equipe daqui?" */
+      function celFolga(no2, critFn) {
+        if (no2.critico) return '<td class="num">' + critFn(no2) + '</td>';
+        var fr2 = fin(no2.folgaReal, 0);
+        if (fr2 < 0) return '<td class="num"><span class="cx-folga-neg-tx" title="' +
+          esc("folga negativa: a data prometida já não é cumprida por esta cadeia (" + fr2 + " dias úteis)") + '">' + fr2 + ' d</span></td>';
+        var fl = fin(no2.folgaLivre, -1), tot = no2.folga || 0;
+        return '<td class="num">+' + tot + ' d' +
+          (fl >= 0 && fl !== tot ? ' <span class="muted cx-mini" title="' +
+            esc("folga livre: atrasar até " + fl + " dia(s) útil(eis) não empurra NENHUMA outra tarefa") + '">(livre ' + fl + ')</span>' : "") + '</td>';
+      }
       var ano = multi ? "" : (ehData(r.dataInicio) ? " (" + r.dataInicio.getFullYear() + ")" : "");
       var numPorId = {}, numF = {}, folhasEt = {}, noEtapa = {};
       r.etapas.forEach(function (e, i) { numPorId[e.id] = i + 1; });
@@ -4103,11 +4751,15 @@
       if (o.temF) html += '<div class="flex" style="gap:8px;margin-top:12px;justify-content:flex-end"><button class="btn sm ghost" data-acao="crono-abrir" data-etapa="*" data-valor="1">Expandir tudo</button><button class="btn sm ghost" data-acao="crono-abrir" data-etapa="*" data-valor="0">Recolher tudo</button></div>';
       html += '<div class="cx-tabela"><table class="tbl cx-eap" style="margin-top:' + (o.temF ? 4 : 12) + 'px"><thead><tr><th>Etapa</th><th>Categoria (agente)</th><th class="num" title="Equipe-dias estimados. Na subetapa, no modo executivo: o nº de equipes trabalhando nela.">Eq-dias</th><th class="num" title="Dias úteis. 0 = marco (entrega, vistoria, liberação): sem barra, um losango no Gantt.">Duração (d)</th>' +
         '<th class="num" title="Nº das etapas que precisam terminar antes desta (ex.: 1,3). Vazio = a anterior; 0 = começa no início da obra. 1+7 = 7 dias úteis depois da 1ª; 1-3 = começa 3 dias antes de a 1ª acabar.">Depende de</th>' +
-        '<th class="num" title="Quanto a etapa pode atrasar sem mudar a entrega. Folga zero = caminho crítico.">Folga</th><th>Início' + ano + '</th><th>Fim</th></tr></thead><tbody>';
+        (temRestr2A ? '<th class="num" title="A data que alguém pediu para esta tarefa (não iniciar antes de, deve terminar em…). ⚠ = a data NÃO é cumprida pelo plano de hoje; ⧗ = o app escreveu essa data para aparelhos de versão anterior.">Data pedida</th>' : '') +
+        '<th class="num" title="Quanto a etapa pode atrasar sem mudar a entrega. Folga zero = caminho crítico.">Folga</th><th>Início' + ano + '</th><th>Fim</th>' +
+        (colAv2A ? '<th class="num" title="% concluído na data de corte do avanço (não hoje).">%</th><th class="num" title="O dia em que a tarefa começou de verdade.">Início real</th><th class="num" title="O último dia trabalhado. Preenchido, a tarefa está concluída.">Fim real</th>' : '') +
+        '</tr></thead><tbody>';
       L.forEach(function (l) {
         if (l.tipo === "etapa") {
           var e = l.et, i = l.i, no = l.no, c = Cr.cat(e.categoria);
-          var valPred = e.predsExplicito ? Cr.predsTexto(e, numPorId) : "";
+          /* ⚠ com a T que segura a etapa (Cronograma.textoDependeDe) */
+          var valPred = (typeof Cr.textoDependeDe === "function") ? Cr.textoDependeDe(e, numPorId) : (e.predsExplicito ? Cr.predsTexto(e, numPorId) : "");
           /* ⚠ no detalhe "Etapa" a linha vem SEM nó (l.no null): o nó da árvore
              ainda diz a fonte — sem ele o campo da etapa com subetapas saía
              com a caixa azul de "editado", parecia o MAIS editável da tabela, e
@@ -4137,7 +4789,17 @@
           var vaoHojeTxt = congEt && _vh === 0
             ? "hoje as subetapas são todas marco — elas não dão vão nenhum"
             : "as subetapas hoje dariam " + _vh + " dia(s)";
-          var fonteEt = iaM[e.id] ? ' <span title="🤖 IA: ' + esc(iaM[e.id]) + '" style="cursor:help">' + ic('ia') + '</span>'
+          /* ⚠ O MOTIVO DA IA SAI DO `CronoPlan.textoIA` (revisão 4, O31), e
+             NUNCA de `cronograma.iaMotivos` cru. Roteiro do defeito que isto
+             fecha: com a porta (1) do teto de 60 KB, o plano guarda só a
+             MARCA — o texto "motivo não guardado (limite do plano)" — e o
+             texto de verdade fica no orçamento de origem. Lendo o mapa cru, a
+             tela mostraria essa marca como se fosse a justificativa da IA, e
+             a pessoa leria "não guardado" numa etapa cujo motivo está a um
+             clique. Sem a fiação nova (`d.cron`), `motivoIA` devolve vazio e
+             a leitura crua de sempre continua valendo. */
+          var iaEt = self2A.motivoIA(d, "etapa", e.id);
+          var fonteEt = (iaEt.titulo || iaM[e.id]) ? ' <span title="' + esc(iaEt.titulo || ("🤖 IA: " + String(iaM[e.id]))) + '" style="cursor:help">' + ic('ia') + '</span>'
             : (noEt && (noEt.fonte === "usuario" || noEt.fonte === "exec" || noEt.fonte === "subetapas")
               ? (congEt && noEt.fonte === "subetapas"
                 ? fonte("subetapas", vaoHojeTxt,
@@ -4160,7 +4822,7 @@
              celular. A borda e a largura saem das classes `cx-in`/`cx-in-dig`
              da F5 (larguras por [data-*] no CSS); os `data-*` e o `readonly`
              são lidos por 9 suítes e ficam como estavam. */
-          html += '<tr><td class="cx-nome">' + ctrl + numEap + esc(e.codigo) + ' ' + esc(e.nome) + (e.marco ? ' <span class="pill cx-pill-marco" title="Marco: evento sem duração (entrega, vistoria, liberação).">◆ marco</span>' : '') + '</td>' +
+          html += '<tr><td class="cx-nome">' + ctrl + numEap + esc(e.codigo) + ' ' + esc(e.nome) + (e.marco ? ' <span class="pill cx-pill-marco" title="Marco: evento sem duração (entrega, vistoria, liberação).">◆ marco</span>' : '') + menuBt(e.id, (i + 1) + " " + e.nome) + '</td>' +
             /* ⚠ badge de categoria: a COR vai no fundo e o texto é --texto
                (.cx-cat) — com o texto na cor da categoria, os tons claros
                (Demolição #9ca3af) davam ~2,5:1 */
@@ -4168,11 +4830,44 @@
             '<td class="num" title="Equipe-dias estimados da etapa">' + nBR(e.equipeDias, 1) + '</td>' +
             '<td class="num"><input class="cell cx-in' + (travada ? '' : (e.editado || e.marco ? ' cx-in-dig' : '')) + '" type="text" inputmode="numeric" data-cron-dur="' + esc(e.id) + '" value="' + e.duracao + '" title="' + esc(motivoTrava) + '"' + (travada ? ' readonly aria-readonly="true"' : '') + '>' + fonteEt + '</td>' +
             '<td class="num"><input class="cell cx-in' + (e.predsExplicito ? ' cx-in-dig' : '') + '" type="text" data-cron-pred="' + esc(e.id) + '" value="' + esc(valPred) + '" placeholder="' + (i > 0 ? i : '—') + '" title="Nº das etapas que precisam terminar antes (ex.: 1,3). Vazio = a anterior; 0 = começa no início da obra. 1+7 = espera 7 dias úteis; 1-3 = começa 3 dias antes."></td>' +
-            '<td class="num">' + (e.critico ? crit(e) : '+' + e.folga + ' d') + '</td>' +
-            '<td>' + dm(e.dataInicio, multi) + '</td><td>' + dm(e.dataFim, multi) + '</td></tr>';
+            celRestr(noEt || e) +
+            celFolga(e, crit) +
+            '<td>' + dm(e.dataInicio, multi) + '</td><td>' + dm(e.dataFim, multi) + '</td>' + celAv(noEt || e) + '</tr>';
           return;
         }
         var n = l.no, cat = Cr.cat(n.categoria);
+        /* A LINHA T (tarefa sem preço, planejador 2A). Ela não é etapa nem
+           subetapa: não tem categoria do orçamento (não tem preço), não tem
+           Eq-dias e o "Depende de" dela aceita etapa E outra T. O responsável
+           vem no lugar da categoria — é a informação que decide se aquele
+           prazo é problema da construtora ou do contratante. */
+        if (l.tipo === "extra") {
+          var nmsT = {}, ordemT = arr(r.etapas).map(function (eT) { return eT && eT.id; });
+          ordemT.forEach(function (eid, iT) { nmsT[eid] = iT + 1; });
+          arr(r.extras).forEach(function (xT) { if (xT) nmsT[xT.id] = xT.numero; });
+          var elosT = arr(n.preds).map(function (pT) {
+            return { i: pT, t: (n.predTipo && n.predTipo[pT]) || "TI", l: (n.predLag && n.predLag[pT]) || 0, x: true };
+          });
+          var predT = (Cr && Cr._textoRede) ? String(Cr._textoRede(elosT, nmsT, { vazioExplicito: false }) || "") : "";
+          var respT = self2A.RESP_T[String(n.resp || "")] || "a construtora";
+          html += '<tr class="cx-t"><td class="cx-nome"><span class="cx-n cx-n-t">' + esc(String(n.numero || "T")) + '</span>' +
+            '<input class="cell cx-in cx-in-nome" type="text" maxlength="80" data-crono-extra-nome="' + esc(n.id) + '" value="' + esc(String(n.nome || "")) +
+            '" title="' + esc("O nome desta tarefa sem preço (até 80 caracteres).") + '">' +
+            (n.marco ? ' <span class="pill cx-pill-marco">◆ marco</span>' : '') +
+            (n.depoisDaEntrega ? ' <span class="pill cx-pill-t" title="' + esc("Esta tarefa termina DEPOIS da entrega da obra: ela não muda o prazo do contrato, mas alguém ainda a deve.") + '">depois da entrega</span>' : '') +
+            (n.cicloDep ? ' <span title="Dependência circular — o elo de volta foi ignorado." style="color:#b45309;cursor:help">⟲</span>' : '') +
+            menuBt(n.id, String(n.numero || "T") + " " + String(n.nome || "")) + '</td>' +
+            '<td><span class="pill cx-pill-t" title="' + esc("Quem deve esta tarefa. Tarefa sem preço não tem custo no orçamento — ela só ocupa prazo." +
+              (n.proposta ? " Aparece na proposta comercial." : " NÃO aparece na proposta comercial.")) + '">' + esc(respT) + (n.proposta ? " · na proposta" : "") + '</span></td>' +
+            '<td class="num" title="' + esc("Tarefa sem preço não tem equipe-dias: ela não tem serviço no orçamento.") + '">—</td>' +
+            '<td class="num"><input class="cell cx-in cx-in-dig" type="text" inputmode="numeric" data-crono-extra-dur="' + esc(n.id) + '" value="' + (n.marco ? 0 : n.duracao) +
+            '" title="' + esc("Dias úteis · 0 = marco. A tarefa sem preço não tem estimativa: o número é seu.") + '"></td>' +
+            '<td class="num"><input class="cell cx-in' + (elosT.length ? ' cx-in-dig' : '') + '" type="text" data-crono-extra-pred="' + esc(n.id) + '" value="' + esc(predT) +
+            '" placeholder="início da obra" title="' + esc("Nº da etapa (1, 3), de outra tarefa sem preço (T1) · espera 3+5 · tipo 3TT · vazio = começa no início da obra.") + '"></td>' +
+            celRestr(n) + celFolga(n, crit) +
+            '<td>' + dm(n.dataInicio, multi) + '</td><td>' + dm(n.dataFim, multi) + '</td>' + celAv(n) + '</tr>';
+          return;
+        }
         if (l.tipo === "folha") {
           var irmas = folhasEt[n.etapaId] || [], pos = irmas.indexOf(n), mp = {};
           (n.preds || []).forEach(function (p) { mp[p] = numF[p]; });
@@ -4197,11 +4892,11 @@
           html += '<tr class="cx-f"><td class="cx-nome"><span style="padding-left:22px"></span><span class="cx-n">' + esc(n.numero) + '</span>' + esc(n.nome) +
             (n.marco ? ' <span class="pill cx-pill-marco">◆ marco</span>' : '') +
             (n.comprimida ? ' <span title="A etapa é curta demais para as subetapas: no desenho elas se sobrepõem além do que a rede pede." style="color:#b45309;cursor:help">⚠</span>' : '') +
-            (n.cicloDep ? ' <span title="Dependência circular entre subetapas — o elo de volta foi ignorado." style="color:#b45309;cursor:help">⟲</span>' : '') + '</td>' +
+            (n.cicloDep ? ' <span title="Dependência circular entre subetapas — o elo de volta foi ignorado." style="color:#b45309;cursor:help">⟲</span>' : '') + menuBt(n.id, n.numero + " " + n.nome) + '</td>' +
             '<td><span class="pill cx-cat" style="background:' + cat.cor + '22">' + esc(cat.nome) + '</span></td>' +
             '<td class="num">' + celEq + '</td><td class="num">' + celDur + '</td><td class="num">' + celPred + '</td>' +
-            '<td class="num">' + (n.critico ? crit(n) : '+' + (n.folga || 0) + ' d') + '</td>' +
-            '<td>' + dm(n.dataInicio, multi) + '</td><td>' + dm(n.dataFim, multi) + '</td></tr>';
+            celRestr(n) + celFolga(n, crit) +
+            '<td>' + dm(n.dataInicio, multi) + '</td><td>' + dm(n.dataFim, multi) + '</td>' + celAv(n) + '</tr>';
           return;
         }
         // serviço: sempre só leitura (a duração dele é a parte da janela da subetapa)
@@ -4210,8 +4905,9 @@
           '<td><span class="cx-mini">' + esc(cat.nome) + '</span></td>' +
           '<td class="num">' + nBR(n.equipeDias || 0, 1) + '</td>' +
           '<td class="num" title="Parte da janela da subetapa, pelo peso em equipe-dias. Só leitura.">' + (sb ? '—' : n.duracao) + fonte(n.fonte) + '</td>' +
-          '<td class="num">—</td><td class="num" title="Herdada da subetapa">—</td>' +
-          '<td>' + (sb ? '—' : dm(n.dataInicio, multi)) + '</td><td>' + (sb ? '—' : dm(n.dataFim, multi)) + '</td></tr>';
+          '<td class="num">—</td>' + (temRestr2A ? '<td class="num">—</td>' : '') + '<td class="num" title="Herdada da subetapa">—</td>' +
+          '<td>' + (sb ? '—' : dm(n.dataInicio, multi)) + '</td><td>' + (sb ? '—' : dm(n.dataFim, multi)) + '</td>' +
+          (colAv2A ? '<td class="num">—</td><td class="num">—</td><td class="num">—</td>' : '') + '</tr>';
       });
       return html + '</tbody></table></div>';
     },
@@ -4313,6 +5009,11 @@
             : '<b>Desligado:</b> as subetapas são desenhadas dentro da duração de cada etapa (só visual). Ao ligar, você vê o prazo antes → depois e confirma — nada é gravado sem isso.') + '</p>';
       }
       html += '</div>';
+      /* os CALENDÁRIOS DAS FRENTES logo abaixo do modo executivo (planejador
+         2B; calendario.md passo 1): as duas respostas para "em que régua esta
+         linha é contada" ficam uma embaixo da outra */
+      var Crp = C();
+      if (!(Crp && typeof Crp.recursos === "function" && Crp.recursos().cal === false)) html += this.calCartao(d, est);
       html += '<div class="card cx-card"><h4>Subetapas e acompanhamento</h4><div class="flex" style="gap:14px;flex-wrap:wrap;align-items:flex-end">' +
         '<div class="field" style="margin:0"><label title="Quanto uma subetapa começa antes de a anterior da mesma etapa terminar (cascata padrão). Vale só entre subetapas.">Paralelismo entre subetapas</label><select id="cronx-parsub">' +
           opt("", "igual ao da obra (" + paralObra + "%)", parSub) + opt(0, "Nenhum", parSub) + opt(0.15, "Leve 15%", parSub) + opt(0.3, "Médio 30%", parSub) + opt(0.5, "Alto 50%", parSub) + '</select></div>' +
@@ -4334,11 +5035,22 @@
          seguia dizendo que restrição de data não existia e que "a data sai da
          rede". Recado que mente sobre o próprio sistema faz a pessoa não
          procurar o que existe. O que continua faltando está listado. */
-      html += '<div class="card cx-card"><h4>Não modelado nesta versão</h4><ul class="cx-lista">' +
-        '<li>Sábado meio período (6 dias/semana conta o sábado inteiro).</li><li>Turnos.</li>' +
-        '<li>Restrição de data só existe como “não iniciar antes de”, só na etapa e só arrastando a barra no Gantt (para tirar: [Soltar a data], na caixa “Datas fixadas no Gantt”). Ainda não há data digitada, restrição em subetapa, “iniciar em” nem “terminar até”.</li>' +
-        '<li>Término-término e início-término (há término-início com espera/avanço, e início-início só entre subetapas).</li>' +
-        '<li>Dependência entre subetapas de etapas diferentes — o elo entre etapas fica na linha da etapa.</li></ul></div>';
+      /* ⚠ AS CINCO LINHAS QUE SAÍRAM DAQUI (planejador 2B, espec §3.4): sábado
+         meio período, turnos, restrição de data, TT/IT e elo cruzado DEIXARAM
+         de ser verdade nesta versão — os calendários das frentes fazem os dois
+         primeiros, a rede faz os três últimos. Recado que mente sobre o próprio
+         sistema faz a pessoa não procurar o que existe: foi esse o defeito que
+         criou este cartão (auditoria da 1.2.80), e é por isso que ele encolhe
+         agora em vez de ficar como estava. O que continua faltando está aqui. */
+      html += '<div class="card cx-card cx-nao-modelado"><h4>Não modelado nesta versão</h4><ul class="cx-lista">' +
+        '<li>' + esc("Nivelamento de recursos: o cronograma não corta a duração por falta de equipe nem redistribui gente entre frentes.") + '</li>' +
+        '<li>' + esc("Histograma, Last Planner e físico-financeiro contam pelo dia útil da obra, e não pelo dia real de cada frente em calendário próprio.") + '</li>' +
+        '<li>' + esc("Importar cronograma do MS Project (exportar já existe, em Documentos do cronograma).") + '</li>' +
+        '<li>' + esc("A IA sugere duração e dependência entre etapas; ela não edita tipos de ligação, calendários das frentes nem tarefas sem preço.") + '</li>' +
+        '<li>' + esc("Biblioteca de calendários da empresa: cada orçamento guarda os calendários dele.") + '</li></ul></div>';
+      /* o cartão da COMPATIBILIDADE fecha a sub-aba: é a última pergunta de
+         quem vai mandar este cronograma para a equipe (crítica 2, achado 17) */
+      html += this.compatCartao(d, est);
       return html;
     },
 
@@ -4476,8 +5188,32 @@
          (`previstoNaData.realPct`); o outro número vai no title, rotulado. */
       var exCmp = (pv && pv.pct != null && pv.realPct != null) ? pv.realPct : ex.pct;
       partes.push("executado " + pctOu(exCmp) + (pv && pv.pct != null ? " × previsto " + pctOu(pv.pct) : ""));
-      partes.push(p.base ? "base v" + p.base.versao : (p.baseAlheia ? "base v" + p.baseAlheia.versao + " de outro orçamento" : "sem linha de base"));
+      /* o ESTADO da base ativa (fatia 1B): "base v2 (aprovada)", "base v3
+         (interna — sem aprovação)". Vem de `p.baseEstado`, que a fiação
+         (App._cronoPainelDados) lê do selo; sem ele, o chip de sempre. Os
+         números não mudam: a ativa continua a de maior versão (a regra da
+         1.2.81 — outra régua daria dois IDPs para a mesma obra). */
+      var ROT_BE = { contratual: "contratual", aprovada: "aprovada", interna: "interna — sem aprovação", anulada: "aprovação anulada" };
+      var bEst = p.base && p.baseEstado && ROT_BE[p.baseEstado.estado] ? " (" + ROT_BE[p.baseEstado.estado] + ")" : "";
+      partes.push(p.base ? "base v" + p.base.versao + bEst : (p.baseAlheia ? "base v" + p.baseAlheia.versao + " de outro orçamento" : "sem linha de base"));
       if (p.base && K.idp && K.idp.valor != null) partes.push("IDP " + nBR(K.idp.valor, 2));
+      /* ---- TÉRMINO PREVISTO no chip (planejador 3C, decisão D3) ----
+         ⚠ A DATA QUE RESPONDE "QUANDO ENTREGA" É A DA REDE, COM O AVANÇO
+         DENTRO (`kpis.previsaoTermino`, publicado pela 2B). O chip da faixa
+         mostrava executado, base e IDP — três números de DESEMPENHO — e
+         nenhum de PRAZO: quem passava pela faixa não via a data, e a única
+         data à mão era a da reta do ritmo dos diários, que é outra conta.
+         O "+N DU base" é o desvio em dias úteis do calendário congelado na
+         linha de base; sem base ele não existe, e a data sai sozinha. */
+      var pvT = K.previsaoTermino;
+      if (pvT && pvT.data) {
+        var dvT = (pvT.desvioDU == null) ? null : Math.round(num0(pvT.desvioDU));
+        partes.push("término " + dmaS(pvT.data) + (dvT == null ? "" : " (" + (dvT > 0 ? "+" : "") + dvT + " DU base)"));
+        tit.push("Término previsto pela rede" + (pvT.comAvanco && pvT.corte ? ", com o avanço lançado até " + dmaS(pvT.corte) : " (sem avanço lançado)") +
+          ": " + dmaS(pvT.data) +
+          (pvT.base && pvT.base.data ? " · linha de base v" + pvT.base.versao + ": " + dmaS(pvT.base.data) : "") +
+          (dvT == null ? "" : " · " + Math.abs(dvT) + " dia(s) útil(eis) " + (dvT > 0 ? "depois" : (dvT < 0 ? "antes" : "em cima")) + " da base"));
+      }
       if (exCmp !== ex.pct && pv) tit.push("executado na régua do previsto (" + (pv.rotulo || "previsto na data").replace(/^Previsto na data /, "") + "): " + pctOu(exCmp));
       tit.push((ex.rotulo || "Executado sobre o orçamento") + ": " + pctOu(ex.pct));
       if (K.portal) tit.push((K.portal.rotulo || "no Portal do cliente") + ": " + pctOu(K.portal.pct));
@@ -4620,6 +5356,34 @@
          A frase curta diz como ler; o completo diz a conta (quem vê dinheiro) */
       if (p.base && idp && idp.valor != null) h += kpi("IDP " + (idp.rotulo || ""), nBR(idp.valor, 2), (comp || !rs(idp.va) || !rs(idp.vp)) ? "acima de 1 = à frente da linha de base; abaixo de 1 = atrás" : "valor agregado " + rs(idp.va) + " ÷ previsto " + rs(idp.vp), "cx-kpi-idp");
       if (K.situacao) h += kpi("Situação" + (K.situacaoContra ? " — contra " + K.situacaoContra : ""), (SIT[K.situacao] || [K.situacao])[0], termTxt(K.desvioTerminoDias), "cx-kpi-sit");
+      /* ==================================================================
+         "TÉRMINO PREVISTO" (planejador 2B; avanco.md passo 6)
+
+         ⚠ UM TÉRMINO EM DESTAQUE, NÃO DOIS. A tela mostrava "10 DU depois"
+           (a rede) e "25 dias antes da base" (o ritmo medido nos diários)
+           com o mesmo peso e sem dizer que são contas diferentes — e quem
+           lia escolhia o número que preferia. A rede sabe as dependências e
+           o que já aconteceu; o ritmo é uma reta sobre a curva executada.
+           O card responde "quando entrega"; o ritmo desce para a linha
+           secundária, rotulado como outra conta.
+         ⚠ A AÇÃO MORA NO CARD DO NÚMERO QUE ELA MUDA: [Atualizar avanço]
+           fica aqui dentro, e não numa barra de ações longe do número.
+         ================================================================== */
+      var pt = K.previsaoTermino;
+      if (pt && pt.data) {
+        var sub = [];
+        sub.push(pt.comAvanco ? "pela rede, com o avanço até " + dmaS(pt.corte) : "pela rede do plano atual");
+        if (pt.base && pt.base.data) {
+          sub.push("linha de base v" + pt.base.versao + ": " + dmaS(pt.base.data) +
+            (pt.desvioDU != null && pt.desvioDU !== 0 ? " (" + (pt.desvioDU > 0 ? "+" : "") + pt.desvioDU + " dias úteis)" : ""));
+        }
+        var obPT = (p.obra && p.obra.id != null) ? String(p.obra.id) : "";
+        var acao = (!comp && obPT && dados.podeEditar !== false)
+          ? '<div class="cx-kpi-acao"><button class="btn sm" data-acao="crono-avanco-abrir" data-obra="' + esc(obPT) + '">' +
+            (pt.comAvanco ? "Atualizar avanço" : "Lançar avanço") + '</button></div>' : "";
+        h += '<div class="cx-kpi cx-kpi-termino"><div class="cx-kpi-rot">Término previsto</div><div class="cx-kpi-v">' + esc(dmaS(pt.data)) +
+          '</div><div class="cx-kpi-sub">' + esc(sub.join(" · ")) + '</div>' + acao + '</div>';
+      }
       return '<div class="cx-kpis">' + h + '</div>';
     },
     _prTabela: function (p, multi) {
@@ -4663,8 +5427,14 @@
         else if (!p.base) h += '<button class="btn sm primary" data-acao="crono-congelar" data-obra="' + esc(obId) + '" title="Congela o plano como está agora: é contra ele que a obra passa a ser comparada (previsto na data e IDP). Linha de base não se regrava — reprogramar cria a versão seguinte.">Congelar linha de base</button>';
         else h += '<button class="btn sm" data-acao="crono-congelar" data-obra="' + esc(obId) + '" data-reprogramar="1" title="Grava a versão seguinte da linha de base, com motivo. A atual fica no histórico.">Reprogramar (nova base)</button>';
       }
-      if (!erro && obId && (p.base || nB)) h += '<button class="btn sm ghost" data-acao="crono-historico" data-obra="' + esc(obId) + '">Histórico de bases' + (nB ? ' (' + nB + ')' : '') + '</button>';
+      /* fatia 1B: "Histórico de bases" vira "Linhas de base (N)" — a porta
+         abre a sub-aba (no orçamento) ou o histórico (na ficha compacta) */
+      if (!erro && obId && (p.base || nB)) h += '<button class="btn sm ghost" data-acao="crono-historico" data-obra="' + esc(obId) + '" title="As versões da linha de base desta obra: a contratual, as aprovações e a comparação entre elas.">Linhas de base' + (nB ? ' (' + nB + ')' : '') + '</button>';
       if (comp && obId) h += '<button class="btn sm" data-acao="crono-planejamento" data-obra="' + esc(obId) + '">Abrir cronograma completo</button>';
+      /* as portas da quarentena onde o painel é o único recado: a ficha e o
+         módulo da obra (a aba do orçamento, origem "orc", já as tem na
+         faixa de cima) — ver App._cronoPainelDados */
+      if (erro && dados.planoIlegivel && dados.planoIlegivel.admin && opts.origem !== "orc") h += '<button class="btn sm acao-forte" data-acao="backup">Restaurar um backup</button><button class="btn sm" data-acao="liberar-ilegivel" title="Guarda o conteúdo ilegível à parte (nada é apagado) e deixa o planejamento das obras recomeçar vazio.">Guardar à parte e recomeçar</button>';
       if (opts.origem === "obra" && p.orcamento && p.orcamento.id) h += '<button class="btn sm ghost" data-acao="crono-abrir-orc" data-orc="' + esc(p.orcamento.id) + '" title="Abre o orçamento da obra na aba Cronograma">Abrir cronograma no orçamento</button>';
       return h ? '<div class="cx-pr-acoes">' + h + '</div>' : '';
     },
@@ -4791,6 +5561,8 @@
         if (df.removidos.length) h += '<div class="cx-aviso">O que foi lançado nos diários nos ' + df.removidos.length + ' item(ns) que saem fica fora do avanço sobre o orçamento ("item fora do orçamento vinculado").</div>';
       }
       if (d.temPlano) h += '<p class="muted" style="font-size:12px;margin:6px 0 0">O plano de execução da obra passa junto (as etapas e subetapas têm os mesmos ids).</p>';
+      /* ⚠ planejamento ilegível: sem este aviso, a falta da linha acima lia como "a obra não tem plano" (App._cronoLerPlanejamento) */
+      else if (d.planoIlegivel) h += '<div class="cx-aviso">O planejamento das obras deste aparelho está ilegível: se a obra tem plano de execução, ele NÃO passa junto — continua marcado com o orçamento anterior até o backup ser restaurado.</div>';
       /* ⚠ O PORTAL DO CLIENTE MUDA JUNTO (revisão 3, lente dinheiro): o snapshot
          lê o cronograma, a curva planejada e os pesos do orçamento LIGADO à
          obra, e se republica sozinho a cada diário publicado. Esta porta se
@@ -4830,6 +5602,41 @@
       }
       h += '<div class="field"><label>Motivo' + (v > 1 ? ' * <span class="muted" style="font-weight:400">(obrigatório: a v' + v + ' substitui a v' + (v - 1) + ')</span>' : ' <span class="muted" style="font-weight:400">(opcional)</span>') +
         '</label><textarea id="cxb-motivo" rows="2" maxlength="200" placeholder="' + (v > 1 ? 'Ex.: chuva atrasou a fundação 10 dias' : 'Ex.: plano assinado com o cliente') + '"></textarea></div>';
+      /* ⚠ A CONTRATUAL E A APROVAÇÃO (planejador, fatia 1B; D15, D20). Os
+         blocos só existem quando a fiação os pede (`d.contratual`,
+         `d.aprovacao`): sem eles o diálogo é o de sempre, byte a byte.
+         ⚠ A CAIXA SÓ NASCE MARCADA NA v1 (`d.contratual.marcada`, decidido na
+         fiação): na REPROGRAMAÇÃO marcar a contratual tem de ser um ato. Ela
+         vinha marcada em toda versão, e a v2 de um atraso do próprio
+         construtor virava, sem ninguém decidir, a base contra a qual o pleito
+         é medido — o mesmo atributo que o texto abaixo diz que não se apaga
+         nem se regrava (medido na revisão final de 22/09/2026).
+         Só o administrador muda a marca; para os outros ela aparece travada,
+         dizendo por quê. */
+      var ct = d.contratual;
+      if (ct && ct.mostrar) {
+        h += '<div class="field cxb-f-contratual"><label style="display:flex;gap:8px;align-items:center;font-weight:600"><input type="checkbox" id="cxb-contratual"' + (ct.marcada ? ' checked' : '') + (ct.admin ? '' : ' disabled') + '> ' +
+          'Esta é a linha de base CONTRATUAL (a do contrato assinado)</label>' +
+          '<div class="muted" style="font-size:11.5px;margin-top:3px">Ela não se apaga, não se regrava e nunca é resumida para caber na nuvem. É contra ela que o comparativo de pleito mede.' +
+          /* ⚠ na reprogramação a caixa nasce DESMARCADA, e a frase diz quando
+             marcar — padrão sem explicação a pessoa desfaz no escuro */
+          (v > 1 ? ' Marque apenas se esta reprogramação foi acordada com o contratante e passou a ser o contrato.' : '') +
+          (ct.admin ? '' : ' Só o administrador da conta muda esta marca.') + '</div></div>';
+      } else if (ct && ct.atual) {
+        h += '<p class="muted" style="font-size:12px;margin:0 0 8px">A contratual desta obra é a <b>v' + esc(ct.atual.versao) + '</b>' + (ct.atual.gemeas ? ' (há ' + esc(ct.atual.gemeas) + ' gêmea(s) — vale esta)' : '') + '. A nova versão é uma reprogramação.</p>';
+      }
+      var ap = d.aprovacao;
+      if (ap) {
+        var aps = arr(ap.aditivos);
+        h += '<div class="field cxb-f-aprov"><label>Aprovação desta ' + (v > 1 ? 'reprogramação' : 'linha de base') + '</label>' +
+          '<label style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="radio" name="cxb-aprov" id="cxb-aprov-c"' + (ap.padrao === "contratante" ? ' checked' : '') + '> Aprovada pelo contratante</label>' +
+          '<label style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="radio" name="cxb-aprov" id="cxb-aprov-i"' + (ap.padrao === "contratante" ? '' : ' checked') + '> Interna — ainda sem aprovação do contratante</label>' +
+          '<div class="cxb-f-linha"><label>Aprovada por <input type="text" id="cxb-aprov-por" maxlength="80" placeholder="nome e cargo de quem aprovou"></label>' +
+          '<label>Em <input type="date" id="cxb-aprov-em" style="width:160px"></label></div>' +
+          '<div class="cxb-f-linha"><label>Documento <input type="text" id="cxb-aprov-doc" maxlength="120" placeholder="ex.: Termo aditivo 01, carta 023/2026, e-mail de 18/09"></label>' +
+          (aps.length ? '<label>Termo aditivo <select id="cxb-aprov-adt"><option value="">— nenhum —</option>' + aps.map(function (x, i) { return '<option value="' + i + '">' + esc(corta(x.rotulo, 60)) + '</option>'; }).join("") + '</select></label>' : '') + '</div>' +
+          (v > 1 ? '<div class="muted" style="font-size:11.5px;margin-top:3px">Interna: a v' + v + ' passa a ser a base do previsto × realizado e do IDP, mas sai marcada como INTERNA no chip e no impresso — o contratante não a aprovou. A aprovação pode ser registrada depois, na sub-aba Linhas de base.</div>' : '') + '</div>';
+      }
       /* ⚠ SEM DINHEIRO (quem não pode Medições nem Financeiro — a regra do
          painel da obra, Gestao._cronoDinheiro): prazo e datas ficam, o valor de
          venda sai. O diálogo vazava "R$ 4.500,00" pela porta da própria ficha
@@ -4838,7 +5645,10 @@
       if (sim && sim.erro) h += '<div class="cx-aviso">Com o início ' + (d.inicio ? esc(dmaS(d.inicio)) + ' ' : '') + 'a linha de base não sai: ' + esc(sim.erro) + '</div>';
       else if (sim) {
         var mq = (v > 1 && d.ativa) ? this.oQueMuda(d.ativa, sim) : null;
-        if (mq) h += this._oQueMudaHtml(mq, v, semD);
+        /* a coluna "contra a contratual" só quando a ativa NÃO é a contratual
+           (fatia 1B): o pleito mede contra a promessa do contrato */
+        var mqC = (mq && d.contratualBase && d.contratualBase.id !== d.ativa.id) ? this.oQueMuda(d.contratualBase, sim) : null;
+        if (mq) h += this._oQueMudaHtml(mq, v, semD, mqC ? { mq: mqC, versao: d.contratualBase.versao } : null);
         else h += '<p class="muted" style="font-size:12px;margin:6px 0 0">Com o início acima e as opcionais desmarcadas: ' + esc(sim.totalDias) + ' dias úteis, término ' + esc(dmaS(sim.dataFim)) + (semD ? '' : ', ' + esc(moeda(sim.valor))) + '.</p>';
         /* ⚠ O TÉRMINO DO CADASTRO (revisão 3, lente UX): a obra de 04/05 a 18/12
            congelava uma base de 378 dias úteis (até 11/2027) sem nenhuma
@@ -4859,17 +5669,37 @@
     },
     /* o diálogo → {dataInicio, motivo, opcionaisIncluidos, erro?}.
        `el(id)` = o elemento ou null; opcIds na MESMA ordem do congelarForm */
-    congelarDoForm: function (el, opcIds, versao) {
+    congelarDoForm: function (el, opcIds, versao, extra) {
+      extra = extra || {};
       var ini = el("cxb-inicio"), mot = el("cxb-motivo");
       var f = { dataInicio: ini ? String(ini.value == null ? "" : ini.value).trim() : "",
         motivo: mot ? String(mot.value == null ? "" : mot.value).replace(/\s+/g, " ").trim().slice(0, 200) : "", opcionaisIncluidos: [] };
       arr(opcIds).forEach(function (id, i) { var c = el("cxb-opc-" + i); if (c && c.checked) f.opcionaisIncluidos.push(id); });
       var tb = el("cxb-termino");
       f.atualizarTermino = !!(tb && tb.checked);
+      /* fatia 1B: a contratual (null = o diálogo não perguntou) e a aprovação
+         (null = interna). O aditivo é lido pela POSIÇÃO na lista que a
+         fiação passou — o id vem de fora e nunca vai para o elemento. */
+      var cc = el("cxb-contratual");
+      f.contratual = cc ? !!cc.checked : null;
+      var apC = el("cxb-aprov-c");
+      f.aprovacao = null;
+      if (apC && apC.checked) {
+        var por = el("cxb-aprov-por"), em = el("cxb-aprov-em"), doc = el("cxb-aprov-doc"), adt = el("cxb-aprov-adt");
+        var ia = adt && adt.value !== "" && adt.value != null ? parseInt(adt.value, 10) : -1;
+        f.aprovacao = { tipo: "contratante", por: por ? String(por.value == null ? "" : por.value).replace(/\s+/g, " ").trim().slice(0, 80) : "",
+          em: em ? String(em.value == null ? "" : em.value).trim() : "", documento: doc ? String(doc.value == null ? "" : doc.value).replace(/\s+/g, " ").trim().slice(0, 120) : "",
+          aditivoId: (ia >= 0 && arr(extra.aditivos)[ia] != null) ? String(arr(extra.aditivos)[ia]) : null };
+      }
       var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(f.dataInicio), ok = false;
       if (m) { var dt = new Date(+m[1], +m[2] - 1, +m[3]); ok = dt.getFullYear() === +m[1] && dt.getMonth() === +m[2] - 1 && dt.getDate() === +m[3]; }
       if (!ok) f.erro = "Informe a data de início da obra — a linha de base congela as datas a partir dela. Nada foi gravado.";
       else if (versao > 1 && !f.motivo) f.erro = "Informe o motivo da reprogramação — a v" + versao + " substitui a v" + (versao - 1) + " na comparação da obra. Nada foi gravado.";
+      else if (f.aprovacao) {
+        var CSm = MOD("CronoSelo", "./cronoselo.js"), va = CSm && CSm.validarAprovacao ? CSm.validarAprovacao(f.aprovacao, extra.hoje) : null;
+        if (va && va.erro) f.erro = "Aprovação: " + va.erro;
+        else if (va) f.aprovacao = va.aprovacao;
+      }
       return f;
     },
     /* o que muda da base ativa para a que sairia: prazo, término, valor e as
@@ -4894,14 +5724,21 @@
       return { prazo: [ativa.totalDias, nova.totalDias], termino: [ativa.dataFim, nova.dataFim], valor: [ativa.valor, nova.valor],
         inicio: [ativa.cal && ativa.cal.dataInicio, nova.cal && nova.cal.dataInicio], mudaram: mud, novos: novos, sairam: sairam };
     },
-    _oQueMudaHtml: function (mq, v, semDinheiro) {
+    _oQueMudaHtml: function (mq, v, semDinheiro, contra) {
+      /* `contra` (fatia 1B) = {mq, versao}: a coluna "contra a contratual",
+         com o início/prazo/término/valor da contratual ao lado — a v1 do
+         contrato, e não só a versão anterior, é o que o pleito compara */
+      var cC = contra && contra.mq ? contra.mq : null, rotC = cC ? 'v' + esc(contra.versao) + ' (contratual)' : '';
+      function colC(k, fmt) { return cC ? '<td class="num">' + esc(fmt(cC[k][0])) + '</td>' : ''; }
+      function du(x) { return x + " dias úteis"; }
       var h = '<div style="font-size:12.5px;margin-top:6px"><b>O que muda da v' + (v - 1) + ' para a v' + v + '</b> <span class="muted">(com o início acima e as opcionais desmarcadas)</span>' +
-        '<table class="tbl cx-muda" style="font-size:12px;margin:4px 0"><thead><tr><th></th><th class="num">v' + (v - 1) + '</th><th class="num">v' + v + '</th></tr></thead><tbody>' +
-        '<tr><td>Início</td><td class="num">' + esc(dmaS(mq.inicio[0])) + '</td><td class="num">' + esc(dmaS(mq.inicio[1])) + '</td></tr>' +
-        '<tr><td>Prazo</td><td class="num">' + esc(mq.prazo[0]) + ' dias úteis</td><td class="num">' + esc(mq.prazo[1]) + ' dias úteis</td></tr>' +
-        '<tr><td>Término</td><td class="num">' + esc(dmaS(mq.termino[0])) + '</td><td class="num">' + esc(dmaS(mq.termino[1])) + '</td></tr>' +
+        '<table class="tbl cx-muda" style="font-size:12px;margin:4px 0"><thead><tr><th></th>' + (cC ? '<th class="num">' + rotC + '</th>' : '') + '<th class="num">v' + (v - 1) + '</th><th class="num">v' + v + '</th></tr></thead><tbody>' +
+        '<tr><td>Início</td>' + colC("inicio", dmaS) + '<td class="num">' + esc(dmaS(mq.inicio[0])) + '</td><td class="num">' + esc(dmaS(mq.inicio[1])) + '</td></tr>' +
+        '<tr><td>Prazo</td>' + colC("prazo", du) + '<td class="num">' + esc(mq.prazo[0]) + ' dias úteis</td><td class="num">' + esc(mq.prazo[1]) + ' dias úteis</td></tr>' +
+        '<tr><td>Término</td>' + colC("termino", dmaS) + '<td class="num">' + esc(dmaS(mq.termino[0])) + '</td><td class="num">' + esc(dmaS(mq.termino[1])) + '</td></tr>' +
         // ⚠ sem dinheiro: a linha do valor de venda não existe (ver congelarForm)
-        (semDinheiro ? '' : '<tr><td>Valor</td><td class="num">' + esc(moeda(mq.valor[0])) + '</td><td class="num">' + esc(moeda(mq.valor[1])) + '</td></tr>') + '</tbody></table>';
+        (semDinheiro ? '' : '<tr><td>Valor</td>' + colC("valor", moeda) + '<td class="num">' + esc(moeda(mq.valor[0])) + '</td><td class="num">' + esc(moeda(mq.valor[1])) + '</td></tr>') + '</tbody></table>';
+      if (cC) h += '<div class="muted" style="font-size:11.5px">Contra a contratual (v' + esc(contra.versao) + '): ' + cC.mudaram.length + ' etapa(s)/subetapa(s) mudam de janela; o prazo vai de ' + esc(cC.prazo[0]) + ' para ' + esc(cC.prazo[1]) + ' dias úteis.</div>';
       if (mq.mudaram.length) {
         h += mq.mudaram.length + ' etapa(s)/subetapa(s) mudam de janela:<ul class="cx-lista">';
         mq.mudaram.slice(0, 8).forEach(function (x) { h += '<li><span class="cx-n">' + esc(x.numero) + '</span>' + esc(corta(x.nome, 50)) + (x.de ? ': ' + esc(dmaS(x.de[0]) + "–" + dmaS(x.de[1]) + " → " + dmaS(x.para[0]) + "–" + dmaS(x.para[1])) : '') + '</li>'; });
@@ -4920,14 +5757,22 @@
       var semD = !!opts.semDinheiro;
       var bs = arr(bases).slice().reverse();
       if (!bs.length) return '<p style="font-size:13px">Esta obra ainda não tem linha de base. Use <b>Congelar linha de base</b> no previsto × realizado da obra.</p>';
-      var h = '<p class="muted" style="font-size:12px;margin:0 0 8px">Linha de base não se apaga nem se regrava: reprogramar grava a versão seguinte. Para caber no limite da nuvem, as versões antigas são resumidas sozinhas — nunca a ativa, e a v1 (a contratual) por último.</p>';
+      /* ⚠ MUDANÇA DECLARADA (planejador, fatia 1B; D15, D16): o texto dizia
+         "a v1 (a contratual) por último" — a tela prometia que a contratual
+         seria resumida um dia. Ela nunca é: a porta do espaço não tem mais as
+         fases da v1. `opts.estados` = {baseId: {estado, selo}} traz as
+         colunas Estado e Selo (a verdade da contratual e da aprovação mora
+         no selo); sem ele, a tabela de sempre. */
+      var ests = (opts.estados && typeof opts.estados === "object") ? opts.estados : null;
+      var ROT_E = { contratual: "contratual", aprovada: "aprovada", interna: "interna — sem aprovação", anulada: "aprovação anulada" };
+      var h = '<p class="muted" style="font-size:12px;margin:0 0 8px">Linha de base não se apaga nem se regrava: reprogramar grava a versão seguinte. Para caber no limite da nuvem, as versões antigas são resumidas sozinhas — nunca a ativa. A contratual nunca é resumida.</p>';
       /* duas bases da MESMA versão = congeladas ao mesmo tempo em aparelhos
          diferentes (o id é único por gravação, nenhuma some no merge): vale a
          ativa (CronoBase.ativa — a mais recente, a mesma em todo aparelho), e
          a outra fica aqui dita, com quem e quando */
       var ativaB = null, porV = {};
       bs.forEach(function (b) { if (b.id === ativaId) ativaB = b; porV[b.versao] = (porV[b.versao] || 0) + 1; });
-      h += '<div class="cx-tabela"><table class="tbl cx-hist" style="font-size:12.5px"><thead><tr><th>Versão</th><th>Congelada em</th><th>Por</th><th>Motivo</th><th class="num">Prazo</th><th>Término</th>' + (semD ? '' : '<th class="num">Valor</th>') + '<th>O que ficou guardado</th></tr></thead><tbody>';
+      h += '<div class="cx-tabela"><table class="tbl cx-hist" style="font-size:12.5px"><thead><tr><th>Versão</th>' + (ests ? '<th>Estado</th>' : '') + '<th>Congelada em</th><th>Por</th><th>Motivo</th><th class="num">Prazo</th><th>Término</th>' + (semD ? '' : '<th class="num">Valor</th>') + '<th>O que ficou guardado</th>' + (ests ? '<th>Selo</th>' : '') + '</tr></thead><tbody>';
       bs.forEach(function (b) {
         var guard = b.id === ativaId ? '<b>ativa</b> — completa'
           : (b.arquivada ? 'arquivada: só o cabeçalho (saíram ' + (Number(b.etapasArquivadas) || 0) + ' etapa(s), ' + (Number(b.folhasResumidas) || 0) + ' subetapa(s) e ' + (Number(b.mesesResumidos) || 0) + ' mês(es) de curva)'
@@ -4935,11 +5780,15 @@
         if (b.id !== ativaId && porV[b.versao] > 1 && ativaB && ativaB.versao === b.versao) {
           guard = '<b>não vale</b>: outra v' + esc(b.versao) + ' foi congelada ao mesmo tempo em outro aparelho (' + esc(dmaS(ativaB.criadaEm)) + (ativaB.por ? ', por ' + esc(corta(ativaB.por, 30)) : '') + ') e é ela que vale — para mudar, reprograme. ' + guard;
         }
-        h += '<tr><td><b>v' + esc(b.versao) + '</b></td><td>' + esc(dmaS(b.criadaEm)) + '</td><td>' + esc(corta(b.por || "—", 30)) + '</td><td style="white-space:normal">' + esc(b.motivo || "—") +
-          '</td><td class="num">' + esc(b.totalDias) + ' d</td><td>' + esc(dmaS(b.dataFim)) + '</td>' + (semD ? '' : '<td class="num">' + esc(moeda(b.valor)) + '</td>') + '<td style="white-space:normal">' + guard + '</td></tr>';
+        var eb = ests ? (ests[b.id] || null) : null;
+        var celE = ests ? '<td>' + esc(eb ? (ROT_E[eb.estado] || eb.estado) : "—") + '</td>' : '';
+        var celS = ests ? '<td style="white-space:normal">' + esc(eb && eb.seloTexto ? eb.seloTexto : "sem selo") + '</td>' : '';
+        h += '<tr><td><b>v' + esc(b.versao) + '</b></td>' + celE + '<td>' + esc(dmaS(b.criadaEm)) + '</td><td>' + esc(corta(b.por || "—", 30)) + '</td><td style="white-space:normal">' + esc(b.motivo || "—") +
+          '</td><td class="num">' + esc(b.totalDias) + ' d</td><td>' + esc(dmaS(b.dataFim)) + '</td>' + (semD ? '' : '<td class="num">' + esc(moeda(b.valor)) + '</td>') + '<td style="white-space:normal">' + guard + '</td>' + celS + '</tr>';
       });
       h += '</tbody></table></div>';
-      if (ocup && ocup.bytes != null && ocup.teto) h += '<p class="muted" style="font-size:11.5px;margin:6px 0 0">Planejamento das obras desta empresa: ' + esc(nBR(ocup.bytes / 1024, 0)) + ' KB de ' + esc(nBR(ocup.teto / 1024, 0)) + ' KB (a nuvem guarda tudo num documento só, de 1 MiB).</p>';
+      if (ocup && ocup.bytes != null && ocup.teto) h += '<p class="muted" style="font-size:11.5px;margin:6px 0 0">Planejamento das obras desta empresa: ' + esc(nBR(ocup.bytes / 1024, 0)) + ' KB de ' + esc(nBR(ocup.teto / 1024, 0)) + ' KB (a nuvem guarda tudo num documento só, de 1 MiB).' +
+        (opts.ocupSelo && opts.ocupSelo.bytes != null ? ' Linhas de base seladas: ' + esc(nBR(opts.ocupSelo.bytes / 1024, 0)) + ' KB de ' + esc(nBR((opts.ocupSelo.teto || 921600) / 1024, 0)) + ' KB.' : '') + '</p>';
       return h;
     },
 
@@ -4982,7 +5831,1790 @@
         html += '<div class="cx-aviso">' + esc(pt.msg) + ' O texto da proposta <b>não</b> é alterado — ajuste o campo “Prazo de execução” dos dados comerciais do orçamento.</div>';
       html += '<p class="muted" style="font-size:12px;margin:8px 0 0">Nada é gravado até você confirmar.</p>';
       return html;
-    }
+    },
+
+    /* =====================================================================
+     * PLANEJADOR — TOMADAS DA ONDA 0 (dono MOTOR). Nada visível muda sem
+     * registro. Espec: ESPEC-planejador.md §3.2 (T8, T20).
+     * ===================================================================== */
+
+    /* SUB-ABA REGISTRÁVEL (T8): {id, nome, depoisDe, quando(d, est),
+       render(d, est)}. O `render` a consulta DEPOIS das três de sempre, e a
+       `barra` a desenha logo depois de `depoisDe`. Mesmo id → substitui (o
+       módulo recarregado não duplica a aba). Id de sub-aba de sempre →
+       recusado (false): uma fatia não troca a aba de outra por aqui. */
+    registrarSub: function (s) {
+      if (!s || typeof s !== "object" || typeof s.id !== "string" || !s.id) return false;
+      for (var i = 0; i < SUBS.length; i++) if (SUBS[i].id === s.id) return false;
+      var reg = { id: s.id, nome: String(s.nome == null ? s.id : s.nome), depoisDe: s.depoisDe == null ? null : String(s.depoisDe),
+        quando: typeof s.quando === "function" ? s.quando : null, render: typeof s.render === "function" ? s.render : null };
+      for (i = 0; i < _subsReg.length; i++) if (_subsReg[i].id === s.id) { _subsReg[i] = reg; return true; }
+      _subsReg.push(reg);
+      return true;
+    },
+    subsRegistradas: function () { return _subsReg.map(function (x) { return { id: x.id, nome: x.nome, depoisDe: x.depoisDe }; }); },
+
+    /* AÇÕES DA LINHA DO PRAZO (T20): {id, ordem, quando(d, est), html(d, est)}.
+       O `cronograma` acrescenta, DEPOIS do conteúdo de hoje, o html de cada
+       registro cujo `quando` vale, na ordem (`ordem`, depois `id`). Mesmo id →
+       substitui. É onde a 2B põe [Lançar avanço]/[Atualizar avanço] e
+       [Calendários (N)] sem editar a linha que a 2A desenha.
+       ⚠ Registro que lança não derruba a aba: some só ele. */
+    registrarPrazo: function (p) {
+      if (!p || typeof p !== "object" || typeof p.id !== "string" || !p.id || typeof p.html !== "function") return false;
+      var reg = { id: p.id, ordem: isFinite(Number(p.ordem)) ? Number(p.ordem) : 0, quando: typeof p.quando === "function" ? p.quando : null, html: p.html }, i;
+      for (i = 0; i < _prazoReg.length; i++) if (_prazoReg[i].id === p.id) { _prazoReg.splice(i, 1); break; }
+      _prazoReg.push(reg);
+      /* ⚠ `sort` estável não é garantido em ES5: o desempate por id torna a
+         ordem a mesma em todo navegador */
+      _prazoReg.sort(function (a, b) { return (a.ordem - b.ordem) || (a.id < b.id ? -1 : (a.id > b.id ? 1 : 0)); });
+      return true;
+    },
+    _prazoRegistrados: function (d, est) {
+      if (!_prazoReg.length) return "";
+      var out = "";
+      _prazoReg.forEach(function (p) {
+        try {
+          if (p.quando && !p.quando(d, est)) return;
+          var h = p.html(d, est);
+          if (h != null) out += String(h);
+        } catch (e) { /* registro com defeito: só ele some */ }
+      });
+      return out;
+    },
+    /* só para as suítes: tira um registro (o módulo é global e as suítes rodam
+       vários cenários no mesmo processo) */
+    _desregistrar: function (tipo, id) {
+      var l = tipo === "sub" ? _subsReg : (tipo === "prazo" ? _prazoReg : null), i;
+      if (!l) return false;
+      for (i = 0; i < l.length; i++) if (l[i].id === id) { l.splice(i, 1); return true; }
+      return false;
+    },
+
+    /* ===== PLANEJADOR: bases (1B) ===== */
+    _regBases: 1,
+    /* ------------------------------------------------------------------
+       SUB-ABA "LINHAS DE BASE" (planejador, fatia 1B; espec §3.3; desenho
+       BASES §a). O desenho é PURO: `dados` vem de App._cronoBasesDados
+       (a leitura do disco, a comparação e as permissões). Nada aqui grava.
+       dados = {erro?, obra, bases: [cartão], contratual, ativaId, podeEditar,
+       admin, veDinheiro, obraConcluida, comp (CronoComp.comparar), escolha
+       ({a, b, detalhe, filtro, busca}), opcoesA, opcoesB, r (plano atual),
+       real ({id: pct}), corte, ocupacao ({crono, selo}), orfaos,
+       seloNaoChegou (n), recursosDesligados}.
+       ⚠ Todo texto de dado passa por `esc`: nome de etapa, motivo, quem
+         aprovou e documento vêm de outro aparelho pela nuvem.
+       ⚠ Sem dinheiro (dados.veDinheiro false) nenhum R$ sai daqui.
+       ------------------------------------------------------------------ */
+    _BASE_ESTADO: { contratual: "CONTRATUAL", aprovada: "APROVADA PELO CONTRATANTE", interna: "INTERNA (sem aprovação)", anulada: "APROVAÇÃO ANULADA" },
+    basesPainel: function (dados) {
+      dados = dados || {};
+      var self = this, h = '<div class="cxb" data-cx-bases="' + esc(dados.obra && dados.obra.id || "") + '">';
+      if (dados.erro) return h + '<div class="cx-aviso">' + esc(dados.erro) + '</div></div>';
+      var ob = dados.obra || {}, obId = String(ob.id == null ? "" : ob.id), bases = arr(dados.bases);
+      /* o topo: o que é a tela, e as portas da obra */
+      h += '<div class="cxb-topo"><div class="cxb-tit">Linhas de base da obra <b>' + esc(corta(ob.nome || "sem nome", 60)) + '</b>' +
+        '<span class="muted"> · ' + bases.length + ' versão(ões)' + (dados.contratual ? ' · contratual v' + esc(dados.contratual.versao) : ' · sem contratual marcada') + '</span></div>';
+      h += '<div class="cxb-acoes">';
+      if (dados.podeEditar && dados.podeCongelar) {
+        h += '<button class="btn sm ' + (bases.length ? '' : 'primary') + '" data-acao="crono-congelar" data-obra="' + esc(obId) + '"' + (bases.length ? ' data-reprogramar="1"' : '') + '>' +
+          (bases.length ? 'Reprogramar (nova base)' : 'Congelar linha de base') + '</button>';
+      }
+      if (dados.admin && dados.contratual && bases.length > 1) h += '<button class="btn sm ghost" data-acao="crono-bases-trocar" data-obra="' + esc(obId) + '" title="Só o administrador: troca qual versão é a contratual, com motivo e confirmação digitada. A marca antiga fica no histórico.">Trocar a contratual</button>';
+      if (dados.admin && dados.obraConcluida && dados.temSelo) h += '<button class="btn sm acao-forte" data-acao="crono-bases-encerrar" data-obra="' + esc(obId) + '" title="Obra concluída: gera o resumo e o pacote de conferência e libera o espaço do detalhe por serviço das linhas de base desta obra (a contratual inclusive).">Encerrar planejamento</button>';
+      h += '</div></div>';
+      if (dados.recursosDesligados) h += '<div class="cx-aviso">' + esc(dados.recursosDesligados) + '</div>';
+      if (dados.seloNaoChegou) h += '<div class="cx-aviso">' + esc(dados.seloNaoChegou + " versão(ões) desta obra estão resumidas aqui e o selo delas ainda não chegou a este aparelho — sincronize para ver as subetapas.") + '</div>';
+      if (!bases.length) {
+        return h + '<p class="cxb-vazio">Esta obra ainda não tem linha de base. ' + (dados.podeEditar ? 'Use <b>Congelar linha de base</b>: a v1 nasce como a contratual.' : 'Quem planeja a obra congela a primeira.') + '</p>' + self._basesRodape(dados) + '</div>';
+      }
+      h += self._basesCartoes(dados);
+      h += self._basesBarra(dados);
+      var comp = dados.comp;
+      if (!comp) h += '<p class="cxb-vazio">' + (bases.length < 2 ? 'Com uma versão só, a comparação é com o <b>plano atual</b> — escolha acima.' : 'Escolha as duas versões acima.') + '</p>';
+      else if (!comp.ok) h += '<div class="cx-aviso">' + esc(comp.erro) + '</div>';
+      else {
+        h += self._basesResumo(comp, dados);
+        if (dados.r) h += '<div class="cxb-sec"><b>Gantt comparativo</b> <span class="muted">— faixa de cima: ' + esc(comp.cab.rotA) + ' · faixa de baixo: ' + esc(comp.cab.rotB) +
+          ' · barra: plano atual · faixa escura: executado · linha laranja: data de corte</span></div>' + self.ganttComparar(dados.r, comp, { realizado: dados.real, corte: dados.corte });
+        h += self._basesTabela(comp, dados);
+        var avs = arr(comp.avisos);
+        if (avs.length) h += '<div class="cxb-sec"><b>O que não entrou na comparação</b></div><ul class="cx-lista cxb-fora">' + avs.map(function (a) { return '<li>' + esc(a.msg) + '</li>'; }).join("") + '</ul>';
+        h += '<p class="muted cxb-rodape">' + arr(comp.rodape).map(esc).join(" ") + '</p>';
+      }
+      return h + self._basesRodape(dados) + '</div>';
+    },
+    _basesCartoes: function (dados) {
+      var self = this, ob = dados.obra || {}, obId = esc(ob.id == null ? "" : ob.id), h = '<div class="cxb-versoes" role="list">';
+      arr(dados.bases).forEach(function (b) {
+        var est = b.estado || "interna", ativa = b.id === dados.ativaId;
+        var cls = "cxb-card cxb-" + est + (ativa ? " cxb-ativa" : "") + (b.gemea ? " cxb-gemea" : "");
+        h += '<div class="' + cls + '" role="listitem" data-base="' + esc(b.id) + '">';
+        h += '<div class="cxb-card-cab"><b>v' + esc(b.versao) + '</b> <span class="cxb-est">' + esc(self._BASE_ESTADO[est] || est) + '</span>' + (ativa ? ' <span class="cxb-selo-ativa" title="É contra ela que o previsto × realizado e o IDP comparam.">ATIVA</span>' : '') + '</div>';
+        if (b.gemea) h += '<div class="cxb-aviso-linha">' + esc(b.gemea) + '</div>';
+        h += '<div class="cxb-card-l">congelada ' + esc(dmaS(b.criadaEm)) + (b.por ? ' por ' + esc(corta(b.por, 40)) : '') + '</div>';
+        /* ⚠ término = ÚLTIMO DIA TRABALHADO (a convenção do comparativo, D9).
+           O recado do congelamento, o histórico e a grade mostram o dia
+           seguinte (o que o motor guarda) — o título diz isso, para a mesma
+           v1 não parecer ter duas datas sem explicação. */
+        h += '<div class="cxb-card-l" title="Término = último dia trabalhado, como no MS Project. O recado do congelamento e o histórico mostram o dia útil seguinte a ele.">' + esc(b.totalDias) + ' dias úteis · ' + esc(dmaS(b.inicio)) + ' → ' + esc(dmaS(b.termino)) + ' (último dia)</div>';
+        if (b.motivo) h += '<div class="cxb-card-l muted" title="' + esc(b.motivo) + '">motivo: ' + esc(corta(b.motivo, 70)) + '</div>';
+        if (b.aprovacao) h += '<div class="cxb-card-l">aprovada por ' + esc(corta(b.aprovacao.por, 40)) + ' em ' + esc(dmaS(b.aprovacao.em)) + (b.aprovacao.documento ? ' · ' + esc(corta(b.aprovacao.documento, 40)) : '') + '</div>';
+        if (b.anulada) h += '<div class="cxb-card-l muted">' + esc(b.anulada) + '</div>';
+        h += '<div class="cxb-card-l cxb-selo-txt">' + esc(b.seloTexto || "") + '</div>';
+        h += '<div class="cxb-card-bt">' +
+          '<button class="btn sm ghost' + (dados.escolha && dados.escolha.a === b.id ? ' on' : '') + '" data-acao="crono-bases-comp" data-lado="a" data-obra="' + obId + '" data-base="' + esc(b.id) + '" aria-pressed="' + (dados.escolha && dados.escolha.a === b.id ? 'true' : 'false') + '">Comparar como A</button>' +
+          '<button class="btn sm ghost' + (dados.escolha && dados.escolha.b === b.id ? ' on' : '') + '" data-acao="crono-bases-comp" data-lado="b" data-obra="' + obId + '" data-base="' + esc(b.id) + '" aria-pressed="' + (dados.escolha && dados.escolha.b === b.id ? 'true' : 'false') + '">Comparar como B</button>';
+        if (dados.podeEditar && (est === "interna" || est === "anulada")) h += '<button class="btn sm" data-acao="crono-bases-aprovar" data-obra="' + obId + '" data-base="' + esc(b.id) + '">Registrar aprovação</button>';
+        if (dados.admin && b.aprovacaoId) h += '<button class="btn sm ghost" data-acao="crono-bases-anular" data-obra="' + obId + '" data-base="' + esc(b.id) + '" data-evento="' + esc(b.aprovacaoId) + '">Anular aprovação</button>';
+        if (dados.admin && !dados.contratual) h += '<button class="btn sm ghost" data-acao="crono-bases-marcar" data-obra="' + obId + '" data-base="' + esc(b.id) + '">Marcar como contratual</button>';
+        h += '</div></div>';
+      });
+      return h + '</div>';
+    },
+    _basesBarra: function (dados) {
+      var e = dados.escolha || {}, ob = dados.obra || {}, obId = esc(ob.id == null ? "" : ob.id);
+      function opcoes(lista, valor) {
+        return arr(lista).map(function (o) { return '<option value="' + esc(o.id) + '"' + (o.id === valor ? ' selected' : '') + '>' + esc(o.rotulo) + '</option>'; }).join("");
+      }
+      function seg(nome, valor, itens) {
+        return '<span class="cx-seg" role="group">' + itens.map(function (it) {
+          var on = it[0] === valor;
+          return '<button class="' + (on ? 'on' : '') + '" data-acao="crono-bases-' + nome + '" data-obra="' + obId + '" data-valor="' + it[0] + '" aria-pressed="' + (on ? 'true' : 'false') + '">' + esc(it[1]) + '</button>';
+        }).join("") + '</span>';
+      }
+      var h = '<div class="cxb-barra">';
+      h += '<label>Comparar <select data-acao="crono-bases-a" data-obra="' + obId + '" aria-label="Linha de base A">' + opcoes(dados.opcoesA, e.a) + '</select></label>';
+      h += '<label>com <select data-acao="crono-bases-b" data-obra="' + obId + '" aria-label="Linha de base B">' + opcoes(dados.opcoesB, e.b) + '</select></label>';
+      h += '<span class="muted">realizado até ' + esc(dmaS(dados.corte)) + '</span>';
+      h += '<span class="cxb-grupo">Detalhe ' + seg("det", e.detalhe, [["etapa", "Etapa"], ["folha", "Subetapa"], ["servico", "Serviço"]]) + '</span>';
+      h += '<span class="cxb-grupo">Mostrar ' + seg("filtro", e.filtro, [["tudo", "Tudo"], ["mudou", "Só o que mudou"], ["critico", "Caminho crítico da A"], ["atrasadas", "Atrasadas"]]) + '</span>';
+      h += '<label class="cxb-busca">Buscar <input type="search" data-acao="crono-bases-busca" data-obra="' + obId + '" value="' + esc(e.busca || "") + '" placeholder="nº ou nome"></label>';
+      return h + '</div>';
+    },
+    _basesResumo: function (comp, dados) {
+      var T = comp.totais || {}, A = comp.cab.rotA, B = comp.cab.rotB;
+      function sn(v) { return v == null ? "—" : (v > 0 ? "+" : (v < 0 ? "−" : "")) + Math.abs(v); }
+      function card(tit, corpo) { return '<div class="cxb-kpi"><div class="cxb-kpi-rot">' + esc(tit) + '</div><div class="cxb-kpi-v">' + corpo + '</div></div>'; }
+      var h = '<div class="cxb-resumo">';
+      var real = T.real ? (T.real.fim ? 'Realizado ' + esc(dmaS(T.real.fim)) : (T.real.fimProj ? 'Plano atual ' + esc(dmaS(T.real.fimProj)) + ' <span class="muted">(' + esc(T.real.rotulo || "") + ')</span>' : '')) : '<span class="muted">sem diário publicado</span>';
+      h += card("Término", esc(A) + ' <b>' + esc(dmaS(T.A && T.A.fim)) + '</b> · ' + esc(B) + ' <b>' + esc(dmaS(T.B && T.B.fim)) + '</b><br>Δ B−A: <b>' + sn(T.difTermino && T.difTermino.dc) + ' dia(s) corrido(s)</b> (' + sn(T.difTermino && T.difTermino.du) + ' útil(eis))<br>' + real +
+        (T.difRealA != null ? '<br>Δ realizado−A: ' + sn(T.difRealA) + ' dia(s) corrido(s)' : ''));
+      h += card("Prazo", esc(A) + ' ' + esc(T.A && T.A.du) + ' dias úteis · ' + esc(B) + ' ' + esc(T.B && T.B.du) + ' dias úteis');
+      h += card("Tarefas", esc(T.mudaram) + ' de ' + esc(T.total) + ' mudaram de janela · ' + esc(T.terminamDepois) + ' terminam depois na ' + esc(B) + ' · ' + esc(T.soB) + ' só na ' + esc(B) + ' · ' + esc(T.soA) + ' só na ' + esc(A) +
+        (comp.omitidas ? '<br><span class="muted">' + esc(comp.omitidas) + ' linha(s) fora do filtro</span>' : ''));
+      var ma = T.critico && T.critico.maiorAtraso;
+      h += card("Caminho crítico da " + A, esc(T.critico ? T.critico.n : 0) + ' tarefa(s)' + (ma && ma.du > 0 ? '<br>maior atraso no fim: <b>+' + esc(ma.du) + ' dia(s) útil(eis)</b> (' + esc(ma.numero) + ' ' + esc(corta(ma.nome, 36)) + ')' : '<br>nenhuma termina depois'));
+      if (T.cobertura) h += card("Cobertura contratual", esc(T.cobertura.texto));
+      return h + '</div>';
+    },
+    _basesTabela: function (comp, dados) {
+      var L = arr(comp.linhas), A = comp.cab.rotA, B = comp.cab.rotB;
+      function sn(v) { return v == null ? "—" : (v > 0 ? "+" : (v < 0 ? "−" : "")) + Math.abs(v); }
+      var h = '<div class="cxb-sec"><b>Variações</b> <span class="muted">— ' + L.length + ' linha(s)</span></div>';
+      if (!L.length) return h + '<p class="muted cxb-vazio">Nenhuma linha com este filtro.</p>';
+      h += '<div class="cx-tabela cxb-tabela"><table class="tbl cxb-tab"><thead><tr><th>Nº</th><th>Etapa / subetapa / serviço</th>' +
+        '<th>' + esc(A) + ' início</th><th>' + esc(A) + ' término</th><th>' + esc(B) + ' início</th><th>' + esc(B) + ' término</th>' +
+        '<th class="num" title="dias corridos">Δ início</th><th class="num" title="dias corridos (dias úteis no calendário da ' + esc(A) + ')">Δ término</th><th class="num" title="dias úteis">Δ duração</th>' +
+        '<th>Real início</th><th>Real término</th><th class="num" title="dias corridos do término da ' + esc(A) + ' ao real (ou ao previsto pelo plano atual)">Δ real × ' + esc(A) + '</th><th>Situação</th></tr></thead><tbody>';
+      L.forEach(function (l) {
+        var sit = [];
+        if (l.presenca === "so-A") sit.push("só na " + A + (l.opcional ? " (opcional fora da " + B + ")" : " (saiu do escopo)"));
+        if (l.presenca === "so-B") sit.push("só na " + B + (l.opcional ? " (opcional incluída só na " + B + ")" : ""));
+        if (l.semServico) sit.push("a " + (l.semServico === "B" ? B : A) + " não guarda serviço");
+        if (l.mudouDeEtapa) sit.push("mudou de etapa");
+        if (l.mudouDeFolha) sit.push("mudou de subetapa: " + (l.mudouDeFolha[0] || "?") + " → " + (l.mudouDeFolha[1] || "?"));
+        if (!sit.length && l.presenca === "ambas") sit.push(l.mudou ? (l.dFimDC > 0 ? "termina depois" : (l.dFimDC < 0 ? "termina antes" : "mudou")) : "igual");
+        if (l.atrasada) sit.push("atrasada");
+        var real = l.R ? (l.R.fim ? esc(dmaS(l.R.fim)) : (l.R.fimProj ? '<span class="muted" title="' + esc(l.R.rotulo || "") + '">em andamento — ' + esc(dmaS(l.R.fimProj)) + ' pelo plano atual</span>' : '<span class="muted">em andamento</span>')) : (l.tipo === "servico" ? '<span class="muted" title="O realizado por serviço aparece por subetapa no Previsto × Realizado.">—</span>' : '—');
+        h += '<tr class="cxb-l-' + esc(l.tipo) + (l.mudou ? ' cxb-mudou' : '') + '" data-no="' + esc(l.id) + '"><td class="cx-n">' + esc(l.numero) + '</td>' +
+          '<td class="cx-nome" title="' + esc(l.nome) + '">' + (l.tipo === "etapa" ? '' : '<span class="cxb-rec' + (l.tipo === "servico" ? '2' : '') + '"></span>') + esc(corta(l.nome, 80)) + '</td>' +
+          '<td>' + (l.A ? esc(dmaS(l.A.ini)) : '—') + '</td><td>' + (l.A ? esc(dmaS(l.A.fim)) : '—') + '</td>' +
+          '<td>' + (l.B ? esc(dmaS(l.B.ini)) : '—') + '</td><td>' + (l.B ? esc(dmaS(l.B.fim)) : '—') + '</td>' +
+          '<td class="num">' + sn(l.dIniDC) + '</td><td class="num">' + sn(l.dFimDC) + (l.dFimDU != null && l.dFimDU !== l.dFimDC ? ' <span class="muted">(' + sn(l.dFimDU) + ' út.)</span>' : '') + '</td>' +
+          '<td class="num">' + sn(l.dDurDU) + '</td>' +
+          '<td>' + (l.R && l.R.ini ? esc(dmaS(l.R.ini)) : '—') + '</td><td>' + real + '</td>' +
+          '<td class="num">' + sn(l.dRealA) + '</td><td>' + esc(sit.join(" · ")) + '</td></tr>';
+      });
+      return h + '</tbody></table></div>';
+    },
+    _basesRodape: function (dados) {
+      var oc = dados.ocupacao || {}, h = '';
+      function kbs(b) { return b == null ? "?" : nBR(b / 1024, 0); }
+      if (oc.crono || oc.selo) {
+        h += '<p class="muted cxb-rodape">A contratual nunca é resumida nem perde o detalhe para caber na nuvem. Espaço: planejamento das obras ' + esc(kbs(oc.crono && oc.crono.bytes)) + ' de 900 KB' +
+          ' · linhas de base seladas ' + esc(kbs(oc.selo && oc.selo.bytes)) + ' de 900 KB' + (oc.selo && oc.selo.comServico != null ? ' (' + esc(oc.selo.comServico) + ' com detalhe por serviço)' : '') + '.</p>';
+      }
+      if (dados.orfaos && dados.orfaos.n) {
+        h += '<div class="cx-aviso">' + esc(dados.orfaos.n + " registro(s) de linha de base selada de obra(s) que não existem mais neste aparelho ocupam " + kbs(dados.orfaos.bytes) + " KB. Nada é apagado sozinho.") +
+          (dados.admin ? ' <button class="btn sm" data-acao="crono-bases-orfaos" data-obra="' + esc(dados.obra && dados.obra.id || "") + '">Ver e decidir</button>' : ' <span class="muted">O administrador da conta decide o que fazer com eles.</span>') + '</div>';
+      }
+      return h;
+    },
+    /* GANTT COMPARATIVO — o `gantt` de sempre (NUNCA editado), com as duas
+       faixas desenhadas pela tomada `opts.camadas.depois` (T7): A em cima, B
+       embaixo, a barra do plano atual no meio. As datas viram índice no
+       calendário do `r` (a régua das barras), como a base fantasma faz.
+       ⚠ A faixa vai até o FIM do último dia trabalhado (índice + 1): a janela
+       das barras é [início, fim), e o término da comparação é o último dia.
+       ⚠ Base que termina depois do plano ALARGA o desenho (cópia rasa do `r`
+       com `totalDias` maior): cortada na borda, a obra que recuperou o atraso
+       pareceria ter prometido menos. */
+    ganttComparar: function (r, comp, opts) {
+      opts = opts || {};
+      var Cr = C(), CCm = MOD("CronoComp", "./cronocomp.js");
+      if (!r || !arr(r.etapas).length || !comp || !comp.ok || !Cr || !CCm) return "";
+      var jan = CCm.janelas(comp), cal = null;
+      try { cal = Cr.calendario(r); } catch (e) { cal = null; }
+      if (!cal) return "";
+      var lim = Math.ceil((r.totalDias || 1) * 4) + 400, maxK = r.totalDias || 1;
+      function idx(sd) {
+        var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(sd || ""));
+        if (!m) return null;
+        var k = cal.indice(new Date(+m[1], +m[2] - 1, +m[3]).getTime(), lim);
+        return k < 0 ? 0 : k;
+      }
+      function faixas(J) {
+        var out = {}, id;
+        for (id in J) if (own(J, id)) {
+          var i0 = idx(J[id].ini), i1 = idx(J[id].fim);
+          if (i0 == null || i1 == null) continue;
+          var f = J[id].marco ? i0 : Math.max(i0, i1) + 1;
+          out[id] = { i: i0, f: f, marco: !!J[id].marco, ini: J[id].ini, fim: J[id].fim };
+          if (f > maxK) maxK = f;
+        }
+        return out;
+      }
+      var FA = faixas(jan.A), FB = faixas(jan.B);
+      var rG = r;
+      if (maxK > (r.totalDias || 0)) { rG = {}; var k; for (k in r) if (own(r, k)) rG[k] = r[k]; rG.totalDias = maxK; }
+      var rotA = comp.cab.rotA, rotB = comp.cab.rotB;
+      function depois(g) {
+        var s = "";
+        g.L.forEach(function (l, i) {
+          if (i < g.lin0 || i > g.lin1) return;
+          var id = l.no ? l.no.id : l.et.id, y0 = g.yRow(i);
+          [["A", FA, y0 + 1, "gantt-base-a", "#334155", rotA], ["B", FB, y0 + g.rowH - 4, "gantt-base-b", "#0d6ebd", rotB]].forEach(function (q) {
+            var x = q[1][id];
+            if (!x) return;
+            var tit = '<title>' + esc(q[5] + ": " + dmaS(x.ini) + (x.marco ? " (marco)" : " → " + dmaS(x.fim))) + '</title>';
+            if (x.marco) {
+              var cx = g.X(x.i), cy = q[2] + 1.5;
+              s += '<polygon class="' + q[3] + ' gantt-base-marco" points="' + f1(cx) + ',' + f1(cy - 3.5) + ' ' + f1(cx + 3.5) + ',' + f1(cy) + ' ' + f1(cx) + ',' + f1(cy + 3.5) + ' ' + f1(cx - 3.5) + ',' + f1(cy) + '" fill="#fff" stroke="' + q[4] + '" stroke-width="1.2">' + tit + '</polygon>';
+            } else {
+              s += '<rect class="' + q[3] + '" x="' + f1(g.X(x.i)) + '" y="' + f1(q[2]) + '" width="' + f1(Math.max(2, (x.f - x.i) * g.pxDia)) + '" height="3" fill="' + q[4] + '">' + tit + '</rect>';
+            }
+          });
+        });
+        return s;
+      }
+      var det = comp.detalhe === "etapa" ? "etapa" : (comp.detalhe === "servico" ? "servico" : "subetapa");
+      return '<div class="cxb-gantt">' + this.gantt(rG, { detalhe: det, camadas: { depois: depois }, realizado: opts.realizado || null, hoje: opts.corte || null, rotHoje: "data de corte" }) +
+        '<div class="cx-leg cxb-leg"><span><i class="cxb-leg-a"></i>faixa de cima: ' + esc(rotA) + '</span><span><i class="cxb-leg-b"></i>faixa de baixo: ' + esc(rotB) + '</span>' +
+        '<span>barra: plano atual</span><span>faixa escura: executado</span><span>linha laranja: data de corte</span></div></div>';
+    },
+    /* a sub-aba só existe onde o previsto × realizado existe: Gestão de Obras
+       e a obra ligada A ESTE orçamento (a mesma regra da "real"), e com o
+       recurso `bases` ligado (§6.2) */
+    _basesQuando: function (d) {
+      var info = d && d.obra, a = info && info.alvo;
+      if (!(info && info.podeGestao && a && a.obra && a.nivel === 0)) return false;
+      var Cr = C();
+      try { if (Cr && typeof Cr.recursos === "function" && Cr.recursos().bases === false) return false; } catch (e) {}
+      return true;
+    },
+    _basesRender: function (d, est) {
+      var A = G("App"), ob = d && d.obra && d.obra.alvo && d.obra.alvo.obra;
+      var dados = null;
+      try { dados = (A && typeof A._cronoBasesDados === "function" && ob) ? A._cronoBasesDados(ob.id, est) : null; } catch (e) { dados = { erro: "Não consegui montar as linhas de base desta obra (" + String((e && e.message) || e) + ") — a sub-aba Cronograma continua valendo." }; }
+      if (!dados) dados = { erro: "As linhas de base desta obra não puderam ser lidas agora — recarregue o app." };
+      return this.basesPainel(dados);
+    },
+    /* o registro da sub-aba (T8), feito UMA vez, ao carregar o módulo: a
+       tomada guarda o registro no próprio módulo, e o `barra`/`render` o
+       consultam. Entre "Previsto × Realizado" e "Parâmetros" (BASES §a). */
+    _regBasesSub: (function () {
+      _subsReg.push({ id: "bases", nome: "Linhas de base", depoisDe: "real",
+        quando: function (d, est) { return CronoExecUI._basesQuando(d, est); },
+        render: function (d, est) { return CronoExecUI._basesRender(d, est); } });
+      return 1;
+    })(),
+    /*
+     * ↑ região da fatia 1B: `basesPainel`, `ganttComparar`, o registro da
+     * sub-aba "Linhas de base" (registrarSub). Quatro linhas entre regiões:
+     * mudanças de fatias diferentes nunca ficam em linhas vizinhas.
+     */
+    /* ===== PLANEJADOR: uso (1C) ===== */
+    _regUso: 1,
+    /* O ESTADO DE USO de um alvo (busca, filtro, pilha), lido da memória do
+       App por `chave` ("orc:<id>" | "plano:<obraId>"). ⚠ Estado de TELA: nada
+       daqui vai ao orçamento, ao plano ou às `prefs` (USO §7-1). Sem App (o
+       PDF, as suítes do desenho) → tudo desligado. */
+    estadoUso: function (app, chave) {
+      function de(m) { return (app && chave && app[m] && typeof app[m] === "object" && own(app[m], chave)) ? app[m][chave] : null; }
+      var b = de("_cronoBusca") || {}, f = de("_cronoFiltro") || {};
+      var Cr = C(), rec = (Cr && typeof Cr.recursos === "function") ? Cr.recursos() : {};
+      return {
+        chave: chave ? String(chave) : "",
+        busca: { texto: String(b.texto == null ? "" : b.texto), idx: Math.max(0, Math.floor(Number(b.idx) || 0)), soAchados: b.soAchados === true },
+        filtro: { critico: f.critico === true, atrasadas: f.atrasadas === true, naoConcluidas: f.naoConcluidas === true,
+          periodo: (f.periodo === "semana" || f.periodo === "2semanas") ? f.periodo : "tudo", marcos: f.marcos === true, fixadas: f.fixadas === true,
+          categorias: arr(f.categorias).slice(), extras: (f.extras === "so" || f.extras === "esconder") ? f.extras : null,
+          soAchados: b.soAchados === true, fixos: (f.fixos && typeof f.fixos === "object" && !ehArr(f.fixos)) ? f.fixos : {} },
+        pilha: de("_cronoPilha"),
+        filtroAberto: !!(app && app._cronoFiltroAberto === chave && chave),
+        atual: null,
+        ligado: { filtro: rec.filtro !== false, pilha: rec.pilha !== false, historico: rec.historico !== false }
+      };
+    },
+
+    /* O FILTRO DO RENDER — UMA resolução por render, lida por quem desenha o
+       Gantt, a tabela e pela fiação do arrasto (`App._cronoGanttCtx`,
+       `App._gxNLinhas`). ⚠ Sem isto, a altura sairia de um número de linhas
+       e o arrasto de outra lista: "a pessoa arrasta uma barra e vê outra se
+       mexer" (USO §3.1). O memo é pelo contador de render (`app._rtok`) e
+       pelo alvo; `pd` (a montagem única do painel da obra) dá a situação e o
+       realizado de cada nó — o 2º leitor do mesmo render recebe o memo.
+       Devolve null sem estado de uso. */
+    _filtroMemo: null,
+    filtroDoRender: function (app, r, est, pd) {
+      var F = MOD("CronoFiltro", "./cronofiltro.js");
+      var u = est && est.uso;
+      if (!F || !u || !r) return null;
+      var det = this.detalheEfetivo(r, est.detalhe), ab = est.abertas || {};
+      var tok = (app && app._rtok != null) ? app._rtok : null;
+      var ch = [tok, u.chave, det, JSON.stringify(ab), F.chave(u.filtro, u.busca)].join("#");
+      var mm = this._filtroMemo;
+      if (tok != null && mm && mm.ch === ch) return mm.v;
+      var L = this.linhas(r, { detalhe: det, abertas: ab });
+      var Ltodas = this.linhas(r, { detalhe: det, abertas: {} });
+      var busca = u.busca.texto ? F.buscar(r, u.busca.texto, Ltodas, { detalhe: det }) : null;
+      var sit = null, real = null, P = pd && pd.painel;
+      if (P && (P.estado === "ok" || P.estado === "sem-diarios")) {
+        sit = {}; real = {};
+        arr(P.nos).forEach(function (n) { if (n && n.id != null) { sit[String(n.id)] = n.situacao || ""; if (n.realPct != null) real[String(n.id)] = n.realPct; } });
+      }
+      var res = F.resolver(r, u.filtro, { L: L, detalhe: det, hoje: u.hojeData || new Date(), situacao: sit, real: real,
+        restricoes: (u.restricoes && typeof u.restricoes === "object") ? u.restricoes : null, busca: busca });
+      var v = { chave: u.chave, det: det, res: res, busca: busca, manter: res.ativo ? res.manter : null,
+        contexto: res.contexto || {}, fora: res.fora || {}, comSituacao: !!sit };
+      if (tok != null) this._filtroMemo = { ch: ch, v: v };
+      return v;
+    },
+
+    /* a CAMADA de uso no desenho (T7: `opts.camadas.antes`, por baixo das
+       barras): faixa âmbar com contorno nos achados, mais forte no atual, e
+       cinza nas linhas que só situam. ⚠ Nunca edita `gantt`. Tintas CRAVADAS
+       (o Gantt é papel branco nos dois temas); contorno #b45309 sobre branco
+       = 5,0:1 (≥ 3:1 exigido para realce, USO §9.2-a5), e o do ATUAL #92400e.
+       ⚠ CONTORNO DE 2 px NOS DOIS. Com 1 px na borda inteira da linha o traço
+       caía em meio pixel, o navegador o espalhava por duas linhas de pixels a
+       50% e o contraste medido no print era 2,06:1 (e2e-crono-busca,
+       17/09/2026). 2 px têm sempre uma linha de pixels cheia, em qualquer
+       deslocamento da página. */
+    camadaUso: function (pro) {
+      var uso = pro && pro.uso;
+      if (!uso || (!uso.achados && !uso.contexto && !uso.fora)) return null;
+      return {
+        antes: function (g) {
+          var s = "", i;
+          for (i = g.lin0; i <= g.lin1; i++) {
+            var l = g.L[i]; if (!l) continue;
+            var n = l.no || l.et, id = String(n && n.id), y = g.yRow(i);
+            if (uso.contexto && own(uso.contexto, id)) s += '<rect class="gx-uso-ctx" x="0" y="' + f1(y) + '" width="' + f1(g.W) + '" height="' + f1(g.rowH) + '" fill="#e2e8f0" fill-opacity="0.55"/>';
+            if (uso.fora && own(uso.fora, id)) s += '<rect class="gx-uso-fora" x="0.5" y="' + f1(y + 0.5) + '" width="' + f1(g.W - 1) + '" height="' + f1(g.rowH - 1) + '" fill="none" stroke="#64748b" stroke-width="1" stroke-dasharray="4,3"><title>fora do filtro depois da edição — [Reaplicar filtro] na faixa acima</title></rect>';
+            if (uso.achados && own(uso.achados, id)) {
+              var at = uso.atual != null && String(uso.atual) === id;
+              s += '<rect class="gx-achado' + (at ? ' gx-atual' : '') + '" x="1" y="' + f1(y + 1) + '" width="' + f1(g.W - 2) + '" height="' + f1(g.rowH - 2) + '" rx="3" fill="#fde68a" fill-opacity="' + (at ? '0.85' : '0.45') +
+                '" stroke="' + (at ? '#92400e' : '#b45309') + '" stroke-width="2"/>';
+            }
+          }
+          return s;
+        }
+      };
+    },
+
+    /* A BARRA DE USO — a primeira faixa DENTRO da moldura do Gantt (USO §1.1),
+       40 px (+GX_USO). Fica colada ao que ela muda (memória "ação mora no
+       card do número"): botão solto fora da moldura não é encontrado.
+       ⚠ `data-rel-livre` no campo de busca: o foco nele não segura a
+       releitura de outra janela (não há edição do cronograma ali). */
+    ganttBarraUso: function (uso, pro, o) {
+      if (!uso) return "";
+      o = o || {};
+      var Pi = MOD("CronoPilha", "./cronopilha.js"), h = '<div class="gx-uso" data-gx-uso="1">';
+      if (uso.ligado.filtro) {
+        /* ⚠ o contador e os ‹ › contam a lista que a NAVEGAÇÃO visita (com o
+           filtro ligado, só os achados da tela — `CronoFiltro.navegaveis`) */
+        var Fb = MOD("CronoFiltro", "./cronofiltro.js"), b = uso.busca, fr = o.fu && o.fu.busca;
+        var navB = (Fb && fr) ? Fb.navegaveis(fr, o.fu.manter) : { ids: [], fora: 0 }, tot = navB.ids.length;
+        var cont = Fb ? Fb.textoContador(b.texto, b.idx, navB) : "";
+        h += '<span class="gx-uso-busca" role="search">' +
+          '<input type="search" class="gx-uso-in" data-crono-busca="1" data-rel-livre="1" autocomplete="off" spellcheck="false" value="' + esc(b.texto) +
+          '" placeholder="Buscar no cronograma (nº, código ou nome) — Ctrl+F" aria-label="Buscar no cronograma por nº, código ou nome (Ctrl+F com o foco no Gantt)" title="Enter ou F3: próximo · Shift+Enter: anterior · Esc: limpar">' +
+          '<span class="gx-uso-cont" data-gx-busca-cont="1" aria-live="polite">' + esc(cont) + '</span>' +
+          '<button type="button" class="gx-zb" data-acao="crono-busca-ant" aria-label="Achado anterior" title="Achado anterior (Shift+Enter)"' + (tot > 1 ? '' : ' disabled') + '>‹</button>' +
+          '<button type="button" class="gx-zb" data-acao="crono-busca-prox" aria-label="Próximo achado" title="Próximo achado (Enter ou F3)"' + (tot > 1 ? '' : ' disabled') + '>›</button>' +
+          '<label class="gx-uso-so" title="Mostra só as linhas achadas (a mãe de cada uma aparece em cinza, para situar)"><input type="checkbox" data-acao="crono-busca-so"' + (b.soAchados ? ' checked' : '') + '> Só os achados</label>' +
+          '</span>';
+        var res = o.fu && o.fu.res, nAtivos = 0, chips = "";
+        arr(res && res.rotulos).forEach(function (x) {
+          if (x.k === "soAchados") return;
+          nAtivos++;
+          chips += '<button type="button" class="gx-uso-chip' + (x.indisponivel ? ' gx-uso-chip-ind' : '') + '" data-acao="crono-filtro-tirar" data-crit="' + esc(x.k) + '" title="' +
+            esc(x.indisponivel ? "Este critério não está valendo: " + ((res.indisponivel || {})[x.k] || "") + " Clique para tirar." : "Tirar este critério do filtro") + '">' + esc(x.rot) + ' ×</button>';
+        });
+        h += '<span class="gx-uso-filtro"><button type="button" class="gx-uso-bt" data-acao="crono-filtro-abrir" aria-expanded="' + (uso.filtroAberto ? 'true' : 'false') + '" title="Filtrar as linhas do Gantt e da tabela (só nesta janela)">Filtrar ▾' + (nAtivos ? ' (' + nAtivos + ')' : '') + '</button>' + chips +
+          (uso.filtroAberto ? this.filtroPainelHtml(uso, o.fu) : '') + '</span>';
+      }
+      h += '<span class="gx-uso-dir">';
+      if (uso.ligado.pilha && Pi) {
+        var p = uso.pilha, at = uso.atual;
+        var impD = Pi.impedimento(p, at, "desfazer"), impR = Pi.impedimento(p, at, "refazer");
+        var tD = Pi.tituloBotao(p, at, "desfazer"), tR = Pi.tituloBotao(p, at, "refazer");
+        /* ⚠ o botão desligado continua lendo o título (a trava diz por quê) —
+           `aria-disabled`, e não `disabled`, para o título aparecer */
+        h += '<button type="button" class="gx-zb gx-uso-pilha" data-acao="crono-pilha-desfazer" aria-label="Desfazer" aria-disabled="' + (impD ? 'true' : 'false') + '" title="' + esc(tD) + '">↶</button>' +
+          '<button type="button" class="gx-zb gx-uso-pilha" data-acao="crono-pilha-refazer" aria-label="Refazer" aria-disabled="' + (impR ? 'true' : 'false') + '" title="' + esc(tR) + '">↷</button>';
+      }
+      h += '<button type="button" class="gx-uso-bt" data-acao="crono-alt-abrir" title="Histórico de alterações deste cronograma: quem mudou o quê, quando e por onde (sincroniza entre aparelhos)">' + ic("relogio") + ' Histórico</button>';
+      h += '</span></div>';
+      var rec = o.fu && o.fu.busca ? (MOD("CronoFiltro", "./cronofiltro.js") || { recadoBusca: function () { return { texto: "" }; } }).recadoBusca(o.fu.busca, o.fu.det) : { texto: "" };
+      if (uso.ligado.filtro && rec.texto) {
+        h += '<div class="gx-uso-recado" data-gx-busca-recado="1">' + esc(rec.texto) +
+          (rec.porta ? ' <button type="button" class="gx-uso-link" data-acao="crono-busca-detalhe" data-det="' + esc(rec.porta) + '">Ver em ' + (rec.porta === "servico" ? "Serviço" : "Subetapa") + '</button>' : '') + '</div>';
+      }
+      if (uso.ligado.filtro && o.fu && o.fu.res && o.fu.res.ativo) h += this.filtroFaixaHtml(o.fu, "gantt");
+      return h;
+    },
+
+    /* O PAINEL DO FILTRO (não é modal; USO §1.3): quantas linhas cada opção
+       deixaria, e a opção sem dado DESLIGADA com o motivo. */
+    filtroPainelHtml: function (uso, fu) {
+      var s = uso.filtro, res = (fu && fu.res) || {}, cnt = res.contagem || {}, ind = res.indisponivel || {};
+      var F = MOD("CronoFiltro", "./cronofiltro.js");
+      function cx(k, rot, extra) {
+        var dis = own(ind, k) && (k === "atrasadas" || k === "naoConcluidas" || cnt[k] === 0 || k === "extras");
+        var nn = cnt[k] == null ? "" : (cnt[k] + " linha" + (cnt[k] === 1 ? "" : "s"));
+        var marcado = k === "extras" ? !!s.extras : s[k] === true;
+        return '<label class="gx-fp-lin' + (dis && !marcado ? ' gx-fp-off' : '') + '"' + (dis ? ' title="' + esc(ind[k]) + '"' : '') + '><input type="checkbox" data-acao="crono-filtro-marcar" data-crit="' + k + '"' +
+          (marcado ? ' checked' : '') + (dis && !marcado ? ' disabled' : '') + '> <span>' + esc(rot) + '</span><span class="gx-fp-n">' + esc(dis && !marcado ? ind[k] : nn) + '</span>' + (extra || '') + '</label>';
+      }
+      var j1 = F ? F.janela(uso.hojeData || new Date(), "semana") : null, j2 = F ? F.janela(uso.hojeData || new Date(), "2semanas") : null;
+      function per(v, rot) {
+        var nk = v === "tudo" ? null : cnt["periodo:" + v];
+        return '<label class="gx-fp-lin"><input type="radio" name="gx-fp-per" data-acao="crono-filtro-periodo" data-per="' + v + '"' + (s.periodo === v ? ' checked' : '') + '> <span>' + esc(rot) + '</span>' +
+          '<span class="gx-fp-n">' + (nk == null ? '' : esc(nk + " linha" + (nk === 1 ? "" : "s"))) + '</span></label>';
+      }
+      var cats = arr(uso.categorias);
+      var h = '<div class="gx-fp" role="dialog" aria-label="Filtrar o cronograma" data-rel-livre="1">' +
+        '<div class="gx-fp-tit">Mostrar só</div>' +
+        cx("critico", "Caminho crítico") +
+        cx("atrasadas", "Atrasadas no previsto × realizado", fu && fu.comSituacao ? ' <span class="gx-fp-dica">(corte do último diário)</span>' : '') +
+        cx("naoConcluidas", "Não concluídas") +
+        '<div class="gx-fp-tit">Período</div>' + per("tudo", "Toda a obra") + per("semana", "Esta semana" + (j1 ? " (" + j1.rotulo + ")" : "")) +
+        per("2semanas", "Próximas 2 semanas" + (j2 ? " (" + j2.rotulo + ")" : "")) +
+        cx("marcos", "Marcos") + cx("fixadas", "Com data fixada no Gantt");
+      if (!own(ind, "extras")) {
+        h += '<div class="gx-fp-tit">Tarefas sem preço</div>' +
+          '<label class="gx-fp-lin"><input type="radio" name="gx-fp-ext" data-acao="crono-filtro-extras" data-ext=""' + (!s.extras ? ' checked' : '') + '> <span>Mostrar junto</span></label>' +
+          '<label class="gx-fp-lin"><input type="radio" name="gx-fp-ext" data-acao="crono-filtro-extras" data-ext="so"' + (s.extras === "so" ? ' checked' : '') + '> <span>Só tarefas sem preço</span><span class="gx-fp-n">' + esc((cnt.extras || 0) + " linha" + (cnt.extras === 1 ? "" : "s")) + '</span></label>' +
+          '<label class="gx-fp-lin"><input type="radio" name="gx-fp-ext" data-acao="crono-filtro-extras" data-ext="esconder"' + (s.extras === "esconder" ? ' checked' : '') + '> <span>Esconder tarefas sem preço</span></label>';
+      }
+      if (cats.length) {
+        h += '<div class="gx-fp-tit">Categoria</div><div class="gx-fp-cats">';
+        cats.forEach(function (c) {
+          h += '<label class="gx-fp-lin"><input type="checkbox" data-acao="crono-filtro-cat" data-cat="' + esc(c.id) + '"' + (s.categorias.indexOf(String(c.id)) > -1 ? ' checked' : '') + '> <span>' + esc(c.nome) + '</span></label>';
+        });
+        h += '</div>';
+      }
+      return h + '<div class="gx-fp-acoes"><button type="button" class="gx-uso-bt" data-acao="crono-filtro-limpar">Limpar filtro</button>' +
+        '<button type="button" class="gx-uso-bt" data-acao="crono-filtro-fechar">Fechar</button></div></div>';
+    },
+
+    /* A FAIXA ÂMBAR, SEMPRE VISÍVEL COM O FILTRO LIGADO — acima do Gantt e
+       acima da tabela. ⚠ Sem ela a pessoa acha que a tarefa sumiu. */
+    filtroFaixaHtml: function (fu, onde) {
+      var F = MOD("CronoFiltro", "./cronofiltro.js");
+      if (!F || !fu || !fu.res || !fu.res.ativo) return "";
+      var extra = onde === "gantt" ? "O histograma e os painéis abaixo somam a obra inteira; o PDF e os documentos saem inteiros." : "";
+      var temFora = Object.keys(fu.res.fora || {}).length > 0;
+      return '<div class="gx-faixa-filtro" data-gx-faixa="' + esc(onde || "") + '" role="status"><span>⚑ ' + esc(F.textoFaixa(fu.res, extra)) + '</span>' +
+        (temFora ? '<button type="button" class="gx-uso-bt" data-acao="crono-filtro-reaplicar">Reaplicar filtro</button>' : '') +
+        '<button type="button" class="gx-uso-bt" data-acao="crono-filtro-limpar">Limpar filtro</button></div>';
+    },
+
+    /* O HISTÓRICO (modal largo; USO §1.5). dados = {titulo, eventos (do mais
+       novo ao mais velho), lacunas (CronoAlt.lacunas), r (o resultado de
+       hoje: o nº atual das tarefas sem preço), nomes, soLinha {id, n},
+       semLeitura (recado da quarentena)}. Texto puro em tudo o que vem do
+       disco (o nome da pessoa, o texto do evento). */
+    altHtml: function (dados) {
+      var A = MOD("CronoAlt", "./cronoalt.js"), d = dados || {};
+      if (d.semLeitura) return '<div class="cx-aviso">' + esc(d.semLeitura) + '</div>';
+      var evs = arr(d.eventos), lac = arr(d.lacunas), r = d.r, nomes = d.nomes || {};
+      function quando(iso) {
+        var t = new Date(String(iso || ""));
+        if (isNaN(t.getTime())) return "—";
+        return dd(t.getDate()) + "/" + dd(t.getMonth() + 1) + " " + dd(t.getHours()) + ":" + dd(t.getMinutes());
+      }
+      function prazo(pz) {
+        if (!ehArr(pz) || pz[0] == null || pz[1] == null) return "—";
+        if (pz[0] === pz[1]) return nBR(pz[1], 0) + " d.u. (sem mudança)";
+        return nBR(pz[0], 0) + " → " + nBR(pz[1], 0) + " d.u." + (pz[2] ? " (entrega " + dmaS(pz[2]) + ")" : "");
+      }
+      function linhaLacuna(l) {
+        return '<tr class="cx-alt-lac"><td>⚠ entre ' + esc(quando(l.de)) + ' e ' + esc(l.ate ? quando(l.ate) : "agora") + '</td><td>—</td><td><b>Alteração sem registro.</b> ' +
+          /* ⚠ sem número de versão no texto: o número que vai ao ar não é
+             decisão desta tela, e número cravado na interface envelhece
+             (o `ver` de cada evento já diz a versão de quem gravou) */
+          esc("Foi feita num aparelho com o app desatualizado (sem este histórico), em outra janela, por restauração de backup ou por um caminho que não registra. O histórico não sabe o que mudou nem quem mudou.") +
+          '</td><td>—</td><td>—</td></tr>';
+      }
+      var lacDepois = {};
+      lac.forEach(function (l) { if (l.depoisDe) (lacDepois[l.depoisDe] = lacDepois[l.depoisDe] || []).push(l); });
+      if (!evs.length) {
+        return '<p class="muted cx-alt-vazio">' + esc("Nenhuma alteração registrada ainda. O histórico começa a ser gravado com a atualização que o trouxe — o que foi feito antes dela não aparece aqui.") + '</p>';
+      }
+      var h = (d.soLinha ? '<p class="cx-alt-so">Só esta linha (' + esc(d.soLinha.n || d.soLinha.id) + ') · <button type="button" class="gx-uso-link" data-acao="crono-alt-tudo">ver tudo</button></p>' : '') +
+        '<div class="cx-tabela"><table class="tbl cx-alt"><thead><tr><th>Quando</th><th>Quem</th><th>O que mudou</th><th>Prazo da obra</th><th>Por onde</th></tr></thead><tbody>';
+      evs.forEach(function (e) {
+        /* a lacuna DEPOIS deste evento aparece ACIMA dele (a lista vai do mais
+           novo ao mais velho) */
+        arr(lacDepois[e.id]).forEach(function (l) { h += linhaLacuna(l); });
+        var ms = arr(e.m).map(function (x) {
+          var nh = null;
+          if (A && x.id && /^x_/.test(String(x.id))) {
+            var q = A.numeroHoje(r, x.id);
+            if (q && q.excluida) nh = "(excluída)";
+            else if (q && q.n && q.n !== x.n) nh = "hoje " + q.n;
+          }
+          return '<li>' + esc(A ? A.textoMudanca(x, nomes, nh) : String(x.c || "")) + '</li>';
+        }).join("");
+        if (Number(e.x) > 0) ms += '<li class="muted">e mais ' + nBR(Number(e.x), 0) + ' alteraç' + (Number(e.x) === 1 ? 'ão' : 'ões') + ' nesta sessão</li>';
+        var porOnde = (A && A.ORIGENS[e.o]) || String(e.o || "");
+        var ver = "";
+        var alvoNo = arr(e.m).filter(function (x) { return x && x.id; })[0];
+        if (alvoNo) ver = ' · <button type="button" class="gx-uso-link" data-acao="crono-alt-ver" data-no="' + esc(alvoNo.id) + '">Ver linha</button>';
+        h += '<tr><td>' + esc(quando(e.atualizadoEm)) + '</td><td>' + esc(e.por || "—") + '</td><td><div>' + esc(e.r || "") + '</div>' + (ms ? '<ul class="cx-lista cx-alt-m">' + ms + '</ul>' : '') +
+          '</td><td>' + esc(prazo(e.pz)) + '</td><td>' + esc(porOnde) + (e.ver ? ' <span class="muted">(' + esc(e.ver) + ')</span>' : '') + ver + '</td></tr>';
+      });
+      h += '</tbody></table></div>';
+      return h + '<p class="muted cx-alt-rodape">' + esc("O histórico guarda as 60 últimas sessões de alteração deste cronograma (e até 800 na empresa) e viaja pela nuvem. Não guarda valores em R$. Para voltar uma alteração, use Desfazer (nesta janela) ou ajuste pela grade.") + '</p>';
+    },
+    /*
+     * ↑ região da fatia 1C: busca, filtro, pilha, sino e histórico.
+     *
+     *
+     */
+    /* ===== PLANEJADOR: gantt (2A) ===== */
+    _regGantt: 1,
+    /* ==================================================================
+       PLANEJADOR — FATIA 2A: O QUE O GANTT DESENHA DAS QUATRO FUNÇÕES
+       ==================================================================
+       Aqui moram as CAMADAS (D30), as linhas das tarefas sem preço, a barra
+       que o avanço substitui e os pedaços novos da linha do prazo. Tudo puro:
+       recebe o resultado do motor e o estado de tela, devolve HTML ou SVG.
+       Nada grava — quem grava é a região `gantt` do js/app.js.
+
+       ⚠ POR QUE PELAS TOMADAS, E NÃO EDITANDO O `gantt`
+       O `gantt()` é o mesmo desenho do PDF, da proposta, do painel da obra e
+       do previsto × realizado. Cada função nova que escrevesse dentro dele
+       deixaria as 38 instalações a um `if` de distância de um desenho
+       diferente no papel do cliente. Por isso a Onda 0 abriu as portas
+       (`opts.intercalar`, `opts.barraDe`, `opts.camadas`) e a 2A só as
+       preenche: sem dado novo, nenhuma delas é passada e o SVG é byte a byte
+       o de hoje (tools/test-crono-tomadas.js).
+       ------------------------------------------------------------------ */
+
+    /* AS CAMADAS (D30, §1.7, crítica 2, achado 17). Cada uma some do DESENHO
+       quando desligada — o motor, a tabela e o papel não mudam.
+       ⚠ "Apresentar" desliga todas de uma vez E esconde o chip de
+       compatibilidade: é o Gantt que o cliente vê numa reunião, e nada de
+       planejamento interno ("folga de 3 dias", "aparelhos 1.2.81") pode
+       aparecer ali. Mas o botão passa a DIZER "Camadas: apresentar", porque
+       informação escondida sem aviso é a pessoa decidindo sobre um desenho
+       que ela acha completo. */
+    CAMADAS_2A: [
+      /* ⚠ "Folgas" cobre a folga LIVRE e a NEGATIVA — as duas que a 2A
+         desenhou. A folga tracejada depois da barra é o desenho de sempre,
+         o mesmo das 38 instalações e o mesmo do PDF: esconder ela por aqui
+         faria o desenho da tela divergir do papel sem ninguém pedir. Quem a
+         tira é o `limpo` do Gantt do cliente (ver `UI._gantt`). O rótulo diz
+         isso, porque caixa que promete mais do que faz é recado que mente. */
+      ["folgas", "Folga livre e folga negativa", "quanto a tarefa atrasa sem empurrar ninguém, e a folga negativa (a tracejada de sempre não muda)"],
+      ["restricoes", "Datas e restrições", "os colchetes das datas fixadas e o ⧗ do piso escrito pelo app"],
+      ["cal", "Calendários das frentes", "os dias em que a frente daquela linha não trabalha"],
+      ["avanco", "Avanço lançado", "os três trechos da barra e a linha da data de corte"],
+      ["rotulos", "Rótulos das ligações", "o tipo e a espera em cada seta (TT+2d)"],
+      ["base", "Linha de base", "a barra do combinado atrás da barra de hoje"]
+    ],
+    CAMADAS_PADRAO: { folgas: true, restricoes: true, cal: true, avanco: true, rotulos: true, base: true, apresentar: false },
+    /* {escolhidas, apresentar, folgas…} — `apresentar` zera TODAS as camadas
+       na leitura, sem apagar a escolha de cada uma (sair de "Apresentar"
+       devolve o que a pessoa tinha ligado). */
+    camadasNorm: function (c) {
+      var o = (c && typeof c === "object" && !ehArr(c)) ? c : {}, out = { escolhidas: {} }, i, k;
+      var ap = o.apresentar === true;
+      for (i = 0; i < this.CAMADAS_2A.length; i++) {
+        k = this.CAMADAS_2A[i][0];
+        var v = own(o, k) ? o[k] !== false : this.CAMADAS_PADRAO[k];
+        out.escolhidas[k] = v;
+        out[k] = ap ? false : v;
+      }
+      out.apresentar = ap;
+      return out;
+    },
+    /* o botão + a caixa das camadas.
+       ⚠ `cam` AUSENTE = nenhum botão, e a aba sai byte a byte a de sempre
+       (tools/test-crono-tomadas.js, bloco [3]). Quem passa o objeto é a
+       fiação do ui.js, lendo `App._cronoCamadas`; sem App ninguém grava a
+       escolha, e um botão que esquece o que a pessoa marcou é pior que
+       botão nenhum (“porta prometida precisa existir”). */
+    camadasBotao: function (cam) {
+      if (cam == null) return "";
+      var c = this.camadasNorm(cam), i, lig = 0;
+      for (i = 0; i < this.CAMADAS_2A.length; i++) if (c.escolhidas[this.CAMADAS_2A[i][0]]) lig++;
+      var rot = c.apresentar ? "Camadas: apresentar"
+        : (lig < this.CAMADAS_2A.length ? "Camadas (" + lig + " de " + this.CAMADAS_2A.length + ")" : "Camadas");
+      var tit = c.apresentar
+        ? "Modo apresentar: folgas, datas, calendários, avanço, rótulos e linha de base estão ESCONDIDOS no desenho, e o chip de compatibilidade também. Os números da tabela e do papel não mudaram. Clique para escolher."
+        : "Escolha o que o Gantt desenha. Camada desligada some só do desenho — a tabela, os documentos e o cálculo não mudam.";
+      var h = '<details class="cx-cam"><summary class="btn sm' + (c.apresentar ? " cx-cam-ap" : "") + '" title="' + esc(tit) + '">' + esc(rot) + ' ▾</summary>' +
+        '<div class="cx-cam-caixa">';
+      for (i = 0; i < this.CAMADAS_2A.length; i++) {
+        var k = this.CAMADAS_2A[i][0];
+        h += '<label class="cx-cam-lin" title="' + esc(this.CAMADAS_2A[i][2]) + '">' +
+          '<input type="checkbox" data-acao="crono-camadas-uma" data-camada="' + esc(k) + '"' + (c.escolhidas[k] ? ' checked' : '') + (c.apresentar ? ' disabled' : '') + '> ' +
+          esc(this.CAMADAS_2A[i][1]) + '</label>';
+      }
+      h += '<label class="cx-cam-lin cx-cam-ap-lin" title="' + esc("Esconde todas as camadas de uma vez e o chip de compatibilidade — o desenho que o cliente vê numa apresentação. Fica lembrado neste aparelho.") + '">' +
+        '<input type="checkbox" data-acao="crono-camadas-apresentar" data-ligar="' + (c.apresentar ? "0" : "1") + '"' + (c.apresentar ? ' checked' : '') + '> Apresentar</label>' +
+        '<p class="cx-cam-nota">' + esc("Camada desligada some do desenho. A tabela, o PDF e o cálculo do prazo não mudam.") + '</p>' +
+        '</div></details>';
+      return h;
+    },
+
+    /* AS LINHAS DAS TAREFAS SEM PREÇO (`opts.intercalar`, T7). Cada uma entra
+       DEPOIS do bloco da etapa em que foi pendurada (`x.apos`); as soltas vão
+       ao fim. Sem `r.extras` devolve `null` — e aí a tomada nem é passada, e a
+       lista é a de sempre, byte a byte.
+       ⚠ CÓPIA, nunca o objeto de `r.extras`: a tela marca `tipo:"extra"` para
+       o `gantt`, o `ctxDoNo` e a grade, e marcar o objeto do motor faria a
+       chave vazar para o resultado que a 1B congela em linha de base e a 3A
+       imprime (é a mesma razão do `GanttUI.acharNo`). */
+    intercalarExtras: function (r) {
+      var xs = arr(r && r.extras);
+      if (!xs.length) return null;
+      var self = this;
+      return function (lista) {
+        var porApos = {}, soltas = [], i, k;
+        for (i = 0; i < xs.length; i++) {
+          var lx = { tipo: "extra", i: -1, et: null, no: self._linhaExtra(xs[i]) };
+          k = (xs[i] && xs[i].apos != null) ? String(xs[i].apos) : "";
+          if (k) { if (!own(porApos, k)) porApos[k] = []; porApos[k].push(lx); }
+          else soltas.push(lx);
+        }
+        var out = [], pend = null;
+        for (i = 0; i < lista.length; i++) {
+          var l = lista[i];
+          /* o BLOCO da etapa acabou quando começa a próxima etapa: é aí que a
+             linha T entra, e não colada na linha da etapa — pendurada no meio
+             das subetapas ela pareceria uma subetapa daquela etapa */
+          if (l && l.tipo === "etapa") {
+            if (pend) { out = out.concat(pend); pend = null; }
+            var idE = l.et ? l.et.id : (l.no ? l.no.id : null);
+            if (idE != null && own(porApos, String(idE))) { pend = porApos[String(idE)]; delete porApos[String(idE)]; }
+          }
+          out.push(l);
+        }
+        if (pend) out = out.concat(pend);
+        // as que apontam para uma etapa fora da lista (recolhida, filtrada) e as soltas
+        for (k in porApos) if (own(porApos, k)) out = out.concat(porApos[k]);
+        return out.concat(soltas);
+      };
+    },
+    _linhaExtra: function (x) {
+      var c = {}, k;
+      for (k in x) if (own(x, k)) c[k] = x[k];
+      c.tipo = "extra";
+      return c;
+    },
+
+    /* A BARRA QUE SUBSTITUI A DE SEMPRE (`opts.barraDe`, T7). Devolve `null`
+       para deixar a barra de hoje intacta — é o que acontece em toda linha
+       sem tarefa sem preço e sem avanço, e é o que segura a paridade.
+         - tarefa sem preço: barra TRACEJADA (ou losango no marco). Tracejada
+           porque ela não tem preço no orçamento: cheia, ela se lê como
+           serviço vendido, e é o contrário — o cliente precisa ver que aquilo
+           é prazo que alguém deve, não serviço contratado.
+         - avanço lançado: o feito (cheio), o que falta (a mesma cor clara) e,
+           na tarefa empurrada, o pedaço entre o planejado e o corte.
+       ⚠ A alça do arrasto NÃO sai daqui: ela é por linha e o `gantt` já a
+       desenhou antes de chamar esta porta. */
+    barraDoPlanejador: function (r, cam) {
+      var c = this.camadasNorm(cam), self = this;
+      var temX = arr(r && r.extras).length > 0, temAv = !!(r && r.avanco);
+      if (!temX && !(temAv && c.avanco)) return null;
+      return function (n, ctx) {
+        if (n && n.tipo === "extra") return self._barraExtra(r, n, ctx, c);
+        if (c.avanco && n && n.avanco && n.avanco.estado !== "nao-iniciada") return self._barraAvanco(r, n, ctx, c);
+        return null;
+      };
+    },
+    RESP_T: { cliente: "o contratante", construtora: "a construtora", terceiro: "um terceiro" },
+    _barraExtra: function (r, n, ctx, cam) {
+      var x = ctx.x, w = ctx.w, y0 = ctx.y0, rowH = ctx.geo.rowH, cor = n.critico ? CRIT : ROXO_T;
+      var resp = this.RESP_T[String(n.resp || "")] || "a construtora";
+      var t = String(n.numero || "T") + " " + String(n.nome || "") + " — tarefa sem preço, " + resp +
+        (n.marco ? " · MARCO (sem duração) · " + dma(n.dataInicio)
+          : " · " + n.duracao + " dia(s) útil(eis) · " + dma(n.dataInicio) + " → " + dma(n.dataFim)) +
+        (cam.folgas ? (n.critico ? " · CRÍTICA (sem folga)" : " · folga de " + (n.folga || 0) + " dia(s)") : "") +
+        (n.depoisDaEntrega ? " · termina DEPOIS da entrega da obra" : "") +
+        (n.proposta ? " · aparece na proposta" : " · não aparece na proposta");
+      if (n.marco) {
+        var cy = y0 + rowH / 2, rr = 7;
+        return '<polygon class="cx-t-marco' + (n.critico ? ' gantt-critica' : '') + '" points="' + f1(x) + ',' + f1(cy - rr) + ' ' + f1(x + rr) + ',' + f1(cy) + ' ' + f1(x) + ',' + f1(cy + rr) + ' ' + f1(x - rr) + ',' + f1(cy) +
+          '" fill="#fff" stroke="' + cor + '" stroke-width="1.6"><title>' + esc(t) + '</title></polygon>';
+      }
+      var hb = 13, yb = y0 + (rowH - hb) / 2, s = "";
+      if (cam.folgas && (n.folga || 0) > 0) {
+        var wF = Math.max(2, Math.min(n.folga, Math.max(0, ctx.geo.dias - n.fim)) * ctx.geo.pxDia);
+        /* ⚠ classe PRÓPRIA (`cx-t-folga`) além da de sempre: a folga da linha
+           T é desenhada por ESTA camada e some com a caixa "Folgas", enquanto
+           a folga tracejada das etapas é o desenho de sempre e fica. Com a
+           mesma classe nas duas, a e2e contava 16 e 15 sem saber qual sumiu
+           (medido em 21/09/2026) — e o CSS também não teria como distinguir. */
+        if (wF > 0) s += '<rect class="gantt-folga cx-t-folga" x="' + f1(x + w) + '" y="' + f1(yb) + '" width="' + f1(wF) + '" height="' + hb + '" rx="3" fill="' + cor + '" fill-opacity="0.10" stroke="' + cor + '" stroke-opacity="0.45" stroke-dasharray="3,3"/>';
+      }
+      return s + '<rect class="cx-t-barra' + (n.critico ? ' gantt-critica' : '') + '" x="' + f1(x) + '" y="' + f1(yb) + '" width="' + f1(w) + '" height="' + hb +
+        '" rx="3" fill="#fff" stroke="' + cor + '" stroke-width="1.6" stroke-dasharray="5,3"><title>' + esc(t) + '</title></rect>' +
+        '<text x="' + f1(x + 4) + '" y="' + f1(yb + hb / 2 + 3) + '" font-size="8.5" font-weight="600" fill="' + cor + '" pointer-events="none">T</text>';
+    },
+    AV_EST: { concluida: "concluída", andamento: "em andamento", empurrada: "empurrada pelo corte", "nao-iniciada": "não iniciada" },
+    AV_FONTE: { digitado: "digitado", diario: "aceito dos diários", medicao: "lançado pela medição" },
+    _barraAvanco: function (r, n, ctx, cam) {
+      var av = n.avanco, x = ctx.x, w = ctx.w, y0 = ctx.y0, rowH = ctx.geo.rowH, X = ctx.geo.X;
+      var Cr = C(), cor = n.cor || ((Cr && Cr.cat ? Cr.cat(n.categoria) : null) || {}).cor || CINZA;
+      var hb = ctx.ehEtapa ? 16 : 13, yb = y0 + (rowH - hb) / 2;
+      var pct = Math.max(0, Math.min(100, fin(av.pct, 0)));
+      var t = String(ctx.rot) + " — " + (this.AV_EST[av.estado] || av.estado) + " · " + nBR(pct, 1) + "% (" + (this.AV_FONTE[av.fonte] || "digitado") + ")" +
+        (av.iniReal ? " · começou em " + dmaS(av.iniReal) : "") + (av.fimReal ? " · terminou em " + dmaS(av.fimReal) : "") +
+        (av.empurradoDias > 0 ? " · empurrada " + av.empurradoDias + " dia(s) útil(eis) pelo corte" : "") +
+        (av.foraSeq ? " · começou ANTES do que a rede deixava (fora de sequência)" : "") +
+        (av.naoAtualizado && av.em ? " · sem lançamento novo desde " + dmaS(av.em) : "") +
+        " · " + dma(n.dataInicio) + " → " + dma(n.dataFim);
+      var s = "";
+      /* o trecho ENTRE o planejado e o corte: é o atraso que a tarefa
+         empurrada já acumulou, e ele precisa ser visível — sem ele a barra só
+         "andou para a direita" e ninguém sabe quanto */
+      if (fin(av.empurradoDias, 0) > 0) {
+        var xp = X(Math.max(0, n.inicio - av.empurradoDias));
+        if (x > xp) s += '<rect class="cx-av-atraso" x="' + f1(xp) + '" y="' + f1(yb + 2) + '" width="' + f1(x - xp) + '" height="' + (hb - 4) +
+          '" fill="' + CRIT + '" fill-opacity="0.10" stroke="' + CRIT + '" stroke-opacity="0.45" stroke-dasharray="2,2"><title>' +
+          esc("empurrada " + av.empurradoDias + " dia(s) útil(eis): a data de corte do avanço passou e esta tarefa ainda não tinha terminado") + '</title></rect>';
+      }
+      var wFeito = Math.max(0, Math.min(w, w * pct / 100));
+      s += '<rect class="cx-av-total" x="' + f1(x) + '" y="' + f1(yb) + '" width="' + f1(w) + '" height="' + hb + '" rx="3" fill="' + cor + '" opacity="0.35"' +
+        (ctx.crit ? ' stroke="' + CRIT + '" stroke-width="1.4"' : '') + '><title>' + esc(t) + '</title></rect>';
+      if (wFeito > 0) s += '<rect class="cx-av-feito" x="' + f1(x) + '" y="' + f1(yb) + '" width="' + f1(wFeito) + '" height="' + hb + '" rx="3" fill="' + cor + '" opacity="0.95"><title>' + esc(t) + '</title></rect>';
+      if (av.estado === "concluida") s += '<text x="' + f1(x + w - 4) + '" y="' + f1(yb + hb / 2 + 3) + '" font-size="8.5" font-weight="600" fill="#fff" text-anchor="end" pointer-events="none">✓</text>';
+      else if (w >= 30) s += '<text x="' + f1(x + w - 4) + '" y="' + f1(yb + hb / 2 + 3) + '" font-size="8.5" font-weight="600" fill="#0f172a" text-anchor="end" pointer-events="none">' + nBR(pct, 0) + '%</text>';
+      if (av.foraSeq) s += '<circle class="cx-av-foraseq" cx="' + f1(x) + '" cy="' + f1(y0 + 4) + '" r="3" fill="#b45309"><title>' + esc("começou antes do que a rede deixava (fora de sequência)") + '</title></circle>';
+      return s;
+    },
+
+    /* A CAMADA POR CIMA DAS BARRAS (`opts.camadas.depois`, T7): a linha da
+       data de corte, o sombreado dos dias em que cada frente não trabalha, o
+       marcador das restrições e as folgas livre e negativa.
+       ⚠ Cada pedaço respeita A SUA caixa (D30): uma camada que desenhasse
+       ignorando a escolha faria "Apresentar" mentir, e é justamente o modo em
+       que o cliente está olhando a tela. */
+    camadaDoPlanejador: function (r, cam, opts) {
+      var c = this.camadasNorm(cam), self = this;
+      opts = opts || {};
+      var temCal = !!(r && r.calendarios && arr(r.calendarios.usados).length);
+      var temAv = !!(r && r.avanco), temRestr = false, temFolga = false, i;
+      var nos = arr(r && r.atividades), ets = arr(r && r.etapas);
+      for (i = 0; i < ets.length && !temRestr; i++) if (ets[i] && ets[i].restricao) temRestr = true;
+      for (i = 0; i < nos.length && !temRestr; i++) if (nos[i] && nos[i].restricao) temRestr = true;
+      for (i = 0; i < nos.length && !temFolga; i++) if (nos[i] && (fin(nos[i].folgaLivre, 0) > 0 || fin(nos[i].folgaReal, 0) < 0)) temFolga = true;
+      for (i = 0; i < ets.length && !temFolga; i++) if (ets[i] && fin(ets[i].folgaReal, 0) < 0) temFolga = true;
+      if (!(temCal && c.cal) && !(temAv && c.avanco) && !(temRestr && c.restricoes) && !(temFolga && c.folgas)) return null;
+      return function (geo) {
+        var s = "";
+        if (temCal && c.cal) s += self._camadaCal(r, geo);
+        if (temFolga && c.folgas) s += self._camadaFolgas(r, geo);
+        if (temRestr && c.restricoes) s += self._camadaRestricoes(r, geo, opts.cron);
+        if (temAv && c.avanco) s += self._camadaCorte(r, geo);
+        return s;
+      };
+    },
+    /* os dias em que a frente DAQUELA linha não trabalha, sombreados na
+       própria linha. ⚠ É por LINHA, não uma faixa da tela inteira: cada
+       frente tem o seu calendário, e um sombreado global diria que a obra
+       inteira parou no sábado em que a montagem estava trabalhando. */
+    _camadaCal: function (r, geo) {
+      var CC = MOD("CronoCal", "./cronocal.js");
+      if (!CC || typeof CC.contexto !== "function" || !r.calendarios) return "";
+      var cal = geo.cal, s = "";
+      if (!cal || typeof cal.dia !== "function") return "";
+      /* ⚠ o CONTEXTO de consumo (dia cheio + feriado da obra) é remontado do
+         `r.calendarios` que o motor publicou, e NUNCA reimplementado aqui: a
+         régua de "a frente trabalha neste dia?" tem de ser a mesma que
+         calculou a duração, senão o sombreado diria uma coisa e a barra
+         outra (memória "réplica de parser apodrece"). */
+      var mapaF = (r.feriados && r.feriados.mapa) || {}, cc = null;
+      try { cc = CC.contexto(r.calendarios, function (ms) { return !!mapaF[chDia2A(ms)]; }, null); } catch (eCt) { cc = null; }
+      if (!cc || !cc.ctxDe) return "";
+      var ctxs = cc.ctxDe, nomes = {};
+      arr(r.calendarios.lista).forEach(function (it) { if (it && it.id != null) nomes[String(it.id)] = String(it.nome || it.id); });
+      var dias = [], k;
+      for (k = 0; k <= geo.dias; k++) { var dk = cal.dia(k); if (!ehData(dk)) break; dias.push(dk); }
+      geo.L.forEach(function (l, i) {
+        if (i < geo.lin0 || i > geo.lin1) return;
+        /* ⚠ NA LINHA DE ETAPA O CALENDÁRIO MORA EM `l.et`, NÃO EM `l.no`. A
+           linha da etapa carrega OS DOIS objetos (o nó da árvore e a etapa do
+           resultado), e o motor publica `calendarioId` na ETAPA de `r.etapas`
+           — `l.no || l.et` pegava o nó, que não o tem, e o sombreado nunca
+           saía. Medido em 21/09/2026: etapa e1 com `cal_x` e ZERO retângulos
+           na tela. */
+        var n = l.no || l.et, calId = (n && n.calendarioId) || (l.et && l.et.calendarioId);
+        if (!calId || !own(ctxs, String(calId))) return;
+        n = (n && n.calendarioId) ? n : (l.et || n);
+        var ini = Math.max(0, Math.floor(fin(n.inicio, 0))), fim = Math.min(dias.length, Math.ceil(fin(n.fim, 0)));
+        var y0 = geo.yRow(i), j, ct = ctxs[String(calId)], nm = nomes[String(calId)] || String(calId);
+        for (j = ini; j < fim; j++) {
+          var cap = 1;
+          try { cap = CC.capacidade(ct, dias[j].getTime()); } catch (e2) { cap = 1; }
+          if (cap > 0) continue;
+          s += '<rect class="cx-cal-parado" x="' + f1(geo.X(j)) + '" y="' + f1(y0 + 2) + '" width="' + f1(Math.max(1, geo.pxDia)) + '" height="' + f1(geo.rowH - 4) +
+            '" fill="#0f172a" fill-opacity="0.10"><title>' + esc(dma(dias[j]) + ": " + nm + " não trabalha") + '</title></rect>';
+        }
+      });
+      return s;
+    },
+    /* a folga LIVRE (quanto a tarefa atrasa sem empurrar a seguinte) e a
+       folga NEGATIVA (o teto que já não é cumprido). ⚠ A folga negativa é a
+       única coisa vermelha que não é caminho crítico: ela quer dizer "a data
+       prometida já passou", e some do desenho do cliente por "Apresentar". */
+    _camadaFolgas: function (r, geo) {
+      var s = "";
+      geo.L.forEach(function (l, i) {
+        if (i < geo.lin0 || i > geo.lin1) return;
+        var n = l.no || l.et;
+        if (!n || n.inicio == null) return;
+        var y0 = geo.yRow(i), h = Math.max(3, geo.rowH - 18);
+        if (fin(n.folgaReal, 0) < 0) {
+          var neg = Math.min(-n.folgaReal, geo.dias);
+          s += '<rect class="cx-folga-neg" x="' + f1(geo.X(Math.max(0, n.fim - neg))) + '" y="' + f1(y0 + geo.rowH - h - 1) + '" width="' + f1(Math.max(2, neg * geo.pxDia)) + '" height="' + f1(h) +
+            '" fill="' + CRIT + '" fill-opacity="0.18" stroke="' + CRIT + '" stroke-opacity="0.6" stroke-dasharray="2,2"><title>' +
+            esc("folga negativa: " + n.folgaReal + " dia(s) útil(eis) — a data prometida já não é cumprida por esta cadeia") + '</title></rect>';
+          return;
+        }
+        if (fin(n.folgaLivre, 0) > 0) {
+          var liv = Math.min(n.folgaLivre, Math.max(0, geo.dias - n.fim));
+          if (liv <= 0) return;
+          s += '<line class="cx-folga-livre" x1="' + f1(geo.X(n.fim)) + '" y1="' + f1(y0 + geo.rowH - 3.5) + '" x2="' + f1(geo.X(n.fim + liv)) + '" y2="' + f1(y0 + geo.rowH - 3.5) +
+            '" stroke="#0f766e" stroke-width="2" stroke-linecap="round" opacity="0.75"><title>' +
+            esc("folga livre: " + n.folgaLivre + " dia(s) útil(eis) — atrasar até aí não empurra NENHUMA outra tarefa") + '</title></line>';
+        }
+      });
+      return s;
+    },
+    /* o colchete da data fixada pela pessoa e o ⧗ do piso que o APP escreveu
+       (`origem:"mat"`). São dois marcadores diferentes de propósito: a
+       primeira a pessoa solta; o segundo a projeção reescreve no próximo
+       salvar, e oferecer [Soltar] nele seria porta falsa. */
+    _camadaRestricoes: function (r, geo, cron) {
+      var Gu = GU(), s = "";
+      if (!Gu || typeof Gu.dataFixadaDomina !== "function") return "";
+      geo.L.forEach(function (l, i) {
+        if (i < geo.lin0 || i > geo.lin1) return;
+        var n = l.no || l.et;
+        if (!n || n.inicio == null) return;
+        var dom = null;
+        try { dom = Gu.dataFixadaDomina(r, n.id, cron); } catch (e) { dom = null; }
+        var rs = n.restricao, y0 = geo.yRow(i), cy = y0 + geo.rowH / 2;
+        if (dom) {
+          var xr = geo.X(n.inicio);
+          s += '<path class="cx-restr" d="M' + f1(xr - 4) + ',' + f1(cy - 8) + ' H' + f1(xr) + ' V' + f1(cy + 8) + ' H' + f1(xr - 4) + '" fill="none" stroke="#0f172a" stroke-width="1.6"><title>' +
+            esc(dom.rotulo + " " + dom.dataBR + " — esta data manda no início desta tarefa") + '</title></path>';
+          return;
+        }
+        if (rs && rs.estourada) {
+          var xt = geo.X(Math.max(0, Math.min(geo.dias, fin(rs.indice, n.fim))));
+          s += '<text class="cx-restr-nok" x="' + f1(xt) + '" y="' + f1(cy + 4) + '" font-size="11" fill="' + CRIT + '" text-anchor="middle" pointer-events="none">⚑</text>' +
+            '<rect x="' + f1(xt - 6) + '" y="' + f1(cy - 8) + '" width="12" height="16" fill="transparent"><title>' +
+            esc("a restrição “" + (Gu._ROT_RESTR && Gu._ROT_RESTR[rs.tipo] ? Gu._ROT_RESTR[rs.tipo] : rs.tipo) + " " + dmaS(rs.data) +
+              "” não é cumprida — o plano termina depois. A restrição avisa; ela não encurta a tarefa nem empurra as outras.") + '</title></rect>';
+          return;
+        }
+        // o piso escrito pelo app: o ⧗, com o MOTIVO que sai do motor (O29)
+        var rd = (cron && ehObj(cron.restricoes) && ehObj(cron.restricoes[n.id])) ? cron.restricoes[n.id] : null;
+        if (!rd || rd.origem !== "mat" || !rs) return;
+        var mot = "";
+        try { mot = Gu.motivoDoPiso(r, n.id) || ""; } catch (e3) { mot = ""; }
+        s += '<text class="cx-restr-mat" x="' + f1(geo.X(n.inicio) - 7) + '" y="' + f1(cy + 4) + '" font-size="10" fill="' + ROXO_T + '" text-anchor="middle" pointer-events="none">⧗</text>' +
+          '<rect x="' + f1(geo.X(n.inicio) - 13) + '" y="' + f1(cy - 8) + '" width="12" height="16" fill="transparent"><title>' +
+          esc("o app guardou “não iniciar antes de " + dmaS(rs.data) + "” aqui para que aparelhos de versão anterior desenhem a mesma data" +
+            (mot ? " — " + mot : " — não consegui dizer o motivo nesta renderização") + ". Não é uma data que você fixou: o próximo salvar a reescreve.") + '</title></rect>';
+      });
+      return s;
+    },
+
+    /* ------------------------------------------------------------------
+       A LINHA DO PRAZO (2A) — o que as quatro funções acrescentam nela.
+       ⚠ O QUE **NÃO** ESTÁ AQUI, DE PROPÓSITO (crítica 2, achado 17): o
+       recado informativo "aparelhos com a versão 1.2.81 veem…". A linha do
+       prazo é o que o cliente lê numa apresentação, e um aviso de versão de
+       app ali vira dúvida sobre o prazo. Ele mora no recado do salvar e no
+       cartão "Compatibilidade" da sub-aba Parâmetros (2B); aqui fica só o
+       CHIP, que a pessoa abre quando quiser — e que some no modo Apresentar.
+       ------------------------------------------------------------------ */
+    prazoExtensoes: function (d, est) {
+      var r = d.r, h = "";
+      if (!r) return "";
+      /* (D2) o segundo número do prazo: o das tarefas sem preço. NUNCA no
+         lugar do primeiro — o prazo da obra é o que vai ao contrato; o das
+         tarefas sem preço é o que o contratante também precisa cumprir. */
+      if (r.dataFimComExtras && fin(r.totalDiasComExtras, 0) > fin(r.totalDias, 0)) {
+        var difX = r.totalDiasComExtras - r.totalDias;
+        h += '<span class="pill cx-pill-t" title="' + esc("O prazo da obra é " + r.totalDias + " dias úteis. Com as tarefas sem preço (as que dependem do contratante ou de terceiros) a última tarefa do cronograma termina " +
+          difX + " dia(s) útil(eis) depois, em " + dma(r.dataFimComExtras) + ". O prazo do contrato continua sendo o da obra.") + '">+' + difX + ' d com as tarefas sem preço</span>';
+      }
+      var us = arr(r.calendarios && r.calendarios.usados);
+      if (us.length) {
+        var nomesC = [];
+        arr(r.calendarios.lista).forEach(function (c) { if (c && us.indexOf(c.id) > -1) nomesC.push(String(c.nome || c.id)); });
+        h += '<span class="pill cx-pill-cal" title="' + esc(nomesC.join(" · ") + " — estas frentes trabalham num calendário próprio (7×7, turnos, sábado). O prazo continua contado na régua da obra.") +
+          '">' + us.length + ' frente' + (us.length === 1 ? '' : 's') + ' em calendário próprio</span>';
+      }
+      if (r.avanco) {
+        var ct = r.avanco.contagem || {};
+        h += '<span class="pill cx-pill-av" title="' + esc("Os % lançados descrevem o dia " + dmaS(r.avanco.corte) + " (a data de corte), não hoje. " +
+          fin(ct.concluidas, 0) + " concluída(s), " + fin(ct.andamento, 0) + " em andamento, " + fin(ct.empurradas, 0) + " empurrada(s) pelo corte.") +
+          '">Avanço até ' + dmaS(r.avanco.corte) + (fin(ct.empurradas, 0) ? ' · ' + ct.empurradas + ' empurrada' + (ct.empurradas === 1 ? '' : 's') : '') + '</span>';
+      }
+      return h;
+    },
+
+    /* O CHIP "Compatibilidade (N)" e a faixa que ele abre.
+       ⚠ Ele conta o que EXISTE, nunca um número redondo: N é a soma dos
+       recados da §1.3.1 (o que um aparelho antigo mexeu), dos códigos de
+       `mat.div` e das pendências. Chip com número que não bate com a lista é
+       a pessoa abrindo para procurar o que não está lá.
+       ⚠ Some no modo "Apresentar" (D30). */
+    compatItens: function (d) {
+      var r = d && d.r, out = [], vistos = {};
+      var av = arr(r && r.compat && r.compat.avisos), CAT = (C() && C().CATALOGO_DIV) || [];
+      av.forEach(function (a) {
+        if (!a) return;
+        var t = typeof a === "string" ? a : String(a.tipo || a.cod || "");
+        if (!t || own(vistos, t + (a.id || ""))) return;
+        vistos[t + (a.id || "")] = 1;
+        out.push({ tipo: t, id: a.id || null, msg: typeof a === "string" ? "" : String(a.msg || "") });
+      });
+      var mat = (d && d.cron && ehObj(d.cron.mat)) ? d.cron.mat : null;
+      var cods = (mat && ehObj(mat.div) && ehArr(mat.div.cods)) ? mat.div.cods : [];
+      cods.forEach(function (c) {
+        if (!c || own(vistos, "cod:" + c)) return;
+        vistos["cod:" + c] = 1;
+        out.push({ tipo: "cod", cod: String(c), conhecido: CAT.indexOf(String(c)) > -1 });
+      });
+      var pend = (mat && ehObj(mat.pend)) ? Object.keys(mat.pend) : [];
+      pend.forEach(function (id) { if (!own(vistos, "pend:" + id)) { vistos["pend:" + id] = 1; out.push({ tipo: "pend", id: id }); } });
+      /* ⚠ `D-AVANCO-PENDENTE` É CONFERIDO AQUI, NA TELA, e não lido de
+         `mat.div`. Motivo medido em 21/09/2026: `mat.avEm` só é ESCRITO pela
+         projeção (no salvar do plano) e ninguém o LÊ para produzir o aviso no
+         `estimar`. Como o lançamento de avanço NÃO regrava o plano (O17), a
+         janela em que aparelhos de versão anterior mostram as datas do
+         último salvar começa exatamente aí — e ficaria MUDA até o próximo
+         salvar, que é quando ela já fechou. A conta é a da §1.11, com os dois
+         campos que a tela já tem em mãos (nenhuma segunda leitura do avanço:
+         o `atualizadoEm` vem do registro que o alvo carregou).
+         Pendência declarada para a 1A: publicar o código em
+         `r.compat.avisos`, para o papel e o cartão "Compatibilidade" da 2B
+         não precisarem repetir esta comparação. */
+      if (d && d.plano && d.avancoEm && !own(vistos, "cod:D-AVANCO-PENDENTE")) {
+        var avEm = mat ? mat.avEm : null;
+        if (String(avEm || "") !== String(d.avancoEm)) {
+          vistos["cod:D-AVANCO-PENDENTE"] = 1;
+          out.push({ tipo: "cod", cod: "D-AVANCO-PENDENTE", conhecido: true });
+        }
+      }
+      return out;
+    },
+    /* ⚠ O CATÁLOGO `TXT_DIV` MORA NUM LUGAR SÓ, mais abaixo, junto do cartão
+       "Compatibilidade" (fatia 2B). A fusão da Onda 2 achou DUAS definições
+       da mesma chave neste objeto — a 2A tinha copiado a sua daqui do toast
+       do salvar (`App._cronoRecadoProjecao`) e a 2B escrito a dela no cartão.
+       Duas venciam em silêncio pela ordem do literal (a última ganha): código
+       novo escrito só na primeira sairia CRU na tela, sem reprovar nada.
+       O chip e a faixa daqui leem `self.TXT_DIV`, que é o de lá. */
+    /* A RÉGUA DE QUEM PODE PERDER (21/09/2026): o item cuja única porta é o
+       [Atualizar as datas para aparelhos de versão anterior] grava o plano
+       INTEIRO, e por isso pode perder uma edição feita em outro aparelho que
+       ainda não chegou (R10) — o próprio modal do botão avisa. Enquanto esse
+       item estiver na lista, nem o chip nem a faixa prometem que nada se
+       perde. Mora aqui porque os dois leem a MESMA lista de itens. */
+    compatPerdePorta: function (itens) {
+      var perde = false;
+      (itens || []).forEach(function (x) { if (x && (x.cod === "D-AVANCO-PENDENTE" || x.tipo === "avanco-pendente")) perde = true; });
+      return perde;
+    },
+    compatChip: function (d, est) {
+      var c = this.camadasNorm(d && d.camadas);
+      if (c.apresentar) return "";
+      var itens = this.compatItens(d);
+      if (!itens.length) return "";
+      /* ⚠ o "aberto" e o MODO moram em `d` (a fiação do ui.js os lê do
+         App), e não no `est` do `CronoExecUI.estado` — que é da fatia 1C. Duas
+         fatias escrevendo no mesmo objeto de estado é merge perdido (§3.7). */
+      var aberto = !!(d && d.compatAberto);
+      /* ⚠ o title repetia “Nenhum dado se perde” para TODO item, pelo mesmo
+         motivo que a faixa (veja o bloco do `compatFaixa`) */
+      var perde = this.compatPerdePorta(itens);
+      return '<button type="button" class="pill cx-chip-compat' + (aberto ? " cx-chip-on" : "") + '" data-acao="crono-camadas-compat" data-ligar="' + (aberto ? "0" : "1") +
+        '" aria-expanded="' + (aberto ? "true" : "false") + '" title="' +
+        esc("O que aparelhos com uma versão anterior do app veem diferente deste cronograma, e o que espera uma escolha sua." +
+          (perde ? "" : " Nenhum dado se perde.")) +
+        '">Compatibilidade (' + itens.length + ')</button>';
+    },
+    /* a faixa que o chip abre, LOGO ABAIXO da linha do prazo. As portas de
+       escolha são as da 1A (`crono-compat-escolher`), que já gravam; a porta
+       [Atualizar as datas…] é da 2B e só aparece quando a fiação a passa
+       (`d.portaAtualizarDatas`) — botão desenhado sem quem o ouça é porta que
+       não abre. Sem ele, a faixa diz o caminho que existe de verdade: o
+       próximo salvar do plano. */
+    compatFaixa: function (d, est) {
+      void est;
+      if (!d || !d.compatAberto) return "";
+      var itens = this.compatItens(d), self = this;
+      if (!itens.length) return "";
+      var linhas = itens.map(function (x) {
+        if (x.tipo === "cod") {
+          var t = self.TXT_DIV[x.cod];
+          return '<li>' + esc(t ? t : ("código " + x.cod + " — não consigo explicar este código nesta versão; avise o suporte da RA")) +
+            (t ? '' : ' <b>' + esc(x.cod) + '</b>') + '</li>';
+        }
+        if (x.tipo === "pend") return '<li>' + esc("uma alteração feita num aparelho de versão anterior espera a sua escolha — abra o quadro pelo salvar, ou escolha aqui: ") +
+          '<button class="btn sm" data-acao="crono-compat-escolher" data-id="' + esc(String(x.id)) + '" data-escolha="manter">Manter o planejado</button></li>';
+        return '<li>' + esc(x.msg || self.TXT_COMPAT[x.tipo] || x.tipo) + '</li>';
+      }).join("");
+      var porta = (d && typeof d.portaAtualizarDatas === "string") ? d.portaAtualizarDatas : "";
+      var temAv = this.compatPerdePorta(itens);
+      return '<div class="cx-compat-faixa"><b>' + esc("Compatibilidade com aparelhos de versão anterior") + '</b><ul class="cx-lista">' + linhas + '</ul>' +
+        (temAv ? (porta || '<p class="muted">' + esc("As datas que o avanço lançado mudou entram no próximo salvar deste plano — até lá, aparelhos de versão anterior mostram as datas do último salvar.") + '</p>') : "") +
+        /* ⚠ A PROMESSA E POR ITEM, NUNCA GENERICA (revisao adversarial da
+           Onda 2, 21/09/2026). Esta frase ficava no FIM da faixa e valia para
+           todos os itens — inclusive o `D-AVANCO-PENDENTE`, cuja unica porta e
+           o [Atualizar as datas para aparelhos de versao anterior] logo acima
+           dela, e o modal DESSE botao diz, com todas as letras: “Uma edicao do
+           plano feita em outro aparelho que ainda nao chegou aqui SE PERDE”.
+           Lido na tela, um em cima do outro. Recado que mente e pior que
+           recado nenhum: a pessoa le “nada se perde” como formalidade e clica.
+           Os itens que de fato nao perdem nada (D-INICIAR-1281, D-IA-TEXTO)
+           continuam com a frase. */
+        (temAv ? "" : '<p class="muted">' + esc("Nada se perde: o valor planejado desta versão continua gravado, e o desta tela é o certo.") + '</p>') + '</div>';
+    },
+    TXT_COMPAT: {
+      "avanco-nao-carregado": "o avanço desta obra não foi carregado nesta tela — as datas mostradas são as do último salvar",
+      "avanco-fim-sem-100": "uma tarefa tem fim real com menos de 100%: ela foi lida como concluída",
+      "avanco-100-sem-fim": "uma tarefa está em 100% sem fim real: marque o último dia trabalhado",
+      "avanco-origem-desconhecida": "uma entrada de avanço veio com uma origem que esta versão não conhece — ela vale como digitada",
+      "avanco-medicao-sem-lastro": "uma entrada veio da medição sem o boletim que a sustenta — ela vale como digitada",
+      "editado-versao-anterior": "uma duração foi alterada num aparelho de versão anterior e espera a sua escolha",
+      "restricao-1281": "uma data fixada foi substituída num aparelho de versão anterior e espera a sua escolha",
+      "limpeza-1281": "as edições do cronograma foram limpas num aparelho de versão anterior",
+      "rede-substituida": "uma ligação TT/IT foi alterada num aparelho de versão anterior: vale o que ficou gravado lá"
+    },
+
+    /* O MOTIVO DA IA QUE A TELA MOSTRA (revisão 4, O31).
+       ⚠ SAI SÓ DO `CronoPlan.textoIA`, nunca de `cronograma.iaMotivos` cru.
+       Roteiro do defeito que isto fecha: com a porta (1) do teto (O30), o
+       plano guarda só a MARCA ("motivo não guardado (limite do plano)") e o
+       texto fica no orçamento de origem. Lendo o mapa cru, a tela mostraria
+       essa marca como se fosse a justificativa — a pessoa leria "não
+       guardado" numa etapa cujo motivo está a um clique de distância.
+       Devolve {texto, fonte, titulo} — `titulo` é o que vai no `title`. */
+    motivoIA: function (d, nivel, id) {
+      var vazio = { texto: "", fonte: null, titulo: "" };
+      if (!d || id == null) return vazio;
+      var CP = MOD("CronoPlan", "./cronoplan.js");
+      var cronP = (d.cron && typeof d.cron === "object" && !ehArr(d.cron)) ? d.cron : null;
+      if (!CP || typeof CP.textoIA !== "function" || !cronP) {
+        /* sem o módulo não se INVENTA leitura crua: a marca do limite do plano
+           sairia como motivo. Melhor não mostrar o ícone do que mostrar um
+           motivo que não é o motivo. */
+        return vazio;
+      }
+      var res = null;
+      try { res = CP.textoIA(cronP, d.cronOrc || null, nivel, id); } catch (e) { res = null; }
+      if (!res || !res.texto) {
+        if (res && res.motivo === "orcamento-mudou") return { texto: "", fonte: null,
+          titulo: "🤖 IA: motivo não guardado no plano (o orçamento de origem mudou desde então)" };
+        return vazio;
+      }
+      var org = (d.orcOrigemNumero ? String(d.orcOrigemNumero) : "");
+      var suf = res.fonte === "orcamento" ? " (texto do orçamento" + (org ? " " + org : "") + ")" : "";
+      return { texto: res.texto, fonte: res.fonte, titulo: "🤖 IA: " + res.texto + suf };
+    },
+
+    /* A FAIXA DO MODO AVANÇAR. ⚠ Ela existe porque as colunas Dur. e
+       "Depende de" SOMEM nesse modo: uma coluna que desaparece sem recado é
+       lida como app quebrado, e a pessoa procura a edição na tabela de baixo
+       (que também está no modo). O botão de voltar é o próprio recado. */
+    modoAvancoFaixa: function (d, est) {
+      if (!d || !d.plano) return "";
+      void est;
+      var modo = d.modoAv === "avancar" ? "avancar" : "planejar";
+      if (modo !== "avancar") return "";
+      return '<div class="cx-modo-av"><b>Modo Avançar</b> ' +
+        esc("— as colunas Dur. e “Depende de” voltam em") +
+        ' <button type="button" class="btn sm" data-acao="crono-camadas-modo" data-modo="planejar">Voltar a Planejar</button>' +
+        (d.r && d.r.avanco ? ' <span class="muted">' + esc("os % descrevem " + dmaS(d.r.avanco.corte) + ", a data de corte") + '</span>' : "") + '</div>';
+    },
+    /* o seletor Planejar | Avançar (só no plano da obra) */
+    modoAvancoBotoes: function (d, est) {
+      if (!d || !d.plano) return "";
+      void est;
+      var modo = d.modoAv === "avancar" ? "avancar" : "planejar";
+      return '<div class="cx-modo-bt" role="group" aria-label="Modo do cronograma">' +
+        '<button type="button" class="btn sm' + (modo === "planejar" ? " primary" : "") + '" data-acao="crono-camadas-modo" data-modo="planejar" aria-pressed="' + (modo === "planejar") + '" title="' +
+        esc("Planejar: duração, ligações e calendário das frentes.") + '">Planejar</button>' +
+        '<button type="button" class="btn sm' + (modo === "avancar" ? " primary" : "") + '" data-acao="crono-camadas-modo" data-modo="avancar" aria-pressed="' + (modo === "avancar") + '" title="' +
+        esc("Avançar: o que já aconteceu — % concluído, início real e fim real na data de corte.") + '">Avançar</button></div>';
+    },
+
+    /* a linha da DATA DE CORTE do avanço. ⚠ Ela não é "hoje": é o dia que os
+       números descrevem. Com as duas confundidas, quem lança avanço na
+       sexta-feira e olha na segunda lê o fim de semana como atraso real. */
+    _camadaCorte: function (r, geo) {
+      var av = r.avanco, j = fin(av.indiceCorte, -1);
+      if (!(j >= 0) || j > geo.dias) return "";
+      var x = geo.X(j), y1 = geo.pro ? 0 : geo.top - 2, y2 = geo.pro ? geo.h : geo.h - 6;
+      return '<line class="cx-av-corte" x1="' + f1(x) + '" y1="' + f1(y1) + '" x2="' + f1(x) + '" y2="' + f1(y2) + '" stroke="#b45309" stroke-width="1.6" stroke-dasharray="6,3"><title>' +
+        esc("data de corte do avanço: " + dmaS(av.corte) + " (os % lançados descrevem este dia, não hoje)") + '</title></line>' +
+        '<text class="cx-av-corte-rot" x="' + f1(x + 3) + '" y="' + f1(y1 + 9) + '" font-size="8.5" fill="#b45309" pointer-events="none">' + esc("corte " + dmaS(av.corte)) + '</text>';
+    },
+    /*
+     * ↑ região da fatia 2A: camadas, `barraDe`, linhas das tarefas sem preço.
+     *
+     *
+     */
+    /* ===== PLANEJADOR: paineis (2B) ===== */
+    _regPaineis: 1,
+
+    /* ------------------------------------------------------------------
+       O CATÁLOGO DE DIVERGÊNCIAS EM PT-BR (espec §1.11), para o cartão
+       "Compatibilidade". Cada código diz O QUE um aparelho 1.2.81 vê de
+       diferente — nunca o código sozinho: "D-FOLHA-INI" na tela é o mesmo que
+       não dizer nada.
+       ⚠ O toast do salvar (`App._cronoRecadoProjecao`, 1A) escreve só os três
+         que mudam o DESENHO; este cartão é o catálogo inteiro, porque é onde
+         a pessoa vem quando quer conferir. Código que entre no
+         `Cronograma.CATALOGO_DIV` e não aqui sai CRU na tela, e a
+         `test-crono-fiacao` reprova — de propósito: recado com código de
+         programador é o mesmo que recado nenhum.
+       ------------------------------------------------------------------ */
+    TXT_DIV: {
+      "D-FOLHA-INI": "o início desenhado de subetapas empurradas pelo corte ou por frente própria (o fim é o mesmo)",
+      "D-INICIO-FRENTE": "nada nas datas: a frente em calendário próprio aparece começando no dia útil da obra",
+      "D-TETO": "o aviso de “terminar até” estourado não aparece (as datas são as mesmas)",
+      "D-CRIT": "a folga e o caminho crítico de cadeias que passam por tarefa sem preço ou por teto de data",
+      "D-VAO0": "frente que só trabalha em dia sem obra aparece como marco (losango)",
+      "D-VELHA": "as datas das sucessoras de uma tarefa que um aparelho de versão anterior editou depois do último salvar daqui",
+      /* ⚠ NÃO É DATA (`Cronograma.DIV_NAO_DATA`): as datas são as MESMAS nas
+         duas versões. O que muda é a espera escrita no "Depende de" de uma
+         tarefa que começou fora de sequência — custo declarado da âncora do
+         início real (O16), que js/cronograma.js escreve com todas as letras.
+         Sem código no catálogo, TODA obra com avanço lançado via, a cada
+         salvar, "não consegui garantir que vejam as mesmas datas
+         (sem-codigo) … avise o suporte da RA" — assustando com "outras
+         datas" quando as datas são iguais (revisão adversarial da Onda 2). */
+      "D-ESPERA-AVANCO": "nada nas datas: a espera mostrada no “Depende de” de uma tarefa que começou antes do que a rede permitia",
+      "D-AVANCO-PENDENTE": "as datas reprogramadas pelo avanço lançado depois do último salvar do plano",
+      "D-INICIO-VELHO": "as datas fixadas ficam na posição do início antigo da obra",
+      "D-PENDENTE": "o efeito das tarefas sem preço, dos calendários, do “o mais tarde possível” e do avanço nas datas",
+      "D-SEM-SOMBRA": "as datas das subetapas (este plano foi gravado sem elas, por escolha)",
+      "D-175": "em aparelhos até a 1.2.75, as tarefas sem preço e o avanço não empurram nenhuma data",
+      "D-INICIAR-1281": "nenhuma data: “Iniciar plano de execução” e “Reiniciar a partir deste orçamento” recusam com “Avise o suporte”",
+      "D-IA-TEXTO": "nenhuma data: a etapa cujo texto da IA ficou no orçamento mostra “motivo não guardado (limite do plano)”"
+    },
+    /* ==================================================================
+       O CARTÃO "COMPATIBILIDADE COM APARELHOS DE VERSÃO ANTERIOR"
+       (crítica 2, achado 17; espec §3.4-2B)
+
+       ⚠ POR QUE ESTE TEXTO SAIU DA LINHA DO PRAZO: a linha do prazo é o que o
+         cliente vê numa apresentação. "Aparelhos com o OrçaPRO anterior à
+         1.2.8x veem…" ao lado do prazo da obra é conversa interna da RA
+         exibida na reunião. Aqui, na sub-aba Parâmetros, é onde quem planeja
+         vem conferir — e é aqui que ficam as portas de escolha.
+       ⚠ RECADO QUE MENTE É PIOR QUE RECADO NENHUM: sem conferência gravada
+         (`mat` ausente) o cartão diz que o cronograma não usa função nenhuma
+         das novas, em vez de afirmar "tudo certo" sobre algo que não mediu.
+       ================================================================== */
+    compatCartao: function (d, est) {
+      void est;
+      var Cr = C(), self = this;
+      var orc = (d && d.orc) || null, cron = (orc && orc.cronograma && typeof orc.cronograma === "object") ? orc.cronograma : {};
+      var mat = (cron.mat && typeof cron.mat === "object" && !ehArr(cron.mat)) ? cron.mat : null;
+      var plano = (d && d.obra && d.obra.alvo && d.obra.alvo.plano) || null;
+      var noPlano = !!(d && d.obra && d.obra.alvo && d.obra.alvo.tipo === "plano");
+      var li = [], cab = [];
+
+      /* 1) O RECADO INFORMATIVO dos calendários (calendario.md passo 6), só
+         enquanto houver frente em calendário próprio: a diferença é real e
+         está declarada no catálogo (`D-INICIO-FRENTE`). */
+      /* ⚠ `r.calendarios` É OBJETO, não lista (`{v, lista, usados, padrao, de,
+         avisos}`, js/cronograma.js:4224). Lido como lista, `.length` dava
+         `undefined`, a contagem virava 0 e o recado dos calendários NUNCA
+         aparecia — medido no navegador com duas etapas em 7×7. O número que
+         interessa é o de FRENTES (nós atribuídos), não o de calendários. */
+      var cc = (d && d.r && d.r.calendarios && typeof d.r.calendarios === "object" && !ehArr(d.r.calendarios)) ? d.r.calendarios : null;
+      var nFrentes = (cc && cc.de && typeof cc.de === "object" && !ehArr(cc.de)) ? Object.keys(cc.de).length : 0;
+      if (nFrentes) {
+        li.push(esc("Aparelhos com o OrçaPRO anterior à " + ((Cr && Cr.VERSAO_RECURSO && Cr.VERSAO_RECURSO.cal) || "1.2.82") +
+          " veem o mesmo prazo e o mesmo término; as " + nFrentes + " frente(s) em calendário próprio aparecem neles começando no dia útil da obra (segunda-feira, e não sábado). Atualize os aparelhos da equipe."));
+      }
+
+      /* 2) OS CÓDIGOS DA ÚLTIMA CONFERÊNCIA (`mat.div`), com o texto do
+         catálogo. Código fora do catálogo é DEFEITO e sai em vermelho. */
+      var div = (mat && mat.div && typeof mat.div === "object") ? mat.div : null;
+      var cods = (div && ehArr(div.cods)) ? div.cods : [];
+      if (cods.length) {
+        cods.forEach(function (c) {
+          var t = own(self.TXT_DIV, c) ? self.TXT_DIV[c] : null;
+          if (!t) li.push('<span class="cx-compat-ruim">' + esc(String(c)) + esc(" — não consegui dizer o que muda nesses aparelhos. Avise o suporte da RA com este código.") + '</span>');
+          else li.push(esc(String(c) + " — " + t));
+        });
+      }
+      /* `D-INICIAR-1281` escolhido (a porta da O30) vale mesmo sem `mat.div`:
+         ele não é data, então a conferência C1 não o vê (§1.11). */
+      if (mat && mat.semIniciar1281 === 1 && cods.indexOf("D-INICIAR-1281") < 0) {
+        li.push(esc("D-INICIAR-1281 — " + self.TXT_DIV["D-INICIAR-1281"] + " (escolhido por você nesta obra, para o cronograma caber)."));
+      }
+      /* `D-IA-TEXTO`: a escolha mora no REGISTRO DO PLANO (`plano.iaResumo`),
+         fora do motor — o cartão a lê de lá, com a data em que foi feita. */
+      var ia = (plano && plano.iaResumo && typeof plano.iaResumo === "object") ? plano.iaResumo : null;
+      if (ia && (ia.texto || ia.origem)) {
+        li.push(esc("D-IA-TEXTO — " + self.TXT_DIV["D-IA-TEXTO"] +
+          (ia.texto ? " · os textos da IA iguais aos do orçamento ficam só lá" : "") +
+          (ia.origem ? " · a origem das ligações da IA não fica no plano" : "") +
+          (ia.em ? " (escolhido em " + dmaS(String(ia.em).slice(0, 10)) + ")" : "") + "."));
+      }
+
+      /* 3) AS PENDÊNCIAS DA §1.3.1 com a porta: enquanto existirem, vale o
+         planejado desta versão e nada do outro aparelho se perde. */
+      var pend = (mat && mat.pend && typeof mat.pend === "object" && !ehArr(mat.pend)) ? mat.pend : null;
+      var nPend = pend ? Object.keys(pend).length : 0;
+      if (nPend) {
+        cab.push('<p class="cx-compat-pend">' + esc(nPend + " tarefa(s) foram alteradas num aparelho de versão anterior e esperam a sua escolha. Até você escolher, vale o planejado desta versão — nada do que o outro aparelho gravou se perde.") + '</p>');
+      }
+
+      /* 4) O TETO DO AVANÇO OCUPADO (E-MC6), só no plano e só com avanço: é o
+         número que a pessoa precisa ANTES de a gravação ser recusada. */
+      var A = G("CronoAvanco"), rec = (orc && orc._avancoDaObra) || null;
+      if (noPlano && A && rec && typeof A.bytes === "function") {
+        var bA = A.bytes(rec), kbA = String(Math.round(bA / 102.4) / 10).replace(".", ","), kbT = Math.round(A.TETO / 1024);
+        li.push(esc("Avanço lançado: " + kbA + " KB de " + kbT + " KB por obra (" + arr(rec.nos).length +
+          " tarefa(s)). Perto do limite, use [Resumir o avanço das etapas concluídas] — o realizado nunca é apagado por falta de espaço."));
+      }
+
+      /* 5) AS CHAVES DESLIGADAS (T12): função desligada neste aparelho é a
+         primeira explicação para "por que a data não mudou". */
+      var R = (Cr && typeof Cr.recursos === "function") ? Cr.recursos() : {};
+      var ROTR = { motor: "as quatro funções de data (a leitura inteira)", rede: "tipos de ligação e restrições de data", cal: "calendários das frentes",
+        extras: "tarefas sem preço", avanco: "avanço lançado", bases: "linhas de base", historico: "histórico de alterações",
+        seloTardio: "selo das linhas de base", filtro: "filtros do Gantt", pilha: "desfazer e refazer", sino: "avisos do cronograma" };
+      var desl = [], k;
+      for (k in ROTR) if (own(ROTR, k) && R[k] === false) desl.push(ROTR[k]);
+      if (desl.length) li.push('<span class="cx-compat-ruim">' + esc("Desligado neste aparelho: " + desl.join("; ") + ". As datas desta tela não contam com essas funções.") + '</span>');
+      /* 6) MEDCC 6B (EM-9): AS CHAVES DA LEVA "medição × centros de custo"
+         (`CONFIG.medccRecursos`), ACRESCENTADAS à lista — nunca no lugar
+         dela. As linhas do planejador acima (`D-INICIAR-1281`, `D-IA-TEXTO`
+         e o teto do avanço ocupado) continuam: substituir a lista faria a
+         pessoa perder justamente o número que ela vem aqui conferir.
+         ⚠ E O TEXTO DIZ QUE NADA FOI APAGADO. Chave desligada esconde porta
+           e impede dado novo; `lancarAvanco`, `avancoMedicao` e as entradas
+           `o:"medicao"` gravadas continuam valendo e sincronizando (§11.3).
+           Sem essa frase, "o lançamento do avanço pela medição está
+           desligado" se lê como "o que já foi lançado sumiu". */
+      var Ge = G("Gestao"), ROTM = {
+        medAvanco: "o lançamento do avanço pela medição", medAvancoAuto: "o lançamento automático ao aprovar o boletim",
+        medOrigem: "a procedência “medição” nas entradas de avanço", ccGerar: "gerar centros de custo do orçamento",
+        ccAgente: "a apropriação automática dos centros de custo", ccDocumentos: "o centro de custo nos documentos de compra",
+        ccSino: "o aviso de lançamentos sem centro de custo", ccIA: "a sugestão de centro por IA"
+      };
+      if (Ge && typeof Ge._medccDesligadas === "function") {
+        var dm = [], km;
+        try { dm = Ge._medccDesligadas() || []; } catch (eM) { dm = []; }
+        var rot = [];
+        for (km = 0; km < dm.length; km++) if (own(ROTM, dm[km]) && dm[km] !== "ccIA") rot.push(ROTM[dm[km]]);
+        if (rot.length) {
+          li.push('<span class="cx-compat-ruim">' + esc("Desligado nesta instalação: " + rot.join("; ") +
+            ". Nenhum dado gravado foi apagado — o que já está no avanço e nos centros continua valendo.") + '</span>');
+        }
+      }
+
+      var h = '<div class="card cx-card cx-compat"><h4>Compatibilidade com aparelhos de versão anterior</h4>';
+      if (!mat && !li.length && !cab.length) {
+        return h + '<p class="muted cx-compat-nada">' +
+          esc("Este cronograma ainda não usa nenhuma das funções novas (tarefas sem preço, calendários das frentes, tipos de ligação ou avanço lançado): aparelhos com a versão anterior veem exatamente as mesmas datas.") + '</p></div>';
+      }
+      h += cab.join("");
+      if (li.length) {
+        h += '<p class="muted cx-compat-lead">' + esc("O que um aparelho que ainda não atualizou vê de diferente neste cronograma:") + '</p><ul class="cx-lista">';
+        li.forEach(function (x) { h += '<li>' + x + '</li>'; });
+        h += '</ul>';
+      } else {
+        h += '<p class="muted cx-compat-nada">' + esc("Nenhuma diferença na última conferência: aparelhos com a versão anterior veem as mesmas datas.") + '</p>';
+      }
+      if (mat && mat.em) h += '<p class="muted cx-compat-em">' + esc("Última conferência ao salvar: " + dmaS(String(mat.em).slice(0, 10)) + ".") + '</p>';
+      return h + '</div>';
+    },
+    /* ------------------------------------------------------------------
+       O CARTÃO "CALENDÁRIOS DAS FRENTES" (calendario.md passo 1).
+       ⚠ A PRIMEIRA LINHA É A RÉGUA DA OBRA, e é só leitura: uma fonte só para
+         "quantos dias por semana". Repetir aqui o campo Dias/sem. daria dois
+         lugares para a mesma resposta, e o segundo envelhece.
+       ------------------------------------------------------------------ */
+    calCartao: function (d, est) {
+      void est;
+      var orc = (d && d.orc) || null, cron = (orc && orc.cronograma && typeof orc.cronograma === "object") ? orc.cronograma : {};
+      var cal = (cron.cal && typeof cron.cal === "object" && !ehArr(cron.cal)) ? cron.cal : null;
+      var lista = cal ? arr(cal.lista) : [], de = (cal && cal.de && typeof cal.de === "object" && !ehArr(cal.de)) ? cal.de : {};
+      var p = (d && d.r && d.r.params) || {}, dias = p.diasUteisSemana || 5;
+      var usos = {}, id;
+      for (id in de) if (own(de, id)) usos[de[id]] = (usos[de[id]] || 0) + 1;
+      var h = '<div class="card cx-card cx-cal-painel"><h4>Calendários das frentes</h4>' +
+        '<p class="muted cx-cal-lead">' + esc("O prazo da obra é contado em dias úteis da obra (" + dias +
+          " por semana, com os feriados descontados). Uma frente que trabalha em outro regime — 7 dias por semana, dois turnos, sábado até o meio-dia, só no fim de semana da parada da planta — ganha um calendário próprio: a duração dela passa a ser contada nos dias de trabalho dela.") + '</p>' +
+        '<table class="tbl cx-cal-tab"><thead><tr><th>Calendário</th><th>Regime</th><th>Frentes</th><th></th></tr></thead><tbody>' +
+        '<tr class="cx-cal-obra"><td><b>Calendário da obra</b></td><td>' + esc((dias === 7 ? "todos os dias" : (dias === 6 ? "seg a sáb" : "seg a sex")) +
+        " · " + (p.descontarFeriados === false ? "não desconta feriados" : "segue os feriados da obra")) + '</td><td class="muted">' + esc("as demais") +
+        '</td><td class="muted">' + esc("muda em Dias/sem. e Feriados locais, na sub-aba Cronograma") + '</td></tr>';
+      lista.forEach(function (c) {
+        if (!c || typeof c !== "object") return;
+        var hh = ehArr(c.h) ? c.h : [], n = 0, i;
+        for (i = 0; i < hh.length; i++) if (Number(hh[i]) > 0) n++;
+        h += '<tr data-cal-id="' + esc(String(c.id)) + '"><td>' + esc(corta(String(c.nome || c.id), 40)) + '</td>' +
+          '<td>' + esc(n + " dia(s)/semana" + (Number(c.turnos) > 1 ? " · " + Number(c.turnos) + " turnos" : "") +
+            (c.fer === "trabalha" ? " · trabalha em feriado" : " · segue os feriados da obra") + (arr(c.exc).length ? " · " + arr(c.exc).length + " parada(s)" : "")) + '</td>' +
+          '<td>' + (usos[c.id] || 0) + '</td>' +
+          '<td><button class="btn sm ghost" data-acao="crono-cal-abrir" data-cal="' + esc(String(c.id)) + '">Editar</button></td></tr>';
+      });
+      h += '</tbody></table><div class="flex" style="gap:8px;margin-top:8px;flex-wrap:wrap">' +
+        '<button class="btn sm primary" data-acao="crono-cal-abrir">' + esc(lista.length ? "Calendários (" + lista.length + ")" : "+ Novo calendário") + '</button></div>';
+      return h + '</div>';
+    },
+
+    /* ==================================================================
+       O MODAL DOS CALENDÁRIOS (calendario.md passos 1 a 3). Só HTML: quem
+       grava é `App._acoesCrono_cal`, com as guardas na função.
+       `dados` = {lista, de, nos, editando, novo, travado, erro}.
+       ================================================================== */
+    CAL_MODELOS: [
+      { id: "7x7", nome: "Montagem 7x7", h: [8, 8, 8, 8, 8, 8, 8], turnos: 1, fer: "obra", rot: "7 dias por semana (7×7)" },
+      { id: "2t", nome: "Dois turnos", h: [0, 8, 8, 8, 8, 8, 0], turnos: 2, fer: "obra", rot: "Dois turnos, seg a sex" },
+      { id: "sab", nome: "Com sabado ate 12h", h: [0, 8, 8, 8, 8, 8, 4], turnos: 1, fer: "obra", rot: "Seg a sex + sábado até 12h" },
+      { id: "par", nome: "Parada da planta", h: [10, 0, 0, 0, 0, 0, 10], turnos: 2, fer: "trabalha", rot: "Só fim de semana (parada da planta)" },
+      { id: "branco", nome: "", h: [0, 8, 8, 8, 8, 8, 0], turnos: 1, fer: "obra", rot: "Em branco" }
+    ],
+    DIAS_SEM: ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"],
+    calModalHtml: function (dados) {
+      dados = dados || {};
+      var self = this, lista = arr(dados.lista), de = (dados.de && typeof dados.de === "object" && !ehArr(dados.de)) ? dados.de : {};
+      function nomeCal(cid) {
+        var n = String(cid || "");
+        lista.forEach(function (c) { if (c && String(c.id) === String(cid)) n = String(c.nome || c.id); });
+        return n;
+      }
+      var h = '<div class="cx-cal-modal">';
+      if (dados.travado) h += '<div class="cx-aviso">' + esc(String(dados.travado)) + '</div>';
+      if (dados.erro) h += '<div class="cx-aviso cx-compat-ruim">' + esc(String(dados.erro)) + '</div>';
+      var ed = dados.novo || null, i;
+      if (!ed && dados.editando) lista.forEach(function (c) { if (c && String(c.id) === String(dados.editando)) ed = c; });
+      if (ed) {
+        h += '<h4 class="cx-cal-tit">' + esc("Calendário: " + (ed.nome || "novo")) + '</h4>' +
+          '<div class="field"><label>Nome</label><input id="cal-nome" class="input" maxlength="60" value="' + esc(String(ed.nome || "")) + '"></div>' +
+          '<div class="field"><label>Horas por dia (0 = não trabalha)</label><div class="flex" style="gap:6px;flex-wrap:wrap">';
+        for (i = 0; i < 7; i++) {
+          h += '<label class="cx-cal-dia">' + esc(self.DIAS_SEM[i]) +
+            '<input id="cal-h' + i + '" type="number" min="0" max="24" step="0.5" value="' + esc(String((ehArr(ed.h) && ed.h[i] != null) ? ed.h[i] : 0)) + '"></label>';
+        }
+        h += '</div></div><div class="flex" style="gap:14px;flex-wrap:wrap;align-items:flex-end">' +
+          '<div class="field" style="margin:0"><label title="' + esc("Com 2 turnos, a duração ESTIMADA pelo agente cai pela metade; a que você digitou não muda.") + '">Turnos por dia</label>' +
+          '<select id="cal-turnos"><option value="1"' + (Number(ed.turnos) > 1 ? '' : ' selected') + '>1</option>' +
+          '<option value="2"' + (Number(ed.turnos) === 2 ? ' selected' : '') + '>2</option>' +
+          '<option value="3"' + (Number(ed.turnos) === 3 ? ' selected' : '') + '>3</option></select></div>' +
+          '<div class="field" style="margin:0"><label>Feriados</label><select id="cal-fer">' +
+          '<option value="obra"' + (ed.fer === "trabalha" ? '' : ' selected') + '>segue os feriados da obra</option>' +
+          '<option value="trabalha"' + (ed.fer === "trabalha" ? ' selected' : '') + '>trabalha em feriado</option></select></div></div>' +
+          '<p class="muted cx-cal-nota">' + esc("Um dia com menos horas que o dia cheio conta como fração: sábado de 4 h num calendário de 8 h vale meio dia de trabalho.") + '</p>';
+        if (arr(ed.exc).length) {
+          h += '<div class="cx-pr-sec"><b>Paradas e dias extras</b></div><ul class="cx-lista">';
+          arr(ed.exc).forEach(function (x) {
+            h += '<li>' + esc(dmaS(x.de) + (x.ate && x.ate !== x.de ? " a " + dmaS(x.ate) : "") + " · " + String(x.h) + " h" + (x.m ? " · " + String(x.m) : "")) + '</li>';
+          });
+          h += '</ul>';
+        }
+        h += '<div class="flex" style="gap:8px;margin-top:10px;flex-wrap:wrap">' +
+          '<button class="btn sm primary" data-acao="crono-cal-salvar" data-cal="' + esc(String(ed.id || "")) + '">Salvar calendário</button>' +
+          (dados.novo ? '' : '<button class="btn sm ghost" data-acao="crono-cal-excluir" data-cal="' + esc(String(ed.id || "")) + '">Excluir</button>') +
+          '<button class="btn sm ghost" data-acao="crono-cal-abrir">Voltar à lista</button></div>';
+        return h + '</div>';
+      }
+      h += '<p class="muted cx-cal-lead">' + esc("A frente com calendário próprio tem a duração contada nos dias de trabalho dela. O prazo da obra continua em dias úteis da obra.") + '</p>';
+      if (!lista.length) h += '<p class="muted cx-cal-vazio">' + esc("Nenhum calendário criado ainda.") + '</p>';
+      else {
+        var usos = {}, id;
+        for (id in de) if (own(de, id)) usos[de[id]] = (usos[de[id]] || 0) + 1;
+        h += '<table class="tbl"><thead><tr><th>Calendário</th><th>Frentes</th><th></th></tr></thead><tbody>';
+        lista.forEach(function (c) {
+          if (!c) return;
+          h += '<tr><td>' + esc(corta(String(c.nome || c.id), 40)) + '</td><td>' + (usos[c.id] || 0) + '</td>' +
+            '<td><button class="btn sm ghost" data-acao="crono-cal-abrir" data-cal="' + esc(String(c.id)) + '">Editar</button></td></tr>';
+        });
+        h += '</tbody></table>';
+      }
+      h += '<div class="cx-pr-sec"><b>Novo calendário</b></div><div class="flex" style="gap:6px;flex-wrap:wrap">';
+      this.CAL_MODELOS.forEach(function (m) {
+        h += '<button class="btn sm ghost" data-acao="crono-cal-novo" data-modelo="' + esc(m.id) + '">' + esc(m.rot) + '</button>';
+      });
+      h += '</div>';
+      var nos = arr(dados.nos);
+      if (lista.length && nos.length) {
+        /* A ATRIBUIÇÃO EM LOTE (passo 3). O antes → depois é mostrado PELA
+           AÇÃO, antes de gravar — como o interruptor do modo executivo. */
+        h += '<div class="cx-pr-sec"><b>Aplicar a</b> <span class="muted">' + esc("— o antes → depois aparece antes de gravar") + '</span></div>' +
+          '<div class="flex" style="gap:8px;flex-wrap:wrap;align-items:flex-end"><div class="field" style="margin:0"><label>Frentes</label>' +
+          /* ⚠ `size="6"` LITERAL, e nunca calculado. Isto era
+             o size calculado por Math.min(6, nos.length), e com UMA frente saía
+             um multiple de tamanho 1 — o campo morto do macOS: lá um
+             `multiple` é SEMPRE lista, nunca menu, e uma lista de uma linha
+             não tem para onde abrir. O cliente vê uma caixinha sem seta que
+             não responde (relato de 30/08/2026, com print, no seletor de obra
+             do Painel). ⚠ E o número é LITERAL porque quem guarda isto é a
+             `test-select-no-mac`, que lê o texto do arquivo: size calculado
+             ela não consegue conferir, e o defeito volta calado — não há como
+             vê-lo aqui, onde só existe Windows. Com poucas frentes a lista
+             nasce com linhas vazias, e é o preço certo a pagar. */
+          '<select id="cal-lote-nos" multiple size="6" class="cx-cal-lote">';
+        nos.forEach(function (n) {
+          h += '<option value="' + esc(String(n.id)) + '">' + esc(corta(String(n.numero || "") + " " + String(n.nome || ""), 48) +
+            (own(de, n.id) ? " (" + nomeCal(de[n.id]) + ")" : "")) + '</option>';
+        });
+        h += '</select></div><div class="field" style="margin:0"><label>Calendário</label><select id="cal-lote-cal"><option value="">Calendário da obra</option>';
+        lista.forEach(function (c) { if (c) h += '<option value="' + esc(String(c.id)) + '">' + esc(corta(String(c.nome || c.id), 40)) + '</option>'; });
+        h += '</select></div><button class="btn sm primary" data-acao="crono-cal-lote">Aplicar</button></div>';
+      }
+      return h + '</div>';
+    },
+    /* ==================================================================
+       O MODAL DO AVANÇO LANÇADO (avanco.md passos 1 e 2). Só HTML.
+       `dados` = {corte, hoje, proximoUtil, ultimoDiario, anterior {corte, nos},
+       fontes, antesDepois, semBase, semInicio, erro}.
+       ⚠ A PORTA [Fixar início] VEM PRONTA DA 1A (`App._cronoPortaInicioHtml`),
+         em `dados.semInicio`: uma segunda porta aqui gravaria o início por
+         outro caminho, e as duas divergiriam na primeira manutenção (a espec
+         dá UMA porta, §3.1 "2A × 2B").
+       ================================================================== */
+    avancoModalHtml: function (dados) {
+      dados = dados || {};
+      var h = '<div class="cx-avanco-painel">';
+      if (dados.erro) h += '<div class="cx-aviso cx-compat-ruim">' + esc(String(dados.erro)) + '</div>';
+      if (dados.semInicio) {
+        /* ⚠ SEM INÍCIO FIXO NÃO HÁ AVANÇO (O14/I13): o avanço lançado vira
+           piso de data ABSOLUTA na sombra. Com o início em "hoje", a 1.2.81
+           recalcularia amanhã com o piso de hoje e mostraria outra data,
+           calada. Por isso a porta vem antes de qualquer campo. */
+        return h + '<p>' + esc("O avanço lançado vira data fixa no cronograma. Sem o início da obra fixado, aparelhos com a versão anterior calculariam outra data a cada dia.") +
+          '</p>' + dados.semInicio + '</div>';
+      }
+      h += '<div class="field"><label>Data de corte</label><input id="av-corte" type="date" value="' + esc(String(dados.corte || "")) + '"' +
+        (dados.hoje ? ' max="' + esc(String(dados.hoje)) + '"' : '') + '></div>' +
+        '<p class="muted cx-av-nota">' + esc("O avanço descreve a obra até o FIM deste dia. O que falta recomeça no dia útil seguinte" +
+          (dados.proximoUtil ? " (" + dmaS(dados.proximoUtil) + ")." : ".")) + '</p>';
+      var ctx = [];
+      if (dados.ultimoDiario) ctx.push("Último diário publicado: " + dmaS(dados.ultimoDiario));
+      if (dados.anterior && dados.anterior.corte) ctx.push("Avanço anterior: " + dmaS(dados.anterior.corte) + " (" + (dados.anterior.nos || 0) + " tarefa(s))");
+      if (ctx.length) h += '<p class="muted cx-av-ctx">' + esc(ctx.join(" · ")) + '</p>';
+      h += this.avancoSugestoesHtml(dados.fontes, { corte: dados.corte });
+      if (dados.antesDepois) h += '<div class="cx-aviso cx-av-diff">' + esc(String(dados.antesDepois)) + '</div>';
+      if (dados.semBase) {
+        h += '<div class="cx-aviso">' + esc("Esta obra ainda não tem linha de base. Reprogramando agora, o prazo original só fica visível na proposta.") + '</div>';
+      }
+      return h + '</div>';
+    },
+
+    /* ------------------------------------------------------------------
+       AS SUGESTÕES, UMA TABELA POR FONTE (E-MC5).
+
+       ⚠ `fontes` é uma LISTA de `{fonte, linhas}`, e não uma lista de linhas.
+         Hoje só a do diário é montada; a da medição chega pela fiação da
+         ESPEC-medicao-cc (mc-6B) SEM EDITAR ESTA FUNÇÃO. Com uma lista só, a
+         medição entraria misturada às linhas do diário — e a tabela diria "os
+         diários dizem" sobre um número que veio de um boletim aprovado. Duas
+         fontes, dois títulos, duas tabelas.
+       ------------------------------------------------------------------ */
+    ROT_FONTE: { diario: "Os diários publicados dizem", medicao: "As medições aprovadas dizem" },
+    avancoSugestoesHtml: function (fontes, opts) {
+      opts = opts || {};
+      var self = this, l = arr(fontes), h = "", n = 0;
+      l.forEach(function (f) {
+        if (!f || typeof f !== "object") return;
+        var linhas = arr(f.linhas);
+        if (!linhas.length) return;
+        n++;
+        var fid = String(f.fonte == null ? "" : f.fonte);
+        var rot = own(self.ROT_FONTE, fid) ? self.ROT_FONTE[fid] : ("Sugestões de " + (fid || "outra fonte"));
+        h += '<div class="cx-pr-sec cx-av-fonte"><b>' + esc(rot + (opts.corte ? " até " + dmaS(opts.corte) : "") + ":") + '</b></div>' +
+          '<table class="tbl cx-av-sug" data-fonte="' + esc(fid) + '"><thead><tr><th>Tarefa</th><th>No avanço</th><th>' +
+          esc(fid === "medicao" ? "Nas medições" : "Nos diários") + '</th><th>Usar</th></tr></thead><tbody>';
+        linhas.forEach(function (x) {
+          if (!x || !x.id) return;
+          h += '<tr><td>' + esc(corta(String(x.numero || "") + " " + String(x.nome || x.id), 46)) + '</td>' +
+            '<td>' + esc(x.atual == null ? "—" : String(x.atual)) + '</td>' +
+            '<td>' + esc(x.novo == null ? "—" : String(x.novo)) + (x.rotulo ? ' <span class="muted">(' + esc(String(x.rotulo)) + ')</span>' : '') + '</td>' +
+            '<td><input type="checkbox" data-av-sug="' + esc(String(x.id)) + '" data-av-fonte="' + esc(fid) + '"' + (x.marcada ? ' checked' : '') + '></td></tr>';
+        });
+        h += '</tbody></table>';
+      });
+      if (!n) return '<p class="muted cx-av-semsug">' + esc("Nenhuma sugestão nesta data: os lançamentos já estão no avanço, ou ainda não há lançamento.") + '</p>';
+      return h;
+    },
+
+    /* a confirmação de [Limpar o avanço] (avanco.md passo 7) — com os DOIS
+       términos, porque é isso que a pessoa precisa para decidir */
+    avancoLimparHtml: function (dados) {
+      dados = dados || {};
+      return '<p>' + esc("Apagar o avanço lançado em " + (dados.nos || 0) + " tarefa(s) (até " + dmaS(dados.corte) +
+        ") e voltar o plano ao que era antes das datas reais?" +
+        (dados.de && dados.para ? " O término volta de " + dmaS(dados.de) + " para " + dmaS(dados.para) + "." : "")) + '</p>' +
+        '<p class="muted">' + esc("Os diários e as medições não mudam.") + '</p>';
+    },
+
+    /* ==================================================================
+       OS REGISTROS DA LINHA DO PRAZO (T20) — [Lançar/Atualizar avanço] e
+       [Calendários (N)].
+
+       ⚠ A AÇÃO MORA NO CARD DO NÚMERO QUE ELA MUDA (memória "ação mora no
+         card do número"): o botão do avanço fica ao lado do prazo, que é o
+         número que ele altera. Na sub-aba Parâmetros ninguém o encontraria —
+         já aconteceu nesta base, com quatro recados apontando para um lugar
+         que o clique seguinte fechava.
+       ⚠ A 2A DESENHA A LINHA; a 2B só registra pela tomada. Sem estes dois
+         registros a linha sai byte a byte a de hoje — é o controle negativo
+         da `e2e-crono-calendario-painel` (registro removido → o link some).
+       ================================================================== */
+    _regPrazo2B: (function () {
+      _prazoReg.push({
+        id: "avanco", ordem: 20,
+        quando: function (d) {
+          var Cr = C();
+          if (Cr && typeof Cr.recursos === "function" && Cr.recursos().avanco === false) return false;
+          /* SÓ NO PLANO DA OBRA: o avanço é o que aconteceu na obra, não uma
+             hipótese da proposta. No orçamento a porta já é [Iniciar plano]. */
+          return !!(d && d.obra && d.obra.alvo && d.obra.alvo.tipo === "plano" && d.obra.alvo.obra);
+        },
+        html: function (d) {
+          var ob = d.obra.alvo.obra, av = (d.r && d.r.avanco) || null;
+          var cont = (av && av.contagem) || {}, nAv = (cont.concluidas || 0) + (cont.andamento || 0);
+          var sel = "";
+          if (av && av.corte) {
+            sel = '<span class="pill cx-pill-avanco" title="' + esc("O avanço descreve a obra até o fim de " + dmaS(av.corte) +
+              ". O que falta foi reprogramado a partir do dia útil seguinte.") + '">📍 Avanço até ' + esc(dmaS(av.corte)) +
+              (nAv ? esc(" · " + nAv + " tarefa(s)") : "") + '</span>';
+          }
+          return sel + '<button class="btn sm' + (av && av.corte ? '' : ' primary') + '" data-acao="crono-avanco-abrir" data-obra="' + esc(String(ob.id)) +
+            '" title="' + esc("Lançar o % concluído, o início e o fim reais de cada tarefa, e reprogramar o que falta a partir de uma data de corte. A proposta aprovada não muda.") +
+            '">' + (av && av.corte ? "Atualizar avanço" : "Lançar avanço") + '</button>';
+        }
+      });
+      _prazoReg.push({
+        id: "cal", ordem: 30,
+        quando: function (d) {
+          var Cr = C();
+          if (Cr && typeof Cr.recursos === "function" && Cr.recursos().cal === false) return false;
+          return !!(d && d.r);
+        },
+        html: function (d) {
+          var cron = (d.orc && d.orc.cronograma && typeof d.orc.cronograma === "object") ? d.orc.cronograma : {};
+          var cal = (cron.cal && typeof cron.cal === "object" && !ehArr(cron.cal)) ? cron.cal : null;
+          var n = cal ? arr(cal.lista).length : 0;
+          /* sem calendário nenhum o link CONTINUA: é por ele que se cria o
+             primeiro — a sub-aba Parâmetros é o caminho longo */
+          /* ⚠ `pill`, E NÃO `gx-uso-link`: a régua do cronograma
+             (e2e-padrao-cronograma) mede TODO clicável acima do Gantt e
+             aceita 32 px/raio 8 para botão e 24 px/raio 999 para pill. O
+             `gx-uso-link` — que é da barra de uso, abaixo — sai com 18,6 px e
+             raio 0: medido em 21/09/2026 na fusão da Onda 2, reprovou nos
+             cinco tamanhos e nos dois temas, e na base do branch a lista
+             estava vazia. A linha do prazo já é feita de pills (caminho
+             crítico, feriados, com as opcionais, Saúde), então a pill também
+             é o que mantém a intenção da espec: mais leve que o botão
+             [Lançar avanço] ao lado, sem inventar um sexto jeito de clicável. */
+          return '<button type="button" class="pill cx-pill-cal-bt" data-acao="crono-cal-abrir" title="' +
+            esc(n ? "Frentes em calendário próprio: a duração delas é contada nos dias de trabalho da frente."
+                  : "Uma frente que trabalha em outro regime (7×7, dois turnos, sábado até 12h) ganha um calendário próprio.") +
+            '">' + (n ? "Calendários (" + n + ")" : "Calendários") + '</button>';
+        }
+      });
+      _prazoReg.sort(function (a, b) { return (a.ordem - b.ordem) || (a.id < b.id ? -1 : (a.id > b.id ? 1 : 0)); });
+      return 1;
+    })(),
+    /*
+     * ↑ região da fatia 2B: modais, cartão "Compatibilidade" e os registros da
+     * linha do prazo (registrarPrazo). A âncora abaixo fecha o objeto.
+     *
+     */
+
+    /* ===== MEDCC 6B ===== */
+    _regMedcc6B: 1,
+
+    /* ==================================================================
+       AS FAIXAS DA MEDIÇÃO NA LINHA DO PRAZO (ESPEC-medicao-cc §3.1)
+
+       Quatro recados, todos DERIVADOS (nada disto é gravado):
+         · sugestão       — "as medições aprovadas dizem mais que o avanço"
+         · aprovada sem lançar (D-MX1) — o boletim foi aprovado e os números
+           não chegaram ao avanço (é o que uma 1.2.81 deixa para trás, e o
+           que sobra quando a gravação foi recusada)
+         · sem lastro     — o boletim que sustenta N tarefas deixou de contar
+         · diário chegou  — o diário passou a ter a tarefa que a medição tinha
+
+       ⚠ ELAS MORAM NA LINHA DO PRAZO, pelo registro T20 — e não na sub-aba
+         Parâmetros. A ação mora no card do NÚMERO que ela muda (memória
+         "ação mora no card do número"): o prazo é o número que o avanço
+         altera. Quatro recados desta base já apontaram para um lugar que o
+         clique seguinte fechava.
+       ⚠ E ELAS SOMEM NO MODO "APRESENTAR" DAS CAMADAS (R3-4, D30 do
+         planejador). "A medição 01a foi reaberta" é conversa interna da RA;
+         o modo "Apresentar" existe justamente para mostrar o Gantt ao
+         cliente na reunião. O modal e o previsto × realizado NÃO mudam: eles
+         não estão na tela que se projeta.
+       ================================================================== */
+    _medccApresentando: function () {
+      var A = G("App");
+      if (!A) return false;
+      var cam = null;
+      try { cam = (typeof A._cronoCamadasLer === "function") ? A._cronoCamadasLer() : A._cronoCamadas; } catch (e) { cam = null; }
+      return !!(cam && cam.apresentar);
+    },
+    /* o texto de cada faixa, puro (a suíte mede daqui, sem navegador) */
+    medFaixasHtml: function (f) {
+      if (!f) return "";
+      var h = "", o = esc(String(f.obraId || ""));
+      var porta = '<button class="btn sm ghost cx-med-puxar" data-acao="crono-avanco-med-puxar" data-obra="' + o + '">Puxar das medições</button>';
+      var precisaPorta = false;
+      if (f.sugerir) {
+        h += '<span class="pill cx-pill-med cx-med-sugere" title="' +
+          esc("O avanço lançado é atualizado só por quem planeja. Estas tarefas são as que os boletins aprovados completam — o diário continua mandando onde ele fala.") + '">📋 ' +
+          esc(f.sugerir + " tarefa(s) nas medições" + (f.corte ? " até " + dmaS(f.corte) : "")) + '</span> ';
+        precisaPorta = true;
+      }
+      /* ⚠ A FAIXA "APROVADA SEM LANÇAR" (D-MX1, §3.1) — a quarta da espec, e
+         a que DOIS recados do canal já prometiam pelo nome ("abra o
+         Cronograma da obra: a faixa “aprovada sem lançar” tem [Puxar das
+         medições]"). Até 22/09/2026 ela era apurada em `App._medccFaixas` e
+         não era desenhada em lugar nenhum: quem seguisse o recado procuraria
+         por um nome que a tela não tem. Porta prometida precisa existir. */
+      if (f.aprovadaSemLancar && f.aprovadaSemLancar.length) {
+        var nB = arr(f.aprovadaSemLancar).map(function (x) { return String(x.numero || x.id); });
+        nB.sort();
+        h += '<span class="pill cx-pill-med cx-med-semlancar" title="' +
+          esc("O boletim foi aprovado com “usar no avanço” e os números dele ainda não estão no avanço lançado. Nada se perde: [Puxar das medições] lança o que ele mede.") + '">📥 ' +
+          esc("medição " + nB.join(", ") + " aprovada sem lançar") + '</span> ';
+        precisaPorta = true;
+      }
+      if (precisaPorta) h += porta;
+      if (f.conflito) {
+        h += '<span class="pill cx-pill-med cx-med-conflito" title="' +
+          esc("Você lançou um número e a medição aprovada diz outro. Nada foi mudado: abra [Atualizar avanço] para ver os dois lado a lado.") + '">⚖ ' +
+          esc(f.conflito + " tarefa(s) com número diferente da medição") + '</span>';
+      }
+      /* ⚠ o nome da tarefa vem do mapa de nós (`f.nomes`), nunca das
+         sugestões: quando o boletim é reaberto a tarefa some das sugestões e
+         a faixa sairia com o id cru do nó */
+      /* ⚠ CORTADO EM 40: a linha do prazo é uma fila de pills, e o nome
+         inteiro de uma subetapa ("Projeto estrutural executivo (fundacao +
+         detalhamento da metalica)") empurrava os dois botões da decisão para
+         a linha de baixo — medido na foto da e2e a 1366 px. O número vem
+         antes, que é por ele que a pessoa acha a tarefa. */
+      var nomeNo = function (id) {
+        var nm = (f.nomes && f.nomes[id]) || null;
+        if (!nm) return String(id);
+        return (nm.numero ? nm.numero + " " : "") + corta(String(nm.nome || id), 40);
+      };
+      if (f.semLastro && f.semLastro.length) {
+        /* ⚠ O NÚMERO DO BOLETIM, NUNCA O ID: "a medição demo-galpao-med-01
+           foi reaberta" não é recado, é despejo de banco de dados. Quando o
+           mapa não conhece o boletim, o id sai — feio, mas verdadeiro. */
+        var b0 = f.semLastro[0], quantos = {}, k, nomes = [];
+        arr(f.semLastro).forEach(function (x) { quantos[String(x.bNumero || x.b)] = (quantos[String(x.bNumero || x.b)] || 0) + 1; });
+        for (k in quantos) if (own(quantos, k)) nomes.push(k);
+        nomes.sort();
+        h += '<span class="pill cx-pill-med cx-med-semlastro" title="' +
+          esc("Nada foi mudado no avanço: o número pode estar certo — a obra pode ter sido feita e o boletim recusado por preço. Use [Rever] para decidir tarefa a tarefa.") + '">⚠ ' +
+          esc(f.semLastro.length + " tarefa(s) com avanço da medição " + nomes.join(", ") + " (" + (b0.situacao === "reaberta" ? "reaberta" : (b0.situacao === "rejeitada" ? "rejeitada" : (b0.situacao === "excluida" ? "excluída" : "fora da conta"))) + ")") +
+          '</span> <button class="btn sm ghost cx-med-rever" data-acao="crono-avanco-med-rever" data-obra="' + o + '">Rever</button>';
+      }
+      /* ⚠ "NÃO CONSEGUI PERGUNTAR AOS DIÁRIOS" — e a faixa diz isso, sem
+         porta. Antes, a leitura falha dos diários virava `false` no motor
+         ("o diário TEM o nó") e a linha do prazo escrevia "📓 3.1 passou a
+         ter lançamento nos diários" com [Usar o diário] ao lado — que no
+         clique respondia "Os diários ainda não apuram esta tarefa". O app
+         afirmava um fato e o desmentia no clique seguinte. Uma faixa só, com
+         a contagem: N linhas repetindo a mesma falha seria despejo. */
+      if (f.diarioIlegivel) {
+        h += '<span class="pill cx-pill-med cx-med-ilegivel" title="' +
+          esc("A medição não completa tarefa sobre a qual não conseguiu perguntar ao diário. Nada foi lançado e nada foi apagado. Se os diários desta obra abrem normalmente, recarregue o app.") + '">📓 ' +
+          esc("não consegui ler os diários desta obra: " + f.diarioIlegivel + " tarefa(s) ficaram como estão") + '</span> ';
+      }
+      arr(f.diarioChegou).forEach(function (s) {
+        h += '<span class="pill cx-pill-med cx-med-diario" title="' +
+          esc("O diário mede o que foi FEITO; a medição, o que foi aprovado para pagamento. Quando os dois falam da mesma tarefa, quem planeja costuma querer o do diário.") + '">📓 ' +
+          esc(nomeNo(s.id) + " passou a ter lançamento nos diários") + '</span> ' +
+          '<button class="btn sm ghost" data-acao="crono-avanco-med-usar-diario" data-obra="' + o + '" data-no="' + esc(String(s.id)) + '">Usar o diário</button> ' +
+          '<button class="btn sm ghost" data-acao="crono-avanco-med-manter-medicao" data-obra="' + o + '" data-no="' + esc(String(s.id)) + '">Manter a medição</button>';
+      });
+      return h;
+    },
+    _regPrazoMedcc: (function () {
+      _prazoReg.push({
+        id: "med-avanco", ordem: 25,
+        /* ⚠ `quando` FALSO NO MODO "APRESENTAR" (R3-4). Sem esta linha, "a
+           medição 01a foi reaberta em 12/08" apareceria ao lado do prazo
+           numa apresentação ao cliente. O registro que lança não derruba a
+           linha (o `_prazoRegistrados` cerca cada um), mas um `quando` que
+           ignora as camadas não dá erro nenhum — ele só expõe. */
+        quando: function (d) {
+          var Cr = C();
+          if (Cr && typeof Cr.recursos === "function" && Cr.recursos().avanco === false) return false;
+          if (CronoExecUI._medccApresentando()) return false;
+          return !!(d && d.obra && d.obra.alvo && d.obra.alvo.tipo === "plano" && d.obra.alvo.obra);
+        },
+        html: function (d) {
+          var A = G("App"), ob = d.obra.alvo.obra;
+          if (!A || typeof A._medccFaixas !== "function") return "";
+          var f = null;
+          try { f = A._medccFaixas(String(ob.id)); } catch (e) { f = null; }
+          if (!f) return "";
+          return CronoExecUI.medFaixasHtml(f);
+        }
+      });
+      _prazoReg.sort(function (a, b) { return (a.ordem - b.ordem) || (a.id < b.id ? -1 : (a.id > b.id ? 1 : 0)); });
+      return 1;
+    })(),
+    /*
+     * ↑ região da fatia MEDCC 6B (faixas da medição na linha do prazo e as
+     * chaves `medcc` no cartão "Compatibilidade"). A âncora abaixo fecha o
+     * objeto.
+     *
+     */
+    _regFim: 1
   };
 
   global.CronoExecUI = CronoExecUI;

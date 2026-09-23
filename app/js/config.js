@@ -37,7 +37,7 @@
        novo. Com as duas fontes, vale sempre a MAIOR. */
     manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
 
-    versao: "1.2.85",
+    versao: "1.2.86",
     schemaVersao: 3, // usado nas migrações de persistência
 
     // Oferta de lançamento do Plus — data/hora que a condição termina (após isso, a urgência some sozinha)
@@ -70,6 +70,75 @@
       arquivoAmostra: "data/sinapi-sample.json", // fallback didático (30 itens)
       competenciaPadrao: "2026-06",
       ufPadrao: "MG"
+    },
+
+    /* ---- Chaves de desligar do cronograma (planejador, Onda 0, T12) ----
+       A FROTA INTEIRA se desliga por versão (uma versão com `motor: false`);
+       uma instalação só, pela chave local `orcapro:tela:crono-recursos:v1`
+       (suporte). Quem lê é o App no boot (`_cronoRecursosBoot`) e entrega ao
+       motor, que é puro. ⚠ `motor: false` = as datas que a versão 1.2.81
+       calcula, sombra incluída (tudo ou nada: desligar metade de uma sombra
+       composta mudaria a data). As outras só escondem portas da tela e
+       impedem criar dado novo; nenhuma apaga dado. Espec §6.2. */
+    cronoRecursos: {
+      motor: true, rede: true, extras: true, cal: true, avanco: true,
+      bases: true, seloTardio: true, historico: true, filtro: true, pilha: true, sino: true
+    },
+
+    /* ---- Chaves de desligar da leva "medição × centros de custo" ----
+       (ESPEC-medicao-cc §1.10 e §11.3; tomada T-MC1 da `mc-4-0`).
+       Mesma régua das `cronoRecursos`: a frota inteira por versão, uma
+       instalação só pela chave local `orcapro:tela:medcc-recursos:v1`.
+       Quem lê é o `Gestao._medcc(nome)`; MOTOR PURO NÃO LÊ NENHUMA DELAS.
+       ⚠ NENHUMA CHAVE APAGA DADO (§11.3). Desligada, a porta some e dado
+         novo não nasce; `lancarAvanco`, `avancoMedicao` e as entradas
+         `o:"medicao"` já gravadas continuam valendo e sincronizando. Uma
+         chave que apagasse seria pior que o defeito que ela desliga.
+       ⚠ `medOrigem` é a contingência K36: se a 1.2.82 for publicada sem as
+         emendas E-MC1/E-MC2 do planejador, o canal passa a gravar entradas
+         DIGITADAS (sem `o` e sem `b`), porque um aparelho que não sabe ler
+         `o:"medicao"` descartaria a entrada inteira e o realizado da obra
+         sumiria lá. Nesta árvore as duas emendas estão no
+         `js/cronoavanco.js`, então ela nasce ligada.
+       ⚠ `ccIA` nasce DESLIGADA (§1.10): nenhuma chamada nesta leva.
+       ⚠⚠ `medAvancoAuto` NASCE DESLIGADA NA 1.2.86, E NÃO PODE SER RELIGADA
+         SEM CONSERTAR O CARIMBO. NÃO REMOVA ESTA LINHA SEM LER O ROTEIRO.
+         Roteiro do defeito (revisão de publicação da 1.2.86, medido em
+         bancada com o `App._cronoAvancoDaMedicao`, o `CronoBase.salvarAvanco`
+         e o `Nuvem._merge` REAIS — tools/test-medavanco-dois-aparelhos.js):
+           dois aparelhos EM DIA (mesmo registro de avanço no disco, mesma
+           marca de sync) aprovam o MESMO boletim, cada um no seu relógio
+           (14:00 e 14:31). O carimbo fraco (E-MC4, js/app.js
+           `_cronoGravarAvanco`) é `max(carimbo do disco, marca de sync) + 1
+           ms` — uma conta feita só com valores JÁ SINCRONIZADOS. Os dois
+           saem com o MESMO `atualizadoEm` (2026-09-20T12:00:00.001Z) e
+           conteúdos DIFERENTES (A: e3=40% e4=12% · B: e3=100% e4=36,5%,
+           porque B tinha um boletim aprovado no campo que ainda não subiu).
+           O `Nuvem._merge` trata carimbo igual como "mesma versão"
+           (js/nuvem.js, `if (tl === tc) { byId[o.id] = o; return; }`) e fica
+           com o LOCAL dos dois lados. Seis rodadas de sync depois cada
+           aparelho continua mostrando o seu número, a tela conta ZERO
+           conflito e ninguém é avisado — o avanço da obra diverge calado,
+           para sempre.
+         A chave desligada fecha o caminho INTEIRO: o único produtor de
+         `carimboFraco` em js/ é `opts.gatilho` (js/app.js:19900), e o único
+         chamador com `gatilho` é o `Gestao._medAvancoAposAprovar`, que só
+         chega lá depois deste `_medcc("medAvancoAuto")`. O caminho MANUAL
+         ([Puxar das medições] da faixa, js/app.js `_medccPuxar`) passa `{}` e
+         carimba com `Util.agoraISO()`, que difere entre aparelhos — esse
+         continua ligado, está correto, e é a PORTA que esta trava deixa
+         aberta (ela fica sob `medAvanco`, que segue ligada).
+         ⚠ NADA É APAGADO: `lancarAvanco` continua sendo gravado no boletim, e
+           quem aprova lê um recado que NÃO promete lançamento (o ramo
+           "o lançamento automático ao aprovar está desligado nesta
+           instalação" do `_medAvancoAposAprovar`).
+         O conserto de verdade fica para a 1.2.87: o carimbo precisa carregar
+         algo do APARELHO (id do dispositivo, aleatório) para dois aparelhos
+         nunca empatarem. Quem religar esta chave antes disso reprova a suíte
+         `tools/test-medavanco-dois-aparelhos.js`, que é exatamente o ponto. */
+    medccRecursos: {
+      medAvanco: true, medAvancoAuto: false, medOrigem: true,
+      ccGerar: true, ccAgente: true, ccDocumentos: true, ccSino: true, ccIA: false
     },
 
     // ---- Presets de BDI (fórmula Acórdão TCU 2622/2013) ----

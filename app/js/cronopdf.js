@@ -69,8 +69,19 @@
     '.cron-doc table.cron-eap tr.h0 td{font-weight:700;background:#f3f6fa}' +
     '.cron-doc table.cron-eap tr.h2 td{font-size:8.6pt;color:#334155}' +
     '.cron-doc .cron-tag{font-size:8pt;font-weight:400;color:#5a6b7b;border:1px solid #cbd5e1;border-radius:3px;padding:0 4px;margin-left:4px}' +
+
     '@media print{.cron-doc .cron-gpag{page-break-inside:avoid;break-inside:avoid}' +
     '.cron-doc .cron-gpag+.cron-gpag{page-break-before:always;break-before:page}}' +
+    '</style>';
+
+  /* ⚠ CSS SÓ DA LINHA T (planejador 3A), em <style> à parte pela MESMA razão
+     do CSS_HIER: sem tarefa sem preço o documento não pode ganhar um
+     caractere. A linha T é tracejada também na tabela, para quem confere o
+     papel contra o Gantt reconhecer a mesma tarefa pelo mesmo traço. */
+  var CSS_TX =
+    '<style>' +
+    '.cron-doc table.cron-eap tr.cron-tx td{background:#faf7ff;border-top:1px dashed #7c3aed;border-bottom:1px dashed #7c3aed}' +
+    '.cron-doc table.cron-eap tr.cron-tx td.n{color:#6d28d9;font-weight:700}' +
     '</style>';
 
   /* ⚠ CSS SÓ DO GANTT RECORTADO NO TEMPO (opts.mesesPorFolha), em <style>
@@ -87,11 +98,26 @@
   // rótulo curto de mês — o mesmo alfabeto de `Cronograma.periodos` ("set/26")
   var MESES3 = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 
+  /* O RESPONSÁVEL DA TAREFA SEM PREÇO em português de papel (planejador 3A).
+     ⚠ "cliente" é a chave no disco (js/cronoextras.js:50) e "Contratante" é a
+     palavra do contrato: este documento vai para quem assina, e lá não existe
+     "cliente" como parte. A tela usa "o contratante" pelo mesmo motivo
+     (js/cronoexecui.js:6523). */
+  var ROTULO_RESP = { cliente: "Contratante", construtora: "Construtora", terceiro: "Terceiro" };
+
   function ehData(d) { return !!d && typeof d.getTime === "function" && !isNaN(d.getTime()); }
   function own(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
   function numero(v) { return typeof v === "number" && isFinite(v); }
-  // "2.g,2.3II+5" → "#2.g, #2.3II+5" (o "#" diz que é nº de linha, não quantidade — como no documento por etapa)
-  function comCerquilha(dep) { return (!dep || dep === "0") ? "" : dep.split(",").map(function (s) { return "#" + s; }).join(", "); }
+  /* "2.g,2.3II+5" → "#2.g, #2.3II+5" (o "#" diz que é nº de linha, não
+     quantidade — como no documento por etapa).
+     ⚠ O "0" SOZINHO NO MEIO SAI (planejador 3A). "0,T1" é a sintaxe de
+     digitação para "não vem depois de nenhuma etapa, só da tarefa T1" (O23);
+     escrito no papel como "#0, #T1" ele vira uma etapa de número zero, que
+     não existe em documento nenhum. */
+  function comCerquilha(dep) {
+    if (!dep || dep === "0") return "";
+    return dep.split(",").filter(function (s) { return s !== "0"; }).map(function (s) { return "#" + s; }).join(", ");
+  }
 
   var CronoPDF = {
 
@@ -226,8 +252,19 @@
       }
       var total = 0;
       if (val) linhas.forEach(function (n) { if (n.tipo === "etapa") total += val[n.id]; });
-      return { ok: true, detalhe: detalhe, linhas: linhas, gantt: gantt, paginas: this.paginasGantt(gantt, this.POR_PAGINA),
+      /* ⚠ AS LINHAS T ENTRAM DEPOIS DE TUDO O QUE CONTA (planejador 3A).
+         Roteiro dos dois defeitos que esta ordem impede:
+         (1) a guarda "ficou sem data" acima devolveria `ok:false` — e o
+             documento inteiro cairia para o nível etapa — por causa de UMA
+             tarefa sem preço sem data (a que espera o início fixo da obra);
+         (2) a cobertura do VALOR (`cobre`) exige número em TODA linha, e a
+             tarefa sem preço não tem valor por definição (D2). Com ela na
+             lista, a coluna Valor e a coluna Peso sumiriam do papel do
+             orçamento inteiro — por uma linha que nunca teve preço. */
+      var linhasDoc = this._comExtras(r, linhas), ganttDoc = this._comExtras(r, gantt);
+      return { ok: true, detalhe: detalhe, linhas: linhasDoc, gantt: ganttDoc, paginas: this.paginasGantt(ganttDoc, this.POR_PAGINA),
         valor: val, total: total, motivoValor: motivoValor, nSub: nSub, nSoltos: nSoltos, nServ: nServ, nSemBase: nSemBase,
+        nExtras: (r.extras || []).length,
         avisos: (r.exec && r.exec.avisos) || [], rede: !!(r.exec && r.exec.rede) };
     },
 
@@ -247,6 +284,189 @@
       return pags;
     },
 
+    /* =================================================================
+       PLANEJADOR 3A — O QUE O PAPEL GANHOU, E COMO ELE CONTINUA O DE SEMPRE
+
+       Toda função daqui devolve "", null ou a lista intacta quando o
+       resultado do motor NÃO tem tarefa sem preço, calendário próprio nem
+       avanço lançado. É o que segura o `test-crono-documentos` (≈700 arquivos
+       comparados byte a byte com o master) e as 38 instalações: documento de
+       orçamento comum não ganha um caractere.
+       ================================================================= */
+
+    /* Há algo desta leva para desenhar neste resultado? */
+    _temNovo: function (r) {
+      if (!r) return false;
+      return !!((r.extras && r.extras.length) || r.avanco || (r.calendarios && (r.calendarios.usados || []).length));
+    },
+
+    /* AS LINHAS DAS TAREFAS SEM PREÇO NA LISTA DO DOCUMENTO.
+       ⚠ A ORDEM É A DA TELA, e de propósito: quem confere o papel contra o
+         app compara linha a linha, e uma T pendurada na etapa 3 no app e no
+         fim da folha no PDF vira "o PDF está errado". Por isso a colocação
+         vem do `CronoExecUI.intercalarExtras` (T7), em vez de uma segunda
+         regra escrita aqui — que apodreceria contra a da tela (memória
+         "réplica de parser apodrece").
+       Sem `r.extras`, ou sem o módulo da tela, devolve a MESMA lista. */
+    _comExtras: function (r, lista) {
+      if (!r || !r.extras || !r.extras.length) return lista;
+      /* ⚠ SEM O MÓDULO DA TELA, AS LINHAS T NÃO SOMEM — elas vão PARA O FIM.
+         Roteiro do defeito, medido no navegador em 21/09/2026: o
+         js/cronoexecui.js não estava carregado no ambiente que montava o
+         documento, esta função devolvia a lista intacta e o papel saía com as
+         três tarefas sem preço na TABELA por etapa e em NENHUMA linha do Gantt
+         detalhado — calado. No app o módulo está sempre lá (index.html carrega
+         o cronoexecui.js antes do cronopdf.js) e a ordem é a da tela; fora
+         dele, conteúdo no fim vale mais que conteúdo ausente. */
+      var fn = null;
+      if (typeof CronoExecUI !== "undefined" && CronoExecUI && typeof CronoExecUI.intercalarExtras === "function") {
+        try { fn = CronoExecUI.intercalarExtras(r); } catch (e) { fn = null; }
+      }
+      if (typeof fn !== "function") {
+        var fim = lista.slice();
+        r.extras.forEach(function (x) {
+          var c = {}, k;
+          for (k in x) if (own(x, k)) c[k] = x[k];
+          c.tipo = "extra";
+          fim.push(c);
+        });
+        return fim;
+      }
+      var env = lista.map(function (n) {
+        return { tipo: n.tipo === "etapa" ? "etapa" : (n.tipo === "servico" ? "servico" : "folha"), i: -1, et: n.tipo === "etapa" ? n : null, no: n };
+      });
+      var fora = null;
+      try { fora = fn(env); } catch (e2) { fora = null; }
+      if (!fora || !fora.length) return lista;
+      return fora.map(function (l) { return l.no; });
+    },
+
+    /* As TOMADAS da 2A no desenho do papel (T7). `null` em cada uma = o Gantt
+       de sempre, byte a byte.
+       ⚠ CAMADAS NÃO VALEM NO PAPEL. O botão "Camadas" é preferência de quem
+         está apresentando na tela; o documento é sempre INTEIRO — pela mesma
+         razão que o filtro da tela não vale aqui. Passar `null` como camada é
+         o que liga tudo (`camadasNorm(null)`). */
+    _tomadas: function (r) {
+      var o = {};
+      if (typeof CronoExecUI === "undefined" || !CronoExecUI) return o;
+      try { if (CronoExecUI.intercalarExtras) o.intercalar = CronoExecUI.intercalarExtras(r); } catch (e) {}
+      try { if (CronoExecUI.barraDoPlanejador) o.barraDe = CronoExecUI.barraDoPlanejador(r, null); } catch (e2) {}
+      /* ⚠ `camadas: {depois}` E NÃO `camadas2A`. As duas portas existem e
+         são de níveis diferentes: `camadas2A` é lido pelo `ganttProEstado` (o
+         Gantt PRO da aba, que o converte em `pro.camadas`); o desenho puro
+         `CronoExecUI.gantt`, que é o do PAPEL, lê `opts.camadas` no formato
+         {antes(geo), depois(geo)} — e IGNORA `camadas2A` calado.
+         Roteiro do defeito, medido em 21/09/2026: o papel do plano saiu com a
+         nota "a linha tracejada no gráfico é a data de corte" e o gráfico
+         SEM linha de corte nenhuma. O único tracejado laranja do desenho era
+         o "hoje" de sempre — o documento mandava o leitor procurar na figura
+         um símbolo que não estava lá, e ainda por cima apontava para outro.
+         Recado que mente é pior que recado nenhum. */
+      try {
+        if (CronoExecUI.camadaDoPlanejador) {
+          var fn = CronoExecUI.camadaDoPlanejador(r, null, {});
+          if (typeof fn === "function") o.camadas = { depois: fn };
+        }
+      } catch (e3) {}
+      return o;
+    },
+
+    /* O "Depende de" COM OS QUATRO TIPOS E COM AS T, no formato único do
+       motor (`Cronograma._textoRede`, via `predsTexto`/`predsTextoSub`).
+       ⚠ NÃO SE ESCREVE FORMATO AQUI: a tabela da tela, o Excel, o recado do
+         salvar e este papel mostram o mesmo texto porque saem do mesmo
+         formatador. O que esta função faz é MONTAR os elos a partir do
+         resultado do motor (`preds` + `predTipoRede` + `predLag`) — a tela
+         monta os dela a partir do que está digitado, e os dois chegam ao
+         mesmo texto.
+       `numPorId` = {id: "3" | "5.2" | "T1"}; `etNum` = {idDaEtapa: 5} só na
+       subetapa, para sair "E5" (O23). */
+    _dependeDe: function (no, numPorId, etNum, extras) {
+      var Cr = (typeof Cronograma !== "undefined") ? Cronograma : null;
+      if (!Cr || !Cr._textoRede) return "";
+      var tR = no.predTipoRede || null, lT = no.predLagTipo || null;
+      /* ⚠ A ESPERA SAI DE `predLagTipo` QUANDO HÁ REDE NOVA, NUNCA DE
+         `predLag`. Roteiro do defeito, medido em 21/09/2026 numa etapa C de 4
+         dias ligada em `bTT+2`: o motor grava `predLag.b = -2`, porque
+         `predLag`/`predDesloc` são, por contrato (§1.8, O20), o deslocamento
+         EQUIVALENTE DE TI — o número que a 1.2.81 precisa para chegar à mesma
+         data. Escrevê-lo aqui imprimiria "#bTT-2" num elo que a pessoa
+         digitou como "bTT+2": o papel contradizendo a tela, e dizendo ao
+         leitor que a etapa termina 2 dias ANTES quando ela termina 2 depois.
+         `predLagTipo` é a espera na régua do tipo — a que foi digitada. */
+      var naRede = !!(tR || lT);
+      function lagDe(p) {
+        if (naRede) return (lT && lT[p] != null) ? lT[p] : null;
+        return (no.predLag && no.predLag[p] != null) ? no.predLag[p] : null;
+      }
+      var vistos = {};
+      var elos = (no.preds || []).map(function (p) {
+        vistos[p] = 1;
+        var t = (tR && tR[p]) || (no.predTipo && no.predTipo[p] === "II" ? "II" : "TI");
+        return { i: p, t: t, l: lagDe(p) };
+      });
+      /* O ELO CRUZADO (O26): a ligação com uma subetapa de OUTRA etapa mora
+         só em `predTipoRede`/`predLagTipo` — `preds` continua com ids de
+         etapa (I3). Sem este laço, "5.2TT" sumia da coluna do papel e a
+         etapa aparecia dependendo de nada. */
+      [tR, lT].forEach(function (mp) {
+        if (!mp) return;
+        for (var k in mp) {
+          if (!own(mp, k) || own(vistos, k)) continue;
+          vistos[k] = 1;
+          elos.push({ i: k, t: (tR && tR[k]) || "TI", l: lagDe(k) });
+        }
+      });
+      var xs = (extras || []).map(function (x) {
+        return { i: x.id != null ? x.id : x.i, t: x.tipo || x.t || "TI", l: x.lag != null ? x.lag : (x.l || 0), x: true };
+      });
+      var base = elos.length ? Cr._textoRede(elos, numPorId, { etapasNum: etNum || null, vazioExplicito: false })
+        : (no.predsExplicito && !xs.length ? "0" : "");
+      if (!xs.length) return base;
+      if (!base && no.predsExplicito) base = "0";   // "0,T1" (O23)
+      var tx = Cr._textoRede(xs, numPorId, { vazioExplicito: false });
+      return base ? base + "," + tx : tx;
+    },
+
+    /* O RODAPÉ ‡ DAS FRENTES EM CALENDÁRIO PRÓPRIO (D10). O prazo do papel
+       continua em DIAS ÚTEIS DA OBRA — é a única régua em que as etapas se
+       somam. O ‡ diz, ao lado, quantos dias de trabalho a frente tem NO
+       CALENDÁRIO DELA e entre que datas, para quem lê não concluir que a
+       etapa de 12 dias corridos "só trabalha 9".
+       Sem calendário atribuído devolve "". */
+    _rodapeCal: function (r) {
+      var C = r && r.calendarios;
+      if (!C || !(C.usados || []).length) return "";
+      var porCal = {}, nomes = {};
+      (C.lista || []).forEach(function (c) { if (c && c.id != null) nomes[String(c.id)] = String(c.nome || c.id); });
+      function junta(no, rotulo) {
+        if (!no || !no.calendarioId) return;
+        var k = String(no.calendarioId);
+        if (!porCal[k]) porCal[k] = [];
+        porCal[k].push({ rotulo: rotulo, dias: no.duracaoFrente, de: no.dataInicioFrente, ate: no.dataUltimoDia });
+      }
+      (r.etapas || []).forEach(function (e, i) { junta(e, "etapa " + (i + 1)); });
+      (r.extras || []).forEach(function (x) { junta(x, String(x.numero || "T")); });
+      var linhas = [];
+      (C.usados || []).forEach(function (id) {
+        var k = String(id), itens = porCal[k] || [];
+        if (!itens.length) return;
+        var c = null;
+        (C.lista || []).forEach(function (x) { if (x && String(x.id) === k) c = x; });
+        var dpw = 0;
+        if (c && c.h && c.h.length) c.h.forEach(function (hh) { if (hh > 0) dpw++; });
+        linhas.push('<b>‡ ' + esc(nomes[k] || k) + '</b>' + (dpw ? ' — ' + dpw + ' dia' + (dpw === 1 ? '' : 's') + ' por semana' : '') + ': ' +
+          itens.map(function (it) {
+            return esc(it.rotulo) + (it.dias != null ? ' (' + it.dias + ' dia' + (it.dias === 1 ? '' : 's') + ' de trabalho' : ' (') +
+              (ehData(it.de) && ehData(it.ate) ? ', de ' + dbr(it.de) + ' a ' + dbr(it.ate) : '') + ')';
+          }).join(' · ') + '.');
+      });
+      if (!linhas.length) return "";
+      return '<b>Frentes em regime próprio:</b> o prazo acima está em <b>dias úteis da obra</b> — é a régua em que as etapas se somam. ' +
+        'Onde há <b>‡</b>, a frente trabalha no calendário dela:<br>' + linhas.join('<br>') + '<br>';
+    },
+
     /* Uma PARTE do Gantt no formato que o `UI._gantt` desenha (r.etapas), com
        a ESCALA DA OBRA INTEIRA (totalDias, início, semanas, feriados): toda
        parte tem o mesmo eixo de tempo, e uma barra se compara com a da folha
@@ -260,6 +480,18 @@
           categoriaNome: no.categoriaNome, cor: no.cor, inicio: no.inicio, fim: no.fim, duracao: no.duracao, folga: no.folga || 0,
           critico: !!no.critico, marco: !!no.marco, editado: !!no.editado, preds: (no.preds || []).slice(), predsExplicito: !!no.predsExplicito,
           predLag: no.predLag || {}, predDesloc: no.predDesloc || {}, dataInicio: no.dataInicio, dataFim: no.dataFim,
+          /* ⚠ OS TIPOS DE ELO VIAJAM PARA A PÁGINA 2 (planejador 3A; crítica 2,
+             achado 15). Esta cópia alimenta o desenhista `UI._gantt`/`opts`, que
+             recebe SÓ estas linhas — e não o `r` inteiro. Enquanto ela levava
+             apenas `predDesloc`, um TT digitado numa etapa da segunda parte do
+             Gantt era desenhado como TI (seta do fim para o início) e o rótulo
+             do tipo sumia: a página 1 dizia "11TT+2" e a 2, "11+2". Duas folhas
+             do MESMO documento com a mesma ligação em regimes diferentes.
+             `predTipo` entra junto porque é o mapa legado (II) que a folha usa
+             quando não há rede nova. Mapa ausente continua ausente: chave nova
+             só nasce com dado (§1.8, I2). */
+          predTipo: no.predTipo || null, predTipoRede: no.predTipoRede || null, predLagTipo: no.predLagTipo || null,
+          tipo: no.tipo, avanco: no.avanco || null, calendarioId: no.calendarioId || null,
           dataLimite: ehData(no.dataLimite) ? no.dataLimite : no.dataFim };
       });
       return { etapas: rows, atividades: nos, totalDias: r.totalDias, totalSemanas: r.totalSemanas, dataInicio: r.dataInicio,
@@ -278,7 +510,11 @@
       if (typeof opts.desenharGantt === "function") return "opts";
       if (typeof CronoExecUI !== "undefined" && CronoExecUI && typeof CronoExecUI.gantt === "function" && typeof CronoExecUI.linhas === "function") {
         try {
-          var L = CronoExecUI.linhas(r, { detalhe: "subetapa", abertas: {} }) || [];
+          /* ⚠ COM `intercalar` (planejador 3A): sem ele a lista da tela vem
+             SEM as linhas T e a comparação abaixo falha por contagem — o
+             documento cairia no `UI._gantt`, que não desenha tarefa sem
+             preço, e o papel mostraria a T na tabela e não no gráfico. */
+          var L = CronoExecUI.linhas(r, { detalhe: "subetapa", abertas: {}, intercalar: this._tomadas(r).intercalar || null }) || [];
           if (L.length === H.gantt.length && L.every(function (l, i) { var x = l && (l.no || l.et); return !!x && x.id === H.gantt[i].id; })) return "tela";
         } catch (e) { /* desenhista da tela quebrado: o documento sai com o de sempre */ }
       }
@@ -297,10 +533,12 @@
     _ganttPaginado: function (r, H, opts) {
       var self = this, pags = H.paginas, n = pags.length, svgs = [], razao = 0, de = 0;
       var pintor = H.pintor = this._pintor(r, H, opts);
+      var tom = this._tomadas(r);
       pags.forEach(function (nos, k) {
         var rp = self._rPagina(r, nos, k, n), s = "";
         if (pintor === "opts") s = String(opts.desenharGantt(rp, { pagina: k + 1, paginas: n, detalhe: H.detalhe, de: de, ate: de + nos.length }) || "");
-        else if (pintor === "tela") s = String(CronoExecUI.gantt(r, { detalhe: "subetapa", abertas: {}, papel: true, semLegenda: true, de: de, ate: de + nos.length }) || "");
+        else if (pintor === "tela") s = String(CronoExecUI.gantt(r, { detalhe: "subetapa", abertas: {}, papel: true, semLegenda: true, de: de, ate: de + nos.length,
+          intercalar: tom.intercalar || null, barraDe: tom.barraDe || null, camadas: tom.camadas || null }) || "");
         else if (pintor === "ui") s = UI._gantt(rp, { semLegenda: true }).replace(/ · depende de: [^<]*/g, "");
         de += nos.length;
         var vb = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(s);
@@ -314,6 +552,21 @@
           (n > 1 ? '<div class="cron-gpag-tit">Parte ' + (k + 1) + ' de ' + n + ' — linhas ' + esc(nos[0].numero) + ' a ' + esc(nos[nos.length - 1].numero) + ' (mesma escala de tempo em todas as partes)</div>' : '') +
           s + '</div>';
       }).join("");
+    },
+
+    /* O Gantt do documento POR ETAPA. Sem nada novo é o `UI._gantt` de
+       sempre, caractere por caractere; com tarefa sem preço, calendário ou
+       avanço é o desenhista da tela (o único que sabe desenhar os três). */
+    _ganttEtapas: function (r, novo) {
+      if (novo && typeof CronoExecUI !== "undefined" && CronoExecUI && typeof CronoExecUI.gantt === "function") {
+        var tom = this._tomadas(r), s = "";
+        try {
+          s = String(CronoExecUI.gantt(r, { detalhe: "etapa", abertas: {}, papel: true, semLegenda: true,
+            intercalar: tom.intercalar || null, barraDe: tom.barraDe || null, camadas: tom.camadas || null }) || "");
+        } catch (e) { s = ""; }
+        if (s) return s;
+      }
+      return (typeof UI !== "undefined" && UI._gantt) ? UI._gantt(r) : "";
     },
 
     /* notas do detalhado: o que os códigos novos significam, e o que este
@@ -362,19 +615,47 @@
 
     // tabela hierárquica: nº EAP, recuo, nome, duração, depende de, datas, folga, valor de venda e peso
     _tabelaHier: function (r, H) {
-      var numPorId = {}, numEt = {}, comV = !!H.valor, total = H.total;
+      var self = this, numPorId = {}, numEt = {}, comV = !!H.valor, total = H.total;
       r.atividades.forEach(function (n) { numPorId[n.id] = n.numero; if (n.tipo === "etapa") numEt[n.id] = n.numero; });
+      /* planejador 3A: o "T1" das tarefas sem preço entra no MESMO mapa de
+         números — é ele que o formatador do motor usa para escrever "0,T1" */
+      (r.extras || []).forEach(function (x) { numPorId[x.id] = x.numero; });
       var h = '<table class="prop-tbl cron-eap"><thead><tr>' +
         '<th>Nº</th><th>Atividade</th><th class="r">Duração</th><th class="r">Depende de</th>' +
         '<th>Início</th><th>Fim</th><th class="r">Folga</th>' +
         (comV ? '<th class="r">Valor (R$)</th><th class="r">Peso</th>' : '') + '</tr></thead><tbody>';
       H.linhas.forEach(function (n) {
+        /* A LINHA T (tarefa sem preço, planejador 3A). Ela tem prazo e não tem
+           dinheiro: as colunas Valor e Peso saem com "—", nunca com 0. Zero ali
+           seria lido como "esta tarefa vale nada", quando o certo é "esta
+           tarefa não entra no preço" (D2 — o prazo contratual continua o das
+           etapas, e o número com as T fica ao lado). */
+        if (n.tipo === "extra") {
+          var depX = self._dependeDe(n, numPorId, null, null);
+          h += '<tr class="h1 cron-tx">' +
+            '<td class="n">' + esc(n.numero) + '</td>' +
+            '<td style="padding-left:20px">' + esc(String(n.nome || "")) +
+              (n.marco ? ' <span class="cron-marco">◆ marco</span>' : '') +
+              '<span class="cron-tag">sem preço' + (n.resp ? ' · ' + esc(ROTULO_RESP[n.resp] || String(n.resp)) : '') + '</span></td>' +
+            '<td class="r">' + (n.marco ? '—' : n.duracao + ' d') + '</td>' +
+            '<td class="r">' + esc(comCerquilha(depX) || "início da obra") + '</td>' +
+            '<td>' + (ehData(n.dataInicio) ? dbr(n.dataInicio) : '—') + '</td>' +
+            '<td>' + (ehData(n.dataFim) ? dbr(n.dataFim) : '—') + '</td>' +
+            '<td class="r">' + (n.critico ? '<span class="cron-crit">crítica</span>' : '+' + (n.folga || 0) + ' d') + '</td>' +
+            (comV ? '<td class="r">—</td><td class="r">—</td>' : '') +
+            '</tr>';
+          return;
+        }
         var serv = n.tipo === "servico", et = n.tipo === "etapa", niv = et ? 0 : (serv ? n.prof : 1);
         var nome = et ? ((n.codigo && codNum(n.codigo) !== String(n.numero) ? n.codigo + " " : "") + (n.nome || "")) : (serv ? ((n.codigo ? n.codigo + " " : "") + (n.nome || "")) : (n.nome || ""));
         var dep;
         if (serv) dep = "—";
-        else if (et) dep = comCerquilha((typeof Cronograma !== "undefined" && Cronograma.predsTexto) ? Cronograma.predsTexto(n, numEt) : "") || "início da obra";
-        else dep = comCerquilha((typeof Cronograma !== "undefined" && Cronograma.predsTextoSub) ? Cronograma.predsTextoSub(n, numPorId) : "") || "início da etapa";
+        /* ⚠ O TIPO DO ELO VEM JUNTO (planejador 3A): "#11TT+2" e não "#11+2".
+           Sem TT/IT/II digitado o texto é, caractere por caractere, o de
+           sempre — é o `_textoRede` do motor que decide, e é o mesmo que a
+           tela e o Excel usam. */
+        else if (et) dep = comCerquilha(self._dependeDe(n, numPorId, null, n.porExtras)) || "início da obra";
+        else dep = comCerquilha(self._dependeDe(n, numPorId, numEt, null)) || "início da etapa";
         var sem = serv && n.semBase;
         var pe = comV && total ? (H.valor[n.id] / total) * 100 : 0;
         h += '<tr class="h' + (et ? 0 : (serv ? 2 : 1)) + '">' +
@@ -417,6 +698,7 @@
        opts.valores: {ok, porId} de Orcamento.valoresEAP, se r veio sem eles. */
     gerarHTML: function (orc, r, opts) {
       opts = opts || {};
+      var self = this;
       var detalhe = this._detalhe(opts);
       if (!r && detalhe) r = this._estimarEAP(orc);
       if (!r && typeof Cronograma !== "undefined" && Cronograma.estimar) r = Cronograma.estimar(orc);
@@ -443,12 +725,21 @@
          opção `faixaDoc` é null e as três linhas abaixo são, caractere por
          caractere, as de sempre: é o que a paridade com o master cobra. */
       var faixaDoc = (opts.mesesPorFolha > 0) ? this._ganttTempoHTML(r, hierOk ? H.gantt : null, opts) : null;
-      var svgUnico = opts.ganttSVG != null && !Array.isArray(opts.ganttSVG) && !(hierOk && H.gantt.length > this.POR_PAGINA);
+      /* ⚠ O DESENHO PRONTO DE QUEM CHAMA NÃO LEVA O QUE ESTA LEVA ACRESCENTOU
+         (planejador 3A). A fiação da aba monta o SVG ANTES, sem as tomadas da
+         2A (`intercalar`, `barraDe`, `camadas2A`) — e com ele o papel sairia
+         com a tarefa sem preço na TABELA e não no GRÁFICO, e com o % na coluna
+         e a barra inteira desenhada como se nada tivesse sido feito. Documento
+         que se contradiz de uma folha para a outra é pior que documento sem a
+         informação. Com `_temNovo` falso nada disto acontece: `opts.ganttSVG`
+         manda, como sempre, e o arquivo sai byte a byte o de hoje. */
+      var novo = this._temNovo(r);
+      var svgUnico = opts.ganttSVG != null && !novo && !Array.isArray(opts.ganttSVG) && !(hierOk && H.gantt.length > this.POR_PAGINA);
       var svg = faixaDoc ? faixaDoc.html
-        : (Array.isArray(opts.ganttSVG) ? opts.ganttSVG.map(function (s) { return '<div class="cron-gpag">' + s + '</div>'; }).join("")
+        : (!novo && Array.isArray(opts.ganttSVG) ? opts.ganttSVG.map(function (s) { return '<div class="cron-gpag">' + s + '</div>'; }).join("")
         : (svgUnico ? opts.ganttSVG
         : (hierOk ? this._ganttPaginado(r, H, opts)
-        : ((typeof UI !== "undefined" && UI._gantt) ? UI._gantt(r) : ""))));
+        : this._ganttEtapas(r, novo))));
 
       var empresa = ((typeof Empresa !== "undefined" && Empresa.nomeDoc) ? Empresa.nomeDoc() : "") ||
         (opts.usuario && opts.usuario.empresa) || "Sua Empresa";
@@ -477,8 +768,12 @@
       var nCrit = (r.caminhoCritico || []).length;
       var nMarcos = r.etapas.filter(function (e) { return e.marco; }).length;
       var numPorId = {}; r.etapas.forEach(function (e, i) { numPorId[e.id] = i + 1; });
+      // planejador 3A: "T1" no mesmo mapa (é assim que sai "0,T1" e "3,T2II+2")
+      (r.extras || []).forEach(function (x) { numPorId[x.id] = x.numero; });
+      (r.atividades || []).forEach(function (n) { if (n && n.numero != null && numPorId[n.id] == null) numPorId[n.id] = n.numero; });
 
-      var h = CSS + (hierOk ? CSS_HIER : '') + (faixaDoc ? CSS_FAIXA : '') + '<div class="rel-doc cron-doc">';
+      var h = CSS + (hierOk ? CSS_HIER : '') + (faixaDoc ? CSS_FAIXA : '') +
+        ((hierOk && r.extras && r.extras.length) ? CSS_TX : '') + '<div class="rel-doc cron-doc">';
       var wm = (typeof Empresa !== "undefined" && Empresa.marcaDaguaTexto) ? Empresa.marcaDaguaTexto() : empresa;
       if (wm) h += '<div class="wm">' + esc(wm) + '</div>';
 
@@ -499,12 +794,41 @@
         '</div></div>';
 
       // ---- KPIs ----
+      /* ⚠ OS DOIS NÚMEROS DO PRAZO (D2), e nunca um só. O prazo CONTRATUAL é
+         o das etapas: é ele que a proposta, o desembolso e a medição usam.
+         A tarefa sem preço que termina depois da entrega (comissionamento,
+         vistoria do contratante) NÃO entra nele — trocar um pelo outro no
+         papel mudaria o prazo que o cliente assinou. Por isso o número com as
+         T fica AO LADO, rotulado, e só existe quando alguma T passa da
+         entrega (`r.dataFimComExtras`). */
+      var comT = (r.totalDiasComExtras != null && ehData(r.dataFimComExtras));
       h += '<div class="rel-kpis">' +
         '<div><span>Prazo total</span><b>' + r.totalDias + ' dias úteis</b></div>' +
         '<div><span>Início</span><b>' + dbr(r.dataInicio) + '</b></div>' +
         '<div class="dest"><span>Entrega prevista</span><b>' + dbr(r.dataFim) + '</b></div>' +
+        (comT ? '<div><span>Com as tarefas sem preço</span><b>' + r.totalDiasComExtras + ' dias úteis · ' + dbr(r.dataFimComExtras) + '</b></div>' : '') +
         '<div><span>Caminho crítico</span><b>' + nCrit + ' de ' + r.etapas.length + ' etapas</b></div>' +
         '</div>';
+      if (comT) {
+        h += '<div class="cron-nota"><b>Dois prazos, de propósito.</b> O prazo de <b>' + r.totalDias +
+          ' dias úteis</b> (entrega em ' + dbr(r.dataFim) + ') é o das etapas contratadas — é ele que vale para o contrato, ' +
+          'para o desembolso e para a medição. O de <b>' + r.totalDiasComExtras + ' dias úteis</b> (' + dbr(r.dataFimComExtras) +
+          ') inclui as tarefas sem preço que acontecem depois da entrega.</div>';
+      }
+      /* A LINHA DE STATUS E O % SÓ NO PAPEL DO PLANO (planejador 3A, AVANÇO C).
+         ⚠ A REGRA NÃO É UM `opts` DE QUEM CHAMA: é `r.avanco`, que só nasce
+           no resultado de um PLANO com avanço lançado e corte válido (§1.8).
+           O papel da proposta sai do orçamento, onde `r.avanco` não existe —
+           então não há como o percentual executado vazar para o documento
+           comercial por esquecimento de uma fiação. */
+      if (r.avanco && r.avanco.corte) {
+        var cg = r.avanco.contagem || {}, cAv = String(r.avanco.corte);
+        var nAv = (cg.concluidas || 0) + (cg.andamento || 0);
+        h += '<div class="cron-nota"><b>Avanço lançado até ' + esc(cAv.slice(8, 10) + "/" + cAv.slice(5, 7) + "/" + cAv.slice(0, 4)) + '.</b> ' +
+          'As barras mostram o que já foi feito e o que falta. No gráfico, a linha tracejada com a <b>data escrita ao lado</b> é a data de corte; a outra linha tracejada é <b>hoje</b>. ' +
+          'As datas do que ainda não terminou foram reprogramadas a partir dela' +
+          (nAv ? ' — ' + nAv + ' tarefa(s) com lançamento (' + (cg.concluidas || 0) + ' concluída(s), ' + (cg.andamento || 0) + ' em andamento)' : '') + '.</div>';
+      }
 
       if (r.temCiclo) {
         h += '<div class="cron-aviso"><b>Dependência circular no cronograma.</b> Uma etapa depende de outra que, por sua vez, depende dela. ' +
@@ -535,8 +859,36 @@
         (temFolga ? '<span><i style="background:#dbe4ee;border:1px dashed #94a3b8"></i>folga</span>' : '') +
         (marcoNoGrafico ? '<span><b style="color:#0f172a">◆</b> marco (evento sem duração)</span>' : '') +
         (hierOk && H.pintor === "tela" ? '<span><i style="background:#334155;height:5px;vertical-align:2px"></i>resumo da etapa (as subetapas vêm logo abaixo)</span>' : '');
+      /* ⚠ A LEGENDA SÓ EXPLICA O QUE ESTÁ NA FIGURA (planejador 3A, a mesma
+         regra da `ganttProLegenda`): símbolo que a obra não tem manda o leitor
+         procurar na figura algo que não existe, e ensina a não ler a legenda.
+         Os três de baixo saem do próprio `r` desta impressão. */
+      var temT = !!(r.extras && r.extras.length), temAvL = false, temCalL = false;
+      noGrafico.forEach(function (e) {
+        if (e.avanco && e.avanco.estado && e.avanco.estado !== "nao-iniciada") temAvL = true;
+        if (e.calendarioId) temCalL = true;
+      });
+      var temTipo = false;
+      (r.etapas || []).concat(r.atividades || []).forEach(function (e) {
+        if (!temTipo && e && e.predTipoRede) { for (var kT in e.predTipoRede) { if (own(e.predTipoRede, kT)) { temTipo = true; break; } } }
+      });
+      if (temT) h += '<span><i style="background:#faf7ff;border:1.5px dashed #7c3aed"></i>tarefa sem preço (T) — prazo sem custo no orçamento</span>';
+      if (temTipo) h += '<span><i style="background:#94a3b8"></i>ligação com tipo: <b>TI</b> término→início (o padrão) · <b>II</b> início→início · <b>TT</b> término→término · <b>IT</b> início→término</span>';
+      /* ⚠ DUAS LINHAS TRACEJADAS LARANJA NA MESMA FIGURA, e a legenda tem de
+         dizer qual é qual. O desenho da tela usa a MESMA tinta (#b45309) para
+         o "hoje" e para a data de corte do avanço — medido em 21/09/2026, no
+         SVG do papel do plano. Quem só as visse diria que o gráfico tem uma
+         linha repetida. O que as separa de verdade é o RÓTULO: o corte leva a
+         data escrita ao lado dele, e é por ela que se reconhece. Enquanto as
+         duas tintas forem iguais, a legenda diz isso com todas as letras
+         (a cor própria para cada uma é do desenho, e está em pendência). */
+      if (temAvL) h += '<span><i style="background:#64748b"></i>o que já foi feito</span><span><i style="background:#cbd5e1"></i>o que falta</span>' +
+        '<span><i style="background:#fff;border-left:2px dashed #b45309;border-radius:0"></i>duas linhas tracejadas laranja: a que tem a <b>data escrita ao lado</b> é a data de corte do avanço; a outra é <b>hoje</b></span>';
+      if (temCalL) h += '<span><i style="background:rgba(15,23,42,.10)"></i>dia em que a frente daquela linha não trabalha</span>';
       var vistas = {};
       noGrafico.forEach(function (e) {
+        // ⚠ a linha T não tem frente de serviço: sem esta guarda a legenda ganhava um quadradinho "undefined"
+        if (e.tipo === "extra" || !e.categoria) return;
         if (vistas[e.categoria]) return; vistas[e.categoria] = 1;
         h += '<span><i style="background:' + esc(e.cor || "#94a3b8") + '"></i>' + esc(e.categoriaNome || e.categoria) + '</span>';
       });
@@ -577,9 +929,11 @@
         /* "#1, #3" e não "1,3": no meio de uma linha com datas e dias, o número
            solto é lido como quantidade. O "#" diz que aquilo é o nº da etapa —
            mesma decisão tomada na planilha do Excel. */
-        var dep = (typeof Cronograma !== "undefined" && Cronograma.predsTexto) ? Cronograma.predsTexto(e, numPorId) : "";
+        /* ⚠ com tipo e com as T (planejador 3A). Sem rede nova e sem tarefa
+           sem preço o texto é o de sempre, caractere por caractere. */
+        var dep = self._dependeDe(e, numPorId, null, e.porExtras);
         // "0" do campo = "não depende de ninguém"; no papel isso se escreve por extenso
-        dep = (!dep || dep === "0") ? "" : dep.split(",").map(function (s) { return "#" + s; }).join(", ");
+        dep = comCerquilha(dep);
         var pe = pesoDe(i);
         h += '<tr>' +
           '<td class="r">' + (i + 1) + '</td>' +
@@ -606,6 +960,36 @@
         (valores ? '<td class="r">' + moeda(somaValor) + '</td>' : '') +
         '<td class="r">100,0%</td></tr></tfoot></table>';
       }   // fim do documento por etapa (o de sempre)
+
+      /* ---- AS TAREFAS SEM PREÇO (planejador 3A, EXTRAS C) ----
+         ⚠ TABELA PRÓPRIA, e não linhas misturadas às etapas: a tabela de cima
+         fecha 100% do valor e do peso, e uma linha sem dinheiro no meio dela
+         faria a soma parecer errada. Sem tarefa sem preço, este bloco não
+         existe — o documento por etapa sai byte a byte o de sempre. */
+      if (r.extras && r.extras.length) {
+        var numX = {}; r.etapas.forEach(function (e, i) { numX[e.id] = i + 1; });
+        r.extras.forEach(function (x) { numX[x.id] = x.numero; });
+        h += '<h2 class="rel-tit">2.1 Tarefas sem preço (prazo sem custo no orçamento)</h2>';
+        h += '<div class="cron-nota" style="margin:0 0 8px">Estas linhas ocupam prazo e <b>não têm valor no orçamento</b>: liberação de área, aprovação em órgão, vistoria, comissionamento. ' +
+          'Elas não entram no preço, no desembolso nem na medição — mas seguram as etapas ligadas a elas.</div>';
+        h += '<table class="prop-tbl"><thead><tr><th class="r">Nº</th><th>Tarefa</th><th>Responsável</th>' +
+          '<th class="r">Duração</th><th class="r">Depende de</th><th>Início</th><th>Fim</th><th class="r">Folga</th></tr></thead><tbody>';
+        r.extras.forEach(function (x) {
+          var dx = comCerquilha(self._dependeDe(x, numX, null, null));
+          h += '<tr>' +
+            '<td class="r">' + esc(x.numero) + '</td>' +
+            '<td>' + esc(String(x.nome || "")) + (x.marco ? ' <span class="cron-marco">◆ marco</span>' : '') +
+              (x.depoisDaEntrega ? ' <span class="cron-tag">depois da entrega</span>' : '') + '</td>' +
+            '<td>' + esc(ROTULO_RESP[x.resp] || String(x.resp || "—")) + '</td>' +
+            '<td class="r">' + (x.marco ? '—' : x.duracao + ' d') + '</td>' +
+            '<td class="r">' + esc(dx || "início da obra") + '</td>' +
+            '<td>' + (ehData(x.dataInicio) ? dbr(x.dataInicio) : '—') + '</td>' +
+            '<td>' + (ehData(x.dataFim) ? dbr(x.dataFim) : '—') + '</td>' +
+            '<td class="r">' + (x.critico ? '<span class="cron-crit">crítica</span>' : '+' + (x.folga || 0) + ' d') + '</td>' +
+            '</tr>';
+        });
+        h += '</tbody></table>';
+      }
 
       // ---- resumo por categoria (visão de gestão: onde está o prazo e o dinheiro) ----
       var porCat = {}, ordemCat = [];
@@ -724,6 +1108,31 @@
         ((hierOk ? H.linhas.some(function (n) { return n.fonte === "subetapas"; }) : r.etapas.some(function (e) { return e.editado && own(vaoEt, e.id); }))
           ? ' Onde há ∑, a duração da etapa é o encadeamento das subetapas dela (cronograma executivo).' : '') + '<br>' +
         (nMarcos ? '<b>Marcos (◆):</b> eventos sem duração (entrega, vistoria, liberação) — aparecem como losango no gráfico.<br>' : '') +
+        /* planejador 3A: cada trecho abaixo nasce SÓ com o dado dele — nota de
+           tipo de elo numa obra sem tipo digitado é ruído que ensina a pular a
+           seção de notas (a mesma régua da legenda, logo acima) */
+        (temTipo ? '<b>Tipos de ligação:</b> <b>TI</b> (padrão) a seguinte começa depois que a anterior termina · ' +
+          '<b>II</b> as duas começam juntas · <b>TT</b> as duas terminam juntas · <b>IT</b> a seguinte termina depois que a anterior começa. ' +
+          'O número depois do tipo é a espera em dias úteis: <b>11TT+2</b> = termina 2 dias úteis depois de a 11 terminar.<br>' : '') +
+        (r.extras && r.extras.length ? '<b>Tarefas sem preço (T):</b> ocupam prazo e não têm valor no orçamento. ' +
+          'Elas não entram no preço, no desembolso nem na medição' +
+          (comT ? ', e por isso o prazo contratual continua sendo o das etapas' : '') + '.<br>' : '') +
+        /* ⚠ O PAPEL É SEMPRE INTEIRO, E ELE PRECISA DIZER ISSO. A aba ganhou
+           busca e filtro (fatia 1C) e o botão "Camadas" (D30): quem filtra a
+           tela por "atrasadas" e manda imprimir espera a mesma lista — e
+           recebe o documento com TODAS as linhas, sem nada explicando. O
+           documento não filtra de propósito (ele é entregue, rubricado e
+           arquivado; meia lista num papel assinado é outra coisa), e as
+           camadas também não valem aqui pelo mesmo motivo.
+           A nota nasce com `opts.filtroAtivo` (a porta para quem chama, que
+           sabe se há filtro ligado) e, sem ela, quando o documento já mudou
+           por outro motivo — assim o arquivo de quem não usa nada disto
+           continua byte a byte o de hoje. */
+        ((opts.filtroAtivo === true || novo)
+          ? '<b>Este documento sai sempre completo:</b> a busca, o filtro e as camadas da aba do cronograma valem só na tela. ' +
+            'O papel leva todas as linhas, porque é ele que se entrega e se arquiva.<br>'
+          : '') +
+        this._rodapeCal(r) +
         (hierOk ? this._notasHier(H) : '') +
         'Cronograma sujeito a condições de clima, liberação de frentes de serviço e fornecimento de materiais.' +
         '</div>';
@@ -2022,10 +2431,31 @@
           if (av.desvioTerminoDias) seg.push(av.desvioTerminoDias);
           if (av.idp) seg.push(av.idp);
           if (seg.length) corpo += '<div class="cdoc-kpis" style="margin-top:8px">' + seg.map(function (k) { return self._kpi(k); }).join("") + '</div>';
+          /* D5 (planejador 3A): POR QUAL RÉGUA este VA foi feito. Ver o ⚠ de
+             `vaLancadoDe` em js/cronodocs.js: o mesmo mês pode ter IDP 0,92
+             pelos diários e 1,03 pelo lançado, e a folha que vai à
+             fiscalização tem de dizer qual das duas ela é. Sem lançamento
+             nenhum, `vaLancado` é null e a folha não ganha uma linha. */
+          if (av.vaLancado) {
+            var origV = (av.vaLancado.porOrigem || []).map(function (x) { return esc(x.nos + " " + x.rotulo); }).join(" · ");
+            corpo += '<div class="cdoc-nota"><b>' + esc(av.vaLancado.texto) + '.</b> ' +
+              esc(av.vaLancado.nos) + ' tarefa(s) com avanço lançado no planejamento entraram no valor agregado e no IDP' +
+              (origV ? ' (' + origV + ')' : '') + '; ' +
+              'o percentual executado das três réguas acima continua saindo dos diários publicados.</div>';
+          }
           if (av.previstoNaData && av.previstoNaData.desvioPP != null) {
             corpo += '<div class="cdoc-nota"><b>Desvio na data de corte:</b> ' + esc(this._pp(av.previstoNaData.desvioPP)) +
               ' (realizado ' + esc(this._n1(av.previstoNaData.realNaMesmaRegua)) + '% contra previsto ' +
               esc(this._n1(av.previstoNaData.valor)) + '%).</div>';
+          }
+          /* D3 (planejador 3A): a data de entrega, e de qual conta ela veio */
+          if (av.terminoPrevisto && av.terminoPrevisto.data) {
+            var tp3 = av.terminoPrevisto;
+            corpo += '<div class="cdoc-nota"><b>Término previsto:</b> <b>' + this._dISO(tp3.data) + '</b>' +
+              (tp3.diasUteis != null ? ' (' + esc(String(tp3.diasUteis)) + ' dias úteis de obra)' : '') + ' — ' + esc(tp3.fonte) + '.' +
+              (tp3.base && tp3.base.data ? ' Linha de base v' + esc(String(tp3.base.versao)) + ': ' + this._dISO(tp3.base.data) +
+                (tp3.desvioDU != null ? ' (' + (tp3.desvioDU > 0 ? '+' : '') + esc(String(tp3.desvioDU)) + ' dias úteis)' : '') + '.' : '') +
+              ' ⚠ ' + esc(tp3.regua) + '</div>';
           }
           if (av.situacao) corpo += '<div class="cdoc-nota"><b>Situação:</b> obra <b>' + esc(av.situacao.texto) + '</b>' +
             (av.situacao.contra ? ' (contra ' + esc(av.situacao.contra) + ')' : '') + ' — ' + esc(av.situacao.fonte) + '.</div>';
@@ -2307,7 +2737,15 @@
          qual é "esta semana", e o rodapé já tem a data de emissão. Duas datas
          com o mesmo rótulo e valores diferentes na mesma folha é como o leitor
          perde a confiança nas duas. */
-      var meta = [["Obra", obraNome || "—"], ["Referência", this._dISO(lk.hoje)],
+      /* ⚠ A REFERÊNCIA DIZ DE ONDE ELA VEIO (planejador 3A). Com avanço
+         lançado recente a janela começa na DATA DE CORTE, não em hoje (ver o
+         ⚠ do `CronoDocs.lookahead`); o encarregado que lê o quadro precisa
+         saber qual das duas datas está no cabeçalho, senão conclui que o
+         quadro está desatualizado. */
+      var refLk = lk.referencia || null;
+      var meta = [["Obra", obraNome || "—"],
+        ["Referência", this._dISO((refLk && refLk.data) || lk.hoje) +
+          (refLk && refLk.fonte === "corte do avanço" ? " (corte do avanço lançado)" : "")],
         ["Horizonte", lk.semanas.length + " semana(s)"],
         ["Tarefas", String(lk.totais ? lk.totais.tarefasNoHorizonte : 0)]];
       var d = this.documento({ papel: P.id, titulo: opc.titulo || "Lookahead — plano de médio prazo",
@@ -2366,6 +2804,26 @@
                 '<td>' + esc(t2.status) + '</td><td>' + restr + '</td></tr>';
             }).join("") + '</tbody></table>'
           : '<div class="cdoc-nota">Nenhuma tarefa planejada para esta semana.</div>';
+        /* AS TAREFAS SEM PREÇO DA SEMANA (planejador 3A). Tabela SEPARADA e
+           sem caixa de comprometimento: elas não são comprometíveis pela
+           equipe da obra (a liberação de área é do contratante), e uma caixa
+           ☐ ao lado convidaria o encarregado a assumir o que não é dele. */
+        var tsp = s.tarefasSemPreco || [];
+        if (tsp.length) {
+          tab += '<div class="cdoc-nota" style="margin-top:6px"><b>Tarefas sem preço nesta semana (T)</b> — ' +
+            'prazo sem serviço no orçamento: é por elas que o canteiro para, e elas não se comprometem aqui.</div>' +
+            '<table class="cdoc-tbl"><thead><tr><th style="width:14mm">Nº</th><th>Tarefa</th>' +
+            '<th style="width:34mm">Responsável</th><th style="width:24mm">Início</th><th style="width:24mm">Fim</th>' +
+            '<th style="width:26mm">Na semana</th></tr></thead><tbody>' +
+            tsp.map(function (x) {
+              return '<tr><td class="r">' + esc(x.numero) + '</td>' +
+                '<td>' + esc(x.nome) + (x.marco ? ' ◆' : '') + '</td>' +
+                '<td>' + esc(x.responsavel || "—") + '</td>' +
+                '<td>' + self._dISO(x.inicio) + '</td><td>' + self._dISO(x.fim) + '</td>' +
+                '<td>' + (x.atrasada ? '<span class="cdoc-nao">venceu e não terminou</span>'
+                  : (x.venceNaSemana ? '<span class="cdoc-ok">vence nesta semana</span>' : 'em andamento')) + '</td></tr>';
+            }).join("") + '</tbody></table>';
+        }
         d.tabela(s.rotulo + " — " + (s.periodo || s.chave), tab, P.utilA - 62,
           { antes: cab, custos: self._custoTRs(tab, 52, 3.1, 1.6) });
       });
@@ -2503,7 +2961,12 @@
         '<div class="cdoc-texto">' + this._txt(opc.decisoes, "a preencher pelo responsável antes da reunião") + '</div>' +
         '<div class="cdoc-nota"><b>Data de corte:</b> ' + this._dISO(ex.dataCorte) +
         this._corte(ex.fonteCorte, ex.fonteCorteRotulo) + '. ' +
-        '⚠ Cada percentual acima traz a <b>régua</b> que o respondeu — são três perguntas diferentes.</div>' +
+        '⚠ Cada percentual acima traz a <b>régua</b> que o respondeu — são três perguntas diferentes.' +
+        /* D5 (planejador 3A): a MESMA legenda do relatório mensal. Esta folha
+           é a que vira decisão de diretoria, e ela não pode trazer um IDP com
+           régua diferente da folha do mesmo mês sem dizer qual é. */
+        (ex.vaLancado ? ' <b>' + esc(ex.vaLancado.texto) + '</b> — ' + esc(ex.vaLancado.nos) +
+          ' tarefa(s) com avanço lançado no planejamento entraram no valor agregado e no IDP.' : '') + '</div>' +
         this._avisos(ex.avisos, "Avisos do painel", ex.publico) + this._foraDaConta(ex.foraDaConta, 6, ex.publico);
       d.secao("Situação da obra", corpo);
       return d.html();
@@ -2662,6 +3125,120 @@
       return estilos + d.html();
     },
 
+    /* =================================================================
+       BASES B4 — O COMPARATIVO DE LINHAS DE BASE EM A3
+
+       O desenho do que o `CronoDocs.comparativoBases` apurou: as versões
+       lado a lado, uma coluna por versão, e o prazo contratual embaixo.
+       Nenhum número nasce aqui.
+
+       ⚠ A3 POR PADRÃO, e é uma decisão de conteúdo, não de estética: com
+         três versões mais o plano atual são oito colunas de data numa
+         tabela com nome de etapa. Em A4 a coluna do nome fica com 30 mm e o
+         nome do serviço quebra em quatro linhas — a folha que a fiscalização
+         confere linha a linha vira ilegível. Quem quiser A4 escolhe no
+         seletor; o padrão é o que se lê.
+       ================================================================= */
+    gerarComparativoBases: function (cb, opc) {
+      opc = opc || {};
+      var self = this;
+      if (!cb || cb.ok !== true) {
+        return this._docErro("Comparativo de linhas de base",
+          (cb && cb.erro) || "o comparativo não foi montado pelo motor.",
+          { papel: opc.papel || "a3-paisagem", obra: opc.obra, empresa: opc.empresa, emissao: opc.emissao });
+      }
+      var P = this.papel(opc.papel || "a3-paisagem");
+      var obraNome = (cb.obra && cb.obra.nome) || opc.obra || "";
+      var T = cb.totais || {};
+      var d = this.documento({ papel: P.id, titulo: opc.titulo || "Comparativo de linhas de base",
+        subtitulo: obraNome, kicker: "PLEITO DE PRAZO",
+        meta: [["Obra", obraNome || "—"], ["Referência", T.referencia || "—"],
+          ["Comparada com", T.ultima || "—"],
+          ["Δ prazo", (T.difPrazoDU == null ? "—" : (T.difPrazoDU > 0 ? "+" : "") + T.difPrazoDU + " dias úteis")]],
+        obra: obraNome, empresa: opc.empresa, nivel: cb.publico ? cb.publico.rotulo : "",
+        capa: opc.capa === true, indice: opc.indice === true, emissao: opc.emissao });
+
+      // ---- as versões ----
+      var cols = cb.colunas || [];
+      var cabV = '<table class="cdoc-tbl"><thead><tr><th style="width:34mm">Versão</th>' +
+        '<th style="width:26mm">Início</th><th class="r" style="width:24mm">Prazo</th>' +
+        '<th style="width:28mm">Término</th><th style="width:30mm">Congelada em</th><th>Motivo</th>' +
+        '</tr></thead><tbody>' +
+        cols.map(function (c) {
+          return '<tr><td><b>' + esc(c.rotulo) + '</b></td>' +
+            '<td>' + self._dISO(c.inicio) + '</td>' +
+            '<td class="r">' + esc(String(c.prazoDU)) + ' d.ú.</td>' +
+            '<td>' + self._dISO(c.termino) + '</td>' +
+            '<td>' + (c.criadaEm ? self._dISO(c.criadaEm) + (c.por ? ' · ' + esc(c.por) : '') : '<span class="cdoc-vazio">—</span>') + '</td>' +
+            '<td>' + esc(c.motivo || "") + '</td></tr>';
+        }).join("") + '</tbody></table>';
+      var resumo = '<div class="cdoc-kpis">' +
+        '<div class="cdoc-kpi"><span>Prazo</span><b>' + esc(String(T.prazoDU ? T.prazoDU[0] : "—")) + ' → ' +
+          esc(String(T.prazoDU ? T.prazoDU[1] : "—")) + '</b><i>dias úteis de obra · ' +
+          (T.difPrazoDU == null ? "—" : (T.difPrazoDU > 0 ? "+" : "") + T.difPrazoDU) + '</i></div>' +
+        '<div class="cdoc-kpi"><span>Término</span><b>' + this._dISO(T.termino ? T.termino[0] : null) + ' → ' +
+          this._dISO(T.termino ? T.termino[1] : null) + '</b><i>' +
+          (T.difTerminoDiasCorridos == null ? "sem comparação" : (T.difTerminoDiasCorridos > 0 ? "+" : "") + T.difTerminoDiasCorridos + " dia(s) corrido(s)") +
+          '</i></div>' +
+        '<div class="cdoc-kpi"><span>Linhas que mudaram</span><b>' + esc(String(T.movidas == null ? "—" : T.movidas)) +
+          '</b><i>de ' + esc(String(T.linhas == null ? "—" : T.linhas)) + ' · ' + esc(String(T.entraram || 0)) + ' entraram, ' +
+          esc(String(T.sairam || 0)) + ' saíram</i></div></div>';
+      d.secao("Versões comparadas", resumo + cabV +
+        '<div class="cdoc-nota"><b>Término = último dia trabalhado</b>, como no MS Project. ' +
+        '<b>Fonte:</b> ' + esc(T.fonte || "") + '.</div>');
+
+      // ---- a tabela etapa a etapa ----
+      var lin = cb.linhas || [];
+      var tab = lin.length
+        ? '<table class="cdoc-tbl"><thead><tr><th class="r" style="width:16mm">Nº</th><th>Etapa / subetapa</th>' +
+          cols.map(function (c) { return '<th style="width:36mm">' + esc(c.rotulo) + '</th>'; }).join("") +
+          '<th class="r" style="width:22mm">Δ fim</th></tr></thead><tbody>' +
+          lin.map(function (L) {
+            return '<tr' + (L.moveu ? ' class="cdoc-mov"' : '') + '><td class="r">' + esc(L.numero) + '</td>' +
+              '<td>' + esc(L.nome) + (L.naReferencia ? '' : ' <span class="cdoc-ok">nova</span>') +
+                (L.naUltima ? '' : ' <span class="cdoc-nao">saiu</span>') + '</td>' +
+              cols.map(function (c) {
+                var j = L.janelas ? L.janelas[c.id] : null;
+                return '<td>' + (j ? self._dISO(j.inicio) + ' – ' + self._dISO(j.fim) : '<span class="cdoc-vazio">—</span>') + '</td>';
+              }).join("") +
+              '<td class="r">' + (L.difFimDias == null ? '<span class="cdoc-vazio">—</span>'
+                : (L.difFimDias > 0 ? '+' : '') + esc(String(L.difFimDias)) + ' d') + '</td></tr>';
+          }).join("") + '</tbody></table>'
+        : '<div class="cdoc-nota">Nenhuma etapa guardada nas versões comparadas.</div>';
+      d.tabela("Janela de cada etapa em cada versão", tab, P.utilA - 70,
+        { custos: this._custoTRs(tab, 40, 3.4, 1.8),
+          depois: '<div class="cdoc-nota">A coluna <b>Δ fim</b> compara o término da linha na <b>' +
+            esc(T.referencia || "referência") + '</b> com o da <b>' + esc(T.ultima || "última") + '</b>, em dias corridos. ' +
+            'Linha destacada é a que mudou de janela.</div>' });
+
+      // ---- o prazo contratual (D17) ----
+      var pc = cb.prazoContratual;
+      if (pc) {
+        var tabA = (pc.aditivos || []).length
+          ? '<table class="cdoc-tbl"><thead><tr><th style="width:26mm">Aditivo</th><th style="width:26mm">Data</th>' +
+            '<th class="r" style="width:26mm">Prazo</th><th>Objeto</th></tr></thead><tbody>' +
+            pc.aditivos.map(function (a) {
+              return '<tr><td>' + esc(a.numero || "—") + '</td><td>' + self._dISO(a.data) + '</td>' +
+                '<td class="r">' + esc(String(a.prazoDias || 0)) + ' dias</td><td>' + esc(a.objeto || "") + '</td></tr>';
+            }).join("") + '</tbody></table>'
+          : '<div class="cdoc-nota">Nenhum termo aditivo de prazo cadastrado nesta obra.</div>';
+        d.secao("Prazo contratual e aditivos",
+          '<div class="cdoc-kpis"><div class="cdoc-kpi"><span>Contrato</span><b>' + esc(pc.numero || "—") +
+          '</b><i>' + esc(String(pc.prazoDias || 0)) + ' dias de prazo</i></div>' +
+          '<div class="cdoc-kpi"><span>Aditivos de prazo</span><b>' + esc(String(pc.somaAditivosDias || 0)) +
+          '</b><i>' + (pc.aditivos || []).length + ' termo(s)</i></div>' +
+          '<div class="cdoc-kpi"><span>Prazo com aditivos</span><b>' + esc(String(pc.prazoComAditivos || 0)) +
+          '</b><i>unidade ' + esc(pc.unidade || "não declarada") + '</i></div></div>' + tabA +
+          /* ⚠ A FOLHA NÃO AFIRMA COBERTURA (D18): ver o ⚠ do motor. */
+          '<div class="cdoc-aviso">⚠ ' + esc(pc.avisoUnidade) + '</div>' +
+          '<div class="cdoc-nota"><b>Fonte:</b> ' + esc(pc.fonte || "") + '.</div>');
+      }
+
+      d.secao("Avisos", this._avisos(cb.avisos, "Avisos do comparativo", cb.publico) +
+        this._foraDaConta(cb.foraDaConta, 8, cb.publico));
+      return '<style>.cdoc-doc tr.cdoc-mov td{background:#fdf6ec}</style>' + d.html();
+    },
+
     /* Porta única para a fiação (js/app.js): tipo + payload do motor.
        ⚠ tipo desconhecido NÃO devolve documento vazio — devolve a folha que
        diz o que aconteceu. */
@@ -2671,8 +3248,9 @@
       if (t === "relatorio-mensal") return this.gerarRelatorioMensal(payload, opc);
       if (t === "lookahead") return this.gerarLookahead(payload, opc);
       if (t === "resumo-executivo") return this.gerarResumoExecutivo(payload, opc);
+      if (t === "comparativo-bases") return this.gerarComparativoBases(payload, opc);
       return this._docErro("Documento do cronograma",
-        'tipo de documento desconhecido: “' + t + '”. Os tipos são: fisico-financeiro, relatorio-mensal, lookahead e resumo-executivo.', opc);
+        'tipo de documento desconhecido: “' + t + '”. Os tipos são: fisico-financeiro, relatorio-mensal, lookahead, resumo-executivo e comparativo-bases.', opc);
     }
   };
 

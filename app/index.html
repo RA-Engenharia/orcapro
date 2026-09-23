@@ -110,6 +110,25 @@
   <!-- a entidade crono_obra (linhas de base e plano de execução da obra):
        motor puro; usa a régua de bytes e o resumo do cronoplan.js acima -->
   <script src="js/cronobase.js"></script>
+  <!-- PLANEJADOR (Onda 0, T11): os módulos das funções novas do cronograma —
+       rede TT/IT, calendários, tarefas sem preço, avanço, linhas de base
+       seladas, comparação, filtro, pilha do desfazer, histórico e alertas.
+       Nascem como esqueleto (`pronto: false`) e cada fatia preenche o seu;
+       as tags ficam aqui, uma vez, para nenhuma fatia tocar este arquivo.
+       Motores puros, resolvidos NA HORA da chamada — a posição é livre, e
+       fica logo depois do cronobase.js só por leitura. ⚠ o js/nuvem.js (bem
+       abaixo) consulta CronoSelo/CronoAlt na hora de cada merge; nenhum deles
+       registra nada no Nuvem. -->
+  <script src="js/cronorede.js"></script>
+  <script src="js/cronocal.js"></script>
+  <script src="js/cronoextras.js"></script>
+  <script src="js/cronoavanco.js"></script>
+  <script src="js/cronoselo.js"></script>
+  <script src="js/cronocomp.js"></script>
+  <script src="js/cronofiltro.js"></script>
+  <script src="js/cronopilha.js"></script>
+  <script src="js/cronoalt.js"></script>
+  <script src="js/cronoalertas.js"></script>
   <!-- a TELA do cronograma executivo (aba Cronograma): desenho puro; o ui.js
        delega o renderCronograma para ele e o cronPDF usa o Gantt hierárquico -->
   <script src="js/cronoexecui.js"></script>
@@ -281,6 +300,11 @@
   <!-- compraslinha.js: linha do tempo do pedido de compra (atraso, parado, data
        vigente) — motor puro; gestao.js, avisos e o Portal leem dele. -->
   <script src="js/compraslinha.js"></script>
+  <!-- ⚠ medavanco.js DEPOIS de cronoplan.js, cronoavanco.js, cronograma.js e
+       avancoservico.js: ele resolve os três NA CHAMADA (nunca no carregamento),
+       mas a ordem do index é o que o `e2e-medcc-boot` mede. Motor puro da
+       medição como origem do avanço lançado (ESPEC-medicao-cc §3). -->
+  <script src="js/medavanco.js"></script>
   <script src="js/avisos-ui.js"></script>
   <script src="js/tour.js"></script>
   <script src="js/apresentacao.js"></script>
