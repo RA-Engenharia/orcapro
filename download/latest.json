@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.89",
+  "versao": "1.2.90",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.89.zip",
-  "notas": "Painel de Gestao: obra concluida deixa de aparecer como vencida; a margem so aparece quando ha custo pago; custo por m2 so com custo lancado; o grafico Orcado x Gasto ganhou leitura ao passar o mouse e o rotulo nao sobrepoe mais. Em Metas, nova meta de recebimento por mes.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.89/OrcaPRO-IA-Instalador-v1.2.89.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.90.zip",
+  "notas": "Painel de Gestao novo (em avaliacao, desligado por padrao): ganhou cartoes de indicador com barras mensais, fluxo de caixa em barras com a linha do saldo, graficos de composicao por categoria e por obra, medidores de meta e lucratividade mes a mes. Nada muda para quem nao ligar o Painel novo.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.90/OrcaPRO-IA-Instalador-v1.2.90.exe"
 }

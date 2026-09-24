@@ -2433,29 +2433,6 @@
       if (a.tipo === "acaoBotao") return '<button class="' + cls + '" data-acao="' + e(a.valor) + '">' + texto + "</button>";
       return '<button class="' + cls + '" data-view="' + e(a.valor) + '">' + texto + "</button>";
     },
-    /* lucratividade mês a mês: (recebido − pago) / recebido, contra a meta */
-    _pnLucro: function (porMes, meta) {
-      if (!porMes || !porMes.length) return "";
-      var self = this, e = Util.esc, fk = function (v) { return self._fmtK(v); };
-      return '<div class="pn-lucro" role="img" aria-label="Lucratividade por mês: ' + porMes.map(function (m) { return m.mes.slice(5, 7) + "/" + m.mes.slice(2, 4) + " " + (m.lucratividade === null ? "sem os dois lados" : m.lucratividade + "%"); }).join(", ") + '">'
-        + porMes.map(function (m) {
-          var v = m.lucratividade, rot = m.mes.slice(5, 7) + "/" + m.mes.slice(2, 4);
-          var cls = v === null ? " pn-vazio-m" : (v < 0 ? " pn-alerta" : (v >= meta ? " pn-ok" : " pn-atencao"));
-          var h = v === null ? 0 : Math.max(3, Math.min(100, Math.abs(v)));
-          return '<div class="pn-lucro-m' + cls + '" title="' + rot + ": recebido " + e(fk(m.recebido)) + ", pago " + e(fk(m.pago)) + (v === null ? ". Sem receita e pagamento no mesmo mês." : ", lucratividade " + v + "%") + '">'
-            + '<span class="pn-lucro-b"><i style="height:' + h + '%"></i></span><b>' + (v === null ? "—" : v + "%") + "</b><span>" + rot + "</span></div>";
-        }).join("") + "</div>";
-    },
-    _pnMedidor: function (rotulo, valorTexto, metaTexto, atingido, titulo) {
-      /* o trilho vai até 150% da meta; a marca da meta fica em 2/3 do trilho.
-         Assim "acima da meta" tem para onde crescer sem o preenchimento
-         estourar o trilho, e a meta é visível como um traço, não como o fim. */
-      var pct = atingido === null || atingido === undefined ? 0 : Math.round(Math.min(1.5, atingido) / 1.5 * 100);
-      var cls = atingido === null || atingido === undefined ? "" : (atingido >= 1 ? " pn-ok" : (atingido >= 0.7 ? " pn-atencao" : " pn-alerta"));
-      return '<div class="pn-medidor' + cls + '" title="' + Util.esc(titulo || "") + '"><span class="pn-med-rot">' + rotulo + '</span>'
-        + '<span class="pn-med-trilho"><i style="width:' + pct + '%"></i><b style="left:66.7%"></b></span>'
-        + '<span class="pn-med-val">' + valorTexto + ' <small>meta ' + metaTexto + "</small></span></div>";
-    },
     _pnDupla: function (l) {
       var e = Util.esc, pz = l.prazo;
       if (!pz.temDatas) {
@@ -2479,6 +2456,142 @@
         + (defasW > 0 ? '<i class="pn-defas' + (grave ? " pn-grave" : "") + '" style="left:' + (a || 0) + "%;width:" + defasW + '%"></i>' : "") + "</div>"
         + '<span class="pn-hoje-marca" style="left:' + (p >= 100 ? "calc(100% - 2px)" : p + "%") + '"></span></div>'
         + '<div class="pn-dupla-leg"><span>prazo <b>' + pz.prazoTexto + "</b></span><span>medido <b>" + (a === null ? "—" : l.avanco + "%") + "</b></span>" + legDef + "</div></div>";
+    },
+
+    /* ---------- gráficos do Painel novo (SVG por string, tokens do app.css) ----------
+       ⚠ UM EIXO SÓ em cada desenho (nunca dois y): recebido, pago e saldo dividem
+         a mesma escala no fluxo; a lucratividade tem a dela.
+       ⚠ Cor de série vem dos tokens --graf-N e --cat-N (par escuro validado por script);
+         estado (ok/atenção/alerta) vem de --verde/--graf-aviso/--graf-alerta. */
+    _pnMiniBarras: function (vals, cor, rotulos, fmt) {
+      if (!vals || !vals.length) return "";
+      var W = 120, H = 40, n = vals.length, gap = 3, bw = Math.max(3, (W - gap * (n - 1)) / n);
+      var max = Math.max.apply(null, vals.concat([0])), min = Math.min.apply(null, vals.concat([0]));
+      var esp = (max - min) || 1, y0 = 2 + (max - 0) / esp * (H - 4);
+      var e = Util.esc, svg = '<svg class="pn-mini" viewBox="0 0 ' + W + " " + H + '" aria-hidden="true">';
+      vals.forEach(function (v, i) {
+        var y = 2 + (max - v) / esp * (H - 4), top = Math.min(y, y0), h = Math.max(1, Math.abs(y - y0));
+        svg += '<rect x="' + (i * (bw + gap)).toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="1.5" fill="' + cor + '"' + (i === n - 1 ? "" : ' opacity=".55"') + '><title>' + e(rotulos[i]) + ": " + e(fmt(v)) + "</title></rect>";
+      });
+      return svg + "</svg>";
+    },
+    _pnTile: function (o) {
+      /* o = { cls, rotulo, valor, sub, delta, mini, titulo } */
+      return '<div class="pn-tile ' + (o.cls || "") + '"' + (o.titulo ? ' title="' + Util.esc(o.titulo) + '"' : "") + '><div class="pn-tile-cab"><span class="pn-tile-rot">' + o.rotulo + "</span>" + (o.delta || "") + "</div>"
+        + '<div class="pn-tile-val">' + o.valor + "</div>"
+        + (o.sub ? '<div class="pn-tile-sub">' + o.sub + "</div>" : "")
+        + (o.mini ? '<div class="pn-tile-mini">' + o.mini + "</div>" : "") + "</div>";
+    },
+    /* fluxo: barras de recebido e pago por mês + linha do saldo acumulado, um eixo */
+    _pnSvgCombo: function (porMes) {
+      var self = this, e = Util.esc, fk = function (v) { return self._fmtK(v); };
+      if (!porMes || !porMes.length) return "";
+      var W = 560, H = 230, padL = 58, padR = 14, padT = 18, padB = 30, iw = W - padL - padR, ih = H - padT - padB;
+      var vals = [0];
+      porMes.forEach(function (m) { vals.push(m.recebido, m.pago, m.saldo); });
+      var eixo = (typeof Escala !== "undefined") ? Escala.calcular(Math.min.apply(null, vals), Math.max.apply(null, vals), 4) : null;
+      var max = eixo ? eixo.max : Math.max.apply(null, vals), min = eixo ? eixo.min : Math.min.apply(null, vals);
+      if (max === min) max = min + 1;
+      var y = function (v) { return padT + (1 - (v - min) / (max - min)) * ih; };
+      var n = porMes.length, slot = iw / n, bw = Math.min(22, slot * 0.28), gap = 2;
+      var xc = function (i) { return padL + slot * (i + 0.5); };
+      var rot = function (ch) { return ch.slice(5, 7) + "/" + ch.slice(2, 4); };
+      var ult = porMes[n - 1];
+      var resumo = "Fluxo de caixa por mês, " + n + " meses: recebido " + fk(porMes.reduce(function (t, m) { return t + m.recebido; }, 0)) + ", pago " + fk(porMes.reduce(function (t, m) { return t + m.pago; }, 0)) + ", saldo acumulado ao final " + fk(ult.saldo) + ".";
+      var svg = '<svg class="pn-combo" viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="' + e(resumo) + '">';
+      var marcas = eixo ? eixo.marcas : [0, 1, 2, 3].map(function (i) { return min + (max - min) * i / 3; });
+      marcas.forEach(function (gv) {
+        svg += '<line class="g-grade" x1="' + padL + '" y1="' + y(gv).toFixed(1) + '" x2="' + (W - padR) + '" y2="' + y(gv).toFixed(1) + '"/>'
+          + '<text class="g-eixo" x="' + (padL - 7) + '" y="' + (y(gv) + 3.5).toFixed(1) + '" text-anchor="end">' + e(fk(gv).replace(/^R\$[\s\u00a0]*/, "")) + "</text>";
+      });
+      if (min < 0) svg += '<line class="g-zero" x1="' + padL + '" y1="' + y(0).toFixed(1) + '" x2="' + (W - padR) + '" y2="' + y(0).toFixed(1) + '"/>';
+      var y0 = y(0);
+      porMes.forEach(function (m, i) {
+        var c = xc(i);
+        [["recebido", "var(--graf-a)", -1], ["pago", "var(--graf-b)", 1]].forEach(function (s) {
+          var v = m[s[0]], top = Math.min(y(v), y0), h = Math.max(0, Math.abs(y(v) - y0));
+          var x0 = s[2] < 0 ? c - bw - gap / 2 : c + gap / 2;
+          if (h > 0) svg += '<path class="pn-barra" d="' + self._barraTopo(x0, top, bw, h, 3) + '" fill="' + s[1] + '"/>';
+        });
+      });
+      var pts = porMes.map(function (m, i) { return xc(i).toFixed(1) + "," + y(m.saldo).toFixed(1); });
+      svg += '<polyline class="g-linha" points="' + pts.join(" ") + '" stroke="var(--graf-c)"/>'
+        + '<circle class="g-fim" cx="' + xc(n - 1).toFixed(1) + '" cy="' + y(ult.saldo).toFixed(1) + '" r="4.5" fill="var(--graf-c)"/>';
+      porMes.forEach(function (m, i) {
+        var c = xc(i), x0 = padL + slot * i, x1 = x0 + slot;
+        svg += '<g class="g-col"><rect class="g-hit" x="' + x0.toFixed(1) + '" y="' + padT + '" width="' + slot.toFixed(1) + '" height="' + ih + '"/>'
+          + '<line class="g-guia" x1="' + c.toFixed(1) + '" y1="' + padT + '" x2="' + c.toFixed(1) + '" y2="' + (padT + ih) + '"/>'
+          + '<circle class="g-pt" cx="' + c.toFixed(1) + '" cy="' + y(m.saldo).toFixed(1) + '" r="4" fill="var(--graf-c)"/>'
+          + '<g class="g-ler"><rect class="g-ler-fundo" x="' + (padL - 2) + '" y="' + (padT - 14) + '" width="' + (iw + 4) + '" height="14" rx="3"/>'
+          + '<text class="g-ler-txt" x="' + (padL + 2) + '" y="' + (padT - 4) + '"><tspan class="g-ler-mes">' + rot(m.mes) + "</tspan>"
+          + '<tspan class="g-ler-a"> · recebido ' + e(fk(m.recebido)) + "</tspan><tspan class=\"g-ler-b\"> · pago " + e(fk(m.pago)) + "</tspan><tspan class=\"g-ler-c\"> · saldo " + e(fk(m.saldo)) + "</tspan></text></g></g>";
+        var passo = Math.max(1, Math.ceil(n / 6));
+        if (i % passo === (n - 1) % passo) svg += '<text class="g-mes' + (i === n - 1 ? " atual" : "") + '" x="' + c.toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle">' + rot(m.mes) + "</text>";
+      });
+      svg += "</svg>";
+      return svg + '<div class="g-legenda"><span class="g-leg"><i class="g-leg-cor" style="background:var(--graf-a)"></i>Recebido <b>' + e(fk(porMes.reduce(function (t, m) { return t + m.recebido; }, 0))) + '</b></span>'
+        + '<span class="g-leg"><i class="g-leg-cor" style="background:var(--graf-b)"></i>Pago <b>' + e(fk(porMes.reduce(function (t, m) { return t + m.pago; }, 0))) + '</b></span>'
+        + '<span class="g-leg"><i class="g-leg-cor" style="background:var(--graf-c)"></i>Saldo ao final <b>' + e(fk(ult.saldo)) + "</b></span></div>";
+    },
+    /* lucratividade mês a mês: linha com o valor em cada ponto e a meta tracejada */
+    _pnSvgLucro: function (porMes, meta) {
+      var self = this, e = Util.esc, fk = function (v) { return self._fmtK(v); };
+      if (!porMes || !porMes.length) return "";
+      var W = 560, H = 180, padL = 40, padR = 16, padT = 26, padB = 30, iw = W - padL - padR, ih = H - padT - padB;
+      var vals = porMes.map(function (m) { return m.lucratividade; }).filter(function (v) { return v !== null; });
+      if (!vals.length) return '<p class="pn-vazio">Nenhum mês com receita e pagamento juntos ainda.</p>';
+      var max = Math.max(100, Math.max.apply(null, vals.concat([meta]))), min = Math.min(0, Math.min.apply(null, vals));
+      var y = function (v) { return padT + (1 - (v - min) / (max - min)) * ih; };
+      var n = porMes.length, x = function (i) { return padL + (n > 1 ? i / (n - 1) : .5) * iw; };
+      var rot = function (ch) { return ch.slice(5, 7) + "/" + ch.slice(2, 4); };
+      var resumo = "Lucratividade por mês: " + porMes.map(function (m) { return rot(m.mes) + " " + (m.lucratividade === null ? "sem os dois lados" : m.lucratividade + "%"); }).join(", ") + ". Meta " + meta + "%.";
+      var svg = '<svg class="pn-lucro-svg" viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="' + e(resumo) + '">';
+      [0, 50, 100].forEach(function (gv) { if (gv >= min && gv <= max) svg += '<line class="g-grade" x1="' + padL + '" y1="' + y(gv).toFixed(1) + '" x2="' + (W - padR) + '" y2="' + y(gv).toFixed(1) + '"/><text class="g-eixo" x="' + (padL - 6) + '" y="' + (y(gv) + 3.5).toFixed(1) + '" text-anchor="end">' + gv + "%</text>"; });
+      svg += '<line class="pn-meta-linha" x1="' + padL + '" y1="' + y(meta).toFixed(1) + '" x2="' + (W - padR) + '" y2="' + y(meta).toFixed(1) + '"/><text class="pn-meta-txt" x="' + (W - padR) + '" y="' + (y(meta) - 4).toFixed(1) + '" text-anchor="end">meta ' + meta + "%</text>";
+      var segs = [], seg = [];
+      porMes.forEach(function (m, i) { if (m.lucratividade === null) { if (seg.length) segs.push(seg); seg = []; } else seg.push(x(i).toFixed(1) + "," + y(m.lucratividade).toFixed(1)); });
+      if (seg.length) segs.push(seg);
+      segs.forEach(function (s) { if (s.length > 1) svg += '<polyline class="g-linha" points="' + s.join(" ") + '" stroke="var(--aco)"/>'; });
+      porMes.forEach(function (m, i) {
+        var v = m.lucratividade;
+        if (v === null) { svg += '<text class="g-eixo" x="' + x(i).toFixed(1) + '" y="' + (padT + ih / 2).toFixed(1) + '" text-anchor="middle">—</text>'; }
+        else {
+          var cls = v < 0 ? "pn-p-alerta" : (v >= meta ? "pn-p-ok" : "pn-p-atencao");
+          svg += '<circle class="pn-ponto ' + cls + '" cx="' + x(i).toFixed(1) + '" cy="' + y(v).toFixed(1) + '" r="5"><title>' + rot(m.mes) + ": recebido " + e(fk(m.recebido)) + ", pago " + e(fk(m.pago)) + ", lucratividade " + v + "%</title></circle>"
+            + '<text class="pn-ponto-txt" x="' + x(i).toFixed(1) + '" y="' + (y(v) - 10).toFixed(1) + '" text-anchor="middle">' + v + "%</text>";
+        }
+        svg += '<text class="g-mes' + (i === n - 1 ? " atual" : "") + '" x="' + x(i).toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle">' + rot(m.mes) + "</text>";
+      });
+      return svg + "</svg>";
+    },
+    /* medidor em arco: 0 a 150% da meta, marca da meta em 100% */
+    _pnGauge: function (rotulo, valorTexto, atingido, metaTexto, titulo) {
+      var W = 180, H = 108, cx = 90, cy = 92, r = 70;
+      var L = Math.PI * r, frac = (atingido === null || atingido === undefined) ? 0 : Math.max(0, Math.min(1.5, atingido)) / 1.5;
+      var cls = (atingido === null || atingido === undefined) ? " pn-g-vazio" : (atingido >= 1 ? " pn-g-ok" : (atingido >= 0.7 ? " pn-g-atencao" : " pn-g-alerta"));
+      var arco = "M" + (cx - r) + "," + cy + " A" + r + "," + r + " 0 0,1 " + (cx + r) + "," + cy;
+      var am = Math.PI * (1 - 1 / 1.5), mx = cx + r * Math.cos(Math.PI - am), my = cy - r * Math.sin(Math.PI - am);
+      var mx2 = cx + (r + 9) * Math.cos(Math.PI - am), my2 = cy - (r + 9) * Math.sin(Math.PI - am);
+      return '<div class="pn-gauge' + cls + '" title="' + Util.esc(titulo || "") + '"><svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="' + Util.esc(rotulo + ": " + valorTexto + ", meta " + metaTexto) + '">'
+        + '<path class="pn-g-trilho" d="' + arco + '"/>'
+        + '<path class="pn-g-fill" d="' + arco + '" stroke-dasharray="' + (L * frac).toFixed(1) + " " + (L + 2).toFixed(1) + '"/>'
+        + '<line class="pn-g-meta" x1="' + mx.toFixed(1) + '" y1="' + my.toFixed(1) + '" x2="' + mx2.toFixed(1) + '" y2="' + my2.toFixed(1) + '"/>'
+        + '<text class="pn-g-val" x="' + cx + '" y="' + (cy - 6) + '" text-anchor="middle">' + valorTexto + "</text>"
+        + "</svg>" + '<div class="pn-g-rot">' + rotulo + '<span>meta ' + metaTexto + "</span></div></div>";
+    },
+    /* rosca: composição com total no centro e legenda com valor e % */
+    _pnDonut: function (itens, total, centro, fmt) {
+      var e = Util.esc, r = 42, C = 2 * Math.PI * r, off = 0, svg = "";
+      var tot = total || itens.reduce(function (s, i) { return s + i.valor; }, 0) || 1;
+      itens.forEach(function (it) {
+        var len = it.valor / tot * C;
+        if (len <= 0) return;
+        svg += '<circle class="pn-fatia" r="' + r + '" cx="60" cy="60" fill="none" stroke="' + it.cor + '" stroke-width="16" stroke-dasharray="' + Math.max(0, len - 2).toFixed(2) + " " + C.toFixed(2) + '" stroke-dashoffset="' + (-off).toFixed(2) + '" transform="rotate(-90 60 60)"><title>' + e(it.rotulo) + ": " + e(fmt(it.valor)) + ", " + Math.round(it.valor / tot * 100) + "%</title></circle>";
+        off += len;
+      });
+      var leg = itens.map(function (it) { return '<li><i style="background:' + it.cor + '"></i><span class="pn-dl-nome">' + e(it.rotulo) + '</span><span class="pn-dl-val">' + e(fmt(it.valor)) + '</span><span class="pn-dl-pct">' + Math.round(it.valor / tot * 100) + "%</span></li>"; }).join("");
+      return '<div class="pn-donut"><svg viewBox="0 0 120 120" role="img" aria-label="' + e(centro.rotulo + " " + centro.valor + ": " + itens.map(function (it) { return it.rotulo + " " + Math.round(it.valor / tot * 100) + "%"; }).join(", ")) + '">' + svg
+        + '<text class="pn-d-val" x="60" y="58" text-anchor="middle">' + e(centro.valor) + '</text><text class="pn-d-rot" x="60" y="73" text-anchor="middle">' + e(centro.rotulo) + "</text></svg><ul class=\"pn-dl\">" + leg + "</ul></div>";
     },
 
     _pnHtml: function (m, ctx) {
@@ -2506,40 +2619,60 @@
         + '<button class="pn-ctl pn-ctl-ghost" data-gacao="painel-antigo" title="Volta ao Painel de sempre neste aparelho">Voltar ao Painel atual</button>'
         + "</div></div>";
 
-      /* ---- primeira dobra: caixa + hoje ---- */
+      /* ---- indicadores: cartões coloridos com variação e mini-barras mensais ---- */
       var cx = m.caixa, temFin = podeFin && fin && esc.financeiro.length > 0;
-      html += '<section class="pn-dobra">';
+      var meses = cx.porMes || [], rotM = meses.map(function (x) { return x.mes.slice(5, 7) + "/" + x.mes.slice(2, 4); });
       if (podeFin) {
-        html += '<div class="pn-plano"><div class="pn-sec"><h2>Caixa, ' + this._pnPeriodoRotulo(m.periodo) + '</h2><p>só o que entrou e saiu do Financeiro</p></div>';
+        html += '<div class="pn-sec"><h2>Caixa, ' + this._pnPeriodoRotulo(m.periodo) + "</h2><p>só o que entrou e saiu do Financeiro</p></div>";
         if (!temFin) html += '<p class="pn-vazio">Sem lançamentos no Financeiro ainda. Registre uma receita ou uma despesa e o caixa aparece aqui.</p>';
         else {
           var margemTxt = cx.margem === null
             ? (cx.recebido > 0 ? "sem despesa paga no período, a margem ainda não existe" : "sem receita no período")
             : "margem de caixa " + Util.fmtNum(cx.margem, 1) + "%, meta " + Util.fmtNum(metas.margem, 0) + "%" + (cx.aPagar > 0 ? ". Não abate " + e(fk(cx.aPagar)) + " a pagar" : "");
-          html += '<div class="pn-caixa"><div class="pn-extrato" role="table" aria-label="Fechamento de caixa">'
-            + '<span class="pn-rot">Recebido</span><span class="pn-reg">medições e faturas pagas ' + this._pnDelta(cx.delta.recebido, m.periodo) + '</span><span class="pn-val" title="' + e(fm(cx.recebido)) + '">' + e(fk(cx.recebido)) + "</span>"
-            + '<span class="pn-rot">Pago</span><span class="pn-reg">custo desembolsado ' + this._pnDelta(cx.delta.pago, m.periodo) + '</span><span class="pn-val pn-neg" title="' + e(fm(cx.pago)) + '">− ' + e(fk(cx.pago)) + "</span>"
-            + '<span class="pn-rot pn-soma">Resultado de caixa</span><span class="pn-reg pn-soma">' + margemTxt + '</span><span class="pn-val pn-soma' + (cx.resultado >= 0 ? " pn-ok" : " pn-ruim") + '" title="' + e(fm(cx.resultado)) + '">' + (cx.resultado < 0 ? "− " : "") + e(fk(Math.abs(cx.resultado))) + "</span>"
-            + "</div>"
-            /* a receber: dois números com o MESMO peso — o que está no Financeiro
-               e o que está aprovado em boletim e ainda não virou receita */
-            + '<div class="pn-lado"><div class="pn-mini"><span class="pn-rot">A receber</span><div class="pn-dois">'
-            + '<div><span class="pn-val">' + e(fm(cx.aReceber)) + '</span><span class="pn-sub">no Financeiro</span></div>'
-            + '<div><span class="pn-val' + (cx.aprovadoNaoPago.n ? "" : " pn-fraco") + '"' + (cx.aprovadoNaoPago.n ? ' data-aviso="aprovada-nao-paga"' : "") + ">" + e(fm(cx.aprovadoNaoPago.valor)) + '</span><span class="pn-sub">' + (cx.aprovadoNaoPago.n ? "em " + N(cx.aprovadoNaoPago.n, "boletim aprovado", "boletins aprovados") + " sem pagamento registrado" : "nenhum boletim aprovado esperando pagamento") + "</span></div></div>"
-            + (cx.pagoSemReceita && cx.pagoSemReceita.total ? '<span class="pn-sub pn-sub-alerta" data-aviso="pago-sem-receita">' + N(cx.pagoSemReceita.total, "boletim marcado como pago", "boletins marcados como pagos") + ", " + e(fm(cx.pagoSemReceita.liquido)) + " líquido, e não encontrei a receita no Financeiro." + (cx.pagoSemReceita.semCarimboForaDaObra > 0 ? " Há " + N(cx.pagoSemReceita.semCarimboForaDaObra, "receita sem carimbo", "receitas sem carimbo") + " sem obra ou de outra obra: confira antes de registrar de novo." : "") + "</span>" : "")
-            + "</div>"
-            + '<div class="pn-mini' + (cx.contasVencendo.n ? " pn-mini-aviso" : "") + '"><span class="pn-rot">A pagar' + (cx.contasVencendo.n ? " até " + this._pnDataCurta(cx.contasVencendo.ate) : "") + '</span><span class="pn-val">' + e(fm(cx.contasVencendo.n ? cx.contasVencendo.valor : cx.aPagar)) + "</span>"
-            + '<span class="pn-sub">' + (cx.contasVencendo.n ? N(cx.contasVencendo.n, "conta", "contas") + " " + (cx.contasVencendo.vencidas ? (cx.contasVencendo.n === 1 ? "vencida ou " : "vencidas ou ") : "") + "vencendo. Total em aberto " + e(fk(cx.aPagar)) + "." : "despesas em aberto no Financeiro, nenhuma vencendo até " + this._pnDataCurta(cx.contasVencendo.ate) + ".") + "</span></div></div>"
-            + '<div class="pn-lucro-bloco"><div class="pn-lucro-cab">Lucratividade por mês<span>' + (cx.anterior.existe ? "antes: recebido " + e(fk(cx.anterior.recebido)) + ", pago " + e(fk(cx.anterior.pago)) : "resultado sobre o recebido, mês a mês") + "</span></div>" + this._pnLucro(cx.porMes, metas.margem) + "</div>"
-            + '<div class="pn-medidores">'
-            + this._pnMedidor("Margem de caixa", cx.margem === null ? "—" : Util.fmtNum(cx.margem, 1) + "%", Util.fmtNum(metas.margem, 0) + "%", m.metas.margem.atingido, "Resultado de caixa dividido pelo recebido no período, contra a meta definida em Metas")
-            + (m.metas.recebimento ? this._pnMedidor("Recebimento", e(fk(m.metas.recebimento.valor)), e(fk(m.metas.recebimento.meta)), m.metas.recebimento.atingido, "Meta de " + fm(m.metas.recebimento.metaMes) + " por mês × " + N(m.metas.recebimento.meses, "mês", "meses") + " do período")
-              : '<div class="pn-medidor pn-med-vazio" title="Defina em Metas quanto a empresa precisa receber por mês"><span class="pn-med-rot">Recebimento</span><span class="pn-med-trilho"></span><span class="pn-med-val"><small>defina em Metas</small></span></div>')
-            + (m.metas.ppc.valor !== null ? this._pnMedidor("PPC da semana", m.metas.ppc.valor + "%", Util.fmtNum(metas.ppc, 0) + "%", m.metas.ppc.atingido, "Tarefas feitas sobre as comprometidas na semana do Last Planner") : "")
-            + "</div></div>";
+          html += '<section class="pn-tiles">'
+            + this._pnTile({ cls: "pn-t-ok", rotulo: "Recebido", valor: e(fk(cx.recebido)), titulo: fm(cx.recebido), delta: this._pnDelta(cx.delta.recebido, m.periodo),
+                sub: "medições e faturas pagas", mini: this._pnMiniBarras(meses.map(function (x) { return x.recebido; }), "var(--graf-a)", rotM, fk) })
+            + this._pnTile({ cls: "pn-t-alerta", rotulo: "Pago", valor: "− " + e(fk(cx.pago)), titulo: fm(cx.pago), delta: this._pnDelta(cx.delta.pago, m.periodo),
+                sub: "custo desembolsado", mini: this._pnMiniBarras(meses.map(function (x) { return x.pago; }), "var(--graf-b)", rotM, fk) })
+            + this._pnTile({ cls: cx.resultado >= 0 ? "pn-t-aco" : "pn-t-alerta", rotulo: "Resultado de caixa", valor: (cx.resultado < 0 ? "− " : "") + e(fk(Math.abs(cx.resultado))), titulo: fm(cx.resultado),
+                delta: this._pnDelta(cx.delta.resultado, m.periodo), sub: margemTxt,
+                mini: this._pnMiniBarras(meses.map(function (x) { return x.recebido - x.pago; }), "var(--graf-c)", rotM, fk) })
+            + '<div class="pn-tile pn-t-neutro"><div class="pn-tile-cab"><span class="pn-tile-rot">A receber</span></div><div class="pn-dois">'
+              + '<div><span class="pn-tile-val pn-tile-val-m">' + e(fm(cx.aReceber)) + '</span><span class="pn-tile-sub">no Financeiro</span></div>'
+              + '<div><span class="pn-tile-val pn-tile-val-m' + (cx.aprovadoNaoPago.n ? "" : " pn-fraco") + '"' + (cx.aprovadoNaoPago.n ? ' data-aviso="aprovada-nao-paga"' : "") + ">" + e(fm(cx.aprovadoNaoPago.valor)) + '</span><span class="pn-tile-sub">' + (cx.aprovadoNaoPago.n ? "em " + N(cx.aprovadoNaoPago.n, "boletim aprovado", "boletins aprovados") + " sem pagamento" : "nenhum boletim aprovado esperando") + "</span></div></div>"
+              + '<div class="pn-tile-cab pn-tile-cab-2"><span class="pn-tile-rot">A pagar' + (cx.contasVencendo.n ? " até " + this._pnDataCurta(cx.contasVencendo.ate) : "") + "</span></div>"
+              + '<span class="pn-tile-val pn-tile-val-m' + (cx.contasVencendo.n ? " pn-q-aviso" : "") + '">' + e(fm(cx.contasVencendo.n ? cx.contasVencendo.valor : cx.aPagar)) + "</span>"
+              + '<span class="pn-tile-sub">' + (cx.contasVencendo.n ? N(cx.contasVencendo.n, "conta", "contas") + " " + (cx.contasVencendo.vencidas ? (cx.contasVencendo.n === 1 ? "vencida ou " : "vencidas ou ") : "") + "vencendo. Em aberto " + e(fk(cx.aPagar)) + "." : "em aberto, nenhuma vencendo até " + this._pnDataCurta(cx.contasVencendo.ate) + ".") + "</span>"
+              + (cx.pagoSemReceita && cx.pagoSemReceita.total ? '<span class="pn-tile-sub pn-sub-alerta" data-aviso="pago-sem-receita">' + N(cx.pagoSemReceita.total, "boletim marcado como pago", "boletins marcados como pagos") + ", " + e(fm(cx.pagoSemReceita.liquido)) + " líquido, sem a receita no Financeiro." + (cx.pagoSemReceita.semCarimboForaDaObra > 0 ? " Há " + N(cx.pagoSemReceita.semCarimboForaDaObra, "receita sem carimbo", "receitas sem carimbo") + " de outra obra: confira antes de registrar de novo." : "") + "</span>" : "")
+              + "</div>"
+            + "</section>";
         }
-        html += "</div>";
       }
+
+      /* ---- grade: gráficos à esquerda, a fila à direita ---- */
+      html += '<section class="pn-grid"><div class="pn-grid-esq">';
+      if (temFin) {
+        html += '<div class="pn-card pn-graf"><div class="pn-sec"><h2>Fluxo de caixa</h2><p>' + this._pnPeriodoRotulo(m.periodo) + ", por mês. Barras: recebido e pago. Linha: saldo acumulado.</p></div>"
+          + (meses.length ? this._pnSvgCombo(meses) : '<p class="pn-vazio">Sem lançamentos pagos no período.</p>') + "</div>";
+        var CORES_OBRA = ["var(--graf-a)", "var(--graf-c)", "var(--graf-d)", "var(--cat-equip)", "var(--cat-impostos)", "var(--cat-medicao)"];
+        html += '<div class="pn-tres">'
+          + '<div class="pn-card pn-graf"><div class="pn-sec"><h2>Despesas por categoria</h2></div>'
+            + (m.categorias.length ? this._pnDonut(m.categorias.map(function (c) { return { rotulo: rot(P.finCategoria, c.cat), valor: c.valor, cor: self._CORCAT[c.cat] || "var(--cat-outros)" }; }), cx.pago, { rotulo: "pago", valor: fk(cx.pago) }, fk)
+              : '<p class="pn-vazio">Sem despesa paga no período.</p>') + "</div>"
+          + '<div class="pn-card pn-graf"><div class="pn-sec"><h2>Custo por obra</h2></div>'
+            + (m.porObra.length ? this._pnDonut(m.porObra.map(function (o, i) { return { rotulo: o.nome, valor: o.valor, cor: CORES_OBRA[i % CORES_OBRA.length] }; }).concat(m.semObraPeriodo > 0 ? [{ rotulo: "Sem obra", valor: m.semObraPeriodo, cor: "var(--cat-outros)" }] : []), cx.pago, { rotulo: "pago", valor: fk(cx.pago) }, fk)
+              : '<p class="pn-vazio">Sem despesa paga com obra no período.</p>') + "</div>"
+          + "</div>";
+        html += '<div class="pn-card pn-graf"><div class="pn-sec"><h2>Lucratividade por mês</h2><p>resultado sobre o recebido, mês a mês, contra a meta de margem</p></div>' + this._pnSvgLucro(meses, Util.num(metas.margem)) + "</div>";
+        html += '<div class="pn-card pn-graf"><div class="pn-sec"><h2>Metas</h2><p>o arco vai até 150% da meta; a marca é a meta</p></div><div class="pn-gauges">'
+          + this._pnGauge("Margem de caixa", cx.margem === null ? "—" : Util.fmtNum(cx.margem, 1) + "%", m.metas.margem.atingido, Util.fmtNum(metas.margem, 0) + "%", "Resultado de caixa dividido pelo recebido no período")
+          + (m.metas.recebimento
+            ? this._pnGauge("Recebimento", e(fk(m.metas.recebimento.valor)), m.metas.recebimento.atingido, e(fk(m.metas.recebimento.meta)), fm(m.metas.recebimento.metaMes) + " por mês × " + N(m.metas.recebimento.meses, "mês", "meses"))
+            : this._pnGauge("Recebimento", e(fk(cx.recebido)), null, "não definida (defina em Metas)", "Defina em Metas quanto a empresa precisa receber por mês"))
+          + (m.metas.ppc.valor !== null ? this._pnGauge("PPC da semana", m.metas.ppc.valor + "%", m.metas.ppc.atingido, Util.fmtNum(metas.ppc, 0) + "%", "Tarefas feitas sobre as comprometidas na semana do Last Planner") : "")
+          + "</div></div>";
+      }
+      html += '</div><div class="pn-grid-dir">';
       /* fila de decisões */
       var dec = m.decisoes, VIS = 5;
       var linhaDec = function (x) {
@@ -2557,7 +2690,7 @@
         html += "<ol>" + dec.slice(0, VIS).map(linhaDec).join("") + "</ol>";
         if (dec.length > VIS) html += '<details class="pn-mais"><summary>Mais ' + N(dec.length - VIS, "ponto", "pontos") + "</summary><ol>" + dec.slice(VIS).map(linhaDec).join("") + "</ol></details>";
       }
-      html += "</div></section>";
+      html += "</div></div></section>";
 
       /* ---- obras ---- */
       var linhaObra = function (l) {
@@ -2615,32 +2748,10 @@
       }
       html += "</section>";
 
-      /* ---- gráficos (reaproveitam os SVGs já testados) ---- */
-      if (temFin) {
-        html += '<section class="pn-grafs">';
-        html += '<div class="pn-card pn-graf"><div class="pn-sec"><h2>Fluxo de caixa por mês</h2><p>' + this._pnPeriodoRotulo(m.periodo) + "</p></div>"
-          + (fin.fluxoTemMovimento ? this._dashSvgFluxo(fin.fluxo) : '<p class="pn-vazio">Sem lançamentos pagos no período.</p>') + "</div>";
-        html += '<div class="pn-card pn-graf"><div class="pn-sec"><h2>Onde o dinheiro saiu</h2><p>despesa paga no período</p></div>';
-        if (!m.categorias.length) html += '<p class="pn-vazio">Sem despesa paga no período.</p>';
-        else {
-          var maxCat = m.categorias[0].valor || 1;
-          html += '<div class="pn-cats-t">Por categoria</div><div class="pn-cats">' + m.categorias.map(function (c) {
-            return '<div class="pn-cat" title="' + e(rot(P.finCategoria, c.cat)) + ": " + e(fm(c.valor)) + ", " + c.pct + '% do pago"><span class="pn-cat-nome">' + e(rot(P.finCategoria, c.cat)) + '</span><span class="pn-cat-barra"><i style="width:' + Math.max(1, Math.round(c.valor / maxCat * 100)) + "%;background:" + (self._CORCAT[c.cat] || "var(--cat-outros)") + '"></i></span><span class="pn-cat-val">' + e(fk(c.valor)) + '</span><span class="pn-cat-pct">' + c.pct + "%</span></div>";
-          }).join("") + "</div>";
-          if (m.porObra.length) {
-            var maxObra = m.porObra[0].valor || 1;
-            html += '<div class="pn-cats-t">Por obra</div><div class="pn-cats">' + m.porObra.map(function (o) {
-              var pct = cx.pago > 0 ? Math.round(o.valor / cx.pago * 100) : 0;
-              return '<div class="pn-cat" title="' + e(o.nome) + ": " + e(fm(o.valor)) + ", " + pct + '% do pago"><span class="pn-cat-nome">' + e(o.nome) + '</span><span class="pn-cat-barra"><i style="width:' + Math.max(1, Math.round(o.valor / maxObra * 100)) + '%;background:var(--cat-obra)"></i></span><span class="pn-cat-val">' + e(fk(o.valor)) + '</span><span class="pn-cat-pct">' + pct + "%</span></div>";
-            }).join("") + "</div>" + (m.semObraPeriodo > 0 ? '<p class="pn-rodape">' + e(fm(m.semObraPeriodo)) + " sem obra vinculada.</p>" : "");
-          }
-        }
-        html += "</div>";
-        if (fin.prevReal.length) {
-          html += '<div class="pn-card pn-graf"><div class="pn-sec"><h2>Orçado × gasto' + (fin.porEtapa ? " por etapa" : " por obra") + '</h2><p>competência, acumulado' + (fin.obrasSemOrcamento ? ". " + N(fin.obrasSemOrcamento, "obra sem orçamento vinculado ficou", "obras sem orçamento vinculado ficaram") + " de fora" : "") + "</p></div>"
-            + this._dashSvgPrevReal(this._dashPrevRealTop(fin.prevReal)) + "</div>";
-        }
-        html += "</section>";
+      /* ---- orçado × gasto (o SVG já testado do Painel antigo, agora com hover) ---- */
+      if (temFin && fin.prevReal.length) {
+        html += '<section class="pn-card pn-graf pn-larga"><div class="pn-sec"><h2>Orçado × gasto' + (fin.porEtapa ? " por etapa" : " por obra") + '</h2><p>competência, acumulado' + (fin.obrasSemOrcamento ? ". " + N(fin.obrasSemOrcamento, "obra sem orçamento vinculado ficou", "obras sem orçamento vinculado ficaram") + " de fora" : "") + "</p></div>"
+          + this._dashSvgPrevReal(this._dashPrevRealTop(fin.prevReal)) + "</section>";
       }
 
       /* ---- operação: contadores + detalhes que abrem ---- */
