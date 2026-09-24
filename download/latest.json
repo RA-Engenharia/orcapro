@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.91",
+  "versao": "1.2.92",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.91.zip",
-  "notas": "Painel de Gestao novo (em avaliacao, desligado por padrao): faixa \"Posicao de hoje\" (a receber, boletins aprovados, a pagar na semana), agenda da semana, previsao de caixa de 30 dias, fila de decisoes em grupos com \"Adiar 7 dias\" (volta sozinho), avisos do sino na mesma fila, \"Organizar painel\" (ordem e visibilidade dos blocos), botao Relatorio (PDF pelo navegador) e comparacao com o periodo anterior no fluxo de caixa. Nada muda para quem nao ligar o Painel novo.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.91/OrcaPRO-IA-Instalador-v1.2.91.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.92.zip",
+  "notas": "Barra de modulos mais estreita (35% menor), com o icone em cima do nome. Clicar num grupo abre uma aba ao lado da barra com os modulos dele; abrir outro grupo fecha o anterior, e a seta saiu. O fundo da barra clareia perto do mouse.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.92/OrcaPRO-IA-Instalador-v1.2.92.exe"
 }

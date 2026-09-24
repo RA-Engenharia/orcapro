@@ -1129,23 +1129,192 @@
        linhas — quatro itens quebravam assim. */
     _sbItem: function (m, viewAtiva, dentroDeGrupo) {
       var nome = dentroDeGrupo && typeof MenuArvore !== "undefined" ? MenuArvore.rotulo(m) : m.nome;
+      /* 22 no azulejo da barra (com o rótulo embaixo, o ícone é o que se lê
+         de longe); 16 na linha da aba lateral, onde o nome vem ao lado */
       return '<button class="sb-item' + (m.id === viewAtiva ? " on" : "") + (dentroDeGrupo ? " sb-filho" : "")
-        + '" data-view="' + m.id + '"><span class="sb-ic">' + svg(m.id, 19) + "</span><span>"
+        + '" data-view="' + m.id + '"><span class="sb-ic">' + svg(m.id, dentroDeGrupo ? 16 : 22) + "</span><span>"
         + Util.esc(nome) + "</span></button>";
     },
 
-    /* Quais grupos o cliente deixou abertos. Preferência de TELA e de
-       APARELHO — a mesma regra do menu enxuto: cada um organiza o seu sem
-       reescrever o do colega pela nuvem. */
+    /* A chave do "grupo aberto" de antes da aba lateral. Não é mais lida para
+       desenhar (a aba é transitória: fecha ao navegar, ao clicar fora, no
+       Esc e ao abrir outro grupo), mas fica: a suíte do menu enxuto semeia
+       essa chave para contar módulos, e apagar a função quebraria o teste
+       sem ganho nenhum. */
     _abertosChave: function () { return this._menuChave() + ":grp"; },
     _menuAbertos: function () {
       try { return JSON.parse(localStorage.getItem(this._abertosChave()) || "{}") || {}; } catch (e) { return {}; }
     },
+
+    /* ==================================================================
+     * A ABA LATERAL DO GRUPO (24/09/2026)
+     *
+     * Antes, clicar num grupo abria uma sanfona dentro da barra (com seta,
+     * preferência gravada e App.render() inteiro a cada clique). Agora:
+     *  • clicar no azulejo do grupo abre uma ABA ao lado da barra com os
+     *    módulos de dentro; clicar de novo fecha;
+     *  • UMA aba por vez — abrir outro grupo fecha o anterior, e com uma
+     *    aberta basta passar o mouse por outro grupo para trocar (é como um
+     *    menu de sistema se comporta, e é o que a mão espera);
+     *  • fecha ao navegar (o render redesenha a barra), ao clicar fora, no
+     *    Esc (o foco volta ao azulejo) e ao rolar a barra (a aba é fixa na
+     *    janela; rolar a barra tiraria o azulejo de baixo dela).
+     * ⚠ NADA AQUI CHAMA App.render(): a aba é estado de DOM, não de tela.
+     * Redesenhar a tela inteira para abrir um menu era o custo que fazia o
+     * clique no grupo "piscar" em módulo pesado (Planilha, BIM).
+     * ================================================================== */
+    menuFlyFechar: function () {
+      var sb = document.getElementById("sidebar");
+      if (!sb) return;
+      Array.prototype.forEach.call(sb.querySelectorAll(".sb-fly.aberta"), function (f) {
+        f.classList.remove("aberta"); f.style.top = ""; f.style.left = ""; f.style.maxHeight = "";
+      });
+      Array.prototype.forEach.call(sb.querySelectorAll(".sb-grp-bt.aberto"), function (b) {
+        b.classList.remove("aberto"); b.setAttribute("aria-expanded", "false");
+      });
+    },
+    _menuFlyAbrir: function (id) {
+      var sb = document.getElementById("sidebar");
+      var fly = document.getElementById("sb-fly-" + id);
+      var bt = sb ? sb.querySelector('.sb-grp-bt[data-id="' + id + '"]') : null;
+      if (!sb || !fly || !bt) return false;
+      this.menuFlyFechar();
+      fly.classList.add("aberta");
+      bt.classList.add("aberto"); bt.setAttribute("aria-expanded", "true");
+      this._menuFlyPosicionar(bt, fly);
+      return true;
+    },
+    /* No desktop a aba é fixa na janela, alinhada ao azulejo que a abriu e
+       encostada na borda direita da barra (medida, não cravada: no modo foco
+       a barra tem 54 px). Se não couber para baixo, sobe até caber.
+       ⚠ Chamado também ao ROLAR a barra, e por isso é função própria: a
+       primeira versão fechava a aba no scroll, e um `scrollIntoView` (que
+       rola a barra sem ninguém pedir — a e2e-medcc-completo faz isso antes
+       de todo clique) fechava a aba entre a mira e o clique; o clique caía
+       na tela de trás. Rolou → a aba acompanha o azulejo; só fecha se o
+       azulejo saiu da parte visível da barra. */
+    _menuFlyPosicionar: function (bt, fly) {
+      var sb = document.getElementById("sidebar");
+      if (!sb || !bt || !fly) return;
+      var desktop = !window.matchMedia || window.matchMedia("(min-width: 821px)").matches;
+      if (!desktop) { fly.style.top = ""; fly.style.left = ""; fly.style.maxHeight = ""; return; }
+      var rb = bt.getBoundingClientRect(), rs = sb.getBoundingClientRect();
+      if (rb.bottom < rs.top || rb.top > rs.bottom) { this.menuFlyFechar(); return; }
+      var altoJanela = window.innerHeight || document.documentElement.clientHeight || 800;
+      fly.style.left = Math.round(rs.right) + "px";
+      fly.style.maxHeight = Math.max(120, altoJanela - 16) + "px";
+      var alto = fly.offsetHeight, topo = Math.round(rb.top);
+      if (topo + alto > altoJanela - 8) topo = Math.max(8, altoJanela - 8 - alto);
+      fly.style.top = topo + "px";
+    },
     menuGrupoToggle: function (id) {
-      if (!id || typeof MenuArvore === "undefined") return;
-      var novo = MenuArvore.alternar(this._menuAbertos(), id);
-      try { localStorage.setItem(this._abertosChave(), JSON.stringify(novo)); } catch (e) {}
-      App.render();
+      if (!id) return;
+      var fly = document.getElementById("sb-fly-" + id);
+      var jaAberta = !!(fly && fly.classList.contains("aberta"));
+      this.menuFlyFechar();
+      if (jaAberta) return;
+      this._menuFlyAbrir(id);
+    },
+    /* Chamado pelo App DEPOIS de cada render da barra (js/app.js). Os
+       listeners no #sidebar são reatribuídos (não acumulam: `on...` é um só);
+       os globais (documento, janela) ligam uma vez. */
+    menuMontar: function () {
+      var self = this, sb = document.getElementById("sidebar");
+      if (!sb) return;
+      sb.onmouseover = function (e) {
+        var t = e && e.target, bt = (t && t.closest) ? t.closest(".sb-grp-bt") : null;
+        if (!bt || bt.classList.contains("aberto")) return;
+        if (!sb.querySelector(".sb-fly.aberta")) return;     /* sem aba aberta, hover não abre nada */
+        self._menuFlyAbrir(bt.getAttribute("data-id"));
+      };
+      sb.onscroll = function () {
+        var ab = sb.querySelector(".sb-grp-bt.aberto");
+        if (ab) self._menuFlyPosicionar(ab, document.getElementById("sb-fly-" + ab.getAttribute("data-id")));
+      };
+      /* ⚠ GUARDA DE BANCADA: test-navegacao.js roda App.render() num `window`
+         de mentira, sem addEventListener — e o gate ficou vermelho por isso
+         (24/09/2026). Sem os globais a aba ainda abre e fecha pelo clique;
+         só perde o "clicar fora" e o Esc, que num teste de Node não existem. */
+      if (typeof document.addEventListener !== "function" || typeof window.addEventListener !== "function") return;
+      if (!this._menuFlyGlobal) {
+        this._menuFlyGlobal = true;
+        document.addEventListener("mousedown", function (e) {
+          var t = e && e.target;
+          if (t && t.closest && t.closest("#sidebar")) return;
+          self.menuFlyFechar();
+        }, true);
+        document.addEventListener("keydown", function (e) {
+          if (!e || (e.key !== "Escape" && e.keyCode !== 27)) return;
+          var s = document.getElementById("sidebar");
+          var ab = s ? s.querySelector(".sb-grp-bt.aberto") : null;
+          if (!ab) return;
+          self.menuFlyFechar();
+          try { ab.focus(); } catch (e2) {}
+        });
+        window.addEventListener("resize", function () { self.menuFlyFechar(); });
+      }
+      this.menuLuz();
+    },
+
+    /* ==================================================================
+     * A LUZ QUE SEGUE O MOUSE (24/09/2026)
+     *
+     * O navy da barra clareia em volta do ponteiro. Dentro da barra a luz
+     * acompanha o cursor; fora dela, encosta na borda direita à altura do
+     * mouse e vai apagando conforme ele se afasta (some a 420 px). A
+     * posição é interpolada quadro a quadro (18% do caminho por quadro), o
+     * que dá o "arrasto" suave em vez de um holofote colado no cursor.
+     *
+     * ⚠ CUSTO ZERO EM REPOUSO: o laço de requestAnimationFrame só roda
+     * enquanto a luz ainda está longe do alvo, e para sozinho. O mousemove
+     * só grava o alvo. O rect da barra é medido no máximo a cada 300 ms.
+     * ⚠ NÃO LIGA quando não há ponteiro (toque) nem quando a pessoa pediu
+     * menos movimento (prefers-reduced-motion) — nesses dois casos o fundo
+     * é o degradê de sempre, e ninguém sente falta do que nunca viu.
+     * Escreve só três variáveis CSS (--lx, --ly, --lr); o desenho está em
+     * css/app.css (`.sidebar`).
+     * ================================================================== */
+    menuLuz: function () {
+      if (this._luzLigada) return;
+      if (!window.requestAnimationFrame || !window.matchMedia) return;
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      if (!window.matchMedia("(hover: hover)").matches) return;
+      this._luzLigada = true;
+      var RAIO = 300, ALCANCE = 420;
+      var alvo = { x: 0, y: 0, r: 0 }, atual = { x: 0, y: 0, r: 0 };
+      var rodando = false, rect = null, rectEm = 0;
+      function barra() { return document.getElementById("sidebar"); }
+      function medir() {
+        var agora = Date.now();
+        if (!rect || agora - rectEm > 300) { var s = barra(); rect = s ? s.getBoundingClientRect() : null; rectEm = agora; }
+        return rect;
+      }
+      function quadro() {
+        var s = barra();
+        if (!s) { rodando = false; return; }
+        var dx = alvo.x - atual.x, dy = alvo.y - atual.y, dr = alvo.r - atual.r;
+        atual.x += dx * 0.18; atual.y += dy * 0.18; atual.r += dr * 0.18;
+        s.style.setProperty("--lx", Math.round(atual.x) + "px");
+        s.style.setProperty("--ly", Math.round(atual.y) + "px");
+        s.style.setProperty("--lr", Math.round(atual.r) + "px");
+        if (Math.abs(dx) + Math.abs(dy) + Math.abs(dr) > 0.6) window.requestAnimationFrame(quadro);
+        else rodando = false;
+      }
+      function acorda() { if (!rodando) { rodando = true; window.requestAnimationFrame(quadro); } }
+      document.addEventListener("mousemove", function (e) {
+        var r = medir();
+        if (!r || r.width < 20 || r.height < 20) { alvo.r = 0; acorda(); return; }   /* gaveta fechada / celular */
+        var x = e.clientX, y = e.clientY;
+        if (x <= r.right) { alvo.x = x - r.left; alvo.y = y - r.top; alvo.r = RAIO; }
+        else {
+          var k = 1 - (x - r.right) / ALCANCE;
+          if (k <= 0) alvo.r = 0;
+          else { alvo.x = r.width; alvo.y = y - r.top; alvo.r = Math.round(RAIO * (0.35 + 0.65 * k)); }
+        }
+        acorda();
+      }, false);
+      /* o ponteiro saiu da janela: a luz apaga em vez de ficar presa na borda */
+      document.documentElement.addEventListener("mouseleave", function () { alvo.r = 0; acorda(); }, false);
     },
 
     renderSidebar: function (viewAtiva) {
@@ -1190,25 +1359,31 @@
         var visiveis = mods.filter(visivel);
         itens = visiveis.map(function (m) { return self._sbItem(m, viewAtiva); }).join("");
       } else if (typeof MenuArvore !== "undefined") {
-        var arvore = MenuArvore.montar(mods, this.GRUPOS_MENU, {
-          ativo: viewAtiva, abertos: this._menuAbertos()
-        });
+        /* `abertos: {}` de prop\u00f3sito: a aba lateral n\u00e3o nasce aberta \u2014 nem a
+           do m\u00f3dulo ativo. O rastro de "onde estou" \u00e9 o azulejo do grupo
+           aceso (tem-ativo) e o t\u00edtulo da tela; a aba \u00e9 o que se abre para
+           IR a outro lugar, n\u00e3o para lembrar onde se est\u00e1. */
+        var arvore = MenuArvore.montar(mods, this.GRUPOS_MENU, { ativo: viewAtiva, abertos: {} });
         itens = arvore.map(function (no) {
           if (no.tipo === "sep") return '<div class="sb-sep"></div>';
           if (no.tipo === "item") return self._sbItem(no.mod, viewAtiva);
-          var cab = '<button class="sb-item sb-grp-bt' + (no.aberto ? " aberto" : "")
-            + (no.temAtivo ? " tem-ativo" : "") + '" data-gacao="menu-grupo" data-id="' + Util.esc(no.id) + '"'
-            + ' aria-expanded="' + (no.aberto ? "true" : "false") + '">'
-            + '<span class="sb-ic">' + svg(self.ICONE_GRUPO[no.id] || no.filhos[0].id, 19) + "</span>"
-            + "<span>" + Util.esc(no.nome) + "</span>"
-            /* sem contador: a seta ja diz que ha mais coisa dentro, e um
-               numero ao lado de cada grupo virava uma coluna de digitos
-               competindo com os nomes. Um acessorio a menos. */
-            + '<span class="sb-grp-seta">' + (no.aberto ? "\u2303" : "\u2304") + "</span></button>";
-          if (!no.aberto) return cab;
-          /* role/aria-label: para o leitor de tela os filhos sao um grupo com
+          var gid = Util.esc(no.id), icone = self.ICONE_GRUPO[no.id] || no.filhos[0].id;
+          /* SEM SETA: o grupo se reconhece por abrir. A seta era o acess\u00f3rio
+             de sanfona, e num azulejo de 122 px ela roubava a linha do
+             r\u00f3tulo. aria-haspopup/aria-controls contam ao leitor de tela o
+             que a seta contava ao olho. */
+          var cab = '<button class="sb-item sb-grp-bt' + (no.temAtivo ? " tem-ativo" : "")
+            + '" data-gacao="menu-grupo" data-id="' + gid + '" aria-haspopup="true" aria-expanded="false"'
+            + ' aria-controls="sb-fly-' + gid + '">'
+            + '<span class="sb-ic">' + svg(icone, 22) + "</span>"
+            + "<span>" + Util.esc(no.nome) + "</span></button>";
+          /* a aba vai SEMPRE ao DOM (fechada): \u00e9 o que mant\u00e9m todo m\u00f3dulo
+             alcan\u00e7\u00e1vel por `#sidebar [data-view]` sem abrir nada, e o que
+             deixa a busca de teste e o leitor de tela verem a lista inteira.
+             role/aria-label: para o leitor de tela os filhos sao um grupo com
              nome, e nao mais quatro botoes soltos depois de um botao */
-          return cab + '<div class="sb-grp-filhos" role="group" aria-label="' + Util.esc(no.nome) + '">'
+          return cab + '<div class="sb-fly" id="sb-fly-' + gid + '" data-grp="' + gid + '" role="group" aria-label="' + Util.esc(no.nome) + '">'
+            + '<div class="sb-fly-cab"><span class="sb-ic">' + svg(icone, 16) + "</span><span>" + Util.esc(no.nome) + "</span></div>"
             + no.filhos.map(function (m) { return self._sbItem(m, viewAtiva, true); }).join("")
             + "</div>";
         }).join("");
@@ -1273,21 +1448,14 @@
          do service worker por duas versões, e um menu meio pintado é pior
          que menu nenhum. */
       var est = '<style id="sb-menu-css">'
-        /* --- o grupo: cabeçalho, contagem e filhos --- */
+        /* --- o grupo: azulejo + aba lateral (o desenho da aba está em
+           css/app.css, `.sb-fly`) --- */
         + ".sb-grp-bt{width:100%}"
-        + ".sb-grp-seta{margin-left:auto;font-size:13px;opacity:.5;line-height:1}"
-        + ".sb-grp-bt:hover .sb-grp-seta{opacity:.9}"
-        /* ⚠ o traço à esquerda dos filhos é o que diz "isto está DENTRO":
-           sem ele, grupo aberto vira a mesma lista plana de antes, só que
-           com um título no meio. */
-        + ".sb-grp-filhos{margin:1px 0 5px 19px;padding-left:9px;border-left:1px solid rgba(255,255,255,.13)}"
-        + ".sb-item.sb-filho{font-size:13.5px;padding-top:5px;padding-bottom:5px;opacity:.86}"
-        + ".sb-item.sb-filho:hover,.sb-item.sb-filho.on{opacity:1}"
         + ".sb-item.sb-filho .sb-ic{opacity:.8}"
-        /* o grupo que contém a tela aberta fica marcado mesmo recolhido —
-           é o rastro de onde a pessoa está */
-        + ".sb-grp-bt.tem-ativo{color:#fff}"
-        + ".sb-grp-bt.tem-ativo .sb-ic{opacity:1}"
+        /* o grupo que contém a tela aberta fica marcado mesmo com a aba
+           fechada — é o rastro de onde a pessoa está */
+        + ".sb-grp-bt.tem-ativo{color:#fff;background:rgba(255,255,255,.10);box-shadow:inset 3px 0 0 var(--verde-claro)}"
+        + ".sb-grp-bt.tem-ativo .sb-ic{opacity:1;color:#fff}"
         + ".sb-mais{position:relative}"
         + ".sb-mais-lista{display:none;padding-left:6px;border-left:2px solid var(--linha);margin:2px 0 6px 10px}"
         + ".sb-mais:hover .sb-mais-lista,.sb-mais.aberto .sb-mais-lista{display:block}"
@@ -1306,21 +1474,19 @@
            saltava sozinha ao atravessar a tela com o mouse. Agora o gesto é
            deliberado: mira no logo para abrir, e ela só recolhe quando o
            ponteiro deixa a área do menu. */
-        + ".app.foco > .sidebar.aberta{width:212px;box-shadow:6px 0 26px rgba(8,18,30,.35)}"
+        + ".app.foco > .sidebar.aberta{width:var(--sb-w,138px);box-shadow:6px 0 26px rgba(8,18,30,.35)}"
         + ".app.foco > .sidebar .sb-top{cursor:pointer;position:relative}"
         /* o logo ganha um alvo maior e uma dica de que é ele que abre */
         + ".app.foco > .sidebar:not(.aberta) .sb-top::after{content:'›';position:absolute;right:6px;top:50%;"
         + "transform:translateY(-50%);font-size:16px;font-weight:700;opacity:.5}"
-        + ".app.foco > .sidebar:not(.aberta) .sb-item > span:not(.sb-ic){display:none}"
+        /* ⚠ `.sb-nav > .sb-item`, e não `.sb-item`: a aba lateral (.sb-fly)
+           mora dentro da barra e abre A PARTIR do trilho — a regra sem o
+           `>` apagava o nome dos módulos dentro da aba, sobrando uma coluna
+           de ícones sem nome, que era justamente o que se queria evitar. */
+        + ".app.foco > .sidebar:not(.aberta) .sb-nav > .sb-item > span:not(.sb-ic){display:none}"
         /* com a barra recolhida, abrir a sanfona de "Mais módulos" dentro de
            54px daria uma coluna de ícones sem nome nenhum — pior que fechada */
         + ".app.foco > .sidebar:not(.aberta) .sb-mais-lista{display:none!important}"
-        /* ⚠ e os filhos do grupo aberto pelo MESMO motivo: com 54px, a
-           indentação de 19px + o traço deixariam meio ícone visível. A barra
-           recolhida mostra só os primeiros níveis; o grupo volta a abrir
-           assim que ela expande. */
-        + ".app.foco > .sidebar:not(.aberta) .sb-grp-filhos{display:none!important}"
-        + ".app.foco > .sidebar:not(.aberta) .sb-grp-seta{display:none}"
         + ".app.foco > .sidebar:not(.aberta) .sb-lbl,"
         + ".app.foco > .sidebar:not(.aberta) .sb-grp,"
         + ".app.foco > .sidebar:not(.aberta) .sb-mais-n{display:none}"
@@ -1328,13 +1494,15 @@
         + ".app.foco > .sidebar:not(.aberta) .sb-org::before{content:'⚙';font-size:13px}"
         + ".app.foco > .sidebar:not(.aberta) .sb-foco{font-size:0;padding:6px 0;text-align:center}"
         + ".app.foco > .sidebar:not(.aberta) .sb-foco::before{content:'⇥';font-size:13px}"
-        + ".app.foco > .sidebar .sb-item{white-space:nowrap;overflow:hidden}"
+        + ".app.foco > .sidebar .sb-nav > .sb-item{overflow:hidden}"
         + "}"
         + "</style>";
       return '<div class="sb-top"><svg width="34" height="34" viewBox="0 0 512 512"><defs><linearGradient id="sbg" x1="0" y1="0" x2=".35" y2="1"><stop offset="0" stop-color="#2d6a9c"/><stop offset="1" stop-color="#143a5e"/></linearGradient></defs><path d="M504 256 L504 354 L502 385 L500 407 L496 425 L492 440 L486 452 L480 463 L472 472 L463 480 L452 486 L440 492 L425 496 L407 500 L385 502 L354 504 L256 504 L158 504 L127 502 L105 500 L87 496 L72 492 L60 486 L49 480 L40 472 L32 463 L26 452 L20 440 L16 425 L12 407 L10 385 L8 354 L8 256 L8 158 L10 127 L12 105 L16 87 L20 72 L26 60 L32 49 L40 40 L49 32 L60 26 L72 20 L87 16 L105 12 L127 10 L158 8 L256 8 L354 8 L385 10 L407 12 L425 16 L440 20 L452 26 L463 32 L472 40 L480 49 L486 60 L492 72 L496 87 L500 105 L502 127 L504 158 Z" fill="url(#sbg)"/><path d="M502 256 L502 353 L500 384 L498 406 L494 424 L490 438 L484 450 L478 461 L470 470 L461 478 L450 484 L438 490 L424 494 L406 498 L384 500 L353 502 L256 502 L159 502 L128 500 L106 498 L88 494 L74 490 L62 484 L51 478 L42 470 L34 461 L28 450 L22 438 L18 424 L14 406 L12 384 L10 353 L10 256 L10 159 L12 128 L14 106 L18 88 L22 74 L28 62 L34 51 L42 42 L51 34 L62 28 L74 22 L88 18 L106 14 L128 12 L159 10 L256 10 L353 10 L384 12 L406 14 L424 18 L438 22 L450 28 L461 34 L470 42 L478 51 L484 62 L490 74 L494 88 L498 106 L500 128 L502 159 Z" fill="none" stroke="#fff" stroke-opacity=".14" stroke-width="3"/><g><path d="M120 306 L120 372 Q120 380 128 380 L180 380 Q188 380 188 372 L188 306 Q188 288 170 288 L138 288 Q120 288 120 306 Z" fill="#fff" fill-opacity=".42"/><path d="M222 238 L222 372 Q222 380 230 380 L282 380 Q290 380 290 372 L290 238 Q290 220 272 220 L240 220 Q222 220 222 238 Z" fill="#fff" fill-opacity=".78"/><path d="M324 170 L324 372 Q324 380 332 380 L384 380 Q392 380 392 372 L392 170 Q392 152 374 152 L342 152 Q324 152 324 170 Z" fill="#3ccf73"/><path d="M402 72 C408 100 408 100 436 106 C408 112 408 112 402 140 C396 112 396 112 368 106 C396 100 396 100 402 72 Z" fill="#9be7af"/></g></svg></div>' +
         est + '<div class="sb-lbl">Módulos</div><nav class="sb-nav">' + itens + mais
+        /* rótulos curtos: a coluna tem 138 px, e "Modo foco (mais tela)" numa
+           linha só cabia nos 212 de antes */
         + '<button class="sb-org sb-foco" data-gacao="menu-foco" title="Recolher a barra para sobrar tela; o menu volta ao encostar o mouse">'
-        + (this.menuFoco() ? "⇥ Mostrar menu fixo" : "⇤ Modo foco (mais tela)") + "</button>"
+        + (this.menuFoco() ? "⇥ Menu fixo" : "⇤ Modo foco") + "</button>"
         + '<button class="sb-org" data-gacao="menu-organizar" title="Escolher quais módulos ficam à vista">' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + ' Organizar menu</button></nav>';
     },
 

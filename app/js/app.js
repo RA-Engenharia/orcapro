@@ -739,6 +739,12 @@
              isto a preferência sumia ao trocar de módulo (que é justamente
              quando o cliente quer a tela maior). */
           if (Gestao._aplicarFoco) Gestao._aplicarFoco();
+          /* aba lateral do grupo + luz que segue o mouse: os listeners da
+             barra morrem com o innerHTML e são reatados aqui, a cada render.
+             ⚠ Sem esta linha a aba abre (o clique passa por Gestao.acao) mas
+             não fecha ao clicar fora, não troca no hover e a luz não liga —
+             o recurso pela metade, do tipo que o gate não pega. */
+          if (Gestao.menuMontar) Gestao.menuMontar();
         }
       }
       // módulos da Gestão
