@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.90",
+  "versao": "1.2.91",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.90.zip",
-  "notas": "Painel de Gestao novo (em avaliacao, desligado por padrao): ganhou cartoes de indicador com barras mensais, fluxo de caixa em barras com a linha do saldo, graficos de composicao por categoria e por obra, medidores de meta e lucratividade mes a mes. Nada muda para quem nao ligar o Painel novo.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.90/OrcaPRO-IA-Instalador-v1.2.90.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.91.zip",
+  "notas": "Painel de Gestao novo (em avaliacao, desligado por padrao): faixa \"Posicao de hoje\" (a receber, boletins aprovados, a pagar na semana), agenda da semana, previsao de caixa de 30 dias, fila de decisoes em grupos com \"Adiar 7 dias\" (volta sozinho), avisos do sino na mesma fila, \"Organizar painel\" (ordem e visibilidade dos blocos), botao Relatorio (PDF pelo navegador) e comparacao com o periodo anterior no fluxo de caixa. Nada muda para quem nao ligar o Painel novo.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.91/OrcaPRO-IA-Instalador-v1.2.91.exe"
 }
