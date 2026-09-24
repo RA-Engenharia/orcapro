@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.93",
+  "versao": "1.2.94",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.93.zip",
-  "notas": "Painel de Gestao novo para todos: caixa do periodo em quatro cartoes (recebido, pago, resultado, saldo a faturar), posicao de hoje, agenda da semana, previsao de caixa de 30 dias, fluxo de caixa por mes, despesas por categoria e por obra, lucratividade mensal, medidores de meta, fila \"Precisa de voce hoje\" em grupos com adiar, obras com prazo e escopo medido lado a lado, e \"Organizar painel\" para escolher os blocos. O Painel anterior saiu.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.93/OrcaPRO-IA-Instalador-v1.2.93.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.94.zip",
+  "notas": "Correcao da barra de modulos: na tela de Obras a aba do grupo ficava escondida atras da cena ao clicar em outro grupo; agora abre na frente. Sem outra mudanca.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.94/OrcaPRO-IA-Instalador-v1.2.94.exe"
 }

@@ -622,8 +622,10 @@ table.tbl, .kpi .num, .g-pill, .cell, input[type="number"] { font-variant-numeri
   .sb-org { text-align: center; white-space: normal; line-height: 1.25; padding: 6px 4px; }
   /* o ícone da engrenagem sai no azulejo: com ele, "Organizar menu" não cabia em 138 px e quebrava em duas linhas */
   .sb-nav > .sb-org svg { display: none; }
+  /* ⚠ z-index 45: acima da cena de Obras e da tela (a aba mora no <body> enquanto
+     aberta, ver _menuFlyAbrir), abaixo do fundo de modal (50) e das toasts (100) */
   .sb-fly.aberta {
-    position: fixed; left: var(--sb-w, 138px); top: 0; width: 216px; z-index: 70;
+    position: fixed; left: var(--sb-w, 138px); top: 0; width: 216px; z-index: 45;
     padding: 4px 6px 6px; overflow-y: auto;
     background: var(--navy-2); border: 1px solid rgba(255,255,255,.12); border-left: 0;
     border-radius: 0 var(--raio) var(--raio) 0;

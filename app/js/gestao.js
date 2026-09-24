@@ -1165,10 +1165,25 @@
      * ================================================================== */
     menuFlyFechar: function () {
       var sb = document.getElementById("sidebar");
-      if (!sb) return;
-      Array.prototype.forEach.call(sb.querySelectorAll(".sb-fly.aberta"), function (f) {
+      /* ⚠ GUARDA DE BANCADA (2ª vez no mesmo dia): test-navegacao.js roda
+         App.render() com um `document` e um #sidebar de mentira, sem
+         querySelectorAll — e menuMontar chama este fechar antes de qualquer
+         outra guarda. Sem elemento de verdade não há aba para fechar. */
+      if (typeof document.querySelectorAll !== "function" || (sb && typeof sb.querySelectorAll !== "function")) return;
+      /* ⚠ NO DOCUMENTO, não só dentro da barra: a aba aberta mora no <body>
+         (ver _menuFlyAbrir). Ao fechar ela volta para o lugar de origem, logo
+         depois do azulejo dela; se a barra já foi redesenhada nesse meio-tempo
+         (há um #sb-fly-<id> novo na barra), a que está no body é sobra e sai. */
+      Array.prototype.forEach.call(document.querySelectorAll(".sb-fly.aberta"), function (f) {
         f.classList.remove("aberta"); f.style.top = ""; f.style.left = ""; f.style.maxHeight = "";
+        if (f.parentNode !== document.body) return;
+        var grp = f.getAttribute("data-grp");
+        var bt = sb ? sb.querySelector('.sb-grp-bt[data-id="' + grp + '"]') : null;
+        var jaTem = document.getElementById(f.id) !== f;
+        if (bt && !jaTem && bt.parentNode) bt.parentNode.insertBefore(f, bt.nextSibling);
+        else if (f.parentNode) f.parentNode.removeChild(f);
       });
+      if (!sb) return;
       Array.prototype.forEach.call(sb.querySelectorAll(".sb-grp-bt.aberto"), function (b) {
         b.classList.remove("aberto"); b.setAttribute("aria-expanded", "false");
       });
@@ -1179,6 +1194,18 @@
       var bt = sb ? sb.querySelector('.sb-grp-bt[data-id="' + id + '"]') : null;
       if (!sb || !fly || !bt) return false;
       this.menuFlyFechar();
+      /* ⚠ A ABA ABERTA VAI PARA O <body> (só no desktop; na gaveta do celular
+         ela é sanfona, em linha). Roteiro do defeito (24/09/2026, 1.2.92): na
+         tela de Obras com a cena, `.app:has(.ov-cena) > .sidebar` ganha
+         `backdrop-filter` — e backdrop-filter, como transform e filter, faz
+         a barra virar o BLOCO CONTENTOR do `position: fixed`. A aba passava a
+         ser posicionada dentro da barra e o `overflow-y: auto` dela a
+         recortava: o azulejo acendia e a aba não aparecia ("fica escondido
+         atrás"). Fora da barra, nenhum ancestral filtra nem transforma. Ela
+         volta para a barra ao fechar (menuFlyFechar), então `#sidebar
+         [data-view]` continua completo em repouso. */
+      var desktop = !window.matchMedia || window.matchMedia("(min-width: 821px)").matches;
+      if (desktop && document.body && fly.parentNode !== document.body) document.body.appendChild(fly);
       fly.classList.add("aberta");
       bt.classList.add("aberto"); bt.setAttribute("aria-expanded", "true");
       this._menuFlyPosicionar(bt, fly);
@@ -1221,10 +1248,15 @@
     menuMontar: function () {
       var self = this, sb = document.getElementById("sidebar");
       if (!sb) return;
+      /* a barra acabou de ser redesenhada: uma aba que estava aberta no
+         <body> ficou órfã (o azulejo dela morreu com o innerHTML) — sai daqui */
+      this.menuFlyFechar();
       sb.onmouseover = function (e) {
         var t = e && e.target, bt = (t && t.closest) ? t.closest(".sb-grp-bt") : null;
         if (!bt || bt.classList.contains("aberto")) return;
-        if (!sb.querySelector(".sb-fly.aberta")) return;     /* sem aba aberta, hover não abre nada */
+        /* sem aba aberta, hover não abre nada. ⚠ `document`, não `sb`: a aba
+           aberta mora no <body>, e procurar só na barra desligava a troca */
+        if (!document.querySelector(".sb-fly.aberta")) return;
         self._menuFlyAbrir(bt.getAttribute("data-id"));
       };
       sb.onscroll = function () {
@@ -1240,7 +1272,8 @@
         this._menuFlyGlobal = true;
         document.addEventListener("mousedown", function (e) {
           var t = e && e.target;
-          if (t && t.closest && t.closest("#sidebar")) return;
+          /* `.sb-fly` além de `#sidebar`: a aba aberta está no <body> */
+          if (t && t.closest && (t.closest("#sidebar") || t.closest(".sb-fly"))) return;
           self.menuFlyFechar();
         }, true);
         document.addEventListener("keydown", function (e) {
