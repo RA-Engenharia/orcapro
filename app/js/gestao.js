@@ -1346,7 +1346,7 @@
       // RBAC: guarda em função (não só ocultar) — sub-usuário sem permissão vê aviso
       if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo(view)) return this._semPermissao(view);
       switch (view) {
-        case "dashboard": return this.renderDashboard();
+        case "dashboard": return this._painelNovoLigado() ? this.renderPainelNovo() : this.renderDashboard();
         case "obras": return this.renderObras();
         case "tarefas": return this.renderTarefas();
         case "lastplanner": return this.renderLastPlanner();
@@ -1475,13 +1475,16 @@
        úteis após a aprovação da medição" (js/orcamento.js:199). Os dois
        números precisam ser conciliados: o daqui rege o app, o de lá rege o
        que o cliente assina. */
-    METAS_PADRAO: { margem: 15, ppc: 85, contasDias: 7, prazoReceber: 7 },
+    /* recebMes 0 = sem meta de recebimento mensal. ⚠ Nada depois do `},` nesta
+       linha: test-lastplanner e test-crono-f3-consertos recortam o objeto por
+       regex até o fecho e um comentário na mesma linha vira erro de sintaxe. */
+    METAS_PADRAO: { margem: 15, ppc: 85, contasDias: 7, prazoReceber: 7, recebMes: 0 },
     _metas: function () {
       var p = {};
       try { p = (Store.lerPrefs ? Store.lerPrefs(eid()) : {}) || {}; } catch (e) { p = {}; }
       var m = p.metas || {}, d = this.METAS_PADRAO;
       var n = function (v, padrao) { var x = Util.num(v); return x > 0 ? x : padrao; };
-      return { margem: n(m.margem, d.margem), ppc: n(m.ppc, d.ppc), contasDias: n(m.contasDias, d.contasDias), prazoReceber: n(m.prazoReceber, d.prazoReceber) };
+      return { margem: n(m.margem, d.margem), ppc: n(m.ppc, d.ppc), contasDias: n(m.contasDias, d.contasDias), prazoReceber: n(m.prazoReceber, d.prazoReceber), recebMes: n(m.recebMes, 0) };
     },
     /* Onde a empresa define a própria régua. Sem esta tela, "parametrizado"
        seria só uma promessa: o valor existiria no código e ninguém alcançaria. */
@@ -1492,6 +1495,7 @@
         + campo("Meta de PPC (%)", inp("g-mt-ppc", m.ppc, "padrão: " + d.ppc))
         + campo("Avisar contas a vencer em (dias)", inp("g-mt-dias", m.contasDias, "padrão: " + d.contasDias))
         + campo("Recebimento vence em (dias após a medição)", inp("g-mt-receber", m.prazoReceber, "padrão: " + d.prazoReceber))
+        + campo("Meta de recebimento por mês (R$)", inp("g-mt-recebmes", m.recebMes > 0 ? m.recebMes : "", "vazio: sem meta"))
         + "</div>"
         + '<p class="muted" style="font-size:12px;margin:6px 0 0">A <b>margem</b> é calculada sobre o que foi recebido: abaixo da meta, o indicador fica laranja. O <b>PPC</b> vale para o indicador do Painel e para a linha de meta do gráfico do Last Planner — os dois usam este número. O <b>recebimento</b> é o prazo que o app sugere ao lançar uma receita de medição — dias corridos, sem pular fim de semana ou feriado.<br>Deixe em branco para voltar ao padrão.</p>';
       UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("ajustes", 15) : "") + " Metas da empresa", corpo, [
@@ -1501,14 +1505,14 @@
           UI.fecharModal(); App.render(); UI.toast("Metas de volta ao padrão.", "ok");
         } },
         { texto: "Salvar", classe: "primary", onClick: function () {
-          var mg = Util.num(v("g-mt-margem")), pp = Util.num(v("g-mt-ppc")), di = Util.num(v("g-mt-dias")), pr = Util.num(v("g-mt-receber"));
+          var mg = Util.num(v("g-mt-margem")), pp = Util.num(v("g-mt-ppc")), di = Util.num(v("g-mt-dias")), pr = Util.num(v("g-mt-receber")), rm = Util.num(v("g-mt-recebmes"));
           /* percentual acima de 100 não é meta, é engano de digitação — e uma
              meta impossível deixaria o indicador laranja para sempre */
           if (mg > 100 || pp > 100) { UI.toast("Margem e PPC são percentuais: no máximo 100.", "erro"); return; }
           if (di > 90) { UI.toast("Avisar contas com mais de 90 dias de antecedência não ajuda ninguém.", "erro"); return; }
           if (pr > 365) { UI.toast("Prazo de recebimento acima de um ano não é prazo — confira o número.", "erro"); return; }
           var p = (Store.lerPrefs(eid()) || {});
-          p.metas = { margem: mg > 0 ? mg : d.margem, ppc: pp > 0 ? pp : d.ppc, contasDias: di > 0 ? di : d.contasDias, prazoReceber: pr > 0 ? pr : d.prazoReceber };
+          p.metas = { margem: mg > 0 ? mg : d.margem, ppc: pp > 0 ? pp : d.ppc, contasDias: di > 0 ? di : d.contasDias, prazoReceber: pr > 0 ? pr : d.prazoReceber, recebMes: rm > 0 ? rm : 0 };
           Store.salvarPrefs(eid(), p);
           UI.fecharModal(); App.render(); UI.toast("Metas salvas — o Painel já usa as suas.", "ok");
         } }
@@ -1621,9 +1625,10 @@
       } catch (e) { return null; }
     },
 
-    _dashAtencaoHtml: function () {
-      if (typeof Atencao === "undefined") return "";
-      var esc = this._dashEscopo();
+    /* os achados de Atenção já filtrados pelo RBAC (null = o motor falhou);
+       compartilhado entre o Painel antigo e o novo — UMA chamada, UMA regra */
+    _dashAtencaoItens: function (esc) {
+      if (typeof Atencao === "undefined") return null;
       var naObra = function (x) { return !esc.ids || (x && esc.ids.indexOf(x.obraId) > -1); };
       var r;
       try {
@@ -1650,7 +1655,7 @@
           vinculosCompra: this._vinculosMortos(esc.compras),
           hoje: String(this._hojeISO()).slice(0, 10)
         });
-      } catch (e) { return ""; }
+      } catch (e) { return null; }
 
       var pode = function (mod) {
         /* ⚠ achado SEM módulo aparece para quem chegou até aqui. `podeModulo("")`
@@ -1660,7 +1665,12 @@
         return !(typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo(mod));
       };
       var itens = r.itens.filter(function (i) { return pode(i.modulo); });
-      if (!itens.length) return "";
+      return itens;
+    },
+    _dashAtencaoHtml: function () {
+      if (typeof Atencao === "undefined") return "";
+      var itens = this._dashAtencaoItens(this._dashEscopo());
+      if (!itens || !itens.length) return "";
 
       var linhas = itens.slice(0, 6).map(function (i) {
         var cor = i.gravidade >= 3 ? "#c2410c" : (i.gravidade === 2 ? "#a16207" : "#64748b");
@@ -1757,9 +1767,10 @@
       }
       return html + "</div>";
     },
-    _dashReconciliacaoHtml: function () {
-      if (typeof Reconciliacao === "undefined") return "";
-      var esc = this._dashEscopo();
+    /* o resultado de Reconciliacao.achar para o recorte (null = motor falhou);
+       compartilhado entre o Painel antigo e o novo */
+    _dashReconciliacaoDados: function (esc) {
+      if (typeof Reconciliacao === "undefined") return null;
       var naObra = function (x) { return !esc.ids || (x && esc.ids.indexOf(x.obraId) > -1); };
       var r;
       try {
@@ -1783,8 +1794,13 @@
             return function (m) { return g._lancVivoDoDoc("medicoes", m && m.id, todo); };
           })(this, lista("financeiro"))
         });
-      } catch (e) { return ""; }
-      if (!r.total) return "";
+      } catch (e) { return null; }
+      return r;
+    },
+    _dashReconciliacaoHtml: function () {
+      if (typeof Reconciliacao === "undefined") return "";
+      var r = this._dashReconciliacaoDados(this._dashEscopo());
+      if (!r || !r.total) return "";
 
       var linhas = r.itens.slice(0, 8).map(function (i) {
         var cor = i.gravidade >= 3 ? "#c2410c" : "#7c3aed";
@@ -2135,8 +2151,15 @@
              sobre cronograma na tela e a ruim, e nao da para conferir a boa.
              Obra sem previsao de termino cadastrada mostra "—" e diz por que:
              o campo esta vazio, nao a obra e que nao tem prazo. */
-          var pz = '<span class="muted" title="Cadastre início e previsão de término na obra">—</span>';
-          if (o.inicio && self._fimPrevisto(o)) {
+          /* ⚠ OBRA CONCLUÍDA NÃO VENCE (24/09/2026). Esta era a 3ª cópia da
+             fórmula de prazo, e a única sem a guarda de status: uma obra
+             ENTREGUE saía "386% × 0% · vencido há 146d" em vermelho nesta
+             tabela enquanto o cartão de cima (_dashPrazoAvancoDados) a
+             cortava. A régua única está em js/painel.js (PainelDados.prazo). */
+          var pz = o.status === "concluida"
+            ? '<span class="muted" title="Obra concluída: o prazo não corre mais">entregue</span>'
+            : '<span class="muted" title="Cadastre início e previsão de término na obra">—</span>';
+          if (o.status !== "concluida" && o.inicio && self._fimPrevisto(o)) {
             var _i = new Date(o.inicio + "T00:00:00"), _f = new Date(self._fimPrevisto(o) + "T00:00:00");
             var _t = (_f - _i) / 86400000;
             if (_t > 0) {
@@ -2149,12 +2172,14 @@
               var _semPct = pO === null;   /* medido em R$, sem % — ver _avancoMedido */
               var _d = Math.ceil((_f - _h) / 86400000);
               var _atras = _semPct ? null : pP - pO;
-              var _cor = _d < 0 ? "#dc2626" : (!_semPct && _atras >= 20 ? "#ea580c" : "var(--verde-tx, #15803d)");
+              /* tokens com par escuro: os hex fixos mediam 3,21:1 sobre o cartão escuro,
+                 e `--verde-tx` nunca existiu (caía sempre no fallback) */
+              var _cor = _d < 0 ? "var(--graf-alerta)" : (!_semPct && _atras >= 20 ? "var(--graf-aviso)" : "var(--verde)");
               pz = '<span style="color:' + _cor + ';font-weight:700;font-variant-numeric:tabular-nums"'
                 + (_semPct ? ' title="medição aprovada em dinheiro, sem percentual informado"' : "")
-                + '>' + pP + '% × ' + (_semPct ? "—" : pO + "%") + '</span>' +
+                + '>' + (pP > 100 ? "100%+" : pP + "%") + ' × ' + (_semPct ? "—" : pO + "%") + '</span>' +
                 '<div class="muted" style="font-size:10.5px">' +
-                (_d < 0 ? "vencido há " + (-_d) + "d" : _d + " dia(s)") + '</div>';
+                (_d < 0 ? "vencido há " + (-_d) + "d" : (_d > 1825 ? "término em " + String(self._fimPrevisto(o)).slice(0, 4) + ", confira a data" : _d + " dia(s)")) + '</div>';
             }
           }
           /* ⚠ ISTO NAO ERA MARGEM. A conta era (contratado - custo) / contratado,
@@ -2164,10 +2189,13 @@
            * Margem se mede contra o que ENTROU, e quando nao entrou nada ela
            * nao existe: "—", como o KPI do bloco financeiro ja fazia (a mesma
            * definicao da linha do `_dashFinExec`). */
-          var margem = rec > 0 ? ((rec - custo) / rec * 100) : null;
+          /* ...e sem custo pago também não: "100%" numa obra que não lançou
+             despesa é lançamento faltando, não lucro (24/09/2026). */
+          var margem = (rec > 0 && custo > 0) ? ((rec - custo) / rec * 100) : null;
           var area = Util.num(o.areaConstruida);
-          var cm2 = area > 0 ? (Util.fmtMoeda(custo / area) + "/m²") : '<span class="muted" title="Cadastre a área construída na obra">—</span>';
-          html += "<tr><td><b>" + Util.esc(o.nome) + "</b></td><td>" + pill(o.status) + '</td><td class="num">' + pz + '</td><td class="num">' + Util.fmtMoeda(base) + '</td><td class="num">' + Util.fmtMoeda(custo) + '</td><td class="num">' + cm2 + '</td><td class="num">' + Util.fmtMoeda(rec) + '</td><td class="num" style="color:' + (margem == null ? "var(--texto-fraco)" : (margem >= 0 ? "var(--verde)" : "var(--vermelho)")) + '" title="' + (margem == null ? "sem receita lançada nesta obra — margem não existe ainda" : "sobre o que já foi recebido") + '">' + (margem == null ? "—" : Util.fmtPct(margem, 1)) + "</td></tr>";
+          var cm2 = (area > 0 && custo > 0) ? (Util.fmtMoeda(custo / area) + "/m²")
+            : '<span class="muted" title="' + (area > 0 ? "sem despesa paga lançada" : "Cadastre a área construída na obra") + '">—</span>';
+          html += "<tr><td><b>" + Util.esc(o.nome) + "</b></td><td>" + pill(o.status) + '</td><td class="num">' + pz + '</td><td class="num">' + Util.fmtMoeda(base) + '</td><td class="num">' + Util.fmtMoeda(custo) + '</td><td class="num">' + cm2 + '</td><td class="num">' + Util.fmtMoeda(rec) + '</td><td class="num" style="color:' + (margem == null ? "var(--texto-fraco)" : (margem >= 0 ? "var(--verde)" : "var(--vermelho)")) + '" title="' + (margem == null ? (rec > 0 ? "sem despesa paga lançada nesta obra — margem não existe ainda" : "sem receita lançada nesta obra — margem não existe ainda") : "sobre o que já foi recebido") + '">' + (margem == null ? "—" : Util.fmtPct(margem, 1)) + "</td></tr>";
         });
         html += "</tbody></table>";
       }
@@ -2180,6 +2208,491 @@
       html += this._obraDemoCard();
       return html;
     },
+    /* ==================================================================
+     * PAINEL DE GESTÃO NOVO (24/09/2026) — fiação fina sobre js/painel.js.
+     *
+     * Atrás de uma chave por pessoa e aparelho (`orcapro:tela:painel:v1`),
+     * ligada por `?painel=novo` e desligada pelo botão "Voltar ao Painel
+     * atual" ou por `?painel=antigo`. Sem botão visível no Painel antigo:
+     * enquanto está em avaliação, só quem sabe da chave vê a tela nova, e
+     * o `renderDashboard` continua byte a byte o de sempre (PLANO-MESA:
+     * "Mesa desligada → tela inicial igual à de hoje" vale aqui também).
+     *
+     * ⚠ OS NÚMEROS SAEM DAS MESMAS RÉGUAS DO PAINEL ANTIGO: `_dashFinExec`
+     *   (período, previsto × realizado, fluxo), `_avancoMedido` (avanço),
+     *   `Atencao.achar` e `Reconciliacao.achar` (achados), `FinStatus`
+     *   (caixa). O que `PainelDados` acrescenta é a guarda que faltava
+     *   (obra concluída, margem sem custo, prazo com teto) e a fila única.
+     * ⚠ GANCHOS PRESERVADOS: `data-gacao="dash-obra|dash-periodo|
+     *   dash-obra-multi|dash-metas|abrir-retencao"`, `data-view`, e os
+     *   `data-aviso="pago-sem-receita|aprovada-nao-paga"` continuam no DOM.
+     * ⚠ TROCA DE FILTRO REDESENHA SÓ O MIOLO (`_pnRender`): topbar e
+     *   sidebar ficam, o scroll volta ao lugar, e os filtros são gravados
+     *   na chave da pessoa (F5 não zera). No Painel antigo nada disso roda.
+     * ================================================================== */
+    _painelNovoHash: function () {
+      var u = {};
+      try { u = (typeof Auth !== "undefined" && Auth.usuario) ? (Auth.usuario() || {}) : {}; } catch (e) { u = {}; }
+      return PainelDados.hashUsuario(eid(), u.email || u.login || "");
+    },
+    _painelNovoStorage: function () {
+      try { return (typeof window !== "undefined" && window.localStorage) ? window.localStorage : null; } catch (e) { return null; }
+    },
+    /* lê `?painel=novo|antigo` UMA vez, grava a preferência e tira o
+       parâmetro da URL — senão "Voltar ao Painel atual" religaria a chave
+       no render seguinte, porque o `search` sobrevive à navegação por hash */
+    _painelNovoLigado: function () {
+      if (typeof PainelDados === "undefined") return false;
+      var st = this._painelNovoStorage(), hash = this._painelNovoHash();
+      var search = "";
+      try { search = (typeof location !== "undefined" && location.search) || ""; } catch (e) { search = ""; }
+      var q = PainelDados.lerParametroUrl(search);
+      if (q) {
+        PainelDados.gravar(st, hash, q === "novo" ? "novo" : null);
+        try {
+          if (typeof history !== "undefined" && history.replaceState) {
+            history.replaceState(null, "", location.pathname + PainelDados.tirarParametroUrl(search) + (location.hash || ""));
+          }
+        } catch (e2) { /* sem history: a chave já está gravada, o parâmetro só fica na barra */ }
+      }
+      return PainelDados.ligado(st, hash);
+    },
+    painelNovoDesligar: function () {
+      if (typeof PainelDados !== "undefined") PainelDados.gravar(this._painelNovoStorage(), this._painelNovoHash(), null);
+      App.render();
+    },
+    /* filtros gravados na chave da pessoa: só entram enquanto o estado ainda
+       está no padrão (null) — quem já mexeu nesta sessão não é sobrescrito */
+    _pnLerFiltros: function () {
+      if (typeof PainelDados === "undefined") return;
+      var hash = this._painelNovoHash();
+      if (this._pnFiltrosLidos === hash) return;
+      this._pnFiltrosLidos = hash;
+      var f = PainelDados.lerFiltros(this._painelNovoStorage(), hash);
+      if (this._dashObra == null && f.obra != null) this._dashObra = f.obra;
+      if (this._dashPer == null && f.per) this._dashPer = f.per;
+      if (this._dashMulti == null && f.multi) this._dashMulti = true;
+      if (this._dashStatus == null && f.status) this._dashStatus = f.status;
+    },
+    _pnGravarFiltros: function () {
+      if (typeof PainelDados === "undefined") return;
+      PainelDados.gravarFiltros(this._painelNovoStorage(), this._painelNovoHash(),
+        { obra: this._dashObra, per: this._dashPer, multi: !!this._dashMulti, status: this._dashStatus || "" });
+    },
+    /* troca de filtro: com o Painel novo, redesenha só o #main e devolve o
+       scroll; com o antigo, o App.render() de sempre (comportamento intacto) */
+    _pnRender: function () {
+      if (!this._painelNovoLigado()) { App.render(); return; }
+      this._pnGravarFiltros();
+      var main = (typeof document !== "undefined") ? document.getElementById("main") : null;
+      if (!main || typeof App === "undefined" || !App._avisosDadoGestao) { App.render(); return; }
+      var st = main.scrollTop;
+      var html = this.render("dashboard");
+      if (!html || !String(html).trim()) { App.render(); return; }
+      if (App._gxDesligar) App._gxDesligar();
+      main.innerHTML = App._avisosDadoGestao() + html;
+      if (this.afterRender) this.afterRender("dashboard");
+      main.scrollTop = st;
+    },
+    dashTrocaStatus: function (s) {
+      var ok = { andamento: 1, planejamento: 1, pausada: 1, concluida: 1 };
+      this._dashStatus = (s && ok[s]) ? s : "";
+      this._pnRender();
+    },
+
+    renderPainelNovo: function () {
+      if (typeof CustoEtapa === "undefined" || !CustoEtapa.totalVivo) return this._moduloNaoCarregado("Painel de Gestão", "js/custoetapa.js");
+      if (typeof PainelDados === "undefined") return this.renderDashboard();
+      var self = this;
+      this._pnLerFiltros();
+      var esc = this._dashEscopo(), metas = this._metas();
+      var _podeFin = !(typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro"));
+      var _podeMod = function (m) { return !(typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo(m)); };
+      var hoje = String(this._hojeISO()).slice(0, 10);
+      if (this._dashPer == null) this._dashPer = "6m";
+      if (this._dashObra == null) this._dashObra = "todas";
+      var med = esc.medicoes, rdos = esc.rdo;
+      var fin = _podeFin ? this._dashFinExec() : null;
+      var atencao = this._dashAtencaoItens(esc) || [];
+      var reconc = _podeFin ? this._dashReconciliacaoDados(esc) : null;
+      var pagoSemRec = null;
+      if (_podeFin && typeof Reconciliacao !== "undefined" && Reconciliacao.pagasSemReceita) {
+        var _finTodo = lista("financeiro");
+        pagoSemRec = Reconciliacao.pagasSemReceita(med, _finTodo, function (m) { return self._lancVivoDoDoc("medicoes", m.id, _finTodo); });
+      }
+      var lp = null;
+      if (typeof LastPlanner !== "undefined" && _podeMod("lastplanner") && esc.lpTarefas.length) {
+        var lpLook = LastPlanner.semanas(new Date(), 6), lpRes = LastPlanner.resumo(esc.lpTarefas, lpLook);
+        var lpCols = { execucao: 0, impedida: 0, liberada: 0 };
+        esc.lpTarefas.forEach(function (t) { if (!t) return; var c = LastPlanner.classificarQuadro(t, lpLook[0].chave); if (lpCols[c] != null) lpCols[c]++; });
+        lp = { ppc: lpRes.ppcSemana == null ? null : lpRes.ppcSemana, feitas: lpRes.feitas, comprometidas: lpRes.comprometidas,
+          execucao: lpCols.execucao, liberada: lpCols.liberada, impedida: lpCols.impedida };
+      }
+      var tarefas = null;
+      if (_podeMod("tarefas")) {
+        var ts = lista("tarefas");
+        tarefas = { atrasadas: ts.filter(function (t) { return self._tarefaAtrasada(t); }).length,
+          afazer: ts.filter(function (t) { return t.status === "afazer" || t.status === "fazendo"; }).length };
+      }
+      var pend = null;
+      var podeAp = (typeof Auth === "undefined" || !Auth.podeAprovar) ? true : Auth.podeAprovar();
+      if (podeAp) {
+        var p0 = this._pendentesAprovacao();
+        pend = { medicoes: _podeMod("medicoes") ? p0.medicoes : 0, compras: _podeMod("compras") ? p0.compras : 0,
+          requisicoes: _podeMod("requisicoes") ? p0.requisicoes : 0, producao: _podeMod("producao") ? p0.producao : 0 };
+        pend.total = pend.medicoes + pend.compras + pend.requisicoes + pend.producao;
+      }
+      var m2 = null;
+      if (_podeMod("producao") && typeof M2 !== "undefined") {
+        try {
+          var mm = M2.daObra(rdos, {});
+          if (mm && mm.executado && mm.executado.total) m2 = { executado: mm.executado.total, atribuido: mm.atribuido.total, aviso: mm.aviso || "",
+            porServico: (mm.executado.porServico || []).slice(0, 6).map(function (s) { return { rotulo: s.descricao || s.chave, valor: s.qtd }; }) };
+        } catch (eM2) { m2 = null; }
+      }
+      var retido = (_podeFin && _podeMod("medicoes") && typeof Atencao !== "undefined") ? Atencao.retencaoPresa(med) : 0;
+
+      var modelo = PainelDados.calcular({
+        hoje: hoje, periodo: this._dashPer, obraIds: esc.ids, statusObras: this._dashStatus || "",
+        obras: esc.obras, contratos: esc.contratos, medicoes: med, financeiro: _podeFin ? esc.financeiro : [],
+        compras: esc.compras, rdos: rdos,
+        regras: {
+          realizado: function (f) { return FinStatus.realizado(f); },
+          emAberto: function (f) { return FinStatus.emAberto(f); },
+          anulado: function (f) { return self._finAnulado(f); },
+          compraTerminal: function (s) { return (typeof ComprasLinha !== "undefined") ? ComprasLinha.ehTerminal(s) : (s === "recebido" || s === "cancelado"); },
+          avancoMedido: function (id) { return self._avancoMedido(id, med); }
+        },
+        metas: metas, atencao: atencao, reconciliacao: reconc, pagoSemReceita: pagoSemRec,
+        prevReal: fin ? { linhas: fin.prevReal, prevTot: fin.prevTot, realTot: fin.realTot, realComp: fin.realComp,
+          nEstouros: fin.nEstouros, obrasSemOrcamento: fin.obrasSemOrcamento, obrasNoRecorte: fin.obrasNoRecorte, porEtapa: fin.porEtapa } : null,
+        lp: lp, tarefas: tarefas, pendentes: pend, m2: m2, retencao: retido
+      });
+      return this._pnHtml(modelo, { esc: esc, fin: fin, podeFin: _podeFin, podeMod: _podeMod, metas: metas });
+    },
+
+    /* ---------- pedaços de texto do Painel novo ---------- */
+    _pnN: function (n, um, varios) { return n + " " + (n === 1 ? um : varios); },
+    _pnPeriodoRotulo: function (p) {
+      return ({ mes: "este mês", "6m": "últimos 6 meses", ano: "este ano", tudo: "desde sempre" })[p] || "últimos 6 meses";
+    },
+    _pnPeriodoAnterior: function (p) {
+      return ({ mes: "o mês anterior", "6m": "os 6 meses anteriores", ano: "o ano anterior" })[p] || "";
+    },
+    _pnDataExtenso: function (isoStr) {
+      var d = new Date(String(isoStr).slice(0, 10) + "T00:00:00");
+      if (isNaN(d.getTime())) return "";
+      var dias = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
+      var meses = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+      return dias[d.getDay()] + ", " + d.getDate() + " de " + meses[d.getMonth()];
+    },
+    _pnDataCurta: function (isoStr) {
+      var s = String(isoStr || "");
+      return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(8, 10) + "/" + s.slice(5, 7) : s;
+    },
+    _pnDelta: function (pct, periodo) {
+      if (pct === null || pct === undefined) return "";
+      var ant = this._pnPeriodoAnterior(periodo);
+      if (!ant) return "";
+      var sinal = pct > 0 ? "+" : (pct < 0 ? "−" : "");
+      return '<span class="pn-delta' + (pct < 0 ? " pn-delta-neg" : "") + '">' + sinal + Math.abs(pct) + "% que " + ant + "</span>";
+    },
+    /* texto de cada decisão a partir do código do motor (PT-BR mora aqui) */
+    _pnDecisao: function (x) {
+      var self = this, fk = function (v) { return self._fmtK(v); }, esc = Util.esc, N = function (n, a, b) { return self._pnN(n, a, b); };
+      var o = x.obraNome ? esc(x.obraNome) : "";
+      var dias = function (n) { return N(n, "dia", "dias"); };
+      var t;
+      switch (x.codigo) {
+        case "vencido": t = { titulo: "Prazo vencido com " + x.avanco + "% medido", detalhe: "<b>" + o + "</b>, vencido há " + dias(x.valor) + ". Confirme o prazo com o cliente ou registre o aditivo.", botao: "Ver" }; break;
+        case "concluir": t = { titulo: "Obra 100% medida com prazo vencido", detalhe: "<b>" + o + "</b>. Marque como concluída ou registre o aditivo de prazo.", botao: "Ver" }; break;
+        case "defasagem": t = { titulo: x.defasagem + " pontos atrás do calendário", detalhe: "<b>" + o + "</b>, " + x.prazoPct + "% do prazo consumido e " + x.avanco + "% medido, " + dias(x.valor) + " até a entrega.", botao: "Ver" }; break;
+        case "entrega-proxima": t = { titulo: "Entrega em " + dias(x.valor) + " com " + x.avanco + "% medido", detalhe: "<b>" + o + "</b>.", botao: "Ver" }; break;
+        case "sem-percentual": t = { titulo: "Medição sem percentual informado", detalhe: "<b>" + o + "</b>, " + x.prazoPct + "% do prazo consumido. Informe o % nas medições para acompanhar a defasagem.", botao: "Ver" }; break;
+        case "estouro": t = { titulo: "Custo acima do orçado", detalhe: "<b>" + o + "</b>: gasto " + fk(x.real) + " contra " + fk(x.previsto) + " orçados.", botao: "Ver" }; break;
+        case "contas": t = { titulo: N(x.n, "conta a pagar", "contas a pagar") + " " + (x.vencidas ? (x.n === 1 ? "vencida ou " : "vencidas ou ") : "") + "vencendo até " + this._pnDataCurta(x.ate), detalhe: "Financeiro, contas a pagar. Aviso de " + dias(x.dias) + ", ajustável em Metas.", botao: "Ver" }; break;
+        case "medicoes-aprovar": t = { titulo: N(x.n, "medição aguardando", "medições aguardando") + " aprovação", detalhe: "Revise e aprove em Medições.", botao: "Ver" }; break;
+        case "aprovado-nao-pago": t = { titulo: N(x.n, "boletim aprovado", "boletins aprovados") + " e ainda sem receita", detalhe: "A receita entra no Financeiro quando o pagamento é registrado em Medições.", botao: "Ver" }; break;
+        case "status-desatualizado": t = { titulo: "Obra em planejamento com dinheiro lançado", detalhe: "<b>" + o + "</b> tem receita ou custo pago e continua como planejamento. O status parece desatualizado.", botao: "Ver" }; break;
+        case "termino-suspeito": t = { titulo: "Data de término parece errada", detalhe: "<b>" + o + "</b> termina em " + dias(x.valor) + ", mais de 5 anos. Confira a data em Obras.", botao: "Ver" }; break;
+        case "sem-datas": t = { titulo: N(x.valor, "obra em andamento", "obras em andamento") + " sem início ou término", detalhe: "Sem as datas o prazo não aparece. Preencha em Obras.", botao: "Ver" }; break;
+        default: t = { titulo: esc(x.titulo || ""), detalhe: esc(x.detalhe || ""), botao: x.acao && x.acao.tipo === "gacao" ? "Resolver" : (x.codigo === "reconciliacao" ? "Resolver" : "Ver") };
+      }
+      /* o porquê e a ação do motor dono (Atenção/Reconciliação) — inclusive
+         quando vieram fundidos numa linha de prazo daqui */
+      if (x.porque && x.codigo !== "atencao" && x.codigo !== "reconciliacao") t.detalhe += '<span class="pn-porque-t">' + esc(x.porque) + "</span>";
+      else if (x.porque) t.detalhe += '<span class="pn-porque-t">' + esc(x.porque) + "</span>";
+      if (x.acaoTexto) t.acaoTexto = esc(x.acaoTexto);
+      return t;
+    },
+    _pnBotao: function (x, texto) {
+      var a = x.acao || { tipo: "view", valor: "dashboard" }, e = Util.esc;
+      var cls = a.tipo === "gacao" ? "pn-btn pn-btn-p" : "pn-btn";
+      if (a.tipo === "gacao") return '<button class="' + cls + '" data-gacao="' + e(a.valor) + '">' + texto + "</button>";
+      if (a.tipo === "acaoGestao") return '<button class="' + cls + '" data-gacao="' + e(a.valor) + '" data-id="' + e(a.id || "") + '">' + texto + "</button>";
+      if (a.tipo === "acaoBotao") return '<button class="' + cls + '" data-acao="' + e(a.valor) + '">' + texto + "</button>";
+      return '<button class="' + cls + '" data-view="' + e(a.valor) + '">' + texto + "</button>";
+    },
+    /* lucratividade mês a mês: (recebido − pago) / recebido, contra a meta */
+    _pnLucro: function (porMes, meta) {
+      if (!porMes || !porMes.length) return "";
+      var self = this, e = Util.esc, fk = function (v) { return self._fmtK(v); };
+      return '<div class="pn-lucro" role="img" aria-label="Lucratividade por mês: ' + porMes.map(function (m) { return m.mes.slice(5, 7) + "/" + m.mes.slice(2, 4) + " " + (m.lucratividade === null ? "sem os dois lados" : m.lucratividade + "%"); }).join(", ") + '">'
+        + porMes.map(function (m) {
+          var v = m.lucratividade, rot = m.mes.slice(5, 7) + "/" + m.mes.slice(2, 4);
+          var cls = v === null ? " pn-vazio-m" : (v < 0 ? " pn-alerta" : (v >= meta ? " pn-ok" : " pn-atencao"));
+          var h = v === null ? 0 : Math.max(3, Math.min(100, Math.abs(v)));
+          return '<div class="pn-lucro-m' + cls + '" title="' + rot + ": recebido " + e(fk(m.recebido)) + ", pago " + e(fk(m.pago)) + (v === null ? ". Sem receita e pagamento no mesmo mês." : ", lucratividade " + v + "%") + '">'
+            + '<span class="pn-lucro-b"><i style="height:' + h + '%"></i></span><b>' + (v === null ? "—" : v + "%") + "</b><span>" + rot + "</span></div>";
+        }).join("") + "</div>";
+    },
+    _pnMedidor: function (rotulo, valorTexto, metaTexto, atingido, titulo) {
+      /* o trilho vai até 150% da meta; a marca da meta fica em 2/3 do trilho.
+         Assim "acima da meta" tem para onde crescer sem o preenchimento
+         estourar o trilho, e a meta é visível como um traço, não como o fim. */
+      var pct = atingido === null || atingido === undefined ? 0 : Math.round(Math.min(1.5, atingido) / 1.5 * 100);
+      var cls = atingido === null || atingido === undefined ? "" : (atingido >= 1 ? " pn-ok" : (atingido >= 0.7 ? " pn-atencao" : " pn-alerta"));
+      return '<div class="pn-medidor' + cls + '" title="' + Util.esc(titulo || "") + '"><span class="pn-med-rot">' + rotulo + '</span>'
+        + '<span class="pn-med-trilho"><i style="width:' + pct + '%"></i><b style="left:66.7%"></b></span>'
+        + '<span class="pn-med-val">' + valorTexto + ' <small>meta ' + metaTexto + "</small></span></div>";
+    },
+    _pnDupla: function (l) {
+      var e = Util.esc, pz = l.prazo;
+      if (!pz.temDatas) {
+        var txt = pz.entregue ? "entregue" : (l.status === "andamento" ? "sem datas cadastradas" : "sem datas");
+        return '<div class="pn-dupla"><div class="pn-trilhos" title="' + (pz.entregue ? "Obra concluída" : "Cadastre início e previsão de término na obra") + '"><div class="pn-trilho"></div><div class="pn-trilho"></div></div>'
+          + '<div class="pn-dupla-leg"><span>' + txt + "</span></div></div>";
+      }
+      var p = Math.min(100, pz.prazoPct), a = l.avanco === null ? null : Math.min(100, Math.max(0, l.avanco));
+      var defasW = (a !== null && p > a) ? (p - a) : 0;
+      var grave = l.sinal === "alerta";
+      var legDef = "";
+      if (l.avanco === null) legDef = '<span class="pn-d-fraco">medição sem percentual</span>';
+      else if (pz.vencido && a >= 100) legDef = '<span class="pn-d-ok">escopo entregue</span>';
+      else if (l.defasagem !== null && l.defasagem >= PainelDados.DEFASAGEM_PONTOS) legDef = '<span class="' + (grave ? "pn-d-alerta" : "pn-d-aviso") + '">' + l.defasagem + " pontos atrás do calendário</span>";
+      else if (l.defasagem !== null && l.defasagem <= -10) legDef = '<span class="pn-d-ok">' + (-l.defasagem) + " pontos à frente</span>";
+      else if (l.defasagem !== null) legDef = '<span class="pn-d-ok">no ritmo do calendário</span>';
+      var title = e(l.nome) + ": " + pz.prazoTexto + " do calendário consumido" + (a === null ? ", medição sem percentual" : ", " + l.avanco + "% do escopo medido");
+      return '<div class="pn-dupla"><div class="pn-trilhos" role="img" aria-label="' + title + '" title="' + title + '">'
+        + '<div class="pn-trilho"><i class="pn-prazo" style="width:' + p + '%"></i></div>'
+        + '<div class="pn-trilho">' + (a !== null ? '<i class="pn-medido" style="width:' + a + '%"></i>' : "")
+        + (defasW > 0 ? '<i class="pn-defas' + (grave ? " pn-grave" : "") + '" style="left:' + (a || 0) + "%;width:" + defasW + '%"></i>' : "") + "</div>"
+        + '<span class="pn-hoje-marca" style="left:' + (p >= 100 ? "calc(100% - 2px)" : p + "%") + '"></span></div>'
+        + '<div class="pn-dupla-leg"><span>prazo <b>' + pz.prazoTexto + "</b></span><span>medido <b>" + (a === null ? "—" : l.avanco + "%") + "</b></span>" + legDef + "</div></div>";
+    },
+
+    _pnHtml: function (m, ctx) {
+      var self = this, e = Util.esc, fk = function (v) { return self._fmtK(v); }, fm = Util.fmtMoeda, N = function (n, a, b) { return self._pnN(n, a, b); };
+      var fin = ctx.fin, podeFin = ctx.podeFin, podeMod = ctx.podeMod, esc = ctx.esc, metas = ctx.metas;
+      var obras = lista("obras"), selIds = this._dashObras();
+      var perRot = { mes: "Este mês", "6m": "Últimos 6 meses", ano: "Este ano", tudo: "Desde sempre" };
+      var _ehMac = function () { try { return /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || ""); } catch (er) { return false; } };
+
+      /* ---- cabeçalho + filtros (mesmos ganchos do Painel antigo) ---- */
+      var optO = '<option value="todas"' + (!selIds ? " selected" : "") + '>Todas as Obras (Visão Global)</option>' +
+        obras.map(function (o) { var mk = !!(selIds && selIds.indexOf(o.id) > -1); return '<option value="' + e(o.id) + '"' + (mk ? " selected" : "") + '>' + e(o.nome) + "</option>"; }).join("");
+      var multi = !!this._dashMulti || !!(selIds && selIds.length > 1);
+      var campoObra = multi
+        ? '<select data-gacao="dash-obra" multiple size="5" title="Segure ' + (_ehMac() ? "Command" : "Ctrl") + ' para marcar mais de uma obra">' + optO + "</select>"
+        : '<select data-gacao="dash-obra">' + optO + "</select>";
+      var optP = ["mes", "6m", "ano", "tudo"].map(function (p) { return '<option value="' + p + '"' + (self._dashPer === p ? " selected" : "") + ">" + perRot[p] + "</option>"; }).join("");
+      var html = '<div class="pn"><div class="pn-cab"><div><h1>Painel de Gestão</h1><p class="pn-cab-sub">' + e(this._pnDataExtenso(m.hoje)) + ". "
+        + N(m.obras.emAndamento, "obra em andamento", "obras em andamento") + " de " + m.obras.total + (m.filtrado ? ", no recorte escolhido" : "") + ".</p></div>"
+        + '<div class="pn-filtros" role="group" aria-label="Recorte do painel">'
+        + '<label class="pn-filtro">Obra ' + campoObra + "</label>"
+        + '<button class="pn-ctl pn-ctl-ghost" data-gacao="dash-obra-multi" title="' + (multi ? "Voltar a escolher uma obra por vez" : "Somar mais de uma obra no mesmo recorte") + '">' + (multi ? "uma obra" : "+ somar obras") + "</button>"
+        + '<label class="pn-filtro">Período <select data-gacao="dash-periodo">' + optP + "</select></label>"
+        + (podeFin ? '<button class="pn-ctl pn-ctl-ghost" data-gacao="dash-metas" title="Definir a margem saudável, a meta de PPC, a meta de recebimento e o aviso de contas a vencer">Metas</button>' : "")
+        + '<button class="pn-ctl pn-ctl-ghost" data-gacao="painel-antigo" title="Volta ao Painel de sempre neste aparelho">Voltar ao Painel atual</button>'
+        + "</div></div>";
+
+      /* ---- primeira dobra: caixa + hoje ---- */
+      var cx = m.caixa, temFin = podeFin && fin && esc.financeiro.length > 0;
+      html += '<section class="pn-dobra">';
+      if (podeFin) {
+        html += '<div class="pn-plano"><div class="pn-sec"><h2>Caixa, ' + this._pnPeriodoRotulo(m.periodo) + '</h2><p>só o que entrou e saiu do Financeiro</p></div>';
+        if (!temFin) html += '<p class="pn-vazio">Sem lançamentos no Financeiro ainda. Registre uma receita ou uma despesa e o caixa aparece aqui.</p>';
+        else {
+          var margemTxt = cx.margem === null
+            ? (cx.recebido > 0 ? "sem despesa paga no período, a margem ainda não existe" : "sem receita no período")
+            : "margem de caixa " + Util.fmtNum(cx.margem, 1) + "%, meta " + Util.fmtNum(metas.margem, 0) + "%" + (cx.aPagar > 0 ? ". Não abate " + e(fk(cx.aPagar)) + " a pagar" : "");
+          html += '<div class="pn-caixa"><div class="pn-extrato" role="table" aria-label="Fechamento de caixa">'
+            + '<span class="pn-rot">Recebido</span><span class="pn-reg">medições e faturas pagas ' + this._pnDelta(cx.delta.recebido, m.periodo) + '</span><span class="pn-val" title="' + e(fm(cx.recebido)) + '">' + e(fk(cx.recebido)) + "</span>"
+            + '<span class="pn-rot">Pago</span><span class="pn-reg">custo desembolsado ' + this._pnDelta(cx.delta.pago, m.periodo) + '</span><span class="pn-val pn-neg" title="' + e(fm(cx.pago)) + '">− ' + e(fk(cx.pago)) + "</span>"
+            + '<span class="pn-rot pn-soma">Resultado de caixa</span><span class="pn-reg pn-soma">' + margemTxt + '</span><span class="pn-val pn-soma' + (cx.resultado >= 0 ? " pn-ok" : " pn-ruim") + '" title="' + e(fm(cx.resultado)) + '">' + (cx.resultado < 0 ? "− " : "") + e(fk(Math.abs(cx.resultado))) + "</span>"
+            + "</div>"
+            /* a receber: dois números com o MESMO peso — o que está no Financeiro
+               e o que está aprovado em boletim e ainda não virou receita */
+            + '<div class="pn-lado"><div class="pn-mini"><span class="pn-rot">A receber</span><div class="pn-dois">'
+            + '<div><span class="pn-val">' + e(fm(cx.aReceber)) + '</span><span class="pn-sub">no Financeiro</span></div>'
+            + '<div><span class="pn-val' + (cx.aprovadoNaoPago.n ? "" : " pn-fraco") + '"' + (cx.aprovadoNaoPago.n ? ' data-aviso="aprovada-nao-paga"' : "") + ">" + e(fm(cx.aprovadoNaoPago.valor)) + '</span><span class="pn-sub">' + (cx.aprovadoNaoPago.n ? "em " + N(cx.aprovadoNaoPago.n, "boletim aprovado", "boletins aprovados") + " sem pagamento registrado" : "nenhum boletim aprovado esperando pagamento") + "</span></div></div>"
+            + (cx.pagoSemReceita && cx.pagoSemReceita.total ? '<span class="pn-sub pn-sub-alerta" data-aviso="pago-sem-receita">' + N(cx.pagoSemReceita.total, "boletim marcado como pago", "boletins marcados como pagos") + ", " + e(fm(cx.pagoSemReceita.liquido)) + " líquido, e não encontrei a receita no Financeiro." + (cx.pagoSemReceita.semCarimboForaDaObra > 0 ? " Há " + N(cx.pagoSemReceita.semCarimboForaDaObra, "receita sem carimbo", "receitas sem carimbo") + " sem obra ou de outra obra: confira antes de registrar de novo." : "") + "</span>" : "")
+            + "</div>"
+            + '<div class="pn-mini' + (cx.contasVencendo.n ? " pn-mini-aviso" : "") + '"><span class="pn-rot">A pagar' + (cx.contasVencendo.n ? " até " + this._pnDataCurta(cx.contasVencendo.ate) : "") + '</span><span class="pn-val">' + e(fm(cx.contasVencendo.n ? cx.contasVencendo.valor : cx.aPagar)) + "</span>"
+            + '<span class="pn-sub">' + (cx.contasVencendo.n ? N(cx.contasVencendo.n, "conta", "contas") + " " + (cx.contasVencendo.vencidas ? (cx.contasVencendo.n === 1 ? "vencida ou " : "vencidas ou ") : "") + "vencendo. Total em aberto " + e(fk(cx.aPagar)) + "." : "despesas em aberto no Financeiro, nenhuma vencendo até " + this._pnDataCurta(cx.contasVencendo.ate) + ".") + "</span></div></div>"
+            + '<div class="pn-lucro-bloco"><div class="pn-lucro-cab">Lucratividade por mês<span>' + (cx.anterior.existe ? "antes: recebido " + e(fk(cx.anterior.recebido)) + ", pago " + e(fk(cx.anterior.pago)) : "resultado sobre o recebido, mês a mês") + "</span></div>" + this._pnLucro(cx.porMes, metas.margem) + "</div>"
+            + '<div class="pn-medidores">'
+            + this._pnMedidor("Margem de caixa", cx.margem === null ? "—" : Util.fmtNum(cx.margem, 1) + "%", Util.fmtNum(metas.margem, 0) + "%", m.metas.margem.atingido, "Resultado de caixa dividido pelo recebido no período, contra a meta definida em Metas")
+            + (m.metas.recebimento ? this._pnMedidor("Recebimento", e(fk(m.metas.recebimento.valor)), e(fk(m.metas.recebimento.meta)), m.metas.recebimento.atingido, "Meta de " + fm(m.metas.recebimento.metaMes) + " por mês × " + N(m.metas.recebimento.meses, "mês", "meses") + " do período")
+              : '<div class="pn-medidor pn-med-vazio" title="Defina em Metas quanto a empresa precisa receber por mês"><span class="pn-med-rot">Recebimento</span><span class="pn-med-trilho"></span><span class="pn-med-val"><small>defina em Metas</small></span></div>')
+            + (m.metas.ppc.valor !== null ? this._pnMedidor("PPC da semana", m.metas.ppc.valor + "%", Util.fmtNum(metas.ppc, 0) + "%", m.metas.ppc.atingido, "Tarefas feitas sobre as comprometidas na semana do Last Planner") : "")
+            + "</div></div>";
+        }
+        html += "</div>";
+      }
+      /* fila de decisões */
+      var dec = m.decisoes, VIS = 5;
+      var linhaDec = function (x) {
+        var t = self._pnDecisao(x);
+        var quanto = x.unidade === "R$" ? e(fk(x.valor)) : (x.unidade === "dias" ? N(x.valor, "dia", "dias") : (x.unidade === "un" ? String(x.valor) : ""));
+        if (!quanto) quanto = '<span class="pn-tag">' + e(x.tag || "") + "</span>";
+        var grav = x.gravidade >= 3 ? "pn-critico" : (x.gravidade === 2 ? "pn-atencao" : "pn-info");
+        return '<li class="pn-decisao ' + grav + '"><span class="pn-quanto"><i></i>' + quanto + '</span><span class="pn-oque">' + t.titulo + '</span>'
+          + '<span class="pn-onde">' + t.detalhe + (t.acaoTexto ? '<span class="pn-porque-a">' + t.acaoTexto + "</span>" : "") + "</span>"
+          + '<span class="pn-acao">' + self._pnBotao(x, t.botao) + "</span></li>";
+      };
+      html += '<div class="pn-card pn-hoje"><div class="pn-sec"><h2>Precisa de você hoje</h2><p>' + (dec.length ? N(dec.length, "ponto", "pontos") + (m.emJogo > 0 ? ", " + e(fk(m.emJogo)) + " em jogo" : "") : "nada pendente") + "</p></div>";
+      if (!dec.length) html += '<p class="pn-vazio">Nenhuma decisão esperando. Quando um prazo apertar, uma conta vencer ou um dinheiro ficar sem lançar, aparece aqui.</p>';
+      else {
+        html += "<ol>" + dec.slice(0, VIS).map(linhaDec).join("") + "</ol>";
+        if (dec.length > VIS) html += '<details class="pn-mais"><summary>Mais ' + N(dec.length - VIS, "ponto", "pontos") + "</summary><ol>" + dec.slice(VIS).map(linhaDec).join("") + "</ol></details>";
+      }
+      html += "</div></section>";
+
+      /* ---- obras ---- */
+      var linhaObra = function (l) {
+        var pill = l.status === "andamento" ? "pn-pill pn-pill-and" : (l.status === "concluida" ? "pn-pill pn-pill-conc" : (l.avisos.indexOf("status-desatualizado") > -1 ? "pn-pill pn-pill-dup" : "pn-pill"));
+        var rotStatus = ({ andamento: "Em andamento", planejamento: "Planejamento", pausada: "Pausada", concluida: "Concluída" })[l.status] || l.status;
+        var quando = "";
+        if (l.prazo.temDatas) {
+          if (l.prazo.vencido) quando = '<span class="pn-quando pn-q-alerta">prazo vencido há ' + N(-l.prazo.dias, "dia", "dias") + "</span>";
+          else if (l.prazo.terminoSuspeito) quando = '<span class="pn-quando pn-q-aviso">término em ' + N(l.prazo.dias, "dia", "dias") + ", confira a data</span>";
+          else quando = '<span class="pn-quando' + (l.prazo.dias <= 15 ? " pn-q-aviso" : "") + '">entrega em ' + N(l.prazo.dias, "dia", "dias") + "</span>";
+        } else if (!l.prazo.entregue) quando = '<span class="pn-quando">sem datas cadastradas</span>';
+        var notas = [];
+        if (l.avisos.indexOf("entregue-fechar") > -1) notas.push('<p class="pn-obra-nota pn-ok">Tudo medido. Marque como concluída para sair da lista de prazo.</p>');
+        if (l.avisos.indexOf("status-desatualizado") > -1) notas.push('<p class="pn-obra-nota">Há dinheiro lançado numa obra em planejamento. O status parece desatualizado: confira em Obras.</p>');
+        if (l.avisos.indexOf("recebeu-sem-contrato") > -1) notas.push('<p class="pn-obra-nota">Recebeu ' + e(fk(l.recebido)) + " sem contrato cadastrado. Cadastre o contrato para o saldo a faturar fechar.</p>");
+        if (l.avisos.indexOf("estouro") > -1) notas.push('<p class="pn-obra-nota">Gasto acima do orçado: ' + e(fk(l.orcado.gasto)) + " contra " + e(fk(l.orcado.previsto)) + " orçados.</p>");
+        var numeros = "";
+        if (podeFin) {
+          numeros = '<dl class="pn-obra-num">'
+            + "<div><dt>" + (l.semContrato ? "Valor da obra" : "Contratado") + '</dt><dd class="pn-tn' + (l.base > 0 ? "" : " pn-fraco") + '"' + (l.semContrato ? ' title="sem contrato assinado: é o valor cadastrado na obra"' : "") + ">" + (l.base > 0 ? e(fm(l.base)) : (l.semContrato ? "sem contrato" : "—")) + "</dd></div>"
+            + '<div><dt>Recebido</dt><dd class="pn-tn' + (l.recebido > 0 ? "" : " pn-fraco") + '">' + (l.recebido > 0 ? e(fm(l.recebido)) : "nenhum") + "</dd></div>"
+            + '<div><dt>Custo pago</dt><dd class="pn-tn' + (l.custoPago > 0 ? "" : " pn-fraco") + '">' + (l.custoPago > 0 ? e(fm(l.custoPago)) : "nenhum lançado") + "</dd></div>"
+            + '<div><dt>Margem s/ recebido</dt><dd class="pn-tn' + (l.margem === null ? " pn-fraco" : (l.margem >= metas.margem ? " pn-ok" : " pn-ruim")) + '"' + (l.margem === null ? ' title="' + (l.recebido > 0 ? "sem despesa paga lançada, a margem ainda não existe" : "sem receita") + '"' : "") + ">" + (l.margem === null ? "—" : Util.fmtNum(l.margem, 1) + "%") + "</dd></div>";
+          if (l.orcado) {
+            var oc = l.orcado;
+            numeros += '<div><dt>Orçado</dt><dd class="pn-tn' + (oc.previsto > 0 ? "" : " pn-fraco") + '">' + (oc.previsto > 0 ? e(fm(oc.previsto)) : "sem orçamento") + "</dd></div>"
+              + '<div><dt>Gasto do orçado</dt><dd class="pn-tn' + (oc.estourou ? " pn-q-alerta" : (oc.consumidoPct !== null && l.avanco !== null && oc.consumidoPct - l.avanco >= PainelDados.DEFASAGEM_PONTOS ? " pn-ruim" : "")) + '" title="competência, acumulado da obra: ' + e(fm(oc.gasto)) + (l.avanco !== null && oc.consumidoPct !== null ? ". Medido " + l.avanco + "% do escopo" : "") + '">' + (oc.consumidoPct === null ? e(fm(oc.gasto)) : oc.consumidoPct + "%") + "</dd></div>";
+          }
+          if (l.custoM2 !== null) numeros += '<div><dt>Custo por m²</dt><dd class="pn-tn">' + e(fm(l.custoM2)) + "/m²</dd></div>";
+          numeros += "</dl>";
+        }
+        return '<li class="pn-obra"><div class="pn-obra-cab"><h3>' + e(l.nome) + '</h3><span class="' + pill + '">' + e(rotStatus) + "</span>" + quando + "</div>"
+          + self._pnDupla(l) + numeros + notas.join("") + "</li>";
+      };
+      var segStatus = function () {
+        var ops = [["", "Todas"], ["andamento", "Em andamento"], ["planejamento", "Planejamento"], ["pausada", "Pausadas"], ["concluida", "Concluídas"]];
+        var atual = m.obras.filtroStatus || "";
+        return '<div class="pn-seg" role="group" aria-label="Filtrar obras por status">' + ops.map(function (o) {
+          return '<button class="pn-seg-b' + (atual === o[0] ? " on" : "") + '" data-gacao="dash-status" data-value="' + o[0] + '"' + (atual === o[0] ? ' aria-pressed="true"' : "") + ">" + o[1] + "</button>";
+        }).join("") + "</div>";
+      };
+      html += '<section class="pn-card pn-obras"><div class="pn-sec pn-sec-obras"><div><h2>Obras</h2><p>' + (podeFin ? "acumulado desde o início, regime de caixa. " : "") + "Calendário consumido em cima, escopo medido embaixo.</p></div>" + segStatus() + "</div>";
+      if (!m.obras.total) html += '<p class="pn-vazio">Nenhuma obra ainda. Crie a primeira em <b>Obras</b> ou gere a partir de um orçamento.</p>';
+      else if (!m.obras.comMovimento.length && !m.obras.semMovimento.length) html += '<p class="pn-vazio">Nenhuma obra com esse status' + (m.obras.ocultasPeloStatus ? " (" + N(m.obras.ocultasPeloStatus, "obra escondida", "obras escondidas") + " pelo filtro)" : "") + ".</p>";
+      else {
+        html += "<ul>" + m.obras.comMovimento.map(linhaObra).join("") + "</ul>";
+        if (m.obras.semMovimento.length) {
+          html += '<details class="pn-sem-mov"><summary>Mais ' + N(m.obras.semMovimento.length, "obra", "obras") + " sem movimento" + (podeFin ? " financeiro" : "") + "</summary><ul>"
+            + m.obras.semMovimento.map(function (l) {
+              var s = l.entregue ? "concluída, entregue" : (l.status === "andamento" && !l.prazo.temDatas ? '<span class="pn-d-aviso">em andamento sem datas</span>' : (l.prazo.terminoSuspeito ? '<span class="pn-d-aviso">término em ' + N(l.prazo.dias, "dia", "dias") + ", confira a data</span>" : (l.status === "planejamento" ? "planejamento" : e(l.status))));
+              return "<li><b>" + e(l.nome) + "</b><span>" + s + "</span></li>";
+            }).join("") + "</ul></details>";
+        }
+        if (m.obras.ocultasPeloStatus) html += '<p class="pn-rodape">' + N(m.obras.ocultasPeloStatus, "obra fica fora", "obras ficam fora") + " pelo filtro de status. A fila e o caixa acima seguem o recorte de obra do topo.</p>";
+      }
+      html += "</section>";
+
+      /* ---- gráficos (reaproveitam os SVGs já testados) ---- */
+      if (temFin) {
+        html += '<section class="pn-grafs">';
+        html += '<div class="pn-card pn-graf"><div class="pn-sec"><h2>Fluxo de caixa por mês</h2><p>' + this._pnPeriodoRotulo(m.periodo) + "</p></div>"
+          + (fin.fluxoTemMovimento ? this._dashSvgFluxo(fin.fluxo) : '<p class="pn-vazio">Sem lançamentos pagos no período.</p>') + "</div>";
+        html += '<div class="pn-card pn-graf"><div class="pn-sec"><h2>Onde o dinheiro saiu</h2><p>despesa paga no período</p></div>';
+        if (!m.categorias.length) html += '<p class="pn-vazio">Sem despesa paga no período.</p>';
+        else {
+          var maxCat = m.categorias[0].valor || 1;
+          html += '<div class="pn-cats-t">Por categoria</div><div class="pn-cats">' + m.categorias.map(function (c) {
+            return '<div class="pn-cat" title="' + e(rot(P.finCategoria, c.cat)) + ": " + e(fm(c.valor)) + ", " + c.pct + '% do pago"><span class="pn-cat-nome">' + e(rot(P.finCategoria, c.cat)) + '</span><span class="pn-cat-barra"><i style="width:' + Math.max(1, Math.round(c.valor / maxCat * 100)) + "%;background:" + (self._CORCAT[c.cat] || "var(--cat-outros)") + '"></i></span><span class="pn-cat-val">' + e(fk(c.valor)) + '</span><span class="pn-cat-pct">' + c.pct + "%</span></div>";
+          }).join("") + "</div>";
+          if (m.porObra.length) {
+            var maxObra = m.porObra[0].valor || 1;
+            html += '<div class="pn-cats-t">Por obra</div><div class="pn-cats">' + m.porObra.map(function (o) {
+              var pct = cx.pago > 0 ? Math.round(o.valor / cx.pago * 100) : 0;
+              return '<div class="pn-cat" title="' + e(o.nome) + ": " + e(fm(o.valor)) + ", " + pct + '% do pago"><span class="pn-cat-nome">' + e(o.nome) + '</span><span class="pn-cat-barra"><i style="width:' + Math.max(1, Math.round(o.valor / maxObra * 100)) + '%;background:var(--cat-obra)"></i></span><span class="pn-cat-val">' + e(fk(o.valor)) + '</span><span class="pn-cat-pct">' + pct + "%</span></div>";
+            }).join("") + "</div>" + (m.semObraPeriodo > 0 ? '<p class="pn-rodape">' + e(fm(m.semObraPeriodo)) + " sem obra vinculada.</p>" : "");
+          }
+        }
+        html += "</div>";
+        if (fin.prevReal.length) {
+          html += '<div class="pn-card pn-graf"><div class="pn-sec"><h2>Orçado × gasto' + (fin.porEtapa ? " por etapa" : " por obra") + '</h2><p>competência, acumulado' + (fin.obrasSemOrcamento ? ". " + N(fin.obrasSemOrcamento, "obra sem orçamento vinculado ficou", "obras sem orçamento vinculado ficaram") + " de fora" : "") + "</p></div>"
+            + this._dashSvgPrevReal(this._dashPrevRealTop(fin.prevReal)) + "</div>";
+        }
+        html += "</section>";
+      }
+
+      /* ---- operação: contadores + detalhes que abrem ---- */
+      var op = m.operacao, itensOp = [], detalhes = [];
+      var contador = function (rot_, val, sub, subCls, attrs) {
+        return '<button class="pn-op-item" ' + attrs + '><span class="pn-op-rot">' + rot_ + '</span><span class="pn-op-val">' + val + "</span>" + (sub ? '<span class="pn-op-sub' + (subCls ? " " + subCls : "") + '">' + sub + "</span>" : "") + "</button>";
+      };
+      if (podeMod("medicoes")) itensOp.push(contador("Medições a aprovar", op.medicoesAAprovar, op.aprovadasSemPgto.n ? N(op.aprovadasSemPgto.n, "aprovada aguarda", "aprovadas aguardam") + " pagamento" : "", "", 'data-view="medicoes"'));
+      if (op.pendentes && op.pendentes.total) {
+        var partes = [];
+        if (op.pendentes.medicoes) partes.push(N(op.pendentes.medicoes, "medição", "medições"));
+        if (op.pendentes.compras) partes.push(N(op.pendentes.compras, "pedido", "pedidos"));
+        if (op.pendentes.requisicoes) partes.push(N(op.pendentes.requisicoes, "requisição", "requisições"));
+        if (op.pendentes.producao) partes.push(op.pendentes.producao + " de produção");
+        var viewPend = op.pendentes.medicoes ? "medicoes" : (op.pendentes.compras ? "compras" : (op.pendentes.requisicoes ? "requisicoes" : "producao"));
+        itensOp.push(contador("Pendentes de aprovação", op.pendentes.total, partes.join(", "), "pn-op-aviso", 'data-view="' + viewPend + '"'));
+      }
+      if (podeMod("compras")) itensOp.push(contador("Compras em aberto", op.comprasAbertas, "requisições e pedidos", "", 'data-view="compras"'));
+      if (op.lp) {
+        itensOp.push(contador("Last Planner, semana", (op.lp.ppc === null ? "—" : Math.round(op.lp.ppc * 100) + "%") + ' <small>PPC</small>', op.lp.impedida ? N(op.lp.impedida, "impedimento", "impedimentos") + ", " + op.lp.execucao + " em execução" : op.lp.execucao + " em execução, " + N(op.lp.liberada, "liberada", "liberadas"), op.lp.impedida ? "pn-op-alerta" : "", 'data-view="lastplanner"'));
+        detalhes.push('<details class="pn-detalhe"><summary>Last Planner da semana</summary><div class="pn-detalhe-c"><dl class="pn-obra-num">'
+          + '<div><dt>PPC</dt><dd class="pn-tn' + (op.lp.ppc === null ? " pn-fraco" : (op.lp.ppc * 100 >= metas.ppc ? " pn-ok" : " pn-ruim")) + '">' + (op.lp.ppc === null ? "—" : Math.round(op.lp.ppc * 100) + "%") + "</dd></div>"
+          + '<div><dt>Feitas / comprometidas</dt><dd class="pn-tn">' + op.lp.feitas + " / " + op.lp.comprometidas + "</dd></div>"
+          + '<div><dt>Em execução</dt><dd class="pn-tn">' + op.lp.execucao + "</dd></div>"
+          + '<div><dt>Liberadas</dt><dd class="pn-tn">' + op.lp.liberada + "</dd></div>"
+          + '<div><dt>Impedimentos</dt><dd class="pn-tn' + (op.lp.impedida ? " pn-q-alerta" : " pn-ok") + '">' + op.lp.impedida + "</dd></div>"
+          + '</dl><button class="pn-btn" data-view="lastplanner">Abrir o quadro</button></div></details>');
+      }
+      if (op.tarefas && (op.tarefas.afazer || op.tarefas.atrasadas)) itensOp.push(contador("Tarefas", op.tarefas.afazer + " <small>a fazer</small>", op.tarefas.atrasadas ? N(op.tarefas.atrasadas, "atrasada", "atrasadas") : "", op.tarefas.atrasadas ? "pn-op-alerta" : "", 'data-view="tarefas"'));
+      if (podeMod("rdo")) itensOp.push(contador("Diários (RDO)", op.rdos, "", "", 'data-view="rdo"'));
+      if (op.m2) {
+        itensOp.push(contador("Executado nos diários", Util.fmtNum(op.m2.executado, 0) + " <small>m²</small>", Util.fmtNum(op.m2.atribuido, 0) + " m² com dono e aprovados", "", 'data-view="producao"'));
+        if (op.m2.porServico && op.m2.porServico.length) {
+          var fmtM2 = function (v) { return Util.fmtNum(v, 2) + " m²"; };
+          detalhes.push('<details class="pn-detalhe"><summary>Metragem por serviço</summary><div class="pn-detalhe-c">'
+            + ((typeof UI !== "undefined" && UI._barH) ? UI._barH(op.m2.porServico, fmtM2) : "")
+            + (op.m2.aviso ? '<p class="pn-rodape">' + e(op.m2.aviso) + "</p>" : "") + "</div></details>");
+        }
+      }
+      if (op.retencao > 0) itensOp.push(contador("Retenção presa", e(fm(op.retencao)), "em contratos vivos", "", 'data-gacao="abrir-retencao"'));
+      if (itensOp.length) html += '<div class="pn-sec pn-sec-solta"><h2>Operação</h2><p>' + e(this._dashEscopoRotulo(esc)) + '</p></div><nav class="pn-op" aria-label="Contadores de operação">' + itensOp.join("") + "</nav>";
+      if (detalhes.length) html += '<div class="pn-detalhes">' + detalhes.join("") + "</div>";
+
+      /* ---- rodapé ---- */
+      var ct = m.contratos;
+      html += '<div class="pn-fim">'
+        + (podeFin && ct.valorContratado > 0 ? "<span>Saldo a faturar: <b>" + e(fm(ct.saldoFaturar)) + "</b>, contratado " + e(fk(ct.valorContratado)) + " menos " + e(fk(ct.faturado)) + " já medido" + (ct.semContrato.n ? ". " + N(ct.semContrato.n, "obra entra", "obras entram") + " pelo valor da obra, sem contrato" : "") + ".</span>" : "")
+        + "</div>";
+      html += this._obraDemoCard();
+      return html + "</div>";
+    },
+
     _obraDemoPode: function () {
       if (typeof ObraDemo === "undefined") return false;
       if (typeof App !== "undefined" && App._demo) return false;          // vitrine do site: nunca
@@ -2297,7 +2810,7 @@
       if (id != null && id !== "") {
         this._dashObra = Object.prototype.toString.call(id) === "[object Array]"
           ? (id.length ? id : "todas") : id;
-        App.render(); return;
+        this._pnRender(); return;
       }
       if (!el && typeof document !== "undefined") el = document.querySelector('[data-gacao="dash-obra"]');
       if (!el || !el.options) return;
@@ -2306,7 +2819,7 @@
         if (el.options[i].selected && el.options[i].value !== "todas") sel.push(el.options[i].value);
       }
       this._dashObra = sel.length ? (sel.length === 1 ? sel[0] : sel) : "todas";
-      App.render();
+      this._pnRender();   /* Painel novo: só o miolo, com o scroll de volta; antigo: App.render() */
     },
     _fmtK: function (v) {
       var neg = v < 0 ? "−" : ""; v = Math.abs(Util.num(v));
@@ -2607,7 +3120,7 @@
       var resultado = receitas - despesas;
       return {
         obraSel: obraSel, receitas: receitas, despesas: despesas, resultado: resultado,
-        margem: receitas > 0 ? (resultado / receitas) * 100 : null,
+        margem: (receitas > 0 && despesas > 0) ? (resultado / receitas) * 100 : null,   /* sem custo pago, margem não existe (ver Resumo por obra) */
         aReceber: aReceber, aPagar: aPagar, cats: cats, fluxo: fluxo, fluxoTemMovimento: fluxoTemMovimento,
         prazoAvanco: prazoAvanco, semPrazo: _semPrazo,
         fluxoForaTras: foraTras.length, fluxoForaFrente: foraFrente.length,
@@ -3167,7 +3680,7 @@
         this._lpKpi("Resultado (caixa)", this._fmtK(d.resultado), this._fmtK(d.aReceber) + " a receber · " + this._fmtK(d.aPagar) + " a pagar", d.resultado >= 0 ? "var(--verde)" : "#dc2626") +
         /* a meta de margem era 15% cravada, no texto E na comparação: construtora
            de obra pública e reforma residencial não vivem da mesma margem */
-        this._lpKpi("Margem", d.margem == null ? "—" : d.margem.toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + "%", d.margem == null ? "sem receita no período" : (d.margem >= _mt.margem ? "saudável (meta ≥ " + Util.fmtNum(_mt.margem, 0) + "%)" : "abaixo da meta de " + Util.fmtNum(_mt.margem, 0) + "%"), d.margem == null ? "var(--texto-fraco)" : d.margem >= _mt.margem ? "var(--verde)" : "#ea580c") +
+        this._lpKpi("Margem", d.margem == null ? "—" : d.margem.toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + "%", d.margem == null ? (d.receitas > 0 ? "sem despesa paga no período" : "sem receita no período") : (d.margem >= _mt.margem ? "saudável (meta ≥ " + Util.fmtNum(_mt.margem, 0) + "%)" : "abaixo da meta de " + Util.fmtNum(_mt.margem, 0) + "%"), d.margem == null ? "var(--texto-fraco)" : d.margem >= _mt.margem ? "var(--verde)" : "#ea580c") +
         kpiPR + '</div>';
 
       // ---- alertas executivos ----
@@ -3567,7 +4080,7 @@
     dashTrocaPeriodo: function (p) {
       if (p == null) return; // clique da delegação (sem value) não re-renderiza
       if (["mes", "6m", "ano", "tudo"].indexOf(p) < 0) p = "6m";
-      this._dashPer = p; App.render();
+      this._dashPer = p; this._pnRender();
     },
 
     // =================== OBRAS ===================
@@ -36096,6 +36609,8 @@ renderFolha: function () {
         case "cobrar-compra": return this.comprasCobrar(id);
         case "med-obra": return this.medTrocaObra(dataset);
         case "dash-metas": return this.metasForm();
+        case "painel-antigo": return this.painelNovoDesligar();
+        case "dash-status": return this.dashTrocaStatus(dataset.value);
         case "dash-obra-multi":
           this._dashMulti = !this._dashMulti;
           /* saindo do modo somar com varias marcadas, fica a primeira: um
@@ -36106,7 +36621,7 @@ renderFolha: function () {
             var _ids = this._dashObras();
             if (_ids && _ids.length > 1) this._dashObra = _ids[0];
           }
-          App.render(); return;
+          this._pnRender(); return;
         case "nova-tarefa": return this.novoTarefa();
         case "tar-filtro": return this.tarTrocaFiltro(dataset.val);
         case "tar-obra": return this.tarTrocaObra(dataset.value);

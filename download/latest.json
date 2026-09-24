@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.88",
+  "versao": "1.2.89",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.88.zip",
-  "notas": "Centros de custo: a aba Fila passou a funcionar. Ela lista os lancamentos que ainda nao tem centro de custo, com o motivo de cada um, e a nota fiscal e dividida pelo valor de cada pedido. A Fila so mostra: nao muda nenhum numero da aba Centros.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.88/OrcaPRO-IA-Instalador-v1.2.88.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.89.zip",
+  "notas": "Painel de Gestao: obra concluida deixa de aparecer como vencida; a margem so aparece quando ha custo pago; custo por m2 so com custo lancado; o grafico Orcado x Gasto ganhou leitura ao passar o mouse e o rotulo nao sobrepoe mais. Em Metas, nova meta de recebimento por mes.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.89/OrcaPRO-IA-Instalador-v1.2.89.exe"
 }

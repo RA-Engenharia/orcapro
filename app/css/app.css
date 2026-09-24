@@ -66,6 +66,9 @@
      tons escuros deriva da superficie do proprio tom (o navy fixo brigava
      com verde/marrom e sumia no preto). */
   --tot-fundo: var(--navy);
+  /* fundos tingidos de estado do Painel novo (.pn-*): a cor semântica a
+     ~12% sobre a superfície — pílula e cartão de atenção sem hex novo */
+  --tinta-ok: rgba(21,128,61,.12); --tinta-aviso: rgba(170,98,0,.13); --tinta-alerta: rgba(214,31,38,.11); --tinta-aco: rgba(13,110,189,.10);
 
   /* ⚠ COR DE SÉRIE DE GRÁFICO É TOKEN PRÓPRIO, e não `--navy` emprestado.
      Medido em 25/08/2026: a linha "Receitas", a barra "Realizado" e a fatia
@@ -233,6 +236,7 @@
   --linha-forte: #4f6c88;
   --faixa-sub: #152636;  /* --surface-2 30% rumo a --surface (mantem a hierarquia no escuro) */
   --tot-fundo: #1b3550;
+  --tinta-ok: rgba(76,174,109,.16); --tinta-aviso: rgba(221,162,63,.16); --tinta-alerta: rgba(232,118,123,.16); --tinta-aco: rgba(78,143,190,.16);
   --texto: #ecf2f8;
   --texto-fraco: #9db0c2;
   --sombra-sm: 0 1px 2px rgba(0,0,0,.35);
@@ -2797,8 +2801,13 @@ input.coef-edit.mexido { border-color: var(--amarelo); background: rgba(170, 98,
 /* anel da cor da superficie: separa o ponto da linha que passa por baixo */
 .g-fim { stroke: var(--surface); stroke-width: 2; }
 
-.g-col .g-guia, .g-col .g-pt, .g-col .g-ler { opacity: 0; transition: opacity .12s ease; }
-.g-col:hover .g-guia, .g-col:hover .g-pt, .g-col:hover .g-ler { opacity: 1; }
+/* ⚠ `.g-bar` TAMBÉM (24/09/2026). A camada de leitura foi copiada do fluxo
+   (.g-col) para as barras do Previsto × Realizado (.g-bar) sem copiar este
+   seletor: as N leituras nasciam visíveis, empilhadas no mesmo canto, e a
+   última cobria as outras — o "rótulo sobreposto" das capturas. E o hover
+   das barras não existia. */
+.g-col .g-guia, .g-col .g-pt, .g-col .g-ler, .g-bar .g-ler { opacity: 0; transition: opacity .12s ease; }
+.g-col:hover .g-guia, .g-col:hover .g-pt, .g-col:hover .g-ler, .g-bar:hover .g-ler { opacity: 1; }
 .g-hit { fill: transparent; }
 .g-guia { stroke: var(--linha-forte); stroke-width: 1; stroke-dasharray: 3 3; pointer-events: none; }
 .g-pt { stroke: var(--surface); stroke-width: 2; pointer-events: none; }
@@ -2894,7 +2903,7 @@ input.coef-edit.mexido { border-color: var(--amarelo); background: rgba(170, 98,
 .g-leg-cor.tracejada { background-image: linear-gradient(90deg, currentColor 0 5px, transparent 5px 8px); }
 
 @media (prefers-reduced-motion: reduce) {
-  .g-col .g-guia, .g-col .g-pt, .g-col .g-ler { transition: none; }
+  .g-col .g-guia, .g-col .g-pt, .g-col .g-ler, .g-bar .g-ler { transition: none; }
 }
 
 /* --- 1b) o indicador: UM componente, duas densidades ---
@@ -3402,3 +3411,238 @@ table.tbl.cxb-tab tr.cxb-mudou td.num { color: var(--graf-aviso); }
 /*
  * ↑ faixas da medição na linha do prazo e a tabela do [Rever].
  */
+
+
+/* =====================================================================
+ * PAINEL DE GESTÃO NOVO (.pn-*) — 24/09/2026, atrás da chave
+ * `orcapro:tela:painel:v1` (ver js/painel.js). Só tokens: tamanho e peso
+ * saem da régua (tools/test-contraste.js reprova px cru), cor sai do :root
+ * e do par escuro. Duas superfícies apenas — plano (sem cartão) e .pn-card —
+ * porque o Painel antigo tinha um cartão igual para filtro, indicador,
+ * gráfico, tabela e aviso, e nada dizia o que era primário.
+ * ⚠ Prefixo .pn- é exclusivo desta tela; nada aqui toca regra existente.
+ * ===================================================================== */
+.pn { max-width: 1240px; }
+.pn h1, .pn h2, .pn h3, .pn p, .pn ul, .pn ol, .pn dl, .pn dd { margin: 0; }
+.pn ul, .pn ol { padding: 0; list-style: none; }
+.pn small { font-size: var(--t-peq); font-weight: var(--p-normal); color: var(--texto-fraco); }
+.pn-tn { font-variant-numeric: tabular-nums; }
+.pn-vazio { color: var(--texto-fraco); font-size: var(--t-peq); padding: 8px 0; }
+.pn-fraco { color: var(--texto-fraco) !important; font-weight: var(--p-normal) !important; }
+.pn-ok { color: var(--verde); }
+.pn-ruim { color: var(--graf-aviso); }
+.pn-neg { color: var(--vermelho); }
+
+/* cabeçalho + filtros */
+.pn-cab { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 14px 24px; margin-bottom: 22px; }
+.pn-cab h1 { font-size: var(--t-hero); font-weight: var(--p-forte); letter-spacing: -.5px; line-height: 1.1; }
+.pn-cab-sub { color: var(--texto-fraco); font-size: var(--t-peq); margin-top: 6px; }
+.pn-filtros { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.pn-ctl { height: var(--h-ctl); border: 1px solid var(--linha); background: var(--surface); border-radius: var(--raio-ctl); padding: 0 12px; font-size: var(--t-peq); font-weight: var(--p-medio); color: var(--texto); display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-family: inherit; }
+.pn-ctl select { border: 0; background: transparent; color: inherit; font: inherit; font-weight: var(--p-medio); max-width: 240px; }
+.pn-ctl select[multiple] { height: auto; max-width: 260px; }
+.pn-ctl.pn-ctl-ghost { background: transparent; }
+/* os <select> ficam com o estilo nativo do app (seta, borda, tema): o rótulo é só texto */
+.pn-filtro { display: inline-flex; align-items: center; gap: 8px; font-size: var(--t-peq); font-weight: var(--p-medio); color: var(--texto-fraco); }
+.pn-filtro select { max-width: 240px; }
+.pn-ctl:hover { border-color: var(--linha-forte); }
+
+/* superfícies e títulos de seção */
+.pn-card { background: var(--surface); border: 1px solid var(--linha); border-radius: var(--raio-lg); box-shadow: var(--sombra); }
+.pn-sec { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.pn-sec h2 { font-size: var(--t-med); font-weight: var(--p-forte); letter-spacing: -.2px; text-transform: none; }
+.pn-sec p { color: var(--texto-fraco); font-size: var(--t-peq); text-align: right; }
+.pn-sec-solta { margin-top: 26px; }
+
+/* primeira dobra */
+.pn-dobra { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; margin-bottom: 30px; }
+/* uma coluna: o extrato (3 colunas, número grande à direita) não cabia ao lado
+   dos dois quadros — os valores ficavam escondidos atrás deles (2ª foto) */
+.pn-caixa { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.pn-extrato { display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content; column-gap: 14px; align-items: baseline; min-width: 0; }
+.pn-extrato > * { padding: 7px 0; border-bottom: 1px solid var(--linha); }
+.pn-extrato .pn-rot { font-size: var(--t-peq); color: var(--texto-fraco); }
+.pn-extrato .pn-reg { font-size: var(--t-micro); color: var(--texto-fraco); }
+.pn-extrato .pn-val { font-size: var(--t-med); font-weight: var(--p-medio); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pn-extrato .pn-soma { border-bottom: 0; border-top: 2px solid var(--texto); padding-top: 10px; }
+.pn-extrato .pn-rot.pn-soma { font-size: var(--t-base); color: var(--texto); font-weight: var(--p-medio); }
+.pn-extrato .pn-val.pn-soma { font-size: var(--t-hero); font-weight: var(--p-forte); letter-spacing: -.6px; line-height: 1; font-variant-numeric: normal; }
+.pn-delta { display: inline-block; margin-left: 6px; color: var(--verde); font-weight: var(--p-medio); }
+.pn-delta-neg { color: var(--graf-aviso); }
+.pn-lado { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.pn-mini { display: grid; gap: 2px; padding: 10px 12px; border-radius: var(--raio); background: var(--surface-2); }
+.pn-mini .pn-rot { font-size: var(--t-micro); color: var(--texto-fraco); }
+.pn-mini .pn-val { font-size: var(--t-med); font-weight: var(--p-forte); font-variant-numeric: tabular-nums; }
+.pn-mini .pn-sub { font-size: var(--t-micro); color: var(--texto-fraco); line-height: 1.35; }
+.pn-mini .pn-sub-alerta { color: var(--graf-alerta); font-weight: var(--p-medio); }
+.pn-mini-aviso { background: var(--tinta-aviso); }
+.pn-mini-aviso .pn-val { color: var(--graf-aviso); }
+.pn-spark { margin-top: 4px; }
+.pn-spark svg { width: 100%; height: 56px; display: block; }
+.pn-spark-area { fill: var(--graf-c); opacity: .1; }
+.pn-spark-linha { fill: none; stroke: var(--graf-c); stroke-width: 2; stroke-linejoin: round; }
+.pn-spark-fim { fill: var(--graf-c); stroke: var(--surface); stroke-width: 2; }
+.pn-spark-txt { font-size: var(--t-graf-mes); fill: var(--texto); font-weight: var(--p-forte); }
+.pn-spark-eixo { font-size: var(--t-graf-eixo); fill: var(--texto-fraco); }
+.pn-spark-leg { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: var(--t-micro); color: var(--texto-fraco); margin-top: 4px; }
+.pn-spark-leg i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; background: var(--graf-c); vertical-align: middle; margin-right: 6px; }
+.pn-medidores { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px 22px; margin-top: 12px; }
+.pn-medidor { display: grid; grid-template-columns: 110px minmax(0, 1fr) auto; align-items: center; gap: 10px; font-size: var(--t-micro); color: var(--texto-fraco); }
+.pn-med-trilho { position: relative; height: 6px; border-radius: 3px; background: var(--surface-3); overflow: visible; }
+.pn-med-trilho i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: var(--linha-forte); }
+.pn-med-trilho b { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--texto); }
+.pn-medidor.pn-ok .pn-med-trilho i { background: var(--verde); }
+.pn-medidor.pn-atencao .pn-med-trilho i { background: var(--graf-aviso); }
+.pn-medidor.pn-alerta .pn-med-trilho i { background: var(--graf-alerta); }
+.pn-med-val { color: var(--texto); font-weight: var(--p-medio); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* a fila de decisões */
+.pn-hoje { padding: 18px 20px 12px; }
+.pn-hoje .pn-sec { margin-bottom: 6px; }
+/* ⚠ COLUNA E LINHA EXPLÍCITAS EM CADA CÉLULA. O grid coloca primeiro os itens
+   com LINHA fixa e coluna automática — o botão (grid-row: 1 / span 2) era
+   posicionado antes do valor e caía na 1ª coluna, empurrando o texto para uma
+   coluna de largura mínima (uma palavra por linha). Medido na 1ª foto. */
+.pn-decisao { display: grid; grid-template-columns: 104px minmax(0, 1fr) auto; grid-template-rows: auto auto; gap: 4px 14px; align-items: center; padding: 11px 0; border-top: 1px solid var(--linha); }
+.pn-hoje ol > .pn-decisao:first-child { border-top: 0; }
+.pn-quanto { grid-column: 1; grid-row: 1; font-size: var(--t-med); font-weight: var(--p-forte); font-variant-numeric: tabular-nums; white-space: nowrap; display: flex; align-items: center; gap: 8px; }
+.pn-quanto i { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--linha-forte); }
+.pn-critico .pn-quanto i { background: var(--vermelho); }
+.pn-atencao .pn-quanto i { background: var(--amarelo); }
+.pn-info .pn-quanto i { background: var(--aco); }
+.pn-oque { grid-column: 2; grid-row: 1; font-weight: var(--p-medio); line-height: 1.3; min-width: 0; }
+.pn-onde { grid-column: 2; grid-row: 2; font-size: var(--t-peq); color: var(--texto-fraco); min-width: 0; }
+.pn-onde b { font-weight: var(--p-medio); color: var(--texto); }
+.pn-porque-t, .pn-porque-a { display: block; margin-top: 2px; }
+.pn-porque-a::before { content: "\2192\00a0"; }
+.pn-acao { grid-column: 3; grid-row: 1 / span 2; }
+.pn-btn { height: 30px; padding: 0 12px; border-radius: var(--raio-ctl); border: 1px solid var(--linha); background: var(--surface); color: var(--texto); font-size: var(--t-peq); font-weight: var(--p-medio); font-family: inherit; cursor: pointer; white-space: nowrap; }
+.pn-btn:hover { border-color: var(--aco); color: var(--aco); }
+.pn-btn-p { background: var(--aco); border-color: var(--aco); color: #fff; }
+.pn-btn-p:hover { background: var(--navy-2); border-color: var(--navy-2); color: #fff; }
+.pn-mais { border-top: 1px solid var(--linha); padding-top: 10px; margin-top: 2px; }
+.pn-mais summary, .pn-sem-mov summary { cursor: pointer; font-size: var(--t-peq); color: var(--aco); font-weight: var(--p-medio); list-style: none; }
+.pn-mais summary::-webkit-details-marker, .pn-sem-mov summary::-webkit-details-marker { display: none; }
+
+/* obras */
+.pn-obras { padding: 18px 20px 8px; margin-bottom: 30px; }
+.pn-obra { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 6px 28px; padding: 14px 0; border-top: 1px solid var(--linha); }
+.pn-obras > ul > .pn-obra:first-child { border-top: 0; }
+.pn-obra-cab { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; grid-column: 1; }
+.pn-obra-cab h3 { font-size: var(--t-base); font-weight: var(--p-forte); }
+.pn-pill { font-size: var(--t-micro); font-weight: var(--p-medio); padding: 1px 9px; border-radius: 99px; background: var(--surface-2); color: var(--texto-fraco); }
+.pn-pill-and { background: var(--tinta-aco); color: var(--aco); }
+.pn-pill-conc { background: var(--tinta-ok); color: var(--verde); }
+.pn-pill-dup { background: var(--tinta-aviso); color: var(--graf-aviso); }
+.pn-quando { font-size: var(--t-peq); color: var(--texto-fraco); margin-left: auto; white-space: nowrap; }
+.pn-q-alerta { color: var(--graf-alerta); font-weight: var(--p-medio); }
+.pn-q-aviso { color: var(--graf-aviso); font-weight: var(--p-medio); }
+/* a barra dupla: calendário em cima, medido embaixo, no mesmo eixo */
+.pn-dupla { grid-column: 1; display: grid; gap: 4px; }
+.pn-trilhos { position: relative; display: grid; gap: 3px; margin-top: 14px; }
+.pn-trilho { height: 7px; border-radius: 3px; background: var(--surface-3); position: relative; overflow: hidden; }
+.pn-trilho i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; }
+.pn-trilho .pn-prazo { background: var(--linha-forte); }
+.pn-trilho .pn-medido { background: var(--aco); }
+.pn-trilho .pn-defas { border-radius: 0; background: repeating-linear-gradient(135deg, var(--graf-aviso) 0 3px, transparent 3px 6px); opacity: .55; }
+.pn-trilho .pn-defas.pn-grave { background: repeating-linear-gradient(135deg, var(--graf-alerta) 0 3px, transparent 3px 6px); }
+.pn-hoje-marca { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--texto); border-radius: 1px; }
+.pn-hoje-marca::after { content: "hoje"; position: absolute; top: -15px; left: -12px; font-size: var(--t-micro); color: var(--texto-fraco); }
+.pn-dupla-leg { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: var(--t-micro); color: var(--texto-fraco); }
+.pn-dupla-leg b { color: var(--texto); font-weight: var(--p-medio); }
+.pn-d-aviso { color: var(--graf-aviso); font-weight: var(--p-medio); }
+.pn-d-alerta { color: var(--graf-alerta); font-weight: var(--p-medio); }
+.pn-d-ok { color: var(--verde); font-weight: var(--p-medio); }
+.pn-d-fraco { color: var(--texto-fraco); }
+.pn-obra-num { grid-column: 2; grid-row: 1 / span 2; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px 12px; align-content: start; }
+.pn-obra-num div { display: grid; gap: 1px; }
+.pn-obra-num dt { font-size: var(--t-micro); color: var(--texto-fraco); }
+.pn-obra-num dd { font-size: var(--t-peq); font-weight: var(--p-medio); white-space: nowrap; }
+.pn-obra-nota { grid-column: 1 / -1; font-size: var(--t-peq); color: var(--graf-aviso); }
+.pn-obra-nota.pn-ok { color: var(--verde); }
+.pn-sem-mov { border-top: 1px solid var(--linha); padding: 12px 0 8px; }
+.pn-sem-mov ul { margin-top: 8px; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px 20px; font-size: var(--t-peq); }
+.pn-sem-mov li { display: flex; justify-content: space-between; gap: 10px; color: var(--texto-fraco); }
+.pn-sem-mov li b { color: var(--texto); font-weight: var(--p-medio); }
+
+/* gráficos */
+.pn-grafs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; margin-bottom: 8px; }
+.pn-graf { padding: 18px 20px 16px; }
+.pn-graf .pn-sec { margin-bottom: 4px; }
+.pn-graf svg { max-width: 560px; width: 100%; height: auto; display: block; }
+.pn-cats { display: grid; gap: 9px; margin-top: 10px; }
+.pn-cat { display: grid; grid-template-columns: 112px minmax(0, 1fr) 96px 44px; align-items: center; gap: 12px; font-size: var(--t-peq); }
+.pn-cat-nome { font-weight: var(--p-medio); }
+.pn-cat-barra { height: 10px; border-radius: 0 4px 4px 0; background: var(--surface-3); position: relative; overflow: hidden; }
+.pn-cat-barra i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 0 4px 4px 0; }
+.pn-cat-val { text-align: right; font-variant-numeric: tabular-nums; }
+.pn-cat-pct { text-align: right; color: var(--texto-fraco); font-variant-numeric: tabular-nums; }
+.pn-rodape { font-size: var(--t-micro); color: var(--texto-fraco); margin-top: 12px; }
+
+/* operação: contadores, não cartões */
+.pn-op { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); border-top: 1px solid var(--linha); border-bottom: 1px solid var(--linha); margin-bottom: 26px; }
+.pn-op-item { display: grid; gap: 2px; padding: 14px 16px 14px 0; border: 0; border-left: 1px solid var(--linha); padding-left: 16px; background: none; color: inherit; text-align: left; font-family: inherit; cursor: pointer; }
+.pn-op-item:first-child { border-left: 0; padding-left: 0; }
+.pn-op-item:hover .pn-op-rot { color: var(--aco); }
+.pn-op-rot { font-size: var(--t-peq); color: var(--texto-fraco); }
+.pn-op-val { font-size: var(--t-tit); font-weight: var(--p-forte); letter-spacing: -.3px; line-height: 1.15; }
+.pn-op-sub { font-size: var(--t-micro); color: var(--texto-fraco); }
+.pn-op-sub.pn-op-alerta { color: var(--graf-alerta); font-weight: var(--p-medio); }
+.pn-op-sub.pn-op-aviso { color: var(--graf-aviso); font-weight: var(--p-medio); }
+.pn-fim { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 20px; font-size: var(--t-peq); color: var(--texto-fraco); margin-bottom: 14px; }
+.pn-fim b { color: var(--texto); font-weight: var(--p-medio); }
+
+@media (max-width: 1100px) { .pn-dobra, .pn-grafs { grid-template-columns: 1fr; } .pn-obra { grid-template-columns: 1fr; } .pn-obra-num { grid-column: 1; grid-row: auto; } }
+@media (max-width: 820px) {
+  .pn-lado { grid-template-columns: 1fr; }
+  .pn-decisao { grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto auto; }
+  .pn-decisao .pn-quanto { grid-column: 1; grid-row: 1; }
+  .pn-decisao .pn-oque { grid-column: 1; grid-row: 2; }
+  .pn-decisao .pn-onde { grid-column: 1; grid-row: 3; }
+  .pn-decisao .pn-acao { grid-column: 2; grid-row: 1 / span 3; }
+  .pn-cat { grid-template-columns: 96px minmax(0, 1fr) 80px; }
+  .pn-cat-pct { display: none; }
+  .pn-obra-num { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pn-sec p { text-align: left; }
+}
+
+/* --- Painel novo, 2ª leva (24/09/2026): lucratividade mensal, dois números
+   com o mesmo peso, filtro de status, detalhes que abrem, rótulo curto --- */
+.pn-lucro-bloco { margin-top: 6px; }
+.pn-lucro-cab { display: flex; justify-content: space-between; gap: 12px; font-size: var(--t-peq); font-weight: var(--p-medio); margin-bottom: 6px; }
+.pn-lucro-cab span { font-weight: var(--p-normal); color: var(--texto-fraco); text-align: right; }
+.pn-lucro { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 8px; align-items: end; }
+.pn-lucro-m { display: grid; justify-items: center; gap: 2px; font-size: var(--t-micro); color: var(--texto-fraco); }
+.pn-lucro-m b { color: var(--texto); font-weight: var(--p-medio); font-variant-numeric: tabular-nums; }
+.pn-lucro-b { width: 100%; height: 44px; border-radius: 4px 4px 0 0; background: var(--surface-3); position: relative; overflow: hidden; }
+.pn-lucro-b i { position: absolute; left: 0; right: 0; bottom: 0; background: var(--linha-forte); border-radius: 4px 4px 0 0; }
+.pn-lucro-m.pn-ok .pn-lucro-b i { background: var(--verde); }
+.pn-lucro-m.pn-atencao .pn-lucro-b i { background: var(--graf-aviso); }
+.pn-lucro-m.pn-alerta .pn-lucro-b i { background: var(--graf-alerta); }
+.pn-lucro-m.pn-vazio-m b { color: var(--texto-fraco); font-weight: var(--p-normal); }
+.pn-dois { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 14px; align-items: start; }
+.pn-dois > div { display: grid; gap: 1px; }
+.pn-dois .pn-val { font-size: var(--t-med); font-weight: var(--p-forte); font-variant-numeric: tabular-nums; }
+.pn-tag { display: inline-block; max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-micro); font-weight: var(--p-medio); color: var(--texto-fraco); background: var(--surface-2); border-radius: 99px; padding: 2px 9px; }
+.pn-sec-obras { align-items: flex-start; flex-wrap: wrap; }
+.pn-sec-obras p { text-align: left; margin-top: 2px; }
+.pn-seg { display: inline-flex; border: 1px solid var(--linha); border-radius: var(--raio-ctl); overflow: hidden; flex: none; }
+.pn-seg-b { height: 30px; padding: 0 12px; border: 0; border-left: 1px solid var(--linha); background: var(--surface); color: var(--texto-fraco); font-size: var(--t-peq); font-weight: var(--p-medio); font-family: inherit; cursor: pointer; }
+.pn-seg-b:first-child { border-left: 0; }
+.pn-seg-b:hover { color: var(--texto); }
+.pn-seg-b.on { background: var(--navy); color: #fff; }
+.pn-detalhes { display: grid; gap: 8px; margin: -14px 0 26px; }
+.pn-detalhe { border: 1px solid var(--linha); border-radius: var(--raio); background: var(--surface); }
+.pn-detalhe summary { cursor: pointer; padding: 10px 14px; font-size: var(--t-peq); font-weight: var(--p-medio); color: var(--aco); list-style: none; }
+.pn-detalhe summary::-webkit-details-marker { display: none; }
+.pn-detalhe-c { padding: 4px 14px 14px; display: grid; gap: 12px; justify-items: start; }
+.pn-detalhe-c .pn-obra-num { grid-column: auto; grid-row: auto; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); width: 100%; }
+.pn-med-vazio .pn-med-trilho { background: transparent; border: 1px dashed var(--linha); }
+.pn-med-vazio .pn-med-val { white-space: normal; }
+.pn-obra-num { grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); }
+@media (max-width: 820px) {
+  .pn-lucro { gap: 4px; }
+  .pn-lucro-m span { display: none; }
+  .pn-dois { grid-template-columns: 1fr; }
+  .pn-seg-b { padding: 0 8px; }
+}
