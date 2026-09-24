@@ -18419,7 +18419,7 @@
          `_ccPode` — abaixo fica só o que é próprio da 8A. */
       if (!this._ccCustoPode()) return "";
       if (CentroCusto.modoDaObra(String(pc.obraId), listaTodas("centrocusto")).modo !== "novo") return "";
-      if (typeof CCAgente === "undefined" && (listaTodas("cc_regras").length + listaTodas("cc_aprop").length) > 0) return "";
+      if (!this._ccAgenteAplicado() && (listaTodas("cc_regras").length + listaTodas("cc_aprop").length) > 0) return "";
       var lanc = this._lancVivoDoDoc("compras", pc.id);
       if (!lanc) return "";
       var fatos = this._ccFatos(this._ccCtx(String(pc.obraId))).fatos, f = null, i;
@@ -28686,6 +28686,29 @@ renderPatrimonio: function () {
        qualquer outro caminho. E a tela lê o Financeiro por outro nome — ter o
        módulo Centro de Custo sem ter o Financeiro não é ter o direito de ver
        o gasto da obra. */
+    /* ---------------------------------------------------------------
+     * _ccAgenteAplicado() — a conta da aba CENTROS já passa pelo agente?
+     *
+     * ⚠ NÃO PERGUNTE `typeof CCAgente === "undefined"` PARA ISTO. As duas
+     *   perguntas parecem a mesma e não são: "o motor está neste aparelho?"
+     *   e "a conta desta tela usa o motor?". Enquanto o `js/ccagente.js` não
+     *   existia elas coincidiam, e por isso as guardas foram escritas com a
+     *   primeira. No dia em que o arquivo nasceu, a primeira virou `true` e
+     *   as guardas se desarmaram TODAS de uma vez — sem que `_ccNumeros`
+     *   tivesse passado a aplicar regra ou decisão. O efeito seria a tela
+     *   afirmando "CC-05 gastou R$ 8.000" com a regra que manda a folha para
+     *   lá fora da conta, e SEM o aviso que dizia que o número é incompleto.
+     *   Número incompleto com cara de completo é o defeito que esta tela
+     *   inteira existe para não cometer.
+     *
+     *   Hoje `_ccNumeros` resolve o centro pelo VÍNCULO (`_ccFatos`), e só.
+     *   Quem ligar a conta ao `CCAgente.consolidar` troca o `false` abaixo
+     *   por `typeof CCAgente !== "undefined"` — e é o único lugar a mexer.
+     *   A aba FILA não depende disto: ela chama o agente direto, e o que ela
+     *   mostra é justamente o que ficou de fora desta conta.
+     * ------------------------------------------------------------- */
+    _ccAgenteAplicado: function () { return false; },
+
     _ccPode: function (obraId, acao) {
       acao = acao || "ler";
       var A = (typeof Auth !== "undefined" && Auth.podeModulo) ? Auth : null;
@@ -28939,9 +28962,9 @@ renderPatrimonio: function () {
       var nReg = 0, nDec = 0;
       try { nReg = Util.arr(Store.listar(eid(), "cc_regras")).length; } catch (e1) {}
       try { nDec = Util.arr(Store.listar(eid(), "cc_aprop")).length; } catch (e2) {}
-      if ((nReg + nDec) > 0 && typeof CCAgente === "undefined") {
+      if ((nReg + nDec) > 0 && !this._ccAgenteAplicado()) {
         out.conferido = false;
-        out.avisos.push("Esta instalação tem " + (nReg + nDec) + " regra(s) ou decisão(ões) de centro de custo gravadas, e o motor que as aplica não está carregado neste aparelho. O Realizado por centro abaixo considera só o vínculo com o orçamento — não posso afirmar que ele está completo. Atualize o sistema.");
+        out.avisos.push("Esta instalação tem " + (nReg + nDec) + " regra(s) ou decisão(ões) de centro de custo gravadas, e o Realizado por centro abaixo ainda considera só o vínculo com o orçamento — não posso afirmar que ele está completo. A aba Fila mostra o que ficou de fora e por quê. Não há nada a fazer neste aparelho: a conta por regra chega numa próxima versão.");
       }
 
       var fatos = this._ccFatos(ctx);
@@ -29042,7 +29065,10 @@ renderPatrimonio: function () {
           return '<div class="tab' + (st.aba === p[0] ? " ativa" : "") + '" data-gacao="cc-aba" data-aba="' + p[0] + '">' + p[1] + "</div>";
         }).join("") + "</div>";
 
-      if (st.aba === "fila" || st.aba === "regras") return html + this._ccAbaAgenteHtml(st.aba);
+      /* ⚠ A FILA RECEBE A OBRA ESCOLHIDA. O seletor fica logo acima das abas:
+         uma Fila que ignorasse a escolha mostraria outra obra a quem acabou
+         de filtrar — e a pessoa leria o total como sendo da obra dela. */
+      if (st.aba === "fila" || st.aba === "regras") return html + this._ccAbaAgenteHtml(st.aba, sel);
       if (sel === "todas") return html + this._ccTodasHtml(obras);
       void self;
       return html + this._ccObraHtml(sel, podeGravar, st);
@@ -29052,13 +29078,251 @@ renderPatrimonio: function () {
        A Fila e as Regras dependem do agente de apropriação; enquanto ele não
        estiver nesta instalação, a aba diz o que falta e o que fazer, em vez de
        mostrar uma lista vazia que a pessoa leria como "não há nada pendente". */
-    _ccAbaAgenteHtml: function (aba) {
+    /* ---------------------------------------------------------------
+     * _ccAgenteCtx(obraId) — o contexto do CCAgente, montado UMA vez
+     *
+     * ⚠ AS RÉGUAS VÊM DOS DONOS DELAS, e nenhuma é reescrita aqui. "Este
+     *   lançamento está morto?" é do `CustoEtapa`, "este pedido é
+     *   compromisso?" é do `ComprasLinha`, "quanto deste pedido já virou
+     *   despesa?" é do `CompraNota`. Cada cópia dessas contas nesta camada
+     *   seria uma segunda régua para a mesma pergunta — e é assim que a tela
+     *   de Centros e o Previsto × Realizado passam a responder diferente
+     *   sobre o mesmo dinheiro. O agente recebe tudo por parâmetro de
+     *   propósito (ele é puro); montar o pacote é trabalho da fiação.
+     * ⚠ LISTA CRUA (`listaTodas`), como o `_ccCtx`: a guarda do agente conta
+     *   o disco inteiro. O recorte do que a pessoa vê vai em `obrasVisiveis`,
+     *   que o motor aplica DEPOIS — assim ela não vê dinheiro de obra que não
+     *   acompanha, e a guarda continua contando certo.
+     * ------------------------------------------------------------- */
+    _ccAgenteCtx: function (obraId) {
+      var fin = listaTodas("financeiro"), cps = listaTodas("compras");
+      var visiveis = null;
+      try {
+        if (typeof Auth !== "undefined" && Auth.obrasPermitidas) {
+          var p = Auth.obrasPermitidas();
+          if (Array.isArray(p)) visiveis = p;
+        }
+      } catch (eA) { visiveis = null; }
+      var orcCache = {};
+      return {
+        obraId: String(obraId || ""),
+        obrasVisiveis: visiveis,
+        ccs: listaTodas("centrocusto"),
+        regras: listaTodas("cc_regras"),
+        decisoes: listaTodas("cc_aprop"),
+        financeiro: fin,
+        compras: cps,
+        medicoes: listaTodas("medicoes"),
+        fiscal: listaTodas("fiscal"),
+        frotaMov: listaTodas("frota_mov"),
+        obras: listaTodas("obras"),
+        orcamento: function (id) {
+          var k = String(id || "");
+          if (!k) return null;
+          if (Object.prototype.hasOwnProperty.call(orcCache, k)) return orcCache[k];
+          try { orcCache[k] = Store.obterOrcamento ? Store.obterOrcamento(eid(), k) : null; } catch (eO) { orcCache[k] = null; }
+          return orcCache[k];
+        },
+        familiaDe: function (oid) {
+          try {
+            var obra = Store.obter(eid(), "obras", String(oid || ""));
+            if (!obra || !obra.orcamentoId) return [];
+            var orcs = Util.arr(Store.listarOrcamentos(eid()));
+            var orc = Store.obterOrcamento(eid(), String(obra.orcamentoId));
+            if (!orc) return [];
+            var raiz = CentroCusto.raizDaCadeia(orc, orcs), out = [];
+            if (!raiz) return [];
+            orcs.forEach(function (o) { if (o && o.id && CentroCusto.raizDaCadeia(o, orcs) === raiz) out.push(String(o.id)); });
+            return out;
+          } catch (eF) { return []; }
+        },
+        hoje: hojeLocal(),
+        reguas: {
+          ehMorto: (typeof CustoEtapa !== "undefined" && CustoEtapa.ehMorto) ? CustoEtapa.ehMorto : null,
+          ehQuitado: (typeof CustoEtapa !== "undefined" && CustoEtapa.ehQuitado) ? CustoEtapa.ehQuitado : null,
+          realizado: (typeof FinStatus !== "undefined" && FinStatus.realizado) ? FinStatus.realizado : null,
+          anulado: (function (self) { return function (f) { return self._finAnulado(f); }; })(this),
+          ehCompromisso: (typeof ComprasLinha !== "undefined" && ComprasLinha.ehCompromisso) ? ComprasLinha.ehCompromisso : null,
+          valorComprometido: (typeof ComprasLinha !== "undefined" && ComprasLinha.valorComprometido) ? ComprasLinha.valorComprometido : null,
+          jaEDespesa: (typeof CompraNota !== "undefined" && CompraNota.jaEDespesaPorPedido) ? CompraNota.jaEDespesaPorPedido(fin, cps) : null,
+          ehAprovado: (function (self) { return function (m) { return self._ehAprovado(String((m && m.status) || "")); }; })(this)
+        }
+      };
+    },
+
+    /* ---------------------------------------------------------------
+     * Aba FILA — o dinheiro que ainda não tem centro, e POR QUÊ
+     *
+     * ⚠ ELA LISTA E EXPLICA; ELA AINDA NÃO DECIDE. O botão [Apropriar]
+     *   depende da `_ccGravarEscolha`, que não existe nesta versão — e porta
+     *   prometida que o clique seguinte fecha já custou quatro recados nesta
+     *   base. Enquanto o gravador não chega, a aba entrega o que ela já sabe
+     *   responder (quanto está fora, de onde veio e qual é o conserto de
+     *   cada caso) e diz, sem rodeio, o que ainda não dá para fazer aqui.
+     * ------------------------------------------------------------- */
+    _ccFilaHtml: function (sel) {
+      var self = this;
+      var obraSel = (!sel || sel === "todas") ? "" : String(sel);
+      var r;
+      try { r = CCAgente.fila(this._ccAgenteCtx(obraSel)); }
+      catch (e) {
+        /* ⚠ A ABA QUE NÃO CONSEGUE CONTAR DIZ QUE NÃO CONSEGUIU. Lista vazia
+           depois de uma exceção seria lida como "não há nada pendente" —
+           recado que mente sobre dinheiro. */
+        return '<div class="card" style="padding:22px;border-left:3px solid var(--erro,#b91c1c)">' +
+          "<h3 style=\"margin-top:0\">Não consegui montar a Fila neste aparelho</h3>" +
+          "<p>A conta falhou (" + Util.esc(String(e && e.message || e)) + "). <b>Isto não quer dizer que não há lançamentos sem centro</b> — quer dizer que não consegui conferir. A aba <b>Centros</b> continua mostrando o que chega pelo vínculo com a etapa.</p></div>";
+      }
+      /* ⚠ DESPESA E RECEITA NÃO SOMAM NO MESMO NÚMERO. As duas saem com valor
+         positivo, e o total único dizia "3 lançamentos sem centro ·
+         R$ 73.000,00" para R$ 23.000 de gasto mais R$ 50.000 de entrada —
+         um número que não responde a pergunta nenhuma e que alguém leria
+         como "R$ 73 mil de gasto fora dos centros". Somar o que tem sinal
+         contrário é o tipo de conta que a tela de Centros inteira existe
+         para não fazer. */
+      var linhas = r.fila, totalDesp = 0, totalRec = 0, i;
+      for (i = 0; i < linhas.length; i++) {
+        if (linhas[i].tipo === "receita") totalRec += linhas[i].cent;
+        else totalDesp += linhas[i].cent;
+      }
+
+      /* ⚠ "LANÇAMENTO", E NÃO "O DINHEIRO QUE JÁ SAIU". A Fila recebe RECEITA
+         também (o recebimento avulso, a medição por valor): medido — uma
+         receita sem destino entra com `sem-apropriacao`. O texto anterior
+         dizia "o dinheiro que já saiu", e quem lesse uma receita de
+         R$ 50.000 nessa lista concluiria que ela é uma despesa. */
+      var html = '<div class="card" style="padding:16px 18px;margin-bottom:14px">' +
+        "<p style=\"margin:0\">Esta lista mostra <b>os lançamentos que ainda não têm centro de custo</b>, com o motivo de cada caso. " +
+        "Ela <b>não muda nenhum número</b> da aba Centros" +
+        /* ⚠ "A MESMA CONTA" SÓ É VERDADE SEM REGRA NEM DECISÃO GRAVADA. A Fila
+           passa pelo agente (regra e decisão tiram o lançamento daqui); a aba
+           Centros ainda soma só pelo vínculo (`_ccAgenteAplicado()` é
+           `false`). Com as duas gravadas, dizer "é a mesma conta" prometeria
+           que as abas fecham — e elas podem não fechar. */
+        (this._ccAgenteAplicado() || (listaTodas("cc_regras").length + listaTodas("cc_aprop").length) === 0
+          ? ": é a mesma conta, vista pelo que ficou de fora.</p>"
+          : ". Com regra ou decisão de centro gravada, a Fila já as aplica e a aba Centros ainda não — por isso as duas podem não fechar; a aba Centros avisa disso.</p>") +
+        "<p class=\"muted\" style=\"margin:8px 0 0\">Decidir o centro de cada linha por aqui ainda não existe — por enquanto o conserto é o que o motivo indica (criar o centro da etapa, pôr o centro no pedido, ou criar a regra).</p></div>";
+
+      Util.arr(r.avisos).forEach(function (a) {
+        html += self._ccFaixa("aviso", String(a && a.msg || ""), "");
+      });
+
+      if (!linhas.length) {
+        /* ⚠ "NADA NA FILA" TEM DE DIZER DE QUE RECORTE ELE FALA. Com uma obra
+           escolhida no seletor acima, "nada na fila" sobre a empresa inteira
+           seria falso — e é a frase que faz a pessoa parar de procurar. */
+        var ondeVazio = obraSel
+          ? "Nesta obra, todo lançamento chegou a um centro"
+          : "Em todas as obras que usam os centros novos, todo lançamento chegou a um centro";
+        return html + '<div class="card" style="padding:26px"><h3 style="margin-top:0">Nada na fila</h3>' +
+          "<p>" + ondeVazio + " — pelo vínculo com o orçamento, por uma regra ou por decisão de alguém.</p>" +
+          (obraSel ? '<p class="muted">Escolha <b>Todas as obras</b> acima para ver a fila da empresa inteira.</p>' : "") + "</div>";
+      }
+
+      /* resumo por motivo: é ele que diz ONDE está o conserto */
+      var mot = r.porMotivo, chaves = [], k;
+      for (k in mot) if (Object.prototype.hasOwnProperty.call(mot, k)) chaves.push(k);
+      /* ordena pela DESPESA, que é o que decide compra; empate pelo motivo,
+         para a lista não embaralhar entre dois renders (I7) */
+      chaves.sort(function (a, b) { return (mot[b].desp - mot[a].desp) || (a < b ? -1 : (a > b ? 1 : 0)); });
+      html += '<div class="card" style="padding:14px 16px;margin-bottom:14px">' +
+        "<b>" + linhas.length + " lançamento(s) sem centro</b>" +
+        (totalDesp > 0 ? " · despesa <b>" + Util.fmtMoeda(totalDesp / 100) + "</b>" : "") +
+        (totalRec > 0 ? " · receita <b>" + Util.fmtMoeda(totalRec / 100) + "</b>" : "") +
+        "<ul style=\"margin:10px 0 0;padding-left:18px\">";
+      for (i = 0; i < chaves.length; i++) {
+        var M = mot[chaves[i]];
+        html += "<li>" + Util.esc(CCAgente.textoMotivo(chaves[i])) + " — " +
+          (M.desp > 0 ? "despesa <b>" + Util.fmtMoeda(M.desp / 100) + "</b>" : "") +
+          (M.desp > 0 && M.rec > 0 ? " · " : "") +
+          (M.rec > 0 ? "receita <b>" + Util.fmtMoeda(M.rec / 100) + "</b>" : "") + "</li>";
+      }
+      html += "</ul></div>";
+
+      /* ⚠ O NOME DA OBRA SAI DE UM MAPA MONTADO UMA VEZ. `Store.obter` dentro
+         do laço é uma consulta por linha: numa obra com centenas de
+         lançamentos sem centro, a tabela sozinha faria centenas de leituras
+         para repetir os mesmos dois ou três nomes. */
+      var nomeObra = {};
+      Util.arr(listaTodas("obras")).forEach(function (o) { if (o && o.id) nomeObra[String(o.id)] = String(o.nome || ""); });
+
+      html += '<div class="card" style="padding:0;overflow:auto"><table class="tbl"><thead><tr>' +
+        "<th>Data</th><th>Obra</th><th>Lançamento</th><th style=\"text-align:right\">Valor</th><th>Por que está aqui</th></tr></thead><tbody>";
+      for (i = 0; i < linhas.length; i++) {
+        var L = linhas[i];
+        var obra = L.obraId ? nomeObra[L.obraId] : null;
+        /* ⚠ `fmtDia`, NUNCA `fmtData`. `L.data` é DATA (vem de um
+           <input type="date">), não instante. O `fmtData` faz `new Date(iso)`,
+           lê a string sem fuso como meia-noite UTC e, em Brasília, imprime
+           21h do DIA ANTERIOR: esta coluna mostrava "11/08/2026 21:00" para
+           um lançamento de 12/08/2026. Numa fila de dinheiro, data errada é
+           a pessoa procurando o lançamento no dia errado do extrato. O
+           próprio `Util.fmtDia` já traz esse roteiro escrito (js/util.js:122)
+           — e eu caí nele de novo. */
+        html += "<tr><td>" + Util.esc(Util.fmtDia(L.data)) + "</td>" +
+          "<td>" + Util.esc(obra != null ? obra : (L.obraId ? "(obra apagada)" : "— sem obra —")) + "</td>" +
+          /* ⚠ `pill`, NÃO `tag`: a classe `.tag` NÃO EXISTE no css/app.css
+             (só `.tag-tipo`, `.tag-c`, `.tag-s`, `.tag-i`). Com ela o selo
+             saía como texto cru colado na descrição — "Folha da equipe pago"
+             —, e nesta tela "pago" não é enfeite: é o que decide se mudar o
+             centro precisa de confirmação com o valor (D20). Selo que vira
+             palavra da descrição é informação de dinheiro que some à vista.
+             Achado na FOTO da e2e; nenhum assert de texto pegaria, porque o
+             innerText é o mesmo nos dois casos. */
+          "<td>" + Util.esc(L.desc || ("(" + L.k + ")")) +
+          /* ⚠ RECEITA MARCADA NA CARA. A Fila tem despesa e receita, e as duas
+             saem com valor positivo: sem este selo, uma receita de R$ 50.000
+             é lida como gasto por quem confere a lista. Só a receita ganha
+             selo — marcar as duas viraria ruído na lista que é quase toda
+             despesa. */
+          (L.tipo === "receita" ? ' <span class="pill" style="background:rgba(37,99,235,.15);color:#1d4ed8" title="Entrada, não gasto.">receita</span>' : "") +
+          (L.pago ? ' <span class="pill" style="background:rgba(22,163,74,.15);color:#15803d" title="Este lançamento já foi pago — mudar o centro dele vai pedir confirmação com o valor.">pago</span>' : "") + "</td>" +
+          "<td style=\"text-align:right\">" + Util.fmtMoeda(L.valor) + "</td>" +
+          "<td>" + Util.esc(L.texto) + "</td></tr>";
+      }
+      html += "</tbody></table></div>";
+      return html;
+    },
+
+    _ccAbaAgenteHtml: function (aba, sel) {
       var nome = aba === "fila" ? "Fila" : "Regras";
       var oq = aba === "fila"
         ? "a lista dos lançamentos que ainda não têm centro de custo"
         : "as regras que mandam um lançamento para um centro automaticamente";
+      /* ⚠ A CHAVE `ccAgente` DESLIGA ESTA ABA TAMBÉM. O cartão
+         "Compatibilidade" (EM-9) lista essa chave como o interruptor do
+         agente, e o `_ccCustoPode` já a obedece no toast de quem lança, nas
+         colunas do CSV e no quadro dos Relatórios. Uma Fila que continuasse
+         respondendo com a chave desligada seria a MESMA falha que o
+         js/gestao.js:18422 registra: interruptor que deixa uma porta falando
+         é pior que interruptor nenhum, porque quem o desliga acredita que o
+         recurso está desligado — e aqui a porta que fala é sobre dinheiro. */
+      if (!this._medcc("ccAgente")) {
+        return '<div class="card" style="padding:26px">' +
+          "<h3 style=\"margin-top:0\">" + Util.esc(nome) + " — desligada nesta instalação</h3>" +
+          "<p>O agente de apropriação está desligado aqui (chave <code>ccAgente</code>). Nada foi apagado: regras e decisões gravadas continuam no aparelho e voltam a valer quando a chave for religada.</p>" +
+          "<p class=\"muted\">A aba <b>Centros</b> segue mostrando o gasto que chega a cada centro pelo vínculo com a etapa do orçamento.</p></div>";
+      }
+      /* ⚠ A FILA JÁ TEM MOTOR; AS REGRAS AINDA NÃO TÊM FORMULÁRIO. Mostrar a
+         aba Regras vazia diria "não há regras" a quem tem regras vindas de
+         outro aparelho — e ofereceria uma tela onde nada pode ser criado. */
+      if (typeof CCAgente !== "undefined" && aba === "fila") return this._ccFilaHtml(sel);
       if (typeof CCAgente !== "undefined") {
-        return '<div class="card" style="padding:22px"><p>A aba <b>' + Util.esc(nome) + "</b> ainda não foi ligada a este motor nesta versão.</p></div>";
+        var nReg = 0;
+        try { nReg = Util.arr(Store.listar(eid(), "cc_regras")).length; } catch (eR) {}
+        return '<div class="card" style="padding:26px">' +
+          "<h3 style=\"margin-top:0\">Regras — o formulário ainda não existe</h3>" +
+          /* ⚠ A FILA OBEDECE À REGRA; A ABA CENTROS AINDA NÃO. Até 24/09/2026
+             este texto dizia que a regra "aparece na aba Centros" — com o
+             `_ccAgenteAplicado()` devolvendo `false`, ou seja, com a própria
+             aba Centros avisando que soma só pelo vínculo. Dois recados
+             opostos sobre o mesmo dinheiro, e o que mentia era o que
+             tranquilizava. Quem ligar a conta ao agente reescreve este par. */
+          "<p>O motor que <b>aplica</b> as regras já está neste aparelho, e a aba <b>Fila</b> já as obedece: lançamento que uma regra resolve sai da Fila. A aba <b>Centros</b> ainda soma só pelo vínculo com a etapa — com regra gravada, ela avisa que o número pode estar incompleto. O que falta é a tela para criar e encerrar regra por aqui.</p>" +
+          (nReg > 0
+            ? '<p class="muted">Há <b>' + nReg + "</b> regra(s) gravada(s) neste aparelho. A Fila já as considera; a aba Centros, ainda não.</p>"
+            : '<p class="muted">Nenhuma regra gravada neste aparelho.</p>') + "</div>";
       }
       var n = 0;
       try { n = Util.arr(Store.listar(eid(), aba === "fila" ? "cc_aprop" : "cc_regras")).length; } catch (e) {}
@@ -29148,9 +29412,9 @@ renderPatrimonio: function () {
         if (voltaCC.length) {
           html += this._ccFaixa("info",
             "Os " + voltaCC.length + " centros desta obra vieram da conversão dos antigos: o Realizado de cada um agora vem só do que for apropriado a ele" +
-            (typeof CCAgente === "undefined"
-              ? " — e o motor que faz essa apropriação (js/ccagente.js) ainda não está neste aparelho, então nada cai neles automaticamente."
-              : "."),
+            (this._ccAgenteAplicado()
+              ? "."
+              : " — e a apropriação por regra ainda não entra nesta conta, então por enquanto só o vínculo com a etapa cai neles. A aba Fila mostra o que ficou de fora."),
             podeGravar ? '<button class="btn sm ghost" data-gacao="cc-desconverter" data-obra="' + Util.esc(obraId) + '">Voltar para a estimativa antiga…</button>' : "");
         }
       }
@@ -30070,9 +30334,7 @@ renderPatrimonio: function () {
         corpo += '<div class="card" style="padding:12px 14px;margin-top:10px;border-left:3px solid var(--ambar, #b45309)">' +
           "<b>" + Util.fmtMoeda(sobra) + " ficam sem centro</b>" +
           '<p class="muted" style="margin:6px 0 0">Com as escolhas acima como estão, esse gasto sai das linhas dos centros e passa a aparecer em <b>Sem centro de custo</b>. ' +
-          (typeof CCAgente === "undefined"
-            ? "A Fila que receberia esse dinheiro para você apropriar depende do motor <code>js/ccagente.js</code>, que ainda não está neste aparelho — então ele fica sem centro até a atualização chegar. "
-            : "Ele vai para a Fila, onde você escolhe o centro de cada lançamento. ") +
+          "Ele vai aparecer na aba <b>Fila</b>, com o motivo de cada caso. Decidir o centro de cada linha por ali ainda não existe — por enquanto o conserto é criar o centro da etapa ou pôr o centro no pedido. " +
           "Se não for isso que você quer, a faixa da tela passa a oferecer <b>[Voltar para a estimativa antiga…]</b>, com a mesma prévia antes → depois.</p></div>";
       }
       var escolhas = {};
@@ -30403,9 +30665,9 @@ renderPatrimonio: function () {
       }
       /* regra/decisão no disco sem o motor que as lê: a contagem acima é por
          texto, não pela régua — ela serve para RECUSAR, nunca para liberar */
-      if ((out.regras + out.decisoes) > 0 && typeof CCAgente === "undefined") {
+      if ((out.regras + out.decisoes) > 0 && !Gestao._ccAgenteAplicado()) {
         out.conferido = false;
-        out.porqueNao = "há " + (out.regras + out.decisoes) + " regra(s)/decisão(ões) de apropriação neste aparelho e o motor que as lê (js/ccagente.js) não está carregado.";
+        out.porqueNao = "há " + (out.regras + out.decisoes) + " regra(s)/decisão(ões) de apropriação neste aparelho, e esta contagem ainda não passa por elas.";
       }
       out.total = out.docs + out.regras + out.decisoes + out.lancs + out.pedidos;
       return out;

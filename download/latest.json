@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.87",
+  "versao": "1.2.88",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.87.zip",
-  "notas": "Medicao alimenta o avanco do cronograma: configurando a obra para lancar ao aprovar, o acumulado dos itens medidos vai para as tarefas do cronograma assim que o boletim e aprovado. Tarefa que ja tem diario nunca e tocada pela medicao. Antes essa opcao deixava o boletim apenas como sugestao para quem planeja.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.87/OrcaPRO-IA-Instalador-v1.2.87.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.88.zip",
+  "notas": "Centros de custo: a aba Fila passou a funcionar. Ela lista os lancamentos que ainda nao tem centro de custo, com o motivo de cada um, e a nota fiscal e dividida pelo valor de cada pedido. A Fila so mostra: nao muda nenhum numero da aba Centros.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.88/OrcaPRO-IA-Instalador-v1.2.88.exe"
 }

@@ -248,6 +248,13 @@
        passa as linhas. Carregado antes, o orçado do centro sairia pela foto
        e a tela mostraria o valor da geração, não o do orçamento de hoje. -->
   <script src="js/centrocusto.js"></script>
+  <!-- ⚠ LOGO DEPOIS do centrocusto.js: o agente usa a identidade, o modo da
+       obra, o índice nó→centro e a régua de divisão DELE. Carregado antes,
+       `temCC()` devolveria nulo no boot e o agente diria que o cadastro não
+       está neste aparelho — com o arquivo ali do lado. E carregado DEPOIS do
+       gestao.js não haveria problema, mas aqui a ordem fica junta com a do
+       irmão, que é onde alguém vai procurar. -->
+  <script src="js/ccagente.js"></script>
   <script src="js/aditivo.js"></script>
   <script src="js/medicaoseguinte.js"></script>
   <script src="js/rdocanal.js"></script>
