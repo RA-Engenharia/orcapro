@@ -1,5 +1,5 @@
 /* =====================================================================
- * painel.js — O MOTOR DO PAINEL DE GESTÃO NOVO (a tela só desenha).
+ * painel.js — O MOTOR DO PAINEL DE GESTÃO (a tela só desenha). Único desde a 1.2.93.
  *
  * Motor PURO: não lê o DOM, não lê o Store, não chama `new Date()`. Recebe
  * listas já recortadas por obra, as regras de dinheiro que o resto do app
@@ -9,7 +9,7 @@
  * Roda em Node (tools/test-painel-dados.js).
  *
  * POR QUE ESTE ARQUIVO EXISTE (24/09/2026)
- * O Painel antigo (`renderDashboard`) calcula dentro do HTML: a fórmula de
+ * O Painel antigo (`renderDashboard`, tela até a 1.2.92) calculava dentro do HTML: a fórmula de
  * prazo está copiada três vezes com guardas diferentes, e foi assim que uma
  * obra CONCLUÍDA saiu "386% × 0% · vencido há 146d" em vermelho na tabela
  * enquanto o cartão de cima a cortava. Margem dava 100% em obra sem custo
@@ -95,16 +95,17 @@
     GRUPOS: GRUPOS,
 
     /* ------------------------------------------------------------------
-     * A CHAVE "PAINEL NOVO" — por pessoa e aparelho, como `paineis.js`.
-     * Mora numa chave própria do localStorage: NÃO entra no Store, nas
-     * prefs (que viajam pela Nuvem), no backup. Ligada por `?painel=novo`,
-     * desligada por `?painel=antigo` ou pelo botão dentro do Painel novo.
-     * O registro da pessoa guarda também os FILTROS (obra, período, somar,
-     * status, comparar), a ORDEM E VISIBILIDADE dos blocos e os pontos
-     * ADIADOS — estado de tela, nunca dado de orçamento; F5 não zera.
-     * Forma: { v:1, u:{ <hash>: { novo, obra, per, multi, status, comparar,
+     * PREFERÊNCIAS DE TELA — por pessoa e aparelho, como `paineis.js`.
+     * Moram numa chave própria do localStorage: NÃO entram no Store, nas
+     * prefs (que viajam pela Nuvem), no backup. O registro da pessoa guarda
+     * os FILTROS (obra, período, somar, status, comparar), a ORDEM E
+     * VISIBILIDADE dos blocos e os pontos ADIADOS — estado de tela, nunca
+     * dado de orçamento; F5 não zera.
+     * Forma: { v:1, u:{ <hash>: { obra, per, multi, status, comparar,
      *                              blocos:[{id,on}], adiados:{chave:"AAAA-MM-DD"} } } }.
-     * O valor antigo (string "novo") continua sendo lido.
+     * Até a 1.2.92 o mesmo registro carregava a chave `novo` (o Painel em
+     * avaliação, ligado por ?painel=novo). Desde a 1.2.93 o Painel é um só e
+     * o campo é ignorado; o registro antigo (string "novo") continua legível.
      * ------------------------------------------------------------------ */
     hashUsuario: function (empresaId, email) {
       var s = String(empresaId == null ? "" : empresaId) + "|" + String(email == null ? "" : email).replace(/^\s+|\s+$/g, "").toLowerCase();
@@ -129,19 +130,6 @@
     },
     _gravarTudo: function (storage, t) {
       try { storage.setItem(CHAVE, JSON.stringify(t)); return true; } catch (e) { return false; }
-    },
-    ligado: function (storage, hash) {
-      if (!this._hashOk(hash)) return false;
-      var r = this._regDe(this._lerTudo(storage), hash);
-      return !!(r && r.novo === true);
-    },
-    gravar: function (storage, hash, valor) {
-      if (!this._hashOk(hash)) return false;
-      var t = this._lerTudo(storage) || { v: 1, u: {} };
-      var r = this._regDe(t, hash) || {};
-      if (valor === "novo") r.novo = true; else delete r.novo;
-      if (Object.keys(r).length) t.u[hash] = r; else delete t.u[hash];
-      return this._gravarTudo(storage, t);
     },
     _blocosLimpos: function (v) {
       if (!ehArr(v)) return null;
@@ -226,15 +214,6 @@
       if (blocos[i].col !== blocos[j].col) return blocos;
       var out = blocos.slice(); var t = out[i]; out[i] = out[j]; out[j] = t;
       return out;
-    },
-    /* "novo" | "antigo" | null a partir de `location.search` */
-    lerParametroUrl: function (search) {
-      var m = /[?&]painel=(novo|antigo)(?:&|$)/.exec(String(search || ""));
-      return m ? m[1] : null;
-    },
-    tirarParametroUrl: function (search) {
-      var s = String(search || "").replace(/^\?/, "").split("&").filter(function (p) { return p && !/^painel=/.test(p); }).join("&");
-      return s ? "?" + s : "";
     },
     /* a chave de um ponto da fila: estável entre renders, curta, sem dado
        sensível além do que a própria tela já mostra */
@@ -586,12 +565,18 @@
         push({ codigo: "estouro", tema: "orcamento", gravidade: 3, unidade: "R$", valor: num(x.real) - num(x.previsto), obraNome: x.rotulo, previsto: num(x.previsto), real: num(x.real), acao: { tipo: "view", valor: "previstoreal" } });
       });
       if (contas.length) push({ codigo: "contas", gravidade: caixa.contasVencendo.vencidas ? 3 : 2, unidade: "R$", valor: contasVal, n: contas.length, vencidas: caixa.contasVencendo.vencidas, ate: limiteContas, dias: caixa.contasVencendo.dias, acao: { tipo: "view", valor: "financeiro" } });
-      if (medPend.length) push({ codigo: "medicoes-aprovar", gravidade: 2, unidade: "R$", valor: medPend.reduce(function (s, m) { return s + num(m.valor); }, 0), n: medPend.length, acao: { tipo: "view", valor: "medicoes" } });
+      /* ⚠ RBAC: `mostrarDinheiro: false` (quem não tem o módulo Financeiro) tira
+         o R$ da fila — a medição a aprovar vira contagem e o "boletim aprovado
+         sem receita" (que só o Financeiro resolve) não entra. Pegou na
+         e2e-painel-kpis [f] da 1.2.93: o encarregado de RDO lia o valor do
+         boletim em "Dinheiro parado". */
+      var dinheiro = d.mostrarDinheiro !== false;
+      if (medPend.length) push({ codigo: "medicoes-aprovar", gravidade: 2, unidade: dinheiro ? "R$" : "un", valor: dinheiro ? medPend.reduce(function (s, m) { return s + num(m.valor); }, 0) : medPend.length, n: medPend.length, acao: { tipo: "view", valor: "medicoes" } });
       var rec = d.reconciliacao || null;
       if (rec && rec.itens) rec.itens.forEach(function (i) {
         push({ codigo: "reconciliacao", gravidade: i.gravidade >= 3 ? 3 : 2, unidade: "R$", valor: num(i.valor), titulo: i.titulo, detalhe: i.detalhe, porque: i.porque, acaoTexto: i.acao, docId: i.docId || i.id || "", acao: { tipo: "view", valor: i.view } });
       });
-      if (!rec && aprov.length) push({ codigo: "aprovado-nao-pago", gravidade: 2, unidade: "R$", valor: caixa.aprovadoNaoPago.valor, n: aprov.length, acao: { tipo: "view", valor: "medicoes" } });
+      if (dinheiro && !rec && aprov.length) push({ codigo: "aprovado-nao-pago", gravidade: 2, unidade: "R$", valor: caixa.aprovadoNaoPago.valor, n: aprov.length, acao: { tipo: "view", valor: "medicoes" } });
       (d.atencao || []).forEach(function (i) {
         var v = num(i.valor);
         var oNome = i.obraId && own(nomeObra, i.obraId) ? nomeObra[i.obraId] : "";

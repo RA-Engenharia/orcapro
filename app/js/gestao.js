@@ -1514,7 +1514,7 @@
       // RBAC: guarda em função (não só ocultar) — sub-usuário sem permissão vê aviso
       if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo(view)) return this._semPermissao(view);
       switch (view) {
-        case "dashboard": return this._painelNovoLigado() ? this.renderPainelNovo() : this.renderDashboard();
+        case "dashboard": return this.renderPainelNovo();
         case "obras": return this.renderObras();
         case "tarefas": return this.renderTarefas();
         case "lastplanner": return this.renderLastPlanner();
@@ -2031,6 +2031,14 @@
       if (esc.obras.length === 1) return "somente " + Util.esc(esc.obras[0].nome || "a obra escolhida");
       return esc.obras.length + " obras selecionadas";
     },
+    /* ⚠ NÃO É MAIS TELA (1.2.93). O Painel de Gestão que o app desenha é o
+       `renderPainelNovo` (motor em js/painel.js); o dispatcher não chama isto
+       e não há botão nem parâmetro que chame. Fica aqui SÓ como bancada das
+       réguas compartilhadas (`_dashFinExec`, reconciliação, regime de caixa)
+       que test-gap1/3/4/5, test-painel-graficos, test-recebido-sem-receita,
+       test-somas-sem-cancelado, e2e-painel-kpis e e2e-painel-recebido ainda
+       medem por aqui. Quando essas suítes migrarem para o motor, apagar este
+       método e os `_dash*Html` que só ele usa. NÃO religar. */
     renderDashboard: function () {
       /* ⚠ O PAINEL É A PRIMEIRA TELA QUE ABRE, e desde a régua única ele soma
          o gasto pelo `js/custoetapa.js` (`_dashFinExec`). Sem o arquivo, a
@@ -2377,16 +2385,18 @@
       return html;
     },
     /* ==================================================================
-     * PAINEL DE GESTÃO NOVO (24/09/2026) — fiação fina sobre js/painel.js.
+     * PAINEL DE GESTÃO (24/09/2026) — fiação fina sobre js/painel.js.
      *
-     * Atrás de uma chave por pessoa e aparelho (`orcapro:tela:painel:v1`),
-     * ligada por `?painel=novo` e desligada pelo botão "Voltar ao Painel
-     * atual" ou por `?painel=antigo`. Sem botão visível no Painel antigo:
-     * enquanto está em avaliação, só quem sabe da chave vê a tela nova, e
-     * o `renderDashboard` continua byte a byte o de sempre (PLANO-MESA:
-     * "Mesa desligada → tela inicial igual à de hoje" vale aqui também).
+     * Desde a 1.2.93 é o ÚNICO Painel: `render("dashboard")` chama
+     * `renderPainelNovo` para todo mundo, sem chave, sem parâmetro e sem
+     * botão de volta. Entre a 1.2.89 e a 1.2.92 ele ficou em avaliação
+     * atrás de `?painel=novo` (por pessoa e aparelho); o registro dessa
+     * chave em `orcapro:tela:painel:v1` continua sendo lido só pelas
+     * preferências de tela (filtros, ordem dos blocos, adiados) — o campo
+     * `novo` é ignorado. O `renderDashboard` antigo ficou como bancada das
+     * réguas compartilhadas (ver o ⚠ nele) e NÃO é alcançável pela tela.
      *
-     * ⚠ OS NÚMEROS SAEM DAS MESMAS RÉGUAS DO PAINEL ANTIGO: `_dashFinExec`
+     * ⚠ OS NÚMEROS SAEM DAS MESMAS RÉGUAS DO RESTO DO APP: `_dashFinExec`
      *   (período, previsto × realizado), `_avancoMedido` (avanço),
      *   `Atencao.achar`, `Reconciliacao.achar` e `Avisos.calcular` (achados),
      *   `FinStatus` (caixa). O que `PainelDados` acrescenta é a guarda que
@@ -2401,7 +2411,7 @@
      *   `data-aviso="pago-sem-receita|aprovada-nao-paga"` continuam no DOM.
      * ⚠ TROCA DE FILTRO REDESENHA SÓ O MIOLO (`_pnRender`): topbar e
      *   sidebar ficam, o scroll volta ao lugar, e os filtros são gravados
-     *   na chave da pessoa (F5 não zera). No Painel antigo nada disso roda.
+     *   nas preferências da pessoa (F5 não zera).
      * ================================================================== */
     _painelNovoHash: function () {
       var u = {};
@@ -2410,26 +2420,6 @@
     },
     _painelNovoStorage: function () {
       try { return (typeof window !== "undefined" && window.localStorage) ? window.localStorage : null; } catch (e) { return null; }
-    },
-    _painelNovoLigado: function () {
-      if (typeof PainelDados === "undefined") return false;
-      var st = this._painelNovoStorage(), hash = this._painelNovoHash();
-      var search = "";
-      try { search = (typeof location !== "undefined" && location.search) || ""; } catch (e) { search = ""; }
-      var q = PainelDados.lerParametroUrl(search);
-      if (q) {
-        PainelDados.gravar(st, hash, q === "novo" ? "novo" : null);
-        try {
-          if (typeof history !== "undefined" && history.replaceState) {
-            history.replaceState(null, "", location.pathname + PainelDados.tirarParametroUrl(search) + (location.hash || ""));
-          }
-        } catch (e2) { /* sem history: a chave já está gravada, o parâmetro só fica na barra */ }
-      }
-      return PainelDados.ligado(st, hash);
-    },
-    painelNovoDesligar: function () {
-      if (typeof PainelDados !== "undefined") PainelDados.gravar(this._painelNovoStorage(), this._painelNovoHash(), null);
-      App.render();
     },
     _pnPrefs: function () {
       return PainelDados.lerPrefs(this._painelNovoStorage(), this._painelNovoHash(), String(this._hojeISO()).slice(0, 10));
@@ -2455,10 +2445,9 @@
     _pnGravarFiltros: function () {
       this._pnGravar({ obra: this._dashObra, per: this._dashPer, multi: !!this._dashMulti, status: this._dashStatus || "", comparar: !!this._dashComparar });
     },
-    /* troca de filtro: com o Painel novo, redesenha só o #main e devolve o
-       scroll; com o antigo, o App.render() de sempre (comportamento intacto) */
+    /* troca de filtro: redesenha só o #main e devolve o scroll; sem DOM (ou
+       sem App), cai no App.render() de sempre */
     _pnRender: function () {
-      if (!this._painelNovoLigado()) { App.render(); return; }
       this._pnGravarFiltros();
       var main = (typeof document !== "undefined") ? document.getElementById("main") : null;
       if (!main || typeof App === "undefined" || !App._avisosDadoGestao) { App.render(); return; }
@@ -2546,7 +2535,7 @@
 
     renderPainelNovo: function () {
       if (typeof CustoEtapa === "undefined" || !CustoEtapa.totalVivo) return this._moduloNaoCarregado("Painel de Gestão", "js/custoetapa.js");
-      if (typeof PainelDados === "undefined") return this.renderDashboard();
+      if (typeof PainelDados === "undefined") return this._moduloNaoCarregado("Painel de Gestão", "js/painel.js");
       var self = this;
       this._pnLerFiltros();
       var esc = this._dashEscopo(), metas = this._metas(), prefs = this._pnPrefs();
@@ -2597,7 +2586,11 @@
 
       var modelo = PainelDados.calcular({
         hoje: hoje, periodo: this._dashPer, obraIds: esc.ids, statusObras: this._dashStatus || "", adiados: prefs.adiados,
-        obras: esc.obras, contratos: esc.contratos, medicoes: med, financeiro: _podeFin ? esc.financeiro : [],
+        /* RBAC entra pela porta do motor: sem Medições a lista vai vazia (nada
+           de boletim na fila, na agenda, nos contadores); sem Financeiro a fila
+           não imprime R$ (`mostrarDinheiro`). O avanço não depende disso: vem
+           por `regras.avancoMedido`, que fecha sobre `med` de qualquer jeito. */
+        obras: esc.obras, contratos: esc.contratos, medicoes: _podeMod("medicoes") ? med : [], mostrarDinheiro: _podeFin, financeiro: _podeFin ? esc.financeiro : [],
         compras: esc.compras, rdos: rdos,
         regras: {
           realizado: function (f) { return FinStatus.realizado(f); },
@@ -3039,7 +3032,8 @@
         if (op.pendentes.requisicoes) partes.push(N(op.pendentes.requisicoes, "requisição", "requisições"));
         if (op.pendentes.producao) partes.push(op.pendentes.producao + " de produção");
         var viewPend = op.pendentes.medicoes ? "medicoes" : (op.pendentes.compras ? "compras" : (op.pendentes.requisicoes ? "requisicoes" : "producao"));
-        itens.push(contador("Pendentes de aprovação", op.pendentes.total, partes.join(", "), "pn-op-aviso", 'data-view="' + viewPend + '"'));
+        /* fila de trabalho, não indicador: NÃO é filtrada por obra — e diz isso quando há recorte */
+        itens.push(contador("Pendentes de aprovação", op.pendentes.total, partes.join(", ") + (m.filtrado ? ", de todas as obras" : ""), "pn-op-aviso", 'data-view="' + viewPend + '"'));
       }
       if (podeMod("compras")) itens.push(contador("Compras em aberto", op.comprasAbertas, "requisições e pedidos", "", 'data-view="compras"'));
       if (op.lp) {
@@ -3082,7 +3076,6 @@
         + (podeFin ? '<button class="pn-ctl pn-ctl-ghost" data-gacao="dash-metas" title="Definir a margem saudável, a meta de PPC, a meta de recebimento e o aviso de contas a vencer">Metas</button>' : "")
         + '<button class="pn-ctl pn-ctl-ghost" data-gacao="painel-organizar" title="Escolher quais blocos aparecem e em que ordem">Organizar painel</button>'
         + '<button class="pn-ctl pn-ctl-ghost" data-gacao="painel-imprimir" title="Abre o painel numa janela de impressão; salve como PDF">Relatório</button>'
-        + '<button class="pn-ctl pn-ctl-ghost" data-gacao="painel-antigo" title="Volta ao Painel de sempre neste aparelho">Voltar ao Painel atual</button>'
         + "</div></div>";
       var blocos = PainelDados.blocosOrdenados(ctx.prefs), fn = { tiles: "_pnBlTiles", posicao: "_pnBlPosicao", agenda: "_pnBlAgenda", previsao: "_pnBlPrevisao", fluxo: "_pnBlFluxo", composicao: "_pnBlComposicao", lucro: "_pnBlLucro", metas: "_pnBlMetas", obras: "_pnBlObras", orcado: "_pnBlOrcado", operacao: "_pnBlOperacao" };
       var esq = "", cheia = "", escondidos = 0;
@@ -37015,7 +37008,6 @@ renderFolha: function () {
         case "cobrar-compra": return this.comprasCobrar(id);
         case "med-obra": return this.medTrocaObra(dataset);
         case "dash-metas": return this.metasForm();
-        case "painel-antigo": return this.painelNovoDesligar();
         case "dash-status": return this.dashTrocaStatus(dataset.value);
         case "dash-comparar": return this.dashTrocaComparar();
         case "painel-organizar": return this.painelOrganizar();
