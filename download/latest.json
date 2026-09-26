@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.94",
+  "versao": "1.2.95",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.94.zip",
-  "notas": "Correcao da barra de modulos: na tela de Obras a aba do grupo ficava escondida atras da cena ao clicar em outro grupo; agora abre na frente. Sem outra mudanca.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.94/OrcaPRO-IA-Instalador-v1.2.94.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.95.zip",
+  "notas": "Centros de custo: as regras e as decisoes passam a valer na aba Centros e no Previsto x Realizado. Na Fila voce escolhe o centro de cada lancamento, um a um ou em lote; lancamento ja pago pede confirmacao com o valor e a data. A aba Regras ganhou formulario para criar, mudar e encerrar regra. Pedido, boletim, gasto rapido e custo de frota mostram o centro de custo. Nota fiscal com varios pedidos e dividida pelo valor de cada pedido.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.95/OrcaPRO-IA-Instalador-v1.2.95.exe"
 }

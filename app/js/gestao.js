@@ -7104,6 +7104,9 @@
         '<div class="row" id="med-linha-orc">' + campo("Orçamento", sel("g-orcmed", optsRec(orcs, "nome", m.orcamentoId, "— selecione o orçamento —"))) + "</div>" +
         '<div id="med-itens"></div>' +
         '<div id="med-centros"></div>' +
+        /* MEDCC Parte D: o centro do boletim — o resto do boletim por itens e
+           o select do boletim por valor (ver `_medCcPintar`) */
+        '<div id="med-cc-resto"></div><div id="med-cc-sel"></div>' +
         '<div class="row">' + campo("Período (início)", inp("g-pini", m.periodoInicio, "", "date")) + campo("Período (fim)", inp("g-pfim", m.periodoFim, "", "date")) + "</div>" +
         '<div class="row">' + campo('% executado no período<span id="med-pct-ast">' + self._astPct(_estPct) + '</span>',
           inp("g-pct", m.percentual) + '<span id="med-pct-nota">' + self._notaPctHtml(_estPct) + '</span>') + campo("Valor medido (R$) *", inp("g-valor", m.valor)) + campo("Retenção (%)", inp("g-ret", m.retencao == null ? 5 : m.retencao)) + "</div>" +
@@ -7133,6 +7136,28 @@
           return false;
         }
         if (!self._gateStatusForm(obj, stAntigo, "medicoes")) return false; // G3 fix: aprovar/rejeitar pelo form exige permissão + auditoria
+        /* ===== (c) O CENTRO DO BOLETIM: AGENDADO, NUNCA GRAVADO AQUI (§3.7) =====
+         * ⚠ DEPOIS DO GATE E ANTES DA GUARDA DO APROVADO, e só se a pessoa
+         *   TROCOU o valor mostrado (`_coletaMudou`: ausente, desabilitado ou
+         *   intocado → nada). A gravação é do `_modalForm`, depois do save
+         *   conferido (`_ccExecutarPendente`): todo `return false` daqui para
+         *   baixo (contrato de outra obra, acima de 100%, teto do contrato)
+         *   deixaria a decisão gravada num boletim que não foi — e cada nova
+         *   tentativa regravaria. É o roteiro da receita de R$ 228.000 lançada
+         *   três vezes (skill `dinheiro` §4), com o centro no lugar do dinheiro.
+         * ⚠ SÓ `_coletaMudou` E O DOM AQUI: a bancada do `test-v12` roda este
+         *   `coletar` de verdade com o mínimo do Gestao. */
+        var _selCc = self._coletaMudou("g-medcc"), _selRs = self._coletaMudou("g-medcc-resto");
+        var _qualCc = _selCc.mudou ? "g-medcc" : (_selRs.mudou ? "g-medcc-resto" : "");
+        if (_qualCc) {
+          var _vCc = String((_selCc.mudou ? _selCc.valor : _selRs.valor) || "");
+          var _elCc = document.getElementById(_qualCc);
+          if (_vCc !== "__dec__") {
+            self._ccPendente = { k: "MED",
+              escolha: (_vCc === "" || _vCc === "__fila__") ? null : (_selCc.mudou ? { cc: _vCc } : { rs: { cc: _vCc } }),
+              opts: { baseEm: (_elCc && _elCc.getAttribute("data-base")) || "", rotulo: "o boletim " + (obj.numero || "") } };
+          }
+        }
         obj.contratoId = v("g-contrato"); obj.periodoInicio = v("g-pini"); obj.periodoFim = v("g-pfim");
         /* ⚠ O CONTRATO TEM DE SER DA OBRA DO BOLETIM. O `<select>` lista os
            contratos da empresa e mostra só o NÚMERO ("001/2026", "002/2026") —
@@ -7561,16 +7586,18 @@
      *   em rateio antigo, o Realizado do centro é uma ESTIMATIVA dividida
      *   pelo orçado: mostrar um "por centro" ao lado dela faria a tela
      *   afirmar duas coisas diferentes sobre o mesmo dinheiro.
-     * ⚠ NADA AQUI GRAVA, E O TEXTO NÃO PROMETE A FILA. A decisão por boletim
-     *   (`cc_aprop`) e a Fila são do agente (`js/ccagente.js`), que não
-     *   existe ainda; a aba Fila da tela responde "ainda não disponível". Um
-     *   "o que está sem centro entra na Fila" mandaria a pessoa a uma porta
-     *   que o clique seguinte fecha.
+     * ⚠ NADA AQUI GRAVA. A decisão do RESTO (os itens em etapas sem centro)
+     *   é o select logo abaixo ([Decidir o resto], `_medCcRestoPintar`),
+     *   agendado no `coletar` e gravado depois do save. O texto cita a Fila
+     *   porque ela existe (Parte B): é para lá que o boletim parcial vai.
      * `memo` (opcional) guarda o contexto da obra entre as repinturas do
      * MESMO formulário — o `_ccCtx` calcula o orçamento inteiro, e o % de
      * cada item repinta este bloco a cada tecla.
      * ================================================================== */
     _medCentrosHtml: function (obraId, orcId, itens, memo) {
+      /* quanto ficou "em etapas sem centro" — o [Decidir o resto] lê daqui
+         (`_medCcRestoPintar`), para as duas contas não divergirem */
+      if (memo) memo.semCentro = 0;
       if (!this._medcc("ccAgente")) return "";
       if (typeof CentroCusto === "undefined" || typeof CentroCusto.centroDoNo !== "function") return "";
       var o = String(obraId || ""), oi = String(orcId || "");
@@ -7619,11 +7646,98 @@
           '</td><td class="num">' + Util.fmtMoeda(semCentro / 100) + "</td></tr>";
       }
       h += '<tr><td class="muted">Soma dos itens medidos</td><td class="num muted">' + Util.fmtMoeda(total / 100) + "</td></tr>";
+      if (memo) memo.semCentro = semCentro;
       h += "</tbody></table>" +
         '<p class="muted" style="font-size:11px;margin:4px 0 0">Pelo vínculo do item com a etapa do orçamento, a mesma régua da tela Centro de custo. Informativo: nada disto é gravado no boletim.' +
-        (semCentro > 0 ? " “Em etapas sem centro” são itens cuja etapa ainda não tem centro de custo nesta obra." : "") + "</p></div>";
+        (semCentro > 0 ? " “Em etapas sem centro” são itens cuja etapa ainda não tem centro de custo nesta obra: sem regra nem decisão para o resto, o boletim inteiro vai para a Fila (boletim parcial)." : "") + "</p></div>";
       return h;
     },
+
+    /* ==================================================================
+     * O CENTRO DO BOLETIM (Parte D, §4.10 e §6.2)
+     *
+     * Por VALOR: o select "Centro de custo deste boletim" — pendente,
+     * editável; aprovado/pago, só leitura com [Mudar centro] (D16: o boletim
+     * aprovado é documento, e o centro muda FORA dele). Por ITENS: o
+     * [Decidir o resto], só para os itens em etapas sem centro (os outros
+     * seguem o vínculo). Por atividades: a regra de cada atividade, na aba
+     * Regras — nada aqui.
+     * ⚠ SÓ DESENHA; quem agenda é o `coletar` (passo c) e quem grava é o
+     *   `_modalForm`, depois do save.
+     * ⚠ O VALOR ESCOLHIDO SOBREVIVE À REPINTURA: trocar de modo e voltar, ou
+     *   digitar o % de um item (que repinta o resto a cada tecla), não pode
+     *   devolver o select ao "Pela regra…" — a pessoa escolheu, e o Salvar
+     *   gravaria outra coisa sem ela ver.
+     * ================================================================== */
+    _medCcHip: function (m, obraId) {
+      return { t: "boletim", id: "", k: "MED", d: "", obraId: String(obraId || ""),
+        data: String(v("g-pfim") || (m && (m.periodoFim || m.data)) || hojeLocal()).slice(0, 10),
+        tipo: "receita", cent: 0, cat: "", forn: "", cnpj: "", frota: "", atv: "", avisos: [],
+        reg: { modo: "valor", obraId: String(obraId || "") } };
+    },
+    _medCcRepintar: function (idCaixa, idSel, html) {
+      var caixa = UI.el(idCaixa);
+      if (!caixa) return;
+      var ant = UI.el(idSel), antV = (ant && !ant.disabled) ? String(ant.value) : null;
+      caixa.innerHTML = html;
+      var novo = UI.el(idSel);
+      if (novo && antV !== null && !novo.disabled && novo.options) {
+        for (var i = 0; i < novo.options.length; i++) if (String(novo.options[i].value) === antV) { novo.value = antV; break; }
+      }
+    },
+    _medCcPintar: function (m) {
+      m = m || {};
+      var html = "";
+      try {
+        var obraId = v("g-obra");
+        if (String(v("g-medmodo") || "") === "valor" && obraId) {
+          var aprov = !!(m.id && this._ehAprovado(m.status));
+          html = this._ccSelHtml("g-medcc", "Centro de custo deste boletim", "MED", String(m.id || ""), obraId, {
+            hip: this._medCcHip(m, obraId), soLeitura: aprov, rotulo: "o boletim " + String(m.numero || ""),
+            notaRo: "Boletim " + String(m.status || "aprovado") + ": o centro não muda pelo formulário — o boletim é documento. [Mudar centro] grava só a decisão de centro; o boletim não é regravado.",
+            nota: "A escolha é gravada depois de salvar o boletim. Não muda o valor do boletim nem o Financeiro." });
+        }
+      } catch (eP) { html = ""; }
+      this._medCcRepintar("med-cc-sel", "g-medcc", html);
+    },
+    _medCcRestoPintar: function (m, memo) {
+      m = m || {};
+      var html = "";
+      try {
+        var obraId = v("g-obra");
+        var semC = Math.round(Util.num(memo && memo.semCentro));
+        var temRs = false;
+        if (m.id) {
+          var dr = Store.obter(eid(), "cc_aprop", "ap_MED_" + String(m.id));
+          temRs = !!(dr && dr.rs && dr.rs.cc);
+        }
+        var rotR = "Decidir o resto" + (semC > 0 ? " (" + Util.fmtMoeda(semC / 100) + " em etapas sem centro)" : "");
+        var mostra = String(v("g-medmodo") || "") === "orcamento" && !!obraId && (semC > 0 || temRs);
+        /* ⚠ O % DE CADA ITEM REPINTA ISTO A CADA TECLA (`recalc`): refazer a
+           cadeia do agente (a empresa inteira) por tecla trava o formulário
+           numa base grande. Com a mesma obra e o mesmo "tem resto", só o
+           valor do rótulo muda — o select (e o que a pessoa escolheu nele)
+           fica. */
+        var chaveR = [String(m.id || ""), obraId, mostra ? 1 : 0].join("|");
+        var caixaR = UI.el("med-cc-resto");
+        if (mostra && caixaR && this._medCcRestoUlt === chaveR && UI.el("g-medcc-resto")) {
+          var lbR = caixaR.querySelector ? caixaR.querySelector("label") : null;
+          if (lbR) lbR.textContent = rotR;
+          return;
+        }
+        this._medCcRestoUlt = chaveR;
+        if (mostra) {
+          var aprov = !!(m.id && this._ehAprovado(m.status));
+          html = this._ccSelHtml("g-medcc-resto", rotR,
+            "MED", String(m.id || ""), obraId, {
+              parte: "rs", hip: this._medCcHip(m, obraId), soLeitura: aprov, rotulo: "o boletim " + String(m.numero || ""),
+              notaRo: "Boletim " + String(m.status || "aprovado") + ": o resto não muda pelo formulário — o boletim é documento. [Mudar centro] grava só a decisão do resto; o boletim não é regravado.",
+              nota: "Só os itens em etapas sem centro: os outros seguem o vínculo com o orçamento. Gravado depois de salvar o boletim." });
+        }
+      } catch (eR) { html = ""; }
+      this._medCcRepintar("med-cc-resto", "g-medcc-resto", html);
+    },
+    _medCcRestoUlt: null,
 
     /* a dica da §3.1, UMA VEZ POR OBRA e sem prometer "sozinho": quem mede
        por valor não sabe que medir por itens liga o boletim ao cronograma.
@@ -7764,6 +7878,7 @@
       function pintarCentros(itensCc) {
         var elCc = UI.el("med-centros");
         if (elCc) elCc.innerHTML = self._medCentrosHtml(v("g-obra"), selOrc.value, itensCc, memoCc);
+        self._medCcRestoPintar(m, memoCc);
       }
       /* soma ao vivo do modo atividades */
       function somarAtividades() {
@@ -7801,6 +7916,8 @@
            dois muda quem pode alimentar o avanço, e a nota tem de acompanhar
            (senão ela promete o que o modo novo não faz) */
         self._medAvancoPintar(m);
+        /* o select do centro (boletim por valor) acompanha a obra e o modo */
+        self._medCcPintar(m);
         if (modo === "atividades") {
           box.innerHTML = self._medAtividadesHtml(m, v("g-obra"));
           pintarCentros([]);
@@ -9094,7 +9211,10 @@
         '<div class="row">' + campo("Valor (R$) *", inp("fr-valor", "", "0,00"))
           + campo("Data", inp("fr-data", hojeISO, "", "date")) + "</div>" +
         campo("Obra *", sel("fr-obra", optsRec(obras, "nome", sugerida && sugerida !== "todas" ? sugerida : "", "— escolha a obra —"))) +
-        campo("Categoria", sel("fr-cat", opts(P.finCategoria, "material")));
+        campo("Categoria", sel("fr-cat", opts(P.finCategoria, "material"))) +
+        /* MEDCC Parte D: o centro do gasto (`_ccSelPintar`, abaixo) */
+        '<div id="fr-cc-caixa"></div>';
+      var selfR = this;
       UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("raio", 15) : "") + " Gasto rápido", corpo, [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Lançar", classe: "primary", onClick: function () {
@@ -9105,6 +9225,13 @@
           var obraId = v("fr-obra");
           if (!obraId) { UI.toast("Escolha a obra — o gasto rápido é sempre de uma obra.", "erro"); return; }
           var data = v("fr-data") || hojeISO;
+          /* ⚠ A ESCOLHA DO CENTRO É LIDA ANTES DE FECHAR O MODAL (o select
+             morre com ele) e GRAVADA SÓ DEPOIS do lançamento conferido: a
+             decisão `FIN_` precisa do id que o `Store.salvar` dá, e decisão
+             de um gasto que não entrou seria centro sem dinheiro. Só se a
+             pessoa trocou o "Pela regra…" (`_ccSelEscolha`). */
+          var ccEsc = null;
+          try { ccEsc = Gestao._ccSelEscolha("fr-cc"); } catch (eCs) { ccEsc = null; }
           /* pago e com as três datas coerentes: lançado hoje, venceu hoje,
              pago hoje. É o que "comprei" significa. */
           var salvo = Store.salvar(eid(), "financeiro", {
@@ -9115,15 +9242,34 @@
           });
           UI.fecharModal();
           App.render();
-          /* ⚠ SEM O SELECT DE CENTRO AINDA (mc-8B, entrega parcial): o
-             "Pela regra…" grava `cc_aprop FIN_` pela `_ccGravarEscolha`, que
-             depende do agente (`js/ccagente.js`), inexistente — ver o
-             cabeçalho da região "MEDCC: custos (8B)". O recado diz onde o
-             gasto caiu pela régua da tela de Centros. */
+          /* a decisão ANTES do toast: a frase do centro no recado diz onde o
+             gasto caiu JÁ com a escolha da pessoa */
+          var rCcR = null;
+          if (salvo && !Gestao._naoGravou(salvo) && ccEsc && ccEsc.escolha) {
+            rCcR = Gestao._ccGravarNoLancar("FIN", String(salvo.id || ""), obraId, ccEsc.escolha, salvo, "o gasto rápido de " + Util.fmtMoeda(valor));
+          }
           if (salvo) Gestao._ccCustoToast("Gasto lançado: " + Util.fmtMoeda(valor) + ".", [salvo], "ok");
           else UI.toast("Não consegui gravar o lançamento.", "erro");
+          if (rCcR && !rCcR.ok && rCcR.motivo !== "pago") Gestao._ccRecadoNaoGravou("FIN", "lançamento", { id: salvo.id, obraId: obraId }, rCcR);
         } }
       ]);
+      try {
+        selfR._finRapidoCcPintar();
+        ["fr-obra", "fr-cat", "fr-data"].forEach(function (idC) {
+          var elC = document.getElementById(idC);
+          if (elC) elC.addEventListener("change", function () { selfR._finRapidoCcPintar(); });
+        });
+      } catch (eFr) { /* sem o select, o gasto rápido é o de antes */ }
+    },
+
+    /* o select do gasto rápido, repintado com a obra, a categoria e a data —
+       a regra que responde (`RAP` + `cat`) depende das três */
+    _finRapidoCcPintar: function () {
+      var ob = v("fr-obra"), data = v("fr-data") || hojeLocal();
+      this._ccSelPintar("fr-cc-caixa", "fr-cc", "Centro de custo (opcional)", "RAP", ob,
+        { t: "lanc", id: "", k: "RAP", d: "", obraId: ob, data: String(data).slice(0, 10), tipo: "despesa", cent: 0,
+          cat: v("fr-cat") || "material", forn: "", cnpj: "", frota: "", atv: "", avisos: [], reg: { origem: "rapido" } },
+        { nota: "Sem mexer, vale a primeira opção. Escolher outro centro grava a decisão depois do lançamento — nada muda no valor." });
     },
 
     formFinanceiro: function (f) {
@@ -9252,8 +9398,28 @@
        *      subetapa sumia da etapa que o continha.
        * E, principalmente, ela dizia so QUANTO ficou sem etiqueta — nunca
        * POR QUAL PORTA entrou, que e o que diz o que consertar. */
+      /* ⚠ O AGENTE DE CENTROS DE CUSTO ENTRA AQUI (§4.6), e SÓ pelo
+       * `apropriar`: ele decide, o `CustoEtapa` credita. É a mesma cadeia da
+       * aba Centros (`_ccAgenteAplicado`) — sem isto, a tela de Centros
+       * mostraria a folha no centro da regra e este Previsto × Realizado (e o
+       * card do Painel, que chama esta função) a mostraria em "Não
+       * apropriado": duas telas do mesmo app respondendo diferente sobre o
+       * mesmo dinheiro.
+       * ⚠ Fato que o agente NÃO resolve volta `null` e fica pela régua de hoje
+       * (crítica D1): ligar o agente nunca tira dinheiro de uma etapa. Se o
+       * agente estourar, a conta sai sem ele e o aviso diz — nunca calada. */
+      var apropriarPR = null, avisoAgentePR = "";
+      if (this._ccAgenteAplicado()) {
+        try { apropriarPR = this._ccApropriarPR(); }
+        catch (eAp) {
+          apropriarPR = null;
+          avisoAgentePR = "Não consegui aplicar as regras e decisões de centro de custo neste cálculo (" + String(eAp && eAp.message || eAp) +
+            ") — as etapas abaixo estão só pelo vínculo de cada lançamento.";
+        }
+      }
       var pac = CustoEtapa.consolidar({
         obraId: obraId, orcamento: orc,
+        apropriar: apropriarPR || undefined,
         financeiro: lista("financeiro"),
         /* ⚠ `lista` e nao `listaTodas`: `compras` respeita escopo por obra do
            usuario, e trocar isso ja vazou dado de obra alheia antes. */
@@ -9299,6 +9465,13 @@
        *   agente a saída desta função continua idêntica, campo a campo.
        * ================================================================= */
       var balde = pac.apropriadoSemEtapa || null;
+      /* ⚠ BALDE VAZIO NÃO EXISTE (invariante I8). Com o agente ligado numa
+         obra que não adotou centro nenhum, todo fato volta `null` e o motor
+         ainda cria o balde zerado — a saída desta função deixaria de ser
+         IDÊNTICA à de hoje por uma chave com R$ 0,00, e o card do Painel
+         ganharia uma linha "Sem etapa apropriada" de zero. Só existe balde
+         com dinheiro dentro. */
+      if (balde && !Util.num(balde.realizado.n) && !Util.num(balde.comprometido.n)) balde = null;
       var baldeReal = balde ? Util.num(balde.realizado.valor) : 0;
       var baldeComp = balde ? Util.num(balde.comprometido.valor) : 0;
       var saidaPR = {
@@ -9323,6 +9496,30 @@
                     (pac.totais.realizadoCompetencia + pac.naoApropriado.valor + baldeReal)
       };
       if (balde) saidaPR.apropriadoSemEtapa = balde;
+      /* ⚠ O AVISO DO BALDE DIZ OS NOMES (§4.6: "R$ 12.000,00 estão em centros
+         sem etapa (Administração local) — …"). O motor diz o valor; os nomes
+         só a fiação tem. Sem eles, quem soma as linhas à mão acha a
+         diferença e não sabe em qual centro procurar. Cópia do objeto: a
+         cobertura do motor não é mexida. */
+      if ((balde && Util.num(balde.realizado.valor) > 0.005) || avisoAgentePR) {
+        var ccsN = {};
+        /* o nome é enfeite do aviso, não conta: se a leitura falhar, o aviso
+           sai com o valor e sem os nomes — nunca derruba o Previsto × Realizado */
+        try { Util.arr(listaTodas("centrocusto")).forEach(function (c) { if (c && c.id) ccsN[String(c.id)] = c; }); } catch (eN) { ccsN = {}; }
+        var nomesB = [];
+        if (balde) Object.keys(balde.realizado.porCentro || {}).sort().forEach(function (id) {
+          var c = ccsN[id];
+          nomesB.push(c ? ((c.codigo ? c.codigo + " " : "") + (c.nome || "")).trim() : "centro apagado (id " + id.slice(0, 8) + "…)");
+        });
+        var avs = Util.arr(pac.cobertura && pac.cobertura.avisos).map(function (a) {
+          if (nomesB.length && /estão em centros de custo sem etapa/.test(String(a))) {
+            return String(a).replace(" estão em centros de custo sem etapa", " estão em centros de custo sem etapa (" + nomesB.join(", ") + ")");
+          }
+          return a;
+        });
+        if (avisoAgentePR) avs.push(avisoAgentePR);
+        saidaPR.cobertura = { pctApropriado: pac.cobertura.pctApropriado, avisos: avs };
+      }
       return saidaPR;
     },
     renderPrevistoReal: function () {
@@ -19028,14 +19225,14 @@
      *   outro sem ninguém confirmar o valor (skill `dinheiro` §5 e §6, D20). E
      *   o recebimento regrava o pedido inteiro em outro aparelho: a troca
      *   daqui e a entrega de lá disputariam o mesmo registro no merge.
-     *   A porta que a espec prevê é [Mudar centro] (decisão `cc_aprop PC_`,
-     *   confirmando o valor pago). Ela grava pela `_ccGravarEscolha`, que
-     *   confere pago pela `CCAgente.pagosAfetados` — e o `js/ccagente.js` não
-     *   existe em branch nenhum (22/09/2026). Gravar decisão sem o motor que a
-     *   aplica faria a tela Centro de custo de TODAS as obras dizer "não posso
-     *   afirmar" (`_ccNumeros`). Por isso o select trava, DIZ por quê e aponta
-     *   a porta que existe hoje: a Etapa da despesa, no Financeiro (a etapa
-     *   própria do lançamento manda sobre a do pedido — régua do `CustoEtapa`).
+     *   A porta é [Mudar centro] (decisão `cc_aprop PC_`, Parte D), ao lado
+     *   do select só leitura: ela grava pela `_ccGravarEscolha`, que confere
+     *   o pago pela `CCAgente.pagosAfetados` e abre a caixa do D20 com o
+     *   valor e a data — e NÃO regrava o pedido. Sem o agente neste aparelho
+     *   (chave `ccAgente` desligada, `ccagente.js` velho em cache) o botão
+     *   não é desenhado e o recado diz isso; a outra porta continua: a Etapa
+     *   da despesa, no Financeiro (a etapa própria do lançamento manda sobre
+     *   a do pedido — régua do `CustoEtapa`).
      *
      * ⚠ A CÓPIA DA CADEIA NUNCA RECUSA (crítica D21). Recusar ali travaria a
      *   criação do PEDIDO por causa de um centro que alguém desativou meses
@@ -19070,10 +19267,14 @@
       if (!c) return "(centro apagado — id " + id.slice(0, 6) + "…)";
       return ((c.codigo ? String(c.codigo) + " " : "") + String(c.nome || "")).trim() || id;
     },
-    /* decisão `cc_aprop PC_<id do pedido>` — SÓ LEITURA. Nenhuma versão
-       publicada grava decisão (quem grava é o [Mudar centro], que espera o
-       agente); se uma chegar pela nuvem de uma versão mais nova, é ela o centro
-       que vale, e o select não pode fingir que o do pedido manda. */
+    /* decisão `cc_aprop PC_<id do pedido>` — lida aqui, NUNCA gravada aqui.
+       Quem grava é a `_ccGravarEscolha` (a Fila, o [Mudar centro] e a lápide
+       agendada pela troca do select, `_ccPendente`). Com ela no disco é ela o
+       centro que vale, e o select não pode fingir que o do pedido manda.
+       ⚠ Sem o agente neste aparelho (`_ccAgenteAplicado` falso: chave
+       desligada ou `ccagente.js` velho em cache), a decisão continua só
+       leitura, como na 1.2.89 — mudá-la sem o motor que confere o pago seria
+       mover dinheiro sem o D20. */
     _ccDocDecisao: function (ent, doc) {
       if (ent !== "compras" || !doc || !doc.id) return null;
       var alvo = "ap_PC_" + String(doc.id), l = listaTodas("cc_aprop"), i;
@@ -19124,17 +19325,37 @@
          o valor inicial do controle habilitado */
       var attrM = doc.id ? ' data-mostrado="' + Util.esc(mostrado) + '"' : "";
       var nota = "";
+      var ag = this._ccAgenteAplicado();
       var dec = this._ccDocDecisao(ent, doc);
-      var trava = dec ? null : this._ccDocTrava(ent, doc);
-      if (dec || trava) {
+      var decSoLeitura = !!dec && !ag;
+      var trava = decSoLeitura ? null : this._ccDocTrava(ent, doc);
+      /* o [Mudar centro] da Parte D: grava `cc_aprop PC_` pela
+         `_ccGravarEscolha` (D20 na caixa), sem regravar o pedido. Só com o
+         agente, na obra que adotou os centros novos e para quem grava. */
+      var podeMudar = ag && ent === "compras" && !!doc.id && this._ccSelPode(obraId).gravar;
+      var btnMudar = !podeMudar ? "" : ' <button type="button" class="btn sm" data-gacao="cc-mudar" data-form="1" data-k="PC" data-d="' + Util.esc(doc.id) +
+        '" data-obra="' + Util.esc(obraId) + '" data-base="' + Util.esc(dec ? String(dec.atualizadoEm || "") : "") +
+        '" data-rot="' + Util.esc("o pedido " + String(doc.numero || "")) + '" data-atual="' + Util.esc(dec && dec.cc ? String(dec.cc) : "") + '">Mudar centro</button>';
+      if (decSoLeitura || trava) {
         var ef;
-        if (dec) {
+        if (decSoLeitura) {
           var nPt = Util.arr(dec.pt).length;
           ef = (nPt ? "Dividido em " + nPt + " centros" : this._ccDocRotulo(dec.cc)) + " — por decisão de " + (dec.por || "alguém") +
             ((dec.atualizadoEm || dec.criadoEm) ? " em " + Util.fmtDia(dec.atualizadoEm || dec.criadoEm) : "");
           nota = "Esta escolha foi gravada por uma versão mais nova do sistema, com a confirmação do valor. Mudá-la exige o motor de apropriação, que não está neste aparelho — atualize o sistema.";
         } else {
           ef = atual ? this._ccDocRotulo(atual) + " — pelo pedido" : "— sem centro de custo —";
+          /* ⚠ COM O AGENTE, O EFETIVO E A FONTE VÊM DA CADEIA (§1.8): "CC-05
+             Estrutura — por decisão de Fulano em 03/09", "— pela regra “…”",
+             "— pelo centro do pedido". Dizer "pelo pedido" sobre a despesa
+             que a decisão da pessoa levou a outro centro é o select
+             discordando da tela de Centros sobre o mesmo dinheiro. */
+          if (ag) {
+            try {
+              var efA = this._ccEfetivo("PC", String(doc.id), obraId, null, { comDecisao: true });
+              if (efA.fato) ef = efA.ok ? efA.rot + " — " + efA.fonteTxt.charAt(0).toLowerCase() + efA.fonteTxt.slice(1) : "— sem centro de custo (está na Fila) —";
+            } catch (eEf) { /* fica o texto de antes */ }
+          }
           var porQue = trava.motivo === "despesa"
             ? "este pedido já tem despesa no Financeiro (" + Util.fmtMoeda(Math.abs(Util.num(trava.lanc.valor))) +
               (trava.lanc.data ? ", lançada em " + Util.fmtDia(trava.lanc.data) : "") + ")"
@@ -19142,7 +19363,10 @@
               ? "este pedido já foi faturado pela nota " + trava.notas.map(function (n) { return n.numero || n.id; }).join(", ")
               : "este pedido já tem entrega registrada");
           nota = "O centro não muda mais por aqui: " + porQue + ". Trocar agora levaria " +
-            (trava.motivo === "entrega" ? "o que já chegou" : "esse dinheiro") + " a outro centro sem confirmar o valor — e a troca com confirmação ([Mudar centro]) ainda não está neste aparelho.";
+            (trava.motivo === "entrega" ? "o que já chegou" : "esse dinheiro") + " a outro centro sem confirmar o valor" +
+            (!ag ? " — e a troca com confirmação ([Mudar centro]) ainda não está neste aparelho."
+              : (podeMudar ? ". Use [Mudar centro], ao lado: ele pede a confirmação do valor e não reescreve o pedido."
+                : " — a troca com confirmação ([Mudar centro]) é de quem tem os módulos Financeiro e Centro de custo, acompanha a obra, e só em obra que usa os centros novos."));
           /* ⚠ A PORTA QUE EXISTE HOJE, e só para quem a abre (crítica F15):
              porta citada para quem não tem o Financeiro manda a pessoa a uma
              tela que ela não abre.
@@ -19179,7 +19403,7 @@
           }
         }
         return { ro: true, vazio: false,
-          html: campo("Centro de custo", '<select id="' + idc + '" disabled' + attrM + '><option value="' + Util.esc(atual) + '" selected>' + Util.esc(ef) + "</option></select>") +
+          html: campo("Centro de custo", '<div style="display:flex;gap:6px;align-items:center"><select id="' + idc + '" disabled' + attrM + '><option value="' + Util.esc(atual) + '" selected>' + Util.esc(ef) + "</option></select>" + btnMudar + "</div>") +
             '<div class="muted" id="' + idc + '-nota" style="font-size:12px;margin:-4px 0 8px">' + Util.esc(nota) + "</div>" };
       }
       var ccs = listaTodas("centrocusto");
@@ -19196,19 +19420,50 @@
         var mo = String(c.obraId || "") === obraId ? modo : "sem-centros";
         return CentroCusto.normalizar(c, mo).apura !== "obra";
       });
-      var d = CentroCusto.optsDados(usar, obraId, sel0, {});
-      var escolhiveis = d.opts.filter(function (o) { return o.v !== ""; }).length;
+      /* ⚠ A PRIMEIRA OPÇÃO DIZ O QUE VALE SEM CENTRO NO DOCUMENTO (§4.10,
+         D15): com a regra "Fornecedor X → CC-05", "— sem centro de custo —"
+         seria mentira — o pedido vai para o CC-05 pela regra. E a decisão
+         da pessoa (`PC_`) aparece como a opção selecionada, com quem decidiu
+         e quando; em partes, só leitura com o [Mudar centro] ao lado. */
+      var ctxO = {};
+      var selPd = ag ? this._ccSelPode(obraId) : { ler: false };
+      if (selPd.ler) {
+        try {
+          var efP = this._ccEfetivo("PC", "", obraId, { t: "pedido", id: "", k: "PC", d: "", obraId: obraId,
+            data: String(doc.data || hojeLocal()).slice(0, 10), tipo: "despesa", cent: 0, cat: String(doc.categoria || ""),
+            forn: String(doc.fornecedorId || ""), cnpj: "", frota: "", atv: "", avisos: [], reg: {} });
+          if (efP.ok) ctxO.efetivo = { texto: efP.texto, fonte: efP.via };
+        } catch (eEP) { /* fica "— sem centro de custo —" */ }
+      }
+      if (ag && dec) {
+        var emD = String(dec.atualizadoEm || dec.criadoEm || "").slice(0, 10);
+        ctxO.decisao = { cc: dec.cc, pt: dec.pt, por: dec.por || "alguém", em: emD ? Util.fmtDia(emD) : "" };
+        ctxO.incluirFila = true;
+      }
+      var d = CentroCusto.optsDados(usar, obraId, sel0, ctxO);
+      var escolhiveis = d.opts.filter(function (o) { return o.v !== "" && o.v !== "__fila__"; }).length;
       /* obra sem centro nenhum (a base instalada inteira, hoje): o formulário
          fica como era — caixa vazia, controle AUSENTE, nada gravado */
       if (!escolhiveis && !atual && !opc.perdido) return { ro: false, vazio: true, html: "" };
       var h = d.opts.map(function (o) {
         return '<option value="' + Util.esc(o.v) + '"' + (o.sel ? " selected" : "") + ">" + Util.esc(o.t) + "</option>";
       }).join("");
+      /* com a decisão, o MOSTRADO é a opção que ela marcou (`__partes__` na
+         decisão em partes): é contra ela que a coleta decide se a pessoa
+         mexeu — contra o `ccId` do pedido, "não mexi" viraria "troquei" e o
+         Salvar apagaria a decisão de quem decidiu */
+      var btnDec = "";
+      if (ag && dec && opc.mostrado == null && doc.id) {
+        var marcada = d.opts.filter(function (o) { return o.sel; })[0];
+        if (marcada) attrM = ' data-mostrado="' + Util.esc(String(marcada.v)) + '"';
+        if (marcada && marcada.v === "__partes__") btnDec = btnMudar;
+      }
       if (opc.perdido) nota = "O centro " + this._ccDocRotulo(opc.perdido) + " era da obra anterior — " + art + " " + nome + " fica sem centro de custo. Escolha um desta obra, se quiser.";
       else if (ent === "requisicoes" && String(doc.status || "") === "comprada") nota = "O pedido levou uma cópia do centro quando foi gerado — mudar aqui não muda o pedido.";
       else if (d.avisos.length) nota = d.avisos[0].msg + " Ele continua gravado até você escolher outro.";
+      else if (ag && dec) nota = "Vale a decisão de " + (dec.por || "alguém") + " (feita no Centro de custo). Escolher outro centro aqui grava no pedido e desfaz essa decisão, depois de salvar.";
       return { ro: false, vazio: false,
-        html: campo("Centro de custo", '<select id="' + idc + '"' + attrM + ">" + h + "</select>") +
+        html: campo("Centro de custo", '<div style="display:flex;gap:6px;align-items:center"><select id="' + idc + '"' + attrM + ">" + h + "</select>" + btnDec + "</div>") +
           (nota ? '<div class="muted" id="' + idc + '-nota" style="font-size:12px;margin:-4px 0 8px">' + Util.esc(nota) + "</div>" : "") };
     },
     /* a caixa inteira, para o `corpo` do formulário. Some (string vazia =
@@ -19258,6 +19513,10 @@
       var pd = this._ccDocPode(String(obj.obraId || ""));
       if (!pd.ok) return { ok: false, msg: pd.msg };
       var valor = String(r.valor == null ? "" : r.valor);
+      /* a decisão em partes é só leitura (a porta é o [Mudar centro]); o
+         "decidir depois (fila)" é tirar o centro do pedido E a decisão */
+      if (valor === "__partes__" || valor === "__dec__") return { ok: true, mudou: false };
+      if (valor === "__fila__") valor = "";
       var gravado = String((registro && registro.ccId) || "");
       var cc = null;
       if (valor) {
@@ -19311,7 +19570,17 @@
       }
       var res = CentroCusto.doDocumento(obj, cc, ctx);
       if (!res || !res.ok) return { ok: false, msg: (res && res.recusa) || "O centro de custo não foi aceito — nada foi gravado." };
-      return { ok: true, mudou: true };
+      /* ⚠ A TROCA NO PEDIDO DESFAZ A DECISÃO `PC_` (§4.10): com ela de pé, o
+         centro novo do pedido não valeria (a pessoa vence o vínculo, degrau
+         3) e a pessoa veria o select dizer uma coisa e a tela outra. A lápide
+         é AGENDADA — quem a grava é o `_modalForm`, depois do save; aqui é
+         validação e roda antes do gate. */
+      var out = { ok: true, mudou: true };
+      if (ent === "compras" && registro && registro.id && this._ccAgenteAplicado()) {
+        var decD = this._ccDocDecisao("compras", { id: registro.id });
+        if (decD) out.agendar = { k: "PC", excluir: true, opts: { baseEm: String(decD.atualizadoEm || ""), rotulo: "o pedido " + String(obj.numero || "") } };
+      }
+      return out;
     },
     /* A CÓPIA DA CADEIA: requisição → cotação → pedido. Nunca recusa (D21):
        devolve "" quando o centro veio junto, ou o recado de por que o
@@ -19367,8 +19636,11 @@
       if (!this._ccAgenteAplicado() && (listaTodas("cc_regras").length + listaTodas("cc_aprop").length) > 0) return "";
       var lanc = this._lancVivoDoDoc("compras", pc.id);
       if (!lanc) return "";
-      var fatos = this._ccFatos(this._ccCtx(String(pc.obraId))).fatos, f = null, i;
-      for (i = 0; i < fatos.length; i++) if (fatos[i].t === "lanc" && fatos[i].id === String(lanc.id)) f = fatos[i];
+      /* a MESMA régua da tela: com o agente, a decisão da pessoa sobre o
+         pedido vence o vínculo (§4.3, degrau 3) — e a frase tem de dizer isso */
+      var ctxR = this._ccCtx(String(pc.obraId));
+      var fatos = (this._ccAgenteAplicado() ? this._ccFatosAgente(ctxR) : this._ccFatos(ctxR)).fatos, f = null, i;
+      for (i = 0; i < fatos.length; i++) if (!f && fatos[i].t === "lanc" && fatos[i].id === String(lanc.id)) f = fatos[i];
       if (!f) return "";
       if (!f.cc) return " Sem centro de custo: esta despesa está na linha “Sem centro de custo” da tela Centro de custo.";
       /* ⚠ A MESMA FRASE DO `comoCaiu` DA 8B para o mesmo fato. As duas portas
@@ -19377,6 +19649,10 @@
          Quem decidiu vem do `viaCc` do PRÓPRIO fato — ler `pc.ccId` aqui
          seria a segunda régua para a mesma pergunta. */
       var fonte = lanc.etapaId ? "pela etapa do lançamento" : (f.viaCc ? "pelo centro do pedido" : "pela etapa do pedido");
+      /* quem decidiu, quando não foi o vínculo (agente, §4.3) */
+      if (f.via === "regra") fonte = "pela regra “" + (f.regraNome || "sem nome") + "”";
+      else if (f.via === "pessoa") fonte = "por decisão registrada no centro de custo";
+      if (Util.num(f.nPartes) > 1) return " Centro de custo: dividido em " + Util.num(f.nPartes) + " centros (" + fonte + ").";
       return " Centro de custo: " + this._ccDocRotulo(f.cc) + " (" + fonte + ").";
     },
 
@@ -19503,6 +19779,9 @@
         if (!rCC.ok) { UI.toast(rCC.msg, "erro", 9000); return false; }
         obj.status = v("g-status");
         if (!self._gateStatusForm(obj, stAntigo, "compras")) return false; // G3 fix: aprovar/rejeitar pelo form exige permissão + auditoria
+        /* a lápide da decisão `PC_` (a troca do select desfaz a decisão):
+           AGENDADA depois do gate, gravada pelo `_modalForm` depois do save */
+        if (rCC.agendar) self._ccPendente = rCC.agendar;
         return true;
       }, function (obj) {
         /* a frase do centro na SEGUNDA porta do Receber (o select de Status):
@@ -24471,13 +24750,19 @@
         '<p class="muted">Custo de <b>' + Util.esc(fr.nome) + "</b> — vira uma despesa no Financeiro (categoria Equipamento).</p>" +
         '<div class="row">' + campo("Data", inp("g-data", hoje, "", "date")) + campo("Tipo de custo", sel("g-ctipo", opts(P.frotaCusto, "combustivel"))) + "</div>" +
         '<div class="row">' + campo("Valor (R$) *", inp("g-cvalor", "")) + campo("KM / Horímetro", inp("g-ckm", fr.km)) + campo("Obra", sel("g-cobra", optsRec(obras, "nome", fr.obraId, "— nenhuma —"))) + "</div>" +
-        campo("Descrição", inp("g-cdesc", "", "Ex.: 200L diesel, troca de óleo"));
+        campo("Descrição", inp("g-cdesc", "", "Ex.: 200L diesel, troca de óleo")) +
+        /* MEDCC Parte D: o centro do custo (`cc_aprop FRT_`, depois do save) */
+        '<div id="g-ccfrota-caixa"></div>';
       UI.modal("Registrar custo — " + Util.esc(fr.nome), corpo, [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Lançar no Financeiro", classe: "primary", onClick: function () {
           if (Gestao._bloqueado()) return;
           var valor = nv("g-cvalor"); if (!(valor > 0)) { UI.toast("Informe o valor do custo.", "erro"); return; }
           var ct = v("g-ctipo"), data = v("g-data"), km = nv("g-ckm"), obraId = v("g-cobra"), desc = v("g-cdesc");
+          /* a escolha de centro, lida ANTES de o modal fechar e gravada só
+             depois da despesa conferida (ver o gasto rápido) */
+          var ccEscF = null;
+          try { ccEscF = Gestao._ccSelEscolha("g-ccfrota"); } catch (eCsF) { ccEscF = null; }
           /* ⚠ O USO DO VEÍCULO É O DOCUMENTO; A DESPESA É O DINHEIRO DELE.
              As duas gravações eram cegas nos dois sentidos: ninguém conferia
              se o `frota_mov` entrou (disco cheio → despesa órfã, sem nada que
@@ -24515,11 +24800,29 @@
               : "ATENÇÃO: a despesa de " + Util.fmtMoeda(valor) + " NÃO entrou no Financeiro e o uso do veículo NÃO pôde ser desfeito. Resolva o aviso vermelho e apague esse uso na ficha do veículo, ou lance a despesa à mão no Financeiro.", "erro");
             return;
           }
-          /* ⚠ o select de centro (`cc_aprop FRT_`) espera o agente — ver o
-             ⚠ do gasto rápido e a região "MEDCC: custos (8B)" */
+          /* ⚠ A DECISÃO `FRT_` (chave = o `frota_mov`, o documento deste
+             custo) só DEPOIS da despesa conferida, e antes do toast — a frase
+             do centro já sai com a escolha da pessoa */
+          var rCcF = null;
+          if (ccEscF && ccEscF.escolha) rCcF = Gestao._ccGravarNoLancar("FRT", String(mov.id || ""), obraId, ccEscF.escolha, lancFr, "o custo de " + Util.fmtMoeda(valor) + " de " + fr.nome);
           UI.fecharModal(); App.render(); Gestao._ccCustoToast("Custo lançado no Financeiro.", [lancFr], "ok");
+          if (rCcF && !rCcF.ok && rCcF.motivo !== "pago") Gestao._ccRecadoNaoGravou("FRT", "custo de frota", { id: mov.id, obraId: obraId }, rCcF);
         } }
       ]);
+      try {
+        var pintarCcF = function () {
+          var ob = v("g-cobra");
+          Gestao._ccSelPintar("g-ccfrota-caixa", "g-ccfrota", "Centro de custo (opcional)", "FRT", ob,
+            { t: "lanc", id: "", k: "FRT", d: "", obraId: ob, data: String(v("g-data") || hoje).slice(0, 10), tipo: "despesa", cent: 0,
+              cat: "equipamento", forn: "", cnpj: "", frota: String(fr.id), atv: "", avisos: [], reg: {} },
+            { nota: "Sem mexer, vale a primeira opção. Escolher outro centro grava a decisão depois do lançamento — nada muda no valor." });
+        };
+        pintarCcF();
+        ["g-cobra", "g-data"].forEach(function (idC) {
+          var elC = document.getElementById(idC);
+          if (elC) elC.addEventListener("change", pintarCcF);
+        });
+      } catch (eCf) { /* sem o select, o custo é o de antes */ }
     },
 
     /* ⚠ SEPARAR POR OBRA — o MESMO motor de Financeiro, Compras, Medições e
@@ -28718,22 +29021,19 @@
      *   mc-7A achou o bloco do boletim montando a família por outra régua
      *   que a tela.
      *
-     * ⚠ ENTREGA PARCIAL, DECLARADA (ESPEC-medicao-cc §8.6). NÃO ESTÃO AQUI:
-     *   o select "Pela regra…" do gasto rápido e do custo de frota (com o
-     *   `cc_aprop FIN_`/`FRT_` gravado depois do save) e a divisão da nota
-     *   pelo valor de cada pedido (K21). Os dois dependem do agente de
-     *   apropriação — `_ccGravarEscolha`, `CCAgente.pagosAfetados`,
-     *   `CCAgente.consolidar` —, e o `js/ccagente.js` não existe em branch
-     *   nenhum (22/09/2026). Gravar a decisão sem o motor que a aplica faria
-     *   a tela Centro de Custo de TODAS as obras dizer "não posso afirmar que
-     *   está completo" (`_ccNumeros`), e o toast "Centro de custo: CC-05"
-     *   apontaria para um centro onde a tela não mostra o dinheiro. Mesmo
-     *   motivo e mesma saída da mc-7A no centro do boletim.
+     * ⚠ O SELECT "Pela regra…" DO GASTO RÁPIDO E DO CUSTO DE FROTA É DA
+     *   PARTE D (`_ccSelPintar` + `_ccGravarNoLancar`): a decisão
+     *   `cc_aprop FIN_`/`FRT_` é gravada pela `_ccGravarEscolha` DEPOIS do
+     *   lançamento conferido, e só quando a pessoa trocou a primeira opção.
+     *   A divisão da nota pelo valor de cada pedido (K21) veio com a conta
+     *   pelo agente (Parte A).
      *
-     * ⚠ O RECADO NÃO PROMETE A FILA. A aba Fila responde "ainda não
-     *   disponível" enquanto o agente não existir; "está na Fila" mandaria a
-     *   pessoa a uma porta que o clique seguinte fecha. O recado diz onde o
-     *   dinheiro aparece HOJE: a linha "Sem centro de custo" da obra.
+     * ⚠ O RECADO SÓ PROMETE A FILA QUANDO ELA EXISTE. Com o agente aplicado
+     *   (`_ccAgenteAplicado`) a aba Fila lista esse dinheiro, e o recado diz
+     *   "está na Fila, em Centro de custo" (§4.10). Sem o agente (chave
+     *   desligada, motor ausente) a Fila não abre — aí o recado diz onde o
+     *   dinheiro aparece: a linha "Sem centro de custo" da obra. Prometer a
+     *   porta que o clique seguinte fecha é o recado que mente.
      *
      * ⚠ SÓ NA OBRA QUE ADOTOU OS CENTROS NOVOS (`modo === "novo"`), só para
      *   quem tem Financeiro E Centro de Custo (`_ccPode`), e com a chave
@@ -28759,7 +29059,17 @@
       try {
         var ctx = this._ccCtx(o);
         var porId = {};
-        this._ccFatos(ctx).fatos.forEach(function (f) { if (f && f.t === "lanc") porId[String(f.id)] = f; });
+        /* ⚠ A MESMA RÉGUA DA TELA (`_ccAgenteAplicado`): com o agente, o toast
+           diz o centro da REGRA ou da DECISÃO — e não "sem centro" sobre a
+           folha que a aba Centros mostra dentro do centro da regra. Fato
+           repartido guarda a PRIMEIRA parte, e em `todas` a lista inteira
+           (a frase e o CSV dizem cada centro com o valor dele). */
+        (this._ccAgenteAplicado() ? this._ccFatosAgente(ctx) : this._ccFatos(ctx)).fatos.forEach(function (f) {
+          if (!f || f.t !== "lanc") return;
+          var kP = String(f.id);
+          if (!porId[kP]) { porId[kP] = f; if (Util.num(f.nPartes) > 1) f.todas = [f]; }
+          else if (porId[kP].todas) porId[kP].todas.push(f);
+        });
         r = { ctx: ctx, porId: porId,
           abraca: CentroCusto.abracaAObra(o, ctx.ccsCrus, ctx.modo ? ctx.modo.modo : "") };
       } catch (e) { r = null; }
@@ -28816,6 +29126,24 @@
          etapa do pedido e o CENTRO do pedido (`compra.ccId`, §4.3-4e). Quem
          decidiu vem do `viaCc` do próprio fato — inferir aqui pelo `no`
          erraria no pedido de centro gerado, que tem `ccId` E `etapaId`. */
+      /* ⚠ QUEM DECIDIU, QUANDO NÃO FOI O VÍNCULO (agente, §4.3): regra e
+         decisão da pessoa ganham frase própria. "Pela etapa do pedido" sobre
+         a folha que caiu no centro pela regra é o recado apontando a porta
+         errada para quem quiser mudar. */
+      var viaA = fa.via === "regra" ? "regra" : (fa.via === "pessoa" ? "pessoa" : (fa.via === "espelho" ? "espelho" : ""));
+      if (!viaA && /^pedidos da nota/.test(String(fa.fonte || "")) && Util.num(fa.nPartes) > 1) viaA = "nota";
+      var selfR = this, ccsR = {};
+      Util.arr(ob.ctx.ccsCrus).forEach(function (c) { if (c && c.id) ccsR[String(c.id)] = c; });
+      /* ⚠ PARTE REPARTIDA DIZ QUANTO FOI PARA CADA CENTRO. "dividido em 2
+         centros" sozinho mandaria a pessoa abrir a tela para descobrir o que
+         o recado já sabia; e é o texto que vai para a coluna do CSV. */
+      var rotA = Util.num(fa.nPartes) > 1
+        ? Util.arr(fa.todas || [fa]).map(function (q) { return selfR._ccCustoRotuloOuApagado(ccsR[String(q.cc)] || null, q.cc) + " " + Util.fmtMoeda(q.valor); }).join(" + ")
+        : this._ccCustoRotuloOuApagado(cc, fa.cc);
+      if (viaA || Util.num(fa.nPartes) > 1) {
+        return { cc: cc || { id: fa.cc }, rot: rotA, regraNome: fa.regraNome || "",
+          via: viaA || (String(f.etapaId || "") ? "etapa" : (fa.viaCc ? "pedido-cc" : "pedido")), motivo: "", valor: Util.num(f.valor) };
+      }
       return { cc: cc || { id: fa.cc }, rot: this._ccCustoRotuloOuApagado(cc, fa.cc),
         via: String(f.etapaId || "") ? "etapa" : (fa.viaCc ? "pedido-cc" : "pedido"), motivo: "", valor: Util.num(f.valor) };
     },
@@ -28829,10 +29157,23 @@
          "o lançamento não tem etapa do orçamento" — e mandava a pessoa
          apropriar à mão um estorno, em vez de olhar o original. */
       "estorno-orfao": "é o estorno de um lançamento que não está mais na base",
-      "estorno-outra-obra": "é o estorno de um lançamento que hoje está em outra obra"
+      "estorno-outra-obra": "é o estorno de um lançamento que hoje está em outra obra",
+      /* motivos do agente (§4.9) — ver o ⚠ do `_ccMotivosTxt` */
+      "sem-regra": "ele não tem vínculo com o orçamento nem regra de centro de custo que o alcance",
+      "sem-apropriacao": "o lançamento não tem etapa do orçamento nem decisão de centro",
+      "sem-centro-pedido": "o pedido dele não tem centro de custo nem etapa do orçamento",
+      "nota-pedido-outra-obra": "a nota só cobre pedidos de outra obra — esta parcela não tem pedido desta obra para seguir",
+      "nota-pedido-sem-centro": "um dos pedidos desta nota não tem centro de custo nem etapa"
     },
 
-    _ccCustoMotivo: function (m) { return this._CC_CUSTO_MOTIVO[m] || String(m || "sem motivo registrado"); },
+    _ccCustoMotivo: function (m) {
+      if (this._CC_CUSTO_MOTIVO[m]) return this._CC_CUSTO_MOTIVO[m];
+      /* ⚠ nome de chave nunca vai para o recado: o que não tem frase aqui
+         sai com o texto do catálogo do motor */
+      var cat = (typeof CCAgente !== "undefined" && CCAgente && CCAgente.MOTIVOS) ? CCAgente.MOTIVOS : {};
+      if (cat[m]) { var s = String(cat[m]).replace(/\.$/, ""); return s.charAt(0).toLowerCase() + s.slice(1); }
+      return String(m || "sem motivo registrado");
+    },
 
     /* a frase que entra no fim do toast de quem lança. `lancs` = os
        lançamentos que ESTE clique gravou (com id — o `Store.salvar` o põe no
@@ -28854,6 +29195,10 @@
       if (!ordem.length) return "";
       function comoCaiu(r) {
         if (r.via === "obra") return r.rot + " (obra inteira)";
+        if (r.via === "regra") return r.rot + " (pela regra “" + (r.regraNome || "sem nome") + "”)";
+        if (r.via === "pessoa") return r.rot + " (por decisão registrada no centro de custo)";
+        if (r.via === "espelho") return r.rot + " (segue o lançamento que ele estorna)";
+        if (r.via === "nota") return r.rot + " (pelo valor de cada pedido da nota)";
         if (r.via === "pedido-cc") return r.rot + " (pelo centro do pedido)";
         return r.rot + (r.via === "pedido" ? " (pela etapa do pedido)" : " (pela etapa do lançamento)");
       }
@@ -28863,15 +29208,18 @@
          recado como se fosse de um lançamento só — e as outras obras
          sumiriam do recado sem nada dizendo. Com mais de um, a frase lista o
          VALOR de cada destino. */
+      var naFila = this._ccAgenteAplicado();
       if (ordem.length === 1 && contados === 1) {
         var g = grupos[ordem[0]];
         return g.r.cc
           ? " · Centro de custo: " + comoCaiu(g.r) + "."
-          : " · Sem centro de custo: " + this._ccCustoMotivo(g.r.motivo) + " — ele fica na linha “Sem centro de custo” da obra, na tela Centros de Custo.";
+          : (naFila
+            ? " · Sem centro de custo: está na Fila, em Centro de custo (" + this._ccCustoMotivo(g.r.motivo) + ")."
+            : " · Sem centro de custo: " + this._ccCustoMotivo(g.r.motivo) + " — ele fica na linha “Sem centro de custo” da obra, na tela Centros de Custo.");
       }
       return " · Centros de custo: " + ordem.map(function (k) {
         var gg = grupos[k];
-        return Util.fmtMoeda(gg.valor) + " → " + (gg.r.cc ? comoCaiu(gg.r) : "sem centro (" + self._ccCustoMotivo(gg.r.motivo) + ")");
+        return Util.fmtMoeda(gg.valor) + " → " + (gg.r.cc ? comoCaiu(gg.r) : (naFila ? "sem centro, na Fila (" : "sem centro (") + self._ccCustoMotivo(gg.r.motivo) + ")");
       }).join(" · ") + ".";
     },
 
@@ -28936,6 +29284,40 @@
       return { pcs: out, obraPC: ks.length === 1 ? ks[0] : "" };
     },
 
+    /* A PARCELA DA NOTA COMO O AGENTE VAI RESOLVÊ-LA DEPOIS DO [Lançar] —
+       pela MESMA cadeia da tela (§4.3-4f: a parcela é dividida pelo valor de
+       cada pedido da nota DAQUELA obra). A nota é montada em memória com os
+       pedidos que o [Lançar] vai gravar nela (`CompraNota.aplicarVinculo`:
+       os que ela já cobre + as fatias do `planoVinculo` dos marcados), e o
+       lançamento com o carimbo que a gravação põe (`docTipo:"NF"`, `docId`,
+       `compraId` do primeiro). ⚠ Nada disto vai ao disco. */
+    _ccCustoHipAgente: function (nf, ped, obraId, valor) {
+      var nfH = {}, k;
+      for (k in nf) if (Object.prototype.hasOwnProperty.call(nf, k)) nfH[k] = nf[k];
+      nfH.id = String(nf.id || "") || "__nf_previa__";
+      var ja = (typeof CompraNota !== "undefined" && CompraNota.pedidosDaNota) ? CompraNota.pedidosDaNota(nf) : [];
+      var jaIds = {}, comps = [];
+      ja.forEach(function (c) { jaIds[String(c.id)] = 1; comps.push({ id: String(c.id), numero: String(c.numero || ""), valor: Util.num(c.valor) }); });
+      var novos = Util.arr(ped && ped.pcs).filter(function (c) { return c && !jaIds[String(c.id)]; });
+      if (novos.length && typeof CompraNota !== "undefined" && CompraNota.planoVinculo) {
+        var pl = null;
+        try { pl = CompraNota.planoVinculo(nf, novos, listaTodas("financeiro"), Util.num(nf.valorTotal)); } catch (eP) { pl = null; }
+        Util.arr(pl && pl.itens).forEach(function (it) {
+          var pc = novos.filter(function (c) { return String(c.id) === String(it.compraId); })[0];
+          comps.push({ id: String(it.compraId), numero: String((pc && pc.numero) || ""), valor: Util.num(it.fatia) });
+        });
+      }
+      nfH.compras = comps;
+      var ac = this._ccAgenteCtx(obraId);
+      ac.fiscal = Util.arr(ac.fiscal).filter(function (x) { return !x || String(x.id) !== nfH.id; }).concat([nfH]);
+      var I = CCAgente.montarIndice(ac);
+      var f = { id: "__lanc_previa_nf__", tipo: "despesa", obraId: String(obraId || ""), valor: Util.num(valor), status: "pendente",
+        data: String(nf.dataEmissao || nf.data || ""), docTipo: "NF", docId: nfH.id, compraId: comps.length ? comps[0].id : undefined };
+      var res = CCAgente.resolver(CCAgente.fatoDoLanc(f, I), I, 0);
+      res.pedidos = comps;
+      return res;
+    },
+
     /* PRÉVIA DE CENTROS DA NOTA (só leitura), por obra. `idsMarcados` =
        pedidos marcados na caixa "Esta nota cobre algum pedido recebido?". */
     _ccCustoPreviaNota: function (nf, rateadas, temRateio, idsMarcados) {
@@ -28987,6 +29369,37 @@
           else destino = "sem centro de custo (" + self._ccCustoMotivo(hip.motivo) + ")";
           if (primeiro && String(primeiro.obraId || "") && String(primeiro.obraId) !== o) destino += " — o pedido " + numP + " é de outra obra";
         }
+        /* ⚠ COM O AGENTE APLICADO, A PRÉVIA É A DO AGENTE (§4.3-4f). A régua
+           de cima (o centro do PRIMEIRO pedido) era a verdade enquanto a
+           divisão não existia; com o agente a tela de Centros e o Previsto ×
+           Realizado DIVIDEM a parcela pelo valor de cada pedido, e a prévia
+           dizendo "a parcela inteira vai para o primeiro" seria prévia ×
+           gravação divergindo na tela em que a pessoa decide lançar. Quando o
+           agente dá o MESMO centro único da régua de cima pelo vínculo, o
+           texto de cima fica (ele já diz de onde veio). */
+        var agP = null;
+        if (!ob.abraca && self._ccAgenteAplicado()) {
+          try { agP = self._ccCustoHipAgente(nf, ped, o, porObra[o]); } catch (eAg) { agP = { ok: false, motivo: "", erro: String(eAg && eAg.message || eAg) }; }
+          var mesmo = agP && agP.ok && agP.partes.length === 1 && agP.via === "vinculo" && hip && String(agP.partes[0].cc) === String(hip.cc || "");
+          if (agP && !mesmo) {
+            if (agP.erro) destino = "não consegui conferir o centro de custo neste aparelho (" + agP.erro + ")";
+            else if (!agP.ok) {
+              destino = "sem centro de custo (" + self._ccCustoMotivo(agP.motivo) + ")";
+              if (agP.motivo !== "nota-pedido-outra-obra" && primeiro && String(primeiro.obraId || "") && String(primeiro.obraId) !== o) destino += " — o pedido " + numP + " é de outra obra";
+            } else {
+              var nomesP = agP.partes.map(function (q) {
+                var ccq = null;
+                Util.arr(ob.ctx.ccsCrus).forEach(function (c) { if (c && String(c.id) === String(q.cc)) ccq = c; });
+                return Util.fmtMoeda(Util.num(q.c) / 100) + " → " + self._ccCustoRotuloOuApagado(ccq, q.cc);
+              });
+              var porQ = agP.via === "regra" ? " (pela regra “" + (agP.regraNome || "sem nome") + "”)"
+                : (agP.via === "pessoa" ? " (por decisão registrada no centro de custo)" : "");
+              destino = agP.partes.length > 1
+                ? "dividido pelo valor de cada pedido: " + nomesP.join(" · ") + porQ
+                : nomesP[0].replace(/^[^→]*→ /, "") + (porQ || " (pelo pedido da nota)");
+            }
+          }
+        }
         var li = "<li><b>" + Util.esc(nomeO) + ":</b> " + Util.fmtMoeda(porObra[o]) + " → " + Util.esc(destino);
         /* ⚠ A DIVISÃO PELOS PEDIDOS (K21) É DO AGENTE, QUE NÃO EXISTE AINDA.
            Hoje a parcela inteira vai para o centro do PRIMEIRO pedido — é o
@@ -28994,7 +29407,9 @@
            do [Lançar]. Mostrar aqui "R$ 30.000 → 4.1 · R$ 9.000 → 4.2" seria
            prometer uma divisão que nenhuma tela faz; calar seria deixar a
            pessoa descobrir no fim do mês. Diz o que acontece. */
-        if (!ob.abraca) {
+        /* sem o agente, a divisão não existe e o aviso diz isso; com ele, a
+           divisão já está na linha acima */
+        if (!ob.abraca && !agP) {
           var outros = {}, nOut = 0;
           ped.pcs.forEach(function (c) {
             if (String(c.obraId || "") && String(c.obraId) !== o) return;
@@ -29589,13 +30004,14 @@ renderPatrimonio: function () {
      *   porque a função que a tela chamaria nunca foi escrita. Toda função
      *   daqui é fiação: quem decide é o `CentroCusto`.
      *
-     * ⚠ O AGENTE DE APROPRIAÇÃO (js/ccagente.js) AINDA NÃO ESTÁ NESTA
-     *   INSTALAÇÃO. Ele é quem aplica regras (`cc_regras`) e decisões
-     *   (`cc_aprop`) sobre cada lançamento. Sem ele, o Realizado por centro
-     *   sai SÓ do vínculo com o orçamento (a etapa do lançamento → o centro
-     *   daquele nó), que é a régua que o Previsto × Realizado já usa hoje.
-     *   Isso é honesto enquanto não houver regra nem decisão no disco — e
-     *   quando houver, `_ccNumeros` para de afirmar e DIZ que não conferiu.
+     * ⚠ O AGENTE DE APROPRIAÇÃO (js/ccagente.js) É QUEM APLICA regras
+     *   (`cc_regras`) e decisões (`cc_aprop`) sobre cada lançamento. Com ele
+     *   aplicado (`_ccAgenteAplicado()`), o Realizado por centro sai do
+     *   `CCAgente.consolidar` — vínculo, regra e decisão, na cadeia da §4.3 —
+     *   e o Previsto × Realizado recebe as MESMAS partes (`partesPorNo`).
+     *   Sem ele (chave `ccAgente` desligada, ou o arquivo não carregou), o
+     *   Realizado sai SÓ do vínculo com o orçamento, e com regra ou decisão
+     *   no disco `_ccNumeros` para de afirmar e DIZ que não conferiu.
      *   Recado que mente é pior que recado nenhum.
      *
      * ⚠ ESTADO DE TELA NÃO SAI DAQUI. Nada nesta região escreve classe no
@@ -29615,6 +30031,7 @@ renderPatrimonio: function () {
         if (this._CC_ABAS.indexOf(String(o.aba)) > -1) e.aba = String(o.aba);
         if (o.obra != null && String(o.obra)) e.obra = String(o.obra);
         e.desativados = !!o.desativados;
+        if (o.regraFoco) e.regraFoco = String(o.regraFoco);
       } catch (er) {}
       this.__ccEstado = e;
       return e;
@@ -29646,13 +30063,38 @@ renderPatrimonio: function () {
      *   Número incompleto com cara de completo é o defeito que esta tela
      *   inteira existe para não cometer.
      *
-     *   Hoje `_ccNumeros` resolve o centro pelo VÍNCULO (`_ccFatos`), e só.
-     *   Quem ligar a conta ao `CCAgente.consolidar` troca o `false` abaixo
-     *   por `typeof CCAgente !== "undefined"` — e é o único lugar a mexer.
-     *   A aba FILA não depende disto: ela chama o agente direto, e o que ela
-     *   mostra é justamente o que ficou de fora desta conta.
+     *   ESTE É O ÚNICO LUGAR QUE RESPONDE "a conta passa pelo agente?", e
+     *   todas as portas perguntam aqui: `_ccNumeros` (a aba Centros, o CSV e
+     *   o quadro dos Relatórios), `_previstoRealDados` (o Previsto × Realizado
+     *   e o card do Painel), `_ccRefs` (a guarda de exclusão), o toast de quem
+     *   lança e a frase do Receber. Uma porta que perguntasse por conta
+     *   própria voltaria a pôr duas réguas na mesma tela.
+     *
+     * ⚠ AS TRÊS CONDIÇÕES, E A ORDEM:
+     *   1. o motor existe E tem `consolidar`/`partesPorNo` — um `ccagente.js`
+     *      velho em cache (só com a Fila) NÃO conta como aplicado: a tela
+     *      perguntaria a uma função que não existe e cairia no meio do render;
+     *   2. a chave `ccAgente` (`_medcc`, §1.10/§11.3). ⚠ FAIL-OPEN: chave
+     *      ausente no CONFIG e no localStorage vale LIGADA — é o padrão de
+     *      instalação (`CONFIG.medccRecursos.ccAgente: true`). Desligada, volta
+     *      a régua do vínculo e o aviso antigo; nada é apagado.
      * ------------------------------------------------------------- */
-    _ccAgenteAplicado: function () { return false; },
+    _ccAgenteAplicado: function () {
+      if (typeof CCAgente === "undefined" || !CCAgente) return false;
+      if (typeof CCAgente.consolidar !== "function" || typeof CCAgente.partesPorNo !== "function") return false;
+      return this._medcc("ccAgente");
+    },
+    /* por que a conta NÃO passa pelo agente — a frase que as telas usam
+       quando `_ccAgenteAplicado()` é falso. ⚠ Duas causas, dois recados: com
+       a chave desligada, "atualize" seria conselho falso (o motor está aqui);
+       com o arquivo ausente, "desligado" mandaria procurar uma chave que
+       ninguém mexeu. */
+    _ccPorqueSemAgente: function () {
+      if (typeof CCAgente === "undefined" || !CCAgente || typeof CCAgente.consolidar !== "function") {
+        return "o motor de apropriação (js/ccagente.js) não carregou neste aparelho — recarregue o app; se continuar, avise o suporte";
+      }
+      return "o agente de apropriação está desligado nesta instalação (chave ccAgente) — nada foi apagado, e religando a chave as regras e decisões voltam a valer";
+    },
 
     _ccPode: function (obraId, acao) {
       acao = acao || "ler";
@@ -29861,7 +30303,9 @@ renderPatrimonio: function () {
         fatos.push({ t: "lanc", id: String(f.id || ""), valor: v, no: no, viaCc: !!ccPed,
           cc: (d.cc && d.cc.id) ? String(d.cc.id) : "", motivo: d.motivo || (no || ccPed ? "" : motivoSemEtapa(f)),
           pago: (typeof FinStatus !== "undefined" && FinStatus.realizado) ? !!FinStatus.realizado(f) : String(f.status || "") === "pago",
-          desc: String(f.descricao || "") });
+          /* ⚠ o Financeiro grava `desc` (formFinanceiro, gasto rápido, as
+             portas de baixa); `descricao` é de documento — ver `_ccRotuloReg` */
+          desc: String(f.desc || f.descricao || "") });
       });
       var ehComp = (typeof ComprasLinha !== "undefined" && ComprasLinha.ehCompromisso)
         ? function (st) { return ComprasLinha.ehCompromisso(st); }
@@ -29891,6 +30335,182 @@ renderPatrimonio: function () {
     },
 
     /* ---------------------------------------------------------------
+     * _ccFatosAgente(ctx) — os MESMOS fatos do `_ccFatos`, resolvidos pelo
+     * agente (vínculo → regra → decisão, §4.3)
+     *
+     * ⚠ MESMA FORMA DE SAÍDA DO `_ccFatos`, DE PROPÓSITO. `_ccNumeros`,
+     *   `_ccLinhasDaObra`, o CSV, o quadro dos Relatórios, o toast de quem
+     *   lança e a guarda de exclusão leem `{t, id, valor, cc, motivo, pago}`
+     *   — trocar a régua por baixo sem mudar a forma é o que deixa UMA
+     *   conta para todos eles. Fato repartido entre centros vira uma linha
+     *   por parte (com `nPartes`), e as partes fecham ao centavo (I6).
+     * ⚠ OS CENTROS SÃO OS DO `ctx.ccsCrus`, não uma segunda leitura do
+     *   disco: a prévia da conversão monta um `ctx` com os centros JÁ
+     *   convertidos em memória e pergunta "como ficaria" pela mesma conta.
+     * ⚠ OBRA VAZIA = "SEM OBRA", como no `_ccFatos` — não "todas as obras".
+     *   O motor lê "" como todas; aqui ele recebe `null` e a saída é filtrada
+     *   pelos fatos sem obra, senão a linha "Sem obra" somaria a empresa
+     *   inteira.
+     * ------------------------------------------------------------- */
+    _ccFatosAgente: function (ctx) {
+      var obraId = String(ctx.obraId || "");
+      var ac = this._ccAgenteCtx(obraId);
+      ac.ccs = Util.arr(ctx.ccsCrus);
+      ac.obraId = obraId || null;
+      var r = CCAgente.consolidar(ac);
+      var cpPorId = {};
+      Util.arr(ac.compras).forEach(function (c) { if (c && c.id) cpPorId[String(c.id)] = c; });
+      var fatos = [], somaReal = 0, somaComp = 0, k;
+      var chaves = [];
+      for (k in r.porFato) if (Object.prototype.hasOwnProperty.call(r.porFato, k)) chaves.push(k);
+      chaves.sort();
+      chaves.forEach(function (ch) {
+        var e = r.porFato[ch];
+        if (String(e.obraId || "") !== obraId) return;
+        if (e.t === "boletim") return;
+        if (e.t === "lanc" && e.tipo !== "despesa") return;
+        /* ⚠ `viaCc` = QUEM DECIDIU (ver o ⚠ do `_ccFatos`): o centro veio do
+           `compra.ccId`, e aí "pela etapa do pedido" seria falso */
+        var viaCc = e.fonte === "centro do pedido";
+        if (!viaCc && e.t === "lanc" && e.via === "vinculo" && /^pedidos da nota/.test(e.fonte || "")) {
+          var fr = null;
+          Util.arr(ac.financeiro).forEach(function (f) { if (f && String(f.id) === e.id) fr = f; });
+          var cpN = fr && fr.compraId ? cpPorId[String(fr.compraId)] : null;
+          viaCc = !!(cpN && cpN.ccId);
+        }
+        var base = { t: e.t, id: e.id, no: e.no || "", viaCc: viaCc, via: e.via || "", regraNome: e.regraNome || "",
+          fonte: e.fonte || "", pago: !!e.pago, desc: e.rotulo || "" };
+        var partes = e.partes ? e.partes : (e.cc ? [{ cc: e.cc, c: e.valor }] : null);
+        var tot = Math.round(Util.num(e.valor)) / 100;
+        if (e.t === "pedido") somaComp += tot; else somaReal += tot;
+        if (!partes || e.motivo) {
+          var semC = {}, kk;
+          for (kk in base) if (Object.prototype.hasOwnProperty.call(base, kk)) semC[kk] = base[kk];
+          semC.valor = tot; semC.cc = ""; semC.motivo = e.motivo || "sem-apropriacao"; semC.nPartes = 0;
+          fatos.push(semC);
+          return;
+        }
+        partes.forEach(function (p) {
+          var um = {}, k3;
+          for (k3 in base) if (Object.prototype.hasOwnProperty.call(base, k3)) um[k3] = base[k3];
+          um.valor = Math.round(Util.num(p.c)) / 100; um.cc = String(p.cc || ""); um.motivo = ""; um.nPartes = partes.length;
+          fatos.push(um);
+        });
+      });
+      return { fatos: fatos, somaReal: somaReal, somaComp: somaComp, consolidado: r };
+    },
+
+    /* a tomada do Previsto × Realizado (`CustoEtapa.consolidar({apropriar})`,
+       §4.6). Mora na região dos centros de propósito: é a MESMA cadeia da
+       aba Centros, com o mesmo contexto (`_ccAgenteCtx`), e as bancadas que
+       medem uma medem a outra. */
+    _ccApropriarPR: function () {
+      var ac = this._ccAgenteCtx("");
+      ac.obraId = null;
+      return CCAgente.partesPorNo(ac);
+    },
+
+    /* "COMO FICARIA" A CONTA DOS CENTROS ANTIGOS DEPOIS DE CONVERTER — pela
+       MESMA conta da tela, com os centros convertidos só EM MEMÓRIA.
+       ⚠ Roteiro do que isto impede: com o agente aplicado, a obra ainda em
+       rateio não resolve fato nenhum (degrau 0, `obra-em-rateio`), então o
+       `porCentro` de ANTES da conversão é zero para todo centro antigo — e a
+       prévia diria "R$ 10.000,00 → R$ 0,00" para um centro que, convertido,
+       recebe na hora o pedido que aponta para ele (`compra.ccId`). Prévia que
+       mente a favor do "não converta" é tão ruim quanto a que mente a favor.
+       Sem o agente, a conta do vínculo não depende do modo e a de antes
+       serve. Nada aqui vai ao disco. */
+    _ccNumerosConvertido: function (ctx, escolhas) {
+      if (!this._ccAgenteAplicado()) return this._ccNumeros(ctx);
+      var obraId = String(ctx.obraId || ""), esc = escolhas || {};
+      var antigos = Util.arr(ctx.ccsCrus).filter(function (c) { return c && String(c.obraId || "") === obraId && Util.num(c.fmt) !== 2; });
+      var padrao = antigos.length === 1 ? "obra" : "lanc";
+      var ccsD = Util.arr(ctx.ccsCrus).map(function (c) {
+        if (!c || String(c.obraId || "") !== obraId || Util.num(c.fmt) === 2) return c;
+        var d = {}, k;
+        for (k in c) if (Object.prototype.hasOwnProperty.call(c, k)) d[k] = c[k];
+        d.fmt = 2; d.apura = esc[String(c.id)] || padrao;
+        return d;
+      });
+      var ctxD = {}, k2;
+      for (k2 in ctx) if (Object.prototype.hasOwnProperty.call(ctx, k2)) ctxD[k2] = ctx[k2];
+      ctxD.ccsCrus = ccsD;
+      ctxD.modo = CentroCusto.modoDaObra(obraId, ccsD);
+      return this._ccNumeros(ctxD);
+    },
+
+    /* o que MUDA DE CENTRO se a geração for aplicada (§4.7.1, crítica D8):
+       o `consolidar` de hoje contra o `consolidar` com os centros novos, os
+       reativados, os desativados e os convertidos aplicados EM MEMÓRIA — a
+       mesma `aplicarPrevia` que o [Gerar] grava, sem gravar. Devolve a saída
+       do `CentroCusto.movimentos`; `ok:false` quando não dá para conferir,
+       e aí a prévia DIZ que não conferiu (nunca "nada muda"). */
+    _ccMovimentosDaGeracao: function (r) {
+      var e = this._ccGerarEstado, prev = r.prev, ctx = r.ctx;
+      var conv = {};
+      Util.arr(prev.conversao).forEach(function (x) { if (x && x.ccId) conv[String(x.ccId)] = x.apuraDepois; });
+      /* ⚠ AS MESMAS ESCOLHAS DO [Gerar] (`ccGerarAplicar`), inclusive a
+         conversão tirada do BLOCO DA PRÉVIA e não só dos selects tocados — ver
+         o ⚠ de lá. Prévia com escolhas diferentes das que vão ao disco
+         mostraria movimentos que não acontecem. */
+      var esc = { conversao: conv, obraId: e.obraId, marcadas: e.marcadas, nomes: e.nomes, codigos: e.codigos };
+      var ap = CentroCusto.aplicarPrevia(prev, esc, Util.agoraISO(), r.quem, ctx.ccsCrus);
+      if (ap.recusa) return { ok: false, fatos: [], porPar: [], avisos: [{ tipo: "recusa", msg: ap.recusa.msg }] };
+      var novos = {}, ccsD = [];
+      ap.gravar.concat(ap.reativar, ap.desativar, ap.converter).forEach(function (c) { if (c && c.id) novos[String(c.id)] = c; });
+      Util.arr(ctx.ccsCrus).forEach(function (c) {
+        if (c && c.id && novos[String(c.id)]) { ccsD.push(novos[String(c.id)]); delete novos[String(c.id)]; } else ccsD.push(c);
+      });
+      var kN;
+      for (kN in novos) if (Object.prototype.hasOwnProperty.call(novos, kN)) ccsD.push(novos[kN]);
+      var acA = this._ccAgenteCtx(e.obraId); acA.ccs = Util.arr(ctx.ccsCrus);
+      var acD = this._ccAgenteCtx(e.obraId); acD.ccs = ccsD;
+      var mv = CentroCusto.movimentos(CCAgente.consolidar(acA), CCAgente.consolidar(acD));
+      mv.ccsDepois = ccsD;
+      return mv;
+    },
+    /* o parágrafo da prévia com os movimentos — texto, números e nomes */
+    _ccMovimentosHtml: function (mv) {
+      if (!mv || !mv.ok) {
+        var porque = this._ccAgenteAplicado()
+          ? ((mv && mv.avisos && mv.avisos[0] && mv.avisos[0].msg) || "a conta não fechou neste aparelho")
+          : this._ccPorqueSemAgente();
+        return '<p class="muted" style="margin-top:6px"><b>Não consegui conferir o que muda de centro</b> com esta geração: ' + Util.esc(porque) +
+          ". Os centros são criados; nenhum lançamento é alterado por esta ação.</p>";
+      }
+      var nomes = {};
+      Util.arr(mv.ccsDepois).forEach(function (c) { if (c && c.id) nomes[String(c.id)] = ((c.codigo ? c.codigo + " " : "") + (c.nome || "")).trim() || String(c.id); });
+      function nome(d) {
+        if (!d) return "sem centro";
+        if (d.indexOf("rateio:") === 0) return "dividido em " + d.slice(7).split("+").length + " centros";
+        return nomes[d] || ("centro apagado (id " + d.slice(0, 8) + "…)");
+      }
+      /* só o DINHEIRO que muda: despesa lançada e pedido comprometido. Boletim
+         e receita também são apropriados, mas "3 lançamentos mudam de centro"
+         contando uma medição seria número que ninguém confere no Financeiro */
+      var lf = Util.arr(mv.fatos).filter(function (f) { return /^(lanc|pedido):/.test(String(f.fato)); });
+      if (!lf.length) return '<p class="muted" style="margin-top:6px">Nenhum lançamento nem pedido muda de centro com esta geração.</p>';
+      var pares = {}, ordem = [], tot = 0, pagos = 0;
+      lf.forEach(function (f) {
+        var k = f.de + ">" + f.para;
+        if (!pares[k]) { pares[k] = { de: f.de, para: f.para, n: 0, v: 0, pagos: 0 }; ordem.push(k); }
+        pares[k].n++; pares[k].v += Util.num(f.valor); if (f.pago) { pares[k].pagos++; pagos++; }
+        tot += Util.num(f.valor);
+      });
+      ordem.sort(function (a, b) { return pares[b].v - pares[a].v || (a < b ? -1 : 1); });
+      var linhas = ordem.slice(0, 6).map(function (k) {
+        var p = pares[k];
+        return "<li>" + p.n + " (" + Util.esc(Util.fmtMoeda(p.v / 100)) + (p.pagos ? "; " + p.pagos + " pago(s)" : "") + "): " +
+          Util.esc(nome(p.de)) + " → " + Util.esc(nome(p.para)) + "</li>";
+      }).join("");
+      return '<div class="card" style="padding:10px 14px;margin-top:8px;border-left:3px solid var(--aco)">' +
+        "<b>Ao gerar: " + lf.length + " lançamento(s)/pedido(s) (" + Util.esc(Util.fmtMoeda(tot / 100)) + (pagos ? "; " + pagos + " já pago(s)" : "") +
+        ") mudam de centro</b>" + '<ul style="margin:6px 0 0;padding-left:18px">' + linhas + "</ul>" +
+        (ordem.length > 6 ? '<p class="muted" style="margin:4px 0 0">… e mais ' + (ordem.length - 6) + " caminho(s).</p>" : "") +
+        '<p class="muted" style="margin:6px 0 0">Nenhum lançamento é alterado no Financeiro: muda só em qual centro ele aparece.</p></div>';
+    },
+
+    /* ---------------------------------------------------------------
      * _ccNumeros(ctx) — Orçado / Comprometido / Realizado por centro
      * ------------------------------------------------------------- */
     _ccNumeros: function (ctx) {
@@ -29909,10 +30529,46 @@ renderPatrimonio: function () {
       try { nDec = Util.arr(Store.listar(eid(), "cc_aprop")).length; } catch (e2) {}
       if ((nReg + nDec) > 0 && !this._ccAgenteAplicado()) {
         out.conferido = false;
-        out.avisos.push("Esta instalação tem " + (nReg + nDec) + " regra(s) ou decisão(ões) de centro de custo gravadas, e o Realizado por centro abaixo ainda considera só o vínculo com o orçamento — não posso afirmar que ele está completo. A aba Fila mostra o que ficou de fora e por quê. Não há nada a fazer neste aparelho: a conta por regra chega numa próxima versão.");
+        /* ⚠ O PORQUÊ É DITO, e não "chega numa próxima versão": o motor já
+           está no pacote, e esse conselho mandaria a pessoa esperar por algo
+           que ela já tem (ver `_ccPorqueSemAgente`). */
+        out.avisos.push("Esta instalação tem " + (nReg + nDec) + " regra(s) ou decisão(ões) de centro de custo gravadas, e o Realizado por centro abaixo considera só o vínculo com o orçamento, porque " +
+          this._ccPorqueSemAgente() + " — não posso afirmar que ele está completo.");
       }
 
-      var fatos = this._ccFatos(ctx);
+      /* ⚠ A RÉGUA TROCA AQUI, E SÓ AQUI (ver `_ccAgenteAplicado`). Com o agente
+         aplicado, regra e decisão entram na conta; sem ele, o vínculo de
+         sempre. Se o agente estourar no meio (dado corrompido, módulo velho),
+         a tela NÃO afirma: cai no vínculo e diz que não conferiu. */
+      var fatos = null;
+      if (this._ccAgenteAplicado()) {
+        try { fatos = this._ccFatosAgente(ctx); }
+        catch (eAg) {
+          fatos = null;
+          out.conferido = false;
+          out.avisos.push("Não consegui aplicar as regras e decisões de centro de custo neste aparelho (" + String(eAg && eAg.message || eAg) +
+            "). Os números abaixo estão só pelo vínculo com o orçamento — não posso afirmar que eles estão completos.");
+        }
+      }
+      if (!fatos) fatos = this._ccFatos(ctx);
+      /* ⚠ I1 CONFERIDA NA TELA, com as quatro parcelas do próprio agente:
+         em centros da obra + em centros da empresa + sem centro = total vivo.
+         Se não fechar, o dinheiro sumiu ou apareceu entre o motor e a tela —
+         e a tela DIZ os dois números em vez de escolher um. */
+      if (fatos.consolidado) {
+        var oI1 = String(ctx.obraId || "") ? fatos.consolidado.obras[String(ctx.obraId)] : fatos.consolidado.semObra;
+        if (oI1) {
+          var parc = Util.num(oI1.emCentrosDaObra) + Util.num(oI1.emCentrosDaEmpresa) + Util.num(oI1.semCentro);
+          if (Math.round(parc) !== Math.round(Util.num(oI1.totalVivo)) || Math.abs(Util.num(oI1.totalVivo) / 100 - fatos.somaReal) > 0.011) {
+            out.conferido = false;
+            out.avisos.push("Não consegui conferir a apropriação desta obra: as parcelas por centro somam " + Util.fmtMoeda(parc / 100) +
+              " e o gasto da obra é " + Util.fmtMoeda(Util.num(oI1.totalVivo) / 100) + ". Os números por centro abaixo podem estar incompletos.");
+          }
+        }
+        Util.arr(fatos.consolidado.avisos).forEach(function (a) {
+          if (a && a.tipo === "cc-total-diverge" && String(a.obraId || "") === String(ctx.obraId || "")) { out.conferido = false; out.avisos.push(String(a.msg || "")); }
+        });
+      }
       out.fatos = fatos.fatos;
       fatos.fatos.forEach(function (f) {
         var campo = f.t === "pedido" ? "comp" : "porCentro";
@@ -30096,14 +30752,1128 @@ renderPatrimonio: function () {
     },
 
     /* ---------------------------------------------------------------
-     * Aba FILA — o dinheiro que ainda não tem centro, e POR QUÊ
+     * D20 NA GERAÇÃO E NA CONVERSÃO (§4.7.3): os PAGOS que mudam de centro
      *
-     * ⚠ ELA LISTA E EXPLICA; ELA AINDA NÃO DECIDE. O botão [Apropriar]
-     *   depende da `_ccGravarEscolha`, que não existe nesta versão — e porta
+     * ⚠ GERAR CENTROS MOVE DINHEIRO JÁ PAGO, e a pessoa tem de ver quanto.
+     *   Roteiro: obra com a etapa 4 inteira num centro e R$ 30.000 de despesa
+     *   paga carimbada na subetapa 4.2 → gerar por subetapa cria o 4.2 e o
+     *   Realizado dos R$ 30.000 pula de centro. O Financeiro não muda, mas o
+     *   número que autoriza a próxima compra muda — e mudar o centro de
+     *   dinheiro pago é decisão da pessoa, com o valor e a data na cara
+     *   (skill `dinheiro` §6, K18). A régua é a mesma do `_ccGravarEscolha`:
+     *   lançamento vivo quitado, sem `estornoDe` e sem espelho; boletim e
+     *   pedido ficam de fora porque o "pago" deles é o lançamento carimbado,
+     *   que já está na lista.
+     * ------------------------------------------------------------- */
+    _ccPagosDoMovimento: function (mv) {
+      var out = { n: 0, valor: 0, maisRecente: "", lista: [] };
+      if (!mv || !mv.ok) return out;
+      var fin = {}, estornados = {}, cents = 0;
+      listaTodas("financeiro").forEach(function (f) {
+        if (!f || !f.id) return;
+        fin[String(f.id)] = f;
+        if (f.estornoDe) estornados[String(f.estornoDe)] = 1;
+      });
+      var nomes = {};
+      Util.arr(mv.ccsDepois || listaTodas("centrocusto")).forEach(function (c) { if (c && c.id) nomes[String(c.id)] = ((c.codigo ? c.codigo + " " : "") + (c.nome || "")).trim() || String(c.id); });
+      function nome(dd) {
+        if (!dd) return "sem centro (Fila)";
+        if (String(dd).indexOf("rateio:") === 0) return "dividido em " + String(dd).slice(7).split("+").length + " centros";
+        return nomes[dd] || ("centro apagado (id " + String(dd).slice(0, 8) + "…)");
+      }
+      Util.arr(mv.fatos).forEach(function (f) {
+        var m = /^lanc:(.*)$/.exec(String(f.fato || ""));
+        if (!m || !f.pago) return;
+        var r = fin[m[1]];
+        if (!r || r.estornoDe || estornados[m[1]]) return;
+        out.n++; cents += Math.round(Util.num(f.valor));
+        var dp = String(f.dataPgto || r.dataPgto || r.dataRecebimento || "").slice(0, 10);
+        if (dp && dp > out.maisRecente) out.maisRecente = dp;
+        out.lista.push({ fato: m[1], valor: Math.round(Util.num(f.valor)) / 100, dataPgto: dp,
+          rotulo: String(r.desc || r.descricao || r.numero || m[1]), deNome: nome(f.de), paraNome: nome(f.para) });
+      });
+      out.valor = cents / 100;
+      return out;
+    },
+    /* a confirmação trazida pela caixa vale para ESTE número? */
+    _ccConfirmacaoVale: function (conf, pg) {
+      return !!(conf && conf.n === pg.n && Math.round(Util.num(conf.valor) * 100) === Math.round(pg.valor * 100));
+    },
+    /* ===================================================================
+     * GRAVAR A DECISÃO DA PESSOA (`cc_aprop`) — §4.10, §1.7, §1.12-9, D20
+     *
+     * ⚠ ESTE É O ÚNICO LUGAR QUE ESCREVE `cc_aprop`. A Fila, o [Mudar
+     *   centro] e o [Voltar para a fila] da aba Centros e o lote passam
+     *   todos por aqui (`_ccGravarEscolha` para uma, `_ccGravarEscolhas`
+     *   para várias), e as duas perguntam ao MESMO planejador
+     *   (`_ccEscolhasPlano`). Duas cópias das guardas foram, nesta base, o
+     *   formato exato em que uma porta de dinheiro esqueceu uma delas — a
+     *   v1.1.232 copiou a despesa da compra para o formulário e esqueceu o
+     *   estoque (skill `dinheiro` §3).
+     *
+     * ⚠ AS GUARDAS MORAM NA FUNÇÃO, NUNCA SÓ NO BOTÃO. O dispatcher de
+     *   `data-gacao` é global: esconder o [Apropriar…] de quem não pode
+     *   gravar não impede a ação de chegar por outro caminho. Chave
+     *   `ccAgente`, licença, módulo + obra, chave vazia, espelho de estorno e
+     *   obra em rateio são conferidos AQUI, antes de qualquer gravação.
+     *
+     * ⚠ D20 — PAGO SÓ MUDA DE CENTRO COM A PESSOA CONFIRMANDO O NÚMERO ATUAL.
+     *   "Pago" é a pergunta ao LANÇAMENTO (vivo, quitado, sem `estornoDe`,
+     *   sem espelho apontando para ele), nunca ao `dataPgto` do documento,
+     *   que reabrir apaga de propósito (skill `dinheiro` §5). A conta é a
+     *   `CCAgente.pagosAfetados` sobre TODOS os fatos da obra, antes × depois
+     *   da decisão — e não só o fato da linha: decidir o pedido move a
+     *   despesa dele E a parcela da nota que o cobre. A confirmação vale
+     *   para o `n` e o `valor` que ela mostrou: se entre o clique e a
+     *   gravação outro aparelho pagou mais um, o número mudou e a função
+     *   recusa de novo com o número novo — confirmar um valor e gravar outro
+     *   é assinar papel em branco.
+     *
+     * ⚠ NUNCA TOCA `financeiro`, `compras`, `medicoes` NEM DOCUMENTO NENHUM.
+     *   A decisão diz em qual centro o dinheiro APARECE; o dinheiro continua
+     *   onde está. Mexer no lançamento para "levar" o centro seria mover
+     *   dinheiro pago por um clique de classificação — `test-cc-gravar-escolha`
+     *   compara o md5 das três entidades antes e depois de toda gravação.
+     *
+     * ⚠ DECISÃO IGUAL À CADEIA NÃO É GRAVADA (§4.10). Gravar "CC-02" onde o
+     *   vínculo já dá CC-02 parece inofensivo e não é: no dia em que alguém
+     *   corrigir o vínculo (a etapa do pedido, a regra), a decisão velha
+     *   continua vencendo calada e o conserto não aparece. Se já havia
+     *   decisão e a escolha agora é igual à cadeia, ela é APAGADA.
+     * ================================================================ */
+    _CC_K_DECISAO: { MED: 1, PC: 1, NF: 1, FOL: 1, PON: 1, FSM: 1, FRT: 1, CARP: 1, FIN: 1 },
+    /* tetos da §1.7/K29, medidos ANTES de gravar (§1.12-7) */
+    _CC_TETO_APROP_N: 2000,
+    _CC_TETO_APROP_BYTES: 665600,   /* 650 KB */
+    _ccQuem: function () {
+      var q = "";
+      try { q = (Auth.usuario && Auth.usuario() && (Auth.usuario().nome || Auth.usuario().email)) || ""; } catch (e) { q = ""; }
+      return String(q).slice(0, 40);
+    },
+    /* HH:MM local de um instante ISO — o recado do carimbo diz QUANDO */
+    _ccHora: function (iso) {
+      var d = new Date(String(iso || ""));
+      if (isNaN(d.getTime())) return "?";
+      function p2(n) { return (n < 10 ? "0" : "") + n; }
+      return p2(d.getHours()) + ":" + p2(d.getMinutes());
+    },
+    /* a frase do pago: "Este lançamento de R$ 19.500,00 já foi pago em 15/09/2026" */
+    _ccTxtPagos: function (pg) {
+      if (!pg || !pg.n) return "";
+      /* ⚠ SEM DATA DE PAGAMENTO NO LANÇAMENTO, O RECADO DIZ ISSO — não troca
+         pela data do lançamento, que não é a do pagamento (lançamento antigo
+         sem status conta como pago, §4.1, e pode não ter `dataPgto`). */
+      if (pg.n === 1) return "Este lançamento de " + Util.fmtMoeda(pg.valor) + " já foi pago" + (pg.maisRecente ? " em " + Util.fmtDia(pg.maisRecente) : " (a data do pagamento não está registrada)") + " — confirme para mudar o centro.";
+      return pg.n + " lançamentos já pagos (" + Util.fmtMoeda(pg.valor) + (pg.maisRecente ? "; o mais recente pago em " + Util.fmtDia(pg.maisRecente) : "; a data do pagamento não está registrada") + ") mudam de centro — confirme para mudar.";
+    },
+    _ccNomeCentro: function (id, ccs) {
+      var i, l = Util.arr(ccs);
+      for (i = 0; i < l.length; i++) {
+        if (l[i] && String(l[i].id) === String(id)) return ((l[i].codigo ? l[i].codigo + " " : "") + (l[i].nome || "")).trim() || String(id);
+      }
+      return "centro apagado (id " + String(id).slice(0, 8) + "…)";
+    },
+    /* a chave da decisão de um fato do agente — a mesma que o `resolver` lê
+       nos degraus 2 e 3. ⚠ Lançamento avulso e gasto rápido decidem pelo
+       PRÓPRIO id (`FIN_`, degrau 2): uma chave `RAP_` também seria lida (no
+       degrau 3), e duas chaves para o mesmo lançamento fariam a segunda
+       decisão ficar invisível atrás da primeira. Espelho não tem chave. */
+    _ccChaveDoFato: function (f) {
+      if (!f) return null;
+      if (f.t === "boletim") return { k: "MED", d: String(f.id || "") };
+      if (f.t === "pedido") return { k: "PC", d: String(f.id || "") };
+      var k = String(f.k || "");
+      if (k === "ESP") return null;
+      if (k === "FIN" || k === "RAP" || !k) return { k: "FIN", d: String(f.id || "") };
+      return { k: k, d: String(f.d || "") };
+    },
+    /* o fato pertence à decisão `id`? (a chave própria FIN_ ou a do documento) */
+    _ccFatoDaChave: function (f, id) {
+      if (!f) return false;
+      if (f.t === "lanc" && ("ap_FIN_" + String(f.id || "")) === id) return true;
+      var ch = this._ccChaveDoFato(f);
+      return !!(ch && ch.d && ("ap_" + ch.k + "_" + ch.d) === id);
+    },
+    _ccEscolhaIgual: function (a, b) {
+      function sig(x) {
+        if (!x) return "";
+        if (x.cc) return "cc:" + String(x.cc);
+        var l = Util.arr(x.pt).map(function (p) { return String(p.c) + ":" + Math.round(Util.num(p.p)); });
+        l.sort();
+        if (l.length) return "pt:" + l.join(",");
+        /* ⚠ O RESTO DO BOLETIM POR ITENS (`rs`, §1.7/§4.3-4b) É OUTRA
+           DECISÃO, e não "nenhuma": sem este ramo `{rs:{cc:X}}` assinava ""
+           e o segundo clique igual não era reconhecido como o mesmo. */
+        if (x.rs && x.rs.cc) return "rs:" + String(x.rs.cc);
+        return "";
+      }
+      return sig(a) !== "" && sig(a) === sig(b);
+    },
+    _ccMotivoDestino: function (motivo, ccId, ccs, fato) {
+      var nome = this._ccNomeCentro(ccId, ccs);
+      if (motivo === "destino-cabecalho") return "o centro " + nome + " é o cabeçalho “obra inteira” — ele não recebe lançamento. Escolha um centro da lista";
+      if (motivo === "destino-outra-obra") return "o centro " + nome + " é de outra obra — o lançamento é desta obra. Escolha um centro desta obra ou um centro da empresa";
+      if (motivo === "destino-desativado") {
+        var c = null;
+        Util.arr(ccs).forEach(function (x) { if (x && String(x.id) === String(ccId)) c = x; });
+        return "o centro " + nome + " está desativado" + (c && c.desativadoEm ? " desde " + Util.fmtDia(String(c.desativadoEm).slice(0, 10)) : "") +
+          " e o lançamento é de " + Util.fmtDia(fato && fato.data) + ". Reative o centro (aba Centros, mostrar desativados) ou escolha outro";
+      }
+      return "o centro escolhido não existe mais neste aparelho (" + nome + "). Recarregue a tela e escolha outro";
+    },
+
+    /* ---------------------------------------------------------------
+     * _ccEscolhasPlano(itens, opts) — valida TUDO, calcula o D20 e devolve
+     * o que gravar. NÃO GRAVA NADA. Item: {k, d, obraId, escolha, baseEm,
+     * rotulo, via, nota}. `escolha` = id do centro, {cc}, {pt:[{c,p}]} ou
+     * null (voltar para a regra/fila).
+     * ------------------------------------------------------------- */
+    _ccEscolhasPlano: function (itens, opts) {
+      var self = this;
+      opts = opts || {};
+      function nao(msg, extra) {
+        var r = { ok: false, msg: msg }, k;
+        if (extra) for (k in extra) if (Object.prototype.hasOwnProperty.call(extra, k)) r[k] = extra[k];
+        return r;
+      }
+      /* ---- 1. o recurso está ligado e o motor está aqui --------------- */
+      if (!this._medcc("ccAgente")) {
+        return nao("A apropriação por centro de custo está desligada nesta instalação (chave ccAgente) — recurso desligado nesta instalação. Nada foi gravado e nada foi apagado.", { motivo: "chave" });
+      }
+      if (typeof CCAgente === "undefined" || !CCAgente || typeof CCAgente.resolver !== "function" ||
+          typeof CCAgente.pagosAfetados !== "function" || typeof CCAgente.validarDestino !== "function") {
+        return nao("O motor de apropriação (js/ccagente.js) não carregou neste aparelho — nada foi gravado. Recarregue o app; se continuar, avise o suporte.", { motivo: "motor" });
+      }
+      /* ---- 2. licença (as DUAS perguntas da §4.10, nesta ordem) -------- */
+      if (this._bloqueado()) return nao("Modo demonstração — ative sua licença para gravar a decisão do centro de custo. Nada foi gravado.", { motivo: "licenca", avisado: true });
+      if (typeof App !== "undefined" && App && App._trialBloqueado && App._trialBloqueado()) {
+        return nao("Modo demonstração — ative sua licença para gravar a decisão do centro de custo. Nada foi gravado.", { motivo: "licenca" });
+      }
+      itens = Util.arr(itens);
+      if (!itens.length) return nao("Nada para gravar: nenhuma linha escolhida.", { motivo: "vazio" });
+      /* ⚠ O LOTE TEM TETO, E A PORTA É A REGRA. Quinhentas decisões de uma
+         vez é o sinal de que a pessoa está resolvendo à mão o que uma regra
+         resolve (K40) — e cada decisão ocupa o documento da nuvem. */
+      if (itens.length > 500) return nao("Não gravei: são " + itens.length + " linhas de uma vez. Para tanto lançamento parecido, crie uma regra (aba Regras) em vez de decidir um a um.", { motivo: "lote-grande" });
+
+      var ccsCrus = listaTodas("centrocusto");
+      var decisoes = listaTodas("cc_aprop");
+      var decPorId = {};
+      decisoes.forEach(function (x) { if (x && x.id) decPorId[String(x.id)] = x; });
+      var finPorId = {};
+      listaTodas("financeiro").forEach(function (f) { if (f && f.id) finPorId[String(f.id)] = f; });
+      var restrito = false;
+      try { restrito = !!(typeof Auth !== "undefined" && Auth.obrasPermitidas && Array.isArray(Auth.obrasPermitidas())); } catch (eA) { restrito = false; }
+
+      /* ---- 3. cada item, na forma: chave, permissão, espelho, modo ---- */
+      var norm = [], vistos = {}, i;
+      for (i = 0; i < itens.length; i++) {
+        var it = itens[i] || {};
+        var k = String(it.k || "").trim(), d = String(it.d == null ? "" : it.d).trim(), obraId = String(it.obraId || "");
+        if (k === "RAP") k = "FIN";
+        var rot = String(it.rotulo || "") || ("o lançamento " + d);
+        /* ⚠ CHAVE VAZIA É RECUSADA (crítica D14): `ap_PC_` seria a MESMA
+           chave para todo lançamento com o carimbo sem documento, e uma
+           decisão tomada num valeria para todos, em qualquer obra. */
+        if (!d) return nao("Não gravei: " + rot + " não tem o id do documento — uma decisão sem chave valeria para todo lançamento na mesma situação. Decida pelo próprio lançamento, na aba Fila.", { motivo: "d-vazio" });
+        /* ⚠ ESPELHO DE ESTORNO NÃO TEM DECISÃO PRÓPRIA (§1.7): ele segue o
+           original, com o sinal dele. Decidir o crédito separado da despesa
+           que ele desfaz deixaria um centro com o gasto e outro com o
+           estorno — o total fecha em zero e os dois centros mentem. */
+        var esp = k === "ESP" ? d : ((k === "FIN" && finPorId[d] && finPorId[d].estornoDe) ? String(finPorId[d].estornoDe) : "");
+        if (esp) {
+          return nao("Não gravei: " + rot + " é o ESTORNO de outro lançamento — ele segue o centro do original e não tem decisão própria. Mude o centro do lançamento original.",
+            { motivo: "espelho", porta: { rotulo: "Abrir o original", abrir: ["financeiro", esp] } });
+        }
+        if (!this._CC_K_DECISAO[k]) return nao("Não gravei: a origem “" + k + "” de " + rot + " não aceita decisão de centro de custo.", { motivo: "k-invalido" });
+        var pode = this._ccPode(obraId, "gravar");
+        if (!pode.ok) return nao(pode.msg, { motivo: "permissao" });
+        /* §7: decisão "sem obra" só para quem vê todas as obras */
+        if (!obraId && restrito) return nao("Esta decisão é de despesa sem obra — só quem enxerga todas as obras pode gravá-la.", { motivo: "permissao" });
+        /* ⚠ OBRA EM RATEIO: NENHUM DESTINO VALE (degrau 0). A decisão
+           gravada ali não apareceria em lugar nenhum — o agente não resolve
+           fato de obra que ainda divide pelo orçado — e a pessoa acharia que
+           decidiu. A porta é a conversão, com a prévia antes → depois. */
+        if (obraId && CentroCusto.modoDaObra(obraId, ccsCrus).modo === "legado-rateio") {
+          return nao("Não gravei: esta obra ainda divide o gasto pelos centros antigos, pelo valor orçado — nenhum centro vale para lançamento dela até a conversão. Use [Converter os centros antigos…] (a prévia mostra o antes → depois).",
+            { motivo: "obra-em-rateio", porta: { rotulo: "Converter os centros antigos…", gacao: "cc-converter", obra: obraId } });
+        }
+        var es = it.escolha, alvo = null;
+        if (es === null || es === undefined || es === "" || es === "__fila__") alvo = null;
+        else if (typeof es === "string") alvo = { cc: es };
+        else if (es && typeof es === "object" && es.cc) alvo = { cc: String(es.cc) };
+        /* o RESTO do boletim por itens ([Decidir o resto], §4.10): só a parte
+           dos itens cujas etapas não têm centro. ⚠ Só em boletim (`MED`): em
+           qualquer outro documento o `resolver` nunca lê `rs`, e a decisão
+           gravada não apareceria em lugar nenhum — a pessoa acharia que
+           decidiu. */
+        else if (es && typeof es === "object" && es.rs && String(es.rs.cc || "")) {
+          if (k !== "MED") return nao("Não gravei: só o boletim medido por itens tem “resto” para decidir — " + rot + " não é um boletim.", { motivo: "escolha" });
+          alvo = { rs: { cc: String(es.rs.cc) } };
+        }
+        else if (es && typeof es === "object" && Util.arr(es.pt).length) {
+          var pt = Util.arr(es.pt), soma = 0, rep = {}, okPt = pt.length >= 2 && pt.length <= 6;
+          pt.forEach(function (p) {
+            var c = p && String(p.c || p.cc || ""), pp = p ? Math.round(Util.num(p.p)) : 0;
+            if (!c || rep[c] || !(pp > 0)) okPt = false;
+            rep[c] = 1; soma += pp;
+          });
+          if (!okPt || soma !== 10000) return nao("Não gravei: a divisão de " + rot + " precisa de 2 a 6 centros diferentes somando 100% (hoje soma " + Util.fmtNum(soma / 100, 2) + "%). Para dividir entre mais centros, crie uma regra.", { motivo: "partes" });
+          alvo = { pt: pt.map(function (p) { return { c: String(p.c || p.cc), p: Math.round(Util.num(p.p)) }; }) };
+        } else return nao("Não gravei: a escolha de centro de " + rot + " veio vazia ou num formato que eu não conheço.", { motivo: "escolha" });
+        var id = CCAgente.chaveDa(k, d);
+        if (vistos[id]) return nao("Não gravei: " + rot + " aparece duas vezes nesta seleção — desmarque uma das linhas.", { motivo: "repetido" });
+        vistos[id] = 1;
+        norm.push({ k: k, d: d, obraId: obraId, id: id, alvo: alvo, rot: rot, existe: decPorId[id] || null,
+          baseEm: it.baseEm, via: String(it.via || ""), nota: String(it.nota || "").slice(0, 120), fatos: [], acao: "" });
+      }
+
+      /* ---- 4. os fatos de cada decisão, pela conta de hoje ----------- */
+      var obrasEnv = {}, nObras = 0, oUnica = "";
+      norm.forEach(function (x) { if (!obrasEnv[x.obraId]) { obrasEnv[x.obraId] = 1; nObras++; oUnica = x.obraId; } });
+      var ac = this._ccAgenteCtx(nObras === 1 ? oUnica : "");
+      if (nObras !== 1) ac.obraId = "";
+      var Ia = CCAgente.montarIndice(ac);
+      var fs = CCAgente.fatos(ac, Ia);
+      norm.forEach(function (x) {
+        fs.forEach(function (f) { if (self._ccFatoDaChave(f, x.id)) x.fatos.push(f); });
+        for (var j = 0; j < x.fatos.length; j++) {
+          if (String(x.fatos[j].obraId || "") !== x.obraId) { x.erroObra = true; break; }
+        }
+      });
+      for (i = 0; i < norm.length; i++) {
+        if (norm[i].erroObra) return nao("Não gravei: a obra informada para " + norm[i].rot + " não é a obra do lançamento. Recarregue a tela e escolha de novo.", { motivo: "obra-diferente", porta: { rotulo: "Recarregar", render: true } });
+      }
+
+      /* ---- 5. idempotência e carimbo da tela -------------------------- */
+      for (i = 0; i < norm.length; i++) {
+        var x = norm[i], ex = x.existe;
+        /* ⚠ A MESMA DECISÃO DUAS VEZES É UM REGISTRO SÓ. O segundo clique
+           (resposta perdida, duplo clique) não reescreve nem recusa: ele
+           confere que o disco já diz isso e devolve ok. */
+        if (x.alvo && ex && this._ccEscolhaIgual({ cc: ex.cc, pt: ex.pt, rs: ex.rs }, x.alvo)) { x.acao = "igual"; continue; }
+        if (!x.alvo && !ex) { x.acao = "nada"; continue; }
+        /* ⚠ CARIMBO: a tela diz qual decisão ela viu (`baseEm`); se o disco
+           tem outra, alguém decidiu por cima noutra janela ou aparelho, e
+           gravar agora apagaria a escolha dela sem que a pessoa daqui a
+           tivesse lido. */
+        var base = String(x.baseEm == null ? "" : x.baseEm), atual = ex ? String(ex.atualizadoEm || "") : "";
+        if (base !== atual) {
+          return nao(ex
+            ? "Não gravei: a decisão de centro de " + x.rot + " foi mudada em outra janela ou aparelho às " + this._ccHora(atual) +
+              (ex.por ? " (" + String(ex.por) + ")" : "") + ". Recarregue a tela para ver a decisão que vale agora e escolha de novo."
+            : "Não gravei: a decisão de centro de " + x.rot + " foi apagada em outra janela ou aparelho. Recarregue a tela para ver o que vale agora.",
+            { motivo: "carimbo", porta: { rotulo: "Recarregar", render: true } });
+        }
+      }
+
+      /* ---- 6. destino válido (§4.3), na lista CRUA -------------------- */
+      for (i = 0; i < norm.length; i++) {
+        var y = norm[i];
+        if (y.acao || !y.alvo) continue;
+        var alvos = y.alvo.cc ? [y.alvo.cc] : (y.alvo.rs ? [y.alvo.rs.cc] : y.alvo.pt.map(function (p) { return p.c; }));
+        var refs = y.fatos.length ? y.fatos : [{ obraId: y.obraId, data: hojeLocal() }];
+        for (var a = 0; a < alvos.length; a++) {
+          for (var b = 0; b < refs.length; b++) {
+            var vd = CCAgente.validarDestino(alvos[a], refs[b], Ia, "pessoa");
+            if (!vd.ok) return nao("Não gravei " + y.rot + ": " + this._ccMotivoDestino(vd.motivo, alvos[a], ccsCrus, refs[b]) + ".", { motivo: vd.motivo });
+          }
+        }
+      }
+
+      /* ---- 7. o estado DEPOIS e a decisão igual à cadeia ------------- */
+      function acComDecisoes(lst) {
+        var c = {}, kk;
+        for (kk in ac) if (Object.prototype.hasOwnProperty.call(ac, kk)) c[kk] = ac[kk];
+        c.decisoes = lst;
+        return c;
+      }
+      var mexidos = {};
+      norm.forEach(function (z) { if (!z.acao) mexidos[z.id] = z; });
+      var semEles = decisoes.filter(function (r) { return !(r && mexidos[String(r.id)]); });
+      var comEles = semEles.slice(0);
+      norm.forEach(function (z) { if (!z.acao && z.alvo) comEles.push({ id: z.id, obraId: z.obraId, cc: z.alvo.cc, pt: z.alvo.pt, rs: z.alvo.rs }); });
+      var Isem = CCAgente.montarIndice(acComDecisoes(semEles));
+      var Icom = CCAgente.montarIndice(acComDecisoes(comEles));
+      norm.forEach(function (z) {
+        if (z.acao) return;
+        if (!z.alvo) { z.acao = "excluir"; return; }
+        /* sem fato no disco não há cadeia para comparar: grava */
+        if (!z.fatos.length) { z.acao = "gravar"; return; }
+        var igual = true, fonte = "";
+        z.fatos.forEach(function (f) {
+          var rs = CCAgente.resolver(f, Isem, 0), rc = CCAgente.resolver(f, Icom, 0);
+          if (CCAgente.assinaturaPartes(rs) !== CCAgente.assinaturaPartes(rc) || !rs.ok) igual = false;
+          if (rs.ok && !fonte) fonte = rs.via === "regra" ? ("a regra “" + (rs.regraNome || "") + "”") : "o vínculo com o orçamento";
+        });
+        if (igual) { z.acao = z.existe ? "excluir-cadeia" : "nada-cadeia"; z.fonte = fonte; }
+        else z.acao = "gravar";
+      });
+
+      /* ---- 8. D20: os pagos que mudam de centro ----------------------- */
+      var finais = semEles.slice(0);
+      norm.forEach(function (z) {
+        if (z.acao === "gravar") finais.push({ id: z.id, obraId: z.obraId, cc: z.alvo.cc, pt: z.alvo.pt, rs: z.alvo.rs });
+        else if (z.acao === "igual" || z.acao === "nada" || z.acao === "nada-cadeia") { if (z.existe) finais.push(z.existe); }
+      });
+      var Id = CCAgente.montarIndice(acComDecisoes(finais));
+      var estornados = {};
+      Util.arr(ac.financeiro).forEach(function (f) { if (f && f.estornoDe) estornados[String(f.estornoDe)] = 1; });
+      /* ⚠ SÓ O LANÇAMENTO VIVO QUITADO CONTA (D20). O boletim e o pedido
+         são fatos também, mas "pago" deles é a receita/despesa carimbada —
+         que já está nesta lista como lançamento. Contar os dois pediria
+         confirmação do mesmo dinheiro duas vezes, com o dobro do valor. */
+      var fsPagos = fs.filter(function (f) {
+        var r = f && f.reg;
+        return f && f.t === "lanc" && f.pago && !(r && r.estornoDe) && !estornados[String(f.id)];
+      });
+      var pg = CCAgente.pagosAfetados(fsPagos,
+        function (f) { return CCAgente.resolver(f, Ia, 0); },
+        function (f) { return CCAgente.resolver(f, Id, 0); }, ac.reguas);
+      pg.lista.forEach(function (l) {
+        var r = finPorId[String(l.fato)];
+        /* ⚠ `desc` PRIMEIRO: é o campo que o Financeiro grava. Lendo só
+           `descricao` (o de documento), a caixa do D20 listava o id do
+           lançamento ("fin_mufz35to5b5s86 — R$ 9.500,00") no lugar da
+           descrição — medido no navegador, e-2e-cc-selects [3]. */
+        l.rotulo = r ? String(r.desc || r.descricao || r.numero || l.fato) : String(l.fato);
+        l.deNome = l.de ? (l.de.indexOf(",") > -1 ? "dividido em " + l.de.split(",").length + " centros" : self._ccNomeCentro(l.de.split(":")[0], ccsCrus)) : "sem centro (Fila)";
+        l.paraNome = l.para ? (l.para.indexOf(",") > -1 ? "dividido em " + l.para.split(",").length + " centros" : self._ccNomeCentro(l.para.split(":")[0], ccsCrus)) : "sem centro (Fila)";
+      });
+      if (pg.n > 0) {
+        var cp = opts.confirmadoPago;
+        if (!cp || cp.n !== pg.n || Math.round(Util.num(cp.valor) * 100) !== Math.round(pg.valor * 100)) {
+          return nao(this._ccTxtPagos(pg), { motivo: "pago", pagos: pg });
+        }
+      }
+
+      /* ---- 9. tetos e o registro enxuto (§1.7) ------------------------ */
+      var quem = this._ccQuem();
+      var gravar = [], excluir = [];
+      norm.forEach(function (z) {
+        if (z.acao === "excluir" || z.acao === "excluir-cadeia") { excluir.push(z.id); return; }
+        if (z.acao !== "gravar") return;
+        var reg = { id: z.id, obraId: z.obraId };
+        if (z.alvo.cc) reg.cc = z.alvo.cc; else if (z.alvo.rs) reg.rs = { cc: z.alvo.rs.cc }; else reg.pt = z.alvo.pt;
+        if (z.via === "h" || z.via === "i") reg.v = z.via;
+        if (z.nota) reg.n = z.nota;
+        var ex = z.existe;
+        if (ex && (ex.cc || Util.arr(ex.pt).length || (ex.rs && ex.rs.cc))) {
+          var ant = ex.cc ? { c: String(ex.cc) } : (Util.arr(ex.pt).length ? { pt: Util.arr(ex.pt).length } : { rs: String(ex.rs.cc) });
+          ant.em = String(ex.atualizadoEm || ex.criadoEm || "").slice(0, 10);
+          reg.h = [ant].concat(Util.arr(ex.h)).slice(0, 2);
+        }
+        reg.por = quem;
+        if (ex && ex.criadoEm) reg.criadoEm = String(ex.criadoEm);
+        z.registro = reg;
+        gravar.push(reg);
+      });
+      for (i = 0; i < gravar.length; i++) {
+        if (!Util.semListaAninhada(gravar[i])) return nao("Não gravei: a decisão de centro saiu num formato que a nuvem não aceita (lista dentro de lista). Avise o suporte.", { motivo: "forma" });
+      }
+      var fica = {};
+      decisoes.forEach(function (r) { if (r && r.id) fica[String(r.id)] = r; });
+      excluir.forEach(function (idE) { delete fica[idE]; });
+      gravar.forEach(function (r) { fica[String(r.id)] = r; });
+      var nFinal = 0, kf;
+      for (kf in fica) if (Object.prototype.hasOwnProperty.call(fica, kf)) nFinal++;
+      var bytes = 0;
+      try { for (kf in fica) if (Object.prototype.hasOwnProperty.call(fica, kf)) bytes += JSON.stringify(fica[kf]).length + 1; } catch (eB) { bytes = 0; }
+      if (gravar.length && (nFinal > this._CC_TETO_APROP_N || bytes > this._CC_TETO_APROP_BYTES)) {
+        return nao("Não gravei: as decisões de centro de custo da empresa passariam de " + (nFinal > this._CC_TETO_APROP_N ? this._CC_TETO_APROP_N + " registros" : "650 KB") +
+          " (" + nFinal + " decisões, " + Math.round(bytes / 102.4) / 10 + " KB). Use uma regra em vez de decidir um a um (aba Regras); números para o suporte: " + nFinal + " / " + bytes + " B.", { motivo: "teto" });
+      }
+      return { ok: true, msg: "", itens: norm, gravar: gravar, excluir: excluir, pagos: pg };
+    },
+
+    /* o carimbo da §1.12-9: `max(agora, lápide + 1 ms, versão no disco + 1 ms)`.
+       ⚠ Um relógio atrasado faria a decisão nova parecer MAIS VELHA que a
+       exclusão (a lápide) ou que a versão anterior — e o merge da nuvem
+       apagaria ou desfaria a escolha que a pessoa acabou de fazer, nos
+       outros aparelhos, sem recado nenhum. */
+    _ccCarimboDecisao: function (id, ex) {
+      var agora = Util.agoraISO(), piso = "";
+      try {
+        var l1 = Store.lapidesDe ? Store.lapidesDe(eid(), "cc_aprop") : {};
+        var l2 = Store.cascatasDeLote ? Store.cascatasDeLote(eid(), "cc_aprop") : {};
+        [l1 && l1[id], l2 && l2[id], ex && ex.atualizadoEm].forEach(function (q) { if (q && String(q) > piso) piso = String(q); });
+      } catch (eL) { piso = ""; }
+      if (piso && piso >= agora) {
+        var t = Date.parse(piso);
+        if (!isNaN(t)) return new Date(t + 1).toISOString();
+      }
+      return agora;
+    },
+    /* depois de gravar: o disco diz o que pedimos? e o dinheiro saiu da Fila? */
+    _ccConferirDepois: function (plano) {
+      var ac = this._ccAgenteCtx("");
+      ac.obraId = "";
+      var disco = {};
+      Util.arr(ac.decisoes).forEach(function (r) { if (r && r.id) disco[String(r.id)] = r; });
+      var I = CCAgente.montarIndice(ac), self = this;
+      var out = { conferido: true, naFila: 0, cent: 0, n: 0 };
+      plano.itens.forEach(function (z) {
+        if (z.acao === "gravar") {
+          var r = disco[z.id];
+          if (!r || !self._ccEscolhaIgual({ cc: r.cc, pt: r.pt, rs: r.rs }, z.alvo)) out.conferido = false;
+        } else if (z.acao === "excluir" || z.acao === "excluir-cadeia") {
+          if (disco[z.id]) out.conferido = false;
+        }
+        /* ⚠ O VALOR DO TOAST É O DO DINHEIRO LANÇADO. O boletim e a receita
+           carimbada dele são dois fatos do MESMO dinheiro (e o pedido
+           recebido e a despesa dele também): somar os dois dizia o dobro no
+           recado. Conta o lançamento; só sem lançamento conta o documento. */
+        var lancs = z.fatos.filter(function (f) { return f.t === "lanc"; });
+        (lancs.length ? lancs : z.fatos).forEach(function (f) { out.cent += Util.num(f.cent); });
+        z.fatos.forEach(function (f) {
+          out.n++;
+          var res = CCAgente.resolver(f, I, 0);
+          if (!res.ok) out.naFila++;
+        });
+      });
+      return out;
+    },
+
+    /* ---------------------------------------------------------------
+     * _ccGravarEscolha(k, d, obraId, escolha, opts) → {ok, msg}
+     * opts: {baseEm, confirmadoPago:{n,valor}, rotulo, via, nota}
+     * ------------------------------------------------------------- */
+    _ccGravarEscolha: function (k, d, obraId, escolha, opts) {
+      opts = opts || {};
+      var plano = this._ccEscolhasPlano([{ k: k, d: d, obraId: obraId, escolha: escolha, baseEm: opts.baseEm,
+        rotulo: opts.rotulo, via: opts.via, nota: opts.nota }], opts);
+      if (!plano.ok) return plano;
+      var z = plano.itens[0];
+      if (z.acao === "igual") return { ok: true, nada: true, msg: "Essa decisão já estava gravada — nada mudou.", pagos: plano.pagos };
+      if (z.acao === "nada") return { ok: true, nada: true, msg: "Não havia decisão de centro para desfazer em " + z.rot + ".", pagos: plano.pagos };
+      if (z.acao === "nada-cadeia") {
+        return { ok: true, nada: true, msg: "Esse já é o centro que " + (z.fonte || "a conta") + " dá a " + z.rot + " — não gravei decisão (ela não mudaria nada, e travaria o conserto futuro do vínculo).", pagos: plano.pagos };
+      }
+      var ex = z.existe;
+      if (z.acao === "excluir" || z.acao === "excluir-cadeia") {
+        /* ⚠ `Store.excluir` DEIXA A LÁPIDE (§1.7): sem ela, o próximo sync
+           traria a decisão apagada de volta de outro aparelho. */
+        var okE = Store.excluir(eid(), "cc_aprop", z.id);
+        if (!okE || Store.obter(eid(), "cc_aprop", z.id)) {
+          return { ok: false, motivo: "gravacao", msg: "NADA foi mudado: o armazenamento deste aparelho recusou apagar a decisão (veja o aviso vermelho). A decisão de centro continua valendo." };
+        }
+        var cf = this._ccConferirDepois(plano);
+        return { ok: true, id: z.id, pagos: plano.pagos, conf: cf,
+          msg: (z.acao === "excluir-cadeia"
+            ? "A decisão de " + z.rot + " foi apagada: ela dava o mesmo centro que " + (z.fonte || "a conta") + " já dá."
+            : "A decisão de " + z.rot + " foi desfeita: " + (cf.naFila ? "ele voltou para a Fila." : "vale de novo a regra ou o vínculo.")) +
+            (plano.pagos.n ? " " + plano.pagos.n + " lançamento(s) pago(s) (" + Util.fmtMoeda(plano.pagos.valor) + ") mudaram de centro, com a sua confirmação. Nada mudou no Financeiro." : " Nada mudou no Financeiro.") };
+      }
+      var reg = z.registro;
+      reg.atualizadoEm = this._ccCarimboDecisao(z.id, ex);
+      if (!reg.criadoEm) reg.criadoEm = reg.atualizadoEm;
+      /* ⚠ DESENTERRAR ANTES DE GRAVAR (§1.12-9, crítica D27): a lápide de
+         uma decisão apagada antes mataria esta no próximo sync. */
+      try { Store.desenterrar(eid(), "cc_aprop", [z.id]); } catch (eD) {}
+      var g = Store.salvar(eid(), "cc_aprop", reg, true);
+      if (this._naoGravou(g)) {
+        return { ok: false, motivo: "gravacao", msg: "NADA foi gravado: o armazenamento deste aparelho recusou a decisão de centro (veja o aviso vermelho). " + z.rot + " continua onde estava." };
+      }
+      var cf2 = this._ccConferirDepois(plano);
+      if (!cf2.conferido) {
+        return { ok: false, motivo: "conferencia", msg: "A gravação não conferiu: o disco não mostra a decisão que eu gravei para " + z.rot + ". Recarregue a tela antes de decidir de novo." };
+      }
+      return { ok: true, id: z.id, registro: Store.obter(eid(), "cc_aprop", z.id), pagos: plano.pagos, conf: cf2,
+        msg: "Centro de custo gravado: " + z.rot + " (" + Util.fmtMoeda(cf2.cent / 100) + ") → " +
+          (reg.cc ? this._ccNomeCentro(reg.cc, listaTodas("centrocusto"))
+            : (reg.rs ? "o resto (itens em etapas sem centro) em " + this._ccNomeCentro(reg.rs.cc, listaTodas("centrocusto")) : "dividido em " + reg.pt.length + " centros")) +
+          (cf2.naFila ? ". ⚠ Ainda está na Fila — veja o motivo lá." : (ex ? "." : ". Saiu da Fila.")) +
+          (plano.pagos.n ? " " + plano.pagos.n + " lançamento(s) pago(s) (" + Util.fmtMoeda(plano.pagos.valor) + ") mudaram de centro, com a sua confirmação." : "") +
+          " Nada mudou no Financeiro." };
+    },
+
+    /* ---------------------------------------------------------------
+     * _ccGravarEscolhas(lista, opts) — o lote: valida TUDO antes, D20 do
+     * lote somado, UMA `salvarVarios` e UMA lápide de lote (§1.12-4).
+     * ⚠ A LÁPIDE DE LOTE VAI COM AS SIMPLES JUNTO, e isto contraria a letra
+     *   da §1.12-4 de propósito. `cc_aprop` está no `Nuvem.ENTIDADES` da
+     *   1.2.85, e a 1.2.85 NÃO lê `cascata:"lote"` (`tools/test-lapide-lote`
+     *   bloco 8): com só a de lote, a decisão desfeita aqui VOLTARIA pelo
+     *   aparelho da 1.2.85 no próximo sync, e o lançamento sairia da Fila
+     *   sozinho para o centro que a pessoa tinha acabado de tirar. O custo é
+     *   o teto das lápides — e ele é pequeno AQUI: o lote da Fila só apaga
+     *   a decisão que ficou igual à cadeia (a tela não manda "voltar" em
+     *   lote), e o lote inteiro tem teto de 500. As operações de 1.500
+     *   (compactar, limpar órfãs) continuam decisão em aberto no arame.
+     * ------------------------------------------------------------- */
+    _ccGravarEscolhas: function (lista, opts) {
+      opts = opts || {};
+      var plano = this._ccEscolhasPlano(lista, opts);
+      if (!plano.ok) return plano;
+      var self = this, gravar = plano.gravar, excluir = plano.excluir;
+      var semMudanca = plano.itens.filter(function (z) { return z.acao === "igual" || z.acao === "nada" || z.acao === "nada-cadeia"; }).length;
+      if (!gravar.length && !excluir.length) {
+        return { ok: true, nada: true, msg: "Nada mudou: as " + plano.itens.length + " linha(s) já estavam com esse centro (pela decisão, pela regra ou pelo vínculo).", pagos: plano.pagos };
+      }
+      var porId = {};
+      plano.itens.forEach(function (z) { porId[z.id] = z; });
+      gravar.forEach(function (r) {
+        r.atualizadoEm = self._ccCarimboDecisao(r.id, porId[r.id] && porId[r.id].existe);
+        if (!r.criadoEm) r.criadoEm = r.atualizadoEm;
+      });
+      if (excluir.length) {
+        /* ⚠ SEM o `semLapide`: as simples são a ponte para a 1.2.85 (ver acima) */
+        var nE = Store.excluirVarios(eid(), "cc_aprop", excluir);
+        if (nE !== excluir.length) {
+          return { ok: false, motivo: "gravacao", msg: "NADA foi gravado: o armazenamento recusou (veja o aviso vermelho). As decisões continuam como estavam." };
+        }
+        Store.lapidarLote(eid(), "cc_aprop", excluir, "cc-voltar-fila");
+      }
+      if (gravar.length) {
+        try { Store.desenterrar(eid(), "cc_aprop", gravar.map(function (r) { return r.id; })); } catch (eD) {}
+        var n = Store.salvarVarios(eid(), "cc_aprop", gravar, true);
+        if (n !== gravar.length) {
+          return { ok: false, motivo: "gravacao", msg: "NADA foi gravado: o armazenamento deste aparelho recusou as " + gravar.length + " decisões de centro (veja o aviso vermelho)" +
+            (excluir.length ? "; " + excluir.length + " decisão(ões) desfeita(s) antes da recusa voltaram para a regra/fila" : "") + "." };
+        }
+      }
+      var cf = this._ccConferirDepois(plano);
+      if (!cf.conferido) return { ok: false, motivo: "conferencia", msg: "A gravação não conferiu: o disco não mostra todas as decisões que eu gravei. Recarregue a tela antes de decidir de novo." };
+      var destinos = {};
+      gravar.forEach(function (r) { if (r.cc) destinos[self._ccNomeCentro(r.cc, listaTodas("centrocusto"))] = 1; });
+      var nomes = Object.keys(destinos);
+      return { ok: true, pagos: plano.pagos, conf: cf, n: gravar.length, excluidas: excluir.length,
+        msg: gravar.length + " decisão(ões) de centro gravada(s)" + (nomes.length === 1 ? " → " + nomes[0] : "") +
+          " · " + cf.n + " lançamento(s)/documento(s), " + Util.fmtMoeda(cf.cent / 100) +
+          (excluir.length ? " · " + excluir.length + " decisão(ões) desfeita(s)" : "") +
+          (semMudanca ? " · " + semMudanca + " linha(s) já estavam assim" : "") +
+          (cf.naFila ? " · ⚠ " + cf.naFila + " ainda na Fila" : "") +
+          (plano.pagos.n ? " · " + plano.pagos.n + " pago(s) (" + Util.fmtMoeda(plano.pagos.valor) + ") mudaram de centro, com a sua confirmação" : "") +
+          ". Nada mudou no Financeiro." };
+    },
+
+    /* ---------------------------------------------------------------
+     * A CAIXA DO D20 — diz QUANTO já está pago e QUANDO, antes de gravar
+     * (skill `dinheiro` §6: reabrir/mudar é decisão da pessoa, com
+     * confirmação que diz quanto já está lançado e quando). Compartilhada
+     * pela Fila, pelo [Mudar centro], pela geração e pela conversão.
+     * ------------------------------------------------------------- */
+    /* `textoCancelar` (opcional): o recado do [Cancelar]. ⚠ Depois de um
+       DOCUMENTO gravado (a escolha do centro feita no formulário do boletim,
+       do pedido), "Nada foi gravado" mentiria: o documento foi. Quem chama
+       de lá diz o que ficou e o que não ficou. */
+    _ccConfirmarPagos: function (pg, oque, aoConfirmar, textoCancelar) {
+      var lista = Util.arr(pg.lista).slice(0, 8).map(function (l) {
+        return "<li>" + Util.esc(l.rotulo || l.fato) + " — <b>" + Util.esc(Util.fmtMoeda(l.valor)) + "</b>, " + Util.esc(l.dataPgto ? "pago em " + Util.fmtDia(l.dataPgto) : "pago (data do pagamento não registrada)") +
+          (l.deNome || l.paraNome ? " · " + Util.esc(l.deNome || "") + " → " + Util.esc(l.paraNome || "") : "") + "</li>";
+      }).join("");
+      var corpo = '<div class="cc-d20" data-cc-d20="1">' +
+        "<p style=\"margin:0 0 8px\"><b>" + (pg.n === 1
+          ? "Este lançamento já foi pago: " + Util.esc(Util.fmtMoeda(pg.valor)) + (pg.maisRecente ? " em " + Util.esc(Util.fmtDia(pg.maisRecente)) : " (a data do pagamento não está registrada)") + "."
+          : pg.n + " lançamentos já pagos mudam de centro: " + Util.esc(Util.fmtMoeda(pg.valor)) + " no total" + (pg.maisRecente ? "; o mais recente pago em " + Util.esc(Util.fmtDia(pg.maisRecente)) : "; a data do pagamento não está registrada") + ".") + "</b></p>" +
+        '<ul style="margin:0 0 8px;padding-left:18px">' + lista + "</ul>" +
+        (pg.lista.length > 8 ? '<p class="muted" style="margin:0 0 8px">… e mais ' + (pg.lista.length - 8) + ".</p>" : "") +
+        "<p class=\"muted\" style=\"margin:0\">" + Util.esc(oque) + " <b>não altera o Financeiro nem o pagamento</b>: muda só em qual centro de custo esse dinheiro aparece (o Realizado do centro e o Previsto × Realizado).</p></div>";
+      UI.modal("Confirmar: dinheiro já pago muda de centro", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); UI.toast(textoCancelar || "Nada foi gravado — o centro continua o de antes.", textoCancelar ? "aviso" : "ok", textoCancelar ? 9000 : undefined); } },
+        { texto: "Confirmar e mudar o centro", classe: "primary", onClick: function () { aoConfirmar({ n: pg.n, valor: pg.valor }); } }
+      ]);
+    },
+    /* a recusa que tem PORTA vira caixa com o botão da porta (skill
+       `dinheiro` §6); a que não tem vira toast com o que fazer */
+    _ccRecusaHtml: function (r) {
+      var self = this;
+      if (r.motivo === "licenca" && r.avisado) return;
+      if (!r.porta) { UI.toast(r.msg, "erro", Math.max(9000, Math.min(20000, String(r.msg || "").length * 70))); return; }
+      var p = r.porta;
+      UI.modal("Não gravei a decisão de centro", "<p>" + Util.esc(r.msg) + "</p>", [
+        { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: p.rotulo, classe: "primary", onClick: function () {
+          UI.fecharModal();
+          if (p.render) { App.render(); return; }
+          if (p.abrir) { self.abrir(p.abrir[0], p.abrir[1]); return; }
+          if (p.gacao === "cc-converter") self.ccConverter({ obra: p.obra });
+        } }
+      ]);
+    },
+    /* o fluxo de toda porta da tela: grava → (D20? confirma e grava de novo)
+       → toast com o número conferido → redesenha */
+    _ccApropriarFluxo: function (itens, conf) {
+      var self = this, r;
+      if (itens.length === 1) {
+        var it = itens[0];
+        r = this._ccGravarEscolha(it.k, it.d, it.obraId, it.escolha, { baseEm: it.baseEm, confirmadoPago: conf || null, rotulo: it.rotulo, via: it.via });
+      } else r = this._ccGravarEscolhas(itens, { confirmadoPago: conf || null });
+      if (r.ok) {
+        UI.fecharModal();
+        UI.toast(r.msg, r.nada ? "ok" : "ok", 12000);
+        App.render();
+        return r;
+      }
+      if (r.motivo === "pago") {
+        this._ccConfirmarPagos(r.pagos, "Mudar o centro", function (c) { self._ccApropriarFluxo(itens, c); });
+        return r;
+      }
+      this._ccRecusaHtml(r);
+      return r;
+    },
+    /* o item de uma porta, lido dos `data-*` do botão (mesmos nomes nas três) */
+    _ccItemDoBotao: function (d, escolha) {
+      return { k: String((d && d.k) || ""), d: String((d && d.d) || ""), obraId: String((d && d.obra) || ""),
+        baseEm: String((d && d.base) || ""), rotulo: String((d && d.rot) || ""), escolha: escolha };
+    },
+    /* [Apropriar…] de uma linha da Fila */
+    ccApropriar: function (d) {
+      var i = String((d && d.i) || "");
+      var el = (typeof document !== "undefined") ? document.getElementById("cc-apr-" + i) : null;
+      var val = el ? String(el.value || "") : "";
+      if (!val) { UI.toast("Escolha o centro de custo na lista da linha antes de [Apropriar…].", "erro"); return; }
+      var opt = el && el.options ? el.options[el.selectedIndex] : null;
+      var it = this._ccItemDoBotao(d, { cc: val });
+      if (opt && opt.getAttribute && opt.getAttribute("data-sug") === "1") it.via = "h";
+      return this._ccApropriarFluxo([it], null);
+    },
+    /* [Apropriar selecionados] — as linhas marcadas, para o centro do topo */
+    ccApropriarLote: function () {
+      var el = (typeof document !== "undefined") ? document.getElementById("cc-lote-cc") : null;
+      var val = el ? String(el.value || "") : "";
+      var marcas = (typeof document !== "undefined" && document.querySelectorAll) ? document.querySelectorAll("input.cc-marca") : [];
+      var itens = [], i;
+      for (i = 0; i < marcas.length; i++) {
+        if (!marcas[i].checked) continue;
+        itens.push(this._ccItemDoBotao({ k: marcas[i].getAttribute("data-k"), d: marcas[i].getAttribute("data-d"), obra: marcas[i].getAttribute("data-obra"),
+          base: marcas[i].getAttribute("data-base"), rot: marcas[i].getAttribute("data-rot") }, { cc: val }));
+      }
+      if (!itens.length) { UI.toast("Marque as linhas da Fila que vão para o mesmo centro.", "erro"); return; }
+      if (!val) { UI.toast("Escolha, no topo da lista, o centro para as " + itens.length + " linha(s) marcada(s).", "erro"); return; }
+      return this._ccApropriarFluxo(itens, null);
+    },
+    /* [Voltar para a fila] — apaga a decisão (lápide); a cadeia volta a valer */
+    ccVoltarFila: function (d) {
+      return this._ccApropriarFluxo([this._ccItemDoBotao(d, null)], null);
+    },
+    /* [Mudar centro] — a caixa com os centros válidos para o fato */
+    ccMudar: function (d) {
+      /* ⚠ DE DENTRO DE UM FORMULÁRIO (`data-form="1"`: o boletim aprovado, o
+         pedido com despesa), a caixa abaixo SUBSTITUI o formulário aberto
+         (`UI.modal` fecha o anterior). Com algo digitado nele, a pessoa
+         perderia o que preencheu por clicar numa porta que nem é do
+         formulário — a mesma pergunta do véu e do ✕. */
+      if (d && String(d.form || "") === "1" && UI.temTrabalhoNaoSalvo && UI.temTrabalhoNaoSalvo() &&
+          typeof window !== "undefined" && window.confirm &&
+          !window.confirm("Há informações não salvas neste formulário. [Mudar centro] abre a própria caixa e fecha o formulário sem salvar. Continuar e perder o que foi preenchido?")) return;
+      var self = this, it = this._ccItemDoBotao(d, null);
+      var ops = this._ccOpcoesDoFato(it.k, it.d, it.obraId);
+      if (!ops.length) { UI.toast("Não há outro centro válido para " + (it.rotulo || "este lançamento") + " — crie o centro na aba Centros.", "erro"); return; }
+      var atual = String((d && d.atual) || "");
+      var corpo = "<p>Centro de custo de <b>" + Util.esc(it.rotulo || it.d) + "</b>:</p>" +
+        '<select id="cc-mudar-sel" style="min-width:280px">' + ops.map(function (o) {
+          return '<option value="' + Util.esc(o.id) + '"' + (o.id === atual ? " selected" : "") + ">" + Util.esc(o.nome) + "</option>";
+        }).join("") + "</select>" +
+        '<p class="muted" style="margin-top:8px">Muda só em qual centro esse dinheiro aparece. Nada muda no Financeiro. Lançamento já pago pede confirmação com o valor e a data.</p>';
+      UI.modal("Mudar centro de custo", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Gravar", classe: "primary", onClick: function () {
+          var s = document.getElementById("cc-mudar-sel");
+          var v = s ? String(s.value || "") : "";
+          if (!v) { UI.toast("Escolha o centro.", "erro"); return; }
+          /* o RESTO do boletim por itens (`data-parte="rs"`, o [Mudar centro]
+             do [Decidir o resto] no boletim aprovado): só os itens em etapas
+             sem centro mudam — os outros seguem o vínculo */
+          it.escolha = (d && String(d.parte || "") === "rs") ? { rs: { cc: v } } : { cc: v };
+          self._ccApropriarFluxo([it], null);
+        } }
+      ]);
+    },
+    /* os centros que aceitam os fatos desta chave (§4.3), com nome — a MESMA
+       validação que o gravador vai fazer, para a lista não oferecer o que o
+       clique seguinte recusa */
+    _ccOpcoesDoFato: function (k, d, obraId, I, fatosChave) {
+      var self = this;
+      if (!I) {
+        var ac = this._ccAgenteCtx(obraId || "");
+        I = CCAgente.montarIndice(ac);
+        var id = CCAgente.chaveDa(k === "RAP" ? "FIN" : k, d);
+        fatosChave = CCAgente.fatos(ac, I).filter(function (f) { return self._ccFatoDaChave(f, id); });
+      }
+      var refs = Util.arr(fatosChave).length ? fatosChave : [{ obraId: obraId, data: hojeLocal() }];
+      var out = [];
+      Util.arr(I.ccsCrus).forEach(function (c) {
+        if (!c || !c.id) return;
+        var n = I.normal[String(c.id)];
+        if (!n || !n._ativo) return;                 /* desativado fora dos seletores (§7) */
+        for (var j = 0; j < refs.length; j++) if (!CCAgente.validarDestino(String(c.id), refs[j], I, "pessoa").ok) return;
+        out.push({ id: String(c.id), nome: (((c.codigo ? c.codigo + " " : "") + (c.nome || "")).trim() || String(c.id)) + (c.obraId ? "" : " (centro da empresa)") });
+      });
+      out.sort(function (a, b) { return a.nome < b.nome ? -1 : (a.nome > b.nome ? 1 : 0); });
+      return out;
+    },
+
+    /* ===================================================================
+     * PARTE D — O CENTRO DE CUSTO NOS FORMULÁRIOS (§4.10, críticas D15/D17)
+     *
+     * O boletim, o pedido, o gasto rápido e o custo de frota ganham o select
+     * de centro. Tudo que ele GRAVA passa pela `_ccGravarEscolha` (a única
+     * que escreve `cc_aprop`), DEPOIS do documento gravado:
+     *   · boletim pendente e pedido: `_ccPendente`, agendado no `coletar`
+     *     DEPOIS do gate e executado pelo `_modalForm` depois do save
+     *     conferido (`_ccExecutarPendente`);
+     *   · gasto rápido e frota: logo depois do `Store.salvar` conferido do
+     *     lançamento.
+     *
+     * ⚠ A PRIMEIRA OPÇÃO DIZ O QUE VALE SEM DECISÃO, E DE ONDE VEM. Um
+     *   select que abre em "— sem centro —" quando a regra "Siderúrgica →
+     *   Estrutura" já manda o pedido para o CC-05 convida a pessoa a
+     *   "escolher" o CC-05 — e aí nasce uma decisão igual à cadeia, que
+     *   esconde o conserto futuro da regra (crítica D15). Com "Pela regra
+     *   “Siderúrgica → Estrutura”: CC-05" no topo, não mexer É a escolha
+     *   certa, e o valor `""` quer dizer "sem decisão".
+     *
+     * ⚠ SÓ GRAVA QUANDO A PESSOA TROCOU O QUE FOI MOSTRADO (§1.15-5). Todo
+     *   select daqui leva `data-mostrado` — inclusive no documento novo, ao
+     *   contrário dos campos do documento: aqui o valor inicial é "sem
+     *   decisão", e gravar o inicial seria gravar nada ou, pior, apagar a
+     *   decisão de quem decidiu em outro aparelho enquanto o formulário
+     *   estava aberto.
+     * ================================================================ */
+    /* quem vê e quem grava o select: agente aplicado, obra que adotou os
+       centros novos (§4.0; na antiga o centro é "obra inteira" ou rateio, e
+       um select ali afirmaria uma apropriação que não existe), e os dois
+       módulos (§6.1) */
+    _ccSelPode: function (obraId) {
+      var o = String(obraId || ""), out = { ler: false, gravar: false };
+      if (!o || !this._ccAgenteAplicado()) return out;
+      if (typeof CentroCusto === "undefined" || !CentroCusto || typeof CentroCusto.modoDaObra !== "function") return out;
+      if (!this._ccPode(o, "ler").ok) return out;
+      var modo = "";
+      try { modo = CentroCusto.modoDaObra(o, listaTodas("centrocusto")).modo; } catch (eM) { modo = ""; }
+      if (modo !== "novo") return out;
+      out.ler = true;
+      out.gravar = this._ccPode(o, "gravar").ok;
+      return out;
+    },
+    /* a fonte do vínculo, no idioma de quem lê (a chave `fonte` do resolver) */
+    _CC_FONTE_VINC: {
+      "etapa do lançamento": ["Pela etapa do lançamento", "etapa do lançamento"],
+      "centro do pedido": ["Pelo centro do pedido", "centro do pedido"],
+      "etapa do pedido": ["Pela etapa do pedido", "etapa do pedido"],
+      "itens do boletim": ["Pelo vínculo dos itens", "vínculo dos itens"],
+      "itens do boletim, resto decidido": ["Pelo vínculo dos itens (o resto por decisão)", "vínculo dos itens; o resto por decisão"],
+      "itens do boletim, resto pela regra": ["Pelo vínculo dos itens (o resto pela regra)", "vínculo dos itens; o resto pela regra"],
+      "atividades do boletim": ["Pelas regras das atividades", "regras das atividades"],
+      "pedidos da nota, pelo valor de cada um": ["Pelos pedidos da nota", "pelo valor de cada pedido da nota"]
+    },
+    /* ---------------------------------------------------------------
+     * _ccEfetivo(k, d, obraId, hip, opc) — onde o fato cai, e POR QUÊ
+     *
+     * `opc.comDecisao`: com a decisão da pessoa (o toast: "onde está AGORA").
+     * Sem ela (o padrão): o que a CADEIA daria — é a primeira opção do
+     * select. `hip` = o fato de um documento que ainda não está no disco
+     * (boletim/gasto novo), montado com os campos que a regra lê;
+     * `opc.soHip` usa o `hip` mesmo com o documento no disco (o resto do
+     * boletim por itens pergunta à regra, não ao boletim inteiro).
+     * ⚠ SÓ LÊ. Nada aqui grava.
+     * ------------------------------------------------------------- */
+    _ccEfetivo: function (k, d, obraId, hip, opc) {
+      opc = opc || {};
+      var self = this, out = { ok: false, texto: "", curto: "", via: "", dec: null, partes: [], fato: null, res: null, fonteTxt: "" };
+      var kk = (k === "RAP") ? "FIN" : String(k || ""), dd = String(d || "");
+      var id = dd ? CCAgente.chaveDa(kk, dd) : "";
+      var ac = this._ccAgenteCtx(obraId), dec = null;
+      Util.arr(ac.decisoes).forEach(function (x) { if (x && id && String(x.id) === id) dec = x; });
+      out.dec = dec;
+      if (!opc.comDecisao && dec) ac.decisoes = Util.arr(ac.decisoes).filter(function (x) { return !(x && String(x.id) === id); });
+      var I = CCAgente.montarIndice(ac), fs = [];
+      if (id && !opc.soHip) {
+        fs = CCAgente.fatos(ac, I).filter(function (f) { return self._ccFatoDaChave(f, id); });
+        /* o DOCUMENTO primeiro: a receita carimbada segue o boletim, e a
+           despesa do pedido segue o pedido — perguntar ao lançamento daria a
+           mesma resposta por um caminho mais longo */
+        fs.sort(function (a, b) { return (a.t === "lanc" ? 1 : 0) - (b.t === "lanc" ? 1 : 0); });
+      }
+      var f = fs[0] || hip || null;
+      if (!f) return out;
+      var res = null;
+      try { res = CCAgente.resolver(f, I, 0); } catch (eR) { res = null; }
+      out.fato = f; out.res = res;
+      var ccs = Util.arr(ac.ccs);
+      if (!res || !res.ok || !Util.arr(res.partes).length) {
+        out.texto = "— sem centro: vai para a Fila —";
+        return out;
+      }
+      out.ok = true; out.via = res.via; out.partes = res.partes;
+      var vistos = {}, ids = [];
+      res.partes.forEach(function (p) { if (p && !vistos[p.cc]) { vistos[p.cc] = 1; ids.push(p.cc); } });
+      var rot = ids.length === 1 ? this._ccNomeCentro(ids[0], ccs) : "dividido em " + ids.length + " centros";
+      var fonte, curta;
+      if (res.via === "regra") {
+        fonte = "Pela regra “" + (res.regraNome || "sem nome") + "”";
+        curta = "regra “" + (res.regraNome || "sem nome") + "”";
+      } else if (res.via === "pessoa") {
+        var em = dec ? String(dec.atualizadoEm || dec.criadoEm || "").slice(0, 10) : "";
+        fonte = "Por decisão de " + ((dec && dec.por) || "alguém") + (em ? " em " + Util.fmtDia(em) : "");
+        curta = "decidido por " + ((dec && dec.por) || "alguém") + (em ? " em " + Util.fmtDia(em) : "");
+      } else if (res.via === "espelho") {
+        fonte = "Pelo lançamento que ele estorna"; curta = "segue o lançamento estornado";
+      } else {
+        var fv = this._CC_FONTE_VINC[String(res.fonte || "")] || ["Pelo vínculo do item", "vínculo do item"];
+        fonte = fv[0]; curta = fv[1];
+      }
+      out.fonteTxt = fonte;
+      out.rot = rot;
+      out.texto = fonte + ": " + rot;
+      out.curto = rot + " (" + curta + ")";
+      return out;
+    },
+    /* ---------------------------------------------------------------
+     * _ccSelOpcoes(k, d, obraId, opc) — as opções do select (D15/D17)
+     *
+     * `opc.parte`: "cc" (o fato inteiro, padrão) ou "rs" (o RESTO do
+     * boletim por itens). Valores: `""` = sem decisão · id do centro ·
+     * `"__dec__"` = a decisão em partes, só leitura · `"__fila__"` = desfazer
+     * a decisão (só aparece quando HÁ decisão a desfazer).
+     * ------------------------------------------------------------- */
+    _ccSelOpcoes: function (k, d, obraId, opc) {
+      opc = opc || {};
+      var parte = opc.parte === "rs" ? "rs" : "cc";
+      var ef = this._ccEfetivo(k, d, obraId, opc.hip, { soHip: parte === "rs" });
+      var dec = ef.dec, ccs = listaTodas("centrocusto");
+      var decVale = !!dec && (parte === "rs" ? !!(dec.rs && dec.rs.cc) : !!(dec.cc || Util.arr(dec.pt).length));
+      var primeira = ef.ok ? ef.texto : (parte === "rs" ? "— o resto vai para a Fila (boletim parcial) —" : ef.texto);
+      if (parte === "rs" && ef.ok) primeira = ef.fonteTxt + ", o resto vai para " + ef.rot;
+      var em = dec ? String(dec.atualizadoEm || dec.criadoEm || "").slice(0, 10) : "";
+      var quem = dec ? " (decidido por " + (dec.por || "alguém") + (em ? " em " + Util.fmtDia(em) : "") + ")" : "";
+      var mostrado = "", h = "";
+      h += '<option value=""' + (decVale ? "" : " selected") + ">" + Util.esc(primeira) + "</option>";
+      var ccDec = "";
+      if (decVale && parte === "cc" && Util.arr(dec.pt).length) {
+        h += '<option value="__dec__" selected>' + Util.esc("Dividido em " + Util.arr(dec.pt).length + " centros — [Mudar]" + quem) + "</option>";
+        mostrado = "__dec__";
+      } else if (decVale) {
+        ccDec = String(parte === "rs" ? dec.rs.cc : dec.cc);
+        h += '<option value="' + Util.esc(ccDec) + '" selected>' + Util.esc(this._ccNomeCentro(ccDec, ccs) + quem) + "</option>";
+        mostrado = ccDec;
+      }
+      var ops = [];
+      try { ops = this._ccOpcoesDoFato(k, d, obraId); } catch (eO) { ops = []; }
+      ops.forEach(function (o) {
+        if (o.id === ccDec) return;
+        h += '<option value="' + Util.esc(o.id) + '">' + Util.esc(o.nome) + "</option>";
+      });
+      if (decVale) h += '<option value="__fila__">— decidir depois (fila) —</option>';
+      return { html: h, mostrado: mostrado, base: dec ? String(dec.atualizadoEm || "") : "", ef: ef, dec: dec, decVale: decVale, n: ops.length };
+    },
+    /* ---------------------------------------------------------------
+     * _ccSelHtml(idSel, rotulo, k, d, obraId, opc) — o campo inteiro
+     *
+     * `opc.soLeitura` = boletim aprovado/pago, pedido com despesa: o select
+     * mostra o efetivo DESABILITADO (a coleta não o lê, §1.15-2) e o botão
+     * [Mudar centro] grava só a decisão, sem regravar o documento (D16).
+     * Devolve "" (controle AUSENTE, §1.15-1) quando a obra não usa os centros
+     * novos ou a pessoa não tem os dois módulos.
+     * ------------------------------------------------------------- */
+    _ccSelHtml: function (idSel, rotulo, k, d, obraId, opc) {
+      opc = opc || {};
+      var pd = this._ccSelPode(obraId);
+      if (!pd.ler) return "";
+      var m = this._ccSelOpcoes(k, d, obraId, opc);
+      var ro = !!opc.soLeitura || !pd.gravar;
+      var sel = '<select id="' + Util.esc(idSel) + '" data-mostrado="' + Util.esc(m.mostrado) + '" data-base="' + Util.esc(m.base) + '"' +
+        (ro ? " disabled" : "") + ">" + m.html + "</select>";
+      var nota = opc.soLeitura ? String(opc.notaRo || "") : (!pd.gravar ? "Só quem tem os módulos Financeiro e Centro de custo, e acompanha a obra, escolhe o centro." : String(opc.nota || ""));
+      /* ⚠ A PORTA SÓ É DESENHADA PARA QUEM GRAVA (crítica F15) e só com o
+         documento no disco: sem `d` a decisão não tem chave (D14). */
+      var btn = "";
+      if (pd.gravar && d && (opc.soLeitura || m.mostrado === "__dec__")) {
+        btn = ' <button type="button" class="btn sm" data-gacao="cc-mudar" data-form="1" data-k="' + Util.esc(k === "RAP" ? "FIN" : k) + '" data-d="' + Util.esc(d) +
+          '" data-obra="' + Util.esc(obraId) + '" data-base="' + Util.esc(m.base) + '" data-rot="' + Util.esc(opc.rotulo || "") +
+          (opc.parte === "rs" ? '" data-parte="rs' : "") +
+          '" data-atual="' + Util.esc(!m.decVale || !m.dec ? "" : (opc.parte === "rs" ? String((m.dec.rs && m.dec.rs.cc) || "") : String(m.dec.cc || ""))) + '">Mudar centro</button>';
+      }
+      return '<div class="field" data-cc-sel="' + Util.esc(idSel) + '"><label>' + Util.esc(rotulo) + "</label>" +
+        '<div style="display:flex;gap:6px;align-items:center">' + sel + btn + "</div>" +
+        (nota ? '<div class="muted" style="font-size:11.5px;margin-top:3px;line-height:1.35">' + Util.esc(nota) + "</div>" : "") + "</div>";
+    },
+    /* a escolha que o select pede para gravar, pelo `_coletaMudou`: null =
+       nada a fazer; `{escolha}` = o que vai para a `_ccGravarEscolha`
+       (`null` na escolha = desfazer a decisão) */
+    _ccSelEscolha: function (idSel, parte) {
+      var c = this._coletaMudou(idSel);
+      if (!c.mudou) return null;
+      var v = String(c.valor == null ? "" : c.valor);
+      if (v === "__dec__") return null;
+      if (v === "" || v === "__fila__") return { escolha: null, v: v };
+      return { escolha: parte === "rs" ? { rs: { cc: v } } : { cc: v }, v: v };
+    },
+    /* ---------------------------------------------------------------
+     * _ccExecutarPendente(p, doc) — a decisão agendada no formulário,
+     * executada DEPOIS do documento gravado (§4.10, §3.7)
+     *
+     * ⚠ SE O SAVE NÃO ACONTECEU, ESTE PONTO NÃO É ALCANÇADO. É o molde do
+     *   `_lancFinPendente` (skill `dinheiro` §4): a decisão gravada lá dentro
+     *   do `coletar` sobreviveria a qualquer `return false` seguinte — o
+     *   boletim recusado ("o contrato é de outra obra") ficaria com o centro
+     *   decidido, e cada nova tentativa regravaria.
+     * ⚠ D20 DEPOIS DO SAVE: boletim com receita lançada (inclusive a que
+     *   ESTE save lançou, ao marcar Paga) e pedido com despesa pedem a
+     *   confirmação com o valor e a data. Recusar não desfaz o documento — e
+     *   o recado diz isso, em vez do "Nada foi gravado" da Fila.
+     * ⚠ `ok:false` DEPOIS DO DOCUMENTO GRAVADO NUNCA FICA VERDE: o recado
+     *   diz o que ficou (o documento) e o que não ficou (o centro), e onde o
+     *   dinheiro está agora.
+     * ------------------------------------------------------------- */
+    _CC_NOME_DOC: { MED: "boletim", PC: "pedido", FIN: "lançamento", RAP: "lançamento", FRT: "custo de frota" },
+    _ccExecutarPendente: function (p, doc) {
+      var self = this;
+      if (!p || !doc || !doc.id) return null;
+      var k = String(p.k || ""), nome = this._CC_NOME_DOC[k] || "documento";
+      var o = p.opts || {};
+      var escolha = p.excluir ? null : (p.escolha === undefined ? null : p.escolha);
+      var r;
+      try {
+        r = this._ccGravarEscolha(k, String(doc.id), String(doc.obraId || ""), escolha, {
+          baseEm: o.baseEm, confirmadoPago: o.confirmadoPago || null, via: o.via,
+          rotulo: o.rotulo || ("o " + nome + (doc.numero ? " " + doc.numero : "")) });
+      } catch (eG) {
+        r = { ok: false, motivo: "excecao", msg: "erro ao gravar a decisão: " + String((eG && eG.message) || eG) };
+      }
+      if (r && r.ok) {
+        if (!r.nada) UI.toast(r.msg, "ok", 12000);
+        return r;
+      }
+      if (r && r.motivo === "pago" && r.pagos) {
+        this._ccConfirmarPagos(r.pagos, "Mudar o centro", function (c) {
+          UI.fecharModal();
+          var p2 = { k: p.k, escolha: p.escolha, excluir: p.excluir, opts: {} }, kk;
+          for (kk in o) if (Object.prototype.hasOwnProperty.call(o, kk)) p2.opts[kk] = o[kk];
+          p2.opts.confirmadoPago = c;
+          self._ccExecutarPendente(p2, doc);
+          App.render();
+        }, "O " + nome + " foi gravado; a escolha do centro não foi gravada — o centro continua o de antes.");
+        return r;
+      }
+      this._ccRecadoNaoGravou(k, nome, doc, r);
+      return r;
+    },
+    /* o recado vermelho de "o documento foi, o centro não" — com ONDE o
+       dinheiro está agora, lido do disco (recado que promete a Fila para um
+       fato que continua no centro antigo é recado que mente) */
+    _ccRecadoNaoGravou: function (k, nome, doc, r) {
+      var onde = "";
+      try {
+        var e = this._ccEfetivo(k, String(doc.id), String(doc.obraId || ""), null, { comDecisao: true });
+        onde = e.fato ? (e.ok ? "o centro que vale continua " + e.curto + "." : "ele está na Fila, em Centro de custo.") : "";
+      } catch (eE) { onde = ""; }
+      var motivo = String((r && r.msg) || "o armazenamento recusou").replace(/\.\s*$/, "");
+      var t = "O " + nome + " foi gravado, mas a escolha do centro de custo não (" + motivo + ")" + (onde ? " — " + onde : ".");
+      UI.toast(t, "erro", Math.max(10000, Math.min(22000, t.length * 60)));
+    },
+    /* a frase do toast depois do save do documento: "· Centro de custo:
+       CC-05 Estrutura (regra “…”)." ou "· Sem centro de custo: está na
+       Fila, em Centro de custo." — só para quem tem os dois módulos e na
+       obra em modo `novo` (`_ccSelPode`), e só quando o documento é um
+       fato do agente (pedido em cotação ainda não é dinheiro: nada a
+       dizer). ⚠ TEXTO PURO (o toast escreve por `textContent`). */
+    _ccFraseDoc: function (k, d, obraId) {
+      if (!this._ccSelPode(obraId).ler) return "";
+      var e = this._ccEfetivo(k, d, obraId, null, { comDecisao: true });
+      if (!e.fato) return "";
+      return e.ok ? " · Centro de custo: " + e.curto + "." : " · Sem centro de custo: está na Fila, em Centro de custo.";
+    },
+    /* ---------------------------------------------------------------
+     * _ccDepoisDoSave(entidade, doc, cp, registro) — o que o `_modalForm`
+     * chama depois do documento gravado e do toast de hoje
+     *
+     * ⚠ NUNCA DERRUBA O SAVE: o documento já está no disco e o modal,
+     *   fechado. Uma exceção aqui (motor em cache velho, orçamento ilegível)
+     *   vira recado honesto — vermelho quando havia uma escolha a gravar,
+     *   silêncio quando era só a frase.
+     * ------------------------------------------------------------- */
+    _ccDepoisDoSave: function (entidade, doc, cp, registro) {
+      var r = null;
+      /* ⚠ BOLETIM REJEITADO NÃO É FATO (§4.1): a decisão gravada nele não
+         apareceria em lugar nenhum, e a caixa do D20 disputaria a tela com a
+         do motivo da rejeição (que abre logo depois deste ponto). */
+      if (cp && entidade === "medicoes" && /^rejeitad/.test(String((doc && doc.status) || ""))) {
+        UI.toast("O boletim foi rejeitado: a escolha do centro de custo não foi gravada — boletim rejeitado não conta em centro nenhum.", "aviso", 9000);
+        return;
+      }
+      if (cp) {
+        try { r = this._ccExecutarPendente(cp, doc || {}); }
+        catch (eX) {
+          UI.toast("O documento foi gravado, mas a escolha do centro de custo não (erro: " + String((eX && eX.message) || eX) + ") — confira na Fila, em Centro de custo.", "erro", 14000);
+          return;
+        }
+        /* gravou de verdade: o toast dele já diz o centro e o valor */
+        if (!r || !r.ok || !r.nada) return;
+      }
+      try {
+        if (!doc || !doc.id || !this._ccAgenteAplicado()) return;
+        var k = entidade === "medicoes" ? "MED" : (entidade === "compras" ? "PC" : "");
+        if (!k) return;
+        /* o Receber do pedido pelo select de Status já diz o centro
+           (`_ccFraseReceber`, no `aposSalvar` do `formCompra`) */
+        if (k === "PC" && String(doc.status || "") === "recebido" && String((registro && registro.status) || "") !== "recebido") return;
+        var fr = this._ccFraseDoc(k, String(doc.id), String(doc.obraId || ""));
+        if (fr) UI.toast((k === "MED" ? "Boletim " : "Pedido ") + String(doc.numero || "") + fr, "ok", 9000);
+      } catch (eF) { /* a frase some; o documento já foi */ }
+    },
+    /* ---------------------------------------------------------------
+     * _ccGravarNoLancar(k, d, obraId, escolha, lanc, rotulo) — gasto
+     * rápido e custo de frota, DEPOIS do `Store.salvar` conferido
+     *
+     * ⚠ O PAGO DESTE CLIQUE JÁ FOI CONFIRMADO NA CARA: a pessoa digitou o
+     *   valor e a data no formulário que diz "entra como despesa paga", e
+     *   escolheu o centro NA MESMA TELA, antes de o lançamento existir. Pedir
+     *   a caixa do D20 sobre ele seria a pergunta que ensina a clicar
+     *   "Confirmar" sem ler. Por isso a confirmação vai pronta — mas SÓ
+     *   quando o único pago que muda é o lançamento que este clique criou,
+     *   com o valor dele. Qualquer outro número (outro pago mudando junto,
+     *   valor diferente) abre a caixa com os números atuais, como em toda
+     *   porta (skill `dinheiro` §6).
+     * ------------------------------------------------------------- */
+    _ccGravarNoLancar: function (k, d, obraId, escolha, lanc, rotulo) {
+      var self = this, opts = { baseEm: "", rotulo: rotulo };
+      var r;
+      try { r = this._ccGravarEscolha(k, d, obraId, escolha, opts); }
+      catch (eG) { r = { ok: false, motivo: "excecao", msg: "erro ao gravar a decisão: " + String((eG && eG.message) || eG) }; }
+      if (r && !r.ok && r.motivo === "pago" && r.pagos && r.pagos.n === 1 &&
+          String((r.pagos.lista[0] || {}).fato || "") === String((lanc && lanc.id) || "") &&
+          Math.round(Util.num(r.pagos.valor) * 100) === Math.round(Math.abs(Util.num(lanc && lanc.valor)) * 100)) {
+        opts.confirmadoPago = { n: 1, valor: r.pagos.valor };
+        try { r = this._ccGravarEscolha(k, d, obraId, escolha, opts); }
+        catch (eG2) { r = { ok: false, motivo: "excecao", msg: "erro ao gravar a decisão: " + String((eG2 && eG2.message) || eG2) }; }
+      }
+      if (r && !r.ok && r.motivo === "pago" && r.pagos) {
+        this._ccConfirmarPagos(r.pagos, "Mudar o centro", function (c) {
+          UI.fecharModal();
+          opts.confirmadoPago = c;
+          var r2 = self._ccGravarEscolha(k, d, obraId, escolha, opts);
+          if (r2.ok) UI.toast(r2.msg, "ok", 12000);
+          else self._ccRecadoNaoGravou(k, self._CC_NOME_DOC[k] || "lançamento", { id: d, obraId: obraId }, r2);
+          App.render();
+        }, "O " + (this._CC_NOME_DOC[k] || "lançamento") + " foi gravado; a escolha do centro não foi gravada — ele está na Fila, em Centro de custo.");
+        return r;
+      }
+      return r;
+    },
+    /* a caixa do select nos modais simples (`UI.modal`: gasto rápido, frota)
+       — repintada quando a obra ou a categoria mudam, porque a regra que
+       responde depende das duas */
+    _ccSelPintar: function (idCaixa, idSel, rotulo, k, obraId, hip, opc) {
+      var caixa = (typeof document !== "undefined") ? document.getElementById(idCaixa) : null;
+      if (!caixa) return;
+      var html = "";
+      try { html = obraId ? this._ccSelHtml(idSel, rotulo, k, "", obraId, { hip: hip, nota: (opc && opc.nota) || "" }) : ""; } catch (eH) { html = ""; }
+      caixa.innerHTML = html;
+    },
+
+    /* ---------------------------------------------------------------
+     * Aba FILA — o dinheiro que ainda não tem centro, e POR QUÊ — e a
+     * porta para decidir
+     *
+     * ⚠ CADA LINHA TEM A PORTA, E A PORTA É O GRAVADOR DE VERDADE. Até a
+     *   1.2.89 esta aba listava e dizia "decidir por aqui ainda não existe"
+     *   — porque o [Apropriar] dependia da `_ccGravarEscolha`, e porta
      *   prometida que o clique seguinte fecha já custou quatro recados nesta
-     *   base. Enquanto o gravador não chega, a aba entrega o que ela já sabe
-     *   responder (quanto está fora, de onde veio e qual é o conserto de
-     *   cada caso) e diz, sem rodeio, o que ainda não dá para fazer aqui.
+     *   base. Agora o select de cada linha oferece só os centros que o
+     *   gravador aceita, a sugestão vem marcada com a palavra "sugestão" e
+     *   nunca é gravada sozinha, e o pago passa pela caixa do D20.
      * ------------------------------------------------------------- */
     _ccFilaHtml: function (sel) {
       var self = this;
@@ -30116,7 +31886,7 @@ renderPatrimonio: function () {
            recado que mente sobre dinheiro. */
         return '<div class="card" style="padding:22px;border-left:3px solid var(--erro,#b91c1c)">' +
           "<h3 style=\"margin-top:0\">Não consegui montar a Fila neste aparelho</h3>" +
-          "<p>A conta falhou (" + Util.esc(String(e && e.message || e)) + "). <b>Isto não quer dizer que não há lançamentos sem centro</b> — quer dizer que não consegui conferir. A aba <b>Centros</b> continua mostrando o que chega pelo vínculo com a etapa.</p></div>";
+          "<p>A conta falhou (" + Util.esc(String(e && e.message || e)) + "). <b>Isto não quer dizer que não há lançamentos sem centro</b> — quer dizer que não consegui conferir. A aba <b>Centros</b> diz, no topo, se conseguiu conferir os números dela.</p></div>";
       }
       /* ⚠ DESPESA E RECEITA NÃO SOMAM NO MESMO NÚMERO. As duas saem com valor
          positivo, e o total único dizia "3 lançamentos sem centro ·
@@ -30138,16 +31908,18 @@ renderPatrimonio: function () {
          R$ 50.000 nessa lista concluiria que ela é uma despesa. */
       var html = '<div class="card" style="padding:16px 18px;margin-bottom:14px">' +
         "<p style=\"margin:0\">Esta lista mostra <b>os lançamentos que ainda não têm centro de custo</b>, com o motivo de cada caso. " +
-        "Ela <b>não muda nenhum número</b> da aba Centros" +
-        /* ⚠ "A MESMA CONTA" SÓ É VERDADE SEM REGRA NEM DECISÃO GRAVADA. A Fila
-           passa pelo agente (regra e decisão tiram o lançamento daqui); a aba
-           Centros ainda soma só pelo vínculo (`_ccAgenteAplicado()` é
-           `false`). Com as duas gravadas, dizer "é a mesma conta" prometeria
-           que as abas fecham — e elas podem não fechar. */
+        "Olhar esta lista <b>não muda nenhum número</b> da aba Centros" +
+        /* ⚠ "A MESMA CONTA" SÓ É VERDADE QUANDO A ABA CENTROS PASSA PELO
+           AGENTE (`_ccAgenteAplicado()`) — ou quando não há regra nem decisão
+           gravada, e aí vínculo e agente dão o mesmo número. A Fila passa
+           sempre pelo agente; com o agente fora da conta da aba Centros e
+           regra gravada, dizer "é a mesma conta" prometeria que as abas fecham
+           — e elas podem não fechar. Roteiro medido na revisão de publicação
+           de 24/09/2026, quando a conta ainda não passava pelo agente. */
         (this._ccAgenteAplicado() || (listaTodas("cc_regras").length + listaTodas("cc_aprop").length) === 0
           ? ": é a mesma conta, vista pelo que ficou de fora.</p>"
           : ". Com regra ou decisão de centro gravada, a Fila já as aplica e a aba Centros ainda não — por isso as duas podem não fechar; a aba Centros avisa disso.</p>") +
-        "<p class=\"muted\" style=\"margin:8px 0 0\">Decidir o centro de cada linha por aqui ainda não existe — por enquanto o conserto é o que o motivo indica (criar o centro da etapa, pôr o centro no pedido, ou criar a regra).</p></div>";
+        "<p class=\"muted\" style=\"margin:8px 0 0\">Para decidir o centro de uma linha, escolha o centro na coluna <b>Ação</b> e clique [Apropriar…] — ou marque várias e use [Apropriar selecionados]. A <b>sugestão</b> é só sugestão: nada é gravado sem o seu clique. Lançamento já pago pede confirmação com o valor e a data. Nada muda no Financeiro: muda só em qual centro o dinheiro aparece.</p></div>";
 
       Util.arr(r.avisos).forEach(function (a) {
         html += self._ccFaixa("aviso", String(a && a.msg || ""), "");
@@ -30192,11 +31964,61 @@ renderPatrimonio: function () {
       var nomeObra = {};
       Util.arr(listaTodas("obras")).forEach(function (o) { if (o && o.id) nomeObra[String(o.id)] = String(o.nome || ""); });
 
-      html += '<div class="card" style="padding:0;overflow:auto"><table class="tbl"><thead><tr>' +
-        "<th>Data</th><th>Obra</th><th>Lançamento</th><th style=\"text-align:right\">Valor</th><th>Por que está aqui</th></tr></thead><tbody>";
+      /* ⚠ A PORTA DE CADA LINHA SAI DA MESMA VALIDAÇÃO DO GRAVADOR
+         (`_ccOpcoesDoFato`, §4.3): a lista oferece só o centro que o clique
+         seguinte aceita. Oferecer um centro de outra obra ou o cabeçalho
+         "obra inteira" e recusar no [Apropriar…] é porta prometida que o
+         clique fecha. O índice é montado UMA vez para a tabela inteira. */
+      var acF = this._ccAgenteCtx(obraSel), IF = null, fatoPor = {}, decPor = {};
+      try {
+        IF = CCAgente.montarIndice(acF);
+        CCAgente.fatos(acF, IF).forEach(function (f) { fatoPor[f.t + ":" + f.id] = f; });
+      } catch (eI) { IF = null; }
+      Util.arr(acF.decisoes).forEach(function (x) { if (x && x.id) decPor[String(x.id)] = x; });
+      var nomeCC = {};
+      Util.arr(acF.ccs).forEach(function (c) { if (c && c.id) nomeCC[String(c.id)] = ((c.codigo ? c.codigo + " " : "") + (c.nome || "")).trim() || String(c.id); });
+      var podeObra = {};
+      function pode(oid) {
+        if (!Object.prototype.hasOwnProperty.call(podeObra, oid)) podeObra[oid] = self._ccPode(oid, "gravar").ok;
+        return podeObra[oid];
+      }
+      var opLote = {}, algumaPorta = false;
+      var corpoT = "";
       for (i = 0; i < linhas.length; i++) {
         var L = linhas[i];
         var obra = L.obraId ? nomeObra[L.obraId] : null;
+        var F = fatoPor[L.t + ":" + L.id] || null;
+        var ch = this._ccChaveDoFato(F || L);
+        var idDec = ch && ch.d ? CCAgente.chaveDa(ch.k, ch.d) : "";
+        var exD = idDec ? decPor[idDec] : null;
+        var rotL = String(L.desc || ("(" + L.k + ")"));
+        var porta = "", marca = "", sugTd = '<span class="muted">—</span>';
+        /* ⚠ SUGESTÃO É SÓ SUGESTÃO (§4.9): marcada com a palavra, pré-escolhida
+           no select mas NUNCA gravada sem o clique. Aplicá-la sozinha seria o
+           app decidir dinheiro por semelhança com o passado. */
+        var sug = null;
+        try { sug = (F && IF && CCAgente.sugerir) ? CCAgente.sugerir(F, IF) : null; } catch (eS) { sug = null; }
+        var ops = (ch && ch.d && IF && pode(L.obraId)) ? this._ccOpcoesDoFato(ch.k, ch.d, L.obraId, IF, F ? [F] : []) : [];
+        if (sug && !ops.some(function (o) { return o.id === sug.cc; })) sug = null;
+        if (sug) sugTd = '<span class="pill" style="background:rgba(180,83,9,.12);color:#92400e" title="Centro mais usado em lançamentos parecidos desta obra (mesmo fornecedor, CNPJ, veículo ou categoria + etapa). Não é aplicado sem o seu clique.">sugestão</span> ' +
+          Util.esc(nomeCC[sug.cc] || sug.cc) + ' <span class="muted">(' + sug.n + " de " + sug.de + ")</span>";
+        if (ops.length) {
+          algumaPorta = true;
+          ops.forEach(function (o) { opLote[o.id] = o.nome; });
+          var dados = ' data-k="' + Util.esc(ch.k) + '" data-d="' + Util.esc(ch.d) + '" data-obra="' + Util.esc(L.obraId) + '"' +
+            ' data-base="' + Util.esc(exD ? String(exD.atualizadoEm || "") : "") + '" data-rot="' + Util.esc(rotL) + '"';
+          marca = '<input type="checkbox" class="cc-marca" aria-label="marcar ' + Util.esc(rotL) + '"' + dados + ">";
+          porta = '<select id="cc-apr-' + i + '" style="max-width:220px"><option value="">— escolha o centro —</option>' +
+            (sug ? '<option value="' + Util.esc(sug.cc) + '" data-sug="1" selected>sugestão: ' + Util.esc(nomeCC[sug.cc] || sug.cc) + "</option>" : "") +
+            ops.map(function (o) { return '<option value="' + Util.esc(o.id) + '">' + Util.esc(o.nome) + "</option>"; }).join("") + "</select> " +
+            '<button class="btn sm" data-gacao="cc-apropriar" data-i="' + i + '"' + dados + ">Apropriar…</button>";
+        } else if (!ch || !ch.d) {
+          porta = '<span class="muted" title="O estorno segue o centro do lançamento original.">segue o original</span>';
+        } else if (!pode(L.obraId)) {
+          porta = '<span class="muted">só quem grava centros desta obra</span>';
+        } else {
+          porta = '<span class="muted">nenhum centro aceita — crie o centro na aba Centros</span>';
+        }
         /* ⚠ `fmtDia`, NUNCA `fmtData`. `L.data` é DATA (vem de um
            <input type="date">), não instante. O `fmtData` faz `new Date(iso)`,
            lê a string sem fuso como meia-noite UTC e, em Brasília, imprime
@@ -30205,7 +32027,7 @@ renderPatrimonio: function () {
            a pessoa procurando o lançamento no dia errado do extrato. O
            próprio `Util.fmtDia` já traz esse roteiro escrito (js/util.js:122)
            — e eu caí nele de novo. */
-        html += "<tr><td>" + Util.esc(Util.fmtDia(L.data)) + "</td>" +
+        corpoT += "<tr><td>" + Util.esc(Util.fmtDia(L.data)) + "</td>" +
           "<td>" + Util.esc(obra != null ? obra : (L.obraId ? "(obra apagada)" : "— sem obra —")) + "</td>" +
           /* ⚠ `pill`, NÃO `tag`: a classe `.tag` NÃO EXISTE no css/app.css
              (só `.tag-tipo`, `.tag-c`, `.tag-s`, `.tag-i`). Com ela o selo
@@ -30215,7 +32037,7 @@ renderPatrimonio: function () {
              palavra da descrição é informação de dinheiro que some à vista.
              Achado na FOTO da e2e; nenhum assert de texto pegaria, porque o
              innerText é o mesmo nos dois casos. */
-          "<td>" + Util.esc(L.desc || ("(" + L.k + ")")) +
+          "<td>" + Util.esc(rotL) +
           /* ⚠ RECEITA MARCADA NA CARA. A Fila tem despesa e receita, e as duas
              saem com valor positivo: sem este selo, uma receita de R$ 50.000
              é lida como gasto por quem confere a lista. Só a receita ganha
@@ -30224,10 +32046,954 @@ renderPatrimonio: function () {
           (L.tipo === "receita" ? ' <span class="pill" style="background:rgba(37,99,235,.15);color:#1d4ed8" title="Entrada, não gasto.">receita</span>' : "") +
           (L.pago ? ' <span class="pill" style="background:rgba(22,163,74,.15);color:#15803d" title="Este lançamento já foi pago — mudar o centro dele vai pedir confirmação com o valor.">pago</span>' : "") + "</td>" +
           "<td style=\"text-align:right\">" + Util.fmtMoeda(L.valor) + "</td>" +
-          "<td>" + Util.esc(L.texto) + "</td></tr>";
+          "<td>" + Util.esc(L.texto) + "</td><td>" + sugTd + "</td><td style=\"white-space:nowrap\">" + (marca ? marca + " " : "") + porta + "</td></tr>";
       }
-      html += "</tbody></table></div>";
+      /* [Apropriar selecionados]: um centro para as linhas marcadas. A lista
+         junta os centros que aceitam ALGUMA linha; a validação do gravador
+         recusa o lote inteiro, dizendo qual linha não aceita, antes de gravar
+         qualquer uma — lote pela metade é o formato em que a pessoa não sabe
+         mais o que ficou gravado. */
+      var idsLote = Object.keys(opLote).sort(function (a, b) { return opLote[a] < opLote[b] ? -1 : (opLote[a] > opLote[b] ? 1 : 0); });
+      if (algumaPorta) {
+        html += '<div class="card" style="padding:10px 14px;margin-bottom:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
+          "<span>Aplicar às linhas marcadas:</span>" +
+          '<select id="cc-lote-cc" style="min-width:220px"><option value="">— escolha o centro —</option>' +
+          idsLote.map(function (id) { return '<option value="' + Util.esc(id) + '">' + Util.esc(opLote[id]) + "</option>"; }).join("") + "</select>" +
+          '<button class="btn sm" data-gacao="cc-apropriar-lote">Apropriar selecionados</button>' +
+          '<span class="muted">Muda só em qual centro o dinheiro aparece. Nada muda no Financeiro.</span></div>';
+      }
+      html += '<div class="card" style="padding:0;overflow:auto"><table class="tbl"><thead><tr>' +
+        "<th>Data</th><th>Obra</th><th>Lançamento</th><th style=\"text-align:right\">Valor</th><th>Por que está aqui</th><th>Sugestão</th><th>Ação</th></tr></thead><tbody>" +
+        corpoT + "</tbody></table></div>";
       return html;
+    },
+
+    /* ===================================================================
+     * ABA REGRAS — O PARÂMETRO DO AGENTE, CRIADO E ENCERRADO POR AQUI
+     * (§4.8, §4.10 "Aba Regras", §7)
+     *
+     * ⚠ AS CINCO GRAVAÇÕES DE `cc_regras` MORAM AQUI, E SÓ AQUI:
+     *   `_ccGravarRegra` (nova, e a da compactação), `_ccMudarRegra`,
+     *   `_ccEncerrarRegra`, `_ccExcluirRegra` e `_ccGravarRegrasDoCentro`
+     *   (as caixas do cadastro do centro). Todas perguntam à MESMA guarda
+     *   (`_ccRegraGuarda`) e à MESMA prévia (`CCAgente.previaRegra`) — duas
+     *   cópias de guarda foram, nesta base, o formato exato em que uma porta
+     *   de dinheiro esqueceu uma delas (skill `dinheiro` §3).
+     *
+     * ⚠ REGRA COM PASSADO MOVE DINHEIRO JÁ LANÇADO — E JÁ PAGO. Uma regra
+     *   "folha desta obra → Administração" com `desde` em janeiro reclassifica
+     *   de uma vez oito meses de folha. O Financeiro não muda, mas o Realizado
+     *   do centro que autoriza a próxima compra muda. Por isso a prévia é
+     *   OBRIGATÓRIA quando `desde` < hoje (e sempre que algum fato muda de
+     *   centro, qualquer que seja a data), diz de onde para onde, quais
+     *   decisões continuam valendo e quanto do que muda já foi pago (D20). A
+     *   gravação só acontece com a confirmação DAQUELE número: se outro
+     *   aparelho lançou mais uma folha entre o clique e a gravação, a função
+     *   recusa e a tela mostra a prévia nova.
+     *
+     * ⚠ NUNCA TOCA `financeiro`, `compras` NEM `medicoes`. A regra diz em
+     *   qual centro o dinheiro APARECE; o dinheiro continua onde está
+     *   (`test-cc-regras` compara o md5 das três antes e depois).
+     * ================================================================ */
+    _CC_ORIGENS: [["FOL", "Folha de pagamento"], ["PON", "Ponto (folha pelo ponto)"], ["FSM", "Folha semanal (diaristas)"],
+      ["FRT", "Custo de frota"], ["NF", "Nota fiscal"], ["PC", "Pedido de compra"], ["MED", "Medição"],
+      ["RAP", "Gasto rápido"], ["FIN", "Lançamento avulso do Financeiro"], ["CARP", "Carpintaria"], ["*", "Qualquer origem"]],
+    /* teto de exclusões por clique na compactação: cada decisão apagada deixa
+       uma lápide SIMPLES (a ponte para a 1.2.85, `test-lapide-lote` bloco 10),
+       e o bloco de lápides tem teto de 3.000. Mil de uma vez comeriam um terço
+       dele — o que sobra, o próximo clique continua. */
+    _CC_COMPACTA_LOTE: 300,
+    _ccMotorRegras: function () {
+      return typeof CCAgente !== "undefined" && !!CCAgente && typeof CCAgente.previaRegra === "function" &&
+        typeof CCAgente.validarRegra === "function" && typeof CCAgente.estatisticasRegras === "function" &&
+        typeof CCAgente.planoCompactacao === "function" && typeof CentroCusto !== "undefined";
+    },
+    _ccRestrito: function () {
+      try { return !!(typeof Auth !== "undefined" && Auth.obrasPermitidas && Array.isArray(Auth.obrasPermitidas())); } catch (e) { return false; }
+    },
+    /* dia ISO ± n, sem fuso: meio-dia UTC não vira o dia vizinho em Brasília */
+    _ccDia: function (iso, delta) {
+      var d = new Date(String(iso || "").slice(0, 10) + "T12:00:00Z");
+      if (isNaN(d.getTime())) return "";
+      d.setUTCDate(d.getUTCDate() + (delta || 0));
+      return d.toISOString().slice(0, 10);
+    },
+    _ccDestinoNome: function (dd, ccs) {
+      if (!dd) return "Fila (sem centro)";
+      if (String(dd).indexOf("rateio:") === 0) return "dividido em " + String(dd).slice(7).split("+").length + " centros";
+      return this._ccNomeCentro(dd, ccs);
+    },
+    _ccRotOrigem: function (o) {
+      var l = this._CC_ORIGENS, i;
+      for (i = 0; i < l.length; i++) if (l[i][0] === String(o || "")) return l[i][1];
+      return String(o || "?");
+    },
+    /* a condição da regra em português, com os NOMES (nunca o id cru) */
+    _ccRegraQuandoTxt: function (q) {
+      q = q || {};
+      var p = [this._ccRotOrigem(q.o || "*")];
+      if (q.cat) p.push("categoria " + rot(P.finCategoria, q.cat));
+      if (q.forn) { var f = Store.obter(eid(), "fornecedores", String(q.forn)); p.push("fornecedor " + (f ? (f.nome || f.razaoSocial || q.forn) : q.forn + " (apagado)")); }
+      if (q.cnpj) p.push("CNPJ " + String(q.cnpj));
+      if (q.frota) { var v = Store.obter(eid(), "frota", String(q.frota)); p.push("veículo " + (v ? (v.nome || v.placa || q.frota) : q.frota + " (apagado)")); }
+      if (q.atv) { var a = Store.obter(eid(), "atividades", String(q.atv)); p.push("atividade " + (a ? (a.descricao || a.codigo || q.atv) : q.atv + " (apagada)")); }
+      return p.join(" · ");
+    },
+    _ccRegraEntaoTxt: function (e, ccs) {
+      var self = this;
+      e = e || {};
+      if (e.t === "rateio") {
+        return "dividido: " + Util.arr(e.partes).map(function (p) { return self._ccNomeCentro(p && p.cc, ccs) + " " + Util.fmtNum(Util.num(p && p.p) / 100, 2) + "%"; }).join(" · ");
+      }
+      return self._ccNomeCentro(e.cc, ccs);
+    },
+    _ccRegraEstado: function (r, hoje) {
+      /* ⚠ INVÁLIDA DIZ POR QUÊ (§1.11): regra vinda de outro aparelho com
+         chave que este motor não conhece não decide nada — e "inválida" sem
+         o motivo manda a pessoa adivinhar o que consertar. */
+      if (typeof CCAgente !== "undefined" && CCAgente.regraLegivel && !CCAgente.regraLegivel(r)) {
+        var vI = null;
+        try { vI = CCAgente.validarRegra(r, { ccs: listaTodas("centrocusto"), regras: [] }); } catch (eV) { vI = null; }
+        return { rot: "inválida — não decide" + (vI && !vI.ok && vI.msg ? " (" + vI.msg + ")" : ""), cls: "erro" };
+      }
+      if (!(r.ativa === undefined || r.ativa === null || r.ativa === true || Util.num(r.ativa) === 1)) {
+        return { rot: r.subst ? "substituída desde o início" : "desligada", cls: "off" };
+      }
+      if (r.ate && String(r.ate).slice(0, 10) < hoje) return { rot: "encerrada em " + Util.fmtDia(String(r.ate).slice(0, 10)), cls: "off" };
+      if (r.desde && String(r.desde).slice(0, 10) > hoje) return { rot: "começa em " + Util.fmtDia(String(r.desde).slice(0, 10)), cls: "futura" };
+      return { rot: "valendo", cls: "ok" };
+    },
+
+    /* ---------------------------------------------------------------
+     * A GUARDA — NA FUNÇÃO, antes de qualquer gravação de regra (§7)
+     * ------------------------------------------------------------- */
+    _ccRegraGuarda: function (obraId) {
+      obraId = String(obraId || "");
+      function nao(msg, ex) {
+        var r = { ok: false, msg: msg }, k;
+        if (ex) for (k in ex) if (Object.prototype.hasOwnProperty.call(ex, k)) r[k] = ex[k];
+        return r;
+      }
+      var txtChave = "A apropriação por centro de custo está desligada nesta instalação (chave ccAgente) — recurso desligado nesta instalação. Nenhuma regra foi gravada e nada foi apagado.";
+      var txtLic = "Modo demonstração — ative sua licença para gravar regras de centro de custo. Nada foi gravado.";
+      if (!this._medcc("ccAgente")) return nao(txtChave, { motivo: "chave" });
+      if (!this._ccMotorRegras()) {
+        return nao("O motor de apropriação (js/ccagente.js) não carregou inteiro neste aparelho — nenhuma regra foi gravada. Recarregue o app; se continuar, avise o suporte.", { motivo: "motor" });
+      }
+      /* ⚠ AS DUAS PERGUNTAS DE LICENÇA, como no `_ccEscolhasPlano`: o
+         `_bloqueado()` avisa e o `App._trialBloqueado()` direto segura mesmo
+         que alguém "simplifique" o primeiro. */
+      if (this._bloqueado()) return nao(txtLic, { motivo: "licenca", avisado: true });
+      if (typeof App !== "undefined" && App && App._trialBloqueado && App._trialBloqueado()) return nao(txtLic, { motivo: "licenca" });
+      var pode = this._ccPode(obraId, "gravar");
+      if (!pode.ok) return nao(pode.msg, { motivo: "permissao" });
+      if (!obraId && this._ccRestrito()) return nao("Esta regra vale para despesas sem obra — só quem enxerga todas as obras pode criá-la.", { motivo: "permissao", campo: "obraId" });
+      /* ⚠ OBRA EM RATEIO: nenhum destino vale (degrau 0 do resolver), então
+         nenhuma regra dela decidiria nada — e a pessoa acharia que decidiu.
+         A porta é a conversão, com a prévia antes → depois. */
+      if (obraId && CentroCusto.modoDaObra(obraId, listaTodas("centrocusto")).modo === "legado-rateio") {
+        return nao("Não gravei: esta obra ainda divide o gasto pelos centros antigos, pelo valor orçado — nenhuma regra vale para lançamento dela até a conversão. Use [Converter os centros antigos…] (a prévia mostra o antes → depois).",
+          { motivo: "obra-em-rateio", campo: "obraId", porta: { rotulo: "Converter os centros antigos…", gacao: "cc-converter", obra: obraId } });
+      }
+      return { ok: true };
+    },
+    /* ⚠ CARIMBO DA TELA: [Mudar]/[Encerrar]/[Excluir] dizem qual versão da
+       regra a pessoa leu. Se o disco tem outra, alguém mexeu nela noutra
+       janela ou aparelho — e encerrar agora gravaria por cima do que ela
+       não viu. */
+    _ccRegraCarimbo: function (r, opts) {
+      var base = String((opts && opts.baseEm) == null ? "" : opts.baseEm), atual = String(r.atualizadoEm || "");
+      if (base === atual) return null;
+      return { ok: false, motivo: "carimbo", msg: "Não gravei: a regra “" + (r.nome || r.id) + "” foi mudada em outra janela ou aparelho às " + this._ccHora(atual) +
+        (r.por ? " (" + String(r.por) + ")" : "") + ". Recarregue a tela para ver a versão que vale agora.", porta: { rotulo: "Recarregar", render: true } };
+    },
+    _ccRegraDoDisco: function (id) {
+      var r = Store.obter(eid(), "cc_regras", String(id || ""));
+      if (r) return { ok: true, r: r };
+      return { ok: false, motivo: "sumiu", msg: "Não encontrei esta regra neste aparelho — ela pode ter sido apagada em outro aparelho. Recarregue a tela.", porta: { rotulo: "Recarregar", render: true } };
+    },
+    /* o registro da §1.6, sem campo a mais: nada de `pid`, `ver`, `fmt` */
+    _ccRegraLimpa: function (r) {
+      r = r || {};
+      var q = {}, qo = r.quando || {};
+      ["o", "cat", "forn", "cnpj", "frota", "atv"].forEach(function (k) {
+        var v = String(qo[k] == null ? "" : qo[k]).trim();
+        if (k === "cnpj") v = v.replace(/\D/g, "");
+        if (v) q[k] = v;
+      });
+      var e = r.entao || {}, ent;
+      if (e.t === "rateio") ent = { t: "rateio", partes: Util.arr(e.partes).map(function (p) { return { cc: String((p && p.cc) || ""), p: Util.num(p && p.p) }; }) };
+      else ent = { t: String(e.t || "cc") === "cc" ? "cc" : String(e.t), cc: String(e.cc || "") };
+      return { id: String(r.id || ""), obraId: String(r.obraId || ""), nome: String(r.nome || "").trim(),
+        tipo: String(r.tipo || ""), quando: q, entao: ent,
+        desde: String(r.desde || "").slice(0, 10), ate: r.ate ? String(r.ate).slice(0, 10) : null,
+        ativa: 1, ant: String(r.ant || ""), subst: String(r.subst || ""), por: this._ccQuem() };
+    },
+    _ccPortaDaRecusa: function (v, reg) {
+      if (!v || !v.porta) return null;
+      if (v.porta === "cc-abrir-regra" && v.regraId) return { rotulo: "Abrir essa regra", gacao: "cc-regra-abrir", id: String(v.regraId) };
+      if (v.porta === "cc-converter") return { rotulo: "Converter os centros antigos…", gacao: "cc-converter", obra: String((reg && reg.obraId) || "") };
+      return null;
+    },
+    _ccRegraPrevia: function (obraId, regrasDepois, regraIds) {
+      var ac = this._ccAgenteCtx(String(obraId || ""));
+      return CCAgente.previaRegra(ac, regrasDepois, { regraIds: regraIds || [] });
+    },
+    /* a prévia é obrigatória? e a confirmação trazida vale para ESTE número? */
+    _ccPreviaPede: function (p, forcar, conf) {
+      var precisa = !!forcar || p.n > 0 || p.boletins.n > 0 || p.pagos.n > 0;
+      if (!precisa || CCAgente.previaConfere(conf, p)) return null;
+      return { ok: false, motivo: "previa", previa: p,
+        msg: (conf ? "Os números mudaram desde a prévia que você confirmou — confira de novo: " : "Confira antes de gravar: ") + this._ccPreviaTxt(p) };
+    },
+    _ccPreviaTxt: function (p) {
+      var M = function (c) { return Util.fmtMoeda(Math.round(Util.num(c)) / 100); };
+      if (!p.n && !p.boletins.n) return "nenhum lançamento muda de centro agora — a regra vale para os lançamentos que chegarem.";
+      var s = p.n + " lançamento(s)/pedido(s) (" + M(p.cent) + ") mudam de centro";
+      var det = [];
+      if (p.saiDaFila.n) det.push(p.saiDaFila.n + " saem da Fila (" + M(p.saiDaFila.cent) + ")");
+      if (p.paraFila.n) det.push(p.paraFila.n + " voltam para a Fila (" + M(p.paraFila.cent) + ")");
+      if (det.length) s += ": " + det.join(", ");
+      s += ".";
+      if (p.boletins.n) s += " E " + p.boletins.n + " boletim(ns) de medição (valor de venda).";
+      if (p.decisoes.n) s += " " + p.decisoes.n + " decisão(ões) tomada(s) à mão continuam valendo (" + M(p.decisoes.cent) + ").";
+      if (p.vinculo.n) s += " " + p.vinculo.n + " continuam pelo vínculo com o orçamento (" + M(p.vinculo.cent) + ").";
+      if (p.pagos.n) s += " " + p.pagos.n + " já pago(s) (" + Util.fmtMoeda(p.pagos.valor) + ").";
+      return s;
+    },
+    _ccRegrasSalvasConferem: function (regs) {
+      for (var i = 0; i < regs.length; i++) {
+        var d = Store.obter(eid(), "cc_regras", String(regs[i].id));
+        if (!d || JSON.stringify(d.quando) !== JSON.stringify(regs[i].quando) || JSON.stringify(d.entao) !== JSON.stringify(regs[i].entao) ||
+            String(d.desde || "") !== String(regs[i].desde || "") || String(d.ate || "") !== String(regs[i].ate || "") ||
+            String(d.ativa) !== String(regs[i].ativa)) return false;
+      }
+      return true;
+    },
+
+    /* ---------------------------------------------------------------
+     * _ccGravarRegra(regra, opts) → {ok, msg} | {ok:false, motivo, campo, porta}
+     * opts: {confirmado: previaAssinatura, compactacao: bool}
+     * ------------------------------------------------------------- */
+    _ccGravarRegra: function (regra, opts) {
+      opts = opts || {};
+      var reg = this._ccRegraLimpa(regra);
+      var g = this._ccRegraGuarda(reg.obraId);
+      if (!g.ok) return g;
+      if (!reg.id) reg.id = Util.uid("ccr");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(reg.desde)) return { ok: false, motivo: "validacao", campo: "desde", msg: "Informe desde quando a regra vale (conta a data de cada lançamento)." };
+      if (reg.ate && !/^\d{4}-\d{2}-\d{2}$/.test(reg.ate)) return { ok: false, motivo: "validacao", campo: "ate", msg: "A data final da regra não é uma data válida — deixe em branco para a regra não ter fim." };
+      var regras = listaTodas("cc_regras"), ex = null;
+      regras.forEach(function (x) { if (x && String(x.id) === reg.id) ex = x; });
+      if (ex) {
+        /* ⚠ RETENTATIVA DA COMPACTAÇÃO (id determinístico, §1.6): a MESMA
+           regra já está no disco — a conferência continua de onde parou. */
+        if (opts.compactacao && JSON.stringify(ex.quando) === JSON.stringify(reg.quando) && JSON.stringify(ex.entao) === JSON.stringify(reg.entao) && String(ex.desde) === reg.desde) {
+          return { ok: true, nada: true, id: reg.id, msg: "A regra “" + (ex.nome || reg.nome) + "” já estava gravada." };
+        }
+        return { ok: false, motivo: "id-ocupado", msg: "Não gravei: já existe outra regra com o id " + reg.id + ". Recarregue a tela e tente de novo." };
+      }
+      var v = CCAgente.validarRegra(reg, { ccs: listaTodas("centrocusto"), regras: regras, restrito: this._ccRestrito() });
+      if (!v.ok) return { ok: false, motivo: "validacao", campo: v.campo, msg: v.msg, porta: this._ccPortaDaRecusa(v, reg), regraId: v.regraId || "" };
+      if (!Util.semListaAninhada(reg)) return { ok: false, motivo: "forma", msg: "Não gravei: a regra saiu num formato que a nuvem não aceita (lista dentro de lista). Avise o suporte." };
+      var p = this._ccRegraPrevia(reg.obraId, regras.concat([reg]), [reg.id]);
+      var pede = this._ccPreviaPede(p, reg.desde < hojeLocal(), opts.confirmado);
+      if (pede) { pede.titulo = "Prévia: nova regra “" + reg.nome + "”"; return pede; }
+      /* id determinístico da compactação pode ter lápide de uma tentativa
+         desfeita antes: sem desenterrar, o próximo sync a apagaria */
+      try { Store.desenterrar(eid(), "cc_regras", [reg.id]); } catch (eD) {}
+      var gv = Store.salvar(eid(), "cc_regras", reg);
+      if (this._naoGravou(gv)) return { ok: false, motivo: "gravacao", msg: "NADA foi gravado: o armazenamento deste aparelho recusou a regra (veja o aviso vermelho). Nenhum lançamento mudou de centro." };
+      if (!this._ccRegrasSalvasConferem([reg])) return { ok: false, motivo: "conferencia", msg: "A gravação não conferiu: o disco não mostra a regra que eu gravei. Recarregue a tela antes de tentar de novo." };
+      return { ok: true, id: reg.id, previa: p, msg: "Regra “" + reg.nome + "” gravada: " + this._ccPreviaTxt(p) + " Nada mudou no Financeiro." };
+    },
+
+    /* [Encerrar]: a regra deixa de valer DEPOIS de `ate` (§4.8-4) */
+    _ccEncerrarRegra: function (id, ate, opts) {
+      opts = opts || {};
+      var dd = this._ccRegraDoDisco(id);
+      if (!dd.ok) return dd;
+      var r = dd.r;
+      var g = this._ccRegraGuarda(String(r.obraId || ""));
+      if (!g.ok) return g;
+      var cb = this._ccRegraCarimbo(r, opts);
+      if (cb) return cb;
+      ate = String(ate || "").slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(ate)) return { ok: false, motivo: "validacao", campo: "ate", msg: "Informe o último dia em que a regra vale." };
+      var desde = String(r.desde || "").slice(0, 10);
+      if (desde && ate < desde) {
+        return { ok: false, motivo: "validacao", campo: "ate", msg: "A regra começa em " + Util.fmtDia(desde) + " — ela não pode terminar antes disso. Para que ela nunca tenha valido, use [Mudar] com “Corrigir também o passado”." };
+      }
+      if (r.ate && ate >= String(r.ate).slice(0, 10)) return { ok: true, nada: true, msg: "A regra já termina em " + Util.fmtDia(String(r.ate).slice(0, 10)) + " — nada mudou." };
+      var nova = Util.clone(r);
+      nova.ate = ate;
+      var regras = listaTodas("cc_regras").map(function (x) { return x && String(x.id) === String(r.id) ? nova : x; });
+      var p = this._ccRegraPrevia(r.obraId, regras, []);
+      /* ⚠ ENCERRAR SEMPRE MOSTRA A CONTA (§4.8-4), mesmo sem passado: é o
+         número do que volta para a Fila que diz se é isto mesmo. */
+      var pede = this._ccPreviaPede(p, true, opts.confirmado);
+      if (pede) { pede.titulo = "Prévia: encerrar a regra “" + (r.nome || r.id) + "” em " + Util.fmtDia(ate); return pede; }
+      var gv = Store.salvar(eid(), "cc_regras", nova);
+      if (this._naoGravou(gv)) return { ok: false, motivo: "gravacao", msg: "NADA foi gravado: o armazenamento recusou (veja o aviso vermelho). A regra continua valendo como antes." };
+      if (!this._ccRegrasSalvasConferem([nova])) return { ok: false, motivo: "conferencia", msg: "A gravação não conferiu: recarregue a tela antes de tentar de novo." };
+      return { ok: true, id: r.id, previa: p, msg: "Regra “" + (r.nome || r.id) + "” encerrada em " + Util.fmtDia(ate) + ": " + this._ccPreviaTxt(p) + " Nada mudou no Financeiro." };
+    },
+
+    /* [Mudar]: encerra a atual em D e cria a nova em D+1 com `ant`, numa
+       `salvarVarios` só (§1.6, §4.8-3). Com "Corrigir também o passado", a
+       atual ganha `subst` e `ativa:0` e a nova herda o `desde` dela. */
+    _ccMudarRegra: function (id, nova, opts) {
+      opts = opts || {};
+      var dd = this._ccRegraDoDisco(id);
+      if (!dd.ok) return dd;
+      var r = dd.r;
+      var g = this._ccRegraGuarda(String(r.obraId || ""));
+      if (!g.ok) return g;
+      var cb = this._ccRegraCarimbo(r, opts);
+      if (cb) return cb;
+      if (!(r.ativa === undefined || r.ativa === null || r.ativa === true || Util.num(r.ativa) === 1)) {
+        return { ok: false, motivo: "validacao", msg: "Esta regra já foi substituída ou desligada — mude a regra que está no lugar dela." };
+      }
+      var corrigir = !!opts.corrigirPassado;
+      var reg = this._ccRegraLimpa(nova);
+      reg.obraId = String(r.obraId || "");
+      reg.id = Util.uid("ccr");
+      reg.ant = String(r.id);
+      var velha = Util.clone(r), desdeR = String(r.desde || "").slice(0, 10);
+      if (corrigir) {
+        velha.ativa = 0; velha.subst = reg.id;
+        reg.desde = desdeR || reg.desde;
+      } else {
+        var d1 = String(opts.aPartir || reg.desde || "").slice(0, 10);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(d1)) return { ok: false, motivo: "validacao", campo: "desde", msg: "Informe a partir de quando a regra nova vale." };
+        if (desdeR && d1 <= desdeR) {
+          return { ok: false, motivo: "validacao", campo: "desde", msg: "A regra atual começa em " + Util.fmtDia(desdeR) + ": a nova precisa começar depois disso. Para trocar a regra desde o começo, marque “Corrigir também o passado”." };
+        }
+        if (r.ate && d1 > String(r.ate).slice(0, 10)) {
+          return { ok: false, motivo: "validacao", campo: "desde", msg: "A regra atual já terminou em " + Util.fmtDia(String(r.ate).slice(0, 10)) + " — crie uma regra nova em vez de mudar esta." };
+        }
+        velha.ate = this._ccDia(d1, -1);
+        reg.desde = d1;
+      }
+      var regrasTmp = listaTodas("cc_regras").map(function (x) { return x && String(x.id) === String(r.id) ? velha : x; });
+      var v = CCAgente.validarRegra(reg, { ccs: listaTodas("centrocusto"), regras: regrasTmp, restrito: this._ccRestrito() });
+      if (!v.ok) return { ok: false, motivo: "validacao", campo: v.campo, msg: v.msg, porta: this._ccPortaDaRecusa(v, reg), regraId: v.regraId || "" };
+      if (!Util.semListaAninhada(reg) || !Util.semListaAninhada(velha)) return { ok: false, motivo: "forma", msg: "Não gravei: a regra saiu num formato que a nuvem não aceita. Avise o suporte." };
+      var p = this._ccRegraPrevia(r.obraId, regrasTmp.concat([reg]), [reg.id]);
+      var pede = this._ccPreviaPede(p, corrigir || reg.desde < hojeLocal(), opts.confirmado);
+      if (pede) { pede.titulo = "Prévia: mudar a regra “" + (r.nome || r.id) + "”"; return pede; }
+      /* ⚠ UMA `salvarVarios` SÓ (§1.6). Em duas gravações, a primeira
+         (encerrar) passando e a segunda (criar) sendo recusada deixaria o
+         dinheiro da regra na Fila sem ninguém ter pedido isso — e o recado
+         "mudei a regra" mentiria. */
+      var n = Store.salvarVarios(eid(), "cc_regras", [velha, reg]);
+      if (n !== 2) return { ok: false, motivo: "gravacao", msg: "NADA foi gravado: o armazenamento recusou (veja o aviso vermelho). A regra continua como estava." };
+      if (!this._ccRegrasSalvasConferem([velha, reg])) return { ok: false, motivo: "conferencia", msg: "A gravação não conferiu: recarregue a tela antes de tentar de novo." };
+      return { ok: true, id: reg.id, previa: p, msg: (corrigir
+        ? "Regra “" + (r.nome || r.id) + "” substituída desde o início (" + Util.fmtDia(reg.desde) + ") por “" + reg.nome + "”: "
+        : "Regra “" + (r.nome || r.id) + "” encerrada em " + Util.fmtDia(velha.ate) + "; “" + reg.nome + "” vale a partir de " + Util.fmtDia(reg.desde) + ": ") +
+        this._ccPreviaTxt(p) + " Nada mudou no Financeiro." };
+    },
+
+    /* [Excluir]: só com "Decidiu 0", contado na lista CRUA (§4.8-5) */
+    _ccExcluirRegra: function (id, opts) {
+      opts = opts || {};
+      var dd = this._ccRegraDoDisco(id);
+      if (!dd.ok) return dd;
+      var r = dd.r;
+      var g = this._ccRegraGuarda(String(r.obraId || ""));
+      if (!g.ok) return g;
+      var cb = this._ccRegraCarimbo(r, opts);
+      if (cb) return cb;
+      /* ⚠ A CONTAGEM VÊ O DISCO INTEIRO (`obrasVisiveis: null`). Contada só
+         nas obras que o sub-usuário acompanha, a regra que decidiu a folha
+         de outra obra daria "Decidiu 0" e sairia — e aquela folha voltaria
+         para a Fila de uma obra que ele nem vê. */
+      var ac = this._ccAgenteCtx("");
+      ac.obraId = ""; ac.obrasVisiveis = null;
+      var est = CCAgente.estatisticasRegras(ac)[String(r.id)] || { decidiu: { n: 0 } };
+      if (est.decidiu.n > 0) {
+        return { ok: false, motivo: "decidiu", msg: "Não apaguei: a regra “" + (r.nome || r.id) + "” já decidiu " + est.decidiu.n + " lançamento(s)/documento(s). Regra que já decidiu não se exclui — apagá-la mudaria esse dinheiro de centro sem ninguém ver. Use [Encerrar] (ela para de valer daqui para a frente e o que ela decidiu fica) ou [Mudar].",
+          porta: { rotulo: "Encerrar esta regra…", gacao: "cc-regra-encerrar", id: String(r.id), base: String(r.atualizadoEm || "") } };
+      }
+      /* ⚠ "DECIDIU 0" NÃO É "NÃO MUDA NADA". Uma regra num empate
+         (`regras-empate`) não decide nada — e é justamente ela que prende o
+         lançamento na Fila: apagá-la deixa a outra responder. A prévia pega
+         isso e pede a confirmação com os números. */
+      var regras = listaTodas("cc_regras").filter(function (x) { return !(x && String(x.id) === String(r.id)); });
+      var p = this._ccRegraPrevia(r.obraId, regras, []);
+      var pede = this._ccPreviaPede(p, false, opts.confirmado);
+      if (pede) { pede.titulo = "Prévia: excluir a regra “" + (r.nome || r.id) + "”"; return pede; }
+      var okE = Store.excluir(eid(), "cc_regras", String(r.id));
+      if (!okE || Store.obter(eid(), "cc_regras", String(r.id))) return { ok: false, motivo: "gravacao", msg: "NADA foi apagado: o armazenamento recusou (veja o aviso vermelho). A regra continua na lista." };
+      return { ok: true, id: r.id, previa: p, msg: "Regra “" + (r.nome || r.id) + "” excluída (ela não tinha decidido nenhum lançamento). " + (p.n ? this._ccPreviaTxt(p) + " " : "") + "Nada mudou no Financeiro." };
+    },
+
+    /* ---------------------------------------------------------------
+     * CRIAR REGRA A PARTIR DO CENTRO (§4.8, última frase)
+     * "Lançamentos automáticos desta obra que vêm para este centro"
+     * ------------------------------------------------------------- */
+    _CC_AUTO: {
+      mo: { rot: "mão de obra (folha, ponto, folha semanal)", quandos: [{ o: "FOL", cat: "mao_obra" }, { o: "PON", cat: "mao_obra" }, { o: "FSM", cat: "mao_obra" }] },
+      frt: { rot: "equipamento/frota", quandos: [{ o: "FRT" }] },
+      mat: { rot: "material sem pedido (nota fiscal)", quandos: [{ o: "NF", cat: "material" }] }
+    },
+    /* as regras VALENDO HOJE desta obra que mandam cada condição para ESTE
+       centro (condição exata, destino exato) */
+    _ccAutoDoCentro: function (cc) {
+      var self = this, hoje = hojeLocal(), out = {}, k;
+      var regras = listaTodas("cc_regras");
+      for (k in this._CC_AUTO) if (Object.prototype.hasOwnProperty.call(this._CC_AUTO, k)) {
+        var achou = [];
+        this._CC_AUTO[k].quandos.forEach(function (q) {
+          var canon = CCAgente.quandoCanonico(q), hit = null;
+          regras.forEach(function (r) {
+            if (!r || String(r.obraId || "") !== String(cc.obraId || "") || String(r.tipo) !== "despesa") return;
+            if (self._ccRegraEstado(r, hoje).cls !== "ok") return;
+            if (CCAgente.quandoCanonico(r.quando) !== canon) return;
+            if (!r.entao || r.entao.t !== "cc" || String(r.entao.cc) !== String(cc.id)) return;
+            hit = r;
+          });
+          achou.push(hit);
+        });
+        var n = achou.filter(function (x) { return !!x; }).length;
+        out[k] = { todas: n === achou.length, parcial: n > 0 && n < achou.length, regras: achou };
+      }
+      return out;
+    },
+    /* marcas = {mo, frt, mat} (true/false/undefined = não mexeu) */
+    _ccGravarRegrasDoCentro: function (ccId, marcas, opts) {
+      opts = opts || {};
+      var self = this;
+      var cc = Store.obter(eid(), "centrocusto", String(ccId || ""));
+      if (!cc) return { ok: false, motivo: "sumiu", msg: "Não encontrei o centro de custo neste aparelho — as regras não foram gravadas." };
+      var obraId = String(cc.obraId || "");
+      if (!obraId) return { ok: false, motivo: "validacao", msg: "As caixas de lançamentos automáticos valem para centro DE UMA OBRA. Para o centro da empresa, crie a regra na aba Regras (ela pergunta de qual obra, ou “sem obra”)." };
+      var g = this._ccRegraGuarda(obraId);
+      if (!g.ok) return g;
+      var n = CentroCusto.normalizar(cc, CentroCusto.modoDaObra(obraId, listaTodas("centrocusto")).modo);
+      if (n.apura === "obra") return { ok: false, motivo: "validacao", msg: "Este centro conta a obra inteira (cabeçalho) — ele não recebe lançamento, e por isso não tem regra." };
+      if (!n._ativo) return { ok: false, motivo: "validacao", msg: "Este centro está desativado — reative-o antes de mandar lançamentos para ele." };
+      var hoje = hojeLocal(), desde = String(opts.desde || hoje).slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(desde)) return { ok: false, motivo: "validacao", campo: "desde", msg: "Informe desde quando os lançamentos automáticos vêm para este centro." };
+      var atual = this._ccAutoDoCentro(cc);
+      var regras = listaTodas("cc_regras").slice(0), gravar = [], novosIds = [], feito = [], k;
+      var nomeCC = this._ccNomeCentro(cc.id, listaTodas("centrocusto"));
+      function troca(nova) {
+        for (var i = 0; i < regras.length; i++) if (regras[i] && String(regras[i].id) === String(nova.id)) { regras[i] = nova; return; }
+        regras.push(nova);
+      }
+      for (k in this._CC_AUTO) if (Object.prototype.hasOwnProperty.call(this._CC_AUTO, k)) {
+        if (marcas[k] === undefined || marcas[k] === null) continue;
+        var a = atual[k], def = this._CC_AUTO[k];
+        if (marcas[k] && !a.todas) {
+          for (var j = 0; j < def.quandos.length; j++) {
+            if (a.regras[j]) continue;
+            var q = def.quandos[j];
+            var reg = this._ccRegraLimpa({ obraId: obraId, tipo: "despesa", quando: q, entao: { t: "cc", cc: String(cc.id) }, desde: desde,
+              nome: (this._ccRotOrigem(q.o) + (q.cat ? " (" + rot(P.finCategoria, q.cat) + ")" : "") + " → " + nomeCC).slice(0, 80) });
+            reg.id = Util.uid("ccr");
+            var v = CCAgente.validarRegra(reg, { ccs: listaTodas("centrocusto"), regras: regras, restrito: this._ccRestrito() });
+            if (!v.ok) {
+              return { ok: false, motivo: "validacao", campo: v.campo, porta: this._ccPortaDaRecusa(v, reg), regraId: v.regraId || "",
+                msg: "Não gravei as regras de " + def.rot + ": " + v.msg + " O centro foi gravado; as regras, não." };
+            }
+            regras.push(reg); gravar.push(reg); novosIds.push(reg.id);
+          }
+          feito.push("criadas as regras de " + def.rot);
+        } else if (!marcas[k] && a.todas) {
+          /* desmarcar = encerrar ontem (o que elas decidiram até ontem fica);
+             regra que começa hoje ou depois termina no próprio `desde` */
+          a.regras.forEach(function (r0) {
+            var fim = self._ccDia(hoje, -1);
+            if (r0.desde && fim < String(r0.desde).slice(0, 10)) fim = String(r0.desde).slice(0, 10);
+            var enc = Util.clone(r0); enc.ate = fim;
+            troca(enc); gravar.push(enc);
+          });
+          feito.push("encerradas as regras de " + def.rot);
+        }
+      }
+      if (!gravar.length) return { ok: true, nada: true, msg: "Nenhuma regra mudou." };
+      for (var s = 0; s < gravar.length; s++) if (!Util.semListaAninhada(gravar[s])) return { ok: false, motivo: "forma", msg: "Não gravei: a regra saiu num formato que a nuvem não aceita. Avise o suporte." };
+      var cabe = CentroCusto.cabe("cc_regras", listaTodas("cc_regras"), gravar);
+      if (!cabe.cabe) return { ok: false, motivo: "teto", msg: cabe.msg };
+      var p = this._ccRegraPrevia(obraId, regras, novosIds);
+      var pede = this._ccPreviaPede(p, desde < hoje || gravar.length > novosIds.length, opts.confirmado);
+      if (pede) { pede.titulo = "Prévia: lançamentos automáticos para " + nomeCC; return pede; }
+      var nG = Store.salvarVarios(eid(), "cc_regras", gravar);
+      if (nG !== gravar.length) return { ok: false, motivo: "gravacao", msg: "O centro foi gravado, mas o armazenamento recusou as regras (veja o aviso vermelho) — nenhuma regra mudou." };
+      if (!this._ccRegrasSalvasConferem(gravar)) return { ok: false, motivo: "conferencia", msg: "A gravação das regras não conferiu: recarregue a tela." };
+      return { ok: true, previa: p, msg: "Centro " + nomeCC + ": " + feito.join("; ") + ". " + this._ccPreviaTxt(p) + " Nada mudou no Financeiro." };
+    },
+
+    /* ---------------------------------------------------------------
+     * COMPACTAÇÃO (§4.8-6), na ordem fixa da crítica D9
+     * ------------------------------------------------------------- */
+    _ccPlanoCompactacao: function () {
+      var ac = this._ccAgenteCtx("");
+      ac.obraId = "";
+      var ccs = listaTodas("centrocusto"), self = this;
+      return CCAgente.planoCompactacao(ac, { por: this._ccQuem(), hoje: hojeLocal(), restrito: this._ccRestrito(),
+        nomeCentro: function (id) { return self._ccNomeCentro(id, ccs); } });
+    },
+    _ccAssinaturasDaEmpresa: function () {
+      var ac = this._ccAgenteCtx("");
+      ac.obraId = ""; ac.obrasVisiveis = null;
+      var m = {};
+      CCAgente.resolverFatos(ac).forEach(function (x) { m[x.fato.t + ":" + x.fato.id] = (x.res.ok ? "1|" : "0|") + CCAgente.assinaturaPartes(x.res); });
+      return m;
+    },
+    _ccCompactarGrupo: function (grupoId, opts) {
+      opts = opts || {};
+      if (!this._medcc("ccAgente")) return this._ccRegraGuarda("");
+      if (!this._ccMotorRegras()) return this._ccRegraGuarda("");
+      var plano = this._ccPlanoCompactacao(), gr = null;
+      plano.grupos.forEach(function (x) { if (x.id === String(grupoId || "")) gr = x; });
+      if (!gr) return { ok: true, nada: true, msg: "Nada a transformar: este grupo de decisões não existe mais (já foi transformado, ou as decisões mudaram). Nenhum número mudou." };
+      var g = this._ccRegraGuarda(gr.regra.obraId);
+      if (!g.ok) return g;
+      /* ---- PASSO 1 DE 3 (crítica D9): GRAVA A REGRA ----------------- */
+      if (!gr.jaGravada) {
+        if (!gr.valida) return { ok: false, motivo: "validacao", msg: "Não transformei: " + gr.recusa };
+        var r1 = this._ccGravarRegra(gr.regra, { confirmado: opts.confirmado, compactacao: true });
+        if (!r1.ok) {
+          if (r1.motivo === "previa") r1.titulo = "Prévia: transformar " + gr.n + " decisões em uma regra";
+          return r1;
+        }
+      }
+      /* ---- PASSO 2 DE 3: CONFERE, COM A REGRA JÁ NO DISCO ------------
+         ⚠ A conferência é feita DEPOIS de a regra existir de verdade, e
+         não sobre a proposta em memória: a regra que o disco aceitou é a
+         que vai responder quando a decisão sair. */
+      var acC = this._ccAgenteCtx("");
+      acC.obraId = ""; acC.obrasVisiveis = null;
+      var cf = CCAgente.conferirCompactacao(acC, gr.decisaoIds);
+      var ids = cf.conferidas.slice(0, this._CC_COMPACTA_LOTE);
+      var antes = this._ccAssinaturasDaEmpresa();
+      /* ---- PASSO 3 DE 3: SÓ AS CONFERIDAS SAEM ------------------------
+         ⚠ LÁPIDE DE LOTE **E** AS SIMPLES: `cc_aprop` também sincroniza na
+         1.2.85, que não lê `cascata:"lote"` (`test-lapide-lote` blocos 8 e
+         10). Só com a de lote, a decisão apagada aqui VOLTARIA pelo aparelho
+         da 1.2.85 — e aí a decisão e a regra juntas dariam o mesmo número,
+         mas a compactação não teria liberado byte nenhum. O teto das
+         simples é o `_CC_COMPACTA_LOTE` por clique. */
+      if (ids.length) {
+        var nE = Store.excluirVarios(eid(), "cc_aprop", ids);
+        if (nE !== ids.length) {
+          return { ok: false, motivo: "gravacao", msg: "A regra “" + gr.regra.nome + "” ficou gravada, mas o armazenamento recusou apagar as decisões (veja o aviso vermelho). Nenhum número mudou. Clique [Transformar] de novo: ele continua de onde parou." };
+        }
+        Store.lapidarLote(eid(), "cc_aprop", ids, "cc-compactar");
+      }
+      var depois = this._ccAssinaturasDaEmpresa(), mudou = 0, kA;
+      for (kA in antes) if (Object.prototype.hasOwnProperty.call(antes, kA)) if (antes[kA] !== depois[kA]) mudou++;
+      var resto = cf.conferidas.length - ids.length;
+      var msg = "Regra “" + gr.regra.nome + "” " + (gr.jaGravada ? "já estava gravada" : "gravada") + " · " + ids.length + " decisão(ões) apagada(s) (a regra dá o mesmo centro)" +
+        (cf.naoConferem.length ? " · " + cf.naoConferem.length + " ficaram à mão, porque sem elas o lançamento mudaria de centro" : "") +
+        (resto > 0 ? " · faltam " + resto + " — clique de novo para continuar" : "") + ".";
+      if (mudou) {
+        return { ok: false, motivo: "conferencia", msg: msg + " Atenção: " + mudou + " lançamento(s) não deram o mesmo resultado depois — avise o suporte com este texto, e confira a aba Fila." };
+      }
+      return { ok: true, n: ids.length, fica: cf.naoConferem.length, msg: msg + " Nenhum número mudou; nada mudou no Financeiro." };
+    },
+
+    /* ---------------------------------------------------------------
+     * O FLUXO DA TELA: executa → (prévia? mostra e grava de novo com o
+     * número confirmado) → toast → redesenha
+     * ------------------------------------------------------------- */
+    _ccRegraAcaoFluxo: function (fn, conf) {
+      var self = this, r = fn(conf || null);
+      if (r && r.ok) {
+        UI.fecharModal();
+        UI.toast(r.msg, "ok", 14000);
+        App.render();
+        return r;
+      }
+      if (r && r.motivo === "previa") {
+        this._ccPreviaRegraModal(r.previa, r.titulo, function (c) { self._ccRegraAcaoFluxo(fn, c); }, null);
+        return r;
+      }
+      this._ccRegraRecusa(r || { msg: "Nada foi gravado." });
+      return r;
+    },
+    _ccRegraRecusa: function (r) {
+      var self = this;
+      if (r.motivo === "licenca" && r.avisado) return;
+      if (!r.porta) { UI.toast(r.msg, "erro", Math.max(9000, Math.min(20000, String(r.msg || "").length * 70))); return; }
+      var p = r.porta;
+      UI.modal("Não gravei a regra", "<p>" + Util.esc(r.msg) + "</p>", [
+        { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: p.rotulo, classe: "primary", onClick: function () {
+          UI.fecharModal();
+          if (p.render) { App.render(); return; }
+          if (p.gacao === "cc-converter") { self.ccConverter({ obra: p.obra }); return; }
+          if (p.gacao === "cc-regra-abrir") { self.ccRegraAbrir({ id: p.id }); return; }
+          if (p.gacao === "cc-regra-encerrar") { self.ccRegraEncerrar({ id: p.id, base: p.base }); return; }
+        } }
+      ]);
+    },
+    /* A CAIXA DA PRÉVIA — N fatos, R$, de onde para onde, as decisões que
+       continuam valendo e a linha D20 dos pagos. Nada grava antes de
+       [Confirmar]. */
+    _ccPreviaRegraModal: function (p, titulo, aoConfirmar, aoVoltar) {
+      var self = this, ccs = listaTodas("centrocusto");
+      var M = function (c) { return Util.esc(Util.fmtMoeda(Math.round(Util.num(c)) / 100)); };
+      var nome = function (dd) { return Util.esc(self._ccDestinoNome(dd, ccs)); };
+      var corpo = '<div data-cc-previa-regra="1">' +
+        '<p style="margin:0 0 8px"><b>' + (p.n
+          ? p.n + " lançamento(s)/pedido(s) mudam de centro: " + M(p.cent) + "."
+          : "Nenhum lançamento muda de centro agora.") + "</b></p>";
+      if (p.grupos.length) {
+        corpo += '<ul style="margin:0 0 8px;padding-left:18px" data-cc-previa-grupos="1">' + p.grupos.slice(0, 10).map(function (g) {
+          return "<li>" + nome(g.de) + " → " + nome(g.para) + ": " + g.n + (g.cent ? " (" + M(g.cent) + ")" : "") + "</li>";
+        }).join("") + "</ul>";
+      }
+      if (p.boletins.n) corpo += '<p class="muted" style="margin:0 0 8px">E ' + p.boletins.n + " boletim(ns) de medição (" + M(p.boletins.cent) + ", valor de venda) — a receita que eles geraram já está na conta acima.</p>";
+      if (p.decisoes.n || p.vinculo.n) {
+        corpo += '<p style="margin:0 0 8px" data-cc-previa-ficam="1">Continuam valendo, por cima da regra: ' +
+          [p.decisoes.n ? p.decisoes.n + " decisão(ões) tomada(s) à mão (" + M(p.decisoes.cent) + ")" : "",
+           p.vinculo.n ? p.vinculo.n + " pelo vínculo com o orçamento (" + M(p.vinculo.cent) + ")" : ""].filter(function (x) { return !!x; }).join(" e ") + ".</p>";
+      }
+      if (p.pagos.n) {
+        corpo += '<div class="cc-d20" data-cc-d20="1" style="border-left:3px solid var(--ambar, #b45309);padding:8px 12px;margin:0 0 8px"><b>' +
+          (p.pagos.n === 1 ? "1 destes já foi pago: " : p.pagos.n + " destes já foram pagos: ") + Util.esc(Util.fmtMoeda(p.pagos.valor)) +
+          (p.pagos.maisRecente ? (p.pagos.n === 1 ? " em " : "; o mais recente em ") + Util.esc(Util.fmtDia(p.pagos.maisRecente)) : " (a data do pagamento não está registrada)") + ".</b>" +
+          '<p class="muted" style="margin:4px 0 0">Mudar o centro <b>não altera o Financeiro nem o pagamento</b>: muda só em qual centro esse dinheiro aparece.</p></div>';
+      }
+      if (p.lista.length) {
+        corpo += '<details><summary>Ver os lançamentos (' + p.lista.length + ")</summary><table class=\"tbl\" style=\"margin-top:6px\"><tbody>" +
+          p.lista.slice(0, 40).map(function (l) {
+            return "<tr><td>" + Util.esc(Util.fmtDia(l.data)) + "</td><td>" + Util.esc(l.desc || l.id) + (l.pago ? ' <span class="pill">pago</span>' : "") + "</td>" +
+              '<td class="num">' + M(l.cent) + "</td><td>" + nome(l.de) + " → " + nome(l.para) + "</td></tr>";
+          }).join("") + "</tbody></table>" + (p.lista.length > 40 ? '<p class="muted">… e mais ' + (p.lista.length - 40) + ".</p>" : "") + "</details>";
+      }
+      if (p.oculto) corpo += '<p class="muted">Há lançamentos de obras que você não acompanha nesta conta.</p>';
+      corpo += '<p class="muted" style="margin:8px 0 0">Nada foi gravado ainda. [Confirmar] grava; o Financeiro não muda — muda só em qual centro o dinheiro aparece.</p></div>';
+      var bts = [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); UI.toast("Nada foi gravado — as regras continuam como estavam.", "ok"); } }];
+      if (aoVoltar) bts.push({ texto: "Voltar", classe: "ghost", onClick: function () { aoVoltar(); } });
+      bts.push({ texto: "Confirmar", classe: "primary", onClick: function () { aoConfirmar(CCAgente.previaAssinatura(p)); } });
+      UI.modal(titulo || "Prévia da regra", corpo, bts);
+    },
+
+    /* ---------------------------------------------------------------
+     * A LISTA
+     * ------------------------------------------------------------- */
+    _ccRegrasHtml: function (sel) {
+      var self = this, st = this._ccEstado(), hoje = hojeLocal();
+      var motorOk = this._ccMotorRegras();
+      var regrasCrus = listaTodas("cc_regras");
+      var restrito = this._ccRestrito();
+      var nomeObra = {};
+      listaTodas("obras").forEach(function (o) { if (o && o.id) nomeObra[String(o.id)] = String(o.nome || o.id); });
+      function veObra(oid) {
+        if (!oid) return !restrito;
+        return !(typeof Auth !== "undefined" && Auth.podeObra && !Auth.podeObra(oid));
+      }
+      var visiveis = regrasCrus.filter(function (r) { return r && veObra(String(r.obraId || "")); });
+      var mostra = visiveis.filter(function (r) { return sel === "todas" || String(r.obraId || "") === String(sel); });
+      var ocultas = regrasCrus.length - visiveis.length;
+      var podeNova = motorOk && this._ccPode(sel === "todas" ? "" : sel, "gravar").ok && (sel !== "todas" || !restrito || lista("obras").length > 0);
+      var html = '<div class="card" style="padding:16px 18px;margin-bottom:14px" data-cc-regras-topo="1">' +
+        (this._ccAgenteAplicado()
+          ? "<p style=\"margin:0\">As regras gravadas <b>já valem</b>: o lançamento que uma regra alcança sai da aba <b>Fila</b> e aparece no centro da regra na aba <b>Centros</b> — e no Previsto × Realizado, pela mesma conta. O vínculo com o orçamento vence a regra, e a decisão da pessoa vence os dois.</p>"
+          : "<p style=\"margin:0\">A aba <b>Fila</b> obedece às regras; a aba <b>Centros</b> soma só pelo vínculo com a etapa, porque " + Util.esc(this._ccPorqueSemAgente()) + ".</p>") +
+        '<p class="muted" style="margin:8px 0 0">Regra com data no passado mostra antes quanto dinheiro muda de centro e quanto disso já foi pago — nada grava antes de [Confirmar]. Regra que já decidiu não se exclui: encerre ou mude.</p>' +
+        '<div class="flex" style="gap:8px;margin-top:10px;flex-wrap:wrap">' +
+        (podeNova ? '<button class="btn" data-gacao="cc-regra-nova" data-obra="' + Util.esc(sel === "todas" ? "" : sel) + '">Nova regra</button>' : "") +
+        (motorOk && listaTodas("cc_aprop").length >= 2 && this._ccPode("", "gravar").ok ? '<button class="btn sm ghost" data-gacao="cc-compactar-ver">Transformar decisões repetidas em regras…</button>' : "") +
+        "</div>" +
+        (motorOk ? "" : '<p class="muted" style="margin:8px 0 0">O motor de regras (<code>js/ccagente.js</code>) não carregou inteiro neste aparelho: a lista aparece, mas criar, mudar e encerrar ficam fechados. Recarregue o app; se continuar, avise o suporte.</p>') +
+        "</div>";
+      if (sel !== "todas" && CentroCusto.modoDaObra(sel, listaTodas("centrocusto")).modo === "legado-rateio") {
+        html += this._ccFaixa("aviso", "Esta obra ainda divide o gasto pelos centros antigos, pelo valor orçado: nenhuma regra vale para ela até a conversão.",
+          this._ccPortaHtml("cc-converter", "Converter os centros antigos…", sel));
+      }
+      if (!mostra.length) {
+        return html + '<div class="card" style="padding:22px"><p style="margin:0">' +
+          (visiveis.length ? "Nenhuma regra desta obra — as " + visiveis.length + " regra(s) gravadas são de outras obras (escolha “Todas as obras”)." : "Nenhuma regra gravada neste aparelho.") +
+          (ocultas > 0 ? " Há " + ocultas + " regra(s) de obras que você não acompanha." : "") + "</p></div>";
+      }
+      var est = {};
+      try { if (motorOk) { var acE = this._ccAgenteCtx(""); acE.obraId = ""; est = CCAgente.estatisticasRegras(acE); } } catch (eE) { est = {}; }
+      var ccs = listaTodas("centrocusto");
+      var M = function (c) { return Util.fmtMoeda(Math.round(Util.num(c)) / 100); };
+      mostra.sort(function (a, b) {
+        var ea = self._ccRegraEstado(a, hoje).cls === "off" ? 1 : 0, eb = self._ccRegraEstado(b, hoje).cls === "off" ? 1 : 0;
+        if (ea !== eb) return ea - eb;
+        return String(a.nome || "") < String(b.nome || "") ? -1 : (String(a.nome || "") > String(b.nome || "") ? 1 : (String(a.id) < String(b.id) ? -1 : 1));
+      });
+      html += '<div class="card" style="padding:0;overflow:auto"><table class="tbl" data-cc-regras="1"><thead><tr>' +
+        "<th>Regra</th><th>Obra</th><th>Quando</th><th>Vai para</th><th>Vigência</th><th>Situação</th><th class=\"num\">Decidiu</th><th>Exceções à mão</th><th></th></tr></thead><tbody>";
+      mostra.forEach(function (r) {
+        var id = String(r.id), e = est[id] || { decidiu: { n: 0, cent: 0 }, excecoes: { n: 0, cent: 0 } };
+        var sit = self._ccRegraEstado(r, hoje);
+        var pode = motorOk && self._ccPode(String(r.obraId || ""), "gravar").ok && veObra(String(r.obraId || ""));
+        var dados = ' data-id="' + Util.esc(id) + '" data-base="' + Util.esc(String(r.atualizadoEm || "")) + '"';
+        var ativa = sit.cls === "ok" || sit.cls === "futura";
+        var acoes = "";
+        if (pode && ativa) acoes += '<button class="btn sm" data-gacao="cc-regra-mudar"' + dados + ">Mudar</button> ";
+        if (pode && ativa && (!r.ate || String(r.ate).slice(0, 10) >= hoje)) acoes += '<button class="btn sm ghost" data-gacao="cc-regra-encerrar"' + dados + ">Encerrar</button> ";
+        /* ⚠ [Excluir] SÓ COM "DECIDIU 0", e o número vem da contagem crua
+           (`estatisticasRegras` conta todas as obras). A função confere de
+           novo — o botão escondido não é a guarda. */
+        if (pode && e.decidiu.n === 0) acoes += '<button class="btn sm danger" data-gacao="cc-regra-excluir"' + dados + ">Excluir</button>";
+        html += '<tr id="cc-rg-' + Util.esc(id) + '"' + (st.regraFoco === id ? ' style="outline:2px solid var(--ambar, #b45309);background:rgba(180,83,9,.10)" data-cc-foco="1"' : "") + ">" +
+          "<td><b>" + Util.esc(r.nome || id) + "</b>" + (r.ant ? ' <span class="muted" title="Esta regra veio de um [Mudar].">(mudada)</span>' : "") + "</td>" +
+          "<td>" + Util.esc(r.obraId ? (nomeObra[String(r.obraId)] || "(obra apagada)") : "— sem obra —") + "</td>" +
+          "<td>" + Util.esc(self._ccRegraQuandoTxt(r.quando)) + (r.tipo === "receita" ? ' <span class="pill">receita</span>' : "") + "</td>" +
+          "<td>" + Util.esc(self._ccRegraEntaoTxt(r.entao, ccs)) + "</td>" +
+          "<td>" + Util.esc((r.desde ? "desde " + Util.fmtDia(String(r.desde).slice(0, 10)) : "sempre") + (r.ate ? " até " + Util.fmtDia(String(r.ate).slice(0, 10)) : " · sem fim")) + "</td>" +
+          '<td data-cc-sit="' + Util.esc(sit.cls) + '">' + Util.esc(sit.rot) + "</td>" +
+          '<td class="num" data-cc-decidiu="' + e.decidiu.n + '">' + e.decidiu.n + (e.decidiu.cent ? " (" + Util.esc(M(e.decidiu.cent)) + ")" : "") +
+            (e.decidiu.oculto ? ' <span class="muted">+ de obras que você não acompanha</span>' : "") + "</td>" +
+          "<td>" + (e.excecoes.n
+            ? e.excecoes.n + " exceção(ões) decidida(s) à mão (" + Util.esc(M(e.excecoes.cent)) + ') <button class="btn sm ghost" data-gacao="cc-regra-excecoes" data-id="' + Util.esc(id) + '">Ver</button>'
+            : '<span class="muted">—</span>') + "</td>" +
+          '<td style="white-space:nowrap">' + acoes + "</td></tr>";
+      });
+      html += "</tbody></table></div>";
+      if (ocultas > 0) html += '<p class="muted" style="margin-top:8px">Há ' + ocultas + " regra(s) de obras que você não acompanha (ou sem obra) — elas não aparecem aqui.</p>";
+      return html;
+    },
+
+    /* ---------------------------------------------------------------
+     * O FORMULÁRIO — os campos que a §1.6 permite, e nenhum outro
+     * ------------------------------------------------------------- */
+    _ccRegraForm: function (draft, cfg) {
+      var self = this;
+      draft = draft || {};
+      cfg = cfg || { modo: "nova" };
+      this._ccRegraRascunho = { draft: draft, cfg: cfg };
+      var restrito = this._ccRestrito();
+      var obraId = String(draft.obraId || "");
+      var q = draft.quando || {}, en = draft.entao || { t: "cc", cc: "" };
+      var erro = draft._erro || null;
+      function opt(v, t, s) { return '<option value="' + Util.esc(v) + '"' + (String(v) === String(s == null ? "" : s) ? " selected" : "") + ">" + Util.esc(t) + "</option>"; }
+      function marca(campo) { return erro && erro.campo === campo ? ' style="outline:2px solid #b91c1c" aria-invalid="true"' : ""; }
+      /* ⚠ SÓ OS CENTROS QUE A GRAVAÇÃO ACEITA: ativos, da obra da regra ou
+         da empresa, e nunca o cabeçalho "obra inteira". Oferecer um centro
+         que o clique seguinte recusa é porta prometida que o clique fecha. */
+      var modo = CentroCusto.modoDaObra(obraId, listaTodas("centrocusto")).modo;
+      var ccsOk = listaTodas("centrocusto").filter(function (c) {
+        if (!c || !c.id) return false;
+        if (c.obraId && String(c.obraId) !== obraId) return false;
+        var n = CentroCusto.normalizar(c, CentroCusto.modoDaObra(String(c.obraId || ""), listaTodas("centrocusto")).modo);
+        return n._ativo && n.apura !== "obra";
+      }).map(function (c) { return { id: String(c.id), nome: self._ccNomeCentro(c.id, listaTodas("centrocusto")) + (c.obraId ? "" : " (centro da empresa)") }; });
+      ccsOk.sort(function (a, b) { return a.nome < b.nome ? -1 : 1; });
+      var optsCC = function (s) { return opt("", "— escolha o centro —", s) + ccsOk.map(function (c) { return opt(c.id, c.nome, s); }).join(""); };
+      var obras = lista("obras");
+      var selObra = cfg.modo === "mudar"
+        ? '<input disabled value="' + Util.esc(obraId ? ((obras.filter(function (o) { return String(o.id) === obraId; })[0] || {}).nome || obraId) : "— sem obra —") + '">'
+        : '<select id="cc-rg-obra" data-gacao="cc-regra-obra"' + marca("obraId") + ">" + (restrito ? "" : opt("", "— sem obra (despesas do escritório) —", obraId)) +
+          obras.map(function (o) { return opt(String(o.id), o.nome || o.id, obraId); }).join("") + "</select>";
+      var partes = Util.arr(en.partes), linhasPt = "", i;
+      for (i = 0; i < 12; i++) {
+        var pp = partes[i] || {};
+        linhasPt += '<div class="flex" style="gap:6px;margin-bottom:4px"><select id="cc-rg-pc' + i + '" style="min-width:220px">' + optsCC(pp.cc || "") + "</select>" +
+          '<input id="cc-rg-pp' + i + '" style="width:90px" placeholder="%" value="' + Util.esc(pp.p ? Util.fmtNum(Util.num(pp.p) / 100, 2) : "") + '"></div>';
+      }
+      var forns = lista("fornecedores"), frotas = lista("frota");
+      var atvs = lista("atividades").filter(function (a) { return a && String(a.obraId || "") === obraId && a.ativo !== false; });
+      var corpo = '<div data-cc-regra-form="1">' +
+        (erro ? '<div id="cc-rg-erro" data-cc-rg-erro="' + Util.esc(erro.campo || "") + '" class="card" style="padding:10px 12px;margin-bottom:10px;border-left:3px solid #b91c1c"><b>Não gravei:</b> ' + Util.esc(erro.msg) +
+          (erro.porta && erro.porta.gacao ? ' <button class="btn sm" data-gacao="' + Util.esc(erro.porta.gacao) + '"' + (erro.porta.id ? ' data-id="' + Util.esc(erro.porta.id) + '"' : "") + (erro.porta.obra ? ' data-obra="' + Util.esc(erro.porta.obra) + '"' : "") + ">" + Util.esc(erro.porta.rotulo) + "</button>" : "") + "</div>" : "") +
+        '<div class="row">' + campo("Nome da regra *", '<input id="cc-rg-nome" maxlength="80" value="' + Util.esc(draft.nome || "") + '"' + marca("nome") + ' placeholder="Ex.: Folha desta obra → Administração local">') + "</div>" +
+        '<div class="row">' + campo("Obra", selObra) +
+        campo("Vale para", '<select id="cc-rg-tipo"' + marca("tipo") + ">" + opt("despesa", "despesa", draft.tipo || "despesa") + opt("receita", "receita", draft.tipo) + "</select>") + "</div>" +
+        '<div class="row">' + campo("Origem do lançamento *", '<select id="cc-rg-o"' + marca("quando") + ">" + this._CC_ORIGENS.map(function (o) { return opt(o[0], o[1], q.o || "*"); }).join("") + "</select>") +
+        campo("Categoria (opcional)", '<select id="cc-rg-cat">' + opt("", "— qualquer —", q.cat) + P.finCategoria.map(function (c) { return opt(c[0], c[1], q.cat); }).join("") + "</select>") + "</div>" +
+        '<div class="row">' + campo("Fornecedor (só com Pedido de compra)", '<select id="cc-rg-forn"' + marca("forn") + ">" + opt("", "— qualquer —", q.forn) + forns.map(function (f) { return opt(String(f.id), f.nome || f.razaoSocial || f.id, q.forn); }).join("") + "</select>") +
+        campo("CNPJ do emitente (só com Nota fiscal)", '<input id="cc-rg-cnpj" value="' + Util.esc(q.cnpj || "") + '"' + marca("cnpj") + ' placeholder="só números">') + "</div>" +
+        '<div class="row">' + campo("Veículo (só com Custo de frota)", '<select id="cc-rg-frota"' + marca("frota") + ">" + opt("", "— qualquer —", q.frota) + frotas.map(function (f) { return opt(String(f.id), f.nome || f.placa || f.id, q.frota); }).join("") + "</select>") +
+        campo("Atividade (só com Medição)", '<select id="cc-rg-atv"' + marca("atv") + ">" + opt("", "— qualquer —", q.atv) + atvs.map(function (a) { return opt(String(a.id), (a.codigo ? a.codigo + " " : "") + (a.descricao || a.id), q.atv); }).join("") + "</select>") + "</div>" +
+        '<div class="row">' + campo("Destino", '<select id="cc-rg-dest"' + marca("entao") + ">" + opt("cc", "Um centro", en.t || "cc") + opt("rateio", "Dividir entre centros", en.t) + "</select>") +
+        campo("Centro de custo", '<select id="cc-rg-cc"' + marca("entao") + ">" + optsCC(en.t === "rateio" ? "" : en.cc) + "</select>") + "</div>" +
+        '<details' + (en.t === "rateio" || (erro && erro.campo === "partes") ? " open" : "") + marca("partes") + '><summary>Divisão entre centros (use com “Dividir entre centros”; as partes somam 100%)</summary>' + linhasPt + "</details>" +
+        '<div class="row">' + campo(cfg.modo === "mudar" ? "A regra nova vale a partir de *" : "Vale desde *", '<input type="date" id="cc-rg-desde" value="' + Util.esc(draft.desde || "") + '"' + marca("desde") + ">") +
+        campo("Até (opcional)", '<input type="date" id="cc-rg-ate" value="' + Util.esc(draft.ate || "") + '"' + marca("ate") + ">") + "</div>" +
+        (cfg.modo === "mudar"
+          ? '<p style="margin:8px 0 0"><input type="checkbox" id="cc-rg-corrigir"' + (draft._corrigir ? " checked" : "") + '> <label for="cc-rg-corrigir">Corrigir também o passado — a regra atual deixa de valer desde o começo (' +
+            Util.esc(cfg.desdeOrig ? Util.fmtDia(cfg.desdeOrig) : "sempre") + ") e a nova vale no lugar dela</label></p>" +
+            '<p class="muted" style="margin:4px 0 0">Sem a caixa, a regra atual termina no dia anterior à data acima e a nova começa nela.</p>'
+          : "") +
+        (modo === "legado-rateio" ? '<p class="muted" style="margin:8px 0 0">Atenção: esta obra ainda divide o gasto pelos centros antigos — a gravação vai recusar e oferecer a conversão.</p>' : "") +
+        '<p class="muted" style="margin:8px 0 0">A regra compara só campos por id (origem, categoria, fornecedor, CNPJ, veículo, atividade) — nunca descrição ou valor. O vínculo com o orçamento vence a regra, e a decisão da pessoa vence os dois.</p></div>';
+      UI.modal(cfg.modo === "mudar" ? "Mudar a regra" : "Nova regra de centro de custo", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { self._ccRegraRascunho = null; UI.fecharModal(); } },
+        { texto: cfg.modo === "mudar" ? "Mudar a regra…" : "Salvar regra…", classe: "primary", onClick: function () { self._ccRegraSalvarForm(null); } }
+      ]);
+    },
+    /* lê o formulário da tela para o rascunho (sem gravar nada) */
+    _ccRegraColetar: function () {
+      var rs = this._ccRegraRascunho || { draft: {}, cfg: { modo: "nova" } };
+      function el(id) { return (typeof document !== "undefined") ? document.getElementById(id) : null; }
+      function v(id) { var e = el(id); return e ? String(e.value == null ? "" : e.value).trim() : ""; }
+      var d = {}, k;
+      for (k in rs.draft) if (Object.prototype.hasOwnProperty.call(rs.draft, k)) d[k] = rs.draft[k];
+      delete d._erro;
+      d.nome = v("cc-rg-nome");
+      if (rs.cfg.modo !== "mudar" && el("cc-rg-obra")) d.obraId = v("cc-rg-obra");
+      d.tipo = v("cc-rg-tipo") || "despesa";
+      d.quando = { o: v("cc-rg-o") || "*" };
+      ["cat", "forn", "cnpj", "frota", "atv"].forEach(function (c) { var x = v("cc-rg-" + c); if (x) d.quando[c] = x; });
+      if (v("cc-rg-dest") === "rateio") {
+        var ps = [];
+        for (var i = 0; i < 12; i++) {
+          var c = v("cc-rg-pc" + i), pct = v("cc-rg-pp" + i);
+          if (!c && !pct) continue;
+          /* ⚠ PERCENTUAL → PONTOS-BASE SEM ARREDONDAR ESCONDIDO: 33,333% vira
+             3333,3 e o `validarRegra` recusa "até duas casas" — arredondar
+             aqui calado faria a soma fechar 100% com um valor que a pessoa
+             não digitou. */
+          ps.push({ cc: c, p: Math.round(Util.num(pct) * 100 * 1e6) / 1e6 });
+        }
+        d.entao = { t: "rateio", partes: ps };
+      } else d.entao = { t: "cc", cc: v("cc-rg-cc") };
+      d.desde = v("cc-rg-desde");
+      d.ate = v("cc-rg-ate") || null;
+      var cx = el("cc-rg-corrigir");
+      d._corrigir = !!(cx && cx.checked);
+      return d;
+    },
+    _ccRegraSalvarForm: function (conf) {
+      var rs = this._ccRegraRascunho || { cfg: { modo: "nova" } };
+      return this._ccRegraSalvarDe(this._ccRegraColetar(), rs.cfg, conf);
+    },
+    /* grava o rascunho: ok → fecha; prévia → caixa com [Confirmar]/[Voltar];
+       recusa → o formulário de volta, com o campo marcado e a porta — nada
+       do que foi digitado se perde */
+    _ccRegraSalvarDe: function (dr, cfg, conf) {
+      var self = this;
+      this._ccRegraRascunho = { draft: dr, cfg: cfg };
+      var r = cfg.modo === "mudar"
+        ? this._ccMudarRegra(cfg.id, dr, { baseEm: cfg.baseEm, corrigirPassado: dr._corrigir, aPartir: dr.desde, confirmado: conf })
+        : this._ccGravarRegra(dr, { confirmado: conf });
+      if (r.ok) {
+        this._ccRegraRascunho = null;
+        UI.fecharModal();
+        UI.toast(r.msg, "ok", 14000);
+        this._ccEstadoGravar({ aba: "regras", regraFoco: String(r.id || "") });
+        App.render();
+        return r;
+      }
+      if (r.motivo === "previa") {
+        this._ccPreviaRegraModal(r.previa, r.titulo,
+          function (c) { self._ccRegraSalvarDe(dr, cfg, c); },
+          function () { self._ccRegraForm(dr, cfg); });
+        return r;
+      }
+      if (r.motivo === "licenca" && r.avisado) return r;
+      dr._erro = { campo: r.campo || "", msg: r.msg, porta: r.porta || null };
+      this._ccRegraForm(dr, cfg);
+      return r;
+    },
+
+    /* ---- as portas da tela (dispatcher) ---- */
+    ccRegraNova: function (d) {
+      var obra = String((d && d.obra) || "");
+      this._ccRegraForm({ obraId: obra, tipo: "despesa", quando: { o: "FOL" }, entao: { t: "cc", cc: "" }, desde: hojeLocal() }, { modo: "nova" });
+    },
+    /* trocar a obra no formulário redesenha a lista de centros, sem perder o resto */
+    ccRegraObra: function (d) {
+      if (!this._ccRegraRascunho) return;
+      var dr = this._ccRegraColetar();
+      dr.obraId = String((d && d.value) || "");
+      if (dr.entao && dr.entao.t === "cc") dr.entao.cc = "";
+      if (dr.entao && dr.entao.t === "rateio") dr.entao.partes = [];
+      delete dr.quando.atv;
+      this._ccRegraForm(dr, this._ccRegraRascunho.cfg);
+    },
+    ccRegraMudar: function (d) {
+      var dd = this._ccRegraDoDisco(d && d.id);
+      if (!dd.ok) { this._ccRegraRecusa(dd); return; }
+      var r = dd.r;
+      var dr = { obraId: String(r.obraId || ""), nome: r.nome, tipo: r.tipo, quando: Util.clone(r.quando || {}), entao: Util.clone(r.entao || {}),
+        desde: hojeLocal() > String(r.desde || "") ? hojeLocal() : this._ccDia(String(r.desde || hojeLocal()), 1), ate: r.ate || null };
+      this._ccRegraForm(dr, { modo: "mudar", id: String(r.id), baseEm: String((d && d.base) != null ? d.base : (r.atualizadoEm || "")), desdeOrig: String(r.desde || "").slice(0, 10) });
+    },
+    ccRegraEncerrar: function (d) {
+      var self = this, dd = this._ccRegraDoDisco(d && d.id);
+      if (!dd.ok) { this._ccRegraRecusa(dd); return; }
+      var r = dd.r, base = String((d && d.base) != null ? d.base : (r.atualizadoEm || ""));
+      var corpo = "<p>A regra <b>" + Util.esc(r.nome || r.id) + "</b> deixa de valer para lançamentos <b>depois</b> deste dia. O que ela decidiu até lá continua no centro dela.</p>" +
+        campo("Último dia em que a regra vale", '<input type="date" id="cc-rg-ate-enc" value="' + Util.esc(hojeLocal()) + '">') +
+        '<p class="muted">O próximo passo mostra quantos lançamentos voltam para a Fila (e quanto disso já foi pago) antes de gravar.</p>';
+      UI.modal("Encerrar a regra", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Continuar…", classe: "primary", onClick: function () {
+          var el = document.getElementById("cc-rg-ate-enc"), ate = el ? String(el.value || "") : "";
+          self._ccRegraAcaoFluxo(function (c) { return self._ccEncerrarRegra(r.id, ate, { baseEm: base, confirmado: c }); });
+        } }
+      ]);
+    },
+    ccRegraExcluir: function (d) {
+      var self = this, dd = this._ccRegraDoDisco(d && d.id);
+      if (!dd.ok) { this._ccRegraRecusa(dd); return; }
+      var r = dd.r, base = String((d && d.base) != null ? d.base : (r.atualizadoEm || ""));
+      UI.modal("Excluir a regra", "<p>Excluir a regra <b>" + Util.esc(r.nome || r.id) + "</b>? Ela não decidiu nenhum lançamento; se a exclusão mudar algum centro, o próximo passo mostra antes.</p>", [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Excluir", classe: "danger", onClick: function () {
+          self._ccRegraAcaoFluxo(function (c) { return self._ccExcluirRegra(r.id, { baseEm: base, confirmado: c }); });
+        } }
+      ]);
+    },
+    ccRegraAbrir: function (d) {
+      var id = String((d && d.id) || ""), r = Store.obter(eid(), "cc_regras", id);
+      UI.fecharModal();
+      this._ccEstadoGravar({ aba: "regras", regraFoco: id, obra: r && r.obraId ? String(r.obraId) : "todas" });
+      this.__ccEstado = null;
+      App.render();
+      try { var el = document.getElementById("cc-rg-" + id); if (el && el.scrollIntoView) el.scrollIntoView({ block: "center" }); } catch (e) {}
+    },
+    ccRegraExcecoes: function (d) {
+      var id = String((d && d.id) || ""), r = Store.obter(eid(), "cc_regras", id);
+      if (!r || !this._ccMotorRegras()) return;
+      var ac = this._ccAgenteCtx(""); ac.obraId = "";
+      var e = (CCAgente.estatisticasRegras(ac)[id] || { excecoes: { lista: [] } }).excecoes;
+      var ccs = listaTodas("centrocusto"), self = this, decs = {};
+      listaTodas("cc_aprop").forEach(function (x) { if (x && x.id) decs[String(x.id)] = x; });
+      var pode = this._ccPode(String(r.obraId || ""), "gravar").ok;
+      var linhas = Util.arr(e.lista).map(function (l) {
+        var ch = CCAgente.chaveDe(l.aprop) || { k: "", d: "" }, ap = decs[String(l.aprop)] || {};
+        return "<tr><td>" + Util.esc(Util.fmtDia(l.data)) + "</td><td>" + Util.esc(l.desc || l.id) + '</td><td class="num">' + Util.esc(Util.fmtMoeda(l.cent / 100)) + "</td>" +
+          "<td>" + Util.esc(self._ccDestinoNome(l.cc, ccs)) + "</td><td>" + Util.esc(String(ap.por || "—")) + "</td><td>" +
+          (pode ? '<button class="btn sm ghost" data-gacao="cc-voltar-fila" data-k="' + Util.esc(ch.k) + '" data-d="' + Util.esc(ch.d) + '" data-obra="' + Util.esc(l.obraId) +
+            '" data-base="' + Util.esc(String(ap.atualizadoEm || "")) + '" data-rot="' + Util.esc(l.desc || l.id) + '">Voltar para a regra</button>' : "") + "</td></tr>";
+      }).join("");
+      UI.modal("Exceções decididas à mão — " + Util.esc(r.nome || id),
+        "<p>Estes lançamentos a regra alcançaria, mas uma pessoa decidiu o centro de cada um à mão — e a decisão vale sobre a regra. O sistema não aprende sozinho com elas.</p>" +
+        '<table class="tbl"><thead><tr><th>Data</th><th>Lançamento</th><th class="num">Valor</th><th>Centro decidido</th><th>Por</th><th></th></tr></thead><tbody>' + linhas + "</tbody></table>",
+        [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+    },
+    ccCompactarVer: function () {
+      if (!this._ccMotorRegras()) return;
+      var plano = this._ccPlanoCompactacao(), self = this, nomeObra = {};
+      listaTodas("obras").forEach(function (o) { if (o && o.id) nomeObra[String(o.id)] = String(o.nome || o.id); });
+      var M = function (c) { return Util.esc(Util.fmtMoeda(Math.round(Util.num(c)) / 100)); };
+      var MOT = { vinculo: "de medição, pedido ou nota (a regra perde para o vínculo — a decisão da pessoa não pode virar regra)", "fin-com-etapa": "de lançamento com etapa (o vínculo pega primeiro)",
+        partes: "divididas em partes", "sem-fato": "de lançamentos que não estão neste aparelho", misturado: "de documentos com lançamentos diferentes entre si",
+        sozinha: "sem outra igual para formar grupo", "outro-destino": "com a mesma condição e outro centro (fica a maior)", "decisao-invalida": "ilegíveis" };
+      var corpo = '<div data-cc-compactar="1"><p>Decisões repetidas — o mesmo tipo de lançamento, na mesma obra, sempre para o mesmo centro — podem virar <b>uma</b> regra. A ordem é fixa: grava a regra, confere lançamento a lançamento que sem a decisão o centro é o mesmo, e só então apaga as decisões conferidas. <b>Nenhum número muda.</b></p>';
+      if (!plano.grupos.length) corpo += '<p class="muted">Nenhum grupo de decisões repetidas agora.</p>';
+      plano.grupos.forEach(function (g) {
+        var pv = g.previa;
+        corpo += '<div class="card" style="padding:10px 12px;margin:8px 0" data-cc-grupo="' + Util.esc(g.id) + '"><b>' + g.n + " decisões (" + M(g.cent) + ")</b> — " + Util.esc(self._ccRegraQuandoTxt(g.regra.quando)) +
+          ", obra " + Util.esc(g.regra.obraId ? (nomeObra[g.regra.obraId] || g.regra.obraId) : "— sem obra —") + " → " + Util.esc(self._ccNomeCentro(g.regra.entao.cc, listaTodas("centrocusto"))) +
+          '<p class="muted" style="margin:4px 0">Regra “' + Util.esc(g.regra.nome) + "”, desde " + Util.esc(Util.fmtDia(g.regra.desde)) + ". Previsão: " + g.previsao.conferidas + " saem (viram a regra)" +
+          (g.previsao.naoConferem ? ", " + g.previsao.naoConferem + " ficam à mão (sem elas o centro mudaria)" : "") + "." +
+          (pv.n ? " Além delas, a regra leva " + pv.n + " lançamento(s) (" + M(pv.cent) + ") que hoje estão na Fila ou em outro centro" + (pv.pagos.n ? " — " + pv.pagos.n + " já pago(s)" : "") + "; a prévia mostra antes." : "") + "</p>" +
+          (g.valida ? '<button class="btn sm" data-gacao="cc-compactar" data-id="' + Util.esc(g.id) + '">' + (g.jaGravada ? "Continuar a transformação" : "Transformar em regra…") + "</button>"
+            : '<p class="muted" style="margin:0">Não dá para transformar: ' + Util.esc(g.recusa) + "</p>") + "</div>";
+      });
+      var k, foraTxt = [];
+      for (k in plano.fora.porMotivo) if (Object.prototype.hasOwnProperty.call(plano.fora.porMotivo, k)) foraTxt.push(plano.fora.porMotivo[k].length + " " + (MOT[k] || k));
+      if (foraTxt.length) corpo += '<p class="muted">Ficam à mão: ' + Util.esc(foraTxt.join("; ")) + ".</p>";
+      corpo += "</div>";
+      UI.modal("Transformar decisões repetidas em regras", corpo, [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+    },
+    ccCompactar: function (d) {
+      var self = this, id = String((d && d.id) || "");
+      return this._ccRegraAcaoFluxo(function (c) { return self._ccCompactarGrupo(id, { confirmado: c }); });
     },
 
     _ccAbaAgenteHtml: function (aba, sel) {
@@ -30249,26 +33015,14 @@ renderPatrimonio: function () {
           "<p>O agente de apropriação está desligado aqui (chave <code>ccAgente</code>). Nada foi apagado: regras e decisões gravadas continuam no aparelho e voltam a valer quando a chave for religada.</p>" +
           "<p class=\"muted\">A aba <b>Centros</b> segue mostrando o gasto que chega a cada centro pelo vínculo com a etapa do orçamento.</p></div>";
       }
-      /* ⚠ A FILA JÁ TEM MOTOR; AS REGRAS AINDA NÃO TÊM FORMULÁRIO. Mostrar a
-         aba Regras vazia diria "não há regras" a quem tem regras vindas de
-         outro aparelho — e ofereceria uma tela onde nada pode ser criado. */
+      /* ⚠ A ABA REGRAS TEM FORMULÁRIO DESDE A PARTE C (24/09/2026). Até ali
+         ela dizia "o formulário ainda não existe" — e era verdade; o recado
+         ficou para trás como texto e é o `test-ccagente-consolidar` [10] que
+         reprova se ele voltar. A lista aparece mesmo com o motor velho em
+         cache (só sem os botões que gravam): esconder as regras de quem tem
+         regras vindas de outro aparelho diria "não há regras". */
       if (typeof CCAgente !== "undefined" && aba === "fila") return this._ccFilaHtml(sel);
-      if (typeof CCAgente !== "undefined") {
-        var nReg = 0;
-        try { nReg = Util.arr(Store.listar(eid(), "cc_regras")).length; } catch (eR) {}
-        return '<div class="card" style="padding:26px">' +
-          "<h3 style=\"margin-top:0\">Regras — o formulário ainda não existe</h3>" +
-          /* ⚠ A FILA OBEDECE À REGRA; A ABA CENTROS AINDA NÃO. Até 24/09/2026
-             este texto dizia que a regra "aparece na aba Centros" — com o
-             `_ccAgenteAplicado()` devolvendo `false`, ou seja, com a própria
-             aba Centros avisando que soma só pelo vínculo. Dois recados
-             opostos sobre o mesmo dinheiro, e o que mentia era o que
-             tranquilizava. Quem ligar a conta ao agente reescreve este par. */
-          "<p>O motor que <b>aplica</b> as regras já está neste aparelho, e a aba <b>Fila</b> já as obedece: lançamento que uma regra resolve sai da Fila. A aba <b>Centros</b> ainda soma só pelo vínculo com a etapa — com regra gravada, ela avisa que o número pode estar incompleto. O que falta é a tela para criar e encerrar regra por aqui.</p>" +
-          (nReg > 0
-            ? '<p class="muted">Há <b>' + nReg + "</b> regra(s) gravada(s) neste aparelho. A Fila já as considera; a aba Centros, ainda não.</p>"
-            : '<p class="muted">Nenhuma regra gravada neste aparelho.</p>') + "</div>";
-      }
+      if (typeof CCAgente !== "undefined") return this._ccRegrasHtml(sel);
       var n = 0;
       try { n = Util.arr(Store.listar(eid(), aba === "fila" ? "cc_aprop" : "cc_regras")).length; } catch (e) {}
       /* ⚠ CONSELHO QUE NÃO SE PODE SEGUIR ENSINA A IGNORAR O PRÓXIMO. Esta
@@ -30278,11 +33032,15 @@ renderPatrimonio: function () {
          Enquanto o motor não existir, a caixa diz que a parte está sendo
          construída e que ela NÃO muda nenhum número da aba Centros — que é a
          dúvida de quem lê isto olhando dinheiro. */
+      /* ⚠ "AINDA ESTÁ SENDO CONSTRUÍDO" DEIXOU DE SER VERDADE: o motor vai em
+         todo pacote desde a 1.2.88. Chegar aqui é o arquivo que NÃO CARREGOU
+         (cache velho, instalação pela metade) — e o conselho seguível é
+         recarregar, não esperar uma versão que já existe. */
       return '<div class="card" style="padding:26px">' +
-        "<h3 style=\"margin-top:0\">" + Util.esc(nome) + " — ainda não disponível neste aparelho</h3>" +
-        "<p>Esta aba vai mostrar " + oq + ". O motor que faz essa conta (<code>js/ccagente.js</code>) ainda está sendo construído — ele <b>não muda nenhum número</b> da aba Centros.</p>" +
+        "<h3 style=\"margin-top:0\">" + Util.esc(nome) + " — o motor não carregou neste aparelho</h3>" +
+        "<p>Esta aba mostra " + oq + ". O motor que faz essa conta (<code>js/ccagente.js</code>) não carregou neste aparelho — sem ele nenhuma regra ou decisão é aplicada, e esta aba <b>não muda nenhum número</b> da aba Centros, que fica só pelo vínculo com a etapa. Recarregue o app; se continuar, avise o suporte.</p>" +
         (n > 0
-          ? '<p class="muted">Há <b>' + n + "</b> registro(s) desse tipo gravados aqui, vindos de outro aparelho ou de uma versão mais nova. Eles não foram apagados e voltam a aparecer quando esta aba existir.</p>"
+          ? '<p class="muted">Há <b>' + n + "</b> registro(s) desse tipo gravados aqui. Eles não foram apagados e voltam a valer quando o motor carregar.</p>"
           : '<p class="muted">Nada foi apagado.</p>') +
         '<p class="muted">Enquanto isso, a aba <b>Centros</b> mostra o gasto que chega a cada centro pelo vínculo com a etapa do orçamento.</p></div>';
     },
@@ -30358,8 +33116,8 @@ renderPatrimonio: function () {
           html += this._ccFaixa("info",
             "Os " + voltaCC.length + " centros desta obra vieram da conversão dos antigos: o Realizado de cada um agora vem só do que for apropriado a ele" +
             (this._ccAgenteAplicado()
-              ? "."
-              : " — e a apropriação por regra ainda não entra nesta conta, então por enquanto só o vínculo com a etapa cai neles. A aba Fila mostra o que ficou de fora."),
+              ? " — pelo vínculo com a etapa, pela regra ou pela decisão de alguém. A aba Fila mostra o que ficou de fora."
+              : " — e só o vínculo com a etapa cai neles, porque " + this._ccPorqueSemAgente() + ". A aba Fila mostra o que ficou de fora."),
             podeGravar ? '<button class="btn sm ghost" data-gacao="cc-desconverter" data-obra="' + Util.esc(obraId) + '">Voltar para a estimativa antiga…</button>' : "");
         }
       }
@@ -30523,9 +33281,85 @@ renderPatrimonio: function () {
           Util.fmtMoeda(Math.abs(sv.soma - sv.real)) +
           ". Confira as linhas “Em centros da empresa ou de outra obra” e “Sem centro de custo” antes de usar estes números — e não exporte este recorte enquanto não fechar.</p>";
       }
+      /* onde a decisão da pessoa aparece — com [Mudar centro] e [Voltar para a fila] */
+      html += this._ccDecididosHtml(obraId, podeGravar);
       return html;
     },
 
+    /* ---------------------------------------------------------------
+     * _ccDecididosHtml(obraId, podeGravar) — onde a DECISÃO aparece
+     *
+     * ⚠ DECISÃO QUE NÃO SE VÊ NÃO SE DESFAZ. Depois do [Apropriar…] a linha
+     *   sai da Fila e o dinheiro entra no Realizado do centro — e, sem este
+     *   bloco, a única marca de que uma PESSOA decidiu (e não o vínculo ou a
+     *   regra) seria o número do centro. A pessoa que errou o centro não
+     *   teria como achar a própria escolha para mudar, e a trava ficaria sem
+     *   porta (skill `dinheiro` §6). Uma linha por decisão: a do pedido cobre
+     *   o comprometido E as despesas dele, e aparece uma vez só.
+     * ------------------------------------------------------------- */
+    _ccDecididosHtml: function (obraId, podeGravar) {
+      if (!this._ccAgenteAplicado()) return "";
+      var self = this, ac, I, fs;
+      try { ac = this._ccAgenteCtx(obraId); I = CCAgente.montarIndice(ac); fs = CCAgente.fatos(ac, I); }
+      catch (e) { return ""; }
+      var porDec = {}, ordem = [];
+      fs.forEach(function (f) {
+        if (String(f.obraId || "") !== String(obraId)) return;
+        var res = CCAgente.resolver(f, I, 0);
+        if (!res.ok || res.via !== "pessoa" || !res.aprop) return;
+        var id = String(res.aprop);
+        if (!porDec[id]) { porDec[id] = { id: id, fatos: [], cent: 0, pagos: 0, partes: res.partes }; ordem.push(id); }
+        porDec[id].fatos.push(f);
+        if (f.t !== "boletim") porDec[id].cent += Util.num(f.cent);
+        if (f.t === "lanc" && f.pago) porDec[id].pagos++;
+      });
+      if (!ordem.length) return "";
+      var nomeCC = {};
+      Util.arr(ac.ccs).forEach(function (c) { if (c && c.id) nomeCC[String(c.id)] = ((c.codigo ? c.codigo + " " : "") + (c.nome || "")).trim() || String(c.id); });
+      var decs = {};
+      Util.arr(ac.decisoes).forEach(function (x) { if (x && x.id) decs[String(x.id)] = x; });
+      ordem.sort();
+      var html = '<div class="card" style="padding:0;margin-top:14px;overflow:auto" data-cc-decididos="1">' +
+        '<div style="padding:12px 16px 4px"><b>Decididos por uma pessoa nesta obra</b> <span class="muted">— a decisão vale sobre a regra e o vínculo com o orçamento. ' +
+        "[Voltar para a fila] apaga a decisão e a conta volta a ser a da regra/vínculo.</span></div>" +
+        '<table class="tbl"><thead><tr><th>Data</th><th>Lançamento</th><th class="num">Valor</th><th>Centro</th><th>Decidido por</th><th></th></tr></thead><tbody>';
+      ordem.forEach(function (id) {
+        var g = porDec[id], ap = decs[id] || {}, ch = CCAgente.chaveDe(id) || { k: "", d: "" };
+        var f0 = g.fatos[0], r0 = (f0 && f0.reg) || {};
+        /* `desc` é o do lançamento; `descricao`/`numero`, o de documento */
+        var rot = String(r0.desc || r0.descricao || r0.numero || id);
+        var centro = ap.cc ? (nomeCC[String(ap.cc)] || String(ap.cc)) : ("dividido em " + Util.arr(ap.pt).length + " centros");
+        var dados = ' data-k="' + Util.esc(ch.k) + '" data-d="' + Util.esc(ch.d) + '" data-obra="' + Util.esc(String(obraId)) + '"' +
+          ' data-base="' + Util.esc(String(ap.atualizadoEm || "")) + '" data-rot="' + Util.esc(rot) + '" data-atual="' + Util.esc(String(ap.cc || "")) + '"';
+        /* ⚠ O RÓTULO DA VOLTA DIZ PARA ONDE VOLTA. Sem a decisão o fato pode
+           cair numa regra ou no vínculo, e não na Fila; "Voltar para a fila"
+           nesse caso prometeria um lugar onde a linha não vai aparecer. */
+        var semEla = null;
+        /* cada linha remonta o índice sem a própria decisão; com muitas
+           decisões na obra isso vira N voltas pela empresa inteira no render.
+           Acima de 40, o rótulo fica o genérico, que não promete lugar. */
+        if (ordem.length > 40) semEla = { ok: false, generico: true };
+        else try {
+          var acS = {}, kS;
+          for (kS in ac) if (Object.prototype.hasOwnProperty.call(ac, kS)) acS[kS] = ac[kS];
+          acS.decisoes = Util.arr(ac.decisoes).filter(function (x) { return !(x && String(x.id) === id); });
+          semEla = CCAgente.resolver(f0, CCAgente.montarIndice(acS), 0);
+        } catch (eS) { semEla = null; }
+        var rotVolta = (semEla && semEla.generico) ? "Voltar para a regra/fila"
+          : ((semEla && semEla.ok) ? (semEla.via === "regra" ? "Voltar para a regra" : "Voltar para o vínculo") : "Voltar para a fila");
+        html += "<tr><td>" + Util.esc(Util.fmtDia(f0 && f0.data)) + "</td>" +
+          "<td>" + Util.esc(rot) + (g.fatos.length > 1 ? ' <span class="muted">(' + g.fatos.length + " lançamentos/documentos)</span>" : "") +
+          (g.pagos ? ' <span class="pill" style="background:rgba(22,163,74,.15);color:#15803d" title="Já foi pago — mudar o centro pede confirmação com o valor.">pago</span>' : "") + "</td>" +
+          '<td class="num">' + Util.fmtMoeda(g.cent / 100) + "</td>" +
+          "<td>" + Util.esc(centro) + "</td>" +
+          "<td>" + Util.esc(String(ap.por || "—")) + (ap.atualizadoEm ? ' <span class="muted">em ' + Util.esc(Util.fmtDia(String(ap.atualizadoEm).slice(0, 10))) + "</span>" : "") + "</td>" +
+          '<td style="white-space:nowrap">' + (podeGravar
+            ? '<button class="btn sm" data-gacao="cc-mudar"' + dados + ">Mudar centro</button> " +
+              '<button class="btn sm ghost" data-gacao="cc-voltar-fila"' + dados + ">" + Util.esc(rotVolta) + "</button>"
+            : "") + "</td></tr>";
+      });
+      return html + "</tbody></table></div>";
+    },
     /* ---------------------------------------------------------------
      * _ccLinhasDaObra(ctx, num, mostrarDesat) — AS LINHAS DA TABELA DA OBRA
      *
@@ -30790,9 +33624,26 @@ renderPatrimonio: function () {
         /* ⚠ chave nova do degrau do espelho — rótulo JUNTO com a chave, senão a
            tela volta a escrever "estorno-orfao" na frase do usuário */
         "estorno-orfao": "estorno cujo lançamento original não está mais na base",
-        "estorno-outra-obra": "estorno de um lançamento que hoje está em outra obra" };
+        "estorno-outra-obra": "estorno de um lançamento que hoje está em outra obra",
+        /* ⚠ OS MOTIVOS DO AGENTE (§4.9), com rótulo curto JUNTO da régua que
+           os produz: sem eles a frase do usuário voltava a dizer "sem-regra"
+           — nome de chave na cara de quem decide compra. O que não tiver
+           rótulo curto aqui sai com o texto do catálogo do próprio motor. */
+        "sem-regra": "sem vínculo com o orçamento nem regra de centro",
+        "sem-apropriacao": "lançamento sem etapa e sem decisão de centro",
+        "sem-centro-pedido": "pedido sem centro nem etapa",
+        "regras-empate": "duas regras empatadas mandando para centros diferentes",
+        "destino-sumiu": "centro escolhido que não existe mais",
+        "destino-outra-obra": "centro escolhido que é de outra obra",
+        "destino-desativado": "centro escolhido desativado na data do lançamento",
+        "destino-cabecalho": "centro escolhido que conta a obra inteira",
+        "nota-pedido-sem-centro": "nota com pedido sem centro",
+        "obra-em-rateio": "obra ainda na divisão pelo orçado" };
+      var cat = (typeof CCAgente !== "undefined" && CCAgente && CCAgente.MOTIVOS) ? CCAgente.MOTIVOS : {};
       var ks = Object.keys(motivos).sort(function (a, b) { return motivos[b] - motivos[a]; });
-      return ks.slice(0, 3).map(function (k) { return (rot[k] || k) + " (" + Util.fmtMoeda(motivos[k]) + ")"; }).join(" · ") || "—";
+      return ks.slice(0, 3).map(function (k) {
+        return (rot[k] || String(cat[k] || k).replace(/\.$/, "")) + " (" + Util.fmtMoeda(motivos[k]) + ")";
+      }).join(" · ") || "—";
     },
 
     /* despesa desta obra que está num centro DA EMPRESA (obraId vazio):
@@ -31032,6 +33883,10 @@ renderPatrimonio: function () {
       var antigos = Util.arr(ctx.ccsCrus).filter(function (c) {
         return c && String(c.obraId || "") === String(e.obraId) && Util.num(c.fmt) !== 2;
       });
+      /* o "depois" dos antigos pela conta convertida em memória (ver o ⚠ do
+         `_ccNumerosConvertido`): com o agente, a obra em rateio não resolve
+         nada ANTES da conversão, e o zero de antes não é o número de depois */
+      var numD = this._ccNumerosConvertido(ctx, e.conversao);
       var den = 0;
       antigos.forEach(function (c) { den += Util.num(c.valorOrcado); });
       var realizado = {};
@@ -31039,7 +33894,7 @@ renderPatrimonio: function () {
         var antes = antigos.length === 1 ? num.realObra
           : (den > 0 ? num.realObra * (Util.num(c.valorOrcado) / den) : num.realObra / antigos.length);
         var esc = e.conversao[String(c.id)] || (antigos.length === 1 ? "obra" : "lanc");
-        realizado[String(c.id)] = { antes: antes, depois: esc === "obra" ? num.realObra : Util.num(num.porCentro[String(c.id)]) };
+        realizado[String(c.id)] = { antes: antes, depois: esc === "obra" ? num.realObra : Util.num(numD.porCentro[String(c.id)]) };
       });
       var prev = CentroCusto.previa(ctx.orc, ctx.obra, ctx.ccsCrus, {
         modo: e.modo, marcadas: e.marcadas, nomes: e.nomes, codigos: e.codigos, conversao: e.conversao,
@@ -31131,10 +33986,18 @@ renderPatrimonio: function () {
       /* ⚠ O QUE MUDA DE CENTRO É AFIRMAÇÃO SOBRE DINHEIRO. Sem o agente de
          apropriação carregado, o app NÃO sabe dizer quantos lançamentos trocam
          de centro — e dizer "nenhum" seria mentir. Ele diz que não conferiu. */
-      var mv = CentroCusto.movimentos(null, null);
-      if (!mv.ok) {
-        corpo += '<p class="muted" style="margin-top:6px"><b>Não consegui conferir o que muda de centro</b> com esta geração: o motor de apropriação (<code>js/ccagente.js</code>) não está carregado neste aparelho. Os centros são criados; nenhum lançamento é alterado por esta ação.</p>';
-      }
+      /* ⚠ COM O AGENTE APLICADO, A PRÉVIA CONTA DE VERDADE (§4.7.1): o
+         `consolidar` de hoje contra o de depois, com os centros novos só em
+         memória. Sem ele, o recado diz POR QUE não conferiu — "o motor não
+         está carregado" era o texto de quando o arquivo não existia, e com o
+         arquivo aqui e a chave desligada ele mandaria procurar o problema
+         errado. */
+      var mv = null;
+      if (this._ccAgenteAplicado()) {
+        try { mv = this._ccMovimentosDaGeracao(r); }
+        catch (eMv) { mv = { ok: false, avisos: [{ msg: "a conta falhou (" + String(eMv && eMv.message || eMv) + ")" }] }; }
+      } else mv = CentroCusto.movimentos(null, null);
+      corpo += this._ccMovimentosHtml(mv);
 
       var teto = CentroCusto.cabe("centrocusto", ctx.ccsCrus, []);
       corpo += '<p class="muted" style="margin-top:6px">Lista de centros da empresa: ' + Util.esc(String(teto.n)) +
@@ -31182,7 +34045,7 @@ renderPatrimonio: function () {
       return l.length;
     },
 
-    ccGerarAplicar: function () {
+    ccGerarAplicar: function (conf) {
       var e = this._ccGerarEstado;
       if (!e) return;
       /* ⚠ A GUARDA DECIDE ANTES DE GRAVAR, NUNCA DEPOIS (skill dinheiro §4). */
@@ -31210,6 +34073,25 @@ renderPatrimonio: function () {
       var cabe = CentroCusto.cabe("centrocusto", ctx.ccsCrus, todos);
       if (!cabe.cabe) { UI.toast(cabe.msg, "erro", 16000); return; }
 
+      /* ⚠ D20 ANTES DE GRAVAR (§4.7.3): os lançamentos PAGOS que mudam de
+         centro com esta geração, pela mesma conta da prévia
+         (`_ccMovimentosDaGeracao`). Com pago no meio, a caixa diz quanto e
+         quando e só a confirmação com ESTE número grava. Sem o agente (ou
+         com a conta falhando) a prévia já disse que não conferiu — e aí
+         não há número para confirmar; travar a geração por isso seria
+         trava sem porta. */
+      var pgG = { n: 0, valor: 0 };
+      if (this._ccAgenteAplicado()) {
+        var mvG = null;
+        try { mvG = this._ccMovimentosDaGeracao(r); } catch (eMv) { mvG = null; }
+        pgG = this._ccPagosDoMovimento(mvG);
+        if (pgG.n > 0 && !this._ccConfirmacaoVale(conf, pgG)) {
+          var selfG = this;
+          this._ccConfirmarPagos(pgG, "Gerar os centros", function (c) { selfG.ccGerarAplicar(c); });
+          return;
+        }
+      }
+
       /* id recriado depois de uma exclusão: a lápide o mataria no próximo sync */
       try { Store.desenterrar(eid(), "centrocusto", todos.map(function (c) { return c.id; })); } catch (eD) {}
 
@@ -31228,6 +34110,7 @@ renderPatrimonio: function () {
       if (ap.resumo.convertidos) msg += " " + ap.resumo.convertidos + " centro(s) antigo(s) convertido(s).";
       if (ap.resumo.reativados) msg += " " + ap.resumo.reativados + " reativado(s).";
       if (ap.resumo.desativados) msg += " " + ap.resumo.desativados + " desativado(s).";
+      if (pgG.n) msg += " " + pgG.n + " lançamento(s) pago(s) (" + Util.fmtMoeda(pgG.valor) + ") mudaram de centro, com a sua confirmação.";
       msg += " Nenhum lançamento foi alterado por esta ação.";
       UI.toast(msg, "ok", 14000);
       this._ccEstadoGravar({ obra: e.obraId });
@@ -31248,6 +34131,9 @@ renderPatrimonio: function () {
       });
       if (!antigos.length) { UI.toast("Esta obra não tem centros antigos para converter.", "erro"); return; }
       var padrao = antigos.length === 1 ? "obra" : "lanc";
+      /* o "depois" pela mesma conta da tela, com os antigos convertidos em
+         memória (ver o ⚠ do `_ccNumerosConvertido`) */
+      var numD = this._ccNumerosConvertido(ctx, null);
       var den = 0;
       antigos.forEach(function (c) { den += Util.num(c.valorOrcado); });
       var corpo = '<p>Depois de converter, o Realizado de cada centro passa a vir do que você escolher aqui. Confira o antes → depois:</p>' +
@@ -31255,7 +34141,7 @@ renderPatrimonio: function () {
       antigos.forEach(function (c) {
         var antes = antigos.length === 1 ? num.realObra
           : (den > 0 ? num.realObra * (Util.num(c.valorOrcado) / den) : num.realObra / antigos.length);
-        var depois = padrao === "obra" ? num.realObra : Util.num(num.porCentro[String(c.id)]);
+        var depois = padrao === "obra" ? num.realObra : Util.num(numD.porCentro[String(c.id)]);
         corpo += "<tr><td>" + Util.esc(c.codigo || "—") + "</td><td>" + Util.esc(c.nome || "—") + "</td>" +
           '<td><select data-cc-conv="' + Util.esc(String(c.id)) + '">' +
           '<option value="lanc"' + (padrao === "lanc" ? " selected" : "") + ">Pelos lançamentos apropriados</option>" +
@@ -31272,14 +34158,14 @@ renderPatrimonio: function () {
          não são a conta; a conta é esta. */
       var somaDepois = 0;
       antigos.forEach(function (c) {
-        somaDepois += padrao === "obra" ? num.realObra : Util.num(num.porCentro[String(c.id)]);
+        somaDepois += padrao === "obra" ? num.realObra : Util.num(numD.porCentro[String(c.id)]);
       });
       var sobra = num.realObra - somaDepois;
       if (sobra > 0.005) {
         corpo += '<div class="card" style="padding:12px 14px;margin-top:10px;border-left:3px solid var(--ambar, #b45309)">' +
           "<b>" + Util.fmtMoeda(sobra) + " ficam sem centro</b>" +
           '<p class="muted" style="margin:6px 0 0">Com as escolhas acima como estão, esse gasto sai das linhas dos centros e passa a aparecer em <b>Sem centro de custo</b>. ' +
-          "Ele vai aparecer na aba <b>Fila</b>, com o motivo de cada caso. Decidir o centro de cada linha por ali ainda não existe — por enquanto o conserto é criar o centro da etapa ou pôr o centro no pedido. " +
+          "Ele vai aparecer na aba <b>Fila</b>, com o motivo de cada caso. Lá você escolhe o centro de cada linha ([Apropriar…], uma a uma ou várias de uma vez); o que já foi pago pede confirmação com o valor e a data. " +
           "Se não for isso que você quer, a faixa da tela passa a oferecer <b>[Voltar para a estimativa antiga…]</b>, com a mesma prévia antes → depois.</p></div>";
       }
       var escolhas = {};
@@ -31351,7 +34237,7 @@ renderPatrimonio: function () {
       UI.toast(n + " centro(s) voltaram para a estimativa antiga (divisão pelo orçado). Nenhum lançamento foi alterado por esta ação.", "ok", 10000);
       App.render();
     },
-    _ccConverterAplicar: function (obraId, escolhas) {
+    _ccConverterAplicar: function (obraId, escolhas, conf) {
       var p = this._ccPode(obraId, "gravar");
       if (!p.ok) { UI.toast(p.msg, "erro"); return; }
       if (this._bloqueado()) return;
@@ -31363,10 +34249,34 @@ renderPatrimonio: function () {
       if (!r.gravar.length) { UI.toast("Nada a converter.", "erro"); return; }
       var cabe = CentroCusto.cabe("centrocusto", ctx.ccsCrus, r.gravar);
       if (!cabe.cabe) { UI.toast(cabe.msg, "erro", 16000); return; }
+      /* ⚠ D20 ANTES DE GRAVAR, pela mesma régua da geração: converter tira
+         a obra da estimativa pelo orçado e põe cada lançamento no centro
+         que o apropria — o Realizado de dinheiro PAGO muda de centro, e a
+         pessoa confirma o valor e a data antes. Os centros convertidos
+         entram só EM MEMÓRIA na conta do depois. */
+      var pgC = { n: 0, valor: 0 };
+      if (this._ccAgenteAplicado()) {
+        var mvC = null;
+        try {
+          var novosC = {}, ccsD = [];
+          r.gravar.forEach(function (c) { if (c && c.id) novosC[String(c.id)] = c; });
+          Util.arr(ctx.ccsCrus).forEach(function (c) { ccsD.push(c && c.id && novosC[String(c.id)] ? novosC[String(c.id)] : c); });
+          var acA = this._ccAgenteCtx(obraId); acA.ccs = Util.arr(ctx.ccsCrus);
+          var acD = this._ccAgenteCtx(obraId); acD.ccs = ccsD;
+          mvC = CentroCusto.movimentos(CCAgente.consolidar(acA), CCAgente.consolidar(acD));
+          mvC.ccsDepois = ccsD;
+        } catch (eMc) { mvC = null; }
+        pgC = this._ccPagosDoMovimento(mvC);
+        if (pgC.n > 0 && !this._ccConfirmacaoVale(conf, pgC)) {
+          var selfC = this;
+          this._ccConfirmarPagos(pgC, "Converter os centros", function (c) { selfC._ccConverterAplicar(obraId, escolhas, c); });
+          return;
+        }
+      }
       var n = Store.salvarVarios(eid(), "centrocusto", r.gravar);
       if (!n) { UI.toast("NADA foi gravado: o armazenamento recusou (veja o aviso vermelho). Os centros continuam como estavam.", "erro", 12000); return; }
       UI.fecharModal();
-      UI.toast(n + " centro(s) antigo(s) convertido(s). Nenhum lançamento foi alterado por esta ação.", "ok", 10000);
+      UI.toast(n + " centro(s) antigo(s) convertido(s)." + (pgC.n ? " " + pgC.n + " lançamento(s) pago(s) (" + Util.fmtMoeda(pgC.valor) + ") mudaram de centro, com a sua confirmação." : "") + " Nenhum lançamento foi alterado por esta ação.", "ok", 10000);
       App.render();
     },
 
@@ -31453,10 +34363,44 @@ renderPatrimonio: function () {
             : '<button class="btn sm" data-gacao="cc-reativar" data-id="' + Util.esc(String(c.id)) + '">Reativar este centro</button>') + "</div>";
       }
 
-      /* bloco de regras: existe, e diz honestamente que o motor não está aqui */
-      corpo += '<div class="card" style="padding:12px 14px;margin-top:12px">' +
-        "<b>Lançamentos automáticos deste centro</b>" +
-        '<p class="muted" style="margin:6px 0 0">As regras que mandam lançamentos para este centro automaticamente dependem do motor de apropriação (<code>js/ccagente.js</code>), que não está carregado nesta instalação. Nenhuma regra existente foi apagada.</p></div>';
+      /* ---------------------------------------------------------------
+       * LANÇAMENTOS AUTOMÁTICOS DESTE CENTRO (§4.8, última frase: substitui
+       * o `padrao` da cc-orc). As caixas CRIAM/ENCERRAM regras de verdade —
+       * `{o:FOL|PON|FSM, cat:mao_obra}`, `{o:FRT}`, `{o:NF, cat:material}` —
+       * pela MESMA `_ccGravarRegrasDoCentro`, com a mesma validação, prévia
+       * e D20 da aba Regras. Elas rodam DEPOIS de o centro gravar
+       * (`aposSalvar`): regra apontando para um centro que o disco recusou
+       * seria regra para um destino que não existe.
+       *
+       * ⚠ ATÉ A PARTE C ESTE BLOCO DIZIA QUE O MOTOR "NÃO ESTÁ CARREGADO
+       *   NESTA INSTALAÇÃO" — em toda instalação, inclusive nas que tinham o
+       *   motor desde a 1.2.88. Recado que mente é pior que recado nenhum.
+       * ------------------------------------------------------------- */
+      var autoAtual = null, autoPorque = "";
+      if (!this._medcc("ccAgente")) autoPorque = "O agente de apropriação está desligado nesta instalação (chave ccAgente) — as regras gravadas continuam no aparelho, e nada foi apagado.";
+      else if (!this._ccMotorRegras()) autoPorque = "O motor de apropriação (js/ccagente.js) não carregou inteiro neste aparelho — recarregue o app; nenhuma regra foi apagada.";
+      else if (n.apura === "obra") autoPorque = "Este centro conta a obra inteira (cabeçalho): ele não recebe lançamento, e por isso não tem regra.";
+      else if (!ehNovo && !c.obraId) autoPorque = "Centro da empresa: crie a regra na aba Regras — ela pergunta de qual obra (ou “sem obra”) vêm os lançamentos.";
+      else if (!ehNovo && !n._ativo) autoPorque = "Este centro está desativado — reative-o antes de mandar lançamentos para ele.";
+      else autoAtual = ehNovo ? { mo: { todas: false }, frt: { todas: false }, mat: { todas: false } } : this._ccAutoDoCentro(c);
+      if (autoAtual) {
+        var cxAuto = function (k, rotulo) {
+          var a = autoAtual[k] || {};
+          return '<label style="display:block;margin:4px 0"><input type="checkbox" id="g-cc-auto-' + k + '" data-antes="' + (a.todas ? "1" : "0") + '"' + (a.todas ? " checked" : "") + "> " + rotulo +
+            (a.parcial ? ' <span class="muted">(hoje só parte destas regras existe — marcar cria as que faltam)</span>' : "") + "</label>";
+        };
+        corpo += '<div class="card" style="padding:12px 14px;margin-top:12px" data-cc-auto="1">' +
+          "<b>Lançamentos automáticos desta obra que vêm para este centro</b>" +
+          cxAuto("mo", "mão de obra (folha, ponto, folha semanal)") + cxAuto("frt", "equipamento/frota") + cxAuto("mat", "material sem pedido (nota fiscal)") +
+          campo("Valem desde", '<input type="date" id="g-cc-auto-desde" value="' + Util.esc(hojeLocal()) + '">') +
+          '<p class="muted" style="margin:6px 0 0">Marcar cria a regra; desmarcar encerra a regra ontem (o que ela decidiu até ali fica). Com data no passado, ou se algum lançamento mudar de centro, a prévia mostra de onde para onde — e o que já foi pago — antes de gravar. ' +
+          (ehNovo ? "Vale para a obra escolhida acima; para centro da empresa, use a aba Regras." : "") + "</p></div>";
+      } else {
+        corpo += '<div class="card" style="padding:12px 14px;margin-top:12px" data-cc-auto="0">' +
+          "<b>Lançamentos automáticos deste centro</b>" +
+          '<p class="muted" style="margin:6px 0 0">' + Util.esc(autoPorque) + "</p></div>";
+      }
+      var autoPedido = null;
 
       var refs = ehNovo ? null : this._ccRefs(c);
       this._modalForm("centrocusto", c, "Centro de custo", corpo, function (obj) {
@@ -31468,6 +34412,17 @@ renderPatrimonio: function () {
            dele, porque `v("g-obra")` volta "" quando o campo não existe. */
         var cObra = document.getElementById("g-obra");
         if (cObra && !cObra.disabled) obj.obraId = cObra.value;
+        /* as caixas dos lançamentos automáticos: só o que a pessoa MUDOU
+           (marcada ≠ como a tela abriu) vira pedido — abrir e salvar o
+           centro não recria nem encerra regra nenhuma */
+        autoPedido = null;
+        ["mo", "frt", "mat"].forEach(function (k) {
+          var cx = document.getElementById("g-cc-auto-" + k);
+          if (!cx || cx.disabled) return;
+          var antes = cx.getAttribute("data-antes") === "1";
+          if (!!cx.checked !== antes) { autoPedido = autoPedido || {}; autoPedido[k] = !!cx.checked; }
+        });
+        if (autoPedido) { var cD = document.getElementById("g-cc-auto-desde"); autoPedido._desde = cD ? String(cD.value || "") : ""; }
         /* ⚠ O VALOR SAI DO `nv(id)`, mesmo com a guarda de presença em volta.
            `nv("g-orcado")` é o que marca este campo como NUMÉRICO nesta base:
            tools/test-v12-celular.js deriva dele a lista de campos que abrem o
@@ -31519,7 +34474,15 @@ renderPatrimonio: function () {
           }
         }
         return true;
-      }, null, {
+      }, function (salvo) {
+        /* ⚠ SÓ DEPOIS DO CENTRO GRAVADO (o `_modalForm` não chega aqui se o
+           disco recusou). Recusa ou [Cancelar] da prévia NÃO desfaz o centro,
+           e o recado diz isso. */
+        if (!autoPedido || !salvo || !salvo.id) return;
+        var ped = autoPedido, desdeA = ped._desde; autoPedido = null;
+        var marcas = { mo: ped.mo, frt: ped.frt, mat: ped.mat };
+        self._ccRegraAcaoFluxo(function (conf) { return self._ccGravarRegrasDoCentro(salvo.id, marcas, { desde: desdeA, confirmado: conf }); });
+      }, {
         /* ⚠ A GUARDA DE EXCLUSÃO CONTA ANTES DE APAGAR, e conta na lista CRUA.
            Apagar um centro que tem dinheiro dentro deixa esse dinheiro sem
            centro — e o número só reaparece depois, quando alguém estranhar o
@@ -31581,10 +34544,36 @@ renderPatrimonio: function () {
           if (CentroCusto.apontaPara(a, id)) out.decisoes++;
         });
         var ctx = self._ccCtx(String(c.obraId || ""));
-        var f = self._ccFatos(ctx);
-        var oculta = !!(typeof Auth !== "undefined" && Auth.podeObra && !Auth.podeObra(ctx.obraId));
-        f.fatos.forEach(function (x) {
+        /* ⚠ COM O AGENTE, O CENTRO DA EMPRESA RECEBE DINHEIRO DE TODAS AS OBRAS
+           (regra, decisão, pedido com `ccId`). Contar só os fatos "sem obra"
+           — que é o que o `_ccCtx("")` enxerga — daria "0 lançamentos" num
+           centro com a folha de três obras dentro, e a recusa sairia com o
+           valor errado. Aqui a volta é pela empresa inteira, na lista CRUA
+           (`obrasVisiveis: null`: a guarda conta o disco todo, §7) — o que a
+           pessoa não acompanha conta, mas o valor dele não aparece. */
+        var lista = null;
+        if (self._ccAgenteAplicado()) {
+          var acR = self._ccAgenteCtx("");
+          acR.obraId = null; acR.obrasVisiveis = null;
+          var rR = CCAgente.consolidar(acR), kR;
+          lista = [];
+          for (kR in rR.porFato) if (Object.prototype.hasOwnProperty.call(rR.porFato, kR)) {
+            var eR = rR.porFato[kR];
+            if (eR.t === "boletim" || (eR.t === "lanc" && eR.tipo !== "despesa")) continue;
+            var psR = eR.partes ? eR.partes : (eR.cc ? [{ cc: eR.cc, c: eR.valor }] : []);
+            psR.forEach(function (pR) {
+              lista.push({ t: eR.t, id: eR.id, cc: String(pR.cc || ""), valor: Math.round(Util.num(pR.c)) / 100, obraId: eR.obraId });
+            });
+          }
+        } else {
+          lista = self._ccFatos(ctx).fatos;
+        }
+        var ocultaCtx = !!(typeof Auth !== "undefined" && Auth.podeObra && !Auth.podeObra(ctx.obraId));
+        lista.forEach(function (x) {
           if (x.cc !== id) return;
+          var oculta = x.obraId !== undefined
+            ? !!(x.obraId && typeof Auth !== "undefined" && Auth.podeObra && !Auth.podeObra(x.obraId))
+            : ocultaCtx;
           if (x.t === "lanc") {
             out.lancs++;
             /* ⚠ A CONTAGEM VÊ TUDO; O VALOR, SÓ O QUE A PESSOA ENXERGA. Somar
@@ -31612,7 +34601,8 @@ renderPatrimonio: function () {
          texto, não pela régua — ela serve para RECUSAR, nunca para liberar */
       if ((out.regras + out.decisoes) > 0 && !Gestao._ccAgenteAplicado()) {
         out.conferido = false;
-        out.porqueNao = "há " + (out.regras + out.decisoes) + " regra(s)/decisão(ões) de apropriação neste aparelho, e esta contagem ainda não passa por elas.";
+        out.porqueNao = "há " + (out.regras + out.decisoes) + " regra(s)/decisão(ões) de apropriação neste aparelho, e esta contagem não passa por elas porque " +
+          Gestao._ccPorqueSemAgente() + ".";
       }
       out.total = out.docs + out.regras + out.decisoes + out.lancs + out.pedidos;
       return out;
@@ -33831,6 +36821,11 @@ renderFolha: function () {
            anterior deixaria o agendamento órfão e o formulário SEGUINTE daria
            entrada no almoxarifado de um pedido que ninguém recebeu. */
         self._estoquePendente = false;
+        /* ⚠ E A ESCOLHA DE CENTRO AGENDADA (`_ccPendente`, §3.7 passo c),
+           pelo mesmo motivo: o `coletar` de um formulário que recusou deixou
+           a intenção pendurada, e o Salvar SEGUINTE — de outro documento —
+           gravaria a decisão de centro no documento errado. */
+        self._ccPendente = null;
         if (coletar(obj) === false) return;
         /* A AUTORIA NASCE ACIMA, e só no documento NOVO.
          * Sem `autorId` a regra "quem preencheu não aprova o próprio" não tem
@@ -33852,7 +36847,7 @@ renderFolha: function () {
            preenchido. */
         var gravadoF = Store.salvar(eid(), entidade, obj);
         if (self._naoGravou(gravadoF)) {
-          self._lancFinPendente = null; self._lancFinRecalc = ""; self._estoquePendente = false; self._aprovRejPendente = null;
+          self._lancFinPendente = null; self._lancFinRecalc = ""; self._estoquePendente = false; self._aprovRejPendente = null; self._ccPendente = null;
           var ilegF = null;
           try { ilegF = Store.ilegivel ? Store.ilegivel(eid(), entidade) : null; } catch (eIF) { ilegF = null; }
           /* sem "criado/criada": o `nome` vem do título do formulário e tem gênero */
@@ -33938,6 +36933,11 @@ renderFolha: function () {
           try { UI.toast(self._lancFinToast.replace(/\.$/, "") + _estMsg + ".", "ok"); } catch (eLF) {}
         }
         self._lancFinToast = ""; self._lancFinRecalc = "";
+        /* a escolha de centro sai do agendamento AQUI, antes do `_semLanc`:
+           com a baixa desfeita o documento voltou de estado, e decidir o
+           centro de um boletim cujo dinheiro não entrou fica para quando ele
+           entrar (o `return` abaixo leva o `_cp` junto, sem executar) */
+        var _cp = self._ccPendente; self._ccPendente = null;
         if (_semLanc) {
           /* o resto do formulário foi gravado; a baixa não. Nada de verde.
              ⚠ E NADA DE AVANÇO: com a baixa desfeita, o documento voltou de
@@ -33952,14 +36952,17 @@ renderFolha: function () {
         UI.fecharModal(); App.render();
         if (typeof aposSalvar === "function") aposSalvar(obj, ehNovo);
         else UI.toast(nome + (ehNovo ? " criado." : " salvo."), "ok");
-        /* ⚠ A DECISÃO DE CENTRO DO BOLETIM (`_ccPendente`, §3.7 passo c) NÃO
-           MORA AQUI AINDA, e de propósito. Ela grava `cc_aprop` pela
-           `_ccGravarEscolha`, que confere pago pela `CCAgente.pagosAfetados`
-           — e o `js/ccagente.js` não existe em branch nenhum (22/09/2026).
-           Gravar decisão sem o motor que a aplica faria a tela Centro de custo
-           de TODAS as obras passar a dizer "não posso afirmar que está
-           completo" (`_ccNumeros`), por um boletim. O agendamento, os três
-           zeros e a execução entram juntos, com o motor. */
+        /* ===== A ESCOLHA DE CENTRO, DEPOIS DO SAVE (§3.7 passo c, §4.10) =====
+         * ⚠ Só se chega aqui com o documento GRAVADO: é a mesma janela do
+         *   `_lancFinPendente` (skill `dinheiro` §4). A escolha feita no select
+         *   do boletim pendente ou do pedido foi AGENDADA no `coletar`, depois
+         *   do gate, e é aqui que ela vira `cc_aprop` — pela
+         *   `_ccGravarEscolha`, a única que grava decisão, com o D20 (a caixa
+         *   do pago abre DEPOIS do save; recusar não desfaz o documento).
+         * ⚠ Sem escolha agendada, só a frase do toast (" · Centro de custo:
+         *   CC-05 …" / " · Sem centro de custo: está na Fila …"), e só para
+         *   boletim e pedido. */
+        if (_cp || entidade === "medicoes" || entidade === "compras") self._ccDepoisDoSave(entidade, gravadoF || obj, _cp, registro);
         /* ===== O CANAL DO AVANÇO, PELA PORTA DO SELECT DE STATUS =====
          * ⚠ DERIVADO DA TRANSIÇÃO GRAVADA, e não do que a tela mostrava.
          *   `registro` é o boletim como ele estava no disco quando o
@@ -36952,7 +39955,14 @@ renderFolha: function () {
          obra gastou e o que a geração faria antes de decidir renovar; quem
          grava é o [Gerar]/[Converter], e esses chamam  dentro
          da própria função. */
-      "cc-gerar": 1, "cc-converter": 1, "cc-desconverter": 1
+      "cc-gerar": 1, "cc-converter": 1, "cc-desconverter": 1,
+      /* ⚠ ABRIR O FORMULÁRIO E A PRÉVIA DE REGRA TAMBÉM É LEITURA: a licença
+         vencida precisa poder CONFERIR o que uma regra faria. As gravações
+         chamam `_bloqueado()` + `App._trialBloqueado()` dentro da função
+         (`_ccRegraGuarda`). O [Transformar] e os botões das caixas não estão
+         aqui: eles gravam. */
+      "cc-regra-nova": 1, "cc-regra-obra": 1, "cc-regra-mudar": 1, "cc-regra-encerrar": 1, "cc-regra-excluir": 1,
+      "cc-regra-abrir": 1, "cc-regra-excecoes": 1, "cc-compactar-ver": 1
     },
     _isentoDoBloqueio: function (gacao) {
       if (this._ISENTO_BLOQUEIO[gacao]) return true;
@@ -37284,7 +40294,12 @@ renderFolha: function () {
             App.render(); UI.toast(txtSL, "erro", Math.max(10000, Math.min(22000, txtSL.length * 60)));
             return;
           }
-          App.render(); UI.toast("Medição paga e receita lançada no Financeiro.", "ok"); return;
+          /* a frase do centro (§4.10): a receita carimbada segue o boletim, e
+             o recado diz onde ela caiu pela MESMA cadeia da tela de Centros.
+             ⚠ Nunca derruba o recado do dinheiro: a receita já entrou. */
+          var frMed = "";
+          try { frMed = this._ccFraseDoc("MED", String(md.id), String(md.obraId || "")); } catch (eFm) { frMed = ""; }
+          App.render(); UI.toast("Medição paga e receita lançada no Financeiro." + frMed, "ok", frMed ? 9000 : undefined); return;
         }
         case "novo-fornecedor": return this.novoFornecedor();
         case "nova-compra": return this.novoCompra();
@@ -37679,6 +40694,24 @@ case "novo-centrocusto": return this.novoCentrocusto();
         case "cc-desconverter": return this.ccDesconverter(dataset);
         case "cc-desativar": return this.ccDesativar(dataset);
         case "cc-reativar": return this.ccReativar(dataset);
+        /* a decisão da pessoa (`cc_aprop`): as quatro portas chamam o MESMO
+           gravador, que confere tudo na função (`_ccEscolhasPlano`) */
+        case "cc-apropriar": return this.ccApropriar(dataset);
+        case "cc-apropriar-lote": return this.ccApropriarLote();
+        case "cc-mudar": return this.ccMudar(dataset);
+        case "cc-voltar-fila": return this.ccVoltarFila(dataset);
+        /* a aba Regras (§4.10): abrir formulário/prévia é leitura; quem grava
+           são as funções `_ccGravarRegra`/`_ccMudarRegra`/`_ccEncerrarRegra`/
+           `_ccExcluirRegra`/`_ccCompactarGrupo`, com a guarda dentro */
+        case "cc-regra-nova": return this.ccRegraNova(dataset);
+        case "cc-regra-obra": return this.ccRegraObra(dataset);
+        case "cc-regra-mudar": return this.ccRegraMudar(dataset);
+        case "cc-regra-encerrar": return this.ccRegraEncerrar(dataset);
+        case "cc-regra-excluir": return this.ccRegraExcluir(dataset);
+        case "cc-regra-abrir": return this.ccRegraAbrir(dataset);
+        case "cc-regra-excecoes": return this.ccRegraExcecoes(dataset);
+        case "cc-compactar-ver": return this.ccCompactarVer();
+        case "cc-compactar": return this.ccCompactar(dataset);
 case "nova-folha": return this.novoFolha();
         case "lancar-folha-enc": return this.lancarFolhaEnc(id);
       }
