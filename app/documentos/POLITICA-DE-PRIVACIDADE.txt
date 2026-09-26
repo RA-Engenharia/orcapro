@@ -1,6 +1,12 @@
 ﻿POLÍTICA DE PRIVACIDADE — OrçaPRO IA
-Versão 1.5 — vigente a partir de 18/09/2026
+Versão 1.6 — vigente a partir de 25/09/2026
 Elaborada conforme a Lei nº 13.709/2018 (LGPD)
+
+O que mudou na 1.6: entrou o item 4.13 — a INSCRIÇÃO NA APRESENTAÇÃO DO
+SISTEMA (sorteio de 1 ano do OrçaPRO e certificado de participação). Quem
+assiste a uma apresentação e se inscreve pelo link deixa nome, contato e
+empresa no nosso servidor, com consentimento. Nada muda dentro do programa
+instalado.
 
 O que mudou na 1.5: entrou o item 4.12 — a MEDIÇÃO DE VISITAS NO NOSSO SITE.
 Passamos a medir, nas páginas públicas do site, quais páginas são vistas e por
@@ -497,6 +503,39 @@ Por quanto tempo: o registro detalhado de cada visita é apagado depois de
 até 25 meses. A pedido, apagamos antes — mesmo canal do item 7.
 
 
+4.13 INSCRIÇÃO NA APRESENTAÇÃO DO SISTEMA (sorteio e certificado — fora do programa)
+Quem assiste a uma apresentação do OrçaPRO recebe um link (/participar) para
+se inscrever. Ao preencher, a pessoa concorre a um ano de uso do OrçaPRO sem
+custo e recebe um certificado de participação na apresentação.
+
+O que guardamos, no nosso servidor: nome, empresa, cargo, cidade e estado, WhatsApp,
+e-mail, o tipo de empresa e, se informado, como conheceu o OrçaPRO — mais a
+data e a hora em que a caixa de consentimento foi marcada. O endereço de IP
+não é gravado.
+
+Para quê:
+
+  · realizar o sorteio e falar com quem for sorteado;
+  · emitir o certificado de participação e enviá-lo por e-mail e WhatsApp;
+  · contato comercial: apresentar o OrçaPRO a quem se interessou.
+
+  · Isso acontece no site, não dentro do programa instalado.
+  · Base legal: o seu consentimento (art. 7º, I, da LGPD), dado na caixa do
+    formulário. A caixa nasce desmarcada, e o servidor recusa a inscrição sem
+    ela.
+  · O certificado fica numa página pública com endereço próprio, longo e
+    imprevisível (/certificado/…), que mostra o seu nome, a empresa e a
+    cidade/UF — é assim que quem recebe o documento confere que ele é
+    verdadeiro. Ele só é liberado depois de conferido pela RA Engenharia, e
+    o endereço não aparece em lista nenhuma: só quem recebe o link o abre.
+  · O e-mail com o link sai do nosso próprio servidor; a mensagem de WhatsApp
+    é enviada pelo botão do item 4.4, do celular da RA.
+  · O regulamento e a data do sorteio são informados pela RA Engenharia aos
+    inscritos; a inscrição não gera cobrança nem obrigação.
+  · Retenção e exclusão: mesmo canal do item 7 — apagamos a pedido, e o
+    endereço do certificado deixa de responder.
+
+
 5. O QUE NUNCA FAZEMOS
 
   · Não vendemos, alugamos nem cedemos os seus dados.
@@ -531,6 +570,9 @@ até 25 meses. A pedido, apagamos antes — mesmo canal do item 7.
     depois de o OrçaPRO baixar; no máximo 200 mensagens pendentes por conta.
   · Cadastro e consultas da busca de composições do site (item 4.5): enquanto
     você não pedir a exclusão.
+  · Inscrição na apresentação (item 4.13): até o sorteio ser realizado e os
+    certificados enviados e, depois disso, enquanto você não pedir a
+    exclusão — o cadastro serve ao contato comercial que você autorizou.
   · Medição de visitas ao site (item 4.12): o registro detalhado de cada
     visita, 4 meses; o resumo por dia, até 25 meses. Apagados automaticamente
     depois disso, e antes, a pedido.

@@ -1,5 +1,5 @@
 /* =====================================================================
- * OrçaPRO — Orçamento Inteligente de Obras
+ * OrçaPRO — Do orçamento à entrega da obra
  * config.js — marca, versão, planos e parâmetros do produto
  * Tudo aqui é "white-label friendly": mude a marca em um lugar só.
  * ===================================================================== */
@@ -10,7 +10,7 @@
     // ---- Identidade do produto (rebrandável por cliente) ----
     marca: {
       nome: "OrçaPRO IA",
-      slogan: "Orçamento Inteligente de Obras",
+      slogan: "Do orçamento à entrega da obra",
       fabricante: "RA Engenharia",
       corPrimaria: "#0f2740",   // navy
       corSecundaria: "#2e6f9e", // aço
@@ -37,7 +37,7 @@
        novo. Com as duas fontes, vale sempre a MAIOR. */
     manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
 
-    versao: "1.2.95",
+    versao: "1.2.96",
     schemaVersao: 3, // usado nas migrações de persistência
 
     // Oferta de lançamento do Plus — data/hora que a condição termina (após isso, a urgência some sozinha)
