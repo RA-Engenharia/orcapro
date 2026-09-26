@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.96",
+  "versao": "1.2.97",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.96.zip",
-  "notas": "A frase da marca passa a ser 'Do orcamento a entrega da obra' no cabecalho, no logo e no instalador. Sem mudanca no funcionamento do sistema.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.96/OrcaPRO-IA-Instalador-v1.2.96.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.97.zip",
+  "notas": "Centros de custo: o lancamento manual do Financeiro passa a ter o campo de centro; boletim medido por itens ganha o botao para mudar o centro do boletim inteiro; limpeza das decisoes de centro de documentos excluidos, com previa; quando o limite de regras enche, a tela oferece excluir as regras paradas. Correcao: escolher o centro do resto de um boletim nao apaga mais a decisao do boletim inteiro.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.97/OrcaPRO-IA-Instalador-v1.2.97.exe"
 }

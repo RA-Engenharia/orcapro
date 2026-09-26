@@ -1,6 +1,12 @@
 ﻿POLÍTICA DE PRIVACIDADE — OrçaPRO IA
-Versão 1.6 — vigente a partir de 25/09/2026
+Versão 1.7 — vigente a partir de 26/09/2026
 Elaborada conforme a Lei nº 13.709/2018 (LGPD)
+
+O que mudou na 1.7: entrou o item 4.14 — o PAINEL DE TREINAMENTO do site
+(aulas em vídeo, prova e certificado para quem comprou o OrçaPRO). O
+progresso, as notas e o certificado ficam no nosso servidor, ligados à
+licença; os vídeos vêm do YouTube (Google), que entrou na lista de terceiros
+(item 8). Nada muda dentro do programa instalado.
 
 O que mudou na 1.6: entrou o item 4.13 — a INSCRIÇÃO NA APRESENTAÇÃO DO
 SISTEMA (sorteio de 1 ano do OrçaPRO e certificado de participação). Quem
@@ -536,6 +542,47 @@ Para quê:
     endereço do certificado deixa de responder.
 
 
+4.14 PAINEL DE TREINAMENTO (aulas, prova e certificado — fora do programa)
+Quem comprou o OrçaPRO pode fazer o treinamento em vídeo no nosso site
+(/treinamento). Entra-se com a chave de licença e o e-mail do titular dela.
+
+O que guardamos, no nosso servidor, ligado à sua chave de licença: o e-mail
+do titular, o nome e a empresa que você informar para o certificado, o plano
+da licença (que define a trilha do curso), quais aulas você marcou como
+vistas e quando, as notas das provas que fez e, quando aprovado, o
+certificado (número, nota, data e o endereço público dele). O endereço de IP
+não é gravado.
+
+Para quê:
+
+  · guardar o seu progresso, para você continuar de qualquer aparelho;
+  · sortear e corrigir a prova e emitir o certificado de treinamento;
+  · saber, no nosso painel, quem já fez o treinamento e quem parou no meio —
+    é assim que a RA Engenharia oferece ajuda a quem ficou preso numa aula.
+
+  · Isso acontece no site, não dentro do programa instalado.
+  · Base legal: execução do contrato de licença (art. 7º, V, da LGPD) — o
+    treinamento faz parte do que você contratou. Não há caixa de
+    consentimento porque não há nada opcional aqui além de fazer ou não o
+    curso.
+  · Sem licença ativa a página mostra as aulas, mas nada é gravado.
+  · Os vídeos das aulas ficam no YouTube (Google) e são embutidos na página
+    pelo endereço youtube-nocookie.com: ao abrir uma aula, o seu navegador
+    busca o vídeo no Google, que recebe o seu endereço de IP e o que o seu
+    navegador manda a qualquer site — nós não mandamos ao Google quem você
+    é nem a sua licença. O Google trata isso pela política dele (item 8).
+  · O certificado fica numa página pública com endereço próprio, longo e
+    imprevisível (/certificado-treinamento/…), que mostra o seu nome, a
+    empresa (se informada), o curso, a carga horária, a nota e a data — é
+    assim que quem recebe o documento confere que ele é verdadeiro. O
+    endereço não aparece em lista nenhuma: só quem recebe o link o abre.
+  · O seu progresso também fica espelhado no navegador em que você usa o
+    painel (localStorage), só para a página abrir mais rápido; apagar os
+    dados do site no navegador remove essa cópia.
+  · Retenção e exclusão: mesmo canal do item 7 — apagamos a pedido, e o
+    endereço do certificado deixa de responder.
+
+
 5. O QUE NUNCA FAZEMOS
 
   · Não vendemos, alugamos nem cedemos os seus dados.
@@ -573,6 +620,8 @@ Para quê:
   · Inscrição na apresentação (item 4.13): até o sorteio ser realizado e os
     certificados enviados e, depois disso, enquanto você não pedir a
     exclusão — o cadastro serve ao contato comercial que você autorizou.
+  · Painel de treinamento (item 4.14): enquanto a licença existir e você não
+    pedir a exclusão — o certificado precisa continuar validável pelo link.
   · Medição de visitas ao site (item 4.12): o registro detalhado de cada
     visita, 4 meses; o resumo por dia, até 25 meses. Apagados automaticamente
     depois disso, e antes, a pedido.
@@ -606,6 +655,10 @@ Boa parte disso você resolve sozinho e na hora, dentro do programa — exportan
     clima do diário (item 4.9).
   · Google LLC — Google Maps: recebe o endereço da obra quando você abre a
     aba Mapa dela (item 4.11).
+  · Google LLC — YouTube: entrega os vídeos das aulas do painel de
+    treinamento do site (item 4.14), embutidos pelo endereço
+    youtube-nocookie.com. Recebe o seu IP e o que o navegador manda a
+    qualquer site; não recebe a sua licença nem o seu nome.
   · consultaca.com — site público aberto por você para consultar o CA do EPI
     (item 4.6); nenhum dado seu acompanha, só o número do CA.
   · Asaas Gestão Financeira S.A. — processa o PAGAMENTO quando você compra o
