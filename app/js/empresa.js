@@ -61,10 +61,36 @@
 
     salvar: function (dados, logoBase64) {
       var p = this._prefs();
+      /* o campo "planejamento e gestão" converge pelo mais novo (gestaoEm):
+         só carimba quando ELE mudou — salvar o resto da empresa não pode
+         passar por cima de um valor mais novo vindo de outro aparelho */
+      var antes = (p.responsavelTecnico && typeof p.responsavelTecnico === "object") ? String(p.responsavelTecnico.gestao || "") : "";
+      if (dados && String(dados.gestao || "") !== antes) p.gestaoEm = new Date().toISOString();
       p.responsavelTecnico = dados;
       if (logoBase64 !== undefined) { if (logoBase64) p.logo = logoBase64; else delete p.logo; }
       Store.salvarPrefs(Auth.empresaId(), p);
       return true;
+    },
+    /* ⚠ SÓ O CAMPO "PLANEJAMENTO E GESTÃO" (28/09/2026). É a porta do usuário
+       comum com a permissão `editaGestao` (Auth.podeEditarGestao). Não passa
+       pelo `salvar`, que regrava o bloco inteiro: `dados()` preenche os padrões
+       de fábrica (ex.: título "Engenheiro Civil") e salvar por ele gravaria esses
+       padrões nos dados da empresa sem o administrador ter decidido nada. Aqui
+       só `responsavelTecnico.gestao` muda; o resto das prefs fica como estava. */
+    salvarGestao: function (valor) {
+      if (typeof Auth !== "undefined" && Auth.podeEditarGestao && !Auth.podeEditarGestao()) {
+        return { ok: false, erro: "Seu usuário não tem permissão para definir o responsável pelo planejamento e gestão. Peça ao administrador da conta (Usuários → editar → marcar a permissão)." };
+      }
+      var p = this._prefs();
+      var rt = (p.responsavelTecnico && typeof p.responsavelTecnico === "object") ? p.responsavelTecnico : {};
+      rt.gestao = String(valor == null ? "" : valor).trim();
+      p.responsavelTecnico = rt;
+      /* ⚠ carimbo de QUANDO: o merge de prefs da nuvem faz "o local vence";
+         com `gestaoEm` o campo converge pelo mais NOVO entre os aparelhos
+         (mesma regra do nomeDono — ver Nuvem._merge) */
+      p.gestaoEm = new Date().toISOString();
+      Store.salvarPrefs(Auth.empresaId(), p);
+      return { ok: true, valor: rt.gestao };
     },
     salvarLogo: function (logoBase64) {
       var p = this._prefs(); p.logo = logoBase64; Store.salvarPrefs(Auth.empresaId(), p);

@@ -134,7 +134,7 @@
         var eq = this._equipe(u.empresaId), atual = null;
         for (var i = 0; i < eq.length; i++) { if (eq[i].id === u.usuarioId) { atual = eq[i]; break; } }
         if (!atual || atual.ativo === false) { this.logout(); return null; } // removido/desativado → desloga
-        u.modulos = atual.modulos || []; u.obras = atual.obras || []; u.departamento = atual.departamento || ""; u.nome = atual.nome || u.nome; u.nomePessoal = String(atual.nome || u.nomePessoal || "").trim(); u.aprovador = atual.aprovador === true; u.trocarSenha = atual.trocarSenha === true;
+        u.modulos = atual.modulos || []; u.obras = atual.obras || []; u.departamento = atual.departamento || ""; u.nome = atual.nome || u.nome; u.nomePessoal = String(atual.nome || u.nomePessoal || "").trim(); u.aprovador = atual.aprovador === true; u.editaGestao = atual.editaGestao === true; u.trocarSenha = atual.trocarSenha === true;
         localStorage.setItem(SESSAO_KEY, JSON.stringify(u));
       }
       return this._usuario;
@@ -246,7 +246,7 @@
             if (!c.ok) continue;
             if (c.legado) this._migrarSenhaEquipe(dono.empresaId, u, senha);
             var mot = c.legado ? "seguranca" : "";
-            return { ok: true, usuario: { empresaId: dono.empresaId, empresa: dono.empresa, email: u.login, nome: u.nome || u.login, plano: dono.plano || "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _obras: u.obras || [], _aprovador: u.aprovador === true, _autoAprovar: u.autoAprovar === true, _trocarSenha: u.trocarSenha === true, _motivoTroca: mot } };
+            return { ok: true, usuario: { empresaId: dono.empresaId, empresa: dono.empresa, email: u.login, nome: u.nome || u.login, plano: dono.plano || "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _obras: u.obras || [], _aprovador: u.aprovador === true, _autoAprovar: u.autoAprovar === true, _editaGestao: u.editaGestao === true, _trocarSenha: u.trocarSenha === true, _motivoTroca: mot } };
           }
         }
       }
@@ -322,6 +322,16 @@
      * `Auth._usuario` com empresaId "demo" (js/app.js:350), então tem sessão. */
     temSessao: function () { return !!this._usuario; },
     ehAdmin: function () { var u = this._usuario; return !!u && u.papel !== "usuario"; },
+    /* ⚠ QUEM PODE DEFINIR O "RESPONSÁVEL PELO PLANEJAMENTO E GESTÃO" (28/09/2026).
+       Os Dados da empresa são só do administrador — e continuam sendo. Este é o
+       único campo de lá que um usuário comum pode mudar, e só com a permissão
+       `editaGestao` marcada pelo administrador em Usuários (caso de quem faz o
+       planejamento da obra por contrato sem ser o dono da conta). O campo é o
+       padrão das composições próprias e das requisições geradas do orçamento;
+       mora nas prefs e converge entre aparelhos pelo mais novo (`gestaoEm`,
+       ver Nuvem._merge). Guarda de função: a tela e o salvar perguntam aqui,
+       não só o menu. */
+    podeEditarGestao: function () { var u = this._usuario; if (!u) return false; return this.ehAdmin() || u.editaGestao === true; },
     papel: function () { return (this._usuario && this._usuario.papel) || (this._usuario ? "admin" : ""); },
     /* ⚠ O NOME DA PESSOA, NAO O DA EMPRESA.
      *
@@ -535,7 +545,7 @@
           if (!c.ok) continue;
           if (c.legado) this._migrarSenhaEquipe(empresaId, u, senha);
           var mot = c.legado ? "seguranca" : "";
-          return { ok: true, usuario: { empresaId: empresaId, empresa: (conta && conta.empresa) || "Minha Empresa", email: u.login, nome: u.nome || u.login, plano: "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _obras: u.obras || [], _aprovador: u.aprovador === true, _autoAprovar: u.autoAprovar === true, _trocarSenha: u.trocarSenha === true, _motivoTroca: mot } };
+          return { ok: true, usuario: { empresaId: empresaId, empresa: (conta && conta.empresa) || "Minha Empresa", email: u.login, nome: u.nome || u.login, plano: "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _obras: u.obras || [], _aprovador: u.aprovador === true, _autoAprovar: u.autoAprovar === true, _editaGestao: u.editaGestao === true, _trocarSenha: u.trocarSenha === true, _motivoTroca: mot } };
         }
       }
       return { ok: false, erro: "Usuário ou senha inválidos." };
@@ -839,6 +849,7 @@
         obras: u._obras || null,
         aprovador: u._aprovador === true,
         autoAprovar: u._autoAprovar === true,  // pode aprovar a própria criação (medição/compra/requisição/RDO)
+        editaGestao: u._editaGestao === true,  // pode definir o responsável pelo planejamento e gestão sem ser admin (ver podeEditarGestao)
         trocarSenha: u._trocarSenha === true,  // força definir a própria senha (1º acesso OU migração de senha)
         motivoTroca: u._motivoTroca || ""       // "seguranca" = a senha estava no formato antigo e foi migrada agora
       };

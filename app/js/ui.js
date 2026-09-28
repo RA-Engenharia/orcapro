@@ -350,6 +350,9 @@
               return '<button class="conta-item' + (alerta ? " alerta" : "") + '" data-acao="licenca"><span>' + (typeof Icones !== 'undefined' ? Icones.get('chave', 15) : '') + '</span>' + Util.esc(lbl) + '</button>';
             })() +
             (admin ? '<button class="conta-item" data-acao="empresa"><span>' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + '</span>Dados da empresa</button>' : '') +
+            /* o usuário comum com a permissão `editaGestao` (marcada pelo admin em
+               Usuários) vê SÓ este campo dos Dados da empresa — ver Auth.podeEditarGestao */
+            (!admin && usuario.editaGestao === true ? '<button class="conta-item" data-acao="gestao-empresa"><span>' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + '</span>Planejamento e gestão</button>' : '') +
             '<button class="conta-item" data-acao="tabelas"><span>' + (typeof Icones !== 'undefined' ? Icones.get('tabela', 15) : '') + '</span>Tabelas de preço</button>' +
             (admin ? '<button class="conta-item" data-acao="nuvem"><span>' + (typeof Icones !== 'undefined' ? Icones.get('nuvem', 15) : '') + '</span>Nuvem — sincronizar aparelhos</button>' : '') +
             (admin ? '<button class="conta-item" data-acao="celular"><span>' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + '</span>Usar no celular ou tablet</button>' : '') +

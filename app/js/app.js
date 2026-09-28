@@ -2157,6 +2157,7 @@
         case "tema-mov": this.aplicarMovimento(t.dataset.movVal); break;
         case "esqueci-senha": this.redefinirSenhaUI(); break;
         case "empresa": this.abrirEmpresa(); break;
+        case "gestao-empresa": this.abrirGestaoEmpresa(); break;
         case "licenca": this.abrirLicenca(); break;
         case "backup": this.abrirBackup(); break;
         case "nuvem": this.abrirNuvem(); break;
@@ -4813,6 +4814,36 @@
     },
 
     // ---------- Empresa / Responsável Técnico ----------
+    /* "PLANEJAMENTO E GESTÃO" para o usuário comum com a permissão `editaGestao`.
+       Só este campo — os outros Dados da empresa continuam do administrador.
+       ⚠ Guarda na função (não só no menu): quem chegar aqui sem a permissão
+       recebe o recado com a porta, e nada abre. */
+    abrirGestaoEmpresa: function () {
+      var self = this;
+      if (typeof Auth === "undefined" || !Auth.podeEditarGestao || !Auth.podeEditarGestao()) {
+        UI.toast("Seu usuário não tem permissão para definir o responsável pelo planejamento e gestão. Peça ao administrador da conta: Usuários → editar o seu usuário → marcar a permissão.", "erro", 9000);
+        return false;
+      }
+      var atual = "";
+      try { atual = Empresa.dados().gestao || ""; } catch (e) {}
+      var corpo = '<div class="field"><label>Responsável pelo planejamento e gestão</label>' +
+        '<input id="emp-gestao-so" value="' + Util.esc(atual) + '" placeholder="Nome de quem responde pelo planejamento e gestão das obras"></div>' +
+        '<p class="muted" style="font-size:12px;margin:6px 0 0">Aparece nas composições próprias criadas ou editadas daqui em diante e nas requisições geradas do orçamento. Com a nuvem ligada, vai para os outros aparelhos da conta (vale o valor mais recente). Os outros dados da empresa são do administrador da conta.</p>';
+      var bg = UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("ajustes", 15) : "") + " Planejamento e gestão", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Salvar", classe: "primary", onClick: function () { self.salvarGestaoEmpresa(); } }
+      ]);
+      var m = bg && bg.querySelector(".modal"); if (m) m.style.maxWidth = "520px";
+      return true;
+    },
+    salvarGestaoEmpresa: function () {
+      var el = UI.el("emp-gestao-so");
+      var r = Empresa.salvarGestao(el ? el.value : "");
+      if (!r || !r.ok) { UI.toast((r && r.erro) || "Não consegui salvar o responsável pelo planejamento e gestão.", "erro", 9000); return false; }
+      UI.fecharModal();
+      UI.toast(r.valor ? "Responsável pelo planejamento e gestão salvo: " + r.valor + "." : "Responsável pelo planejamento e gestão apagado.", "ok");
+      return true;
+    },
     abrirEmpresa: function () {
       var self = this;
       this._logoPendente = undefined; // undefined=inalterado · string=novo logo

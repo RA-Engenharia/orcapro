@@ -29125,7 +29125,11 @@
              aprova o próprio). Marque para este usuário dispensar o segundo
              aprovador na PRÓPRIA criação. Só faz efeito junto com "Pode
              aprovar" acima — sem poder de aprovação, não há o que dispensar. */
-          + '<label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer;margin-top:8px"><input type="checkbox" id="g-autoaprovar"' + (u.autoAprovar ? " checked" : "") + ' style="margin-top:3px"> <span>Pode <b>aprovar a própria criação</b> (dispensa o segundo aprovador)<br><span class="muted" style="font-size:12px">O administrador já pode por padrão. A ação fica registrada na trilha como autoaprovação.</span></span></label>');
+          + '<label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer;margin-top:8px"><input type="checkbox" id="g-autoaprovar"' + (u.autoAprovar ? " checked" : "") + ' style="margin-top:3px"> <span>Pode <b>aprovar a própria criação</b> (dispensa o segundo aprovador)<br><span class="muted" style="font-size:12px">O administrador já pode por padrão. A ação fica registrada na trilha como autoaprovação.</span></span></label>'
+          /* "planejamento e gestão": o único campo dos Dados da empresa que um
+             usuário comum pode mudar — e só com esta permissão (Auth.podeEditarGestao).
+             Caso de quem faz o planejamento da obra sem ser o dono da conta. */
+          + '<label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer;margin-top:8px"><input type="checkbox" id="g-editagestao"' + (u.editaGestao ? " checked" : "") + ' style="margin-top:3px"> <span>Pode definir o <b>responsável pelo planejamento e gestão</b><br><span class="muted" style="font-size:12px">Só esse campo dos Dados da empresa, no menu da conta (Planejamento e gestão). Os outros dados continuam só do administrador.</span></span></label>');
       if (ehTitular) corpo = seletorTipo + '<div id="us-bloco-empresa">' + corpo + '</div>';
       this._modalForm("equipe", u, "Usuário", corpo, function (obj) {
         /* licença independente: NÃO nasce registro em equipe. Devolver false
@@ -29186,6 +29190,7 @@
         }
         obj.aprovador = !!(document.getElementById("g-aprovador") && document.getElementById("g-aprovador").checked);
         obj.autoAprovar = !!(document.getElementById("g-autoaprovar") && document.getElementById("g-autoaprovar").checked);
+        obj.editaGestao = !!(document.getElementById("g-editagestao") && document.getElementById("g-editagestao").checked);
         senhaGerada = senha || ""; // captura o plaintext p/ mostrar/enviar (só quando é nova senha)
         return true;
       }, ehNovo ? function (obj) { self._usuarioCriado(obj, senhaGerada); } : null);

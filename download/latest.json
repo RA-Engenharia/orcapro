@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.98",
+  "versao": "1.2.99",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.98.zip",
-  "notas": "Simulacao 4D e requisicoes do orcamento: no BIM, a Simulacao 4D mostra a obra subindo dia a dia no calendario do cronograma, com planejado x real, etapas atrasadas e criticas, filtro por etapa, custo na data, curva S e o 3D numa janela separada para o projetor; em Requisicoes, o botao Gerar do orcamento cria requisicoes de material e equipamento por etapa, por tipo ou de tudo, sem repetir o que ja foi requisitado ou comprado, com opcao de aprovar e ja montar as cotacoes; em Dados da empresa, o campo Responsavel pelo planejamento e gestao.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.98/OrcaPRO-IA-Instalador-v1.2.98.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.99.zip",
+  "notas": "Planejamento e gestao por usuario: o administrador pode dar a um usuario comum a permissao de definir o responsavel pelo planejamento e gestao, que aparece no menu da conta so com esse campo; o valor passa a ir para os outros aparelhos da conta pela nuvem (vale o mais recente).",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.99/OrcaPRO-IA-Instalador-v1.2.99.exe"
 }

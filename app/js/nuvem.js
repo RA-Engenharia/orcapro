@@ -528,6 +528,25 @@
           else delete r.nomeDono;
           r.nomeDonoEm = c.nomeDonoEm;
         }
+        /* ⚠ O "RESPONSÁVEL PELO PLANEJAMENTO E GESTÃO" TAMBÉM VENCE PELO MAIS NOVO
+         * (28/09/2026). Ele mora dentro de `responsavelTecnico` e é o padrão das
+         * composições próprias e das requisições geradas do orçamento. Com o
+         * "local vence" cada aparelho ficava com o seu valor para sempre: o
+         * administrador preenchia no computador dele e o engenheiro que gera as
+         * requisições nunca recebia. Viaja com `gestaoEm`; só ESTE campo segue a
+         * data — o resto de `responsavelTecnico` continua como sempre. Sem carimbo
+         * dos dois lados, comportamento antigo. `delete` respeitado como no nome. */
+        var lG = String(l.gestaoEm || ""), cG = String(c.gestaoEm || "");
+        if (cG && cG > lG) {
+          var rtR = (r.responsavelTecnico && typeof r.responsavelTecnico === "object") ? r.responsavelTecnico : {};
+          var rtC = (c.responsavelTecnico && typeof c.responsavelTecnico === "object") ? c.responsavelTecnico : {};
+          var rtN = {}, kG;
+          for (kG in rtR) if (Object.prototype.hasOwnProperty.call(rtR, kG)) rtN[kG] = rtR[kG];
+          if (Object.prototype.hasOwnProperty.call(rtC, "gestao")) rtN.gestao = rtC.gestao;
+          else delete rtN.gestao;
+          r.responsavelTecnico = rtN;
+          r.gestaoEm = c.gestaoEm;
+        }
         return r;
       }
       var self = this;
