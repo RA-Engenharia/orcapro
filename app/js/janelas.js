@@ -147,9 +147,47 @@
       return win;
     },
 
-    _levarParaOutraTela: function (win) {
+    /* =================================================================
+       A JANELA DO 3D DA SIMULAÇÃO 4D — #bim3d=v1/<obraId>
+       O painel da Simulação 4D (Gestao._b4*) abre o visualizador numa janela
+       própria, para o projetor ou o 2º monitor. A janela reabre o modelo
+       GUARDADO na obra (cache do BIM, mesma origem) e segue o painel por
+       BroadcastChannel. Mesma lista branca de id do orçamento (`idOk`): o id
+       vai para seletor e para o nome da janela.
+       ================================================================= */
+    montarRotaBim: function (obraId) {
+      if (!idOk(obraId)) return null;
+      return "#bim3d=" + this.VERSAO + "/" + obraId;
+    },
+    lerRotaBim: function (hash) {
+      var m = /^#bim3d=v1\/([^\/]{1,200})$/.exec(typeof hash === "string" ? hash : "");
+      if (!m || !idOk(m[1])) return null;
+      return { tipo: "bim3d", obraId: m[1] };
+    },
+    /* um nome por obra: clicar de novo traz a janela que já está aberta */
+    nomeBim: function (obraId) { return ("orcapro_bim3d_" + obraId).replace(/[^A-Za-z0-9_]/g, "_"); },
+    /* ⚠ SÍNCRONO dentro do clique, como o `abrir` */
+    abrirBim3d: function (obraId) {
+      var rota = this.montarRotaBim(obraId);
+      if (!rota) { this._toast("Não consegui montar o endereço da janela do 3D.", "erro"); return null; }
+      var s = global.screen || {};
+      var w = Math.max(900, Math.min(1600, (s.availWidth || 1366) - 60));
+      var h = Math.max(600, Math.min(1000, (s.availHeight || 768) - 60));
+      var feat = "popup=yes,width=" + w + ",height=" + h + ",left=" + Math.round((s.availLeft || 0) + ((s.availWidth || w) - w) / 2) + ",top=" + Math.round((s.availTop || 0) + 30);
+      var win = null;
+      try { win = global.open(this.url(global.location, rota), this.nomeBim(obraId), feat); } catch (e) { win = null; }
+      if (!win) {
+        this._toast("O navegador bloqueou a janela nova. Libere as janelas pop-up para " + (global.location ? global.location.host : "este endereço") + " (ícone na barra de endereço) e clique de novo.", "erro");
+        return null;
+      }
+      try { win.focus(); } catch (eF) {}
+      this._levarParaOutraTela(win, "O 3D abriu em outra janela. Arraste-a para o projetor ou o outro monitor — ela segue a simulação deste painel.");
+      return win;
+    },
+
+    _levarParaOutraTela: function (win, recado) {
       var self = this;
-      var arraste = function () { self._toast("Janela aberta. Arraste-a para o outro monitor — o que você gravar numa aparece na outra.", "ok"); };
+      var arraste = function () { self._toast(recado || "Janela aberta. Arraste-a para o outro monitor — o que você gravar numa aparece na outra.", "ok"); };
       if (typeof global.getScreenDetails !== "function") { arraste(); return; }
       var jaPediu = false;
       try { jaPediu = global.localStorage.getItem("orcapro:tela:janelas:pediu") === "1"; } catch (eL) {}

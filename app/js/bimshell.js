@@ -49,6 +49,7 @@
     _raiz: null,
     _palco: null,
     _opts: null,
+    _focoTravado: "",      /* ver travarFoco */
     _estado: { docs: [{ id: "3d", nome: "{3D}", ativo: true }], selecao: null, arvore: null, props: null },
 
     /* ---------------------------------------------------------------
@@ -125,7 +126,9 @@
            dele — os dois rodavam no mesmo Esc. Quem estava no modo foco com a trena
            no 1º ponto saia do foco E perdia a medição de uma vez. Parar a propagação
            aqui é o que faz valer o "um Esc, uma ação" que a nota acima promete. */
-        if (ev.key === "Escape" && self.focoAtivo()) { self.alternarFoco(false); ev.preventDefault(); ev.stopPropagation(); return; }
+        /* foco TRAVADO (janela do 3D, ver `travarFoco`): o Esc não sai do
+           foco — segue para cancelar a ferramenta, como fora do foco */
+        if (ev.key === "Escape" && !self._focoTravado && self.focoAtivo()) { self.alternarFoco(false); ev.preventDefault(); ev.stopPropagation(); return; }
         if (ev.key === "Escape") { var n = CMD() && CMD().cancelar(); if (n) { self.pintarFita(); ev.preventDefault(); } }
         else if (ev.key === "Enter") { var c = CMD(); if (c && c.ultimo()) { c.repetir(); self.pintarFita(); ev.preventDefault(); } }
       };
@@ -763,20 +766,41 @@
       if (!this._raiz) return false;
       var atual = this._raiz.getAttribute("data-rv-foco") === "1";
       var novo = on == null ? !atual : !!on;
+      /* ⚠ FOCO TRAVADO: sair do foco devolveria a fita inteira (Parede, Piso,
+         "Gerar orçamento"…) numa janela que não pode gravar. A trava tem
+         porta: o recado diz onde editar (a janela principal). */
+      if (atual && !novo && this._focoTravado) {
+        if (typeof UI !== "undefined" && UI.toast) UI.toast(this._focoTravado, "aviso");
+        return true;
+      }
       this._raiz.setAttribute("data-rv-foco", novo ? "1" : "0");
       if (novo && !this._btnSairFoco) {
         var self = this;
         var b = el("button", "rv-foco-sair");
         b.type = "button";
-        b.innerHTML = ico("fechar", 13) + "<span>Sair do foco (Esc)</span>";
         b.onclick = function () { self.alternarFoco(false); };
         this._raiz.appendChild(b);
         this._btnSairFoco = b;
+        this._pintarSairFoco();
       }
-      if (typeof this._opts.onLayout === "function") this._opts.onLayout();
+      if (this._opts && typeof this._opts.onLayout === "function") this._opts.onLayout();
       return novo;
     },
-    focoAtivo: function () { return !!(this._raiz && this._raiz.getAttribute("data-rv-foco") === "1"); }
+    focoAtivo: function () { return !!(this._raiz && this._raiz.getAttribute("data-rv-foco") === "1"); },
+    /* TRAVA O MODO FOCO (a janela do 3D da Simulação 4D, achado 40.4 da
+       revisão da 1.2.98: ela é só visualização). `texto` é o recado que o
+       botão do canto passa a mostrar e que sai quando alguém tenta sair do
+       foco; "" destrava. */
+    travarFoco: function (texto) {
+      this._focoTravado = texto ? String(texto) : "";
+      this._pintarSairFoco();
+      return !!this._focoTravado;
+    },
+    _pintarSairFoco: function () {
+      var b = this._btnSairFoco; if (!b) return;
+      if (this._focoTravado) { b.innerHTML = "<span>" + esc(this._focoTravado) + "</span>"; b.title = this._focoTravado; }
+      else { b.innerHTML = ico("fechar", 13) + "<span>Sair do foco (Esc)</span>"; b.title = ""; }
+    }
   };
 
   global.BimShell = Shell;

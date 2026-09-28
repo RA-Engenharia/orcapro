@@ -105,7 +105,11 @@
          ela grava sobe pela janela principal, que recebe o evento `storage`
          e empurra para a nuvem (bindGlobal). */
       var rotaJan = (typeof Janelas !== "undefined" && !/[?&]demo=1/.test(location.search || "")) ? Janelas.lerRota(location.hash || "") : null;
-      if (rotaJan) { this._janela = rotaJan; try { document.body.classList.add("modo-janela"); } catch (eMj) {} }
+      /* a JANELA DO 3D da Simulação 4D (#bim3d=v1/<obra>) é uma janela
+         destacada também: mesma regra de não conectar nuvem, não fazer
+         backup nem telemetria (todas as guardas `!this._janela` abaixo) */
+      if (!rotaJan && typeof Janelas !== "undefined" && Janelas.lerRotaBim && !/[?&]demo=1/.test(location.search || "")) rotaJan = Janelas.lerRotaBim(location.hash || "");
+      if (rotaJan) { this._janela = rotaJan; try { document.body.classList.add(rotaJan.tipo === "bim3d" ? "modo-bim3d" : "modo-janela"); } catch (eMj) {} }
 
       // MODO DEMO (?demo=1) — orçamento genérico para vitrine/teste na página de vendas
       if (/[?&]demo=1/.test(location.search || "")) { return this._iniciarDemo(location.search || ""); }
@@ -269,6 +273,7 @@
        Roda de novo quando o endereço muda (ver `_janelaHash`). */
     _iniciarJanela: function () {
       var j = this._janela;
+      if (j && j.tipo === "bim3d") return this._iniciarJanelaBim3d();
       if (!Auth.usuario()) { this._janelaRecado("Entre na janela principal do OrçaPRO para continuar."); return; }
       if (!Janelas.podeEditar(Store)) { this._janelaRecado("Esta versão ainda não protege a edição em duas janelas ao mesmo tempo. Use a janela principal."); return; }
       this._janelaSemDado = false; this._janelaTexto = "";
@@ -296,6 +301,73 @@
       }
       this.render();
       setTimeout(function () { try { self.render(); } catch (eR) {} }, 400);
+    },
+
+    /* A JANELA DO 3D DA SIMULAÇÃO 4D (js/janelas.js `abrirBim3d`): só o
+       visualizador, na obra da rota, seguindo o painel da janela principal
+       (Gestao._b4Receber). Ela NÃO grava nada de planejamento: o que a
+       pessoa pode fazer aqui é olhar, girar e cortar o modelo.
+       ⚠ Obra que não existe neste aparelho vira recado — abrir o BIM "sem
+       obra" mostraria outra coisa com o título da obra pedida. */
+    _iniciarJanelaBim3d: function () {
+      var j = this._janela;
+      var motivo = this._bim3dMotivo(j.obraId);
+      if (motivo) { this._janelaRecado(motivo); return; }
+      var obra = null;
+      try { obra = Store.obter(Auth.empresaId(), "obras", j.obraId); } catch (eO) { obra = null; }
+      Gestao._bimSel = j.obraId;
+      Gestao._b4Janela3d = true;
+      try { document.title = "3D · Simulação 4D — " + ((obra && obra.nome) || "obra"); } catch (eT) {}
+      /* ⚠ A SESSÃO É DA PRINCIPAL. Sair, entrar com outra pessoa ou o admin
+         tirar esta obra do usuário acontece lá; esta janela só fica sabendo
+         pelo evento `storage` da sessão (ou da equipe) — e aí confere de novo
+         (ver `_janelaBim3dRevalidar`). Uma vez por documento. */
+      if (!this._bim3dOuvindoSessao && window.addEventListener) {
+        this._bim3dOuvindoSessao = true;
+        var self = this, chaveEquipe = "orcapro:" + Auth.empresaId() + ":equipe";
+        window.addEventListener("storage", function (ev) {
+          try { if (ev && (ev.key === "orcapro:sessao" || ev.key === chaveEquipe || ev.key === null)) self._janelaBim3dRevalidar(); } catch (eR) {}
+        });
+      }
+      this.view = "bim"; this.tela = "gestao"; this.orcAtual = null;
+      this.render();
+    },
+
+    /* POR QUE A JANELA DO 3D NÃO ABRE ESTA OBRA — "" quando pode.
+       ⚠ A MESMA RÉGUA DO RESTO DA TELA (achado 40.3 da revisão da 1.2.98).
+       Roteiro do defeito: um sub-usuário limitado às obras [A] digitava (ou
+       recebia) `…/#bim3d=v1/<id da obra B>`, e a janela lia a obra com
+       `Store.obter`, sem o filtro por obra que o seletor do BIM aplica
+       (`lista("obras")` → `filtrarPorObra`): reabria o modelo da obra B do
+       cache e a simulação com o cronograma e o orçamento dela. E sem o módulo
+       BIM o render mandava ao Painel, que o CSS da janela esconde — os dados
+       ficavam no DOM, e a tela em branco. Cada porta fechada diz por quê. */
+    _bim3dMotivo: function (obraId) {
+      if (!Auth.usuario()) return "Entre na janela principal do OrçaPRO para continuar.";
+      if (typeof Gestao === "undefined" || typeof Gestao.renderBim !== "function") return "O módulo BIM não carregou nesta janela. Feche-a e use o 3D da janela principal.";
+      if (!this._demo && Gestao.podeGestao && !Gestao.podeGestao()) return "O 3D da Simulação 4D é da Gestão de Obras (plano Plus), que esta licença não inclui. Para liberar, renove a licença pela janela principal (🔑). Feche esta janela.";
+      if (Auth.podeModulo && !Auth.podeModulo("bim")) return "Seu usuário não tem acesso ao módulo BIM. Peça ao administrador da conta, ou feche esta janela.";
+      var obra = null;
+      try { obra = Store.obter(Auth.empresaId(), "obras", obraId); } catch (eO) { obra = null; }
+      if (!obra) return "Esta obra não foi encontrada neste aparelho. Feche esta janela e abra o 3D de novo pelo painel da Simulação 4D.";
+      if (Auth.podeObra && !Auth.podeObra(obraId)) return "Esta obra não está liberada para o seu usuário. Para ver o 3D dela, peça ao administrador da conta que a libere; para as suas obras, use o painel da Simulação 4D na janela principal. Feche esta janela.";
+      return "";
+    },
+    /* a sessão ou a equipe mudaram (evento `storage` vindo da principal):
+       relê a sessão e confere de novo; outra pessoa, ou obra retirada, vira
+       recado — e a janela para de ouvir o painel (Gestao._b4JanelaRecusar) */
+    _janelaBim3dRevalidar: function () {
+      var j = this._janela;
+      if (!j || j.tipo !== "bim3d" || this._janelaSemDado) return;
+      var antes = Auth.usuario(), quem = antes ? String(antes.email || "") + "|" + Auth.empresaId() : "";
+      try { Auth.init(); } catch (eI) {}
+      var agora = Auth.usuario(), quemAgora = agora ? String(agora.email || "") + "|" + Auth.empresaId() : "";
+      var motivo = (!agora || quemAgora !== quem)
+        ? "A sessão mudou na janela principal (saiu, ou entrou outra pessoa). Feche esta janela e abra o 3D de novo pelo painel da Simulação 4D."
+        : this._bim3dMotivo(j.obraId);
+      if (!motivo) return;
+      try { if (typeof Gestao !== "undefined" && Gestao._b4JanelaRecusar) { Gestao._b4JanelaRecusar(motivo); return; } } catch (eG) {}
+      this._janelaRecado(motivo);
     },
 
     /* O hash mudou com a janela aberta: outra rota válida remonta a janela
@@ -12283,6 +12355,7 @@
           codigo: bp.codigo, descricao: bp.descricao, unidade: bp.unidade,
           grupo: bp.grupo || "Composição própria", custoUnitario: Util.num(bp.custoUnitario),
           custoMO: Util.num(bp.custoMO), custoMAT: Util.num(bp.custoMAT), custoEQ: Util.num(bp.custoEQ),
+          gestao: bp.gestao || "",   /* o responsável pelo planejamento e gestão, se a composição tiver */
           insumos: bp.insumos.map(function (i) {
             return { tipo: "INSUMO", codigo: i.codigo, descricao: i.descricao, unidade: i.unidade,
               coeficiente: Util.num(i.coeficiente), custoUnitario: Util.num(i.custoUnitario),
@@ -12412,11 +12485,21 @@
         comp: {
           codigo: ComposicaoPropria.gerarCodigo(cods), codigoSec: "", descricao: "", grupo: "",
           unidade: "", uf: String(this._baseUf || Sinapi.uf || ""), modeloRef: "SINAPI",
-          metodo: "truncar2", maoDeObra: false, observacao: "", insumos: []
+          metodo: "truncar2", maoDeObra: false, observacao: "", insumos: [],
+          /* ⚠ com guarda: bancadas recortam este método sozinho (test-varredura-236) */
+          gestao: this._planejamentoGestao ? this._planejamentoGestao() : ""
         },
         referencia: null
       };
       if (!semRender) this._cpRender(); // fluxos que mutam o _cp antes do 1º paint passam true
+    },
+    /* PLANEJAMENTO E GESTÃO — o parâmetro da conta (⚙ Empresa, campo
+       "Responsável pelo planejamento e gestão"). Vai para a composição
+       própria criada ou editada (campo `gestao`) e para as requisições
+       geradas do orçamento. Padrão vazio: nome nenhum mora no código. */
+    _planejamentoGestao: function () {
+      try { return (typeof Empresa !== "undefined" && Empresa.dados) ? String(Empresa.dados().gestao || "").trim() : ""; }
+      catch (e) { return ""; }
     },
     /* v1.1.123 — reabre uma composição própria existente no criador (errou o
      * coeficiente? corrige e regrava — o código original é sobrescrito). */
@@ -12439,7 +12522,11 @@
           codigo: copia.codigo, codigoSec: copia.codigoSecundario || "", descricao: copia.descricao || "",
           grupo: copia.grupo || "", unidade: copia.unidade || "", uf: String(this._baseUf || Sinapi.uf || ""),
           modeloRef: copia.modeloRef || "SINAPI", metodo: copia.metodo || "truncar2",
-          maoDeObra: !!copia.maoDeObra, observacao: copia.observacao || "", insumos: copia.insumos || []
+          maoDeObra: !!copia.maoDeObra, observacao: copia.observacao || "", insumos: copia.insumos || [],
+          /* a composição que já tem responsável mostra o dela; a que não tem
+             recebe o da conta — e grava ao salvar (pedido: "configurado nas
+             composições") */
+          gestao: (copia.gestao != null && String(copia.gestao).trim() !== "") ? String(copia.gestao) : (this._planejamentoGestao ? this._planejamentoGestao() : "")
         },
         referencia: null
       };
@@ -12473,6 +12560,7 @@
       c.maoDeObra = !!copia.maoDeObra;
       c.observacao = copia.observacao || "";
       c.insumos = copia.insumos || [];
+      if (copia.gestao != null && String(copia.gestao).trim() !== "") c.gestao = String(copia.gestao);
       this._cp.passo = 2;
       this._cpRender();
       UI.toast("Cópia de " + codigo + " aberta como " + c.codigo + " — ajuste e grave. O original não muda.", "ok");
@@ -12809,6 +12897,9 @@
       var rc = document.querySelector('input[name="cp-metodo"]:checked'); if (rc) c.metodo = rc.value;
       var mo = UI.el("cp-mo"); if (mo) c.maoDeObra = !!mo.checked;
       c.observacao = String(v("cp-obs"));
+      /* só lê se o campo existe: coletar sem ele (versão antiga do desenho)
+         não pode zerar o responsável que veio da composição */
+      if (UI.el("cp-gestao")) c.gestao = String(v("cp-gestao")).trim();
     },
     /* resolve p/ validação e preços atualizados: procura o código nas bases reais.
      * Com a FONTE conhecida (insumo adicionado pela busca ou vindo de referência
@@ -12996,6 +13087,10 @@
           observacao: c.observacao, referenciaCodigo: (st.referencia && st.referencia.codigo) || "",
           criadoEm: Util.agoraISO(), insumos: c.insumos
         };
+        /* PLANEJAMENTO E GESTÃO — o responsável vai gravado na composição
+           (vazio não grava a chave: composição sem responsável continua
+           igual a antes, e o espelho da nuvem não vê "mudança" à toa) */
+        if (c.gestao != null && String(c.gestao).trim() !== "") item.gestao = String(c.gestao).trim();
         /* ⚠ EDICAO PRESERVA O `criadoPor` ORIGINAL — e nao e detalhe de
            auditoria, e o que impede o clone. `js/propriasync.js:97` decide
            "colisao de verdade" por AUTORES DIFERENTES + conteudo diferente;
@@ -13316,6 +13411,19 @@
         atualizadoEm: Util.agoraISO(),
         criadoPor: (alvoEdicao && alvoEdicao.criadoPor) || ((typeof Auth !== "undefined" && Auth.nome) ? Auth.nome() : "") // auditoria
       };
+      /* ⚠ O QUE ESTE FORMULÁRIO NÃO EDITA NÃO PODE MORRER NA REGRAVAÇÃO. O
+         `item` acima é montado do zero; o `grupo` e o `fornecedorRef` (que o
+         gerador de requisições do orçamento lê para agrupar "por tipo" e para
+         sugerir quem cotar) sumiam na primeira correção de preço.
+         `fornecedorRef` na coleta: undefined = o campo não estava na tela
+         (preserva); null = a pessoa escolheu "nenhum". No DEDUPE (cadastro
+         novo que caiu num insumo existente) o "nenhum" de um formulário em
+         branco não apaga o que o outro já tinha — ninguém viu o campo cheio. */
+      var anteriorIns = alvoEdicao || jaExiste;
+      if (anteriorIns && anteriorIns.grupo) item.grupo = anteriorIns.grupo;
+      var refNova = dados.fornecedorRef;
+      if (refNova && (refNova.id || refNova.nome)) item.fornecedorRef = { id: String(refNova.id || ""), nome: String(refNova.nome || "") };
+      else if (anteriorIns && anteriorIns.fornecedorRef && (refNova === undefined || !alvoEdicao)) item.fornecedorRef = anteriorIns.fornecedorRef;
       this._propriaGravar(item, null, null);
       UI.toast("Insumo " + item.codigo + (alvoEdicao ? " regravado" : (jaExiste ? " ATUALIZADO no seu banco" : " salvo no seu banco")) + (preco > 0 ? " (" + Util.fmtMoeda(preco) + "/" + und + ")" : "") + " — aparece nas buscas de requisição e de orçamento.", "ok");
       /* v1.1.210 — o insumo próprio nunca conferiu unidade: aceitava qualquer
@@ -13376,6 +13484,22 @@
       var pre = UI.el("eip-preco"); if (pre) pre.value = Util.num(ins.custoUnitario) ? String(Util.num(ins.custoUnitario).toFixed(2)).replace(".", ",") : "";
       var cat = UI.el("eip-cat");
       if (cat) cat.value = ["MO", "MAT", "EQ"].indexOf(String(ins.categoria || "").toUpperCase()) >= 0 ? String(ins.categoria).toUpperCase() : "MAT";
+      /* o fornecedor de referência abre MARCADO — é por isso que, na edição,
+         "— nenhum —" quer dizer "tirar" (ver salvarInsumoProprio). Id que saiu
+         do cadastro ganha uma opção própria, senão o Salvar o apagaria calado. */
+      var fSel = UI.el("eip-forn"), refI = ins.fornecedorRef;
+      if (fSel && refI) {
+        var idR = String((typeof refI === "object" ? refI.id : refI) || "");
+        var achouR = false;
+        for (var iR = 0; iR < fSel.options.length; iR++) if (fSel.options[iR].value === idR) achouR = true;
+        if (idR && !achouR) {
+          var oR = document.createElement("option");
+          oR.value = idR; oR.setAttribute("data-nome", String((typeof refI === "object" && refI.nome) || ""));
+          oR.textContent = ((typeof refI === "object" && refI.nome) || idR) + " (não está mais no cadastro)";
+          fSel.appendChild(oR);
+        }
+        if (idR) fSel.value = idR;
+      }
     },
     /* Depois de regravar um insumo próprio: quem depende dele fica mentindo
      * (a composição soma o preço velho, a planilha idem). Levanta os dois

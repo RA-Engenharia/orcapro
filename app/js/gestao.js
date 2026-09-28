@@ -8705,7 +8705,12 @@
       var obra = r.obraId ? Store.obter(eid(), "obras", r.obraId) : null, itens = this._reqItens(r);
       var brd = function (d) { return d ? String(d).split("-").reverse().join("/") : "—"; };
       var rows = itens.map(function (it, i) { return "<tr><td style='border:1px solid #bbb;padding:5px;text-align:center'>" + (i + 1) + "</td><td style='border:1px solid #bbb;padding:5px'>" + (it.codigo ? "<b>" + Util.esc(it.codigo) + "</b> " : "") + Util.esc(it.descricao) + "</td><td style='border:1px solid #bbb;padding:5px;text-align:center'>" + Util.fmtNum(it.quantidade, 2) + "</td><td style='border:1px solid #bbb;padding:5px;text-align:center'>" + Util.esc(Util.unidadeExibir(it.unidade)) + "</td><td style='border:1px solid #bbb;padding:5px;text-align:center'>☐</td></tr>"; }).join("");
-      var corpo = "<table style='width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px'><tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc;width:18%'><b>Nº</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(r.numero || "—") + "</td><td style='border:1px solid #bbb;padding:6px;background:#f8fafc;width:16%'><b>Data</b></td><td style='border:1px solid #bbb;padding:6px'>" + brd(r.data) + "</td></tr><tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Obra</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(obra ? obra.nome : "—") + "</td><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Prioridade</b></td><td style='border:1px solid #bbb;padding:6px'>" + rot(P.reqPrioridade, r.prioridade) + "</td></tr><tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Solicitante</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(r.solicitante || "—") + "</td><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Status</b></td><td style='border:1px solid #bbb;padding:6px'>" + rot(P.reqStatus, r.status) + "</td></tr></table>"
+      var corpo = "<table style='width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px'><tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc;width:18%'><b>Nº</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(r.numero || "—") + "</td><td style='border:1px solid #bbb;padding:6px;background:#f8fafc;width:16%'><b>Data</b></td><td style='border:1px solid #bbb;padding:6px'>" + brd(r.data) + "</td></tr><tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Obra</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(obra ? obra.nome : "—") + "</td><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Prioridade</b></td><td style='border:1px solid #bbb;padding:6px'>" + rot(P.reqPrioridade, r.prioridade) + "</td></tr><tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Solicitante</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(r.solicitante || "—") + "</td><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Status</b></td><td style='border:1px solid #bbb;padding:6px'>" + rot(P.reqStatus, r.status) + "</td></tr>"
+        /* PLANEJAMENTO E GESTÃO e a ORIGEM no papel — só quando existem
+           (linha vazia rotulada parece dado que falta em algum lugar) */
+        + (r.gestao ? "<tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Planejamento e gestão</b></td><td colspan='3' style='border:1px solid #bbb;padding:6px'>" + Util.esc(r.gestao) + "</td></tr>" : "")
+        + (r.origemOrc && r.origemOrc.orcamentoId ? "<tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Origem</b></td><td colspan='3' style='border:1px solid #bbb;padding:6px'>Gerada do orçamento" + (r.origemOrc.orcamentoNumero ? " " + Util.esc(r.origemOrc.orcamentoNumero) : "") + (r.origemOrc.rotulo ? " — " + Util.esc(r.origemOrc.rotulo) : "") + "</td></tr>" : "")
+        + "</table>"
         + "<table style='width:100%;border-collapse:collapse;font-size:12px'><thead><tr style='background:#0f2740;color:#fff'><th style='border:1px solid #bbb;padding:5px;width:8%'>Nº</th><th style='border:1px solid #bbb;padding:5px'>Material / Insumo</th><th style='border:1px solid #bbb;padding:5px;width:14%'>Qtd</th><th style='border:1px solid #bbb;padding:5px;width:12%'>Unid.</th><th style='border:1px solid #bbb;padding:5px;width:12%'>Entregue</th></tr></thead><tbody>" + (rows || "<tr><td colspan='5' style='border:1px solid #bbb;padding:8px;text-align:center'>Sem itens</td></tr>") + "</tbody></table>"
         + (r.observacoes ? "<p style='margin-top:10px;font-size:11px'><b>Obs.:</b> " + Util.esc(r.observacoes) + "</p>" : "")
         + "<div style='display:flex;justify-content:space-between;margin-top:44px;gap:26px'><div style='flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:11px'>Solicitante</div><div style='flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:11px'>Aprovado por</div><div style='flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:11px'>Recebido por</div></div>";
@@ -9977,6 +9982,7 @@
 
       var info = document.getElementById("bim-info");
       var drawer = document.getElementById("bim-drawer");
+      var hud4 = document.getElementById("bim4d-hud"), st3d = document.getElementById("b4-j3d-status");
       var obra = null;
       try { obra = Store.obter(eid(), "obras", this._bimSel); } catch (e) {}
 
@@ -9987,6 +9993,8 @@
           /* o canvas do viewer e o que vive sobre ele mudam de casa */
           palco.appendChild(canvas);
           if (info) palco.appendChild(info);
+          if (hud4) palco.appendChild(hud4);
+          if (st3d) palco.appendChild(st3d);
           if (drawer) palco.appendChild(drawer);
           canvas.style.height = "100%";
           canvas.style.background = "transparent";
@@ -12476,6 +12484,18 @@
     },
 
     renderBim: function () {
+      /* JANELA DO 3D (#bim3d=v1/<obra>, App._iniciarJanelaBim3d): só o
+         visualizador, a tela inteira, com o carimbo da data por cima. Quem
+         manda na simulação é o painel da janela principal. */
+      if (this._b4Janela3d) {
+        return '<div class="card b4-j3d" style="padding:0;overflow:hidden;border-radius:0;position:relative">' +
+          '<div id="bim-canvas" style="width:100%;height:100vh;position:relative;background:#0b1a2b;display:flex;align-items:center;justify-content:center">' +
+          '<div id="bim-aviso" style="color:#8fa3b8;text-align:center;font-size:14px;padding:20px">Abrindo o modelo guardado nesta obra…</div></div>' +
+          '<div id="bim-info" style="position:absolute;left:64px;top:52px;background:rgba(15,39,64,.9);color:#fff;border-radius:8px;padding:7px 11px;font-size:12px;display:none;max-width:260px;z-index:4"></div>' +
+          '<div id="bim4d-hud" class="b4-hud" style="display:none" aria-live="polite"></div>' +
+          '<div id="b4-j3d-status" class="b4-j3d-status">Esperando o painel da Simulação 4D na janela principal…</div>' +
+          "</div>";
+      }
       var self = this, obras = lista("obras");
       if (this._bimSel == null) this._bimSel = (obras.filter(function (o) { return o.orcamentoId; })[0] || obras[0] || {}).id || "";
       var sel = '<select data-gacao="bim-troca-obra" style="max-width:260px">' +
@@ -12499,6 +12519,9 @@
         // FORA do #bim-canvas: BIM.montar zera o innerHTML do host — dentro dele o balão era APAGADO
         // em toda montagem (overlay de propriedades/conflito nunca aparecia após montar o viewer)
         '<div id="bim-info" style="position:absolute;left:64px;top:52px;background:rgba(15,39,64,.9);color:#fff;border-radius:8px;padding:7px 11px;font-size:12px;display:none;max-width:260px;z-index:4"></div>' +
+        /* o carimbo da data da simulação 4D sobre o 3D (fora do #bim-canvas
+           pelo mesmo motivo do balão: o BIM.montar zera o host) */
+        '<div id="bim4d-hud" class="b4-hud" style="display:none" aria-live="polite"></div>' +
         // GAVETA de análise (drawer): desliza da direita, por cima do canvas
         '<div id="bim-drawer" style="position:absolute;top:0;right:0;bottom:0;width:min(440px,94%);background:var(--surface);border-left:1px solid var(--linha-forte);box-shadow:-14px 0 34px rgba(0,0,0,.3);z-index:6;display:none;flex-direction:column">' +
           '<div style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:2px solid var(--linha)">' +
@@ -12511,15 +12534,12 @@
           '<span class="muted" style="font-size:11.5px">arraste mais .IFC no visualizador (federado)</span></div>' +
           '<div id="bim-modelos-lista"></div></div>' +
 
-        '<div id="bim-4d" style="display:none">' +
-          '<div class="flex between" style="align-items:center;margin-bottom:8px;flex-wrap:wrap"><h3 style="margin:0;display:flex;align-items:center">' + _icB("cronograma") + 'Simulação 4D</h3>' +
-          '<span><span id="bim-custo" class="g-pill" style="background:#2e6f9e22;color:#2e6f9e;margin-right:6px;display:none"></span><span id="bim-avanco" class="g-pill" style="background:#16a34a22;color:#16a34a">0%</span></span></div>' +
-          '<div class="flex" style="gap:10px;align-items:center">' +
-          '<button class="btn sm" id="bim-play">▶ Play</button>' +
-          '<input type="range" id="bim-slider" min="0" max="100" value="0" style="flex:1">' +
-          '<span id="bim-semana" class="muted" style="min-width:110px;text-align:right;font-size:12.5px">Semana 0</span></div>' +
-          '<div id="bim-legenda" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:12px;font-size:12px"></div>' +
-          '<div id="bim-curva" style="margin-top:12px"></div>' +
+        /* SIMULAÇÃO 4D (estilo TimeLiner): o corpo é desenhado pelo _b4Render
+           (motor js/bim4dsim.js); aqui só a casca e o cabeçalho */
+        '<div id="bim-4d" class="b4" style="display:none">' +
+          /* o título "Simulação 4D" já está na barra da gaveta: aqui só o subtítulo e as ações */
+          '<div class="b4-cab"><span class="b4-sub">' + _icB("cronograma", 14) + 'Por data, no calendário do cronograma · estilo TimeLiner</span><span id="b4-cab-acoes" class="b4-cab-acoes"></span></div>' +
+          '<div id="b4-corpo" class="b4-corpo"><p class="muted b4-vazio">Carregue um modelo .IFC no visualizador para simular a obra no tempo.</p></div>' +
         "</div>" +
 
         '<div id="bim-clash" style="display:none">' +
@@ -12608,6 +12628,32 @@
       });
       var tit = document.getElementById("bim-drawer-tit"); if (tit) tit.textContent = alvo[1];
       drawer.style.display = "flex";
+      /* a Simulação 4D precisa de largura (lista de atividades com Gantt);
+         os outros painéis voltam à gaveta de sempre */
+      var st4 = this._b4Estado();
+      drawer.style.width = chave === "4d" ? (st4.largo ? "100%" : "min(640px,96%)") : "min(440px,94%)";
+      if (chave === "4d") {
+        /* abrir o painel liga a simulação. A 1ª abertura vai para HOJE quando
+           hoje cai dentro da obra (é a pergunta de toda reunião: "onde
+           deveríamos estar?"); fora dela, o fim — o modelo inteiro. */
+        st4.ativo = true;
+        var primeira = false;
+        if (!st4.abriu && this._b4Sim) {
+          st4.abriu = true; primeira = true;
+          var hj = this._b4Sim.hoje;
+          if (!st4.data && hj >= this._b4Sim.inicio && hj < this._b4Sim.fim) st4.data = hj;
+        }
+        this._b4Render();
+        if (this._b4Sim) this._b4Ir(st4.data, { fixar: false });
+        /* a gaveta cobre a direita do 3D: na 1ª abertura a obra é trazida
+           para a parte livre (depois, a câmera é da pessoa) */
+        if (primeira) { var selfE = this; setTimeout(function () { try { selfE._b4Enquadrar(null); } catch (eE) {} }, 120); }
+      }
+      this._b4Casca(chave === "4d");
+      /* o Cronograma 4D do engenheiro toma a cena: esta simulação sai dela
+         (o carimbo da data sumiria de qualquer jeito na primeira pintura
+         dele, mas antes disso mentiria sobre o que está na tela) */
+      if (chave === "tarefas4d") { this._b4Play(true); st4.ativo = false; try { this._b4PintarHud(null); } catch (eH) {} }
       /* ⚠ SAIU DO CRONOGRAMA 4D, DESFAZ O 4D. Os painéis são seções da MESMA
          gaveta do MESMO visualizador: a cena não é remontada ao trocar. Sem
          isto, o coordenador ia inspecionar conflitos com o modelo pintado pelo
@@ -12630,9 +12676,14 @@
     _bimFecharDrawer: function () {
       var drawer = document.getElementById("bim-drawer");
       if (drawer) drawer.style.display = "none";
+      try { this._b4Casca(false); } catch (e4) {}   /* a coluna Propriedades e a fita voltam */
     },
     bimTrocaObra: function (obraId) {
       if (obraId == null) return; // clique da delegação (sem value): não zera a obra do 4D
+      /* ⚠ a janela do 3D é DA OBRA: ela só ouve mensagens com o id dela.
+         Trocar de obra com ela aberta deixaria no projetor a obra anterior,
+         parada, enquanto o painel simula a nova. Fecha antes (com o id velho). */
+      if (this._b4Destacado) { try { this._b4FecharJanela3d(); } catch (eJ3) {} }
       this._bimSel = obraId;
       /* B0: a âncora do vínculo BIM leva a obra, e o registro salvo TAMBÉM é
          por obra. Trocar aqui sem avisar o viewer deixaria a chave apontando
@@ -12666,6 +12717,7 @@
       try {
         this._bimEdFlush();
         this._bimSemana = null; // slider 4D da obra anterior não vale pra nova
+        this._b4Resetar();      // nem a data, a fonte e o filtro da simulação 4D
         var edN = Store.obter(eid(), "bim_edicoes", obraId || "geral");
         if (window.BIM && BIM.editarAplicar) BIM.editarAplicar((edN && edN.ops) || []);
       } catch (eEd2) {}
@@ -14938,7 +14990,13 @@
       if (this._bimRestaurando) return;
       var regs = this._bimFedCarregar();
       var meus = BimFed.daObra(regs, obraId);
-      if (!meus.length) return;
+      /* ⚠ NA JANELA DO 3D ESTA FUNÇÃO NÃO FALA (achado 40.1 da revisão da
+         1.2.98). A janela chama o restaurar a cada 3 s enquanto o modelo não
+         chega, e cada chamada soltava o toast "Falta o arquivo de…" — no
+         projetor, por até 3 minutos. Lá o resultado vai para `_b4Restauro`
+         e quem fala é o selo da janela, uma vez, com o que foi achado. */
+      var mudo = !!this._b4Janela3d;
+      if (!meus.length) { if (mudo) { this._b4Restauro = { total: 0 }; this._b4StatusJanela(); } return; }
       this._bimRestaurando = true;
       var emp = eid();
 
@@ -14977,6 +15035,12 @@
           });
         }).then(function (res) {
           self._bimRestaurando = false;
+          if (mudo) {
+            self._b4Restauro = res ? { total: res.total, abertos: res.abertos, faltando: res.semArquivo, naoDeu: res.naoDeu, semRegistro: res.semRegistro || [] } : { total: meus.length, semIdb: true };
+            try { self._b4StatusJanela(); } catch (eSj) {}
+            try { self._b4AvisarModelo(false); } catch (eAm) {}
+            return;
+          }
           if (!res) return;
           if (res.abertos) {
             var msg = res.abertos + (res.abertos > 1 ? " modelos restaurados" : " modelo restaurado") + " do que estava guardado — não precisei dos arquivos.";
@@ -14998,7 +15062,13 @@
           if (res.semRegistro && res.semRegistro.length) {
             UI.toast(res.semRegistro.length + " modelo(s) desta obra estão registrados sem arquivo: " + res.semRegistro.map(function (f) { return f.nome; }).join(", ") + ".", "aviso");
           }
-        })["catch"](function () { self._bimRestaurando = false; });
+        })["catch"](function (eR) {
+          self._bimRestaurando = false;
+          if (mudo) {
+            self._b4Restauro = { total: meus.length, naoDeu: meus.map(function (r) { return { nome: r.nome, motivo: "erro ao ler o que estava guardado" }; }) };
+            try { self._b4StatusJanela(); } catch (eSj2) {}
+          }
+        });
       });
     },
 
@@ -15008,6 +15078,10 @@
       clearTimeout(this._bimEdSaveT);
       var p = this._bimEdPend; this._bimEdPend = null;
       if (!p) return;
+      /* ⚠ a janela do 3D nunca grava `bim_edicoes` (ver `_bimAoEditar`): a
+         lista inteira de operações da obra seria substituída pela desta
+         janela, apagando a edição feita na principal */
+      if (this._b4Janela3d) return;
       try { Store.salvar(eid(), "bim_edicoes", p); } catch (eS) {}
     },
     // Exporta a obra selecionada p/ o plugin do Revit (revit/obra-ativa.json):
@@ -15478,6 +15552,8 @@
       if (!this._bimElementos || !this._bimElementos.length) {
         // último modelo removido: sem isto, timeline/clash/QTO/6D ficavam mostrando o modelo que JÁ FOI
         this._bimPlano = null; this._bimCurva = null; this._bimQto = null; this._bimClashes = null;
+        this._b4Sim = null; this._b4Curva = null; this._b4Play(true);
+        try { this._b4PintarHud(null); } catch (eH4) {}
         /* ⚠ o resultado do B5 zera junto: sem isso a tela seguiria mostrando os
            conflitos da obra anterior, com os nomes de peça da nova. */
         this._bimClashRec = null; this._bimClashTeste = null; this._bimClashDescartados = 0;
@@ -15499,87 +15575,1068 @@
         var qresV = document.getElementById("bim-qto-res");
         if (qresV) qresV.innerHTML = '<p class="muted" style="font-size:12.5px;margin:0">O modelo mudou desde o último levantamento — clique em <b>Levantar</b> de novo para atualizar os quantitativos.</p>';
       }
-      var crono = null, obra = this._bimSel ? Store.obter(eid(), "obras", this._bimSel) : null;
-      if (obra && obra.orcamentoId && Store.obterOrcamento && typeof Cronograma !== "undefined" && Cronograma.estimar) {
-        var orc = Store.obterOrcamento(eid(), obra.orcamentoId);
-        if (orc) { try { crono = Cronograma.estimar(orc).etapas; } catch (e) { crono = null; } }
-      }
-      this._bimPlano = BIM4D.planejar(this._bimElementos, crono);
-      this._bimRenderTimeline();
+      /* a FONTE do 4D: sem escolha, o plano de execução da obra quando ela
+         tem um (é nele que o avanço real mora); `_b4Calcular` cai no
+         cronograma do orçamento quando não há plano */
+      var st4 = this._b4Estado();
+      this._b4F = this._b4Calcular(st4.fonte || "plano");
+      this._bimPlano = BIM4D.planejar(this._bimElementos, (this._b4F && this._b4F.r) ? this._b4F.r.etapas : null);
+      this._b4Montar();
     },
-    _bimRenderTimeline: function () {
-      var p = this._bimPlano; if (!p) return;
-      // preserva a semana que o usuário estava inspecionando — replanejar (ex.: cada op do
-      // editor BIM dispara onLoaded→replan) não pode resetar o slider pro fim
-      var semAlvo = (this._bimSemana != null) ? Math.max(0, Math.min(this._bimSemana, p.semanas)) : p.semanas;
-      var sl = document.getElementById("bim-slider"); if (sl) { sl.max = String(p.semanas); sl.value = String(semAlvo); }
-      var leg = document.getElementById("bim-legenda");
-      if (leg) {
-        var nEx = p.elementos.filter(function (e) { return e.exato; }).length, nTot = p.elementos.length;
-        var selo = nEx
-          ? '<span title="Elementos com etapa carimbada no Revit (property OrcaPRO_Etapa) casada com o cronograma — 4D preciso, não estimado" style="display:inline-flex;align-items:center;gap:5px;background:rgba(34,197,94,.16);color:#16a34a;font-weight:700;border-radius:99px;padding:2px 10px;margin-right:6px">🏷️ 4D exato: ' + nEx + "/" + nTot + " carimbados</span>"
-          : '<span class="muted" title="Nenhum elemento carimbado — 4D estimado pela categoria do tipo IFC. Para 4D preciso, use no Revit os botões “Criar Campos OrçaPRO” + “Exportar IFC p/ OrçaPRO”." style="margin-right:6px">' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' 4D estimado por tipo</span>';
-        leg.innerHTML = selo + p.fases.map(function (f) {
-          return '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:' + f.cor + ';display:inline-block"></span>' + Util.esc(f.nome) + ' <span class="muted">(' + f.qtd + ")</span></span>";
-        }).join("");
+    /* =====================================================================
+     * SIMULAÇÃO 4D POR DATA (estilo TimeLiner) — A FIAÇÃO DA TELA
+     *
+     * O motor é o js/bim4dsim.js (puro, com teste): ele decide estado, %,
+     * curva S e a CENA. Aqui fica só o que a tela faz: escolher a fonte,
+     * guardar as escolhas da pessoa, desenhar o painel e mandar a cena para o
+     * visualizador — o desta janela e, quando o 3D foi destacado, o da outra
+     * (BroadcastChannel "orcapro-bim4d").
+     *
+     * ⚠ O QUE ISTO SUBSTITUI. O painel antigo tinha um slider "Semana N /
+     *   total" cujos índices eram DIAS ÚTEIS do `estimar` (obra de 33 dias
+     *   úteis = "Semana 33 / 33"), uma legenda por categoria e uma curva de
+     *   PEÇAS. Agora o eixo é a data do calendário do cronograma, a lista é
+     *   de atividades (etapas) com início, término, folga e crítica, e a
+     *   curva é planejado × real ponderada por custo.
+     *
+     * ⚠ DUAS JANELAS, UMA SIMULAÇÃO. A janela do 3D (#bim3d=v1/<obra>, ver
+     *   js/janelas.js e App._iniciarJanelaBim3d) NÃO recebe a cena pronta:
+     *   ela recebe as ESCOLHAS (data, fonte, filtros, aparência) e calcula
+     *   com o mesmo motor sobre os mesmos dados do aparelho. O uid de uma
+     *   peça (`mid:expressID`) depende da ordem em que cada janela abriu os
+     *   modelos — mandar uid de uma para a outra pintaria a peça errada.
+     * ===================================================================== */
+    _b4Estado: function () {
+      if (!this._b4) {
+        var pref = {};
+        try { pref = JSON.parse(localStorage.getItem("orcapro:bim4d:pref") || "{}") || {}; } catch (e) { pref = {}; }
+        this._b4 = {
+          data: null, fonte: "", cor: pref.cor === "etapa" ? "etapa" : "status",
+          futuro: pref.futuro === "fantasma" ? "fantasma" : "oculto", criticas: pref.criticas !== false,
+          soCriticas: false, soExecucao: false, etapas: null, etapasAntes: null, sel: "", focar: "",
+          intervalo: ({ dia: 1, diaUtil: 1, semana: 1, mes: 1 }).hasOwnProperty(pref.intervalo) ? pref.intervalo : "dia",
+          vel: [0.5, 1, 2, 4].indexOf(+pref.vel) > -1 ? +pref.vel : 1,
+          ativo: false, largo: false
+        };
       }
-      // v1.1.121: os painéis moram na GAVETA do viewer — quem controla a exibição
-      // é _bimAbrirPainel (um por vez); modelo carregado não os força mais na página.
-      this._bimCurva = BIM4D.curva(p);
-      this._bimAplicarSemana(semAlvo);
+      return this._b4;
     },
-    // Curva S: avanço físico (verde) × financeiro (azul) ao longo do tempo + marcador da semana atual.
-    _bimCurvaSvg: function (cv, semAtual) {
-      if (!cv) return "";
-      var W = 320, H = 96, pl = 30, pr = 8, pt = 8, pb = 16, iw = W - pl - pr, ih = H - pt - pb, n = cv.semanas || 1;
-      function X(w) { return pl + (w / n) * iw; }
+    /* só a APARÊNCIA e o ritmo são lembrados por aparelho; data e filtro são
+       da reunião de hoje, e voltariam amanhã escondendo peça sem ninguém pedir */
+    _b4GuardarPref: function () {
+      var s = this._b4Estado();
+      try { localStorage.setItem("orcapro:bim4d:pref", JSON.stringify({ cor: s.cor, futuro: s.futuro, criticas: s.criticas, intervalo: s.intervalo, vel: s.vel })); } catch (e) {}
+    },
+    _b4Resetar: function () {
+      var s = this._b4Estado();
+      this._b4Play(true);
+      s.data = null; s.fonte = ""; s.etapas = null; s.etapasAntes = null; s.sel = ""; s.focar = "";
+      s.soCriticas = false; s.soExecucao = false;
+    },
+
+    /* A FONTE da simulação: o cronograma do orçamento ou o PLANO DE EXECUÇÃO
+       da obra (crono_obra), que carrega o avanço real. Pela porta única do
+       planejamento (`App._cronoOrcDaObra` → `CronoBase.orcDaObra`): montar o
+       clone aqui esqueceria o avanço, e o mesmo plano sairia com duas datas
+       conforme a tela (O25). */
+    _b4Calcular: function (fonte) {
+      var out = { fonte: "orcamento", r: null, base: null, temPlano: false, temObra: false, temOrc: false, erro: "", erroBase: "",
+        temRegAvanco: false, avisosAvanco: 0, avisosCrono: [] };
+      var obra = null;
+      try { obra = this._bimSel ? Store.obter(eid(), "obras", this._bimSel) : null; } catch (e0) { obra = null; }
+      if (!obra) return out;
+      out.temObra = true;
+      if (!obra.orcamentoId || typeof Cronograma === "undefined" || !Cronograma.estimar) return out;
+      var oP = null;
+      try { if (window.App && typeof App._cronoOrcDaObra === "function") oP = App._cronoOrcDaObra(obra.id); } catch (e1) { oP = null; }
+      out.temPlano = !!oP;
+      if (fonte === "plano" && oP) {
+        out.fonte = "plano";
+        /* ⚠ O ERRO DO CÁLCULO É GUARDADO E DITO (achado 25.3 da revisão da
+           1.2.98). Ele era gravado aqui e nunca lido: o painel dizia "Sem
+           cronograma ligado" e "sem avanço lançado" para uma obra que tem os
+           dois — só não calculou. Quem mostra é o `BIM4DSim.montar`
+           (`erroCronograma`), que troca o aviso. */
+        try { out.r = Cronograma.estimar(oP); } catch (e2) { out.r = null; out.erro = String((e2 && e2.message) || e2); }
+        try { out.base = (typeof Cronograma.semAvanco === "function") ? Cronograma.semAvanco(oP) : out.r; } catch (e3) { out.base = out.r; out.erroBase = String((e3 && e3.message) || e3); }
+        /* ⚠ O AVANÇO É O QUE O CRONOGRAMA DA OBRA ACEITOU, NÃO UMA SEGUNDA
+           LEITURA (achado 25.2 da revisão da 1.2.98). Aqui havia um
+           `CronoAvanco.ler(oP._avancoDaObra)` SEM os ganchos `noExiste` e
+           `mandaNaData` — exatamente o defeito que o js/cronograma.js registra
+           como achado A1. Roteiro medido: no modo executivo, uma entrada antiga
+           na ETAPA (inerte para o Cronograma, "avanco-nivel-errado") com a
+           subetapa concluída fazia a Simulação mostrar a etapa "Atrasada, real
+           9%" enquanto o Cronograma dizia "concluída 100%"; e um registro com
+           corte e sem entrada válida ligava o modo real e pintava de vermelho
+           uma etapa que o Cronograma não dava por atrasada. O `estimar` já lê
+           o registro com os ganchos e só expõe `r.avanco` / `et.avanco` quando
+           aceitou alguma entrada: é essa leitura que o motor usa (sem
+           `avanco` à parte). Não reler aqui. */
+        out.temRegAvanco = oP._avancoDaObra != null;
+        out.temOrc = true;
+        this._b4AvisosDoCrono(out);
+        return out;
+      }
+      var orc = null;
+      try { orc = Store.obterOrcamento ? Store.obterOrcamento(eid(), obra.orcamentoId) : null; } catch (e5) { orc = null; }
+      if (orc) {
+        out.temOrc = true;
+        try { out.r = Cronograma.estimar(orc); } catch (e6) { out.r = null; out.erro = String((e6 && e6.message) || e6); }
+      }
+      out.base = out.r;
+      this._b4AvisosDoCrono(out);
+      return out;
+    },
+    /* o que o PRÓPRIO cronograma avisou ao calcular (`r.compat.avisos`): a
+       leitura do avanço que descartou entrada, o motor que caiu na conta da
+       versão anterior. Vai para a nota da fonte — a Simulação não pode
+       parecer mais segura do que o Cronograma da obra. */
+    _b4AvisosDoCrono: function (out) {
+      var av = (out.r && out.r.compat && out.r.compat.avisos) || [];
+      out.avisosAvanco = 0; out.avisosCrono = [];
+      for (var i = 0; i < av.length; i++) {
+        var a = av[i]; if (!a) continue;
+        if (a.msg) out.avisosCrono.push(String(a.msg));
+        else if (/^avanco/.test(String(a.tipo || ""))) out.avisosAvanco++;
+      }
+    },
+    _b4Montar: function () {
+      var st = this._b4Estado(), F = this._b4F || {}, p = this._bimPlano;
+      this._b4Sim = null; this._b4Curva = null; this._b4Erro = "";
+      if (p && typeof BIM4DSim !== "undefined") {
+        try {
+          /* ⚠ sem `avanco` à parte: o real é o que o `estimar` aceitou (ver o
+             ⚠ no _b4Calcular). `erroCronograma` faz a falha ser dita como falha. */
+          this._b4Sim = BIM4DSim.montar({ r: F.r, base: F.base, plano: p, hoje: BIM4DSim.ymd(new Date()), unidade: F.r ? "dia" : "semana", erroCronograma: F.erro || "" });
+          this._b4Curva = BIM4DSim.curvaS(this._b4Sim);
+        } catch (e) { this._b4Sim = null; this._b4Erro = String((e && e.message) || e); }
+      } else if (p) this._b4Erro = "o motor da simulação (js/bim4dsim.js) não carregou";
+      /* o filtro por etapa e a seleção sobrevivem a replanejar (cada edição do
+         modelo replaneja), mas não a uma etapa que deixou de existir */
+      if (this._b4Sim) {
+        var ids = this._b4Sim.porId;
+        if (st.sel && !ids.hasOwnProperty(st.sel)) st.sel = "";
+        if (st.etapas) { var m = {}; Object.keys(st.etapas).forEach(function (k) { if (ids.hasOwnProperty(k)) m[k] = true; }); st.etapas = m; }
+      }
+      this._b4Render();
+      if (this._b4Sim) this._b4Ir(st.data, { fixar: false, aplicar: st.ativo, enviar: false });
+      if (this._b4Janela3d) this._b4StatusJanela();
+    },
+
+    /* ---------------------------------------------------------------------
+       O PAINEL
+       ------------------------------------------------------------------- */
+    _b4Render: function () {
+      var box = document.getElementById("b4-corpo"); if (!box) return;
+      var sim = this._b4Sim, st = this._b4Estado(), F = this._b4F || {}, S4 = window.BIM4DSim;
+      var pan = document.getElementById("bim-4d");
+      if (pan) pan.classList.toggle("b4-largo", !!st.largo);
+      this._b4Cabecalho();
+      if (!sim || !S4) {
+        box.innerHTML = '<p class="muted b4-vazio">' + ((this._bimElementos && this._bimElementos.length)
+          ? "Não consegui montar a simulação" + (this._b4Erro ? ": " + Util.esc(this._b4Erro) : "") + ". O modelo continua aberto normalmente."
+          : "Carregue um modelo .IFC no visualizador para simular a obra no tempo.") + "</p>";
+        return;
+      }
+      var ic = function (n, s) { return (typeof Icones !== "undefined") ? Icones.get(n, s || 14) : ""; };
+      var n = sim.eixo.dias.length, variosAnos = sim.inicio.slice(0, 4) !== sim.fim.slice(0, 4);
+      function dcurta(d) { return variosAnos ? S4.br(d).slice(0, 6) + S4.br(d).slice(8) : S4.brCurto(d); }
+      /* marca sobre a RÉGUA: o polegar do slider vai de 0 a n-1, então a
+         posição é i/(n-1) — com i/n a marca do corte ficava um dia antes */
+      function pos(d) { var i = S4.indiceDe(sim, d); return (n > 1 ? i / (n - 1) * 100 : 0).toFixed(3); }
+      var hoje = sim.hoje;
+
+      /* ---- TEMPO ---- */
+      var marcas = "";
+      if (hoje >= sim.inicio && hoje <= sim.fim) marcas += '<i class="b4-m b4-m-hoje" style="left:' + pos(hoje) + '%" title="Hoje · ' + S4.br(hoje) + '"></i>';
+      if (sim.corte) marcas += '<i class="b4-m b4-m-corte" style="left:' + pos(sim.corte) + '%" title="Corte do avanço real · ' + S4.br(sim.corte) + '"></i>';
+      sim.atividades.forEach(function (a) { if (a.marco && !a.estimado) marcas += '<i class="b4-m b4-m-marco" style="left:' + pos(a.inicio) + '%" title="Marco · ' + Util.esc(a.nome) + " · " + S4.br(a.inicio) + '"></i>'; });
+      var optInt = [["dia", "1 dia"], ["diaUtil", "1 dia útil"], ["semana", "1 semana"], ["mes", "1 mês"]].map(function (o) { return '<option value="' + o[0] + '"' + (st.intervalo === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("");
+      var optVel = [[0.5, "0,5×"], [1, "1×"], [2, "2×"], [4, "4×"]].map(function (o) { return '<option value="' + o[0] + '"' + (st.vel === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("");
+      var tempo = '<section class="b4-sec b4-tempo">' +
+        '<div class="b4-sec-t">' + ic("calendario") + "Tempo</div>" +
+        '<div class="b4-data"><div class="b4-data-l"><b id="b4-data-txt">—</b><span id="b4-dow" class="b4-dow"></span></div><div id="b4-dia-info" class="b4-dia-info"></div></div>' +
+        '<div id="b4-kpis" class="b4-kpis"></div>' +
+        '<div class="b4-regua"><div class="b4-marcas">' + marcas + '</div>' +
+          '<input type="range" id="b4-slider" min="0" max="' + (n - 1) + '" step="1" value="' + (n - 1) + '" aria-label="Data da simulação (um passo por dia)">' +
+          '<div class="b4-regua-rot"><span>' + S4.br(sim.inicio) + '</span><span class="b4-regua-leg">' +
+            (hoje >= sim.inicio && hoje <= sim.fim ? '<span><i class="b4-m-hoje"></i>hoje</span>' : "") +
+            (sim.corte ? '<span><i class="b4-m-corte"></i>corte do avanço</span>' : "") +
+            (marcas.indexOf("b4-m-marco") > -1 ? '<span><i class="b4-m-marco"></i>marco</span>' : "") +
+          "</span><span>" + S4.br(sim.fim) + "</span></div></div>" +
+        '<div class="b4-ctl">' +
+          '<span class="b4-ctl-g">' +
+            '<button type="button" class="btn sm" data-b4="ini" title="Início da obra">⏮</button>' +
+            '<button type="button" class="btn sm" data-b4="ant" title="Voltar um passo">◀</button>' +
+            '<button type="button" class="btn sm primary b4-play" data-b4="play" id="b4-play" title="Simular: a obra sobe no ritmo escolhido">' + (this._b4Timer ? "⏸ Pausar" : "▶ Simular") + "</button>" +
+            '<button type="button" class="btn sm" data-b4="prox" title="Avançar um passo">▶</button>' +
+            '<button type="button" class="btn sm" data-b4="fim" title="Fim da obra">⏭</button>' +
+            '<button type="button" class="btn sm" data-b4="hoje" title="Ir para a data de hoje">Hoje</button>' +
+          "</span>" +
+          '<label class="b4-campo">Passo <select data-b4="intervalo">' + optInt + "</select></label>" +
+          '<label class="b4-campo">Velocidade <select data-b4="vel">' + optVel + "</select></label>" +
+          '<label class="b4-campo">Ir para <input type="date" data-b4="data" id="b4-data-in" min="' + sim.inicio + '" max="' + sim.fim + '"></label>' +
+        "</div>" +
+      "</section>";
+
+      /* ---- ATIVIDADES (Gantt compacto) ---- */
+      var linhas = sim.atividades.map(function (a) {
+        var i0 = S4.indiceDe(sim, a.inicio), i1 = S4.indiceDe(sim, a.termino);
+        var left = (i0 / n * 100).toFixed(3), wid = (Math.max(a.marco ? 0 : 1, i1 + 1 - i0) / n * 100).toFixed(3);
+        var base = "";
+        if (a.real || a.reprogramada) {
+          var b0 = S4.indiceDe(sim, a.base.inicio), b1 = S4.indiceDe(sim, a.base.termino);
+          base = '<i class="b4-bar-base" style="left:' + (b0 / n * 100).toFixed(3) + "%;width:" + (Math.max(a.base.marco ? 0 : 1, b1 + 1 - b0) / n * 100).toFixed(3) + '%" title="Planejado: ' + S4.br(a.base.inicio) + " → " + S4.br(a.base.termino) + '"></i>';
+        }
+        var ck = !st.etapas || st.etapas[a.id];
+        var folga = a.folga == null ? "—" : (a.critico ? "0" : "+" + a.folga + " d");
+        var tags = (a.marco ? '<span class="b4-tag b4-tag-marco" title="Marco: evento sem duração">◆ marco</span>' : "") +
+          (a.critico ? '<span class="b4-tag b4-tag-crit" title="Sem folga: atrasar esta etapa atrasa a obra">crítica</span>' : "") +
+          (a.reprogramada ? '<span class="b4-tag b4-tag-rep" title="Plano: ' + S4.br(a.base.inicio) + " → " + S4.br(a.base.termino) + '. Datas atuais reprogramadas pelo avanço real.">reprogramada</span>' : "") +
+          (a.estimado ? '<span class="b4-tag" title="Peças sem etapa carimbada: janela estimada pelo tipo IFC">estimada</span>' : "");
+        var cor = st.cor === "etapa" ? a.corEtapa : a.corCat;
+        return '<tr data-b4-atv="' + Util.esc(a.id) + '" class="b4-lin' + (st.sel === a.id ? " b4-sel" : "") + '">' +
+          '<td class="b4-c-ck"><input type="checkbox" data-b4-ck="' + Util.esc(a.id) + '"' + (ck ? " checked" : "") + ' title="Mostrar as peças desta etapa no 3D"></td>' +
+          '<td class="b4-c-n">' + a.n + "</td>" +
+          '<td class="b4-c-nome"><span class="b4-cor" style="background:' + Util.esc(cor) + '"></span><span class="b4-nome" title="' + Util.esc(a.nome) + '">' + Util.esc(a.nome) + "</span>" + tags +
+            '<span class="b4-pecas">' + (a.nEl ? a.nEl + (a.nEl === 1 ? " peça" : " peças") : "sem peças no modelo") + "</span></td>" +
+          '<td class="b4-c-dt" title="' + S4.diaSemana(a.inicio) + ", " + S4.br(a.inicio) + '">' + dcurta(a.inicio) + "</td>" +
+          '<td class="b4-c-dt" title="Último dia de trabalho: ' + S4.diaSemana(a.termino) + ", " + S4.br(a.termino) + '">' + dcurta(a.termino) + "</td>" +
+          '<td class="b4-c-num b4-c-dur">' + (a.marco ? "0" : a.duracao) + "</td>" +
+          '<td class="b4-c-num b4-c-folga' + (a.critico ? " b4-crit-txt" : "") + '">' + folga + "</td>" +
+          '<td class="b4-c-est"><span class="b4-est">—</span></td>' +
+          '<td class="b4-c-num b4-c-pct">—</td>' +
+          '<td class="b4-c-gantt"><div class="b4-trilho">' + base +
+            '<i class="b4-bar' + (a.marco ? " b4-bar-marco" : "") + (a.critico ? " b4-bar-crit" : "") + '" style="left:' + left + "%;width:" + wid + "%;--b4-cor:" + Util.esc(cor) + '"><b class="b4-bar-f"></b></i></div></td>' +
+        "</tr>";
+      }).join("");
+      var nAtv = sim.atividades.filter(function (a) { return !a.estimado; }).length;
+      var lista = '<section class="b4-sec b4-lista-sec">' +
+        '<div class="b4-sec-t">' + ic("lista") + "Atividades <span class=\"b4-sec-n\">" + nAtv + (nAtv === 1 ? " etapa" : " etapas") + "</span>" +
+          '<span class="b4-sec-aux">clique na linha: isola as peças da etapa e leva a data ao início dela</span></div>' +
+        '<div class="b4-grade-wrap"><table class="b4-grade" id="b4-grade"><thead><tr>' +
+          '<th class="b4-c-ck"><input type="checkbox" data-b4="ck-todas"' + (!st.etapas ? " checked" : "") + ' title="Todas / nenhuma"></th>' +
+          '<th class="b4-c-n">#</th><th class="b4-c-nome">Etapa</th><th class="b4-c-dt">Início</th>' +
+          '<th class="b4-c-dt" title="Último dia de trabalho (o Gantt do cronograma mostra o dia útil seguinte)">Término</th>' +
+          '<th class="b4-c-num b4-c-dur" title="Duração em dias úteis">Dur.</th><th class="b4-c-num b4-c-folga" title="Folga total em dias úteis">Folga</th>' +
+          '<th class="b4-c-est">Na data</th><th class="b4-c-num b4-c-pct" title="% no começo do dia. Com avanço: real / planejado">%</th>' +
+          '<th class="b4-c-gantt">' + S4.mesCurto(sim.inicio) + (S4.mesCurto(sim.inicio) !== S4.mesCurto(sim.fim) ? " → " + S4.mesCurto(sim.fim) : "") + "</th>" +
+        "</tr></thead><tbody>" + linhas + "</tbody></table></div></section>";
+
+      /* ---- LEGENDA, CURVA ---- */
+      /* ⚠ o selo "4D exato: N/M carimbados" (achado 40.5 da revisão da
+         1.2.98): o painel antigo o tinha e o novo tirou sem aviso. É o que o
+         gestor mostra na reunião para dizer quanto do modelo sobe na data
+         EXATA da etapa (carimbo OrcaPRO_Etapa do Revit) e quanto é estimado
+         pelo tipo de peça. A contagem vem do motor (`sim.carimbo`). */
+      var car = sim.carimbo || { etapa: 0, categoria: 0, total: 0 };
+      var seloCar = !car.total ? "" : (car.etapa
+        ? '<p class="b4-selo-car" id="b4-selo-car" title="Peças com a etapa carimbada no Revit (OrcaPRO_Etapa) casada com uma etapa deste cronograma: sobem na data exata dela. As outras seguem a janela da categoria ou do tipo de peça.">🏷️ 4D exato: ' +
+            Util.fmtNum(car.etapa, 0) + "/" + Util.fmtNum(car.total, 0) + " carimbados" + (car.categoria ? " · " + Util.fmtNum(car.categoria, 0) + " pela categoria" : "") + "</p>"
+        : '<p class="b4-selo-car b4-selo-est" id="b4-selo-car" title="Nenhuma peça tem a etapa carimbada casada com este cronograma: o 4D é estimado pelo tipo de peça. Para o 4D exato, use no Revit os botões “Criar Campos OrçaPRO” + “Exportar IFC p/ OrçaPRO”.">4D estimado pelo tipo de peça: 0/' +
+            Util.fmtNum(car.total, 0) + " carimbados" + (car.categoria ? " · " + Util.fmtNum(car.categoria, 0) + " pela categoria" : "") + " — no Revit, “Criar Campos OrçaPRO” + “Exportar IFC p/ OrçaPRO”</p>");
+      var leg = '<section class="b4-sec"><div class="b4-sec-t">' + ic("paleta") + 'Legenda <span id="b4-vis" class="b4-sec-n"></span></div>' + seloCar + '<div id="b4-legenda" class="b4-legenda"></div></section>';
+      var cvTit = sim.temReal ? "Curva S — planejado × real" : "Curva S — planejado";
+      var cvNota = this._b4Curva && this._b4Curva.vazia
+        ? (sim.erroCronograma ? "O cronograma desta obra não pôde ser calculado: não há curva de obra — o 3D segue a sequência padrão por tipo de peça." : "Sem cronograma com custo nem duração: não há curva de obra — o 3D segue a sequência padrão por tipo de peça.")
+        : ("Ponderada pelo " + (sim.peso === "custo" ? "custo de cada etapa (orçamento)" : "prazo de cada etapa em dias úteis — o orçamento não tem custo lançado") + "." +
+          (sim.temReal ? " Real = avanço lançado até o corte de " + S4.br(sim.corte) + ", interpolado entre o início real e o corte (o registro guarda o % no corte, não a história). Depois do corte, a linha tracejada é o plano reprogramado." : ""));
+      var curva = '<section class="b4-sec"><div class="b4-sec-t">' + ic("grafico") + cvTit + '</div><div id="b4-curva">' + this._b4CurvaSvg() + '</div><p class="b4-nota">' + Util.esc(cvNota) + "</p></section>";
+
+      /* ---- FONTE, APARÊNCIA, FILTROS ---- */
+      var fonteNota;
+      if (!F.temObra) fonteNota = "Nenhuma obra escolhida no alto da tela: a obra sobe pela sequência padrão por tipo de peça, com datas ilustrativas a partir de hoje.";
+      else if (!F.temOrc) fonteNota = "A obra não tem orçamento vinculado: sem cronograma, a obra sobe pela sequência padrão por tipo de peça.";
+      /* ⚠ cálculo que falhou: quem fala é o aviso do motor, com o motivo —
+         "sem avanço lançado" aqui seria uma afirmação sobre o que não se leu */
+      else if (F.erro) fonteNota = "";
+      else if (sim.temReal) fonteNota = "Plano de execução da obra. Planejado = o plano sem o avanço; real = o avanço lançado até o corte de " + S4.br(sim.corte) + ". Atrasada = passou do término planejado sem chegar a 100%, até o corte. Depois do corte vale o plano reprogramado.";
+      else if (F.fonte === "plano") fonteNota = F.temRegAvanco
+        ? "Plano de execução da obra. O avanço registrado nesta obra não tem lançamento que o cronograma aceite" + (F.avisosAvanco ? " (" + F.avisosAvanco + (F.avisosAvanco === 1 ? " aviso" : " avisos") + " na leitura)" : "") +
+          ": o Cronograma da obra também não o usa, e aqui nada aparece como atrasado. Confira os lançamentos na aba Cronograma da obra."
+        : "Plano de execução da obra, sem avanço lançado: nada aparece como atrasado (o sistema não sabe o que foi feito).";
+      else fonteNota = "Datas do cronograma do orçamento. Sem avanço real: nada aparece como atrasado." + (F.temPlano ? " A obra tem plano de execução — escolha-o acima para ver o real." : "");
+      if (fonteNota && F.erroBase) fonteNota += " O planejado sem o avanço não pôde ser calculado (" + F.erroBase + "): a comparação usa as datas atuais.";
+      var avisosFonte = sim.avisos.map(function (a) { return a.msg; }).concat(F.avisosCrono || []);
+      var calNota = "Calendário do cronograma: " + (sim.eixo.dpw === 7 ? "7 dias por semana" : (sim.eixo.dpw === 6 ? "segunda a sábado" : "segunda a sexta")) +
+        (sim.feriadosNoPeriodo.length ? "; feriados no período: " + sim.feriadosNoPeriodo.map(function (f) { return S4.brCurto(f.data) + " " + f.nome; }).join(", ") : "; nenhum feriado no período") + ".";
+      var fonte = '<details class="b4-sec b4-cfg" data-b4-sec="fonte" open><summary class="b4-sec-t">' + ic("cronograma") + "Fonte do cronograma</summary>" +
+        '<select data-b4="fonte" class="b4-fonte"' + (F.temOrc ? "" : " disabled") + ">" +
+          '<option value="orcamento"' + (F.fonte !== "plano" ? " selected" : "") + ">Cronograma do orçamento</option>" +
+          '<option value="plano"' + (F.fonte === "plano" ? " selected" : "") + (F.temPlano ? "" : " disabled") + ">Plano de execução da obra (com avanço real)" + (F.temPlano ? "" : " — a obra ainda não tem") + "</option>" +
+        "</select>" +
+        (fonteNota ? '<p class="b4-nota" id="b4-fonte-nota">' + Util.esc(fonteNota) + "</p>" : "") +
+        '<p class="b4-nota">' + Util.esc(calNota) + "</p>" +
+        (avisosFonte.length ? '<p class="b4-nota b4-aviso" id="b4-fonte-aviso">' + Util.esc(avisosFonte.join(" ")) + "</p>" : "") +
+        "</details>";
+      function seg(chave, v, rot, dica) { return '<button type="button" data-b4="' + chave + '" data-v="' + v + '" class="' + (st[chave] === v ? "on" : "") + '" title="' + dica + '">' + rot + "</button>"; }
+      var apar = '<details class="b4-sec b4-cfg" data-b4-sec="apar" open><summary class="b4-sec-t">' + ic("olho") + "Aparência</summary>" +
+        '<div class="b4-linha"><span class="b4-rot">Cor</span><span class="b4-seg">' +
+          seg("cor", "status", "Por status", "Em execução em âmbar, crítica em roxo, atrasada em vermelho; concluída com o material natural") +
+          seg("cor", "etapa", "Por etapa", "Cada etapa com a sua cor; atrasada continua vermelha") + "</span></div>" +
+        '<div class="b4-linha"><span class="b4-rot">Não iniciado</span><span class="b4-seg">' +
+          seg("futuro", "oculto", "Oculto", "O que ainda não começou não aparece") +
+          seg("futuro", "fantasma", "Fantasma", "O que ainda não começou aparece translúcido, para dar contexto") + "</span></div>" +
+        '<label class="b4-ck"><input type="checkbox" data-b4="criticas"' + (st.criticas ? " checked" : "") + "> Destacar as críticas em execução (roxo)</label>" +
+        "</details>";
+      var filt = '<details class="b4-sec b4-cfg" data-b4-sec="filt" open><summary class="b4-sec-t">' + ic("alvo") + "Filtros</summary>" +
+        '<label class="b4-ck"><input type="checkbox" data-b4="soCriticas"' + (st.soCriticas ? " checked" : "") + "> Só atividades críticas (caminho crítico)</label>" +
+        '<label class="b4-ck"><input type="checkbox" data-b4="soExecucao"' + (st.soExecucao ? " checked" : "") + "> Só o que está em execução na data</label>" +
+        '<div class="b4-linha"><button type="button" class="btn sm" data-b4="todas">Mostrar todas as etapas</button><span id="b4-filtro-info" class="b4-nota"></span></div>' +
+        "</details>";
+
+      /* ⚠ redesenhar não pode jogar a pessoa para o topo: marcar a 20ª etapa
+         e ver a lista voltar à 1ª a cada clique é o tipo de coisa que faz
+         desistir do filtro. Guarda e devolve a rolagem da lista e da gaveta. */
+      var gw = box.querySelector(".b4-grade-wrap"), db = document.getElementById("bim-drawer-body");
+      var rolaG = gw ? gw.scrollTop : 0, rolaD = db ? db.scrollTop : 0;
+      var abertos = {};
+      Array.prototype.forEach.call(box.querySelectorAll("details[data-b4-sec]"), function (dd) { abertos[dd.getAttribute("data-b4-sec")] = dd.open; });
+      box.innerHTML = '<div class="b4-col-a">' + tempo + lista + "</div>" +
+        '<div class="b4-col-b">' + leg + curva + fonte + apar + filt + "</div>";
+      Array.prototype.forEach.call(box.querySelectorAll("details[data-b4-sec]"), function (dd) { var k = dd.getAttribute("data-b4-sec"); if (abertos.hasOwnProperty(k)) dd.open = abertos[k]; });
+      var gw2 = box.querySelector(".b4-grade-wrap"); if (gw2) gw2.scrollTop = rolaG;
+      if (db) db.scrollTop = rolaD;
+    },
+
+    /* o cabeçalho do painel: fonte em uma palavra e os botões da janela */
+    _b4Cabecalho: function () {
+      var cab = document.getElementById("b4-cab-acoes"); if (!cab) return;
+      var st = this._b4Estado(), destacado = !!this._b4Destacado;
+      var ic = function (n, s) { return (typeof Icones !== "undefined") ? Icones.get(n, s || 14) : ""; };
+      /* ⚠ o selo sai do motor (`seloPainel`): "sincronizado" só com o eco da
+         outra janela — ver `_b4Eco` e o ⚠ no js/bim4dsim.js */
+      var selo = (destacado && window.BIM4DSim && BIM4DSim.seloPainel) ? BIM4DSim.seloPainel(this._b4SyncInfo()) : null;
+      cab.innerHTML =
+        (selo ? '<span id="b4-chip-sync" class="b4-chip-' + selo.classe + '" title="' + Util.esc(selo.dica) + '">' + Util.esc(selo.texto) + "</span>" : "") +
+        '<button type="button" class="btn sm" data-b4="janela3d" title="' + (destacado ? "Fecha a janela do 3D e volta a simular aqui" : "Abre o 3D numa janela própria (leve ao projetor ou ao 2º monitor); este painel fica largo e controla a simulação") + '">' +
+          ic(destacado ? "voltar" : "abrir") + (destacado ? "Trazer o 3D de volta" : "3D em outra janela") + "</button>" +
+        (!st.largo ? '<button type="button" class="btn sm" data-b4="enquadrar" title="Enquadra a obra inteira na parte do 3D que o painel não cobre">' + ic("alvo") + "Enquadrar</button>" : "") +
+        '<button type="button" class="btn sm" data-b4="largo" title="' + (st.largo ? "Painel estreito, ao lado do 3D" : "Painel largo, em duas colunas") + '">' + ic("expandir") + (st.largo ? "Estreitar" : "Ampliar") + "</button>" +
+        (st.ativo ? '<button type="button" class="btn sm ghost" data-b4="encerrar" title="Sai da simulação: o modelo volta inteiro, com o material original">' + ic("fechar") + "Encerrar</button>" : "");
+    },
+
+    /* o que o painel sabe da outra janela (entrada do `BIM4DSim.seloPainel`) */
+    _b4SyncInfo: function () {
+      return { destacado: !!this._b4Destacado, agora: Date.now(), ultimoEco: this._b4UltEco || 0, pendenteDesde: this._b4PendDesde || 0,
+        janelaTemModelo: this._b4JanModelo === true ? true : (this._b4JanModelo === false ? false : null), janelaAbrindo: !!this._b4JanAbrindo };
+    },
+    /* o que a janela do 3D conta de si no "olá" e no eco */
+    _b4LerJanela: function (m) {
+      if (m.temModelo === true || m.temModelo === false) this._b4JanModelo = m.temModelo;
+      this._b4JanAbrindo = m.abrindo === true;
+    },
+    /* (na janela do 3D) o modelo chegou ou sumiu: avisa o painel NA HORA —
+       esperar a próxima volta da tentativa deixava o selo dele dizendo
+       "aberta, sem modelo" por até 3 s com o modelo já na tela */
+    _b4AvisarModelo: function (forcar) {
+      var tem = this._b4TemModelo(), abrindo = !tem && !!this._bimRestaurando;
+      if (!forcar && tem === this._b4TemModeloAvisado && abrindo === this._b4AbrindoAvisado) return;
+      this._b4TemModeloAvisado = tem; this._b4AbrindoAvisado = abrindo;
+      this._b4Enviar("ola", { temModelo: tem, abrindo: abrindo });
+    },
+    /* repinta SÓ o selo (a cada eco e a cada batimento): redesenhar o
+       cabeçalho inteiro no ritmo do "Simular" trocaria os botões debaixo do
+       clique da pessoa */
+    _b4PintarSelo: function () {
+      var ch = document.getElementById("b4-chip-sync");
+      if (!this._b4Destacado) { if (ch) this._b4Cabecalho(); return; }
+      if (!ch) { this._b4Cabecalho(); return; }
+      var s = BIM4DSim.seloPainel(this._b4SyncInfo()); if (!s) return;
+      var cls = "b4-chip-" + s.classe;
+      if (ch.textContent !== s.texto) ch.textContent = s.texto;
+      if (ch.className !== cls) ch.className = cls;
+      if (ch.getAttribute && ch.getAttribute("title") !== s.dica && ch.setAttribute) ch.setAttribute("title", s.dica);
+    },
+    /* a janela do 3D confirmou o estado `seq` (e diz se tem modelo): tudo o
+       que foi mandado até ele deixa de estar pendente */
+    _b4Eco: function (m) {
+      /* eco atrasado de uma janela que já foi fechada não vale para a próxima:
+         ela reabriria dizendo "sincronizado" antes de a nova responder */
+      if (!this._b4Destacado) return;
+      var env = this._b4Envios || {}, c = +m.seq, resto = 0;
+      if (!isFinite(c)) return;
+      Object.keys(env).forEach(function (k) { if (+k <= c) delete env[k]; else if (!resto || env[k] < resto) resto = env[k]; });
+      this._b4Envios = env;
+      this._b4PendDesde = resto;
+      this._b4UltEco = Date.now();
+      this._b4LerJanela(m);
+      this._b4PintarSelo();
+    },
+
+    /* curva S em SVG — desenhada uma vez por simulação; a data só move a linha */
+    _b4CurvaSvg: function () {
+      var cv = this._b4Curva, sim = this._b4Sim, S4 = window.BIM4DSim;
+      if (!cv || !sim || cv.vazia) return "";
+      var W = 520, H = 150, pl = 30, pr = 10, pt = 10, pb = 22, iw = W - pl - pr, ih = H - pt - pb, n = Math.max(1, cv.datas.length - 1);
+      function X(i) { return pl + (i / n) * iw; }
       function Y(v) { return pt + ih - (Math.max(0, Math.min(100, v)) / 100) * ih; }
-      function poly(arr, cor) {
-        var pts = []; for (var w = 0; w < arr.length; w++) if (arr[w] != null) pts.push(X(w).toFixed(1) + "," + Y(arr[w]).toFixed(1));
-        return pts.length ? '<polyline points="' + pts.join(" ") + '" fill="none" stroke="' + cor + '" stroke-width="2" stroke-linejoin="round"/>' : "";
+      function linha(arr, cls) {
+        var pts = [];
+        for (var i = 0; i < arr.length; i++) if (arr[i] != null) pts.push(X(i).toFixed(1) + "," + Y(arr[i]).toFixed(1));
+        return pts.length > 1 ? '<polyline class="' + cls + '" points="' + pts.join(" ") + '"/>' : "";
       }
       var g = "";
-      [0, 25, 50, 75, 100].forEach(function (v) { g += '<line x1="' + pl + '" y1="' + Y(v).toFixed(1) + '" x2="' + (W - pr) + '" y2="' + Y(v).toFixed(1) + '" stroke="#e2e8f0" stroke-width="1"/><text x="' + (pl - 4) + '" y="' + (Y(v) + 3).toFixed(1) + '" text-anchor="end" font-size="8" fill="#94a3b8">' + v + "</text>"; });
-      var marca = semAtual != null ? '<line x1="' + X(semAtual).toFixed(1) + '" y1="' + pt + '" x2="' + X(semAtual).toFixed(1) + '" y2="' + (pt + ih) + '" stroke="#0f2740" stroke-width="1" stroke-dasharray="3 2"/>' : "";
-      var legFin = cv.temCusto ? '<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:14px;height:2px;background:#2e6f9e;display:inline-block"></span>Financeiro (custo)</span>' : "";
-      return '<div class="muted" style="font-size:12px;margin-bottom:4px">Curva S — avanço no tempo</div>' +
-        '<svg viewBox="0 0 ' + W + " " + H + '" style="width:100%;max-width:520px;height:auto;background:#fff;border:1px solid var(--linha,#e2e8f0);border-radius:8px">' +
-        g + poly(cv.financeiro, "#2e6f9e") + poly(cv.fisico, "#16a34a") + marca + "</svg>" +
-        '<div style="display:flex;gap:14px;margin-top:5px;font-size:11px;color:#475569"><span style="display:inline-flex;align-items:center;gap:4px"><span style="width:14px;height:2px;background:#16a34a;display:inline-block"></span><span title="Fração das PEÇAS do plano simulado concluídas até cada semana. Peça conta uma, seja conexão ou parede — por isso ela sobe rápido em modelo com hidráulica.">Peças do plano</span></span>' + legFin + "</div>";
-    },
-    _bimAplicarSemana: function (sem) {
-      var p = this._bimPlano; if (!p) return;
-      sem = Math.max(0, Math.min(p.semanas, +sem || 0));
-      // _bimSemana NÃO é gravada aqui: só gesto do usuário (slider/play) pina a semana —
-      // gravar na chamada programática pinava o 1º render no fim e o plano crescido escondia elementos
-      var est = BIM4D.estadoEm(p, sem);
-      /* o 4D automático e o cronograma pintam a MESMA cena; quem chega desfaz
-         o outro, senão as duas legendas valem ao mesmo tempo e nenhuma é lida */
-      if (this._bimTarSim) { this._bimTarSim = null; this._bimTarPend = null; try { if (window.BIM && BIM.limpar4DTarefas) BIM.limpar4DTarefas(); } catch (e6) {} }
-      if (window.BIM && BIM.aplicarEstado) { try { BIM.aplicarEstado(est); } catch (e) {} }
-      /* ⚠ A PÍLULA ERA UM NÚMERO VERDE SEM RÓTULO. "88%" ao lado de uma régua
-         de datas se lê como "88% da obra" — e era a fração de PEÇAS do plano
-         simulado, dominada pelas 10.648 conexões do modelo real. Agora ela
-         diz de onde vem, e sem orçamento nem se apresenta como percentual. */
-      var av = document.getElementById("bim-avanco");
-      if (av) {
-        var ap = BIM4D.avancoPonderado(p, sem);
-        if (ap.base === "custo") {
-          av.textContent = "simulado " + Util.fmtNum(ap.pct, ap.pct % 1 ? 1 : 0) + "% (por custo)";
-          av.title = "Percentual do CUSTO do orçamento que o cronograma simulado já executou nesta semana da régua. É o plano, não o avanço medido — o medido sai das medições, na aba Cronograma 4D.";
-        } else {
-          av.textContent = Util.fmtNum(ap.nFeitas, 0) + " de " + Util.fmtNum(ap.nTotal, 0) + " peças";
-          av.title = "Quantas peças o cronograma simulado já construiu nesta semana da régua. Não vira percentual de obra porque não há orçamento vinculado: sem custo, uma conexão e uma parede pesariam igual, e num modelo com hidráulica as conexões são a maioria esmagadora das peças.";
+      [0, 25, 50, 75, 100].forEach(function (v) { g += '<line class="b4-cv-grade" x1="' + pl + '" y1="' + Y(v).toFixed(1) + '" x2="' + (W - pr) + '" y2="' + Y(v).toFixed(1) + '"/><text class="b4-cv-tx" x="' + (pl - 4) + '" y="' + (Y(v) + 3).toFixed(1) + '" text-anchor="end">' + v + "</text>"; });
+      /* rótulo de mês no eixo x: o 1º dia de cada mês (e o início) */
+      /* ⚠ rótulo encostado no anterior some: obra que começa no fim do mês
+         escrevia "set/26" e "out/26" um em cima do outro */
+      var ult = "", rot = "", xUlt = -999;
+      cv.datas.forEach(function (d, i) {
+        var m = d.slice(0, 7);
+        if (m !== ult && (i === 0 || d.slice(8) === "01")) {
+          ult = m;
+          if (X(i) - xUlt < 44) return;
+          xUlt = X(i);
+          rot += '<text class="b4-cv-tx" x="' + X(i).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="' + (i === 0 ? "start" : "middle") + '">' + S4.mesCurto(d) + "</text>";
         }
+      });
+      var corte = "";
+      if (cv.temReal && cv.corte) { var ic2 = cv.datas.indexOf(cv.corte); if (ic2 > -1) corte = '<line class="b4-cv-corte" x1="' + X(ic2).toFixed(1) + '" y1="' + pt + '" x2="' + X(ic2).toFixed(1) + '" y2="' + (pt + ih) + '"><title>Corte do avanço · ' + S4.br(cv.corte) + "</title></line>"; }
+      var leg = '<div class="b4-cv-leg"><span><i class="b4-cv-l-plan"></i>Planejado</span>' + (cv.temReal ? '<span><i class="b4-cv-l-real"></i>Real (até o corte)</span><span><i class="b4-cv-l-proj"></i>Reprogramado</span>' : "") +
+        '<span><i class="b4-cv-l-data"></i>Data da simulação</span></div>';
+      return '<svg class="b4-cv" viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Curva S">' + g + rot + corte +
+        linha(cv.plan, "b4-cv-plan") + linha(cv.real, "b4-cv-real") + linha(cv.proj, "b4-cv-proj") +
+        '<line id="b4-cv-agora" class="b4-cv-agora" x1="' + X(n) + '" y1="' + pt + '" x2="' + X(n) + '" y2="' + (pt + ih) + '"/>' +
+        '<circle id="b4-cv-pto" class="b4-cv-pto" cx="' + X(n) + '" cy="' + Y(100) + '" r="3.2"/></svg>' + leg;
+    },
+
+    /* ---------------------------------------------------------------------
+       IR PARA UMA DATA — o coração: estado, painel, 3D e a outra janela
+       opts.fixar=false: chamada do sistema (replanejar), não pina a data;
+       opts.aplicar=false: não mexe na cena; opts.enviar=false: não avisa a
+       outra janela.
+       ⚠ A DATA SÓ É PINADA POR GESTO. `null` = "fim da obra": com um 2º
+       modelo federado o plano cresce, e uma data pinada no fim antigo
+       esconderia as etapas novas como futuras (a mesma regra do slider
+       antigo). Chegar ao fim com a régua também desafixa.
+       ------------------------------------------------------------------- */
+    _b4Ir: function (data, opts) {
+      opts = opts || {};
+      var sim = this._b4Sim, st = this._b4Estado(), S4 = window.BIM4DSim;
+      if (!sim || !S4) return null;
+      var d = data ? S4.clampData(sim, data) : sim.fim;
+      if (opts.fixar !== false) st.data = (d === sim.fim) ? null : d;
+      var est = S4.estadoEm(sim, d);
+      this._b4Est = est;
+      var cena = S4.cena(sim, est, { cor: st.cor, futuro: st.futuro, criticas: st.criticas, etapas: st.etapas, soCriticas: st.soCriticas, soExecucao: st.soExecucao });
+      this._b4Cena = cena;
+      if (opts.aplicar !== false && st.ativo) this._b4AplicarCena(cena);
+      this._b4PintarTempo(est, cena);
+      this._b4PintarLista(est);
+      this._b4PintarLegenda(cena);
+      this._b4PintarCurva(d);
+      this._b4PintarHud(est);
+      if (opts.enviar !== false) this._b4Enviar();
+      return est;
+    },
+    _b4AplicarCena: function (cena) {
+      /* o Cronograma 4D do engenheiro e esta simulação pintam a MESMA cena:
+         quem chega desfaz o outro, senão as duas legendas valem ao mesmo
+         tempo e nenhuma é lida */
+      if (this._bimTarSim) {
+        if (this._bimTarTimer) { clearInterval(this._bimTarTimer); this._bimTarTimer = null; }
+        this._bimTarSim = null; this._bimTarPend = null;
+        try { if (window.BIM && BIM.limpar4DTarefas) BIM.limpar4DTarefas(); } catch (e6) {}
       }
-      // 5D-lite: custo acumulado no tempo (só quando há orçamento vinculado com custo)
-      var cst = document.getElementById("bim-custo");
-      if (cst) {
-        if (p.custoTotal > 0) { cst.style.display = ""; cst.textContent = Util.fmtMoeda(BIM4D.custoEm(p, sem)) + " / " + Util.fmtMoeda(p.custoTotal); }
-        else cst.style.display = "none";
+      try { if (window.BIM && BIM.aplicar4DSim) BIM.aplicar4DSim({ ocultos: cena.ocultos, pinturas: cena.pinturas }); } catch (e) {}
+    },
+    _b4Encerrar: function () {
+      var st = this._b4Estado();
+      this._b4Play(true);
+      st.ativo = false; st.data = null; st.sel = ""; st.focar = "";
+      if (st.etapasAntes !== null) { st.etapas = st.etapasAntes; st.etapasAntes = null; }
+      try { if (window.BIM && BIM.mostrarTudo && BIM.donoDaPintura && BIM.donoDaPintura() === "4d-sim") BIM.mostrarTudo(); } catch (e) {}
+      this._b4Render();
+      if (this._b4Sim) this._b4Ir(null, { fixar: false, aplicar: false });
+      this._b4Enviar();
+    },
+
+    _b4PintarTempo: function (est, cena) {
+      var sim = this._b4Sim, S4 = window.BIM4DSim, st = this._b4Estado();
+      var el = function (id) { return document.getElementById(id); };
+      var dt = el("b4-data-txt"); if (!dt) return;
+      dt.textContent = est.br;
+      var dw = el("b4-dow"); if (dw) dw.textContent = est.diaSemana;
+      var info = [];
+      if (est.util) {
+        var totU = S4.uteisEntre(sim, sim.dataInicioObra, sim.dataFimObra || sim.fim);
+        if (est.fase === "durante" && est.diaUtilN) info.push("dia útil " + est.diaUtilN + (totU ? " de " + totU : ""));
+      } else if (est.motivoNaoUtil) info.push("sem expediente: " + est.motivoNaoUtil);
+      if (est.fase === "antes") info.push("antes do início da obra");
+      else if (est.fase === "depois") info.push("depois do término planejado");
+      if (sim.temReal) info.push(est.real ? "até o corte: vale o REAL lançado" : "depois do corte (" + S4.br(sim.corte) + "): vale o plano reprogramado");
+      var di = el("b4-dia-info"); if (di) { di.textContent = info.join(" · "); di.className = "b4-dia-info" + (est.util === false ? " b4-nao-util" : ""); }
+      var sl = el("b4-slider"); if (sl) sl.value = String(S4.indiceDe(sim, est.data));
+      var dIn = el("b4-data-in"); if (dIn && dIn.value !== est.data) dIn.value = est.data;
+      var k = el("b4-kpis");
+      if (k) {
+        function kpi(rot, val, cls, dica) { return '<div class="b4-kpi' + (cls ? " " + cls : "") + '" title="' + Util.esc(dica || "") + '"><span>' + rot + "</span><b>" + val + "</b></div>"; }
+        function pct(x) { return Util.fmtNum(Math.round(x * 1000) / 10, 1) + "%"; }
+        var h = "";
+        if (est.pctPlan != null) h += kpi("Planejado", pct(est.pctPlan), "", "Quanto do cronograma " + (sim.temReal ? "planejado (sem o avanço) " : "") + "estava feito no começo deste dia, ponderado pelo " + (sim.peso === "custo" ? "custo das etapas" : "prazo das etapas"));
+        else h += kpi("Peças", Util.fmtNum(est.contagemEl.concluido + est.contagemEl.execucao, 0) + " de " + Util.fmtNum(sim.elementos.length, 0), "", "Sem cronograma não há % de obra defensável: a contagem é de peças, e uma conexão pesa o mesmo que uma parede");
+        if (est.pctReal != null) h += kpi("Real", pct(est.pctReal), est.pctReal + 0.0005 < est.pctPlan ? "b4-kpi-atr" : "b4-kpi-ok", "Avanço lançado (até o corte), ponderado da mesma forma que o planejado");
+        else if (sim.temReal && est.pctVig != null) h += kpi("Reprogramado", pct(est.pctVig), "", "Depois do corte: o plano reprogramado pelo avanço real");
+        /* ⚠ 5D-lite: o custo em R$ na data (achado 40.5 da revisão da 1.2.98).
+           O painel antigo mostrava "R$ executado / R$ total" e o novo tirou
+           sem aviso — era o número que o gestor apresentava na reunião. Só
+           existe com custo no orçamento: sem ele o motor devolve null e aqui
+           não sai R$ nenhum (nunca um valor inventado). */
+        if (est.custoPlan != null) h += kpi("Custo planejado (de " + Util.fmtMoeda(est.custoTotal) + ")", Util.fmtMoeda(est.custoPlan), "b4-kpi-custo",
+          "5D: quanto do custo do orçamento (" + Util.fmtMoeda(est.custoTotal) + " no total) o cronograma planejado já executou no começo deste dia — cada etapa na proporção do seu %.");
+        if (est.custoReal != null) h += kpi("Custo executado", Util.fmtMoeda(est.custoReal), est.custoReal + 0.005 < est.custoPlan ? "b4-kpi-custo b4-kpi-atr" : "b4-kpi-custo b4-kpi-ok",
+          "5D: o mesmo custo pelo avanço lançado até o corte, cada etapa na proporção do % real.");
+        h += kpi("Em execução", String(est.contagem.execucao), est.contagem.execucao ? "b4-kpi-exe" : "", "Etapas trabalhando neste dia");
+        if (sim.temReal) h += kpi("Atrasadas", String(est.contagem.atrasado), est.contagem.atrasado ? "b4-kpi-atr" : "", "Passaram do término planejado sem chegar a 100% (só até o corte do avanço)");
+        h += kpi("Concluídas", est.contagem.concluido + "/" + sim.atividades.filter(function (a) { return !a.estimado; }).length, "", "Etapas concluídas até este dia");
+        if (est.marcos.length) h += kpi("Marcos", est.marcos.filter(function (m) { return m.atingido; }).length + "/" + est.marcos.length, "", est.marcos.map(function (m) { return (m.atingido ? "✓ " : "○ ") + m.nome + " · " + S4.br(m.data); }).join("\n"));
+        if (cena) h += kpi("No 3D", Util.fmtNum(cena.visiveis, 0) + " de " + Util.fmtNum(cena.total, 0), "", "Peças visíveis nesta data com os filtros escolhidos");
+        k.innerHTML = h;
       }
-      var lb = document.getElementById("bim-semana"); if (lb) lb.textContent = "Semana " + sem + " / " + p.semanas;
-      var cv = document.getElementById("bim-curva"); if (cv && this._bimCurva) cv.innerHTML = this._bimCurvaSvg(this._bimCurva, sem);
+      var fi = el("b4-filtro-info");
+      if (fi) {
+        var nA = sim.atividades.length, nV = st.etapas ? Object.keys(st.etapas).length : nA;
+        fi.textContent = (st.etapas ? nV + " de " + nA + " etapas no 3D" : "todas as etapas no 3D") + (st.soCriticas ? " · só críticas" : "") + (st.soExecucao ? " · só em execução" : "");
+      }
+    },
+    _b4PintarLista: function (est) {
+      var sim = this._b4Sim, S4 = window.BIM4DSim, st = this._b4Estado();
+      var tb = document.getElementById("b4-grade"); if (!tb) return;
+      tb.style.setProperty("--b4-x", (S4.indiceDe(sim, est.data) / sim.eixo.dias.length * 100).toFixed(3) + "%");
+      var rows = tb.querySelectorAll("tr[data-b4-atv]");
+      for (var i = 0; i < rows.length; i++) {
+        var tr = rows[i], id = tr.getAttribute("data-b4-atv"), s = est.porAtv[id];
+        if (!s) continue;
+        var a = sim.atividades[sim.porId[id]];
+        var cls = "b4-lin b4-e-" + s.estado + (st.sel === id ? " b4-sel" : "") + (a && a.critico && s.estado === "execucao" ? " b4-e-crit" : "");
+        if (tr.className !== cls) tr.className = cls;
+        var e = tr.querySelector(".b4-est");
+        var rot = a && a.marco ? (s.estado === "concluido" ? "Atingido" : (s.estado === "atrasado" ? "Atrasado" : "A atingir")) : S4.ROTULO[s.estado];
+        if (e && e.textContent !== rot) e.textContent = rot;
+        var p = tr.querySelector(".b4-c-pct");
+        var tx = s.pctReal != null ? Math.round(s.pctReal * 100) + "% / " + Math.round(s.pctPlan * 100) + "%" : Math.round((sim.temReal ? s.pctVig : s.pctPlan) * 100) + "%";
+        if (p && p.textContent !== tx) p.textContent = tx;
+        var f = tr.querySelector(".b4-bar-f");
+        if (f) f.style.width = Math.round((s.pctReal != null ? s.pctReal : (sim.temReal ? s.pctVig : s.pctPlan)) * 100) + "%";
+      }
+    },
+    _b4PintarLegenda: function (cena) {
+      var lg = document.getElementById("b4-legenda"); if (!lg || !cena) return;
+      var ORD = { execucao: 1, critico: 2, atrasado: 3, demolindo: 4, concluido: 5, existente: 6, futuro: 7 };
+      var itens = cena.legenda.slice().sort(function (a, b) { return (ORD[a.chave] || 9) - (ORD[b.chave] || 9); });
+      var st = this._b4Estado();
+      if (!itens.length) { lg.innerHTML = '<span class="b4-nota">Nenhuma peça visível nesta data' + (st.futuro === "oculto" ? " — as que ainda não começaram estão ocultas (Aparência → Fantasma mostra o contexto)" : "") + ".</span>"; }
+      else lg.innerHTML = itens.map(function (x) {
+        var sw = x.cor ? '<i style="background:' + Util.esc(x.cor) + '"></i>' : '<i class="b4-sw-nat" title="material original da peça"></i>';
+        return '<span class="b4-leg-i">' + sw + Util.esc(x.rotulo) + ' <b>' + Util.fmtNum(x.n, 0) + "</b></span>";
+      }).join("");
+      var vis = document.getElementById("b4-vis");
+      if (vis) vis.textContent = Util.fmtNum(cena.visiveis, 0) + " de " + Util.fmtNum(cena.total, 0) + " peças visíveis";
+    },
+    _b4PintarCurva: function (d) {
+      var cv = this._b4Curva; if (!cv || cv.vazia) return;
+      var ln = document.getElementById("b4-cv-agora"), pt = document.getElementById("b4-cv-pto"); if (!ln) return;
+      var W = 520, pl = 30, pr = 10, ptop = 10, pb = 22, H = 150, iw = W - pl - pr, ih = H - ptop - pb, n = Math.max(1, cv.datas.length - 1);
+      var i = cv.datas.indexOf(d); if (i < 0) i = n;
+      var x = (pl + (i / n) * iw).toFixed(1);
+      ln.setAttribute("x1", x); ln.setAttribute("x2", x);
+      var v = cv.real[i] != null ? cv.real[i] : (cv.proj[i] != null ? cv.proj[i] : cv.plan[i]);
+      if (pt) { pt.setAttribute("cx", x); pt.setAttribute("cy", (ptop + ih - (Math.max(0, Math.min(100, v || 0)) / 100) * ih).toFixed(1)); }
+    },
+    /* o carimbo da data SOBRE o 3D — é o que a reunião lê no projetor */
+    _b4PintarHud: function (est) {
+      var hud = document.getElementById("bim4d-hud"); if (!hud) return;
+      var st = this._b4Estado(), sim = this._b4Sim, S4 = window.BIM4DSim;
+      var dono = null;
+      try { dono = (window.BIM && BIM.donoDaPintura) ? BIM.donoDaPintura() : "4d-sim"; } catch (e) { dono = null; }
+      est = est || this._b4Est;
+      var mostra = !!(st.ativo && sim && est && dono === "4d-sim");
+      hud.style.display = mostra ? "" : "none";
+      if (!mostra) return;
+      function pct(x) { return Util.fmtNum(Math.round(x * 100), 0) + "%"; }
+      var sub = [];
+      if (est.pctPlan != null) sub.push("Planejado " + pct(est.pctPlan));
+      if (est.pctReal != null) sub.push("Real " + pct(est.pctReal));
+      else if (sim.temReal && est.pctVig != null) sub.push("Reprogramado " + pct(est.pctVig));
+      /* o R$ na data também no carimbo do projetor (é para a reunião) */
+      if (est.custoReal != null) sub.push(Util.fmtMoeda(est.custoReal) + " executado");
+      else if (est.custoPlan != null) sub.push(Util.fmtMoeda(est.custoPlan) + " planejado");
+      sub.push(est.contagem.execucao + " em execução");
+      if (sim.temReal && est.contagem.atrasado) sub.push(est.contagem.atrasado + (est.contagem.atrasado === 1 ? " atrasada" : " atrasadas"));
+      var ativas = est.ativas.slice(0, 3).map(function (id) { var a = sim.atividades[sim.porId[id]]; return a ? a.nome : ""; }).filter(Boolean);
+      hud.innerHTML = '<div class="b4h-d">' + Util.esc(S4.diaSemanaCurto(est.data)) + ", " + Util.esc(est.br) + (est.util === false ? ' <span class="b4h-nu">' + Util.esc(est.motivoNaoUtil || "") + "</span>" : "") + "</div>" +
+        '<div class="b4h-s">' + Util.esc(sub.join(" · ")) + "</div>" +
+        (ativas.length ? '<div class="b4h-a">' + ativas.map(function (x) { return Util.esc(x); }).join("<br>") + (est.ativas.length > 3 ? "<br>+ " + (est.ativas.length - 3) + " etapa(s)" : "") + "</div>" : "");
+    },
+
+    /* ---------------------------------------------------------------------
+       AÇÕES
+       ------------------------------------------------------------------- */
+    _b4Ligar: function () {
+      var self = this, pan = document.getElementById("bim-4d"); if (!pan) return;
+      pan.onclick = function (ev) {
+        var t = ev.target; if (!t || !t.closest) return;
+        var b = t.closest("[data-b4]");
+        if (b && b.tagName !== "SELECT" && b.tagName !== "INPUT" && b.tagName !== "OPTION") { ev.preventDefault(); self._b4Acao(b.getAttribute("data-b4"), b.getAttribute("data-v")); return; }
+        if (t.closest("input,select,label,summary")) return;
+        var lin = t.closest("[data-b4-atv]");
+        if (lin) self._b4Escolher(lin.getAttribute("data-b4-atv"));
+      };
+      pan.onchange = function (ev) {
+        var t = ev.target; if (!t || !t.getAttribute) return;
+        var ck = t.getAttribute("data-b4-ck");
+        if (ck != null) { self._b4Filtrar(ck, !!t.checked); return; }
+        var k = t.getAttribute("data-b4"); if (!k) return;
+        var st = self._b4Estado();
+        if (k === "fonte") { self._b4TrocarFonte(t.value); return; }
+        if (k === "intervalo") { st.intervalo = t.value; self._b4GuardarPref(); return; }
+        if (k === "vel") { st.vel = +t.value || 1; self._b4GuardarPref(); if (self._b4Timer) { self._b4Play(true); self._b4Play(); } return; }
+        if (k === "data") { if (t.value) { st.ativo = true; self._b4Ir(t.value); self._b4Cabecalho(); } return; }
+        if (k === "ck-todas") { st.etapas = t.checked ? null : {}; st.sel = ""; st.etapasAntes = null; self._b4Refazer(); return; }
+        if (k === "criticas" || k === "soCriticas" || k === "soExecucao") { st[k] = !!t.checked; if (k === "criticas") self._b4GuardarPref(); st.ativo = true; self._b4Refazer(); return; }
+      };
+      /* teclado, como num player: ← → um passo, espaço simula/pausa.
+         ⚠ A DECISÃO É DO MOTOR (`BIM4DSim.acaoDaTecla`, com teste): espaço
+         num checkbox, <summary>, select, campo ou botão faz a ação NATIVA
+         dele — aqui ele disparava "Simular" e o filtro da etapa não mudava
+         (achado 40.6 da revisão da 1.2.98). Sem ação, nem preventDefault. */
+      pan.onkeydown = function (ev) {
+        if (typeof BIM4DSim === "undefined" || !BIM4DSim.acaoDaTecla) return;
+        var t = ev.target || {};
+        var ac = BIM4DSim.acaoDaTecla({ key: ev.key, tag: t.tagName, type: t.type, editavel: !!t.isContentEditable });
+        if (!ac) return;
+        ev.preventDefault();
+        self._b4Acao(ac);
+      };
+      pan.oninput = function (ev) {
+        var t = ev.target;
+        if (t && t.id === "b4-slider" && self._b4Sim) { var st = self._b4Estado(), era = st.ativo; st.ativo = true; self._b4Ir(BIM4DSim.dataDoIndice(self._b4Sim, +t.value)); if (!era) self._b4Cabecalho(); }
+      };
+    },
+    /* repinta tudo com o estado atual (aparência e filtro mudaram) */
+    _b4Refazer: function () {
+      var st = this._b4Estado();
+      this._b4Render();
+      this._b4Ir(st.data, { fixar: false });
+    },
+    _b4Acao: function (k, v) {
+      var st = this._b4Estado(), sim = this._b4Sim, S4 = window.BIM4DSim;
+      if (k === "janela3d") { if (this._b4Destacado) this._b4FecharJanela3d(); else this._b4AbrirJanela3d(); return; }
+      if (k === "largo") { st.largo = !st.largo; this._b4Largura(); this._b4Refazer(); return; }
+      if (k === "encerrar") { this._b4Encerrar(); return; }
+      if (k === "enquadrar") { this._b4Enquadrar(null); return; }
+      if (!sim || !S4) return;
+      var atual = st.data || sim.fim;
+      if (k === "play") { this._b4Play(); return; }
+      this._b4Play(true);
+      var era = st.ativo; st.ativo = true;
+      if (k === "ini") this._b4Ir(sim.inicio);
+      else if (k === "fim") this._b4Ir(sim.fim);
+      else if (k === "ant") this._b4Ir(S4.passo(sim, atual, st.intervalo, -1));
+      else if (k === "prox") this._b4Ir(S4.passo(sim, atual, st.intervalo, 1));
+      else if (k === "hoje") {
+        var h = sim.hoje;
+        if (h < sim.inicio || h > sim.fim) UI.toast("Hoje (" + S4.br(h) + ") está fora do período da obra (" + S4.br(sim.inicio) + " a " + S4.br(sim.fim) + ") — a régua foi para " + (h < sim.inicio ? "o início." : "o fim."), "aviso");
+        this._b4Ir(h);
+      }
+      else if (k === "cor" || k === "futuro") { st[k] = v; this._b4GuardarPref(); this._b4Refazer(); }
+      else if (k === "todas") { st.etapas = null; st.etapasAntes = null; st.sel = ""; st.focar = ""; st.soCriticas = false; st.soExecucao = false; this._b4Refazer(); }
+      if (!era) this._b4Cabecalho();
+    },
+    _b4Play: function (parar) {
+      var self = this, st = this._b4Estado(), btn = document.getElementById("b4-play");
+      if (this._b4Timer || parar) {
+        if (this._b4Timer) { clearInterval(this._b4Timer); this._b4Timer = null; }
+        if (btn) btn.textContent = "▶ Simular";
+        return;
+      }
+      var sim = this._b4Sim; if (!sim) return;
+      var atual = st.data || sim.fim;
+      if (atual >= sim.fim) atual = sim.inicio;
+      var era = st.ativo; st.ativo = true;
+      this._b4Ir(atual);
+      if (!era) this._b4Cabecalho();
+      if (btn) btn.textContent = "⏸ Pausar";
+      this._b4Timer = setInterval(function () {
+        var s2 = self._b4Sim;
+        /* a aba saiu do BIM (ou o modelo foi removido): o laço morre junto */
+        if (!s2 || !document.getElementById("b4-play")) { self._b4Play(true); return; }
+        var cur = st.data || s2.fim;
+        if (cur >= s2.fim) { self._b4Play(true); return; }
+        self._b4Ir(BIM4DSim.passo(s2, cur, st.intervalo, 1));
+      }, Math.max(80, Math.round(700 / (st.vel || 1))));
+    },
+    /* clique numa linha: isola as peças da etapa, leva a data ao início dela
+       e enquadra. Clique de novo na mesma: solta e devolve o filtro de antes. */
+    _b4Escolher: function (id) {
+      var st = this._b4Estado(), sim = this._b4Sim; if (!sim || !sim.porId.hasOwnProperty(id)) return;
+      this._b4Play(true);
+      var era = st.ativo; st.ativo = true;
+      if (st.sel === id) {
+        st.sel = ""; st.focar = "";
+        st.etapas = st.etapasAntes; st.etapasAntes = null;
+        this._b4Refazer();
+        if (!era) this._b4Cabecalho();
+        return;
+      }
+      if (!st.sel) st.etapasAntes = st.etapas;
+      var m = {}; m[id] = true;
+      st.sel = id; st.focar = id; st.etapas = m;
+      var a = sim.atividades[sim.porId[id]];
+      this._b4Render();
+      this._b4Ir(a.inicio);
+      this._b4Enquadrar(id);
+      if (!a.nEl) UI.toast("A etapa “" + a.nome + "” não tem peças no modelo: nenhuma peça carimbada com ela (OrcaPRO_Etapa).", "aviso");
+      if (!era) this._b4Cabecalho();
+    },
+    /* voa até a etapa escolhida. Na janela principal a gaveta tapa o lado
+       direito do 3D: o enquadramento desconta a largura dela (sem isto a
+       etapa aparecia pela metade atrás do painel). Com o painel LARGO o 3D
+       daqui está coberto — quem enquadra é a janela do 3D. */
+    _b4Enquadrar: function (id) {
+      var sim = this._b4Sim; if (!sim || !window.BIM || !BIM.enquadrarUids) return;
+      var st = this._b4Estado();
+      if (st.largo && !this._b4Janela3d) return;
+      var dw = document.getElementById("bim-drawer"), tampa = 0;
+      if (!this._b4Janela3d && dw && dw.style.display !== "none") { try { tampa = dw.getBoundingClientRect().width; } catch (e) { tampa = 0; } }
+      var uids = id ? BIM4DSim.elementosDe(sim, id) : sim.elementos.map(function (e) { return e.id; });
+      try { BIM.enquadrarUids(uids, { direita: tampa }); } catch (e2) {}
+    },
+    _b4Filtrar: function (id, marcado) {
+      var st = this._b4Estado(), sim = this._b4Sim; if (!sim) return;
+      var m = {};
+      if (st.etapas) Object.keys(st.etapas).forEach(function (k) { m[k] = true; });
+      else sim.atividades.forEach(function (a) { m[a.id] = true; });
+      if (marcado) m[id] = true; else delete m[id];
+      st.etapas = Object.keys(m).length === sim.atividades.length ? null : m;
+      st.sel = ""; st.focar = ""; st.etapasAntes = null; st.ativo = true;
+      this._b4Refazer();
+    },
+    _b4TrocarFonte: function (v) {
+      var st = this._b4Estado();
+      st.fonte = v === "plano" ? "plano" : "orcamento";
+      this._bimReplanejar();
+      this._b4Enviar();
+    },
+    /* a gaveta muda de largura com o painel 4D (a lista de atividades precisa
+       de espaço) e ocupa a tela toda no modo largo */
+    _b4Largura: function () {
+      var dw = document.getElementById("bim-drawer"), pn = document.getElementById("bim-4d");
+      if (!dw || !pn || pn.style.display === "none") return;
+      var st = this._b4Estado();
+      dw.style.width = st.largo ? "100%" : "min(640px,96%)";
+      pn.classList.toggle("b4-largo", !!st.largo);
+      this._b4Casca(true);
+    },
+    /* a casca do BIM enquanto o painel 4D está aberto:
+       - a coluna Propriedades/Navegador sai do caminho (a gaveta de 640 px e
+         os 268 px da coluna deixavam o 3D com menos de 500 px num monitor
+         comum — a obra subia atrás do painel). É CLASSE, não a preferência
+         "esconder a lateral" da pessoa (localStorage), que fica intacta;
+       - no painel LARGO a fita e as abas também saem, e o palco cresce: o 3D
+         está coberto ou em outra janela, e a lista de atividades precisa da
+         altura. `on=false` devolve tudo. */
+    _b4Casca: function (on) {
+      var raiz = null;
+      try { raiz = (window.BimShell && BimShell.raiz) ? BimShell.raiz() : null; } catch (e) { raiz = null; }
+      if (!raiz || !raiz.classList) return;
+      var st = this._b4Estado();
+      var semLat = !!on, largo = !!on && !!st.largo;
+      var antes = raiz.classList.contains("b4-sem-lateral") + "|" + raiz.classList.contains("b4-largo-on");
+      raiz.classList.toggle("b4-sem-lateral", semLat);
+      raiz.classList.toggle("b4-largo-on", largo);
+      if (antes !== semLat + "|" + largo) {
+        /* o canvas do WebGL não redimensiona sozinho com o CSS (ver o ⚠ em
+           BIM.redimensionar): dois quadros para o layout assentar */
+        requestAnimationFrame(function () { requestAnimationFrame(function () { try { if (window.BIM && BIM.redimensionar) BIM.redimensionar(); } catch (e2) {} }); });
+      }
+    },
+
+    /* ---------------------------------------------------------------------
+       A JANELA DO 3D
+       ------------------------------------------------------------------- */
+    _b4Canal: function () {
+      if (this._b4BC !== undefined) return this._b4BC;
+      var self = this;
+      this._b4BC = null;
+      try {
+        if (typeof BroadcastChannel === "function") {
+          this._b4BC = new BroadcastChannel("orcapro-bim4d");
+          this._b4BC.onmessage = function (ev) { try { self._b4Receber(ev && ev.data); } catch (e) {} };
+          /* ⚠ a principal RECARREGADA (F5) esquece que o 3D está aberto em
+             outra janela, e a janela continuaria mostrando uma data velha
+             dizendo "segue o painel". "Quem está aí?" faz a janela do 3D se
+             apresentar de novo. */
+          if (!this._b4Janela3d) {
+            var selfQ = this;
+            setTimeout(function () { try { selfQ._b4Enviar("quem"); } catch (eQ) {} }, 0);
+            /* o painel que fecha (ou recarrega) avisa: sem isto a janela do 3D
+               seguia dizendo "segue o painel" para um painel que não existe
+               mais (achado 25.6 da revisão da 1.2.98) */
+            if (window.addEventListener) window.addEventListener("pagehide", function () { try { selfQ._b4Enviar("tchau"); } catch (eT) {} });
+          }
+        }
+      } catch (e2) { this._b4BC = null; }
+      return this._b4BC;
+    },
+    _b4Enviar: function (tipo, extra) {
+      tipo = tipo || "estado";
+      /* só fala quem tem com quem falar: o painel manda estado quando há uma
+         janela do 3D ouvindo; a janela do 3D manda os avisos dela */
+      if (tipo === "estado" && (this._b4Janela3d || !this._b4Destacado)) return;
+      var bc = this._b4Canal(); if (!bc) return;
+      var st = this._b4Estado(), msg = { v: 1, tipo: tipo, de: this._b4Janela3d ? "3d" : "painel", obraId: String(this._bimSel || ""), eid: String(eid() || "") };
+      if (tipo === "estado") {
+        msg.s = BIM4DSim.opcoes({ fonte: (this._b4F && this._b4F.fonte) || st.fonte, data: st.data || "", cor: st.cor, futuro: st.futuro, criticas: st.criticas,
+          soCriticas: st.soCriticas, soExecucao: st.soExecucao, etapas: st.etapas, focar: st.focar });
+        msg.ativo = !!st.ativo;
+        msg.seq = (this._b4Seq = (this._b4Seq || 0) + 1);
+        /* o que saiu e ainda não teve eco: é o que o selo mede */
+        var agora = Date.now();
+        if (!this._b4Envios) this._b4Envios = {};
+        this._b4Envios[msg.seq] = agora;
+        if (!this._b4PendDesde) this._b4PendDesde = agora;
+      }
+      if (extra) Object.keys(extra).forEach(function (k) { msg[k] = extra[k]; });
+      try { bc.postMessage(msg); } catch (e) {}
+    },
+    _b4TemModelo: function () { return !!(window.BIM && BIM.modelos && BIM.modelos.length); },
+    /* a janela do 3D recusa a obra (permissão retirada, sessão trocada):
+       para de ouvir e de tentar, e o recado ocupa a janela */
+    _b4JanelaRecusar: function (texto) {
+      this._b4JanelaRecusada = true;
+      if (this._b4Retenta) { clearInterval(this._b4Retenta); this._b4Retenta = null; }
+      try { if (window.App && App._janelaRecado) App._janelaRecado(texto); } catch (e) {}
+    },
+    /* ⚠ MENSAGEM DE OUTRA JANELA É ENTRADA. A mesma origem não quer dizer a
+       mesma obra nem a mesma empresa (duas abas, duas contas): confere as
+       duas, e as opções passam pela lista branca do motor. */
+    _b4Receber: function (m) {
+      if (!m || typeof m !== "object" || m.v !== 1 || typeof m.tipo !== "string") return;
+      if (String(m.obraId || "") !== String(this._bimSel || "") || String(m.eid || "") !== String(eid() || "")) return;
+      if (this._b4Janela3d) {
+        if (m.de !== "painel") return;
+        if (this._b4JanelaRecusada || (window.App && App._janelaSemDado)) return;
+        /* ⚠ A PERMISSÃO VALE TAMBÉM PARA O QUE CHEGA PELO CANAL (achado 40.3
+           da revisão da 1.2.98). A janela confere a obra ao abrir
+           (App._iniciarJanelaBim3d); aqui confere de novo a cada mensagem,
+           com a sessão desta janela — que a principal pode ter trocado (ver
+           App._janelaBim3dRevalidar, que relê a sessão no evento `storage`). */
+        if (typeof Auth !== "undefined" && (!Auth.usuario() || (Auth.podeObra && !Auth.podeObra(String(m.obraId || ""))))) {
+          this._b4JanelaRecusar("Esta obra não está liberada para o seu usuário. Para ver o 3D dela, peça ao administrador da conta que a libere; para as suas obras, use o painel da Simulação 4D na janela principal. Feche esta janela.");
+          return;
+        }
+        if (m.tipo === "estado") {
+          this._b4AplicarRemoto(m);
+          /* o eco é o que deixa o painel dizer "sincronizado" (achado 25.6) */
+          this._b4Enviar("eco", { seq: typeof m.seq === "number" ? m.seq : null, temModelo: this._b4TemModelo(), abrindo: !this._b4TemModelo() && !!this._bimRestaurando });
+        }
+        else if (m.tipo === "quem") this._b4AvisarModelo(true);
+        else if (m.tipo === "tchau") { this._b4UltimaMsg = 0; this._b4StatusJanela(); }
+        else if (m.tipo === "fechar") { try { window.close(); } catch (e) {} }
+        return;
+      }
+      if (m.de !== "3d") return;
+      if (m.tipo === "ola") {
+        this._b4LerJanela(m);
+        /* "olá" repetido (a janela reapresenta-se quando o modelo chega) não
+           redesenha o painel: só manda o estado de novo */
+        if (!this._b4Destacado) { this._b4Destacado = true; this._b4Destaque(true); }
+        else { this._b4Enviar(); this._b4PintarSelo(); }
+      }
+      else if (m.tipo === "eco") this._b4Eco(m);
+      else if (m.tipo === "tchau") { this._b4Destacado = false; this._b4Destaque(false); }
+      else if (m.tipo === "pick" && typeof m.atv === "string") this._b4RealcarLinha(m.atv);
+    },
+    _b4AplicarRemoto: function (m) {
+      var st = this._b4Estado(), o = BIM4DSim.opcoes(m.s || {});
+      var trocou = o.fonte !== st.fonte;
+      var focarNovo = !!(o.focar && o.focar !== st.focar);
+      st.cor = o.cor; st.futuro = o.futuro; st.criticas = o.criticas; st.soCriticas = o.soCriticas; st.soExecucao = o.soExecucao;
+      st.etapas = o.etapas; st.data = o.data || null; st.focar = o.focar; st.fonte = o.fonte;
+      var eraAtivo = st.ativo; st.ativo = m.ativo !== false;
+      this._b4UltimaMsg = Date.now();
+      this._b4StatusJanela();
+      if (trocou || !this._b4Sim) { if (this._bimElementos && this._bimElementos.length) this._bimReplanejar(); return; }
+      if (!st.ativo) {
+        if (eraAtivo) { try { if (window.BIM && BIM.mostrarTudo) BIM.mostrarTudo(); } catch (e) {} }
+        this._b4PintarHud(null);
+        return;
+      }
+      this._b4Ir(st.data, { fixar: false, enviar: false });
+      if (focarNovo) this._b4Enquadrar(o.focar);
+    },
+    /* ⚠ SÍNCRONO dentro do clique: qualquer espera antes do `window.open`
+       consome o gesto, e o bloqueador de pop-up barra a janela (a mesma regra
+       do js/janelas.js). */
+    _b4AbrirJanela3d: function () {
+      if (!this._bimSel) { UI.toast("Escolha a obra no alto da tela: a janela do 3D reabre o modelo guardado nela.", "aviso"); return; }
+      if (!this._b4Canal()) { UI.toast("Este navegador não sincroniza janelas (sem BroadcastChannel). Use o Chrome ou o Edge atualizados.", "erro"); return; }
+      if (typeof Janelas === "undefined" || !Janelas.abrirBim3d) { UI.toast("Esta versão não abre o 3D em outra janela.", "erro"); return; }
+      var st = this._b4Estado();
+      st.ativo = true;
+      var win = Janelas.abrirBim3d(this._bimSel);
+      if (!win) return;
+      this._b4Win = win;
+      var self = this;
+      /* sem o "tchau" (janela morta pelo sistema, travamento) o painel ficaria
+         largo e dizendo "sincronizado" para sempre: confere a janela */
+      if (this._b4Vigia) clearInterval(this._b4Vigia);
+      this._b4Vigia = setInterval(function () {
+        var morta = true;
+        try { morta = !self._b4Win || self._b4Win.closed; } catch (e) { morta = true; }
+        if (morta) { clearInterval(self._b4Vigia); self._b4Vigia = null; self._b4Win = null; if (self._b4Destacado) { self._b4Destacado = false; self._b4Destaque(false); } }
+      }, 1500);
+    },
+    _b4FecharJanela3d: function () {
+      this._b4Enviar("fechar");
+      try { if (this._b4Win && !this._b4Win.closed) this._b4Win.close(); } catch (e) {}
+      this._b4Win = null; this._b4Destacado = false;
+      this._b4Destaque(false);
+    },
+    /* o painel fica LARGO enquanto o 3D está na outra janela (é para isso
+       que ela existe) e volta ao lado do 3D quando ele volta */
+    _b4Destaque: function (on) {
+      var st = this._b4Estado(), self = this;
+      st.largo = !!on;
+      /* ⚠ BATIMENTO (achado 25.6 da revisão da 1.2.98): sem ele o selo só
+         mudava quando alguém mexia na régua, e uma janela do 3D travada
+         seguia "sincronizada". A cada 10 s o painel reenvia o estado (que
+         também ressincroniza a janela que perdeu uma mensagem) e reavalia o
+         selo; a janela devolve o eco. */
+      if (this._b4Pulso) { clearInterval(this._b4Pulso); this._b4Pulso = null; }
+      /* a confirmação é de UMA janela: ao destacar de novo, recomeça do zero
+         (o que o "olá" contou do modelo fica — ele chega antes daqui) */
+      this._b4UltEco = 0; this._b4PendDesde = 0; this._b4Envios = {};
+      if (!on) { this._b4JanModelo = null; this._b4JanAbrindo = false; }
+      this._b4Largura();
+      this._b4Refazer();
+      if (on) {
+        st.ativo = true; this._b4Enviar();
+        this._b4Pulso = setInterval(function () {
+          if (!self._b4Destacado) { clearInterval(self._b4Pulso); self._b4Pulso = null; return; }
+          try { self._b4Enviar(); } catch (e) {}
+          try { self._b4PintarSelo(); } catch (e2) {}
+        }, 10000);
+      }
+    },
+    _b4RealcarLinha: function (atvId) {
+      var tb = document.getElementById("b4-grade"); if (!tb) return;
+      var alvo = null, rows = tb.querySelectorAll("tr[data-b4-atv]");
+      for (var i = 0; i < rows.length; i++) { rows[i].classList.remove("b4-pick"); if (rows[i].getAttribute("data-b4-atv") === atvId) alvo = rows[i]; }
+      if (alvo) { alvo.classList.add("b4-pick"); try { alvo.scrollIntoView({ block: "nearest" }); } catch (e) {} }
+    },
+    /* peça clicada no 3D → a etapa dela na lista (e, na janela do 3D, avisa
+       o painel) */
+    _b4AoEscolherPeca: function (info) {
+      var sim = this._b4Sim; if (!sim || !info) return;
+      var atv = BIM4DSim.atividadeDoElemento(sim, info.uid || info.id);
+      if (!atv) return;
+      if (this._b4Janela3d) this._b4Enviar("pick", { atv: atv });
+      else this._b4RealcarLinha(atv);
+    },
+    /* o selo da janela do 3D: ligado ao painel ou esperando por ele */
+    _b4StatusJanela: function () {
+      var el = document.getElementById("b4-j3d-status"); if (!el) return;
+      if (typeof BIM4DSim === "undefined" || !BIM4DSim.seloJanela) return;
+      var vivo = !!(this._b4UltimaMsg && (Date.now() - this._b4UltimaMsg < BIM4DSim.SYNC_MS));
+      /* ⚠ UM RECADO SÓ, FIXO E VERDADEIRO (achado 40.1 da revisão da 1.2.98):
+         o texto sai do motor (`seloJanela`) a partir do que a última
+         tentativa de reabrir ACHOU (`_b4Restauro`, gravado pelo
+         _bimRestaurar desta janela, que aqui não solta toast). Antes: "Falta
+         o arquivo de…" a cada 3 s no projetor, e "esta janela reabre
+         sozinha" também quando ela não reabre. Só troca o texto quando ele
+         muda — o leitor de tela não relê a mesma frase a cada batida. */
+      var s = BIM4DSim.seloJanela({ temModelo: this._b4TemModelo(), restaurando: !!this._bimRestaurando, procurando: !!this._b4Retenta,
+        vivo: vivo, restauro: this._b4Restauro || null });
+      if (el.textContent !== s.texto) el.textContent = s.texto;
+      var cls = "b4-j3d-status" + (s.classe === "vivo" ? " b4-vivo" : "") + (s.classe === "aviso" ? " b4-aviso" : "");
+      if (el.className !== cls) el.className = cls;
+    },
+    /* a janela do 3D acabou de montar o visualizador: foco (só o modelo),
+       avisa o painel que está ouvindo, e tenta reabrir o modelo guardado
+       enquanto ele não chega (o painel pode ter aberto a janela segundos
+       antes de o cache terminar de gravar) */
+    _b4Janela3dMontada: function () {
+      var self = this;
+      if (this._b4JanelaRecusada) return;
+      try { if (window.BimShell && BimShell.alternarFoco && !BimShell.focoAtivo()) BimShell.alternarFoco(true); } catch (eF) {}
+      /* ⚠ SÓ VISUALIZAÇÃO (achado 40.4 da revisão da 1.2.98): fora do foco a
+         fita inteira voltava (Parede, Piso, "Gerar orçamento"…), e o que se
+         gravasse aqui brigaria com a janela principal. O foco fica travado,
+         com a saída dita no próprio botão; a edição que escapar (o dock do
+         visualizador) é desfeita e não é gravada — ver `_bimAoEditar`. */
+      try { if (window.BimShell && BimShell.travarFoco) BimShell.travarFoco("Janela do 3D · só para ver — para editar o modelo, use a janela principal"); } catch (eT) {}
+      this._b4Estado().ativo = true;
+      this._b4AvisarModelo(true);
+      if (!this._b4TchauLigado) {
+        this._b4TchauLigado = true;
+        window.addEventListener("pagehide", function () { try { self._b4Enviar("tchau"); } catch (e) {} });
+      }
+      if (this._b4Retenta) clearInterval(this._b4Retenta);
+      var giros = 0;
+      this._b4Retenta = setInterval(function () {
+        giros++;
+        if (self._b4JanelaRecusada) { clearInterval(self._b4Retenta); self._b4Retenta = null; return; }
+        var tem = self._b4TemModelo();
+        /* a tentativa é SILENCIOSA nesta janela (ver `_bimRestaurar`): quem
+           fala é o selo, com o que ela achou */
+        if (!tem) { try { self._bimRestaurar(); } catch (e2) {} }
+        /* o painel pode ter aberto a janela e só depois recarregado: repete o
+           "olá" até alguém responder — e de novo quando o modelo chega ou
+           some, para o selo do painel dizer a verdade */
+        self._b4AvisarModelo(!self._b4UltimaMsg);
+        if ((tem && self._b4UltimaMsg) || giros > 60) { clearInterval(self._b4Retenta); self._b4Retenta = null; }
+        self._b4StatusJanela();
+      }, 3000);
+      /* o selo "segue o painel" envelhece sozinho: sem batimento do painel
+         por 30 s ele passa a "Esperando o painel" */
+      if (!this._b4StatusTick) this._b4StatusTick = setInterval(function () { try { self._b4StatusJanela(); } catch (e3) {} }, 5000);
+      this._b4StatusJanela();
+    },
+    /* ⚠ A EDIÇÃO PASSA POR AQUI (o `onEdicao` do BIM.montar). Na janela do 3D
+       ela é RECUSADA (achado 40.4 da revisão da 1.2.98). Roteiro do defeito:
+       o editor grava `bim_edicoes` SUBSTITUINDO a lista inteira de operações
+       da obra, e nenhuma janela incorpora a edição da outra. A principal
+       tinha A e gravou A+B (uma parede); a janela do 3D, que montou com A,
+       apagou uma peça e gravou A+C — a parede B sumia sem aviso, e no próximo
+       salvar da principal era a C que sumia. Aqui a janela desfaz a edição
+       na tela (volta às operações gravadas) e diz onde editar. */
+    _bimAoEditar: function (ops) {
+      var self = this;
+      if (this._b4Janela3d) { this._b4EdicaoRecusada(); return; }
+      clearTimeout(this._bimEdSaveT);
+      this._bimEdPend = { id: this._bimSel || "geral", ops: ops };
+      this._bimEdSaveT = setTimeout(function () { self._bimEdFlush(); }, 400);
+    },
+    /* ⚠ A LIXEIRA DA JANELA DO 3D NÃO TIRA O MODELO DA OBRA (28/09/2026, revisão da 1.2.98).
+       O 🗑 da barra do viewer chama `onModelosRemovidos`, que remove as vagas do modelo na OBRA
+       (bim_modelos) — é o certo na janela principal (senão a aba devolvia o que a pessoa tirou).
+       Na janela "só para ver" do 3D destacado, o mesmo clique apagava o cadastro dos modelos da
+       obra para todo mundo, e o recado de lá dizia "nada foi gravado". Aqui a janela só limpa a
+       própria tela e diz que o modelo continua salvo na obra. */
+    _bimAoRemoverModelos: function (lista) {
+      if (this._b4Janela3d) {
+        try { UI.toast("Esta janela do 3D é só para ver: o modelo saiu só desta tela e continua salvo na obra. Para tirar o modelo da obra, use a lixeira na janela principal.", "aviso"); } catch (eT) {}
+        return false;
+      }
+      try { this._bimFedRemoverVarios(lista); } catch (e3) {}
+      return true;
+    },
+    _b4EdicaoRecusada: function () {
+      var self = this;
+      if (this._b4RevertEd) return;
+      /* depois do clique que editou (a reconstrução do editor ainda está na
+         pilha) */
+      this._b4RevertEd = setTimeout(function () {
+        self._b4RevertEd = null;
+        try { if (window.BIM && BIM.editar) BIM.editar(false); } catch (e) {}
+        var salvas = [];
+        try { var ed = Store.obter(eid(), "bim_edicoes", self._bimSel || "geral"); salvas = (ed && ed.ops) || []; } catch (e2) { salvas = []; }
+        try { if (window.BIM && BIM.editarAplicar) BIM.editarAplicar(salvas); } catch (e3) {}
+        try { UI.toast("Esta janela do 3D é só para ver: a edição foi desfeita e nada foi gravado. Para editar o modelo, use a janela principal.", "aviso"); } catch (e4) {}
+      }, 0);
     },
     /* 6D/7D: plano de manutenção (VUP NBR 15575) + custo do ciclo de vida a partir do
      * modelo carregado. Custos por categoria vêm do ORÇAMENTO VINCULADO à obra (etapas
@@ -16059,7 +17116,7 @@
       /* ⚠ "ninguém" e "outro painel" são respostas diferentes: o dono some
          quando alguém limpa as cores, e aí dizer "agora são de outro painel"
          manda o engenheiro procurar um painel que não existe. */
-      var quem = dono === "4d-tarefas" || dono === "4d-auto" ? " (a simulação 4D)"
+      var quem = dono === "4d-tarefas" || dono === "4d-auto" || dono === "4d-sim" ? " (a simulação 4D)"
         : (dono === "conjunto" ? " (um conjunto de seleção)" : "");
       return '<p class="muted" style="font-size:11.5px;margin:0 0 6px">'
         + (dono ? "As cores do modelo agora são de outro painel" + quem + "." : "As cores do avanço foram tiradas do modelo.")
@@ -16986,21 +18043,10 @@
           try { self.insumoDoBim(ev.detail); } catch (e) { UI.toast("Não consegui abrir o cadastro: " + (e && e.message || e), "erro"); }
         });
       }
-      // slider + play — a semana só é PINADA por gesto do usuário; arrastar até o fim
-      // desafixa (null = "fim da obra"), senão federar um 2º IFC (plano cresce) esconderia
-      // as semanas novas como futuro com o slider pinado no máximo antigo
-      var sl = document.getElementById("bim-slider");
-      if (sl) sl.oninput = function () { var v = +sl.value; self._bimSemana = (v >= +sl.max) ? null : v; self._bimAplicarSemana(v); };
-      var play = document.getElementById("bim-play");
-      if (play) play.onclick = function () {
-        if (self._bimTimer) { clearInterval(self._bimTimer); self._bimTimer = null; play.textContent = "▶ Play"; return; }
-        play.textContent = "⏸ Pausar"; var s0 = document.getElementById("bim-slider"); if (s0 && +s0.value >= +s0.max) s0.value = "0";
-        self._bimTimer = setInterval(function () {
-          var s = document.getElementById("bim-slider"); if (!s) { clearInterval(self._bimTimer); self._bimTimer = null; return; }
-          var v = +s.value + 1; if (v > +s.max) { clearInterval(self._bimTimer); self._bimTimer = null; play.textContent = "▶ Play"; return; }
-          s.value = String(v); self._bimSemana = (v >= +s.max) ? null : v; self._bimAplicarSemana(v);
-        }, 700);
-      };
+      /* Simulação 4D por data: a delegação do painel inteiro (os controles
+         nascem a cada _b4Render) e o canal com a janela do 3D */
+      this._b4Ligar();
+      this._b4Canal();
       // compatibilização (clash): botão rodar + delegação dos cliques "ver"/"limpar"
       this._bimClashRenderTestes();
       var cnovo = document.getElementById("bim-clash-novo");
@@ -17099,7 +18145,7 @@
             },
             /* B1: o 🗑 da barra do viewer tira os modelos da OBRA também —
                senão a próxima entrada na aba devolve o que foi removido */
-            onModelosRemovidos: function (lista) { try { self._bimFedRemoverVarios(lista); } catch (e3) {} },
+            onModelosRemovidos: function (lista) { self._bimAoRemoverModelos(lista); },
             // v1.1.121: innerHTML com Icones (textContent apagaria o ícone SVG do botão)
             onReuniao: function (n) { var b = document.getElementById("bim-btn-reuniao"); if (b) { var icR = (typeof Icones !== "undefined") ? Icones.get("obra", 14) : ""; b.innerHTML = icR + (n > 0 ? "Reunião · " + n + " online" : (BIM.reuniao && BIM.reuniao.ativa ? "Na sala…" : "Reunião")); b.style.background = n > 0 ? "#16a34a" : ""; b.style.color = n > 0 ? "#fff" : ""; } },
             onReuniaoFalha: function () { var b = document.getElementById("bim-btn-reuniao"); if (b) { b.innerHTML = ((typeof Icones !== "undefined") ? Icones.get("obra", 14) : "") + "Reunião"; b.style.background = ""; b.style.color = ""; } UI.toast("Não consegui manter a reunião conectada (sem internet?). Você saiu da sala; o modelo segue normal.", "erro"); },
@@ -17143,6 +18189,7 @@
               try { if (window.BimShell) BimShell.contadores(self._bimRotuloVis(), self._bimSelecao ? (self._bimSelecao.nome || self._bimSelecao.tipo) : null); } catch (e2) {}
             },
             onPick: function (info) {
+              try { self._b4AoEscolherPeca(info); } catch (e4d) {}   /* peça → etapa na lista da Simulação 4D */
               /* SELEÇÃO É ESTADO DA CASCA, não só um balão na tela.
                  _bimSelecao nunca era escrito — e "Editar tipo" e "Rastrear
                  no orçamento" ficavam mortos para sempre, mesmo com o
@@ -17172,11 +18219,8 @@
             // ✏️ Editor: cada mutação agenda o save das ops da obra ATUAL (capturada NA HORA
             // da mutação — trocar de obra não pode gravar no registro errado); debounce leve
             // com flush explícito (trocar de obra dentro dos 400ms não pode PERDER a edição)
-            onEdicao: function (ops) {
-              clearTimeout(self._bimEdSaveT);
-              self._bimEdPend = { id: self._bimSel || "geral", ops: ops };
-              self._bimEdSaveT = setTimeout(function () { self._bimEdFlush(); }, 400);
-            }
+            /* ⚠ via `_bimAoEditar`: é lá que a janela do 3D recusa a edição */
+            onEdicao: function (ops) { self._bimAoEditar(ops); }
           });
           // edições salvas da obra atual voltam ao montar (replay determinístico).
           // FLUSH antes de ler (re-render em <400ms leria ops velhas e REVERTERIA a última
@@ -17218,6 +18262,7 @@
             if (BIM.modelos && BIM.modelos.length) self._bimRenderModelos(BIM.modelos);
             else self._bimRenderModelos([]);
           } catch (e2) {}
+          if (self._b4Janela3d) self._b4Janela3dMontada();
           return;
         }
         if (tentativas++ < 60) setTimeout(montarViewer, 200);
@@ -24960,6 +26005,15 @@
           }).join("") + "</select></label>"
         : "";
       var extra = selReq + '<span class="muted" style="margin-right:12px;align-self:center">Abertas: <b>' + abertas + "</b> · Urgentes: <b>" + urgentes + "</b></span>";
+      /* GERAR DO ORÇAMENTO — só aparece quando há obra com orçamento vinculado
+         (`obra.orcamentoId`) e o motor carregou. Com uma obra escolhida no
+         filtro, o gerador já abre nela. */
+      var obrasComOrc = obras.filter(function (o) { return o && o.orcamentoId; });
+      if (obrasComOrc.length && typeof ReqOrcamento !== "undefined") {
+        var obraSelOrc = obrasComOrc.some(function (o) { return String(o.id) === String(e.sel); }) ? String(e.sel) : "";
+        extra += '<button class="btn" data-gacao="req-do-orcamento" data-id="' + Util.esc(obraSelOrc) + '" style="margin-right:8px" title="Gerar requisições com o saldo do orçamento da obra (por etapa, por tipo ou tudo) — gera só o que ainda não foi requisitado por este botão, etapa por etapa">' +
+          (typeof Icones !== "undefined" ? Icones.get("planilha", 15) : "") + " Gerar do orçamento</button>";
+      }
       var html = this._head(svg("requisicoes") + "Requisições", "nova-requisicoes", "Nova requisição", extra);
       if (!e.todos.length) return html + vazioBox("Nenhuma requisição", "nova-requisicoes", "Criar primeira");
       /* ⚠ VAZIO DO RECORTE ≠ VAZIO DO MÓDULO, e precisa de porta: sem o botão,
@@ -24999,9 +26053,25 @@
            olhando este numero — e item sem preco (o que veio do modelo e nao
            casou na base) puxa o valor para baixo. Avisar so no formulario e
            avisar em lugar nenhum para quem aprova. */
-        var nPendR = (r.itens || []).filter(function (i) { return i && i.pendente; }).length;
+        /* ⚠ ITEM GERADO DO ORÇAMENTO SEM PREÇO TAMBÉM DEIXA O TOTAL PARCIAL. O
+           gerador grava o insumo sem custo na base com precoRef 0 (e sem
+           `pendente`, que quer dizer "veio do modelo e não casou") — sem esta
+           conta o total aparecia completo na lista onde se aprova. */
+        var nPendR = (r.itens || []).filter(function (i) { return i && (i.pendente || (i.origemOrc && !(Util.num(i.precoRef) > 0))); }).length;
+        var perdR = (r.origemOrc && r.origemOrc.orcamentoId && typeof ReqOrcamento !== "undefined" && ReqOrcamento.perdeuCarimbo) ? ReqOrcamento.perdeuCarimbo(r) : null;
         var reqInfo = (nItens > 1 ? ' <span class="g-pill" style="background:#2e6f9e22;color:#2e6f9e">' + nItens + " itens</span>" : "") + (r.valorEstimado ? ' <span class="muted">· ' + Util.fmtMoeda(r.valorEstimado) + "</span>" : "") +
-          (nPendR ? ' <span class="g-pill" style="background:#b4530922;color:#b45309" title="' + nPendR + ' item(ns) sem preço — o total está incompleto">valor parcial</span>' : "");
+          (nPendR ? ' <span class="g-pill" style="background:#b4530922;color:#b45309" title="' + nPendR + ' item(ns) sem preço — o total está incompleto">valor parcial</span>' : "") +
+          /* a requisição gerada do orçamento se identifica na lista: é ela que
+             o gerador conta como "já requisitado".
+             ⚠ A DICA DIZ A EXCEÇÃO DO PEDIDO: é AQUI que se cancela, e com
+             pedido vivo cancelar a requisição não devolve nada. E a que perdeu
+             o carimbo dos itens não promete o que o gerador não faz. */
+          (r.origemOrc && r.origemOrc.orcamentoId ? ' <span class="g-pill" style="background:#0e749022;--gp-t:#0d6982;--gp-td:#16b4df" title="' +
+            Util.esc(perdR
+              ? "Gerada do orçamento (" + (r.origemOrc.rotulo || "") + "), mas os itens estão SEM o carimbo do orçamento — acontece quando ela é salva num aparelho de versão anterior. " +
+                (perdR.porEtapa ? "O gerador reconhece os itens pelo código do insumo, na etapa dela." : "O gerador não sabe de qual etapa é cada item e trava esses insumos por precaução em todas as etapas.")
+              : "Gerada do orçamento (" + (r.origemOrc.rotulo || "") + ") — conta como já requisitado no gerador. Cancelar devolve o saldo, a menos que ela já tenha virado pedido: aí o saldo só volta cancelando (ou rejeitando) o pedido em Compras.") +
+            '">do orçamento' + (perdR ? " ⚠" : "") + "</span>" : "");
         html += '<tr><td style="cursor:pointer" data-gopen="requisicoes:' + r.id + '"><b>' + Util.esc(r.numero || "—") + "</b></td><td>" + Util.esc(r.data || "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + '</td><td>' + Util.esc(r.descricao || "—") + reqInfo + '</td><td><b style="color:' + corPri + '">' + rot(P.reqPrioridade, r.prioridade) + "</b></td><td>" + pill(r.status) + self._aprovLinha(r) + '</td><td class="num">' + acoes + "</td></tr>";
       });
       return html + "</tbody></table>";
@@ -25016,6 +26086,513 @@
       return "REQ-" + ano + "-" + pad;
     },
     novoRequisicoes: function () { this.formRequisicoes(null); },
+
+    /* =================================================================
+     * GERAR REQUISIÇÕES DO ORÇAMENTO — a tela (o motor é js/reqorcamento.js)
+     *
+     * Pedido do gestor: "gerar a requisição por etapa, por tipo ou tudo de
+     * uma vez, e o que foi gerado e comprado não terá como gerar novamente".
+     *
+     * ⚠ A TRAVA É DO MOTOR, E A TELA NÃO A DUPLICA. O que a prévia mostra e o
+     *   que o botão grava saem da MESMA conta (`ReqOrcamento.planejar`) — e o
+     *   botão REFAZ a conta com o disco de AGORA antes de gravar: entre abrir
+     *   a prévia e clicar, outro aparelho pode ter gerado a mesma etapa (a
+     *   nuvem funde), e gravar pela prévia velha pediria o material de novo.
+     * ⚠ O CENTRO DE CUSTO NÃO É ESCRITO À MÃO. O `etapaId` de documento de
+     *   compra deriva do centro (`CentroCusto.doDocumento`, §1.8). No modo por
+     *   etapa o gerador procura o centro GERADO daquela etapa pelo carimbo
+     *   `origem {t:"orc", o, e}` — nunca pelo nome — e, sem ele, a requisição
+     *   nasce sem centro, como o formulário faz. A etapa do orçamento de cada
+     *   item continua no `origemOrc` do item.
+     * ⚠ COTAÇÃO AUTOMÁTICA PASSA PELA APROVAÇÃO. O produto só cota requisição
+     *   aprovada (o 🆚 Cotar só aparece na aprovada, e é a aprovação que libera
+     *   o pedido). Montar a cotação de uma requisição Aberta deixaria concluir
+     *   a cotação — e gerar PEDIDO — sem ninguém aprovar. Por isso "aprovar e
+     *   já cotar" só existe para quem pode aprovar a PRÓPRIA requisição, e
+     *   aprova pelo `_aprovar` de sempre (trilha + regra do autor). Para os
+     *   outros a requisição nasce Aberta, e o 🆚 Cotar depois da aprovação já
+     *   vem com os fornecedores de referência (`novaCotacaoDaRequisicao`).
+     * ================================================================= */
+    _reqOrcEstado: null,
+    /* o parâmetro "Planejamento e gestão" da conta (⚙ Empresa) */
+    _reqOrcGestao: function () {
+      try { return (typeof Empresa !== "undefined" && Empresa.dados) ? String(Empresa.dados().gestao || "").trim() : ""; }
+      catch (e) { return ""; }
+    },
+    reqDoOrcamento: function (obraId) {
+      if (typeof ReqOrcamento === "undefined") { UI.toast("O gerador de requisições (js/reqorcamento.js) não carregou neste aparelho — recarregue o app.", "erro"); return; }
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("requisicoes")) { UI.toast("Você não tem acesso a Requisições.", "erro"); return; }
+      var obras = lista("obras").filter(function (o) { return o && o.orcamentoId; });
+      if (!obras.length) { UI.toast("Nenhuma obra tem orçamento vinculado. Vincule no cadastro da obra (campo \"Vincular a um orçamento\") e volte aqui.", "erro"); return; }
+      var alvo = obras.filter(function (o) { return String(o.id) === String(obraId || ""); })[0] || obras[0];
+      this._reqOrcEstado = { obraId: alvo.id, modo: "etapa", cats: { MAT: true, EQ: true }, opcionais: false, marcados: {}, cotar: false, carregando: false, gerando: false };
+      var self = this;
+      var bg = UI.modal((typeof Icones !== "undefined" ? Icones.get("planilha", 15) : "") + " Gerar requisições do orçamento", '<div id="ro-corpo" data-modal-largo></div>', [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { self._reqOrcEstado = null; UI.fecharModal(); } },
+        { texto: "Gerar requisições", classe: "primary", onClick: function () { self._reqOrcGerar(); } }
+      ]);
+      var m = (bg && bg.querySelector) ? bg.querySelector(".modal") : null; if (m) m.style.maxWidth = "1120px";
+      /* nada é digitado aqui: marcar caixa não é "trabalho" a perder, e o ✕
+         não precisa perguntar "descartar?" */
+      if (UI.modalConsulta) UI.modalConsulta();
+      this._reqOrcDesenhar();
+      this._reqOrcFiar(bg);
+    },
+    _reqOrcDados: function (st) {
+      var obra = null, orc = null, orcs = [];
+      try { obra = Store.obter(eid(), "obras", st.obraId); } catch (e) { obra = null; }
+      try { orcs = Store.listarOrcamentos(eid()) || []; } catch (e2) { orcs = []; }
+      if (obra && obra.orcamentoId) orcs.forEach(function (o) { if (!orc && o && o.id === obra.orcamentoId) orc = o; });
+      /* ⚠ `listaTodas`, não `lista`: o que já foi pedido é da EMPRESA. Uma
+         requisição que este usuário não enxerga (outra obra no filtro dele)
+         continua tendo pedido o material — contá-la só pelo que ele vê
+         liberaria o saldo para pedir de novo. */
+      return { obra: obra, orc: orc, orcs: orcs, requisicoes: listaTodas("requisicoes"), pedidos: listaTodas("compras") };
+    },
+    /* Onde cada código abre em insumos. A mesma precedência do detalhamento
+       do item (`App.verInsumos`): composição PRÓPRIA pela base própria; SINAPI
+       pelo analítico carregado (a própria de código não oficial vale, como lá);
+       outra base só se o item dela trouxer os insumos. */
+    _reqOrcResolver: function () {
+      var temAna = (typeof Analitico !== "undefined" && Analitico.carregado);
+      var B = (typeof Bases !== "undefined") ? Bases : null;
+      return {
+        composicao: function (cod, fonte) {
+          cod = String(cod || "");
+          var F = ReqOrcamento.normFonte(fonte);
+          if (!B) return null;
+          if (F === "PROPRIA" || /^PROP-/i.test(cod)) {
+            var bp = B.obter("PROPRIA", cod);
+            return (bp && bp.insumos && bp.insumos.length) ? bp : null;
+          }
+          if (F === "SINAPI") {
+            if (temAna) { var a = Analitico.obter(cod); if (a) return a; }
+            var bp2 = B.obter("PROPRIA", cod);
+            var ofi = (typeof Sinapi !== "undefined" && Sinapi.obter) ? !!Sinapi.obter(cod) : false;
+            return (bp2 && bp2.insumos && bp2.insumos.length && !ofi) ? bp2 : null;
+          }
+          var x = B.obter(F, cod);
+          return (x && x.insumos && x.insumos.length) ? x : null;
+        },
+        insumo: function (cod, fonte) {
+          if (!B) return null;
+          var F = ReqOrcamento.normFonte(fonte);
+          if (F === "PROPRIA" || /^PROP-/i.test(String(cod))) return B.obter("PROPRIA", String(cod));
+          return B.obter(F, String(cod));
+        },
+        motivoSem: function (cod, fonte) {
+          var F = ReqOrcamento.normFonte(fonte);
+          if (F === "SINAPI") return temAna ? "composição fora do detalhamento SINAPI carregado" : "detalhamento SINAPI não carregado — use o botão \"Carregar o detalhamento\" acima";
+          if (F === "PROPRIA") return "composição própria sem insumos, ou que não está mais na base própria";
+          return "a base " + F + " não traz o detalhamento em insumos";
+        }
+      };
+    },
+    _reqOrcPlano: function (d, st) {
+      return ReqOrcamento.planejar({ orcamento: d.orc, orcamentos: d.orcs, resolver: this._reqOrcResolver(),
+        requisicoes: d.requisicoes, pedidos: d.pedidos }, { modo: st.modo, categorias: st.cats, incluirOpcionais: st.opcionais });
+    },
+    /* grupo novo nasce marcado; o que a pessoa desmarcou fica desmarcado */
+    _reqOrcMarcadas: function (plano, st) {
+      return plano.grupos.filter(function (g) {
+        if (!g.selecionavel) return false;
+        return !(st.marcados && Object.prototype.hasOwnProperty.call(st.marcados, g.chave) && !st.marcados[g.chave]);
+      }).map(function (g) { return g.chave; });
+    },
+    _reqOrcDesenhar: function () {
+      var st = this._reqOrcEstado; if (!st) return;
+      var box = document.getElementById("ro-corpo"); if (!box) return;
+      var self = this, d = this._reqOrcDados(st), RO = ReqOrcamento;
+      var q = function (n) { return Util.fmtNum(n, 4).replace(/,?0+$/, "") || "0"; };
+      var obrasOrc = lista("obras").filter(function (o) { return o && o.orcamentoId; });
+      var html = '<div class="row" style="align-items:flex-end;gap:12px;flex-wrap:wrap">' +
+        campo("Obra", '<select id="ro-obra" style="min-width:240px">' + obrasOrc.map(function (o) {
+          return '<option value="' + Util.esc(o.id) + '"' + (String(o.id) === String(st.obraId) ? " selected" : "") + ">" + Util.esc(o.nome || "(obra sem nome)") + "</option>";
+        }).join("") + "</select>");
+      if (!d.obra) { box.innerHTML = html + '</div><div class="vazio card">A obra escolhida não existe mais neste aparelho.</div>'; return; }
+      if (!d.orc) {
+        box.innerHTML = html + '</div><div class="vazio card">O orçamento vinculado a esta obra não foi encontrado neste aparelho (apagado, ou ainda não sincronizou). Confira em Orçamentos e no cadastro da obra (campo "Vincular a um orçamento").</div>';
+        return;
+      }
+      var plano = this._reqOrcPlano(d, st);
+      var marcadas = this._reqOrcMarcadas(plano, st), selM = {};
+      marcadas.forEach(function (k) { selM[k] = 1; });
+      var gestao = this._reqOrcGestao();
+      html += '<div class="field" style="flex:1;min-width:260px"><label>Orçamento</label><div style="padding:7px 0;font-size:13px"><b>' + Util.esc(d.orc.numero || d.orc.id) + "</b> " +
+        Util.esc(d.orc.nome || (d.orc.cliente && typeof d.orc.cliente === "object" ? d.orc.cliente.nome : d.orc.cliente) || "") +
+        (plano.familia.length > 1 ? ' <span class="muted" title="O que foi pedido pela origem e pelas revisões conta junto: a revisão que aumenta a quantidade gera só a diferença">· família de ' + plano.familia.length + " versões (origem e revisões)</span>" : "") +
+        "</div></div></div>";
+      html += '<div style="font-size:12.5px;margin:-4px 0 8px">' + (gestao
+        ? "Planejamento e gestão: <b>" + Util.esc(gestao) + "</b> <span class=\"muted\">(vai carimbado em cada requisição)</span>"
+        : '<span class="muted">Planejamento e gestão: não configurado — preencha em ⚙ Empresa, campo "Responsável pelo planejamento e gestão".</span>') + "</div>";
+      /* modo e filtros */
+      var temOpc = (d.orc.etapas || []).some(function (e) { return e && e.opcional; });
+      html += '<div class="card" style="padding:10px 12px;margin-bottom:10px;display:flex;gap:18px;flex-wrap:wrap;align-items:center;font-size:13px">' +
+        "<b>Gerar</b>" +
+        ["etapa", "tipo", "tudo"].map(function (m) {
+          var dica = m === "etapa" ? "uma requisição por etapa do orçamento" : (m === "tipo" ? "uma por fornecedor de referência, ou por grupo / Materiais / Equipamentos" : "uma requisição com todo o escopo");
+          return '<label style="cursor:pointer" title="' + dica + '"><input type="radio" name="ro-modo" value="' + m + '"' + (st.modo === m ? " checked" : "") + "> " + RO.MODOS[m] + "</label>";
+        }).join("") +
+        '<span style="border-left:1px solid var(--linha);height:18px"></span>' +
+        '<label style="cursor:pointer"><input type="checkbox" id="ro-cat-MAT"' + (st.cats.MAT ? " checked" : "") + "> Material</label>" +
+        '<label style="cursor:pointer"><input type="checkbox" id="ro-cat-EQ"' + (st.cats.EQ ? " checked" : "") + "> Equipamento</label>" +
+        (temOpc ? '<label style="cursor:pointer" title="Etapas marcadas como opcionais (adicionais) no orçamento"><input type="checkbox" id="ro-opc"' + (st.opcionais ? " checked" : "") + "> incluir etapas opcionais</label>" : "") +
+        '<span class="muted" title="Requisição é compra: mão de obra não entra">· mão de obra não entra</span></div>';
+      /* o detalhamento SINAPI — só quando o orçamento precisa dele */
+      var nSinapi = 0;
+      (d.orc.etapas || []).forEach(function (e) {
+        (e && e.itens || []).forEach(function (it) {
+          if (it && it.codigo && !/^PROP-/i.test(String(it.codigo)) && RO.normFonte(it.baseFonte) === "SINAPI") nSinapi++;
+        });
+      });
+      var ufOrc = String(d.orc.uf || "").toUpperCase();
+      var anaOk = typeof Analitico !== "undefined" && Analitico.carregado;
+      var anaUf = anaOk ? String(Analitico.uf || "").toUpperCase() : "";
+      /* ⚠ DETALHAMENTO DE OUTRA UF: OS ITENS ENTRAM. O `_reqOrcResolver` abre a
+         composição com o analítico carregado, de qualquer UF — o aviso dizia
+         "sem ele, esses itens NÃO entram", e eles entravam, com o preço de
+         referência do outro estado. Coeficiente é nacional (a mesma régua da
+         tela da composição, js/ui.js); o preço é que é da UF carregada. */
+      var ufDif = !!(nSinapi && anaOk && ufOrc && anaUf && anaUf !== ufOrc);
+      if (nSinapi && (!anaOk || ufDif)) {
+        html += '<div style="font-size:12.5px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:8px 11px;margin-bottom:10px;color:#1e3a5f">' +
+          (st.carregando ? "Carregando o detalhamento SINAPI" + (ufOrc ? " de " + Util.esc(ufOrc) : "") + "… (só na primeira vez)" :
+            (ufDif
+              ? "<b>" + nSinapi + " item(ns) SINAPI</b> abriram em insumos com o detalhamento de <b>" + Util.esc(anaUf) + "</b>, e o orçamento é de <b>" + Util.esc(ufOrc) + "</b>: " +
+                "as quantidades estão certas (coeficientes são nacionais), mas o <b>preço de referência</b> desses insumos é de " + Util.esc(anaUf) + " — e vai assim nas requisições. " +
+                "Carregue o de " + Util.esc(ufOrc) + " (cerca de 17 MB, uma vez) para o preço do estado. "
+              : "<b>" + nSinapi + " item(ns) SINAPI</b> só abrem em insumos com o detalhamento oficial" + (ufOrc ? " de <b>" + Util.esc(ufOrc) + "</b>" : "") +
+                " — cerca de 17 MB, baixados uma vez. Sem ele, esses itens ficam na lista \"não abriram em insumo\" e NÃO entram. ") +
+            '<button type="button" class="btn sm" data-ro="analitico" style="margin-left:4px">Carregar o detalhamento' + (ufDif ? " de " + Util.esc(ufOrc) : "") + "</button>") + "</div>";
+      }
+      /* resumo do que o botão vai gravar */
+      var nReq = 0, nIt = 0, val = 0, nSemP = 0;
+      plano.grupos.forEach(function (g) { if (selM[g.chave]) { nReq++; nIt += g.nGeraveis; val += g.valorGerar; nSemP += (g.nSemPreco || 0); } });
+      /* ⚠ "NADA A REQUISITAR" SÓ QUANDO É VERDADE — o porquê mora no motor
+         (`ReqOrcamento.porQueNada`), para a prévia e o botão dizerem o mesmo */
+      var nada = RO.porQueNada ? RO.porQueNada(plano, { semDetalhamentoSinapi: !!(nSinapi && !anaOk), ufCarregada: ufDif ? anaUf : "", ufOrcamento: ufDif ? ufOrc : "" }) : { txt: "", verdade: false };
+      html += '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px;font-size:13px">' +
+        (nReq ? "Vai gerar <b>" + nReq + " requisição(ões)</b> com <b>" + nIt + " item(ns)</b> · <b>" + Util.fmtMoeda(val) + "</b> de referência (custo direto, sem BDI)" +
+            (nSemP ? ' <span class="g-pill" style="background:#b4530922;color:#b45309" title="' + nSemP + ' insumo(s) sem preço na base: o total não os inclui">valor parcial — ' + nSemP + " item(ns) sem preço</span>" : "")
+          : (plano.resumo.nGeraveis ? '<span class="muted">Marque ao menos um grupo para gerar.</span>'
+            : '<b style="color:' + (nada.verdade ? "#15803d" : "#b45309") + '">' + Util.esc(nada.txt) + "</b>")) +
+        "</div>";
+      /* os grupos */
+      if (!plano.grupos.length) {
+        html += '<div class="vazio card">Nenhum material ou equipamento a listar com estes filtros.</div>';
+      }
+      var corEstado = { livre: "#15803d", parcial: "#b45309", requisitado: "#64748b", cotando: "#0e7490", comprado: "#7c3aed", compradoParte: "#6d28d9", excedente: "#dc2626" };
+      plano.grupos.forEach(function (g) {
+        var marc = !!selM[g.chave];
+        html += '<div class="card" style="padding:8px 10px;margin-bottom:8px' + (g.selecionavel ? "" : ";opacity:.7") + '">' +
+          '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+          '<label style="cursor:' + (g.selecionavel ? "pointer" : "not-allowed") + ';display:flex;align-items:center;gap:8px;font-weight:700;font-size:13.5px">' +
+          '<input type="checkbox" data-ro-g="' + Util.esc(g.chave) + '"' + (marc ? " checked" : "") + (g.selecionavel ? "" : " disabled") + "> " + Util.esc(g.rotulo) + "</label>" +
+          '<span class="muted" style="font-size:12px">' + (g.nGeraveis ? g.nGeraveis + " a requisitar · " + Util.fmtMoeda(g.valorGerar) : "nada a requisitar") +
+          (g.nBloqueadas ? " · " + g.nBloqueadas + " travado(s)" : "") + "</span></div>" +
+          '<details' + (plano.grupos.length <= 2 ? " open" : "") + ' style="margin-top:4px"><summary class="muted" style="font-size:12px;cursor:pointer">ver os ' + g.linhas.length + " insumo(s)</summary>" +
+          '<div style="overflow-x:auto"><table class="tbl" style="font-size:12px;margin-top:4px"><thead><tr><th>Insumo</th><th>Un</th><th class="num">Orçado</th><th class="num">Já requisitado</th><th class="num">Saldo a requisitar</th><th class="num">Preço ref.</th><th>Fornecedor ref.</th><th>Situação</th></tr></thead><tbody>' +
+          g.linhas.map(function (L) {
+            var cor = corEstado[L.estado] || "#64748b";
+            var sit = '<span style="color:' + cor + ';font-weight:600">' + Util.esc(RO.ROTULO_ESTADO[L.estado] || L.estado) + "</span>" +
+              /* o rótulo do estado já está acima: o motivo entra sem repetir a
+                 mesma palavra ("já requisitado · Já requisitado — REQ…") */
+              (L.motivo ? '<div class="muted" style="font-size:11px;max-width:320px">' + Util.esc(String(L.motivo).replace(/^(Já requisitado|Já comprado|Em cotação) — /, "")) + "</div>" : "") +
+              /* a trava por precaução e o insumo já pedido numa etapa que saiu
+                 aparecem NA LINHA: é ali que se decide gerar */
+              (L.precaucao > 0 ? '<div style="font-size:11px;color:#b45309;max-width:320px">inclui ' + q(L.precaucao) + " travado(s) por precaução — requisição sem o carimbo dos itens (veja o aviso abaixo)</div>" : "") +
+              (L.orfaoMesmoInsumo > 0 && L.gerar > 0 ? '<div style="font-size:11px;color:#b45309;max-width:320px">⚠ ' + q(L.orfaoMesmoInsumo) + " já pedido(s) numa etapa que saiu do orçamento — confira antes de gerar de novo aqui</div>" : "");
+            var f = L.fornecedorRef ? (L.fornecedorRef.nome || L.fornecedorRef.id) : "";
+            return '<tr style="' + (L.bloqueado ? "opacity:.55;background:rgba(100,116,139,.06)" : "") + '">' +
+              "<td>" + (L.insumoCodigo ? "<b>" + Util.esc(L.insumoCodigo) + "</b> " : "") + Util.esc(L.descricao) +
+              (L.etapaNome && st.modo !== "etapa" ? ' <span class="muted" style="font-size:11px">· ' + Util.esc((L.etapaNumero ? L.etapaNumero + " " : "") + L.etapaNome) + "</span>" : "") + "</td>" +
+              "<td>" + Util.esc(Util.unidadeExibir ? Util.unidadeExibir(L.unidade) : L.unidade) + "</td>" +
+              '<td class="num">' + q(L.orcado) + "</td>" +
+              '<td class="num">' + (L.jaRequisitado > 0 ? q(L.jaRequisitado) : "—") + "</td>" +
+              '<td class="num"><b>' + (L.gerar > 0 ? q(L.gerar) : "0") + "</b></td>" +
+              '<td class="num"' + (L.precoDivergente ? ' title="O mesmo insumo aparece com preços diferentes nas composições — vai o primeiro; confira na cotação"' : "") + ">" +
+              (L.precoRef > 0 ? Util.fmtMoeda(L.precoRef) + (L.precoDivergente ? " *" : "") : '<span class="muted">sem preço</span>') + "</td>" +
+              "<td>" + (f ? Util.esc(f) : '<span class="muted">—</span>') + "</td>" +
+              "<td>" + sit + "</td></tr>";
+          }).join("") + "</tbody></table></div></details></div>";
+      });
+      /* o que ficou fora, com o porquê */
+      if (plano.naoDetalhado.length) {
+        var valND = 0; plano.naoDetalhado.forEach(function (x) { valND += Util.num(x.valor); });
+        html += '<details style="margin:8px 0"><summary style="cursor:pointer;font-size:12.5px;color:#b45309"><b>' + plano.naoDetalhado.length +
+          " item(ns) do orçamento não abriram em insumo</b> (" + Util.fmtMoeda(valND) + ") — NÃO entram nas requisições; peça à mão se forem de compra</summary>" +
+          '<table class="tbl" style="font-size:12px;margin-top:4px"><thead><tr><th>Etapa</th><th>Código</th><th>Descrição</th><th class="num">Qtd</th><th>Motivo</th></tr></thead><tbody>' +
+          plano.naoDetalhado.map(function (x) {
+            return "<tr><td>" + Util.esc((x.etapaNumero || "") + " " + (x.etapaNome || "")) + "</td><td>" + Util.esc(x.codigo || "—") + "</td><td>" + Util.esc(x.descricao || "") +
+              '</td><td class="num">' + (x.quantidade ? q(x.quantidade) + " " + Util.esc(x.unidade || "") : "—") + "</td><td>" + Util.esc(x.motivo) + "</td></tr>";
+          }).join("") + "</tbody></table></details>";
+      }
+      var notas = [];
+      if (plano.maoDeObra.n) notas.push("Mão de obra fora da requisição: " + plano.maoDeObra.n + " linha(s) de MO (" + Util.fmtMoeda(plano.maoDeObra.valor) + ") — requisição é compra de material e equipamento.");
+      if (plano.foraFiltro.opcional) notas.push(plano.foraFiltro.opcional + " insumo(s) de etapas opcionais (adicionais) ficaram fora — marque \"incluir etapas opcionais\" se foram contratadas.");
+      if (plano.foraFiltro.categoria) notas.push(plano.foraFiltro.categoria + " insumo(s) fora pelo filtro Material/Equipamento.");
+      if (plano.liberadas.length) notas.push("Devolveram o saldo (canceladas ou rejeitadas, sem pedido vivo): " + plano.liberadas.map(function (x) { return x.numero || x.id; }).join(", ") + ".");
+      /* ⚠ ÓRFÃO NÃO É "NÃO SAI DE NOVO". A nota dizia que o que foi pedido em
+         etapa que saiu do orçamento "não é gerado de novo" — e o motor, que
+         conta por (etapa, insumo), OFERECE o mesmo insumo na etapa nova
+         (provado: 50 kg já comprados voltavam como "gerar 50"). A nota diz a
+         verdade e nomeia onde ele volta. */
+      if (plano.orfaos.length) {
+        var reof = [];
+        plano.orfaos.forEach(function (o) {
+          (o.reofertas || []).forEach(function (x) {
+            var rot = (x.insumoCodigo ? x.insumoCodigo + " " : "") + (x.descricao || "") + " em " + ((x.etapaNumero ? x.etapaNumero + " " : "") + (x.etapaNome || "outra etapa"));
+            if (reof.indexOf(rot) < 0) reof.push(rot);
+          });
+        });
+        notas.push(plano.orfaos.length + " insumo(s) já requisitado(s) em etapas ou composições que não existem mais neste orçamento (revisão?). Eles continuam contados lá, e NÃO são abatidos de outra etapa" +
+          (reof.length ? ": o gerador está oferecendo de novo " + reof.join("; ") + " — confira se não é o mesmo material antes de gerar." : "."));
+      }
+      /* ⚠ REQUISIÇÃO QUE PERDEU O CARIMBO DOS ITENS (aparelho de versão
+         anterior) — o motor reconta ou trava por precaução; a tela diz qual */
+      (plano.semCarimbo || []).forEach(function (s) {
+        if (!s.conta) return;   /* cancelada/rejeitada sem pedido: já está nas que devolveram */
+        notas.push((s.numero || s.id) + ": os itens estão sem o carimbo do orçamento (acontece quando a requisição é salva num aparelho de versão anterior). " +
+          (s.porEtapa ? "O gerador a reconta pelo código do insumo, na etapa dela." :
+            "Não dá para saber de qual etapa é cada item: por precaução, cada insumo dela fica travado, até a quantidade dela, em todas as etapas. Para liberar, cancele a requisição (ou o pedido dela em Compras) e gere de novo — ou peça à mão o que faltar.") +
+          (s.semCodigo ? " " + s.semCodigo + " item(ns) sem código não foram reconhecidos e NÃO estão travados — confira antes de gerar." : ""));
+      });
+      if (notas.length) html += '<ul class="muted" style="font-size:12px;margin:6px 0 8px 18px;padding:0">' + notas.map(function (n) { return "<li>" + Util.esc(n) + "</li>"; }).join("") + "</ul>";
+      /* ⚠ A PORTA ESCRITA: trava sem saída ensina a rejeitar requisição boa.
+         O título vale POR ETAPA (é como o saldo é contado) — "não sai de novo"
+         incondicional mentia no caso do órfão acima. */
+      html += '<div style="font-size:12.5px;background:#f8fafc;border:1px solid var(--linha);border-radius:8px;padding:8px 11px;margin:6px 0">' +
+        (typeof Icones !== "undefined" ? Icones.get("cadeado", 14) : "") + " <b>O que já foi gerado para uma etapa não sai de novo para ela.</b> " + Util.esc(RO.PORTA) +
+        ' <span class="muted">Requisição digitada à mão não é contada aqui: só as geradas por este botão carregam o carimbo do orçamento.</span></div>';
+      /* cotação automática: só para quem aprova a própria requisição */
+      var porQueNao = this._reqOrcPodeAutoCotar();
+      html += '<label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;margin-top:8px;cursor:' + (porQueNao ? "not-allowed" : "pointer") + '">' +
+        '<input type="checkbox" id="ro-cotar"' + (st.cotar && !porQueNao ? " checked" : "") + (porQueNao ? " disabled" : "") + ' style="margin-top:3px"> <span><b>Aprovar agora e já montar as cotações</b> (rascunho, uma por requisição, com os fornecedores de referência dos insumos)' +
+        (porQueNao ? '<br><span class="muted" style="font-size:12px">' + Util.esc(porQueNao) + "</span>"
+          : '<br><span class="muted" style="font-size:12px">A aprovação fica registrada em seu nome. Sem fornecedor de referência nos insumos, a cotação nasce sem fornecedor e o aviso diz qual.</span>') +
+        "</span></label>";
+      box.innerHTML = html;
+    },
+    _reqOrcFiar: function (bg) {
+      var self = this;
+      var raiz = (bg && bg.addEventListener) ? bg : document;
+      /* ⚠ <select>, rádio e caixa falam por CHANGE, nunca por click (a base já
+         tropeçou nisso: o clique que ABRE a lista redesenhava a tela) */
+      raiz.addEventListener("change", function (ev) {
+        var st = self._reqOrcEstado, t = ev.target; if (!st || !t) return;
+        if (t.id === "ro-obra") { st.obraId = t.value; st.marcados = {}; }
+        else if (t.name === "ro-modo") { st.modo = t.value; st.marcados = {}; }
+        else if (t.id === "ro-cat-MAT" || t.id === "ro-cat-EQ") { st.cats[t.id.slice(7)] = !!t.checked; }
+        else if (t.id === "ro-opc") { st.opcionais = !!t.checked; }
+        else if (t.hasAttribute && t.hasAttribute("data-ro-g")) { st.marcados[t.getAttribute("data-ro-g")] = !!t.checked; }
+        else if (t.id === "ro-cotar") { st.cotar = !!t.checked; return; }
+        else return;
+        self._reqOrcDesenhar();
+      });
+      raiz.addEventListener("click", function (ev) {
+        var b = ev.target && ev.target.closest ? ev.target.closest('[data-ro="analitico"]') : null;
+        if (!b || !self._reqOrcEstado) return;
+        var d = self._reqOrcDados(self._reqOrcEstado);
+        self._reqOrcCarregarAnalitico(d.orc ? String(d.orc.uf || "").toUpperCase() : "");
+      });
+    },
+    /* mesmo caminho da aba Insumos do orçamento (`App._insumosCarregarBase`),
+       só que com a UF DO ORÇAMENTO — o ambiente pode estar em outro estado */
+    _reqOrcCarregarAnalitico: function (uf) {
+      var self = this, st = this._reqOrcEstado;
+      if (typeof Analitico === "undefined" || typeof App === "undefined" || !App._prepararAnalitico || !Analitico.carregarArquivo) {
+        UI.toast("O detalhamento SINAPI não está disponível nesta instalação.", "erro"); return;
+      }
+      var urls = App._prepararAnalitico(uf || null);
+      if (!urls || (!urls.local && !urls.live)) { UI.toast("Sem estado para o detalhamento: escolha a UF em Tabelas de Preço e volte aqui.", "erro"); return; }
+      if (Analitico.reset && Analitico.uf && uf && String(Analitico.uf).toUpperCase() !== uf) Analitico.reset();
+      if (st) st.carregando = true;
+      this._reqOrcDesenhar();
+      Analitico.carregarArquivo(urls.alts).then(function () {
+        if (self._reqOrcEstado) { self._reqOrcEstado.carregando = false; self._reqOrcDesenhar(); }
+      })["catch"](function (e) {
+        if (self._reqOrcEstado) { self._reqOrcEstado.carregando = false; self._reqOrcDesenhar(); }
+        if (e && e.message === "cancelado") return;
+        UI.toast("Não consegui carregar o detalhamento SINAPI. Confira a internet, ou baixe a base do estado em Tabelas de Preço.", "erro");
+      });
+    },
+    /* centro de custo da etapa: SÓ o centro gerado dela, achado pelo carimbo
+       `origem` (orçamento da família + etapa, sem subetapa). Devolve "" quando
+       aplicou ou quando não há o que aplicar; o recado quando não pôde. */
+    _reqOrcCentro: function (req, familia, etapaId) {
+      if (!etapaId || typeof CentroCusto === "undefined" || !CentroCusto.doDocumento) return "";
+      var pd = this._ccDocPode(String(req.obraId || ""));
+      if (!pd.ok) return "";
+      var fam = {}; (familia || []).forEach(function (x) { fam[String(x)] = 1; });
+      var cc = null;
+      listaTodas("centrocusto").forEach(function (c) {
+        if (cc || !c || !c.origem) return;
+        var o = c.origem;
+        if (String(o.t || "") !== "orc" || !fam[String(o.o || "")] || String(o.e || "") !== String(etapaId) || o.s) return;
+        if (String(c.obraId || "") !== String(req.obraId || "")) return;
+        if (c.ativo === false || c.ativo === 0 || c.ativo === "0") return;
+        cc = c;
+      });
+      if (!cc) return "";
+      var res = CentroCusto.doDocumento(req, cc, { obraId: String(req.obraId || "") });
+      if (res && res.ok && req.ccId) return "";
+      delete req.ccId; delete req.etapaId;
+      return "A requisição " + (req.numero || "") + " nasceu sem centro de custo: " + ((res && res.recusa) || "o centro da etapa não foi aceito") + ".";
+    },
+    /* "" = pode aprovar a PRÓPRIA requisição agora; senão, o porquê */
+    _reqOrcPodeAutoCotar: function () {
+      /* ⚠ RBAC: A MESMA PERGUNTA QUE O DESPACHANTE FAZ para "🆚 Cotar" e "Nova
+         cotação" (`Auth.podeModulo("cotacoes")`). Sem ela, quem aprova
+         requisição mas não usa Cotações gravava cotações e punha a requisição
+         em "cotando" — o "Gerar pedido" sumia e a cotação ficava num módulo
+         que ele não abre, sem saída à vista. A porta: a requisição nasce
+         Aberta, e quem usa Cotações cota pelo 🆚 depois da aprovação. */
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("cotacoes")) {
+        return "Seu usuário não tem acesso ao módulo Cotações: as requisições nascem Abertas — aprove pela lista, e quem usa Cotações monta a cotação pelo 🆚 Cotar.";
+      }
+      if (typeof Auth !== "undefined" && Auth.podeAprovar && !Auth.podeAprovar()) {
+        return "Seu usuário não aprova requisições: elas nascem Abertas, e depois da aprovação o 🆚 Cotar já traz os fornecedores de referência.";
+      }
+      if (typeof Aprovacao === "undefined" || !Aprovacao.podeAcao) return "";
+      /* ⚠ A MESMA ORDEM DO `_guardaAutor`, que é quem decide de verdade no
+         `_aprovar`: conta de um aprovador só passa antes de tudo; sem id de
+         usuário a autoria é "não verificada" e ele libera. Uma régua diferente
+         aqui faria a caixa dizer "não pode" onde a aprovação deixaria — ou o
+         contrário, e aí o recado mentiria depois do clique. */
+      var ctxA = this._aprovCtx();
+      if (ctxA && ctxA.semOutroAprovador) return "";
+      var eu = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+      var meu = Aprovacao.idDoUsuario ? Aprovacao.idDoUsuario(eu) : "";
+      if (!meu) return "";
+      if (Aprovacao.podeAcao("aprovar", eu, { estadoAprovacao: "em_aprovacao", autorId: meu }, ctxA)) return "";
+      return "Na sua empresa quem gera a requisição não a aprova: elas nascem Abertas, e depois que outro aprovador aprovar, o 🆚 Cotar já traz os fornecedores de referência.";
+    },
+    _reqOrcGerar: function () {
+      var self = this, st = this._reqOrcEstado;
+      if (!st || st.gerando) return;                    /* clique duplo: o segundo não grava */
+      if (this._bloqueado()) return;
+      if (typeof ReqOrcamento === "undefined") { UI.toast("O gerador de requisições não carregou — recarregue o app.", "erro"); return; }
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("requisicoes")) { UI.toast("Você não tem acesso a Requisições.", "erro"); return; }
+      var d = this._reqOrcDados(st);
+      if (!d.obra || !d.orc) { UI.toast("A obra ou o orçamento dela não foi encontrado — nada foi gerado.", "erro"); return; }
+      if (typeof Auth !== "undefined" && Auth.podeObra && !Auth.podeObra(d.obra.id)) { UI.toast("Você não acompanha esta obra — nada foi gerado.", "erro"); return; }
+      /* ⚠ A GUARDA DECIDE COM O DISCO DE AGORA, não com a prévia desenhada */
+      var plano = this._reqOrcPlano(d, st);
+      var chaves = this._reqOrcMarcadas(plano, st);
+      /* o detalhamento carregado (para o recado do "nada" e a ressalva do preço) */
+      var anaOkG = typeof Analitico !== "undefined" && Analitico.carregado;
+      var ufOrcG = String(d.orc.uf || "").toUpperCase(), ufAnaG = anaOkG ? String(Analitico.uf || "").toUpperCase() : "";
+      var temSinapiG = (d.orc.etapas || []).some(function (e) {
+        return (e && e.itens || []).some(function (it) { return it && it.codigo && !/^PROP-/i.test(String(it.codigo)) && ReqOrcamento.normFonte(it.baseFonte) === "SINAPI"; });
+      });
+      var ufDifG = !!(temSinapiG && anaOkG && ufOrcG && ufAnaG && ufOrcG !== ufAnaG);
+      if (!chaves.length) {
+        /* ⚠ O MESMO PORQUÊ DA PRÉVIA: "já foi todo requisitado" só quando é verdade */
+        var nadaG = ReqOrcamento.porQueNada(plano, { semDetalhamentoSinapi: !!(temSinapiG && !anaOkG), ufCarregada: ufDifG ? ufAnaG : "", ufOrcamento: ufDifG ? ufOrcG : "" });
+        UI.toast(plano.resumo.nGeraveis ? "Marque ao menos um grupo com saldo a requisitar." : String(nadaG.txt || "Nada a requisitar.").replace(/^Nada a requisitar/, "Nada a gerar"), "aviso", 12000);
+        this._reqOrcDesenhar(); return;
+      }
+      var cotar = !!st.cotar && !this._reqOrcPodeAutoCotar();
+      var mont = ReqOrcamento.montar(plano, chaves, {
+        obraId: d.obra.id, data: hojeLocal(), solicitante: (typeof Auth !== "undefined" && Auth.nome) ? Auth.nome() : "",
+        gestao: this._reqOrcGestao(), agoraISO: Util.agoraISO(), uid: function (p) { return Util.uid(p); },
+        obsExtra: ufDifG ? "Preço de referência dos insumos SINAPI tirado do detalhamento de " + ufAnaG + " (o orçamento é de " + ufOrcG + ")." : ""
+      });
+      if (!mont.requisicoes.length) {
+        UI.toast("Nada a gerar: o saldo dos grupos marcados acabou de ser requisitado (em outra janela ou aparelho). A prévia foi atualizada.", "aviso");
+        this._reqOrcDesenhar(); return;
+      }
+      st.gerando = true;
+      var criadas = [], avisos = [], recusada = null, nItens = 0, valor = 0, nSemPreco = 0;
+      var ano = new Date().getFullYear();
+      mont.requisicoes.forEach(function (m) {
+        if (recusada) return;
+        var req = m.req;
+        /* número da EMPRESA (listaTodas), não do recorte que este usuário vê */
+        req.numero = proxNumero("requisicoes", { prefixo: "REQ-" + ano + "-", casas: 3 });
+        if (typeof Aprovacao !== "undefined" && Aprovacao.MODULOS && Aprovacao.MODULOS.requisicoes) self._aprovCarimbar(req, true);
+        if (m.grupo.etapaId) { var avCC = self._reqOrcCentro(req, plano.familia, m.grupo.etapaId); if (avCC) avisos.push(avCC); }
+        var g = Store.salvar(eid(), "requisicoes", req);
+        if (self._naoGravou(g)) { recusada = req; return; }
+        var rec = (g && g.id) ? g : req;
+        criadas.push(rec);
+        nItens += (rec.itens || []).length; valor += Util.num(rec.valorEstimado);
+        (rec.itens || []).forEach(function (it) { if (it && !(Util.num(it.precoRef) > 0)) nSemPreco++; });
+      });
+      st.gerando = false;
+      this._reqOrcEstado = null;
+      UI.fecharModal();
+      var faixa = criadas.length ? (criadas.length === 1 ? criadas[0].numero : criadas[0].numero + " a " + criadas[criadas.length - 1].numero) : "";
+      var txt = criadas.length
+        ? criadas.length + " requisição(ões) gerada(s) do orçamento " + (d.orc.numero || "") + " (" + faixa + ") · " + nItens + " item(ns) · " + Util.fmtMoeda(valor) + " de referência" +
+          /* ⚠ valor parcial se declara, como na lista e na prévia */
+          (nSemPreco ? " (valor parcial: " + nSemPreco + " item(ns) sem preço na base)" : "") + "." +
+          (ufDifG ? " Preço de referência dos insumos SINAPI é de " + ufAnaG + " (o orçamento é de " + ufOrcG + ")." : "")
+        : "";
+      if (recusada) txt += (txt ? " " : "") + "O armazenamento deste aparelho RECUSOU a gravação" + (criadas.length ? " a partir da " + (recusada.numero || "seguinte") : "") +
+        ": as que faltaram NÃO foram criadas — libere espaço e gere de novo (o gerador só cria o saldo que ainda falta).";
+      var tipo = recusada ? "erro" : (avisos.length ? "aviso" : "ok");
+      if (cotar && criadas.length) {
+        var rc = this._reqOrcCotar(criadas);
+        if (rc.txt) txt += " " + rc.txt;
+        if (rc.aviso && tipo === "ok") tipo = "aviso";
+      }
+      if (avisos.length) txt += " " + avisos.join(" ");
+      App.render();
+      UI.toast(txt, tipo, tipo === "ok" ? 7000 : 14000);
+    },
+    /* aprova (pelo `_aprovar` de sempre) e monta a cotação rascunho de cada
+       requisição gerada; devolve o recado para o toast único */
+    _reqOrcCotar: function (criadas) {
+      var self = this, marca = (UI.toastMarca ? UI.toastMarca() : []);
+      /* ⚠ A GUARDA SE REPETE AQUI, e não só na caixa: função que grava cotação
+         pergunta o módulo ela mesma (RBAC em função — regra do despachante) */
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("cotacoes")) {
+        return { txt: "Cotação automática NÃO montada: seu usuário não tem acesso ao módulo Cotações. As requisições ficaram Abertas.", aviso: true };
+      }
+      var cots = [], semForn = [], naoAprov = [], naoGrav = [], naoAchados = [];
+      criadas.forEach(function (r) {
+        self._aprovar("requisicoes", r.id, "aprovada", "Requisição aprovada.");
+        var viva = Store.obter(eid(), "requisicoes", r.id);
+        if (!viva || viva.status !== "aprovada") { naoAprov.push(r.numero); return; }
+        /* ⚠ O ITEM DA COTAÇÃO NASCE COM `id` PRÓPRIO + `reqItemId` + o carimbo
+           `origemOrc` do item da requisição (`ReqOrcamento.itemParaCotacao`):
+           é por eles que o pedido do Mapa herda o carimbo e o saldo continua
+           seguro se a requisição for excluída. O `id` é o que o Mapa usa para
+           achar a linha de volta ao salvar (`_cotDoForm`). */
+        var itens = self._reqItens(viva).map(function (it) { return ReqOrcamento.itemParaCotacao(it, Util.uid("cti")); });
+        var sug = ReqOrcamento.fornecedoresSugeridos(viva.itens, lista("fornecedores"), 4);
+        sug.naoAchados.concat(sug.ambiguos).forEach(function (n) { if (naoAchados.indexOf(n) < 0) naoAchados.push(n); });
+        var cot = { numero: self._proxNumeroCot(), data: hojeLocal(), obraId: viva.obraId || "", requisicaoId: viva.id, descricao: viva.descricao || "",
+          status: "rascunho", itens: itens,
+          fornecedores: sug.fornecedores.map(function (f) { return { cid: Util.uid("ctf"), fornecedorId: f.fornecedorId, nome: f.nome, precos: {} }; }) };
+        var avCC = self._ccDocCopiar("requisicoes", viva, cot, cot.obraId, "cotacoes");
+        var gc = Store.salvar(eid(), "cotacoes", cot);
+        if (self._naoGravou(gc)) { naoGrav.push(r.numero); return; }
+        /* o MESMO passo do Salvar do Mapa: requisição aprovada com cotação
+           gravada vira "cotando" (e sai o botão Gerar pedido direto, que
+           compraria por fora da cotação) */
+        viva.status = "cotando"; Store.salvar(eid(), "requisicoes", viva);
+        cots.push({ numero: (gc && gc.numero) || cot.numero, n: cot.fornecedores.length, cc: avCC });
+        if (!cot.fornecedores.length) semForn.push((gc && gc.numero) || cot.numero);
+      });
+      /* os "Requisição aprovada." de cada `_aprovar` saem: o recado é um só.
+         Recado de ERRO do `_aprovar` fica (é a regra do autor falando). */
+      try {
+        var w = UI.el("toasts");
+        if (w && w.children) [].slice.call(w.children).forEach(function (t) {
+          if (marca.indexOf(t) < 0 && !/(^|\s)erro(\s|$)/.test(t.className)) { try { t.parentNode.removeChild(t); } catch (eR) {} }
+        });
+      } catch (eT) {}
+      var partes = [];
+      if (cots.length) partes.push("Aprovada(s) e com cotação montada: " + cots.map(function (c) { return c.numero + " (" + (c.n ? c.n + " fornecedor(es)" : "sem fornecedor") + ")"; }).join(", ") + ".");
+      if (semForn.length) partes.push("⚠ " + semForn.join(", ") + " nasceu(ram) SEM fornecedor: nenhum insumo tinha fornecedor de referência ligado a um cadastro — abra a cotação e inclua os fornecedores.");
+      if (naoAchados.length) partes.push("Fornecedor de referência sem cadastro correspondente (não sugerido): " + naoAchados.join(", ") + ".");
+      if (naoAprov.length) partes.push("Não aprovada(s), ficaram Abertas e sem cotação: " + naoAprov.join(", ") + ".");
+      if (naoGrav.length) partes.push("Cotação NÃO gravada (armazenamento recusou): " + naoGrav.join(", ") + " — use o 🆚 Cotar na lista.");
+      cots.forEach(function (c) { if (c.cc) partes.push(c.cc); });
+      return { txt: partes.join(" "), aviso: !!(semForn.length || naoAprov.length || naoGrav.length || naoAchados.length) };
+    },
     // =================== COTAÇÕES (Mapa de Cotação de Compras) ===================
     /* mesmo motor e mesmas regras das Requisições, logo acima. */
     _cotObra: "todas",
@@ -25105,15 +26682,38 @@
          requisição perder, e o casamento passaria a apontar para o material
          errado com a confiança de quem casou "por id". Sem id, o casamento cai
          para conteúdo, que é palpite — mas palpite que se sabe palpite. */
-      var itens = this._reqItens(r).map(function (it) { return { codigo: it.codigo || "", descricao: it.descricao, unidade: it.unidade, quantidade: Util.num(it.quantidade), precoRef: Util.num(it.precoRef), reqItemId: it.id || "" }; });
+      /* ⚠ E O CARIMBO DO ORÇAMENTO VAI JUNTO (1.2.98), com `id` próprio do item
+         da cotação: sem o carimbo aqui, o pedido do Mapa nascia sem ele e,
+         excluída a requisição, o gerador devolvia o saldo com o pedido vivo.
+         Requisição manual segue igual (item sem `origemOrc` não ganha nada). */
+      var itens = this._reqItens(r).map(function (it) {
+        if (typeof ReqOrcamento !== "undefined" && ReqOrcamento.itemParaCotacao) return ReqOrcamento.itemParaCotacao(it, Util.uid("cti"));
+        return { codigo: it.codigo || "", descricao: it.descricao, unidade: it.unidade, quantidade: Util.num(it.quantidade), precoRef: Util.num(it.precoRef), reqItemId: it.id || "" };
+      });
       if (!itens.length) { UI.toast("A requisição não tem itens pra cotar.", "erro"); return; }
       var novaCot = { numero: this._proxNumeroCot(), data: hojeLocal(), obraId: r.obraId || "", requisicaoId: r.id, descricao: r.descricao || "", status: "rascunho", itens: itens, fornecedores: [] };
+      /* FORNECEDORES DE REFERÊNCIA — só os que o INSUMO aponta por carimbo
+         (`fornecedorRef`: id do cadastro, ou o nome igual a UM cadastro só;
+         ver `ReqOrcamento.fornecedoresSugeridos`). Sem carimbo, a cotação
+         abre vazia como sempre abriu: fornecedor "parecido" pela descrição
+         do material seria palpite com cara de escolha. */
+      var avisoForn = "";
+      if (typeof ReqOrcamento !== "undefined" && ReqOrcamento.fornecedoresSugeridos) {
+        try {
+          var sugF = ReqOrcamento.fornecedoresSugeridos(r.itens, lista("fornecedores"), 4);
+          novaCot.fornecedores = sugF.fornecedores.map(function (f) { return { cid: Util.uid("ctf"), fornecedorId: f.fornecedorId, nome: f.nome, precos: {} }; });
+          if (novaCot.fornecedores.length) avisoForn = novaCot.fornecedores.length + " fornecedor(es) de referência dos insumos já estão na cotação.";
+          var semCad = sugF.naoAchados.concat(sugF.ambiguos);
+          if (semCad.length) avisoForn += (avisoForn ? " " : "") + "Fornecedor de referência sem cadastro correspondente (não incluído): " + semCad.join(", ") + ".";
+        } catch (eSug) { novaCot.fornecedores = []; }
+      }
       /* MEDCC 8A — o centro da requisição vai para a cotação (e dela para o
          pedido). A cotação ainda não está gravada: o Salvar do Mapa é quem a
          grava, com o centro que o select mostrar. */
       var avisoCC = this._ccDocCopiar("requisicoes", r, novaCot, novaCot.obraId, "cotacoes");
       this.formCotacao(novaCot);
       if (avisoCC) UI.toast(avisoCC, "aviso", 10000);
+      if (avisoForn) UI.toast(avisoForn, /sem cadastro/.test(avisoForn) ? "aviso" : "ok", 8000);
     },
     // lê a grade do modal -> objeto de cotação (itens + fornecedores + preços)
     _cotDoForm: function (base, soGrade) {
@@ -25225,15 +26825,38 @@
          porque o crachá da tela continua dizendo "respondeu": esse vem do
          convite, que veio do vivo e sobreviveu. */
       var carimbos = ((base && base.fornecedores) || []).concat((vivo && vivo.fornecedores) || []);
+      /* ⚠ O VÍNCULO COM A REQUISIÇÃO NÃO TEM CAMPO NA GRADE — e este objeto é
+         montado do zero. Roteiro do defeito: `reqItemId` (a ponte para o item
+         da requisição) e `origemOrc` (o carimbo do orçamento) morriam no
+         PRIMEIRO Salvar do Mapa; o pedido nascia sem carimbo e, excluída a
+         requisição, o gerador de requisições devolvia o saldo com o pedido
+         vivo. Voltam do item de ORIGEM pelo `id` da linha (data-ct-iid) — do
+         `base` (o que a tela desenhou) e, na falta, do registro vivo. Linha
+         desenhada de item SEM id (cotação de antes) pega pela posição em que
+         FOI desenhada: `data-ct-item` é o índice no `base.itens` daquele
+         desenho, e linha acrescentada à mão nasce com índice acima de todos. */
+      var itensOrigem = {}, baseItens = (base && base.itens) || [];
+      baseItens.concat((vivo && vivo.itens) || []).forEach(function (it0) {
+        if (it0 && it0.id && !Object.prototype.hasOwnProperty.call(itensOrigem, String(it0.id))) itensOrigem[String(it0.id)] = it0;
+      });
       var mapaIdx = {}; // índice do DOM -> índice no array (linha em branco no meio NÃO pode deslocar os preços)
       Array.prototype.forEach.call(document.querySelectorAll("[data-ct-item]"), function (tr) {
         var g = function (cl) { var e = tr.querySelector("[data-cti=" + cl + "]"); return e ? e.value.trim() : ""; };
         var desc = g("desc"); if (!desc) return;
-        mapaIdx[+tr.getAttribute("data-ct-item")] = cot.itens.length;
+        var iDom = +tr.getAttribute("data-ct-item");
+        mapaIdx[iDom] = cot.itens.length;
         /* ⚠ `id` estável por linha (data-ct-iid): é a ponte entre o servidor,
            que fala por itemId, e o índice local dos preços. Reatribuir aqui
            faria a resposta do fornecedor cair no item errado. */
-        cot.itens.push({ id: tr.getAttribute("data-ct-iid") || Util.uid("cti"), codigo: g("cod"), descricao: desc, unidade: g("un"), quantidade: Util.num(g("qtd")), precoRef: Util.num(g("ref")) });
+        var iid = tr.getAttribute("data-ct-iid") || "";
+        var novoIt = { id: iid || Util.uid("cti"), codigo: g("cod"), descricao: desc, unidade: g("un"), quantidade: Util.num(g("qtd")), precoRef: Util.num(g("ref")) };
+        var orig = (iid && Object.prototype.hasOwnProperty.call(itensOrigem, iid)) ? itensOrigem[iid]
+          : ((baseItens[iDom] && !baseItens[iDom].id) ? baseItens[iDom] : null);
+        if (orig) {
+          if (typeof ReqOrcamento !== "undefined" && ReqOrcamento.herdarCarimbo) ReqOrcamento.herdarCarimbo(novoIt, orig);
+          else if (orig.reqItemId) novoIt.reqItemId = orig.reqItemId;
+        }
+        cot.itens.push(novoIt);
       });
       var nF = document.querySelectorAll("[data-ct-forn]").length;
       for (var f = 0; f < nF; f++) {
@@ -25710,7 +27333,20 @@
           origemBase = "mapa-antes-da-negociacao";
         }
       }
-      var novoPc = self._aprovCarimbar({ numero: pc, data: hojePed, descricao: (cot.descricao || "Cotação " + cot.numero) + " — " + p.fornecedorNome, obraId: cot.obraId, fornecedorId: p.fornecedorId, fornecedorNome: p.fornecedorNome, valor: p.total, status: "cotacao", categoria: "material", itens: p.itens, cotacaoId: cot.id || null,
+      /* ⚠ O CARIMBO DO ORÇAMENTO VOLTA PARA O ITEM DO PEDIDO (1.2.98).
+         `Cotacoes.pedidos` remonta cada item com campos fixos e só guarda o
+         `itemIdx` (a posição na cotação). Pelo `itemIdx` se acha o item da
+         cotação e, nele, o `origemOrc` — ou, em cotação de antes, o
+         `reqItemId` que leva ao item da requisição. Sem isto, excluir a
+         requisição comprada pelo Mapa devolvia o saldo ao gerador de
+         requisições com o pedido vivo (js/reqorcamento.js, `consumo`). Sempre
+         por id: nada aqui compara descrição. */
+      var itensPc = p.itens;
+      if (typeof ReqOrcamento !== "undefined" && ReqOrcamento.carimbarItensDoPedido) {
+        var reqDoPc = cot.requisicaoId ? Store.obter(eid(), "requisicoes", cot.requisicaoId) : null;
+        itensPc = ReqOrcamento.carimbarItensDoPedido(p.itens, cot.itens, reqDoPc ? reqDoPc.itens : []);
+      }
+      var novoPc = self._aprovCarimbar({ numero: pc, data: hojePed, descricao: (cot.descricao || "Cotação " + cot.numero) + " — " + p.fornecedorNome, obraId: cot.obraId, fornecedorId: p.fornecedorId, fornecedorNome: p.fornecedorNome, valor: p.total, status: "cotacao", categoria: "material", itens: itensPc, cotacaoId: cot.id || null,
         /* ⚠ `formaPgto` só recebe CHAVE de P.formaPgto; o texto livre do
            fornecedor vai em `condPgtoTexto` — ver `_formaPgtoChave`.
            Gravar o texto em `formaPgto` era o que o select do
@@ -26429,8 +28065,12 @@
               origemCotacaoId: cot.id || null,
               itens: pendNaConclusao.map(function (p) {
                 var it = p.item || {};
-                return { id: Util.uid("cti"), codigo: it.codigo || "", descricao: it.descricao || "", unidade: it.unidade || "",
+                var novoP = { id: Util.uid("cti"), codigo: it.codigo || "", descricao: it.descricao || "", unidade: it.unidade || "",
                   quantidade: Util.num(it.quantidade), precoRef: Util.num(it.precoRef), reqItemId: it.reqItemId || "" };
+                /* o carimbo do orçamento segue para a cotação dos pendentes (e dela
+                   para o pedido que ela gerar) — ver `_cotDoForm` */
+                if (it.origemOrc && typeof ReqOrcamento !== "undefined" && ReqOrcamento.herdarCarimbo) ReqOrcamento.herdarCarimbo(novoP, it);
+                return novoP;
               }),
               fornecedores: []
             };
@@ -26720,12 +28360,37 @@
         '<div class="field" style="max-width:110px"><label>Unidade *</label><input id="' + px + '-und" list="lista-unidades" autocomplete="off" value="un" placeholder="un, m², cx…">' + (UI.datalistUnidades ? UI.datalistUnidades() : "") + '</div></div>' +
         '<div class="row"><div class="field"><label>Categoria</label><select id="' + px + '-cat"><option value="MAT">Material</option><option value="MO">Mão de obra</option><option value="EQ">Equipamento</option></select></div>' +
         '<div class="field"><label>Preço de referência (R$) — opcional</label><input id="' + px + '-preco" placeholder="0,00"></div></div>' +
+        this._insumoFornRefCampo(px) +
         (comSalvar ? '<label style="cursor:pointer;display:inline-flex;align-items:center;gap:8px;margin:4px 0"><input type="checkbox" id="' + px + '-salvar" checked> Salvar no meu banco (código PROP — aparece nas próximas buscas de requisição e de orçamento)</label>' : "");
+    },
+    /* FORNECEDOR DE REFERÊNCIA do insumo próprio: um dos fornecedores do
+       cadastro, gravado pelo ID (`fornecedorRef: {id, nome}`). É ele que o
+       gerador de requisições usa para agrupar "por tipo" e para sugerir quem
+       cotar — por carimbo, nunca pelo nome do material. Sem cadastro de
+       fornecedores o campo nem aparece. */
+    _insumoFornRefCampo: function (px) {
+      var fs = [];
+      try { fs = lista("fornecedores") || []; } catch (e) { fs = []; }
+      if (!fs.length) return "";
+      return '<div class="field"><label>Fornecedor de referência — opcional (sugerido na cotação gerada do orçamento)</label><select id="' + px + '-forn"><option value="">— nenhum —</option>' +
+        fs.map(function (f) { return '<option value="' + Util.esc(f.id) + '">' + Util.esc(f.nome || "(sem nome)") + "</option>"; }).join("") + "</select></div>";
     },
     _insumoProprioColeta: function (px) {
       var v = function (id) { var el = document.getElementById(px + "-" + id); return el ? el.value : ""; };
       var chk = document.getElementById(px + "-salvar");
-      return { descricao: String(v("desc")).trim(), unidade: String(v("und")).trim() || "un", categoria: v("cat") || "MAT", preco: Util.num(v("preco")), salvar: chk ? !!chk.checked : false };
+      var d = { descricao: String(v("desc")).trim(), unidade: String(v("und")).trim() || "un", categoria: v("cat") || "MAT", preco: Util.num(v("preco")), salvar: chk ? !!chk.checked : false };
+      /* `fornecedorRef` só existe na coleta quando o campo está na tela:
+         `null` = a pessoa escolheu "nenhum"; ausente = não perguntamos, e
+         quem grava preserva o que já havia (ver `App.salvarInsumoProprio`) */
+      var selF = document.getElementById(px + "-forn");
+      if (selF) {
+        var idF = String(selF.value || "");
+        var fF = idF ? (lista("fornecedores") || []).filter(function (x) { return String(x.id) === idF; })[0] : null;
+        var optF = selF.options ? selF.options[selF.selectedIndex] : null;
+        d.fornecedorRef = fF ? { id: String(fF.id), nome: String(fF.nome || "") }
+          : (idF ? { id: idF, nome: String((optF && optF.getAttribute && optF.getAttribute("data-nome")) || "") } : null);
+      }
+      return d;
     },
     /* Modal de cadastro (view Banco de Insumos) — grava direto na base PROPRIA. */
     formInsumoProprio: function () {
@@ -26870,7 +28535,19 @@
          parecer vivo. Item antigo (do cliente, gravado antes disto) continua sem
          id e cai no casamento por conteúdo — de propósito: inventar id aqui,
          na LEITURA, geraria um id novo a cada render. */
-      if (r.itens && r.itens.length) return r.itens.map(function (i) { return { id: i.id || "", codigo: i.codigo || "", descricao: i.descricao || "", unidade: i.unidade || "un", quantidade: Util.num(i.quantidade) || 1, precoRef: Util.num(i.precoRef) || 0, categoria: i.categoria || "MAT", fonte: i.fonte || "", pendente: i.pendente === true, origemBim: i.origemBim || null }; });
+      /* ⚠ `origemOrc` e `fornecedorRef` ATRAVESSAM O FUNIL (requisição gerada
+         do orçamento, js/reqorcamento.js). O carimbo é o que diz ao gerador
+         "este saldo já foi pedido": se ele morresse aqui, o primeiro Salvar do
+         formulário apagava o carimbo, o saldo voltava inteiro e o gerador
+         deixava pedir o mesmo material outra vez — a trava que o gestor pediu
+         sumiria por um clique em Salvar. Só entram QUANDO EXISTEM: item manual
+         continua com as mesmas chaves de sempre. */
+      if (r.itens && r.itens.length) return r.itens.map(function (i) {
+        var o = { id: i.id || "", codigo: i.codigo || "", descricao: i.descricao || "", unidade: i.unidade || "un", quantidade: Util.num(i.quantidade) || 1, precoRef: Util.num(i.precoRef) || 0, categoria: i.categoria || "MAT", fonte: i.fonte || "", pendente: i.pendente === true, origemBim: i.origemBim || null };
+        if (i.origemOrc) o.origemOrc = i.origemOrc;
+        if (i.fornecedorRef) o.fornecedorRef = i.fornecedorRef;
+        return o;
+      });
       if (r.descricao) return [{ codigo: "", descricao: r.descricao, unidade: r.unidade || "un", quantidade: Util.num(r.quantidade) || 1, precoRef: 0, categoria: "MAT", fonte: "" }];
       return [];
     },
@@ -26909,6 +28586,16 @@
           });
         } catch (ePed) { pedidoDaReq = null; }
       }
+      /* pedidos VIVOS desta requisição, em qualquer status dela (a "cotando"
+         de conclusão parcial do Mapa e a cancelada por cima do pedido também
+         têm) — da EMPRESA (`listaTodas`): o pedido pode ter ido para outra obra
+         no modal do "Gerar pedido", e a regra do gerador não olha o filtro */
+      var vivosDaReq = [];
+      if (r.id && r.origemOrc && typeof ReqOrcamento !== "undefined" && ReqOrcamento.pedidosVivosDe) {
+        try { vivosDaReq = ReqOrcamento.pedidosVivosDe(r.id, listaTodas("compras")); } catch (eViv) { vivosDaReq = []; }
+      }
+      var perdeuReq = (r.origemOrc && typeof ReqOrcamento !== "undefined" && ReqOrcamento.perdeuCarimbo) ? ReqOrcamento.perdeuCarimbo(r) : null;
+      var nSemPrecoOrc = (itensBuf || []).filter(function (i) { return i && i.origemOrc && !(Util.num(i.precoRef) > 0); }).length;
       var avisoComprada = (r.status === "comprada")
         ? '<div style="font-size:12.5px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:8px 11px;margin-bottom:10px;color:#92400e">' +
           (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") +
@@ -26922,6 +28609,31 @@
         /* MEDCC 8A — centro de custo da requisição (viaja para a cotação e o pedido) */
         this._ccDocCampoHtml("requisicoes", r) +
         '<div class="row">' + campo("Solicitante", inp("g-solic", r.solicitante)) + campo("Prioridade", sel("g-prioridade", opts(P.reqPrioridade, r.prioridade || "normal"))) + campo("Status", sel("g-status", opts(P.reqStatus, r.status || "aberta"))) + "</div>" +
+        /* PLANEJAMENTO E GESTÃO — o responsável (parâmetro de ⚙ Empresa). A
+           requisição NOVA nasce com o da conta; a que já existe mostra o que
+           foi gravado nela (vazio fica vazio: não se reescreve o passado). */
+        campo("Planejamento e gestão", inp("g-gestao", r.gestao != null ? r.gestao : (r.id ? "" : (this._reqOrcGestao ? this._reqOrcGestao() : "")), "Responsável pelo planejamento e gestão")) +
+        /* a requisição gerada do orçamento DIZ que é — e diz a porta da trava.
+           ⚠ O RECADO É O QUE O MOTOR FAZ (js/reqorcamento.js, `consumo`):
+           - com pedido vivo, tirar item ou baixar quantidade NÃO devolve (conta
+             o maior entre requisição e pedido) — a versão anterior dizia que
+             devolvia, e o gerador liberava a compra em dobro;
+           - sem o carimbo nos itens (salva num aparelho de versão anterior),
+             não promete "os itens levam o carimbo". */
+        (r.origemOrc && r.origemOrc.orcamentoId
+          ? '<div style="font-size:12px;background:#ecfeff;border:1px solid #a5f3fc;border-radius:8px;padding:7px 10px;margin:0 0 10px;color:#155e75">Gerada do orçamento' +
+            (r.origemOrc.orcamentoNumero ? " <b>" + Util.esc(r.origemOrc.orcamentoNumero) + "</b>" : "") +
+            (r.origemOrc.rotulo ? " (" + Util.esc(r.origemOrc.rotulo) + ")" : "") + ". " +
+            (perdeuReq
+              ? "<b>Os itens estão sem o carimbo do orçamento</b> (acontece quando a requisição é salva num aparelho de versão anterior): " +
+                (perdeuReq.porEtapa ? "o gerador a reconhece pelo código do insumo, na etapa dela. " : "o gerador não sabe de qual etapa é cada item e trava esses insumos por precaução em todas as etapas. ")
+              : "Os itens levam o carimbo do orçamento: é por ele que o gerador sabe o que já foi pedido. ") +
+            (vivosDaReq.length
+              ? "Ela já virou pedido (<b>" + Util.esc(vivosDaReq.map(function (p) { return p.numero || p.id; }).join(", ")) + "</b>): cancelar esta requisição, tirar um item ou baixar a quantidade " +
+                "<b>não devolve</b> o saldo ao gerador — ele conta o maior entre o que a requisição pede e o que o pedido compra. Para devolver, cancele (ou rejeite) o pedido em Compras."
+              : "Cancelar esta requisição, tirar um item ou baixar a quantidade devolve o saldo ao gerador.") +
+            (nSemPrecoOrc ? " <b>Valor parcial:</b> " + nSemPrecoOrc + " item(ns) sem preço na base — o total não os inclui." : "") + "</div>"
+          : "") +
         campo("Itens da solicitação *",
           '<input id="ri-q" placeholder="🔍 Buscar no banco de insumos (código ou descrição)" autocomplete="off" style="margin-bottom:6px">' +
           '<div class="muted" id="ri-status" style="font-size:12px;margin-bottom:6px"></div>' +
@@ -26951,6 +28663,9 @@
         if (!itensBuf.length) { UI.toast("Adicione ao menos um item (busque no banco ou use item manual).", "erro"); return false; }
         obj.numero = v("g-numero"); obj.data = v("g-data"); obj.obraId = v("g-obra"); obj.solicitante = v("g-solic");
         obj.prioridade = v("g-prioridade"); obj.status = v("g-status"); obj.observacoes = v("g-obs");
+        /* só mexe se o campo está na tela (formulário de versão sem o campo
+           não apaga o que outra gravou) */
+        if (UI.el("g-gestao")) { var gGest = v("g-gestao"); if (gGest) obj.gestao = gGest; else delete obj.gestao; }
         /* MEDCC 8A — antes do gate, e só se a pessoa mexeu (§1.15). A
            requisição NÃO pergunta ao Financeiro: ela nunca lançou dinheiro. */
         var rCC = self._ccDocColetar("requisicoes", obj, r);
@@ -41240,6 +42955,9 @@ renderFolha: function () {
         case "nova-frota": return this.novoFrota();
         case "custo-frota": return this.formCustoFrota(id);
 case "nova-requisicoes": return this.novoRequisicoes();
+        /* ⚠ a guarda de módulo mora DENTRO de `reqDoOrcamento` (este case
+           passa por fora do RBAC de `_acoesExtras`) */
+        case "req-do-orcamento": return this.reqDoOrcamento(id);
 case "nova-cotacoes": return this.formCotacao(null);
         case "cotar-requisicao": return this.novaCotacaoDaRequisicao(id);
         case "doc-cotacao": return this.documentoCotacao(id);

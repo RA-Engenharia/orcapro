@@ -785,6 +785,10 @@
         '<div class="row">' + f("crea", "Registro CREA/CAU", emp.crea) + f("registroNacional", "Reg. Nacional", emp.registroNacional) + '</div>' +
         '<div class="row">' + f("cidade", "Cidade / UF", emp.cidade) + f("contato", "Contato (tel/e-mail)", emp.contato) + '</div>' +
         '<div class="field"><label>Endereço (rua, nº, bairro — usado nos documentos)</label><input id="emp-endereco" value="' + Util.esc(emp.endereco || "") + '"></div>' +
+        /* PARÂMETRO "PLANEJAMENTO E GESTÃO" — vai para as composições próprias
+           criadas/editadas e para as requisições geradas do orçamento */
+        '<div class="field"><label>Responsável pelo planejamento e gestão</label><input id="emp-gestao" value="' + Util.esc(emp.gestao || "") + '" placeholder="Nome de quem responde pelo planejamento e gestão das obras">' +
+        '<div class="muted" style="font-size:11.5px;margin-top:3px">Aparece nas composições próprias (criadas ou editadas daqui em diante) e nas requisições geradas do orçamento.</div></div>' +
         '<h3 style="margin:10px 0 4px;border-top:1px solid var(--linha);padding-top:12px;font-size:13px">Canais de contato (viram links clicáveis na proposta em PDF)</h3>' +
         '<div class="row">' + f("telefone", "Telefone (com DDD)", emp.telefone) + f("whatsapp", "WhatsApp (só números, com DDD)", emp.whatsapp) + '</div>' +
         '<div class="row">' + f("email", "E-mail", emp.email) + f("site", "Site (https://…)", emp.site) + '</div>' +
@@ -1973,6 +1977,9 @@
             '<label style="display:block;cursor:pointer;padding:3px 0"><input type="radio" name="cp-metodo" value="nenhum"' + (c.metodo === "nenhum" ? " checked" : "") + '> Não arredondar</label></div>' +
           '<label style="cursor:pointer;display:inline-flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="cp-mo"' + (c.maoDeObra ? " checked" : "") + '> Composição com mão de obra</label>' +
           '<div class="field"><label>Observação</label><textarea id="cp-obs" rows="2">' + Util.esc(c.observacao || "") + '</textarea></div>' +
+          /* PLANEJAMENTO E GESTÃO — nasce com o parâmetro da conta (⚙ Empresa)
+             e fica gravado na composição (campo `gestao`) */
+          '<div class="field"><label>Planejamento e gestão</label><input id="cp-gestao" value="' + Util.esc(c.gestao || "") + '" placeholder="Responsável pelo planejamento e gestão (padrão: ⚙ Empresa)"></div>' +
           '<div class="flex" style="gap:8px;margin-top:6px;flex-wrap:wrap">' +
             /* `longo`: o rótulo tem 355px e a caixa cabe em 313px a 375px. Sem a
                exceção, o `white-space: nowrap` do `.btn` trava tudo numa linha
@@ -2013,7 +2020,8 @@
             '<td class="num" data-cp-tot="' + idx + '">' + Util.fmtMoeda(tot) + '</td>' +
             '<td><button class="btn sm ico danger" data-cp-del="' + idx + '">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></td></tr>';
         }).join("");
-        html += '<div class="muted" style="font-size:12px;margin-bottom:8px"><b>' + Util.esc(c.codigo) + '</b> — ' + Util.esc(c.descricao || "(sem descrição)") + ' · ' + Util.esc(Util.unidadeExibir(c.unidade) || "?") + (st.referencia ? ' · <span class="pill sinapi">ref. ' + Util.esc(st.referencia.codigo) + '</span>' : '') + '</div>' +
+        html += '<div class="muted" style="font-size:12px;margin-bottom:8px"><b>' + Util.esc(c.codigo) + '</b> — ' + Util.esc(c.descricao || "(sem descrição)") + ' · ' + Util.esc(Util.unidadeExibir(c.unidade) || "?") + (st.referencia ? ' · <span class="pill sinapi">ref. ' + Util.esc(st.referencia.codigo) + '</span>' : '') +
+          (c.gestao ? ' · Planejamento e gestão: <b>' + Util.esc(c.gestao) + '</b>' : '') + '</div>' +
           '<div class="field"><label>Adicionar insumo/composição das bases reais (busque por código ou descrição)</label>' +
           '<input id="cp-busca" placeholder="Ex.: 88316, servente, tubo pvc 100…"></div>' +
           '<div id="cp-busca-res" style="max-height:180px;overflow-y:auto;margin-bottom:10px"></div>' +
@@ -2044,7 +2052,9 @@
         ? '<div class="muted mb" style="color:#f59e0b;font-size:12px">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Analítico de referência da UF <b>' + Util.esc(anaUf) + '</b> (a base ativa é <b>' + Util.esc(ufAtivo) + '</b>). Coeficientes são nacionais; os preços exibidos aqui são da UF de referência.</div>'
         : '';
       var html = aviso + '<div class="muted mb"><b>' + Util.esc(a.codigo) + '</b> · ' + Util.esc(a.unidade) +
-        (a.grupo ? ' · ' + Util.esc(a.grupo) : '') + '<br>' + Util.esc(a.descricao) + '</div>';
+        (a.grupo ? ' · ' + Util.esc(a.grupo) : '') + '<br>' + Util.esc(a.descricao) +
+        /* composição própria com responsável gravado (campo `gestao`) */
+        (a.gestao ? '<br><span data-cp-gestao-ver>Planejamento e gestão: <b>' + Util.esc(a.gestao) + '</b></span>' : '') + '</div>';
       html += '<div class="kpis">' +
         box("Mão de obra", a.custoMO) + box("Material", a.custoMAT) +
         box("Equipamento", a.custoEQ) + box("Custo Unit.", a.custoUnitario, "destaque") + '</div>';

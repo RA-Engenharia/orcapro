@@ -3849,3 +3849,166 @@ table.tbl.cxb-tab tr.cxb-mudou td.num { color: var(--graf-aviso); }
 .pn-tres .pn-cat-barra { grid-area: barra; }
 .pn-tres .pn-cat-val { grid-area: val; }
 .pn-tres .pn-cat-pct { grid-area: pct; }
+
+/* =====================================================================
+   SIMULAÇÃO 4D DO BIM — painel estilo TimeLiner (Gestao._b4*, motor
+   js/bim4dsim.js) e a JANELA DO 3D (#bim3d=v1/<obra>, body.modo-bim3d).
+   ⚠ Tamanhos e pesos pela régua (--t-*, --p-*): o test-contraste cobra.
+   ⚠ As cores de ESTADO são as mesmas do motor (BIM4DSim.COR): âmbar em
+     execução, roxo crítica, vermelho atrasada. Trocar uma aqui sem trocar
+     lá faz a lista dizer uma cor e o 3D mostrar outra.
+   ===================================================================== */
+.b4 { color: var(--texto); }
+.b4-cab { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.b4-cab h3 { margin: 0; display: flex; align-items: center; gap: 6px; font-size: var(--t-med); }
+.b4-sub { font-size: var(--t-micro); font-weight: var(--p-normal); color: var(--texto-fraco); }
+.b4-cab-acoes { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.b4-chip-vivo { font-size: var(--t-micro); color: var(--verde); background: var(--tinta-ok); border-radius: 99px; padding: 3px 10px; font-weight: var(--p-medio); }
+/* o selo do 3D destacado: "sincronizado" só com o eco da outra janela (js/bim4dsim.js, seloPainel) */
+.b4-chip-espera { font-size: var(--t-micro); color: var(--texto-fraco); background: var(--tinta-aco); border-radius: 99px; padding: 3px 10px; font-weight: var(--p-medio); }
+.b4-chip-aviso { font-size: var(--t-micro); color: var(--graf-aviso); background: var(--tinta-aviso); border-radius: 99px; padding: 3px 10px; font-weight: var(--p-medio); }
+/* 4D exato: N/M carimbados (OrcaPRO_Etapa) */
+.b4-selo-car { display: inline-block; margin: 0 0 8px; font-size: var(--t-micro); font-weight: var(--p-medio); color: var(--verde); background: var(--tinta-ok); border-radius: 99px; padding: 2px 10px; }
+.b4-selo-car.b4-selo-est { color: var(--texto-fraco); background: var(--tinta-aco); border-radius: var(--raio-sm); }
+.b4-corpo { display: flex; flex-direction: column; gap: 10px; }
+.b4-col-a, .b4-col-b { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.b4-largo .b4-corpo { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(300px, 1fr); align-items: start; gap: 14px; }
+.b4-sec { border: 1px solid var(--linha); border-radius: var(--raio); padding: 10px 12px; background: var(--card-bg); }
+.b4-sec-t { display: flex; align-items: center; gap: 6px; font-size: var(--t-micro); font-weight: var(--p-forte); text-transform: uppercase; letter-spacing: .04em; color: var(--texto-fraco); margin: 0 0 8px; }
+details.b4-sec > summary.b4-sec-t { cursor: pointer; margin: 0; }
+details.b4-sec[open] > summary.b4-sec-t { margin-bottom: 8px; }
+.b4-sec-n { font-weight: var(--p-normal); text-transform: none; letter-spacing: 0; }
+.b4-sec-aux { margin-left: auto; font-weight: var(--p-normal); text-transform: none; letter-spacing: 0; text-align: right; }
+.b4-nota { font-size: var(--t-micro); color: var(--texto-fraco); margin: 6px 0 0; line-height: 1.4; }
+.b4-aviso { color: var(--graf-aviso); }
+.b4-vazio { margin: 6px 0; }
+
+/* ---- tempo ---- */
+.b4-data { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; }
+.b4-data-l { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+#b4-data-txt { font-size: var(--t-tit); font-weight: var(--p-forte); font-variant-numeric: tabular-nums; color: var(--texto); }
+.b4-dow { font-size: var(--t-base); color: var(--texto-fraco); }
+.b4-dia-info { font-size: var(--t-peq); color: var(--texto-fraco); min-height: 1.2em; }
+.b4-dia-info.b4-nao-util { color: var(--graf-aviso); }
+.b4-kpis { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+.b4-kpi { display: flex; flex-direction: column; min-width: 78px; padding: 4px 9px; border: 1px solid var(--linha); border-radius: var(--raio-sm); background: var(--surface); }
+.b4-kpi span { font-size: var(--t-micro); color: var(--texto-fraco); white-space: nowrap; }
+.b4-kpi b { font-size: var(--t-med); font-weight: var(--p-forte); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.b4-kpi-exe b { color: var(--graf-aviso); }
+.b4-kpi-atr b { color: var(--graf-alerta); }
+.b4-kpi-ok b { color: var(--verde); }
+.b4-kpi-custo span { white-space: normal; max-width: 150px; }
+.b4-regua { position: relative; padding-top: 11px; }
+.b4-regua input[type=range] { width: 100%; margin: 0; accent-color: var(--aco); }
+.b4-marcas { position: absolute; left: 8px; right: 8px; top: 0; height: 11px; pointer-events: none; }
+.b4-m { position: absolute; top: 0; width: 2px; height: 10px; margin-left: -1px; border-radius: 1px; }
+.b4-m-hoje { background: var(--aco); }
+.b4-m-corte { background: var(--verde); }
+.b4-m-marco { background: var(--texto); width: 7px; height: 7px; margin-left: -3px; top: 2px; transform: rotate(45deg); border-radius: 1px; }
+.b4-regua-rot { display: flex; justify-content: space-between; gap: 8px; font-size: var(--t-micro); color: var(--texto-fraco); margin-top: 3px; font-variant-numeric: tabular-nums; }
+.b4-regua-leg { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.b4-regua-leg i { display: inline-block; vertical-align: middle; margin-right: 4px; width: 2px; height: 9px; position: static; }
+.b4-regua-leg i.b4-m-marco { width: 6px; height: 6px; margin: 0 5px 0 1px; transform: rotate(45deg); }
+.b4-ctl { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-top: 10px; }
+.b4-ctl-g { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.b4-play { min-width: 104px; }
+.b4-campo { display: inline-flex; align-items: center; gap: 6px; font-size: var(--t-peq); color: var(--texto-fraco); }
+.b4-campo select, .b4-campo input { height: 30px; font-size: var(--t-peq); color: var(--texto); }
+
+/* ---- aparência e filtros ---- */
+.b4-linha { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.b4-rot { font-size: var(--t-peq); color: var(--texto-fraco); min-width: 92px; }
+.b4-seg { display: inline-flex; border: 1px solid var(--linha-forte); border-radius: var(--raio-sm); overflow: hidden; }
+.b4-seg button { border: 0; background: var(--surface); color: var(--texto); font: inherit; font-size: var(--t-peq); padding: 5px 11px; cursor: pointer; }
+.b4-seg button + button { border-left: 1px solid var(--linha); }
+.b4-seg button.on { background: var(--aco); color: #fff; font-weight: var(--p-medio); }
+.b4-seg button:focus-visible { outline: 2px solid var(--aco); outline-offset: -2px; }
+.b4-ck { display: flex; align-items: center; gap: 7px; font-size: var(--t-peq); margin: 4px 0; cursor: pointer; color: var(--texto); }
+.b4-fonte { width: 100%; height: 32px; font-size: var(--t-peq); color: var(--texto); }
+
+/* ---- atividades: Gantt compacto ---- */
+.b4-grade-wrap { max-height: 340px; overflow: auto; border: 1px solid var(--linha); border-radius: var(--raio-sm); background: var(--surface); }
+.b4-largo .b4-grade-wrap { max-height: calc(100vh - 360px); min-height: 280px; }
+.b4-grade { width: 100%; border-collapse: separate; border-spacing: 0; font-size: var(--t-peq); --b4-x: 100%; }
+.b4-grade thead th { position: sticky; top: 0; z-index: 1; background: var(--faixa-sub); color: var(--texto-fraco); font-weight: var(--p-forte); font-size: var(--t-micro); text-align: left; padding: 6px; border-bottom: 1px solid var(--linha); white-space: nowrap; }
+.b4-grade td { padding: 5px 6px; border-bottom: 1px solid var(--linha); vertical-align: middle; white-space: nowrap; }
+.b4-lin { cursor: pointer; }
+.b4-lin:hover td { background: var(--tinta-aco); }
+.b4-c-ck { width: 22px; text-align: center; }
+.b4-c-n { width: 24px; color: var(--texto-fraco); text-align: right; font-variant-numeric: tabular-nums; }
+.b4-grade td.b4-c-nome { white-space: normal; min-width: 160px; max-width: 300px; }
+.b4-nome { font-weight: var(--p-medio); }
+.b4-cor { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; vertical-align: 1px; }
+.b4-pecas { display: block; font-size: var(--t-micro); color: var(--texto-fraco); }
+.b4-tag { display: inline-block; margin-left: 6px; font-size: var(--t-micro); padding: 0 6px; border-radius: 99px; border: 1px solid var(--linha); color: var(--texto-fraco); line-height: 16px; }
+.b4-tag-crit { color: var(--graf-alerta); border-color: currentColor; font-weight: var(--p-medio); }
+.b4-tag-marco { color: var(--texto); }
+.b4-tag-rep { color: var(--graf-aviso); border-color: currentColor; }
+.b4-c-dt { font-variant-numeric: tabular-nums; }
+.b4-c-num { text-align: right; font-variant-numeric: tabular-nums; }
+.b4-crit-txt { color: var(--graf-alerta); font-weight: var(--p-medio); }
+.b4-est { display: inline-block; font-size: var(--t-micro); font-weight: var(--p-medio); padding: 1px 8px; border-radius: 99px; background: var(--faixa-sub); color: var(--texto-fraco); }
+.b4-e-execucao .b4-est { background: var(--tinta-aviso); color: var(--graf-aviso); }
+.b4-e-crit .b4-est { background: rgba(124, 58, 237, .14); color: #7c3aed; }
+.b4-e-atrasado .b4-est { background: var(--tinta-alerta); color: var(--graf-alerta); }
+.b4-e-concluido .b4-est { background: var(--tinta-ok); color: var(--verde); }
+.b4-e-execucao td, .b4-e-atrasado td { background: rgba(245, 158, 11, .07); }
+.b4-e-futuro .b4-nome { color: var(--texto-fraco); }
+.b4-grade tr.b4-sel td { background: var(--tinta-aco); box-shadow: inset 0 1px 0 var(--aco), inset 0 -1px 0 var(--aco); }
+.b4-grade tr.b4-pick td { box-shadow: inset 0 2px 0 var(--aco), inset 0 -2px 0 var(--aco); }
+.b4-c-gantt { width: 36%; min-width: 150px; }
+.b4-trilho { position: relative; height: 18px; }
+/* a linha da DATA atravessa a coluna inteira: a variável mora na tabela e
+   cada célula a herda — uma escrita por passo, não uma por linha */
+.b4-trilho::after { content: ""; position: absolute; top: -6px; bottom: -6px; left: var(--b4-x); border-left: 2px solid var(--texto); opacity: .75; pointer-events: none; }
+.b4-bar { position: absolute; top: 3px; height: 11px; border-radius: 3px; border: 1px solid var(--b4-cor, var(--aco)); background: var(--surface); overflow: hidden; box-sizing: border-box; }
+.b4-bar-f { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--b4-cor, var(--aco)); }
+.b4-bar-crit { border-width: 2px; }
+.b4-bar-marco { width: 10px !important; height: 10px; margin-left: -5px; top: 4px; transform: rotate(45deg); border-radius: 2px; }
+.b4-bar-marco .b4-bar-f { width: 100% !important; opacity: .25; }
+.b4-e-concluido .b4-bar-marco .b4-bar-f { opacity: 1; }
+.b4-bar-base { position: absolute; top: 15px; height: 3px; border-radius: 2px; background: var(--texto-fraco); opacity: .55; }
+.b4:not(.b4-largo) .b4-c-dur, .b4:not(.b4-largo) .b4-c-folga, .b4:not(.b4-largo) .b4-c-n, .b4:not(.b4-largo) .b4-sec-aux { display: none; }
+
+/* ---- legenda e curva S ---- */
+.b4-legenda { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: var(--t-peq); }
+.b4-leg-i { display: inline-flex; align-items: center; gap: 6px; }
+.b4-leg-i i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.b4-sw-nat { background: linear-gradient(135deg, #e2e8f0 0 50%, #94a3b8 50% 100%); border: 1px solid var(--linha-forte); }
+.b4-cv { width: 100%; height: auto; display: block; background: var(--surface); border: 1px solid var(--linha); border-radius: var(--raio-sm); }
+.b4-cv-grade { stroke: var(--linha); stroke-width: 1; }
+.b4-cv-tx { fill: var(--texto-fraco); font-size: var(--t-graf-eixo); }
+.b4-cv-plan { fill: none; stroke: #64748b; stroke-width: 2; }
+.b4-cv-real { fill: none; stroke: var(--verde); stroke-width: 2.4; }
+.b4-cv-proj { fill: none; stroke: #ea580c; stroke-width: 2; stroke-dasharray: 5 3; }
+.b4-cv-corte { stroke: var(--verde); stroke-width: 1; stroke-dasharray: 2 2; }
+.b4-cv-agora { stroke: var(--texto); stroke-width: 1.5; }
+.b4-cv-pto { fill: var(--texto); }
+.b4-cv-leg { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--t-micro); color: var(--texto-fraco); margin-top: 5px; }
+.b4-cv-leg i { display: inline-block; width: 16px; height: 0; border-top: 2px solid #64748b; vertical-align: middle; margin-right: 5px; }
+.b4-cv-leg i.b4-cv-l-real { border-top-color: var(--verde); }
+.b4-cv-leg i.b4-cv-l-proj { border-top: 2px dashed #ea580c; }
+.b4-cv-leg i.b4-cv-l-data { width: 0; height: 10px; border-top: 0; border-left: 2px solid var(--texto); }
+
+/* ---- o carimbo da data sobre o 3D (é o que a reunião lê) ---- */
+.b4-hud { position: absolute; left: 64px; bottom: 16px; z-index: 5; pointer-events: none; background: rgba(15, 39, 64, .9); color: #fff; border-radius: 10px; padding: 8px 14px; box-shadow: 0 6px 18px rgba(0, 0, 0, .3); max-width: min(460px, 55%); }
+.b4h-d { font-size: var(--t-med); font-weight: var(--p-forte); font-variant-numeric: tabular-nums; }
+.b4h-nu { font-size: var(--t-micro); font-weight: var(--p-normal); color: #fcd34d; margin-left: 6px; }
+.b4h-s { font-size: var(--t-peq); color: #dbe8f5; margin-top: 2px; }
+.b4h-a { font-size: var(--t-micro); color: #bcd0e3; margin-top: 4px; line-height: 1.35; }
+
+/* ---- a JANELA DO 3D: só o visualizador, a tela inteira ---- */
+body.modo-bim3d #sidebar, body.modo-bim3d #topbar { display: none !important; }
+body.modo-bim3d .app, body.modo-bim3d .app.com-sidebar { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); grid-template-areas: "main"; height: 100vh; height: 100dvh; }
+body.modo-bim3d .main { grid-area: main; padding: 0; }
+/* ⚠ o recado (#jan-recado) é a exceção, como na janela do orçamento: sem ela,
+   obra não encontrada virava janela EM BRANCO */
+body.modo-bim3d #main > :not(.b4-j3d):not(#jan-recado) { display: none !important; }
+body.modo-bim3d .b4-j3d .bim-revit { height: 100vh; height: 100dvh; border: 0; border-radius: 0; }
+body.modo-bim3d .b4-hud { left: 24px; bottom: 24px; padding: 12px 20px; max-width: 50%; }
+body.modo-bim3d .b4h-d { font-size: var(--t-hero); }
+body.modo-bim3d .b4h-s { font-size: var(--t-med); }
+body.modo-bim3d .b4h-a { font-size: var(--t-base); }
+.b4-j3d-status { position: absolute; right: 14px; bottom: 14px; z-index: 5; font-size: var(--t-micro); background: rgba(15, 39, 64, .82); color: #dbe8f5; padding: 5px 11px; border-radius: 99px; pointer-events: none; max-width: 46%; }
+.b4-j3d-status.b4-vivo { color: #86efac; }
+.b4-j3d-status.b4-aviso { color: #fcd34d; border-radius: 10px; }

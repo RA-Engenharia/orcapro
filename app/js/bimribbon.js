@@ -144,9 +144,9 @@
           { id: "corte-tecnico", rotulo: "Corte\ntécnico", icone: "prancha", requer: "modelo", dica: "Vira o corte num desenho técnico em preto e branco, com hachura." }
         ] },
         { nome: "Tempo e custo", comandos: [
-          { id: "quatro-d", rotulo: "4D\nCronograma", icone: "calendario", grande: true, requer: "modelo", dica: "Vê a obra subindo semana a semana, ligada ao cronograma." },
+          { id: "quatro-d", rotulo: "4D\nSimulação", icone: "calendario", grande: true, requer: "modelo", dica: "A obra subindo dia a dia no calendário do cronograma (estilo TimeLiner): atividades, críticas, atrasos com o avanço real, filtros, curva S e o 3D em outra janela." },
           { id: "seis-d", rotulo: "6D/7D\nCiclo de vida", icone: "ciclo", grande: true, requer: "modelo", pro: true, dica: "Operação e manutenção do que foi construído." },
-          { id: "curva-s", rotulo: "Curva S", icone: "grafico", requer: "modelo", dica: "Avanço previsto x realizado." }
+          { id: "curva-s", rotulo: "Curva S", icone: "grafico", requer: "modelo", dica: "Avanço planejado x real no tempo — no painel da Simulação 4D." }
         ] }
       ]
     },

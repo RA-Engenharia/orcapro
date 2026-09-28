@@ -160,7 +160,16 @@
         if (!agg[cat]) agg[cat] = { inicio: ini, fim: fim, qtd: 0 };
         else { agg[cat].inicio = Math.min(agg[cat].inicio, ini); agg[cat].fim = Math.max(agg[cat].fim, fim); }
         agg[cat].qtd++;
-        return { id: el.id, tipo: el.tipo, cat: cat, codOrc: el.codOrc || "", exato: exato, fase: fase || null, semInicio: ini, semFim: fim };
+        /* `etapaId`: a etapa do cronograma que o carimbo casou (null quando
+           casou só pela categoria ou caiu no tipo IFC). É o que a simulação
+           por data (js/bim4dsim.js) usa para ligar a peça à ATIVIDADE — a
+           janela `semInicio/semFim` sozinha não diz qual das etapas da mesma
+           categoria é a dela, e sem isso não há "isolar esta etapa". */
+        return { id: el.id, tipo: el.tipo, cat: cat, codOrc: el.codOrc || "", exato: exato, fase: fase || null, semInicio: ini, semFim: fim,
+          /* demolir usa a janela da demolição (acima), não a da etapa do
+             carimbo — o vínculo segue a MESMA janela, senão a peça subiria
+             numa data e a lista a mostraria noutra */
+          etapaId: (fase !== "demolir" && m && m.e && m.e.id != null) ? m.e.id : null };
       });
       var resumoFases = Object.keys(agg).map(function (c) {
         return { cat: c, nome: BIM4D.nomeCat(c), cor: BIM4D.corCat(c), inicio: agg[c].inicio, fim: agg[c].fim, qtd: agg[c].qtd };

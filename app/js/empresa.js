@@ -26,11 +26,15 @@
     whatsapp: "",
     email: "",
     site: "",
-    instagram: ""
+    instagram: "",
+    /* PARÂMETRO "PLANEJAMENTO E GESTÃO": o responsável que vai para as
+       composições próprias (campo `gestao`) e para as requisições geradas do
+       orçamento. Vazio de fábrica — nome nenhum mora no código. */
+    gestao: ""
   };
 
   var Empresa = {
-    campos: ["nome", "cnpj", "responsavel", "titulo", "crea", "registroNacional", "cidade", "endereco", "contato", "telefone", "whatsapp", "email", "site", "instagram"],
+    campos: ["nome", "cnpj", "responsavel", "titulo", "crea", "registroNacional", "cidade", "endereco", "contato", "telefone", "whatsapp", "email", "site", "instagram", "gestao"],
 
     _prefs: function () {
       try { return (typeof Store !== "undefined" && typeof Auth !== "undefined") ? (Store.lerPrefs(Auth.empresaId()) || {}) : {}; }

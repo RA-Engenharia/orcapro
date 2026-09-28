@@ -510,3 +510,17 @@
   .pag-num td:last-child { padding-top: 2px !important; font-weight: 600; }
   .pag-num tr { display: block; border-bottom: 1px solid var(--linha); }
 }
+
+/* =====================================================================
+ * SIMULAÇÃO 4D — a casca enquanto o painel 4D está aberto (Gestao._b4Casca)
+ * - b4-sem-lateral: a coluna Propriedades/Navegador sai do caminho (com a
+ *   gaveta de 640 px ela deixava o 3D com menos de 500 px). É classe
+ *   própria, não o `data-rv-lateral-off` — esse é a preferência guardada da
+ *   pessoa, e fechar o painel 4D não pode mudá-la.
+ * - b4-largo-on: painel largo (ou 3D na outra janela) — a fita e as abas
+ *   também saem e a lista de atividades ganha a altura.
+ * ===================================================================== */
+.bim-revit.b4-sem-lateral .rv-lateral { display: none; }
+.bim-revit.b4-largo-on .rv-fita,
+.bim-revit.b4-largo-on .rv-abas,
+.bim-revit.b4-largo-on .rv-docs { display: none !important; }

@@ -334,7 +334,30 @@ function montar(host, opts) {
     try { return !(window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches); }
     catch (e) { return false; }
   }
-  function aceitaIFC() { return ehToque() ? '' : ' accept=".ifc"'; }
+  /* ⚠ `.skp` ENTRA NO FILTRO DO SELETOR, MAS NUNCA NO INTERPRETADOR.
+   * O SketchUp grava num formato fechado (Trimble) que nenhum navegador lê — o
+   * que o OrçaPRO abre é o IFC que o próprio SketchUp Pro exporta. Antes, o
+   * cliente com um .skp na mão abria o seletor, não via o arquivo dele (o
+   * filtro só mostrava .ifc) e concluía que "o BIM não abre SketchUp"; se
+   * trocava para "Todos os arquivos", ganhava o toast genérico de "não é IFC"
+   * e desistia do mesmo jeito. Com o .skp visível, ele escolhe o arquivo e
+   * recebe o passo a passo da exportação (ver orientarSketchUp) em vez de um
+   * beco. Quem decide o destino de cada arquivo é classificarEntradaBim — uma
+   * função só, usada pelo seletor E pelo arrastar-e-soltar, para os dois
+   * caminhos não divergirem de novo (o drop descartava em silêncio o que o
+   * seletor avisava). Ela é pura de propósito: tools/test-bim-skp.js a extrai
+   * do fonte e a roda em Node. */
+  function aceitaIFC() { return ehToque() ? '' : ' accept=".ifc,.skp"'; }
+  function classificarEntradaBim(itens) {
+    var r = { ifc: [], skp: [], outros: [] };
+    (itens || []).forEach(function (it) {
+      var nome = String(typeof it === 'string' ? it : ((it && it.name) || ''));
+      if (/\.ifc$/i.test(nome)) r.ifc.push(it);
+      else if (/\.skp$/i.test(nome)) r.skp.push(it);
+      else r.outros.push(it);
+    });
+    return r;
+  }
 
   // toolbar compacta
   var bar = document.createElement('div');
@@ -1290,9 +1313,49 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
        arrastar-e-soltar filtrava por `.ifc`, o seletor não filtrava nada —
        bastava o cliente trocar o filtro para "Todos os arquivos", coisa que
        todo diálogo do Windows oferece. */
-    var bons = fs2.filter(function (f) { return /\.ifc$/i.test(f.name || ''); });
-    var maus = fs2.filter(function (f) { return !/\.ifc$/i.test(f.name || ''); });
-    bons.forEach(function (f) { abrirArquivo(f); });
+    receberArquivos(fs2);
+    e.target.value = '';
+  });
+  /* ⚠ O .skp NÃO É ARQUIVO ERRADO, É PEDIDO DE ORIENTAÇÃO. O formato do
+     SketchUp é fechado e nenhum navegador lê; mandá-lo ao web-ifc daria um
+     erro de parser incompreensível, e o toast "não é IFC" fazia o cliente
+     desistir achando que o BIM não trabalha com SketchUp — quando o SketchUp
+     Pro exporta IFC nativamente (IFC 4 por padrão; IFC 2x3 só no Windows). O
+     que ele precisa é do caminho, na cara, com botão para voltar ao seletor.
+     Clique programático em input[type=file] só vale dentro de um gesto do
+     usuário: o clique no botão do modal é um, por isso o `.click()` fica no
+     onClick e não num setTimeout. */
+  function orientarSketchUp(nomes) {
+    nomes = nomes || [];
+    var nm = nomes.slice(0, 3).map(function (n) { return '“' + n + '”'; }).join(', ') + (nomes.length > 3 ? '…' : '');
+    var titulo = 'Arquivo do SketchUp (.skp)';
+    var aviso = (nomes.length === 1 ? 'O arquivo ' + nm + ' é' : 'Os arquivos ' + nm + ' são') +
+      ' do SketchUp. O formato .skp é fechado e nenhum navegador consegue lê-lo; o OrçaPRO abre o IFC que o próprio SketchUp exporta — com a geometria e o tipo de cada elemento.';
+    var passos = [
+      'Abra o modelo no SketchUp Pro (ou Studio).',
+      'Menu Arquivo → Exportar → Modelo 3D…',
+      'Em “Salvar como tipo”, escolha IFC (*.ifc). O IFC 4 é o padrão; no Windows também existe o IFC 2x3 — os dois abrem aqui.',
+      'Volte ao OrçaPRO e abra o .ifc exportado: botão Abrir IFC, ou arraste para o visualizador.'
+    ];
+    var dica = 'Dica: classifique os componentes com tipos IFC no SketchUp (painel Classificações → “Tipo” em Informações da entidade) antes de exportar; sem isso parede, laje e pilar podem chegar como elementos genéricos e o QTO não sabe separá-los. Se a sua versão do SketchUp não exportar IFC, peça o .ifc a quem fez o projeto.';
+    if (typeof UI === 'undefined' || !UI.modal) {
+      try { alert(titulo + '\n\n' + aviso + '\n\n' + passos.map(function (p, i) { return (i + 1) + '. ' + p; }).join('\n') + '\n\n' + dica); } catch (_) {}
+      return;
+    }
+    var corpo = '<p style="margin:0 0 10px">' + esc(aviso) + '</p>' +
+      '<ol style="margin:0 0 10px 18px;padding:0;line-height:1.5">' + passos.map(function (p) { return '<li>' + esc(p) + '</li>'; }).join('') + '</ol>' +
+      '<p class="muted" style="margin:0;font-size:12px">' + esc(dica) + '</p>';
+    UI.modal(titulo, corpo, [
+      { texto: 'Escolher o IFC exportado', classe: 'primary', onClick: function () { UI.fecharModal(); try { bar.querySelector('[data-b="file"]').click(); } catch (_) {} } },
+      { texto: 'Fechar', classe: 'ghost', onClick: function () { UI.fecharModal(); } }
+    ]);
+  }
+  /* funil ÚNICO do seletor e do arrastar-e-soltar (ver classificarEntradaBim) */
+  function receberArquivos(lista) {
+    var cls = classificarEntradaBim(lista);
+    cls.ifc.forEach(function (f) { abrirArquivo(f); });
+    if (cls.skp.length) orientarSketchUp(cls.skp.map(function (f) { return f.name; }));
+    var maus = cls.outros;
     if (maus.length) {
       /* diz o nome do arquivo: "não é IFC" sem dizer qual, com vários
          selecionados, não ajuda ninguém a achar o errado */
@@ -1302,10 +1365,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         : maus.length + ' arquivos não são IFC (' + nm + (maus.length > 3 ? '…' : '') + '). O BIM abre arquivos terminados em .ifc.';
       try { if (typeof UI !== 'undefined' && UI.toast) UI.toast(msg, 'erro'); else alert(msg); } catch (_) {}
     }
-    e.target.value = '';
-  });
+  }
   function onDragOver(e) { e.preventDefault(); }
-  function onDrop(e) { e.preventDefault(); Array.prototype.slice.call(e.dataTransfer.files || []).forEach(function (f) { if (/\.ifc$/i.test(f.name)) abrirArquivo(f); }); }
+  /* ⚠ o drop passa pelo MESMO funil do seletor. Ele descartava em silêncio o
+     que não fosse .ifc — soltar um .skp "não fazia nada", que é o pior recado. */
+  function onDrop(e) { e.preventDefault(); receberArquivos(Array.prototype.slice.call(e.dataTransfer.files || [])); }
   host.addEventListener('dragover', onDragOver); host.addEventListener('drop', onDrop);
   S._onDragOver = onDragOver; S._onDrop = onDrop; // guardados p/ re-registrar no host novo (re-home)
   function setUltra(on) {
@@ -7499,6 +7563,90 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   S._aplicar4DTarefas = aplicar4DTarefas; S._limpar4DTarefas = limpar4DTarefas;
 
   /* =====================================================================
+   * SIMULAÇÃO 4D POR DATA (js/bim4dsim.js) — a cena que o motor decidiu.
+   *
+   * O motor devolve, por UID da sessão (`mid:expressID`, o mesmo id que o
+   * `onLoaded` entrega à casca), quem some e quem é pintado de quê
+   * ({cor, opacidade}). Aqui fica só o que a cena sabe fazer.
+   *
+   * ⚠ QUEM CHEGA TOMA A CENA INTEIRA, como o 4D automático antigo: a
+   *   pintura de outro painel (conjunto, avanço medido) não pode sobrar nas
+   *   peças "concluídas" — a cena viraria duas legendas ao mesmo tempo (ver o
+   *   ⚠ "A CENA TEM UM DONO DE CADA VEZ"). O contorno de atraso do Cronograma
+   *   4D do engenheiro também sai: ele desenharia laranja sobre peças que esta
+   *   simulação escondeu.
+   * ⚠ `_fut4d` recebe TODOS os ocultos (futuro e filtrado): é ele que o
+   *   isolamento por pavimento e o restaurar consultam para não ressuscitar o
+   *   que a simulação escondeu.
+   * ===================================================================== */
+  function aplicar4DSim(cena) {
+    if (!S || !cena) return { ok: false, erro: 'simulação vazia' };
+    if (S.pav && (S.pav.isolado || S.pav.manual)) { S.pav.isolado = null; S.pav.manual = false; if (S._pavRender) S._pavRender(); }
+    limparContorno4D();
+    var fora = {};
+    (cena.ocultos || []).forEach(function (u) { fora[u] = 1; });
+    var pint = {}, n = 0;
+    Object.keys(cena.pinturas || {}).forEach(function (u) {
+      var p = cena.pinturas[u];
+      if (p && typeof p.cor === 'string' && /^#[0-9a-fA-F]{6}$/.test(p.cor)) { pint[u] = { cor: p.cor, opacidade: Math.max(0.05, Math.min(1, +p.opacidade || 1)) }; n++; }
+    });
+    S._pintura = n ? pint : null;
+    S._pinturaDono = '4d-sim';
+    S._fut4d = fora; S._and4d = null;
+    var vis = 0;
+    cadaMalha(function (m) {
+      var id = m.userData.expressID; if (id == null) return;
+      var uid = m.userData.mid + ':' + id;
+      if (fora[uid] || ehRemovidoEd(m)) { m.visible = false; return; }
+      m.visible = true; vis++;
+      if (m === S.selected) return;
+      m.material = S._matBase ? S._matBase(m) : (m.userData.matOrig || m.material);
+    });
+    return { ok: true, ocultos: Object.keys(fora).length, pintados: n, malhasVisiveis: vis };
+  }
+  /* voo até um conjunto de peças (a atividade escolhida na lista do 4D).
+     Mede o que EXISTE na cena, visível ou não: a etapa futura está escondida
+     e o enquadramento tem de mostrar onde ela vai nascer. */
+  /* `opts.direita` = quantos px do lado direito do canvas estão TAPADOS (a
+     gaveta do painel 4D fica por cima do 3D). ⚠ Sem isto o enquadramento
+     centralizava a etapa no canvas inteiro — medido: a metade dela caía
+     atrás da gaveta de 640 px, e o "enquadrar" mostrava meia parede. O alvo
+     anda para a direita no mundo e a peça aparece no meio da parte livre. */
+  function enquadrarUids(uids, opts) {
+    if (!S || !uids || !uids.length) return false;
+    var alvo = {}; uids.forEach(function (u) { alvo[u] = 1; });
+    var box = new THREE.Box3(), achou = 0, bm = new THREE.Box3();
+    cadaMalha(function (m) {
+      if (m.userData.expressID == null || !alvo[m.userData.mid + ':' + m.userData.expressID]) return;
+      if (!m.geometry) return;
+      if (!m.geometry.boundingBox) { try { m.geometry.computeBoundingBox(); } catch (e) { return; } }
+      if (!m.geometry.boundingBox) return;
+      bm.copy(m.geometry.boundingBox).applyMatrix4(m.matrixWorld);
+      box.union(bm); achou++;
+    });
+    if (!achou || box.isEmpty()) return false;
+    var W = (S.renderer && S.renderer.domElement) ? (S.renderer.domElement.clientWidth || 0) : 0;
+    var tampa = Math.max(0, Math.min(W * 0.7, +((opts && opts.direita) || 0)));
+    if (!tampa || !W) { if (S._enquadrarObj) S._enquadrarObj(box, 1.5); return true; }
+    if (S._cancelTween) S._cancelTween();
+    var c = box.getCenter(new THREE.Vector3()), sz = box.getSize(new THREE.Vector3());
+    var raio = Math.max(sz.x, sz.y, sz.z, 0.5) * 0.5, livre = (W - tampa) / W;
+    var tg = Math.tan((camera.fov * Math.PI / 180) / 2);
+    /* cabe na ALTURA e na LARGURA LIVRE: a que apertar mais manda (numa tela
+       larga, com a gaveta aberta, quase sempre ainda é a altura) */
+    var tgLivre = tg * (camera.aspect || 1) * Math.max(0.3, livre);
+    var dist = (raio / Math.min(tg, tgLivre)) * 1.3;
+    var dir = camera.position.clone().sub(orbit.target); if (dir.lengthSq() < 1e-6) dir.set(0.7, 0.55, 0.8); dir.normalize();
+    var largMundo = 2 * dist * tg * (camera.aspect || 1);
+    var direita = new THREE.Vector3().crossVectors(dir.clone().negate(), camera.up).normalize();
+    var alvoCam = c.clone().add(direita.multiplyScalar((tampa / W) * largMundo / 2));
+    var near = Math.max(0.01, (dist - raio) * 0.5); if (near < camera.near) { camera.near = near; camera.updateProjectionMatrix(); }
+    voarCam(alvoCam.clone().add(dir.multiplyScalar(dist)), alvoCam, 0.55);
+    return true;
+  }
+  S._aplicar4DSim = aplicar4DSim; S._enquadrarUids = enquadrarUids;
+
+  /* =====================================================================
    * B4 — LER E APLICAR UM PONTO DE VISTA
    *
    * O motor (js/bimvista.js) decide o que a vista E; aqui ficam as duas pontas
@@ -8155,6 +8303,7 @@ function mostrarTudo() {
   if (S.pav && (S.pav.isolado || S.pav.manual)) { S.pav.isolado = null; S.pav.manual = false; if (S._pavRender) S._pavRender(); }
   S._fut4d = null; S._and4d = null; // sair do 4D: nada mais é "futuro" nem "em andamento"
   if (S._pinturaDono === "4d-auto") { S._pintura = null; S._pinturaDono = null; }
+  if (S._pinturaDono === "4d-sim") { S._pintura = null; S._pinturaDono = null; }   /* a simulação por data (bim4dsim) também é "o 4D" */
   cadaMalha(function (m) { m.visible = !ehRemovidoEd(m); if (m !== S.selected) m.material = S._matBase ? S._matBase(m) : (m.userData.matOrig || m.material); });
 }
 
@@ -8755,6 +8904,9 @@ window.BIM = {
   /* ---- B6: simulação 4D dirigida pelo cronograma do engenheiro ---- */
   aplicar4DTarefas: function (sim) { return (S && S._aplicar4DTarefas) ? S._aplicar4DTarefas(sim) : { ok: false, erro: 'visualizador não montado' }; },
   limpar4DTarefas: function () { if (S && S._limpar4DTarefas) S._limpar4DTarefas(); },
+  /* ---- simulação 4D por data (js/bim4dsim.js): {ocultos:[uid], pinturas:{uid:{cor,opacidade}}} ---- */
+  aplicar4DSim: function (cena) { return (S && S._aplicar4DSim) ? S._aplicar4DSim(cena) : { ok: false, erro: 'visualizador não montado' }; },
+  enquadrarUids: function (uids, opts) { return (S && S._enquadrarUids) ? S._enquadrarUids(uids, opts) : false; },
   cameraAtual: function () { return (S && S._cameraAtual) ? S._cameraAtual() : null; },
   aplicarVista: function (v, opts) { return (S && S._aplicarVista) ? S._aplicarVista(v, opts) : { ok: false, erro: 'visualizador não montado' }; },
   modelosSemArquivo: function () {
