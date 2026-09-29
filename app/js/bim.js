@@ -5212,7 +5212,17 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     // agora vive no PÉ do viewer, então lá os painéis podem colar no topo (t=8).
     var bh = (bar && bar.offsetHeight) || 0;
     var t = bh ? bh + 8 : (ehTelaPequena ? 8 : 44);
+    /* ⚠ QUEM MONTA O VIEWER PODE RESERVAR O TOPO. O visor da nuvem (app.js,
+       _abrirRVCloud) tem botões fixos lá em cima — 🔄 à direita, Reunião à
+       esquerda — por cima de tudo (z 2147483000). Com o painel colado em
+       t=8, o 🔄 cobria o ✕ do painel de RA/RV: no iPhone, a pessoa não
+       conseguia fechar o painel que abre sozinho. */
+    var o0 = (S && S.opts) || opts || {};
+    if (o0.topoReservado > t) t = o0.topoReservado;
     [hint, snapPanel, pavPanel, visPanel, xrPanel].forEach(function (el) { if (el) el.style.top = t + 'px'; });
+    /* no celular o painel de RA/RV ocupa a largura (até 340 px): em 250 px os
+       rótulos dos modos não cabiam nem quebrando linha */
+    if (xrPanel) { xrPanel.style.width = ehTelaPequena ? 'calc(100% - 20px)' : '250px'; xrPanel.style.maxWidth = '340px'; xrPanel.style.boxSizing = 'border-box'; }
     /* v1.1.126: os painéis voltam para a DIREITA (o right:10px do próprio cssText).
      * Em left:64px eles ficavam embaixo do leque do dock (que abre em ~56px com 172px
      * de largura e z-index 60): no PC, passar o mouse na direção do painel fazia o leque
@@ -5484,12 +5494,20 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var html = '<div style="display:flex;justify-content:space-between;align-items:center"><b>' + (typeof Icones !== 'undefined' ? Icones.get('vr', 15) : '') + ' Realidade Mista / Virtual</b><button class="btn sm" data-x="fechar" title="Fechar painel">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>';
     if (vazio) { html += '<div style="font-size:11px;color:#5b6b7c">Carregue um modelo primeiro.</div>'; xrPanel.innerHTML = html; return; }
     if (!xr.on) {
+      /* ⚠ `longo` nos botões de modo: o `.btn` não quebra linha, e a 390 px
+         os rótulos saíam cortados dos dois lados ("âmera + Projeto (ver no
+         seu ambie") — medido no visor da nuvem aberto como iPhone. */
+      var ql = quickLookAqui();
       html += '<div style="font-size:11px;color:#5b6b7c">Veja o projeto no ambiente ou ande dentro dele. Escolha o modo:</div>' +
-        '<button class="btn sm primary" data-x="camera" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('camera', 15) : '') + ' Câmera + Projeto (ver no seu ambiente)</button>' +
-        '<button class="btn sm" data-x="caminhar" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('caminhar', 15) : '') + ' Caminhar no projeto (fundo liso)</button>' +
-        '<button class="btn sm" data-x="ar" style="width:100%" disabled>' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA com âncora (Android) <span data-x="arst" style="color:#5b6b7c">(verificando…)</span></button>' +
-        '<button class="btn sm" data-x="vr" style="width:100%" disabled>' + (typeof Icones !== 'undefined' ? Icones.get('vr', 15) : '') + ' VR imersivo <span data-x="vrst" style="color:#5b6b7c">(verificando…)</span></button>' +
-        '<div style="font-size:11px;color:#5b6b7c;line-height:1.35">📷 <b>funciona no iPhone e Android</b>: liga a câmera e o projeto aparece no ambiente real — mova o celular pra olhar, joystick pra chegar perto (precisa HTTPS: use o link ' + (typeof Icones !== 'undefined' ? Icones.get('nuvem', 15) : '') + ' da nuvem). ' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA com âncora (fixa no chão) só no Android/ARCore.</div>';
+        (ql ? '<button class="btn sm primary longo" data-x="quicklook" data-ql="real" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA do iPhone — no chão, tamanho real</button>' +
+              '<button class="btn sm longo" data-x="quicklook" data-ql="maquete" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA do iPhone — maquete na mesa</button>' : '') +
+        '<button class="btn sm ' + (ql ? '' : 'primary ') + 'longo" data-x="camera" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('camera', 15) : '') + ' Câmera + Projeto (ver no seu ambiente)</button>' +
+        '<button class="btn sm longo" data-x="caminhar" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('caminhar', 15) : '') + ' Caminhar no projeto (fundo liso)</button>' +
+        (ql ? '' : '<button class="btn sm longo" data-x="ar" style="width:100%" disabled>' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA com âncora (Android) <span data-x="arst" style="color:#5b6b7c">(verificando…)</span></button>') +
+        '<button class="btn sm longo" data-x="vr" style="width:100%" disabled>' + (typeof Icones !== 'undefined' ? Icones.get('vr', 15) : '') + ' VR imersivo <span data-x="vrst" style="color:#5b6b7c">(verificando…)</span></button>' +
+        (ql
+          ? '<div style="font-size:11px;color:#5b6b7c;line-height:1.35"><b>RA do iPhone</b>: abre a realidade aumentada do próprio iPhone — o projeto fica preso no chão enquanto você anda em volta. Nada é instalado e o arquivo não sai do aparelho.</div>'
+          : '<div style="font-size:11px;color:#5b6b7c;line-height:1.35">📷 <b>funciona no iPhone e Android</b>: liga a câmera e o projeto aparece no ambiente real — mova o celular pra olhar, joystick pra chegar perto (precisa HTTPS: use o link ' + (typeof Icones !== 'undefined' ? Icones.get('nuvem', 15) : '') + ' da nuvem). ' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA com âncora (fixa no chão): Android com ARCore; no iPhone, pela RA do iPhone.</div>');
     } else {
       var em = xr.mode === 'ar' ? '' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA no ambiente' : xr.mode === 'vr' ? '' + (typeof Icones !== 'undefined' ? Icones.get('vr', 15) : '') + ' VR imersivo' : xr.mode === 'camera' ? '' + (typeof Icones !== 'undefined' ? Icones.get('camera', 15) : '') + ' Câmera + Projeto' : '' + (typeof Icones !== 'undefined' ? Icones.get('caminhar', 15) : '') + ' Caminhando';
       html += '<div style="font-size:11px;color:#15803d"><b>' + em + '</b> ativo</div>';
@@ -5553,6 +5571,83 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return Object.keys(mapa).map(function (k) { return mapa[k]; });
   }
   function nomeDisc(d) { var M = { arquitetura: 'Arquitetura', estrutura: 'Estrutura', hidraulica: 'Hidráulica', eletrica: 'Elétrica', mecanica: 'Mecânica', incendio: 'Incêndio', outros: 'Outros' }; return M[d] || (d.charAt(0).toUpperCase() + d.slice(1)); }
+
+  // ---- 📱 RA DO iPHONE (AR Quick Look) — o motor é js/bimusdz.js; aqui só a cena e o clique ----
+  function quickLookAqui() {
+    if (typeof window === 'undefined' || !window.BimUsdz) return false;
+    var a = document.createElement('a');
+    var rel = false; try { rel = !!(a.relList && a.relList.supports && a.relList.supports('ar')); } catch (_) {}
+    return BimUsdz.quickLook({ ua: navigator.userAgent, plataforma: navigator.platform, toques: navigator.maxTouchPoints || 0,
+      relAr: rel, webview: !!(window.webkit && window.webkit.messageHandlers) });
+  }
+  /* O que vai para o iPhone é O QUE ESTÁ NA TELA: disciplina desligada,
+     pavimento isolado e peça escondida ficam de fora (traverseVisible).
+     A matriz é relativa ao modelRoot — no imersivo ele anda e escala, e o
+     arquivo tem de sair no tamanho do projeto, não no da miniatura. */
+  function pecasVisiveis() {
+    modelRoot.updateMatrixWorld(true);
+    var inv = new THREE.Matrix4().copy(modelRoot.matrixWorld).invert(), rel = new THREE.Matrix4(), out = [];
+    modelRoot.traverseVisible(function (o) {
+      if (!o.isMesh || o.isInstancedMesh || !o.geometry || !o.geometry.attributes) return;
+      var pa = o.geometry.attributes.position, na = o.geometry.attributes.normal;
+      if (!pa || pa.isInterleavedBufferAttribute || pa.count < 3) return;
+      var mat = Array.isArray(o.material) ? o.material[0] : o.material;
+      if (!mat || mat.visible === false || mat.colorWrite === false) return;
+      var cor = (o.userData && o.userData.matOrig && o.userData.matOrig.color && o.material === selMat) ? o.userData.matOrig : mat; // peça SELECIONADA vai com a cor dela, não o verde da seleção
+      var op = mat.transparent ? (mat.opacity == null ? 1 : mat.opacity) : 1;
+      if (op < 0.05) return;
+      var idx = o.geometry.index ? o.geometry.index.array : null;
+      if (!idx) { idx = new Uint32Array(pa.count); for (var i = 0; i < pa.count; i++) idx[i] = i; }
+      rel.multiplyMatrices(inv, o.matrixWorld);
+      out.push({ cor: [cor.color ? cor.color.r : 0.8, cor.color ? cor.color.g : 0.8, cor.color ? cor.color.b : 0.8, op],
+        pos: pa.array, nor: (na && !na.isInterleavedBufferAttribute) ? na.array : null, idx: idx, matriz: rel.elements.slice() });
+    });
+    return out;
+  }
+  var _ql = null; // { chave, url } — o mesmo arquivo serve ao segundo toque
+  function abrirQuickLook(modo, btn) {
+    var pecas = pecasVisiveis(), tri = 0;
+    pecas.forEach(function (p) { tri += Math.floor(p.idx.length / 3); });
+    var chave = modo + '|' + pecas.length + '|' + tri;
+    if (_ql && _ql.chave === chave) { dispararQuickLook(_ql.url); return; }
+    var rot = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; btn.textContent = 'Montando o arquivo da RA…'; }
+    // setTimeout: deixa o botão mostrar o "montando" antes do trabalho pesado
+    setTimeout(function () {
+      var r;
+      try { r = BimUsdz.gerar(pecas, { modo: modo }); } catch (e) { r = { ok: false, erro: String(e && e.message || e) }; }
+      if (btn) { btn.disabled = false; btn.innerHTML = rot; }
+      S._qlUltimo = { ok: r.ok, erro: r.erro || '', tri: r.tri || 0, malhas: r.malhas || 0, bytes: r.ok ? r.bytes.length : 0, modo: modo };
+      if (!r.ok) {
+        S._hint(r.erro === 'grande'
+          ? 'Este modelo tem ' + Math.round(r.tri / 1000) + ' mil triângulos visíveis; a RA do iPhone aguenta até ' + Math.round(r.limite / 1000) + ' mil. Desligue disciplinas (ex.: deixe só a Arquitetura) e toque de novo — ou use Caminhar.'
+          : r.erro === 'vazio' ? 'Nada visível para mostrar. Ligue ao menos uma disciplina.'
+          : 'Não consegui montar o arquivo da RA: ' + r.erro);
+        return;
+      }
+      var url = URL.createObjectURL(new Blob([r.bytes], { type: 'model/vnd.usdz+zip' }));
+      if (_ql) { try { URL.revokeObjectURL(_ql.url); } catch (_) {} }
+      _ql = { chave: chave, url: url };
+      dispararQuickLook(url);
+    }, 40);
+  }
+  /* ⚠ O LINK TEM DE SER <a rel="ar"> COM UMA <img> DENTRO — é assim que o
+     Safari decide abrir o Quick Look em vez de baixar o arquivo. O
+     `download` segue o <model-viewer> do Google para arquivo gerado na hora
+     (blob:), que é o nosso caso. Clique depois de montar (assíncrono)
+     funciona: o Quick Look não é janela nova, não precisa do gesto. */
+  function dispararQuickLook(url) {
+    var a = document.createElement('a');
+    a.setAttribute('rel', 'ar');
+    a.setAttribute('href', url);
+    a.setAttribute('download', 'projeto.usdz');
+    a.appendChild(document.createElement('img'));
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    S._qlDisparos = (S._qlDisparos || 0) + 1;
+    a.click();
+    setTimeout(function () { try { a.remove(); } catch (_) {} }, 1500);
+  }
 
   function toggleXRPanel() {
     if (xrPanel.style.display === 'flex') { xrPanel.style.display = 'none'; return; }
@@ -6123,6 +6218,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var bd = e.target.closest('[data-xd]'); if (bd) { toggleDisciplinaXR(bd.getAttribute('data-xd')); return; }
     var b = e.target.closest('[data-x]'); if (!b) return; var k = b.getAttribute('data-x');
     if (k === 'fechar') { xrPanel.style.display = 'none'; }
+    else if (k === 'quicklook') { abrirQuickLook(b.getAttribute('data-ql') === 'maquete' ? 'maquete' : 'real', b); }
     else if (k === 'camera') { entrarCamera(); }
     else if (k === 'caminhar') { entrarCaminhar(); }
     else if (k === 'vr') { entrarVR(); }
@@ -8220,7 +8316,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         modelo.elementos.push({ globalId: idB.globalId, chave: idB.chave, chaveInstavel: idB.instavel, nomeIfc: idIfc.nomeIfc, tag: idIfc.tag, id: mesh.expressID, uid: mid + ':' + mesh.expressID, mid: mid, arquivo: modelo.nome, tipo: tipoNome, nome: rotuloDisciplina(tipoNome), familia: famEl ? famEl.familia : null, descricao: dM.descricao, descricaoFonte: dM.fonte, sistemaIfc: (modelo.sistemas && modelo.sistemas[mesh.expressID]) || '', etapa: cb.etapa || null, codOrc: cb.codOrc || null, fase: cb.fase || null, tarefa: cb.tarefa || null, disciplinaPeca: cb.disciplinaPeca || null, detalhe: cb.detalhe || null, qto: (qto && qto[mesh.expressID]) || null });
         modelo.nEl++;
       });
-      modelo.disciplina = detectarDisciplina(modelo.nome, modelo.tipos);
+      /* a disciplina que o engenheiro deixou no modelo viaja no manifesto do
+         link da nuvem (só o visor da nuvem passa `disc`); sem ela, o celular
+         adivinhava pelo nome do arquivo e a Hidráulica podia virar "Outros" —
+         justo o filtro de "não furar em cima do cano". Mesma regra do cache. */
+      modelo.disciplina = String(disc || '') || detectarDisciplina(modelo.nome, modelo.tipos);
       modelo.elementos.forEach(function (e) { e.disciplina = modelo.disciplina; });
       /* B1: fica pendurado no modelo ate a casca gravar (ou desistir). Nao e
          o viewer quem escreve no disco — a fronteira do produto diz que quem
@@ -9159,7 +9259,10 @@ window.BIM = {
    * pessoa vê, porque a matriz de projeção continua a da largura antiga. */
   redimensionar: function () { if (S && S._resize) S._resize(); },
   abrirArquivo: function (f) { if (S && S._abrirArquivo) S._abrirArquivo(f); },
-  abrirBytes: function (ab, nome) { if (S && S._abrirBytes) S._abrirBytes(ab, nome); }, // v1.1.85 — RA/RV nuvem
+  /* ⚠ a disciplina tem de passar: o visor da nuvem recebe do manifesto qual
+     arquivo é Hidráulica, Estrutura… e sem ela o filtro por disciplina do
+     celular ficava adivinhando pelo nome do arquivo */
+  abrirBytes: function (ab, nome, disc) { if (S && S._abrirBytes) S._abrirBytes(ab, nome, disc); }, // v1.1.85 — RA/RV nuvem
   bytesModelos: function () { return (S && S._bytesModelos) ? S._bytesModelos() : []; },
   carregarExemplo: function () { if (S && S._carregarExemplo) S._carregarExemplo(); },
   aplicarEstado: aplicarEstado,

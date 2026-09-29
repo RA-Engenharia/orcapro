@@ -240,7 +240,8 @@
       try { if (typeof Pacote !== "undefined" && Pacote.processarParam) Pacote.processarParam(); } catch (ePk) {}
       // Rota #rv (QR da RA/RV no celular): abre o BIM e entra no imersivo Caminhar assim que
       // o modelo estiver carregado. Honesto: precisa do módulo Gestão e de um modelo carregado
-      // NESTE aparelho (o compartilhamento em nuvem p/ qualquer lugar é a próxima fase).
+      // NESTE aparelho. Para abrir em QUALQUER celular o caminho é o link da nuvem
+      // (#rv?t=<token>, `_abrirRVCloud` acima) — este #rv puro é só o QR da rede local.
       try {
         if (/(^|[#&])rv\b/i.test(location.hash || "")) {
           if (typeof Gestao !== "undefined" && Gestao.podeGestao && Gestao.podeGestao()) {
@@ -495,7 +496,7 @@
         '<button id="rv-audio" style="display:none;position:absolute;top:calc(env(safe-area-inset-top,0px) + 50px);left:8px;z-index:2147483000;background:rgba(15,39,64,.94);color:#dbe8f5;border:1px solid #2e6f9e;border-radius:9px;padding:8px 12px;font-size:13px;font-weight:600;font-family:Inter,system-ui,sans-serif;cursor:pointer;-webkit-tap-highlight-color:transparent">' + (typeof Icones !== 'undefined' ? Icones.get('microfone', 15) : '') + ' Áudio</button>' +
         '<div id="rv-load" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#dbe8f5;font-family:Inter,system-ui,sans-serif;gap:10px;text-align:center;padding:20px">' +
         '<div style="font-size:34px">' + (typeof Icones !== 'undefined' ? Icones.get('nuvem', 15) : '') + '</div><div id="rv-load-txt" style="font-size:15px">Baixando o projeto…</div>' +
-        '<div style="font-size:12px;color:#8fa3b8;max-width:320px">Depois, toque em ' + (typeof Icones !== 'undefined' ? Icones.get('caminhar', 15) : '') + ' Caminhar (ou ' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA no Android) no painel.</div></div></div>';
+        '<div style="font-size:12px;color:#8fa3b8;max-width:320px">Depois escolha no painel: RA do iPhone, RA com âncora (Android) ou ' + (typeof Icones !== 'undefined' ? Icones.get('caminhar', 15) : '') + ' Caminhar, que funciona em qualquer aparelho.</div></div></div>';
       (function () { var b = document.getElementById("rv-upd"); if (b) b.onclick = function () { if (typeof AutoUpdate !== "undefined" && AutoUpdate.forcar) AutoUpdate.forcar(); }; })();
       var origin = location.origin;
       function txt(t) { var e = document.getElementById("rv-load-txt"); if (e) e.textContent = t; }
@@ -507,6 +508,10 @@
           clearInterval(espera);
           // opts.onReuniao mantém o contador no botão; onReuniaoFalha avisa quando cai a conexão
           try { BIM.montar(document.getElementById("bim-canvas"), {
+            /* ⚠ os botões 🔄/Reunião/Áudio acima moram no topo, por cima de
+               tudo: sem reservar a faixa, o 🔄 cobria o ✕ do painel de RA/RV,
+               que abre sozinho (medido como iPhone, 390 px) */
+            topoReservado: 52,
             onReuniao: function (n) { App._rvReunBadge(n); },
             onReuniaoFalha: function () { App._rvReunBadge(0); alert("A reunião caiu (sem internet?). O modelo segue normal — toque em " + (typeof Icones !== "undefined" ? Icones.get("pessoas", 15) : "") + " pra reconectar."); },
             onReuniaoCheia: function () { App._rvReunBadge(0); alert("" + (typeof Icones !== "undefined" ? Icones.get("pessoas", 15) : "") + " Sala cheia — o limite é de 20 pessoas nesta reunião. Tente de novo quando alguém sair."); },

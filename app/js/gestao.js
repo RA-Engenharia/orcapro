@@ -18833,45 +18833,76 @@
       if (mexeu) UI.toast("Família aplicada no editor — desenhe com as dimensões dela.", "ok");
       else UI.toast("Editor aberto. Esta família não vira molde automático (só parede/pilar/laje) — use as medidas do card como referência.", "ok");
     },
-    // 📱 QR para abrir a Realidade Mista/Virtual no celular/tablet.
-    // O QR aponta pro app na REDE LOCAL (mesmo Wi-Fi) com #rv, que entra direto no
-    // modo imersivo. Honesto: o aparelho precisa estar na mesma rede E o modelo precisa
-    // estar carregado no app que serve o QR (o compartilhamento em nuvem p/ qualquer
-    // lugar é a próxima fase). No Android dá RA no ambiente; iPhone entra pelo Caminhar.
+    // 📱 ABRIR O PROJETO 3D NO CELULAR — o link da nuvem é o caminho principal.
+    /* ⚠ ROTEIRO DO DEFEITO (29/09/2026). Este modal abria com um QR grande
+       apontando para o PRÓPRIO app com #rv — no PWA, https://ra-engenharia.
+       github.io/orcapro/app/#rv. Lido por um iPhone, aquele endereço abre o
+       cadastro do teste grátis, sem modelo nenhum: o celular não tem o IFC,
+       que só existe na memória de quem gerou o QR. O Rogério leu o QR do
+       iPhone e "não abriu". O link que abre em QUALQUER celular (o da nuvem)
+       ficava num botão acima, parecendo opcional, e o texto do rodapé ainda
+       dizia que ele era "a próxima atualização".
+       Agora a ação principal é o link da nuvem; um link ainda válido para os
+       MESMOS modelos é reaproveitado (sem reenviar o IFC); e o QR da rede
+       local só aparece quando existe servidor local, recolhido e com a
+       condição escrita — ele só abre num aparelho que já tem o modelo.
+       ⚠ O envio continua exigindo o toque: a Política (item 4.3) diz que o
+       IFC sobe "em Compartilhar na nuvem", não ao abrir este modal. */
     bimQRImersivo: function () {
       var self = this;
-      function montar(url, lanNota, alts) {
+      var I = function (n) { return (typeof Icones !== "undefined") ? Icones.get(n, 15) : ""; };
+      var base = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : "";
+      var chave = (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "";
+      var modelos = (typeof BIM !== "undefined" && BIM.bytesModelos) ? BIM.bytesModelos() : [];
+      var semArq = (typeof BIM !== "undefined" && BIM.modelosSemArquivo) ? BIM.modelosSemArquivo() : [];
+      var salvo = self._rvLinkSalvo(modelos, base);
+
+      function abrir(lan) {
         var velho = document.getElementById("rv-qr-ov"); if (velho) velho.remove(); // sem overlays empilhados
-        var svg = (typeof QR !== "undefined") ? QR.svg(url, { tamanhoPx: 220, correcao: "M" }) : "";
+        /* o que impede o link — dito na cara, com a saída */
+        var trava = !base ? "O servidor de compartilhamento não está configurado nesta instalação."
+          : !chave ? "O link para qualquer celular é da versão ativada (" + I("chave") + " Licença). No teste grátis o projeto não sai do computador."
+          : !modelos.length ? (semArq.length
+              ? "Os modelos desta obra vieram do que estava guardado, sem o arquivo .ifc em memória (" + Util.esc(semArq.map(function (m) { return m.nome; }).join(", ")) + "). Abra o .ifc pelo <b>+ IFC</b> e volte aqui."
+              : "Carregue um modelo .IFC no visualizador primeiro.")
+          : "";
         var ov = document.createElement("div");
         ov.id = "rv-qr-ov";
         ov.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(4,12,22,.82);display:flex;align-items:center;justify-content:center;padding:16px";
-        ov.innerHTML =
-          '<div style="background:#0f2740;border:1px solid #24435f;border-radius:16px;max-width:440px;width:100%;padding:20px;color:#dbe8f5;box-shadow:0 20px 60px rgba(0,0,0,.5);max-height:92vh;overflow:auto">' +
-          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-size:15px">' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' Abrir a RA/RV no aparelho</b><button class="btn sm" data-rv="fechar">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>' +
-          '<button class="btn primary" data-rv="nuvem" style="width:100%;margin-bottom:10px">' + (typeof Icones !== 'undefined' ? Icones.get('nuvem', 15) : '') + ' Compartilhar na nuvem — abre em QUALQUER celular</button>' +
-          '<div style="font-size:11px;color:#8fa3b8;text-align:center;margin-bottom:8px">— ou o QR abaixo, só pra aparelho na <b>mesma rede Wi-Fi</b> —</div>' +
-          '<div style="background:#fff;border-radius:12px;padding:14px;display:flex;justify-content:center">' + (svg || '<span style="color:#333">QR indisponível</span>') + '</div>' +
-          '<div style="font-size:12px;color:#9fb2c8;margin-top:10px;word-break:break-all"><b>Endereço:</b> ' + Util.esc(url) + '</div>' +
-          '<div style="font-size:12.5px;color:#cbd8e6;line-height:1.5;margin:12px 0 6px">Este QR abre a tela de <b>RA/RV</b> — no <b>tablet/celular que já tem este modelo carregado</b> (mesmo aparelho, ou outro na mesma rede com o mesmo IFC aberto):' +
-          '<ul style="margin:6px 0;padding-left:18px">' +
-          '<li><b>Android</b>: <b>' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA no ambiente</b> — aponte pro chão, toque pra fixar, <b>' + (typeof Icones !== 'undefined' ? Icones.get('cadeado', 15) : '') + ' trave</b> e escolha a <b>disciplina</b> (ex.: Hidráulica, pra não furar em cima do cano).</li>' +
-          '<li><b>iPhone/iPad</b>: <b>' + (typeof Icones !== 'undefined' ? Icones.get('caminhar', 15) : '') + ' Caminhar</b> (o Safari não tem RA no navegador).</li>' +
-          '</ul></div>' +
-          '<div style="font-size:11.5px;color:#f0b94a;line-height:1.35;margin-bottom:6px">' + Util.esc(lanNota) + '</div>' +
-          '<div style="font-size:11px;color:#8fa3b8;line-height:1.35;margin-bottom:12px">ℹ️ Enviar o modelo automaticamente pra qualquer celular (sem carregar lá) é a próxima atualização (compartilhamento em nuvem).</div>' +
-          (alts && alts.length ? '<div style="font-size:11px;color:#9fb2c8;margin-bottom:10px">Não abriu? Tente outro IP: ' + alts.map(function (u) { return '<button class="btn sm" data-rvip="' + Util.esc(u) + '" style="font-size:11px;padding:3px 7px;margin:2px">' + Util.esc(u.replace(/^https?:\/\//, "").replace(/\/#rv$/, "")) + '</button>'; }).join("") + '</div>' : '') +
-          '<div style="display:flex;gap:8px"><button class="btn sm primary" data-rv="imprimir" style="flex:1">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Imprimir cartão pra obra</button><button class="btn sm" data-rv="copiar" style="flex:1">' + (typeof Icones !== 'undefined' ? Icones.get('checklist', 15) : '') + ' Copiar link</button></div>' +
-          '</div>';
+        var h = '<div style="background:#0f2740;border:1px solid #24435f;border-radius:16px;max-width:440px;width:100%;padding:20px;color:#dbe8f5;box-shadow:0 20px 60px rgba(0,0,0,.5);max-height:92vh;overflow:auto">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><b style="font-size:15px">' + I("celular") + ' Abrir o projeto 3D no celular</b><button class="btn sm" data-rv="fechar" title="Fechar">' + I("fechar") + '</button></div>' +
+          '<button class="btn primary longo" data-rv="nuvem" style="width:100%;padding:12px"' + (trava ? " disabled" : "") + '>' + I("nuvem") + ' Gerar link e QR para qualquer celular</button>' +
+          '<div style="font-size:12px;color:#cbd8e6;line-height:1.5;margin:10px 0 4px">Android ou iPhone, <b>com ou sem o OrçaPRO instalado</b>, em qualquer rede: a pessoa lê o QR (ou toca no link que você mandar) e o projeto abre no navegador do celular.</div>' +
+          '<ul style="font-size:12px;color:#cbd8e6;line-height:1.5;margin:4px 0 8px;padding-left:18px">' +
+          '<li><b>iPhone/iPad</b>: RA do iPhone (o projeto fica preso no chão) ou Caminhar.</li>' +
+          '<li><b>Android</b>: RA com âncora (ARCore) com filtro de disciplina, ou Caminhar.</li></ul>' +
+          (trava
+            ? '<div data-rv="trava" style="font-size:12px;color:#f0b94a;line-height:1.4;margin-bottom:10px">' + trava + '</div>'
+            : '<div style="font-size:11px;color:#8fa3b8;line-height:1.4;margin-bottom:10px">O arquivo .ifc ' + (modelos.length > 1 ? "dos " + modelos.length + " modelos " : "") + 'vai para a nuvem da RA e fica por 3 dias; depois é apagado. Só quem tem o link acessa.</div>');
+        /* QR da REDE LOCAL: só existe com servidor local respondendo IP. No
+           PWA (github.io) não há servidor — o QR apontaria para o app vazio,
+           que foi exatamente o QR que "não abriu". */
+        if (lan && lan.urls.length) {
+          var svgL = (typeof QR !== "undefined") ? QR.svg(lan.urls[0], { tamanhoPx: 190, correcao: "M" }) : "";
+          h += '<details data-rv="lan" style="border-top:1px solid #24435f;padding-top:10px"><summary style="cursor:pointer;font-size:12.5px;color:#cbd8e6">Sem internet na obra? QR da rede Wi-Fi</summary>' +
+            '<div style="font-size:11.5px;color:#f0b94a;line-height:1.4;margin:8px 0">Só abre num aparelho <b>no mesmo Wi-Fi deste computador</b> e que <b>já tenha este modelo aberto</b> no OrçaPRO dele. Para mostrar a outra pessoa, use o link acima.</div>' +
+            '<div style="background:#fff;border-radius:12px;padding:12px;display:flex;justify-content:center">' + (svgL || '<span style="color:#333">QR indisponível</span>') + '</div>' +
+            '<div style="font-size:11.5px;color:#9fb2c8;margin-top:8px;word-break:break-all"><b>Endereço:</b> ' + Util.esc(lan.urls[0]) + '</div>' +
+            (lan.urls.length > 1 ? '<div style="font-size:11px;color:#9fb2c8;margin-top:6px">Não abriu? Tente outro IP: ' + lan.urls.slice(1).map(function (u) { return '<button class="btn sm" data-rvip="' + Util.esc(u) + '" style="font-size:11px;padding:3px 7px;margin:2px">' + Util.esc(u.replace(/^https?:\/\//, "").replace(/\/#rv$/, "")) + '</button>'; }).join("") + '</div>' : '') +
+            '<div style="display:flex;gap:8px;margin-top:10px"><button class="btn sm" data-rv="lan-imprimir" style="flex:1">' + I("imprimir") + ' Imprimir cartão</button><button class="btn sm" data-rv="lan-copiar" style="flex:1">' + I("checklist") + ' Copiar endereço</button></div>' +
+            '</details>';
+        }
+        ov.innerHTML = h + "</div>";
         document.body.appendChild(ov);
         ov.addEventListener("click", function (e) {
           if (e.target === ov) { ov.remove(); return; }
-          var bip = e.target.closest("[data-rvip]"); if (bip) { ov.remove(); montar(bip.getAttribute("data-rvip"), lanNota, alts); return; }
-          var b = e.target.closest("[data-rv]"); if (!b) return; var k = b.getAttribute("data-rv");
+          var bip = e.target.closest("[data-rvip]");
+          if (bip && lan) { var u = bip.getAttribute("data-rvip"); lan.urls = [u].concat(lan.urls.filter(function (x) { return x !== u; })); abrir(lan); var d = document.querySelector('#rv-qr-ov [data-rv="lan"]'); if (d) d.open = true; return; }
+          var b = e.target.closest("[data-rv]"); if (!b || b.tagName === "DETAILS" || b.tagName === "DIV") return; var k = b.getAttribute("data-rv");
           if (k === "fechar") ov.remove();
-          else if (k === "copiar") { try { navigator.clipboard.writeText(url); UI.toast("Link copiado.", "ok"); } catch (_) { UI.toast("Copie o endereço mostrado.", "info"); } }
-          else if (k === "imprimir") self._imprimirCartaoRV(url, svg);
-          else if (k === "nuvem") { ov.remove(); self._compartilharNuvemRV(); }
+          else if (k === "nuvem") { if (!trava) { ov.remove(); self._compartilharNuvemRV(); } }
+          else if (k === "lan-copiar") { try { navigator.clipboard.writeText(lan.urls[0]); UI.toast("Endereço copiado.", "ok"); } catch (_) { UI.toast("Copie o endereço mostrado.", "info"); } }
+          else if (k === "lan-imprimir") self._imprimirCartaoRV(lan.urls[0], (typeof QR !== "undefined") ? QR.svg(lan.urls[0], { tamanhoPx: 220, correcao: "M" }) : "", { nuvem: false });
         });
       }
       // ordena os IPs: rede doméstica real (192.168 / 10.x) na frente; virtuais (172.x de WSL/Hyper-V) atrás
@@ -18879,27 +18910,64 @@
         return ips.slice().sort(function (a, b) { return prio(a) - prio(b); });
         function prio(ip) { if (/^192\.168\./.test(ip)) return 0; if (/^10\./.test(ip)) return 1; if (/^172\.(1[6-9]|2\d|3[01])\./.test(ip)) return 3; return 2; }
       }
-      var base = location.origin + location.pathname.replace(/[^/]*$/, "");
-      var urlLocal = base + "#rv";
-      fetch("/__lan").then(function (r) { return r.json(); }).then(function (d) {
-        if (d && d.ips && d.ips.length) {
-          var ips = ordenarIps(d.ips), porta = d.porta || 8754;
-          var urls = ips.map(function (ip) { return "http://" + ip + ":" + porta + "/#rv"; });
-          montar(urls[0], "O QR aponta pra " + ips[0] + " (rede local). O aparelho precisa estar no mesmo Wi-Fi do computador.", urls.slice(1));
-        } else montar(urlLocal, "Não achei o IP da rede local. Este QR abre só neste aparelho.", []);
-      }).catch(function () { montar(urlLocal, "Servidor local não respondeu o IP. Este QR abre só neste aparelho.", []); });
+      function comLan(cb) {
+        fetch("/__lan").then(function (r) { return r.json(); }).then(function (d) {
+          if (d && d.ips && d.ips.length) {
+            var porta = d.porta || 8754;
+            cb({ urls: ordenarIps(d.ips).map(function (ip) { return "http://" + ip + ":" + porta + "/#rv"; }) });
+          } else cb(null);
+        }).catch(function () { cb(null); });
+      }
+      /* link já gerado para ESTES modelos e ainda com folga: mostra direto.
+         Confere no servidor antes — link apagado lá não pode virar QR na tela. */
+      if (salvo) {
+        var feito = false, tempo = setTimeout(function () { if (!feito) { feito = true; self._modalNuvemRV(salvo.url, salvo.expira, salvo.token); } }, 4000);
+        fetch(base + "/rv/t/" + salvo.token, { cache: "no-store" }).then(function (r) {
+          if (feito) return; feito = true; clearTimeout(tempo);
+          if (r.status === 404 || r.status === 410) { self._rvEsquecerLink(); comLan(abrir); }
+          else self._modalNuvemRV(salvo.url, salvo.expira, salvo.token);
+        }).catch(function () { if (feito) return; feito = true; clearTimeout(tempo); self._modalNuvemRV(salvo.url, salvo.expira, salvo.token); });
+        return;
+      }
+      comLan(abrir);
     },
-    _imprimirCartaoRV: function (url, svg) {
+    /* ---- o último link da nuvem, para não reenviar o IFC a cada abertura ----
+       A assinatura é nome + tamanho + disciplina de cada modelo, e o servidor:
+       trocou o arquivo (reexportou do Revit), trocou a assinatura, e o link
+       velho — que mostraria o projeto ANTIGO — deixa de ser oferecido. */
+    _rvAssinatura: function (modelos, base) {
+      return String(base || "") + "|" + (modelos || []).map(function (m) { return m.nome + ":" + (m.bytes ? m.bytes.length : 0) + ":" + (m.disc || ""); }).join("|");
+    },
+    _rvLinkSalvo: function (modelos, base) {
+      if (!modelos || !modelos.length) return null;
+      var s = null; try { s = JSON.parse(localStorage.getItem("orcapro:rv:ultimo") || "null"); } catch (e) { s = null; }
+      if (!s || !s.token || !s.url || s.assinatura !== this._rvAssinatura(modelos, base)) return null;
+      // ⚠ com menos de 6 h de vida, gera outro: o cliente abre amanhã e cai em "link expirado"
+      if (!(Number(s.expira) - Date.now() > 6 * 3600000)) return null;
+      return s;
+    },
+    _rvGuardarLink: function (modelos, base, url, expira, token) {
+      try { localStorage.setItem("orcapro:rv:ultimo", JSON.stringify({ assinatura: this._rvAssinatura(modelos, base), url: url, expira: expira, token: token })); } catch (e) {}
+    },
+    _rvEsquecerLink: function () { try { localStorage.removeItem("orcapro:rv:ultimo"); } catch (e) {} },
+    _imprimirCartaoRV: function (url, svg, opts) {
+      opts = opts || {};
       var w = null; try { w = window.open("", "_blank"); } catch (_) {}
       if (!w) { UI.toast("O navegador bloqueou a impressão — copie o link.", "erro"); return; }
       try {
         var emp = (typeof Store !== "undefined" && Store.empresa) ? (Store.empresa(Auth.empresaId()) || {}) : {};
-        w.document.write('<!doctype html><meta charset="utf-8"><title>RA/RV na obra</title>' +
+        /* o cartão da NUVEM não pode dizer "mesmo Wi-Fi": é justamente o que
+           ele não exige, e a pessoa na obra acreditaria no papel */
+        var instr = opts.nuvem
+          ? 'Aponte a câmera de qualquer celular para o QR — Android ou iPhone, com internet, sem instalar nada.<br>iPhone: RA do iPhone · Android: RA com âncora · qualquer um: Caminhar.' +
+            (opts.expira ? '<br><b>Válido até ' + new Date(opts.expira).toLocaleDateString("pt-BR") + '.</b>' : '')
+          : 'Aponte a câmera do celular pro QR (mesmo Wi-Fi, com o modelo já aberto no aparelho).<br>Android: RA com âncora · iPhone: Caminhar no projeto.';
+        w.document.write('<!doctype html><meta charset="utf-8"><title>Projeto 3D no celular</title>' +
           '<style>@page{size:A5;margin:12mm}body{font-family:Arial;color:#0f2740;text-align:center}h1{font-size:20px;margin:6px 0}p{font-size:13px;color:#334}</style>' +
           '<h1>' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' Ver o projeto em Realidade Aumentada</h1>' +
           '<p><b>' + Util.esc(emp.nome || "Visita virtual da obra") + '</b></p>' +
           '<div style="margin:14px auto;width:220px">' + (svg || "") + '</div>' +
-          '<p>Aponte a câmera do celular pro QR (mesmo Wi-Fi).<br>Android: RA no ambiente · iPhone: Caminhar no projeto.</p>' +
+          '<p>' + instr + '</p>' +
           '<p style="font-size:10px;color:#889;word-break:break-all">' + Util.esc(url) + '</p>' +
           '<script>setTimeout(function(){window.print()},300)<\/script>');
         w.document.close();
@@ -18936,7 +19004,7 @@
       var base = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? CONFIG.licencaServer : "";
       var chave = (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "";
       if (!base) { UI.toast("Servidor de compartilhamento não configurado.", "erro"); return; }
-      if (!chave) { UI.toast("Compartilhar na nuvem é da versão ativada (🔑). No teste grátis, use o QR da rede local.", "erro"); return; }
+      if (!chave) { UI.toast("O link para qualquer celular é da versão ativada (🔑 Licença). No teste grátis o projeto não sai do computador.", "erro"); return; }
       var modelos = (typeof BIM !== "undefined" && BIM.bytesModelos) ? BIM.bytesModelos() : [];
       /* ⚠ MODELO RESTAURADO DO CACHE NÃO TEM O ARQUIVO. O cache guarda a
          geometria convertida, nunca o .ifc (é o que impede o inchaço de
@@ -18979,7 +19047,9 @@
           .then(function (res) {
             if (!res.ok || !res.j.token) throw new Error(res.j.erro || "falha ao criar o link");
             if (ov.parentNode) ov.remove();
-            self._modalNuvemRV(base + "/rvapp/#rv?t=" + res.j.token, res.j.expira, res.j.token);
+            var urlT = base + "/rvapp/#rv?t=" + res.j.token;
+            self._rvGuardarLink(modelos, base, urlT, res.j.expira, res.j.token);
+            self._modalNuvemRV(urlT, res.j.expira, res.j.token);
           }).catch(function (e) { if (ov.parentNode) ov.remove(); UI.toast("Não deu pra criar o link: " + (e && e.message || e), "erro"); });
       }
       subir(0);
@@ -18995,14 +19065,15 @@
       ov.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(4,12,22,.82);display:flex;align-items:center;justify-content:center;padding:16px";
       ov.innerHTML =
         '<div style="background:#0f2740;border:1px solid #24435f;border-radius:16px;max-width:440px;width:100%;padding:20px;color:#dbe8f5;box-shadow:0 20px 60px rgba(0,0,0,.5);max-height:92vh;overflow:auto">' +
-        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-size:15px">' + (typeof Icones !== 'undefined' ? Icones.get('nuvem', 15) : '') + ' RA/RV na nuvem — qualquer celular</b><button class="btn sm" data-rv="fechar">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-size:15px">' + (typeof Icones !== 'undefined' ? Icones.get('nuvem', 15) : '') + ' Projeto 3D — qualquer celular</b><button class="btn sm" data-rv="fechar">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>' +
         '<div style="background:#fff;border-radius:12px;padding:14px;display:flex;justify-content:center">' + (svg || '<span style="color:#333">QR indisponível</span>') + '</div>' +
         '<div style="font-size:12px;color:#9fb2c8;margin-top:10px;word-break:break-all"><b>Link:</b> ' + Util.esc(url) + '</div>' +
-        '<div style="font-size:12.5px;color:#cbd8e6;line-height:1.5;margin:12px 0 6px">Aponte a câmera de <b>qualquer celular ou tablet</b> (não precisa estar na mesma rede) — o modelo abre direto na RA/RV:' +
-        '<ul style="margin:6px 0;padding-left:18px"><li><b>Android</b>: RA no ambiente (fixe no chão e trave) + escolha a disciplina.</li><li><b>iPhone/iPad</b>: Caminhar no projeto.</li></ul></div>' +
-        '<div style="font-size:11.5px;color:#f0b94a;line-height:1.35;margin-bottom:12px">⏳ O link vale <b>' + dias + ' dia(s)</b> e só quem tem ele acessa. Depois disso o modelo é apagado do servidor.</div>' +
+        '<div style="font-size:12.5px;color:#cbd8e6;line-height:1.5;margin:12px 0 6px">Aponte a câmera de <b>qualquer celular ou tablet</b> — Android ou iPhone, com ou sem o OrçaPRO instalado, em qualquer rede. Ou mande o link: quem tocar nele abre o projeto no navegador.' +
+        '<ul style="margin:6px 0;padding-left:18px"><li><b>iPhone/iPad</b>: RA do iPhone (fixa no chão) ou Caminhar.</li><li><b>Android</b>: RA com âncora (fixe no chão e trave) + disciplina, ou Caminhar.</li></ul></div>' +
+        '<div style="font-size:11.5px;color:#f0b94a;line-height:1.35;margin-bottom:12px">⏳ O link vale até <b>' + (expira ? new Date(expira).toLocaleDateString("pt-BR") + ' às ' + new Date(expira).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : dias + ' dia(s)') + '</b> e só quem tem ele acessa. Depois disso o modelo é apagado do servidor.</div>' +
         (salaLink ? '<button data-rv="entrar" style="width:100%;margin-bottom:8px;padding:10px;border-radius:9px;border:0;background:#16a34a;color:#fff;font-weight:700;font-size:13px;cursor:pointer">' + (typeof Icones !== 'undefined' ? Icones.get('pessoas', 15) : '') + ' Entrar você também na reunião deste link</button>' : '') +
-        '<div style="display:flex;gap:8px"><button class="btn sm primary" data-rv="imprimir" style="flex:1">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Imprimir cartão</button><button class="btn sm" data-rv="copiar" style="flex:1">' + (typeof Icones !== 'undefined' ? Icones.get('checklist', 15) : '') + ' Copiar link</button></div>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm primary" data-rv="whats" style="flex:1 1 100%">' + (typeof Icones !== 'undefined' ? Icones.get('enviar', 15) : '') + ' Enviar o link por WhatsApp</button><button class="btn sm" data-rv="imprimir" style="flex:1">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Imprimir cartão</button><button class="btn sm" data-rv="copiar" style="flex:1">' + (typeof Icones !== 'undefined' ? Icones.get('checklist', 15) : '') + ' Copiar link</button></div>' +
+        '<button class="btn sm" data-rv="renovar" style="width:100%;margin-top:8px;font-size:11.5px" title="Envia o modelo de novo e cria outro link — use se você mudou o projeto">' + (typeof Icones !== 'undefined' ? Icones.get('ciclo', 15) : '') + ' Mudou o modelo? Gerar link novo</button>' +
         '</div>';
       document.body.appendChild(ov);
       ov.addEventListener("click", function (e) {
@@ -19010,7 +19081,11 @@
         var b = e.target.closest("[data-rv]"); if (!b) return; var k = b.getAttribute("data-rv");
         if (k === "fechar") ov.remove();
         else if (k === "copiar") { try { navigator.clipboard.writeText(url); UI.toast("Link copiado.", "ok"); } catch (_) { UI.toast("Copie o link mostrado.", "info"); } }
-        else if (k === "imprimir") self._imprimirCartaoRV(url, svg);
+        else if (k === "imprimir") self._imprimirCartaoRV(url, svg, { nuvem: true, expira: expira });
+        /* o link vai no texto do wa.me (Política 4.4: o que vai na URL passa pela Meta) — só o
+           endereço do projeto, sem nome de cliente */
+        else if (k === "whats") { try { window.open("https://wa.me/?text=" + encodeURIComponent("Projeto em 3D para abrir no celular (Android ou iPhone, sem instalar nada): " + url), "_blank"); } catch (_) { UI.toast("Copie o link e mande pelo WhatsApp.", "info"); } }
+        else if (k === "renovar") { self._rvEsquecerLink(); ov.remove(); self._compartilharNuvemRV(); }
         else if (k === "entrar") {
           if (typeof BIM === "undefined" || !BIM.reuniao) { UI.toast("Abra o modelo no visualizador primeiro.", "erro"); return; }
           if (BIM.reuniao.ativa) { UI.toast("Você já está na reunião deste link.", "ok"); ov.remove(); return; }
