@@ -307,10 +307,49 @@
        com uma ETAPA do cronograma — é o que põe a peça na data certa. O
        carimbo que casou só pela categoria entra à parte: a janela dela é a
        da categoria inteira, não a da etapa. */
-    var nCarEtapa = 0, nCarCat = 0;
+    var nCarEtapa = 0, nCarCat = 0, nCarTarefa = 0;
     etapas.forEach(function (e) { idsAtv[String(e.id)] = true; });
+    /* ⚠ AS TAREFAS DO PLANO EXECUTIVO (js/bimelo.js). Com a árvore da EAP
+       (`r.atividades`, `estimar` com `{eap: true}`), cada SUBETAPA — e o
+       grupo de serviços soltos — vira uma atividade FILHA da etapa, com as
+       datas, a folga, a crítica e o avanço real dela. A peça cujo elo
+       (`ent.elo.porEl`, do `BIMElo.resolver`) aponta para a tarefa sobe na
+       data da TAREFA: antes, a laje subia junto com os pilares, na janela da
+       etapa inteira.
+       ⚠ A FILHA NÃO PESA (`peso` 0, fora da contagem, dos marcos e das
+       ativas): a curva S, o % e o custo na data continuam pela etapa, que já
+       contém o custo das tarefas — somar as duas contaria o dinheiro duas
+       vezes, e mudaria o número que o gestor já mostrou na reunião. */
+    var folhasArv = {}, ordemFolhas = [], baseArv = {};
+    arr(r && r.atividades).forEach(function (n) {
+      if (n && n.papel === "folha" && n.tipo !== "etapa" && n.id != null && n.etapaId != null && own(idsAtv, String(n.etapaId))) {
+        folhasArv[String(n.id)] = n; ordemFolhas.push(String(n.id));
+        /* a régua cobre a tarefa inteira (o eixo nasce logo abaixo) */
+        ini = menor(ini, ymd(n.dataInicio)); fim = maior(fim, ymd(n.dataFim));
+        if (n.avanco && (n.avanco.estado === "andamento" || n.avanco.estado === "concluida")) {
+          ini = menor(ini, ymd(n.avanco.iniReal));
+          if (n.avanco.fimReal) fim = maior(fim, somaDias(ymd(n.avanco.fimReal), 1));
+        }
+      }
+    });
+    arr(base && base.atividades).forEach(function (n) {
+      if (!n || n.id == null) return;
+      baseArv[String(n.id)] = n;
+      if (own(folhasArv, String(n.id))) { ini = menor(ini, ymd(n.dataInicio)); fim = maior(fim, ymd(n.dataFim)); }
+    });
+    var eloDe = (ent.elo && ent.elo.porEl) ? ent.elo.porEl : null;
     var elementos = arr(plano.elementos).map(function (el) {
-      var atv = (el.etapaId != null && own(idsAtv, String(el.etapaId))) ? String(el.etapaId) : null;
+      var atv = null, eE = eloDe ? eloDe[String(el.id)] : null;
+      /* ⚠ DEMOLIR FICA COM A JANELA DA DEMOLIÇÃO: o carimbo da peça a
+         demolir diz a etapa da obra NOVA, não quando ela cai (a mesma regra
+         do `BIM4D.planejar`) — o elo não passa por cima disso */
+      if (eE && eE.noId != null && el.fase !== "demolir") {
+        var kN = String(eE.noId);
+        if (own(idsAtv, kN)) atv = kN;
+        else if (own(folhasArv, kN)) { atv = kN; nCarTarefa++; }
+        else if (eE.etapaId != null && own(idsAtv, String(eE.etapaId))) atv = String(eE.etapaId);
+      }
+      if (!atv) atv = (el.etapaId != null && own(idsAtv, String(el.etapaId))) ? String(el.etapaId) : null;
       if (atv) nCarEtapa++; else if (el.exato === true) nCarCat++;
       var fase = el.fase === "existente" || el.fase === "demolir" ? el.fase : null;
       if (!atv && fase !== "existente") {
@@ -367,6 +406,34 @@
         real: null, reprogramada: false, nEl: porAtv[k] || 0, estimado: true, demolicao: !!p.demolicao
       });
     });
+    /* as TAREFAS (filhas), na ordem da árvore, DEPOIS das etapas e das
+       estimadas: o nº e a cor de cada etapa ficam os de sempre (a cor por
+       etapa é PALETA[i]) — a filha herda a cor da mãe e usa o nº da EAP */
+    var idxEtapa = {};
+    atividades.forEach(function (a, i) { if (!a.estimado) idxEtapa[a.id] = i; });
+    ordemFolhas.forEach(function (id) {
+      var n = folhasArv[id], mae = atividades[idxEtapa[String(n.etapaId)]];
+      if (!mae) return;
+      var A = ymd(n.dataInicio), Bx = ymd(n.dataFim);
+      var nb = baseArv[id] || n, Ab = ymd(nb.dataInicio) || A, Bbx = ymd(nb.dataFim) || Bx;
+      var marco = !!n.marco || (!!A && !(Bx > A));
+      var marcoB = !!nb.marco || (!!Ab && !(Bbx > Ab));
+      var T = terminoIncl(A, Bx, marco), Tb = terminoIncl(Ab, Bbx, marcoB);
+      var real = temReal ? realDe(n, AV) : null;
+      atividades.push({
+        id: id, codigo: n.numero == null ? "" : String(n.numero), nome: String(n.nome || "Tarefa"),
+        n: n.numero == null ? "" : String(n.numero), pai: mae.id, sub: true, tipoNo: n.tipo,
+        categoria: n.categoria || mae.categoria, corCat: n.cor || mae.corCat, corEtapa: mae.corEtapa,
+        inicio: A, termino: T, fimExcl: Bx, duracao: marco ? 0 : uteisEntre(E, A, T), marco: marco,
+        folga: n.folga == null ? null : num(n.folga, 0), critico: !!n.critico, custo: 0, peso: 0,
+        valor: n.valor == null ? null : num(n.valor, 0),
+        base: { inicio: Ab, termino: Tb, marco: marcoB },
+        real: real, reprogramada: !!(real && (A !== Ab || T !== Tb)),
+        nEl: porAtv[id] || 0, estimado: false
+      });
+      mae.nFilhas = (mae.nFilhas || 0) + 1;
+      mae.nEl += porAtv[id] || 0;
+    });
     var porId = {};
     atividades.forEach(function (a, i) { porId[a.id] = i; });
 
@@ -378,7 +445,7 @@
     atividades.forEach(function (a) { if (!a.estimado) somaCusto += a.custo; });
     var pesoBase = somaCusto > 0 ? "custo" : "duracao";
     atividades.forEach(function (a) {
-      if (a.estimado) { a.peso = 0; return; }
+      if (a.estimado || a.sub) { a.peso = 0; return; }
       a.peso = pesoBase === "custo" ? a.custo : (a.base.marco ? 0 : uteisEntre(E, a.base.inicio, a.base.termino));
     });
     var pesoTotal = 0;
@@ -389,7 +456,8 @@
       eixo: E, atividades: atividades, porId: porId, elementos: elementos,
       temReal: temReal, corte: corte || null, temCronograma: !!r, erroCronograma: erroCrono || null,
       peso: pesoBase, pesoTotal: pesoTotal, avisos: avisos,
-      custoTotal: somaCusto, carimbo: { etapa: nCarEtapa, categoria: nCarCat, total: elementos.length },
+      custoTotal: somaCusto, carimbo: { etapa: nCarEtapa, categoria: nCarCat, total: elementos.length, tarefa: nCarTarefa },
+      temTarefas: ordemFolhas.length > 0,
       dataInicioObra: ymd(r && r.dataInicio) || ymd(rCal && rCal.dataInicio) || ini,
       dataFimObra: r ? terminoIncl(ymd(r.dataInicio), ymd(r.dataFim), false) : "",
       feriadosNoPeriodo: E.dias.filter(function (d) { return d.feriado; }).map(function (d) { return { data: d.data, nome: d.feriado, util: d.util }; }),
@@ -470,8 +538,9 @@
       var s = estadoAtividade(sim, a, d);
       s.id = a.id;
       porAtv[a.id] = s; lista.push(s);
-      if (!a.estimado) cont[s.estado]++;
-      if (s.estado === "execucao" || (s.estado === "atrasado" && (s.pctReal || 0) < 1)) ativas.push(a.id);
+      /* a tarefa (filha) não conta de novo o que a etapa dela já conta */
+      if (!a.estimado && !a.sub) cont[s.estado]++;
+      if (!a.sub && (s.estado === "execucao" || (s.estado === "atrasado" && (s.pctReal || 0) < 1))) ativas.push(a.id);
       somaPlan += a.peso * s.pctPlan;
       somaVig += a.peso * s.pctVig;
       somaReal += a.peso * (s.pctReal == null ? s.pctVig : s.pctReal);
@@ -489,7 +558,7 @@
     });
     var rd = rotuloDia(sim, d);
     var real = sim.temReal && d <= sim.corte;
-    var marcos = sim.atividades.filter(function (a) { return a.marco && !a.estimado; }).map(function (a) {
+    var marcos = sim.atividades.filter(function (a) { return a.marco && !a.estimado && !a.sub; }).map(function (a) {
       return { id: a.id, nome: a.nome, data: a.inicio, atingido: porAtv[a.id].estado === "concluido", estado: porAtv[a.id].estado };
     });
     return {
@@ -546,7 +615,9 @@
       var a = el.atv != null && own(sim.porId, el.atv) ? sim.atividades[sim.porId[el.atv]] : null;
       var k = estadoElemento(el, est.porAtv);
       /* ---- filtros: some quem não passa ---- */
-      if (a && filtro && !filtro[a.id]) { ocultos.push(el.id); return; }
+      /* a peça da TAREFA passa com a tarefa marcada OU com a etapa-mãe
+         marcada (isolar a etapa mostra as tarefas dela) */
+      if (a && filtro && !filtro[a.id] && !(a.pai && filtro[a.pai])) { ocultos.push(el.id); return; }
       if (op.soCriticas && !(a && a.critico)) { ocultos.push(el.id); return; }
       if (op.soExecucao && !(k === "execucao" || k === "atrasado" || k === "demolindo")) { ocultos.push(el.id); return; }
       /* ---- aparência ---- */
@@ -599,6 +670,59 @@
   }
 
   /* ---------------------------------------------------------------------
+     DESEMBOLSO MÊS A MÊS — o custo direto planejado (e o executado pelo
+     avanço, até o corte) que cai em cada mês da simulação.
+     ⚠ É A RÉGUA DESTA SIMULAÇÃO, NÃO O DESEMBOLSO DA PROPOSTA. O da
+       proposta é preço de venda, por etapa, com o nº de meses que o
+       orçamento travou; este é custo direto, dia útil a dia útil, no plano
+       escolhido na Fonte. A tela diz isso ao lado — os dois podem diferir
+       mês a mês, e não é defeito.
+     ⚠ SEM CUSTO NO ORÇAMENTO NÃO HÁ LINHA: `vazio` com o motivo, nunca um
+       mês com R$ 0,00 que parece medido.
+     → { meses:[{mes:"AAAA-MM", rotulo, plan, real|null, acumPlan, acumReal|null}],
+         total, temReal, vazio, motivo }
+     ------------------------------------------------------------------- */
+  function custoEm(sim, d) {
+    var p = 0, re = 0;
+    sim.atividades.forEach(function (a) {
+      if (a.estimado || a.sub || !a.custo) return;
+      var s = estadoAtividade(sim, a, d);
+      p += a.custo * s.pctPlan;
+      re += a.custo * (s.pctReal == null ? s.pctVig : s.pctReal);
+    });
+    return { plan: p, real: re };
+  }
+  function desembolso(sim) {
+    if (!(sim && sim.custoTotal > 0)) return { meses: [], total: 0, temReal: false, vazio: true, motivo: "o orçamento desta obra não tem custo lançado — sem ele não há desembolso (nenhum valor é inventado)." };
+    var ini = sim.inicio, fim = sim.fim, meses = [];
+    var d = ini.slice(0, 7) + "-01", g = 0;
+    var antes = custoEm(sim, ini), acP = 0, acR = 0, antesR = antes.real;
+    var temReal = !!(sim.temReal && sim.corte);
+    while (d <= fim && g++ < 600) {
+      var prox = somaMeses(d, 1);
+      /* o fim do intervalo é o COMEÇO do dia seguinte ao último do mês (o %
+         é o do começo do dia), preso ao último dia da régua */
+      var ate = prox > fim ? fim : prox;
+      var agora = custoEm(sim, ate);
+      var dp = Math.max(0, agora.plan - antes.plan);
+      acP += dp;
+      var real = null, acReal = null;
+      /* o real só até o corte — a MESMA régua da curva S (depois do corte é
+         plano reprogramado, não dinheiro executado) */
+      if (temReal && d <= sim.corte) {
+        var aR = custoEm(sim, ate > sim.corte ? sim.corte : ate).real;
+        real = Math.max(0, aR - antesR); antesR = aR;
+        acR += real; acReal = acR;
+      }
+      meses.push({ mes: d.slice(0, 7), rotulo: mesCurto(d), plan: Math.round(dp * 100) / 100, real: real == null ? null : Math.round(real * 100) / 100,
+        acumPlan: Math.round(acP * 100) / 100, acumReal: acReal == null ? null : Math.round(acReal * 100) / 100 });
+      antes = agora;
+      d = prox;
+    }
+    return { meses: meses, total: Math.round(sim.custoTotal * 100) / 100, temReal: temReal, vazio: false, motivo: "" };
+  }
+
+  /* ---------------------------------------------------------------------
      A RÉGUA: limites, passo e posição
      ------------------------------------------------------------------- */
   function clampData(sim, data) {
@@ -637,7 +761,12 @@
   /* elementos (ids) de uma atividade — "isolar esta etapa" e "enquadrar" */
   function elementosDe(sim, atvId) {
     var out = [];
-    sim.elementos.forEach(function (el) { if (el.atv === atvId) out.push(el.id); });
+    /* a etapa leva junto as peças das tarefas dela */
+    sim.elementos.forEach(function (el) {
+      if (el.atv === atvId) { out.push(el.id); return; }
+      var a = el.atv != null && own(sim.porId, el.atv) ? sim.atividades[sim.porId[el.atv]] : null;
+      if (a && a.pai === atvId) out.push(el.id);
+    });
     return out;
   }
   /* a atividade de um elemento (clique no 3D → linha da lista) */
@@ -669,6 +798,47 @@
       Object.keys(o.etapas).forEach(function (k) { if (o.etapas[k] === true && k.length <= 120 && n < 2000) { m[k] = true; n++; } });
       out.etapas = m;
     }
+    return out;
+  }
+
+  /* ---------------------------------------------------------------------
+     FOCO — o que a janela principal pede para a janela do 3D MOSTRAR, vindo
+     de QUALQUER ferramenta do BIM: o conjunto isolado ou pintado, o conflito
+     aberto, a divergência orçamento × modelo, o avanço pintado, a peça
+     clicada. É o "de onde veio esta informação" na tela do projetor.
+     ⚠ SÓ CHAVES DURÁVEIS (`modeloId::globalId`, js/bimid.js), NUNCA uid: o
+       uid (`mid:expressID`) depende da ordem em que cada janela abriu os
+       modelos — a mesma armadilha do estado da simulação (ver `opcoes`).
+     ⚠ MENSAGEM DE OUTRA JANELA É ENTRADA: lista branca campo a campo; cor só
+       em #hex; dono da pintura só dos conhecidos; tetos de tamanho.
+     → null (descartar) | { modo, chaves:[], mapa:{chave: cor|{cor,opacidade}}|null,
+                            dono, rotulo }
+     ------------------------------------------------------------------- */
+  var MODOS_FOCO = { isolar: 1, pintar: 1, focar: 1, selecao: 1, limpar: 1 };
+  var DONOS_FOCO = { conjunto: 1, divergencia: 1, avanco: 1, versao: 1 };
+  var RE_COR = /^#[0-9a-f]{3,8}$/i, TETO_FOCO = 20000;
+  function foco(o) {
+    o = o || {};
+    if (typeof o.modo !== "string" || !own(MODOS_FOCO, o.modo)) return null;
+    var out = { modo: o.modo, chaves: [], mapa: null, dono: "", rotulo: "" };
+    arr(o.chaves).forEach(function (k) { if (typeof k === "string" && k.length && k.length <= 200 && out.chaves.length < TETO_FOCO) out.chaves.push(k); });
+    if (o.modo === "pintar") {
+      var m = {}, n = 0, src = (o.mapa && typeof o.mapa === "object") ? o.mapa : {};
+      Object.keys(src).forEach(function (k) {
+        if (n >= TETO_FOCO || !k || k.length > 200) return;
+        var v = src[k];
+        if (typeof v === "string" && RE_COR.test(v)) { m[k] = v; n++; }
+        else if (v && typeof v === "object" && typeof v.cor === "string" && RE_COR.test(v.cor)) {
+          var op = +v.opacidade;
+          m[k] = { cor: v.cor, opacidade: isFinite(op) ? Math.max(0, Math.min(1, op)) : 1 }; n++;
+        }
+      });
+      if (!n) return null;
+      out.mapa = m;
+      out.dono = (typeof o.dono === "string" && own(DONOS_FOCO, o.dono)) ? o.dono : "espelho";
+    }
+    if (typeof o.rotulo === "string") out.rotulo = o.rotulo.slice(0, 200);
+    if ((o.modo === "isolar" || o.modo === "focar" || o.modo === "selecao") && !out.chaves.length) return null;
     return out;
   }
 
@@ -759,7 +929,12 @@
     o = o || {};
     var R = o.restauro || null;
     if (o.temModelo) {
-      var t = o.vivo ? "Simulação 4D · segue o painel da janela principal" : "Esperando o painel da Simulação 4D na janela principal…";
+      /* `simulando === false`: aberta como ESPELHO pelo cabeçalho do BIM (a
+         simulação não está ligada) — dizer "Simulação 4D" ali seria dizer o
+         que ela não está fazendo */
+      var esp = o.simulando === false;
+      var t = o.vivo ? (esp ? "3D da obra · segue a janela principal" : "Simulação 4D · segue o painel da janela principal")
+        : (esp ? "Esperando a janela principal…" : "Esperando o painel da Simulação 4D na janela principal…");
       if (R && arr(R.faltando).length) t += " · Falta o arquivo de " + nomes(R.faltando) + " neste aparelho: arraste o .IFC para esta janela.";
       return { texto: t, classe: o.vivo ? "vivo" : "espera" };
     }
@@ -786,9 +961,9 @@
     ymd: ymd, br: br, brCurto: brCurto, diaSemana: diaSemana, diaSemanaCurto: diaSemanaCurto, mesCurto: mesCurto,
     somaDias: somaDias, somaMeses: somaMeses, diasEntre: diasEntre,
     montar: montar, estadoEm: estadoEm, estadoAtividade: estadoAtividade, estadoElemento: estadoElemento,
-    cena: cena, curvaS: curvaS,
+    cena: cena, curvaS: curvaS, desembolso: desembolso,
     clampData: clampData, passo: passo, indiceDe: indiceDe, dataDoIndice: dataDoIndice, fracao: fracao,
-    elementosDe: elementosDe, atividadeDoElemento: atividadeDoElemento, opcoes: opcoes,
+    elementosDe: elementosDe, atividadeDoElemento: atividadeDoElemento, opcoes: opcoes, foco: foco,
     uteisEntre: function (sim, a, b) { return uteisEntre(sim.eixo, ymd(a), ymd(b)); }
   };
 

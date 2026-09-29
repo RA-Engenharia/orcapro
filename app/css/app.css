@@ -3873,6 +3873,74 @@ table.tbl.cxb-tab tr.cxb-mudou td.num { color: var(--graf-aviso); }
 .b4-corpo { display: flex; flex-direction: column; gap: 10px; }
 .b4-col-a, .b4-col-b { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .b4-largo .b4-corpo { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(300px, 1fr); align-items: start; gap: 14px; }
+
+/* ---- janela do 3D (espelho): "de onde veio" e a tela cheia ---- */
+.b3-foco { position: absolute; left: 50%; transform: translateX(-50%); top: 14px; z-index: 5; max-width: min(760px, 80%); background: rgba(15, 39, 64, .9); color: #fff; border-radius: 10px; padding: 7px 14px; font-size: var(--t-peq); box-shadow: 0 6px 18px rgba(0, 0, 0, .3); pointer-events: none; text-align: center; }
+/* embaixo à direita, acima do selo da janela: o canto de cima é da barra do visualizador */
+.b3-tela { position: absolute; right: 14px; bottom: 50px; z-index: 6; display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgba(255, 255, 255, .25); background: rgba(15, 39, 64, .82); color: #dbe8f5; border-radius: 8px; padding: 6px 11px; font: inherit; font-size: var(--t-peq); cursor: pointer; }
+.b3-tela:hover { background: rgba(15, 39, 64, .95); color: #fff; }
+.b3-tela:focus-visible { outline: 2px solid #93c5fd; outline-offset: 2px; }
+:fullscreen .b3-tela { opacity: .55; }
+:fullscreen .b3-tela:hover { opacity: 1; }
+
+/* ---- abas do painel (Simulação · Prazo × Custo · Elo do modelo) ---- */
+.b4-abas { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--linha); padding-bottom: 6px; }
+.b4-largo .b4-abas { grid-column: 1 / -1; }
+.b4-aba { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--linha); background: var(--surface); color: var(--texto); font: inherit; font-size: var(--t-peq); padding: 6px 12px; border-radius: var(--raio-sm); cursor: pointer; min-height: 32px; }
+.b4-aba:hover { background: var(--tinta-aco); }
+.b4-aba.on { background: var(--aco); border-color: var(--aco); color: #fff; font-weight: var(--p-medio); }
+.b4-aba:focus-visible { outline: 2px solid var(--aco); outline-offset: 2px; }
+.b4-aba-n { display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 99px; background: var(--graf-aviso); color: #fff; font-size: var(--t-micro); line-height: 18px; text-align: center; }
+
+/* ---- lista: etapa → tarefas do plano executivo ---- */
+.b4-grade tr.b4-filha td { background: var(--faixa-sub); }
+.b4-grade tr.b4-filha td.b4-c-nome { padding-left: 26px; }
+.b4-grade tr.b4-filha .b4-nome { font-weight: var(--p-normal); }
+.b4-num-eap { display: inline-block; margin-right: 6px; font-size: var(--t-micro); color: var(--texto-fraco); font-variant-numeric: tabular-nums; }
+.b4-tog { border: 0; background: transparent; color: var(--texto-fraco); cursor: pointer; font-size: var(--t-peq); width: 20px; height: 20px; padding: 0; margin-right: 2px; border-radius: 4px; vertical-align: middle; }
+.b4-tog:hover { background: var(--tinta-aco); color: var(--texto); }
+.b4-tog:focus-visible { outline: 2px solid var(--aco); }
+.b4-tog-todas { margin-left: 8px; text-transform: none; letter-spacing: 0; }
+
+/* ---- a peça clicada no 3D (em cima, em qualquer aba) ---- */
+.b4-peca { font-size: var(--t-peq); color: var(--texto); margin: -4px 0 8px; line-height: 1.5; }
+.b4-peca:empty { display: none; }
+.b4-peca-t { color: var(--texto-fraco); }
+.b4-peca-f { font-size: var(--t-micro); color: var(--aco); background: var(--tinta-aco); border-radius: 99px; padding: 0 7px; white-space: nowrap; }
+.b4-ficha { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; font-size: var(--t-peq); }
+.b4-ficha dt { color: var(--texto-fraco); }
+.b4-ficha dd { margin: 0; }
+
+/* ---- Prazo × Custo ---- */
+.b4-cd-l { display: grid; grid-template-columns: 78px 1fr auto 52px; align-items: center; gap: 8px; font-size: var(--t-peq); margin: 4px 0; }
+.b4-cd-l b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.b4-cd-l em { font-style: normal; color: var(--texto-fraco); text-align: right; font-variant-numeric: tabular-nums; }
+.b4-cd-b { display: block; height: 10px; border-radius: 5px; background: var(--faixa-sub); overflow: hidden; }
+.b4-cd-b i, .b4-desemb-bar i { display: block; height: 100%; border-radius: 5px; }
+.b4-db-p { background: #64748b; }
+.b4-db-r { background: var(--verde); }
+.b4-cd-at { margin-top: 8px; font-size: var(--t-peq); }
+.b4-cd-at ul { margin: 4px 0 0; padding-left: 18px; }
+.b4-desemb { width: 100%; border-collapse: collapse; font-size: var(--t-peq); }
+.b4-desemb th { text-align: left; font-size: var(--t-micro); color: var(--texto-fraco); font-weight: var(--p-forte); padding: 4px 6px; border-bottom: 1px solid var(--linha); }
+.b4-desemb td { padding: 4px 6px; border-bottom: 1px solid var(--linha); }
+.b4-desemb-bar { width: 32%; }
+.b4-desemb-bar i { height: 6px; margin: 1px 0; }
+
+/* ---- Elo do modelo ---- */
+.b4-elo-l { display: grid; grid-template-columns: 140px 1fr 56px; align-items: center; gap: 8px; font-size: var(--t-peq); margin: 4px 0; }
+.b4-elo-l b { text-align: right; font-variant-numeric: tabular-nums; }
+.b4-elo-b { display: block; height: 10px; border-radius: 5px; background: var(--faixa-sub); overflow: hidden; }
+.b4-elo-b i { display: block; height: 100%; }
+.b4-elo-tar { background: var(--verde); }
+.b4-elo-et { background: var(--graf-aviso); }
+.b4-elo-est { background: #94a3b8; }
+.b4-elo-ex { background: #cbd5e1; }
+.b4-elo-tab { width: 100%; border-collapse: collapse; font-size: var(--t-peq); }
+.b4-elo-tab th { text-align: left; font-size: var(--t-micro); color: var(--texto-fraco); padding: 4px 6px; border-bottom: 1px solid var(--linha); }
+.b4-elo-tab td { padding: 4px 6px; border-bottom: 1px solid var(--linha); vertical-align: top; }
+.b4-passos { margin: 0; padding-left: 20px; font-size: var(--t-peq); line-height: 1.5; }
+.b4-passos li + li { margin-top: 4px; }
 .b4-sec { border: 1px solid var(--linha); border-radius: var(--raio); padding: 10px 12px; background: var(--card-bg); }
 .b4-sec-t { display: flex; align-items: center; gap: 6px; font-size: var(--t-micro); font-weight: var(--p-forte); text-transform: uppercase; letter-spacing: .04em; color: var(--texto-fraco); margin: 0 0 8px; }
 details.b4-sec > summary.b4-sec-t { cursor: pointer; margin: 0; }

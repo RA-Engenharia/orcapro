@@ -190,7 +190,11 @@
    * defeito que o `nomeIfc` acima já custou uma vez. */
   var CAMPOS_ELEMENTO = ["id", "globalId", "tipo", "nome", "nomeIfc", "familia", "sistemaIfc",
                          "descricao", "descricaoFonte",
-                         "etapa", "codOrc", "fase", "tag"];
+                         "etapa", "codOrc", "fase", "tag",
+                         /* a tarefa do plano executivo (OrcaPRO_Tarefa): sem ela
+                            aqui, o modelo reaberto do cache perderia o elo
+                            peça ↔ tarefa e voltaria a subir pela etapa */
+                         "tarefa"];
 
   function elementoLimpo(e) {
     var o = {};

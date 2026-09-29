@@ -2574,7 +2574,9 @@
          consumidor"). Falhou: a aba continua, sem os números. */
       if (ao && ao.obra && ao.nivel === 0 && ap && typeof ap._cronoPainelDados === "function") {
         var pd = null;
-        try { pd = ap._cronoPainelDados(ao.obra, orc, { comGantt: est.sub === "real" }); } catch (eP) { pd = null; }
+        /* `comCusto`: a sub-aba Previsto × Realizado mostra o Prazo × Custo
+           (valor agregado com o custo real); o chip da faixa não precisa */
+        try { pd = ap._cronoPainelDados(ao.obra, orc, { comGantt: est.sub === "real", comCusto: est.sub === "real" }); } catch (eP) { pd = null; }
         if (pd && pd.painel) {
           /* texto e porta SEPARADOS: na faixa o texto encolhe com reticências
              (a 1366 ela divide a linha com as sub-abas) e a porta não pode sumir junto */

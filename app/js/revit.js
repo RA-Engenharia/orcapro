@@ -28,7 +28,15 @@
 
     /* Contrato formato 1 (lido por rabim_orcapro.carregar_obra no plugin):
        { formato, obra, orcamento, uf, competencia, bdi (percentual),
-         etapas: [nome...], cronograma: [{etapa, inicio, fim}...], geradoEm } */
+         etapas: [nome...], cronograma: [{etapa, inicio, fim}...], geradoEm }
+       Campos ADITIVOS (o plugin antigo ignora o que não conhece), postos
+       pelo Gestao.bimExportarRevit depois desta função:
+         avanco  — Revit.montarAvanco;
+         tarefas — BIMElo.tarefasRevit: [{numero, nome, etapa, etapaNumero,
+                   tipo, inicio, fim (último dia de trabalho), critica, marco,
+                   carimbo}] — `carimbo` é o texto EXATO que o botão
+                   "Carimbar Tarefa" grava em OrcaPRO_Tarefa;
+         tarefasFonte — "plano de execução da obra" | "cronograma do orçamento". */
     montarObraAtiva: function (orc, obra, sim) {
       orc = orc || {};
       var etapas = [], vistos = {};

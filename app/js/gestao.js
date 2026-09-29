@@ -9983,6 +9983,10 @@
       var info = document.getElementById("bim-info");
       var drawer = document.getElementById("bim-drawer");
       var hud4 = document.getElementById("bim4d-hud"), st3d = document.getElementById("b4-j3d-status");
+      /* ⚠ o rótulo "de onde veio" e o botão de tela cheia da janela do 3D
+         (espelho): o que a casca não leva para o palco some junto com o card
+         antigo — a e2e mediu o rótulo vazio com o foco aplicado */
+      var foco3 = document.getElementById("b3-foco"), tela3 = document.querySelector(".b3-tela");
       var obra = null;
       try { obra = Store.obter(eid(), "obras", this._bimSel); } catch (e) {}
 
@@ -9995,6 +9999,8 @@
           if (info) palco.appendChild(info);
           if (hud4) palco.appendChild(hud4);
           if (st3d) palco.appendChild(st3d);
+          if (foco3) palco.appendChild(foco3);
+          if (tela3) palco.appendChild(tela3);
           if (drawer) palco.appendChild(drawer);
           canvas.style.height = "100%";
           canvas.style.background = "transparent";
@@ -12493,6 +12499,10 @@
           '<div id="bim-aviso" style="color:#8fa3b8;text-align:center;font-size:14px;padding:20px">Abrindo o modelo guardado nesta obra…</div></div>' +
           '<div id="bim-info" style="position:absolute;left:64px;top:52px;background:rgba(15,39,64,.9);color:#fff;border-radius:8px;padding:7px 11px;font-size:12px;display:none;max-width:260px;z-index:4"></div>' +
           '<div id="bim4d-hud" class="b4-hud" style="display:none" aria-live="polite"></div>' +
+          /* "de onde veio": o que a janela principal pediu para mostrar
+             (conjunto, conflito, divergência, avanço, a peça clicada) */
+          '<div id="b3-foco" class="b3-foco" style="display:none" aria-live="polite"></div>' +
+          '<button type="button" class="b3-tela" data-gacao="bim-tela-cheia" title="Tela cheia (F). Esc sai.">' + (typeof Icones !== "undefined" ? Icones.get("expandir", 15) : "") + "Tela cheia</button>" +
           '<div id="b4-j3d-status" class="b4-j3d-status">Esperando o painel da Simulação 4D na janela principal…</div>' +
           "</div>";
       }
@@ -12503,6 +12513,11 @@
         obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === self._bimSel ? " selected" : "") + ">" + Util.esc(o.nome) + (o.orcamentoId ? "" : " (sem orçamento)") + "</option>"; }).join("") + "</select>";
       var extra = '<span class="muted" style="align-self:center;margin-right:10px">Cronograma da obra (4D):</span>' + sel +
         ' <button class="btn sm" data-gacao="bim-reuniao" id="bim-btn-reuniao">' + ((typeof Icones !== "undefined") ? Icones.get("obra", 14) : "") + 'Reunião</button>' +
+        /* o 3D do tamanho da tela (as análises continuam na gaveta, por cima)
+           e o 3D numa janela própria — o 2º monitor ou o projetor mostra o
+           modelo enquanto esta janela mostra de onde vem cada número */
+        ' <button class="btn sm" data-gacao="bim-max" id="bim-btn-max" title="O 3D ocupa a tela inteira; as análises continuam na gaveta lateral. Esc volta.">' + (typeof Icones !== "undefined" ? Icones.get("expandir", 14) : "") + 'Maximizar 3D</button>' +
+        ' <button class="btn sm" data-gacao="bim-3d-janela" id="bim-btn-3dj" title="Abre o 3D desta obra numa janela própria (leve ao 2º monitor ou ao projetor). Tudo o que você abrir aqui — conjunto, conflito, divergência, avanço, a peça clicada, a Simulação 4D — aparece lá.">' + (typeof Icones !== "undefined" ? Icones.get("abrir", 14) : "") + '3D em outra janela</button>' +
         ' <button class="btn sm" data-gacao="bim-revit" title="Grava revit\\obra-ativa.json — o plugin RA BIM Tools no Revit passa a ver BDI, etapas e cronograma desta obra">' + ((typeof Icones !== "undefined") ? Icones.get("custoobra", 14) : "") + 'Exportar p/ Revit</button>' +
         ' <button class="btn sm primary" data-gacao="bimeap-abrir" title="O agente lê o modelo IFC (carimbos do Revit, quantitativos, fases de reforma) e monta a EAP completa: etapas, serviços, quantidades e memorial de cálculo rastreável">' + ((typeof Icones !== "undefined") ? Icones.get("escopo", 14) : "") + 'Gerar orçamento do modelo</button>' +
         ' <button class="btn sm" data-gacao="bim-quant-ilustrado" title="Caderno com a imagem de cada família, descrição, dimensões e quantidades do projeto inteiro">' + ((typeof Icones !== "undefined") ? Icones.get("relatorios", 14) : "") + 'Quantitativo ilustrado</button>' +
@@ -14557,6 +14572,7 @@
       if (!r.ok) { UI.toast(r.erros[0] || "A regra deste conjunto tem problema.", "erro"); return; }
       if (!r.chaves.length) { UI.toast('\u201C' + c.nome + '\u201D não casa com nenhuma peça do modelo aberto.', "aviso"); return; }
       var n = BIM.isolarChaves(r.chaves);
+      this._b3Espelhar({ modo: "isolar", chaves: r.chaves, rotulo: "conjunto “" + String(c.nome || "") + "” (isolado)" });
       UI.toast(n + " peça(s) isoladas. Restaurar tudo volta o modelo.", "ok");
     },
     _bimConjPintar: function (id) {
@@ -14566,6 +14582,7 @@
       var cor = c.cor || "#2563eb", mapa = {};
       r.chaves.forEach(function (k) { mapa[k] = cor; });
       var n = BIM.pintarChaves(mapa, "conjunto");
+      this._b3Espelhar({ modo: "pintar", mapa: mapa, dono: "conjunto", rotulo: "conjunto “" + String(c.nome || "") + "” (pintado)" });
       UI.toast(n ? n + " peça(s) pintadas. Clique de novo em Pintar para trocar; o botão de estilo limpa." : "Nenhuma peça deste conjunto está no modelo aberto.", n ? "ok" : "aviso");
     },
     _bimConjExcluir: function (id, nome) {
@@ -14832,6 +14849,7 @@
           UI.fecharModal();
           var n = 0;
           try { n = BIM.isolarChaves(mexidas); } catch (e) {}
+          self._b3Espelhar({ modo: "isolar", chaves: mexidas, rotulo: "peças que mudaram entre as versões do modelo" });
           /* ⚠ as REMOVIDAS não entram: elas não existem mais na cena, e pedir
              para isolar uma peça que saiu não isolaria nada — a tela pareceria
              ter ignorado o clique. */
@@ -15094,6 +15112,24 @@
       var sim = null;
       try { sim = (typeof Execucao !== "undefined") ? Execucao.simular(orc, {}) : null; } catch (e) { sim = null; }
       var payload = Revit.montarObraAtiva(orc, obra, sim);
+      /* AS TAREFAS DO PLANO EXECUTIVO (campo ADITIVO do formato 1 — o plugin
+         antigo ignora): é a lista que o botão "Carimbar Tarefa" do Revit
+         oferece, e o `carimbo` de cada uma é o texto que ele grava em
+         OrcaPRO_Tarefa. Sai do PLANO de execução da obra quando existe (é
+         nele que o engenheiro trabalha), senão do cronograma do orçamento —
+         a mesma porta da Simulação 4D (`_b4Calcular`), para as datas que o
+         Revit mostra serem as mesmas que o 4D usa. */
+      var nTarefas = 0, fonteTar = "";
+      try {
+        if (typeof BIMElo !== "undefined" && BIMElo.tarefasRevit) {
+          var Ft = this._b4Calcular("plano");
+          if (Ft && Ft.r) {
+            payload.tarefas = BIMElo.tarefasRevit(Ft.r, (typeof Cronograma !== "undefined") ? Cronograma : null);
+            payload.tarefasFonte = Ft.fonte === "plano" ? "plano de execução da obra" : "cronograma do orçamento";
+            nTarefas = payload.tarefas.length; fonteTar = payload.tarefasFonte;
+          }
+        }
+      } catch (eT) { payload.tarefas = []; }
       // avanço físico (medições por itens; fallback Last Planner) — v1.1.77
       try {
         var medsObra = lista("medicoes").filter(function (m) { return m.obraId === obra.id; });
@@ -15118,6 +15154,7 @@
           }
           UI.toast("Exportado! O plugin no Revit já vê esta obra: BDI " + payload.bdi + "%, " +
             payload.etapas.length + " etapas" + (nCrono ? ", cronograma de " + nCrono + " etapas" : "") +
+            (nTarefas ? ", " + nTarefas + " tarefas do " + fonteTar + " (para o Carimbar Tarefa)" : "") +
             (av ? ", avanço real (" + (av.fonte === "medicao" ? "medições" : "Last Planner") + ")" : "") + "." + extra, "ok");
         }
       });
@@ -15616,7 +15653,10 @@
           soCriticas: false, soExecucao: false, etapas: null, etapasAntes: null, sel: "", focar: "",
           intervalo: ({ dia: 1, diaUtil: 1, semana: 1, mes: 1 }).hasOwnProperty(pref.intervalo) ? pref.intervalo : "dia",
           vel: [0.5, 1, 2, 4].indexOf(+pref.vel) > -1 ? +pref.vel : 1,
-          ativo: false, largo: false
+          ativo: false, largo: false,
+          /* aba do painel (sim | custo | elo) e as etapas com as tarefas
+             abertas na lista ({etapaId: bool}; null = o padrão do motor) */
+          aba: ({ sim: 1, custo: 1, elo: 1 }).hasOwnProperty(pref.aba) ? pref.aba : "sim", abertas: null
         };
       }
       return this._b4;
@@ -15625,7 +15665,7 @@
        da reunião de hoje, e voltariam amanhã escondendo peça sem ninguém pedir */
     _b4GuardarPref: function () {
       var s = this._b4Estado();
-      try { localStorage.setItem("orcapro:bim4d:pref", JSON.stringify({ cor: s.cor, futuro: s.futuro, criticas: s.criticas, intervalo: s.intervalo, vel: s.vel })); } catch (e) {}
+      try { localStorage.setItem("orcapro:bim4d:pref", JSON.stringify({ cor: s.cor, futuro: s.futuro, criticas: s.criticas, intervalo: s.intervalo, vel: s.vel, aba: s.aba })); } catch (e) {}
     },
     _b4Resetar: function () {
       var s = this._b4Estado();
@@ -15650,15 +15690,41 @@
       var oP = null;
       try { if (window.App && typeof App._cronoOrcDaObra === "function") oP = App._cronoOrcDaObra(obra.id); } catch (e1) { oP = null; }
       out.temPlano = !!oP;
+      /* ⚠ A ÁRVORE DO PLANO EXECUTIVO (`ctx.eap`): subetapas e serviços com
+         datas, número da EAP e — com `valores` — o preço de venda de cada nó.
+         É dela que o elo peça ↔ tarefa (js/bimelo.js) tira a tarefa, e a
+         simulação, as atividades filhas. O `estimar` com a árvore NÃO muda a
+         etapa (ver `Cronograma._arvore`: "lê `r` e nunca o reescreve"), então
+         nenhum número de etapa desta tela muda por causa dela.
+         Os valores e a numeração são os do ORÇAMENTO (a mesma porta do
+         `_cronoPainelDados`): o plano só troca o cronograma. */
+      function ctxArv(o) {
+        var c = { eap: true };
+        /* sem o `calcular`, a numeração sai pela réplica do próprio `eap()` */
+        try { if (typeof Orcamento !== "undefined" && Orcamento.calcular) c.calc = Orcamento.calcular(o); } catch (eC) { /* numeração pela réplica */ }
+        try {
+          var V = (typeof Orcamento !== "undefined" && Orcamento.valoresEAP) ? Orcamento.valoresEAP(o) : null;
+          if (V && V.ok === true) c.valores = V; else out.semVenda = (V && V.motivo) || "valores de venda indisponíveis";
+        } catch (eV) { out.semVenda = String((eV && eV.message) || eV); }
+        return c;
+      }
+      function estimarArv(o, semAv) {
+        /* a árvore é BÔNUS: se ela falhar, o cálculo de sempre (sem árvore)
+           continua — a simulação por etapa não pode cair por causa dela */
+        var C = Cronograma;
+        try { return semAv ? C.semAvanco(o, null, ctxArv(o)) : C.estimar(o, null, ctxArv(o)); }
+        catch (eA) { out.erroArvore = String((eA && eA.message) || eA); return semAv ? C.semAvanco(o) : C.estimar(o); }
+      }
       if (fonte === "plano" && oP) {
         out.fonte = "plano";
+        out.orc = oP;
         /* ⚠ O ERRO DO CÁLCULO É GUARDADO E DITO (achado 25.3 da revisão da
            1.2.98). Ele era gravado aqui e nunca lido: o painel dizia "Sem
            cronograma ligado" e "sem avanço lançado" para uma obra que tem os
            dois — só não calculou. Quem mostra é o `BIM4DSim.montar`
            (`erroCronograma`), que troca o aviso. */
-        try { out.r = Cronograma.estimar(oP); } catch (e2) { out.r = null; out.erro = String((e2 && e2.message) || e2); }
-        try { out.base = (typeof Cronograma.semAvanco === "function") ? Cronograma.semAvanco(oP) : out.r; } catch (e3) { out.base = out.r; out.erroBase = String((e3 && e3.message) || e3); }
+        try { out.r = estimarArv(oP, false); } catch (e2) { out.r = null; out.erro = String((e2 && e2.message) || e2); }
+        try { out.base = (typeof Cronograma.semAvanco === "function") ? estimarArv(oP, true) : out.r; } catch (e3) { out.base = out.r; out.erroBase = String((e3 && e3.message) || e3); }
         /* ⚠ O AVANÇO É O QUE O CRONOGRAMA DA OBRA ACEITOU, NÃO UMA SEGUNDA
            LEITURA (achado 25.2 da revisão da 1.2.98). Aqui havia um
            `CronoAvanco.ler(oP._avancoDaObra)` SEM os ganchos `noExiste` e
@@ -15681,7 +15747,8 @@
       try { orc = Store.obterOrcamento ? Store.obterOrcamento(eid(), obra.orcamentoId) : null; } catch (e5) { orc = null; }
       if (orc) {
         out.temOrc = true;
-        try { out.r = Cronograma.estimar(orc); } catch (e6) { out.r = null; out.erro = String((e6 && e6.message) || e6); }
+        out.orc = orc;
+        try { out.r = estimarArv(orc, false); } catch (e6) { out.r = null; out.erro = String((e6 && e6.message) || e6); }
       }
       out.base = out.r;
       this._b4AvisosDoCrono(out);
@@ -15703,11 +15770,23 @@
     _b4Montar: function () {
       var st = this._b4Estado(), F = this._b4F || {}, p = this._bimPlano;
       this._b4Sim = null; this._b4Curva = null; this._b4Erro = "";
+      /* O ELO peça ↔ tarefa ↔ prazo ↔ custo (js/bimelo.js): cada peça
+         procura a TAREFA do plano (OrcaPRO_Tarefa → OrcaPRO_CodOrc →
+         OrcaPRO_Etapa → estimado). Sem o módulo, a simulação segue pela etapa
+         como antes — e a aba Elo diz que o módulo não carregou. */
+      this._b4Elo = null; this._b4EloCustos = null; this._b4EloConf = null; this._b4Desemb = null; this._b4Evm = null;
+      if (p && F.r && typeof BIMElo !== "undefined" && BIMElo.resolver) {
+        try {
+          this._b4Elo = BIMElo.resolver(this._bimElementos || [], F.r, { plano: p });
+          this._b4EloConf = BIMElo.conferir(this._b4Elo, F.r);
+          if (F.orc) this._b4EloCustos = BIMElo.custos(F.orc, F.r);
+        } catch (eElo) { this._b4Elo = null; this._b4EloErro = String((eElo && eElo.message) || eElo); }
+      }
       if (p && typeof BIM4DSim !== "undefined") {
         try {
           /* ⚠ sem `avanco` à parte: o real é o que o `estimar` aceitou (ver o
              ⚠ no _b4Calcular). `erroCronograma` faz a falha ser dita como falha. */
-          this._b4Sim = BIM4DSim.montar({ r: F.r, base: F.base, plano: p, hoje: BIM4DSim.ymd(new Date()), unidade: F.r ? "dia" : "semana", erroCronograma: F.erro || "" });
+          this._b4Sim = BIM4DSim.montar({ r: F.r, base: F.base, plano: p, elo: this._b4Elo, hoje: BIM4DSim.ymd(new Date()), unidade: F.r ? "dia" : "semana", erroCronograma: F.erro || "" });
           this._b4Curva = BIM4DSim.curvaS(this._b4Sim);
         } catch (e) { this._b4Sim = null; this._b4Erro = String((e && e.message) || e); }
       } else if (p) this._b4Erro = "o motor da simulação (js/bim4dsim.js) não carregou";
@@ -15738,7 +15817,7 @@
           : "Carregue um modelo .IFC no visualizador para simular a obra no tempo.") + "</p>";
         return;
       }
-      var ic = function (n, s) { return (typeof Icones !== "undefined") ? Icones.get(n, s || 14) : ""; };
+      var ic = function (n, s) { return typeof Icones !== "undefined" ? Icones.get(n, s || 14) : ""; };
       var n = sim.eixo.dias.length, variosAnos = sim.inicio.slice(0, 4) !== sim.fim.slice(0, 4);
       function dcurta(d) { return variosAnos ? S4.br(d).slice(0, 6) + S4.br(d).slice(8) : S4.brCurto(d); }
       /* marca sobre a RÉGUA: o polegar do slider vai de 0 a n-1, então a
@@ -15757,6 +15836,9 @@
         '<div class="b4-sec-t">' + ic("calendario") + "Tempo</div>" +
         '<div class="b4-data"><div class="b4-data-l"><b id="b4-data-txt">—</b><span id="b4-dow" class="b4-dow"></span></div><div id="b4-dia-info" class="b4-dia-info"></div></div>' +
         '<div id="b4-kpis" class="b4-kpis"></div>' +
+        /* a peça clicada no 3D: de onde vem a informação dela (tarefa, prazo,
+           custo) — preenchida por `_b4PintarPeca` */
+        '<div id="b4-peca" class="b4-peca" aria-live="polite"></div>' +
         '<div class="b4-regua"><div class="b4-marcas">' + marcas + '</div>' +
           '<input type="range" id="b4-slider" min="0" max="' + (n - 1) + '" step="1" value="' + (n - 1) + '" aria-label="Data da simulação (um passo por dia)">' +
           '<div class="b4-regua-rot"><span>' + S4.br(sim.inicio) + '</span><span class="b4-regua-leg">' +
@@ -15779,8 +15861,23 @@
         "</div>" +
       "</section>";
 
-      /* ---- ATIVIDADES (Gantt compacto) ---- */
-      var linhas = sim.atividades.map(function (a) {
+      /* ---- ATIVIDADES (Gantt compacto) ----
+         ⚠ ETAPA → TAREFAS DO PLANO EXECUTIVO. As tarefas (subetapas e o grupo
+         de soltos) vêm no fim de `sim.atividades` — para o nº e a cor de cada
+         etapa não mudarem —, e a lista as desenha LOGO ABAIXO da etapa-mãe,
+         recolhíveis. Recolhida, a linha nem vai ao DOM: 160 subetapas numa
+         lista que repinta a cada passo da régua pesam. */
+      var filhasDe = {};
+      sim.atividades.forEach(function (a) { if (a.sub && a.pai) (filhasDe[a.pai] = filhasDe[a.pai] || []).push(a); });
+      var abrePadrao = !!(sim.carimbo && sim.carimbo.tarefa > 0);
+      function aberta(id) { return st.abertas && st.abertas.hasOwnProperty(id) ? !!st.abertas[id] : abrePadrao; }
+      var ordem = [];
+      sim.atividades.forEach(function (a) {
+        if (a.sub) return;
+        ordem.push(a);
+        if (filhasDe[a.id] && aberta(a.id)) filhasDe[a.id].forEach(function (f) { ordem.push(f); });
+      });
+      var linhas = ordem.map(function (a) {
         var i0 = S4.indiceDe(sim, a.inicio), i1 = S4.indiceDe(sim, a.termino);
         var left = (i0 / n * 100).toFixed(3), wid = (Math.max(a.marco ? 0 : 1, i1 + 1 - i0) / n * 100).toFixed(3);
         var base = "";
@@ -15795,11 +15892,16 @@
           (a.reprogramada ? '<span class="b4-tag b4-tag-rep" title="Plano: ' + S4.br(a.base.inicio) + " → " + S4.br(a.base.termino) + '. Datas atuais reprogramadas pelo avanço real.">reprogramada</span>' : "") +
           (a.estimado ? '<span class="b4-tag" title="Peças sem etapa carimbada: janela estimada pelo tipo IFC">estimada</span>' : "");
         var cor = st.cor === "etapa" ? a.corEtapa : a.corCat;
-        return '<tr data-b4-atv="' + Util.esc(a.id) + '" class="b4-lin' + (st.sel === a.id ? " b4-sel" : "") + '">' +
-          '<td class="b4-c-ck"><input type="checkbox" data-b4-ck="' + Util.esc(a.id) + '"' + (ck ? " checked" : "") + ' title="Mostrar as peças desta etapa no 3D"></td>' +
-          '<td class="b4-c-n">' + a.n + "</td>" +
-          '<td class="b4-c-nome"><span class="b4-cor" style="background:' + Util.esc(cor) + '"></span><span class="b4-nome" title="' + Util.esc(a.nome) + '">' + Util.esc(a.nome) + "</span>" + tags +
-            '<span class="b4-pecas">' + (a.nEl ? a.nEl + (a.nEl === 1 ? " peça" : " peças") : "sem peças no modelo") + "</span></td>" +
+        /* tarefa: marcada também quando a etapa-mãe está marcada inteira */
+        if (a.sub && st.etapas && !st.etapas[a.id] && st.etapas[a.pai]) ck = true;
+        var nF = (filhasDe[a.id] || []).length;
+        var tog = nF ? '<button type="button" class="b4-tog" data-b4="abrir" data-v="' + Util.esc(a.id) + '" aria-expanded="' + (aberta(a.id) ? "true" : "false") + '" title="' + (aberta(a.id) ? "Recolher" : "Mostrar") + " as " + nF + ' tarefas do plano executivo desta etapa">' + (aberta(a.id) ? "▾" : "▸") + "</button>" : "";
+        var valTar = (a.sub && a.valor != null) ? " · " + Util.fmtMoeda(a.valor) + " (venda)" : "";
+        return '<tr data-b4-atv="' + Util.esc(a.id) + '" class="b4-lin' + (a.sub ? " b4-filha" : "") + (st.sel === a.id ? " b4-sel" : "") + '">' +
+          '<td class="b4-c-ck"><input type="checkbox" data-b4-ck="' + Util.esc(a.id) + '"' + (ck ? " checked" : "") + ' title="Mostrar as peças desta ' + (a.sub ? "tarefa" : "etapa") + ' no 3D"></td>' +
+          '<td class="b4-c-n">' + Util.esc(String(a.n)) + "</td>" +
+          '<td class="b4-c-nome">' + tog + (a.sub ? '<span class="b4-num-eap">' + Util.esc(a.codigo) + "</span>" : "") + '<span class="b4-cor" style="background:' + Util.esc(cor) + '"></span><span class="b4-nome" title="' + Util.esc(a.nome) + '">' + Util.esc(a.nome) + "</span>" + tags +
+            '<span class="b4-pecas">' + (a.nEl ? a.nEl + (a.nEl === 1 ? " peça" : " peças") : "sem peças no modelo") + (nF ? " · " + nF + (nF === 1 ? " tarefa" : " tarefas") : "") + Util.esc(valTar) + "</span></td>" +
           '<td class="b4-c-dt" title="' + S4.diaSemana(a.inicio) + ", " + S4.br(a.inicio) + '">' + dcurta(a.inicio) + "</td>" +
           '<td class="b4-c-dt" title="Último dia de trabalho: ' + S4.diaSemana(a.termino) + ", " + S4.br(a.termino) + '">' + dcurta(a.termino) + "</td>" +
           '<td class="b4-c-num b4-c-dur">' + (a.marco ? "0" : a.duracao) + "</td>" +
@@ -15810,13 +15912,17 @@
             '<i class="b4-bar' + (a.marco ? " b4-bar-marco" : "") + (a.critico ? " b4-bar-crit" : "") + '" style="left:' + left + "%;width:" + wid + "%;--b4-cor:" + Util.esc(cor) + '"><b class="b4-bar-f"></b></i></div></td>' +
         "</tr>";
       }).join("");
-      var nAtv = sim.atividades.filter(function (a) { return !a.estimado; }).length;
+      var nAtv = sim.atividades.filter(function (a) { return !a.estimado && !a.sub; }).length;
+      var nTar = sim.atividades.filter(function (a) { return a.sub; }).length;
+      var todasAbertas = Object.keys(filhasDe).every(function (k) { return aberta(k); });
       var lista = '<section class="b4-sec b4-lista-sec">' +
-        '<div class="b4-sec-t">' + ic("lista") + "Atividades <span class=\"b4-sec-n\">" + nAtv + (nAtv === 1 ? " etapa" : " etapas") + "</span>" +
-          '<span class="b4-sec-aux">clique na linha: isola as peças da etapa e leva a data ao início dela</span></div>' +
+        '<div class="b4-sec-t">' + ic("lista") + "Atividades <span class=\"b4-sec-n\">" + nAtv + (nAtv === 1 ? " etapa" : " etapas") +
+          (nTar ? " · " + nTar + (nTar === 1 ? " tarefa" : " tarefas") + " do plano executivo" : "") + "</span>" +
+          (nTar ? '<button type="button" class="btn sm ghost b4-tog-todas" data-b4="abrirTodas" data-v="' + (todasAbertas ? "0" : "1") + '">' + (todasAbertas ? "Recolher tarefas" : "Mostrar tarefas") + "</button>" : "") +
+          '<span class="b4-sec-aux">clique na linha: isola as peças e leva a data ao início dela</span></div>' +
         '<div class="b4-grade-wrap"><table class="b4-grade" id="b4-grade"><thead><tr>' +
           '<th class="b4-c-ck"><input type="checkbox" data-b4="ck-todas"' + (!st.etapas ? " checked" : "") + ' title="Todas / nenhuma"></th>' +
-          '<th class="b4-c-n">#</th><th class="b4-c-nome">Etapa</th><th class="b4-c-dt">Início</th>' +
+          '<th class="b4-c-n">#</th><th class="b4-c-nome">' + (nTar ? "Etapa / tarefa" : "Etapa") + '</th><th class="b4-c-dt">Início</th>' +
           '<th class="b4-c-dt" title="Último dia de trabalho (o Gantt do cronograma mostra o dia útil seguinte)">Término</th>' +
           '<th class="b4-c-num b4-c-dur" title="Duração em dias úteis">Dur.</th><th class="b4-c-num b4-c-folga" title="Folga total em dias úteis">Folga</th>' +
           '<th class="b4-c-est">Na data</th><th class="b4-c-num b4-c-pct" title="% no começo do dia. Com avanço: real / planejado">%</th>' +
@@ -15832,7 +15938,7 @@
       var car = sim.carimbo || { etapa: 0, categoria: 0, total: 0 };
       var seloCar = !car.total ? "" : (car.etapa
         ? '<p class="b4-selo-car" id="b4-selo-car" title="Peças com a etapa carimbada no Revit (OrcaPRO_Etapa) casada com uma etapa deste cronograma: sobem na data exata dela. As outras seguem a janela da categoria ou do tipo de peça.">🏷️ 4D exato: ' +
-            Util.fmtNum(car.etapa, 0) + "/" + Util.fmtNum(car.total, 0) + " carimbados" + (car.categoria ? " · " + Util.fmtNum(car.categoria, 0) + " pela categoria" : "") + "</p>"
+            Util.fmtNum(car.etapa, 0) + "/" + Util.fmtNum(car.total, 0) + " carimbados" + (car.tarefa ? " · " + Util.fmtNum(car.tarefa, 0) + " na tarefa do plano executivo" : "") + (car.categoria ? " · " + Util.fmtNum(car.categoria, 0) + " pela categoria" : "") + "</p>"
         : '<p class="b4-selo-car b4-selo-est" id="b4-selo-car" title="Nenhuma peça tem a etapa carimbada casada com este cronograma: o 4D é estimado pelo tipo de peça. Para o 4D exato, use no Revit os botões “Criar Campos OrçaPRO” + “Exportar IFC p/ OrçaPRO”.">4D estimado pelo tipo de peça: 0/' +
             Util.fmtNum(car.total, 0) + " carimbados" + (car.categoria ? " · " + Util.fmtNum(car.categoria, 0) + " pela categoria" : "") + " — no Revit, “Criar Campos OrçaPRO” + “Exportar IFC p/ OrçaPRO”</p>");
       var leg = '<section class="b4-sec"><div class="b4-sec-t">' + ic("paleta") + 'Legenda <span id="b4-vis" class="b4-sec-n"></span></div>' + seloCar + '<div id="b4-legenda" class="b4-legenda"></div></section>';
@@ -15892,18 +15998,232 @@
       var rolaG = gw ? gw.scrollTop : 0, rolaD = db ? db.scrollTop : 0;
       var abertos = {};
       Array.prototype.forEach.call(box.querySelectorAll("details[data-b4-sec]"), function (dd) { abertos[dd.getAttribute("data-b4-sec")] = dd.open; });
-      box.innerHTML = '<div class="b4-col-a">' + tempo + lista + "</div>" +
-        '<div class="b4-col-b">' + leg + curva + fonte + apar + filt + "</div>";
+      /* ⚠ AS ABAS DO PAINEL — organização, não recurso novo escondido: a
+         régua do TEMPO fica em cima nas três (a data é a mesma e é ela que
+         move os números de todas). "Simulação" é o painel de sempre, com os
+         mesmos ids (as e2e e a janela do 3D dependem deles). */
+      var ABAS = [["sim", "Simulação", "calendario"], ["custo", "Prazo × Custo", "grafico"], ["elo", "Elo do modelo", "link"]];
+      if (!ABAS.some(function (x) { return x[0] === st.aba; })) st.aba = "sim";
+      var nProb = this._b4EloConf ? (this._b4EloConf.semPar.length + this._b4EloConf.conflitos.length) : 0;
+      var abas = '<div class="b4-abas" role="tablist" aria-label="Seções da Simulação 4D">' + ABAS.map(function (x) {
+        var on = st.aba === x[0];
+        return '<button type="button" role="tab" class="b4-aba' + (on ? " on" : "") + '" data-b4="aba" data-v="' + x[0] + '" aria-selected="' + (on ? "true" : "false") + '">' +
+          ic(x[2]) + x[1] + (x[0] === "elo" && nProb ? ' <span class="b4-aba-n" title="Carimbos que não casaram ou discordam">' + nProb + "</span>" : "") + "</button>";
+      }).join("") + "</div>";
+      var colA, colB;
+      if (st.aba === "custo") { colA = tempo + this._b4HtmlCusto(); colB = curva + fonte; }
+      else if (st.aba === "elo") { colA = tempo + this._b4HtmlElo(); colB = leg + this._b4HtmlComoCarimbar(); }
+      else { colA = tempo + lista; colB = leg + curva + fonte + apar + filt; }
+      box.innerHTML = abas + '<div class="b4-col-a">' + colA + "</div>" + '<div class="b4-col-b">' + colB + "</div>";
       Array.prototype.forEach.call(box.querySelectorAll("details[data-b4-sec]"), function (dd) { var k = dd.getAttribute("data-b4-sec"); if (abertos.hasOwnProperty(k)) dd.open = abertos[k]; });
       var gw2 = box.querySelector(".b4-grade-wrap"); if (gw2) gw2.scrollTop = rolaG;
       if (db) db.scrollTop = rolaD;
+    },
+
+    /* =====================================================================
+       PRAZO × CUSTO (aba da Simulação 4D)
+       ⚠ TRÊS NÚMEROS, TRÊS RÉGUAS, CADA UM COM O NOME:
+         - "Custo na data": custo DIRETO do orçamento na data da régua (o
+           mesmo 5D dos cartões de cima), pelo plano da Fonte escolhida;
+         - "Valor agregado": o do Cronograma da obra (CronoPlan, pela
+           montagem única `_cronoDados`), na DATA DE CORTE dele e contra a
+           linha de base — não na data da régua;
+         - "Desembolso": custo direto por mês desta simulação — não é o
+           desembolso da proposta (venda, por etapa).
+       ⚠ DINHEIRO SÓ PARA QUEM VÊ DINHEIRO (Medições ou Financeiro, a régua
+         da ficha da obra); o Custo Real, só com o Financeiro.
+       ===================================================================== */
+    _b4HtmlCusto: function () {
+      var sim = this._b4Sim, S4 = window.BIM4DSim, ic = function (n, s) { return (typeof Icones !== "undefined") ? Icones.get(n, s || 14) : ""; };
+      var dinheiro = typeof this._cronoDinheiro === "function" ? this._cronoDinheiro() : true;
+      if (!dinheiro) return '<section class="b4-sec"><div class="b4-sec-t">' + ic("grafico") + 'Prazo × Custo</div><p class="b4-nota">Seu usuário não vê valores (é preciso acesso a Medições ou ao Financeiro). Os prazos continuam na aba Simulação.</p></section>';
+      var h = '<section class="b4-sec"><div class="b4-sec-t">' + ic("grafico") + 'Custo na data <span class="b4-sec-n">custo direto do orçamento, pelo plano da Fonte</span></div>' +
+        '<div id="b4-custo-data" class="b4-custo-data"></div>' +
+        '<p class="b4-nota">Cada etapa entra na proporção do % dela no começo do dia (o planejado e, até o corte, o real lançado). É a mesma conta dos cartões lá em cima — mova a régua para ver o dinheiro andar com a obra.</p></section>';
+      h += this._b4HtmlEvm();
+      /* desembolso mês a mês desta simulação */
+      if (!this._b4Desemb && sim && S4 && S4.desembolso) { try { this._b4Desemb = S4.desembolso(sim); } catch (eD) { this._b4Desemb = { vazio: true, meses: [], motivo: "não consegui montar o desembolso (" + String((eD && eD.message) || eD) + ")." }; } }
+      var D = this._b4Desemb;
+      h += '<section class="b4-sec"><div class="b4-sec-t">' + ic("calendario") + 'Desembolso mês a mês <span class="b4-sec-n">custo direto, por esta simulação</span></div>';
+      if (!D || D.vazio) h += '<p class="b4-nota">' + Util.esc((D && D.motivo) || "Sem simulação montada.") + "</p>";
+      else {
+        var max = 0;
+        D.meses.forEach(function (m) { max = Math.max(max, m.plan, m.real || 0); });
+        h += '<table class="b4-desemb"><thead><tr><th>Mês</th><th class="b4-c-num">Planejado</th>' + (D.temReal ? '<th class="b4-c-num">Executado</th>' : "") + '<th class="b4-c-num">Acumulado</th><th class="b4-desemb-bar"></th></tr></thead><tbody>' +
+          D.meses.map(function (m) {
+            var w = max > 0 ? Math.round(m.plan / max * 100) : 0, wr = max > 0 && m.real != null ? Math.round(m.real / max * 100) : 0;
+            return "<tr><td>" + Util.esc(m.rotulo) + '</td><td class="b4-c-num">' + Util.fmtMoeda(m.plan) + "</td>" +
+              (D.temReal ? '<td class="b4-c-num">' + (m.real == null ? "—" : Util.fmtMoeda(m.real)) + "</td>" : "") +
+              '<td class="b4-c-num">' + Util.fmtMoeda(m.acumPlan) + '</td><td class="b4-desemb-bar"><i class="b4-db-p" style="width:' + w + '%"></i>' + (m.real != null ? '<i class="b4-db-r" style="width:' + wr + '%"></i>' : "") + "</td></tr>";
+          }).join("") + "</tbody></table>" +
+          '<p class="b4-nota">Total: ' + Util.fmtMoeda(D.total) + ". É a distribuição DESTA simulação (custo direto, dia útil a dia útil, no plano da Fonte) — pode diferir mês a mês do desembolso da proposta, que é preço de venda por etapa." +
+          (D.temReal ? " Executado = pelo avanço lançado, só até o corte." : "") + "</p>";
+      }
+      return h + "</section>";
+    },
+    /* o valor agregado da obra — o MESMO bloco do Cronograma da obra
+       (`CronoExecUI._prEvm`), pela montagem ÚNICA (`_cronoDados`): uma
+       segunda conta aqui divergiria na data de corte ou na base */
+    _b4HtmlEvm: function () {
+      var ic = function (n, s) { return typeof Icones !== "undefined" ? Icones.get(n, s || 14) : ""; };
+      var tit = '<section class="b4-sec"><div class="b4-sec-t">' + ic("cronograma") + 'Valor agregado da obra <span class="b4-sec-n">prazo × custo, do Cronograma da obra</span></div>';
+      var obra = null;
+      try { obra = this._bimSel ? Store.obter(eid(), "obras", this._bimSel) : null; } catch (e0) { obra = null; }
+      if (!obra) return tit + '<p class="b4-nota">Escolha a obra no alto da tela para ver o valor agregado dela.</p></section>';
+      if (typeof this._cronoDados !== "function" || typeof CronoExecUI === "undefined" || !CronoExecUI._prEvm) return tit + '<p class="b4-nota">O módulo do cronograma da obra não carregou nesta tela — o valor agregado não pôde ser montado. Recarregue o app.</p></section>';
+      if (!this._b4Evm || this._b4Evm.obraId !== obra.id) {
+        var c = null;
+        try { c = this._cronoDados(obra, { comCusto: true }); } catch (eC) { c = { estado: "falha", erro: String((eC && eC.message) || eC) }; }
+        this._b4Evm = { obraId: obra.id, c: c };
+      }
+      var c2 = this._b4Evm.c || {};
+      if (c2.estado !== "painel" || !c2.dados) {
+        var msg = { "sem-orcamento": "A obra não tem orçamento vinculado — sem ele não há valor agregado.", "orcamento-sumiu": "O orçamento vinculado a esta obra não está neste aparelho.", "sem-motor": "O motor do planejamento da obra não carregou — recarregue o app." }[c2.estado] || ("O valor agregado não pôde ser montado" + (c2.erro ? " (" + c2.erro + ")" : "") + ".");
+        return tit + '<p class="b4-nota">' + Util.esc(msg) + "</p></section>";
+      }
+      var p = c2.dados;
+      if (p.erro) return tit + '<p class="b4-nota b4-aviso">' + Util.esc(p.erro) + "</p></section>";
+      var bloco = CronoExecUI._prEvm(p, c2.pr || {});
+      if (!bloco) return tit + '<p class="b4-nota">' + (c2.pr && c2.pr.semDinheiro ? "Seu usuário não vê valores." : "O valor agregado sai do previsto × realizado da obra, e ele ainda não tem o que comparar (sem diários, medições ou avanço lançado).") + "</p></section>";
+      return tit + "<style>" + CronoExecUI.CSS_EVM + "</style>" + bloco +
+        '<div class="b4-linha"><button type="button" class="btn sm" data-b4="abrirCrono" title="Abre o Cronograma da obra: previsto × realizado, linha de base, avanço e o Gantt completo">' + ic("abrir") + "Abrir o Cronograma da obra</button></div></section>";
+    },
+    /* =====================================================================
+       ELO DO MODELO (aba) — de onde vem a data e o dinheiro de cada peça.
+       ===================================================================== */
+    _b4HtmlElo: function () {
+      var ic = function (n, s) { return typeof Icones !== "undefined" ? Icones.get(n, s || 14) : ""; };
+      var K = this._b4EloConf, E = this._b4Elo;
+      var h = '<section class="b4-sec"><div class="b4-sec-t">' + ic("alvo") + 'Peça selecionada</div><div id="b4-elo-peca" class="b4-elo-peca"><p class="b4-nota">Clique numa peça no 3D: aqui aparece de onde vem a data e o valor dela — a tarefa do plano, o carimbo que ligou, o prazo, o custo e o avanço.</p></div></section>';
+      if (typeof BIMElo === "undefined") return h + '<section class="b4-sec"><p class="b4-nota b4-aviso">O motor do elo (js/bimelo.js) não carregou — a simulação segue pela etapa. Recarregue o app.</p></section>';
+      if (!E || !K) {
+        return h + '<section class="b4-sec"><p class="b4-nota">' + (this._b4EloErro ? "Não consegui montar o elo (" + Util.esc(this._b4EloErro) + ")." :
+          ((this._b4F && this._b4F.r) ? "Sem peças no modelo para ligar." : "Sem cronograma ligado a esta obra: o elo precisa do orçamento (e, para as tarefas, do plano executivo).")) + "</p></section>";
+      }
+      var n = E.n || {}, tot = n.total || 0;
+      function barra(q, cls, rot, dica) {
+        var w = tot ? Math.max(q ? 2 : 0, Math.round(q / tot * 100)) : 0;
+        return '<div class="b4-elo-l" title="' + Util.esc(dica) + '"><span class="b4-elo-r">' + rot + '</span><span class="b4-elo-b"><i class="' + cls + '" style="width:' + w + '%"></i></span><b>' + Util.fmtNum(q, 0) + "</b></div>";
+      }
+      h += '<section class="b4-sec"><div class="b4-sec-t">' + ic("link") + 'Como as peças estão ligadas <span class="b4-sec-n">' + Util.fmtNum(tot, 0) + " peças</span></div>" +
+        barra(n.tarefa || 0, "b4-elo-tar", "Na tarefa do plano", "OrcaPRO_Tarefa, o código do serviço ou a etapa sem subetapas: a peça sobe na data exata da tarefa, com o avanço e o valor dela") +
+        barra(n.etapa || 0, "b4-elo-et", "Só na etapa", "A etapa carimbada tem tarefas (subetapas): sem OrcaPRO_Tarefa a peça sobe na janela da etapa inteira") +
+        barra((n.categoria || 0) + (n.tipo || 0), "b4-elo-est", "Estimado", "Sem carimbo que case: a janela sai da categoria ou do tipo de peça IFC") +
+        (n.existente ? barra(n.existente, "b4-elo-ex", "Existente (reforma)", "OrcaPRO_Fase = existente: já está de pé, não é obra") : "");
+      if (K.temArvore) {
+        var nT = K.tarefas.length, nC = K.tarefas.filter(function (t) { return t.nPecas; }).length;
+        h += '<p class="b4-nota"><b>' + nC + " de " + nT + "</b> tarefas do plano têm peça no modelo" +
+          (K.pctVenda != null && this._cronoDinheiro && this._cronoDinheiro() ? " — " + Util.fmtNum(Math.round(K.pctVenda * 1000) / 10, 1) + "% do valor de venda (" + Util.fmtMoeda(K.vendaComPeca) + " de " + Util.fmtMoeda(K.vendaTotal) + ")" : "") + ".</p>";
+      } else h += '<p class="b4-nota">O cronograma desta obra não trouxe a árvore do plano executivo' + (this._b4F && this._b4F.erroArvore ? " (" + Util.esc(this._b4F.erroArvore) + ")" : "") + ": o elo fica na etapa.</p>";
+      h += "</section>";
+      function tab(tit, cab, linhas, vazio) {
+        return '<section class="b4-sec"><div class="b4-sec-t">' + tit + "</div>" + (linhas.length ? '<table class="b4-elo-tab"><thead><tr>' + cab.map(function (x) { return "<th>" + x + "</th>"; }).join("") + "</tr></thead><tbody>" + linhas.join("") + "</tbody></table>" : '<p class="b4-nota">' + vazio + "</p>") + "</section>";
+      }
+      function td(x) { return "<td>" + Util.esc(x == null ? "" : String(x)) + "</td>"; }
+      h += tab(ic("alerta") + "Carimbos que não casaram <span class=\"b4-sec-n\">a peça caiu para o próximo carimbo</span>", ["Parâmetro", "Valor no modelo", "Peças", "Por quê"],
+        K.semPar.slice(0, 40).map(function (x) { return "<tr>" + td(x.campo) + td(x.valor) + '<td class="b4-c-num">' + x.n + "</td>" + td(x.motivo) + "</tr>"; }), "Nenhum: todo carimbo do modelo casou com o plano.");
+      if (K.conflitos.length) h += tab(ic("alerta") + "Carimbos que discordam <span class=\"b4-sec-n\">valeu a tarefa; confira a etapa no Revit</span>", ["Tarefa", "Etapa carimbada", "Peças"],
+        K.conflitos.map(function (x) { return "<tr>" + td(x.tarefa) + td(x.etapaCarimbo) + '<td class="b4-c-num">' + x.n + "</td></tr>"; }), "");
+      if (K.avisos.length) h += tab(ic("alerta") + "Plano renumerado", ["O que aconteceu", "Peças"], K.avisos.map(function (x) { return "<tr>" + td(x.msg) + '<td class="b4-c-num">' + x.n + "</td></tr>"; }), "");
+      if (K.temArvore) {
+        var din = !!(this._cronoDinheiro && this._cronoDinheiro());
+        h += tab(ic("lista") + "Tarefas sem peça no modelo <span class=\"b4-sec-n\">não aparecem no 3D</span>", din ? ["Nº", "Tarefa", "Venda"] : ["Nº", "Tarefa"],
+          K.semPeca.slice(0, 25).map(function (t) { return "<tr>" + td(t.numero) + td(t.nome) + (din ? '<td class="b4-c-num">' + (t.venda == null ? "—" : Util.fmtMoeda(t.venda)) + "</td>" : "") + "</tr>"; }).concat(K.semPeca.length > 25 ? ['<tr><td colspan="3" class="b4-nota">e mais ' + (K.semPeca.length - 25) + "</td></tr>"] : []),
+          "Toda tarefa do plano tem peça no modelo.");
+        if (K.soEtapa.length) h += tab(ic("lista") + "Etapas ligadas só pela etapa <span class=\"b4-sec-n\">carimbe a tarefa para a data exata</span>", ["Nº", "Etapa", "Peças", "Tarefas"],
+          K.soEtapa.map(function (t) { return "<tr>" + td(t.numero) + td(t.nome) + '<td class="b4-c-num">' + t.nPecas + '</td><td class="b4-c-num">' + t.nTarefas + "</td></tr>"; }), "");
+      }
+      return h;
+    },
+    _b4HtmlComoCarimbar: function () {
+      var ic = function (n, s) { return typeof Icones !== "undefined" ? Icones.get(n, s || 14) : ""; };
+      return '<section class="b4-sec"><div class="b4-sec-t">' + ic("link") + "Como ligar peça, prazo e custo</div>" +
+        '<ol class="b4-passos">' +
+        "<li>No OrçaPRO, <b>Exportar tarefas para o Revit</b> (abaixo): grava a lista das tarefas do plano executivo desta obra no <code>revit\\obra-ativa.json</code>.</li>" +
+        "<li>No Revit, <b>Criar Params OrçaPRO</b> (uma vez por projeto): cria o parâmetro <code>OrcaPRO_Tarefa</code> nas peças.</li>" +
+        "<li>Selecione as peças e use <b>Carimbar Tarefa</b>: escolha a tarefa (ex.: <i>2.2 Pilares</i>) — o plugin grava o número e o nome.</li>" +
+        "<li><b>Exportar IFC p/ OrçaPRO</b> e abra o IFC aqui: cada peça sobe na data da tarefa, com o valor e o avanço dela.</li></ol>" +
+        '<p class="b4-nota">Sem o plugin: o parâmetro de texto <code>OrcaPRO_Tarefa</code> com <i>3.2</i>, <i>3.2 Nome da tarefa</i> ou só o nome (se for único) também funciona. A ordem de prioridade é OrcaPRO_Tarefa → OrcaPRO_CodOrc (o código do serviço, se estiver numa tarefa só) → OrcaPRO_Etapa → tipo de peça. Nada é ligado por nome parecido.</p>' +
+        '<div class="b4-linha"><button type="button" class="btn sm primary" data-b4="revit" title="Grava revit\\obra-ativa.json com BDI, etapas, cronograma e a lista de tarefas do plano executivo">' + ic("abrir") + "Exportar tarefas para o Revit</button></div></section>";
+    },
+    /* a peça clicada no 3D: a ficha curta (em cima, em qualquer aba) e a
+       completa (aba Elo) */
+    _b4PintarPeca: function () {
+      var cur = document.getElementById("b4-peca"), det = document.getElementById("b4-elo-peca");
+      if (!cur && !det) return;
+      var uid = this._b4Peca || "", E = this._b4Elo, F = this._b4F || {}, S4 = window.BIM4DSim, sim = this._b4Sim;
+      if (!uid) { if (cur) cur.innerHTML = ""; return; }
+      /* ⚠ SEM FICHA, DIZ QUE NÃO TEM — e APAGA a da peça anterior. O controle
+         negativo da e2e mediu: com a ficha indisponível, a completa continuava
+         mostrando a tarefa e o valor da peça clicada ANTES, como se fossem
+         desta (recado que mente é pior que recado nenhum) */
+      function semFicha(txt) {
+        if (cur) cur.innerHTML = "";
+        if (det) det.innerHTML = '<p class="b4-nota b4-aviso">' + Util.esc(txt) + "</p>";
+      }
+      if (!E || typeof BIMElo === "undefined") { semFicha("O elo desta obra não está montado (sem cronograma ligado, ou o motor do elo não carregou): não dá para dizer a tarefa, o prazo e o custo desta peça."); return; }
+      var f = null;
+      try { f = BIMElo.ficha(uid, E, F.r, { custos: this._b4EloCustos || null, Cronograma: (typeof Cronograma !== "undefined") ? Cronograma : null }); } catch (e) { f = null; }
+      if (!f) { semFicha("Não consegui montar a ficha desta peça (ela não está no elo desta simulação). Clique em outra peça ou reabra o modelo."); return; }
+      var din = !!(this._cronoDinheiro && this._cronoDinheiro());
+      var atv = sim ? BIM4DSim.atividadeDoElemento(sim, uid) : null, est = this._b4Est && atv && this._b4Est.porAtv[atv] ? this._b4Est.porAtv[atv] : null;
+      var tit = f.numero || f.nome ? (f.numero ? f.numero + " " : "") + f.nome : "";
+      var datas = f.inicio ? S4.br(f.inicio) + " → " + S4.br(f.termino || f.inicio) : "";
+      if (cur) {
+        cur.innerHTML = '<span class="b4-peca-t">Peça:</span> ' + (tit ? "<b>" + Util.esc(tit) + "</b>" : "<i>" + Util.esc(f.nivelRot) + "</i>") +
+          (datas ? " · " + Util.esc(datas) : "") + (est ? " · " + Util.esc(S4.ROTULO[est.estado] || est.estado) : "") +
+          ' <span class="b4-peca-f" title="De onde veio o elo desta peça">via ' + Util.esc(f.fonte) + "</span>" +
+          ' <button type="button" class="btn sm ghost" data-b4="aba" data-v="elo">detalhes</button>';
+      }
+      if (det) {
+        var L = [];
+        function li(r, v) { if (v != null && v !== "") L.push("<dt>" + r + "</dt><dd>" + v + "</dd>"); }
+        li("Ligada por", Util.esc(f.nivelRot) + ' — <span class="b4-peca-f">' + Util.esc(f.fonte) + "</span>");
+        if (f.aviso) li("Atenção", '<span class="b4-aviso">' + Util.esc(f.aviso) + "</span>");
+        li("Tarefa", tit ? Util.esc(tit) : "");
+        if (f.etapa) li("Etapa", Util.esc(f.etapa.numero + " " + f.etapa.nome));
+        if (f.servico) li("Serviço", Util.esc(f.servico.numero + " " + f.servico.nome + (f.servico.codigo ? " (" + f.servico.codigo + ")" : "")));
+        li("Prazo", datas ? Util.esc(datas) + (f.critica ? ' · <b class="b4-crit-txt">crítica</b>' : (f.folga != null ? " · folga " + f.folga + " d úteis" : "")) : "");
+        if (est) li("Na data da régua", Util.esc(S4.ROTULO[est.estado] || est.estado) + " · " + Math.round((est.pctReal != null ? est.pctReal : (sim.temReal ? est.pctVig : est.pctPlan)) * 100) + "%");
+        if (f.avanco) li("Avanço lançado", Util.esc((f.avanco.estado === "concluida" ? "concluída" : (f.avanco.estado === "andamento" ? "em andamento" : "não iniciada")) + " · " + Math.round(f.avanco.pct) + "%" + (f.avanco.iniReal ? " · início real " + S4.br(f.avanco.iniReal) : "") + (f.avanco.fimReal ? " · fim real " + S4.br(f.avanco.fimReal) : "")));
+        if (din && f.nivel === "tarefa") {
+          li("Valor da tarefa", (f.venda != null ? Util.fmtMoeda(f.venda) + " de venda" : "venda indisponível") + (f.custo != null ? " · " + Util.fmtMoeda(f.custo) + " de custo direto" : ""));
+          li("Peças na tarefa", f.nPecas + (f.nPecas === 1 ? " peça" : " peças") + ' <span class="b4-nota">(o valor é da tarefa inteira — não é rateado por peça)</span>');
+        }
+        det.innerHTML = '<dl class="b4-ficha">' + L.join("") + "</dl>";
+      }
+    },
+    /* o custo na DATA da régua (aba Prazo × Custo) — repintado a cada passo */
+    _b4PintarCustoData: function (est) {
+      var box = document.getElementById("b4-custo-data"); if (!box || !est) return;
+      var sim = this._b4Sim, S4 = window.BIM4DSim;
+      if (est.custoPlan == null) { box.innerHTML = '<p class="b4-nota">O orçamento desta obra não tem custo lançado: não há R$ na data (nenhum valor é inventado).</p>'; return; }
+      var T = est.custoTotal || 0;
+      function pc(v) { return T > 0 ? Util.fmtNum(Math.round(v / T * 1000) / 10, 1) + "%" : "—"; }
+      function barra(v, cls) { return '<span class="b4-cd-b"><i class="' + cls + '" style="width:' + (T > 0 ? Math.min(100, v / T * 100).toFixed(1) : 0) + '%"></i></span>'; }
+      var h = '<div class="b4-cd-l"><span>Planejado</span>' + barra(est.custoPlan, "b4-db-p") + "<b>" + Util.fmtMoeda(est.custoPlan) + "</b><em>" + pc(est.custoPlan) + "</em></div>";
+      if (est.custoReal != null) {
+        var dif = est.custoReal - est.custoPlan;
+        h += '<div class="b4-cd-l"><span>Executado</span>' + barra(est.custoReal, "b4-db-r") + "<b>" + Util.fmtMoeda(est.custoReal) + "</b><em>" + pc(est.custoReal) + "</em></div>" +
+          '<p class="b4-nota' + (dif < -0.005 ? " b4-aviso" : "") + '">' + (Math.abs(dif) < 0.005 ? "Executado igual ao planejado nesta data." : (dif < 0 ? "Obra " + Util.fmtMoeda(-dif) + " atrás do planejado nesta data (em custo direto executado)." : "Obra " + Util.fmtMoeda(dif) + " à frente do planejado nesta data.")) + "</p>";
+      }
+      h += '<p class="b4-nota">Orçamento: ' + Util.fmtMoeda(T) + " de custo direto.</p>";
+      /* o que está custando nesta data: as frentes em execução */
+      var ativas = sim.atividades.filter(function (a) { var s = est.porAtv[a.id]; return s && !a.estimado && (s.estado === "execucao" || s.estado === "atrasado"); });
+      if (ativas.length) {
+        h += '<div class="b4-cd-at"><b>Em execução nesta data</b><ul>' + ativas.slice(0, 12).map(function (a) {
+          return "<li>" + (a.sub ? '<span class="b4-num-eap">' + Util.esc(a.codigo) + "</span>" : "") + Util.esc(a.nome) + ' <span class="b4-nota">' + S4.brCurto(a.inicio) + "→" + S4.brCurto(a.termino) +
+            (a.sub ? (a.valor != null ? " · " + Util.fmtMoeda(a.valor) + " venda" : "") : (a.custo ? " · " + Util.fmtMoeda(a.custo) + " custo direto" : "")) + "</span></li>";
+        }).join("") + (ativas.length > 12 ? "<li>e mais " + (ativas.length - 12) + "</li>" : "") + "</ul></div>";
+      }
+      box.innerHTML = h;
     },
 
     /* o cabeçalho do painel: fonte em uma palavra e os botões da janela */
     _b4Cabecalho: function () {
       var cab = document.getElementById("b4-cab-acoes"); if (!cab) return;
       var st = this._b4Estado(), destacado = !!this._b4Destacado;
-      var ic = function (n, s) { return (typeof Icones !== "undefined") ? Icones.get(n, s || 14) : ""; };
+      var ic = function (n, s) { return typeof Icones !== "undefined" ? Icones.get(n, s || 14) : ""; };
       /* ⚠ o selo sai do motor (`seloPainel`): "sincronizado" só com o eco da
          outra janela — ver `_b4Eco` e o ⚠ no js/bim4dsim.js */
       var selo = (destacado && window.BIM4DSim && BIM4DSim.seloPainel) ? BIM4DSim.seloPainel(this._b4SyncInfo()) : null;
@@ -16027,6 +16347,8 @@
       this._b4PintarLegenda(cena);
       this._b4PintarCurva(d);
       this._b4PintarHud(est);
+      this._b4PintarCustoData(est);
+      this._b4PintarPeca();
       if (opts.enviar !== false) this._b4Enviar();
       return est;
     },
@@ -16089,15 +16411,18 @@
           "5D: o mesmo custo pelo avanço lançado até o corte, cada etapa na proporção do % real.");
         h += kpi("Em execução", String(est.contagem.execucao), est.contagem.execucao ? "b4-kpi-exe" : "", "Etapas trabalhando neste dia");
         if (sim.temReal) h += kpi("Atrasadas", String(est.contagem.atrasado), est.contagem.atrasado ? "b4-kpi-atr" : "", "Passaram do término planejado sem chegar a 100% (só até o corte do avanço)");
-        h += kpi("Concluídas", est.contagem.concluido + "/" + sim.atividades.filter(function (a) { return !a.estimado; }).length, "", "Etapas concluídas até este dia");
+        h += kpi("Concluídas", est.contagem.concluido + "/" + sim.atividades.filter(function (a) { return !a.estimado && !a.sub; }).length, "", "Etapas concluídas até este dia");
         if (est.marcos.length) h += kpi("Marcos", est.marcos.filter(function (m) { return m.atingido; }).length + "/" + est.marcos.length, "", est.marcos.map(function (m) { return (m.atingido ? "✓ " : "○ ") + m.nome + " · " + S4.br(m.data); }).join("\n"));
         if (cena) h += kpi("No 3D", Util.fmtNum(cena.visiveis, 0) + " de " + Util.fmtNum(cena.total, 0), "", "Peças visíveis nesta data com os filtros escolhidos");
         k.innerHTML = h;
       }
       var fi = el("b4-filtro-info");
       if (fi) {
-        var nA = sim.atividades.length, nV = st.etapas ? Object.keys(st.etapas).length : nA;
-        fi.textContent = (st.etapas ? nV + " de " + nA + " etapas no 3D" : "todas as etapas no 3D") + (st.soCriticas ? " · só críticas" : "") + (st.soExecucao ? " · só em execução" : "");
+        /* conta ETAPAS (a tarefa é parte da etapa, não soma de novo) */
+        var etps = sim.atividades.filter(function (a) { return !a.sub; }), nA = etps.length;
+        var nV = st.etapas ? etps.filter(function (a) { return st.etapas[a.id]; }).length : nA;
+        var nTv = st.etapas ? sim.atividades.filter(function (a) { return a.sub && st.etapas[a.id] && !st.etapas[a.pai]; }).length : 0;
+        fi.textContent = (st.etapas ? nV + " de " + nA + " etapas no 3D" + (nTv ? " + " + nTv + (nTv === 1 ? " tarefa" : " tarefas") + " avulsas" : "") : "todas as etapas no 3D") + (st.soCriticas ? " · só críticas" : "") + (st.soExecucao ? " · só em execução" : "");
       }
     },
     _b4PintarLista: function (est) {
@@ -16109,7 +16434,9 @@
         var tr = rows[i], id = tr.getAttribute("data-b4-atv"), s = est.porAtv[id];
         if (!s) continue;
         var a = sim.atividades[sim.porId[id]];
-        var cls = "b4-lin b4-e-" + s.estado + (st.sel === id ? " b4-sel" : "") + (a && a.critico && s.estado === "execucao" ? " b4-e-crit" : "");
+        /* ⚠ a classe da TAREFA (filha) sobrevive à repintura — sem ela a linha
+           perdia o recuo e o fundo a cada passo da régua (a e2e mediu 0) */
+        var cls = "b4-lin" + (a && a.sub ? " b4-filha" : "") + " b4-e-" + s.estado + (st.sel === id ? " b4-sel" : "") + (a && a.critico && s.estado === "execucao" ? " b4-e-crit" : "");
         if (tr.className !== cls) tr.className = cls;
         var e = tr.querySelector(".b4-est");
         var rot = a && a.marco ? (s.estado === "concluido" ? "Atingido" : (s.estado === "atrasado" ? "Atrasado" : "A atingir")) : S4.ROTULO[s.estado];
@@ -16226,6 +16553,26 @@
       if (k === "largo") { st.largo = !st.largo; this._b4Largura(); this._b4Refazer(); return; }
       if (k === "encerrar") { this._b4Encerrar(); return; }
       if (k === "enquadrar") { this._b4Enquadrar(null); return; }
+      /* organização do painel: a aba não liga a simulação (trocar de aba
+         para ler o custo não pode pintar o modelo de ninguém) */
+      if (k === "aba") { st.aba = ({ sim: 1, custo: 1, elo: 1 }).hasOwnProperty(v) ? v : "sim"; this._b4GuardarPref(); this._b4Render(); if (sim) this._b4Ir(st.data, { fixar: false, aplicar: st.ativo, enviar: false }); return; }
+      if (k === "abrir" || k === "abrirTodas") {
+        if (!sim) return;
+        var ab = st.abertas || {}, cc = sim.carimbo && sim.carimbo.tarefa > 0;
+        if (k === "abrir") ab[v] = !(ab.hasOwnProperty(v) ? ab[v] : cc);
+        else sim.atividades.forEach(function (a) { if (!a.sub && a.nFilhas) ab[a.id] = v === "1"; });
+        st.abertas = ab;
+        this._b4Render(); this._b4Ir(st.data, { fixar: false, aplicar: false, enviar: false });
+        return;
+      }
+      if (k === "revit") { if (typeof this.bimExportarRevit === "function") this.bimExportarRevit(); return; }
+      if (k === "abrirCrono") {
+        /* a MESMA porta do botão "Abrir cronograma completo" (App.onClick,
+           ação crono-planejamento) — nada de uma segunda navegação */
+        var obC = this._bimSel;
+        if (obC && typeof App !== "undefined" && typeof App.cronoAbrirPlanejamento === "function") { try { App.cronoAbrirPlanejamento(obC); } catch (eCr) { UI.toast("Não consegui abrir o Cronograma da obra: " + String((eCr && eCr.message) || eCr), "erro"); } }
+        return;
+      }
       if (!sim || !S4) return;
       var atual = st.data || sim.fim;
       if (k === "play") { this._b4Play(); return; }
@@ -16287,7 +16634,9 @@
       this._b4Render();
       this._b4Ir(a.inicio);
       this._b4Enquadrar(id);
-      if (!a.nEl) UI.toast("A etapa “" + a.nome + "” não tem peças no modelo: nenhuma peça carimbada com ela (OrcaPRO_Etapa).", "aviso");
+      if (!a.nEl) UI.toast(a.sub
+        ? "A tarefa “" + a.codigo + " " + a.nome + "” não tem peças no modelo: nenhuma peça carimbada com ela (OrcaPRO_Tarefa). Veja a aba Elo do modelo."
+        : "A etapa “" + a.nome + "” não tem peças no modelo: nenhuma peça carimbada com ela (OrcaPRO_Etapa).", "aviso");
       if (!era) this._b4Cabecalho();
     },
     /* voa até a etapa escolhida. Na janela principal a gaveta tapa o lado
@@ -16308,7 +16657,23 @@
       var m = {};
       if (st.etapas) Object.keys(st.etapas).forEach(function (k) { m[k] = true; });
       else sim.atividades.forEach(function (a) { m[a.id] = true; });
-      if (marcado) m[id] = true; else delete m[id];
+      /* ⚠ ETAPA E TAREFAS ANDAM JUNTAS. A peça da tarefa passa com a tarefa
+         OU com a etapa-mãe marcada (a regra da cena, js/bim4dsim.js); então:
+         marcar/desmarcar a etapa leva as tarefas dela junto; desmarcar UMA
+         tarefa com a mãe marcada desmarca a mãe e deixa as irmãs marcadas —
+         senão a tarefa desmarcada continuava no 3D pela mãe, e o clique não
+         fazia nada visível */
+      var a0 = sim.porId.hasOwnProperty(id) ? sim.atividades[sim.porId[id]] : null;
+      var filhas = sim.atividades.filter(function (a) { return a.sub && a.pai === id; });
+      if (marcado) { m[id] = true; filhas.forEach(function (f) { m[f.id] = true; }); }
+      else {
+        delete m[id];
+        filhas.forEach(function (f) { delete m[f.id]; });
+        if (a0 && a0.sub && m[a0.pai]) {
+          delete m[a0.pai];
+          sim.atividades.forEach(function (f) { if (f.sub && f.pai === a0.pai && f.id !== id) m[f.id] = true; });
+        }
+      }
       st.etapas = Object.keys(m).length === sim.atividades.length ? null : m;
       st.sel = ""; st.focar = ""; st.etapasAntes = null; st.ativo = true;
       this._b4Refazer();
@@ -16433,6 +16798,7 @@
           this._b4Enviar("eco", { seq: typeof m.seq === "number" ? m.seq : null, temModelo: this._b4TemModelo(), abrindo: !this._b4TemModelo() && !!this._bimRestaurando });
         }
         else if (m.tipo === "quem") this._b4AvisarModelo(true);
+        else if (m.tipo === "foco") { this._b4UltimaMsg = Date.now(); this._b3AplicarFoco(m.f); this._b4StatusJanela(); }
         else if (m.tipo === "tchau") { this._b4UltimaMsg = 0; this._b4StatusJanela(); }
         else if (m.tipo === "fechar") { try { window.close(); } catch (e) {} }
         return;
@@ -16447,7 +16813,11 @@
       }
       else if (m.tipo === "eco") this._b4Eco(m);
       else if (m.tipo === "tchau") { this._b4Destacado = false; this._b4Destaque(false); }
-      else if (m.tipo === "pick" && typeof m.atv === "string") this._b4RealcarLinha(m.atv);
+      else if (m.tipo === "pick") {
+        if (typeof m.atv === "string" && m.atv) this._b4RealcarLinha(m.atv);
+        /* a peça clicada LÁ: a ficha dela aparece AQUI (chave durável, nunca uid) */
+        if (typeof m.chave === "string" && m.chave && m.chave.length <= 200) this._b3PecaDaJanela(m.chave);
+      }
     },
     _b4AplicarRemoto: function (m) {
       var st = this._b4Estado(), o = BIM4DSim.opcoes(m.s || {});
@@ -16467,15 +16837,122 @@
       this._b4Ir(st.data, { fixar: false, enviar: false });
       if (focarNovo) this._b4Enquadrar(o.focar);
     },
+    /* =====================================================================
+       O 3D ESPELHO — a janela do 3D serve a TODO o BIM, não só à Simulação 4D.
+
+       Quem trabalha com duas telas quer o modelo numa e, na outra, de onde
+       vem cada número: o conjunto, o conflito, a divergência orçamento ×
+       modelo, o avanço, a peça clicada. Cada ferramenta que MOSTRA peças
+       aqui chama `_b3Espelhar`, e a janela do 3D mostra o mesmo, com o rótulo
+       do que está mostrando ("de onde veio esta informação").
+       ⚠ A MESMA JANELA, O MESMO CANAL, AS MESMAS PORTAS da Simulação 4D
+         (#bim3d, `_b4Canal`, a permissão por obra a cada mensagem): um
+         segundo mecanismo de janela seria um segundo lugar para a permissão
+         escapar. Aberta daqui (`semSimular`), ela NÃO liga a simulação.
+       ⚠ SÓ CHAVES DURÁVEIS vão pelo canal (ver `BIM4DSim.foco`).
+       ===================================================================== */
+    _b3Espelhar: function (f) {
+      if (this._b4Janela3d || !this._b4Destacado) return;
+      var F = (typeof BIM4DSim !== "undefined" && BIM4DSim.foco) ? BIM4DSim.foco(f) : null;
+      if (F) this._b4Enviar("foco", { f: F });
+    },
+    _b3AbrirEspelho: function () {
+      var viva = false;
+      try { viva = !!(this._b4Win && !this._b4Win.closed); } catch (e) { viva = false; }
+      if (viva || this._b4Destacado) { try { if (this._b4Win) this._b4Win.focus(); } catch (e2) {} UI.toast("O 3D desta obra já está aberto em outra janela.", "ok"); return; }
+      this._b4AbrirJanela3d({ semSimular: true });
+    },
+    /* o 3D do tamanho da tela: a tela cheia E o modo foco da casca (só o
+       modelo, a barra da vista e o dock — as análises continuam na gaveta).
+       Não é o tela-cheia do navegador: nele os avisos e os diálogos do app,
+       que ficam fora do visualizador, sumiriam. Esc volta. */
+    _b3Maximizar: function (on) {
+      var S = (typeof BimShell !== "undefined" && BimShell.raiz && BimShell.raiz()) ? BimShell : null;
+      if (!S) { UI.toast("O visualizador 3D ainda não abriu nesta tela — abra o modelo e tente de novo.", "aviso"); return; }
+      var novo = on == null ? !this._b3Max : !!on, self = this;
+      this._b3Max = novo;
+      try { if (S.telaCheia) S.telaCheia(novo); } catch (e) {}
+      try { if (S.alternarFoco) S.alternarFoco(novo); } catch (e2) {}
+      if (novo && !this._b3Esc) {
+        this._b3Esc = function (ev) { if (ev && ev.key === "Escape" && self._b3Max) { var t = ev.target || {}; if (/^(INPUT|TEXTAREA|SELECT)$/.test(String(t.tagName || ""))) return; self._b3Maximizar(false); } };
+        document.addEventListener("keydown", this._b3Esc);
+      }
+      if (!novo && this._b3Esc) { document.removeEventListener("keydown", this._b3Esc); this._b3Esc = null; }
+      requestAnimationFrame(function () { requestAnimationFrame(function () { try { if (window.BIM && BIM.redimensionar) BIM.redimensionar(); } catch (e3) {} }); });
+      if (novo) UI.toast("3D maximizado. Esc (ou “Sair do foco”) volta.", "ok");
+    },
+    /* NA JANELA DO 3D: aplica o que a principal pediu para mostrar */
+    _b3AplicarFoco: function (f0) {
+      var f = (typeof BIM4DSim !== "undefined" && BIM4DSim.foco) ? BIM4DSim.foco(f0) : null;
+      if (!f || !window.BIM) return;
+      var st = this._b4Estado(), comSim = !!(st.ativo && this._b4Sim);
+      var uids = [], n = 0;
+      try {
+        if (f.modo === "limpar") {
+          if (BIM.limparClash) BIM.limparClash();
+          /* com a simulação ligada, é ela que volta a mandar na cena */
+          if (comSim) this._b4Ir(st.data, { fixar: false, enviar: false });
+          else { if (BIM.limparPintura) BIM.limparPintura(); if (BIM.mostrarTudo) BIM.mostrarTudo(); }
+          this._b3Rotulo("");
+          return;
+        }
+        if (f.modo === "pintar") {
+          n = Object.keys(f.mapa).length;
+          BIM.pintarChaves(f.mapa, f.dono);
+          uids = BIM.uidsDeChaves ? BIM.uidsDeChaves(Object.keys(f.mapa)) : [];
+        } else {
+          n = f.chaves.length;
+          uids = BIM.uidsDeChaves ? BIM.uidsDeChaves(f.chaves) : [];
+          if (f.modo === "isolar" && BIM.isolarChaves) BIM.isolarChaves(f.chaves);
+          else if (f.modo === "focar" && BIM.focarClash && uids.length) BIM.focarClash(uids);
+        }
+        if (f.modo !== "focar" && uids.length && BIM.enquadrarUids) BIM.enquadrarUids(uids);
+      } catch (e) {}
+      this._b3Rotulo(f.rotulo, uids.length, n);
+    },
+    /* o rótulo "de onde veio" no canto da janela do 3D — e, se parte das
+       peças não está no modelo aberto aqui, ele DIZ quantas faltam */
+    _b3Rotulo: function (txt, achadas, total) {
+      var el = document.getElementById("b3-foco"); if (!el) return;
+      if (!txt) { el.style.display = "none"; el.textContent = ""; return; }
+      var falta = (total > achadas) ? " · " + (total - achadas) + " de " + total + " peça(s) não estão no modelo aberto nesta janela" : "";
+      el.textContent = "Da janela principal: " + txt + (achadas ? " · " + achadas + " peça(s)" : "") + falta;
+      el.style.display = "";
+    },
+    /* NA PRINCIPAL: a peça clicada na janela do 3D — a ficha dela (tarefa,
+       prazo, custo) aparece aqui, onde estão os painéis */
+    _b3PecaDaJanela: function (chave) {
+      if (!window.BIM || !BIM.uidsDeChaves) return;
+      var u = BIM.uidsDeChaves([chave])[0];
+      if (!u) return;
+      this._b4Peca = String(u);
+      try { this._b4PintarPeca(); } catch (e) {}
+      var el = null;
+      (this._bimElementos || []).some(function (x) { if (x && x.id === u) { el = x; return true; } return false; });
+      var E = this._b4Elo && this._b4Elo.porEl ? this._b4Elo.porEl[u] : null;
+      UI.toast("Na janela do 3D: " + ((el && (el.nomeIfc || el.nome || el.tipo)) || "peça") + (E && E.numero ? " · tarefa " + E.numero + " " + E.nome : (E && E.nome ? " · " + E.nome : "")), "ok");
+    },
+    /* NA JANELA DO 3D: tela cheia de verdade (aqui não há diálogo do app a
+       esconder — a janela só mostra o modelo) */
+    _b3TelaCheia: function () {
+      try {
+        if (document.fullscreenElement) { if (document.exitFullscreen) document.exitFullscreen(); }
+        else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
+      } catch (e) {}
+    },
+
     /* ⚠ SÍNCRONO dentro do clique: qualquer espera antes do `window.open`
        consome o gesto, e o bloqueador de pop-up barra a janela (a mesma regra
        do js/janelas.js). */
-    _b4AbrirJanela3d: function () {
+    _b4AbrirJanela3d: function (opc) {
       if (!this._bimSel) { UI.toast("Escolha a obra no alto da tela: a janela do 3D reabre o modelo guardado nela.", "aviso"); return; }
       if (!this._b4Canal()) { UI.toast("Este navegador não sincroniza janelas (sem BroadcastChannel). Use o Chrome ou o Edge atualizados.", "erro"); return; }
       if (typeof Janelas === "undefined" || !Janelas.abrirBim3d) { UI.toast("Esta versão não abre o 3D em outra janela.", "erro"); return; }
       var st = this._b4Estado();
-      st.ativo = true;
+      /* aberta pela Simulação 4D, ela simula; aberta pelo cabeçalho do BIM
+         (espelho), mostra o modelo como está e segue as ferramentas */
+      this._b3SoEspelho = !!(opc && opc.semSimular);
+      if (!this._b3SoEspelho) st.ativo = true;
       var win = Janelas.abrirBim3d(this._bimSel);
       if (!win) return;
       this._b4Win = win;
@@ -16513,7 +16990,9 @@
       this._b4Largura();
       this._b4Refazer();
       if (on) {
-        st.ativo = true; this._b4Enviar();
+        /* o espelho (aberto pelo cabeçalho do BIM) não liga a simulação */
+        if (!this._b3SoEspelho) st.ativo = true;
+        this._b4Enviar();
         this._b4Pulso = setInterval(function () {
           if (!self._b4Destacado) { clearInterval(self._b4Pulso); self._b4Pulso = null; return; }
           try { self._b4Enviar(); } catch (e) {}
@@ -16530,11 +17009,20 @@
     /* peça clicada no 3D → a etapa dela na lista (e, na janela do 3D, avisa
        o painel) */
     _b4AoEscolherPeca: function (info) {
-      var sim = this._b4Sim; if (!sim || !info) return;
-      var atv = BIM4DSim.atividadeDoElemento(sim, info.uid || info.id);
-      if (!atv) return;
-      if (this._b4Janela3d) this._b4Enviar("pick", { atv: atv });
-      else this._b4RealcarLinha(atv);
+      if (!info) return;
+      var sim = this._b4Sim, uid = String(info.uid || info.id || "");
+      /* a ficha da peça (de onde vem a data e o valor dela) — em cima, em
+         qualquer aba, e completa na aba Elo */
+      this._b4Peca = uid;
+      try { this._b4PintarPeca(); } catch (eP) {}
+      var atv = sim ? BIM4DSim.atividadeDoElemento(sim, uid) : null;
+      var chave = "";
+      try { chave = (window.BIM && BIM.chaveDe) ? String(BIM.chaveDe(uid) || "") : ""; } catch (eC) { chave = ""; }
+      if (this._b4Janela3d) { if (atv || chave) this._b4Enviar("pick", { atv: atv || "", chave: chave }); return; }
+      if (atv) this._b4RealcarLinha(atv);
+      /* o 3D na outra janela mostra a peça clicada aqui (só enquadra: não
+         mexe na cena que a simulação ou outra ferramenta pintou lá) */
+      if (chave) this._b3Espelhar({ modo: "selecao", chaves: [chave], rotulo: "peça selecionada — " + String(info.nome || info.tipo || "").slice(0, 120) });
     },
     /* o selo da janela do 3D: ligado ao painel ou esperando por ele */
     _b4StatusJanela: function () {
@@ -16548,8 +17036,10 @@
          o arquivo de…" a cada 3 s no projetor, e "esta janela reabre
          sozinha" também quando ela não reabre. Só troca o texto quando ele
          muda — o leitor de tela não relê a mesma frase a cada batida. */
+      /* `simulando` só depois da 1ª mensagem do painel (antes dela a janela
+         não sabe se foi aberta pela Simulação ou como espelho) */
       var s = BIM4DSim.seloJanela({ temModelo: this._b4TemModelo(), restaurando: !!this._bimRestaurando, procurando: !!this._b4Retenta,
-        vivo: vivo, restauro: this._b4Restauro || null });
+        vivo: vivo, restauro: this._b4Restauro || null, simulando: this._b4UltimaMsg ? !!this._b4Estado().ativo : undefined });
       if (el.textContent !== s.texto) el.textContent = s.texto;
       var cls = "b4-j3d-status" + (s.classe === "vivo" ? " b4-vivo" : "") + (s.classe === "aviso" ? " b4-aviso" : "");
       if (el.className !== cls) el.className = cls;
@@ -17007,6 +17497,7 @@
       }
       try { BIM.pintarChaves(pin.pinturas, "divergencia"); }
       catch (e2) { UI.toast("Não consegui pintar a cena.", "erro"); return; }
+      this._b3Espelhar({ modo: "pintar", mapa: pin.pinturas, dono: "divergencia", rotulo: "divergência orçamento × modelo" });
       this._bimOrcPintado = { modo: "divergencia", div: pin, em: new Date().toISOString() };
       this._bimOrcRender();
       UI.toast(tinha4d ? "Modelo pintado pela divergência. A simulação 4D foi desligada."
@@ -17074,6 +17565,7 @@
       }
 
       try { BIM.pintarChaves(pin.pinturas, "avanco"); } catch (e2) { UI.toast("Não consegui pintar a cena.", "erro"); return; }
+      this._b3Espelhar({ modo: "pintar", mapa: pin.pinturas, dono: "avanco", rotulo: "avanço medido nas medições" });
       this._bimOrcPintado = { modo: "avanco", pin: pin, din: din, pendentes: av.pendentes, em: new Date().toISOString() };
       this._bimOrcRender();
       UI.toast(tinha4d ? "Modelo pintado pelo medido. A simulação 4D foi desligada — as duas usam a mesma cor da cena."
@@ -17084,6 +17576,7 @@
       if (!this._bimOrcPintado) return;
       this._bimOrcPintado = null;
       try { if (window.BIM && BIM.limparPintura) BIM.limparPintura(); } catch (e) {}
+      this._b3Espelhar({ modo: "limpar" });
       if (!semRender) this._bimOrcRender();
     },
 
@@ -17575,6 +18068,9 @@
       var alvo = (c.aId != null && c.bId != null) ? [c.aId, c.bId]
         : ((window.BIM && BIM.uidsDeChaves) ? BIM.uidsDeChaves([c.chaveA, c.chaveB]) : []);
       if (window.BIM && BIM.focarClash && alvo.length) { try { BIM.focarClash(alvo); } catch (e) {} }
+      /* as CHAVES do conflito (não os uids desta sessão) vão para o 3D destacado */
+      var chC = (c.chaveA && c.chaveB) ? [c.chaveA, c.chaveB] : ((window.BIM && BIM.chaveDe) ? alvo.map(function (u) { return BIM.chaveDe(u); }).filter(Boolean) : []);
+      if (chC.length) this._b3Espelhar({ modo: "focar", chaves: chC, rotulo: "conflito " + (i + 1) + " · " + String(c.par || "").slice(0, 120) });
       var box = document.getElementById("bim-info");
       if (box) {
         box.style.maxWidth = "260px"; // o painel de propriedades (420px) pode ter ficado aberto
@@ -17599,6 +18095,7 @@
     },
     _bimLimparClash: function () {
       if (window.BIM && BIM.limparClash) { try { BIM.limparClash(); } catch (e) {} }
+      this._b3Espelhar({ modo: "limpar" });
       /* "limpar destaque" tem de limpar TUDO que está por cima do modelo. O
          `mostrarTudo` devolve a visibilidade mas não toca na pintura nem no
          contorno do cronograma — o modelo voltava colorido pelo 4D. */
@@ -41385,7 +41882,12 @@ renderFolha: function () {
       var dinheiro = this._cronoDinheiro();
       /* o Gantt do completo carrega o valor e o peso de cada nó: sem
          permissão de dinheiro, o painel vai sem ele */
-      var pr = App._cronoPainelDados(obra, c.orc, { comGantt: !!opts.comGantt && dinheiro });
+      /* `comCusto` com dinheiro, na ficha e no módulo: o custo real entra no
+         Prazo × Custo (a permissão do Financeiro é conferida lá dentro).
+         ⚠ Os dois pedem IGUAL — é uma montagem só (test-crono-modulo); com a
+         linha de base e sem o custo, a ficha mostrava o recado técnico "o
+         custo real não chegou ao painel" como se fosse falha da obra. */
+      var pr = App._cronoPainelDados(obra, c.orc, { comGantt: !!opts.comGantt && dinheiro, comCusto: dinheiro });
       if (!pr || !pr.painel) { c.estado = "sem-motor"; return c; }
       if (!dinheiro) {
         /* sem o removedor não se mostra o painel: melhor "não carregou" que o
@@ -42310,6 +42812,9 @@ renderFolha: function () {
         case "bim-drawer-fechar": return this._bimFecharDrawer();
         case "bim-reuniao": return this.bimReuniao();
         case "bim-revit": return this.bimExportarRevit();
+        case "bim-max": return this._b3Maximizar();
+        case "bim-3d-janela": return this._b3AbrirEspelho();
+        case "bim-tela-cheia": return this._b3TelaCheia();
         case "bimeap-abrir": return this.bimeapAbrir();
         case "bim-quant-ilustrado": return this.bimQuantIlustrado();
         case "bim-qr-rv": return this.bimQRImersivo();

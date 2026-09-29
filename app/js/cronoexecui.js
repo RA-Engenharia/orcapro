@@ -652,8 +652,22 @@
 
   /* CSS do painel previsto × realizado — emitido pelo próprio painelPR, porque
      a ficha da obra (outra tela, sem o <style> da aba) também o desenha */
+  /* Prazo × custo (valor agregado): duas colunas, uma por régua. Exportado
+     (`CronoExecUI.CSS_EVM`) porque a Simulação 4D desenha o MESMO bloco
+     (`_prEvm`) — uma regra de estilo só para os dois lugares. */
+  var CSS_EVM =
+    ".cx-evm{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin:0 0 6px}" +
+    ".cx-evm-col{border:1px solid var(--borda,#e2e8f0);border-radius:8px;padding:8px 10px;background:var(--fundo-card,transparent)}" +
+    ".cx-evm-t{font-weight:600;font-size:12.5px;margin:0 0 4px}" +
+    ".cx-evm-tab{width:100%;border-collapse:collapse;font-size:12.5px}" +
+    ".cx-evm-tab th{width:42px;text-align:left;color:var(--texto-fraco,#64748b);font-weight:600;padding:2px 4px 2px 0}" +
+    ".cx-evm-tab td{padding:2px 0}" +
+    ".cx-evm-v{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}" +
+    ".cx-evm-mau .cx-evm-v{color:#dc2626;font-weight:600}.cx-evm-bom .cx-evm-v{color:#15803d;font-weight:600}" +
+    ".cx-evm-mot{font-size:11.5px;color:var(--texto-fraco,#64748b);margin-top:5px;line-height:1.35}" +
+    ".cx-evm-regua{font-size:11px;margin:0 0 10px;line-height:1.35}";
   var CSS_PR =
-    ".cx-pr{font-size:13px}" +
+    ".cx-pr{font-size:13px}" + CSS_EVM +
     /* ⚠ o nº EAP antes do nome precisa do espaço AQUI também: a ficha da obra
        não tem o <style> da aba, e na foto saía "2.gServiços" e "3Piscina" */
     ".cx-pr .cx-n{color:var(--texto-fraco,#64748b);font-variant-numeric:tabular-nums;margin-right:5px}" +
@@ -754,6 +768,7 @@
     SUBS: SUBS,
     FASE: FASE,
     CSS: CSS,
+    CSS_EVM: CSS_EVM,
 
     /* ------------------------------------------------------------------
        DADOS — o cálculo que a aba precisa, UMA vez por render.
@@ -5274,6 +5289,7 @@
         '" title="O dia que os números descrevem: executado, Portal e previsto saem todos desta data. Apague para voltar ao último diário publicado." style="width:140px"></label>' + (fc ? '<span class="muted">(' + fc + ')</span>' : ''));
       html += '<div class="cx-pr-cab">' + cab.join('<span class="muted">·</span>') + '</div>';
       html += this._prKpis(p, dados, comp);
+      if (!comp) html += this._prEvm(p, dados);
       /* ⚠ `opts.aposKpis` entra AQUI, e o lugar é medido. A leitura executiva
          ficava ACIMA do painel e empurrava a faixa dos três números para
          y 742–893 numa janela de 768 (medido com o layout despejado: o bloco
@@ -5385,6 +5401,50 @@
           '</div><div class="cx-kpi-sub">' + esc(sub.join(" · ")) + '</div>' + acao + '</div>';
       }
       return '<div class="cx-kpis">' + h + '</div>';
+    },
+    /* ==================================================================
+       PRAZO × CUSTO — o valor agregado completo (`kpis.evm`, do
+       CronoPlan.evmDaObra) com o custo real do Financeiro.
+       ⚠ DUAS RÉGUAS, DUAS COLUNAS, NUNCA SOMADAS (skill `dinheiro`): a do
+         prazo é PREÇO DE VENDA (a do cronograma e da proposta); a do custo é
+         CUSTO DIRETO (a do Financeiro). O motor já converte o VA para a
+         régua do custo; a tela só não pode pôr as duas lado a lado sem dizer
+         qual é qual.
+       ⚠ NÚMERO QUE NÃO SAIU MOSTRA O MOTIVO, não "—" mudo: sem linha de
+         base, sem despesa lançada, sem acesso ao Financeiro — cada um diz o
+         que fazer.
+       ⚠ SEM DINHEIRO, NADA: quem não vê R$ não vê este bloco (os índices
+         sozinhos, sem a conta, se leem errado).
+       ================================================================== */
+    _prEvm: function (p, dados) {
+      var V = (p.kpis || {}).evm;
+      if (!V || !V.ok || (dados && dados.semDinheiro)) return "";
+      var R = V.rotulos || {}, G = V.regua || {};
+      function rs(v) { return (v == null || !isFinite(Number(v))) ? "—" : moeda(v); }
+      function ix(v) { return (v == null || !isFinite(Number(v))) ? "—" : nBR(v, 2); }
+      function lin(sig, rot, val, dica, cls) {
+        return '<tr class="' + (cls || "") + '" title="' + esc(dica || "") + '"><th>' + esc(sig) + '</th><td>' + esc(rot) + '</td><td class="cx-evm-v">' + esc(val) + '</td></tr>';
+      }
+      function tom(v) { return (v == null || !isFinite(Number(v))) ? "" : (Number(v) < 0.995 ? "cx-evm-mau" : (Number(v) > 1.005 ? "cx-evm-bom" : "")); }
+      function sinal(v) { return (v == null || !isFinite(Number(v))) ? "" : (Number(v) < -0.005 ? "cx-evm-mau" : ""); }
+      var h = '<div class="cx-pr-sec"><b>Prazo × custo</b> <span class="muted">— valor agregado' + (V.dataCorte ? ' na data de corte ' + esc(dmaS(V.dataCorte)) : '') +
+        (V.contra ? ', contra ' + esc(V.contra) : '') + '</span></div><div class="cx-evm">';
+      h += '<div class="cx-evm-col"><div class="cx-evm-t">Prazo <span class="muted">· preço de venda</span></div><table class="cx-evm-tab">' +
+        lin("VP", "Valor previsto na data", rs(V.vp), R.vp) + lin("VA", "Valor agregado (feito)", rs(V.va), R.va) +
+        lin("ONT", "Orçamento no término", rs(V.ont), R.ont) + lin("IDP", "Índice de desempenho de prazo", ix(V.idp), R.idp, tom(V.idp)) +
+        lin("VPR", "Variação de prazo", rs(V.vpr), R.vpr, sinal(V.vpr)) + '</table>' +
+        (V.idp == null && V.idpMotivo ? '<div class="cx-evm-mot">' + esc(V.idpMotivo) + '</div>' : '') + '</div>';
+      h += '<div class="cx-evm-col"><div class="cx-evm-t">Custo <span class="muted">· custo direto (Financeiro)</span></div><table class="cx-evm-tab">' +
+        lin("CR", "Custo real (despesas da obra)", rs(V.cr), R.cr) + lin("VA", "Valor agregado em custo", rs(V.vaCusto), R.vaCusto) +
+        lin("IDC", "Índice de desempenho de custo", ix(V.idc), R.idc, tom(V.idc)) + lin("VC", "Variação de custo", rs(V.vc), R.vc, sinal(V.vc)) +
+        lin("ENT", "Estimativa no término", rs(V.ent), R.ent) + lin("VNT", "Variação no término", rs(V.vnt), R.vnt, sinal(V.vnt)) +
+        lin("EPT", "Estimativa para terminar", rs(V.ept), R.ept) +
+        (V.comprometido != null ? lin("", "Comprometido (pedidos aprovados)", rs(V.comprometido), R.comprometido) : '') + '</table>' +
+        (V.idc == null && V.idcMotivo ? '<div class="cx-evm-mot">' + esc(V.idcMotivo) + '</div>' : '') +
+        (V.cobertura && V.cobertura.pctApropriado != null ? '<div class="cx-evm-mot" title="' + esc(V.cobertura.rotulo || "") + '">Cobertura de apropriação: ' + esc(nBR(V.cobertura.pctApropriado, 1)) + '% do gasto tem etapa carimbada' +
+          (V.cobertura.suficiente ? '' : ' — abaixo de ' + esc(String(V.cobertura.minimo)) + '%: o IDC da obra inteira vale, o custo POR ETAPA ainda não') + '.</div>' : '') + '</div>';
+      h += '</div><div class="muted cx-evm-regua">' + esc((G.venda || "") + " " + (G.custo || "")) + (V.cr != null ? ' O Custo Real é o de hoje (as despesas da obra não são cortadas na data).' : '') + '</div>';
+      return h;
     },
     _prTabela: function (p, multi) {
       var nos = arr(p.nos);

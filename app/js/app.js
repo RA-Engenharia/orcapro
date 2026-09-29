@@ -329,6 +329,17 @@
           try { if (ev && (ev.key === "orcapro:sessao" || ev.key === chaveEquipe || ev.key === null)) self._janelaBim3dRevalidar(); } catch (eR) {}
         });
       }
+      /* F = tela cheia (a janela do 3D só mostra o modelo: é para o 2º
+         monitor e o projetor). Fora de campo de texto; uma vez por documento. */
+      if (!this._bim3dTeclaF && document.addEventListener) {
+        this._bim3dTeclaF = true;
+        document.addEventListener("keydown", function (ev) {
+          var t = ev.target || {};
+          if ((ev.key === "f" || ev.key === "F") && !ev.ctrlKey && !ev.metaKey && !ev.altKey && !/^(INPUT|TEXTAREA|SELECT)$/.test(String(t.tagName || "")) && !t.isContentEditable) {
+            try { if (typeof Gestao !== "undefined" && Gestao._b3TelaCheia) { ev.preventDefault(); Gestao._b3TelaCheia(); } } catch (eF) {}
+          }
+        });
+      }
       this.view = "bim"; this.tela = "gestao"; this.orcAtual = null;
       this.render();
     },
@@ -5698,7 +5709,32 @@
          que falta) e o `confrontoPorNo` (que mescla o real por nó, com a
          origem de cada entrada). O corte padrão do painel passa a ser o dele. */
       var avRec = (CB && lista) ? CB.avanco(lista, obra.id) : null;
+      /* ⚠ O CUSTO REAL LIGA O PRAZO AO CUSTO — e SÓ SOB PEDIDO (`comCusto`).
+         O `evmDaObra` já sabia fazer CR, IDC e ENT, e nenhuma chamada lhe
+         entregava o custo: a metade "estou caro?" do valor agregado era
+         motor sem fiação (recurso inerte). Ele entra aqui, na montagem
+         única, pelo `CustoEtapa.consolidar` — a MESMA conta do Previsto ×
+         Realizado da Gestão (lançamento ligado à obra por carimbo, nunca por
+         semelhança).
+         ⚠ Sob pedido porque o sino monta este painel obra por obra a cada
+           5 min (~27 ms cada, js/avisos-ui.js) e não mostra custo nenhum.
+         ⚠ SÓ QUEM PODE O FINANCEIRO VÊ O CUSTO REAL. "Ver dinheiro" na
+           ficha é Medições OU Financeiro (preço de venda); a despesa da obra
+           é do Financeiro — quem só mede não a vê em tela nenhuma, e não
+           passa a vê-la por aqui. */
+      var custoEtapa = null, custoMotivo = "";
+      if (opts.comCusto) {
+        var podeFin = !(typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro"));
+        var podeOb = !(typeof Auth !== "undefined" && Auth.podeObra && !Auth.podeObra(obra.id));
+        if (!podeFin || !podeOb) custoMotivo = "o Custo Real vem das despesas do Financeiro, e o seu usuário não tem acesso ao Financeiro" + (podeOb ? "" : " desta obra") + " — o IDC e a estimativa no término ficam para quem tem.";
+        else if (typeof CustoEtapa === "undefined" || !CustoEtapa.consolidar) custoMotivo = "o módulo do custo por etapa (custoetapa.js) não carregou — o Custo Real não pôde ser apurado. Recarregue o app.";
+        else {
+          try { custoEtapa = CustoEtapa.consolidar({ obraId: obra.id, orcamento: orc, financeiro: ler("financeiro"), compras: ler("compras") }); }
+          catch (eCE) { custoEtapa = null; custoMotivo = "não consegui apurar o Custo Real desta obra (" + String((eCE && eCE.message) || eCE) + ")."; }
+        }
+      }
       var p = CronoPlan.montarPainel({ orc: orc, obra: obra, plano: plano, bases: bases, rdos: ler("rdo"), medicoes: ler("medicoes"),
+        custoEtapa: custoEtapa || undefined,
         atividadesDaObra: ativ, hoje: new Date(), dataCorte: corte || null, orcamentos: orcsP,
         avanco: avRec, numeroB: this._cronoNumeroB(ler("medicoes"), obra.id),
         /* MEDCC 6B (linha de passagem): o estado DERIVADO da medição, apurado
@@ -5707,6 +5743,12 @@
            prontos e só escreve os avisos. Uma segunda apuração dentro dele
            daria dois "quantas tarefas a medição completa" na mesma tela. */
         medcc: (typeof this._medccFaixas === "function") ? this._medccFaixas(String(obra.id)) : null });
+      /* o recado de quem não pôde ter o custo diz POR QUÊ — o do motor
+         ("não chegou ao painel") é para o suporte, não para o engenheiro */
+      if (custoMotivo && p && p.kpis && p.kpis.evm && p.kpis.evm.cr == null) {
+        p.kpis.evm.idcMotivo = custoMotivo;
+        (p.avisos || []).forEach(function (a) { if (a && a.tipo === "sem-idc") a.msg = "IDC e ENT indisponíveis: " + custoMotivo; });
+      }
       if (ileg && p) {
         /* fora do PR_OK (CronoExecUI): o chip diz "indisponível" com o recado
            no title, e o painel mostra o recado sem [Congelar]/[Histórico] */

@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.99",
+  "versao": "1.2.100",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.99.zip",
-  "notas": "Planejamento e gestao por usuario: o administrador pode dar a um usuario comum a permissao de definir o responsavel pelo planejamento e gestao, que aparece no menu da conta so com esse campo; o valor passa a ir para os outros aparelhos da conta pela nuvem (vale o mais recente).",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.99/OrcaPRO-IA-Instalador-v1.2.99.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.100.zip",
+  "notas": "Simulacao 4D ligada ao plano de execucao e ao custo: cada peca do modelo pode ser ligada a tarefa do plano pelo parametro OrcaPRO_Tarefa (sobe na data da tarefa, com o avanco e o valor dela); abas Simulacao, Prazo x Custo (custo na data, desembolso mes a mes e valor agregado com o custo real) e Elo do modelo; Maximizar 3D e 3D em outra janela para todas as ferramentas do BIM.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.100/OrcaPRO-IA-Instalador-v1.2.100.exe"
 }

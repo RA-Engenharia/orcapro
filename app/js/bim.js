@@ -1400,7 +1400,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         nome: (elC && (elC.nomeIfc || elC.nome)) || '—', tipo: (elC && elC.tipo) || tipoCache || '',
         globalId: (elC && elC.globalId) || '', tag: (elC && elC.tag) || '',
         familia: famC ? famC.familia : ((elC && elC.familia) || ''),
-        etapa: cbC.etapa || (elC && elC.etapa) || '', codOrc: cbC.codOrc || (elC && elC.codOrc) || '',
+        etapa: cbC.etapa || (elC && elC.etapa) || '', codOrc: cbC.codOrc || (elC && elC.codOrc) || '', tarefa: cbC.tarefa || (elC && elC.tarefa) || '',
         fase: cbC.fase || (elC && elC.fase) || '', qto: qC,
         area: qC && qC.area, comprimento: qC && qC.comprimento };
     }
@@ -1425,7 +1425,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       var qtoP = (moP && moP.qto && moP.qto[expressID]) || null;
       return { id: expressID, mid: mid, uid: mid + ':' + expressID, nome: nome, tipo: tipo, globalId: gid, tag: (line.Tag && line.Tag.value) || '',
         familia: famP ? famP.familia : ((line.ObjectType && line.ObjectType.value) || ''),
-        etapa: cb.etapa || '', codOrc: cb.codOrc || '', fase: cb.fase || '', qto: qtoP };
+        etapa: cb.etapa || '', codOrc: cb.codOrc || '', fase: cb.fase || '', tarefa: cb.tarefa || '', qto: qtoP };
     } catch (e) { return { id: expressID, mid: mid, uid: mid + ':' + expressID, nome: '—', tipo: tipoCache || '', globalId: '', familia: '', etapa: '', codOrc: '', fase: '', qto: null }; }
   }
   function nomeTipo(num) { var raw = ''; try { if (S.api.GetNameFromTypeCode) raw = S.api.GetNameFromTypeCode(num); } catch (_) {} return raw || ('IFC#' + num); }
@@ -6968,7 +6968,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         var pset; try { pset = S.api.GetLine(mid, psetID, false); } catch (_) { continue; }
         if (!pset || !pset.HasProperties) continue; // não é IfcPropertySet (ex.: quantities/type)
         var props = Array.isArray(pset.HasProperties) ? pset.HasProperties : [pset.HasProperties];
-        var etapa = null, cod = null, fase = null, descrPset = null;
+        var etapa = null, cod = null, fase = null, descrPset = null, tarefa = null;
         for (var p = 0; p < props.length; p++) {
           var h = props[p]; if (!h || h.value == null) continue;
           var pv; try { pv = S.api.GetLine(mid, h.value, false); } catch (_) { continue; }
@@ -6977,6 +6977,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           if (nm === 'OrcaPRO_Etapa' && pv.NominalValue) etapa = pv.NominalValue.value;
           else if (nm === 'OrcaPRO_CodOrc' && pv.NominalValue) cod = pv.NominalValue.value;
           else if (nm === 'OrcaPRO_Fase' && pv.NominalValue) fase = pv.NominalValue.value; // reforma: nova|demolir|existente
+          /* a TAREFA do plano executivo ("3.2 Pilares"): o elo que liga a peça
+             ao prazo, ao custo e ao avanço dela (js/bimelo.js) */
+          else if (nm === 'OrcaPRO_Tarefa' && pv.NominalValue) tarefa = pv.NominalValue.value;
           /* ⚠ TERCEIRA PORTA DA DESCRIÇÃO, e ela sai de graça. Nem todo
              exportador leva o campo Descrição do Revit para o atributo
              `Description` do IFC — vários o despejam como propriedade num
@@ -6990,7 +6993,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
             if (vD != null && String(vD).trim()) descrPset = String(vD).trim();
           }
         }
-        if (etapa == null && cod == null && fase == null && descrPset == null) continue;
+        if (etapa == null && cod == null && fase == null && descrPset == null && tarefa == null) continue;
         var objs = Array.isArray(rel.RelatedObjects) ? rel.RelatedObjects : [rel.RelatedObjects];
         for (var o = 0; o < objs.length; o++) {
           var oh = objs[o]; if (!oh || oh.value == null) continue;
@@ -6998,6 +7001,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           if (etapa != null) mapa[eid].etapa = etapa;
           if (cod != null) mapa[eid].codOrc = cod;
           if (fase != null) mapa[eid].fase = fase;
+          if (tarefa != null && String(tarefa).trim()) mapa[eid].tarefa = String(tarefa).trim();
           if (descrPset != null && !mapa[eid].descricaoPset) mapa[eid].descricaoPset = descrPset;
         }
       }
@@ -7988,7 +7992,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         var idIfc = lerIdentidadeIfc(S.api, mid, mesh.expressID);
         var idB = idElemento(modelo.modeloId, { id: mesh.expressID, globalId: idIfc.globalId });
         var dM = descricaoDeMercado(idIfc, famEl, cb);
-        modelo.elementos.push({ globalId: idB.globalId, chave: idB.chave, chaveInstavel: idB.instavel, nomeIfc: idIfc.nomeIfc, tag: idIfc.tag, id: mesh.expressID, uid: mid + ':' + mesh.expressID, mid: mid, arquivo: modelo.nome, tipo: tipoNome, nome: rotuloDisciplina(tipoNome), familia: famEl ? famEl.familia : null, descricao: dM.descricao, descricaoFonte: dM.fonte, sistemaIfc: (modelo.sistemas && modelo.sistemas[mesh.expressID]) || '', etapa: cb.etapa || null, codOrc: cb.codOrc || null, fase: cb.fase || null, qto: (qto && qto[mesh.expressID]) || null });
+        modelo.elementos.push({ globalId: idB.globalId, chave: idB.chave, chaveInstavel: idB.instavel, nomeIfc: idIfc.nomeIfc, tag: idIfc.tag, id: mesh.expressID, uid: mid + ':' + mesh.expressID, mid: mid, arquivo: modelo.nome, tipo: tipoNome, nome: rotuloDisciplina(tipoNome), familia: famEl ? famEl.familia : null, descricao: dM.descricao, descricaoFonte: dM.fonte, sistemaIfc: (modelo.sistemas && modelo.sistemas[mesh.expressID]) || '', etapa: cb.etapa || null, codOrc: cb.codOrc || null, fase: cb.fase || null, tarefa: cb.tarefa || null, qto: (qto && qto[mesh.expressID]) || null });
         modelo.nEl++;
       });
       modelo.disciplina = detectarDisciplina(modelo.nome, modelo.tipos);

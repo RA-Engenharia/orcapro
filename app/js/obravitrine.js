@@ -496,7 +496,14 @@
      um dos dois, os percentuais ficam e os valores saem — inclusive de dentro
      dos recados, onde o número em R$ vem escrito. Uma lista de campos só
      esqueceria o próximo recado com R$ dentro; por isso o texto também passa. */
-  var CHAVES_REAIS = { valor: 1, vp: 1, va: 1, VP: 1, VA: 1, emValor: 1, valorForaDaBase: 1, valorBase: 1 };
+  /* ⚠ O VALOR AGREGADO (`kpis.evm`) TEM R$ EM CHAVES PRÓPRIAS: o orçado no
+     término em venda e em custo, a variação de prazo e — desde que o custo
+     real passou a chegar ao painel — o gasto da obra (CR, VC, ENT, VNT, EPT,
+     comprometido, exposição). Fora desta lista, cada uma delas passava para
+     quem não pode ver dinheiro. Os índices (IDP, IDC) não são R$ e ficam. */
+  var CHAVES_REAIS = { valor: 1, vp: 1, va: 1, VP: 1, VA: 1, emValor: 1, valorForaDaBase: 1, valorBase: 1,
+    ont: 1, vpr: 1, ontCusto: 1, vpCusto: 1, vaCusto: 1, cr: 1, crApropriado: 1, crNaoApropriado: 1, crCaixa: 1,
+    comprometido: 1, exposicao: 1, vc: 1, ent: 1, vnt: 1, ept: 1, valorVendaSemCusto: 1 };
   function semReais(s) { return String(s).replace(/R\$\s?-?\d[\d.]*(?:,\d+)?/g, "R$ —"); }
   ObraVitrine.cronoSemDinheiro = function (dados) {
     function vai(x, pai) {
