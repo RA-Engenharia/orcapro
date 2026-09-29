@@ -4080,3 +4080,47 @@ body.modo-bim3d .b4h-a { font-size: var(--t-base); }
 .b4-j3d-status { position: absolute; right: 14px; bottom: 14px; z-index: 5; font-size: var(--t-micro); background: rgba(15, 39, 64, .82); color: #dbe8f5; padding: 5px 11px; border-radius: 99px; pointer-events: none; max-width: 46%; }
 .b4-j3d-status.b4-vivo { color: #86efac; }
 .b4-j3d-status.b4-aviso { color: #fcd34d; border-radius: 10px; }
+
+/* =====================================================================
+ * DISCIPLINAS E ETAPAS (filtro do 3D) e PROJETO ESTRUTURAL NO CANTEIRO
+ * (js/estrutui.js). Tokens da régua: nada de tamanho/peso cru.
+ * ===================================================================== */
+.edisc-atalhos { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.edisc-abas, .est-abas { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 10px; }
+.edisc-lista { border: 1px solid var(--linha); border-radius: 10px; overflow: hidden; }
+.edisc-lin { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--linha); }
+.edisc-lin:last-child { border-bottom: 0; }
+.edisc-ck { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; cursor: pointer; }
+.edisc-cor { width: 14px; height: 14px; border-radius: 4px; flex: 0 0 auto; border: 1px solid var(--linha-forte); }
+.edisc-nome { font-weight: var(--p-forte); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.edisc-n { font-size: var(--t-micro); white-space: nowrap; }
+.edisc-acoes, .est-acoes, .est-cab { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; align-items: center; }
+.edisc-nota, .edisc-vazio { font-size: var(--t-micro); margin: 8px 0 0; }
+.est-vazio p { margin: 0 0 8px; }
+.est-resumo { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin: 4px 0 8px; }
+.est-selo { display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-micro); font-weight: var(--p-forte); padding: 2px 9px; border-radius: 99px; }
+.est-selo.bom { background: rgba(21, 128, 61, .14); color: var(--verde); }
+.est-selo.ruim { background: rgba(214, 31, 38, .12); color: var(--vermelho); }
+.est-aviso { color: var(--amarelo); font-size: var(--t-peq); margin: 6px 0; }
+.est-sec { margin: 12px 0 4px; }
+.est-sec h4 { margin: 0 0 8px; font-size: var(--t-base); }
+.est-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+.est-card { display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 6px; text-align: left; background: var(--surface); color: var(--texto); border: 1px solid var(--linha); border-radius: 10px; cursor: pointer; }
+.est-card:hover, .est-card:focus-visible { border-color: var(--linha-forte); outline: 2px solid transparent; }
+.est-thumb { width: 100%; height: auto; min-height: 60px; background: #fff; border-radius: 6px; border: 1px solid var(--linha); }
+.est-thumb.sem-pdf { background: var(--surface-2); }
+.est-card-tit { font-size: var(--t-peq); }
+.est-card-sub { font-size: var(--t-micro); }
+.est-tab { width: 100%; border-collapse: collapse; margin: 6px 0 12px; }
+.est-tab th, .est-tab td { padding: 5px 7px; border-bottom: 1px solid var(--linha); text-align: left; font-size: var(--t-peq); }
+.est-tab th { font-weight: var(--p-forte); background: var(--surface-2); }
+.est-tab .n { text-align: right; white-space: nowrap; }
+.est-tab tfoot td { font-weight: var(--p-forte); }
+.est-conf tr.ruim td { color: var(--vermelho); }
+.est-det { display: flex; flex-direction: column; gap: 10px; }
+.est-crop-wrap { overflow: auto; max-height: 62vh; background: #fff; border: 1px solid var(--linha); border-radius: 8px; }
+.est-crop { display: block; width: 100%; height: auto; background: #fff; }
+.est-crop-legenda { font-size: var(--t-micro); margin: 4px 8px 6px; color: #516375; }
+.est-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.est-chip { font-size: var(--t-micro); padding: 2px 9px; border-radius: 99px; background: var(--surface-2); border: 1px solid var(--linha); }
+.est-dim { margin: 0; }

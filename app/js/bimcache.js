@@ -194,7 +194,12 @@
                          /* a tarefa do plano executivo (OrcaPRO_Tarefa): sem ela
                             aqui, o modelo reaberto do cache perderia o elo
                             peça ↔ tarefa e voltaria a subir pela etapa */
-                         "tarefa"];
+                         "tarefa",
+                         /* disciplina da peça e detalhe do projeto estrutural: sem
+                            eles aqui, o modelo reaberto do cache perderia o filtro
+                            "só fundação / só armação" (tudo cairia na regra) e o
+                            elo peça ↔ vista do PDF */
+                         "disciplinaPeca", "detalhe"];
 
   function elementoLimpo(e) {
     var o = {};

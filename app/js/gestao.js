@@ -511,6 +511,8 @@
      * não pegava — um controle que mente. */
     lp_tarefas: 1, fiscal: 1, frota_mov: 1, estoque: 1, centrocusto: 1,
     producao_preco: 1, bim_niveis: 1, bim_modelos: 1, bim_conjuntos: 1, bim_vistas: 1,
+    /* o projeto estrutural lido do PDF é DAQUELA obra (locação, armação, vistas) */
+    bim_estrut: 1,
     bim_clash_testes: 1, bim_clash_resultados: 1, bim_tarefas: 1,
     /* o elo modelo<->orcamento carrega obraId: sem estar aqui, o sub-usuario
        restrito a duas obras veria os elos das outras oito. */
@@ -5237,6 +5239,9 @@
          aponta para chaves que não existem mais */
       ["bim_conjuntos", "conjunto(s) de seleção"],
       ["bim_vistas", "ponto(s) de vista salvo(s)"],
+      /* o projeto estrutural lido é da obra; o PDF no IndexedDB fica órfão e a
+         política de espaço do navegador o descarta — não é dado de negócio */
+      ["bim_estrut", "projeto(s) estrutural(is) lido(s) do PDF"],
       ["bim_clash_testes", "teste(s) de compatibilização"],
       ["bim_clash_resultados", "conflito(s) com histórico"],
       ["bim_tarefas", "tarefa(s) do cronograma 4D"],
@@ -10108,6 +10113,9 @@
       reg["estilo"] = function (e) { var b = B(); if (b && b.estiloDesenho) { b.estiloDesenho(e.ligado); return true; } return false; };
       reg["sistemas"] = function (e) { var b = B(); if (b && b.sistema) { b.sistema(e.ligado); return true; } return false; };
       reg["conjuntos"] = function () { self._bimAbrirPainel("conjuntos"); self._bimConjRender(); return true; };
+      reg["disciplinas"] = function () { self._bimAbrirPainel("disc"); self._bimDiscRender(); return true; };
+      reg["estrutural"] = function () { self._bimAbrirPainel("estrut"); self._estRender(); return true; };
+      reg["detalhe-peca"] = function () { return self._estDetalheDaSelecao(); };
       reg["vistas"] = function () { self._bimAbrirPainel("vistas"); self._bimVistaRender(); return true; };
       reg["tarefas4d"] = function () { self._bimAbrirPainel("tarefas4d"); self._bimTarRender(); return true; };
       /* "snap" é comando de MENU, não de alternar: e.ligado chegava null e o
@@ -12619,6 +12627,17 @@
           '<div id="bim-conj-lista"></div>' +
         "</div>" +
 
+        /* DISCIPLINAS E ETAPAS: "só a fundação / só a armação / só os painéis"
+           (motor js/bimdisc.js, desenho js/estrutui.js) */
+        '<div id="bim-disc" style="display:none"><div id="bim-disc-corpo"></div></div>' +
+        /* PROJETO ESTRUTURAL: o PDF do calculista vira vista por peça,
+           armação, cobrimento e lista de material (js/estrutpdf.js) */
+        '<div id="bim-estrut" style="display:none">' +
+          '<input type="file" id="bim-est-arq" accept=".pdf,application/pdf" style="display:none">' +
+          '<input type="file" id="bim-est-reanexo" accept=".pdf,application/pdf" style="display:none">' +
+          '<div id="bim-est-corpo"></div>' +
+        "</div>" +
+
         '<div id="bim-6d" style="display:none">' +
           '<div class="flex between" style="align-items:center;margin-bottom:8px;flex-wrap:wrap"><h3 style="margin:0;display:flex;align-items:center">' + _icB("relogio") + '6D/7D · Ciclo de vida</h3>' +
           '<button class="btn sm primary" id="bim-6d-run">Gerar ciclo de vida</button></div>' +
@@ -12634,7 +12653,7 @@
     /* v1.1.121 — abre a gaveta de análise do viewer no painel pedido (chamado pelo
      * dock do BIM via opts.onPainel; um painel por vez pra leitura limpa). */
     _bimAbrirPainel: function (chave) {
-      var mapa = { modelos: ["bim-modelos", "Modelos carregados"], "4d": ["bim-4d", "Simulação 4D"], clash: ["bim-clash", "Compatibilização"], qto: ["bim-qto", "Quantitativos"], familias: ["bim-familias", "Banco de famílias"], "6d": ["bim-6d", "6D/7D · Ciclo de vida"], conjuntos: ["bim-conjuntos", "Conjuntos de seleção"], vistas: ["bim-vistas", "Pontos de vista"], tarefas4d: ["bim-tarefas", "Cronograma 4D"] };
+      var mapa = { modelos: ["bim-modelos", "Modelos carregados"], "4d": ["bim-4d", "Simulação 4D"], clash: ["bim-clash", "Compatibilização"], qto: ["bim-qto", "Quantitativos"], familias: ["bim-familias", "Banco de famílias"], "6d": ["bim-6d", "6D/7D · Ciclo de vida"], conjuntos: ["bim-conjuntos", "Conjuntos de seleção"], vistas: ["bim-vistas", "Pontos de vista"], tarefas4d: ["bim-tarefas", "Cronograma 4D"], disc: ["bim-disc", "Disciplinas e etapas construtivas"], estrut: ["bim-estrut", "Projeto estrutural no canteiro"] };
       var alvo = mapa[chave]; if (!alvo) return;
       var drawer = document.getElementById("bim-drawer"); if (!drawer) return;
       Object.keys(mapa).forEach(function (k) {
@@ -12646,7 +12665,8 @@
       /* a Simulação 4D precisa de largura (lista de atividades com Gantt);
          os outros painéis voltam à gaveta de sempre */
       var st4 = this._b4Estado();
-      drawer.style.width = chave === "4d" ? (st4.largo ? "100%" : "min(640px,96%)") : "min(440px,94%)";
+      /* o projeto estrutural mostra os recortes do desenho: precisa de largura como o 4D */
+      drawer.style.width = chave === "4d" ? (st4.largo ? "100%" : "min(640px,96%)") : (chave === "estrut" ? "min(640px,96%)" : "min(440px,94%)");
       if (chave === "4d") {
         /* abrir o painel liga a simulação. A 1ª abertura vai para HOJE quando
            hoje cai dentro da obra (é a pergunta de toda reunião: "onde
@@ -12815,14 +12835,23 @@
         var linha = document.createElement("div");
         linha.style.cssText = "display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:9px 4px;border-bottom:1px dashed var(--linha)";
         var com = (v.comentarios && v.comentarios[0]) ? v.comentarios[0].texto : "";
+        /* ⚠ o que a vista GUARDOU, dito na lista: a vista gravada antes da
+           correção abre sem corte e sem ocultos, e sem este aviso a pessoa
+           concluiria que o sistema perdeu a configuração outra vez */
+        var antiga = v.completa !== true && v.origem !== "bcf";
+        var guardou = (window.BimVista && BimVista.resumo) ? BimVista.resumo(v).join(" · ") : "";
         linha.innerHTML =
-          '<div style="min-width:180px;max-width:300px"><b>' + Util.esc(v.nome) + '</b>' +
+          '<div style="min-width:180px;max-width:320px"><b>' + Util.esc(v.nome) + '</b>' +
           (com ? '<div class="muted" style="font-size:11px">' + Util.esc(com) + '</div>' : "") +
+          (guardou ? '<div data-vt="guardou" class="muted" style="font-size:10.5px' + (antiga ? ';color:var(--amarelo)' : '') + '">' +
+            (antiga && typeof Icones !== "undefined" ? Icones.get("alerta", 13) + " " : "") + Util.esc(guardou) + '</div>' : "") +
           '<div class="muted" style="font-size:10.5px">' + Util.esc(v.autor || "") + (v.criadoEm ? " · " + Util.esc(String(v.criadoEm).slice(0, 10)) : "") + '</div></div>' +
           '<span style="flex:1"></span>' +
-          '<button data-vt="ir" class="btn sm" title="Volta a câmera e a visibilidade desta vista">Ir para</button>' +
+          '<button data-vt="ir" class="btn sm" title="Volta esta vista exatamente como foi gravada: câmera, cortes, peças ocultas, cotas e cores">Ir para</button>' +
+          '<button data-vt="regravar" class="btn sm" title="Grava o que está na tela AGORA nesta vista (só nesta — as outras não mudam). O nome e os comentários ficam.">' + (typeof Icones !== "undefined" ? Icones.get("salvar", 15) + " " : "") + 'Regravar</button>' +
           '<button data-vt="del" class="btn sm danger" title="Apagar">' + (typeof Icones !== "undefined" ? Icones.get("lixeira", 15) : "×") + '</button>';
         linha.querySelector('[data-vt="ir"]').onclick = function () { self._bimVistaIr(v.id); };
+        linha.querySelector('[data-vt="regravar"]').onclick = function () { self._bimVistaRegravar(v.id); };
         linha.querySelector('[data-vt="del"]').onclick = function () { self._bimVistaExcluir(v.id, v.nome); };
         box.appendChild(linha);
       });
@@ -12832,32 +12861,73 @@
       if (!window.BimVista || !window.BIM) return;
       if (this._semSessao()) { UI.toast("Entre com a sua conta para salvar o ponto de vista.", "aviso"); return; }
       if (!this._bimSel) { UI.toast("Escolha a obra no alto da tela — o ponto de vista pertence a ela.", "aviso"); return; }
-      var cam = BIM.cameraAtual();
-      if (!cam) { UI.toast("Abra um modelo antes de salvar a vista.", "erro"); return; }
+      /* ⚠ A CENA INTEIRA, NÃO SÓ A CÂMERA. A versão anterior lia os ocultos
+         de `el.oculto`, campo que nenhum código escreve: toda vista saía com
+         zero ocultos e sem corte, e o engenheiro descobria ao voltar a ela.
+         Ver "A VISTA COMPLETA" em js/bimvista.js. */
+      var est = BIM.estadoVista ? BIM.estadoVista() : null;
+      if (!est || !est.camera) { UI.toast("Abra um modelo antes de salvar a vista.", "erro"); return; }
       var nome = prompt("Nome do ponto de vista (o que está errado aqui?)", "");
       if (nome == null) return;
       var texto = prompt("Comentário para quem projeta (pode deixar em branco)", "") || "";
       var quem = "";
       try { quem = (Auth.usuario && Auth.usuario() && (Auth.usuario().nome || Auth.usuario().email)) || ""; } catch (e) {}
-      /* o que está OCULTO agora entra na vista: é metade do que faz um ponto
-         de vista significar alguma coisa ("olhe ISTO, sem o resto na frente") */
-      var ocultos = [];
-      try {
-        (BIM.elementos || []).forEach(function (el) { if (el.chave && el.oculto) ocultos.push(el.chave); });
-      } catch (e2) {}
       var v = BimVista.vista({
         obraId: this._bimSel, nome: nome, autor: quem, criadoEm: new Date().toISOString(),
-        camera: cam, visibilidade: { ocultos: ocultos },
+        completa: true, camera: est.camera, cortes: est.cortes, visibilidade: est.visibilidade,
+        aparencias: est.aparencias, modelos: est.modelos, estilo: est.estilo,
+        medidas: est.medidas, cotaRede: est.cotaRede,
         comentarios: texto ? [{ autor: quem, em: new Date().toISOString(), texto: texto }] : []
       });
       if (!v) { UI.toast("Dê um nome ao ponto de vista.", "erro"); return; }
       if (!Store.salvar(eid(), "bim_vistas", v)) { UI.toast("Não consegui salvar (armazenamento cheio?).", "erro"); return; }
-      /* a miniatura vai para o IndexedDB, e a falta dela não impede a vista */
+      this._bimVistaGuardarMiniatura(v.id);
+      UI.toast('Ponto de vista \u201C' + v.nome + '\u201D salvo: ' + BimVista.resumo(v).join(" · ") + "." + this._bimVistaAvisoSemChave(est), est.semChave ? "aviso" : "ok");
+      this._bimVistaRender();
+    },
+
+    /* a peça que o B0 não identificou não tem como entrar na vista — e a
+       pessoa precisa saber disso agora, não quando a vista abrir mostrando
+       a peça que ela tinha escondido */
+    _bimVistaAvisoSemChave: function (est) {
+      var n = (est && est.semChave) || 0;
+      return n ? " \u26A0 " + n + " peça(s) oculta(s) sem identificação no IFC não puderam ser gravadas e vão aparecer." : "";
+    },
+
+    /* ⚠ A MINIATURA NÃO USA `BIM.foto()`. O `foto()` é o botão de fotografar:
+       ele BAIXA um bim-foto.png a cada chamada — salvar um ponto de vista
+       deixava um arquivo na pasta Downloads, sem a pessoa pedir. Aqui o
+       quadro é desenhado sem baixar nada e reduzido para caber no IndexedDB. */
+    _bimVistaGuardarMiniatura: function (id) {
       try {
-        var png = BIM.foto && BIM.foto();
-        if (png && window.Idb) Idb.set("bimthumb:" + v.id, png)["catch"](function () {});
-      } catch (e3) {}
-      UI.toast('Ponto de vista \u201C' + v.nome + '\u201D salvo.', "ok");
+        if (!window.Idb || !BIM.desenharQuadro) return;
+        var cnv = BIM.desenharQuadro();
+        if (!cnv || !cnv.width) return;
+        var f = Math.min(1, 360 / cnv.width);
+        var off = document.createElement("canvas");
+        off.width = Math.max(1, Math.round(cnv.width * f)); off.height = Math.max(1, Math.round(cnv.height * f));
+        off.getContext("2d").drawImage(cnv, 0, 0, off.width, off.height);
+        Idb.set("bimthumb:" + id, off.toDataURL("image/jpeg", 0.8))["catch"](function () {});
+      } catch (e) {}
+    },
+
+    /* Regravar mexe SÓ nesta vista (mesmo id): as outras continuam como
+       foram gravadas. Nome, autor, comentários e marcações ficam — é o que o
+       projetista respondeu, e reenquadrar a câmera não pode apagar. */
+    _bimVistaRegravar: function (id) {
+      if (!window.BimVista || !window.BIM) return;
+      if (this._semSessao()) { UI.toast("Entre com a sua conta para regravar o ponto de vista.", "aviso"); return; }
+      var antiga = this._bimVistaDe(id); if (!antiga) return;
+      var est = BIM.estadoVista ? BIM.estadoVista() : null;
+      if (!est || !est.camera) { UI.toast("Abra um modelo antes de regravar a vista.", "erro"); return; }
+      if (!confirm('Regravar o ponto de vista \u201C' + antiga.nome + '\u201D com o que está na tela agora?\n\n' +
+        "Fica: " + BimVista.resumo(BimVista.vista({ nome: "x", completa: true, cortes: est.cortes, visibilidade: est.visibilidade, aparencias: est.aparencias, modelos: est.modelos, estilo: est.estilo, medidas: est.medidas, cotaRede: est.cotaRede })).join(" · ") +
+        "\n\nSó esta vista muda. O nome e os comentários continuam.")) return;
+      var v = BimVista.regravar(antiga, est, new Date().toISOString());
+      if (!v) return;
+      if (!Store.salvar(eid(), "bim_vistas", v)) { UI.toast("Não consegui regravar (armazenamento cheio?).", "erro"); return; }
+      this._bimVistaGuardarMiniatura(v.id);
+      UI.toast('Ponto de vista \u201C' + v.nome + '\u201D regravado.' + this._bimVistaAvisoSemChave(est), est.semChave ? "aviso" : "ok");
       this._bimVistaRender();
     },
 
@@ -12870,6 +12940,8 @@
          atrás sobre a versão nova mostraria menos e ninguém saberia por quê */
       if (r.naoLocalizadas && r.naoLocalizadas.length) {
         UI.toast(r.naoLocalizadas.length + " peça(s) desta vista não estão no modelo aberto — o resto foi aplicado.", "aviso");
+      } else if (!r.completa && v.origem !== "bcf") {
+        UI.toast('\u201C' + v.nome + '\u201D foi gravada antes da correção e guardou só a câmera. Oculte, corte e cote de novo e clique em Regravar.', "aviso");
       }
     },
     _bimVistaExcluir: function (id, nome) {
@@ -12924,7 +12996,7 @@
           var n = 0, semVista = 0, naoLoc = 0;
           r.topicos.forEach(function (t) {
             var v = BimVista.vista({
-              obraId: self._bimSel, nome: t.nome, autor: t.autor, criadoEm: t.criadoEm,
+              obraId: self._bimSel, nome: t.nome, autor: t.autor, criadoEm: t.criadoEm, origem: "bcf",
               camera: t.camera || {}, visibilidade: { isolados: t.isolados, ocultos: t.ocultos },
               comentarios: t.comentarios
             });
@@ -14591,6 +14663,527 @@
       this._bimConjRender();
     },
 
+    /* =====================================================================
+     * DISCIPLINAS E ETAPAS CONSTRUTIVAS — "só a fundação", "só a armação",
+     * "só os painéis de parede" (motor js/bimdisc.js, desenho js/estrutui.js)
+     *
+     * ⚠ O ESTADO É DA TELA, NÃO DA OBRA: o que está marcado não grava nada.
+     *   Mostrar/ocultar/pintar usa os MESMOS caminhos do conjunto de seleção
+     *   (isolarChaves, pintarChaves, raio-X) — "Restaurar tudo" do 👁 desfaz
+     *   como a pessoa já espera — e vai para o 3D da outra janela.
+     * ===================================================================== */
+    /* enquadra as peças na parte do 3D que a gaveta NÃO cobre (a mesma conta do _b4Enquadrar) */
+    _bimEnquadrarLivre: function (chaves) {
+      if (!window.BIM || !BIM.enquadrarUids) return;
+      var dw = document.getElementById("bim-drawer"), tampa = 0;
+      if (!this._b4Janela3d && dw && dw.style.display !== "none") { try { tampa = dw.getBoundingClientRect().width; } catch (e) { tampa = 0; } }
+      try { BIM.enquadrarUids(BIM.uidsDeChaves(chaves), { direita: tampa }); } catch (e2) {}
+    },
+    _bimDiscEst: function () {
+      if (!this._bimDisc) this._bimDisc = { aba: "disc", marcados: {} };
+      return this._bimDisc;
+    },
+    _bimDiscGrupos: function () {
+      var els = [];
+      try { els = (window.BIM && BIM.elementos) || []; } catch (e) {}
+      if (!window.BimDisc) return { grupos: [], etapas: [] };
+      return { grupos: BimDisc.agrupar(els), etapas: BimDisc.agruparPorEtapa(els) };
+    },
+    _bimDiscRender: function () {
+      var box = document.getElementById("bim-disc-corpo"); if (!box) return;
+      if (!window.BimDisc || !window.EstrutUI) { box.innerHTML = '<p class="muted">O módulo de filtros não carregou nesta tela. Recarregue o app.</p>'; return; }
+      var self = this, st = this._bimDiscEst(), g = this._bimDiscGrupos();
+      this._bimDiscCache = g;
+      box.innerHTML = EstrutUI.htmlDisc(g.grupos, g.etapas, { aba: st.aba, marcados: st.marcados, atalhos: BimDisc.ATALHOS });
+      if (box._ligado) return;
+      box._ligado = true;
+      box.addEventListener("click", function (ev) {
+        var b = ev.target && ev.target.closest ? ev.target.closest("[data-edisc]") : null;
+        if (!b || b.disabled) return;
+        self._bimDiscAcao(b.getAttribute("data-edisc"), b.getAttribute("data-v"));
+      });
+      box.addEventListener("change", function (ev) {
+        var ck = ev.target;
+        if (!ck || !ck.getAttribute || !ck.hasAttribute("data-edisc-ck")) return;
+        var s2 = self._bimDiscEst(), id = ck.getAttribute("data-edisc-ck");
+        if (ck.checked) s2.marcados[id] = 1; else delete s2.marcados[id];
+        self._bimDiscRender();
+      });
+    },
+    _bimDiscAcao: function (acao, v) {
+      var st = this._bimDiscEst();
+      if (acao === "aba") { st.aba = v === "etapa" ? "etapa" : "disc"; st.marcados = {}; this._bimDiscRender(); return; }
+      if (!window.BIM || !window.BimDisc) return;
+      var g = this._bimDiscCache || this._bimDiscGrupos();
+      if (acao === "tudo") {
+        try { BIM.limparRaioX(); } catch (e) {}
+        try { BIM.restaurarVisibilidade(); } catch (e2) {}
+        try { if (BIM.donoDaPintura && BIM.donoDaPintura() === "disciplina") BIM.limparPintura(); } catch (e3) {}
+        this._b3Espelhar({ modo: "limpar", rotulo: "modelo inteiro" });
+        UI.toast("Modelo inteiro de volta.", "ok");
+        return;
+      }
+      if (acao === "pintar") {
+        var mapa = BimDisc.pinturaDe(g.grupos);
+        var np = BIM.pintarChaves(mapa, "disciplina");
+        this._b3Espelhar({ modo: "pintar", mapa: mapa, dono: "disciplina", rotulo: "cores por disciplina" });
+        UI.toast(np ? np + " peça(s) pintadas com a cor da lista." : "Nenhuma peça do modelo aberto para pintar.", np ? "ok" : "aviso");
+        return;
+      }
+      /* "Só" de um atalho é sempre de DISCIPLINA, mesmo com a aba de etapa aberta */
+      var lista = (acao === "so" && String(v || "").indexOf("e:") !== 0) ? g.grupos : (st.aba === "etapa" ? g.etapas : g.grupos);
+      var ids = acao === "so" ? [v] : Object.keys(st.marcados);
+      var chaves = BimDisc.chavesDe(lista, ids);
+      var nomes = lista.filter(function (x) { return ids.indexOf(x.id) >= 0; }).map(function (x) { return x.nome; });
+      var rot = nomes.join(" + ") || "o grupo";
+      if (!chaves.length) { UI.toast("Nenhuma peça de " + rot + " no modelo aberto.", "aviso"); return; }
+      try { BIM.limparRaioX(); } catch (e4) {}
+      if (acao === "raiox") {
+        try { BIM.restaurarVisibilidade(); } catch (e5) {}
+        var nx = BIM.raioXChaves(chaves);
+        this._b3Espelhar({ modo: "isolar", chaves: chaves, rotulo: rot + " (raio-X na janela principal)" });
+        UI.toast(nx ? rot + " em destaque; o resto translúcido. “Mostrar tudo” volta." : "Nada de " + rot + " está visível agora.", nx ? "ok" : "aviso");
+        return;
+      }
+      var ni = BIM.isolarChaves(chaves);
+      /* a fundação isolada ficava miúda no canto do enquadramento do modelo inteiro: traz o grupo para a parte
+         do 3D que a gaveta não cobre */
+      if (ni) this._bimEnquadrarLivre(chaves);
+      this._b3Espelhar({ modo: "isolar", chaves: chaves, rotulo: rot });
+      /* ⚠ PEÇAS, NÃO MALHAS: o isolarChaves devolve malhas (a barra dobrada tem uma por trecho) — "3599 peças
+         de armação" para 1.099 barras. A contagem de peças visíveis é a do contador da cena. */
+      var np = ni ? BIM.contarVisiveis() : 0;
+      UI.toast(np ? np + " peça(s): " + rot + ". “Mostrar tudo” volta o modelo." : "As peças de " + rot + " estão fora da cena agora (4D ou modelo desligado).", np ? "ok" : "aviso");
+    },
+
+    /* =====================================================================
+     * PROJETO ESTRUTURAL NO CANTEIRO — o PDF do calculista vira, por peça, a
+     * vista de detalhamento COMO ESTÁ NO PROJETO (recorte do desenho), a
+     * armação, o cobrimento e a lista de material (motor js/estrutpdf.js).
+     *
+     * ⚠ ONDE CADA COISA MORA: o que foi LIDO (números, vistas, conferência)
+     *   vai para a obra (`bim_estrut`, sincroniza — o celular do canteiro
+     *   abre); o PDF fica no IndexedDB DESTE computador (~4 MB). No outro
+     *   aparelho os números aparecem e a tela PEDE o arquivo para desenhar —
+     *   nunca mostra recorte em branco como se fosse o desenho.
+     * ===================================================================== */
+    _estEst: function () { if (!this._est) this._est = { aba: "vistas", sel: null, semPdf: null }; return this._est; },
+    _estRegs: function () {
+      var o = String(this._bimSel || ""), l = [];
+      try { l = Store.listar(eid(), "bim_estrut") || []; } catch (e) {}
+      var ok = [], ruins = 0;
+      l.forEach(function (r) {
+        if (!r || String(r.obraId || "") !== o) return;
+        if (window.EstrutPDF && EstrutPDF.valido(r.projeto)) ok.push(r); else ruins++;
+      });
+      /* registro ilegível não trava a tela: fica fora da lista e a tela conta */
+      this._estRuins = ruins;
+      return ok;
+    },
+    _estAtual: function () {
+      var st = this._estEst(), regs = this._estRegs();
+      var r = regs.filter(function (x) { return x.id === st.sel; })[0] || regs[regs.length - 1] || null;
+      st.sel = r ? r.id : null;
+      return r;
+    },
+    _estChavePdf: function (reg) { return "estrut:pdf:" + eid() + ":" + reg.id; },
+    _estVista: function (proj, id) { return ((proj && proj.vistas) || []).filter(function (v) { return v.id === id; })[0] || null; },
+    _estObraNome: function () {
+      var o = String(this._bimSel || ""), n = "";
+      lista("obras").forEach(function (x) { if (String(x.id) === o) n = x.nome || ""; });
+      return n;
+    },
+
+    _estRender: function () {
+      var box = document.getElementById("bim-est-corpo"); if (!box) return;
+      if (!window.EstrutPDF || !window.EstrutUI) { box.innerHTML = '<p class="muted">O módulo do projeto estrutural não carregou nesta tela. Recarregue o app.</p>'; return; }
+      var self = this, st = this._estEst(), reg = this._estAtual(), regs = this._estRegs(), proj = reg ? reg.projeto : null;
+      var h = EstrutUI.htmlEstCab(regs, st.sel, proj, proj ? { nome: reg.nome, arquivo: reg.arquivo, conferencia: EstrutPDF.resumoConferencia(proj.conferencia), semPdf: st.semPdf === reg.id } : {});
+      if (this._estRuins) h += '<p class="est-aviso">' + this._estRuins + " registro(s) de projeto estrutural desta obra estão ilegíveis e ficaram de fora (carregue o PDF de novo).</p>";
+      if (!proj) h += EstrutUI.htmlEstVazio(!!this._bimSel);
+      else {
+        h += EstrutUI.htmlEstAbas(st.aba);
+        if (st.aba === "material") {
+          h += '<div class="est-acoes"><button type="button" class="btn sm" data-est="imp-lista">' + (typeof Icones !== "undefined" ? Icones.get("imprimir", 14) : "") + 'Imprimir lista</button><button type="button" class="btn sm" data-est="csv">' + (typeof Icones !== "undefined" ? Icones.get("excel", 14) : "") + "Exportar CSV</button></div>" +
+            EstrutUI.htmlLista(EstrutPDF.listaMaterial(proj));
+        } else if (st.aba === "espec") h += EstrutUI.htmlEspecificacoes(proj.especificacoes);
+        else if (st.aba === "conf") h += EstrutUI.htmlConferencia(proj.conferencia, EstrutPDF.resumoConferencia(proj.conferencia));
+        else {
+          h += '<div class="est-acoes"><button type="button" class="btn sm" data-est="imp-caderno" title="Uma folha por peça: o recorte do projeto, a armação e o concreto">' + (typeof Icones !== "undefined" ? Icones.get("imprimir", 14) : "") + "Imprimir caderno do canteiro</button></div>" +
+            EstrutUI.htmlVistas(proj, this._estContagem3D(proj));
+        }
+      }
+      box.innerHTML = h;
+      if (!box._ligado) {
+        box._ligado = true;
+        box.addEventListener("click", function (ev) {
+          var b = ev.target && ev.target.closest ? ev.target.closest("[data-est]") : null;
+          if (!b || b.disabled || b.tagName === "SELECT") return;
+          self._estAcao(b.getAttribute("data-est"), b.getAttribute("data-v"));
+        });
+        box.addEventListener("change", function (ev) {
+          var t = ev.target;
+          if (t && t.getAttribute && t.getAttribute("data-est") === "sel") { self._estEst().sel = t.value; self._estRender(); }
+        });
+      }
+      if (proj && st.aba === "vistas") this._estThumbs(reg);
+    },
+    _estAcao: function (acao, v) {
+      var st = this._estEst(), reg = this._estAtual();
+      if (acao === "carregar") {
+        if (!this._bimSel) { UI.toast("Escolha a obra no alto da tela — o projeto estrutural fica guardado nela.", "aviso"); return; }
+        var inp = document.getElementById("bim-est-arq"); if (inp) inp.click();
+        return;
+      }
+      if (acao === "reanexar") { var inp2 = document.getElementById("bim-est-reanexo"); if (inp2) inp2.click(); return; }
+      if (!reg) return;
+      if (acao === "aba") { st.aba = v; this._estRender(); return; }
+      if (acao === "vista") { this._estAbrirVista(v); return; }
+      if (acao === "remover") { this._estRemover(reg); return; }
+      if (acao === "imp-lista") { this._estImprimirLista(reg); return; }
+      if (acao === "csv") { this._estCsv(reg); return; }
+      if (acao === "imp-caderno") { this._estImprimirCaderno(reg); return; }
+    },
+
+    /* peças do modelo aberto que o carimbo OrcaPRO_Detalhe liga a cada vista */
+    _estContagem3D: function (proj) {
+      var els = [];
+      try { els = (window.BIM && BIM.elementos) || []; } catch (e) {}
+      if (!els.length) return {};
+      var out = {};
+      (proj.vistas || []).forEach(function (v) {
+        var alvo = EstrutUI.alvoDetalhe(proj, v), n = 0;
+        els.forEach(function (el) { if (el.detalhe && EstrutUI.casaDetalhe(alvo, el.detalhe)) n++; });
+        out[v.id] = n;
+      });
+      return out;
+    },
+    _estChavesDaVista: function (proj, v, soArm) {
+      var els = [];
+      try { els = (window.BIM && BIM.elementos) || []; } catch (e) {}
+      var alvo = EstrutUI.alvoDetalhe(proj, v), out = [];
+      els.forEach(function (el) {
+        if (!el.detalhe || !el.chave || !EstrutUI.casaDetalhe(alvo, el.detalhe)) return;
+        if (soArm && !(/REINFORCING/.test(String(el.tipo || "").toUpperCase()) || (window.BimDisc && BimDisc.norm(el.disciplinaPeca) === "armacao"))) return;
+        out.push(el.chave);
+      });
+      return out;
+    },
+
+    /* ---- pdf.js (vendorizado, o mesmo do leitor de nota fiscal) ---- */
+    _estPdfLib: function (cb) {
+      if (this._pdfLib) { cb(this._pdfLib); return; }
+      if (window.pdfjsLib) {
+        try { if (!window.pdfjsLib.GlobalWorkerOptions.workerSrc) window.pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("js/vendor/pdfjs/pdf.worker.min.mjs", document.baseURI).href; } catch (eW) {}
+        this._pdfLib = window.pdfjsLib; cb(this._pdfLib); return;
+      }
+      var self = this;
+      /* SEM FALLBACK PARA CDN (o mesmo motivo do _pdfTexto): projeto de cliente
+         não sai para terceiro no caminho de erro */
+      try {
+        var raiz = document.baseURI;
+        import(new URL("js/vendor/pdfjs/pdf.min.mjs", raiz).href).then(function (lib) {
+          try { lib.GlobalWorkerOptions.workerSrc = new URL("js/vendor/pdfjs/pdf.worker.min.mjs", raiz).href; } catch (e) {}
+          self._pdfLib = lib; cb(lib);
+        })["catch"](function () { UI.toast("Não carregou o leitor de PDF local (js/vendor/pdfjs). Reinstale o programa.", "erro"); cb(null); });
+      } catch (eImp) { UI.toast("Este navegador não carrega o leitor de PDF.", "erro"); cb(null); }
+    },
+    /* o documento do PDF guardado neste computador (null = não está aqui) */
+    _estPdfDoc: function (reg, cb) {
+      if (this._estDoc && this._estDoc.id === reg.id) { cb(this._estDoc.doc); return; }
+      var self = this;
+      if (!window.Idb) { cb(null); return; }
+      Idb.get(this._estChavePdf(reg)).then(function (buf) {
+        if (!buf) {
+          var st = self._estEst();
+          /* ⚠ só redesenha se MUDOU: o redesenho chama as miniaturas, que
+             chamam isto de novo — sem a trava era laço sem fim */
+          if (st.semPdf !== reg.id) { st.semPdf = reg.id; self._estRender(); }
+          cb(null); return;
+        }
+        self._estPdfLib(function (lib) {
+          if (!lib) { cb(null); return; }
+          /* ⚠ CÓPIA: o pdf.js transfere o buffer ao worker (e o esvazia) */
+          lib.getDocument({ data: new Uint8Array(buf.slice ? buf.slice(0) : buf) }).promise.then(function (doc) {
+            self._estDoc = { id: reg.id, doc: doc }; cb(doc);
+          }, function () { cb(null); });
+        });
+      }, function () { cb(null); });
+    },
+    /* desenha o retângulo `rect` (fração da página) da vista num canvas */
+    _estDesenhar: function (doc, v, canvas, larguraPx, cb) {
+      doc.getPage(v.pagina + 1).then(function (page) {
+        var vp1 = page.getViewport({ scale: 1 }), r = v.rect || [0, 0, 1, 1];
+        var x0 = r[0] * vp1.width, y0 = r[1] * vp1.height, w = Math.max(1, (r[2] - r[0]) * vp1.width), hh = Math.max(1, (r[3] - r[1]) * vp1.height);
+        var esc = Math.max(0.15, Math.min(8, larguraPx / w));
+        var vp = page.getViewport({ scale: esc, offsetX: -x0 * esc, offsetY: -y0 * esc });
+        canvas.width = Math.round(w * esc); canvas.height = Math.round(hh * esc);
+        var ctx = canvas.getContext("2d");
+        /* papel branco: a prancha é desenhada para fundo branco (no tema escuro também) */
+        ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        page.render({ canvasContext: ctx, viewport: vp }).promise.then(function () { if (cb) cb(true); }, function () { if (cb) cb(false); });
+      }, function () { if (cb) cb(false); });
+    },
+    /* miniaturas em fila (uma de cada vez: a prancha A1 é pesada) */
+    _estThumbs: function (reg) {
+      var self = this, box = document.getElementById("bim-est-corpo"); if (!box) return;
+      var cvs = Array.prototype.slice.call(box.querySelectorAll("canvas[data-est-thumb]"));
+      if (!cvs.length) return;
+      var tok = (this._estTok = (this._estTok || 0) + 1);
+      this._estPdfDoc(reg, function (doc) {
+        if (tok !== self._estTok) return;
+        if (!doc) { cvs.forEach(function (c) { c.className += " sem-pdf"; }); return; }
+        var fila = cvs.slice();
+        (function prox() {
+          if (tok !== self._estTok || !fila.length) return;
+          var c = fila.shift(), v = self._estVista(reg.projeto, c.getAttribute("data-est-thumb"));
+          if (!v || !document.body.contains(c)) { prox(); return; }
+          self._estDesenhar(doc, v, c, 300, function () { setTimeout(prox, 0); });
+        })();
+      });
+    },
+
+    /* ---- carregar / anexar de novo / remover ---- */
+    _estCarregarPdf: function (file) {
+      var self = this;
+      if (this._semSessao && this._semSessao()) { UI.toast("Entre com a sua conta para guardar o projeto na obra.", "aviso"); return; }
+      if (!this._bimSel) { UI.toast("Escolha a obra no alto da tela — o projeto estrutural fica guardado nela.", "aviso"); return; }
+      if (!/\.pdf$/i.test(file.name || "") && file.type !== "application/pdf") { UI.toast("Escolha o arquivo .PDF do projeto estrutural.", "aviso"); return; }
+      if (file.size > 80 * 1024 * 1024) { UI.toast("PDF de " + Math.round(file.size / 1048576) + " MB: grande demais para ler no navegador. Separe as pranchas de fundação/estrutura num PDF menor.", "erro"); return; }
+      UI.toast("Lendo " + file.name + "…", "info");
+      var fr = new FileReader();
+      fr.onerror = function () { UI.toast("Não consegui abrir o arquivo. Tente de novo.", "erro"); };
+      fr.onload = function () {
+        var buf = fr.result;
+        self._estPdfLib(function (lib) {
+          if (!lib) return;
+          lib.getDocument({ data: new Uint8Array(buf.slice(0)) }).promise.then(function (doc) {
+            var pags = [], i = 0;
+            (function prox() {
+              if (i >= doc.numPages) { fim(); return; }
+              i++;
+              doc.getPage(i).then(function (pg) {
+                var vp = pg.getViewport({ scale: 1 });
+                return pg.getTextContent().then(function (tc) { pags.push(EstrutPDF.itensDaPagina(tc.items, vp.transform, vp.width, vp.height)); prox(); });
+              })["catch"](function () { UI.toast("A página " + i + " do PDF não abriu — a leitura parou.", "erro"); });
+            })();
+            function fim() {
+              var nIt = 0; pags.forEach(function (p) { nIt += p.itens.length; });
+              if (!nIt) { UI.toast("Este PDF não tem texto (é escaneado): não dá para ler as tabelas. Peça ao calculista o PDF exportado do programa de cálculo.", "erro"); return; }
+              var proj = EstrutPDF.ler(pags, { arquivo: file.name, agora: new Date().toISOString() });
+              if (!proj.tabelas.length && !proj.pilares.length) UI.toast("Não reconheci relação do aço nem locação de pilares neste PDF — ele é um projeto estrutural? As vistas foram montadas mesmo assim.", "aviso");
+              var reg = { obraId: self._bimSel, nome: proj.codigo || String(file.name).replace(/\.pdf$/i, ""), arquivo: file.name, bytes: file.size,
+                paginas: pags.length, lidoEm: new Date().toISOString(), projeto: proj };
+              var salvo = Store.salvar(eid(), "bim_estrut", reg);
+              if (!salvo) { UI.toast("Não consegui guardar o projeto (armazenamento cheio?).", "erro"); return; }
+              var st = self._estEst(); st.sel = salvo.id; st.aba = "vistas"; st.semPdf = null;
+              self._estDoc = { id: salvo.id, doc: doc };
+              var rc = EstrutPDF.resumoConferencia(proj.conferencia);
+              var pronto = function (okPdf) {
+                if (!okPdf) st.semPdf = salvo.id;
+                self._estRender();
+                UI.toast(proj.vistas.length + " vista(s) e " + proj.tabelas.length + " tabela(s) de aço lidas; " +
+                  (rc.falhas ? rc.falhas + " de " + rc.total + " conferências NÃO batem — veja a aba Conferência antes de usar os números." : "as " + rc.total + " conferências do próprio projeto batem.") +
+                  (okPdf ? "" : " O desenho NÃO ficou guardado neste computador (sem espaço no navegador): os recortes somem ao recarregar."), rc.falhas || !okPdf ? "aviso" : "ok");
+              };
+              if (window.Idb) Idb.set(self._estChavePdf(salvo), buf).then(function () { pronto(true); }, function () { pronto(false); });
+              else pronto(false);
+            }
+          }, function () { UI.toast("O arquivo não abriu como PDF.", "erro"); });
+        });
+      };
+      fr.readAsArrayBuffer(file);
+    },
+    _estReanexar: function (file) {
+      var self = this, reg = this._estAtual(); if (!reg) return;
+      var fr = new FileReader();
+      fr.onerror = function () { UI.toast("Não consegui abrir o arquivo.", "erro"); };
+      fr.onload = function () {
+        var buf = fr.result;
+        self._estPdfLib(function (lib) {
+          if (!lib) return;
+          lib.getDocument({ data: new Uint8Array(buf.slice(0)) }).promise.then(function (doc) {
+            /* ⚠ o arquivo tem de ser O MESMO projeto: outro PDF desenharia os
+               recortes certos no lugar errado, e o canteiro executaria a peça
+               errada com a legenda certa. Confere páginas e tamanho de folha. */
+            var tam = (reg.projeto.origem && reg.projeto.origem.tamanhos) || [];
+            if (doc.numPages !== (reg.paginas || tam.length)) { UI.toast("Este PDF tem " + doc.numPages + " página(s); o projeto guardado tem " + (reg.paginas || tam.length) + ". Não é o mesmo arquivo.", "erro"); return; }
+            doc.getPage(1).then(function (pg) {
+              var vp = pg.getViewport({ scale: 1 });
+              if (tam[0] && (Math.abs(vp.width - tam[0][0]) > 2 || Math.abs(vp.height - tam[0][1]) > 2)) { UI.toast("O tamanho da folha deste PDF não é o do projeto guardado — não é o mesmo arquivo.", "erro"); return; }
+              if (!window.Idb) { UI.toast("Este navegador não guarda arquivos (IndexedDB indisponível).", "erro"); return; }
+              Idb.set(self._estChavePdf(reg), buf).then(function () {
+                self._estDoc = { id: reg.id, doc: doc }; self._estEst().semPdf = null; self._estRender();
+                UI.toast("Desenhos de volta neste computador.", "ok");
+              }, function () { UI.toast("Não consegui guardar o PDF (sem espaço no navegador).", "erro"); });
+            });
+          }, function () { UI.toast("O arquivo não abriu como PDF.", "erro"); });
+        });
+      };
+      fr.readAsArrayBuffer(file);
+    },
+    _estRemover: function (reg) {
+      if (!confirm('Tirar o projeto estrutural "' + (reg.nome || reg.arquivo) + '" desta obra? O PDF guardado neste computador sai junto.')) return;
+      try { Store.excluir(eid(), "bim_estrut", reg.id); } catch (e) {}
+      try { if (window.Idb) Idb.del(this._estChavePdf(reg)); } catch (e2) {}
+      if (this._estDoc && this._estDoc.id === reg.id) this._estDoc = null;
+      var st = this._estEst(); st.sel = null; st.semPdf = null;
+      this._estRender();
+    },
+
+    /* ---- a vista de UMA peça: recorte + armação + cobrimento ---- */
+    _estInfoVista: function (proj, v) {
+      var esp = proj.especificacoes || {}, info = { folha: ((proj.folhas || [])[v.pagina] || {}).folha || "" };
+      info.linhas = EstrutPDF.armacaoDaVista(proj, v);
+      if (!v.folha) {
+        var n0 = v.elementos[0] || "", tipo = EstrutPDF.tipoDoNome(n0, v.grupo);
+        if (tipo === "viga" && /BALDRAME|EQUIL|FUNDA/i.test(v.pavimento || "")) tipo = "viga-baldrame";
+        var cob = EstrutPDF.cobrimentoDe(proj, tipo);
+        if (cob == null && tipo === "viga") cob = EstrutPDF.cobrimentoDe(proj, "laje");
+        info.cobrimento = cob;
+        var solo = EstrutPDF.cobrimentoDe(proj, "pilar-solo");
+        info.tipoPeca = { sapata: "sapata", pilar: "pilar" + (solo != null ? "; " + EstrutUI.fmt(solo, 1) + " cm no trecho em contato com o solo" : ""), "viga-baldrame": "viga de equilíbrio", viga: "viga", laje: "laje" }[tipo] || "";
+        if (tipo === "sapata") {
+          var pil = (proj.pilares || []).filter(function (p) { return p.fundacao && ("S" + p.nome.slice(1)) === n0; })[0];
+          if (pil) { var F = pil.fundacao; info.dimensoes = "Sapata " + F.B + " × " + F.H + " cm, h0 = " + F.h0 + " cm, h1 = " + F.h1 + " cm, assentamento df = " + F.df + " cm abaixo do nível 0 (pilar " + pil.nome + " " + pil.secao + ", carga máx. " + EstrutUI.fmt(pil.cargaMaxTf, 1) + " tf)."; }
+        } else if (tipo === "pilar") {
+          var p2 = (proj.pilares || []).filter(function (p) { return p.nome === n0; })[0];
+          if (p2) info.dimensoes = "Pilar " + p2.secao + " cm, níveis " + p2.niveis.join(" → ") + (p2.fundacao ? ", sobre sapata " + p2.fundacao.B + " × " + p2.fundacao.H + " cm" : "") + ".";
+        } else if (tipo === "viga" || tipo === "viga-baldrame") {
+          var vg = (proj.vigas || []).filter(function (x) { return x.nome === n0 && x.pavimento === v.pavimento; })[0];
+          if (vg) info.dimensoes = "Viga " + vg.secao + " cm, topo no nível " + vg.nivel + " (elevação " + vg.elevacao + ")" + (v.apoios && v.apoios.length > 1 ? ", apoios " + v.apoios.join(" → ") : "") + ".";
+        }
+      }
+      var itensC = (proj.conferencia || []).filter(function (x) { return String(x.grupo).indexOf("(prancha " + (v.pagina + 1) + ")") >= 0 && /detalhes × relação/.test(x.item); });
+      if (itensC.length) {
+        var okC = itensC.every(function (x) { return x.ok; });
+        info.conferencia = { ok: okC, texto: okC ? "Conferido: as chamadas das vistas desta folha somam a relação do aço do projeto." : "Atenção: nesta folha as chamadas não somam a relação do aço — veja a aba Conferência antes de cortar barra." };
+      }
+      return info;
+    },
+    _estAbrirVista: function (id) {
+      var self = this, reg = this._estAtual(); if (!reg) return;
+      var proj = reg.projeto, v = this._estVista(proj, id); if (!v) return;
+      var st = this._estEst(), info = this._estInfoVista(proj, v);
+      info.semPdf = st.semPdf === reg.id;
+      var folhaV = (proj.vistas || []).filter(function (x) { return x.folha && x.pagina === v.pagina; })[0];
+      var bt = [];
+      if (!v.folha) {
+        bt.push({ texto: "Ver no 3D", classe: "primary", onClick: function () { self._estVer3D(reg, v, false); } });
+        bt.push({ texto: "Só a armação no 3D", onClick: function () { self._estVer3D(reg, v, true); } });
+      } else bt.push({ texto: "Ver no 3D", classe: "primary", onClick: function () { self._estVer3D(reg, v, false); } });
+      if (!v.folha && folhaV) bt.push({ texto: "Folha inteira", onClick: function () { self._estAbrirVista(folhaV.id); } });
+      bt.push({ texto: "Imprimir para o canteiro", onClick: function () { self._estImprimirVista(reg, v); } });
+      UI.modal("Projeto estrutural · " + v.titulo + (v.pavimento && v.grupo === "vigas" ? " (" + v.pavimento + ")" : ""), EstrutUI.htmlVistaDetalhe(proj, v, info), bt);
+      var cv = document.getElementById("est-crop");
+      if (!cv || info.semPdf) return;
+      var larg = Math.max(480, Math.min(1400, ((cv.parentNode && cv.parentNode.clientWidth) || 900) * Math.min(2, window.devicePixelRatio || 1)));
+      this._estPdfDoc(reg, function (doc) { if (doc && document.body.contains(cv)) self._estDesenhar(doc, v, cv, larg); });
+    },
+    _estVer3D: function (reg, v, soArm) {
+      var els = [];
+      try { els = (window.BIM && BIM.elementos) || []; } catch (e) {}
+      if (!els.length) { UI.toast("Abra o modelo da obra no visualizador para ver a peça no 3D.", "aviso"); return; }
+      var chaves = this._estChavesDaVista(reg.projeto, v, soArm);
+      if (!chaves.length) {
+        UI.toast(soArm ? "Nenhuma barra de " + v.titulo + " no modelo aberto." : "Nenhuma peça do modelo traz o carimbo OrcaPRO_Detalhe de " + v.titulo + " — o modelo precisa ser carimbado (plugin Revit ou gerador do modelo).", "aviso");
+        return;
+      }
+      UI.fecharModal();
+      try { BIM.limparRaioX(); } catch (e2) {}
+      var nm = BIM.isolarChaves(chaves);
+      if (nm) this._bimEnquadrarLivre(chaves);
+      this._b3Espelhar({ modo: "isolar", chaves: chaves, rotulo: "projeto estrutural: " + v.titulo + (soArm ? " (armação)" : "") });
+      var n = nm ? BIM.contarVisiveis() : 0;   /* peças, não malhas (ver _bimDiscAcao) */
+      UI.toast(n + " peça(s) de " + v.titulo + (soArm ? " — só a armação" : "") + ". “Restaurar tudo” (Visibilidade) volta o modelo.", n ? "ok" : "aviso");
+    },
+    /* ⚠ a peça selecionada no 3D → a vista dela (carimbo, nunca semelhança) */
+    _estDetalheDaSelecao: function () {
+      var sel = this._bimSelecao;
+      if (!sel) { UI.toast("Selecione uma peça no 3D (duplo clique) primeiro.", "aviso"); return true; }
+      var el = null;
+      try { (BIM.elementos || []).some(function (e) { if (e.uid === sel.uid) { el = e; return true; } return false; }); } catch (e) {}
+      if (!el || !el.detalhe) { UI.toast("Esta peça não traz o carimbo OrcaPRO_Detalhe — o OrçaPRO não sabe qual vista do projeto a desenha.", "aviso"); return true; }
+      this._estAbrirDetalhe(el.detalhe);
+      return true;
+    },
+    _estAbrirDetalhe: function (det) {
+      var s = String(det || ""), i = s.lastIndexOf("/");
+      var pav = i >= 0 ? s.slice(0, i) : "", nome = i >= 0 ? s.slice(i + 1) : s;
+      var regs = this._estRegs(), achou = null, achouReg = null;
+      regs.forEach(function (r) {
+        if (achou) return;
+        var v = EstrutPDF.vistaDoElemento(r.projeto, nome, pav);
+        if (!v && /^L\d/i.test(nome)) v = (r.projeto.vistas || []).filter(function (x) { return x.folha && x.grupo === "lajes"; })[0] || null;
+        if (v) { achou = v; achouReg = r; }
+      });
+      if (!achou) {
+        UI.toast(regs.length ? "O projeto estrutural desta obra não tem a vista de " + s + "." : "Esta obra ainda não tem projeto estrutural: abra “Projeto estrutural” e carregue o PDF.", "aviso");
+        return false;
+      }
+      this._estEst().sel = achouReg.id;
+      this._estAbrirVista(achou.id);
+      return true;
+    },
+
+    /* ---- canteiro: impressão e CSV ---- */
+    _estRecorteImg: function (reg, v, larg, cb) {
+      var self = this;
+      this._estPdfDoc(reg, function (doc) {
+        if (!doc) { cb(null); return; }
+        var c = document.createElement("canvas");
+        self._estDesenhar(doc, v, c, larg, function (ok) { try { cb(ok ? c.toDataURL("image/png") : null); } catch (e) { cb(null); } });
+      });
+    },
+    _estBlocoVista: function (reg, v, img) {
+      var proj = reg.projeto, info = this._estInfoVista(proj, v), esp = proj.especificacoes || {}, chips = [];
+      if (!v.folha && v.multiplicidade > 1) chips.push(v.multiplicidade + " peças: " + v.elementos.join(", "));
+      if (v.apoios && v.apoios.length > 1) chips.push("apoios " + v.apoios.join(" → "));
+      if (info.cobrimento != null) chips.push("cobrimento " + EstrutUI.fmt(info.cobrimento, 1) + " cm" + (info.tipoPeca ? " (" + info.tipoPeca + ")" : ""));
+      if (esp.fckMPa) chips.push("concreto fck ≥ " + esp.fckMPa + " MPa" + (esp.relacaoAc ? ", a/c ≤ " + EstrutUI.fmt(esp.relacaoAc, 2) : ""));
+      return { titulo: v.titulo + (v.grupo === "vigas" && v.pavimento ? " — " + v.pavimento : ""), sub: (reg.nome || "") + " · folha " + (info.folha || "?"),
+        img: img, semImg: img ? "" : "Desenho indisponível neste computador (o PDF não está guardado aqui).", chips: chips,
+        html: (info.dimensoes ? "<p>" + EstrutUI.esc(info.dimensoes) + "</p>" : "") + "<h2>Armação</h2>" + EstrutUI.htmlArmacao(info.linhas, v.folha ? 1 : v.multiplicidade) };
+    },
+    _estImprimirVista: function (reg, v) {
+      var self = this;
+      this._estRecorteImg(reg, v, 1800, function (img) {
+        var html = EstrutUI.htmlImpressao("Canteiro — " + v.titulo, self._estObraNome(), [self._estBlocoVista(reg, v, img)]);
+        UI.fecharModal();
+        if (typeof App !== "undefined" && App._abrirPrint) App._abrirPrint("Canteiro — " + v.titulo, html, "prancha");
+      });
+    },
+    _estImprimirCaderno: function (reg) {
+      var self = this, secs = EstrutUI.secoesDeVistas(reg.projeto), vs = [];
+      secs.forEach(function (s) { s.vistas.forEach(function (v) { if (!v.folha) vs.push(v); }); });
+      if (!vs.length) { UI.toast("Nenhuma vista de peça para imprimir.", "aviso"); return; }
+      var blocos = [], i = 0;
+      UI.toast("Montando o caderno do canteiro: " + vs.length + " peça(s)…", "info");
+      (function prox() {
+        if (i >= vs.length) {
+          var html = EstrutUI.htmlImpressao("Caderno do canteiro", self._estObraNome(), blocos);
+          if (typeof App !== "undefined" && App._abrirPrint) App._abrirPrint("Caderno do canteiro — " + (reg.nome || ""), html, "prancha");
+          return;
+        }
+        var v = vs[i++];
+        self._estRecorteImg(reg, v, 1400, function (img) { blocos.push(self._estBlocoVista(reg, v, img)); setTimeout(prox, 0); });
+      })();
+    },
+    _estImprimirLista: function (reg) {
+      var L = EstrutPDF.listaMaterial(reg.projeto);
+      var html = EstrutUI.htmlImpressao("Lista de material", this._estObraNome(), [{ titulo: "Lista de material — " + (reg.nome || ""), sub: "do projeto estrutural (" + (reg.arquivo || "") + ")", html: EstrutUI.htmlLista(L) }]);
+      if (typeof App !== "undefined" && App._abrirPrint) App._abrirPrint("Lista de material — " + (reg.nome || ""), html, "imprimir");
+    },
+    _estCsv: function (reg) {
+      var csv = "﻿" + EstrutUI.csvLista(EstrutPDF.listaMaterial(reg.projeto));
+      try {
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+        a.download = String(reg.nome || "projeto-estrutural").replace(/[^\w.-]+/g, "_") + "-lista-de-material.csv";
+        document.body.appendChild(a); a.click(); setTimeout(function () { try { URL.revokeObjectURL(a.href); a.remove(); } catch (e) {} }, 800);
+      } catch (e2) { UI.toast("Este navegador não deixou baixar o arquivo.", "erro"); }
+    },
+
     /* lê bim_modelos e entrega ao viewer o mapa da obra (arquivo → modelo) */
     _bimFedCarregar: function () {
       var regs = [];
@@ -15139,7 +15732,10 @@
       Revit.exportar(payload, function (err, res) {
         if (err) { UI.toast("Não consegui exportar: " + (err.message || err), "erro"); return; }
         if (res && res.download) {
-          UI.toast("Baixei o obra-ativa.json — salve na pasta revit\\ da instalação do OrçaPRO para o Revit ler.", "ok");
+          /* a versão web não grava em pasta: o arquivo vai para Downloads, e o
+             plugin 3.8.0 procura lá sozinho — a pessoa não copia nada */
+          UI.toast("Baixei o arquivo da obra “" + (payload.obra || "") + "” (" + (res.arquivo || "OrcaPRO-obra.json") + ") para a pasta Downloads. " +
+            "O plugin do Revit (3.8.0 ou mais novo) acha sozinho: no projeto do Revit, use “Vincular Obra” uma vez e escolha esta obra.", "ok");
         } else {
           var nCrono = payload.cronograma.length;
           var av = payload.avanco;
@@ -18500,6 +19096,11 @@
     },
     _bimWire: function () {
       var _self = this;
+      /* projeto estrutural: carregar o PDF / anexar de novo neste computador */
+      var _estArq = document.getElementById("bim-est-arq");
+      if (_estArq) _estArq.onchange = function () { var f = this.files && this.files[0]; this.value = ""; if (f) _self._estCarregarPdf(f); };
+      var _estRe = document.getElementById("bim-est-reanexo");
+      if (_estRe) _estRe.onchange = function () { var f = this.files && this.files[0]; this.value = ""; if (f) _self._estReanexar(f); };
       var _cjNovo = document.getElementById("bim-conj-novo");
       if (_cjNovo) _cjNovo.onclick = function () { _self._bimConjEditor(); };   /* B3 */
       var btReal = document.getElementById("bim-tar-real");
@@ -18707,8 +19308,15 @@
                 if (info.qto.volume > 0) qtxt.push(Util.fmtNum(info.qto.volume, 2) + " m³");
                 if (qtxt.length) h += "<br><span style='opacity:.85;font-size:11px'>📐 " + qtxt.join(" · ") + "</span>";
               }
-              h += '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" id="bim-props-btn">' + (typeof Icones !== 'undefined' ? Icones.get('checklist', 15) : '') + ' Propriedades</button> <button class="btn sm" id="bim-fam-salvar">' + (typeof Icones !== 'undefined' ? Icones.get('salvar', 15) : '') + ' Salvar família</button></div>';
+              /* a peça traz o carimbo do projeto estrutural? o balão oferece a vista
+                 dela ("Detalhe S5") — o caminho do 3D até o desenho do calculista */
+              var elSel = null;
+              try { (BIM.elementos || []).some(function (eS) { if (eS.uid === info.uid) { elSel = eS; return true; } return false; }); } catch (eSel) {}
+              if (elSel && elSel.disciplinaPeca) h += "<br><span style='display:inline-block;margin-top:4px;background:rgba(148,163,184,.2);font-weight:700;font-size:11px;padding:2px 8px;border-radius:99px'>" + Util.esc(elSel.disciplinaPeca) + "</span>";
+              h += '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" id="bim-props-btn">' + (typeof Icones !== 'undefined' ? Icones.get('checklist', 15) : '') + ' Propriedades</button> <button class="btn sm" id="bim-fam-salvar">' + (typeof Icones !== 'undefined' ? Icones.get('salvar', 15) : '') + ' Salvar família</button>' +
+                (elSel && elSel.detalhe ? ' <button class="btn sm" id="bim-det-btn" title="Abre a vista do projeto estrutural que desenha esta peça">' + (typeof Icones !== 'undefined' ? Icones.get('prancha', 15) : '') + ' Detalhe ' + Util.esc(elSel.detalhe) + '</button>' : '') + '</div>';
               box.innerHTML = h;
+              var bD = document.getElementById("bim-det-btn"); if (bD && elSel) bD.onclick = function () { self._estAbrirDetalhe(elSel.detalhe); };
               // wiring direto (balão dinâmico — mesmo padrão dos painéis do _bimWire)
               var bP = document.getElementById("bim-props-btn"); if (bP) bP.onclick = function () { self._bimVerProps(info); };
               var bF = document.getElementById("bim-fam-salvar"); if (bF) bF.onclick = function () { self._bimSalvarFamilia(info); };

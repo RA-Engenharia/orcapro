@@ -147,6 +147,10 @@
           { id: "quatro-d", rotulo: "4D\nSimulação", icone: "calendario", grande: true, requer: "modelo", dica: "A obra subindo dia a dia no calendário do cronograma (estilo TimeLiner): atividades, críticas, atrasos com o avanço real, filtros, curva S e o 3D em outra janela." },
           { id: "seis-d", rotulo: "6D/7D\nCiclo de vida", icone: "ciclo", grande: true, requer: "modelo", pro: true, dica: "Operação e manutenção do que foi construído." },
           { id: "curva-s", rotulo: "Curva S", icone: "grafico", requer: "modelo", dica: "Avanço planejado x real no tempo — no painel da Simulação 4D." }
+        ] },
+        { nome: "Canteiro", comandos: [
+          { id: "estrutural", rotulo: "Projeto\nestrutural", icone: "estrutura", grande: true, dica: "Lê o PDF do projeto estrutural: a vista de cada sapata, pilar e viga como está no projeto, a armação, o cobrimento e a lista de material — para executar sem prancha." },
+          { id: "detalhe-peca", rotulo: "Detalhe da\npeça", icone: "prancha", requer: "selecao", dica: "Abre a vista do projeto estrutural que desenha a peça selecionada no 3D (pelo carimbo OrcaPRO_Detalhe)." }
         ] }
       ]
     },
@@ -177,6 +181,7 @@
           { id: "pavimentos", rotulo: "Pavimentos", icone: "niveis", grande: true, requer: "modelo", dica: "Isola um pavimento do modelo importado." },
           { id: "sistemas", rotulo: "Cores por\nsistema", icone: "paleta", requer: "modelo", dica: "Pinta por sistema hidrossanitário ou disciplina." },
           { id: "conjuntos", rotulo: "Conjuntos\nde seleção", icone: "alvo", requer: "modelo", dica: "Monta \u201Ctubos de água fria do térreo\u201D por regra e usa isso no lugar de clicar peça por peça." },
+          { id: "disciplinas", rotulo: "Disciplinas\ne etapas", icone: "camadas", grande: true, requer: "modelo", dica: "Só a fundação, só a armação, só os painéis de parede, só os pilares e vigas de madeira: filtra o modelo por disciplina ou etapa construtiva, com raio-X e cores." },
           { id: "estilo", rotulo: "Estilo de\nexibição", icone: "pincel", tipo: "menu", dica: "Sombreado, linhas, desenho técnico." }
         ] },
         { nome: "Colaborar", comandos: [

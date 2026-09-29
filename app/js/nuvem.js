@@ -91,6 +91,12 @@
      * so o endereco dela, e no outro aparelho a vista abre sem a foto em vez
      * de nao abrir. */
     "bim_vistas",
+    /* o PROJETO ESTRUTURAL lido do PDF (js/estrutpdf.js): locação, armação,
+     * cobrimentos e as vistas de cada peça. É o que o mestre de obras abre no
+     * celular do canteiro — tem de chegar lá. O PDF em si NÃO viaja (mora no
+     * IndexedDB de quem carregou; ~4 MB por projeto): no outro aparelho os
+     * números aparecem e a tela pede o arquivo para mostrar os desenhos. */
+    "bim_estrut",
     /* compatibilizacao: o TESTE salvo e o RESULTADO com o ciclo de vida.
      * O resultado carrega responsavel, prazo, comentario e historico — e
      * e justamente isso que precisa atravessar aparelhos: o engenheiro

@@ -80,6 +80,11 @@
       return {
         formato: 1,
         obra: (obra && obra.nome) || (orc.obra && orc.obra.nome) || orc.nome || "",
+        /* ⚠ A IDENTIDADE DA OBRA (campo aditivo). O plugin 3.8.0 guarda no .rvt
+           de qual obra o projeto é (parâmetro OrcaPRO_Obra) e acha o arquivo
+           certo entre vários — por este id. Pelo nome só, duas obras
+           homônimas (ou uma renomeada) trocariam de lugar em silêncio. */
+        obraId: (obra && obra.id != null) ? String(obra.id) : "",
         orcamento: orc.nome || "",
         uf: orc.uf || "",
         competencia: orc.competenciaSinapi || "",
@@ -231,12 +236,25 @@
     },
 
     // POST no servidor local; fallback: download do arquivo p/ salvar na mão.
+    /* O NOME DO ARQUIVO BAIXADO — com o nome da obra.
+       ⚠ Na versão web (sem servidor local) o arquivo vai para a pasta
+       Downloads, e é LÁ que o plugin 3.8.0 procura sozinho. Com o nome fixo
+       "obra-ativa.json", a 2ª obra virava "obra-ativa (1).json" e ninguém
+       sabia qual era qual; com o nome da obra, cada uma tem o seu arquivo e
+       o plugin escolhe a do projeto aberto (parâmetro OrcaPRO_Obra).
+       O prefixo "OrcaPRO-obra-" é contrato com o plugin — não mudar. */
+    nomeArquivo: function (payload) {
+      var n = String((payload && payload.obra) || "obra").replace(/[\\\/:*?"<>|\u0000-\u001f]/g, " ")
+        .replace(/\s+/g, " ").replace(/^[\s.]+|[\s.]+$/g, "").slice(0, 80);
+      return "OrcaPRO-obra-" + (n || "obra") + ".json";
+    },
+
     exportar: function (payload, cb) {
       cb = cb || function () {};
-      var corpo = JSON.stringify(payload);
+      var corpo = JSON.stringify(payload), nome = Revit.nomeArquivo(payload);
       try { Revit.exportarIA(); } catch (e) {}   // best-effort: nunca derruba o export
       if (typeof fetch !== "function" || location.protocol === "file:") {
-        Revit.baixar(corpo); return cb(null, { download: true });
+        Revit.baixar(corpo, nome); return cb(null, { download: true, arquivo: nome });
       }
       fetch("/__revit/exportar", {
         method: "POST",
@@ -246,17 +264,17 @@
         .then(function (res) {
           if (res.st === 200 && res.j && res.j.ok) return cb(null, res.j);
           // servidor antigo (404) ou recusa: entrega por download, sem travar
-          Revit.baixar(corpo); cb(null, { download: true, detalhe: (res.j && res.j.erro) || ("HTTP " + res.st) });
+          Revit.baixar(corpo, nome); cb(null, { download: true, arquivo: nome, detalhe: (res.j && res.j.erro) || ("HTTP " + res.st) });
         })
-        .catch(function () { Revit.baixar(corpo); cb(null, { download: true }); });
+        .catch(function () { Revit.baixar(corpo, nome); cb(null, { download: true, arquivo: nome }); });
     },
 
-    baixar: function (corpo) {
+    baixar: function (corpo, nome) {
       try {
         var blob = new Blob([corpo], { type: "application/json" });
         var a = document.createElement("a");
         a.href = URL.createObjectURL(blob);
-        a.download = "obra-ativa.json";
+        a.download = nome || "obra-ativa.json";
         document.body.appendChild(a); a.click();
         setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 800);
       } catch (e) { /* ambiente sem DOM (teste) */ }

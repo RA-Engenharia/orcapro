@@ -1514,7 +1514,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   // ============================================================
   // TRENA (medição) — clique em 2 pontos do modelo e mede a distância real
   // ============================================================
-  var medir = { on: false, pts: [], objs: [], down: null, prov: null };
+  /* `regs` é o que o ponto de vista guarda das cotas: uma linha por medida
+     PRONTA, com os pontos (não o número — ver `BimVista.medida`). `objs` são
+     os desenhos; `regs` é o que dá para redesenhar noutra hora. */
+  var medir = { on: false, pts: [], objs: [], down: null, prov: null, regs: [] };
   S.medir = medir;
 
   // A geometria do web-ifc já vem NORMALIZADA em METROS (o próprio web-ifc aplica o fator da
@@ -1858,23 +1861,27 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   });
   function btnCotas() { var b = bar.querySelector('[data-b="limpar-medidas"]'); if (b) b.style.display = medir.objs.length ? '' : 'none'; if (S && S._ajustarTop) S._ajustarTop(); } // botão entra/sai -> a barra (flex-wrap) pode mudar de altura
   function addMed(o) { scene.add(o); medir.objs.push(o); rescaleObj(o); }
-  function desenharMedida(a, b) {
+  function pxyz(v) { return [v.x, v.y, v.z]; }
+  // `horiz` só vem de quem REDESENHA uma cota gravada (ponto de vista): a cota
+  // feita na planta continua horizontal mesmo que a vista reabra sem a planta.
+  function desenharMedida(a, b, horiz) {
     // na PLANTA mede-se a distância HORIZONTAL (projeção XZ) — é o que a planta representa;
     // em 3D livre, a distância real. A ETIQUETA declara "(horizontal)" pra não haver
     // diferença semântica silenciosa entre os dois modos.
     var dxz = Math.sqrt((a.x - b.x) * (a.x - b.x) + (a.z - b.z) * (a.z - b.z));
-    var horizontal = !!planta.on, d = horizontal ? dxz : a.distanceTo(b);
+    var horizontal = (horiz == null) ? !!planta.on : !!horiz, d = horizontal ? dxz : a.distanceTo(b);
     if (d < 2e-3) return false; // pontos coincidentes (duplo-clique/acidente) -> ignora
     var line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), new THREE.LineBasicMaterial({ color: 0x22c55e, depthTest: false })); line.renderOrder = 997;
     var lab = labelSprite(fmtDist(d) + (horizontal ? ' (horizontal)' : '')); lab.position.copy(a.clone().add(b).multiplyScalar(0.5));
     var mA = pontoMarca(a), mB = pontoMarca(b);
     addMed(mA); addMed(mB); addMed(line); addMed(lab); btnCotas();
     medir.ultima = { valor: d, horizontal: horizontal }; // introspecção (UI futura + testes)
+    medir.regs.push({ tipo: 'dist', pts: [pxyz(a), pxyz(b)], horizontal: horizontal });
     return true;
   }
   function limparMarca(o) { scene.remove(o); if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } }
   function tirarProv() { if (!medir.prov) return; var i = medir.objs.indexOf(medir.prov); if (i >= 0) { limparMarca(medir.prov); medir.objs.splice(i, 1); } medir.prov = null; }
-  function limparMedidas() { medir.prov = null; area.pts = []; area.tmp = []; ang.pts = []; ang.tmp = []; medir.objs.forEach(limparMarca); medir.objs = []; medir.pts = []; btnCotas(); }
+  function limparMedidas() { medir.prov = null; area.pts = []; area.tmp = []; ang.pts = []; ang.tmp = []; medir.objs.forEach(limparMarca); medir.objs = []; medir.pts = []; medir.regs = []; btnCotas(); }
   S._limparMedidas = limparMedidas;
   // cursor único p/ as 3 ferramentas de medição (trena/área/ângulo)
   function atualizarCursor() { canvasEl.style.cursor = (medir.on || area.on || ang.on) ? 'crosshair' : ''; }
@@ -2336,9 +2343,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   // área+perímetro do polígono. horizontal=true -> projeção XZ (shoelace). Senão, vetor-área de
   // Newell: |Σ cross|/2 é a área da projeção no plano médio — exata p/ polígono plano, aproximação
   // declarada p/ não-plano (aprox=true quando o desvio ao plano passa de 2% do lado típico).
-  function areaCalc(pts) {
+  function areaCalc(pts, horiz) {
     var n = pts.length, i, p, q;
-    if (planta.on) {
+    if (horiz == null ? planta.on : horiz) {
       var a2 = 0, perH = 0;
       for (i = 0; i < n; i++) {
         p = pts[i]; q = pts[(i + 1) % n];
@@ -2419,8 +2426,14 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (pts.length > 1 && pts[pts.length - 1].distanceTo(pts[0]) < 2e-3) pts.pop();
     limparTmp(area.tmp); area.pts = [];
     if (pts.length < 3) { S._hint('▱ Pontos coincidentes — marque 3+ cantos distintos.'); return; }
-    var res = areaCalc(pts);
-    if (!res || res.area < 1e-4) { S._hint('▱ Pontos colineares — não formam área. Recomece.'); return; }
+    if (!desenharArea(pts)) { S._hint('▱ Pontos colineares — não formam área. Recomece.'); return; }
+    S._hint('▱ Área medida! Clique os cantos da próxima, ou Esc pra sair.');
+  }
+  /* desenho final da área — separado do clique para o ponto de vista poder
+     redesenhar a área gravada sem passar pela ferramenta */
+  function desenharArea(pts, horiz) {
+    var res = areaCalc(pts, horiz);
+    if (!res || res.area < 1e-4) return null;
     // desenho final: contorno fechado + preenchimento + marcas + rótulo no centro
     var loop = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts.concat([pts[0]])), new THREE.LineBasicMaterial({ color: 0x38bdf8, depthTest: false }));
     loop.renderOrder = 997; addMed(loop);
@@ -2431,7 +2444,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var lab = labelSprite('▱ ' + fmtArea(res.area) + ' · per ' + fmtDist(res.per) + sufixo);
     lab.position.copy(c); addMed(lab); btnCotas();
     medir.ultimaArea = { area: res.area, perimetro: res.per, horizontal: res.horizontal, aproximada: res.aprox, pontos: pts.length };
-    S._hint('▱ Área medida! Clique os cantos da próxima, ou Esc pra sair.');
+    medir.regs.push({ tipo: 'area', pts: pts.map(pxyz), horizontal: res.horizontal });
+    return res;
   }
   function setAng(on) {
     ang.on = !!on;
@@ -2454,8 +2468,14 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var P1 = ang.pts[0], V = ang.pts[1], P2 = ang.pts[2];
     marcarFechamento(); // 3º ponto pode vir de duplo-clique — engole o irmão
     limparTmp(ang.tmp); ang.pts = [];
+    var deg = desenharAngulo(P1, V, P2);
+    if (deg == null) { S._hint('∠ Pontos coincidentes — recomece: 1º ponto, vértice, 2º ponto.'); return; }
+    S._hint('∠ ' + deg.toFixed(1).replace('.', ',') + '° — clique 3 pontos pra medir outro, ou Esc pra sair.');
+  }
+  /* desenho final do ângulo — separado do clique pelo mesmo motivo da área */
+  function desenharAngulo(P1, V, P2) {
     var u = P1.clone().sub(V), v = P2.clone().sub(V);
-    if (u.length() < 2e-3 || v.length() < 2e-3) { S._hint('∠ Pontos coincidentes — recomece: 1º ponto, vértice, 2º ponto.'); return; }
+    if (u.length() < 2e-3 || v.length() < 2e-3) return null;
     var rad = u.angleTo(v), deg = rad * 180 / Math.PI;
     // desenho final: os 2 lados + arco no plano u,v + rótulo na bissetriz
     [[V, P1], [V, P2]].forEach(function (par) {
@@ -2477,7 +2497,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     lab.position.copy(V).add(bis.multiplyScalar(Math.max(r * 1.4, 0.05)));
     addMed(lab); btnCotas();
     medir.ultimoAngulo = { graus: deg };
-    S._hint('∠ ' + deg.toFixed(1).replace('.', ',') + '° — clique 3 pontos pra medir outro, ou Esc pra sair.');
+    medir.regs.push({ tipo: 'ang', pts: [pxyz(P1), pxyz(V), pxyz(P2)], horizontal: false });
+    return deg;
   }
 
   // ============================================================
@@ -5099,8 +5120,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       if (ehAlvo(m)) { nAlvo++; return; } // alvo permanece sólido
       m.material = ghostMat(); xray.ghosted.push(m);
     });
-    if (!nAlvo) { limparRaioX(); S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('camadas', 15) : '') + ' Nada correspondeu ao alvo do raio-X.'); return; } // agora restaura de verdade
+    if (!nAlvo) { limparRaioX(); S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('camadas', 15) : '') + ' Nada correspondeu ao alvo do raio-X.'); return 0; } // agora restaura de verdade
     S._hint(msg);
+    return nAlvo;
   }
   function raioXSelecao() {
     var si = selInfo(); if (!si) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('olho', 15) : '') + ' Dê dois cliques num elemento primeiro.'); return; }
@@ -5112,6 +5134,17 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     aplicarRaioX(function (m) { return m.userData.tipo === si.tipo; }, '' + (typeof Icones !== 'undefined' ? Icones.get('camadas', 15) : '') + ' Raio-X de "' + rotuloDisciplina(si.tipo) + '": resto translúcido — bom pra ver onde há cano/eletroduto antes de furar. ' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Restaurar tudo volta.');
   }
   S._raioXSelecao = raioXSelecao; S._raioXTipo = raioXTipo;
+  /* raio-X de um GRUPO de peças (disciplina, etapa construtiva — js/bimdisc.js):
+     o grupo fica sólido e o resto translúcido, para ver a armação DENTRO da
+     sapata ou os painéis sobre a laje sem perder o contexto. Devolve quantas
+     malhas ficaram em destaque (0 = nada do grupo está visível). */
+  function raioXChaves(chaves, msg) {
+    var alvo = {};
+    uidsDeChaves(chaves).forEach(function (u) { alvo[u] = 1; });
+    return aplicarRaioX(function (m) { return !!alvo[m.userData.mid + ':' + m.userData.expressID]; },
+      msg || ('' + (typeof Icones !== 'undefined' ? Icones.get('camadas', 15) : '') + ' Raio-X: o grupo em destaque, o resto translúcido. ' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Restaurar tudo volta.')) || 0;
+  }
+  S._raioXChaves = raioXChaves;
   visPanel.addEventListener('click', function (e) {
     var b = e.target.closest('[data-v]'); if (!b) return; var k = b.getAttribute('data-v');
     if (k === 'fechar') { visPanel.style.display = 'none'; var bvF = bar.querySelector('[data-b="vis"]'); if (bvF) bvF.style.outline = ''; return; }
@@ -6968,7 +7001,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         var pset; try { pset = S.api.GetLine(mid, psetID, false); } catch (_) { continue; }
         if (!pset || !pset.HasProperties) continue; // não é IfcPropertySet (ex.: quantities/type)
         var props = Array.isArray(pset.HasProperties) ? pset.HasProperties : [pset.HasProperties];
-        var etapa = null, cod = null, fase = null, descrPset = null, tarefa = null;
+        var etapa = null, cod = null, fase = null, descrPset = null, tarefa = null, discP = null, detalhe = null;
         for (var p = 0; p < props.length; p++) {
           var h = props[p]; if (!h || h.value == null) continue;
           var pv; try { pv = S.api.GetLine(mid, h.value, false); } catch (_) { continue; }
@@ -6980,6 +7013,13 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           /* a TAREFA do plano executivo ("3.2 Pilares"): o elo que liga a peça
              ao prazo, ao custo e ao avanço dela (js/bimelo.js) */
           else if (nm === 'OrcaPRO_Tarefa' && pv.NominalValue) tarefa = pv.NominalValue.value;
+          /* a DISCIPLINA / etapa construtiva da peça ("Fundação", "Armação",
+             "Painéis de parede") — o filtro "só fundação / só armação" do
+             js/bimdisc.js — e o DETALHE do projeto estrutural que desenha a
+             peça ("S5", "P6", "BALDRAMES/V3"), que liga a peça à vista do PDF
+             (js/estrutpdf.js). Carimbados pelo plugin ou pelo gerador do modelo. */
+          else if (nm === 'OrcaPRO_Disciplina' && pv.NominalValue) discP = pv.NominalValue.value;
+          else if (nm === 'OrcaPRO_Detalhe' && pv.NominalValue) detalhe = pv.NominalValue.value;
           /* ⚠ TERCEIRA PORTA DA DESCRIÇÃO, e ela sai de graça. Nem todo
              exportador leva o campo Descrição do Revit para o atributo
              `Description` do IFC — vários o despejam como propriedade num
@@ -6993,7 +7033,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
             if (vD != null && String(vD).trim()) descrPset = String(vD).trim();
           }
         }
-        if (etapa == null && cod == null && fase == null && descrPset == null && tarefa == null) continue;
+        if (etapa == null && cod == null && fase == null && descrPset == null && tarefa == null && discP == null && detalhe == null) continue;
         var objs = Array.isArray(rel.RelatedObjects) ? rel.RelatedObjects : [rel.RelatedObjects];
         for (var o = 0; o < objs.length; o++) {
           var oh = objs[o]; if (!oh || oh.value == null) continue;
@@ -7002,6 +7042,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           if (cod != null) mapa[eid].codOrc = cod;
           if (fase != null) mapa[eid].fase = fase;
           if (tarefa != null && String(tarefa).trim()) mapa[eid].tarefa = String(tarefa).trim();
+          if (discP != null && String(discP).trim()) mapa[eid].disciplinaPeca = String(discP).trim();
+          if (detalhe != null && String(detalhe).trim()) mapa[eid].detalhe = String(detalhe).trim();
           if (descrPset != null && !mapa[eid].descricaoPset) mapa[eid].descricaoPset = descrPset;
         }
       }
@@ -7666,24 +7708,172 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     };
   }
 
-  /* ⚠ APLICAR NA ORDEM CERTA: camera, depois visibilidade, depois cor. Aplicar
-   * a visibilidade antes da camera faria o `enquadrar` interno de alguns
-   * caminhos re-mirar o que sobrou, e a vista salva abriria noutro angulo — o
-   * oposto do que um ponto de vista promete. */
+  /* =====================================================================
+   * ⚠ O ESTADO INTEIRO DA CENA — o que o ponto de vista grava
+   *
+   * Ver "A VISTA COMPLETA" em js/bimvista.js: a vista antiga guardava só a
+   * câmera, e o engenheiro perdia o que tinha ocultado, cortado e medido.
+   * Aqui entra tudo o que a pessoa ajustou e que muda o que se vê: câmera,
+   * planta ou corte livre (com a posição do slider), peças ocultas/isoladas,
+   * raio-X, cores, estilo desenho, modelos desligados/transparentes, cotas da
+   * trena (área e ângulo também) e as cotas da rede.
+   *
+   * ⚠ O QUE OUTRO DONO ESCONDEU NÃO ENTRA. Peça no futuro do 4D e peça
+   * removida no editor estão escondidas por outro recurso; gravá-las como
+   * "ocultas pela vista" faria a vista escondê-las para sempre, mesmo depois
+   * de o 4D andar.
+   *
+   * ⚠ PEÇA SEM CHAVE NÃO TEM COMO SER GRAVADA (o B0 não conseguiu
+   * identificá-la). Ela é CONTADA em `semChave`, para a tela avisar em vez de
+   * a vista abrir mostrando uma peça que a pessoa tinha escondido.
+   * ===================================================================== */
+  function corParaV3(h) {
+    var m = /^#?([0-9a-fA-F]{6})$/.exec(String(h || ''));
+    if (!m) return null;
+    var n = parseInt(m[1], 16);
+    return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+  }
+  function v3ParaCor(c) {
+    function h(x) { var t = Math.round(Math.max(0, Math.min(1, +x || 0)) * 255).toString(16); return t.length < 2 ? '0' + t : t; }
+    return '#' + h(c[0]) + h(c[1]) + h(c[2]);
+  }
+  function estadoVista() {
+    var fantasma = {};
+    if (xray.on) xray.ghosted.forEach(function (m) { fantasma[m.uuid] = 1; });
+    var porUid = {};
+    todasMalhas(function (m) {
+      if (m.userData.expressID == null) return;
+      if (ehFuturo4d(m) || ehRemovidoEd(m)) return;
+      var u = m.userData.mid + ':' + m.userData.expressID;
+      var r = porUid[u] || (porUid[u] = { vis: false, solido: false });
+      if (m.visible) { r.vis = true; if (!fantasma[m.uuid]) r.solido = true; }
+    });
+    var visiveis = [], ocultos = [], alvoRx = [], semChave = 0;
+    (S.elementos || []).forEach(function (e) {
+      var r = porUid[e.uid]; if (!r) return;
+      if (!e.chave) { if (!r.vis) semChave++; return; }
+      if (r.vis) visiveis.push(e.chave); else ocultos.push(e.chave);
+      if (xray.on && r.vis && r.solido) alvoRx.push(e.chave);
+    });
+    var BV = (typeof window !== 'undefined') ? window.BimVista : null;
+    var vis = BV ? BV.escolherVisibilidade(visiveis, ocultos) : { isolados: [], ocultos: ocultos };
+    var aparencias = [];
+    if (S._pintura) {
+      (S.elementos || []).forEach(function (e) {
+        var p = S._pintura[e.uid]; if (!p || !e.chave) return;
+        var obj = (typeof p === 'object');
+        var rgb = corParaV3(obj ? p.cor : p); if (!rgb) return;
+        aparencias.push({ chave: e.chave, cor: rgb, alpha: (obj && p.opacidade != null) ? +p.opacidade : 1 });
+      });
+    }
+    var fixados = [];
+    if (cota.on) {
+      var fx = cota.fixados || {};
+      (S.elementos || []).forEach(function (e) { if (fx[e.uid] && e.chave) fixados.push(e.chave); });
+    }
+    var slP = cortePanel.querySelector('[data-c="alt"]'), slL = corteLPanel.querySelector('[data-k="pos"]');
+    return {
+      completa: true,
+      camera: cameraAtual(),
+      cortes: {
+        planta: { on: !!planta.on, y: planta.plane ? planta.plane.constant : 0, frac: slP ? (+slP.value) / 1000 : 0.62 },
+        livre: { on: !!corteL.on, az: corteL.az, inc: corteL.inc, inv: !!corteL.inv, pos: slL ? (+slL.value) / 1000 : 0.5,
+                 plano: [corteL.plane.normal.x, corteL.plane.normal.y, corteL.plane.normal.z, corteL.plane.constant] }
+      },
+      visibilidade: { isolados: vis.isolados, ocultos: vis.ocultos, raioX: !!(xray.on && alvoRx.length), raioXAlvo: alvoRx },
+      aparencias: aparencias,
+      modelos: S.modelos.map(function (mo) { return { arquivoId: mo.versaoId || '', modeloId: mo.modeloId || '', visivel: mo.visivel !== false, alpha: mo.alpha == null ? 1 : mo.alpha }; }),
+      estilo: { desenho: !!estiloD.on },
+      medidas: medir.regs.map(function (r) { return { tipo: r.tipo, pts: r.pts.map(function (p) { return p.slice(); }), horizontal: !!r.horizontal }; }),
+      cotaRede: { on: !!cota.on, modo: cota.modo, fixados: fixados, chave: cota.chave || '' },
+      semChave: semChave
+    };
+  }
+
+  /* =====================================================================
+   * ⚠ APLICAR = ZERAR A CENA E MONTAR SÓ O QUE A VISTA GUARDOU
+   *
+   * A versão anterior somava por cima do que estava na tela: o corte aberto
+   * para uma vista continuava aberto na próxima, o raio-X e a cor também.
+   * Agora cada passo abaixo primeiro DESFAZ e depois aplica, e o que a vista
+   * não guardou volta ao neutro (modelo inteiro, sem corte, sem cota).
+   *
+   * ⚠ A ORDEM IMPORTA, e cada troca aqui já custou uma vista errada:
+   *   - cortes antes de tudo: ligar a planta põe o estilo desenho, e
+   *     desligá-la re-enquadra a câmera;
+   *   - estilo antes do raio-X: o estilo reescreve os materiais e apaga o
+   *     fantasma do raio-X;
+   *   - visibilidade antes do raio-X: o raio-X só deixa translúcido o que
+   *     está VISÍVEL;
+   *   - câmera por ÚLTIMO, com o voo cancelado: `setPlanta(false)` chama o
+   *     enquadrar, e o tween dele puxaria a câmera para fora da vista meio
+   *     segundo depois de ela ter sido posta no lugar.
+   *
+   * ⚠ VISTA ANTIGA (sem `completa`): o que ela não guardou não existe para
+   * ela — abre com a câmera dela e o resto no neutro. Os modelos ficam como
+   * estão, porque ela nunca soube deles.
+   * ===================================================================== */
   function aplicarVista(v, opts) {
     if (!v) return { ok: false, erro: 'ponto de vista vazio' };
     opts = opts || {};
-    var res = { ok: true, naoLocalizadas: [] };
+    var completa = v.completa === true;
+    var res = { ok: true, naoLocalizadas: [], completa: completa };
     try {
-      var c = v.camera;
-      if (c && c.pos) {
-        camera.position.set(c.pos[0], c.pos[1], c.pos[2]);
-        if (c.up) camera.up.set(c.up[0], c.up[1], c.up[2]);
-        if (c.fov) { camera.fov = c.fov; camera.updateProjectionMatrix(); }
-        if (orbit && orbit.target && c.alvo) { orbit.target.set(c.alvo[0], c.alvo[1], c.alvo[2]); orbit.update(); }
-        camera.lookAt(c.alvo[0], c.alvo[1], c.alvo[2]);
+      var BV = (typeof window !== 'undefined') ? window.BimVista : null;
+      var r = BV ? BV.resolver(v, S.elementos || []) : null;
+      cancelTween();
+
+      /* 1) cotas: nenhuma da vista anterior sobrevive */
+      limparMedidas();
+      if (cota.on) setCota(false);
+      cota.fixados = {}; cota.chave = null;
+
+      /* 2) cortes */
+      var cs = v.cortes || {}, cp = cs.planta || {}, cl = cs.livre || {};
+      var querP = !!cp.on, querL = !querP && !!cl.on;
+      if (planta.on && !querP) setPlanta(false);
+      if (corteL.on && !querL) setCorteL(false);
+      if (querP) {
+        if (!planta.on) setPlanta(true);
+        if (planta.on) {
+          var fr = (cp.frac != null) ? +cp.frac : ((planta.y1 - planta.y0) ? (+cp.y - planta.y0) / (planta.y1 - planta.y0) : 0.62);
+          if (!isFinite(fr)) fr = 0.62;
+          fr = Math.max(0, Math.min(1, fr));
+          var slP = cortePanel.querySelector('[data-c="alt"]'); if (slP) slP.value = Math.round(fr * 1000);
+          setAlturaCorte(fr);
+        }
       }
-      var r = (typeof window !== 'undefined' && window.BimVista) ? window.BimVista.resolver(v, S.elementos || []) : null;
+      if (querL) {
+        corteL.az = +cl.az || 0; corteL.inc = +cl.inc || 0; corteL.inv = !!cl.inv;
+        var elAz = corteLPanel.querySelector('[data-k="az"]'), elInc = corteLPanel.querySelector('[data-k="inc"]');
+        var elPos = corteLPanel.querySelector('[data-k="pos"]'), elInv = corteLPanel.querySelector('[data-k="inv"]');
+        if (elAz) elAz.value = corteL.az;
+        if (elInc) elInc.value = corteL.inc;
+        if (elPos) elPos.value = Math.round((cl.pos == null ? 0.5 : Math.max(0, Math.min(1, +cl.pos))) * 1000);
+        if (elInv) { elInv.style.background = corteL.inv ? corAtiva() : ''; elInv.style.color = corteL.inv ? '#fff' : ''; }
+        if (!corteL.on) setCorteL(true); else aplicarCorteL();
+      }
+
+      /* 3) estilo desenho */
+      var querE = completa ? !!(v.estilo && v.estilo.desenho) : (planta.on && estiloD.on);
+      if (!!estiloD.on !== querE) setEstiloDesenho(querE);
+
+      /* 4) modelos — só a vista completa sabe deles. Casa primeiro pela
+         versão exata do arquivo; se não houver, pela identidade do modelo. */
+      if (completa && Array.isArray(v.modelos)) {
+        S.modelos.forEach(function (mo) {
+          var reg = null, i;
+          for (i = 0; i < v.modelos.length && !reg; i++) if (v.modelos[i].arquivoId && v.modelos[i].arquivoId === mo.versaoId) reg = v.modelos[i];
+          for (i = 0; i < v.modelos.length && !reg; i++) if (v.modelos[i].modeloId && v.modelos[i].modeloId === mo.modeloId) reg = v.modelos[i];
+          var querVis = reg ? reg.visivel !== false : true;
+          var querA = (reg && reg.alpha != null) ? +reg.alpha : 1;
+          if ((mo.visivel !== false) !== querVis) setVisivel(mo.mid, querVis);
+          if (Math.abs((mo.alpha == null ? 1 : mo.alpha) - querA) > 0.001) setTransparencia(mo.mid, querA);
+        });
+      }
+
+      /* 5) visibilidade — do zero (o restaurar também tira o raio-X) */
+      restaurarVisibilidade();
       if (r) {
         res.naoLocalizadas = r.naoLocalizadas;
         if (r.isolados.length) isolarChaves(r.isolados);
@@ -7696,19 +7886,54 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           });
           pav.isolado = null; pav.manual = true; pavRender();
         }
-        if (r.aparencias.length) {
-          var mapa = {};
-          r.aparencias.forEach(function (a) {
-            function h(x) { var t = Math.round(Math.max(0, Math.min(1, x)) * 255).toString(16); return t.length < 2 ? '0' + t : t; }
-            mapa[a.chave] = '#' + h(a.cor[0]) + h(a.cor[1]) + h(a.cor[2]);
-          });
-          pintarChaves(mapa);
+      }
+
+      /* 6) cores: a vista sem cor tira a cor que estava na tela */
+      if (r && r.aparencias.length) {
+        var mapa = {};
+        r.aparencias.forEach(function (a) {
+          var hx = v3ParaCor(a.cor);
+          mapa[a.chave] = (a.alpha != null && a.alpha < 0.999) ? { cor: hx, opacidade: a.alpha } : hx;
+        });
+        pintarChaves(mapa, 'vista');
+      } else if (S._pintura) limparPintura();
+
+      /* 7) raio-X */
+      if (r && v.visibilidade && v.visibilidade.raioX && r.raioXAlvo.length) raioXChaves(r.raioXAlvo);
+
+      /* 8) cotas da trena, área e ângulo — redesenhadas dos pontos */
+      (v.medidas || []).forEach(function (m) {
+        var P = (m.pts || []).map(function (p) { return new THREE.Vector3(+p[0], +p[1], +p[2]); });
+        if (m.tipo === 'dist' && P.length === 2) desenharMedida(P[0], P[1], !!m.horizontal);
+        else if (m.tipo === 'area' && P.length >= 3) desenharArea(P, !!m.horizontal);
+        else if (m.tipo === 'ang' && P.length === 3) desenharAngulo(P[0], P[1], P[2]);
+      });
+
+      /* 9) cotas da rede */
+      if (v.cotaRede && v.cotaRede.on) {
+        setCota(true, v.cotaRede.modo || 'clicado');
+        if (cota.on) {
+          uidsDeChaves(r ? r.cotaFixados : []).forEach(function (u) { cota.fixados[u] = 1; });
+          cota.chave = v.cotaRede.chave || null;
+          cota.acum = cota.periodo;
         }
       }
+
+      /* 10) câmera por último */
+      cancelTween();
+      var c = v.camera;
+      if (c && c.pos) {
+        camera.position.set(c.pos[0], c.pos[1], c.pos[2]);
+        if (c.up) camera.up.set(c.up[0], c.up[1], c.up[2]);
+        if (c.fov) { camera.fov = c.fov; camera.updateProjectionMatrix(); }
+        if (orbit && orbit.target && c.alvo) { orbit.target.set(c.alvo[0], c.alvo[1], c.alvo[2]); orbit.update(); }
+        camera.lookAt(c.alvo[0], c.alvo[1], c.alvo[2]);
+      }
+      S._hint('');
     } catch (e) { return { ok: false, erro: String(e && e.message || e) }; }
     return res;
   }
-  S._cameraAtual = cameraAtual; S._aplicarVista = aplicarVista;
+  S._cameraAtual = cameraAtual; S._aplicarVista = aplicarVista; S._estadoVista = estadoVista;
 
   // material corrente de um mesh respeitando a TRANSPARÊNCIA do modelo dele
   function matBase(m) {
@@ -7992,7 +8217,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         var idIfc = lerIdentidadeIfc(S.api, mid, mesh.expressID);
         var idB = idElemento(modelo.modeloId, { id: mesh.expressID, globalId: idIfc.globalId });
         var dM = descricaoDeMercado(idIfc, famEl, cb);
-        modelo.elementos.push({ globalId: idB.globalId, chave: idB.chave, chaveInstavel: idB.instavel, nomeIfc: idIfc.nomeIfc, tag: idIfc.tag, id: mesh.expressID, uid: mid + ':' + mesh.expressID, mid: mid, arquivo: modelo.nome, tipo: tipoNome, nome: rotuloDisciplina(tipoNome), familia: famEl ? famEl.familia : null, descricao: dM.descricao, descricaoFonte: dM.fonte, sistemaIfc: (modelo.sistemas && modelo.sistemas[mesh.expressID]) || '', etapa: cb.etapa || null, codOrc: cb.codOrc || null, fase: cb.fase || null, tarefa: cb.tarefa || null, qto: (qto && qto[mesh.expressID]) || null });
+        modelo.elementos.push({ globalId: idB.globalId, chave: idB.chave, chaveInstavel: idB.instavel, nomeIfc: idIfc.nomeIfc, tag: idIfc.tag, id: mesh.expressID, uid: mid + ':' + mesh.expressID, mid: mid, arquivo: modelo.nome, tipo: tipoNome, nome: rotuloDisciplina(tipoNome), familia: famEl ? famEl.familia : null, descricao: dM.descricao, descricaoFonte: dM.fonte, sistemaIfc: (modelo.sistemas && modelo.sistemas[mesh.expressID]) || '', etapa: cb.etapa || null, codOrc: cb.codOrc || null, fase: cb.fase || null, tarefa: cb.tarefa || null, disciplinaPeca: cb.disciplinaPeca || null, detalhe: cb.detalhe || null, qto: (qto && qto[mesh.expressID]) || null });
         modelo.nEl++;
       });
       modelo.disciplina = detectarDisciplina(modelo.nome, modelo.tipos);
@@ -8913,6 +9138,8 @@ window.BIM = {
   enquadrarUids: function (uids, opts) { return (S && S._enquadrarUids) ? S._enquadrarUids(uids, opts) : false; },
   cameraAtual: function () { return (S && S._cameraAtual) ? S._cameraAtual() : null; },
   aplicarVista: function (v, opts) { return (S && S._aplicarVista) ? S._aplicarVista(v, opts) : { ok: false, erro: 'visualizador não montado' }; },
+  /* a fotografia inteira da cena para o ponto de vista (ver `estadoVista`) */
+  estadoVista: function () { return (S && S._estadoVista) ? S._estadoVista() : null; },
   modelosSemArquivo: function () {
     return ((S && S.modelos) || []).filter(function (m) { return !m.sintetico && !(m._bytes && m._bytes.length); })
       .map(function (m) { return { mid: m.mid, nome: m.nome, doCache: !!m.doCache }; });
@@ -9182,6 +9409,7 @@ window.BIM = {
   raioXSelecao: function () { if (S && S._raioXSelecao) S._raioXSelecao(); },
   raioXTipo: function () { if (S && S._raioXTipo) S._raioXTipo(); },
   limparRaioX: function () { if (S && S._limparRaioX) S._limparRaioX(); },
+  raioXChaves: function (chaves, msg) { return (S && S._raioXChaves) ? S._raioXChaves(chaves, msg) : 0; },
   _ghostCount: function () { if (!S) return 0; var n = 0, gm = null; S.modelRoot.children.forEach(function (g) { (g.children || []).forEach(function (m) { if (m.material && m.material.opacity === 0.1 && m.material.transparent && m.material.depthWrite === false && m.material.color && m.material.color.getHex() === 0x93a7bd) n++; }); }); return n; }, // malhas em material fantasma
   _amberCount: function () { if (!S) return 0; var n = 0; S.modelRoot.children.forEach(function (g) { (g.children || []).forEach(function (m) { if (m.material === S.matAndamento) n++; }); }); return n; }, // malhas em âmbar (4D em andamento)
   _chaoVis: function () { if (!S || !S.scene) return null; var v = null; S.scene.children.forEach(function (o) { if (o.type === 'Mesh' && o.geometry && o.geometry.type === 'PlaneGeometry' && o.material && o.material.map && o.renderOrder === -1) v = o.visible; }); return v; }, // visibilidade da sombra de contato

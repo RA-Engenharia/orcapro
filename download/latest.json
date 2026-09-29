@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.100",
+  "versao": "1.2.101",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.100.zip",
-  "notas": "Simulacao 4D ligada ao plano de execucao e ao custo: cada peca do modelo pode ser ligada a tarefa do plano pelo parametro OrcaPRO_Tarefa (sobe na data da tarefa, com o avanco e o valor dela); abas Simulacao, Prazo x Custo (custo na data, desembolso mes a mes e valor agregado com o custo real) e Elo do modelo; Maximizar 3D e 3D em outra janela para todas as ferramentas do BIM.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.100/OrcaPRO-IA-Instalador-v1.2.100.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.101.zip",
+  "notas": "Projeto estrutural no BIM: carregue o PDF do calculista e veja o detalhamento de cada sapata, pilar e viga como esta no projeto, com armacao, cobrimento e lista de material; filtro por disciplina e etapa (so fundacao, so armacao, so paineis, so madeira); pontos de vista guardam a cena inteira (pecas ocultas, cortes, cotas, cores) e cada vista volta exatamente como foi gravada, com o botao Regravar; Exportar p/ Revit leva a obra no arquivo.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.101/OrcaPRO-IA-Instalador-v1.2.101.exe"
 }
