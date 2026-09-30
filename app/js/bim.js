@@ -248,7 +248,7 @@ function montar(host, opts) {
      * visita e sumia calado a partir da segunda, que é o pior jeito de falhar.
      * Os traços dos notáveis não entram na lista porque nascem sob demanda; eles
      * se re-penduram sozinhos em `posicionarNotaveis`. */
-    [(S.xr && S.xr.video), S.bar, S.barToggle, S.hud, S.over, S.loading, S.renderer.domElement, S.hint, S.cortePanel, S.corteLPanel, S.snapPanel, S.snapMarca, S.guiaH, S.guiaV, S.lupaEl, S.ctecCfg, S.ctecModal, S.plantaCfg, S.pavPanel, S.visPanel, S.sisPanel, S.blocokPanel, S.p3dPanel, S.editPanel, S.editDist, S.xrPanel, S.xrHud, S.reqPanel].forEach(function (el) { if (el) host.appendChild(el); });
+    [(S.xr && S.xr.video), S.bar, S.barToggle, S.hud, S.over, S.loading, S.renderer.domElement, S.vcubeEl, S.hint, S.cortePanel, S.corteLPanel, S.snapPanel, S.snapMarca, S.guiaH, S.guiaV, S.lupaEl, S.ctecCfg, S.ctecModal, S.plantaCfg, S.pavPanel, S.visPanel, S.sisPanel, S.blocokPanel, S.p3dPanel, S.editPanel, S.editDist, S.xrPanel, S.xrHud, S.reqPanel].forEach(function (el) { if (el) host.appendChild(el); });
     if (S._onDragOver) { host.addEventListener('dragover', S._onDragOver); host.addEventListener('drop', S._onDrop); } // re-registra drop no host novo
     S.host = host;
     // painel flutuante volta ABERTO com a barra recolhida = caixa presa sem fechador
@@ -1063,7 +1063,13 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (S._xrWalk) S._xrWalk(dt);          // locomoção do imersivo (andar) — tem prioridade
     else if (fly.on) flyStep(dt); else orbit.update();
     for (var tx = 0; tx < S._tickExtra.length; tx++) { try { S._tickExtra[tx](dt); } catch (_) {} }
-    renderer.render(scene, camera);
+    /* ⚠ a vista principal ESCONDIDA (outra aba de vista na frente) não desenha:
+       seria o dobro de GPU para um canvas que ninguém vê */
+    if (!S._principalOculta) {
+      renderer.render(scene, camera);
+      if (S._cxMain) S._cxMain.desenhar(renderer, camera);
+    }
+    if (S._renderVistas) S._renderVistas(dt);
     /* ⚠ GANCHO DEPOIS DO RENDER, e a ordem é o que faz ele existir.
      * Quem precisa COPIAR o quadro desenhado (a lupa do toque) tem de rodar
      * com o buffer ainda válido. O renderer é criado sem `preserveDrawingBuffer`
@@ -1172,6 +1178,486 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     scene.add(ln); _selLn = ln;
   }
   S._contornoSelecao = contornoSelecao;
+
+  /* =====================================================================
+   * AMBIENTE TIPO REVIT NO 3D (30/09/2026) — pedido do Rogério: "entenda
+   * como é a interface do Revit e faça no nosso sistema; a maioria dos
+   * usuários já é acostumada com o Revit". Aqui moram as peças que vivem
+   * DENTRO do visualizador:
+   *   • ViewCube (canto superior direito de cada vista): clicar numa face,
+   *     aresta ou canto orienta a câmera; arrastar gira; a casinha volta ao
+   *     início; o botão direito abre o menu do Revit (início, salvar vista,
+   *     perspectiva/ortogonal, definir início, orientar para vista…);
+   *   • Ortogonal: câmera com abertura mínima e recuada na mesma proporção —
+   *     o enquadramento não pula e todo o resto (seleção, trena, foto) segue
+   *     igual, porque a câmera continua a mesma;
+   *   • Caixa de corte com as setas azuis nas seis faces (puxar e empurrar),
+   *     como no Revit;
+   *   • Vistas extras: outra câmera sobre a MESMA cena — abas, lado a lado e
+   *     outra janela. A peça selecionada numa aparece selecionada em todas
+   *     (o material de seleção é da cena, não da vista).
+   * ===================================================================== */
+  var _V3 = function (x, y, z) { return new THREE.Vector3(x, y, z); };
+  /* cada face do cubo: normal (direção DE ONDE se olha), eixo "direita" e
+     eixo "cima" na tela — cena = IFC (X, Z, −Y): frente = sul = +Z */
+  var VC_FACES = {
+    frontal:   { rot: 'FRONTAL',   n: _V3(0, 0, 1),  u: _V3(1, 0, 0),  v: _V3(0, 1, 0) },
+    direita:   { rot: 'DIREITA',   n: _V3(1, 0, 0),  u: _V3(0, 0, -1), v: _V3(0, 1, 0) },
+    posterior: { rot: 'POSTERIOR', n: _V3(0, 0, -1), u: _V3(-1, 0, 0), v: _V3(0, 1, 0) },
+    esquerda:  { rot: 'ESQUERDA',  n: _V3(-1, 0, 0), u: _V3(0, 0, 1),  v: _V3(0, 1, 0) },
+    superior:  { rot: 'SUPERIOR',  n: _V3(0, 1, 0),  u: _V3(1, 0, 0),  v: _V3(0, 0, -1) },
+    inferior:  { rot: 'INFERIOR',  n: _V3(0, -1, 0), u: _V3(1, 0, 0),  v: _V3(0, 0, 1) }
+  };
+  function vcCss(w) { return [w.x, -w.y, w.z]; }
+  function vcMatFace(f, meio) {
+    var X = vcCss(f.u), Y = vcCss(f.v.clone().negate()), Z = vcCss(f.n), T = vcCss(f.n.clone().multiplyScalar(meio));
+    return 'matrix3d(' + [X[0], X[1], X[2], 0, Y[0], Y[1], Y[2], 0, Z[0], Z[1], Z[2], 0, T[0], T[1], T[2], 1].join(',') + ')';
+  }
+  function vcEstilo() {
+    if (document.getElementById('bim-vcube-estilo')) return;
+    var st = document.createElement('style'); st.id = 'bim-vcube-estilo';
+    st.textContent =
+      '.bim-vcube{position:absolute;top:10px;right:12px;width:104px;height:112px;z-index:5;user-select:none;font-family:"Segoe UI",system-ui,sans-serif}' +
+      '.bim-vcube-casa{position:absolute;left:0;top:0;width:20px;height:20px;padding:0;border:0;background:transparent;color:#5b6573;cursor:pointer;display:flex;align-items:center;justify-content:center;opacity:.8}' +
+      '.bim-vcube-casa:hover{opacity:1;color:#1a6cb5}' +
+      '.bim-vcube-cena{position:absolute;left:17px;top:14px;width:70px;height:70px}' +
+      '.bim-vcube-cubo{position:absolute;left:35px;top:35px;width:0;height:0;transform-style:preserve-3d}' +
+      '.bim-vcube-face{position:absolute;left:-35px;top:-35px;width:70px;height:70px;box-sizing:border-box;border:1px solid #9aa5b1;background:rgba(236,240,244,.94);display:grid;grid-template-columns:22% 56% 22%;grid-template-rows:22% 56% 22%;backface-visibility:hidden}' +
+      '.bim-vcube-face>span{display:block}' +
+      '.bim-vcube-face>span:hover{background:rgba(26,108,181,.35)}' +
+      '.bim-vcube-face>b{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;letter-spacing:.2px;color:#44505c;pointer-events:none}' +
+      '.bim-vcube-anel{position:absolute;left:4px;top:60px;width:96px;height:44px;border-radius:50%;border:5px solid rgba(160,170,182,.55);box-sizing:border-box;pointer-events:none}' +
+      '.bim-vcube-menu{position:fixed;z-index:80;min-width:230px;background:#fff;color:#1a1a1a;border:1px solid #b4b4b4;box-shadow:0 6px 18px rgba(0,0,0,.22);padding:4px 0;font:12px "Segoe UI",system-ui,sans-serif}' +
+      '.bim-vcube-menu div{padding:5px 14px 5px 26px;cursor:pointer;white-space:nowrap;position:relative}' +
+      '.bim-vcube-menu div:hover{background:#d8e6f2}' +
+      '.bim-vcube-menu div[data-marca]:before{content:"\\2713";position:absolute;left:9px}' +
+      '.bim-vcube-menu hr{border:0;border-top:1px solid #d4d4d4;margin:4px 0}' +
+      '.bim-vcube-menu .sub{padding-left:40px}';
+    document.head.appendChild(st);
+  }
+  /* cria o ViewCube de UMA vista. ctx = { cam(), orbit(), voar(pos,tgt), home(), menu(acao) } */
+  function criarViewCube(cont, ctx) {
+    vcEstilo();
+    var w = document.createElement('div'); w.className = 'bim-vcube';
+    w.innerHTML = '<button type="button" class="bim-vcube-casa" title="Ir para o início (Início)">' +
+      '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg></button>' +
+      '<div class="bim-vcube-anel"></div><div class="bim-vcube-cena"><div class="bim-vcube-cubo"></div></div>';
+    var cubo = w.querySelector('.bim-vcube-cubo');
+    Object.keys(VC_FACES).forEach(function (k) {
+      var f = VC_FACES[k], fe = document.createElement('div');
+      fe.className = 'bim-vcube-face'; fe.setAttribute('data-face', k); fe.style.transform = vcMatFace(f, 35);
+      /* 3×3: canto, aresta, face — a direção é a soma das normais tocadas */
+      [1, 0, -1].forEach(function (j) { [-1, 0, 1].forEach(function (i) { var z = document.createElement('span'); z.setAttribute('data-i', i); z.setAttribute('data-j', j); fe.appendChild(z); }); });
+      var b = document.createElement('b'); b.textContent = f.rot; fe.appendChild(b);
+      cubo.appendChild(fe);
+    });
+    cont.appendChild(w);
+    var arrastou = false, p0 = null, zonaDown = null;
+    w.querySelector('.bim-vcube-casa').onclick = function (e) { e.stopPropagation(); ctx.home(); };
+    /* ⚠ a zona é guardada no APERTAR: com a captura do ponteiro no cubo, o
+       alvo do SOLTAR passa a ser o próprio cubo, e a face clicada se perdia */
+    cubo.addEventListener('pointerdown', function (e) { if (e.button !== 0) return; p0 = { x: e.clientX, y: e.clientY }; arrastou = false; zonaDown = e.target && e.target.closest ? e.target.closest('.bim-vcube-face > span') : null; try { cubo.setPointerCapture(e.pointerId); } catch (_) {} e.stopPropagation(); });
+    cubo.addEventListener('pointermove', function (e) {
+      if (!p0) return;
+      var dx = e.clientX - p0.x, dy = e.clientY - p0.y;
+      if (!arrastou && Math.abs(dx) + Math.abs(dy) < 4) return;
+      arrastou = true; p0 = { x: e.clientX, y: e.clientY };
+      /* arrastar o cubo GIRA a vista em volta do alvo (como no Revit) */
+      var cam = ctx.cam(), orb = ctx.orbit(), off = cam.position.clone().sub(orb.target);
+      var sph = new THREE.Spherical().setFromVector3(off);
+      sph.theta -= dx * 0.012; sph.phi = Math.max(0.02, Math.min(Math.PI - 0.02, sph.phi - dy * 0.012));
+      off.setFromSpherical(sph); cam.position.copy(orb.target).add(off); cam.lookAt(orb.target);
+    });
+    cubo.addEventListener('pointerup', function (e) {
+      var eraClique = p0 && !arrastou; p0 = null;
+      if (!eraClique) return;
+      var z = zonaDown; zonaDown = null; if (!z) return;
+      var f = VC_FACES[z.parentNode.getAttribute('data-face')], i = +z.getAttribute('data-i'), j = +z.getAttribute('data-j');
+      orientarPara(ctx, f.n.clone().add(f.u.clone().multiplyScalar(i)).add(f.v.clone().multiplyScalar(j)));
+    });
+    w.addEventListener('contextmenu', function (e) { e.preventDefault(); e.stopPropagation(); abrirMenuCubo(e.clientX, e.clientY, ctx); });
+    var ultimo = '';
+    return {
+      el: w,
+      atualizar: function () {
+        var cam = ctx.cam(); if (!cam) return;
+        cam.updateMatrixWorld();
+        var e = cam.matrixWorldInverse.elements;
+        var m = [e[0], -e[1], e[2], 0, -e[4], e[5], -e[6], 0, e[8], -e[9], e[10], 0, 0, 0, 0, 1];
+        var s = 'matrix3d(' + m.map(function (x) { return Math.abs(x) < 1e-7 ? 0 : +x.toFixed(6); }).join(',') + ')';
+        if (s !== ultimo) { cubo.style.transform = s; ultimo = s; }
+      },
+      remover: function () { if (w.parentNode) w.parentNode.removeChild(w); }
+    };
+  }
+  /* olhar DE uma direção, mantendo o alvo e a distância */
+  function orientarPara(ctx, dir) {
+    var cam = ctx.cam(), orb = ctx.orbit();
+    dir = dir.clone(); if (dir.lengthSq() < 1e-9) return; dir.normalize();
+    /* de cima (ou de baixo) exato a órbita perde o "norte": um fio para o sul mantém a frente embaixo */
+    if (Math.abs(dir.y) > 0.999) dir.z += 0.0015 * (dir.y > 0 ? 1 : -1);
+    var d = cam.position.distanceTo(orb.target);
+    ctx.voar(orb.target.clone().add(dir.normalize().multiplyScalar(d)), orb.target.clone());
+  }
+  var _menuCubo = null;
+  function fecharMenuCubo() { if (_menuCubo && _menuCubo.parentNode) _menuCubo.parentNode.removeChild(_menuCubo); _menuCubo = null; }
+  function abrirMenuCubo(x, y, ctx) {
+    fecharMenuCubo();
+    var orto = !!ctx.orto(), m = document.createElement('div'); m.className = 'bim-vcube-menu';
+    var itens = [['inicio', 'Ir para o início'], ['salvar', 'Salvar vista'], null, ['persp', 'Perspectiva', !orto], ['orto', 'Ortogonal', orto], null,
+      ['definir-inicio', 'Definir vista atual como a principal'], ['reinicio', 'Reinicializar o início'], null,
+      ['o-frontal', 'Orientar: Frontal', false, 1], ['o-posterior', 'Orientar: Posterior', false, 1], ['o-esquerda', 'Orientar: Esquerda', false, 1], ['o-direita', 'Orientar: Direita', false, 1],
+      ['o-superior', 'Orientar: Superior', false, 1], ['o-inferior', 'Orientar: Inferior', false, 1], ['o-iso', 'Orientar: Isométrica', false, 1], null, ['enquadrar', 'Enquadrar tudo']];
+    itens.forEach(function (it) {
+      if (!it) { m.appendChild(document.createElement('hr')); return; }
+      var d = document.createElement('div'); d.textContent = it[1]; d.setAttribute('data-a', it[0]);
+      if (it[2]) d.setAttribute('data-marca', '1');
+      if (it[3]) d.className = 'sub';
+      m.appendChild(d);
+    });
+    m.addEventListener('click', function (e) {
+      var a = e.target.getAttribute && e.target.getAttribute('data-a'); if (!a) return;
+      fecharMenuCubo();
+      if (a.indexOf('o-') === 0) {
+        var k = a.slice(2);
+        if (k === 'iso') orientarPara(ctx, _V3(1, 0.85, 1)); else orientarPara(ctx, VC_FACES[k].n.clone());
+        return;
+      }
+      ctx.menu(a);
+    });
+    m.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+    document.body.appendChild(m);
+    var r = m.getBoundingClientRect();
+    m.style.left = Math.max(4, Math.min(x, (window.innerWidth || 800) - r.width - 6)) + 'px';
+    m.style.top = Math.max(4, Math.min(y, (window.innerHeight || 600) - r.height - 6)) + 'px';
+    _menuCubo = m;
+    setTimeout(function () { document.addEventListener('pointerdown', function fora(ev) { if (_menuCubo && !_menuCubo.contains(ev.target)) { fecharMenuCubo(); document.removeEventListener('pointerdown', fora, true); } }, true); }, 0);
+  }
+
+  /* ---------- ortogonal: abertura mínima, câmera recuada na mesma proporção ---------- */
+  var ORTO_FOV = 1.2;
+  function raioModelo() { var b = new THREE.Box3().setFromObject(modelRoot); if (b.isEmpty()) return 20; return Math.max(1, b.getSize(new THREE.Vector3()).length() / 2); }
+  function aplicarOrto(cam, orb, on, estado) {
+    if (!!estado.on === !!on) return;
+    var d = cam.position.distanceTo(orb.target), dir = cam.position.clone().sub(orb.target).normalize();
+    var fov0 = on ? cam.fov : estado.fovPersp || 60, fov1 = on ? ORTO_FOV : (estado.fovPersp || 60);
+    var h = 2 * d * Math.tan(fov0 * Math.PI / 360);
+    var d1 = h / (2 * Math.tan(fov1 * Math.PI / 360));
+    /* ⚠ near/far da perspectiva são GUARDADOS ao ligar e DEVOLVIDOS ao
+       desligar. A primeira versão, com a ortogonal desligada, empurrava a
+       câmera a cada quadro para near <= 0,1 e far >= 5000 — passando por cima
+       do enquadramento (near = maior dimensão/1000): num modelo grande o near
+       caía e a profundidade perdia precisão (faces cintilando). */
+    if (on) { estado.fovPersp = cam.fov; estado.near0 = cam.near; estado.far0 = cam.far; }
+    estado.on = !!on;
+    cam.fov = fov1; cam.position.copy(orb.target).add(dir.multiplyScalar(d1));
+    if (!on && estado.near0) { cam.near = estado.near0; cam.far = estado.far0; }
+    cam.updateProjectionMatrix();
+    ajustarPlanosOrto(cam, orb, estado);
+  }
+  function ajustarPlanosOrto(cam, orb, estado) {
+    if (!estado.on) return;
+    var dd = cam.position.distanceTo(orb.target), R = estado.raio || (estado.raio = raioModelo());
+    var nn = Math.max(0.1, dd - R * 2.2), ff = dd + R * 4;
+    if (Math.abs(nn - cam.near) > 0.5 || Math.abs(ff - cam.far) > 1) { cam.near = nn; cam.far = ff; cam.updateProjectionMatrix(); }
+  }
+
+  /* ---------- CAIXA DE CORTE, com as setas azuis nas seis faces ----------
+   * Os seis planos entram no `clippingPlanes` DO RENDERER da vista (cada vista
+   * tem a sua caixa); a caixa e as setas são desenhadas numa cena à parte,
+   * depois, sem corte — senão o próprio corte apagaria a caixa. */
+  function criarCaixaCorte(ctx) {
+    var cx = { on: false, box: new THREE.Box3(), planos: [], cena: new THREE.Scene(), setas: [], arr: null };
+    for (var i = 0; i < 6; i++) cx.planos.push(new THREE.Plane(_V3(1, 0, 0), 0));
+    var linMat = new THREE.LineBasicMaterial({ color: 0x1a6cb5, depthTest: false, transparent: true, opacity: 0.95 });
+    var setaMat = new THREE.MeshBasicMaterial({ color: 0x1f6fd1, depthTest: false, transparent: true, opacity: 0.95 });
+    var setaMatHover = new THREE.MeshBasicMaterial({ color: 0xf59e0b, depthTest: false, transparent: true, opacity: 1 });
+    var linhas = new THREE.LineSegments(new THREE.BufferGeometry(), linMat); linhas.renderOrder = 999; cx.cena.add(linhas);
+    var FACES = [['x', -1], ['x', 1], ['y', -1], ['y', 1], ['z', -1], ['z', 1]];
+    var coneGeo = new THREE.ConeGeometry(0.35, 1, 14);
+    FACES.forEach(function (f, k) {
+      var g = new THREE.Group(), cone = new THREE.Mesh(coneGeo, setaMat), cone2 = new THREE.Mesh(coneGeo, setaMat);
+      cone.position.y = 0.55; cone2.position.y = -0.55; cone2.rotation.z = Math.PI;
+      g.add(cone); g.add(cone2); g.userData.face = k; cone.userData.face = k; cone2.userData.face = k;
+      /* o grupo aponta o eixo Y local para a normal da face */
+      var n = _V3(f[0] === 'x' ? f[1] : 0, f[0] === 'y' ? f[1] : 0, f[0] === 'z' ? f[1] : 0);
+      g.quaternion.setFromUnitVectors(_V3(0, 1, 0), n);
+      cx.cena.add(g); cx.setas.push(g);
+    });
+    function atualizar() {
+      var b = cx.box, mn = b.min, mx = b.max;
+      cx.planos[0].set(_V3(1, 0, 0), -mn.x); cx.planos[1].set(_V3(-1, 0, 0), mx.x);
+      cx.planos[2].set(_V3(0, 1, 0), -mn.y); cx.planos[3].set(_V3(0, -1, 0), mx.y);
+      cx.planos[4].set(_V3(0, 0, 1), -mn.z); cx.planos[5].set(_V3(0, 0, -1), mx.z);
+      var c = [[mn.x, mn.y, mn.z], [mx.x, mn.y, mn.z], [mx.x, mx.y, mn.z], [mn.x, mx.y, mn.z], [mn.x, mn.y, mx.z], [mx.x, mn.y, mx.z], [mx.x, mx.y, mx.z], [mn.x, mx.y, mx.z]];
+      var ar = [0, 1, 1, 2, 2, 3, 3, 0, 4, 5, 5, 6, 6, 7, 7, 4, 0, 4, 1, 5, 2, 6, 3, 7], pos = [];
+      ar.forEach(function (ix) { pos.push(c[ix][0], c[ix][1], c[ix][2]); });
+      linhas.geometry.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); linhas.geometry.computeBoundingSphere();
+      var ctr = b.getCenter(new THREE.Vector3());
+      FACES.forEach(function (f, k) {
+        var p = ctr.clone(); p[f[0]] = f[1] < 0 ? mn[f[0]] : mx[f[0]];
+        cx.setas[k].position.copy(p);
+      });
+    }
+    cx.ligar = function (on, box) {
+      cx.on = !!on;
+      var rr = ctx.renderer();
+      if (cx.on) {
+        var b = box || new THREE.Box3().setFromObject(modelRoot);
+        if (b.isEmpty()) { cx.on = false; return false; }
+        var sz = b.getSize(new THREE.Vector3()), fol = Math.max(0.05, sz.length() * 0.01);
+        cx.box.copy(b).expandByScalar(fol);
+        atualizar();
+        rr.clippingPlanes = cx.planos.slice(); rr.localClippingEnabled = false;
+      } else {
+        if (rr.clippingPlanes && rr.clippingPlanes.length === 6 && rr.clippingPlanes[0] === cx.planos[0]) rr.clippingPlanes = [];
+      }
+      return cx.on;
+    };
+    /* as setas ficam do mesmo tamanho na tela, perto ou longe */
+    cx.desenhar = function (rr, cam) {
+      if (!cx.on) return;
+      var ctr = cx.box.getCenter(new THREE.Vector3());
+      var esc = Math.max(0.05, cam.position.distanceTo(ctr) * Math.tan((cam.fov || 60) * Math.PI / 360) * 0.045);
+      cx.setas.forEach(function (g) { g.scale.setScalar(esc); });
+      var ac = rr.autoClear, cp = rr.clippingPlanes;
+      rr.autoClear = false; rr.clippingPlanes = [];
+      try { rr.render(cx.cena, cam); } catch (_) {}
+      rr.clippingPlanes = cp; rr.autoClear = ac;
+    };
+    /* ⚠ PEGA A SETA ANTES DA ÓRBITA: o ouvinte é de CAPTURA no canvas, e no
+       alvo a captura roda antes do ouvinte comum do OrbitControls — o
+       `stopImmediatePropagation` impede a vista de girar enquanto se puxa a
+       face. Soltou, a órbita volta. */
+    var ray = new THREE.Raycaster(), ms = new THREE.Vector2(), arr = null, hover = null;
+    function setaSob(e) {
+      if (!cx.on) return null;
+      var cv = ctx.canvas(), r = cv.getBoundingClientRect();
+      ms.x = ((e.clientX - r.left) / r.width) * 2 - 1; ms.y = -((e.clientY - r.top) / r.height) * 2 + 1;
+      ray.setFromCamera(ms, ctx.cam());
+      var h = ray.intersectObjects(cx.setas, true);
+      return h.length ? h[0].object.userData.face : null;
+    }
+    function pintarHover(f) { if (hover === f) return; hover = f; cx.setas.forEach(function (g, k) { g.children.forEach(function (c) { c.material = k === f ? setaMatHover : setaMat; }); }); ctx.canvas().style.cursor = f == null ? '' : 'move'; }
+    cx.onDown = function (e) {
+      if (!cx.on || e.button !== 0) return;
+      var f = setaSob(e); if (f == null) return;
+      e.stopImmediatePropagation(); e.preventDefault();
+      var eixo = FACES[f][0], lado = FACES[f][1], cam = ctx.cam();
+      var ctr = cx.box.getCenter(new THREE.Vector3()); ctr[eixo] = lado < 0 ? cx.box.min[eixo] : cx.box.max[eixo];
+      var um = _V3(0, 0, 0); um[eixo] = 1;
+      var cv = ctx.canvas(), r = cv.getBoundingClientRect();
+      var a = ctr.clone().project(cam), b = ctr.clone().add(um).project(cam);
+      var px = { x: (b.x - a.x) * r.width / 2, y: -(b.y - a.y) * r.height / 2 };
+      var l2 = px.x * px.x + px.y * px.y;
+      arr = { f: f, eixo: eixo, lado: lado, x0: e.clientX, y0: e.clientY, v0: lado < 0 ? cx.box.min[eixo] : cx.box.max[eixo], px: px, l2: Math.max(l2, 1e-6) };
+      var orb = ctx.orbit(); if (orb) orb.enabled = false;
+      try { cv.setPointerCapture(e.pointerId); } catch (_) {}
+    };
+    cx.onMove = function (e) {
+      if (!cx.on) return;
+      if (!arr) { pintarHover(setaSob(e)); return; }
+      e.stopImmediatePropagation();
+      var dx = e.clientX - arr.x0, dy = e.clientY - arr.y0;
+      var dm = (dx * arr.px.x + dy * arr.px.y) / arr.l2;
+      var v = arr.v0 + dm, lim = 0.02;
+      if (arr.lado < 0) cx.box.min[arr.eixo] = Math.min(v, cx.box.max[arr.eixo] - lim);
+      else cx.box.max[arr.eixo] = Math.max(v, cx.box.min[arr.eixo] + lim);
+      atualizar();
+    };
+    cx.onUp = function (e) {
+      if (!arr) return;
+      arr = null; e.stopImmediatePropagation();
+      var orb = ctx.orbit(); if (orb) orb.enabled = ctx.orbitLivre ? ctx.orbitLivre() : true;
+      try { ctx.canvas().releasePointerCapture(e.pointerId); } catch (_) {}
+    };
+    cx.ligarEventos = function (cv) {
+      cv.addEventListener('pointerdown', cx.onDown, true);
+      cv.addEventListener('pointermove', cx.onMove, true);
+      cv.addEventListener('pointerup', cx.onUp, true);
+    };
+    cx.estado = function () { return { on: cx.on, min: cx.box.min.toArray(), max: cx.box.max.toArray() }; };
+    return cx;
+  }
+
+  /* ---------- a vista PRINCIPAL ganha ViewCube, ortogonal e caixa de corte ---------- */
+  var ortoMain = { on: false, fovPersp: 60, raio: 0 };
+  var inicioChave = function () { return 'orcapro:bim:inicio:' + (OBRA_ID || '-'); };
+  function irInicio(cam, orb, voar) {
+    var sv = null; try { sv = JSON.parse(localStorage.getItem(inicioChave()) || 'null'); } catch (_) {}
+    if (sv && sv.p && sv.t) { voar(_V3(sv.p[0], sv.p[1], sv.p[2]), _V3(sv.t[0], sv.t[1], sv.t[2])); return; }
+    var b = new THREE.Box3().setFromObject(modelRoot);
+    if (b.isEmpty()) return;
+    var c = b.getCenter(new THREE.Vector3()), raio = Math.max(b.getSize(new THREE.Vector3()).length() / 2, 0.5);
+    var dist = raio / Math.tan((cam.fov * Math.PI / 180) / 2) * 1.15;
+    voar(c.clone().add(_V3(1, 0.85, 1).normalize().multiplyScalar(dist)), c);
+  }
+  function menuDaVista(a, cam, orb, voar, estOrto) {
+    if (a === 'inicio') irInicio(cam, orb, voar);
+    else if (a === 'enquadrar') { if (cam === camera) S._fit(); else irInicio(cam, orb, voar); }
+    else if (a === 'persp' || a === 'orto') { aplicarOrto(cam, orb, a === 'orto', estOrto); if (S.opts && S.opts.onOrto) try { S.opts.onOrto(estOrto.on); } catch (_) {} }
+    else if (a === 'definir-inicio') { try { localStorage.setItem(inicioChave(), JSON.stringify({ p: cam.position.toArray(), t: orb.target.toArray() })); } catch (_) {} if (S._hint) S._hint('Vista atual definida como o início desta obra.'); }
+    else if (a === 'reinicio') { try { localStorage.removeItem(inicioChave()); } catch (_) {} irInicio(cam, orb, voar); }
+    else if (a === 'salvar') { var o = (S && S.opts) || opts; if (o && o.onSalvarVista) o.onSalvarVista(); }
+  }
+  var vcMain = criarViewCube(host, {
+    cam: function () { return camera; }, orbit: function () { return orbit; },
+    voar: function (p, t) { voarCam(p, t, 0.55); }, orto: function () { return ortoMain.on; },
+    home: function () { irInicio(camera, orbit, function (p, t) { voarCam(p, t, 0.6); }); },
+    menu: function (a) { menuDaVista(a, camera, orbit, function (p, t) { voarCam(p, t, 0.6); }, ortoMain); }
+  });
+  S.vcubeEl = vcMain.el;
+  if (visitante) vcMain.el.style.display = 'none';
+  S._tickPos.push(function () { vcMain.atualizar(); ajustarPlanosOrto(camera, orbit, ortoMain); });
+
+  var cxMain = criarCaixaCorte({ renderer: function () { return renderer; }, cam: function () { return camera; }, orbit: function () { return orbit; }, canvas: function () { return renderer.domElement; }, orbitLivre: function () { return !fly.on; } });
+  cxMain.ligarEventos(renderer.domElement);
+  S._cxMain = cxMain;
+  /* a caixa disputa o clippingPlanes com a planta e o corte livre: uma de cada vez */
+  S._cxDesligar = function () { if (cxMain.on) { cxMain.ligar(false); if (S.opts && S.opts.onCaixaCorte) try { S.opts.onCaixaCorte(false); } catch (_) {} } };
+  function caixaCorteMain(on) {
+    if (on) { if (planta.on) setPlanta(false); if (corteL.on) setCorteL(false); }
+    var r = cxMain.ligar(on);
+    if (S.opts && S.opts.onCaixaCorte) try { S.opts.onCaixaCorte(r); } catch (_) {}
+    return r;
+  }
+  S._caixaCorte = caixaCorteMain;
+  S._ortoMain = function (on) { aplicarOrto(camera, orbit, on, ortoMain); return ortoMain.on; };
+  S._ortoEstado = function () { return ortoMain.on; };
+  S._camPlanos = function () { return { near: camera.near, far: camera.far, fov: camera.fov }; };
+  S._irInicio = function () { irInicio(camera, orbit, function (p, t) { voarCam(p, t, 0.6); }); };
+
+  /* ---------- VISTAS EXTRAS: outra câmera sobre a mesma cena ----------
+   * Cada vista tem o SEU renderer (o seu canvas), câmera, órbita, ViewCube e
+   * caixa de corte. A cena, os materiais e a seleção são os mesmos: clicou
+   * numa, a peça fica verde em todas. O ambiente (reflexos) é refeito por
+   * renderer — a textura do principal não vale num contexto WebGL de outro. */
+  function envPara(rr) {
+    try {
+      var pm = new THREE.PMREMGenerator(rr), sc = new THREE.Scene();
+      sc.add(new THREE.Mesh(new THREE.BoxGeometry(24, 18, 24), new THREE.MeshStandardMaterial({ side: THREE.BackSide, roughness: 1, metalness: 0, color: 0x9fb0c4 })));
+      var luz = function (cor, w, h, d, x, y, z, g) { var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshBasicMaterial()); m.material.color.setHex(cor).multiplyScalar(g); m.position.set(x, y, z); return m; };
+      sc.add(luz(0xffffff, 16, 1, 16, 0, 8.5, 0, 3.0)); sc.add(luz(0xdfeaf7, 1, 10, 12, -11.5, 2, -3, 1.6)); sc.add(luz(0xfff0dc, 1, 10, 12, 11.5, 2, 4, 1.3)); sc.add(luz(0xc4d0dd, 16, 1, 16, 0, -8.5, 0, 0.6));
+      var rt = pm.fromScene(sc, 0.04);
+      sc.traverse(function (o) { if (o.material && o.material.dispose) o.material.dispose(); if (o.geometry && o.geometry.dispose) o.geometry.dispose(); });
+      pm.dispose();
+      return rt.texture;
+    } catch (e) { return null; }
+  }
+  S.vistas = {}; var _vSeq = 0;
+  function montarVista(v, cont) {
+    var rr = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    rr.setPixelRatio(Math.min((cont.ownerDocument.defaultView || window).devicePixelRatio || 1, 2));
+    try { rr.outputColorSpace = THREE.SRGBColorSpace; } catch (_) {}
+    rr.toneMapping = renderer.toneMapping; rr.toneMappingExposure = renderer.toneMappingExposure;
+    rr.domElement.style.cssText = 'display:block;width:100%;height:100%;outline:none';
+    cont.style.position = cont.style.position || 'relative';
+    cont.appendChild(rr.domElement);
+    var orb = new OrbitControls(v.camera, rr.domElement); orb.enableDamping = true; orb.dampingFactor = .08; orb.target.copy(v.alvo);
+    v.renderer = rr; v.orbit = orb; v.cont = cont; v.env = envPara(rr);
+    var cxAnt = v.cx && v.cx.on ? v.cx.box.clone() : null;
+    v.cx = criarCaixaCorte({ renderer: function () { return v.renderer; }, cam: function () { return v.camera; }, orbit: function () { return v.orbit; }, canvas: function () { return v.renderer.domElement; } });
+    v.cx.ligarEventos(rr.domElement);
+    if (cxAnt) { v.cx.ligar(true, cxAnt); v.cx.box.copy(cxAnt); }
+    v.cubo = criarViewCube(cont, {
+      cam: function () { return v.camera; }, orbit: function () { return v.orbit; },
+      voar: function (p, t) { v.tween = { p0: v.camera.position.clone(), p1: p, t0: v.orbit.target.clone(), t1: t, e: 0, dur: 0.55 }; },
+      orto: function () { return v.orto.on; },
+      home: function () { irInicio(v.camera, v.orbit, function (p, t) { v.tween = { p0: v.camera.position.clone(), p1: p, t0: v.orbit.target.clone(), t1: t, e: 0, dur: 0.6 }; }); },
+      menu: function (a) { menuDaVista(a, v.camera, v.orbit, function (p, t) { v.tween = { p0: v.camera.position.clone(), p1: p, t0: v.orbit.target.clone(), t1: t, e: 0, dur: 0.6 }; }, v.orto); }
+    });
+    /* duplo clique seleciona NESTA vista — e a seleção aparece em todas */
+    rr.domElement.addEventListener('dblclick', function (e) { selecionarNaVista(v, e.clientX, e.clientY); });
+    redimVista(v);
+  }
+  function desmontarVista(v) {
+    try { if (v.cubo) v.cubo.remover(); } catch (_) {}
+    try { if (v.orbit) v.orbit.dispose(); } catch (_) {}
+    try { if (v.env) v.env.dispose(); } catch (_) {}
+    try { if (v.renderer) { var el = v.renderer.domElement; v.renderer.dispose(); if (v.renderer.forceContextLoss) v.renderer.forceContextLoss(); if (el.parentNode) el.parentNode.removeChild(el); } } catch (_) {}
+    v.renderer = null; v.orbit = null; v.cubo = null;
+  }
+  function redimVista(v) {
+    if (!v || !v.renderer || !v.cont) return;
+    var w = v.cont.clientWidth, h = v.cont.clientHeight;
+    if (w && h) { v.renderer.setSize(w, h, false); v.camera.aspect = w / h; v.camera.updateProjectionMatrix(); }
+  }
+  function selecionarNaVista(v, cx0, cy0) {
+    if (S._limparRaioX) S._limparRaioX();
+    var cv = v.renderer.domElement, r = cv.getBoundingClientRect(), rr = new THREE.Raycaster(), m = new THREE.Vector2();
+    m.x = ((cx0 - r.left) / r.width) * 2 - 1; m.y = -((cy0 - r.top) / r.height) * 2 + 1;
+    /* ⚠ A MESMA CAMADA DO RAIO DA PRINCIPAL: com a malha mesclada (AGREG) a
+       tela desenha a malha única e as PEÇAS clicáveis moram na camada 1 — um
+       raio na camada 0 atravessava o modelo sem achar nada (medido: 0 acertos
+       no centro da vista 2 com o modelo inteiro na frente) */
+    rr.layers.mask = ray.layers.mask;
+    rr.setFromCamera(m, v.camera);
+    var hits = rr.intersectObjects(modelRoot.children, true), hit = null, pls = v.renderer.clippingPlanes || [];
+    for (var i = 0; i < hits.length && !hit; i++) {
+      if (!cadeiaVisivel(hits[i].object)) continue;
+      var fora = false; for (var k = 0; k < pls.length; k++) if (pls[k].distanceToPoint(hits[i].point) < -1e-6) fora = true;
+      if (!fora) hit = hits[i];
+    }
+    if (S.selected) { S.selected.material = S.prevMat; S.selected = null; }
+    var o = (S && S.opts) || opts;
+    if (hit && hit.object.userData && hit.object.userData.expressID != null) {
+      S.selected = hit.object; S.prevMat = S.selected.material; S.selected.material = selMat;
+      contornoSelecao(hit.object);
+      if (o.onPick) o.onPick(propsDe(hit.object.userData.mid != null ? hit.object.userData.mid : S.modelID, hit.object.userData.expressID, hit.object.userData.tipo));
+    } else { contornoSelecao(null); if (o.onPick) o.onPick(null); }
+  }
+  function novaVista(cont, nome) {
+    var id = 'v' + (++_vSeq);
+    var v = { id: id, nome: nome || ('{3D} ' + (_vSeq + 1)), camera: camera.clone(), alvo: orbit.target.clone(), orto: { on: ortoMain.on, fovPersp: ortoMain.fovPersp }, visivel: true };
+    S.vistas[id] = v;
+    montarVista(v, cont);
+    return id;
+  }
+  function renderVistas(dt) {
+    var ks = Object.keys(S.vistas);
+    for (var i = 0; i < ks.length; i++) {
+      var v = S.vistas[ks[i]];
+      if (!v.renderer || !v.visivel || !v.cont || !v.cont.isConnected) continue;
+      if (v.tween) {
+        v.tween.e += dt; var kk = Math.min(1, v.tween.e / v.tween.dur), s = kk < 0.5 ? 2 * kk * kk : 1 - Math.pow(-2 * kk + 2, 2) / 2;
+        v.camera.position.lerpVectors(v.tween.p0, v.tween.p1, s); v.orbit.target.lerpVectors(v.tween.t0, v.tween.t1, s);
+        if (kk >= 1) v.tween = null;
+      }
+      v.orbit.update();
+      ajustarPlanosOrto(v.camera, v.orbit, v.orto);
+      var envP = scene.environment; scene.environment = v.env;
+      try { v.renderer.render(scene, v.camera); v.cx.desenhar(v.renderer, v.camera); } catch (_) {}
+      scene.environment = envP;
+      v.cubo.atualizar();
+    }
+  }
+  S._renderVistas = renderVistas;
+  S._novaVista = novaVista;
+  S._fecharVista = function (id) { var v = S.vistas[id]; if (!v) return false; desmontarVista(v); delete S.vistas[id]; return true; };
+  /* leva a vista para outro lugar (outra janela, outra casa depois de re-render):
+     o renderer é refeito no container novo — nada de adotar canvas WebGL
+     entre documentos; câmera, alvo, ortogonal e caixa de corte vão junto */
+  S._moverVista = function (id, cont) {
+    var v = S.vistas[id]; if (!v || !cont) return false;
+    v.alvo = v.orbit ? v.orbit.target.clone() : v.alvo;
+    desmontarVista(v);
+    montarVista(v, cont);
+    return true;
+  };
+  S._redimVistas = function () { Object.keys(S.vistas).forEach(function (k) { redimVista(S.vistas[k]); }); };
+  /* sonda para as e2e: quantas peças o raio da vista acerta num ponto da tela */
+  S._raioVista = function (id, x, y) {
+    var v = S.vistas[id]; if (!v || !v.renderer) return null;
+    var cv = v.renderer.domElement, r = cv.getBoundingClientRect(), rc = new THREE.Raycaster(), m = new THREE.Vector2();
+    m.x = ((x - r.left) / r.width) * 2 - 1; m.y = -((y - r.top) / r.height) * 2 + 1;
+    v.camera.updateMatrixWorld();
+    rc.layers.mask = ray.layers.mask;
+    rc.setFromCamera(m, v.camera);
+    var h = rc.intersectObjects(modelRoot.children, true);
+    return { n: h.length, r: [r.left, r.top, r.width, r.height], cam: v.camera.position.toArray(), m: [m.x, m.y], fov: v.camera.fov, asp: v.camera.aspect };
+  };
+  S._ortoVista = function (id, on) { var v = S.vistas[id]; if (!v || !v.orbit) return false; aplicarOrto(v.camera, v.orbit, !!on, v.orto); return v.orto.on; };
+
 
   /* =================================================================
    * VER A PEÇA NO MODELO — a desambiguação que o modelo já tem.
@@ -2660,6 +3146,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var bp = bar.querySelector('[data-b="planta"]');
     if (on) {
       if (corteL.on) setCorteL(false); // planta e corte livre disputam o MESMO clippingPlanes
+      if (S._cxDesligar) S._cxDesligar(); // …e a caixa de corte também
       setMode(false); // trena PODE ficar ligada (medir na planta é o uso pedido)
       var box = new THREE.Box3().setFromObject(modelRoot);
       if (box.isEmpty()) { planta.on = false; S._hint('Carregue um modelo primeiro.'); return; }
@@ -2765,6 +3252,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var bc = bar.querySelector('[data-b="corte"]');
     if (on) {
       if (planta.on) setPlanta(false); // disputam o clippingPlanes
+      if (S._cxDesligar) S._cxDesligar();
       setMode(false); // órbita LIVRE (trena pode ficar)
       var box = new THREE.Box3().setFromObject(modelRoot);
       if (box.isEmpty()) { corteL.on = false; S._hint('Carregue um modelo primeiro.'); return; }
@@ -9885,6 +10373,35 @@ window.BIM = {
     b.click();
     return true;
   },
+  /* ---- ambiente tipo Revit (ViewCube, ortogonal, caixa de corte, vistas) ---- */
+  caixaCorte: function (on) { return (S && S._caixaCorte) ? S._caixaCorte(!!on) : false; },
+  caixaCorteAtiva: function () { return !!(S && S._cxMain && S._cxMain.on); },
+  caixaCorteEstado: function () { return (S && S._cxMain) ? S._cxMain.estado() : null; },
+  /* onde está, na tela, a seta da face k (0..5 = x−, x+, y−, y+, z−, z+) — usado pelas e2e para puxar a face */
+  caixaCorteSetaNaTela: function (k) {
+    if (!S || !S._cxMain || !S._cxMain.on || !S._cxMain.setas[k]) return null;
+    var p = S._cxMain.setas[k].position.clone().project(S.camera), r = S.renderer.domElement.getBoundingClientRect();
+    return { x: r.left + (p.x + 1) / 2 * r.width, y: r.top + (1 - p.y) / 2 * r.height };
+  },
+  ortogonal: function (on) { return (S && S._ortoMain) ? S._ortoMain(!!on) : false; },
+  ortogonalAtivo: function () { return !!(S && S._ortoEstado && S._ortoEstado()); },
+  /* só leitura (near/far/fov da câmera principal) — fora do cameraAtual de
+     propósito: aquele é o que o ponto de vista GRAVA */
+  camPlanos: function () { return (S && S._camPlanos) ? S._camPlanos() : null; },
+  irParaInicio: function () { if (S && S._irInicio) { S._irInicio(); return true; } return false; },
+  principalOculta: function (on) { if (S) { S._principalOculta = !!on; if (!on && S._resize) S._resize(); } },
+  vistaNova: function (cont, nome) { return (S && S._novaVista && cont) ? S._novaVista(cont, nome) : null; },
+  vistaFechar: function (id) { return !!(S && S._fecharVista && S._fecharVista(id)); },
+  vistaMover: function (id, cont) { return !!(S && S._moverVista && S._moverVista(id, cont)); },
+  vistaVisivel: function (id, on) { var v = S && S.vistas && S.vistas[id]; if (v) v.visivel = !!on; return !!v; },
+  vistasRedimensionar: function () { if (S && S._redimVistas) S._redimVistas(); if (S && S._resize) S._resize(); },
+  vistaCaixaCorte: function (id, on) { var v = S && S.vistas && S.vistas[id]; return v && v.cx ? v.cx.ligar(!!on) : false; },
+  vistaRaio: function (id, x, y) { return S && S._raioVista ? S._raioVista(id, x, y) : null; },
+  vistaOrtogonal: function (id, on) { return !!(S && S._ortoVista && S._ortoVista(id, on)); },
+  vistaOrtoAtivo: function (id) { var v = S && S.vistas && S.vistas[id]; return !!(v && v.orto && v.orto.on); },
+  vistaCaixaAtiva: function (id) { var v = S && S.vistas && S.vistas[id]; return !!(v && v.cx && v.cx.on); },
+  vistasAbertas: function () { return S && S.vistas ? Object.keys(S.vistas).map(function (k) { var v = S.vistas[k]; return { id: v.id, nome: v.nome, caixa: !!(v.cx && v.cx.on), orto: !!(v.orto && v.orto.on) }; }) : []; },
+  vistaCamera: function (id) { var v = S && S.vistas && S.vistas[id]; return v ? { pos: v.camera.position.toArray(), alvo: v.orbit ? v.orbit.target.toArray() : v.alvo.toArray() } : null; },
   temBotao: function (k) { return !!(S && S.bar && S.bar.querySelector('[data-b="' + String(k).replace(/"/g, '') + '"]')); },
   ultraAtivo: function () { return !!(S && S.ultra); },
   setUltra: function (v) { if (S && S._setUltra) S._setUltra(v); },

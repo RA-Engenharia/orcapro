@@ -221,7 +221,7 @@
 
 /* coluna esquerda: Propriedades em cima, Navegador embaixo */
 .rv-lateral {
-  width: 268px; flex: 0 0 268px;
+  width: var(--rv-lat-w, 268px); flex: 0 0 var(--rv-lat-w, 268px);
   display: flex; flex-direction: column;
   background: var(--rv-painel-bg); color: var(--rv-painel-tx);
   border-right: 1px solid var(--rv-linha-forte);
@@ -230,8 +230,8 @@
 .rv-doca { display: flex; flex-direction: column; min-height: 0; }
 /* Propriedades é o painel de trabalho — leva a maior fatia. O Navegador
    guarda um piso para nunca virar uma fresta. */
-.rv-doca.rv-props { flex: 1 1 62%; }
-.rv-doca.rv-nav { flex: 1 1 38%; min-height: 150px; border-top: 1px solid var(--rv-linha-forte); }
+.rv-doca.rv-props { flex: 0 0 var(--rv-props-h, 62%); }
+.rv-doca.rv-nav { flex: 1 1 auto; min-height: 90px; }
 .rv-doca-cab {
   display: flex; align-items: center; gap: 6px;
   padding: 5px 8px; font-size: 12px; font-weight: 600;
@@ -593,3 +593,117 @@
   padding: 10px 14px; border-bottom: 2px solid var(--linha, #d4d4d4); background: var(--surface, #fff);
 }
 .bim-pop-corpo { flex: 1; padding: 12px 14px; }
+
+/* =====================================================================
+ * AMBIENTE TIPO REVIT (30/09/2026) — pedido do Rogério, com as capturas do
+ * Revit 2027 como referência: o BIM abre como um programa (tela inteira),
+ * Propriedades e Navegador recolhem numa aba com a seta e têm largura de
+ * arrastar, as ferramentas abrem numa janela À DIREITA (ao lado do 3D, não
+ * por cima), e as vistas abrem em abas, lado a lado ou em outra janela.
+ * ===================================================================== */
+
+/* ⚠ MODO PROGRAMA: some o menu e o topo do OrçaPRO, a janela do BIM ocupa a
+   tela inteira. Só no computador — no celular o BIM já tem o seu modo. A
+   volta é o botão "OrçaPRO" no canto da barra de título. */
+@media (min-width: 641px) {
+  body.bim-app { overflow: hidden; }
+  body.bim-app .sidebar, body.bim-app .topbar { display: none !important; }
+  body.bim-app .bim-revit:not([data-rv-cheia="1"]) {
+    position: fixed; inset: 0; height: auto !important; z-index: 40;
+    border: 0; border-radius: 0;
+  }
+}
+
+/* barra de título: volta ao OrçaPRO e a obra */
+.rv-sair {
+  display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px 0 6px; margin-right: 4px;
+  border: 1px solid rgba(255,255,255,.22); border-radius: 3px; background: rgba(255,255,255,.06);
+  color: var(--rv-titulo-tx); font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer;
+}
+.rv-sair:hover { background: rgba(255,255,255,.16); }
+.rv-sair svg { width: 13px; height: 13px; }
+.rv-titulo-nome { display: flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; }
+/* ⚠ especificidade alta de propósito: o <select> global do app (altura 38px,
+   padding e fundo branco) cortava o nome da obra na barra de 30px */
+.bim-revit .rv-titulo select.rv-obra {
+  max-width: 340px; width: auto; height: 22px; min-height: 0; line-height: 18px; margin: 0;
+  padding: 1px 22px 1px 8px; font: inherit; font-size: 12px; font-weight: 600;
+  color: var(--rv-titulo-tx); background-color: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.2);
+  border-radius: 3px; box-shadow: none; cursor: pointer;
+}
+.bim-revit .rv-titulo select.rv-obra option { color: #1a1a1a; background: #fff; }
+/* ⚠ tablet: o app força 16px em todo campo no toque (senão o Safari amplia a
+   tela a cada toque — css/app.css, "hover: none and pointer: coarse"); com
+   22px de altura o nome da obra saía cortado embaixo na barra de título */
+@media (hover: none) and (pointer: coarse) {
+  .bim-revit .rv-titulo select.rv-obra { height: 26px; line-height: 22px; padding-top: 0; padding-bottom: 0; }
+}
+.rv-titulo-app { opacity: .75; white-space: nowrap; }
+
+/* o tamanho da interface (Vista → Tamanho da interface): letras e botões, nunca o 3D */
+.bim-revit .rv-titulo, .bim-revit .rv-abas, .bim-revit .rv-fita, .bim-revit .rv-lateral, .bim-revit .rv-lat-aba,
+.bim-revit .rv-docs, .bim-revit .rv-vistabar, .bim-revit .rv-status, .bim-revit .rv-direita { zoom: var(--rv-ui, 1); }
+
+/* lateral: seta de recolher, divisória Propriedades/Navegador, alça de largura, aba de volta */
+.rv-doca-cab .rv-recolher { margin-left: auto; font-size: 10px; }
+.rv-split-h { flex: 0 0 5px; cursor: row-resize; background: var(--rv-linha); border-top: 1px solid var(--rv-linha-forte); }
+.rv-split-h:hover, .rv-alca:hover { background: var(--rv-ativo-borda); }
+.rv-alca { flex: 0 0 5px; width: 5px; cursor: col-resize; background: var(--rv-linha); z-index: 3; }
+.bim-revit[data-rv-lateral-off="1"] .rv-alca-lat { display: none; }
+.rv-lat-aba {
+  display: none; flex: 0 0 22px; width: 22px; padding: 8px 0; margin: 0;
+  flex-direction: column; align-items: center; gap: 8px;
+  background: var(--rv-painel-cab); color: var(--rv-painel-tx);
+  border: 0; border-right: 1px solid var(--rv-linha-forte); cursor: pointer; font: inherit;
+}
+.rv-lat-aba:hover { background: var(--rv-hover); }
+.rv-lat-aba-seta { font-size: 10px; }
+.rv-lat-aba-rot { writing-mode: vertical-rl; font-size: 11.5px; font-weight: 600; letter-spacing: .3px; }
+.bim-revit[data-rv-lateral-off="1"] .rv-lat-aba { display: flex; }
+@media (max-width: 900px) { .rv-lat-aba, .rv-alca-lat { display: none !important; } }
+
+/* a janela da direita (as ferramentas abertas pela fita), ao lado do 3D */
+.rv-direita { display: none; flex: 0 0 var(--rv-dir-w, 440px); width: var(--rv-dir-w, 440px); min-width: 0; flex-direction: column; background: var(--surface, #fff); }
+.rv-alca-dir { display: none; }
+.bim-revit[data-rv-direita="1"] .rv-direita { display: flex; }
+.bim-revit[data-rv-direita="1"] .rv-alca-dir { display: block; }
+.rv-direita > #bim-drawer { position: relative !important; inset: auto !important; width: auto !important; flex: 1; min-height: 0; box-shadow: none !important; border-left: 1px solid var(--rv-linha-forte) !important; }
+.bim-revit.b4-largo-on[data-rv-direita="1"] .rv-direita { flex-basis: 72%; width: 72%; }
+/* arrastando uma alça: o 3D não rouba o ponteiro */
+.bim-revit[data-rv-arrastando="1"] .rv-palco, .bim-revit[data-rv-arrastando="1"] .rv-direita { pointer-events: none; }
+.bim-revit[data-rv-arrastando="1"] { cursor: col-resize; user-select: none; }
+
+/* abas de vista: botões à direita e o menu do botão direito */
+.rv-docs { align-items: flex-end; }
+.rv-docs-dir { margin-left: auto; display: flex; align-items: center; gap: 4px; padding: 0 4px 3px; }
+.rv-docs-bt {
+  display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px;
+  border: 1px solid var(--rv-linha-forte); border-radius: 3px; background: var(--rv-fita-bg); color: var(--rv-fita-tx);
+  font: inherit; font-size: 11px; cursor: pointer;
+}
+.rv-docs-bt:hover { background: var(--rv-hover); }
+.rv-docs-bt[aria-pressed="true"] { background: var(--rv-ativo); border-color: var(--rv-ativo-borda); }
+.rv-docs-bt svg { width: 12px; height: 12px; }
+.rv-doc[data-rv-fora="1"] { font-style: italic; opacity: .8; }
+.rv-menu-doc {
+  position: fixed; z-index: 80; min-width: 220px; background: #fff; color: #1a1a1a;
+  border: 1px solid #b4b4b4; box-shadow: 0 6px 18px rgba(0,0,0,.22); padding: 4px 0;
+  font: 12px "Segoe UI", system-ui, sans-serif;
+}
+.rv-menu-doc div { padding: 5px 14px; cursor: pointer; white-space: nowrap; }
+.rv-menu-doc div:hover { background: #d8e6f2; }
+
+/* as vistas no palco: uma por vez (abas) ou em grade (lado a lado) */
+.bim-grade { position: absolute; inset: 0; display: grid; gap: 3px; background: var(--rv-linha-forte); }
+.bim-grade > .bim-tela { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: var(--rv-tela); }
+.bim-grade[data-modo="abas"] > .bim-tela:not([data-ativa="1"]) { display: none !important; }
+.bim-grade[data-modo="lado"] > .bim-tela[data-ativa="1"] { box-shadow: inset 0 0 0 2px #1a6cb5; }
+.bim-tela-rot {
+  display: none; position: absolute; left: 8px; bottom: 6px; z-index: 6; pointer-events: none;
+  font-size: 11px; font-weight: 600; color: #1a1a1a; background: rgba(255,255,255,.82); padding: 1px 7px; border-radius: 3px;
+}
+.bim-grade[data-modo="lado"] .bim-tela-rot { display: block; }
+.bim-tela-fora {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 8px;
+  color: var(--rv-tx-fraco); font-size: 12.5px; z-index: 5; background: var(--rv-tela-2);
+}

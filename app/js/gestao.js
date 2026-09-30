@@ -10004,24 +10004,46 @@
       try { obra = Store.obter(eid(), "obras", this._bimSel); } catch (e) {}
 
       var pill = document.getElementById("bim-drawer-pill");
+      var obrasTit = [];
+      try { obrasTit = (lista("obras") || []).map(function (o) { return { id: o.id, nome: (o.nome || "Obra") + (o.orcamentoId ? "" : " (sem orçamento)") }; }); } catch (eO) {}
       BimShell.montar(card, {
         arquivo: (obra && obra.nome) || "",
         tema: BimShell.temaSalvo(),
         acoes: this._bimAcoesTitulo || [],
+        /* a obra na barra de título e a volta ao OrçaPRO: no modo programa
+           (tela inteira) o cabeçalho e o menu da página não aparecem */
+        obras: this._b4Janela3d ? null : obrasTit, obraSel: this._bimSel || "",
+        onSair: this._b4Janela3d ? null : function () {
+          var volta = (typeof App !== "undefined" && App._viewAntesBim && App._viewAntesBim !== "bim") ? App._viewAntesBim : "dashboard";
+          if (typeof App !== "undefined" && App._navegar) App._navegar(volta);
+        },
+        onDoc: function (id) { self._bimVxAtivar(id); },
+        propsVista: function () { return self._bimPropsVista(); },
+        onDocAcao: function (a, id) { self._bimVxAcao(a, id); },
+        onLayoutVivo: function () { try { if (typeof BIM !== "undefined" && BIM.vistasRedimensionar) BIM.vistasRedimensionar(); } catch (e) {} },
         onPalco: function (palco) {
-          /* o canvas do viewer e o que vive sobre ele mudam de casa */
-          palco.appendChild(canvas);
+          /* o canvas do viewer e o que vive sobre ele mudam de casa. O {3D}
+             principal vira a PRIMEIRA TELA da grade de vistas (abas ou lado a
+             lado); as vistas extras entram na mesma grade (_bimVx*) */
+          var grade = document.createElement("div");
+          grade.id = "bim-grade"; grade.className = "bim-grade"; grade.setAttribute("data-modo", "abas");
+          palco.appendChild(grade);
+          canvas.classList.add("bim-tela"); canvas.setAttribute("data-vista", "3d"); canvas.setAttribute("data-ativa", "1");
+          grade.appendChild(canvas);
+          canvas.addEventListener("pointerdown", function () { if (self._bimVxEst().ativa !== "3d") self._bimVxAtivar("3d"); }, true);
           if (info) palco.appendChild(info);
           if (hud4) palco.appendChild(hud4);
           if (st3d) palco.appendChild(st3d);
           if (foco3) palco.appendChild(foco3);
           if (tela3) palco.appendChild(tela3);
-          if (drawer) palco.appendChild(drawer);
+          /* a gaveta das ferramentas mora na JANELA DA DIREITA (ao lado do 3D) */
+          var doca = BimShell.docaDireita ? BimShell.docaDireita() : null;
+          if (drawer) (doca || palco).appendChild(drawer);
           if (pill) palco.appendChild(pill);
           canvas.style.height = "100%";
           canvas.style.background = "transparent";
         },
-        onNo: function (no) { if (no && no.acao) self._bimCascaAcao(no.acao, no); },
+        onNo: function (no) { if (no && typeof no.fn === "function") no.fn(); else if (no && no.acao) self._bimCascaAcao(no.acao, no); },
         onTrocarTipo: function (id) { self._alvTrocarTipo(id); },
         /* ⚠ ESCONDER A LATERAL OU ENTRAR NO FOCO MUDA A LARGURA DO PALCO, e o
          * canvas do WebGL não redimensiona sozinho — ele ficaria esticado, com
@@ -10039,6 +10061,15 @@
       });
       card.setAttribute("data-rv-montado", "1");
       card.style.padding = "0";
+      /* ⚠ A DOCA DA DIREITA SEGUE A GAVETA. Os painéis abrem e fecham mexendo
+         no `display` da gaveta em muitos lugares (_bimAbrirPainel, fechar,
+         minimizar, outra janela, 4D…); um observador só acompanha todos eles
+         sem precisar lembrar de cada um. */
+      if (drawer && window.MutationObserver && !drawer._docaObs) {
+        drawer._docaObs = new MutationObserver(function () { self._bimDocaSync(); });
+        drawer._docaObs.observe(drawer, { attributes: true, attributeFilter: ["style"] });
+      }
+      this._bimDocaSync();
       /* a janela do BIM vai até o pé da tela (sem a faixa vazia embaixo) e
          acompanha o tamanho da janela do navegador */
       this._bimAjustarAltura();
@@ -10052,6 +10083,8 @@
       this._bimCascaAcoes();
       this._bimCascaContexto();
       this._nivArvore();
+      /* re-render: as vistas extras ganham telas novas na grade nova */
+      this._bimVxRemontar();
       /* o tema da cena só pode ser aplicado DEPOIS que o viewer montar —
        * antes disso não existe host para pintar. Por isso o _bimTemaCena
        * espera o BIM aparecer em vez de chamar direto. */
@@ -10107,6 +10140,32 @@
       reg.familias = function () { self._bimAbrirPainel("familias"); return true; };
       /* o arquivo da obra (.zip) não pede modelo aberto: é ele que traz o modelo */
       reg["arquivo-obra"] = function () { self._bimPacoteEscolher(); return true; };
+      /* caixa de corte e ortogonal valem para a VISTA ATIVA (cada uma tem a sua) */
+      reg["caixa-corte"] = function (e) {
+        var b = B(), st = self._bimVxEst(); if (!b) return false;
+        var on = st.ativa === "3d" ? b.caixaCorte(!!e.ligado) : b.vistaCaixaCorte(st.ativa, !!e.ligado);
+        try { BimRibbon.setAtivo("caixa-corte", !!on); } catch (eR) {}
+        try { BimShell.repintarVista(); } catch (eV) {}
+        if (e.ligado && !on) UI.toast("Não deu para ligar a caixa de corte: abra um modelo primeiro.", "aviso");
+        else if (on) BimShell.status("Caixa de corte ligada — puxe as setas azuis de cada face.");
+        return true;
+      };
+      reg.ortogonal = function (e) {
+        var b = B(), st = self._bimVxEst(); if (!b) return false;
+        var on = st.ativa === "3d" ? b.ortogonal(!!e.ligado) : b.vistaOrtogonal(st.ativa, !!e.ligado);
+        try { BimRibbon.setAtivo("ortogonal", !!on); } catch (eR) {}
+        try { BimShell.repintarVista(); } catch (eV) {}
+        return true;
+      };
+      reg["nova-vista"] = function () { self._bimVxNova(); return true; };
+      reg["lado-a-lado"] = function (e) { self._bimVxEst().lado = !!e.ligado; self._bimVxLayout(); return true; };
+      reg["tamanho-ui"] = function () {
+        var seq = [1, 0.9, 0.8, 1.1], a = BimShell.escalaUi(), i = 0;
+        for (var k = 0; k < seq.length; k++) if (Math.abs(seq[k] - a) < 0.01) i = k;
+        var f = BimShell.escalaUi(seq[(i + 1) % seq.length]);
+        UI.toast("Tamanho da interface do BIM: " + Math.round(f * 100) + "% (o 3D não muda).", "ok");
+        return true;
+      };
 
       /* painéis de análise que moram na gaveta */
       [["modelos", "modelos"], ["quatro-d", "4d"], ["clash", "clash"], ["qto", "qto"], ["seis-d", "6d"]].forEach(function (p) {
@@ -10551,12 +10610,16 @@
     },
 
     /* Os níveis aparecem no Navegador de Projeto, como no Revit. */
+    /* O NAVEGADOR DE PROJETO, no molde do Revit: tudo o que a obra tem e faz
+       sentido abrir por aqui — vistas (3D, extras, pontos de vista por pasta,
+       plantas), folhas (pranchas), tabelas/quantidades, sondagens, projeto
+       estrutural, níveis, vínculos (modelos) e famílias. Nó com `fn` abre o
+       que ele é; nó com `acao` roda o comando da fita. Só existe nó onde
+       existe ação: clique no vazio é pior que nó nenhum. */
     _nivArvore: function () {
-      if (!window.BimShell || !window.Niveis) return;
-      var L = Niveis.listar(this._nivLer());
-      /* Só emite `acao` onde existe ação de verdade. Nó com acao que ninguém
-         trata é clique no vazio: nada acontece e nada é dito. Aqui os dois
-         abrem a tela de níveis, que é o que existe hoje. */
+      if (!window.BimShell) return;
+      var self = this, L = [];
+      try { L = window.Niveis ? Niveis.listar(this._nivLer()) : []; } catch (eN) { L = []; }
       var ramoNiveis = L.length
         ? L.slice().reverse().map(function (n) {
             return { id: "niv:" + n.id, rotulo: n.nome + " · " + (n.elevacao >= 0 ? "+" : "") + n.elevacao.toFixed(2),
@@ -10564,14 +10627,53 @@
           })
         : [{ id: "niv:vazio", rotulo: "Nenhum nível — clique para criar", icone: "niveis", acao: "niveis" }];
       var plantas = L.length
-        ? L.map(function (n) { return { id: "pl:" + n.id, rotulo: n.nome + " (em breve)", icone: "planta", nivelId: n.id }; })
-        : [];
+        ? L.map(function (n) { return { id: "pl:" + n.id, rotulo: n.nome, icone: "planta", acao: "planta", nivelId: n.id }; })
+        : [{ id: "pl:vazio", rotulo: "Planta baixa (corte do modelo)", icone: "planta", acao: "planta" }];
+      var st = this._bimVxEst();
+      var v3d = [{ id: "3d", rotulo: "{3D}", icone: "quadrado", fn: function () { self._bimVxAtivar("3d"); } }];
+      st.lista.forEach(function (v) {
+        v3d.push({ id: "vx:" + v.id, rotulo: v.nome + (v.janela ? " (outra janela)" : ""), icone: "quadrado",
+                   fn: function () { if (v.janela && !v.janela.closed) { try { v.janela.focus(); } catch (e) {} } else self._bimVxAtivar(v.id); } });
+      });
+      var pv = []; try { pv = this._bimVistaDaObra() || []; } catch (eV) {}
+      var pastas = {};
+      pv.forEach(function (v) { var p = v.pasta || "Sem pasta"; (pastas[p] = pastas[p] || []).push(v); });
+      var ramoPv = Object.keys(pastas).sort().map(function (p) {
+        return { id: "pvp:" + p, rotulo: p, icone: "pasta", n: pastas[p].length, aberto: false,
+                 filhos: pastas[p].map(function (v) { return { id: "pv:" + v.id, rotulo: v.nome, icone: "camera", fn: function () { self._bimVistaIr(v.id); } }; }) };
+      });
+      var pr = [], sd = [], es = [], mods = [];
+      try { pr = this._prRegs() || []; } catch (e1) {}
+      try { sd = this._sdRegs() || []; } catch (e2) {}
+      try { es = this._estRegs() || []; } catch (e3) {}
+      try { mods = ((window.BIM && BIM.modelos) || []).filter(function (m) { return m && !m.sintetico; }); } catch (e4) {}
       var arv = [
-        { id: "vistas", rotulo: "Vistas", icone: "planta", filhos: [
-          { id: "plantas", rotulo: "Plantas de piso", icone: "planta", filhos: plantas },
-          { id: "v3d", rotulo: "Vistas 3D", icone: "quadrado", filhos: [{ id: "3d", rotulo: "{3D}", icone: "quadrado", acao: "home" }] }
+        { id: "vistas", rotulo: "Vistas (todas)", icone: "planta", filhos: [
+          { id: "v3d", rotulo: "Vistas 3D", icone: "quadrado", filhos: v3d },
+          { id: "plantas", rotulo: "Plantas de piso", icone: "planta", aberto: false, filhos: plantas },
+          { id: "pvs", rotulo: "Pontos de vista", icone: "camera", n: pv.length, aberto: false,
+            filhos: ramoPv.length ? ramoPv : [{ id: "pv:vazio", rotulo: "Nenhum — salve uma vista ou abra o arquivo da obra", icone: "camera", acao: "vistas" }] }
         ] },
-        { id: "niveis", rotulo: "Níveis", icone: "niveis", filhos: ramoNiveis }
+        { id: "folhas", rotulo: "Folhas (todas)", icone: "prancha", n: pr.length, aberto: false,
+          filhos: pr.length ? pr.map(function (r) { return { id: "pr:" + r.id, rotulo: r.nome || "Prancha", icone: "prancha", fn: function () { self._bimAbrirPainel("pranchas"); self._prRender(); } }; })
+                            : [{ id: "pr:vazio", rotulo: "Nenhuma — Anotar → Pranchas do projeto", icone: "prancha", acao: "pranchas" }] },
+        { id: "tabelas", rotulo: "Tabelas/Quantidades", icone: "tabela", aberto: false, filhos: [
+          { id: "t:qto", rotulo: "Quantitativos do modelo", icone: "calculadora", acao: "qto" },
+          { id: "t:ins", rotulo: "Insumos do modelo", icone: "insumo", acao: "insumos-modelo" },
+          { id: "t:peso", rotulo: "Peso por nível", icone: "balanca", acao: "peso-total" },
+          { id: "t:ilus", rotulo: "Quantitativo ilustrado", icone: "relatorios", fn: function () { self.acao("bim-quant-ilustrado", {}); } }
+        ] },
+        { id: "sond", rotulo: "Sondagens", icone: "niveis", n: sd.length, aberto: false,
+          filhos: sd.length ? sd.map(function (r) { return { id: "sd:" + r.id, rotulo: r.nome || "Sondagem", icone: "niveis", fn: function () { self._sdEst().sel = r.id; self._bimAbrirPainel("sondagem"); self._sdRender(); } }; })
+                            : [{ id: "sd:vazio", rotulo: "Nenhuma — vem no arquivo da obra", icone: "niveis", acao: "sondagem" }] },
+        { id: "estrut", rotulo: "Projeto estrutural", icone: "estrutura", n: es.length, aberto: false,
+          filhos: es.length ? es.map(function (r) { return { id: "es:" + r.id, rotulo: r.nome || "Projeto estrutural", icone: "estrutura", fn: function () { self._estEst().sel = r.id; self._bimAbrirPainel("estrut"); self._estRender(); } }; })
+                            : [{ id: "es:vazio", rotulo: "Carregar o PDF do projeto", icone: "estrutura", acao: "estrutural" }] },
+        { id: "niveis", rotulo: "Níveis", icone: "niveis", aberto: false, filhos: ramoNiveis },
+        { id: "mods", rotulo: "Vínculos (modelos abertos)", icone: "camadas", n: mods.length, aberto: false,
+          filhos: mods.length ? mods.map(function (m, i) { return { id: "md:" + i, rotulo: m.nome || "Modelo", icone: "camadas", acao: "modelos" }; })
+                              : [{ id: "md:vazio", rotulo: "Nenhum — Abrir IFC ou Arquivo da obra", icone: "camadas", acao: "abrir-ifc" }] },
+        { id: "fam", rotulo: "Famílias", icone: "tabela", acao: "familias" }
       ];
       BimShell.pintarArvore(arv);
     },
@@ -12558,6 +12660,10 @@
           "</div>";
       }
       var self = this, obras = lista("obras");
+      /* ⚠ MODO PROGRAMA: o BIM abre como um programa à parte, em tela inteira
+         (css/bim-revit.css, body.bim-app). Sai pelo botão "OrçaPRO" da barra de
+         título ou por qualquer navegação (App._navegar tira a classe). */
+      try { document.body.classList.add("bim-app"); } catch (eBa) {}
       if (this._bimSel == null) this._bimSel = (obras.filter(function (o) { return o.orcamentoId; })[0] || obras[0] || {}).id || "";
       var sel = '<select data-gacao="bim-troca-obra" style="max-width:260px">' +
         '<option value="">— sem cronograma (sequência padrão) —</option>' +
@@ -12606,6 +12712,7 @@
             '<button class="btn sm ghost" data-gacao="bim-drawer-min" title="Minimizar o painel (fica uma etiqueta para trazer de volta)">' + _icB("voltar", 15) + '</button>' +
             '<button class="btn sm ghost" data-gacao="bim-drawer-fechar" title="Fechar painel">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>' +
           '<div id="bim-drawer-body" style="flex:1;overflow-y:auto;padding:12px">' +
+          '<div id="bim-params" style="display:none"></div>' +
 
         '<div id="bim-modelos" style="display:none">' +
           '<div class="flex between" style="align-items:center;margin-bottom:8px;flex-wrap:wrap"><h3 style="margin:0;display:flex;align-items:center">' + _icB("camadas") + 'Modelos carregados</h3>' +
@@ -12717,7 +12824,8 @@
     /* v1.1.121 — abre a gaveta de análise do viewer no painel pedido (chamado pelo
      * dock do BIM via opts.onPainel; um painel por vez pra leitura limpa). */
     _BIM_PAINEIS: { modelos: ["bim-modelos", "Modelos carregados"], "4d": ["bim-4d", "Simulação 4D"], clash: ["bim-clash", "Compatibilização"], qto: ["bim-qto", "Quantitativos"], familias: ["bim-familias", "Banco de famílias"], "6d": ["bim-6d", "6D/7D · Ciclo de vida"], conjuntos: ["bim-conjuntos", "Conjuntos de seleção"], vistas: ["bim-vistas", "Pontos de vista"], tarefas4d: ["bim-tarefas", "Cronograma 4D"], disc: ["bim-disc", "Disciplinas e etapas construtivas"], estrut: ["bim-estrut", "Projeto estrutural no canteiro"],
-                   sondagem: ["bim-sondagem", "Sondagem 3D"], pranchas: ["bim-pranchas", "Pranchas do projeto"] },
+                   sondagem: ["bim-sondagem", "Sondagem 3D"], pranchas: ["bim-pranchas", "Pranchas do projeto"],
+                   params: ["bim-params", "Parâmetros do elemento"] },
     _bimAbrirPainel: function (chave) {
       var mapa = this._BIM_PAINEIS;
       var alvo = mapa[chave]; if (!alvo) return;
@@ -12740,6 +12848,9 @@
       /* o projeto estrutural mostra os recortes do desenho: precisa de largura como o 4D */
       /* a sondagem mostra o perfil ao lado do boletim (ou da régua do simulador): precisa de largura */
       drawer.style.width = chave === "4d" ? (st4.largo ? "100%" : "min(640px,96%)") : (chave === "estrut" ? "min(640px,96%)" : (chave === "sondagem" ? "min(860px,97%)" : "min(440px,94%)"));
+      /* na janela da direita a largura é da DOCA (lembrada por ferramenta) */
+      this._bimDocaChave = chave;
+      this._bimDocaPref = chave === "4d" ? 640 : (chave === "estrut" ? 640 : (chave === "sondagem" ? 860 : 440));
       if (chave === "4d") {
         /* abrir o painel liga a simulação. A 1ª abertura vai para HOJE quando
            hoje cai dentro da obra (é a pergunta de toda reunião: "onde
@@ -12805,6 +12916,292 @@
       var h = Math.max(460, Math.floor((window.innerHeight || 800) - topo - 10));
       r.style.setProperty("--rv-altura", h + "px");
       try { if (window.BIM && BIM.redimensionar) BIM.redimensionar(); } catch (e2) {}
+    },
+
+    /* a janela da direita acompanha a gaveta (aberta, fechada, minimizada) */
+    _bimDocaSync: function () {
+      var dr = document.getElementById("bim-drawer");
+      if (!window.BimShell || !BimShell.direita || !dr) return;
+      var doca = BimShell.docaDireita ? BimShell.docaDireita() : null;
+      if (!doca || !doca.contains(dr)) return;
+      var aberta = dr.style.display && dr.style.display !== "none";
+      BimShell.direita(!!aberta, this._bimDocaChave || "", this._bimDocaPref || 440);
+    },
+
+    /* =====================================================================
+     * VISTAS — o {3D} principal e as vistas extras, como no Revit: abas,
+     * lado a lado ("Vistas lado a lado") ou uma vista em outra janela (outro
+     * monitor). Cada vista extra tem câmera, caixa de corte e ViewCube
+     * próprios (js/bim.js, BIM.vista*); a cena é a mesma, então a peça
+     * selecionada numa fica verde em todas.
+     * ⚠ O {3D} principal não sai desta janela: para ele, "outra janela" é a
+     *   janela do 3D que já existe (bim-3d-janela, com o espelho).
+     * ===================================================================== */
+    _bimVxEst: function () { if (!this._bimVx) this._bimVx = { lado: false, ativa: "3d", lista: [] }; return this._bimVx; },
+    /* o BIM está na casca do Revit, no computador e fora do modo foco — é
+       quando Propriedades está na tela e o balão da seleção sobra */
+    _bimModoRevit: function () {
+      try {
+        return !!(window.BimShell && BimShell.raiz() && document.body.classList.contains("bim-app") &&
+          (window.innerWidth || 0) > 640 && !(BimShell.focoAtivo && BimShell.focoAtivo()));
+      } catch (e) { return false; }
+    },
+    _bimParamsAberto: function () {
+      var dr = document.getElementById("bim-drawer"), p = document.getElementById("bim-params");
+      return !!(dr && p && dr.style.display !== "none" && p.style.display !== "none");
+    },
+    /* Parâmetros do elemento (janela da direita): os property sets do IFC da
+       peça, com filtro — o que antes abria no balão de 420px sobre o 3D */
+    _bimParamsRender: function (info) {
+      var alvo = document.getElementById("bim-params"); if (!alvo) return;
+      if (!info) {
+        alvo.removeAttribute("data-uid");
+        alvo.innerHTML = '<p class="muted" style="font-size:12.5px;margin:0">Nada selecionado. Dê dois cliques numa peça do modelo para ver os parâmetros dela.</p>';
+        return;
+      }
+      var grupos = [];
+      try { grupos = (window.BIM && BIM.propriedades) ? (BIM.propriedades(info.uid) || []) : []; } catch (e) { grupos = []; }
+      var h = '<p style="margin:0 0 8px;font-size:13px"><b>' + Util.esc(info.nome || info.tipo || "Elemento") + "</b>" +
+        (info.familia ? ' <span class="muted">· ' + Util.esc(info.familia) + "</span>" : "") + "</p>";
+      if (!grupos.length) {
+        h += '<p class="muted" style="font-size:12.5px;margin:0">Este elemento não trouxe property sets no IFC.</p>';
+      } else {
+        h += '<input id="bim-params-filtro" type="search" placeholder="Filtrar parâmetro…" style="width:100%;margin:0 0 6px">';
+        grupos.forEach(function (gr) {
+          var fam = gr.origem === "família";
+          h += '<div style="display:flex;align-items:center;gap:6px;margin-top:10px;border-bottom:1px solid var(--linha-forte);padding-bottom:3px">' +
+            '<b style="font-size:12px">' + Util.esc(gr.pset || "—") + "</b>" +
+            '<span style="font-size:10px;font-weight:700;padding:1px 7px;border-radius:99px;' + (fam ? "background:rgba(245,158,11,.18);color:#b45309" : "background:rgba(34,197,94,.16);color:#15803d") + '">' + Util.esc(fam ? "família" : (gr.origem || "instância")) + "</span></div>";
+          h += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
+          (gr.props || []).forEach(function (p) {
+            h += '<tr class="bim-params-lin"><td style="padding:3px 8px 3px 0;color:var(--texto-fraco);vertical-align:top;width:45%;word-break:break-word">' + Util.esc(p.n) + '</td><td style="padding:3px 0;word-break:break-word">' + Util.esc(p.v) + "</td></tr>";
+          });
+          h += "</table>";
+        });
+      }
+      alvo.innerHTML = h;
+      alvo.setAttribute("data-uid", String(info.uid));
+      var fil = document.getElementById("bim-params-filtro");
+      if (fil) fil.oninput = function () {
+        var q = (fil.value || "").toLowerCase(), lins = alvo.querySelectorAll("tr.bim-params-lin");
+        for (var i = 0; i < lins.length; i++) {
+          var t = (lins[i].textContent || "").toLowerCase();
+          lins[i].style.display = (!q || t.indexOf(q) >= 0) ? "" : "none";
+        }
+      };
+    },
+    /* Propriedades com uma PEÇA selecionada (em qualquer vista), como no
+       Revit: o que o balão do 3D mostra, em linhas — identidade, obra e
+       quantidades — e o botão para todos os parâmetros do IFC. Só leitura:
+       quem edita peça é o Editor; parede edita pelo "Editar tipo". */
+    _bimPropsPeca: function (info) {
+      if (!info) return null;
+      var self = this, el = null;
+      try { (BIM.elementos || []).some(function (e) { if (e.uid === info.uid) { el = e; return true; } return false; }); } catch (e0) {}
+      var tipo = String(info.tipo || ""), cat = "";
+      try { cat = BIM4D.nomeCat(BIM4D.catDoTipo(info.tipo)); } catch (eC) {}
+      var q = info.qto || {};
+      var num = function (v, u) { return v > 0 ? Util.fmtNum(v, 2) + " " + u : null; };
+      var ro = function (id, rot, v) { return { id: id, rotulo: rot, leitura: true, valor: v == null || v === "" ? "—" : v }; };
+      var secoes = [
+        { nome: "Identidade", params: [
+          ro("peca-cat", "Categoria", cat), ro("peca-classe", "Classe IFC", tipo), ro("peca-familia", "Família", info.familia),
+          ro("peca-gid", "GlobalId", info.globalId) ].concat(el && el.disciplinaPeca ? [ro("peca-disc", "Disciplina", el.disciplinaPeca)] : []) },
+        { nome: "Obra", params: [ ro("peca-etapa", "Etapa", info.etapa), ro("peca-fase", "Fase", info.fase) ]
+          .concat(el && el.detalhe ? [{ id: "peca-det", rotulo: "Detalhe", tipo: "botao", rotuloBotao: "Detalhe " + el.detalhe, fn: function () { self._pecaDetalhe(el.detalhe); } }] : []) },
+        { nome: "Quantidades", params: [ ro("peca-comp", "Comprimento", num(q.comprimento, "m")), ro("peca-area", "Área", num(q.area, "m²")), ro("peca-vol", "Volume", num(q.volume, "m³")) ] },
+        { nome: "Dados", params: [ { id: "peca-ifc", rotulo: "Parâmetros do IFC", tipo: "botao", rotuloBotao: "Ver todos", fn: function () { self._bimVerProps(info); } },
+          { id: "peca-familia-salvar", rotulo: "Banco de famílias", tipo: "botao", rotuloBotao: "Salvar família", fn: function () { self._bimSalvarFamilia(info); } } ] }
+      ];
+      var parede = /^IFCWALL/i.test(tipo);
+      return {
+        daPeca: true, uid: info.uid, semEditarTipo: !parede,
+        titulo: info.nome || tipo || "Elemento", icone: parede ? "parede" : (/^IFCCOLUMN/i.test(tipo) ? "pilar" : "quadrado"),
+        secoes: secoes,
+        onMudar: function () { return self._bimPropsPeca(info); }
+      };
+    },
+    /* Propriedades com nada selecionado = a VISTA ativa, como no Revit */
+    _bimPropsVista: function () {
+      var self = this, st = this._bimVxEst(), id = st.ativa, v = this._bimVxAchar(id), b = window.BIM;
+      var nome = id === "3d" ? "{3D}" : (v ? v.nome : "{3D}");
+      var temModelo = false;
+      try { temModelo = !!((b && b.elementos && b.elementos.length) || (this._bimElementos && this._bimElementos.length)); } catch (eT) {}
+      var caixa = false, orto = false;
+      try { caixa = id === "3d" ? b.caixaCorteAtiva() : b.vistaCaixaAtiva(id); orto = id === "3d" ? b.ortogonalAtivo() : b.vistaOrtoAtivo(id); } catch (e) {}
+      return {
+        daVista: true, semEditarTipo: true, titulo: "Vista 3D: " + nome, icone: "quadrado",
+        secoes: [
+          { nome: "Gráficos", params: [
+            { id: "vista-nome", rotulo: "Nome da vista", leitura: true, valor: nome },
+            { id: "vista-orto", rotulo: "Ortogonal", tipo: "sim-nao", valor: orto, leitura: !temModelo, motivo: "Abra um modelo primeiro" } ] },
+          { nome: "Extensões", params: [
+            { id: "vista-caixa", rotulo: "Caixa de corte", tipo: "sim-nao", valor: caixa, leitura: !temModelo, motivo: "Abra um modelo primeiro" } ] },
+          { nome: "Câmera", params: [
+            { id: "vista-inicio", rotulo: "Enquadrar", tipo: "botao", rotuloBotao: "Enquadrar tudo", acao: "home" } ] }
+        ],
+        onMudar: function (pid, valor) {
+          var on;
+          try {
+            if (pid === "vista-caixa") { on = id === "3d" ? b.caixaCorte(!!valor) : b.vistaCaixaCorte(id, !!valor); BimRibbon.setAtivo("caixa-corte", !!on); }
+            if (pid === "vista-orto") { on = id === "3d" ? b.ortogonal(!!valor) : b.vistaOrtogonal(id, !!valor); BimRibbon.setAtivo("ortogonal", !!on); }
+            BimShell.pintarFita();
+          } catch (e2) {}
+          return self._bimPropsVista();
+        }
+      };
+    },
+    _bimVxAchar: function (id) { return this._bimVxEst().lista.filter(function (v) { return v.id === id; })[0] || null; },
+    _bimVxGrade: function () { return document.getElementById("bim-grade"); },
+    _bimVxTela: function (id) { var g = this._bimVxGrade(); return g ? g.querySelector('.bim-tela[data-vista="' + id + '"]') : null; },
+    _bimVxCriarTela: function (id, nome) {
+      var g = this._bimVxGrade(); if (!g) return null;
+      var self = this, t = document.createElement("div");
+      t.className = "bim-tela"; t.setAttribute("data-vista", id);
+      t.innerHTML = '<span class="bim-tela-rot">' + Util.esc(nome) + '</span>';
+      /* tocar numa tela (lado a lado) torna ela a ativa: a fita (caixa de corte, ortogonal) passa a mandar nela */
+      t.addEventListener("pointerdown", function () { var vid = t.getAttribute("data-vista"); if (self._bimVxEst().ativa !== vid) self._bimVxAtivar(vid); }, true);
+      g.appendChild(t);
+      return t;
+    },
+    _bimVxDocs: function () {
+      var st = this._bimVxEst();
+      var docs = [{ id: "3d", nome: "{3D}", ativo: st.ativa === "3d", fechavel: false }];
+      st.lista.forEach(function (v) { docs.push({ id: v.id, nome: v.nome, ativo: st.ativa === v.id, fora: !!(v.janela && !v.janela.closed) }); });
+      if (window.BimShell && BimShell.definirDocs) BimShell.definirDocs(docs, st.lado);
+    },
+    _bimVxNova: function () {
+      if (!window.BIM || !BIM.vistaNova) return;
+      var st = this._bimVxEst(), usados = {}, n = 2;
+      st.lista.forEach(function (v) { usados[v.nome] = 1; });
+      while (usados["{3D} " + n]) n++;
+      var nome = "{3D} " + n;
+      var tela = this._bimVxCriarTela("nova", nome); if (!tela) return;
+      var id = BIM.vistaNova(tela, nome);
+      if (!id) { if (tela.parentNode) tela.parentNode.removeChild(tela); UI.toast("Não consegui abrir outra vista: o visualizador 3D ainda não abriu.", "erro"); return; }
+      tela.setAttribute("data-vista", id);
+      st.lista.push({ id: id, nome: nome, janela: null });
+      this._bimVxAtivar(id);
+      this._nivArvore();
+      UI.toast("Vista " + nome + " aberta, com câmera, caixa de corte e ViewCube próprios. \u201CLado a lado\u201D mostra as vistas juntas.", "ok");
+    },
+    _bimVxAtivar: function (id) {
+      var st = this._bimVxEst();
+      if (id !== "3d" && !this._bimVxAchar(id)) id = "3d";
+      var v = this._bimVxAchar(id);
+      if (v && v.janela && !v.janela.closed) { try { v.janela.focus(); } catch (e) {} return; }
+      st.ativa = id;
+      this._bimVxLayout();
+      /* a fita segue a vista ativa: caixa de corte e ortogonal são de cada vista */
+      try {
+        var b = window.BIM;
+        BimRibbon.setAtivo("caixa-corte", id === "3d" ? b.caixaCorteAtiva() : b.vistaCaixaAtiva(id));
+        BimRibbon.setAtivo("ortogonal", id === "3d" ? b.ortogonalAtivo() : b.vistaOrtoAtivo(id));
+        BimShell.pintarFita();
+        BimShell.repintarVista();
+      } catch (e2) {}
+    },
+    _bimVxLayout: function () {
+      var st = this._bimVxEst(), g = this._bimVxGrade(); if (!g) return;
+      var self = this;
+      g.setAttribute("data-modo", st.lado ? "lado" : "abas");
+      var telas = [].slice.call(g.querySelectorAll(".bim-tela"));
+      telas.forEach(function (t) { t.setAttribute("data-ativa", t.getAttribute("data-vista") === st.ativa ? "1" : "0"); });
+      if (st.lado) {
+        var n = Math.max(1, telas.length), cols = Math.ceil(Math.sqrt(n)), rows = Math.ceil(n / cols);
+        g.style.gridTemplateColumns = "repeat(" + cols + ", minmax(0, 1fr))";
+        g.style.gridTemplateRows = "repeat(" + rows + ", minmax(0, 1fr))";
+      } else { g.style.gridTemplateColumns = "minmax(0, 1fr)"; g.style.gridTemplateRows = "minmax(0, 1fr)"; }
+      try {
+        /* ⚠ a vista que não aparece não desenha: GPU de sobra para quem aparece */
+        BIM.principalOculta(!st.lado && st.ativa !== "3d");
+        st.lista.forEach(function (v) { BIM.vistaVisivel(v.id, !!(v.janela && !v.janela.closed) || st.lado || st.ativa === v.id); });
+      } catch (e) {}
+      this._bimVxDocs();
+      try { BimRibbon.setAtivo("lado-a-lado", st.lado); BimShell.pintarFita(); } catch (e2) {}
+      requestAnimationFrame(function () { requestAnimationFrame(function () { try { BIM.vistasRedimensionar(); } catch (e3) {} }); });
+    },
+    _bimVxFechar: function (id) {
+      var st = this._bimVxEst(), v = this._bimVxAchar(id); if (!v) return;
+      var w = v.janela; v.janela = null;
+      if (w && !w.closed) { try { w.close(); } catch (e) {} }
+      try { BIM.vistaFechar(id); } catch (e2) {}
+      var t = this._bimVxTela(id); if (t && t.parentNode) t.parentNode.removeChild(t);
+      st.lista = st.lista.filter(function (x) { return x.id !== id; });
+      if (st.ativa === id) st.ativa = "3d";
+      this._bimVxLayout(); this._nivArvore();
+    },
+    /* uma vista extra numa janela própria (outro monitor): o renderer dela é
+       refeito lá (BIM.vistaMover) — e volta para a tela quando a janela fecha */
+    _bimVxJanela: function (id) {
+      if (id === "3d") { this.acao("bim-3d-janela", {}); return; }
+      var self = this, st = this._bimVxEst(), v = this._bimVxAchar(id); if (!v) return;
+      if (v.janela && !v.janela.closed) { this._bimVxVoltar(id, false); return; }
+      var w = null;
+      try { w = window.open("", "orcapro-vista-" + id, "width=1200,height=800,resizable=yes"); } catch (e) { w = null; }
+      if (!w) { UI.toast("O navegador bloqueou a janela nova. Permita janelas (pop-up) para o OrçaPRO e tente de novo.", "erro", 6000); return; }
+      var d = w.document;
+      d.open();
+      d.write('<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>' + Util.esc(v.nome) + ' — OrçaPRO BIM</title>' +
+        '<style>html,body{margin:0;height:100%;overflow:hidden;background:#fff;font-family:"Segoe UI",system-ui,sans-serif}#bim-vx{position:absolute;inset:0}</style></head><body><div id="bim-vx"></div></body></html>');
+      d.close();
+      var est = document.getElementById("bim-vcube-estilo");
+      if (est) { var c = d.createElement("style"); c.textContent = est.textContent; d.head.appendChild(c); }
+      if (!BIM.vistaMover(id, d.getElementById("bim-vx"))) { try { w.close(); } catch (e2) {} UI.toast("Não consegui levar a vista para a outra janela.", "erro"); return; }
+      v.janela = w;
+      this._bimVxAviso(id);
+      w.addEventListener("resize", function () { try { BIM.vistasRedimensionar(); } catch (e3) {} });
+      w.addEventListener("pagehide", function () { if (v.janela === w) self._bimVxVoltar(id, true); });
+      /* ⚠ recarregar/fechar o OrçaPRO fecha as vistas soltas: o renderer
+         delas vive AQUI — sem isto a outra janela ficava com o 3D congelado
+         e sem resposta (mesma regra do painel em outra janela, _bimPopSaida) */
+      if (!this._bimVxSaida) {
+        this._bimVxSaida = function () {
+          (self._bimVxEst().lista || []).forEach(function (x) { try { if (x.janela && !x.janela.closed) x.janela.close(); } catch (eS) {} });
+        };
+        window.addEventListener("pagehide", this._bimVxSaida);
+      }
+      if (st.ativa === id) st.ativa = "3d";
+      this._bimVxLayout(); this._nivArvore();
+      setTimeout(function () { try { BIM.vistasRedimensionar(); } catch (e4) {} }, 60);
+    },
+    /* o aviso na tela de uma vista que está em outra janela (com o botão
+       de trazer de volta — também depois de a casca ser refeita) */
+    _bimVxAviso: function (id) {
+      var self = this, v = this._bimVxAchar(id), t = this._bimVxTela(id);
+      if (!v || !t || t.querySelector(".bim-tela-fora")) return;
+      var f = document.createElement("div"); f.className = "bim-tela-fora";
+      f.innerHTML = "<b>" + Util.esc(v.nome) + "</b><span>está em outra janela</span>";
+      var bt = document.createElement("button"); bt.className = "btn sm"; bt.type = "button"; bt.textContent = "Trazer de volta";
+      bt.onclick = function () { self._bimVxVoltar(id, false); };
+      f.appendChild(bt); t.appendChild(f);
+    },
+    _bimVxVoltar: function (id, fechando) {
+      var v = this._bimVxAchar(id); if (!v) return;
+      var w = v.janela; v.janela = null;
+      var t = this._bimVxTela(id);
+      if (t) { var f = t.querySelector(".bim-tela-fora"); if (f) f.parentNode.removeChild(f); try { BIM.vistaMover(id, t); } catch (e) {} }
+      if (!fechando && w && !w.closed) { try { w.close(); } catch (e2) {} }
+      this._bimVxLayout(); this._nivArvore();
+    },
+    _bimVxAcao: function (a, id) {
+      var st = this._bimVxEst();
+      if (a === "nova" || a === "duplicar") return this._bimVxNova();
+      if (a === "lado") { st.lado = !st.lado; return this._bimVxLayout(); }
+      if (a === "fechar") return this._bimVxFechar(id);
+      if (a === "janela") return this._bimVxJanela(id);
+      if (a === "focar") { var v = this._bimVxAchar(id); if (v && v.janela && !v.janela.closed) { try { v.janela.focus(); } catch (e) {} } return; }
+    },
+    /* re-render (a casca é refeita a cada App.render): as vistas extras que
+       estão nesta janela ganham tela nova na grade nova */
+    _bimVxRemontar: function () {
+      var self = this, st = this._bimVxEst();
+      st.lista.forEach(function (v) {
+        if (v.janela && !v.janela.closed) { self._bimVxCriarTela(v.id, v.nome); self._bimVxAviso(v.id); return; }
+        var t = self._bimVxCriarTela(v.id, v.nome);
+        if (t) { try { BIM.vistaMover(v.id, t); } catch (e) {} }
+      });
+      this._bimVxLayout();
     },
 
     /* =====================================================================
@@ -19557,6 +19954,7 @@
       if (chC.length) this._b3Espelhar({ modo: "focar", chaves: chC, rotulo: "conflito " + (i + 1) + " · " + String(c.par || "").slice(0, 120) });
       var box = document.getElementById("bim-info");
       if (box) {
+        box.removeAttribute("data-bim-balao");
         box.style.maxWidth = "260px"; // o painel de propriedades (420px) pode ter ficado aberto
         /* ⚠ O BALÃO FALAVA SEMPRE EM PENETRAÇÃO, EM TODOS OS MODOS. No modo
            folga a penetração é zero por definição (as peças não se tocam), e
@@ -19606,7 +20004,9 @@
     // 📋 Propriedades COMPLETAS do elemento (todos os psets, instância+família) — expande
     // o PRÓPRIO balão #bim-info (o clash reusa o mesmo balão; fechar restaura o tamanho)
     _bimVerProps: function (info) {
+      if (info && this._bimModoRevit()) { this._bimParamsRender(info); this._bimAbrirPainel("params"); return; }
       var box = document.getElementById("bim-info"); if (!box || !info) return;
+      box.setAttribute("data-bim-balao", "selecao");
       var grupos = [];
       try { grupos = (window.BIM && BIM.propriedades) ? (BIM.propriedades(info.uid) || []) : []; } catch (e) { grupos = []; }
       box.style.display = ""; box.style.maxWidth = "420px";
@@ -20411,6 +20811,10 @@
             onModelosRemovidos: function (lista) { self._bimAoRemoverModelos(lista); },
             /* o arquivo da obra (.zip) solto no 3D ou escolhido no "+ IFC" */
             onArquivoObra: function (f) { self._bimPacoteImportar(f); },
+            /* a fita acompanha o que o ViewCube (botão direito) e a planta/corte mudam */
+            onCaixaCorte: function (on) { if (self._bimVxEst().ativa === "3d") { try { BimRibbon.setAtivo("caixa-corte", !!on); BimShell.pintarFita(); BimShell.repintarVista(); } catch (e) {} } },
+            onOrto: function (on) { if (self._bimVxEst().ativa === "3d") { try { BimRibbon.setAtivo("ortogonal", !!on); BimShell.pintarFita(); BimShell.repintarVista(); } catch (e) {} } },
+            onSalvarVista: function () { self._bimVistaSalvar(); },
             // v1.1.121: innerHTML com Icones (textContent apagaria o ícone SVG do botão)
             onReuniao: function (n) { var b = document.getElementById("bim-btn-reuniao"); if (b) { var icR = (typeof Icones !== "undefined") ? Icones.get("obra", 14) : ""; b.innerHTML = icR + (n > 0 ? "Reunião · " + n + " online" : (BIM.reuniao && BIM.reuniao.ativa ? "Na sala…" : "Reunião")); b.style.background = n > 0 ? "#16a34a" : ""; b.style.color = n > 0 ? "#fff" : ""; } },
             onReuniaoFalha: function () { var b = document.getElementById("bim-btn-reuniao"); if (b) { b.innerHTML = ((typeof Icones !== "undefined") ? Icones.get("obra", 14) : "") + "Reunião"; b.style.background = ""; b.style.color = ""; } UI.toast("Não consegui manter a reunião conectada (sem internet?). Você saiu da sala; o modelo segue normal.", "erro"); },
@@ -20424,6 +20828,7 @@
                cinza respondendo "Abra ou gere um modelo primeiro". */
             onLoaded: function (elementos) {
               self._bimElementos = (elementos || []).filter(function (e) { return e && e.tipo; }).map(function (e) { return Object.assign({}, e, { id: e.uid || e.id }); });
+              try { if (window.BimShell) BimShell.repintarVista(); } catch (eRv) {}
               /* B7: as peças chegaram — é AQUI que a comparação entre versões
                  pode acontecer, e não no `onModeloCarregado`, que roda antes.
                  Guarda a fotografia de cada modelo aberto para a próxima
@@ -20450,6 +20855,7 @@
                 if (!vive) self._bimSelecao = null;
               }
               self._bimReplanejar();
+              try { self._nivArvore(); } catch (eArv) {}
               try { self._bimCascaContexto(); } catch (e) {}
               try { if (window.BimShell) BimShell.contadores(self._bimRotuloVis(), self._bimSelecao ? (self._bimSelecao.nome || self._bimSelecao.tipo) : null); } catch (e2) {}
             },
@@ -20461,10 +20867,27 @@
                  elemento certo destacado no 3D. */
               self._bimSelecao = info || null;
               try { self._bimCascaContexto(); } catch (e) {}
+              /* Propriedades acompanha a seleção (peça → dados dela; nada →
+                 a vista ativa). Antes a seleção nunca chegava lá e, com as
+                 propriedades da vista, a peça selecionada parecia ignorada. */
+              try { if (window.BimShell) BimShell.pintarProps(info ? self._bimPropsPeca(info) : null); } catch (eP) {}
               try { if (window.BimShell) BimShell.contadores(self._bimRotuloVis(), info ? (info.nome || info.tipo) : null); } catch (e2) {}
+              /* ⚠ NO COMPUTADOR O BALÃO DA SELEÇÃO NÃO APARECE: Propriedades já
+                 mostra a peça e o balão tapava o 3D (pedido do Rogério,
+                 30/09/2026 — "pode tirar"). No celular e no modo foco ele
+                 continua: lá não há Propriedades na tela. O balão de CONFLITO
+                 (compatibilização) usa a mesma caixa e não é tocado aqui. */
+              if (self._bimModoRevit()) {
+                var boxR = document.getElementById("bim-info");
+                if (boxR && boxR.getAttribute("data-bim-balao") === "selecao") { boxR.style.display = "none"; boxR.removeAttribute("data-bim-balao"); }
+                /* os Parâmetros do elemento abertos acompanham a seleção */
+                try { if (self._bimParamsAberto()) self._bimParamsRender(info); } catch (ePa) {}
+                return;   /* depois da barra de status: "Selecionado: …" continua */
+              }
               var box = document.getElementById("bim-info"); if (!box) return;
               if (!info) { box.style.display = "none"; return; }
               box.style.display = ""; box.style.maxWidth = "260px"; // volta do painel de propriedades expandido (420px)
+              box.setAttribute("data-bim-balao", "selecao");
               var h = "<b>" + Util.esc(info.nome || info.tipo || "Elemento") + "</b><br><span style='opacity:.85'>" + Util.esc(BIM4D.nomeCat(BIM4D.catDoTipo(info.tipo))) + " · " + Util.esc(info.tipo || "") + "</span>" + (info.etapa ? "<br><span style='display:inline-block;margin-top:4px;background:rgba(34,197,94,.18);color:#16a34a;font-weight:700;font-size:11px;padding:2px 8px;border-radius:99px'>🏷️ Etapa: " + Util.esc(info.etapa) + " · carimbo OrçaPRO</span>" : "") + (info.fase ? "<br><span style='display:inline-block;margin-top:4px;font-weight:700;font-size:11px;padding:2px 8px;border-radius:99px;" + (info.fase === "demolir" ? "background:rgba(239,68,68,.18);color:#ef4444" : (info.fase === "existente" ? "background:rgba(148,163,184,.18);color:#94a3b8" : "background:rgba(34,197,94,.18);color:#16a34a")) + "'>" + (info.fase === "demolir" ? "🔴" : (info.fase === "existente" ? "⚪" : "🟢")) + " Fase: " + Util.esc(info.fase) + " · reforma</span>" : "") + (info.globalId ? "<br><span style='opacity:.6;font-size:11px'>" + Util.esc(info.globalId) + "</span>" : "");
               // v1.1.82: família Revit em destaque + quantitativos reais (BaseQuantities, só os >0)
               if (info.familia) h += "<br><span style='display:inline-block;margin-top:4px;background:rgba(46,111,158,.28);color:#9fd0f5;font-weight:700;font-size:11px;padding:2px 8px;border-radius:99px'>🧩 " + Util.esc(info.familia) + "</span>";
@@ -20516,6 +20939,7 @@
             // senão trocar de obra ressuscitava painéis 4D/clash/QTO do modelo que JÁ FOI (achado do gate)
             var jaCarregado = BIM.elementos || [];
             self._bimElementos = jaCarregado.filter(function (e) { return e && e.tipo; }).map(function (e) { return Object.assign({}, e, { id: e.uid || e.id }); });
+            try { if (window.BimShell) BimShell.repintarVista(); } catch (eRv2) {}
             self._bimReplanejar();
             /* REENTRAR NA ABA É COMO CARREGAR DE NOVO. Este ramo re-sincroniza
                os elementos mas não avisava a casca: a barra voltava a

@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.105",
+  "versao": "1.2.106",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.105.zip",
-  "notas": "BIM organizado no topo: nada flutuando em cima do 3D, os botoes do dia a dia a direita das abas e as ferramentas da barra antiga na fita; Arquivo da obra abre sem modelo aberto (ou arraste o .zip para o 3D); paineis como Sondagem, Projeto estrutural e Pontos de vista podem abrir em outra janela ou ser minimizados; a janela do BIM ocupa a tela ate embaixo.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.105/OrcaPRO-IA-Instalador-v1.2.105.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.106.zip",
+  "notas": "BIM no jeito do Revit: abre em tela inteira; Propriedades e Navegador de projeto recolhem na seta; as ferramentas abrem numa janela a direita que voce alarga; varias vistas 3D em abas, lado a lado ou em outra janela (2o monitor), com a mesma selecao em todas; caixa de corte com setas nas seis faces; ViewCube com menu no botao direito e vista ortogonal; Propriedades mostra a peca selecionada, sem o balao sobre o 3D.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.106/OrcaPRO-IA-Instalador-v1.2.106.exe"
 }

@@ -89,6 +89,16 @@
 
       var corpo = el("div", "rv-corpo");
       corpo.appendChild(this._lateral());
+      /* a lateral recolhida vira só uma ABA com a seta, na borda esquerda —
+         clicar nela traz Propriedades e Navegador de volta (como no Revit) */
+      var abaLat = el("button", "rv-lat-aba");
+      abaLat.type = "button"; abaLat.title = "Mostrar Propriedades e Navegador de projeto";
+      abaLat.innerHTML = '<span class="rv-lat-aba-seta">▶</span><span class="rv-lat-aba-rot">Propriedades</span>';
+      abaLat.onclick = function () { self.alternarLateralFixa(false); };
+      corpo.appendChild(abaLat);
+      var alcaLat = el("div", "rv-alca rv-alca-lat");
+      alcaLat.title = "Arraste para alargar ou estreitar a coluna";
+      corpo.appendChild(alcaLat);
 
       var area = el("div", "rv-area");
       area.appendChild(this._docs());
@@ -97,12 +107,29 @@
       area.appendChild(palco);
       area.appendChild(this._vistabar());
       corpo.appendChild(area);
+
+      /* A JANELA DA DIREITA: as ferramentas abertas pela fita (Sondagem,
+         Projeto estrutural, Pontos de vista…) entram aqui, AO LADO do 3D —
+         não por cima dele — com o nome no alto e a borda arrastável. */
+      var alcaDir = el("div", "rv-alca rv-alca-dir");
+      alcaDir.title = "Arraste para alargar ou estreitar o painel";
+      corpo.appendChild(alcaDir);
+      var dir = el("div", "rv-direita");
+      corpo.appendChild(dir);
+      this._direita = dir;
       raiz.appendChild(corpo);
 
       raiz.appendChild(this._status());
 
       /* preferência de quem já escondeu a lateral antes — ver `alternarLateralFixa` */
       try { if (localStorage.getItem("orcapro:bim:lateral-off") === "1") raiz.setAttribute("data-rv-lateral-off", "1"); } catch (e) {}
+      /* larguras lembradas (lateral, divisória Propriedades/Navegador) e o tamanho da interface */
+      try {
+        var lw = +localStorage.getItem("orcapro:bim:lateral-w"); if (lw >= 200 && lw <= 700) raiz.style.setProperty("--rv-lat-w", lw + "px");
+        var ph = +localStorage.getItem("orcapro:bim:props-h"); if (ph >= 15 && ph <= 85) raiz.style.setProperty("--rv-props-h", ph + "%");
+        var ui = +localStorage.getItem("orcapro:bim:escala-ui"); if (ui >= 0.7 && ui <= 1.3) raiz.style.setProperty("--rv-ui", String(ui));
+      } catch (eL) {}
+      this._ligarAlcas(raiz, alcaLat, alcaDir);
 
       container.innerHTML = "";
       container.appendChild(raiz);
@@ -176,6 +203,15 @@
     _titulo: function (opts) {
       var self = this;
       var t = el("div", "rv-titulo");
+      /* o BIM abre como um programa à parte (tela inteira): esta é a porta de
+         volta para o resto do OrçaPRO */
+      if (typeof opts.onSair === "function") {
+        var bSair = el("button", "rv-sair");
+        bSair.type = "button"; bSair.title = "Voltar ao OrçaPRO (os módulos de orçamento, obras, financeiro…)";
+        bSair.innerHTML = ico("voltar", 14) + "<span>OrçaPRO</span>";
+        bSair.onclick = function () { opts.onSair(); };
+        t.appendChild(bSair);
+      }
       var qat = el("div", "rv-qat");
       [
         { id: "salvar-modelo", ico: "salvar", dica: "Salvar no projeto" },
@@ -193,7 +229,19 @@
       t.appendChild(qat);
 
       var nome = el("div", "rv-titulo-nome");
-      nome.textContent = (opts.arquivo ? opts.arquivo + " — " : "") + "OrçaPRO BIM";
+      /* a obra é escolhida AQUI (o cabeçalho da página some no modo programa):
+         o <select> fala pela delegação do app (data-gacao + change) */
+      if (opts.obras && opts.obras.length) {
+        var sel = el("select", "rv-obra");
+        sel.setAttribute("data-gacao", "bim-troca-obra");
+        sel.title = "Obra (o cronograma 4D e o que fica guardado no BIM são dela)";
+        var o0 = el("option", null, "— sem obra (sequência padrão) —"); o0.value = ""; sel.appendChild(o0);
+        opts.obras.forEach(function (o) { var op = el("option", null, o.nome); op.value = o.id; if (o.id === opts.obraSel) op.selected = true; sel.appendChild(op); });
+        nome.appendChild(sel);
+        nome.appendChild(el("span", "rv-titulo-app", "— OrçaPRO BIM"));
+      } else {
+        nome.textContent = (opts.arquivo ? opts.arquivo + " — " : "") + "OrçaPRO BIM";
+      }
       t.appendChild(nome);
 
       var dir = el("div", "rv-qat");
@@ -377,6 +425,11 @@
       var props = el("div", "rv-doca rv-props");
       var cabP = el("div", "rv-doca-cab");
       cabP.appendChild(el("span", null, "Propriedades"));
+      /* recolher a coluna inteira: sobra a aba com a seta na borda esquerda */
+      var bRec = el("button", "rv-x rv-recolher", "◀");
+      bRec.type = "button"; bRec.title = "Recolher Propriedades e Navegador (fica a aba com a seta para trazer de volta)";
+      bRec.onclick = (function (self) { return function () { self.alternarLateralFixa(true); }; })(this);
+      cabP.appendChild(bRec);
       props.appendChild(cabP);
       props.appendChild(el("div", "rv-doca-corpo"));
       var pe = el("div", "rv-props-pe");
@@ -386,6 +439,10 @@
       pe.appendChild(bAp);
       props.appendChild(pe);
       lat.appendChild(props);
+      var split = el("div", "rv-split-h");
+      split.title = "Arraste para dividir o espaço entre Propriedades e Navegador";
+      lat.appendChild(split);
+      this._split = split;
 
       var nav = el("div", "rv-doca rv-nav");
       var cabN = el("div", "rv-doca-cab");
@@ -412,6 +469,9 @@
       if (!this._raiz) return;
       var corpo = this._raiz.querySelector(".rv-props .rv-doca-corpo");
       if (!corpo) return;
+      /* nada selecionado: como no Revit, Propriedades mostra a VISTA ativa
+         (nome, ortogonal, caixa de corte em "Extensões", início) */
+      if (!esquema && typeof this._opts.propsVista === "function") { try { esquema = this._opts.propsVista() || null; } catch (eV) { esquema = null; } }
       this._estado.props = esquema;
       corpo.innerHTML = "";
 
@@ -445,10 +505,12 @@
 
       var lin = el("div", "rv-tipo-linha");
       lin.appendChild(el("b", null, esquema.titulo || ""));
-      var bt = el("button", "rv-btn-tipo", "Editar tipo");
-      bt.type = "button";
-      bt.onclick = (function (self) { return function () { self.executar("editar-tipo"); }; })(this);
-      lin.appendChild(bt);
+      if (!esquema.semEditarTipo) {
+        var bt = el("button", "rv-btn-tipo", "Editar tipo");
+        bt.type = "button";
+        bt.onclick = (function (self) { return function () { self.executar("editar-tipo"); }; })(this);
+        lin.appendChild(bt);
+      }
       corpo.appendChild(lin);
 
       var tb = el("table", "rv-params");
@@ -486,14 +548,20 @@
     _campo: function (p) {
       var self = this;
       if (p.leitura) {
-        var ro = el("span", "rv-p-ro", p.valor == null ? "—" : String(p.valor));
+        /* booleano só de leitura: "Sim"/"Não" — String(false) mostrava
+           "false" em Propriedades, que para quem lê é defeito */
+        var txt = p.valor == null || p.valor === "" ? "—" : (typeof p.valor === "boolean" ? (p.valor ? "Sim" : "Não") : String(p.valor));
+        var ro = el("span", "rv-p-ro", txt);
         if (p.motivo) ro.title = p.motivo;
         return ro;
       }
       if (p.tipo === "botao") {
         var b = el("button", "rv-btn-tipo", p.rotuloBotao || "Editar…");
         b.type = "button";
-        b.onclick = function () { if (p.acao) self.executar(p.acao); };
+        /* `fn` (função da tela) vem antes de `acao` (comando da fita): um
+           botão de Propriedades nem sempre é um comando — e comando que a
+           fita não conhece responde "Comando desconhecido." */
+        b.onclick = function () { if (typeof p.fn === "function") p.fn(); else if (p.acao) self.executar(p.acao); };
         return b;
       }
       if (p.tipo === "sim-nao") {
@@ -642,18 +710,62 @@
       var c = cont || (this._raiz && this._raiz.querySelector(".rv-docs"));
       if (!c) return;
       c.innerHTML = "";
+      var acao = function (a, id) { if (typeof self._opts.onDocAcao === "function") self._opts.onDocAcao(a, id); };
       this._estado.docs.forEach(function (doc) {
         var b = el("div", "rv-doc");
+        b.setAttribute("data-rv-doc", doc.id);
         b.setAttribute("aria-selected", doc.ativo ? "true" : "false");
-        b.appendChild(el("span", null, doc.nome));
-        if (doc.fechavel !== false && self._estado.docs.length > 1) {
+        if (doc.fora) b.setAttribute("data-rv-fora", "1");
+        b.appendChild(el("span", null, doc.nome + (doc.fora ? " ↗" : "")));
+        b.title = doc.fora ? "Esta vista está em outra janela — clique para trazê-la para a frente" : "Botão direito: outra janela, duplicar, fechar";
+        /* o {3D} principal não fecha; as vistas abertas fecham no ✕, como no Revit */
+        if (doc.fechavel !== false && doc.id !== "3d") {
           var x = el("span", "rv-x", "✕");
-          x.onclick = function (ev) { ev.stopPropagation(); self.fecharDoc(doc.id); };
+          x.title = "Fechar esta vista";
+          x.onclick = function (ev) { ev.stopPropagation(); acao("fechar", doc.id); };
           b.appendChild(x);
         }
-        b.onclick = function () { self.abrirDoc(doc.id); };
+        b.onclick = function () { if (doc.fora) acao("focar", doc.id); else self.abrirDoc(doc.id); };
+        b.oncontextmenu = function (ev) { ev.preventDefault(); self._menuDoc(ev.clientX, ev.clientY, doc, acao); };
         c.appendChild(b);
       });
+      /* à direita das abas: abrir vista nova e alternar abas/lado a lado */
+      var dirD = el("div", "rv-docs-dir");
+      var bNova = el("button", "rv-docs-bt");
+      bNova.type = "button"; bNova.innerHTML = ico("mais", 13) + "<span>Nova vista</span>"; bNova.title = "Duplicar a vista 3D ativa numa aba nova (câmera, caixa de corte e ViewCube próprios)";
+      bNova.onclick = function () { acao("nova", null); };
+      var bLado = el("button", "rv-docs-bt");
+      bLado.type = "button"; bLado.setAttribute("data-rv-lado", "1");
+      bLado.setAttribute("aria-pressed", this._estado.lado ? "true" : "false");
+      bLado.innerHTML = ico("grade", 13) + "<span>" + (this._estado.lado ? "Abas" : "Lado a lado") + "</span>";
+      bLado.title = this._estado.lado ? "Voltar a uma vista por vez (abas)" : "Mostrar as vistas abertas lado a lado";
+      bLado.onclick = function () { acao("lado", null); };
+      dirD.appendChild(bNova); dirD.appendChild(bLado);
+      c.appendChild(dirD);
+    },
+    _menuDoc: function (x, y, doc, acao) {
+      var velho = document.querySelector(".rv-menu-doc"); if (velho) velho.parentNode.removeChild(velho);
+      var m = el("div", "rv-menu-doc");
+      var itens = [["janela", doc.fora ? "Trazer de volta para esta janela" : "Abrir em outra janela (outro monitor)"], ["duplicar", "Duplicar esta vista"], ["lado", this._estado.lado ? "Voltar para abas" : "Vistas lado a lado"]];
+      if (doc.id !== "3d") itens.push(["fechar", "Fechar"]);
+      itens.forEach(function (it) {
+        var d = el("div", null, it[1]);
+        d.onclick = function () { if (m.parentNode) m.parentNode.removeChild(m); acao(it[0], doc.id); };
+        m.appendChild(d);
+      });
+      document.body.appendChild(m);
+      var r = m.getBoundingClientRect();
+      m.style.left = Math.max(4, Math.min(x, (window.innerWidth || 800) - r.width - 6)) + "px";
+      m.style.top = Math.max(4, Math.min(y, (window.innerHeight || 600) - r.height - 6)) + "px";
+      setTimeout(function () {
+        document.addEventListener("pointerdown", function fora(ev) { if (!m.contains(ev.target)) { if (m.parentNode) m.parentNode.removeChild(m); document.removeEventListener("pointerdown", fora, true); } }, true);
+      }, 0);
+    },
+    /* estado das abas vindo de quem manda nas vistas (Gestao): lista, ativa, lado a lado, fora */
+    definirDocs: function (docs, lado) {
+      this._estado.docs = (docs || []).map(function (d) { return { id: d.id, nome: d.nome, ativo: !!d.ativo, fechavel: d.fechavel, fora: !!d.fora }; });
+      this._estado.lado = !!lado;
+      this._pintarDocs();
     },
     abrirDoc: function (id) {
       this._estado.docs.forEach(function (d) { d.ativo = d.id === id; });
@@ -812,6 +924,87 @@
       try { localStorage.setItem("orcapro:bim:lateral-off", novo ? "1" : "0"); } catch (e) {}
       if (typeof this._opts.onLayout === "function") this._opts.onLayout();
       return novo;
+    },
+
+    /* ================================================================
+     * A JANELA DA DIREITA (doca) E AS ALÇAS DE ARRASTAR
+     * A largura da doca é lembrada POR FERRAMENTA: a Sondagem pede largura
+     * (perfil ao lado do boletim), Pontos de vista cabe estreito — uma
+     * largura só não serviria às duas.
+     * ================================================================ */
+    docaDireita: function () { return this._direita || null; },
+    /* repinta as propriedades da vista (se é isso que está em Propriedades) */
+    repintarVista: function () {
+      if (!this._raiz) return;
+      var p = this._estado.props;
+      if (!p || p.daVista) this.pintarProps(null);
+    },
+    direita: function (on, chave, preferida) {
+      if (!this._raiz) return;
+      var r = this._raiz, abrir = !!on;
+      if (abrir) {
+        this._dirChave = chave || this._dirChave || "";
+        var salvo = 0;
+        try { salvo = +localStorage.getItem("orcapro:bim:direita-w:" + this._dirChave) || 0; } catch (e) {}
+        var w = salvo || preferida || 440;
+        r.style.setProperty("--rv-dir-w", this._limitarDir(w) + "px");
+      }
+      var antes = r.getAttribute("data-rv-direita") === "1";
+      r.setAttribute("data-rv-direita", abrir ? "1" : "0");
+      if (antes !== abrir && typeof this._opts.onLayout === "function") this._opts.onLayout();
+    },
+    _limitarDir: function (w) {
+      var tot = (this._raiz && this._raiz.clientWidth) || (window.innerWidth || 1400);
+      return Math.round(Math.max(280, Math.min(w, tot * 0.75)));
+    },
+    _ligarAlcas: function (raiz, alcaLat, alcaDir) {
+      var self = this;
+      function arrastar(alca, aoMover, aoSoltar) {
+        alca.addEventListener("pointerdown", function (e) {
+          if (e.button !== 0) return;
+          e.preventDefault();
+          var x0 = e.clientX, y0 = e.clientY;
+          try { alca.setPointerCapture(e.pointerId); } catch (_) {}
+          raiz.setAttribute("data-rv-arrastando", "1");
+          function mv(ev) { aoMover(ev.clientX - x0, ev.clientY - y0, ev); }
+          function up(ev) {
+            alca.removeEventListener("pointermove", mv); alca.removeEventListener("pointerup", up); alca.removeEventListener("pointercancel", up);
+            raiz.removeAttribute("data-rv-arrastando");
+            if (aoSoltar) aoSoltar();
+            if (typeof self._opts.onLayout === "function") self._opts.onLayout();
+          }
+          alca.addEventListener("pointermove", mv); alca.addEventListener("pointerup", up); alca.addEventListener("pointercancel", up);
+          alca._w0 = null;
+        });
+      }
+      var lat = raiz.querySelector(".rv-lateral"), lw0 = 0, dw0 = 0, ph0 = 0;
+      arrastar(alcaLat, function (dx) {
+        if (!lw0) lw0 = lat.getBoundingClientRect().width;
+        var w = Math.max(200, Math.min(700, lw0 + dx));
+        raiz.style.setProperty("--rv-lat-w", Math.round(w) + "px");
+        if (self._opts.onLayoutVivo) self._opts.onLayoutVivo();
+      }, function () { lw0 = 0; try { localStorage.setItem("orcapro:bim:lateral-w", String(parseInt(raiz.style.getPropertyValue("--rv-lat-w"), 10) || "")); } catch (e) {} });
+      arrastar(alcaDir, function (dx) {
+        if (!dw0) dw0 = self._direita.getBoundingClientRect().width;
+        raiz.style.setProperty("--rv-dir-w", self._limitarDir(dw0 - dx) + "px");
+        if (self._opts.onLayoutVivo) self._opts.onLayoutVivo();
+      }, function () { dw0 = 0; try { localStorage.setItem("orcapro:bim:direita-w:" + (self._dirChave || ""), String(parseInt(raiz.style.getPropertyValue("--rv-dir-w"), 10) || "")); } catch (e) {} });
+      if (this._split) arrastar(this._split, function (dx, dy) {
+        var lr = lat.getBoundingClientRect();
+        if (!ph0) { var pr = lat.querySelector(".rv-props").getBoundingClientRect(); ph0 = pr.height; }
+        var pct = Math.max(15, Math.min(85, (ph0 + dy) / Math.max(1, lr.height) * 100));
+        raiz.style.setProperty("--rv-props-h", pct.toFixed(1) + "%");
+      }, function () { ph0 = 0; try { localStorage.setItem("orcapro:bim:props-h", String(parseFloat(raiz.style.getPropertyValue("--rv-props-h")) || "")); } catch (e) {} });
+    },
+    /* o tamanho da interface (letras e botões), sem mexer no 3D */
+    escalaUi: function (f) {
+      if (!this._raiz) return 1;
+      if (f == null) { var a = parseFloat(this._raiz.style.getPropertyValue("--rv-ui")); return a > 0 ? a : 1; }
+      f = Math.max(0.7, Math.min(1.3, +f || 1));
+      this._raiz.style.setProperty("--rv-ui", String(f));
+      try { localStorage.setItem("orcapro:bim:escala-ui", String(f)); } catch (e) {}
+      if (typeof this._opts.onLayout === "function") this._opts.onLayout();
+      return f;
     },
 
     /* ================================================================

@@ -1729,6 +1729,11 @@
       } catch (eM) {}
       if (view !== "bim" && typeof BIM !== "undefined" && BIM.reuniao && BIM.reuniao.ativa) { try { BIM.reuniao.sair(); } catch (eR) {} }
       var ap = document.querySelector(".app"); if (ap) ap.classList.remove("menu-aberto");
+      /* o BIM abre como programa em tela inteira (body.bim-app, ver
+         Gestao.renderBim); sair dele devolve o menu e o topo do OrçaPRO — e
+         o botão "OrçaPRO" da barra de título volta para onde se estava */
+      if (view !== "bim") { try { document.body.classList.remove("bim-app"); } catch (eBa) {} }
+      else if (this.view !== "bim") this._viewAntesBim = this.view;
       this.view = view;
       this.tela = (view === "orcamentos" ? "lista" : "gestao");
       this.orcAtual = null;

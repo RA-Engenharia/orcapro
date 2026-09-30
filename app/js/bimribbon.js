@@ -210,7 +210,15 @@
           { id: "sistemas", rotulo: "Cores por\nsistema", icone: "paleta", requer: "modelo", dica: "Pinta por sistema hidrossanitário ou disciplina." },
           { id: "conjuntos", rotulo: "Conjuntos\nde seleção", icone: "alvo", requer: "modelo", dica: "Monta \u201Ctubos de água fria do térreo\u201D por regra e usa isso no lugar de clicar peça por peça." },
           { id: "disciplinas", rotulo: "Disciplinas\ne etapas", icone: "camadas", grande: true, requer: "modelo", dica: "Só a fundação, só a armação, só os painéis de parede, só os pilares e vigas de madeira: filtra o modelo por disciplina ou etapa construtiva, com raio-X e cores." },
-          { id: "estilo", rotulo: "Estilo de\nexibição", icone: "pincel", tipo: "menu", dica: "Sombreado, linhas, desenho técnico." }
+          { id: "estilo", rotulo: "Estilo de\nexibição", icone: "pincel", tipo: "menu", dica: "Sombreado, linhas, desenho técnico." },
+          /* como no Revit: a caixa de corte da vista ativa, com as setas azuis nas seis faces */
+          { id: "caixa-corte", rotulo: "Caixa de\ncorte", icone: "corte", grande: true, tipo: "alterna", requer: "modelo", dica: "Liga a caixa de corte da vista ativa: puxe as setas azuis de cada face para cortar o modelo de cima, de baixo e dos lados." },
+          { id: "ortogonal", rotulo: "Ortogonal", icone: "grade", tipo: "alterna", requer: "modelo", dica: "Vista ortogonal (sem perspectiva) na vista ativa — também no botão direito do ViewCube." }
+        ] },
+        { nome: "Janelas", comandos: [
+          { id: "nova-vista", rotulo: "Nova vista\n3D", icone: "mais", grande: true, requer: "modelo", dica: "Duplica a vista 3D numa aba nova, com câmera, caixa de corte e ViewCube próprios. A peça selecionada numa aparece em todas." },
+          { id: "lado-a-lado", rotulo: "Vistas lado\na lado", icone: "grade", grande: true, tipo: "alterna", dica: "Mostra as vistas abertas lado a lado — para analisar o projeto de vários ângulos ao mesmo tempo." },
+          { id: "tamanho-ui", rotulo: "Tamanho da\ninterface", icone: "expandir", dica: "Letras e botões do BIM menores ou maiores (100% → 90% → 80% → 110%). O 3D não muda." }
         ] },
         { nome: "Colaborar", comandos: [
           { id: "reuniao", rotulo: "Reunião no\nmodelo", icone: "obra", grande: true, requer: "modelo", pro: true, dica: "Várias pessoas dentro do mesmo modelo, com voz." },
