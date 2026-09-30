@@ -126,7 +126,11 @@
       });
       return { exatos: exatos, prefixos: prefixos, rx: rx };
     }
-    if (vista.grupo === "sapatas" || vista.grupo === "locacao") rx = "^[SP]\\d+[A-Z]?$";
+    if (vista.grupo === "sapatas") rx = "^[SP]\\d+[A-Z]?$";
+    /* a planta de locação também é das ESTACAS (E1, E12, E2-3, E1/2-1): fundação
+       profunda não tem sapata, e sem isto o "Ver no 3D" da folha de locação de
+       um projeto de estacas não achava peça nenhuma (30/09/2026) */
+    else if (vista.grupo === "locacao") rx = "^([SP]\\d+[A-Z]?|E\\d+[A-Z]?(/\\d+)?(-\\d+)?)$";
     else if (vista.grupo === "pilares") rx = "^P\\d+[A-Z]?$";
     else if (vista.grupo === "lajes") rx = "/L\\d+[A-Z]?$";
     else if (vista.grupo === "vigas" && vista.pavimento) prefixos.push(norm(vista.pavimento + "/V"));

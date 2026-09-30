@@ -151,7 +151,7 @@
         ] },
         { nome: "Canteiro", comandos: [
           { id: "estrutural", rotulo: "Projeto\nestrutural", icone: "estrutura", grande: true, dica: "Lê o PDF do projeto estrutural: a vista de cada sapata, pilar e viga como está no projeto, a armação, o cobrimento e a lista de material — para executar sem prancha." },
-          { id: "detalhe-peca", rotulo: "Detalhe da\npeça", icone: "prancha", requer: "selecao", dica: "Abre a vista do projeto estrutural que desenha a peça selecionada no 3D (pelo carimbo OrcaPRO_Detalhe)." },
+          { id: "detalhe-peca", rotulo: "Detalhe da\npeça", icone: "prancha", requer: "selecao", dica: "Abre o detalhe da peça selecionada no 3D (pelo carimbo OrcaPRO_Detalhe): a ficha do arquivo da obra — desenho, cálculo, prancha — ou a vista do projeto estrutural." },
           { id: "sondagem", rotulo: "Sondagem\n3D", icone: "niveis", grande: true, dica: "O boletim SPT dentro do sistema: o solo debaixo da obra em 3D, o relatório camada por camada com o plano descendo junto, e o simulador de até onde a estaca tem de ir para a carga do pilar." }
         ] }
       ]

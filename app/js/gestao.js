@@ -12623,7 +12623,7 @@
 
         '<div id="bim-vistas" style="display:none">' +
           '<div class="flex between" style="align-items:center;margin-bottom:8px;flex-wrap:wrap"><h3 style="margin:0;display:flex;align-items:center">' + _icB("camera") + 'Pontos de vista</h3>' +
-          '<span class="flex" style="gap:6px;flex-wrap:wrap"><button class="btn sm" id="bim-vista-pacote" title="Pacote da obra (.json): vistas prontas em pastas, com o desenho original de cada uma, as pranchas e a sondagem">Importar pacote da obra</button><button class="btn sm" id="bim-vista-bcf-in">Importar BCF</button><button class="btn sm" id="bim-vista-bcf-out">Exportar BCF</button><button class="btn sm primary" id="bim-vista-nova">+ Salvar esta vista</button></span></div>' +
+          '<span class="flex" style="gap:6px;flex-wrap:wrap"><button class="btn sm" id="bim-vista-pacote" title="Arquivo da obra (.zip, com o modelo) ou pacote (.json): vistas prontas em pastas com o desenho original, as pranchas, a sondagem e a ficha de detalhe de cada peça">Importar pacote da obra</button><button class="btn sm" id="bim-vista-bcf-in">Importar BCF</button><button class="btn sm" id="bim-vista-bcf-out">Exportar BCF</button><button class="btn sm primary" id="bim-vista-nova">+ Salvar esta vista</button></span></div>' +
           '<p class="muted" style="font-size:11.5px;margin:0 0 8px">Guarda o ângulo da câmera, o que está visível e o comentário. O <b>BCF</b> é o formato que o Revit, o Navisworks e o Solibri leem — é como o apontamento volta para quem projeta. <b>O BCF ainda não foi aberto noutra ferramenta a partir daqui: trate como experimental.</b></p>' +
           '<input type="file" id="bim-vista-arq" accept=".bcfzip,.zip" style="display:none">' +
           '<div id="bim-vistas-lista"></div>' +
@@ -13058,13 +13058,7 @@
         var bytes = new Uint8Array(fr.result);
         /* ⚠ o inflate vem do navegador: arquivo de terceiro vem comprimido, e
            sem isto o motor recusaria dizendo que não sabe descomprimir */
-        function inflar(b) {
-          if (typeof DecompressionStream === "undefined") return Promise.reject(new Error("este navegador não sabe descomprimir"));
-          var ds = new DecompressionStream("deflate-raw");
-          var w = ds.writable.getWriter(); w.write(b); w.close();
-          return new Response(ds.readable).arrayBuffer().then(function (ab) { return new Uint8Array(ab); });
-        }
-        BimBcf.zipLer(bytes, { inflar: inflar }).then(function (arqs) {
+        BimBcf.zipLer(bytes, { inflar: self._zipInflar }).then(function (arqs) {
           var r = BimBcf.importar(arqs, { elementos: (window.BIM && BIM.elementos) || [] });
           if (!r.ok) { UI.toast("Não achei tópico nenhum neste arquivo.", "erro"); return; }
           var n = 0, semVista = 0, naoLoc = 0;
@@ -13102,7 +13096,7 @@
      * ===================================================================== */
     _bimPacoteEscolher: function () {
       var inp = document.getElementById("bim-pacote-arq");
-      if (!inp) { inp = document.createElement("input"); inp.type = "file"; inp.id = "bim-pacote-arq"; inp.accept = ".json,application/json"; inp.style.display = "none"; document.body.appendChild(inp); var self = this; inp.onchange = function () { var f = inp.files && inp.files[0]; inp.value = ""; if (f) self._bimPacoteImportar(f); }; }
+      if (!inp) { inp = document.createElement("input"); inp.type = "file"; inp.id = "bim-pacote-arq"; inp.accept = ".zip,.json,application/zip,application/x-zip-compressed,application/json"; inp.style.display = "none"; document.body.appendChild(inp); var self = this; inp.onchange = function () { var f = inp.files && inp.files[0]; inp.value = ""; if (f) self._bimPacoteImportar(f); }; }
       inp.click();
     },
     _bimPacoteImportar: function (arquivo) {
@@ -13111,30 +13105,83 @@
       if (this._semSessao() || !this._bimSel) { UI.toast("Escolha a obra e entre com a sua conta antes de importar o pacote.", "aviso"); return; }
       var fr = new FileReader();
       fr.onload = function () {
+        var bytes = new Uint8Array(fr.result);
+        /* ⚠ pelo CONTEÚDO, não pela extensão: o WhatsApp e o Drive renomeiam o
+           arquivo ("obra (1).zip"), e o .zip sempre começa com "PK" */
+        if (PacoteObra.ehZip(bytes)) { self._bimObraZip(bytes); return; }
         var p = null;
-        try { p = JSON.parse(fr.result); } catch (e) { UI.toast("O arquivo não é um JSON válido: " + e.message, "erro"); return; }
-        var v = PacoteObra.validar(p);
-        if (!v.ok) { UI.toast("Pacote recusado: " + v.erros.join("; ") + ".", "erro"); return; }
-        var els = []; try { els = (window.BIM && BIM.elementos) || []; } catch (e2) {}
-        var gid2ch = {};
-        els.forEach(function (el) { var ch = el && el.chave; if (ch && ch.indexOf("::") > 0) gid2ch[ch.split("::").pop()] = ch; else if (el && el.globalId && ch) gid2ch[el.globalId] = ch; });
-        var conf = PacoteObra.conferirModelo(p, function (g) { return !!gid2ch[g]; });
-        var r = v.resumo;
-        var alertaModelo = !els.length ? '<p class="est-aviso">' + (typeof Icones !== "undefined" ? Icones.get("alerta", 14) + " " : "") + 'Nenhum modelo aberto: as <b>vistas não entram</b> (elas apontam peças do modelo). Abra o ' + Util.esc(r.modelo || "modelo") + ' e importe de novo para trazer as vistas.</p>'
-          : (conf.total && conf.fracao < 0.9 ? '<p class="est-aviso">' + (typeof Icones !== "undefined" ? Icones.get("alerta", 14) + " " : "") + 'Só ' + conf.achados + ' de ' + conf.total + ' peças citadas pelas vistas existem no modelo aberto (' + Math.round(conf.fracao * 100) + '%). O pacote é do ' + Util.esc(r.modelo || "outro modelo") + ' — confira se é o modelo certo.</p>' : "");
-        var corpo = '<p style="margin:0 0 6px"><b>' + Util.esc(r.nome || "Pacote da obra") + '</b>' + (r.modelo ? ' · modelo ' + Util.esc(r.modelo) : '') + '</p><ul style="margin:0 0 8px;padding-left:18px;font-size:13px">' +
-          (r.vistas ? '<li>' + r.vistas + ' ponto(s) de vista em ' + r.pastas + ' pasta(s)' + (r.referencias ? ', ' + r.referencias + ' com o desenho original' : '') + '</li>' : '') +
-          (r.pranchas ? '<li>' + r.pranchas + ' prancha(s), ' + r.folhas + ' folha(s)</li>' : '') +
-          (r.sondagens ? '<li>' + r.sondagens + ' sondagem(ns) SPT com o boletim completo</li>' : '') +
-          '<li>' + (r.imagens + r.arquivos) + ' desenho(s)/arquivo(s) — ' + String(r.megabytes).replace(".", ",") + ' MB, guardados neste computador</li></ul>' +
-          (els.length && conf.total ? '<p class="muted" style="font-size:12px;margin:0 0 6px">Peças conferidas no modelo aberto: ' + conf.achados + ' de ' + conf.total + '.</p>' : '') +
-          alertaModelo + (v.avisos.length ? '<p class="muted" style="font-size:12px">' + v.avisos.map(Util.esc).join("<br>") + '</p>' : '');
-        UI.modal("Importar pacote da obra", corpo, [
-          { texto: "Importar", classe: "primary", onClick: function () { UI.fecharModal(); self._bimPacoteGravar(p, gid2ch, els.length > 0); } },
-          { texto: "Cancelar", onClick: function () { UI.fecharModal(); } }]);
+        try { p = JSON.parse(new TextDecoder("utf-8").decode(bytes)); } catch (e) { UI.toast("O arquivo não é o arquivo da obra (.zip) nem um pacote (.json) válido: " + e.message, "erro"); return; }
+        self._bimPacoteResumo(p, null);
       };
       fr.onerror = function () { UI.toast("Não consegui ler o arquivo.", "erro"); };
-      fr.readAsText(arquivo);
+      fr.readAsArrayBuffer(arquivo);
+    },
+
+    /* O ARQUIVO DA OBRA (.zip = pacote + modelo .ifc) — o que se manda no grupo
+       da obra: quem recebe abre um arquivo só.
+       ⚠ ABRE O MODELO ANTES DO RESUMO: as vistas apontam peças por GlobalId;
+         importar antes de as peças chegarem deixaria as vistas de fora.
+       ⚠ o modelo entra pela MESMA porta do "Abrir IFC" (BIM.abrirBytes →
+         carregarIFC → onModeloCarregado): vai para a federação da obra e para
+         o cache deste computador, e a obra reabre depois sem pedir arquivo.
+       ⚠ modelo já aberto (mesmo nome) NÃO abre de novo — seriam duas cópias
+         das mesmas peças na cena. */
+    _bimObraZip: function (bytes) {
+      var self = this;
+      UI.toast("Lendo o arquivo da obra…", "info");
+      PacoteObra.lerObraCompleta(bytes, { inflar: this._zipInflar, decodificar: function (b) { return new TextDecoder("utf-8").decode(b); } }).then(function (r) {
+        var v = PacoteObra.validar(r.pacote);
+        if (!v.ok) { UI.toast("Arquivo da obra recusado: " + v.erros.join("; ") + ".", "erro"); return; }
+        var abertos = []; try { abertos = (BIM.modelos || []).map(function (m) { return m && m.nome; }); } catch (e) {}
+        if (!r.ifc || PacoteObra.modeloAberto(r.ifc.nome, abertos)) { self._bimPacoteResumo(r.pacote, null); return; }
+        var b = r.ifc.bytes, mb = String(Math.round(b.length / 1048576 * 10) / 10).replace(".", ",");
+        var ab = (b.byteOffset === 0 && b.byteLength === b.buffer.byteLength) ? b.buffer : b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
+        var pr = (window.BIM && BIM.abrirBytes) ? BIM.abrirBytes(ab, r.ifc.nome) : null;
+        if (!pr || typeof pr.then !== "function") { UI.toast("O visualizador 3D não está aberto: entre no BIM da obra e importe o arquivo de novo.", "erro"); return; }
+        UI.toast("Abrindo o modelo " + r.ifc.nome + " (" + mb + " MB) — as vistas entram quando as peças chegarem…", "info");
+        pr.then(function () {
+          var agora = []; try { agora = (BIM.modelos || []).map(function (m) { return m && m.nome; }); } catch (e2) {}
+          if (!PacoteObra.modeloAberto(r.ifc.nome, agora)) { UI.toast("O modelo " + r.ifc.nome + " não abriu (veja o aviso do visualizador). Nada foi importado.", "erro"); return; }
+          self._bimPacoteResumo(r.pacote, { abriu: r.ifc.nome });
+        }, function (e3) { UI.toast("O modelo " + r.ifc.nome + " não abriu: " + ((e3 && e3.message) || e3) + ". Nada foi importado.", "erro"); });
+      })["catch"](function (e) { UI.toast("Não consegui abrir o arquivo da obra: " + ((e && e.message) || e) + ".", "erro"); });
+    },
+
+    /* ⚠ o inflate vem do navegador (DecompressionStream): o produto não
+       vendoriza biblioteca de zip — ver js/bimbcf.js. Usado pelo BCF e pelo
+       arquivo da obra. */
+    _zipInflar: function (b) {
+      if (typeof DecompressionStream === "undefined") return Promise.reject(new Error("este navegador não sabe descomprimir"));
+      var ds = new DecompressionStream("deflate-raw");
+      var w = ds.writable.getWriter(); w.write(b); w.close();
+      return new Response(ds.readable).arrayBuffer().then(function (ab) { return new Uint8Array(ab); });
+    },
+
+    /* o resumo do que o pacote traz, conferido no modelo aberto — só grava
+       depois do "Importar" (VALIDA, MOSTRA E SÓ ENTÃO GRAVA) */
+    _bimPacoteResumo: function (p, extra) {
+      var self = this;
+      var v = PacoteObra.validar(p);
+      if (!v.ok) { UI.toast("Pacote recusado: " + v.erros.join("; ") + ".", "erro"); return; }
+      var els = []; try { els = (window.BIM && BIM.elementos) || []; } catch (e2) {}
+      var gid2ch = {};
+      els.forEach(function (el) { var ch = el && el.chave; if (ch && ch.indexOf("::") > 0) gid2ch[ch.split("::").pop()] = ch; else if (el && el.globalId && ch) gid2ch[el.globalId] = ch; });
+      var conf = PacoteObra.conferirModelo(p, function (g) { return !!gid2ch[g]; });
+      var r = v.resumo;
+      var alertaModelo = !els.length ? '<p class="est-aviso">' + (typeof Icones !== "undefined" ? Icones.get("alerta", 14) + " " : "") + 'Nenhum modelo aberto: as <b>vistas não entram</b> (elas apontam peças do modelo). Abra o ' + Util.esc(r.modelo || "modelo") + ' e importe de novo para trazer as vistas.</p>'
+        : (conf.total && conf.fracao < 0.9 ? '<p class="est-aviso">' + (typeof Icones !== "undefined" ? Icones.get("alerta", 14) + " " : "") + 'Só ' + conf.achados + ' de ' + conf.total + ' peças citadas pelas vistas existem no modelo aberto (' + Math.round(conf.fracao * 100) + '%). O pacote é do ' + Util.esc(r.modelo || "outro modelo") + ' — confira se é o modelo certo.</p>' : "");
+      var corpo = '<p style="margin:0 0 6px"><b>' + Util.esc(r.nome || "Pacote da obra") + '</b>' + (r.modelo ? ' · modelo ' + Util.esc(r.modelo) : '') + '</p><ul style="margin:0 0 8px;padding-left:18px;font-size:13px">' +
+        (r.vistas ? '<li>' + r.vistas + ' ponto(s) de vista em ' + r.pastas + ' pasta(s)' + (r.referencias ? ', ' + r.referencias + ' com o desenho original' : '') + '</li>' : '') +
+        (r.pranchas ? '<li>' + r.pranchas + ' prancha(s), ' + r.folhas + ' folha(s)</li>' : '') +
+        (r.sondagens ? '<li>' + r.sondagens + ' sondagem(ns) SPT com o boletim completo</li>' : '') +
+        (r.detalhes ? '<li>' + r.detalhes + ' ficha(s) de detalhe de peça — o “Detalhe da peça” abre a ficha</li>' : '') +
+        '<li>' + (r.imagens + r.arquivos) + ' desenho(s)/arquivo(s) — ' + String(r.megabytes).replace(".", ",") + ' MB, guardados neste computador</li></ul>' +
+        (els.length && conf.total ? '<p class="muted" style="font-size:12px;margin:0 0 6px">Peças conferidas no modelo aberto: ' + conf.achados + ' de ' + conf.total + '.</p>' : '') +
+        alertaModelo + (v.avisos.length ? '<p class="muted" style="font-size:12px">' + v.avisos.map(Util.esc).join("<br>") + '</p>' : '') +
+        (extra && extra.abriu ? '<p class="muted" style="font-size:12px;margin:6px 0 0">O modelo ' + Util.esc(extra.abriu) + ' foi aberto a partir do arquivo da obra e fica guardado nesta obra, neste computador.</p>' : '');
+      UI.modal("Importar pacote da obra", corpo, [
+        { texto: "Importar", classe: "primary", onClick: function () { UI.fecharModal(); self._bimPacoteGravar(p, gid2ch, els.length > 0); } },
+        { texto: "Cancelar", onClick: function () { UI.fecharModal(); } }]);
     },
     _bimPacoteGravar: function (p, gid2ch, comModelo) {
       var self = this, obra = String(this._bimSel), agora = new Date().toISOString(), falhasIdb = 0, pend = [];
@@ -13145,6 +13192,8 @@
           if (by) pend.push(Idb.set(k, by.buffer)["catch"](function () { falhasIdb++; }));
         });
       }
+      var dets = PacoteObra.detalhes(p), nDet = 0, falhaFichas = false;
+      if (dets.length) pend.push(this._pdGravar(obra, dets).then(function (k) { nDet = k; }, function () { falhaFichas = true; }));
       var nV = { criados: 0, atualizados: 0 }, faltam = 0;
       if (comModelo && window.BimVista && (p.vistas || []).length) {
         var dv = BimVista.doPacote(p, gid2ch, obra, agora); faltam = dv.pecasFaltando;
@@ -13167,10 +13216,12 @@
         if (nV.criados || nV.atualizados) partes.push((nV.criados + nV.atualizados) + " vista(s) (" + nV.criados + " nova(s), " + nV.atualizados + " atualizada(s))");
         if (csS.registros.length) partes.push(csS.registros.length + " sondagem(ns)");
         if (csP.registros.length) partes.push(csP.registros.length + " prancha(s)");
+        if (nDet) partes.push(nDet + " ficha(s) de detalhe");
         var msg = "Pacote importado: " + (partes.join(" · ") || "nada novo") + ".";
         if (faltam) msg += " ⚠ " + faltam + " referência(s) a peças que não estão no modelo aberto.";
         if (falhasIdb) msg += " ⚠ " + falhasIdb + " desenho(s) não couberam neste navegador (sem espaço).";
-        UI.toast(msg, (faltam || falhasIdb) ? "aviso" : "ok");
+        if (falhaFichas) msg += " Atenção: as fichas de detalhe não foram guardadas neste navegador (sem espaço?) — o “Detalhe da peça” não vai achá-las.";
+        UI.toast(msg, (faltam || falhasIdb || falhaFichas) ? "aviso" : "ok");
       });
     },
 
@@ -13204,10 +13255,10 @@
       if (!window.Sondagem || !window.SondagemUI) { box.innerHTML = '<p class="muted">O módulo de sondagem não carregou nesta tela. Recarregue o app.</p>'; return; }
       var self = this, st = this._sdEst(), reg = this._sdAtual();
       var cab = '<div class="flex between" style="align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px"><h3 style="margin:0;display:flex;align-items:center">' + (typeof Icones !== "undefined" ? Icones.get("niveis", 15) : "") + 'Sondagem 3D</h3>' +
-        '<span class="flex" style="gap:6px;flex-wrap:wrap"><button class="btn sm" data-sd="pacote" title="Pacote da obra (.json) com a sondagem, as vistas e as pranchas">Importar pacote</button>' +
+        '<span class="flex" style="gap:6px;flex-wrap:wrap"><button class="btn sm" data-sd="pacote" title="Arquivo da obra (.zip, com o modelo) ou pacote (.json): a sondagem, as vistas, as pranchas e as fichas de detalhe">Importar pacote</button>' +
         (reg ? '<button class="btn sm" data-sd="pdf">Relatório (PDF)</button><button class="btn sm' + (st.no3d ? ' primary' : '') + '" data-sd="3d">' + (st.no3d ? 'Tirar solo do 3D' : 'Solo no 3D') + '</button>' : '') + '</span></div>';
       if (!reg) {
-        box.innerHTML = cab + '<p class="muted" style="font-size:12.5px">Nenhuma sondagem nesta obra. Importe o <b>pacote da obra</b> (ele traz o boletim SPT completo, as unidades do solo e o relatório em PDF). Com a sondagem aqui você lê o boletim camada por camada, vê o solo debaixo do modelo e simula até onde a estaca precisa ir para a carga do pilar.</p>';
+        box.innerHTML = cab + '<p class="muted" style="font-size:12.5px">Nenhuma sondagem nesta obra. Importe o <b>arquivo da obra</b> (.zip) ou o <b>pacote da obra</b> (.json) — ele traz o boletim SPT completo, as unidades do solo e o relatório em PDF. Com a sondagem aqui você lê o boletim camada por camada, vê o solo debaixo do modelo e simula até onde a estaca precisa ir para a carga do pilar.</p>';
         this._sdLigar(box); return;
       }
       var s = Sondagem.normalizar(reg), furos = s.furos;
@@ -15627,26 +15678,134 @@
       var el = null;
       try { (BIM.elementos || []).some(function (e) { if (e.uid === sel.uid) { el = e; return true; } return false; }); } catch (e) {}
       if (!el || !el.detalhe) { UI.toast("Esta peça não traz o carimbo OrcaPRO_Detalhe — o OrçaPRO não sabe qual vista do projeto a desenha.", "aviso"); return true; }
-      this._estAbrirDetalhe(el.detalhe);
+      this._pecaDetalhe(el.detalhe);
       return true;
     },
-    _estAbrirDetalhe: function (det) {
+    /* ⚠ O "Detalhe da peça" tem DUAS fontes, nesta ordem: a VISTA do projeto
+       estrutural lido do PDF (concreto: a peça exata, com a armação — abre na
+       hora, como sempre abriu) e, se ela não existir, a FICHA do arquivo da
+       obra (estaca de madeira, painel, ligação: o que o leitor de concreto não
+       conhece). Sem nenhuma, a tela diz o que falta — nunca abre a vista
+       "parecida" (o leitor só cria vista de S/P/V/L, então a estaca E1-1 não
+       cai numa vista de sapata).
+       Roteiro do defeito (30/09/2026): a fundação em estacas de madeira foi
+       carregada em "Projeto estrutural" (leitor de concreto), a estaca E1-1
+       tinha o carimbo e a tela respondia "o projeto não tem a vista de E1-1". */
+    _pecaDetalhe: function (det) {
+      var self = this, s = String(det || "");
+      if (this._estAbrirDetalhe(s)) return;
+      this._pdAbrir(s).then(function (ok) {
+        if (ok) return;
+        var regs = self._estRegs();
+        UI.toast((regs.length ? "O projeto estrutural desta obra não tem a vista de " + s + ", e" : "Esta obra não tem projeto estrutural carregado, e") +
+          " o arquivo da obra importado neste computador não traz a ficha dessa peça. Importe o arquivo da obra (.zip) em Pontos de vista → Importar pacote da obra.", "aviso");
+      }, function () { UI.toast("Não consegui ler as fichas de detalhe deste computador.", "erro"); });
+    },
+    /* a vista do projeto estrutural que desenha o carimbo (ou null) */
+    _estAcharDetalhe: function (det) {
+      if (!window.EstrutPDF) return null;
       var s = String(det || ""), i = s.lastIndexOf("/");
-      var pav = i >= 0 ? s.slice(0, i) : "", nome = i >= 0 ? s.slice(i + 1) : s;
-      var regs = this._estRegs(), achou = null, achouReg = null;
-      regs.forEach(function (r) {
+      var pav = i >= 0 ? s.slice(0, i) : "", nome = i >= 0 ? s.slice(i + 1) : s, achou = null;
+      this._estRegs().forEach(function (r) {
         if (achou) return;
         var v = EstrutPDF.vistaDoElemento(r.projeto, nome, pav);
         if (!v && /^L\d/i.test(nome)) v = (r.projeto.vistas || []).filter(function (x) { return x.folha && x.grupo === "lajes"; })[0] || null;
-        if (v) { achou = v; achouReg = r; }
+        if (v) achou = { v: v, reg: r };
       });
-      if (!achou) {
-        UI.toast(regs.length ? "O projeto estrutural desta obra não tem a vista de " + s + "." : "Esta obra ainda não tem projeto estrutural: abra “Projeto estrutural” e carregue o PDF.", "aviso");
-        return false;
-      }
-      this._estEst().sel = achouReg.id;
-      this._estAbrirVista(achou.id);
+      return achou;
+    },
+    _estAbrirDetalhe: function (det) {
+      var a = this._estAcharDetalhe(det);
+      if (!a) return false;
+      this._estEst().sel = a.reg.id;
+      this._estAbrirVista(a.v.id);
       return true;
+    },
+
+    /* =====================================================================
+     * FICHA DE DETALHE DO ARQUIVO DA OBRA — o "Detalhe da peça" de quem não
+     * tem projeto de concreto (estaca de madeira, painel de wood frame,
+     * ligação metálica): o desenho, as linhas do cálculo, as pendências, a
+     * vista do pacote e a folha da prancha (motor: js/pacoteobra.js).
+     *
+     * ⚠ CASA PELO CARIMBO OrcaPRO_Detalhe, NUNCA POR SEMELHANÇA.
+     * ⚠ MORA NESTE COMPUTADOR (IndexedDB), como o modelo e os desenhos do
+     *   pacote: onde o arquivo da obra não foi importado, a tela diz isso em
+     *   vez de abrir uma ficha vazia.
+     * ===================================================================== */
+    _pdChave: function (obra) { return "pacote:detalhes:" + eid() + ":" + String(obra || this._bimSel || ""); },
+    _pdLer: function (obra) {
+      if (!window.Idb) return Promise.resolve({});
+      return Idb.get(this._pdChave(obra)).then(function (s) {
+        try { var o = typeof s === "string" ? JSON.parse(s) : s; return o && typeof o === "object" ? o : {}; } catch (e) { return {}; }
+      }, function () { return {}; });
+    },
+    /* reimportar ATUALIZA: a ficha nova troca a do mesmo carimbo, as outras ficam */
+    _pdGravar: function (obra, lista) {
+      var self = this;
+      if (!window.Idb) return Promise.reject(new Error("sem IndexedDB"));
+      return this._pdLer(obra).then(function (m) {
+        (lista || []).forEach(function (f) { if (f && f.chave) m[f.chave] = f; });
+        return Idb.set(self._pdChave(obra), JSON.stringify(m)).then(function () { return (lista || []).length; });
+      });
+    },
+    _pdAbrir: function (det) {
+      var self = this;
+      if (!window.PacoteObra || !this._bimSel) return Promise.resolve(false);
+      return this._pdLer().then(function (m) {
+        var f = PacoteObra.ficha(m, det);
+        if (!f) return false;
+        self._pdMostrar(f);
+        return true;
+      });
+    },
+    _pdMostrar: function (f) {
+      var self = this, esc = Util.esc, vistaReg = null;
+      if (f.vista) { try { vistaReg = (this._bimVistaDaObra() || []).filter(function (v) { return v && v.origemId === f.vista; })[0] || null; } catch (e) {} }
+      var linhas = f.linhas || [], avisos = f.avisos || [];
+      var corpo = (f.grupo || f.subtitulo ? '<p class="muted" style="margin:0 0 8px;font-size:12.5px">' + esc([f.grupo, f.subtitulo].filter(function (x) { return !!x; }).join(" · ")) + '</p>' : '') +
+        (f.desenho ? '<div id="pd-desenho" style="text-align:center;max-height:50vh;overflow:auto;margin:0 0 8px"><p class="muted" style="font-size:12px">Carregando o desenho…</p></div>' : '') +
+        (linhas.length ? '<table class="tabela" style="width:100%;font-size:12.5px;margin:0 0 8px"><tbody>' + linhas.map(function (l) { return '<tr><th style="text-align:left;font-weight:600;width:42%">' + esc(l[0]) + '</th><td>' + esc(l[1]) + '</td></tr>'; }).join("") + '</tbody></table>' : '') +
+        avisos.map(function (a) { return '<p class="est-aviso">' + (typeof Icones !== "undefined" ? Icones.get("alerta", 14) + " " : "") + esc(a) + '</p>'; }).join("") +
+        '<p class="muted" style="font-size:11px;margin:6px 0 0">Carimbo da peça: <b>' + esc(f.carimbo || f.chave) + '</b> · ficha do arquivo da obra</p>';
+      var bt = [{ texto: "Ver no 3D", classe: "primary", onClick: function () { self._pdVer3D(f); } }];
+      if (vistaReg) bt.push({ texto: "Vista do projeto", onClick: function () { UI.fecharModal(); self._bimVistaIr(vistaReg.id); } });
+      if (f.prancha) bt.push({ texto: "Prancha", onClick: function () { self._pdPrancha(f); } });
+      bt.push({ texto: "Fechar", onClick: function () { UI.fecharModal(); } });
+      UI.modal("Detalhe · " + f.titulo, corpo, bt);
+      if (!f.desenho || !window.Idb) return;
+      Idb.get(f.desenho).then(function (dado) {
+        var box = document.getElementById("pd-desenho"); if (!box) return;
+        if (!dado) { box.innerHTML = '<p class="muted" style="font-size:12px">O desenho desta peça não está neste computador — importe de novo o arquivo da obra.</p>'; return; }
+        var src = typeof dado === "string" ? dado : URL.createObjectURL(new Blob([dado], { type: "image/jpeg" }));
+        box.innerHTML = '<img alt="" src="' + esc(src) + '" style="max-width:100%;background:#fff;border-radius:6px">' + (f.rotuloDesenho ? '<p class="muted" style="font-size:11px;margin:4px 0 0">' + esc(f.rotuloDesenho) + '</p>' : '');
+      }, function () { var box = document.getElementById("pd-desenho"); if (box) box.innerHTML = '<p class="muted" style="font-size:12px">Não consegui abrir o desenho desta peça.</p>'; });
+    },
+    /* as peças do MESMO carimbo (a estaca e a ligação dela; o painel inteiro) */
+    _pdVer3D: function (f) {
+      var els = [];
+      try { els = (window.BIM && BIM.elementos) || []; } catch (e) {}
+      if (!els.length) { UI.toast("Abra o modelo da obra no visualizador para ver a peça no 3D.", "aviso"); return; }
+      var chaves = [];
+      els.forEach(function (el) { if (el && el.chave && el.detalhe && PacoteObra.chaveDetalhe(el.detalhe) === f.chave) chaves.push(el.chave); });
+      if (!chaves.length) { UI.toast("Nenhuma peça do modelo aberto traz o carimbo " + (f.carimbo || f.chave) + " — o modelo aberto é o desta ficha?", "aviso"); return; }
+      UI.fecharModal();
+      try { BIM.limparRaioX(); } catch (e2) {}
+      var nm = BIM.isolarChaves(chaves);
+      if (nm) this._bimEnquadrarLivre(chaves);
+      this._b3Espelhar({ modo: "isolar", chaves: chaves, rotulo: "detalhe: " + f.titulo });
+      var n = nm ? BIM.contarVisiveis() : 0;   /* peças, não malhas (ver _bimDiscAcao) */
+      UI.toast(n + " peça(s) de " + f.titulo + ". “Restaurar tudo” (Visibilidade) volta o modelo.", n ? "ok" : "aviso");
+    },
+    /* a folha da prancha, no PDF do pacote (#page=) */
+    _pdPrancha: function (f) {
+      var pr = f.prancha; if (!pr || !window.Idb) return;
+      Idb.get(pr.pdf).then(function (dado) {
+        if (!dado) { UI.toast("A prancha desta peça não está neste computador — importe de novo o arquivo da obra.", "aviso"); return; }
+        var src = (typeof dado === "string" ? dado : URL.createObjectURL(new Blob([dado], { type: "application/pdf" }))) + "#page=" + pr.pagina;
+        UI.fecharModal();
+        UI.modal((pr.rotulo || "Prancha") + " — folha " + pr.pagina, '<iframe src="' + Util.esc(src) + '" style="width:100%;height:76vh;border:0"></iframe>', [{ texto: "Fechar", onClick: function () { UI.fecharModal(); } }]);
+      }, function () { UI.toast("Não consegui abrir a prancha.", "erro"); });
     },
 
     /* ---- canteiro: impressão e CSV ---- */
@@ -20114,9 +20273,9 @@
               try { (BIM.elementos || []).some(function (eS) { if (eS.uid === info.uid) { elSel = eS; return true; } return false; }); } catch (eSel) {}
               if (elSel && elSel.disciplinaPeca) h += "<br><span style='display:inline-block;margin-top:4px;background:rgba(148,163,184,.2);font-weight:700;font-size:11px;padding:2px 8px;border-radius:99px'>" + Util.esc(elSel.disciplinaPeca) + "</span>";
               h += '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" id="bim-props-btn">' + (typeof Icones !== 'undefined' ? Icones.get('checklist', 15) : '') + ' Propriedades</button> <button class="btn sm" id="bim-fam-salvar">' + (typeof Icones !== 'undefined' ? Icones.get('salvar', 15) : '') + ' Salvar família</button>' +
-                (elSel && elSel.detalhe ? ' <button class="btn sm" id="bim-det-btn" title="Abre a vista do projeto estrutural que desenha esta peça">' + (typeof Icones !== 'undefined' ? Icones.get('prancha', 15) : '') + ' Detalhe ' + Util.esc(elSel.detalhe) + '</button>' : '') + '</div>';
+                (elSel && elSel.detalhe ? ' <button class="btn sm" id="bim-det-btn" title="Abre o detalhe desta peça: a ficha do arquivo da obra ou a vista do projeto estrutural">' + (typeof Icones !== 'undefined' ? Icones.get('prancha', 15) : '') + ' Detalhe ' + Util.esc(elSel.detalhe) + '</button>' : '') + '</div>';
               box.innerHTML = h;
-              var bD = document.getElementById("bim-det-btn"); if (bD && elSel) bD.onclick = function () { self._estAbrirDetalhe(elSel.detalhe); };
+              var bD = document.getElementById("bim-det-btn"); if (bD && elSel) bD.onclick = function () { self._pecaDetalhe(elSel.detalhe); };
               // wiring direto (balão dinâmico — mesmo padrão dos painéis do _bimWire)
               var bP = document.getElementById("bim-props-btn"); if (bP) bP.onclick = function () { self._bimVerProps(info); };
               var bF = document.getElementById("bim-fam-salvar"); if (bF) bF.onclick = function () { self._bimSalvarFamilia(info); };

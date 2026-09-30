@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.103",
+  "versao": "1.2.104",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.103.zip",
-  "notas": "Pacote da obra: pontos de vista em pastas com o desenho original do projetista, pranchas e sondagem importados de uma vez; Sondagem 3D: boletim SPT, solo debaixo do modelo com o solo critico em destaque e simulador de ate onde a estaca precisa ir; Pranchas A0 a A4 com carimbo e vistas do modelo; aba Montagem com o passo a passo da obra; RA/RV: validade, marca, vistas e 4D do link, Meus links e apontamentos de campo.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.103/OrcaPRO-IA-Instalador-v1.2.103.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.104.zip",
+  "notas": "Arquivo da obra: um .zip com o modelo e o pacote da obra - ao importar, o sistema abre o modelo e traz de uma vez as vistas, as pranchas, a sondagem e a ficha de cada peca; Detalhe da peca abre a ficha (desenho, calculo, pendencias e a prancha na folha certa) quando o projeto estrutural nao tem a vista dela; o Ver no 3D da planta de locacao encontra as estacas.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.104/OrcaPRO-IA-Instalador-v1.2.104.exe"
 }

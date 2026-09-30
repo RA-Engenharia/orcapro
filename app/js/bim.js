@@ -8845,7 +8845,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
 
   function abrirArquivo(file) { var fr = new FileReader(); fr.onload = function () { enfileirar(function () { return carregarIFC(fr.result, file.name); }); }; fr.readAsArrayBuffer(file); }
   // v1.1.85 — carrega IFC a partir de bytes (compartilhamento em nuvem: o celular baixa o modelo do VPS)
-  S._abrirBytes = function (ab, nome, disc) { enfileirar(function () { return carregarIFC(ab, nome || 'modelo.ifc', disc); }); };
+  /* devolve a promessa da fila: o arquivo da obra (.zip) só importa as vistas DEPOIS que as peças chegaram */
+  S._abrirBytes = function (ab, nome, disc) { return enfileirar(function () { return carregarIFC(ab, nome || 'modelo.ifc', disc); }); };
   // modelos IFC atuais com bytes guardados (p/ subir pra nuvem) — sintéticos/editor ficam de fora
   S._bytesModelos = function () { return S.modelos.filter(function (m) { return m._bytes && m._bytes.length; }).map(function (m) { return { nome: m.nome, disc: m.disciplina || '', bytes: m._bytes }; }); };
   function carregarExemplo() {
@@ -9559,7 +9560,7 @@ window.BIM = {
   /* ⚠ a disciplina tem de passar: o visor da nuvem recebe do manifesto qual
      arquivo é Hidráulica, Estrutura… e sem ela o filtro por disciplina do
      celular ficava adivinhando pelo nome do arquivo */
-  abrirBytes: function (ab, nome, disc) { if (S && S._abrirBytes) S._abrirBytes(ab, nome, disc); }, // v1.1.85 — RA/RV nuvem
+  abrirBytes: function (ab, nome, disc) { return (S && S._abrirBytes) ? S._abrirBytes(ab, nome, disc) : null; }, // v1.1.85 — RA/RV nuvem; null = visualizador não montado
   bytesModelos: function () { return (S && S._bytesModelos) ? S._bytesModelos() : []; },
   carregarExemplo: function () { if (S && S._carregarExemplo) S._carregarExemplo(); },
   aplicarEstado: aplicarEstado,
