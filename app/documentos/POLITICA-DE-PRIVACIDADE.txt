@@ -1,6 +1,16 @@
 ﻿POLÍTICA DE PRIVACIDADE — OrçaPRO IA
-Versão 1.7 — vigente a partir de 26/09/2026
+Versão 1.8 — vigente a partir de 29/09/2026
 Elaborada conforme a Lei nº 13.709/2018 (LGPD)
+
+O que mudou na 1.8: o item 4.3 (modelo BIM compartilhado por link) passou a
+descrever o que o link leva e o que volta dele. O prazo do link agora é
+escolhido por quem compartilha (1, 3, 7 ou 30 dias; o padrão continua 3) e o
+link pode ser revogado antes. Junto com o modelo podem ir o nome e o logo da
+empresa, o nome da obra, os pontos de vista e o cronograma SEM valores. Quem
+abre o link pode deixar APONTAMENTOS DE CAMPO (texto, foto e o próprio nome),
+que o dono do link traz para a obra. O servidor conta quantas vezes o link foi
+aberto, sem identificar quem abriu. No Android, a realidade aumentada pelo app
+do Google recebe o modelo 3D (item 8).
 
 O que mudou na 1.7: entrou o item 4.14 — o PAINEL DE TREINAMENTO do site
 (aulas em vídeo, prova e certificado para quem comprou o OrçaPRO). O
@@ -199,9 +209,32 @@ fornecedora, fora do retrato da obra (para não ser apagado a cada publicação)
     para mais ninguém. Retenção no item 6.
 
 4.3 MODELO BIM NA NUVEM E SALA DE REUNIÃO
-Em "Compartilhar na nuvem", o ARQUIVO IFC INTEIRO do projeto é enviado ao
-servidor da fornecedora para abrir no celular ou em realidade virtual por link
-ou QR. O link expira em cerca de 72 horas e o modelo é apagado em seguida.
+Em "Gerar link e QR para qualquer celular", o ARQUIVO IFC INTEIRO do projeto é
+enviado ao servidor da fornecedora para abrir no celular ou em realidade
+virtual por link ou QR. O link vale o prazo que você escolher (1, 3, 7 ou 30
+dias; padrão 3) e pode ser revogado antes, em "Meus links"; vencido ou
+revogado, o modelo e tudo o que veio com ele são apagados do servidor.
+
+  · O QUE PODE IR JUNTO, e só se você marcar: o nome e o logo da empresa e o
+    nome da obra; os pontos de vista salvos (SEM os comentários da equipe); o
+    cronograma da obra para o "obra no tempo" (4D), SEM custo, preço de venda
+    ou qualquer valor.
+  · QUANTAS VEZES O LINK FOI ABERTO: o servidor conta as aberturas e guarda a
+    hora da última, para você ver em "Meus links". Não identifica quem abriu.
+  · APONTAMENTOS DE CAMPO: quem abre o link pode tocar num ponto do modelo e
+    deixar um apontamento — texto, foto (opcional) e o nome que a pessoa
+    digitar. Ele fica no servidor junto com o link, é visível para QUEM TEM O
+    LINK e é apagado com ele. O dono do link pode trazê-lo para a obra, onde
+    vira um ponto de vista com a foto (e passa a seguir as regras da obra,
+    itens 3.1 e 6).
+  · SEM INTERNET: o celular que abriu o link guarda o modelo NO PRÓPRIO
+    APARELHO para abrir de novo sem sinal, até o link vencer; vencido ou
+    revogado, o próprio visualizador apaga essa cópia na próxima abertura.
+  · REALIDADE AUMENTADA: no iPhone, o arquivo 3D da RA é montado no próprio
+    aparelho e não sai dele. No Android, a RA pelo app do Google precisa de um
+    arquivo 3D (GLB) montado a partir do que está visível: ele sobe para o
+    servidor da fornecedora e o app do Google o baixa de lá (item 8); é
+    apagado com o link.
 
 Na Sala de Reunião, enquanto ela está aberta, saem a posição da sua câmera no
 modelo (várias vezes por segundo), o seu nome, telefone e o logo da empresa,
@@ -604,8 +637,11 @@ Para quê:
     apagados automaticamente do nosso servidor depois disso.
   · Portal do Cliente (item 4.2): enquanto a obra estiver publicada. Excluir a
     obra remove a publicação; a pedido, apagamos em até 30 dias.
-  · Modelo BIM compartilhado (item 4.3): cerca de 72 horas, apagado em seguida.
-    Posição, identidade e voz da reunião não são gravadas.
+  · Modelo BIM compartilhado (item 4.3), com os dados que foram junto, os
+    apontamentos de campo e o arquivo da RA do Android: pelo prazo escolhido
+    no link (1 a 30 dias; padrão 3) ou até você revogar — o que vier antes —,
+    apagados em seguida. Posição, identidade e voz da reunião não são
+    gravadas.
   · Áudio do diário (item 4.8): enviado para transcrever e não guardado por
     nós; o que fica é o texto, dentro do diário.
   · Cadastro de quem manda o diário (item 4.8 — nome e telefone): enquanto
@@ -655,6 +691,10 @@ Boa parte disso você resolve sozinho e na hora, dentro do programa — exportan
     clima do diário (item 4.9).
   · Google LLC — Google Maps: recebe o endereço da obra quando você abre a
     aba Mapa dela (item 4.11).
+  · Google LLC — app do Google no Android (Scene Viewer): quando alguém escolhe
+    a realidade aumentada do Android num link de projeto (item 4.3), o app do
+    Google baixa do nosso servidor o arquivo 3D do que está visível para
+    mostrá-lo. Não recebe licença, nome nem dado da obra além da geometria.
   · Google LLC — YouTube: entrega os vídeos das aulas do painel de
     treinamento do site (item 4.14), embutidos pelo endereço
     youtube-nocookie.com. Recebe o seu IP e o que o navegador manda a

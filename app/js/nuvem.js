@@ -97,6 +97,12 @@
      * IndexedDB de quem carregou; ~4 MB por projeto): no outro aparelho os
      * números aparecem e a tela pede o arquivo para mostrar os desenhos. */
     "bim_estrut",
+    /* a SONDAGEM da obra (boletim SPT, unidades do solo, posição dos furos) e
+     * as PRANCHAS do projeto (folhas, carimbo, blocos): o canteiro abre no
+     * celular. Os PDFs e os desenhos NÃO viajam — moram no IndexedDB de quem
+     * importou o pacote; no outro aparelho a tela diz isso. */
+    "bim_sondagens",
+    "bim_pranchas",
     /* compatibilizacao: o TESTE salvo e o RESULTADO com o ciclo de vida.
      * O resultado carrega responsavel, prazo, comentario e historico — e
      * e justamente isso que precisa atravessar aparelhos: o engenheiro

@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.102",
+  "versao": "1.2.103",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.102.zip",
-  "notas": "RA/RV no celular: botao Gerar link e QR para qualquer celular - o projeto 3D abre em qualquer Android ou iPhone, com ou sem o OrcaPRO instalado, pelo QR ou por link enviado no WhatsApp; no iPhone, RA do iPhone que prende o projeto no chao (tamanho real ou maquete na mesa); painel de RA/RV cabe na tela do celular.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.102/OrcaPRO-IA-Instalador-v1.2.102.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.103.zip",
+  "notas": "Pacote da obra: pontos de vista em pastas com o desenho original do projetista, pranchas e sondagem importados de uma vez; Sondagem 3D: boletim SPT, solo debaixo do modelo com o solo critico em destaque e simulador de ate onde a estaca precisa ir; Pranchas A0 a A4 com carimbo e vistas do modelo; aba Montagem com o passo a passo da obra; RA/RV: validade, marca, vistas e 4D do link, Meus links e apontamentos de campo.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.103/OrcaPRO-IA-Instalador-v1.2.103.exe"
 }

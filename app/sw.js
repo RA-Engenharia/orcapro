@@ -11,7 +11,7 @@
  * lugar nenhum. Passo manual em release é passo que uma hora não acontece:
  * agora o packer REPROVA o pacote se os dois números divergirem
  * (tools/check-versao.js, chamado no empacotar-cliente.ps1). */
-var CACHE = 'orcapro-app-v1.2.102';
+var CACHE = 'orcapro-app-v1.2.103';
 
 self.addEventListener('install', function (e) {
   self.skipWaiting();
@@ -45,7 +45,11 @@ self.addEventListener('install', function (e) {
 });
 self.addEventListener('activate', function (e) {
   e.waitUntil(
-    caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return k === CACHE ? null : caches.delete(k); })); })
+    /* ⚠ o cache do LINK da RA/RV (orcapro-rv-*, js/rvvisor.js) não é da
+       versão do app: guarda os modelos para abrir sem internet até o link
+       vencer. Apagado aqui, toda atualização zerava o uso sem internet de
+       quem já tinha aberto o link — e ninguém avisaria. */
+    caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return (k === CACHE || k.indexOf('orcapro-rv-') === 0) ? null : caches.delete(k); })); })
       .then(function () { return self.clients.claim(); })
   );
 });
@@ -55,6 +59,10 @@ self.addEventListener('fetch', function (e) {
   var url;
   try { url = new URL(req.url); } catch (err) { return; }
   if (url.origin !== self.location.origin) return; // IA (:3041), licença (VPS), SDK do Firebase: rede direto
+  /* as rotas do link (/rv/t, /rv/f, /rv/notas…) são do js/rvvisor.js, que
+     guarda o que precisa com validade própria; aqui o .ifc (até 80 MB) ficaria
+     guardado DUAS vezes no celular */
+  if (url.pathname.indexOf('/rv/') === 0) return;
   e.respondWith(
     fetch(req).then(function (r) {
       if (r && r.ok) { var cp = r.clone(); caches.open(CACHE).then(function (c) { c.put(req, cp); }); }

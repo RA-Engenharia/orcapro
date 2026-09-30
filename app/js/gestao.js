@@ -513,6 +513,10 @@
     producao_preco: 1, bim_niveis: 1, bim_modelos: 1, bim_conjuntos: 1, bim_vistas: 1,
     /* o projeto estrutural lido do PDF é DAQUELA obra (locação, armação, vistas) */
     bim_estrut: 1,
+    /* a sondagem (boletim SPT, posição dos furos) e as pranchas do projeto
+       são DAQUELA obra: sem estar aqui, o sub-usuário restrito veria o solo e
+       as folhas das obras que não acompanha */
+    bim_sondagens: 1, bim_pranchas: 1,
     bim_clash_testes: 1, bim_clash_resultados: 1, bim_tarefas: 1,
     /* o elo modelo<->orcamento carrega obraId: sem estar aqui, o sub-usuario
        restrito a duas obras veria os elos das outras oito. */
@@ -5242,6 +5246,10 @@
       /* o projeto estrutural lido é da obra; o PDF no IndexedDB fica órfão e a
          política de espaço do navegador o descarta — não é dado de negócio */
       ["bim_estrut", "projeto(s) estrutural(is) lido(s) do PDF"],
+      /* a sondagem e as pranchas são da obra; os PDFs no IndexedDB ficam
+         órfãos e a política de espaço do navegador os descarta */
+      ["bim_sondagens", "sondagem(ns) SPT"],
+      ["bim_pranchas", "prancha(s) do projeto"],
       ["bim_clash_testes", "teste(s) de compatibilização"],
       ["bim_clash_resultados", "conflito(s) com histórico"],
       ["bim_tarefas", "tarefa(s) do cronograma 4D"],
@@ -10117,6 +10125,8 @@
       reg["estrutural"] = function () { self._bimAbrirPainel("estrut"); self._estRender(); return true; };
       reg["detalhe-peca"] = function () { return self._estDetalheDaSelecao(); };
       reg["vistas"] = function () { self._bimAbrirPainel("vistas"); self._bimVistaRender(); return true; };
+      reg["sondagem"] = function () { self._bimAbrirPainel("sondagem"); self._sdRender(); return true; };
+      reg["pranchas"] = function () { self._bimAbrirPainel("pranchas"); self._prRender(); return true; };
       reg["tarefas4d"] = function () { self._bimAbrirPainel("tarefas4d"); self._bimTarRender(); return true; };
       /* "snap" é comando de MENU, não de alternar: e.ligado chegava null e o
          snapConfig({on:null}) não mudava nada — o botão dizia sucesso e o
@@ -12613,7 +12623,7 @@
 
         '<div id="bim-vistas" style="display:none">' +
           '<div class="flex between" style="align-items:center;margin-bottom:8px;flex-wrap:wrap"><h3 style="margin:0;display:flex;align-items:center">' + _icB("camera") + 'Pontos de vista</h3>' +
-          '<span class="flex" style="gap:6px"><button class="btn sm" id="bim-vista-bcf-in">Importar BCF</button><button class="btn sm" id="bim-vista-bcf-out">Exportar BCF</button><button class="btn sm primary" id="bim-vista-nova">+ Salvar esta vista</button></span></div>' +
+          '<span class="flex" style="gap:6px;flex-wrap:wrap"><button class="btn sm" id="bim-vista-pacote" title="Pacote da obra (.json): vistas prontas em pastas, com o desenho original de cada uma, as pranchas e a sondagem">Importar pacote da obra</button><button class="btn sm" id="bim-vista-bcf-in">Importar BCF</button><button class="btn sm" id="bim-vista-bcf-out">Exportar BCF</button><button class="btn sm primary" id="bim-vista-nova">+ Salvar esta vista</button></span></div>' +
           '<p class="muted" style="font-size:11.5px;margin:0 0 8px">Guarda o ângulo da câmera, o que está visível e o comentário. O <b>BCF</b> é o formato que o Revit, o Navisworks e o Solibri leem — é como o apontamento volta para quem projeta. <b>O BCF ainda não foi aberto noutra ferramenta a partir daqui: trate como experimental.</b></p>' +
           '<input type="file" id="bim-vista-arq" accept=".bcfzip,.zip" style="display:none">' +
           '<div id="bim-vistas-lista"></div>' +
@@ -12637,6 +12647,11 @@
           '<input type="file" id="bim-est-reanexo" accept=".pdf,application/pdf" style="display:none">' +
           '<div id="bim-est-corpo"></div>' +
         "</div>" +
+        /* SONDAGEM 3D: o boletim SPT, o solo debaixo da obra e o simulador
+           da estaca (js/sondagem.js, js/sondagemui.js) */
+        '<div id="bim-sondagem" style="display:none"><div id="bim-sd-corpo"></div></div>' +
+        /* PRANCHAS: folhas com carimbo e vistas do modelo (js/prancha.js) */
+        '<div id="bim-pranchas" style="display:none"><div id="bim-pr-corpo"></div></div>' +
 
         '<div id="bim-6d" style="display:none">' +
           '<div class="flex between" style="align-items:center;margin-bottom:8px;flex-wrap:wrap"><h3 style="margin:0;display:flex;align-items:center">' + _icB("relogio") + '6D/7D · Ciclo de vida</h3>' +
@@ -12653,7 +12668,8 @@
     /* v1.1.121 — abre a gaveta de análise do viewer no painel pedido (chamado pelo
      * dock do BIM via opts.onPainel; um painel por vez pra leitura limpa). */
     _bimAbrirPainel: function (chave) {
-      var mapa = { modelos: ["bim-modelos", "Modelos carregados"], "4d": ["bim-4d", "Simulação 4D"], clash: ["bim-clash", "Compatibilização"], qto: ["bim-qto", "Quantitativos"], familias: ["bim-familias", "Banco de famílias"], "6d": ["bim-6d", "6D/7D · Ciclo de vida"], conjuntos: ["bim-conjuntos", "Conjuntos de seleção"], vistas: ["bim-vistas", "Pontos de vista"], tarefas4d: ["bim-tarefas", "Cronograma 4D"], disc: ["bim-disc", "Disciplinas e etapas construtivas"], estrut: ["bim-estrut", "Projeto estrutural no canteiro"] };
+      var mapa = { modelos: ["bim-modelos", "Modelos carregados"], "4d": ["bim-4d", "Simulação 4D"], clash: ["bim-clash", "Compatibilização"], qto: ["bim-qto", "Quantitativos"], familias: ["bim-familias", "Banco de famílias"], "6d": ["bim-6d", "6D/7D · Ciclo de vida"], conjuntos: ["bim-conjuntos", "Conjuntos de seleção"], vistas: ["bim-vistas", "Pontos de vista"], tarefas4d: ["bim-tarefas", "Cronograma 4D"], disc: ["bim-disc", "Disciplinas e etapas construtivas"], estrut: ["bim-estrut", "Projeto estrutural no canteiro"],
+                   sondagem: ["bim-sondagem", "Sondagem 3D"], pranchas: ["bim-pranchas", "Pranchas do projeto"] };
       var alvo = mapa[chave]; if (!alvo) return;
       var drawer = document.getElementById("bim-drawer"); if (!drawer) return;
       Object.keys(mapa).forEach(function (k) {
@@ -12666,7 +12682,8 @@
          os outros painéis voltam à gaveta de sempre */
       var st4 = this._b4Estado();
       /* o projeto estrutural mostra os recortes do desenho: precisa de largura como o 4D */
-      drawer.style.width = chave === "4d" ? (st4.largo ? "100%" : "min(640px,96%)") : (chave === "estrut" ? "min(640px,96%)" : "min(440px,94%)");
+      /* a sondagem mostra o perfil ao lado do boletim (ou da régua do simulador): precisa de largura */
+      drawer.style.width = chave === "4d" ? (st4.largo ? "100%" : "min(640px,96%)") : (chave === "estrut" ? "min(640px,96%)" : (chave === "sondagem" ? "min(860px,97%)" : "min(440px,94%)"));
       if (chave === "4d") {
         /* abrir o painel liga a simulação. A 1ª abertura vai para HOJE quando
            hoje cai dentro da obra (é a pergunta de toda reunião: "onde
@@ -12831,30 +12848,87 @@
         return;
       }
       box.innerHTML = "";
-      lista.forEach(function (v) {
+      /* PASTAS: a obra com o pacote da estrutura tem 60+ vistas (cada painel,
+         cada detalhe, cada etapa de montagem). Lista plana virava rolagem sem
+         fim; a pasta aberta fica aberta ao voltar ao painel. */
+      var grupos = (window.BimVista && BimVista.porPasta) ? BimVista.porPasta(lista) : [{ pasta: "Sem pasta", vistas: lista }];
+      var abertas = this._bimVistaAbertas || (this._bimVistaAbertas = {});
+      var soUma = grupos.length === 1 && grupos[0].pasta === "Sem pasta";
+      grupos.forEach(function (gr) {
+        var alvo = box;
+        if (!soUma) {
+          var det = document.createElement("details");
+          det.style.cssText = "border:1px solid var(--linha);border-radius:8px;margin:0 0 8px;padding:2px 8px";
+          if (abertas[gr.pasta]) det.open = true;
+          det.innerHTML = '<summary style="cursor:pointer;padding:6px 2px;font-weight:600">' + Util.esc(gr.pasta) + ' <span class="muted" style="font-weight:400">(' + gr.vistas.length + ')</span></summary>';
+          det.addEventListener("toggle", function () { abertas[gr.pasta] = det.open; });
+          box.appendChild(det); alvo = det;
+        }
+        gr.vistas.forEach(function (v) { alvo.appendChild(self._bimVistaLinha(v)); });
+      });
+    },
+
+    _bimVistaLinha: function (v) {
+      var self = this;
         var linha = document.createElement("div");
         linha.style.cssText = "display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:9px 4px;border-bottom:1px dashed var(--linha)";
         var com = (v.comentarios && v.comentarios[0]) ? v.comentarios[0].texto : "";
         /* ⚠ o que a vista GUARDOU, dito na lista: a vista gravada antes da
            correção abre sem corte e sem ocultos, e sem este aviso a pessoa
            concluiria que o sistema perdeu a configuração outra vez */
-        var antiga = v.completa !== true && v.origem !== "bcf";
+        var antiga = v.completa !== true && v.origem !== "bcf" && v.origem !== "campo";
+        /* apontamento que veio do CELULAR (link da RA/RV): diz de onde veio e
+           quem apontou — e a foto, que é a metade do recado */
+        var campo = v.origem === "campo" && v.campo;
         var guardou = (window.BimVista && BimVista.resumo) ? BimVista.resumo(v).join(" · ") : "";
+        var ref = v.referencia && v.referencia.chave ? v.referencia : null;
         linha.innerHTML =
-          '<div style="min-width:180px;max-width:320px"><b>' + Util.esc(v.nome) + '</b>' +
+          '<div style="min-width:180px;max-width:320px">' + (campo ? '<span style="font-size:10.5px;font-weight:700;color:#fff;background:#0e7490;border-radius:6px;padding:1px 6px;margin-right:5px">CAMPO</span>' : '') + '<b>' + Util.esc(v.nome) + '</b>' +
+          (v.descricao ? '<div class="muted" style="font-size:11px">' + Util.esc(v.descricao) + '</div>' : "") +
           (com ? '<div class="muted" style="font-size:11px">' + Util.esc(com) + '</div>' : "") +
           (guardou ? '<div data-vt="guardou" class="muted" style="font-size:10.5px' + (antiga ? ';color:var(--amarelo)' : '') + '">' +
             (antiga && typeof Icones !== "undefined" ? Icones.get("alerta", 13) + " " : "") + Util.esc(guardou) + '</div>' : "") +
           '<div class="muted" style="font-size:10.5px">' + Util.esc(v.autor || "") + (v.criadoEm ? " · " + Util.esc(String(v.criadoEm).slice(0, 10)) : "") + '</div></div>' +
           '<span style="flex:1"></span>' +
+          (campo && v.fotos && v.fotos.length ? '<button data-vt="foto" class="btn sm" title="Foto tirada no celular por quem apontou">' + (typeof Icones !== "undefined" ? Icones.get("camera", 15) + " " : "") + 'Foto</button>' : '') +
+          (ref ? '<button data-vt="ref" class="btn sm" title="' + Util.esc("O desenho do projetista para esta vista" + (ref.fonte ? " — " + ref.fonte : "")) + '">' + (typeof Icones !== "undefined" ? Icones.get("prancha", 15) + " " : "") + 'Desenho original</button>' : '') +
           '<button data-vt="ir" class="btn sm" title="Volta esta vista exatamente como foi gravada: câmera, cortes, peças ocultas, cotas e cores">Ir para</button>' +
           '<button data-vt="regravar" class="btn sm" title="Grava o que está na tela AGORA nesta vista (só nesta — as outras não mudam). O nome e os comentários ficam.">' + (typeof Icones !== "undefined" ? Icones.get("salvar", 15) + " " : "") + 'Regravar</button>' +
           '<button data-vt="del" class="btn sm danger" title="Apagar">' + (typeof Icones !== "undefined" ? Icones.get("lixeira", 15) : "×") + '</button>';
         linha.querySelector('[data-vt="ir"]').onclick = function () { self._bimVistaIr(v.id); };
+        var bFoto = linha.querySelector('[data-vt="foto"]');
+        if (bFoto) bFoto.onclick = function () {
+          Promise.resolve(Fotos.dataURI(v.fotos[0])).then(function (d) {
+            if (!d) { UI.toast("A foto ainda não chegou neste aparelho.", "info"); return; }
+            UI.modal("Foto do apontamento", '<img src="' + Util.esc(d) + '" style="max-width:100%;border-radius:8px"><p class="muted" style="font-size:12px">' + Util.esc((v.campo.autor || "") + (v.campo.elemento ? " · " + v.campo.elemento : "")) + '</p>', [{ texto: "Fechar" }]);
+          }).catch(function () { UI.toast("Não consegui abrir a foto.", "erro"); });
+        };
+        var bRef = linha.querySelector('[data-vt="ref"]');
+        if (bRef) bRef.onclick = function () { self._bimVistaReferencia(v); };
         linha.querySelector('[data-vt="regravar"]').onclick = function () { self._bimVistaRegravar(v.id); };
         linha.querySelector('[data-vt="del"]').onclick = function () { self._bimVistaExcluir(v.id, v.nome); };
-        box.appendChild(linha);
-      });
+        return linha;
+    },
+
+    /* O DESENHO ORIGINAL da vista (o recorte da folha do projetista), ao lado
+       do 3D. Mora no IndexedDB: no aparelho onde ele não chegou, a tela diz
+       isso e de onde ele vem — nunca abre uma janela em branco. */
+    _bimVistaReferencia: function (v) {
+      var ref = v && v.referencia; if (!ref) return;
+      var self = this;
+      if (!window.Idb) { UI.toast("Este navegador não guarda arquivos (IndexedDB indisponível).", "erro"); return; }
+      Idb.get(ref.chave).then(function (dado) {
+        if (!dado) {
+          UI.toast("O desenho desta vista não está neste computador. Importe de novo o pacote da obra (Pontos de vista → Importar pacote)" + (ref.fonte ? " — origem: " + ref.fonte : "") + ".", "aviso");
+          return;
+        }
+        var src = typeof dado === "string" ? dado : URL.createObjectURL(new Blob([dado], { type: ref.tipo === "pdf" ? "application/pdf" : "image/jpeg" }));
+        UI.modal(v.nome, '<div style="max-height:78vh;overflow:auto;text-align:center">' +
+          (ref.tipo === "pdf" ? '<iframe src="' + Util.esc(src) + '" style="width:100%;height:74vh;border:0"></iframe>' : '<img src="' + Util.esc(src) + '" style="max-width:100%;background:#fff;border-radius:6px">') +
+          '</div><p class="muted" style="font-size:12px;margin:6px 0 0">' + Util.esc((ref.rotulo || "Desenho original") + (ref.fonte ? " · " + ref.fonte : "")) + '</p>',
+          [{ texto: "Ir para a vista 3D", classe: "primary", onClick: function () { UI.fecharModal(); self._bimVistaIr(v.id); } },
+           { texto: "Fechar", onClick: function () { UI.fecharModal(); } }]);
+      })["catch"](function () { UI.toast("Não consegui abrir o desenho desta vista.", "erro"); });
     },
 
     _bimVistaSalvar: function () {
@@ -13014,6 +13088,394 @@
         })["catch"](function (e) { UI.toast("Não consegui ler o arquivo: " + e.message, "erro"); });
       };
       fr.readAsArrayBuffer(arquivo);
+    },
+
+    /* =====================================================================
+     * PACOTE DA OBRA — vistas (em pastas, com o desenho original de cada
+     * uma), pranchas do projeto e sondagem, de uma vez (motor js/pacoteobra.js)
+     *
+     * ⚠ VALIDA, MOSTRA E SÓ ENTÃO GRAVA. O pacote de outra obra ou de outra
+     *   revisão do modelo acharia metade das peças: a tela conta quantas o
+     *   modelo aberto tem ANTES de gravar, e a pessoa decide.
+     * ⚠ Reimportar ATUALIZA (casa por origemId): a vista ajustada e regravada
+     *   é sobrescrita pela do pacote, os comentários dela ficam.
+     * ===================================================================== */
+    _bimPacoteEscolher: function () {
+      var inp = document.getElementById("bim-pacote-arq");
+      if (!inp) { inp = document.createElement("input"); inp.type = "file"; inp.id = "bim-pacote-arq"; inp.accept = ".json,application/json"; inp.style.display = "none"; document.body.appendChild(inp); var self = this; inp.onchange = function () { var f = inp.files && inp.files[0]; inp.value = ""; if (f) self._bimPacoteImportar(f); }; }
+      inp.click();
+    },
+    _bimPacoteImportar: function (arquivo) {
+      var self = this;
+      if (!window.PacoteObra) { UI.toast("O módulo do pacote da obra não carregou nesta tela. Recarregue o app.", "erro"); return; }
+      if (this._semSessao() || !this._bimSel) { UI.toast("Escolha a obra e entre com a sua conta antes de importar o pacote.", "aviso"); return; }
+      var fr = new FileReader();
+      fr.onload = function () {
+        var p = null;
+        try { p = JSON.parse(fr.result); } catch (e) { UI.toast("O arquivo não é um JSON válido: " + e.message, "erro"); return; }
+        var v = PacoteObra.validar(p);
+        if (!v.ok) { UI.toast("Pacote recusado: " + v.erros.join("; ") + ".", "erro"); return; }
+        var els = []; try { els = (window.BIM && BIM.elementos) || []; } catch (e2) {}
+        var gid2ch = {};
+        els.forEach(function (el) { var ch = el && el.chave; if (ch && ch.indexOf("::") > 0) gid2ch[ch.split("::").pop()] = ch; else if (el && el.globalId && ch) gid2ch[el.globalId] = ch; });
+        var conf = PacoteObra.conferirModelo(p, function (g) { return !!gid2ch[g]; });
+        var r = v.resumo;
+        var alertaModelo = !els.length ? '<p class="est-aviso">' + (typeof Icones !== "undefined" ? Icones.get("alerta", 14) + " " : "") + 'Nenhum modelo aberto: as <b>vistas não entram</b> (elas apontam peças do modelo). Abra o ' + Util.esc(r.modelo || "modelo") + ' e importe de novo para trazer as vistas.</p>'
+          : (conf.total && conf.fracao < 0.9 ? '<p class="est-aviso">' + (typeof Icones !== "undefined" ? Icones.get("alerta", 14) + " " : "") + 'Só ' + conf.achados + ' de ' + conf.total + ' peças citadas pelas vistas existem no modelo aberto (' + Math.round(conf.fracao * 100) + '%). O pacote é do ' + Util.esc(r.modelo || "outro modelo") + ' — confira se é o modelo certo.</p>' : "");
+        var corpo = '<p style="margin:0 0 6px"><b>' + Util.esc(r.nome || "Pacote da obra") + '</b>' + (r.modelo ? ' · modelo ' + Util.esc(r.modelo) : '') + '</p><ul style="margin:0 0 8px;padding-left:18px;font-size:13px">' +
+          (r.vistas ? '<li>' + r.vistas + ' ponto(s) de vista em ' + r.pastas + ' pasta(s)' + (r.referencias ? ', ' + r.referencias + ' com o desenho original' : '') + '</li>' : '') +
+          (r.pranchas ? '<li>' + r.pranchas + ' prancha(s), ' + r.folhas + ' folha(s)</li>' : '') +
+          (r.sondagens ? '<li>' + r.sondagens + ' sondagem(ns) SPT com o boletim completo</li>' : '') +
+          '<li>' + (r.imagens + r.arquivos) + ' desenho(s)/arquivo(s) — ' + String(r.megabytes).replace(".", ",") + ' MB, guardados neste computador</li></ul>' +
+          (els.length && conf.total ? '<p class="muted" style="font-size:12px;margin:0 0 6px">Peças conferidas no modelo aberto: ' + conf.achados + ' de ' + conf.total + '.</p>' : '') +
+          alertaModelo + (v.avisos.length ? '<p class="muted" style="font-size:12px">' + v.avisos.map(Util.esc).join("<br>") + '</p>' : '');
+        UI.modal("Importar pacote da obra", corpo, [
+          { texto: "Importar", classe: "primary", onClick: function () { UI.fecharModal(); self._bimPacoteGravar(p, gid2ch, els.length > 0); } },
+          { texto: "Cancelar", onClick: function () { UI.fecharModal(); } }]);
+      };
+      fr.onerror = function () { UI.toast("Não consegui ler o arquivo.", "erro"); };
+      fr.readAsText(arquivo);
+    },
+    _bimPacoteGravar: function (p, gid2ch, comModelo) {
+      var self = this, obra = String(this._bimSel), agora = new Date().toISOString(), falhasIdb = 0, pend = [];
+      if (window.Idb) {
+        Object.keys(p.imagens || {}).forEach(function (k) { pend.push(Idb.set(k, p.imagens[k])["catch"](function () { falhasIdb++; })); });
+        Object.keys(p.arquivos || {}).forEach(function (k) {
+          var a = p.arquivos[k] || {}, by = PacoteObra.base64ParaBytes(a.base64);
+          if (by) pend.push(Idb.set(k, by.buffer)["catch"](function () { falhasIdb++; }));
+        });
+      }
+      var nV = { criados: 0, atualizados: 0 }, faltam = 0;
+      if (comModelo && window.BimVista && (p.vistas || []).length) {
+        var dv = BimVista.doPacote(p, gid2ch, obra, agora); faltam = dv.pecasFaltando;
+        var ex = this._bimVistaDaObra();
+        var cs = PacoteObra.casar(ex, dv.vistas, "origemId");
+        cs.registros.forEach(function (v) { v.obraId = obra; Store.salvar(eid(), "bim_vistas", v); });
+        nV = cs;
+      }
+      var sd = (p.sondagens || []).map(function (s) { var o = JSON.parse(JSON.stringify(s)); o.origemId = String(s.id || s.origemId || ""); delete o.id; o.obraId = obra; o.criadoEm = agora; return o; });
+      var csS = PacoteObra.casar(this._sdRegs(), sd, "origemId");
+      csS.registros.forEach(function (s) { Store.salvar(eid(), "bim_sondagens", s); });
+      var pr = (p.pranchas || []).map(function (x) { var n = window.Prancha ? Prancha.normalizar(x) : x; n.origemId = String(x.id || x.origemId || ""); n.id = ""; n.obraId = obra; n.criadoEm = agora; n.origem = "pacote"; return n; });
+      var csP = PacoteObra.casar(this._prRegs(), pr, "origemId");
+      csP.registros.forEach(function (x) { if (!x.id) delete x.id; Store.salvar(eid(), "bim_pranchas", x); });
+      Promise.all(pend).then(function () {
+        try { self._bimVistaRender(); } catch (e) {}
+        try { self._sdRender(); } catch (e2) {}
+        try { self._prRender(); } catch (e3) {}
+        var partes = [];
+        if (nV.criados || nV.atualizados) partes.push((nV.criados + nV.atualizados) + " vista(s) (" + nV.criados + " nova(s), " + nV.atualizados + " atualizada(s))");
+        if (csS.registros.length) partes.push(csS.registros.length + " sondagem(ns)");
+        if (csP.registros.length) partes.push(csP.registros.length + " prancha(s)");
+        var msg = "Pacote importado: " + (partes.join(" · ") || "nada novo") + ".";
+        if (faltam) msg += " ⚠ " + faltam + " referência(s) a peças que não estão no modelo aberto.";
+        if (falhasIdb) msg += " ⚠ " + falhasIdb + " desenho(s) não couberam neste navegador (sem espaço).";
+        UI.toast(msg, (faltam || falhasIdb) ? "aviso" : "ok");
+      });
+    },
+
+    /* =====================================================================
+     * SONDAGEM 3D — o boletim SPT dentro do sistema, o solo debaixo da obra
+     * e o simulador "até onde a estaca tem de ir" (js/sondagem.js,
+     * js/sondagemui.js; a cena em BIM.solo*)
+     *
+     * ⚠ ONDE CADA COISA MORA (o mesmo acordo do projeto estrutural): o
+     *   boletim (números) vai para a obra — `bim_sondagens`, sincroniza, o
+     *   celular do canteiro abre; o PDF do relatório fica no IndexedDB deste
+     *   computador. No outro aparelho a tela diz que o PDF não está ali.
+     * ⚠ POSIÇÃO ESQUEMÁTICA é dita na tela: o croqui da sondagem raramente
+     *   amarra o furo à planta, e um solo "no lugar certo" que não está no
+     *   lugar certo engana quem crava.
+     * ===================================================================== */
+    _sdEst: function () { if (!this._sd) this._sd = { sel: null, furo: null, aba: "boletim", prof: null, no3d: false, carga: null, dF: null, dP: null, FS: null }; return this._sd; },
+    _sdRegs: function () {
+      var o = String(this._bimSel || ""), l = [];
+      try { l = Store.listar(eid(), "bim_sondagens") || []; } catch (e) {}
+      return l.filter(function (r) { return r && String(r.obraId || "") === o; });
+    },
+    _sdAtual: function () {
+      var st = this._sdEst(), regs = this._sdRegs();
+      var r = regs.filter(function (x) { return x.id === st.sel; })[0] || regs[regs.length - 1] || null;
+      st.sel = r ? r.id : null;
+      return r;
+    },
+    _sdRender: function () {
+      var box = document.getElementById("bim-sd-corpo"); if (!box) return;
+      if (!window.Sondagem || !window.SondagemUI) { box.innerHTML = '<p class="muted">O módulo de sondagem não carregou nesta tela. Recarregue o app.</p>'; return; }
+      var self = this, st = this._sdEst(), reg = this._sdAtual();
+      var cab = '<div class="flex between" style="align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px"><h3 style="margin:0;display:flex;align-items:center">' + (typeof Icones !== "undefined" ? Icones.get("niveis", 15) : "") + 'Sondagem 3D</h3>' +
+        '<span class="flex" style="gap:6px;flex-wrap:wrap"><button class="btn sm" data-sd="pacote" title="Pacote da obra (.json) com a sondagem, as vistas e as pranchas">Importar pacote</button>' +
+        (reg ? '<button class="btn sm" data-sd="pdf">Relatório (PDF)</button><button class="btn sm' + (st.no3d ? ' primary' : '') + '" data-sd="3d">' + (st.no3d ? 'Tirar solo do 3D' : 'Solo no 3D') + '</button>' : '') + '</span></div>';
+      if (!reg) {
+        box.innerHTML = cab + '<p class="muted" style="font-size:12.5px">Nenhuma sondagem nesta obra. Importe o <b>pacote da obra</b> (ele traz o boletim SPT completo, as unidades do solo e o relatório em PDF). Com a sondagem aqui você lê o boletim camada por camada, vê o solo debaixo do modelo e simula até onde a estaca precisa ir para a carga do pilar.</p>';
+        this._sdLigar(box); return;
+      }
+      var s = Sondagem.normalizar(reg), furos = s.furos;
+      var f = furos.filter(function (x) { return x.id === st.furo; })[0] || furos[0]; st.furo = f ? f.id : null;
+      if (!f) { box.innerHTML = cab + '<p class="muted">A sondagem não tem furos legíveis.</p>'; this._sdLigar(box); return; }
+      var cls = Sondagem.classificar(f), est = reg.estacaDoProjeto || {};
+      var abas = furos.map(function (x) { return '<button class="btn sm' + (x.id === f.id ? ' primary' : '') + '" data-sd="furo" data-v="' + Util.esc(x.id) + '">' + Util.esc(x.id) + '</button>'; }).join("");
+      var semPos = !f.posicao || f.posicao.x == null || /esquem/i.test(f.posicao.fonte || "");
+      var prof = st.prof;
+      var c = prof != null ? cls.filter(function (k) { return k.de <= prof && prof < k.ate; })[0] || cls[cls.length - 1] : null;
+      var h = cab + '<p class="muted" style="font-size:11.5px;margin:0 0 6px">' + Util.esc((reg.nome || "Sondagem") + (reg.empresa ? " · " + reg.empresa : "") + (reg.data ? " · " + String(reg.data).split("-").reverse().join("/") : "")) +
+        (semPos ? ' · <b style="color:var(--amarelo)">posição dos furos no 3D é esquemática</b>' : "") + '</p>' +
+        '<div class="flex" style="gap:6px;margin-bottom:8px;flex-wrap:wrap">' + abas + '<span style="flex:1"></span>' +
+        '<button class="btn sm' + (st.aba === "boletim" ? ' primary' : '') + '" data-sd="aba" data-v="boletim">Boletim</button>' +
+        '<button class="btn sm' + (st.aba === "sim" ? ' primary' : '') + '" data-sd="aba" data-v="sim">Simulador da estaca</button></div>' +
+        '<style>' + SondagemUI.CSS + '</style>' +
+        '<div style="display:grid;grid-template-columns:170px minmax(0,1fr);gap:10px;align-items:start">' +
+          '<div><div id="bim-sd-perfil">' + SondagemUI.perfilSVG(f, cls, { zmax: Math.ceil(f.fim || 20), cursor: prof, estaca: est.embut ? { L: est.embut } : null }) + '</div>' +
+            '<label style="font-size:11.5px;display:block;margin-top:4px">Profundidade: <b id="bim-sd-profv">' + (prof == null ? "—" : String(prof.toFixed(2)).replace(".", ",") + " m") + '</b></label>' +
+            '<input type="range" id="bim-sd-prof" min="0" max="' + (f.fim || 20) + '" step="0.05" value="' + (prof == null ? 0 : prof) + '" style="width:100%">' +
+            (c ? '<div style="border-left:4px solid ' + c.cor + ';padding:4px 6px;margin-top:6px;font-size:11.5px;background:' + (c.critico ? '#fdecea' : 'transparent') + '"><b>' + Util.esc(c.designacao || "") + '</b><br>' + Util.esc(c.descricao) + (c.critico ? '<br><b style="color:#b3261e">' + (typeof Icones !== "undefined" ? Icones.get("alerta", 14) + " " : "") + 'solo crítico</b>' : '') + '</div>' : '') +
+            (st.no3d ? '<label style="font-size:11.5px;display:block;margin-top:8px">Transparência do solo</label><input type="range" id="bim-sd-opac" min="0.1" max="0.9" step="0.05" value="' + ((BIM.soloEstado && BIM.soloEstado().opacidade) || 0.5) + '" style="width:100%">' : '') +
+          '</div><div id="bim-sd-dir" style="min-width:0;max-height:62vh;overflow:auto">' + (st.aba === "sim" ? this._sdSimHtml(reg, f, cls) : SondagemUI.boletim(f, cls, s)) + '</div></div>';
+      box.innerHTML = h;
+      this._sdLigar(box);
+    },
+    _sdSimHtml: function (reg, f, cls) {
+      var st = this._sdEst(), est = reg.estacaDoProjeto || {};
+      var carga = st.carga != null ? st.carga : (est.cargaMax || 31.4);
+      var dF = st.dF || est.dFuste || 0.20, dP = st.dP || est.dPonta || 0.16, FS = st.FS || est.FS || 2;
+      var par = { F1: est.F1 || 1.75, F2: est.F2 || 3.5, FS: FS }, e = { dFuste: dF, dPonta: dP, ignorarTopo: est.ignorarTopo != null ? est.ignorarTopo : 0.5 };
+      var res = Sondagem.profundidadeNecessaria(f, carga, e, par, { de: 1, ate: Math.max(2, (f.fim || 10) - 1) });
+      var cvL = res.curva, Lp = est.embut || null;
+      var noProj = Lp ? Sondagem.capacidade(f, Lp, e, par) : null;
+      var vis = Math.min(8, Math.max(5, (res.L || 4) + 2));
+      var txt = '<p style="font-size:12.5px;margin:6px 0">Para <b>' + String(carga).replace(".", ",") + ' kN</b> com fuste Ø' + Math.round(dF * 100) + ' e ponta Ø' + Math.round(dP * 100) + ' (FS ' + String(FS).replace(".", ",") + '): ' +
+        (res.L != null ? 'a estaca precisa de <b>L ≥ ' + String(res.L.toFixed(2)).replace(".", ",") + ' m</b> no ' + Util.esc(f.id) + '.' : '<b style="color:#b3261e">a carga não é alcançada</b> no trecho ensaiado.') +
+        (res.primeiroCritico != null ? ' O solo crítico começa a <b>' + String(res.primeiroCritico.toFixed(2)).replace(".", ",") + ' m</b>' + (res.melhorAntesDoCritico ? ' — antes dele, o melhor é ' + String(res.melhorAntesDoCritico.L.toFixed(2)).replace(".", ",") + ' m (Qadm ' + String(res.melhorAntesDoCritico.Qadm.toFixed(1)).replace(".", ",") + ' kN).' : '.') : '') +
+        (noProj ? ' No projeto (' + String(Lp.toFixed(2)).replace(".", ",") + ' m): Qadm <b>' + String(noProj.Qadm.toFixed(1)).replace(".", ",") + ' kN</b> ' + (noProj.Qadm >= carga ? '✓' : '<b style="color:#b3261e">' + (typeof Icones !== "undefined" ? Icones.get("alerta", 14) + " " : "") + 'insuficiente</b>') + '.' : '') + '</p>' +
+        '<p class="muted" style="font-size:11px;margin:0 0 6px">Aoki-Velloso e Décourt-Quaresma (métodos semiempíricos, NBR 6122): vale o MENOR dos dois ÷ FS. É estimativa para decisão — o projeto assinado manda.</p>';
+      var form = '<div class="flex" style="gap:8px;flex-wrap:wrap;font-size:12px;align-items:end">' +
+        '<label>Carga (kN)<br><input type="number" id="bim-sd-carga" value="' + carga + '" step="0.5" style="width:80px"></label>' +
+        '<label>Ø fuste (cm)<br><input type="number" id="bim-sd-df" value="' + Math.round(dF * 100) + '" style="width:60px"></label>' +
+        '<label>Ø ponta (cm)<br><input type="number" id="bim-sd-dp" value="' + Math.round(dP * 100) + '" style="width:60px"></label>' +
+        '<label>FS<br><input type="number" id="bim-sd-fs" value="' + FS + '" step="0.1" style="width:55px"></label>' +
+        '<button class="btn sm" data-sd="sim-sel" title="Usa a carga da estaca selecionada no 3D (RA_Fundacao_Estaca)">Carga da estaca selecionada</button></div>';
+      return form + txt + '<div style="display:grid;grid-template-columns:150px minmax(0,1fr);gap:8px">' +
+        SondagemUI.barraSVG(f, cls, res, { Lmax: vis }) +
+        SondagemUI.curvaSVG(cvL, { carga: carga, Lnec: res.L, Lprojeto: Lp, Lmax: vis, critico: res.primeiroCritico, janela: est.embutMin ? [est.embutMin, est.embutMax] : null }) + '</div>';
+    },
+    _sdLigar: function (box) {
+      var self = this;
+      if (!box._sdLigado) {
+        box._sdLigado = true;
+        box.addEventListener("click", function (ev) {
+          var b = ev.target && ev.target.closest ? ev.target.closest("[data-sd]") : null;
+          if (b) { self._sdAcao(b.getAttribute("data-sd"), b.getAttribute("data-v")); return; }
+          var tr = ev.target && ev.target.closest ? ev.target.closest("tr[data-prof]") : null;
+          if (tr) self._sdIrProf(parseFloat(tr.getAttribute("data-prof")));
+        });
+        box.addEventListener("input", function (ev) {
+          var t = ev.target; if (!t) return;
+          if (t.id === "bim-sd-prof") self._sdIrProf(parseFloat(t.value), true);
+          if (t.id === "bim-sd-opac" && window.BIM && BIM.soloOpacidade) BIM.soloOpacidade(parseFloat(t.value));
+        });
+        box.addEventListener("change", function (ev) {
+          var t = ev.target, st = self._sdEst(); if (!t) return;
+          var n = parseFloat(String(t.value).replace(",", "."));
+          if (t.id === "bim-sd-carga" && isFinite(n) && n > 0) { st.carga = n; self._sdRender(); }
+          if (t.id === "bim-sd-df" && isFinite(n) && n > 5) { st.dF = n / 100; self._sdRender(); }
+          if (t.id === "bim-sd-dp" && isFinite(n) && n > 5) { st.dP = n / 100; self._sdRender(); }
+          if (t.id === "bim-sd-fs" && isFinite(n) && n >= 1) { st.FS = n; self._sdRender(); }
+          if (t.id === "bim-sd-prof") self._sdRender();
+        });
+      }
+    },
+    /* o cursor desce pelo relatório e o plano azul desce junto no 3D; a
+       camada daquela profundidade fica destacada no solo */
+    _sdIrProf: function (z, leve) {
+      var st = this._sdEst(), reg = this._sdAtual(); if (!reg || !isFinite(z)) return;
+      st.prof = Math.max(0, z);
+      var s = Sondagem.normalizar(reg), f = s.furos.filter(function (x) { return x.id === st.furo; })[0] || s.furos[0];
+      if (st.no3d && f && f.posicao && f.posicao.zBoca != null && window.BIM) {
+        try { BIM.soloProfundidade(f.posicao.zBoca - st.prof); } catch (e) {}
+        var c = Sondagem.camadaEm(f, st.prof);
+        try { BIM.soloDestacar(c && c.unidade || null); } catch (e2) {}
+      }
+      if (leve) {
+        var lab = document.getElementById("bim-sd-profv"); if (lab) lab.textContent = String(st.prof.toFixed(2)).replace(".", ",") + " m";
+        var g = document.querySelector("#bim-sd-perfil .sd-cursor");
+        if (g) { var k = parseFloat(g.getAttribute("data-k")); g.style.display = "inline"; g.setAttribute("transform", "translate(0," + (st.prof * k) + ")"); var tx = g.querySelector(".sd-cursor-txt"); if (tx) tx.textContent = String(st.prof.toFixed(2)).replace(".", ",") + " m"; }
+        var rows = document.querySelectorAll("#bim-sd-dir tr[data-prof]");
+        for (var i = 0; i < rows.length; i++) { var p = parseFloat(rows[i].getAttribute("data-prof")); rows[i].classList.toggle("sd-ativa", Math.abs(p - st.prof) < 0.5); }
+        return;
+      }
+      this._sdRender();
+    },
+    _sdAcao: function (a, v) {
+      var st = this._sdEst(), reg = this._sdAtual(), self = this;
+      if (a === "pacote") { this._bimPacoteEscolher(); return; }
+      if (a === "furo") { st.furo = v; this._sdRender(); if (st.no3d) this._sdMostrar3d(); return; }
+      if (a === "aba") { st.aba = v === "sim" ? "sim" : "boletim"; this._sdRender(); return; }
+      if (!reg) return;
+      if (a === "3d") { st.no3d = !st.no3d; if (st.no3d) this._sdMostrar3d(); else { try { BIM.soloLimpar(); } catch (e) {} } this._sdRender(); return; }
+      if (a === "pdf") {
+        var ch = reg.pdf && reg.pdf.chave;
+        if (!ch || !window.Idb) { UI.toast("O relatório em PDF não veio com esta sondagem.", "aviso"); return; }
+        Idb.get(ch).then(function (buf) {
+          if (!buf) { UI.toast("O PDF do relatório não está neste computador — ele fica no aparelho onde o pacote foi importado. Importe o pacote aqui para trazê-lo.", "aviso"); return; }
+          var url = URL.createObjectURL(new Blob([buf], { type: "application/pdf" }));
+          window.open(url, "_blank");
+          setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+        })["catch"](function () { UI.toast("Não consegui abrir o PDF.", "erro"); });
+        return;
+      }
+      if (a === "sim-sel") {
+        var uid = this._bimSelecao && this._bimSelecao.uid;
+        var props = []; try { props = uid && BIM.propriedades ? BIM.propriedades(uid) || [] : []; } catch (e4) {}
+        var carga = null;
+        props.forEach(function (ps) { (ps.props || []).forEach(function (pp) { if (pp.n === "Carga_projeto_kN" && isFinite(+pp.v)) carga = +pp.v; }); });
+        if (carga == null) { UI.toast("Selecione uma estaca no 3D (ela traz a carga no RA_Fundacao_Estaca) — ou digite a carga.", "aviso"); return; }
+        st.carga = carga; st.aba = "sim"; this._sdRender(); UI.toast("Carga da estaca selecionada: " + String(carga).replace(".", ",") + " kN.", "ok");
+      }
+    },
+    _sdMostrar3d: function () {
+      var reg = this._sdAtual(); if (!reg || !window.BIM || !BIM.soloMostrar) return;
+      var s = Sondagem.normalizar(reg);
+      var vols = Sondagem.volumes3D(s);
+      var furos = s.furos.filter(function (f) { return f.posicao && f.posicao.x != null && f.posicao.zBoca != null; }).map(function (f) {
+        return { id: f.id, x: f.posicao.x, y: f.posicao.y, zBoca: f.posicao.zBoca,
+                 trechos: Sondagem.classificar(f).map(function (c) { return { de: c.de, ate: c.ate, cor: c.critico ? "#b3261e" : c.cor }; }) };
+      });
+      var r = BIM.soloMostrar({ volumes: vols, furos: furos, area: s.area });
+      if (!r || !r.ok) { UI.toast("Não consegui desenhar o solo: " + ((r && r.erro) || "sem posição dos furos"), "erro"); this._sdEst().no3d = false; return; }
+      UI.toast(r.volumes + " camada(s) do solo e " + r.furos + " furo(s) no 3D. Arraste a profundidade: o plano azul desce e a camada fica em destaque.", "ok");
+    },
+
+    /* =====================================================================
+     * PRANCHAS DO PROJETO — folhas A0…A4 com o carimbo da empresa e as
+     * vistas do modelo (js/prancha.js, js/pranchaui.js)
+     *
+     * ⚠ A VISTA É FOTOGRAFADA NA HORA DE IMPRIMIR, a partir do ponto de vista
+     *   gravado: regravou a vista, a prancha sai com a nova. Antes de
+     *   fotografar, a cena de quem está trabalhando é guardada e volta no fim.
+     * ===================================================================== */
+    _prRegs: function () {
+      var o = String(this._bimSel || ""), l = [];
+      try { l = Store.listar(eid(), "bim_pranchas") || []; } catch (e) {}
+      return l.filter(function (r) { return r && String(r.obraId || "") === o; });
+    },
+    _prRender: function () {
+      var box = document.getElementById("bim-pr-corpo"); if (!box) return;
+      if (!window.Prancha || !window.PranchaUI) { box.innerHTML = '<p class="muted">O módulo de pranchas não carregou nesta tela. Recarregue o app.</p>'; return; }
+      var self = this, regs = this._prRegs();
+      var h = '<div class="flex between" style="align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px"><h3 style="margin:0;display:flex;align-items:center">' + (typeof Icones !== "undefined" ? Icones.get("prancha", 15) : "") + 'Pranchas do projeto</h3>' +
+        '<span class="flex" style="gap:6px;flex-wrap:wrap"><button class="btn sm" data-pr="pacote">Importar pacote</button><button class="btn sm primary" data-pr="nova">+ Prancha com pontos de vista</button></span></div>' +
+        '<p class="muted" style="font-size:11.5px;margin:0 0 8px">Folhas A0 a A4 com o <b>carimbo da empresa</b> e as <b>vistas do modelo</b> (com as cotas de cada ponto de vista). A vista é fotografada na hora de imprimir: regravou o ponto de vista, a prancha sai com ele. Para PDF: Imprimir → Salvar como PDF (o tamanho da folha já vai certo).</p>';
+      if (!regs.length) h += '<p class="muted" style="font-size:12.5px">Nenhuma prancha nesta obra ainda.</p>';
+      regs.forEach(function (r) {
+        var n = (r.folhas || []).length;
+        h += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 4px;border-bottom:1px dashed var(--linha)"><div style="min-width:180px;flex:1"><b>' + Util.esc(r.nome) + '</b><div class="muted" style="font-size:11px">' +
+          Util.esc(r.formato + " · " + n + " folha" + (n === 1 ? "" : "s") + (r.origem === "pacote" ? " · do pacote da obra" : "")) + '</div></div>' +
+          '<button class="btn sm" data-pr="imprimir" data-v="' + Util.esc(r.id) + '">Abrir / imprimir</button>' +
+          (r.pdf && r.pdf.chave ? '<button class="btn sm" data-pr="pdf" data-v="' + Util.esc(r.id) + '">PDF original</button>' : '') +
+          '<button class="btn sm danger" data-pr="del" data-v="' + Util.esc(r.id) + '">' + (typeof Icones !== "undefined" ? Icones.get("lixeira", 15) : "×") + '</button></div>';
+      });
+      box.innerHTML = h;
+      if (!box._prLigado) {
+        box._prLigado = true;
+        box.addEventListener("click", function (ev) {
+          var b = ev.target && ev.target.closest ? ev.target.closest("[data-pr]") : null;
+          if (b) self._prAcao(b.getAttribute("data-pr"), b.getAttribute("data-v"));
+        });
+      }
+    },
+    _prAcao: function (a, id) {
+      var self = this, reg = this._prRegs().filter(function (r) { return r.id === id; })[0] || null;
+      if (a === "pacote") { this._bimPacoteEscolher(); return; }
+      if (a === "nova") { this._prNova(); return; }
+      if (!reg) return;
+      if (a === "del") {
+        if (!confirm('Apagar a prancha "' + reg.nome + '"? As vistas e os desenhos continuam.')) return;
+        try { Store.excluir(eid(), "bim_pranchas", reg.id); } catch (e) {}
+        this._prRender(); return;
+      }
+      if (a === "pdf") {
+        Idb.get(reg.pdf.chave).then(function (buf) {
+          if (!buf) { UI.toast("O PDF desta prancha não está neste computador. Importe o pacote da obra aqui para trazê-lo.", "aviso"); return; }
+          var url = URL.createObjectURL(new Blob([buf], { type: "application/pdf" })); window.open(url, "_blank"); setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+        })["catch"](function () { UI.toast("Não consegui abrir o PDF.", "erro"); });
+        return;
+      }
+      if (a === "imprimir") this._prImprimir(reg);
+    },
+    _prNova: function () {
+      var self = this;
+      var vistas = this._bimVistaDaObra();
+      if (!vistas.length) { UI.toast("Salve ou importe pontos de vista antes — a prancha é montada com eles.", "aviso"); return; }
+      var grupos = BimVista.porPasta(vistas);
+      var lista = grupos.map(function (g) {
+        return '<details' + (grupos.length < 4 ? ' open' : '') + ' style="margin:4px 0"><summary><b>' + Util.esc(g.pasta) + '</b> (' + g.vistas.length + ')</summary>' +
+          g.vistas.map(function (v) { return '<label style="display:block;font-size:12.5px;padding:2px 0"><input type="checkbox" data-prv="' + Util.esc(v.id) + '"> ' + Util.esc(v.nome) + '</label>'; }).join("") + '</details>';
+      }).join("");
+      UI.modal("Nova prancha com pontos de vista",
+        '<div class="flex" style="gap:10px;flex-wrap:wrap;margin-bottom:8px"><label>Título<br><input id="pr-nome" value="Estrutura — vistas" style="width:260px"></label>' +
+        '<label>Folha<br><select id="pr-form"><option>A1</option><option>A2</option><option selected>A3</option><option>A4</option><option>A0</option></select></label>' +
+        '<label>Vistas por folha<br><input type="number" id="pr-por" value="4" min="1" max="12" style="width:70px"></label></div>' +
+        '<div style="max-height:46vh;overflow:auto;border:1px solid var(--linha);border-radius:6px;padding:6px">' + lista + '</div>',
+        [{ texto: "Criar", classe: "primary", onClick: function () {
+          var ids = [].slice.call(document.querySelectorAll("[data-prv]")).filter(function (c) { return c.checked; }).map(function (c) { return c.getAttribute("data-prv"); });
+          if (!ids.length) { UI.toast("Marque ao menos um ponto de vista.", "aviso"); return; }
+          var sel = vistas.filter(function (v) { return ids.indexOf(v.id) >= 0; });
+          var d = Empresa.dados ? Empresa.dados() : {};
+          var obraNome = ""; try { var o = Store.obter(eid(), "obras", self._bimSel); obraNome = (o && o.nome) || ""; } catch (e) {}
+          var pr = Prancha.deVistas({ nome: document.getElementById("pr-nome").value || "Pranchas", formato: document.getElementById("pr-form").value,
+            porFolha: +document.getElementById("pr-por").value || 4, vistas: sel,
+            carimbo: { empresa: d.nome || "", responsavel: d.responsavel || "", registro: d.crea ? "CREA " + d.crea : "", obra: obraNome, data: new Date().toLocaleDateString("pt-BR") } });
+          pr.obraId = String(self._bimSel); pr.criadoEm = new Date().toISOString();
+          if (!pr.id) delete pr.id;
+          if (!Store.salvar(eid(), "bim_pranchas", pr)) { UI.toast("Não consegui salvar a prancha.", "erro"); return; }
+          UI.fecharModal(); self._prRender();
+          UI.toast("Prancha criada: " + pr.folhas.length + " folha(s) " + pr.formato + ". Clique em Abrir / imprimir.", "ok");
+        } }, { texto: "Cancelar", onClick: function () { UI.fecharModal(); } }]);
+    },
+    _prImprimir: function (reg) {
+      var self = this, pr = Prancha.normalizar(reg), geo = Prancha.geometria(pr.formato, pr.orientacao);
+      var rec = { imagens: {}, vistas: {}, logo: (window.Empresa && Empresa.logo) ? Empresa.logo() : null };
+      var chavesImg = {};
+      pr.folhas.forEach(function (f) { if (f.imagemInteira) chavesImg[f.imagemInteira] = 1; f.blocos.forEach(function (b) { if (b.tipo === "imagem") chavesImg[b.chave] = 1; }); });
+      (pr.carimbo.logos || []).forEach(function (k) { chavesImg[k] = 1; });
+      var vistasBlocos = [];
+      pr.folhas.forEach(function (f) { f.blocos.forEach(function (b) { if (b.tipo === "vista") vistasBlocos.push(b); }); });
+      /* ⚠ a janela abre NO CLIQUE (senão o bloqueador de pop-up engole) e é
+         preenchida depois que as vistas foram fotografadas */
+      var jan = window.open("", "_blank");
+      if (!jan) { UI.toast("O navegador bloqueou a janela da prancha. Permita pop-ups para o OrçaPRO.", "erro"); return; }
+      jan.document.write('<p style="font-family:Arial;padding:20px">Montando ' + pr.folhas.length + ' folha(s) de ' + Util.esc(pr.nome) + '…</p>');
+      var pImg = Object.keys(chavesImg).map(function (k) { return window.Idb ? Idb.get(k).then(function (d) { if (d) rec.imagens[k] = typeof d === "string" ? d : URL.createObjectURL(new Blob([d])); })["catch"](function () {}) : Promise.resolve(); });
+      Promise.all(pImg).then(function () { return self._prFotografarVistas(vistasBlocos, rec); }).then(function () {
+        jan.document.open(); jan.document.write(PranchaUI.documento(pr, rec, geo)); jan.document.close();
+        setTimeout(function () { try { jan.focus(); jan.print(); } catch (e) {} }, 900);
+      })["catch"](function (e) { UI.toast("Não consegui montar a prancha: " + (e && e.message || e), "erro"); });
+    },
+    _prFotografarVistas: function (blocos, rec) {
+      var self = this;
+      if (!blocos.length) return Promise.resolve();
+      if (!window.BIM || !BIM.aplicarVista || !BIM.desenharQuadro) return Promise.resolve();
+      var todas = this._bimVistaDaObra(), antes = null;
+      try { antes = BIM.estadoVista ? BIM.estadoVista() : null; } catch (e) {}
+      var i = 0;
+      function proximo() {
+        if (i >= blocos.length) {
+          if (antes) { try { BIM.aplicarVista(BimVista.vista({ nome: "_antes", completa: true, camera: antes.camera, cortes: antes.cortes, visibilidade: antes.visibilidade, aparencias: antes.aparencias, modelos: antes.modelos, estilo: antes.estilo, medidas: antes.medidas, cotaRede: antes.cotaRede })); } catch (e2) {} }
+          return Promise.resolve();
+        }
+        var b = blocos[i++];
+        var v = todas.filter(function (x) { return x.id === b.vistaId || (b.origemVista && x.origemId === b.origemVista); })[0];
+        if (!v) return proximo();
+        try { BIM.aplicarVista(v); } catch (e3) { return proximo(); }
+        return new Promise(function (res) { setTimeout(res, 450); }).then(function () {
+          /* ⚠ a foto sai na proporção do QUADRO da prancha (b.w × b.h em mm), a ~6 px/mm, e sem o
+             solo da sondagem — ver desenharQuadroEm no bim.js */
+          var k = Math.min(6, 2000 / Math.max(b.w || 1, b.h || 1));
+          try { var cnv = BIM.desenharQuadroEm ? BIM.desenharQuadroEm("#ffffff", (b.w || 160) * k, (b.h || 100) * k) : BIM.desenharQuadro("#ffffff"); if (cnv && cnv.width) rec.vistas[b.vistaId || b.origemVista] = cnv.toDataURL("image/jpeg", 0.92); } catch (e4) {}
+          return proximo();
+        });
+      }
+      return proximo();
     },
 
     /* =====================================================================
@@ -14686,15 +15148,17 @@
     _bimDiscGrupos: function () {
       var els = [];
       try { els = (window.BIM && BIM.elementos) || []; } catch (e) {}
-      if (!window.BimDisc) return { grupos: [], etapas: [] };
-      return { grupos: BimDisc.agrupar(els), etapas: BimDisc.agruparPorEtapa(els) };
+      if (!window.BimDisc) return { grupos: [], etapas: [], montagens: [] };
+      return { grupos: BimDisc.agrupar(els), etapas: BimDisc.agruparPorEtapa(els),
+               montagens: BimDisc.agruparPorMontagem ? BimDisc.agruparPorMontagem(els) : [] };
     },
     _bimDiscRender: function () {
       var box = document.getElementById("bim-disc-corpo"); if (!box) return;
       if (!window.BimDisc || !window.EstrutUI) { box.innerHTML = '<p class="muted">O módulo de filtros não carregou nesta tela. Recarregue o app.</p>'; return; }
       var self = this, st = this._bimDiscEst(), g = this._bimDiscGrupos();
       this._bimDiscCache = g;
-      box.innerHTML = EstrutUI.htmlDisc(g.grupos, g.etapas, { aba: st.aba, marcados: st.marcados, atalhos: BimDisc.ATALHOS });
+      box.innerHTML = EstrutUI.htmlDisc(g.grupos, g.etapas, { aba: st.aba, marcados: st.marcados, atalhos: BimDisc.ATALHOS,
+        montagens: g.montagens, seq: st.seq || null });
       if (box._ligado) return;
       box._ligado = true;
       box.addEventListener("click", function (ev) {
@@ -14712,9 +15176,15 @@
     },
     _bimDiscAcao: function (acao, v) {
       var st = this._bimDiscEst();
-      if (acao === "aba") { st.aba = v === "etapa" ? "etapa" : "disc"; st.marcados = {}; this._bimDiscRender(); return; }
+      if (acao === "aba") {
+        if (st.aba === "montagem" && v !== "montagem") this._bimSeqParar();
+        st.aba = (v === "etapa" || v === "montagem") ? v : "disc"; st.marcados = {}; this._bimDiscRender(); return;
+      }
       if (!window.BIM || !window.BimDisc) return;
       var g = this._bimDiscCache || this._bimDiscGrupos();
+      if (acao === "seq") { this._bimSeqPasso(v); return; }
+      /* "Mostrar tudo" também encerra o passo a passo e devolve as cores */
+      if (acao === "tudo" && (st.seq || this._bimSeqTimer)) { this._bimSeqParar(); this._bimDiscRender(); }
       if (acao === "tudo") {
         try { BIM.limparRaioX(); } catch (e) {}
         try { BIM.restaurarVisibilidade(); } catch (e2) {}
@@ -14731,7 +15201,9 @@
         return;
       }
       /* "Só" de um atalho é sempre de DISCIPLINA, mesmo com a aba de etapa aberta */
-      var lista = (acao === "so" && String(v || "").indexOf("e:") !== 0) ? g.grupos : (st.aba === "etapa" ? g.etapas : g.grupos);
+      var vs = String(v || "");
+      var lista = (acao === "so" && vs.indexOf("e:") !== 0 && vs.indexOf("m:") !== 0) ? g.grupos
+        : (st.aba === "etapa" || vs.indexOf("e:") === 0 ? g.etapas : (st.aba === "montagem" || vs.indexOf("m:") === 0 ? (g.montagens || []) : g.grupos));
       var ids = acao === "so" ? [v] : Object.keys(st.marcados);
       var chaves = BimDisc.chavesDe(lista, ids);
       var nomes = lista.filter(function (x) { return ids.indexOf(x.id) >= 0; }).map(function (x) { return x.nome; });
@@ -14754,6 +15226,57 @@
          de armação" para 1.099 barras. A contagem de peças visíveis é a do contador da cena. */
       var np = ni ? BIM.contarVisiveis() : 0;
       UI.toast(np ? np + " peça(s): " + rot + ". “Mostrar tudo” volta o modelo." : "As peças de " + rot + " estão fora da cena agora (4D ou modelo desligado).", np ? "ok" : "aviso");
+    },
+
+    /* ---- sequência de MONTAGEM (aba Montagem do painel de disciplinas) ----
+     * O passo k mostra o que já foi montado (etapas 1..k) e pinta de laranja a
+     * etapa do passo. ⚠ A pintura é do dono "montagem": sair do passo a passo
+     * (Mostrar tudo, trocar de aba) devolve as cores — senão o modelo ficava
+     * laranja com a legenda fora da tela e ninguém sabia de onde vinha. */
+    _bimSeqPasso: function (cmd) {
+      var st = this._bimDiscEst(), g = this._bimDiscCache || this._bimDiscGrupos();
+      var mont = g.montagens || [];
+      var atual = st.seq && st.seq.k != null ? st.seq.k : -1;
+      if (cmd === "tocar") {
+        var self = this; this._bimSeqParar(true);
+        st.seq = st.seq || {}; st.seq.tocando = true;
+        var passo = function () {
+          var s2 = self._bimDiscEst(); if (!s2.seq || !s2.seq.tocando) return;
+          var prox = (s2.seq.k == null || s2.seq.k < 0) ? 0 : s2.seq.k + 1;
+          var tot = BimDisc.sequencia(mont, 0).n;
+          if (prox >= tot) { s2.seq.tocando = false; if (self._bimSeqTimer) { clearInterval(self._bimSeqTimer); self._bimSeqTimer = null; } self._bimDiscRender(); return; }
+          self._bimSeqIr(prox, mont);
+        };
+        passo(); this._bimSeqTimer = setInterval(passo, 1800);
+        return;
+      }
+      if (cmd === "parar") { this._bimSeqParar(); this._bimDiscRender(); return; }
+      var k = cmd === "ant" ? atual - 1 : (cmd === "prox" ? atual + 1 : parseInt(String(cmd).replace(/^i:/, ""), 10));
+      this._bimSeqParar(true);
+      this._bimSeqIr(isNaN(k) ? 0 : k, mont);
+    },
+    _bimSeqIr: function (k, mont) {
+      var st = this._bimDiscEst(), sq = BimDisc.sequencia(mont, k);
+      if (!sq.n) { UI.toast("As peças deste modelo não têm etapa de montagem (OrcaPRO_Montagem).", "aviso"); return; }
+      var tocando = !!(st.seq && st.seq.tocando);
+      st.seq = { k: sq.k, n: sq.n, nome: sq.nome, codigo: sq.codigo, tocando: tocando };
+      try { BIM.limparRaioX(); } catch (e) {}
+      var ni = BIM.isolarChaves(sq.ate);
+      var mapa = {}; sq.atual.forEach(function (c) { mapa[c] = "#e65100"; });
+      try { BIM.pintarChaves(mapa, "montagem"); } catch (e2) {}
+      if (ni && sq.k === 0) this._bimEnquadrarLivre(sq.ate);
+      this._b3Espelhar({ modo: "isolar", chaves: sq.ate, rotulo: "montagem até " + (sq.codigo || sq.nome) });
+      this._bimDiscRender();
+      if (!tocando) UI.toast("Passo " + (sq.k + 1) + " de " + sq.n + ": " + sq.nome + " — " + sq.atual.length + " peça(s) nesta etapa.", "ok");
+    },
+    _bimSeqParar: function (silencioso) {
+      if (this._bimSeqTimer) { clearInterval(this._bimSeqTimer); this._bimSeqTimer = null; }
+      var st = this._bimDiscEst();
+      if (st.seq) st.seq.tocando = false;
+      if (!silencioso) {
+        try { if (BIM.donoDaPintura && BIM.donoDaPintura() === "montagem") BIM.limparPintura(); } catch (e) {}
+        st.seq = null;
+      }
     },
 
     /* =====================================================================
@@ -18855,7 +19378,8 @@
       var chave = (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "";
       var modelos = (typeof BIM !== "undefined" && BIM.bytesModelos) ? BIM.bytesModelos() : [];
       var semArq = (typeof BIM !== "undefined" && BIM.modelosSemArquivo) ? BIM.modelosSemArquivo() : [];
-      var salvo = self._rvLinkSalvo(modelos, base);
+      var op = self._rvOpcoes();
+      var salvo = self._rvLinkSalvo(modelos, base, op);
 
       function abrir(lan) {
         var velho = document.getElementById("rv-qr-ov"); if (velho) velho.remove(); // sem overlays empilhados
@@ -18866,26 +19390,40 @@
               ? "Os modelos desta obra vieram do que estava guardado, sem o arquivo .ifc em memória (" + Util.esc(semArq.map(function (m) { return m.nome; }).join(", ")) + "). Abra o .ifc pelo <b>+ IFC</b> e volte aqui."
               : "Carregue um modelo .IFC no visualizador primeiro.")
           : "";
+        var extra = self._rvExtrasDisponiveis();
         var ov = document.createElement("div");
         ov.id = "rv-qr-ov";
         ov.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(4,12,22,.82);display:flex;align-items:center;justify-content:center;padding:16px";
-        var h = '<div style="background:#0f2740;border:1px solid #24435f;border-radius:16px;max-width:440px;width:100%;padding:20px;color:#dbe8f5;box-shadow:0 20px 60px rgba(0,0,0,.5);max-height:92vh;overflow:auto">' +
+        var chk = function (k, rot, dica, disp) {
+          return '<label style="display:flex;gap:8px;align-items:flex-start;font-size:12.5px;color:' + (disp ? "#cbd8e6" : "#6b7f94") + ';margin:5px 0;cursor:' + (disp ? "pointer" : "default") + '">' +
+            '<input type="checkbox" data-rvo="' + k + '"' + (op[k] && disp ? " checked" : "") + (disp ? "" : " disabled") + ' style="margin-top:2px">' +
+            '<span><b>' + rot + '</b>' + (dica ? '<br><span style="font-size:11px;color:#8fa3b8">' + dica + '</span>' : '') + '</span></label>';
+        };
+        var h = '<div style="background:#0f2740;border:1px solid #24435f;border-radius:16px;max-width:460px;width:100%;padding:20px;color:#dbe8f5;box-shadow:0 20px 60px rgba(0,0,0,.5);max-height:92vh;overflow:auto">' +
           '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><b style="font-size:15px">' + I("celular") + ' Abrir o projeto 3D no celular</b><button class="btn sm" data-rv="fechar" title="Fechar">' + I("fechar") + '</button></div>' +
-          '<button class="btn primary longo" data-rv="nuvem" style="width:100%;padding:12px"' + (trava ? " disabled" : "") + '>' + I("nuvem") + ' Gerar link e QR para qualquer celular</button>' +
-          '<div style="font-size:12px;color:#cbd8e6;line-height:1.5;margin:10px 0 4px">Android ou iPhone, <b>com ou sem o OrçaPRO instalado</b>, em qualquer rede: a pessoa lê o QR (ou toca no link que você mandar) e o projeto abre no navegador do celular.</div>' +
-          '<ul style="font-size:12px;color:#cbd8e6;line-height:1.5;margin:4px 0 8px;padding-left:18px">' +
-          '<li><b>iPhone/iPad</b>: RA do iPhone (o projeto fica preso no chão) ou Caminhar.</li>' +
-          '<li><b>Android</b>: RA com âncora (ARCore) com filtro de disciplina, ou Caminhar.</li></ul>' +
+          '<div style="font-size:12px;color:#cbd8e6;line-height:1.5;margin:0 0 8px">Android ou iPhone, <b>com ou sem o OrçaPRO instalado</b>, em qualquer rede: a pessoa lê o QR (ou toca no link que você mandar) e o projeto abre no navegador do celular — com RA do iPhone, RA do Android, pontos de vista, camadas e apontamentos de campo.</div>';
+        if (!trava) {
+          h += '<div style="border:1px solid #24435f;border-radius:12px;padding:10px 12px;margin-bottom:10px">' +
+            '<label style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12.5px"><b>O link vale</b>' +
+            '<select data-rvo="dias" class="inp" style="width:130px">' + RvNuvem.VALIDADES.map(function (v) { return '<option value="' + v.dias + '"' + (op.dias === v.dias ? " selected" : "") + '>' + v.rotulo + '</option>'; }).join("") + '</select></label>' +
+            '<div style="font-size:11.5px;color:#8fa3b8;margin:8px 0 2px">Vai junto com o modelo:</div>' +
+            chk("marca", "Nome e logo da empresa", "O celular mostra quem enviou e o nome da obra.", true) +
+            chk("vistas", "Pontos de vista" + (extra.vistas ? " (" + extra.vistas + ")" : ""), extra.vistas ? "Sem os comentários da equipe." : "Esta obra não tem pontos de vista salvos.", extra.vistas > 0) +
+            chk("crono", "Obra no tempo (4D)", extra.crono ? "O cronograma, SEM valores (custo e venda não vão)." : extra.cronoMotivo, extra.crono) +
+            '</div>';
+        }
+        h += '<button class="btn primary longo" data-rv="nuvem" style="width:100%;padding:12px"' + (trava ? " disabled" : "") + '>' + I("nuvem") + ' Gerar link e QR para qualquer celular</button>' +
           (trava
-            ? '<div data-rv="trava" style="font-size:12px;color:#f0b94a;line-height:1.4;margin-bottom:10px">' + trava + '</div>'
-            : '<div style="font-size:11px;color:#8fa3b8;line-height:1.4;margin-bottom:10px">O arquivo .ifc ' + (modelos.length > 1 ? "dos " + modelos.length + " modelos " : "") + 'vai para a nuvem da RA e fica por 3 dias; depois é apagado. Só quem tem o link acessa.</div>');
+            ? '<div data-rv="trava" style="font-size:12px;color:#f0b94a;line-height:1.4;margin:10px 0">' + trava + '</div>'
+            : '<div style="font-size:11px;color:#8fa3b8;line-height:1.4;margin:8px 0 10px">O arquivo .ifc ' + (modelos.length > 1 ? "dos " + modelos.length + " modelos " : "") + 'vai para a nuvem da RA pelo prazo escolhido; depois é apagado. Só quem tem o link acessa, e você pode revogar antes em Meus links.</div>') +
+          (chave && base ? '<button class="btn sm" data-rv="meus" style="width:100%;margin-bottom:8px">' + I("link") + ' Meus links (aberturas, apontamentos, revogar)</button>' : '');
         /* QR da REDE LOCAL: só existe com servidor local respondendo IP. No
            PWA (github.io) não há servidor — o QR apontaria para o app vazio,
            que foi exatamente o QR que "não abriu". */
         if (lan && lan.urls.length) {
           var svgL = (typeof QR !== "undefined") ? QR.svg(lan.urls[0], { tamanhoPx: 190, correcao: "M" }) : "";
           h += '<details data-rv="lan" style="border-top:1px solid #24435f;padding-top:10px"><summary style="cursor:pointer;font-size:12.5px;color:#cbd8e6">Sem internet na obra? QR da rede Wi-Fi</summary>' +
-            '<div style="font-size:11.5px;color:#f0b94a;line-height:1.4;margin:8px 0">Só abre num aparelho <b>no mesmo Wi-Fi deste computador</b> e que <b>já tenha este modelo aberto</b> no OrçaPRO dele. Para mostrar a outra pessoa, use o link acima.</div>' +
+            '<div style="font-size:11.5px;color:#f0b94a;line-height:1.4;margin:8px 0">Só abre num aparelho <b>no mesmo Wi-Fi deste computador</b> e que <b>já tenha este modelo aberto</b> no OrçaPRO dele. Para mostrar a outra pessoa, use o link acima (depois de aberto uma vez, ele também funciona sem internet).</div>' +
             '<div style="background:#fff;border-radius:12px;padding:12px;display:flex;justify-content:center">' + (svgL || '<span style="color:#333">QR indisponível</span>') + '</div>' +
             '<div style="font-size:11.5px;color:#9fb2c8;margin-top:8px;word-break:break-all"><b>Endereço:</b> ' + Util.esc(lan.urls[0]) + '</div>' +
             (lan.urls.length > 1 ? '<div style="font-size:11px;color:#9fb2c8;margin-top:6px">Não abriu? Tente outro IP: ' + lan.urls.slice(1).map(function (u) { return '<button class="btn sm" data-rvip="' + Util.esc(u) + '" style="font-size:11px;padding:3px 7px;margin:2px">' + Util.esc(u.replace(/^https?:\/\//, "").replace(/\/#rv$/, "")) + '</button>'; }).join("") + '</div>' : '') +
@@ -18894,13 +19432,19 @@
         }
         ov.innerHTML = h + "</div>";
         document.body.appendChild(ov);
+        ov.addEventListener("change", function (e) {
+          var k = e.target.getAttribute && e.target.getAttribute("data-rvo"); if (!k) return;
+          if (k === "dias") op.dias = Number(e.target.value) || RvNuvem.DIAS_PADRAO; else op[k] = !!e.target.checked;
+          self._rvGuardarOpcoes(op);
+        });
         ov.addEventListener("click", function (e) {
           if (e.target === ov) { ov.remove(); return; }
           var bip = e.target.closest("[data-rvip]");
           if (bip && lan) { var u = bip.getAttribute("data-rvip"); lan.urls = [u].concat(lan.urls.filter(function (x) { return x !== u; })); abrir(lan); var d = document.querySelector('#rv-qr-ov [data-rv="lan"]'); if (d) d.open = true; return; }
           var b = e.target.closest("[data-rv]"); if (!b || b.tagName === "DETAILS" || b.tagName === "DIV") return; var k = b.getAttribute("data-rv");
           if (k === "fechar") ov.remove();
-          else if (k === "nuvem") { if (!trava) { ov.remove(); self._compartilharNuvemRV(); } }
+          else if (k === "nuvem") { if (!trava) { ov.remove(); self._compartilharNuvemRV(op); } }
+          else if (k === "meus") { ov.remove(); self._rvMeusLinks(); }
           else if (k === "lan-copiar") { try { navigator.clipboard.writeText(lan.urls[0]); UI.toast("Endereço copiado.", "ok"); } catch (_) { UI.toast("Copie o endereço mostrado.", "info"); } }
           else if (k === "lan-imprimir") self._imprimirCartaoRV(lan.urls[0], (typeof QR !== "undefined") ? QR.svg(lan.urls[0], { tamanhoPx: 220, correcao: "M" }) : "", { nuvem: false });
         });
@@ -18918,11 +19462,13 @@
           } else cb(null);
         }).catch(function () { cb(null); });
       }
-      /* link já gerado para ESTES modelos e ainda com folga: mostra direto.
-         Confere no servidor antes — link apagado lá não pode virar QR na tela. */
+      self._rvAbrirEscolha = function () { comLan(abrir); };
+      /* link já gerado para ESTES modelos, com ESTAS escolhas, e ainda com
+         folga: mostra direto. Confere no servidor antes (c=0: conferir não é
+         abrir) — link apagado lá não pode virar QR na tela. */
       if (salvo) {
         var feito = false, tempo = setTimeout(function () { if (!feito) { feito = true; self._modalNuvemRV(salvo.url, salvo.expira, salvo.token); } }, 4000);
-        fetch(base + "/rv/t/" + salvo.token, { cache: "no-store" }).then(function (r) {
+        fetch(base + "/rv/t/" + salvo.token + "?c=0", { cache: "no-store" }).then(function (r) {
           if (feito) return; feito = true; clearTimeout(tempo);
           if (r.status === 404 || r.status === 410) { self._rvEsquecerLink(); comLan(abrir); }
           else self._modalNuvemRV(salvo.url, salvo.expira, salvo.token);
@@ -18931,23 +19477,70 @@
       }
       comLan(abrir);
     },
-    /* ---- o último link da nuvem, para não reenviar o IFC a cada abertura ----
-       A assinatura é nome + tamanho + disciplina de cada modelo, e o servidor:
-       trocou o arquivo (reexportou do Revit), trocou a assinatura, e o link
-       velho — que mostraria o projeto ANTIGO — deixa de ser oferecido. */
-    _rvAssinatura: function (modelos, base) {
-      return String(base || "") + "|" + (modelos || []).map(function (m) { return m.nome + ":" + (m.bytes ? m.bytes.length : 0) + ":" + (m.disc || ""); }).join("|");
+    /* ---- as escolhas do link (validade e o que vai junto), por aparelho ---- */
+    _rvOpcoes: function () {
+      var o = {}; try { o = JSON.parse(localStorage.getItem("orcapro:rv:opcoes") || "{}") || {}; } catch (e) { o = {}; }
+      var dias = Number(o.dias);
+      return {
+        dias: (typeof RvNuvem !== "undefined" && RvNuvem.VALIDADES.some(function (v) { return v.dias === dias; })) ? dias : 3,
+        marca: o.marca !== false, vistas: o.vistas !== false, crono: o.crono !== false
+      };
     },
-    _rvLinkSalvo: function (modelos, base) {
+    _rvGuardarOpcoes: function (o) { try { localStorage.setItem("orcapro:rv:opcoes", JSON.stringify(o)); } catch (e) {} },
+    /* o que dá para mandar junto AGORA (e por que não, quando não dá) */
+    _rvExtrasDisponiveis: function () {
+      var r = { vistas: 0, crono: false, cronoMotivo: "" };
+      try { r.vistas = (typeof RvNuvem !== "undefined") ? RvNuvem.vistasParaLink(this._bimVistaDaObra()).length : 0; } catch (e) {}
+      var s = this._b4Sim;
+      if (!s && this._bimElementos && this._bimElementos.length) { try { this._bimReplanejar(); s = this._b4Sim; } catch (e2) { s = null; } }
+      /* ⚠ só o cronograma DE VERDADE da obra viaja. Sem cronograma, a
+         simulação usa a "sequência padrão por tipo de peça, com datas
+         ilustrativas a partir de hoje" — ótima para estudo no escritório,
+         enganosa no celular do cliente, que não lê a nota da fonte. */
+      if (!s) r.cronoMotivo = "Sem cronograma ligado à obra deste modelo.";
+      else if (!s.temCronograma || s.erroCronograma) r.cronoMotivo = s.erroCronograma ? "O cronograma desta obra não calculou (" + String(s.erroCronograma).slice(0, 80) + ")." : "Sem cronograma ligado: o 4D seria só a sequência ilustrativa.";
+      else r.crono = true;
+      return r;
+    },
+    /* monta os DADOS do link — tudo por lista branca em js/rvnuvem.js */
+    _rvDadosDoLink: function (op, cb) {
+      var self = this, dados = {}, resumo = { vistas: 0, crono: false, semChave: 0 };
+      var mods = (typeof BIM !== "undefined" && BIM.modelos) ? BIM.modelos : [];
+      dados.modelos = mods.filter(function (m) { return m.arquivoId && m.modeloId; }).map(function (m) { return { arquivoId: m.arquivoId, modeloId: m.modeloId }; });
+      if (op.vistas) { dados.vistas = RvNuvem.vistasParaLink(self._bimVistaDaObra()); resumo.vistas = dados.vistas.length; }
+      if (op.crono && self._rvExtrasDisponiveis().crono) {
+        var uidChave = {};
+        ((typeof BIM !== "undefined" && BIM.elementos) || []).forEach(function (e) { if (e.uid && e.chave) uidChave[e.uid] = e.chave; });
+        dados.crono = RvNuvem.cronoParaLink(self._b4Sim, function (uid) { return uidChave[uid] || ""; });
+        if (dados.crono) { resumo.crono = true; resumo.semChave = dados.crono.semChave; }
+      }
+      var obra = null; try { obra = self._bimSel ? Store.obter(eid(), "obras", self._bimSel) : null; } catch (e) { obra = null; }
+      if (!op.marca) { cb(dados, resumo, obra); return; }
+      var emp = (typeof Empresa !== "undefined" && Empresa.dados) ? (Empresa.dados() || {}) : {};
+      self._avatarLogoSmall(function (logo) {
+        dados.marca = RvNuvem.marca(emp.nome || "", obra ? obra.nome : "", logo);
+        cb(dados, resumo, obra);
+      });
+    },
+    /* ---- o último link da nuvem, para não reenviar o IFC a cada abertura ----
+       A assinatura é nome + tamanho + disciplina de cada modelo, o servidor
+       e as ESCOLHAS: trocou o arquivo (reexportou do Revit) ou pediu outra
+       validade/outro conteúdo, e o link velho deixa de ser oferecido. */
+    _rvAssinatura: function (modelos, base, op) {
+      op = op || {};
+      return String(base || "") + "|" + (modelos || []).map(function (m) { return m.nome + ":" + (m.bytes ? m.bytes.length : 0) + ":" + (m.disc || ""); }).join("|") +
+        "|" + [op.dias, op.marca ? 1 : 0, op.vistas ? 1 : 0, op.crono ? 1 : 0, this._bimSel || ""].join(",");
+    },
+    _rvLinkSalvo: function (modelos, base, op) {
       if (!modelos || !modelos.length) return null;
       var s = null; try { s = JSON.parse(localStorage.getItem("orcapro:rv:ultimo") || "null"); } catch (e) { s = null; }
-      if (!s || !s.token || !s.url || s.assinatura !== this._rvAssinatura(modelos, base)) return null;
+      if (!s || !s.token || !s.url || s.assinatura !== this._rvAssinatura(modelos, base, op)) return null;
       // ⚠ com menos de 6 h de vida, gera outro: o cliente abre amanhã e cai em "link expirado"
       if (!(Number(s.expira) - Date.now() > 6 * 3600000)) return null;
       return s;
     },
-    _rvGuardarLink: function (modelos, base, url, expira, token) {
-      try { localStorage.setItem("orcapro:rv:ultimo", JSON.stringify({ assinatura: this._rvAssinatura(modelos, base), url: url, expira: expira, token: token })); } catch (e) {}
+    _rvGuardarLink: function (modelos, base, url, expira, token, op) {
+      try { localStorage.setItem("orcapro:rv:ultimo", JSON.stringify({ assinatura: this._rvAssinatura(modelos, base, op), url: url, expira: expira, token: token })); } catch (e) {}
     },
     _rvEsquecerLink: function () { try { localStorage.removeItem("orcapro:rv:ultimo"); } catch (e) {} },
     _imprimirCartaoRV: function (url, svg, opts) {
@@ -18959,7 +19552,7 @@
         /* o cartão da NUVEM não pode dizer "mesmo Wi-Fi": é justamente o que
            ele não exige, e a pessoa na obra acreditaria no papel */
         var instr = opts.nuvem
-          ? 'Aponte a câmera de qualquer celular para o QR — Android ou iPhone, com internet, sem instalar nada.<br>iPhone: RA do iPhone · Android: RA com âncora · qualquer um: Caminhar.' +
+          ? 'Aponte a câmera de qualquer celular para o QR — Android ou iPhone, com internet, sem instalar nada.<br>iPhone: RA do iPhone · Android: RA do Android · qualquer um: Caminhar.' +
             (opts.expira ? '<br><b>Válido até ' + new Date(opts.expira).toLocaleDateString("pt-BR") + '.</b>' : '')
           : 'Aponte a câmera do celular pro QR (mesmo Wi-Fi, com o modelo já aberto no aparelho).<br>Android: RA com âncora · iPhone: Caminhar no projeto.';
         w.document.write('<!doctype html><meta charset="utf-8"><title>Projeto 3D no celular</title>' +
@@ -18973,8 +19566,7 @@
         w.document.close();
       } catch (_) { UI.toast("Não deu pra abrir a impressão.", "erro"); }
     },
-    // ☁️ Compartilhar na nuvem: sobe os IFC carregados pro VPS (gated por licença) e gera
-    // logo da empresa reduzido e CAPADO (<20KB) p/ a camisa do avatar. O relay corta em
+    // logo da empresa reduzido e CAPADO (<20KB) p/ a camisa do avatar e a marca do link. O relay corta em
     // MAX_LOGO(24KB)/MAX_BODY(40KB): um PNG denso de 96px poderia ser truncado (base64 quebrado →
     // logo some) ou derrubar o POST de identidade (avatar vira "Visitante"). Reencoda p/ JPEG e, se
     // ainda passar, descarta o logo — nome/tel/cores SEMPRE seguem (gate v1.1.93). cb(dataURL|"").
@@ -18998,13 +19590,15 @@
       } catch (e) { cb(""); }
     },
     // um QR pro app público /rvapp/#rv?t=<token> — QUALQUER celular, em qualquer lugar, abre.
-    // Honesto: o link expira em 72h e só quem tem ele acessa.
-    _compartilharNuvemRV: function () {
+    // Honesto: o link vale o prazo escolhido e só quem tem ele acessa.
+    _compartilharNuvemRV: function (op) {
       var self = this;
-      var base = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? CONFIG.licencaServer : "";
+      op = op || self._rvOpcoes();
+      var base = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : "";
       var chave = (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "";
       if (!base) { UI.toast("Servidor de compartilhamento não configurado.", "erro"); return; }
       if (!chave) { UI.toast("O link para qualquer celular é da versão ativada (🔑 Licença). No teste grátis o projeto não sai do computador.", "erro"); return; }
+      if (typeof RvNuvem === "undefined") { UI.toast("O módulo do link (js/rvnuvem.js) não carregou. Recarregue o app.", "erro"); return; }
       var modelos = (typeof BIM !== "undefined" && BIM.bytesModelos) ? BIM.bytesModelos() : [];
       /* ⚠ MODELO RESTAURADO DO CACHE NÃO TEM O ARQUIVO. O cache guarda a
          geometria convertida, nunca o .ifc (é o que impede o inchaço de
@@ -19026,6 +19620,12 @@
       ov.innerHTML = '<div style="background:#0f2740;border:1px solid #24435f;border-radius:16px;max-width:420px;width:100%;padding:22px;color:#dbe8f5;text-align:center"><div style="font-size:30px">' + (typeof Icones !== 'undefined' ? Icones.get('nuvem', 15) : '') + '</div><b data-rvp="txt" style="display:block;margin:10px 0">Enviando o modelo pra nuvem…</b><div class="muted" style="font-size:12px">Não feche esta janela.</div></div>';
       document.body.appendChild(ov);
       function setTxt(t) { var e = ov.querySelector('[data-rvp="txt"]'); if (e) e.textContent = t; }
+      function falhou(msg, cota) {
+        if (ov.parentNode) ov.remove();
+        UI.toast(msg, "erro");
+        /* cota cheia tem SAÍDA: a lista de links para revogar os velhos */
+        if (cota) self._rvMeusLinks();
+      }
       var enviados = [];
       function subir(i) {
         if (i >= modelos.length) { criarToken(); return; }
@@ -19035,31 +19635,43 @@
           method: "POST", headers: { "x-licenca": chave, "Content-Type": "application/octet-stream" }, body: m.bytes
         }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
           .then(function (res) {
-            if (!res.ok || !res.j.id) throw new Error(res.j.erro || "falha no envio");
+            if (!res.ok || !res.j.id) { var er = new Error(res.j.erro || "falha no envio"); er.cota = !!res.j.cota; throw er; }
             enviados.push({ id: res.j.id, nome: m.nome, disc: m.disc });
             subir(i + 1);
-          }).catch(function (e) { if (ov.parentNode) ov.remove(); UI.toast("Não deu pra enviar: " + (e && e.message || e), "erro"); });
+          }).catch(function (e) { falhou("Não deu pra enviar: " + (e && e.message || e), e && e.cota); });
       }
       function criarToken() {
         setTxt("Criando o link…");
-        fetch(base + "/rv/token", { method: "POST", headers: { "x-licenca": chave, "Content-Type": "application/json" }, body: JSON.stringify({ nome: (modelos[0] && modelos[0].nome) || "Projeto", arquivos: enviados }) })
-          .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
-          .then(function (res) {
-            if (!res.ok || !res.j.token) throw new Error(res.j.erro || "falha ao criar o link");
-            if (ov.parentNode) ov.remove();
-            var urlT = base + "/rvapp/#rv?t=" + res.j.token;
-            self._rvGuardarLink(modelos, base, urlT, res.j.expira, res.j.token);
-            self._modalNuvemRV(urlT, res.j.expira, res.j.token);
-          }).catch(function (e) { if (ov.parentNode) ov.remove(); UI.toast("Não deu pra criar o link: " + (e && e.message || e), "erro"); });
+        self._rvDadosDoLink(op, function (dados, resumo, obra) {
+          /* apontamentos: true = "este app traz o apontamento para a obra" (Meus
+             links → Trazer). Sem isso o servidor recusa apontamento no link e o
+             celular nem mostra o Apontar: link de app antigo não promete o que
+             o dono não vai receber. */
+          var corpo = { nome: (obra && obra.nome) || (modelos[0] && modelos[0].nome) || "Projeto", arquivos: enviados, dias: op.dias, obraId: self._bimSel || "", dados: dados, apontamentos: true };
+          fetch(base + "/rv/token", { method: "POST", headers: { "x-licenca": chave, "Content-Type": "application/json" }, body: JSON.stringify(corpo) })
+            .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+            .then(function (res) {
+              if (!res.ok || !res.j.token) { var er = new Error(res.j.erro || "falha ao criar o link"); er.cota = !!res.j.cota; throw er; }
+              if (ov.parentNode) ov.remove();
+              var urlT = base + "/rvapp/#rv?t=" + res.j.token;
+              self._rvGuardarLink(modelos, base, urlT, res.j.expira, res.j.token, op);
+              self._modalNuvemRV(urlT, res.j.expira, res.j.token, resumo);
+            }).catch(function (e) { falhou("Não deu pra criar o link: " + (e && e.message || e), e && e.cota); });
+        });
       }
       subir(0);
     },
-    _modalNuvemRV: function (url, expira, token) {
+    _modalNuvemRV: function (url, expira, token, resumo) {
       var self = this;
       var svg = (typeof QR !== "undefined") ? QR.svg(url, { tamanhoPx: 220, correcao: "M" }) : "";
       var dias = expira ? Math.max(1, Math.round((expira - Date.now()) / 86400000)) : 3;
       // sala da reunião derivada do token (mesma fórmula do visor da nuvem): quem abre o link cai aqui
       var salaLink = token ? ("nuvem-" + String(token).slice(0, 18)) : "";
+      var junto = [];
+      if (resumo) {
+        if (resumo.vistas) junto.push(resumo.vistas + (resumo.vistas === 1 ? " ponto de vista" : " pontos de vista"));
+        if (resumo.crono) junto.push("obra no tempo (4D), sem valores" + (resumo.semChave ? " — " + resumo.semChave + " peça(s) sem identificação ficaram de fora" : ""));
+      }
       var ov = document.getElementById("rv-qr-ov"); if (ov) ov.remove();
       ov = document.createElement("div"); ov.id = "rv-qr-ov";
       ov.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(4,12,22,.82);display:flex;align-items:center;justify-content:center;padding:16px";
@@ -19068,12 +19680,14 @@
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-size:15px">' + (typeof Icones !== 'undefined' ? Icones.get('nuvem', 15) : '') + ' Projeto 3D — qualquer celular</b><button class="btn sm" data-rv="fechar">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>' +
         '<div style="background:#fff;border-radius:12px;padding:14px;display:flex;justify-content:center">' + (svg || '<span style="color:#333">QR indisponível</span>') + '</div>' +
         '<div style="font-size:12px;color:#9fb2c8;margin-top:10px;word-break:break-all"><b>Link:</b> ' + Util.esc(url) + '</div>' +
-        '<div style="font-size:12.5px;color:#cbd8e6;line-height:1.5;margin:12px 0 6px">Aponte a câmera de <b>qualquer celular ou tablet</b> — Android ou iPhone, com ou sem o OrçaPRO instalado, em qualquer rede. Ou mande o link: quem tocar nele abre o projeto no navegador.' +
-        '<ul style="margin:6px 0;padding-left:18px"><li><b>iPhone/iPad</b>: RA do iPhone (fixa no chão) ou Caminhar.</li><li><b>Android</b>: RA com âncora (fixe no chão e trave) + disciplina, ou Caminhar.</li></ul></div>' +
+        '<div style="font-size:12.5px;color:#cbd8e6;line-height:1.5;margin:12px 0 6px">Aponte a câmera de <b>qualquer celular ou tablet</b> — Android ou iPhone, com ou sem o OrçaPRO instalado, em qualquer rede. Ou mande o link: quem tocar nele abre o projeto no navegador (e depois abre de novo mesmo sem internet).' +
+        '<ul style="margin:6px 0;padding-left:18px"><li><b>iPhone/iPad</b>: RA do iPhone (fixa no chão) ou Caminhar.</li><li><b>Android</b>: RA do Android (app do Google) ou RA com âncora + disciplina, ou Caminhar.</li></ul></div>' +
+        (junto.length ? '<div style="font-size:11.5px;color:#9fb2c8;margin-bottom:6px">Foi junto: ' + Util.esc(junto.join(" · ")) + '.</div>' : '') +
         '<div style="font-size:11.5px;color:#f0b94a;line-height:1.35;margin-bottom:12px">⏳ O link vale até <b>' + (expira ? new Date(expira).toLocaleDateString("pt-BR") + ' às ' + new Date(expira).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : dias + ' dia(s)') + '</b> e só quem tem ele acessa. Depois disso o modelo é apagado do servidor.</div>' +
         (salaLink ? '<button data-rv="entrar" style="width:100%;margin-bottom:8px;padding:10px;border-radius:9px;border:0;background:#16a34a;color:#fff;font-weight:700;font-size:13px;cursor:pointer">' + (typeof Icones !== 'undefined' ? Icones.get('pessoas', 15) : '') + ' Entrar você também na reunião deste link</button>' : '') +
         '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm primary" data-rv="whats" style="flex:1 1 100%">' + (typeof Icones !== 'undefined' ? Icones.get('enviar', 15) : '') + ' Enviar o link por WhatsApp</button><button class="btn sm" data-rv="imprimir" style="flex:1">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Imprimir cartão</button><button class="btn sm" data-rv="copiar" style="flex:1">' + (typeof Icones !== 'undefined' ? Icones.get('checklist', 15) : '') + ' Copiar link</button></div>' +
-        '<button class="btn sm" data-rv="renovar" style="width:100%;margin-top:8px;font-size:11.5px" title="Envia o modelo de novo e cria outro link — use se você mudou o projeto">' + (typeof Icones !== 'undefined' ? Icones.get('ciclo', 15) : '') + ' Mudou o modelo? Gerar link novo</button>' +
+        '<div style="display:flex;gap:8px;margin-top:8px"><button class="btn sm" data-rv="renovar" style="flex:1;font-size:11.5px" title="Escolher validade/conteúdo de novo e criar outro link — use se você mudou o projeto">' + (typeof Icones !== 'undefined' ? Icones.get('ciclo', 15) : '') + ' Gerar link novo</button>' +
+        '<button class="btn sm" data-rv="meus" style="flex:1;font-size:11.5px">' + (typeof Icones !== 'undefined' ? Icones.get('link', 15) : '') + ' Meus links</button></div>' +
         '</div>';
       document.body.appendChild(ov);
       ov.addEventListener("click", function (e) {
@@ -19085,7 +19699,8 @@
         /* o link vai no texto do wa.me (Política 4.4: o que vai na URL passa pela Meta) — só o
            endereço do projeto, sem nome de cliente */
         else if (k === "whats") { try { window.open("https://wa.me/?text=" + encodeURIComponent("Projeto em 3D para abrir no celular (Android ou iPhone, sem instalar nada): " + url), "_blank"); } catch (_) { UI.toast("Copie o link e mande pelo WhatsApp.", "info"); } }
-        else if (k === "renovar") { self._rvEsquecerLink(); ov.remove(); self._compartilharNuvemRV(); }
+        else if (k === "renovar") { self._rvEsquecerLink(); ov.remove(); self.bimQRImersivo(); }
+        else if (k === "meus") { ov.remove(); self._rvMeusLinks(); }
         else if (k === "entrar") {
           if (typeof BIM === "undefined" || !BIM.reuniao) { UI.toast("Abra o modelo no visualizador primeiro.", "erro"); return; }
           if (BIM.reuniao.ativa) { UI.toast("Você já está na reunião deste link.", "ok"); ov.remove(); return; }
@@ -19100,6 +19715,114 @@
           });
         }
       });
+    },
+    /* ---- MEUS LINKS: os links vivos desta licença, com aberturas e apontamentos ---- */
+    _rvMeusLinks: function () {
+      var self = this;
+      var base = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : "";
+      var chave = (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "";
+      if (!base || !chave) { UI.toast("Meus links é da versão ativada (🔑 Licença).", "erro"); return; }
+      var I = function (n) { return (typeof Icones !== "undefined") ? Icones.get(n, 15) : ""; };
+      var ov = document.getElementById("rv-qr-ov"); if (ov) ov.remove();
+      ov = document.createElement("div"); ov.id = "rv-qr-ov";
+      ov.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(4,12,22,.82);display:flex;align-items:center;justify-content:center;padding:16px";
+      ov.innerHTML = '<div data-rv="caixa" style="background:#0f2740;border:1px solid #24435f;border-radius:16px;max-width:560px;width:100%;padding:20px;color:#dbe8f5;box-shadow:0 20px 60px rgba(0,0,0,.5);max-height:92vh;overflow:auto"><b>' + I("link") + ' Meus links</b><p style="font-size:12.5px;color:#9fb2c8">Carregando…</p></div>';
+      document.body.appendChild(ov);
+      var links = [];
+      function nomeObra(id) { try { var o = id ? Store.obter(eid(), "obras", id) : null; return o ? o.nome : ""; } catch (e) { return ""; } }
+      function trazidas(tk) { try { return (Store.listar(eid(), "bim_vistas") || []).filter(function (v) { return v.origemId && v.origemId.indexOf(tk + ":") === 0; }).length; } catch (e) { return 0; } }
+      function pintar(j) {
+        links = (j && j.links) || [];
+        var u = (j && j.uso) || {}, agora = Date.now();
+        var h = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b style="font-size:15px">' + I("link") + ' Meus links</b><button class="btn sm" data-rv="fechar">' + I("fechar") + '</button></div>' +
+          '<div style="font-size:11.5px;color:#8fa3b8;margin-bottom:10px">' + links.length + ' link(s) ativo(s) · ' + Math.round((u.bytes || 0) / 1048576) + ' MB de ' + Math.round((u.maxBytes || 0) / 1048576) + ' MB · no máximo ' + (u.maxLinks || 0) + ' links</div>';
+        if (!links.length) h += '<p style="font-size:12.5px;color:#9fb2c8">Nenhum link ativo. Gere um em "QR · RA/RV no celular".</p>';
+        links.forEach(function (l, i) {
+          var r = RvNuvem.resumoLink(l, agora), ob = nomeObra(l.obraId), tz = trazidas(l.token), novas = Math.max(0, (l.notas || 0) - tz);
+          h += '<div style="border:1px solid #24435f;border-radius:12px;padding:10px 12px;margin-bottom:8px">' +
+            '<b>' + Util.esc(r.titulo) + '</b>' + (ob && ob !== r.titulo ? ' <span style="font-size:11.5px;color:#9fb2c8">· obra ' + Util.esc(ob) + '</span>' : '') +
+            '<div style="font-size:12px;color:' + (r.vencendo ? '#f0b94a' : '#cbd8e6') + ';margin-top:3px">' + Util.esc(r.validade) + ' · ' + Util.esc(r.aberturas) + '</div>' +
+            (l.notas ? '<div style="font-size:12px;color:#cbd8e6">' + I("nota") + ' ' + Util.esc(r.notas) + (tz ? ' (' + tz + ' já na obra)' : '') + '</div>' : '') +
+            (r.semApontar ? '<div data-rv-sem-apontar="1" style="font-size:12px;color:#9fb2c8">' + Util.esc(r.semApontar) + '</div>' : '') +
+            '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">' +
+            '<button class="btn sm" data-rv="qr" data-i="' + i + '">QR</button>' +
+            '<button class="btn sm" data-rv="copiar" data-i="' + i + '">' + I("checklist") + ' Copiar</button>' +
+            (novas ? '<button class="btn sm primary" data-rv="trazer" data-i="' + i + '">' + I("importar") + ' Trazer ' + novas + ' apontamento(s) para a obra</button>' : '') +
+            '<button class="btn sm danger" data-rv="revogar" data-i="' + i + '">Revogar</button></div></div>';
+        });
+        ov.querySelector('[data-rv="caixa"]').innerHTML = h;
+      }
+      function carregar() {
+        fetch(base + "/rv/meus", { headers: { "x-licenca": chave }, cache: "no-store" })
+          .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.erro || "HTTP " + r.status); return j; }); })
+          .then(pintar)
+          .catch(function (e) { ov.querySelector('[data-rv="caixa"]').innerHTML = '<b>Meus links</b><p style="font-size:12.5px;color:#f0b94a">Não consegui ler seus links: ' + Util.esc(e.message) + '. Confira a internet e tente de novo.</p><button class="btn sm" data-rv="fechar">Fechar</button>'; });
+      }
+      ov.addEventListener("click", function (e) {
+        if (e.target === ov) { ov.remove(); return; }
+        var b = e.target.closest("[data-rv]"); if (!b) return; var k = b.getAttribute("data-rv"), l = links[+b.getAttribute("data-i")];
+        var url = l ? base + "/rvapp/#rv?t=" + l.token : "";
+        if (k === "fechar") ov.remove();
+        else if (k === "qr" && l) { ov.remove(); self._modalNuvemRV(url, l.expira, l.token); }
+        else if (k === "copiar" && l) { try { navigator.clipboard.writeText(url); UI.toast("Link copiado.", "ok"); } catch (_) { UI.toast(url, "info"); } }
+        else if (k === "trazer" && l) { b.disabled = true; b.textContent = "Trazendo…"; self._rvTrazerNotas(l, function () { carregar(); }); }
+        else if (k === "revogar" && l) {
+          var faltam = Math.max(0, (l.notas || 0) - trazidas(l.token));
+          /* ⚠ revogar apaga os apontamentos no servidor: o que ainda não veio
+             para a obra se perde, e isso é dito com o número, antes */
+          if (!confirm('Revogar o link "' + (l.nome || "Projeto") + '"?\n\nQuem tiver o link não abre mais, e o modelo é apagado do servidor.' +
+            (faltam ? "\n\n⚠ " + faltam + " apontamento(s) deste link ainda NÃO foram trazidos para a obra e serão perdidos. Cancele e use \"Trazer\" antes." : ""))) return;
+          b.disabled = true;
+          fetch(base + "/rv/revogar", { method: "POST", headers: { "x-licenca": chave, "Content-Type": "application/json" }, body: JSON.stringify({ token: l.token }) })
+            .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.erro || "falha"); return j; }); })
+            .then(function () {
+              try { var s = JSON.parse(localStorage.getItem("orcapro:rv:ultimo") || "null"); if (s && s.token === l.token) self._rvEsquecerLink(); } catch (e2) {}
+              UI.toast('Link "' + (l.nome || "Projeto") + '" revogado.', "ok"); carregar();
+            })
+            .catch(function (e3) { b.disabled = false; UI.toast("Não consegui revogar: " + e3.message, "erro"); });
+        }
+      });
+      carregar();
+    },
+    /* ---- apontamentos de campo → pontos de vista da obra (idempotente) ----
+       Cada apontamento vira um ponto de vista de origem "campo", com o
+       comentário aberto e a câmera olhando o ponto — no molde da importação
+       de BCF. `origemId` (token:id) impede duplicar ao trazer de novo. */
+    _rvTrazerNotas: function (l, cb) {
+      var self = this;
+      var base = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : "";
+      var obraId = "";
+      try { obraId = (l.obraId && Store.obter(eid(), "obras", l.obraId)) ? l.obraId : (self._bimSel || ""); } catch (e) { obraId = self._bimSel || ""; }
+      if (!obraId) { UI.toast("Não sei de que obra é este link. Abra a obra no BIM e tente de novo.", "erro"); if (cb) cb(); return; }
+      function paraDataUrl(blob) { return new Promise(function (ok, falha) { var fr = new FileReader(); fr.onload = function () { ok(fr.result); }; fr.onerror = falha; fr.readAsDataURL(blob); }); }
+      fetch(base + "/rv/notas/" + l.token, { cache: "no-store" })
+        .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.erro || "HTTP " + r.status); return j; }); })
+        .then(function (j) {
+          var existentes = (Store.listar(eid(), "bim_vistas") || []).filter(function (v) { return String(v.obraId || "") === String(obraId); });
+          var novas = RvNuvem.notasNovas(j.notas || [], existentes, l.token), n = 0, semFoto = 0;
+          return novas.reduce(function (p, nota) {
+            return p.then(function () {
+              var rec = RvNuvem.notaParaVista(nota, { token: l.token, obraId: obraId, nomeLink: l.nome });
+              rec.autor = "Campo · " + (nota.autor || "");
+              var foto = !nota.foto ? Promise.resolve(null)
+                : fetch(base + "/rv/nf/" + l.token + "/" + nota.id).then(function (r) { if (!r.ok) throw new Error("foto"); return r.blob(); })
+                  .then(paraDataUrl).then(function (d) { return (typeof Fotos !== "undefined" && Fotos.guardar) ? Fotos.guardar(d, "Apontamento: " + String(nota.texto || "").slice(0, 60)) : null; })
+                  .catch(function () { semFoto++; return null; });
+              return foto.then(function (ref) {
+                if (ref) { rec.fotos = [ref]; if (Fotos.carimbarRemotos) Fotos.carimbarRemotos(rec.fotos); }
+                /* ⚠ Store.salvar devolve null quando falha (cota cheia) — contar
+                   só o que gravou, senão o recado diria "trazidos" sem estar */
+                if (Store.salvar(eid(), "bim_vistas", rec)) n++;
+              });
+            });
+          }, Promise.resolve()).then(function () {
+            var nomeO = ""; try { nomeO = (Store.obter(eid(), "obras", obraId) || {}).nome || ""; } catch (e4) {}
+            UI.toast(n ? n + " apontamento(s) trazido(s) para a obra " + nomeO + " (BIM → Pontos de vista)" + (semFoto ? " — " + semFoto + " foto(s) não baixaram; tente de novo" : "") + "." : "Nada novo: os apontamentos deste link já estavam na obra.", n ? "ok" : "info");
+            try { if (String(self._bimSel || "") === String(obraId)) self._bimVistaRender(); } catch (e5) {}
+            if (cb) cb(n);
+          });
+        })
+        .catch(function (e) { UI.toast("Não consegui trazer os apontamentos: " + e.message, "erro"); if (cb) cb(0); });
     },
     // 📕 Quantitativo ilustrado — caderno impresso: foto de cada família, descrição,
     // dimensões e quantidade principal (área/comprimento/unidade) do projeto inteiro
@@ -19196,6 +19919,8 @@
       var _vtIn = document.getElementById("bim-vista-bcf-in");
       var _vtArq = document.getElementById("bim-vista-arq");
       if (_vtIn && _vtArq) { _vtIn.onclick = function () { _vtArq.click(); }; _vtArq.onchange = function () { _self._bimVistaImportarBcf(this.files && this.files[0]); this.value = ""; }; }
+      var _vtPac = document.getElementById("bim-vista-pacote");
+      if (_vtPac) _vtPac.onclick = function () { _self._bimPacoteEscolher(); };
       var self = this, canvas = document.getElementById("bim-canvas"); if (!canvas) return;
       // F5/fechar aba dentro da janela de 400ms do debounce não pode perder a edição
       if (!this._bimEdUnload) {
@@ -23595,6 +24320,20 @@
               if (al[a2] && al[a2].id === idLocal && !al[a2].remoto) {
                 al[a2].remoto = idRemoto; al[a2].tenant = tenant;
                 Store.salvar(eid(), "obras", obs[w2]);
+                return;
+              }
+            }
+          }
+          /* e a FOTO DO APONTAMENTO DE CAMPO (ponto de vista de origem
+             "campo", trazido do link da RA/RV): sem o carimbo ela só existiria
+             no computador que trouxe o apontamento para a obra */
+          var vsF = Store.listar(eid(), "bim_vistas") || [];
+          for (var vf = 0; vf < vsF.length; vf++) {
+            var fvs = (vsF[vf] && vsF[vf].fotos) || [];
+            for (var fj = 0; fj < fvs.length; fj++) {
+              if (fvs[fj] && fvs[fj].id === idLocal && !fvs[fj].remoto) {
+                fvs[fj].remoto = idRemoto; fvs[fj].tenant = tenant;
+                Store.salvar(eid(), "bim_vistas", vsF[vf]);
                 return;
               }
             }

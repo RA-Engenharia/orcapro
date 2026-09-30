@@ -199,7 +199,11 @@
                             eles aqui, o modelo reaberto do cache perderia o filtro
                             "só fundação / só armação" (tudo cairia na regra) e o
                             elo peça ↔ vista do PDF */
-                         "disciplinaPeca", "detalhe"];
+                         "disciplinaPeca", "detalhe",
+                         /* a etapa de MONTAGEM (OrcaPRO_Montagem): sem ela aqui, a
+                            aba Montagem do painel de disciplinas abriria vazia no
+                            modelo reaberto do cache */
+                         "montagem"];
 
   function elementoLimpo(e) {
     var o = {};

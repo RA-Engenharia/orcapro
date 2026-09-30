@@ -477,69 +477,19 @@
       }
     },
 
-    // ---------- Modo demonstração (vitrine) ----------
-    // Visor RA/RV público (link da nuvem): monta só o viewer BIM em tela cheia, baixa o modelo
-    // compartilhado do VPS (mesmo domínio) e entra no imersivo Caminhar. Sem login/gestão.
+    // ---------- Visor RA/RV público (link da nuvem) ----------
+    /* O visor do link mora em js/rvvisor.js desde 29/09/2026 (barra do
+       visitante, marca da empresa, vistas, 4D, apontamentos, RA do iPhone e
+       do Android, uso sem internet). Aqui só a porta de entrada: sem login,
+       sem gestão, antes de todo o app. As funções de reunião (_rvReuniao e
+       os selos) continuam no App — o visor as chama. */
     _abrirRVCloud: function (token) {
-      document.title = "RA/RV — OrçaPRO";
-      // a SALA da reunião é derivada do próprio token do link: TODOS que abrem o mesmo link/QR caem
-      // na mesma sala e se veem (avatares). O token vem de crypto (18 hex) → sala não-adivinhável.
-      var sala = "nuvem-" + String(token).slice(0, 18);
-      document.body.innerHTML =
-        '<div id="rvfull" style="position:fixed;inset:0;background:#0b1a2b">' +
-        '<div id="bim-canvas" style="width:100%;height:100%;position:relative"></div>' +
-        // 🔄 buscar atualização — no celular não tem Ctrl+Shift+R; puxa a versão nova limpando o cache (preserva o token do link)
-        '<button id="rv-upd" title="Buscar atualização" style="position:absolute;top:calc(env(safe-area-inset-top,0px) + 8px);right:8px;z-index:2147483000;background:rgba(15,39,64,.92);color:#dbe8f5;border:1px solid #24435f;border-radius:9px;padding:8px 11px;font-size:14px;font-family:Inter,system-ui,sans-serif;cursor:pointer;-webkit-tap-highlight-color:transparent">' + (typeof Icones !== 'undefined' ? Icones.get('ciclo', 15) : '') + '</button>' +
-        // 👥 Reunião — QUALQUER pessoa do link entra na mesma sala e vê os outros (cap 20). Escondido até o modelo carregar.
-        '<button id="rv-reun" style="display:none;position:absolute;top:calc(env(safe-area-inset-top,0px) + 8px);left:8px;z-index:2147483000;background:rgba(22,115,74,.94);color:#eafff2;border:1px solid #1c7a4a;border-radius:9px;padding:8px 12px;font-size:13px;font-weight:600;font-family:Inter,system-ui,sans-serif;cursor:pointer;-webkit-tap-highlight-color:transparent">' + (typeof Icones !== 'undefined' ? Icones.get('pessoas', 15) : '') + ' Reunião</button>' +
-        // 🎤 áudio walkie-talkie — só aparece dentro de uma reunião (precisa de toque p/ liberar o mic)
-        '<button id="rv-audio" style="display:none;position:absolute;top:calc(env(safe-area-inset-top,0px) + 50px);left:8px;z-index:2147483000;background:rgba(15,39,64,.94);color:#dbe8f5;border:1px solid #2e6f9e;border-radius:9px;padding:8px 12px;font-size:13px;font-weight:600;font-family:Inter,system-ui,sans-serif;cursor:pointer;-webkit-tap-highlight-color:transparent">' + (typeof Icones !== 'undefined' ? Icones.get('microfone', 15) : '') + ' Áudio</button>' +
-        '<div id="rv-load" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#dbe8f5;font-family:Inter,system-ui,sans-serif;gap:10px;text-align:center;padding:20px">' +
-        '<div style="font-size:34px">' + (typeof Icones !== 'undefined' ? Icones.get('nuvem', 15) : '') + '</div><div id="rv-load-txt" style="font-size:15px">Baixando o projeto…</div>' +
-        '<div style="font-size:12px;color:#8fa3b8;max-width:320px">Depois escolha no painel: RA do iPhone, RA com âncora (Android) ou ' + (typeof Icones !== 'undefined' ? Icones.get('caminhar', 15) : '') + ' Caminhar, que funciona em qualquer aparelho.</div></div></div>';
-      (function () { var b = document.getElementById("rv-upd"); if (b) b.onclick = function () { if (typeof AutoUpdate !== "undefined" && AutoUpdate.forcar) AutoUpdate.forcar(); }; })();
-      var origin = location.origin;
-      function txt(t) { var e = document.getElementById("rv-load-txt"); if (e) e.textContent = t; }
-      function erro(t) { var l = document.getElementById("rv-load"); if (l) { l.querySelector("#rv-load-txt").textContent = t; l.querySelector("div").textContent = "❌"; } }
-      this._rvReuniao(sala); // prepara o botão/formulário da reunião (fica escondido até liberar)
-      var t0 = 0, espera = setInterval(function () {
-        t0++;
-        if (window.BIM && BIM.montar) {
-          clearInterval(espera);
-          // opts.onReuniao mantém o contador no botão; onReuniaoFalha avisa quando cai a conexão
-          try { BIM.montar(document.getElementById("bim-canvas"), {
-            /* ⚠ os botões 🔄/Reunião/Áudio acima moram no topo, por cima de
-               tudo: sem reservar a faixa, o 🔄 cobria o ✕ do painel de RA/RV,
-               que abre sozinho (medido como iPhone, 390 px) */
-            topoReservado: 52,
-            onReuniao: function (n) { App._rvReunBadge(n); },
-            onReuniaoFalha: function () { App._rvReunBadge(0); alert("A reunião caiu (sem internet?). O modelo segue normal — toque em " + (typeof Icones !== "undefined" ? Icones.get("pessoas", 15) : "") + " pra reconectar."); },
-            onReuniaoCheia: function () { App._rvReunBadge(0); alert("" + (typeof Icones !== "undefined" ? Icones.get("pessoas", 15) : "") + " Sala cheia — o limite é de 20 pessoas nesta reunião. Tente de novo quando alguém sair."); },
-            onVoz: function (on) { App._rvAudioBadge(on); },
-            onFala: function (falando) { var b = document.getElementById("rv-audio"); if (b && BIM.reuniao.audioAtiva) b.style.boxShadow = falando ? "0 0 0 3px rgba(22,163,74,.9)" : "none"; },
-            onVozErro: function (nm) { App._rvAudioBadge(false); alert(nm === "NotAllowedError" ? "" + (typeof Icones !== "undefined" ? Icones.get("microfone", 15) : "") + " Você negou o microfone. Toque em " + (typeof Icones !== "undefined" ? Icones.get("microfone", 15) : "") + " de novo e permita." : "" + (typeof Icones !== "undefined" ? Icones.get("microfone", 15) : "") + " Não consegui abrir o microfone: " + nm); }
-          }); }
-          catch (e) { erro("Falha ao iniciar o visualizador."); return; }
-          fetch(origin + "/rv/t/" + token).then(function (r) { return r.json(); }).then(function (man) {
-            if (!man.ok) throw new Error(man.erro || "link inválido");
-            var arqs = man.arquivos || [], i = 0;
-            (function prox() {
-              if (i >= arqs.length) {
-                var l = document.getElementById("rv-load"); if (l) l.remove();
-                var rb = document.getElementById("rv-reun"); if (rb) rb.style.display = "block"; // libera a reunião
-                // abre o seletor de modo (📷 Câmera + Projeto / 👣 Caminhar) — a câmera precisa de um
-                // TOQUE do usuário pra pedir permissão, então não entramos sozinhos no modo câmera.
-                setTimeout(function () { try { BIM.abrirXR(); } catch (e) {} }, 800);
-                return;
-              }
-              var a = arqs[i]; txt("Baixando " + (a.nome || "modelo") + " (" + (i + 1) + "/" + arqs.length + ")…");
-              fetch(origin + "/rv/f/" + a.id).then(function (r) { if (!r.ok) throw new Error("modelo indisponível"); return r.arrayBuffer(); })
-                .then(function (ab) { try { BIM.abrirBytes(ab, a.nome, a.disc); } catch (e) {} i++; setTimeout(prox, 1800); })
-                .catch(function (e) { erro("Não deu pra baixar o modelo: " + (e && e.message || e)); });
-            })();
-          }).catch(function (e) { erro("Link expirado ou inválido. Peça um novo QR."); });
-        } else if (t0 > 80) { clearInterval(espera); erro("O visualizador não carregou. Recarregue a página."); }
-      }, 100);
+      if (typeof RvVisor !== "undefined" && RvVisor.abrir) return RvVisor.abrir(token, this);
+      /* ⚠ sem o módulo, diz isso — nunca uma tela vazia (o /rvapp/ do VPS é
+         uma cópia do app, e cópia incompleta já aconteceu) */
+      document.title = "Projeto 3D";
+      document.body.innerHTML = '<div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;background:#0b1a2b;color:#dbe8f5;font-family:Inter,system-ui,sans-serif">' +
+        'O visualizador deste link não carregou por completo. Recarregue a página; se continuar, avise quem enviou o link.</div>';
     },
     // Botão/fluxo de reunião no visor da nuvem: o convidado informa nome/sexo/telefone (sem login) e
     // entra na sala do link. Avatar humano com capacete + camisa (nome+telefone; sem logo → iniciais).
@@ -620,6 +570,7 @@
       };
     },
     _escAttr: function (s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); },
+    // ---------- Modo demonstração (vitrine) ----------
     _iniciarDemo: function (qs) {
       var aba = (qs.match(/[?&]aba=([a-z]+)/) || [])[1] || "planilha";
       /* ⚠ NOME DO CLIENTE NA DEMONSTRAÇÃO. O Painel de Apresentação passa

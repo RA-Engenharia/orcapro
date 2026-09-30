@@ -116,76 +116,98 @@
     return b;
   }
 
-  // ---------- montagem ----------
-  function gerar(pecas, opts) {
+  // ---------- preparação comum (.usdz e .glb) ----------
+  /* ⚠ DUAS PASSADAS, EM DUPLA PRECISÃO ATÉ RECENTRAR. A primeira versão
+     guardava as coordenadas do MUNDO em Float32 antes de recentrar — num IFC
+     georreferenciado (UTM, ~7 460 000 m) o Float32 só tem resolução de 0,5 m,
+     e a peça saía deslocada ou achatada. O teste com o cubo passava por sorte
+     (meio metro exato). Agora a 1ª passada só mede a caixa; a 2ª transforma
+     de novo e grava JÁ recentrado, onde o Float32 sobra. */
+  function preparar(pecas, opts) {
     opts = opts || {};
     var limite = opts.limiteTri || LIMITE_TRI;
     pecas = (pecas || []).filter(function (p) { return p && p.pos && p.pos.length >= 9 && p.idx && p.idx.length >= 3; });
     if (!pecas.length) return { ok: false, erro: "vazio", tri: 0 };
-
     var tri = 0, i, j;
     for (i = 0; i < pecas.length; i++) tri += Math.floor(pecas[i].idx.length / 3);
     if (tri > limite) return { ok: false, erro: "grande", tri: tri, limite: limite };
 
-    /* 1ª passada: tudo para o espaço do modelo + caixa envolvente. Guardado
-       em Float32 por peça (é o que a cena já usa; o texto sai com 4 casas). */
-    var mundo = [], min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+    var ID = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    var min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity], tmp = [0, 0, 0];
     for (i = 0; i < pecas.length; i++) {
-      var p = pecas[i], m = p.matriz || [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
-      var nv = Math.floor(p.pos.length / 3), wp = new Float32Array(nv * 3), wn = new Float32Array(nv * 3);
-      var mn = matrizNormal(m), N = mn.n;
-      for (j = 0; j < nv; j++) {
-        aplicarPonto(m, p.pos[j * 3], p.pos[j * 3 + 1], p.pos[j * 3 + 2], wp, j * 3);
-        for (var e = 0; e < 3; e++) { var v = wp[j * 3 + e]; if (v < min[e]) min[e] = v; if (v > max[e]) max[e] = v; }
-        if (p.nor && p.nor.length >= nv * 3) {
-          var x = p.nor[j * 3], y = p.nor[j * 3 + 1], z = p.nor[j * 3 + 2];
-          var nx = N[0] * x + N[1] * y + N[2] * z, ny = N[3] * x + N[4] * y + N[5] * z, nz = N[6] * x + N[7] * y + N[8] * z;
-          var l = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
-          wn[j * 3] = nx / l; wn[j * 3 + 1] = ny / l; wn[j * 3 + 2] = nz / l;
-        } else { wn[j * 3 + 1] = 1; }
+      var m1 = pecas[i].matriz || ID, pp = pecas[i].pos, nv1 = Math.floor(pp.length / 3);
+      for (j = 0; j < nv1; j++) {
+        aplicarPonto(m1, pp[j * 3], pp[j * 3 + 1], pp[j * 3 + 2], tmp, 0);
+        for (var e = 0; e < 3; e++) { if (tmp[e] < min[e]) min[e] = tmp[e]; if (tmp[e] > max[e]) max[e] = tmp[e]; }
       }
-      /* ⚠ PEÇA ESPELHADA (det < 0) inverte o sentido dos triângulos: sem
-         desvirar, a face de fora vira a de dentro e a peça some no Quick
-         Look, que desenha um lado só. */
-      mundo.push({ cor: p.cor || [0.8, 0.8, 0.8, 1], pos: wp, nor: wn, idx: p.idx, espelhada: mn.det < 0 });
     }
-
-    /* O Quick Look põe a ORIGEM do arquivo no chão que ele achou. Então a
-       base do projeto vai para y=0 e o centro em planta para x=z=0 — sem isto
-       um IFC georreferenciado aparece a quilômetros da pessoa, ou enterrado. */
+    /* O Quick Look e o Scene Viewer põem a ORIGEM do arquivo no chão que
+       acharam. Então a base do projeto vai para y=0 e o centro em planta para
+       x=z=0 — sem isto um IFC georreferenciado aparece a quilômetros da
+       pessoa, ou enterrado. */
     var cx = (min[0] + max[0]) / 2, cz = (min[2] + max[2]) / 2, y0 = min[1];
     var lado = Math.max(max[0] - min[0], max[2] - min[2]) || 1;
     var escala = opts.modo === "maquete" ? MAQUETE_M / lado : 1;
-    var casas = escala < 0.2 ? 5 : 4;
 
     // agrupa por cor: centenas de malhas pesam no Quick Look; dezenas não
-    var grupos = {}, ordem = [];
-    for (i = 0; i < mundo.length; i++) {
-      var c = mundo[i].cor, a = c[3] == null ? 1 : c[3];
+    var porCor = {}, ordem = [];
+    for (i = 0; i < pecas.length; i++) {
+      var c = pecas[i].cor || [0.8, 0.8, 0.8, 1], a = c[3] == null ? 1 : c[3];
       var k = n(c[0], 2) + "|" + n(c[1], 2) + "|" + n(c[2], 2) + "|" + n(a, 2);
-      if (!grupos[k]) { grupos[k] = { cor: [c[0], c[1], c[2], a], itens: [] }; ordem.push(k); }
-      grupos[k].itens.push(mundo[i]);
+      if (!porCor[k]) { porCor[k] = { cor: [c[0], c[1], c[2], a], itens: [], nv: 0, ni: 0 }; ordem.push(k); }
+      porCor[k].itens.push(pecas[i]);
+      porCor[k].nv += Math.floor(pecas[i].pos.length / 3);
+      porCor[k].ni += Math.floor(pecas[i].idx.length / 3) * 3;
     }
+    var grupos = ordem.map(function (k) {
+      var g = porCor[k], pos = new Float32Array(g.nv * 3), nor = new Float32Array(g.nv * 3), idx = new Uint32Array(g.ni);
+      var vb = 0, ib = 0;
+      g.itens.forEach(function (p) {
+        var m = p.matriz || ID, nv = Math.floor(p.pos.length / 3), mn = matrizNormal(m), N = mn.n;
+        for (var v = 0; v < nv; v++) {
+          aplicarPonto(m, p.pos[v * 3], p.pos[v * 3 + 1], p.pos[v * 3 + 2], tmp, 0);
+          var o = (vb + v) * 3;
+          pos[o] = (tmp[0] - cx) * escala; pos[o + 1] = (tmp[1] - y0) * escala; pos[o + 2] = (tmp[2] - cz) * escala;
+          if (p.nor && p.nor.length >= nv * 3) {
+            var x = p.nor[v * 3], y = p.nor[v * 3 + 1], z = p.nor[v * 3 + 2];
+            var nx = N[0] * x + N[1] * y + N[2] * z, ny = N[3] * x + N[4] * y + N[5] * z, nz = N[6] * x + N[7] * y + N[8] * z;
+            var l = Math.sqrt(nx * nx + ny * ny + nz * nz);
+            if (l > 1e-12) { nor[o] = nx / l; nor[o + 1] = ny / l; nor[o + 2] = nz / l; } else nor[o + 1] = 1;
+          } else nor[o + 1] = 1;
+        }
+        /* ⚠ PEÇA ESPELHADA (det < 0) inverte o sentido dos triângulos: sem
+           desvirar, a face de fora vira a de dentro e a peça some no Quick
+           Look, que desenha um lado só. */
+        var esp = mn.det < 0, q = Math.floor(p.idx.length / 3) * 3;
+        for (var t = 0; t < q; t += 3) {
+          idx[ib + t] = p.idx[t] + vb;
+          idx[ib + t + 1] = (esp ? p.idx[t + 2] : p.idx[t + 1]) + vb;
+          idx[ib + t + 2] = (esp ? p.idx[t + 1] : p.idx[t + 2]) + vb;
+        }
+        vb += nv; ib += q;
+      });
+      return { cor: g.cor, pos: pos, nor: nor, idx: idx };
+    });
+    return {
+      ok: true, grupos: grupos, tri: tri, escala: escala, casas: escala < 0.2 ? 5 : 4,
+      tamanho: { x: (max[0] - min[0]) * escala, y: (max[1] - min[1]) * escala, z: (max[2] - min[2]) * escala }
+    };
+  }
 
-    var partes = [];
+  // ---------- .usdz (iPhone, AR Quick Look) ----------
+  function gerar(pecas, opts) {
+    var pr = preparar(pecas, opts);
+    if (!pr.ok) return pr;
+    var casas = pr.casas, partes = [], materiais = [];
     partes.push('#usda 1.0\n(\n    customLayerData = {\n        string creator = "OrcaPRO"\n    }\n    defaultPrim = "Root"\n    metersPerUnit = 1\n    upAxis = "Y"\n)\n\n');
     partes.push('def Xform "Root"\n{\n    def Scope "Scenes" (\n        kind = "sceneLibrary"\n    )\n    {\n        def Xform "Scene" (\n            customData = {\n                bool preliminary_collidesWithEnvironment = 0\n                string sceneName = "Scene"\n            }\n            sceneName = "Scene"\n        )\n        {\n        token preliminary:anchoring:type = "plane"\n        token preliminary:planeAnchoring:alignment = "horizontal"\n\n');
-    var materiais = [];
-    for (var g = 0; g < ordem.length; g++) {
-      var gr = grupos[ordem[g]], cont = [], ind = [], pts = [], nrm = [], base = 0;
-      for (i = 0; i < gr.itens.length; i++) {
-        var it = gr.itens[i], nvi = it.pos.length / 3;
-        for (j = 0; j < nvi; j++) {
-          pts.push("(" + n((it.pos[j * 3] - cx) * escala, casas) + ", " + n((it.pos[j * 3 + 1] - y0) * escala, casas) + ", " + n((it.pos[j * 3 + 2] - cz) * escala, casas) + ")");
-          nrm.push("(" + n(it.nor[j * 3], 3) + ", " + n(it.nor[j * 3 + 1], 3) + ", " + n(it.nor[j * 3 + 2], 3) + ")");
-        }
-        for (j = 0; j + 2 < it.idx.length; j += 3) {
-          cont.push("3");
-          if (it.espelhada) ind.push((it.idx[j] + base) + ", " + (it.idx[j + 2] + base) + ", " + (it.idx[j + 1] + base));
-          else ind.push((it.idx[j] + base) + ", " + (it.idx[j + 1] + base) + ", " + (it.idx[j + 2] + base));
-        }
-        base += nvi;
+    pr.grupos.forEach(function (gr, g) {
+      var nv = gr.pos.length / 3, cont = [], ind = [], pts = [], nrm = [], j;
+      for (j = 0; j < nv; j++) {
+        pts.push("(" + n(gr.pos[j * 3], casas) + ", " + n(gr.pos[j * 3 + 1], casas) + ", " + n(gr.pos[j * 3 + 2], casas) + ")");
+        nrm.push("(" + n(gr.nor[j * 3], 3) + ", " + n(gr.nor[j * 3 + 1], 3) + ", " + n(gr.nor[j * 3 + 2], 3) + ")");
       }
+      for (j = 0; j + 2 < gr.idx.length; j += 3) { cont.push("3"); ind.push(gr.idx[j] + ", " + gr.idx[j + 1] + ", " + gr.idx[j + 2]); }
       partes.push('        def Mesh "Malha_' + g + '" (\n            prepend apiSchemas = ["MaterialBindingAPI"]\n        )\n        {\n' +
         '            uniform bool doubleSided = 1\n' +
         '            int[] faceVertexCounts = [' + cont.join(", ") + ']\n' +
@@ -201,15 +223,56 @@
         '            float inputs:opacity = ' + n(Math.max(0.05, Math.min(1, cr[3])), 2) + '\n' +
         '            int inputs:useSpecularWorkflow = 0\n            token outputs:surface\n        }\n\n' +
         '        token outputs:surface.connect = </Materials/Mat_' + g + '/PreviewSurface.outputs:surface>\n    }\n\n');
-    }
+    });
     partes.push('        }\n    }\n}\n\ndef "Materials"\n{\n' + materiais.join("") + '}\n');
-
     var usda = asciiBytes(partes.join(""));
     partes = null;
-    return {
-      ok: true, bytes: zipUsdz("model.usda", usda), tri: tri, malhas: ordem.length, escala: escala,
-      tamanho: { x: (max[0] - min[0]) * escala, y: (max[1] - min[1]) * escala, z: (max[2] - min[2]) * escala }
-    };
+    return { ok: true, bytes: zipUsdz("model.usda", usda), tri: pr.tri, malhas: pr.grupos.length, escala: pr.escala, tamanho: pr.tamanho };
+  }
+
+  // ---------- .glb (Android, Scene Viewer do app do Google) ----------
+  /* glTF 2.0 binário: um nó por cor, POSITION + NORMAL + índices uint32,
+     material PBR com a cor em LINEAR (a mesma regra do .usdz) e dupla face.
+     ⚠ Cada bufferView começa em múltiplo de 4 bytes e os dois blocos (JSON e
+     BIN) são completados até múltiplo de 4 — é a regra do formato, e o
+     Scene Viewer recusa o arquivo em silêncio quando ela quebra. */
+  function gerarGlb(pecas, opts) {
+    var pr = preparar(pecas, opts);
+    if (!pr.ok) return pr;
+    var views = [], acessores = [], malhas = [], nos = [], materiais = [], blocos = [], off = 0;
+    function vista(tipado, alvo) {
+      var pad = (4 - (off % 4)) % 4;
+      if (pad) { blocos.push(new Uint8Array(pad)); off += pad; }
+      views.push({ buffer: 0, byteOffset: off, byteLength: tipado.byteLength, target: alvo });
+      blocos.push(new Uint8Array(tipado.buffer, tipado.byteOffset, tipado.byteLength)); off += tipado.byteLength;
+      return views.length - 1;
+    }
+    pr.grupos.forEach(function (g, i) {
+      var nv = g.pos.length / 3, mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+      for (var v = 0; v < nv; v++) for (var e = 0; e < 3; e++) { var x = g.pos[v * 3 + e]; if (x < mn[e]) mn[e] = x; if (x > mx[e]) mx[e] = x; }
+      var vp = vista(g.pos, 34962), vn = vista(g.nor, 34962), vi = vista(g.idx, 34963);
+      acessores.push({ bufferView: vp, componentType: 5126, count: nv, type: "VEC3", min: mn, max: mx });
+      acessores.push({ bufferView: vn, componentType: 5126, count: nv, type: "VEC3" });
+      acessores.push({ bufferView: vi, componentType: 5125, count: g.idx.length, type: "SCALAR" });
+      var a = Math.max(0.05, Math.min(1, g.cor[3] == null ? 1 : g.cor[3]));
+      materiais.push({ name: "Mat_" + i, doubleSided: true, alphaMode: a < 0.99 ? "BLEND" : "OPAQUE",
+        pbrMetallicRoughness: { baseColorFactor: [linear(g.cor[0]), linear(g.cor[1]), linear(g.cor[2]), a], metallicFactor: 0.05, roughnessFactor: 0.85 } });
+      malhas.push({ name: "Malha_" + i, primitives: [{ attributes: { POSITION: i * 3, NORMAL: i * 3 + 1 }, indices: i * 3 + 2, material: i, mode: 4 }] });
+      nos.push({ mesh: i, name: "Malha_" + i });
+    });
+    var padBin = (4 - (off % 4)) % 4;
+    if (padBin) { blocos.push(new Uint8Array(padBin)); off += padBin; }
+    var gltf = { asset: { version: "2.0", generator: "OrcaPRO" }, scene: 0, scenes: [{ nodes: nos.map(function (x, i) { return i; }) }],
+      nodes: nos, meshes: malhas, materials: materiais, accessors: acessores, bufferViews: views, buffers: [{ byteLength: off }] };
+    var js = asciiBytes(JSON.stringify(gltf)), padJs = (4 - (js.length % 4)) % 4;
+    var total = 12 + 8 + js.length + padJs + 8 + off, out = new Uint8Array(total), dv = new DataView(out.buffer), p = 0;
+    function u32(v) { dv.setUint32(p, v, true); p += 4; }
+    u32(0x46546C67); u32(2); u32(total);                         // "glTF", versão 2, tamanho
+    u32(js.length + padJs); u32(0x4E4F534A); out.set(js, p); p += js.length;
+    for (var s = 0; s < padJs; s++) out[p++] = 0x20;             // JSON completa com espaço
+    u32(off); u32(0x004E4942);                                   // "BIN" + zero
+    blocos.forEach(function (b) { out.set(b, p); p += b.length; });
+    return { ok: true, bytes: out, tri: pr.tri, malhas: pr.grupos.length, escala: pr.escala, tamanho: pr.tamanho };
   }
 
   /* O aparelho abre .usdz em RA? Réplica da regra do <model-viewer> do
@@ -226,7 +289,7 @@
     return /CriOS\/|EdgiOS\/|FxiOS\/|GSA\/|DuckDuckGo\//.test(ua);
   }
 
-  var BimUsdz = { gerar: gerar, quickLook: quickLook, zipUsdz: zipUsdz, crc32: crc32, LIMITE_TRI: LIMITE_TRI, MAQUETE_M: MAQUETE_M };
+  var BimUsdz = { gerar: gerar, gerarGlb: gerarGlb, preparar: preparar, quickLook: quickLook, zipUsdz: zipUsdz, crc32: crc32, LIMITE_TRI: LIMITE_TRI, MAQUETE_M: MAQUETE_M };
   global.BimUsdz = BimUsdz;
   if (typeof module !== "undefined" && module.exports) module.exports = BimUsdz;
 })(typeof window !== "undefined" ? window : this);

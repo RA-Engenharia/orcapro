@@ -305,8 +305,44 @@
       marcacoes: marcas,
       comentarios: coms,
       /* a miniatura é blob: mora no IndexedDB, e aqui fica só o endereço */
-      miniatura: txt(d.miniatura)
+      miniatura: txt(d.miniatura),
+      /* PASTA ("Estrutura ECVS/Painéis de wood frame", "Montagem"): a lista de
+         uma obra com 60 vistas vira gaveta; sem pasta a vista fica em
+         "Sem pasta". A barra separa subpastas. */
+      pasta: pasta(d.pasta),
+      descricao: txt(d.descricao),
+      /* o DESENHO ORIGINAL do projetista para esta vista (o recorte da folha
+         do PDF): mora no IndexedDB, aqui fica o endereço e de onde veio —
+         é o "detalhe por detalhe" lado a lado com o 3D */
+      referencia: referencia(d.referencia),
+      /* de onde a vista veio quando foi importada em pacote: reimportar o
+         mesmo pacote atualiza em vez de duplicar */
+      origemId: txt(d.origemId)
     };
+  }
+  function pasta(p) {
+    return txt(p).split("/").map(function (s) { return s.replace(/^\s+|\s+$/g, ""); }).filter(function (s) { return !!s; }).join("/");
+  }
+  function referencia(r) {
+    if (!r || typeof r !== "object") return null;
+    var ch = txt(r.chave).trim();
+    if (!ch) return null;
+    return { tipo: r.tipo === "pdf" ? "pdf" : "imagem", chave: ch, rotulo: txt(r.rotulo), fonte: txt(r.fonte) };
+  }
+  /* agrupa por pasta, na ordem de nome (pastas) e de criação (vistas) */
+  function porPasta(vistas) {
+    var mapa = {}, lista = [];
+    (Array.isArray(vistas) ? vistas : []).forEach(function (v) {
+      if (!v) return;
+      var p = pasta(v.pasta) || "Sem pasta";
+      if (!mapa[p]) { mapa[p] = { pasta: p, vistas: [] }; lista.push(mapa[p]); }
+      mapa[p].vistas.push(v);
+    });
+    lista.sort(function (a, b) {
+      if (a.pasta === "Sem pasta") return 1; if (b.pasta === "Sem pasta") return -1;
+      return a.pasta < b.pasta ? -1 : a.pasta > b.pasta ? 1 : 0;
+    });
+    return lista;
   }
 
   /* ---------------------------------------------------------------
@@ -325,6 +361,9 @@
       id: antiga.id, obraId: antiga.obraId, nome: antiga.nome, autor: antiga.autor,
       criadoEm: antiga.criadoEm, atualizadoEm: txt(quando),
       comentarios: antiga.comentarios, marcacoes: antiga.marcacoes, miniatura: antiga.miniatura,
+      /* ⚠ organização também é identidade: regravar a vista do "Painel 03"
+         não pode tirá-la da pasta nem perder o desenho original dela */
+      pasta: antiga.pasta, descricao: antiga.descricao, referencia: antiga.referencia, origemId: antiga.origemId, origem: antiga.origem,
       completa: true,
       camera: e.camera, cortes: e.cortes, visibilidade: e.visibilidade,
       aparencias: e.aparencias, modelos: e.modelos, estilo: e.estilo,
@@ -392,8 +431,51 @@
     };
   }
 
+  /* ---------------------------------------------------------------
+   * doPacote — as vistas de um PACOTE DA OBRA viram registros de bim_vistas
+   *
+   * O pacote é gerado fora do sistema (junto com o IFC) e não conhece o
+   * `modeloId` desta conta: as peças vêm por GlobalId. Aqui cada GlobalId
+   * vira a chave do modelo aberto (`gidParaChave`). O que não existe no
+   * modelo aberto é CONTADO e devolvido — a tela diz quantas peças de cada
+   * vista não foram achadas, em vez de gravar uma vista que mostra menos do
+   * que devia sem ninguém saber.
+   * ------------------------------------------------------------- */
+  function doPacote(pkg, gidParaChave, obraId, agora) {
+    var out = [], faltam = 0, total = 0, semNome = 0;
+    var mapa = typeof gidParaChave === "function" ? gidParaChave : function (g) { return gidParaChave && gidParaChave[g] || null; };
+    function conv(lista) {
+      var r = [];
+      (Array.isArray(lista) ? lista : []).forEach(function (g) {
+        total++; var k = mapa(txt(g));
+        if (k) r.push(k); else faltam++;
+      });
+      return r;
+    }
+    (pkg && Array.isArray(pkg.vistas) ? pkg.vistas : []).forEach(function (p) {
+      if (!p || !txt(p.nome).trim()) { semNome++; return; }
+      var vis = p.visibilidade || {};
+      var v = vista({
+        id: txt(p.id), obraId: txt(obraId), nome: p.nome, criadoEm: txt(agora), atualizadoEm: txt(agora), autor: txt(p.autor || (pkg && pkg.autor)),
+        completa: true, origem: "pacote", origemId: txt(p.origemId || p.id),
+        pasta: p.pasta, descricao: p.descricao, referencia: p.referencia,
+        camera: p.camera, cortes: p.cortes,
+        visibilidade: { isolados: conv(vis.isolados), ocultos: conv(vis.ocultos), raioX: !!vis.raioX, raioXAlvo: conv(vis.raioXAlvo) },
+        aparencias: (Array.isArray(p.aparencias) ? p.aparencias : []).map(function (a) {
+          var k = mapa(txt(a && (a.gid || a.chave))); total++; if (!k) faltam++;
+          return k ? { chave: k, cor: a.cor, alpha: a.alpha } : null;
+        }).filter(function (a) { return !!a; }),
+        estilo: p.estilo, medidas: p.medidas, modelos: [],
+        cotaRede: p.cotaRede ? { on: !!p.cotaRede.on, modo: p.cotaRede.modo, fixados: conv(p.cotaRede.fixados) } : null
+      });
+      if (v) out.push(v);
+    });
+    return { vistas: out, pecasFaltando: faltam, pecasTotal: total, semNome: semNome };
+  }
+
   var BimVista = {
     TIPOS_MARCA: TIPOS_MARCA,
+    pasta: pasta, referencia: referencia, porPasta: porPasta, doPacote: doPacote,
     STATUS: STATUS,
     DIST_ALVO_PADRAO: DIST_ALVO_PADRAO,
     cenaParaIfc: cenaParaIfc,

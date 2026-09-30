@@ -190,6 +190,49 @@
     return lista;
   }
 
+  /* ------------------------------------------------------------------
+   * ETAPA DE MONTAGEM — a sequência executiva (carimbo OrcaPRO_Montagem,
+   * "M05 · Vigas primárias triplas"). É a ordem em que as peças SOBEM na
+   * obra, e não a etapa da EAP: a etapa 09 do orçamento junta pilares (M06)
+   * e coberturas (M10, M12) que são montados em dias diferentes.
+   * ------------------------------------------------------------------ */
+  function ordemMontagem(nome) {
+    var m = /^\s*M\s*(\d+)/i.exec(txt(nome));
+    if (m) return parseInt(m[1], 10);
+    var n = /^\s*(\d+)/.exec(txt(nome));
+    return n ? parseInt(n[1], 10) : 1e9;
+  }
+  function agruparPorMontagem(elementos) {
+    var mapa = {}, lista = [];
+    arr(elementos).forEach(function (el) {
+      if (!el) return;
+      var nome = txt(el.montagem).replace(/^\s+|\s+$/g, "") || "Sem etapa de montagem";
+      var k = norm(nome), g = mapa[k];
+      if (!g) {
+        var cod = /^\s*(M\s*\d+)/i.exec(nome);
+        g = mapa[k] = { id: "m:" + k, nome: nome, codigo: cod ? cod[1].replace(/\s+/g, "").toUpperCase() : "", n: 0, chaves: [],
+                        ordem: nome === "Sem etapa de montagem" ? 2e9 : ordemMontagem(nome) };
+        lista.push(g);
+      }
+      g.n++; var ch = chaveDe(el); if (ch) g.chaves.push(ch);
+    });
+    lista.sort(function (a, b) { return (a.ordem - b.ordem) || (a.nome < b.nome ? -1 : 1); });
+    return lista;
+  }
+  /* o passo k da sequência (0 = primeira etapa): o que JÁ está montado
+     (etapas 0..k), o que entra AGORA (k) e o que ainda não subiu.
+     ⚠ "Sem etapa de montagem" nunca entra na sequência — a peça sem carimbo
+     não pode aparecer como montada numa etapa que não é a dela. */
+  function sequencia(grupos, k) {
+    var etapas = arr(grupos).filter(function (g) { return g.ordem < 2e9; });
+    var n = etapas.length;
+    if (!n) return { n: 0, k: -1, ate: [], atual: [], nome: "", codigo: "" };
+    k = Math.max(0, Math.min(n - 1, parseInt(k, 10) || 0));
+    var ate = [], vis = {};
+    for (var i = 0; i <= k; i++) etapas[i].chaves.forEach(function (c) { if (!vis[c]) { vis[c] = 1; ate.push(c); } });
+    return { n: n, k: k, ate: ate, atual: etapas[k].chaves.slice(), nome: etapas[k].nome, codigo: etapas[k].codigo };
+  }
+
   /* união das chaves dos grupos marcados (sem repetição) */
   function chavesDe(grupos, ids) {
     var quer = {}; arr(ids).forEach(function (i) { quer[i] = 1; });
@@ -237,6 +280,7 @@
     GRUPOS: GRUPOS, ATALHOS: ATALHOS, norm: norm,
     regra: regra, classificar: classificar, grupoDoCarimbo: grupoDoCarimbo,
     agrupar: agrupar, agruparPorEtapa: agruparPorEtapa, ordemEtapa: ordemEtapa,
+    agruparPorMontagem: agruparPorMontagem, ordemMontagem: ordemMontagem, sequencia: sequencia,
     chavesDe: chavesDe, pinturaDe: pinturaDe, hex: hex
   };
   global.BimDisc = BimDisc;

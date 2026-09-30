@@ -581,6 +581,14 @@ function montar(host, opts) {
   var ehTelaPequena = (host.clientWidth || window.innerWidth || 1024) <= 640;
   var barraAberta = !ehTelaPequena;
   try { var _pref = localStorage.getItem('orcapro:bim:barra'); if (_pref) barraAberta = _pref !== 'recolhida'; } catch (_) {}
+  /* ⚠ MODO VISITANTE (o link da RA/RV aberto no celular de quem não tem o
+     OrçaPRO). A barra do computador inteira aparecia para o cliente: "+ IFC",
+     "Exemplo" (que abria o modelo de outra obra), a LIXEIRA que remove os
+     modelos e o lápis do editor — e o botão Reunião do visor cobria o
+     "+ IFC". O visitante tem a barra própria (js/rvvisor.js), que só chama a
+     API pública; aqui a barra e o botão "Ferramentas" nem aparecem. */
+  var visitante = !!opts.visitante;
+  if (visitante) barraAberta = false;
   function aplicarEstiloToggle() {
     ehTelaPequena = (host.clientWidth || window.innerWidth || 1024) <= 640;
     if (ehTelaPequena) {
@@ -691,8 +699,10 @@ function montar(host, opts) {
       }
     } catch (eD) {}
     barToggle.innerHTML = barraAberta ? (ehTelaPequena ? '' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' Fechar ferramentas' : '⤢ Esconder') : '' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + ' Ferramentas';
+    if (visitante) barToggle.style.display = 'none';
   }
   function setBarra(aberta) {
+    if (visitante) aberta = false;
     barraAberta = !!aberta;
     bar.style.display = aberta ? 'flex' : 'none';
     barToggle.innerHTML = aberta ? (ehTelaPequena ? '' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' Fechar ferramentas' : '⤢ Esconder') : '' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + ' Ferramentas';
@@ -904,6 +914,9 @@ function montar(host, opts) {
   var hud = document.createElement('div');
   hud.style.cssText = 'position:absolute;right:10px;bottom:10px;z-index:3;background:rgba(15,39,64,.85);border:1px solid #24435f;border-radius:8px;padding:6px 10px;font-size:12px;color:#bcd0e4';
   hud.innerHTML = 'Elementos: <b data-h="el">0</b> · Triângulos: <b data-h="tri">0</b>';
+  /* contagem de elementos e triângulos é informação de engenheiro; no link
+     do cliente ela só ocupava o meio da tela (medido a 390 px) */
+  if (visitante) hud.style.display = 'none';
   host.appendChild(hud);
 
   var over = document.createElement('div');
@@ -1084,19 +1097,26 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (S.medir && S.medir.on) return; // no modo trena o duplo-clique é medição, não seleção
     if (area.on) { if (area.pts.length >= 3) fecharArea(); return; } // no modo área o duplo-clique FECHA o polígono
     if (ang.on) return; // no modo ângulo o clique é ponto — não seleção
+    selecionarEm(e.clientX, e.clientY);
+  });
+  /* a seleção de uma peça no ponto da tela — a do duplo-clique e, no modo
+     visitante, a do TOQUE simples (no celular o duplo-toque é zoom do
+     sistema e a seleção nunca acontecia) */
+  function selecionarEm(cx, cy) {
     if (S._limparRaioX) S._limparRaioX(); // nova seleção reseta o raio-X (senão o ghostMat vaza pro prevMat)
     var r = canvasEl.getBoundingClientRect();
-    mouse.x = ((e.clientX - r.left) / r.width) * 2 - 1; mouse.y = -((e.clientY - r.top) / r.height) * 2 + 1;
+    mouse.x = ((cx - r.left) / r.width) * 2 - 1; mouse.y = -((cy - r.top) / r.height) * 2 + 1;
     ray.setFromCamera(mouse, camera);
     var hit = primeiroHit(ray.intersectObjects(modelRoot.children, true));
     if (S.selected) { S.selected.material = S.prevMat; S.selected = null; }
     if (hit && hit.object.userData && hit.object.userData.expressID != null) {
       S.selected = hit.object; S.prevMat = S.selected.material; S.selected.material = selMat;
       contornoSelecao(hit.object); // v1.1.89 — contorno nítido na seleção
-      if (!fly.on && !xr.on && !planta.on && !corteL.on) enquadrarObj(new THREE.Box3().setFromObject(hit.object), 2.6); // foco cinematográfico — NÃO na planta/corte (quebraria a moldura travada)
+      if (!fly.on && !xr.on && !planta.on && !corteL.on && !visitante) enquadrarObj(new THREE.Box3().setFromObject(hit.object), 2.6); // foco cinematográfico — NÃO na planta/corte (quebraria a moldura travada); nem no visitante, que toca para LER a peça, não para voar até ela
       if (opts.onPick) opts.onPick(propsDe(hit.object.userData.mid != null ? hit.object.userData.mid : S.modelID, hit.object.userData.expressID, hit.object.userData.tipo));
     } else if (opts.onPick) { contornoSelecao(null); opts.onPick(null); }
-  });
+  }
+  S._selecionarEm = selecionarEm;
 
   // ---- navegação cinematográfica: tween suave de câmera (fly-to / enquadrar) ----
   var _cvT = null; // tween ativo
@@ -1920,6 +1940,77 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   S._raycastEm = raycastEm; S._aplicarSnapRef = function (h, r) { return aplicarSnap(h, r); }; S._foraDoClipRef = foraDoClip; // hooks p/ E2E
 
   /* =====================================================================
+   * API DO VISITANTE (js/rvvisor.js) — o link da RA/RV no celular.
+   * O ponto sai nas coordenadas do MODELO (relativas ao modelRoot): é a
+   * mesma geometria no computador, então o apontamento feito no celular
+   * cai no mesmo lugar quando vira ponto de vista da obra.
+   * ===================================================================== */
+  function pontoNaTela(cx, cy) {
+    var h = raycastEm(cx, cy); if (!h) return null;
+    modelRoot.updateMatrixWorld(true);
+    var pl = h.point.clone().applyMatrix4(new THREE.Matrix4().copy(modelRoot.matrixWorld).invert());
+    var ud = h.object.userData || {}, uid = ud.expressID != null ? ((ud.mid != null ? ud.mid : S.modelID) + ':' + ud.expressID) : '';
+    var el = null, els = S.elementos || [];
+    for (var i = 0; uid && i < els.length; i++) if (els[i].uid === uid) { el = els[i]; break; }
+    return { p: [pl.x, pl.y, pl.z], uid: uid, chave: el ? (el.chave || '') : '', nome: el ? (el.familia || el.nome || el.tipo || '') : '', tipo: ud.tipo || '' };
+  }
+  S._pontoNaTela = pontoNaTela;
+  /* ⚠ OS PINOS MORAM NA CENA, NÃO NO modelRoot. Filhos do modelo, eles
+     seriam acertados pelo raio do toque (e a peça atrás deles nunca seria
+     selecionada), entrariam no todasMalhas como se fossem modelo e iriam
+     parar no arquivo da RA do iPhone. A posição acompanha a matriz do modelo
+     a cada quadro — no imersivo o modelo anda e escala. */
+  var pinGrupo = new THREE.Group(); pinGrupo.name = 'pinos-visitante'; scene.add(pinGrupo);
+  var _pinWp = new THREE.Vector3();
+  function pinos(lista) {
+    while (pinGrupo.children.length) {
+      var o = pinGrupo.children.pop();
+      try { if (o.material && o.material.map) o.material.map.dispose(); if (o.material) o.material.dispose(); if (o.geometry) o.geometry.dispose(); } catch (_) {}
+    }
+    (lista || []).forEach(function (pn) {
+      if (!pn || !pn.p || pn.p.length !== 3) return;
+      var pl = new THREE.Vector3(pn.p[0], pn.p[1], pn.p[2]);
+      var sp = labelSprite(String(pn.rotulo || '•').slice(0, 24));
+      sp.userData.pl = pl.clone().add(new THREE.Vector3(0, 0.35, 0)); sp.userData.pinoId = pn.id;
+      var bola = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 12), new THREE.MeshBasicMaterial({ color: pn.cor || 0xf59e0b, depthTest: false }));
+      bola.userData = { pl: pl, _sc: 0.008, pinoId: pn.id }; bola.renderOrder = 998;
+      pinGrupo.add(sp); pinGrupo.add(bola);
+    });
+  }
+  S._pinos = pinos;
+  S._tickExtra.push(function () {
+    if (!pinGrupo.children.length) return;
+    modelRoot.updateMatrixWorld();
+    for (var i = 0; i < pinGrupo.children.length; i++) {
+      var o = pinGrupo.children[i];
+      o.position.copy(o.userData.pl).applyMatrix4(modelRoot.matrixWorld);
+      var sc = o.userData._sc; if (!sc) continue;
+      var d = camera.position.distanceTo(o.getWorldPosition(_pinWp)) * sc;
+      if (o.userData._ratio) o.scale.set(d * o.userData._ratio, d, 1); else o.scale.setScalar(d);
+    }
+  });
+  /* leva a câmera para olhar um ponto do modelo, mantendo a direção atual */
+  function olharPara(p, dist) {
+    if (!p || p.length !== 3) return;
+    modelRoot.updateMatrixWorld(true);
+    var alvo = new THREE.Vector3(p[0], p[1], p[2]).applyMatrix4(modelRoot.matrixWorld);
+    var dir = camera.position.clone().sub(orbit.target); if (dir.lengthSq() < 1e-6) dir.set(0.7, 0.55, 0.8); dir.normalize();
+    voarCam(alvo.clone().add(dir.multiplyScalar(dist || 6)), alvo, 0.6);
+  }
+  S._olharPara = olharPara;
+  /* corte de altura do visitante ("ver por dentro"), fora do imersivo — no
+     modo visitante não há planta nem corte livre disputando o plano */
+  var _tetoV = new THREE.Plane(new THREE.Vector3(0, -1, 0), 0);
+  function tetoVisitante(frac) {
+    var box = new THREE.Box3().setFromObject(modelRoot); if (box.isEmpty()) return null;
+    if (frac == null || frac >= 0.999) { renderer.clippingPlanes = []; renderer.localClippingEnabled = false; return { inteiro: true }; }
+    var y = box.min.y + (box.max.y - box.min.y) * Math.max(0, frac);
+    _tetoV.constant = y; renderer.localClippingEnabled = true; renderer.clippingPlanes = [_tetoV];
+    return { inteiro: false, alturaM: y - box.min.y };
+  }
+  S._tetoVisitante = tetoVisitante;
+
+  /* =====================================================================
    * B2 — AGREGACAO DE GEOMETRIA (motor puro em js/bimagreg.js)
    *
    * MEDIDO no modelo real da RA antes de existir esta funcao: 950 draw calls
@@ -2203,8 +2294,14 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   // Temporal+ESPACIAL (<20px): não pune usuário rápido clicando em outro canto.
   var toolFechou = null, _upAtual = null;
   function marcarFechamento() { toolFechou = _upAtual ? { x: _upAtual.x, y: _upAtual.y, t: performance.now() } : { x: -1e9, y: -1e9, t: performance.now() }; }
+  /* toque simples do visitante (seleção ou o ponto do "Apontar"): um dedo,
+     sem arrastar mais de 10 px, em menos de meio segundo. Segundo dedo na
+     tela = pinça de zoom, e cancela o toque. */
+  var _toque = null, _dedos = 0;
   canvasEl.addEventListener('pointerdown', function (e) {
     if (!S || !S.alive) return;
+    _dedos++;
+    _toque = (_dedos === 1 && e.button === 0) ? { x: e.clientX, y: e.clientY, t: performance.now(), ts: e.timeStamp || 0, id: e.pointerId } : null;
     if (ferramentaClique()) medir.down = (e.button === 0) ? { x: e.clientX, y: e.clientY } : null;
     /* 🔍 toque-e-segure abre a lupa (só no DEDO, só com ferramenta de ponto
        ativa). No mouse não faz falta: lá o cursor não tapa o alvo e o
@@ -2223,6 +2320,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
    * fecha e devolve a órbita. */
   canvasEl.addEventListener('pointercancel', function (e) {
     if (!S || !S.alive) return;
+    _dedos = Math.max(0, _dedos - 1); _toque = null;
     medir.down = null;
     if (S._lupaSoltar) S._lupaSoltar(e);
   });
@@ -2239,6 +2337,22 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
      * põe `touchAction:'none'` no canvas, então a pinça não é cancelada pelo
      * navegador — ela chega como dois ponteiros normais. */
     var alvoLupa = S._lupaSoltar ? S._lupaSoltar(e) : null;
+    _dedos = Math.max(0, _dedos - 1);
+    var tq = _toque; _toque = null;
+    if (tq && tq.id === e.pointerId && !ferramentaClique() && !fly.on && !xr.on && (visitante || S._aoTocar)) {
+      var tdx = e.clientX - tq.x, tdy = e.clientY - tq.y;
+      /* ⚠ DURAÇÃO PELO RELÓGIO DO DEDO (timeStamp do evento), não pela hora em
+         que o código rodou. Com o 3D na tela inteira, cada quadro de um modelo
+         pesado num celular fraco pode levar meio segundo: o `pointerup` era
+         tratado 1,1 s depois do `pointerdown` (medido na e2e de 29/09) e o
+         toque de 80 ms virava "segurou o dedo" — a ficha da peça não abria. */
+      var durou = (tq.ts > 0 && e.timeStamp > 0) ? e.timeStamp - tq.ts : performance.now() - tq.t;
+      if (tdx * tdx + tdy * tdy <= 100 && durou < 500) {
+        if (S._aoTocar) { var fn = S._aoTocar; S._aoTocar = null; try { fn(pontoNaTela(e.clientX, e.clientY)); } catch (eT) {} }
+        else selecionarEm(e.clientX, e.clientY);
+        return;
+      }
+    }
     if (!ferramentaClique() || e.button !== 0) { medir.down = null; return; } // só botão esquerdo/toque
     if (!alvoLupa && !medir.down) return;
     /* 🔍 LUPA: se ela estava aberta, o ponto é o da MIRA, não o do dedo — e o
@@ -5223,6 +5337,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     /* no celular o painel de RA/RV ocupa a largura (até 340 px): em 250 px os
        rótulos dos modos não cabiam nem quebrando linha */
     if (xrPanel) { xrPanel.style.width = ehTelaPequena ? 'calc(100% - 20px)' : '250px'; xrPanel.style.maxWidth = '340px'; xrPanel.style.boxSizing = 'border-box'; }
+    /* e a faixa de BAIXO: a barra do visitante mora lá, fixa; sem o teto de
+       altura o fim do painel (os últimos modos) ficava atrás dela */
+    if (xrPanel && o0.baseReservada > 0) xrPanel.style.maxHeight = 'calc(100% - ' + (t + o0.baseReservada + 10) + 'px)';
     /* v1.1.126: os painéis voltam para a DIREITA (o right:10px do próprio cssText).
      * Em left:64px eles ficavam embaixo do leque do dock (que abre em ~56px com 172px
      * de largura e z-index 60): no PC, passar o mouse na direção do painel fazia o leque
@@ -5416,6 +5533,50 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
   S._desenharQuadro = desenharQuadro;
 
+  /* ⚠ A FOTO DA PRANCHA NA PROPORÇÃO DO QUADRO DELA. O desenharQuadro devolve
+   *   o canvas da tela (1,9:1 num monitor largo); num quadro quase quadrado da
+   *   prancha A1 a foto ocupava metade da altura e o título ficava solto lá
+   *   embaixo (visto na prancha de painéis de wood frame, 29/09/2026). Aqui o
+   *   renderer desenha no tamanho pedido, a imagem é COPIADA NA MESMA HORA
+   *   (preserveDrawingBuffer é false: depois do resize o buffer some) e a
+   *   tela volta ao tamanho dela.
+   * ⚠ A LARGURA DA TELA É O MÍNIMO: quadro mais estreito que a tela ganha
+   *   ALTURA (o fov vertical abre), nunca perde as laterais — a vista gravada
+   *   foi enquadrada numa tela larga e a cota do comprimento mora na borda.
+   * ⚠ SEM O SOLO: o solo da sondagem é ferramenta de estudo e não faz parte
+   *   da vista gravada. Ligado na tela, ele entrava na foto da prancha (faixa
+   *   vermelha atrás da parede). `semSolo: false` o mantém de propósito. */
+  function desenharQuadroEm(fundo, larg, alt, opts) {
+    opts = opts || {};
+    larg = Math.round(+larg || 0); alt = Math.round(+alt || 0);
+    if (!S || !S.alive || !renderer || larg < 8 || alt < 8) return null;
+    var prevBg = scene.background, vLn = _selLn ? _selLn.visible : null;
+    var vSolo = solo.grupo ? solo.grupo.visible : null;
+    var pr = renderer.getPixelRatio(), asp = camera.aspect, fov = camera.fov, out = null;
+    try {
+      if (fundo) scene.background = new THREE.Color(fundo);
+      if (_selLn) _selLn.visible = false;
+      if (opts.semSolo !== false && solo.grupo) solo.grupo.visible = false;
+      renderer.setPixelRatio(1); renderer.setSize(larg, alt, false);
+      var na = larg / alt;
+      if (na < asp) camera.fov = 2 * Math.atan(Math.tan(fov * Math.PI / 360) * asp / na) * 180 / Math.PI;
+      camera.aspect = na; camera.updateProjectionMatrix();
+      renderer.render(scene, camera);
+      out = document.createElement('canvas'); out.width = larg; out.height = alt;
+      out.getContext('2d').drawImage(renderer.domElement, 0, 0);
+    } catch (e) { out = null; }
+    finally {
+      scene.background = prevBg; if (_selLn && vLn !== null) _selLn.visible = vLn;
+      if (solo.grupo && vSolo !== null) solo.grupo.visible = vSolo;
+      camera.fov = fov; camera.aspect = asp; camera.updateProjectionMatrix();
+      renderer.setPixelRatio(pr);
+      if (S._resize) S._resize();
+      try { renderer.render(scene, camera); } catch (e2) {}
+    }
+    return out;
+  }
+  S._desenharQuadroEm = desenharQuadroEm;
+
   function tirarFoto() {
     if (!S.modelos.length) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('camera', 15) : '') + ' Carregue um modelo primeiro.'); return null; }
     var prevBg = scene.background, url;
@@ -5498,10 +5659,31 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
          os rótulos saíam cortados dos dois lados ("âmera + Projeto (ver no
          seu ambie") — medido no visor da nuvem aberto como iPhone. */
       var ql = quickLookAqui();
+      /* ⚠ O QUE ENTRA NA RA É ESCOLHIDO AQUI, ANTES do modo. A RA do
+         iPhone e a do app do Google levam o que está VISÍVEL; sem estes
+         controles no seletor, no iPhone não havia como mandar "só a
+         Hidráulica" para a RA — os chips só existiam DENTRO do imersivo,
+         que o Quick Look nem usa. */
+      var pavsXR = (S._pavLista ? S._pavLista() : []).map(function (x) { return x.nome; });
+      if (discs.length > 1 || pavsXR.length > 1) {
+        html += '<div style="font-size:11px;color:#5b6b7c;margin-top:2px">O que aparece (vale para todos os modos):</div>';
+        if (discs.length > 1) {
+          html += '<div style="display:flex;flex-wrap:wrap;gap:5px">';
+          discs.forEach(function (d) { var off = !!xr.discOcultas[d.chave]; html += '<button class="btn sm" data-xd="' + esc(d.chave) + '" style="' + (off ? 'opacity:.45' : 'background:' + corAtiva() + ';color:#fff') + '">' + esc(d.nome) + '</button>'; });
+          html += '</div>';
+        }
+        if (pavsXR.length > 1) {
+          html += '<label style="display:flex;justify-content:space-between;align-items:center;gap:6px">Pavimento <select data-x="pavxr" class="inp" style="flex:1;min-width:0"><option value="">Todos</option>' +
+            pavsXR.map(function (nm) { return '<option value="' + esc(nm) + '"' + (pav.isolado === nm ? ' selected' : '') + '>' + esc(nm) + '</option>'; }).join('') + '</select></label>';
+        }
+      }
+      var android = /Android/i.test(navigator.userAgent || '') && !!(S.opts && S.opts.onSceneViewer);
       html += '<div style="font-size:11px;color:#5b6b7c">Veja o projeto no ambiente ou ande dentro dele. Escolha o modo:</div>' +
         (ql ? '<button class="btn sm primary longo" data-x="quicklook" data-ql="real" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA do iPhone — no chão, tamanho real</button>' +
               '<button class="btn sm longo" data-x="quicklook" data-ql="maquete" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA do iPhone — maquete na mesa</button>' : '') +
-        '<button class="btn sm ' + (ql ? '' : 'primary ') + 'longo" data-x="camera" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('camera', 15) : '') + ' Câmera + Projeto (ver no seu ambiente)</button>' +
+        (android ? '<button class="btn sm primary longo" data-x="sceneviewer" data-ql="real" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA do Android (app do Google) — tamanho real</button>' +
+                   '<button class="btn sm longo" data-x="sceneviewer" data-ql="maquete" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA do Android — maquete na mesa</button>' : '') +
+        '<button class="btn sm ' + (ql || android ? '' : 'primary ') + 'longo" data-x="camera" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('camera', 15) : '') + ' Câmera + Projeto (ver no seu ambiente)</button>' +
         '<button class="btn sm longo" data-x="caminhar" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('caminhar', 15) : '') + ' Caminhar no projeto (fundo liso)</button>' +
         (ql ? '' : '<button class="btn sm longo" data-x="ar" style="width:100%" disabled>' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA com âncora (Android) <span data-x="arst" style="color:#5b6b7c">(verificando…)</span></button>') +
         '<button class="btn sm longo" data-x="vr" style="width:100%" disabled>' + (typeof Icones !== 'undefined' ? Icones.get('vr', 15) : '') + ' VR imersivo <span data-x="vrst" style="color:#5b6b7c">(verificando…)</span></button>' +
@@ -5648,6 +5830,16 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     a.click();
     setTimeout(function () { try { a.remove(); } catch (_) {} }, 1500);
   }
+
+  /* o arquivo da RA nativa a partir do que está NA TELA — .usdz (iPhone) ou
+     .glb (app do Google no Android). Motor em js/bimusdz.js. */
+  function arquivoRA(formato, modo) {
+    if (!window.BimUsdz) return { ok: false, erro: 'motor da RA não carregou' };
+    var pecas = pecasVisiveis();
+    try { return formato === 'glb' ? BimUsdz.gerarGlb(pecas, { modo: modo }) : BimUsdz.gerar(pecas, { modo: modo }); }
+    catch (e) { return { ok: false, erro: String(e && e.message || e) }; }
+  }
+  S._arquivoRA = arquivoRA;
 
   function toggleXRPanel() {
     if (xrPanel.style.display === 'flex') { xrPanel.style.display = 'none'; return; }
@@ -6177,6 +6369,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     S.modelos.forEach(function (mo) { if ((mo.disciplina || 'outros') === chave) mo.grupo.visible = !xr.discOcultas[chave] && mo.visivel !== false; });
     pintarXRPanel();
   }
+  /* a mesma chave de disciplina do painel da RA, para a barra do visitante:
+     escolher em "Camadas" ou no painel da RA é a MESMA escolha */
+  S._disciplinas = function () { return disciplinasPresentes().map(function (d) { d.oculta = !!xr.discOcultas[d.chave]; return d; }); };
+  S._disciplinaVisivel = function (chave, on) { if (!!xr.discOcultas[chave] !== !on) toggleDisciplinaXR(chave); };
 
   // ---- SAIR: restaura tudo ----
   function sairImersivo() {
@@ -6197,7 +6393,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (xr.modelSnap) { modelRoot.position.copy(xr.modelSnap.pos); modelRoot.quaternion.copy(xr.modelSnap.quat); modelRoot.scale.copy(xr.modelSnap.scale); xr.modelSnap = null; }
     else if (xr.posOrig) { modelRoot.position.copy(xr.posOrig); } // câmera/caminhar movem o modelRoot p/ a origem — devolve a posição real
     xr.posOrig = null; xr.boxLocal = null;
-    S.modelos.forEach(function (mo) { mo.grupo.visible = mo.visivel !== false; }); xr.discOcultas = {};
+    /* no visitante a disciplina é escolhida FORA do imersivo (Camadas) e tem
+       de continuar valendo depois de sair; no computador, sair devolve tudo */
+    if (!visitante) { S.modelos.forEach(function (mo) { mo.grupo.visible = mo.visivel !== false; }); xr.discOcultas = {}; }
     ligarSombras(false);
     limparMedirXR(); xr.medir.on = false;
     desligarOrientacao(); desligarPassos();
@@ -6219,6 +6417,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var b = e.target.closest('[data-x]'); if (!b) return; var k = b.getAttribute('data-x');
     if (k === 'fechar') { xrPanel.style.display = 'none'; }
     else if (k === 'quicklook') { abrirQuickLook(b.getAttribute('data-ql') === 'maquete' ? 'maquete' : 'real', b); }
+    else if (k === 'sceneviewer') { if (S.opts && S.opts.onSceneViewer) S.opts.onSceneViewer(b.getAttribute('data-ql') === 'maquete' ? 'maquete' : 'real', b); }
     else if (k === 'camera') { entrarCamera(); }
     else if (k === 'caminhar') { entrarCaminhar(); }
     else if (k === 'vr') { entrarVR(); }
@@ -6231,6 +6430,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   });
   xrPanel.addEventListener('change', function (e) {
     var b = e.target.closest('[data-x]'); if (!b) return; var k = b.getAttribute('data-x');
+    if (k === 'pavxr') { if (b.value) isolarPavimento(b.value); else if (pav.isolado) restaurarVisibilidade(); pintarXRPanel(); return; }
     if (k === 'esc') aplicarEscalaXR(parseFloat(b.value) || 1);
     else if (k === 'esc2') { var v = b.value; aplicarEscalaImersivo(v === 'fit' ? fitEscala() : (parseFloat(v) || 1)); }
   });
@@ -6298,6 +6498,98 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return mid;
   }
   S._carregarSintetico = carregarSintetico;
+
+  // ============================================================
+  // 🪨 SONDAGEM 3D — as camadas de solo debaixo da obra. O motor
+  // (js/sondagem.js) monta os volumes em coordenadas do IFC; aqui só se
+  // desenha. NÃO é modelo: fica fora da federação, do QTO, do clash, do
+  // 4D e do limite de 8 modelos — é uma sobreposição que some num clique.
+  // ⚠ IFC → cena é a permutação do web-ifc (x, z, −y), a mesma de
+  //   BimVista.ifcParaCena. Somar translação aqui tira o solo de baixo da
+  //   obra sem erro nenhum na tela.
+  // ⚠ Fica DENTRO do modelRoot: o AR e o "caminhar" movem o modelRoot, e o
+  //   solo tem de ir junto com o prédio.
+  // ============================================================
+  var solo = { grupo: null, vols: [], furos: [], plano: null, opac: 0.5, destaque: null, n: 0 };
+  function soloV(p) { return new THREE.Vector3(+p[0], +p[2], -(+p[1])); }
+  function soloLimpar() {
+    if (solo.grupo) {
+      solo.grupo.traverse(function (o) { if (o.geometry) o.geometry.dispose(); if (o.material) { (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { m.dispose(); }); } });
+      if (solo.grupo.parent) solo.grupo.parent.remove(solo.grupo);
+    }
+    solo.grupo = null; solo.vols = []; solo.furos = []; solo.plano = null; solo.destaque = null; solo.n = 0;
+  }
+  function soloHexa(v, cor, opac) {
+    // v: 8 vértices — base 0..3 e topo 4..7 na mesma ordem (o retângulo da área)
+    var P = v.map(soloV), pos = [];
+    var F = [[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7], [0, 1, 5], [0, 5, 4], [1, 2, 6], [1, 6, 5], [2, 3, 7], [2, 7, 6], [3, 0, 4], [3, 4, 7]];
+    F.forEach(function (t) { t.forEach(function (i) { pos.push(P[i].x, P[i].y, P[i].z); }); });
+    var g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.computeVertexNormals();
+    var m = new THREE.MeshStandardMaterial({ color: new THREE.Color(cor), transparent: true, opacity: opac, depthWrite: false, side: THREE.DoubleSide, roughness: 0.95, metalness: 0 });
+    var mesh = new THREE.Mesh(g, m); mesh.renderOrder = 2;
+    var ar = new THREE.LineSegments(new THREE.EdgesGeometry(g, 20), new THREE.LineBasicMaterial({ color: new THREE.Color(cor).multiplyScalar(0.55), transparent: true, opacity: Math.min(1, opac + 0.3) }));
+    ar.renderOrder = 3;
+    return { mesh: mesh, arestas: ar };
+  }
+  function soloMostrar(def) {
+    soloLimpar();
+    def = def || {};
+    var vols = def.volumes || [], furos = def.furos || [];
+    if (!vols.length && !furos.length) return { ok: false, erro: 'sem volumes nem furos para desenhar' };
+    if (def.opacidade != null) solo.opac = Math.max(0.05, Math.min(1, +def.opacidade));
+    solo.grupo = new THREE.Group(); solo.grupo.name = 'sondagem3d'; solo.grupo.userData.sondagem = true;
+    vols.forEach(function (v) {
+      if (!v || !v.v || v.v.length !== 8) return;
+      var h = soloHexa(v.v, v.cor || '#c8b58a', solo.opac);
+      h.mesh.userData = { soloUnidade: v.unidade, nome: v.nome, critico: !!v.critico };
+      solo.grupo.add(h.mesh); solo.grupo.add(h.arestas);
+      solo.vols.push({ unidade: v.unidade, mesh: h.mesh, arestas: h.arestas, critico: !!v.critico, cor: v.cor });
+    });
+    // furos: cilindro fino, um trecho por camada, na cor do solo daquele trecho
+    furos.forEach(function (f) {
+      if (!f || f.x == null || f.y == null || f.zBoca == null) return;
+      (f.trechos || []).forEach(function (t) {
+        var alt = Math.max(0.01, t.ate - t.de);
+        var cil = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, alt, 18), new THREE.MeshStandardMaterial({ color: new THREE.Color(t.cor || '#999'), roughness: 0.8 }));
+        var c = soloV([f.x, f.y, f.zBoca - (t.de + t.ate) / 2]); cil.position.copy(c);
+        cil.userData = { soloFuro: f.id }; solo.grupo.add(cil);
+      });
+      var topo = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.30, 0.06, 18), new THREE.MeshStandardMaterial({ color: 0x1d1d1d }));
+      topo.position.copy(soloV([f.x, f.y, f.zBoca + 0.03])); solo.grupo.add(topo);
+      solo.furos.push({ id: f.id, x: f.x, y: f.y, zBoca: f.zBoca });
+    });
+    // plano de profundidade (o cursor do relatório): começa escondido
+    if (def.area && def.area.length >= 4) {
+      var a = def.area, sh = new THREE.Shape();
+      sh.moveTo(a[0][0], a[0][1]); for (var i = 1; i < a.length; i++) sh.lineTo(a[i][0], a[i][1]);
+      /* rotateX(−90°) leva (x, y, 0) em (x, 0, −y): é exatamente IFC (x, y) → cena (x, −y) */
+      var pg = new THREE.ShapeGeometry(sh); pg.rotateX(-Math.PI / 2);
+      var pl = new THREE.Mesh(pg, new THREE.MeshBasicMaterial({ color: 0x1565c0, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false }));
+      pl.visible = false; pl.renderOrder = 4; solo.plano = pl; solo.grupo.add(pl);
+    }
+    modelRoot.add(solo.grupo);
+    solo.n = solo.vols.length;
+    return { ok: true, volumes: solo.vols.length, furos: solo.furos.length };
+  }
+  function soloProfundidade(zIfc) {
+    if (!solo.plano) return false;
+    if (zIfc == null || !isFinite(+zIfc)) { solo.plano.visible = false; return true; }
+    solo.plano.position.y = +zIfc; solo.plano.visible = true; return true;
+  }
+  function soloAplicarOpac() {
+    solo.vols.forEach(function (v) {
+      var alvo = solo.destaque == null ? solo.opac : (v.unidade === solo.destaque ? Math.min(0.92, solo.opac + 0.35) : solo.opac * 0.25);
+      v.mesh.material.opacity = alvo; v.arestas.material.opacity = Math.min(1, alvo + 0.3);
+    });
+  }
+  S._soloMostrar = soloMostrar; S._soloLimpar = soloLimpar; S._soloProfundidade = soloProfundidade;
+  S._soloDestacar = function (u) { solo.destaque = (u == null || u === '') ? null : String(u); soloAplicarOpac(); return solo.destaque; };
+  S._soloOpacidade = function (a) { solo.opac = Math.max(0.05, Math.min(1, +a || 0.5)); soloAplicarOpac(); return solo.opac; };
+  S._soloEstado = function () {
+    return { on: !!solo.grupo, volumes: solo.vols.map(function (v) { return { unidade: v.unidade, critico: v.critico, opacidade: +v.mesh.material.opacity.toFixed(3), cor: v.cor }; }),
+             furos: solo.furos.slice(), plano: solo.plano ? { visivel: solo.plano.visible, y: solo.plano.position.y } : null, destaque: solo.destaque, opacidade: solo.opac,
+             dentroDoModelRoot: !!(solo.grupo && solo.grupo.parent === modelRoot) };
+  };
 
   // ============================================================
   // ✏️ EDITOR — cria/edita volumetria SINTÉTICA no viewer (motor puro:
@@ -7097,7 +7389,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         var pset; try { pset = S.api.GetLine(mid, psetID, false); } catch (_) { continue; }
         if (!pset || !pset.HasProperties) continue; // não é IfcPropertySet (ex.: quantities/type)
         var props = Array.isArray(pset.HasProperties) ? pset.HasProperties : [pset.HasProperties];
-        var etapa = null, cod = null, fase = null, descrPset = null, tarefa = null, discP = null, detalhe = null;
+        var etapa = null, cod = null, fase = null, descrPset = null, tarefa = null, discP = null, detalhe = null, montagem = null;
         for (var p = 0; p < props.length; p++) {
           var h = props[p]; if (!h || h.value == null) continue;
           var pv; try { pv = S.api.GetLine(mid, h.value, false); } catch (_) { continue; }
@@ -7116,6 +7408,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
              (js/estrutpdf.js). Carimbados pelo plugin ou pelo gerador do modelo. */
           else if (nm === 'OrcaPRO_Disciplina' && pv.NominalValue) discP = pv.NominalValue.value;
           else if (nm === 'OrcaPRO_Detalhe' && pv.NominalValue) detalhe = pv.NominalValue.value;
+          /* a ETAPA DE MONTAGEM ("M05 · Vigas primárias"): a ordem em que a peça
+             sobe na obra. Não é a etapa da EAP — a mesma etapa 09 do orçamento tem
+             pilares (M06) e coberturas (M10, M12) que sobem em dias diferentes. */
+          else if (nm === 'OrcaPRO_Montagem' && pv.NominalValue) montagem = pv.NominalValue.value;
           /* ⚠ TERCEIRA PORTA DA DESCRIÇÃO, e ela sai de graça. Nem todo
              exportador leva o campo Descrição do Revit para o atributo
              `Description` do IFC — vários o despejam como propriedade num
@@ -7129,7 +7425,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
             if (vD != null && String(vD).trim()) descrPset = String(vD).trim();
           }
         }
-        if (etapa == null && cod == null && fase == null && descrPset == null && tarefa == null && discP == null && detalhe == null) continue;
+        if (etapa == null && cod == null && fase == null && descrPset == null && tarefa == null && discP == null && detalhe == null && montagem == null) continue;
         var objs = Array.isArray(rel.RelatedObjects) ? rel.RelatedObjects : [rel.RelatedObjects];
         for (var o = 0; o < objs.length; o++) {
           var oh = objs[o]; if (!oh || oh.value == null) continue;
@@ -7140,6 +7436,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           if (tarefa != null && String(tarefa).trim()) mapa[eid].tarefa = String(tarefa).trim();
           if (discP != null && String(discP).trim()) mapa[eid].disciplinaPeca = String(discP).trim();
           if (detalhe != null && String(detalhe).trim()) mapa[eid].detalhe = String(detalhe).trim();
+          if (montagem != null && String(montagem).trim()) mapa[eid].montagem = String(montagem).trim();
           if (descrPset != null && !mapa[eid].descricaoPset) mapa[eid].descricaoPset = descrPset;
         }
       }
@@ -8313,7 +8610,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         var idIfc = lerIdentidadeIfc(S.api, mid, mesh.expressID);
         var idB = idElemento(modelo.modeloId, { id: mesh.expressID, globalId: idIfc.globalId });
         var dM = descricaoDeMercado(idIfc, famEl, cb);
-        modelo.elementos.push({ globalId: idB.globalId, chave: idB.chave, chaveInstavel: idB.instavel, nomeIfc: idIfc.nomeIfc, tag: idIfc.tag, id: mesh.expressID, uid: mid + ':' + mesh.expressID, mid: mid, arquivo: modelo.nome, tipo: tipoNome, nome: rotuloDisciplina(tipoNome), familia: famEl ? famEl.familia : null, descricao: dM.descricao, descricaoFonte: dM.fonte, sistemaIfc: (modelo.sistemas && modelo.sistemas[mesh.expressID]) || '', etapa: cb.etapa || null, codOrc: cb.codOrc || null, fase: cb.fase || null, tarefa: cb.tarefa || null, disciplinaPeca: cb.disciplinaPeca || null, detalhe: cb.detalhe || null, qto: (qto && qto[mesh.expressID]) || null });
+        modelo.elementos.push({ globalId: idB.globalId, chave: idB.chave, chaveInstavel: idB.instavel, nomeIfc: idIfc.nomeIfc, tag: idIfc.tag, id: mesh.expressID, uid: mid + ':' + mesh.expressID, mid: mid, arquivo: modelo.nome, tipo: tipoNome, nome: rotuloDisciplina(tipoNome), familia: famEl ? famEl.familia : null, descricao: dM.descricao, descricaoFonte: dM.fonte, sistemaIfc: (modelo.sistemas && modelo.sistemas[mesh.expressID]) || '', etapa: cb.etapa || null, codOrc: cb.codOrc || null, fase: cb.fase || null, tarefa: cb.tarefa || null, disciplinaPeca: cb.disciplinaPeca || null, detalhe: cb.detalhe || null, montagem: cb.montagem || null, qto: (qto && qto[mesh.expressID]) || null });
         modelo.nEl++;
       });
       /* a disciplina que o engenheiro deixou no modelo viaja no manifesto do
@@ -9290,6 +9587,17 @@ window.BIM = {
   restaurarVisibilidade: function () { if (S && S._restaurarVis) S._restaurarVis(); },
   // ---- RA/RV (v1.1.84): imersivo — andar em escala real, VR, RA Android ----
   abrirXR: function () { if (S && S._toggleXR) S._toggleXR(); },
+  painelXRAberto: function () { return !!(S && S.xrPanel && S.xrPanel.style.display === 'flex'); },
+  /* ---- API do visitante (js/rvvisor.js) ---- */
+  pontoNaTela: function (x, y) { return S && S._pontoNaTela ? S._pontoNaTela(x, y) : null; },
+  aoTocar: function (fn) { if (S) S._aoTocar = typeof fn === 'function' ? fn : null; },
+  pinos: function (lista) { if (S && S._pinos) S._pinos(lista || []); },
+  olharPara: function (p, dist) { if (S && S._olharPara) S._olharPara(p, dist); },
+  tetoVisitante: function (frac) { return S && S._tetoVisitante ? S._tetoVisitante(frac) : null; },
+  disciplinas: function () { return S && S._disciplinas ? S._disciplinas() : []; },
+  disciplinaVisivel: function (chave, on) { if (S && S._disciplinaVisivel) S._disciplinaVisivel(chave, on); },
+  arquivoRA: function (formato, modo) { return S && S._arquivoRA ? S._arquivoRA(formato, modo) : { ok: false, erro: 'visualizador não montado' }; },
+  selecionarEm: function (x, y) { if (S && S._selecionarEm) S._selecionarEm(x, y); },
   imersivo: function (modo) { if (!S || !S.xr) return false; if (S.xr.on) return true; if (S._toggleXR && (!S.xrPanel || S.xrPanel.style.display !== 'flex')) S._toggleXR(); var b = S.xrPanel && S.xrPanel.querySelector('[data-x="' + (modo || 'caminhar') + '"]'); if (b) { b.click(); return true; } return false; },
   imersivoAtivo: function () { return !!(S && S.xr && S.xr.on); },
   sairImersivo: function () { if (S && S._sairImersivo) S._sairImersivo(); },
@@ -9314,6 +9622,8 @@ window.BIM = {
      (o 4D, um corte, um isolamento) e repintar a própria barra de status */
   aoMudarVisibilidade: function (fn) { if (S) S._onContadores = fn; },
   desenharQuadro: function (fundo) { return (S && S._desenharQuadro) ? S._desenharQuadro(fundo) : null; },
+  /* a foto no tamanho de um quadro de prancha, sem o solo da sondagem (ver `desenharQuadroEm`) */
+  desenharQuadroEm: function (fundo, larg, alt, opts) { return (S && S._desenharQuadroEm) ? S._desenharQuadroEm(fundo, larg, alt, opts) : null; },
   /* enquadramento INSTANTANEO (sem tween). O `fit` da fita usa o tween
      cinematografico, que leva ~0,55 s — bonito na tela e inutil para quem vai
      capturar a imagem no mesmo instante: a foto sairia no meio do movimento,
@@ -9346,6 +9656,13 @@ window.BIM = {
   thumbFamilia: function (uid, maxPx) { return (S && S._thumbFamilia) ? S._thumbFamilia(uid, maxPx) : null; },
   // ---- 2D→3D (Fase C.1): paredes confirmadas viram modelo sintético no viewer ----
   carregarSintetico: function (caixas, nome) { return (S && S._carregarSintetico) ? S._carregarSintetico(caixas, nome) : null; },
+  /* ---- Sondagem 3D (js/sondagem.js monta; aqui só a cena) ---- */
+  soloMostrar: function (def) { return (S && S._soloMostrar) ? S._soloMostrar(def) : { ok: false, erro: 'visualizador não montado' }; },
+  soloLimpar: function () { if (S && S._soloLimpar) S._soloLimpar(); },
+  soloProfundidade: function (zIfc) { return (S && S._soloProfundidade) ? S._soloProfundidade(zIfc) : false; },
+  soloDestacar: function (u) { return (S && S._soloDestacar) ? S._soloDestacar(u) : null; },
+  soloOpacidade: function (a) { return (S && S._soloOpacidade) ? S._soloOpacidade(a) : null; },
+  soloEstado: function () { return (S && S._soloEstado) ? S._soloEstado() : { on: false }; },
   editar: function (on) { if (S && S._setEdit) S._setEdit(on == null ? !(S.edit && S.edit.on) : !!on); },
   /* a espessura com que a próxima parede nasce — vem do tipo (alvtipos.js),
      em METROS, já com as camadas das duas faces somadas */

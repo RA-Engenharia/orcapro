@@ -47,8 +47,8 @@
    * ------------------------------------------------------------------ */
   function htmlDisc(grupos, etapas, est) {
     est = est || {};
-    var aba = est.aba === "etapa" ? "etapa" : "disc", marc = est.marcados || {};
-    var lista = aba === "etapa" ? arr(etapas) : arr(grupos);
+    var aba = (est.aba === "etapa" || est.aba === "montagem") ? est.aba : "disc", marc = est.marcados || {};
+    var lista = aba === "etapa" ? arr(etapas) : (aba === "montagem" ? arr(est.montagens) : arr(grupos));
     var tem = {}; arr(grupos).forEach(function (g) { tem[g.id] = g.n; });
     var atalhos = arr(est.atalhos).filter(function (a) { return tem[a.id] > 0; });
     var h = '<div class="edisc">';
@@ -59,10 +59,26 @@
     }
     h += '<div class="edisc-abas" role="tablist">' +
       '<button type="button" class="btn sm' + (aba === "disc" ? " primary" : "") + '" data-edisc="aba" data-v="disc" role="tab" aria-selected="' + (aba === "disc") + '">Disciplina</button>' +
-      '<button type="button" class="btn sm' + (aba === "etapa" ? " primary" : "") + '" data-edisc="aba" data-v="etapa" role="tab" aria-selected="' + (aba === "etapa") + '">Etapa construtiva</button></div>';
+      '<button type="button" class="btn sm' + (aba === "etapa" ? " primary" : "") + '" data-edisc="aba" data-v="etapa" role="tab" aria-selected="' + (aba === "etapa") + '">Etapa construtiva</button>' +
+      '<button type="button" class="btn sm' + (aba === "montagem" ? " primary" : "") + '" data-edisc="aba" data-v="montagem" role="tab" aria-selected="' + (aba === "montagem") + '">Montagem</button></div>';
     if (!lista.length) {
-      h += '<p class="muted edisc-vazio">Carregue um modelo .IFC no visualizador para filtrar por ' + (aba === "etapa" ? "etapa construtiva" : "disciplina") + ".</p></div>";
+      h += '<p class="muted edisc-vazio">Carregue um modelo .IFC no visualizador para filtrar por ' + (aba === "etapa" ? "etapa construtiva" : (aba === "montagem" ? "etapa de montagem" : "disciplina")) + ".</p></div>";
       return h;
+    }
+    /* a SEQUÊNCIA executiva: passo a passo, o que já subiu fica e a etapa do
+       passo aparece destacada — é como a equipe vê a ordem de montagem */
+    if (aba === "montagem") {
+      var sq = est.seq || {}, nEt = lista.filter(function (g) { return g.ordem < 2e9; }).length;
+      if (!nEt) {
+        h += '<p class="muted edisc-vazio">As peças deste modelo não têm o carimbo <b>OrcaPRO_Montagem</b> — sem ele não dá para montar a sequência. Use a aba Etapa construtiva.</p>';
+      } else {
+        var kk = sq.k == null ? -1 : sq.k;
+        h += '<div class="edisc-seq" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:6px 0;padding:6px 8px;border:1px solid var(--borda,#d6dde3);border-radius:6px">' +
+          '<button type="button" class="btn sm" data-edisc="seq" data-v="ant"' + (kk <= 0 ? " disabled" : "") + ' title="Etapa anterior">◀</button>' +
+          '<span class="edisc-seq-rot" style="flex:1;min-width:150px;font-size:12px">' + (kk < 0 ? "Sequência de montagem: <b>" + nEt + " etapas</b>" : "Passo <b>" + (kk + 1) + " de " + nEt + "</b> — " + esc(sq.nome || "")) + "</span>" +
+          '<button type="button" class="btn sm" data-edisc="seq" data-v="prox"' + (kk >= nEt - 1 ? " disabled" : "") + ' title="Próxima etapa">▶</button>' +
+          '<button type="button" class="btn sm' + (sq.tocando ? " primary" : "") + '" data-edisc="seq" data-v="' + (sq.tocando ? "parar" : "tocar") + '">' + (sq.tocando ? "■ Parar" : "▶▶ Reproduzir") + "</button></div>";
+      }
     }
     h += '<div class="edisc-lista">';
     lista.forEach(function (g) {
@@ -86,6 +102,8 @@
       '<button type="button" class="btn sm" data-edisc="tudo">' + ic("voltar") + "Mostrar tudo</button></div>";
     if (aba === "disc") {
       h += '<p class="muted edisc-nota">"Carimbada" = a peça traz o parâmetro <b>OrcaPRO_Disciplina</b> (plugin Revit ou modelo da obra). "Por regra" = sem carimbo, o grupo foi deduzido do tipo e do nome da peça — confira antes de tirar quantidade daqui.</p>';
+    } else if (aba === "montagem") {
+      h += '<p class="muted edisc-nota">A etapa de montagem é o carimbo <b>OrcaPRO_Montagem</b> (M01, M02…): a ordem em que as peças sobem na obra. No passo a passo, o que já foi montado fica no modelo e a etapa do passo aparece em laranja.</p>';
     } else {
       h += '<p class="muted edisc-nota">A etapa é o carimbo <b>OrcaPRO_Etapa</b> — a mesma do cronograma 4D. Peça sem etapa aparece em "Sem etapa".</p>';
     }
