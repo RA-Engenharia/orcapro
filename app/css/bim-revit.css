@@ -47,7 +47,10 @@
   flex-direction: column;
   /* o ambiente ocupa a tela como um programa de projeto, não como um cartão:
      sem altura fixa o palco colapsa e o 3D some */
-  height: min(84vh, 900px);
+  /* a altura vem de Gestao._bimAjustarAltura: do ponto onde a janela começa
+     até o pé da tela (sem a faixa vazia que sobrava embaixo); o min() é o
+     valor de antes, para quando a medida ainda não rodou */
+  height: var(--rv-altura, min(84vh, 900px));
   background: var(--rv-fita-bg);
   color: var(--rv-fita-tx);
   border: 1px solid var(--rv-linha-forte);
@@ -524,3 +527,69 @@
 .bim-revit.b4-largo-on .rv-fita,
 .bim-revit.b4-largo-on .rv-abas,
 .bim-revit.b4-largo-on .rv-docs { display: none !important; }
+
+/* =====================================================================
+ * TOPO ORGANIZADO (30/09/2026) — pedido do Rogério: nada flutuando em
+ * cima do 3D, tudo no alto da janela.
+ * ===================================================================== */
+
+/* as ações da página, na barra de título (antes: duas linhas acima da janela) */
+.rv-titulo-acoes { display: flex; align-items: center; gap: 4px; margin-right: 6px; }
+.rv-qat .rv-tacao {
+  width: auto; height: 22px; padding: 0 8px; gap: 5px;
+  display: inline-flex; align-items: center;
+  border: 1px solid rgba(255,255,255,.2); border-radius: 3px;
+  background: transparent; color: var(--rv-titulo-tx);
+  font: inherit; font-size: 11.5px; white-space: nowrap; opacity: .92; cursor: pointer;
+}
+.rv-qat .rv-tacao:hover { background: rgba(255,255,255,.14); opacity: 1; }
+.rv-qat .rv-tacao-pri { background: #1a6cb5; border-color: #1a6cb5; opacity: 1; }
+.rv-qat .rv-tacao svg { width: 14px; height: 14px; flex: 0 0 auto; }
+/* tela mais estreita: só os ícones (o nome fica na dica) — a barra não quebra */
+@media (max-width: 1560px) { .rv-qat .rv-tacao .rv-tacao-rot { display: none; } .rv-qat .rv-tacao { padding: 0 6px; } }
+
+/* os botões rápidos, à direita das abas (o que flutuava em cima do 3D) */
+.rv-abas-dir { margin-left: auto; display: flex; align-items: center; gap: 4px; padding: 3px 4px 3px 12px; flex: 0 0 auto; }
+.rv-rap {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 26px; padding: 0 9px;
+  border: 1px solid var(--rv-linha-forte); border-radius: 4px;
+  background: var(--rv-fita-bg); color: var(--rv-fita-tx);
+  font: inherit; font-size: 12px; white-space: nowrap; cursor: pointer;
+}
+.rv-rap:hover:not(:disabled) { background: var(--rv-hover); }
+.rv-rap[aria-pressed="true"] { background: var(--rv-ativo); border-color: var(--rv-ativo-borda); }
+.rv-rap:disabled { opacity: .45; cursor: default; }
+.rv-rap svg { width: 14px; height: 14px; flex: 0 0 auto; }
+.rv-rap-pri { background: var(--rv-arquivo-bg); border-color: var(--rv-arquivo-bg); color: var(--rv-arquivo-tx); }
+.rv-rap-pri:hover:not(:disabled) { background: #155a98; }
+.rv-rap-sep { width: 1px; height: 18px; background: var(--rv-linha-forte); margin: 0 4px; }
+@media (max-width: 1280px) { .rv-rap:not(.rv-rap-pri) .rv-rap-rot { display: none; } }
+
+/* ⚠ A BARRA FLUTUANTE SAI DE CIMA DO 3D no computador: cada botão dela tem
+   comando na fita (Gestao._bimCascaAcoes → BIM.botao). Ela CONTINUA no DOM
+   (o estado e o despacho moram nela). No celular (≤ 640 px) e no modo foco
+   (Maximizar 3D, janela do 3D) — onde a fita some — ela volta a aparecer. */
+@media (min-width: 641px) {
+  .bim-revit:not([data-rv-foco="1"]) .rv-palco [data-bim-barra],
+  .bim-revit:not([data-rv-foco="1"]) .rv-palco [data-bim-barra-toggle] { display: none !important; }
+}
+
+/* a etiqueta do painel minimizado / levado para outra janela */
+.bim-drawer-pill {
+  position: absolute; top: 10px; right: 10px; z-index: 7;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: 999px;
+  border: 1px solid var(--rv-ativo-borda, #7aaddc); background: var(--surface, #fff); color: var(--texto, #1a1a1a);
+  font-size: 12.5px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,.25);
+}
+.bim-drawer-pill:hover { filter: brightness(.97); }
+
+/* o painel na OUTRA JANELA (Gestao._bimPopAbrir) */
+.bim-pop { display: flex; flex-direction: column; min-height: 100vh; background: var(--surface, #fff); }
+.bim-pop-cab {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px; border-bottom: 2px solid var(--linha, #d4d4d4); background: var(--surface, #fff);
+}
+.bim-pop-corpo { flex: 1; padding: 12px 14px; }

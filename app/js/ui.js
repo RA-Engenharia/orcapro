@@ -58,11 +58,26 @@
        ninguém lê isso — a pessoa via uma faixa vermelha sumir e seguia
        achando que tinha salvo. Recado de dado NÃO gravado tem de durar o
        tempo de ler (App._msRecado). */
+    /* ⚠ O DOCUMENTO QUE RECEBE O QUADRO E O RECADO. Com um painel do BIM
+       levado para outra janela (Gestao._bimPopAbrir, window.__bimPop), o
+       código do painel continua rodando AQUI — sem isto o quadro que ele
+       abre e o recado que ele dá apareciam na janela de trás, no outro
+       monitor, e a pessoa via o botão "não fazer nada". Vale a janela que
+       está com o foco; sem janela de painel, é sempre este documento. */
+    _docAlvo: function () {
+      try {
+        var w = window.__bimPop;
+        if (w && !w.closed && w.document && w.document.hasFocus && w.document.hasFocus() && w.document.body) return w.document;
+      } catch (e) {}
+      return document;
+    },
     toast: function (msg, tipo, ms) {
-      var wrap = this.el("toasts");
+      var D = this._docAlvo();
+      var wrap = D === document ? this.el("toasts") : D.getElementById("toasts");
+      if (!wrap) wrap = this.el("toasts");
       /* com quadro aberto o recado vai para o topo (ver .toasts.sobre-modal em
          css/app.css): no canto de baixo ele tampava o rodapé do quadro */
-      try { if (wrap && wrap.classList) wrap.classList.toggle("sobre-modal", !!document.getElementById("modal-bg")); } catch (eSm) {}
+      try { if (wrap && wrap.classList) wrap.classList.toggle("sobre-modal", !!D.getElementById("modal-bg")); } catch (eSm) {}
       var t = document.createElement("div");
       t.className = "toast " + (tipo || "");
       this._rotulo(t, msg);
@@ -153,7 +168,7 @@
         '<span style="flex:1"></span><button class="btn ghost sm" data-fechar>' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></header>' +
         '<div class="body">' + corpoHTML + '</div>' +
         '<footer id="modal-footer"></footer></div>';
-      document.body.appendChild(bg);
+      this._docAlvo().body.appendChild(bg);
       var footer = bg.querySelector("#modal-footer");
       (rodapeBotoes || []).forEach(function (b) {
         var btn = document.createElement("button");

@@ -10003,9 +10003,11 @@
       var obra = null;
       try { obra = Store.obter(eid(), "obras", this._bimSel); } catch (e) {}
 
+      var pill = document.getElementById("bim-drawer-pill");
       BimShell.montar(card, {
         arquivo: (obra && obra.nome) || "",
         tema: BimShell.temaSalvo(),
+        acoes: this._bimAcoesTitulo || [],
         onPalco: function (palco) {
           /* o canvas do viewer e o que vive sobre ele mudam de casa */
           palco.appendChild(canvas);
@@ -10015,6 +10017,7 @@
           if (foco3) palco.appendChild(foco3);
           if (tela3) palco.appendChild(tela3);
           if (drawer) palco.appendChild(drawer);
+          if (pill) palco.appendChild(pill);
           canvas.style.height = "100%";
           canvas.style.background = "transparent";
         },
@@ -10036,6 +10039,15 @@
       });
       card.setAttribute("data-rv-montado", "1");
       card.style.padding = "0";
+      /* a janela do BIM vai até o pé da tela (sem a faixa vazia embaixo) e
+         acompanha o tamanho da janela do navegador */
+      this._bimAjustarAltura();
+      requestAnimationFrame(function () { self._bimAjustarAltura(); });
+      if (!this._bimAltResize) {
+        var tAlt = null;
+        this._bimAltResize = function () { clearTimeout(tAlt); tAlt = setTimeout(function () { self._bimAjustarAltura(); }, 120); };
+        window.addEventListener("resize", this._bimAltResize);
+      }
 
       this._bimCascaAcoes();
       this._bimCascaContexto();
@@ -10081,6 +10093,21 @@
       reg.visibilidade = function () { var b = B(); if (b && b.painelVis) { b.painelVis(); return true; } return false; };
       reg.pavimentos = function () { var b = B(); if (b && b.painelPav) { b.painelPav(); return true; } return false; };
 
+      /* ⚠ O QUE SÓ EXISTIA NA BARRA FLUTUANTE DO 3D. No computador ela saiu de
+         cima do modelo (pedido do Rogério, 30/09/2026: "deixa tudo organizado no
+         topo") — cada ferramenta dela ganhou comando na fita, e o comando aciona
+         o MESMO botão da barra, escondido (BIM.botao). Nada de ação reescrita:
+         estado, confirmações e painéis continuam sendo os do bim.js. */
+      var botao = function (k) { return function () { var b = B(); return !!(b && b.botao && b.botao(k)); }; };
+      ["cota", "cota-iguais", "cota-todas", "cota-numerar", "cota-planilha", "cota-limpar", "limpar-medidas", "p3d", "blocok", "req-bim", "exemplo"].forEach(function (k) { reg[k] = botao(k); });
+      reg.editor = botao("editar");
+      reg["remover-modelos"] = botao("limpar");
+      reg.orbita = function () { var b = B(); if (!b || !b.botao) return false; try { BimRibbon.setAtivo("voo", false); } catch (e) {} return b.botao("orbita"); };
+      reg.ultra = function (e) { var b = B(); if (b && b.setUltra) { b.setUltra(!!e.ligado); return true; } return false; };
+      reg.familias = function () { self._bimAbrirPainel("familias"); return true; };
+      /* o arquivo da obra (.zip) não pede modelo aberto: é ele que traz o modelo */
+      reg["arquivo-obra"] = function () { self._bimPacoteEscolher(); return true; };
+
       /* painéis de análise que moram na gaveta */
       [["modelos", "modelos"], ["quatro-d", "4d"], ["clash", "clash"], ["qto", "qto"], ["seis-d", "6d"]].forEach(function (p) {
         reg[p[0]] = function () {
@@ -10098,7 +10125,10 @@
       reg.eap = function () { self.acao("bimeap-abrir", {}); return true; };
       reg["exportar-revit"] = function () { self.acao("bim-revit", {}); return true; };
       reg.reuniao = function () { self.acao("bim-reuniao", {}); return true; };
-      reg.imersivo = function () { self.acao("bim-qr-rv", {}); return true; };
+      /* "Realidade virtual" abre o painel RA/RV do visualizador (andar em 1:1,
+         medir, ver por disciplina e gerar o QR) — era o botão RA/RV da barra
+         flutuante. Sem o painel (visor antigo), cai no QR, como antes. */
+      reg.imersivo = function () { var b = B(); if (b && b.botao && b.botao("xr")) return true; self.acao("bim-qr-rv", {}); return true; };
       /* O assistente novo faz as TRÊS portas — DXF, PDF (vetor ou
          escaneado) e foto/croqui — com calibração de escala e revisão
          das paredes antes de gerar. O painel antigo do viewer, que só
@@ -10263,6 +10293,9 @@
         obra: !!this._bimSel,
         pro: pro
       });
+      /* Blocok é liberado por conta: sem o botão no visualizador, o comando da
+         fita diz isso em vez de acionar nada */
+      try { BimRibbon.desabilitar("blocok", (window.BIM && BIM.temBotao && BIM.temBotao("blocok")) ? "" : "As plantas Blocok não estão liberadas nesta conta."); } catch (eBk) {}
       if (window.BimShell) BimShell.pintarFita();
     },
 
@@ -12529,17 +12562,24 @@
       var sel = '<select data-gacao="bim-troca-obra" style="max-width:260px">' +
         '<option value="">— sem cronograma (sequência padrão) —</option>' +
         obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === self._bimSel ? " selected" : "") + ">" + Util.esc(o.nome) + (o.orcamentoId ? "" : " (sem orçamento)") + "</option>"; }).join("") + "</select>";
-      var extra = '<span class="muted" style="align-self:center;margin-right:10px">Cronograma da obra (4D):</span>' + sel +
-        ' <button class="btn sm" data-gacao="bim-reuniao" id="bim-btn-reuniao">' + ((typeof Icones !== "undefined") ? Icones.get("obra", 14) : "") + 'Reunião</button>' +
+      var extra = '<span class="muted" style="align-self:center;margin-right:10px">Obra (cronograma 4D):</span>' + sel;
+      /* ⚠ AS AÇÕES DA PÁGINA FORAM PARA A BARRA DE TÍTULO DA JANELA DO BIM
+         (BimShell, opts.acoes). Eram duas linhas de botões acima da janela que
+         roubavam altura do 3D e deixavam a janela curta, com uma faixa vazia
+         embaixo (pedido do Rogério, 30/09/2026). Mesmos `data-gacao` e ids:
+         a delegação do app, o contador da Reunião e as e2e seguem achando. */
+      this._bimAcoesTitulo = [
+        { gacao: "bim-reuniao", id: "bim-btn-reuniao", ico: "obra", rotulo: "Reunião", dica: "Várias pessoas dentro do mesmo modelo, com voz." },
         /* o 3D do tamanho da tela (as análises continuam na gaveta, por cima)
            e o 3D numa janela própria — o 2º monitor ou o projetor mostra o
            modelo enquanto esta janela mostra de onde vem cada número */
-        ' <button class="btn sm" data-gacao="bim-max" id="bim-btn-max" title="O 3D ocupa a tela inteira; as análises continuam na gaveta lateral. Esc volta.">' + (typeof Icones !== "undefined" ? Icones.get("expandir", 14) : "") + 'Maximizar 3D</button>' +
-        ' <button class="btn sm" data-gacao="bim-3d-janela" id="bim-btn-3dj" title="Abre o 3D desta obra numa janela própria (leve ao 2º monitor ou ao projetor). Tudo o que você abrir aqui — conjunto, conflito, divergência, avanço, a peça clicada, a Simulação 4D — aparece lá.">' + (typeof Icones !== "undefined" ? Icones.get("abrir", 14) : "") + '3D em outra janela</button>' +
-        ' <button class="btn sm" data-gacao="bim-revit" title="Grava revit\\obra-ativa.json — o plugin RA BIM Tools no Revit passa a ver BDI, etapas e cronograma desta obra">' + ((typeof Icones !== "undefined") ? Icones.get("custoobra", 14) : "") + 'Exportar p/ Revit</button>' +
-        ' <button class="btn sm primary" data-gacao="bimeap-abrir" title="O agente lê o modelo IFC (carimbos do Revit, quantitativos, fases de reforma) e monta a EAP completa: etapas, serviços, quantidades e memorial de cálculo rastreável">' + ((typeof Icones !== "undefined") ? Icones.get("escopo", 14) : "") + 'Gerar orçamento do modelo</button>' +
-        ' <button class="btn sm" data-gacao="bim-quant-ilustrado" title="Caderno com a imagem de cada família, descrição, dimensões e quantidades do projeto inteiro">' + ((typeof Icones !== "undefined") ? Icones.get("relatorios", 14) : "") + 'Quantitativo ilustrado</button>' +
-        ' <button class="btn sm" data-gacao="bim-qr-rv" title="Gera um QR pra abrir a Realidade Mista/Virtual no celular ou tablet — andar dentro do projeto, ver por disciplina e (Android) fixar em RA no ambiente da obra">' + ((typeof Icones !== "undefined") ? Icones.get("apresentar", 14) : "") + 'QR · RA/RV no celular</button>';
+        { gacao: "bim-max", id: "bim-btn-max", ico: "expandir", rotulo: "Maximizar 3D", dica: "O 3D ocupa a tela inteira; as análises continuam na gaveta lateral. Esc volta." },
+        { gacao: "bim-3d-janela", id: "bim-btn-3dj", ico: "abrir", rotulo: "3D em outra janela", dica: "Abre o 3D desta obra numa janela própria (leve ao 2º monitor ou ao projetor). Tudo o que você abrir aqui — conjunto, conflito, divergência, avanço, a peça clicada, a Simulação 4D — aparece lá." },
+        { gacao: "bim-revit", ico: "custoobra", rotulo: "Exportar p/ Revit", dica: "Grava revit\\obra-ativa.json — o plugin RA BIM Tools no Revit passa a ver BDI, etapas e cronograma desta obra" },
+        { gacao: "bimeap-abrir", ico: "escopo", rotulo: "Gerar orçamento", dica: "O agente lê o modelo IFC (carimbos do Revit, quantitativos, fases de reforma) e monta a EAP completa: etapas, serviços, quantidades e memorial de cálculo rastreável", primario: true },
+        { gacao: "bim-quant-ilustrado", ico: "relatorios", rotulo: "Quantitativo ilustrado", dica: "Caderno com a imagem de cada família, descrição, dimensões e quantidades do projeto inteiro" },
+        { gacao: "bim-qr-rv", ico: "apresentar", rotulo: "QR · RA/RV", dica: "Gera um QR pra abrir a Realidade Mista/Virtual no celular ou tablet — andar dentro do projeto, ver por disciplina e (Android) fixar em RA no ambiente da obra" }
+      ];
       var _icB = function (n, s) { return (typeof Icones !== "undefined") ? Icones.get(n, s || 15) : ""; };
       var html = this._head(svg("bim") + "BIM 3D ao 7D", "", "", extra);
       // v1.1.121 — página = SÓ o visualizador (mais alto). Os painéis de análise
@@ -12559,7 +12599,12 @@
         '<div id="bim-drawer" style="position:absolute;top:0;right:0;bottom:0;width:min(440px,94%);background:var(--surface);border-left:1px solid var(--linha-forte);box-shadow:-14px 0 34px rgba(0,0,0,.3);z-index:6;display:none;flex-direction:column">' +
           '<div style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:2px solid var(--linha)">' +
             '<b id="bim-drawer-tit" style="font-size:14px">Análise</b>' +
-            '<button class="btn sm ghost" data-gacao="bim-drawer-fechar" style="margin-left:auto" title="Fechar painel">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>' +
+            /* ⚠ o painel cobre a direita do 3D: "Outra janela" leva o painel para
+               uma janela própria (2º monitor) e o 3D fica inteiro aqui; "Minimizar"
+               tira o painel da frente e deixa uma etiqueta para trazê-lo de volta */
+            '<button class="btn sm ghost" data-gacao="bim-drawer-janela" style="margin-left:auto" title="Abrir este painel em outra janela (o 3D fica inteiro aqui)">' + _icB("abrir", 15) + '</button>' +
+            '<button class="btn sm ghost" data-gacao="bim-drawer-min" title="Minimizar o painel (fica uma etiqueta para trazer de volta)">' + _icB("voltar", 15) + '</button>' +
+            '<button class="btn sm ghost" data-gacao="bim-drawer-fechar" title="Fechar painel">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>' +
           '<div id="bim-drawer-body" style="flex:1;overflow-y:auto;padding:12px">' +
 
         '<div id="bim-modelos" style="display:none">' +
@@ -12661,18 +12706,29 @@
 
           "</div>" + // /#bim-drawer-body
         "</div>" +   // /#bim-drawer
+        /* a etiqueta do painel minimizado ou levado para outra janela */
+        '<button type="button" id="bim-drawer-pill" class="bim-drawer-pill" data-gacao="bim-drawer-restaurar" style="display:none"></button>' +
         "</div>";    // /card do viewer
-      html += '<p class="muted" style="font-size:12.5px;margin-top:10px">Carregue um modelo <b>.IFC</b> (exportado do Revit/pyRevit) — use <b>Exemplo</b> pra testar. As ferramentas ficam no <b>dock à esquerda</b>, agrupadas por categoria (passe o mouse ou toque pra expandir); Quantitativos, Compatibilização, 4D e 6D/7D abrem no grupo <b>Análise & Orçamento</b>, numa gaveta dentro do próprio visualizador. Duplo-clique num elemento mostra as propriedades.</p>';
+      /* ⚠ SEM PARÁGRAFO DE AJUDA EMBAIXO: ele empurrava a página e, com a janela
+         do BIM ajustada à altura da tela (_bimAjustarAltura), sobrava só ele
+         numa faixa vazia. O recado de como começar está no palco vazio (bim.js). */
       return html;
     },
     /* v1.1.121 — abre a gaveta de análise do viewer no painel pedido (chamado pelo
      * dock do BIM via opts.onPainel; um painel por vez pra leitura limpa). */
+    _BIM_PAINEIS: { modelos: ["bim-modelos", "Modelos carregados"], "4d": ["bim-4d", "Simulação 4D"], clash: ["bim-clash", "Compatibilização"], qto: ["bim-qto", "Quantitativos"], familias: ["bim-familias", "Banco de famílias"], "6d": ["bim-6d", "6D/7D · Ciclo de vida"], conjuntos: ["bim-conjuntos", "Conjuntos de seleção"], vistas: ["bim-vistas", "Pontos de vista"], tarefas4d: ["bim-tarefas", "Cronograma 4D"], disc: ["bim-disc", "Disciplinas e etapas construtivas"], estrut: ["bim-estrut", "Projeto estrutural no canteiro"],
+                   sondagem: ["bim-sondagem", "Sondagem 3D"], pranchas: ["bim-pranchas", "Pranchas do projeto"] },
     _bimAbrirPainel: function (chave) {
-      var mapa = { modelos: ["bim-modelos", "Modelos carregados"], "4d": ["bim-4d", "Simulação 4D"], clash: ["bim-clash", "Compatibilização"], qto: ["bim-qto", "Quantitativos"], familias: ["bim-familias", "Banco de famílias"], "6d": ["bim-6d", "6D/7D · Ciclo de vida"], conjuntos: ["bim-conjuntos", "Conjuntos de seleção"], vistas: ["bim-vistas", "Pontos de vista"], tarefas4d: ["bim-tarefas", "Cronograma 4D"], disc: ["bim-disc", "Disciplinas e etapas construtivas"], estrut: ["bim-estrut", "Projeto estrutural no canteiro"],
-                   sondagem: ["bim-sondagem", "Sondagem 3D"], pranchas: ["bim-pranchas", "Pranchas do projeto"] };
+      var mapa = this._BIM_PAINEIS;
       var alvo = mapa[chave]; if (!alvo) return;
       var drawer = document.getElementById("bim-drawer"); if (!drawer) return;
+      /* o painel que está em OUTRA JANELA continua lá: pedir ele de novo só
+         traz aquela janela para a frente; os outros abrem na gaveta sem tocá-lo */
+      var pop = this._bimPop;
+      if (pop && pop.chave === chave && pop.w && !pop.w.closed) { try { pop.w.focus(); } catch (eF) {} return; }
+      this._bimPillEsconder();
       Object.keys(mapa).forEach(function (k) {
+        if (pop && pop.chave === k) return;
         var el = document.getElementById(mapa[k][0]);
         if (el) el.style.display = (k === chave) ? "" : "none";
       });
@@ -12728,7 +12784,157 @@
     _bimFecharDrawer: function () {
       var drawer = document.getElementById("bim-drawer");
       if (drawer) drawer.style.display = "none";
+      this._bimPillEsconder();
       try { this._b4Casca(false); } catch (e4) {}   /* a coluna Propriedades e a fita voltam */
+    },
+    /* =====================================================================
+     * A JANELA DO BIM NA ALTURA DA TELA
+     * A casca nascia com min(84vh, 900px) e, abaixo dela, sobrava uma faixa
+     * vazia (medido na captura de 30/09/2026 num monitor 1080p). Agora ela vai
+     * do ponto onde começa até o pé da janela do navegador, e volta a medir
+     * quando a janela muda de tamanho. No modo foco (Maximizar) quem manda é
+     * o CSS (tela inteira) — a variável não interfere.
+     * ===================================================================== */
+    _bimAjustarAltura: function () {
+      var r = null;
+      try { r = (window.BimShell && BimShell.raiz) ? BimShell.raiz() : null; } catch (e) {}
+      if (!r || !document.body.contains(r)) return;
+      var rolado = window.pageYOffset || 0, n = r.parentElement;
+      while (n && n !== document.body) { rolado += n.scrollTop || 0; n = n.parentElement; }
+      var topo = r.getBoundingClientRect().top + rolado;
+      var h = Math.max(460, Math.floor((window.innerHeight || 800) - topo - 10));
+      r.style.setProperty("--rv-altura", h + "px");
+      try { if (window.BIM && BIM.redimensionar) BIM.redimensionar(); } catch (e2) {}
+    },
+
+    /* =====================================================================
+     * GAVETA: MINIMIZAR E ABRIR EM OUTRA JANELA
+     * O painel (Sondagem, Projeto estrutural, Pontos de vista…) cobre a
+     * direita do 3D. Minimizar tira ele da frente e deixa uma etiqueta no
+     * palco. "Outra janela" leva o painel para uma janela própria (2º
+     * monitor) e o 3D fica inteiro aqui.
+     *
+     * ⚠ COMO A OUTRA JANELA FUNCIONA — e por que é assim. O painel NÃO é
+     *   recriado lá: o MESMO nó do DOM é levado para a janela nova (o
+     *   navegador adota o nó com os eventos dele), e o código continua rodando
+     *   AQUI, com o mesmo Gestao, BIM e dados. Por isso o 3D reage ao painel
+     *   como antes (solo no 3D, ver no 3D, ir para a vista). O que precisou de
+     *   ponte, enquanto a janela existe:
+     *   (a) `document.getElementById/querySelector/querySelectorAll` desta
+     *       janela também procuram lá (os renders dos painéis buscam o corpo
+     *       deles pelo id);
+     *   (b) quadro (UI.modal) e recado (UI.toast) abrem na janela que tem o
+     *       foco (js/ui.js, window.__bimPop);
+     *   (c) o clique e o change de lá passam pela delegação do app.
+     *   Fechar a janela (ou "Trazer de volta") devolve o painel à gaveta e
+     *   desfaz a ponte.
+     * ===================================================================== */
+    _bimPainelVisivel: function () {
+      var mapa = this._BIM_PAINEIS, pop = this._bimPop, achou = null;
+      Object.keys(mapa).forEach(function (k) {
+        if (achou || (pop && pop.chave === k)) return;
+        var el = document.getElementById(mapa[k][0]);
+        if (el && el.style.display !== "none") achou = k;
+      });
+      return achou;
+    },
+    _bimPillMostrar: function (texto, titulo) {
+      var p = document.getElementById("bim-drawer-pill"); if (!p) return;
+      p.innerHTML = ((typeof Icones !== "undefined") ? Icones.get("voltar", 14) + " " : "") + Util.esc(texto);
+      p.title = titulo || texto;
+      p.style.display = "";
+    },
+    _bimPillEsconder: function () { var p = document.getElementById("bim-drawer-pill"); if (p) p.style.display = "none"; },
+    _bimDrawerMin: function () {
+      var drawer = document.getElementById("bim-drawer"); if (!drawer) return;
+      var tit = document.getElementById("bim-drawer-tit");
+      drawer.style.display = "none";
+      this._bimPillMostrar((tit && tit.textContent) || "Painel", "Trazer o painel de volta");
+      this._bimPillPop = false;
+    },
+    _bimDrawerRestaurar: function () {
+      /* a etiqueta do painel que está em outra janela traz a janela de volta */
+      if (this._bimPop && this._bimPop.w && !this._bimPop.w.closed) { this._bimPopDevolver(true); return; }
+      var drawer = document.getElementById("bim-drawer"); if (drawer) drawer.style.display = "flex";
+      this._bimPillEsconder();
+    },
+    _bimPopAbrir: function () {
+      var self = this, chave = this._bimPainelVisivel();
+      if (!chave) { UI.toast("Abra um painel antes de levá-lo para outra janela.", "aviso"); return; }
+      if (this._bimPop && this._bimPop.w && !this._bimPop.w.closed) this._bimPopDevolver(false);
+      var info = this._BIM_PAINEIS[chave], painel = document.getElementById(info[0]);
+      if (!painel) return;
+      var w = null;
+      try { w = window.open("", "orcapro-painel-bim", "width=1000,height=900,resizable=yes,scrollbars=yes"); } catch (e) { w = null; }
+      if (!w) { UI.toast("O navegador bloqueou a janela nova. Permita janelas (pop-up) para o OrçaPRO e clique de novo.", "erro", 6000); return; }
+      var obraNome = "";
+      try { var o = Store.obter(eid(), "obras", this._bimSel); obraNome = (o && o.nome) || ""; } catch (eO) {}
+      /* os estilos do app vão junto (os href relativos resolvem pela <base>) */
+      var estilos = [].slice.call(document.querySelectorAll('link[rel="stylesheet"], style')).map(function (n) { return n.outerHTML; }).join("");
+      var d = w.document;
+      d.open();
+      d.write('<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>' + Util.esc(info[1]) + ' — OrçaPRO</title><base href="' + Util.esc(location.href.split("#")[0]) + '">' + estilos + '</head>' +
+        '<body class="' + Util.esc(document.body.className || "") + '"><div class="bim-pop"><header class="bim-pop-cab"><b>' + Util.esc(info[1]) + '</b>' + (obraNome ? '<span class="muted"> · ' + Util.esc(obraNome) + '</span>' : '') +
+        '<span style="flex:1"></span><button type="button" class="btn sm" data-bim-pop="voltar" title="Devolve o painel à gaveta da janela principal">' + ((typeof Icones !== "undefined") ? Icones.get("voltar", 14) + " " : "") + 'Trazer de volta</button></header>' +
+        '<div class="bim-pop-corpo" id="bim-pop-corpo"></div></div><div id="toasts" class="toasts"></div></body></html>');
+      d.close();
+      try { [].slice.call(document.documentElement.attributes).forEach(function (a) { if (a.name !== "lang") d.documentElement.setAttribute(a.name, a.value); }); } catch (eA) {}
+      d.getElementById("bim-pop-corpo").appendChild(painel);
+      painel.style.display = "";
+      this._bimPop = { w: w, chave: chave, id: info[0], titulo: info[1] };
+      window.__bimPop = w;
+      this._bimPopPonte(true);
+      /* clique e change de lá seguem pela delegação do app (data-gacao etc.) */
+      d.body.addEventListener("click", function (e) {
+        var v = e.target && e.target.closest ? e.target.closest("[data-bim-pop]") : null;
+        if (v) { self._bimPopDevolver(true); return; }
+        try { if (typeof App !== "undefined" && App.onClick) App.onClick(e); } catch (eC) {}
+      });
+      d.body.addEventListener("change", function (e) { try { if (typeof App !== "undefined" && App.onChange) App.onChange(e); } catch (eCh) {} });
+      /* fechar a janela pelo X devolve o painel (senão ele morreria com ela) */
+      w.addEventListener("pagehide", function () { if (self._bimPop && self._bimPop.w === w) self._bimPopDevolver(false); });
+      if (!this._bimPopSaida) {
+        this._bimPopSaida = function () { try { if (self._bimPop && self._bimPop.w && !self._bimPop.w.closed) self._bimPop.w.close(); } catch (eS) {} };
+        window.addEventListener("pagehide", this._bimPopSaida);
+      }
+      var drawer = document.getElementById("bim-drawer"); if (drawer) drawer.style.display = "none";
+      this._bimPillMostrar(info[1] + " — em outra janela", "Trazer o painel de volta para esta janela");
+      try { w.focus(); } catch (eW) {}
+      requestAnimationFrame(function () { try { if (window.BIM && BIM.redimensionar) BIM.redimensionar(); } catch (eR) {} });
+    },
+    /* devolve o painel à gaveta; `reabrir` mostra a gaveta com ele (o "Trazer de volta") */
+    _bimPopDevolver: function (reabrir) {
+      var pop = this._bimPop; if (!pop) return;
+      this._bimPop = null;
+      window.__bimPop = null;
+      this._bimPopPonte(false);
+      var painel = null;
+      try { painel = pop.w && pop.w.document ? pop.w.document.getElementById(pop.id) : null; } catch (e) { painel = null; }
+      var corpo = document.getElementById("bim-drawer-body");
+      if (painel && corpo) { corpo.appendChild(painel); painel.style.display = "none"; }
+      try { if (pop.w && !pop.w.closed) pop.w.close(); } catch (e2) {}
+      this._bimPillEsconder();
+      if (reabrir) this._bimAbrirPainel(pop.chave);
+    },
+    /* a ponte das buscas por id/seletor (ver o cabeçalho acima) */
+    _bimPopPonte: function (ligar) {
+      var D = document;
+      if (ligar) {
+        if (this._bimPonteOrig) return;
+        var o = { gid: D.getElementById, qs: D.querySelector, qsa: D.querySelectorAll, cont: D.body.contains };
+        this._bimPonteOrig = o;
+        var lado = function () { var w = window.__bimPop; try { return (w && !w.closed && w.document) ? w.document : null; } catch (e) { return null; } };
+        D.getElementById = function (id) { var e = o.gid.call(D, id); if (e) return e; var L = lado(); return L ? L.getElementById(id) : null; };
+        D.querySelector = function (sel) { var e = o.qs.call(D, sel); if (e) return e; var L = lado(); if (!L) return null; try { return L.querySelector(sel); } catch (x) { return null; } };
+        D.querySelectorAll = function (sel) { var r = o.qsa.call(D, sel); if (r.length) return r; var L = lado(); if (!L) return r; try { return L.querySelectorAll(sel); } catch (x) { return r; } };
+        D.body.contains = function (n) { if (o.cont.call(D.body, n)) return true; var L = lado(); return !!(L && L.body && L.body.contains(n)); };
+        return;
+      }
+      var o2 = this._bimPonteOrig; if (!o2) return;
+      D.getElementById = o2.gid; D.querySelector = o2.qs; D.querySelectorAll = o2.qsa; D.body.contains = o2.cont;
+      /* as quatro eram do protótipo: tirar a própria da instância volta a ele */
+      try { delete D.getElementById; delete D.querySelector; delete D.querySelectorAll; delete D.body.contains; } catch (eD) {}
+      this._bimPonteOrig = null;
     },
     bimTrocaObra: function (obraId) {
       if (obraId == null) return; // clique da delegação (sem value): não zera a obra do 4D
@@ -20203,6 +20409,8 @@
             /* B1: o 🗑 da barra do viewer tira os modelos da OBRA também —
                senão a próxima entrada na aba devolve o que foi removido */
             onModelosRemovidos: function (lista) { self._bimAoRemoverModelos(lista); },
+            /* o arquivo da obra (.zip) solto no 3D ou escolhido no "+ IFC" */
+            onArquivoObra: function (f) { self._bimPacoteImportar(f); },
             // v1.1.121: innerHTML com Icones (textContent apagaria o ícone SVG do botão)
             onReuniao: function (n) { var b = document.getElementById("bim-btn-reuniao"); if (b) { var icR = (typeof Icones !== "undefined") ? Icones.get("obra", 14) : ""; b.innerHTML = icR + (n > 0 ? "Reunião · " + n + " online" : (BIM.reuniao && BIM.reuniao.ativa ? "Na sala…" : "Reunião")); b.style.background = n > 0 ? "#16a34a" : ""; b.style.color = n > 0 ? "#fff" : ""; } },
             onReuniaoFalha: function () { var b = document.getElementById("bim-btn-reuniao"); if (b) { b.innerHTML = ((typeof Icones !== "undefined") ? Icones.get("obra", 14) : "") + "Reunião"; b.style.background = ""; b.style.color = ""; } UI.toast("Não consegui manter a reunião conectada (sem internet?). Você saiu da sala; o modelo segue normal.", "erro"); },
@@ -44298,7 +44506,7 @@ renderFolha: function () {
       "fin-obra": 1, "compras-obra": 1, "med-obra": 1, "rdo-obra": 1, "req-obra": 1, "cot-obra": 1,
       "bim-troca-obra": 1, "lp-obra": 1, "lp-visao": 1, "fs-semana": 1, "fs-obra": 1, "prod-obra": 1,
       "galeria-abrir": 1, "galeria-fechar": 1, "galeria-nav": 1, "galeria-troca-obra": 1,
-      "bim-drawer-fechar": 1,
+      "bim-drawer-fechar": 1, "bim-drawer-min": 1, "bim-drawer-restaurar": 1, "bim-drawer-janela": 1,
       /* trocar a obra do quadro "Custo por centro" dos Relatórios só LÊ (mc-8B) */
       "rel-cc-obra": 1,
       /* a ficha da obra (palco de Obras) só LÊ e navega: abrir, trocar de
@@ -44391,6 +44599,9 @@ renderFolha: function () {
         case "pr-troca-obra": return this.prTrocaObra(dataset.value);
         case "bim-troca-obra": return this.bimTrocaObra(dataset.value);
         case "bim-drawer-fechar": return this._bimFecharDrawer();
+        case "bim-drawer-min": return this._bimDrawerMin();
+        case "bim-drawer-restaurar": return this._bimDrawerRestaurar();
+        case "bim-drawer-janela": return this._bimPopAbrir();
         case "bim-reuniao": return this.bimReuniao();
         case "bim-revit": return this.bimExportarRevit();
         case "bim-max": return this._b3Maximizar();

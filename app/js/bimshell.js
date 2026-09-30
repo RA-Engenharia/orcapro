@@ -197,6 +197,26 @@
       t.appendChild(nome);
 
       var dir = el("div", "rv-qat");
+      /* AS AÇÕES DA PÁGINA MORAM AQUI (Reunião, Maximizar, 3D em outra janela,
+         Revit, orçamento, quantitativo, QR). Eram duas linhas de botões ACIMA da
+         janela do BIM, que roubavam altura do 3D. Vêm prontas de quem monta
+         (opts.acoes) com o `data-gacao` de sempre: o clique segue pela delegação
+         do app (App.onClick), os ids ficam (as e2e e o contador da Reunião os
+         procuram) — só muda o lugar. */
+      if (opts.acoes && opts.acoes.length) {
+        var ac = el("div", "rv-titulo-acoes");
+        opts.acoes.forEach(function (a) {
+          var b = el("button", "rv-tacao" + (a.primario ? " rv-tacao-pri" : ""));
+          b.type = "button";
+          if (a.id) b.id = a.id;
+          if (a.gacao) b.setAttribute("data-gacao", a.gacao);
+          b.title = a.dica || a.rotulo || "";
+          b.setAttribute("aria-label", a.rotulo || a.dica || "");
+          b.innerHTML = ico(a.ico || "quadrado", 14) + '<span class="rv-tacao-rot">' + esc(a.rotulo || "") + "</span>";
+          ac.appendChild(b);
+        });
+        dir.appendChild(ac);
+      }
       var bTema = el("button");
       bTema.type = "button"; bTema.title = "Alternar tema claro/escuro";
       bTema.innerHTML = ico("tema", 15);
@@ -232,7 +252,50 @@
         };
         d.appendChild(b);
       });
+      d.appendChild(this._rapidos());
       return d;
+    },
+
+    /* ------------------------------------------------- BOTÕES RÁPIDOS
+     * À direita das abas, o que se usa o tempo todo e morava FLUTUANDO em cima
+     * do 3D (+ IFC, órbita/voo, enquadrar, ultra) — agora com o arquivo da obra.
+     * São comandos da fita: passam por `executar` e herdam disponibilidade e
+     * estado (aceso/apagado) do BimRibbon, repintados junto com a fita. */
+    _RAPIDOS: [
+      { id: "abrir-ifc", rot: "+ IFC", ico: "abrir", pri: true },
+      { id: "arquivo-obra", rot: "Arquivo da obra", ico: "pasta" },
+      { sep: true },
+      { id: "orbita", rot: "Órbita", ico: "ciclo" },
+      { id: "voo", rot: "Voo", ico: "voo" },
+      { id: "home", rot: "Enquadrar", ico: "casa" },
+      { id: "ultra", rot: "Ultra", ico: "estrela" }
+    ],
+    _rapidos: function () {
+      var self = this, d = el("div", "rv-abas-dir");
+      this._RAPIDOS.forEach(function (q) {
+        if (q.sep) { d.appendChild(el("span", "rv-rap-sep")); return; }
+        var b = el("button", "rv-rap" + (q.pri ? " rv-rap-pri" : ""));
+        b.type = "button";
+        b.setAttribute("data-rv-rap", q.id);
+        b.innerHTML = ico(q.ico, 14) + '<span class="rv-rap-rot">' + esc(q.rot) + "</span>";
+        b.onclick = function () { self.executar(q.id); };
+        d.appendChild(b);
+      });
+      return d;
+    },
+    _pintarRapidos: function () {
+      var r = R();
+      if (!this._raiz || !r) return;
+      var noVoo = r.ativo("voo");
+      this._raiz.querySelectorAll("[data-rv-rap]").forEach(function (b) {
+        var id = b.getAttribute("data-rv-rap"), c = r.comando(id), d = r.disponibilidade(id);
+        var rot = c ? String(c.rotulo || "").split("\n").join(" ") : id;
+        b.disabled = !d.ok;
+        b.title = d.ok ? ((c && c.dica) || rot) : (d.motivo || rot);
+        /* órbita é o "não voo": aceso quando há modelo e o voo está desligado */
+        var aceso = id === "orbita" ? (d.ok && !noVoo) : r.ativo(id);
+        if (id === "orbita" || (c && c.tipo === "alterna")) b.setAttribute("aria-pressed", aceso ? "true" : "false");
+      });
     },
 
     /* ------------------------------------------------------------ FITA */
@@ -241,6 +304,7 @@
       if (!this._raiz || !r) return;
       var fita = this._raiz.querySelector(".rv-fita");
       if (!fita) return;
+      this._pintarRapidos();
       var v = r.render();
       fita.innerHTML = "";
       if (!v) return;

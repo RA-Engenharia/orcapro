@@ -347,13 +347,17 @@ function montar(host, opts) {
    * caminhos não divergirem de novo (o drop descartava em silêncio o que o
    * seletor avisava). Ela é pura de propósito: tools/test-bim-skp.js a extrai
    * do fonte e a roda em Node. */
-  function aceitaIFC() { return ehToque() ? '' : ' accept=".ifc,.skp"'; }
+  function aceitaIFC() { return ehToque() ? '' : ' accept=".ifc,.skp,.zip"'; }
+  /* .zip = o ARQUIVO DA OBRA (pacote + modelo, js/pacoteobra.js): quem o
+     recebe no grupo solta ele aqui como soltaria um .ifc — e quem abre é a
+     tela (opts.onArquivoObra), que confere e importa tudo */
   function classificarEntradaBim(itens) {
-    var r = { ifc: [], skp: [], outros: [] };
+    var r = { ifc: [], skp: [], zip: [], outros: [] };
     (itens || []).forEach(function (it) {
       var nome = String(typeof it === 'string' ? it : ((it && it.name) || ''));
       if (/\.ifc$/i.test(nome)) r.ifc.push(it);
       else if (/\.skp$/i.test(nome)) r.skp.push(it);
+      else if (/\.zip$/i.test(nome)) r.zip.push(it);
       else r.outros.push(it);
     });
     return r;
@@ -372,6 +376,12 @@ function montar(host, opts) {
    * (rótulos de medida, controles de planta e corte, botão de recolher) já é
    * 4 ou 5 e é criado depois, então segue ganhando o empate como sempre. */
   bar.style.cssText = 'position:absolute;left:0;right:0;top:0;z-index:4;display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;background:linear-gradient(180deg,rgba(15,39,64,.9),rgba(15,39,64,0))';
+  /* ⚠ A MARCA É O QUE A CASCA USA PARA TIRAR A BARRA DE CIMA DO 3D. No
+     computador, com a fita no topo, cada botão daqui tem comando na fita
+     (BIM.botao aciona o daqui mesmo, escondido) — a barra continua no DOM
+     porque o estado de cada ferramenta e o despacho do clique moram nela.
+     No celular e no modo foco ela volta a aparecer (css/bim-revit.css). */
+  bar.setAttribute('data-bim-barra', '1');
   bar.innerHTML =
     '<button class="btn sm primary" data-b="abrir">' + ico('abrir') + '+ IFC</button>' +
     '<button class="btn sm" data-b="exemplo">Exemplo</button>' +
@@ -571,6 +581,7 @@ function montar(host, opts) {
   // vista. Um botão discreto no canto esconde/mostra todos os botões; o estado fica salvo.
   var barToggle = document.createElement('button');
   barToggle.className = 'btn sm';
+  barToggle.setAttribute('data-bim-barra-toggle', '1');
   barToggle.title = 'Mostrar ou esconder a barra de ferramentas (deixa a vista limpa)';
   // v1.1.114 — CELULAR: o toggle era pequeno e ficava no TOPO do viewer; rolando a página
   // pra ver o 3D ele saía da tela e o cliente "perdia" as ferramentas (relato real).
@@ -921,7 +932,7 @@ function montar(host, opts) {
 
   var over = document.createElement('div');
   over.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:2;pointer-events:none';
-  over.innerHTML = '<div style="pointer-events:auto;text-align:center;background:rgba(15,39,64,.82);border:2px dashed #2e6f9e;border-radius:16px;padding:28px 34px;max-width:420px;color:#dbe8f5"><div style="font-size:34px">' + (typeof Icones !== 'undefined' ? Icones.get('obra', 15) : '') + '</div><h3 style="margin:8px 0 6px">Arraste um <b>.IFC</b> aqui</h3><p style="color:#a9c1d8;font-size:13px;margin:4px 0">Exporte do Revit/pyRevit e solte — abre em 3D, offline. Ou clique em <b>Carregar exemplo</b>.</p></div>';
+  over.innerHTML = '<div style="pointer-events:auto;text-align:center;background:rgba(15,39,64,.82);border:2px dashed #2e6f9e;border-radius:16px;padding:28px 34px;max-width:420px;color:#dbe8f5"><div style="font-size:34px">' + (typeof Icones !== 'undefined' ? Icones.get('obra', 15) : '') + '</div><h3 style="margin:8px 0 6px">Arraste um <b>.IFC</b> aqui</h3><p style="color:#a9c1d8;font-size:13px;margin:4px 0">Exporte do Revit/pyRevit e solte — abre em 3D, offline. Recebeu o <b>arquivo da obra (.zip)</b> no grupo? Solte ele aqui, ou use <b>Arquivo da obra</b> no alto.</p></div>';
   host.appendChild(over);
 
   var loading = document.createElement('div');
@@ -1375,6 +1386,15 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var cls = classificarEntradaBim(lista);
     cls.ifc.forEach(function (f) { abrirArquivo(f); });
     if (cls.skp.length) orientarSketchUp(cls.skp.map(function (f) { return f.name; }));
+    /* um arquivo da obra por vez: dois .zip seriam dois modelos e dois resumos
+       empilhados; o segundo é dito, não engolido */
+    if (cls.zip.length) {
+      var oZ = (S && S.opts) || opts;
+      if (oZ && typeof oZ.onArquivoObra === 'function') {
+        oZ.onArquivoObra(cls.zip[0]);
+        if (cls.zip.length > 1) { try { UI.toast('Abri só o primeiro .zip (' + cls.zip[0].name + '). Mande um arquivo da obra por vez.', 'aviso'); } catch (_) {} }
+      } else cls.outros = cls.outros.concat(cls.zip);
+    }
     var maus = cls.outros;
     if (maus.length) {
       /* diz o nome do arquivo: "não é IFC" sem dizer qual, com vários
@@ -9855,6 +9875,18 @@ window.BIM = {
   setDisciplina: function (mid, d) { if (S && S._setDisciplina) S._setDisciplina(mid, d); },
   removerModelo: function (mid) { if (S && S._removerModelo) S._removerModelo(mid); },
   limpar: function () { if (S && S._limparTudo) S._limparTudo(); },
+  /* aciona um botão da barra do viewer pelo `data-b` — a fita no topo chama as
+     MESMAS ações (e o mesmo estado) em vez de reescrever cada uma. Devolve
+     false quando o botão não existe (ex.: Blocok numa conta sem ele). */
+  botao: function (k) {
+    if (!S || !S.bar) return false;
+    var b = S.bar.querySelector('[data-b="' + String(k).replace(/"/g, '') + '"]');
+    if (!b) return false;
+    b.click();
+    return true;
+  },
+  temBotao: function (k) { return !!(S && S.bar && S.bar.querySelector('[data-b="' + String(k).replace(/"/g, '') + '"]')); },
+  ultraAtivo: function () { return !!(S && S.ultra); },
   setUltra: function (v) { if (S && S._setUltra) S._setUltra(v); },
   // ---- reunião multi-usuário (avatares no modelo) ----
   reuniao: {

@@ -46,8 +46,17 @@
         { nome: "Projeto", comandos: [
           { id: "novo-projeto", rotulo: "Novo\nprojeto", icone: "obra", grande: true, dica: "Começa um projeto do zero: define os níveis e desenha as paredes aqui mesmo." },
           { id: "abrir-ifc", rotulo: "Abrir\nIFC", icone: "abrir", grande: true, dica: "Abre um modelo IFC exportado do Revit, ArchiCAD, SketchUp ou do nosso plugin." },
+          /* ⚠ SEM `requer` DE PROPÓSITO: é o caminho de quem ainda não tem modelo
+             aberto. O "Importar pacote" morava só em Pontos de vista, que pede
+             modelo — e o arquivo da obra (.zip) é justamente o que TRAZ o modelo.
+             Roteiro do defeito (30/09/2026): obra nova, BIM vazio, "Pontos de
+             vista" cinza — o passo 2 do LEIA-ME do grupo não tinha como ser feito. */
+          { id: "arquivo-obra", rotulo: "Arquivo\nda obra", icone: "pasta", grande: true, dica: "Abre o arquivo da obra (.zip) que chegou no grupo: o modelo, os pontos de vista, as pranchas, a sondagem e a ficha de cada peça, de uma vez. Também aceita o pacote (.json)." },
           { id: "gerar-volumetria", rotulo: "Gerar de\ndesenho", icone: "importar", grande: true, dica: "Levanta a volumetria a partir de PDF, DWG/DXF, foto de prancha ou croqui feito à mão." },
-          { id: "modelos", rotulo: "Modelos\nabertos", icone: "camadas", requer: "modelo", dica: "Federação: vários arquivos abertos juntos, com visibilidade e transparência por disciplina." }
+          { id: "modelos", rotulo: "Modelos\nabertos", icone: "camadas", requer: "modelo", dica: "Federação: vários arquivos abertos juntos, com visibilidade e transparência por disciplina." },
+          { id: "exemplo", rotulo: "Modelo de\nexemplo", icone: "obra", dica: "Abre um modelo de exemplo para conhecer as ferramentas." },
+          { id: "remover-modelos", rotulo: "Remover\nmodelos", icone: "lixeira", requer: "modelo", dica: "Tira os modelos desta obra do visualizador. O arquivo .ifc no seu computador continua onde está." },
+          { id: "p3d", rotulo: "Planta DXF\n→ 3D", icone: "importar", dica: "Reconstrói o 3D a partir da planta baixa em DXF (assistido: o sistema propõe as paredes, você confirma)." }
         ] },
         { nome: "Salvar e sair", comandos: [
           { id: "salvar-modelo", rotulo: "Salvar\nno projeto", icone: "salvar", requer: "modelo", dica: "Guarda o modelo e as edições dentro da obra." },
@@ -65,7 +74,8 @@
           { id: "pilar", rotulo: "Pilar", icone: "pilar", grande: true, tipo: "alterna", dica: "Lança pilar pela seção definida no tipo." },
           { id: "porta", emBreve: true, rotulo: "Porta", icone: "porta", grande: true, tipo: "alterna", requer: "modelo", dica: "Abre vão de porta na parede — o vão desconta da alvenaria e do revestimento." },
           { id: "janela", emBreve: true, rotulo: "Janela", icone: "janela", grande: true, tipo: "alterna", requer: "modelo", dica: "Abre vão de janela com peitoril; desconta do quantitativo e gera verga e contraverga." },
-          { id: "cobertura", emBreve: true, rotulo: "Cobertura", icone: "telhado", grande: true, tipo: "alterna", requer: "modelo", dica: "Telhado por inclinação e tipo de telha." }
+          { id: "cobertura", emBreve: true, rotulo: "Cobertura", icone: "telhado", grande: true, tipo: "alterna", requer: "modelo", dica: "Telhado por inclinação e tipo de telha." },
+          { id: "editor", rotulo: "Editor", icone: "editar", dica: "Cria paredes, lajes e pilares sintéticos, move, apaga e anota — salvo com a obra." }
         ] },
         { nome: "Tipo", comandos: [
           { id: "tipos-parede", rotulo: "Tipos de\nparede", icone: "camadas", grande: true, dica: "Biblioteca de paredes: bloco, espessura e as camadas de acabamento de cada face." },
@@ -90,7 +100,8 @@
         { nome: "Paginação", comandos: [
           { id: "paginar-alvenaria", rotulo: "Paginar\nalvenaria", icone: "grade", grande: true, requer: "modelo", dica: "Distribui as peças fiada a fiada, com amarração nos encontros em L, T e X." },
           { id: "elevacoes", rotulo: "Elevações\nde parede", icone: "prancha", grande: true, requer: "modelo", dica: "Gera a prancha de elevação de cada parede, com peças numeradas e lista de material." },
-          { id: "graute", emBreve: true, rotulo: "Graute e\narmadura", icone: "estrutura", requer: "modelo", dica: "Alvenaria estrutural: pontos de graute e armadura vertical, com m³ e kg." }
+          { id: "graute", emBreve: true, rotulo: "Graute e\narmadura", icone: "estrutura", requer: "modelo", dica: "Alvenaria estrutural: pontos de graute e armadura vertical, com m³ e kg." },
+          { id: "blocok", rotulo: "Plantas\nBlocok", icone: "prancha", requer: "modelo", dica: "Plantas executivas Blocok: a prancha de cada parede com as placas 90×90 numeradas e a tabela de material." }
         ] },
         { nome: "Conferência", comandos: [
           /* sem `requer` de propósito: os dois são paramétricos puros — não
@@ -125,7 +136,18 @@
           { id: "medir", rotulo: "Trena", icone: "medir", grande: true, tipo: "alterna", requer: "modelo", dica: "Mede a distância entre dois pontos do modelo." },
           { id: "area", rotulo: "Área", icone: "area", grande: true, tipo: "alterna", requer: "modelo", dica: "Mede área por um contorno de pontos." },
           { id: "angulo", rotulo: "Ângulo", icone: "angulo", grande: true, tipo: "alterna", requer: "modelo", dica: "Mede o ângulo entre duas direções." },
-          { id: "snap", rotulo: "Snap", icone: "ima", tipo: "menu", dica: "Onde a medição se agarra: vértice, meio da aresta, aresta, interseção." }
+          { id: "snap", rotulo: "Snap", icone: "ima", tipo: "menu", dica: "Onde a medição se agarra: vértice, meio da aresta, aresta, interseção." },
+          { id: "limpar-medidas", rotulo: "Apagar\nmedidas", icone: "lixeira", requer: "modelo", dica: "Apaga todas as cotas medidas com a trena, a área e o ângulo." }
+        ] },
+        /* cotar rede NÃO mede: mostra o comprimento que o projetista publicou no
+           IFC. Painel próprio pelo mesmo motivo do grupo próprio no dock. */
+        { nome: "Rede (tubos)", comandos: [
+          { id: "cota", rotulo: "Cotar\ntubo", icone: "regua", grande: true, requer: "modelo", dica: "Toque num tubo e o comprimento dele aparece em cima da peça — o número vem do IFC, não é medido na tela." },
+          { id: "cota-iguais", rotulo: "Cotar\niguais", icone: "camadas", requer: "modelo", dica: "Cota todos os trechos iguais ao último tocado." },
+          { id: "cota-todas", rotulo: "Cotar a\nrede toda", icone: "grade", requer: "modelo", dica: "Cota a rede inteira que estiver à vista." },
+          { id: "cota-numerar", rotulo: "Numerar\nrede", icone: "lista", requer: "modelo", dica: "Numera os tubos seguindo o encadeamento da rede (R01-T001…)." },
+          { id: "cota-planilha", rotulo: "Planilha\nda rede", icone: "planilha", requer: "modelo", dica: "Baixa a relação dos tubos por ramal: número, comprimento e a conexão de cada ponta." },
+          { id: "cota-limpar", rotulo: "Limpar\ncotas", icone: "lixeira", requer: "modelo", dica: "Apaga as cotas da rede." }
         ] },
         { nome: "Documentar", comandos: [
           { id: "cotas-auto", rotulo: "Cotas\nautomáticas", icone: "regua", grande: true, requer: "modelo", dica: "Gera as cadeias de cota da planta." },
@@ -162,7 +184,9 @@
         { nome: "Levantar", comandos: [
           { id: "qto", rotulo: "Quantitativos\ndo modelo", icone: "calculadora", grande: true, requer: "modelo", dica: "Levanta as quantidades direto da geometria, por categoria." },
           { id: "eap", rotulo: "Gerar\norçamento", icone: "ia", grande: true, requer: "modelo", dica: "O agente monta a EAP e casa cada serviço com a base de preços — sem inventar código." },
-          { id: "insumos-modelo", rotulo: "Insumos\ndo modelo", icone: "insumo", requer: "modelo", dica: "Todo insumo gasto: blocos, argamassa, graute, aço, tinta, cerâmica, rejunte." }
+          { id: "insumos-modelo", rotulo: "Insumos\ndo modelo", icone: "insumo", requer: "modelo", dica: "Todo insumo gasto: blocos, argamassa, graute, aço, tinta, cerâmica, rejunte." },
+          { id: "req-bim", rotulo: "Requisitar\nmaterial", icone: "estoque", requer: "modelo", dica: "Levanta as peças do modelo por família, casa com o banco de insumos e monta a requisição de material." },
+          { id: "familias", rotulo: "Banco de\nfamílias", icone: "tabela", dica: "Famílias salvas do modelo para reusar em qualquer projeto." }
         ] },
         { nome: "Conferir", comandos: [
           { id: "peso-total", rotulo: "Peso por\nnível", icone: "balanca", grande: true, requer: "modelo", dica: "Peso por parede, por nível e total." },
@@ -175,8 +199,10 @@
       paineis: [
         { nome: "Navegar", comandos: [
           { id: "home", rotulo: "Enquadrar\ntudo", icone: "casa", grande: true, requer: "modelo", dica: "Volta a ver o modelo inteiro." },
+          { id: "orbita", rotulo: "Órbita", icone: "ciclo", grande: true, requer: "modelo", dica: "Gira em volta do modelo com o mouse (o modo de sempre). Sai do modo de voo." },
           { id: "voo", rotulo: "Modo de\nvoo", icone: "voo", grande: true, tipo: "alterna", requer: "modelo", dica: "Anda pelo modelo com o teclado, como num jogo." },
-          { id: "imersivo", rotulo: "Realidade\nvirtual", icone: "vr", grande: true, requer: "modelo", pro: true, dica: "Entra no modelo em escala 1:1, pelo celular ou visor." }
+          { id: "imersivo", rotulo: "Realidade\nvirtual", icone: "vr", grande: true, requer: "modelo", pro: true, dica: "Entra no modelo em escala 1:1, pelo celular ou visor." },
+          { id: "ultra", rotulo: "Qualidade\nultra", icone: "estrela", tipo: "alterna", requer: "modelo", dica: "Nitidez máxima (usa mais a placa de vídeo)." }
         ] },
         { nome: "Exibir", comandos: [
           { id: "visibilidade", rotulo: "Visibilidade", icone: "olho", grande: true, requer: "modelo", dica: "Isola, oculta e usa raio-X na seleção." },
