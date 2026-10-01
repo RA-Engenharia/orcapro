@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.110",
+  "versao": "1.2.111",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.110.zip",
-  "notas": "Tabelas de preco se atualizam sozinhas, 1 vez por dia: SINAPI (onerada e desonerada), SICRO, ORSE, IOPES e GOINFRA, sem o botao Verificar atualizacao; SINAPI desonerada volta a acompanhar a competencia nova; SINAPI dos ultimos 8 meses disponivel para orcamento de licitacao; a barra da SINAPI saiu da lista de orcamentos (importar base propria fica em Tabelas); placa da obra com QR permanente, senha e cadastro de visitantes; o link 3D vai sem valores de custo e venda.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.110/OrcaPRO-IA-Instalador-v1.2.110.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.111.zip",
+  "notas": "Insumos e ABC: orcamento feito com composicao propria abre em insumos, com os filtros de mao de obra, material e equipamento; orcamento so com composicao propria abre a lista sem baixar a base analitica; item com preco diferente da sua composicao propria aparece numa lista propria, sem alterar nenhum valor.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.111/OrcaPRO-IA-Instalador-v1.2.111.exe"
 }

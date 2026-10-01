@@ -2353,8 +2353,12 @@
       if (typeof InsumosOrc === "undefined") return '<div class="vazio card">Módulo de insumos indisponível.</div>';
       if (!(orc.etapas || []).length) return '<div class="vazio card"><h3>Sem itens para abrir em insumos</h3><span class="muted">Monte a planilha primeiro: cada serviço lançado vira material, mão de obra e equipamento aqui.</span></div>';
 
+      var linhas = (typeof Orcamento !== "undefined") ? Orcamento.linhas(orc) : [];
+      var R = App._insumosOrcResolver();
       var temBase = (typeof Analitico !== "undefined" && Analitico.carregado);
-      if (!temBase) {
+      /* ⚠ o botao dos 17 MB so aparece se ALGUM item precisa do SINAPI: o
+         orcamento so de composicao propria abre direto da base propria */
+      if (!temBase && R.precisaAnalitico(linhas)) {
         /* ⚠ NAO CARREGA SOZINHO AO ABRIR A ABA. O analitico tem ~17 MB; puxar
            isso porque alguem passou pela aba gasta a franquia de quem esta no
            celular do canteiro. O botao deixa a escolha com quem le. */
@@ -2363,8 +2367,7 @@
           + '<button class="btn primary" data-acao="insumos-carregar-base">Carregar a base e abrir</button></div>';
       }
 
-      var linhas = (typeof Orcamento !== "undefined") ? Orcamento.linhas(orc) : [];
-      var res = InsumosOrc.consolidar(linhas, function (c) { return Analitico.obter(c); });
+      var res = InsumosOrc.consolidar(linhas, R.obter, { motivoSem: R.motivoSem });
       var abc = InsumosOrc.resumoABC(res);
       var f = App._insumosOrcFiltro || { busca: "", cat: "TODAS" };
       var lista = InsumosOrc.filtrar(res.insumos, f.busca, f.cat);
@@ -2379,7 +2382,7 @@
         + '<div class="kpi kpi-compacto"><div class="rotulo">Custo direto aberto</div><div class="num">' + Util.fmtMoeda(res.somaInsumos) + '</div>'
         + '<div class="kpi-sub">material, mão de obra e equipamento</div></div>'
         + '<div class="kpi kpi-compacto"><div class="rotulo">Cobertura</div><div class="num" style="color:' + corCob + '">' + Util.fmtNum(res.cobertura, 1) + '%</div>'
-        + '<div class="kpi-sub">' + (res.naoDetalhado.length ? res.naoDetalhado.length + ' item(ns) sem composição — ver abaixo' : 'todo o orçamento abriu em insumo') + '</div></div>'
+        + '<div class="kpi-sub">' + (res.naoDetalhado.length ? res.naoDetalhado.length + ' item(ns) fora da lista — ver abaixo' : 'todo o orçamento abriu em insumo') + '</div></div>'
         + '<div class="kpi kpi-compacto"><div class="rotulo">Classe A</div><div class="num">' + abc.A.n + '</div>'
         + '<div class="kpi-sub">' + Util.fmtMoeda(abc.A.valor) + ' — os que levam 80% do dinheiro</div></div>'
         + '</div></div>';
@@ -2407,7 +2410,8 @@
           html += '<tr><td><span class="ins-abc ins-' + x.classe + '">' + x.classe + '</span></td>'
             + '<td><b>' + Util.esc(x.descricao || "(sem descrição)") + '</b>'
             + '<div class="muted" style="font-size:11.5px">' + (x.codigo ? Util.esc(x.codigo) + " · " : "")
-            + self._catRotulo(x.categoria) + (x.emServicos > 1 ? " · em " + x.emServicos + " serviços" : "") + '</div></td>'
+            + self._catRotulo(x.categoria) + (x.emServicos > 1 ? " · em " + x.emServicos + " serviços" : "")
+            + (x.subcomposicao ? ' · <span title="Composição usada dentro de outra. Entra aqui como uma linha só: a mão de obra e o material dela não foram separados.">subcomposição, não aberta</span>' : '') + '</div></td>'
             + '<td>' + Util.esc(x.unidade || "") + '</td>'
             + '<td class="num">' + Util.fmtNum(x.quantidade, 2) + '</td>'
             + '<td class="num">' + Util.fmtMoeda(x.custoUnitario) + '</td>'
@@ -2424,7 +2428,7 @@
         html += '<div class="card" style="margin-top:14px">'
           + '<h3 style="margin:0 0 6px">' + res.naoDetalhado.length + ' item(ns) fora da lista de compras</h3>'
           + '<p class="muted" style="font-size:12.5px;margin:0 0 10px">Somam <b>' + Util.fmtMoeda(res.custoFechado)
-          + '</b> do custo direto e não viraram material porque não têm composição na base analítica. O valor está no orçamento; o que falta é o detalhamento.</p>'
+          + '</b> do custo direto e não viraram material porque não abriram em insumos — o motivo de cada um está na última coluna. O valor está no orçamento; o que falta é o detalhamento.</p>'
           + '<table class="tbl"><thead><tr><th>Código</th><th>Serviço</th><th class="num">Custo</th><th>Por quê</th></tr></thead><tbody>';
         res.naoDetalhado.slice(0, 40).forEach(function (x) {
           html += '<tr><td>' + Util.esc(x.codigo || "—") + '</td><td>' + Util.esc(x.descricao || "—") + '</td>'
@@ -2434,6 +2438,30 @@
         html += '</tbody></table>';
         if (res.naoDetalhado.length > 40) html += '<p class="muted" style="font-size:11.5px;margin:8px 0 0">Mostrando os 40 maiores de ' + res.naoDetalhado.length + '.</p>';
         html += '</div>';
+      }
+
+      /* ⚠ COMPOSICAO PROPRIA COM PRECO DIFERENTE DO ITEM. A lista acima usa
+         o custo de cada insumo, e nao o preco do item; quando o item foi
+         editado na planilha (ou a composicao mudou depois de lancada), a
+         soma dos insumos nao fecha com o custo direto. Sem este cartao o
+         "Custo direto aberto" parece conta errada. NAO se corrige nada
+         sozinho: qual dos dois esta certo e decisao de quem orca. */
+      var dv = res.divergentes || [];
+      if (dv.length) {
+        var somaDv = 0;
+        dv.forEach(function (x) { somaDv += x.diferencaTotal; });
+        html += '<div class="card" style="margin-top:14px">'
+          + '<h3 style="margin:0 0 6px">' + dv.length + ' item(ns) com preço diferente da composição</h3>'
+          + '<p class="muted" style="font-size:12.5px;margin:0 0 10px">A lista acima soma o custo dos insumos da composição própria; o orçamento usa o preço do item. '
+          + 'Nestes itens os dois não batem e a diferença soma <b>' + Util.fmtMoeda(somaDv) + '</b>. Nada foi alterado: confira qual está certo e ajuste o item ou a composição.</p>'
+          + '<table class="tbl"><thead><tr><th>Código</th><th>Serviço</th><th class="num">Preço do item</th><th class="num">Soma da composição</th><th class="num">Diferença no total</th></tr></thead><tbody>';
+        dv.slice(0, 40).forEach(function (x) {
+          html += '<tr><td>' + Util.esc(x.codigo || "—") + '</td><td>' + Util.esc(x.descricao || "—") + '</td>'
+            + '<td class="num">' + Util.fmtMoeda(x.custoItem) + '</td>'
+            + '<td class="num">' + Util.fmtMoeda(x.custoComposicao) + '</td>'
+            + '<td class="num"><b>' + Util.fmtMoeda(x.diferencaTotal) + '</b></td></tr>';
+        });
+        html += '</tbody></table></div>';
       }
       return html;
     },

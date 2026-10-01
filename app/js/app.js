@@ -1483,14 +1483,31 @@
       });
     },
 
+    /* Onde cada item abre em insumos — a tela e o CSV leem daqui, para os
+       dois nunca discordarem. A regra mora em InsumosOrc.resolvedor; aqui
+       so se entregam as bases do app. ⚠ Ate 01/10/2026 a tela olhava so o
+       analitico SINAPI e todo item de composicao propria caia em "sem
+       composicao na base" (ver o roteiro em js/insumosorc.js). */
+    _insumosOrcResolver: function () {
+      var temAna = (typeof Analitico !== "undefined" && !!Analitico.carregado);
+      var B = (typeof Bases !== "undefined" && Bases.obter) ? Bases : null;
+      return InsumosOrc.resolvedor({
+        temAnalitico: temAna,
+        sinapi: function (c) { return temAna ? Analitico.obter(c) : null; },
+        base: function (f, c) { return B ? B.obter(f, String(c)) : null; },
+        oficial: function (c) { return (typeof Sinapi !== "undefined" && Sinapi.obter) ? !!Sinapi.obter(String(c)) : false; }
+      });
+    },
+
     /* O CSV sai do RECORTE que esta na tela, e o nome do arquivo diz qual —
        exportar filtrado e receber tudo (ou o contrario) e a pior forma de
        errar: o arquivo tem a cara de um recorte e o conteudo de outro. */
     _insumosCsv: function () {
       if (typeof InsumosOrc === "undefined" || !this.orcAtual) return;
-      if (typeof Analitico === "undefined" || !Analitico.carregado) { UI.toast("Carregue a base analítica primeiro.", "erro"); return; }
       var linhas = Orcamento.linhas(this.orcAtual);
-      var res = InsumosOrc.consolidar(linhas, function (c) { return Analitico.obter(c); });
+      var R = this._insumosOrcResolver();
+      if (R.precisaAnalitico(linhas) && (typeof Analitico === "undefined" || !Analitico.carregado)) { UI.toast("Carregue a base analítica primeiro.", "erro"); return; }
+      var res = InsumosOrc.consolidar(linhas, R.obter, { motivoSem: R.motivoSem });
       var f = this._insumosOrcFiltro || { busca: "", cat: "TODAS" };
       var lista = InsumosOrc.filtrar(res.insumos, f.busca, f.cat);
       var sep = ";";
