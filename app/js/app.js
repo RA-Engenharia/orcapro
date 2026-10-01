@@ -200,6 +200,11 @@
       try {
         var u0 = Auth.usuario();
         if (u0) {
+          /* a lista de pontos de vista ainda na forma antiga volta ao disco
+             compactada ANTES da medida (js/store.js, `compactarGuardado`):
+             sem isto o aviso abaixo saía de novo na primeira abertura depois
+             da atualização, apontando um espaço que já não está ocupado */
+          try { if (Store.compactarGuardado) Store.compactarGuardado(u0.empresaId); } catch (eCg) {}
           var sd = Store.saude(u0.empresaId);
           /* ⚠ O AVISO DIZIA "remova bases não usadas em Tabelas" — e as bases
              não ocupam um byte deste limite: elas vivem no IndexedDB. O

@@ -328,6 +328,15 @@
     return Store.lerParaSync ? Store.lerParaSync(empresaId, ent)
                              : Store.adapter.ler(empresaId, ent, vazioDe(ent));
   }
+  /* ⚠ A FORMA GUARDADA NA NUVEM (js/store.js, nota GUARDAR): os pontos de
+   * vista do BIM sobem com o prefixo da chave dito uma vez — inteiros, 74
+   * vistas de um pacote da obra passavam do teto de 1 MiB do documento e a
+   * lista era recusada a cada sync. O que desce é ABERTO antes do merge: o
+   * merge e a conferência "nada mudou" do `escutar` comparam registros, e a
+   * mesma vista numa forma de cada lado viraria escrita a cada snapshot.
+   * Store antigo sem as funções: passa intacto (o comportamento de sempre). */
+  function paraNuvem(ent, v) { return (Store.compactar ? Store.compactar(ent, v) : v); }
+  function daNuvem(ent, v) { return (Store.expandir ? Store.expandir(ent, v) : v); }
 
   /* ⚠ CONTEÚDO LOCAL ILEGÍVEL NÃO ENTRA NO MERGE NEM SOBE (js/store.js, nota
    * da quarentena). O `lerEnt` de uma entidade corrompida devolve `[]`, e:
@@ -963,7 +972,7 @@
            tamanho no catch → reprova). */
         var cargaU = null;
         return self._doc(ent).get().then(function (snap) {
-          var cloud = snap.exists ? snap.data().v : null;
+          var cloud = snap.exists ? daNuvem(ent, snap.data().v) : null;
           var local = lerEnt(empresaId, ent);
           /* ⚠ ver `ilegivelLocal`: nem merge, nem marca, nem subida */
           if (ilegivelLocal(empresaId, ent)) {
@@ -986,8 +995,11 @@
              A base comum é o que ficou igual nos DOIS lados, não só o que
              este aparelho subiu. */
           self._marcarSync(empresaId, ent, merged);
+          /* o que SOBE é a forma guardada (ver `paraNuvem`); o tamanho que
+             o aviso mede e o "nada mudou" comparam esta mesma carga */
+          var subir = paraNuvem(ent, merged);
           var carga = "";
-          try { carga = JSON.stringify(merged); } catch (e) { carga = ""; }
+          try { carga = JSON.stringify(subir); } catch (e) { carga = ""; }
           cargaU = carga;
           /* nada mudou dos dois lados? não sobe. Antes subia sempre, e o
              `em: Date.now()` fazia o outro aparelho reagir a uma escrita que
@@ -999,7 +1011,7 @@
              podia crescer por conflito até o teto do Firestore sem nenhum recado */
           self._avisarTamanho(ent, carga);
           self._ultimoEnviado[ck] = carga;
-          return self._doc(ent).set({ v: merged, em: Date.now() }).then(function () { return true; });
+          return self._doc(ent).set({ v: subir, em: Date.now() }).then(function () { return true; });
         }).catch(function (e) {
           /* NÃO engolir: 32 de 32 entidades reprovadas viravam "sincronizado". */
           falhou++;
@@ -1121,7 +1133,7 @@
         var un = self._doc(ent).onSnapshot(function (snap) {
           if (!snap.exists) return;
           if (snap.metadata && snap.metadata.hasPendingWrites) return; // ignora o eco do próprio write
-          var cloud = snap.data().v;
+          var cloud = daNuvem(ent, snap.data().v);
           var aplicar = function () {
             var local = lerEnt(empresaId, ent);
             if (ilegivelLocal(empresaId, ent)) return;   // ⚠ ver `ilegivelLocal`
@@ -1276,11 +1288,12 @@
           /* ⚠ o `[]` de uma leitura ilegível NÃO sobe: ele substituiria na
              nuvem a lista que os outros aparelhos ainda têm (ver `ilegivelLocal`) */
           if (ilegivelLocal(empresaId, ent)) return;
-          try { carga = JSON.stringify(v); } catch (e) { carga = ""; }
+          var vN = paraNuvem(ent, v);                                   // a forma guardada (ver `paraNuvem`)
+          try { carga = JSON.stringify(vN); } catch (e) { carga = ""; }
           if (carga && self._ultimoEnviado[chave] === carga) return;   // nada mudou: não escreve
           self._avisarTamanho(ent, carga);
           self._ultimoEnviado[chave] = carga; marcou = true;
-          self._doc(ent).set({ v: v, em: Date.now() }).then(function () {
+          self._doc(ent).set({ v: vN, em: Date.now() }).then(function () {
             self._marcarSync(empresaId, ent, v); // o que subiu vira a base comum
           }).catch(function (e) {
             /* a escrita falhou: esquece a marca, senão a próxima tentativa
@@ -1345,7 +1358,15 @@
              não existisse, o guard passava e a linha seguinte estourava
              ReferenceError — derrubando o push inteiro em vez de cair no "?".
              No navegador funcionaria por acaso, porque lá `CONFIG` é global. */
-          var verAtual = (global.CONFIG && global.CONFIG.app && global.CONFIG.app.versao) || "?";
+          /* ⚠ E A VERSÃO MORA EM `CONFIG.versao` (js/config.js). Esta linha
+             lia `CONFIG.app.versao`, que não existe: dava sempre "?", a marca
+             nunca mudava de versão e o aviso saía UMA VEZ NA VIDA do aparelho
+             — não "uma vez por versão" como a nota acima promete: a lista
+             avisada uma vez continuava crescendo, versão após versão, até
+             passar do teto calada. `app.versao` fica como segunda leitura só
+             por compatibilidade. */
+          var cfg = global.CONFIG || null;
+          var verAtual = (cfg && (cfg.versao || (cfg.app && cfg.app.versao))) || "?";
           var jaAvisado = self._avisouTamanho[ent];
           if (!jaAvisado) {
             try { jaAvisado = global.localStorage.getItem(marcaTam) === verAtual; } catch (eL) {}

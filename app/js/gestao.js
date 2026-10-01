@@ -13900,7 +13900,12 @@
         var dv = BimVista.doPacote(p, gid2ch, obra, agora); faltam = dv.pecasFaltando;
         var ex = this._bimVistaDaObra();
         var cs = PacoteObra.casar(ex, dv.vistas, "origemId");
-        cs.registros.forEach(function (v) { v.obraId = obra; Store.salvar(eid(), "bim_vistas", v); });
+        /* uma gravação para o pacote inteiro, não uma por vista: cada
+           `salvar` relê e regrava a lista toda (agora compactando e
+           conferindo, js/store.js GUARDAR) — 73 vistas eram 1,7 s de aba
+           parada; assim é uma volta só, pelo mesmo funil */
+        cs.registros.forEach(function (v) { v.obraId = obra; });
+        Store.salvarVarios(eid(), "bim_vistas", cs.registros);
         nV = cs;
       }
       var sd = (p.sondagens || []).map(function (s) { var o = JSON.parse(JSON.stringify(s)); o.origemId = String(s.id || s.origemId || ""); delete o.id; o.obraId = obra; o.criadoEm = agora; return o; });

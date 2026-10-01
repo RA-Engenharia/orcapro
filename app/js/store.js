@@ -241,7 +241,10 @@
         return false;
       }
       try {
-        localStorage.setItem(chave(empresaId, entidade), JSON.stringify(valor));
+        /* a forma GUARDADA da entidade (ver GUARDAR: bim_vistas sem o
+           prefixo repetido); `valor` em si não muda */
+        var gd = Object.prototype.hasOwnProperty.call(GUARDAR, entidade) ? GUARDAR[entidade](valor) : valor;
+        localStorage.setItem(chave(empresaId, entidade), JSON.stringify(gd));
         return true;
       } catch (e) {
         console.error("[store] falha ao gravar", entidade, e);
@@ -326,6 +329,9 @@
       return { ok: true, quarentena: m.quarentena, bytes: raw.length };
     }
   };
+  /* o gravador SEM o embrulho da nuvem (js/nuvem.js `_patch` troca a função
+     no próprio objeto): só `compactarGuardado` usa — ver a nota lá */
+  var _gravarLocal = LocalAdapter.gravar;
 
   /* ---------- Blobs GRANDES (IndexedDB) ----------
    * A base SINAPI enriquecida (~3 MB) e as bases extras estouram a cota de
@@ -515,7 +521,198 @@
     }
     return l;
   }
-  var FORMAS = { precosinsumos: precosInsumoParaLista };
+
+  /* =====================================================================
+   * ⚠ PONTOS DE VISTA DO BIM: A CHAVE DA PEÇA SEM O PREFIXO REPETIDO
+   *
+   * O DEFEITO (01/10/2026, aparelho do dono): "Armazenamento local em 82% —
+   *   o maior é bim_vistas com 1437 KB". Medido no backup: 74 vistas (73
+   *   vindas de um pacote da obra), 12.567 chaves de peça em
+   *   `visibilidade.isolados`/`raioXAlvo` e 1.829 em `aparencias`. A chave do
+   *   B0 é `obraId/modeloId::GlobalId` (js/bimid.js) e TODAS as chaves eram
+   *   do mesmo modelo: 65 dos 87 caracteres de cada uma eram o mesmo prefixo.
+   *   Dois estragos juntos:
+   *    - o localStorage (~5 M caracteres por origem) chegando ao teto — e
+   *      cheio, a gravação seguinte falha;
+   *    - a nuvem guarda a entidade INTEIRA num documento só, com teto de
+   *      1 MiB: a lista de vistas era recusada a cada sincronização e os
+   *      outros aparelhos nunca as recebiam.
+   *
+   * A CORREÇÃO: cada lista de chaves é GUARDADA (disco e nuvem) com o prefixo
+   *   dito uma vez. Em memória nada muda — quem lê pelo Store recebe a chave
+   *   inteira, como sempre (bim.js, BCF, Projeto estrutural, placa da obra).
+   *   Lista guardada: [MARCA, "<prefixo>::", "GlobalId", "GlobalId", …]
+   *    - MARCA ("@prefixo") no índice 0 diz que a lista está compactada.
+   *      Lista sem ela é aberta EXATAMENTE como está: o disco e a nuvem de
+   *      hoje, e os aparelhos que ainda não atualizaram, continuam valendo.
+   *    - item que termina em "::" troca o prefixo corrente ("::" sozinho =
+   *      sem prefixo);
+   *    - item sem "::" = prefixo corrente + item;
+   *    - item com "::" no meio = chave inteira, como sempre.
+   *   Medido no mesmo backup: 1.437 KB → ~530 KB.
+   *
+   * ⚠ POR QUE MARCA DENTRO DA LISTA, E NÃO UM CAMPO NOVO NO REGISTRO. O
+   *   aparelho que ainda não atualizou recebe a lista compactada pela nuvem.
+   *   O normalizador dele (`BimVista.vista`) DESCARTA campo que não conhece —
+   *   um `prefixo` num campo à parte sumiria na primeira edição feita lá, e
+   *   as chaves viveriam órfãs para sempre. Dentro da lista, a marca e os
+   *   prefixos sobrevivem a ele: `chaves()` só apara e tira repetido.
+   *   Por isso também a regra de NUNCA repetir um item na lista guardada (o
+   *   tira-repetido do aparelho antigo comeria o segundo): prefixo que
+   *   precisaria voltar e GlobalId igual em dois modelos saem como chave
+   *   inteira. No aparelho antigo a vista compactada abre sem achar as peças
+   *   ("não localizada") até ele atualizar — nada é apagado nem regravado.
+   *
+   * ⚠ A COMPACTAÇÃO SE CONFERE ANTES DE VALER. `compactarVistas` abre o que
+   *   acabou de compactar e compara com o original, caractere a caractere;
+   *   se não for idêntico, guarda o original. Pior caso: ocupa o que ocupava.
+   *   Nunca: guardar outra coisa.
+   *
+   * Prova: tools/test-vistas-compactas.js.
+   * ===================================================================== */
+  var MARCA_COMPACTA = "@prefixo";
+  var SEP_CHAVE = "::";
+  function _ehPrefixo(s) { return typeof s === "string" && s.length >= 2 && s.slice(-2) === SEP_CHAVE; }
+
+  /* `itens` = a lista guardada; `ler(item)` dá a chave do item (ou null se o
+     item não tem chave), `com(item, chave)` devolve o item com outra chave. */
+  function _abrirChaves(itens, ler, com) {
+    if (!Array.isArray(itens) || !itens.length || ler(itens[0]) !== MARCA_COMPACTA) return itens;
+    var out = [], pre = "";
+    for (var i = 1; i < itens.length; i++) {
+      var it = itens[i], s = ler(it);
+      if (typeof s !== "string") { out.push(it); continue; }
+      if (_ehPrefixo(s)) { pre = (s === SEP_CHAVE) ? "" : s; continue; }
+      out.push(s.indexOf(SEP_CHAVE) >= 0 ? it : com(it, pre + s));
+    }
+    return out;
+  }
+  function _compactarChaves(itens, ler, com, marca) {
+    if (!Array.isArray(itens) || itens.length < 2) return itens;
+    var n0 = ler(itens[0]);
+    if (n0 === MARCA_COMPACTA) return itens;                 // já está guardada
+    /* as chaves de cada prefixo, para saber se vale abrir um prefixo (≥ 2) */
+    var conta = {};
+    for (var c = 0; c < itens.length; c++) {
+      var sc = ler(itens[c]), pc = (typeof sc === "string") ? sc.indexOf(SEP_CHAVE) : -1;
+      if (pc > 0 && pc + 2 < sc.length) { var bc = sc.slice(0, pc + 2); conta[bc] = (conta[bc] || 0) + 1; }
+    }
+    var out = [marca(MARCA_COMPACTA)], pre = "", abertos = {}, ditos = {}, ganhou = false;
+    ditos[MARCA_COMPACTA] = 1;
+    function poe(it, s) { out.push(it); ditos[s] = 1; }
+    for (var i = 0; i < itens.length; i++) {
+      var it = itens[i], s = ler(it);
+      if (typeof s !== "string") { out.push(it); continue; }
+      var p = s.indexOf(SEP_CHAVE);
+      if (p < 0) {
+        /* chave sem prefixo: só pode sair "crua" com o prefixo zerado */
+        if (pre !== "") {
+          if (abertos[SEP_CHAVE]) return itens;              // precisaria repetir o "::" — não compacta
+          abertos[SEP_CHAVE] = 1; pre = ""; out.push(marca(SEP_CHAVE));
+        }
+        if (ditos[s]) return itens;                          // repetida: o tira-repetido antigo comeria
+        poe(it, s); continue;
+      }
+      /* "::" no começo ou no fim: chave que o BimId nunca gera, e que a
+         leitura confundiria com prefixo — a lista fica como está */
+      if (p === 0 || p + 2 >= s.length) return itens;
+      var b = s.slice(0, p + 2), suf = s.slice(p + 2);
+      var sufOk = suf.indexOf(SEP_CHAVE) < 0 && !ditos[suf];
+      if (b === pre && sufOk) { poe(com(it, suf), suf); ganhou = true; continue; }
+      if (b !== pre && sufOk && !abertos[b] && conta[b] >= 2) {
+        abertos[b] = 1; pre = b; out.push(marca(b)); ditos[b] = 1;
+        poe(com(it, suf), suf); ganhou = true; continue;
+      }
+      if (ditos[s]) return itens;
+      poe(it, s);                                            // chave inteira: vale com qualquer prefixo
+    }
+    return ganhou ? out : itens;
+  }
+
+  function _lerTexto(s) { return typeof s === "string" ? s : null; }
+  function _comTexto(s, nova) { return nova; }
+  function _marcaTexto(s) { return s; }
+  /* aparência: { chave, cor, alpha } — a cópia mantém a ORDEM dos campos (a
+     conferência compara o texto) e só troca a chave */
+  function _lerAparencia(a) { return (a && typeof a === "object" && typeof a.chave === "string") ? a.chave : null; }
+  function _comAparencia(a, nova) {
+    var r = {};
+    for (var k in a) if (Object.prototype.hasOwnProperty.call(a, k)) r[k] = (k === "chave") ? nova : a[k];
+    return r;
+  }
+  function _marcaAparencia(s) { return { chave: s }; }
+
+  /* o registro de vista, com as listas de chave trocadas. `abrir` = true lê,
+     false guarda. Nunca mexe no objeto recebido: quem grava continua com
+     ele na mão (o merge da nuvem usa a mesma lista para a marca do sync). */
+  function _vistaComChaves(v, abrir) {
+    if (!v || typeof v !== "object") return v;
+    var fT = abrir ? function (l) { return _abrirChaves(l, _lerTexto, _comTexto); }
+                   : function (l) { return _compactarChaves(l, _lerTexto, _comTexto, _marcaTexto); };
+    var fA = abrir ? function (l) { return _abrirChaves(l, _lerAparencia, _comAparencia); }
+                   : function (l) { return _compactarChaves(l, _lerAparencia, _comAparencia, _marcaAparencia); };
+    var r = null;
+    function troca(dono, campo, f) {
+      var src = dono && dono[campo];
+      if (!Array.isArray(src)) return dono;
+      var nv = f(src);
+      if (nv === src) return dono;
+      var d2 = {};
+      for (var k in dono) if (Object.prototype.hasOwnProperty.call(dono, k)) d2[k] = (k === campo) ? nv : dono[k];
+      return d2;
+    }
+    function poe(campo, novo) {
+      if (novo === v[campo]) return;
+      if (!r) { r = {}; for (var k in v) if (Object.prototype.hasOwnProperty.call(v, k)) r[k] = v[k]; }
+      r[campo] = novo;
+    }
+    var vis = v.visibilidade;
+    if (vis && typeof vis === "object") {
+      var vis2 = troca(troca(troca(vis, "isolados", fT), "ocultos", fT), "raioXAlvo", fT);
+      poe("visibilidade", vis2);
+    }
+    if (Array.isArray(v.aparencias)) poe("aparencias", fA(v.aparencias));
+    if (v.cotaRede && typeof v.cotaRede === "object") poe("cotaRede", troca(v.cotaRede, "fixados", fT));
+    /* a cópia do perdedor de um conflito da nuvem é uma vista inteira (até
+       50 KB, js/nuvem.js `_merge`): também guarda compactada */
+    var cf = v._conflitoDe;
+    if (cf && typeof cf === "object" && cf.copia && typeof cf.copia === "object") {
+      var cp2 = _vistaComChaves(cf.copia, abrir);
+      if (cp2 !== cf.copia) {
+        var cf2 = {};
+        for (var kc in cf) if (Object.prototype.hasOwnProperty.call(cf, kc)) cf2[kc] = (kc === "copia") ? cp2 : cf[kc];
+        poe("_conflitoDe", cf2);
+      }
+    }
+    return r || v;
+  }
+  function abrirVistas(lista) {
+    if (!Array.isArray(lista)) return lista;
+    return lista.map(function (v) { return _vistaComChaves(v, true); });
+  }
+  function compactarVistas(lista) {
+    if (!Array.isArray(lista)) return lista;
+    var c = lista.map(function (v) { return _vistaComChaves(v, false); });
+    /* ⚠ a conferência (ver a nota): o compactado, aberto, tem de ser o
+       original aberto. "Aberto" dos dois lados porque a lista pode chegar
+       mista — vista que desceu compactada de um aparelho antigo ao lado de
+       vista inteira — e o que não pode mudar é o que se LÊ. */
+    try {
+      if (JSON.stringify(abrirVistas(c)) !== JSON.stringify(abrirVistas(lista))) {
+        try { console.warn("[store] bim_vistas: a compactação não voltou idêntica — guardado sem compactar"); } catch (eW) {}
+        return lista;
+      }
+    } catch (eC) { return lista; }
+    return c;
+  }
+  /* entidade → como ela é GUARDADA (disco e nuvem). A leitura desfaz em
+     `_lerLista` (FORMAS, logo abaixo) e na nuvem (`Store.expandir`). */
+  var GUARDAR = { bim_vistas: compactarVistas };
+
+  var FORMAS = {
+    precosinsumos: precosInsumoParaLista,
+    bim_vistas: function (bruto) { return abrirVistas(Util.arr(bruto)); }
+  };
 
   /* =====================================================================
    * NORMALIZAR NA GRAVAÇÃO — o que mantém o espelho honesto.
@@ -1251,6 +1448,55 @@
     lerParaSync: function (empresaId, entidade) {
       if (entidade === "prefs" || entidade === "conta") return this.adapter.ler(empresaId, entidade, {});
       return this._lerLista(empresaId, entidade);
+    },
+    /* ⚠ AS DUAS PORTAS DA NUVEM PARA A FORMA GUARDADA (ver GUARDAR). O
+       documento do Firestore tem teto de 1 MiB por entidade: o que sobe vai
+       compactado (`compactar`), e o que desce é aberto (`expandir`) ANTES do
+       merge — o merge compara registro com registro, e a mesma vista numa
+       forma de cada lado pareceria "mudou" a cada snapshot. Entidade fora da
+       tabela passa intacta, e o que já está aberto continua aberto. */
+    compactar: function (entidade, valor) {
+      return Object.prototype.hasOwnProperty.call(GUARDAR, entidade) ? GUARDAR[entidade](valor) : valor;
+    },
+    expandir: function (entidade, valor) {
+      if (entidade === "bim_vistas") return abrirVistas(valor);
+      return valor;
+    },
+    /* =====================================================================
+     * compactarGuardado — a lista de vistas que ainda está no disco na
+     *   forma antiga é regravada compactada, UMA vez, no boot.
+     *
+     * Sem isto o espaço só voltaria na primeira gravação de uma vista (ou no
+     * primeiro sync), e o aviso "Armazenamento local em 82%" continuaria
+     * aparecendo a cada abertura até lá.
+     *
+     * ⚠ PELO GRAVADOR ORIGINAL (`_gravarLocal`), não pelo `adapter.gravar`:
+     *   a nuvem embrulha aquele para subir a cada gravação, e o `push` sobe a
+     *   lista LOCAL por cima da nuvem — antes do merge do boot, isso passaria
+     *   por cima do que outro aparelho mandou. Aqui o conteúdo é o mesmo (a
+     *   conferência de `compactarVistas` garante), só a forma muda: não há o
+     *   que subir, nem `atualizadoEm` a carimbar.
+     * Devolve o que foi regravado: [{ entidade, antes, depois }], em
+     * caracteres (lista vazia = nada a fazer).
+     * ===================================================================== */
+    compactarGuardado: function (empresaId) {
+      var out = [];
+      for (var ent in GUARDAR) {
+        if (!Object.prototype.hasOwnProperty.call(GUARDAR, ent)) continue;
+        try {
+          var k = chave(empresaId, ent), raw = localStorage.getItem(k);
+          if (_vazio(raw) || raw.length < 4096) continue;     // pequeno: nada a ganhar
+          var lista = this._lerLista(empresaId, ent);
+          if (this.ilegivel(empresaId, ent)) continue;        // quarentena: não se toca
+          var novo = JSON.stringify(GUARDAR[ent](lista));
+          if (novo.length >= raw.length) continue;           // já compactada (ou não ganha)
+          if (_gravarLocal.call(LocalAdapter, empresaId, ent, lista)) {
+            out.push({ entidade: ent, antes: raw.length, depois: novo.length });
+            try { console.info("[store] " + ent + " compactada: " + Math.round(raw.length / 1024) + " → " + Math.round(novo.length / 1024) + " KB"); } catch (eI) {}
+          }
+        } catch (e) {}
+      }
+      return out;
     },
     listar: function (empresaId, entidade) {
       var l = this._lerLista(empresaId, entidade);

@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.111",
+  "versao": "1.2.112",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.111.zip",
-  "notas": "Insumos e ABC: orcamento feito com composicao propria abre em insumos, com os filtros de mao de obra, material e equipamento; orcamento so com composicao propria abre a lista sem baixar a base analitica; item com preco diferente da sua composicao propria aparece numa lista propria, sem alterar nenhum valor.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.111/OrcaPRO-IA-Instalador-v1.2.111.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.112.zip",
+  "notas": "Pontos de vista do BIM ocupam cerca de um terco do espaco: o aviso de armazenamento cheio deixa de aparecer por causa deles; a lista de pontos de vista volta a sincronizar com a nuvem e chega aos outros aparelhos; o aviso de lista perto do limite da nuvem volta a aparecer a cada versao.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.112/OrcaPRO-IA-Instalador-v1.2.112.exe"
 }
