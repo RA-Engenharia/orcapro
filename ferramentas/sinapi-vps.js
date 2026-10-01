@@ -54,7 +54,15 @@ var { execFileSync } = require("child_process");
 
 var DADOS = process.env.SINAPI_DADOS || "/opt/orcapro-analitico/data";
 var ESTADO = process.env.SINAPI_ESTADO || "/opt/orcapro-sinapi/estado.json";
-var JANELA = parseInt(process.env.SINAPI_JANELA, 10) || 2;
+/* 9 = a corrente + 8 anteriores (pedido do Rogério, 01/10/2026: "até 8 meses
+   anteriores, para o cliente que queira usar a antiga"). O app pede a
+   competência antiga ao servidor PRIMEIRO; sem ela aqui, só o espelho atende. */
+var JANELA = parseInt(process.env.SINAPI_JANELA, 10) || 9;
+/* a desonerada das N mais novas: é a mais nova que o app instala (SINAPI_DES),
+   e a anterior fica para quem ainda não abriu o app desde a troca */
+var DES_N = parseInt(process.env.SINAPI_DES_N, 10) || 2;
+/* de onde o app BAIXA a desonerada (rota /bases/, .json cru) */
+var BASES = process.env.SINAPI_BASES || "/opt/orcapro-bases/data";
 var CONFIG = process.env.ORCAPRO_CONFIG || "/opt/orcapro-loja/server/vendas-config.json";
 var SMTP = process.env.ORCAPRO_SMTP || "/opt/orcapro-loja/server/smtp-envio.js";
 var ESPELHO = process.env.SINAPI_ESPELHO || "https://ra-engenharia.github.io/orcapro/app/data/bases-status.json";
@@ -160,24 +168,66 @@ function main() {
   if (lista) {
     var oficiais = lista.oficiais || [];
     var alvos = oficiais.slice(0, JANELA);
-    alvos.forEach(function (o) {
+    var presDes = lista.presentesDes || {};
+    alvos.forEach(function (o, idx) {
       var presente = lista.presentes[o.comp] === 27;
+      var querDes = idx < DES_N;
+      var faltaDes = querDes && presDes[o.comp] !== 27;
       var ja = est.coletadas[o.comp];
       /* primeira execução com a competência já na pasta (posta à mão em
          01/10/2026): registra o nome atual como base, sem recoletar */
-      if (presente && !ja) { est.coletadas[o.comp] = { nome: o.nome, em: agora(), origem: "já estava na pasta" }; return; }
+      if (presente && !ja) est.coletadas[o.comp] = ja = { nome: o.nome, em: agora(), origem: "já estava na pasta" };
       var retif = presente && ja && ja.nome !== o.nome;
-      if (presente && !retif) return;
-      log(o.comp + ": " + (retif ? "a CAIXA republicou (" + o.nome + ") — coletando de novo" : "nova — coletando"));
+      if (presente && !retif && !faltaDes) return;
+      var motivo = retif ? "a CAIXA republicou (" + o.nome + ") — coletando de novo"
+        : (!presente ? "nova — coletando" : "falta a desonerada — gerando");
+      log(o.comp + ": " + motivo);
       try {
-        coletor(["--comp", o.comp, "--sem-manifesto"].concat(retif ? ["--forcar"] : []));
-        est.coletadas[o.comp] = { nome: o.nome, em: agora(), publicadoEm: o.publicadoEm };
-        novas.push({ comp: o.comp, retif: retif, publicadoEm: o.publicadoEm });
+        coletor(["--comp", o.comp, "--sem-manifesto"].concat(retif ? ["--forcar"] : []).concat(querDes ? ["--desonerada", "1"] : []));
+        if (!presente || retif) {
+          est.coletadas[o.comp] = { nome: o.nome, em: agora(), publicadoEm: o.publicadoEm };
+          novas.push({ comp: o.comp, retif: retif, publicadoEm: o.publicadoEm, des: querDes });
+        }
       } catch (e) {
         erros.push(o.comp + ": a coleta falhou — " + String((e && (e.stderr || e.message)) || e).trim().split("\n").slice(-6).join(" | ").slice(0, 600));
       }
     });
   }
+
+  /* 1b) a desonerada vai para onde o app a BAIXA: /bases/ serve .json cru de
+     BASES. Grava só o que mudou, em nome temporário + rename (a pasta está
+     no ar). A de meses antigos fica: quem está na versão anterior do app
+     ainda pede pelo nome do mês que conhece. */
+  var desServidor = null;
+  try {
+    var porComp = {};
+    fs.readdirSync(DADOS).forEach(function (f) {
+      var m = f.match(/^sinapi-([A-Z]{2})-(\d{4}-\d{2})-desonerada\.json\.gz$/);
+      if (m) (porComp[m[2]] = porComp[m[2]] || []).push(m[1]);
+    });
+    var compsDes = Object.keys(porComp).filter(function (c) { return porComp[c].length === 27; }).sort().reverse().slice(0, DES_N);
+    var gravadas = 0;
+    compsDes.forEach(function (c) {
+      UFS.forEach(function (uf) {
+        var bruto = require("zlib").gunzipSync(fs.readFileSync(path.join(DADOS, "sinapi-" + uf + "-" + c + "-desonerada.json.gz")));
+        var alvo = path.join(BASES, "sinapi-" + uf + "-" + c + "-desonerada.json");
+        if (fs.existsSync(alvo) && crypto.createHash("md5").update(fs.readFileSync(alvo)).digest("hex") === crypto.createHash("md5").update(bruto).digest("hex")) return;
+        var j = JSON.parse(bruto.toString("utf8"));
+        if (j.desonerado !== true || String(j.mes) !== c || String(j.uf).toUpperCase() !== uf) throw new Error(uf + " " + c + ": o pacote não é a desonerada que diz ser");
+        var tmp = path.join(BASES, ".sinapi-" + uf + "-" + c + "-desonerada.json.tmp");
+        fs.writeFileSync(tmp, bruto);
+        fs.renameSync(tmp, alvo);
+        gravadas++;
+      });
+    });
+    if (gravadas) log("desonerada: " + gravadas + " arquivos atualizados em " + BASES);
+    var noAr = {};
+    fs.readdirSync(BASES).forEach(function (f) {
+      var m = f.match(/^sinapi-([A-Z]{2})-(\d{4}-\d{2})-desonerada\.json$/);
+      if (m) (noAr[m[2]] = noAr[m[2]] || {})[m[1]] = 1;
+    });
+    desServidor = Object.keys(noAr).filter(function (c) { return Object.keys(noAr[c]).length === 27; }).sort().pop() || null;
+  } catch (e) { erros.push("desonerada: não consegui publicar em " + BASES + " — " + e.message); }
 
   /* 2) o analítico de nome antigo acompanha a mais nova completa */
   var comps = [];
@@ -189,12 +239,13 @@ function main() {
   }
   var caixa = lista && lista.oficiais && lista.oficiais[0] ? lista.oficiais[0].comp : null;
   if (caixa && servidor && caixa > servidor) erros.push("o servidor está na " + fmt(servidor) + " e a CAIXA já publicou a " + fmt(caixa) + ".");
+  if (caixa && (!desServidor || caixa > desServidor)) erros.push("a SINAPI DESONERADA do servidor está na " + fmt(desServidor) + " e a CAIXA já publicou a " + fmt(caixa) + ".");
 
   /* 3) o espelho (GitHub Pages) — o atraso que passou batido em setembro */
   return pegarJson(ESPELHO).then(function (j) { return (j && j.sinapi && j.sinapi.competencia) || null; }, function (e) { return "erro: " + e.message; })
     .then(function (espelho) {
       est.ultimaExecucao = agora();
-      est.caixa = caixa; est.servidor = servidor; est.espelho = espelho;
+      est.caixa = caixa; est.servidor = servidor; est.espelho = espelho; est.desonerada = desServidor;
       est.ok = !erros.length;
       est.erros = erros;
       var envios = [];
@@ -203,7 +254,7 @@ function main() {
         envios.push(avisar("[OrçaPRO] SINAPI " + novas.map(function (n) { return fmt(n.comp); }).join(", ") + " no ar no servidor", [
           "A coleta automática publicou no servidor OrçaPRO:",
           ""].concat(novas.map(function (n) {
-            return "  · " + fmt(n.comp) + (n.retif ? " (RETIFICAÇÃO da CAIXA — substituiu a versão anterior)" : "") + " — publicada pela CAIXA em " + (n.publicadoEm || "?") + ", 27 UFs, preço e analítico.";
+            return "  · " + fmt(n.comp) + (n.retif ? " (RETIFICAÇÃO da CAIXA — substituiu a versão anterior)" : "") + " — publicada pela CAIXA em " + (n.publicadoEm || "?") + ", 27 UFs, preço e analítico" + (n.des ? ", onerada e desonerada" : "") + ".";
           })).concat(["",
           "Os clientes recebem na varredura diária do app (ou no botão Verificar atualização, em Tabelas de Preço).",
           "",
@@ -242,7 +293,7 @@ function main() {
       }
 
       gravarEstado(est);
-      log("CAIXA " + (caixa || "?") + " · servidor " + (servidor || "?") + " · espelho " + (espelho || "?") +
+      log("CAIXA " + (caixa || "?") + " · servidor " + (servidor || "?") + " · desonerada " + (desServidor || "?") + " · espelho " + (espelho || "?") +
         (novas.length ? " · NOVAS: " + novas.map(function (n) { return n.comp; }).join(",") : "") +
         (erros.length ? " · ERROS: " + erros.length : " · ok"));
       return Promise.all(envios).then(function () { if (erros.length) process.exitCode = 1; });
