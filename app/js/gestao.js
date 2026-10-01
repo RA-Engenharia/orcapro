@@ -10227,6 +10227,11 @@
       reg["sistemas"] = function (e) { var b = B(); if (b && b.sistema) { b.sistema(e.ligado); return true; } return false; };
       reg["conjuntos"] = function () { self._bimAbrirPainel("conjuntos"); self._bimConjRender(); return true; };
       reg["disciplinas"] = function () { self._bimAbrirPainel("disc"); self._bimDiscRender(); return true; };
+      /* aba Içamento: o peso das peças é a base do plano de içamento */
+      reg["peso-pecas"] = function () { self._bimAbrirPainel("peso"); self._pesoRender(); return true; };
+      reg["peso-coletar"] = function (e) { return self._pesoColetar(!!e.ligado); };
+      reg["peso-tipo"] = function () { self._pesoEst().foco = "tipo"; self._bimAbrirPainel("peso"); self._pesoRender(); return true; };
+      reg["peso-relatorio"] = function () { self._bimAbrirPainel("peso"); self._pesoRender(); self._pesoRelatorio("imprimir"); return true; };
       reg["estrutural"] = function () { self._bimAbrirPainel("estrut"); self._estRender(); return true; };
       reg["detalhe-peca"] = function () { return self._estDetalheDaSelecao(); };
       reg["vistas"] = function () { self._bimAbrirPainel("vistas"); self._bimVistaRender(); return true; };
@@ -12808,6 +12813,9 @@
         /* DISCIPLINAS E ETAPAS: "só a fundação / só a armação / só os painéis"
            (motor js/bimdisc.js, desenho js/estrutui.js) */
         '<div id="bim-disc" style="display:none"><div id="bim-disc-corpo"></div></div>' +
+        /* PESO DAS PEÇAS (aba Içamento): peso por peça, por tipo e da seleção
+           (motor js/bimpeso.js) */
+        '<div id="bim-peso" style="display:none"><div id="bim-peso-corpo"></div></div>' +
         /* PROJETO ESTRUTURAL: o PDF do calculista vira vista por peça,
            armação, cobrimento e lista de material (js/estrutpdf.js) */
         '<div id="bim-estrut" style="display:none">' +
@@ -12840,6 +12848,7 @@
     /* v1.1.121 — abre a gaveta de análise do viewer no painel pedido (chamado pelo
      * dock do BIM via opts.onPainel; um painel por vez pra leitura limpa). */
     _BIM_PAINEIS: { modelos: ["bim-modelos", "Modelos carregados"], "4d": ["bim-4d", "Simulação 4D"], clash: ["bim-clash", "Compatibilização"], qto: ["bim-qto", "Quantitativos"], familias: ["bim-familias", "Banco de famílias"], "6d": ["bim-6d", "6D/7D · Ciclo de vida"], conjuntos: ["bim-conjuntos", "Conjuntos de seleção"], vistas: ["bim-vistas", "Pontos de vista"], tarefas4d: ["bim-tarefas", "Cronograma 4D"], disc: ["bim-disc", "Disciplinas e etapas construtivas"], estrut: ["bim-estrut", "Projeto estrutural no canteiro"],
+                   peso: ["bim-peso", "Peso das peças"],
                    sondagem: ["bim-sondagem", "Sondagem 3D"], pranchas: ["bim-pranchas", "Pranchas do projeto"],
                    params: ["bim-params", "Parâmetros do elemento"] },
     _bimAbrirPainel: function (chave) {
@@ -13025,10 +13034,11 @@
           ro("peca-gid", "GlobalId", info.globalId) ].concat(el && el.disciplinaPeca ? [ro("peca-disc", "Disciplina", el.disciplinaPeca)] : []) },
         { nome: "Obra", params: [ ro("peca-etapa", "Etapa", info.etapa), ro("peca-fase", "Fase", info.fase) ]
           .concat(el && el.detalhe ? [{ id: "peca-det", rotulo: "Detalhe", tipo: "botao", rotuloBotao: "Detalhe " + el.detalhe, fn: function () { self._pecaDetalhe(el.detalhe); } }] : []) },
-        { nome: "Quantidades", params: [ ro("peca-comp", "Comprimento", num(q.comprimento, "m")), ro("peca-area", "Área", num(q.area, "m²")), ro("peca-vol", "Volume", num(q.volume, "m³")) ] },
+        { nome: "Quantidades", params: [ ro("peca-comp", "Comprimento", num(q.comprimento, "m")), ro("peca-area", "Área", num(q.area, "m²")), ro("peca-vol", "Volume", num(q.volume, "m³")) ] }
+      ].concat(this._pesoSecaoProps(el, ro)).concat([
         { nome: "Dados", params: [ { id: "peca-ifc", rotulo: "Parâmetros do IFC", tipo: "botao", rotuloBotao: "Ver todos", fn: function () { self._bimVerProps(info); } },
           { id: "peca-familia-salvar", rotulo: "Banco de famílias", tipo: "botao", rotuloBotao: "Salvar família", fn: function () { self._bimSalvarFamilia(info); } } ] }
-      ];
+      ]);
       var parede = /^IFCWALL/i.test(tipo);
       return {
         daPeca: true, uid: info.uid, semEditarTipo: !parede,
@@ -15897,6 +15907,404 @@
       var dw = document.getElementById("bim-drawer"), tampa = 0;
       if (!this._b4Janela3d && dw && dw.style.display !== "none") { try { tampa = dw.getBoundingClientRect().width; } catch (e) { tampa = 0; } }
       try { BIM.enquadrarUids(BIM.uidsDeChaves(chaves), { direita: tampa }); } catch (e2) {}
+    },
+    /* =====================================================================
+     * PESO DAS PEÇAS — aba Içamento (motor js/bimpeso.js)
+     *
+     * Quanto pesa cada peça, por tipo e o que o engenheiro juntou — clicando
+     * no modelo ou "todos os pilares + os vidros". É a base do plano de
+     * içamento: guindaste e munck se escolhem pela carga.
+     *
+     * ⚠ O PESO PRÓPRIO É A BASE DA PORCENTAGEM, e a tela diz isso com essas
+     *   palavras: o modelo não sabe a sobrecarga de uso nem o vento, e solo e
+     *   aterro pesam mas não são carga sobre a estrutura.
+     * ⚠ O PESO ESPECÍFICO INFORMADO É DA EMPRESA, não da obra (`bim_pesos_esp`,
+     *   sincronizado): "Compensado naval = 6 kN/m³" vale para todo modelo que
+     *   tiver o material com esse nome — informar uma vez, não uma por obra.
+     * ===================================================================== */
+    _pesoEst: function () {
+      if (!this._bimPesoSt) this._bimPesoSt = { sel: [], criterio: "tipo", marcados: {}, ver: 0, filtroMat: "", foco: "" };
+      return this._bimPesoSt;
+    },
+    /* os dois tipos de número informado moram no mesmo registro: peso
+       ESPECÍFICO do material (kN/m³, chave "mat:"/"tipo:") e peso POR PEÇA de
+       equipamento/mobiliário (kg, chave "fam:"/"nome:"/"peca:") */
+    _pesoDens: function () {
+      var mapa = { densidades: {}, pesosPeca: {} };
+      try {
+        (Store.listar(eid(), "bim_pesos_esp") || []).forEach(function (r) {
+          if (!r || !r.chave) return;
+          if (+r.kNm3 > 0) mapa.densidades[r.chave] = { kNm3: +r.kNm3, ref: r.ref || "" };
+          else if (+r.kg > 0) mapa.pesosPeca[r.chave] = { kg: +r.kg, ref: r.ref || "" };
+        });
+      } catch (e) {}
+      return mapa;
+    },
+    _pesoOpts: function () {
+      if (!this._pesoDensCache) this._pesoDensCache = this._pesoDens();
+      return {
+        densidades: this._pesoDensCache.densidades, pesosPeca: this._pesoDensCache.pesosPeca,
+        volumeMalha: function (el) { try { return (window.BIM && BIM.volumeMalha) ? BIM.volumeMalha(el.uid) : null; } catch (e) { return null; } }
+      };
+    },
+    /* o resumo do modelo inteiro, guardado enquanto nada mudar: a porcentagem
+       de UMA peça precisa do peso de TODAS, e a Propriedades repinta a cada
+       clique */
+    _pesoResumo: function () {
+      if (!window.BimPeso || !window.BIM) return null;
+      var els = [], mods = "";
+      try { els = BIM.elementos || []; } catch (e) { els = []; }
+      try { mods = (BIM.modelos || []).map(function (m) { return m.mid + "/" + m.n; }).join(","); } catch (e2) {}
+      var ass = els.length + "|" + mods + "|" + this._pesoEst().ver;
+      if (this._pesoMemo && this._pesoMemo.ass === ass) return this._pesoMemo;
+      var opts = this._pesoOpts(), r = BimPeso.resumo(els, opts), porUid = {};
+      r.itens.forEach(function (it) { porUid[it.el.uid] = it; });
+      this._pesoMemo = { ass: ass, r: r, els: els, opts: opts, porUid: porUid };
+      return this._pesoMemo;
+    },
+    _pesoFmtKg: function (v) { return Util.fmtNum(v, v >= 100 ? 0 : 1) + " kg"; },
+    _pesoFmtKN: function (v) { return Util.fmtNum(v, v >= 100 ? 1 : (v >= 1 ? 2 : 3)) + " kN"; },
+    _pesoFmtPct: function (v) { return v == null ? "—" : Util.fmtNum(v, v >= 1 ? 1 : 2) + " %"; },
+    _pesoOrigem: function (p) {
+      if (!p || !p.ok) return "";
+      if (p.fonte === "ifc") return "massa publicada no IFC";
+      if (p.fonte === "peca") return "peso por peça informado";
+      var g = p.gama || {}, gtxt = Util.fmtNum(g.kNm3, 2) + " kN/m³";
+      var de = g.origem === "usuario" ? "informado" : g.origem === "ifc" ? "do IFC" : g.origem === "composto" ? "média das camadas" : "NBR 6120";
+      return (p.fonte === "malha" ? "volume da malha (estimado)" : "volume do IFC") + " × " + gtxt + " (" + de + ")";
+    },
+    /* a seção "Peso" das Propriedades da peça */
+    _pesoSecaoProps: function (el, ro) {
+      if (!window.BimPeso || !el) return [];
+      var self = this, m = this._pesoResumo(), it = m && m.porUid[el.uid];
+      var p = it ? it.p : BimPeso.pesoDe(el, this._pesoOpts());
+      var mats = (el.materiais || []).map(function (x) { return x.n; }).join(" + ");
+      var naSel = this._pesoEst().sel.indexOf(el.uid) >= 0;
+      var juntar = { id: "peca-peso-sel", rotulo: "Seleção de peso", tipo: "botao", rotuloBotao: naSel ? "Tirar da seleção" : "Juntar à seleção",
+        fn: function () { self._pesoAlternar(el.uid); } };
+      if (p.naoFisico) return [{ nome: "Peso", params: [ro("peca-peso", "Peso", "não é peça física")] }];
+      if (!p.ok) {
+        return [{ nome: "Peso", params: [ro("peca-peso", "Peso", "sem peso"), ro("peca-peso-motivo", "Por quê", p.motivo), ro("peca-mat", "Material", mats || "—"),
+          { id: "peca-peso-informar", rotulo: "Peso específico", tipo: "botao", rotuloBotao: "Informar", fn: function () { self._pesoAbrirMateriais(); } }] }];
+      }
+      var base = m ? m.r.total.kN : 0;
+      var pct = p.solo ? "solo/aterro — fora do peso próprio" : this._pesoFmtPct(BimPeso.participacao(p.kN, base)) + " do peso próprio";
+      return [{ nome: "Peso", params: [
+        ro("peca-peso-kg", "Peso (kg)", this._pesoFmtKg(p.kg) + (p.estimado ? " (estimado)" : "")),
+        ro("peca-peso-kn", "Peso (kN)", this._pesoFmtKN(p.kN)),
+        ro("peca-peso-pct", "Participação", pct),
+        ro("peca-peso-origem", "Origem", this._pesoOrigem(p)),
+        ro("peca-mat", "Material", mats || "—"),
+        juntar ] }];
+    },
+    _pesoAbrirMateriais: function () {
+      var st = this._pesoEst(); st.foco = "materiais";
+      this._bimAbrirPainel("peso"); this._pesoRender();
+    },
+    /* liga/desliga uma peça na seleção de peso, pinta e conta */
+    _pesoAlternar: function (uid, doClique) {
+      if (!window.BimPeso || !uid) return;
+      var st = this._pesoEst();
+      st.sel = BimPeso.alternar(st.sel, uid);
+      this._pesoPintar();
+      this._pesoRender();
+      this._pesoAtualizarProps();
+      if (doClique) {
+        var m = this._pesoResumo(), it = m && m.porUid[uid], entrou = st.sel.indexOf(uid) >= 0;
+        var nome = it ? (it.el.nomeIfc || it.el.familia || BimPeso.rotuloTipo(it.el)) : "Peça";
+        var tot = this._pesoSomaSel();
+        var pesoTxt = it && it.p.ok ? " (" + this._pesoFmtKN(it.p.kN) + ")" : " (sem peso: " + (it ? it.p.motivo : "fora do modelo") + ")";
+        try { BimShell.status((entrou ? "Entrou: " : "Saiu: ") + nome + pesoTxt + " — seleção: " + tot.n + " peça(s), " + this._pesoFmtKN(tot.kN) + "."); } catch (e) {}
+      }
+    },
+    /* Propriedades mostra a peça selecionada: repinta para o botão
+       "Juntar/Tirar" e a porcentagem acompanharem */
+    _pesoAtualizarProps: function () {
+      try {
+        var pr = window.BimShell && BimShell._estado ? BimShell._estado.props : null;
+        if (pr && pr.daPeca && this._bimSelecao) BimShell.pintarProps(this._bimPropsPeca(this._bimSelecao));
+      } catch (e) {}
+    },
+    _pesoSomaSel: function () {
+      var st = this._pesoEst(), m = this._pesoResumo(), o = { n: 0, comPeso: 0, semPeso: 0, kN: 0, kg: 0, estimados: 0 };
+      if (!m) return o;
+      st.sel.forEach(function (u) {
+        var it = m.porUid[u]; if (!it || it.p.naoFisico) return;
+        o.n++;
+        if (it.p.ok) { o.comPeso++; o.kN += it.p.kN; o.kg += it.p.kg; if (it.p.estimado) o.estimados++; } else o.semPeso++;
+      });
+      return o;
+    },
+    /* a seleção de peso aparece pintada de laranja no modelo (dono "peso"):
+       sair da seleção devolve as cores — e só se a pintura ainda for nossa */
+    _pesoPintar: function () {
+      if (!window.BIM || !BIM.pintarChaves) return;
+      var st = this._pesoEst(), m = this._pesoResumo(), mapa = {}, n = 0;
+      st.sel.forEach(function (u) { var it = m && m.porUid[u]; if (it && it.el.chave) { mapa[it.el.chave] = "#f97316"; n++; } });
+      try {
+        if (!n) { if (BIM.donoDaPintura && BIM.donoDaPintura() === "peso") BIM.limparPintura(); return; }
+        BIM.pintarChaves(mapa, "peso");
+        this._b3Espelhar({ modo: "pintar", mapa: mapa, dono: "peso", rotulo: "seleção de peso" });
+      } catch (e) {}
+    },
+    _pesoChavesSel: function () {
+      var m = this._pesoResumo(), out = [];
+      this._pesoEst().sel.forEach(function (u) { var it = m && m.porUid[u]; if (it && it.el.chave) out.push(it.el.chave); });
+      return out;
+    },
+    /* "Selecionar clicando": cada clique numa peça entra ou sai. ⚠ O estado
+       mora no viewer (`coletarCliques`) e a fita só o reflete — o botão da
+       fita e o do painel chegam aqui e saem sincronizados. */
+    _pesoColetar: function (on) {
+      if (!window.BIM || !BIM.coletarCliques) return false;
+      var self = this;
+      BIM.coletarCliques(on ? function (p) { if (p && p.uid) self._pesoAlternar(p.uid, true); } : null);
+      try { BimRibbon.setAtivo("peso-coletar", !!on); BimShell.pintarFita(); } catch (e) {}
+      try { BimShell.status(on ? "Selecionar clicando: cada clique numa peça entra ou sai da seleção de peso (laranja). Clique de novo no botão para desligar." : "Selecionar clicando desligado — o duplo clique volta a selecionar uma peça só."); } catch (e2) {}
+      this._pesoRender();
+      return true;
+    },
+    _pesoRender: function () {
+      var box = document.getElementById("bim-peso-corpo"); if (!box) return;
+      var self = this, st = this._pesoEst(), esc = Util.esc;
+      if (!window.BimPeso) { box.innerHTML = '<p class="muted">O módulo de peso não carregou nesta tela. Recarregue o app.</p>'; return; }
+      var m = this._pesoResumo();
+      if (!m || !m.els.length) { box.innerHTML = '<p class="muted">Abra um modelo para ver o peso das peças.</p>'; return; }
+      var r = m.r, base = r.total.kN, coletando = !!(BIM.coletandoCliques && BIM.coletandoCliques());
+      var kg = function (v) { return self._pesoFmtKg(v); }, kn = function (v) { return self._pesoFmtKN(v); }, pc = function (v) { return self._pesoFmtPct(v); };
+      var h = "";
+      /* ---- o peso próprio (a base de toda porcentagem) ---- */
+      h += '<div style="border:1px solid var(--linha-forte);border-radius:10px;padding:10px 12px;margin-bottom:10px">' +
+        '<div class="muted" style="font-size:11.5px">Peso próprio da construção (modelo aberto)</div>' +
+        '<div style="font-size:20px;font-weight:700" data-peso="total">' + kn(base) + ' <span class="muted" style="font-size:13px;font-weight:400">' + kg(r.total.kg) + "</span></div>" +
+        '<div style="font-size:12px;margin-top:2px" data-peso="cobertura">' + r.comPeso + " de " + r.fisicas + " peças com peso" +
+        (r.total.estimados ? " · " + r.total.estimados + " pelo volume da malha (estimado)" : "") + "</div>" +
+        (r.solo.n ? '<div class="muted" style="font-size:11.5px">Solo e aterro à parte: ' + kn(r.solo.kN) + " (" + r.solo.n + " peça(s)) — pesam, mas não são carga sobre a estrutura.</div>" : "") +
+        '<div class="muted" style="font-size:11px;margin-top:4px">A participação de cada peça é a fatia dela neste peso. Sobrecarga de uso, vento e o que vai em cima da laje não estão no modelo.</div>' +
+        "</div>";
+      /* ---- a seleção ---- */
+      var tot = this._pesoSomaSel();
+      h += '<div class="flex between" style="align-items:center;gap:6px;flex-wrap:wrap;margin:4px 0 6px"><b style="font-size:13px">Seleção de peso</b>' +
+        '<span style="display:flex;gap:6px;flex-wrap:wrap">' +
+        '<button class="btn sm' + (coletando ? " primary" : "") + '" data-epeso="coletar">' + (coletando ? "Selecionando — desligar" : "Selecionar clicando") + "</button>" +
+        '<button class="btn sm" data-epeso="isolar"' + (st.sel.length ? "" : " disabled") + ">Isolar</button>" +
+        '<button class="btn sm" data-epeso="tudo">Mostrar tudo</button>' +
+        '<button class="btn sm" data-epeso="limpar"' + (st.sel.length ? "" : " disabled") + ">Limpar</button></span></div>";
+      if (!st.sel.length) {
+        h += '<p class="muted" style="font-size:12px;margin:0 0 10px">Ligue “Selecionar clicando” e clique nas peças do modelo, ou escolha por tipo logo abaixo. As peças escolhidas ficam laranja.</p>';
+      } else {
+        h += '<div style="font-size:13px;margin-bottom:6px" data-peso="selecao"><b>' + tot.n + "</b> peça(s) · <b>" + kn(tot.kN) + "</b> · " + kg(tot.kg) + " · " + pc(BimPeso.participacao(tot.kN, base)) + " do peso próprio" +
+          (tot.semPeso ? ' · <span style="color:#b45309">' + tot.semPeso + " sem peso</span>" : "") + "</div>";
+        var linhas = st.sel.map(function (u) { return m.porUid[u]; }).filter(Boolean)
+          .sort(function (a, b) { return (b.p.ok ? b.p.kN : -1) - (a.p.ok ? a.p.kN : -1); });
+        h += '<div style="max-height:220px;overflow:auto;border:1px solid var(--linha);border-radius:8px"><table style="width:100%;border-collapse:collapse;font-size:12px">' +
+          '<tr class="muted"><th style="text-align:left;padding:4px 6px">Peça</th><th style="text-align:right;padding:4px 6px">kg</th><th style="text-align:right;padding:4px 6px">kN</th><th style="text-align:right;padding:4px 6px">%</th><th></th></tr>';
+        linhas.slice(0, 200).forEach(function (it) {
+          var p = it.p, nm = it.el.nomeIfc || it.el.familia || BimPeso.rotuloTipo(it.el);
+          h += '<tr style="border-top:1px solid var(--linha)"><td style="padding:3px 6px;word-break:break-word">' + esc(nm) + ' <span class="muted">· ' + esc(BimPeso.rotuloTipo(it.el)) + "</span></td>" +
+            (p.ok ? '<td style="text-align:right;padding:3px 6px">' + Util.fmtNum(p.kg, p.kg >= 100 ? 0 : 1) + (p.estimado ? "*" : "") + '</td><td style="text-align:right;padding:3px 6px">' + Util.fmtNum(p.kN, 3) + '</td><td style="text-align:right;padding:3px 6px">' + (p.solo ? "—" : pc(BimPeso.participacao(p.kN, base))) + "</td>"
+              : '<td colspan="3" style="text-align:right;padding:3px 6px;color:#b45309">' + esc(p.motivo) + "</td>") +
+            '<td style="padding:3px 4px"><button class="btn sm" data-epeso="tirar" data-v="' + esc(it.el.uid) + '" title="Tirar da seleção">×</button></td></tr>';
+        });
+        h += "</table></div>" + (linhas.length > 200 ? '<p class="muted" style="font-size:11px">Mostrando as 200 mais pesadas; a planilha traz todas.</p>' : "") +
+          (tot.estimados ? '<p class="muted" style="font-size:11px;margin:4px 0 0">* volume pela malha da peça (o IFC não publica o volume): estimado.</p>' : "");
+      }
+      /* ---- por tipo / material / família ---- */
+      var crit = st.criterio || "tipo";
+      var grupos = crit === "material" ? r.porMaterial : crit === "familia" ? r.porFamilia : r.porTipo;
+      h += '<div style="margin-top:14px" id="bim-peso-tipo"><b style="font-size:13px">Selecionar por tipo</b>' +
+        '<div style="display:flex;gap:4px;margin:6px 0">' +
+        ["tipo", "material", "familia"].map(function (c) { return '<button class="btn sm' + (c === crit ? " primary" : "") + '" data-epeso="criterio" data-v="' + c + '">' + (c === "tipo" ? "Tipo de peça" : c === "material" ? "Material" : "Família") + "</button>"; }).join("") +
+        "</div>";
+      h += '<div style="max-height:260px;overflow:auto;border:1px solid var(--linha);border-radius:8px">';
+      grupos.forEach(function (g) {
+        var ck = st.marcados[g.chave] ? " checked" : "";
+        h += '<label style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-top:1px solid var(--linha);font-size:12.5px;cursor:pointer">' +
+          '<input type="checkbox" data-epeso-ck="' + esc(g.chave) + '"' + ck + ">" +
+          '<span style="flex:1;word-break:break-word">' + esc(g.rotulo) + ' <span class="muted">(' + g.n + ")</span></span>" +
+          '<span style="white-space:nowrap">' + kn(g.kN) + "</span>" +
+          '<span class="muted" style="white-space:nowrap;min-width:52px;text-align:right">' + pc(BimPeso.participacao(g.kN, base)) + "</span></label>";
+      });
+      h += "</div>";
+      var nMarc = Object.keys(st.marcados).length;
+      h += '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">' +
+        '<button class="btn sm primary" data-epeso="sel-marcados"' + (nMarc ? "" : " disabled") + ">Selecionar marcados</button>" +
+        '<button class="btn sm" data-epeso="somar-marcados"' + (nMarc ? "" : " disabled") + ">Somar à seleção</button>" +
+        (nMarc ? '<button class="btn sm" data-epeso="desmarcar">Desmarcar</button>' : "") + "</div></div>";
+      /* ---- pesos específicos (o que o engenheiro confere e corrige) ---- */
+      var lista = BimPeso.pesosDoModelo(m.els, m.opts), semG = lista.filter(function (x) { return !x.gama; }).length;
+      h += '<div style="margin-top:14px" id="bim-peso-materiais"><b style="font-size:13px">Pesos específicos dos materiais</b>' +
+        (semG ? ' <span style="color:#b45309;font-size:12px">· ' + semG + " sem peso</span>" : "") +
+        '<p class="muted" style="font-size:11.5px;margin:2px 0 6px">De onde vem o peso de cada material: o informado aqui, o que o IFC publica ou a NBR 6120:2019. Informe em kN/m³ o que estiver sem peso; equipamento e mobiliário pedem o peso por peça em kg (do catálogo — o modelo só tem a caixa externa). Vale para todas as obras da empresa. Apague o número para voltar à norma.</p>' +
+        '<input type="search" data-epeso-filtro placeholder="Filtrar material…" value="' + esc(st.filtroMat || "") + '" style="width:100%;margin-bottom:6px">' +
+        '<div style="max-height:300px;overflow:auto;border:1px solid var(--linha);border-radius:8px">';
+      var fm = Util.normalizar(st.filtroMat || "");
+      lista.forEach(function (x) {
+        if (fm && Util.normalizar(x.nome).indexOf(fm) < 0) return;
+        var g = x.gama, info, val, unid = x.porPeca ? "kg/peça" : "kN/m³";
+        if (x.porPeca) {
+          info = g ? Util.fmtNum(g.kg, 1) + " kg por peça · informado" : '<span style="color:#b45309">equipamento/mobiliário — informe o peso por peça (catálogo)</span>';
+          val = g ? Util.fmtNum(g.kg, 1) : "";
+        } else {
+          info = g ? Util.fmtNum(g.kNm3, 2) + " kN/m³ · " + (g.origem === "usuario" ? "informado" : g.origem === "ifc" ? "do IFC" : esc(g.ref || "")) : '<span style="color:#b45309">sem peso — informe</span>';
+          val = g && g.origem === "usuario" ? Util.fmtNum(g.kNm3, 2) : "";
+        }
+        h += '<div style="display:flex;align-items:center;gap:6px;padding:5px 8px;border-top:1px solid var(--linha);font-size:12px">' +
+          '<div style="flex:1;min-width:0"><div style="word-break:break-word">' + esc(x.nome) + ' <span class="muted">(' + x.n + ")</span></div>" +
+          '<div class="muted" style="font-size:11px">' + info + "</div></div>" +
+          '<input type="text" inputmode="decimal" data-epeso-gama="' + esc(x.chave) + '" data-nome="' + esc(x.nome) + '"' + (x.porPeca ? ' data-por-peca="1"' : "") + ' value="' + esc(val) + '" placeholder="' + unid + '" title="' + unid + '" style="width:74px;text-align:right"></div>';
+      });
+      h += "</div></div>";
+      /* ---- relatório ---- */
+      h += '<div style="display:flex;gap:6px;margin-top:14px;flex-wrap:wrap">' +
+        '<button class="btn sm primary" data-epeso="imprimir">Relatório (imprimir)</button>' +
+        '<button class="btn sm" data-epeso="csv">Planilha (CSV)</button></div>' +
+        '<p class="muted" style="font-size:11px;margin:4px 0 0">Com peças selecionadas, o relatório é da seleção; sem seleção, do modelo inteiro.</p>';
+      box.innerHTML = h;
+      if (st.foco) {
+        var alvoF = document.getElementById(st.foco === "materiais" ? "bim-peso-materiais" : "bim-peso-tipo");
+        st.foco = "";
+        if (alvoF && alvoF.scrollIntoView) { try { alvoF.scrollIntoView({ block: "start" }); } catch (eS) {} }
+      }
+      if (box._ligado) return;
+      box._ligado = true;
+      box.addEventListener("click", function (ev) {
+        var b = ev.target && ev.target.closest ? ev.target.closest("[data-epeso]") : null;
+        if (!b || b.disabled) return;
+        self._pesoAcao(b.getAttribute("data-epeso"), b.getAttribute("data-v"));
+      });
+      box.addEventListener("change", function (ev) {
+        var t = ev.target; if (!t || !t.getAttribute) return;
+        if (t.hasAttribute("data-epeso-ck")) {
+          var s2 = self._pesoEst(), k = t.getAttribute("data-epeso-ck");
+          if (t.checked) s2.marcados[k] = 1; else delete s2.marcados[k];
+          self._pesoRender();
+          return;
+        }
+        if (t.hasAttribute("data-epeso-gama")) self._pesoSalvarGama(t.getAttribute("data-epeso-gama"), t.getAttribute("data-nome"), t.value, t.hasAttribute("data-por-peca"));
+      });
+      box.addEventListener("input", function (ev) {
+        var t = ev.target; if (!t || !t.hasAttribute || !t.hasAttribute("data-epeso-filtro")) return;
+        self._pesoEst().filtroMat = t.value;
+        clearTimeout(self._pesoFiltroT);
+        self._pesoFiltroT = setTimeout(function () {
+          self._pesoRender();
+          var f = box.querySelector("[data-epeso-filtro]"); if (f) { f.focus(); try { f.setSelectionRange(f.value.length, f.value.length); } catch (eR) {} }
+        }, 250);
+      });
+    },
+    _pesoAcao: function (acao, v) {
+      var self = this, st = this._pesoEst();
+      if (acao === "coletar") { this._pesoColetar(!(BIM.coletandoCliques && BIM.coletandoCliques())); return; }
+      if (acao === "tirar") { this._pesoAlternar(v); return; }
+      if (acao === "limpar") { st.sel = []; this._pesoPintar(); this._pesoRender(); this._pesoAtualizarProps(); return; }
+      if (acao === "criterio") { st.criterio = v; st.marcados = {}; this._pesoRender(); return; }
+      if (acao === "desmarcar") { st.marcados = {}; this._pesoRender(); return; }
+      if (acao === "sel-marcados" || acao === "somar-marcados") {
+        var m = this._pesoResumo(); if (!m) return;
+        var crit = st.criterio || "tipo";
+        var grupos = crit === "material" ? m.r.porMaterial : crit === "familia" ? m.r.porFamilia : m.r.porTipo;
+        var novos = BimPeso.uidsDe(grupos, Object.keys(st.marcados));
+        var nomes = grupos.filter(function (g) { return st.marcados[g.chave]; }).map(function (g) { return g.rotulo; });
+        if (acao === "sel-marcados") st.sel = novos;
+        else { var ja = {}; st.sel.forEach(function (u) { ja[u] = 1; }); novos.forEach(function (u) { if (!ja[u]) st.sel.push(u); }); }
+        st.marcados = {};
+        this._pesoPintar(); this._pesoRender(); this._pesoAtualizarProps();
+        var tot = this._pesoSomaSel();
+        UI.toast((acao === "sel-marcados" ? "Selecionado: " : "Somado: ") + nomes.join(" + ") + " — " + tot.n + " peça(s), " + this._pesoFmtKN(tot.kN) + ".", "ok");
+        return;
+      }
+      if (acao === "isolar") {
+        var ch = this._pesoChavesSel(); if (!ch.length) return;
+        try { BIM.limparRaioX(); } catch (e) {}
+        var ni = BIM.isolarChaves(ch);
+        if (ni) this._bimEnquadrarLivre(ch);
+        this._b3Espelhar({ modo: "isolar", chaves: ch, rotulo: "seleção de peso" });
+        return;
+      }
+      if (acao === "tudo") {
+        try { BIM.restaurarVisibilidade(); } catch (e2) {}
+        this._b3Espelhar({ modo: "limpar", rotulo: "modelo inteiro" });
+        return;
+      }
+      if (acao === "imprimir" || acao === "csv") { this._pesoRelatorio(acao); return; }
+    },
+    /* o peso específico informado pelo engenheiro: grava, recalcula e diz */
+    _pesoSalvarGama: function (chave, nome, valor, porPeca) {
+      if (!chave) return;
+      var txt = String(valor == null ? "" : valor).trim(), v = txt ? Util.parseNum(txt) : 0;
+      var todos = [];
+      try { todos = Store.listar(eid(), "bim_pesos_esp") || []; } catch (e) {}
+      var atual = todos.filter(function (r) { return r && r.chave === chave; })[0] || null;
+      if (!txt) {
+        if (atual) { try { Store.excluir(eid(), "bim_pesos_esp", atual.id); } catch (e2) {} UI.toast(nome + ": voltou ao peso da norma (ou ficou sem peso, se a norma não tem).", "ok"); }
+      } else if (porPeca ? !(v > 0) : (!(v > 0) || v > 200)) {
+        UI.toast(porPeca ? "Peso por peça em kg, maior que zero (o do catálogo do fabricante). “" + txt + "” não serve."
+          : "Peso específico em kN/m³, maior que zero (concreto armado é 25; aço, 77,8). “" + txt + "” não serve.", "erro");
+        this._pesoRender(); return;
+      } else {
+        var reg = atual || {};
+        reg.chave = chave; reg.nome = nome || reg.nome || chave;
+        if (porPeca) { reg.kg = v; delete reg.kNm3; } else { reg.kNm3 = v; delete reg.kg; }
+        reg.ref = "informado pelo usuário em " + new Date().toLocaleDateString("pt-BR");
+        if (!Store.salvar(eid(), "bim_pesos_esp", reg)) { UI.toast("Não consegui salvar (armazenamento cheio?).", "erro"); return; }
+        UI.toast(porPeca ? nome + ": " + Util.fmtNum(v, 1) + " kg por peça — vale para as peças iguais em todas as obras."
+          : nome + ": " + Util.fmtNum(v, 2) + " kN/m³ — vale para as peças deste material em todas as obras.", "ok");
+      }
+      this._pesoDensCache = null; this._pesoEst().ver++;
+      this._pesoRender(); this._pesoAtualizarProps();
+    },
+    /* relatório: planilha (CSV) ou folha para imprimir/salvar em PDF */
+    _pesoRelatorio: function (modo) {
+      if (!window.BimPeso) return;
+      var m = this._pesoResumo(); if (!m || !m.els.length) { UI.toast("Abra um modelo para tirar o relatório de peso.", "aviso"); return; }
+      var st = this._pesoEst(), rel = BimPeso.relatorio(m.els, st.sel.length ? st.sel : null, m.opts);
+      var obra = "";
+      try { var ob = this._bimSel ? Store.obter(eid(), "obras", this._bimSel) : null; obra = ob ? (ob.nome || ob.titulo || "") : ""; } catch (e) {}
+      var nomeArq = "peso-" + (rel.ehSelecao ? "selecao" : "modelo") + "-" + hojeLocal();
+      if (modo === "csv") { Util.baixar(nomeArq + ".csv", BimPeso.csv(rel), "text/csv;charset=utf-8"); UI.toast("Planilha de peso baixada (" + rel.linhas.length + " peça(s)).", "ok"); return; }
+      var esc = Util.esc, self = this, kn = function (v) { return v == null ? "—" : Util.fmtNum(v, 3); }, kgf = function (v) { return v == null ? "—" : Util.fmtNum(v, 1); };
+      var pc = function (v) { return v == null ? "—" : Util.fmtNum(v, 2); };
+      var mods = []; try { mods = (BIM.modelos || []).map(function (x) { return x.nome; }); } catch (e3) {}
+      var refs = {};
+      rel.linhas.forEach(function (l) { if (l.refGama && l.fonte !== "ifc") refs[l.refGama] = 1; });
+      var h = '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Relatório de peso</title><style>' +
+        "body{font:12px/1.4 Arial,sans-serif;color:#111;margin:18mm 14mm}h1{font-size:18px;margin:0 0 2px}h2{font-size:14px;margin:18px 0 6px;border-bottom:1.5px solid #f97316;padding-bottom:2px}" +
+        "table{width:100%;border-collapse:collapse}th,td{border:1px solid #ccc;padding:3px 5px;vertical-align:top}th{background:#f3f4f6;text-align:left}td.n{text-align:right;white-space:nowrap}" +
+        ".cx{display:flex;gap:10px;flex-wrap:wrap}.cx div{border:1px solid #ddd;border-radius:6px;padding:6px 10px}.cx b{font-size:16px}.m{color:#555}.av{color:#b45309}" +
+        "@media print{body{margin:10mm}h2{break-after:avoid}tr{break-inside:avoid}}</style></head><body>" +
+        "<h1>Relatório de peso" + (rel.ehSelecao ? " — seleção" : " — modelo") + "</h1>" +
+        '<div class="m">' + (obra ? "Obra: " + esc(obra) + " · " : "") + "Modelo(s): " + esc(mods.join(", ") || "—") + " · Emitido em " + esc(new Date().toLocaleString("pt-BR")) + "</div>" +
+        '<h2>Resumo</h2><div class="cx">' +
+        "<div>" + (rel.ehSelecao ? "Seleção" : "Peças") + "<br><b>" + rel.selecao.n + "</b></div>" +
+        "<div>Peso<br><b>" + kn(rel.selecao.kN) + " kN</b><br>" + kgf(rel.selecao.kg) + " kg</div>" +
+        "<div>Participação no peso próprio<br><b>" + pc(rel.selecao.pct) + " %</b></div>" +
+        "<div>Peso próprio da construção<br><b>" + kn(rel.total.kN) + " kN</b><br>" + kgf(rel.total.kg) + " kg</div>" +
+        "<div>Peças com peso<br><b>" + rel.selecao.comPeso + " de " + rel.selecao.n + "</b></div></div>" +
+        (rel.solo && rel.solo.n ? '<p class="m">Solo e aterro do modelo (' + kn(rel.solo.kN) + " kN) ficam fora do peso próprio: pesam, mas não são carga sobre a estrutura.</p>" : "") +
+        '<p class="m">A participação é a fatia no peso próprio das peças do modelo. Sobrecarga de uso, vento e cargas que não estão modeladas não entram.</p>' +
+        "<h2>Peso por tipo</h2><table><tr><th>Tipo</th><th>Peças</th><th>Com peso</th><th>kg</th><th>kN</th><th>%</th></tr>";
+      rel.porTipo.forEach(function (t) { h += "<tr><td>" + esc(t.rotulo) + '</td><td class="n">' + t.n + '</td><td class="n">' + t.comPeso + '</td><td class="n">' + kgf(t.kg) + '</td><td class="n">' + kn(t.kN) + '</td><td class="n">' + pc(t.pct) + "</td></tr>"; });
+      h += "</table><h2>Peso por peça</h2><table><tr><th>Peça</th><th>Tipo</th><th>Material</th><th>Volume (m³)</th><th>γ (kN/m³)</th><th>kg</th><th>kN</th><th>%</th><th>Origem</th></tr>";
+      rel.linhas.forEach(function (l) {
+        var orig = l.motivo ? '<span class="av">sem peso: ' + esc(l.motivo) + "</span>" : (l.fonte === "ifc" ? "massa do IFC" : (l.fonte === "malha" ? "malha (estimado)" : "volume do IFC") + " × γ");
+        h += "<tr><td>" + esc(l.nome) + "</td><td>" + esc(l.tipo) + "</td><td>" + esc(l.material || "—") + '</td><td class="n">' + (l.volume ? Util.fmtNum(l.volume, 4) : "—") +
+          '</td><td class="n">' + (l.kNm3 ? Util.fmtNum(l.kNm3, 2) : "—") + '</td><td class="n">' + kgf(l.kg) + '</td><td class="n">' + kn(l.kN) + '</td><td class="n">' + (l.solo ? "solo" : pc(l.pct)) + "</td><td>" + orig + "</td></tr>";
+      });
+      h += "</table>";
+      var rk = Object.keys(refs);
+      if (rk.length) { h += "<h2>Pesos específicos usados</h2><ul>"; rk.sort().forEach(function (x) { h += "<li>" + esc(x) + "</li>"; }); h += "</ul>"; }
+      if (rel.motivos && rel.motivos.length) {
+        h += "<h2>Peças sem peso (do modelo)</h2><ul>";
+        rel.motivos.forEach(function (x) { h += "<li>" + x.n + " peça(s): " + esc(x.motivo) + "</li>"; });
+        h += '</ul><p class="m">Peça sem peso NÃO entra nos totais acima. Informe o peso específico do material no painel Peso das peças.</p>';
+      }
+      h += '<p class="m" style="margin-top:18px">Fontes: massa publicada no IFC (IfcQuantityWeight) quando existe; senão volume × peso específico aparente (ABNT NBR 6120:2019, valor médio quando a norma dá faixa) ou o valor informado pelo engenheiro. Gerado pelo OrçaPRO.</p></body></html>';
+      var jan = null;
+      try { jan = window.open("", "_blank"); } catch (e4) { jan = null; }
+      if (!jan) { Util.baixar(nomeArq + ".html", h, "text/html;charset=utf-8"); UI.toast("O navegador bloqueou a janela: baixei o relatório (.html) — abra e imprima.", "aviso"); return; }
+      jan.document.open(); jan.document.write(h); jan.document.close();
+      setTimeout(function () { try { jan.focus(); jan.print(); } catch (e5) {} }, 400);
     },
     _bimDiscEst: function () {
       if (!this._bimDisc) this._bimDisc = { aba: "disc", marcados: {} };

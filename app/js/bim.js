@@ -230,6 +230,13 @@ var IFC_PROP_ENUM = 4166981789, IFC_PROP_LIST = 2752243245, IFC_PROP_BOUNDED = 8
  *   10025" é NÚMERO DE LINHA do vendor, não código de tipo. Quem seguir aquilo
  *   ao pé da letra hardcoda 10025 e o traversal devolve zero, em silêncio. */
 var IFC_DISTRIBUTIONPORT = 3041715199, IFC_RELCONNECTSPORTTOELEMENT = 4201705270, IFC_RELCONNECTSPORTS = 3190031847;
+/* MATERIAL da peça (IfcRelAssociatesMaterial) — é dele que sai o PESO quando o
+ * IFC não traz a massa (volume × peso específico, js/bimpeso.js). Códigos lidos
+ * do `var IFC... = <numero>` do vendor (ver o ⚠ acima: número de LINHA não serve). */
+var IFC_RELASSOCIATESMATERIAL = 2655215786, IFC_MATERIAL = 1838606355, IFC_MATERIALLIST = 2199411900;
+var IFC_MATERIALLAYERSETUSAGE = 1303795690, IFC_MATERIALLAYERSET = 3303938423;
+var IFC_MATERIALPROFILESETUSAGE = 3079605661, IFC_MATERIALPROFILESET = 164193824;
+var IFC_MATERIALCONSTITUENTSET = 2852063980, IFC_MATERIALPROPERTIES = 3265635763;
 
 function montar(host, opts) {
   opts = opts || {};
@@ -1171,6 +1178,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (S.medir && S.medir.on) return; // no modo trena o duplo-clique é medição, não seleção
     if (area.on) { if (area.pts.length >= 3) fecharArea(); return; } // no modo área o duplo-clique FECHA o polígono
     if (ang.on) return; // no modo ângulo o clique é ponto — não seleção
+    if (S._aoClicarPeca) return; // coletando peças (peso/içamento): o clique simples já juntou — ver `cliqueColetor`
     selecionarEm(e.clientX, e.clientY);
   });
   /* a seleção de uma peça no ponto da tela — a do duplo-clique e, no modo
@@ -2798,6 +2806,89 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return { p: [pl.x, pl.y, pl.z], uid: uid, chave: el ? (el.chave || '') : '', nome: el ? (el.familia || el.nome || el.tipo || '') : '', tipo: ud.tipo || '' };
   }
   S._pontoNaTela = pontoNaTela;
+  /* COLETOR DE CLIQUES — "vou clicando nas peças e o sistema vai juntando"
+   * (relatório de peso, e depois o içamento). Diferente do `_aoTocar`, que é
+   * de UM toque: o coletor fica ligado até quem ligou desligar.
+   * ⚠ O DUPLO-CLIQUE DE HÁBITO: quem passa a vida no Revit clica duas vezes.
+   *   Os dois cliques chegavam aqui e a peça entrava e saía na mesma hora — na
+   *   tela, "não aconteceu nada". O segundo clique na MESMA peça em menos de
+   *   400 ms é o duplo-clique da primeira, e é ignorado; e o `dblclick` não
+   *   seleciona enquanto o coletor está ligado (ver o ouvinte dele). */
+  /* ⚠ e o tempo é o do RELÓGIO DO CLIQUE (timeStamp do evento), não a hora em
+     que o código rodou — a mesma lição do toque do visitante, acima: com o 3D
+     pesado cada quadro leva centenas de ms, os dois cliques do duplo clique
+     eram tratados 500 ms um do outro e a guarda deixava a peça entrar e sair
+     (medido na e2e-bim-peso, 01/10/2026: passava numa rodada e não na outra). */
+  var _ultColeta = null;
+  function cliqueColetor(e) {
+    var p = pontoNaTela(e.clientX, e.clientY);
+    var agora = (e && e.timeStamp > 0) ? e.timeStamp : performance.now();
+    if (p && p.uid && _ultColeta && _ultColeta.uid === p.uid && agora - _ultColeta.t < 400) return;
+    _ultColeta = p && p.uid ? { uid: p.uid, t: agora } : null;
+    try { S._aoClicarPeca(p); } catch (_) {}
+  }
+  S._cliqueColetor = cliqueColetor;
+
+  /* VOLUME PELA MALHA — para a peça cujo IFC não publica volume (porta,
+   * janela e louça costumam vir assim). Volume assinado dos tetraedros contra
+   * um ponto (teorema da divergência), na matriz da PRÓPRIA peça: independe de
+   * onde o modelo está na cena (imersivo, mesa, reposicionamento).
+   * ⚠ SÓ É CERTO EM MALHA FECHADA. Casca aberta dá um número que depende da
+   *   origem — por isso a origem é o centro da caixa da peça (o erro fica do
+   *   tamanho da peça, não da distância até a origem do projeto) e o resultado
+   *   é RECUSADO quando passa do volume da caixa envolvente. Quem consome
+   *   chama de "estimado pela malha", nunca de medido. */
+  /* o memo e o índice moram NO MODELO: tirar o modelo leva os dois junto, e
+     um IFC aberto depois com o mesmo `mid` não herda volume de outro arquivo */
+  function modeloDaPeca(uid) {
+    var s = String(uid || ''), i = s.lastIndexOf(':'); if (i < 0) return null;
+    var mid = s.slice(0, i);
+    return modeloDe(mid !== '' && !isNaN(+mid) ? +mid : mid) || modeloDe(mid);
+  }
+  function malhasDaPeca(uid) {
+    var mo = modeloDaPeca(uid), eid = +String(uid).slice(String(uid).lastIndexOf(':') + 1);
+    if (!mo || !mo.grupo) return [];
+    if (!mo._malhasPorId) {
+      mo._malhasPorId = {};
+      mo.grupo.children.forEach(function (m) {
+        var id = m.userData && m.userData.expressID; if (id == null || !m.isMesh) return;
+        (mo._malhasPorId[id] = mo._malhasPorId[id] || []).push(m);
+      });
+    }
+    return mo._malhasPorId[eid] || [];
+  }
+  function volumeMalha(uid) {
+    var mo = modeloDaPeca(uid); if (!mo) return null;
+    var memo = mo._volMalha || (mo._volMalha = {});
+    if (Object.prototype.hasOwnProperty.call(memo, uid)) return memo[uid];
+    var ms = malhasDaPeca(uid), caixa = new THREE.Box3(), tmp = new THREE.Box3();
+    if (!ms.length) return null;
+    ms.forEach(function (m) {
+      if (!m.geometry) return; m.updateMatrix();
+      if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+      tmp.copy(m.geometry.boundingBox).applyMatrix4(m.matrix); caixa.union(tmp);
+    });
+    if (caixa.isEmpty()) { memo[uid] = null; return null; }
+    var c = caixa.getCenter(new THREE.Vector3()), sz = caixa.getSize(new THREE.Vector3()), vCaixa = sz.x * sz.y * sz.z;
+    var total = 0;
+    ms.forEach(function (m) {
+      var g = m.geometry, pa = g && g.attributes && g.attributes.position, ix = g && g.index; if (!pa || !ix) return;
+      var e = m.matrix.elements, p = pa.array, id = ix.array, s = 0;
+      function X(k) { return e[0] * p[k] + e[4] * p[k + 1] + e[8] * p[k + 2] + e[12] - c.x; }
+      function Y(k) { return e[1] * p[k] + e[5] * p[k + 1] + e[9] * p[k + 2] + e[13] - c.y; }
+      function Z(k) { return e[2] * p[k] + e[6] * p[k + 1] + e[10] * p[k + 2] + e[14] - c.z; }
+      for (var t = 0; t + 2 < id.length; t += 3) {
+        var a = id[t] * 3, b = id[t + 1] * 3, d = id[t + 2] * 3;
+        var ax = X(a), ay = Y(a), az = Z(a), bx = X(b), by = Y(b), bz = Z(b), dx = X(d), dy = Y(d), dz = Z(d);
+        s += ax * (by * dz - bz * dy) - ay * (bx * dz - bz * dx) + az * (bx * dy - by * dx);
+      }
+      total += Math.abs(s / 6); // matriz espelhada inverte o sinal da peça inteira, não o volume
+    });
+    var r = (total > 0 && total <= vCaixa * 1.001) ? { volume: total, caixa: vCaixa } : null;
+    memo[uid] = r;
+    return r;
+  }
+  S._volumeMalha = volumeMalha;
   /* ⚠ OS PINOS MORAM NA CENA, NÃO NO modelRoot. Filhos do modelo, eles
      seriam acertados pelo raio do toque (e a peça atrás deles nunca seria
      selecionada), entrariam no todasMalhas como se fossem modelo e iriam
@@ -3191,7 +3282,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var alvoLupa = S._lupaSoltar ? S._lupaSoltar(e) : null;
     _dedos = Math.max(0, _dedos - 1);
     var tq = _toque; _toque = null;
-    if (tq && tq.id === e.pointerId && !ferramentaClique() && !fly.on && !xr.on && (visitante || S._aoTocar)) {
+    if (tq && tq.id === e.pointerId && !ferramentaClique() && !fly.on && !xr.on && (visitante || S._aoTocar || S._aoClicarPeca)) {
       var tdx = e.clientX - tq.x, tdy = e.clientY - tq.y;
       /* ⚠ DURAÇÃO PELO RELÓGIO DO DEDO (timeStamp do evento), não pela hora em
          que o código rodou. Com o 3D na tela inteira, cada quadro de um modelo
@@ -3201,6 +3292,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       var durou = (tq.ts > 0 && e.timeStamp > 0) ? e.timeStamp - tq.ts : performance.now() - tq.t;
       if (tdx * tdx + tdy * tdy <= 100 && durou < 500) {
         if (S._aoTocar) { var fn = S._aoTocar; S._aoTocar = null; try { fn(pontoNaTela(e.clientX, e.clientY)); } catch (eT) {} }
+        else if (S._aoClicarPeca) cliqueColetor(e);
         else selecionarEm(e.clientX, e.clientY);
         return;
       }
@@ -8785,6 +8877,82 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return mapa;
   }
 
+  /* MATERIAL por objeto (IfcRelAssociatesMaterial) → { id: [{ n, f, rho }] }:
+   * `n` o nome do material no IFC, `f` a fração do volume (camadas de parede
+   * pela espessura; constituinte pela `Fraction`; null quando o IFC não diz) e
+   * `rho` a massa específica que o PRÓPRIO IFC publica (Pset_MaterialCommon
+   * .MassDensity, kg/m³), quando publica.
+   *
+   * ⚠ O MATERIAL PODE ESTAR NO TIPO, não na peça (o Revit faz isso com
+   *   família). O mapa sai por objeto — peça OU tipo — e quem monta o elemento
+   *   cai no do tipo (`familias[eid].tipoId`) quando a peça não tem o seu.
+   * ⚠ Sem fração, NADA de dividir igual entre os materiais: uma janela de
+   *   alumínio e vidro meio a meio seria um número inventado. O motor do peso
+   *   recusa a peça e pede o material, em vez de chutar. */
+  function lerMateriais(mid) {
+    var mapa = {}, memo = {}, dens = {};
+    function linha(id) { if (id == null) return null; try { return S.api.GetLine(mid, id, false); } catch (_) { return null; } }
+    function lista(x) { return x == null ? [] : (Array.isArray(x) ? x : [x]); }
+    function ref(x) { return (x && x.value != null) ? x.value : null; }
+    function numv(x) { if (x == null) return NaN; if (typeof x === 'object') x = x.value; var v = parseFloat(x); return isNaN(v) ? NaN : v; }
+    try {
+      var mps = S.api.GetLineIDsWithType(mid, IFC_MATERIALPROPERTIES), nmp = mps.size();
+      for (var a = 0; a < nmp; a++) {
+        var mp = linha(mps.get(a)), matId = mp && ref(mp.Material); if (matId == null) continue;
+        lista(mp.Properties).forEach(function (h) {
+          var pv = linha(ref(h)); if (!pv || pv.type !== IFC_PROPERTYSINGLEVALUE) return;
+          if (!pv.Name || pv.Name.value !== 'MassDensity' || !pv.NominalValue) return;
+          var v = numv(pv.NominalValue.value); if (v > 0) dens[matId] = v;
+        });
+      }
+    } catch (_) {}
+    function item(matId, f) {
+      var m = linha(matId), n = m && m.Name && m.Name.value ? String(m.Name.value).trim() : '';
+      return n ? { n: n, f: (f == null || isNaN(f)) ? null : f, rho: dens[matId] || null } : null;
+    }
+    function resolver(id, prof) {
+      if (id == null || prof > 4) return [];
+      if (memo[id]) return memo[id];
+      var m = linha(id), out = [];
+      if (m) {
+        var t = m.type;
+        if (t === IFC_MATERIAL) { var it = item(id, null); if (it) out.push(it); }
+        else if (t === IFC_MATERIALLAYERSETUSAGE) out = resolver(ref(m.ForLayerSet), prof + 1);
+        else if (t === IFC_MATERIALPROFILESETUSAGE) out = resolver(ref(m.ForProfileSet), prof + 1);
+        else if (t === IFC_MATERIALLAYERSET) {
+          var cams = lista(m.MaterialLayers).map(function (h) { return linha(ref(h)); }).filter(Boolean), tot = 0;
+          cams.forEach(function (c) { var e = numv(c.LayerThickness); if (e > 0) tot += e; });
+          cams.forEach(function (c) { var e = numv(c.LayerThickness), it2 = item(ref(c.Material), tot > 0 ? (e > 0 ? e / tot : 0) : null); if (it2) out.push(it2); });
+        } else if (t === IFC_MATERIALPROFILESET) {
+          lista(m.MaterialProfiles).forEach(function (h) { var p = linha(ref(h)), it3 = p && item(ref(p.Material), null); if (it3) out.push(it3); });
+        } else if (t === IFC_MATERIALCONSTITUENTSET) {
+          lista(m.MaterialConstituents).forEach(function (h) { var c = linha(ref(h)), it4 = c && item(ref(c.Material), numv(c.Fraction)); if (it4) out.push(it4); });
+        } else if (t === IFC_MATERIALLIST) {
+          lista(m.Materials).forEach(function (h) { var it5 = item(ref(h), null); if (it5) out.push(it5); });
+        }
+      }
+      /* ⚠ perfil com o mesmo material repetido (montante + travessa do mesmo
+         aço) contaria duas vezes o mesmo nome: junta, somando a fração */
+      var por = {}, uniq = [];
+      out.forEach(function (x) {
+        if (!por[x.n]) { por[x.n] = { n: x.n, f: x.f, rho: x.rho }; uniq.push(por[x.n]); }
+        else if (por[x.n].f != null && x.f != null) por[x.n].f += x.f;
+        else por[x.n].f = null;
+      });
+      memo[id] = uniq;
+      return uniq;
+    }
+    try {
+      var rels = S.api.GetLineIDsWithType(mid, IFC_RELASSOCIATESMATERIAL), n = rels.size();
+      for (var i = 0; i < n; i++) {
+        var rel = linha(rels.get(i)); if (!rel || !rel.RelatingMaterial || !rel.RelatedObjects) continue;
+        var mats = resolver(ref(rel.RelatingMaterial), 0); if (!mats.length) continue;
+        lista(rel.RelatedObjects).forEach(function (oh) { var eid = ref(oh); if (eid != null) mapa[eid] = mats; });
+      }
+    } catch (e) { /* bônus: material nunca impede o modelo de abrir */ }
+    return mapa;
+  }
+
   // v1.1.98 — SISTEMA por elemento (IfcRelAssignsToGroup → IfcSystem/IfcDistributionSystem): o Revit
   // agrupa a tubulação em sistemas nomeados ("Sanitário 1", "Água Fria 3", "Ventilação 2"…). É esse
   // Name que diz o SISTEMA de verdade — o nome do elemento costuma ser genérico ("Tubo/duto"). Só
@@ -8951,6 +9119,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var bL = unidadePrefixoBase(mid, 'LENGTHUNIT'); if (bL == null) bL = 1;
     var bA = unidadePrefixoBase(mid, 'AREAUNIT'), bV = unidadePrefixoBase(mid, 'VOLUMEUNIT');
     var fLen = bL, fArea = (bA != null ? bA * bA : bL * bL), fVol = (bV != null ? bV * bV * bV : bL * bL * bL);
+    /* MASSA em kg. O SI do IFC chama a unidade de GRAM e põe o KILO no prefixo:
+       KILO GRAM → 1000 g → fator 1. Sem MASSUNIT declarada, vale o kg — é o que
+       os exportadores gravam (e o que o gerador dos modelos da RA grava). */
+    var bM = unidadePrefixoBase(mid, 'MASSUNIT'), fMassa = (bM != null ? bM / 1000 : 1);
     function vnum(x) { if (x == null) return NaN; if (typeof x === 'object') x = x.value; var v = parseFloat(x); return isNaN(v) ? NaN : v; }
     try {
       var rels = S.api.GetLineIDsWithType(mid, IFC_RELDEFINESBYPROPERTIES), nRel = rels.size();
@@ -8960,7 +9132,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         var qid = rel.RelatingPropertyDefinition.value; if (qid == null) continue;
         var qset; try { qset = S.api.GetLine(mid, qid, false); } catch (_) { continue; }
         if (!qset) continue;
-        var comp = { v: 0, s: -1 }, ar = { v: 0, s: -1 }, vol = { v: 0, s: -1 }, cont = 0;
+        var comp = { v: 0, s: -1 }, ar = { v: 0, s: -1 }, vol = { v: 0, s: -1 }, mas = { v: 0, s: -1 }, cont = 0;
         /* ⚠ MUITO IFC NÃO TEM BaseQuantities — E O COMPRIMENTO ESTÁ LÁ MESMO ASSIM.
          *
          * Este leitor só olhava `IfcElementQuantity`. Medido num projeto
@@ -9038,10 +9210,18 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
             if (sV > vol.s) vol = { v: Vv, s: sV };
           } else if (qv.CountValue != null) {
             var Cv = vnum(qv.CountValue); if (!isNaN(Cv)) cont += Cv;
+          } else if (qv.WeightValue != null) {
+            /* o PESO que o projetista (ou o fabricante) publicou: vale mais que
+               volume × peso específico, que é estimativa. Líquido antes do bruto,
+               como área e volume. */
+            var Wv = vnum(qv.WeightValue); if (isNaN(Wv) || Wv <= 0) continue;
+            var sW = /net/.test(nm) ? 3 : /gross/.test(nm) ? 2 : 1;
+            if (sW > mas.s) mas = { v: Wv, s: sW };
           }
         }
-        if (comp.s < 0 && ar.s < 0 && vol.s < 0 && cont === 0) continue;
+        if (comp.s < 0 && ar.s < 0 && vol.s < 0 && mas.s < 0 && cont === 0) continue;
         var qto = { comprimento: comp.s >= 0 ? comp.v * fLen : 0, area: ar.s >= 0 ? ar.v * fArea : 0, volume: vol.s >= 0 ? vol.v * fVol : 0, contagem: cont,
+          massa: mas.s >= 0 ? mas.v * fMassa : 0, massaFonte: mas.s === 3 ? 'liquida' : mas.s === 2 ? 'bruta' : mas.s === 1 ? 'anonima' : '',
           /* 'exata' = a quantidade se chama Length; 'nomeada' = o nome cita
              comprimento; 'anonima' = e de comprimento mas ninguem a batizou. */
           compFonte: comp.s === 3 ? 'exata' : comp.s === 2 ? 'nomeada' : comp.s === 1 ? 'anonima' : '' };
@@ -9055,6 +9235,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           if (qto.area > mapa[eid].area) mapa[eid].area = qto.area;
           if (qto.volume > mapa[eid].volume) mapa[eid].volume = qto.volume;
           if (qto.contagem > mapa[eid].contagem) mapa[eid].contagem = qto.contagem;
+          if (qto.massa > (mapa[eid].massa || 0)) { mapa[eid].massa = qto.massa; mapa[eid].massaFonte = qto.massaFonte; }
         }
       }
     } catch (e) { /* quantidade é bônus; nunca impede o modelo de abrir */ }
@@ -9939,6 +10120,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       modelo.carimbos = carimbos; modelo.qto = qto; // por modelo (expressID colide entre IFCs)
       modelo.familias = lerTipos(mid); // v1.1.82: família/tipo por elemento (Revit → IfcTypeObject)
       modelo.sistemas = lerSistemas(mid); // v1.1.98: SISTEMA por elemento (IfcSystem) → cor por sistema hidrossanitário
+      var materiais = lerMateriais(mid); // material da peça (ou do tipo dela) → peso por volume (js/bimpeso.js)
       modelo.pavimentos = lerPavimentos(mid); // 🏢 (y0 real preenchido depois, pelo AABB dos membros)
       var tmpMat = new THREE.Matrix4();
       var getMat = criarGetMat(modelo);
@@ -9994,7 +10176,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         var idIfc = lerIdentidadeIfc(S.api, mid, mesh.expressID);
         var idB = idElemento(modelo.modeloId, { id: mesh.expressID, globalId: idIfc.globalId });
         var dM = descricaoDeMercado(idIfc, famEl, cb);
-        modelo.elementos.push({ globalId: idB.globalId, chave: idB.chave, chaveInstavel: idB.instavel, nomeIfc: idIfc.nomeIfc, tag: idIfc.tag, id: mesh.expressID, uid: mid + ':' + mesh.expressID, mid: mid, arquivo: modelo.nome, tipo: tipoNome, nome: rotuloDisciplina(tipoNome), familia: famEl ? famEl.familia : null, descricao: dM.descricao, descricaoFonte: dM.fonte, sistemaIfc: (modelo.sistemas && modelo.sistemas[mesh.expressID]) || '', etapa: cb.etapa || null, codOrc: cb.codOrc || null, fase: cb.fase || null, tarefa: cb.tarefa || null, disciplinaPeca: cb.disciplinaPeca || null, detalhe: cb.detalhe || null, montagem: cb.montagem || null, folhas: cb.folhas || null, qto: (qto && qto[mesh.expressID]) || null });
+        modelo.elementos.push({ globalId: idB.globalId, chave: idB.chave, chaveInstavel: idB.instavel, nomeIfc: idIfc.nomeIfc, tag: idIfc.tag, id: mesh.expressID, uid: mid + ':' + mesh.expressID, mid: mid, arquivo: modelo.nome, tipo: tipoNome, nome: rotuloDisciplina(tipoNome), familia: famEl ? famEl.familia : null, descricao: dM.descricao, descricaoFonte: dM.fonte, sistemaIfc: (modelo.sistemas && modelo.sistemas[mesh.expressID]) || '', etapa: cb.etapa || null, codOrc: cb.codOrc || null, fase: cb.fase || null, tarefa: cb.tarefa || null, disciplinaPeca: cb.disciplinaPeca || null, detalhe: cb.detalhe || null, montagem: cb.montagem || null, folhas: cb.folhas || null, materiais: materiais[mesh.expressID] || (famEl && famEl.tipoId != null && materiais[famEl.tipoId]) || null, qto: (qto && qto[mesh.expressID]) || null });
         modelo.nEl++;
       });
       /* a disciplina que o engenheiro deixou no modelo viaja no manifesto do
@@ -10996,6 +11178,13 @@ window.BIM = {
   /* ---- API do visitante (js/rvvisor.js) ---- */
   pontoNaTela: function (x, y) { return S && S._pontoNaTela ? S._pontoNaTela(x, y) : null; },
   aoTocar: function (fn) { if (S) S._aoTocar = typeof fn === 'function' ? fn : null; },
+  /* coletor de cliques (peso/içamento): fn({uid, chave, nome, tipo, p}) a cada
+     clique simples numa peça — ou {uid:''} no vazio — até `coletarCliques(null)` */
+  coletarCliques: function (fn) { if (S) S._aoClicarPeca = typeof fn === 'function' ? fn : null; return !!(S && S._aoClicarPeca); },
+  coletandoCliques: function () { return !!(S && S._aoClicarPeca); },
+  _cliqueColetorEm: function (x, y) { if (S && S._cliqueColetor) S._cliqueColetor({ clientX: x, clientY: y }); }, // gancho de teste
+  /* volume pela malha (m³) da peça sem volume no IFC — ESTIMATIVA: {volume, caixa} ou null */
+  volumeMalha: function (uid) { return (S && S._volumeMalha) ? S._volumeMalha(uid) : null; },
   pinos: function (lista) { if (S && S._pinos) S._pinos(lista || []); },
   olharPara: function (p, dist) { if (S && S._olharPara) S._olharPara(p, dist); },
   tetoVisitante: function (frac) { return S && S._tetoVisitante ? S._tetoVisitante(frac) : null; },

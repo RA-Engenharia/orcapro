@@ -85,6 +85,10 @@
        É por isso que test-sem-emoji confere nome usado contra nome existente. */
     lista: '<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3.5 6h.01M3.5 12h.01M3.5 18h.01"/>',
     balanca: '<path d="M12 3v18M7 21h10"/><path d="M12 6 4 9l3 5 3-5zM12 6l8 3-3 5-3-5z"/>',
+    /* içamento: a lança do guindaste com o cabo e o gancho */
+    guindaste: '<path d="M4 21h8M6 21V9l2-2 13-3"/><path d="M8 7l-2 2M19 4.5V11"/><path d="M17.5 13a1.5 1.5 0 1 0 3 0c0-.8-.6-1.3-1.5-2"/>',
+    /* vento: três correntes */
+    vento: '<path d="M3 8h11a3 3 0 1 0-3-3"/><path d="M3 12h16a3 3 0 1 1-3 3"/><path d="M3 16h7"/>',
     cebola: '<path d="M3 5h18v14H3z"/><path d="M3 9.7h18M3 14.3h18"/><path d="M9 5v4.7M15 9.7v4.6M9 14.3V19"/>',
     estrela: '<path d="m12 3 2.6 5.6 6 .8-4.4 4.2 1.1 6.1L12 16.8 6.7 19.7l1.1-6.1L3.4 9.4l6-.8z"/>',
     ambiente: '<path d="M4 20V8l8-5 8 5v12z"/><path d="M9 20v-6h6v6"/>',

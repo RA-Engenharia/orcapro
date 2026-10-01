@@ -103,6 +103,11 @@
      * importou o pacote; no outro aparelho a tela diz isso. */
     "bim_sondagens",
     "bim_pranchas",
+    /* o PESO ESPECÍFICO que o engenheiro informou para um material que a
+     * norma não cobre ("Compensado naval = 6 kN/m³"). É da EMPRESA, não da
+     * obra: o mesmo material pesa igual em toda obra — e sem sincronizar, o
+     * peso da peça mudaria de um aparelho para o outro, no plano de içamento. */
+    "bim_pesos_esp",
     /* compatibilizacao: o TESTE salvo e o RESULTADO com o ciclo de vida.
      * O resultado carrega responsavel, prazo, comentario e historico — e
      * e justamente isso que precisa atravessar aparelhos: o engenheiro

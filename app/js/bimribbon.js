@@ -194,6 +194,28 @@
         ] }
       ]
     },
+    /* IÇAMENTO — o peso de cada peça é a base de tudo: guindaste e munck se
+       escolhem pela carga. O plano de içamento (equipamento, posição, pontos
+       de içamento, vento, simulação e o plano de rigging) entra por cima dele. */
+    {
+      id: "icamento", rotulo: "Içamento",
+      paineis: [
+        { nome: "Peso", comandos: [
+          { id: "peso-pecas", rotulo: "Peso das\npeças", icone: "balanca", grande: true, requer: "modelo", dica: "Quanto pesa cada peça, em kg e em kN, e quanto ela representa do peso próprio da obra. Junta peças clicando no modelo ou por tipo e tira o relatório." },
+          { id: "peso-coletar", rotulo: "Selecionar\nclicando", icone: "alvo", grande: true, tipo: "alterna", requer: "modelo", dica: "Ligado: cada clique numa peça do modelo entra (ou sai) da seleção de peso. Desligue para voltar a selecionar uma peça só." },
+          { id: "peso-tipo", rotulo: "Selecionar\npor tipo", icone: "camadas", requer: "modelo", dica: "Todos os pilares, todos os vidros, todas as peças de um material ou de uma família — de uma vez." },
+          { id: "peso-relatorio", rotulo: "Relatório\nde peso", icone: "planilha", requer: "modelo", dica: "Planilha e folha para imprimir: peso de cada peça, por tipo e da seleção, com a origem de cada número." }
+        ] },
+        { nome: "Plano de içamento", comandos: [
+          { id: "icar-equipamento", emBreve: true, rotulo: "Guindaste\ne munck", icone: "guindaste", grande: true, requer: "modelo", dica: "Escolhe o equipamento pela carga, pelo raio e pela altura, com a tabela de carga do fabricante." },
+          { id: "icar-posicao", emBreve: true, rotulo: "Posição do\nequipamento", icone: "caminhao", grande: true, requer: "modelo", dica: "Marca no projeto onde o guindaste ou o caminhão munck fica parado." },
+          { id: "icar-pontos", emBreve: true, rotulo: "Pontos de\niçamento", icone: "alvo", requer: "modelo", dica: "Onde vão as alças de içamento e por onde passa a linha de içamento de cada peça." },
+          { id: "icar-vento", emBreve: true, rotulo: "Vento no\nlocal", icone: "vento", requer: "modelo", dica: "Vento da cidade da obra pela NBR 6123, para liberar ou suspender o içamento." },
+          { id: "icar-simular", emBreve: true, rotulo: "Simular\niçamento", icone: "guindaste", requer: "modelo", dica: "O içamento passo a passo no 3D, com o equipamento modelado." },
+          { id: "icar-plano", emBreve: true, rotulo: "Plano de\nrigging", icone: "prancha", requer: "modelo", dica: "Memorial de cálculo, planilha de cargas, vistas e cortes, documentos do equipamento e do operador." }
+        ] }
+      ]
+    },
     {
       id: "vista", rotulo: "Vista",
       paineis: [

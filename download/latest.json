@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.112",
+  "versao": "1.2.113",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.112.zip",
-  "notas": "Pontos de vista do BIM ocupam cerca de um terco do espaco: o aviso de armazenamento cheio deixa de aparecer por causa deles; a lista de pontos de vista volta a sincronizar com a nuvem e chega aos outros aparelhos; o aviso de lista perto do limite da nuvem volta a aparecer a cada versao.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.112/OrcaPRO-IA-Instalador-v1.2.112.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.113.zip",
+  "notas": "BIM: nova aba Icamento com o peso de cada peca (kg, kN e participacao no peso proprio), pela massa do IFC ou pelo volume vezes o peso especifico da NBR 6120; selecao clicando no modelo ou por tipo, material e familia; relatorio em planilha e para imprimir. Projeto estrutural: o Ver no 3D da folha inteira volta a funcionar depois de reabrir o modelo guardado.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.113/OrcaPRO-IA-Instalador-v1.2.113.exe"
 }

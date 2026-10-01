@@ -203,7 +203,23 @@
                          /* a etapa de MONTAGEM (OrcaPRO_Montagem): sem ela aqui, a
                             aba Montagem do painel de disciplinas abriria vazia no
                             modelo reaberto do cache */
-                         "montagem"];
+                         "montagem",
+                         /* ⚠ as FOLHAS que desenham a peça (OrcaPRO_Folha). Entraram
+                            no elemento sem entrar nesta lista: o "Ver no 3D" da
+                            prancha inteira funcionava ao importar o IFC e, no dia
+                            seguinte, com o modelo reaberto daqui, voltava a dizer
+                            "nenhuma peça traz o carimbo" — a mesma frase que o
+                            recurso existia para acabar. */
+                         "folhas",
+                         /* o MATERIAL da peça (IfcRelAssociatesMaterial) — é dele
+                            que sai o peso quando o IFC não traz a massa */
+                         "materiais"];
+
+  /* ⚠ OS CARIMBOS TAMBÉM ESTÃO NO MAPA `carimbos`, e é por ele que um cache
+   * gravado ANTES de o campo entrar na lista acima se conserta sozinho. Só
+   * preenche o campo que o registro NÃO tem (`in`): campo gravado vazio é
+   * resposta, e não se sobrescreve resposta. */
+  var CAMPOS_DO_CARIMBO = ["etapa", "codOrc", "fase", "tarefa", "disciplinaPeca", "detalhe", "montagem", "folhas"];
 
   function elementoLimpo(e) {
     var o = {};
@@ -384,11 +400,18 @@
     var porG = {};
     for (var i = 0; i < reg.geometrias.length; i++) porG[txt(reg.geometrias[i].g)] = reg.geometrias[i];
 
-    var qto = reg.qto || {};
+    var qto = reg.qto || {}, carimbos = reg.carimbos || {};
     var els = [];
     for (var k = 0; k < (reg.elementos || []).length; k++) {
       var e = reg.elementos[k], o = {};
       for (var p = 0; p < CAMPOS_ELEMENTO.length; p++) o[CAMPOS_ELEMENTO[p]] = e[CAMPOS_ELEMENTO[p]];
+      var cb = carimbos[e.id];
+      if (cb) {
+        for (var cc = 0; cc < CAMPOS_DO_CARIMBO.length; cc++) {
+          var nc = CAMPOS_DO_CARIMBO[cc];
+          if (!(nc in e) && cb[nc] != null && txt(cb[nc])) o[nc] = cb[nc];
+        }
+      }
       o.mid = m;
       o.uid = m + ":" + o.id;
       o.arquivo = reg.nome;
