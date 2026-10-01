@@ -201,6 +201,7 @@
           { id: "home", rotulo: "Enquadrar\ntudo", icone: "casa", grande: true, requer: "modelo", dica: "Volta a ver o modelo inteiro." },
           { id: "orbita", rotulo: "Órbita", icone: "ciclo", grande: true, requer: "modelo", dica: "Gira em volta do modelo com o mouse (o modo de sempre). Sai do modo de voo." },
           { id: "voo", rotulo: "Modo de\nvoo", icone: "voo", grande: true, tipo: "alterna", requer: "modelo", dica: "Anda pelo modelo com o teclado, como num jogo." },
+          { id: "mesa", rotulo: "Modo\nmesa", icone: "cadeado", grande: true, tipo: "alterna", requer: "modelo", dica: "Para o tablet ou a tela deitada na mesa: o 3D ocupa a tela, as ferramentas ficam numa barra ao lado e a câmera fica travada (encostar a mão não gira nem dá zoom)." },
           { id: "imersivo", rotulo: "Realidade\nvirtual", icone: "vr", grande: true, requer: "modelo", pro: true, dica: "Entra no modelo em escala 1:1, pelo celular ou visor." },
           { id: "ultra", rotulo: "Qualidade\nultra", icone: "estrela", tipo: "alterna", requer: "modelo", dica: "Nitidez máxima (usa mais a placa de vídeo)." }
         ] },

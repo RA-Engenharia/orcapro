@@ -248,13 +248,13 @@ function montar(host, opts) {
      * visita e sumia calado a partir da segunda, que é o pior jeito de falhar.
      * Os traços dos notáveis não entram na lista porque nascem sob demanda; eles
      * se re-penduram sozinhos em `posicionarNotaveis`. */
-    [(S.xr && S.xr.video), S.bar, S.barToggle, S.hud, S.over, S.loading, S.renderer.domElement, S.vcubeEl, S.hint, S.cortePanel, S.corteLPanel, S.snapPanel, S.snapMarca, S.guiaH, S.guiaV, S.lupaEl, S.ctecCfg, S.ctecModal, S.plantaCfg, S.pavPanel, S.visPanel, S.sisPanel, S.blocokPanel, S.p3dPanel, S.editPanel, S.editDist, S.xrPanel, S.xrHud, S.reqPanel].forEach(function (el) { if (el) host.appendChild(el); });
+    [(S.xr && S.xr.video), S.bar, S.barToggle, S.hud, S.over, S.loading, S.renderer.domElement, S.vcubeEl, S.hint, S.cortePanel, S.corteLPanel, S.snapPanel, S.snapMarca, S.travaChip, S.guiaH, S.guiaV, S.lupaEl, S.ctecCfg, S.ctecModal, S.plantaCfg, S.pavPanel, S.visPanel, S.sisPanel, S.blocokPanel, S.p3dPanel, S.editPanel, S.editDist, S.xrPanel, S.xrHud, S.reqPanel].forEach(function (el) { if (el) host.appendChild(el); });
     if (S._onDragOver) { host.addEventListener('dragover', S._onDragOver); host.addEventListener('drop', S._onDrop); } // re-registra drop no host novo
     S.host = host;
     // painel flutuante volta ABERTO com a barra recolhida = caixa presa sem fechador
     // (o usuário voltava ao BIM e "não conseguia mais fechar"). Entra sempre limpo.
     try { if (S._fecharPaineis && S.bar && S.bar.style.display === 'none') S._fecharPaineis(null); } catch (eP) {}
-    setTimeout(function () { if (S && S._resize) S._resize(); if (S && S._ajustarTop) S._ajustarTop(); if (S && S._aplicarTema) S._aplicarTema(); }, 0); // tema re-aplicado (o fundo acima é só o default até aqui)
+    setTimeout(function () { if (S && S._resize) S._resize(); if (S && S._ajustarTop) S._ajustarTop(); if (S && S._aplicarTema) S._aplicarTema(); try { if (window.BimMesa) window.BimMesa.aoMontar(); } catch (eM) {} }, 0);   /* a barra do modo mesa morava no host antigo */ // tema re-aplicado (o fundo acima é só o default até aqui)
     return;
   }
   // CONTEXTO PERDIDO: o viewer antigo morreu (S.alive=false) mas os listeners globais e o
@@ -1027,9 +1027,51 @@ function montar(host, opts) {
 
   // ---- voo ----
   var canvasEl = renderer.domElement, fly = S.fly, _fwd = new THREE.Vector3(), _right = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0);
+  /* =====================================================================
+   * ⚠ A TRAVA DA CÂMERA (modo mesa, 30/09/2026): «o botão de trava na mesa,
+   * para que na hora que estiver passando a mão não dê zoom etc. — só se
+   * tiver destravado». Tablet deitado na mesa, várias mãos apontando: a mão
+   * que encosta girava ou dava zoom no modelo de todo mundo.
+   *
+   * Travada, a câmera só muda por AÇÃO DELIBERADA (botão Enquadrar, vista,
+   * ViewCube). Dedo, mouse e roda não giram nem dão zoom, e selecionar uma
+   * peça não voa até ela. As ferramentas (trena, corte, isolar) continuam: o
+   * toque delas é outro caminho, que a órbita nunca viu.
+   *
+   * ⚠ TODA TRAVA TEM PORTA: travada, aparece no canto um aviso que também é
+   * o botão de destravar, e quem tenta arrastar recebe o recado do porquê.
+   * Os lugares que devolvem a órbita (voo, lupa, saída da RA) respeitam a
+   * trava — sem isso, fechar a lupa destravava a câmera sem ninguém pedir.
+   * ===================================================================== */
+  var trava = { on: false, avisoT: 0 };
+  S.trava = trava;
+  var travaChip = document.createElement('button');
+  travaChip.type = 'button'; travaChip.setAttribute('data-bim', 'trava');
+  travaChip.style.cssText = 'position:absolute;left:10px;top:' + ((opts.topoReservado || 0) + 10) + 'px;z-index:21;display:none;border:0;border-radius:16px;padding:6px 12px;font:700 12px Inter,system-ui,sans-serif;color:#fff;background:#15803d;box-shadow:0 2px 10px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation';
+  host.appendChild(travaChip); S.travaChip = travaChip;   /* ⚠ e entra na lista do RE-HOME, lá em cima */
+  travaChip.addEventListener('click', function (e) { e.stopPropagation(); setTrava(false); });
+  function orbitaPode() { return !trava.on && !fly.on && !(S.lupa && S.lupa.on) && !(S.xr && S.xr.on); }
+  function setTrava(on) {
+    trava.on = !!on;
+    if (orbit) orbit.enabled = orbitaPode();
+    travaChip.innerHTML = (typeof Icones !== 'undefined' ? Icones.get('cadeado', 14) : '') + ' Câmera travada · toque para destravar';
+    travaChip.style.display = trava.on ? 'block' : 'none';
+    return trava.on;
+  }
+  S._setTrava = setTrava; S._visitante = visitante;
+  function avisarTrava() {
+    var agora = performance.now(); if (agora - trava.avisoT < 2500) return; trava.avisoT = agora;
+    S._hint((typeof Icones !== 'undefined' ? Icones.get('cadeado', 15) : '') + ' Câmera travada: encostar a mão não gira nem dá zoom. Toque em "Câmera travada" para destravar.');
+    travaChip.animate && travaChip.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.12)' }, { transform: 'scale(1)' }], { duration: 380 });
+  }
+  canvasEl.addEventListener('wheel', function () { if (trava.on) avisarTrava(); }, { passive: true });
+  function arrasteTravado(e) { if (trava.on && e.buttons && !ferramentaClique()) avisarTrava(); }
+  canvasEl.addEventListener('pointermove', arrasteTravado);
+  /* o modo mesa (js/bimmesa.js) volta sozinho quando o viewer remonta */
+  setTimeout(function () { try { if (window.BimMesa && S && S.alive) window.BimMesa.aoMontar(); } catch (_) {} }, 0);
   function setMode(voo) {
     if (S._cancelTween) S._cancelTween(); // qualquer troca de modo (Voo/Órbita e — via setMode(false) — Planta/Corte/Caminhar) cancela o voo cinematográfico pendente
-    fly.on = voo; orbit.enabled = !voo;
+    fly.on = voo; orbit.enabled = !voo && !trava.on;
     bar.querySelector('[data-b="voo"]').classList.toggle('on', voo);
     bar.querySelector('[data-b="voo"]').style.background = voo ? corAtiva() : '';
     bar.querySelector('[data-b="voo"]').style.color = voo ? '#fff' : '';
@@ -1129,7 +1171,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (hit && hit.object.userData && hit.object.userData.expressID != null) {
       S.selected = hit.object; S.prevMat = S.selected.material; S.selected.material = selMat;
       contornoSelecao(hit.object); // v1.1.89 — contorno nítido na seleção
-      if (!fly.on && !xr.on && !planta.on && !corteL.on && !visitante) enquadrarObj(new THREE.Box3().setFromObject(hit.object), 2.6); // foco cinematográfico — NÃO na planta/corte (quebraria a moldura travada); nem no visitante, que toca para LER a peça, não para voar até ela
+      if (!fly.on && !xr.on && !planta.on && !corteL.on && !visitante && !trava.on) enquadrarObj(new THREE.Box3().setFromObject(hit.object), 2.6); // foco cinematográfico — NÃO na planta/corte (quebraria a moldura travada); nem no visitante, que toca para LER a peça, não para voar até ela
       if (opts.onPick) opts.onPick(propsDe(hit.object.userData.mid != null ? hit.object.userData.mid : S.modelID, hit.object.userData.expressID, hit.object.userData.tipo));
     } else if (opts.onPick) { contornoSelecao(null); opts.onPick(null); }
   }
@@ -2407,7 +2449,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
   function limparMarca(o) { scene.remove(o); if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } }
   function tirarProv() { if (!medir.prov) return; var i = medir.objs.indexOf(medir.prov); if (i >= 0) { limparMarca(medir.prov); medir.objs.splice(i, 1); } medir.prov = null; }
-  function limparMedidas() { medir.prov = null; area.pts = []; area.tmp = []; ang.pts = []; ang.tmp = []; medir.objs.forEach(limparMarca); medir.objs = []; medir.pts = []; medir.regs = []; btnCotas(); }
+  function limparMedidas() { medir.prov = null; area.pts = []; area.tmp = []; ang.pts = []; ang.tmp = []; medir.objs.forEach(limparMarca); medir.objs = []; medir.pts = []; medir.regs = []; atualizarElastico(null); btnCotas(); }
   S._limparMedidas = limparMedidas;
   // cursor único p/ as 3 ferramentas de medição (trena/área/ângulo)
   function atualizarCursor() { canvasEl.style.cursor = (medir.on || area.on || ang.on) ? 'crosshair' : ''; }
@@ -2914,15 +2956,18 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       S._hint(fmtDist(reg.L) + ' · ' + (reg.temFamilia ? reg.chave : 'sem família no IFC — “Iguais” usa o tipo'));
       marcarFechamento(); return;
     }
-    if (!hit) { S._hint((ctec.ativo ? '📝' : area.on ? '▱' : ang.on ? '∠' : '📏') + ' Clique em cima de uma superfície do modelo.'); return; }
-    var sn = aplicarSnap(hit, raioToque(e)); mostrarSnapMarca(sn, e.clientX, e.clientY);
+    /* `mirarEm`, não o `hit` cru: com o cursor na borda (ou fora) da peça o
+       canto dela ainda vale — é o mesmo cálculo que o marcador mostrou */
+    var sn = mirarParaClique(e.clientX, e.clientY, raioToque(e));
+    if (!sn || !sn.p) { S._hint((ctec.ativo ? '📝' : area.on ? '▱' : ang.on ? '∠' : '📏') + ' Clique em cima de uma superfície do modelo.'); return; }
+    mostrarSnapMarca(sn, e.clientX, e.clientY);
     if (ctec.ativo) { ctecClique(sn.p.clone()); return; } // linha do corte técnico tem prioridade
     if (area.on) { areaClique(sn.p.clone()); return; }
     if (ang.on) { angClique(sn.p.clone()); return; }
     medir.pts.push({ p: sn.p.clone() });
     if (medir.pts.length === 2) {
       tirarProv(); // a marca definitiva do 1º ponto é desenhada por desenharMedida (evita marca dupla)
-      var ok = desenharMedida(medir.pts[0].p, medir.pts[1].p); medir.pts = [];
+      var ok = desenharMedida(medir.pts[0].p, medir.pts[1].p); medir.pts = []; atualizarElastico(null);
       marcarFechamento(); // duplo-clique no 2º ponto não planta o 1º ponto da próxima cota
       S._hint(ok ? '' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' Medido! Clique 2 pontos pra medir de novo, ou Esc pra sair.' : '' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' Pontos muito próximos — clique 2 pontos distintos.');
     } else {
@@ -2942,9 +2987,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     }
     if (!ferramentaClique() || !snap.on) return;
     var t = performance.now(); if (t - _snapHoverT < 60) return; _snapHoverT = t;
-    var hit = raycastEm(e.clientX, e.clientY);
-    if (!hit) { esconderSnapMarca(); return; }
-    mostrarSnapMarca(aplicarSnap(hit, raioToque(e)), e.clientX, e.clientY);
+    var sn = mirarEm(e.clientX, e.clientY, raioToque(e));
+    if (!sn || !sn.p) { esconderSnapMarca(); return; }
+    mostrarSnapMarca(sn, e.clientX, e.clientY);
   });
 
   // ============================================================
@@ -4324,8 +4369,16 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   });
   // marcador HTML (não entra na cena 3D: não é clipado nem raycastado)
   var snapMarca = document.createElement('div');
-  snapMarca.style.cssText = 'position:absolute;z-index:5;display:none;pointer-events:none;transform:translate(-50%,-50%)';
-  snapMarca.innerHTML = '<div data-sm="ico" style="width:12px;height:12px;border:2px solid #22c55e;margin:0 auto"></div><div data-sm="rot" style="font-size:10px;font-weight:700;color:#15803d;text-shadow:0 1px 2px rgba(0,0,0,.8);text-align:center;margin-top:2px"></div>';
+  /* ⚠ O ÍCONE FICA CRAVADO NO PONTO, e os rótulos penduram EMBAIXO dele.
+     Antes o bloco inteiro (ícone + rótulo) era centralizado no ponto com
+     translate(-50%,-50%): com o rótulo escrito, o ícone subia ~7 px acima do
+     ponto de verdade, enquanto as linhas-guia cruzavam no lugar certo — o
+     marcador e a guia discordavam de onde a trena ia agarrar. A âncora agora
+     tem 0×0 e cada peça é posicionada a partir dela. */
+  snapMarca.style.cssText = 'position:absolute;z-index:5;display:none;pointer-events:none;width:0;height:0;overflow:visible';
+  snapMarca.innerHTML = '<div data-sm="ico" style="position:absolute;left:-8px;top:-8px;width:16px;height:16px;box-sizing:border-box;border:2px solid #22c55e"></div>' +
+    '<div data-sm="rot" style="position:absolute;top:11px;left:0;transform:translateX(-50%);white-space:nowrap;font-size:10px;font-weight:700;color:#15803d;background:rgba(15,39,64,.8);border-radius:5px;padding:1px 6px;text-align:center"></div>' +
+    '<div data-sm="dist" style="position:absolute;top:25px;left:0;transform:translateX(-50%);white-space:nowrap;display:none;font-size:11px;font-weight:800;color:#fff;background:rgba(15,39,64,.88);border-radius:6px;padding:1px 7px"></div>';
   host.appendChild(snapMarca);
   S.snapMarca = snapMarca;
   var SNAP_VIS = { vertice: { cor: '#22c55e', borda: '0', rot: 'vértice' }, meio: { cor: '#f59e0b', borda: '50%', rot: 'meio' }, aresta: { cor: '#38bdf8', borda: '0', rot: 'aresta' }, intersecao: { cor: '#e879f9', borda: '0', rot: '✚ interseção' }, centro: { cor: '#facc15', borda: '50%', rot: '⊕ centro' } };
@@ -4438,8 +4491,48 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     else guiasEsconder();   /* sem ponto agarrado não há alinhamento a mostrar: guia aí seria promessa falsa */
   }
   S._tickExtra.push(function () { posicionarSnapMarca(); });
+  /* ⚠ O QUE A TRENA ESTÁ SEGUINDO FICA ACESO. O marcador diz o TIPO do ponto;
+     com arestas de várias peças passando perto, faltava dizer QUAL aresta e
+     de QUAL peça — "sempre fico com dúvida de onde estou pegando" (30/09/2026).
+     A aresta acesa mora na CENA (fora do modelo: não é raycastada nem vai para
+     o arquivo da RA) e desenha por cima de tudo. */
+  var destaqueSnap = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), new THREE.LineBasicMaterial({ color: 0x38bdf8, depthTest: false, transparent: true, opacity: 0.95 }));
+  destaqueSnap.renderOrder = 999; destaqueSnap.visible = false; destaqueSnap.frustumCulled = false; scene.add(destaqueSnap);
+  /* o ELÁSTICO: do 1º ponto da trena até onde o cursor vai agarrar, com a
+     distância AO VIVO. Antes o número só aparecia depois do 2º clique — a
+     pessoa media no escuro e conferia depois. A conta é a mesma do
+     `desenharMedida` (na planta, horizontal, e o rótulo diz). */
+  var elastico = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), new THREE.LineBasicMaterial({ color: 0x22c55e, depthTest: false, transparent: true, opacity: 0.85 }));
+  elastico.renderOrder = 996; elastico.visible = false; elastico.frustumCulled = false; scene.add(elastico);
+  function linhaEm(l, a, b) { var pa = l.geometry.attributes.position; pa.setXYZ(0, a.x, a.y, a.z); pa.setXYZ(1, b.x, b.y, b.z); pa.needsUpdate = true; l.geometry.computeBoundingSphere(); l.visible = true; }
+  function distElastico(a, b) {
+    var horizontal = !!planta.on;
+    var d = horizontal ? Math.sqrt((a.x - b.x) * (a.x - b.x) + (a.z - b.z) * (a.z - b.z)) : a.distanceTo(b);
+    return fmtDist(d) + (horizontal ? ' (horizontal)' : '');
+  }
+  function atualizarElastico(p) {
+    var dv = snapMarca.querySelector('[data-sm="dist"]');
+    if (!p || !medir.on || medir.pts.length !== 1) { elastico.visible = false; dv.style.display = 'none'; return; }
+    linhaEm(elastico, medir.pts[0].p, p);
+    dv.textContent = distElastico(medir.pts[0].p, p); dv.style.display = 'block';
+  }
+  S._elasticoTexto = function () { var dv = snapMarca.querySelector('[data-sm="dist"]'); return dv.style.display === 'none' ? '' : dv.textContent; };   // hook de teste
+  /* nome curto da peça do ponto agarrado — lido com textContent, nunca HTML:
+     vem cru de um IFC de terceiros */
+  var _elUid = { n: -1, arr: null, mapa: {} };
+  function nomeDaPeca(obj) {
+    var ud = obj && obj.userData; if (!ud || ud.expressID == null) return '';
+    var els = S.elementos || [];
+    if (_elUid.arr !== els || _elUid.n !== els.length) { _elUid = { n: els.length, arr: els, mapa: {} }; for (var i = 0; i < els.length; i++) _elUid.mapa[els[i].uid] = els[i]; }
+    var el = _elUid.mapa[(ud.mid != null ? ud.mid : S.modelID) + ':' + ud.expressID];
+    var nm = String((el && (el.familia || el.nome || el.tipo)) || ud.tipo || '');
+    return nm.length > 30 ? nm.slice(0, 29) + '…' : nm;
+  }
   function mostrarSnapMarca(sn) {
     notaveisDefinir(sn && sn.notaveis);
+    if (sn && sn.p && sn.seg && (sn.tipo === 'aresta' || sn.tipo === 'meio')) { linhaEm(destaqueSnap, sn.seg[0], sn.seg[1]); destaqueSnap.material.color.set((SNAP_VIS[sn.tipo] || SNAP_VIS.aresta).cor); }
+    else destaqueSnap.visible = false;
+    atualizarElastico(sn && sn.p);
     if (!sn || !sn.tipo) {
       snapVivo = null; guiasEsconder();
       /* ⚠ ELEMENTO PESADO: o snap não é pulado à toa — gerar as arestas de uma
@@ -4456,18 +4549,31 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         posicionarSnapMarca();
         return;
       }
+      /* SUPERFÍCIE: sem canto nem aresta perto o clique cai na face — e isso
+         também se mostra. Sumir com o marcador deixava a dúvida de "vai pegar
+         o quê?" justo onde a resposta era simples. */
+      if (sn && sn.p && snap.on) {
+        var icoS = snapMarca.querySelector('[data-sm="ico"]');
+        icoS.style.borderColor = '#cbd5e1'; icoS.style.borderRadius = '50%'; icoS.style.transform = 'scale(.6)';
+        var rotS = snapMarca.querySelector('[data-sm="rot"]'), nmS = nomeDaPeca(sn.obj);
+        rotS.textContent = 'superfície' + (nmS ? ' · ' + nmS : ''); rotS.style.color = '#cbd5e1';
+        snapVivo = { p: sn.p.clone(), tipo: null };
+        posicionarSnapMarca();
+        return;
+      }
       snapMarca.style.display = 'none';
       return;
     }
     var vis = SNAP_VIS[sn.tipo], ico = snapMarca.querySelector('[data-sm="ico"]');
     ico.style.borderColor = vis.cor; ico.style.borderRadius = vis.borda;
     ico.style.transform = (sn.tipo === 'aresta' || sn.tipo === 'intersecao') ? 'rotate(45deg)' : '';
-    snapMarca.querySelector('[data-sm="rot"]').textContent = vis.rot;
+    var nmP = nomeDaPeca(sn.obj);
+    snapMarca.querySelector('[data-sm="rot"]').textContent = vis.rot + (nmP ? ' · ' + nmP : '');
     snapMarca.querySelector('[data-sm="rot"]').style.color = vis.cor;
     snapVivo = { p: sn.p.clone(), tipo: sn.tipo };
     posicionarSnapMarca();
   }
-  function esconderSnapMarca() { snapVivo = null; snapMarca.style.display = 'none'; guiasEsconder(); notaveisEsconder(); }
+  function esconderSnapMarca() { snapVivo = null; snapMarca.style.display = 'none'; guiasEsconder(); notaveisEsconder(); destaqueSnap.visible = false; atualizarElastico(null); }
 
   // ============================================================
   // ┼ LINHAS-GUIA FINAS — onde o ponto vai cair, atravessando a tela
@@ -4578,14 +4684,13 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     lupaEl.style.top = y + 'px';
   }
   function lupaAtualizarSnap() {
-    var hit = raycastEm(lupa.x, lupa.y);
-    if (!hit) { lupa.sn = null; esconderSnapMarca(); return; }
+    var sn = mirarEm(lupa.x, lupa.y, raioToque({ pointerType: 'touch' }));
+    if (!sn || !sn.p) { lupa.sn = null; esconderSnapMarca(); return; }
     /* ⚠ O MESMO RAIO QUE A SOLTURA VAI USAR. Aqui era 26 e a soltura sintetiza um
        evento `pointerType:'touch'`, que cai em `raioToque` = 30. Dois raios = a lupa
        podia MOSTRAR um ponto e a cota GRAVAR outro — exatamente a queixa que esta
        versão veio consertar, reintroduzida dentro do próprio conserto. */
-    var sn = aplicarSnap(hit, raioToque({ pointerType: 'touch' }));
-    lupa.sn = sn && sn.tipo ? { p: sn.p.clone(), tipo: sn.tipo } : { p: hit.point.clone(), tipo: null };
+    lupa.sn = { p: sn.p.clone(), tipo: sn.tipo || null };
     mostrarSnapMarca(sn);   /* mesmo sem tipo: os traços finos dos notáveis continuam úteis, e o aviso de elemento pesado precisa aparecer TAMBÉM dentro da lupa */
   }
   function lupaAbrir(x, y, pid) {
@@ -4599,7 +4704,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (!lupa.on) return;
     lupa.on = false; lupa.id = null; lupa.sn = null;
     lupaEl.style.display = 'none';
-    if (orbit) orbit.enabled = true;
+    if (orbit) orbit.enabled = !trava.on;   /* ⚠ fechar a lupa não destrava a câmera */
     /* ⚠ e a dica da lupa NÃO pode ficar no ar. "Arraste para ajustar a mira,
        solte para marcar o ponto" mandando fazer uma coisa que já não é possível
        é pior que balão nenhum — principalmente quando a lupa fechou sozinha
@@ -4926,71 +5031,270 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var dd = Math.sqrt((px1 - qx1) * (px1 - qx1) + (py1 - qy1) * (py1 - qy1) + (pz1 - qz1) * (pz1 - qz1));
     return { d: dd, p: new THREE.Vector3((px1 + qx1) / 2, (py1 + qy1) / 2, (pz1 + qz1) / 2) };
   }
-  function aplicarSnap(hit, raioPx) {
-    if (!snap.on || !hit || !hit.object || !hit.object.geometry) return { p: hit.point, tipo: null };
-    var raio = raioPx || snap.raio, rc = canvasEl.getBoundingClientRect();
+  /* ⚠ DUAS JANELAS — o conserto da queixa de 30/09/2026 ("ainda está difícil
+   * encontrar aresta e pontos de forma fluida, sempre fico com dúvida de onde
+   * estou pegando").
+   *
+   * O canto (e o meio, e o cruzamento) fica EM CIMA das arestas que chegam
+   * nele. A distância do cursor até a aresta é, portanto, SEMPRE menor ou
+   * igual à distância até o canto — e o peso de 1,35 só fazia o canto ganhar
+   * com d_canto ≤ 1,35 × d_aresta. Chegando num canto em 45° isso NUNCA
+   * acontece. Medido na bancada (exemplo.ifc, 6 vistas): a 8 px de um canto
+   * visível, com o cursor em cima da própria peça, o snap pegou o canto 1 vez
+   * em 176 — a aresta levou 125.
+   *
+   * A regra dos programas de CAD: PONTO primeiro, numa janela menor; ARESTA só
+   * quando não há ponto na janela. A janela de ponto (70 % do raio) dá 10 px no
+   * mouse e 21 px no dedo — abaixo dos 27 px do relato de 27/08 («um vértice a
+   * 27 px levando o clique de uma aresta a 20 px»), que continua impossível. */
+  function snapRaioPonto(raio) { return Math.round(raio * 0.7); }
+  var SNAP_PONTOS = { vertice: 1, meio: 1, intersecao: 1, centro: 1 };
+  var _snRc = new THREE.Raycaster(), _snRc2 = new THREE.Raycaster(), _snNdc = new THREE.Vector2(), _snRay = new THREE.Ray(), _snNaRay = new THREE.Vector3();
+  /* ⚠ PONTO ESCONDIDO NÃO VALE. Com as peças vizinhas do cursor entrando na
+     varredura (a coroa, em `mirarEm`) e as de TRÁS do raio também (o canto
+     parede×viga×laje), um canto que não está à vista pode cair a poucos pixels
+     do cursor — e a trena mediria até um ponto que a pessoa nem está vendo.
+     O raio da câmera até o candidato não pode bater em superfície visível
+     ANTES dele. Testa só contra as peças varridas: quem tampa um ponto a
+     poucos pixels do cursor é uma delas, e o modelo inteiro a cada movimento
+     do mouse pesaria. `setFromCamera` serve à perspectiva e à ortográfica. */
+  function snapVisivel(p, objs) {
+    if (!objs.length) return true;
+    /* ⚠ A CAMADA DO RAIO DO CLIQUE. Com a agregação ligada as peças moram na
+       camada 1 (a tela desenha a malha mesclada, camada 0) e o raio do clique
+       só olha a 1. Um Raycaster novo nasce na camada 0: não via peça nenhuma e
+       aprovava TODO ponto como visível — medido: desligar esta checagem não
+       mudava nada, e era por isso. */
+    _snRc2.layers.mask = ray.layers.mask;
+    var q = _snP.copy(p).project(camera);
+    _snRc2.setFromCamera(_snNdc.set(q.x, q.y), camera);
+    var L = _snRc2.ray.origin.distanceTo(p), tol = Math.max(0.01, L * 0.002);
+    _snRc2.far = L + tol;
+    var hs = _snRc2.intersectObjects(objs, false);
+    for (var i = 0; i < hs.length; i++) {
+      if (!cadeiaVisivel(hs[i].object) || foraDoClip(hs[i].point)) continue;
+      return hs[i].distance >= L - tol;
+    }
+    return true;
+  }
+  function aplicarSnap(hit, raioPx, cursor, extras) {
+    if (!snap.on || (!hit && !cursor)) return hit ? { p: hit.point, tipo: null } : null;
+    if (hit && (!hit.object || !hit.object.geometry)) return { p: hit.point, tipo: null };
+    var raio = raioPx || snap.raio, raioP = snapRaioPonto(raio), rc = canvasEl.getBoundingClientRect();
     function px(v) { var q = _snP.copy(v).project(camera); return { x: (q.x + 1) / 2 * rc.width, y: (1 - q.y) / 2 * rc.height }; }
-    var alvoPx = px(hit.point), melhor = null, maisPerto = null, notaveis = [];
-    function testar(v, tipo) {
+    /* o alvo é o CURSOR quando ele é conhecido: com o cursor fora da peça não
+       há ponto 3D debaixo dele, e a aresta é medida contra o raio da câmera que
+       passa por ali (não contra o ponto do hit, que pode ser de outra peça) */
+    var alvoPx = cursor ? { x: cursor.x - rc.left, y: cursor.y - rc.top } : px(hit.point);
+    _snRc.setFromCamera(_snNdc.set(alvoPx.x / rc.width * 2 - 1, -(alvoPx.y / rc.height) * 2 + 1), camera);
+    _snRay.copy(_snRc.ray);
+    var pontos = [], arestas = [], notaveis = [], varridos = [];
+    function testar(v, tipo, obj, a, b) {
       var p2 = px(v), dx = p2.x - alvoPx.x, dy = p2.y - alvoPx.y, d = Math.sqrt(dx * dx + dy * dy);
+      var ehPonto = !!SNAP_PONTOS[tipo];
       if (d > raio) return;
       if (foraDoClip(v)) return; // vértice/aresta do lado CLIPADO (invisível) do corte NÃO pode ser snapado -> cota errada
-      var dEff = d / (SNAP_PESO[tipo] || 1);
-      if (!melhor || dEff < melhor.dEff) melhor = { p: v.clone(), tipo: tipo, d: d, dEff: dEff };
-      if (!maisPerto || d < maisPerto.d) maisPerto = { p: v.clone(), tipo: tipo, d: d, dEff: dEff };
       /* pontos notáveis à vista, para os traços finos do item 6 — só canto,
-         começo, meio e centro; aresta é linha inteira, não é um "ponto". */
-      if (tipo !== 'aresta' && notaveis.length < 24) notaveis.push({ v: v.clone(), tipo: tipo, d: d });
+         começo, meio e centro; aresta é linha inteira, não é um "ponto". Eles
+         continuam aparecendo no raio CHEIO: mostram o que existe por perto,
+         mesmo o que ainda não está na janela de agarrar. */
+      if (ehPonto && notaveis.length < 24) notaveis.push({ v: v.clone(), tipo: tipo, d: d });
+      if (ehPonto && d > raioP) return;
+      var c = { p: v.clone(), tipo: tipo, d: d, dEff: d / (SNAP_PESO[tipo] || 1), obj: obj, a: a ? a.clone() : null, b: b ? b.clone() : null };
+      if (ehPonto) pontos.push(c); else arestas.push(c);
     }
-    // arestas PRÓXIMAS do cursor (candidatas ao ✚ interseção) — dos até 2 objetos do raio
+    // arestas PRÓXIMAS do cursor (candidatas ao ✚ interseção) — dos objetos varridos
     var proximas = [], pulouPesado = false;
     function varrerObjeto(obj) {
-      if (!obj || !obj.geometry) return;
+      if (!obj || !obj.geometry || varridos.indexOf(obj) > -1) return;
       var g = obj.geometry, np = (g.attributes && g.attributes.position) ? g.attributes.position.count : 0;
       /* ⚠ elemento pesado: sem snap nesse objeto — e ANTES isso era um silêncio.
          O marcador simplesmente não aparecia, e quem estava medindo concluía que
          o snap "não pega direito" nesse pedaço do modelo. Falhar calado é o que
          transforma um limite técnico legítimo em queixa de imprecisão. Agora a
          marca diz por quê; inventar um ponto que não existe continua fora. */
-      if (np > SNAP_MAX_VERT) { if (obj === hit.object) pulouPesado = true; return; }   /* ⚠ só o objeto ATINGIDO. A bandeira era única para a chamada toda: bastava o terreno estar ATRÁS da parede para o marcador dizer "sem snap (peça pesada)" em cima de uma parede leve, que tinha snap perfeito. Aviso errado é pior que aviso nenhum. */
+      if (np > SNAP_MAX_VERT) { if (hit && obj === hit.object) pulouPesado = true; return; }   /* ⚠ só o objeto ATINGIDO. A bandeira era única para a chamada toda: bastava o terreno estar ATRÁS da parede para o marcador dizer "sem snap" em cima de uma parede que tinha snap perfeito */
+      varridos.push(obj);
       var arr = arestasDe(g); if (!arr.length) return;
       var mw = obj.matrixWorld;
       if (snap.c !== false) {
         var ctr = centrosDe(g);
-        for (var ci = 0; ci < ctr.length; ci++) testar(_snCt.copy(ctr[ci]).applyMatrix4(mw), 'centro');
+        for (var ci = 0; ci < ctr.length; ci++) testar(_snCt.copy(ctr[ci]).applyMatrix4(mw), 'centro', obj);
       }
       for (var i = 0; i < arr.length; i += 6) {
         _snA.set(arr[i], arr[i + 1], arr[i + 2]).applyMatrix4(mw);
         _snB.set(arr[i + 3], arr[i + 4], arr[i + 5]).applyMatrix4(mw);
-        if (snap.v) { testar(_snA, 'vertice'); testar(_snB, 'vertice'); }
-        if (snap.m) { testar(_snM.addVectors(_snA, _snB).multiplyScalar(0.5), 'meio'); }
-        _snL.set(_snA, _snB);
-        var cl = _snL.closestPointToPoint(hit.point, true, _snCl);
-        if (snap.a) testar(cl, 'aresta');
+        if (snap.v) { testar(_snA, 'vertice', obj); testar(_snB, 'vertice', obj); }
+        if (snap.m) { testar(_snM.addVectors(_snA, _snB).multiplyScalar(0.5), 'meio', obj, _snA, _snB); }
+        /* o ponto da aresta mais perto do RAIO do cursor (não do ponto 3D do
+           hit): é o que se projeta embaixo do cursor, com ou sem peça ali */
+        _snRay.distanceSqToSegment(_snA, _snB, _snNaRay, _snCl);
+        if (snap.a) testar(_snCl, 'aresta', obj, _snA, _snB);
         if (snap.i !== false && proximas.length < 14) {
-          var pc = px(cl), ddx = pc.x - alvoPx.x, ddy = pc.y - alvoPx.y;
-          if (ddx * ddx + ddy * ddy <= (raio + 6) * (raio + 6)) proximas.push({ a: _snA.clone(), b: _snB.clone() });
+          var pc = px(_snCl), ddx = pc.x - alvoPx.x, ddy = pc.y - alvoPx.y;
+          if (ddx * ddx + ddy * ddy <= (raio + 6) * (raio + 6)) proximas.push({ a: _snA.clone(), b: _snB.clone(), obj: obj });
         }
       }
     }
-    varrerObjeto(hit.object);
+    if (hit) varrerObjeto(hit.object);
     // demais objetos do raio: o canto parede×viga vive na FRONTEIRA entre elementos
-    for (var oh = 1; oh < _ultimosHits.length; oh++) if (_ultimosHits[oh].object !== hit.object) varrerObjeto(_ultimosHits[oh].object);
+    for (var oh = 1; oh < _ultimosHits.length; oh++) if (!hit || _ultimosHits[oh].object !== hit.object) varrerObjeto(_ultimosHits[oh].object);
+    // e as peças vizinhas que a coroa trouxe (cursor na borda ou fora da peça)
+    if (extras) { var ate = performance.now() + SNAP_ORCAMENTO_MS; for (var ex = 0; ex < extras.length; ex++) { if (ex >= SNAP_MIN_PECAS && performance.now() > ate) break; varrerObjeto(extras[ex]); } }
     // ✚ INTERSEÇÃO REAL: pares de arestas próximas cujos pontos-mais-próximos em 3D distam < 1 cm
     // (cruzamento genuíno no espaço, não coincidência visual de projeção — nunca inventa ponto)
     if (snap.i !== false) {
       for (var ii = 0; ii < proximas.length; ii++) for (var jj = ii + 1; jj < proximas.length; jj++) {
         var r3 = segSeg3D(proximas[ii].a, proximas[ii].b, proximas[jj].a, proximas[jj].b);
-        if (r3.d < 0.01) testar(r3.p, 'intersecao');
+        if (r3.d < 0.01) testar(r3.p, 'intersecao', proximas[ii].obj);
       }
     }
-    /* A FOLGA: o tipo nobre só ganha se estiver perto. Um vértice a 27 px não
-       leva o clique de uma aresta a 20 px — era exatamente o "ponto que não é". */
-    if (melhor && maisPerto && melhor.tipo !== maisPerto.tipo && melhor.d > maisPerto.d + snapFolga(raio)) melhor = maisPerto;
-    return melhor
-      ? { p: melhor.p, tipo: melhor.tipo, notaveis: notaveis, pesado: pulouPesado }
-      : { p: hit.point, tipo: null, notaveis: notaveis, pesado: pulouPesado };
+    /* PONTOS: ganha o de menor distância efetiva. A FOLGA continua valendo
+       ENTRE tipos de ponto: um centro a 9 px não leva o clique de um canto a
+       2 px — era exatamente o "ponto que não é". */
+    var melhor = null, maisPerto = null, k;
+    for (k = 0; k < pontos.length; k++) {
+      if (!melhor || pontos[k].dEff < melhor.dEff) melhor = pontos[k];
+      if (!maisPerto || pontos[k].d < maisPerto.d) maisPerto = pontos[k];
+    }
+    if (melhor && maisPerto && melhor.tipo !== maisPerto.tipo && melhor.d > maisPerto.d + snapFolga(raioP)) melhor = maisPerto;
+    /* fila: o ponto escolhido, os outros pontos por distância efetiva, e só
+       então as arestas por distância — o primeiro que estiver À VISTA vence */
+    /* ⚠ UM CANDIDATO POR LUGAR. O mesmo canto chega uma vez por aresta que
+       encosta nele (3 a 6 vezes), e cada cópia custava uma checagem de
+       visibilidade. Num trecho com peças atrás, as cópias de cantos
+       ESCONDIDOS esgotavam as checagens antes de a fila chegar à aresta
+       visível — a bancada contou 53 "nada" onde havia aresta à vista. */
+    function semRepetir(lista, chaveD) {
+      var visto = {}, out = [];
+      for (var i = 0; i < lista.length; i++) {
+        var c = lista[i], kk = Math.round(c.p.x * 1000) + ',' + Math.round(c.p.y * 1000) + ',' + Math.round(c.p.z * 1000);
+        var ja = visto[kk];
+        if (ja === undefined) { visto[kk] = out.length; out.push(c); } else if (c[chaveD] < out[ja][chaveD]) out[ja] = c;
+      }
+      return out;
+    }
+    pontos = semRepetir(pontos, 'dEff'); arestas = semRepetir(arestas, 'd');
+    var fila = [];
+    if (melhor) fila.push(melhor);
+    pontos.sort(function (a, b) { return a.dEff - b.dEff; });
+    for (k = 0; k < pontos.length; k++) if (pontos[k].p.distanceToSquared(melhor.p) > 1e-12 || pontos[k].tipo !== melhor.tipo) fila.push(pontos[k]);
+    arestas.sort(function (a, b) { return a.d - b.d; });
+    for (k = 0; k < arestas.length; k++) fila.push(arestas[k]);
+    /* as checagens de visibilidade vão até achar um visível — com teto de
+       TEMPO (não de contagem) depois das 40 primeiras */
+    var venc = null, ateVis = performance.now() + SNAP_ORCAMENTO_MS;
+    for (k = 0; k < fila.length; k++) {
+      if (k >= SNAP_MIN_CHECAGENS && performance.now() > ateVis) break;
+      if (snapVisivel(fila[k].p, varridos)) { venc = fila[k]; break; }
+    }
+    return venc
+      ? { p: venc.p, tipo: venc.tipo, notaveis: notaveis, pesado: pulouPesado, obj: venc.obj || null, seg: (venc.a && venc.b) ? [venc.a, venc.b] : null }
+      : { p: hit ? hit.point : null, tipo: null, notaveis: notaveis, pesado: pulouPesado, obj: hit ? hit.object : null, seg: null };
   }
+  /* ⚠ AS PEÇAS PERTO DO CURSOR SE ACHAM PELA CAIXA NA TELA, NÃO POR RAIOS.
+     O snap só varria as peças que o raio do cursor ATRAVESSA. Com o cursor na
+     borda ou fora da peça, o canto dela nem existia como candidato — bancada
+     com gabarito (exemplo.ifc, 6 vistas, 30/09/2026): de 556 pontos visíveis
+     na janela, 158 saíam como "nada".
+     A primeira tentativa foi uma coroa de 8 raios à volta do cursor e não
+     resolveu NENHUM dos 158: o canto que escapa é o da ponta de uma LASCA
+     fina — parede de 15 cm, laje ou viga vista de lado —, com 1 a 3 px de
+     largura na tela, e nem 48 raios em volta a acertavam. A caixa da peça
+     projetada na tela não tem fresta: se ela encosta na janela do cursor, a
+     peça entra, e `snapVisivel` descarta o ponto que estiver escondido.
+     As caixas são projetadas numa passada pelo modelo e só de novo quando a
+     câmera, o tamanho da tela ou os modelos mudam — mirando, a câmera está
+     parada. Visibilidade (ocultar/isolar) é conferida na hora do uso. */
+  /* ⚠ SEM TETO DE CONTAGEM, COM TETO DE TEMPO. Com teto de 60 peças, 7 dos
+     107 pontos da bancada do modelo real (6.733 peças, 1.099 barras de
+     armadura) ficavam de fora — num trecho denso, mais de 300 caixas encostam
+     no cursor. Sem teto nenhum o acerto foi 100 %, mas a PRIMEIRA passada
+     calculava as arestas de milhares de peças de uma vez: 543 ms de tela
+     parada. O orçamento espalha esse cálculo (que fica em cache) pelos
+     movimentos seguintes, das peças mais próximas da câmera para trás. */
+  var PERTO_MAX = 5000, SNAP_ORCAMENTO_MS = 12;
+  /* ⚠ E UM MÍNIMO GARANTIDO, que o orçamento de tempo não corta. Só com o
+     teto de tempo, a trena ficava PIOR com o computador ocupado: medido em
+     30/09/2026 com outros programas pesando na máquina, o acerto de longe caiu
+     de 95,7 % para menos de 90 % — cabiam menos checagens nos mesmos 12 ms.
+     Com o mínimo, o resultado não depende da carga até esse ponto, e o custo
+     no pior caso fica em ~20 ms por movimento (o hover é estrangulado em 60). */
+  var SNAP_MIN_PECAS = 60, SNAP_MIN_CHECAGENS = 150;
+  var _caixasTela = { chave: '', lista: [] }, _cxV = new THREE.Vector3(), _cxB = new THREE.Box3();
+  function chaveDaCena() {
+    var rc = canvasEl.getBoundingClientRect();
+    camera.updateMatrixWorld();
+    var ids = []; for (var ci = 0; ci < modelRoot.children.length; ci++) ids.push(modelRoot.children[ci].id);
+    return camera.matrixWorld.elements.join(',') + '|' + camera.projectionMatrix.elements.join(',') + '|' + Math.round(rc.width) + 'x' + Math.round(rc.height) + '|' + ids.join(',');
+  }
+  function caixasNaTela() {
+    var rc = canvasEl.getBoundingClientRect();
+    var chave = chaveDaCena();
+    if (_caixasTela.chave === chave) return _caixasTela.lista;
+    var lista = [];
+    modelRoot.updateMatrixWorld(true);
+    modelRoot.traverse(function (o) {
+      if (!o.isMesh || !o.geometry) return;
+      var g = o.geometry; if (!g.boundingBox) g.computeBoundingBox();
+      if (!g.boundingBox) return;
+      _cxB.copy(g.boundingBox).applyMatrix4(o.matrixWorld);
+      var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, atras = false;
+      for (var i = 0; i < 8; i++) {
+        _cxV.set(i & 1 ? _cxB.max.x : _cxB.min.x, i & 2 ? _cxB.max.y : _cxB.min.y, i & 4 ? _cxB.max.z : _cxB.min.z).project(camera);
+        /* canto atrás da câmera (andando dentro do modelo): a projeção dele
+           não vale — a peça entra sempre, pelo lado seguro */
+        if (_cxV.z > 1 || _cxV.z < -1) atras = true;
+        var sx = (_cxV.x + 1) / 2 * rc.width, sy = (1 - _cxV.y) / 2 * rc.height;
+        if (sx < x0) x0 = sx; if (sx > x1) x1 = sx; if (sy < y0) y0 = sy; if (sy > y1) y1 = sy;
+      }
+      lista.push({ o: o, x0: x0, y0: y0, x1: x1, y1: y1, atras: atras, perto: _cxB.distanceToPoint(camera.position) });
+    });
+    _caixasTela = { chave: chave, lista: lista };
+    return lista;
+  }
+  function pecasPerto(cx, cy, raio) {
+    var rc = canvasEl.getBoundingClientRect(), x = cx - rc.left, y = cy - rc.top, L = caixasNaTela(), sel = [];
+    for (var i = 0; i < L.length; i++) {
+      var c = L[i];
+      if (!c.atras && (x + raio < c.x0 || x - raio > c.x1 || y + raio < c.y0 || y - raio > c.y1)) continue;
+      if (!cadeiaVisivel(c.o)) continue;
+      sel.push(c);
+    }
+    sel.sort(function (a, b) { return a.perto - b.perto; });
+    var out = [];
+    for (var k = 0; k < sel.length && k < PERTO_MAX; k++) out.push(sel[k].o);
+    return out;
+  }
+  /* o cálculo que o MARCADOR mostra e que o CLIQUE grava — um só, para os
+     dois nunca discordarem. Devolve null quando não há nada: nem peça sob o
+     cursor, nem ponto ou aresta visível na janela. */
+  function mirarEm(cx, cy, raioPx) {
+    var hit = raycastEm(cx, cy), raio = raioPx || snap.raio;
+    var sn = aplicarSnap(hit, raio, { x: cx, y: cy }, snap.on ? pecasPerto(cx, cy, raio) : null);
+    if (!sn || (!sn.tipo && !hit && !sn.pesado)) sn = null;
+    _ultimaMira = { x: cx, y: cy, raio: raio, chave: chaveDaCena(), sn: sn };
+    return sn;
+  }
+  /* ⚠ O CLIQUE GRAVA O QUE O MARCADOR MOSTROU. O cálculo trabalha com
+     orçamento de tempo, e o cache de arestas esquenta entre um movimento e
+     outro: o mesmo pixel podia dar "superfície" no marcador e "aresta" no
+     clique — visto na e2e com a máquina ocupada, e é exatamente a queixa
+     ("fico com dúvida de onde estou pegando"). Com o cursor parado (até 2 px)
+     e a câmera igual, o clique usa a mira que já está na tela. */
+  var _ultimaMira = null;
+  function mirarParaClique(cx, cy, raioPx) {
+    var m = _ultimaMira, raio = raioPx || snap.raio;
+    /* e a peça da mira ainda à vista, e o ponto fora do corte: ocultar ou
+       cortar sem mexer o mouse não pode deixar o clique gravar o que sumiu */
+    if (m && m.raio === raio && Math.abs(m.x - cx) <= 2 && Math.abs(m.y - cy) <= 2 && m.chave === chaveDaCena() &&
+        (!m.sn || ((!m.sn.obj || cadeiaVisivel(m.sn.obj)) && !(m.sn.p && foraDoClip(m.sn.p))))) return m.sn;
+    return mirarEm(cx, cy, raio);
+  }
+  S._snapLimites = function (ms, pecas, checagens) { var ant = [SNAP_ORCAMENTO_MS, SNAP_MIN_PECAS, SNAP_MIN_CHECAGENS]; if (ms != null) { SNAP_ORCAMENTO_MS = ms; SNAP_MIN_PECAS = pecas; SNAP_MIN_CHECAGENS = checagens; } return ant; };   // hook de teste
+  S._ultimaMiraXY = function () { return _ultimaMira ? [_ultimaMira.x, _ultimaMira.y] : null; };   // hook de teste
+  S._marcaAtual = function () { return snapVivo ? { p: [snapVivo.p.x, snapVivo.p.y, snapVivo.p.z], tipo: snapVivo.tipo } : null; };   // hook de teste
+  S._mirarEm = mirarEm; S._centrosDe = centrosDe; S._pecasPerto = pecasPerto; S._destaqueSnap = destaqueSnap; S._raioCamadas = function () { return ray.layers.mask; }; // hooks de teste
   function raioToque(e) { return (e && e.pointerType === 'touch') ? 30 : snap.raio; } // dedo tem ~mais incerteza
 
   // ============================================================
@@ -6186,6 +6490,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         }
       }
       var android = /Android/i.test(navigator.userAgent || '') && !!(S.opts && S.opts.onSceneViewer);
+      html += '<button class="btn sm longo" data-x="ratrava" style="width:100%;' + (raTrava ? 'background:#15803d;color:#fff' : '') + '">' +
+        (raTrava ? (typeof Icones !== 'undefined' ? Icones.get('cadeado', 15) : '') + ' RA travada: encostar a mão não muda o tamanho nem tira do lugar' : (typeof Icones !== 'undefined' ? Icones.get('destravado', 15) : '') + ' RA livre: a pinça muda o tamanho da maquete') + '</button>';
       html += '<div style="font-size:11px;color:#5b6b7c">Veja o projeto no ambiente ou ande dentro dele. Escolha o modo:</div>' +
         (ql ? '<button class="btn sm primary longo" data-x="quicklook" data-ql="real" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA do iPhone — no chão, tamanho real</button>' +
               '<button class="btn sm longo" data-x="quicklook" data-ql="maquete" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA do iPhone — maquete na mesa</button>' : '') +
@@ -6326,10 +6632,18 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
      `download` segue o <model-viewer> do Google para arquivo gerado na hora
      (blob:), que é o nosso caso. Clique depois de montar (assíncrono)
      funciona: o Quick Look não é janela nova, não precisa do gesto. */
+  /* ⚠ TRAVA DA RA — uma só para os três caminhos, ligada por padrão e
+     guardada no aparelho. No iPhone a tela é a do AR Quick Look (da Apple): o
+     que ela deixa travar é a pinça de TAMANHO (allowsContentScaling=0) —
+     girar e arrastar a Apple não deixa. No app do Google é o resizable=false.
+     Na RA do próprio OrçaPRO, a maquete fica presa no lugar ao ser fixada. */
+  var raTrava = true;
+  try { raTrava = localStorage.getItem('orcapro:bim:raTrava') !== '0'; } catch (_) {}
+  S._raTravada = function () { return raTrava; };
   function dispararQuickLook(url) {
     var a = document.createElement('a');
     a.setAttribute('rel', 'ar');
-    a.setAttribute('href', url);
+    a.setAttribute('href', url + (raTrava ? '#allowsContentScaling=0' : ''));
     a.setAttribute('download', 'projeto.usdz');
     a.appendChild(document.createElement('img'));
     a.style.display = 'none';
@@ -6457,16 +6771,25 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     // tampa a vista, então as ações essenciais (disciplina/medir/ajustes/sair) ficam nesta barra.
     var discs = disciplinasPresentes();
     var chips = discs.length > 1 ? discs.map(function (d) { var off = !!xr.discOcultas[d.chave]; return '<button data-har="' + esc(d.chave) + '" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 11px;font-size:12px;color:#fff;background:' + (off ? 'rgba(90,110,130,.7)' : corAtiva()) + '">' + esc(d.nome) + '</button>'; }).join('') : '';
-    var barra = '<div style="position:absolute;left:0;right:0;bottom:16px;display:flex;flex-wrap:wrap;gap:6px;justify-content:center;padding:0 10px">' +
-      chips +
-      '<button data-har="centralizar" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#fff;background:#2563eb;font-weight:600">' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' Centralizar</button>' +
+    /* ⚠ AS FERRAMENTAS NUMA COLUNA AO LADO DO MODELO (pedido de 30/09/2026):
+       a fileira de baixo competia com a mão de quem segura o celular e com a
+       maquete na mesa. Embaixo ficam só as disciplinas (filtro). */
+    var passosOn = !!(xr._pass && xr._pass.on);
+    function bt(k, ico, rot, bg, cor) {
+      return '<button data-har="' + k + '" style="pointer-events:auto;border:0;border-radius:12px;width:68px;min-height:52px;padding:5px 2px;font-size:10.5px;line-height:1.15;color:' + (cor || '#fff') + ';background:' + bg +
+        ';font-weight:700;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;touch-action:manipulation">' + (typeof Icones !== 'undefined' ? Icones.get(ico, 18) : '') + '<span>' + rot + '</span></button>';
+    }
+    var barra = '<div data-h="lateral" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:6px;max-height:calc(100% - 130px);overflow-y:auto;pointer-events:auto;padding:6px;background:rgba(11,26,43,.55);border-radius:14px">' +
+      (comReticulo ? bt('trava', xr.travado ? 'cadeado' : 'destravado', xr.travado ? 'Travado' : 'Livre', xr.travado ? '#15803d' : '#b45309') : '') +
+      bt('medir', 'medir', 'Medir', xr.medir.on ? '#b45309' : '#15803d', xr.medir.on ? '#fff' : '#0b1a2b') +
+      bt('centralizar', 'alvo', 'Centralizar', '#2563eb') +
       // Passos SÓ em Caminhar/Câmera (no AR a locomoção é do WebXR, o botão seria morto). Rótulo reflete
       // o estado REAL (listener ativo) — nunca mostra "on" sem sensor ligado (gate v1.1.93).
-      (comReticulo ? '' : '<button data-har="passos" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#fff;font-weight:600;background:' + ((xr._pass && xr._pass.on) ? '#0d9488' : 'rgba(90,110,130,.7)') + '">' + (typeof Icones !== 'undefined' ? Icones.get('caminhar', 15) : '') + ' Passos: ' + ((xr._pass && xr._pass.on) ? 'on' : 'off') + '</button>') +
-      '<button data-har="medir" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#0b1a2b;background:#15803d;font-weight:600">' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' Medir</button>' +
-      '<button data-har="sistema" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#fff;font-weight:600;background:' + (sisColor.on ? corAtiva() : '#334a63') + '">' + (typeof Icones !== 'undefined' ? Icones.get('paleta', 15) : '') + ' Sistemas</button>' +
-      '<button data-har="ajustes" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#fff;background:#334a63">' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + ' Ajustes</button>' +
-      '<button data-har="sair" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#fff;background:#b91c1c">⏹ Sair</button></div>';
+      (comReticulo ? '' : bt('passos', 'caminhar', 'Passos: ' + (passosOn ? 'on' : 'off'), passosOn ? '#0d9488' : 'rgba(90,110,130,.7)')) +
+      bt('sistema', 'paleta', 'Cores', sisColor.on ? corAtiva() : '#334a63') +
+      bt('ajustes', 'ajustes', 'Ajustes', '#334a63') +
+      bt('sair', 'fechar', 'Sair', '#b91c1c') + '</div>' +
+      (chips ? '<div style="position:absolute;left:0;right:0;bottom:16px;display:flex;flex-wrap:wrap;gap:6px;justify-content:center;padding:0 92px 0 10px">' + chips + '</div>' : '');
     xrHud.innerHTML =
       (comReticulo ? '' : '<div data-h="joy" style="position:absolute;left:16px;bottom:60px;width:108px;height:108px;border-radius:50%;background:rgba(20,40,64,.4);border:2px solid rgba(127,224,163,.5);pointer-events:auto;touch-action:none">' +
       '<div data-h="knob" style="position:absolute;left:31px;top:31px;width:46px;height:46px;border-radius:50%;background:rgba(127,224,163,.85)"></div></div>') +
@@ -6481,6 +6804,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   xrHud.addEventListener('click', function (e) {
     var b = e.target.closest('[data-har]'); if (!b) return; var k = b.getAttribute('data-har');
     if (k === 'sair') sairImersivo();
+    else if (k === 'trava') { xr.travado = !xr.travado; if (xr.reticle) xr.reticle.visible = false; pintarTravaHud(); xrDica(xr.travado ? 'Travado: a maquete não sai do lugar.' : 'Livre: use "Centralizar" (ou Ajustes → reposicionar) para mover.'); }
     else if (k === 'centralizar') centralizarProjeto();
     else if (k === 'passos') {
       if (xr._passH) { xr._pass.on = !xr._pass.on; _syncPassosHud(xr._pass.on ? 'Andar com o celular na mão move você no projeto (por passos).' : 'Passos desligados — use o joystick.'); }
@@ -6504,10 +6828,16 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   // permissão de Movimento foi negada/está pendente no iOS (gate v1.1.93).
   function _syncPassosHud(dica) {
     var b = xrHud.querySelector('[data-har="passos"]');
-    if (b) { var on = !!(xr._pass && xr._pass.on); b.textContent = '' + (typeof Icones !== 'undefined' ? Icones.get('caminhar', 15) : '') + ' Passos: ' + (on ? 'on' : 'off'); b.style.background = on ? '#0d9488' : 'rgba(90,110,130,.7)'; }
+    /* ⚠ innerHTML com o ícone: o textContent de antes jogava o CÓDIGO do SVG na tela */
+    if (b) { var on = !!(xr._pass && xr._pass.on); b.innerHTML = (typeof Icones !== 'undefined' ? Icones.get('caminhar', 18) : '') + '<span>Passos: ' + (on ? 'on' : 'off') + '</span>'; b.style.background = on ? '#0d9488' : 'rgba(90,110,130,.7)'; }
     if (dica) xrDica(dica);
   }
-  S._xrPassosHud = function (n) { var b = xrHud.querySelector('[data-har="passos"]'); if (b && xr._pass && xr._pass.on) b.textContent = '🚶 ' + n + ' passos'; };
+  S._xrPassosHud = function (n) { var b = xrHud.querySelector('[data-har="passos"] span'); if (b && xr._pass && xr._pass.on) b.textContent = n + ' passos'; };
+  function pintarTravaHud() {
+    var b = xrHud.querySelector('[data-har="trava"]'); if (!b) return;
+    b.innerHTML = (typeof Icones !== 'undefined' ? Icones.get(xr.travado ? 'cadeado' : 'destravado', 18) : '') + '<span>' + (xr.travado ? 'Travado' : 'Livre') + '</span>';
+    b.style.background = xr.travado ? '#15803d' : '#b45309';
+  }
   function ligarJoystick() {
     var joy = xrHud.querySelector('[data-h="joy"]'), knob = xrHud.querySelector('[data-h="knob"]');
     if (!joy) return;
@@ -6816,7 +7146,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     xr._anchorMat = xr.reticle.matrix.clone();
     xr.placed = true; modelRoot.visible = true;
     posicionarModeloAR();
-    xrDica('Projeto fixado. Ande em volta! Trave no painel pra ele não sair do lugar.');
+    /* travada por padrão: o pedido é "só se tiver destravado" */
+    xr.travado = raTrava; pintarTravaHud();
+    xrDica(raTrava ? 'Projeto fixado e TRAVADO: encostar a mão não tira ele do lugar. Toque em "Travado" para mover.' : 'Projeto fixado. Ande em volta! Toque em "Livre" para travar no lugar.');
     pintarXRPanel();
   }
   function posicionarModeloAR() {
@@ -6850,15 +7182,42 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
 
   // ---- medir na escala (2 toques) ----
+  /* ⚠ A TRENA DA RA COM O MESMO ÍMÃ DO 3D. Ela pegava o ponto cru da
+     superfície no centro da tela — nenhum canto, nenhuma aresta — e no
+     imersivo o marcador de snap (HTML) nem aparece: só o dom-overlay é
+     desenhado. Aqui o alvo é o centro da tela (a mira), o ímã é o `mirarEm`
+     (raio de dedo) e o marcador é uma bolinha NA CENA, com o tipo, a peça e a
+     distância real na dica. */
+  var marcaXR = null, elasticoXR = null, _marcaXRT = 0, _miraXR = null;
+  var COR_TIPO = { vertice: 0x22c55e, meio: 0xf59e0b, aresta: 0x38bdf8, intersecao: 0xe879f9, centro: 0xfacc15 };
+  function centroDaTela() { var r = canvasEl.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }
+  S._tickExtra.push(function () {
+    var vivo = xr.on && xr.medir && xr.medir.on && (xr.mode !== 'ar' || xr.placed);
+    if (!vivo) { if (marcaXR) marcaXR.visible = false; if (elasticoXR) elasticoXR.visible = false; _miraXR = null; return; }
+    var agora = performance.now(); if (agora - _marcaXRT < 150) { if (marcaXR && marcaXR.visible) rescaleObj(marcaXR); return; }
+    _marcaXRT = agora;
+    var c = centroDaTela(), sn = mirarEm(c.x, c.y, 30);
+    _miraXR = sn && sn.p ? sn : null;
+    if (!marcaXR) { marcaXR = pontoMarca(new THREE.Vector3()); marcaXR.userData._sc = 0.012; scene.add(marcaXR); }
+    if (!_miraXR) { marcaXR.visible = false; if (elasticoXR) elasticoXR.visible = false; return; }
+    marcaXR.position.copy(_miraXR.p); marcaXR.material.color.setHex(COR_TIPO[_miraXR.tipo] || 0xcbd5e1); marcaXR.visible = true; rescaleObj(marcaXR);
+    var rot = (_miraXR.tipo ? (SNAP_VIS[_miraXR.tipo] || {}).rot : 'superfície') || 'superfície', nm = nomeDaPeca(_miraXR.obj), dist = '';
+    if (xr.medir.pts.length === 1) {
+      if (!elasticoXR) { elasticoXR = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), new THREE.LineBasicMaterial({ color: 0x7fe0a3, depthTest: false })); elasticoXR.renderOrder = 997; elasticoXR.frustumCulled = false; scene.add(elasticoXR); }
+      linhaEm(elasticoXR, xr.medir.pts[0], _miraXR.p);
+      dist = ' · ' + fmtDist(xr.medir.pts[0].distanceTo(_miraXR.p) / (xr.escala || 1)) + ' (real)';
+    } else if (elasticoXR) elasticoXR.visible = false;
+    xrDica(rot + (nm ? ' · ' + nm : '') + dist);
+  });
   function medirTocar(e) {
-    var r = canvasEl.getBoundingClientRect();
-    var mx = (((e.clientX != null ? e.clientX : r.left + r.width / 2) - r.left) / r.width) * 2 - 1;
-    var my = -((((e.clientY != null ? e.clientY : r.top + r.height / 2) - r.top) / r.height) * 2 - 1);
-    ray.setFromCamera({ x: mx, y: my }, camera);
-    var hit = primeiroHit(ray.intersectObjects(modelRoot.children, true));
-    if (!hit) { xrDica('' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' Mire numa superfície do modelo.'); return; }
-    xr.medir.pts.push(hit.point.clone());
-    var m = pontoMarca(hit.point.clone()); scene.add(m); xr.medir.objs.push(m); rescaleObj(m);
+    /* o ponto que a bolinha está mostrando (a mira) — ou, sem ela, o ímã no
+       lugar do toque/centro. Nunca o ponto cru da superfície. */
+    var c = centroDaTela(), cx = e.clientX != null ? e.clientX : c.x, cy = e.clientY != null ? e.clientY : c.y;
+    var sn = (e.clientX == null && _miraXR) ? _miraXR : mirarEm(cx, cy, 30);
+    if (!sn || !sn.p) { xrDica('' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' Mire numa superfície do modelo.'); return; }
+    var P = sn.p.clone();
+    xr.medir.pts.push(P);
+    var m = pontoMarca(P.clone()); scene.add(m); xr.medir.objs.push(m); rescaleObj(m);
     if (xr.medir.pts.length === 2) {
       var a = xr.medir.pts[0], b = xr.medir.pts[1];
       var dReal = a.distanceTo(b) / (xr.escala || 1); // divide pela escala → metros reais
@@ -6867,8 +7226,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       var lab = labelSprite(fmtDist(dReal)); lab.position.copy(a.clone().add(b).multiplyScalar(0.5)); scene.add(lab); xr.medir.objs.push(lab); rescaleObj(lab);
       xrDica('📏 ' + fmtDist(dReal) + ' (real). Toque 2 pontos pra medir de novo.');
       xr.medir.pts = [];
+      if (elasticoXR) elasticoXR.visible = false;
     } else xrDica('' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' Agora toque no 2º ponto.');
   }
+  S._medirTocarXR = medirTocar;   // hook de teste
   function limparMedirXR() { xr.medir.objs.forEach(function (o) { scene.remove(o); if (o.geometry) o.geometry.dispose(); }); xr.medir.objs = []; xr.medir.pts = []; }
 
   // ---- disciplina: liga/desliga MODELOS por disciplina ----
@@ -6911,7 +7272,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     canvasEl.removeEventListener('pointerdown', xrPointerDown); canvasEl.removeEventListener('pointermove', xrPointerMove); window.removeEventListener('pointerup', xrPointerUp);
     xrHud.style.display = 'none'; xrHud.innerHTML = '';
     if (xr.cam) { camera.position.copy(xr.cam.pos); if (xr.cam.quat) camera.quaternion.copy(xr.cam.quat); if (xr.cam.near) { camera.near = xr.cam.near; camera.far = xr.cam.far; camera.updateProjectionMatrix(); } xr.cam = null; }
-    orbit.enabled = true; orbit.update();
+    orbit.enabled = !trava.on; orbit.update();   /* ⚠ sair da RA não destrava a câmera */
     xr.escala = 1; xr.mode = null; xr.placed = false; xr.travado = false;
     marcarBtnXR(false); pintarXRPanel();
     if (S._retomarTick) S._retomarTick();
@@ -6924,6 +7285,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var bd = e.target.closest('[data-xd]'); if (bd) { toggleDisciplinaXR(bd.getAttribute('data-xd')); return; }
     var b = e.target.closest('[data-x]'); if (!b) return; var k = b.getAttribute('data-x');
     if (k === 'fechar') { xrPanel.style.display = 'none'; }
+    else if (k === 'ratrava') { raTrava = !raTrava; try { localStorage.setItem('orcapro:bim:raTrava', raTrava ? '1' : '0'); } catch (_) {} pintarXRPanel(); }
     else if (k === 'quicklook') { abrirQuickLook(b.getAttribute('data-ql') === 'maquete' ? 'maquete' : 'real', b); }
     else if (k === 'sceneviewer') { if (S.opts && S.opts.onSceneViewer) S.opts.onSceneViewer(b.getAttribute('data-ql') === 'maquete' ? 'maquete' : 'real', b); }
     else if (k === 'camera') { entrarCamera(); }
@@ -10236,7 +10598,7 @@ window.BIM = {
     if (alvo == null) return null;
     try { var m = S.api.GetCoordinationMatrix(alvo); return Array.prototype.slice.call(m); } catch (e) { return String(e && e.message || e); }
   },
-  _snapAt: function (cx, cy) { if (!S || !S._raycastEm) return null; var h = S._raycastEm(cx, cy); if (!h) return null; var sn = S._aplicarSnapRef(h, S.snap ? S.snap.raio : 14); return { tipo: sn.tipo, p: [sn.p.x, sn.p.y, sn.p.z] }; }, // hook de teste: snap num ponto de tela
+  _snapAt: function (cx, cy, raio) { if (!S || !S._mirarEm) return null; var sn = S._mirarEm(cx, cy, raio || (S.snap ? S.snap.raio : 14)); if (!sn || !sn.p) return null; return { tipo: sn.tipo, p: [sn.p.x, sn.p.y, sn.p.z] }; }, // hook de teste: o MESMO cálculo do marcador e do clique (mirarEm)
   /* =====================================================================
    * _perf — a régua do B2, e a razão de ela existir
    *
@@ -10320,6 +10682,7 @@ window.BIM = {
   // Numerar rede — hook público: dispara o encadeamento e devolve o pacote
   numerarRede: function () { return (S && S._numerarRede) ? S._numerarRede() : null; },
   numeracao: function () { return (S && S._numeracao) ? S._numeracao() : null; },
+  _testeTrena: function () { return S ? { S: S, THREE: THREE } : null; }, // hook de teste (tools/e2e-bim-trena.js): o gabarito da trena precisa das peças, da câmera e das arestas
   _px: function (p) { if (!S) return null; var v = new THREE.Vector3(p[0], p[1], p[2]).project(S.camera); var rc = S.renderer.domElement.getBoundingClientRect(); return { x: rc.left + (v.x + 1) / 2 * rc.width, y: rc.top + (1 - v.y) / 2 * rc.height }; }, // hook de teste: mundo -> px da tela
   _visiveis: function () { if (!S) return null; var v = 0, t = 0; S.modelRoot.children.forEach(function (g) { (g.children || []).forEach(function (m) { t++; if (m.visible) v++; }); }); return { visiveis: v, total: t }; }, // hook de teste: malhas visíveis
   _cam: function () { if (!S) return null; var c = S.camera, t = S.orbit.target; return { p: [c.position.x, c.position.y, c.position.z], t: [t.x, t.y, t.z], near: c.near, far: c.far, rot: S.orbit.enableRotate }; }, // hook de teste: estado da câmera
@@ -10403,6 +10766,15 @@ window.BIM = {
   vistasAbertas: function () { return S && S.vistas ? Object.keys(S.vistas).map(function (k) { var v = S.vistas[k]; return { id: v.id, nome: v.nome, caixa: !!(v.cx && v.cx.on), orto: !!(v.orto && v.orto.on) }; }) : []; },
   vistaCamera: function (id) { var v = S && S.vistas && S.vistas[id]; return v ? { pos: v.camera.position.toArray(), alvo: v.orbit ? v.orbit.target.toArray() : v.alvo.toArray() } : null; },
   temBotao: function (k) { return !!(S && S.bar && S.bar.querySelector('[data-b="' + String(k).replace(/"/g, '') + '"]')); },
+  /* ligado = o que a própria barra pinta (classe `on` ou a cor de ativo) — a
+     barra do modo mesa lê daqui em vez de guardar estado paralelo */
+  botaoAtivo: function (k) { var b = S && S.bar && S.bar.querySelector('[data-b="' + String(k).replace(/"/g, '') + '"]'); if (!b) return false; return b.classList.contains('on') || !!(b.style.background && b.style.background !== 'transparent'); },
+  travar: function (on) { if (!S || !S._setTrava) return false; return S._setTrava(on == null ? !(S.trava && S.trava.on) : !!on); },
+  travado: function () { return !!(S && S.trava && S.trava.on); },
+  host: function () { return S ? S.host : null; },
+  ehVisitante: function () { return !!(S && S._visitante); },
+  /* trava da RA (iPhone: sem pinça de tamanho; Android: maquete presa no lugar) */
+  raTravada: function () { return S && S._raTravada ? S._raTravada() : true; },
   ultraAtivo: function () { return !!(S && S.ultra); },
   setUltra: function (v) { if (S && S._setUltra) S._setUltra(v); },
   // ---- reunião multi-usuário (avatares no modelo) ----

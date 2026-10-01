@@ -145,6 +145,8 @@
       /* os ids rv-reun / rv-audio / rv-upd são os que App._rvReuniao e o AutoUpdate conhecem */
       '<button id="rv-reun" class="rvv-bt" style="display:none">' + I("pessoas", 15) + ' Reunião</button>' +
       '<button id="rv-audio" class="rvv-bt" style="display:none">' + I("microfone", 15) + '</button>' +
+      /* trava da câmera (tablet deitado na mesa): encostar a mão não gira nem dá zoom */
+      '<button class="rvv-bt" data-a="trava" title="Travar a câmera">' + I("destravado", 15) + '</button>' +
       '<button id="rv-upd" class="rvv-bt" title="Buscar atualização">' + I("ciclo", 15) + '</button></div>' +
       '<div id="rvv-recado"></div>' +
       '<div id="rvv-card"></div>' +
@@ -171,6 +173,16 @@
       if (f === "ra") { recado(""); fecharFolha(); fecharCard(); if (B().abrirXR) B().abrirXR(); return; }
       if (st.folha === f) fecharFolha(); else abrirFolha(f);
     });
+  }
+  /* o botão acompanha a trava — ela também se desfaz pelo aviso do próprio 3D */
+  function pintarTrava() {
+    var b = document.querySelector('#rvv-topo [data-a="trava"]'); if (!b) return;
+    var on = !!(B().travado && B().travado());
+    if (b.getAttribute("data-on") === (on ? "1" : "0")) return;
+    b.setAttribute("data-on", on ? "1" : "0");
+    b.innerHTML = I(on ? "cadeado" : "destravado", 15);
+    b.style.background = on ? "#15803d" : "";
+    b.title = on ? "Câmera travada — toque para destravar" : "Travar a câmera";
   }
   function marcarBarra() {
     var bs = document.querySelectorAll("#rvv-barra [data-f]");
@@ -498,7 +510,8 @@
         .then(function (j) {
           var arq = location.origin + j.url, titulo = (st.dados && st.dados.marca && st.dados.marca.obra) || st.man.nome || "Projeto";
           var url = "intent://arvr.google.com/scene-viewer/1.0?file=" + encodeURIComponent(arq) + "&mode=ar_preferred&title=" + encodeURIComponent(titulo) +
-            (modo === "real" ? "&resizable=false" : "") +
+            /* tamanho real nunca muda de escala; a maquete, só com a trava da RA desligada */
+            (modo === "real" || (B().raTravada && B().raTravada()) ? "&resizable=false" : "") +
             "#Intent;scheme=https;package=com.google.android.googlequicksearchbox;action=android.intent.action.VIEW;S.browser_fallback_url=" + encodeURIComponent(location.href) + ";end;";
           st.ultimoIntent = url;
           if (btn) { btn.disabled = false; btn.setAttribute("data-url", url); btn.innerHTML = I("avancar", 15) + " Abrir na RA do Google"; btn.classList.add("azul"); }
@@ -513,6 +526,7 @@
       var b = e.target.closest("[data-a]"); if (!b) return;
       var a = b.getAttribute("data-a");
       if (a === "fechar-folha") return fecharFolha();
+      if (a === "trava") { if (B().travar) B().travar(); pintarTrava(); recado(B().travado && B().travado() ? "Câmera travada: encostar a mão não gira nem dá zoom. Toque no cadeado para destravar." : "Câmera livre.", false); return; }
       if (a === "vista-inicio") { if (B().home) B().home(); return fecharFolha(); }
       if (a === "vista") return irVista(+b.getAttribute("data-i"));
       if (a === "disc") { var k = b.getAttribute("data-k"), liga = !b.classList.contains("on"); B().disciplinaVisivel(k, liga); b.classList.toggle("on", liga); return; }
@@ -635,6 +649,7 @@
           });
         } catch (e) { erroCarga("Falha ao iniciar o visualizador."); return; }
         vigiarImersivo();
+        setInterval(pintarTrava, 700);   /* a trava também se desfaz pelo aviso do 3D */
         buscarJson("/rv/t/" + token, "/rv/t/" + token).then(function (man) {
           if (!man.ok) throw new Error(man.erro || "link inválido");
           st.man = man;

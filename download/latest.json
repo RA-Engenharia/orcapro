@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.106",
+  "versao": "1.2.107",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.106.zip",
-  "notas": "BIM no jeito do Revit: abre em tela inteira; Propriedades e Navegador de projeto recolhem na seta; as ferramentas abrem numa janela a direita que voce alarga; varias vistas 3D em abas, lado a lado ou em outra janela (2o monitor), com a mesma selecao em todas; caixa de corte com setas nas seis faces; ViewCube com menu no botao direito e vista ortogonal; Propriedades mostra a peca selecionada, sem o balao sobre o 3D.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.106/OrcaPRO-IA-Instalador-v1.2.106.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.107.zip",
+  "notas": "Trena do BIM agarra o canto, o meio e a aresta certos, mostra a distancia ao vivo e o nome da peca. Novo Modo mesa (Vista > Modo mesa ou botao Mesa): ferramentas numa barra ao lado do modelo e camera travada para tablet na mesa. Trava tambem na RA do celular.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.107/OrcaPRO-IA-Instalador-v1.2.107.exe"
 }

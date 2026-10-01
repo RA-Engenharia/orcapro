@@ -10122,6 +10122,20 @@
       });
       reg.voo = function (e) { var b = B(); if (b && b.voo) { b.voo(e.ligado); return true; } return false; };
       reg.home = function () { var b = B(); if (b && b.home) { b.home(); return true; } return false; };
+      /* ⚠ MODO MESA (js/bimmesa.js): tablet ou tela deitada na mesa — o 3D ocupa
+         a tela (foco), as ferramentas ficam numa barra ao lado e a câmera TRAVA.
+         Quem sai (pela fita, pelo botão rápido ou pelo "Sair da mesa" da própria
+         barra) sai dos três: o aviso `aoMudar` é o único caminho. */
+      if (typeof BimMesa !== "undefined") {
+        BimMesa.aoMudar = function (on) {
+          try { BimShell.alternarFoco(!!on); } catch (eF) {}
+          try { BimRibbon.setAtivo("mesa", !!on); BimShell.pintarFita(); } catch (eR) {}
+        };
+      }
+      reg.mesa = function (e) {
+        if (typeof BimMesa === "undefined") return false;
+        return !!BimMesa.ligar(e && e.ligado != null ? !!e.ligado : !BimMesa.ligado());
+      };
       reg.foto = function () { var b = B(); if (b && b.foto) { b.foto(); return true; } return false; };
       reg.visibilidade = function () { var b = B(); if (b && b.painelVis) { b.painelVis(); return true; } return false; };
       reg.pavimentos = function () { var b = B(); if (b && b.painelPav) { b.painelPav(); return true; } return false; };

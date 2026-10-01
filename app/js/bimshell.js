@@ -316,6 +316,8 @@
       { id: "orbita", rot: "Órbita", ico: "ciclo" },
       { id: "voo", rot: "Voo", ico: "voo" },
       { id: "home", rot: "Enquadrar", ico: "casa" },
+      /* no tablet a fita é o que menos se vê: a mesa fica à mão */
+      { id: "mesa", rot: "Mesa", ico: "cadeado" },
       { id: "ultra", rot: "Ultra", ico: "estrela" }
     ],
     _rapidos: function () {
