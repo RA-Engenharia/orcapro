@@ -108,6 +108,11 @@
      * obra: o mesmo material pesa igual em toda obra — e sem sincronizar, o
      * peso da peça mudaria de um aparelho para o outro, no plano de içamento. */
     "bim_pesos_esp",
+    /* o PLANO DE IÇAMENTO da obra (equipamento, posição, içamentos, ficha do
+     * operador, documentos conferidos): o encarregado confere no celular do
+     * canteiro. Os ANEXOS (laudo, ART, certificados) NÃO viajam — moram no
+     * IndexedDB de quem anexou; no outro aparelho a tela diz isso. */
+    "bim_icamento",
     /* compatibilizacao: o TESTE salvo e o RESULTADO com o ciclo de vida.
      * O resultado carrega responsavel, prazo, comentario e historico — e
      * e justamente isso que precisa atravessar aparelhos: o engenheiro

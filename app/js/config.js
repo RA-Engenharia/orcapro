@@ -37,7 +37,7 @@
        novo. Com as duas fontes, vale sempre a MAIOR. */
     manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
 
-    versao: "1.2.113",
+    versao: "1.2.114",
     schemaVersao: 3, // usado nas migrações de persistência
 
     // Oferta de lançamento do Plus — data/hora que a condição termina (após isso, a urgência some sozinha)
@@ -137,6 +137,15 @@
            tools/test-medavanco-dois-aparelhos.js mede as duas, e o controle
            negativo [6-1] devolve o carimbo antigo e exige a reprovação.
        ⚠ `ccIA` nasce DESLIGADA (§1.10): nenhuma chamada nesta leva. */
+    /* ---- Plano de içamento do BIM (aba Içamento) — PRÉVIA ----
+       Desligado na FROTA (a fita mostra "em breve", como na 1.2.113); ligado
+       numa instalação só pela chave local `orcapro:tela:icamento-recursos:v1`
+       ({"plano":true}), que o `App._previaDaUrl` grava quando o app abre com
+       `?previa=icamento` (e apaga com `?previa=icamento-desligar`). O peso das
+       peças (fase 1) não depende desta chave. Quem lê é `Gestao._icarLigado`.
+       ⚠ Desligar NÃO apaga dado: o `bim_icamento` gravado continua e sincroniza. */
+    icamentoRecursos: { plano: false },
+
     medccRecursos: {
       medAvanco: true, medAvancoAuto: true, medOrigem: true,
       ccGerar: true, ccAgente: true, ccDocumentos: true, ccSino: true, ccIA: false

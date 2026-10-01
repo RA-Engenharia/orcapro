@@ -88,6 +88,9 @@
       /* as chaves de desligar do cronograma (planejador, Onda 0, T12) ANTES de
          qualquer desenho: o motor calcula a primeira tela já com elas */
       this._cronoRecursosBoot();
+      /* prévia por instalação (?previa=icamento): grava a chave local ANTES do
+         primeiro desenho e tira o parâmetro do endereço */
+      this._previaDaUrl();
       /* aparencia salva: dois eixos independentes — iluminacao (claro/escuro)
          e letra (Plex/Source). `aplicarTema` faz a migracao de quem ainda
          tem o `orcapro:tom` antigo gravado no aparelho. */
@@ -16056,6 +16059,28 @@
           try { console.info(txt); } catch (eC) {}
         }
         return ef;
+      } catch (e) { return null; }
+    },
+
+    /* PRÉVIA POR INSTALAÇÃO (01/10/2026). `?previa=<nome>` liga, numa
+       instalação só, o recurso que a frota ainda não vê; `?previa=<nome>-desligar`
+       desliga. É a mesma régua das chaves do cronograma (CONFIG para a frota,
+       chave local por cima), com uma porta que não exige console: o atalho que
+       o suporte entrega abre o app assim. Só os nomes da lista valem — nada
+       do endereço vira chave arbitrária no aparelho. */
+    _PREVIAS: { icamento: ["orcapro:tela:icamento-recursos:v1", '{"plano":true}'] },
+    _previaDaUrl: function () {
+      try {
+        var m = /[?&]previa=([a-z0-9-]+)/i.exec(location.search || ""); if (!m) return null;
+        var bruto = String(m[1]).toLowerCase(), deslig = /-desligar$/.test(bruto), nome = bruto.replace(/-desligar$/, ""), alvo = this._PREVIAS[nome];
+        if (!alvo) return null;
+        if (deslig) localStorage.removeItem(alvo[0]); else localStorage.setItem(alvo[0], alvo[1]);
+        var resto = String(location.search || "").replace(/([?&])previa=[^&]*&?/i, "$1").replace(/[?&]$/, "");
+        try { history.replaceState(null, "", location.pathname + resto + location.hash); } catch (eH) {}
+        var txt = deslig ? "Prévia desligada nesta instalação: " + nome + "." : "Prévia ligada nesta instalação: " + nome + ".";
+        try { console.info("[previa] " + txt); } catch (eC) {}
+        setTimeout(function () { try { if (typeof UI !== "undefined" && UI.toast) UI.toast(txt, "ok"); } catch (eT) {} }, 2500);
+        return { nome: nome, ligada: !deslig };
       } catch (e) { return null; }
     },
 

@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.113",
+  "versao": "1.2.114",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.113.zip",
-  "notas": "BIM: nova aba Icamento com o peso de cada peca (kg, kN e participacao no peso proprio), pela massa do IFC ou pelo volume vezes o peso especifico da NBR 6120; selecao clicando no modelo ou por tipo, material e familia; relatorio em planilha e para imprimir. Projeto estrutural: o Ver no 3D da folha inteira volta a funcionar depois de reabrir o modelo guardado.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.113/OrcaPRO-IA-Instalador-v1.2.113.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.114.zip",
+  "notas": "BIM, aba Icamento: preparacao do plano de icamento (equipamento, simulacao e plano de rigging), ainda em previa e fora desta versao para os clientes. O peso das pecas segue igual.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.114/OrcaPRO-IA-Instalador-v1.2.114.exe"
 }
