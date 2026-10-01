@@ -37,6 +37,14 @@
  *   node ferramentas/coletar-sinapi.js --comp 2026-07
  *   node ferramentas/coletar-sinapi.js --janela 5          (as 5 mais novas)
  *   node ferramentas/coletar-sinapi.js --janela 5 --podar  (e apaga as velhas)
+ *   node ferramentas/coletar-sinapi.js --listar --json     (a lista, para outro programa ler)
+ *
+ *   --dados <pasta>   grava o acervo em outra pasta (padrão: app/data). É o
+ *                     que o servidor OrçaPRO usa (ferramentas/sinapi-vps.js).
+ *   --sem-manifesto   não regenera o bases-status.json (o servidor calcula o
+ *                     dele olhando a pasta; o manifesto é coisa do espelho).
+ *   --forcar          recoleta mesmo com a competência completa — é o caminho
+ *                     da RETIFICAÇÃO, que a CAIXA publica sobre um mês já saído.
  * ===================================================================== */
 "use strict";
 var fs = require("fs");
@@ -47,7 +55,16 @@ var zlib = require("zlib");
 var { execFileSync } = require("child_process");
 
 var RAIZ = path.resolve(__dirname, "..");
-var DADOS = path.join(RAIZ, "app", "data");
+/* ⚠ A PASTA DE DESTINO É PARÂMETRO desde 01/10/2026. O coletor só sabia
+   gravar no espelho (`app/data`, publicado pelo GitHub Actions) — e quando a
+   conta do GitHub foi bloqueada por cobrança, as duas execuções de setembro
+   nem começaram, a 08/2026 não chegou a cliente nenhum e ninguém soube. O
+   servidor OrçaPRO, que é a PRIMEIRA fonte que o app consulta, passa a rodar
+   este mesmo coletor apontando para a pasta dele. Um código, dois destinos. */
+var DADOS = (function () {
+  var i = process.argv.indexOf("--dados");
+  return (i > 0 && process.argv[i + 1]) ? path.resolve(process.argv[i + 1]) : path.join(RAIZ, "app", "data");
+})();
 var GER = path.join(RAIZ, "ferramentas", "sinapi", "tools");
 var UFS = ["AC","AL","AM","AP","BA","CE","DF","ES","GO","MA","MG","MS","MT","PA","PB","PE","PI","PR","RJ","RN","RO","RR","RS","SC","SE","SP","TO"];
 
@@ -160,6 +177,7 @@ function gzipar(origem, destino) {
 /* ---------- coleta de UMA competência --------------------------------- */
 function coletar(item) {
   var comp = item.comp;
+  var trocas = [];
   var tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sinapi-" + comp + "-"));
   try {
     var zip = path.join(tmp, "pacote.zip");
@@ -191,18 +209,32 @@ function coletar(item) {
        competência); no espelho ele precisa da competência no nome, senão as
        competências do acervo se sobrescreveriam e sobraria uma só. O app já
        procura por esse nome (`App._nomeAnalitico`). */
-    var n = 0;
+    /* ⚠ COMPRIME TUDO ANTES, TROCA DEPOIS, E O PREÇO POR ÚLTIMO. No servidor
+       a pasta está sendo servida enquanto o coletor grava: um cliente que
+       pedisse o arquivo no meio do `writeFileSync` levaria um .gz cortado.
+       Cada arquivo nasce com nome temporário na MESMA pasta (rename atômico)
+       e só então assume o nome real. O servidor anuncia a competência pelo
+       arquivo de PREÇO, então ele entra por último — quando o app ouvir
+       "saiu a 09", o analítico da 09 já está lá. */
     UFS.forEach(function (uf) {
-      gzipar(path.join(saida, "sinapi-" + uf + "-" + comp + ".json"),
-             path.join(DADOS, "sinapi-" + uf + "-" + comp + ".json.gz"));
-      gzipar(path.join(saida, "sinapi-" + uf + "-analitico.json"),
-             path.join(DADOS, "sinapi-" + uf + "-" + comp + "-analitico.json.gz"));
-      n += 2;
+      var pares = [
+        ["sinapi-" + uf + "-analitico.json", "sinapi-" + uf + "-" + comp + "-analitico.json.gz"],
+        ["sinapi-" + uf + "-" + comp + ".json", "sinapi-" + uf + "-" + comp + ".json.gz"]
+      ];
+      pares.forEach(function (p) {
+        var tmpGz = path.join(DADOS, "." + p[1] + ".tmp");
+        gzipar(path.join(saida, p[0]), tmpGz);
+        trocas.push([tmpGz, path.join(DADOS, p[1])]);
+      });
     });
-    log(comp + ": " + n + " arquivos gravados no espelho");
+    trocas.sort(function (a, b) { return /-analitico\.json\.gz$/.test(a[1]) ? -1 : (/-analitico\.json\.gz$/.test(b[1]) ? 1 : 0); });
+    trocas.forEach(function (t) { fs.renameSync(t[0], t[1]); });
+    log(comp + ": " + trocas.length + " arquivos gravados em " + DADOS);
     return true;
   } finally {
     try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {}
+    /* falha no meio da compressão não deixa .tmp esquecido na pasta servida */
+    trocas.forEach(function (t) { try { if (fs.existsSync(t[0])) fs.unlinkSync(t[0]); } catch (e) {} });
   }
 }
 
@@ -231,6 +263,10 @@ function main() {
   if (!oficiais.length) { console.error("[coletar] a CAIXA não devolveu nenhuma competência — nada foi feito."); process.exit(1); }
   var noEspelho = competenciasNoEspelho();
 
+  if (arg.listar && arg.json) {
+    process.stdout.write(JSON.stringify({ oficiais: oficiais, presentes: noEspelho, dados: DADOS }) + "\n");
+    return;
+  }
   if (arg.listar) {
     log("competências publicadas pela CAIXA (mais nova primeiro):");
     oficiais.slice(0, 14).forEach(function (o) {
@@ -260,7 +296,7 @@ function main() {
   if (arg.podar) podar(alvos.map(function (o) { return o.comp; }));
 
   /* o manifesto é regenerado por quem sabe olhar a pasta — nunca escrito aqui */
-  try {
+  if (!arg["sem-manifesto"]) try {
     execFileSync("node", [path.join(RAIZ, "ferramentas", "gerar-bases-status.js")], { stdio: "inherit" });
   } catch (e) { console.error("[coletar] falhou ao regenerar o manifesto: " + (e && e.message)); }
 
