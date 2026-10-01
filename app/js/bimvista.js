@@ -306,7 +306,7 @@
       comentarios: coms,
       /* a miniatura é blob: mora no IndexedDB, e aqui fica só o endereço */
       miniatura: txt(d.miniatura),
-      /* PASTA ("Estrutura ECVS/Painéis de wood frame", "Montagem"): a lista de
+      /* PASTA ("Estrutura/Painéis de wood frame", "Montagem"): a lista de
          uma obra com 60 vistas vira gaveta; sem pasta a vista fica em
          "Sem pasta". A barra separa subpastas. */
       pasta: pasta(d.pasta),

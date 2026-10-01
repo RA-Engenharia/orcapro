@@ -188,9 +188,24 @@
     return !!alvo && arr(abertos).some(function (n) { return nomeBase(n).toLowerCase() === alvo; });
   }
 
+  /* o MESMO modelo em OUTRA revisão está aberto? ("Obra_Completo_R10.ifc"
+     aberto e o arquivo da obra traz o "…_R11.ifc"). Sem isto a importação abria o
+     R11 AO LADO do R10 — o modelo inteiro duas vezes, sobreposto. Só vale para
+     nome com revisão no fim (_Rnn): sem ela não há como dizer que é o mesmo modelo,
+     e a tela não pergunta. Quem decide trocar é a pessoa. */
+  function semRevisao(s) {
+    var m = /^(.*?)[_ -]R\d{1,3}(\.ifc)?$/i.exec(nomeBase(s));
+    return m ? m[1].toLowerCase() : "";
+  }
+  function outraRevisao(arquivo, abertos) {
+    var base = semRevisao(arquivo), alvo = nomeBase(arquivo).toLowerCase();
+    if (!base) return [];
+    return arr(abertos).filter(function (n) { return semRevisao(n) === base && nomeBase(n).toLowerCase() !== alvo; });
+  }
+
   var PacoteObra = { TIPO: TIPO, validar: validar, conferirModelo: conferirModelo, casar: casar, base64ParaBytes: base64ParaBytes,
                      chaveDetalhe: chaveDetalhe, detalhes: detalhes, mapaDetalhes: mapaDetalhes, ficha: ficha,
-                     ehZip: ehZip, lerObraCompleta: lerObraCompleta, modeloAberto: modeloAberto };
+                     ehZip: ehZip, lerObraCompleta: lerObraCompleta, modeloAberto: modeloAberto, outraRevisao: outraRevisao };
   global.PacoteObra = PacoteObra;
   if (typeof module !== 'undefined' && module.exports) module.exports = PacoteObra;
 })(typeof window !== 'undefined' ? window : this);

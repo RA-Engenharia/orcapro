@@ -304,7 +304,12 @@
     if (!folha) tk.forEach(function (t) { if (!folha && /^\d{2}\/\d{2}$/.test(t)) folha = t; });
     var data = /\b(\d{2}\/\d{2}\/\d{4})\b/.exec(s);
     var pv = /PAVIMENTO\s+(.+?)\s*\(\s*N[ÍI]VEL\s*(-?\d+(?:[.,]\d+)?)\s*\)/i.exec(s);
-    return { pagina: idx, codigo: cod ? cod[1] : "", folha: folha, data: data ? data[1] : "",
+    /* o DOCUMENTO no padrão "OBRA-FUND_R02" (código com hífens + _Rnn): é a
+       identidade que o carimbo OrcaPRO_Folha da peça cita. ⚠ Só a forma com
+       sublinhado: a mesma folha cita "OBRA-ES R00" (o projeto do calculista,
+       com espaço) como referência — pegar esse seria casar a folha errada. */
+    var docM = /(?:^|[^A-Z0-9-])([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+_R\d{2,3})(?![0-9])/.exec(s);
+    return { pagina: idx, codigo: cod ? cod[1] : "", documento: docM ? docM[1] : "", folha: folha, data: data ? data[1] : "",
       titulo: ic >= 0 && tk[ic + 1] ? tk[ic + 1] : "", pavimento: pv ? { nome: limpa(pv[1]).replace(/\s*\|\s*/g, " "), nivel: num(pv[2]) } : null };
   }
 
@@ -543,6 +548,7 @@
       versao: VERSAO,
       origem: { arquivo: txt(opts.arquivo), paginas: pgs.length, lidoEm: txt(opts.agora), tamanhos: pgs.map(function (p) { return [r2(p.w), r2(p.h)]; }) },
       codigo: codBase, data: (fichas[0] || {}).data || "",
+      documento: (fichas.filter(function (f) { return f.documento; })[0] || {}).documento || "",
       folhas: fichas, pavimentos: pavs,
       especificacoes: esp,
       pilares: el.pilares, vigas: el.vigas, lajes: el.lajes,

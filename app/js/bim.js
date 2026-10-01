@@ -1636,7 +1636,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     rr.setFromCamera(m, v.camera);
     var hits = rr.intersectObjects(modelRoot.children, true), hit = null, pls = v.renderer.clippingPlanes || [];
     for (var i = 0; i < hits.length && !hit; i++) {
-      if (!cadeiaVisivel(hits[i].object)) continue;
+      var ob = hits[i].object;
+      if (v.est ? !(ob.userData && ob.userData.expressID != null && existeNaVista(ob, v.est) && (!ob.parent || ob.parent.visible !== false)) : !cadeiaVisivel(ob)) continue;
       var fora = false; for (var k = 0; k < pls.length; k++) if (pls[k].distanceToPoint(hits[i].point) < -1e-6) fora = true;
       if (!fora) hit = hits[i];
     }
@@ -1648,6 +1649,15 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       if (o.onPick) o.onPick(propsDe(hit.object.userData.mid != null ? hit.object.userData.mid : S.modelID, hit.object.userData.expressID, hit.object.userData.tipo));
     } else { contornoSelecao(null); if (o.onPick) o.onPick(null); }
   }
+  /* hook de teste: seleciona a peça sem clique — o mesmo que o duplo clique faz */
+  S._selecionarUid = function (uid) {
+    var m = S.meshPorUid && S.meshPorUid[uid]; if (!m) return false;
+    if (S.selected) { S.selected.material = S.prevMat; S.selected = null; }
+    S.selected = m; S.prevMat = m.material; m.material = selMat; contornoSelecao(m);
+    var o = (S && S.opts) || opts;
+    if (o.onPick) o.onPick(propsDe(m.userData.mid != null ? m.userData.mid : S.modelID, m.userData.expressID, m.userData.tipo));
+    return true;
+  };
   function novaVista(cont, nome) {
     var id = 'v' + (++_vSeq);
     var v = { id: id, nome: nome || ('{3D} ' + (_vSeq + 1)), camera: camera.clone(), alvo: orbit.target.clone(), orto: { on: ortoMain.on, fovPersp: ortoMain.fovPersp }, visivel: true };
@@ -1668,14 +1678,238 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       v.orbit.update();
       ajustarPlanosOrto(v.camera, v.orbit, v.orto);
       var envP = scene.environment; scene.environment = v.env;
-      try { v.renderer.render(scene, v.camera); v.cx.desenhar(v.renderer, v.camera); } catch (_) {}
+      var tr = null;
+      try { if (v.est) tr = trocasDaVista(v); v.renderer.render(scene, v.camera); v.cx.desenhar(v.renderer, v.camera); } catch (_) {}
+      finally { if (tr) desfazerTrocas(tr); }
       scene.environment = envP;
       v.cubo.atualizar();
     }
   }
   S._renderVistas = renderVistas;
   S._novaVista = novaVista;
-  S._fecharVista = function (id) { var v = S.vistas[id]; if (!v) return false; desmontarVista(v); delete S.vistas[id]; return true; };
+  S._fecharVista = function (id) { var v = S.vistas[id]; if (!v) return false; limparEstadoVista(v); desmontarVista(v); delete S.vistas[id]; return true; };
+
+  /* =====================================================================
+   * VISTA COM ESTADO PRÓPRIO — o ponto de vista aberto NUMA ABA NOVA
+   * (Rogério, 30/09/2026: "abrir um ponto de vista muda todas as janelas
+   * abertas… quero que abra uma nova e ela mantenha como foi criada; só a
+   * seleção aparece nas outras, se o elemento estiver visível").
+   *
+   * A visibilidade da cena é UMA (mesh.visible) e o modelo mesclado (AGREG)
+   * desenha por UM índice e UM buffer de cor. A vista com estado próprio
+   * guarda, por parte mesclada, o SEU índice, as SUAS cores e o SEU material
+   * (transparência do raio-X), e o renderVistas troca os ponteiros só
+   * durante o desenho dela (try/finally). Custo por quadro: trocar ponteiro;
+   * cada contexto WebGL sobe o buffer dele uma vez (refeito só quando o
+   * estado da vista ou a assinatura do mesclado muda).
+   * Por vista: câmera, peças visíveis (isolar/ocultar), cores, raio-X e cotas.
+   * Continua da cena inteira (global): cortes, estilo desenho, modelos
+   * ligados e as cotas da rede — o ponto de vista que usa isso é avisado.
+   * A seleção é uma só: aparece na vista onde a peça está visível.
+   * ===================================================================== */
+  var _parteSeq = 0, _estSeq = 0, _matCorVista = {};
+  function uidDe(m) { return m.userData.mid + ':' + m.userData.expressID; }
+  function existeNaVista(m, est) {
+    if (ehFuturo4d(m) || ehRemovidoEd(m)) return false;   /* peça que ainda não existe (4D) ou foi apagada no editor */
+    var u = uidDe(m);
+    if (est.isolados) return !!est.isolados[u];
+    if (est.ocultos) return !est.ocultos[u];
+    return true;
+  }
+  function corNaVista(m, est) {
+    var u = uidDe(m), c = est.cores[u] || _corDoMaterial(m.userData.matOrig || m.material);
+    var a = c[3] == null ? 1 : c[3];
+    if (est.rx && !est.rx[u]) a = 0.1;   /* raio-X: o resto vira fantasma (o 0,1 do ghostMat) */
+    return [c[0], c[1], c[2], a];
+  }
+  function limparEstadoVista(v) {
+    if (v.cotas) {
+      (v.cotasObjs || []).forEach(function (o) { try { v.cotas.remove(o); if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } } catch (_) {} });
+      scene.remove(v.cotas);
+    }
+    Object.keys(v.cache || {}).forEach(function (k) { var c = v.cache[k]; if (c && c.mat) { try { c.mat.dispose(); } catch (_) {} } });
+    v.cotas = null; v.cotasObjs = []; v.cotasRegs = []; v.cache = {}; v.est = null; v.pv = null;
+  }
+  /* os buffers da vista, por parte mesclada — refeitos só quando mudou algo */
+  function prepararVista(v) {
+    var est = v.est;
+    S.modelos.forEach(function (mo) {
+      var ag = mo._agreg; if (!ag) return;
+      ag.partes.forEach(function (parte) {
+        if (!parte._id) parte._id = ++_parteSeq;
+        var c = v.cache[parte._id];
+        if (c && c.ver === est.ver && c.sig === ag.assinatura) return;
+        var fx = parte.faixas, ocultos = {}, algumT = false, nPecas = 0;
+        var cores = (c && c.cores && c.cores.length === parte.cores.length) ? c.cores : new Float32Array(parte.cores.length);
+        for (var f = 0; f < fx.length; f++) {
+          var faixa = fx[f], ref = faixa.ref;
+          if (!ref) { ocultos[faixa.e] = 1; continue; }
+          /* a peça em destaque (seleção, 4D, conflito) é desenhada por ela
+             mesma — fora do índice da vista, como no da principal */
+          if (!existeNaVista(ref, est) || _ehRealce(ref.material)) { ocultos[faixa.e] = 1; continue; }
+          var cor = corNaVista(ref, est); nPecas++;
+          if (cor[3] < 1) algumT = true;
+          var ini = faixa.iniVert * 4, fim = ini + faixa.nVert * 4;
+          for (var q = ini; q < fim; q += 4) { cores[q] = cor[0]; cores[q + 1] = cor[1]; cores[q + 2] = cor[2]; cores[q + 3] = cor[3]; }
+        }
+        var r = BimAgreg.indicesVisiveis(fx, parte.idxCheio, ocultos, c && c.idx);
+        var idxAttr = (c && c.idxAttr && c.idxAttr.array === r.idx) ? c.idxAttr : new THREE.BufferAttribute(r.idx, 1);
+        idxAttr.needsUpdate = true;
+        var corAttr = (c && c.corAttr && c.corAttr.array === cores) ? c.corAttr : new THREE.BufferAttribute(cores, 4);
+        corAttr.needsUpdate = true;
+        /* material PRÓPRIO: a transparência do raio-X desta vista não pode
+           mexer no material que a principal usa */
+        var mat = c && c.mat;
+        if (!mat) mat = parte.malha.material.clone();
+        if (mat.transparent !== algumT) { mat.transparent = algumT; mat.depthWrite = !algumT; mat.needsUpdate = true; }
+        v.cache[parte._id] = { ver: est.ver, sig: ag.assinatura, idx: r.idx, n: r.nIdx, idxAttr: idxAttr, cores: cores, corAttr: corAttr, mat: mat, nPecas: nPecas };
+      });
+    });
+  }
+  function matCorVista(cor) {
+    var k = cor.join(',');
+    if (!_matCorVista[k]) _matCorVista[k] = new THREE.MeshStandardMaterial({ color: new THREE.Color(cor[0], cor[1], cor[2]), transparent: cor[3] < 1, opacity: cor[3], depthWrite: cor[3] >= 1, metalness: .05, roughness: .85, side: THREE.DoubleSide });
+    return _matCorVista[k];
+  }
+  /* troca, para o desenho DESTA vista, o que ela mostra diferente da cena */
+  function trocasDaVista(v) {
+    prepararVista(v);
+    var est = v.est, t = { partes: [], vis: [], mats: [], lay: [], cotas: null };
+    S.modelos.forEach(function (mo) {
+      var ag = mo._agreg;
+      if (ag) {
+        ag.partes.forEach(function (parte) {
+          var c = v.cache[parte._id]; if (!c) return;
+          var g = parte.malha.geometry;
+          t.partes.push([parte, g.index, g.attributes.color, g.drawRange.start, g.drawRange.count, parte.malha.material]);
+          g.index = c.idxAttr; g.attributes.color = c.corAttr; g.drawRange.start = 0; g.drawRange.count = c.n;
+          parte.malha.material = c.mat;
+        });
+        /* as peças em destaque (seleção, 4D, conflito) desenham por si e seguem
+           a visibilidade DESTA vista: somem onde ela não as mostra e APARECEM
+           onde ela mostra — ⚠ inclusive a peça que a {3D} esconde: o duplo
+           clique numa aba de ponto de vista selecionava a peça e ela sumia da
+           aba (o realce fica fora do índice e seguia a visibilidade da {3D}) */
+        mo.grupo.children.forEach(function (m) {
+          if (!m.isMesh || m.userData.expressID == null || !_ehRealce(m.material)) return;
+          var q = existeNaVista(m, est), agora = m.visible !== false && m.layers.isEnabled(0);
+          if (q && !agora) { t.lay.push([m, m.layers.mask, m.visible]); m.visible = true; m.layers.enable(0); }
+          else if (!q && agora) { t.vis.push([m, true]); m.visible = false; }
+        });
+        return;
+      }
+      /* modelo fora da mescla (mescla desligada, ou suspensa pelo raio-X da
+         principal): peça a peça — visibilidade e cor desta vista */
+      mo.grupo.children.forEach(function (m) {
+        if (!m.isMesh || m.userData.expressID == null) return;
+        var q = existeNaVista(m, est);
+        if (q !== (m.visible !== false)) { t.vis.push([m, m.visible]); m.visible = q; }
+        if (q && !_ehRealce(m.material)) {
+          var u = uidDe(m);
+          if (est.cores[u] || est.rx) { t.mats.push([m, m.material]); m.material = matCorVista(corNaVista(m, est)); }
+        }
+      });
+    });
+    /* o contorno da seleção segue o que ESTA vista mostra */
+    if (_selLn && S.selected && S.selected.userData && S.selected.userData.expressID != null) {
+      var qs = existeNaVista(S.selected, est);
+      if (qs !== (_selLn.visible !== false)) { t.vis.push([_selLn, _selLn.visible]); _selLn.visible = qs; }
+    }
+    /* as cotas: as da principal saem, as desta vista entram (no tamanho desta câmera) */
+    medir.objs.forEach(function (o) { if (o.visible !== false) { t.vis.push([o, true]); o.visible = false; } });
+    if (v.cotas) { v.cotas.visible = true; t.cotas = v.cotas; (v.cotasObjs || []).forEach(function (o) { rescaleObj(o, v.camera); }); }
+    return t;
+  }
+  function desfazerTrocas(t) {
+    t.partes.forEach(function (x) { var g = x[0].malha.geometry; g.index = x[1]; g.attributes.color = x[2]; g.drawRange.start = x[3]; g.drawRange.count = x[4]; x[0].malha.material = x[5]; });
+    t.vis.forEach(function (x) { x[0].visible = x[1]; });
+    t.mats.forEach(function (x) { x[0].material = x[1]; });
+    t.lay.forEach(function (x) { x[0].layers.mask = x[1]; x[0].visible = x[2]; });
+    if (t.cotas) t.cotas.visible = false;
+  }
+  /* aplica um ponto de vista NA vista `v` (e só nela) */
+  function aplicarVistaNa(v, pv) {
+    var BV = (typeof window !== 'undefined') ? window.BimVista : null;
+    var r = BV ? BV.resolver(pv, S.elementos || []) : null;
+    var res = { ok: true, naoLocalizadas: r ? r.naoLocalizadas : [], completa: pv.completa === true, globais: [] };
+    limparEstadoVista(v);
+    var est = { isolados: null, ocultos: null, cores: {}, rx: null, ver: ++_estSeq };
+    if (r) {
+      if (r.isolados.length) { est.isolados = {}; uidsDeChaves(r.isolados).forEach(function (u) { est.isolados[u] = 1; }); }
+      else if (r.ocultos.length) { est.ocultos = {}; uidsDeChaves(r.ocultos).forEach(function (u) { est.ocultos[u] = 1; }); }
+      (r.aparencias || []).forEach(function (a) {
+        var cor = [+a.cor[0], +a.cor[1], +a.cor[2], a.alpha != null ? +a.alpha : 1];
+        uidsDeChaves([a.chave]).forEach(function (u) { est.cores[u] = cor; });
+      });
+      if (pv.visibilidade && pv.visibilidade.raioX && r.raioXAlvo.length) { est.rx = {}; uidsDeChaves(r.raioXAlvo).forEach(function (u) { est.rx[u] = 1; }); }
+    }
+    var cs = pv.cortes || {};
+    if ((cs.planta && cs.planta.on) || (cs.livre && cs.livre.on)) res.globais.push('corte');
+    if (pv.estilo && pv.estilo.desenho) res.globais.push('estilo desenho');
+    if (pv.cotaRede && pv.cotaRede.on) res.globais.push('cotas da rede');
+    v.est = est; v.cache = {}; v.pv = pv;
+    /* cotas: desenhadas no grupo DESTA vista (a principal fica com as dela) */
+    v.cotas = new THREE.Group(); v.cotas.visible = false; scene.add(v.cotas);
+    var g0 = medir.objs, r0 = medir.regs;
+    medir.objs = []; medir.regs = []; S._medAlvo = v.cotas;
+    try {
+      (pv.medidas || []).forEach(function (m) {
+        var P = (m.pts || []).map(function (p) { return new THREE.Vector3(+p[0], +p[1], +p[2]); });
+        if (m.tipo === 'dist' && P.length === 2) desenharMedida(P[0], P[1], !!m.horizontal);
+        else if (m.tipo === 'area' && P.length >= 3) desenharArea(P, !!m.horizontal);
+        else if (m.tipo === 'ang' && P.length === 3) desenharAngulo(P[0], P[1], P[2]);
+      });
+    } finally {
+      v.cotasObjs = medir.objs; v.cotasRegs = medir.regs;
+      medir.objs = g0; medir.regs = r0; S._medAlvo = null;
+      try { btnCotas(); } catch (_) {}
+    }
+    /* câmera desta vista */
+    var c = pv.camera; v.tween = null;
+    if (c && c.pos) {
+      v.camera.position.set(c.pos[0], c.pos[1], c.pos[2]);
+      if (c.up) v.camera.up.set(c.up[0], c.up[1], c.up[2]);
+      if (c.fov && !v.orto.on) v.camera.fov = c.fov;
+      v.camera.updateProjectionMatrix();
+      if (c.alvo) { v.orbit.target.set(c.alvo[0], c.alvo[1], c.alvo[2]); v.camera.lookAt(c.alvo[0], c.alvo[1], c.alvo[2]); }
+      v.orbit.update();
+    }
+    return res;
+  }
+  S._aplicarVistaNa = function (id, pv) { var v = S.vistas[id]; if (!v || !pv) return { ok: false, erro: 'vista não encontrada' }; try { return aplicarVistaNa(v, pv); } catch (e) { return { ok: false, erro: String(e && e.message || e) }; } };
+  S._vistaTemEstado = function (id) { var v = S.vistas[id]; return !!(v && v.est); };
+  /* só leitura (prova): o que a vista com estado próprio DESENHA — peças no índice dela */
+  S._vistaInfo = function (id) {
+    var v = S.vistas[id]; if (!v) return null;
+    var n = 0, tri = 0; Object.keys(v.cache || {}).forEach(function (k) { var c = v.cache[k]; n += c.nPecas || 0; tri += (c.n || 0) / 3; });
+    var realce = 0;
+    if (v.est) S.modelos.forEach(function (mo) { mo.grupo.children.forEach(function (m) { if (m.isMesh && m.userData.expressID != null && _ehRealce(m.material) && existeNaVista(m, v.est)) realce++; }); });
+    n += realce;
+    return { estado: !!v.est, pecas: n, triangulos: tri, desenhados: v.renderer ? v.renderer.info.render.triangles : 0, cores: v.est ? Object.keys(v.est.cores).length : 0, raioX: !!(v.est && v.est.rx), cotas: (v.cotasObjs || []).length,
+      camera: [v.camera.position.x, v.camera.position.y, v.camera.position.z] };
+  };
+  /* o que a vista MOSTRA, para gravar como ponto de vista ("Salvar esta vista"
+     com ela ativa): o ponto de vista dela com a câmera de agora; vista sem
+     estado próprio = o estado da cena com a câmera dela */
+  S._estadoDaVista = function (id) {
+    var v = S.vistas[id]; if (!v) return null;
+    var base = v.pv ? JSON.parse(JSON.stringify(v.pv)) : estadoVista();
+    if (!base) return null;
+    delete base.id; delete base.nome; delete base.pasta; delete base.comentario; delete base.autor; delete base.thumb;
+    base.camera = { pos: [v.camera.position.x, v.camera.position.y, v.camera.position.z], alvo: [v.orbit.target.x, v.orbit.target.y, v.orbit.target.z], up: [v.camera.up.x, v.camera.up.y, v.camera.up.z], fov: v.camera.fov, orto: false };
+    if (v.pv) base.medidas = (v.cotasRegs || []).slice();
+    return base;
+  };
+  /* a visibilidade GLOBAL (da cena) mudou — a tela decide se leva a pessoa à
+     aba {3D}: quem está olhando uma vista congelada não veria o efeito */
+  var _visSigGlobal = null, _visTick = 0;
+  S._tickExtra.push(function () {
+    if (++_visTick % 12) return;
+    var sig = 0;
+    S.modelos.forEach(function (mo) { sig = (sig * 31 + (mo.grupo.visible === false ? 1 : 2)) | 0; mo.grupo.children.forEach(function (m) { sig = (sig * 33 + (m.visible === false ? 1 : 2)) | 0; }); });
+    if (_visSigGlobal !== null && sig !== _visSigGlobal) { var o = (S && S.opts) || opts; if (o.onVisibilidadeGlobal) { try { o.onVisibilidadeGlobal(); } catch (_) {} } }
+    _visSigGlobal = sig;
+  });
   /* leva a vista para outro lugar (outra janela, outra casa depois de re-render):
      o renderer é refeito no container novo — nada de adotar canvas WebGL
      entre documentos; câmera, alvo, ortogonal e caixa de corte vão junto */
@@ -2110,9 +2344,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
   // marcas e etiquetas ficam do MESMO tamanho na tela em qualquer zoom/escala de modelo:
   // reescala por distância da câmera a cada frame (vãos pequenos — porta, parede — continuam legíveis)
-  function rescaleObj(o) {
+  function rescaleObj(o, cam) {
     var sc = o.userData && o.userData._sc; if (!sc) return;
-    var d = camera.position.distanceTo(o.position) * sc;
+    var d = (cam || camera).position.distanceTo(o.position) * sc;
     if (o.userData._ratio) o.scale.set(d * o.userData._ratio, d, 1); else o.scale.setScalar(d);
   }
   S._tickExtra.push(function () { for (var i = 0; i < medir.objs.length; i++) rescaleObj(medir.objs[i]); });
@@ -2428,7 +2662,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     }
   });
   function btnCotas() { var b = bar.querySelector('[data-b="limpar-medidas"]'); if (b) b.style.display = medir.objs.length ? '' : 'none'; if (S && S._ajustarTop) S._ajustarTop(); } // botão entra/sai -> a barra (flex-wrap) pode mudar de altura
-  function addMed(o) { scene.add(o); medir.objs.push(o); rescaleObj(o); }
+  /* S._medAlvo: durante o "abrir ponto de vista NUMA vista", as cotas vão para o grupo DELA */
+  function addMed(o) { (S._medAlvo || scene).add(o); medir.objs.push(o); rescaleObj(o); }
   function pxyz(v) { return [v.x, v.y, v.z]; }
   // `horiz` só vem de quem REDESENHA uma cota gravada (ponto de vista): a cota
   // feita na planta continua horizontal mesmo que a vista reabra sem a planta.
@@ -2781,9 +3016,13 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           continue;
         }
         ref.layers.set(1);
-        if (ref.visible === false) { ocultos[faixa.e] = 1; continue; }
+        var oculta = ref.visible === false;
+        if (oculta) ocultos[faixa.e] = 1;
         var c = _corDoMaterial(ref.material);
-        if (c[3] < 1) algumTransp = true;
+        if (!oculta && c[3] < 1) algumTransp = true;
+        /* ⚠ a cor é escrita também na peça OCULTA: uma vista com estado próprio
+           (ponto de vista aberto numa aba) mostra peça que a principal esconde,
+           e o buffer dela nasce destas cores — sem isto saía com alfa 0 */
         var ini = faixa.iniVert * 4, fim = ini + faixa.nVert * 4;
         for (var v = ini; v < fim; v += 4) { parte.cores[v] = c[0]; parte.cores[v + 1] = c[1]; parte.cores[v + 2] = c[2]; parte.cores[v + 3] = c[3]; }
       }
@@ -8259,7 +8498,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         var pset; try { pset = S.api.GetLine(mid, psetID, false); } catch (_) { continue; }
         if (!pset || !pset.HasProperties) continue; // não é IfcPropertySet (ex.: quantities/type)
         var props = Array.isArray(pset.HasProperties) ? pset.HasProperties : [pset.HasProperties];
-        var etapa = null, cod = null, fase = null, descrPset = null, tarefa = null, discP = null, detalhe = null, montagem = null;
+        var etapa = null, cod = null, fase = null, descrPset = null, tarefa = null, discP = null, detalhe = null, montagem = null, folha = null;
         for (var p = 0; p < props.length; p++) {
           var h = props[p]; if (!h || h.value == null) continue;
           var pv; try { pv = S.api.GetLine(mid, h.value, false); } catch (_) { continue; }
@@ -8282,6 +8521,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
              sobe na obra. Não é a etapa da EAP — a mesma etapa 09 do orçamento tem
              pilares (M06) e coberturas (M10, M12) que sobem em dias diferentes. */
           else if (nm === 'OrcaPRO_Montagem' && pv.NominalValue) montagem = pv.NominalValue.value;
+          /* as FOLHAS que desenham a peça ("OBRA-FUND_R02 folha 02; …"): o
+             "Ver no 3D" de uma prancha inteira do Projeto estrutural casa por
+             aqui (js/estrutui.js casaFolha) — por identidade, nunca pelo texto */
+          else if (nm === 'OrcaPRO_Folha' && pv.NominalValue) folha = pv.NominalValue.value;
           /* ⚠ TERCEIRA PORTA DA DESCRIÇÃO, e ela sai de graça. Nem todo
              exportador leva o campo Descrição do Revit para o atributo
              `Description` do IFC — vários o despejam como propriedade num
@@ -8295,7 +8538,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
             if (vD != null && String(vD).trim()) descrPset = String(vD).trim();
           }
         }
-        if (etapa == null && cod == null && fase == null && descrPset == null && tarefa == null && discP == null && detalhe == null && montagem == null) continue;
+        if (etapa == null && cod == null && fase == null && descrPset == null && tarefa == null && discP == null && detalhe == null && montagem == null && folha == null) continue;
         var objs = Array.isArray(rel.RelatedObjects) ? rel.RelatedObjects : [rel.RelatedObjects];
         for (var o = 0; o < objs.length; o++) {
           var oh = objs[o]; if (!oh || oh.value == null) continue;
@@ -8307,6 +8550,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           if (discP != null && String(discP).trim()) mapa[eid].disciplinaPeca = String(discP).trim();
           if (detalhe != null && String(detalhe).trim()) mapa[eid].detalhe = String(detalhe).trim();
           if (montagem != null && String(montagem).trim()) mapa[eid].montagem = String(montagem).trim();
+          if (folha != null && String(folha).trim()) mapa[eid].folhas = String(folha).trim();
           if (descrPset != null && !mapa[eid].descricaoPset) mapa[eid].descricaoPset = descrPset;
         }
       }
@@ -9480,7 +9724,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         var idIfc = lerIdentidadeIfc(S.api, mid, mesh.expressID);
         var idB = idElemento(modelo.modeloId, { id: mesh.expressID, globalId: idIfc.globalId });
         var dM = descricaoDeMercado(idIfc, famEl, cb);
-        modelo.elementos.push({ globalId: idB.globalId, chave: idB.chave, chaveInstavel: idB.instavel, nomeIfc: idIfc.nomeIfc, tag: idIfc.tag, id: mesh.expressID, uid: mid + ':' + mesh.expressID, mid: mid, arquivo: modelo.nome, tipo: tipoNome, nome: rotuloDisciplina(tipoNome), familia: famEl ? famEl.familia : null, descricao: dM.descricao, descricaoFonte: dM.fonte, sistemaIfc: (modelo.sistemas && modelo.sistemas[mesh.expressID]) || '', etapa: cb.etapa || null, codOrc: cb.codOrc || null, fase: cb.fase || null, tarefa: cb.tarefa || null, disciplinaPeca: cb.disciplinaPeca || null, detalhe: cb.detalhe || null, montagem: cb.montagem || null, qto: (qto && qto[mesh.expressID]) || null });
+        modelo.elementos.push({ globalId: idB.globalId, chave: idB.chave, chaveInstavel: idB.instavel, nomeIfc: idIfc.nomeIfc, tag: idIfc.tag, id: mesh.expressID, uid: mid + ':' + mesh.expressID, mid: mid, arquivo: modelo.nome, tipo: tipoNome, nome: rotuloDisciplina(tipoNome), familia: famEl ? famEl.familia : null, descricao: dM.descricao, descricaoFonte: dM.fonte, sistemaIfc: (modelo.sistemas && modelo.sistemas[mesh.expressID]) || '', etapa: cb.etapa || null, codOrc: cb.codOrc || null, fase: cb.fase || null, tarefa: cb.tarefa || null, disciplinaPeca: cb.disciplinaPeca || null, detalhe: cb.detalhe || null, montagem: cb.montagem || null, folhas: cb.folhas || null, qto: (qto && qto[mesh.expressID]) || null });
         modelo.nEl++;
       });
       /* a disciplina que o engenheiro deixou no modelo viaja no manifesto do
@@ -10405,9 +10649,18 @@ window.BIM = {
   aplicar4DSim: function (cena) { return (S && S._aplicar4DSim) ? S._aplicar4DSim(cena) : { ok: false, erro: 'visualizador não montado' }; },
   enquadrarUids: function (uids, opts) { return (S && S._enquadrarUids) ? S._enquadrarUids(uids, opts) : false; },
   cameraAtual: function () { return (S && S._cameraAtual) ? S._cameraAtual() : null; },
-  aplicarVista: function (v, opts) { return (S && S._aplicarVista) ? S._aplicarVista(v, opts) : { ok: false, erro: 'visualizador não montado' }; },
+  aplicarVista: function (v, opts) {
+    /* opts.vista = id: aplica SÓ naquela vista (a aba do ponto de vista); as outras ficam como estão */
+    if (opts && opts.vista && opts.vista !== '3d') return (S && S._aplicarVistaNa) ? S._aplicarVistaNa(opts.vista, v) : { ok: false, erro: 'visualizador não montado' };
+    return (S && S._aplicarVista) ? S._aplicarVista(v, opts) : { ok: false, erro: 'visualizador não montado' };
+  },
   /* a fotografia inteira da cena para o ponto de vista (ver `estadoVista`) */
-  estadoVista: function () { return (S && S._estadoVista) ? S._estadoVista() : null; },
+  estadoVista: function (opts) {
+    if (opts && opts.vista && opts.vista !== '3d') return (S && S._estadoDaVista) ? S._estadoDaVista(opts.vista) : null;
+    return (S && S._estadoVista) ? S._estadoVista() : null;
+  },
+  vistaTemEstado: function (id) { return !!(S && S._vistaTemEstado && S._vistaTemEstado(id)); },
+  vistaInfo: function (id) { return (S && S._vistaInfo) ? S._vistaInfo(id) : null; },
   modelosSemArquivo: function () {
     return ((S && S.modelos) || []).filter(function (m) { return !m.sintetico && !(m._bytes && m._bytes.length); })
       .map(function (m) { return { mid: m.mid, nome: m.nome, doCache: !!m.doCache }; });
@@ -10469,6 +10722,7 @@ window.BIM = {
   disciplinaVisivel: function (chave, on) { if (S && S._disciplinaVisivel) S._disciplinaVisivel(chave, on); },
   arquivoRA: function (formato, modo) { return S && S._arquivoRA ? S._arquivoRA(formato, modo) : { ok: false, erro: 'visualizador não montado' }; },
   selecionarEm: function (x, y) { if (S && S._selecionarEm) S._selecionarEm(x, y); },
+  _selecionarUid: function (uid) { return !!(S && S._selecionarUid && S._selecionarUid(uid)); }, // hook de teste
   imersivo: function (modo) { if (!S || !S.xr) return false; if (S.xr.on) return true; if (S._toggleXR && (!S.xrPanel || S.xrPanel.style.display !== 'flex')) S._toggleXR(); var b = S.xrPanel && S.xrPanel.querySelector('[data-x="' + (modo || 'caminhar') + '"]'); if (b) { b.click(); return true; } return false; },
   imersivoAtivo: function () { return !!(S && S.xr && S.xr.on); },
   sairImersivo: function () { if (S && S._sairImersivo) S._sairImersivo(); },

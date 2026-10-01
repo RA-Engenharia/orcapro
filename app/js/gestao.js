@@ -13099,6 +13099,27 @@
       this._nivArvore();
       UI.toast("Vista " + nome + " aberta, com câmera, caixa de corte e ViewCube próprios. \u201CLado a lado\u201D mostra as vistas juntas.", "ok");
     },
+    /* abre o ponto de vista `pv` numa aba própria — ou volta para a aba dele,
+       se já estiver aberta (como a vista do Navegador de projeto do Revit) */
+    _bimVxAbrirPonto: function (pv) {
+      var st = this._bimVxEst(), ja = null;
+      st.lista.forEach(function (x) { if (x.pvId === pv.id && BIM.vistaTemEstado(x.id)) ja = x; });
+      if (ja) { if (ja.janela && !ja.janela.closed) { try { ja.janela.focus(); } catch (e) {} } this._bimVxAtivar(ja.id); return; }
+      var nome = String(pv.nome || "Ponto de vista");
+      var tela = this._bimVxCriarTela("nova", nome); if (!tela) return;
+      var id = BIM.vistaNova(tela, nome);
+      if (!id) { if (tela.parentNode) tela.parentNode.removeChild(tela); UI.toast("Não consegui abrir outra vista: o visualizador 3D ainda não abriu.", "erro"); return; }
+      tela.setAttribute("data-vista", id);
+      st.lista.push({ id: id, nome: nome, janela: null, pvId: pv.id });
+      var r = BIM.aplicarVista(pv, { vista: id });
+      this._bimVxAtivar(id);
+      this._nivArvore();
+      if (!r || !r.ok) { UI.toast("Não consegui aplicar o ponto de vista na aba nova: " + ((r && r.erro) || ""), "erro"); return; }
+      var avisos = [];
+      if (r.naoLocalizadas && r.naoLocalizadas.length) avisos.push(r.naoLocalizadas.length + " peça(s) dele não estão no modelo aberto");
+      if (r.globais && r.globais.length) avisos.push("o " + r.globais.join(", ") + " vale para a cena toda e não foi aplicado nesta aba");
+      UI.toast("\u201C" + nome + "\u201D aberto numa aba própria — as outras vistas continuam como estavam." + (avisos.length ? " " + avisos.join("; ") + "." : ""), avisos.length ? "aviso" : "ok");
+    },
     _bimVxAtivar: function (id) {
       var st = this._bimVxEst();
       if (id !== "3d" && !this._bimVxAchar(id)) id = "3d";
@@ -13556,7 +13577,8 @@
          de `el.oculto`, campo que nenhum código escreve: toda vista saía com
          zero ocultos e sem corte, e o engenheiro descobria ao voltar a ela.
          Ver "A VISTA COMPLETA" em js/bimvista.js. */
-      var est = BIM.estadoVista ? BIM.estadoVista() : null;
+      /* a aba ATIVA é o que a pessoa está vendo — é ela que se grava */
+      var est = BIM.estadoVista ? BIM.estadoVista({ vista: this._bimVxEst().ativa }) : null;
       if (!est || !est.camera) { UI.toast("Abra um modelo antes de salvar a vista.", "erro"); return; }
       var nome = prompt("Nome do ponto de vista (o que está errado aqui?)", "");
       if (nome == null) return;
@@ -13609,7 +13631,7 @@
       if (!window.BimVista || !window.BIM) return;
       if (this._semSessao()) { UI.toast("Entre com a sua conta para regravar o ponto de vista.", "aviso"); return; }
       var antiga = this._bimVistaDe(id); if (!antiga) return;
-      var est = BIM.estadoVista ? BIM.estadoVista() : null;
+      var est = BIM.estadoVista ? BIM.estadoVista({ vista: this._bimVxEst().ativa }) : null;
       if (!est || !est.camera) { UI.toast("Abra um modelo antes de regravar a vista.", "erro"); return; }
       if (!confirm('Regravar o ponto de vista \u201C' + antiga.nome + '\u201D com o que está na tela agora?\n\n' +
         "Fica: " + BimVista.resumo(BimVista.vista({ nome: "x", completa: true, cortes: est.cortes, visibilidade: est.visibilidade, aparencias: est.aparencias, modelos: est.modelos, estilo: est.estilo, medidas: est.medidas, cotaRede: est.cotaRede })).join(" · ") +
@@ -13625,6 +13647,13 @@
     _bimVistaDe: function (id) { return this._bimVistaDaObra().filter(function (v) { return v.id === id; })[0] || null; },
     _bimVistaIr: function (id) {
       var v = this._bimVistaDe(id); if (!v || !window.BIM) return;
+      /* ⚠ NA CASCA DO REVIT, O PONTO DE VISTA ABRE NUMA ABA DELE (Rogério,
+         30/09/2026: "abrir um ponto de vista muda todas as janelas abertas…
+         quero que abra uma nova e ela mantenha como foi criada"). A vista nova
+         guarda câmera, peças visíveis, cores, raio-X e cotas do ponto de vista;
+         as outras abas não mudam. No celular e no modo foco segue como era
+         (aplica na única vista que existe). */
+      if (this._bimModoRevit() && BIM.vistaNova && BIM.vistaTemEstado) { this._bimVxAbrirPonto(v); return; }
       var r = BIM.aplicarVista(v);
       if (!r.ok) { UI.toast("Não consegui aplicar esta vista: " + (r.erro || ""), "erro"); return; }
       /* ⚠ peça que sumiu do modelo é DITA, não engolida: a vista de três meses
@@ -13751,6 +13780,29 @@
         if (!v.ok) { UI.toast("Arquivo da obra recusado: " + v.erros.join("; ") + ".", "erro"); return; }
         var abertos = []; try { abertos = (BIM.modelos || []).map(function (m) { return m && m.nome; }); } catch (e) {}
         if (!r.ifc || PacoteObra.modeloAberto(r.ifc.nome, abertos)) { self._bimPacoteResumo(r.pacote, null); return; }
+        /* outra REVISÃO do mesmo modelo aberta: pergunta antes de abrir (senão
+           ficam os dois, sobrepostos, e as vistas casam peças dos dois) */
+        var velhos = PacoteObra.outraRevisao(r.ifc.nome, abertos);
+        if (velhos.length && !r._revisaoDecidida) {
+          UI.modal("Trocar a revisão do modelo?",
+            "<p style=\"margin:0 0 8px\">O arquivo da obra traz <b>" + Util.esc(r.ifc.nome) + "</b>. Nesta obra já está aberto <b>" + velhos.map(Util.esc).join("</b>, <b>") + "</b> — o mesmo modelo em outra revisão.</p>" +
+            "<p style=\"margin:0\"><b>Trocar</b> tira a revisão antiga desta obra e abre a nova (vistas, fichas e carimbos casam pelo GlobalId). <b>Abrir os dois</b> deixa os dois modelos, um sobre o outro.</p>",
+            [{ texto: "Trocar pela nova", classe: "primary", onClick: function () {
+                UI.fecharModal();
+                try { (BIM.modelos || []).forEach(function (m) { if (m && velhos.indexOf(m.nome) >= 0) { self._bimFedRemover(m.mid); BIM.removerModelo(m.mid); } }); } catch (eR) {}
+                r._revisaoDecidida = true; self._bimObraZipAbrir(r);
+              } },
+             { texto: "Abrir os dois", onClick: function () { UI.fecharModal(); r._revisaoDecidida = true; self._bimObraZipAbrir(r); } },
+             { texto: "Cancelar", onClick: function () { UI.fecharModal(); } }]);
+          return;
+        }
+        self._bimObraZipAbrir(r);
+      })["catch"](function (e) { UI.toast("Não consegui abrir o arquivo da obra: " + ((e && e.message) || e) + ".", "erro"); });
+    },
+    /* abre o modelo do arquivo da obra e SÓ DEPOIS mostra o resumo */
+    _bimObraZipAbrir: function (r) {
+      var self = this;
+      (function () {
         var b = r.ifc.bytes, mb = String(Math.round(b.length / 1048576 * 10) / 10).replace(".", ",");
         var ab = (b.byteOffset === 0 && b.byteLength === b.buffer.byteLength) ? b.buffer : b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
         var pr = (window.BIM && BIM.abrirBytes) ? BIM.abrirBytes(ab, r.ifc.nome) : null;
@@ -13761,7 +13813,7 @@
           if (!PacoteObra.modeloAberto(r.ifc.nome, agora)) { UI.toast("O modelo " + r.ifc.nome + " não abriu (veja o aviso do visualizador). Nada foi importado.", "erro"); return; }
           self._bimPacoteResumo(r.pacote, { abriu: r.ifc.nome });
         }, function (e3) { UI.toast("O modelo " + r.ifc.nome + " não abriu: " + ((e3 && e3.message) || e3) + ". Nada foi importado.", "erro"); });
-      })["catch"](function (e) { UI.toast("Não consegui abrir o arquivo da obra: " + ((e && e.message) || e) + ".", "erro"); });
+      })();
     },
 
     /* ⚠ o inflate vem do navegador (DecompressionStream): o produto não
@@ -16049,12 +16101,18 @@
       });
       return out;
     },
-    _estChavesDaVista: function (proj, v, soArm) {
+    _estChavesDaVista: function (proj, v, soArm, doc) {
       var els = [];
       try { els = (window.BIM && BIM.elementos) || []; } catch (e) {}
       var alvo = EstrutUI.alvoDetalhe(proj, v), out = [];
+      /* folha inteira: também as peças que trazem ESTA folha no carimbo
+         OrcaPRO_Folha (documento + página) — a prancha de ligação, de
+         painéis, de tratamento… que não é sapata/pilar/viga/laje */
+      var pag = v.folha ? (v.pagina + 1) : 0;
       els.forEach(function (el) {
-        if (!el.detalhe || !el.chave || !EstrutUI.casaDetalhe(alvo, el.detalhe)) return;
+        if (!el.chave) return;
+        var casa = (el.detalhe && EstrutUI.casaDetalhe(alvo, el.detalhe)) || (pag && doc && el.folhas && EstrutUI.casaFolha(doc, pag, el.folhas));
+        if (!casa) return;
         if (soArm && !(/REINFORCING/.test(String(el.tipo || "").toUpperCase()) || (window.BimDisc && BimDisc.norm(el.disciplinaPeca) === "armacao"))) return;
         out.push(el.chave);
       });
@@ -16160,9 +16218,15 @@
             })();
             function fim() {
               var nIt = 0; pags.forEach(function (p) { nIt += p.itens.length; });
-              if (!nIt) { UI.toast("Este PDF não tem texto (é escaneado): não dá para ler as tabelas. Peça ao calculista o PDF exportado do programa de cálculo.", "erro"); return; }
+              /* ⚠ PDF SEM TEXTO NÃO É MAIS RECUSADO (30/09/2026). A prancha de madeira
+                 gerada do DXF (estrutura de madeira) vira traço — sem texto nenhum — e a
+                 recusa deixava a folha fora do sistema, sem "Ver no 3D". Agora entram
+                 as FOLHAS INTEIRAS (desenho + carimbo OrcaPRO_Folha do modelo); o que
+                 depende de texto (tabelas de aço, conferências) fica de fora — e o
+                 recado DIZ isso, em vez de "as 0 conferências batem". */
+              var semTexto = !nIt;
               var proj = EstrutPDF.ler(pags, { arquivo: file.name, agora: new Date().toISOString() });
-              if (!proj.tabelas.length && !proj.pilares.length) UI.toast("Não reconheci relação do aço nem locação de pilares neste PDF — ele é um projeto estrutural? As vistas foram montadas mesmo assim.", "aviso");
+              if (!semTexto && !proj.tabelas.length && !proj.pilares.length) UI.toast("Não reconheci relação do aço nem locação de pilares neste PDF — ele é um projeto estrutural? As vistas foram montadas mesmo assim.", "aviso");
               var reg = { obraId: self._bimSel, nome: proj.codigo || String(file.name).replace(/\.pdf$/i, ""), arquivo: file.name, bytes: file.size,
                 paginas: pags.length, lidoEm: new Date().toISOString(), projeto: proj };
               var salvo = Store.salvar(eid(), "bim_estrut", reg);
@@ -16173,6 +16237,13 @@
               var pronto = function (okPdf) {
                 if (!okPdf) st.semPdf = salvo.id;
                 self._estRender();
+                /* o Navegador de projeto conta os projetos estruturais: dizia (0) com o PDF carregado */
+                try { self._nivArvore(); } catch (eNa) {}
+                if (semTexto) {
+                  UI.toast("Este PDF não tem texto (desenho em traços ou escaneado): entraram as " + pags.length + " folha(s) inteira(s), para ver e levar ao 3D pelo carimbo OrcaPRO_Folha do modelo. Tabelas de aço e conferências NÃO foram lidas — se for projeto de concreto, peça ao calculista o PDF exportado do programa de cálculo." +
+                    (okPdf ? "" : " O desenho NÃO ficou guardado neste computador (sem espaço no navegador)."), "aviso");
+                  return;
+                }
                 UI.toast(proj.vistas.length + " vista(s) e " + proj.tabelas.length + " tabela(s) de aço lidas; " +
                   (rc.falhas ? rc.falhas + " de " + rc.total + " conferências NÃO batem — veja a aba Conferência antes de usar os números." : "as " + rc.total + " conferências do próprio projeto batem.") +
                   (okPdf ? "" : " O desenho NÃO ficou guardado neste computador (sem espaço no navegador): os recortes somem ao recarregar."), rc.falhas || !okPdf ? "aviso" : "ok");
@@ -16220,6 +16291,7 @@
       if (this._estDoc && this._estDoc.id === reg.id) this._estDoc = null;
       var st = this._estEst(); st.sel = null; st.semPdf = null;
       this._estRender();
+      try { this._nivArvore(); } catch (eNa) {}
     },
 
     /* ---- a vista de UMA peça: recorte + armação + cobrimento ---- */
@@ -16275,8 +16347,27 @@
       var els = [];
       try { els = (window.BIM && BIM.elementos) || []; } catch (e) {}
       if (!els.length) { UI.toast("Abra o modelo da obra no visualizador para ver a peça no 3D.", "aviso"); return; }
-      var chaves = this._estChavesDaVista(reg.projeto, v, soArm);
+      var doc = this._estDocumento(reg), docs = [];
+      /* ⚠ PERGUNTA ANTES DE ISOLAR: o modelo cita documentos (OrcaPRO_Folha)
+         e ESTE PDF não é nenhum deles (sem código, ou outro código). Isolar só
+         pela regra antiga do grupo esconderia em silêncio as peças carimbadas
+         desta folha — medido na e2e: 43 peças mostradas, 17 paredes da folha
+         de fora. Pergunta uma vez; a resposta (inclusive "nenhum", guardado
+         como "-") fica no projeto. Nunca adivinha pelo parecido. */
+      if (v.folha && !soArm) {
+        docs = EstrutUI.docsDosCarimbos(els);
+        var citado = docs.some(function (d) { return d.doc === doc; });
+        if (docs.length && !citado && reg.documento !== "-") { this._estEscolherDocumento(reg, v, docs, doc); return; }
+      }
+      var chaves = this._estChavesDaVista(reg.projeto, v, soArm, doc);
       if (!chaves.length) {
+        if (v.folha && !soArm) {
+          var pgTxt = ("0" + (v.pagina + 1)).slice(-2);
+          UI.toast(docs.length
+            ? "Nenhuma peça do modelo traz a folha " + pgTxt + " de " + doc + " no carimbo OrcaPRO_Folha — o modelo aberto não cita esta folha."
+            : "Nenhuma peça do modelo traz o carimbo desta folha (OrcaPRO_Folha" + (doc ? " de " + doc : "") + "). O modelo precisa ser carimbado: plugin Revit ou gerador do modelo — num arquivo da obra, importe a revisão que traz as folhas.", "aviso");
+          return;
+        }
         UI.toast(soArm ? "Nenhuma barra de " + v.titulo + " no modelo aberto." : "Nenhuma peça do modelo traz o carimbo OrcaPRO_Detalhe de " + v.titulo + " — o modelo precisa ser carimbado (plugin Revit ou gerador do modelo).", "aviso");
         return;
       }
@@ -16287,6 +16378,40 @@
       this._b3Espelhar({ modo: "isolar", chaves: chaves, rotulo: "projeto estrutural: " + v.titulo + (soArm ? " (armação)" : "") });
       var n = nm ? BIM.contarVisiveis() : 0;   /* peças, não malhas (ver _bimDiscAcao) */
       UI.toast(n + " peça(s) de " + v.titulo + (soArm ? " — só a armação" : "") + ". “Restaurar tudo” (Visibilidade) volta o modelo.", n ? "ok" : "aviso");
+    },
+    /* a identidade do PDF (documento) que o carimbo OrcaPRO_Folha cita */
+    _estDocumento: function (reg) {
+      return reg ? EstrutUI.documentoDoProjeto(reg.projeto, reg.arquivo || "", reg.documento) : "";
+    },
+    /* "Que documento é este PDF?" — quando o PDF não traz o código (o original
+       do projetista, um PDF sem texto) ou traz um que o modelo não cita. A
+       resposta fica guardada no projeto: pergunta uma vez. */
+    _estEscolherDocumento: function (reg, v, docs, atual) {
+      var self = this, np = (reg.projeto && reg.projeto.origem && reg.projeto.origem.paginas) || reg.paginas || 0;
+      var ops = docs.map(function (d, i) {
+        return '<label style="display:flex;gap:8px;align-items:flex-start;padding:7px 4px;border-bottom:1px solid var(--linha);cursor:pointer">' +
+          '<input type="radio" name="est-doc" value="' + Util.esc(d.doc) + '"' + (i === 0 ? " checked" : "") + ' style="margin-top:3px">' +
+          "<span><b>" + Util.esc(d.doc) + '</b><br><span class="muted" style="font-size:12px">' + d.nFolhas + " folha(s) citada(s), até a " + ("0" + d.maior).slice(-2) + " · " + d.pecas + " marcação(ões) de peça</span></span></label>";
+      }).join("");
+      var corpo = '<p style="margin:0 0 8px">As peças do modelo dizem em quais folhas aparecem, pelo <b>código do documento</b> + página. ' +
+        (atual ? "Este PDF parece ser <b>" + Util.esc(atual) + "</b>, que o modelo aberto não cita." : "Este PDF não traz o código do documento no carimbo nem no nome do arquivo.") +
+        " Qual documento é <b>" + Util.esc(reg.nome || reg.arquivo || "este PDF") + "</b>" + (np ? " (" + np + " página(s))" : "") + "?</p>" + ops +
+        '<p class="muted" style="font-size:12px;margin:8px 0 0">A escolha fica guardada neste projeto estrutural. Escolher o documento errado mostraria as peças de outra folha.</p>';
+      UI.modal("Qual documento é este PDF?", corpo, [
+        { texto: "Usar este documento", classe: "primary", onClick: function () {
+          var r = document.querySelector('input[name="est-doc"]:checked'); if (!r) return;
+          reg.documento = r.value;
+          try { Store.salvar(eid(), "bim_estrut", reg); } catch (e) {}
+          UI.fecharModal();
+          self._estVer3D(reg, v, false);
+        } },
+        { texto: "Nenhum destes", onClick: function () {
+          reg.documento = "-";   /* "nenhum", confirmado: não pergunta de novo */
+          try { Store.salvar(eid(), "bim_estrut", reg); } catch (e) {}
+          UI.fecharModal();
+          self._estVer3D(reg, v, false);
+        } }
+      ]);
     },
     /* ⚠ a peça selecionada no 3D → a vista dela (carimbo, nunca semelhança) */
     _estDetalheDaSelecao: function () {
@@ -20826,6 +20951,14 @@
             /* o arquivo da obra (.zip) solto no 3D ou escolhido no "+ IFC" */
             onArquivoObra: function (f) { self._bimPacoteImportar(f); },
             /* a fita acompanha o que o ViewCube (botão direito) e a planta/corte mudam */
+            /* "Ver no 3D", isolar, 4D… mudam a cena ({3D}); quem está numa aba de
+               ponto de vista (congelada) não veria nada acontecer — leva à {3D} */
+            onVisibilidadeGlobal: function () {
+              var st = self._bimVxEst();
+              if (st.ativa === "3d" || !BIM.vistaTemEstado || !BIM.vistaTemEstado(st.ativa)) return;
+              self._bimVxAtivar("3d");
+              UI.toast("A mudança de visibilidade vale para a vista {3D}; as abas de ponto de vista continuam como foram abertas.", "info");
+            },
             onCaixaCorte: function (on) { if (self._bimVxEst().ativa === "3d") { try { BimRibbon.setAtivo("caixa-corte", !!on); BimShell.pintarFita(); BimShell.repintarVista(); } catch (e) {} } },
             onOrto: function (on) { if (self._bimVxEst().ativa === "3d") { try { BimRibbon.setAtivo("ortogonal", !!on); BimShell.pintarFita(); BimShell.repintarVista(); } catch (e) {} } },
             onSalvarVista: function () { self._bimVistaSalvar(); },

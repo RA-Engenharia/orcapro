@@ -146,6 +146,61 @@
     return false;
   }
 
+  /* ------------------------------------------------------------------
+   * PROJETO ESTRUTURAL — a FOLHA inteira no 3D (carimbo OrcaPRO_Folha)
+   * A peça diz em quais folhas aparece: "OBRA-FUND_R02 folha 02;
+   * OBRA-EST_R01 folha 04" (documento + página do PDF). A folha aberta
+   * casa por DOCUMENTO + PÁGINA — identidade, nunca o texto da folha: as
+   * listas de peças das pranchas usam reticências ("E1-2, E1-3 … E5-2") e
+   * dariam um conjunto incompleto. (Roteiro do defeito, 30/09/2026: toda
+   * folha que não fosse sapata/pilar/viga/laje de concreto respondia
+   * "Nenhuma peça do modelo traz o carimbo OrcaPRO_Detalhe de …".)
+   * ------------------------------------------------------------------ */
+  var RX_DOC = /(?:^|[^A-Z0-9-])([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+_R\d{2,3})(?![0-9])/;
+  /* "OBRA-FUND R02" (com espaço, como sai no texto) = "OBRA-FUND_R02" */
+  function normDoc(s) {
+    return txt(s).toUpperCase().replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "").replace(/\s+(R\d{2,3}(?:\.V\d+)?)$/, "_$1");
+  }
+  function lerFolhas(s) {
+    var out = [];
+    txt(s).split(";").forEach(function (p) {
+      var m = /^\s*(.*\S)\s+folha\s+0*(\d+)\s*$/i.exec(p);
+      if (m) out.push({ doc: normDoc(m[1]), pagina: parseInt(m[2], 10) });
+    });
+    return out;
+  }
+  function casaFolha(doc, pagina, carimbo) {
+    var d = normDoc(doc);
+    if (!d || !(pagina > 0)) return false;
+    return lerFolhas(carimbo).some(function (f) { return f.doc === d && f.pagina === pagina; });
+  }
+  function docDoArquivo(nome) {
+    var m = RX_DOC.exec(txt(nome).toUpperCase());
+    return m ? m[1] : "";
+  }
+  /* a identidade do PDF, na ordem: o que a pessoa confirmou → o código "_Rnn"
+     do carimbo → o código do calculista → o nome do arquivo */
+  function documentoDoProjeto(proj, arquivo, confirmado) {
+    return normDoc(confirmado) || normDoc(proj && proj.documento) || normDoc(proj && proj.codigo) ||
+      docDoArquivo(arquivo || (proj && proj.origem && proj.origem.arquivo)) || "";
+  }
+  /* os documentos que o modelo aberto cita (para perguntar "que PDF é este?") */
+  function docsDosCarimbos(els) {
+    var m = {}, out = [];
+    arr(els).forEach(function (e) {
+      lerFolhas(e && e.folhas).forEach(function (f) {
+        if (!m[f.doc]) { m[f.doc] = { doc: f.doc, pags: {}, pecas: 0 }; out.push(m[f.doc]); }
+        m[f.doc].pags[f.pagina] = 1; m[f.doc].pecas++;
+      });
+    });
+    out.forEach(function (d) {
+      var ps = Object.keys(d.pags).map(Number);
+      d.nFolhas = ps.length; d.maior = ps.length ? Math.max.apply(null, ps) : 0; delete d.pags;
+    });
+    out.sort(function (a, b) { return a.doc < b.doc ? -1 : 1; });
+    return out;
+  }
+
   /* rótulo de seção para agrupar as vistas na tela */
   function secaoDaVista(v) {
     if (v.folha) return { ordem: 9, nome: "Pranchas inteiras" };
@@ -369,6 +424,8 @@
     fmt: fmt, bitola: bitola, esc: esc,
     htmlDisc: htmlDisc,
     alvoDetalhe: alvoDetalhe, casaDetalhe: casaDetalhe, secoesDeVistas: secoesDeVistas,
+    normDoc: normDoc, lerFolhas: lerFolhas, casaFolha: casaFolha, docDoArquivo: docDoArquivo,
+    documentoDoProjeto: documentoDoProjeto, docsDosCarimbos: docsDosCarimbos,
     htmlEstVazio: htmlEstVazio, htmlEstCab: htmlEstCab, htmlEstAbas: htmlEstAbas, htmlVistas: htmlVistas,
     htmlArmacao: htmlArmacao, htmlVistaDetalhe: htmlVistaDetalhe,
     htmlLista: htmlLista, htmlEspecificacoes: htmlEspecificacoes, htmlConferencia: htmlConferencia,
