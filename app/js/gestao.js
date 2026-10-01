@@ -10131,6 +10131,8 @@
           try { BimShell.alternarFoco(!!on); } catch (eF) {}
           try { BimRibbon.setAtivo("mesa", !!on); BimShell.pintarFita(); } catch (eR) {}
         };
+        /* o rabisco da mesa vira ponto de vista DESTA obra (câmera + cena + traços) */
+        BimMesa.aoSalvarRabisco = function (marcas) { return self._bimVistaSalvarRabisco(marcas); };
       }
       reg.mesa = function (e) {
         if (typeof BimMesa === "undefined") return false;
@@ -13597,6 +13599,36 @@
       this._bimVistaGuardarMiniatura(v.id);
       UI.toast('Ponto de vista \u201C' + v.nome + '\u201D salvo: ' + BimVista.resumo(v).join(" · ") + "." + this._bimVistaAvisoSemChave(est), est.semChave ? "aviso" : "ok");
       this._bimVistaRender();
+    },
+
+    /* O RABISCO DO MODO MESA (01/10/2026): o mesmo "salvar ponto de vista",
+       com os traços como marcações (`livre`) e um nome já sugerido — na mesa,
+       com o cliente olhando, ninguém quer pensar em nome. Devolve {ok} para a
+       barra saber se fecha o desenho. */
+    _bimVistaSalvarRabisco: function (marcas) {
+      if (!window.BimVista || !window.BIM) return { ok: false };
+      if (this._semSessao()) { UI.toast("Entre com a sua conta para salvar o rabisco.", "aviso"); return { ok: false }; }
+      if (!this._bimSel) { UI.toast("Escolha a obra no alto da tela — o rabisco vira ponto de vista dela.", "aviso"); return { ok: false }; }
+      var est = BIM.estadoVista ? BIM.estadoVista({ vista: this._bimVxEst().ativa }) : null;
+      if (!est || !est.camera) { UI.toast("Abra um modelo antes de rabiscar.", "erro"); return { ok: false }; }
+      var d = new Date(), dois = function (n) { return (n < 10 ? "0" : "") + n; };
+      var nome = prompt("Nome do ponto de vista com o rabisco", "Rabisco " + dois(d.getDate()) + "/" + dois(d.getMonth() + 1) + " " + dois(d.getHours()) + ":" + dois(d.getMinutes()));
+      if (nome == null) return { ok: false, cancelou: true };
+      var quem = "";
+      try { quem = (Auth.usuario && Auth.usuario() && (Auth.usuario().nome || Auth.usuario().email)) || ""; } catch (e) {}
+      var v = BimVista.vista({
+        obraId: this._bimSel, nome: nome, autor: quem, criadoEm: d.toISOString(),
+        completa: true, camera: est.camera, cortes: est.cortes, visibilidade: est.visibilidade,
+        aparencias: est.aparencias, modelos: est.modelos, estilo: est.estilo,
+        medidas: est.medidas, cotaRede: est.cotaRede, marcacoes: marcas || [], comentarios: []
+      });
+      if (!v) { UI.toast("Dê um nome ao ponto de vista.", "erro"); return { ok: false }; }
+      if (!v.marcacoes.length) { UI.toast("O rabisco não tem nenhum traço para gravar.", "aviso"); return { ok: false }; }
+      if (!Store.salvar(eid(), "bim_vistas", v)) { UI.toast("Não consegui salvar (armazenamento cheio?).", "erro"); return { ok: false }; }
+      this._bimVistaGuardarMiniatura(v.id);
+      UI.toast('Rabisco salvo no ponto de vista “' + v.nome + '” (' + v.marcacoes.length + (v.marcacoes.length === 1 ? " traço" : " traços") + ")." + this._bimVistaAvisoSemChave(est), est.semChave ? "aviso" : "ok");
+      this._bimVistaRender();
+      return { ok: true, id: v.id, nome: v.nome };
     },
 
     /* a peça que o B0 não identificou não tem como entrar na vista — e a

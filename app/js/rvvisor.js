@@ -6,23 +6,27 @@
  * Quem abre: App.iniciar → App._abrirRVCloud(token) → RvVisor.abrir(token).
  * O que tem:
  *   - cabeçalho com a MARCA da empresa e o nome da obra;
- *   - barra própria (Vistas · Camadas · 4D · Apontar · RA/RV · Mais) — a
- *     barra do computador não aparece (modo visitante do bim.js);
+ *   - barra própria (Vistas · Camadas · 4D · Apontar · Medir · RA/RV · Mais)
+ *     — a barra do computador não aparece (modo visitante do bim.js);
+ *   - trena com o mesmo ímã do computador (lupa no dedo, eixo travado),
+ *     desfazer e limpar — só na tela, nada sai do aparelho;
  *   - toque na peça mostra o que ela é (sem preço);
  *   - pontos de vista, disciplina/pavimento/corte, obra no tempo (4D);
- *   - apontamento de campo com foto;
+ *   - apontamento de campo com foto — SEM SINAL ele fica guardado no
+ *     aparelho e vai sozinho quando a internet volta (com o link aberto);
  *   - RA do iPhone (Quick Look) e do Android (app do Google);
  *   - abre SEM INTERNET depois da primeira vez (Cache API), até o link vencer.
  *
  * ⚠ O CELULAR NÃO TEM LOGIN NEM Store. Tudo o que ele sabe vem do link
  *   (/rv/t, /rv/d, /rv/f, /rv/notas) — e o que ele manda de volta é só o
- *   apontamento (/rv/nota) e o .glb do Android (/rv/glb).
+ *   apontamento (/rv/nota) e o .glb do Android (/rv/glb). O apontamento que
+ *   espera sinal mora no cache orcapro-rv-fila-v1, deste aparelho só.
  * ===================================================================== */
 (function (global) {
   "use strict";
 
   var CACHE = "orcapro-rv-v1";
-  var TOPO = 60, BASE = 74;
+  var TOPO = 60, BASE = 74, TRENA_H = 46;
   var st = null;
 
   function I(n, px) { return (global.Icones && global.Icones.get) ? global.Icones.get(n, px || 18) : ""; }
@@ -90,6 +94,11 @@
       Object.keys(ix).forEach(function (tk) {
         if (ix[tk].expira > agora) return;
         c.delete("/rv/t/" + tk); c.delete("/rv/d/" + tk); c.delete("/rv/notas/" + tk);
+        /* ⚠ a FILA não sai aqui: esta limpeza roda ao abrir, ANTES de o
+           manifesto dizer que o link venceu — apagar aqui fazia o apontamento
+           que esperava sinal sumir calado. Ela sai pelo caminho do "venceu",
+           que diz quantos se perderam. (É texto da própria pessoa, no
+           aparelho dela.) */
         (ix[tk].ids || []).forEach(function (id) { if (!vivosIds[id]) c.delete("/rv/f/" + id); });
         delete ix[tk];
       });
@@ -102,6 +111,104 @@
       (ix[tk] && ix[tk].ids || []).forEach(function (id) { c.delete("/rv/f/" + id); });
       delete ix[tk]; return ix;
     });
+  }
+
+  /* ---------------- apontamento SEM SINAL ----------------
+     ⚠ No canteiro o sinal cai o tempo todo. Antes, sem internet o envio
+     falhava e a pessoa tinha de lembrar de mandar de novo depois — na
+     prática, apontamento perdido. Agora ele fica guardado NESTE aparelho
+     (Cache API, como o modelo; o sw.js preserva os caches orcapro-rv-*) e
+     vai sozinho quando o sinal volta, com o link aberto.
+     ⚠ Cada apontamento leva um `cid` gerado aqui: se a resposta da 1ª
+     tentativa se perder no caminho de volta, o servidor já gravou — e o
+     reenvio com o mesmo cid devolve o mesmo apontamento (bim-rv v5), em vez
+     de a obra receber dois. */
+  var FILA = "orcapro-rv-fila-v1";
+  function novoCid() {
+    var a = [], i;
+    try { var u = new Uint8Array(12); global.crypto.getRandomValues(u); for (i = 0; i < u.length; i++) a.push(u[i]); }
+    catch (e) { a = []; for (i = 0; i < 12; i++) a.push(Math.floor(Math.random() * 256)); }
+    return a.map(function (b) { return ("0" + b.toString(16)).slice(-2); }).join("");
+  }
+  function filaUrl(tk, cid) { return "/rv/fila/" + tk + "/" + cid; }
+  function filaCache() { return (global.caches && global.caches.open) ? global.caches.open(FILA) : Promise.reject(new Error("sem cache")); }
+  function doLink(tk) { var pre = "/rv/fila/" + tk + "/"; return function (rq) { try { return new URL(rq.url).pathname.indexOf(pre) === 0; } catch (e) { return false; } }; }
+  function filaGravar(tk, item) {
+    return filaCache().then(function (c) { return c.put(filaUrl(tk, item.nota.cid), new Response(JSON.stringify(item), { headers: { "Content-Type": "application/json" } })); });
+  }
+  function filaTirar(tk, cid) { return filaCache().then(function (c) { return c.delete(filaUrl(tk, cid)); }).catch(function () {}); }
+  function filaLer(tk) {
+    return filaCache().then(function (c) {
+      return c.keys().then(function (ks) {
+        return Promise.all(ks.filter(doLink(tk)).map(function (rq) { return c.match(rq).then(function (r) { return r ? r.json() : null; }).catch(function () { return null; }); }));
+      });
+    }).then(function (l) {
+      return (l || []).filter(function (x) { return x && x.nota && x.nota.cid; }).sort(function (a, b) { return (a.guardado || 0) - (b.guardado || 0); });
+    }, function () { return []; });
+  }
+  function filaApagarLink(tk) {
+    return filaCache().then(function (c) { return c.keys().then(function (ks) { return Promise.all(ks.filter(doLink(tk)).map(function (rq) { return c.delete(rq); })); }); }).catch(function () {});
+  }
+  /* {ok, id} | {temporario, rede?, erro} | {erro} — este último é RECUSA do
+     servidor (link vencido, limite, texto inválido): não adianta reenviar */
+  function postarNota(tk, nota) {
+    return fetch("/rv/nota/" + tk, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(nota) }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        if (r.ok && j && j.ok) return { ok: true, id: j.id, repetido: !!j.repetido };
+        /* ⚠ 200 SEM o "ok" do servidor é wi-fi de portal (canteiro, hotel)
+           respondendo uma página no lugar dele: não chegou — tenta de novo */
+        if (r.ok) return { temporario: true, erro: "a resposta não veio do servidor — o wi-fi está pedindo login?" };
+        if (r.status === 429 || r.status >= 500) return { temporario: true, erro: (j && j.erro) || ("o servidor respondeu " + r.status) };
+        return { erro: (j && j.erro) || ("o servidor recusou (" + r.status + ")") };
+      });
+    }, function (e) { return { temporario: true, rede: true, erro: (e && e.message) || "sem rede" }; });
+  }
+  var _filaRodando = false, _filaT = 0, _filaEspera = 15000;
+  function agendarFila(ms) { clearTimeout(_filaT); _filaT = setTimeout(function () { enviarFila(); }, ms); }
+  function enviarFila() {
+    if (_filaRodando) return Promise.resolve(-1);   /* já está mandando: quem pediu não ganha recado */
+    if (!st || !st.token || !st.man || !st.man.aceitaNotas) return Promise.resolve(0);
+    _filaRodando = true;
+    /* quem manda AGORA desarma o relógio de antes: o "Tentar agora" (ou o
+       sinal voltando) deixava armado o reenvio de 15 s agendado quando o
+       apontamento foi guardado, e ele disparava depois à toa */
+    clearTimeout(_filaT); _filaT = 0;
+    var tk = st.token, foram = 0, recusados = 0, parou = false;
+    return filaLer(tk).then(function (l) {
+      var seq = Promise.resolve();
+      l.filter(function (x) { return !x.erro; }).forEach(function (it) {
+        seq = seq.then(function () {
+          if (parou) return;
+          return postarNota(tk, it.nota).then(function (r) {
+            if (r.ok) { foram++; return filaTirar(tk, it.nota.cid); }
+            if (r.temporario) { parou = true; return; }
+            /* recusado: FICA na lista com o motivo (a pessoa decide descartar);
+               sumir com ele calado seria perder o que ela escreveu */
+            recusados++; it.erro = r.erro; it.erroEm = Date.now();
+            return filaGravar(tk, it).catch(function () {});
+          });
+        });
+      });
+      return seq;
+    }).then(function () { return filaLer(tk); }).then(function (l) {
+      _filaRodando = false;
+      if (!st || st.token !== tk) return foram;
+      st.fila = l; pintarFila();   /* o selo acompanha já, sem esperar a lista do servidor */
+      var pend = l.filter(function (x) { return !x.erro; }).length;
+      if (pend) { _filaEspera = parou ? Math.min(_filaEspera * 2, 300000) : 15000; agendarFila(_filaEspera); }
+      else _filaEspera = 15000;
+      if (recusados) recado(recusados === 1 ? "Um apontamento guardado sem sinal foi RECUSADO pelo servidor — veja o motivo em Apontar." : recusados + " apontamentos guardados foram RECUSADOS pelo servidor — veja o motivo em Apontar.", true);
+      else if (foram) recado(foram === 1 ? "O apontamento guardado sem sinal foi enviado." : foram + " apontamentos guardados sem sinal foram enviados.", false);
+      if (foram) carregarNotas(st.folha !== "notas");
+      return foram;
+    }, function () { _filaRodando = false; return 0; });
+  }
+  function pintarFila() {
+    if (!st) return;
+    var n = (st.fila || []).length, b = document.querySelector('#rvv-barra [data-f="notas"]');
+    if (b) { if (n) b.setAttribute("data-n", String(n)); else b.removeAttribute("data-n"); }
+    if (B() && B().pinos) desenharPinos();
+    if (st.folha === "notas" && !st.apontando) listarNotas(st._notasOffline);
   }
 
   /* ---------------- montagem da tela ---------------- */
@@ -118,6 +225,9 @@
       "#rvv-barra{position:absolute;left:0;right:0;bottom:0;height:" + BASE + "px;padding:4px 4px calc(env(safe-area-inset-bottom,0px) + 4px);box-sizing:border-box;display:flex;justify-content:space-around;align-items:stretch;background:rgba(8,20,34,.96);border-top:1px solid #1d3550;z-index:2147483000}" +
       "#rvv-barra button{flex:1;min-width:0;border:0;background:transparent;color:#9fb2c8;font-size:10.5px;font-family:inherit;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border-radius:10px;cursor:pointer;-webkit-tap-highlight-color:transparent;padding:2px 0}" +
       "#rvv-barra button.on{color:#fff;background:rgba(37,99,235,.35)}#rvv-barra button[hidden]{display:none}" +
+      /* selo do Apontar: quantos esperam sinal neste aparelho */
+      "#rvv-barra button{position:relative}#rvv-barra button[data-n]::after{content:attr(data-n);position:absolute;top:3px;left:calc(50% + 6px);min-width:16px;height:16px;padding:0 4px;box-sizing:border-box;border-radius:8px;background:#f59e0b;color:#111;font-size:10px;font-weight:700;line-height:16px;text-align:center}" +
+      ".rvv-fila{font-size:12px;color:#fcd34d;margin:8px 0;line-height:1.45}" +
       "#rvv-folha{position:absolute;left:0;right:0;bottom:" + BASE + "px;max-height:62%;overflow:auto;background:#0f2740;border-top:1px solid #24435f;border-radius:16px 16px 0 0;padding:14px 14px 16px;box-sizing:border-box;z-index:2147482990;display:none;box-shadow:0 -10px 30px rgba(0,0,0,.45)}" +
       "#rvv-folha h3{margin:0 0 10px;font-size:15px;display:flex;justify-content:space-between;align-items:center}" +
       ".rvv-lin{display:flex;align-items:center;gap:8px;padding:10px 8px;border-bottom:1px solid #1d3550;cursor:pointer}.rvv-lin:last-child{border-bottom:0}.rvv-lin small{color:#8fa3b8;display:block}" +
@@ -128,7 +238,12 @@
       "#rvv-recado{position:absolute;left:10px;right:10px;top:" + (TOPO + 8) + "px;display:none;padding:10px 12px;border-radius:10px;font-size:13px;line-height:1.35;z-index:2147483001;color:#fff;box-shadow:0 6px 18px rgba(0,0,0,.4)}" +
       "#rv-load{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:20px;background:#0b1a2b;z-index:2147483002}" +
       ".rvv-inp{width:100%;box-sizing:border-box;padding:10px;border-radius:9px;border:1.5px solid #24435f;background:#0b1e33;color:#eaf2fb;font-size:15px;font-family:inherit}" +
-      ".rvv-nota-foto{width:54px;height:54px;object-fit:cover;border-radius:8px;flex:none}";
+      ".rvv-nota-foto{width:54px;height:54px;object-fit:cover;border-radius:8px;flex:none}" +
+      /* a faixa da trena: logo acima da barra; a barra do eixo do bim.js sobe
+         para cima dela (opção eixoBase no montar) */
+      "#rvv-trena{position:absolute;left:10px;right:10px;bottom:" + (BASE + 8) + "px;height:" + TRENA_H + "px;box-sizing:border-box;display:none;align-items:center;gap:6px;padding:5px 6px 5px 10px;background:rgba(15,39,64,.95);border:1px solid #24435f;border-radius:12px;z-index:2147482994;box-shadow:0 6px 18px rgba(0,0,0,.4)}" +
+      "#rvv-trena .tx{flex:1;min-width:0;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#rvv-trena .tx svg{vertical-align:-3px}" +
+      "#rvv-trena .v{color:#86efac;margin-left:6px;font-weight:700}#rvv-trena .rvv-bt{padding:7px 9px}";
     document.head.appendChild(s);
   }
 
@@ -150,6 +265,7 @@
       '<button id="rv-upd" class="rvv-bt" title="Buscar atualização">' + I("ciclo", 15) + '</button></div>' +
       '<div id="rvv-recado"></div>' +
       '<div id="rvv-card"></div>' +
+      '<div id="rvv-trena" role="toolbar" aria-label="Trena"></div>' +
       '<div id="rvv-folha"></div>' +
       '<nav id="rvv-barra">' +
       '<button data-f="vistas">' + I("camera", 20) + 'Vistas</button>' +
@@ -157,6 +273,10 @@
       '<button data-f="4d" hidden>' + I("calendario", 20) + 'Obra no tempo</button>' +
       /* escondido até o manifesto dizer que o link recebe (aceitaNotas) */
       '<button data-f="notas" hidden>' + I("nota", 20) + 'Apontar</button>' +
+      /* a trena na BARRA, não em Mais: é ferramenta de campo (o mestre de obra
+         mede a peça na frente dele), e lá dentro ninguém achava — nem achava
+         onde parar */
+      '<button data-f="medir">' + I("medir", 20) + 'Medir</button>' +
       '<button data-f="ra">' + I("vr", 20) + 'RA/RV</button>' +
       '<button data-f="mais">' + I("mais", 20) + 'Mais</button>' +
       '</nav>' +
@@ -170,7 +290,9 @@
       /* ⚠ o recado mora no topo, por cima de tudo: aberto junto com o painel
          da RA, ele cobria o ✕ do painel (a e2e de 29/09 pegou o
          "Apontamento enviado" em cima do fechar) */
-      if (f === "ra") { recado(""); fecharFolha(); fecharCard(); if (B().abrirXR) B().abrirXR(); return; }
+      if (f === "medir") { ligarMedir(!st.medindo); return; }
+      /* na RA a tela é do imersivo: toque ali anda/olha, não marca ponto */
+      if (f === "ra") { recado(""); fecharFolha(); fecharCard(); if (st.medindo) ligarMedir(false); if (B().abrirXR) B().abrirXR(); return; }
       if (st.folha === f) fecharFolha(); else abrirFolha(f);
     });
   }
@@ -186,7 +308,41 @@
   }
   function marcarBarra() {
     var bs = document.querySelectorAll("#rvv-barra [data-f]");
-    for (var i = 0; i < bs.length; i++) bs[i].classList.toggle("on", bs[i].getAttribute("data-f") === st.folha);
+    for (var i = 0; i < bs.length; i++) bs[i].classList.toggle("on", bs[i].getAttribute("data-f") === st.folha || (bs[i].getAttribute("data-f") === "medir" && !!st.medindo));
+  }
+
+  /* ---------------- trena ----------------
+     O ímã, a lupa (segurar o dedo) e o eixo são os do bim.js — os mesmos do
+     computador. Aqui é só ligar/desligar e a faixa com o que foi medido.
+     Nada disto sai do aparelho: a medida é de quem está olhando. */
+  function fmtM(m) { return m >= 1 ? m.toFixed(2).replace(".", ",") + " m" : Math.round(m * 100) + " cm"; }
+  function ligarMedir(on) {
+    st.medindo = !!on;
+    if (on) {
+      recado(""); fecharFolha(); fecharCard();
+      if (B().painelXRAberto && B().painelXRAberto()) B().abrirXR();
+    }
+    if (B().medir) B().medir(st.medindo);
+    marcarBarra(); pintarTrena();
+  }
+  function pintarTrena() {
+    var el = $("rvv-trena"); if (!el || !st) return;
+    var e = (B() && B().trenaEstado) ? B().trenaEstado() : null;
+    /* a trena também se desliga por dentro do 3D (abrir a RA, Esc num
+       computador): a faixa acompanha em vez de mostrar uma ferramenta morta */
+    if (st.medindo && e && !e.on) { st.medindo = false; marcarBarra(); }
+    if (!st.medindo || !e) { if (el.style.display !== "none") { el.style.display = "none"; el.removeAttribute("data-k"); } return; }
+    el.style.display = "flex";
+    var k = [e.n, e.pendente, e.ultima ? e.ultima.valor.toFixed(4) + e.ultima.eixo : ""].join("|");
+    if (el.getAttribute("data-k") === k) return;   /* repinta só quando muda (o relógio passa a cada 300 ms) */
+    el.setAttribute("data-k", k);
+    var algo = e.n > 0 || e.pendente > 0;
+    var txt = e.pendente ? "1º ponto marcado" : e.n ? e.n + (e.n === 1 ? " medida" : " medidas") : "Toque em 2 pontos";
+    var ult = (!e.pendente && e.ultima) ? '<span class="v" data-a="trena-valor">' + fmtM(e.ultima.valor) + (e.ultima.eixo ? " (" + esc(e.ultima.eixo) + ")" : e.ultima.horizontal ? " (horizontal)" : "") + "</span>" : "";
+    el.innerHTML = '<div class="tx">' + I("medir", 16) + " <b>" + txt + "</b>" + ult + "</div>" +
+      '<button class="rvv-bt" data-a="trena-desfazer"' + (algo ? "" : " disabled") + ">↶ Desfazer</button>" +
+      '<button class="rvv-bt" data-a="trena-limpar"' + (algo ? "" : " disabled") + ">Limpar</button>" +
+      '<button class="rvv-bt" data-a="trena-parar" title="Parar de medir" aria-label="Parar de medir">' + I("fechar", 15) + "</button>";
   }
   function txtCarga(t) { var e = $("rv-load-txt"); if (e) e.textContent = t; }
   function erroCarga(t) {
@@ -221,7 +377,10 @@
     else if (f === "mais") html = folhaMais();
     el.innerHTML = html;
     if (f === "4d") ligar4D();
-    if (f === "notas") carregarNotas(false);
+    /* a lista sai NA HORA com o que já se sabe (inclusive o que espera
+       sinal); a volta do servidor só atualiza. Sem sinal essa volta cai no
+       cache e demora — a pessoa via "Carregando…" logo depois de guardar. */
+    if (f === "notas") { listarNotas(st._notasOffline); carregarNotas(false); }
   }
   function fecharFolha() {
     st.folha = ""; marcarBarra();
@@ -326,23 +485,43 @@
     return h;
   }
   function carregarNotas(soPinos) {
-    return buscarJson("/rv/notas/" + st.token, "/rv/notas/" + st.token).then(function (j) {
-      st.notas = (j && j.notas) || [];
-      desenharPinos();
-      if (!soPinos) listarNotas(j && j._offline);
-    }).catch(function () { if (!soPinos) listarNotas(true); });
+    var tk = st.token;
+    return Promise.all([buscarJson("/rv/notas/" + tk, "/rv/notas/" + tk).catch(function () { return null; }), filaLer(tk)]).then(function (rs) {
+      if (!st || st.token !== tk) return;
+      var j = rs[0];
+      if (j) st.notas = j.notas || [];
+      st._notasOffline = !j || !!j._offline;
+      /* o que JÁ está no servidor sai da fila (a resposta se perdeu, mas chegou) */
+      var noServ = {}; (st.notas || []).forEach(function (n) { if (n.cid) noServ[n.cid] = 1; });
+      st.fila = (rs[1] || []).filter(function (it) { if (noServ[it.nota.cid]) { filaTirar(tk, it.nota.cid); return false; } return true; });
+      pintarFila();
+      if (!soPinos) listarNotas(st._notasOffline);
+    });
   }
   function desenharPinos() {
     var tipos = { problema: 0xdc2626, duvida: 0x2563eb, obs: 0xf59e0b };
     B().pinos((st.notas || []).map(function (n, i) {
       return { id: n.id, p: n.ponto, rotulo: String(i + 1), cor: tipos[n.tipo] || 0xf59e0b };
-    }));
+    }).concat((st.fila || []).map(function (it) {
+      /* o que espera sinal: cinza com reticências (vermelho se foi recusado) */
+      return { id: "fila-" + it.nota.cid, p: it.nota.ponto, rotulo: "…", cor: it.erro ? 0xdc2626 : 0x64748b };
+    })));
   }
   function listarNotas(offline) {
     var box = document.querySelector('#rvv-folha [data-a="notas-lista"]'); if (!box) return;
-    var ns = st.notas || [];
+    var ns = st.notas || [], fl = st.fila || [];
     var h = offline ? '<p style="font-size:11.5px;color:#f0b94a">Sem internet: mostrando o que este aparelho guardou.</p>' : "";
-    if (!ns.length) h += '<p style="font-size:12.5px;color:#9fb2c8">Nenhum apontamento ainda.</p>';
+    var pend = fl.filter(function (x) { return !x.erro; }).length;
+    if (pend) h += '<div class="rvv-fila" data-a="fila-aviso"><b>' + pend + (pend === 1 ? ' apontamento guardado' : ' apontamentos guardados') + ' neste aparelho</b> — ' + (pend === 1 ? 'vai' : 'vão') + ' sozinho' + (pend === 1 ? '' : 's') + ' quando o sinal voltar, com este link aberto. ' +
+      '<button class="rvv-bt" data-a="fila-enviar" style="margin-top:6px">' + I("ciclo", 14) + ' Tentar agora</button></div>';
+    fl.forEach(function (it) {
+      var n = it.nota;
+      h += '<div class="rvv-lin" data-a="fila-ir" data-cid="' + esc(n.cid) + '"><b style="width:28px;text-align:center">' + I(it.erro ? "alerta" : "relogio", 18) + '</b>' +
+        '<div style="min-width:0"><b>' + esc(RV().rotuloTipo(n.tipo)) + '</b> — ' + esc(n.texto) +
+        '<small' + (it.erro ? ' style="color:#fca5a5"' : '') + '>' + (it.erro ? 'Não enviado: ' + esc(it.erro) : 'Esperando sinal · guardado ' + esc(RV().tempoRelativo(it.guardado))) + (n.foto ? ' · com foto' : '') + '</small>' +
+        (it.erro ? '<button class="rvv-bt" data-a="fila-descartar" data-cid="' + esc(n.cid) + '" style="margin-top:6px">' + I("lixeira", 14) + ' Descartar</button>' : '') + '</div></div>';
+    });
+    if (!ns.length && !fl.length) h += '<p style="font-size:12.5px;color:#9fb2c8">Nenhum apontamento ainda.</p>';
     ns.forEach(function (n, i) {
       h += '<div class="rvv-lin" data-a="nota-ir" data-i="' + i + '">' +
         (n.foto ? '<img class="rvv-nota-foto" alt="" src="/rv/nf/' + esc(st.token) + '/' + esc(n.id) + '">' : '<b style="width:28px;text-align:center">' + (i + 1) + '</b>') +
@@ -352,6 +531,9 @@
     box.innerHTML = h;
   }
   function comecarApontar() {
+    /* ⚠ com a trena ligada o toque vira PONTO DE MEDIDA e o apontamento nunca
+       recebia o toque — a pessoa tocava no modelo e nada acontecia */
+    if (st.medindo) ligarMedir(false);
     st.apontando = true;
     var f = $("rvv-folha"); if (f) f.style.display = "none";
     recado("Toque no ponto do modelo onde fica o apontamento.", false);
@@ -380,7 +562,7 @@
          para onde vão o nome e a foto, e onde ler a regra (Política, 4.3) */
       '<div style="font-size:11px;color:#8fa3b8;margin-top:8px;line-height:1.4">O texto, a foto e o seu nome ficam com quem enviou o link e com quem tem o link, e são apagados quando o link vence. <a href="documentos/POLITICA-DE-PRIVACIDADE.txt" target="_blank" rel="noopener" style="color:#7dd3fc">Política de privacidade</a></div>' +
       '<div style="display:flex;gap:8px;margin-top:12px"><button class="rvv-bt pri" data-a="nota-enviar" style="flex:1;justify-content:center;padding:11px">' + I("enviar", 16) + ' Enviar</button><button class="rvv-bt" data-a="fechar-folha">Cancelar</button></div>';
-    st.notaPt = pt; st.notaTipo = "obs";
+    st.notaPt = pt; st.notaTipo = "obs"; st.notaCid = "";
     B().pinos((st.notas || []).map(function (n, i) { return { id: n.id, p: n.ponto, rotulo: String(i + 1) }; }).concat([{ id: "novo", p: pt.p, rotulo: "novo", cor: 0x22c55e }]));
   }
   /* foto do celular vira JPEG ≤ 1280 px e ≤ 700 KB antes de sair do aparelho */
@@ -410,22 +592,45 @@
     var f = $("rvv-folha"), q = function (a) { return f.querySelector('[data-a="' + a + '"]'); };
     var texto = q("nota-texto").value, autor = q("nota-autor").value, arq = q("nota-foto").files && q("nota-foto").files[0];
     var bt = q("nota-enviar"); bt.disabled = true; bt.textContent = "Enviando…";
+    var tk = st.token, nota = null;
     comprimirFoto(arq).then(function (foto) {
       var pt = st.notaPt;
-      var nota = { texto: texto, autor: autor, tipo: st.notaTipo, ponto: pt.p, elemento: pt.nome || "",
+      if (!st.notaCid) st.notaCid = novoCid();
+      nota = { texto: texto, autor: autor, tipo: st.notaTipo, ponto: pt.p, elemento: pt.nome || "",
         /* a chave vai no formato do COMPUTADOR — é lá que o apontamento vira ponto de vista */
-        chave: pt.chave ? RV().traduzir(pt.chave, st.inverso) : "", foto: foto };
+        chave: pt.chave ? RV().traduzir(pt.chave, st.inverso) : "", foto: foto, cid: st.notaCid };
       var erro = RV().validarNota(nota);
       if (erro) throw new Error(erro);
       guest({ nome: String(autor).trim() });
-      return fetch("/rv/nota/" + st.token, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(nota) })
-        .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.erro || "falha ao enviar"); return j; }); });
-    }).then(function () {
-      recado("Apontamento enviado. Quem compartilhou o projeto vai ver na obra.", false);
-      abrirFolha("notas");
+      return postarNota(tk, nota);
+    }).then(function (r) {
+      /* ⚠ A FOLHA ANTES DO RECADO: abrirFolha começa com recado("") — na
+         ordem antiga o "Apontamento enviado" era apagado no mesmo instante e
+         a pessoa nunca via a confirmação */
+      if (r.ok) {
+        st.notaCid = "";
+        abrirFolha("notas");
+        recado("Apontamento enviado. Quem compartilhou o projeto vai ver na obra.", false);
+        return;
+      }
+      if (!r.temporario) throw new Error(r.erro);
+      var item = { nota: nota, guardado: Date.now() };
+      return filaGravar(tk, item).then(function () {
+        st.notaCid = "";
+        /* na memória JÁ, não quando a lista do servidor voltar: sem sinal essa
+           volta demora (cai no cache), e até lá o selo e a lista diziam 0 */
+        st.fila = (st.fila || []).filter(function (x) { return x.nota.cid !== nota.cid; }).concat([item]);
+        pintarFila();
+        abrirFolha("notas");
+        recado(r.rede ? "Sem sinal: o apontamento ficou guardado neste aparelho e vai sozinho quando a internet voltar, com este link aberto."
+          : "Não deu para confirmar o envio (" + r.erro + "): o apontamento ficou guardado neste aparelho e vai sozinho na próxima tentativa.", false);
+        _filaEspera = 15000; agendarFila(_filaEspera);
+      }, function () {
+        throw new Error("Sem sinal agora, e este navegador não deixou guardar o apontamento no aparelho. Tente de novo quando tiver sinal (o texto continua aqui).");
+      });
     }).catch(function (e) {
       bt.disabled = false; bt.innerHTML = I("enviar", 16) + " Enviar";
-      recado(/Failed to fetch|NetworkError|Load failed/i.test(e.message) ? "Sem internet agora — o apontamento não foi enviado. Tente de novo quando tiver sinal (o texto continua aqui)." : e.message, true);
+      recado(e.message, true);
     });
   }
   function guest(novo) {
@@ -437,7 +642,6 @@
   // ---- Mais ----
   function folhaMais() {
     var h = cabecalho(I("mais", 17) + " Mais");
-    h += '<div class="rvv-lin" data-a="medir"><span>' + I("medir", 18) + '</span><div><b>' + (st.medindo ? "Parar de medir" : "Medir") + '</b><small>Toque 2 pontos do modelo</small></div></div>';
     h += '<div class="rvv-lin" data-a="enquadrar"><span>' + I("alvo", 18) + '</span><div><b>Enquadrar o projeto</b></div></div>';
     h += '<div class="rvv-lin" data-a="reuniao"><span>' + I("pessoas", 18) + '</span><div><b>Reunião no modelo</b><small>Todos com este link se veem dentro do projeto</small></div></div>';
     var m = st.man || {};
@@ -555,7 +759,21 @@
       if (a === "nota-ir") { var n = st.notas[+b.getAttribute("data-i")]; if (n) { fecharFolha(); B().olharPara(n.ponto, 5); recado((+b.getAttribute("data-i") + 1) + ". " + n.texto, false); } return; }
       if (a === "nota-tipo") { st.notaTipo = b.getAttribute("data-k"); var cs = b.parentNode.querySelectorAll(".rvv-chip"); for (var i = 0; i < cs.length; i++) cs[i].classList.toggle("on", cs[i] === b); return; }
       if (a === "nota-enviar") return enviarNota();
-      if (a === "medir") { st.medindo = !st.medindo; B().medir(st.medindo); fecharFolha(); recado(st.medindo ? "Toque 2 pontos do modelo para medir. Em Mais, pare de medir." : "", false); return; }
+      if (a === "fila-enviar") {
+        _filaEspera = 15000; b.disabled = true;
+        /* só diz "sem sinal" se ainda há o que mandar — a recusa tem recado próprio, que não pode ser coberto */
+        enviarFila().then(function (n) { if (n === 0 && (st.fila || []).some(function (x) { return !x.erro; })) recado("Ainda sem sinal — continua guardado e vai sozinho depois.", false); });
+        return;
+      }
+      if (a === "fila-descartar") {
+        var cidD = b.getAttribute("data-cid");
+        if (!global.confirm("Descartar este apontamento? Ele NÃO foi enviado e some deste aparelho.")) return;
+        return filaTirar(st.token, cidD).then(function () { return carregarNotas(false); });
+      }
+      if (a === "fila-ir") { var itF = (st.fila || []).filter(function (x) { return x.nota.cid === b.getAttribute("data-cid"); })[0]; if (itF) { fecharFolha(); B().olharPara(itF.nota.ponto, 5); recado("Esperando sinal: " + itF.nota.texto, false); } return; }
+      if (a === "trena-desfazer") { if (B().desfazerMedida) B().desfazerMedida(); return pintarTrena(); }
+      if (a === "trena-limpar") { if (B().limparMedidas) B().limparMedidas(); return pintarTrena(); }
+      if (a === "trena-parar") return ligarMedir(false);
       if (a === "enquadrar") { if (B().home) B().home(); return fecharFolha(); }
       if (a === "reuniao") { fecharFolha(); var rb = $("rv-reun"); if (rb) rb.click(); return; }
       if (a === "card-fechar") return fecharCard();
@@ -590,6 +808,7 @@
       var br = $("rvv-barra"), tp = $("rvv-topo");
       if (br) br.style.display = on ? "none" : "flex";
       if (tp) tp.style.display = on ? "none" : "flex";
+      if (on && st.medindo) ligarMedir(false);
       if (on && st.folha) fecharFolha();
     }, 500);
   }
@@ -612,14 +831,14 @@
         }
       }
     } else { st.dados = {}; st.inverso = {}; }
-    carregarNotas(true);
     recado("Toque numa peça para ver o que ela é. RA/RV mostra o projeto no seu ambiente.", false);
+    carregarNotas(true).then(function () { if ((st.fila || []).some(function (x) { return !x.erro; })) enviarFila(); });
   }
 
   /* ---------------- ABRIR ---------------- */
   var RvVisor = {
     abrir: function (token, app) {
-      st = { token: token, man: null, dados: null, dadosBrutos: null, mapa: {}, inverso: {}, simCel: null, notas: [], folha: "", est4d: null,
+      st = { token: token, man: null, dados: null, dadosBrutos: null, mapa: {}, inverso: {}, simCel: null, notas: [], fila: [], notaCid: "", folha: "", est4d: null,
         op4d: { futuro: "oculto" }, dia4d: 0, em4d: false, play: 0, corte: 100, apontando: false, medindo: false, guardado: false };
       app = app || global.App || {};
       document.title = "Projeto 3D";
@@ -631,13 +850,17 @@
       var sala = "nuvem-" + String(token).slice(0, 18);
       if (app._rvReuniao) app._rvReuniao(sala);
       limparVencidos();
+      if (!global.__rvFilaOnline) {   /* um só ouvinte, mesmo que o visor reabra */
+        global.__rvFilaOnline = 1;
+        global.addEventListener("online", function () { _filaEspera = 15000; if (st && st.fila && st.fila.length) enviarFila(); });
+      }
       var t0 = 0, espera = setInterval(function () {
         t0++;
         if (!(global.BIM && global.BIM.montar && global.RvNuvem)) { if (t0 > 100) { clearInterval(espera); erroCarga("O visualizador não carregou. Recarregue a página."); } return; }
         clearInterval(espera);
         try {
           global.BIM.montar(document.getElementById("bim-canvas"), {
-            visitante: true, topoReservado: TOPO, baseReservada: BASE,
+            visitante: true, topoReservado: TOPO, baseReservada: BASE, eixoBase: BASE + 8 + TRENA_H + 8,
             onPick: aoTocarPeca,
             onSceneViewer: sceneViewer,
             onReuniao: function (n) { if (app._rvReunBadge) app._rvReunBadge(n); },
@@ -650,6 +873,7 @@
         } catch (e) { erroCarga("Falha ao iniciar o visualizador."); return; }
         vigiarImersivo();
         setInterval(pintarTrava, 700);   /* a trava também se desfaz pelo aviso do 3D */
+        setInterval(pintarTrena, 300);
         buscarJson("/rv/t/" + token, "/rv/t/" + token).then(function (man) {
           if (!man.ok) throw new Error(man.erro || "link inválido");
           st.man = man;
@@ -685,14 +909,23 @@
             indiceCache(function (ix) { ix[token] = { expira: man.expira, ids: (man.arquivos || []).map(function (a) { return a.id; }) }; return ix; }).then(function () { st.guardado = true; });
           });
         }).catch(function (e) {
-          if (e && e.expirado) { esquecerLink(token); erroCarga("Este link venceu ou foi revogado. Peça um novo a quem enviou."); }
+          if (e && e.expirado) {
+            /* ⚠ o que esperava sinal não tem mais para onde ir: diz QUANTOS se
+               perderam, em vez de sumir com eles calado */
+            filaLer(token).then(function (fl) {
+              esquecerLink(token); filaApagarLink(token);
+              erroCarga("Este link venceu ou foi revogado. Peça um novo a quem enviou." +
+                (fl.length ? " " + (fl.length === 1 ? "1 apontamento feito sem sinal neste aparelho não chegou" : fl.length + " apontamentos feitos sem sinal neste aparelho não chegaram") + " a ser enviado" + (fl.length === 1 ? "" : "s") + " — avise quem enviou o link." : ""));
+            });
+          }
           else if (e && /offline/.test(e.message)) erroCarga("Sem internet, e este link ainda não foi aberto neste aparelho. Abra uma vez com internet para ele ficar guardado.");
           else erroCarga("Não deu pra abrir o projeto: " + ((e && e.message) || e));
         });
       }, 100);
     },
     /* para as e2e e para depurar no celular */
-    _estado: function () { return st; }
+    _estado: function () { return st; },
+    _filaAgendada: function () { return !!_filaT; }
   };
 
   global.RvVisor = RvVisor;

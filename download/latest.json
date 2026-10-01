@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.108",
+  "versao": "1.2.109",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.108.zip",
-  "notas": "Projeto estrutural: o Ver no 3D da folha inteira mostra as pecas da folha pelo carimbo OrcaPRO_Folha do modelo (documento e pagina) e o PDF sem texto entra como folhas inteiras; ponto de vista abre numa aba propria e as outras vistas nao mudam (a selecao aparece onde a peca esta visivel); arquivo da obra com outra revisao do modelo aberta pergunta se troca.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.108/OrcaPRO-IA-Instalador-v1.2.108.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.109.zip",
+  "notas": "Trena com eixo travado (horizontal, vertical ou ao longo da aresta); peca selecionada volta a aceitar clique e trena; modo mesa com girar/virar, corte com o dedo e rabisco salvo como ponto de vista; no link do cliente, Medir no celular e apontamento sem sinal guardado e enviado sozinho quando a internet volta.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.109/OrcaPRO-IA-Instalador-v1.2.109.exe"
 }

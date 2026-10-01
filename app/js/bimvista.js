@@ -80,7 +80,10 @@
     return [v[0] / d, v[1] / d, v[2] / d];
   }
 
-  var TIPOS_MARCA = ["linha", "seta", "nuvem", "texto", "retangulo"];
+  /* "livre" = o RABISCO com o dedo do modo mesa (01/10/2026): um traço com
+     muitos pontos, desenhado sobre o 3D com a câmera travada */
+  var TIPOS_MARCA = ["linha", "seta", "nuvem", "texto", "retangulo", "livre"];
+  var MAX_PTS_LIVRE = 2000;
   var STATUS = ["aberto", "resolvido", "fechado"];
 
   /* ---------------------------------------------------------------
@@ -135,7 +138,11 @@
       if (!Array.isArray(p) || p.length < 2) continue;
       /* ⚠ preso a 0..1 de propósito: ponto fora do quadro viraria risco
          invisível no relatório, e ninguém saberia que ele existe */
-      pts.push([clamp01(p[0]), clamp01(p[1])]);
+      var q = [clamp01(p[0]), clamp01(p[1])];
+      /* o traço livre tem centenas de pontos: 4 casas (0,1 px numa tela de
+         1000 px) e um teto — o ponto de vista mora no localStorage */
+      if (tipo === "livre") { q = [Math.round(q[0] * 1e4) / 1e4, Math.round(q[1] * 1e4) / 1e4]; if (pts.length >= MAX_PTS_LIVRE) break; }
+      pts.push(q);
     }
     if (tipo === "texto") { if (!pts.length || !txt(d.texto).trim()) return null; }
     else if (pts.length < 2) return null;

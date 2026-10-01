@@ -248,7 +248,7 @@ function montar(host, opts) {
      * visita e sumia calado a partir da segunda, que é o pior jeito de falhar.
      * Os traços dos notáveis não entram na lista porque nascem sob demanda; eles
      * se re-penduram sozinhos em `posicionarNotaveis`. */
-    [(S.xr && S.xr.video), S.bar, S.barToggle, S.hud, S.over, S.loading, S.renderer.domElement, S.vcubeEl, S.hint, S.cortePanel, S.corteLPanel, S.snapPanel, S.snapMarca, S.travaChip, S.guiaH, S.guiaV, S.lupaEl, S.ctecCfg, S.ctecModal, S.plantaCfg, S.pavPanel, S.visPanel, S.sisPanel, S.blocokPanel, S.p3dPanel, S.editPanel, S.editDist, S.xrPanel, S.xrHud, S.reqPanel].forEach(function (el) { if (el) host.appendChild(el); });
+    [(S.xr && S.xr.video), S.bar, S.barToggle, S.hud, S.over, S.loading, S.renderer.domElement, S.vcubeEl, S.hint, S.cortePanel, S.corteLPanel, S.snapPanel, S.snapMarca, S.travaChip, S.eixoBar, S.marcasSvg, S.guiaH, S.guiaV, S.lupaEl, S.ctecCfg, S.ctecModal, S.plantaCfg, S.pavPanel, S.visPanel, S.sisPanel, S.blocokPanel, S.p3dPanel, S.editPanel, S.editDist, S.xrPanel, S.xrHud, S.reqPanel].forEach(function (el) { if (el) host.appendChild(el); });
     if (S._onDragOver) { host.addEventListener('dragover', S._onDragOver); host.addEventListener('drop', S._onDrop); } // re-registra drop no host novo
     S.host = host;
     // painel flutuante volta ABERTO com a barra recolhida = caixa presa sem fechador
@@ -1051,11 +1051,26 @@ function montar(host, opts) {
   host.appendChild(travaChip); S.travaChip = travaChip;   /* ⚠ e entra na lista do RE-HOME, lá em cima */
   travaChip.addEventListener('click', function (e) { e.stopPropagation(); setTrava(false); });
   function orbitaPode() { return !trava.on && !fly.on && !(S.lupa && S.lupa.on) && !(S.xr && S.xr.on); }
+  /* ⚠ TRAVAR PARA NA HORA. A órbita tem inércia (amortecimento): um arrasto
+     feito antes de travar deixava um EMBALO que seguia girando a câmera por
+     vários quadros — medido na e2e de 01/10/2026: 6 cm de altura durante um
+     giro e 7,6 cm durante o corte, com a câmera "travada". O embalo é zerado
+     sem pulo: aplica, devolve a câmera para onde estava, aplica de novo. */
+  function pararInercia() {
+    if (!orbit) return;
+    var p0 = camera.position.clone(), t0 = orbit.target.clone(), amort = orbit.enableDamping;
+    orbit.enableDamping = false; orbit.update();
+    camera.position.copy(p0); orbit.target.copy(t0); orbit.update();
+    orbit.enableDamping = amort;
+  }
+  S._pararInercia = pararInercia;
   function setTrava(on) {
     trava.on = !!on;
+    if (trava.on) pararInercia();
     if (orbit) orbit.enabled = orbitaPode();
     travaChip.innerHTML = (typeof Icones !== 'undefined' ? Icones.get('cadeado', 14) : '') + ' Câmera travada · toque para destravar';
     travaChip.style.display = trava.on ? 'block' : 'none';
+    if (S._ajustarTop) S._ajustarTop();   /* a dica desce/sobe junto */
     return trava.on;
   }
   S._setTrava = setTrava; S._visitante = visitante;
@@ -1855,7 +1870,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     try {
       (pv.medidas || []).forEach(function (m) {
         var P = (m.pts || []).map(function (p) { return new THREE.Vector3(+p[0], +p[1], +p[2]); });
-        if (m.tipo === 'dist' && P.length === 2) desenharMedida(P[0], P[1], !!m.horizontal);
+        if (m.tipo === 'dist' && P.length === 2) desenharMedida(P[0], P[1], !!m.horizontal, m.eixo || '');
         else if (m.tipo === 'area' && P.length >= 3) desenharArea(P, !!m.horizontal);
         else if (m.tipo === 'ang' && P.length === 3) desenharAngulo(P[0], P[1], P[2]);
       });
@@ -2259,7 +2274,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   // ============================================================
   var hint = document.createElement('div');
   hint.setAttribute('data-bim', 'hint'); // âncora estável p/ testes/depuração
-  hint.style.cssText = 'position:absolute;left:50%;top:52px;transform:translateX(-50%);z-index:4;display:none;pointer-events:none;background:rgba(34,197,94,.94);color:#04240f;font-weight:600;font-size:12.5px;padding:7px 15px;border-radius:20px;box-shadow:0 6px 16px rgba(0,0,0,.35);max-width:90%;text-align:center';
+  /* ⚠ width:max-content: com left:50% e sem largura, o encolher-para-caber
+     do navegador limita a caixa à METADE da tela. No celular (390 px) a dica
+     da trena saía com 195 px e quatro linhas no meio do modelo. */
+  hint.style.cssText = 'position:absolute;left:50%;top:52px;transform:translateX(-50%);z-index:4;display:none;pointer-events:none;background:rgba(34,197,94,.94);color:#04240f;font-weight:600;font-size:12.5px;padding:7px 15px;border-radius:20px;box-shadow:0 6px 16px rgba(0,0,0,.35);width:max-content;max-width:90%;box-sizing:border-box;text-align:center';
   host.appendChild(hint);
   S.hint = hint; // guardado p/ re-parentar no re-home (senão some ao revisitar a aba)
   /* ⚠ O BALÃO MOSTRAVA O CÓDIGO DO ÍCONE, NÃO O ÍCONE.
@@ -2319,8 +2337,26 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   /* `regs` é o que o ponto de vista guarda das cotas: uma linha por medida
      PRONTA, com os pontos (não o número — ver `BimVista.medida`). `objs` são
      os desenhos; `regs` é o que dá para redesenhar noutra hora. */
-  var medir = { on: false, pts: [], objs: [], down: null, prov: null, regs: [] };
+  var medir = { on: false, pts: [], objs: [], down: null, prov: null, regs: [], pilha: [] };
   S.medir = medir;
+  /* ⚠ FRASE DE DEDO NO DEDO. As dicas da trena diziam "clique" e "Esc sai"
+     também no celular do link — onde não há clique nem Esc, e a pessoa
+     ficava sem saber como sair. O tipo vem do último toque no 3D; antes do
+     primeiro, o visitante (link no celular) e a tela de toque falam "toque". */
+  var _ptrTipo = '';
+  function ehToque() {
+    if (_ptrTipo) return _ptrTipo === 'touch';
+    return visitante || !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  }
+  function trenaTxt(k) {
+    var d = ehToque(), ic = (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '');
+    if (k === 'on') return ic + (d ? ' Trena: toque em 2 pontos do modelo. Segure o dedo para mirar com a lupa.' : ' Trena: clique em 2 pontos do modelo pra medir. Esc sai.');
+    if (k === 'planta') return ic + (d ? ' Trena na planta: toque em 2 pontos — a cota é a distância horizontal.' : ' Trena na planta: clique em 2 pontos — a cota é a distância horizontal.');
+    if (k === '2o') return ic + (d ? ' Agora toque no 2º ponto (segure o dedo para a lupa).' : ' Agora clique no 2º ponto.');
+    if (k === 'ok') return ic + (d ? ' Medido! Toque 2 pontos para medir de novo.' : ' Medido! Clique 2 pontos pra medir de novo, ou Esc pra sair.');
+    if (k === 'perto') return ic + (d ? ' Pontos muito próximos — toque 2 pontos distintos.' : ' Pontos muito próximos — clique 2 pontos distintos.');
+    return '';
+  }
 
   // A geometria do web-ifc já vem NORMALIZADA em METROS (o próprio web-ifc aplica o fator da
   // unidade do arquivo). Logo, a distância entre 2 pontos do mundo JÁ é em metros — NÃO se aplica
@@ -2667,7 +2703,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   function pxyz(v) { return [v.x, v.y, v.z]; }
   // `horiz` só vem de quem REDESENHA uma cota gravada (ponto de vista): a cota
   // feita na planta continua horizontal mesmo que a vista reabra sem a planta.
-  function desenharMedida(a, b, horiz) {
+  function desenharMedida(a, b, horiz, eixoRot) {
     // na PLANTA mede-se a distância HORIZONTAL (projeção XZ) — é o que a planta representa;
     // em 3D livre, a distância real. A ETIQUETA declara "(horizontal)" pra não haver
     // diferença semântica silenciosa entre os dois modos.
@@ -2675,26 +2711,50 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var horizontal = (horiz == null) ? !!planta.on : !!horiz, d = horizontal ? dxz : a.distanceTo(b);
     if (d < 2e-3) return false; // pontos coincidentes (duplo-clique/acidente) -> ignora
     var line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), new THREE.LineBasicMaterial({ color: 0x22c55e, depthTest: false })); line.renderOrder = 997;
-    var lab = labelSprite(fmtDist(d) + (horizontal ? ' (horizontal)' : '')); lab.position.copy(a.clone().add(b).multiplyScalar(0.5));
+    var lab = labelSprite(fmtDist(d) + (eixoRot ? ' (' + eixoRot + ')' : horizontal ? ' (horizontal)' : '')); lab.position.copy(a.clone().add(b).multiplyScalar(0.5));
     var mA = pontoMarca(a), mB = pontoMarca(b);
     addMed(mA); addMed(mB); addMed(line); addMed(lab); btnCotas();
-    medir.ultima = { valor: d, horizontal: horizontal }; // introspecção (UI futura + testes)
-    medir.regs.push({ tipo: 'dist', pts: [pxyz(a), pxyz(b)], horizontal: horizontal });
+    medir.ultima = { valor: d, horizontal: horizontal, eixo: eixoRot || '' }; // introspecção (UI futura + testes)
+    var reg = { tipo: 'dist', pts: [pxyz(a), pxyz(b)], horizontal: horizontal, eixo: eixoRot || '' };
+    medir.regs.push(reg);
+    medir.pilha.push({ objs: [mA, mB, line, lab], reg: reg, ultima: medir.ultima });
     return true;
   }
   function limparMarca(o) { scene.remove(o); if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } }
   function tirarProv() { if (!medir.prov) return; var i = medir.objs.indexOf(medir.prov); if (i >= 0) { limparMarca(medir.prov); medir.objs.splice(i, 1); } medir.prov = null; }
-  function limparMedidas() { medir.prov = null; area.pts = []; area.tmp = []; ang.pts = []; ang.tmp = []; medir.objs.forEach(limparMarca); medir.objs = []; medir.pts = []; medir.regs = []; atualizarElastico(null); btnCotas(); }
+  function limparMedidas() { medir.prov = null; area.pts = []; area.tmp = []; ang.pts = []; ang.tmp = []; medir.objs.forEach(limparMarca); medir.objs = []; medir.pts = []; medir.regs = []; medir.pilha = []; medir.ultima = null; atualizarElastico(null); btnCotas(); }
   S._limparMedidas = limparMedidas;
+  /* DESFAZER da trena (o visor do link tem o botão): com o 1º ponto marcado,
+     desfaz o PONTO; senão, tira a última medida inteira (as 2 marcas, a linha
+     e a etiqueta, e o registro que o ponto de vista guardaria).
+     ⚠ Confere que a medida ainda é desta cena: o "abrir ponto de vista numa
+     vista" troca medir.regs/objs por um tempo, e a pilha pode ter entrada de
+     lá — essa é pulada, nunca apaga desenho de outra vista. */
+  function desfazerMedida() {
+    if (medir.pts.length) { medir.pts = []; medir.dirAresta = null; tirarProv(); atualizarElastico(null); if (medir.on) S._hint(trenaTxt('on')); return 'ponto'; }
+    while (medir.pilha.length) {
+      var u = medir.pilha.pop(), ri = medir.regs.indexOf(u.reg);
+      if (ri < 0) continue;
+      medir.regs.splice(ri, 1);
+      u.objs.forEach(function (o) { var i = medir.objs.indexOf(o); if (i >= 0) { limparMarca(o); medir.objs.splice(i, 1); } });
+      var ant = medir.pilha[medir.pilha.length - 1];
+      medir.ultima = ant ? ant.ultima : null;
+      btnCotas();
+      return 'medida';
+    }
+    return null;
+  }
+  S._desfazerMedida = desfazerMedida;
   // cursor único p/ as 3 ferramentas de medição (trena/área/ângulo)
   function atualizarCursor() { canvasEl.style.cursor = (medir.on || area.on || ang.on) ? 'crosshair' : ''; }
   function setMedir(on) {
     medir.on = !!on;
     if (on) { setMode(false); if (area.on) setArea(false); if (ang.on) setAng(false); if (edit && edit.on) setEdit(false); } // pode coexistir com Planta/Corte; exclusivo entre medições e editor
     else { medir.pts = []; tirarProv(); btnCotas(); esconderSnapMarca(); } // sai: descarta 1º ponto pendente
+    if (S._pintarEixo) S._pintarEixo();
     var bm = bar.querySelector('[data-b="medir"]'); if (bm) { bm.style.background = on ? corAtiva() : ''; bm.style.color = on ? '#fff' : ''; }
     atualizarCursor();
-    S._hint(on ? (planta.on ? '' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' Trena na planta: clique em 2 pontos — a cota é a distância horizontal.' : '' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' Trena: clique em 2 pontos do modelo pra medir. Esc sai.') : (planta.on ? '' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Planta baixa. Ajuste a altura do corte no painel.' : ''));
+    S._hint(on ? trenaTxt(planta.on ? 'planta' : 'on') : (planta.on ? '' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Planta baixa. Ajuste a altura do corte no painel.' : ''));
   }
   S._setMedir = setMedir;
   // captura por CLIQUE-SEM-ARRASTE (não atrapalha a órbita: se arrastou, é rotação).
@@ -3012,7 +3072,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         if (_ehRealce(ref.material)) {
           /* sai do mesclado e volta a ser desenhada por si */
           ocultos[faixa.e] = 1;
-          if (ref.visible !== false) ref.layers.set(0); else ref.layers.set(1);
+          /* ⚠ AS DUAS CAMADAS, não só a 0: a 0 é a que a câmera desenha, a 1 é
+             a que o raio do clique olha. Só na 0, a peça SELECIONADA (ou em
+             andamento no 4D, ou em conflito) sumia para o clique e para a trena:
+             o toque seguinte atravessava e pegava o que estava atrás (e2e-bim-trena [5]). */
+          ref.layers.set(1); if (ref.visible !== false) ref.layers.enable(0);
           continue;
         }
         ref.layers.set(1);
@@ -3088,6 +3152,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   canvasEl.addEventListener('pointerdown', function (e) {
     if (!S || !S.alive) return;
     _dedos++;
+    if (e.pointerType) _ptrTipo = e.pointerType;
     _toque = (_dedos === 1 && e.button === 0) ? { x: e.clientX, y: e.clientY, t: performance.now(), ts: e.timeStamp || 0, id: e.pointerId } : null;
     if (ferramentaClique()) medir.down = (e.button === 0) ? { x: e.clientX, y: e.clientY } : null;
     /* 🔍 toque-e-segure abre a lupa (só no DEDO, só com ferramenta de ponto
@@ -3198,19 +3263,25 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     /* `mirarEm`, não o `hit` cru: com o cursor na borda (ou fora) da peça o
        canto dela ainda vale — é o mesmo cálculo que o marcador mostrou */
     var sn = mirarParaClique(e.clientX, e.clientY, raioToque(e));
-    if (!sn || !sn.p) { S._hint((ctec.ativo ? '📝' : area.on ? '▱' : ang.on ? '∠' : '📏') + ' Clique em cima de uma superfície do modelo.'); return; }
+    if (!sn || !sn.p) { S._hint((ctec.ativo ? '📝' : area.on ? '▱' : ang.on ? '∠' : '📏') + (ehToque() ? ' Toque em cima de uma superfície do modelo.' : ' Clique em cima de uma superfície do modelo.')); return; }
     mostrarSnapMarca(sn, e.clientX, e.clientY);
     if (ctec.ativo) { ctecClique(sn.p.clone()); return; } // linha do corte técnico tem prioridade
     if (area.on) { areaClique(sn.p.clone()); return; }
     if (ang.on) { angClique(sn.p.clone()); return; }
     medir.pts.push({ p: sn.p.clone() });
+    if (medir.pts.length === 1) medir.dirAresta = dirDaAresta(sn);
     if (medir.pts.length === 2) {
       tirarProv(); // a marca definitiva do 1º ponto é desenhada por desenharMedida (evita marca dupla)
-      var ok = desenharMedida(medir.pts[0].p, medir.pts[1].p); medir.pts = []; atualizarElastico(null);
+      _shift = !!e.shiftKey;
+      var rr = restringir(medir.pts[0].p, medir.pts[1].p);
+      var ok = desenharMedida(medir.pts[0].p, rr.p, rr.rot ? false : null, rr.rot); medir.pts = []; atualizarElastico(null);
       marcarFechamento(); // duplo-clique no 2º ponto não planta o 1º ponto da próxima cota
-      S._hint(ok ? '' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' Medido! Clique 2 pontos pra medir de novo, ou Esc pra sair.' : '' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' Pontos muito próximos — clique 2 pontos distintos.');
+      S._hint(trenaTxt(ok ? 'ok' : 'perto'));
     } else {
-      var m0 = pontoMarca(medir.pts[0].p); addMed(m0); medir.prov = m0; S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' Agora clique no 2º ponto.');
+      var m0 = pontoMarca(medir.pts[0].p); addMed(m0); medir.prov = m0;
+      /* "ao longo da aresta" sem aresta no 1º ponto: diz, e mede livre — não inventa direção */
+      if (medir.eixo === 'aresta' && !medir.dirAresta) S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' Para medir ao longo de uma aresta, comece o 1º ponto EM CIMA da aresta. Esta medida vai livre.');
+      else S._hint(trenaTxt('2o'));
     }
   });
   // hover do snap: feedback ao vivo de onde a trena vai "agarrar" (throttle p/ não pesar o raycast)
@@ -3226,6 +3297,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     }
     if (!ferramentaClique() || !snap.on) return;
     var t = performance.now(); if (t - _snapHoverT < 60) return; _snapHoverT = t;
+    _shift = !!e.shiftKey;
     var sn = mirarEm(e.clientX, e.clientY, raioToque(e));
     if (!sn || !sn.p) { esconderSnapMarca(); return; }
     mostrarSnapMarca(sn, e.clientX, e.clientY);
@@ -3427,6 +3499,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
   function setPlanta(on) {
     planta.on = !!on;
+    if (S._pintarEixo) setTimeout(S._pintarEixo, 0);
     var bp = bar.querySelector('[data-b="planta"]');
     if (on) {
       if (corteL.on) setCorteL(false); // planta e corte livre disputam o MESMO clippingPlanes
@@ -3502,6 +3575,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     '<input type="range" data-k="pos" min="0" max="1000" value="500" style="width:100%;accent-color:#22c55e">' +
     '<button class="btn sm" data-k="inv" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('ciclo', 15) : '') + ' Inverter lado visível</button>' +
     '<div style="font-size:11px;color:#5b6b7c">O modelo some do lado cortado conforme você move. Gire a órbita normalmente. A ' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' trena funciona na face do corte.</div>';
+  corteLPanel.setAttribute('data-bim', 'corteL');   /* o modo mesa troca este painel pelo controle de dedo */
   host.appendChild(corteLPanel);
   S.corteLPanel = corteLPanel;
   function corteNormal() {
@@ -3567,6 +3641,67 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     else if (k === 'plo') preset(90, 0);
     else if (k === 'inv') { corteL.inv = !corteL.inv; b.style.background = corteL.inv ? corAtiva() : ''; b.style.color = corteL.inv ? '#fff' : ''; aplicarCorteL(); }
   });
+
+  /* =====================================================================
+   * MODO MESA (01/10/2026): CORTE COM O DEDO e GIRAR A VISTA.
+   *
+   * O corte da mesa é o MESMO plano do corte livre, só que horizontal e numa
+   * altura em metros — é o que se faz numa reunião: mostrar pavimento por
+   * pavimento. A altura por pavimento é o piso dele (y0, o AABB das peças, no
+   * mundo) + 1,20 m, a convenção da planta. Nada de régua nova: o desenho, o
+   * clip e a trena continuam os do corte livre.
+   * ===================================================================== */
+  function corteEstado() {
+    var box = new THREE.Box3().setFromObject(modelRoot);
+    if (box.isEmpty()) return { on: false };
+    var frac = (+corteLPanel.querySelector('[data-k="pos"]').value) / 1000;
+    return { on: corteL.on, horizontal: corteL.inc === 90 && !corteL.inv, yMin: box.min.y, yMax: box.max.y, y: box.min.y + (box.max.y - box.min.y) * frac, frac: frac };
+  }
+  function corteHorizontal(h) {
+    if (h == null) { if (corteL.on) setCorteL(false); return corteEstado(); }
+    var box = new THREE.Box3().setFromObject(modelRoot);
+    if (box.isEmpty()) return { on: false };
+    corteL.az = 0; corteL.inc = 90; corteL.inv = false;
+    corteLPanel.querySelector('[data-k="az"]').value = 0; corteLPanel.querySelector('[data-k="inc"]').value = 90;
+    var bi = corteLPanel.querySelector('[data-k="inv"]'); if (bi) { bi.style.background = ''; bi.style.color = ''; }
+    var frac = Math.max(0, Math.min(1, (h - box.min.y) / Math.max(1e-6, box.max.y - box.min.y)));
+    corteLPanel.querySelector('[data-k="pos"]').value = Math.round(frac * 1000);
+    if (!corteL.on) {
+      setCorteL(true);
+      /* o recado do corte livre fala do painel de computador ("escolha a direção…"),
+         que na mesa nem aparece — aqui o comando é o trilho */
+      if (corteL.on) S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('corte', 15) : '') + ' Corte horizontal: arraste o trilho ao lado da barra, ou use ▲/▼ pavimento.');
+    } else aplicarCorteL();
+    return corteEstado();
+  }
+  function pavimentosCorte() {
+    return pavLista().filter(function (pv) { return pv.y0 != null; }).map(function (pv) { return { nome: pv.nome, y: pv.y0 + 1.2 }; });
+  }
+  S._corteHorizontal = corteHorizontal; S._corteEstado = corteEstado; S._pavimentosCorte = pavimentosCorte;
+
+  /* ⚠ GIRAR A VISTA EM VOLTA DO MODELO — para quem está do outro lado da
+     mesa. É ação DELIBERADA (botão), então vale com a câmera travada. Não usa
+     o voo da câmera (`voarCam`): ele vai em LINHA RETA, e num giro de 180° a
+     câmera passaria por dentro do modelo. Aqui ela roda em volta do alvo,
+     mantendo a distância e a altura. */
+  var _giro = null, _giroEixo = new THREE.Vector3(0, 1, 0);
+  function girarVista(graus) {
+    if (fly.on || !graus) return false;
+    if (S._cancelTween) S._cancelTween();
+    if (S._pararInercia) S._pararInercia();   /* o embalo de um arrasto antigo entortaria o giro */
+    _giro = { total: graus * Math.PI / 180, feito: 0, dur: Math.max(0.35, Math.abs(graus) / 180 * 0.7), e: 0 };
+    return true;
+  }
+  S._tickExtra.push(function (dt) {
+    if (!_giro) return;
+    _giro.e += dt;
+    var k = Math.min(1, _giro.e / _giro.dur), s = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+    var alvo = _giro.total * s, d = alvo - _giro.feito; _giro.feito = alvo;
+    var off = camera.position.clone().sub(orbit.target).applyAxisAngle(_giroEixo, d);
+    camera.position.copy(orbit.target).add(off); camera.lookAt(orbit.target);
+    if (k >= 1) _giro = null;
+  });
+  S._girarVista = girarVista;
 
   // ============================================================
   // 🧲 SNAP — a trena (e a linha do corte técnico) "agarram" em pontos notáveis:
@@ -4744,17 +4879,74 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   var elastico = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), new THREE.LineBasicMaterial({ color: 0x22c55e, depthTest: false, transparent: true, opacity: 0.85 }));
   elastico.renderOrder = 996; elastico.visible = false; elastico.frustumCulled = false; scene.add(elastico);
   function linhaEm(l, a, b) { var pa = l.geometry.attributes.position; pa.setXYZ(0, a.x, a.y, a.z); pa.setXYZ(1, b.x, b.y, b.z); pa.needsUpdate = true; l.geometry.computeBoundingSphere(); l.visible = true; }
-  function distElastico(a, b) {
-    var horizontal = !!planta.on;
+  function distElastico(a, b, eixoRot) {
+    var horizontal = !eixoRot && !!planta.on;
     var d = horizontal ? Math.sqrt((a.x - b.x) * (a.x - b.x) + (a.z - b.z) * (a.z - b.z)) : a.distanceTo(b);
-    return fmtDist(d) + (horizontal ? ' (horizontal)' : '');
+    return fmtDist(d) + (eixoRot ? ' (' + eixoRot + ')' : horizontal ? ' (horizontal)' : '');
   }
   function atualizarElastico(p) {
     var dv = snapMarca.querySelector('[data-sm="dist"]');
     if (!p || !medir.on || medir.pts.length !== 1) { elastico.visible = false; dv.style.display = 'none'; return; }
-    linhaEm(elastico, medir.pts[0].p, p);
-    dv.textContent = distElastico(medir.pts[0].p, p); dv.style.display = 'block';
+    var rr = restringir(medir.pts[0].p, p);
+    linhaEm(elastico, medir.pts[0].p, rr.p);
+    dv.textContent = distElastico(medir.pts[0].p, rr.p, rr.rot); dv.style.display = 'block';
   }
+  /* =====================================================================
+   * ⚠ EIXO TRAVADO DA TRENA (01/10/2026): medir SÓ na horizontal, SÓ na
+   * vertical (pé-direito, peitoril) ou AO LONGO de uma aresta — e, no
+   * computador, Shift trava no eixo dominante (X, Z ou vertical), como nos
+   * programas de CAD. Sem isso, medir um pé-direito exigia achar dois pontos
+   * exatamente um sobre o outro; qualquer desvio entrava na cota.
+   * O ponto travado é o que o elástico mostra E o que a medida grava — a conta
+   * é uma só (`restringir`). Na planta vale a regra de sempre (horizontal).
+   * ===================================================================== */
+  var EIXOS = [{ k: 'livre', rot: 'Livre' }, { k: 'h', rot: 'Horizontal' }, { k: 'v', rot: 'Vertical' }, { k: 'aresta', rot: 'Ao longo da aresta' }];
+  medir.eixo = 'livre'; medir.dirAresta = null;
+  var _shift = false;
+  function dirDaAresta(sn) {
+    if (!sn || !sn.seg || (sn.tipo !== 'aresta' && sn.tipo !== 'meio')) return null;
+    var d = sn.seg[1].clone().sub(sn.seg[0]); return d.lengthSq() > 1e-10 ? d.normalize() : null;
+  }
+  function restringir(a, p) {
+    var eixo = _shift ? 'orto' : medir.eixo;
+    if (planta.on && eixo !== 'orto') return { p: p.clone(), rot: '' };   /* a planta já mede na horizontal */
+    if (eixo === 'h') return { p: new THREE.Vector3(p.x, a.y, p.z), rot: 'horizontal' };
+    if (eixo === 'v' && !planta.on) return { p: new THREE.Vector3(a.x, p.y, a.z), rot: 'vertical' };
+    if (eixo === 'orto') {
+      var dx = Math.abs(p.x - a.x), dy = planta.on ? 0 : Math.abs(p.y - a.y), dz = Math.abs(p.z - a.z);
+      if (dy >= dx && dy >= dz) return { p: new THREE.Vector3(a.x, p.y, a.z), rot: 'vertical' };
+      if (dx >= dz) return { p: new THREE.Vector3(p.x, a.y, a.z), rot: 'eixo X' };
+      return { p: new THREE.Vector3(a.x, a.y, p.z), rot: 'eixo Z' };
+    }
+    if (eixo === 'aresta' && medir.dirAresta) { var k = p.clone().sub(a).dot(medir.dirAresta); return { p: a.clone().add(medir.dirAresta.clone().multiplyScalar(k)), rot: 'ao longo da aresta' }; }
+    return { p: p.clone(), rot: '' };
+  }
+  S._restringirTrena = restringir;   // hook de teste
+  var eixoBar = document.createElement('div');
+  eixoBar.setAttribute('data-bim', 'eixo');
+  /* `eixoBase`: quem monta pode pôr faixa própria em cima da barra de baixo
+     (o visor do link põe a da trena) — o eixo sobe para não ficar por baixo.
+     max-width: num celular de 360 px os quatro botões não cabem na largura
+     do conteúdo — o teto faz os botões encolherem (o rótulo quebra dentro
+     deles) em vez de a barra sair da tela. */
+  eixoBar.style.cssText = 'position:absolute;left:50%;transform:translateX(-50%);bottom:' + (opts.eixoBase != null ? opts.eixoBase : (opts.baseReservada || 0) + 14) + 'px;z-index:21;display:none;justify-content:center;width:max-content;max-width:calc(100% - 16px);box-sizing:border-box;gap:4px;padding:4px;border-radius:12px;background:rgba(11,26,43,.86);box-shadow:0 2px 10px rgba(0,0,0,.3);font:600 12px Inter,system-ui,sans-serif';
+  host.appendChild(eixoBar); S.eixoBar = eixoBar;   /* ⚠ e entra na lista do RE-HOME */
+  function pintarEixo() {
+    var vis = medir.on && !planta.on;
+    eixoBar.style.display = vis ? 'flex' : 'none';
+    if (!vis) return;
+    eixoBar.innerHTML = EIXOS.map(function (x) {
+      var on = medir.eixo === x.k;
+      return '<button type="button" data-eixo="' + x.k + '" style="border:0;border-radius:9px;padding:7px 11px;cursor:pointer;touch-action:manipulation;color:' + (on ? '#fff' : '#cbd8e6') + ';background:' + (on ? '#2563eb' : 'transparent') + '">' + x.rot + '</button>';
+    }).join('') + (ehToque() ? '' : '<span style="align-self:center;color:#7d93ab;font-size:11px;padding:0 6px">Shift: eixo mais perto</span>');   /* no dedo não há Shift */
+  }
+  eixoBar.addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('[data-eixo]') : null; if (!b) return;
+    e.stopPropagation();
+    medir.eixo = b.getAttribute('data-eixo'); pintarEixo();
+    if (_ultimaMira && _ultimaMira.sn && _ultimaMira.sn.p) atualizarElastico(_ultimaMira.sn.p);
+  });
+  S._pintarEixo = pintarEixo;
   S._elasticoTexto = function () { var dv = snapMarca.querySelector('[data-sm="dist"]'); return dv.style.display === 'none' ? '' : dv.textContent; };   // hook de teste
   /* nome curto da peça do ponto agarrado — lido com textContent, nunca HTML:
      vem cru de um IFC de terceiros */
@@ -6385,6 +6577,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var o0 = (S && S.opts) || opts || {};
     if (o0.topoReservado > t) t = o0.topoReservado;
     [hint, snapPanel, pavPanel, visPanel, xrPanel].forEach(function (el) { if (el) el.style.top = t + 'px'; });
+    /* o aviso "Câmera travada" mora em topoReservado+10 (≈28 px de altura):
+       com a câmera travada a dica desce para baixo dele — medir com o tablet
+       travado na mesa é justamente o caso, e o aviso cobria o começo da frase */
+    if (hint && trava.on) hint.style.top = Math.max(t, (o0.topoReservado || 0) + 46) + 'px';
     /* no celular o painel de RA/RV ocupa a largura (até 340 px): em 250 px os
        rótulos dos modos não cabiam nem quebrando linha */
     if (xrPanel) { xrPanel.style.width = ehTelaPequena ? 'calc(100% - 20px)' : '250px'; xrPanel.style.maxWidth = '340px'; xrPanel.style.boxSizing = 'border-box'; }
@@ -9411,7 +9607,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       /* 8) cotas da trena, área e ângulo — redesenhadas dos pontos */
       (v.medidas || []).forEach(function (m) {
         var P = (m.pts || []).map(function (p) { return new THREE.Vector3(+p[0], +p[1], +p[2]); });
-        if (m.tipo === 'dist' && P.length === 2) desenharMedida(P[0], P[1], !!m.horizontal);
+        if (m.tipo === 'dist' && P.length === 2) desenharMedida(P[0], P[1], !!m.horizontal, m.eixo || '');
         else if (m.tipo === 'area' && P.length >= 3) desenharArea(P, !!m.horizontal);
         else if (m.tipo === 'ang' && P.length === 3) desenharAngulo(P[0], P[1], P[2]);
       });
@@ -9428,6 +9624,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
 
       /* 10) câmera por último */
       cancelTween();
+      /* ⚠ o embalo de um arrasto anterior é zerado ANTES de pôr a câmera: o
+         `orbit.update()` logo abaixo aplicava um pedaço dele e a vista abria
+         ~45 cm fora da câmera gravada (e o rabisco dela não aparecia) —
+         medido na e2e-bim-mesa [11], 01/10/2026 */
+      if (S._pararInercia) S._pararInercia();
       var c = v.camera;
       if (c && c.pos) {
         camera.position.set(c.pos[0], c.pos[1], c.pos[2]);
@@ -9436,11 +9637,80 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         if (orbit && orbit.target && c.alvo) { orbit.target.set(c.alvo[0], c.alvo[1], c.alvo[2]); orbit.update(); }
         camera.lookAt(c.alvo[0], c.alvo[1], c.alvo[2]);
       }
+      /* 11) as marcações da vista (o rabisco) por cima do 3D, nesta câmera */
+      mostrarMarcas(v.marcacoes || [], c && c.pos ? c : null);
       S._hint('');
     } catch (e) { return { ok: false, erro: String(e && e.message || e) }; }
     return res;
   }
   S._cameraAtual = cameraAtual; S._aplicarVista = aplicarVista; S._estadoVista = estadoVista;
+
+  /* =====================================================================
+   * MARCAÇÕES DA VISTA SOBRE O 3D — o RABISCO (01/10/2026)
+   *
+   * As marcações (`marcacoes` do ponto de vista: linha, seta, nuvem, texto,
+   * retângulo e o traço livre do modo mesa) são 2D, em 0..1 da tela — valem
+   * para AQUELA câmera. Até aqui elas eram só dado: nada as desenhava.
+   * Agora aparecem quando a vista é aplicada e SOMEM quando a câmera sai dela
+   * (um traço que "fica no lugar" com a câmera girando apontaria para outra
+   * coisa — pior que não mostrar). Aplicar a vista de novo traz de volta.
+   * ===================================================================== */
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  var marcasSvg = document.createElementNS(SVGNS, 'svg');
+  marcasSvg.setAttribute('data-bim', 'marcas');
+  marcasSvg.style.cssText = 'position:absolute;left:0;top:0;pointer-events:none;z-index:6;display:none;overflow:visible';
+  host.appendChild(marcasSvg); S.marcasSvg = marcasSvg;   /* ⚠ e entra na lista do RE-HOME */
+  var _marcas = null, _mkV1 = new THREE.Vector3(), _mkV2 = new THREE.Vector3();
+  function svgEl(tag, at) { var e = document.createElementNS(SVGNS, tag); for (var k in at) if (Object.prototype.hasOwnProperty.call(at, k)) e.setAttribute(k, at[k]); return e; }
+  function desenharMarcas(svg, lista, w, h) {
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    svg.setAttribute('width', w); svg.setAttribute('height', h); svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+    (lista || []).forEach(function (m) {
+      if (!m || !m.pts || !m.pts.length) return;
+      var cor = /^#[0-9a-fA-F]{6}$/.test(m.cor || '') ? m.cor : '#e11d48';
+      var P = m.pts.map(function (q) { return [q[0] * w, q[1] * h]; });
+      var traco = { stroke: cor, 'stroke-width': 4, fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' };
+      if (m.tipo === 'livre' && P.length > 1) { traco.points = P.map(function (q) { return q[0].toFixed(1) + ',' + q[1].toFixed(1); }).join(' '); svg.appendChild(svgEl('polyline', traco)); }
+      else if ((m.tipo === 'linha' || m.tipo === 'seta') && P.length > 1) {
+        svg.appendChild(svgEl('line', { x1: P[0][0], y1: P[0][1], x2: P[1][0], y2: P[1][1], stroke: cor, 'stroke-width': 4, 'stroke-linecap': 'round' }));
+        if (m.tipo === 'seta') {
+          var ang = Math.atan2(P[1][1] - P[0][1], P[1][0] - P[0][0]), L = 16;
+          var a1 = [P[1][0] - L * Math.cos(ang - 0.45), P[1][1] - L * Math.sin(ang - 0.45)], a2 = [P[1][0] - L * Math.cos(ang + 0.45), P[1][1] - L * Math.sin(ang + 0.45)];
+          svg.appendChild(svgEl('polygon', { points: P[1].join(',') + ' ' + a1.join(',') + ' ' + a2.join(','), fill: cor }));
+        }
+      } else if ((m.tipo === 'retangulo' || m.tipo === 'nuvem') && P.length > 1) {
+        var x = Math.min(P[0][0], P[1][0]), y = Math.min(P[0][1], P[1][1]), rw = Math.abs(P[1][0] - P[0][0]), rh = Math.abs(P[1][1] - P[0][1]);
+        if (m.tipo === 'retangulo') svg.appendChild(svgEl('rect', { x: x, y: y, width: rw, height: rh, stroke: cor, 'stroke-width': 4, fill: 'none' }));
+        else svg.appendChild(svgEl('ellipse', { cx: x + rw / 2, cy: y + rh / 2, rx: rw / 2, ry: rh / 2, stroke: cor, 'stroke-width': 4, fill: 'none', 'stroke-dasharray': '10 6' }));
+      } else if (m.tipo === 'texto' && m.texto) {
+        var tx = svgEl('text', { x: P[0][0], y: P[0][1], fill: cor, 'font-size': 16, 'font-weight': 700, 'font-family': 'Inter,system-ui,sans-serif', 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 });
+        tx.textContent = String(m.texto);   /* texto vem do usuário (ou de um BCF de fora): só textContent */
+        svg.appendChild(tx);
+      }
+    });
+  }
+  S._desenharMarcas = desenharMarcas;
+  function mostrarMarcas(lista, cam) {
+    if (!lista || !lista.length) { _marcas = null; marcasSvg.style.display = 'none'; return false; }
+    var c = cam || cameraAtual();
+    _marcas = { lista: lista, cam: { pos: c.pos.slice(), alvo: c.alvo.slice() }, w: 0, h: 0 };
+    return true;
+  }
+  S._mostrarMarcas = mostrarMarcas;
+  S._tickExtra.push(function () {
+    if (!_marcas) { if (marcasSvg.style.display !== 'none') marcasSvg.style.display = 'none'; return; }
+    var c = _marcas.cam, dist = camera.position.distanceTo(orbit.target);
+    var d = camera.position.distanceTo(_mkV1.set(c.pos[0], c.pos[1], c.pos[2])) + orbit.target.distanceTo(_mkV2.set(c.alvo[0], c.alvo[1], c.alvo[2]));
+    if (d > Math.max(1e-4, dist * 1e-3)) { _marcas = null; marcasSvg.style.display = 'none'; return; }   /* a câmera saiu da vista: o traço apontaria para outra coisa */
+    var rc = canvasEl.getBoundingClientRect(), hr = ((S && S.host) || host).getBoundingClientRect();
+    if (_marcas.w !== rc.width || _marcas.h !== rc.height) {
+      _marcas.w = rc.width; _marcas.h = rc.height;
+      marcasSvg.style.left = (rc.left - hr.left) + 'px'; marcasSvg.style.top = (rc.top - hr.top) + 'px';
+      marcasSvg.style.width = rc.width + 'px'; marcasSvg.style.height = rc.height + 'px';
+      desenharMarcas(marcasSvg, _marcas.lista, rc.width, rc.height);
+    }
+    if (marcasSvg.style.display === 'none') marcasSvg.style.display = 'block';
+  });
 
   // material corrente de um mesh respeitando a TRANSPARÊNCIA do modelo dele
   function matBase(m) {
@@ -10699,6 +10969,15 @@ window.BIM = {
   angulo: function (on) { if (S && S._setAng) S._setAng(on == null ? !(S.ang && S.ang.on) : !!on); },
   get ultimoAngulo() { return (S && S.medir && S.medir.ultimoAngulo) || null; }, // {graus}
   limparMedidas: function () { if (S && S._limparMedidas) S._limparMedidas(); },
+  /* a trena vista de fora (o visor do link desenha a faixa dele com isto):
+     ligada?, quantas medidas, 1º ponto pendente?, a última e o eixo */
+  trenaEstado: function () {
+    if (!S || !S.medir) return null;
+    var m = S.medir, n = 0;
+    for (var i = 0; i < m.regs.length; i++) if (m.regs[i].tipo === 'dist') n++;
+    return { on: !!m.on, n: n, pendente: m.pts.length, ultima: m.ultima ? { valor: m.ultima.valor, horizontal: !!m.ultima.horizontal, eixo: m.ultima.eixo || '' } : null, eixo: m.eixo || 'livre', objs: m.objs.length };
+  },
+  desfazerMedida: function () { return (S && S._desfazerMedida) ? S._desfazerMedida() : null; },
   // ---- pavimentos (IfcBuildingStorey) ----
   get pavimentos() { return (S && S._pavLista) ? S._pavLista().map(function (p) { return { nome: p.nome, y0: p.y0, n: p.n }; }) : []; },
   get pavimentoIsolado() { return (S && S.pav && S.pav.isolado) || null; },
@@ -11025,6 +11304,16 @@ window.BIM = {
   botaoAtivo: function (k) { var b = S && S.bar && S.bar.querySelector('[data-b="' + String(k).replace(/"/g, '') + '"]'); if (!b) return false; return b.classList.contains('on') || !!(b.style.background && b.style.background !== 'transparent'); },
   travar: function (on) { if (!S || !S._setTrava) return false; return S._setTrava(on == null ? !(S.trava && S.trava.on) : !!on); },
   travado: function () { return !!(S && S.trava && S.trava.on); },
+  /* marcações da vista (o rabisco do modo mesa) por cima do 3D */
+  marcacoesMostrar: function (lista, cam) { return !!(S && S._mostrarMarcas && S._mostrarMarcas(lista, cam)); },
+  marcacoesVisiveis: function () { return !!(S && S.marcasSvg && S.marcasSvg.style.display !== 'none'); },
+  desenharMarcasEm: function (svg, lista, w, h) { if (S && S._desenharMarcas) S._desenharMarcas(svg, lista, w, h); },
+  canvasRect: function () { return S ? S.renderer.domElement.getBoundingClientRect() : null; },
+  /* modo mesa: girar a vista em volta do modelo e o corte horizontal com o dedo */
+  girarVista: function (graus) { return !!(S && S._girarVista && S._girarVista(graus)); },
+  corteHorizontal: function (y) { return S && S._corteHorizontal ? S._corteHorizontal(y) : null; },
+  corteEstado: function () { return S && S._corteEstado ? S._corteEstado() : null; },
+  pavimentosCorte: function () { return S && S._pavimentosCorte ? S._pavimentosCorte() : []; },
   host: function () { return S ? S.host : null; },
   ehVisitante: function () { return !!(S && S._visitante); },
   /* trava da RA (iPhone: sem pinça de tamanho; Android: maquete presa no lugar) */
