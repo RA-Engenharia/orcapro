@@ -19,8 +19,17 @@
  *
  * ⚠ O CELULAR NÃO TEM LOGIN NEM Store. Tudo o que ele sabe vem do link
  *   (/rv/t, /rv/d, /rv/f, /rv/notas) — e o que ele manda de volta é só o
- *   apontamento (/rv/nota) e o .glb do Android (/rv/glb). O apontamento que
- *   espera sinal mora no cache orcapro-rv-fila-v1, deste aparelho só.
+ *   apontamento (/rv/nota) e o .glb do Android (/rv/glb).
+ *
+ * PLACA DA OBRA (01/10/2026) — App.iniciar → RvVisor.abrirPlaca(slug):
+ *   o QR impresso na placa leva a /rvapp/#placa=<slug>. Antes do 3D vem a
+ *   ENTRADA: senha + cadastro (nome completo, celular, quem é: equipe →
+ *   departamento, cliente → empresa, fornecedor → CNPJ). O servidor devolve
+ *   uma SESSÃO, que este aparelho guarda (orcapro:rv:placa:<slug>) e manda
+ *   em TODO pedido do link (?s=) — sem ela o servidor responde 401.
+ *   ⚠ o cache do aparelho guarda pelo caminho SEM a sessão: trocar de sessão
+ *   (senha nova) não duplica o modelo guardado.
+ *   O apontamento que espera sinal mora no cache orcapro-rv-fila-v1, deste aparelho só.
  * ===================================================================== */
 (function (global) {
   "use strict";
@@ -50,8 +59,12 @@
      ⚠ o cache some quando o link vence — a Política promete que o modelo
      some junto com o link, e isso vale também para este aparelho. */
   function cacheAberto() { return (global.caches && global.caches.open) ? global.caches.open(CACHE) : Promise.reject(new Error("sem cache")); }
+  /* a sessão da placa vai em todo pedido do link; link comum: o caminho puro */
+  function u(caminho) { return st && st.sessao ? caminho + (caminho.indexOf("?") > -1 ? "&" : "?") + "s=" + encodeURIComponent(st.sessao) : caminho; }
   function buscarJson(url, guardar) {
     return fetch(url, { cache: "no-store" }).then(function (r) {
+      /* 401 = a sessão da placa não vale mais (senha trocada, placa despublicada) */
+      if (r.status === 401) { var e1 = new Error("sessao"); e1.sessao = true; e1.expirado = true; throw e1; }
       if (r.status === 404 || r.status === 410) { var e = new Error("expirado"); e.expirado = true; throw e; }
       if (!r.ok) throw new Error("HTTP " + r.status);
       if (guardar) { var cp = r.clone(); cacheAberto().then(function (c) { return c.put(guardar, cp); }).catch(function () {}); }
@@ -64,13 +77,14 @@
       });
     });
   }
-  function buscarBytes(url) {
+  function buscarBytes(url, chave) {
+    chave = chave || url;
     return cacheAberto().then(function (c) {
-      return c.match(url).then(function (r) {
+      return c.match(chave).then(function (r) {
         if (r) return r.arrayBuffer();
         return fetch(url).then(function (r2) {
-          if (!r2.ok) throw new Error(r2.status === 410 ? "link expirado" : "modelo indisponível (HTTP " + r2.status + ")");
-          return c.put(url, r2.clone()).catch(function () {}).then(function () { return r2.arrayBuffer(); });
+          if (!r2.ok) throw new Error(r2.status === 410 ? "link expirado" : r2.status === 401 ? "link expirado (entre de novo com a senha)" : "modelo indisponível (HTTP " + r2.status + ")");
+          return c.put(chave, r2.clone()).catch(function () {}).then(function () { return r2.arrayBuffer(); });
         });
       });
     }).catch(function (e) {
@@ -152,7 +166,8 @@
   /* {ok, id} | {temporario, rede?, erro} | {erro} — este último é RECUSA do
      servidor (link vencido, limite, texto inválido): não adianta reenviar */
   function postarNota(tk, nota) {
-    return fetch("/rv/nota/" + tk, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(nota) }).then(function (r) {
+    /* u(): na placa, a sessão vai junto — sem ela o servidor responde 401 (e a fila guardaria para sempre) */
+    return fetch(u("/rv/nota/" + tk), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(nota) }).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (j) {
         if (r.ok && j && j.ok) return { ok: true, id: j.id, repetido: !!j.repetido };
         /* ⚠ 200 SEM o "ok" do servidor é wi-fi de portal (canteiro, hotel)
@@ -448,7 +463,25 @@
     h += '<div data-a="4d-leg" style="font-size:12px;line-height:1.6"></div>';
     if (s.naoLocalizadas) h += '<p style="font-size:11px;color:#f0b94a">' + s.naoLocalizadas + ' peça(s) do cronograma não estão neste modelo.</p>';
     h += '<p style="font-size:11px;color:#8fa3b8">As cores seguem o cronograma de quem enviou: âmbar = em execução, roxo = no caminho crítico, vermelho = atrasado; sem cor = pronto.</p>';
+    /* o CRONOGRAMA em lista — etapa, datas e situação no dia escolhido.
+       ⚠ sem valor nenhum: o link nunca traz custo (rvnuvem.cronoParaLink),
+       e o % é de prazo/avanço lançado, não de dinheiro */
+    h += '<div class="rvv-rot">Cronograma — etapas no dia escolhido</div><div data-a="4d-etapas"></div>';
     return h;
+  }
+  function etapas4D(s, est) {
+    var M = global.BIM4DSim, ats = (s.atividades || []).filter(function (a) { return a && !a.sub && !a.estimado && a.inicio; })
+      .slice().sort(function (a, b) { return a.inicio < b.inicio ? -1 : a.inicio > b.inicio ? 1 : 0; }).slice(0, 80);
+    if (!ats.length) return '<p style="font-size:12px;color:#9fb2c8">O cronograma deste link não tem etapas com data.</p>';
+    var cor = { execucao: "#f59e0b", atrasado: "#ef4444", concluido: "#22c55e", futuro: "#64748b" };
+    return ats.map(function (a) {
+      var e = (est && est.porAtv && est.porAtv[a.id]) || {}, pct = e.pctReal != null ? e.pctReal : e.pctPlan;
+      return '<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 2px;border-bottom:1px solid #1d3550;font-size:12px">' +
+        '<span style="flex:none;width:9px;height:9px;border-radius:50%;margin-top:4px;background:' + (cor[e.estado] || "#64748b") + '"></span>' +
+        '<div style="min-width:0;flex:1"><b>' + esc(a.nome) + '</b>' + (a.marco ? ' <span style="color:#a78bfa">(marco)</span>' : '') +
+        '<small style="display:block;color:#8fa3b8">' + esc(M.br(a.inicio)) + (a.termino && a.termino !== a.inicio ? ' a ' + esc(M.br(a.termino)) : '') +
+        ' · ' + esc(M.ROTULO[e.estado] || e.estado || "") + (pct != null && isFinite(pct) ? ' · ' + Math.round(pct * 100) + '%' + (e.pctReal != null ? ' feito' : ' previsto') : '') + '</small></div></div>';
+    }).join("");
   }
   function ligar4D() { st.em4d = true; aplicar4D(); }
   function aplicar4D() {
@@ -464,6 +497,7 @@
     if (q("4d-leg")) q("4d-leg").innerHTML = (cena.legenda || []).map(function (l) {
       return '<span style="display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;background:' + (l.cor || "#e5e7eb") + '"></span>' + esc(l.rotulo) + ': <b>' + l.n + '</b>';
     }).join("<br>") + (est.marcos && est.marcos.length ? '<br>' + est.marcos.map(function (m) { return (m.atingido ? "✓ " : "◇ ") + esc(m.nome); }).join(" · ") : "");
+    if (q("4d-etapas")) q("4d-etapas").innerHTML = etapas4D(s, est);
   }
   function sair4D() {
     st.em4d = false; if (st.play) { clearInterval(st.play); st.play = 0; }
@@ -486,7 +520,7 @@
   }
   function carregarNotas(soPinos) {
     var tk = st.token;
-    return Promise.all([buscarJson("/rv/notas/" + tk, "/rv/notas/" + tk).catch(function () { return null; }), filaLer(tk)]).then(function (rs) {
+    return Promise.all([buscarJson(u("/rv/notas/" + tk), "/rv/notas/" + tk).catch(function () { return null; }), filaLer(tk)]).then(function (rs) {
       if (!st || st.token !== tk) return;
       var j = rs[0];
       if (j) st.notas = j.notas || [];
@@ -524,7 +558,7 @@
     if (!ns.length && !fl.length) h += '<p style="font-size:12.5px;color:#9fb2c8">Nenhum apontamento ainda.</p>';
     ns.forEach(function (n, i) {
       h += '<div class="rvv-lin" data-a="nota-ir" data-i="' + i + '">' +
-        (n.foto ? '<img class="rvv-nota-foto" alt="" src="/rv/nf/' + esc(st.token) + '/' + esc(n.id) + '">' : '<b style="width:28px;text-align:center">' + (i + 1) + '</b>') +
+        (n.foto ? '<img class="rvv-nota-foto" alt="" src="' + esc(u("/rv/nf/" + st.token + "/" + n.id)) + '">' : '<b style="width:28px;text-align:center">' + (i + 1) + '</b>') +
         '<div style="min-width:0"><b>' + (i + 1) + '. ' + esc(RV().rotuloTipo(n.tipo)) + '</b> — ' + esc(n.texto) +
         '<small>' + esc(n.autor) + ' · ' + esc(RV().tempoRelativo(n.criado)) + (n.elemento ? ' · ' + esc(n.elemento) : '') + '</small></div></div>';
     });
@@ -645,6 +679,12 @@
     h += '<div class="rvv-lin" data-a="enquadrar"><span>' + I("alvo", 18) + '</span><div><b>Enquadrar o projeto</b></div></div>';
     h += '<div class="rvv-lin" data-a="reuniao"><span>' + I("pessoas", 18) + '</span><div><b>Reunião no modelo</b><small>Todos com este link se veem dentro do projeto</small></div></div>';
     var m = st.man || {};
+    if (st.placa) {
+      var vg = visitanteGuardado();
+      h += '<div class="rvv-rot">Placa da obra</div><div style="font-size:12.5px;line-height:1.5;color:#cbd8e6">Você entrou como <b>' + esc(vg.nome || "visitante") + '</b>.' +
+        '<br><button class="rvv-bt" data-a="placa-sair" style="margin-top:8px">' + I("voltar", 15) + ' Sair deste aparelho</button>' +
+        '<div style="font-size:11px;color:#8fa3b8;margin-top:4px">Para celular emprestado: apaga a senha, o cadastro e o modelo guardados aqui.</div></div>';
+    }
     h += '<div class="rvv-rot">Sobre este link</div><div style="font-size:12.5px;line-height:1.5;color:#cbd8e6">' +
       (st.dados && st.dados.marca && st.dados.marca.empresa ? 'Enviado por <b>' + esc(st.dados.marca.empresa) + '</b><br>' : '') +
       (m.expira ? 'Vale até ' + new Date(m.expira).toLocaleDateString("pt-BR") + ' às ' + new Date(m.expira).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) + '<br>' : '') +
@@ -709,7 +749,7 @@
       var b = r.bytes, amostra = [b.length, modo];
       for (var i = 0; i < b.length; i += 997) amostra.push(b[i]);
       var h = RV().hashCurto(amostra.join(","));
-      fetch("/rv/glb/" + st.token + "?h=" + h, { method: "POST", headers: { "Content-Type": "model/gltf-binary" }, body: b })
+      fetch(u("/rv/glb/" + st.token + "?h=" + h), { method: "POST", headers: { "Content-Type": "model/gltf-binary" }, body: b })
         .then(function (res) { return res.json().then(function (j) { if (!res.ok) throw new Error(j.erro || "falha no envio"); return j; }); })
         .then(function (j) {
           var arq = location.origin + j.url, titulo = (st.dados && st.dados.marca && st.dados.marca.obra) || st.man.nome || "Projeto";
@@ -776,6 +816,10 @@
       if (a === "trena-parar") return ligarMedir(false);
       if (a === "enquadrar") { if (B().home) B().home(); return fecharFolha(); }
       if (a === "reuniao") { fecharFolha(); var rb = $("rv-reun"); if (rb) rb.click(); return; }
+      if (a === "placa-sair") {
+        if (!confirm("Sair deste aparelho?\n\nA senha, o seu cadastro e o modelo guardados aqui são apagados. Para entrar de novo, leia o QR da placa e digite a senha.")) return;
+        esquecerPlaca(st.placa, true); esquecerLink(st.token).then(function () { location.reload(); }); return;
+      }
       if (a === "card-fechar") return fecharCard();
       if (a === "card-apontar") {
         var pc = st.pecaTocada; fecharCard(); if (!pc || !pc.el || !pc.el.aabb) return comecarApontar();
@@ -835,11 +879,139 @@
     carregarNotas(true).then(function () { if ((st.fila || []).some(function (x) { return !x.erro; })) enviarFila(); });
   }
 
+  /* =====================================================================
+   * PLACA DA OBRA — a ENTRADA (senha + cadastro) antes do 3D
+   * ===================================================================== */
+  function chavePlaca(slug) { return "orcapro:rv:placa:" + slug; }
+  function sessaoGuardada(slug) { try { var o = JSON.parse(localStorage.getItem(chavePlaca(slug)) || "null"); return o && o.s && Number(o.exp) > Date.now() ? o : null; } catch (e) { return null; } }
+  function guardarSessao(slug, o) { try { localStorage.setItem(chavePlaca(slug), JSON.stringify(o)); } catch (e) {} }
+  /* o cadastro fica no aparelho para a pessoa não digitar de novo — a SENHA, nunca */
+  function visitanteGuardado() { try { return JSON.parse(localStorage.getItem("orcapro:rv:visitante") || "{}") || {}; } catch (e) { return {}; } }
+  function esquecerPlaca(slug, tudo) {
+    try { localStorage.removeItem(chavePlaca(slug)); if (tudo) { localStorage.removeItem("orcapro:rv:visitante"); localStorage.removeItem("orcapro:rv:guest"); } } catch (e) {}
+  }
+  function telaPlaca(conteudo) {
+    estilo();
+    document.body.innerHTML = '<div id="rvfull" style="overflow:auto"><div id="rvv-portao" style="max-width:440px;margin:0 auto;padding:calc(env(safe-area-inset-top,0px) + 18px) 16px 28px;box-sizing:border-box">' + conteudo + '</div></div>';
+    return $("rvv-portao");
+  }
+  function cabPlaca(info) {
+    var m = (info && info.marca) || {};
+    return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">' +
+      (m.logo ? '<img alt="" src="' + esc(m.logo) + '" style="height:52px;max-width:110px;object-fit:contain;background:#fff;border-radius:8px;padding:3px">' : '<span style="font-size:30px">' + I("obra", 30) + '</span>') +
+      '<div style="min-width:0"><b style="font-size:17px;display:block;color:#fff">' + esc(m.obra || (info && info.nome) || "Projeto da obra") + '</b>' +
+      '<span style="font-size:12.5px;color:#9fb2c8">' + esc(m.empresa || "") + '</span></div></div>';
+  }
+  function avisoPlaca(info, titulo, texto) {
+    telaPlaca(cabPlaca(info) + '<div style="border:1px solid #24435f;border-radius:14px;padding:16px;background:#0f2740"><b style="font-size:15px;color:#fff">' + esc(titulo) + '</b>' +
+      '<p style="font-size:13px;line-height:1.5;color:#cbd8e6;margin:8px 0 0">' + esc(texto) + '</p></div>');
+  }
+  function formPlaca(slug, info, app, erro) {
+    var g = visitanteGuardado(), RVn = RV(), tipo = g.tipo || "";
+    var tipos = RVn.TIPOS_VISITANTE.map(function (t) { return '<button type="button" class="rvv-chip' + (t.id === tipo ? ' on' : '') + '" data-tipo="' + t.id + '" title="' + esc(t.dica) + '">' + esc(t.rotulo) + '</button>'; }).join("");
+    var deps = '<option value="">Escolha…</option>' + RVn.DEPARTAMENTOS.map(function (d) { return '<option' + (g.departamento === d ? ' selected' : '') + '>' + esc(d) + '</option>'; }).join("");
+    var campo = function (id, rot, attrs, valor) {
+      return '<div data-campo="' + id + '"><div class="rvv-rot">' + rot + '</div><input class="rvv-inp" data-c="' + id + '" ' + attrs + ' value="' + esc(valor || "") + '"><div data-erro="' + id + '" style="display:none;color:#fca5a5;font-size:12px;margin-top:4px"></div></div>';
+    };
+    var p = telaPlaca(cabPlaca(info) +
+      '<div style="border:1px solid #24435f;border-radius:14px;padding:14px 14px 16px;background:#0f2740">' +
+      '<b style="font-size:15px;color:#fff;display:flex;align-items:center;gap:6px">' + I("cadeado", 16) + ' Acesso ao projeto da obra</b>' +
+      '<p style="font-size:12.5px;color:#9fb2c8;line-height:1.45;margin:6px 0 4px">Digite a senha que a equipe da obra passou e faça o cadastro (só na primeira vez neste aparelho).</p>' +
+      '<div data-erro="geral" style="' + (erro ? '' : 'display:none;') + 'background:rgba(153,27,27,.9);color:#fff;border-radius:9px;padding:9px 11px;font-size:13px;margin:8px 0">' + esc(erro || "") + '</div>' +
+      campo("senha", "Senha de acesso", 'type="password" autocomplete="off" maxlength="64"', "") +
+      campo("nome", "Nome completo", 'autocomplete="name" maxlength="80" placeholder="Nome e sobrenome"', g.nome) +
+      campo("telefone", "Celular (WhatsApp)", 'type="tel" inputmode="tel" autocomplete="tel" maxlength="22" placeholder="(34) 99999-9999"', g.telefone) +
+      '<div data-campo="tipo"><div class="rvv-rot">Você é</div><div class="rvv-chips">' + tipos + '</div><div data-erro="tipo" style="display:none;color:#fca5a5;font-size:12px"></div></div>' +
+      '<div data-campo="departamento" style="display:none"><div class="rvv-rot">Departamento</div><select class="rvv-inp" data-c="departamento">' + deps + '</select><div data-erro="departamento" style="display:none;color:#fca5a5;font-size:12px;margin-top:4px"></div></div>' +
+      campo("cnpj", "CNPJ da empresa", 'inputmode="text" autocapitalize="characters" maxlength="18" placeholder="00.000.000/0000-00"', g.cnpj) +
+      campo("empresa", "Empresa", 'autocomplete="organization" maxlength="80"', g.empresa) +
+      '<label style="display:flex;gap:9px;align-items:flex-start;font-size:12.5px;color:#cbd8e6;margin-top:12px;line-height:1.4;cursor:pointer">' +
+      '<input type="checkbox" data-c="aceitaContato"' + (g.aceitaContato ? ' checked' : '') + ' style="margin-top:2px;width:18px;height:18px;flex:none">' +
+      '<span>Aceito receber contato da RA Engenharia Especial sobre o OrçaPRO, a plataforma deste projeto (WhatsApp ou ligação). Posso cancelar quando quiser.</span></label>' +
+      '<button class="rvv-bt pri" data-a="placa-entrar" style="width:100%;justify-content:center;padding:13px;margin-top:14px;font-size:14.5px">' + I("avancar", 16) + ' Entrar no projeto</button>' +
+      /* quem entra NÃO tem o OrçaPRO e não aceitou termo nenhum: diz na hora
+         quem fica com os dados, para quê, e onde ler a regra (Política, 4.15) */
+      '<p style="font-size:11px;color:#8fa3b8;line-height:1.45;margin:12px 0 0">Para liberar o acesso, a RA Engenharia Especial (responsável pela plataforma) registra o seu nome, celular, empresa e quando você entrou, e mostra isso a quem publicou a obra. ' +
+      'Contato comercial, só se você marcar acima. Para pedir a exclusão, use o contato da <a href="documentos/POLITICA-DE-PRIVACIDADE.txt" target="_blank" rel="noopener" style="color:#7dd3fc">Política de privacidade</a> (item 7).</p>' +
+      '</div>');
+    function q(c) { return p.querySelector('[data-c="' + c + '"]'); }
+    function mostrarCampos() {
+      var vis = { departamento: tipo === "equipe", cnpj: tipo === "fornecedor", empresa: !!tipo };
+      Object.keys(vis).forEach(function (k) { var el = p.querySelector('[data-campo="' + k + '"]'); if (el) el.style.display = vis[k] ? "block" : "none"; });
+      var re = p.querySelector('[data-campo="empresa"] .rvv-rot');
+      if (re) re.textContent = tipo === "cliente" ? "Empresa (ou o seu nome, se for pessoa física)" : tipo === "fornecedor" ? "Razão social (opcional)" : "Empresa em que trabalha (opcional)";
+    }
+    function marcarErro(campo, texto) {
+      var es = p.querySelectorAll("[data-erro]"); for (var i = 0; i < es.length; i++) { es[i].style.display = "none"; es[i].textContent = ""; }
+      var e = p.querySelector('[data-erro="' + (campo || "geral") + '"]') || p.querySelector('[data-erro="geral"]');
+      e.textContent = texto; e.style.display = "block";
+      var alvo = q(campo) || e; try { alvo.scrollIntoView({ block: "center" }); if (alvo.focus) alvo.focus(); } catch (e2) {}
+    }
+    mostrarCampos();
+    p.addEventListener("click", function (ev) {
+      var t = ev.target.closest("[data-tipo]");
+      if (t) { tipo = t.getAttribute("data-tipo"); var cs = p.querySelectorAll("[data-tipo]"); for (var i = 0; i < cs.length; i++) cs[i].classList.toggle("on", cs[i] === t); mostrarCampos(); return; }
+      var b = ev.target.closest('[data-a="placa-entrar"]'); if (!b) return;
+      var corpo = { senha: q("senha").value, nome: q("nome").value, telefone: q("telefone").value, tipo: tipo, departamento: q("departamento").value,
+        empresa: q("empresa").value, cnpj: q("cnpj").value, aceitaContato: !!q("aceitaContato").checked };
+      if (!corpo.senha) return marcarErro("senha", "Digite a senha que a equipe da obra passou.");
+      var v = RV().validarVisitante(corpo);
+      if (v.erro) return marcarErro(v.campo, v.erro);
+      b.disabled = true; b.textContent = "Entrando…";
+      fetch("/rv/pe/" + slug, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo) })
+        .then(function (r) { return r.json().then(function (j) { return { s: r.status, j: j }; }); })
+        .then(function (res) {
+          if (res.s === 200 && res.j.sessao) {
+            var vg = v.visitante;
+            try { localStorage.setItem("orcapro:rv:visitante", JSON.stringify({ nome: vg.nome, telefone: corpo.telefone, tipo: vg.tipo, departamento: vg.departamento, empresa: vg.empresa, cnpj: corpo.cnpj, aceitaContato: vg.aceitaContato })); } catch (e3) {}
+            /* o apontamento de campo usa o mesmo nome (orcapro:rv:guest) */
+            guest({ nome: vg.nome });
+            guardarSessao(slug, { s: res.j.sessao, exp: res.j.expira, token: res.j.token });
+            return RvVisor.abrir(res.j.token, app, { sessao: res.j.sessao, placa: slug });
+          }
+          b.disabled = false; b.innerHTML = I("avancar", 16) + " Entrar no projeto";
+          if (res.s === 410) return avisoPlaca(info, "Projeto fora do ar", res.j.erro || "Esta obra não está publicada no momento.");
+          marcarErro(res.j.campo || "geral", res.j.erro || "Não deu para entrar (HTTP " + res.s + ").");
+        })
+        .catch(function () { b.disabled = false; b.innerHTML = I("avancar", 16) + " Entrar no projeto"; marcarErro("geral", "Sem internet agora. A primeira entrada precisa de sinal; depois o projeto abre mesmo sem internet."); });
+    });
+  }
+
   /* ---------------- ABRIR ---------------- */
   var RvVisor = {
-    abrir: function (token, app) {
+    /* a porta da PLACA: sessão guardada → direto ao 3D (com o modelo ATUAL da
+       placa, /rv/ps); sem sessão ou com sessão vencida → a entrada */
+    abrirPlaca: function (slug, app) {
+      app = app || global.App || {};
+      document.title = "Projeto da obra";
+      var guardada = sessaoGuardada(slug);
+      function entrada(erro) {
+        avisoPlaca(null, "Carregando…", "Buscando a obra.");
+        fetch("/rv/pi/" + slug, { cache: "no-store" }).then(function (r) { return r.json().then(function (j) { return { s: r.status, j: j }; }); }).then(function (res) {
+          if (res.s === 404) return avisoPlaca(null, "Placa não encontrada", "Confira o QR da placa ou fale com a equipe da obra.");
+          var info = res.j || {};
+          if (!info.publicado) return avisoPlaca(info, info.vencida ? "A publicação desta obra terminou" : "Projeto fora do ar", info.vencida ? "O prazo de publicação acabou. Fale com a equipe da obra." : "Esta obra não está publicada no momento. Fale com a equipe da obra.");
+          document.title = (info.marca && info.marca.obra) || info.nome || "Projeto da obra";
+          formPlaca(slug, info, app, erro);
+        }).catch(function () { avisoPlaca(null, "Sem internet", "A primeira entrada no projeto precisa de internet. Tente de novo quando tiver sinal."); });
+      }
+      if (!guardada) return entrada("");
+      fetch("/rv/ps/" + slug + "?s=" + encodeURIComponent(guardada.s), { cache: "no-store" }).then(function (r) { return r.json().then(function (j) { return { s: r.status, j: j }; }); }).then(function (res) {
+        if (res.s === 200 && res.j.token) { guardarSessao(slug, { s: guardada.s, exp: guardada.exp, token: res.j.token }); return RvVisor.abrir(res.j.token, app, { sessao: guardada.s, placa: slug }); }
+        if (res.s === 410) { return avisoPlaca(null, "Projeto fora do ar", res.j.erro || "Esta obra não está publicada no momento."); }
+        esquecerPlaca(slug);
+        entrada(res.s === 401 ? "A senha desta obra mudou ou o seu acesso venceu. Digite a senha de novo." : "");
+      }).catch(function () {
+        /* sem internet: abre o que este aparelho guardou (o cache não depende da sessão) */
+        if (guardada.token) RvVisor.abrir(guardada.token, app, { sessao: guardada.s, placa: slug });
+        else entrada("");
+      });
+    },
+    abrir: function (token, app, opt) {
+      opt = opt || {};
       st = { token: token, man: null, dados: null, dadosBrutos: null, mapa: {}, inverso: {}, simCel: null, notas: [], fila: [], notaCid: "", folha: "", est4d: null,
-        op4d: { futuro: "oculto" }, dia4d: 0, em4d: false, play: 0, corte: 100, apontando: false, medindo: false, guardado: false };
+        op4d: { futuro: "oculto" }, dia4d: 0, em4d: false, play: 0, corte: 100, apontando: false, medindo: false, guardado: false,
+        sessao: opt.sessao || "", placa: opt.placa || "" };
       app = app || global.App || {};
       document.title = "Projeto 3D";
       montarTela();
@@ -874,7 +1046,7 @@
         vigiarImersivo();
         setInterval(pintarTrava, 700);   /* a trava também se desfaz pelo aviso do 3D */
         setInterval(pintarTrena, 300);
-        buscarJson("/rv/t/" + token, "/rv/t/" + token).then(function (man) {
+        buscarJson(u("/rv/t/" + token), "/rv/t/" + token).then(function (man) {
           if (!man.ok) throw new Error(man.erro || "link inválido");
           st.man = man;
           /* ⚠ LINK DE APP ANTIGO NÃO RECEBE APONTAMENTO: o dono não tem como
@@ -882,7 +1054,7 @@
              (o servidor recusa do mesmo jeito, com 403) */
           var bN = document.querySelector('#rvv-barra [data-f="notas"]'); if (bN) bN.hidden = !man.aceitaNotas;
           if (man._offline) recado("Sem internet: abrindo o que este aparelho guardou.", false);
-          var pDados = man.temDados ? buscarJson("/rv/d/" + token, "/rv/d/" + token).catch(function () { return null; }) : Promise.resolve(null);
+          var pDados = man.temDados ? buscarJson(u("/rv/d/" + token), "/rv/d/" + token).catch(function () { return null; }) : Promise.resolve(null);
           return pDados.then(function (d) {
             st.dadosBrutos = d;
             aplicarMarca((d && d.marca) || { obra: man.nome });
@@ -892,7 +1064,7 @@
                 if (i >= arqs.length) return fim();
                 var a = arqs[i], antes = (global.BIM.modelos || []).length;
                 txtCarga("Baixando " + (a.nome || "modelo") + " (" + (i + 1) + "/" + arqs.length + ")…");
-                buscarBytes("/rv/f/" + a.id).then(function (ab) {
+                buscarBytes(u("/rv/f/" + a.id), "/rv/f/" + a.id).then(function (ab) {
                   txtCarga("Montando " + (a.nome || "modelo") + " (" + (i + 1) + "/" + arqs.length + ")…");
                   global.BIM.abrirBytes(ab, a.nome, a.disc);
                   /* espera ESTE modelo entrar na cena antes do próximo (a fila do
@@ -909,6 +1081,16 @@
             indiceCache(function (ix) { ix[token] = { expira: man.expira, ids: (man.arquivos || []).map(function (a) { return a.id; }) }; return ix; }).then(function () { st.guardado = true; });
           });
         }).catch(function (e) {
+          /* placa: sessão recusada (senha trocada, placa despublicada) ou modelo
+             trocado pelo dono → recarrega e a porta da placa decide (entrada ou
+             o modelo atual). ⚠ recarregar com o 3D já montado, não desenhar
+             por cima dele; e no máximo 2 vezes em 30 s — nunca em laço. */
+          if (e && (e.sessao || e.expirado) && st.placa) {
+            if (e.sessao) esquecerPlaca(st.placa); else esquecerLink(token);
+            var rl = []; try { rl = JSON.parse(sessionStorage.getItem("orcapro:rv:recarga") || "[]").filter(function (t) { return Date.now() - t < 30000; }); } catch (eR) { rl = []; }
+            if (rl.length < 2) { rl.push(Date.now()); try { sessionStorage.setItem("orcapro:rv:recarga", JSON.stringify(rl)); } catch (eR2) {} location.reload(); return; }
+            return erroCarga("Não consegui abrir o projeto desta placa. Feche a página e leia o QR de novo.");
+          }
           if (e && e.expirado) {
             /* ⚠ o que esperava sinal não tem mais para onde ir: diz QUANTOS se
                perderam, em vez de sumir com eles calado */

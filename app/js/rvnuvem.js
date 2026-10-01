@@ -80,8 +80,12 @@
   function vistasParaLink(vistas) {
     return (vistas || []).filter(function (v) {
       /* só as vistas que a equipe salvou: as que vieram do BCF e as de
-         apontamento de campo são pendência de coordenação, não apresentação */
-      return v && v.camera && !v.origem;
+         apontamento de campo são pendência de coordenação, não apresentação.
+         ⚠ A DO PACOTE DA OBRA VAI (01/10/2026): "Arquivo da obra" traz as
+         vistas de APRESENTAÇÃO preparadas para a obra (origem "pacote"), e o
+         filtro antigo (`!v.origem`) barrava todas — o link e a placa saíam
+         sem nenhuma, calados. A regra é pelo que a origem É, não por ter uma. */
+      return v && v.camera && v.origem !== "bcf" && v.origem !== "campo";
     }).slice(0, MAX_VISTAS).map(function (v) {
       var r = pega(v, CAMPOS_VISTA);
       r.nome = txt(v.nome, 80) || "Vista";
@@ -147,12 +151,27 @@
     if (i <= 0) return null;
     return { modeloId: s.slice(0, i), resto: s.slice(i + SEP.length) };
   }
-  /* {modeloIdDoComputador: modeloIdDoCelular}, casando pelo hash do arquivo */
+  /* {modeloIdDoComputador: modeloIdDoCelular}, casando pelo hash do arquivo.
+     ⚠ RESERVA PELO NOME DO ARQUIVO (01/10/2026): o servidor v5 tira os
+     valores de custo/venda do .ifc, e o link criado por um app que ainda não
+     limpa antes de enviar (≤ 1.2.108) chega com o hash do arquivo ORIGINAL —
+     o do celular é o do arquivo limpo. O modeloId é "<obra>/<arquivo>" no
+     computador e "sem_obra/<arquivo>" no celular: o que vem depois da barra
+     casa. Só par ÚNICO dos dois lados — dois arquivos de mesmo nome ficam sem
+     par (peça "não localizada" é melhor que peça trocada). */
+  function nomeDoModelo(mid) { var s = String(mid || ""), i = s.indexOf("/"); return i > -1 ? s.slice(i + 1) : ""; }
   function mapaModelos(doLink, doCelular) {
-    var porArq = {}, mapa = {};
+    var porArq = {}, mapa = {}, usados = {}, porNome = {}, nomesLink = {};
     (doCelular || []).forEach(function (m) { if (m && m.arquivoId) porArq[m.arquivoId] = m.modeloId; });
     (doLink || []).forEach(function (m) {
-      if (m && m.arquivoId && m.modeloId && porArq[m.arquivoId]) mapa[m.modeloId] = porArq[m.arquivoId];
+      if (m && m.arquivoId && m.modeloId && porArq[m.arquivoId]) { mapa[m.modeloId] = porArq[m.arquivoId]; usados[porArq[m.arquivoId]] = 1; }
+    });
+    (doCelular || []).forEach(function (m) { var nm = m && !usados[m.modeloId] ? nomeDoModelo(m.modeloId) : ""; if (nm) porNome[nm] = porNome[nm] ? "*" : m.modeloId; });
+    (doLink || []).forEach(function (m) { var nm = m && m.modeloId && !mapa[m.modeloId] ? nomeDoModelo(m.modeloId) : ""; if (nm) nomesLink[nm] = (nomesLink[nm] || 0) + 1; });
+    (doLink || []).forEach(function (m) {
+      if (!m || !m.modeloId || mapa[m.modeloId]) return;
+      var nm = nomeDoModelo(m.modeloId), alvo = nm ? porNome[nm] : "";
+      if (alvo && alvo !== "*" && nomesLink[nm] === 1) mapa[m.modeloId] = alvo;
     });
     return mapa;
   }
@@ -266,6 +285,173 @@
     };
   }
 
+  /* ---------------- DINHEIRO FORA DO IFC ----------------
+     O .ifc ia CRU para o link, com custo e venda por peça (pset RA_5D_*,
+     "Custo" do Revit): quem tinha o link baixava o arquivo e lia o orçamento.
+     A propriedade FICA e perde o VALOR — ('RA_5D_Preco_Venda',$,$,$) — e o
+     arquivo continua abrindo. Por nome (custo, preço, venda, valor, BDI…) e
+     por tipo (IFCMONETARYMEASURE); IfcCostValue perde o AppliedValue.
+     ⚠ O COMPUTADOR LIMPA ANTES DE ENVIAR, E O SERVIDOR LIMPA DE NOVO. O
+       celular casa as peças pelo hash do arquivo (BimId.versaoId): se só o
+       servidor mudasse os bytes, o hash do celular não bateria com o que o
+       computador mandou e toda vista abriria com as peças "não localizadas".
+       Limpo antes, o computador manda o hash do arquivo LIMPO, e o servidor,
+       ao limpar de novo, não acha nada (é idempotente) e não muda um byte.
+     ⚠ ESTA FUNÇÃO É IDÊNTICA à de server/vps/bim-rv.js — o test-rvnuvem
+       compara o texto das duas e roda as duas no mesmo arquivo. Mudou uma,
+       copie para a outra. Trabalha nos BYTES (Uint8Array/Buffer): um IFC de
+       80 MB não vira string inteira; só as instâncias candidatas são lidas. */
+  function limparDinheiroIfc(bytes) {
+    var RX_NOME = /(custo|\bcost|pre[cç]o|price|venda|valor|r\$|bdi|desembolso|_5d_|^5d_)/i;
+    var RX_ENT = /^(\s*#\d+\s*=\s*)(IFCPROPERTY(?:SINGLE|BOUNDED|ENUMERATED|LIST|TABLE)VALUE|IFCCOSTVALUE|IFCAPPLIEDVALUE)(\s*\()([\s\S]*)\)\s*$/i;
+    var n = bytes ? bytes.length : 0;
+    function latin1(a, b) { var s = "", P = 8192; for (var k = a; k < b; k += P) s += String.fromCharCode.apply(null, bytes.subarray(k, Math.min(b, k + P))); return s; }
+    function decodificar(s) {
+      return String(s).replace(/\\X2\\([0-9A-F]+)\\X0\\/gi, function (m, h) { var r = ""; for (var i = 0; i + 4 <= h.length; i += 4) r += String.fromCharCode(parseInt(h.substr(i, 4), 16)); return r; })
+        .replace(/\\X\\([0-9A-F]{2})/gi, function (m, h) { return String.fromCharCode(parseInt(h, 16)); })
+        .replace(/\\S\\(.)/g, function (m, c) { return String.fromCharCode(c.charCodeAt(0) + 128); })
+        .replace(/''/g, "'");
+    }
+    function argumentos(s) {
+      var out = [], prof = 0, emStr = false, ini = 0;
+      for (var i = 0; i < s.length; i++) {
+        var c = s.charCodeAt(i);
+        if (c === 39) { if (emStr && s.charCodeAt(i + 1) === 39) { i++; continue; } emStr = !emStr; continue; }
+        if (emStr) continue;
+        if (c === 40) prof++; else if (c === 41) prof--;
+        else if (c === 44 && prof === 0) { out.push(s.slice(ini, i)); ini = i + 1; }
+      }
+      out.push(s.slice(ini));
+      return out;
+    }
+    /* cabeça da instância nos bytes: "#123=" seguido de IFCP / IFCC / IFCA (sem criar string) */
+    function cabecaDin(a, b) {
+      var k = a, lim = Math.min(b, a + 48);
+      while (k < lim && (bytes[k] === 32 || bytes[k] === 10 || bytes[k] === 13 || bytes[k] === 9)) k++;
+      if (bytes[k] !== 35) return false;
+      k++;
+      while (k < lim && bytes[k] >= 48 && bytes[k] <= 57) k++;
+      while (k < lim && (bytes[k] === 32 || bytes[k] === 9)) k++;
+      if (bytes[k] !== 61) return false;
+      k++;
+      while (k < lim && (bytes[k] === 32 || bytes[k] === 9 || bytes[k] === 10 || bytes[k] === 13)) k++;
+      if (k + 4 > b) return false;
+      var c3 = bytes[k + 3] & 0xDF;
+      return (bytes[k] & 0xDF) === 73 && (bytes[k + 1] & 0xDF) === 70 && (bytes[k + 2] & 0xDF) === 67 && (c3 === 80 || c3 === 67 || c3 === 65);
+    }
+    function limparInstancia(st, nomes) {
+      var m = RX_ENT.exec(st);
+      if (!m) return null;
+      var ent = m[2].toUpperCase(), a = argumentos(m[4]), mudou = false, k;
+      var bruto = String(a[0] || "").replace(/^\s+|\s+$/g, ""), nome = /^'[\s\S]*'$/.test(bruto) ? decodificar(bruto.slice(1, -1)) : "";
+      var LST = "(IFCLABEL(''))";
+      if (ent === "IFCCOSTVALUE" || ent === "IFCAPPLIEDVALUE") {
+        if (a.length > 2 && a[2].replace(/\s/g, "") !== "$") { a[2] = "$"; mudou = true; }
+      } else {
+        var din = RX_NOME.test(nome) || (ent === "IFCPROPERTYSINGLEVALUE" && /^\s*IFCMONETARYMEASURE\s*\(/i.test(a[2] || ""));
+        if (!din) return null;
+        /* SINGLE: o valor vira $ (a unidade fica); listas obrigatórias no IFC2x3 viram uma etiqueta vazia; BOUNDED: tudo depois da descrição */
+        var mapa = { IFCPROPERTYSINGLEVALUE: { 2: "$" }, IFCPROPERTYENUMERATEDVALUE: { 2: LST }, IFCPROPERTYLISTVALUE: { 2: LST }, IFCPROPERTYTABLEVALUE: { 2: LST, 3: LST } }[ent];
+        for (k = 2; k < a.length; k++) {
+          var novo = mapa ? (mapa[k] || null) : "$";
+          if (novo === null) continue;
+          if (a[k].replace(/^\s+|\s+$/g, "") !== novo) { a[k] = novo; mudou = true; }
+        }
+      }
+      if (!mudou) return null;
+      if (nomes) nomes[nome || ent] = (nomes[nome || ent] || 0) + 1;
+      return m[1] + m[2] + m[3] + a.join(",") + ")";
+    }
+    if (!/ISO-10303-21\s*;/.test(latin1(0, Math.min(n, 1024)))) return { erro: "nao-step" };
+    var partes = [], ultimo = 0, ini = 0, emStr = false, limpos = 0, nomes = {}, tam = n;
+    for (var i = 0; i < n; i++) {
+      var c = bytes[i];
+      if (c === 39) { if (emStr && bytes[i + 1] === 39) { i++; continue; } emStr = !emStr; continue; }
+      if (c !== 59 || emStr) continue;
+      if (i - ini > 20 && cabecaDin(ini, i)) {
+        var novo = limparInstancia(latin1(ini, i), nomes);
+        if (novo !== null) { partes.push({ de: ultimo, ate: ini, novo: novo }); ultimo = i; limpos++; tam += novo.length - (i - ini); }
+      }
+      ini = i + 1;
+    }
+    if (!limpos) return { bytes: bytes, limpos: 0, nomes: {} };
+    var out = new Uint8Array(tam), p = 0;
+    for (var t = 0; t < partes.length; t++) {
+      out.set(bytes.subarray(partes[t].de, partes[t].ate), p); p += partes[t].ate - partes[t].de;
+      for (var j = 0; j < partes[t].novo.length; j++) out[p++] = partes[t].novo.charCodeAt(j) & 255;
+    }
+    out.set(bytes.subarray(ultimo, n), p);
+    return { bytes: out, limpos: limpos, nomes: nomes };
+  } /* fim limparDinheiroIfc */
+
+  /* ---------------- PLACA DA OBRA (QR permanente com senha) ----------------
+     ⚠ ESPELHO das regras do servidor (validarVisitante, cnpjOk, foneE164 e as
+     listas TIPOS_VIS/DEPTOS em server/vps/bim-rv.js): o celular recusa ANTES
+     de enviar, e o test-rvnuvem confere que as listas são as mesmas. */
+  var PLACA_DIAS = [30, 60, 90, 180, 365];
+  var PLACA_DIAS_PADRAO = 90, PLACA_DIAS_MAX = 365, SENHA_MIN = 6, SENHA_MAX = 64;
+  var TIPOS_VISITANTE = [
+    { id: "equipe", rotulo: "Equipe da obra", dica: "construtora, empreiteira, projetista" },
+    { id: "cliente", rotulo: "Cliente / proprietário", dica: "dono da obra ou empresa contratante" },
+    { id: "fornecedor", rotulo: "Fornecedor / prestador", dica: "material, equipamento ou serviço" },
+    { id: "visitante", rotulo: "Outro / visitante", dica: "" }
+  ];
+  var DEPARTAMENTOS = ["Engenharia / Projetos", "Obra / Canteiro", "Planejamento / Orçamento", "Compras / Suprimentos", "Financeiro / Administrativo",
+    "Segurança do Trabalho / Qualidade", "Diretoria / Gestão", "Arquitetura / Design", "Outro"];
+  /* CNPJ numérico ou alfanumérico (desde julho/2026): 12 posições 0-9A-Z + 2 dígitos */
+  function cnpjOk(v) {
+    var s = String(v || "").toUpperCase().replace(/[.\/\-\s]/g, "");
+    if (!/^[0-9A-Z]{12}[0-9]{2}$/.test(s) || /^(.)\1{13}$/.test(s)) return "";
+    function dv(base) {
+      var pesos = base.length === 12 ? [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2] : [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2], t = 0;
+      for (var i = 0; i < base.length; i++) t += (base.charCodeAt(i) - 48) * pesos[i];
+      var r = t % 11; return r < 2 ? 0 : 11 - r;
+    }
+    var d1 = dv(s.slice(0, 12)), d2 = dv(s.slice(0, 12) + d1);
+    return (String(d1) + String(d2)) === s.slice(12) ? s : "";
+  }
+  function foneE164(v) {
+    var t = String(v || "").trim(), d = t.replace(/\D/g, "");
+    if (/^\+/.test(t) && !/^\+?55/.test(t.replace(/\s/g, ""))) return d.length >= 8 && d.length <= 15 ? "+" + d : "";
+    if ((d.length === 12 || d.length === 13) && d.slice(0, 2) === "55") d = d.slice(2);
+    if (d.length !== 10 && d.length !== 11) return "";
+    if (!/^[1-9][1-9]/.test(d)) return "";
+    if (d.length === 11 && d.charAt(2) !== "9") return "";
+    return "+55" + d;
+  }
+  /* devolve {erro, campo} ou {visitante} — o mesmo veredito do servidor */
+  function validarVisitante(b) {
+    b = b || {};
+    var nome = String(b.nome == null ? "" : b.nome).replace(/\s+/g, " ").trim().slice(0, 80);
+    if (nome.split(" ").filter(function (w) { return w.replace(/[^A-Za-zÀ-ÿ]/g, "").length >= 2; }).length < 2) return { erro: "Escreva o nome completo (nome e sobrenome).", campo: "nome" };
+    var tel = foneE164(b.telefone);
+    if (!tel) return { erro: "Telefone inválido — use DDD + número (ex.: 48 99999-9999).", campo: "telefone" };
+    var tipos = TIPOS_VISITANTE.map(function (t) { return t.id; });
+    if (tipos.indexOf(b.tipo) < 0) return { erro: "Diga quem você é nesta obra.", campo: "tipo" };
+    var r = { nome: nome, telefone: tel, tipo: b.tipo, departamento: "", empresa: String(b.empresa == null ? "" : b.empresa).trim().slice(0, 80), cnpj: "", aceitaContato: b.aceitaContato === true };
+    if (b.tipo === "equipe") { if (DEPARTAMENTOS.indexOf(b.departamento) < 0) return { erro: "Escolha o seu departamento.", campo: "departamento" }; r.departamento = b.departamento; }
+    if (b.tipo === "cliente" && r.empresa.length < 2) return { erro: "Diga o nome da empresa (ou o seu, se for pessoa física).", campo: "empresa" };
+    if (b.tipo === "fornecedor") { r.cnpj = cnpjOk(b.cnpj); if (!r.cnpj) return { erro: "CNPJ inválido — confira os 14 caracteres.", campo: "cnpj" }; }
+    return { visitante: r };
+  }
+  function validarSenhaPlaca(s) {
+    s = String(s == null ? "" : s);
+    return s.length < SENHA_MIN || s.length > SENHA_MAX ? "A senha precisa ter de " + SENHA_MIN + " a " + SENHA_MAX + " caracteres." : null;
+  }
+  /* os textos da placa no computador (Meus links / tela da placa) */
+  function resumoPlaca(p, agora) {
+    agora = agora || Date.now();
+    var falta = (p.expira || 0) - agora, d = Math.ceil(falta / 86400000);
+    var estado = !p.temModelo ? "sem modelo" : !p.publicado ? "despublicada" : falta <= 0 ? "vencida" : "no ar";
+    return {
+      titulo: txt(p.nome, 120) || "Obra",
+      estado: estado,
+      validade: falta <= 0 ? "venceu em " + dataHora(p.expira) : "fica publicada até " + dataHora(p.expira) + " (" + d + (d === 1 ? " dia" : " dias") + ")",
+      visitantes: p.visitantes ? p.visitantes + (p.visitantes === 1 ? " pessoa cadastrada" : " pessoas cadastradas") + (p.ultimoAcesso ? " · último acesso " + tempoRelativo(p.ultimoAcesso, agora) : "") : "ninguém entrou ainda",
+      vencendo: falta > 0 && falta < 7 * 86400000
+    };
+  }
+
   /* hash curto e estável (FNV-1a, 2 × 32 bits) — chave do .glb no servidor:
      o mesmo recorte do modelo não sobe duas vezes */
   function hashCurto(s) {
@@ -285,7 +471,11 @@
     marca: marca, vistasParaLink: vistasParaLink, cronoParaLink: cronoParaLink, cronoNoCelular: cronoNoCelular,
     mapaModelos: mapaModelos, inverter: inverter, traduzir: traduzir, traduzirDados: traduzirDados,
     validarNota: validarNota, rotuloTipo: rotuloTipo, cameraPara: cameraPara, notaParaVista: notaParaVista, notasNovas: notasNovas,
-    resumoLink: resumoLink, tempoRelativo: tempoRelativo, hashCurto: hashCurto
+    resumoLink: resumoLink, tempoRelativo: tempoRelativo, hashCurto: hashCurto,
+    PLACA_DIAS: PLACA_DIAS, PLACA_DIAS_PADRAO: PLACA_DIAS_PADRAO, PLACA_DIAS_MAX: PLACA_DIAS_MAX, SENHA_MIN: SENHA_MIN, SENHA_MAX: SENHA_MAX,
+    TIPOS_VISITANTE: TIPOS_VISITANTE, DEPARTAMENTOS: DEPARTAMENTOS,
+    cnpjOk: cnpjOk, foneE164: foneE164, validarVisitante: validarVisitante, validarSenhaPlaca: validarSenhaPlaca, resumoPlaca: resumoPlaca,
+    limparDinheiroIfc: limparDinheiroIfc
   };
   global.RvNuvem = RvNuvem;
   if (typeof module !== "undefined" && module.exports) module.exports = RvNuvem;

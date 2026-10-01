@@ -1,6 +1,15 @@
 ﻿POLÍTICA DE PRIVACIDADE — OrçaPRO IA
-Versão 1.8 — vigente a partir de 29/09/2026
+Versão 1.9 — vigente a partir de 01/10/2026
 Elaborada conforme a Lei nº 13.709/2018 (LGPD)
+
+O que mudou na 1.9: entrou o item 4.15 — a PLACA DA OBRA (um QR permanente,
+impresso na placa, que abre o projeto 3D com senha). Quem lê esse QR faz um
+cadastro antes de entrar (nome, celular, quem é na obra e, conforme o caso,
+departamento, empresa ou CNPJ), que fica com a RA Engenharia Especial; o
+contato comercial depende de uma caixa SEPARADA e opcional. E o item 4.3
+mudou: o modelo BIM compartilhado por link ou pela placa sai SEM os valores
+de custo, preço de venda e afins — o programa apaga esses valores do arquivo
+antes de enviar, e o servidor confere de novo antes de guardar.
 
 O que mudou na 1.8: o item 4.3 (modelo BIM compartilhado por link) passou a
 descrever o que o link leva e o que volta dele. O prazo do link agora é
@@ -209,18 +218,26 @@ fornecedora, fora do retrato da obra (para não ser apagado a cada publicação)
     para mais ninguém. Retenção no item 6.
 
 4.3 MODELO BIM NA NUVEM E SALA DE REUNIÃO
-Em "Gerar link e QR para qualquer celular", o ARQUIVO IFC INTEIRO do projeto é
+Em "Gerar link e QR para qualquer celular", o ARQUIVO IFC do projeto é
 enviado ao servidor da fornecedora para abrir no celular ou em realidade
 virtual por link ou QR. O link vale o prazo que você escolher (1, 3, 7 ou 30
 dias; padrão 3) e pode ser revogado antes, em "Meus links"; vencido ou
 revogado, o modelo e tudo o que veio com ele são apagados do servidor.
+
+  · SEM VALORES NO ARQUIVO (desde a 1.9): antes de o arquivo sair do seu
+    computador, o programa apaga o VALOR das propriedades de dinheiro do
+    modelo (custo, preço, venda, BDI, desembolso e afins, inclusive as que o
+    Revit exporta como "Custo"/"Cost" e qualquer valor do tipo monetário). A
+    peça e o nome da propriedade continuam; o número sai. O servidor confere
+    de novo antes de guardar. Quantos valores saíram aparece na tela do link.
 
   · O QUE PODE IR JUNTO, e só se você marcar: o nome e o logo da empresa e o
     nome da obra; os pontos de vista salvos (SEM os comentários da equipe); o
     cronograma da obra para o "obra no tempo" (4D), SEM custo, preço de venda
     ou qualquer valor.
   · QUANTAS VEZES O LINK FOI ABERTO: o servidor conta as aberturas e guarda a
-    hora da última, para você ver em "Meus links". Não identifica quem abriu.
+    hora da última, para você ver em "Meus links". O link comum não
+    identifica quem abriu; a PLACA DA OBRA identifica, com cadastro (item 4.15).
   · APONTAMENTOS DE CAMPO: quem abre o link pode tocar num ponto do modelo e
     deixar um apontamento — texto, foto (opcional) e o nome que a pessoa
     digitar. Ele fica no servidor junto com o link, é visível para QUEM TEM O
@@ -615,6 +632,38 @@ Para quê:
   · Retenção e exclusão: mesmo canal do item 7 — apagamos a pedido, e o
     endereço do certificado deixa de responder.
 
+4.15 PLACA DA OBRA (QR permanente com senha — o projeto 3D para quem passa na obra)
+O administrador de uma conta do OrçaPRO pode publicar a "placa da obra": um
+QR que vai impresso na placa e abre o projeto 3D da obra (modelo, pontos de
+vista e, se ele quiser, o cronograma), SEM valor nenhum (item 4.3). O QR não
+muda; o administrador decide se a placa fica publicada, por quantos dias (até
+365) e a senha, e pode trocar a senha, despublicar ou apagar a placa a
+qualquer momento. A senha é guardada só como resumo criptográfico (hash com
+sal) — nem nós a lemos.
+
+Quem lê o QR, antes de entrar, digita a senha e faz um cadastro:
+
+  · O QUE É PEDIDO: nome completo, celular e quem a pessoa é na obra —
+    equipe da obra (e o departamento), cliente (e o nome da empresa),
+    fornecedor (e o CNPJ da empresa) ou outro; a empresa é opcional nos
+    demais casos. Junto, guardamos quando a pessoa entrou, quantas vezes e o
+    tipo de aparelho (iPhone, Android…). O endereço de IP NÃO é gravado: ele
+    só é usado, na memória do servidor, para frear tentativas de senha.
+  · QUEM FICA COM OS DADOS: a RA Engenharia Especial, controladora (item 1),
+    que mostra a quem publicou a placa quantas pessoas entraram.
+  · PARA QUÊ: controlar o acesso ao projeto da obra (base legal: legítimo
+    interesse de quem publicou o projeto e da RA Engenharia em saber quem
+    viu, art. 7º, IX) e, SÓ PARA QUEM MARCAR A CAIXA de aceite, que é
+    separada e começa desmarcada, contato comercial da RA Engenharia sobre o
+    OrçaPRO, por WhatsApp ou ligação (consentimento, art. 7º, I). Quem não
+    marca entra do mesmo jeito. Desmarcar a caixa numa entrada seguinte
+    revoga o aceite.
+  · O APARELHO de quem entrou guarda, no navegador, o acesso (para não pedir
+    a senha toda vez) e o cadastro (para não digitar de novo) — nunca a
+    senha. "Mais → Sair deste aparelho" apaga tudo isso, e também o modelo
+    guardado para uso sem internet.
+  · Retenção e exclusão: item 6; a pedido, pelo canal do item 7.
+
 
 5. O QUE NUNCA FAZEMOS
 
@@ -641,7 +690,12 @@ Para quê:
     apontamentos de campo e o arquivo da RA do Android: pelo prazo escolhido
     no link (1 a 30 dias; padrão 3) ou até você revogar — o que vier antes —,
     apagados em seguida. Posição, identidade e voz da reunião não são
-    gravadas.
+    gravadas. Na placa da obra (item 4.15), o modelo fica pelo prazo de
+    publicação escolhido (até 365 dias) e sai do servidor ao vencer ou ao
+    apagar a placa.
+  · Cadastro de quem entra pela placa da obra (item 4.15): até 24 meses
+    depois do último acesso, apagado em seguida; antes disso, a pedido. O
+    aceite de contato comercial vale até ser revogado.
   · Áudio do diário (item 4.8): enviado para transcrever e não guardado por
     nós; o que fica é o texto, dentro do diário.
   · Cadastro de quem manda o diário (item 4.8 — nome e telefone): enquanto

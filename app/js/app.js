@@ -118,6 +118,10 @@
       // compartilhado, SEM login/gestão. Curto-circuito antes de todo o app.
       var _rvt = ((location.hash || "") + (location.search || "")).match(/[?&]t=([a-f0-9]{12,40})/);
       if (_rvt && /(^|[#&/])rv\b/i.test(location.hash || location.search || "")) { return this._abrirRVCloud(_rvt[1]); }
+      /* PLACA DA OBRA (#placa=<código>) — o QR permanente impresso na placa:
+         senha + cadastro, depois o mesmo visor do link. Também antes de todo o app. */
+      var _plc = (location.hash || "").match(/^#placa=([a-z2-9]{6,16})$/);
+      if (_plc) { return this._abrirPlacaObra(_plc[1]); }
 
       // USO SOLO/LOCAL: entra direto (sem a barreira de login). O login segue acessível via "Sair"
       // p/ quem usa RBAC/multiempresa ou quer conta com e-mail. Só age quando não há RBAC configurado.
@@ -483,8 +487,12 @@
        do Android, uso sem internet). Aqui só a porta de entrada: sem login,
        sem gestão, antes de todo o app. As funções de reunião (_rvReuniao e
        os selos) continuam no App — o visor as chama. */
+    _abrirPlacaObra: function (slug) {
+      if (typeof RvVisor !== "undefined" && RvVisor.abrirPlaca) return RvVisor.abrirPlaca(slug, this);
+      return this._abrirRVCloud("");
+    },
     _abrirRVCloud: function (token) {
-      if (typeof RvVisor !== "undefined" && RvVisor.abrir) return RvVisor.abrir(token, this);
+      if (token && typeof RvVisor !== "undefined" && RvVisor.abrir) return RvVisor.abrir(token, this);
       /* ⚠ sem o módulo, diz isso — nunca uma tela vazia (o /rvapp/ do VPS é
          uma cópia do app, e cópia incompleta já aconteceu) */
       document.title = "Projeto 3D";
@@ -3283,13 +3291,29 @@
        * `_analiticoArquivo` NÃO entra — ele é o caminho que o boot escolheu
        * para a base principal, que é sempre a não desonerada. */
       var deso = (regimeForcado === true || regimeForcado === false) ? regimeForcado : this._regimeAnalitico();
+      /* a competência que veio no pacote — o nome ANTIGO (sem mês) é dela */
+      var embarcada = "";
+      try {
+        var estE = (this._estados || []).filter(function (e) { return String(e.uf).toUpperCase() === uf; })[0];
+        embarcada = String((estE && estE.competencia) || "").trim();
+      } catch (eE) {}
       if (deso) {
         var dLocal = uf ? ("data/" + this._nomeAnalitico(uf, comp, true)) : null;
         var dLive = (uf && srv) ? (srv + "/analitico/" + this._nomeAnalitico(uf, comp, true)) : null;
+        /* ⚠ O DESONERADO DE NOME ANTIGO É DE 06/2026 (o único que existia).
+           Ele vinha em 2º lugar, antes da rede: com a desonerada passando a
+           andar sozinha (08/2026 em diante), o detalhamento de agosto abriria
+           com os insumos de junho, calado. Agora, como no onerado, o nome
+           antigo só vem na frente quando É do mesmo mês; senão a competência
+           certa (servidor, espelho) vence, e ele fica de último recurso. */
+        var dMesmo = !comp || (embarcada && this._normComp(comp) === this._normComp(embarcada));
         var dAlt = [];
         if (dLocal) dAlt.push(dLocal);
-        if (uf) dAlt.push("data/" + this._nomeAnalitico(uf, "", true));
+        if (uf && dMesmo) dAlt.push("data/" + this._nomeAnalitico(uf, "", true));
         if (dLive) dAlt.push(dLive);
+        var dEspC = comp ? this._espelhoAnalitico(uf, comp, true) : null;
+        if (dEspC) dAlt.push(dEspC);
+        if (uf && !dMesmo) dAlt.push("data/" + this._nomeAnalitico(uf, "", true));
         if (uf && srv) dAlt.push(srv + "/analitico/" + this._nomeAnalitico(uf, "", true));
         var dEsp = this._espelhoAnalitico(uf, "", true);
         if (dEsp) dAlt.push(dEsp);
@@ -3311,11 +3335,6 @@
        *
        * Quando a competência carregada NÃO é a embarcada, ele fica para depois do
        * servidor — ali o servidor tem o mês certo e o local não. */
-      var embarcada = "";
-      try {
-        var estE = (this._estados || []).filter(function (e) { return String(e.uf).toUpperCase() === uf; })[0];
-        embarcada = String((estE && estE.competencia) || "").trim();
-      } catch (eE) {}
       var legadoLocal = uf ? ("data/" + this._nomeAnalitico(uf, "")) : null;
       var mesmoMes = !!(comp && embarcada && comp === embarcada);
       /* ORDEM FINAL, e ela é a coisa toda:
@@ -3334,6 +3353,12 @@
         if (arqBoot) alt.push(arqBoot);
       }
       if (live) alt.push(live);
+      /* o ESPELHO com a competência: o acervo (até 8 meses para trás) está lá
+         com o analítico de cada mês. Sem isto, com o servidor fora do ar, o
+         orçamento de licitação preso a uma data-base antiga caía no analítico
+         de outro mês. */
+      var espC = comp ? this._espelhoAnalitico(uf, comp, false) : null;
+      if (espC) alt.push(espC);
       if (!mesmoMes) {
         /* mês diferente: o de nome antigo é de OUTRA competência. Fica depois do
            servidor, que tem o mês certo — e só vale como último recurso, com o
@@ -3749,7 +3774,11 @@
     _temBasePropria: function () {
       try {
         var b = Store.lerBaseSinapi(Auth.empresaId());
-        return !!(b && b.dados && b.dados.length && b._origem !== "atualizacao-oficial");
+        if (!(b && b.dados && b.dados.length)) return false;
+        /* a MESMA regra da atualização — duas cópias dela já divergiram uma
+           vez (a do fetcher sem marca); agora é uma função só */
+        if (typeof Atualizacao !== "undefined" && Atualizacao.ehBaseOficial) return !Atualizacao.ehBaseOficial(b);
+        return b._origem !== "atualizacao-oficial";
       } catch (e) { return false; }
     },
 
@@ -3774,8 +3803,17 @@
             UI.fecharModal();
             /* sem a persistida, o boot lê a do pacote */
             self.carregarBaseSinapi().then(function () {
-              UI.toast("De volta à SINAPI oficial. Rode “Verificar atualização” para pegar a competência nova.", "ok");
+              UI.toast("De volta à SINAPI oficial. Buscando a competência mais nova…", "ok");
               self.render();
+              /* sem botão para isso: a varredura roda AGORA (a trava do dia é
+                 desfeita, senão quem já varreu hoje esperaria até amanhã com a
+                 base do pacote) */
+              try {
+                if (typeof Atualizacao !== "undefined" && Atualizacao.checarAuto) {
+                  try { localStorage.removeItem(Atualizacao.CHAVE_DIA); } catch (eD) {}
+                  Atualizacao.checarAuto();
+                }
+              } catch (eA) {}
             }).catch(function () { location.reload(); });
           } }
         ]);
@@ -3800,6 +3838,11 @@
       var opts = { competencia: (UI.el("imp-comp") || {}).value, uf: (UI.el("imp-uf") || {}).value };
       var r = Sinapi.importarTexto(texto, nome, opts);
       if (!r.ok) { UI.toast("Importação falhou: " + r.erro, "erro"); return; }
+      /* ⚠ IMPORTADA PELA PESSOA = BASE DELA, sempre. O JSON entra como veio:
+         um arquivo exportado de outra instalação (ou baixado do fetcher) pode
+         trazer `_origem: "atualizacao-oficial"`, e aí a próxima varredura
+         passaria por cima de uma tabela que alguém escolheu importar. */
+      r.pacote._origem = "importacao";
       var grav = Store.salvarBaseSinapi(Auth.empresaId(), r.pacote);
       UI.fecharModal();
       this.render();

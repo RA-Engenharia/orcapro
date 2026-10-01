@@ -577,8 +577,8 @@
      *
      * O sinal honesto é outro: comparar a competência instalada com a MAIS
      * NOVA QUE QUALQUER FONTE CONHECE, que a varredura já registrou.
-     *   · alguma fonte tem coisa mais nova  → isso é acionável, e o aviso diz
-     *     o que fazer (clicar em Verificar atualização);
+     *   · alguma fonte tem coisa mais nova  → o aviso diz por que ainda não
+     *     entrou (base própria, ou a falha da última tentativa automática);
      *   · você está na mais nova que existe → não é atraso seu, e calar é o
      *     certo. Só volta a avisar se ATÉ as fontes estiverem velhas demais,
      *     porque aí quem parou foi a coleta lá atrás;
@@ -612,9 +612,19 @@
 
       /* 1) EXISTE COISA MAIS NOVA — o único caso em que a pessoa pode agir */
       if (maisNova && maisNova > inst) {
+        /* sem botão (01/10/2026): o texto diz POR QUE ainda não entrou —
+           base própria (a oficial nunca passa por cima) ou falha da última
+           tentativa — em vez de mandar clicar num botão que não existe mais */
+        if (v && v.basePropria) {
+          return caixa('<b>Você usa uma base SINAPI própria</b> (competência <b>' + Util.esc(Atualizacao.fmtComp(inst)) +
+            '</b>). A oficial já está na <b>' + Util.esc(Atualizacao.fmtComp(maisNova)) + '</b>, mas nunca passa por cima de uma base que você importou. ' +
+            'Para voltar à oficial: <b>Importar base própria</b> → <b>Voltar para a oficial</b>.',
+            "#b45309", "rgba(234,88,12,.09)");
+        }
         return caixa('<b>Existe competência mais nova.</b> Você está na <b>' +
           Util.esc(Atualizacao.fmtComp(inst)) + '</b> e já saiu a <b>' + Util.esc(Atualizacao.fmtComp(maisNova)) +
-          '</b>. Clique em <b>Verificar atualização</b> aqui em cima — ou espere a varredura de amanhã, que aplica sozinha.',
+          '</b>. O app aplica sozinho na próxima abertura' +
+          (v && v.erro ? ' — a última tentativa falhou: ' + Util.esc(v.erro) : '') + '.',
           "#b45309", "rgba(234,88,12,.09)");
       }
 
@@ -637,7 +647,7 @@
       return caixa('<b>Base possivelmente atrasada.</b> A competência instalada é a <b>' +
         Util.esc(Atualizacao.fmtComp(inst)) + '</b> — ' + n + ' meses atrás do mês corrente, e a SINAPI é ' +
         'publicada mensalmente. A varredura ainda não rodou nesta máquina para dizer se existe algo mais novo; ' +
-        'clique em <b>Verificar atualização</b> para conferir agora.',
+        'ela roda sozinha alguns segundos depois de abrir o app (é preciso estar conectado à internet).',
         "#b45309", "rgba(234,88,12,.09)");
     },
 
@@ -687,21 +697,38 @@
       var comCanal = (typeof BasesCat !== "undefined")
         ? BasesCat.CATALOGO.filter(function (e) { return e.chaveStatus && !e.principal; })
         : [];
+      /* ⚠ SEM BOTÃO "VERIFICAR ATUALIZAÇÃO" (01/10/2026, pedido do Rogério:
+         "isso tem que subir automaticamente"). A SINAPI e toda base que o
+         servidor anuncia se atualizam na varredura diária
+         (Atualizacao.checarAuto / _varrerExtras); a linha só INFORMA. O que
+         ela não pode é calar uma falha: o resultado da última atualização
+         automática de cada base aparece aqui, inclusive o erro. */
+      var vEx = (typeof Atualizacao !== "undefined" && Atualizacao.ultimaVarreduraExtras) ? Atualizacao.ultimaVarreduraExtras() : null;
+      var resExtra = function (id) {
+        var r = vEx && (vEx.itens || []).filter(function (i) { return i.id === id; })[0];
+        if (!r) return "";
+        var quando = (typeof Atualizacao !== "undefined" && Atualizacao.fmtData) ? Atualizacao.fmtData(vEx.dia) : vEx.dia;
+        var fc = function (c) { return (typeof Atualizacao !== "undefined" && Atualizacao.fmtComp) ? Atualizacao.fmtComp(c) : c; };
+        return r.ok
+          ? '<span style="flex-basis:100%;font-size:11.5px;color:var(--verde)">Atualizada sozinha em ' + Util.esc(quando) + ': ' + Util.esc(fc(r.de)) + ' → ' + Util.esc(fc(r.para)) + '.</span>'
+          : '<span style="flex-basis:100%;font-size:11.5px;color:#b45309">A atualização automática de ' + Util.esc(quando) + ' (' + Util.esc(fc(r.de)) + ' → ' + Util.esc(fc(r.para)) + ') falhou: ' + Util.esc(r.erro || "erro") + '. A base atual foi mantida; o app tenta de novo amanhã.</span>';
+      };
+      var auto = '<span class="muted" style="margin-left:auto;font-size:11.5px">' + _icT("ciclo") + 'atualiza sozinha</span>';
       var atuLinhas = '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0;border-bottom:1px dashed var(--linha)">' +
         '<span class="pill sinapi">SINAPI</span><span style="font-size:12.5px">competência ativa: <b>' + Util.esc(compSin) + '</b> · ' + Util.esc(String(Sinapi.uf || "")) + '</span>' +
-        '<button class="btn sm primary" data-atu-base="SINAPI" style="margin-left:auto">' + _icT("reimportar") + 'Verificar atualização</button>' +
-        '<span class="muted" id="atu-st-SINAPI" style="flex-basis:100%;font-size:11.5px"></span></div>';
+        auto +
+        '<button class="btn sm ghost" data-acao="importar-sinapi" title="Usar uma tabela SINAPI sua (preços negociados). Base própria não é atualizada sozinha.">' + _icT("importar") + 'Importar base própria</button></div>';
       comCanal.forEach(function (e) {
         var inst = (lista || []).filter(function (b) { return String(b.fonte).toUpperCase() === e.id; })[0];
         var comp = inst ? (BasesCat.fmtVersao(inst.competencia) || "—") : "";
         atuLinhas += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0;border-bottom:1px dashed var(--linha)">' +
           '<span class="pill ' + Util.esc((inst && inst.cor) || "proprio") + '">' + Util.esc(e.nome) + '</span>' +
           '<span style="font-size:12.5px">' + (inst ? "competência ativa: <b>" + Util.esc(comp) + "</b> · " + Util.esc(inst.uf || "") : '<span class="muted">não instalada — instale nos botões ' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' abaixo</span>') + '</span>' +
-          '<button class="btn sm" data-atu-base="' + Util.esc(e.id) + '" style="margin-left:auto">' + _icT("reimportar") + 'Verificar atualização</button>' +
-          '<span class="muted" id="atu-st-' + Util.esc(e.id) + '" style="flex-basis:100%;font-size:11.5px"></span></div>';
+          (inst ? auto : '') +
+          (inst ? resExtra(e.id) : '') + '</div>';
       });
       return '<h3 style="margin:0 0 6px;display:flex;align-items:center">' + _icT("reimportar") + 'Atualização dos bancos de preço</h3>' +
-        '<p class="muted" style="font-size:12px;margin:0 0 8px">O sistema confere se há competência nova e aplica na hora. A SINAPI também se atualiza <b>sozinha</b>, <b>1× por dia</b>, em três fontes: o servidor OrçaPRO, o <b>espelho do app</b> (que a RA publica junto com o código) e o <b>fetcher local</b> do ERP (que fala com a CAIXA). Reabrir o app no mesmo dia não repete a varredura.</p>' +
+        '<p class="muted" style="font-size:12px;margin:0 0 8px">As tabelas se atualizam <b>sozinhas</b>, <b>1× por dia</b>, ao abrir o app: quando sai competência nova da SINAPI (onerada e desonerada), do SICRO, ORSE, IOPES ou GOINFRA, o app baixa e aplica sem você clicar em nada. Uma base <b>própria</b> que você importou nunca é substituída.</p>' +
         this._linhaVarredura() +
         '<div style="margin-bottom:16px">' + atuLinhas + '</div>' +
         '<p class="muted mb">Habilite/priorize bancos de preço. A busca de itens varre todas as bases <b>ativas</b> (badge mostra a origem). A SINAPI continua padrão.</p>' +
@@ -1040,30 +1067,14 @@
       var listaIlegivel = ilegiveis.some(function (m) { return m && m.entidade === "orcamentos"; });
       html += this.renderAvisoIlegivel(ilegiveis, !(baseInfo && baseInfo.admin === false));
       if (!ilegiveis.length && baseInfo && baseInfo.pausa) html += this.renderAvisoPausa(baseInfo.pausa, baseInfo.admin, baseInfo.pausaAntes);
-      // Banner da base SINAPI ativa
-      if (baseInfo) {
-        var origem = baseInfo.personalizada ? "base própria importada" : "base para novos orçamentos";
-        var ufs = baseInfo.ufs || [];
-        /* A UF é um SELETOR quando há mais de um estado instalado — trocar aqui
-           chama App.trocarEstadoSinapi e recarrega a base. Com um só estado, é
-           texto (nada a escolher) e o caminho de instalar mais fica em Tabelas.
-           ⚠ Isto é a base dos PRÓXIMOS orçamentos, não dos que já existem: cada
-           orçamento guarda a própria UF/competência (aparece no documento). */
-        var ufCtrl;
-        if (ufs.length > 1) {
-          ufCtrl = '<select id="lst-uf" class="btn sm" style="padding:4px 6px" title="Estado da base de preços para novos orçamentos">' +
-            ufs.map(function (u) {
-              return '<option value="' + Util.esc(u) + '"' + (u === String(baseInfo.uf).toUpperCase() ? ' selected' : '') + '>' + Util.esc(u) + '</option>';
-            }).join("") + '</select>';
-        } else {
-          ufCtrl = '<b>' + Util.esc(baseInfo.uf) + '</b>';
-        }
-        html += '<div class="card flex between mb" style="padding:12px 16px">' +
-          '<div><span class="pill sinapi">SINAPI</span> <b>' + Util.esc(baseInfo.competencia) + '</b> · ' + ufCtrl + ' · ' +
-          baseInfo.total.toLocaleString("pt-BR") + ' itens <span class="muted">(' + origem + ')</span></div>' +
-          '<div class="flex"><button class="btn sm" data-acao="atualizar">' + (typeof Icones !== 'undefined' ? Icones.get('ciclo', 15) : '') + ' Atualizar</button> ' +
-          '<button class="btn sm" data-acao="importar-sinapi">' + (typeof Icones !== 'undefined' ? Icones.get('importar', 15) : '') + ' Importar base SINAPI</button></div></div>';
-      }
+      /* ⚠ A BARRA DA SINAPI QUE FICAVA AQUI SAIU (01/10/2026, pedido do
+         Rogério: "essa aba não faz sentido"). Ela tinha três defeitos: o botão
+         "Atualizar" usava o fetcher local, que gravava a base SEM a marca de
+         oficial e a travava como "base própria" para sempre; o rótulo dizia
+         "base própria importada" para QUALQUER base gravada, inclusive a
+         atualização oficial; e a atualização já é automática. Cada orçamento
+         escolhe a sua UF e competência no assistente; importar uma base
+         própria ficou em 🗂 Tabelas, na linha da SINAPI. */
       html += '<div class="flex between mb"><h1 style="margin:0">Meus Orçamentos</h1>' +
                  /* "RECUPERAR" TEM PORTA PRÓPRIA (v1.1.212). Quem perdeu um orçamento
                     não procura "importar" — procura "recuperar", e por isso passava

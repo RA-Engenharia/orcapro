@@ -10232,7 +10232,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   /* devolve a promessa da fila: o arquivo da obra (.zip) só importa as vistas DEPOIS que as peças chegaram */
   S._abrirBytes = function (ab, nome, disc) { return enfileirar(function () { return carregarIFC(ab, nome || 'modelo.ifc', disc); }); };
   // modelos IFC atuais com bytes guardados (p/ subir pra nuvem) — sintéticos/editor ficam de fora
-  S._bytesModelos = function () { return S.modelos.filter(function (m) { return m._bytes && m._bytes.length; }).map(function (m) { return { nome: m.nome, disc: m.disciplina || '', bytes: m._bytes }; }); };
+  /* arquivoId (hash do conteúdo) vai junto: o link limpa o dinheiro do .ifc antes de enviar e troca o
+     arquivoId pelo do arquivo LIMPO — é ele que o celular calcula ao abrir (rvnuvem.limparDinheiroIfc) */
+  S._bytesModelos = function () { return S.modelos.filter(function (m) { return m._bytes && m._bytes.length; }).map(function (m) { return { nome: m.nome, disc: m.disciplina || '', bytes: m._bytes, arquivoId: m.versaoId || '' }; }); };
   function carregarExemplo() {
     // v1.1.97 — exemplo = modelo REAL de obra (Murumbir, RA Engenharia) da nuvem; atualizável sem
     // release e sem inchar o pacote. Offline/sem nuvem cai no exemplo embutido (bim/samples/exemplo.ifc).

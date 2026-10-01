@@ -141,8 +141,16 @@
          `entrega` tem `vps` e NAO tem `local`. */
       id: "SINAPI_DES", nome: "SINAPI desonerada", orgao: "SINAPI — encargos sociais COM desoneração (abas CCD/ICD da Referência da CAIXA)",
       regiao: "nacional", uf: "BR", localRotulo: "",
-      entrega: { vps: "sinapi-<UF>-2026-06-desonerada.json" },
-      chaveStatus: "sinapi", coleta: "manual",
+      /* ⚠ <COMP> E NÃO UM MÊS ESCRITO AQUI. Até 01/10/2026 o nome era
+         `sinapi-<UF>-2026-06-desonerada.json`: o servidor anunciava 08/2026, o
+         botão concluía "tem versão nova", baixava DE NOVO o arquivo de junho
+         e a linha seguia em 06/2026 — para sempre, sem erro nenhum. O mês sai
+         agora do que o servidor anuncia para ESTA base (`sinapiDes`, a
+         desonerada que existe de fato lá, que pode estar atrás da onerada); sem
+         resposta do servidor, cai no `versaoPacote`, que é o arquivo que
+         sempre existiu. */
+      entrega: { vps: "sinapi-<UF>-<COMP>-desonerada.json" },
+      chaveStatus: "sinapiDes", coleta: "diario",
       versaoPacote: "2026-06", itens: 324702, pesoMb: 3.12,
       /* as UFs saem do servidor, como no SICRO. Sem resposta, nao ha opcao —
          e a linha, sem `local`, nem se oferece para instalar. */
@@ -433,6 +441,18 @@
           if (vps) vps = String(vps).replace("<UF>", uf);
         }
       }
+      /* <COMP> no arquivo do SERVIDOR: a competência que o servidor anuncia
+         para ESTA base (ctx.servidor[chaveStatus]); sem anúncio, o
+         `versaoPacote` — o arquivo que sempre existiu. Só o caminho do
+         servidor: o local da SINAPI usa o manifesto, não este resolver. */
+      if (vps && String(vps).indexOf("<COMP>") >= 0) {
+        var anun = (e.chaveStatus && ctx && ctx.servidor && ctx.servidor[e.chaveStatus]) || null;
+        var compV = String((anun && anun.competencia) || e.versaoPacote || "");
+        var mC = /^(\d{2})\/(\d{4})$/.exec(compV);
+        if (mC) compV = mC[2] + "-" + mC[1];
+        if (!/^\d{4}-\d{2}$/.test(compV)) return null;   // sem mês válido não se monta nome de arquivo
+        vps = String(vps).replace("<COMP>", compV);
+      }
       // o remapeamento de preço dentro do arquivo (região do SETOP, direto/
       // comBDI da GOINFRA): é o 3º argumento de Bases.carregarInclusa
       var remap = "";
@@ -489,15 +509,19 @@
       /* Os dois campos que substituem o "atualiza sozinho" mentiroso. */
       var coletaServidor = e.coleta === "cron"
         ? "Coletor semanal no servidor da RA"
-        : (grau === AUSENTE ? "" : (e.entrega && e.entrega.autoral ? "" : "Publicada à mão pela RA"));
-      /* No app do cliente, hoje, SÓ a SINAPI se atualiza sozinha
-         (Atualizacao.checarAuto, atualizacao.js:118). Os extras dependem do
-         botão em 🗂 Tabelas. Enquanto for assim, nenhuma outra linha pode
-         dizer "sozinho". */
+        : (e.coleta === "diario" ? "Coletor diário no servidor da RA"
+          : (grau === AUSENTE ? "" : (e.entrega && e.entrega.autoral ? "" : "Publicada à mão pela RA")));
+      /* QUEM PODE DIZER "SOZINHO": a SINAPI (Atualizacao.checarAuto) e, desde
+         01/10/2026, toda base que o servidor ANUNCIA (`chaveStatus`) — a
+         varredura diária reinstala a instalada quando o servidor está à frente
+         (Atualizacao.planoExtras). Base sem anúncio no servidor (SETOP,
+         estaduais importadas) não tem como saber que existe versão nova; a
+         linha dela continua mandando a pessoa a 🗂 Tabelas. */
       var atualizacaoCliente = grau === AUSENTE ? ""
         : (e.entrega && e.entrega.autoral ? "Sua base — só muda quando você mexe"
           : (e.id === "SINAPI" ? "O app avisa e baixa sozinho"
-            : (grau === SERVIDOR ? "Você atualiza em 🗂 Tabelas (o servidor já tem a nova)" : "Você atualiza em 🗂 Tabelas")));
+            : (e.chaveStatus ? "O app atualiza sozinho (confere todo dia)"
+              : (grau === SERVIDOR ? "Você atualiza em 🗂 Tabelas (o servidor já tem a nova)" : "Você atualiza em 🗂 Tabelas"))));
 
       var rotulo = grau === AUSENTE ? "Sem fonte conectada"
         : (inst ? "Instalada" : (grau === SERVIDOR ? "Pronta — baixa do servidor" : "Pronta — vem no app"));

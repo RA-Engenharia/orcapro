@@ -20352,7 +20352,13 @@
           (trava
             ? '<div data-rv="trava" style="font-size:12px;color:#f0b94a;line-height:1.4;margin:10px 0">' + trava + '</div>'
             : '<div style="font-size:11px;color:#8fa3b8;line-height:1.4;margin:8px 0 10px">O arquivo .ifc ' + (modelos.length > 1 ? "dos " + modelos.length + " modelos " : "") + 'vai para a nuvem da RA pelo prazo escolhido; depois é apagado. Só quem tem o link acessa, e você pode revogar antes em Meus links.</div>') +
-          (chave && base ? '<button class="btn sm" data-rv="meus" style="width:100%;margin-bottom:8px">' + I("link") + ' Meus links (aberturas, apontamentos, revogar)</button>' : '');
+          (chave && base ? '<button class="btn sm" data-rv="meus" style="width:100%;margin-bottom:8px">' + I("link") + ' Meus links (aberturas, apontamentos, revogar)</button>' : '') +
+          /* PLACA DA OBRA: o QR permanente que vai impresso na placa (senha +
+             cadastro de quem entra). Só o ADMIN publica — é a vitrine da obra
+             para a rua, e quem decide prazo e senha é quem responde por ela. */
+          (chave && base ? '<div style="border-top:1px solid #24435f;margin:4px 0 8px;padding-top:10px">' +
+            '<button class="btn sm" data-rv="placa" style="width:100%"' + (self._rvPodePlaca() ? '' : ' disabled') + '>' + I("obra") + ' Placa da obra — QR permanente com senha</button>' +
+            '<div style="font-size:11px;color:#8fa3b8;margin-top:4px;line-height:1.4">' + Util.esc(self._rvPodePlaca() ? "Para imprimir na placa: o QR nunca muda. Quem lê digita a senha e se cadastra (nome, celular, empresa). Você decide se fica publicada, por quantos dias e a senha." : self._rvMotivoSemPlaca()) + '</div></div>' : '');
         /* QR da REDE LOCAL: só existe com servidor local respondendo IP. No
            PWA (github.io) não há servidor — o QR apontaria para o app vazio,
            que foi exatamente o QR que "não abriu". */
@@ -20381,6 +20387,7 @@
           if (k === "fechar") ov.remove();
           else if (k === "nuvem") { if (!trava) { ov.remove(); self._compartilharNuvemRV(op); } }
           else if (k === "meus") { ov.remove(); self._rvMeusLinks(); }
+          else if (k === "placa") { if (self._rvPodePlaca()) { ov.remove(); self._rvPlaca(); } }
           else if (k === "lan-copiar") { try { navigator.clipboard.writeText(lan.urls[0]); UI.toast("Endereço copiado.", "ok"); } catch (_) { UI.toast("Copie o endereço mostrado.", "info"); } }
           else if (k === "lan-imprimir") self._imprimirCartaoRV(lan.urls[0], (typeof QR !== "undefined") ? QR.svg(lan.urls[0], { tamanhoPx: 220, correcao: "M" }) : "", { nuvem: false });
         });
@@ -20527,9 +20534,12 @@
     },
     // um QR pro app público /rvapp/#rv?t=<token> — QUALQUER celular, em qualquer lugar, abre.
     // Honesto: o link vale o prazo escolhido e só quem tem ele acessa.
-    _compartilharNuvemRV: function (op) {
+    /* extra.placa = {slug?, senha?, dias?, cronograma, apontamentos}: o mesmo
+       envio, mas o link vira o modelo da PLACA DA OBRA (e não um QR avulso) */
+    _compartilharNuvemRV: function (op, extra) {
       var self = this;
       op = op || self._rvOpcoes();
+      var placa = extra && extra.placa ? extra.placa : null, semValores = 0;
       var base = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : "";
       var chave = (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "";
       if (!base) { UI.toast("Servidor de compartilhamento não configurado.", "erro"); return; }
@@ -20562,19 +20572,32 @@
         /* cota cheia tem SAÍDA: a lista de links para revogar os velhos */
         if (cota) self._rvMeusLinks();
       }
-      var enviados = [];
+      var enviados = [], novosIds = {};
       function subir(i) {
         if (i >= modelos.length) { criarToken(); return; }
-        setTxt("Enviando modelo " + (i + 1) + " de " + modelos.length + "…");
         var m = modelos[i];
-        fetch(base + "/rv/up?nome=" + encodeURIComponent(m.nome) + "&disc=" + encodeURIComponent(m.disc), {
-          method: "POST", headers: { "x-licenca": chave, "Content-Type": "application/octet-stream" }, body: m.bytes
-        }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
-          .then(function (res) {
-            if (!res.ok || !res.j.id) { var er = new Error(res.j.erro || "falha no envio"); er.cota = !!res.j.cota; throw er; }
-            enviados.push({ id: res.j.id, nome: m.nome, disc: m.disc });
-            subir(i + 1);
-          }).catch(function (e) { falhou("Não deu pra enviar: " + (e && e.message || e), e && e.cota); });
+        setTxt("Tirando valores de custo/venda do modelo " + (i + 1) + " de " + modelos.length + "…");
+        /* setTimeout: a tela pinta o recado antes de o laço segurar a aba (80 MB ≈ 2 s) */
+        setTimeout(function () {
+          /* ⚠ DINHEIRO NÃO SAI DO COMPUTADOR (rvnuvem.limparDinheiroIfc). E o hash
+             muda junto: o celular casa vistas e 4D pelo hash do arquivo que ELE
+             recebe — o limpo. Ver o cabeçalho da função. */
+          var lim = (typeof RvNuvem !== "undefined" && RvNuvem.limparDinheiroIfc) ? RvNuvem.limparDinheiroIfc(m.bytes) : { bytes: m.bytes, limpos: 0 };
+          if (lim.erro) { falhou("O modelo " + m.nome + " não é um IFC de texto (STEP). Exporte como .ifc e tente de novo."); return; }
+          semValores += lim.limpos || 0;
+          if (lim.limpos && m.arquivoId && typeof BimId !== "undefined" && BimId.versaoId) novosIds[m.arquivoId] = BimId.versaoId(lim.bytes, lim.bytes.length);
+          setTxt("Enviando modelo " + (i + 1) + " de " + modelos.length + "…");
+          fetch(base + "/rv/up?nome=" + encodeURIComponent(m.nome) + "&disc=" + encodeURIComponent(m.disc), {
+            method: "POST", headers: { "x-licenca": chave, "Content-Type": "application/octet-stream" }, body: lim.bytes
+          }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+            .then(function (res) {
+              if (!res.ok || !res.j.id) { var er = new Error(res.j.erro || "falha no envio"); er.cota = !!res.j.cota; throw er; }
+              /* o servidor limpa de novo como garantia; num arquivo já limpo ele diz 0 */
+              semValores += Number(res.j.semValores) || 0;
+              enviados.push({ id: res.j.id, nome: m.nome, disc: m.disc });
+              subir(i + 1);
+            }).catch(function (e) { falhou("Não deu pra enviar: " + (e && e.message || e), e && e.cota); });
+        }, 30);
       }
       function criarToken() {
         setTxt("Criando o link…");
@@ -20583,16 +20606,36 @@
              links → Trazer). Sem isso o servidor recusa apontamento no link e o
              celular nem mostra o Apontar: link de app antigo não promete o que
              o dono não vai receber. */
-          var corpo = { nome: (obra && obra.nome) || (modelos[0] && modelos[0].nome) || "Projeto", arquivos: enviados, dias: op.dias, obraId: self._bimSel || "", dados: dados, apontamentos: true };
+          /* o par {arquivoId, modeloId} vai com o hash do arquivo LIMPO (o que o celular calcula) */
+          (dados.modelos || []).forEach(function (mm) { if (novosIds[mm.arquivoId]) mm.arquivoId = novosIds[mm.arquivoId]; });
+          var corpo = { nome: (obra && obra.nome) || (modelos[0] && modelos[0].nome) || "Projeto", arquivos: enviados, dias: placa ? 30 : op.dias, obraId: self._bimSel || "", dados: dados, apontamentos: true };
+          resumo.semValores = semValores;
           fetch(base + "/rv/token", { method: "POST", headers: { "x-licenca": chave, "Content-Type": "application/json" }, body: JSON.stringify(corpo) })
             .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
             .then(function (res) {
               if (!res.ok || !res.j.token) { var er = new Error(res.j.erro || "falha ao criar o link"); er.cota = !!res.j.cota; throw er; }
+              if (placa) {
+                /* o link nasce com 30 dias e a PLACA estica para o prazo dela (até 365) */
+                setTxt("Ligando o modelo à placa…");
+                var cp = { token: res.j.token, nome: corpo.nome, obraId: corpo.obraId, cronograma: placa.cronograma !== false, apontamentos: placa.apontamentos === true };
+                if (placa.slug) cp.slug = placa.slug; else cp.publicado = true;
+                if (placa.senha) cp.senha = placa.senha;
+                if (placa.dias) cp.dias = placa.dias;
+                return self._rvPlacaPost("/rv/placa", cp).then(function (j) {
+                  if (ov.parentNode) ov.remove();
+                  UI.toast((placa.slug ? "Modelo da placa atualizado" : "Placa da obra publicada") + " — o QR é permanente." + (semValores ? " " + semValores + " valor(es) de custo/venda foram tirados do arquivo antes de sair." : ""), "ok");
+                  self._rvPlacaTela(j.placa, { senhaNova: placa.senha || "" });
+                }, function (e2) {
+                  /* o link criado não pode ficar solto ocupando a cota: revoga */
+                  fetch(base + "/rv/revogar", { method: "POST", headers: { "x-licenca": chave, "Content-Type": "application/json" }, body: JSON.stringify({ token: res.j.token }) }).catch(function () {});
+                  throw e2;
+                });
+              }
               if (ov.parentNode) ov.remove();
               var urlT = base + "/rvapp/#rv?t=" + res.j.token;
               self._rvGuardarLink(modelos, base, urlT, res.j.expira, res.j.token, op);
               self._modalNuvemRV(urlT, res.j.expira, res.j.token, resumo);
-            }).catch(function (e) { falhou("Não deu pra criar o link: " + (e && e.message || e), e && e.cota); });
+            }).catch(function (e) { falhou((placa ? "Não deu pra publicar a placa: " : "Não deu pra criar o link: ") + (e && e.message || e), e && e.cota); });
         });
       }
       subir(0);
@@ -20607,6 +20650,8 @@
       if (resumo) {
         if (resumo.vistas) junto.push(resumo.vistas + (resumo.vistas === 1 ? " ponto de vista" : " pontos de vista"));
         if (resumo.crono) junto.push("obra no tempo (4D), sem valores" + (resumo.semChave ? " — " + resumo.semChave + " peça(s) sem identificação ficaram de fora" : ""));
+        /* o que o servidor TIROU do arquivo — número que a pessoa confere */
+        if (resumo.semValores) junto.push(resumo.semValores + " valor(es) de custo/venda tirados do arquivo antes de sair");
       }
       var ov = document.getElementById("rv-qr-ov"); if (ov) ov.remove();
       ov = document.createElement("div"); ov.id = "rv-qr-ov";
@@ -20676,15 +20721,20 @@
         links.forEach(function (l, i) {
           var r = RvNuvem.resumoLink(l, agora), ob = nomeObra(l.obraId), tz = trazidas(l.token), novas = Math.max(0, (l.notas || 0) - tz);
           h += '<div style="border:1px solid #24435f;border-radius:12px;padding:10px 12px;margin-bottom:8px">' +
+            (l.placa ? '<span data-rv-placa="1" style="font-size:11px;font-weight:700;color:#0b1a2b;background:#7dd3fc;border-radius:999px;padding:1px 8px;margin-right:6px">PLACA DA OBRA</span>' : '') +
             '<b>' + Util.esc(r.titulo) + '</b>' + (ob && ob !== r.titulo ? ' <span style="font-size:11.5px;color:#9fb2c8">· obra ' + Util.esc(ob) + '</span>' : '') +
             '<div style="font-size:12px;color:' + (r.vencendo ? '#f0b94a' : '#cbd8e6') + ';margin-top:3px">' + Util.esc(r.validade) + ' · ' + Util.esc(r.aberturas) + '</div>' +
             (l.notas ? '<div style="font-size:12px;color:#cbd8e6">' + I("nota") + ' ' + Util.esc(r.notas) + (tz ? ' (' + tz + ' já na obra)' : '') + '</div>' : '') +
             (r.semApontar ? '<div data-rv-sem-apontar="1" style="font-size:12px;color:#9fb2c8">' + Util.esc(r.semApontar) + '</div>' : '') +
             '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">' +
-            '<button class="btn sm" data-rv="qr" data-i="' + i + '">QR</button>' +
-            '<button class="btn sm" data-rv="copiar" data-i="' + i + '">' + I("checklist") + ' Copiar</button>' +
+            /* ⚠ link de PLACA: o QR que vale é o da placa (permanente), e
+               revogar aqui deixaria a placa impressa sem modelo — a gestão
+               dele é pela tela da placa */
+            (l.placa ? '<button class="btn sm primary" data-rv="placa-abrir" data-i="' + i + '">' + I("obra") + ' Abrir a placa</button>'
+              : '<button class="btn sm" data-rv="qr" data-i="' + i + '">QR</button>' +
+                '<button class="btn sm" data-rv="copiar" data-i="' + i + '">' + I("checklist") + ' Copiar</button>') +
             (novas ? '<button class="btn sm primary" data-rv="trazer" data-i="' + i + '">' + I("importar") + ' Trazer ' + novas + ' apontamento(s) para a obra</button>' : '') +
-            '<button class="btn sm danger" data-rv="revogar" data-i="' + i + '">Revogar</button></div></div>';
+            (l.placa ? '' : '<button class="btn sm danger" data-rv="revogar" data-i="' + i + '">Revogar</button>') + '</div></div>';
         });
         ov.querySelector('[data-rv="caixa"]').innerHTML = h;
       }
@@ -20702,6 +20752,14 @@
         else if (k === "qr" && l) { ov.remove(); self._modalNuvemRV(url, l.expira, l.token); }
         else if (k === "copiar" && l) { try { navigator.clipboard.writeText(url); UI.toast("Link copiado.", "ok"); } catch (_) { UI.toast(url, "info"); } }
         else if (k === "trazer" && l) { b.disabled = true; b.textContent = "Trazendo…"; self._rvTrazerNotas(l, function () { carregar(); }); }
+        else if (k === "placa-abrir" && l) {
+          if (!self._rvPodePlaca()) { UI.toast(self._rvMotivoSemPlaca(), "erro"); return; }
+          self._rvPlacaPost("/rv/placas").then(function (j) {
+            var p = (j.placas || []).filter(function (x) { return x.slug === l.placa; })[0];
+            if (!p) { UI.toast("A placa deste link não existe mais.", "erro"); return; }
+            ov.remove(); self._rvPlacaTela(p);
+          }).catch(function (e5) { UI.toast("Não consegui abrir a placa: " + e5.message, "erro"); });
+        }
         else if (k === "revogar" && l) {
           var faltam = Math.max(0, (l.notas || 0) - trazidas(l.token));
           /* ⚠ revogar apaga os apontamentos no servidor: o que ainda não veio
@@ -20731,7 +20789,9 @@
       try { obraId = (l.obraId && Store.obter(eid(), "obras", l.obraId)) ? l.obraId : (self._bimSel || ""); } catch (e) { obraId = self._bimSel || ""; }
       if (!obraId) { UI.toast("Não sei de que obra é este link. Abra a obra no BIM e tente de novo.", "erro"); if (cb) cb(); return; }
       function paraDataUrl(blob) { return new Promise(function (ok, falha) { var fr = new FileReader(); fr.onload = function () { ok(fr.result); }; fr.onerror = falha; fr.readAsDataURL(blob); }); }
-      fetch(base + "/rv/notas/" + l.token, { cache: "no-store" })
+      /* a licença vai junto: o link de PLACA só entrega os apontamentos ao dono (bim-rv v5) */
+      var licH = { "x-licenca": (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "" };
+      fetch(base + "/rv/notas/" + l.token, { cache: "no-store", headers: licH })
         .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.erro || "HTTP " + r.status); return j; }); })
         .then(function (j) {
           var existentes = (Store.listar(eid(), "bim_vistas") || []).filter(function (v) { return String(v.obraId || "") === String(obraId); });
@@ -20741,7 +20801,7 @@
               var rec = RvNuvem.notaParaVista(nota, { token: l.token, obraId: obraId, nomeLink: l.nome });
               rec.autor = "Campo · " + (nota.autor || "");
               var foto = !nota.foto ? Promise.resolve(null)
-                : fetch(base + "/rv/nf/" + l.token + "/" + nota.id).then(function (r) { if (!r.ok) throw new Error("foto"); return r.blob(); })
+                : fetch(base + "/rv/nf/" + l.token + "/" + nota.id, { headers: licH }).then(function (r) { if (!r.ok) throw new Error("foto"); return r.blob(); })
                   .then(paraDataUrl).then(function (d) { return (typeof Fotos !== "undefined" && Fotos.guardar) ? Fotos.guardar(d, "Apontamento: " + String(nota.texto || "").slice(0, 60)) : null; })
                   .catch(function () { semFoto++; return null; });
               return foto.then(function (ref) {
@@ -20759,6 +20819,150 @@
           });
         })
         .catch(function (e) { UI.toast("Não consegui trazer os apontamentos: " + e.message, "erro"); if (cb) cb(0); });
+    },
+    /* =================================================================
+     * PLACA DA OBRA — o QR PERMANENTE que vai impresso na placa.
+     * O servidor (bim-rv v5) guarda a placa com um código fixo; o modelo, a
+     * senha e o prazo mudam por baixo e o QR impresso continua valendo.
+     * Quem lê o QR digita a senha e se cadastra (nome, celular, empresa ou
+     * CNPJ). ⚠ Só ADMIN: prazo, senha e o que vai para a rua são decisão de
+     * quem responde pela obra — a guarda é na função, não só no botão.
+     * ================================================================= */
+    /* ⚠ ADMIN OU QUEM TEM A GESTÃO DA OBRA (permissão editaGestao): o gestor
+       contratado opera a obra na conta do cliente sem ser admin dela — e é ele
+       quem responde pela placa junto com o dono da conta (pedido de 01/10/2026:
+       "eu ou os usuários adm"). Usuário comum, não. */
+    _rvPodePlaca: function () {
+      var pode = typeof Auth !== "undefined" && ((Auth.podeEditarGestao && Auth.podeEditarGestao()) || (Auth.ehAdmin && Auth.ehAdmin()));
+      return !!(pode && this._bimSel && typeof RvNuvem !== "undefined" && RvNuvem.validarVisitante);
+    },
+    _rvMotivoSemPlaca: function () {
+      var pode = typeof Auth !== "undefined" && ((Auth.podeEditarGestao && Auth.podeEditarGestao()) || (Auth.ehAdmin && Auth.ehAdmin()));
+      if (!pode) return "Só o administrador da conta ou quem tem a gestão da obra publica a placa.";
+      if (!this._bimSel) return "Selecione a obra no BIM para publicar a placa dela.";
+      return "A placa precisa do OrçaPRO atualizado (módulo do link).";
+    },
+    _rvPlacaPost: function (rota, corpo) {
+      var base = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : "";
+      var chave = (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "";
+      return fetch(base + rota, { method: corpo ? "POST" : "GET", headers: corpo ? { "x-licenca": chave, "Content-Type": "application/json" } : { "x-licenca": chave }, body: corpo ? JSON.stringify(corpo) : undefined, cache: "no-store" })
+        .then(function (r) { return r.json().then(function (j) { if (!r.ok) { var e = new Error(j.erro || "HTTP " + r.status); e.semModelo = !!j.semModelo; e.cota = !!j.cota; throw e; } return j; }); });
+    },
+    /* a placa DESTA obra (uma por obra): mostra a tela de gestão, ou a de criar */
+    _rvPlaca: function () {
+      var self = this;
+      if (!self._rvPodePlaca()) { UI.toast(self._rvMotivoSemPlaca(), "erro"); return; }
+      UI.toast("Buscando a placa desta obra…", "info");
+      self._rvPlacaPost("/rv/placas").then(function (j) {
+        var p = (j.placas || []).filter(function (x) { return String(x.obraId || "") === String(self._bimSel || ""); })[0] || null;
+        self._rvPlacaTela(p);
+      }).catch(function (e) { UI.toast("Não consegui ler as placas: " + e.message + ". Confira a internet.", "erro"); });
+    },
+    _rvPlacaTela: function (p, info) {
+      var self = this; info = info || {};
+      if (!self._rvPodePlaca()) { UI.toast(self._rvMotivoSemPlaca(), "erro"); return; }
+      var I = function (n) { return (typeof Icones !== "undefined") ? Icones.get(n, 15) : ""; };
+      var ov = document.getElementById("rv-qr-ov"); if (ov) ov.remove();
+      ov = document.createElement("div"); ov.id = "rv-qr-ov";
+      ov.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(4,12,22,.82);display:flex;align-items:center;justify-content:center;padding:16px";
+      var extra = self._rvExtrasDisponiveis();
+      var modelos = (typeof BIM !== "undefined" && BIM.bytesModelos) ? BIM.bytesModelos() : [];
+      var opDias = function (sel) { return RvNuvem.PLACA_DIAS.map(function (d) { return '<option value="' + d + '"' + (d === sel ? " selected" : "") + '>' + d + ' dias</option>'; }).join("") + '<option value="outro">outro…</option>'; };
+      var caixa = '<div style="background:#0f2740;border:1px solid #24435f;border-radius:16px;max-width:480px;width:100%;padding:20px;color:#dbe8f5;box-shadow:0 20px 60px rgba(0,0,0,.5);max-height:92vh;overflow:auto">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-size:15px">' + I("obra") + ' Placa da obra</b><button class="btn sm" data-pl="fechar">' + I("fechar") + '</button></div>';
+      var h;
+      if (!p) {
+        h = caixa + '<div style="font-size:12.5px;color:#cbd8e6;line-height:1.5;margin-bottom:10px">O QR desta tela vai <b>impresso na placa da obra</b> e nunca muda. Quem ler digita a <b>senha</b> e faz um cadastro rápido (nome, celular, quem é na obra). Dinheiro nunca aparece: o servidor tira custo e venda do arquivo antes de guardar.</div>' +
+          '<label style="display:block;font-size:12.5px;margin:8px 0 3px"><b>Senha de acesso</b> <span style="color:#8fa3b8">(' + RvNuvem.SENHA_MIN + ' a ' + RvNuvem.SENHA_MAX + ' caracteres — anote: depois ela não aparece mais)</span></label>' +
+          '<input class="inp" data-pl="senha" maxlength="64" autocomplete="off" style="width:100%" placeholder="ex.: Obra@2026">' +
+          '<label style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12.5px;margin-top:10px"><b>Fica publicada por</b><select class="inp" data-pl="dias" style="width:140px">' + opDias(RvNuvem.PLACA_DIAS_PADRAO) + '</select></label>' +
+          '<input class="inp" data-pl="dias-n" type="number" min="1" max="' + RvNuvem.PLACA_DIAS_MAX + '" placeholder="dias (1 a ' + RvNuvem.PLACA_DIAS_MAX + ')" style="width:100%;display:none;margin-top:6px">' +
+          '<label style="display:flex;gap:8px;align-items:flex-start;font-size:12.5px;margin-top:10px;color:' + (extra.crono ? "#cbd8e6" : "#6b7f94") + '"><input type="checkbox" data-pl="crono"' + (extra.crono ? " checked" : " disabled") + '><span><b>Mostrar o cronograma</b> (obra no tempo e lista de etapas, SEM valores)' + (extra.crono ? "" : '<br><span style="font-size:11px">' + Util.esc(extra.cronoMotivo) + '</span>') + '</span></label>' +
+          '<label style="display:flex;gap:8px;align-items:flex-start;font-size:12.5px;margin-top:6px;color:#cbd8e6"><input type="checkbox" data-pl="notas"><span><b>Receber apontamentos</b> de quem entrar (texto e foto no modelo)</span></label>' +
+          '<div style="font-size:11.5px;color:#8fa3b8;margin:10px 0">Vai: ' + Util.esc(modelos.length + (modelos.length === 1 ? " modelo aberto" : " modelos abertos") + (extra.vistas ? " · " + extra.vistas + " ponto(s) de vista" : "") + " · nome e logo da empresa") + '.</div>' +
+          '<button class="btn primary longo" data-pl="criar" style="width:100%;padding:12px"' + (modelos.length ? '' : ' disabled') + '>' + I("nuvem") + ' Publicar a placa</button>' +
+          (modelos.length ? '' : '<div style="font-size:12px;color:#f0b94a;margin-top:8px">Abra o modelo .ifc da obra pelo + IFC antes (o que veio do guardado não tem o arquivo).</div>') + '</div>';
+      } else {
+        var r = RvNuvem.resumoPlaca(p), svg = (typeof QR !== "undefined") ? QR.svg(p.url, { tamanhoPx: 220, correcao: "H" }) : "";
+        var cor = r.estado === "no ar" ? "#22c55e" : r.estado === "despublicada" ? "#f0b94a" : "#ef4444";
+        h = caixa + '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><b>' + Util.esc(r.titulo) + '</b><span data-pl-estado="' + Util.esc(r.estado) + '" style="font-size:11.5px;font-weight:700;color:#0b1a2b;background:' + cor + ';border-radius:999px;padding:2px 9px">' + Util.esc(r.estado.toUpperCase()) + '</span></div>' +
+          '<div style="font-size:12px;color:' + (r.vencendo ? "#f0b94a" : "#cbd8e6") + '">' + Util.esc(r.validade) + '</div>' +
+          '<div style="font-size:12px;color:#cbd8e6;margin-bottom:10px">' + I("pessoas") + ' ' + Util.esc(r.visitantes) + '</div>' +
+          (info.senhaNova ? '<div style="font-size:12.5px;background:rgba(22,163,74,.18);border:1px solid #16a34a;border-radius:10px;padding:8px 10px;margin-bottom:10px">Senha desta placa: <b data-pl="senha-vista">' + Util.esc(info.senhaNova) + '</b> — anote: depois ela não aparece mais.</div>' : '') +
+          '<div style="background:#fff;border-radius:12px;padding:14px;display:flex;justify-content:center">' + (svg || '<span style="color:#333">QR indisponível</span>') + '</div>' +
+          '<div style="font-size:12px;color:#9fb2c8;margin-top:8px;word-break:break-all"><b>Endereço permanente:</b> <span data-pl="url">' + Util.esc(p.url) + '</span></div>' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn sm primary" data-pl="baixar-qr" style="flex:1">' + I("baixar") + ' Baixar o QR para a gráfica (SVG)</button><button class="btn sm" data-pl="copiar" style="flex:1">' + I("copiar") + ' Copiar endereço</button></div>' +
+          '<div style="border-top:1px solid #24435f;margin-top:12px;padding-top:10px;display:grid;gap:8px">' +
+          '<button class="btn sm' + (p.publicado ? '' : ' primary') + '" data-pl="publicar">' + (p.publicado ? I("proibido") + ' Despublicar (ninguém entra até publicar de novo)' : I("olho") + ' Publicar de novo') + '</button>' +
+          '<div style="display:flex;gap:6px;align-items:center"><select class="inp" data-pl="dias" style="flex:1">' + opDias(p.dias) + '</select><input class="inp" data-pl="dias-n" type="number" min="1" max="' + RvNuvem.PLACA_DIAS_MAX + '" placeholder="dias" style="width:90px;display:none"><button class="btn sm" data-pl="prazo">' + I("calendario") + ' Fica publicada (a partir de hoje)</button></div>' +
+          '<div style="display:flex;gap:6px;align-items:center"><input class="inp" data-pl="senha" maxlength="64" autocomplete="off" placeholder="Senha nova" style="flex:1"><button class="btn sm" data-pl="trocar-senha">' + I("chave") + ' Trocar a senha</button></div>' +
+          '<label style="display:flex;gap:8px;font-size:12.5px;color:#cbd8e6"><input type="checkbox" data-pl="crono"' + (p.cronograma ? " checked" : "") + '> Mostrar o cronograma (sem valores)</label>' +
+          '<label style="display:flex;gap:8px;font-size:12.5px;color:#cbd8e6"><input type="checkbox" data-pl="notas"' + (p.apontamentos ? " checked" : "") + '> Receber apontamentos de quem entrar</label>' +
+          '<button class="btn sm" data-pl="atualizar"' + (modelos.length ? '' : ' disabled title="Abra o .ifc pelo + IFC primeiro"') + '>' + I("ciclo") + ' Atualizar o modelo (envia o que está aberto agora; o QR continua o mesmo)</button>' +
+          '<button class="btn sm danger" data-pl="apagar">' + I("lixeira") + ' Apagar a placa</button>' +
+          '</div>' +
+          (p.temModelo ? '' : '<div style="font-size:12px;color:#f0b94a;margin-top:8px">Esta placa está sem modelo (o prazo venceu ou o link foi revogado). Use "Atualizar o modelo": o QR impresso continua valendo.</div>') +
+          '<div style="font-size:11px;color:#8fa3b8;line-height:1.45;margin-top:10px">Quem entra pela placa vê o modelo, os pontos de vista e — se você deixar — o cronograma, sem valor nenhum. Os cadastros de quem entrou ficam com a RA Engenharia Especial (Política de privacidade, item 4.15).</div></div>';
+      }
+      ov.innerHTML = h;
+      document.body.appendChild(ov);
+      function q(k) { return ov.querySelector('[data-pl="' + k + '"]'); }
+      function dias() { var sel = q("dias"); if (!sel) return 0; if (sel.value === "outro") { var n = Math.floor(Number(q("dias-n").value)); return n >= 1 && n <= RvNuvem.PLACA_DIAS_MAX ? n : 0; } return Number(sel.value) || 0; }
+      function op() { var o = self._rvOpcoes(); o.marca = true; o.vistas = true; o.crono = !!(q("crono") && q("crono").checked); return o; }
+      function mudar(corpo, txtOk) {
+        return self._rvPlacaPost("/rv/placa", corpo).then(function (j) { UI.toast(txtOk, "ok"); self._rvPlacaTela(j.placa, { senhaNova: corpo.senha || "" }); })
+          .catch(function (e) { UI.toast("Não consegui mudar a placa: " + e.message, "erro"); });
+      }
+      ov.addEventListener("change", function (e) {
+        var k = e.target.getAttribute && e.target.getAttribute("data-pl");
+        if (k === "dias") { var n = q("dias-n"); if (n) n.style.display = e.target.value === "outro" ? "block" : "none"; }
+        if (p && (k === "crono" || k === "notas")) mudar(k === "crono" ? { slug: p.slug, cronograma: !!e.target.checked } : { slug: p.slug, apontamentos: !!e.target.checked },
+          k === "crono" ? (e.target.checked ? "O cronograma aparece para quem entrar." : "O cronograma não aparece mais.") : (e.target.checked ? "Quem entrar pode deixar apontamentos." : "A placa não recebe mais apontamentos."));
+      });
+      ov.addEventListener("click", function (e) {
+        if (e.target === ov) { ov.remove(); return; }
+        var b = e.target.closest("[data-pl]"); if (!b || b.tagName === "INPUT" || b.tagName === "SELECT") return;
+        var k = b.getAttribute("data-pl");
+        if (k === "fechar") return ov.remove();
+        if (k === "criar") {
+          var sn = q("senha").value, er = RvNuvem.validarSenhaPlaca(sn), d = dias();
+          if (er) { UI.toast(er, "erro"); q("senha").focus(); return; }
+          if (!d) { UI.toast("Diga por quantos dias a placa fica publicada (1 a " + RvNuvem.PLACA_DIAS_MAX + ").", "erro"); return; }
+          ov.remove();
+          return self._compartilharNuvemRV(op(), { placa: { senha: sn, dias: d, cronograma: op().crono, apontamentos: !!q("notas").checked } });
+        }
+        if (!p) return;
+        if (k === "copiar") { try { navigator.clipboard.writeText(p.url); UI.toast("Endereço copiado.", "ok"); } catch (_) { UI.toast(p.url, "info"); } return; }
+        if (k === "baixar-qr") {
+          /* vetor, correção H (placa ao tempo), margem de 4 módulos: a gráfica amplia sem perder */
+          var sv = (typeof QR !== "undefined") ? QR.svg(p.url, { tamanhoPx: 1000, correcao: "H", margemModulos: 4 }) : "";
+          if (!sv) { UI.toast("O gerador de QR não carregou.", "erro"); return; }
+          try {
+            var a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([sv], { type: "image/svg+xml" }));
+            a.download = "QR-placa-" + String(p.nome || "obra").replace(/[^\w\-]+/g, "-").slice(0, 40) + ".svg"; document.body.appendChild(a); a.click(); a.remove();
+            UI.toast("QR baixado (vetor): mande à gráfica junto com a arte da placa.", "ok");
+          } catch (e2) { UI.toast("Não consegui baixar o QR: " + e2.message, "erro"); }
+          return;
+        }
+        if (k === "publicar") return mudar({ slug: p.slug, publicado: !p.publicado }, p.publicado ? "Placa despublicada: ninguém entra até você publicar de novo." : "Placa publicada de novo.");
+        if (k === "prazo") { var dd = dias(); if (!dd) { UI.toast("Diga quantos dias (1 a " + RvNuvem.PLACA_DIAS_MAX + ").", "erro"); return; } return mudar({ slug: p.slug, dias: dd }, "A placa fica publicada por " + dd + " dias a partir de hoje."); }
+        if (k === "trocar-senha") {
+          var s2 = q("senha").value, e3 = RvNuvem.validarSenhaPlaca(s2);
+          if (e3) { UI.toast(e3, "erro"); return; }
+          if (!confirm("Trocar a senha da placa?\n\nQuem já entrou com a senha antiga vai precisar digitar a nova.")) return;
+          return mudar({ slug: p.slug, senha: s2 }, "Senha trocada.");
+        }
+        if (k === "atualizar") {
+          if (!confirm("Enviar o modelo aberto agora para a placa?\n\nO QR impresso continua o mesmo; quem já entrou vê o modelo novo sem se cadastrar de novo.")) return;
+          ov.remove();
+          return self._compartilharNuvemRV(op(), { placa: { slug: p.slug, cronograma: p.cronograma, apontamentos: p.apontamentos } });
+        }
+        if (k === "apagar") {
+          if (!confirm('Apagar a placa "' + (p.nome || "obra") + '"?\n\nO QR impresso deixa de abrir (vai dizer "placa não encontrada") e o modelo sai do servidor. Isso não tem volta.')) return;
+          return self._rvPlacaPost("/rv/placa-apagar", { slug: p.slug }).then(function () { ov.remove(); UI.toast("Placa apagada.", "ok"); })
+            .catch(function (e4) { UI.toast("Não consegui apagar: " + e4.message, "erro"); });
+        }
+      });
     },
     // 📕 Quantitativo ilustrado — caderno impresso: foto de cada família, descrição,
     // dimensões e quantidade principal (área/comprimento/unidade) do projeto inteiro

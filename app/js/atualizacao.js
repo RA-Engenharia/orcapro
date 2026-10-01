@@ -63,8 +63,99 @@
     _basePropriaDoCliente: function () {
       try {
         var b = (typeof Store !== "undefined" && Store.lerBaseSinapi) ? Store.lerBaseSinapi(Auth.empresaId()) : null;
-        return !!(b && b.dados && b.dados.length && b._origem !== "atualizacao-oficial");
+        return !!(b && b.dados && b.dados.length && !this.ehBaseOficial(b));
       } catch (eB) { return false; }
+    },
+
+    /* A base gravada veio de uma fonte OFICIAL (substituível pela próxima
+     * competência) ou é do cliente (intocável)?
+     *
+     * ⚠ O FETCHER GRAVAVA SEM A MARCA (até 01/10/2026). `baixar()` salvava o
+     *   pacote da CAIXA sem `_origem`; daí em diante a varredura concluía
+     *   "base própria, não mexo" e a SINAPI daquela empresa nunca mais se
+     *   atualizava sozinha — calada, com o app dizendo que se atualiza. O
+     *   pacote do fetcher tem assinatura própria (`tipo: "composicoes"` e o
+     *   endereço do ZIP da CAIXA em `fonte`), e é por ela que a base antiga é
+     *   reconhecida. A importação manual passou a gravar `_origem:
+     *   "importacao"`, então o que a pessoa escolheu importar nunca cai aqui,
+     *   nem que o arquivo dela seja um JSON do fetcher. */
+    ehBaseOficial: function (b) {
+      if (!b) return false;
+      if (b._origem === "atualizacao-oficial") return true;
+      if (b._origem) return false;
+      return String(b.tipo || "") === "composicoes" && /^https?:\/\/(www\.)?caixa\.gov\.br\//i.test(String(b.fonte || ""));
+    },
+
+    /* =================================================================
+     * OS EXTRAS SE ATUALIZAM SOZINHOS (01/10/2026)
+     *
+     * Até aqui só a SINAPI andava sozinha; SICRO, ORSE, IOPES, GOINFRA e a
+     * SINAPI desonerada dependiam de alguém abrir 🗂 Tabelas e clicar em
+     * "Verificar atualização" linha por linha. O servidor já anunciava a
+     * competência nova de cada uma — faltava o app agir.
+     *
+     * PLANO PURO: recebe o que está instalado, o catálogo e o anúncio do
+     * servidor, e devolve O QUE reinstalar. Só entra base que:
+     *   · está INSTALADA (o app não instala banco que a pessoa não escolheu);
+     *   · tem anúncio no servidor (`chaveStatus`);
+     *   · o servidor está À FRENTE — `cmpVersao === 1`. Competência que não
+     *     dá para comparar (a SEINFRA numera, "028.1") devolve null e NÃO
+     *     entra: "não sei comparar" nunca vira "tem versão nova".
+     * A variante instalada vai junto (`sel`): atualizar a competência não pode
+     * trocar a região do SETOP nem o regime da GOINFRA pelas costas. */
+    planoExtras: function (instaladas, catalogo, status, cmpVersao) {
+      var plano = [];
+      (catalogo || []).forEach(function (e) {
+        if (!e || !e.chaveStatus || e.principal || e.id === "SINAPI") return;
+        var srv = status && status[e.chaveStatus];
+        if (!srv || !srv.competencia) return;
+        var inst = (instaladas || []).filter(function (b) { return String((b && b.fonte) || "").toUpperCase() === e.id; })[0];
+        if (!inst || !inst.competencia) return;
+        if (cmpVersao(srv.competencia, inst.competencia) !== 1) return;
+        plano.push({ id: e.id, nome: e.nome, sel: inst.sel || null, de: inst.competencia, para: srv.competencia, pesoMb: e.pesoMb || 0 });
+      });
+      return plano;
+    },
+
+    CHAVE_DIA_EXTRAS: "orcapro:bases:check-extras",
+    CHAVE_EXTRAS: "orcapro:bases:extras",
+
+    ultimaVarreduraExtras: function () {
+      try { return JSON.parse(localStorage.getItem(this.CHAVE_EXTRAS) || "null"); } catch (e) { return null; }
+    },
+
+    /* A fiação: uma vez por dia, com a mesma trava de dia da SINAPI (carimba
+     * só depois de o servidor responder). Reinstala em FILA, uma de cada vez:
+     * duas gravações simultâneas do multi-base disputariam o mesmo registro. */
+    _varrerExtras: function (hoje) {
+      var self = this;
+      try { if (localStorage.getItem(self.CHAVE_DIA_EXTRAS) === hoje) return Promise.resolve(null); } catch (e) { return Promise.resolve(null); }
+      if (typeof Bases === "undefined" || typeof BasesCat === "undefined" || !Bases.instalar) return Promise.resolve(null);
+      return self.statusServidor().then(function (st) {
+        var plano = self.planoExtras(Bases.lista(), BasesCat.CATALOGO, st, function (a, b) { return BasesCat.cmpVersao(a, b); });
+        var reg = { dia: hoje, itens: [] };
+        var fila = Promise.resolve();
+        plano.forEach(function (p) {
+          fila = fila.then(function () {
+            return Bases.instalar(p.id, p.sel, { pesoMb: p.pesoMb, ctx: { servidor: st } }).then(function (r) {
+              reg.itens.push({ id: p.id, nome: p.nome, de: p.de, para: (r && r.competencia) || p.para, ok: true, itens: (r && r.total) || 0 });
+            }, function (err) {
+              reg.itens.push({ id: p.id, nome: p.nome, de: p.de, para: p.para, ok: false, erro: (err && err.message) || "falha" });
+            });
+          });
+        });
+        return fila.then(function () {
+          try { localStorage.setItem(self.CHAVE_EXTRAS, JSON.stringify(reg)); } catch (e) {}
+          try { localStorage.setItem(self.CHAVE_DIA_EXTRAS, hoje); } catch (e) {}
+          var feitas = reg.itens.filter(function (i) { return i.ok; });
+          if (feitas.length && typeof UI !== "undefined" && UI.toast) {
+            UI.toast("Tabelas atualizadas sozinhas: " + feitas.map(function (i) {
+              return i.nome + " " + self.fmtComp(i.de) + " → " + self.fmtComp(i.para);
+            }).join(" · ") + ".", "ok");
+          }
+          return reg;
+        });
+      }).catch(function () { return null; });   // sem servidor: tenta na próxima abertura
     },
 
     /* Atualiza a base SINAPI da UF ativa para a competência do servidor.
@@ -171,8 +262,11 @@
         if (typeof Auth === "undefined" || !Auth.usuario()) return;
         if (global.App && global.App._demo) return;
         hoje = new Date().toISOString().slice(0, 10);
-        if (localStorage.getItem(self.CHAVE_DIA) === hoje) return;
       } catch (eL) { return; }
+      /* os extras têm a trava de dia DELES: um servidor que falhou para a
+         SINAPI não pode queimar o dia das outras tabelas, e vice-versa */
+      try { self._varrerExtras(hoje); } catch (eX) {}
+      try { if (localStorage.getItem(self.CHAVE_DIA) === hoje) return; } catch (eL2) { return; }
 
       var uf = "";
       try { uf = String((global.App && global.App._baseUf) || Sinapi.uf || CONFIG.sinapi.ufPadrao).toUpperCase(); } catch (eU) {}
@@ -508,6 +602,10 @@
           if (!pacote || !pacote.dados || !pacote.dados.length) {
             throw new Error("O servidor devolveu um pacote vazio para " + uf + " " + mes + " — a base atual foi mantida.");
           }
+          /* ⚠ É A CAIXA, NÃO É BASE PRÓPRIA: sem esta marca a varredura passava
+             a tratar a SINAPI baixada pelo fetcher como base do cliente e
+             nunca mais a atualizava (ver ehBaseOficial). */
+          pacote._origem = "atualizacao-oficial";
           if (typeof Sinapi !== "undefined") Sinapi.carregarDe(pacote);
           var grav = { ok: true };
           if (typeof Store !== "undefined" && typeof Auth !== "undefined") grav = Store.salvarBaseSinapi(Auth.empresaId(), pacote) || { ok: true };

@@ -308,6 +308,13 @@
       if (typeof BasesCat === "undefined") return Promise.reject(new Error("catálogo indisponível"));
       var e = BasesCat.get(catId);
       if (!e) return Promise.reject(new Error("banco fora do catálogo: " + catId));
+      /* ⚠ SEM CONTEXTO, O ÚLTIMO ANÚNCIO DO SERVIDOR. O arquivo da SINAPI
+         desonerada tem a competência no nome (<COMP>), que sai do que o
+         servidor anuncia. O botão de instalar não passa contexto nenhum — e
+         sem isto ele montaria sempre o nome do mês embarcado (06/2026). */
+      if (!opts.ctx) {
+        try { if (typeof Atualizacao !== "undefined" && Atualizacao._ultimoStatus) opts.ctx = { servidor: Atualizacao._ultimoStatus }; } catch (eCtx) {}
+      }
       var av = BasesCat.avaliar(e, opts.ctx || {});
       // ⚠ porta fechada por dentro: banco sem fonte não instala nem se alguém
       // chamar isto na mão pelo console
