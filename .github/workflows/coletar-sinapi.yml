@@ -15,11 +15,22 @@ name: Coletar SINAPI
 # inteira na varredura diária do dia seguinte — app instalado, PWA,
 # qualquer UF, sem ninguém clicar em nada.
 #
-# ⚠ A JANELA É DE 5 COMPETÊNCIAS, e isso é requisito de licitação, não
+# ⚠ A JANELA É DE 6 COMPETÊNCIAS, e isso é requisito de licitação, não
 #   economia de espaço: orçamento é preso à data-base do edital, e quem
 #   abriu processo em março continua orçando em março. `--podar` remove o
 #   que sai da janela para o repositório não crescer sem fim (cada
 #   competência pesa ~31 MB comprimida).
+#   Era 5. Passou a 6 em 01/10/2026, quando a 08/2026 entrou à mão sem
+#   poda: com 5, a primeira coleta automática apagaria a 03/2026, que já
+#   estava oferecida aos clientes. Competência some do acervo só quando
+#   alguém decide — não como efeito colateral de um número.
+#
+# ⚠ ESTE NÃO É MAIS O ÚNICO COLETOR. Desde 01/10/2026 o servidor OrçaPRO
+#   roda o mesmo `coletar-sinapi.js` todo dia (`ferramentas/sinapi-vps.js`,
+#   cron no VPS), e o app consulta o servidor PRIMEIRO. Este job continua
+#   responsável pelo ESPELHO: o acervo que o usuário escolhe no orçamento e o
+#   caminho de quem não alcança o servidor. Se ele parar, a frota continua
+#   recebendo a competência nova; o servidor avisa que o espelho atrasou.
 #
 # ⚠ SE A COLETA FALHAR, O JOB FALHA. Não existe "seguiu em frente": o
 #   coletor recusa publicar pacote que não passe na conferência (UF certa,
@@ -42,7 +53,7 @@ on:
       janela:
         description: "Quantas competências manter"
         required: false
-        default: "5"
+        default: "6"
         type: string
       podar:
         description: "Apagar as competências fora da janela"
@@ -80,7 +91,7 @@ jobs:
         run: |
           set -euo pipefail
           COMP="${{ inputs.competencia }}"
-          JAN="${{ inputs.janela || '5' }}"
+          JAN="${{ inputs.janela || '6' }}"
           PODAR=""
           if [ "${{ inputs.podar }}" != "false" ]; then PODAR="--podar"; fi
           if [ -n "$COMP" ]; then
