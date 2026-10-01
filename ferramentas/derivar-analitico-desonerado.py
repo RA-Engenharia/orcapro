@@ -43,6 +43,14 @@ REPARTIÇÃO MO/MAT/EQ (a mesma do gerador oficial, `criarQuebrador`)
 USO
     python3 ferramentas/derivar-analitico-desonerado.py --conferir PA
     python3 ferramentas/derivar-analitico-desonerado.py MG PA --out app/data
+    python3 ferramentas/derivar-analitico-desonerado.py ALL --comp 2026-08 --analitico-dir <pasta> --sintetico-dir <pasta> --out <pasta>
+
+⚠ A COMPETÊNCIA ERA FIXA EM 2026-06 (até 01/10/2026). O script foi rodado à
+  mão uma vez e o desonerado nunca mais andou: em outubro o servidor seguia
+  entregando a desonerada de junho enquanto a onerada já estava em agosto.
+  Agora `--comp` escolhe o mês, e o coletor (`coletar-sinapi.js`) chama este
+  script na mesma rodada que gera o onerado, com os arquivos que acabou de
+  gerar (`--analitico-dir`, `--sintetico-dir`) — sem baixar nada do servidor.
 """
 import argparse
 import gzip
@@ -221,8 +229,17 @@ class _PrecoDict(object):
         return u if u else padrao
 
 
+SINTETICO_DIR = None   # --sintetico-dir: lê daqui em vez de baixar do servidor
+ANALITICO_DIR = None   # --analitico-dir: onde está o sinapi-<UF>-analitico.json onerado
+
+
 def sintetico_desonerado(uf):
     """Baixa do servidor o sintético desonerado da UF (3 MB), com cache local."""
+    if SINTETICO_DIR:
+        pacote = carregar(os.path.join(SINTETICO_DIR, "sinapi-%s-%s-desonerada.json" % (uf, COMPETENCIA)))
+        if pacote.get("desonerado") is not True or str(pacote.get("mes")) != COMPETENCIA:
+            raise SystemExit("ERRO: sintetico de %s nao e o desonerado de %s — nao gero no escuro." % (uf, COMPETENCIA))
+        return pacote
     import tempfile
     import urllib.request
     # ⚠ o cache NÃO vai para app/data/: o sintético desonerado é entregue pelo
@@ -276,7 +293,12 @@ def conferir(uf):
 
 
 def gerar(uf, out_dir):
-    ana = carregar(os.path.join(DATA, "sinapi-%s-analitico.json" % uf))
+    ana = carregar(os.path.join(ANALITICO_DIR or DATA, "sinapi-%s-analitico.json" % uf))
+    # o onerado tem de ser DO MESMO MÊS: estrutura de um mês com preço de outro
+    # é justamente o descasamento que este arquivo existe para não produzir
+    mes_ana = re.sub(r"^(\d{2})/(\d{4})$", r"\2-\1", str(ana.get("mes", "")))
+    if mes_ana != COMPETENCIA:
+        raise SystemExit("ERRO: o analitico onerado de %s e de %s, nao de %s." % (uf, ana.get("mes"), COMPETENCIA))
     sdes = sintetico_desonerado(uf)
     sp_des = sintetico_desonerado("SP")
     saida = derivar(ana, precos_do_sintetico(sdes), precos_do_sintetico(sp_des), True, ana.get("mes"))
@@ -314,9 +336,18 @@ if __name__ == "__main__":
     ap.add_argument("ufs", nargs="*", default=[])
     ap.add_argument("--conferir", action="store_true")
     ap.add_argument("--out", default=DATA)
+    ap.add_argument("--comp", default=COMPETENCIA)
+    ap.add_argument("--analitico-dir", default=None)
+    ap.add_argument("--sintetico-dir", default=None)
     a = ap.parse_args()
     if not a.ufs:
         ap.error("informe ao menos uma UF")
+    COMPETENCIA = a.comp
+    ANALITICO_DIR = a.analitico_dir
+    SINTETICO_DIR = a.sintetico_dir
+    if [u.upper() for u in a.ufs] == ["ALL"]:
+        a.ufs = ["AC","AL","AM","AP","BA","CE","DF","ES","GO","MA","MG","MS","MT","PA",
+                 "PB","PE","PI","PR","RJ","RN","RO","RR","RS","SC","SE","SP","TO"]
     if a.conferir:
         for uf in a.ufs:
             conferir(uf.upper())

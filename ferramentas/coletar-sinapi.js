@@ -146,6 +146,44 @@ function competenciasNoEspelho() {
   return out;
 }
 
+/* a DESONERADA só conta como presente com preço E analítico desonerados */
+function desoneradaNoEspelho() {
+  var p = {}, a = {};
+  try {
+    fs.readdirSync(DADOS).forEach(function (f) {
+      var m = f.match(/^sinapi-([A-Z]{2})-(\d{4}-\d{2})-desonerada(-analitico)?\.json\.gz$/);
+      if (m) ((m[3] ? a : p)[m[2]] = (m[3] ? a : p)[m[2]] || {})[m[1]] = 1;
+    });
+  } catch (e) {}
+  var out = {};
+  Object.keys(p).forEach(function (c) {
+    out[c] = Object.keys(p[c]).filter(function (uf) { return a[c] && a[c][uf]; }).length;
+  });
+  return out;
+}
+
+function validarDes(dir, comp) {
+  var problemas = [];
+  UFS.forEach(function (uf) {
+    var fs1 = path.join(dir, "sinapi-" + uf + "-" + comp + "-desonerada.json");
+    var fa1 = path.join(dir, "sinapi-" + uf + "-desonerada-analitico.json");
+    if (!fs.existsSync(fs1)) { problemas.push(uf + ": sintético desonerado não gerado"); return; }
+    if (!fs.existsSync(fa1)) { problemas.push(uf + ": analítico desonerado não gerado"); return; }
+    var s, a;
+    try { s = JSON.parse(fs.readFileSync(fs1, "utf8")); } catch (e) { problemas.push(uf + ": sintético desonerado ilegível"); return; }
+    try { a = JSON.parse(fs.readFileSync(fa1, "utf8")); } catch (e) { problemas.push(uf + ": analítico desonerado ilegível"); return; }
+    if (String(s.uf).toUpperCase() !== uf) problemas.push(uf + ": sintético desonerado diz UF " + s.uf);
+    if (String(s.mes) !== comp) problemas.push(uf + ": sintético desonerado diz competência " + s.mes);
+    if (s.desonerado !== true) problemas.push(uf + ": sintético desonerado NÃO se declara desonerado");
+    if (!(s.dados && s.dados.length > 5000)) problemas.push(uf + ": sintético desonerado com só " + ((s.dados || []).length) + " itens");
+    if (a.desonerado !== true) problemas.push(uf + ": analítico desonerado NÃO se declara desonerado");
+    if (!(a.dados && a.dados.length > 5000)) problemas.push(uf + ": analítico desonerado com só " + ((a.dados || []).length) + " composições");
+    var mesA = String(a.mes || "").replace(/^(\d{2})\/(\d{4})$/, "$2-$1");
+    if (mesA !== comp) problemas.push(uf + ": analítico desonerado é de " + a.mes + ", não de " + comp);
+  });
+  return problemas;
+}
+
 /* ---------- conferência antes de publicar ----------------------------- */
 function validar(dir, comp) {
   var problemas = [];
@@ -175,7 +213,15 @@ function gzipar(origem, destino) {
 }
 
 /* ---------- coleta de UMA competência --------------------------------- */
-function coletar(item) {
+/* op = { onerada: bool, desonerada: bool } — o que GRAVAR. O analítico
+   onerado é gerado sempre: a desonerada é derivada dele (mesma estrutura e
+   coeficientes, outro encargo social), então sem ele não há desonerada.
+   ⚠ A DESONERADA ENTROU AQUI EM 01/10/2026. Ela foi gerada à mão uma vez, na
+   06/2026, e nunca mais: em outubro o servidor seguia entregando a desonerada
+   de junho com a onerada em agosto. Agora sai na mesma rodada, da mesma
+   Referência da CAIXA (abas CCD/ICD), conferida antes de gravar. */
+function coletar(item, op) {
+  op = op || { onerada: true, desonerada: false };
   var comp = item.comp;
   var trocas = [];
   var tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sinapi-" + comp + "-"));
@@ -205,6 +251,23 @@ function coletar(item) {
       throw new Error(comp + ": pacote não passou na conferência");
     }
 
+    if (op.desonerada) {
+      log(comp + ": gerando os 27 estados (sintético DESONERADO, abas CCD/ICD)");
+      execFileSync("node", [path.join(GER, "gerar-sintetico-sinapi.js"), UFS.join(","), "--mes", comp, "--regime", "desonerada", "--ref", ref, "--out", saida],
+        { stdio: ["ignore", "ignore", "inherit"] });
+      log(comp + ": derivando o analítico DESONERADO (estrutura do onerado + preço desonerado)");
+      execFileSync(process.env.PYTHON || (process.platform === "win32" ? "python" : "python3"),
+        [path.join(RAIZ, "ferramentas", "derivar-analitico-desonerado.py"), "ALL", "--comp", comp,
+         "--analitico-dir", saida, "--sintetico-dir", saida, "--out", saida],
+        { stdio: ["ignore", "ignore", "inherit"], env: Object.assign({}, process.env, { PYTHONIOENCODING: "utf-8" }) });
+      var probsD = validarDes(saida, comp);
+      if (probsD.length) {
+        console.error("[coletar] " + comp + " DESONERADA RECUSADA — " + probsD.length + " problema(s):");
+        probsD.slice(0, 12).forEach(function (p) { console.error("    " + p); });
+        throw new Error(comp + ": desonerada não passou na conferência");
+      }
+    }
+
     /* grava comprimido. O analítico sai do gerador com o nome LEGADO (sem
        competência); no espelho ele precisa da competência no nome, senão as
        competências do acervo se sobrescreveriam e sobraria uma só. O app já
@@ -217,10 +280,15 @@ function coletar(item) {
        arquivo de PREÇO, então ele entra por último — quando o app ouvir
        "saiu a 09", o analítico da 09 já está lá. */
     UFS.forEach(function (uf) {
-      var pares = [
-        ["sinapi-" + uf + "-analitico.json", "sinapi-" + uf + "-" + comp + "-analitico.json.gz"],
-        ["sinapi-" + uf + "-" + comp + ".json", "sinapi-" + uf + "-" + comp + ".json.gz"]
-      ];
+      var pares = [];
+      if (op.onerada) {
+        pares.push(["sinapi-" + uf + "-analitico.json", "sinapi-" + uf + "-" + comp + "-analitico.json.gz"]);
+        pares.push(["sinapi-" + uf + "-" + comp + ".json", "sinapi-" + uf + "-" + comp + ".json.gz"]);
+      }
+      if (op.desonerada) {
+        pares.push(["sinapi-" + uf + "-desonerada-analitico.json", "sinapi-" + uf + "-" + comp + "-desonerada-analitico.json.gz"]);
+        pares.push(["sinapi-" + uf + "-" + comp + "-desonerada.json", "sinapi-" + uf + "-" + comp + "-desonerada.json.gz"]);
+      }
       pares.forEach(function (p) {
         var tmpGz = path.join(DADOS, "." + p[1] + ".tmp");
         gzipar(path.join(saida, p[0]), tmpGz);
@@ -239,14 +307,18 @@ function coletar(item) {
 }
 
 /* ---------- poda: mantém só a janela ---------------------------------- */
-function podar(manter) {
-  var mantidas = {};
+/* manterDes: competências cuja DESONERADA fica (null = não mexe na
+   desonerada — quem não pediu desonerada não pode perdê-la por tabela) */
+function podar(manter, manterDes) {
+  var mantidas = {}, mantidasDes = {};
   manter.forEach(function (c) { mantidas[c] = 1; });
+  (manterDes || []).forEach(function (c) { mantidasDes[c] = 1; });
   var apagados = 0;
   fs.readdirSync(DADOS).forEach(function (f) {
     var m = f.match(/^sinapi-[A-Z]{2}-(\d{4}-\d{2})(-analitico)?\.json\.gz$/);
-    if (!m || mantidas[m[1]]) return;
-    fs.unlinkSync(path.join(DADOS, f)); apagados++;
+    var d = f.match(/^sinapi-[A-Z]{2}-(\d{4}-\d{2})-desonerada(-analitico)?\.json\.gz$/);
+    if (m && !mantidas[m[1]]) { fs.unlinkSync(path.join(DADOS, f)); apagados++; return; }
+    if (d && manterDes && !mantidasDes[d[1]]) { fs.unlinkSync(path.join(DADOS, f)); apagados++; }
   });
   if (apagados) log("poda: " + apagados + " arquivos de competência fora da janela removidos");
   return apagados;
@@ -262,17 +334,19 @@ function main() {
   var oficiais = listarOficial();
   if (!oficiais.length) { console.error("[coletar] a CAIXA não devolveu nenhuma competência — nada foi feito."); process.exit(1); }
   var noEspelho = competenciasNoEspelho();
+  var desNoEspelho = desoneradaNoEspelho();
 
   if (arg.listar && arg.json) {
-    process.stdout.write(JSON.stringify({ oficiais: oficiais, presentes: noEspelho, dados: DADOS }) + "\n");
+    process.stdout.write(JSON.stringify({ oficiais: oficiais, presentes: noEspelho, presentesDes: desNoEspelho, dados: DADOS }) + "\n");
     return;
   }
   if (arg.listar) {
     log("competências publicadas pela CAIXA (mais nova primeiro):");
     oficiais.slice(0, 14).forEach(function (o) {
-      var tem = noEspelho[o.comp] || 0;
+      var tem = noEspelho[o.comp] || 0, des = desNoEspelho[o.comp] || 0;
       log("  " + o.comp + "  publicado " + o.publicadoEm + "  " + Math.round(o.bytes / 1048576) + " MB" +
-        (o.retificacao ? "  [retificação]" : "") + "   espelho: " + (tem ? tem + "/27 UFs" : "—"));
+        (o.retificacao ? "  [retificação]" : "") + "   espelho: " + (tem ? tem + "/27 UFs" : "—") +
+        (des ? "  · desonerada " + des + "/27" : ""));
     });
     return;
   }
@@ -286,14 +360,27 @@ function main() {
     alvos = oficiais.slice(0, janela);
   }
 
+  /* --desonerada N: as N competências MAIS NOVAS dos alvos também ganham a
+     desonerada. Só as mais novas porque a desonerada é instalada pela mais
+     recente (linha SINAPI_DES do app); o acervo de meses antigos, que serve a
+     licitação presa à data-base, é o onerado. */
+  var nDes = parseInt(arg.desonerada, 10) || 0;
+  var desAlvos = {};
+  alvos.slice(0, nDes).forEach(function (o) { desAlvos[o.comp] = 1; });
+
   var feitos = [], falhas = [];
   alvos.forEach(function (o) {
-    if (noEspelho[o.comp] === 27 && !arg.forcar) { log(o.comp + ": já completa no espelho (27/27) — pulando"); feitos.push(o.comp); return; }
-    try { coletar(o); feitos.push(o.comp); }
+    var op = {
+      onerada: !(noEspelho[o.comp] === 27) || !!arg.forcar,
+      desonerada: !!desAlvos[o.comp] && (!(desNoEspelho[o.comp] === 27) || !!arg.forcar)
+    };
+    if (!op.onerada && !op.desonerada) { log(o.comp + ": já completa (27/27" + (desAlvos[o.comp] ? ", com desonerada" : "") + ") — pulando"); feitos.push(o.comp); return; }
+    if (!op.onerada) log(o.comp + ": onerada já completa — gerando só a desonerada");
+    try { coletar(o, op); feitos.push(o.comp); }
     catch (e) { falhas.push(o.comp + ": " + (e && e.message)); console.error("[coletar] " + o.comp + " FALHOU: " + (e && e.message)); }
   });
 
-  if (arg.podar) podar(alvos.map(function (o) { return o.comp; }));
+  if (arg.podar) podar(alvos.map(function (o) { return o.comp; }), nDes ? Object.keys(desAlvos) : null);
 
   /* o manifesto é regenerado por quem sabe olhar a pasta — nunca escrito aqui */
   if (!arg["sem-manifesto"]) try {

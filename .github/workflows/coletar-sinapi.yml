@@ -15,15 +15,21 @@ name: Coletar SINAPI
 # inteira na varredura diária do dia seguinte — app instalado, PWA,
 # qualquer UF, sem ninguém clicar em nada.
 #
-# ⚠ A JANELA É DE 6 COMPETÊNCIAS, e isso é requisito de licitação, não
-#   economia de espaço: orçamento é preso à data-base do edital, e quem
-#   abriu processo em março continua orçando em março. `--podar` remove o
-#   que sai da janela para o repositório não crescer sem fim (cada
-#   competência pesa ~31 MB comprimida).
-#   Era 5. Passou a 6 em 01/10/2026, quando a 08/2026 entrou à mão sem
-#   poda: com 5, a primeira coleta automática apagaria a 03/2026, que já
+# ⚠ A JANELA É DE 9 COMPETÊNCIAS (a corrente + 8 anteriores), e isso é
+#   requisito de licitação, não economia de espaço: orçamento é preso à
+#   data-base do edital, e quem abriu processo em março continua orçando em
+#   março. `--podar` remove o que sai da janela para o repositório não
+#   crescer sem fim (cada competência pesa ~31 MB comprimida).
+#   Era 5; passou a 6 e depois a 9 em 01/10/2026, a pedido do Rogério ("até
+#   8 meses anteriores, para o cliente que queira usar a antiga"). Com uma
+#   janela menor, a primeira coleta automática apagaria competência que já
 #   estava oferecida aos clientes. Competência some do acervo só quando
 #   alguém decide — não como efeito colateral de um número.
+#
+# ⚠ A DESONERADA ANDA JUNTO (`--desonerada 2`): preço desonerado (abas CCD/ICD)
+#   e analítico desonerado das 2 competências mais novas. Antes de 01/10/2026
+#   ela tinha sido gerada à mão uma vez (06/2026) e ficou parada. Usa python3
+#   (ferramentas/derivar-analitico-desonerado.py), que o runner já tem.
 #
 # ⚠ ESTE NÃO É MAIS O ÚNICO COLETOR. Desde 01/10/2026 o servidor OrçaPRO
 #   roda o mesmo `coletar-sinapi.js` todo dia (`ferramentas/sinapi-vps.js`,
@@ -53,7 +59,7 @@ on:
       janela:
         description: "Quantas competências manter"
         required: false
-        default: "6"
+        default: "9"
         type: string
       podar:
         description: "Apagar as competências fora da janela"
@@ -91,13 +97,13 @@ jobs:
         run: |
           set -euo pipefail
           COMP="${{ inputs.competencia }}"
-          JAN="${{ inputs.janela || '6' }}"
+          JAN="${{ inputs.janela || '9' }}"
           PODAR=""
           if [ "${{ inputs.podar }}" != "false" ]; then PODAR="--podar"; fi
           if [ -n "$COMP" ]; then
-            node ferramentas/coletar-sinapi.js --comp "$COMP"
+            node ferramentas/coletar-sinapi.js --comp "$COMP" --desonerada 1
           else
-            node ferramentas/coletar-sinapi.js --janela "$JAN" $PODAR
+            node ferramentas/coletar-sinapi.js --janela "$JAN" --desonerada 2 $PODAR
           fi
 
       - name: Conferir o manifesto contra a pasta
