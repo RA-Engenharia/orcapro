@@ -858,7 +858,10 @@
     { id: "qualidade",   rotulo: "Qualidade" },
     { id: "fiscalizacao", rotulo: "Atendimento à fiscalização" },
     { id: "administracao", rotulo: "Administração" },
-    { id: "meioambiente", rotulo: "Meio ambiente" }
+    { id: "meioambiente", rotulo: "Meio ambiente" },
+    /* 02/10/2026: quase-acidente, incidente e acidente (o plano de içamento os traz ao RDO do dia — js/icarlanca.js rdoItens).
+       ⚠ Versão antiga do app mostra o id ("seguranca") no lugar do rótulo — nada quebra, a lista só cresceu. */
+    { id: "seguranca", rotulo: "Segurança do trabalho" }
   ];
 
   /* Fatos impeditivos NÃO imputáveis a quem executa. Esta lista é o que

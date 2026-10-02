@@ -27,7 +27,9 @@
     larguraRio_m: 15.0,         // rio sem width no mapa (ESTIMADA)
     larguraFaixa_m: 3.5,        // faixa de rua (lanes × isto quando não há width)
     areaMinEdif_m2: 4,          // abaixo disto é abrigo de medidor, guarita mapeada como ponto…
-    maxPropostas: 300           // o mesmo teto do p.entorno do plano
+    maxPropostas: 300,          // o mesmo teto do p.entorno do plano
+    arvorePorM2: 60,            // DECORATIVO: 1 árvore a cada 60 m² de praça/gramado (só aparência — nunca obstáculo)
+    maxArvores: 300
   };
   function prem(p) { var o = {}, k; for (k in PREMISSAS) o[k] = PREMISSAS[k]; if (p) for (k in p) if (p[k] != null && p[k] !== "") o[k] = +p[k]; return o; }
   function br(v, c) { var x = +v; if (!isFinite(x)) return "—"; var f = Math.pow(10, c == null ? 2 : c); return String(Math.round(x * f) / f).replace(".", ","); }
@@ -242,7 +244,26 @@
     });
   }
 
-  var IcarEntorno = { PREMISSAS: PREMISSAS, propostas: propostas, redeParaPlano: redeParaPlano, metros: metros, kVdo: kVdo, faixa: faixa, tocaCaixa: tocaCaixa, cotaRelevo: cotaRelevo, malhaRelevo: malhaRelevo,
+  /* ÁRVORES DECORATIVAS nas áreas verdes do mapa (ESPEC §II.9.1): pontos dentro do polígono por amostragem com semente fixa
+     (a mesma praça ganha as mesmas árvores a cada redesenho). ⚠ Só aparência: não entram em colisão nem no agente. */
+  function arvores(verdes, opts) {
+    var pp = prem(opts && opts.premissas), out = [], s = 12345;
+    function rnd() { s = (s * 16807) % 2147483647; return s / 2147483647; }
+    (verdes || []).forEach(function (v) {
+      var pol = v.poligono; if (!pol || pol.length < 3 || out.length >= pp.maxArvores) return;
+      var A = Math.abs(area(pol)), n = Math.min(Math.floor(A / pp.arvorePorM2), pp.maxArvores - out.length);
+      if (n < 1) return;
+      var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      pol.forEach(function (q) { x0 = Math.min(x0, q[0]); y0 = Math.min(y0, q[1]); x1 = Math.max(x1, q[0]); y1 = Math.max(y1, q[1]); });
+      for (var t = 0, k = 0; k < n && t < n * 20; t++) {
+        var x = x0 + rnd() * (x1 - x0), y = y0 + rnd() * (y1 - y0);
+        if (dentro([x, y], pol)) { out.push({ x: r3(x), y: r3(y), escala: r3(0.8 + 0.5 * rnd()) }); k++; }
+      }
+    });
+    return out;
+  }
+
+  var IcarEntorno = { PREMISSAS: PREMISSAS, arvores: arvores, propostas: propostas, redeParaPlano: redeParaPlano, metros: metros, kVdo: kVdo, faixa: faixa, tocaCaixa: tocaCaixa, cotaRelevo: cotaRelevo, malhaRelevo: malhaRelevo,
     latLonDoTile: latLonDoTile, planoImagem: planoImagem, cantosImagem: cantosImagem };
   global.IcarEntorno = IcarEntorno;
   if (typeof module !== "undefined" && module.exports) module.exports = IcarEntorno;

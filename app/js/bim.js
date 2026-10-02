@@ -3209,7 +3209,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   function icDescartar(o) {
     o.traverse(function (x) {
       try {
-        if (x.material && !x.userData.geoCompartilhada) { if (x.material.map) x.material.map.dispose(); x.material.dispose(); }
+        /* ⚠ material em LISTA (telhado + fachada do prédio do entorno): .dispose() na lista lançava e a geometria ficava sem
+           liberar; e a textura da fachada é COMPARTILHADA (texCompartilhada) — destruí-la a cada redesenho reenviaria à GPU */
+        if (x.material && !x.userData.geoCompartilhada) (Array.isArray(x.material) ? x.material : [x.material]).forEach(function (m) { if (m.map && !(m.userData && m.userData.texCompartilhada)) m.map.dispose(); m.dispose(); });
         if (x.geometry && !x.userData.geoCompartilhada) x.geometry.dispose();
       } catch (_) {}
     });
@@ -3974,6 +3976,19 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return new THREE.Matrix4().set(s * c, -s * sn, 0, cal.t.x, 0, 0, 1, cota, -s * sn, -s * c, 0, -cal.t.y, 0, 0, 0, 1);
   }
   var IC_M_MOTOR = new THREE.Matrix4().set(1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1);   // motor (x, y, z) → local (x, z, −y)
+  /* a textura da fachada: 1 quadro = 3 m × 3 m (um pavimento), reboco claro e uma janela de 1,2 × 1,4 m com peitoril a 1 m */
+  var icTexFachada = null;
+  function icFachada() {
+    if (!icTexFachada) {
+      var cv = document.createElement('canvas'); cv.width = 128; cv.height = 128;
+      var x = cv.getContext('2d'); x.fillStyle = '#e7e2d6'; x.fillRect(0, 0, 128, 128);
+      var k = 128 / 3; x.fillStyle = '#5b6b7a'; x.fillRect(0.9 * k, 128 - 2.4 * k, 1.2 * k, 1.4 * k);
+      x.fillStyle = '#cfd8e3'; x.fillRect(0.9 * k + 2, 128 - 2.4 * k + 2, 1.2 * k - 4, 3);
+      icTexFachada = new THREE.CanvasTexture(cv); icTexFachada.wrapS = icTexFachada.wrapT = THREE.RepeatWrapping; icTexFachada.repeat.set(1 / 3, 1 / 3);
+    }
+    var m = new THREE.MeshStandardMaterial({ map: icTexFachada, roughness: 0.85, metalness: 0, side: THREE.DoubleSide });
+    m.userData.fachada = true; m.userData.texCompartilhada = true; return m;
+  }
   icar.entorno = [];
   function icPlanta(cfg) {
     while (icPlantaG.children.length) { var o = icPlantaG.children.pop(); icDescartar(o); }
@@ -4001,8 +4016,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       var agua = v.tipo === 'agua', alt = agua ? 0.05 : Math.max(0.05, +v.altura || 0), base = +v.base || 0;
       var gV = new THREE.ExtrudeGeometry(new THREE.Shape(pts.map(function (q) { return new THREE.Vector2(+q[0], +q[1]); })), { depth: alt, bevelEnabled: false });
       gV.translate(0, 0, base);
+      /* prédio ACEITO: fachada com janelas por pavimento (3 m) nas paredes e telhado à parte — o ExtrudeGeometry põe as tampas no
+         grupo 0 e as paredes no grupo 1, com UV em METROS nas paredes (a textura repete a cada 3 m) */
       var mat = v.proposta ? new THREE.MeshBasicMaterial({ color: 0xf97316, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide })
-        : agua ? new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide }) : icMat(0xcbd5e1, 0.92);
+        : agua ? new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide })
+        : v.tipo === 'edificacao' ? [icMat(0x9ca3af, 0.95), icFachada()] : v.tipo === 'muro' ? icMat(0xa8a29e, 0.95) : icMat(0xcbd5e1, 0.92);
       var mV = new THREE.Mesh(gV, mat); mV.matrixAutoUpdate = false; mV.matrix.copy(IC_M_MOTOR); mV.name = v.proposta ? 'planta-proposta' : agua ? 'entorno-agua' : 'entorno'; mV.userData.idx = i; icPlantaG.add(mV);
       var eV = new THREE.LineSegments(new THREE.EdgesGeometry(gV), new THREE.LineBasicMaterial({ color: v.proposta ? 0xc2410c : agua ? 0x0284c7 : 0x64748b }));
       eV.matrixAutoUpdate = false; eV.matrix.copy(IC_M_MOTOR); icPlantaG.add(eV);
@@ -4062,6 +4080,20 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       var mI = new THREE.Mesh(gI, new THREE.MeshBasicMaterial({ map: tI, transparent: true, opacity: im.opacidade == null ? 0.9 : +im.opacidade, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 2 }));
       mI.matrixAutoUpdate = false; mI.matrix.copy(IC_M_MOTOR); mI.name = 'local-imagem'; mI.renderOrder = 0; icLocalG.add(mI); out.imagem = true;
     }
+    /* o LEVANTAMENTO da obra (js/icarrelevo.js): o chão que vale no lote — mais opaco que o relevo de satélite, e as curvas de nível */
+    var lv = cfg.levantamento;
+    if (lv && lv.pos && lv.idx && lv.pos.length >= 9) {
+      var gL2 = new THREE.BufferGeometry(); gL2.setAttribute('position', new THREE.Float32BufferAttribute(lv.pos, 3)); gL2.setIndex(lv.idx); gL2.computeVertexNormals();
+      var mL2 = new THREE.Mesh(gL2, new THREE.MeshStandardMaterial({ color: 0xb59466, roughness: 0.95, metalness: 0, transparent: true, opacity: 0.72, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 2 }));
+      mL2.matrixAutoUpdate = false; mL2.matrix.copy(IC_M_MOTOR); mL2.name = 'local-levantamento'; icLocalG.add(mL2); out.levantamento = lv.pos.length / 3;
+    }
+    if (cfg.curvas && cfg.curvas.length) {
+      var arrC = new Float32Array(cfg.curvas.length * 6);
+      cfg.curvas.forEach(function (s, i) { arrC[i * 6] = s[0]; arrC[i * 6 + 1] = s[1]; arrC[i * 6 + 2] = s[4] + 0.02; arrC[i * 6 + 3] = s[2]; arrC[i * 6 + 4] = s[3]; arrC[i * 6 + 5] = s[4] + 0.02; });
+      var gC2 = new THREE.BufferGeometry(); gC2.setAttribute('position', new THREE.BufferAttribute(arrC, 3));
+      var lC2 = new THREE.LineSegments(gC2, new THREE.LineBasicMaterial({ color: 0x6b4f2a, transparent: true, opacity: 0.85, depthWrite: false }));
+      lC2.matrixAutoUpdate = false; lC2.matrix.copy(IC_M_MOTOR); lC2.name = 'local-curvas'; lC2.renderOrder = 2; icLocalG.add(lC2); out.curvas = cfg.curvas.length;
+    }
     var rl = cfg.relevo;
     if (rl && rl.pos && rl.idx && rl.pos.length >= 9) {
       var gR = new THREE.BufferGeometry(); gR.setAttribute('position', new THREE.Float32BufferAttribute(rl.pos, 3)); gR.setIndex(rl.idx); gR.computeVertexNormals();
@@ -4076,7 +4108,26 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       if (fechar) v.push(v[0].clone());
       var l = icLinha(v, cor, trac || null); l.material.depthTest = true; l.renderOrder = 1; l.name = nome; icLocalG.add(l); return l;
     }
-    (cfg.ruas || []).forEach(function (r) { if (polilinha(r.pontos || [], 0x475569, 'local-rua')) out.ruas++; });
+    (cfg.ruas || []).forEach(function (r) {
+      /* a faixa de asfalto na largura da via (a do mapa, ou a da classe — premissa) por baixo do eixo */
+      if (r.faixa && r.faixa.length >= 4) {
+        var gF = new THREE.ShapeGeometry(new THREE.Shape(r.faixa.map(function (q) { return new THREE.Vector2(+q[0], +q[1]); })));
+        gF.translate(0, 0, (+r.z || 0) + 0.015);
+        var mF = new THREE.Mesh(gF, new THREE.MeshStandardMaterial({ color: 0x4b5563, roughness: 0.9, metalness: 0, transparent: true, opacity: 0.92, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }));
+        mF.matrixAutoUpdate = false; mF.matrix.copy(IC_M_MOTOR); mF.name = 'local-rua-faixa'; icLocalG.add(mF); out.faixas = (out.faixas || 0) + 1;
+      }
+      if (polilinha(r.pontos || [], r.faixa ? 0xe5e7eb : 0x475569, 'local-rua', false, r.faixa ? 1.5 : 0)) out.ruas++;
+    });
+    /* árvores DECORATIVAS nas praças e gramados (js/icarentorno.js arvores): instanciadas — 300 árvores = 2 desenhos */
+    var arv = cfg.arvores || [];
+    if (arv.length) {
+      var gT = new THREE.CylinderGeometry(0.12, 0.16, 2.2, 6); gT.translate(0, 1.1, 0);
+      var gCp = new THREE.SphereGeometry(1.6, 8, 6); gCp.translate(0, 3.4, 0);
+      var iT = new THREE.InstancedMesh(gT, new THREE.MeshStandardMaterial({ color: 0x6b4423, roughness: 1 }), arv.length), iC = new THREE.InstancedMesh(gCp, new THREE.MeshStandardMaterial({ color: 0x4d7c3a, roughness: 1 }), arv.length);
+      var mm = new THREE.Matrix4(), qq = new THREE.Quaternion(), ss = new THREE.Vector3();
+      arv.forEach(function (a, i) { var pz = icL({ x: +a.x, y: +a.y, z: +a.z || 0 }), e = +a.escala || 1; ss.set(e, e, e); mm.compose(pz, qq, ss); iT.setMatrixAt(i, mm); iC.setMatrixAt(i, mm); });
+      iT.name = 'local-arvores'; iC.name = 'local-arvores-copa'; icLocalG.add(iT); icLocalG.add(iC); out.arvores = arv.length;
+    }
     (cfg.verdes || []).forEach(function (r) { if (polilinha(r.poligono || [], 0x16a34a, 'local-verde', true)) out.verdes++; });
     (cfg.redes || []).forEach(function (r) { if (r.a && r.b && polilinha([r.a, r.b], 0xeab308, 'local-rede', false, 0.6)) out.redes++; });
     (cfg.postes || []).forEach(function (p) {
@@ -4282,13 +4333,14 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     simular: icSimular, simulando: function () { return !!icar.sim; }, parar: function () { icLimparSim(); return true; },
     colisoes: icColisoes, caixas: icCaixas, mapa: icMapa, planta: icPlanta, plantaPonto: icPlantaPonto, visada: icVisada, local: icLocal, geoIfc: icGeoIfc,
     localEstado: function () {
-      var c = { imagem: 0, relevo: 0, ruas: 0, verdes: 0, postes: 0, redes: 0, chuva: 0, vento: 0, neblina: !!(icLocalEst.nevoaVis && scene.fog), sol: !!icLocalEst.sol, luz: { x: dir.position.x, y: dir.position.y, z: dir.position.z, i: dir.intensity } };
-      icLocalG.children.forEach(function (o) { if (o.name === 'local-imagem') c.imagem++; else if (o.name === 'local-relevo') c.relevo++; else if (o.name === 'local-rua') c.ruas++; else if (o.name === 'local-verde') c.verdes++; else if (o.name === 'local-poste') c.postes++; else if (o.name === 'local-rede') c.redes++; });
+      var c = { faixas: 0, arvores: 0, levantamento: 0, curvas: 0, imagem: 0, relevo: 0, ruas: 0, verdes: 0, postes: 0, redes: 0, chuva: 0, vento: 0, neblina: !!(icLocalEst.nevoaVis && scene.fog), sol: !!icLocalEst.sol, luz: { x: dir.position.x, y: dir.position.y, z: dir.position.z, i: dir.intensity } };
+      icLocalG.children.forEach(function (o) { if (o.name === 'local-rua-faixa') c.faixas++; else if (o.name === 'local-arvores') c.arvores = o.count; else if (o.name === 'local-levantamento') c.levantamento++; else if (o.name === 'local-curvas') c.curvas = o.geometry.attributes.position.count / 2; else if (o.name === 'local-imagem') c.imagem++; else if (o.name === 'local-relevo') c.relevo++; else if (o.name === 'local-rua') c.ruas++; else if (o.name === 'local-verde') c.verdes++; else if (o.name === 'local-poste') c.postes++; else if (o.name === 'local-rede') c.redes++; });
       icLocalMundo.children.forEach(function (o) { if (o.name === 'local-chuva') c.chuva = o.geometry.attributes.position.count; else if (o.name === 'local-vento') c.vento++; });
       return c;
     },
     plantaEstado: function () {
       var c = { plano: 0, linhas: 0, propostas: 0, entorno: 0, agua: 0, opacidade: null };
+      icPlantaG.children.forEach(function (o) { if (o.name === 'entorno' && Array.isArray(o.material) && o.material[1] && o.material[1].userData.fachada) c.fachadas = (c.fachadas || 0) + 1; });
       icPlantaG.children.forEach(function (o) { if (o.name === 'planta-imagem') { c.plano++; c.opacidade = o.material.opacity; } else if (o.name === 'planta-linhas') c.linhas++; else if (o.name === 'planta-proposta') c.propostas++; else if (o.name === 'entorno') c.entorno++; else if (o.name === 'entorno-agua') c.agua++; else if (o.name === 'agente-limite') c.limite = (c.limite || 0) + 1; });
       c.obstaculos = (icar.entorno || []).length; return c;
     },

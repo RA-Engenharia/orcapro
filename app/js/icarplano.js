@@ -47,6 +47,10 @@
     anguloLinga_graus: 30,     // ângulo-alvo da perna com a vertical (≤ 45° = fator 1,4 da cinta)
     Ca: 2.0,                   // coeficiente de arrasto da carga: placa plana alongada, a favor da segurança — ajuste pela forma
     isolamentoFolga_m: 2.0,    // área isolada = raio + metade da maior dimensão da carga + esta folga (premissa; a NR-18 manda isolar, não dá número)
+    /* largura da via quando o mapa não traz (premissa, ESPEC §II.9.1): local 6 m, coletora 9 m, arterial 14 m, passeio 2 m */
+    larguraVia_m: { local: 6, coletora: 9, arterial: 14, pedestre: 2 },
+    /* ACESSO DO EQUIPAMENTO (premissas, ESPEC §II.14): folga na passagem, folga embaixo do obstáculo baixo, rampa que pede conferência */
+    acessoFolgaLateral_m: 0.25, acessoFolgaAltura_m: 0.30, acessoRampaAviso_pct: 10, acessoEixoAtencao: 0.8,
     olhoGuindaste_m: 3.0,      // VISÃO DO OPERADOR: olho na cabina da superestrutura, acima do apoio (premissa)
     olhoMunck_m: 1.7,          // munck: o operador em pé no comando, ao lado do caminhão (premissa; com rádio-controle, ele anda — confira em campo)
     olhoLateral_m: 1.2,        // a cabina/comando fica de lado para a lança (premissa)
@@ -447,6 +451,12 @@
       o.giro = ic.coleta ? Math.abs(angulo(ic.pos, ic.coleta) - angulo(ic.pos, geo.cg)) * 180 / Math.PI : 0;
       if (o.giro > 180) o.giro = 360 - o.giro;
       o.isolamento = o.raio + Math.max(geo.dx, geo.dy) / 2 + p.isolamentoFolga_m;
+      /* a área isolada sobre a VIA PÚBLICA (ruas do mapa guardadas no plano): interdição com permissão do órgão de trânsito */
+      o.vias = viasAfetadas(ic.pos, o.isolamento, ic.vias, p);
+      o.vias.forEach(function (v) {
+        o.avisos.push("A área isolada (raio " + br(o.isolamento, 1) + " m) avança " + br(v.invasao, 1) + " m sobre " + v.rotulo + (v.larguraEstimada ? " (largura " + br(v.largura, 0) + " m estimada)" : "") +
+          ": interdição com permissão do órgão de trânsito do município (CTB art. 95), sinalização e horário de menor movimento.");
+      });
     }
     if (!eq) o.bloqueios.push("Escolha o equipamento.");
     else if (o.raio != null) {
@@ -549,7 +559,9 @@
     { id: "cnh", rotulo: "CNH do motorista compatível com o veículo", ref: "CTB", obrig: false, vence: true },
     { id: "acessorios", rotulo: "Certificados dos acessórios (lingas, cintas, manilhas) com marcação indelével", ref: "NR-18 18.10.1.27", obrig: true },
     { id: "aterramento", rotulo: "Laudo de aterramento (semestral)", ref: "NR-18 18.10.1.23", obrig: false, vence: true },
-    { id: "tabela-cabine", rotulo: "Tabela de cargas em português na cabine", ref: "NR-18 18.10.1.25e", obrig: true }
+    { id: "tabela-cabine", rotulo: "Tabela de cargas em português na cabine", ref: "NR-18 18.10.1.25e", obrig: true },
+    /* condicional: a liberação só cobra quando a área isolada de algum içamento avança sobre via pública (ver liberacao) */
+    { id: "interdicao-via", rotulo: "Autorização de interdição da via e sinalização (quando a área isolada avança sobre a rua ou o passeio)", ref: "CTB art. 95 (Lei 9.503/1997)", obrig: false }
   ];
   var CONFERENCIAS = [
     { id: "isolamento", rotulo: "Área de operação isolada; ninguém sob a carga", ref: "NR-18 18.10.1.17e / 18.10.1.29" },
@@ -567,7 +579,71 @@
      liberar com pendência, registrando quem, quando e por quê (toda trava precisa de porta). */
   /* quando = o dia de referência (AAAA-MM-DD: o 1º içamento, ou hoje). ⚠ Documento que VENCE (capacitação, laudo, CNH…) marcado
      "ok" mas vencido NESSE dia é pendência — o "ok" foi dado quando ainda valia. Perto de vencer (30 dias) só avisa. */
-  function liberacao(plano, avaliacoes, quando) {
+  /* VIAS AFETADAS pela área isolada: círculo (centro de giro, raio de isolamento) contra a faixa de cada via (linha do eixo ± meia
+     largura). Largura do mapa quando há; senão pela classe da via (premissa larguraVia_m) — e a frase diz que é estimada. */
+  function classeVia(tipo) {
+    var t = String(tipo || "");
+    if (/^(footway|pedestrian|path|steps|cycleway)$/.test(t)) return "pedestre";
+    if (/^(primary|secondary|trunk|motorway)(_link)?$/.test(t)) return "arterial";
+    if (/^tertiary(_link)?$/.test(t)) return "coletora";
+    return "local";
+  }
+  function viasAfetadas(pos, raioIso, vias, pp) {
+    var out = [], larg = (pp && pp.larguraVia_m) || PREMISSAS.larguraVia_m;
+    if (!pos || !(raioIso > 0)) return out;
+    (vias || []).forEach(function (v) {
+      var pts = v && v.pontos; if (!pts || pts.length < 2) return;
+      var d = Infinity;
+      for (var i = 1; i < pts.length; i++) {
+        var ax = +pts[i - 1][0], ay = +pts[i - 1][1], bx = +pts[i][0], by = +pts[i][1], dx = bx - ax, dy = by - ay, l = dx * dx + dy * dy;
+        var u = l > 0 ? Math.max(0, Math.min(1, ((pos.x - ax) * dx + (pos.y - ay) * dy) / l)) : 0, ex = ax + u * dx - pos.x, ey = ay + u * dy - pos.y;
+        d = Math.min(d, Math.sqrt(ex * ex + ey * ey));
+      }
+      var cls = classeVia(v.tipo), w = +v.largura > 0 ? +v.largura : larg[cls], inv = raioIso + w / 2 - d;
+      if (inv > 0) out.push({ nome: v.nome || "", tipo: v.tipo || "", classe: cls, largura: w, larguraEstimada: v.larguraEstimada === true || !(+v.largura > 0), distancia: r2(d, 2), invasao: r2(Math.min(inv, raioIso + w / 2), 2),
+        rotulo: (cls === "pedestre" ? "o passeio" : "a via") + (v.nome ? " " + v.nome : " sem nome no mapa") });
+    });
+    return out;
+  }
+
+  /* ACESSO DO EQUIPAMENTO À OBRA (ESPEC §II.14): o caminho até a posição contra as medidas do equipamento.
+     f = ficha montada (js/icarficha.js: comprimento, largura, altura, eixos, taraCaminhao_kg, guindasteMassa_kg);
+     a = plano.acesso (o que a pessoa mediu no caminho + o que o fabricante informa: raio de curva, rampa, peso).
+     ⚠ Nada inventado: sem o número de um dos lados, o item fica "sem" e a frase diz o que falta. Peso por eixo = peso ÷ eixos
+       (distribuição igual) e a frase diz que é estimado. */
+  function acesso(f, a, premissas) {
+    var pp = prem(premissas), it = [], bloq = [], av = [];
+    f = f || {}; a = a || {};
+    function n(v) { return v == null || v === "" || !isFinite(+v) ? null : +v; }
+    function item(id, rot, estado, texto) { it.push({ id: id, rotulo: rot, estado: estado, texto: texto }); if (estado === "falha") bloq.push(texto); else if (estado === "atencao") av.push(texto); }
+    var L = n(a.larguraEquip_m) != null ? n(a.larguraEquip_m) : n(f.largura), H = n(a.alturaEquip_m) != null ? n(a.alturaEquip_m) : n(f.altura);
+    var Lp = n(a.largura_m), Hp = n(a.alturaLivre_m);
+    if (L == null || Lp == null) item("largura", "Largura da passagem", "sem", L == null ? "Largura do equipamento desconhecida: informe (ficha do fabricante ou CRLV)." : "Informe a largura da passagem mais estreita do caminho (portão, rua, rampa).");
+    else { var need = L + 2 * pp.acessoFolgaLateral_m;
+      item("largura", "Largura da passagem", Lp + 1e-9 >= need ? "ok" : "falha", Lp + 1e-9 >= need ? "Passa: " + br(L, 2) + " m de equipamento em " + br(Lp, 2) + " m de passagem (folga de " + br(pp.acessoFolgaLateral_m, 2) + " m de cada lado)."
+        : "Não passa: o equipamento tem " + br(L, 2) + " m e a passagem " + br(Lp, 2) + " m — precisa de " + br(need, 2) + " m com " + br(pp.acessoFolgaLateral_m, 2) + " m de folga de cada lado."); }
+    if (H == null || Hp == null) item("altura", "Altura livre", "sem", H == null ? "Altura do equipamento em transporte desconhecida: informe (ficha do fabricante ou CRLV)." : "Informe a altura livre mais baixa do caminho (fio, marquise, viga do portão).");
+    else { var needH = H + pp.acessoFolgaAltura_m;
+      item("altura", "Altura livre", Hp + 1e-9 >= needH ? "ok" : "falha", Hp + 1e-9 >= needH ? "Passa: " + br(H, 2) + " m de altura sob " + br(Hp, 2) + " m livres." :
+        "Não passa por baixo: o equipamento tem " + br(H, 2) + " m e o vão livre " + br(Hp, 2) + " m — precisa de " + br(needH, 2) + " m. Se o obstáculo é fio energizado, vale a zona da NR-10 (cadastre a rede).") ; }
+    var Rq = n(a.raioCurvaEquip_m), Rp = n(a.raioCurva_m);
+    if (Rq == null || Rp == null) item("curva", "Raio de curva", "sem", "Não conferido: informe o raio de curva do equipamento (ficha do fabricante) e o da curva mais fechada do caminho.");
+    else item("curva", "Raio de curva", Rq <= Rp + 1e-9 ? "ok" : "falha", Rq <= Rp + 1e-9 ? "Faz a curva: raio do equipamento " + br(Rq, 1) + " m na curva de " + br(Rp, 1) + " m." : "Não faz a curva: o equipamento precisa de " + br(Rq, 1) + " m de raio e a curva tem " + br(Rp, 1) + " m.");
+    var Ip = n(a.rampa_pct), Iq = n(a.rampaMaxEquip_pct);
+    if (Ip == null) item("rampa", "Rampa", "sem", "Informe a rampa mais forte do caminho (%), se houver.");
+    else if (Iq != null) item("rampa", "Rampa", Ip <= Iq + 1e-9 ? "ok" : "falha", Ip <= Iq + 1e-9 ? "Sobe: rampa de " + br(Ip, 1) + " % para " + br(Iq, 1) + " % do fabricante." : "Rampa de " + br(Ip, 1) + " % acima dos " + br(Iq, 1) + " % que o fabricante admite.");
+    else item("rampa", "Rampa", Ip >= pp.acessoRampaAviso_pct ? "atencao" : "ok", Ip >= pp.acessoRampaAviso_pct ? "Rampa de " + br(Ip, 1) + " %: confira com a locadora ou o fabricante (aderência e frenagem com o equipamento)." : "Rampa de " + br(Ip, 1) + " %.");
+    var peso = n(a.pesoTotal_t) != null ? n(a.pesoTotal_t) * 1000 : (n(f.taraCaminhao_kg) != null && n(f.guindasteMassa_kg) != null ? n(f.taraCaminhao_kg) + n(f.guindasteMassa_kg) : null);
+    var eixos = n(a.eixos) != null ? n(a.eixos) : n(f.eixos), lim = n(a.cargaEixo_t);
+    if (lim == null) item("eixo", "Carga por eixo no caminho", "sem", "Se o caminho passa por laje, ponte ou pavimento com limite, informe a carga máxima por eixo (t).");
+    else if (peso == null || !(eixos > 0)) item("eixo", "Carga por eixo no caminho", "sem", "Para conferir o limite de " + br(lim, 1) + " t por eixo, informe o peso total do equipamento (ficha/CRLV)" + (eixos > 0 ? "." : " e o número de eixos."));
+    else { var pe = peso / eixos / 1000, est = " (estimada: " + br(peso / 1000, 1) + " t ÷ " + eixos + " eixos, distribuição igual)";
+      item("eixo", "Carga por eixo no caminho", pe > lim + 1e-9 ? "falha" : pe >= pp.acessoEixoAtencao * lim ? "atencao" : "ok",
+        pe > lim + 1e-9 ? "Carga por eixo de " + br(pe, 1) + " t" + est + " acima do limite de " + br(lim, 1) + " t do caminho." : "Carga por eixo de " + br(pe, 1) + " t" + est + " para " + br(lim, 1) + " t do caminho" + (pe >= pp.acessoEixoAtencao * lim ? " — perto do limite: confirme a pesagem por eixo." : ".")); }
+    return { itens: it, bloqueios: bloq, avisos: av, conferidos: it.filter(function (x) { return x.estado !== "sem"; }).length };
+  }
+
+  function liberacao(plano, avaliacoes, quando, extra) {
     var docs = (plano && plano.docs) || {}, conf = (plano && plano.conf) || {};
     var falta = [], vencendo = [], semValidade = [], ref = /^\d{4}-\d{2}-\d{2}$/.test(String(quando || "")) ? String(quando) : "";
     function dbr(x) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(x); return m ? m[3] + "/" + m[2] + "/" + m[1] : x; }
@@ -584,6 +660,13 @@
       if (d.obrig && s !== "ok" && s !== "na") falta.push(d.rotulo);
     });
     CONFERENCIAS.forEach(function (d) { var s = conf[d.id]; if (s !== "ok" && s !== "na") falta.push(d.rotulo); });
+    /* interdição: só cobra quando alguma área isolada avança sobre via — e aí é obrigatória (CTB art. 95) */
+    var vs = [];
+    (avaliacoes || []).forEach(function (a, i) { (a && a.vias || []).forEach(function (v) { var k = v.rotulo; if (vs.indexOf(k) < 0) vs.push(k); }); });
+    var di = docs["interdicao-via"] || {};
+    if (vs.length && di.status !== "ok") falta.push("Autorização de interdição da via (órgão de trânsito do município, CTB art. 95) — a área isolada avança sobre " + vs.join(", "));
+    /* o acesso que não passa (largura, altura, curva, rampa, eixo) é pendência do plano inteiro */
+    if (extra && extra.acesso && (extra.acesso.bloqueios || []).length) extra.acesso.bloqueios.forEach(function (b) { falta.push("Acesso do equipamento — " + b); });
     var porIc = [];
     (avaliacoes || []).forEach(function (a, i) { if (a && (a.status === "pendente" || a.status === "reprovado")) porIc.push((i + 1) + "º içamento: " + (a.reprovado || a.bloqueios[0] || a.status)); });
     var reprovado = (avaliacoes || []).some(function (a) { return a && a.status === "reprovado"; });
@@ -909,7 +992,7 @@
     prem: prem, cercar: cercar, capGuindaste: capGuindaste, capMunck: capMunck, capacidade: capacidade, porte: porte,
     carga: carga, geometria: geometria, pontosIcamento: pontosIcamento, lingas: lingas, conferirAcessorio: conferirAcessorio,
     classeVento: classeVento, S2: S2, S3: S3, vento: vento, tempo: tempo, avaliar: avaliar, melhores: melhores,
-    liberacao: liberacao, passoAPasso: passoAPasso, nomeEq: nomeEq, pontoOlho: pontoOlho,
+    liberacao: liberacao, passoAPasso: passoAPasso, nomeEq: nomeEq, pontoOlho: pontoOlho, viasAfetadas: viasAfetadas, classeVia: classeVia, acesso: acesso,
     layoutEquip: layoutEquip, dentroPoligono: dentroPoligono, sapatasProibidas: sapatasProibidas, rumoPadrao: rumoPadrao, coletaPadrao: coletaPadrao, modoSugerido: modoSugerido, croqui: croqui, dxf: dxf, svgCroqui: svgCroqui, ifc: ifc, ifcTxt: ifcTxt, csvCargas: csvCargas
   };
   global.IcarPlano = IcarPlano;

@@ -181,12 +181,42 @@
      ctx = { plano: {id, nome}, data, icamentos: [{id, nome, data, tempo_min}], equipamento: {nome, tipo}, frota: {placa, posse} | null,
              liberacoes: [plano.liberacoes], existentes: { equip: [linhas do formulário], ocor: [linhas do formulário] } }
      → { equip, ocor, doDia, jaTinha, semTempo } */
+  /* DEPOIS DO IÇAMENTO (ESPEC §II.14): quase-acidente, incidente, acidente e lição aprendida ligados ao plano.
+     ⚠ Acidente com lesão: a CAT é obrigação legal (Lei 8.213/1991, art. 22 — até o 1º dia útil seguinte; morte, de imediato). */
+  var TIPOS_REGISTRO = [
+    { id: "quase-acidente", rotulo: "Quase-acidente" },
+    { id: "incidente", rotulo: "Incidente (dano material, sem lesão)" },
+    { id: "acidente", rotulo: "Acidente com lesão", aviso: "Emitir a CAT até o 1º dia útil seguinte (de imediato em caso de morte) — Lei 8.213/1991, art. 22." },
+    { id: "licao", rotulo: "Lição aprendida" }
+  ];
+  function registro(r) {
+    r = r || {};
+    var tipo = TIPOS_REGISTRO.filter(function (t) { return t.id === r.tipo; })[0], data = txt(r.data), desc = txt(r.descricao);
+    if (!tipo) return { ok: false, motivo: "escolha o tipo do registro" };
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) return { ok: false, motivo: "informe a data" };
+    if (desc.length < 10) return { ok: false, motivo: "descreva o que aconteceu (pelo menos uma frase)" };
+    return { ok: true, aviso: tipo.aviso || "", registro: { id: txt(r.id) || ("oc" + Math.random().toString(36).slice(2, 10)), data: data, tipo: tipo.id, icamentoId: txt(r.icamentoId),
+      descricao: desc.slice(0, 1000), causa: txt(r.causa).slice(0, 500), acao: txt(r.acao).slice(0, 500), responsavel: txt(r.responsavel).slice(0, 120), em: txt(r.em) } };
+  }
+  function rotuloRegistro(id) { var t = TIPOS_REGISTRO.filter(function (x) { return x.id === id; })[0]; return t ? t.rotulo : id; }
+
   function rdoItens(ctx) {
     ctx = ctx || {};
     var pl = ctx.plano || {}, data = txt(ctx.data), ex = ctx.existentes || {}, out = { equip: [], ocor: [], doDia: 0, jaTinha: 0, semTempo: false };
     var doDia = (ctx.icamentos || []).map(function (ic, i) { return { ic: ic, n: i + 1 }; }).filter(function (x) { return txt(x.ic.data) === data; });
-    out.doDia = doDia.length; if (!doDia.length || !pl.id) return out;
     function tem(lista, chave) { return (lista || []).some(function (x) { return x && x.origemIcamento && x.origemIcamento.chave === chave; }); }
+    /* os registros de segurança do dia vão ao RDO mesmo sem içamento marcado nele (o quase-acidente pode ser na mobilização) */
+    var nIc = {}; (ctx.icamentos || []).forEach(function (ic, i) { nIc[ic.id] = { n: i + 1, nome: ic.nome }; });
+    (ctx.registros || []).forEach(function (r) {
+      if (!r || txt(r.data) !== data || !pl.id) return;
+      var ch = "icamento:" + pl.id + ":rdo:oc:" + r.id;
+      if (tem(ex.ocor, ch)) { out.jaTinha++; return; }
+      var ic = nIc[r.icamentoId];
+      out.ocor.push({ tipo: "seguranca", descricao: rotuloRegistro(r.tipo) + (ic ? " no içamento " + ic.n + " (" + (txt(ic.nome) || "peças") + ")" : " no plano de içamento") + ": " + txt(r.descricao).replace(/([^.!?])$/, "$1.") +
+        (txt(r.causa) ? " Causa provável: " + txt(r.causa) + "." : "") + (txt(r.acao) ? " Ação: " + txt(r.acao) + "." : ""),
+        responsavel: txt(r.responsavel), horasParadas: 0, prazoCorrecao: "", origemIcamento: { planoId: pl.id, registroId: r.id, chave: ch } });
+    });
+    out.doDia = doDia.length; if (!doDia.length || !pl.id) return out;
     var chE = "icamento:" + pl.id + ":rdo:" + data + ":equipamento", min = 0, ids = [];
     doDia.forEach(function (x) { ids.push(x.ic.id); if (+x.ic.tempo_min > 0) min += +x.ic.tempo_min; else out.semTempo = true; });
     if (tem(ex.equip, chE)) out.jaTinha++;
@@ -212,7 +242,7 @@
     return out;
   }
 
-  var IcarLanca = { PREMISSAS: PREMISSAS, montar: montar, rdoItens: rdoItens, chaveTarefa: chaveTarefa, chaveReq: chaveReq };
+  var IcarLanca = { PREMISSAS: PREMISSAS, montar: montar, rdoItens: rdoItens, chaveTarefa: chaveTarefa, chaveReq: chaveReq, TIPOS_REGISTRO: TIPOS_REGISTRO, registro: registro, rotuloRegistro: rotuloRegistro };
   global.IcarLanca = IcarLanca;
   if (typeof module !== "undefined" && module.exports) module.exports = IcarLanca;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

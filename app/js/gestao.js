@@ -16514,6 +16514,7 @@
         pecas: pecas, geos: gs, pos: ic.pos || p.pos || null, coleta: ic.coleta || null, rumo: ic.pos && ic.rumo_graus != null ? +ic.rumo_graus : (p.rumo_graus != null ? p.rumo_graus : null), modo: ic.modo || "2", premissas: prem,
         acessorios: ic.acessorios_kg > 0 ? [{ nome: ic.acessorios_nome || "lingas, manilhas e balancim", kg: +ic.acessorios_kg, qtd: 1 }] : [],
         proibidoApoiar: p.proibidoApoiar || [],
+        vias: p.vias || [],   // ruas do mapa guardadas no plano: a área isolada é conferida contra elas (interdição, CTB art. 95)
         colisao: (this._icarEst().colisoes || {})[ic.id] || null, visada: (this._icarEst().visadas || {})[ic.id] || null,
         moitao_kg: e.moitao_kg != null && e.moitao_kg !== "" ? +e.moitao_kg : null, lingas: ic.lingas || { tipo: "cinta", modo: "direto" },
         manilha_cmt_kg: ic.manilha_cmt_kg != null && ic.manilha_cmt_kg !== "" ? +ic.manilha_cmt_kg : null, flags: ic.flags || {},
@@ -16572,8 +16573,10 @@
         var t = ev.target; if (!t || !t.getAttribute) return;
         if (t.hasAttribute("data-icar-anexo")) { self._icarAnexar(t.getAttribute("data-icar-anexo"), t.files); return; }
         if (t.hasAttribute("data-icar-planta-arq")) { if (t.files && t.files[0]) self._icarPlantaArquivo(t.files[0]); return; }
+        if (t.hasAttribute("data-icar-lev-arq")) { if (t.files && t.files[0]) self._icarLevArquivo(t.files[0]); return; }
         if (t.hasAttribute("data-icar-planta")) { self._icarPlantaCampo(t); return; }
         if (t.hasAttribute("data-icar-local")) { self._icarLocalCampo(t); return; }
+        if (t.hasAttribute("data-icar-reg")) { var stR = self._icarEst(); stR.regNovo = stR.regNovo || {}; stR.regNovo[t.getAttribute("data-icar-reg")] = t.value; if (t.getAttribute("data-icar-reg") === "tipo") self._icarRender(); return; }   // o tipo redesenha: o aviso da CAT aparece ao escolher acidente
         if (t.hasAttribute("data-icar-k")) { self._icarSobrecarga(+t.value || 1); self._icarRender(); return; }
         if (t.hasAttribute("data-icar-moitao")) { self._icarUsarMoitao(t.value === "" ? null : t.value); return; }
         if (t.hasAttribute("data-icar-dr")) { var dr = Util.parseNum(String(t.value || "0")); self._icarEst().dR = isFinite(dr) ? dr : 0; self._icarRender(); self._icarRedesenhar(true); return; }
@@ -16747,7 +16750,7 @@
         '<button class="btn sm" data-icar="apoio-subir" data-v="-0.1" title="Descer 0,10 m">▼ 0,10</button><button class="btn sm" data-icar="apoio-subir" data-v="-1" title="Descer 1 m">▼ 1 m</button></div>' +
         '<div data-icar-enterrada="' + ent.length + '" style="margin-top:4px;color:#b45309">' + ent.map(function (s) {
           return "Atenção: a sapata " + esc(s.nome) + " está" + " " + f(s.dif, 2) + " m abaixo do terreno — suba o apoio ou escolha a superfície.";
-        }).join("<br>") + "</div></div>";
+        }).join("<br>") + "</div>" + this._icarHtmlDecLev(p, eq) + "</div>";
       h += '<div style="font-size:12px;margin-top:12px"><b>Posição no projeto</b> <span class="muted">(centro de giro)</span></div>' +
         '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12px;margin-top:4px">' +
         (p.pos ? "X " + f(p.pos.x, 2) + " · Y " + f(p.pos.y, 2) + " · Z " + f(p.pos.z, 2) : '<span class="muted">não marcada</span>') +
@@ -16764,6 +16767,7 @@
         this._icarHtmlMoitao(p, eq) + this._icarHtmlProibido(p) + this._icarHtmlRede(p) +
         "<span>Moitão / gancho (kg)</span><span>" + num("equipamento.moitao_kg", e.moitao_kg, eq && eq.moitao_kg != null ? String(eq.moitao_kg) : "informar") + (eq && eq.moitao_kg != null ? ' <span class="muted">catálogo: ' + f(eq.moitao_kg, 0) + " kg (já na tabela)</span>" : "") + "</span>" +
         "<span>Limite de vento (m/s)</span><span>" + num("equipamento.vLim", e.vLim, eq && eq.vento_ms ? String(eq.vento_ms) : "manual") + (eq && eq.vento_fonte ? ' <span class="muted">' + esc(eq.vento_fonte) + "</span>" : ' <span class="muted">do manual do equipamento</span>') + "</span></div>";
+      h += this._icarHtmlAcesso(p, eq, num, txt);
       /* ficha (NR-18 18.10.1.17b/c) */
       h += '<div style="font-size:12px;margin-top:12px"><b>Ficha do equipamento e da equipe</b> <span class="muted">(NR-18 18.10.1.17)</span></div>' +
         '<div style="display:grid;grid-template-columns:auto 1fr;gap:5px 8px;align-items:center;font-size:12px;margin-top:4px">' +
@@ -16775,6 +16779,106 @@
         "<span>CNH (categoria / validade)</span>" + txt("equipamento.cnh", e.cnh) + "</div>" +
         '<p class="muted" style="font-size:11px;margin-top:4px">Laudo, plano de manutenção, certificados e ART se anexam na aba Documentos.</p>';
       return h;
+    },
+    /* ---------- RELEVO DO LEVANTAMENTO (ESPEC §II.8.3; motor js/icarrelevo.js) ----------
+       ⚠ O plano guarda os pontos CRUS (E, N, Z) — até 3 mil, rareados por grade — e a superfície é refeita na sessão: mudar a
+         localização, o fuso ou o "0,00 = cota X" refaz o chão sem reimportar. Sem nada inventado: fora dos triângulos não há cota. */
+    _icarLev: function (p) {
+      if (!window.IcarRelevo) return null;
+      var lv = p && p.levantamento; if (!lv || !(lv.pontos || []).length) return null;
+      var st = this._icarEst(), g = this._icarGeo(p), ass = JSON.stringify([lv.em, lv.nome, lv.pontos.length, lv.trocaNE, lv.sistema, lv.fuso, lv.zRef, lv.maxAresta, g ? [g.lat, g.lon, g.x0, g.y0, g.norte] : null]);
+      if (st.levAss === ass) return st.levTin;
+      var pts = lv.pontos.map(function (q) { return { e: q[0], n: q[1], z: q[2] }; });
+      var fuso = +lv.fuso || (g && window.IcarGeo ? IcarGeo.fusoDe(+g.lon) : 0);   // trocou para UTM depois da importação: o fuso da obra
+      var m = lv.sistema === "utm" && !g ? [] : IcarRelevo.paraModelo(pts, { sistema: lv.sistema, geo: g, fuso: fuso, sul: true, zRef: +lv.zRef || 0 });
+      st.levAss = ass; st.levTin = m.length >= 3 ? IcarRelevo.triangular(m, { maxAresta_m: lv.maxAresta != null && lv.maxAresta !== "" ? +lv.maxAresta : undefined }) : null;
+      return st.levTin;
+    },
+    _icarLevArquivo: function (file) {
+      var self = this, nome = file.name || "levantamento";
+      if (!window.IcarRelevo) return;
+      if (file.size > 20 * 1024 * 1024) { UI.toast(nome + ": acima de 20 MB — exporte só os pontos do lote.", "erro"); return; }
+      var rd = new FileReader();
+      rd.onload = function () {
+        var bytes = new Uint8Array(rd.result), txt = new TextDecoder("utf-8").decode(bytes);
+        if (txt.indexOf("\uFFFD") >= 0) { try { txt = new TextDecoder("windows-1252").decode(bytes); } catch (eD) {} }
+        var r = IcarRelevo.lerPontos(txt);
+        if (!r.ok) { UI.toast(nome + ": " + r.motivo + ".", "aviso", 9000); return; }
+        var p = self._icarPlano(), g = self._icarGeo(p);
+        var cru = IcarRelevo.rarear(r.pontos.map(function (q) { return { x: q.e, y: q.n, z: q.z }; }), IcarRelevo.PREMISSAS.maxPontos);
+        var sist = r.pareceUtm ? "utm" : "projeto", fuso = g && window.IcarGeo ? IcarGeo.fusoDe(+g.lon) : null;
+        /* 0,00 do projeto: SUPOSTO = a cota do levantamento no meio do modelo (senão a menor) — a tela manda conferir */
+        var zMin = Infinity; cru.forEach(function (q) { zMin = Math.min(zMin, q.z); });
+        p.levantamento = { nome: nome, ordem: r.ordem, ordemAdivinhada: !!r.ordemAdivinhada, sistema: sist, fuso: fuso, zRef: Math.round(zMin * 100) / 100, zRefSuposto: true, passo: 1, maxAresta: null, mostrar: true,
+          ignoradas: r.ignoradas, lidos: r.pontos.length, pontos: cru.map(function (q) { return [Math.round(q.x * 1000) / 1000, Math.round(q.y * 1000) / 1000, Math.round(q.z * 1000) / 1000]; }), em: new Date().toISOString() };
+        var tin0 = self._icarLev(p), cen = self._icarCentroModelo(), zc = tin0 && tin0.ok ? IcarRelevo.cota(tin0, cen.x, cen.y) : null;
+        if (zc != null) { p.levantamento.zRef = Math.round((zc + p.levantamento.zRef) * 100) / 100; self._icarEst().levAss = null; }
+        if (self._icarSalvar(p)) { self._icarRender(); UI.toast(nome + ": " + cru.length + " ponto(s) no chão do 3D" + (cru.length < r.pontos.length ? " (de " + r.pontos.length + ", rareados)" : "") + ". Confira a ordem das colunas e o \"0,00 do projeto\".", "ok", 8000); }
+      };
+      rd.onerror = function () { UI.toast("Não consegui ler " + nome + ".", "erro"); };
+      rd.readAsArrayBuffer(file);
+    },
+    _icarLevAcao: function (acao) {
+      var p = this._icarPlano(), lv = p.levantamento; if (!lv) return;
+      if (acao === "lev-tirar") { p.levantamento = null; this._icarEst().levAss = null; if (this._icarSalvar(p)) this._icarRender(); return; }
+      if (acao === "lev-ver") { lv.mostrar = lv.mostrar === false; if (this._icarSalvar(p)) this._icarRender(); return; }
+      if (acao === "lev-trocar-ne") { lv.pontos = lv.pontos.map(function (q) { return [q[1], q[0], q[2]]; }); lv.trocaNE = !lv.trocaNE; lv.ordem = { PNEZD: "PENZD", PENZD: "PNEZD", NEZ: "ENZ", ENZ: "NEZ" }[lv.ordem] || lv.ordem; if (this._icarSalvar(p)) this._icarRender(); return; }
+    },
+    _icarHtmlLevantamento: function (p) {
+      if (!window.IcarRelevo) return "";
+      var self = this, esc = Util.esc, f = function (v, d) { return self._icarFmt(v, d); }, lv = p.levantamento, tin = this._icarLev(p), g = this._icarGeo(p);
+      var h = '<div style="font-size:12px;margin-top:10px;border-top:1px solid var(--linha);padding-top:8px" data-icar-lev="' + (tin && tin.ok ? tin.tris.length : 0) + '"><b>Relevo do levantamento</b> <span class="muted">(pontos do topógrafo em CSV/TXT: PNEZD do Civil 3D, PENZD, NEZ ou XYZ)</span>' +
+        '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px"><label class="btn sm' + (lv ? "" : " primary") + '" style="cursor:pointer">' + (lv ? "Trocar os pontos" : "Escolher os pontos") +
+        '<input type="file" accept=".csv,.txt,.xyz,.pnezd,.pts" data-icar-lev-arq="1" style="display:none"></label>' +
+        (lv ? "<span>" + esc(lv.nome) + "</span>" + '<button class="btn sm" data-icar="lev-ver">' + (lv.mostrar === false ? "Mostrar no 3D" : "Esconder do 3D") + '</button><button class="btn sm" data-icar="lev-tirar">Tirar</button>' : "") + "</div>";
+      if (!lv) return h + '<div class="muted" style="margin-top:4px">O chão que vale no lote: superfície e curvas de nível no 3D, o agente do equipamento pisa nele e a declividade sob as patolas sai dele.</div></div>';
+      function sel(attr, val, ops) { return '<select data-icar-c="' + attr + '">' + ops.map(function (o) { return '<option value="' + o[0] + '"' + (String(val) === String(o[0]) ? " selected" : "") + ">" + esc(o[1]) + "</option>"; }).join("") + "</select>"; }
+      function numI(attr, val, w) { return '<input type="text" inputmode="decimal" data-icar-c="' + attr + '" data-num="1" value="' + (val == null || val === "" ? "" : esc(String(val).replace(".", ","))) + '" style="width:' + (w || 70) + 'px;text-align:right">'; }
+      h += '<div style="margin-top:4px">' + f(lv.pontos.length, 0) + " ponto(s)" + (lv.lidos > lv.pontos.length ? " (de " + f(lv.lidos, 0) + ", rareados)" : "") + (lv.ignoradas ? " · " + lv.ignoradas + " linha(s) ignorada(s)" : "") +
+        " · colunas " + esc(lv.ordem) + (lv.ordemAdivinhada ? ' <span style="color:#b45309">(adivinhada — confira)</span>' : "") + ' <button class="btn sm" data-icar="lev-trocar-ne" title="Se o desenho saiu espelhado/girado, Norte e Este estão trocados">Trocar Norte e Este</button></div>' +
+        '<div style="display:grid;grid-template-columns:auto 1fr;gap:5px 8px;align-items:center;margin-top:4px">' +
+        "<span>Coordenadas</span><span>" + sel("levantamento.sistema", lv.sistema, [["utm", "UTM SIRGAS 2000"], ["projeto", "as do projeto (mesmo sistema do IFC)"]]) + (lv.sistema === "utm" ? " fuso " + numI("levantamento.fuso", lv.fuso, 44) : "") + "</span>" +
+        "<span>0,00 do projeto</span><span>= cota " + numI("levantamento.zRef", lv.zRef, 80) + ' m do levantamento' + (lv.zRefSuposto ? ' <span style="color:#b45309">(SUPOSTO: a cota no meio do modelo — confira no projeto)</span>' : "") + "</span>" +
+        "<span>Curvas de nível</span><span>a cada " + sel("levantamento.passo", lv.passo || 1, [[0.5, "0,5 m"], [1, "1 m"], [2, "2 m"], [5, "5 m"]]) + " · aresta máx. " + numI("levantamento.maxAresta", lv.maxAresta != null ? lv.maxAresta : "", 50) + ' m <span class="muted">(vazio = ' + f(IcarRelevo.PREMISSAS.maxAresta_m, 0) + " m: acima disso é vão não medido)</span></span></div>";
+      if (lv.sistema === "utm" && !g) h += '<div style="color:#b45309;margin-top:4px">Coordenadas UTM precisam da localização da obra (aba Local e clima) — ou escolha "as do projeto".</div>';
+      else if (tin && tin.ok) h += '<div style="margin-top:4px" data-icar-lev-resumo="1">' + f(tin.tris.length, 0) + " triângulos · " + f(tin.area, 0) + " m² · cotas de " + f(tin.zmin + (+lv.zRef || 0), 2) + " a " + f(tin.zmax + (+lv.zRef || 0), 2) + " m (no modelo: " + f(tin.zmin, 2) + " a " + f(tin.zmax, 2) + ")" +
+        (tin.longos ? ' <span class="muted">· ' + tin.longos + " triângulo(s) sobre vão não medido descartados</span>" : "") + "</div>";
+      else if (tin) h += '<div style="color:#b45309;margin-top:4px">' + esc(tin.motivo) + ".</div>";
+      return h + "</div>";
+    },
+    /* declividade do LEVANTAMENTO sob as sapatas da posição marcada (o mesmo limite que o agente usa) */
+    _icarHtmlDecLev: function (p, eq) {
+      var tin = this._icarLev(p); if (!tin || !tin.ok || !p.pos || !eq || !window.IcarRelevo) return "";
+      var self = this, f = function (v, d) { return self._icarFmt(v, d); }, rumo = p.rumo_graus != null ? p.rumo_graus : 0;
+      if (p.rumo_graus == null) { var ic = p.icamentos[this._icarEst().sel], a = ic ? this._icarAvaliar(p, ic) : null; rumo = IcarPlano.rumoPadrao(p.pos, a && a.geo && a.geo.cg); }
+      var lay = IcarPlano.layoutEquip(eq, p.pos, rumo), d = IcarRelevo.declividade(tin, lay.sapatas), lim = window.IcarAgente ? IcarAgente.PREMISSAS.declividadeMax_pct : 5;
+      if (d.fora === lay.sapatas.length) return '<div class="muted" style="margin-top:4px" data-icar-declev="fora">As sapatas ficam fora da área do levantamento.</div>';
+      var alto = d.maxPct > lim + 1e-9;
+      return '<div style="margin-top:4px;' + (alto ? "color:#b45309" : "") + '" data-icar-declev="' + d.maxPct + '">Levantamento sob as patolas: desnível de ' + f(d.desnivel, 2) + " m entre sapatas, declividade máx. " + f(d.maxPct, 1) + " %" +
+        (alto ? " — acima de " + f(lim, 1) + " % (premissa do agente): confira o curso dos macacos na ficha e calce as sapatas" : " (até " + f(lim, 1) + " %, premissa)") + (d.fora ? " · " + d.fora + " sapata(s) fora do levantamento" : "") + ".</div>";
+    },
+    /* ---------- ACESSO DO EQUIPAMENTO À OBRA (ESPEC §II.14; motor IcarPlano.acesso) ----------
+       O caminho até a posição (o que a pessoa mede) contra a ficha (catálogo/CRLV) e o que o fabricante informa. O que não passa
+       vira pendência da liberação; o que não dá para conferir aparece como "não conferido" com o dado que falta. */
+    _icarAcesso: function (p) {
+      if (!window.IcarPlano || !IcarPlano.acesso) return null;
+      var eq = this._icarEquip(p), fi = null; try { fi = eq ? this._icarFicha(p, eq) : null; } catch (e) { fi = null; }
+      return IcarPlano.acesso(fi || {}, p.acesso || {}, p.premissas);
+    },
+    _icarHtmlAcesso: function (p, eq, num, txt) {
+      var esc = Util.esc, ac = this._icarAcesso(p), a = p.acesso || {}; if (!ac) return "";
+      var cor = { ok: "#16a34a", falha: "#dc2626", atencao: "#d97706", sem: "#64748b" }, rot = { ok: "ok", falha: "não passa", atencao: "atenção", sem: "não conferido" };
+      var h = '<div style="font-size:12px;margin-top:12px" data-icar-acesso="' + ac.bloqueios.length + '"><b>Acesso à obra</b> <span class="muted">— o caminho até a posição (portão, rua, rampa, laje) contra as medidas do equipamento</span>' +
+        '<div style="display:grid;grid-template-columns:auto 1fr;gap:5px 8px;align-items:center;margin-top:4px">' +
+        "<span>Passagem mais estreita</span><span>" + num("acesso.largura_m", a.largura_m, "m", 60) + ' m <span class="muted">(portão, rua entre carros, rampa)</span></span>' +
+        "<span>Altura livre mais baixa</span><span>" + num("acesso.alturaLivre_m", a.alturaLivre_m, "m", 60) + ' m <span class="muted">(fio, marquise, viga do portão)</span></span>' +
+        "<span>Curva mais fechada</span><span>" + num("acesso.raioCurva_m", a.raioCurva_m, "m", 60) + " m de raio · equipamento " + num("acesso.raioCurvaEquip_m", a.raioCurvaEquip_m, "m", 60) + ' m <span class="muted">(ficha do fabricante)</span></span>' +
+        "<span>Rampa mais forte</span><span>" + num("acesso.rampa_pct", a.rampa_pct, "%", 50) + " % · o equipamento sobe " + num("acesso.rampaMaxEquip_pct", a.rampaMaxEquip_pct, "%", 50) + ' % <span class="muted">(fabricante, se tiver)</span></span>' +
+        "<span>Limite por eixo no caminho</span><span>" + num("acesso.cargaEixo_t", a.cargaEixo_t, "t", 50) + " t · peso total " + num("acesso.pesoTotal_t", a.pesoTotal_t, "t", 50) + ' t <span class="muted">(laje, ponte, pavimento; peso pela ficha/CRLV)</span></span>' +
+        "<span>Medidas do equipamento</span><span>largura " + num("acesso.larguraEquip_m", a.larguraEquip_m, "ficha", 50) + " · altura " + num("acesso.alturaEquip_m", a.alturaEquip_m, "ficha", 50) + ' m <span class="muted">(vazio = a ficha)</span></span>' +
+        "<span>Fonte / observação</span>" + txt("acesso.obs", a.obs, "ex.: medido na visita de 02/10, trena") + "</div>";
+      ac.itens.forEach(function (x) { h += '<div style="margin-top:3px" data-icar-acesso-item="' + x.id + '" data-estado="' + x.estado + '"><b style="color:' + cor[x.estado] + '">' + esc(x.rotulo) + ": " + rot[x.estado] + "</b> — " + esc(x.texto) + "</div>"; });
+      return h + "</div>";
     },
     /* ---------- aba Vento ---------- */
     _icarHtmlVento: function (p, eq) {
@@ -16866,6 +16970,19 @@
       r.propostas.forEach(function (q) { var a = antes[q.fonte]; if (a) { q.aceita = a.aceita; q.descartada = a.descartada; q.alturaEditada = a.alturaEditada; } });
       lc.mapa = r;
     },
+    /* AS VIAS DO MAPA NO PLANO: até 40 ruas/passeios a até 150 m da obra, no referencial do modelo — é contra elas que a área isolada
+       de cada içamento é conferida (IcarPlano.viasAfetadas: interdição com permissão do órgão de trânsito). Dado público do mapa,
+       sem nada de cliente. Só grava quando muda (roda também quando a georreferência muda). */
+    _icarLocalGuardarVias: function () {
+      var p = this._icarPlano(), lc = this._icarLocalEst();
+      if (!lc.mapa || !this._icarGeo(p)) return;
+      var vias = lc.mapa.ruas.filter(function (r) { return r.distancia <= 150 && r.pontos && r.pontos.length >= 2; }).sort(function (a, b) { return a.distancia - b.distancia; }).slice(0, 40).map(function (r) {
+        return { nome: String(r.nome || "").slice(0, 80), tipo: r.tipo || "", largura: r.largura != null ? Math.round(+r.largura * 10) / 10 : null, larguraEstimada: !!r.larguraEstimada,
+          pontos: r.pontos.map(function (q) { return [Math.round(q[0] * 100) / 100, Math.round(q[1] * 100) / 100]; }) };
+      });
+      if (JSON.stringify(vias) === JSON.stringify(p.vias || [])) return;
+      p.vias = vias; this._icarSalvar(p);
+    },
     /* trechos de rede do mapa agrupados pela linha (o id do OpenStreetMap): a pessoa informa altura e tensão UMA vez por linha */
     _icarLocalRedes: function (mapa) {
       var gr = {}, ordem = [];
@@ -16911,6 +17028,7 @@
         h += '<div style="margin-top:6px" data-icar-osm="' + mp.propostas.length + '" data-icar-osm-vivas="' + vivas.length + '">Do mapa: ' + (mp.porTipo.edificacao || 0) + " edificação(ões), " + (mp.porTipo.muro || 0) + " muro(s), " + (mp.porTipo.agua || 0) + " água, " +
           mp.ruas.length + " rua(s), " + this._icarLocalRedes(mp).length + " linha(s) de rede" + (nAc ? " · " + nAc + " já no plano" : "") + (mp.conta.cortadas ? ' · <span style="color:#b45309">' + mp.conta.cortadas + " mais longe ficaram de fora (teto de 300)</span>" : "") + "</div>";
         mp.avisos.forEach(function (a) { h += '<div style="color:#b45309">• ' + esc(a) + "</div>"; });
+        if ((p.vias || []).length) h += '<div class="muted" data-icar-vias="' + p.vias.length + '">' + p.vias.length + " rua(s)/passeio(s) do mapa guardados no plano: a área isolada de cada içamento é conferida contra eles (interdição com permissão do órgão de trânsito).</div>";
         if (vivas.length) h += '<div style="margin-top:4px"><button class="btn sm primary" data-icar="loc-aceitar" data-v="todas">Aceitar todas</button> <span class="muted">(menos as que estão sobre o terreno da obra) — viram obstáculo no caminho e no agente do equipamento</span></div>';
         vivas.slice(0, 40).forEach(function (q) {
           h += '<div style="border-top:1px solid var(--linha);padding:4px 0;display:flex;gap:6px;align-items:center;flex-wrap:wrap" data-icar-osm-prop="' + q.n + '"><span style="flex:1;min-width:180px"><b>' + (rot[q.tipo] || q.tipo) + "</b> a " + f(q.distancia, 0) + " m" +
@@ -16994,6 +17112,7 @@
       function livre() { lc.ocupado = null; }
       function usarGeo(ng, msg) {
         var a = p.geo || {};
+        p.vias = [];   // as ruas guardadas eram do lugar antigo
         p.geo = { lat: Math.round(+ng.lat * 1e7) / 1e7, lon: Math.round(+ng.lon * 1e7) / 1e7, x0: ng.x0 != null ? +ng.x0 : (a.x0 != null ? a.x0 : 0), y0: ng.y0 != null ? +ng.y0 : (a.y0 != null ? a.y0 : 0),
           norte: ng.norte != null ? +ng.norte : (a.norte != null ? a.norte : 0), fonte: ng.fonte || "", endereco: ng.endereco || "" };
         /* a obra mudou de lugar: o que veio do mapa e do clima do lugar antigo não vale mais */
@@ -17030,7 +17149,7 @@
         this._icarGeoPost("/ia/geo/entorno", { lat: +g.lat, lon: +g.lon, raio: +lc.raio || 150 }).then(function (x) {
           livre();
           if (x.s !== 200 || !x.j.ok) { UI.toast(self._icarGeoErro(x, "Entorno"), "erro", 9000); self._icarRender(); return; }
-          lc.mapaResp = x.j; self._icarLocalMapa(self._icarPlano());
+          lc.mapaResp = x.j; self._icarLocalMapa(self._icarPlano()); self._icarLocalGuardarVias();
           var m = lc.mapa; if (m) UI.toast(m.propostas.length + " volume(s) e " + self._icarLocalRedes(m).length + " linha(s) de rede do mapa — em laranja no 3D: aceite, ajuste a altura ou descarte.", "ok", 8000);
           self._icarRender(); self._icarPlantaDesenhar();
         });
@@ -17169,7 +17288,7 @@
       if (assG !== lc.assG) {
         lc.assG = assG;
         lc.malha = g && lc.relevoResp ? IcarEntorno.malhaRelevo(lc.relevoResp, g, cota) : null;
-        if (g && lc.mapaResp) this._icarLocalMapa(p); else lc.mapa = null;
+        if (g && lc.mapaResp) { this._icarLocalMapa(p); this._icarLocalGuardarVias(); } else lc.mapa = null;
         if (!g) lc.imagem = null; else if (lc.imagem) lc.imagem.cantos = IcarEntorno.cantosImagem(g, lc.imagem.plano);
       }
       var cfg = null;
@@ -17177,12 +17296,20 @@
       if (g && lc.mostrar !== false) {
         cfg = { relevo: lc.malha ? { pos: lc.malha.pos, idx: lc.malha.idx } : null, imagem: lc.imagem ? { canvas: lc.imagem.canvas, cantos: lc.imagem.cantos, z: cota } : null, ruas: [], verdes: [], postes: [], redes: [] };
         if (lc.mapa) {
-          cfg.ruas = lc.mapa.ruas.map(function (r) { return { pontos: r.pontos.map(function (q) { return [q[0], q[1], zEm(q[0], q[1])]; }) }; });
+          /* a faixa de asfalto: a largura do mapa, senão a da classe da via (premissa larguraVia_m) */
+          cfg.ruas = lc.mapa.ruas.map(function (r) {
+            var w = r.largura > 0 ? +r.largura : (IcarPlano.PREMISSAS.larguraVia_m || {})[IcarPlano.classeVia(r.tipo)] || 6, zs = 0;
+            r.pontos.forEach(function (q) { zs += zEm(q[0], q[1]); });
+            return { pontos: r.pontos.map(function (q) { return [q[0], q[1], zEm(q[0], q[1])]; }), faixa: IcarEntorno.faixa(r.pontos, w), z: zs / r.pontos.length };
+          });
+          cfg.arvores = IcarEntorno.arvores(lc.mapa.verdes).map(function (a) { return { x: a.x, y: a.y, z: zEm(a.x, a.y), escala: a.escala }; });
           cfg.verdes = lc.mapa.verdes.map(function (v) { return { poligono: v.poligono.map(function (q) { return [q[0], q[1], zEm(q[0], q[1])]; }) }; });
           cfg.postes = lc.mapa.postes.map(function (q) { return { x: q.x, y: q.y, z: zEm(q.x, q.y) }; });
           cfg.redes = lc.mapa.redes.filter(function (r) { return !r.aceita && !r.jaAceita; }).map(function (r) { return { a: [r.a[0], r.a[1], zEm(r.a[0], r.a[1])], b: [r.b[0], r.b[1], zEm(r.b[0], r.b[1])] }; });
         }
       }
+      var tinL = this._icarLev(p), lvL = p.levantamento;
+      if (tinL && tinL.ok && lvL && lvL.mostrar !== false) { cfg = cfg || {}; cfg.levantamento = IcarRelevo.malha(tinL); cfg.curvas = IcarRelevo.curvas(tinL, +lvL.passo || 1); }
       var hs = null, cj = null;
       if (g && st.aba === "local" && lc.hora != null) {
         cj = this._icarLocalJanela(p);
@@ -17194,7 +17321,7 @@
           cfg.clima = { neblina: +hs.h.neblina || 0, chuva: +hs.h.chuva || 0, ventoMs: rm != null ? rm : hs.h.v10, ventoDir: hs.h.dir10, estado: hs.estado, norte: +g.norte || 0 };
         }
       }
-      var ass = JSON.stringify([assG, lc.mostrar, lc.malha ? lc.malha.pos.length : 0, lc.mapa ? [lc.mapa.ruas.length, lc.mapa.redes.map(function (r) { return !!(r.aceita || r.jaAceita); })] : 0, lc.imagem ? lc.imagem.plano.tiles.length : 0, cfg && cfg.sol ? [lc.hora, this._icarLocalDia(p)] : null, cfg && cfg.clima ? cfg.clima : null]);
+      var ass = JSON.stringify([st.levAss || null, lvL ? [lvL.mostrar, lvL.passo] : null, assG, lc.mostrar, lc.malha ? lc.malha.pos.length : 0, lc.mapa ? [lc.mapa.ruas.length, lc.mapa.redes.map(function (r) { return !!(r.aceita || r.jaAceita); })] : 0, lc.imagem ? lc.imagem.plano.tiles.length : 0, cfg && cfg.sol ? [lc.hora, this._icarLocalDia(p)] : null, cfg && cfg.clima ? cfg.clima : null]);
       if (ass === lc.assin) return;
       lc.assin = ass;
       try { BIM.icarLocal(cfg); } catch (e) {}
@@ -17219,6 +17346,50 @@
         self._icarRender();
       });
     },
+    /* ---------- DEPOIS DO IÇAMENTO: quase-acidente, incidente, acidente, lição aprendida (ESPEC §II.14; motor js/icarlanca.js) ----------
+       Ficam no plano (p.registros), saem no plano impresso e vão ao RDO do dia pelo "Trazer do plano de içamento" (tipo Segurança). */
+    _icarHtmlRegistros: function (p) {
+      if (!window.IcarLanca || !IcarLanca.registro) return "";
+      var self = this, esc = Util.esc, st = this._icarEst(), nv = st.regNovo || {}, regs = (p.registros || []).slice().sort(function (a, b) { return String(b.data).localeCompare(String(a.data)); });
+      var dia = nv.data || hojeLocal();
+      function opt(v, r, sel) { return '<option value="' + esc(v) + '"' + (String(sel) === String(v) ? " selected" : "") + ">" + esc(r) + "</option>"; }
+      var h = '<div style="font-size:12px;margin-top:10px;border-top:1px solid var(--linha);padding-top:8px" data-icar-registros-pos="' + regs.length + '"><b>Depois do içamento</b> <span class="muted">— quase-acidente, incidente, acidente e lição aprendida; vão ao RDO do dia e ao plano impresso</span>' +
+        '<div style="display:grid;grid-template-columns:auto 1fr;gap:5px 8px;align-items:center;margin-top:6px">' +
+        '<span>Tipo</span><select data-icar-reg="tipo">' + opt("", "— escolha —", nv.tipo || "") + IcarLanca.TIPOS_REGISTRO.map(function (t) { return opt(t.id, t.rotulo, nv.tipo || ""); }).join("") + "</select>" +
+        '<span>Data</span><input type="date" data-icar-reg="data" value="' + esc(dia) + '">' +
+        '<span>Içamento</span><select data-icar-reg="icamentoId">' + opt("", "o plano todo (mobilização, montagem…)", nv.icamentoId || "") + (p.icamentos || []).map(function (ic, i) { return opt(ic.id, (i + 1) + "º — " + (ic.nome || "peças"), nv.icamentoId || ""); }).join("") + "</select>" +
+        '<span>O que aconteceu</span><textarea data-icar-reg="descricao" rows="2" placeholder="Ex.: a cinta escorregou do canto do painel ao iniciar o giro">' + esc(nv.descricao || "") + "</textarea>" +
+        '<span>Causa provável</span><input type="text" data-icar-reg="causa" value="' + esc(nv.causa || "") + '" placeholder="opcional">' +
+        '<span>Ação / lição</span><input type="text" data-icar-reg="acao" value="' + esc(nv.acao || "") + '" placeholder="o que muda daqui para a frente">' +
+        '<span>Quem registra</span><input type="text" data-icar-reg="responsavel" value="' + esc(nv.responsavel || "") + '"></div>' +
+        (nv.tipo === "acidente" ? '<div style="color:#b91c1c;margin-top:4px" data-icar-reg-cat="1">Acidente com lesão: emitir a CAT até o 1º dia útil seguinte (de imediato em caso de morte) — Lei 8.213/1991, art. 22.</div>' : "") +
+        '<div style="margin-top:5px"><button class="btn sm primary" data-icar="reg-add">Registrar</button></div>';
+      regs.forEach(function (r) {
+        var ic = (p.icamentos || []).filter(function (x) { return x.id === r.icamentoId; })[0], n = ic ? (p.icamentos.indexOf(ic) + 1) : 0;
+        h += '<div style="border-top:1px solid var(--linha);padding:4px 0;display:flex;gap:6px;align-items:flex-start" data-icar-reg-item="' + esc(r.tipo) + '"><span style="flex:1"><b' + (r.tipo === "acidente" ? ' style="color:#b91c1c"' : "") + ">" + esc(IcarLanca.rotuloRegistro(r.tipo)) + "</b> · " + esc(r.data.split("-").reverse().join("/")) +
+          (n ? " · " + n + "º içamento" : "") + "<br>" + esc(r.descricao) + (r.causa ? '<br><span class="muted">Causa: ' + esc(r.causa) + "</span>" : "") + (r.acao ? '<br><span class="muted">Ação: ' + esc(r.acao) + "</span>" : "") +
+          (r.responsavel ? '<br><span class="muted">' + esc(r.responsavel) + "</span>" : "") + '</span><button class="btn sm" data-icar="reg-tirar" data-v="' + esc(r.id) + '">Tirar</button></div>';
+      });
+      return h + "</div>";
+    },
+    _icarRegistroAcao: function (acao, v) {
+      var p = this._icarPlano(), st = this._icarEst();
+      if (acao === "reg-tirar") {
+        var alvo = (p.registros || []).filter(function (r) { return r.id === v; })[0]; if (!alvo) return;
+        if (!window.confirm("Tirar este registro (" + IcarLanca.rotuloRegistro(alvo.tipo) + " de " + alvo.data.split("-").reverse().join("/") + ") do plano? O que já foi para o RDO continua lá.")) return;
+        p.registros = (p.registros || []).filter(function (r) { return r.id !== v; });
+        if (this._icarSalvar(p)) this._icarRender();
+        return;
+      }
+      var nv = st.regNovo || {}, r = IcarLanca.registro({ tipo: nv.tipo, data: nv.data || hojeLocal(), icamentoId: nv.icamentoId, descricao: nv.descricao, causa: nv.causa, acao: nv.acao, responsavel: nv.responsavel, em: new Date().toISOString() });
+      if (!r.ok) { UI.toast("Registro: " + r.motivo + ".", "aviso"); return; }
+      p.registros = (p.registros || []).concat([r.registro]).slice(-100);
+      if (this._icarSalvar(p)) {
+        st.regNovo = {};
+        this._icarRender();
+        UI.toast(IcarLanca.rotuloRegistro(r.registro.tipo) + " registrado no plano — vai ao RDO de " + r.registro.data.split("-").reverse().join("/") + " pelo \"Trazer do plano de içamento\"." + (r.aviso ? " " + r.aviso : ""), r.aviso ? "aviso" : "ok", r.aviso ? 12000 : 6000);
+      }
+    },
     /* ---------- aba Documentos ---------- */
     /* o dia que vale para a validade dos documentos: o 1º içamento com data, senão hoje */
     _icarDiaRef: function (p) {
@@ -17228,10 +17399,13 @@
     _icarHtmlDocs: function (p) {
       var self = this, esc = Util.esc, a = [];
       var avs = p.icamentos.map(function (ic) { return self._icarAvaliar(p, ic); });
-      var lib = IcarPlano.liberacao(p, avs, this._icarDiaRef(p));
+      var lib = IcarPlano.liberacao(p, avs, this._icarDiaRef(p), { acesso: this._icarAcesso(p) });
       var h = '<div data-icar-liberacao="' + (lib.liberado ? "liberado" : lib.comPorta ? "porta" : "bloqueado") + '" style="border-radius:8px;padding:8px 10px;font-size:12px;margin-bottom:8px;background:' + (lib.liberado ? "#dcfce7" : lib.comPorta ? "#fef3c7" : "#fee2e2") + '">' +
         (lib.liberado ? "<b>Plano liberado</b> — documentos e verificações completos." : lib.reprovado ? "<b>Plano bloqueado</b> — há içamento reprovado (nem a liberação com pendência resolve)." :
           lib.comPorta ? "<b>Liberado com pendência</b> por " + esc(lib.porta.quem) + " em " + esc(lib.porta.quando || "") + ": " + esc(lib.porta.motivo) : "<b>Ainda não liberado</b> — " + (lib.faltaDocs.length + lib.pendIcamentos.length) + " pendência(s).") + "</div>";
+      /* as pendências que NÃO são uma linha desta aba (o acesso, a via) — sem isto a pessoa só via o número, não o portão */
+      var fora = (lib.faltaDocs || []).filter(function (x) { return /^(Acesso do equipamento|Autorização de interdição)/.test(x); });
+      if (fora.length) h += '<div style="font-size:12px;margin:-4px 0 8px;color:#b45309" data-icar-pend-fora="' + fora.length + '">' + fora.map(function (x) { return "• " + esc(x); }).join("<br>") + "</div>";
       h += '<div style="font-size:12px"><b>Documentos</b> <span class="muted">(NR-18 18.10.1.23 e seguintes)</span></div>';
       IcarPlano.DOCUMENTOS.forEach(function (d) {
         var r = p.docs[d.id] || {}, s = r.status || "pendente";
@@ -17249,6 +17423,7 @@
       if (regs.length) h += '<div style="font-size:12px;margin-top:8px" data-icar-clima-regs="' + (p.climaRegistros || []).length + '"><b>Clima registrado</b> <span class="muted">(aba Local e clima · ' + (p.climaRegistros || []).length + ' registro(s), sai no plano impresso)</span>' +
         regs.map(function (r) { return '<div style="border-top:1px solid var(--linha);padding:3px 0">' + esc(self._icarLocalQuando(r.em)) + " · <b>" + esc(self._icarLocalRotStatus(r.status)) + "</b>" + (r.anemometro != null ? " · anemômetro " + esc(String(r.anemometro).replace(".", ",")) + " m/s" : "") +
           (r.motivos && r.motivos.length ? ' <span class="muted">· ' + esc(r.motivos.join("; ")) + "</span>" : "") + "</div>"; }).join("") + "</div>";
+      h += this._icarHtmlRegistros(p);
       h += '<div style="font-size:12px;margin-top:10px"><b>Verificações antes de içar</b></div>';
       IcarPlano.CONFERENCIAS.forEach(function (c) {
         var s = p.conf[c.id] || "";
@@ -17320,11 +17495,14 @@
         for (var i = 0; i < partes.length - 1; i++) { if (!o[partes[i]] || typeof o[partes[i]] !== "object") o[partes[i]] = {}; o = o[partes[i]]; }
         o[partes[partes.length - 1]] = v;
       }
+      if (cam === "levantamento.zRef" && p.levantamento) p.levantamento.zRefSuposto = false;
       if (this._icarSalvar(p)) { this._icarRender(); this._icarRedesenhar(); }
     },
     _icarAcao: function (acao, v, el) {
       var self = this, p = this._icarPlano(), st = this._icarEst();
       if (/^loc-/.test(acao)) { this._icarLocalAcao(acao, v, el); return; }
+      if (acao === "reg-add" || acao === "reg-tirar") { this._icarRegistroAcao(acao, v); return; }
+      if (/^lev-/.test(acao)) { this._icarLevAcao(acao, v); return; }
       if (acao === "agente-ia") { this._icarAgenteIA(+v); return; }
       if (acao === "aba") {
         var antes = st.aba; st.aba = v; this._icarRender();
@@ -17706,7 +17884,7 @@
        ⚠ Quem pode: Auth.podeAprovar() (o app não tem permissão por ação; quem aprova documento é quem assume).
        ⚠ A lista p.liberacoes SÓ CRESCE; anular é um registro novo. */
     _icarCondicao: function (p, ic, a) {
-      var lib = IcarPlano.liberacao(p, [a], ic && ic.data ? ic.data : this._icarDiaRef(p)), mot = [];
+      var lib = IcarPlano.liberacao(p, [a], ic && ic.data ? ic.data : this._icarDiaRef(p), { acesso: this._icarAcesso(p) }), mot = [];
       if (a.reprovado) mot.push(a.reprovado);
       (a.bloqueios || []).forEach(function (b) { mot.push(b); });
       (lib.faltaDocs || []).forEach(function (d) { mot.push("documento pendente: " + d); });
@@ -17758,19 +17936,22 @@
        ⚠ Entorno aceito são volumes do PLANO, nunca peças do IFC; entram como obstáculo no "Verificar o caminho" e no agente do
          equipamento. Proposta (laranja) não entra em nada até ser aceita.
        ⚠ Unidades da planta: DXF em METROS (o js/dxf.js converte) com calibração inicial = identidade (DXF do mesmo projeto já cai no
-         lugar); PDF em PONTOS com y para cima e calibração inicial SUPOSTA 1:100 no meio do modelo — a tela manda calibrar. */
+         lugar); PDF em PONTOS com y para cima e calibração inicial SUPOSTA 1:100 no meio do modelo — a tela manda calibrar.
+       ⚠ IMAGEM (JPG/PNG/WebP — a planta de situação escaneada, o print do Google Earth): em PIXELS com y para cima, escala SUPOSTA
+         de 10 cm por pixel no meio do modelo, e SEM traço vetorial — serve de chão de referência (calibre com 2 pontos); o agente da
+         volumetria diz que não tem o que ler em vez de inventar contorno. */
     _icarPlantaEst: function () { var st = this._icarEst(); if (!st.planta) st.planta = { chave: null }; return st.planta; },
     _icarHtmlCenario: function (p) {
       var self = this, esc = Util.esc, pl = p.planta || null, sp = this._icarPlantaEst(), f = function (v, d) { return self._icarFmt(v, d); };
       var est = !pl ? "nenhuma" : sp.falta ? "falta" : sp.carregada && sp.chave === pl.chave ? "carregada" : "carregando";
-      var h = '<div style="font-size:12px" data-icar-planta-estado="' + est + '"><b>Planta do projeto</b> <span class="muted">(PDF ou DXF; DWG: salve como DXF no CAD)</span>' +
-        '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px"><label class="btn sm' + (pl ? "" : " primary") + '" style="cursor:pointer">' + (pl ? "Trocar a planta" : "Escolher PDF/DXF") +
-        '<input type="file" accept=".pdf,.dxf,.dwg" data-icar-planta-arq="1" style="display:none"></label>' +
+      var h = '<div style="font-size:12px" data-icar-planta-estado="' + est + '"><b>Planta do projeto</b> <span class="muted">(PDF, DXF ou imagem JPG/PNG; DWG: salve como DXF no CAD)</span>' +
+        '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px"><label class="btn sm' + (pl ? "" : " primary") + '" style="cursor:pointer">' + (pl ? "Trocar a planta" : "Escolher PDF/DXF/imagem") +
+        '<input type="file" accept=".pdf,.dxf,.dwg,.jpg,.jpeg,.png,.webp" data-icar-planta-arq="1" style="display:none"></label>' +
         (pl ? "<span>" + esc(pl.nome) + "</span>" + (sp.carregada ? '<button class="btn sm" data-icar="planta-ver">' + (sp.mostrar === false ? "Mostrar no 3D" : "Esconder do 3D") + "</button>" : "") + '<button class="btn sm" data-icar="planta-tirar">Tirar</button>' : "") + "</div>";
       if (!pl) {
         h += '<div class="muted" style="margin-top:4px">A planta aparece no chão do 3D, por baixo do modelo. Calibre com 2 pontos e peça ao agente as edificações, muros e água do entorno — viram obstáculos no caminho do içamento e na escolha do equipamento.</div>';
       } else if (sp.falta) {
-        h += '<div style="color:#b45309;margin-top:4px">O arquivo desta planta foi guardado em outro aparelho (ele não viaja pela nuvem). Escolha o PDF/DXF de novo aqui — a calibração e o entorno aceito continuam.</div>';
+        h += '<div style="color:#b45309;margin-top:4px">O arquivo desta planta foi guardado em outro aparelho (ele não viaja pela nuvem). Escolha o mesmo arquivo de novo aqui — a calibração e o entorno aceito continuam.</div>';
       } else if (!sp.carregada) {
         h += '<div class="muted" style="margin-top:4px">Abrindo a planta…</div>';
       } else {
@@ -17782,15 +17963,16 @@
         h += '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px">Nível <input type="text" inputmode="decimal" data-icar-planta="cota" value="' + esc(String(Math.round((+pl.cota || 0) * 100) / 100).replace(".", ",")) + '" style="width:64px;text-align:right"> m' +
           ' · Transparência <input type="range" min="0" max="100" step="5" data-icar-planta="op" value="' + Math.round((1 - (pl.opacidade == null ? 0.6 : +pl.opacidade)) * 100) + '" style="width:110px"></div>';
         h += '<div style="margin-top:8px" data-icar-planta-cal="' + (pl.calibrada || "nao") + '"><b>Calibração</b> · ' +
-          (pl.calibrada ? "escala " + f(cal.s, cal.s < 0.1 ? 5 : 3) + " m por " + (pl.tipo === "pdf" ? "ponto" : "unidade") + ", rotação " + f(cal.r * 180 / Math.PI, 1) + "°" +
+          (pl.calibrada ? "escala " + f(cal.s, cal.s < 0.1 ? 5 : 3) + " m por " + (pl.tipo === "pdf" ? "ponto" : pl.tipo === "img" ? "pixel" : "unidade") + ", rotação " + f(cal.r * 180 / Math.PI, 1) + "°" +
             (pl.residuo != null ? ' · <span style="color:' + (pl.residuo > 0.2 ? "#dc2626" : "#16a34a") + '">erra ' + f(pl.residuo, 2) + " m no ponto de conferência</span>" : "")
-            : '<span style="color:#b45309">' + (pl.tipo === "pdf" ? "não calibrada — escala SUPOSTA 1:100 no meio do modelo" : "as coordenadas do DXF como estão (se não cair no lugar, calibre)") + "</span>") +
+            : '<span style="color:#b45309">' + (pl.tipo === "pdf" ? "não calibrada — escala SUPOSTA 1:100 no meio do modelo" : pl.tipo === "img" ? "não calibrada — escala SUPOSTA de 10 cm por pixel no meio do modelo" : "as coordenadas do DXF como estão (se não cair no lugar, calibre)") + "</span>") +
           '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px"><button class="btn sm primary" data-icar="planta-cal" data-v="2p">Calibrar por 2 pontos</button>' +
           'ou <input type="text" inputmode="decimal" data-icar-planta="distM" value="' + esc(sp.distM || "") + '" placeholder="m" style="width:56px;text-align:right"> m entre 2 pontos <button class="btn sm" data-icar="planta-cal" data-v="dist">Medir na planta</button>' +
           (pl.calibrada ? '<button class="btn sm" data-icar="planta-cal" data-v="conferir">Conferir num 3º ponto</button>' : "") + "</div>" +
           (sp.calPasso ? '<div style="color:#2563eb;margin-top:2px">' + esc(sp.calPasso) + "</div>" : "") + "</div>";
         /* o agente */
-        h += '<div style="margin-top:8px"><b>Entorno pela planta</b> <button class="btn sm primary" data-icar="planta-analisar">Analisar a planta (agente)</button>';
+        if (pl.tipo === "img") h += '<div class="muted" style="margin-top:8px" data-icar-planta-img="1">Imagem não tem traço vetorial: ela fica no chão como referência. Para o agente criar os volumes do entorno, use o PDF exportado do CAD, o DXF ou o mapa (aba Local e clima).</div><div>';
+        else h += '<div style="margin-top:8px"><b>Entorno pela planta</b> <button class="btn sm primary" data-icar="planta-analisar">Analisar a planta (agente)</button>';
         var props = (sp.propostas || []).filter(function (q) { return !q.aceita && !q.descartada; });
         if (sp.analise) h += ' <span class="muted">' + Object.keys(sp.analise.porTipo).map(function (k) { return sp.analise.porTipo[k] + " " + ({ edificacao: "edificação(ões)", muro: "muro(s)", agua: "água", lote: "lote(s)" }[k] || k); }).join(", ") + (sp.analise.descartes.pequenos ? " · " + sp.analise.descartes.pequenos + " pequeno(s) ignorado(s)" : "") + "</span>";
         if (props.length) {
@@ -17805,6 +17987,7 @@
         }
         h += "</div>";
       }
+      h += this._icarHtmlLevantamento(p);
       /* o entorno aceito (vale com ou sem a planta carregada aqui) */
       var ent = p.entorno || [];
       if (ent.length) h += '<div style="margin-top:8px" data-icar-entorno="' + ent.length + '"><b>Entorno aceito</b> <span class="muted">(obstáculo no caminho e no agente do equipamento)</span>' + ent.map(function (e) {
@@ -17816,15 +17999,16 @@
     _icarPlantaArquivo: function (file) {
       var self = this, nome = file.name || "planta", ext = ((/\.([a-z0-9]+)$/i.exec(nome) || [])[1] || "").toLowerCase();
       if (ext === "dwg") { UI.toast("DWG é formato fechado: no CAD, salve como DXF (Arquivo → Salvar como → DXF) e escolha o DXF aqui.", "aviso"); return; }
-      if (ext !== "pdf" && ext !== "dxf") { UI.toast("Escolha a planta em PDF ou DXF.", "aviso"); return; }
+      var img = /^(jpe?g|png|webp)$/.test(ext);
+      if (ext !== "pdf" && ext !== "dxf" && !img) { UI.toast("Escolha a planta em PDF, DXF ou imagem (JPG/PNG).", "aviso"); return; }
       if (!window.Idb || !Idb.disponivel()) { UI.toast("Este navegador não guarda a planta (IndexedDB indisponível).", "erro"); return; }
       if (file.size > 40 * 1024 * 1024) { UI.toast(nome + ": acima de 40 MB — exporte só a prancha da implantação.", "erro"); return; }
       var rd = new FileReader();
       rd.onload = function () {
         var chave = "icar:planta:" + eid() + ":" + self._icarObra() + ":" + Date.now().toString(36);
-        Idb.set(chave, { nome: nome, tipo: ext, dados: rd.result }).then(function () {
+        Idb.set(chave, { nome: nome, tipo: img ? "img" : ext, mime: img ? (file.type || "image/" + (ext === "jpg" ? "jpeg" : ext)) : "", dados: rd.result }).then(function () {
           var p = self._icarPlano(), velha = p.planta && p.planta.chave;
-          p.planta = { nome: nome, tipo: ext, chave: chave, pagina: 1, cal: null, calibrada: null, residuo: null, cota: +self._icarApoio(p).cota || 0, opacidade: 0.6, em: new Date().toISOString() };
+          p.planta = { nome: nome, tipo: img ? "img" : ext, chave: chave, pagina: 1, cal: null, calibrada: null, residuo: null, cota: +self._icarApoio(p).cota || 0, opacidade: 0.6, em: new Date().toISOString() };
           var sp = self._icarPlantaEst(); sp.propostas = null; sp.analise = null; sp.carregada = false; sp.falta = false; sp.chave = null;
           if (self._icarSalvar(p)) { if (velha) Idb.del(velha)["catch"](function () {}); self._icarEst().aba = "cenario"; self._icarPlantaCarregar(true); self._icarRender(); }
         }, function () { UI.toast("Não consegui guardar a planta neste aparelho.", "erro"); });
@@ -17857,6 +18041,21 @@
       Idb.get(pl.chave).then(function (reg) {
         if (!reg || !reg.dados) { sp.carregando = null; sp.falta = true; self._icarRender(); return; }
         sp.falta = false;
+        if (pl.tipo === "img") {
+          /* a imagem num canvas de até 4096 px no lado maior (o teto de textura que todo aparelho aceita) */
+          var url = URL.createObjectURL(new Blob([reg.dados], { type: reg.mime || "image/jpeg" })), im = new Image();
+          im.onload = function () {
+            var W = im.naturalWidth || im.width, H = im.naturalHeight || im.height, k = Math.min(1, 4096 / Math.max(W, H)), cv = document.createElement("canvas");
+            cv.width = Math.max(1, Math.round(W * k)); cv.height = Math.max(1, Math.round(H * k));
+            cv.getContext("2d").drawImage(im, 0, 0, cv.width, cv.height); URL.revokeObjectURL(url);
+            sp.tipo = "img"; sp.img = cv; sp.larg = W; sp.alt = H; sp.segs = []; sp.textos = []; sp.paginas = 1;
+            var s = 0.1, cen = self._icarCentroModelo();
+            pronto({ cal: { s: s, r: 0, t: { x: cen.x - s * W / 2, y: cen.y - s * H / 2 } }, aviso: true, nota: W + " × " + H + " pixels — escala SUPOSTA de 10 cm por pixel: calibre com 2 pontos" });
+          };
+          im.onerror = function () { URL.revokeObjectURL(url); falhou("Não consegui abrir a imagem " + pl.nome + "."); };
+          im.src = url;
+          return;
+        }
         if (pl.tipo === "dxf") {
           var bytes = new Uint8Array(reg.dados), txt = new TextDecoder("utf-8").decode(bytes);
           if (txt.indexOf("\uFFFD") >= 0) { try { txt = new TextDecoder("windows-1252").decode(bytes); } catch (eD) {} }   // DXF antigo (ANSI): "TÉRREO" chega estragado em UTF-8
@@ -17917,7 +18116,7 @@
       var cfg = { volumes: vols };
       if (pl && sp.carregada && sp.chave === pl.chave && pl.cal && sp.mostrar !== false) {
         cfg.cal = pl.cal; cfg.cota = +pl.cota || 0; cfg.opacidade = pl.opacidade == null ? 0.6 : +pl.opacidade;
-        cfg.imagem = sp.tipo === "pdf" ? sp.img : null; cfg.largura = sp.larg; cfg.altura = sp.alt; cfg.segmentos = sp.tipo === "dxf" ? sp.segs : null;
+        cfg.imagem = sp.tipo === "pdf" || sp.tipo === "img" ? sp.img : null; cfg.largura = sp.larg; cfg.altura = sp.alt; cfg.segmentos = sp.tipo === "dxf" ? sp.segs : null;
       }
       var stL = this._icarEst(), lim = stL.limiteNovo ? stL.limiteNovo.pts : (p.limite || []);
       if (lim.length >= 2) { cfg.limite = lim; cfg.limiteAberto = !!stL.limiteNovo; cfg.cotaLimite = +this._icarApoio(p).cota || 0; }
@@ -17982,6 +18181,7 @@
     _icarPlantaAnalisar: function () {
       var p = this._icarPlano(), pl = p.planta, sp = this._icarPlantaEst();
       if (!pl || !sp.carregada || !window.IcarPlanta) { UI.toast("Escolha a planta e espere ela abrir no 3D.", "aviso"); return; }
+      if (pl.tipo === "img") { UI.toast("Imagem não tem traço vetorial: o agente precisa do PDF exportado do CAD ou do DXF — ou use o entorno do mapa (aba Local e clima).", "aviso"); return; }
       if (!sp.segs || !sp.segs.length) { UI.toast(pl.tipo === "pdf" ? "Esta página não tem traço vetorial (é imagem escaneada): o agente precisa do PDF exportado do CAD, ou do DXF." : "O DXF não tem linhas.", "aviso"); return; }
       var cal = pl.cal;
       /* o agente trabalha em METROS do modelo: as premissas (2 cm, 6 m², muro de 10–30 cm) só valem na escala real */
@@ -18158,10 +18358,19 @@
         try { obst = BIM.icarCaixas(fora, reg).filter(function (o) { return !/^IFC(SITE|GEOGRAPHICELEMENT)$/i.test(o.tipo || "") && !/terreno|toposolid|topografia|terrain/i.test(o.nome || ""); }); }
         catch (eC) { obst = []; avisos.push("Não consegui ler as peças do modelo: o chão ocupado e a lança não foram conferidos."); }
       }
-      if (ics.length && window.BIM && BIM.icarSondar) {
+      var tinA = this._icarLev(p);
+      if (ics.length && ((window.BIM && BIM.icarSondar) || (tinA && tinA.ok))) {
+        /* ⚠ dentro da área levantada vale o LEVANTAMENTO (topógrafo); fora dela, o chão do modelo 3D — e a tela diz isso */
         terreno = IcarAgente.terrenoEmBlocos(function (pts) {
-          return BIM.icarSondar(pts.map(function (q) { return { x: q.x, y: q.y, z: zA }; })).map(function (r) { return r && r.sup != null ? r.sup : null; });
+          var zs = pts.map(function (q) { return tinA && tinA.ok ? IcarRelevo.cota(tinA, q.x, q.y) : null; }), falta = [];
+          zs.forEach(function (z, i) { if (z == null) falta.push(i); });
+          if (falta.length && window.BIM && BIM.icarSondar) {
+            var r = BIM.icarSondar(falta.map(function (i) { return { x: pts[i].x, y: pts[i].y, z: zA }; }));
+            falta.forEach(function (i, k) { zs[i] = r[k] && r[k].sup != null ? r[k].sup : null; });
+          }
+          return zs;
         }, 1, 8);
+        if (tinA && tinA.ok) avisos.push("Chão do agente: o levantamento topográfico (" + tinA.pts.length + " pontos) dentro da área levantada; fora dela, o modelo 3D.");
       }
       return { icamentos: ics, catalogo: cat, moitaoPadrao_kg: e.moitao_kg != null && e.moitao_kg !== "" ? +e.moitao_kg : null, condicoes: e.condicoes || {},
         premissasPlano: prem || {}, zApoio: zA, terreno: terreno, obstaculos: obst, ocupadas: ocup, proibidas: p.proibidoApoiar || [], limite: p.limite && p.limite.length >= 3 ? p.limite : null, avisosTela: avisos };
@@ -18510,7 +18719,7 @@
         } catch (eF) { return null; }
       });
       this._icarRedesenhar();
-      var avs = itens.map(function (x) { return x.aval; }), lib = IcarPlano.liberacao(p, avs, this._icarDiaRef(p));
+      var avs = itens.map(function (x) { return x.aval; }), acR = this._icarAcesso(p), lib = IcarPlano.liberacao(p, avs, this._icarDiaRef(p), { acesso: acR });
       var nEmit = new Date().toLocaleDateString("pt-BR"), tTot = 0; avs.forEach(function (a) { tTot += a.tempo.total_min; });
       var css = "@page{size:A4;margin:16mm 14mm 18mm;@bottom-right{content:'Página ' counter(page) ' de ' counter(pages);font:9px Arial;color:#555}@bottom-left{content:'Plano de içamento — " + esc(obra).replace(/'/g, "") + "';font:9px Arial;color:#555}}" +
         "body{font:11.5px/1.45 Arial,sans-serif;color:#111;margin:0}h1{font-size:24px;margin:0}h2{font-size:15px;margin:18px 0 6px;border-bottom:2px solid #f97316;padding-bottom:3px;break-after:avoid}h3{font-size:13px;margin:12px 0 4px;break-after:avoid}" +
@@ -18553,6 +18762,10 @@
         ["Moitão / gancho", e.moitao_kg != null && e.moitao_kg !== "" ? f(+e.moitao_kg, 0) + " kg" : (eq && eq.moitao_kg != null ? f(eq.moitao_kg, 0) + " kg (catálogo)" : "")],
         ["Limite de vento de operação", e.vLim ? f(+e.vLim, 1) + " m/s (informado)" : (eq && eq.vento_ms ? f(eq.vento_ms, 1) + " m/s — " + (eq.vento_fonte || "") : "")]].forEach(function (r) {
         h += "<tr><td>" + esc(r[0]) + "</td><td>" + (r[1] ? esc(r[1]) : '<span class="av">[a preencher]</span>') + "</td></tr>";
+      });
+      if (acR && acR.conferidos) acR.itens.forEach(function (x) {
+        if (x.estado === "sem") return;
+        h += "<tr><td>Acesso — " + esc(x.rotulo) + "</td><td>" + (x.estado === "falha" ? '<span class="rep">' + esc(x.texto) + "</span>" : x.estado === "atencao" ? '<span class="av">' + esc(x.texto) + "</span>" : esc(x.texto)) + "</td></tr>";
       });
       h += "</table>";
       /* 3. premissas e normas */
@@ -18619,6 +18832,12 @@
         return "<tr><td>" + esc(d.rotulo) + "</td><td>" + esc(d.ref) + "</td><td>" + (s === "ok" ? '<span class="ok">ok</span>' : s === "na" ? "não se aplica" : '<span class="av">pendente</span>') + "</td><td>" + ((r.anexos || []).map(function (x) { return esc(x.nome); }).join("<br>") || "—") + "</td></tr>";
       }).join("") + "</table><table><tr><th>Verificação antes de içar</th><th>Referência</th><th>Situação</th></tr>" + IcarPlano.CONFERENCIAS.map(function (c) {
         return "<tr><td>" + esc(c.rotulo) + "</td><td>" + esc(c.ref) + "</td><td>" + (p.conf[c.id] === "ok" ? '<span class="ok">ok</span>' : '<span class="av">a verificar</span>') + "</td></tr>";
+      }).join("") + "</table>";
+      var posR = (p.registros || []).slice().sort(function (a, b) { return String(a.data).localeCompare(String(b.data)); });
+      if (posR.length && window.IcarLanca) h += "<table><tr><th>Depois do içamento</th><th>Data</th><th>O que aconteceu</th><th>Causa · ação</th></tr>" + posR.map(function (r) {
+        var ic = (p.icamentos || []).filter(function (x) { return x.id === r.icamentoId; })[0];
+        return "<tr><td>" + esc(IcarLanca.rotuloRegistro(r.tipo)) + (ic ? " · " + (p.icamentos.indexOf(ic) + 1) + "º içamento" : "") + "</td><td>" + esc(String(r.data).split("-").reverse().join("/")) + "</td><td>" + esc(r.descricao) + (r.responsavel ? " (" + esc(r.responsavel) + ")" : "") +
+          "</td><td>" + esc([r.causa ? "Causa: " + r.causa : "", r.acao ? "Ação: " + r.acao : ""].filter(Boolean).join(" · ") || "—") + "</td></tr>";
       }).join("") + "</table>";
       var regsR = (p.climaRegistros || []).slice(-10);
       if (regsR.length) h += "<table><tr><th>Clima registrado</th><th>Situação</th><th>Motivos</th></tr>" + regsR.map(function (r) {
@@ -29016,14 +29235,14 @@
       if (!obraId || !data) { UI.toast("Escolha a obra e a data primeiro.", "erro"); return null; }
       if (!window.IcarLanca) return null;
       var plano = (Store.listar(eid(), "bim_icamento") || []).filter(function (p) { return p && p.obraId === obraId; })[0];
-      if (!plano || !(plano.icamentos || []).length) { UI.toast("Esta obra não tem plano de içamento.", "aviso"); return null; }
+      if (!plano || (!(plano.icamentos || []).length && !(plano.registros || []).length)) { UI.toast("Esta obra não tem plano de içamento.", "aviso"); return null; }
       var e = plano.equipamento || {}, eq = e.catalogoId && window.IcarCatalogo ? IcarCatalogo.porId(e.catalogoId) : null;
       var fx = plano.frotaId ? Store.obter(eid(), "frota", plano.frotaId) : null;
       var r = IcarLanca.rdoItens({ plano: { id: plano.id, nome: plano.nome }, data: data,
         icamentos: plano.icamentos.map(function (ic) { return { id: ic.id, nome: ic.nome, data: ic.data, tempo_min: ic.tempo_min }; }),
         equipamento: { nome: eq ? IcarPlano.nomeEq(eq) : (e.outro && e.outro.modelo) || "", tipo: eq ? eq.tipo : ((e.outro || {}).tipo || "") },
-        frota: fx ? { placa: fx.placa || "", posse: fx.posse || "proprio" } : null, liberacoes: plano.liberacoes || [], existentes: { equip: buf.equip, ocor: buf.ocor } });
-      if (!r.doDia) { UI.toast("Nenhum içamento do plano marcado para " + data.split("-").reverse().join("/") + " (o dia é gravado no \"Lançar no sistema\" do plano).", "aviso"); return r; }
+        frota: fx ? { placa: fx.placa || "", posse: fx.posse || "proprio" } : null, liberacoes: plano.liberacoes || [], registros: plano.registros || [], existentes: { equip: buf.equip, ocor: buf.ocor } });
+      if (!r.doDia && !r.ocor.length) { UI.toast("Nenhum içamento do plano marcado para " + data.split("-").reverse().join("/") + " (o dia é gravado no \"Lançar no sistema\" do plano).", "aviso"); return r; }
       r.equip.forEach(function (x) { buf.equip.push(x); }); r.ocor.forEach(function (x) { buf.ocor.push(x); });
       if (buf._renderEq) buf._renderEq(); if (buf._renderOc) buf._renderOc();
       var n = r.equip.length + r.ocor.length;
