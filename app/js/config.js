@@ -37,7 +37,7 @@
        novo. Com as duas fontes, vale sempre a MAIOR. */
     manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
 
-    versao: "1.2.114",
+    versao: "1.2.115",
     schemaVersao: 3, // usado nas migrações de persistência
 
     // Oferta de lançamento do Plus — data/hora que a condição termina (após isso, a urgência some sozinha)
@@ -145,6 +145,12 @@
        peças (fase 1) não depende desta chave. Quem lê é `Gestao._icarLigado`.
        ⚠ Desligar NÃO apaga dado: o `bim_icamento` gravado continua e sincroniza. */
     icamentoRecursos: { plano: false },
+
+    /* ---- Cristal OrçaPRO no BIM + cubo de navegação novo (ESPEC-BIM-CUBO-LOGO.md) — PRÉVIA ----
+       Desligado na FROTA (o BIM vazio e o cubo de antes); ligado numa instalação pela chave local
+       `orcapro:tela:bim-cristal:v1` ({"cristal":true}), gravada pelo `App._previaDaUrl` com `?previa=cristal`
+       (e apagada com `?previa=cristal-desligar`). Quem lê é o `cristalLigado()` do js/bim.js. */
+    bimRecursos: { cristal: false },
 
     medccRecursos: {
       medAvanco: true, medAvancoAuto: true, medOrigem: true,

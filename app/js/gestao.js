@@ -16383,6 +16383,35 @@
       return true;
     },
     /* o equipamento do plano: do catálogo, ou a tabela da placa informada */
+    /* NÍVEL DO APOIO do equipamento (o defeito da prévia 1.2.114: o caminhão nascia abaixo do piso — ver
+       `icPontoNoChao` no bim.js). Padrão: o pavimento cuja ELEVAÇÃO do IFC está mais perto de 0 (o térreo); sem
+       elevação no IFC, cota 0,00 — o zero do projeto. ⚠ Nunca o `y0` dos pavimentos: é a peça mais baixa (a estaca). */
+    _icarPavimentos: function () {
+      var l = []; try { l = (window.BIM && BIM.icarPavimentos) ? BIM.icarPavimentos() : []; } catch (e) { l = []; }
+      return l;
+    },
+    _icarApoio: function (p) {
+      if (p.apoio && p.apoio.modo) return p.apoio;
+      var pavs = this._icarPavimentos(), esc = null;
+      pavs.forEach(function (v) { if (v.elev != null && (!esc || Math.abs(v.elev) < Math.abs(esc.elev))) esc = v; });
+      if (!esc) pavs.forEach(function (v) { if (!esc && /t[ée]rreo/i.test(v.nome)) esc = v; });
+      p.apoio = { modo: "pavimento", pavimento: esc ? esc.nome : "", cota: esc && esc.elev != null ? esc.elev : 0 };
+      return p.apoio;
+    },
+    _icarCotaPav: function (nome) {
+      var v = this._icarPavimentos().filter(function (x) { return x.nome === nome; })[0];
+      return v && v.elev != null ? v.elev : 0;
+    },
+    /* sapata enterrada: a superfície (terreno/laje) logo acima da sapata — raio de cima para baixo a partir de 3 m */
+    _icarEnterradas: function (p) {
+      var eq = this._icarEquip(p); if (!p.pos || !eq || !window.BIM || !BIM.icarSondar) return [];
+      var rumo = p.rumo_graus != null ? p.rumo_graus : 0;
+      if (p.rumo_graus == null) { var ic = p.icamentos[this._icarEst().sel], a = ic ? this._icarAvaliar(p, ic) : null; rumo = IcarPlano.rumoPadrao(p.pos, a && a.geo && a.geo.cg); }
+      var lay = IcarPlano.layoutEquip(eq, p.pos, rumo), z = +p.pos.z || 0, out = [];
+      var sond = []; try { sond = BIM.icarSondar(lay.sapatas.map(function (s) { return { x: s.x, y: s.y, z: z }; })); } catch (e) { sond = []; }
+      sond.forEach(function (r, i) { if (r && r.sup != null && r.sup > z + 0.02) out.push({ nome: lay.sapatasNomes[i] || ("sapata " + (i + 1)), dif: r.sup - z }); });
+      return out;
+    },
     _icarEquip: function (p) {
       var e = (p && p.equipamento) || {};
       if (e.catalogoId && window.IcarCatalogo) return IcarCatalogo.porId(e.catalogoId);
@@ -16440,6 +16469,8 @@
       return {
         pecas: pecas, geos: gs, pos: ic.pos || p.pos || null, coleta: ic.coleta || null, rumo: p.rumo_graus != null ? p.rumo_graus : null, modo: ic.modo || "2", premissas: prem,
         acessorios: ic.acessorios_kg > 0 ? [{ nome: ic.acessorios_nome || "lingas, manilhas e balancim", kg: +ic.acessorios_kg, qtd: 1 }] : [],
+        proibidoApoiar: p.proibidoApoiar || [],
+        colisao: (this._icarEst().colisoes || {})[ic.id] || null,
         moitao_kg: e.moitao_kg != null && e.moitao_kg !== "" ? +e.moitao_kg : null, lingas: ic.lingas || { tipo: "cinta", modo: "direto" },
         manilha_cmt_kg: ic.manilha_cmt_kg != null && ic.manilha_cmt_kg !== "" ? +ic.manilha_cmt_kg : null, flags: ic.flags || {},
         vento: { V0: l.V0, S1: l.S1, cat: l.cat, grupo: l.grupo, edicao: l.edicao, Ca: l.Ca, vPrev10: l.vPrev10, vLim: e.vLim != null && e.vLim !== "" ? +e.vLim : (eq && eq.vento_ms) || null },
@@ -16466,11 +16497,13 @@
       var self = this, esc = Util.esc, st = this._icarEst(), f = function (v, d) { return self._icarFmt(v, d); };
       if (!window.IcarPlano || !window.IcarCatalogo) { box.innerHTML = '<p class="muted">O módulo de içamento não carregou nesta tela. Recarregue o app.</p>'; return; }
       var p = this._icarPlano(), eq = this._icarEquip(p);
-      var abas = [["icamentos", "Içamentos"], ["equipamento", "Equipamento"], ["vento", "Vento"], ["documentos", "Documentos"], ["plano", "Plano"]];
+      var abas = [["icamentos", "Içamentos"], ["fisica", "Física"], ["alem", "Além do limite"], ["equipamento", "Equipamento"], ["vento", "Vento"], ["documentos", "Documentos"], ["plano", "Plano"]];
       var h = '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px">' + abas.map(function (a) {
         return '<button class="btn sm' + (st.aba === a[0] ? " primary" : "") + '" data-icar="aba" data-v="' + a[0] + '">' + a[1] + "</button>";
       }).join("") + "</div>";
       if (st.aba === "equipamento") h += this._icarHtmlEquip(p, eq);
+      else if (st.aba === "fisica") h += this._icarHtmlFisica(p, eq);
+      else if (st.aba === "alem") h += this._icarHtmlAlem(p, eq);
       else if (st.aba === "vento") h += this._icarHtmlVento(p, eq);
       else if (st.aba === "documentos") h += this._icarHtmlDocs(p);
       else if (st.aba === "plano") h += this._icarHtmlPlano(p, eq);
@@ -16483,9 +16516,21 @@
         if (!b || b.disabled) return;
         self._icarAcao(b.getAttribute("data-icar"), b.getAttribute("data-v"), b);
       });
+      box.addEventListener("input", function (ev) {
+        var t = ev.target; if (!t || !t.hasAttribute || !t.hasAttribute("data-icar-k")) return;
+        self._icarSobrecarga(+t.value || 1);
+      });
       box.addEventListener("change", function (ev) {
         var t = ev.target; if (!t || !t.getAttribute) return;
         if (t.hasAttribute("data-icar-anexo")) { self._icarAnexar(t.getAttribute("data-icar-anexo"), t.files); return; }
+        if (t.hasAttribute("data-icar-k")) { self._icarSobrecarga(+t.value || 1); self._icarRender(); return; }
+        if (t.hasAttribute("data-icar-moitao")) { self._icarUsarMoitao(t.value === "" ? null : t.value); return; }
+        if (t.hasAttribute("data-icar-dr")) { var dr = Util.parseNum(String(t.value || "0")); self._icarEst().dR = isFinite(dr) ? dr : 0; self._icarRender(); self._icarRedesenhar(true); return; }
+        if (t.name === "icar-apoio-modo") {
+          var pM = self._icarPlano(); self._icarMudarApoio(pM, t.value, null);
+          if (self._icarSalvar(pM)) { self._icarRender(); self._icarRedesenhar(); }
+          return;
+        }
         if (t.hasAttribute("data-icar-c") || t.hasAttribute("data-icar-i")) self._icarCampo(t);
       });
     },
@@ -16566,6 +16611,7 @@
           a.bloqueios.map(function (b) { return '<div style="color:#b45309">• ' + esc(b) + "</div>"; }).join("") + "</div>";
       }
       if (a.avisos.length) h += '<details style="margin-top:6px;font-size:11px"><summary class="muted">' + a.avisos.length + " aviso(s)</summary>" + a.avisos.map(function (x) { return '<div class="muted">• ' + esc(x) + "</div>"; }).join("") + "</details>";
+      h += this._icarHtmlCaminho(p, ic, eq);
       h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">' +
         '<button class="btn sm primary" data-icar="mostrar"' + (a.raio != null && eq ? "" : " disabled") + ">Mostrar no 3D</button>" +
         '<button class="btn sm primary" data-icar="simular"' + (a.raio != null && eq ? "" : " disabled") + ">" + (window.BIM && BIM.icarSimulando && BIM.icarSimulando() ? "Parar simulação" : "Simular içamento") + "</button>" +
@@ -16627,6 +16673,21 @@
           '<span></span><span class="muted">' + (o.pontos ? o.pontos.length : 0) + " ponto(s) lido(s). Use a configuração que vai trabalhar (lança, contrapeso, patolas).</span></div>";
       }
       /* posição */
+      /* nível do apoio — pavimento (elevação do IFC), superfície clicada ou manual, com subir/descer */
+      var ap = this._icarApoio(p), pavs = this._icarPavimentos(), ent = this._icarEnterradas(p);
+      function rad(v, rot) { return '<label style="display:inline-flex;gap:4px;align-items:center;margin-right:10px"><input type="radio" name="icar-apoio-modo" value="' + v + '"' + (ap.modo === v ? " checked" : "") + ">" + rot + "</label>"; }
+      h += '<div style="font-size:12px;margin-top:12px" data-icar-apoio="' + esc(ap.modo) + '"><b>Nível do apoio</b> <span class="muted">(onde o equipamento pisa)</span>' +
+        '<div style="margin-top:4px">' + rad("pavimento", "Pavimento") + rad("superficie", "Superfície clicada") + rad("manual", "Manual") + "</div>" +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:4px">' +
+        (pavs.length ? '<select data-icar-c="apoio.pavimento">' + pavs.map(function (v) {
+          return '<option value="' + esc(v.nome) + '"' + (ap.pavimento === v.nome ? " selected" : "") + ">" + esc(v.nome) + " (" + (v.elev != null ? f(v.elev, 2) + " m" : "sem elevação no IFC: 0,00") + ")</option>";
+        }).join("") + "</select>" : '<span class="muted">o modelo não tem pavimentos — use a cota manual</span>') +
+        ' cota <input type="text" inputmode="decimal" data-icar-c="apoio.cota" data-num="1" value="' + esc(String(Math.round((+ap.cota || 0) * 100) / 100).replace(".", ",")) + '" style="width:64px;text-align:right"> m ' +
+        '<button class="btn sm" data-icar="apoio-subir" data-v="1" title="Subir 1 m">▲ 1 m</button><button class="btn sm" data-icar="apoio-subir" data-v="0.1" title="Subir 0,10 m">▲ 0,10</button>' +
+        '<button class="btn sm" data-icar="apoio-subir" data-v="-0.1" title="Descer 0,10 m">▼ 0,10</button><button class="btn sm" data-icar="apoio-subir" data-v="-1" title="Descer 1 m">▼ 1 m</button></div>' +
+        '<div data-icar-enterrada="' + ent.length + '" style="margin-top:4px;color:#b45309">' + ent.map(function (s) {
+          return "Atenção: a sapata " + esc(s.nome) + " está" + " " + f(s.dif, 2) + " m abaixo do terreno — suba o apoio ou escolha a superfície.";
+        }).join("<br>") + "</div></div>";
       h += '<div style="font-size:12px;margin-top:12px"><b>Posição no projeto</b> <span class="muted">(centro de giro)</span></div>' +
         '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12px;margin-top:4px">' +
         (p.pos ? "X " + f(p.pos.x, 2) + " · Y " + f(p.pos.y, 2) + " · Z " + f(p.pos.z, 2) : '<span class="muted">não marcada</span>') +
@@ -16635,6 +16696,7 @@
         '<button class="btn sm" data-icar="rumo" data-v="-15">girar −15°</button><button class="btn sm" data-icar="rumo" data-v="15">girar +15°</button><button class="btn sm" data-icar="rumo" data-v="auto">de lado para a carga</button></div>';
       /* operação */
       h += '<div style="display:grid;grid-template-columns:auto 1fr;gap:5px 8px;align-items:center;font-size:12px;margin-top:10px">' +
+        this._icarHtmlMoitao(p, eq) + this._icarHtmlProibido(p) + this._icarHtmlRede(p) +
         "<span>Moitão / gancho (kg)</span><span>" + num("equipamento.moitao_kg", e.moitao_kg, eq && eq.moitao_kg != null ? String(eq.moitao_kg) : "informar") + (eq && eq.moitao_kg != null ? ' <span class="muted">catálogo: ' + f(eq.moitao_kg, 0) + " kg (já na tabela)</span>" : "") + "</span>" +
         "<span>Limite de vento (m/s)</span><span>" + num("equipamento.vLim", e.vLim, eq && eq.vento_ms ? String(eq.vento_ms) : "manual") + (eq && eq.vento_fonte ? ' <span class="muted">' + esc(eq.vento_fonte) + "</span>" : ' <span class="muted">do manual do equipamento</span>') + "</span></div>";
       /* ficha (NR-18 18.10.1.17b/c) */
@@ -16748,6 +16810,8 @@
       if (t.type === "checkbox") v = !!t.checked;
       else if (t.hasAttribute("data-num")) { var tx = String(t.value || "").trim(); v = tx === "" ? null : Util.parseNum(tx); if (tx !== "" && !isFinite(v)) { UI.toast("“" + tx + "” não é número.", "erro"); this._icarRender(); return; } }
       else v = t.value;
+      if (cam === "apoio.cota") { this._icarMudarApoio(p, "manual", v); if (this._icarSalvar(p)) { this._icarRender(); this._icarRedesenhar(); } return; }
+      if (cam === "apoio.pavimento") { this._icarMudarApoio(p, "pavimento", null, v); if (this._icarSalvar(p)) { this._icarRender(); this._icarRedesenhar(); } return; }
       if (cam === "equipamento.catalogoId") {
         p.equipamento = p.equipamento || {};
         if (v === "__outro") { p.equipamento.catalogoId = ""; p.equipamento.outro = p.equipamento.outro || { tipo: "munck", pontos: [] }; }
@@ -16765,7 +16829,89 @@
     },
     _icarAcao: function (acao, v, el) {
       var self = this, p = this._icarPlano(), st = this._icarEst();
-      if (acao === "aba") { st.aba = v; this._icarRender(); return; }
+      if (acao === "aba") {
+        var antes = st.aba; st.aba = v; this._icarRender();
+        /* Física e Além do limite mostram o içamento escolhido no 3D; saindo do "além", a carga volta a ×1 */
+        if (v === "fisica" || v === "alem" || antes === "alem") this._icarRedesenhar(true);
+        return;
+      }
+      if (acao === "fis-girar") {
+        if (window.BIM && BIM.icarGirando && BIM.icarGirando()) { BIM.icarGirar(false); this._icarRender(); return; }
+        if (!this._icarMostrar(st.sel, false)) { UI.toast("Para girar: escolha o equipamento e marque a posição dele.", "aviso"); return; }
+        try { BIM.icarGirar(true, 8); } catch (e) {}
+        var selfG = this; setTimeout(function () { selfG._icarRender(); }, 8300);
+        this._icarRender();
+        try { BimShell.status("A lança dá uma volta no raio do içamento: as cores das patolas e do solo mudam com o giro."); } catch (e2) {}
+        return;
+      }
+      if (acao === "fis-op") {
+        st[v] = v === "valores" ? !(st.valores !== false) : !st[v];
+        if (v === "mostrarEstimado") this._icarRedesenhar(true);
+        else try { BIM.icarOpcoes({ valores: st.valores !== false, soCritico: !!st.soCritico, modoFalha: st.aba === "alem" && !!st.modoFalha }); } catch (e) {}
+        this._icarRender();
+        return;
+      }
+      if (acao === "fis-ajuste") {
+        var box2 = document.getElementById("bim-icamento-corpo"), q2 = function (n) { var e = box2 && box2.querySelector('[data-icar-aj="' + n + '"]'); return e ? String(e.value || "").trim() : ""; };
+        var campo = q2("campo"), val = Util.parseNum(q2("v")), fonte = q2("fonte");
+        if (!campo || !isFinite(val)) { UI.toast("Informe o valor (número).", "erro"); return; }
+        if (!fonte) { UI.toast("Sem a fonte o número não entra: escreva de onde ele veio (manual, ficha, plano do locador…).", "erro"); return; }
+        p.fichaAjustes = p.fichaAjustes || {}; p.fichaAjustes[campo] = { v: val, fonte: fonte };
+        if (this._icarSalvar(p)) { this._icarRender(); this._icarRedesenhar(); }
+        return;
+      }
+      if (acao === "moitao-usar") { this._icarUsarMoitao(v); return; }
+      if (acao === "rede-marcar") {
+        var bxR = document.getElementById("bim-icamento-corpo"), qR = function (nm) { var el = bxR && bxR.querySelector('[data-icar-rede="' + nm + '"]'); return el ? String(el.value || "").trim() : ""; };
+        var kv = Util.parseNum(qR("kV")), alt = Util.parseNum(qR("altura"));
+        if (!isFinite(kv) || !(kv > 0)) { UI.toast("Informe a tensão da rede em kV (a zona da NR-10 depende dela).", "erro"); return; }
+        if (window.IcarColisao && !IcarColisao.zonaNR10(kv)) { UI.toast("Acima de 700 kV a tabela da NR-10 não cobre: o afastamento é pelo estudo da concessionária.", "erro"); return; }
+        if (!isFinite(alt) || !(alt > 0)) { UI.toast("Informe a altura do cabo acima do chão (m).", "erro"); return; }
+        st.redeNova = { pts: [], kV: kv, altura: alt, nome: qR("nome") };
+        this._icarRender(); this._icarMarcarRede(); return;
+      }
+      if (acao === "rede-cancelar") { st.redeNova = null; try { BIM.icarMarcarPonto(null); } catch (e) {} this._icarRender(); return; }
+      if (acao === "rede-tirar") { (p.redes || []).splice(+v, 1); if (this._icarSalvar(p)) { this._icarRender(); this._icarRedesenhar(); } return; }
+      if (acao === "caminho") { this._icarVerificarCaminho(st.sel); return; }
+      if (acao === "caminho-ir") {
+        var pr = String(v || "").split("|");
+        try { BIM.icarSimIr(+pr[0]); if (pr[1] && pr[1].indexOf(":") > 0) BIM._selecionarUid(pr[1]); } catch (e) {}
+        try { BimShell.status("Simulação parada em " + this._icarFmt(+pr[0] * 100, 0) + " % do caminho" + (pr[2] ? " — " + pr[2] : "") + "."); } catch (e2) {}
+        return;
+      }
+      if (acao === "proibido-marcar") { st.areaNova = { pts: [], motivo: "" }; this._icarRender(); this._icarMarcarArea(); return; }
+      if (acao === "proibido-cancelar") { st.areaNova = null; try { BIM.icarMarcarPonto(null); } catch (e) {} this._icarRender(); this._icarRedesenhar(); return; }
+      if (acao === "proibido-fechar") {
+        var an = st.areaNova; if (!an || an.pts.length < 3) return;
+        var mt = document.querySelector('#bim-icamento-corpo [data-icar-proib="motivo"]');
+        p.proibidoApoiar = p.proibidoApoiar || []; p.proibidoApoiar.push({ poligono: an.pts.slice(), motivo: (mt && String(mt.value || "").trim()) || "área marcada" });
+        st.areaNova = null; try { BIM.icarMarcarPonto(null); } catch (e) {}
+        if (this._icarSalvar(p)) { this._icarRender(); this._icarRedesenhar(); }
+        return;
+      }
+      if (acao === "proibido-tirar") { (p.proibidoApoiar || []).splice(+v, 1); if (this._icarSalvar(p)) { this._icarRender(); this._icarRedesenhar(); } return; }
+      if (acao === "escora-add") {
+        var bxE = document.getElementById("bim-icamento-corpo"), qE = function (nm) { var el = bxE && bxE.querySelector('[data-icar-esc="' + nm + '"]'); return el ? String(el.value || "").trim() : ""; };
+        var capE = Util.parseNum(qE("cap")), fonteE = qE("fonte");
+        if (!isFinite(capE) || !(capE > 0)) { UI.toast("Informe a capacidade da escora em kN.", "erro"); return; }
+        if (!fonteE) { UI.toast("Sem a fonte a capacidade não entra: escreva de onde ela veio (catálogo da escora, projeto do escoramento…).", "erro"); return; }
+        p.escoras = p.escoras || []; p.escoras.push({ patola: +qE("patola") || 0, capacidade_kN: capE, tipo: qE("tipo"), fonte: fonteE });
+        if (this._icarSalvar(p)) { this._icarRender(); this._icarRedesenhar(); }
+        return;
+      }
+      if (acao === "escora-tirar") { (p.escoras || []).splice(+v, 1); if (this._icarSalvar(p)) { this._icarRender(); this._icarRedesenhar(); } return; }
+      if (acao === "fis-ajuste-tirar") { if (p.fichaAjustes) delete p.fichaAjustes[v]; if (this._icarSalvar(p)) { this._icarRender(); this._icarRedesenhar(); } return; }
+      if (acao === "alem-animar") {
+        var self3 = this, k0 = 1, passo = 0.05;
+        if (st._anim) { clearInterval(st._anim); st._anim = null; return; }
+        this._icarRedesenhar(true);
+        st._anim = setInterval(function () {
+          k0 = Math.min(3, k0 + passo); self3._icarSobrecarga(k0);
+          var sl = document.querySelector('#bim-icamento-corpo [data-icar-k]'); if (sl) sl.value = k0;
+          if (k0 >= 3 - 1e-9) { clearInterval(st._anim); st._anim = null; }
+        }, 150);
+        return;
+      }
       if (acao === "sel") { st.sel = +v || 0; this._icarRender(); this._icarRedesenhar(true); return; }
       if (acao === "novo" || acao === "trocar-pecas") {
         var uids = this._pesoEst().sel.slice(); if (!uids.length) return;
@@ -16788,6 +16934,12 @@
       }
       if (acao === "usar-eq") { p.equipamento = p.equipamento || {}; p.equipamento.catalogoId = v; if (this._icarSalvar(p)) { this._icarRender(); this._icarRedesenhar(); UI.toast("Equipamento do plano: " + IcarPlano.nomeEq(IcarCatalogo.porId(v)) + ".", "ok"); } return; }
       if (acao === "marcar-pos" || acao === "marcar-coleta") { this._icarMarcar(acao === "marcar-pos" ? "pos" : "coleta"); return; }
+      if (acao === "apoio-subir") {
+        var apS = this._icarApoio(p);
+        this._icarMudarApoio(p, "manual", (+apS.cota || 0) + (+v || 0));
+        if (this._icarSalvar(p)) { this._icarRender(); this._icarRedesenhar(); }
+        return;
+      }
       if (acao === "tirar-coleta") { if (p.icamentos[st.sel]) { p.icamentos[st.sel].coleta = null; if (this._icarSalvar(p)) { this._icarRender(); this._icarRedesenhar(); } } return; }
       if (acao === "rumo") {
         if (v === "auto") p.rumo_graus = null;
@@ -16834,17 +16986,33 @@
       var self = this;
       if (!window.BIM || !BIM.icarMarcarPonto) return;
       try { if (BIM.coletandoCliques && BIM.coletandoCliques()) this._pesoColetar(false); } catch (e) {}
+      var p0 = this._icarPlano(), ap0 = this._icarApoio(p0);
+      /* o equipamento fica na COTA DO APOIO (pavimento/manual) — clicar no telhado põe o caminhão no térreo sob o cursor;
+         em "superfície", na peça clicada. A coleta é sempre a superfície (carreta, chão), com o apoio para o vazio. */
+      var optsM = qual === "pos" ? { modo: ap0.modo, cota: ap0.cota } : { modo: "superficie", cota: ap0.cota };
       BIM.icarMarcarPonto(function (pt) {
         if (!pt) { UI.toast("Não achei o chão nesse ponto — clique no terreno ou perto do modelo.", "aviso"); return; }
-        var p = self._icarPlano(), st = self._icarEst();
-        if (qual === "pos") p.pos = { x: pt.x, y: pt.y, z: pt.z };
-        else if (p.icamentos[st.sel]) p.icamentos[st.sel].coleta = { x: pt.x, y: pt.y, z: pt.z };
+        var p = self._icarPlano(), st = self._icarEst(), ap = self._icarApoio(p);
+        if (qual === "pos") {
+          var z = ap.modo === "superficie" ? pt.z : +ap.cota || 0;
+          if (ap.modo === "superficie") ap.cota = Math.round(pt.z * 1000) / 1000;
+          p.pos = { x: pt.x, y: pt.y, z: z };
+        } else if (p.icamentos[st.sel]) p.icamentos[st.sel].coleta = { x: pt.x, y: pt.y, z: pt.z };
         if (self._icarSalvar(p)) {
           self._icarRender(); self._icarRedesenhar(true);
           try { BimShell.status((qual === "pos" ? "Posição do equipamento" : "Coleta da peça") + " marcada: X " + Util.fmtNum(pt.x, 2) + " · Y " + Util.fmtNum(pt.y, 2) + " · Z " + Util.fmtNum(pt.z, 2) + "."); } catch (e2) {}
         }
       });
       try { BimShell.status(qual === "pos" ? "Clique no chão onde fica o centro de giro do guindaste/munck (arrastar continua girando a vista)." : "Clique onde a peça está antes de subir (carreta, chão do canteiro)."); } catch (e3) {}
+    },
+    /* muda o apoio e leva o centro de giro junto (a cota do equipamento É a cota do apoio) */
+    _icarMudarApoio: function (p, modo, cota, pavimento) {
+      var ap = this._icarApoio(p);
+      ap.modo = modo;
+      if (pavimento != null) ap.pavimento = pavimento;
+      if (modo === "pavimento") ap.cota = this._icarCotaPav(ap.pavimento);
+      else if (cota != null && isFinite(cota)) ap.cota = Math.round(cota * 1000) / 1000;
+      if (p.pos && modo !== "superficie") p.pos.z = +ap.cota || 0;
     },
     /* a cena acompanha o plano: redesenha o içamento selecionado se ele já está na tela */
     _icarRedesenhar: function (forcar) {
@@ -16857,7 +17025,275 @@
       return { tipo: eq.tipo, pos: pos, rumo_graus: p.rumo_graus != null ? p.rumo_graus : IcarPlano.rumoPadrao(pos, a.geo && a.geo.cg),
         patolas: eq.patolas_m, comp: eq.dim_m ? eq.dim_m[0] : null, larg: eq.dim_m ? eq.dim_m[1] : null, eixos: eq.eixos,
         gancho: a.lingas.gancho, pontos: a.pontos, cg: a.geo.cg, raio: a.raio, alcanceMax: eq.alcance_max_m || eq.raio_max_m, isolamento: a.isolamento,
-        alturaPe: a.premissas.alturaPeLanca_m, pontaGancho: a.premissas.pontaGancho_m, lanca: a.cap && a.cap.ok ? a.cap.lanca : null, rotulo: IcarPlano.nomeEq(eq) };
+        alturaPe: a.premissas.alturaPeLanca_m, pontaGancho: a.premissas.pontaGancho_m, lanca: a.cap && a.cap.ok ? a.cap.lanca : null, rotulo: IcarPlano.nomeEq(eq),
+        /* fatia 1: o equipamento articulado (forma da ficha) pintado pela física — sem os motores, o desenho de antes */
+        forma: window.IcarFicha ? IcarFicha.forma(this._icarFicha(p, eq)) : null, fisica: this._icarFisEntrada(p, ic, a, eq, 1, this._icarEst().aba === "alem" ? this._icarEst().dR : 0),
+        carga_kg: a.carga.total_kg, pernasCabo: (p.fisica || {}).caboPernas || (this._icarFicha(p, eq) || {}).moitaoPernas, valores: this._icarEst().valores !== false, soCritico: !!this._icarEst().soCritico,
+        mostrarEstimado: !!this._icarEst().mostrarEstimado, modoFalha: this._icarEst().aba === "alem" && !!this._icarEst().modoFalha,
+        k: this._icarEst().aba === "alem" && +this._icarEst().k > 0 ? +this._icarEst().k : null,
+        proibidoApoiar: (p.proibidoApoiar || []).concat(this._icarEst().areaNova ? [{ poligono: this._icarEst().areaNova.pts, motivo: "marcando…", aberta: true }] : []),
+        redes: p.redes || [] };
+    },
+    /* ---------- FÍSICA do içamento (fatia 1 — ESPEC-ICAMENTO-CENARIO.md §II.4) ----------
+       ⚠ A ficha monta do CATÁLOGO + do que a pessoa informa COM FONTE (p.fichaAjustes, p.veiculo); o que falta deixa a
+         parte cinza. Nenhum número de equipamento é digitado aqui sem fonte — a trava está no js/icarficha.js.
+       ⚠ θ da física = direção do CG da carga em relação ao CHASSI (rumo): 0 = lança para a cabine, + para a esquerda. */
+    _icarFicha: function (p, eq) { var e0 = (p && p.equipamento) || {}; return window.IcarFicha && eq ? IcarFicha.montar(eq, p.fichaAjustes || {}, p.veiculo || {}, { moitaoIdx: e0.moitaoIdx }) : null; },
+    _icarFisEntrada: function (p, ic, a, eq, k, dR) {
+      if (!window.IcarFisica || !a || !a.geo || !ic) return null;
+      var f = this._icarFicha(p, eq); if (!f) return null;
+      var pos = ic.pos || p.pos, rumo = p.rumo_graus != null ? p.rumo_graus : IcarPlano.rumoPadrao(pos, a.geo.cg);
+      var th = pos ? Math.atan2(a.geo.cg.y - pos.y, a.geo.cg.x - pos.x) - rumo * Math.PI / 180 : 0;
+      var lg = ic.lingas || {}, fis = p.fisica || {}, R = a.raioDestino != null ? a.raioDestino : a.raio, cap = a.cap && a.cap.ok ? a.cap.cap_kg : null;
+      /* "além do limite" → raio: a capacidade da tabela no raio novo (a mesma conta do plano) */
+      if (+dR && R != null && eq) { R = Math.max(0.5, R + +dR); var c2 = IcarPlano.capacidade(eq, R, a.alturaGancho, a.premissas); cap = c2 && c2.ok ? c2.cap_kg : null; }
+      var nomeL = lg.tipo === "cabo" ? "Cabo de aço" : lg.tipo === "corrente" ? "Corrente" : "Cinta";
+      var lingas = (a.lingas.pernasDet || []).map(function (pd, i) { return { nome: nomeL + " P" + (i + 1), T_kg: pd.tracao_kg, cmt_kg: lg.cmt_kg, cmtEfetiva_kg: a.acLinga.cmtEfetiva_kg, tipo: lg.tipo || "cinta" }; });
+      var manilhas = +ic.manilha_cmt_kg > 0 ? (a.lingas.pernasDet || []).map(function (pd, i) { return { nome: "Manilha P" + (i + 1), T_kg: pd.tracao_kg, cmt_kg: +ic.manilha_cmt_kg }; }) : [];
+      /* a PEÇA içada (uma peça só): perfil I lido do IFC → tensão de flexão; concreto → momento e o aviso da armadura de içamento.
+         ⚠ 4 pontos numa peça plana usam a conta de 2 pontos (0,207·L) — é viga, não placa; o painel diz qual conta foi usada. */
+      var pc = null, pcs = (a._ent && a._ent.pecas) || [];
+      if ((ic.uids || []).length === 1 && pcs[0] && pcs[0].ok) {
+        var perf = null; try { perf = window.BIM && BIM.icarPerfil ? BIM.icarPerfil(ic.uids[0]) : null; } catch (eP) {}
+        var it0 = null; try { var mr = this._pesoResumo(); it0 = mr && mr.porUid[ic.uids[0]]; } catch (eM) {}
+        var mats = it0 && it0.el && it0.el.materiais ? it0.el.materiais.map(function (m) { return m && m.n; }).join(" ") : "";
+        var concreto = !perf && /concret/i.test(mats);
+        if (perf || concreto) pc = { perfil: perf, L_m: perf && perf.comprimento ? perf.comprimento : Math.max(a.geo.dx, a.geo.dy), P_kN: pcs[0].kN, pontos: ic.modo === "1" ? 1 : 2,
+          fy_MPa: fis.fy_MPa, phi: (a.premissas && a.premissas.fatorDinamico) || 1, concreto: concreto };
+      }
+      return { ficha: f, theta: th, R: R, Q_kN: a.carga.total_kN, peca: pc,
+        tabela: { carga_kg: a.carga.total_kg, cap_kg: cap },
+        /* escoras sob as patolas (patola sobre laje escorada): só as que têm capacidade COM fonte entram na conta */
+        escoras: (p.escoras || []).map(function (x) { return { patola: x.patola, capacidade_kN: String(x.fonte || "").trim() ? x.capacidade_kN : null, tipo: x.tipo }; }),
+        solo: p.solo || {}, pranchao: p.pranchoes || {}, sapataLado_m: f.sapataLado_m,
+        /* pernas do cabo: o que a pessoa informou, senão as do moitão escolhido na lista do fabricante */
+        cabo: { pernas: fis.caboPernas || f.moitaoPernas, TmaxPerna_kN: f.caboTmax_kN, ruptura_kN: f.caboRuptura_kN },
+        moitao: { capacidade_kN: f.moitaoCap_kN }, lingas: lingas, manilhas: manilhas,
+        coefTombamento: fis.coefTombamento, k: +k > 0 ? +k : 1,
+        /* sapatas em área proibida, na ordem da física (DE, DD, TE, TD) pelo NOME do layout */
+        proibidas: (a.proibidas || []).map(function (s) { return { k: ["dianteira esquerda", "dianteira direita", "traseira esquerda", "traseira direita"].indexOf(s.nome), motivo: s.motivo }; }) };
+    },
+    /* a lista de moitões do fabricante (catálogo → FICHAS_FAB, com a página): escolher põe o PESO na carga do içamento e as
+       PERNAS no cabo. ⚠ Sugere, não escolhe sozinho: o peso do moitão entra na carga e a pessoa tem de ver a troca. */
+    _icarHtmlMoitao: function (p, eq) {
+      var self = this, esc = Util.esc, f = function (v, d) { return self._icarFmt(v, d); };
+      var fi = this._icarFicha(p, eq); if (!fi || !fi.moitoes || !fi.moitoes.length) return "";
+      var e = p.equipamento || {}, ic = p.icamentos[this._icarEst().sel], carga = null;
+      try { var a = ic ? this._icarAvaliar(p, ic) : null; if (a && a.carga && a.carga.total_kg > 0) carga = a.carga.total_kg - (+e.moitao_kg || 0); } catch (eA) {}
+      var cabem = carga ? fi.moitoes.filter(function (m) { return m.cap_t * 1000 >= carga; }).sort(function (x, y) { return x.cap_t - y.cap_t; }) : [];
+      var sug = cabem[0] || null;
+      var opts = '<option value="">— escolher —</option>' + fi.moitoes.map(function (m) {
+        return '<option value="' + m.idx + '"' + (+e.moitaoIdx === m.idx && e.moitaoIdx != null && e.moitaoIdx !== "" ? " selected" : "") + ">" + f(m.cap_t, 1) + " t · " + (m.polias ? m.polias + " polia(s)" : "gancho simples") + " · " + m.pernas + " perna(s) · " + f(m.massa_t * 1000, 0) + " kg</option>";
+      }).join("");
+      return "<span>Moitão do fabricante</span><span><select data-icar-moitao=\"1\" style=\"max-width:300px\">" + opts + "</select>" +
+        (sug && (e.moitaoIdx == null || e.moitaoIdx === "") ? ' <button class="btn sm" data-icar="moitao-usar" data-v="' + sug.idx + '">Usar o sugerido: ' + f(sug.cap_t, 1) + " t</button>" : "") +
+        ' <span class="muted">' + esc(fi.moitoes[0].fonte) + (carga ? " · menor que aguenta " + f(carga, 0) + " kg: " + (sug ? f(sug.cap_t, 1) + " t" : "nenhum") : "") + "</span></span>";
+    },
+    /* áreas onde não se pode apoiar: marcadas no 3D clicando os cantos (3 ou mais); o plano bloqueia sapata dentro */
+    _icarHtmlProibido: function (p) {
+      var self = this, esc = Util.esc, st = this._icarEst(), ar = p.proibidoApoiar || [], m = st.areaNova;
+      return "<span>Onde não se pode apoiar</span><span data-icar-proibido=\"" + ar.length + "\">" +
+        ar.map(function (x, i) { return '<span style="border:1px solid #fecaca;background:#fef2f2;border-radius:6px;padding:1px 6px;margin-right:4px">' + esc(x.motivo || "área") + " (" + x.poligono.length + ' cantos) <button class="btn sm" data-icar="proibido-tirar" data-v="' + i + '">×</button></span>'; }).join("") +
+        (m ? '<b>marcando: ' + m.pts.length + ' canto(s)</b> <input data-icar-proib="motivo" placeholder="motivo (fossa, galeria…)" value="' + esc(m.motivo || "") + '" style="width:150px"> <button class="btn sm primary" data-icar="proibido-fechar"' + (m.pts.length >= 3 ? "" : " disabled") + '>Fechar área</button> <button class="btn sm" data-icar="proibido-cancelar">Cancelar</button>'
+          : '<button class="btn sm" data-icar="proibido-marcar">Marcar área no 3D</button>') + "</span>";
+    },
+    /* REDE ELÉTRICA perto do içamento: o vão marcado com 2 cliques no chão + a altura do cabo e a tensão (os raios da NR-10
+       saem da tabela do js/icarcolisao.js). ⚠ Sem tensão não marca: zona da NR-10 depende dela. */
+    _icarHtmlRede: function (p) {
+      var self = this, esc = Util.esc, f = function (v, d) { return self._icarFmt(v, d); }, st = this._icarEst(), rs = p.redes || [], m = st.redeNova;
+      return "<span>Rede elétrica perto</span><span data-icar-redes=\"" + rs.length + "\">" +
+        rs.map(function (r, i) { var z = window.IcarColisao ? IcarColisao.zonaNR10(r.kV) : null; return '<span style="border:1px solid #fed7aa;background:#fff7ed;border-radius:6px;padding:1px 6px;margin-right:4px">' + esc(r.nome || "rede") + " · " + f(r.kV, 1) + " kV · " + f(r.altura, 2) + " m" + (z ? " · Rc " + f(z.Rc, 2) + " m" : "") + ' <button class="btn sm" data-icar="rede-tirar" data-v="' + i + '">×</button></span>'; }).join("") +
+        (m ? "<b>clique " + (m.pts.length ? "o 2º poste" : "o 1º poste") + " no chão</b> " + '<button class="btn sm" data-icar="rede-cancelar">Cancelar</button>'
+          : '<input data-icar-rede="nome" placeholder="nome (rede da rua)" style="width:120px"> <input data-icar-rede="kV" placeholder="tensão kV" style="width:75px" inputmode="decimal"> <input data-icar-rede="altura" placeholder="altura do cabo m" style="width:110px" inputmode="decimal"> <button class="btn sm" data-icar="rede-marcar">Marcar o vão no 3D (2 cliques)</button>') +
+        ' <span class="muted">zonas pela NR-10, Anexo II</span></span>';
+    },
+    _icarMarcarRede: function () {
+      var self = this, st = this._icarEst(); if (!st.redeNova || !window.BIM || !BIM.icarMarcarPonto) return;
+      BIM.icarMarcarPonto(function (pt) {
+        var s2 = self._icarEst(), m = s2.redeNova; if (!m || !pt) { self._icarRender(); return; }
+        m.pts.push([Math.round(pt.x * 1000) / 1000, Math.round(pt.y * 1000) / 1000, Math.round(pt.z * 1000) / 1000]);
+        if (m.pts.length < 2) { self._icarRender(); self._icarMarcarRede(); return; }
+        var p = self._icarPlano(), a = m.pts[0], b = m.pts[1];
+        p.redes = p.redes || []; p.redes.push({ id: "rede" + Date.now().toString(36), nome: m.nome || "rede elétrica", kV: m.kV, altura: m.altura, a: [a[0], a[1], a[2] + m.altura], b: [b[0], b[1], b[2] + m.altura] });
+        s2.redeNova = null;
+        if (self._icarSalvar(p)) { self._icarRender(); self._icarRedesenhar(); UI.toast("Rede marcada: confira o caminho na aba Içamentos (Verificar o caminho).", "ok"); }
+        /* ⚠ clique fora do modelo cai no plano da COTA DO APOIO — sem ela caía no fundo do modelo (ponta da estaca) e a rede
+           nascia 6 m mais baixa no poste fora do terreno (medido na e2e de 02/10/2026; o mesmo defeito do equipamento abaixo do piso) */
+      }, { modo: "superficie", cota: +self._icarApoio(self._icarPlano()).cota || 0 });
+      try { BimShell.status("Clique no chão no pé de cada poste do vão (2 cliques)."); } catch (e) {}
+    },
+    _icarMarcarArea: function () {
+      var self = this, st = this._icarEst();
+      if (!st.areaNova || !window.BIM || !BIM.icarMarcarPonto) return;
+      BIM.icarMarcarPonto(function (pt) {
+        var s2 = self._icarEst(); if (!s2.areaNova) return;
+        if (pt) s2.areaNova.pts.push([Math.round(pt.x * 1000) / 1000, Math.round(pt.y * 1000) / 1000]);
+        self._icarRender(); self._icarRedesenhar();
+        self._icarMarcarArea();   // o próximo canto
+      }, { modo: "superficie", cota: +self._icarApoio(self._icarPlano()).cota || 0 });   // ⚠ fora do modelo: cota do apoio, nunca o fundo
+      try { BimShell.status("Clique os cantos da área onde não se pode apoiar (3 ou mais) e depois em \"Fechar área\"."); } catch (e) {}
+    },
+    _icarUsarMoitao: function (idx) {
+      var p = this._icarPlano(), eq = this._icarEquip(p), fi = this._icarFicha(p, eq), m = fi && fi.moitoes ? fi.moitoes[+idx] : null;
+      p.equipamento = p.equipamento || {};
+      if (!m) { delete p.equipamento.moitaoIdx; if (this._icarSalvar(p)) { this._icarRender(); this._icarRedesenhar(); } return; }
+      p.equipamento.moitaoIdx = m.idx; p.equipamento.moitao_kg = Math.round(m.massa_t * 1000);
+      if (this._icarSalvar(p)) {
+        this._icarRender(); this._icarRedesenhar();
+        UI.toast("Moitão de " + this._icarFmt(m.cap_t, 1) + " t (" + m.pernas + " pernas, " + this._icarFmt(m.massa_t * 1000, 0) + " kg) — o peso entrou na carga e as pernas no cabo.", "ok");
+      }
+    },
+    /* CHOQUES E FOLGAS NO CAMINHO (ESPEC §II.5.4): o botão posa o equipamento em 61 instantes e testa contra o modelo e a rede;
+       a lista diz o quê, contra o quê e quanto; a linha do tempo leva a simulação ao instante (pausada) e seleciona a peça */
+    _icarHtmlCaminho: function (p, ic, eq) {
+      var self = this, esc = Util.esc, f = function (v, d) { return self._icarFmt(v, d); }, st = this._icarEst(), r = (st.colisoes || {})[ic.id], fis = p.fisica || {};
+      var COR = { choque: "#dc2626", "zona-de-risco": "#dc2626", "zona-controlada": "#f97316", folga: "#eab308" }, ROT = { choque: "CHOQUE", "zona-de-risco": "zona de RISCO (NR-10)", "zona-controlada": "zona controlada (NR-10)", folga: "folga pequena" };
+      var h = '<div style="border:1px solid var(--linha);border-radius:8px;padding:8px;margin-top:8px;font-size:11.5px" data-icar-caminho="' + (r ? r.resumo.length : -1) + '"><b>Choques e folgas no caminho</b> ' +
+        '<span class="muted">folga mínima</span> <input data-icar-c="fisica.folgaColisao_m" data-num value="' + (fis.folgaColisao_m != null ? esc(String(fis.folgaColisao_m).replace(".", ",")) : "") + '" placeholder="0,50" style="width:50px" inputmode="decimal"> m <span class="muted">(premissa do plano)</span> ' +
+        '<button class="btn sm primary" data-icar="caminho"' + (eq ? "" : " disabled") + '>Verificar o caminho</button>';
+      if (r) {
+        h += '<div class="muted" style="margin-top:3px">' + r.amostras + " instantes · " + r.obstaculos + " peça(s) perto do caminho · " + (p.redes || []).length + " rede(s) · " + f(r.ms / 1000, 1) + " s</div>";
+        if (!r.resumo.length) h += '<div style="color:#16a34a;margin-top:4px" data-icar-caminho-limpo="1"><b>Caminho livre</b>: nada a menos de ' + f(r.folga, 2) + " m.</div>";
+        else {
+          h += '<div style="position:relative;height:14px;background:#f1f5f9;border-radius:7px;margin:6px 0" title="linha do tempo da simulação">' + r.resumo.map(function (x) {
+            return '<i data-icar="caminho-ir" data-v="' + x.primeiro + "|" + esc(x.id) + "|" + esc(x.quem + " × " + x.contra) + '" style="position:absolute;top:1px;width:6px;height:12px;border-radius:3px;cursor:pointer;left:calc(' + f(x.primeiro * 100, 1).replace(",", ".") + '% - 3px);background:' + COR[x.tipo] + '"></i>';
+          }).join("") + "</div>";
+          h += r.resumo.map(function (x) {
+            return '<div data-icar-choque="' + x.tipo + '"><a href="#" data-icar="caminho-ir" data-v="' + x.primeiro + "|" + esc(x.id) + "|" + esc(x.quem + " × " + x.contra) + '" style="color:' + COR[x.tipo] + ';font-weight:700">' + ROT[x.tipo] + "</a> · " + esc(x.quem) + " × " + esc(x.contra) +
+              " · " + (x.tipo === "choque" ? "encosta" : f(x.menor, 2) + " m") + ' <span class="muted">em ' + f(x.primeiro * 100, 0) + " % do caminho</span></div>";
+          }).join("");
+        }
+      }
+      return h + "</div>";
+    },
+    _icarVerificarCaminho: function (idx) {
+      var self = this, p = this._icarPlano(), ic = p.icamentos[idx], eq = this._icarEquip(p), st = this._icarEst();
+      if (!ic || !eq || !window.BIM || !BIM.icarColisoes) return;
+      if (!this._icarMostrar(idx, false)) { UI.toast("Para verificar o caminho: escolha o equipamento e marque a posição dele.", "aviso"); return; }
+      var a = this._icarAvaliar(p, ic);
+      try { if (BIM.icarSimulando && BIM.icarSimulando()) BIM.icarPararSimulacao(); } catch (e0) {}
+      var rs = BIM.icarSimular({ uids: ic.uids, pivo: ic.pos || p.pos, cg: a.geo.cg, gancho: a.lingas.gancho, pontos: a.pontos, fundo: a.geo.min.z, coleta: ic.coleta || a.coletaPadrao || null,
+        folga: a.premissas.folgaGancho_m, duracao_s: 9, pausado: true });
+      if (!rs || !rs.ok) { UI.toast("Não consegui montar o caminho: " + ((rs && rs.erro) || "sem resposta do 3D") + ".", "erro"); return; }
+      var fol = +(p.fisica || {}).folgaColisao_m; if (!(fol >= 0)) fol = 0.5;
+      var r = BIM.icarColisoes({ folga: fol, uids: ic.uids, redes: p.redes || [] });
+      if (!r || !r.ok) { UI.toast("Não consegui verificar o caminho: " + ((r && r.erro) || "sem resposta do 3D") + ".", "erro"); return; }
+      st.colisoes = st.colisoes || {}; st.colisoes[ic.id] = { resumo: r.resumo, folga: r.folga, bloqueia: r.bloqueia, amostras: r.amostras, obstaculos: r.obstaculos, ms: r.ms };
+      this._icarRender();
+      try { BimShell.status(r.bloqueia ? "Caminho com problema: " + r.resumo.length + " item(ns) — clique na marca para ver o instante." : r.resumo.length ? "Caminho com folga pequena em " + r.resumo.length + " ponto(s)." : "Caminho livre."); } catch (e) {}
+    },
+    _icarSelAval: function (p) {
+      var st = this._icarEst(), ic = p.icamentos[st.sel], eq = this._icarEquip(p);
+      if (!ic || !eq) return null;
+      var a = this._icarAvaliar(p, ic);
+      return a && a.geo ? { ic: ic, eq: eq, a: a } : null;
+    },
+    _icarHtmlFisica: function (p, eq) {
+      var self = this, esc = Util.esc, st = this._icarEst(), f = function (v, d) { return self._icarFmt(v, d); };
+      if (!window.IcarFisica || !window.IcarFicha) return '<p class="muted">O motor de física não carregou nesta tela. Recarregue o app.</p>';
+      var s = this._icarSelAval(p);
+      if (!s) return '<p class="muted">Escolha o equipamento, crie um içamento na aba <b>Içamentos</b> e marque a posição do equipamento — a física usa o raio e a carga dele.</p>';
+      var ent = this._icarFisEntrada(p, s.ic, s.a, s.eq, 1), r = IcarFisica.componentes(ent), ficha = ent.ficha;
+      var th = ((ent.theta * 180 / Math.PI) % 360 + 360) % 360;
+      var h = '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12px;margin-bottom:6px"><b>Içamento ' + (st.sel + 1) + " · " + esc(s.ic.nome || "") + "</b> · " + esc(IcarPlano.nomeEq(s.eq)) + ' · giro <span data-icar-r="theta">' + f(th, 0) + "°</span></div>" +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">' +
+        '<button class="btn sm primary" data-icar="fis-girar">' + (window.BIM && BIM.icarGirando && BIM.icarGirando() ? "Parar" : "Girar a lança (uma volta)") + "</button>" +
+        [["valores", "valores no 3D", st.valores !== false], ["soCritico", "só o crítico", !!st.soCritico], ["mostrarEstimado", "mostrar o que é estimado", !!st.mostrarEstimado]].map(function (o) {
+          return '<label style="font-size:11.5px;display:flex;gap:4px;align-items:center"><input type="checkbox" data-icar="fis-op" data-v="' + o[0] + '"' + (o[2] ? " checked" : "") + ">" + o[1] + "</label>";
+        }).join("") + "</div>";
+      /* a tabela dos componentes */
+      h += '<table style="width:100%;border-collapse:collapse;font-size:11.5px" data-icar-fisica="1"><tr class="muted"><th style="text-align:left">Componente</th><th style="text-align:right">Esforço</th><th style="text-align:right">Limite</th><th style="text-align:left;padding-left:8px">Utilização</th></tr>';
+      var crit = [];
+      r.componentes.forEach(function (c) {
+        var u = c.u, fx = u.faixa, d = c.unidade === "kg" ? 0 : c.unidade === "MPa" ? 1 : 1;
+        var pctT = u.uTrab != null ? u.uTrab * 100 : null;
+        if (pctT != null && pctT >= 80) crit.push(c.nome);
+        var lim = u.limTrab != null ? f(u.limTrab, d) + " " + c.unidade : "—";
+        if (u.limRup != null) lim += '<div class="muted">ruptura ' + f(u.limRup, 0) + " " + c.unidade + "</div>";
+        var barra = pctT == null ? '<span style="color:#6b7280">sem dado' + (c.falta ? " — falta " + esc(c.falta) : "") + "</span>"
+          : '<span style="display:inline-block;width:70px;height:8px;background:#f1f5f9;border-radius:4px;overflow:hidden;vertical-align:middle"><i style="display:block;height:100%;width:' + Math.min(100, pctT) + "%;background:" + fx.cor + '"></i></span> <b style="color:' + fx.cor + '">' + f(pctT, 0) + " %</b> " + esc(fx.rotulo) +
+            (c.descola ? ' <b style="color:#dc2626">· descola</b>' : "") + (u.uRup != null && u.uRup < 1 ? ' <span class="muted">(ruptura ' + f(u.uRup * 100, 0) + " %)</span>" : "");
+        h += '<tr style="border-top:1px solid var(--linha)" data-icar-comp="' + esc(c.id) + '" data-faixa="' + fx.chave + '"><td><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:' + fx.cor + ';margin-right:5px"></span>' + esc(c.nome) + "</td>" +
+          '<td style="text-align:right">' + (c.esforco != null ? f(c.esforco, d) + " " + c.unidade : "—") + '</td><td style="text-align:right">' + lim + '</td><td style="padding-left:8px">' + barra + "</td></tr>";
+      });
+      h += "</table>";
+      var rea = r.reacoes;
+      if (rea.ok) h += '<div style="font-size:11.5px;margin-top:6px">Estabilidade: margem <b>' + f(rea.margem_m, 2) + " m</b> até a linha " + esc(rea.linha.rotulo) + (rea.MeMt ? " · Me/Mt <b>" + f(rea.MeMt, 2) + "</b>" : "") +
+        (rea.tomba ? ' · <b style="color:#dc2626">TOMBA</b>' : "") + ' <span class="muted">— informação: o critério de aceite é a tabela do fabricante.</span></div>';
+      r.componentes.filter(function (c) { return c.pranchaoSugerido; }).slice(0, 1).forEach(function () {
+        var maior = r.componentes.filter(function (c) { return c.pranchaoSugerido; }).sort(function (x, y) { return y.pranchaoSugerido.lado_m - x.pranchaoSugerido.lado_m; })[0];
+        h += '<div style="font-size:11.5px;margin-top:4px">Pranchão sugerido para ' + f(ent.solo.sigmaAdm_kPa, 0) + " kPa: <b>" + f(maior.pranchaoSugerido.lado_m, 1) + " × " + f(maior.pranchaoSugerido.lado_m, 1) + " m</b> (" + esc(maior.nome.replace("Solo sob a ", "")) + ")</div>";
+      });
+      if (crit.length) h += '<div style="font-size:11.5px;margin-top:4px;color:#b45309"><b>Atenção:</b> ' + crit.length + " componente(s) a 80 % ou mais: " + esc(crit.join(", ")) + ".</div>";
+      /* o que falta na ficha — e onde achar */
+      if (ficha.faltas.length || ficha.notas.length) {
+        h += '<details style="margin-top:8px;font-size:11.5px"' + (ficha.faltas.length ? " open" : "") + "><summary><b>O que falta na ficha do equipamento (" + ficha.faltas.length + ")</b> — sem estes números a parte correspondente fica cinza</summary>" +
+          ficha.notas.map(function (n) { return '<div style="color:#b45309">• ' + esc(n) + "</div>"; }).join("") +
+          ficha.faltas.map(function (x) { return "<div>• " + esc(x.rotulo) + ' <span class="muted">— ' + esc(x.onde) + " · afeta: " + esc(x.usa.join(", ")) + "</span></div>"; }).join("") + "</details>";
+      }
+      /* informar COM fonte */
+      var aj = p.fichaAjustes || {}, campos = Object.keys(IcarFicha.CAMPOS[ficha.tipo] || {}).filter(function (k) { return k !== "cabo" && k !== "moitao"; }).concat(["caboTmax_kN", "caboRuptura_kN", "moitaoCap_kN"]);
+      var rotC = function (k) { var c = (IcarFicha.CAMPOS[ficha.tipo] || {})[k]; return c ? c.rotulo : { caboTmax_kN: "cabo: tração máxima por perna (kN)", caboRuptura_kN: "cabo: ruptura mínima (kN)", moitaoCap_kN: "moitão: capacidade (kN)" }[k] || k; };
+      h += '<div style="border:1px solid var(--linha);border-radius:8px;padding:8px;margin-top:8px;font-size:11.5px"><b>Informar um número da ficha (com a fonte)</b> <span class="muted">— vale só para este plano; sem fonte não entra</span>' +
+        '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px"><select data-icar-aj="campo" style="max-width:260px">' + campos.map(function (k) { return '<option value="' + k + '">' + esc(rotC(k)) + "</option>"; }).join("") + "</select>" +
+        '<input data-icar-aj="v" placeholder="valor" style="width:80px" inputmode="decimal"><input data-icar-aj="fonte" placeholder="fonte (ex.: plano do locador, rev. 2)" style="flex:1;min-width:180px">' +
+        '<button class="btn sm" data-icar="fis-ajuste">Adicionar</button></div>' +
+        Object.keys(aj).map(function (k) { return '<div style="margin-top:3px">' + esc(rotC(k)) + ": <b>" + f(aj[k].v, 3) + '</b> <span class="muted">(' + esc(aj[k].fonte || "") + ')</span> <button class="btn sm" data-icar="fis-ajuste-tirar" data-v="' + esc(k) + '">×</button></div>'; }).join("") + "</div>";
+      /* solo, pranchão, cabo, estabilidade e (munck) o caminhão */
+      var so = p.solo || {}, pr = p.pranchoes || {}, fs0 = p.fisica || {}, vc = p.veiculo || {};
+      function num(cam, val, ph, w) { return '<input data-icar-c="' + cam + '" data-num value="' + (val == null ? "" : esc(String(val).replace(".", ","))) + '" placeholder="' + esc(ph || "") + '" style="width:' + (w || 70) + 'px" inputmode="decimal">'; }
+      function txt(cam, val, ph) { return '<input data-icar-c="' + cam + '" value="' + esc(val || "") + '" placeholder="' + esc(ph || "") + '" style="flex:1;min-width:160px">'; }
+      h += '<div style="display:grid;grid-template-columns:auto 1fr;gap:4px 8px;align-items:center;margin-top:8px;font-size:11.5px">' +
+        "<span>σ adm do solo (kPa)</span><span style=\"display:flex;gap:4px\">" + num("solo.sigmaAdm_kPa", so.sigmaAdm_kPa, "kPa") + txt("solo.fonte", so.fonte, "fonte: laudo, sondagem…") + "</span>" +
+        "<span>Pranchão sob a sapata (lado, m)</span><span>" + num("pranchoes.lado_m", pr.lado_m, "m") + "</span>" +
+        "<span>Pernas do cabo (moitão)</span><span>" + num("fisica.caboPernas", fs0.caboPernas, "nº") + "</span>" +
+        "<span>f_y do aço da peça (MPa)</span><span style=\"display:flex;gap:4px\">" + num("fisica.fy_MPa", fs0.fy_MPa, "MPa") + txt("fisica.fyFonte", fs0.fyFonte, "fonte: norma do material, certificado…") + "</span>" +
+        "<span>Coeficiente de estabilidade do fabricante (Me/Mt)</span><span style=\"display:flex;gap:4px\">" + num("fisica.coefTombamento", fs0.coefTombamento, "ex.: manual") + txt("fisica.coefFonte", fs0.coefFonte, "fonte") + "</span>" +
+        (ficha.tipo === "munck" ? "<span>Tara do caminhão (CRLV, kg)</span><span style=\"display:flex;gap:4px\">" + num("veiculo.tara_kg", vc.tara_kg, "kg") + txt("veiculo.fonte", vc.fonte, "CRLV placa…") + "</span>" : "") +
+        "</div>";
+      /* escoras: patola sobre laje/escoramento (subsolo, marquise). ⚠ A verificação da LAJE é do engenheiro: o sistema mostra a
+         carga em cada escora (a reação da patola dividida igualmente entre as escoras dela — versão 1, ESPEC §II.4.3). */
+      var SIG = ["DE", "DD", "TE", "TD"], esc0 = p.escoras || [];
+      h += '<div style="border:1px solid var(--linha);border-radius:8px;padding:8px;margin-top:8px;font-size:11.5px" data-icar-escoras="' + esc0.length + '"><b>Escoras sob as patolas</b> <span class="muted">— quando a patola apoia em laje escorada; a verificação da laje é do engenheiro, aqui aparece a carga em cada escora</span>' +
+        esc0.map(function (x, i) { return '<div style="margin-top:3px">Escora ' + (i + 1) + " sob a <b>" + SIG[+x.patola] + "</b>: " + f(x.capacidade_kN, 1) + ' kN <span class="muted">(' + esc(x.tipo || "") + (x.fonte ? " · " + esc(x.fonte) : "") + ')</span> <button class="btn sm" data-icar="escora-tirar" data-v="' + i + '">×</button></div>'; }).join("") +
+        '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px"><select data-icar-esc="patola">' + SIG.map(function (s, i) { return '<option value="' + i + '">sob a ' + s + "</option>"; }).join("") + "</select>" +
+        '<input data-icar-esc="cap" placeholder="capacidade kN" style="width:100px" inputmode="decimal"><input data-icar-esc="tipo" placeholder="tipo (metálica, madeira…)" style="width:150px">' +
+        '<input data-icar-esc="fonte" placeholder="fonte (catálogo da escora, projeto…)" style="flex:1;min-width:160px"><button class="btn sm" data-icar="escora-add">Adicionar</button></div></div>';
+      return h;
+    },
+    _icarHtmlAlem: function (p, eq) {
+      var self = this, esc = Util.esc, st = this._icarEst(), f = function (v, d) { return self._icarFmt(v, d); };
+      if (!window.IcarFisica) return '<p class="muted">O motor de física não carregou nesta tela.</p>';
+      var s = this._icarSelAval(p);
+      if (!s) return '<p class="muted">Crie um içamento e marque a posição do equipamento primeiro.</p>';
+      var k = +st.k > 0 ? +st.k : 1, dR = +st.dR || 0;
+      var ent = this._icarFisEntrada(p, s.ic, s.a, s.eq, 1, dR), al = IcarFisica.alemDoLimite(ent, { kMax: 50 });
+      var h = '<div style="font-size:12px;margin-bottom:6px"><b>Além do limite</b> — a carga do içamento ' + (st.sel + 1) + " multiplicada por k: quem passa do limite de trabalho e quem rompe primeiro.</div>" +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:12px">Sobrecarga ×<b data-icar-r="k">' + f(k, 2) + '</b><input type="range" min="1" max="3" step="0.05" value="' + k + '" data-icar-k="1" style="width:220px">' +
+        '<span>Raio ' + '<input data-icar-dr="1" value="' + (dR ? String(dR).replace(".", ",") : "0") + '" style="width:50px" inputmode="decimal"> m</span>' +
+        '<button class="btn sm" data-icar="alem-animar">Animar de ×1 a ×3</button>' +
+        '<label style="display:flex;gap:4px;align-items:center"><input type="checkbox" data-icar="fis-op" data-v="modoFalha"' + (st.modoFalha ? " checked" : "") + ">esmaecer o que está bem</label></div>" +
+        '<div class="muted" style="font-size:11px;margin-top:2px">O vento entra na fatia do clima (força horizontal); aqui, só cargas verticais.</div>';
+      h += '<div style="margin-top:8px;font-size:12px"><b>Quem falha primeiro:</b></div><ol style="margin:4px 0 0 18px;padding:0;font-size:11.5px" data-icar-ranking="1">' +
+        (al.ranking.length ? al.ranking.slice(0, 8).map(function (ev) {
+          var partes = [];
+          if (ev.kTrab != null) partes.push("trabalho ×" + f(ev.kTrab, 2));
+          if (ev.kRup != null) partes.push("ruptura ×" + f(ev.kRup, 2));
+          if (ev.kDescola != null) partes.push("descola ×" + f(ev.kDescola, 2));
+          if (ev.kTomba != null) partes.push("tomba ×" + f(ev.kTomba, 2));
+          var ja = ev.primeiro <= k + 1e-9;
+          return '<li data-icar-ev="' + esc(ev.id) + '"' + (ja ? ' style="color:#dc2626;font-weight:700"' : "") + ">" + esc(ev.nome) + " — " + partes.join(" · ") + "</li>";
+        }).join("") : '<li class="muted">Nada falha até ×50 com os números que existem (os componentes cinza não entram — veja a aba Física).</li>') + "</ol>";
+      if (al.ranking[0]) h += '<div style="font-size:11.5px;margin-top:6px" data-icar-frase="1">' + esc(al.ranking[0].frase) + ".</div>";
+      return h;
+    },
+    /* a sobrecarga do "além do limite": repinta o 3D e o rótulo, sem refazer o painel a cada passo do deslizador */
+    _icarSobrecarga: function (k) {
+      var st = this._icarEst(); st.k = k;
+      try { if (window.BIM && BIM.icarSobrecarga) BIM.icarSobrecarga(k); } catch (e) {}
+      var b = document.querySelector('#bim-icamento-corpo [data-icar-r="k"]'); if (b) b.textContent = this._icarFmt(k, 2);
+      var lis = document.querySelectorAll("#bim-icamento-corpo [data-icar-ev]");
+      Array.prototype.forEach.call(lis, function (li) { var t = li.textContent, m = t.match(/×([\d,]+)/g) || [], ks = m.map(function (x) { return +x.slice(1).replace(",", "."); }); var ja = ks.length && Math.min.apply(null, ks) <= k + 1e-9; li.style.color = ja ? "#dc2626" : ""; li.style.fontWeight = ja ? "700" : ""; });
     },
     _icarMostrar: function (idx, enquadrar) {
       var p = this._icarPlano(), ic = p.icamentos[idx], eq = this._icarEquip(p), st = this._icarEst();
@@ -16872,7 +17308,10 @@
     _icarSimular: function (idx) {
       var self = this, p = this._icarPlano(), ic = p.icamentos[idx], eq = this._icarEquip(p);
       if (!window.BIM || !BIM.icarSimular) return;
-      if (BIM.icarSimulando && BIM.icarSimulando()) { BIM.icarPararSimulacao(); this._icarRender(); this._icarMostrar(idx, false); return; }
+      /* simulação PAUSADA (a do "Verificar o caminho" ou a de um clique na linha do tempo): "Simular" recomeça do zero */
+      var pausada = !!(BIM.icarSimPausado && BIM.icarSimPausado());
+      if (BIM.icarSimulando && BIM.icarSimulando() && !pausada) { BIM.icarPararSimulacao(); this._icarRender(); this._icarMostrar(idx, false); return; }
+      if (pausada) { try { BIM.icarPararSimulacao(); } catch (eP) {} }
       if (!this._icarMostrar(idx, true)) { UI.toast("Para simular: escolha o equipamento e marque a posição dele.", "aviso"); return; }
       var a = this._icarAvaliar(p, ic);
       var r = BIM.icarSimular({ uids: ic.uids, pivo: ic.pos || p.pos, cg: a.geo.cg, gancho: a.lingas.gancho, pontos: a.pontos, fundo: a.geo.min.z, coleta: ic.coleta || a.coletaPadrao || null,

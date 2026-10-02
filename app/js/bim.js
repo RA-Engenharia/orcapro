@@ -12,6 +12,7 @@
  * ===================================================================== */
 import * as THREE from 'three';
 import { OrbitControls } from '../bim/vendor/OrbitControls.js';
+import { criarCristal } from '../bim/cristal.js';
 import { IfcAPI } from 'web-ifc';
 
 var S = null; // estado do viewer montado
@@ -1279,6 +1280,21 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var X = vcCss(f.u), Y = vcCss(f.v.clone().negate()), Z = vcCss(f.n), T = vcCss(f.n.clone().multiplyScalar(meio));
     return 'matrix3d(' + [X[0], X[1], X[2], 0, Y[0], Y[1], Y[2], 0, Z[0], Z[1], Z[2], 0, T[0], T[1], T[2], 1].join(',') + ')';
   }
+  /* PRÉVIA do Cristal OrçaPRO e do cubo novo (ESPEC-BIM-CUBO-LOGO): `CONFIG.bimRecursos.cristal` (a frota, por versão) com a
+     chave local por cima (`orcapro:tela:bim-cristal:v1`, gravada pelo App._previaDaUrl quando o app abre com `?previa=cristal`;
+     `?previa=cristal-desligar` apaga). Desligado: o BIM vazio e o cubo de antes. Lida UMA vez por montagem do visualizador.
+     ⚠ Sem esta chave, o cristal iria para a frota inteira na próxima publicação do master — e o Rogério pediu prévia por instalação. */
+  function cristalLigado() {
+    var on = false;
+    try { on = !!(typeof window !== 'undefined' && window.CONFIG && window.CONFIG.bimRecursos && window.CONFIG.bimRecursos.cristal === true); } catch (_) {}
+    try { var raw = localStorage.getItem('orcapro:tela:bim-cristal:v1'); if (raw) { var o = JSON.parse(raw); if (o && typeof o.cristal === 'boolean') on = o.cristal; } } catch (_) {}
+    return on;
+  }
+  /* um plano qualquer no espaço do cubo (u = direita, v = cima da figura, n = normal), deslocado `d` ao longo de n */
+  function vcMatPlano(u, v, n, d) {
+    var X = vcCss(u), Y = vcCss(v.clone().negate()), Z = vcCss(n), T = vcCss(n.clone().multiplyScalar(d));
+    return 'matrix3d(' + [X[0], X[1], X[2], 0, Y[0], Y[1], Y[2], 0, Z[0], Z[1], Z[2], 0, T[0], T[1], T[2], 1].join(',') + ')';
+  }
   function vcEstilo() {
     if (document.getElementById('bim-vcube-estilo')) return;
     var st = document.createElement('style'); st.id = 'bim-vcube-estilo';
@@ -1293,6 +1309,33 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       '.bim-vcube-face>span:hover{background:rgba(26,108,181,.35)}' +
       '.bim-vcube-face>b{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;letter-spacing:.2px;color:#44505c;pointer-events:none}' +
       '.bim-vcube-anel{position:absolute;left:4px;top:60px;width:96px;height:44px;border-radius:50%;border:5px solid rgba(160,170,182,.55);box-sizing:border-box;pointer-events:none}' +
+      /* CUBO DE CRISTAL (02/10/2026, ESPEC-BIM-CUBO-LOGO.md) — PRÉVIA (`.cristal`, ver cristalLigado): menor que o de cima
+         (104×112), faces de vidro verde por cima do cristal desenhado em WebGL (bim/cristal.js), nomes com brilho, bússola no
+         plano do chão, controles só no hover/toque. Sem a prévia, o cubo é exatamente o de antes.
+         ⚠ As classes e as zonas (span[data-i][data-j]) são as MESMAS nos dois: é nelas que as e2e e o clique agem. */
+      '.bim-vcube.cristal{width:96px;height:104px}' +
+      '.bim-vcube.cristal .bim-vcube-cena{left:18px;top:16px;width:60px;height:60px}' +
+      '.bim-vcube.cristal .bim-vcube-cubo{left:30px;top:30px}' +
+      '.bim-vcube.cristal .bim-vcube-face{left:-30px;top:-30px;width:60px;height:60px;border:1px solid rgba(120,255,180,.6);background:rgba(28,112,72,.66);box-shadow:inset 0 0 12px rgba(90,255,170,.22)}' +
+      /* com o cristal desenhado atrás (só a vista principal), a face vira vidro quase transparente */
+      '.bim-vcube.cristal.com-cristal .bim-vcube-face{background:rgba(40,170,100,.10)}' +
+      '.bim-vcube.cristal .bim-vcube-face>span:hover{background:rgba(60,207,115,.42);box-shadow:0 0 8px rgba(110,255,170,.6)}' +
+      '.bim-vcube.cristal .bim-vcube-face>b{font-size:8.5px;font-weight:700;letter-spacing:.5px;color:#f0fff6;text-shadow:0 0 4px #3ccf73,0 0 2px #0b2a18,0 0 1px #000}' +
+      '.bim-vcube.cristal .bim-vcube-anel{display:none}' +
+      /* ⚠ a caixa da bússola (quadrado girado em 3D) entra na conta de sobreposição da barra da mesa (bimmesa.js, top 140):
+         132 px com as letras DENTRO dela — com 150 px a caixa passava da barra (e2e-bim-mesa, 02/10/2026) */
+      '.bim-vcube-bussola{position:absolute;left:-66px;top:-66px;width:132px;height:132px;pointer-events:none}' +
+      '.bim-vcube-ctl{position:absolute;inset:0;opacity:0;pointer-events:none;transition:opacity .15s}' +
+      /* ⚠ a camada dos controles cobre o cubo inteiro: ela mesma NUNCA pega clique (senão as faces deixam de responder);
+         só os botões, quando visíveis */
+      '.bim-vcube:hover .bim-vcube-ctl,.bim-vcube.sobre .bim-vcube-ctl,.bim-vcube.toque .bim-vcube-ctl{opacity:1}' +
+      '.bim-vcube:hover .bim-vcube-ctl>*,.bim-vcube.sobre .bim-vcube-ctl>*,.bim-vcube.toque .bim-vcube-ctl>*{pointer-events:auto}' +
+      '.bim-vcube-ctl button{position:absolute;width:20px;height:20px;padding:0;border:0;border-radius:6px;background:rgba(15,39,64,.72);color:#bfffd6;cursor:pointer;display:flex;align-items:center;justify-content:center}' +
+      '.bim-vcube-ctl button:hover{background:#1f9d55;color:#fff}' +
+      '.bim-vcube-ctl select{position:absolute;left:0;top:83px;width:36px;height:18px;font-size:10px;border-radius:5px;border:1px solid #2e6f9e;background:rgba(15,39,64,.85);color:#dbe8f5;padding:0 2px}' +
+      '.bim-vcube-angulo{position:absolute;right:100px;top:0;display:none;pointer-events:auto;background:rgba(15,39,64,.95);border:1px solid #2e6f9e;border-radius:8px;padding:6px 8px;color:#dbe8f5;font-size:11px;white-space:nowrap;z-index:6}' +
+      '.bim-vcube-angulo.aberto{display:block}' +
+      '.bim-vcube-angulo input{width:44px;font-size:11px;margin:0 4px 0 2px;background:#0f2740;color:#fff;border:1px solid #2e6f9e;border-radius:4px}' +
       '.bim-vcube-menu{position:fixed;z-index:80;min-width:230px;background:#fff;color:#1a1a1a;border:1px solid #b4b4b4;box-shadow:0 6px 18px rgba(0,0,0,.22);padding:4px 0;font:12px "Segoe UI",system-ui,sans-serif}' +
       '.bim-vcube-menu div{padding:5px 14px 5px 26px;cursor:pointer;white-space:nowrap;position:relative}' +
       '.bim-vcube-menu div:hover{background:#d8e6f2}' +
@@ -1304,19 +1347,73 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   /* cria o ViewCube de UMA vista. ctx = { cam(), orbit(), voar(pos,tgt), home(), menu(acao) } */
   function criarViewCube(cont, ctx) {
     vcEstilo();
-    var w = document.createElement('div'); w.className = 'bim-vcube';
+    var cristal = !!(ctx && ctx.cristal);
+    var w = document.createElement('div'); w.className = 'bim-vcube' + (cristal ? ' cristal' : '');
     w.innerHTML = '<button type="button" class="bim-vcube-casa" title="Ir para o início (Início)">' +
       '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg></button>' +
       '<div class="bim-vcube-anel"></div><div class="bim-vcube-cena"><div class="bim-vcube-cubo"></div></div>';
     var cubo = w.querySelector('.bim-vcube-cubo');
     Object.keys(VC_FACES).forEach(function (k) {
       var f = VC_FACES[k], fe = document.createElement('div');
-      fe.className = 'bim-vcube-face'; fe.setAttribute('data-face', k); fe.style.transform = vcMatFace(f, 35);
+      fe.className = 'bim-vcube-face'; fe.setAttribute('data-face', k); fe.style.transform = vcMatFace(f, cristal ? 30 : 35);
       /* 3×3: canto, aresta, face — a direção é a soma das normais tocadas */
       [1, 0, -1].forEach(function (j) { [-1, 0, 1].forEach(function (i) { var z = document.createElement('span'); z.setAttribute('data-i', i); z.setAttribute('data-j', j); fe.appendChild(z); }); });
       var b = document.createElement('b'); b.textContent = f.rot; fe.appendChild(b);
       cubo.appendChild(fe);
     });
+    if (cristal) {
+    /* BÚSSOLA no plano do chão, logo abaixo do cubo: N verde, S, L, O e as diagonais; marcas a cada 15°.
+       O plano gira com a vista como as faces (norte = −Z da cena = +Y do IFC, ver ESPEC-BIM-CUBO-LOGO §1). */
+    var bus = document.createElement('div'); bus.className = 'bim-vcube-bussola';
+    var marcas = '';
+    for (var gm = 0; gm < 360; gm += 15) { var ra = gm * Math.PI / 180, r1 = gm % 45 === 0 ? 40 : 43; marcas += '<line x1="' + (66 + Math.sin(ra) * r1).toFixed(1) + '" y1="' + (66 - Math.cos(ra) * r1).toFixed(1) + '" x2="' + (66 + Math.sin(ra) * 47).toFixed(1) + '" y2="' + (66 - Math.cos(ra) * 47).toFixed(1) + '"/>'; }
+    /* ⚠ estilo por ATRIBUTO, nunca <style> dentro do SVG: o <style> de um SVG embutido vale para o documento inteiro */
+    var BUS_EST = { bn: 'font-size="15" font-weight="800" fill="#3ccf73"', bp: 'font-size="12" font-weight="700" fill="#f2fff7"', bd: 'font-size="8" font-weight="700" fill="#cdf5dc"' };
+    function rotBus(t, gr, rr, cls) { var a = gr * Math.PI / 180; return '<text x="' + (66 + Math.sin(a) * rr).toFixed(1) + '" y="' + (66 - Math.cos(a) * rr + 4.5).toFixed(1) + '" text-anchor="middle" font-family="Segoe UI,sans-serif" stroke="#0b2a18" stroke-width=".6" paint-order="stroke" ' + BUS_EST[cls] + ' data-rosa="' + t + '">' + t + '</text>'; }
+    bus.innerHTML = '<svg viewBox="0 0 132 132" width="132" height="132"><circle cx="66" cy="66" r="45" fill="none" stroke="rgba(150,255,195,.7)" stroke-width="3"/>' +
+      '<g stroke="rgba(190,255,215,.7)" stroke-width="1">' + marcas + '</g>' +
+      rotBus('N', 0, 56, 'bn') + rotBus('L', 90, 56, 'bp') + rotBus('S', 180, 56, 'bp') + rotBus('O', 270, 56, 'bp') +
+      rotBus('NE', 45, 55, 'bd') + rotBus('SE', 135, 55, 'bd') + rotBus('SO', 225, 55, 'bd') + rotBus('NO', 315, 55, 'bd') + '</svg>';
+    /* plano horizontal (normal +Y), leste para a direita, norte para cima da figura, 34 px abaixo do centro */
+    bus.style.transform = vcMatPlano(_V3(1, 0, 0), _V3(0, 0, -1), _V3(0, 1, 0), -30);
+    cubo.appendChild(bus);
+    /* CONTROLES (só no hover ou no toque): setas giram a vista pelo passo; ângulo exato; menu */
+    var seta = function (d) { return '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6"><path d="' + d + '"/></svg>'; };
+    var ctl = document.createElement('div'); ctl.className = 'bim-vcube-ctl';
+    ctl.innerHTML = '<button type="button" data-vc="cima" title="Girar para cima" style="left:38px;top:0">' + seta('M6 15l6-6 6 6') + '</button>' +
+      '<button type="button" data-vc="baixo" title="Girar para baixo" style="left:38px;top:82px">' + seta('M6 9l6 6 6-6') + '</button>' +
+      '<button type="button" data-vc="esquerda" title="Girar para a esquerda" style="left:0;top:36px">' + seta('M15 6l-6 6 6 6') + '</button>' +
+      '<button type="button" data-vc="direita" title="Girar para a direita" style="left:76px;top:36px">' + seta('M9 6l6 6-6 6') + '</button>' +
+      '<button type="button" data-vc="angulo" title="Ângulo exato (azimute e elevação)" style="left:76px;top:82px">' + seta('M4 20h16M4 20L16 6') + '</button>' +
+      '<button type="button" data-vc="menu" title="Menu da vista" style="left:76px;top:0">' + seta('M5 7h14M5 12h14M5 17h14') + '</button>' +
+      '<select data-vc="passo" title="Passo do giro">' + [15, 30, 45, 90].map(function (g) { return '<option value="' + g + '"' + (g === 45 ? ' selected' : '') + '>' + g + '°</option>'; }).join('') + '</select>' +
+      '<div class="bim-vcube-angulo">azimute<input type="text" inputmode="decimal" data-vc="az" value="0">elevação<input type="text" inputmode="decimal" data-vc="el" value="30"><button type="button" data-vc="ir" style="position:static;display:inline-flex;width:auto;padding:0 6px">Ir</button></div>';
+    w.appendChild(ctl);
+    function vcBA() { return (typeof window !== 'undefined') ? window.BimAbertura : null; }
+    function vcIrAngulo(az, el) {
+      var BAv = vcBA(); if (!BAv) return;
+      var cam = ctx.cam(), orb = ctx.orbit(), dist = cam.position.distanceTo(orb.target);
+      var p = BAv.posicaoDaCamera(orb.target, dist, az, Math.max(-89, Math.min(89, el)));
+      ctx.voar(new THREE.Vector3(p.x, p.y, p.z), orb.target.clone());
+    }
+    function vcAngAtual() { var BAv = vcBA(), cam = ctx.cam(), orb = ctx.orbit(); if (!BAv) return null; var d = orb.target.clone().sub(cam.position); return BAv.anguloDaCamera(d.x, d.y, d.z); }
+    ctl.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+    ctl.addEventListener('click', function (e) {
+      var b = e.target && e.target.closest ? e.target.closest('[data-vc]') : null; if (!b) return;
+      e.stopPropagation();
+      var acao = b.getAttribute('data-vc'), BAv = vcBA();
+      if (acao === 'menu') { var rcm = b.getBoundingClientRect(); abrirMenuCubo(rcm.left, rcm.bottom, ctx); return; }
+      if (acao === 'angulo') { var pa = ctl.querySelector('.bim-vcube-angulo'), at = vcAngAtual(); if (at) { ctl.querySelector('[data-vc="az"]').value = Math.round(at.az); ctl.querySelector('[data-vc="el"]').value = Math.round(at.el); } pa.classList.toggle('aberto'); return; }
+      if (acao === 'ir') { vcIrAngulo(+String(ctl.querySelector('[data-vc="az"]').value).replace(',', '.') || 0, +String(ctl.querySelector('[data-vc="el"]').value).replace(',', '.') || 0); return; }
+      if (!BAv || ['cima', 'baixo', 'esquerda', 'direita'].indexOf(acao) < 0) return;
+      var a0 = vcAngAtual(), n = BAv.girar(a0.az, a0.el, acao, +ctl.querySelector('[data-vc="passo"]').value || 45);
+      vcIrAngulo(n.az, n.el);
+    });
+    w.addEventListener('pointerenter', function (e) { if (e.pointerType !== 'touch') w.classList.add('sobre'); });
+    w.addEventListener('pointerleave', function () { w.classList.remove('sobre'); });
+    /* no toque, os controles ficam visíveis por 3 s */
+    w.addEventListener('pointerdown', function (e) { if (e.pointerType !== 'touch') return; w.classList.add('toque'); clearTimeout(w._toqueT); w._toqueT = setTimeout(function () { w.classList.remove('toque'); }, 3000); }, true);
+    } /* fim do cubo de cristal (prévia) */
     cont.appendChild(w);
     var arrastou = false, p0 = null, zonaDown = null;
     w.querySelector('.bim-vcube-casa').onclick = function (e) { e.stopPropagation(); ctx.home(); };
@@ -1566,7 +1663,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     else if (a === 'reinicio') { try { localStorage.removeItem(inicioChave()); } catch (_) {} irInicio(cam, orb, voar); }
     else if (a === 'salvar') { var o = (S && S.opts) || opts; if (o && o.onSalvarVista) o.onSalvarVista(); }
   }
+  var _cristalOn = !visitante && cristalLigado();
   var vcMain = criarViewCube(host, {
+    cristal: _cristalOn,
     cam: function () { return camera; }, orbit: function () { return orbit; },
     voar: function (p, t) { voarCam(p, t, 0.55); }, orto: function () { return ortoMain.on; },
     home: function () { irInicio(camera, orbit, function (p, t) { voarCam(p, t, 0.6); }); },
@@ -1575,6 +1674,156 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   S.vcubeEl = vcMain.el;
   if (visitante) vcMain.el.style.display = 'none';
   S._tickPos.push(function () { vcMain.atualizar(); ajustarPlanosOrto(camera, orbit, ortoMain); });
+
+  /* =====================================================================
+   * O CRISTAL ORÇAPRO (bim/cristal.js + js/bimabertura.js) — ESPEC-BIM-CUBO-LOGO.md
+   * centro (sem modelo) → carregando → abrindo ("caixa de presente") → cubo (o cristal pequeno no canto).
+   * ⚠ A ESCALA DO MODELO NA ABERTURA VALE SÓ NO DESENHO: aplicada num _tickExtra (depois do agregado) e
+   *   desfeita no _tickPos. Caixa das peças, compatibilização, cache e clique veem o modelo do tamanho real.
+   * ⚠ "Reduzir movimento" (preferência do sistema — e o Chrome sem tela das e2e): sem animação, direto ao fim.
+   * ⚠ Visitante (link da RA/RV): sem cristal.
+   * ===================================================================== */
+  var cris = { hist: ['centro'], congelado: null, obj: null, estado: 'centro', t0: 0, tCarga: 0, curta: null, mo: null, c: null, escalado: null, ultimo: performance.now(), abriuEm: performance.now(), arr: null, semMov: false };
+  try { cris.semMov = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (_) {}
+  function crisBA() { return (typeof window !== 'undefined') ? window.BimAbertura : null; }
+  function crisSet(e) { if (e === cris.estado) return; cris.estado = e; cris.hist.push(e); if (cris.hist.length > 40) cris.hist.shift(); }
+  /* o relógio da abertura (o teste congela num instante para fotografar e para provar o Esc) */
+  function crisT(t0) { return cris.congelado != null ? cris.congelado : performance.now() - t0; }
+  function cristalDom() {
+    if (S.vcubeEl) { S.vcubeEl.style.visibility = (!cris.obj || cris.estado === 'cubo') ? '' : 'hidden'; S.vcubeEl.classList.toggle('com-cristal', !!cris.obj); }
+    if (cris.obj) {
+      over.style.alignItems = 'flex-end'; over.style.paddingBottom = '3vh';
+      var cxo = over.firstElementChild; if (cxo && !cxo._compacto) { cxo._compacto = 1; cxo.style.padding = '10px 22px'; cxo.style.maxWidth = '560px'; cxo.style.background = 'rgba(15,39,64,.72)'; if (cxo.firstElementChild) cxo.firstElementChild.style.display = 'none'; }
+      loading.style.background = 'rgba(11,26,43,.12)'; loading.style.justifyContent = 'flex-end'; loading.style.paddingBottom = '8vh';
+    }
+  }
+  function cristalCentroDe(mo) {
+    var b = new THREE.Box3(), t = new THREE.Box3();
+    (mo.grupo.children || []).forEach(function (m) { if (!m.geometry) return; if (!m.geometry.boundingBox) m.geometry.computeBoundingBox(); m.updateMatrix(); t.copy(m.geometry.boundingBox).applyMatrix4(m.matrix); b.union(t); });
+    return b.isEmpty() ? new THREE.Vector3() : b.getCenter(new THREE.Vector3());
+  }
+  function cristalEvento(ev) {
+    var BA = crisBA(); if (!BA) return;
+    if (ev === 'carregar' && cris.estado === 'centro') cris.tCarga = performance.now();
+    crisSet(BA.proximo(cris.estado, ev)); cristalDom();
+  }
+  function cristalModeloPronto(mo) {
+    var BA = crisBA(); if (!BA) return;
+    cris.menorEscala = null;
+    if (!cris.obj || cris.semMov) { crisSet('cubo'); cris.mo = null; cristalDom(); return; }
+    if (cris.estado === 'cubo') { cris.curta = { t0: performance.now(), mo: mo, c: cristalCentroDe(mo) }; return; }
+    crisSet(BA.proximo(cris.estado === 'centro' ? 'carregando' : cris.estado, 'pronto'));
+    cris.t0 = performance.now(); cris.mo = mo; cris.c = cristalCentroDe(mo); cris.abriuEm = cris.t0; cristalDom();
+  }
+  function cristalFechouTudo() { if (!S.modelos.length) { crisSet('centro'); cris.mo = null; cris.curta = null; cristalDom(); } }
+  S._cristalEvento = cristalEvento; S._cristalModeloPronto = cristalModeloPronto; S._cristalFechouTudo = cristalFechouTudo;
+  S._cristalEstado = function () { return cris.obj ? cris.estado : 'sem-cristal'; };
+  /* hook de teste: a menor escala que a abertura APLICOU no desenho (prova que o modelo sai pequeno da caixa) */
+  /* hook de teste: onde o cristal do canto cai na tela (barras projetadas pela câmera do canto, em px da página) */
+  S._cristalCanto = function () {
+    var o = cris.obj, r2 = cristalRetCanto(); if (!o || !r2) return null;
+    var cv = renderer.domElement.getBoundingClientRect();
+    return { ret: r2, barras: o.barras.map(function (b) { var p = new THREE.Vector3(); b.getWorldPosition(p); p.project(o.camCanto); return [Math.round(cv.left + r2.x + (p.x + 1) / 2 * r2.w), Math.round(cv.bottom - r2.y - (p.y + 1) / 2 * r2.h), +p.z.toFixed(3)]; }), vis: o.barras.map(function (b) { var v = true; b.traverseAncestors(function (a) { if (!a.visible) v = false; }); return v && b.visible; }) };
+  };
+  S._cristalCongelar = function (ms) { cris.congelado = ms == null ? null : +ms; };
+  S._cristalDiag = function () { return { hist: cris.hist.slice(), estado: S._cristalEstado(), semMov: cris.semMov, menorEscala: cris.menorEscala == null ? null : cris.menorEscala, curta: !!cris.curta, escalaFora: S.modelos.map(function (m) { return +m.grupo.scale.x.toFixed(4); }) }; };
+  S._cristalPular = function () { var BA = crisBA(); if (BA && cris.estado === 'abrindo') { crisSet(BA.proximo('abrindo', 'pular')); cris.mo = null; cristalDom(); } };
+  if (_cristalOn) {
+    fetch('bim/cristal-textos.json').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }).then(function (tx) {
+      if (S !== Sm || !S.alive || !crisBA()) return;
+      try { cris.obj = criarCristal({ renderer: renderer, transmissao: !cris.semMov, textos: tx }); } catch (eC) { cris.obj = null; }
+      if (S.modelos.length) crisSet('cubo');
+      cristalDom();
+    });
+  }
+  /* o modelo encolhido (só durante o desenho) */
+  function cristalEscala(mo, c, s, vis) {
+    cris.escalado = { mo: mo, vis: mo.grupo.visible, pos: mo.grupo.position.clone(), esc: mo.grupo.scale.clone() };
+    cris.menorEscala = Math.min(cris.menorEscala == null ? 9 : cris.menorEscala, s);
+    mo.grupo.scale.setScalar(s); mo.grupo.position.set(c.x * (1 - s), c.y * (1 - s), c.z * (1 - s)); mo.grupo.visible = vis && cris.escalado.vis;
+    var ag = mo._agreg && mo._agreg.grupo;
+    if (ag) {
+      modelRoot.updateMatrix();
+      var M = new THREE.Matrix4().copy(modelRoot.matrix).multiply(new THREE.Matrix4().makeTranslation(c.x, c.y, c.z)).multiply(new THREE.Matrix4().makeScale(s, s, s)).multiply(new THREE.Matrix4().makeTranslation(-c.x, -c.y, -c.z));
+      M.decompose(ag.position, ag.quaternion, ag.scale); ag.visible = ag.visible && vis;
+    }
+  }
+  function cristalRestaura() {
+    var e = cris.escalado; if (!e) return; cris.escalado = null;
+    e.mo.grupo.scale.copy(e.esc); e.mo.grupo.position.copy(e.pos); e.mo.grupo.visible = e.vis; e.mo.grupo.updateMatrixWorld(true);
+  }
+  /* ⚠ registrado no _tickExtra DEPOIS do sincronizarAgregado (lá embaixo): o espelho copia a posição/escala do
+     modelRoot a cada quadro e apagaria a escala da abertura se rodasse depois dela */
+  S._cristalTickEscala = function () {
+    var BA = crisBA(); if (!BA || !cris.obj) return;
+    var agora = performance.now();
+    if (cris.estado === 'abrindo' && cris.mo) { var q = BA.quadro(crisT(cris.t0), { semMovimento: cris.semMov }); cristalEscala(cris.mo, cris.c, q.modeloEscala, q.modeloVisivel); }
+    else if (cris.curta) { var qc = BA.quadroCurto(agora - cris.curta.t0, { semMovimento: cris.semMov }); cristalEscala(cris.curta.mo, cris.curta.c, qc.modeloEscala, true); }
+  };
+  /* o retângulo do cristal do canto: 2× o lado do cubo HTML, no mesmo centro (o cubo girado passa do quadrado) */
+  function cristalRetCanto() {
+    var ce = S.vcubeEl && S.vcubeEl.querySelector('.bim-vcube-cena'); if (!ce) return null;
+    /* ⚠ px CSS (ver o desenhar do bim/cristal.js): o three multiplica pelo pixelRatio */
+    var a = ce.getBoundingClientRect(), b = renderer.domElement.getBoundingClientRect();
+    if (!a.width || !b.width) return null;
+    var cx = a.left + a.width / 2 - b.left, cy = b.bottom - (a.top + a.height / 2), lado = a.width * 2;
+    return { x: Math.round(cx - lado / 2), y: Math.round(cy - lado / 2), w: Math.round(lado), h: Math.round(lado), ladoCubo: a.width };
+  }
+  function lerpN(a, b, k) { return a + (b - a) * k; }
+  S._tickPos.push(function () {
+    var agora = performance.now(), dt = Math.min(0.1, (agora - cris.ultimo) / 1000); cris.ultimo = agora;
+    cristalRestaura();
+    var BA = crisBA(), o = cris.obj; if (!BA || !o) return;
+    var tS = agora / 1000, tamR = renderer.getSize(new THREE.Vector2()), W = tamR.x, H = tamR.y;
+    if (cris.estado === 'centro' || cris.estado === 'carregando') {
+      o.aplicarAbertura(null, false);
+      o.aplicarBarras(cris.estado === 'carregando' ? BA.barras(Math.min(0.92, (agora - cris.tCarga) / 4000)) : null);
+      o.aplicarEstrela(cris.semMov ? BA.estrela(0, 'acesa') : BA.estrela(tS, 'forte'));
+      o.animarCentro(dt, tS, cris.semMov);
+      o.camCentro.position.set(0, 0.12, 6.2); o.camCentro.lookAt(0, -0.3, 0); o.camCentro.aspect = W / Math.max(1, H); o.camCentro.updateProjectionMatrix();
+      o.desenhar({ x: 0, y: 0, w: W, h: H }, o.camCentro);
+      return;
+    }
+    if (cris.estado === 'abrindo') {
+      var q = BA.quadro(crisT(cris.t0), { semMovimento: cris.semMov }), rc = cristalRetCanto() || { x: W - 200, y: H - 200, w: 160, h: 160 }, k = q.paraOCanto;
+      o.aplicarAbertura(q, false); o.aplicarBarras(null); o.aplicarEstrela(BA.estrela(tS, 'forte'));
+      o.animarCentro(dt, tS, cris.semMov);
+      var rect = { x: Math.round(lerpN(0, rc.x, k)), y: Math.round(lerpN(0, rc.y, k)), w: Math.max(2, Math.round(lerpN(W, rc.w, k))), h: Math.max(2, Math.round(lerpN(H, rc.h, k))) };
+      o.camCentro.position.set(0, 0.12, 6.2 - q.zoom * 1.8 - k * 1.6); o.camCentro.lookAt(0, -0.3 * (1 - k), 0); o.camCentro.aspect = rect.w / rect.h; o.camCentro.updateProjectionMatrix();
+      o.desenhar(rect, o.camCentro);
+      if (q.fim) { crisSet(BA.proximo('abrindo', 'fim')); cris.mo = null; cristalDom(); }
+      return;
+    }
+    if (cris.estado === 'cubo' && S.vcubeEl && S.vcubeEl.style.display !== 'none') {
+      var r2 = cristalRetCanto(); if (!r2) return;
+      var pc = cris.curta ? BA.quadroCurto(agora - cris.curta.t0, { semMovimento: cris.semMov }) : null;
+      o.aplicarAbertura(pc ? { t: 0, respira: pc.pisca * 0.12, luz: pc.pisca, tampaGraus: 0, ladosGraus: 0, explosao: pc.feixe * 0.6, cristalOpac: 1, paraOCanto: 1 } : null, true);
+      o.aplicarBarras(null);
+      o.aplicarEstrela(cris.semMov ? BA.estrela(0, 'acesa') : (agora - cris.abriuEm < 3000 ? BA.estrela(tS, 'forte') : BA.estrela(tS, 'suave')));
+      o.prepararCanto(camera.quaternion, r2, r2.ladoCubo);
+      o.desenhar(r2, o.camCanto);
+      if (pc && pc.fim) cris.curta = null;
+    }
+  });
+  /* centro: inclinar para o cursor, arrastar gira, clique dá um pulo; na abertura, clique pula.
+     ⚠ FUNÇÕES COM NOME, não ouvinte anônimo de parâmetro "e": o test-bim-mira acha os ouvintes da mira/lupa pelo PRIMEIRO
+     ouvinte anônimo de pointermove/pointerdown do canvas no arquivo — anônimos aqui, acima deles, roubavam a busca (02/10). */
+  function cristalMover(ev) {
+    if (!cris.obj || cris.estado !== 'centro') return;
+    var r = canvasEl.getBoundingClientRect();
+    cris.obj.inclinar(((ev.clientX - r.left) / r.width - 0.5) * 2, ((ev.clientY - r.top) / r.height - 0.5) * 2);
+    if (cris.arr) { cris.obj.arrastar(ev.clientX - cris.arr.x, ev.clientY - cris.arr.y); cris.arr.x = ev.clientX; cris.arr.y = ev.clientY; cris.arr.moveu = true; }
+  }
+  function cristalApertar(ev) {
+    if (!cris.obj) return;
+    if (cris.estado === 'abrindo') { S._cristalPular(); return; }
+    if (cris.estado === 'centro') cris.arr = { x: ev.clientX, y: ev.clientY, moveu: false };
+  }
+  function cristalSoltar() { if (cris.arr && !cris.arr.moveu && cris.obj) cris.obj.pular(); cris.arr = null; }
+  canvasEl.addEventListener('pointermove', cristalMover);
+  canvasEl.addEventListener('pointerdown', cristalApertar);
+  canvasEl.addEventListener('pointerup', cristalSoltar);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && S === Sm && S.alive && cris.estado === 'abrindo') S._cristalPular(); });
 
   var cxMain = criarCaixaCorte({ renderer: function () { return renderer; }, cam: function () { return camera; }, orbit: function () { return orbit; }, canvas: function () { return renderer.domElement; }, orbitLivre: function () { return !fly.on; } });
   cxMain.ligarEventos(renderer.domElement);
@@ -1625,7 +1874,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     v.cx = criarCaixaCorte({ renderer: function () { return v.renderer; }, cam: function () { return v.camera; }, orbit: function () { return v.orbit; }, canvas: function () { return v.renderer.domElement; } });
     v.cx.ligarEventos(rr.domElement);
     if (cxAnt) { v.cx.ligar(true, cxAnt); v.cx.box.copy(cxAnt); }
-    v.cubo = criarViewCube(cont, {
+    v.cubo = criarViewCube(cont, { cristal: _cristalOn,
       cam: function () { return v.camera; }, orbit: function () { return v.orbit; },
       voar: function (p, t) { v.tween = { p0: v.camera.position.clone(), p1: p, t0: v.orbit.target.clone(), t1: t, e: 0, dur: 0.55 }; },
       orto: function () { return v.orto.on; },
@@ -2371,13 +2620,13 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   // unidade do arquivo). Logo, a distância entre 2 pontos do mundo JÁ é em metros — NÃO se aplica
   // o fator de unidade aqui (isso é só p/ os BaseQuantities do QTO, que vêm em unidade nativa).
   function fmtDist(m) { return m >= 1 ? m.toFixed(2).replace('.', ',') + ' m' : Math.round(m * 100) + ' cm'; }
-  function labelSprite(txt) {
+  function labelSprite(txt, borda) {
     var cv = document.createElement('canvas'), fs = 46, pad = 14;
     var g = cv.getContext('2d'); g.font = 'bold ' + fs + 'px Arial';
     cv.width = Math.ceil(g.measureText(txt).width) + pad * 2; cv.height = fs + pad * 2;
     g = cv.getContext('2d'); g.font = 'bold ' + fs + 'px Arial';
     g.fillStyle = 'rgba(11,26,43,.94)'; g.fillRect(0, 0, cv.width, cv.height);
-    g.strokeStyle = '#22c55e'; g.lineWidth = 4; g.strokeRect(2, 2, cv.width - 4, cv.height - 4);
+    g.strokeStyle = borda || '#22c55e'; g.lineWidth = borda ? 7 : 4; g.strokeRect(3, 3, cv.width - 6, cv.height - 6);
     g.fillStyle = '#c7f9d8'; g.textBaseline = 'middle'; g.textAlign = 'left'; g.fillText(txt, pad, cv.height / 2 + 2);
     var tex = new THREE.CanvasTexture(cv); tex.minFilter = THREE.LinearFilter;
     var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
@@ -2951,7 +3200,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
    * ⚠ O CAMINHÃO É ILUSTRATIVO no desenho: o que vem do fabricante (patolas,
    *   alcance, comprimento) sai do catálogo; o resto é volume de referência.
    * ===================================================================== */
-  var icar = { grupo: new THREE.Group(), equip: null, sim: null, rotulos: [] };
+  var icar = { grupo: new THREE.Group(), equip: null, sim: null, rotulos: [], vivos: {}, giro: null };
   icar.grupo.name = 'icamento'; icar.grupo.matrixAutoUpdate = false; scene.add(icar.grupo);
   var _icWp = new THREE.Vector3();
   function icL(p) { return new THREE.Vector3(+p.x || 0, +p.z || 0, -(+p.y || 0)); }
@@ -2974,7 +3223,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   function icLimpar() {
     icLimparSim();
     while (icar.grupo.children.length) { var o = icar.grupo.children.pop(); icDescartar(o); }
-    icar.equip = null; icar.rotulos = [];
+    icar.equip = null; icar.rotulos = []; icar.vivos = {}; icar.giro = null;
   }
   /* barra (caixa) de a até b, larg × alt de seção */
   function icBarra(a, b, larg, alt, mat) {
@@ -3047,19 +3296,42 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     cadaMalha(function (m) { if (!m.geometry || !m.visible) return; if (!m.geometry.boundingBox) m.geometry.computeBoundingBox(); m.updateMatrixWorld(true); tmp.copy(m.geometry.boundingBox).applyMatrix4(m.matrixWorld).applyMatrix4(inv); box.union(tmp); });
     return box.isEmpty() ? 0 : box.min.y;
   }
-  /* o ponto no chão sob o cursor: a peça acertada (terreno, laje) ou o plano do chão */
-  function icPontoNoChao(cx, cy) {
-    var h = raycastEm(cx, cy);
+  /* o ponto no chão sob o cursor. opts = { modo: 'pavimento'|'manual'|'superficie', cota (motor z) }.
+     ⚠ O DEFEITO DA PRÉVIA 1.2.114 (Rogério, 01/10/2026): o caminhão nascia ABAIXO DO PISO. O clique que não
+       acertava peça caía no plano do FUNDO do modelo (`icChao()`), e num modelo com fundação o fundo é a ponta
+       da estaca (−6 m no fixture). Agora: pavimento/manual = o raio é projetado no plano da COTA DO APOIO (a
+       peça acertada não conta — clicar no telhado põe o caminhão no térreo, sob o cursor); superfície = a peça
+       acertada (terreno, laje), e o vazio cai no plano da cota do apoio. O fundo do modelo nunca mais é chão. */
+  function icPontoNoChao(cx, cy, opts) {
     modelRoot.updateMatrixWorld(true);
     var inv = new THREE.Matrix4().copy(modelRoot.matrixWorld).invert();
-    if (h) { var pl = h.point.clone().applyMatrix4(inv), ud = h.object.userData || {}; var r = icM(pl); r.uid = ud.expressID != null ? ((ud.mid != null ? ud.mid : S.modelID) + ':' + ud.expressID) : ''; r.noModelo = true; return r; }
+    if (!opts || opts.modo === 'superficie') {
+      var h = raycastEm(cx, cy);
+      if (h) { var pl = h.point.clone().applyMatrix4(inv), ud = h.object.userData || {}; var r = icM(pl); r.uid = ud.expressID != null ? ((ud.mid != null ? ud.mid : S.modelID) + ':' + ud.expressID) : ''; r.noModelo = true; return r; }
+    }
     var rc = canvasEl.getBoundingClientRect();
     mouse.x = ((cx - rc.left) / rc.width) * 2 - 1; mouse.y = -((cy - rc.top) / rc.height) * 2 + 1;
     ray.setFromCamera(mouse, camera);
-    var yCh = icChao(), p0 = new THREE.Vector3(0, yCh, 0).applyMatrix4(modelRoot.matrixWorld), p1 = new THREE.Vector3(0, yCh + 1, 0).applyMatrix4(modelRoot.matrixWorld);
+    var yCh = (opts && opts.cota != null) ? icL({ x: 0, y: 0, z: +opts.cota }).y : icChao();
+    var p0 = new THREE.Vector3(0, yCh, 0).applyMatrix4(modelRoot.matrixWorld), p1 = new THREE.Vector3(0, yCh + 1, 0).applyMatrix4(modelRoot.matrixWorld);
     var n = p1.clone().sub(p0).normalize(), plano = new THREE.Plane().setFromNormalAndCoplanarPoint(n, p0), hit = new THREE.Vector3();
     if (!ray.ray.intersectPlane(plano, hit)) return null;
     var r2 = icM(hit.applyMatrix4(inv)); r2.uid = ''; r2.noModelo = false; return r2;
+  }
+  /* a superfície sob cada ponto (motor): raio de cima para baixo começando 3 m acima do ponto — telhado mais alto
+     que isso não conta como chão. Devolve [{x, y, z, sup|null}] — sup = cota da primeira peça abaixo do início. */
+  var _icRaioSonda = new THREE.Raycaster();
+  function icSondar(pts) {
+    modelRoot.updateMatrixWorld(true);
+    var alvos = []; cadaMalha(function (m) { if (m.visible && m.isMesh) alvos.push(m); });
+    var baixo = new THREE.Vector3(0, -1, 0).transformDirection(modelRoot.matrixWorld), inv = new THREE.Matrix4().copy(modelRoot.matrixWorld).invert();
+    return (pts || []).map(function (p) {
+      var o = icL({ x: p.x, y: p.y, z: (+p.z || 0) + 3 }).applyMatrix4(modelRoot.matrixWorld);
+      _icRaioSonda.set(o, baixo); _icRaioSonda.far = 1e4; _icRaioSonda.layers.mask = ray.layers.mask; // a camada do clique (o agregado põe as peças na 1)
+      var hs = _icRaioSonda.intersectObjects(alvos, false), sup = null;
+      for (var i = 0; i < hs.length; i++) { if (!cadeiaVisivel(hs[i].object)) continue; sup = icM(hs[i].point.clone().applyMatrix4(inv)).z; break; }
+      return { x: p.x, y: p.y, z: p.z, sup: sup };
+    });
   }
   /* o equipamento na cena. c = { tipo, pos (centro de giro, motor), rumo_graus (eixo do caminhão),
        patolas:[long, lat], comp, larg, gancho (motor), pontos:[motor], cg, raio, alcanceMax, isolamento,
@@ -3072,6 +3344,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var y0 = pos.y;
     function P(al, sd, up) { return pos.clone().add(ax.clone().multiplyScalar(al)).add(lat.clone().multiplyScalar(sd)).setY(y0 + up); }
     var mAm = icMat(0xf59e0b), mCab = icMat(0x1d4ed8), mChassi = icMat(0x475569), mPat = icMat(0xfacc15), mSap = icMat(0x7c2d12), mPreto = icMat(0x111827);
+    /* com a FORMA da ficha (js/icarficha.js): o equipamento articulado; sem ela, o desenho de referência abaixo */
+    var ge = (c.forma && window.IcarCinematica) ? icGerar(c, pos, rumo, y0) : null;
     function caixa(al, sd, up, Lx, Wl, Hz, mat) {
       var m = new THREE.Mesh(new THREE.BoxGeometry(Lx, Hz, Wl), mat);
       m.position.copy(P(al, sd, up + Hz / 2)); m.rotation.y = rumo; icar.grupo.add(m); return m;
@@ -3080,7 +3354,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var pat = c.patolas || [], pLat = Math.max(+pat[pat.length - 1] || larg + 2, larg), pLong = ehMunck ? null : (+pat[0] || comp * 0.55);
     var rodas = function (als) { als.forEach(function (al) { [-1, 1].forEach(function (s) { var r = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.35, 18), mPreto); r.position.copy(P(al, s * (larg / 2 - 0.15), 0.5)); r.rotation.set(Math.PI / 2, 0, 0); r.rotateOnWorldAxis(new THREE.Vector3(0, 1, 0), rumo); icar.grupo.add(r); }); }); };
     var sapatas = [];
-    if (ehMunck) {
+    if (ge) { /* o gerador já desenhou caminhão, patolas e sapatas */ }
+    else if (ehMunck) {
       /* munck: o giro fica logo atrás da cabine; patolas no giro e na traseira */
       caixa(-comp / 2 + 2.6, 0, 0.75, comp, larg * 0.9, 0.45, mChassi);
       caixa(-comp / 2 + 2.6 - 0.6, 0, 1.2, comp - 3.6, larg, 0.25, icMat(0x64748b));
@@ -3102,11 +3377,33 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     });
     /* chão: raio de trabalho, alcance máximo, área isolada */
     var yC = y0 + 0.03;
+    /* REDE ELÉTRICA: o vão (linha preta) e os cilindros da NR-10 — zona controlada (Rc, laranja) e zona de risco (Rr, vermelho) */
+    (c.redes || []).forEach(function (rd) {
+      var z = window.IcarColisao ? IcarColisao.zonaNR10(rd.kV) : null, A = icL({ x: rd.a[0], y: rd.a[1], z: rd.a[2] }), B = icL({ x: rd.b[0], y: rd.b[1], z: rd.b[2] });
+      var ln = icLinha([A, B], 0x111827); ln.name = 'rede-eletrica'; icar.grupo.add(ln);
+      if (!z) return;
+      [[z.Rc, 0xf97316, 0.16], [z.Rr, 0xdc2626, 0.3]].forEach(function (zr) {
+        var cil = icCilindroL(icar.grupo, A, B, zr[0], new THREE.MeshBasicMaterial({ color: zr[1], transparent: true, opacity: zr[2], depthWrite: false, side: THREE.DoubleSide }), 24); cil.name = 'rede-zona';
+      });
+      icRotulo((rd.nome || 'rede') + ' · ' + String(rd.kV).replace('.', ',') + ' kV · Rc ' + String(z.Rc).replace('.', ',') + ' m', A.clone().lerp(B, 0.5).setY(A.y + z.Rc + 0.6));
+    });
+    /* áreas onde não se pode apoiar: vermelho translúcido + contorno (a que está sendo marcada, só o contorno tracejado) */
+    (c.proibidoApoiar || []).forEach(function (ar) {
+      var pts = (ar.poligono || []).map(function (q) { return icL({ x: q[0], y: q[1], z: 0 }).setY(yC + 0.01); });
+      if (pts.length >= 2) { var ln = icLinha(ar.aberta ? pts : pts.concat([pts[0]]), 0xdc2626, ar.aberta ? 0.3 : 0); ln.name = 'area-proibida'; icar.grupo.add(ln); }
+      if (pts.length >= 3 && !ar.aberta) {
+        var sh = new THREE.Shape(pts.map(function (v) { return new THREE.Vector2(v.x, -v.z); }));
+        var mF = new THREE.Mesh(new THREE.ShapeGeometry(sh), new THREE.MeshBasicMaterial({ color: 0xdc2626, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false }));
+        mF.rotation.x = -Math.PI / 2; mF.position.y = yC + 0.008; mF.name = 'area-proibida'; icar.grupo.add(mF);
+        var cx = 0, cz = 0; pts.forEach(function (v) { cx += v.x; cz += v.z; });
+        icRotulo('não apoiar: ' + (ar.motivo || 'área'), new THREE.Vector3(cx / pts.length, yC + 0.5, cz / pts.length));
+      }
+    });
     if (c.raio > 0) icar.grupo.add(icCirculo(pos, c.raio, yC, 0xf97316, 0.5));
     if (c.alcanceMax > 0) { var cAlc = icCirculo(pos, c.alcanceMax, yC, 0x94a3b8, 0.35); cAlc.userData.foraDaFoto = true; icar.grupo.add(cAlc); } // o alcance máximo não manda no enquadramento da foto
     if (c.isolamento > 0) icar.grupo.add(icCirculo(pos, c.isolamento, yC, 0xef4444, 0.8));
     var lanca = new THREE.Group(); lanca.name = 'lanca'; icar.grupo.add(lanca);
-    icar.equip = { c: c, pos: pos, ax: ax, lat: lat, y0: y0, ehMunck: ehMunck, lanca: lanca, mAm: mAm, mPreto: mPreto };
+    icar.equip = { c: c, pos: pos, ax: ax, lat: lat, y0: y0, ehMunck: ehMunck, lanca: lanca, mAm: mAm, mPreto: mPreto, ge: ge, k: c.k != null ? +c.k : null };
     icAtualizarLanca(c.gancho ? icL(c.gancho) : P(0, 0, 6), (c.pontos || []).map(icL));
     if (c.cg && c.raio > 0) {
       var cg0 = icL(c.cg).setY(yC);
@@ -3114,13 +3411,287 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       icRotulo('R = ' + (Math.round(c.raio * 100) / 100).toString().replace('.', ',') + ' m', pos.clone().lerp(cg0, 0.5).setY(yC + 0.4));
     }
     (c.rotulos || []).forEach(function (r) { if (r && r.p) icRotulo(r.txt, icL(r.p)); });
-    if (c.rotulo) icRotulo(c.rotulo, pos.clone().setY(y0 + (ehMunck ? 4.6 : 4.2)));
+    /* com o equipamento articulado o nome sobe acima da superestrutura (embaixo encavalava com a margem e as patolas) */
+    if (c.rotulo) icRotulo(c.rotulo, pos.clone().setY(y0 + (ge ? (ehMunck ? 6.2 : 7.2) : (ehMunck ? 4.6 : 4.2))));
     icSincronizar();
     return { ok: true, objetos: icar.grupo.children.length };
   }
+  /* =====================================================================
+   * EQUIPAMENTO ARTICULADO — fatia 1 do içamento (ESPEC-ICAMENTO-CENARIO.md §II.3.2 e §II.4.7).
+   * A FORMA vem da ficha (js/icarficha.js → forma), a POSE da cinemática (js/icarcinematica.js) e as CORES e os
+   * VALORES da física (js/icarfisica.js). Cada peça tem o seu pivô: a superestrutura gira (θ) no eixo de giro, a lança
+   * levanta (α) no pé, os braços do munck dobram pela cinemática inversa.
+   * ⚠ REFERENCIAL DO GRUPO: u (chassi, + para a cabine) = +X local, v (+ esquerda) = −Z local, w = +Y. O grupo fica no
+   *   centro de giro marcado e gira pelo rumo — o mesmo P(al, sd, up) do desenho antigo, que segue de reserva para
+   *   equipamento sem ficha (tabela da placa, "Outro equipamento").
+   * ⚠ A FÍSICA repinta no máximo a cada 120 ms enquanto a lança gira (simulação ou "girar a lança"), não a cada quadro.
+   * ⚠ Peça marcada "estimado" na forma (proporção genérica, sem número da ficha) ganha contorno tracejado quando
+   *   c.mostrarEstimado — e NENHUMA conta da física usa essas medidas.
+   * ===================================================================== */
+  var IC_FAB = { liebherr: 0xf5c400, masal: 0xc8102e, palfinger: 0xd4001a, madal: 0xd4001a, xcmg: 0xf2b705, sany: 0xd71920, tka: 0x1f4e9a, argos: 0x0b5fa5, imap: 0xd71920 };
+  function icCorFab(nome) { var n = String(nome || '').toLowerCase(); for (var k in IC_FAB) if (n.indexOf(k) >= 0) return IC_FAB[k]; return 0xf59e0b; }
+  function icCaixaL(pai, x0, x1, y0, y1, z0, z1, mat, nome) {
+    var m = new THREE.Mesh(new THREE.BoxGeometry(Math.max(1e-3, x1 - x0), Math.max(1e-3, y1 - y0), Math.max(1e-3, z1 - z0)), mat);
+    m.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2); if (nome) m.name = nome; pai.add(m); return m;
+  }
+  function icCilindroL(pai, a, b, r, mat, seg) {
+    var d = b.clone().sub(a), L = Math.max(d.length(), 1e-3);
+    var m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, L, seg || 14), mat);
+    m.position.copy(a).add(b).multiplyScalar(0.5); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()); pai.add(m); return m;
+  }
+  function icTracejar(m) {
+    var e = new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry), new THREE.LineDashedMaterial({ color: 0x334155, dashSize: 0.18, gapSize: 0.12 }));
+    e.computeLineDistances(); e.position.copy(m.position); e.quaternion.copy(m.quaternion); e.scale.copy(m.scale); m.parent.add(e); return e;
+  }
+  /* rótulo VIVO: um sprite por componente; o texto só redesenha quando muda (a física repinta várias vezes por segundo) */
+  function icRotuloVivo(id, txt, p, cor) {
+    var v = icar.vivos[id];
+    if (!txt) { if (v) v.visible = false; return null; }
+    if (!v || v.userData._txt !== txt || v.userData._cor !== cor) {
+      if (v) { icar.grupo.remove(v); icDescartar(v); var ix = icar.rotulos.indexOf(v); if (ix >= 0) icar.rotulos.splice(ix, 1); }
+      v = labelSprite(String(txt).slice(0, 60), cor); v.userData._txt = txt; v.userData._cor = cor; icar.grupo.add(v); icar.rotulos.push(v); icar.vivos[id] = v;
+    }
+    v.visible = true; v.position.copy(p); return v;
+  }
+  function icGerar(c, pos, rumo, y0) {
+    var fo = c.forma, est = fo.estimado || {}, munck = fo.tipo === 'munck';
+    var eqG = new THREE.Group(); eqG.name = 'equipamento-articulado'; eqG.position.copy(pos).setY(y0); eqG.rotation.y = rumo; icar.grupo.add(eqG);
+    var fab = icCorFab(c.rotulo), mFab = icMat(fab), mChassi = icMat(0x3f4652), mPreto = icMat(0x15181d), mAro = icMat(0xb8bec7);
+    var mVidro = new THREE.MeshStandardMaterial({ color: 0x8fb6d9, metalness: 0.1, roughness: 0.05, transparent: true, opacity: 0.55 });
+    var mCil = new THREE.MeshStandardMaterial({ color: 0xd9dde3, metalness: 0.9, roughness: 0.2 });
+    var ge = { eqG: eqG, munck: munck, fo: fo, patolas: [], tracejar: [], mats: {} };
+    function marca(m, campo) { if (est[campo]) ge.tracejar.push(m); return m; }
+    function roda(u, z, r, larg) {
+      var w = new THREE.Group(); w.position.set(u, r, z); eqG.add(w);
+      var pneu = new THREE.Mesh(new THREE.CylinderGeometry(r, r, larg, 22), mPreto); pneu.rotation.x = Math.PI / 2; w.add(pneu);
+      var aro = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.55, r * 0.55, larg + 0.02, 16), mAro); aro.rotation.x = Math.PI / 2; w.add(aro);
+    }
+    var gU = fo.giroU || 0, a = fo.patolaA, b = fo.patolaB;
+    /* as 4 patolas (DE, DD, TE, TD): centro do retângulo em u = −giroU (o grupo nasce no centro de giro) */
+    var pos4 = [[a / 2, b / 2], [a / 2, -b / 2], [-a / 2, b / 2], [-a / 2, -b / 2]];
+    if (!munck) {
+      var ch = fo.chassi, L = ch.comprimento, W = ch.largura, xc = -gU, hRod = ch.rodaD / 2;
+      marca(icCaixaL(eqG, xc - L / 2, xc + L / 2, hRod * 0.9, hRod * 0.9 + ch.altura, -W / 2, W / 2, mFab, 'chassi'), 'comprimento');
+      ch.eixos.forEach(function (u) { [-1, 1].forEach(function (s) { roda(xc + u, s * (W / 2 - 0.2), hRod, 0.45); }); });
+      var cb = fo.cabineMotorista, xf = xc + L / 2;
+      var cab = icCaixaL(eqG, xf - cb.comprimento, xf, hRod * 0.9 + ch.altura, hRod * 0.9 + ch.altura + cb.altura, -W / 2, W / 2 - 0.9, mFab, 'cabine'); marca(cab, 'cabineMotorista');
+      icCaixaL(eqG, xf - 0.02, xf + 0.01, hRod * 0.9 + ch.altura + 0.6, hRod * 0.9 + ch.altura + cb.altura - 0.15, -W / 2 + 0.1, W / 2 - 1.0, mVidro);
+      ge.topoChassi = hRod * 0.9 + ch.altura;
+    } else {
+      var cm = fo.caminhao, Lc = cm.comprimento, Wc = cm.largura, x1 = 2.8, x0 = x1 - Lc, hR = cm.rodaD / 2, xcen = (x0 + x1) / 2;
+      marca(icCaixaL(eqG, x0, x1, hR * 0.8, hR * 0.8 + 0.35, -Wc * 0.42, Wc * 0.42, mChassi, 'chassi'), 'comprimento');
+      var cabM = icCaixaL(eqG, x1 - cm.cabine.comprimento, x1, hR * 0.8 + 0.35, hR * 0.8 + 0.35 + cm.cabine.altura, -Wc / 2, Wc / 2, icMat(0xe5e7eb), 'cabine'); marca(cabM, 'caminhaoDetalhe');
+      icCaixaL(eqG, x1 - 0.02, x1 + 0.01, hR * 0.8 + 1.2, hR * 0.8 + 0.35 + cm.cabine.altura - 0.15, -Wc / 2 + 0.12, Wc / 2 - 0.12, mVidro);
+      var car = icCaixaL(eqG, x0 + 0.1, -0.7, hR * 0.8 + 0.35, hR * 0.8 + 0.45, -Wc / 2, Wc / 2, icMat(0x6b7280), 'carroceria'); marca(car, 'caminhaoDetalhe');
+      [-1, 1].forEach(function (s) { icCaixaL(eqG, x0 + 0.1, -0.7, hR * 0.8 + 0.45, hR * 0.8 + 0.85, s * Wc / 2 - 0.04, s * Wc / 2 + 0.04, icMat(0x9ca3af)); });
+      cm.eixos.forEach(function (u) { [-1, 1].forEach(function (s) { roda(xcen + u, s * (Wc / 2 - 0.25), hR, 0.38); }); });
+      icCaixaL(eqG, -0.65, 0.65, hR * 0.8 + 0.35, 1.3, -0.65, 0.65, mFab, 'base do guindaste');
+      ge.topoChassi = 1.3;
+    }
+    /* patolas: viga do chassi até a sapata, cilindro vertical, sapata (cor da patola) e o chão sob ela (cor do solo) */
+    var lado = fo.sapataLado || 0.6, hViga = munck ? 0.95 : (ge.topoChassi - 0.35), largCh = munck ? fo.caminhao.largura : fo.chassi.largura;
+    pos4.forEach(function (p, k) {
+      var u = p[0] - gU, z = -p[1], zIn = (z > 0 ? 1 : -1) * largCh * 0.42;
+      var viga = icCilindroL(eqG, new THREE.Vector3(u, hViga, zIn), new THREE.Vector3(u, hViga, z), 0.13, mFab); viga.userData.parte = 'viga';
+      var cil = icCilindroL(eqG, new THREE.Vector3(u, hViga, z), new THREE.Vector3(u, 0.16, z), 0.09, mCil);
+      var mS = icMat(0x9ca3af), sap = icCaixaL(eqG, u - lado / 2, u + lado / 2, 0.03, 0.12, z - lado / 2, z + lado / 2, mS, 'sapata-' + k); marca(sap, 'sapataLado_m');
+      var mC = new THREE.MeshBasicMaterial({ color: 0x9ca3af, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide });
+      var chao = new THREE.Mesh(new THREE.PlaneGeometry(lado * 1.9, lado * 1.9), mC); chao.rotation.x = -Math.PI / 2; chao.position.set(u, 0.012, z); chao.renderOrder = 2; eqG.add(chao);
+      if (est.patolaA || est.patolaB) ge.tracejar.push(viga);
+      ge.patolas.push({ sapata: sap, chao: chao, mS: mS, mC: mC, u: u, z: z });
+    });
+    /* escoras sob as patolas (patola sobre laje escorada): postes de 2,8 m ABAIXO do apoio, espalhados sob a sapata; a cor
+       vem da física (escora-n). Ilustrativo na posição — a carga é a da patola dividida entre as escoras dela. */
+    ge.escoras = [];
+    var escs = (c.fisica && c.fisica.escoras) || [];
+    escs.forEach(function (es, n) {
+      var k = +es.patola, pa = ge.patolas[k]; if (!pa) return;
+      var mesmas = escs.filter(function (x) { return +x.patola === k; }), j = mesmas.indexOf(es), nn = mesmas.length;
+      var ang = nn > 1 ? j / nn * Math.PI * 2 : 0, rr = nn > 1 ? lado * 0.45 : 0;
+      var mE = icMat(0x9ca3af), x0 = pa.u + rr * Math.cos(ang), z0 = pa.z + rr * Math.sin(ang);
+      var poste = icCilindroL(eqG, new THREE.Vector3(x0, -2.8, z0), new THREE.Vector3(x0, -0.05, z0), 0.06, mE); poste.name = 'escora-' + (n + 1);
+      icCaixaL(eqG, x0 - 0.15, x0 + 0.15, -0.12, -0.05, z0 - 0.15, z0 + 0.15, mE);
+      ge.escoras.push({ m: mE, idx: n, x: x0, z: z0 });
+    });
+    /* superestrutura (gira θ em torno do eixo de giro) */
+    var sup = new THREE.Group(); sup.name = 'superestrutura'; sup.position.set(0, ge.topoChassi, 0); eqG.add(sup); ge.sup = sup;
+    if (!munck) {
+      var pl = fo.plataforma, se = fo.superestrutura, cpf = fo.contrapeso;
+      marca(icCilindroL(sup, new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, pl.altura, 0), pl.raio, mChassi, 28), 'plataforma');
+      var supC = icCaixaL(sup, -se.comprimento * 0.62, se.comprimento * 0.38, pl.altura, pl.altura + se.altura, -se.largura / 2, se.largura / 2 - 0.85, mFab, 'superestrutura'); marca(supC, 'superestrutura');
+      /* cabine do operador do lado esquerdo (v > 0 → −Z), com vidro */
+      var cabO = icCaixaL(sup, se.comprimento * 0.05, se.comprimento * 0.38 + 0.5, pl.altura, pl.altura + 1.7, se.largura / 2 - 0.8, se.largura / 2, mFab, 'cabine do operador');
+      cabO.position.z = -cabO.position.z; marca(cabO, 'superestrutura');
+      icCaixaL(sup, se.comprimento * 0.38 + 0.49, se.comprimento * 0.38 + 0.52, pl.altura + 0.5, pl.altura + 1.6, -(se.largura / 2 - 0.05), -(se.largura / 2 - 0.75), mVidro);
+      /* contrapeso escalonado ATRÁS do giro (oposto à lança) */
+      var mCp = icMat(0x2b2f36), rc = cpf.raio;
+      var cp1 = icCaixaL(sup, -rc - cpf.comprimento / 2, -rc + cpf.comprimento / 2, pl.altura, pl.altura + cpf.altura * 0.55, -cpf.largura / 2, cpf.largura / 2, mCp, 'contrapeso'); marca(cp1, 'contrapesoRaio');
+      marca(icCaixaL(sup, -rc - cpf.comprimento * 0.4, -rc + cpf.comprimento * 0.4, pl.altura + cpf.altura * 0.55, pl.altura + cpf.altura, -cpf.largura * 0.4, cpf.largura * 0.4, mCp), 'contrapesoRaio');
+      /* pé da lança: pivô que levanta α (rotação em Z local: +X sobe para +Y) */
+      var pe = new THREE.Group(); pe.name = 'pe-da-lanca'; pe.position.set(fo.peU, fo.peW - ge.topoChassi, 0); sup.add(pe); ge.pe = pe;
+      ge.secoes = [];
+      for (var i = 0; i < fo.secoes; i++) {
+        var hh = 0.95 - 0.13 * i, ww = 0.72 - 0.1 * i, mSec = icMat(fab);
+        var s = new THREE.Mesh(new THREE.BoxGeometry(1, hh, ww), mSec); s.name = 'secao-' + i; pe.add(s); ge.secoes.push({ m: s, mat: mSec });
+        if (est.Lmin || est.secoes) ge.tracejar.push(s);
+      }
+      var cabeca = new THREE.Group(); cabeca.name = 'cabeca'; pe.add(cabeca); ge.cabeca = cabeca;
+      icCaixaL(cabeca, -0.25, 0.35, -0.45, 0.35, -0.3, 0.3, mFab);
+      [-0.12, 0.12].forEach(function (zz) { var pol = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.08, 20), mAro); pol.rotation.x = Math.PI / 2; pol.position.set(0.3, -0.05, zz); cabeca.add(pol); });
+      ge.cilElev = null; ge.mCil = mCil;
+    } else {
+      var mFabM = mFab;
+      ge.coluna = icCaixaL(sup, -0.35, 0.35, 0, fo.colunaW - ge.topoChassi, -0.35, 0.35, mFabM, 'coluna'); marca(ge.coluna, 'colunaW');
+      ge.braco1 = new THREE.Mesh(new THREE.BoxGeometry(1, 0.42, 0.42), mFabM); ge.braco1.name = 'braco-1'; sup.add(ge.braco1);
+      ge.braco2 = new THREE.Mesh(new THREE.BoxGeometry(1, 0.34, 0.34), mFabM); ge.braco2.name = 'braco-2'; sup.add(ge.braco2);
+      ge.ext = new THREE.Mesh(new THREE.BoxGeometry(1, 0.24, 0.24), mFabM); ge.ext.name = 'extensao'; sup.add(ge.ext);
+      if (est.L1) ge.tracejar.push(ge.braco1); if (est.L2) ge.tracejar.push(ge.braco2); if (est.extMax) ge.tracejar.push(ge.ext);
+      ge.mCil = mCil; ge.mBracos = mFabM;
+    }
+    /* cabo (N pernas), moitão, e as lingas — redesenhados na pose */
+    ge.cabos = new THREE.Group(); ge.cabos.name = 'cabo'; eqG.add(ge.cabos);
+    ge.mCabo = new THREE.LineBasicMaterial({ color: 0x111827 });
+    ge.moitao = new THREE.Group(); ge.moitao.name = 'moitao'; eqG.add(ge.moitao);
+    ge.mMoitao = icMat(munck ? 0x111827 : 0xf5c400);
+    icCaixaL(ge.moitao, -0.22, 0.22, 0.2, 0.75, -0.18, 0.18, ge.mMoitao);
+    var gch = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.035, 8, 16, Math.PI * 1.4), mAro); gch.position.set(0, 0.08, 0); gch.rotation.z = Math.PI * 0.8; ge.moitao.add(gch);
+    if (c.mostrarEstimado) ge.tracejar.forEach(function (m) { try { icTracejar(m); } catch (_) {} });
+    ge.nEstimadas = ge.tracejar.length;
+    return ge;
+  }
+  /* a pose: do gancho (cena) para θ, R e a cinemática; depois a física com θ e R, e as cores/valores */
+  function icPoseGerada(gancho, pontos) {
+    var q = icar.equip, ge = q.ge, fo = ge.fo, C = window.IcarCinematica;
+    q._pontosUlt = (pontos || []).map(function (p) { return p.clone(); });
+    /* gancho no referencial do grupo — mas o grupo vive dentro do icar.grupo (que copia o modelRoot): os pontos chegam no
+       referencial do icar.grupo, então a conta é com a matriz LOCAL do grupo */
+    var Mloc = new THREE.Matrix4().compose(ge.eqG.position, ge.eqG.quaternion, ge.eqG.scale), invL = Mloc.clone().invert();
+    var gl = gancho.clone().applyMatrix4(invL), plL = (pontos || []).map(function (p) { return p.clone().applyMatrix4(invL); });
+    var R = Math.hypot(gl.x, gl.z), th = Math.atan2(-gl.z, gl.x);
+    ge.sup.rotation.y = th;
+    q.theta = th; q.R = R; q.ganchoL = gl;
+    var pontaL = null, wTopo = ge.topoChassi;
+    if (!ge.munck) {
+      var L = +q.c.lanca || fo.Lmin || 10;
+      var k = C ? C.telescopica({ L: L, peU: fo.peU, peW: fo.peW, Lmin: Math.min(fo.Lmin || L, L), secoes: fo.secoes, dPonta: fo.dPonta, alfaMax: fo.alfaMax }, { R: R, H: gl.y }) : null;
+      if (!k || !k.ok) {
+        /* raio fora do alcance desta lança: deita a lança na direção do gancho (o aviso é do plano) */
+        k = { ok: false, alfa: Math.atan2(Math.max(0.2, gl.y - fo.peW), Math.max(0.5, R - fo.peU)), secoes: [{ de: 0, ate: L }], ponta: null };
+        k.ponta = { r: fo.peU + L * Math.cos(k.alfa), w: fo.peW + L * Math.sin(k.alfa) };
+      }
+      ge.pe.rotation.z = k.alfa;
+      ge.secoes.forEach(function (s, i) { var sc = k.secoes[Math.min(i, k.secoes.length - 1)], len = Math.max(0.3, sc.ate - sc.de); s.m.scale.x = len; s.m.position.set(sc.de + len / 2, 0, 0); s.m.visible = i < k.secoes.length; });
+      ge.cabeca.position.set(L, 0, 0);
+      /* cilindro de elevação: da superestrutura até 45 % da seção base */
+      if (ge.cilElev) { ge.sup.remove(ge.cilElev); icDescartar(ge.cilElev); }
+      var baseC = new THREE.Vector3(fo.peU + 1.4, fo.plataforma.altura + 0.1, 0), pBoom = new THREE.Vector3(fo.peU + 0.45 * (fo.Lmin || L) * Math.cos(k.alfa), (fo.peW - ge.topoChassi) + 0.45 * (fo.Lmin || L) * Math.sin(k.alfa) - 0.35, 0);
+      ge.cilElev = icCilindroL(ge.sup, baseC, pBoom, 0.16, ge.mCil);
+      q.alfa = k.alfa; q.alfaGraus = k.alfa * 180 / Math.PI; q.kin = k;
+      pontaL = new THREE.Vector3(k.ponta.r * Math.cos(th), k.ponta.w, -k.ponta.r * Math.sin(th));
+    } else {
+      var Cm = { r: 0, w: fo.colunaW }, P = { r: R, w: gl.y + 1.2 };
+      var km = C ? C.munck({ C: Cm, L1: fo.L1, L2: fo.L2, extMin: 0, extMax: fo.extMax }, P) : null;
+      function noSup(pt) { return new THREE.Vector3(pt.r, pt.w - wTopo, 0); }
+      function barra(m, a2, b2) { var d = b2.clone().sub(a2), len = Math.max(d.length(), 1e-3); m.scale.x = len; m.position.copy(a2).add(b2).multiplyScalar(0.5); m.rotation.set(0, 0, Math.atan2(d.y, d.x)); }
+      if (km && km.ok) {
+        var c0 = noSup(Cm), cot = noSup(km.cotovelo), pt = noSup(km.ponta), dir2 = pt.clone().sub(cot).normalize();
+        var fim2 = cot.clone().add(dir2.clone().multiplyScalar(fo.L2));
+        barra(ge.braco1, c0, cot); barra(ge.braco2, cot, fim2.distanceTo(cot) < pt.distanceTo(cot) ? fim2 : pt); ge.ext.visible = km.ext > 0.01;
+        if (ge.ext.visible) barra(ge.ext, fim2.clone().sub(dir2.clone().multiplyScalar(0.4)), pt);
+        q.kin = km; pontaL = new THREE.Vector3(km.ponta.r * Math.cos(th), km.ponta.w, -km.ponta.r * Math.sin(th));
+      } else {
+        var c1 = noSup(Cm), p1 = noSup(P); barra(ge.braco1, c1, c1.clone().lerp(p1, 0.5)); barra(ge.braco2, c1.clone().lerp(p1, 0.5), p1); ge.ext.visible = false;
+        q.kin = km || { ok: false }; pontaL = new THREE.Vector3(P.r * Math.cos(th), P.w, -P.r * Math.sin(th));
+      }
+    }
+    q.pontaL = pontaL;
+    /* cabo: N pernas verticais da ponta ao moitão */
+    while (ge.cabos.children.length) { var o0 = ge.cabos.children.pop(); if (o0.geometry) o0.geometry.dispose(); }
+    var n = Math.max(1, Math.min(8, +q.c.pernasCabo || (ge.munck ? 1 : 2)));
+    for (var j = 0; j < n; j++) {
+      var dz = (j - (n - 1) / 2) * 0.07;
+      var gl2 = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(pontaL.x, pontaL.y - 0.1, pontaL.z + dz), new THREE.Vector3(gl.x, gl.y + 0.75, gl.z + dz)]);
+      ge.cabos.add(new THREE.Line(gl2, ge.mCabo));
+    }
+    ge.moitao.position.copy(gl).setY(gl.y);
+    /* lingas: do gancho às pernas (no referencial do grupo) */
+    if (ge.lingas) { ge.eqG.remove(ge.lingas); icDescartar(ge.lingas); }
+    ge.lingas = new THREE.Group(); ge.lingas.name = 'lingas'; ge.eqG.add(ge.lingas); ge.mLingas = [];
+    plL.forEach(function (p, i) {
+      var mL = new THREE.LineBasicMaterial({ color: 0x16a34a, depthTest: false, transparent: true });
+      var ln = new THREE.Line(new THREE.BufferGeometry().setFromPoints([gl, p]), mL); ln.renderOrder = 996; ge.lingas.add(ln); ge.mLingas.push(mL);
+      var bo = new THREE.Mesh(new THREE.SphereGeometry(0.07, 12, 12), new THREE.MeshBasicMaterial({ color: 0x16a34a, depthTest: false })); bo.position.copy(p); bo.renderOrder = 997; ge.lingas.add(bo);
+    });
+    q.gancho = gancho.clone();
+    icFisicaAgora(false);
+  }
+  /* a física com o θ e o R de agora → cores e valores (no máximo a cada 120 ms, salvo forçar) */
+  function icFisicaAgora(forcar) {
+    var q = icar.equip; if (!q || !q.ge || !q.c.fisica || !window.IcarFisica) return null;
+    var agora = performance.now();
+    if (!forcar && q._fisT && agora - q._fisT < 120) { q._fisPend = true; return q.fis; }
+    q._fisT = agora; q._fisPend = false;
+    var e = {}, base = q.c.fisica; for (var kk in base) e[kk] = base[kk];
+    e.theta = q.theta; e.R = q.R; if (q.k != null) e.k = q.k;
+    var r = IcarFisica.componentes(e);
+    q.fis = r; icPintar(r);
+    return r;
+  }
+  function icPintar(r) {
+    var q = icar.equip, ge = q.ge, c = q.c, valores = c.valores !== false, soCrit = !!c.soCritico, falha = !!c.modoFalha;
+    var porId = {}; r.componentes.forEach(function (x) { porId[x.id] = x; });
+    q.pulsa = [];
+    function cor(x) { return new THREE.Color((x && x.u && x.u.faixa && x.u.faixa.cor) || '#9ca3af'); }
+    function critico(x) { return x && x.u && ((x.u.uTrab != null && x.u.uTrab >= 0.8) || (x.u.uRup != null && x.u.uRup >= 1) || x.descola); }
+    function pinta(mat, x, op) {
+      if (!mat) return;
+      mat.color.copy(cor(x));
+      if (mat.emissive) mat.emissive.set(0x000000);
+      var esmaece = falha && !critico(x);
+      if (mat.opacity != null) { mat.transparent = esmaece || mat.transparent; mat.opacity = esmaece ? 0.18 : (op != null ? op : mat.opacity); }
+      if (x && x.u && x.u.faixa.pulsa && mat.emissive) q.pulsa.push(mat);
+    }
+    function br(v, d) { return v == null || !isFinite(v) ? '—' : (Math.round(v * Math.pow(10, d)) / Math.pow(10, d)).toFixed(d).replace('.', ','); }
+    function pct(x) { return x && x.u && x.u.uTrab != null ? br(x.u.uTrab * 100, 0) + ' %' : 'sem dado'; }
+    var SIG = ['DE', 'DD', 'TE', 'TD'];
+    ge.patolas.forEach(function (pa, k) {
+      var xp = porId['patola-' + SIG[k]], xs = porId['solo-' + SIG[k]];
+      pinta(pa.mS, xp, 1); pinta(pa.mC, xs, 0.55);
+      var t = !valores || (soCrit && !critico(xp) && !critico(xs)) ? null
+        : SIG[k] + ' · ' + (xp && xp.esforco != null ? 'R = ' + br(xp.esforco, 0) + ' kN' + (xp.descola ? ' (descola)' : '') : 'R: sem dado') + (xs && xs.esforco != null ? ' · ' + br(xs.esforco, 0) + ' kPa' : '');
+      var wp = new THREE.Vector3(pa.u, 1.0, pa.z).applyMatrix4(new THREE.Matrix4().compose(ge.eqG.position, ge.eqG.quaternion, ge.eqG.scale));
+      icRotuloVivo('patola-' + k, t, wp, xp && xp.u ? xp.u.faixa.cor : null);
+    });
+    (ge.escoras || []).forEach(function (es) {
+      var xe = porId['escora-' + (es.idx + 1)]; pinta(es.m, xe, 1);
+      var wpE = new THREE.Vector3(es.x, -1.4, es.z).applyMatrix4(new THREE.Matrix4().compose(ge.eqG.position, ge.eqG.quaternion, ge.eqG.scale));
+      icRotuloVivo('escora-' + es.idx, valores && xe && (!soCrit || critico(xe)) ? 'escora ' + (es.idx + 1) + ': ' + (xe.esforco != null ? br(xe.esforco, 0) + ' kN (' + pct(xe) + ')' : 'sem dado') : null, wpE, xe && xe.u ? xe.u.faixa.cor : null);
+    });
+    var tb = porId.tabela;
+    if (ge.secoes) ge.secoes.forEach(function (s) { pinta(s.mat, tb, 1); });
+    if (ge.munck) { pinta(ge.mBracos, tb, 1); }
+    var cb = porId.cabo; if (cb && cb.u.uTrab != null) ge.mCabo.color.copy(cor(cb)); else ge.mCabo.color.set(0x111827);
+    var mo = porId.moitao; if (mo && mo.u.uTrab != null) pinta(ge.mMoitao, mo, 1);
+    (ge.mLingas || []).forEach(function (m, i) { var x = porId['linga-' + (i + 1)]; m.color.copy(cor(x)); if (x && x.u.faixa.pulsa) q.pulsa.push(m); });
+    var Mg = new THREE.Matrix4().compose(ge.eqG.position, ge.eqG.quaternion, ge.eqG.scale);
+    var gW = q.ganchoL.clone().applyMatrix4(Mg), pW = q.pontaL.clone().applyMatrix4(Mg);
+    icRotuloVivo('gancho', valores && !soCrit ? 'Q = ' + br(c.carga_kg, 0) + ' kg' : null, gW.clone().setY(gW.y + 1.3), null);
+    icRotuloVivo('tabela', valores && (!soCrit || critico(tb)) ? 'tabela ' + pct(tb) : null, pW.clone().setY(pW.y + 0.9), tb && tb.u ? tb.u.faixa.cor : null);
+    var tom = porId.tombamento;
+    icRotuloVivo('giro', valores && !soCrit && r.reacoes.ok ? 'margem ' + br(r.reacoes.margem_m, 2) + ' m' + (r.reacoes.MeMt ? ' · Me/Mt ' + br(r.reacoes.MeMt, 1) : '') : null,
+      new THREE.Vector3(0, ge.topoChassi + 2.4, 0).applyMatrix4(Mg), tom && tom.u ? tom.u.faixa.cor : null);
+    var pts = ge.lingas ? ge.lingas.children.filter(function (o) { return o.isLine; }) : [];
+    pts.forEach(function (ln, i) {
+      var x = porId['linga-' + (i + 1)], a2 = ln.geometry.attributes.position;
+      var mid = new THREE.Vector3((a2.getX(0) + a2.getX(1)) / 2, (a2.getY(0) + a2.getY(1)) / 2, (a2.getZ(0) + a2.getZ(1)) / 2).applyMatrix4(Mg);
+      icRotuloVivo('linga-' + i, valores && x && (!soCrit || critico(x)) ? br(x.esforco, 0) + ' kgf (' + pct(x) + ')' : null, mid, x && x.u ? x.u.faixa.cor : null);
+    });
+  }
+
   /* lança + cabo + gancho + lingas até o gancho dado (redesenhado a cada quadro da simulação) */
   function icAtualizarLanca(gancho, pontos) {
     var q = icar.equip; if (!q) return;
+    if (q.ge) { icPoseGerada(gancho, pontos); return; }
     while (q.lanca.children.length) { var o = q.lanca.children.pop(); icDescartar(o); }
     var pos = q.pos, y0 = q.y0, c = q.c;
     var ponta = gancho.clone().setY(gancho.y + (q.ehMunck ? 1.2 : (+c.pontaGancho || 3)));
@@ -3197,7 +3768,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     for (var k2 = 0; k2 <= 60; k2++) trilha.push(Cd.clone().applyMatrix4(estado(k2 / 60)));
     var ln = icLinha(trilha, 0x7c3aed, 0.25); ln.name = 'linha-icamento'; icar.grupo.add(ln);
     var esc = false; try { aplicar4DSim({ ocultos: s.uids || [] }); esc = true; } catch (_) {}
-    icar.sim = { t: 0, dur: Math.max(2, +s.duracao_s || 9), fantasma: fant, estado: estado, gD: gD, pD: pD, escondeu: esc, aoFim: s.aoFim, parado: false };
+    icar.sim = { t: 0, dur: Math.max(2, +s.duracao_s || 9), fantasma: fant, estado: estado, gD: gD, pD: pD, escondeu: esc, aoFim: s.aoFim, parado: !!s.pausado };
     function passo() {
       var si = icar.sim; if (!si) return;
       var M = si.estado(Math.min(1, si.t));
@@ -3207,6 +3778,118 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     icar.sim.passo = passo; passo();
     return { ok: true, malhas: n, trilha: trilha.length };
   }
+  /* =====================================================================
+   * CHOQUES E FOLGAS NO CAMINHO (ESPEC-ICAMENTO §D e §II.5) — motor: js/icarcolisao.js.
+   * Em cada um dos 61 instantes da simulação o equipamento articulado é POSADO de verdade (a mesma icPoseGerada do quadro) e
+   * daí saem, em coordenadas do motor: lança (cápsula), cabo e lingas (segmentos), carga e contrapeso (caixas orientadas).
+   * Obstáculos: as peças VISÍVEIS do modelo, menos as içadas, filtradas antes pela caixa do caminho inteiro.
+   * ⚠ Contato da CARGA e das LINGAS no primeiro e no último instante é esperado (a peça sai do chão/carreta e assenta no
+   *   apoio) e é ignorado só para elas; lança e contrapeso encostando em t = 0 é problema de verdade e aparece.
+   * ⚠ O teste só existe com o equipamento articulado (ficha) — sem ele não há lança nem contrapeso para testar.
+   * ===================================================================== */
+  function icMotorArr(v) { return [v.x, -v.z, v.y]; }
+  function icObbDeMalha(m, invG) {
+    if (!m.geometry) return null;
+    if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+    m.updateMatrixWorld(true);
+    var bb = m.geometry.boundingBox, M = new THREE.Matrix4().multiplyMatrices(invG, m.matrixWorld);
+    var c = bb.getCenter(new THREE.Vector3()).applyMatrix4(M), ex = new THREE.Vector3(), ey = new THREE.Vector3(), ez = new THREE.Vector3();
+    M.extractBasis(ex, ey, ez);
+    var sx = ex.length(), sy = ey.length(), sz = ez.length(), sz3 = bb.getSize(new THREE.Vector3());
+    ex.normalize(); ey.normalize(); ez.normalize();
+    return { c: icMotorArr(c), e: [icMotorArr(ex), icMotorArr(ey), icMotorArr(ez)], h: [sz3.x * sx / 2, sz3.y * sy / 2, sz3.z * sz / 2] };
+  }
+  function icPontoMotor(obj, x, invG) { obj.updateMatrixWorld(true); return icMotorArr(new THREE.Vector3(x, 0, 0).applyMatrix4(obj.matrixWorld).applyMatrix4(invG)); }
+  /* as partes do equipamento NA POSE ATUAL (depois de icPoseGerada) */
+  function icPartesAgora(invG) {
+    var q = icar.equip, ge = q.ge, out = [], Mg = new THREE.Matrix4().compose(ge.eqG.position, ge.eqG.quaternion, ge.eqG.scale);
+    /* ⚠ ÁRVORE INTEIRA A PARTIR DA RAIZ: aqui a pose muda 61 vezes sem quadro no meio, e o updateMatrixWorld de uma peça usa a
+       matriz do PAI como está — a lança saía medida na pose do instante anterior (apontando para o norte com o gancho a leste,
+       medido em 02/10/2026) e o contrapeso nunca chegava ao muro */
+    icSincronizar(); ge.eqG.updateMatrixWorld(true);
+    function loc(v) { return icMotorArr(v.clone().applyMatrix4(Mg)); }
+    var gch = loc(q.ganchoL.clone().setY(q.ganchoL.y + 0.75)), ponta = loc(q.pontaL);
+    if (!ge.munck) {
+      out.push({ quem: 'lança', tipo: 'capsula', a: icPontoMotor(ge.pe, 0, invG), b: icPontoMotor(ge.cabeca, 0, invG), raio: 0.48 });
+      ge.sup.traverse(function (o) { if (o.isMesh && o.name === 'contrapeso') { var ob = icObbDeMalha(o, invG); if (ob) out.push({ quem: 'contrapeso', tipo: 'obb', obb: ob }); } });
+    } else {
+      out.push({ quem: 'braço 1', tipo: 'capsula', a: icPontoMotor(ge.braco1, -0.5, invG), b: icPontoMotor(ge.braco1, 0.5, invG), raio: 0.21 });
+      out.push({ quem: 'braço 2', tipo: 'capsula', a: icPontoMotor(ge.braco2, -0.5, invG), b: icPontoMotor(ge.braco2, 0.5, invG), raio: 0.17 });
+      if (ge.ext.visible) out.push({ quem: 'extensão', tipo: 'capsula', a: icPontoMotor(ge.ext, -0.5, invG), b: icPontoMotor(ge.ext, 0.5, invG), raio: 0.12 });
+    }
+    out.push({ quem: 'cabo', tipo: 'segmento', a: ponta, b: gch, raio: 0.03 });
+    (ge.lingas ? ge.lingas.children.filter(function (o) { return o.isLine; }) : []).forEach(function (ln, i) {
+      var a2 = ln.geometry.attributes.position;
+      out.push({ quem: 'linga ' + (i + 1), tipo: 'segmento', a: loc(new THREE.Vector3(a2.getX(0), a2.getY(0), a2.getZ(0))), b: loc(new THREE.Vector3(a2.getX(1), a2.getY(1), a2.getZ(1))), raio: 0.02 });
+    });
+    /* a carga: a caixa da peça-fantasma (no referencial da peça no destino) levada pela matriz do instante */
+    var si = icar.sim;
+    if (si && si.fantasma) {
+      var bxF = new THREE.Box3(), tmp = new THREE.Box3();
+      si.fantasma.children.forEach(function (k) { if (!k.geometry || k.visible === false) return; if (!k.geometry.boundingBox) k.geometry.computeBoundingBox(); tmp.copy(k.geometry.boundingBox).applyMatrix4(k.matrix); if (!tmp.isEmpty()) bxF.union(tmp); });
+      if (!bxF.isEmpty()) {
+        var M = si.fantasma.matrix, c = bxF.getCenter(new THREE.Vector3()).applyMatrix4(M), sz = bxF.getSize(new THREE.Vector3()), ex = new THREE.Vector3(), ey = new THREE.Vector3(), ez = new THREE.Vector3();
+        M.extractBasis(ex, ey, ez); ex.normalize(); ey.normalize(); ez.normalize();
+        out.push({ quem: 'carga', tipo: 'obb', obb: { c: icMotorArr(c), e: [icMotorArr(ex), icMotorArr(ey), icMotorArr(ez)], h: [sz.x / 2, sz.y / 2, sz.z / 2] } });
+      }
+    }
+    return out;
+  }
+  /* os obstáculos: peças visíveis do modelo (menos as içadas), cuja caixa cruza a caixa do caminho; triângulos no motor */
+  function icObstaculos(fora, caixaCaminho, invRoot) {
+    var foraSet = {}; (fora || []).forEach(function (u) { foraSet[u] = 1; });
+    var out = [], v = new THREE.Vector3(), b3 = new THREE.Box3(), tmp = new THREE.Box3();
+    (S.elementos || []).forEach(function (el) {
+      if (foraSet[el.uid]) return;
+      var ms = malhasDaPeca(el.uid).filter(function (m) { return m.isMesh && m.visible && cadeiaVisivel(m) && m.geometry; });
+      if (!ms.length) return;
+      b3.makeEmpty();
+      ms.forEach(function (m) { m.updateMatrixWorld(true); if (!m.geometry.boundingBox) m.geometry.computeBoundingBox(); tmp.copy(m.geometry.boundingBox).applyMatrix4(new THREE.Matrix4().multiplyMatrices(invRoot, m.matrixWorld)); b3.union(tmp); });
+      var mn = icMotorArr(b3.min), mx = icMotorArr(b3.max), aabb = { min: [Math.min(mn[0], mx[0]), Math.min(mn[1], mx[1]), Math.min(mn[2], mx[2])], max: [Math.max(mn[0], mx[0]), Math.max(mn[1], mx[1]), Math.max(mn[2], mx[2])] };
+      if (caixaCaminho && !(aabb.min[0] <= caixaCaminho.max[0] && aabb.max[0] >= caixaCaminho.min[0] && aabb.min[1] <= caixaCaminho.max[1] && aabb.max[1] >= caixaCaminho.min[1] && aabb.min[2] <= caixaCaminho.max[2] && aabb.max[2] >= caixaCaminho.min[2])) return;
+      var tris = [];
+      ms.forEach(function (m) {
+        var g = m.geometry, pos = g.attributes.position, idx = g.index, M = new THREE.Matrix4().multiplyMatrices(invRoot, m.matrixWorld), n = idx ? idx.count : pos.count;
+        for (var i = 0; i < n; i++) { v.fromBufferAttribute(pos, idx ? idx.getX(i) : i).applyMatrix4(M); tris.push(v.x, -v.z, v.y); }
+      });
+      out.push({ id: el.uid, nome: el.nomeIfc || el.nome || el.familia || el.uid, aabb: aabb, tris: tris });
+    });
+    return out;
+  }
+  function icColisoes(opts) {
+    opts = opts || {};
+    var q = icar.equip, si = icar.sim;
+    if (!q || !q.ge || !si || !window.IcarColisao) return { ok: false, erro: !q || !q.ge ? 'equipamento articulado não desenhado' : !si ? 'sem a simulação' : 'motor de colisões não carregado' };
+    icSincronizar();
+    var invG = new THREE.Matrix4().copy(icar.grupo.matrixWorld).invert(), invRoot = new THREE.Matrix4().copy(modelRoot.matrixWorld).invert();
+    var N = Math.max(6, Math.min(120, +opts.amostras || 60)), amostras = [], t0 = performance.now(), tVolta = si.t;
+    for (var k = 0; k <= N; k++) {
+      var t = k / N, M = si.estado(t);
+      si.fantasma.matrix.copy(M); si.fantasma.matrixWorldNeedsUpdate = true;
+      icPoseGerada(si.gD.clone().applyMatrix4(M), si.pD.map(function (p) { return p.clone().applyMatrix4(M); }));
+      amostras.push({ t: t, partes: icPartesAgora(invG) });
+    }
+    /* a caixa do caminho inteiro (todas as partes, todos os instantes) + folga */
+    var folga = +opts.folga >= 0 ? +opts.folga : 0.5, cx = { min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
+    amostras.forEach(function (am) { am.partes.forEach(function (pt) { var b = IcarColisao.aabbParte(pt, folga); for (var i = 0; i < 3; i++) { cx.min[i] = Math.min(cx.min[i], b.min[i]); cx.max[i] = Math.max(cx.max[i], b.max[i]); } }); });
+    var obst = icObstaculos(opts.uids || [], cx, invRoot);
+    /* contato esperado: o que a CARGA e as LINGAS tocam no primeiro e no último instante */
+    var ignorar = {};
+    [amostras[0], amostras[amostras.length - 1]].forEach(function (am) {
+      var r0 = IcarColisao.verificar([{ t: am.t, partes: am.partes.filter(function (pt) { return pt.quem === 'carga' || /^linga/.test(pt.quem); }) }], obst, [], { folga: 0.02 });
+      r0.eventos.forEach(function (ev) { (ignorar[ev.quem] = ignorar[ev.quem] || []).indexOf(ev.id) < 0 && ignorar[ev.quem].push(ev.id); });
+    });
+    var res = IcarColisao.verificar(amostras, obst, opts.redes || [], { folga: folga, ignorar: ignorar });
+    res.ok = true; res.amostras = amostras.length; res.obstaculos = obst.length; res.ms = Math.round(performance.now() - t0); res.ignorados = ignorar;
+    /* para o teste e para conferir à mão: o que entrou como obstáculo e as partes no último instante */
+    if (opts.debug) res.debug = { obst: obst.map(function (o) { return { nome: o.nome, id: o.id, aabb: o.aabb, ntri: o.tris.length / 9 }; }), caixa: cx, ultimo: amostras[amostras.length - 1].partes.map(function (pt) { return { quem: pt.quem, obb: pt.obb || null, a: pt.a || null, b: pt.b || null }; }),
+      elementos: (S.elementos || []).filter(function (e) { return /^p3d/.test(e.uid); }).map(function (e) { return { uid: e.uid, malhas: malhasDaPeca(e.uid).length, vis: malhasDaPeca(e.uid).map(function (m) { return m.visible && cadeiaVisivel(m); }) }; }) };
+    /* volta a pose ao instante em que a simulação estava */
+    si.t = tVolta; si.passo();
+    icar.colisao = res;
+    return res;
+  }
+
   /* o grupo segue o modelo — a cada quadro e logo depois de desenhar (a foto do plano sai antes do próximo quadro) */
   function icSincronizar() { modelRoot.updateMatrixWorld(); icar.grupo.matrix.copy(modelRoot.matrixWorld); icar.grupo.matrixWorldNeedsUpdate = true; icar.grupo.updateMatrixWorld(true); }
   S._tickExtra.push(function (dt) {
@@ -3218,11 +3901,57 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       si.passo();
       if (si.t >= 1.12) { si.parado = true; var fim = si.aoFim; icLimparSim(); try { if (fim) fim(); } catch (_) {} }
     }
+    var qe = icar.equip;
+    if (qe && qe.ge) {
+      if (icar.giro) {
+        var gr = icar.giro; gr.t += (dt > 0 && dt < 0.25 ? dt : 0.016) / gr.dur;
+        var ang = gr.th0 + Math.PI * 2 * Math.min(1, gr.t), Mg0 = new THREE.Matrix4().compose(qe.ge.eqG.position, qe.ge.eqG.quaternion, qe.ge.eqG.scale);
+        var gL = new THREE.Vector3(gr.R * Math.cos(ang), gr.y, -gr.R * Math.sin(ang)).applyMatrix4(Mg0);
+        var rot = new THREE.Matrix4().makeRotationY(ang - gr.th0), pts = gr.pL.map(function (p) { return p.clone().applyMatrix4(rot).applyMatrix4(Mg0); });
+        icPoseGerada(gL, pts);
+        if (gr.t >= 1) { icar.giro = null; icPoseGerada(gr.g0, gr.p0); icFisicaAgora(true); }
+      } else if (qe._fisPend) icFisicaAgora(true);
+      if (qe.pulsa && qe.pulsa.length) {
+        var pz = 0.5 + 0.5 * Math.sin(performance.now() / 1000 * 8);
+        qe.pulsa.forEach(function (m) { if (m.emissive) m.emissive.setRGB(0.85 * pz, 0, 0); else if (m.opacity != null) { m.transparent = true; m.opacity = 0.35 + 0.65 * pz; } });
+      }
+    }
     for (var i = 0; i < icar.rotulos.length; i++) {
       var o = icar.rotulos[i], d = camera.position.distanceTo(o.getWorldPosition(_icWp)) * (o.userData._sc || 0.028);
       if (o.userData._ratio) o.scale.set(d * o.userData._ratio, d, 1); else o.scale.setScalar(d);
     }
+    icEmpilharRotulos();
   });
+  /* RÓTULOS QUE NÃO SE SOBREPÕEM (ESPEC-ICAMENTO §II.4.7: "empilham por distância à câmera"): o mais perto da câmera fica no
+     lugar; cada um dos outros sobe, de uma altura de rótulo em uma, até achar um vão livre na TELA. Sobe pelo `center` do
+     sprite (deslocamento em tela, sem mexer na posição 3D — o rótulo continua preso à peça). Máximo de 8 alturas.
+     ⚠ Medido na tela a cada quadro: girar a câmera desempilha sozinho o que deixou de encavalar. */
+  function icEmpilharRotulos() {
+    var lista = icar.rotulos.filter(function (o) { return o.visible && o.parent; });
+    if (lista.length < 2) { lista.forEach(function (o) { o.center.set(0.5, 0.5); }); return; }
+    var tam = renderer.getSize(new THREE.Vector2()), W = tam.x, H = tam.y, tanF = Math.tan((camera.fov || 50) * Math.PI / 360);
+    var itens = lista.map(function (o) {
+      o.getWorldPosition(_icWp);
+      var dist = camera.position.distanceTo(_icWp), p = _icWp.clone().project(camera);
+      var hPx = camera.isPerspectiveCamera ? o.scale.y / (2 * dist * tanF) * H : o.scale.y * camera.zoom / ((camera.top - camera.bottom) || 1) * H;
+      return { o: o, dist: dist, x: (p.x + 1) / 2 * W, y: (1 - p.y) / 2 * H, h: hPx, w: hPx * (o.userData._ratio || 1), atras: p.z > 1 };
+    }).sort(function (a, b) { return a.dist - b.dist; });
+    var postos = [];
+    function bate(r) { for (var j = 0; j < postos.length; j++) { var q = postos[j]; if (r.x0 < q.x1 && r.x1 > q.x0 && r.y0 < q.y1 && r.y1 > q.y0) return true; } return false; }
+    itens.forEach(function (it) {
+      if (it.atras) { it.o.center.set(0.5, 0.5); return; }
+      var n = 0, r;
+      for (; n <= 8; n++) {
+        var cy = it.y - n * it.h * 1.08;
+        r = { x0: it.x - it.w / 2, x1: it.x + it.w / 2, y0: cy - it.h / 2, y1: cy + it.h / 2 };
+        if (!bate(r)) break;
+      }
+      if (n > 8) n = 8;
+      it.o.center.set(0.5, 0.5 - n * 1.08); it.o.userData._degraus = n;
+      it.o.userData._tela = r;
+      postos.push(r);
+    });
+  }
   /* a foto do plano: planta, elevação (perpendicular ao raio) ou perspectiva, em
      fundo branco, sem mexer na câmera de quem está olhando */
   function icCaptura(vista) {
@@ -3267,13 +3996,66 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var box = icCaixaFoco(); if (box.isEmpty()) return false;
     if (S._enquadrarObj) S._enquadrarObj(box, 1.25); return true;
   }
-  S._icar = { geometria: icGeometria, chao: function () { return icM(new THREE.Vector3(0, icChao(), 0)).z; }, pontoNoChao: icPontoNoChao, desenhar: icDesenhar, limpar: icLimpar,
+  S._icar = { geometria: icGeometria, chao: function () { return icM(new THREE.Vector3(0, icChao(), 0)).z; }, pontoNoChao: icPontoNoChao, sondar: icSondar, desenhar: icDesenhar, limpar: icLimpar,
     simular: icSimular, simulando: function () { return !!icar.sim; }, parar: function () { icLimparSim(); return true; },
+    colisoes: icColisoes,
+    /* leva a simulação a um instante (0–1) e PAUSA ali — é o clique na marca de choque da linha do tempo */
+    simIr: function (t) { var si = icar.sim; if (!si) return false; si.t = Math.max(0, Math.min(1, +t || 0)); si.parado = true; si.passo(); icFisicaAgora(true); return true; },
+    simPausado: function () { return !!(icar.sim && icar.sim.parado); },
     captura: icCaptura, enquadrar: icEnquadrar,
+    /* "▶ girar a lança": uma volta completa no raio de agora (as cores das patolas mudam com θ) */
+    girar: function (on, dur) {
+      var q = icar.equip; if (!q || !q.ge || !q.ganchoL) return false;
+      if (!on) { if (icar.giro) { var g0 = icar.giro; icar.giro = null; icPoseGerada(g0.g0, g0.p0); } return true; }
+      var Mi = new THREE.Matrix4().compose(q.ge.eqG.position, q.ge.eqG.quaternion, q.ge.eqG.scale).invert();
+      var pL = (q._pontosUlt || []).map(function (p) { return p.clone().applyMatrix4(Mi); });
+      icar.giro = { t: 0, dur: Math.max(2, +dur || 8), th0: q.theta, R: q.R, y: q.ganchoL.y, pL: pL, g0: q.gancho.clone(), p0: (q._pontosUlt || []).map(function (p) { return p.clone(); }) };
+      return true;
+    },
+    girando: function () { return !!icar.giro; },
+    /* θ fixo (graus, a partir da dianteira) — para a tela e para o teste */
+    theta: function (graus) {
+      var q = icar.equip; if (!q || !q.ge || !q.ganchoL) return null;
+      var a = (+graus || 0) * Math.PI / 180, Mg = new THREE.Matrix4().compose(q.ge.eqG.position, q.ge.eqG.quaternion, q.ge.eqG.scale);
+      var rot = new THREE.Matrix4().makeRotationY(a - q.theta), Mi = Mg.clone().invert();
+      var pts = (q._pontosUlt || []).map(function (p) { return p.clone().applyMatrix4(Mi).applyMatrix4(rot).applyMatrix4(Mg); });
+      icPoseGerada(new THREE.Vector3(q.R * Math.cos(a), q.ganchoL.y, -q.R * Math.sin(a)).applyMatrix4(Mg), pts);
+      icFisicaAgora(true); return q.theta;
+    },
+    sobrecarga: function (k) { var q = icar.equip; if (!q) return null; q.k = k == null ? null : +k; return icFisicaAgora(true); },
+    opcoes: function (o) { var q = icar.equip; if (!q) return false; for (var k in o) q.c[k] = o[k]; icFisicaAgora(true); return true; },
+    equipEstado: function () {
+      var q = icar.equip; if (!q || !q.ge) return null;
+      var ge = q.ge, Mg = new THREE.Matrix4().compose(ge.eqG.position, ge.eqG.quaternion, ge.eqG.scale);
+      function hex(m) { return m && m.color ? '#' + m.color.getHexString() : null; }
+      var rot = {}; Object.keys(icar.vivos).forEach(function (k) { var v = icar.vivos[k]; if (v.visible) rot[k] = v.userData._txt; });
+      /* a ponta e o cotovelo pela MALHA desenhada (não pela conta): é o que prova que o desenho segue a cinemática */
+      icSincronizar();
+      var invG = new THREE.Matrix4().copy(icar.grupo.matrixWorld).invert();
+      function daMalha(m, x) { if (!m) return null; m.updateMatrixWorld(true); return icM(new THREE.Vector3(x, 0, 0).applyMatrix4(m.matrixWorld).applyMatrix4(invG)); }
+      var pontaMalha = ge.munck ? daMalha(ge.ext && ge.ext.visible ? ge.ext : ge.braco2, 0.5) : daMalha(ge.cabeca, 0), cotMalha = ge.munck ? daMalha(ge.braco1, 0.5) : null;
+      var colMalha = ge.munck ? daMalha(ge.braco1, -0.5) : null;
+      return { tipo: ge.munck ? 'munck' : 'guindaste', theta: q.theta * 180 / Math.PI, R: q.R, alfa: q.alfaGraus != null ? q.alfaGraus : null, kinOk: !!(q.kin && q.kin.ok),
+        ponta: q.pontaL ? icM(q.pontaL.clone().applyMatrix4(Mg)) : null, gancho: q.gancho ? icM(q.gancho) : null, centro: icM(new THREE.Vector3(0, 0, 0).applyMatrix4(Mg)),
+        cores: { escoras: (ge.escoras || []).map(function (e) { return hex(e.m); }), patolas: ge.patolas.map(function (p) { return hex(p.mS); }), solo: ge.patolas.map(function (p) { return hex(p.mC); }), lanca: ge.secoes ? hex(ge.secoes[0].mat) : hex(ge.mBracos), cabo: hex(ge.mCabo), lingas: (ge.mLingas || []).map(hex) },
+        /* onde cada rótulo visível caiu na TELA depois do empilhamento (px) — para provar que nenhum encavala */
+        /* ⚠ medido do ZERO (projeção + o `center` atual do sprite), sem ler o que o empilhamento gravou — senão, sem empilhar,
+           a lista viria vazia e "nenhum encavala" passaria por omissão */
+        rotulosTela: (function () {
+          var tam = renderer.getSize(new THREE.Vector2()), W = tam.x, H = tam.y, tanF = Math.tan((camera.fov || 50) * Math.PI / 360), wp = new THREE.Vector3();
+          return icar.rotulos.filter(function (o) { return o.visible && o.parent; }).map(function (o) {
+            o.getWorldPosition(wp); var dist = camera.position.distanceTo(wp), p = wp.clone().project(camera);
+            var h = o.scale.y / (2 * dist * tanF) * H, w = h * (o.userData._ratio || 1), x = (p.x + 1) / 2 * W, y = (1 - p.y) / 2 * H - (0.5 - o.center.y) * h;
+            return { txt: o.userData._txt || '', x0: Math.round(x - w / 2), x1: Math.round(x + w / 2), y0: Math.round(y - h / 2), y1: Math.round(y + h / 2), degraus: o.userData._degraus || 0 };
+          });
+        })(),
+        pontaMalha: pontaMalha, cotoveloMalha: cotMalha, colunaMalha: colMalha, kin: q.kin ? { ok: !!q.kin.ok, modo: q.kin.modo || null, ext: q.kin.ext != null ? q.kin.ext : null } : null,
+        rotulos: rot, nEstimadas: ge.nEstimadas, pulsando: (q.pulsa || []).length, fis: q.fis ? q.fis.componentes.map(function (x) { return { id: x.id, esforco: x.esforco, uTrab: x.u.uTrab, uRup: x.u.uRup, faixa: x.u.faixa.chave }; }) : null, k: q.k };
+    },
     estado: function (uids) {
       var vis = 0; (uids || []).forEach(function (u) { malhasDaPeca(u).forEach(function (m) { if (m.visible) vis++; }); });
       var lc = icar.equip && icar.equip.gancho ? [icar.equip.gancho.x, icar.equip.gancho.y, icar.equip.gancho.z] : null; // onde o gancho está agora
-      return { objetos: icar.grupo.children.length, equip: !!icar.equip, sim: icar.sim ? { t: icar.sim.t, malhas: icar.sim.fantasma.children.length - 1 } : null, rotulos: icar.rotulos.length,
+      return { objetos: icar.grupo.children.length, equip: !!icar.equip, equipPos: icar.equip ? icM(icar.equip.pos) : null, sim: icar.sim ? { t: icar.sim.t, malhas: icar.sim.fantasma.children.length - 1 } : null, rotulos: icar.rotulos.length,
         malhasVisiveis: vis, lanca: lc, linhaIcamento: !!icar.grupo.getObjectByName('linha-icamento') };
     } };
   /* corte de altura do visitante ("ver por dentro"), fora do imersivo — no
@@ -3570,6 +4352,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   };
   /* o espelhamento anda com o quadro — e o mesmo gancho que a lupa e as cotas usam */
   S._tickExtra.push(function () { sincronizarAgregado(); });
+  S._tickExtra.push(function () { if (S._cristalTickEscala) S._cristalTickEscala(); });
   /* ⚠ `cota.on` PRECISA estar aqui. O `pointerup` sai cedo quando nenhuma
      ferramenta consome clique (a porteira logo abaixo), e sem esta linha o
      botao Cotar ficaria MUDO: sem raycast, sem erro, sem log. */
@@ -3635,7 +4418,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
          toque de 80 ms virava "segurou o dedo" — a ficha da peça não abria. */
       var durou = (tq.ts > 0 && e.timeStamp > 0) ? e.timeStamp - tq.ts : performance.now() - tq.t;
       if (tdx * tdx + tdy * tdy <= 100 && durou < 500) {
-        if (S._aoMarcarPonto) { var fm = S._aoMarcarPonto; S._aoMarcarPonto = null; try { fm(S._icar.pontoNoChao(e.clientX, e.clientY)); } catch (eM) {} } // içamento: um clique = um ponto no chão
+        if (S._aoMarcarPonto) { var fm = S._aoMarcarPonto, om = S._aoMarcarOpts; S._aoMarcarPonto = null; S._aoMarcarOpts = null; try { fm(S._icar.pontoNoChao(e.clientX, e.clientY, om)); } catch (eM) {} } // içamento: um clique = um ponto no chão
         else if (S._aoTocar) { var fn = S._aoTocar; S._aoTocar = null; try { fn(pontoNaTela(e.clientX, e.clientY)); } catch (eT) {} }
         else if (S._aoClicarPeca) cliqueColetor(e);
         else selecionarEm(e.clientX, e.clientY);
@@ -9087,6 +9870,39 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return 0;
   }
 
+  /* O PERFIL I DA PEÇA (IfcIShapeProfileDef da área varrida), em METROS pela unidade do arquivo — a peça içada da física do
+     içamento (ESPEC-ICAMENTO §II.4.5: W pela geometria da seção). Mesmo caminho do lerBitolaMm. Sem wasm (cache) ou sem perfil
+     I: null — a física mostra "sem dado (perfil)" em vez de inventar a seção. */
+  function lerPerfilI(mid, eid) {
+    var moP = modeloDe(mid);
+    if (!moP || semWasm(moP)) return null;
+    var fLen = unidadePrefixoBase(mid, 'LENGTHUNIT'); if (fLen == null) fLen = 1;
+    function vl(x) { var n = x && x.value != null ? parseFloat(x.value) : parseFloat(x); return isFinite(n) && n > 0 ? n * fLen : null; }
+    try {
+      var el = S.api.GetLine(mid, eid, false);
+      if (!el || !el.Representation || el.Representation.value == null) return null;
+      var pds = S.api.GetLine(mid, el.Representation.value, false);
+      var reps = pds && pds.Representations; if (!reps) return null;
+      reps = Array.isArray(reps) ? reps : [reps];
+      for (var i = 0; i < reps.length; i++) {
+        if (!reps[i] || reps[i].value == null) continue;
+        var sr; try { sr = S.api.GetLine(mid, reps[i].value, false); } catch (_) { continue; }
+        var itens = sr && sr.Items; if (!itens) continue;
+        itens = Array.isArray(itens) ? itens : [itens];
+        for (var j = 0; j < itens.length; j++) {
+          if (!itens[j] || itens[j].value == null) continue;
+          var it; try { it = S.api.GetLine(mid, itens[j].value, false); } catch (_) { continue; }
+          if (!it || !it.SweptArea || it.SweptArea.value == null) continue;
+          var pf; try { pf = S.api.GetLine(mid, it.SweptArea.value, false); } catch (_) { continue; }
+          var h = vl(pf && pf.OverallDepth), b = vl(pf && pf.OverallWidth), tw = vl(pf && pf.WebThickness), tf = vl(pf && pf.FlangeThickness);
+          if (h && b && tw && tf) return { tipo: 'I', h: h, b: b, tw: tw, tf: tf, comprimento: vl(it.Depth), fonte: 'IfcIShapeProfileDef do IFC' + (pf.ProfileName && pf.ProfileName.value ? ' (' + pf.ProfileName.value + ')' : '') };
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+  S._icarPerfil = function (uid) { var p = String(uid || '').split(':'); return p.length === 2 ? lerPerfilI(+p[0], +p[1]) : null; };
+
   /* Nomes sob os quais o campo "Descrição" do Revit chega num pset. Varia por
      exportador e pelo idioma da instalação — por isso os três, sem acento e em
      minúscula. ⚠ Lista FECHADA de propósito: qualquer propriedade cujo nome
@@ -10400,6 +11216,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (pav.isolado || pav.manual) restaurarVisibilidade(); else pavRender(); // isolamento (🏢 OU 👁) pode ter ficado sem alvo
     if (mid === 'edit' && S._editReset) S._editReset(); // apagar "Criados no OrçaPRO" = zerar edições (senão replay ressuscita + pins órfãos)
     if (opts.onLoaded) opts.onLoaded(elementosVivos());
+    if (S._cristalFechouTudo) S._cristalFechouTudo();
     if (!S.modelos.length) { over.style.display = 'flex'; limparSisMatCache(); } // sem modelos: nenhuma malha referencia os materiais de sistema → pode liberar a GPU (com modelos vivos, NÃO limpar: eles ainda apontam pro cache global)
   }
   function limparTudo() {
@@ -10439,8 +11256,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     // nem despejar meshes/índices no viewer NOVO (S global pode já ser outra instância)
     if (S !== Sm || !S.alive) return;
     over.style.display = 'none'; loading.style.display = 'flex';
+    if (S._cristalEvento) S._cristalEvento('carregar');
     loading.querySelector('[data-l="txt"]').textContent = 'Lendo ' + (nome || 'IFC') + '…';
-    if (S.modelos.length >= 8) { loading.style.display = 'none'; over.style.display = S.modelos.length ? 'none' : 'flex'; try { alert('Limite de 8 modelos abertos ao mesmo tempo. Remova um antes de abrir outro (memória de vídeo).'); } catch (_) {} return; }
+    if (S.modelos.length >= 8) { loading.style.display = 'none'; over.style.display = S.modelos.length ? 'none' : 'flex'; if (S._cristalEvento) S._cristalEvento('falhou'); try { alert('Limite de 8 modelos abertos ao mesmo tempo. Remova um antes de abrir outro (memória de vídeo).'); } catch (_) {} return; }
     var mid;
     try {
       await initApi();
@@ -10554,6 +11372,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       if (planta.on) setPlanta(false); // carregar modelo com a planta ativa: sai da planta (senão vista fica incoerente)
       if (corteL.on) setCorteL(false); // idem corte livre (o bbox mudou; o usuário re-corta no modelo federado)
       enquadrar(); loading.style.display = 'none';
+      if (S._cristalModeloPronto) S._cristalModeloPronto(modelo);
       // AABB (mundo) por elemento do modelo novo — p/ compatibilização entre DISCIPLINAS
       try {
         modelRoot.updateMatrixWorld(true);
@@ -10583,6 +11402,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       try { if (typeof modelo !== 'undefined' && modelo && S.modelos.indexOf(modelo) === -1) { (modelo.grupo.children || []).forEach(function (m) { if (m.geometry) { try { m.geometry.dispose(); } catch (_) {} } }); Object.keys(modelo.matCache || {}).forEach(function (k) { try { modelo.matCache[k].dispose(); } catch (_) {} }); modelRoot.remove(modelo.grupo); } } catch (_) {}
       try { rebuildIndices(); } catch (_) {} // meshPorId E meshPorUid sem restos do modelo que falhou (o manual só limpava o Uid)
       loading.style.display = 'none'; if (!S.modelos.length) over.style.display = 'flex';
+      if (S._cristalEvento) S._cristalEvento('falhou');
       over.querySelector('div').innerHTML = '<div style="font-size:30px">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + '</div><h3 style="margin:8px 0">Não consegui ler este IFC</h3><p style="color:#a9c1d8;font-size:13px">' + esc(String(err && err.message || err)) + '</p><p style="color:#a9c1d8;font-size:12px">Confira se é um .ifc válido (IFC2x3 ou IFC4).</p>';
     }
   }
@@ -10679,6 +11499,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (planta.on) setPlanta(false);
     if (corteL.on) setCorteL(false);
     enquadrar(); over.style.display = 'none'; loading.style.display = 'none';
+    if (S._cristalModeloPronto) S._cristalModeloPronto(modelo);
 
     /* caixa envolvente por peca e altura real do pavimento: THREE puro, sao
        recalculados de proposito (guardar criaria uma segunda verdade) */
@@ -11534,9 +12355,13 @@ window.BIM = {
   icarGeometria: function (uids) { return (S && S._icar) ? S._icar.geometria(uids) : {}; },          // {uid: {min, max, cg, cgPelaMalha}}
   icarChao: function () { return (S && S._icar) ? S._icar.chao() : 0; },
   /* um clique simples no 3D devolve o ponto no chão (peça acertada ou plano do chão): fn({x,y,z,uid,noModelo}) — uma vez */
-  icarMarcarPonto: function (fn) { if (S) S._aoMarcarPonto = typeof fn === 'function' ? fn : null; return !!(S && S._aoMarcarPonto); },
+  icarMarcarPonto: function (fn, opts) { if (S) { S._aoMarcarPonto = typeof fn === 'function' ? fn : null; S._aoMarcarOpts = S._aoMarcarPonto ? (opts || null) : null; } return !!(S && S._aoMarcarPonto); },
+  icarSondar: function (pts) { return (S && S._icar) ? S._icar.sondar(pts) : []; },        // [{x,y,z,sup}] superfície sob cada ponto (motor)
+  /* os pavimentos com a ELEVAÇÃO do IFC (IfcBuildingStorey.Elevation). ⚠ O `y0` do `pavimentos` é a peça mais BAIXA
+     do pavimento — com estaca, o Térreo dava −6. Para o nível de apoio vale a elevação; sem ela, null (a tela usa 0). */
+  icarPavimentos: function () { return (S && S._pavLista) ? S._pavLista().map(function (p) { return { nome: p.nome, elev: p.elev, y0: p.y0, n: p.n }; }) : []; },
   icarMarcandoPonto: function () { return !!(S && S._aoMarcarPonto); },
-  _icarMarcarEm: function (x, y) { if (S && S._aoMarcarPonto) { var f = S._aoMarcarPonto; S._aoMarcarPonto = null; f(S._icar.pontoNoChao(x, y)); return true; } return false; }, // gancho de teste
+  _icarMarcarEm: function (x, y) { if (S && S._aoMarcarPonto) { var f = S._aoMarcarPonto, o = S._aoMarcarOpts; S._aoMarcarPonto = null; S._aoMarcarOpts = null; f(S._icar.pontoNoChao(x, y, o)); return true; } return false; }, // gancho de teste
   icarDesenhar: function (c) { return (S && S._icar) ? S._icar.desenhar(c) : { ok: false, erro: 'visualizador não montado' }; },
   icarLimpar: function () { if (S && S._icar) S._icar.limpar(); },
   icarSimular: function (s) { return (S && S._icar) ? S._icar.simular(s) : { ok: false, erro: 'visualizador não montado' }; },
@@ -11544,7 +12369,22 @@ window.BIM = {
   icarPararSimulacao: function () { if (S && S._icar) S._icar.parar(); },
   icarCaptura: function (vista) { return (S && S._icar) ? S._icar.captura(vista) : null; },              // dataURL PNG (fundo branco)
   icarEnquadrar: function () { return !!(S && S._icar && S._icar.enquadrar()); },
+  _cristalEstado: function () { return (S && S._cristalEstado) ? S._cristalEstado() : null; },   // centro|carregando|abrindo|cubo|sem-cristal
+  _cristalPular: function () { if (S && S._cristalPular) S._cristalPular(); },
+  _cristalDiag: function () { return (S && S._cristalDiag) ? S._cristalDiag() : null; },
+  _cristalCanto: function () { return (S && S._cristalCanto) ? S._cristalCanto() : null; },
+  _cristalCongelar: function (ms) { if (S && S._cristalCongelar) S._cristalCongelar(ms); },   // hook de teste: abertura parada em `ms` (null solta)
   _icarEstado: function (uids) { return (S && S._icar) ? S._icar.estado(uids) : null; }, // gancho de teste
+  icarColisoes: function (opts) { return (S && S._icar) ? S._icar.colisoes(opts || {}) : { ok: false, erro: 'visualizador não montado' }; },   // choques e folgas no caminho
+  icarSimIr: function (t) { return (S && S._icar) ? S._icar.simIr(t) : false; },
+  icarSimPausado: function () { return (S && S._icar) ? S._icar.simPausado() : false; },
+  icarPerfil: function (uid) { return (S && S._icarPerfil) ? S._icarPerfil(uid) : null; },            // perfil I da peça (m), ou null
+  icarGirar: function (on, dur) { return (S && S._icar) ? S._icar.girar(on, dur) : false; },          // "▶ girar a lança" (uma volta)
+  icarGirando: function () { return (S && S._icar) ? S._icar.girando() : false; },
+  icarTheta: function (graus) { return (S && S._icar) ? S._icar.theta(graus) : null; },               // lança em θ (graus a partir da dianteira)
+  icarSobrecarga: function (k) { return (S && S._icar) ? S._icar.sobrecarga(k) : null; },             // "além do limite": carga × k
+  icarOpcoes: function (o) { return (S && S._icar) ? S._icar.opcoes(o || {}) : false; },              // { valores, soCritico, modoFalha }
+  _icarEquipEstado: function () { return (S && S._icar) ? S._icar.equipEstado() : null; }, // gancho de teste: pose, cores e rótulos do equipamento articulado
   pinos: function (lista) { if (S && S._pinos) S._pinos(lista || []); },
   olharPara: function (p, dist) { if (S && S._olharPara) S._olharPara(p, dist); },
   tetoVisitante: function (frac) { return S && S._tetoVisitante ? S._tetoVisitante(frac) : null; },

@@ -251,6 +251,39 @@
     if (g.fabricante === "Liebherr") { g.vento_ms = 9; g.vento_fonte = "Liebherr: tabelas em geral para até 9 m/s — conferir no manual do equipamento"; }
   });
   MUNCKS.forEach(function (x) { x.tipo = "munck"; x.fonte.levantamento = "01/10/2026"; });
+  /* ======================================================================
+   * FICHA DE FABRICANTE (o que o PDF publica ALÉM da tabela de carga) — levantamento de 02/10/2026, para a física do içamento
+   * (js/icarficha.js → js/icarfisica.js). Cada número com a PÁGINA do mesmo PDF da tabela (campo `fonte` do modelo).
+   * ⚠ O "Fmax" das Liebherr ("Max. Stützkräfte / max. supporting forces") é a força que UMA PATOLA DESCARREGA NO CHÃO no pior
+   *   caso, em duas configurações de patola (ícones da página) — NÃO é capacidade da patola. Para o solo, o lado seguro é o
+   *   MAIOR valor. Até 01/10 a ficha adotava o menor, lendo-o como capacidade; a página do PDF desfez o engano.
+   * ⚠ giroFrente/giroTras = do EIXO DE GIRO às patolas dianteiras/traseiras, cotas do desenho de dimensões (vista em planta):
+   *   o giro fica ATRÁS do centro das patolas em todos estes modelos.
+   * ⚠ O fabricante NÃO publica massa/CG da superestrutura, da lança nem o raio do CG do contrapeso: as reações por patola
+   *   continuam cinza — o solo é conferido pelo pior caso (Fmax) até alguém informar esses números com fonte.
+   * moitões: [capacidade t, polias, pernas (linhas), massa t]; cabo: [diâmetro mm, comprimento m, tração máx. por perna kN].
+   * ====================================================================== */
+  var FICHAS_FAB = {
+    "liebherr-ltm-1030-2-1": { pagDim: 3, pagDados: 7, giroFrente_m: 3.9155, giroTras_m: 2.3895, sapata_m: 0.5, raioTraseira_m: [3.15],
+      moitoes: [[34.9, 5, 11, 0.265], [22.8, 3, 7, 0.165], [10.1, 1, 3, 0.145], [3.4, 0, 1, 0.075]], fmax_kN: [230, 300],
+      cabo: [13, 150, 34], icar_m_min: 120, giro_rpm: 2.4, alfaMax_graus: 81, notas: ["p. 6: em estrada ≤ 24 t com 2,3 t de contrapeso, 12 t por eixo"] },
+    "liebherr-ltm-1040-2-1": { pagDim: 3, pagDados: 7, giroFrente_m: 3.9155, giroTras_m: 2.3895, sapata_m: 0.5, raioTraseira_m: [3.33],
+      moitoes: [[34.9, 5, 11, 0.265], [22.8, 3, 7, 0.165], [10.1, 1, 3, 0.145], [3.4, 0, 1, 0.075]], fmax_kN: [250, 310],
+      cabo: [13, 150, 34], icar_m_min: 120, giro_rpm: 2.4, alfaMax_graus: 81, notas: [] },
+    "liebherr-ltm-1050-3-1": { pagDim: 3, pagDados: 9, giroFrente_m: 4.526, giroTras_m: 2.625, sapata_m: 0.5, raioTraseira_m: [3.53, 4.07],
+      moitoes: [[50, 7, 12, 0.40], [46.1, 5, 11, 0.40], [30.2, 3, 7, 0.28], [13.3, 1, 3, 0.195], [4.5, 0, 1, 0.075]], fmax_kN: [295, 420],
+      cabo: [15, 185, 45], icar_m_min: 120, giro_rpm: 1.9, alfaMax_graus: 81, notas: ["dois guinchos com o mesmo cabo (p. 9)"] },
+    "liebherr-ltm-1060-3-1": { pagDim: 3, pagDados: 8, giroFrente_m: 4.826, giroTras_m: 2.515, sapata_m: 0.5, raioTraseira_m: [3.54],
+      moitoes: [[60, 7, 15, 0.40], [46.1, 5, 11, 0.40], [30.2, 3, 7, 0.28], [13.3, 1, 3, 0.20], [4.5, 0, 1, 0.10]], fmax_kN: [280, 445],
+      cabo: [15, 220, 45], icar_m_min: 130, giro_rpm: 1.5, alfaMax_graus: 82, notas: ["dois guinchos com o mesmo cabo (p. 8)"] },
+    "liebherr-ltm-1090-4-2": { pagDim: 3, pagDados: 9, giroFrente_m: 4.729, giroTras_m: 2.717, sapata_m: 0.5, raioTraseira_m: [3.77, 4.71],
+      moitoes: [[68, 7, 12, 0.76], [59.2, 5, 10, 0.53], [42.3, 3, 7, 0.45], [18.7, 1, 3, 0.30], [6.3, 0, 1, 0.14]], fmax_kN: [400, 533],
+      cabo: [17, 240, 63], icar_m_min: 135, giro_rpm: 1.5, alfaMax_graus: 82, notas: ["dois guinchos com o mesmo cabo (p. 9)"] },
+    /* munck: o catálogo da Masal (p. 2, tabela "Especificações") — sem o comprimento de cada braço (os braços seguem estimados) */
+    "masal-mc10605": { pagDados: 2, larguraTransporte_m: 2.60, espacoMontagem_m: 1.20, anguloAbertura_graus: 80, raioMin_m: 1.00,
+      alcanceVertHid_m: 11.90, giroGraus: 410, torqueGiro_kgfm: 2062, pressao_bar: 250, oleo_L: 80, lancasHid: 3, lancasManuais: 2, notas: [] }
+  };
+  GUINDASTES.concat(MUNCKS).forEach(function (x) { x.ficha = FICHAS_FAB[x.id] || null; });
   var TODOS = GUINDASTES.concat(MUNCKS);
 
   function porId(id) {

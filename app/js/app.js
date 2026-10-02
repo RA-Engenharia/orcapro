@@ -16068,19 +16068,27 @@
        chave local por cima), com uma porta que não exige console: o atalho que
        o suporte entrega abre o app assim. Só os nomes da lista valem — nada
        do endereço vira chave arbitrária no aparelho. */
-    _PREVIAS: { icamento: ["orcapro:tela:icamento-recursos:v1", '{"plano":true}'] },
+    _PREVIAS: { icamento: ["orcapro:tela:icamento-recursos:v1", '{"plano":true}'], cristal: ["orcapro:tela:bim-cristal:v1", '{"cristal":true}'] },
+    /* `?previa=icamento` ou uma LISTA `?previa=icamento,cristal` (um atalho liga as duas); `-desligar` em cada nome apaga.
+       Nome que não existe em _PREVIAS é ignorado — nunca grava chave inventada. */
     _previaDaUrl: function () {
       try {
-        var m = /[?&]previa=([a-z0-9-]+)/i.exec(location.search || ""); if (!m) return null;
-        var bruto = String(m[1]).toLowerCase(), deslig = /-desligar$/.test(bruto), nome = bruto.replace(/-desligar$/, ""), alvo = this._PREVIAS[nome];
-        if (!alvo) return null;
-        if (deslig) localStorage.removeItem(alvo[0]); else localStorage.setItem(alvo[0], alvo[1]);
+        var m = /[?&]previa=([a-z0-9,-]+)/i.exec(location.search || ""); if (!m) return null;
+        var self = this, feitos = [];
+        String(m[1]).toLowerCase().split(",").forEach(function (bruto) {
+          var deslig = /-desligar$/.test(bruto), nome = bruto.replace(/-desligar$/, ""), alvo = self._PREVIAS[nome];
+          if (!alvo) return;
+          if (deslig) localStorage.removeItem(alvo[0]); else localStorage.setItem(alvo[0], alvo[1]);
+          feitos.push({ nome: nome, ligada: !deslig });
+        });
+        if (!feitos.length) return null;
         var resto = String(location.search || "").replace(/([?&])previa=[^&]*&?/i, "$1").replace(/[?&]$/, "");
         try { history.replaceState(null, "", location.pathname + resto + location.hash); } catch (eH) {}
-        var txt = deslig ? "Prévia desligada nesta instalação: " + nome + "." : "Prévia ligada nesta instalação: " + nome + ".";
+        var lig = feitos.filter(function (x) { return x.ligada; }).map(function (x) { return x.nome; }), des = feitos.filter(function (x) { return !x.ligada; }).map(function (x) { return x.nome; });
+        var txt = (lig.length ? "Prévia ligada nesta instalação: " + lig.join(", ") + "." : "") + (des.length ? (lig.length ? " " : "") + "Prévia desligada nesta instalação: " + des.join(", ") + "." : "");
         try { console.info("[previa] " + txt); } catch (eC) {}
         setTimeout(function () { try { if (typeof UI !== "undefined" && UI.toast) UI.toast(txt, "ok"); } catch (eT) {} }, 2500);
-        return { nome: nome, ligada: !deslig };
+        return feitos.length === 1 ? feitos[0] : { lista: feitos };
       } catch (e) { return null; }
     },
 

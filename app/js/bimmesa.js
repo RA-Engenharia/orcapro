@@ -103,9 +103,11 @@
        30/09/2026: centralizada na altura, ela passava por cima do "Sair do
        foco" e do cubo de vistas (em cima, à direita) e do contador de
        elementos (embaixo), e o "Sair da mesa" nem cabia na tela. Começa abaixo
-       do cubo, termina acima do contador, e rola se a tela for baixa. */
+       do cubo, termina acima do contador, e rola se a tela for baixa.
+       140 px (era 124) desde 02/10/2026: o cubo de cristal tem a BÚSSOLA em volta (js/bim.js, .bim-vcube-bussola), e a caixa
+       dela girada em 3D desce além do cubo — com 124 a barra ficava por cima do S da bússola. */
     s.textContent =
-      "#bim-mesa{position:absolute;top:124px;z-index:20;display:flex;flex-direction:column;gap:4px;padding:6px 5px;" +
+      "#bim-mesa{position:absolute;top:140px;z-index:20;display:flex;flex-direction:column;gap:4px;padding:6px 5px;" +
       "max-height:calc(100% - 184px);overflow:hidden;background:rgba(11,26,43,.86);border:1px solid rgba(148,163,184,.25);border-radius:14px;box-shadow:0 6px 24px rgba(0,0,0,.35);-webkit-user-select:none;user-select:none}" +
       "#bim-mesa[data-lado=dir]{right:10px}#bim-mesa[data-lado=esq]{left:10px}" +
       "#bim-mesa button{width:64px;min-height:46px;border:0;border-radius:10px;background:transparent;color:#dbe8f5;font:600 10px/1.15 Inter,system-ui,sans-serif;" +
@@ -124,7 +126,7 @@
       "#bim-mesa hr{border:0;border-top:1px solid rgba(148,163,184,.25);margin:2px 4px;width:auto}" +
       "#bim-mesa svg{width:20px;height:20px}" +
       /* o painel do CORTE COM O DEDO mora ao lado da barra, do lado de dentro */
-      "#bim-mesa-corte{position:absolute;top:124px;z-index:20;width:96px;display:flex;flex-direction:column;align-items:center;gap:6px;padding:8px 6px;" +
+      "#bim-mesa-corte{position:absolute;top:140px;z-index:20;width:96px;display:flex;flex-direction:column;align-items:center;gap:6px;padding:8px 6px;" +
       "background:rgba(11,26,43,.86);border:1px solid rgba(148,163,184,.25);border-radius:14px;box-shadow:0 6px 24px rgba(0,0,0,.35);color:#dbe8f5;font:600 11px/1.2 Inter,system-ui,sans-serif;-webkit-user-select:none;user-select:none}" +
       "#bim-mesa-corte[data-lado=dir]{right:96px}#bim-mesa-corte[data-lado=esq]{left:96px}" +
       "#bim-mesa-corte b{font-size:15px;color:#fff}#bim-mesa-corte .pav{font-size:10px;color:#9fb2c8;text-align:center;min-height:12px}" +

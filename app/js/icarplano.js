@@ -481,6 +481,21 @@
       o.vento = vento(vw);
       o.bloqueios = o.bloqueios.concat(o.vento.bloqueios);
     } else o.bloqueios.push("Vento não verificado.");
+    /* choques no caminho (js/icarcolisao.js, conferido no 3D): choque ou zona da NR-10 = bloqueio; rede elétrica perto = crítico */
+    if (ic.colisao && ic.colisao.resumo) {
+      ic.colisao.resumo.forEach(function (r) {
+        var onde = "em " + br(r.primeiro * 100, 0) + " % do caminho";
+        if (r.tipo === "choque") o.bloqueios.push("Choque no caminho: " + r.quem + " × " + r.contra + " (" + onde + ").");
+        else if (r.tipo === "zona-de-risco" || r.tipo === "zona-controlada") o.bloqueios.push("Rede elétrica: " + r.quem + " entra na " + (r.tipo === "zona-de-risco" ? "zona de RISCO" : "zona controlada") + " da NR-10 de " + r.contra + " (" + onde + ", a " + br(r.menor, 2) + " m).");
+        else if (r.tipo === "folga") o.avisos.push("Folga pequena no caminho: " + r.quem + " a " + br(r.menor, 2) + " m de " + r.contra + " (" + onde + "; folga mínima " + br(ic.colisao.folga, 2) + " m).");
+      });
+      if (ic.colisao.resumo.some(function (r) { return /^zona/.test(r.tipo); })) o.criticoPor.push("perto de rede elétrica (dentro das zonas da NR-10 no caminho)");
+    }
+    /* sapata em área proibida = bloqueio (o plano não libera) */
+    if (eq && ic.pos && ic.proibidoApoiar && ic.proibidoApoiar.length) {
+      o.proibidas = sapatasProibidas(layoutEquip(eq, ic.pos, ic.rumo != null ? ic.rumo : rumoPadrao(ic.pos, geo && geo.cg)), ic.proibidoApoiar);
+      o.proibidas.forEach(function (s) { o.bloqueios.push("Sapata " + s.nome + " dentro de área onde não se pode apoiar (" + s.motivo + ") — mude a posição ou o rumo do equipamento."); });
+    }
     o.tempo = tempo({ altura_m: o.alturaGancho || 0, giro_graus: o.giro || 0, tempo: p.tempo });
     o.premissas = p;
     o.status = o.reprovado ? "reprovado" : o.bloqueios.length ? "pendente" : o.criticoPor.length ? "critico" : "aprovado";
@@ -580,16 +595,41 @@
     var a = (+rumoGraus || 0) * Math.PI / 180, ax = { x: Math.cos(a), y: Math.sin(a) }, lt = { x: -Math.sin(a), y: Math.cos(a) };
     function P(al, sd) { return { x: pos.x + ax.x * al + lt.x * sd, y: pos.y + ax.y * al + lt.y * sd }; }
     function ret(a0, a1, s0, s1) { return [P(a0, s0), P(a1, s0), P(a1, s1), P(a0, s1)]; }
-    var o = { ehMunck: ehMunck, comp: comp, larg: larg, retangulos: [], sapatas: [] };
+    var o = { ehMunck: ehMunck, comp: comp, larg: larg, retangulos: [], sapatas: [], sapatasNomes: [] };
+    /* nome da sapata pelo lugar dela no caminhão: dianteira/traseira (cabine = frente) e direita/esquerda (olhando para a frente) */
+    function sap(al, sd, frente) { o.sapatas.push(P(al, sd)); o.sapatasNomes.push((frente ? "dianteira" : "traseira") + " " + (sd > 0 ? "esquerda" : "direita")); }
     if (ehMunck) {
       o.retangulos.push({ rotulo: "caminhão", pts: ret(-comp + 2.6, 2.8, -larg / 2, larg / 2) }, { rotulo: "cabine", pts: ret(0.7, 2.8, -larg / 2, larg / 2) });
-      [0.15, -comp + 2.9].forEach(function (al) { o.sapatas.push(P(al, -pLat / 2), P(al, pLat / 2)); });
+      [0.15, -comp + 2.9].forEach(function (al, i) { sap(al, -pLat / 2, i === 0); sap(al, pLat / 2, i === 0); });
     } else {
-      o.retangulos.push({ rotulo: "guindaste", pts: ret(-comp / 2, comp / 2, -larg / 2, larg / 2) }, { rotulo: "cabine", pts: ret(comp / 2 - 2.3, comp / 2 - 0.1, -larg / 2, larg / 2) });
-      [-pLong / 2, pLong / 2].forEach(function (al) { o.sapatas.push(P(al, -pLat / 2), P(al, pLat / 2)); });
+      /* ⚠ com a FICHA do fabricante (desenho de dimensões), as patolas ficam onde o PDF diz: o giro NÃO é o centro delas
+         (LTM 1030-2.1: 3,9155 m à frente, 2,3895 m atrás). Sem ficha, simétricas como antes. O 3D (js/bim.js, icGerar) usa os
+         mesmos números — planta, DXF, IFC e 3D têm de bater. */
+      var fb = eq.ficha || {}, aF = +fb.giroFrente_m > 0 ? +fb.giroFrente_m : pLong / 2, aT = +fb.giroTras_m > 0 ? +fb.giroTras_m : pLong / 2, cC = (aF - aT) / 2;
+      o.retangulos.push({ rotulo: "guindaste", pts: ret(cC - comp / 2, cC + comp / 2, -larg / 2, larg / 2) }, { rotulo: "cabine", pts: ret(cC + comp / 2 - 2.3, cC + comp / 2 - 0.1, -larg / 2, larg / 2) });
+      [-aT, aF].forEach(function (al, i) { sap(al, -pLat / 2, i === 1); sap(al, pLat / 2, i === 1); });
     }
     o.patolasLat = pLat; o.patolasLong = pLong;
     return o;
+  }
+  /* ÁREAS ONDE NÃO SE PODE APOIAR (fossa, galeria, tubulação, laje sem escoramento) — ESPEC-ICAMENTO §II.4.3: sapata dentro =
+     bloqueio. Ponto no polígono por cruzamento de raio (motor: x, y em metros). areas = [{ poligono: [[x, y]…], motivo }] */
+  function dentroPoligono(pt, pol) {
+    var dentro = false;
+    for (var i = 0, j = pol.length - 1; i < pol.length; j = i++) {
+      var xi = +pol[i][0], yi = +pol[i][1], xj = +pol[j][0], yj = +pol[j][1];
+      if (((yi > pt.y) !== (yj > pt.y)) && (pt.x < (xj - xi) * (pt.y - yi) / ((yj - yi) || 1e-12) + xi)) dentro = !dentro;
+    }
+    return dentro;
+  }
+  function sapatasProibidas(lay, areas) {
+    var out = [];
+    (lay && lay.sapatas || []).forEach(function (s, k) {
+      (areas || []).forEach(function (ar) {
+        if (ar && ar.poligono && ar.poligono.length >= 3 && dentroPoligono(s, ar.poligono)) out.push({ k: k, nome: lay.sapatasNomes[k], motivo: ar.motivo || "área marcada" });
+      });
+    });
+    return out;
   }
   /* rumo padrão: o caminhão de lado para a carga (eixo perpendicular ao raio) */
   function rumoPadrao(pos, cg) { return pos && cg ? (Math.atan2(cg.y - pos.y, cg.x - pos.x) * 180 / Math.PI + 90) : 0; }
@@ -838,7 +878,7 @@
     carga: carga, geometria: geometria, pontosIcamento: pontosIcamento, lingas: lingas, conferirAcessorio: conferirAcessorio,
     classeVento: classeVento, S2: S2, S3: S3, vento: vento, tempo: tempo, avaliar: avaliar, melhores: melhores,
     liberacao: liberacao, passoAPasso: passoAPasso, nomeEq: nomeEq,
-    layoutEquip: layoutEquip, rumoPadrao: rumoPadrao, coletaPadrao: coletaPadrao, modoSugerido: modoSugerido, croqui: croqui, dxf: dxf, svgCroqui: svgCroqui, ifc: ifc, ifcTxt: ifcTxt, csvCargas: csvCargas
+    layoutEquip: layoutEquip, dentroPoligono: dentroPoligono, sapatasProibidas: sapatasProibidas, rumoPadrao: rumoPadrao, coletaPadrao: coletaPadrao, modoSugerido: modoSugerido, croqui: croqui, dxf: dxf, svgCroqui: svgCroqui, ifc: ifc, ifcTxt: ifcTxt, csvCargas: csvCargas
   };
   global.IcarPlano = IcarPlano;
   if (typeof module !== "undefined" && module.exports) module.exports = IcarPlano;

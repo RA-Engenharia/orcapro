@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.114",
+  "versao": "1.2.115",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.114.zip",
-  "notas": "BIM, aba Icamento: preparacao do plano de icamento (equipamento, simulacao e plano de rigging), ainda em previa e fora desta versao para os clientes. O peso das pecas segue igual.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.114/OrcaPRO-IA-Instalador-v1.2.114.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.115.zip",
+  "notas": "Modo mesa do BIM: a barra de ferramentas desceu um pouco e nao cobre mais o cubo de vistas. O plano de icamento e o novo cubo do BIM seguem em previa, fora desta versao para os clientes.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.115/OrcaPRO-IA-Instalador-v1.2.115.exe"
 }
