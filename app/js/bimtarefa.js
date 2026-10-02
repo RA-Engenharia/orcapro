@@ -104,7 +104,7 @@
     t = t || {};
     var tp = txt(t.tipoTarefa).trim();
     if (!TIPOS[tp]) tp = "construir";
-    return {
+    var out = {
       id: txt(t.id) || "",
       obraId: txt(t.obraId),
       nome: txt(t.nome) || "Tarefa sem nome",
@@ -120,8 +120,13 @@
       dependeDe: (t.dependeDe || []).map(txt).filter(Boolean),
       etapaOrc: txt(t.etapaOrc),
       itemOrcId: txt(t.itemOrcId),
-      origem: txt(t.origem) || "manual"    /* manual | csv | mspdi | cronograma */
+      origem: txt(t.origem) || "manual"    /* manual | csv | mspdi | cronograma | icamento */
     };
+    /* ⚠ O CARIMBO DO PLANO DE IÇAMENTO (js/icarlanca.js) passa pela normalização: sem ele, editar a tarefa no 4D gravava o
+       registro sem a chave, e o próximo "Lançar no sistema" do içamento criava OUTRA tarefa para as mesmas peças. */
+    if (t.origemIcamento && typeof t.origemIcamento === "object")
+      out.origemIcamento = { planoId: txt(t.origemIcamento.planoId), icamentoId: txt(t.origemIcamento.icamentoId), chave: txt(t.origemIcamento.chave) };
+    return out;
   }
 
   function validar(t) {

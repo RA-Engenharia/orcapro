@@ -47,6 +47,9 @@
     anguloLinga_graus: 30,     // ângulo-alvo da perna com a vertical (≤ 45° = fator 1,4 da cinta)
     Ca: 2.0,                   // coeficiente de arrasto da carga: placa plana alongada, a favor da segurança — ajuste pela forma
     isolamentoFolga_m: 2.0,    // área isolada = raio + metade da maior dimensão da carga + esta folga (premissa; a NR-18 manda isolar, não dá número)
+    olhoGuindaste_m: 3.0,      // VISÃO DO OPERADOR: olho na cabina da superestrutura, acima do apoio (premissa)
+    olhoMunck_m: 1.7,          // munck: o operador em pé no comando, ao lado do caminhão (premissa; com rádio-controle, ele anda — confira em campo)
+    olhoLateral_m: 1.2,        // a cabina/comando fica de lado para a lança (premissa)
     tempo: { amarrar_min: 10, vIcar_m_min: 6, giro_rpm: 0.5, posicionar_min: 15, soltar_min: 5 }
   };
 
@@ -491,6 +494,12 @@
       });
       if (ic.colisao.resumo.some(function (r) { return /^zona/.test(r.tipo); })) o.criticoPor.push("perto de rede elétrica (dentro das zonas da NR-10 no caminho)");
     }
+    /* VISÃO DO OPERADOR (conferida no 3D, js/icarcolisao.js visada): sem visão do ponto de assentamento a NR-18 manda sinaleiro —
+       não bloqueia, OBRIGA (o plano diz quem e onde; a conferência "sinaleiro presente" deixa de ser opcional) */
+    if (ic.visada) {
+      o.visada = ic.visada;
+      if (ic.visada.livre === false) { o.sinaleiroObrigatorio = true; o.avisos.unshift("O operador NÃO vê o ponto de assentamento (a visada da cabine passa por " + ((ic.visada.por || {}).nome || "uma peça") + ", a " + br(ic.visada.distOlho, 1) + " m dele): SINALEIRO obrigatório (NR-18 18.10.1.30), com rádio e posição que veja o ponto e o operador."); }
+    }
     /* sapata em área proibida = bloqueio (o plano não libera) */
     if (eq && ic.pos && ic.proibidoApoiar && ic.proibidoApoiar.length) {
       o.proibidas = sapatasProibidas(layoutEquip(eq, ic.pos, ic.rumo != null ? ic.rumo : rumoPadrao(ic.pos, geo && geo.cg)), ic.proibidoApoiar);
@@ -534,12 +543,12 @@
     { id: "ar-pt", rotulo: "Análise de risco (e permissão de trabalho, se o içamento não for rotineiro)", ref: "NR-18 18.10.1.18 / 18.10.1.19", obrig: true },
     { id: "manutencao", rotulo: "Registros de manutenção e inspeção do equipamento (plano de manutenção)", ref: "NR-18 18.10.1.23; NR-12 12.11", obrig: true },
     { id: "entrega-tecnica", rotulo: "Termo de entrega técnica do equipamento", ref: "NR-18 18.10.1.23; NR-12 12.11", obrig: true },
-    { id: "laudo", rotulo: "Laudo / inspeção do equipamento", ref: "NR-18 18.10.1.23", obrig: true },
-    { id: "operador", rotulo: "Capacitação do operador (guindaste: 120 h, NR-18 Anexo I)", ref: "NR-18 18.10.1.23 / Anexo I", obrig: true },
-    { id: "sinaleiro", rotulo: "Capacitação do sinaleiro/amarrador (16 h, reciclagem a cada 2 anos)", ref: "NR-18 18.10.1.23 / Anexo I", obrig: true },
-    { id: "cnh", rotulo: "CNH do motorista compatível com o veículo", ref: "CTB", obrig: false },
+    { id: "laudo", rotulo: "Laudo / inspeção do equipamento", ref: "NR-18 18.10.1.23", obrig: true, vence: true },
+    { id: "operador", rotulo: "Capacitação do operador (guindaste: 120 h, NR-18 Anexo I)", ref: "NR-18 18.10.1.23 / Anexo I", obrig: true, vence: true },
+    { id: "sinaleiro", rotulo: "Capacitação do sinaleiro/amarrador (16 h, reciclagem a cada 2 anos)", ref: "NR-18 18.10.1.23 / Anexo I", obrig: true, vence: true },
+    { id: "cnh", rotulo: "CNH do motorista compatível com o veículo", ref: "CTB", obrig: false, vence: true },
     { id: "acessorios", rotulo: "Certificados dos acessórios (lingas, cintas, manilhas) com marcação indelével", ref: "NR-18 18.10.1.27", obrig: true },
-    { id: "aterramento", rotulo: "Laudo de aterramento (semestral)", ref: "NR-18 18.10.1.23", obrig: false },
+    { id: "aterramento", rotulo: "Laudo de aterramento (semestral)", ref: "NR-18 18.10.1.23", obrig: false, vence: true },
     { id: "tabela-cabine", rotulo: "Tabela de cargas em português na cabine", ref: "NR-18 18.10.1.25e", obrig: true }
   ];
   var CONFERENCIAS = [
@@ -556,17 +565,31 @@
 
   /* liberação do plano: tudo verificado e documentos obrigatórios OK — ou a PORTA:
      liberar com pendência, registrando quem, quando e por quê (toda trava precisa de porta). */
-  function liberacao(plano, avaliacoes) {
+  /* quando = o dia de referência (AAAA-MM-DD: o 1º içamento, ou hoje). ⚠ Documento que VENCE (capacitação, laudo, CNH…) marcado
+     "ok" mas vencido NESSE dia é pendência — o "ok" foi dado quando ainda valia. Perto de vencer (30 dias) só avisa. */
+  function liberacao(plano, avaliacoes, quando) {
     var docs = (plano && plano.docs) || {}, conf = (plano && plano.conf) || {};
-    var falta = [];
-    DOCUMENTOS.forEach(function (d) { var s = docs[d.id] && docs[d.id].status; if (d.obrig && s !== "ok" && s !== "na") falta.push(d.rotulo); });
+    var falta = [], vencendo = [], semValidade = [], ref = /^\d{4}-\d{2}-\d{2}$/.test(String(quando || "")) ? String(quando) : "";
+    function dbr(x) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(x); return m ? m[3] + "/" + m[2] + "/" + m[1] : x; }
+    function dias(a, b) { return Math.round((Date.UTC(+a.slice(0, 4), +a.slice(5, 7) - 1, +a.slice(8, 10)) - Date.UTC(+b.slice(0, 4), +b.slice(5, 7) - 1, +b.slice(8, 10))) / 86400000); }
+    DOCUMENTOS.forEach(function (d) {
+      var r = docs[d.id] || {}, s = r.status, v = String(r.validade || "");
+      if (d.vence && s === "ok" && ref) {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+          var dd = dias(v, ref);
+          if (dd < 0) { falta.push(d.rotulo + " — VENCIDO em " + dbr(v) + " (o içamento é em " + dbr(ref) + ")"); return; }
+          if (dd <= 30) vencendo.push(d.rotulo + " vence em " + dbr(v) + " (" + dd + " dia(s) depois do içamento)");
+        } else semValidade.push(d.rotulo);
+      }
+      if (d.obrig && s !== "ok" && s !== "na") falta.push(d.rotulo);
+    });
     CONFERENCIAS.forEach(function (d) { var s = conf[d.id]; if (s !== "ok" && s !== "na") falta.push(d.rotulo); });
     var porIc = [];
     (avaliacoes || []).forEach(function (a, i) { if (a && (a.status === "pendente" || a.status === "reprovado")) porIc.push((i + 1) + "º içamento: " + (a.reprovado || a.bloqueios[0] || a.status)); });
     var reprovado = (avaliacoes || []).some(function (a) { return a && a.status === "reprovado"; });
     var porta = plano && plano.liberacaoPorta;
     return { liberado: !reprovado && !falta.length && !porIc.length, comPorta: !reprovado && !!(porta && porta.quem && porta.motivo) && (falta.length + porIc.length > 0),
-      reprovado: reprovado, faltaDocs: falta, pendIcamentos: porIc, porta: porta || null };
+      reprovado: reprovado, faltaDocs: falta, pendIcamentos: porIc, porta: porta || null, vencendo: vencendo, semValidade: semValidade, referencia: ref };
   }
 
   /* passo a passo de um içamento (o texto que vai para o plano e para a obra) */
@@ -630,6 +653,15 @@
       });
     });
     return out;
+  }
+  /* o OLHO do operador (motor): guindaste = cabina girando com a lança, de lado para ela, a olhoGuindaste_m do apoio; munck = de pé no
+     comando ao lado do caminhão, a olhoMunck_m. alvo = o ponto de assentamento. Tudo premissa (PREMISSAS), impresso no plano. */
+  function pontoOlho(eq, pos, alvo, p) {
+    p = prem(p);
+    if (!pos || !alvo) return null;
+    var dx = alvo.x - pos.x, dy = alvo.y - pos.y, d = Math.sqrt(dx * dx + dy * dy) || 1, ux = dx / d, uy = dy / d, lx = -uy, ly = ux;
+    var munck = eq && eq.tipo === "munck", lat = p.olhoLateral_m;
+    return { x: pos.x + lx * lat, y: pos.y + ly * lat, z: (+pos.z || 0) + (munck ? p.olhoMunck_m : p.olhoGuindaste_m) };
   }
   /* rumo padrão: o caminhão de lado para a carga (eixo perpendicular ao raio) */
   function rumoPadrao(pos, cg) { return pos && cg ? (Math.atan2(cg.y - pos.y, cg.x - pos.x) * 180 / Math.PI + 90) : 0; }
@@ -877,7 +909,7 @@
     prem: prem, cercar: cercar, capGuindaste: capGuindaste, capMunck: capMunck, capacidade: capacidade, porte: porte,
     carga: carga, geometria: geometria, pontosIcamento: pontosIcamento, lingas: lingas, conferirAcessorio: conferirAcessorio,
     classeVento: classeVento, S2: S2, S3: S3, vento: vento, tempo: tempo, avaliar: avaliar, melhores: melhores,
-    liberacao: liberacao, passoAPasso: passoAPasso, nomeEq: nomeEq,
+    liberacao: liberacao, passoAPasso: passoAPasso, nomeEq: nomeEq, pontoOlho: pontoOlho,
     layoutEquip: layoutEquip, dentroPoligono: dentroPoligono, sapatasProibidas: sapatasProibidas, rumoPadrao: rumoPadrao, coletaPadrao: coletaPadrao, modoSugerido: modoSugerido, croqui: croqui, dxf: dxf, svgCroqui: svgCroqui, ifc: ifc, ifcTxt: ifcTxt, csvCargas: csvCargas
   };
   global.IcarPlano = IcarPlano;

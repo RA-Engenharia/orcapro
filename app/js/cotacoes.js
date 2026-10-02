@@ -621,6 +621,31 @@
     }
   };
 
+  /* as alternativas de `resposta` que a coluna `fr` não recebeu porque foi
+     preenchida por um app anterior à alternativa — [{ i, t, p }]. Vazio
+     quando a coluna já conhece alternativa (`fr.alternativas` existe: quem
+     aplicou sabia ler) ou quando não há o que completar.
+     ⚠ Item em que a coluna JÁ TEM preço fica de fora: é o preço que o
+     engenheiro digitou ouvindo o fornecedor. Marcá-lo como alternativa o
+     tiraria da comparação sem ninguém pedir. */
+  Cotacoes._alternativasQueFaltam = function (fr, resposta, itens) {
+    var out = [];
+    if (!ehObjetoPlano(fr) || ehObjetoPlano(fr.alternativas)) return out;
+    if (!ehObjetoPlano(resposta) || !ehObjetoPlano(resposta.alternativas)) return out;
+    var cruAlt = resposta.alternativas;
+    var cruPrecos = ehObjetoPlano(resposta.precos) ? resposta.precos : {};
+    var locais = ehObjetoPlano(fr.precos) ? fr.precos : {};
+    (Array.isArray(itens) ? itens : []).forEach(function (it, i) {
+      var id = it && txt(it.id);
+      if (!id || chavePerigosa(id) || !temProp(cruAlt, id)) return;
+      var t = txt(cruAlt[id], TETO.alternativa);
+      if (!t) return;
+      if (temProp(locais, i) && num(locais[i]) > 0) return;
+      out.push({ i: i, t: t, p: temProp(cruPrecos, id) ? num(cruPrecos[id]) : 0 });
+    });
+    return out;
+  };
+
   /* aplica UMA resposta do servidor na coluna do fornecedor (por cid).
      ⚠ PURA: devolve uma cópia; `cot` não muda. Quem chama decide se salva —
      e nunca salva se a cotação já foi concluída (os pedidos já saíram). */
@@ -649,7 +674,27 @@
     var novaEm = Date.parse(resposta.respondidoEm);
     if (!isFinite(novaEm)) return recusa("já aplicada");
     var antigaEm = Date.parse(forns[f].respondidoEm);
-    if (isFinite(antigaEm) && novaEm <= antigaEm) return recusa("já aplicada");
+    if (isFinite(antigaEm) && novaEm < antigaEm) return recusa("já aplicada");
+    if (isFinite(antigaEm) && novaEm === antigaEm) {
+      /* ⚠ A MESMA RESPOSTA, PUXADA ANTES POR UM APP QUE NÃO CONHECIA
+         ALTERNATIVA (02/10/2026). O servidor entrega ao app antigo o item da
+         alternativa como NÃO COTADO (trava do cotacao-srv) e ele grava o
+         `respondidoEm`. Quando a instalação atualiza, o pull traz a mesma
+         resposta, agora com a alternativa, e a data igual recusava "já
+         aplicada": a oferta do fornecedor sumia para sempre, sem aviso, e
+         só voltava se ele respondesse de novo. Aqui só se COMPLETA o que
+         falta; o resto da coluna (que o engenheiro pode ter mexido depois)
+         não é tocado. */
+      var falta = Cotacoes._alternativasQueFaltam(forns[f], resposta, cot.itens);
+      if (!falta.length) return recusa("já aplicada");
+      var novoC = clonar(cot);
+      var frC = novoC.fornecedores[f];
+      if (!ehObjetoPlano(frC.precos)) frC.precos = {};
+      frC.alternativas = {}; frC.alternativasAceitas = {};
+      var nP = 0;
+      falta.forEach(function (x) { frC.alternativas[x.i] = x.t; if (x.p > 0) { frC.precos[x.i] = x.p; nP++; } });
+      return { aplicado: true, motivo: "", cot: novoC, ignorados: 0, aplicados: nP, substituidos: 0, completadas: falta.length };
+    }
 
     var novo = clonar(cot);
     var fr = novo.fornecedores[f];
@@ -744,10 +789,10 @@
     if (!cot || typeof cot !== "object" || !ehObjetoPlano(estado)) return 0;
     var on = ehObjetoPlano(estado.online) ? estado.online : estado;
     var convites = Array.isArray(on.convites) ? on.convites : [];
-    var locais = {};
+    var locais = {}, colunas = {};
     (Array.isArray(cot.fornecedores) ? cot.fornecedores : []).forEach(function (fr) {
       var cid = fr && txt(fr.cid);
-      if (cid && !chavePerigosa(cid)) locais[cid] = Date.parse(fr.respondidoEm);
+      if (cid && !chavePerigosa(cid)) { locais[cid] = Date.parse(fr.respondidoEm); colunas[cid] = fr; }
     });
     var n = 0;
     convites.forEach(function (cv) {
@@ -765,6 +810,9 @@
       if (!isFinite(em)) return;
       var local = locais[cid];
       if (!isFinite(local) || em > local) n++;
+      /* mesma data, mas com alternativa que um app antigo deixou de fora:
+         `aplicarResposta` completa, então o botão precisa contar */
+      else if (em === local && Cotacoes._alternativasQueFaltam(colunas[cid], cv.resposta, cot.itens).length) n++;
     });
     return n;
   };

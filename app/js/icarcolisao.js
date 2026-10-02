@@ -197,7 +197,34 @@
       bloqueia: resumo.some(function (r) { return r.tipo === "choque" || r.tipo === "zona-de-risco" || r.tipo === "zona-controlada"; }) };
   }
 
-  var IcarColisao = { NR10: NR10, zonaNR10: zonaNR10, pontoTri: pontoTri, segSeg: segSeg, segTri: segTri, segCruzaTri: segCruzaTri, obbVertices: obbVertices,
+  /* VISÃO DO OPERADOR (ESPEC §II.14; NR-18 18.10.1.30: sem visão do ponto, sinaleiro obrigatório): o segmento olho → alvo contra
+     os triângulos dos obstáculos. Devolve a PRIMEIRA peça a partir do olho. ⚠ Os últimos `folgaAlvo` m (padrão 0,30) não contam: o
+     alvo encosta na peça vizinha onde a carga assenta (viga sobre o pilar) e isso não é tapar a vista.
+     obstaculos: [{ id, nome, aabb: {min, max}, tris: [x,y,z, …] }] (os mesmos do caminho) */
+  function segTriT(p, q, a, b, c) {
+    var d = sub(q, p), e1 = sub(b, a), e2 = sub(c, a), h = cross(d, e2), det = dot(e1, h);
+    if (Math.abs(det) < 1e-12) return -1;
+    var inv = 1 / det, s = sub(p, a), u = inv * dot(s, h); if (u < 0 || u > 1) return -1;
+    var qq = cross(s, e1), v = inv * dot(d, qq); if (v < 0 || u + v > 1) return -1;
+    var t = inv * dot(e2, qq); return t >= 0 && t <= 1 ? t : -1;
+  }
+  function visada(olho, alvo, obstaculos, opts) {
+    opts = opts || {};
+    var L = len(sub(alvo, olho)), tMax = L > 0 ? Math.max(0, 1 - (opts.folgaAlvo == null ? 0.30 : +opts.folgaAlvo) / L) : 0, melhor = null, n = 0;
+    var mn = [Math.min(olho[0], alvo[0]), Math.min(olho[1], alvo[1]), Math.min(olho[2], alvo[2])], mx = [Math.max(olho[0], alvo[0]), Math.max(olho[1], alvo[1]), Math.max(olho[2], alvo[2])];
+    (obstaculos || []).forEach(function (o) {
+      var a = o.aabb; if (!a || a.min[0] > mx[0] || a.max[0] < mn[0] || a.min[1] > mx[1] || a.max[1] < mn[1] || a.min[2] > mx[2] || a.max[2] < mn[2]) return;
+      n++;
+      var tr = o.tris || [];
+      for (var i = 0; i + 8 < tr.length; i += 9) {
+        var t = segTriT(olho, alvo, [tr[i], tr[i + 1], tr[i + 2]], [tr[i + 3], tr[i + 4], tr[i + 5]], [tr[i + 6], tr[i + 7], tr[i + 8]]);
+        if (t >= 0 && t <= tMax && (!melhor || t < melhor.t)) melhor = { t: t, id: o.id, nome: o.nome || o.id };
+      }
+    });
+    return { livre: !melhor, por: melhor ? { id: melhor.id, nome: melhor.nome } : null, t: melhor ? Math.round(melhor.t * 1000) / 1000 : null,
+      distOlho: melhor ? Math.round(melhor.t * L * 100) / 100 : null, comprimento: Math.round(L * 100) / 100, testados: n };
+  }
+  var IcarColisao = { NR10: NR10, zonaNR10: zonaNR10, visada: visada, pontoTri: pontoTri, segSeg: segSeg, segTri: segTri, segCruzaTri: segCruzaTri, obbVertices: obbVertices,
     pontoObb: pontoObb, obbCruzaTri: obbCruzaTri, obbTri: obbTri, segCruzaObb: segCruzaObb, obbSeg: obbSeg, aabbParte: aabbParte, verificar: verificar };
   global.IcarColisao = IcarColisao;
   if (typeof module !== "undefined" && module.exports) module.exports = IcarColisao;

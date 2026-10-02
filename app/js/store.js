@@ -711,9 +711,37 @@
      `_lerLista` (FORMAS, logo abaixo) e na nuvem (`Store.expandir`). */
   var GUARDAR = { bim_vistas: compactarVistas };
 
+  /* ⚠ O FIRESTORE RECUSA LISTA DENTRO DE LISTA ("Nested arrays are not supported") — e recusa o DOCUMENTO inteiro: a entidade para
+     de sincronizar e a tela só diz "formato recusado". O plano de içamento guarda polígonos como [[x, y], …] (onde não se pode apoiar,
+     limite do terreno/acesso, entorno da planta) e, desde a 1.2.115, um plano com qualquer polígono não subia (achado em 02/10/2026,
+     no aviso de outra sessão sobre bim_vistas/bim_estrut). Conserto na FRONTEIRA da nuvem e só nela: o disco e o código continuam com
+     as listas; ao subir, cada lista que está DENTRO de outra lista vira { "__lista": [...] }; ao descer, volta. Recursivo, reversível,
+     e quem já desceu aberto continua aberto.
+     ⚠ SÓ para as entidades da tabela abaixo. Estender a outra (bim_vistas, bim_estrut…) muda o que um aparelho de versão ANTIGA recebe
+       da nuvem — e ele leria { "__lista" } onde espera lista. O plano de içamento só existe em prévia, por isso pôde entrar sem trava. */
+  var NUVEM_SEM_LISTA_EM_LISTA = { bim_icamento: true };
+  var MARCA_LISTA = "__lista";
+  function desaninhar(v, dentroDeLista) {
+    if (Array.isArray(v)) { var a = v.map(function (x) { return desaninhar(x, true); }); if (!dentroDeLista) return a; var o0 = {}; o0[MARCA_LISTA] = a; return o0; }
+    if (v && typeof v === "object") { var o = {}; for (var k in v) if (Object.prototype.hasOwnProperty.call(v, k)) o[k] = desaninhar(v[k], false); return o; }
+    return v;
+  }
+  function reaninhar(v) {
+    if (Array.isArray(v)) return v.map(reaninhar);
+    if (v && typeof v === "object") {
+      var ks = Object.keys(v);
+      if (ks.length === 1 && ks[0] === MARCA_LISTA && Array.isArray(v[MARCA_LISTA])) return v[MARCA_LISTA].map(reaninhar);
+      var o = {}; ks.forEach(function (k) { o[k] = reaninhar(v[k]); }); return o;
+    }
+    return v;
+  }
+
   var FORMAS = {
     precosinsumos: precosInsumoParaLista,
-    bim_vistas: function (bruto) { return abrirVistas(Util.arr(bruto)); }
+    bim_vistas: function (bruto) { return abrirVistas(Util.arr(bruto)); },
+    /* ⚠ o aparelho de versão ANTIGA guarda no disco o plano como desceu da nuvem (com { "__lista" }); quando ele atualiza, a leitura
+       abre aqui — sem isto, os polígonos chegariam ao motor como objetos. Em dado já aberto não muda nada (ver reaninhar). */
+    bim_icamento: function (bruto) { return reaninhar(Util.arr(bruto)); }
   };
 
   /* =====================================================================
@@ -1462,9 +1490,11 @@
        forma de cada lado pareceria "mudou" a cada snapshot. Entidade fora da
        tabela passa intacta, e o que já está aberto continua aberto. */
     compactar: function (entidade, valor) {
-      return Object.prototype.hasOwnProperty.call(GUARDAR, entidade) ? GUARDAR[entidade](valor) : valor;
+      var g = Object.prototype.hasOwnProperty.call(GUARDAR, entidade) ? GUARDAR[entidade](valor) : valor;
+      return NUVEM_SEM_LISTA_EM_LISTA[entidade] ? desaninhar(g, false) : g;
     },
     expandir: function (entidade, valor) {
+      if (NUVEM_SEM_LISTA_EM_LISTA[entidade]) valor = reaninhar(valor);
       if (entidade === "bim_vistas") return abrirVistas(valor);
       return valor;
     },

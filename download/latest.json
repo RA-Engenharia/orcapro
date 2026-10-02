@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.117",
+  "versao": "1.2.118",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.117.zip",
-  "notas": "Novo: Catalogo do fornecedor - importe o catalogo (PDF, foto ou texto), revise e compre por ele; a requisicao ja sai com o fornecedor do catalogo. Na cotacao online o fornecedor pode anexar o catalogo e, quando nao tem o item pedido, descrever a alternativa (ela so entra na comparacao se voce aceitar). Lembrete para pedir catalogo atualizado a cada 15 dias, por e-mail e no sino.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.117/OrcaPRO-IA-Instalador-v1.2.117.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.118.zip",
+  "notas": "Correcao: na cotacao online, a alternativa do fornecedor que uma versao anterior puxou sem mostrar volta a aparecer no Mapa ao puxar as respostas. O plano de icamento do BIM segue em previa.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.118/OrcaPRO-IA-Instalador-v1.2.118.exe"
 }
