@@ -60,7 +60,12 @@
         /* os atrasos do cronograma das obras (planejador, 1C): do CACHE —
            montar o painel de cada obra custa ~27 ms e o badge é pedido a
            cada render (ver `_crono`) */
-        crono: self._cronoGrupos(eid)
+        crono: self._cronoGrupos(eid),
+        /* catálogos de fornecedor a pedir atualização (js/catalogoforn.js).
+           Fornecedor não é por obra: lê o Store direto, sem o funil da obra. */
+        catalogos: (self._pode("fornecedores") && typeof CatalogoForn !== "undefined")
+          ? (function () { try { return CatalogoForn.lembretesDevidos(Store.listar(eid, "fornecedores") || [], self._hojeISO()); } catch (eC) { return []; } })()
+          : []
       };
     },
 
@@ -232,6 +237,14 @@
           AvisosUI._cronoAtualizarBadge();
           return;
         }
+        /* WhatsApp do catálogo: síncrono dentro do clique (o window.open fora
+           do clique é bloqueado como pop-up) */
+        var cp = e.target.closest("[data-cat-pedir]");
+        if (cp) {
+          e.stopPropagation();
+          if (typeof Gestao !== "undefined" && Gestao.catalogoPedirAtualizacao) Gestao.catalogoPedirAtualizacao(cp.getAttribute("data-cat-pedir"));
+          return;
+        }
         var cr = e.target.closest("[data-crono-aviso]");
         if (cr && typeof App !== "undefined") {
           var ac = null;
@@ -268,6 +281,13 @@
               (it.detalhe ? "<small>" + Util.esc(it.detalhe) + "</small>" : "") +
               '<button type="button" class="avisos-dispensar" data-crono-dispensar="' + Util.esc(JSON.stringify(chs)) + '" data-crono-niveis="' + Util.esc(JSON.stringify(nvs)) +
               '" title="Some por 7 dias neste aparelho; volta antes se piorar 2 dias úteis">Dispensar por 7 dias</button></div>';
+            return;
+          }
+          /* catálogo do fornecedor: o botão abre a conversa com a mensagem
+             pronta (Gestao.catalogoPedirAtualizacao) — quem envia é a pessoa */
+          if (it.catalogo) {
+            h += '<div class="avisos-item" data-aview="' + Util.esc(it.view) + '"><b>' + Util.esc(it.titulo) + "</b>" + (it.detalhe ? "<small>" + Util.esc(it.detalhe) + "</small>" : "") +
+              '<button type="button" class="avisos-dispensar" data-cat-pedir="' + Util.esc(it.id) + '" title="Abre a conversa do fornecedor com a mensagem pronta — você aperta Enviar">WhatsApp</button></div>';
             return;
           }
           h += '<div class="avisos-item" data-aview="' + Util.esc(it.view) + '"><b>' + Util.esc(it.titulo) + "</b>" + (it.detalhe ? "<small>" + Util.esc(it.detalhe) + "</small>" : "") + "</div>";

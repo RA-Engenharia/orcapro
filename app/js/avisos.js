@@ -254,6 +254,20 @@
         (gr.prioridade === 1 ? cronoP1 : cronoP2).push(gr);
       });
 
+      /* CATÁLOGO DO FORNECEDOR (02/10/2026): quem passou do prazo de receber o
+         pedido de catálogo atualizado. A conta de "devido" é do
+         js/catalogoforn.js (`lembretesDevidos`) e chega pronta em
+         `dados.catalogos`; aqui só o grupo. Só entra quem tem WhatsApp como
+         canal — é o único que pede um clique de quem lê (o e-mail o servidor
+         manda sozinho, e aviso sem ação é ruído). Prioridade 3: é rotina. */
+      var itCat = [];
+      (dados.catalogos || []).forEach(function (c) {
+        if (!c || c.id == null || !c.whatsapp) return;
+        itCat.push({ id: c.id, titulo: "Catálogo de " + String(c.nome || "fornecedor") + ": pedir atualização",
+          detalhe: (+c.passados || 0) + " dias sem catálogo novo" + (c.email ? " · o e-mail sai sozinho" : "") + " · WhatsApp: 1 clique",
+          view: "fornecedores", prioridade: 3, catalogo: true });
+      });
+
       // monta grupos (vazios ficam FORA), já em ordem de prioridade
       var grupos = [];
       if (itCompAtr.length) grupos.push({ tipo: "compra-atrasada", rotulo: "Compras atrasadas", prioridade: 1, itens: itCompAtr });
@@ -269,6 +283,7 @@
       cronoP2.forEach(function (g) { grupos.push(g); });
       if (itCompPar.length) grupos.push({ tipo: "compra-parada", rotulo: "Pedidos parados", prioridade: 3, itens: itCompPar });
       if (itCon.length) grupos.push({ tipo: "contrato-vencendo", rotulo: "Contratos vencendo", prioridade: 3, itens: itCon });
+      if (itCat.length) grupos.push({ tipo: "catalogo-atualizar", rotulo: "Catálogos de fornecedor", prioridade: 3, itens: itCat });
       var total = 0;
       grupos.forEach(function (g) { total += g.itens.length; });
       return { total: total, grupos: grupos };

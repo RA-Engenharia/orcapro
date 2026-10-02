@@ -77,10 +77,23 @@
     /* preço unitário válido do fornecedor f para o item i (null = não cotou) */
     preco: function (cot, i, f) {
       var fr = (cot.fornecedores || [])[f]; if (!fr || !fr.precos) return null;
+      /* ⚠ ALTERNATIVA DO FORNECEDOR (02/10/2026): o preço de um item que ele
+         NÃO tem na especificação pedida (ofereceu outro — "temos, mas o
+         tratamento é outro") não entra na comparação até o engenheiro ACEITAR
+         a alternativa no Mapa. Sem isto a oferta fora da especificação venceria
+         calada pelo menor preço e viraria pedido de compra. */
+      if (this.alternativa(cot, i, f) && !(fr.alternativasAceitas && fr.alternativasAceitas[i] === true)) return null;
       var p = fr.precos[i];
       if (p == null || p === "") return null;
       p = num(p);
       return p > 0 ? p : null;
+    },
+
+    /* o texto da alternativa que o fornecedor ofereceu no item i (null = não ofereceu) */
+    alternativa: function (cot, i, f) {
+      var fr = (cot.fornecedores || [])[f];
+      var t = fr && fr.alternativas && fr.alternativas[i];
+      return (typeof t === "string" && t.trim()) ? t.trim() : null;
     },
 
     /* totais por fornecedor: subtotal só dos itens cotados, frete, total e completude */
@@ -183,7 +196,12 @@
         var fr = cot.fornecedores[fIdx] || {};
         var its = grupos[fIdx].map(function (g) {
           var sub = r2(num(g.item.quantidade) * g.preco);
-          return { codigo: g.item.codigo || "", descricao: g.item.descricao, unidade: g.item.unidade, quantidade: num(g.item.quantidade), valorUnit: g.preco, precoRef: g.preco, itemIdx: g.itemIdx, subtotal: sub };
+          /* alternativa ACEITA que venceu: o pedido diz o que de fato se compra
+             (a descrição pedida + o que o fornecedor ofereceu no lugar) */
+          var alt = self.alternativa(cot, g.itemIdx, +fIdx);
+          var o = { codigo: g.item.codigo || "", descricao: alt ? (g.item.descricao + " — ALTERNATIVA DO FORNECEDOR: " + alt) : g.item.descricao, unidade: g.item.unidade, quantidade: num(g.item.quantidade), valorUnit: g.preco, precoRef: g.preco, itemIdx: g.itemIdx, subtotal: sub };
+          if (alt) o.alternativa = alt;
+          return o;
         });
         var soma = r2(its.reduce(function (s, x) { return s + x.subtotal; }, 0));
         return { fornecedorIdx: +fIdx, fornecedorId: fr.fornecedorId || null, fornecedorNome: fr.nome || "", condPgto: fr.condPgto || "", prazoDias: fr.prazoDias != null ? num(fr.prazoDias) : null, itens: its, frete: r2(num(fr.frete)), total: r2(soma + num(fr.frete)) };
@@ -362,7 +380,7 @@
 
   var TETO = { numero: 40, data: 10, descricao: 200, obra: 120, empresa: 120,
                itemCodigo: 40, itemDescricao: 200, itemUnidade: 10,
-               nome: 80, condPgto: 120, cru: 40 };
+               nome: 80, condPgto: 120, cru: 40, alternativa: 300 };
   var MAX_ITENS = 200, MAX_FORN = 10;
 
   /* string segura: só string/number viram texto; objeto/array/null viram ""
@@ -556,7 +574,24 @@
          frase manda o fornecedor procurar um branco que não existe. Com o mapa
          ilegível a frase também não sai (`precosIlegiveis`): ali o sistema nem
          conseguiu ler o envio, e já disse isso. */
-      if (!validos && !precosIlegiveis && !recusados) erros.push("Informe ao menos um preço.");
+      /* ALTERNATIVA POR ITEM (02/10/2026): "não tenho este item na
+         especificação pedida; ofereço isto" — texto curto, só em item
+         conhecido. O preço do item (se vier) passa a ser o da alternativa, e
+         o app não o compara até o engenheiro aceitar (ver `preco`). Texto
+         vazio ou não-texto é ignorado; item desconhecido é recusado como no
+         preço (a régua é a mesma). */
+      var alternativas = {}, nAlt = 0;
+      if (ehObjetoPlano(corpo.alternativas)) {
+        Object.keys(corpo.alternativas).forEach(function (id) {
+          var t = corpo.alternativas[id];
+          if (typeof t !== "string" || !t.trim()) return;
+          if (chavePerigosa(id) || !temProp(porId, id)) { erros.push("Item desconhecido: \"" + txt(id, TETO.cru) + "\"."); recusados++; return; }
+          alternativas[id] = txt(t, TETO.alternativa);
+          nAlt++;
+        });
+      }
+      /* quem só descreveu o que tem (sem preço) também respondeu */
+      if (!validos && !nAlt && !precosIlegiveis && !recusados) erros.push("Informe ao menos um preço.");
 
       var frete = 0;
       if (corpo.frete != null && !(typeof corpo.frete === "string" && !corpo.frete.trim())) {
@@ -578,6 +613,7 @@
         precos: precos,
         precosCru: precosCru
       };
+      if (nAlt) resposta.alternativas = alternativas;
       return { ok: erros.length === 0, erros: erros, resposta: erros.length ? null : resposta };
     } catch (e) {
       /* qualquer coisa que escapou das guardas acima: recusa dizendo, sem 500 */
@@ -654,6 +690,23 @@
       if (!temProp(precos, i)) substituidos++;
     });
     fr.precos = precos;
+    /* ALTERNATIVAS (02/10/2026): reconstruídas da resposta, por id → índice
+       atual, como os preços. O "aceitar" do engenheiro só sobrevive se o
+       texto da alternativa NÃO mudou — oferta nova pede olhar de novo. */
+    var cruAlt = ehObjetoPlano(resposta.alternativas) ? resposta.alternativas : {};
+    var altAnt = ehObjetoPlano(forns[f].alternativas) ? forns[f].alternativas : {};
+    var aceAnt = ehObjetoPlano(forns[f].alternativasAceitas) ? forns[f].alternativasAceitas : {};
+    var alts = {}, aceitas = {}, nAlts = 0;
+    itens.forEach(function (it, i) {
+      var id = it && txt(it.id);
+      if (!id || chavePerigosa(id) || !temProp(cruAlt, id)) return;
+      var t = txt(cruAlt[id], TETO.alternativa);
+      if (!t) return;
+      alts[i] = t; nAlts++;
+      if (aceAnt[i] === true && altAnt[i] === t) aceitas[i] = true;
+    });
+    if (nAlts) { fr.alternativas = alts; fr.alternativasAceitas = aceitas; }
+    else { delete fr.alternativas; delete fr.alternativasAceitas; }
     var frete = num(resposta.frete);
     fr.frete = frete >= 0 ? r2(frete) : 0;
     fr.prazoDias = (resposta.prazoDias == null || resposta.prazoDias === "") ? null : Math.max(0, Math.round(num(resposta.prazoDias)));

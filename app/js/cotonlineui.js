@@ -585,7 +585,11 @@
     return fetch(base + rota, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-licenca": (chave || _chave()) },
-      body: JSON.stringify(corpo || {})
+      /* ⚠ ESTE APP ENTENDE "ALTERNATIVA POR ITEM" (02/10/2026): sem a
+         declaração o servidor esconde o preço de alternativa — é a trava que
+         impede um app antigo de comprar o item errado (cotacao-srv.js,
+         `semAlternativas`). */
+      body: JSON.stringify((function (c) { c = c || {}; if (!c.recursos) c.recursos = ["alternativas"]; return c; })(corpo))
     }).then(function (r) {
       return r.json().then(function (j) { return { s: r.status, j: j || {} }; }, function () { return { s: r.status, j: {} }; });
     }, function (e) {
@@ -1939,7 +1943,10 @@
       links.push(link);
       var cad = _fornecedorCadastro(cot, cv.cid);
       var fone = cad ? _foneIntl(cad.whatsapp || cad.telefone) : "";
-      var msg = "Olá " + (cv.nome || "") + "! A " + (empresa || "empresa") + " pede sua cotação para " + assunto + ". Preencha seus preços neste link (válido até " + ate + "): " + link;
+      /* catálogo do fornecedor (02/10/2026): a mesma página aceita o catálogo
+         da empresa (server/catalogo-srv.js) — a mensagem já pede */
+      var msg = "Olá " + (cv.nome || "") + "! A " + (empresa || "empresa") + " pede sua cotação para " + assunto + ". Preencha seus preços neste link (válido até " + ate + "): " + link +
+        " — se puder, anexe também o catálogo da sua empresa (PDF, foto ou link) no mesmo link.";
       var wa = fone ? ("https://wa.me/" + fone + "?text=" + encodeURIComponent(msg)) : "";
       var qr = (typeof QR !== "undefined" && QR.svg) ? QR.svg(link, { tamanhoPx: 140 }) : "";
       html += '<div class="card" style="padding:10px 12px;margin-bottom:8px;display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">' +

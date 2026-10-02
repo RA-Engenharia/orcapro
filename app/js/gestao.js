@@ -23333,9 +23333,16 @@
       var fs = lista("fornecedores");
       var html = this._head(svg("fornecedores") + "Fornecedores", "novo-fornecedor", "Novo fornecedor");
       if (!fs.length) return html + vazioBox("Nenhum fornecedor cadastrado", "novo-fornecedor", "Cadastrar primeiro fornecedor");
-      html += '<table class="tbl"><thead><tr><th>Nome</th><th>Categoria</th><th>CNPJ/CPF</th><th>Telefone</th><th>Cidade</th><th>Status</th></tr></thead><tbody>';
+      /* CATÁLOGO DO FORNECEDOR (02/10/2026): quantos itens do catálogo dele
+         estão no banco próprio, e a porta para importar/atualizar. O botão
+         mora dentro da linha clicável — o despachante pega o elemento mais
+         próximo, então o clique nele não abre o cadastro. */
+      var nCat = this._catContagem();
+      html += '<table class="tbl"><thead><tr><th>Nome</th><th>Categoria</th><th>CNPJ/CPF</th><th>Telefone</th><th>Cidade</th><th>Status</th><th>Catálogo</th></tr></thead><tbody>';
       fs.forEach(function (f) {
-        html += '<tr class="lin" style="cursor:pointer" data-gopen="fornecedores:' + f.id + '"><td><b>' + Util.esc(f.nome) + "</b></td><td>" + rot(P.fornCategoria, f.categoria) + "</td><td>" + Util.esc(f.doc || "—") + "</td><td>" + Util.esc(f.telefone || "—") + "</td><td>" + Util.esc(f.cidade || "—") + (f.uf ? "/" + Util.esc(f.uf) : "") + "</td><td>" + pill(f.status) + "</td></tr>";
+        var nc = nCat[f.id] || 0;
+        html += '<tr class="lin" style="cursor:pointer" data-gopen="fornecedores:' + f.id + '"><td><b>' + Util.esc(f.nome) + "</b></td><td>" + rot(P.fornCategoria, f.categoria) + "</td><td>" + Util.esc(f.doc || "—") + "</td><td>" + Util.esc(f.telefone || "—") + "</td><td>" + Util.esc(f.cidade || "—") + (f.uf ? "/" + Util.esc(f.uf) : "") + "</td><td>" + pill(f.status) + "</td>" +
+          '<td><button class="btn sm" data-gacao="cat-forn" data-id="' + Util.esc(f.id) + '" title="Ver, importar ou atualizar o catálogo deste fornecedor">' + (nc ? nc + " ite" + (nc > 1 ? "ns" : "m") : "Importar") + "</button></td></tr>";
       });
       return html + "</tbody></table>";
     },
@@ -23354,8 +23361,11 @@
         '<div class="row">' + campo("Chave PIX", inp("g-pix", f.chavePix, "CNPJ, telefone, e-mail ou aleatória")) + campo("Titular da conta", inp("g-titular", f.titular, "quem recebe, se for diferente do nome")) + campo("CPF/CNPJ do titular", inp("g-titdoc", f.titularDoc)) + "</div>" +
         '<div class="row">' + campo("Banco", inp("g-banco", f.banco, "Ex.: 341 Itaú")) + campo("Agência", inp("g-ag", f.agencia)) + campo("Conta", inp("g-conta", f.conta)) + campo("Tipo", sel("g-tipoconta", opts([["", "—"], ["corrente", "Corrente"], ["poupanca", "Poupança"], ["pagamento", "Pagamento"]], f.tipoConta || ""))) + "</div>" +
         campo("Produtos / serviços fornecidos", '<textarea id="g-prod" rows="2">' + Util.esc(f.produtos || "") + "</textarea>") +
-        campo("Observações", '<textarea id="g-obs" rows="2">' + Util.esc(f.obs || "") + "</textarea>");
+        campo("Observações", '<textarea id="g-obs" rows="2">' + Util.esc(f.obs || "") + "</textarea>") +
+        this._catCamposLembrete(f);
+      var selfF = this;
       this._modalForm("fornecedores", f, "Fornecedor", corpo, function (obj) {
+        selfF._catColetarLembrete(obj, f);
         obj.nome = v("g-nome"); if (!obj.nome) { UI.toast("Informe o nome do fornecedor.", "erro"); return false; }
         obj.categoria = v("g-cat"); obj.tipo = v("g-tipo"); obj.doc = v("g-doc"); obj.ie = v("g-ie");
         obj.telefone = v("g-tel"); obj.whatsapp = v("g-zap"); obj.email = v("g-email"); obj.contato = v("g-contato"); obj.endereco = v("g-end");
@@ -23363,7 +23373,416 @@
         obj.chavePix = v("g-pix"); obj.titular = v("g-titular"); obj.titularDoc = v("g-titdoc");
         obj.banco = v("g-banco"); obj.agencia = v("g-ag"); obj.conta = v("g-conta"); obj.tipoConta = v("g-tipoconta");
         return true;
+      }, function () { selfF._catSincronizarAgenda(); });
+    },
+
+    // =================== CATÁLOGO DO FORNECEDOR (motor: js/catalogoforn.js) ===================
+    /* Pedido de 02/10/2026 (ESPEC-CATALOGO-FORNECEDOR.md). O catálogo de um
+       fornecedor vira insumo PRÓPRIO com preço, data e `fornecedorRef` = o
+       cadastro dele, pelo ID: a requisição acha o item, a cotação sugere o
+       fornecedor e o pedido sai para ele. Aqui só a tela; a regra é do motor.
+       ⚠ NADA ENTRA NO BANCO SEM A REVISÃO DA PESSOA. Leitura de imagem erra
+       dígito (aconteceu na 1ª carga feita à mão); o motor aponta, quem decide
+       é quem confere com o catálogo na mão. */
+    _CAT_IA_DIA: 30,
+    _catBase: function () {
+      try {
+        var b = (Store.lerBasesExtras(eid()) || []).filter(function (x) { return String(x.fonte).toUpperCase() === "PROPRIA"; })[0];
+        return (b && b.dados) || [];
+      } catch (e) { return []; }
+    },
+    _catItens: function (fornecedorId, base) {
+      return Util.arr(base || this._catBase()).filter(function (d) {
+        return d && d.fornecedorRef && String(d.fornecedorRef.id) === String(fornecedorId) && String(d.tipoItem || "insumo") === "insumo";
       });
+    },
+    _catContagem: function () {
+      var m = {};
+      this._catBase().forEach(function (d) {
+        var id = d && d.fornecedorRef && d.fornecedorRef.id;
+        if (id && !d.foraDoCatalogoDesde && String(d.tipoItem || "insumo") === "insumo") m[id] = (m[id] || 0) + 1;
+      });
+      return m;
+    },
+    /* o parâmetro do lembrete no formulário do fornecedor (decisão do gestor:
+       a cada 15 dias, por e-mail e/ou WhatsApp; o fornecedor pode parar) */
+    _catCamposLembrete: function (f) {
+      var cat = (f && f.catalogo) || {}, l = cat.lembrete || null;
+      var dias = l ? l.dias : (typeof CatalogoForn !== "undefined" ? CatalogoForn.LEMBRETE_DIAS_PADRAO : 15);
+      var simNao = function (id, valor) { return sel(id, opts([["sim", "Sim"], ["nao", "Não"]], valor ? "sim" : "nao")); };
+      return '<h4 style="margin:14px 0 6px;font-size:13px;border-top:1px solid var(--borda);padding-top:10px">Catálogo e lembrete de atualização</h4>' +
+        '<div class="row">' + campo("Pedir catálogo atualizado", simNao("g-catlem", !!(l && l.ativo))) + campo("A cada (dias)", inp("g-catdias", dias, "7 a 90", "number")) +
+        campo("Por e-mail", simNao("g-catmail", !l || l.email !== false)) + campo("Por WhatsApp", simNao("g-catzap", !l || l.whatsapp !== false)) + "</div>" +
+        (cat.parado ? '<p style="font-size:12px;color:#b45309;margin:2px 0 0">O fornecedor pediu para parar os lembretes' + (cat.paradoEm ? " em " + Util.esc(Util.fmtDia(cat.paradoEm)) : "") + ". Eles só voltam se ele pedir.</p>" : "") +
+        '<p class="muted" style="font-size:12px;margin:4px 0 0">E-mail: o servidor da RA manda sozinho no dia. WhatsApp: no dia, o lembrete aparece no sino com a mensagem pronta — um clique abre a conversa e você aperta Enviar (o WhatsApp não deixa sistema enviar sem um canal conectado).</p>';
+    },
+    _catColetarLembrete: function (obj, f) {
+      if (!UI.el("g-catlem")) return;          // formulário sem o bloco: não mexe no que outra versão gravou
+      var ant = (f && f.catalogo) || {}, lAnt = ant.lembrete || {};
+      var cat = {}; for (var k in ant) if (Object.prototype.hasOwnProperty.call(ant, k)) cat[k] = ant[k];
+      var ativo = v("g-catlem") === "sim";
+      cat.lembrete = { ativo: ativo, dias: (typeof CatalogoForn !== "undefined" ? CatalogoForn.diasLembrete(v("g-catdias")) : 15),
+        email: v("g-catmail") === "sim", whatsapp: v("g-catzap") === "sim",
+        /* ligou agora: conta a partir de hoje (senão o 1º lembrete sairia na hora) */
+        desde: (ativo && lAnt.ativo && lAnt.desde) ? lAnt.desde : hojeLocal() };
+      obj.catalogo = cat;
+    },
+
+    catalogoFornecedor: function (id) {
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("fornecedores")) { UI.toast("Você não tem acesso a Fornecedores.", "erro"); return; }
+      if (typeof CatalogoForn === "undefined") { UI.toast("O motor do catálogo (js/catalogoforn.js) não carregou — recarregue a página.", "erro"); return; }
+      var self = this, f = Store.obter(eid(), "fornecedores", id);
+      if (!f) { UI.toast("Fornecedor não encontrado.", "erro"); return; }
+      var itens = this._catItens(id).slice().sort(function (a, b) { return String(a.codigo).localeCompare(String(b.codigo)); });
+      var cat = f.catalogo || {}, l = cat.lembrete || null;
+      var vivos = itens.filter(function (d) { return !d.foraDoCatalogoDesde; }).length;
+      var fone = String(f.whatsapp || f.telefone || "").replace(/\D/g, "");
+      var resumo = '<p style="margin:0 0 8px;font-size:13px"><b>' + vivos + "</b> item(ns) do catálogo no banco próprio" +
+        (itens.length > vivos ? " · " + (itens.length - vivos) + " fora do catálogo" : "") +
+        (cat.ultimaVersaoEm ? " · última versão em <b>" + Util.esc(Util.fmtDia(cat.ultimaVersaoEm)) + "</b>" : "") +
+        " · lembrete: " + (l && l.ativo && !cat.parado ? "a cada " + l.dias + " dias" + (l.email ? " por e-mail" : "") + (l.email && l.whatsapp ? " e" : "") + (l.whatsapp ? " por WhatsApp" : "") : (cat.parado ? "parado a pedido do fornecedor" : "desligado (ligue no cadastro)")) + "</p>";
+      var tabela = itens.length
+        ? '<div style="max-height:34vh;overflow:auto;margin-bottom:10px"><table class="tbl" style="font-size:12.5px"><thead><tr><th>Código</th><th>Descrição</th><th>Und</th><th class="num">Preço</th><th>Data</th></tr></thead><tbody>' +
+          itens.map(function (d) {
+            return "<tr" + (d.foraDoCatalogoDesde ? ' style="opacity:.55" title="saiu do catálogo em ' + Util.esc(Util.fmtDia(d.foraDoCatalogoDesde)) + '"' : "") + "><td><b>" + Util.esc(d.codigo) + "</b></td><td>" + Util.esc(d.descricao) +
+              (d.foraDoCatalogoDesde ? ' <span class="muted">(fora do catálogo)</span>' : "") + "</td><td>" + Util.esc(Util.unidadeExibir(d.unidade)) + '</td><td class="num">' + Util.fmtMoeda(Util.num(d.custoUnitario)) +
+              "</td><td>" + Util.esc(d.precoData ? Util.fmtDia(d.precoData) : "—") + "</td></tr>";
+          }).join("") + "</tbody></table></div>"
+        : '<div class="muted" style="font-size:12.5px;margin-bottom:10px">Nenhum item do catálogo deste fornecedor no banco ainda. Importe abaixo.</div>';
+      var corpo = resumo + tabela +
+        /* o que o FORNECEDOR mandou pelo link (cotação ou link de catálogo) —
+           preenchido depois de abrir, pelo servidor (server/catalogo-srv.js) */
+        '<div id="cat-recebidos" class="muted" style="font-size:12.5px;margin-bottom:10px">Conferindo se o fornecedor mandou catálogo pelo link…</div>' +
+        '<div style="padding:10px 12px;border-radius:9px;box-shadow:inset 0 0 0 1px var(--linha)">' +
+        "<b>Importar catálogo</b>" +
+        '<p class="muted" style="font-size:12px;margin:4px 0 8px">PDF com texto é lido aqui mesmo. Foto, print ou PDF escaneado vão para a leitura por IA (plano Plus, até ' + this._CAT_IA_DIA + " páginas por dia). " +
+        "Catálogo do WhatsApp Business não abre fora do aplicativo: peça o PDF ou tire print dos produtos. <b>Nada entra no banco antes da sua revisão.</b></p>" +
+        '<button type="button" class="btn sm primary" id="cat-arq">' + (typeof Icones !== "undefined" ? Icones.get("importar", 15) : "") + " Escolher arquivos (PDF, JPG, PNG)</button> " +
+        '<button type="button" class="btn sm" id="cat-colar">Colar texto do catálogo</button>' +
+        '<div id="cat-colar-box" style="display:none;margin-top:8px"><textarea id="cat-texto" rows="6" placeholder="Cole aqui o texto do catálogo — uma linha por produto, com o preço (ex.: CAIBRO 6X12X3,00 R$ 50,76 UN)"></textarea>' +
+        '<button type="button" class="btn sm" id="cat-texto-ler" style="margin-top:6px">Ler o texto</button></div>' +
+        '<div class="field" style="margin-top:8px"><label>Link do catálogo (fica guardado como referência)</label><input id="cat-link" value="' + Util.esc(cat.link || "") + '" placeholder="https://…"></div></div>';
+      var botoes = [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }];
+      botoes.push({ texto: "Salvar link", classe: "", onClick: function () {
+        var fv = Store.obter(eid(), "fornecedores", id); if (!fv) return;
+        fv.catalogo = fv.catalogo || {}; fv.catalogo.link = v("cat-link");
+        if (self._naoGravou(Store.salvar(eid(), "fornecedores", fv))) { UI.toast("Não consegui gravar o link.", "erro"); return; }
+        UI.toast("Link do catálogo guardado.", "ok");
+      } });
+      if (fone.length >= 10) botoes.push({ texto: (typeof Icones !== "undefined" ? Icones.get("celular", 15) : "") + " Pedir catálogo atualizado", classe: "", onClick: function () { self.catalogoPedirAtualizacao(id); } });
+      UI.modal("Catálogo — " + Util.esc(f.nome || ""), corpo, botoes);
+      var bArq = UI.el("cat-arq");
+      if (bArq) bArq.onclick = function () {
+        var inp = document.createElement("input");
+        inp.type = "file"; inp.multiple = true; inp.accept = ".pdf,image/png,image/jpeg,image/webp"; inp.style.display = "none";
+        inp.onchange = function () { self._catLerArquivos(f, inp.files); };
+        document.body.appendChild(inp); inp.click(); setTimeout(function () { try { inp.remove(); } catch (eR) {} }, 60000);
+      };
+      var bCol = UI.el("cat-colar");
+      if (bCol) bCol.onclick = function () { var bx = UI.el("cat-colar-box"); if (bx) bx.style.display = bx.style.display === "none" ? "block" : "none"; };
+      var bLer = UI.el("cat-texto-ler");
+      if (bLer) bLer.onclick = function () {
+        var r = CatalogoForn.extrairDeTexto(v("cat-texto"));
+        if (!r.itens.length) { UI.toast("Não achei linha com preço no texto. Cada produto precisa do preço na mesma linha (ou na linha logo abaixo).", "erro", 9000); return; }
+        self._catRevisar(f, r.itens, "texto colado");
+      };
+      this._catMostrarRecebidos(f);
+    },
+
+    /* ---- servidor do catálogo (server/catalogo-srv.js) ----
+       ⚠ O TOKEN DO LINK DE CATÁLOGO NUNCA É GRAVADO AQUI (mesma regra da
+       cotação online): o registro sincroniza pela nuvem e vai nos backups.
+       Quando precisa do link, pede ao servidor. */
+    _catSrv: function (acao, corpo) {
+      var base = this._urlLoja ? String(this._urlLoja() || "").replace(/\/$/, "") : "";
+      var chave = (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "";
+      if (!base || !chave || typeof fetch !== "function") return Promise.reject(new Error("sem servidor ou licença"));
+      return fetch(base + "/api/catalogo/" + acao, { method: "POST", headers: { "Content-Type": "application/json", "x-licenca": chave }, body: JSON.stringify(corpo || {}) })
+        .then(function (r) { return r.json().then(function (j) { return { s: r.status, j: j || {} }; }, function () { return { s: r.status, j: {} }; }); });
+    },
+    /* recebidos deste fornecedor: pelo link de catálogo (chave = id do
+       cadastro) ou pela cotação (cotação + convite → fornecedorId do Mapa).
+       ⚠ LIGA SÓ POR ID — nunca pelo nome que o fornecedor digitou na página. */
+    _catRecebidosDo: function (fid, recebidos) {
+      var porCot = {};
+      try { (Store.listar(eid(), "cotacoes") || []).forEach(function (c) { if (c && c.id) porCot[c.id] = c; }); } catch (eC) {}
+      return Util.arr(recebidos).filter(function (r) {
+        if (!r) return false;
+        if (r.chave && String(r.chave) === String(fid)) return true;
+        var cot = r.cotacao && r.cotacao.id ? porCot[r.cotacao.id] : null;
+        if (!cot) return false;
+        var fr = Util.arr(cot.fornecedores).filter(function (x) { return x && x.cid === r.cotacao.cid; })[0];
+        return !!(fr && String(fr.fornecedorId || "") === String(fid));
+      });
+    },
+    /* a vontade do fornecedor sobre o lembrete: o "Parar" do link de catálogo
+       (servidor) ou a caixa da página da cotação — vale a MAIS RECENTE */
+    _catParadoPeloFornecedor: function (fid, parados, recebidosDele) {
+      var ultimo = null;
+      Util.arr(parados).forEach(function (p) { if (p && String(p.chave) === String(fid)) ultimo = { em: p.paradoEm || "", parado: true }; });
+      Util.arr(recebidosDele).forEach(function (r) {
+        if (!r || typeof r.lembrete !== "boolean") return;
+        if (!ultimo || String(r.recebidoEm || "") > String(ultimo.em || "")) ultimo = { em: r.recebidoEm || "", parado: r.lembrete === false };
+      });
+      return ultimo;
+    },
+    _catMostrarRecebidos: function (f) {
+      var self = this, alvo = function () { return UI.el("cat-recebidos"); };
+      this._catSrv("estado", {}).then(function (x) {
+        var el = alvo(); if (!el) return;
+        if (!x.j.ok) { el.textContent = "Não consegui conferir o que o fornecedor mandou pelo link (" + (x.j.erro || "servidor") + ")."; return; }
+        var meus = self._catRecebidosDo(f.id, x.j.recebidos).sort(function (a, b) { return String(b.recebidoEm).localeCompare(String(a.recebidoEm)); });
+        var fv = Store.obter(eid(), "fornecedores", f.id) || f, cat = fv.catalogo || {};
+        var vont = self._catParadoPeloFornecedor(f.id, x.j.parados, meus);
+        if (vont && !!cat.parado !== vont.parado) {
+          var c2 = {}; for (var k in cat) if (Object.prototype.hasOwnProperty.call(cat, k)) c2[k] = cat[k];
+          c2.parado = vont.parado; c2.paradoEm = vont.parado ? (vont.em || Util.agoraISO()).slice(0, 10) : null;
+          fv.catalogo = c2; self._naoGravou(Store.salvar(eid(), "fornecedores", fv)); self._catSincronizarAgenda();
+          cat = c2;
+        }
+        var ag = x.j.agenda && x.j.agenda[f.id];
+        var imp = Util.arr(cat.importados);
+        var linhas = meus.filter(function (r) { return r.arquivo || r.link; }).slice(0, 12).map(function (r) {
+          var ja = imp.indexOf(r.id) >= 0;
+          return "<li style=\"margin:3px 0\">" + Util.esc(Util.fmtDia(r.recebidoEm)) + " · " +
+            (r.arquivo ? "<b>" + Util.esc(r.arquivo.nome) + "</b> " + (ja ? '<span class="muted">(importado)</span> ' : "") +
+              '<button type="button" class="btn sm" data-cat-rec="' + Util.esc(r.id) + '">' + (ja ? "Importar de novo" : "Importar") + "</button>"
+              : 'link: <a href="' + Util.esc(r.link) + '" target="_blank" rel="noopener">' + Util.esc(r.link.slice(0, 70)) + "</a>") +
+            (r.cotacao ? ' <span class="muted">(pela cotação)</span>' : "") + "</li>";
+        });
+        var contato = meus.filter(function (r) { return r.contato && (r.contato.email || r.contato.whatsapp); })[0];
+        el.innerHTML = (linhas.length ? "<b>O fornecedor mandou pelo link:</b><ul style=\"margin:4px 0 0 18px\">" + linhas.join("") + "</ul>" : "O fornecedor ainda não mandou catálogo pelo link.") +
+          (contato ? '<div style="margin-top:4px">Contato que ele deixou: ' + Util.esc([contato.contato.email, contato.contato.whatsapp].filter(Boolean).join(" · ")) + "</div>" : "") +
+          (cat.parado ? '<div style="margin-top:4px;color:#b45309">O fornecedor pediu para não receber lembretes.</div>' : "") +
+          (ag && ag.ultimoEmailEm ? '<div style="margin-top:4px">Último lembrete por e-mail: ' + Util.esc(Util.fmtDia(ag.ultimoEmailEm)) + "</div>" : "") +
+          (ag && ag.erro ? '<div style="margin-top:4px;color:#b91c1c">O último e-mail de lembrete NÃO saiu: ' + Util.esc(ag.erro) + "</div>" : "");
+        Array.prototype.forEach.call(el.querySelectorAll("[data-cat-rec]"), function (b) {
+          b.onclick = function () { self._catImportarRecebido(f, b.getAttribute("data-cat-rec")); };
+        });
+      }, function () {
+        var el = alvo(); if (el) el.textContent = "Sem conexão com o servidor da RA — o que o fornecedor mandou pelo link aparece aqui quando a internet voltar.";
+      });
+    },
+    _catImportarRecebido: function (f, id) {
+      var self = this;
+      UI.toast("Baixando o arquivo do fornecedor…", "ok");
+      this._catSrv("arquivo", { id: id }).then(function (x) {
+        if (!x.j.ok || !x.j.dataUrl) { UI.toast(x.j.erro || "Não consegui baixar o arquivo.", "erro"); return; }
+        var partes = String(x.j.dataUrl).split(","), bin = atob(partes[1] || ""), u8 = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+        var arq;
+        try { arq = new File([u8], x.j.nome || "catalogo", { type: x.j.tipo || "" }); }
+        catch (eF) { arq = new Blob([u8], { type: x.j.tipo || "" }); arq.name = x.j.nome || "catalogo"; }
+        var fv = Store.obter(eid(), "fornecedores", f.id) || f;
+        fv.catalogo = fv.catalogo || {};
+        fv.catalogo.importados = Util.arr(fv.catalogo.importados).concat([id]).slice(-200);
+        self._naoGravou(Store.salvar(eid(), "fornecedores", fv));
+        self._catLerArquivos(fv, [arq]);
+      }, function () { UI.toast("Sem conexão com o servidor da RA.", "erro"); });
+    },
+    /* a agenda do e-mail automático (decisão do gestor, 02/10/2026): quem
+       tem o lembrete ligado com e-mail. O servidor manda sozinho no dia. */
+    _catSincronizarAgenda: function () {
+      if (typeof CatalogoForn === "undefined") return;
+      var empresa = (typeof Empresa !== "undefined" && Empresa.nomeDoc) ? Empresa.nomeDoc() : "";
+      var itens = [];
+      try {
+        (Store.listar(eid(), "fornecedores") || []).forEach(function (f) {
+          var c = f && f.catalogo, l = c && c.lembrete;
+          if (!l) return;
+          var base = [c.ultimaVersaoEm, c.ultimoPedidoEm, l.desde].filter(Boolean).map(function (s) { return String(s).slice(0, 10); }).sort().pop() || hojeLocal();
+          var email = /@/.test(String(f.email || "")) ? String(f.email) : "";
+          itens.push({ chave: f.id, nome: String(f.contato || f.nome || "").split("(")[0].trim(), empresa: empresa, email: l.email ? email : "",
+            dias: CatalogoForn.diasLembrete(l.dias), base: base, ativo: !!(l.ativo && l.email && email && !c.parado) });
+        });
+      } catch (eL) { return; }
+      this._catSrv("agenda", { itens: itens }).then(function (x) {
+        if (!x.j.ok && typeof console !== "undefined") console.warn("[catálogo] agenda do lembrete não sincronizada: " + (x.j.erro || x.s));
+      }, function () {});
+    },
+
+    _catLerArquivos: function (f, files) {
+      var self = this, lista = Array.prototype.slice.call(files || [], 0, 10), acum = [], origens = [], paraIA = [], i = 0;
+      if (!lista.length) return;
+      if (files.length > 10) UI.toast("Leio até 10 arquivos por vez — os outros ficaram de fora.", "aviso", 8000);
+      function proximo() {
+        if (i >= lista.length) { fimLocal(); return; }
+        var file = lista[i++], ext = String(file.name || "").toLowerCase().split(".").pop();
+        if (ext === "pdf") {
+          if (file.size > 10 * 1024 * 1024) { UI.toast(file.name + ": PDF acima de 10 MB.", "erro"); proximo(); return; }
+          UI.toast("Lendo " + file.name + "…", "ok");
+          self._pdfTexto(file, function (texto) {
+            var r = CatalogoForn.extrairDeTexto(texto || "");
+            if (r.itens.length) { acum = acum.concat(r.itens); origens.push(file.name); }
+            else if (String(texto || "").trim().length >= 20) paraIA.push({ tipo: "texto", conteudo: texto, nome: file.name });
+            else UI.toast(file.name + ": PDF sem texto (escaneado) — mande as páginas como foto ou print.", "erro", 9000);
+            proximo();
+          }, { linhas: true });
+        } else if (/^(jpe?g|png|webp)$/.test(ext)) {
+          if (file.size > 3 * 1024 * 1024) { UI.toast(file.name + ": imagem acima de 3 MB — reduza ou tire um print.", "erro"); proximo(); return; }
+          var fr = new FileReader();
+          fr.onload = function () { paraIA.push({ tipo: "imagem", conteudo: fr.result, nome: file.name }); proximo(); };
+          fr.onerror = function () { UI.toast("Não consegui abrir " + file.name + ".", "erro"); proximo(); };
+          fr.readAsDataURL(file);
+        } else { UI.toast(file.name + ": formato não aceito (use PDF, JPG ou PNG).", "erro"); proximo(); }
+      }
+      function fimLocal() {
+        if (!paraIA.length) {
+          if (acum.length) self._catRevisar(f, acum, origens.join(", "));
+          else UI.toast("Não achei itens com preço nos arquivos.", "erro");
+          return;
+        }
+        self._catViaIA(paraIA, function (itensIA, nomesOk) {
+          acum = acum.concat(itensIA); origens = origens.concat(nomesOk);
+          if (acum.length) self._catRevisar(f, acum, origens.join(", "));
+          else UI.toast("A leitura não achou itens com preço. Confira se a imagem está nítida e se o preço aparece nela.", "erro", 9000);
+        });
+      }
+      proximo();
+    },
+
+    /* leitura por IA: o mesmo /ia/documento da nota fiscal, com contexto
+       "catalogo" (o servidor novo usa o leitor de catálogo; o antigo devolve o
+       formato de nota, que o motor também entende). ⚠ CADA PÁGINA É UMA CHAMADA
+       PAGA — plano Plus e teto diário (decisão D2); o servidor confere de novo. */
+    _catViaIA: function (lista, cb) {
+      var self = this;
+      var back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? String(CONFIG.iaBackend).replace(/\/$/, "") : "";
+      var chave = (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "";
+      var st = (typeof Licenca !== "undefined" && Licenca.status) ? (Licenca.status() || {}) : {};
+      if (!chave || !back) { UI.toast("A leitura de foto/print por IA precisa da licença ativa e de internet. PDF com texto é lido sem IA.", "erro", 9000); cb([], []); return; }
+      if (!st.ativo || st.trial || st.tier === "base") {
+        UI.toast("A leitura de catálogo por IA (foto, print, PDF escaneado) é do plano Plus. PDF com texto continua sendo lido aqui.", "erro", 9000);
+        if (self._upsell) self._upsell();
+        cb([], []); return;
+      }
+      if (this._iaOcupada) { UI.toast("Já estou lendo um documento — aguarde o resultado.", "erro"); cb([], []); return; }
+      var hojeK = "orcapro:catalogo:ia:" + hojeLocal(), usados = 0;
+      try { usados = parseInt(localStorage.getItem(hojeK) || "0", 10) || 0; } catch (eU) {}
+      var cabe = Math.max(0, this._CAT_IA_DIA - usados);
+      if (!cabe) { UI.toast("Limite de " + this._CAT_IA_DIA + " páginas por dia na leitura por IA atingido neste aparelho. Continue amanhã ou use PDF com texto.", "erro", 9000); cb([], []); return; }
+      var fila = lista.slice(0, cabe), itens = [], nomes = [], k = 0;
+      if (lista.length > fila.length) UI.toast((lista.length - fila.length) + " arquivo(s) ficaram de fora: passaria do limite de " + this._CAT_IA_DIA + " páginas por dia.", "aviso", 9000);
+      this._iaOcupada = true;
+      function fim() { self._iaOcupada = false; cb(itens, nomes); }
+      function prox() {
+        if (k >= fila.length) { fim(); return; }
+        var a = fila[k++];
+        UI.toast("A IA está lendo " + a.nome + " (" + k + "/" + fila.length + ")…", "ok");
+        fetch(back + "/ia/documento", { method: "POST", headers: { "Content-Type": "application/json", "x-licenca": chave }, body: JSON.stringify({ tipo: a.tipo, conteudo: a.conteudo, contexto: "catalogo" }) })
+          .then(function (r) { return r.json().then(function (j) { return { s: r.status, j: j || {} }; }, function () { return { s: r.status, j: {} }; }); })
+          .then(function (x) {
+            usados++; try { localStorage.setItem(hojeK, String(usados)); } catch (eL) {}
+            if (x.s === 429) { UI.toast(x.j.error || "Limite diário da leitura por IA atingido.", "erro", 9000); fim(); return; }
+            if (!x.j.ok) { UI.toast(a.nome + ": " + (x.j.error || "a IA não conseguiu ler."), "erro", 8000); prox(); return; }
+            var lidos = CatalogoForn.deIA(x.j.dados);
+            if (lidos.length) { itens = itens.concat(lidos); nomes.push(a.nome); }
+            prox();
+          })["catch"](function () { UI.toast("Sem conexão com a IA — " + a.nome + " não foi lido.", "erro"); prox(); });
+      }
+      prox();
+    },
+
+    _catRevisar: function (f, itensLidos, origem) {
+      var self = this, base = this._catBase();
+      var conf = CatalogoForn.conferir(itensLidos);
+      var sg = CatalogoForn.siglasDoBanco(base, f.id);
+      var sigla = (f.catalogo && f.catalogo.sigla) || sg.minha || CatalogoForn.sigla(f.nome, sg.deOutros);
+      var grupos = {}; base.forEach(function (d) { if (d && d.grupo) grupos[String(d.grupo)] = 1; });
+      var grupoPad = (f.catalogo && f.catalogo.grupo) || "MATERIAL";
+      var nAl = conf.filter(function (c) { return c.alertas.length; }).length;
+      var linhas = conf.map(function (c, i) {
+        return "<tr" + (c.alertas.length ? ' style="background:rgba(245,158,11,.12)"' : "") + '><td><input type="checkbox" data-cr-inc="' + i + '"' + (c.pendente ? "" : " checked") + "></td>" +
+          '<td><input data-cr-desc="' + i + '" value="' + Util.esc(c.descricao) + '" style="width:100%;min-width:260px"></td>' +
+          '<td><input data-cr-un="' + i + '" value="' + Util.esc(c.unidade) + '" style="width:58px"></td>' +
+          '<td class="num"><input data-cr-preco="' + i + '" value="' + (c.preco > 0 ? c.preco.toFixed(2).replace(".", ",") : "") + '" style="width:88px;text-align:right"></td>' +
+          '<td style="font-size:11.5px;color:#b45309;max-width:260px">' + c.alertas.map(function (a) { return Util.esc(a); }).join("<br>") + "</td></tr>";
+      }).join("");
+      var corpo = '<p style="margin:0 0 8px;font-size:12.5px">' + conf.length + " item(ns) lido(s) de <b>" + Util.esc(origem) + "</b>" + (nAl ? " · <b style=\"color:#b45309\">" + nAl + " com alerta</b> (linha amarela)" : "") +
+        ". Confira cada preço com o catálogo. Só os marcados vão ao banco; sem preço não entra. Item que já existe deste fornecedor é <b>atualizado</b> (mesmo código); o que sumiu do catálogo fica <b>marcado</b>, nunca apagado.</p>" +
+        '<div class="row">' + campo("Sigla do código (PROP-" + Util.esc(sigla) + "-001)", '<input id="cr-sigla" maxlength="3" value="' + Util.esc(sigla) + '" style="width:80px;text-transform:uppercase">') +
+        campo("Grupo de compra", '<input id="cr-grupo" value="' + Util.esc(grupoPad) + '" list="cr-grupos"><datalist id="cr-grupos">' + Object.keys(grupos).sort().map(function (g) { return '<option value="' + Util.esc(g) + '">'; }).join("") + "</datalist>") + "</div>" +
+        '<div style="max-height:50vh;overflow:auto"><table class="tbl" style="font-size:12.5px"><thead><tr><th></th><th>Descrição</th><th>Und</th><th class="num">Preço (R$)</th><th>Alertas</th></tr></thead><tbody>' + linhas + "</tbody></table></div>";
+      UI.modal("Revisar catálogo — " + Util.esc(f.nome || ""), corpo, [
+        { texto: "Voltar", classe: "ghost", onClick: function () { self.catalogoFornecedor(f.id); } },
+        { texto: "Aplicar ao banco", classe: "primary", onClick: function () { self._catAplicar(f.id, conf, origem); } }
+      ]);
+    },
+
+    _catAplicar: function (fid, conf, origem) {
+      if (this._bloqueado()) return;
+      if (typeof App !== "undefined" && App._trialBloqueado && App._trialBloqueado()) { if (App._avisoTrial) App._avisoTrial(); return; }
+      var self = this, f = Store.obter(eid(), "fornecedores", fid);
+      if (!f) { UI.toast("Fornecedor não encontrado.", "erro"); return; }
+      var sigla = String(v("cr-sigla") || "").toUpperCase();
+      if (!/^[A-Z][A-Z0-9]{2}$/.test(sigla)) { UI.toast("Sigla do código: 3 caracteres, começando por letra (ex.: TMD).", "erro"); return; }
+      var sg = CatalogoForn.siglasDoBanco(this._catBase(), fid);
+      if (sg.deOutros[sigla] && sg.minha !== sigla) {
+        if (!window.confirm("A sigla " + sigla + " já tem itens de OUTRO fornecedor no banco. Os códigos novos vão continuar a numeração sem tocar nos dele — mas a busca por \"" + sigla + "\" vai misturar os dois. Usar mesmo assim?")) return;
+      }
+      var itens = conf.map(function (c, i) {
+        var inc = document.querySelector('[data-cr-inc="' + i + '"]'), d = document.querySelector('[data-cr-desc="' + i + '"]');
+        var u = document.querySelector('[data-cr-un="' + i + '"]'), p = document.querySelector('[data-cr-preco="' + i + '"]');
+        return { incluir: !!(inc && inc.checked), descricao: d ? d.value : c.descricao, unidade: u ? u.value : c.unidade,
+          preco: CatalogoForn.lerPreco(p ? p.value : c.preco), precoM2: c.precoM2 };
+      });
+      var cat = f.catalogo || {}, hoje = hojeLocal(), versao = (Util.num(cat.versao) || 0) + 1;
+      var plano;
+      try {
+        plano = CatalogoForn.planoAplicar({ itens: itens, fornecedor: { id: f.id, nome: f.nome }, base: this._catBase(), sigla: sigla, grupo: v("cr-grupo") || "MATERIAL",
+          data: hoje, versao: versao, autor: (typeof Auth !== "undefined" && Auth.nome) ? Auth.nome() : "", agora: Util.agoraISO(), origem: origem });
+      } catch (eP) { UI.toast("Não consegui montar o plano: " + eP.message, "erro"); return; }
+      if (!plano.gravar.length) { UI.toast("Nada para gravar: marque ao menos um item com preço.", "erro"); return; }
+      var partes = [plano.criar.length + " novo(s)", plano.atualizar.length + " atualizado(s)"];
+      if (plano.sumidos.length) partes.push(plano.sumidos.length + " marcado(s) como fora do catálogo (não apagados)");
+      if (plano.pendentes.length) partes.push(plano.pendentes.length + " sem preço (ficam de fora)");
+      if (plano.colisoes.length) partes.push(plano.colisoes.length + " já existem no banco com outro código e ficam de fora (" + plano.colisoes.slice(0, 3).map(function (c) { return c.codigoExistente; }).join(", ") + (plano.colisoes.length > 3 ? "…" : "") + ")");
+      if (!window.confirm("Aplicar o catálogo de " + f.nome + " ao banco próprio?\n\n" + partes.join("\n"))) return;
+      var n = App._propriaGravarVarios(plano.gravar);
+      var fv = Store.obter(eid(), "fornecedores", fid) || f;
+      var c2 = {}; var antigo = fv.catalogo || {}; for (var k in antigo) if (Object.prototype.hasOwnProperty.call(antigo, k)) c2[k] = antigo[k];
+      c2.sigla = sigla; c2.grupo = v("cr-grupo") || "MATERIAL"; c2.versao = versao; c2.ultimaVersaoEm = hoje;
+      c2.versoes = Util.arr(antigo.versoes).concat([{ em: Util.agoraISO(), origem: String(origem || "").slice(0, 200), criados: plano.criar.length, atualizados: plano.atualizar.length, sumidos: plano.sumidos.length }]).slice(-20);
+      /* o 1º catálogo liga o lembrete no padrão (15 dias, e-mail e WhatsApp) —
+         decisão do gestor; quem não quiser desliga no cadastro */
+      if (!c2.lembrete) c2.lembrete = CatalogoForn.lembretePadrao(hoje);
+      fv.catalogo = c2;
+      var gravouF = !this._naoGravou(Store.salvar(eid(), "fornecedores", fv));
+      UI.toast("Catálogo de " + f.nome + ": " + n + " item(ns) gravado(s) no banco próprio (" + partes.slice(0, 2).join(", ") + ")." +
+        (gravouF ? "" : " Atenção: a data da versão NÃO foi gravada no cadastro (armazenamento recusou) — o lembrete pode sair antes da hora."), gravouF ? "ok" : "erro", 9000);
+      if (gravouF) this._catSincronizarAgenda();
+      self.catalogoFornecedor(fid);
+    },
+
+    /* WhatsApp de 1 clique (decisão do gestor, 02/10/2026): abre a conversa
+       do fornecedor com a mensagem pronta; quem envia é a pessoa. ⚠ O recado
+       NÃO diz "enviado" — o app não tem como saber se ela apertou Enviar. */
+    catalogoPedirAtualizacao: function (id) {
+      if (typeof CatalogoForn === "undefined") return;
+      var f = Store.obter(eid(), "fornecedores", id); if (!f) return;
+      var fone = String(f.whatsapp || f.telefone || "").replace(/\D/g, "");
+      if (fone.length >= 10 && fone.length <= 11) fone = "55" + fone;
+      if (fone.length < 12) { UI.toast("O cadastro de " + (f.nome || "") + " está sem WhatsApp e sem telefone — preencha no cadastro para pedir o catálogo.", "erro"); return; }
+      var empresa = (typeof Empresa !== "undefined" && Empresa.nomeDoc) ? Empresa.nomeDoc() : "";
+      /* ⚠ A JANELA ABRE AQUI, DENTRO DO CLIQUE: o link de catálogo vem do
+         servidor (o token não é gravado no app) e window.open depois da
+         resposta seria bloqueado como pop-up. Sem servidor, a mensagem sai
+         sem link ("respondendo esta mensagem") — e ainda serve. */
+      var janela = null;
+      try { janela = window.open("", "_blank"); } catch (eJ) { janela = null; }
+      var abrir = function (link) {
+        var url = "https://wa.me/" + fone + "?text=" + encodeURIComponent(CatalogoForn.mensagemLembrete(f, empresa, link || ""));
+        if (janela && !janela.closed) { try { janela.location.href = url; return; } catch (eL) {} }
+        try { window.open(url, "_blank"); } catch (eW) {}
+      };
+      this._catSrv("link", { chave: f.id, nome: f.nome || "", empresa: empresa })
+        .then(function (x) { abrir(x.j && x.j.ok ? x.j.url : ""); }, function () { abrir(""); });
+      f.catalogo = f.catalogo || {};
+      f.catalogo.ultimoPedidoEm = hojeLocal();
+      f.catalogo.pedidos = Util.arr(f.catalogo.pedidos).concat([{ em: Util.agoraISO(), canal: "whatsapp" }]).slice(-20);
+      this._naoGravou(Store.salvar(eid(), "fornecedores", f));
+      UI.toast("Conversa aberta com a mensagem pronta — aperte Enviar no WhatsApp. O próximo lembrete conta a partir de hoje.", "ok", 8000);
+      if (typeof AvisosUI !== "undefined" && AvisosUI.fechar) AvisosUI.fechar();
     },
 
     // =================== COMPRAS (pedidos de compra) ===================
@@ -31776,6 +32195,17 @@
           var val = inp2.value.trim(); if (val === "") return;
           fr.precos[mapaIdx[iDom]] = Util.num(val); // parser BR direto ("0,850"=0.85 — pré-replace viraria milhar!)
         });
+        /* a alternativa do fornecedor e o "aceitar" do engenheiro voltam do
+           DOM pelo mesmo mapa de índices dos preços (item removido não leva) */
+        Array.prototype.forEach.call(document.querySelectorAll("[data-ct-alt=\"" + f + "\"]"), function (el) {
+          var iDom = +el.getAttribute("data-ct-alt-item");
+          if (mapaIdx[iDom] == null) return;
+          fr.alternativas = fr.alternativas || {};
+          fr.alternativas[mapaIdx[iDom]] = el.getAttribute("data-ct-alt-txt") || "";
+          fr.alternativasAceitas = fr.alternativasAceitas || {};
+          var ck = el.querySelector("[data-ct-alt-ok]");
+          if (ck && ck.checked) fr.alternativasAceitas[mapaIdx[iDom]] = true;
+        });
         cot.fornecedores.push(fr);
       }
       return cot;
@@ -32499,7 +32929,17 @@
           var pv = (c.fornecedores[f2] && c.fornecedores[f2].precos && c.fornecedores[f2].precos[i] != null) ? c.fornecedores[f2].precos[i] : "";
           /* numBR: preço gravado como número reabria com ponto e o salvar lia
              milhar — cotação de R$ 4,125/un virava R$ 4.125 (v1.1.232) */
-          precosTd += '<td><input data-ct-preco="' + f2 + '" data-ct-preco-item="' + i + '" value="' + Util.esc(numBR(pv)) + '" placeholder="R$/un" style="width:86px" inputmode="decimal"></td>';
+          /* ALTERNATIVA DO FORNECEDOR (02/10/2026): ele não tem o item na
+             especificação pedida e ofereceu outro. O preço dele só entra na
+             comparação com o "aceitar" marcado (Cotacoes.preco) — e o texto
+             mora no DOM para o `_cotDoForm` ler de volta, como o preço. */
+          var altTx = (typeof Cotacoes !== "undefined" && Cotacoes.alternativa) ? Cotacoes.alternativa(c, i, f2) : null;
+          var altAceita = !!(c.fornecedores[f2] && c.fornecedores[f2].alternativasAceitas && c.fornecedores[f2].alternativasAceitas[i] === true);
+          precosTd += '<td><input data-ct-preco="' + f2 + '" data-ct-preco-item="' + i + '" value="' + Util.esc(numBR(pv)) + '" placeholder="R$/un" style="width:86px" inputmode="decimal">' +
+            (altTx ? '<div data-ct-alt="' + f2 + '" data-ct-alt-item="' + i + '" data-ct-alt-txt="' + Util.esc(altTx) + '" style="font-size:11px;color:#b45309;max-width:200px;white-space:normal;margin-top:3px" title="O fornecedor não tem o item na especificação pedida e ofereceu isto">' +
+              "<b>ALTERNATIVA:</b> " + Util.esc(altTx) +
+              '<label style="display:block;margin-top:2px;color:inherit;font-weight:600"><input type="checkbox" data-ct-alt-ok="' + f2 + '" data-ct-alt-ok-item="' + i + '"' + (altAceita ? " checked" : "") + "> aceitar (entra na comparação)</label></div>" : "") +
+            "</td>";
         }
         /* data-ct-iid: id estável do item (ver _cotDoForm) — nasce aqui e
            sobrevive à re-renderização porque _cotDoForm o lê de volta */
@@ -32658,7 +33098,7 @@
             if (s0) s0.disabled = true; if (n0) n0.disabled = true;
           });
         }
-        raiz.addEventListener("input", function (ev) { if (ev.target && (ev.target.hasAttribute("data-ct-preco") || ev.target.hasAttribute("data-cti") || /^ctf-/.test(ev.target.id || ""))) atualiza(); });
+        raiz.addEventListener("input", function (ev) { if (ev.target && (ev.target.hasAttribute("data-ct-preco") || ev.target.hasAttribute("data-ct-alt-ok") || ev.target.hasAttribute("data-cti") || /^ctf-/.test(ev.target.id || ""))) atualiza(); });
         var add = document.getElementById("ct-add-item");
         if (add) add.onclick = function () {
           /* ⚠ MAIOR + 1, não a contagem. Com a exclusão, a contagem volta a
@@ -33135,9 +33575,13 @@
                a orçamento (App._navegar zera orcAtual em toda view de Gestão). A
                denylist é preferência de precificação, não de o que o comprador
                pode solicitar. Guardado em tools/test-escopo-denylist.js [8]. */
+            /* o `fornecedorRef` do item próprio vem junto: é o carimbo do
+               catálogo do fornecedor (ver `_reqItemDaBusca`) */
             var prop = Bases.buscar(q, { max: 10, fonte: "PROPRIA", tipo: "insumo" }).map(function (r) {
-              return { codigo: r.item.codigo, descricao: r.item.descricao, unidade: r.item.unidade || "un",
+              var o = { codigo: r.item.codigo, descricao: r.item.descricao, unidade: r.item.unidade || "un",
                 custoUnitario: Util.num(r.item.custoUnitario), categoria: String(r.item.categoria || "MAT").toUpperCase(), fonte: "PRÓPRIO" };
+              if (r.item.fornecedorRef) o.fornecedorRef = r.item.fornecedorRef;
+              return o;
             });
             if (prop.length) {
               var codsProp = {};
@@ -33246,8 +33690,38 @@
     },
 
     novaRequisicaoComItem: function (ins) {
-      this._reqItemSeed = { codigo: ins.codigo, descricao: ins.descricao, unidade: ins.unidade || "un", quantidade: 1, precoRef: ins.custoUnitario || 0, categoria: ins.categoria || "MAT", fonte: ins.fonte || "" };
+      this._reqItemSeed = this._reqItemDaBusca(ins);
       this.formRequisicoes(null);
+    },
+    /* ⚠ O ITEM QUE VEM DA BUSCA LEVA O FORNECEDOR DO CATÁLOGO (02/10/2026).
+       Roteiro do defeito: o catálogo de um fornecedor foi cadastrado no banco
+       próprio com `fornecedorRef` — é ele que faz a cotação sugerir quem
+       cotar e o pedido sair para o fornecedor certo. Mas a requisição feita à
+       mão perdia o carimbo no caminho: a busca entregava só código, descrição,
+       unidade e preço, e a cotação nascia sem fornecedor. Um montador só para
+       os dois caminhos (＋ Requisição do banco e Adicionar dentro da
+       requisição), para não voltarem a divergir. */
+    _reqItemDaBusca: function (ins) {
+      ins = ins || {};
+      var it = { codigo: ins.codigo, descricao: ins.descricao, unidade: ins.unidade || "un", quantidade: 1, precoRef: ins.custoUnitario || 0, categoria: ins.categoria || "MAT", fonte: ins.fonte || "" };
+      var ref = ins.fornecedorRef;
+      if (ref && typeof ref === "object" && (ref.id || ref.nome)) it.fornecedorRef = { id: String(ref.id || ""), nome: String(ref.nome || "") };
+      return it;
+    },
+    /* O fornecedor que TODOS os itens apontam, pelo ID do cadastro. Nenhum
+       quando algum item não aponta, aponta outro, ou aponta um cadastro que
+       não existe mais: pedido para dois fornecedores é caso de cotação, e
+       ⚠ NUNCA por nome parecido (skill `dinheiro`, regra 2) — o pedido de
+       compra é o documento que vira despesa. */
+    _reqFornecedorUnico: function (itens, fornecedores) {
+      var id = null, ok = true;
+      (itens || []).forEach(function (i) {
+        var r = (i && i.fornecedorRef && i.fornecedorRef.id) ? String(i.fornecedorRef.id) : "";
+        if (!r) { ok = false; return; }
+        if (id === null) id = r; else if (id !== r) ok = false;
+      });
+      if (!ok || !id) return null;
+      return (fornecedores || []).filter(function (f) { return f && String(f.id) === id; })[0] || null;
     },
     /* v1.1.124 — INSUMO PRÓPRIO: campos reutilizáveis (inline na requisição,
      * modal na view do banco). Coleta devolve {descricao,unidade,categoria,preco,salvar}. */
@@ -33611,7 +34085,7 @@
         });
       }
       this._wireInsumoSearch("ri-q", "ri-res", function (ins) {
-        itensBuf.push({ codigo: ins.codigo, descricao: ins.descricao, unidade: ins.unidade || "un", quantidade: 1, precoRef: ins.custoUnitario || 0, categoria: ins.categoria || "MAT", fonte: ins.fonte || "" });
+        itensBuf.push(self._reqItemDaBusca(ins));
         renderItens(); UI.toast("Item adicionado.", "ok");
       }, { status: "ri-status" });
       // v1.1.124 — item manual virou FORM INLINE (modal aninhado fecharia a
@@ -33651,6 +34125,10 @@
       if (r.status !== "aprovada") { UI.toast("Aprove a requisição antes de gerar o pedido.", "erro"); return; }
       var obras = lista("obras");
       var nI = (r.itens && r.itens.length) || 0;
+      /* todos os itens do catálogo de UM fornecedor → o pedido já nasce com
+         ele selecionado (a pessoa pode trocar). É o "pedido direto" de quem
+         compra pelo catálogo; ligação só pelo ID (ver `_reqFornecedorUnico`). */
+      var fornUnico = this._reqFornecedorUnico(this._reqItens(r), lista("fornecedores"));
       var corpo =
         '<div class="row">' + campo("Descrição", inp("g-pdesc", r.descricao)) + campo("Valor (R$)", inp("g-pvalor", r.valorEstimado || "", "", "number")) + "</div>" +
         /* ⚠ O PEDIDO NASCIA SEM DONO. Este modal perguntava descrição, valor e
@@ -33663,7 +34141,8 @@
            normal de quem vai cotar. "— escolher depois —" é estado legítimo, e
            o formulário do pedido preenche quando a decisão sair. */
         '<div class="row">' + campo("Obra", sel("g-pobra", optsRec(obras, "nome", r.obraId, "— nenhuma —")))
-          + campo("Fornecedor", sel("g-pforn", optsRec(lista("fornecedores"), "nome", "", "— escolher depois —"))) + "</div>" +
+          + campo("Fornecedor", sel("g-pforn", optsRec(lista("fornecedores"), "nome", fornUnico ? fornUnico.id : "", "— escolher depois —"))) + "</div>" +
+        (fornUnico ? '<p class="muted" style="font-size:12.5px">Todos os itens são do catálogo de <b>' + Util.esc(fornUnico.nome || "") + "</b> — o pedido já sai para ele (troque acima, se for outro).</p>" : "") +
         (nI ? '<p class="muted">Leva <b>' + nI + "</b> ite" + (nI > 1 ? "ns" : "m") + " para o pedido" + (r.valorEstimado ? " (valor de referência do banco: <b>" + Util.fmtMoeda(r.valorEstimado) + "</b>, ajuste com a cotação real)." : ".") + "</p>" : "") +
         '<p class="muted">Cria um pedido em Compras (status Aguardando aprovação) e marca a requisição como comprada.</p>';
       UI.modal("Gerar pedido — " + Util.esc(r.numero || ""), corpo, [
@@ -47966,6 +48445,9 @@ case "nova-requisicoes": return this.novoRequisicoes();
         case "req-do-orcamento": return this.reqDoOrcamento(id);
 case "nova-cotacoes": return this.formCotacao(null);
         case "cotar-requisicao": return this.novaCotacaoDaRequisicao(id);
+        /* catálogo do fornecedor — a guarda de módulo mora dentro de `catalogoFornecedor` (o switch passa por fora do RBAC de `_acoesExtras`) */
+        case "cat-forn": return this.catalogoFornecedor(id);
+        case "cat-forn-pedir": return this.catalogoPedirAtualizacao(id);
         case "doc-cotacao": return this.documentoCotacao(id);
         case "excluir-cotacao": return this.excluirCotacao(id);
         case "aprovar-requisicao": return this._aprovar("requisicoes", id, "aprovada", "Requisição aprovada.");
@@ -49959,8 +50441,22 @@ case "nova-folha": return this.novoFolha();
        por PDF simplesmente não funcionar offline, sem dizer o porquê. Desde a
        v1.1.142 NÃO há mais socorro por CDN: um terceiro que só aparece no caminho
        de erro não dá para declarar na Política nem para o cliente prever. */
-    _pdfTexto: function (file, cb) {
-      var self = this;
+    /* `opts.linhas` (catálogo do fornecedor): uma linha do PDF por linha de
+       texto. A leitura de nota junta a página inteira com espaço — e para o
+       catálogo isso grudava o produto de uma linha no preço da seguinte. */
+    _pdfTexto: function (file, cb, opts) {
+      var self = this, porLinha = !!(opts && opts.linhas);
+      function juntarLinhas(items) {
+        var out = "", yAnt = null;
+        items.forEach(function (it) {
+          var y = (it && it.transform) ? Math.round(it.transform[5]) : null;
+          if (yAnt !== null && y !== null && Math.abs(y - yAnt) > 2 && out && out.slice(-1) !== "\n") out += "\n";
+          out += String((it && it.str) || "");
+          out += (it && it.hasEOL) ? "\n" : " ";
+          if (y !== null) yAnt = y;
+        });
+        return out + "\n";
+      }
       function extrair(lib) {
         var fr = new FileReader();
         fr.onload = function () {
@@ -49969,7 +50465,7 @@ case "nova-folha": return this.novoFolha();
                justamente o quadro de produtos, que e o que alimenta a triagem. */
             var texto = "", n = Math.min(pdf.numPages, 10), chain = Promise.resolve();
             if (pdf.numPages > 10) texto += "[o documento tem " + pdf.numPages + " páginas; li as 10 primeiras]\n";
-            for (var p = 1; p <= n; p++) (function (pg) { chain = chain.then(function () { return pdf.getPage(pg).then(function (page) { return page.getTextContent().then(function (tc) { texto += tc.items.map(function (it) { return it.str; }).join(" ") + "\n"; }); }); }); })(p);
+            for (var p = 1; p <= n; p++) (function (pg) { chain = chain.then(function () { return pdf.getPage(pg).then(function (page) { return page.getTextContent().then(function (tc) { texto += porLinha ? juntarLinhas(tc.items) : tc.items.map(function (it) { return it.str; }).join(" ") + "\n"; }); }); }); })(p);
             chain.then(function () { cb(texto); });
           })["catch"](function () { cb(""); });
         };
