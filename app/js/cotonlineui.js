@@ -1155,6 +1155,25 @@
   /* ------------------------------------------------------------------
    * wireForm — o bloco #ct-online dentro do Mapa de Cotação
    * ------------------------------------------------------------------ */
+  /* a última revisão pedida e quem ainda não respondeu a ela. A régua é a
+     do servidor: respondeu DEPOIS do pedido = revisão respondida. ⚠ Sem esta
+     linha o Mapa mostraria os preços antigos sem dizer que a obra já pediu
+     outros — e "Concluir e gerar pedidos" fecharia no preço de antes da
+     revisão sem ninguém ver. */
+  function _linhaRevisao(on, estilo) {
+    var revs = (on && Array.isArray(on.revisoes)) ? on.revisoes : [];
+    var r = revs[revs.length - 1];
+    if (!r) return "";
+    var falta = [];
+    ((on && on.convites) || []).forEach(function (cv) {
+      if (!cv || !cv.revisaoPedidaEm || (r.cids && r.cids.indexOf(cv.cid) < 0)) return;
+      if (!(cv.respondidoEm && String(cv.respondidoEm) > String(cv.revisaoPedidaEm))) falta.push(cv.nome || cv.cid);
+    });
+    return '<div id="cto-rev" ' + estilo + ">" + _ico("editar") + " Revisão " + (r.n || revs.length) + " pedida em " + _fmt(r.em) +
+      (falta.length ? " · aguardando: " + _esc(falta.join(", ")) + " — até eles responderem, os preços da coluna são os de antes da revisão."
+        : " · todos responderam.") + "</div>";
+  }
+
   CotOnlineUI.wireForm = function (c, raiz) {
     raiz = raiz || document;
     var el = raiz.querySelector ? raiz.querySelector("#ct-online") : null;
@@ -1215,16 +1234,23 @@
            pedir desconto sobre nada — e o servidor recusa, mas um botão que
            só serve para levar a um erro é pior que botão nenhum. */
         (N0 > 0 && !vencida ? '<button type="button" class="btn sm" id="cto-desconto">' + _ico("dinheiro") + ' Pedir desconto</button> ' : '') +
+        /* PEDIR REVISÃO (02/10/2026): acrescentar/ajustar itens depois de
+           publicar, com justificativa, no mesmo link. Só com link aberto —
+           vencido o fornecedor recebe 410 e a saída é publicar de novo. */
+        (!vencida ? '<button type="button" class="btn sm" id="cto-revisao" title="Acrescentar ou ajustar itens e pedir que os fornecedores revisem a proposta, no mesmo link">' + _ico("editar") + ' Pedir revisão</button> ' : '') +
         '<button type="button" class="btn sm ghost" id="cto-encerrar" style="color:#dc2626">Encerrar</button>' +
         (vencida ? ' <button type="button" class="btn sm primary" id="cto-publicar">' + _ico("link") + " Publicar de novo</button>" : "") +
         "</div>" +
         (vencida ? '<div id="cto-30d" ' + estiloFraco + ">Respostas enviadas até o vencimento ainda podem ser puxadas por 30 dias.</div>" : "") +
+        _linhaRevisao(on, estiloFraco) +
         '<div id="cto-nota" ' + estiloFraco + "></div></div>";
       var bL = el.querySelector("#cto-links"), bP = el.querySelector("#cto-puxar"), bE = el.querySelector("#cto-encerrar"), bR = el.querySelector("#cto-publicar");
       if (bL) bL.onclick = function () { CotOnlineUI.links(c); };
       if (bP) bP.onclick = function () { CotOnlineUI.puxar(c); };
       var bD = el.querySelector("#cto-desconto");
       if (bD) bD.onclick = function () { CotOnlineUI.pedirDesconto(c); };
+      var bRv = el.querySelector("#cto-revisao");
+      if (bRv) bRv.onclick = function () { CotOnlineUI.pedirRevisao(c); };
       if (bE) bE.onclick = function () { CotOnlineUI.encerrar(c); };
       if (bR) bR.onclick = function () { CotOnlineUI.publicar(c); };
       if (!on || !on.id) return;
@@ -1337,7 +1363,7 @@
       '<p style="margin:0 0 8px">Cada fornecedor abaixo recebe <b>um link só dele</b>: vê os itens da cotação e digita os próprios preços, frete, prazo e condição.</p>' +
       '<ul style="margin:0 0 10px 18px;font-size:13px">' + lista + "</ul>" +
       '<div class="field"><label>Válido por (dias)</label><input id="cto-dias" type="number" min="1" max="30" step="1" value="' + ((cot.online && cot.online.validadeDias) || 7) + '" style="width:90px"></div>' +
-      '<p class="muted" style="font-size:12.5px;margin-top:8px">' + _ico("cadeado") + ' Os itens ficam travados enquanto a publicação estiver aberta. Para mudar itens, encerre e publique de novo. O fornecedor não vê preço de referência nem os outros fornecedores.</p>';
+      '<p class="muted" style="font-size:12.5px;margin-top:8px">' + _ico("cadeado") + ' Os itens ficam travados enquanto a publicação estiver aberta. Para acrescentar ou ajustar itens, use <b>Pedir revisão</b> (o fornecedor revisa no mesmo link); para tirar item, encerre e publique de novo. O fornecedor não vê preço de referência nem os outros fornecedores.</p>';
     var enviando = false;
     var voltar = function () { UI.fecharModal(); G.formCotacao(cot); };
     var bg = UI.modal("Publicar cotação online", corpo, [
@@ -1931,12 +1957,16 @@
   /* ------------------------------------------------------------------
    * modal com os links (QR / copiar / WhatsApp), um por fornecedor
    * ------------------------------------------------------------------ */
-  CotOnlineUI._modalLinks = function (cot, convites, aoFechar) {
+  CotOnlineUI._modalLinks = function (cot, convites, aoFechar, opts) {
+    opts = opts || {};
     var base = _base(), empresa = _empresaNome();
     var ate = _fmtDia(cot.online && cot.online.expiraEm);
     var assunto = cot.descricao || cot.numero || "";
     var links = [];
-    var html = '<p class="muted" style="font-size:12.5px;margin:0 0 10px">' + _ico("cadeado") + ' Cada link é de um fornecedor: ele vê só os itens e a própria proposta. Válido até <b>' + ate + "</b>.</p>";
+    var html = (opts.revisao
+      ? '<p style="font-size:13px;margin:0 0 8px"><b>A revisão já está no link de cada fornecedor</b>, mas ninguém é avisado sozinho: mande a mensagem abaixo para cada um.</p>'
+      : "") +
+      '<p class="muted" style="font-size:12.5px;margin:0 0 10px">' + _ico("cadeado") + ' Cada link é de um fornecedor: ele vê só os itens e a própria proposta. Válido até <b>' + ate + "</b>.</p>";
     (convites || []).forEach(function (cv, i) {
       if (!cv || !cv.token) return;
       var link = base + "/cotar?t=" + encodeURIComponent(cv.token);
@@ -1945,8 +1975,11 @@
       var fone = cad ? _foneIntl(cad.whatsapp || cad.telefone) : "";
       /* catálogo do fornecedor (02/10/2026): a mesma página aceita o catálogo
          da empresa (server/catalogo-srv.js) — a mensagem já pede */
-      var msg = "Olá " + (cv.nome || "") + "! A " + (empresa || "empresa") + " pede sua cotação para " + assunto + ". Preencha seus preços neste link (válido até " + ate + "): " + link +
-        " — se puder, anexe também o catálogo da sua empresa (PDF, foto ou link) no mesmo link.";
+      var msg = opts.revisao
+        ? "Olá " + (cv.nome || "") + "! A " + (empresa || "empresa") + " pede a REVISÃO da cotação de " + assunto + ". Motivo: " + opts.revisao +
+          " Os itens novos ou alterados estão marcados no mesmo link (válido até " + ate + "): " + link
+        : "Olá " + (cv.nome || "") + "! A " + (empresa || "empresa") + " pede sua cotação para " + assunto + ". Preencha seus preços neste link (válido até " + ate + "): " + link +
+          " — se puder, anexe também o catálogo da sua empresa (PDF, foto ou link) no mesmo link.";
       var wa = fone ? ("https://wa.me/" + fone + "?text=" + encodeURIComponent(msg)) : "";
       var qr = (typeof QR !== "undefined" && QR.svg) ? QR.svg(link, { tamanhoPx: 140 }) : "";
       html += '<div class="card" style="padding:10px 12px;margin-bottom:8px;display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">' +
@@ -1959,7 +1992,7 @@
         "</div></div></div>";
     });
     if (!links.length) html += '<p class="muted">Nenhum link disponível.</p>';
-    var bg = UI.modal(_ico("link") + " Links da cotação " + _esc(cot.numero || ""), html, [
+    var bg = UI.modal(_ico("link") + (opts.revisao ? " Revisão pedida — avise os fornecedores " : " Links da cotação ") + _esc(cot.numero || ""), html, [
       { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); if (aoFechar) aoFechar(); } }
     ]);
     if (typeof UI.modalConsulta === "function") UI.modalConsulta(); // nada a perder ao fechar
@@ -2256,6 +2289,145 @@
       ]));
       _reabrirAoFechar(bg, voltarAoMapa);
     }, function () { _toast("Não consegui falar com o servidor.", "erro"); voltarAoMapa(); });
+  };
+
+  /* =====================================================================
+   * PEDIR REVISÃO — acrescentar/ajustar itens de uma cotação JÁ PUBLICADA e
+   * pedir que os fornecedores revisem a proposta, com justificativa.
+   *
+   * Pedido do Rogério (02/10/2026, cliente cotando): entraram estacas novas
+   * no projeto e um fornecedor tinha cotado sem a ponta. A única saída era
+   * encerrar e publicar de novo — link novo para cada um, e a proposta que
+   * já estava na mesa ficava no link morto.
+   *
+   * ⚠ MESMO LINK (como o desconto) e NENHUM ITEM SAI NEM MUDA DE LUGAR: a
+   *   coluna de preço do fornecedor é guardada pela POSIÇÃO do item; tirar
+   *   um do meio mandaria o preço para o material errado. Item novo entra
+   *   no fim. O servidor confere as duas coisas (server/cotacao-srv.js).
+   * ⚠ O APP NÃO AVISA NINGUÉM SOZINHO: depois de gravar, abre a caixa com a
+   *   mensagem pronta para cada fornecedor (WhatsApp de 1 clique).
+   * ===================================================================== */
+  CotOnlineUI.pedirRevisao = function (c) {
+    if (!_pode()) return;
+    var G = _G();
+    if (!G || !G._cotDoForm) { _toast("Motor de cotacoes nao carregado.", "erro"); return; }
+    if (!_chave()) { _toast("Ative a licenca para falar com os fornecedores.", "erro"); return; }
+    if (!_plus()) { _toast("Cotacao online e do plano Plus.", "erro"); if (G._upsell) G._upsell(); return; }
+    var M = _motor();
+    var cot = G._cotDoForm(c);
+    if (!cot || !M) return;
+    var on = cot.online || {};
+    if (!on.id || !_ativa(cot)) { _toast("A revisão só vale com a publicação aberta. Publique de novo.", "erro"); return; }
+    /* mesma porta de volta do Pedir desconto: UI.modal fecha o Mapa */
+    var voltarAoMapa = function () { UI.fecharModal(); if (G.formCotacao) G.formCotacao(cot); };
+    var numBR = function (v) { var n = _numPreco(v); return n ? String(n).replace(".", ",") : ""; };
+    var linha = function (it, i, novo) {
+      return '<tr data-rv-linha="' + (novo ? "novo" : i) + '">' +
+        '<td style="color:#64748b">' + (novo ? '<b style="color:#1d4ed8">novo</b>' : (i + 1)) + "</td>" +
+        '<td style="width:100%"><input data-rv="desc" maxlength="200" value="' + _esc(it.descricao || "") + '" style="width:100%;min-width:220px;box-sizing:border-box" placeholder="descrição do material"></td>' +
+        '<td><input data-rv="un" maxlength="10" value="' + _esc(it.unidade || "") + '" style="width:52px" placeholder="un"></td>' +
+        '<td><input data-rv="qtd" inputmode="decimal" value="' + _esc(numBR(it.quantidade)) + '" style="width:70px" placeholder="qtd"></td>' +
+        "<td>" + (novo ? '<button type="button" class="btn sm ghost" data-rv-tirar title="Tirar este item novo">×</button>' : "") + "</td></tr>";
+    };
+    var linhas = (cot.itens || []).map(function (it, i) { return linha(it, i, false); }).join("");
+    var convs = (Array.isArray(on.convites) ? on.convites : []).filter(function (cv) { return cv && cv.cid; });
+    var caixas = convs.map(function (cv) {
+      return '<label style="display:flex;gap:8px;align-items:center;margin:3px 0"><input type="checkbox" class="cto-rv-cid" value="' + _esc(cv.cid) + '" checked> <span>' +
+        /* só o que o app SABE: quem respondeu e ainda não foi puxado aparece
+           sem nota — "ainda não respondeu" aqui seria afirmar sem ter olhado */
+        _esc(cv.nome || cv.cid) + (cv.respondidoEm ? ' <span class="muted" style="font-size:12px">· já respondeu — os preços dele vêm preenchidos para revisar</span>' : "") +
+        "</span></label>";
+    }).join("");
+    var corpo =
+      '<p style="margin:0 0 8px">Acrescente ou ajuste os itens e diga <b>por quê</b>. O fornecedor revisa <b>no mesmo link</b>: vê a sua justificativa e os itens novos ou alterados marcados.</p>' +
+      '<div style="overflow:auto;max-height:40vh;border:1px solid var(--linha,#e2e8f0);border-radius:8px"><table class="tbl" style="width:100%;display:table;font-size:12.5px"><thead><tr><th>#</th><th>Descrição</th><th>Un.</th><th>Qtd.</th><th></th></tr></thead>' +
+      '<tbody id="cto-rv-itens">' + linhas + "</tbody></table></div>" +
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 2px"><button type="button" class="btn sm" id="cto-rv-add">+ Acrescentar item</button>' +
+      '<span class="muted" style="font-size:12px">Tirar item ou mudar a ordem não cabe na revisão — o preço de cada fornecedor está guardado pela posição do item. Para isso, encerre e publique de novo.</span></div>' +
+      '<div class="field" style="margin-top:10px"><label>Justificativa da revisão (o fornecedor lê)</label>' +
+      '<textarea id="cto-rv-motivo" maxlength="600" rows="3" style="width:100%" placeholder="Ex.: entraram itens novos no projeto; a especificação de um item foi esclarecida."></textarea></div>' +
+      '<div class="field"><label>Quem revisa</label>' + caixas + "</div>" +
+      '<div class="field"><label>Prazo para responder (dias)</label><input id="cto-rv-dias" type="number" min="1" max="30" step="1" value="5" style="width:90px">' +
+      ' <span class="muted" style="font-size:12px">se passar do prazo da publicação, o link é estendido (nunca encurta)</span></div>';
+    var enviando = false;
+    var bg = UI.modal(_ico("editar") + " Pedir revisão — " + _esc(cot.numero || ""), corpo, [
+      { texto: "Voltar", classe: "ghost", onClick: voltarAoMapa },
+      { texto: "Enviar revisão", classe: "primary", onClick: function () {
+        if (enviando) return;
+        var raiz = bg || document;
+        var itens2 = JSON.parse(JSON.stringify(cot.itens || []));
+        var erros = [];
+        Array.prototype.forEach.call(raiz.querySelectorAll("#cto-rv-itens tr[data-rv-linha]"), function (tr, k) {
+          var g = function (q) { var e = tr.querySelector('[data-rv="' + q + '"]'); return e ? String(e.value || "").trim() : ""; };
+          var desc = g("desc"), un = g("un"), qtd = _numPreco(g("qtd"));
+          var novo = tr.getAttribute("data-rv-linha") === "novo";
+          if (novo && !desc && !g("qtd")) return;            // linha nova deixada em branco
+          var pos = novo ? itens2.length + 1 : k + 1;
+          if (!desc) erros.push("Item " + pos + " sem descrição.");
+          if (!(qtd > 0)) erros.push("Item " + pos + " com quantidade inválida.");
+          if (novo) itens2.push({ id: _uid("cti"), codigo: "", descricao: desc, unidade: un, quantidade: qtd, precoRef: 0 });
+          else { var it = itens2[k]; it.descricao = desc; it.unidade = un; it.quantidade = qtd; }
+        });
+        var elM = document.getElementById("cto-rv-motivo");
+        var motivo = String((elM && elM.value) || "").trim().slice(0, 600);
+        if (!motivo) erros.push("Escreva a justificativa da revisão — é ela que o fornecedor lê.");
+        var cids = [];
+        Array.prototype.forEach.call(raiz.querySelectorAll(".cto-rv-cid"), function (cx) { if (cx.checked) cids.push(cx.value); });
+        if (!cids.length) erros.push("Escolha ao menos um fornecedor.");
+        var elD = document.getElementById("cto-rv-dias");
+        var dias = parseInt(elD ? elD.value : "5", 10);
+        if (!isFinite(dias) || dias < 1 || dias > 30) erros.push("Prazo da revisão: de 1 a 30 dias.");
+        var cot2 = JSON.parse(JSON.stringify(cot)); cot2.itens = itens2;
+        /* a régua de forma é a mesma da publicação; "já está publicada" é o
+           que se espera aqui, e não erro */
+        (M.validarPublicacao ? M.validarPublicacao(cot2) : []).forEach(function (e) { if (!/já está publicada/.test(e)) erros.push(e); });
+        if (erros.length) { _toast(erros[0], "erro"); return; }
+        if (!_sincronizarVivo(cot)) return;
+        if (!_podeRegravarMapa(cot, "Nenhuma revisão foi pedida e nada foi gravado.")) return;
+        var snapshot = M.snapshotPublicacao(cot2, { obraNome: _obraNome(cot2), empresa: _empresaNome() });
+        enviando = true;
+        _post("/api/cotacao/revisar", { id: on.id, snapshot: snapshot, motivo: motivo, cids: cids, validadeDias: dias }).then(function (y) {
+          enviando = false;
+          if (!y || !y.j || !y.j.ok) {
+            /* ⚠ servidor da loja ainda sem a rota: a frase diz a causa, não
+               "não consegui" — senão a pessoa tenta de novo para sempre */
+            if (y && y.s === 404 && y.j && /Rota inexistente/.test(y.j.erro || "")) _toast("O servidor da loja ainda não tem a revisão. Nada foi mudado: tente depois da próxima atualização.", "erro");
+            else _toast(_erroDe(y), "erro");
+            if (y && y.s === 403 && y.j && y.j.upgrade && G._upsell) { G._upsell(); return; }
+            return;
+          }
+          var rv = y.j.revisao || {};
+          cot.itens = itens2;
+          cot.online = cot.online || {};
+          cot.online.revisoes = (Array.isArray(cot.online.revisoes) ? cot.online.revisoes : []).concat([{
+            n: rv.n, em: rv.em, motivo: motivo, novos: rv.novos || 0, alterados: rv.alterados || 0, cids: rv.cids || cids }]);
+          (cot.online.convites || []).forEach(function (cv) { if (cv && (rv.cids || cids).indexOf(cv.cid) >= 0) cv.revisaoPedidaEm = rv.em; });
+          if (y.j.online && y.j.online.expiraEm) cot.online.expiraEm = y.j.online.expiraEm;
+          _hist(cot, "online-revisao", "revisão " + rv.n + " pedida a " + (rv.cids || cids).length + " fornecedor(es): " +
+            (rv.novos || 0) + " item(ns) novo(s), " + (rv.alterados || 0) + " alterado(s) — " + motivo);
+          var gravou = _salvar(cot);
+          _toast((gravou ? "" : "⚠ A revisão FOI pedida no servidor, mas não consegui gravar isso aqui — o Mapa não mostra os itens novos. Libere espaço no navegador. ")
+            + "Revisão " + rv.n + " pedida: " + (rv.novos || 0) + " item(ns) novo(s), " + (rv.alterados || 0) + " alterado(s). Avise os fornecedores pelo link.", gravou ? "ok" : "aviso");
+          var alvo = ((y.j.online || {}).convites || []).filter(function (cv) { return cv && (rv.cids || cids).indexOf(cv.cid) >= 0; });
+          CotOnlineUI._modalLinks(cot, alvo, function () { if (G.formCotacao) G.formCotacao(cot); }, { revisao: motivo });
+        }, function () { enviando = false; _toast("Não consegui falar com o servidor. Nada foi mudado.", "erro"); });
+      } }
+    ]);
+    _reabrirAoFechar(bg, voltarAoMapa);
+    var raizM = bg || document;
+    var tb = raizM.querySelector("#cto-rv-itens");
+    var ligarTirar = function () {
+      Array.prototype.forEach.call(raizM.querySelectorAll("[data-rv-tirar]"), function (b) {
+        b.onclick = function () { var tr = b.closest ? b.closest("tr") : b.parentNode.parentNode; if (tr && tr.parentNode) tr.parentNode.removeChild(tr); };
+      });
+    };
+    var bAdd = raizM.querySelector("#cto-rv-add");
+    if (bAdd && tb) bAdd.onclick = function () {
+      tb.insertAdjacentHTML("beforeend", linha({}, 0, true));
+      ligarTirar();
+      var ins = tb.querySelectorAll('tr[data-rv-linha="novo"] [data-rv="desc"]');
+      if (ins.length) ins[ins.length - 1].focus();
+    };
   };
 
   CotOnlineUI.links = function (c) {

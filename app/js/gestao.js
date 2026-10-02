@@ -33976,7 +33976,8 @@
          confirma com a pessoa, puxa as respostas pendentes antes de fechar e
          grava o Mapa. Uma segunda implementação aqui seria a que esquece de
          puxar a resposta que o fornecedor mandou dez minutos atrás. */
-      var faixaTrava = ehTravada ? '<div style="font-size:12.5px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:7px 10px;margin:6px 0;color:#92400e">' + (typeof Icones !== "undefined" ? Icones.get("cadeado", 15) : "") + ' Itens travados enquanto a cotação online estiver aberta (válida até ' + Util.fmtData(c.online.expiraEm) + '): os fornecedores estão respondendo <b>esta</b> lista. Para acrescentar, tirar ou corrigir item, encerre a rodada — as respostas já enviadas são puxadas antes de fechar.'
+      var faixaTrava = ehTravada ? '<div style="font-size:12.5px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:7px 10px;margin:6px 0;color:#92400e">' + (typeof Icones !== "undefined" ? Icones.get("cadeado", 15) : "") + ' Itens travados enquanto a cotação online estiver aberta (válida até ' + Util.fmtData(c.online.expiraEm) + '): os fornecedores estão respondendo <b>esta</b> lista. Para acrescentar ou corrigir item, use <b>Pedir revisão</b> — o fornecedor revisa no mesmo link, com a sua justificativa. Para tirar item, encerre a rodada — as respostas já enviadas são puxadas antes de fechar.'
+        + ' <button type="button" class="btn sm" id="ct-revisao-trava" style="margin-left:4px">Pedir revisão</button>'
         + ' <button type="button" class="btn sm" id="ct-encerrar-trava" style="margin-left:4px">Encerrar a cotação online</button></div>' : "";
       var corpo =
         '<div class="row">' + campo("Nº", inp("ct-num", c.numero)) + campo("Data", inp("ct-data", c.data, "", "date")) + campo("Obra", sel("ct-obra", optsRec(obras, "nome", c.obraId, "— nenhuma —"))) + "</div>" +
@@ -34090,6 +34091,13 @@
               UI.toast("O módulo da cotação online não carregou — recarregue o app.", "erro"); return;
             }
             CotOnlineUI.encerrar(c);
+          };
+          var bTravaRev = raiz.querySelector("#ct-revisao-trava");
+          if (bTravaRev) bTravaRev.onclick = function () {
+            if (typeof CotOnlineUI === "undefined" || !CotOnlineUI.pedirRevisao) {
+              UI.toast("O módulo da cotação online não carregou — recarregue o app.", "erro"); return;
+            }
+            CotOnlineUI.pedirRevisao(c);
           };
           /* somente leitura pelo DOM, como a concluída faz: `v()`/`_cotDoForm`
              leem `.value` de input disabled normalmente, então o salvar
