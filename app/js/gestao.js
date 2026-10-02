@@ -29617,7 +29617,7 @@
           /* os campos do pleito só fazem sentido quando choveu */
           var cxP = document.getElementById("g-cl-pleito");
           if (cxP) cxP.style.display = Number(clima.chuvaMm) > 0 ? "block" : "none";
-          /* média histórica: o app busca sozinho no arquivo do Open-Meteo, em
+          /* média histórica: o app busca sozinho (servidor da RA → NASA POWER), em
              vez de mandar o engenheiro procurar. Falhou? o campo fica em
              branco para ele preencher — nunca preenchemos com chute. */
           if (Number(clima.chuvaMm) > 0) {
@@ -29657,19 +29657,24 @@
       });
     },
 
-    /* Busca o clima do dia. A coordenada vem da obra; se ela não tiver, tenta
-       descobrir pelo endereço e GRAVA na obra — a próxima busca é instantânea.
-       Fonte: Open-Meteo (sem chave de API, com arquivo histórico, que é o que
-       importa porque diário quase sempre é lançado com atraso). */
+    /* Busca o clima do dia PELO SERVIDOR DA RA (js/rdo.js, cabeçalho do item 1). A coordenada vem da obra; se ela não tiver,
+       descobre o MUNICÍPIO pelo endereço e GRAVA na obra — a próxima busca é instantânea. */
     _buscarClima: function (obra, dataISO, cb) {
       if (typeof RDO === "undefined") { cb(null, "Módulo indisponível."); return; }
-      var hoje = hojeLocal();
+      var self = this;
+      function msg(x, oque) {
+        if (x.s === 0) return "Sem internet agora — tente quando conectar.";
+        if (x.s === 403) return "O clima automático vem do servidor da RA e precisa da licença ativa neste aparelho.";
+        var e = x.j && x.j.error ? String(x.j.error) : "";
+        return e ? e.charAt(0).toUpperCase() + e.slice(1) + (/[.!?]$/.test(e) ? "" : ".") : oque;
+      }
 
       function comCoord(lat, lon, nomeLocal) {
-        var url = RDO.urlClima(lat, lon, dataISO, hoje);
-        if (!url) { cb(null, "Não consegui montar a consulta."); return; }
-        fetch(url).then(function (x) { return x.json(); }).then(function (j) {
-          var c = RDO.lerRespostaClima(j);
+        /* o dia do diário é o dia LOCAL: o servidor soma as 24 horas pelo fuso do aparelho naquela data */
+        var fuso = -new Date(Date.parse(dataISO + "T12:00:00")).getTimezoneOffset();
+        self._icarGeoPost("/ia/geo/clima-dia", { lat: +lat, lon: +lon, dia: dataISO, fusoMin: isFinite(fuso) ? fuso : -180 }).then(function (x) {
+          if (x.s !== 200 || !x.j || !x.j.ok) { cb(null, msg(x, "A fonte não devolveu dado para este dia.")); return; }
+          var c = RDO.lerClimaServidor(x.j);
           if (!c) { cb(null, "A fonte não devolveu dado para este dia."); return; }
           c.buscadoEm = new Date().toISOString();
           c.lat = lat; c.lon = lon;
@@ -29679,7 +29684,7 @@
            * km. Medição sem procedência não sustenta pedido de prazo. */
           if (nomeLocal) c.local = nomeLocal;
           cb(c, null);
-        }).catch(function () { cb(null, "Sem internet agora — tente quando conectar."); });
+        });
       }
 
       if (obra.lat != null && obra.lon != null) { comCoord(obra.lat, obra.lon, obra.climaLocal || ""); return; }
@@ -29696,59 +29701,46 @@
       var mun = RDO.municipioDoEndereco(local);
       var ultima = mun.cidade || local, uf = mun.uf;
 
-      /* ⚠ `&country=BR` NÃO EXISTE na API de geocodificação do Open-Meteo — ele
-       * é aceito e IGNORADO em silêncio. Conferi chamando a API de verdade:
-       *   "Vitoria"       → 1º resultado: Vitória, PAÍS BASCO (Espanha)
-       *   "Sao Francisco" → 1º resultado: São Francisco, CALIFÓRNIA
-       * A obra em Vitória/ES pegava o clima da Espanha, e a coordenada errada
-       * ficava GRAVADA na obra para sempre — todo diário seguinte nascia com
-       * chuva de outro continente. O filtro tem de ser no resultado. */
-      /* ⚠ `count` é aplicado ANTES do filtro brasileiro — a API não tem filtro
-       * de país. Com 20, um nome ibérico comum ("Santa Cruz", "Santo Antônio")
-       * gastava as vagas com homônimos da Bolívia, Espanha e Portugal, e o
-       * município da obra nem chegava a ser avaliado. 100 é o teto da API. */
-      fetch(RDO.GEO_URL + "?name=" + encodeURIComponent(ultima) + "&count=100&language=pt")
-        .then(function (x) { return x.json(); }).then(function (j) {
-          var todos = (j && j.results) || [];
-          var brasileiros = todos.filter(function (r) { return String(r.country_code || "").toUpperCase() === "BR"; });
-          /* ⚠ país e estado NÃO são município. Sem esta checagem, "Brasil" no
-           * fim do endereço fazia o app aceitar o feature_code PCLI (o país) e
-           * gravar lat −10 / lon −55 — o centro geográfico do Brasil — como
-           * coordenada da obra, em silêncio. Antes desta versão a busca
-           * simplesmente falhava, o que era melhor: errar alto é melhor que
-           * errar quieto. */
-          var achados = brasileiros.filter(function (r) { return RDO.ehMunicipio(r); });
-          if (!achados.length) {
-            cb(null, brasileiros.length
-              ? "\"" + ultima + "\" não é um município — parece um estado ou o país. O clima do diário precisa da CIDADE da obra: confira o \"Local / Endereço\"."
-              : (todos.length
-                ? "Achei \"" + ultima + "\" só fora do Brasil. O clima do diário precisa do município brasileiro — confira o \"Local / Endereço\" da obra."
-                : "Não achei \"" + ultima + "\" no mapa. O clima só entra no diário com o município certo — confira o \"Local / Endereço\" da obra."));
-            return;
-          }
-          /* com UF na mão, escolhe o município do estado certo: há dezenas de
-             homônimos no Brasil e o primeiro resultado não é sempre o daqui.
-             Comparação EXATA pela tabela de UF (ver RDO.ufBate): o `indexOf`
-             que eu tinha escrito casava "SP" com "ESpírito Santo". */
-          var g = achados[0], ufCasou = false;
-          if (uf) {
-            var mesmoUf = achados.filter(function (r) { return RDO.ufBate(uf, r.admin1); })[0];
-            if (mesmoUf) { g = mesmoUf; ufCasou = true; }
-          }
-          /* a UF foi digitada e NENHUM município daquele estado apareceu: dizer
-             nada aqui seria carimbar a coordenada de outro estado como certa */
-          if (uf && !ufCasou) {
-            cb(null, "Achei \"" + ultima + "\", mas em nenhum município de " + uf.toUpperCase() +
-              ". O clima viria do estado errado — confira o \"Local / Endereço\" da obra.");
-            return;
-          }
-          var nome = g.name + (g.admin1 ? " — " + g.admin1 : "");
-          try {
-            var ob = (Store.listar(eid(), "obras") || []).filter(function (o) { return o.id === obra.id; })[0];
-            if (ob) { ob.lat = g.latitude; ob.lon = g.longitude; ob.climaLocal = nome; Store.salvar(eid(), "obras", ob); }
-          } catch (e) {}
-          comCoord(g.latitude, g.longitude, nome);
-        }).catch(function () { cb(null, "Sem internet agora — tente quando conectar."); });
+      /* o servidor pergunta ao Nominatim só no Brasil e com o ESTADO quando a UF veio — e as guardas abaixo continuam: país e
+         estado não são município, e UF digitada sem município daquele estado é erro, nunca a coordenada de outro estado */
+      self._icarGeoPost("/ia/geo/municipio", { cidade: ultima, uf: uf, estado: uf && RDO.UF_ESTADO[uf] ? RDO.UF_ESTADO[uf] : "" }).then(function (x) {
+        if (x.s !== 200 || !x.j || !x.j.ok) { cb(null, msg(x, "Não consegui procurar o município agora.")); return; }
+        var todos = x.j.results || [];
+        var brasileiros = todos.filter(function (r) { return String(r.country_code || "").toUpperCase() === "BR"; });
+        /* ⚠ país e estado NÃO são município. Sem esta checagem, "Brasil" no
+         * fim do endereço fazia o app aceitar o feature_code PCLI (o país) e
+         * gravar lat −10 / lon −55 — o centro geográfico do Brasil — como
+         * coordenada da obra, em silêncio. Errar alto é melhor que errar quieto. */
+        var achados = brasileiros.filter(function (r) { return RDO.ehMunicipio(r); });
+        if (!achados.length) {
+          cb(null, brasileiros.length
+            ? "\"" + ultima + "\" não é um município — parece um estado ou o país. O clima do diário precisa da CIDADE da obra: confira o \"Local / Endereço\"."
+            : "Não achei \"" + ultima + "\" no mapa do Brasil. O clima só entra no diário com o município certo — confira o \"Local / Endereço\" da obra.");
+          return;
+        }
+        /* com UF na mão, escolhe o município do estado certo: há dezenas de
+           homônimos no Brasil e o primeiro resultado não é sempre o daqui.
+           Comparação EXATA pela tabela de UF (ver RDO.ufBate): o `indexOf`
+           que eu tinha escrito casava "SP" com "ESpírito Santo". */
+        var g = achados[0], ufCasou = false;
+        if (uf) {
+          var mesmoUf = achados.filter(function (r) { return RDO.ufBate(uf, r.admin1); })[0];
+          if (mesmoUf) { g = mesmoUf; ufCasou = true; }
+        }
+        /* a UF foi digitada e NENHUM município daquele estado apareceu: dizer
+           nada aqui seria carimbar a coordenada de outro estado como certa */
+        if (uf && !ufCasou) {
+          cb(null, "Achei \"" + ultima + "\", mas em nenhum município de " + uf.toUpperCase() +
+            ". O clima viria do estado errado — confira o \"Local / Endereço\" da obra.");
+          return;
+        }
+        var nome = g.name + (g.admin1 ? " — " + g.admin1 : "");
+        try {
+          var ob = (Store.listar(eid(), "obras") || []).filter(function (o) { return o.id === obra.id; })[0];
+          if (ob) { ob.lat = g.latitude; ob.lon = g.longitude; ob.climaLocal = nome; Store.salvar(eid(), "obras", ob); }
+        } catch (e) {}
+        comCoord(g.latitude, g.longitude, nome);
+      });
     },
 
     /* `RDO.estadoDe` com o 2º argumento respondido pela obra.
@@ -29763,47 +29755,22 @@
       return RDO.estadoDe(r, !!(ob && ob.portalUser));
     },
 
-    /* Média histórica de chuva do MESMO DIA DO ANO, nos 10 anos anteriores.
+    /* Média histórica de chuva do MESMO DIA DO ANO, nos 10 anos anteriores (±7 dias no calendário).
      *
      * É o número que separa "choveu" de "choveu fora do normal" — e o TCU e o
      * IBAPE são expressos: chuva dentro da média já deveria estar no preço e
      * no prazo, então não gera pleito. Mandar o engenheiro achar isso sozinho
      * era garantir que a lista de pendências nunca fosse zerada.
      *
-     * Janela de ±7 dias em torno da data, para a média não depender de um
-     * único dia de cada ano. Uma chamada só ao arquivo do Open-Meteo. */
+     * Pelo servidor da RA (NASA POWER, a mesma janela de antes, conta feita lá). Falhou? fica em branco — nunca chute. */
     _mediaHistoricaChuva: function (lat, lon, dataISO, cb) {
       try {
         if (lat == null || lon == null || !dataISO) { cb(null); return; }
-        var d = new Date(dataISO + "T00:00:00");
-        if (isNaN(d.getTime())) { cb(null); return; }
-        var ini = new Date(d.getTime()), fim = new Date(d.getTime());
-        ini.setFullYear(d.getFullYear() - 10); ini.setDate(ini.getDate() - 7);
-        fim.setFullYear(d.getFullYear() - 1);  fim.setDate(fim.getDate() + 7);
-        var url = RDO.CLIMA_URL_HIST + "?latitude=" + lat + "&longitude=" + lon +
-          "&start_date=" + ini.toISOString().slice(0, 10) +
-          "&end_date=" + fim.toISOString().slice(0, 10) +
-          "&daily=precipitation_sum&timezone=auto";
-        var to = setTimeout(function () { to = null; cb(null); }, 12000);
-        fetch(url).then(function (x) { return x.json(); }).then(function (j) {
+        var to = setTimeout(function () { to = null; cb(null); }, 20000);
+        this._icarGeoPost("/ia/geo/chuva-media", { lat: +lat, lon: +lon, dia: dataISO }).then(function (x) {
           if (!to) return; clearTimeout(to); to = null;
-          var dias = j && j.daily && j.daily.time, mm = j && j.daily && j.daily.precipitation_sum;
-          if (!dias || !mm || !dias.length) { cb(null); return; }
-          /* só os dias na mesma JANELA do calendário (±7 do dia/mês alvo) —
-             a média do ano inteiro diria outra coisa */
-          var alvoM = d.getMonth(), alvoD = d.getDate(), soma = 0, n = 0;
-          for (var i = 0; i < dias.length; i++) {
-            var dd = new Date(dias[i] + "T00:00:00");
-            if (isNaN(dd.getTime())) continue;
-            var difDias = Math.abs((dd.getMonth() - alvoM) * 30.44 + (dd.getDate() - alvoD));
-            if (difDias > 7 && difDias < 358) continue;   // 358: vira o ano (dez↔jan)
-            var v2 = Number(mm[i]);
-            if (isNaN(v2)) continue;
-            soma += v2; n++;
-          }
-          if (!n) { cb(null); return; }
-          cb(Math.round((soma / n) * 10) / 10);
-        })["catch"](function () { if (to) { clearTimeout(to); to = null; cb(null); } });
+          cb(x.s === 200 && x.j && x.j.ok && isFinite(Number(x.j.mediaMm)) ? Number(x.j.mediaMm) : null);
+        });
       } catch (e) { cb(null); }
     },
 

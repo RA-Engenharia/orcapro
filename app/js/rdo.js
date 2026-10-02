@@ -7,8 +7,9 @@
  *
  *   1) CLIMA COM PROVA. O clima do diário era um <select> que o encarregado
  *      escolhia na mão. Isso não vale nada numa discussão de prazo: o cliente
- *      contesta e não há o que mostrar. Agora o clima vem do Open-Meteo (sem
- *      chave de API, com histórico), e a paralisação por chuva sai com número:
+ *      contesta e não há o que mostrar. Agora o clima vem do servidor da RA
+ *      (NASA POWER e MET Norway, com a procedência gravada — item 1 abaixo), e
+ *      a paralisação por chuva sai com número:
  *      "choveu 23,4 mm em 5 h". Isso é evidência.
  *   2) ATIVIDADES DE ONDE ELAS JÁ EXISTEM. O que se executa no dia sai do
  *      orçamento, do cronograma ou do Last Planner — e o que não estiver em
@@ -23,15 +24,16 @@
   var RDO = {};
 
   /* ---------------------------------------------------------------
-   * 1) CLIMA — Open-Meteo (open-meteo.com, uso livre, sem chave)
+   * 1) CLIMA — pelo SERVIDOR DA RA (/ia/geo/clima-dia, /ia/geo/chuva-media, /ia/geo/municipio; server/icar-geo.js)
    *
-   * Duas rotas de propósito: a de previsão só responde de ~5 dias atrás em
-   * diante; o arquivo histórico cobre o passado. Diário quase sempre é
-   * preenchido com atraso, então sem o arquivo isso não serviria para nada.
+   * ⚠ Até a 1.2.119 o app chamava o Open-Meteo GRÁTIS direto do navegador — e o grátis é só para uso NÃO comercial, que o
+   *   OrçaPRO não é (02/10/2026: trocado). Agora o app manda só a coordenada (ou o município) e a data ao servidor da RA, que:
+   *   · dia fechado: reanálise da NASA (POWER, ~50 km), que sai de 2 a 3 dias depois;
+   *   · hoje e os dias que a NASA ainda não publicou: a previsão de curto prazo do MET Norway que o servidor REGISTRA hora a hora
+   *     para cada obra que pede o clima — marcada como previsão registrada, nunca como observação;
+   *   · média de 10 anos da data: NASA POWER.
+   *   A procedência vai gravada no clima (fonte, tipo, aviso) — é o que o fiscal lê num pleito.
    * --------------------------------------------------------------- */
-  RDO.CLIMA_URL_PREV = "https://api.open-meteo.com/v1/forecast";
-  RDO.CLIMA_URL_HIST = "https://archive-api.open-meteo.com/v1/archive";
-  RDO.GEO_URL = "https://geocoding-api.open-meteo.com/v1/search";
 
   /* Códigos WMO → texto em português + se a condição atrapalha a obra.
    * A tabela é do padrão WMO 4677, que é o que a API devolve. */
@@ -180,6 +182,7 @@
     var nd = (r.clima && !RDO.diaNaoTrabalhavel(r)) ? RDO.fracaoDiaPerdidoPorChuva(r.clima.chuvaMm) : 0;
     if (nd <= 0) return falta;                       // não há pleito de chuva a instruir
     if (!r.clima || !r.clima.fonte) falta.push("Buscar o clima do dia de fonte externa (o valor digitado à mão não é prova).");
+    else if (/^(registro|parcial|previsao)$/.test(String(r.clima.tipo || ""))) falta.push("O clima deste dia é PREVISÃO registrada pelo servidor, não reanálise — busque de novo depois que a NASA publicar o dia (2 a 3 dias depois); previsão não é prova.");
     if (r.chuvaMediaHistoricaMm == null) falta.push("Comparar com a média histórica do local — chuva dentro da média não gera pleito.");
     if (!String(r.impactoChuva || "").trim()) falta.push("Descrever o IMPACTO do dia: que frentes pararam, quanto efetivo ficou ocioso, quantas horas.");
     if (!(r.efetivo && r.efetivo.length)) falta.push("Registrar o efetivo presente — é ele que comprova a mão de obra ociosa.");
@@ -201,22 +204,6 @@
     return (Math.round(v * 10) / 10).toString().replace(".", ",");
   };
 
-  /* Monta a URL certa para a data pedida.
-   * A rota de previsão não entrega o passado distante e o arquivo histórico
-   * leva ~5 dias para consolidar — daí o corte. Errar isso devolve JSON sem
-   * `daily`, que é o modo silencioso de o clima "não funcionar". */
-  RDO.urlClima = function (lat, lon, dataISO, hojeISO) {
-    if (lat == null || lon == null || !dataISO) return "";
-    var dias = RDO.diasEntre(dataISO, hojeISO || dataISO);
-    var base = (dias > 5) ? RDO.CLIMA_URL_HIST : RDO.CLIMA_URL_PREV;
-    var campos = "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_hours,wind_speed_10m_max";
-    return base + "?latitude=" + encodeURIComponent(lat) +
-      "&longitude=" + encodeURIComponent(lon) +
-      "&start_date=" + encodeURIComponent(dataISO) +
-      "&end_date=" + encodeURIComponent(dataISO) +
-      "&daily=" + campos +
-      "&timezone=America%2FSao_Paulo";
-  };
 
   /* O endereço da obra é UM campo livre ("Rua, nº, bairro, cidade"). O
    * geocodificador precisa de MUNICÍPIO — mandar a rua devolve qualquer
@@ -305,22 +292,28 @@
 
   /* Normaliza a resposta da API. Devolve null quando não veio nada aproveitável
    * — e a view mostra "não consegui buscar", em vez de inventar sol. */
-  RDO.lerRespostaClima = function (json) {
-    if (!json || !json.daily || !json.daily.time || !json.daily.time.length) return null;
-    var d = json.daily, i = 0;
-    function v(campo) { return (d[campo] && d[campo][i] != null) ? Number(d[campo][i]) : null; }
-    var codigo = v("weather_code");
-    if (codigo == null) return null;
+  /* A resposta do servidor (/ia/geo/clima-dia) → o clima do diário. Sem código de tempo (a reanálise da NASA não diz o tipo,
+   * e sem chuva não se inventa "céu limpo"): a descrição sai da chuva. */
+  RDO.lerClimaServidor = function (json) {
+    var c = json && json.clima;
+    if (!c || c.chuvaMm == null || !isFinite(Number(c.chuvaMm))) return null;
+    var cod = c.codigo == null ? null : Number(c.codigo), mm = Number(c.chuvaMm) || 0;
+    function n(v) { return v == null || !isFinite(Number(v)) ? null : Number(v); }
     return {
-      data: d.time[i],
-      codigo: codigo,
-      descricao: RDO.descreverWMO(codigo),
-      tempMax: v("temperature_2m_max"),
-      tempMin: v("temperature_2m_min"),
-      chuvaMm: v("precipitation_sum") || 0,
-      chuvaHoras: v("precipitation_hours") || 0,
-      ventoMax: v("wind_speed_10m_max"),
-      fonte: "Open-Meteo",
+      data: c.data || null,
+      codigo: cod,
+      descricao: cod != null ? RDO.descreverWMO(cod) : (mm >= 0.2 ? "Chuva" : "Sem chuva"),   // abaixo de 0,2 mm é garoa de modelo, não chuva (o número fica)
+      tempMax: n(c.tempMax),
+      tempMin: n(c.tempMin),
+      chuvaMm: mm,
+      chuvaHoras: n(c.chuvaHoras) || 0,
+      ventoMax: n(c.ventoMax),
+      ventoUnidade: c.ventoUnidade || "km/h",
+      fonte: String(c.fonte || "servidor da RA"),
+      tipo: c.tipo || null,           // reanalise | registro | parcial | previsao
+      aviso: c.aviso || "",
+      atribuicao: c.atribuicao || "",
+      horasCobertas: n(c.horasCobertas),
       buscadoEm: null   // carimbado por quem chama (o motor não lê relógio)
     };
   };

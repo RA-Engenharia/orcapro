@@ -1,6 +1,15 @@
 ﻿POLÍTICA DE PRIVACIDADE — OrçaPRO IA
-Versão 1.10 — vigente a partir de 02/10/2026
+Versão 1.11 — vigente a partir de 02/10/2026
 Elaborada conforme a Lei nº 13.709/2018 (LGPD)
+
+O que mudou na 1.11: o CLIMA DO DIÁRIO DE OBRA (item 4.9) deixou de ser
+buscado direto do seu navegador no Open-Meteo. Agora o programa manda o
+município (uma vez) e a coordenada e a data da obra ao NOSSO servidor, que
+consulta a NASA (dias que já passaram e a média de chuva) e o MET Norway
+(hoje e os dias que a NASA ainda não publicou) e devolve o resultado. Para os
+dias recentes, o nosso servidor guarda por 12 dias a previsão hora a hora da
+coordenada das obras que pediram o clima (item 6). A NASA entrou na lista do
+item 8.
 
 O que mudou na 1.10: entrou o item 4.16 — LOCAL E CLIMA DO PLANO DE IÇAMENTO.
 Quando você pede, a coordenada da obra passa pelo nosso servidor e vai a
@@ -398,12 +407,23 @@ pedido, apagamos na hora o que estiver pendente (item 7).
 
 
 4.9 CLIMA DO DIA NO DIÁRIO DE OBRA
-Quando você aperta "Buscar o clima deste dia", o programa consulta um serviço
-público de meteorologia (Open-Meteo, Alemanha). Vão para lá, nessa ordem:
+Quando você aperta "Buscar o clima deste dia", o programa pergunta ao NOSSO
+servidor (o mesmo dos recursos de IA, item 4.1, que só atende licença ativa).
+Vão para lá, nessa ordem:
 
-  · o NOME DO MUNICÍPIO da obra, uma única vez, para descobrir a coordenada —
-    depois disso a coordenada fica gravada na obra e essa consulta não se repete;
-  · a COORDENADA e a DATA, para trazer a condição do tempo daquele dia.
+  · o NOME DO MUNICÍPIO da obra e a UF, uma única vez, para descobrir a
+    coordenada — o servidor pergunta ao Nominatim (OpenStreetMap); depois disso
+    a coordenada fica gravada na obra e essa consulta não se repete;
+  · a COORDENADA e a DATA, para trazer a condição do tempo daquele dia — o
+    servidor pergunta à NASA (POWER) pelos dias que já passaram e pela média de
+    chuva de 10 anos da data, e ao MET Norway pela previsão de hoje e dos dias
+    que a NASA ainda não publicou (ela publica de 2 a 3 dias depois).
+
+Para cobrir esses dias recentes, o nosso servidor GUARDA, por coordenada (sem
+nome de obra, cliente ou licença), a previsão hora a hora das obras que pediram
+o clima nos últimos 20 dias, e a consulta de novo de 3 em 3 horas (item 6). O
+diário registra de onde veio cada número: reanálise da NASA ou previsão
+registrada — e previsão não entra na soma de um pleito por chuva.
 
 Não vão: o nome da obra, o endereço completo, o cliente, nem qualquer conteúdo
 do diário. Não é a sua localização — é o município que você cadastrou na obra.
@@ -765,6 +785,11 @@ coordenada da obra, só quando você clica nele.
     tarefa ou anexo dentro do seu OrçaPRO é sua e fica com você.
   · Mapa da obra (item 4.11): nada é guardado por nós — o endereço vai direto
     do seu navegador ao Google, que o trata pela política dele.
+  · Clima do diário (item 4.9): o nosso servidor guarda a previsão hora a
+    hora de cada coordenada por 12 dias, a lista de coordenadas acompanhadas
+    por 20 dias depois do último pedido, as respostas da NASA por 30 dias, a
+    média de chuva por 1 ano e o município buscado por 30 dias. Nada disso
+    leva nome de obra, cliente, licença ou usuário.
   · Local e clima do plano de içamento (item 4.16): o nosso servidor guarda
     as respostas pela coordenada (ou pelo endereço buscado), para não repetir
     a consulta — previsão por 30 minutos, entorno do mapa por 7 dias,
@@ -790,18 +815,23 @@ Boa parte disso você resolve sozinho e na hora, dentro do programa — exportan
   · Groq, Inc. — processa o conteúdo enviado aos recursos de IA (item 4.1).
   · GitHub Inc. (Microsoft) — entrega o pacote de atualização (item 3.3).
   · Meta Platforms — recebe o que você manda pelos botões de WhatsApp (4.4).
-  · Open-Meteo (Alemanha) — recebe município e coordenada da obra ao buscar o
-    clima do diário (item 4.9) e, se o nosso servidor estiver configurado para
-    ele, a coordenada da previsão do plano de içamento (item 4.16).
+  · Open-Meteo (Alemanha) — se o nosso servidor estiver configurado para o
+    plano pago dele, recebe a coordenada da previsão do plano de içamento
+    (item 4.16). Até a versão 1.2.119 do programa, recebia também, direto do
+    seu navegador, o município e a coordenada da obra para o clima do diário
+    (item 4.9) — isso acabou na 1.2.120.
+  · NASA (EUA) — POWER, da NASA Langley Research Center: recebe a coordenada da
+    obra e a data (ou o período de 10 anos da média de chuva) ao buscar o clima
+    do diário (item 4.9), pelo nosso servidor.
   · OpenStreetMap Foundation (Reino Unido) — Nominatim: recebe o endereço
-    digitado em "Localizar" no plano de içamento (item 4.16), pelo nosso
-    servidor.
+    digitado em "Localizar" no plano de içamento (item 4.16) e o município da
+    obra no clima do diário (item 4.9), pelo nosso servidor.
   · FOSSGIS e.V. (Alemanha) — Overpass API do OpenStreetMap: recebe a
     coordenada da obra e o raio ao buscar o entorno (item 4.16), pelo nosso
     servidor.
   · Instituto Meteorológico da Noruega (MET Norway) — recebe a coordenada da
-    obra ao buscar a previsão do plano de içamento (item 4.16), pelo nosso
-    servidor.
+    obra ao buscar a previsão do plano de içamento (item 4.16) e o clima
+    recente do diário (item 4.9), pelo nosso servidor.
   · Amazon Web Services — Terrain Tiles: entrega o relevo da região da obra
     (item 4.16); o nosso servidor pede os quadros de mapa que cobrem a
     coordenada.

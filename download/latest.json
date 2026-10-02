@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.119",
+  "versao": "1.2.120",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.119.zip",
-  "notas": "Politica de privacidade atualizada (versao 1.10): novo item 4.16, sobre o local e o clima do plano de icamento. O plano de icamento do BIM segue em previa.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.119/OrcaPRO-IA-Instalador-v1.2.119.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.120.zip",
+  "notas": "Diario de obra: o clima do dia passa a vir do servidor da RA (NASA para os dias que ja passaram e para a media de chuva; previsao do MET Norway para hoje e os ultimos dias, marcada como previsao). Requer a licenca ativa. Politica de privacidade 1.11.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.120/OrcaPRO-IA-Instalador-v1.2.120.exe"
 }

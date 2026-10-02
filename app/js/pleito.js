@@ -74,6 +74,7 @@
   Pleito.MOTIVOS_DESCARTE = {
     domingo: "Domingo — dia que não seria trabalhado; o DNIT exclui, e um domingo na lista derruba o pleito inteiro.",
     feriado: "Feriado marcado no diário — dia que não seria trabalhado.",
+    so_previsao: "Chuva de PREVISÃO (registrada pelo servidor), não de reanálise ou observação — busque o clima deste dia de novo no diário depois que a NASA publicar (2 a 3 dias depois do dia).",
     sem_fonte: "Chuva sem fonte externa no registro — valor digitado à mão não é prova contra a fiscalização.",
     sem_medicao: "Dia apontado como parado no diário, mas sem medição de chuva — não há o que somar.",
     abaixo_limiar: "Chuva abaixo do limiar do critério DNIT/SICRO — não gera parada pleiteável."
@@ -82,7 +83,7 @@
   /* Ordem em que o motivo PRINCIPAL é escolhido quando mais de um se aplica.
    * O dia não trabalhável vem primeiro porque ele é definitivo: nem com fonte
    * perfeita aquele domingo entraria. */
-  var ORDEM_MOTIVOS = ["domingo", "feriado", "sem_fonte", "sem_medicao", "abaixo_limiar"];
+  var ORDEM_MOTIVOS = ["domingo", "feriado", "so_previsao", "sem_fonte", "sem_medicao", "abaixo_limiar"];
 
   /* ---------------------------------------------------------------
    * FORMATO E DATAS — só apresentação, nenhuma regra mora aqui
@@ -208,6 +209,7 @@
     var somaDescartada = 0;    // fração que se perdeu no descarte
     var porMotivo = {};
     var semFonteQualquer = 0;  // conta o motivo mesmo quando ele não é o principal
+    var soPrevisaoQualquer = 0;
     var efetivoPessoasDia = 0, efetivoHh = 0, efetivoHhOcioso = 0, diasComEfetivo = 0;
     var portalImpraticaveis = 0, portalParciais = 0;
     var naoHomologados = 0;
@@ -230,7 +232,11 @@
 
       /* A REGRA DE OURO. Sem fonte externa a fração não entra na soma — nem
          como parcela pequena, nem "só para constar". */
-      var temFonte = !!(clima && String(clima.fonte || "").trim());
+      /* ⚠ PREVISÃO NÃO É PROVA. Desde 02/10/2026 o clima do diário de hoje e dos dias que a NASA ainda não publicou é a previsão
+         de curto prazo que o servidor registra (`tipo` registro/parcial/previsao). Ela tem fonte — e por isso passava pela
+         regra de ouro como se fosse medição. Clima antigo (sem `tipo`, do Open-Meteo) continua valendo como antes. */
+      var soPrevisao = !!(clima && /^(registro|parcial|previsao)$/.test(String(clima.tipo || "")));
+      var temFonte = !!(clima && String(clima.fonte || "").trim()) && !soPrevisao;
       var fracaoContada = temFonte ? fracaoClima : 0;
 
       /* impedimento não imputável: a lista de js/rdo.js:770 é declaradamente de
@@ -287,7 +293,8 @@
       if (fracaoBruta > 0 || houvePar || /impratic|parcial/i.test(String(r.condicao || ""))) {
         if (ehDomingo) motivos.push("domingo");
         else if (naoTrabalhavel) motivos.push("feriado");
-        if (fracaoBruta > 0 && !temFonte) motivos.push("sem_fonte");
+        if (fracaoBruta > 0 && soPrevisao) motivos.push("so_previsao");
+        else if (fracaoBruta > 0 && !temFonte) motivos.push("sem_fonte");
         if (!clima && (houvePar || /impratic|parcial/i.test(String(r.condicao || "")))) motivos.push("sem_medicao");
         if (clima && temFonte && fracaoBruta === 0 && !naoTrabalhavel &&
             /impratic|parcial/i.test(String(r.condicao || "")) && !paradoPorImpedimento) {
@@ -301,6 +308,7 @@
         ORDEM_MOTIVOS.forEach(function (m) { if (!principal && motivos.indexOf(m) > -1) principal = m; });
         porMotivo[principal] = (porMotivo[principal] || 0) + 1;
         if (motivos.indexOf("sem_fonte") > -1) semFonteQualquer++;
+        if (motivos.indexOf("so_previsao") > -1) soPrevisaoQualquer++;
         somaDescartada = arred5(somaDescartada + fracaoBruta);
         descartados.push({
           data: r.data,
@@ -472,6 +480,9 @@
     if (semFonteQualquer > 0) {
       avisos.push(semFonteQualquer + " dia(s) com chuva registrada FICARAM DE FORA da soma por não terem clima de fonte externa. Busque o clima desses dias no diário antes de protocolar — hoje eles não são prova.");
     }
+    if (soPrevisaoQualquer > 0) {
+      avisos.push(soPrevisaoQualquer + " dia(s) com chuva FICARAM DE FORA da soma porque o clima deles é PREVISÃO registrada, não reanálise. Abra o diário desses dias e busque o clima de novo — passados 2 a 3 dias a NASA já publicou e o número vira prova.");
+    }
     if (buracos.length) {
       avisos.push(buracos.length + " dia(s) do período não têm diário. Dia sem diário não conta como pleiteável, e buraco na sequência é a primeira coisa que a fiscalização procura.");
     }
@@ -533,6 +544,7 @@
         total: descartados.length,
         porMotivo: porMotivo,
         semFonte: semFonteQualquer,
+        soPrevisao: soPrevisaoQualquer,
         diasPerdidosNoDescarte: somaDescartada,
         linhas: descartados,
         criterio: "Dias que pareciam pleito e não entraram na soma. A lista é o que sustenta o documento quando a fiscalização contesta."
