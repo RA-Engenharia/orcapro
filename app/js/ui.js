@@ -911,6 +911,15 @@
             contas.map(function (c) { return '<button type="button" class="btn sm" data-conta="' + Util.esc(c.email) + '">👤 ' + Util.esc(c.email) + '</button>'; }).join("") +
           '</div></div>'
         : '';
+      /* ⚠ O PORQUÊ DA SAÍDA FORÇADA (acesso com prazo, js/auth.js). O toast
+         some em segundos; quem volta ao computador depois do prazo encontra
+         só a tela de login e conclui que "o sistema caiu". O recado fica aqui
+         até o próximo login ou "Sair". Fundo claro FIXO pede texto escuro
+         fixo (mesma régua do aviso de usuário criado, js/gestao.js). */
+      var recadoSaida = (typeof Auth !== "undefined" && Auth.recadoSaida) ? Auth.recadoSaida() : "";
+      var caixaRecado = recadoSaida
+        ? '<div class="card" id="lg-recado" role="alert" style="background:#fffbeb;border-color:#fde68a;color:#92400e;margin:0 0 14px">' + Util.esc(recadoSaida) + '</div>'
+        : '';
       var badge = '<svg width="46" height="46" viewBox="0 0 512 512" style="flex:none"><defs><linearGradient id="lgg" x1="0" y1="0" x2=".35" y2="1"><stop offset="0" stop-color="#2d6a9c"/><stop offset="1" stop-color="#143a5e"/></linearGradient></defs><path d="M504 256 L504 354 L502 385 L500 407 L496 425 L492 440 L486 452 L480 463 L472 472 L463 480 L452 486 L440 492 L425 496 L407 500 L385 502 L354 504 L256 504 L158 504 L127 502 L105 500 L87 496 L72 492 L60 486 L49 480 L40 472 L32 463 L26 452 L20 440 L16 425 L12 407 L10 385 L8 354 L8 256 L8 158 L10 127 L12 105 L16 87 L20 72 L26 60 L32 49 L40 40 L49 32 L60 26 L72 20 L87 16 L105 12 L127 10 L158 8 L256 8 L354 8 L385 10 L407 12 L425 16 L440 20 L452 26 L463 32 L472 40 L480 49 L486 60 L492 72 L496 87 L500 105 L502 127 L504 158 Z" fill="url(#lgg)"/><path d="M502 256 L502 353 L500 384 L498 406 L494 424 L490 438 L484 450 L478 461 L470 470 L461 478 L450 484 L438 490 L424 494 L406 498 L384 500 L353 502 L256 502 L159 502 L128 500 L106 498 L88 494 L74 490 L62 484 L51 478 L42 470 L34 461 L28 450 L22 438 L18 424 L14 406 L12 384 L10 353 L10 256 L10 159 L12 128 L14 106 L18 88 L22 74 L28 62 L34 51 L42 42 L51 34 L62 28 L74 22 L88 18 L106 14 L128 12 L159 10 L256 10 L353 10 L384 12 L406 14 L424 18 L438 22 L450 28 L461 34 L470 42 L478 51 L484 62 L490 74 L494 88 L498 106 L500 128 L502 159 Z" fill="none" stroke="#fff" stroke-opacity=".14" stroke-width="3"/><g><path d="M120 306 L120 372 Q120 380 128 380 L180 380 Q188 380 188 372 L188 306 Q188 288 170 288 L138 288 Q120 288 120 306 Z" fill="#fff" fill-opacity=".42"/><path d="M222 238 L222 372 Q222 380 230 380 L282 380 Q290 380 290 372 L290 238 Q290 220 272 220 L240 220 Q222 220 222 238 Z" fill="#fff" fill-opacity=".78"/><path d="M324 170 L324 372 Q324 380 332 380 L384 380 Q392 380 392 372 L392 170 Q392 152 374 152 L342 152 Q324 152 324 170 Z" fill="#3ccf73"/><path d="M402 72 C408 100 408 100 436 106 C408 112 408 112 402 140 C396 112 396 112 368 106 C396 100 396 100 402 72 Z" fill="#9be7af"/></g></svg>';
       return '' +
         '<div class="login-wrap">' +
@@ -928,6 +937,7 @@
             '<div class="brand"><div class="lc-logo">' + badge + '<span class="nome">OrçaPRO<span class="ia">IA</span></span></div>' +
             '<div class="slogan">Entre ou crie sua conta para começar.</div></div>' +
             '<div id="login-form">' +
+            caixaRecado +
             chips +
             /* ⚠ ENTRAR PELO CELULAR ERA O QUE MAIS GERAVA CHAMADO (11/09/2026).
                Três coisas faziam a pessoa errar sem saber por quê, e as três
@@ -1075,6 +1085,24 @@
          atualização oficial; e a atualização já é automática. Cada orçamento
          escolhe a sua UF e competência no assistente; importar uma base
          própria ficou em 🗂 Tabelas, na linha da SINAPI. */
+      /* ⚠ ESCOPO POR OBRA (js/auth.js): o usuário restrito vê só os orçamentos
+         ligados às obras dele, e NÃO cria orçamento solto (nasceria sem obra
+         e sumiria da lista dele — Auth.orcNovoRestrito). Os botões de criar
+         saem da tela; a guarda de verdade está nas funções (App.novoOrcamento
+         e as outras). A faixa diz o recorte: lista curta sem explicação é a
+         pessoa achando que orçamento sumiu. */
+      var escopo = !!(baseInfo && baseInfo.escopoObras);
+      if (escopo) {
+        html += '<div class="flex between mb"><h1 style="margin:0">Meus Orçamentos</h1></div>' +
+          '<div class="card" id="orc-escopo-aviso" style="padding:10px 12px;margin-bottom:12px;font-size:13px">' +
+          'Você vê os orçamentos ligados às <b>obras liberadas para o seu usuário</b>. ' +
+          'Para criar orçamento novo ou ver o de outra obra, fale com o administrador da conta.</div>';
+        if (!orcamentos.length && listaIlegivel) return html;
+        if (!orcamentos.length) {
+          return html + '<div class="vazio card"><h3>Nenhum orçamento ligado às suas obras</h3>' +
+            '<p class="muted">Quando o administrador ligar o orçamento à obra (ficha da obra → Vincular a um orçamento), ele aparece aqui.</p></div>';
+        }
+      } else {
       html += '<div class="flex between mb"><h1 style="margin:0">Meus Orçamentos</h1>' +
                  /* "RECUPERAR" TEM PORTA PRÓPRIA (v1.1.212). Quem perdeu um orçamento
                     não procura "importar" — procura "recuperar", e por isso passava
@@ -1085,6 +1113,7 @@
                  '<button class="btn" data-acao="importar-planilha" title="Importe uma planilha de orçamento (Excel/CSV) de QUALQUER formato — o agente detecta as etapas e itens e casa o código SINAPI">' + Icones.get("importar") + 'Importar planilha</button>' +
                  '<button class="btn" data-acao="copiar-orc" title="Criar um orçamento a partir de outro que já existe">⧉ Copiar de outro</button> ' +
                  '<button class="btn primary" data-acao="novo">+ Novo Orçamento</button></div></div>';
+      }
       /* lista ilegível: o aviso lá em cima já diz tudo, e "crie o primeiro" é o
          convite para gravar por cima (ver renderAvisoIlegivel) */
       if (!orcamentos.length && listaIlegivel) return html;

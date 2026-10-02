@@ -103,6 +103,16 @@
      * importou o pacote; no outro aparelho a tela diz isso. */
     "bim_sondagens",
     "bim_pranchas",
+    /* DOCUMENTOS DA OBRA (js/docobra.js): a FICHA de cada documento — tipo,
+     * revisão, SHA-256 do arquivo, quem assinou (lido do próprio PDF) e o
+     * histórico — viaja, para o escritório e o canteiro verem o mesmo arquivo
+     * técnico. O PDF NÃO viaja: mora no IndexedDB de quem adicionou; no outro
+     * aparelho a linha diz "não está neste computador". O histórico tem teto
+     * por documento (DocObra.MAX_HIST) por causa do teto de 1 MiB daqui. */
+    "obra_docs",
+    /* quem assina (certificado ou manuscrita AUTORIZADA, com o registro da
+     * autorização): é da EMPRESA, sem obraId. A imagem da manuscrita não viaja. */
+    "doc_assinantes",
     /* o PESO ESPECÍFICO que o engenheiro informou para um material que a
      * norma não cobre ("Compensado naval = 6 kN/m³"). É da EMPRESA, não da
      * obra: o mesmo material pesa igual em toda obra — e sem sincronizar, o

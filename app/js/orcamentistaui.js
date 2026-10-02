@@ -95,6 +95,8 @@
   /* ---------------- App: fluxo ---------------- */
   App.orcamentistaDaImportacao = function () {
     if (this._trialBloqueado && this._trialBloqueado()) { this._avisoTrial(); return; }
+    /* escopo por obra: a importação cria orçamento NOVO, sem obra (Auth.orcNovoRestrito) */
+    if (this._orcNovoRecusado && this._orcNovoRecusado()) return;
     var res = this._imp && this._imp.res;
     if (!res || !res.etapas || !res.etapas.length) { UI.toast("Nada para o orçamentista — ajuste o mapeamento das colunas e clique Reanalisar.", "erro"); return; }
     var nome = String(this._imp.nome || "Orçamento importado").replace(/\.(xlsx|xls|csv)$/i, "");
@@ -396,6 +398,13 @@
     var porque = function () { return self._iaPorqueNaoGravou ? self._iaPorqueNaoGravou(false, QUEM) : "o motivo está no aviso que apareceu"; };
     this._orcmRecado("");
     if (this._trialBloqueado && this._trialBloqueado()) { this._orcmRecado("Nada foi aplicado: " + porque() + ". As decisões continuam neste quadro."); return; }
+    /* ⚠ escopo por obra, NA FUNÇÃO que grava: no modo importação nasce um
+       orçamento sem obra, invisível para o restrito que o criou. Antes das
+       composições próprias, que também gravam. */
+    if (st.modo === "importacao") {
+      var rnOm = (typeof Auth !== "undefined" && Auth.orcNovoRestrito) ? Auth.orcNovoRestrito() : "";
+      if (rnOm) { this._orcmRecado("Nada foi criado: " + rnOm); return; }
+    }
     var orcA = null, copia = null, pares = [];
     if (st.modo !== "importacao") {
       orcA = this.orcAtual;

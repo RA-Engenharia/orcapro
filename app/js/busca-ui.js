@@ -24,7 +24,10 @@
       // ações rápidas (primeiro no ranking por tipo)
       // v1.1.233 — RBAC também aqui: sub-usuário sem o módulo Orçamentos criava
       // e gravava orçamento pelo Ctrl+K, contornando a permissão da sidebar
-      if (this._pode("orcamentos")) f.push({ tipo: "acao", id: "novo-orcamento", titulo: "Novo Orçamento", subtitulo: "criar um orçamento em branco", palavras: "criar novo adicionar" });
+      /* escopo por obra: o restrito não cria orçamento solto (Auth.orcNovoRestrito) —
+         a ação sai daqui; a recusa de verdade está no App.novoOrcamento */
+      var restritoOrc = !!(typeof Auth !== "undefined" && Auth.orcNovoRestrito && Auth.orcNovoRestrito());
+      if (this._pode("orcamentos") && !restritoOrc) f.push({ tipo: "acao", id: "novo-orcamento", titulo: "Novo Orçamento", subtitulo: "criar um orçamento em branco", palavras: "criar novo adicionar" });
       if (typeof Tour !== "undefined") f.push({ tipo: "acao", id: "tour", titulo: "Rever o tour guiado", subtitulo: "conheça o sistema em 60 segundos", palavras: "ajuda tutorial guia" });
       // backup é ação de DONO (sub-usuário não tem o menu — sem beco sem saída)
       if (logado.papel !== "usuario") f.push({ tipo: "acao", id: "backup", titulo: "Backup dos dados", subtitulo: "exportar ou restaurar", palavras: "exportar salvar restaurar seguranca" });
@@ -73,7 +76,14 @@
       var nomeDe = function (v) { return (v && typeof v === "object") ? (v.nome || "") : (v || ""); };
       if (this._pode("orcamentos")) {
         try {
-          (Store.listar(eid, "orcamentos") || []).forEach(function (o) {
+          /* ⚠ ESCOPO POR OBRA (js/auth.js, "ESCOPO DOS ORÇAMENTOS POR OBRA"):
+             o Ctrl+K entregava número, nome e cliente do orçamento de obra que
+             o usuário restrito não vê na lista — e o clique abria. O clique é
+             barrado também na função (App.abrirOrcamento); aqui some o
+             resultado, como já acontece com as entidades da Gestão abaixo. */
+          var orcsB = Store.listar(eid, "orcamentos") || [];
+          if (typeof Auth !== "undefined" && Auth.filtrarOrcamentos) orcsB = Auth.filtrarOrcamentos(orcsB);
+          orcsB.forEach(function (o) {
             var cli = nomeDe(o.cliente), obr = nomeDe(o.obra);
             f.push({ tipo: "orcamento", id: o.id, titulo: (o.numero ? o.numero + " · " : "") + (o.nome || "Sem nome"), subtitulo: cli || obr || "orçamento", palavras: cli + " " + obr + " " + (o.uf || "") });
           });

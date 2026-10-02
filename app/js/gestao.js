@@ -85,9 +85,9 @@
        é ele quem responde "a obra está atrasada?" e congela a linha de base
        (espec v2 3.2). Sem estar aqui, o sub-usuário de engenharia criado por
        preset nasceria sem a tela — o mesmo buraco da `producao` acima. */
-    engenharia:     ["dashboard", "orcamentos", "obras", "medicoes", "rdo", "cronobra", "producao", "requisicoes", "cotacoes", "insumos", "epi", "relatorios", "carpintaria"],
+    engenharia:     ["dashboard", "orcamentos", "obras", "documentos", "medicoes", "rdo", "cronobra", "producao", "requisicoes", "cotacoes", "insumos", "epi", "relatorios", "carpintaria"],
     compras:        ["dashboard", "compras", "estoque", "requisicoes", "cotacoes", "insumos", "fornecedores"],
-    financeiro:     ["dashboard", "financeiro", "folhasemanal", "medicoes", "contratos", "fiscal", "centrocusto", "relatorios"],
+    financeiro:     ["dashboard", "financeiro", "folhasemanal", "medicoes", "contratos", "documentos", "fiscal", "centrocusto", "relatorios"],
     rh:             ["dashboard", "colaboradores", "folhasemanal", "epi", "ponto", "folha", "remunvar"],
     administrativo: ["dashboard", "clientes", "contratos", "fornecedores", "fiscal", "patrimonio", "frota", "epi", "modelos"],
     diretoria:      null   // null = todos os módulos atribuíveis
@@ -517,6 +517,9 @@
        são DAQUELA obra: sem estar aqui, o sub-usuário restrito veria o solo e
        as folhas das obras que não acompanha */
     bim_sondagens: 1, bim_pranchas: 1,
+    /* o arquivo de documentos (contrato, ART, memorial assinado) é DAQUELA
+       obra: o sub-usuário restrito não vê o contrato das obras que não acompanha */
+    obra_docs: 1,
     bim_clash_testes: 1, bim_clash_resultados: 1, bim_tarefas: 1,
     /* o elo modelo<->orcamento carrega obraId: sem estar aqui, o sub-usuario
        restrito a duas obras veria os elos das outras oito. */
@@ -597,6 +600,21 @@
      olhar só as obras da pessoa daria resposta ERRADA — hoje a numeração de
      documento. Não use para montar tela: tela usa `lista`. */
   function listaTodas(ent) { return Store.listar(eid(), ent); }
+  /* ⚠ ESCOPO DOS ORÇAMENTOS POR OBRA (js/auth.js). O orçamento não passa
+     pelo `filtrarPorObra` (mora em `Store.listarOrcamentos`), e por isso os
+     seletores de orçamento da Gestão — vínculo da obra, contrato, medição,
+     cronograma da obra — ofereciam ao usuário restrito o orçamento de
+     QUALQUER obra, com nome e número. E escolher ali era pior que ver: ligar
+     a própria obra ao orçamento alheio o tornaria visível para ele (o vínculo
+     é o que dá a visibilidade). Por isso: a TELA lista
+     `Auth.filtrarOrcamentos(...)` e a FUNÇÃO que grava confere
+     `Auth.podeOrcamento(id)`.
+     ⚠ ESCRITO EM LINHA EM CADA MÉTODO, SEM AJUDANTE AQUI DO MÓDULO: as
+       bancadas de tools/ (test-crono-f3-consertos, test-crono-inicio,
+       test-cc-selects, test-v12-dinheiro-dado…) recortam UM método do
+       fonte e o rodam sozinho — um ajudante novo deste escopo vira
+       "ReferenceError" lá (medido na primeira versão). Com o `typeof Auth`
+       em linha, bancada com Auth de mentira roda o de antes. */
 
   /* ⚠ NUMERAÇÃO POR MAIOR + 1, nunca por `length + 1`.
    *
@@ -660,6 +678,7 @@
     obras: '<path d="M3 21h18"/><path d="M5 21V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v16"/><path d="M15 21V9h2a2 2 0 0 1 2 2v10"/><path d="M8 7h1M11 7h1M8 11h1M11 11h1M8 15h1M11 15h1"/>',
     clientes: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
     contratos: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/>',
+    documentos: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 11h5"/><path d="M8.5 17.5c1.2 0 1.4-1.6 2.6-1.6s1.2 1.6 2.4 1.6 1.4-.8 1.4-.8"/>',
     medicoes: '<path d="M21.3 8.7 8.7 21.3a1 1 0 0 1-1.4 0l-4.6-4.6a1 1 0 0 1 0-1.4L15.3 2.7a1 1 0 0 1 1.4 0l4.6 4.6a1 1 0 0 1 0 1.4Z"/><path d="m7.5 10.5 2 2"/><path d="m11 7 2 2"/><path d="m14.5 3.5 2 2"/><path d="m4 14 2 2"/>',
     financeiro: '<path d="M20 12V8H6a2 2 0 0 1 0-4h12v4"/><path d="M4 6v12a2 2 0 0 0 2 2h14v-4"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/>',
     fornecedores: '<path d="M10 17h4V5H2v12h3"/><path d="M14 8h4l3 4v5h-2"/><path d="M14 17h1"/><circle cx="7.5" cy="17.5" r="1.5"/><circle cx="17.5" cy="17.5" r="1.5"/>',
@@ -825,6 +844,10 @@
       { id: "clientes", nome: "Clientes", g: "obra" },
       { id: "contratos", nome: "Contratos", g: "obra" },
       { id: "obras", nome: "Obras", g: "obra" },
+      /* o arquivo técnico da obra: PDF, revisões, quem assinou (certificado
+         ICP-Brasil ou manuscrita autorizada) e o histórico. Não confundir com a
+         lista "Documentos do Portal" da ficha da obra, que é o que o cliente vê. */
+      { id: "documentos", nome: "Documentos da obra", curto: "Documentos", g: "obra" },
       { id: "tarefas", nome: "Tarefas", g: "obra" },
       { id: "rdo", nome: "Diário (RDO)", g: "canteiro" },
       { id: "lastplanner", nome: "Last Planner (PPC)", curto: "Last Planner", g: "canteiro" },
@@ -1565,6 +1588,8 @@
         case "folhasemanal": return this.renderFolhaSemanal();
         case "clientes": return this.renderClientes();
         case "contratos": return this.renderContratos();
+        /* a tela mora em js/docobraui.js (carregado depois deste arquivo) */
+        case "documentos": return this.renderDocumentos ? this.renderDocumentos() : this._moduloNaoCarregado("Documentos da obra", "js/docobraui.js");
         case "medicoes": return this.renderMedicoes();
         case "financeiro": return this.renderFinanceiro();
         case "previstoreal": return this.renderPrevistoReal();
@@ -4989,6 +5014,7 @@
       if (mod === "medicoes") this._medObra = id || "todas";
       if (mod === "rdo") this._rdoObraFiltro = id || "todas";
       if (mod === "galeria") { this._galSel = id; this._galFiltro = ""; }
+      if (mod === "documentos") this._dobObra = id || "todas";
       this._ovFicha = null;
       App.irPara(mod);
     },
@@ -5293,6 +5319,10 @@
          triagem, apagar a obra apagaria documento fiscal — que a empresa é
          obrigada a guardar por 5 anos. Perde o vínculo, não o documento. */
       ["fiscal", "nota(s) fiscal(is)"],
+      /* DOCUMENTO ASSINADO NÃO MORRE COM A OBRA, pelo mesmo motivo da nota:
+         contrato, ART e memorial assinados são prova. A ficha guarda o nome da
+         obra (`obraNome`) para continuar dizendo de onde veio. */
+      ["obra_docs", "documento(s) do arquivo da obra"],
       ["frota", "veículo(s)"],
       /* v1.1.236 — jornada e dinheiro de PESSOA. Perdem o vínculo com a obra,
          não a existência. Estes quatro já eram imunes à cascata no merge da
@@ -5774,7 +5804,7 @@
          não dá erro — dá silêncio, e o silêncio custou o cadastro do diário
          por WhatsApp de todo mundo até 09/08/2026. */
       var selfObra = this;
-      o = o || {}; var clientes = lista("clientes"), orcs = Store.listarOrcamentos(eid());
+      o = o || {}; var clientes = lista("clientes"), orcs = ((typeof Auth !== "undefined" && Auth.filtrarOrcamentos) ? Auth.filtrarOrcamentos(Store.listarOrcamentos(eid())) : Store.listarOrcamentos(eid()));   // escopo por obra: só o que a pessoa pode ver
       var corpo =
         '<div class="row">' + campo("Nome da obra *", inp("g-nome", o.nome, "Ex.: Residência Silva")) + campo("Cliente", sel("g-cliente", optsRec(clientes, "nome", o.clienteId, "— nenhum —"))) + "</div>" +
         '<div class="row">' + campo("Tipo", sel("g-tipo", '<option value="">—</option>' + opts(P.obraTipo, o.tipo))) + campo("Fase atual", sel("g-fase", '<option value="">—</option>' + opts(P.obraFase, o.fase))) + "</div>" +
@@ -5885,6 +5915,10 @@
         obj.enderecoEntrega = v("g-endentrega"); obj.responsavelRecebimento = v("g-receb");
         obj.telefoneRecebimento = v("g-recebtel"); obj.horarioRecebimento = v("g-recebhora");
         obj.areaConstruida = nv("g-areac"); obj.areaTerreno = nv("g-areat"); obj.orcamentoId = v("g-orc"); obj.obs = v("g-obs");
+        /* ⚠ ESCOPO POR OBRA NA FUNÇÃO: ligar a obra a um orçamento que a pessoa não
+           vê é o jeito de passar a vê-lo (ver o ⚠ ESCOPO DOS ORÇAMENTOS no topo). Manter o que já
+           estava ligado passa sempre. */
+        if (obj.orcamentoId && String(obj.orcamentoId) !== String(o.orcamentoId || "") && (typeof Auth !== "undefined" && Auth.podeOrcamento && !Auth.podeOrcamento(obj.orcamentoId))) { UI.toast(Auth.msgOrcForaDoEscopo(), "erro", 9000); return false; }
         /* ⚠ O PARÂMETRO DA MEDIÇÃO PASSA PELO `_coletaMudou` (§1.15): numa
            instalação com a chave `medAvanco` desligada o select não existe, e
            um `obj.avancoMedicao = v(...)` cru apagaria a escolha que o
@@ -6474,7 +6508,7 @@
 
     novoContrato: function () { this.formContrato(null); },
     formContrato: function (c) {
-      c = c || {}; var obras = lista("obras"), clientes = lista("clientes"), orcs = Store.listarOrcamentos(eid());
+      c = c || {}; var obras = lista("obras"), clientes = lista("clientes"), orcs = ((typeof Auth !== "undefined" && Auth.filtrarOrcamentos) ? Auth.filtrarOrcamentos(Store.listarOrcamentos(eid())) : Store.listarOrcamentos(eid()));   // escopo por obra
       var num = c.numero || proxNumero("contratos", { prefixo: "CT-" + new Date().getFullYear() + "-", casas: 3 });
       var corpo =
         '<div class="row">' + campo("Número", inp("g-num", num)) + campo("Status", sel("g-status", opts(P.contratoStatus, c.status || "elaboracao"))) + "</div>" +
@@ -6500,6 +6534,8 @@
         obj.numero = v("g-num"); obj.status = v("g-status"); obj.clienteId = v("g-cliente"); obj.obraId = v("g-obra");
         obj.tipo = v("g-tipo"); obj.regime = v("g-regime"); obj.valor = nv("g-valor"); obj.formaPgto = v("g-forma");
         obj.dataAssinatura = v("g-assin"); obj.inicio = v("g-inicio"); obj.termino = v("g-termino"); obj.orcamentoId = v("g-orc");
+        /* escopo por obra: o contrato da obra liberada também dá visibilidade ao orçamento dele (js/auth.js) */
+        if (obj.orcamentoId && String(obj.orcamentoId) !== String(c.orcamentoId || "") && (typeof Auth !== "undefined" && Auth.podeOrcamento && !Auth.podeOrcamento(obj.orcamentoId))) { UI.toast(Auth.msgOrcForaDoEscopo(), "erro", 9000); return false; }
         obj.descricao = v("g-desc"); obj.rtContratada = v("g-rt"); obj.creaContratada = v("g-crea"); obj.artContratada = v("g-art");
         obj.garantiaServicos = nv("g-gserv"); obj.tipoGarantia = v("g-tgar"); obj.multaAtraso = nv("g-multa"); obj.clausulasEspeciais = v("g-clausulas");
         var cli = obras && lista("clientes").filter(function (x) { return x.id === obj.clienteId; })[0];
@@ -6900,7 +6936,7 @@
           { texto: "Puxar e abrir", classe: "primary", onClick: function () {
             var obraId = v("g-pux-obra");
             var r = MedicaoSeguinte.puxar({ medicoes: lista("medicoes"), obraId: obraId, hoje: hoje,
-              orcamentosValidos: Store.listarOrcamentos(eid()) });
+              orcamentosValidos: ((typeof Auth !== "undefined" && Auth.filtrarOrcamentos) ? Auth.filtrarOrcamentos(Store.listarOrcamentos(eid())) : Store.listarOrcamentos(eid())) });
             if (!r.ok) {
               UI.toast(r.motivo === "so-futuras"
                 ? "Esta obra só tem boletim com data futura — confira as datas antes de puxar."
@@ -6923,7 +6959,7 @@
           var box = document.getElementById("g-pux-previa");
           if (!box) return;
           var r = MedicaoSeguinte.puxar({ medicoes: lista("medicoes"), obraId: v("g-pux-obra"), hoje: hoje,
-            orcamentosValidos: Store.listarOrcamentos(eid()) });
+            orcamentosValidos: ((typeof Auth !== "undefined" && Auth.filtrarOrcamentos) ? Auth.filtrarOrcamentos(Store.listarOrcamentos(eid())) : Store.listarOrcamentos(eid())) });
           if (!r.ok) { box.innerHTML = '<span class="muted" style="font-size:12px">Sem medição anterior nesta obra.</span>'; return; }
           box.innerHTML =
             '<div style="border:1px solid var(--linha,#e2e8f0);border-radius:8px;padding:9px;font-size:12px">' +
@@ -7094,7 +7130,7 @@
     formMedicao: function (m) {
       var self = this;
       m = m || {}; var stAntigo = m.status || ""; var obras = lista("obras"), contratos = lista("contratos");
-      var orcs = Store.listarOrcamentos(eid());
+      var orcs = ((typeof Auth !== "undefined" && Auth.filtrarOrcamentos) ? Auth.filtrarOrcamentos(Store.listarOrcamentos(eid())) : Store.listarOrcamentos(eid()));   // escopo por obra: o seletor não oferece orçamento de obra alheia
       var num = m.numero || proxNumero("medicoes", { casas: 2, sufixo: "ª" });
       /* estado inicial do campo "%": obrigatório, calculado ou inaplicável.
          Sai já escrito no HTML — ver _notaPctHtml. */
@@ -7269,6 +7305,8 @@
         if (orcId) {
           var orc = Store.obterOrcamento(eid(), orcId);
           if (!orc) { UI.toast("Orçamento não encontrado.", "erro"); return false; }
+          /* escopo por obra NA FUNÇÃO: medir contra orçamento alheio leria os itens e preços dele */
+          if (typeof Auth !== "undefined" && Auth.podeOrcamento && !Auth.podeOrcamento(orc)) { UI.toast(Auth.msgOrcForaDoEscopo(), "erro", 9000); return false; }
           // Boletim JÁ APROVADO/PAGO é documento contratual: NADA de dinheiro é
           // reprecificado ao salvar — nem itens, nem valor, nem % (o gate pegou o
           // congelamento pela metade: valor/itens mudavam e o rodapé congelado não
@@ -8014,6 +8052,8 @@
         if (!orcId) { box.innerHTML = '<div class="muted" style="margin:8px 0">Selecione o orçamento que será medido.</div>'; pintarCentros([]); notaPct("obrigatorio"); if (gv) gv.readOnly = false; if (gp) gp.readOnly = false; return; }
         var orc = Store.obterOrcamento(eid(), orcId);
         if (!orc) { box.innerHTML = '<div class="muted">Orçamento não encontrado.</div>'; return; }
+        /* escopo por obra: a prévia dos itens é a planilha do orçamento — não desenha a de obra alheia */
+        if (typeof Auth !== "undefined" && Auth.podeOrcamento && !Auth.podeOrcamento(orc)) { box.innerHTML = '<div class="muted">' + Util.esc(Auth.msgOrcForaDoEscopo()) + '</div>'; return; }
         // Boletim APROVADO/PAGO: mostra os valores SALVOS, travados — a prévia não
         // pode recalcular contra o orçamento atual e induzir o usuário a gravar
         // um documento contratual reprecificado.
@@ -16612,6 +16652,7 @@
       }
       if (a.avisos.length) h += '<details style="margin-top:6px;font-size:11px"><summary class="muted">' + a.avisos.length + " aviso(s)</summary>" + a.avisos.map(function (x) { return '<div class="muted">• ' + esc(x) + "</div>"; }).join("") + "</details>";
       h += this._icarHtmlCaminho(p, ic, eq);
+      h += this._icarHtmlLiberacao(p, ic, a);
       h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">' +
         '<button class="btn sm primary" data-icar="mostrar"' + (a.raio != null && eq ? "" : " disabled") + ">Mostrar no 3D</button>" +
         '<button class="btn sm primary" data-icar="simular"' + (a.raio != null && eq ? "" : " disabled") + ">" + (window.BIM && BIM.icarSimulando && BIM.icarSimulando() ? "Parar simulação" : "Simular içamento") + "</button>" +
@@ -16873,6 +16914,9 @@
       if (acao === "rede-cancelar") { st.redeNova = null; try { BIM.icarMarcarPonto(null); } catch (e) {} this._icarRender(); return; }
       if (acao === "rede-tirar") { (p.redes || []).splice(+v, 1); if (this._icarSalvar(p)) { this._icarRender(); this._icarRedesenhar(); } return; }
       if (acao === "caminho") { this._icarVerificarCaminho(st.sel); return; }
+      if (acao === "lib-dentro") { this._icarLiberar("dentro"); return; }
+      if (acao === "lib-fora") { this._icarLiberar("fora"); return; }
+      if (acao === "lib-anular") { this._icarLiberar("anula", v); return; }
       if (acao === "caminho-ir") {
         var pr = String(v || "").split("|");
         try { BIM.icarSimIr(+pr[0]); if (pr[1] && pr[1].indexOf(":") > 0) BIM._selecionarUid(pr[1]); } catch (e) {}
@@ -17165,6 +17209,58 @@
         }
       }
       return h + "</div>";
+    },
+    /* LIBERAÇÃO COM RESPONSABILIDADE (ESPEC §K e §II.11; motor js/icarliberacao.js). A situação do sistema por içamento:
+       LIBERADO (aprovado e documentos em ordem) → "dentro"; crítico/pendente/documento faltando → só "fora" (nome, função,
+       motivo, LIBERO); REPROVADO (carga acima da capacidade) → NENHUMA liberação: a saída é trocar o equipamento ou o plano.
+       ⚠ Quem pode: Auth.podeAprovar() (o app não tem permissão por ação; quem aprova documento é quem assume).
+       ⚠ A lista p.liberacoes SÓ CRESCE; anular é um registro novo. */
+    _icarCondicao: function (p, ic, a) {
+      var lib = IcarPlano.liberacao(p, [a]), mot = [];
+      if (a.reprovado) mot.push(a.reprovado);
+      (a.bloqueios || []).forEach(function (b) { mot.push(b); });
+      (lib.faltaDocs || []).forEach(function (d) { mot.push("documento pendente: " + d); });
+      (a.criticoPor || []).forEach(function (c) { mot.push("içamento crítico: " + c); });
+      var st = a.status === "reprovado" ? "REPROVADO" : (a.status === "aprovado" && !(lib.faltaDocs || []).length) ? "LIBERADO" : (a.status === "critico" && !(a.bloqueios || []).length && !(lib.faltaDocs || []).length) ? "ATENCAO" : "SUSPENDER";
+      return { status: st, motivosSistema: mot, versaoPlano: p.versao || null };
+    },
+    _icarAgoraIso: function () {
+      var d = new Date(), z = -d.getTimezoneOffset(), s = z >= 0 ? "+" : "-", pad = function (n) { return (n < 10 ? "0" : "") + n; };
+      return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds()) + s + pad(Math.floor(Math.abs(z) / 60)) + ":" + pad(Math.abs(z) % 60);
+    },
+    _icarHtmlLiberacao: function (p, ic, a) {
+      if (!window.IcarLiberacao) return "";
+      var self = this, esc = Util.esc, cond = this._icarCondicao(p, ic, a), lista = p.liberacoes || [], vig = IcarLiberacao.vigente(lista, ic.id);
+      var ver = IcarLiberacao.verificar(lista, Util.sha256hex), u = (window.Auth && Auth.usuario && Auth.usuario()) || {}, pode = !!(window.Auth && Auth.podeAprovar && Auth.podeAprovar());
+      var COR = { LIBERADO: "#16a34a", ATENCAO: "#b45309", SUSPENDER: "#dc2626", REPROVADO: "#991b1b" }, ROT = { LIBERADO: "LIBERADO", ATENCAO: "ATENÇÃO (crítico)", SUSPENDER: "SUSPENDER", REPROVADO: "REPROVADO" };
+      var h = '<div style="border:1px solid var(--linha);border-radius:8px;padding:8px;margin-top:8px;font-size:11.5px" data-icar-lib="' + cond.status + '"><b>Liberação deste içamento</b> · sistema: <b style="color:' + COR[cond.status] + '">' + ROT[cond.status] + "</b>" +
+        (lista.length ? ' <span style="color:' + (ver.ok ? "#16a34a" : "#dc2626") + '" data-icar-cadeia="' + (ver.ok ? "ok" : "quebrada") + '">· registro ' + (ver.ok ? "íntegro (" + ver.n + ")" : "ALTERADO no registro " + (ver.quebradoEm + 1) + " — " + esc(ver.motivo)) + "</span>" : "");
+      if (cond.motivosSistema.length) h += '<div class="muted" style="margin-top:2px">' + cond.motivosSistema.slice(0, 4).map(esc).join(" · ") + (cond.motivosSistema.length > 4 ? " …" : "") + "</div>";
+      if (vig) h += '<div style="margin-top:4px" data-icar-lib-vigente="' + esc(vig.id) + '">Liberado <b>' + (vig.tipo === "fora" ? "FORA das condições" : "dentro das condições") + "</b> por " + esc(vig.quem.nome) + (vig.quem.funcao ? " (" + esc(vig.quem.funcao) + ")" : "") + " em " + esc((vig.em || "").replace("T", " ").slice(0, 16)) +
+        (vig.motivo ? ' — "' + esc(vig.motivo) + '"' : "") + ' <input data-icar-lib="anulaMotivo" placeholder="motivo para anular" style="width:180px"> <button class="btn sm" data-icar="lib-anular" data-v="' + esc(vig.id) + '"' + (pode ? "" : " disabled") + ">Anular</button></div>";
+      else if (cond.status === "REPROVADO") h += '<div style="color:#991b1b;margin-top:4px">Não há liberação para içamento reprovado: troque o equipamento, a posição ou o plano.</div>';
+      else if (!pode) h += '<div class="muted" style="margin-top:4px">Só quem pode aprovar (administrador ou aprovador) registra a liberação.</div>';
+      else if (cond.status === "LIBERADO") h += '<div style="margin-top:4px"><input data-icar-lib="funcao" placeholder="sua função (opcional)" style="width:160px"> <button class="btn sm primary" data-icar="lib-dentro">Liberar o içamento ' + (this._icarEst().sel + 1) + " agora</button></div>";
+      else h += '<div style="margin-top:4px;display:grid;grid-template-columns:auto 1fr;gap:4px 6px;align-items:center"><span>Nome</span><input data-icar-lib="nome" value="' + esc(u.nome || "") + '">' +
+        '<span>Função</span><input data-icar-lib="funcao" placeholder="ex.: engenheiro responsável">' +
+        '<span>Motivo</span><input data-icar-lib="motivo" placeholder="por que liberar fora das condições (mínimo ' + IcarLiberacao.MIN_MOTIVO + ' caracteres)">' +
+        '<span>Confirmação</span><input data-icar-lib="confirmacao" placeholder="digite ' + IcarLiberacao.CONFIRMA + '"></div>' +
+        '<button class="btn sm" data-icar="lib-fora" style="margin-top:4px;border-color:#dc2626;color:#dc2626">Liberar FORA das condições</button>';
+      return h + "</div>";
+    },
+    _icarLiberar: function (tipo, extra) {
+      var p = this._icarPlano(), st = this._icarEst(), ic = p.icamentos[st.sel]; if (!ic) return;
+      if (!(window.Auth && Auth.podeAprovar && Auth.podeAprovar())) { UI.toast("Só quem pode aprovar registra a liberação.", "erro"); return; }
+      var a = this._icarAvaliar(p, ic), cond = this._icarCondicao(p, ic, a);
+      if (cond.status === "REPROVADO" && tipo !== "anula") { UI.toast("Içamento reprovado não se libera: troque o equipamento, a posição ou o plano.", "erro"); return; }
+      var box = document.getElementById("bim-icamento-corpo"), q = function (nm) { var el = box && box.querySelector('[data-icar-lib="' + nm + '"]'); return el ? String(el.value || "").trim() : ""; };
+      var u = (Auth.usuario && Auth.usuario()) || {};
+      var d = { tipo: tipo, icamentoId: ic.id, planoId: p.id || null, obraId: this._icarObra(), quem: { nome: tipo === "fora" ? q("nome") : (u.nome || u.email || ""), funcao: q("funcao"), usuario: u.email || "", aparelho: (navigator.platform || "") },
+        motivo: tipo === "anula" ? q("anulaMotivo") : q("motivo"), confirmacao: q("confirmacao"), anula: extra || null, clima: null };
+      var r = IcarLiberacao.registrar(p.liberacoes || [], d, cond, { agora: this._icarAgoraIso(), sha256: Util.sha256hex });
+      if (!r.ok) { UI.toast("Não registrei: falta " + r.faltas.join(", ") + ".", "erro"); return; }
+      p.liberacoes = (p.liberacoes || []).concat([r.registro]);
+      if (this._icarSalvar(p)) { this._icarRender(); UI.toast(tipo === "anula" ? "Liberação anulada (o registro fica na lista)." : tipo === "fora" ? "Liberado FORA das condições — registrado com nome, função e motivo." : "Içamento liberado — registrado.", tipo === "fora" ? "aviso" : "ok"); }
     },
     _icarVerificarCaminho: function (idx) {
       var self = this, p = this._icarPlano(), ic = p.icamentos[idx], eq = this._icarEquip(p), st = this._icarEst();
@@ -17527,6 +17623,16 @@
         lib.comPorta ? '<b class="av">Liberado com pendência</b> por ' + esc(lib.porta.quem) + " em " + esc(lib.porta.quando || "") + ". Motivo: " + esc(lib.porta.motivo) + "." : '<b class="av">Não liberado</b>.') + "</p>" +
         (lib.faltaDocs.length || lib.pendIcamentos.length ? "<ul>" + lib.faltaDocs.concat(lib.pendIcamentos).map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>" : "") +
         "<p class=\"m\">Proibições (NR-18 18.10.1.29): içar carga de peso desconhecido; içamento inclinado ou arrasto; carga não totalmente desprendida; cordas de fibra natural; pessoas sob a carga; clima adverso.</p>";
+      /* registro IMUTÁVEL das liberações (ESPEC §II.11.2): cada linha com o começo do hash e a verificação da cadeia */
+      var libs = p.liberacoes || [];
+      if (libs.length && window.IcarLiberacao) {
+        var vr = IcarLiberacao.verificar(libs, Util.sha256hex), nomeIc = {}; p.icamentos.forEach(function (x, i) { nomeIc[x.id] = (i + 1) + " · " + (x.nome || ""); });
+        h += "<h3>Registro de liberações</h3><p class=\"m\">" + (vr.ok ? "Registro íntegro: " + vr.n + " lançamento(s), encadeados por SHA-256." : "<b class=\"rep\">Registro ALTERADO</b> a partir do lançamento " + (vr.quebradoEm + 1) + " (" + esc(vr.motivo) + ").") + "</p>" +
+          "<table><tr><th>Quando</th><th>Içamento</th><th>Tipo</th><th>Quem</th><th>Sistema</th><th>Motivo</th><th>Hash</th></tr>" + libs.map(function (r) {
+            return "<tr><td>" + esc((r.em || "").replace("T", " ").slice(0, 16)) + "</td><td>" + esc(nomeIc[r.icamentoId] || (r.anula ? "anula " + r.anula : "")) + "</td><td>" + esc(r.tipo === "fora" ? "FORA das condições" : r.tipo === "anula" ? "anulação" : "dentro") + "</td><td>" + esc(r.quem.nome + (r.quem.funcao ? " (" + r.quem.funcao + ")" : "")) +
+              "</td><td>" + esc(r.status || "") + (r.motivosSistema && r.motivosSistema.length ? "<br><span class=\"m\">" + esc(r.motivosSistema.slice(0, 3).join("; ")) + "</span>" : "") + "</td><td>" + esc(r.motivo || "") + "</td><td><code>" + esc(String(r.hash || "").slice(0, 12)) + "</code></td></tr>";
+          }).join("") + "</table>";
+      }
       /* 8. assinaturas */
       h += "<h2>8. Responsabilidade e assinaturas</h2><p>Declaramos ciência deste plano de içamento e das condições nele estabelecidas.</p>" +
         '<div class="assin"><div>' + esc(rt.nome || emp.responsavel || "[RESPONSÁVEL TÉCNICO]") + "<br>" + esc(rt.crea || emp.crea || "[CREA/CAU]") + " · ART " + esc(rt.art || "[nº]") + "<br>Responsável técnico pelo plano</div>" +
@@ -19074,6 +19180,16 @@
       var truncou = false;
       if (linhas.length > limite) { linhas = linhas.slice(0, limite); truncou = true; }
       var obra = this._bimSel ? Store.obter(eid(), "obras", this._bimSel) : null;
+      /* ⚠ ESCOPO POR OBRA: para o restrito, o orçamento gerado só nasce LIGADO
+         à obra dele — solto, ele sumiria da lista de quem o gerou (ver
+         Auth.orcNovoRestrito). Ligado, ele é da obra e aparece. */
+      if (typeof Auth !== "undefined" && Auth.orcNovoRestrito && Auth.orcNovoRestrito()) {
+        var vincR = UI.el("eap-vincular");
+        if (!(obra && vincR && vincR.checked && (!Auth.podeObra || Auth.podeObra(obra.id)))) {
+          UI.toast("Marque “Vincular o orçamento gerado à obra”. " + Auth.orcNovoRestrito(), "erro", 10000);
+          return;
+        }
+      }
       var orc = Orcamento.novo({ nome: "Orçamento BIM — " + (obra ? obra.nome : "modelo IFC") });
       var mapaEtapa = {}; // nome -> etapaId (carimbado usa o nome EXATO do Revit → 4D exato)
       function etapaId(nome) {
@@ -24028,7 +24144,11 @@
      * ================================================================= */
     _blocoVincularPedido: function (nf) {
       if (typeof CompraNota === "undefined" || !CompraNota.elegiveis) return "";
-      var el = CompraNota.elegiveis(nf, listaTodas("compras"), hojeLocal());
+      /* ⚠ escopo por obra (02/10/2026): os pedidos OFERECIDOS saem do funil. A
+         lista crua mostrava ao restrito número, valor, fornecedor e saldo dos
+         pedidos de todas as obras. Só tira opção: o cálculo de cada pedido
+         (`faturado`, `saldoDoPedido`) é do próprio registro e não muda. */
+      var el = CompraNota.elegiveis(nf, lista("compras"), hojeLocal());
       /* o que esta nota JÁ cobre vai dito em cima: a lista abaixo não mostra
          esses pedidos (eles já estão nela), e sem o recado a pessoa acha que
          o vínculo se perdeu */
@@ -29007,7 +29127,10 @@
         (function () { // Last Planner: o diário evidencia a execução → conclui a tarefa da semana
           if (typeof LastPlanner === "undefined") return "";
           var sem = LastPlanner.chaveSemana(new Date());
-          var abertas = Store.listar(eid(), "lp_tarefas").filter(function (t) { return t.semana === sem && t.status !== "feito"; });
+          /* ⚠ escopo por obra (02/10/2026): pelo FUNIL, não a lista crua — o
+             seletor oferecia ao restrito as tarefas da semana de todas as obras
+             (pelo título), e concluir uma delas marcava a tarefa de obra alheia */
+          var abertas = lista("lp_tarefas").filter(function (t) { return t.semana === sem && t.status !== "feito"; });
           if (!abertas.length) return "";
           var obrasIdx = {}; lista("obras").forEach(function (o) { obrasIdx[o.id] = o.nome; });
           var op = '<option value="">— nenhuma —</option>' + abertas.map(function (t) {
@@ -29194,6 +29317,8 @@
               var salvo = Store.obter(eid(), "rdo", obj.id);
               if (!salvo || salvo.lpTarefaId !== lpId) return;
               var lpT = Store.obter(eid(), "lp_tarefas", lpId);
+              /* escopo por obra NA FUNÇÃO: o id vem do DOM */
+              if (lpT && lpT.obraId && typeof Auth !== "undefined" && Auth.podeObra && !Auth.podeObra(lpT.obraId)) lpT = null;
               if (lpT && LastPlanner.concluirPorRdo(lpT, lpData)) { Store.salvar(eid(), "lp_tarefas", lpT); UI.toast("Tarefa da semana concluída pelo diário: " + (lpT.titulo || ""), "ok"); }
             } catch (eLp) {}
           }, 0);
@@ -30911,6 +31036,8 @@
     _reqOrcDados: function (st) {
       var obra = null, orc = null, orcs = [];
       try { obra = Store.obter(eid(), "obras", st.obraId); } catch (e) { obra = null; }
+      /* escopo por obra NA FUNÇÃO: o seletor já vem do funil, mas o id vem do DOM */
+      if (obra && typeof Auth !== "undefined" && Auth.podeObra && !Auth.podeObra(obra.id)) obra = null;
       try { orcs = Store.listarOrcamentos(eid()) || []; } catch (e2) { orcs = []; }
       if (obra && obra.orcamentoId) orcs.forEach(function (o) { if (!orc && o && o.id === obra.orcamentoId) orc = o; });
       /* ⚠ `listaTodas`, não `lista`: o que já foi pedido é da EMPRESA. Uma
@@ -33697,10 +33824,31 @@
         + '<p style="font-size:15px">O módulo <b>' + Util.esc(nome) + '</b> está liberado para esta empresa, mas o arquivo dele não foi carregado.</p>'
         + '<p class="muted">Falta <code>' + Util.esc(arquivo) + '</code> no <code>index.html</code>. Atualize o sistema ou fale com o suporte.</p></div>';
     },
+    /* Prazo de acesso de um usuário da equipe, para a TELA: { br, vencido }.
+       Quem decide é o Auth (`acessoVencido`, js/auth.js) — a tela só mostra.
+       Sem o Auth (bancada de teste), sem prazo. */
+    _prazoAcesso: function (u) {
+      if (!u || typeof Auth === "undefined" || !Auth.acessoAteBR || !Auth.acessoVencido) return { br: "", vencido: false };
+      var br = Auth.acessoAteBR(u.acessoAte);
+      return { br: br, vencido: !!br && Auth.acessoVencido(u) };
+    },
+    /* Selo de TEXTO LIVRE com o par de texto por tema do TXTStatus — o mesmo
+       do `pill()`. ⚠ Nada de `background:X22;color:X`: cor cheia sobre 13%
+       dela mesma não chega a 4,5:1 e estilo inline não sabe o tema (ver a
+       nota "TEXTO E FUNDO NÃO PODEM SER A MESMA COR", no topo). O teto de
+       selo com cor literal só desce (tools/test-contraste-status.js). */
+    _pillTexto: function (cor, texto, titulo) {
+      var tx = TXTStatus[cor] || TXTStatus["#64748b"];
+      return '<span class="g-pill" style="background:' + cor + '22;--gp-t:' + tx[0] + ';--gp-td:' + tx[1] + '"' + (titulo ? ' title="' + Util.esc(titulo) + '"' : "") + ">" + Util.esc(texto) + "</span>";
+    },
     renderUsuarios: function () {
       if (typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin()) return this._semPermissao("usuarios");
+      var self = this;
       var us = lista("equipe").slice().sort(function (a, b) { return (a.nome || "").localeCompare(b.nome || ""); });
-      var ativos = us.filter(function (u) { return u.ativo !== false; }).length;
+      /* "ativos" é quem ENTRA: o de prazo vencido não entra, e contá-lo aqui
+         desmentiria a coluna Status logo abaixo. A cota de vagas não muda —
+         ela conta todos, como já contava os inativos. */
+      var ativos = us.filter(function (u) { return u.ativo !== false && !self._prazoAcesso(u).vencido; }).length;
       var cota = cotaUsuarios();
       var extra = (cota.tipo === "titular" ? '<button class="btn sm" data-gacao="ver-independentes" style="margin-right:10px;align-self:center" title="Abre a lista das licenças independentes que você emitiu">' + (typeof Icones !== 'undefined' ? Icones.get('chave', 15) : '') + ' Licenças independentes</button>' : '')
         + '<button class="btn sm" data-gacao="config-aprovacao" style="margin-right:10px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + ' Aprovações</button>'
@@ -33719,7 +33867,14 @@
       html += '<table class="tbl"><thead><tr><th>Nome</th><th>Login</th><th>Departamento</th><th class="num">Módulos</th><th>Status</th><th></th></tr></thead><tbody>';
       us.forEach(function (u) {
         var nMod = (u.modulos && u.modulos.length) || 0;
-        var st = u.ativo === false ? '<span class="g-pill" style="background:#64748b22;color:#64748b">inativo</span>' : '<span class="g-pill" style="background:#16a34a22;color:#16a34a">ativo</span>';
+        /* acesso com prazo: "ativo até dd/mm/aaaa" enquanto vale; "acesso
+           vencido" depois — a pessoa não entra mais, e o administrador
+           precisa ver isso sem abrir o cadastro. Inativo vence o prazo. */
+        var pz = self._prazoAcesso(u);
+        var st = u.ativo === false ? self._pillTexto("#64748b", "inativo")
+          : pz.vencido ? self._pillTexto("#dc2626", "acesso vencido", "O acesso terminou em " + pz.br + ". Para liberar de novo, edite o usuário e mude (ou apague) a data.")
+          : pz.br ? self._pillTexto("#16a34a", "ativo até " + pz.br, "Vale até o fim deste dia, pelo relógio do aparelho da pessoa")
+          : self._pillTexto("#16a34a", "ativo");
         html += '<tr><td style="cursor:pointer" data-gopen="equipe:' + u.id + '"><b>' + Util.esc(u.nome || "—") + "</b></td><td>" + Util.esc(u.login || "—") + "</td><td>" + rot(P.departamento, u.departamento) + '</td><td class="num">' + nMod + "</td><td>" + st + '</td><td class="num"><button class="btn sm" data-gacao="acesso-movel" data-id="' + u.id + '" title="Enviar o acesso pelo celular/tablet (link + QR — abre já ativado com a licença da empresa)">' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + '</button> <button class="btn sm" data-gopen="equipe:' + u.id + '">Editar</button></td></tr>';
       });
       return html + "</tbody></table>";
@@ -33767,12 +33922,22 @@
       if (typeof Auth !== "undefined" && Auth.contaMestre && !Auth.contaMestre()) { UI.toast("Antes, clique em " + (typeof Icones !== "undefined" ? Icones.get("link", 15) : "") + " Configurar admin (faixa no topo) — é o que liga o acesso multi-aparelho.", "erro"); return; }
       var base = (typeof CONFIG !== "undefined" && CONFIG.appWebUrl) ? CONFIG.appWebUrl : "https://ra-engenharia.github.io/orcapro/app/";
       var link = base + "?lic=" + encodeURIComponent(chave) + "&u=" + encodeURIComponent(u.login || "");
-      var msg = "Olá " + (u.nome || u.login) + "! Seu acesso ao OrçaPRO no celular/tablet:\n\n1) Toque no link abaixo — o sistema abre já ativado;\n2) Entre com seu usuário \"" + (u.login || "") + "\" e a sua senha.\n\n" + link;
+      /* acesso com prazo: a mensagem diz até quando vale — o convidado não
+         pode descobrir o fim do prazo pela porta fechada */
+      var pz = this._prazoAcesso(u);
+      var msg = "Olá " + (u.nome || u.login) + "! Seu acesso ao OrçaPRO no celular/tablet:\n\n1) Toque no link abaixo — o sistema abre já ativado;\n2) Entre com seu usuário \"" + (u.login || "") + "\" e a sua senha." +
+        (pz.br && !pz.vencido ? "\n\nSeu acesso vale até " + pz.br + " (até o fim do dia)." : "") + "\n\n" + link;
+      /* prazo já vencido: o link abriria o app e a pessoa bateria no recado
+         do prazo. Não trava o envio (o administrador pode estar justamente
+         estendendo), mas avisa antes de mandar uma porta fechada. */
+      var avisoPrazo = pz.vencido
+        ? '<div class="card" style="background:#fffbeb;border-color:#fde68a;color:#92400e;margin:0 0 10px">O acesso de <b>' + Util.esc(u.nome || u.login) + '</b> terminou em <b>' + pz.br + '</b>: com este link a pessoa <b>não consegue entrar</b>. Para liberar, feche e mude a data em <b>Editar</b>.</div>'
+        : (pz.br ? '<p class="muted" style="margin:0 0 10px">Acesso válido até <b>' + pz.br + '</b> (até o fim do dia) — a mensagem já avisa a pessoa.</p>' : "");
       var fone = String(u.fone || "").replace(/\D/g, "");
       var foneIntl = fone ? (fone.length <= 11 ? "55" + fone : fone) : "";
       var wa = foneIntl ? ("https://wa.me/" + foneIntl + "?text=" + encodeURIComponent(msg)) : "";
       var qrSvg = (typeof QR !== "undefined" && QR.svg) ? QR.svg(link, { tamanhoPx: 200 }) : "";
-      var corpo = '<p class="muted" style="margin:0 0 10px">Envie para <b>' + Util.esc(u.nome || u.login) + '</b>: no aparelho, é só <b>tocar no link</b> (ou apontar a câmera pro QR) — o OrçaPRO abre <b>já ativado com a licença da empresa</b> e com o usuário preenchido; a pessoa só digita a própria senha.</p>' +
+      var corpo = avisoPrazo + '<p class="muted" style="margin:0 0 10px">Envie para <b>' + Util.esc(u.nome || u.login) + '</b>: no aparelho, é só <b>tocar no link</b> (ou apontar a câmera pro QR) — o OrçaPRO abre <b>já ativado com a licença da empresa</b> e com o usuário preenchido; a pessoa só digita a própria senha.</p>' +
         (qrSvg ? '<div style="display:flex;justify-content:center;margin:8px 0 12px"><div style="background:#fff;border:1px solid var(--linha,#e2e8f0);border-radius:12px;padding:10px">' + qrSvg + '</div></div>' : '') +
         '<div style="border:1.5px dashed var(--linha,#e2e8f0);border-radius:10px;background:#f8fafc;padding:10px 12px;font-family:ui-monospace,Consolas,monospace;font-size:11px;word-break:break-all">' + Util.esc(link) + '</div>' +
         '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">' +
@@ -33870,14 +34035,32 @@
           /* ⚠ Honestidade na tela: o escopo esconde o que a pessoa VÊ. A
              sincronização baixa a empresa inteira para o aparelho, porque a
              identidade na nuvem é da EMPRESA (js/nuvem.js:158) e não da
-             pessoa. Prometer "não tem acesso aos dados" seria mentira. */
-          + '<p class="muted" style="font-size:11.5px;margin:8px 0 0">Define o que a pessoa <b>vê no app</b>. Não substitui a confidencialidade combinada com ela.</p>';
+             pessoa. Prometer "não tem acesso aos dados" seria mentira.
+             ⚠ E O ORÇAMENTO ENTRA NA FRASE (02/10/2026): até aqui a lista de
+             orçamentos não respeitava a obra (ver Auth, "ESCOPO DOS ORÇAMENTOS
+             POR OBRA"), e o administrador que restringia a obra achava que
+             tinha restringido o preço. Agora restringe — na TELA —, e a frase
+             diz as duas coisas: o que some e o que continua no aparelho. */
+          + '<p class="muted" style="font-size:11.5px;margin:8px 0 0">Define o que a pessoa <b>vê no app</b> — inclusive os <b>orçamentos</b>: com obras escolhidas, ela vê só os ligados a essas obras e não cria orçamento novo. ' +
+            'O aparelho dela recebe pela nuvem os dados da empresa inteira: o escopo esconde, não apaga. Não substitui a confidencialidade combinada com ela.</p>';
 
       var senhaGerada = ""; // plaintext capturado só p/ o envio ao usuário (nunca é salvo)
       var corpo =
         '<div class="row">' + campo("Nome *", inp("g-nome", u.nome, "Ex.: Maria Souza")) + campo("Login (usuário) *", inp("g-login", u.login, "ex.: maria")) + "</div>" +
         '<div class="row">' + campo(ehNovo ? "Senha provisória (branco = gerar automática)" : "Nova senha (branco = manter)", '<input id="g-senha" type="text" placeholder="' + (ehNovo ? "deixe em branco p/ gerar" : "manter atual") + '">') + campo("Departamento", sel("g-depto", opts(P.departamento, u.departamento || "engenharia"))) + campo("Status", sel("g-ativo", '<option value="1"' + (u.ativo !== false ? " selected" : "") + '>Ativo</option><option value="0"' + (u.ativo === false ? " selected" : "") + ">Inativo</option>")) + "</div>" +
         '<div class="row">' + campo("WhatsApp do usuário", inp("g-ufone", u.fone, "(34) 90000-0000")) + campo("E-mail do usuário", inp("g-uemail", u.email, "usuario@empresa.com")) + "</div>" +
+        /* ===== ACESSO COM PRAZO (`acessoAte`, juiz em Auth.acessoVencido) =====
+           Para o convidado que entra por um período (cliente que acompanha
+           uma obra, consultor por contrato): no fim do dia escolhido ele é
+           desconectado e o login dele passa a ser recusado com recado próprio.
+           ⚠ O texto da tela é honesto sobre o limite, pelo mesmo motivo do
+           aviso do escopo por obra logo abaixo: a conferência é feita NO
+           APARELHO da pessoa (a identidade na nuvem é da EMPRESA), só nos
+           aparelhos com esta versão, e não apaga o que já sincronizou lá.
+           Prometer "perde o acesso aos dados" seria mentira. */
+        '<div class="row">' + campo("Acesso válido até (opcional)", inp("g-acessoate", u.acessoAte || "", "dd/mm/aaaa", "date") +
+          '<p class="muted" style="font-size:12px;margin:6px 0 0">No fim desse dia a pessoa é desconectada e o login dela passa a ser recusado. Em branco = sem prazo; para estender, é só mudar a data.</p>' +
+          '<p class="muted" style="font-size:11.5px;margin:4px 0 0">Conferido no aparelho dela (com o app atualizado): tranca a entrada, mas não apaga o que já foi sincronizado lá.</p>') + "</div>" +
         campo('Módulos liberados <button type="button" class="btn sm" id="us-preset" style="margin-left:8px">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' preset do departamento</button>', checkboxes) +
         campo("Obras que este usuário enxerga", caixasObra) +
         campo("Aprovações",
@@ -33936,6 +34119,22 @@
         obj.fone = String(v("g-ufone") || "").trim();
         obj.email = String(v("g-uemail") || "").trim();
         obj.ativo = v("g-ativo") !== "0";
+        /* ⚠ DATA QUE NÃO É DATA NÃO VIRA "SEM PRAZO" CALADA. O juiz trata
+           inválido como sem limite (registro antigo não pode trancar
+           ninguém) — então gravar o texto torto daria ao administrador um
+           prazo que não existe. Aqui a tela recusa e diz o que fazer. */
+        var prazo = (typeof Auth !== "undefined" && Auth.normalizarAcessoAte) ? Auth.normalizarAcessoAte(v("g-acessoate")) : String(v("g-acessoate") || "");
+        /* ⚠ O CALENDÁRIO DO NAVEGADOR ESCONDE A DATA TORTA. No <input type="date">
+           do Chrome, uma data digitada pela metade ("12/10/" sem o ano) ou
+           impossível ("31/02") devolve `value === ""` — que é exatamente o
+           "sem prazo". Sem esta linha o administrador digitava o prazo errado
+           e o convidado ganhava acesso SEM FIM, com o formulário salvando
+           calado. Quem sabe que o campo tem lixo é o `validity.badInput`. */
+        var elPrazo = null;
+        try { elPrazo = document.getElementById("g-acessoate"); } catch (eEl) { elPrazo = null; }
+        if (elPrazo && elPrazo.validity && elPrazo.validity.badInput) prazo = null;
+        if (prazo === null) { UI.toast("\"Acesso válido até\" não é uma data válida. Escolha no calendário (ou digite dd/mm/aaaa), ou deixe em branco para não ter prazo.", "erro"); return false; }
+        obj.acessoAte = prazo;
         var mods = ["dashboard"];
         Array.prototype.forEach.call(document.querySelectorAll("#us-mods [data-mod]"), function (c) { if (c.checked && c.getAttribute("data-mod") !== "dashboard") mods.push(c.getAttribute("data-mod")); });
         obj.modulos = mods;
@@ -34103,8 +34302,12 @@
     _usuarioCriado: function (u, senha) {
       var nome = u.nome || u.login;
       var empresa = ""; try { empresa = (Auth.usuario() || {}).empresa || ""; } catch (e) {}
+      /* acesso com prazo: quem nasce com prazo fica sabendo dele na mesma
+         mensagem das credenciais (ver `acessoMovel`) */
+      var pzC = this._prazoAcesso(u);
       var msg = "Olá " + nome + "! Seu acesso ao OrçaPRO" + (empresa ? " (" + empresa + ")" : "") + " foi criado.\n\n" +
         "Login: " + u.login + "\nSenha provisória: " + senha + "\n\n" +
+        (pzC.br && !pzC.vencido ? "Seu acesso vale até " + pzC.br + " (até o fim do dia).\n\n" : "") +
         "No primeiro acesso o sistema vai pedir para você criar uma nova senha. Bom trabalho!";
       try { // com a licença ativa, a mensagem já leva o link do celular/tablet (abre ativado)
         var chaveL = (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "";
@@ -34119,7 +34322,8 @@
       /* fundo claro FIXO pede texto escuro fixo: no tema escuro login e senha sumiam */
       var creds = '<div style="background:#f0fdf4;border:1px solid #b9e6c8;border-radius:10px;padding:12px 14px;margin:10px 0;font-size:14px;color:#14532d">' +
         '<div><b>Login:</b> <span style="font-family:monospace">' + Util.esc(u.login) + '</span></div>' +
-        '<div><b>Senha provisória:</b> <span style="font-family:monospace">' + Util.esc(senha) + '</span></div></div>';
+        '<div><b>Senha provisória:</b> <span style="font-family:monospace">' + Util.esc(senha) + '</span></div>' +
+        (pzC.br ? '<div><b>Acesso válido até:</b> ' + pzC.br + (pzC.vencido ? " (já terminou — mude a data em Editar)" : " (até o fim do dia)") + '</div>' : '') + '</div>';
       var botoes = '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px">' +
         (wa ? '<a class="btn primary" href="' + wa + '" target="_blank" rel="noopener">' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' Enviar por WhatsApp</a>' : '') +
         (mail ? '<a class="btn" href="' + mail + '">' + (typeof Icones !== 'undefined' ? Icones.get('mensagem', 15) : '') + ' Enviar por E-mail</a>' : '') +
@@ -41862,6 +42066,8 @@ renderFolha: function () {
         return;
       }
       var obra = obraId ? Store.obter(eid(), "obras", obraId) : null;
+      /* escopo por obra NA FUNÇÃO: o seletor vem do funil, mas o id vem do DOM */
+      if (obra && typeof Auth !== "undefined" && Auth.podeObra && !Auth.podeObra(obra.id)) { UI.toast("Esta obra não está liberada para o seu usuário.", "erro"); return; }
       if (!obra) { UI.toast("Selecione a obra.", "erro"); return; }
       mesISO = String(mesISO || "").slice(0, 7);
       if (!/^\d{4}-\d{2}$/.test(mesISO)) { UI.toast("Informe o mês do relatório.", "erro"); return; }
@@ -46183,12 +46389,15 @@ renderFolha: function () {
        abre medição em dobro sem saber (`_pctAnterioresPorItem` é por obra).
        O NOME dela só aparece se ele pode vê-la. */
     _cronoOpcoesVinculo: function (obraId) {
-      var self = this, orcs = [], obras = [];
+      var self = this, orcs = [], obras = [], ofertas;
       try { orcs = Store.listarOrcamentos(eid()) || []; } catch (eL) { orcs = []; }
+      /* ⚠ escopo por obra: a FAMÍLIA (cadeia de revisões) é apurada na lista
+         inteira, mas só o visível vira opção (ver o ⚠ ESCOPO DOS ORÇAMENTOS no topo) */
+      ofertas = (typeof Auth !== "undefined" && Auth.filtrarOrcamentos) ? Auth.filtrarOrcamentos(orcs) : orcs;
       try { obras = (Store.listar(eid(), "obras") || []).filter(function (ob) { return ob && ob.id !== obraId; }); } catch (eL2) { obras = []; }
       var podeVer = function (ob) { return !(typeof Auth !== "undefined" && Auth.podeObra && !Auth.podeObra(ob.id)); };
       var CX = (typeof CronoExecUI !== "undefined" && CronoExecUI.obraDaCadeia) ? CronoExecUI : null;
-      return orcs.filter(function (o) { return !!o; }).map(function (o) {
+      return ofertas.filter(function (o) { return !!o; }).map(function (o) {
         var nomes = [], ocultas = 0;
         if (CX) {
           var info = CX.obraDaCadeia(o, orcs, obras, podeVer) || {};
@@ -46286,6 +46495,8 @@ renderFolha: function () {
       if (obra.orcamentoId) { var blqV = this._cronoTrocaBloqueada(obra, orcId); if (blqV) return nao(blqV); }
       var orc = Store.obterOrcamento(eid(), orcId);
       if (!orc) return nao("Orçamento não encontrado neste aparelho — atualize a tela e escolha de novo. Nada foi gravado.");
+      /* escopo por obra NA FUNÇÃO: ligar a obra ao orçamento alheio daria acesso a ele */
+      if (typeof Auth !== "undefined" && Auth.podeOrcamento && !Auth.podeOrcamento(orc)) return nao(Auth.msgOrcForaDoEscopo() + " Nada foi gravado.");
       var op = this._cronoOpcoesVinculo(obra.id).filter(function (x) { return x.id === orcId; })[0];
       if (op && op.obra) {
         var txt = "O orçamento " + this._orcRotulo(orc) + " (ele ou uma revisão anterior dele) já está ligado a: " + op.obra + ".\n\n" +
@@ -46390,7 +46601,12 @@ renderFolha: function () {
     },
 
     // ================= LAST PLANNER (PPC) — planejamento enxuto (Lean Construction) =================
-    _lpTarefas: function () { var o = this._lpObra; return Store.listar(eid(), "lp_tarefas").filter(function (t) { return !o || t.obraId === o; }); },
+    /* ⚠ PELO FUNIL (02/10/2026). Era a lista crua: com `_lpObra` vazio (primeiro
+       desenho sem obra, aparelho recém-sincronizado) a tela e o "Plano semanal"
+       impresso mostravam ao usuário restrito as tarefas de TODAS as obras; e
+       com `_lpObra` herdado de outra sessão na mesma aba, as da obra alheia.
+       Só a tela e a impressão leem daqui. */
+    _lpTarefas: function () { var o = this._lpObra; return lista("lp_tarefas").filter(function (t) { return !o || t.obraId === o; }); },
 
     /* O cronograma que VALE para a obra: o PLANO DE EXECUÇÃO dela (crono_obra,
        tipo "plano") quando existe — é o que se edita depois de o orçamento ser
@@ -46993,6 +47209,10 @@ renderFolha: function () {
       "bim-drawer-fechar": 1, "bim-drawer-min": 1, "bim-drawer-restaurar": 1, "bim-drawer-janela": 1,
       /* trocar a obra do quadro "Custo por centro" dos Relatórios só LÊ (mc-8B) */
       "rel-cc-obra": 1,
+      /* Documentos da obra: filtrar e ABRIR o arquivo só leem (o documento é
+         consultado mesmo com a licença vencida). Assinar, verificar, revisar
+         e o "Mais…" gravam — passam pela trava. */
+      "dob-obra": 1, "dob-tipo": 1, "dob-sit": 1, "dob-abrir": 1,
       /* a ficha da obra (palco de Obras) só LÊ e navega: abrir, trocar de
          aba, trocar mapa/satélite, pôr foto no fundo, ir ao módulo filtrado */
       "ov-ficha": 1, "ov-aba": 1, "ov-ficha-fechar": 1, "ov-mapa-tipo": 1, "ov-ir": 1, "ov-foto-cena": 1, "ov-rolar": 1,
@@ -49203,7 +49423,7 @@ case "nova-folha": return this.novoFolha();
           ? '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px 13px;font-size:13px;margin-bottom:12px">'
             + "<b>" + lidos.gravados + " documento(s)</b> ganharam a data em que o cliente abriu — ela aparece no diário e no boletim, e serve de prova de que ele foi avisado."
             + "</div>"
-          : "") + self._avaliacoesHtml(j.obras || [], gravadas);
+          : "") + self._avaliacoesHtml(self._avaliacoesDoEscopo(j.obras || []), gravadas) + self._avaliacoesForaHtml(j.obras || []);
       }).catch(function () {
         var el = document.getElementById("av-corpo");
         if (el) el.innerHTML = '<span style="color:#b91c1c">Sem conexão com o servidor. Tente de novo.</span>';
@@ -49219,6 +49439,24 @@ case "nova-folha": return this.novoFolha();
       return '<span style="color:#f5a623;letter-spacing:1px">' + s + '</span> <b>' + Util.fmtNum(media, 1) + "</b>";
     },
 
+    /* ⚠ ESCOPO POR OBRA (02/10/2026). O servidor devolve o retorno de TODAS as
+       obras publicadas da licença, e a tela desenhava todas: o usuário
+       restrito à obra A lia nome do cliente, nota e o recado escrito pelo
+       cliente da obra B. A gravação nos diários (acima) continua com a lista
+       inteira — é o dado chegando, e o funil de `lista("rdo")` já decide onde
+       ele cai; o que muda é só o que se MOSTRA. Sem obraId conhecido, o
+       restrito não vê (não dá para dizer de quem é). */
+    _avaliacoesDoEscopo: function (obras) {
+      var perm = (typeof Auth !== "undefined" && Auth.obrasPermitidas) ? Auth.obrasPermitidas() : null;
+      if (perm === null) return Util.arr(obras);
+      return Util.arr(obras).filter(function (o) { return !!o && !!o.obraId && perm.indexOf(String(o.obraId)) > -1; });
+    },
+    /* o recado de que há mais: só a CONTAGEM, nunca o nome (a contagem não
+       mente sobre o painel ser parcial) */
+    _avaliacoesForaHtml: function (obras) {
+      var fora = Util.arr(obras).length - this._avaliacoesDoEscopo(obras).length;
+      return fora > 0 ? '<p class="muted" style="font-size:12px;margin:8px 0 0">' + fora + " obra(s) fora das liberadas para o seu usuário não aparecem aqui.</p>" : "";
+    },
     _avaliacoesHtml: function (obras, gravadas) {
       var aviso = (gravadas && gravadas.falhas)
         ? '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:9px 12px;font-size:12.5px;color:#b91c1c;margin-bottom:10px">' +

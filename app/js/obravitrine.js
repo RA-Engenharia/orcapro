@@ -722,7 +722,10 @@
     }
     if (aba === "documentos") {
       var dc = ctx.documentos || [];
-      var gerenciar = '<button type="button" class="btn ov-sec" data-gacao="docs-obra" data-id="' + id + '">Gerenciar documentos</button>';
+      var gerenciar = '<button type="button" class="btn ov-sec" data-gacao="docs-obra" data-id="' + id + '">Gerenciar documentos</button>' +
+        /* o ARQUIVO técnico (PDF, revisões, assinaturas) mora no módulo Documentos da
+           obra; esta aba é a lista do Portal. O botão leva já filtrado nesta obra. */
+        ' <button type="button" class="ov-chip" data-gacao="ov-ir" data-mod="documentos" data-id="' + id + '">Arquivo da obra (PDF e assinaturas)</button>';
       if (!dc.length) return vazio("Nenhum documento cadastrado — ART/RRT, alvará, apólice e o que o cliente vê no Portal.", gerenciar);
       return '<div class="ov-lista">' + dc.map(function (d) {
         return '<div class="ov-linha ov-linha-fixa"><span class="ov-linha-corpo"><b>' + esc(d.nome || "Documento") + "</b>" +

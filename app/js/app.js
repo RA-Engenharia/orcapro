@@ -85,6 +85,10 @@
     // ---------- Boot ----------
     iniciar: function () {
       Auth.init();
+      /* acesso com prazo (js/auth.js, `acessoAte`): o `init` acima já
+         desligou quem venceu antes de abrir; o relógio pega quem vence com o
+         app aberto, mesmo sem ninguém clicar em nada */
+      this._ligarRelogioAcesso();
       /* as chaves de desligar do cronograma (planejador, Onda 0, T12) ANTES de
          qualquer desenho: o motor calcula a primeira tela já com elas */
       this._cronoRecursosBoot();
@@ -296,6 +300,11 @@
         /* lista ilegível (o `abrirOrcamento` acabou de lê-la): "não encontrado
            (pode ter sido excluído)" seria mentira */
         if (this._listaIlegivel(Auth.empresaId())) { this._janelaRecado("A lista de orçamentos deste aparelho está ilegível (arquivo corrompido). Feche esta janela e veja o aviso na janela principal."); return; }
+        /* escopo por obra: ele EXISTE, mas não é das obras desta pessoa —
+           "não encontrado (pode ter sido excluído)" seria o recado que mente */
+        var orcJ = null;
+        try { orcJ = Store.obterOrcamento(Auth.empresaId(), j.orcId); } catch (eOj) { orcJ = null; }
+        if (orcJ && this._orcForaDoEscopo(orcJ)) { this._janelaRecado(Auth.msgOrcForaDoEscopo() + " Feche esta janela."); return; }
         this._janelaRecado("Este orçamento não foi encontrado nesta máquina (pode ter sido excluído). Feche esta janela."); return;
       }
       this.aba = j.aba;
@@ -658,6 +667,94 @@
       if (pr) { var s = this; setTimeout(function () { try { if (pr === "laudo") s.gerarLaudo(); else if (pr === "proposta") s.gerarProposta(); else if (pr === "relatorio") s.gerarRelatorio(); } catch (e) {} }, 500); }
     },
 
+    /* =====================================================================
+     * ACESSO COM PRAZO — a fiação do `Auth.conferirAcesso` (js/auth.js).
+     *
+     * `_acessoTerminou`: confere AGORA. Venceu → o Auth já encerrou a sessão;
+     * aqui a tela vai para o login, o modal aberto fecha (o "Salvar" dele
+     * gravaria sem sessão, na empresa "default"), o tour guiado fecha, e o
+     * recado aparece — no toast e, fixo, na tela de login (UI.renderLogin lê
+     * Auth.recadoSaida).
+     * Devolve true quando encerrou. Admin e conta mestre nunca caem aqui: quem
+     * decide é o Auth.
+     * ⚠ A guarda de existência do `Auth.conferirAcesso` não é enfeite: as
+     *   bancadas de tools/ rodam este app.js com um Auth de mentira, sem ele.
+     * ===================================================================== */
+    _acessoTerminou: function () {
+      if (this.tela === "login" || typeof Auth === "undefined" || !Auth.conferirAcesso || !Auth.usuario()) return false;
+      var recado = "";
+      try { recado = Auth.conferirAcesso(); } catch (eAc) { recado = ""; }
+      if (!recado) return false;
+      this.tela = "login"; this.orcAtual = null;
+      try { if (typeof UI !== "undefined" && UI.fecharModal) UI.fecharModal(); } catch (eFm) {}
+      /* o tour guiado da sessão que acabou também sai: medido no navegador,
+         o cartão "Jornada da obra" ficava por cima da tela de login e do
+         recado, escurecendo o porquê da saída */
+      try { if (typeof Tour !== "undefined" && Tour.fechar) Tour.fechar(); } catch (eTr) {}
+      try { UI.toast(recado, "erro", 8000); } catch (eTo) {}
+      return true;
+    },
+    /* O relógio: 1 min basta para "vale até o fim do dia" e custa uma leitura
+       da equipe por minuto, só para sub-usuário (o resto sai na 1ª linha do
+       `Auth.conferirAcesso`). Um por documento.
+       ⚠ `unref`: processo Node (bancada de teste que roda o `iniciar`)
+       termina mesmo com o relógio ligado. No navegador o id é número e não
+       tem `unref` — a guarda cobre os dois. */
+    _ligarRelogioAcesso: function () {
+      if (this._relogioAcesso || typeof setInterval !== "function") return;
+      var self = this;
+      this._relogioAcesso = setInterval(function () {
+        try { if (self._acessoTerminou()) self.render(); } catch (eRl) {}
+      }, 60000);
+      try { if (this._relogioAcesso && this._relogioAcesso.unref) this._relogioAcesso.unref(); } catch (eUr) {}
+    },
+
+    /* =====================================================================
+     * ESCOPO DOS ORÇAMENTOS POR OBRA — a fiação do juiz do Auth
+     * (`orcamentosVisiveisDe`, js/auth.js). A tela só pergunta.
+     * ⚠ As guardas de existência não são enfeite: as bancadas de tools/
+     *   rodam este app.js com um Auth de mentira, sem estas funções — e aí
+     *   vale o comportamento de antes (sem escopo de orçamento).
+     * ===================================================================== */
+    /* a lista que a TELA mostra (nunca a que o Store grava — ver o ⚠ no Auth) */
+    _orcsDaTela: function (lista) {
+      return (typeof Auth !== "undefined" && Auth.filtrarOrcamentos) ? Auth.filtrarOrcamentos(lista) : lista;
+    },
+    _orcForaDoEscopo: function (orc) {
+      return !!(orc && typeof Auth !== "undefined" && Auth.podeOrcamento && !Auth.podeOrcamento(orc));
+    },
+    /* recuperar da planilha: true = recusou (e já disse por quê) */
+    _orcRestauroForaDoEscopo: function (orc) {
+      if (!this._orcForaDoEscopo(orc && orc.id ? orc : { id: "" })) return false;
+      try { UI.toast("O orçamento desta planilha não está ligado a nenhuma obra liberada para o seu usuário — por isso não dá para recuperá-lo por aqui. Peça ao administrador.", "erro", 10000); } catch (eT) {}
+      return true;
+    },
+    /* true = recusou (e já disse por quê) */
+    _orcNovoRecusado: function () {
+      var m = (typeof Auth !== "undefined" && Auth.orcNovoRestrito) ? Auth.orcNovoRestrito() : "";
+      if (!m) return false;
+      try { UI.toast(m, "erro", 10000); } catch (eT) {}
+      return true;
+    },
+    /* A REDE DE BAIXO DO EDITOR: quem põe um orçamento em `orcAtual` sem
+       passar pelo `abrirOrcamento` (assistente, Orçamentista, BIM, cópia,
+       recuperação, código de terceiros) ainda passa pelo render. Confere uma
+       vez por orçamento/pessoa — o render roda a cada edição e a conferência
+       lê a lista inteira; quem abre de novo passa pelo `abrirOrcamento`, que
+       confere sempre. Devolve false quando o orçamento não pode estar na tela. */
+    _orcEscopoNaTela: function () {
+      var o = this.orcAtual;
+      if (!o || typeof Auth === "undefined" || !Auth.obrasPermitidas || !Auth.podeOrcamento) return true;
+      var perm = Auth.obrasPermitidas();
+      if (perm === null) return true;
+      var u = (Auth.usuario && Auth.usuario()) || {};
+      var ch = String(o.id) + "|" + String(u.empresaId || "") + "|" + String(u.usuarioId || "") + "|" + String(perm);
+      if (this._orcEscopoVisto === ch) return true;
+      if (!Auth.podeOrcamento(o)) return false;
+      this._orcEscopoVisto = ch;
+      return true;
+    },
+
     // ---------- Render dispatcher ----------
     render: function () {
       /* contador de renders: o CronoExecUI.preparar reaproveita o cálculo do
@@ -688,6 +785,11 @@
       var main = UI.el("main");
       var sidebar = UI.el("sidebar");
       var app = document.querySelector(".app");
+      /* ⚠ ACESSO COM PRAZO, A CADA RENDER (o relógio do `_ligarRelogioAcesso`
+         cobre quem não clica). Antes do ramo do login de propósito: venceu,
+         a sessão já sai encerrada e ESTE render desenha o login com o recado,
+         em vez de mais uma tela de dados para quem não tem mais acesso. */
+      this._acessoTerminou();
       if (this.tela === "login" || !Auth.usuario()) {
         if (app) { app.classList.add("tela-login"); app.classList.remove("com-sidebar"); }
         topbar.innerHTML = ""; topbar.style.display = "none";
@@ -814,6 +916,12 @@
         return;
       }
       // view = Orçamentos (fluxo original)
+      /* ⚠ ESCOPO POR OBRA: orçamento fora das obras da pessoa não chega ao
+         editor por caminho nenhum (ver `_orcEscopoNaTela`) */
+      if (this.tela === "editor" && this.orcAtual && !this._orcEscopoNaTela()) {
+        this.orcAtual = null; this.tela = "lista";
+        try { UI.toast(Auth.msgOrcForaDoEscopo(), "erro", 9000); } catch (eEs) {}
+      }
       if (this.tela === "editor" && this.orcAtual) {
         /* FOCO NO CRONOGRAMA: na aba Cronograma somem as ações e os KPIs do
            orçamento (CSS body.foco-crono .orc-cab) — a tela fica com o que é do
@@ -851,7 +959,10 @@
         this._gxDesligar();
         /* a leitura vem ANTES do aviso: é ela que renova a marca de conteúdo
            ilegível (js/store.js, quarentena) que o aviso fixo mostra */
-        var orcsLista = Store.listarOrcamentos(Auth.empresaId());
+        /* ⚠ ESCOPO POR OBRA: a lista, os KPIs da carteira e o filtro de cliente
+           saem desta lista — podar aqui poda os quatro (js/auth.js) */
+        var orcsLista = this._orcsDaTela(Store.listarOrcamentos(Auth.empresaId()));
+        baseInfo.escopoObras = !!(Auth.obrasPermitidas && Auth.obrasPermitidas() !== null);
         baseInfo.ilegiveis = this._ilegiveisTravando(Auth.empresaId(), false);
         baseInfo.admin = this._ehAdminAqui();
         baseInfo.pausa = this._bkpPausa(Auth.empresaId());
@@ -1380,9 +1491,13 @@
     exportarCarteira: function () {
       var self = this;
       var f = this._filtroOrc || {};
-      var r = Orcamento.filtrarLista(Store.listarOrcamentos(Auth.empresaId()), f, Util.agoraISO());
+      /* escopo por obra: o arquivo leva o que a tela mostra, nunca a carteira da empresa */
+      var r = Orcamento.filtrarLista(this._orcsDaTela(Store.listarOrcamentos(Auth.empresaId())), f, Util.agoraISO());
       if (!r.lista.length) { UI.toast("Nada para exportar neste filtro.", "erro"); return; }
       var recorte = [];
+      /* o arquivo diz que é recorte (ver o ⚠ acima): sem esta linha, a carteira
+         de UMA obra iria para a reunião como "a carteira" */
+      if (Auth.obrasPermitidas && Auth.obrasPermitidas() !== null) recorte.push("só os orçamentos das obras liberadas para o seu usuário");
       if (f.busca) recorte.push('busca "' + f.busca + '"');
       if (f.cliente) recorte.push("cliente: " + f.cliente);
       if (f.tipo) recorte.push("tipo: " + f.tipo);
@@ -2897,6 +3012,12 @@
       var jaExiste = Auth.existeEmail(email) || (Auth.existeLoginEquipe && Auth.existeLoginEquipe(email));
       var r = Auth.login(email, senha);
       if (!r.ok) {
+        /* ⚠ PRAZO VENCIDO ANTES DO "Senha incorreta". O login existe, então o
+           ramo de baixo diria "senha incorreta" a quem acertou a senha — e a
+           pessoa pediria outra ao administrador, que redefiniria a senha de
+           um acesso que ele mesmo encerrou. `r.vencido` só nasce com a senha
+           certa (js/auth.js, `_loginEquipe`). */
+        if (r.vencido) { UI.toast(r.erro, "erro", 8000); return; }
         if (jaExiste) {
           // conta/usuário existe → senha errada. NÃO cria conta nova (os dados estão salvos nesta).
           UI.toast("Senha incorreta para " + email + ". Tente de novo ou use “Esqueci a senha” (se for o dono da conta).", "erro");
@@ -6007,6 +6128,8 @@
       var para = null;
       try { para = Store.obterOrcamento(c.eid, paraId); } catch (eP) { para = null; }
       if (!para) { UI.toast("A revisão não está gravada neste aparelho — a obra não mudou.", "erro"); return false; }
+      /* escopo por obra NA FUNÇÃO: ligar a obra a orçamento alheio daria acesso a ele (js/auth.js) */
+      if (this._orcForaDoEscopo(para)) { UI.toast(Auth.msgOrcForaDoEscopo() + " A obra não mudou.", "erro", 9000); return false; }
       var obra = c.obra, deNum = String((c.orc && c.orc.numero) || "");
       /* ⚠ AÇÃO REGISTRADA na própria obra: quem passou, quando, de onde para
          onde (as 10 últimas). Não há trilha de auditoria central no app; o
@@ -10601,6 +10724,9 @@
      * que empurra o orçamentista de volta para o Excel.
      * ------------------------------------------------------------------ */
     copiarOrcamento: function () {
+      /* escopo por obra: a cópia é orçamento novo, sem obra — e a lista de
+         origem mostraria os orçamentos das outras obras (ver Auth.orcNovoRestrito) */
+      if (this._orcNovoRecusado()) return;
       var self = this, eid = Auth.empresaId();
       var lista = Store.listarOrcamentos(eid).slice().sort(function (a, b) {
         return String(b.atualizadoEm || "").localeCompare(String(a.atualizadoEm || ""));
@@ -10667,6 +10793,8 @@
     },
 
     novoOrcamento: function () {
+      /* escopo por obra: o restrito não cria orçamento solto (ver Auth.orcNovoRestrito) */
+      if (this._orcNovoRecusado()) return;
       var lista = Store.listarOrcamentos(Auth.empresaId());
       /* ⚠ LISTA ILEGÍVEL: a gravação seria recusada no FIM do assistente de 3
          passos, com tudo preenchido. Diz antes (js/store.js, quarentena). */
@@ -10712,6 +10840,8 @@
       var self = this;
       var orc = Store.obterOrcamento(Auth.empresaId(), id);
       if (!orc) { UI.toast("Orçamento não encontrado.", "erro"); return; }
+      /* escopo por obra: excluir pelo id não pode alcançar o que a lista esconde */
+      if (this._orcForaDoEscopo(orc)) { UI.toast(Auth.msgOrcForaDoEscopo(), "erro", 9000); return; }
       var t = Orcamento.totais(orc);
       // vínculos que ficam órfãos (aviso honesto antes de apagar)
       var vinculos = [];
@@ -10752,6 +10882,12 @@
     abrirOrcamento: function (id) {
       var orc = Store.obterOrcamento(Auth.empresaId(), id);
       if (!orc) { UI.toast("Orçamento não encontrado.", "erro"); return; }
+      /* ⚠ ESCOPO POR OBRA NA FUNÇÃO, NÃO SÓ NA LISTA (js/auth.js, "ESCOPO DOS
+         ORÇAMENTOS POR OBRA"). Por aqui chegam a lista, a busca (Ctrl+K), a
+         janela destacada (#janela=v1/<id>), o cronograma da obra e o console:
+         esconder da lista e abrir pelo id seria a mesma porta, só que sem
+         placa. Recusa ANTES dos reparos de abertura, que GRAVAM. */
+      if (this._orcForaDoEscopo(orc)) { UI.toast(Auth.msgOrcForaDoEscopo(), "erro", 9000); return; }
       // Conserta acentos/ç corrompidos (mojibake) de versões antigas — sem o usuário recriar nada.
       try {
         var reparos = Orcamento.repararTexto(orc);
@@ -13232,7 +13368,12 @@
         if (st.editando && !self._trialBloqueado()) { /* trial bloqueado nao grava orcamento por NENHUM caminho */
           try {
             eidRp = Auth.empresaId();
-            var afetados = [], listaRp = Store.listarOrcamentos(eidRp);
+            /* ⚠ ESCOPO POR OBRA: o restrito reprecifica só os orçamentos das
+               obras dele. A composição é da empresa, mas o orçamento da obra
+               alheia não é dele para regravar — e a pergunta de baixo diria
+               quantos são (e o recado de recusa, quais). */
+            var afetados = [], listaRp = self._orcsDaTela(Store.listarOrcamentos(eidRp));
+            var restritoRp = !!(Auth.obrasPermitidas && Auth.obrasPermitidas() !== null);
             listaRp.forEach(function (o) {
               var alvo = (self.orcAtual && self.orcAtual.id === o.id) ? self.orcAtual : o;
               var n = Orcamento.reprecificarPorCodigo(alvo, st.editando, item);
@@ -13242,7 +13383,7 @@
               var totRp = afetados.reduce(function (s, a) { return s + a.n; }, 0);
               t0Rp = Date.now();
               simRp = !!window.confirm("Esta composição está lançada em " + totRp + " item(ns) de " +
-                  afetados.length + " orçamento(s). Atualizar o preço desses itens agora?\n\n" +
+                  afetados.length + " orçamento(s)" + (restritoRp ? " das obras liberadas para você (os das outras obras ficam como estão)" : "") + ". Atualizar o preço desses itens agora?\n\n" +
                   "OK = atualiza para " + Util.fmtMoeda(item.custoUnitario) + "/" + item.unidade +
                   " · Cancelar = mantém como está");
               if (simRp) {
@@ -13643,7 +13784,8 @@
       var eid = Auth.empresaId(), afetados = [], totItens = 0;
       if (!this._trialBloqueado()) { /* trial não grava orçamento por NENHUM caminho */
         try {
-          Store.listarOrcamentos(eid).forEach(function (o) {
+          /* ⚠ escopo por obra: só os orçamentos das obras de quem edita (ver cpSalvar) */
+          self._orcsDaTela(Store.listarOrcamentos(eid)).forEach(function (o) {
             var alvo = (self.orcAtual && self.orcAtual.id === o.id) ? self.orcAtual : o;
             var n = Orcamento.reprecificarPorCodigo(alvo, novo.codigo, novo);
             atualizadas.forEach(function (c) { n += Orcamento.reprecificarPorCodigo(alvo, c.codigo, c); });
@@ -13656,7 +13798,7 @@
         (mudouPreco ? " de " + Util.fmtMoeda(antigo.custoUnitario) + " para " + Util.fmtMoeda(novo.custoUnitario) : "") + ".\n\n" +
         "Ele é usado em:\n" +
         (atualizadas.length ? "· " + atualizadas.length + " composição(ões) própria(s) (" + atualizadas.slice(0, 5).map(function (c) { return c.codigo; }).join(", ") + (atualizadas.length > 5 ? "…" : "") + ")\n" : "") +
-        (afetados.length ? "· " + totItens + " item(ns) de " + afetados.length + " orçamento(s)\n" : "") +
+        (afetados.length ? "· " + totItens + " item(ns) de " + afetados.length + " orçamento(s)" + ((Auth.obrasPermitidas && Auth.obrasPermitidas() !== null) ? " das obras liberadas para você (os das outras obras ficam como estão)" : "") + "\n" : "") +
         "\nOK = atualiza tudo agora · Cancelar = só o insumo muda (o resto fica com o valor antigo)";
       var t0In = Date.now();
       if (!window.confirm(pergunta)) {
@@ -14686,6 +14828,9 @@
       if (erro || !matriz || !matriz.length) { UI.toast("Não consegui ler a planilha: " + (erro || "vazia"), "erro"); return; }
       // planilha gerada por este app: o orçamento inteiro está na _meta
       if (meta && meta.snapshot) { self._abrirRestaurarSnapshot(meta.snapshot, f.name, matriz, meta); return; }
+      /* escopo por obra: daqui para baixo a planilha vira orçamento NOVO, sem
+         obra (ver Auth.orcNovoRestrito); a recuperação de cima confere à parte */
+      if (self._orcNovoRecusado()) return;
       /* ⚠ PLANILHA ORÇAMENTÁRIA COMPLETA ANTES DA HEURÍSTICA DE GRADE. A
          heurística lê UMA aba e devolve item solto: a composição própria
          vira preço fixo sem estrutura, o banco de cada item se perde, o BDI
@@ -14716,6 +14861,11 @@
      * ================================================================== */
     _abrirRestaurarSnapshot: function (snap, nomeArq, matriz, meta) {
       var self = this, cab = snap.cab || {}, orc = snap.orc || {};
+      /* ⚠ ESCOPO POR OBRA ANTES DA PRÉVIA: ela mostra nome, número e valor do
+         orçamento que já existe com este id. Para o restrito, só volta o
+         orçamento ligado a uma obra dele (inclusive o que foi excluído: a
+         ficha da obra ainda aponta para ele). */
+      if (this._orcRestauroForaDoEscopo(orc)) return;
       var val = Roundtrip.validar(cab, null);
       if (val.erro === "schema-novo") {
         UI.toast("Esta planilha veio de uma versão MAIS NOVA do OrçaPRO (schema " + cab.schemaVersao + "). Atualize o app antes de restaurar — importar assim corromperia o orçamento.", "erro");
@@ -14776,6 +14926,8 @@
       if (this._trialBloqueado()) { this._avisoTrial(); return; }
       var orc;
       try { orc = JSON.parse(JSON.stringify(snap.orc)); } catch (e) { UI.toast("Não consegui ler o orçamento de dentro da planilha.", "erro"); return; }
+      /* escopo por obra: a guarda da prévia de novo, NA FUNÇÃO que grava */
+      if (this._orcRestauroForaDoEscopo(orc)) return;
       var eid = Auth.empresaId();
       /* limite do plano: só conta como NOVO quando não é substituição */
       if (!substituindo) {
@@ -15016,6 +15168,7 @@
       var self = this, pc = this._pc;
       if (!pc) return;
       if (this._trialBloqueado()) { this._avisoTrial(); return; }
+      if (this._orcNovoRecusado()) return;   // escopo por obra: o restrito não cria orçamento solto (Auth.orcNovoRestrito)
       var eid = Auth.empresaId(), plano = pc.plano;
       try {
         var qtd = Store.listarOrcamentos(eid).length, lim = Auth.limite("limiteOrcamentos");
@@ -15264,6 +15417,7 @@
     },
     criarOrcamentoDaImportacao: function () {
       if (this._trialBloqueado()) { this._avisoTrial(); return; }
+      if (this._orcNovoRecusado()) return;   // escopo por obra: o restrito não cria orçamento solto (Auth.orcNovoRestrito)
       var res = this._imp && this._imp.res;
       if (!res || !res.etapas.length) { UI.toast("Nada pra importar — ajuste o mapeamento das colunas e clique Reanalisar.", "erro"); return; }
       var nomeBase = String(this._imp.nome || "Orçamento importado").replace(/\.(xlsx|xls|csv)$/i, "");
@@ -15303,6 +15457,7 @@
     // NÃO inventa preço: custo entra zerado — o usuário casa no SINAPI / precifica no editor.
     criarOrcamentoDoBIM: function (levantamento, nomeObra) {
       if (this._trialBloqueado()) { this._avisoTrial(); return; }
+      if (this._orcNovoRecusado()) return;   // escopo por obra: o restrito não cria orçamento solto (Auth.orcNovoRestrito)
       var seed = (typeof BIMQto !== "undefined" && BIMQto.paraOrcamento) ? BIMQto.paraOrcamento(levantamento) : null;
       if (!seed || !seed.itens.length) { UI.toast("Nada pra lançar — o modelo não gerou quantitativos.", "erro"); return; }
       var orc = Orcamento.novo({ nome: nomeObra ? ("Levantamento BIM — " + nomeObra) : "Levantamento BIM (modelo IFC)" });

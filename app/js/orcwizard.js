@@ -749,6 +749,11 @@
 
     /* ---------------- criação ---------------- */
     _criar: function () {
+      /* ⚠ escopo por obra, NA FUNÇÃO que grava (o App.novoOrcamento já recusa
+         antes de abrir o assistente; esta é a porta de quem o abrir por outro
+         caminho): o orçamento novo nasce sem obra, invisível para o restrito */
+      var rnWz = (typeof Auth !== "undefined" && Auth.orcNovoRestrito) ? Auth.orcNovoRestrito() : "";
+      if (rnWz) { UI.toast(rnWz, "erro", 10000); return; }
       if (!this._coletar3()) return;
       var s = this._st, self = this, app = this._app;
       var orc = Orcamento.novo({ numero: s.numero, nome: s.nome, cliente: s.cliente, obra: s.obra });
@@ -954,7 +959,16 @@
     _quemUsa: function (catId, idIgnorar) {
       var nomes = [];
       try {
-        (Store.listarOrcamentos(Auth.empresaId()) || []).forEach(function (o) {
+        /* ⚠ ESCOPO POR OBRA (js/auth.js): o restrito não lê o nome do
+           orçamento de obra alheia — mas ele CONTA: esconder a contagem
+           mentiria sobre o alcance da troca (o preço muda para eles
+           também). Um rótulo genérico por orçamento mantém o `length` que a
+           pergunta usa. (Hoje o restrito nem chega aqui — o assistente é
+           de criação —, mas a função não sabe disso.) */
+        var todosQ = Store.listarOrcamentos(Auth.empresaId()) || [];
+        var visQ = (typeof Auth !== "undefined" && Auth.filtrarOrcamentos) ? Auth.filtrarOrcamentos(todosQ) : todosQ, podeQ = {};
+        visQ.forEach(function (o) { if (o) podeQ[String(o.id)] = 1; });
+        todosQ.forEach(function (o) {
           if (!o || o.id === idIgnorar) return;
           var v2 = o.config && o.config.basesV2;
           var achou = false;
@@ -962,7 +976,7 @@
           if (!achou) {
             Util.arr(o.config && o.config.bases).forEach(function (b) { if (String(b.fonte).toUpperCase() === String(catId).toUpperCase()) achou = true; });
           }
-          if (achou) nomes.push(o.numero || o.nome || o.id);
+          if (achou) nomes.push(podeQ[String(o.id)] === 1 ? (o.numero || o.nome || o.id) : "(orçamento de obra fora do seu acesso)");
         });
       } catch (e) {}
       return nomes;

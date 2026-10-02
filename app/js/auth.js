@@ -134,7 +134,10 @@
         var eq = this._equipe(u.empresaId), atual = null;
         for (var i = 0; i < eq.length; i++) { if (eq[i].id === u.usuarioId) { atual = eq[i]; break; } }
         if (!atual || atual.ativo === false) { this.logout(); return null; } // removido/desativado → desloga
-        u.modulos = atual.modulos || []; u.obras = atual.obras || []; u.departamento = atual.departamento || ""; u.nome = atual.nome || u.nome; u.nomePessoal = String(atual.nome || u.nomePessoal || "").trim(); u.aprovador = atual.aprovador === true; u.editaGestao = atual.editaGestao === true; u.trocarSenha = atual.trocarSenha === true;
+        /* prazo vencido sai como o inativo — mas com o recado, para a tela de
+           login dizer o porquê (ver `acessoVencido`, acima) */
+        if (this.acessoVencido(atual)) { var recado = this.msgAcessoVencido(atual); this.logout(); this._recadoSaida = recado; return null; }
+        u.modulos = atual.modulos || []; u.obras = atual.obras || []; u.departamento = atual.departamento || ""; u.nome = atual.nome || u.nome; u.nomePessoal = String(atual.nome || u.nomePessoal || "").trim(); u.aprovador = atual.aprovador === true; u.editaGestao = atual.editaGestao === true; u.trocarSenha = atual.trocarSenha === true; u.acessoAte = String(atual.acessoAte || "");
         localStorage.setItem(SESSAO_KEY, JSON.stringify(u));
       }
       return this._usuario;
@@ -167,10 +170,18 @@
          para fora: o dono e os sub-usuários, sobre os próprios dados. Os
          passos 1 a 3 continuam antes porque cobrem os casos com conta
          registrada e multi-aparelho; este é a rede de baixo. */
+      var loc = null;
       if (this.empresaId() !== "local") {
-        var loc = this.loginNuvem(email, senha, "local");
+        loc = this.loginNuvem(email, senha, "local");
         if (loc.ok) { this._iniciarSessao(loc.usuario); return loc; }
       }
+      /* ⚠ PRAZO VENCIDO É A RESPOSTA, NÃO "E-mail ou senha inválidos". O `r`
+         de baixo é o erro do passo 1 (o dono), e devolvê-lo jogava fora o
+         recado próprio que os passos 2 a 4 montaram — que só existe quando a
+         senha estava CERTA (ver `_loginEquipe`). */
+      if (sub.vencido) return sub;
+      if (nuv.vencido) return nuv;
+      if (loc && loc.vencido) return loc;
       return r;
     },
 
@@ -233,10 +244,142 @@
       if (typeof Store === "undefined" || !Store.listar) return [];
       try { return Store.listar(empresaId, "equipe") || []; } catch (e) { return []; }
     },
+
+    /* =====================================================================
+     * ACESSO COM PRAZO — "Acesso válido até" (`acessoAte`) por usuário da equipe
+     *
+     * Para que serve: o administrador dá a um CONVIDADO (cliente que só vai
+     * acompanhar uma obra, consultor por contrato) um acesso que acaba
+     * sozinho, sem depender de alguém lembrar de desativar no dia certo.
+     *
+     * Contrato do campo: "AAAA-MM-DD", INCLUSIVO — vale até o fim desse dia
+     * no RELÓGIO DO APARELHO (acaba à meia-noite local do dia seguinte).
+     * Vazio, ausente ou inválido = SEM LIMITE: registro antigo não muda de
+     * comportamento no dia do update, e não há migração a rodar.
+     *
+     * Um só juiz: `acessoVencido(u, agora)`. Quem pergunta é o login da
+     * equipe (`_loginEquipe`), o login por empresa (`loginNuvem`), a abertura
+     * do app (`init`) e a checagem periódica com o app aberto
+     * (`conferirAcesso`, chamada pelo App.render e por um relógio de 1 min em
+     * js/app.js). Regra copiada em cada ponto apodrece em um deles.
+     *
+     * ⚠ "2026-10-05" NUNCA passa por `new Date(texto)`: string só de data é
+     *   lida como meia-noite UTC, e em Brasília o acesso venceria às 21h do
+     *   dia ANTERIOR ao combinado (é a mesma armadilha da nota de
+     *   `Util.fmtDia`). A data é montada em partes, no fuso do aparelho;
+     *   tools/test-acesso-validade.js prova em vários fusos.
+     *
+     * ⚠ A CHECAGEM É NO APARELHO — dois limites que a tela não pode esconder:
+     *   1. A identidade na nuvem é da EMPRESA, não da pessoa (js/nuvem.js; é
+     *      o mesmo aviso do escopo por obra no `formUsuario`, js/gestao.js).
+     *      O prazo tranca a ENTRADA no app; não revoga a nuvem nem apaga o
+     *      que já sincronizou no aparelho do convidado. E quem atrasa o
+     *      relógio do aparelho atrasa o vencimento.
+     *   2. Só vale nos aparelhos que tiverem ESTA versão. Versão anterior não
+     *      conhece o campo e deixa entrar. Para cortar também nesses, o
+     *      caminho continua sendo Status "Inativo" (que toda versão confere)
+     *      ou excluir o usuário.
+     *
+     * ⚠ Admin e conta mestre NUNCA vencem: o prazo é de sub-usuário. Trancar
+     *   o dono fora do próprio sistema é o incidente de 27/08 (ver
+     *   `redefinirSenha`) aberto por outra porta.
+     * ===================================================================== */
+    /* "AAAA-MM-DD" → { a, m, d }, ou null. Estrito: dia que não existe
+       ("2026-02-30") é inválido — e inválido é SEM LIMITE, nunca "vencido". */
+    _acessoAtePartes: function (s) {
+      var t = String(s == null ? "" : s).trim();
+      var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(t);
+      if (!m) return null;
+      var a = +m[1], me = +m[2], d = +m[3];
+      var dt = new Date(a, me - 1, d);
+      if (dt.getFullYear() !== a || dt.getMonth() !== me - 1 || dt.getDate() !== d) return null;
+      return { a: a, m: me, d: d };
+    },
+    /* o instante (ms) em que o acesso ACABA: meia-noite LOCAL do dia seguinte
+       ao `acessoAte`; null = sem limite. `d + 1` vira o mês/ano sozinho
+       (31/12 → 01/01), e o construtor por partes usa o fuso do aparelho. */
+    acessoFimMs: function (acessoAte) {
+      var p = this._acessoAtePartes(acessoAte);
+      if (!p) return null;
+      return new Date(p.a, p.m - 1, p.d + 1, 0, 0, 0, 0).getTime();
+    },
+    /* "dd/mm/aaaa" para mostrar; "" quando não há data válida */
+    acessoAteBR: function (acessoAte) {
+      var p = this._acessoAtePartes(acessoAte);
+      if (!p) return "";
+      return ("0" + p.d).slice(-2) + "/" + ("0" + p.m).slice(-2) + "/" + ("000" + p.a).slice(-4);
+    },
+    /* QUEM está sujeito ao prazo: só sub-usuário. Sessão e resultado de
+       login dizem o papel; registro da equipe não diz, mas tem `login` (a
+       conta mestre e o dono registrado não têm). Forma desconhecida = sem
+       limite: é o mesmo lado para onde a data inválida cai. */
+    _sujeitoAPrazo: function (u) {
+      if (u.papel != null) return u.papel === "usuario";      // sessão
+      if (u._papel != null) return u._papel === "usuario";    // resultado de login
+      if (u.id === "conta") return false;                     // conta mestre (admin)
+      return !!String(u.login || "").trim();                  // registro da equipe
+    },
+    /* ⚠ O JUIZ ÚNICO. `agora`: Date, ms ou nada (= relógio do aparelho). */
+    acessoVencido: function (u, agora) {
+      if (!u || typeof u !== "object") return false;
+      if (!this._sujeitoAPrazo(u)) return false;
+      var fim = this.acessoFimMs(u.acessoAte);
+      if (fim === null) return false;
+      var t = (agora instanceof Date) ? agora.getTime() : (agora == null ? Date.now() : Number(agora));
+      if (!isFinite(t)) t = Date.now();
+      return t >= fim;
+    },
+    msgAcessoVencido: function (u) {
+      return "Seu acesso a esta empresa terminou em " + this.acessoAteBR(u && u.acessoAte) + ". Fale com o administrador.";
+    },
+    /* ⚠ ERRO PRÓPRIO, NÃO "senha inválida". A pessoa que acertou a senha e
+       ouve "inválida" tenta de novo, pede outra senha, conclui que o sistema
+       quebrou — e o administrador redefine a senha de quem ele mesmo
+       desligou. O texto diz o que houve e o que fazer. */
+    _erroAcessoVencido: function (u) {
+      return { ok: false, vencido: true, acessoAte: String(u.acessoAte || ""), erro: this.msgAcessoVencido(u) };
+    },
+    /* o que o FORMULÁRIO grava: "AAAA-MM-DD", "" (sem prazo) ou null (não é
+       data — e o formulário RECUSA salvar). Gravar "sem limite" quando o
+       administrador quis pôr um seria o recado que mente. Aceita
+       "dd/mm/aaaa" porque o <input type="date"> vira caixa de texto comum em
+       WebView antiga, e é assim que a pessoa digita data. */
+    normalizarAcessoAte: function (txt) {
+      var s = String(txt == null ? "" : txt).trim();
+      if (!s) return "";
+      var br = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s);
+      if (br) s = br[3] + "-" + ("0" + br[2]).slice(-2) + "-" + ("0" + br[1]).slice(-2);
+      return this._acessoAtePartes(s) ? s : null;
+    },
+    /* CHECAGEM COM O APP ABERTO (App.render e o relógio de 1 min do App).
+       Devolve "" ou o recado — e, no recado, a sessão JÁ foi encerrada.
+       ⚠ Confere o registro FRESCO da equipe, não a cópia da sessão: o
+       administrador que estende (ou encurta) o prazo noutro aparelho manda o
+       registro pela nuvem, e é ele que vale. A cópia da sessão é só a rede
+       de baixo, para registro que não está no aparelho. */
+    conferirAcesso: function (agora) {
+      var u = this._usuario;
+      if (!u || u.papel !== "usuario") return "";             // admin/conta mestre: nunca
+      var alvo = u;
+      if (u.usuarioId) {
+        var eq = this._equipe(u.empresaId);
+        for (var i = 0; i < eq.length; i++) { if (eq[i] && eq[i].id === u.usuarioId) { alvo = eq[i]; break; } }
+      }
+      if (!this.acessoVencido(alvo, agora)) return "";
+      var recado = this.msgAcessoVencido(alvo);
+      this.logout();
+      this._recadoSaida = recado;                             // a tela de login mostra (UI.renderLogin)
+      return recado;
+    },
+    /* o porquê da última saída forçada (prazo vencido), para a tela de login.
+       Limpa no login seguinte e no "Sair" — ver `_iniciarSessao` e `logout`. */
+    _recadoSaida: "",
+    recadoSaida: function () { return this._recadoSaida || ""; },
+
     _loginEquipe: function (login, senha) {
       login = String(login || "").trim().toLowerCase();
       if (!login) return { ok: false, erro: "Usuário ou senha inválidos." };
-      var contas = this.backend._lerUsuarios();
+      var contas = this.backend._lerUsuarios(), vencido = null;
       for (var i = 0; i < contas.length; i++) {
         var dono = contas[i], equipe = this._equipe(dono.empresaId);
         for (var j = 0; j < equipe.length; j++) {
@@ -244,13 +387,19 @@
           if (u.ativo !== false && String(u.login || "").trim().toLowerCase() === login) {
             var c = this._confereSenha(senha, u.senhaHash);
             if (!c.ok) continue;
+            /* ⚠ O PRAZO VEM DEPOIS DA SENHA, e antes da migração dela. Depois
+               da senha: com senha errada a resposta segue a genérica — o
+               recado do prazo não serve para descobrir que um login existe.
+               Antes da migração: acesso vencido não grava nada no registro
+               (a migração regrava a equipe, e isso sincroniza). */
+            if (this.acessoVencido(u)) { if (!vencido) vencido = this._erroAcessoVencido(u); continue; }
             if (c.legado) this._migrarSenhaEquipe(dono.empresaId, u, senha);
             var mot = c.legado ? "seguranca" : "";
-            return { ok: true, usuario: { empresaId: dono.empresaId, empresa: dono.empresa, email: u.login, nome: u.nome || u.login, plano: dono.plano || "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _obras: u.obras || [], _aprovador: u.aprovador === true, _autoAprovar: u.autoAprovar === true, _editaGestao: u.editaGestao === true, _trocarSenha: u.trocarSenha === true, _motivoTroca: mot } };
+            return { ok: true, usuario: { empresaId: dono.empresaId, empresa: dono.empresa, email: u.login, nome: u.nome || u.login, plano: dono.plano || "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _obras: u.obras || [], _aprovador: u.aprovador === true, _autoAprovar: u.autoAprovar === true, _editaGestao: u.editaGestao === true, _trocarSenha: u.trocarSenha === true, _motivoTroca: mot, _acessoAte: String(u.acessoAte || "") } };
           }
         }
       }
-      return { ok: false, erro: "Usuário ou senha inválidos." };
+      return vencido || { ok: false, erro: "Usuário ou senha inválidos." };
     },
     existeLoginEquipe: function (login) {
       login = String(login || "").trim().toLowerCase();
@@ -454,6 +603,142 @@
       return l.indexOf(String(id)) > -1;
     },
 
+    /* =====================================================================
+     * ESCOPO DOS ORÇAMENTOS POR OBRA (02/10/2026)
+     *
+     * O DEFEITO: o escopo por obra (`obras` do usuário da equipe) podava as
+     * entidades da Gestão (`filtrarPorObra`, js/gestao.js), mas o ORÇAMENTO
+     * não passa por aquele funil — mora em `Store.listarOrcamentos`. Medido
+     * no app: o usuário restrito à obra A com o módulo Orçamentos via na
+     * lista "Meus Orçamentos" o orçamento da obra B, com cliente e valor
+     * (`veOrcDeOutraObra: true`). A lista de obras escondia a obra B; a de
+     * orçamentos entregava o preço dela.
+     *
+     * A REGRA (um juiz só, `orcamentosVisiveisDe`, puro):
+     *   - sem restrição (admin, vitrine, sub-usuário sem obras marcadas) →
+     *     `null`, e nada muda;
+     *   - restrito: vê o orçamento LIGADO POR ID a uma obra liberada —
+     *       obra.orcamentoId  (o vínculo da ficha da obra; é o principal),
+     *       orc.obraId        (campo antigo, ainda honrado quando existe),
+     *       contrato.orcamentoId / medicao.orcamentoId com o obraId liberado
+     *                         (o aditivo em orçamento separado chega por aí);
+     *     e as REVISÕES desse orçamento (cadeia `revisaoDe`, para cima e para
+     *     baixo) — a revisão é o mesmo orçamento da mesma obra, e quem cria a
+     *     revisão do orçamento da própria obra não pode vê-la sumir.
+     *   - orçamento SEM obra é invisível para o restrito. É de propósito: a
+     *     proposta em negociação ainda não tem obra, e é justamente o que um
+     *     convidado não pode ver.
+     *   ⚠ A família NÃO atravessa orçamento ligado a obra alheia: revisão que
+     *     outra obra adotou (ou "revisão" usada como modelo de outro cliente)
+     *     é da outra obra. Ligado às duas, vale o vínculo com a liberada.
+     *   ⚠ `orc.obra` NÃO é vínculo: é texto livre ({nome, local, regime})
+     *     digitado no orçamento. Casar por nome seria ligar por semelhança —
+     *     duas obras "Residência" e o restrito leria a proposta da outra.
+     *
+     * ⚠ O FILTRO MORA NA LEITURA DE TELA, NUNCA NO `Store.listarOrcamentos`.
+     *   `Store.salvarOrcamento` lê a lista por ele e regrava a lista INTEIRA:
+     *   lista podada ali faria o restrito que salva um orçamento APAGAR os
+     *   das outras obras — e a nuvem levaria o estrago à frota (é a mesma
+     *   nota do `filtrarPorObra`).
+     *
+     * ⚠ O QUE ISTO NÃO FAZ (e a tela não pode prometer): a nuvem baixa a
+     *   empresa inteira para o aparelho (a identidade lá é da EMPRESA). O
+     *   escopo esconde o que a pessoa vê e abre no app; não tira o dado do
+     *   aparelho dela. É o mesmo aviso do `formUsuario`, js/gestao.js.
+     * ===================================================================== */
+    /* PURO: `permitidas` (null = sem restrição), listas cruas. Devolve null
+       ou o mapa { orcId: true } do que o restrito pode ver. */
+    orcamentosVisiveisDe: function (permitidas, obras, orcs, outros) {
+      if (permitidas === null || permitidas === undefined) return null;
+      var P = {}, perm = {}, alheia = {}, pai = {}, filhos = {}, fam = {}, vis = {}, fila = [], k, g;
+      function txt(v) { return v == null ? "" : String(v).trim(); }
+      function arr(v) { return Array.isArray(v) ? v : []; }
+      arr(permitidas).forEach(function (id) { if (txt(id)) P[txt(id)] = 1; });
+      function marca(orcId, obraId) {
+        var o = txt(orcId), ob = txt(obraId);
+        if (!o || !ob) return;
+        if (P[ob] === 1) perm[o] = true; else alheia[o] = true;
+      }
+      arr(obras).forEach(function (ob) { if (ob) marca(ob.orcamentoId, ob.id); });
+      arr(orcs).forEach(function (o) {
+        if (!o || !txt(o.id)) return;
+        marca(o.id, o.obraId);
+        var rv = txt(o.revisaoDe);
+        if (rv && rv !== txt(o.id)) { pai[txt(o.id)] = rv; (filhos[rv] = filhos[rv] || []).push(txt(o.id)); }
+      });
+      arr(outros).forEach(function (l) { arr(l).forEach(function (r) { if (r) marca(r.orcamentoId, r.obraId); }); });
+      /* "alheia" sem "perm" = ligado SÓ a obra que a pessoa não vê */
+      function bloqueado(id) { return alheia[id] === true && perm[id] !== true; }
+      for (k in perm) {
+        if (!Object.prototype.hasOwnProperty.call(perm, k)) continue;
+        /* sobe pela cadeia até esbarrar em quem já foi visto ou em orçamento de obra alheia */
+        var c = k; g = 0;
+        while (c && !fam[c] && !bloqueado(c) && g++ < 1000) { fam[c] = true; fila.push(c); c = pai[c]; }
+      }
+      g = 0;
+      while (fila.length && g++ < 20000) {
+        var at = fila.shift();
+        arr(filhos[at]).forEach(function (f) { if (!fam[f] && !bloqueado(f)) { fam[f] = true; fila.push(f); } });
+      }
+      for (k in fam) if (Object.prototype.hasOwnProperty.call(fam, k)) vis[k] = true;
+      return vis;
+    },
+    /* FIAÇÃO: lê do Store o que o juiz precisa. `orcsTodos` evita reler a
+       lista quando quem chama já a tem (a lista inteira, não um recorte —
+       a cadeia de revisões precisa dos elos do meio).
+       ⚠ FALHA FECHADA: leitura que estoura devolve mapa vazio (não vê nada),
+         nunca `null` (veria tudo). */
+    orcamentosVisiveis: function (orcsTodos) {
+      var perm = this.obrasPermitidas();
+      if (perm === null) return null;
+      var eid = this.empresaId();
+      /* ⚠ `var`, não declaração de função dentro do `try`: em modo estrito o
+         ES5 recusa função declarada dentro de bloco (WebView antiga = erro de
+         sintaxe no arquivo inteiro, e sem auth.js não há login) */
+      var ler = function (ent) { try { return Store.listar(eid, ent) || []; } catch (e) { return []; } };
+      try {
+        var orcs = orcsTodos || Store.listarOrcamentos(eid) || [];
+        return this.orcamentosVisiveisDe(perm, ler("obras"), orcs, [ler("contratos"), ler("medicoes")]);
+      } catch (eV) { return {}; }
+    },
+    /* O restrito pode ver/abrir ESTE orçamento? (objeto ou id). Sem
+       restrição: sempre. Sem id: não. Objeto que ainda não está no disco
+       entra na conta (é por ele que a revisão recém-montada se acha na
+       cadeia); o do disco, quando há, é o que vale. */
+    podeOrcamento: function (orcOuId) {
+      if (this.obrasPermitidas() === null) return true;
+      var obj = (orcOuId && typeof orcOuId === "object") ? orcOuId : null;
+      var id = String(obj ? (obj.id == null ? "" : obj.id) : (orcOuId == null ? "" : orcOuId)).trim();
+      if (!id) return false;
+      var orcs = [];
+      try { orcs = Store.listarOrcamentos(this.empresaId()) || []; } catch (eL) { orcs = []; }
+      if (obj && !orcs.some(function (o) { return o && String(o.id) === id; })) orcs = orcs.concat([obj]);
+      var m = this.orcamentosVisiveis(orcs);
+      return !!(m && m[id] === true);
+    },
+    /* a lista que a TELA mostra. `todos` = a lista inteira, quando `lista`
+       for um recorte (a cadeia de revisões precisa dela). */
+    filtrarOrcamentos: function (lista, todos) {
+      var m = this.orcamentosVisiveis(todos || lista);
+      if (m === null) return lista;
+      return (Array.isArray(lista) ? lista : []).filter(function (o) { return !!o && o.id != null && m[String(o.id)] === true; });
+    },
+    /* Recados — um texto só para todas as portas (lista, abrir por id, busca,
+       medição, vínculo da obra). Dizem o que houve e o que fazer. */
+    msgOrcForaDoEscopo: function () {
+      return "Este orçamento não está ligado a nenhuma obra liberada para o seu usuário — por isso ele não abre aqui. Se você precisa dele, peça ao administrador para ligá-lo à obra (ficha da obra → Vincular a um orçamento).";
+    },
+    /* "" = pode criar; texto = por que não. ⚠ O RESTRITO NÃO CRIA ORÇAMENTO
+       SOLTO: o novo nasce sem obra, e sem obra ele é invisível para quem o
+       criou — sumiria da lista no primeiro clique fora dele, com o trabalho
+       dentro. Recusar ANTES de gravar é a porta honesta; quem cria e liga à
+       obra é o administrador. (A revisão do orçamento da própria obra não
+       passa por aqui: ela é da família, e a família é visível.) */
+    orcNovoRestrito: function () {
+      if (this.obrasPermitidas() === null) return "";
+      return "Seu usuário vê só os orçamentos ligados às obras liberadas para ele, e um orçamento novo nasce sem obra — ele sumiria da sua lista assim que você saísse dele. Peça ao administrador para criar o orçamento e ligá-lo à obra.";
+    },
+
     // G3: quem pode APROVAR/rejeitar medições, compras e requisições.
     // Dono/demo sempre pode; sub-usuário só com a flag "aprovador" marcada pelo admin.
     podeAprovar: function () {
@@ -537,18 +822,21 @@
           return { ok: true, usuario: { empresaId: empresaId, empresa: conta.empresa, email: conta.email, nome: conta.empresa, plano: "PRO", _papel: "admin", _trocarSenha: conta.trocarSenha === true, _motivoTroca: cc.legado ? "seguranca" : "" } };
         }
       }
-      var eq = this._equipe(empresaId);
+      var eq = this._equipe(empresaId), vencido = null;
       for (var i = 0; i < eq.length; i++) {
         var u = eq[i];
         if (u.ativo !== false && String(u.login || "").trim().toLowerCase() === login) {
           var c = this._confereSenha(senha, u.senhaHash);
           if (!c.ok) continue;
+          /* ⚠ mesma ordem do `_loginEquipe`: prazo depois da senha, antes da
+             migração. A conta mestre, acima, nunca passa por aqui. */
+          if (this.acessoVencido(u)) { if (!vencido) vencido = this._erroAcessoVencido(u); continue; }
           if (c.legado) this._migrarSenhaEquipe(empresaId, u, senha);
           var mot = c.legado ? "seguranca" : "";
-          return { ok: true, usuario: { empresaId: empresaId, empresa: (conta && conta.empresa) || "Minha Empresa", email: u.login, nome: u.nome || u.login, plano: "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _obras: u.obras || [], _aprovador: u.aprovador === true, _autoAprovar: u.autoAprovar === true, _editaGestao: u.editaGestao === true, _trocarSenha: u.trocarSenha === true, _motivoTroca: mot } };
+          return { ok: true, usuario: { empresaId: empresaId, empresa: (conta && conta.empresa) || "Minha Empresa", email: u.login, nome: u.nome || u.login, plano: "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _obras: u.obras || [], _aprovador: u.aprovador === true, _autoAprovar: u.autoAprovar === true, _editaGestao: u.editaGestao === true, _trocarSenha: u.trocarSenha === true, _motivoTroca: mot, _acessoAte: String(u.acessoAte || "") } };
         }
       }
-      return { ok: false, erro: "Usuário ou senha inválidos." };
+      return vencido || { ok: false, erro: "Usuário ou senha inválidos." };
     },
     // Este aparelho é secundário/anônimo mas o tenant já tem admin? → precisa logar (não auto-entra).
     precisaLoginNuvem: function () {
@@ -851,13 +1139,18 @@
         autoAprovar: u._autoAprovar === true,  // pode aprovar a própria criação (medição/compra/requisição/RDO)
         editaGestao: u._editaGestao === true,  // pode definir o responsável pelo planejamento e gestão sem ser admin (ver podeEditarGestao)
         trocarSenha: u._trocarSenha === true,  // força definir a própria senha (1º acesso OU migração de senha)
-        motivoTroca: u._motivoTroca || ""       // "seguranca" = a senha estava no formato antigo e foi migrada agora
+        motivoTroca: u._motivoTroca || "",      // "seguranca" = a senha estava no formato antigo e foi migrada agora
+        /* cópia do prazo (ver `acessoVencido`): rede de baixo do
+           `conferirAcesso` quando o registro da equipe não está no aparelho */
+        acessoAte: u._acessoAte || ""
       };
+      this._recadoSaida = "";                   // entrou: o recado da saída anterior não vale mais
       localStorage.setItem(SESSAO_KEY, JSON.stringify(this._usuario));
     },
 
     logout: function () {
       this._usuario = null;
+      this._recadoSaida = "";   // "Sair" de propósito não herda recado; a saída por prazo o grava DEPOIS de chamar logout
       /* ⚠ o cache do nome do dono e por CONTA. Sem isto, trocar de licenca na
          mesma maquina faria a barra do topo — e as aprovacoes — abrirem com o
          nome de quem saiu. */

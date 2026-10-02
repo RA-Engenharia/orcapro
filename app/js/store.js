@@ -201,7 +201,9 @@
      ⚠ FUSÃO DA ONDA 5 (21/09/2026): as duas listas são UMA SÓ. Ficar com a
      de um lado apagaria a quarentena do outro — e entidade fora daqui é o
      buraco que os dois comentários acima descrevem. */
-  var FORMA_PADRAO = { orcamentos: "lista", crono_obra: "lista", crono_selo: "lista", crono_alt: "lista", centrocusto: "lista", cc_regras: "lista", cc_aprop: "lista" };
+  var FORMA_PADRAO = { orcamentos: "lista", crono_obra: "lista", crono_selo: "lista", crono_alt: "lista", centrocusto: "lista", cc_regras: "lista", cc_aprop: "lista",
+    /* Documentos da obra: entram no sync no mesmo commit (regra acima) */
+    obra_docs: "lista", doc_assinantes: "lista" };
 
   /* ---------- Adapter local (localStorage) ---------- */
   var LocalAdapter = {
@@ -1140,7 +1142,11 @@
        existência. ⚠ Quem está aqui tem de estar em `_ENT_SO_DESVINCULA` e
        NUNCA em `_ENT_DA_OBRA` — as duas listas ao mesmo tempo foi o defeito
        que a v1.1.236 consertou. */
-    _IMUNES_CASCATA: { colaboradores: 1, patrimonio: 1, frota: 1, fiscal: 1,
+    /* ⚠ a ÚLTIMA linha da lista é âncora do controle negativo do
+       test-crono-obra-sync (ele acrescenta `crono_obra` nela): entrada nova
+       entra numa linha de CIMA. `obra_docs` = documento do arquivo da obra
+       (contrato, ART, memorial assinado). */
+    _IMUNES_CASCATA: { colaboradores: 1, patrimonio: 1, frota: 1, fiscal: 1, obra_docs: 1,
                        folha: 1, fs_lancamentos: 1, fs_pagamentos: 1, ponto: 1, frota_mov: 1,
                        remun_apur: 1, carp_propostas: 1, horas_extras: 1 },
     imuneACascata: function (entidade) { return !!this._IMUNES_CASCATA[entidade]; },

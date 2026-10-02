@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.115",
+  "versao": "1.2.116",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.115.zip",
-  "notas": "Modo mesa do BIM: a barra de ferramentas desceu um pouco e nao cobre mais o cubo de vistas. O plano de icamento e o novo cubo do BIM seguem em previa, fora desta versao para os clientes.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.115/OrcaPRO-IA-Instalador-v1.2.115.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.116.zip",
+  "notas": "Novo: Documentos da obra - o arquivo de cada obra com PDF, revisoes, historico e assinatura digital ICP-Brasil (no computador com o assinador instalado). Usuarios: campo Acesso valido ate; usuario restrito por obra passa a ver so os orcamentos das obras dele.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.116/OrcaPRO-IA-Instalador-v1.2.116.exe"
 }
