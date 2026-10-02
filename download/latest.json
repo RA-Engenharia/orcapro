@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.118",
+  "versao": "1.2.119",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.118.zip",
-  "notas": "Correcao: na cotacao online, a alternativa do fornecedor que uma versao anterior puxou sem mostrar volta a aparecer no Mapa ao puxar as respostas. O plano de icamento do BIM segue em previa.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.118/OrcaPRO-IA-Instalador-v1.2.118.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.119.zip",
+  "notas": "Politica de privacidade atualizada (versao 1.10): novo item 4.16, sobre o local e o clima do plano de icamento. O plano de icamento do BIM segue em previa.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.119/OrcaPRO-IA-Instalador-v1.2.119.exe"
 }

@@ -16541,7 +16541,7 @@
       var self = this, esc = Util.esc, st = this._icarEst(), f = function (v, d) { return self._icarFmt(v, d); };
       if (!window.IcarPlano || !window.IcarCatalogo) { box.innerHTML = '<p class="muted">O módulo de içamento não carregou nesta tela. Recarregue o app.</p>'; return; }
       var p = this._icarPlano(), eq = this._icarEquip(p);
-      var abas = [["icamentos", "Içamentos"], ["fisica", "Física"], ["alem", "Além do limite"], ["equipamento", "Equipamento"], ["cenario", "Cenário"], ["vento", "Vento"], ["documentos", "Documentos"], ["plano", "Plano"]];
+      var abas = [["icamentos", "Içamentos"], ["fisica", "Física"], ["alem", "Além do limite"], ["equipamento", "Equipamento"], ["cenario", "Cenário"], ["local", "Local e clima"], ["vento", "Vento"], ["documentos", "Documentos"], ["plano", "Plano"]];
       var h = '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px">' + abas.map(function (a) {
         return '<button class="btn sm' + (st.aba === a[0] ? " primary" : "") + '" data-icar="aba" data-v="' + a[0] + '">' + a[1] + "</button>";
       }).join("") + "</div>";
@@ -16549,12 +16549,14 @@
       else if (st.aba === "fisica") h += this._icarHtmlFisica(p, eq);
       else if (st.aba === "alem") h += this._icarHtmlAlem(p, eq);
       else if (st.aba === "cenario") h += this._icarHtmlCenario(p);
+      else if (st.aba === "local") h += this._icarHtmlLocal(p, eq);
       else if (st.aba === "vento") h += this._icarHtmlVento(p, eq);
       else if (st.aba === "documentos") h += this._icarHtmlDocs(p);
       else if (st.aba === "plano") h += this._icarHtmlPlano(p, eq);
       else h += this._icarHtmlIcamentos(p, eq);
       box.innerHTML = h;
       this._icarPlantaSync();
+      this._icarLocalSync();
       if (box._ligado) return;
       box._ligado = true;
       box.addEventListener("click", function (ev) {
@@ -16571,6 +16573,7 @@
         if (t.hasAttribute("data-icar-anexo")) { self._icarAnexar(t.getAttribute("data-icar-anexo"), t.files); return; }
         if (t.hasAttribute("data-icar-planta-arq")) { if (t.files && t.files[0]) self._icarPlantaArquivo(t.files[0]); return; }
         if (t.hasAttribute("data-icar-planta")) { self._icarPlantaCampo(t); return; }
+        if (t.hasAttribute("data-icar-local")) { self._icarLocalCampo(t); return; }
         if (t.hasAttribute("data-icar-k")) { self._icarSobrecarga(+t.value || 1); self._icarRender(); return; }
         if (t.hasAttribute("data-icar-moitao")) { self._icarUsarMoitao(t.value === "" ? null : t.value); return; }
         if (t.hasAttribute("data-icar-dr")) { var dr = Util.parseNum(String(t.value || "0")); self._icarEst().dR = isFinite(dr) ? dr : 0; self._icarRender(); self._icarRedesenhar(true); return; }
@@ -16801,6 +16804,421 @@
       h += '<p class="muted" style="font-size:11px;margin-top:8px">Referências: NR-18 (gruas: alarme acima de 42 km/h, proibido acima de 72 km/h); NR-12 Anexo XII (cesto: alerta a 35 km/h); Liebherr: tabelas em geral até 9 m/s. Vale o anemômetro do equipamento na hora.</p>';
       return h;
     },
+    /* ---------- aba Local e clima (ESPEC §II.10.8; motores js/icargeo.js, js/icarentorno.js, js/icarclima.js; servidor /ia/geo/*) ----------
+       ⚠ A coordenada da obra sai do aparelho para o servidor da RA e dele para serviços públicos (OpenStreetMap, MET Norway,
+         Terrain Tiles da AWS e, quando habilitada, a imagem da Esri) — sem nome de obra, de cliente ou de pessoa. Está na
+         política de privacidade (serviços de mapa e previsão). Mudar o que vai no corpo exige mudar a política junto.
+       ⚠ Nada do mapa entra no plano sem a pessoa aceitar: prédio/muro/água aceito vira p.entorno (obstáculo), rede aceita vira
+         p.redes — com a ALTURA e a TENSÃO que ela informou (o mapa não tem altura de cabo; chutar encolheria a zona da NR-10).
+         Relevo, ruas, previsão e satélite ficam só na sessão (o servidor guarda o cache). No plano vão só p.geo e os registros. */
+    _icarLocalEst: function () { var st = this._icarEst(); if (!st.local) st.local = { raio: 150, mostrar: true, redeKv: {}, redeAlt: {} }; return st.local; },
+    _icarGeo: function (p) { var g = p && p.geo; return g && g.lat != null && g.lat !== "" && g.lon != null && g.lon !== "" && isFinite(+g.lat) && isFinite(+g.lon) ? g : null; },
+    _icarLocalRotStatus: function (s) { return { LIBERADO: "Liberado", ATENCAO: "Atenção", SUSPENDER: "Suspender", "SEM DADOS": "Sem dados" }[s] || String(s || "—"); },
+    _icarLocalQuando: function (iso) { var d = iso ? new Date(iso) : null; if (!d || isNaN(d.getTime())) return "—"; function z(n) { return (n < 10 ? "0" : "") + n; } return z(d.getDate()) + "/" + z(d.getMonth() + 1) + "/" + d.getFullYear() + " " + z(d.getHours()) + ":" + z(d.getMinutes()); },
+    _icarGeoPost: function (rota, corpo) {
+      var back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? CONFIG.iaBackend : "http://localhost:3041";
+      var chave = (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "";
+      return fetch(back + rota, { method: "POST", headers: { "Content-Type": "application/json", "x-licenca": chave }, body: JSON.stringify(corpo || {}) })
+        .then(function (r) { return r.json().then(function (j) { return { s: r.status, j: j || {} }; }, function () { return { s: r.status, j: {} }; }); },
+          function () { return { s: 0, j: { error: "sem conexão com o servidor da RA — confira a internet e tente de novo" } }; });
+    },
+    _icarGeoErro: function (x, oque) {
+      var e = x && x.j && x.j.error ? String(x.j.error) : "o servidor respondeu " + (x ? x.s : "?");
+      return oque + ": " + e + (x && x.s === 403 ? " (a licença deste aparelho precisa estar ativa)" : "") + ".";
+    },
+    /* a cota do chão onde o mapa encosta: o apoio do equipamento (o térreo) + o desnível do relevo até o ponto, quando carregado */
+    _icarLocalBase: function (p, pol) {
+      var lc = this._icarLocalEst(), g = this._icarGeo(p), b = +this._icarApoio(p).cota || 0;
+      if (!g || !lc.relevoResp || !lc.malha || !pol || !pol.length) return b;
+      var cx = 0, cy = 0; pol.forEach(function (q) { cx += +q[0]; cy += +q[1]; }); cx /= pol.length; cy /= pol.length;
+      var z = IcarEntorno.cotaRelevo(lc.relevoResp, g, cx, cy);
+      return z == null ? b : Math.round((b + z - lc.malha.cotaObra) * 100) / 100;
+    },
+    /* os içamentos do plano no formato do motor do clima: altura do gancho e limite do fabricante vêm da avaliação (aba Vento) */
+    _icarLocalIcs: function (p) {
+      var self = this, out = [];
+      (p.icamentos || []).forEach(function (ic, i) {
+        var a = self._icarAvaliar(p, ic), v = a && a.vento;
+        out.push({ nome: "içamento " + (i + 1), z: v && v.z != null ? v.z : 10, limite: v && v.vLim ? v.vLim : null, cat: (v && v.cat) || (p.local && p.local.cat) || "III", classe: (v && v.classe) || "B",
+          duracao_min: a && a.tempo && a.tempo.total_min > 0 ? a.tempo.total_min : 60 });
+      });
+      return out;
+    },
+    _icarLocalDia: function (p) { var lc = this._icarLocalEst(); return /^\d{4}-\d{2}-\d{2}$/.test(lc.dia || "") ? lc.dia : this._icarDiaRef(p); },
+    /* ⚠ o fuso é o do APARELHO na data escolhida (horário de verão incluso): a obra fora do fuso do aparelho mostraria a hora
+       do aparelho — a tela diz isso no rodapé da linha do tempo */
+    _icarLocalJanela: function (p) {
+      var lc = this._icarLocalEst(), dia = this._icarLocalDia(p), g = this._icarGeo(p), fuso = -new Date(Date.parse(dia + "T12:00:00")).getTimezoneOffset();
+      var np = g ? IcarGeo.nascerPor(+g.lat, +g.lon, dia) : null, ics = this._icarLocalIcs(p);
+      var J = lc.clima ? IcarClima.janela(lc.clima.horas, dia, ics, {}, { fusoMin: fuso, nascer: np && np.nascer, por: np && np.por }) : null;
+      return { J: J, ics: ics, np: np, fuso: fuso, dia: dia };
+    },
+    _icarLocalHora: function (ms, fuso) { var d = new Date(ms + fuso * 60000); function z(n) { return (n < 10 ? "0" : "") + n; } return z(d.getUTCHours()) + ":" + z(d.getUTCMinutes()); },
+    /* recalcula as propostas do mapa a partir da resposta guardada (a georreferência mudou, ou chegou resposta nova),
+       preservando o que a pessoa já aceitou/descartou/editou — a chave é o id do OpenStreetMap */
+    _icarLocalMapa: function (p) {
+      var lc = this._icarLocalEst(), g = this._icarGeo(p); if (!g || !lc.mapaResp) { lc.mapa = null; return; }
+      var antes = {}; if (lc.mapa) lc.mapa.propostas.forEach(function (q) { antes[q.fonte] = q; });
+      var ja = (p.entorno || []).map(function (e) { return e.fonte; }).filter(Boolean).concat((p.redes || []).map(function (r) { return r.fonte; }).filter(Boolean));
+      var cx = null; try { var cs = (window.BIM && BIM.icarCaixas) ? BIM.icarCaixas([]) : []; if (cs && cs.length) { cx = { min: [Infinity, Infinity], max: [-Infinity, -Infinity] }; cs.forEach(function (c) { if (/^entorno:/.test(String(c.id))) return; var mn = c.min || (c.aabb && c.aabb.min), mx = c.max || (c.aabb && c.aabb.max); if (!mn || !mx) return; cx.min[0] = Math.min(cx.min[0], mn[0]); cx.min[1] = Math.min(cx.min[1], mn[1]); cx.max[0] = Math.max(cx.max[0], mx[0]); cx.max[1] = Math.max(cx.max[1], mx[1]); }); if (!isFinite(cx.min[0])) cx = null; } } catch (e) { cx = null; }
+      var r = IcarEntorno.propostas(lc.mapaResp, g, { raio: lc.mapaResp.raio || lc.raio, jaAceitos: ja, caixaModelo: cx });
+      if (!r.ok) { lc.mapa = null; UI.toast(r.motivo, "aviso"); return; }
+      r.propostas.forEach(function (q) { var a = antes[q.fonte]; if (a) { q.aceita = a.aceita; q.descartada = a.descartada; q.alturaEditada = a.alturaEditada; } });
+      lc.mapa = r;
+    },
+    /* trechos de rede do mapa agrupados pela linha (o id do OpenStreetMap): a pessoa informa altura e tensão UMA vez por linha */
+    _icarLocalRedes: function (mapa) {
+      var gr = {}, ordem = [];
+      (mapa && mapa.redes || []).forEach(function (r) {
+        var k = String(r.fonte).split(":").slice(0, 2).join(":");
+        if (!gr[k]) { gr[k] = { chave: k, nome: r.nome, kV: r.kV, trechos: [], distancia: r.distancia, aceita: true }; ordem.push(k); }
+        gr[k].trechos.push(r); gr[k].distancia = Math.min(gr[k].distancia, r.distancia); if (!r.jaAceita && !r.aceita) gr[k].aceita = false;
+      });
+      return ordem.map(function (k) { return gr[k]; }).sort(function (a, b) { return a.distancia - b.distancia; });
+    },
+    _icarHtmlLocal: function (p, eq) {
+      var self = this, esc = Util.esc, f = function (v, d) { return self._icarFmt(v, d); }, lc = this._icarLocalEst(), g = this._icarGeo(p), st = this._icarEst();
+      if (!window.IcarGeo || !window.IcarClima || !window.IcarEntorno) return '<p class="muted">Os módulos de local e clima não carregaram nesta tela. Recarregue o app.</p>';
+      function num(attr, val, ph, w) { return '<input type="text" inputmode="decimal" data-icar-c="' + attr + '" data-num="1" value="' + (val == null || val === "" ? "" : esc(String(val).replace(".", ","))) + '" placeholder="' + esc(ph || "") + '" style="width:' + (w || 70) + 'px;text-align:right">'; }
+      var dis = lc.ocupado ? " disabled" : "", h = '<div style="font-size:12px" data-icar-geo="' + (g ? "sim" : "nao") + '"><b>Onde fica a obra</b>';
+      if (g) h += '<div style="margin-top:3px" data-icar-geo-ll="' + (+g.lat) + "," + (+g.lon) + '">' + f(+g.lat, 6) + "; " + f(+g.lon, 6) + ' <span class="muted">· ' + esc(g.fonte || "") + (g.endereco ? " · " + esc(g.endereco) : "") + "</span> " +
+        '<a href="https://www.openstreetmap.org/?mlat=' + (+g.lat) + "&amp;mlon=" + (+g.lon) + "#map=18/" + (+g.lat) + "/" + (+g.lon) + '" target="_blank" rel="noopener">conferir no mapa</a></div>';
+      else h += '<div class="muted" style="margin-top:3px">Ainda não localizada. Cole o link do Google Maps (Compartilhar → Copiar link), as coordenadas ou o endereço — ou leia do IFC.</div>';
+      h += '<div style="display:flex;gap:6px;margin-top:5px;flex-wrap:wrap"><input type="text" data-icar-local="busca" value="' + esc(lc.buscaTxt || "") + '" placeholder="link do mapa, -27,5954; -48,5480 ou endereço" style="flex:1;min-width:200px">' +
+        '<button class="btn sm primary" data-icar="loc-buscar"' + dis + '>Localizar</button><button class="btn sm" data-icar="loc-ifc" title="Latitude, longitude e norte que o IFC traz (IfcSite / IfcMapConversion)">Ler do IFC</button></div>';
+      if (lc.resultados && lc.resultados.length) h += '<div style="margin-top:4px" data-icar-loc-resultados="' + lc.resultados.length + '">' + lc.resultados.map(function (r, i) {
+        return '<div style="display:flex;gap:6px;align-items:center;padding:2px 0;border-top:1px solid var(--linha)"><span style="flex:1">' + esc(r.nome) + '</span><button class="btn sm" data-icar="loc-usar" data-v="' + i + '">Usar</button></div>';
+      }).join("") + '<div class="muted" style="font-size:10.5px">Endereços: ' + esc(lc.resAtrib || "© OpenStreetMap contributors") + "</div></div>";
+      if (g) h += '<div style="display:grid;grid-template-columns:auto 1fr;gap:5px 8px;align-items:center;margin-top:6px">' +
+        "<span>Ponto do modelo nessa coordenada</span><span>X " + num("geo.x0", g.x0, "0") + " Y " + num("geo.y0", g.y0, "0") + ' <span class="muted">m (origem do IFC = 0; 0)</span></span>' +
+        "<span>Norte do projeto</span><span>" + num("geo.norte", g.norte, "0", 60) + '° <span class="muted">giro do norte verdadeiro a partir do +Y do modelo, anti-horário (o IFC traz no TrueNorth)</span></span></div>';
+      h += '<div class="muted" style="font-size:10.5px;margin-top:4px">A coordenada vai ao servidor da RA e dele aos serviços públicos de mapa, relevo e previsão (OpenStreetMap, MET Norway, AWS) — sem nome de obra nem de cliente.</div></div>';
+      if (!g) return h;
+
+      /* ENTORNO, RELEVO E SATÉLITE */
+      h += '<div style="font-size:12px;margin-top:10px;border-top:1px solid var(--linha);padding-top:8px"><b>Entorno e relevo pelo mapa</b>' +
+        '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px">Raio <select data-icar-local="raio">' + [100, 150, 250, 400].map(function (r) { return '<option value="' + r + '"' + (+lc.raio === r ? " selected" : "") + ">" + r + " m</option>"; }).join("") + "</select>" +
+        '<button class="btn sm primary" data-icar="loc-entorno"' + dis + ">Buscar entorno</button>" + '<button class="btn sm" data-icar="loc-relevo"' + dis + ">Carregar relevo</button>" +
+        '<button class="btn sm" data-icar="loc-satelite"' + dis + ">Satélite no chão</button>" +
+        (lc.malha || lc.mapa || lc.imagem ? '<button class="btn sm" data-icar="loc-mostrar">' + (lc.mostrar !== false ? "Esconder do 3D" : "Mostrar no 3D") + "</button>" : "") + "</div>";
+      if (lc.ocupado) h += '<div class="muted" data-icar-loc-ocupado="1">' + esc(lc.ocupado) + "…</div>";
+      if (lc.semSatelite) h += '<div class="muted" style="margin-top:3px" data-icar-sem-satelite="1">Imagem de satélite: ' + esc(lc.semSatelite) + " Por enquanto, use a planta de situação na aba Cenário.</div>";
+      if (lc.imagem) h += '<div class="muted" style="margin-top:3px" data-icar-satelite="' + lc.imagem.plano.tiles.length + '">Satélite no chão: ' + lc.imagem.plano.nx + " × " + lc.imagem.plano.ny + " quadros de " + f(lc.imagem.plano.resolucao_m, 2) + " m por ponto · " + esc(lc.imagem.atrib || "") + "</div>";
+      if (lc.malha) h += '<div style="margin-top:4px" data-icar-relevo="' + lc.malha.n + '">Relevo: desnível de ' + f(lc.malha.desnivel, 1) + " m no raio · cota da obra " + f(lc.malha.cotaObra, 1) + " m (grade de " + f(lc.malha.passo, 0) + ' m) <span class="muted">— superfície de satélite (~30 m, inclui prédios e árvores): serve para o entorno, não para nivelar patola.</span></div>';
+      if (lc.mapa) {
+        var mp = lc.mapa, vivas = mp.propostas.filter(function (q) { return !q.aceita && !q.descartada && !q.jaAceita; }), rot = { edificacao: "Edificação", muro: "Muro", agua: "Água" };
+        var nAc = mp.propostas.filter(function (q) { return q.aceita || q.jaAceita; }).length;
+        h += '<div style="margin-top:6px" data-icar-osm="' + mp.propostas.length + '" data-icar-osm-vivas="' + vivas.length + '">Do mapa: ' + (mp.porTipo.edificacao || 0) + " edificação(ões), " + (mp.porTipo.muro || 0) + " muro(s), " + (mp.porTipo.agua || 0) + " água, " +
+          mp.ruas.length + " rua(s), " + this._icarLocalRedes(mp).length + " linha(s) de rede" + (nAc ? " · " + nAc + " já no plano" : "") + (mp.conta.cortadas ? ' · <span style="color:#b45309">' + mp.conta.cortadas + " mais longe ficaram de fora (teto de 300)</span>" : "") + "</div>";
+        mp.avisos.forEach(function (a) { h += '<div style="color:#b45309">• ' + esc(a) + "</div>"; });
+        if (vivas.length) h += '<div style="margin-top:4px"><button class="btn sm primary" data-icar="loc-aceitar" data-v="todas">Aceitar todas</button> <span class="muted">(menos as que estão sobre o terreno da obra) — viram obstáculo no caminho e no agente do equipamento</span></div>';
+        vivas.slice(0, 40).forEach(function (q) {
+          h += '<div style="border-top:1px solid var(--linha);padding:4px 0;display:flex;gap:6px;align-items:center;flex-wrap:wrap" data-icar-osm-prop="' + q.n + '"><span style="flex:1;min-width:180px"><b>' + (rot[q.tipo] || q.tipo) + "</b> a " + f(q.distancia, 0) + " m" +
+            (q.sobreModelo ? ' <span style="color:#b45309">· sobre a obra</span>' : "") + ' <span class="muted">· ' + esc(q.motivos.join(" · ")) + "</span></span>" +
+            (q.tipo !== "agua" ? 'altura <input type="text" inputmode="decimal" data-icar-local="propAlt" data-n="' + q.n + '" value="' + esc(String(q.alturaEditada != null ? q.alturaEditada : q.altura).replace(".", ",")) + '" style="width:54px;text-align:right"> m ' : "") +
+            '<button class="btn sm" data-icar="loc-aceitar" data-v="' + q.n + '">Aceitar</button><button class="btn sm" data-icar="loc-descartar" data-v="' + q.n + '">Descartar</button></div>';
+        });
+        if (vivas.length > 40) h += '<div class="muted">+ ' + (vivas.length - 40) + " mais longe (o Aceitar todas inclui)</div>";
+        this._icarLocalRedes(mp).forEach(function (gr) {
+          var kv = lc.redeKv[gr.chave] != null ? lc.redeKv[gr.chave] : (gr.kV != null ? String(gr.kV).replace(".", ",") : ""), al = lc.redeAlt[gr.chave] != null ? lc.redeAlt[gr.chave] : "";
+          h += '<div style="border-top:1px solid var(--linha);padding:4px 0;display:flex;gap:6px;align-items:center;flex-wrap:wrap" data-icar-osm-rede="' + esc(gr.chave) + '"><span style="flex:1;min-width:180px"><b>' + esc(gr.nome) + "</b> a " + f(gr.distancia, 0) + " m · " + gr.trechos.length + " trecho(s)" +
+            (gr.kV == null ? ' <span style="color:#b45309">· tensão não está no mapa</span>' : ' <span class="muted">· ' + f(gr.kV, 1) + " kV no mapa</span>") + "</span>" +
+            (gr.aceita ? '<span class="muted">no plano</span>' : 'tensão <input type="text" inputmode="decimal" data-icar-local="redeKv" data-k="' + esc(gr.chave) + '" value="' + esc(String(kv)) + '" placeholder="kV" style="width:50px;text-align:right"> kV · altura dos cabos <input type="text" inputmode="decimal" data-icar-local="redeAlt" data-k="' + esc(gr.chave) + '" value="' + esc(String(al)) + '" placeholder="m" style="width:50px;text-align:right"> m ' +
+              '<button class="btn sm" data-icar="loc-rede" data-v="' + esc(gr.chave) + '">Aceitar rede</button>') + "</div>";
+        });
+        h += '<div class="muted" style="font-size:10.5px;margin-top:3px">Mapa: ' + esc(mp.atribuicao) + (lc.relevoAtrib ? " · Relevo: " + esc(lc.relevoAtrib) : "") + "</div>";
+      } else if (lc.relevoAtrib) h += '<div class="muted" style="font-size:10.5px;margin-top:3px">Relevo: ' + esc(lc.relevoAtrib) + "</div>";
+      h += "</div>";
+
+      /* CLIMA NO DIA */
+      var cj = this._icarLocalJanela(p), J = cj.J, dia = cj.dia;
+      h += '<div style="font-size:12px;margin-top:10px;border-top:1px solid var(--linha);padding-top:8px" data-icar-clima="' + (lc.clima ? lc.clima.horas.length : 0) + '"><b>Clima no dia do içamento</b>' +
+        '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px">Dia <input type="date" data-icar-local="dia" value="' + esc(dia) + '"><button class="btn sm primary" data-icar="loc-clima"' + dis + ">" + (lc.clima ? "Atualizar previsão" : "Buscar previsão") + "</button>" +
+        (cj.np && cj.np.nascer ? '<span class="muted">sol nasce às ' + this._icarLocalHora(cj.np.nascer, cj.fuso) + " e se põe às " + this._icarLocalHora(cj.np.por, cj.fuso) + "</span>" : "") + "</div>";
+      if (lc.clima) {
+        if (!lc.clima.tem || !lc.clima.tem.rajada) h += '<div class="muted" style="margin-top:3px">Esta previsão não traz rajada para o Brasil: rajada ESTIMADA = vento médio × ' + f(IcarClima.PREMISSAS.fatorRajada, 1) + " (premissa). O anemômetro do equipamento manda.</div>";
+        if (!cj.ics.some(function (x) { return x.limite > 0; })) h += '<div style="color:#b45309;margin-top:3px">Sem limite de vento do equipamento: só chuva, neblina e trovoada entram na conta. Informe o limite na aba Equipamento.</div>';
+        if (J.semPrevisao) h += '<div class="muted" style="margin-top:4px" data-icar-sem-previsao="1">Previsão ainda não disponível para esse dia (a fonte cobre uns 9 dias à frente).</div>';
+        else {
+          h += '<div style="display:flex;gap:2px;margin-top:6px;flex-wrap:wrap" data-icar-linha-clima="' + J.horas.length + '">' + J.horas.map(function (x) {
+            var cor = x.estado === "bloqueado" ? "#fecaca" : x.estado === "atencao" ? "#fde68a" : "#bbf7d0", rm = null;
+            (x.rajadas || []).forEach(function (r) { if (rm == null || r.valor > rm) rm = r.valor; });
+            return '<button class="btn sm" data-icar="loc-hora" data-v="' + x.horaLocal + '" data-estado="' + x.estado + '" title="' + esc(x.motivos.join("; ") || "sem restrição") + '" style="min-width:40px;padding:2px 3px;line-height:1.15;background:' + cor + ";color:#0f172a" + (lc.hora === x.horaLocal ? ";outline:2px solid #0f172a" : "") + '"><div>' + x.horaLocal + 'h</div><div style="font-size:10px">' + (rm != null ? f(rm, 0) : "—") + "</div></button>";
+          }).join("") + "</div>";
+          h += '<div class="muted" style="font-size:10.5px">Rajada no gancho mais alto (m/s), hora do aparelho. Verde livre · amarelo a partir de ' + f(IcarClima.PREMISSAS.atencao * 100, 0) + " % do limite · vermelho bloqueado. Clique na hora para ver o sol e o clima no 3D.</div>";
+          var tot = 0; cj.ics.forEach(function (x) { tot += x.duracao_min || 0; });
+          h += '<div style="margin-top:4px" data-icar-melhor="' + (J.melhor ? J.melhor.inicio + "-" + J.melhor.fim : "") + '">' + (J.melhor ? "<b>Melhor horário: das " + J.melhor.inicio + " às " + J.melhor.fim + " h</b>" + (J.melhor.atencao ? " (com atenção)" : "")
+            : '<b style="color:#b45309">Sem janela segura neste dia</b> <span class="muted">(' + esc(J.motivo) + ")</span>") + (tot ? ' <span class="muted">para ' + f(tot, 0) + " min de içamento</span>" : "") +
+            ' <button class="btn sm" data-icar="loc-falar" data-v="melhor">Falar</button> <button class="btn sm" data-icar="loc-vprev" title="Leva a maior rajada a 10 m da janela para a conta da NBR 6123 na aba Vento">Levar para a aba Vento</button></div>';
+          var hs = lc.hora != null ? J.horas.filter(function (x) { return x.horaLocal === lc.hora; })[0] : null;
+          if (hs) {
+            var sol = IcarGeo.sol(+g.lat, +g.lon, Date.parse(dia + "T00:00:00Z") + (hs.horaLocal + 0.5) * 3600000 - cj.fuso * 60000);
+            h += '<div style="margin-top:4px" data-icar-hora-sel="' + hs.horaLocal + '"><b>' + hs.horaLocal + "h:</b> " + esc(hs.motivos.join("; ") || "sem restrição") + ' <span class="muted">· sol a ' + f(sol.elevacao, 0) + "° de altura, rumo " + f(sol.azimute, 0) + "°</span></div>";
+          }
+        }
+        h += '<div class="muted" style="font-size:10.5px;margin-top:3px">Previsão: ' + esc(lc.clima.atribuicao || lc.clima.fonte || "") + ", consultada às " + esc(this._icarLocalQuando(lc.clima.consultadoEm).slice(11)) + "</div>";
+      }
+      h += "</div>";
+
+      /* AGORA, NO CANTEIRO */
+      var icA = cj.ics[st.sel] ? [cj.ics[st.sel]] : [], ag = IcarClima.agora(lc.clima ? lc.clima.horas : [], Date.now(), icA, {}, lc.anem != null ? { ms: lc.anem } : null);
+      var corA = { LIBERADO: "#dcfce7", ATENCAO: "#fef3c7", SUSPENDER: "#fee2e2" }[ag.status] || "#f1f5f9";
+      h += '<div style="font-size:12px;margin-top:10px;border-top:1px solid var(--linha);padding-top:8px"><b>Agora, no canteiro</b>' + (icA.length ? ' <span class="muted">(içamento ' + (st.sel + 1) + ")</span>" : "") +
+        '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px">Anemômetro <input type="text" inputmode="decimal" data-icar-local="anem" value="' + (lc.anem != null ? esc(String(lc.anem).replace(".", ",")) : "") + '" style="width:56px;text-align:right"> m/s <span class="muted">(o que o equipamento marca agora — vale mais que a previsão)</span></div>' +
+        '<div data-icar-agora="' + esc(ag.status) + '" style="margin-top:6px;border-radius:8px;padding:8px 10px;background:' + corA + ';color:#0f172a"><b style="font-size:14px">' + esc(this._icarLocalRotStatus(ag.status)) + "</b>" +
+        (ag.fonte === "anemometro" ? " · pelo anemômetro" : lc.clima ? " · pela previsão" : "") + (ag.motivos.length ? "<div>" + ag.motivos.map(esc).join("<br>") + "</div>" : ag.status === "SEM DADOS" ? "<div>Busque a previsão ou digite o anemômetro.</div>" : "") + "</div>" +
+        '<div style="display:flex;gap:6px;margin-top:5px;flex-wrap:wrap"><button class="btn sm" data-icar="loc-falar" data-v="agora">Falar</button><button class="btn sm" data-icar="loc-registrar"' + (ag.status === "SEM DADOS" ? " disabled" : "") + ' title="Guarda no plano a condição de agora (sai no plano impresso)">Registrar no plano</button></div>';
+      var rg = (p.climaRegistros || []).slice(-4).reverse();
+      if (rg.length) h += '<div style="margin-top:5px" data-icar-registros="' + (p.climaRegistros || []).length + '">' + rg.map(function (r) {
+        return '<div class="muted" style="border-top:1px solid var(--linha);padding:2px 0">' + esc(self._icarLocalQuando(r.em)) + " · " + esc(self._icarLocalRotStatus(r.status)) + (r.anemometro != null ? " · anemômetro " + esc(String(r.anemometro).replace(".", ",")) + " m/s" : "") + (r.motivos && r.motivos.length ? " · " + esc(r.motivos.join("; ")) : "") + "</div>";
+      }).join("") + "</div>";
+      return h + "</div>";
+    },
+    _icarLocalCampo: function (t) {
+      var lc = this._icarLocalEst(), k = t.getAttribute("data-icar-local"), v = t.value;
+      if (k === "busca") { lc.buscaTxt = v; return; }
+      if (k === "raio") { lc.raio = +v || 150; return; }
+      if (k === "dia") { lc.dia = v; lc.hora = null; this._icarRender(); return; }
+      if (k === "propAlt") { var q = lc.mapa && lc.mapa.propostas[+t.getAttribute("data-n")], a = Util.parseNum(String(v || "")); if (q && isFinite(a) && a > 0) q.alturaEditada = Math.round(a * 100) / 100; this._icarPlantaDesenhar(); return; }
+      if (k === "redeKv") { lc.redeKv[t.getAttribute("data-k")] = v; return; }
+      if (k === "redeAlt") { lc.redeAlt[t.getAttribute("data-k")] = v; return; }
+      if (k === "anem") {
+        var tx = String(v || "").trim(), n = tx === "" ? null : Util.parseNum(tx);
+        if (tx !== "" && !(isFinite(n) && n >= 0)) { UI.toast("“" + tx + "” não é uma leitura de anemômetro (m/s).", "erro"); this._icarRender(); return; }
+        lc.anem = n == null ? null : Math.round(n * 10) / 10; lc.anemEm = Date.now(); this._icarRender(); return;
+      }
+    },
+    _icarLocalAcao: function (acao, v) {
+      var self = this, p = this._icarPlano(), lc = this._icarLocalEst(), g = this._icarGeo(p), st = this._icarEst();
+      function ocupar(txt) { lc.ocupado = txt; self._icarRender(); }
+      function livre() { lc.ocupado = null; }
+      function usarGeo(ng, msg) {
+        var a = p.geo || {};
+        p.geo = { lat: Math.round(+ng.lat * 1e7) / 1e7, lon: Math.round(+ng.lon * 1e7) / 1e7, x0: ng.x0 != null ? +ng.x0 : (a.x0 != null ? a.x0 : 0), y0: ng.y0 != null ? +ng.y0 : (a.y0 != null ? a.y0 : 0),
+          norte: ng.norte != null ? +ng.norte : (a.norte != null ? a.norte : 0), fonte: ng.fonte || "", endereco: ng.endereco || "" };
+        /* a obra mudou de lugar: o que veio do mapa e do clima do lugar antigo não vale mais */
+        lc.mapaResp = null; lc.mapa = null; lc.relevoResp = null; lc.malha = null; lc.imagem = null; lc.clima = null; lc.hora = null; lc.resultados = null; lc.semSatelite = null;
+        if (self._icarSalvar(p)) { self._icarRender(); if (msg) UI.toast(msg, "ok", 7000); }
+      }
+      if (acao === "loc-buscar") {
+        var txt = String(lc.buscaTxt || "").trim(), c = IcarGeo.lerCoordenada(txt);
+        if (c) { usarGeo({ lat: c.lat, lon: c.lon, fonte: c.fonte }, "Obra localizada pelo " + c.fonte + ". Confira no mapa."); return; }
+        if (txt.length < 4) { UI.toast("Cole o link do mapa, as coordenadas ou digite o endereço da obra.", "aviso"); return; }
+        ocupar("procurando o endereço");
+        this._icarGeoPost("/ia/geo/busca", { q: txt }).then(function (x) {
+          livre();
+          if (x.s !== 200 || !x.j.ok) { UI.toast(self._icarGeoErro(x, "Endereço"), "erro", 9000); self._icarRender(); return; }
+          lc.resultados = (x.j.resultados || []).slice(0, 5); lc.resAtrib = x.j.atribuicao || "";
+          if (!lc.resultados.length) UI.toast("Não achei esse endereço. Tente com cidade e estado, ou cole o link do Google Maps.", "aviso", 8000);
+          self._icarRender();
+        });
+        return;
+      }
+      if (acao === "loc-usar") { var r = (lc.resultados || [])[+v]; if (r) usarGeo({ lat: r.lat, lon: r.lon, fonte: "endereço (OpenStreetMap)", endereco: String(r.nome || "").slice(0, 160) }, "Obra localizada pelo endereço. Confira no mapa — endereço cai no meio da rua, não no ponto do modelo."); return; }
+      if (acao === "loc-ifc") {
+        var gi = (window.BIM && BIM.icarGeoIfc) ? BIM.icarGeoIfc() : { ok: false, motivo: "visualizador não montado" };
+        if (!gi.ok) { UI.toast("IFC: " + gi.motivo + ".", "aviso", 8000); return; }
+        usarGeo(gi, "Do IFC: " + gi.fonte + ". Confira no mapa — o Revit às vezes exporta só a cidade.");
+        return;
+      }
+      if (acao === "loc-mostrar") { lc.mostrar = lc.mostrar === false; this._icarRender(); this._icarPlantaDesenhar(); return; }
+      if (acao === "loc-hora") { lc.hora = lc.hora === +v ? null : +v; this._icarRender(); return; }
+      if (acao === "loc-falar") { this._icarFalar(this._icarLocalFrase(p, v)); return; }
+      if (!g) { UI.toast("Localize a obra primeiro.", "aviso"); return; }
+      if (acao === "loc-entorno") {
+        ocupar("buscando o entorno no OpenStreetMap");
+        this._icarGeoPost("/ia/geo/entorno", { lat: +g.lat, lon: +g.lon, raio: +lc.raio || 150 }).then(function (x) {
+          livre();
+          if (x.s !== 200 || !x.j.ok) { UI.toast(self._icarGeoErro(x, "Entorno"), "erro", 9000); self._icarRender(); return; }
+          lc.mapaResp = x.j; self._icarLocalMapa(self._icarPlano());
+          var m = lc.mapa; if (m) UI.toast(m.propostas.length + " volume(s) e " + self._icarLocalRedes(m).length + " linha(s) de rede do mapa — em laranja no 3D: aceite, ajuste a altura ou descarte.", "ok", 8000);
+          self._icarRender(); self._icarPlantaDesenhar();
+        });
+        return;
+      }
+      if (acao === "loc-relevo") {
+        ocupar("carregando o relevo");
+        var rr = Math.max(150, +lc.raio || 150);
+        this._icarGeoPost("/ia/geo/relevo", { lat: +g.lat, lon: +g.lon, raio: rr, n: rr > 250 ? 65 : 41 }).then(function (x) {
+          livre();
+          if (x.s !== 200 || !x.j.ok) { UI.toast(self._icarGeoErro(x, "Relevo"), "erro", 9000); self._icarRender(); return; }
+          var p2 = self._icarPlano(), g2 = self._icarGeo(p2); if (!g2) return;
+          lc.relevoResp = x.j; lc.relevoAtrib = x.j.atribuicao || x.j.fonte || ""; lc.malha = IcarEntorno.malhaRelevo(x.j, g2, +self._icarApoio(p2).cota || 0);
+          self._icarRender(); self._icarPlantaDesenhar();
+        });
+        return;
+      }
+      if (acao === "loc-satelite") {
+        var pl = IcarEntorno.planoImagem(g, +lc.raio || 150);
+        if (!pl) return;
+        ocupar("baixando a imagem de satélite");
+        this._icarGeoPost("/ia/geo/imagem", { tiles: pl.tiles }).then(function (x) {
+          if (x.s === 503 && x.j.semChave) { livre(); lc.semSatelite = "ainda não habilitada no servidor da RA."; self._icarRender(); return; }
+          if (x.s !== 200 || !x.j.ok) { livre(); UI.toast(self._icarGeoErro(x, "Satélite"), "erro", 9000); self._icarRender(); return; }
+          var cv = document.createElement("canvas"); cv.width = pl.nx * 256; cv.height = pl.ny * 256;
+          var ctx = cv.getContext("2d"), ts = x.j.tiles || [], falta = ts.length, ok = 0;
+          function fim() {
+            livre(); if (!ok) { UI.toast("A imagem de satélite veio vazia para este lugar.", "aviso"); self._icarRender(); return; }
+            var g3 = self._icarGeo(self._icarPlano()); if (!g3) return;
+            lc.imagem = { canvas: cv, plano: pl, cantos: IcarEntorno.cantosImagem(g3, pl), atrib: x.j.atribuicao || x.j.fonte || "" }; lc.semSatelite = null;
+            self._icarRender();
+          }
+          if (!falta) { fim(); return; }
+          ts.forEach(function (t) {
+            if (!t || !t.jpg) { if (--falta === 0) fim(); return; }
+            var im = new Image();
+            im.onload = function () { try { ctx.drawImage(im, (t.x - pl.x0) * 256, (t.y - pl.y0) * 256); ok++; } catch (e) {} if (--falta === 0) fim(); };
+            im.onerror = function () { if (--falta === 0) fim(); };
+            im.src = "data:image/jpeg;base64," + t.jpg;
+          });
+        });
+        return;
+      }
+      if (acao === "loc-aceitar") {
+        var mp = lc.mapa; if (!mp) return;
+        var lista = v === "todas" ? mp.propostas.filter(function (q) { return !q.aceita && !q.descartada && !q.jaAceita && !q.sobreModelo; }) : [mp.propostas[+v]].filter(function (q) { return q && !q.aceita && !q.jaAceita; });
+        if (!lista.length) return;
+        p.entorno = p.entorno || [];
+        if (p.entorno.length + lista.length > 300) { UI.toast("Até 300 volumes de entorno por plano — aceite os mais perto um a um ou diminua o raio.", "aviso"); return; }
+        var nomes = { edificacao: "Edificação", muro: "Muro", agua: "Água" };
+        lista.forEach(function (q) {
+          var n = p.entorno.length + 1, alt = q.alturaEditada != null ? q.alturaEditada : q.altura;
+          p.entorno.push({ id: "ent" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), tipo: q.tipo, nome: (nomes[q.tipo] || "Entorno") + " " + n + " (mapa)",
+            poligono: q.poligono.map(function (pt) { return [Math.round(pt[0] * 1000) / 1000, Math.round(pt[1] * 1000) / 1000]; }), base: self._icarLocalBase(p, q.poligono), altura: q.tipo === "agua" ? 0 : alt,
+            estimada: q.alturaEditada == null && !!q.alturaEstimada, origem: q.origem, confianca: q.confianca, fonte: q.fonte });
+          q.aceita = true;
+        });
+        if (this._icarSalvar(p)) { this._icarRender(); this._icarPlantaDesenhar(); UI.toast(lista.length + " volume(s) do mapa no entorno do plano — entram no \"Verificar o caminho\" e no agente do equipamento.", "ok"); }
+        return;
+      }
+      if (acao === "loc-descartar") { var qd = lc.mapa && lc.mapa.propostas[+v]; if (qd) { qd.descartada = true; this._icarRender(); this._icarPlantaDesenhar(); } return; }
+      if (acao === "loc-rede") {
+        var gr = this._icarLocalRedes(lc.mapa).filter(function (x) { return x.chave === v; })[0]; if (!gr) return;
+        var alt = Util.parseNum(String(lc.redeAlt[v] == null ? "" : lc.redeAlt[v])), kvT = lc.redeKv[v] != null ? lc.redeKv[v] : (gr.kV != null ? String(gr.kV) : ""), kv = Util.parseNum(String(kvT));
+        var novas = [], erro = null;
+        gr.trechos.forEach(function (t) {
+          if (erro || t.jaAceita || t.aceita) return;
+          var meio = [[(t.a[0] + t.b[0]) / 2, (t.a[1] + t.b[1]) / 2]], rp = IcarEntorno.redeParaPlano(t, isFinite(alt) ? alt : "", isFinite(kv) ? kv : "", self._icarLocalBase(p, meio));
+          if (!rp.ok) { erro = rp.motivo; return; }
+          novas.push({ r: t, rede: rp.rede });
+        });
+        if (erro) { UI.toast(erro + ".", "aviso", 8000); return; }
+        p.redes = p.redes || [];
+        novas.forEach(function (x) { x.rede.nome = gr.nome + " (mapa)"; p.redes.push(x.rede); x.r.aceita = true; });
+        if (this._icarSalvar(p)) { this._icarRender(); this._icarRedesenhar(); UI.toast(novas.length + " trecho(s) de rede no plano, a " + String(alt).replace(".", ",") + " m e " + String(kv).replace(".", ",") + " kV — entram nas zonas da NR-10 do caminho.", "ok", 8000); }
+        return;
+      }
+      if (acao === "loc-clima") {
+        ocupar("buscando a previsão");
+        this._icarGeoPost("/ia/geo/clima", { lat: +g.lat, lon: +g.lon }).then(function (x) {
+          livre();
+          if (x.s !== 200 || !x.j.ok) { UI.toast(self._icarGeoErro(x, "Previsão"), "erro", 9000); self._icarRender(); return; }
+          lc.clima = x.j;
+          var cj = self._icarLocalJanela(self._icarPlano()); lc.hora = cj.J && cj.J.melhor ? cj.J.melhor.inicio : null;
+          self._icarRender();
+        });
+        return;
+      }
+      if (acao === "loc-vprev") {
+        var cj2 = this._icarLocalJanela(p), J2 = cj2.J; if (!J2 || !J2.horas.length) { UI.toast("Busque a previsão do dia primeiro.", "aviso"); return; }
+        var hs = J2.horas.filter(function (x) { return !J2.melhor || (x.horaLocal >= J2.melhor.inicio && x.horaLocal < J2.melhor.fim); }), mx = null;
+        hs.forEach(function (x) { var h0 = x.h || x, r10 = h0.raj10 != null ? +h0.raj10 : (h0.v10 != null ? +h0.v10 * IcarClima.PREMISSAS.fatorRajada : null); if (r10 != null && (mx == null || r10 > mx)) mx = r10; });
+        if (mx == null) { UI.toast("A previsão não trouxe vento para essas horas.", "aviso"); return; }
+        p.local = p.local || {}; p.local.vPrev10 = Math.round(mx * 10) / 10;
+        if (this._icarSalvar(p)) { this._icarRender(); UI.toast("Rajada prevista de " + String(p.local.vPrev10).replace(".", ",") + " m/s a 10 m (" + (J2.melhor ? "janela das " + J2.melhor.inicio + " às " + J2.melhor.fim + " h" : "o dia todo") + ") levada para a aba Vento.", "ok", 8000); }
+        return;
+      }
+      if (acao === "loc-registrar") {
+        var icA = this._icarLocalIcs(p)[st.sel], ag = IcarClima.agora(lc.clima ? lc.clima.horas : [], Date.now(), icA ? [icA] : [], {}, lc.anem != null ? { ms: lc.anem } : null);
+        if (ag.status === "SEM DADOS") { UI.toast("Sem previsão nem anemômetro: nada a registrar.", "aviso"); return; }
+        var rt = IcarClima.retrato(lc.clima, ag, Date.now()); rt.anemometro = lc.anem != null ? lc.anem : null; rt.icamento = icA ? st.sel + 1 : null;
+        p.climaRegistros = (p.climaRegistros || []).concat([rt]).slice(-30);
+        if (this._icarSalvar(p)) { this._icarRender(); UI.toast("Condição de agora registrada no plano (" + this._icarLocalRotStatus(rt.status) + ").", "ok"); }
+        return;
+      }
+    },
+    /* a frase falada: unidades por extenso, número inteiro, sem sigla (js/icarclima.js frases) */
+    _icarLocalFrase: function (p, tipo) {
+      var lc = this._icarLocalEst(), st = this._icarEst();
+      if (tipo === "melhor") { var cj = this._icarLocalJanela(p); return cj.J && !cj.J.semPrevisao ? IcarClima.frases("melhor", { melhor: cj.J.melhor }) : "Sem previsão para esse dia ainda."; }
+      var icA = this._icarLocalIcs(p)[st.sel], ag = IcarClima.agora(lc.clima ? lc.clima.horas : [], Date.now(), icA ? [icA] : [], {}, lc.anem != null ? { ms: lc.anem } : null);
+      var vento = lc.anem != null ? lc.anem : (ag.rajadas && ag.rajadas[0] ? ag.rajadas[0].valor : null), lim = icA && icA.limite;
+      var txt = ag.motivos.join(" ");
+      if (ag.status === "SEM DADOS") return "Sem dados de vento. Confira o anemômetro antes de içar.";
+      if (ag.status === "SUSPENDER") return /trovoada/i.test(txt) ? IcarClima.frases("trovoada") : /neblina|visibilidade/i.test(txt) && !/rajada|anemômetro/.test(txt) ? IcarClima.frases("neblina") : (vento != null && lim ? IcarClima.frases("suspender", { vento: vento, limite: lim }) : IcarClima.frases("suspender", { motivo: "Condição fora do limite." }));
+      if (ag.status === "ATENCAO") return vento != null && lim ? IcarClima.frases("atencao", { vento: vento, limite: lim }) : "Atenção às condições do tempo.";
+      return vento != null && lim ? IcarClima.frases("liberado", { n: st.sel + 1, vento: vento, limite: lim }) : "Içamento " + (st.sel + 1) + " liberado.";
+    },
+    _icarFalar: function (txt) {
+      this._icarEst().ultimaFala = txt;
+      try {
+        var ss = window.speechSynthesis;
+        if (!ss || typeof SpeechSynthesisUtterance === "undefined") { UI.toast(txt + " (este navegador não fala em voz alta)", "aviso", 8000); return; }
+        ss.cancel();
+        var u = new SpeechSynthesisUtterance(txt), vs = ss.getVoices ? ss.getVoices() : [], vz = vs.filter(function (x) { return /^pt[-_]BR/i.test(x.lang); })[0];
+        u.lang = "pt-BR"; if (vz) u.voice = vz;
+        ss.speak(u);
+      } catch (e) { UI.toast(txt, "aviso", 8000); }
+    },
+    /* o 3D do local: relevo, ruas, verdes, postes, redes sugeridas e satélite (com a aba aberta ou não); sol e clima da HORA
+       escolhida só com a aba Local e clima na frente — fora dela a luz volta ao normal */
+    _icarLocalSync: function () {
+      if (!window.BIM || !BIM.icarLocal || !window.IcarEntorno || !window.IcarGeo) return;
+      var self = this, p = this._icarPlano(), lc = this._icarLocalEst(), g = this._icarGeo(p), cota = +this._icarApoio(p).cota || 0, st = this._icarEst();
+      var assG = JSON.stringify(g ? [g.lat, g.lon, g.x0, g.y0, g.norte, cota] : null);
+      if (assG !== lc.assG) {
+        lc.assG = assG;
+        lc.malha = g && lc.relevoResp ? IcarEntorno.malhaRelevo(lc.relevoResp, g, cota) : null;
+        if (g && lc.mapaResp) this._icarLocalMapa(p); else lc.mapa = null;
+        if (!g) lc.imagem = null; else if (lc.imagem) lc.imagem.cantos = IcarEntorno.cantosImagem(g, lc.imagem.plano);
+      }
+      var cfg = null;
+      function zEm(x, y) { if (!lc.relevoResp || !lc.malha) return cota; var z = IcarEntorno.cotaRelevo(lc.relevoResp, g, x, y); return z == null ? cota : cota + z - lc.malha.cotaObra; }
+      if (g && lc.mostrar !== false) {
+        cfg = { relevo: lc.malha ? { pos: lc.malha.pos, idx: lc.malha.idx } : null, imagem: lc.imagem ? { canvas: lc.imagem.canvas, cantos: lc.imagem.cantos, z: cota } : null, ruas: [], verdes: [], postes: [], redes: [] };
+        if (lc.mapa) {
+          cfg.ruas = lc.mapa.ruas.map(function (r) { return { pontos: r.pontos.map(function (q) { return [q[0], q[1], zEm(q[0], q[1])]; }) }; });
+          cfg.verdes = lc.mapa.verdes.map(function (v) { return { poligono: v.poligono.map(function (q) { return [q[0], q[1], zEm(q[0], q[1])]; }) }; });
+          cfg.postes = lc.mapa.postes.map(function (q) { return { x: q.x, y: q.y, z: zEm(q.x, q.y) }; });
+          cfg.redes = lc.mapa.redes.filter(function (r) { return !r.aceita && !r.jaAceita; }).map(function (r) { return { a: [r.a[0], r.a[1], zEm(r.a[0], r.a[1])], b: [r.b[0], r.b[1], zEm(r.b[0], r.b[1])] }; });
+        }
+      }
+      var hs = null, cj = null;
+      if (g && st.aba === "local" && lc.hora != null) {
+        cj = this._icarLocalJanela(p);
+        hs = cj.J && !cj.J.semPrevisao ? cj.J.horas.filter(function (x) { return x.horaLocal === lc.hora; })[0] : null;
+        var tH = Date.parse(this._icarLocalDia(p) + "T00:00:00Z") + (lc.hora + 0.5) * 3600000 - cj.fuso * 60000, sol = IcarGeo.sol(+g.lat, +g.lon, tH);
+        cfg = cfg || {}; cfg.sol = { elevacao: sol.elevacao, azimute: sol.azimute, norte: +g.norte || 0 };
+        if (hs && hs.h) {
+          var rm = null; (hs.rajadas || []).forEach(function (r) { if (rm == null || r.valor > rm) rm = r.valor; });
+          cfg.clima = { neblina: +hs.h.neblina || 0, chuva: +hs.h.chuva || 0, ventoMs: rm != null ? rm : hs.h.v10, ventoDir: hs.h.dir10, estado: hs.estado, norte: +g.norte || 0 };
+        }
+      }
+      var ass = JSON.stringify([assG, lc.mostrar, lc.malha ? lc.malha.pos.length : 0, lc.mapa ? [lc.mapa.ruas.length, lc.mapa.redes.map(function (r) { return !!(r.aceita || r.jaAceita); })] : 0, lc.imagem ? lc.imagem.plano.tiles.length : 0, cfg && cfg.sol ? [lc.hora, this._icarLocalDia(p)] : null, cfg && cfg.clima ? cfg.clima : null]);
+      if (ass === lc.assin) return;
+      lc.assin = ass;
+      try { BIM.icarLocal(cfg); } catch (e) {}
+    },
+    /* ---------- Explicar (IA): a IA reescreve o porquê do agente em texto corrido; o servidor DESCARTA se ela trouxer número
+       que não está no cálculo (server/icar-geo.js iaMudouNumero) ---------- */
+    _icarAgenteIAHtml: function (c) {
+      var m = (this._icarEst().agenteIa || {})[c.porque];
+      if (!m) return "";
+      if (m.carregando) return '<div class="muted" style="margin-top:3px" data-icar-agente-ia="carregando">A IA está escrevendo…</div>';
+      if (m.erro) return '<div style="margin-top:3px;color:#b45309" data-icar-agente-ia="erro">' + Util.esc(m.erro) + "</div>";
+      return '<div style="margin-top:4px;padding:6px 8px;border-left:3px solid #0284c7;background:var(--fundo2, #f8fafc)" data-icar-agente-ia="ok">' + Util.esc(m.texto) + '<div class="muted" style="font-size:10.5px">Texto da IA conferido no servidor: só usa números do cálculo.</div></div>';
+    },
+    _icarAgenteIA: function (k) {
+      var self = this, st = this._icarEst(), r = st.agente && st.agente.res, c = r && r.melhores[k];
+      if (!c || !c.porque) return;
+      st.agenteIa = st.agenteIa || {};
+      var chave = c.porque; if (st.agenteIa[chave] && st.agenteIa[chave].carregando) return;
+      st.agenteIa[chave] = { carregando: true }; this._icarRender();
+      this._icarGeoPost("/ia/icamento", { porque: c.porque }).then(function (x) {
+        st.agenteIa[chave] = x.s === 200 && x.j.ok && x.j.texto ? { texto: String(x.j.texto) } : { erro: x.j && x.j.descartado ? "A IA trouxe um número que não está no cálculo — o texto foi descartado. Vale a justificativa acima." : self._icarGeoErro(x, "Explicar (IA)") };
+        self._icarRender();
+      });
+    },
     /* ---------- aba Documentos ---------- */
     /* o dia que vale para a validade dos documentos: o 1º içamento com data, senão hoje */
     _icarDiaRef: function (p) {
@@ -16827,6 +17245,10 @@
       if ((lib.vencendo || []).length || (lib.semValidade || []).length) h += '<div style="font-size:11.5px;margin-top:6px;color:#b45309" data-icar-vencendo="' + lib.vencendo.length + '">' +
         lib.vencendo.map(function (x) { return "Atenção: " + esc(x) + "."; }).join("<br>") + (lib.vencendo.length && lib.semValidade.length ? "<br>" : "") +
         (lib.semValidade.length ? "Sem a data de validade (o plano não consegue conferir): " + esc(lib.semValidade.join("; ")) + "." : "") + "</div>";
+      var regs = (p.climaRegistros || []).slice(-3).reverse();
+      if (regs.length) h += '<div style="font-size:12px;margin-top:8px" data-icar-clima-regs="' + (p.climaRegistros || []).length + '"><b>Clima registrado</b> <span class="muted">(aba Local e clima · ' + (p.climaRegistros || []).length + ' registro(s), sai no plano impresso)</span>' +
+        regs.map(function (r) { return '<div style="border-top:1px solid var(--linha);padding:3px 0">' + esc(self._icarLocalQuando(r.em)) + " · <b>" + esc(self._icarLocalRotStatus(r.status)) + "</b>" + (r.anemometro != null ? " · anemômetro " + esc(String(r.anemometro).replace(".", ",")) + " m/s" : "") +
+          (r.motivos && r.motivos.length ? ' <span class="muted">· ' + esc(r.motivos.join("; ")) + "</span>" : "") + "</div>"; }).join("") + "</div>";
       h += '<div style="font-size:12px;margin-top:10px"><b>Verificações antes de içar</b></div>';
       IcarPlano.CONFERENCIAS.forEach(function (c) {
         var s = p.conf[c.id] || "";
@@ -16902,6 +17324,8 @@
     },
     _icarAcao: function (acao, v, el) {
       var self = this, p = this._icarPlano(), st = this._icarEst();
+      if (/^loc-/.test(acao)) { this._icarLocalAcao(acao, v, el); return; }
+      if (acao === "agente-ia") { this._icarAgenteIA(+v); return; }
       if (acao === "aba") {
         var antes = st.aba; st.aba = v; this._icarRender();
         /* Física e Além do limite mostram o içamento escolhido no 3D; saindo do "além", a carga volta a ×1 */
@@ -17413,7 +17837,8 @@
       if (!window.IcarPlanta || !window.BIM || !BIM.icarPlanta) return;
       var p = this._icarPlano(), pl = p.planta, sp = this._icarPlantaEst();
       if (pl && !sp.falta && (sp.chave !== pl.chave || sp.pagina !== pl.pagina) && sp.carregando !== pl.chave + "|" + pl.pagina) { this._icarPlantaCarregar(false); return; }
-      var stA = this._icarEst(), ass = JSON.stringify([p.limite || null, stA.limiteNovo ? stA.limiteNovo.pts : null, pl && pl.chave, pl && pl.cal, pl && pl.cota, pl && pl.opacidade, sp.carregada, sp.mostrar, (p.entorno || []).map(function (e) { return [e.id, e.altura]; }), (sp.propostas || []).map(function (q) { return [q.aceita, q.descartada, q.alturaEditada]; }), this._icarObra()]);
+      var stA = this._icarEst(), ass = JSON.stringify([p.limite || null, stA.limiteNovo ? stA.limiteNovo.pts : null, pl && pl.chave, pl && pl.cal, pl && pl.cota, pl && pl.opacidade, sp.carregada, sp.mostrar, (p.entorno || []).map(function (e) { return [e.id, e.altura]; }), (sp.propostas || []).map(function (q) { return [q.aceita, q.descartada, q.alturaEditada]; }), this._icarObra(),
+        stA.local && stA.local.mapa ? [stA.local.mostrar, stA.local.assG, stA.local.mapa.propostas.map(function (q) { return [q.aceita, q.descartada, q.alturaEditada]; })] : null]);
       if (ass !== sp.assin) { sp.assin = ass; this._icarPlantaDesenhar(); }
     },
     _icarPlantaCarregar: function (novo) {
@@ -17482,6 +17907,12 @@
       (sp.propostas || []).forEach(function (q) {
         if (q.aceita || q.descartada || q.tipo === "lote") return;
         vols.push({ proposta: true, tipo: q.tipo, poligono: q.poligono, base: pl ? +pl.cota || 0 : 0, altura: q.tipo === "agua" ? 0.05 : (q.alturaEditada != null ? q.alturaEditada : q.altura) });
+      });
+      /* as propostas do MAPA (aba Local e clima) entram do mesmo jeito: laranja, fora do caminho até serem aceitas */
+      var lcP = this._icarLocalEst(), selfP = this;
+      if (lcP.mapa && lcP.mostrar !== false) lcP.mapa.propostas.forEach(function (q) {
+        if (q.aceita || q.descartada || q.jaAceita) return;
+        vols.push({ proposta: true, tipo: q.tipo, poligono: q.poligono, base: selfP._icarLocalBase(p, q.poligono), altura: q.tipo === "agua" ? 0.05 : (q.alturaEditada != null ? q.alturaEditada : q.altura) });
       });
       var cfg = { volumes: vols };
       if (pl && sp.carregada && sp.chave === pl.chave && pl.cal && sp.mostrar !== false) {
@@ -17778,8 +18209,9 @@
         h += '<div style="border-top:1px solid var(--linha);margin-top:6px;padding-top:6px" data-icar-cenario="' + i + '"><div style="display:flex;gap:6px;align-items:center"><span style="flex:1"><b>' + (i + 1) + "º · " + esc(c.nome) + "</b>" +
           ' <span class="muted">· ' + (c.tipo === "munck" ? "munck" : "guindaste") + " · " + c.posicoes.length + " posição(ões) · utilização máx. " + f(c.utilMax * 100, 0) + " %" + "</span>" +
           (c.faltam.length ? ' <span style="color:#dc2626">· não atende ' + c.faltam.length + "</span>" : "") + "</span>" +
-          '<button class="btn sm' + (i === 0 ? " primary" : "") + '" data-icar="agente-usar" data-v="' + i + '">Usar este</button></div>' +
-          '<div class="muted" style="margin-top:2px">' + esc(c.porque) + "</div></div>";
+          '<button class="btn sm' + (i === 0 ? " primary" : "") + '" data-icar="agente-usar" data-v="' + i + '">Usar este</button>' +
+          '<button class="btn sm" data-icar="agente-ia" data-v="' + i + '" title="A IA reescreve a justificativa em texto corrido — sem mudar nenhum número do cálculo">Explicar (IA)</button></div>' +
+          '<div class="muted" style="margin-top:2px">' + esc(c.porque) + "</div>" + self._icarAgenteIAHtml(c) + "</div>";
       });
       if (!r.melhores.length) h += '<div style="color:#b45309;margin-top:4px">Nenhum equipamento do catálogo atende estes içamentos. Divida a carga, aproxime a coleta ou informe a tabela de um equipamento maior.</div>';
       var av = (r.avisosTela || []).concat(r.avisos || []), pr = r.premissas || {};
@@ -18104,6 +18536,7 @@
       /* 1. identificação */
       h += "<h2>1. Identificação (NR-18 18.10.1.17)</h2><table class=\"ficha\">" +
         "<tr><td>Obra</td><td>" + esc(obra || "—") + "</td></tr><tr><td>Endereço</td><td>" + esc(rt.endereco || "[ENDEREÇO DA OBRA]") + "</td></tr>" +
+        (this._icarGeo(p) ? "<tr><td>Localização</td><td>" + f(+p.geo.lat, 6) + "; " + f(+p.geo.lon, 6) + " (" + esc(p.geo.fonte || "") + ")</td></tr>" : "") +
         "<tr><td>Duração prevista</td><td>" + esc(rt.duracao || "[DURAÇÃO]") + "</td></tr><tr><td>Contratante</td><td>" + esc(rt.contratante || "[CONTRATANTE]") + "</td></tr>" +
         "<tr><td>Elaborado por</td><td>" + esc(emp.nome || "") + " · " + esc(rt.nome || emp.responsavel || "") + " (" + esc(rt.crea || emp.crea || "") + ")</td></tr></table>";
       /* 2. equipamento */
@@ -18186,6 +18619,11 @@
         return "<tr><td>" + esc(d.rotulo) + "</td><td>" + esc(d.ref) + "</td><td>" + (s === "ok" ? '<span class="ok">ok</span>' : s === "na" ? "não se aplica" : '<span class="av">pendente</span>') + "</td><td>" + ((r.anexos || []).map(function (x) { return esc(x.nome); }).join("<br>") || "—") + "</td></tr>";
       }).join("") + "</table><table><tr><th>Verificação antes de içar</th><th>Referência</th><th>Situação</th></tr>" + IcarPlano.CONFERENCIAS.map(function (c) {
         return "<tr><td>" + esc(c.rotulo) + "</td><td>" + esc(c.ref) + "</td><td>" + (p.conf[c.id] === "ok" ? '<span class="ok">ok</span>' : '<span class="av">a verificar</span>') + "</td></tr>";
+      }).join("") + "</table>";
+      var regsR = (p.climaRegistros || []).slice(-10);
+      if (regsR.length) h += "<table><tr><th>Clima registrado</th><th>Situação</th><th>Motivos</th></tr>" + regsR.map(function (r) {
+        return "<tr><td>" + esc(self._icarLocalQuando(r.em)) + (r.icamento ? " · içamento " + r.icamento : "") + "</td><td>" + esc(self._icarLocalRotStatus(r.status)) + (r.fonteStatus === "anemometro" ? " (anemômetro " + esc(String(r.anemometro).replace(".", ",")) + " m/s)" : r.fonte ? " (previsão " + esc(r.fonte) + ")" : "") +
+          "</td><td>" + esc((r.motivos || []).join("; ") || "—") + "</td></tr>";
       }).join("") + "</table>";
       h += "<h2>7. Liberação</h2><p>" + (lib.liberado ? '<b class="ok">Plano liberado</b>: documentos, verificações e içamentos em ordem.' : lib.reprovado ? '<b class="rep">Plano bloqueado</b>: há içamento reprovado.' :
         lib.comPorta ? '<b class="av">Liberado com pendência</b> por ' + esc(lib.porta.quem) + " em " + esc(lib.porta.quando || "") + ". Motivo: " + esc(lib.porta.motivo) + "." : '<b class="av">Não liberado</b>.') + "</p>" +

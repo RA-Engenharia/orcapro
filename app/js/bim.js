@@ -4027,6 +4027,151 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var m = icPlantaG.getObjectByName('planta-imagem') || icPlantaG.getObjectByName('planta-linhas'); if (!m) return null;
     var v = new THREE.Vector3(px, py, 0).applyMatrix4(m.matrix); return icM(v);
   }
+  /* LOCAL DA OBRA — ESPEC §II.10.8 (js/icargeo.js, js/icarentorno.js, js/icarclima.js). Dois grupos próprios, como a planta:
+     icLocalG (no referencial do modelo) com o relevo, as ruas, as áreas verdes, os postes e as redes SUGERIDAS pelo mapa; e
+     icLocalMundo (na cena) com a chuva e a seta do vento. Mais o SOL da hora escolhida e a NEBLINA.
+     ⚠ Nada daqui é obstáculo nem entra no "Verificar o caminho": o que conta é o que a pessoa ACEITA (p.entorno e p.redes,
+       desenhados pelo icPlanta e pelo icDesenhar). A rede sugerida vai no chão, tracejada: a altura dos cabos o mapa não tem.
+     ⚠ O sol MOVE a direcional principal e a devolve ao lugar quando sai (sol: null); a neblina guarda e devolve o scene.fog.
+       Sem a devolução, a cena ficava escura depois de simular o fim da tarde e nunca mais voltava. */
+  var icLocalG = new THREE.Group(); icLocalG.name = 'local-g'; icLocalG.matrixAutoUpdate = false; scene.add(icLocalG);
+  var icLocalMundo = new THREE.Group(); icLocalMundo.name = 'local-mundo'; scene.add(icLocalMundo);
+  var icLocalEst = { chuva: null, nevoa: undefined, nevoaVis: 0, sol: null };
+  function icLocalCaixa() {
+    var b = new THREE.Box3(); modelRoot.updateMatrixWorld(); try { b.setFromObject(modelRoot); } catch (_) {}
+    if (b.isEmpty()) b.set(new THREE.Vector3(-10, 0, -10), new THREE.Vector3(10, 10, 10));
+    return b;
+  }
+  /* direção no motor (x, y, z) → direção no mundo (o modelo pode estar girado na cena) */
+  function icMotorDirMundo(mx, my, mz) { modelRoot.updateMatrixWorld(); return icL({ x: mx, y: my, z: mz }).transformDirection(modelRoot.matrixWorld); }
+  /* leste/norte (ENU) → motor, girando pelo norte do modelo (o mesmo de IcarGeo.paraMotor) */
+  function icEnuMotor(e, n, norte) { var t = (+norte || 0) * Math.PI / 180; return { x: e * Math.cos(t) - n * Math.sin(t), y: e * Math.sin(t) + n * Math.cos(t) }; }
+  function icLocal(cfg) {
+    while (icLocalG.children.length) icDescartar(icLocalG.children.pop());
+    while (icLocalMundo.children.length) icDescartar(icLocalMundo.children.pop());
+    icLocalEst.chuva = null;
+    cfg = cfg || {};
+    var out = { ok: true, imagem: false, relevo: 0, ruas: 0, verdes: 0, postes: 0, redes: 0, sol: false, neblina: false, chuva: 0, vento: false };
+    /* satélite no chão: quadrilátero pelos 4 cantos do mosaico (NO, NE, SE, SO) já no motor — js/icarentorno.js cantosImagem */
+    var im = cfg.imagem;
+    if (im && im.canvas && im.cantos && im.cantos.length === 4) {
+      var zI = (+im.z || 0) + 0.004, c4 = im.cantos, gI = new THREE.BufferGeometry();
+      gI.setAttribute('position', new THREE.Float32BufferAttribute([+c4[0][0], +c4[0][1], zI, +c4[1][0], +c4[1][1], zI, +c4[2][0], +c4[2][1], zI, +c4[3][0], +c4[3][1], zI], 3));
+      gI.setAttribute('uv', new THREE.Float32BufferAttribute([0, 1, 1, 1, 1, 0, 0, 0], 2)); gI.setIndex([0, 3, 2, 0, 2, 1]);
+      var tI = new THREE.CanvasTexture(im.canvas); tI.needsUpdate = true;
+      var mI = new THREE.Mesh(gI, new THREE.MeshBasicMaterial({ map: tI, transparent: true, opacity: im.opacidade == null ? 0.9 : +im.opacidade, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 2 }));
+      mI.matrixAutoUpdate = false; mI.matrix.copy(IC_M_MOTOR); mI.name = 'local-imagem'; mI.renderOrder = 0; icLocalG.add(mI); out.imagem = true;
+    }
+    var rl = cfg.relevo;
+    if (rl && rl.pos && rl.idx && rl.pos.length >= 9) {
+      var gR = new THREE.BufferGeometry(); gR.setAttribute('position', new THREE.Float32BufferAttribute(rl.pos, 3)); gR.setIndex(rl.idx); gR.computeVertexNormals();
+      var mR = new THREE.Mesh(gR, new THREE.MeshStandardMaterial({ color: 0x9ca38f, roughness: 0.95, metalness: 0, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 4 }));
+      mR.matrixAutoUpdate = false; mR.matrix.copy(IC_M_MOTOR); mR.name = 'local-relevo'; icLocalG.add(mR);
+      var wR = new THREE.LineSegments(new THREE.WireframeGeometry(gR), new THREE.LineBasicMaterial({ color: 0x6b7280, transparent: true, opacity: 0.16, depthWrite: false }));
+      wR.matrixAutoUpdate = false; wR.matrix.copy(IC_M_MOTOR); icLocalG.add(wR);
+      out.relevo = rl.pos.length / 3;
+    }
+    function polilinha(pts, cor, nome, fechar, trac) {
+      var v = pts.map(function (q) { return icL({ x: +q[0], y: +q[1], z: (q[2] != null ? +q[2] : 0) + 0.03 }); }); if (v.length < 2) return null;
+      if (fechar) v.push(v[0].clone());
+      var l = icLinha(v, cor, trac || null); l.material.depthTest = true; l.renderOrder = 1; l.name = nome; icLocalG.add(l); return l;
+    }
+    (cfg.ruas || []).forEach(function (r) { if (polilinha(r.pontos || [], 0x475569, 'local-rua')) out.ruas++; });
+    (cfg.verdes || []).forEach(function (r) { if (polilinha(r.poligono || [], 0x16a34a, 'local-verde', true)) out.verdes++; });
+    (cfg.redes || []).forEach(function (r) { if (r.a && r.b && polilinha([r.a, r.b], 0xeab308, 'local-rede', false, 0.6)) out.redes++; });
+    (cfg.postes || []).forEach(function (p) {
+      /* marcador, não o poste: a altura dele o mapa não tem */
+      var gP = new THREE.CylinderGeometry(0.12, 0.12, 1.5, 8); gP.translate(0, 0.75, 0);
+      var mP = new THREE.Mesh(gP, icMat(0xca8a04)); mP.position.copy(icL({ x: +p.x, y: +p.y, z: +p.z || 0 })); mP.name = 'local-poste'; icLocalG.add(mP); out.postes++;
+    });
+    var sol = cfg.sol;
+    if (sol && isFinite(+sol.elevacao) && isFinite(+sol.azimute)) {
+      if (!icLocalEst.sol) icLocalEst.sol = { pos: dir.position.clone(), int: dir.intensity, hemi: hemi.intensity };
+      var el = +sol.elevacao * Math.PI / 180, az = +sol.azimute * Math.PI / 180, q = icEnuMotor(Math.cos(el) * Math.sin(az), Math.cos(el) * Math.cos(az), sol.norte);
+      var dS = icMotorDirMundo(q.x, q.y, Math.sin(el)).normalize();
+      dir.position.copy(dir.target.position).addScaledVector(dS, 100);
+      /* abaixo do horizonte: a luz cai para o resto da noite — e o hemisfério também, para a cena não ficar com cara de meio-dia */
+      dir.intensity = el > 0 ? 0.3 + 0.8 * Math.min(1, Math.sin(el) * 2.5) : 0.05;
+      hemi.intensity = el > 0 ? icLocalEst.sol.hemi : icLocalEst.sol.hemi * 0.45;
+      out.sol = true; out.solDir = { x: dS.x, y: dS.y, z: dS.z };
+    } else if (icLocalEst.sol) { dir.position.copy(icLocalEst.sol.pos); dir.intensity = icLocalEst.sol.int; hemi.intensity = icLocalEst.sol.hemi; icLocalEst.sol = null; }
+    var cl = cfg.clima;
+    if (cl && +cl.neblina >= 20) {
+      if (icLocalEst.nevoa === undefined) icLocalEst.nevoa = scene.fog;
+      icLocalEst.nevoaVis = +cl.neblina >= 80 ? 40 : +cl.neblina >= 50 ? 120 : 400;
+      scene.fog = new THREE.Fog(0xd7dde3, 1, 1000); out.neblina = true;
+    } else if (icLocalEst.nevoa !== undefined) { scene.fog = icLocalEst.nevoa; icLocalEst.nevoa = undefined; icLocalEst.nevoaVis = 0; }
+    if (cl && +cl.chuva > 0.1) {
+      var bx = icLocalCaixa(), c = bx.getCenter(new THREE.Vector3()), sz = bx.getSize(new THREE.Vector3()), R = Math.max(sz.x, sz.z) * 0.7 + 6, H = sz.y + 18;
+      var nP = Math.min(6000, Math.round(500 + +cl.chuva * 500)), arr = new Float32Array(nP * 3);
+      for (var k = 0; k < nP; k++) { arr[k * 3] = c.x + (Math.random() * 2 - 1) * R; arr[k * 3 + 1] = bx.min.y + Math.random() * H; arr[k * 3 + 2] = c.z + (Math.random() * 2 - 1) * R; }
+      var gC = new THREE.BufferGeometry(); gC.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+      var pC = new THREE.Points(gC, new THREE.PointsMaterial({ color: 0x60a5fa, size: 2, sizeAttenuation: false, transparent: true, opacity: 0.75, depthWrite: false }));
+      pC.name = 'local-chuva'; pC.userData = { y0: bx.min.y, y1: bx.min.y + H, v: 8 }; icLocalMundo.add(pC); icLocalEst.chuva = pC; out.chuva = nP;
+    }
+    if (cl && isFinite(+cl.ventoMs) && cl.ventoDir != null && isFinite(+cl.ventoDir)) {
+      /* a seta aponta para ONDE o vento vai (a previsão diz de onde ele vem: + 180°), em cima do modelo */
+      var bv = icLocalCaixa(), topo = new THREE.Vector3((bv.min.x + bv.max.x) / 2, bv.max.y + 3, (bv.min.z + bv.max.z) / 2), pr = (+cl.ventoDir + 180) * Math.PI / 180;
+      var qv = icEnuMotor(Math.sin(pr), Math.cos(pr), cl.norte), dV = icMotorDirMundo(qv.x, qv.y, 0).normalize(), L = 3 + Math.min(20, +cl.ventoMs);
+      var o0 = topo.clone().addScaledVector(dV, -L / 2), corV = cl.estado === 'bloqueado' ? 0xdc2626 : cl.estado === 'atencao' ? 0xd97706 : 0x0284c7;
+      var aV = new THREE.ArrowHelper(dV, o0, L, corV, L * 0.25, L * 0.12); aV.name = 'local-vento'; icLocalMundo.add(aV);
+      var sV = labelSprite('vento ' + Math.round(+cl.ventoMs) + ' m/s'); sV.position.copy(o0); icLocalMundo.add(sV); out.vento = true;
+    }
+    modelRoot.updateMatrixWorld(); icLocalG.matrix.copy(modelRoot.matrixWorld); icLocalG.matrixWorldNeedsUpdate = true;
+    return out;
+  }
+  S._tickExtra.push(function (dt) {
+    if (icLocalG.children.length) { modelRoot.updateMatrixWorld(); icLocalG.matrix.copy(modelRoot.matrixWorld); icLocalG.matrixWorldNeedsUpdate = true; }
+    var ch = icLocalEst.chuva;
+    if (ch) {
+      var pa = ch.geometry.attributes.position, u = ch.userData, s = dt > 0 && dt < 0.25 ? dt : 0.016;
+      for (var k = 0; k < pa.count; k++) { var y = pa.getY(k) - u.v * s; pa.setY(k, y < u.y0 ? u.y1 : y); }
+      pa.needsUpdate = true;
+    }
+    /* a neblina acompanha a câmera: perto fica nítido, o que passa da visibilidade some (a distância da órbita muda com o zoom) */
+    if (icLocalEst.nevoaVis && scene.fog) { var D = camera.position.distanceTo(orbit.target); scene.fog.near = D * 0.6; scene.fog.far = D + icLocalEst.nevoaVis; }
+  });
+  /* GEORREFERÊNCIA QUE O PRÓPRIO IFC TRAZ: IfcMapConversion (+ IfcProjectedCRS com o EPSG) vale mais; senão IfcSite
+     (RefLatitude/RefLongitude no ponto de inserção do terreno) com o TrueNorth do contexto do modelo.
+     ⚠ O motor trabalha nas coordenadas do IFC (o modelo abre sem COORDINATE_TO_ORIGIN): a origem do site, em unidade do
+       arquivo, vira metro pelo LENGTHUNIT. Revit exporta RefLatitude da "Localização" do projeto — que pode ser só a CIDADE:
+       a tela mostra o ponto no mapa para a pessoa conferir antes de usar. */
+  var IFC_MAPCONVERSION = 3057273783, IFC_PROJECTEDCRS = 3843373140, IFC_GEOMREPCONTEXT = 3448662350, IFC_SITE_T = 4097777520;
+  function icGeoIfc() {
+    var G = window.IcarGeo; if (!G) return { ok: false, motivo: 'falta js/icargeo.js' };
+    if (!S.api || S.modelID == null) return { ok: false, motivo: 'abra o modelo IFC primeiro' };
+    var api = S.api, mid = S.modelID;
+    function val(x) { return x && typeof x === 'object' && x.value !== undefined ? x.value : x; }
+    function lin(id) { try { return api.GetLine(mid, val(id), false); } catch (_) { return null; } }
+    function ids(t) { var o = []; try { var r = api.GetLineIDsWithType(mid, t); for (var i = 0; i < r.size(); i++) o.push(r.get(i)); } catch (_) {} return o; }
+    var fLen = unidadePrefixoBase(mid, 'LENGTHUNIT'); if (fLen == null) fLen = 1;
+    var mcs = ids(IFC_MAPCONVERSION);
+    for (var a = 0; a < mcs.length; a++) {
+      var mc = lin(mcs[a]), crs = mc && lin(mc.TargetCRS), nome = crs ? String(val(crs.Name) || '') : '', ep = /(\d{4,5})\s*$/.exec(nome) || /EPSG\D*(\d{4,5})/i.exec(nome);
+      if (!mc || !ep) continue;
+      /* Eastings/Northings na unidade do mapa — que o Revit às vezes deixa em mm: fica o fator que cai dentro de uma zona UTM */
+      var E0 = +val(mc.Eastings), N0 = +val(mc.Northings), fat = [1, fLen, 0.001].filter(function (f) { var e = E0 * f, n = N0 * f; return e > 100000 && e < 900000 && n > 0 && n < 10000000; })[0];
+      if (!fat) continue;
+      var sc = +val(mc.Scale) || 1; if (fLen !== 1 && Math.abs(sc - fLen) < 1e-9) sc = 1;   // Scale = conversão mm → m, não fator de escala da projeção
+      var g = G.geoDoMapConversion({ Eastings: E0 * fat, Northings: N0 * fat, XAxisAbscissa: val(mc.XAxisAbscissa), XAxisOrdinate: val(mc.XAxisOrdinate), Scale: sc }, +ep[1]);
+      if (g) { g.ok = true; return g; }
+    }
+    var st = ids(IFC_SITE_T), site = st.length ? lin(st[0]) : null;
+    if (!site) return { ok: false, motivo: 'o IFC não tem IfcSite' };
+    function arr(v) { v = val(v); return v && v.length ? Array.prototype.map.call(v, function (x) { return +val(x); }) : null; }
+    var la = G.anguloIfc(arr(site.RefLatitude)), lo = G.anguloIfc(arr(site.RefLongitude));
+    if (la == null || lo == null || (Math.abs(la) < 1e-9 && Math.abs(lo) < 1e-9)) return { ok: false, motivo: 'o IFC não traz latitude e longitude do terreno (IfcSite)' };
+    var x0 = 0, y0 = 0;
+    try { var pl = lin(site.ObjectPlacement), rp = pl && lin(pl.RelativePlacement), lc = rp && lin(rp.Location), cs = lc && arr(lc.Coordinates); if (cs) { x0 = (cs[0] || 0) * fLen; y0 = (cs[1] || 0) * fLen; } } catch (_) {}
+    var norte = 0, temNorte = false, cxs = ids(IFC_GEOMREPCONTEXT);
+    for (var c = 0; c < cxs.length && !temNorte; c++) {
+      var cx = lin(cxs[c]); if (!cx || !cx.TrueNorth) continue;
+      var tn = lin(cx.TrueNorth), dr = tn && arr(tn.DirectionRatios); if (!dr || dr.length < 2) continue;
+      norte = G.norteDeTrueNorth(dr[0], dr[1]); temNorte = true;
+    }
+    return { ok: true, lat: la, lon: lo, x0: Math.round(x0 * 1000) / 1000, y0: Math.round(y0 * 1000) / 1000, norte: Math.round(norte * 1e4) / 1e4, semNorte: !temNorte,
+      fonte: 'IfcSite (latitude/longitude do terreno)' + (temNorte ? ' + norte do projeto' : ' — sem norte no arquivo (norte = +Y)') };
+  }
   S._tickExtra.push(function (dt) {
     if (!icar.grupo.children.length) return;
     icSincronizar();
@@ -4135,7 +4280,13 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
   S._icar = { geometria: icGeometria, chao: function () { return icM(new THREE.Vector3(0, icChao(), 0)).z; }, pontoNoChao: icPontoNoChao, sondar: icSondar, desenhar: icDesenhar, limpar: icLimpar,
     simular: icSimular, simulando: function () { return !!icar.sim; }, parar: function () { icLimparSim(); return true; },
-    colisoes: icColisoes, caixas: icCaixas, mapa: icMapa, planta: icPlanta, plantaPonto: icPlantaPonto, visada: icVisada,
+    colisoes: icColisoes, caixas: icCaixas, mapa: icMapa, planta: icPlanta, plantaPonto: icPlantaPonto, visada: icVisada, local: icLocal, geoIfc: icGeoIfc,
+    localEstado: function () {
+      var c = { imagem: 0, relevo: 0, ruas: 0, verdes: 0, postes: 0, redes: 0, chuva: 0, vento: 0, neblina: !!(icLocalEst.nevoaVis && scene.fog), sol: !!icLocalEst.sol, luz: { x: dir.position.x, y: dir.position.y, z: dir.position.z, i: dir.intensity } };
+      icLocalG.children.forEach(function (o) { if (o.name === 'local-imagem') c.imagem++; else if (o.name === 'local-relevo') c.relevo++; else if (o.name === 'local-rua') c.ruas++; else if (o.name === 'local-verde') c.verdes++; else if (o.name === 'local-poste') c.postes++; else if (o.name === 'local-rede') c.redes++; });
+      icLocalMundo.children.forEach(function (o) { if (o.name === 'local-chuva') c.chuva = o.geometry.attributes.position.count; else if (o.name === 'local-vento') c.vento++; });
+      return c;
+    },
     plantaEstado: function () {
       var c = { plano: 0, linhas: 0, propostas: 0, entorno: 0, agua: 0, opacidade: null };
       icPlantaG.children.forEach(function (o) { if (o.name === 'planta-imagem') { c.plano++; c.opacidade = o.material.opacity; } else if (o.name === 'planta-linhas') c.linhas++; else if (o.name === 'planta-proposta') c.propostas++; else if (o.name === 'entorno') c.entorno++; else if (o.name === 'entorno-agua') c.agua++; else if (o.name === 'agente-limite') c.limite = (c.limite || 0) + 1; });
@@ -12523,6 +12674,9 @@ window.BIM = {
   icarCaixas: function (fora, regiao) { return (S && S._icar) ? S._icar.caixas(fora, regiao) : []; },     // caixa (motor) de cada peça visível — para o agente do equipamento
   icarMapa: function (mp) { return (S && S._icar) ? S._icar.mapa(mp) : { ok: false, erro: 'visualizador não montado' }; },   // mapa do agente no chão (null apaga)
   icarPlanta: function (cfg) { return (S && S._icar) ? S._icar.planta(cfg) : { ok: false, erro: 'visualizador não montado' }; }, // planta PDF/DXF + entorno (null apaga)
+  icarLocal: function (cfg) { return (S && S._icar) ? S._icar.local(cfg) : { ok: false, erro: 'visualizador não montado' }; },   // relevo, ruas, postes, sol e clima da obra (null apaga)
+  icarGeoIfc: function () { return (S && S._icar) ? S._icar.geoIfc() : { ok: false, motivo: 'visualizador não montado' }; },     // latitude/longitude e norte que o IFC traz
+  _icarLocalEstado: function () { return (S && S._icar) ? S._icar.localEstado() : null; },                                     // gancho de teste
   _icarPlantaPonto: function (x, y) { return (S && S._icar) ? S._icar.plantaPonto(x, y) : null; },  // gancho de teste
   _icarPlantaEstado: function () { return (S && S._icar) ? S._icar.plantaEstado() : null; },        // gancho de teste
   _icarMapaEstado: function () { return (S && S._icar) ? S._icar.mapaEstado() : null; },              // gancho de teste: o mapa do agente na cena

@@ -1,6 +1,13 @@
 ﻿POLÍTICA DE PRIVACIDADE — OrçaPRO IA
-Versão 1.9 — vigente a partir de 01/10/2026
+Versão 1.10 — vigente a partir de 02/10/2026
 Elaborada conforme a Lei nº 13.709/2018 (LGPD)
+
+O que mudou na 1.10: entrou o item 4.16 — LOCAL E CLIMA DO PLANO DE IÇAMENTO.
+Quando você pede, a coordenada da obra passa pelo nosso servidor e vai a
+serviços públicos de mapa, relevo, imagem de satélite e previsão do tempo
+(OpenStreetMap, Amazon, Esri e MET Norway, que entraram na lista do item 8),
+sem nome de obra, de cliente ou seu. O nosso servidor guarda essas respostas
+por pouco tempo, por coordenada, para não repetir a consulta (item 6).
 
 O que mudou na 1.9: entrou o item 4.15 — a PLACA DA OBRA (um QR permanente,
 impresso na placa, que abre o projeto 3D com senha). Quem lê esse QR faz um
@@ -665,6 +672,42 @@ Quem lê o QR, antes de entrar, digita a senha e faz um cadastro:
   · Retenção e exclusão: item 6; a pedido, pelo canal do item 7.
 
 
+4.16 LOCAL E CLIMA DO PLANO DE IÇAMENTO
+No plano de içamento (tela BIM), a aba "Local e clima" situa a obra no mapa
+para trazer o entorno, o relevo, a imagem de satélite e a previsão do tempo do
+dia do içamento. Nada disso sai sozinho: cada consulta acontece quando você
+aperta o botão dela ("Localizar", "Buscar entorno", "Carregar relevo",
+"Satélite no chão", "Buscar previsão" ou "Explicar (IA)").
+
+As consultas passam pelo NOSSO servidor (o mesmo dos recursos de IA, item
+4.1), que só atende licença ativa e as repassa aos serviços públicos do item 8
+com a identificação dele (o endereço do nosso site), não a sua. Vão:
+
+  · a COORDENADA DA OBRA (latitude e longitude) e o raio da busca — para o
+    entorno (OpenStreetMap), o relevo (Terrain Tiles da Amazon), a previsão
+    do tempo (MET Norway) e, quando habilitada, a imagem de satélite (Esri);
+  · o ENDEREÇO que você digitar em "Localizar", só quando o texto não é um
+    link de mapa nem uma coordenada — para encontrar o lugar (Nominatim, do
+    OpenStreetMap);
+  · em "Explicar (IA)", a justificativa do equipamento sugerido (modelo do
+    guindaste, posição, raio e utilização, em números) — para a IA
+    reescrevê-la (Groq, item 4.1). O servidor descarta a resposta se ela
+    trouxer número que não estava no cálculo.
+
+Não vão: o nome da obra, o cliente, o seu nome, o seu e-mail, valores nem o
+modelo 3D. Não é a sua localização — é o lugar da obra, que você informou ou
+que o projeto (IFC) traz.
+
+O que volta (prédios, ruas e redes do mapa, relevo, previsão, imagem) fica só
+na tela enquanto ela está aberta. No plano gravado entram apenas a
+localização da obra, o que você ACEITAR do mapa (prédios, muros e redes
+elétricas, com a altura e a tensão que você informar) e os registros de clima
+que você mandar guardar.
+
+O link "conferir no mapa" abre o site do OpenStreetMap numa aba nova, com a
+coordenada da obra, só quando você clica nele.
+
+
 5. O QUE NUNCA FAZEMOS
 
   · Não vendemos, alugamos nem cedemos os seus dados.
@@ -722,6 +765,12 @@ Quem lê o QR, antes de entrar, digita a senha e faz um cadastro:
     tarefa ou anexo dentro do seu OrçaPRO é sua e fica com você.
   · Mapa da obra (item 4.11): nada é guardado por nós — o endereço vai direto
     do seu navegador ao Google, que o trata pela política dele.
+  · Local e clima do plano de içamento (item 4.16): o nosso servidor guarda
+    as respostas pela coordenada (ou pelo endereço buscado), para não repetir
+    a consulta — previsão por 30 minutos, entorno do mapa por 7 dias,
+    endereço buscado por 30 dias e relevo por 1 ano; a imagem de satélite só
+    na memória, por 1 hora. Nenhuma dessas cópias leva nome de obra, cliente,
+    licença ou usuário.
   · Licença e faturamento: pelo prazo legal aplicável (fiscal e prescricional).
 
 
@@ -742,7 +791,22 @@ Boa parte disso você resolve sozinho e na hora, dentro do programa — exportan
   · GitHub Inc. (Microsoft) — entrega o pacote de atualização (item 3.3).
   · Meta Platforms — recebe o que você manda pelos botões de WhatsApp (4.4).
   · Open-Meteo (Alemanha) — recebe município e coordenada da obra ao buscar o
-    clima do diário (item 4.9).
+    clima do diário (item 4.9) e, se o nosso servidor estiver configurado para
+    ele, a coordenada da previsão do plano de içamento (item 4.16).
+  · OpenStreetMap Foundation (Reino Unido) — Nominatim: recebe o endereço
+    digitado em "Localizar" no plano de içamento (item 4.16), pelo nosso
+    servidor.
+  · FOSSGIS e.V. (Alemanha) — Overpass API do OpenStreetMap: recebe a
+    coordenada da obra e o raio ao buscar o entorno (item 4.16), pelo nosso
+    servidor.
+  · Instituto Meteorológico da Noruega (MET Norway) — recebe a coordenada da
+    obra ao buscar a previsão do plano de içamento (item 4.16), pelo nosso
+    servidor.
+  · Amazon Web Services — Terrain Tiles: entrega o relevo da região da obra
+    (item 4.16); o nosso servidor pede os quadros de mapa que cobrem a
+    coordenada.
+  · Esri (EUA) — imagem de satélite, quando habilitada no nosso servidor:
+    recebe os quadros de mapa que cobrem a obra (item 4.16).
   · Google LLC — Google Maps: recebe o endereço da obra quando você abre a
     aba Mapa dela (item 4.11).
   · Google LLC — app do Google no Android (Scene Viewer): quando alguém escolhe
