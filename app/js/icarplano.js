@@ -51,6 +51,9 @@
     larguraVia_m: { local: 6, coletora: 9, arterial: 14, pedestre: 2 },
     /* ACESSO DO EQUIPAMENTO (premissas, ESPEC §II.14): folga na passagem, folga embaixo do obstáculo baixo, rampa que pede conferência */
     acessoFolgaLateral_m: 0.25, acessoFolgaAltura_m: 0.30, acessoRampaAviso_pct: 10, acessoEixoAtencao: 0.8,
+    /* TANDEM (premissas): cada guindaste até 75 % da própria tabela (prática de mercado; a NR-18 manda planejar, não dá número) e
+       a incerteza do CG em 5 % da distância entre os pontos — a repartição pior vale para cada lado */
+    tandemFator: 0.75, tandemIncertezaCG_pct: 5,
     olhoGuindaste_m: 3.0,      // VISÃO DO OPERADOR: olho na cabina da superestrutura, acima do apoio (premissa)
     olhoMunck_m: 1.7,          // munck: o operador em pé no comando, ao lado do caminhão (premissa; com rádio-controle, ele anda — confira em campo)
     olhoLateral_m: 1.2,        // a cabina/comando fica de lado para a lança (premissa)
@@ -458,7 +461,26 @@
           ": interdição com permissão do órgão de trânsito do município (CTB art. 95), sinalização e horário de menor movimento.");
       });
     }
+    var tdm = ic.tandem && ic.tandem.eq2 && ic.tandem.pos2 ? ic.tandem : null;
+    /* ⚠ 2º equipamento escolhido SEM posição: não cai na conta de um guindaste só (que aprovaria a peça inteira sem querer) */
+    if (ic.tandem && ic.tandem.eq2 && !ic.tandem.pos2) { o.bloqueios.push("Tandem: marque no projeto onde fica o 2º equipamento."); o.criticoPor.push("içamento em tandem (dois equipamentos)"); }
     if (!eq) o.bloqueios.push("Escolha o equipamento.");
+    else if (tdm && ic.pos && geo) {
+      /* TANDEM: cada equipamento pega UM ponto, na vertical; nada de "a peça inteira num guindaste só" */
+      /* a coleta só vale a MARCADA: a suposta ("lado oposto do guindaste") é a de um equipamento só */
+      var T = tandem({ carga_kg: c.total_kg, geo: geo, pontos: pts, eq1: eq, pos1: ic.pos, eq2: tdm.eq2, pos2: tdm.pos2, alturaGancho: o.alturaGancho, premissas: ic.premissas,
+        coleta: o.coletaPadrao ? null : ic.coleta });
+      o.tandem = T; o.bloqueios = o.bloqueios.concat(T.bloqueios); o.avisos = o.avisos.concat(T.avisos);
+      o.criticoPor.push("içamento em tandem (dois equipamentos)");
+      if (T.lados.length === 2) {
+        o.cap = T.lados[0].capObj; o.util = Math.max(T.lados[0].util, T.lados[1].util);
+        if (T.reprovado) o.reprovado = T.reprovado;
+        /* as lingas: uma por gancho, vertical — a tração é a parte de cada guindaste */
+        L = { pernas: 2, ok: true, alturaLingas: L.alturaLingas, gancho: T.lados[0].gancho, pernasDet: T.lados.map(function (l) { return { ponto: l.pt, rotulo: l.ponto, anguloVert: 0, comprimento: null, tracao_kg: l.carga_kg }; }),
+          tracaoMax_kg: Math.max(T.lados[0].carga_kg, T.lados[1].carga_kg), anguloMax: 0, bloqueios: [], avisos: ["Tandem: cada gancho na vertical do seu ponto — a linga de cada lado trabalha a parte do seu guindaste."] };
+        o.lingas = L;
+      }
+    }
     else if (o.raio != null) {
       var cap = capacidade(eq, o.raio, o.alturaGancho, p); o.cap = cap;
       o.avisos = o.avisos.concat(cap.avisos || []);
@@ -472,7 +494,7 @@
     if (c.total_kg > CRITICO_KG) o.criticoPor.push("carga acima de 10 t");
     var f = ic.flags || {};
     if (f.redeEletrica) o.criticoPor.push("perto de rede elétrica");
-    if (f.doisEquipamentos) o.criticoPor.push("dois ou mais equipamentos");
+    if (f.doisEquipamentos && !ic.tandem) o.criticoPor.push("dois ou mais equipamentos");
     if (f.geometriaComplexa) o.criticoPor.push("geometria complexa");
     if (f.sobreLinhas) o.criticoPor.push("sobre linhas ou equipamentos em operação");
     /* acessórios */
@@ -643,6 +665,37 @@
     return { itens: it, bloqueios: bloq, avisos: av, conferidos: it.filter(function (x) { return x.estado !== "sem"; }).length };
   }
 
+  /* TANDEM — dois equipamentos numa peça (ESPEC §II.14). Pontos A (1º equipamento) e B (2º); a carga se reparte pela alavanca
+     do CG entre eles; com o CG incerto (premissa) cada lado recebe a sua PIOR parte. Cada um na própria tabela, no próprio raio,
+     até tandemFator (premissa). CG fora do segmento AB = a peça vira: bloqueia. */
+  function tandem(t) {
+    var pp = prem(t.premissas), o = { ok: true, bloqueios: [], avisos: [], lados: [], reprovado: null, reparticao: null };
+    var A = t.pontos && t.pontos[0], B = t.pontos && t.pontos[1], g = t.geo;
+    if (!A || !B || (t.pontos.length !== 2)) { o.ok = false; o.bloqueios.push("Tandem: use 2 pontos de içamento (amarração em 2 pontos) — cada equipamento pega um."); return o; }
+    var Lb = dist2(A, B); if (!(Lb > 0.1)) { o.ok = false; o.bloqueios.push("Tandem: os 2 pontos estão juntos demais."); return o; }
+    var s = ((g.cg.x - A.x) * (B.x - A.x) + (g.cg.y - A.y) * (B.y - A.y)) / (Lb * Lb);
+    if (s < 0 || s > 1) { o.ok = false; o.bloqueios.push("Tandem: o centro de gravidade fica FORA dos dois pontos — um equipamento levaria mais que a peça inteira e o outro seria puxado para cima (a peça vira). Mude os pontos."); return o; }
+    var d = (+pp.tandemIncertezaCG_pct || 0) / 100, sMin = Math.max(0, s - d), sMax = Math.min(1, s + d), W = +t.carga_kg || 0;
+    o.reparticao = { s: r2(s, 4), incerteza_pct: +pp.tandemIncertezaCG_pct, A: r2(1 - s, 4), B: r2(s, 4) };
+    var lados = [{ ponto: "P1", eq: t.eq1, pos: t.pos1, gancho: A, F: W * (1 - sMin) }, { ponto: "P2", eq: t.eq2, pos: t.pos2, gancho: B, F: W * sMax }];
+    /* coleta MARCADA: a peça sai de lá com os mesmos pontos (translação do CG) — vale o MAIOR raio de cada lado, como no
+       içamento de um equipamento só. Sem coleta marcada, só a posição final (e o plano diz). */
+    var dC = t.coleta ? { x: t.coleta.x - g.cg.x, y: t.coleta.y - g.cg.y } : null, zG = (+t.pos1.z || 0) + (+t.alturaGancho || 0);
+    lados.forEach(function (l, i) {
+      var Rd = dist2(l.pos, l.gancho), Rc = dC ? dist2(l.pos, { x: l.gancho.x + dC.x, y: l.gancho.y + dC.y }) : null, R = Math.max(Rd, Rc || 0);
+      var H = (+t.alturaGancho || 0) + ((+t.pos1.z || 0) - (+l.pos.z || 0)), cap = capacidade(l.eq, R, H, pp);
+      var lim = cap.ok ? cap.cap_kg * pp.tandemFator : null, util = lim ? l.F / lim : null;
+      o.lados.push({ ponto: l.ponto, equipamento: nomeEq(l.eq), raio: r2(R, 2), raioDestino: r2(Rd, 2), raioColeta: Rc != null ? r2(Rc, 2) : null,
+        gancho: { x: l.gancho.x, y: l.gancho.y, z: zG }, pt: { x: l.gancho.x, y: l.gancho.y, z: l.gancho.z }, pos: { x: l.pos.x, y: l.pos.y, z: +l.pos.z || 0 }, carga_kg: Math.round(l.F), cap_kg: cap.ok ? cap.cap_kg : null, limite_kg: lim != null ? Math.round(lim) : null, util: util != null ? r2(util, 4) : null, capObj: cap });
+      if (!cap.ok) { o.ok = false; o.bloqueios.push("Tandem, " + (i + 1) + "º equipamento: " + cap.motivo + "."); return; }
+      if (util > 1 + 1e-9 && !o.reprovado) o.reprovado = (i + 1) + "º equipamento do tandem levaria " + br(l.F, 0) + " kg no ponto " + l.ponto + ", acima de " + br(pp.tandemFator * 100, 0) + " % da tabela (" + br(lim, 0) + " kg de " + br(cap.cap_kg, 0) + " kg a " + br(R, 2) + " m)";
+    });
+    o.avisos.push("Tandem: repartição pelo CG entre os pontos (" + br((1 - s) * 100, 0) + " % / " + br(s * 100, 0) + " %), com o CG incerto em " + br(pp.tandemIncertezaCG_pct, 0) + " % — cada lado conferido na sua pior parte, até " + br(pp.tandemFator * 100, 0) + " % da tabela (premissas).");
+    if (!dC) o.avisos.push("Tandem: coleta não marcada — conferido só na posição final; marque onde a peça estará para conferir também a saída (os dois raios mudam juntos).");
+    o.avisos.push("Tandem: um sinaleiro só comanda os dois; movimentos lentos e sincronizados; cabos sempre na vertical (desvio joga carga de um para o outro); nada de girar os dois ao mesmo tempo sem plano para isso.");
+    return o;
+  }
+
   function liberacao(plano, avaliacoes, quando, extra) {
     var docs = (plano && plano.docs) || {}, conf = (plano && plano.conf) || {};
     var falta = [], vencendo = [], semValidade = [], ref = /^\d{4}-\d{2}-\d{2}$/.test(String(quando || "")) ? String(quando) : "";
@@ -682,6 +735,16 @@
     if (ic.pos) s.push("Posicionar o " + nm + " com o centro de giro em X " + br(ic.pos.x, 2) + " / Y " + br(ic.pos.y, 2) + "; patolas totalmente estendidas sobre placas de apoio, equipamento nivelado.");
     s.push("Conferir o vento no anemômetro" + (a.vento && a.vento.vLim ? " (limite " + br(a.vento.vLim, 1) + " m/s)" : "") + " e os limitadores de carga/momento.");
     s.push("Inspecionar lingas e manilhas (etiqueta legível, sem dano) — " + (a.lingas ? a.lingas.pernas : 1) + " perna(s)" + (a.lingas && a.lingas.alturaLingas ? ", ~" + br(a.lingas.alturaLingas, 2) + " m de altura do gancho ao topo da carga" : "") + ".");
+    var td = a.tandem && a.tandem.lados && a.tandem.lados.length === 2 ? a.tandem.lados : null;
+    if (td) {
+      s.push("Posicionar o 2º equipamento (" + td[1].equipamento + ") com o centro de giro em X " + br(td[1].pos.x, 2) + " / Y " + br(td[1].pos.y, 2) + "; patolas totalmente estendidas sobre placas de apoio, equipamento nivelado.");
+      s.push("Amarrar P1 (" + br(td[0].pt.x, 2) + "; " + br(td[0].pt.y, 2) + ") no gancho do 1º equipamento e P2 (" + br(td[1].pt.x, 2) + "; " + br(td[1].pt.y, 2) + ") no gancho do 2º — cada gancho na vertical do seu ponto.");
+      s.push("Um sinaleiro só comanda os dois equipamentos (rádio no mesmo canal); içar juntos, devagar, conferindo o nível da peça a cada parada.");
+      s.push("Levar a carga com os dois ao mesmo tempo: 1º a " + br(td[0].raio, 2) + " m de raio (" + br(td[0].carga_kg, 0) + " kg de " + br(td[0].limite_kg, 0) + " kg) e 2º a " + br(td[1].raio, 2) + " m (" + br(td[1].carga_kg, 0) + " kg de " + br(td[1].limite_kg, 0) + " kg), cabos sempre na vertical.");
+      s.push("Assentar, fixar provisoriamente (escora/travamento) e só então aliviar os dois ganchos juntos e soltar as lingas.");
+      s.push("Recolher os ganchos e liberar a área.");
+      return s;
+    }
     if (a.pontos && a.pontos.length) s.push("Amarrar nos pontos " + a.pontos.map(function (p, i) { return "P" + (i + 1) + " (" + br(p.x, 2) + "; " + br(p.y, 2) + ")"; }).join(", ") + "; gancho na vertical do centro de gravidade.");
     s.push("Içar poucos centímetros e parar: conferir estabilidade do equipamento, nivelamento da carga e amarração.");
     if (a.raio != null) s.push("Subir até " + br(a.alturaGancho, 2) + " m de gancho" + (a.giro ? ", girar " + br(a.giro, 0) + "°" : "") + " e levar a carga ao raio de " + br(a.raio, 2) + " m com movimentos suaves, guiada por cabo-guia.");
@@ -992,7 +1055,7 @@
     prem: prem, cercar: cercar, capGuindaste: capGuindaste, capMunck: capMunck, capacidade: capacidade, porte: porte,
     carga: carga, geometria: geometria, pontosIcamento: pontosIcamento, lingas: lingas, conferirAcessorio: conferirAcessorio,
     classeVento: classeVento, S2: S2, S3: S3, vento: vento, tempo: tempo, avaliar: avaliar, melhores: melhores,
-    liberacao: liberacao, passoAPasso: passoAPasso, nomeEq: nomeEq, pontoOlho: pontoOlho, viasAfetadas: viasAfetadas, classeVia: classeVia, acesso: acesso,
+    liberacao: liberacao, passoAPasso: passoAPasso, nomeEq: nomeEq, pontoOlho: pontoOlho, viasAfetadas: viasAfetadas, classeVia: classeVia, acesso: acesso, tandem: tandem,
     layoutEquip: layoutEquip, dentroPoligono: dentroPoligono, sapatasProibidas: sapatasProibidas, rumoPadrao: rumoPadrao, coletaPadrao: coletaPadrao, modoSugerido: modoSugerido, croqui: croqui, dxf: dxf, svgCroqui: svgCroqui, ifc: ifc, ifcTxt: ifcTxt, csvCargas: csvCargas
   };
   global.IcarPlano = IcarPlano;

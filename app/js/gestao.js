@@ -16515,12 +16515,36 @@
         acessorios: ic.acessorios_kg > 0 ? [{ nome: ic.acessorios_nome || "lingas, manilhas e balancim", kg: +ic.acessorios_kg, qtd: 1 }] : [],
         proibidoApoiar: p.proibidoApoiar || [],
         vias: p.vias || [],   // ruas do mapa guardadas no plano: a área isolada é conferida contra elas (interdição, CTB art. 95)
+        /* TANDEM: o 2º equipamento (do catálogo) e onde ele fica — escolhido sem posição, o motor bloqueia em vez de contar um só */
+        tandem: ic.tandem && ic.tandem.catalogoId2 && window.IcarCatalogo ? { eq2: IcarCatalogo.porId(ic.tandem.catalogoId2), pos2: ic.tandem.pos2 || null } : null,
         colisao: (this._icarEst().colisoes || {})[ic.id] || null, visada: (this._icarEst().visadas || {})[ic.id] || null,
         moitao_kg: e.moitao_kg != null && e.moitao_kg !== "" ? +e.moitao_kg : null, lingas: ic.lingas || { tipo: "cinta", modo: "direto" },
         manilha_cmt_kg: ic.manilha_cmt_kg != null && ic.manilha_cmt_kg !== "" ? +ic.manilha_cmt_kg : null, flags: ic.flags || {},
         vento: { V0: l.V0, S1: l.S1, cat: l.cat, grupo: l.grupo, edicao: l.edicao, Ca: l.Ca, vPrev10: l.vPrev10, vLim: e.vLim != null && e.vLim !== "" ? +e.vLim : (eq && eq.vento_ms) || null },
         _eq: eq
       };
+    },
+    /* TANDEM no cartão: a parte de cada equipamento, no raio dele, contra a fração da tabela (premissa tandemFator) */
+    _icarHtmlTandem: function (a) {
+      var T = a && a.tandem, self = this, esc = Util.esc, f = function (v, d) { return self._icarFmt(v, d); };
+      if (!T || !T.lados || !T.lados.length) return "";
+      var fat = a.premissas && a.premissas.tandemFator != null ? a.premissas.tandemFator : null;
+      return '<div data-icar-tandem="' + T.lados.length + '" style="border:1px solid var(--linha);border-radius:8px;padding:6px 8px;margin-top:8px;font-size:11.5px"><div class="muted">Tandem — cada equipamento no seu ponto' +
+        (T.reparticao ? " (CG entre os pontos: " + f(T.reparticao.A * 100, 0) + " % / " + f(T.reparticao.B * 100, 0) + " %, incerteza de " + f(T.reparticao.incerteza_pct, 0) + " %)" : "") + "</div>" +
+        T.lados.map(function (l, i) {
+          var u = l.util != null ? l.util * 100 : null, cor = u == null ? "#94a3b8" : u > 100 ? "#dc2626" : u > 80 ? "#d97706" : "#16a34a";
+          return '<div class="flex between" style="gap:6px"><span>' + (i + 1) + "º · " + esc(l.equipamento) + " · " + esc(l.ponto) + " · raio " + f(l.raio, 2) + " m</span><span>" + f(l.carga_kg, 0) + " kg de " +
+            (l.limite_kg != null ? f(l.limite_kg, 0) + " kg" : "—") + ' <b style="color:' + cor + '" data-icar-r="tandem-' + (i + 1) + '">' + (u != null ? f(u, 1) + " %" : "—") + "</b></span></div>";
+        }).join("") + (fat != null ? '<div class="muted">limite de cada um: ' + f(fat * 100, 0) + " % da própria tabela (premissa)</div>" : "") + "</div>";
+    },
+    _icarRelTandem: function (a) {
+      var T = a && a.tandem, self = this, esc = Util.esc, f = function (v, d) { return self._icarFmt(v, d); };
+      if (!T || !T.lados || T.lados.length !== 2) return "";
+      return "<h3>Tandem (dois equipamentos)</h3><table><tr><th>Equipamento</th><th>Centro de giro</th><th>Ponto</th><th>Raio</th><th>Parte da carga</th><th>Limite</th><th>Utilização</th></tr>" +
+        T.lados.map(function (l, i) {
+          return "<tr><td>" + (i + 1) + "º · " + esc(l.equipamento) + "</td><td>X " + f(l.pos.x, 3) + " · Y " + f(l.pos.y, 3) + "</td><td>" + esc(l.ponto) + '</td><td class="n">' + f(l.raio, 2) + ' m</td><td class="n">' + f(l.carga_kg, 0) +
+            ' kg</td><td class="n">' + (l.limite_kg != null ? f(l.limite_kg, 0) + " kg de " + f(l.cap_kg, 0) : "—") + '</td><td class="n">' + (l.util != null ? f(l.util * 100, 1) + " %" : "—") + "</td></tr>";
+        }).join("") + "</table>" + T.avisos.map(function (x) { return '<div class="m">• ' + esc(x) + "</div>"; }).join("");
     },
     _icarAvaliar: function (p, ic) {
       if (!window.IcarPlano) return null;
@@ -16620,7 +16644,13 @@
         return "<div>" + esc(x.nome) + ' <span class="muted">· ' + (x.ok ? f(x.kg, x.kg >= 100 ? 0 : 1) + " kg" + (x.estimado ? " (estimado)" : "") : '<span style="color:#b45309">sem peso: ' + esc(x.motivo || "") + "</span>") + "</span></div>";
       }).join("") + "</div>";
       /* amarração */
-      var lg = ic.lingas || {};
+      var lg = ic.lingas || {}, td = ic.tandem || {};
+      /* TANDEM: só equipamento do CATÁLOGO no 2º (a tabela da placa "Outro equipamento" é a do 1º). A lista só aparece depois de
+         "Usar um 2º equipamento": são dezenas de modelos — sempre aberta, ela soterrava o cartão de quem iça com um só */
+      var selTd = !(td.ligado || td.catalogoId2) ? '<button class="btn sm" data-icar="tandem-ligar">Usar um 2º equipamento</button>' : '<select data-icar-i="tandem.catalogoId2" style="max-width:230px"><option value="">— não (um equipamento só) —</option>' +
+        [["Guindastes", IcarCatalogo.GUINDASTES], ["Munck", IcarCatalogo.MUNCKS]].map(function (g) {
+          return '<optgroup label="' + g[0] + '">' + g[1].map(function (x) { return '<option value="' + esc(x.id) + '"' + (td.catalogoId2 === x.id ? " selected" : "") + ">" + esc(IcarPlano.nomeEq(x)) + "</option>"; }).join("") + "</optgroup>";
+        }).join("") + "</select>";
       function sel(attr, val, ops) { return '<select data-icar-i="' + attr + '">' + ops.map(function (o) { return '<option value="' + o[0] + '"' + (String(val) === String(o[0]) ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + "</select>"; }
       function num(attr, val, ph, w) { return '<input type="text" inputmode="decimal" data-icar-i="' + attr + '" data-num="1" value="' + (val == null || val === "" ? "" : esc(Util.fmtNum(+val, 2).replace(/,00$/, ""))) + '" placeholder="' + esc(ph || "") + '" style="width:' + (w || 80) + 'px;text-align:right">'; }
       h += '<div style="display:grid;grid-template-columns:auto 1fr;gap:5px 8px;align-items:center;font-size:12px;margin-top:10px">' +
@@ -16633,6 +16663,8 @@
         "<span>Coleta da peça</span><span>" + (ic.coleta ? "X " + f(ic.coleta.x, 2) + " · Y " + f(ic.coleta.y, 2) + " · Z " + f(ic.coleta.z, 2) + ' <button class="btn sm" data-icar="tirar-coleta">×</button>' :
           '<span class="muted">não marcada — suposta ' + (eq && eq.tipo === "munck" ? "na carroceria do caminhão" : "do lado oposto do guindaste") + "</span>") +
           ' <button class="btn sm" data-icar="marcar-coleta">Marcar no 3D</button></span>' +
+        "<span>Tandem (2º equipamento)</span><span>" + selTd + (td.catalogoId2 ? (td.pos2 ? ' <span data-icar-r="tandem-pos">X ' + f(td.pos2.x, 2) + " · Y " + f(td.pos2.y, 2) + '</span> <button class="btn sm" data-icar="tirar-tandem">×</button>' :
+          ' <span style="color:#b45309">posição não marcada</span>') + ' <button class="btn sm" data-icar="marcar-tandem">Marcar no 3D</button>' : "") + "</span>" +
         "</div>";
       var fl = ic.flags || {};
       h += '<div style="display:flex;gap:10px;flex-wrap:wrap;font-size:11.5px;margin-top:6px">' + [["redeEletrica", "perto de rede elétrica"], ["sobreLinhas", "sobre linhas/equipamentos em operação"], ["geometriaComplexa", "geometria complexa"], ["doisEquipamentos", "dois equipamentos"]].map(function (x) {
@@ -16647,6 +16679,7 @@
           (a.cap && a.cap.ok && a.cap.lanca ? '<div class="muted">lança ' + f(a.cap.lanca, 1) + " m</div>" : "") + "</div></div>" +
         '<div style="height:10px;background:#f1f5f9;border-radius:5px;overflow:hidden;margin:6px 0 2px"><i style="display:block;height:100%;width:' + Math.min(ut || 0, 100) + "%;background:" + corU + '"></i></div>' +
         '<div style="font-size:11.5px"><b style="color:' + corU + '" data-icar-r="util">' + (ut != null ? f(ut, 1) + " %" : "—") + '</b> da capacidade <span class="muted">· crítico acima de 80 % · reprovado acima de 100 %</span></div>';
+      h += this._icarHtmlTandem(a);
       h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;font-size:11.5px">' +
         '<div style="border:1px solid var(--linha);border-radius:8px;padding:6px 8px"><div class="muted">Carga do içamento</div><b style="font-size:15px" data-icar-r="carga">' + f(a.carga.total_kg, 0) + " kg</b>" +
           a.carga.composicao.map(function (c) { return '<div class="flex between"><span>' + esc(c.rotulo) + "</span><span>" + (c.kg == null ? '<span style="color:#b45309">informar</span>' : f(c.kg, 0) + " kg") + "</span></div>"; }).join("") + "</div>" +
@@ -17468,7 +17501,9 @@
         '<button class="btn sm primary" data-icar="relatorio">Plano completo (imprimir / PDF)</button>' +
         '<button class="btn sm" data-icar="csv">Planilha de cargas (CSV)</button>' +
         '<button class="btn sm" data-icar="dxf">Croqui em planta (DXF)</button>' +
-        '<button class="btn sm" data-icar="ifc">Equipamento e áreas (IFC)</button></div>' +
+        '<button class="btn sm" data-icar="ifc">Equipamento e áreas (IFC)</button>' +
+        '<button class="btn sm" data-icar="foto-hd" title="A vista de agora em 1920 × 1080, com sombras e o céu da hora">Modo foto (PNG)</button></div>' +
+        (this._icarEst().fotoHD ? '<p class="muted" style="font-size:11px;margin-top:4px" data-icar-fotohd="1">Foto do cenário guardada nesta tela — entra no plano completo (seção 4).</p>' : "") +
         '<p class="muted" style="font-size:11px;margin-top:4px">O DXF abre em qualquer CAD — o DWG sai salvando por lá. O IFC traz o equipamento, as patolas, a área isolada e o raio de cada içamento nas coordenadas do modelo: abra junto com o projeto.</p>';
       return h;
     },
@@ -17488,6 +17523,8 @@
         else { p.equipamento.catalogoId = v; }
       } else if (cam === "equipamento.outro.pontosTxt") {
         p.equipamento.outro = p.equipamento.outro || {}; p.equipamento.outro.pontosTxt = v; p.equipamento.outro.pontos = this._icarLerPontos(v);
+      } else if (cam === "tandem.catalogoId2" && !v) {
+        alvo.tandem = null;   // "— não (um equipamento só) —" desliga o tandem e esquece a posição do 2º
       } else if (/^conf\./.test(cam) && t.type === "checkbox") {
         p.conf[cam.slice(5)] = v ? "ok" : "";
       } else {
@@ -17639,6 +17676,9 @@
       }
       if (acao === "usar-eq") { p.equipamento = p.equipamento || {}; p.equipamento.catalogoId = v; if (this._icarSalvar(p)) { this._icarRender(); this._icarRedesenhar(); UI.toast("Equipamento do plano: " + IcarPlano.nomeEq(IcarCatalogo.porId(v)) + ".", "ok"); } return; }
       if (acao === "marcar-pos" || acao === "marcar-coleta") { this._icarMarcar(acao === "marcar-pos" ? "pos" : "coleta"); return; }
+      if (acao === "marcar-tandem") { this._icarMarcar("tandem"); return; }
+      if (acao === "tandem-ligar") { if (p.icamentos[st.sel]) { p.icamentos[st.sel].tandem = { ligado: true, catalogoId2: "" }; if (this._icarSalvar(p)) this._icarRender(); } return; }
+      if (acao === "tirar-tandem") { if (p.icamentos[st.sel] && p.icamentos[st.sel].tandem) { p.icamentos[st.sel].tandem.pos2 = null; if (this._icarSalvar(p)) { this._icarRender(); this._icarRedesenhar(); } } return; }
       if (acao === "apoio-subir") {
         var apS = this._icarApoio(p);
         this._icarMudarApoio(p, "manual", (+apS.cota || 0) + (+v || 0));
@@ -17684,6 +17724,7 @@
         return;
       }
       if (acao === "relatorio") { this._icarRelatorio(); return; }
+      if (acao === "foto-hd") { this._icarFotoHD(); return; }
       if (acao === "csv" || acao === "dxf" || acao === "ifc") { this._icarExportar(acao); return; }
     },
     /* marcar no 3D: um clique simples no chão (ou numa peça) devolve o ponto */
@@ -17694,7 +17735,7 @@
       var p0 = this._icarPlano(), ap0 = this._icarApoio(p0);
       /* o equipamento fica na COTA DO APOIO (pavimento/manual) — clicar no telhado põe o caminhão no térreo sob o cursor;
          em "superfície", na peça clicada. A coleta é sempre a superfície (carreta, chão), com o apoio para o vazio. */
-      var optsM = qual === "pos" ? { modo: ap0.modo, cota: ap0.cota } : { modo: "superficie", cota: ap0.cota };
+      var optsM = qual === "pos" || qual === "tandem" ? { modo: ap0.modo, cota: ap0.cota } : { modo: "superficie", cota: ap0.cota };
       BIM.icarMarcarPonto(function (pt) {
         if (!pt) { UI.toast("Não achei o chão nesse ponto — clique no terreno ou perto do modelo.", "aviso"); return; }
         var p = self._icarPlano(), st = self._icarEst(), ap = self._icarApoio(p);
@@ -17702,13 +17743,18 @@
           var z = ap.modo === "superficie" ? pt.z : +ap.cota || 0;
           if (ap.modo === "superficie") ap.cota = Math.round(pt.z * 1000) / 1000;
           p.pos = { x: pt.x, y: pt.y, z: z };
+        } else if (qual === "tandem") {
+          /* o 2º equipamento no MESMO apoio do 1º (pavimento/manual); em "superfície", onde clicou */
+          var icT = p.icamentos[st.sel]; if (!icT) return;
+          icT.tandem = icT.tandem || {};
+          icT.tandem.pos2 = { x: pt.x, y: pt.y, z: ap.modo === "superficie" ? pt.z : +ap.cota || 0 };
         } else if (p.icamentos[st.sel]) p.icamentos[st.sel].coleta = { x: pt.x, y: pt.y, z: pt.z };
         if (self._icarSalvar(p)) {
           self._icarRender(); self._icarRedesenhar(true);
-          try { BimShell.status((qual === "pos" ? "Posição do equipamento" : "Coleta da peça") + " marcada: X " + Util.fmtNum(pt.x, 2) + " · Y " + Util.fmtNum(pt.y, 2) + " · Z " + Util.fmtNum(pt.z, 2) + "."); } catch (e2) {}
+          try { BimShell.status((qual === "pos" ? "Posição do equipamento" : qual === "tandem" ? "Posição do 2º equipamento" : "Coleta da peça") + " marcada: X " + Util.fmtNum(pt.x, 2) + " · Y " + Util.fmtNum(pt.y, 2) + " · Z " + Util.fmtNum(pt.z, 2) + "."); } catch (e2) {}
         }
       });
-      try { BimShell.status(qual === "pos" ? "Clique no chão onde fica o centro de giro do guindaste/munck (arrastar continua girando a vista)." : "Clique onde a peça está antes de subir (carreta, chão do canteiro)."); } catch (e3) {}
+      try { BimShell.status(qual === "tandem" ? "Clique no chão onde fica o centro de giro do 2º equipamento (tandem)." : qual === "pos" ? "Clique no chão onde fica o centro de giro do guindaste/munck (arrastar continua girando a vista)." : "Clique onde a peça está antes de subir (carreta, chão do canteiro)."); } catch (e3) {}
     },
     /* muda o apoio e leva o centro de giro junto (a cota do equipamento É a cota do apoio) */
     _icarMudarApoio: function (p, modo, cota, pavimento) {
@@ -17734,9 +17780,12 @@
     },
     _icarCena: function (p, a, eq, ic) {
       var pos = (ic && ic.pos) || p.pos;
+      /* TANDEM: o 1º leva só a linga do P1 (vertical); o 2º vai em c.tandem, em desenho de referência */
+      var T2 = a.tandem && a.tandem.lados && a.tandem.lados.length === 2 ? a.tandem.lados : null;
       return { tipo: eq.tipo, pos: pos, rumo_graus: this._icarRumo(p, ic, a.geo && a.geo.cg),
         patolas: eq.patolas_m, comp: eq.dim_m ? eq.dim_m[0] : null, larg: eq.dim_m ? eq.dim_m[1] : null, eixos: eq.eixos,
-        gancho: a.lingas.gancho, pontos: a.pontos, cg: a.geo.cg, raio: a.raio, alcanceMax: eq.alcance_max_m || eq.raio_max_m, isolamento: a.isolamento,
+        gancho: a.lingas.gancho, pontos: T2 ? [a.pontos[0]] : a.pontos, cg: a.geo.cg, raio: T2 ? T2[0].raio : a.raio,
+        tandem: T2 ? { pos: T2[1].pos, gancho: T2[1].gancho, ponto: a.pontos[1], raio: T2[1].raio, rotulo: "2º · " + T2[1].equipamento } : null, alcanceMax: eq.alcance_max_m || eq.raio_max_m, isolamento: a.isolamento,
         alturaPe: a.premissas.alturaPeLanca_m, pontaGancho: a.premissas.pontaGancho_m, lanca: a.cap && a.cap.ok ? a.cap.lanca : null, rotulo: IcarPlano.nomeEq(eq),
         /* fatia 1: o equipamento articulado (forma da ficha) pintado pela física — sem os motores, o desenho de antes */
         forma: window.IcarFicha ? IcarFicha.forma(this._icarFicha(p, eq)) : null, fisica: this._icarFisEntrada(p, ic, a, eq, 1, this._icarEst().aba === "alem" ? this._icarEst().dR : 0),
@@ -18477,15 +18526,17 @@
       if (!this._icarMostrar(idx, false)) { UI.toast("Para verificar o caminho: escolha o equipamento e marque a posição dele.", "aviso"); return; }
       var a = this._icarAvaliar(p, ic);
       try { if (BIM.icarSimulando && BIM.icarSimulando()) BIM.icarPararSimulacao(); } catch (e0) {}
-      var rs = BIM.icarSimular({ uids: ic.uids, pivo: ic.pos || p.pos, cg: a.geo.cg, gancho: a.lingas.gancho, pontos: a.pontos, fundo: a.geo.min.z, coleta: ic.coleta || a.coletaPadrao || null,
-        folga: a.premissas.folgaGancho_m, duracao_s: 9, pausado: true });
+      var saC = this._icarSimArgs(p, ic, a); saC.pausado = true;
+      var rs = BIM.icarSimular(saC);
       if (!rs || !rs.ok) { UI.toast("Não consegui montar o caminho: " + ((rs && rs.erro) || "sem resposta do 3D") + ".", "erro"); return; }
       var fol = +(p.fisica || {}).folgaColisao_m; if (!(fol >= 0)) fol = 0.5;
       var r = BIM.icarColisoes({ folga: fol, uids: ic.uids, redes: p.redes || [] });
       if (!r || !r.ok) { UI.toast("Não consegui verificar o caminho: " + ((r && r.erro) || "sem resposta do 3D") + ".", "erro"); return; }
       st.colisoes = st.colisoes || {}; st.colisoes[ic.id] = { resumo: r.resumo, folga: r.folga, bloqueia: r.bloqueia, amostras: r.amostras, obstaculos: r.obstaculos, ms: r.ms };
       this._icarRender();
-      try { BimShell.status(r.bloqueia ? "Caminho com problema: " + r.resumo.length + " item(ns) — clique na marca para ver o instante." : r.resumo.length ? "Caminho com folga pequena em " + r.resumo.length + " ponto(s)." : "Caminho livre."); } catch (e) {}
+      /* ⚠ no tandem só o 1º (articulado) entra na conferência: o 2º é desenho de referência, sem lança medida — e a frase diz */
+      try { BimShell.status((r.bloqueia ? "Caminho com problema: " + r.resumo.length + " item(ns) — clique na marca para ver o instante." : r.resumo.length ? "Caminho com folga pequena em " + r.resumo.length + " ponto(s)." : "Caminho livre.") +
+        (saC.tandem ? " Tandem: só o 1º equipamento foi conferido — confira o 2º em campo." : "")); } catch (e) {}
     },
     _icarSelAval: function (p) {
       var st = this._icarEst(), ic = p.icamentos[st.sel], eq = this._icarEquip(p);
@@ -18618,13 +18669,22 @@
       if (BIM.icarSimulando && BIM.icarSimulando() && !pausada) { BIM.icarPararSimulacao(); this._icarRender(); this._icarMostrar(idx, false); return; }
       if (pausada) { try { BIM.icarPararSimulacao(); } catch (eP) {} }
       if (!this._icarMostrar(idx, true)) { UI.toast("Para simular: escolha o equipamento e marque a posição dele.", "aviso"); return; }
-      var a = this._icarAvaliar(p, ic);
-      var r = BIM.icarSimular({ uids: ic.uids, pivo: ic.pos || p.pos, cg: a.geo.cg, gancho: a.lingas.gancho, pontos: a.pontos, fundo: a.geo.min.z, coleta: ic.coleta || a.coletaPadrao || null,
-        folga: a.premissas.folgaGancho_m, duracao_s: 9, aoFim: function () { self._icarRender(); self._pesoPintar(); try { BimShell.status("Simulação do içamento " + (idx + 1) + " concluída — tempo estimado na obra: " + Util.fmtNum(a.tempo.total_min, 0) + " min."); } catch (e) {} } });
+      var a = this._icarAvaliar(p, ic), sa = this._icarSimArgs(p, ic, a);
+      var r = BIM.icarSimular(this._icarComFim(sa, function () { self._icarRender(); self._pesoPintar(); try { BimShell.status("Simulação do içamento " + (idx + 1) + " concluída — tempo estimado na obra: " + Util.fmtNum(a.tempo.total_min, 0) + " min."); } catch (e) {} }));
       if (!r || !r.ok) { UI.toast("Não consegui simular: " + ((r && r.erro) || "sem resposta do 3D") + ".", "erro"); return; }
       this._icarRender();
-      try { BimShell.status("Simulando o içamento " + (idx + 1) + ": a peça laranja sai da coleta, sobe, gira com a lança e assenta. A linha roxa é a linha de içamento."); } catch (e2) {}
+      try { BimShell.status(sa.tandem ? "Simulando o içamento " + (idx + 1) + " em tandem: a peça laranja sobe nos dois ganchos, anda em linha reta e assenta — cada lança segue o seu ponto. A linha roxa é a linha de içamento."
+        : "Simulando o içamento " + (idx + 1) + ": a peça laranja sai da coleta, sobe, gira com a lança e assenta. A linha roxa é a linha de içamento."); } catch (e2) {}
     },
+    /* a entrada da simulação (Simular e Verificar o caminho). TANDEM: o 1º leva só o P1, o 2º vai em s.tandem, e a coleta vale só
+       a MARCADA — a suposta ("lado oposto do guindaste") é a de um equipamento só */
+    _icarSimArgs: function (p, ic, a) {
+      var T = a.tandem && a.tandem.lados && a.tandem.lados.length === 2 ? a.tandem.lados : null;
+      return { uids: ic.uids, pivo: ic.pos || p.pos, cg: a.geo.cg, gancho: a.lingas.gancho, pontos: T ? [a.pontos[0]] : a.pontos, fundo: a.geo.min.z,
+        coleta: T ? (ic.coleta || null) : (ic.coleta || a.coletaPadrao || null), folga: a.premissas.folgaGancho_m, duracao_s: 9,
+        tandem: T ? { gancho: T[1].gancho, ponto: a.pontos[1] } : null };
+    },
+    _icarComFim: function (sa, fn) { sa.aoFim = fn; return sa; },
     /* anexos: o arquivo no IndexedDB deste aparelho; a lista (nome, tipo, tamanho) no plano */
     _icarAnexar: function (docId, files) {
       var self = this, lista = files ? Array.prototype.slice.call(files) : [];
@@ -18670,6 +18730,20 @@
         out.push({ nome: ic.nome || "Içamento " + (i + 1), ic: ic, aval: a, eq: eq, pos: ic.pos || p.pos, rumo: ic.pos && ic.rumo_graus != null ? +ic.rumo_graus : p.rumo_graus, coleta: ic.coleta, mesmaPosicao: !ic.pos && i > 0 });
       });
       return out;
+    },
+    /* MODO FOTO: a vista de agora em 1920 × 1080, com sombras (e o céu da hora, se o local tem sol); baixa o PNG e guarda para o
+       plano completo enquanto a tela estiver aberta (não vai para o plano gravado: imagem pesa e a nuvem tem teto por lista) */
+    _icarFotoHD: function () {
+      if (!window.BIM || !BIM.icarFotoHD) return;
+      var st = this._icarEst(); try { this._icarMostrar(st.sel, false); } catch (e0) {}
+      var r = BIM.icarFotoHD({ largura: 1920, altura: 1080 });
+      if (!r || !r.ok) { UI.toast("Não consegui fazer a foto: " + ((r && r.erro) || "sem resposta do 3D") + ".", "erro"); return; }
+      st.fotoHD = r.url;
+      var b = atob(r.url.split(",")[1]), u8 = new Uint8Array(b.length);
+      for (var i = 0; i < b.length; i++) u8[i] = b.charCodeAt(i);
+      Util.baixar(this._icarNomeArq("png"), u8, "image/png");
+      this._icarRender();
+      UI.toast("Foto do cenário baixada (" + r.largura + " × " + r.altura + ", com sombras" + (r.ceu ? " e o céu da hora" : "") + "). Ela entra no plano completo.", "ok");
     },
     _icarNomeArq: function (ext) {
       var ob = ""; try { var o = Store.obter(eid(), "obras", this._bimSel); ob = o ? (o.nome || o.titulo || "") : ""; } catch (e) {}
@@ -18794,6 +18868,10 @@
       /* croqui geral */
       var cq = IcarPlano.svgCroqui(IcarPlano.croqui(itens.filter(function (x) { return x.aval.raio != null; })), 680, 470);
       if (cq) h += "<h3>Croqui em planta (coordenadas do modelo, em metros)</h3>" + cq + '<div class="m" style="font-size:10px">Laranja: raio de trabalho · cinza: alcance máximo · vermelho: área isolada · azul: peças · verde: pontos de içamento.</div>';
+      /* o MODO FOTO da tela (se tirado): o cenário como a obra vai ver — ilustrativo, o carimbo está na imagem */
+      var fhd = this._icarEst().fotoHD;
+      if (fhd) h += '<h3>Cenário (modo foto — imagem ilustrativa)</h3><div class="fig" data-fotohd="1"><figure><img src="' + fhd + '" alt="Cenário do içamento"><figcaption>Vista do 3D com sombras' +
+        ' e o céu da hora; as medidas valem pelo croqui e pelas tabelas.</figcaption></figure></div>';
       /* 5. cada içamento */
       itens.forEach(function (it, i) {
         var a = it.aval, fo = fotos[i];
@@ -18814,6 +18892,7 @@
           "<tr><td>Capacidade na tabela</td><td>" + (a.cap && a.cap.ok ? f(a.cap.cap_kg, 0) + " kg" + (a.cap.lanca ? " · lança " + f(a.cap.lanca, 1) + " m" : "") + " · linhas da tabela: " + esc([].concat(a.cap.raioTab).join(" e ")) + " m" : '<span class="rep">' + esc(a.cap ? a.cap.motivo : "—") + "</span>") + "</td></tr>" +
           "<tr><td>Utilização</td><td>" + (a.util != null ? "<b>" + f(a.util * 100, 1) + " %</b>" : "—") + (a.criticoPor.length ? ' — <span class="av">crítico: ' + esc(a.criticoPor.join("; ")) + "</span>" : "") + (a.reprovado ? ' — <span class="rep">' + esc(a.reprovado) + "</span>" : "") + "</td></tr>" +
           "<tr><td>Área isolada</td><td>raio de " + f(a.isolamento, 2) + " m em torno do centro de giro</td></tr></table>";
+        h += self._icarRelTandem(a);
         h += "<h3>Amarração</h3><table><tr><th>Perna</th><th>Ponto (X; Y; Z)</th><th>Ângulo com a vertical</th><th>Comprimento</th><th>Tração (kg)</th></tr>" + a.lingas.pernasDet.map(function (pd, k) {
           return "<tr><td>P" + (k + 1) + "</td><td>" + f(pd.ponto.x, 3) + "; " + f(pd.ponto.y, 3) + "; " + f(pd.ponto.z, 3) + '</td><td class="n">' + f(pd.anguloVert, 1) + '°</td><td class="n">' + f(pd.comprimento, 2) + ' m</td><td class="n">' + f(pd.tracao_kg, 0) + "</td></tr>";
         }).join("") + "</table><table class=\"ficha\">" +

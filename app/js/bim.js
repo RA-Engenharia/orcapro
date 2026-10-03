@@ -12,6 +12,7 @@
  * ===================================================================== */
 import * as THREE from 'three';
 import { OrbitControls } from '../bim/vendor/OrbitControls.js';
+import { Sky } from '../bim/vendor/Sky.js';
 import { criarCristal } from '../bim/cristal.js';
 import { IfcAPI } from 'web-ifc';
 
@@ -3225,7 +3226,17 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   function icLimpar() {
     icLimparSim();
     while (icar.grupo.children.length) { var o = icar.grupo.children.pop(); icDescartar(o); }
-    icar.equip = null; icar.rotulos = []; icar.vivos = {}; icar.giro = null;
+    icar.equip = null; icar.rotulos = []; icar.vivos = {}; icar.giro = null; icar.tandem = null;
+  }
+  /* TANDEM: a lança, o cabo e a linga do 2º equipamento seguem o gancho dele (g) e o ponto P2 (pt), em coordenadas locais */
+  function icTandemPose(g, pt) {
+    var td = icar.tandem; if (!td) return;
+    var ponta = g.clone().setY(g.y + 3), d = ponta.clone().sub(td.pe), L = Math.max(d.length(), 1e-3);
+    td.lanca.position.copy(td.pe).add(ponta).multiplyScalar(0.5);
+    td.lanca.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), d.normalize()); td.lanca.scale.set(1, 1, L);
+    function mover(l, a, b) { if (!l) return; var at = l.geometry.attributes.position; at.setXYZ(0, a.x, a.y, a.z); at.setXYZ(1, b.x, b.y, b.z); at.needsUpdate = true; l.geometry.computeBoundingSphere(); }
+    mover(td.cabo, g, ponta); if (pt) mover(td.linga, g, pt);
+    td.gAgora = g.clone();
   }
   /* barra (caixa) de a até b, larg × alt de seção */
   function icBarra(a, b, larg, alt, mat) {
@@ -3415,6 +3426,27 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       var cg0 = icL(c.cg).setY(yC);
       icar.grupo.add(icLinha([pos.clone().setY(yC), cg0], 0xf97316));
       icRotulo('R = ' + (Math.round(c.raio * 100) / 100).toString().replace('.', ',') + ' m', pos.clone().lerp(cg0, 0.5).setY(yC + 0.4));
+    }
+    /* TANDEM: o 2º equipamento em desenho de REFERÊNCIA (base, lança até o gancho dele, linga na vertical do P2, raio) —
+       a física/forma articulada é só do 1º */
+    if (c.tandem && c.tandem.pos && c.tandem.gancho) {
+      var t2 = c.tandem, p2 = icL(t2.pos), g2 = icL(t2.gancho), y2 = p2.y, m2 = icMat(0x0ea5e9);
+      var d2 = g2.clone().setY(y2).sub(p2); if (d2.length() > 1e-6) d2.normalize(); else d2.set(1, 0, 0);
+      /* o caminhão do 2º em REFERÊNCIA (as medidas não vêm da ficha): chassi, cabine, giro e rodas, de lado para a carga */
+      var b2 = new THREE.Group(); b2.name = 'tandem-equip'; b2.position.copy(p2).setY(y2); b2.rotation.y = Math.atan2(-d2.z, d2.x) + Math.PI / 2; icar.grupo.add(b2);
+      var ch2 = new THREE.Mesh(new THREE.BoxGeometry(8, 0.9, 2.5), icMat(0x475569)); ch2.position.set(0, 1.35, 0); b2.add(ch2);
+      var cb2c = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.9, 2.4), icMat(0x0369a1)); cb2c.position.set(3.0, 2.3, 0); b2.add(cb2c);
+      var gi2 = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 0.5, 24), m2); gi2.position.set(0, 2.05, 0); b2.add(gi2);
+      [-2.8, -1.4, 1.6, 2.9].forEach(function (u) { [-1, 1].forEach(function (s) { var rd = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.35, 18), icMat(0x111827)); rd.rotation.x = Math.PI / 2; rd.position.set(u, 0.5, s * 1.1); b2.add(rd); }); });
+      /* lança, cabo e linga criados UMA vez e reposicionados por icTandemPose — a simulação chama a cada quadro, e recriar
+         malha por quadro descartaria o material compartilhado */
+      var l2 = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.7, 1), m2); l2.name = 'tandem-lanca'; icar.grupo.add(l2);
+      var cb2 = icLinha([g2, g2.clone().setY(g2.y + 3)], 0x111827); icar.grupo.add(cb2);
+      var lg2 = t2.ponto ? icLinha([g2, icL(t2.ponto)], 0x16a34a) : null; if (lg2) { lg2.name = 'tandem-linga'; icar.grupo.add(lg2); }
+      icar.tandem = { pe: p2.clone().setY(y2 + 2.5), lanca: l2, cabo: cb2, linga: lg2, g: g2.clone(), pt: t2.ponto ? icL(t2.ponto) : null, gAgora: null };
+      icTandemPose(g2, icar.tandem.pt);
+      if (t2.raio > 0) icar.grupo.add(icCirculo(p2, t2.raio, yC, 0x0ea5e9, 0.5));
+      if (t2.rotulo) icRotulo(t2.rotulo, p2.clone().setY(y2 + 4.4));
     }
     (c.rotulos || []).forEach(function (r) { if (r && r.p) icRotulo(r.txt, icL(r.p)); });
     /* com o equipamento articulado o nome sobe acima da superestrutura (embaixo encavalava com a margem e as patolas) */
@@ -3760,7 +3792,20 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var dhT = Math.max(dh0, 0) + (s.folga > 0 ? +s.folga : 1);
     var dPh = phD - phC; while (dPh > Math.PI) dPh -= 2 * Math.PI; while (dPh < -Math.PI) dPh += 2 * Math.PI; phC = phD - dPh; // o caminho curto
     var gD = icL(s.gancho), pD = (s.pontos || []).map(icL);
-    function estado(t) {
+    /* TANDEM: dois ganchos — a peça não gira em torno do centro de giro de um; sobe, ANDA em linha reta da coleta MARCADA ao destino
+       (sem coleta: sobe do chão no próprio lugar) e assenta, e a lança de cada equipamento segue o seu ponto */
+    var tdS = s.tandem && s.tandem.gancho && icar.tandem ? { g: icL(s.tandem.gancho), pt: s.tandem.ponto ? icL(s.tandem.ponto) : null } : null;
+    var Cc0 = tdS && s.coleta ? icL(s.coleta) : Cd.clone(), dhA = tdS && s.coleta ? (+s.coleta.z || 0) - fundoY : dh0;
+    var dhTT = Math.max(dhA, 0) + (s.folga > 0 ? +s.folga : 1);
+    function estadoTandem(t) {
+      var x, z, dh;
+      if (t < 0.22) { var a = t / 0.22; x = Cc0.x; z = Cc0.z; dh = dhA + (dhTT - dhA) * a; }
+      else if (t < 0.74) { var b = (t - 0.22) / 0.52, e = b * b * (3 - 2 * b); x = Cc0.x + (Cd.x - Cc0.x) * e; z = Cc0.z + (Cd.z - Cc0.z) * e; dh = dhTT; }
+      else { var d = Math.min(1, (t - 0.74) / 0.26); x = Cd.x; z = Cd.z; dh = dhTT * (1 - d); }
+      return new THREE.Matrix4().makeTranslation(x - Cd.x, dh, z - Cd.z);
+    }
+    var estado = tdS ? estadoTandem : estadoGiro;
+    function estadoGiro(t) {
       var ph, r, dh;
       if (t < 0.22) { var a = t / 0.22; ph = phC; r = rC; dh = dh0 + (dhT - dh0) * a; }
       else if (t < 0.74) { var b = (t - 0.22) / 0.52, e = b * b * (3 - 2 * b); ph = phC + (phD - phC) * e; r = rC + (rD - rC) * e; dh = dhT; }
@@ -3774,12 +3819,13 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     for (var k2 = 0; k2 <= 60; k2++) trilha.push(Cd.clone().applyMatrix4(estado(k2 / 60)));
     var ln = icLinha(trilha, 0x7c3aed, 0.25); ln.name = 'linha-icamento'; icar.grupo.add(ln);
     var esc = false; try { aplicar4DSim({ ocultos: s.uids || [] }); esc = true; } catch (_) {}
-    icar.sim = { t: 0, dur: Math.max(2, +s.duracao_s || 9), fantasma: fant, estado: estado, gD: gD, pD: pD, escondeu: esc, aoFim: s.aoFim, parado: !!s.pausado };
+    icar.sim = { t: 0, dur: Math.max(2, +s.duracao_s || 9), fantasma: fant, estado: estado, gD: gD, pD: pD, escondeu: esc, aoFim: s.aoFim, parado: !!s.pausado, tandem: tdS };
     function passo() {
       var si = icar.sim; if (!si) return;
       var M = si.estado(Math.min(1, si.t));
       si.fantasma.matrix.copy(M); si.fantasma.matrixWorldNeedsUpdate = true;
       icAtualizarLanca(si.gD.clone().applyMatrix4(M), si.pD.map(function (p) { return p.clone().applyMatrix4(M); }));
+      if (si.tandem) icTandemPose(si.tandem.g.clone().applyMatrix4(M), si.tandem.pt ? si.tandem.pt.clone().applyMatrix4(M) : null);
     }
     icar.sim.passo = passo; passo();
     return { ok: true, malhas: n, trilha: trilha.length };
@@ -3977,6 +4023,27 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
   var IC_M_MOTOR = new THREE.Matrix4().set(1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1);   // motor (x, y, z) → local (x, z, −y)
   /* a textura da fachada: 1 quadro = 3 m × 3 m (um pavimento), reboco claro e uma janela de 1,2 × 1,4 m com peitoril a 1 m */
+  /* MATERIAIS DO CENÁRIO SEM ARQUIVO (como a fachada): asfalto e grama com grão, semente fixa. A UV do ShapeGeometry é em METROS,
+     então a textura repete a cada `passo` m. ⚠ Compartilhadas (texCompartilhada): o descarte do redesenho não as destrói. */
+  var icTexs = {};
+  function icTexGrao(nome, base, cores, passo) {
+    if (!icTexs[nome]) {
+      var cv = document.createElement('canvas'); cv.width = 128; cv.height = 128;
+      var x = cv.getContext('2d'), s = 7;
+      function rnd() { s = (s * 16807) % 2147483647; return s / 2147483647; }
+      x.fillStyle = base; x.fillRect(0, 0, 128, 128);
+      for (var i = 0; i < 2600; i++) { x.globalAlpha = 0.3 + 0.45 * rnd(); x.fillStyle = cores[Math.floor(rnd() * cores.length)]; x.fillRect(Math.floor(rnd() * 128), Math.floor(rnd() * 128), 1 + Math.floor(rnd() * 2), 1 + Math.floor(rnd() * 2)); }
+      x.globalAlpha = 1;
+      var t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(1 / passo, 1 / passo);
+      icTexs[nome] = t;
+    }
+    return icTexs[nome];
+  }
+  function icMatGrao(nome, base, cores, passo, extra) {
+    var o = { map: icTexGrao(nome, base, cores, passo), roughness: 0.95, metalness: 0 };
+    for (var k in extra || {}) o[k] = extra[k];
+    var m = new THREE.MeshStandardMaterial(o); m.userData.texCompartilhada = true; m.userData.grao = nome; return m;
+  }
   var icTexFachada = null;
   function icFachada() {
     if (!icTexFachada) {
@@ -4113,7 +4180,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       if (r.faixa && r.faixa.length >= 4) {
         var gF = new THREE.ShapeGeometry(new THREE.Shape(r.faixa.map(function (q) { return new THREE.Vector2(+q[0], +q[1]); })));
         gF.translate(0, 0, (+r.z || 0) + 0.015);
-        var mF = new THREE.Mesh(gF, new THREE.MeshStandardMaterial({ color: 0x4b5563, roughness: 0.9, metalness: 0, transparent: true, opacity: 0.92, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }));
+        var mF = new THREE.Mesh(gF, icMatGrao('asfalto', '#2e3236', ['#1d2024', '#3c4045', '#282b2f', '#4a4e53'], 4, { roughness: 0.92, transparent: true, opacity: 0.92, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }));
         mF.matrixAutoUpdate = false; mF.matrix.copy(IC_M_MOTOR); mF.name = 'local-rua-faixa'; icLocalG.add(mF); out.faixas = (out.faixas || 0) + 1;
       }
       if (polilinha(r.pontos || [], r.faixa ? 0xe5e7eb : 0x475569, 'local-rua', false, r.faixa ? 1.5 : 0)) out.ruas++;
@@ -4128,7 +4195,18 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       arv.forEach(function (a, i) { var pz = icL({ x: +a.x, y: +a.y, z: +a.z || 0 }), e = +a.escala || 1; ss.set(e, e, e); mm.compose(pz, qq, ss); iT.setMatrixAt(i, mm); iC.setMatrixAt(i, mm); });
       iT.name = 'local-arvores'; iC.name = 'local-arvores-copa'; icLocalG.add(iT); icLocalG.add(iC); out.arvores = arv.length;
     }
-    (cfg.verdes || []).forEach(function (r) { if (polilinha(r.poligono || [], 0x16a34a, 'local-verde', true)) out.verdes++; });
+    (cfg.verdes || []).forEach(function (r) {
+      /* o gramado preenchido (grão de grama a cada 3 m) por baixo do contorno — na cota média do polígono */
+      var pg = r.poligono || [];
+      if (pg.length >= 3) {
+        var zg = 0; pg.forEach(function (q) { zg += q[2] != null ? +q[2] : 0; });
+        var gG = new THREE.ShapeGeometry(new THREE.Shape(pg.map(function (q) { return new THREE.Vector2(+q[0], +q[1]); })));
+        gG.translate(0, 0, zg / pg.length + 0.012);
+        var mG = new THREE.Mesh(gG, icMatGrao('grama', '#5e8a3a', ['#4a7330', '#6f9c45', '#3f6428', '#83ad52'], 3, { transparent: true, opacity: 0.92, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
+        mG.matrixAutoUpdate = false; mG.matrix.copy(IC_M_MOTOR); mG.name = 'local-gramado'; icLocalG.add(mG); out.gramados = (out.gramados || 0) + 1;
+      }
+      if (polilinha(pg, 0x16a34a, 'local-verde', true)) out.verdes++;
+    });
     (cfg.redes || []).forEach(function (r) { if (r.a && r.b && polilinha([r.a, r.b], 0xeab308, 'local-rede', false, 0.6)) out.redes++; });
     (cfg.postes || []).forEach(function (p) {
       /* marcador, não o poste: a altura dele o mapa não tem */
@@ -4167,6 +4245,18 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       var o0 = topo.clone().addScaledVector(dV, -L / 2), corV = cl.estado === 'bloqueado' ? 0xdc2626 : cl.estado === 'atencao' ? 0xd97706 : 0x0284c7;
       var aV = new THREE.ArrowHelper(dV, o0, L, corV, L * 0.25, L * 0.12); aV.name = 'local-vento'; icLocalMundo.add(aV);
       var sV = labelSprite('vento ' + Math.round(+cl.ventoMs) + ' m/s'); sV.position.copy(o0); icLocalMundo.add(sV); out.vento = true;
+    }
+    /* CÉU FÍSICO (Preetham — bim/vendor/Sky.js) com o sol da hora: só quando há sol calculado. Acompanha a câmera de CADA vista
+       (onBeforeRender) e fica atrás de tudo; turvo com chuva ou neblina. ⚠ As fotos do plano (fundo branco) o escondem. */
+    if (out.sol) {
+      var ceu = new Sky(); ceu.name = 'local-ceu'; ceu.userData.foraDaFoto = true; ceu.frustumCulled = false; ceu.renderOrder = -10;
+      var un = ceu.material.uniforms, turvo = !!(cl && (+cl.chuva > 0.1 || +cl.neblina >= 20));
+      un.turbidity.value = turvo ? 14 : 4; un.rayleigh.value = turvo ? 0.6 : 1.6; un.mieCoefficient.value = 0.005; un.mieDirectionalG.value = 0.8;
+      un.sunPosition.value.copy(dS);
+      /* ⚠ PARADO NA ORIGEM e enorme (como o exemplo do three): o shader mede a direção a partir da ORIGEM (cameraPos = 0) e
+         desenha no plano do fundo (z = w), sem corte pelo `far`. Seguir a câmera mostrava as quinas da caixa (medido na foto). */
+      ceu.scale.setScalar(450000);
+      icLocalMundo.add(ceu); out.ceu = true;
     }
     modelRoot.updateMatrixWorld(); icLocalG.matrix.copy(modelRoot.matrixWorld); icLocalG.matrixWorldNeedsUpdate = true;
     return out;
@@ -4303,6 +4393,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       } else { dir = new THREE.Vector3(0.75, 0.62, 0.9).normalize(); camera.up.set(0, 1, 0); }
       camera.position.copy(c).add(dir.multiplyScalar(dist));
       icMapaG.visible = false;   // o mapa do agente ajuda a escolher, não vai para a foto do plano
+      var ceuC = icLocalMundo.getObjectByName('local-ceu'); if (ceuC) ceuC.visible = false;   // foto do plano é técnica, fundo branco
       camera.near = Math.max(0.05, dist - raio * 3); camera.far = dist + raio * 4;
       camera.lookAt(c); camera.updateProjectionMatrix();
       scene.background = new THREE.Color(0xffffff);
@@ -4312,10 +4403,105 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     } catch (_) { url = null; } finally {
       camera.position.copy(bk.p); camera.up.copy(bk.up); camera.fov = bk.fov; camera.near = bk.near; camera.far = bk.far; scene.background = bk.bg;
       icMapaG.visible = true;
+      var ceuV = icLocalMundo.getObjectByName('local-ceu'); if (ceuV) ceuV.visible = true;
       if (_selLn && vLn !== null) _selLn.visible = vLn;
       camera.lookAt(orbit.target); camera.updateProjectionMatrix();
     }
     return url;
+  }
+  /* MODO FOTO (ESPEC §II.9.2): a câmera de quem está olhando, numa imagem grande — desenhada no DOBRO do tamanho e reduzida
+     (anti-serrilhado de verdade), com SOMBRA ligada no modelo, no equipamento e no cenário e o mapa de sombra (4096) apertado na
+     cena. ⚠ Tudo volta como estava (tamanho do canvas, sombras, luz), também se der erro no meio. ⚠ Não é traçado de raios: é o
+     mesmo motor do 3D com o melhor dele ligado — e o carimbo diz "ilustrativo". */
+  function icRaizesSombra() {
+    var r = [modelRoot];
+    (S.modelos || []).forEach(function (mo) { if (mo._agreg && mo._agreg.grupo) r.push(mo._agreg.grupo); });
+    return r.concat([icar.grupo, icPlantaG, icLocalG, icLocalMundo]);
+  }
+  function icFotoHD(o) {
+    o = o || {};
+    if (!S) return { ok: false, erro: 'visualizador não montado' };
+    var W = Math.max(320, Math.min(3840, Math.round(+o.largura || 1920))), H = Math.max(240, Math.min(2160, Math.round(+o.altura || 1080)));
+    var maxRB = (renderer.capabilities && renderer.capabilities.maxRenderbufferSize) || 4096, ss = Math.max(1, Math.min(2, Math.floor(Math.min(maxRB / W, maxRB / H))));
+    var cv = renderer.domElement, tam = new THREE.Vector2(); renderer.getSize(tam);
+    var sc = dir.shadow.camera, bk = { w: cv.width, h: cv.height, pr: renderer.getPixelRatio(), asp: camera.aspect, cast: dir.castShadow, map: dir.shadow.mapSize.clone(),
+      cam: [sc.left, sc.right, sc.top, sc.bottom, sc.near, sc.far], pos: dir.position.clone(), tgt: dir.target.position.clone() };
+    var marcadas = [], envs = [], trocas = [], luzes = { d: dir.intensity, h: hemi.intensity, f: fill.intensity, g: grid.visible }, out = null;
+    try {
+      /* LUZ DE FOTO: o 3D de todo dia é claro por igual (ambiente + hemisfério + preenchimento) e a sombra some nele — medido: 1.445
+         pixels mais escuros numa foto de 518 mil. Na foto o sol manda: sol × 1,7, hemisfério × 0,55, preenchimento × 0,4 e o
+         reflexo do ambiente × 0,5; a grade técnica do chão sai. Tudo volta no finally. */
+      dir.intensity = luzes.d * 1.7; hemi.intensity = luzes.h * 0.55; fill.intensity = luzes.f * 0.4; grid.visible = false;
+      /* o SATÉLITE no chão é material sem luz (MeshBasic): a sombra do modelo não caía nele. Na foto ele vira material com luz
+         (o mesmo mapa) e recebe sombra — nas duas fotos (com e sem sombra), para a comparação medir só a sombra */
+      icLocalG.children.forEach(function (m) {
+        if (m.name !== 'local-imagem' || !m.material || !m.material.isMeshBasicMaterial) return;
+        var b = m.material;
+        trocas.push([m, b, m.receiveShadow]);
+        m.material = new THREE.MeshStandardMaterial({ map: b.map, transparent: b.transparent, opacity: b.opacity, depthWrite: false, side: b.side, polygonOffset: b.polygonOffset,
+          polygonOffsetFactor: b.polygonOffsetFactor, polygonOffsetUnits: b.polygonOffsetUnits, roughness: 1, metalness: 0 });
+        m.receiveShadow = true;
+      });
+      icRaizesSombra().forEach(function (g) {
+        g.traverse(function (m) {
+          if (!m.isMesh || !m.material) return;
+          (Array.isArray(m.material) ? m.material : [m.material]).forEach(function (mt) {
+            if (mt.envMapIntensity == null || mt.userData.__envFoto) return;
+            mt.userData.__envFoto = true; envs.push([mt, mt.envMapIntensity]); mt.envMapIntensity = mt.envMapIntensity * 0.5;
+          });
+        });
+      });
+      /* ⚠ O MODELO NA TELA É A MALHA MESCLADA (mo._agreg, pendurada no scene, camada 0): as peças do modelRoot estão na camada 1
+         só para o clique e NÃO são desenhadas — ligar sombra só nelas dava uma foto sem sombra nenhuma (medido: 0 pixel de
+         diferença com e sem sombra). Entram as duas, mais o entorno aceito (icPlantaG). */
+      /* o.semSombra: a mesma foto sem sombra — só para medir que a sombra APARECE (a comparação pixel a pixel da e2e) */
+      if (!o.semSombra) icRaizesSombra().forEach(function (g) {
+        g.traverse(function (m) {
+          if (!m.isMesh || !m.geometry || m.name === 'local-ceu') return;
+          marcadas.push([m, m.castShadow, m.receiveShadow]);
+          var chao = /^local-(relevo|levantamento|imagem|rua-faixa|gramado)$/.test(m.name), fino = m.material && m.material.transparent && m.material.opacity < 0.5;
+          m.castShadow = !chao && !fino; m.receiveShadow = true;
+        });
+      });
+      /* a área da sombra: modelo + equipamento + o ENTORNO aceito (o prédio do vizinho faz sombra no chão da obra) — até 150 m de
+         raio, para o mapa de 4096 não passar de ~7 cm por texel */
+      var box = icLocalCaixa(); if (icar.grupo.children.length) { var bF = icCaixaFoco(); if (!bF.isEmpty()) box.union(bF); }
+      icPlantaG.children.forEach(function (e) { if (e.name === 'entorno') { var bE = new THREE.Box3().setFromObject(e); if (!bE.isEmpty()) box.union(bE); } });
+      var ctr = box.getCenter(new THREE.Vector3()), R = Math.min(150, box.getSize(new THREE.Vector3()).length() / 2 + 2);
+      var dSol = dir.position.clone().sub(dir.target.position); if (dSol.lengthSq() < 1e-9) dSol.set(0.4, 1, 0.3); dSol.normalize();
+      dir.target.position.copy(ctr); dir.target.updateMatrixWorld(); dir.position.copy(ctr).addScaledVector(dSol, R * 2);
+      sc.left = -R; sc.right = R; sc.top = R; sc.bottom = -R; sc.near = 0.5; sc.far = R * 4; sc.updateProjectionMatrix();
+      dir.shadow.mapSize.set(4096, 4096); if (dir.shadow.map) { dir.shadow.map.dispose(); dir.shadow.map = null; }
+      dir.castShadow = !o.semSombra;
+      renderer.setPixelRatio(1); renderer.setSize(W * ss, H * ss, false);
+      camera.aspect = W / H; camera.updateProjectionMatrix();
+      renderer.setScissorTest(false); renderer.setViewport(0, 0, W * ss, H * ss);
+      renderer.render(scene, camera);
+      var mapaOk = !!(dir.shadow.map && dir.shadow.map.texture);
+      var c2 = document.createElement('canvas'); c2.width = W; c2.height = H;
+      var x2 = c2.getContext('2d'); x2.fillStyle = '#eef2f6'; x2.fillRect(0, 0, W, H);   // sem céu, o fundo do 3D é transparente
+      x2.imageSmoothingEnabled = true; x2.imageSmoothingQuality = 'high';
+      x2.drawImage(cv, 0, 0, W * ss, H * ss, 0, 0, W, H);
+      var txt = String(o.carimbo || 'OrçaPRO · modo foto · imagem ilustrativa').slice(0, 90), fs = Math.round(H / 54);
+      x2.font = '600 ' + fs + 'px system-ui, sans-serif'; var tw = x2.measureText(txt).width;
+      x2.fillStyle = 'rgba(15,23,42,.55)'; x2.fillRect(W - tw - fs * 1.6, H - fs * 2.2, tw + fs * 1.2, fs * 1.7);
+      x2.fillStyle = '#fff'; x2.fillText(txt, W - tw - fs, H - fs * 0.95);
+      out = { ok: true, url: c2.toDataURL('image/png'), largura: W, altura: H, superamostra: ss, sombras: marcadas.filter(function (x) { return x[0].castShadow; }).length,
+        mescladas: marcadas.filter(function (x) { return x[0].userData.agregado; }).length, satelite: trocas.length,
+        ceu: !!icLocalMundo.getObjectByName('local-ceu'), mapaSombra: dir.shadow.mapSize.x, mapaGerado: mapaOk, recebem: marcadas.length, luz: Math.round(dir.intensity * 100) / 100 };
+    } catch (e) { out = { ok: false, erro: String((e && e.message) || e) }; }
+    finally {
+      marcadas.forEach(function (x) { x[0].castShadow = x[1]; x[0].receiveShadow = x[2]; });
+      envs.forEach(function (x) { x[0].envMapIntensity = x[1]; delete x[0].userData.__envFoto; });
+      trocas.forEach(function (x) { var t = x[0].material; x[0].material = x[1]; x[0].receiveShadow = x[2]; try { t.dispose(); } catch (_) {} });   // o mapa (satélite) é do original: não descartar
+      dir.intensity = luzes.d; hemi.intensity = luzes.h; fill.intensity = luzes.f; grid.visible = luzes.g;
+      dir.castShadow = bk.cast; dir.shadow.mapSize.copy(bk.map); if (dir.shadow.map) { dir.shadow.map.dispose(); dir.shadow.map = null; }
+      sc.left = bk.cam[0]; sc.right = bk.cam[1]; sc.top = bk.cam[2]; sc.bottom = bk.cam[3]; sc.near = bk.cam[4]; sc.far = bk.cam[5]; sc.updateProjectionMatrix();
+      dir.position.copy(bk.pos); dir.target.position.copy(bk.tgt); dir.target.updateMatrixWorld();
+      renderer.setPixelRatio(bk.pr); renderer.setSize(tam.x, tam.y, false); camera.aspect = bk.asp; camera.updateProjectionMatrix();
+      if (out) out.restaurado = cv.width === bk.w && cv.height === bk.h && dir.castShadow === bk.cast && dir.intensity === luzes.d && hemi.intensity === luzes.h && grid.visible === luzes.g;
+    }
+    return out;
   }
   /* o que importa na foto e no enquadramento: equipamento, carga, raio e área isolada — sem o círculo do
      alcance máximo (o de um guindaste de 40 m afastava a câmera até o caminhão virar um ponto) nem os rótulos */
@@ -4331,10 +4517,12 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
   S._icar = { geometria: icGeometria, chao: function () { return icM(new THREE.Vector3(0, icChao(), 0)).z; }, pontoNoChao: icPontoNoChao, sondar: icSondar, desenhar: icDesenhar, limpar: icLimpar,
     simular: icSimular, simulando: function () { return !!icar.sim; }, parar: function () { icLimparSim(); return true; },
-    colisoes: icColisoes, caixas: icCaixas, mapa: icMapa, planta: icPlanta, plantaPonto: icPlantaPonto, visada: icVisada, local: icLocal, geoIfc: icGeoIfc,
+    colisoes: icColisoes, caixas: icCaixas, fotoHD: icFotoHD, mapa: icMapa, planta: icPlanta, plantaPonto: icPlantaPonto, visada: icVisada, local: icLocal, geoIfc: icGeoIfc,
     localEstado: function () {
-      var c = { faixas: 0, arvores: 0, levantamento: 0, curvas: 0, imagem: 0, relevo: 0, ruas: 0, verdes: 0, postes: 0, redes: 0, chuva: 0, vento: 0, neblina: !!(icLocalEst.nevoaVis && scene.fog), sol: !!icLocalEst.sol, luz: { x: dir.position.x, y: dir.position.y, z: dir.position.z, i: dir.intensity } };
-      icLocalG.children.forEach(function (o) { if (o.name === 'local-rua-faixa') c.faixas++; else if (o.name === 'local-arvores') c.arvores = o.count; else if (o.name === 'local-levantamento') c.levantamento++; else if (o.name === 'local-curvas') c.curvas = o.geometry.attributes.position.count / 2; else if (o.name === 'local-imagem') c.imagem++; else if (o.name === 'local-relevo') c.relevo++; else if (o.name === 'local-rua') c.ruas++; else if (o.name === 'local-verde') c.verdes++; else if (o.name === 'local-poste') c.postes++; else if (o.name === 'local-rede') c.redes++; });
+      var c = { gramados: 0, ceu: !!icLocalMundo.getObjectByName('local-ceu'), faixas: 0, arvores: 0, levantamento: 0, curvas: 0, imagem: 0, relevo: 0, ruas: 0, verdes: 0, postes: 0, redes: 0, chuva: 0, vento: 0, neblina: !!(icLocalEst.nevoaVis && scene.fog), sol: !!icLocalEst.sol, luz: { x: dir.position.x, y: dir.position.y, z: dir.position.z, i: dir.intensity } };
+      c.graos = []; icLocalG.children.forEach(function (o) { var gr = (o.name === 'local-gramado' || o.name === 'local-rua-faixa') && o.material && o.material.userData.grao; if (gr && c.graos.indexOf(gr) < 0) c.graos.push(gr); });
+      c.sombrasLigadas = 0; icRaizesSombra().slice(0, -4).forEach(function (g) { g.traverse(function (m) { if (m.isMesh && m.castShadow) c.sombrasLigadas++; }); });   // o modo foto devolve como estava (modelo e malha mesclada)
+      icLocalG.children.forEach(function (o) { if (o.name === 'local-gramado') c.gramados++; else if (o.name === 'local-rua-faixa') c.faixas++; else if (o.name === 'local-arvores') c.arvores = o.count; else if (o.name === 'local-levantamento') c.levantamento++; else if (o.name === 'local-curvas') c.curvas = o.geometry.attributes.position.count / 2; else if (o.name === 'local-imagem') c.imagem++; else if (o.name === 'local-relevo') c.relevo++; else if (o.name === 'local-rua') c.ruas++; else if (o.name === 'local-verde') c.verdes++; else if (o.name === 'local-poste') c.postes++; else if (o.name === 'local-rede') c.redes++; });
       icLocalMundo.children.forEach(function (o) { if (o.name === 'local-chuva') c.chuva = o.geometry.attributes.position.count; else if (o.name === 'local-vento') c.vento++; });
       return c;
     },
@@ -4402,7 +4590,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       var vis = 0; (uids || []).forEach(function (u) { malhasDaPeca(u).forEach(function (m) { if (m.visible) vis++; }); });
       var lc = icar.equip && icar.equip.gancho ? [icar.equip.gancho.x, icar.equip.gancho.y, icar.equip.gancho.z] : null; // onde o gancho está agora
       return { objetos: icar.grupo.children.length, equip: !!icar.equip, equipPos: icar.equip ? icM(icar.equip.pos) : null, sim: icar.sim ? { t: icar.sim.t, malhas: icar.sim.fantasma.children.length - 1 } : null, rotulos: icar.rotulos.length,
-        malhasVisiveis: vis, lanca: lc, linhaIcamento: !!icar.grupo.getObjectByName('linha-icamento') };
+        malhasVisiveis: vis, lanca: lc, linhaIcamento: !!icar.grupo.getObjectByName('linha-icamento'),
+        tandem: ['tandem-equip', 'tandem-lanca', 'tandem-linga'].filter(function (n) { return !!icar.grupo.getObjectByName(n); }).length,
+        tandemGancho: icar.tandem && icar.tandem.gAgora ? icM(icar.tandem.gAgora) : null };
     } };
   /* corte de altura do visitante ("ver por dentro"), fora do imersivo — no
      modo visitante não há planta nem corte livre disputando o plano */
@@ -8678,6 +8868,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (on && tri > 1800000) return false; // modelo pesado: sombra travaria — segue sem
     dir.castShadow = !!on;
     todasMalhas(function (m) { if (m.geometry) { m.castShadow = !!on; m.receiveShadow = !!on; } });
+    /* ⚠ a malha MESCLADA é o que a câmera desenha (as peças acima estão na camada do clique): sem ela, a sombra do imersivo
+       não aparecia desde a agregação — achado no modo foto do içamento (02/10/2026) */
+    S.modelos.forEach(function (mo) { if (mo._agreg && mo._agreg.grupo) mo._agreg.grupo.traverse(function (m) { if (m.isMesh) { m.castShadow = !!on; m.receiveShadow = !!on; } }); });
     return true;
   }
 
@@ -12726,6 +12919,7 @@ window.BIM = {
   icarCaixas: function (fora, regiao) { return (S && S._icar) ? S._icar.caixas(fora, regiao) : []; },     // caixa (motor) de cada peça visível — para o agente do equipamento
   icarMapa: function (mp) { return (S && S._icar) ? S._icar.mapa(mp) : { ok: false, erro: 'visualizador não montado' }; },   // mapa do agente no chão (null apaga)
   icarPlanta: function (cfg) { return (S && S._icar) ? S._icar.planta(cfg) : { ok: false, erro: 'visualizador não montado' }; }, // planta PDF/DXF + entorno (null apaga)
+  icarFotoHD: function (o) { return (S && S._icar) ? S._icar.fotoHD(o) : { ok: false, erro: 'visualizador não montado' }; },   // modo foto: PNG grande, com sombra e anti-serrilhado
   icarLocal: function (cfg) { return (S && S._icar) ? S._icar.local(cfg) : { ok: false, erro: 'visualizador não montado' }; },   // relevo, ruas, postes, sol e clima da obra (null apaga)
   icarGeoIfc: function () { return (S && S._icar) ? S._icar.geoIfc() : { ok: false, motivo: 'visualizador não montado' }; },     // latitude/longitude e norte que o IFC traz
   _icarLocalEstado: function () { return (S && S._icar) ? S._icar.localEstado() : null; },                                     // gancho de teste
