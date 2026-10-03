@@ -140,6 +140,29 @@
     var e = dx * c + dy * s, n = -dx * s + dy * c, r = deslocar(geo.lat, geo.lon, e, n);
     return r;
   }
+  /* ---------- 3D FOTORREALISTA DO GOOGLE: ECEF (WGS 84) → MOTOR ----------
+     Os blocos do Google chegam em ECEF (centro da Terra, metros, elipsoide WGS 84 — não o GRS80 de cima: a diferença é de décimos
+     de milímetro, mas aqui vale a constante do provedor). A matriz leva ECEF ao motor: leste/norte/cima (ENU) no ponto lat/lon da
+     obra, na altura 0 do elipsoide, girado pelo norte do modelo e posto em (x0, y0) — a MESMA conta do paraMotor — e a altura
+     deslocada de `zDesloc` (a tela acha o chão do Google no ponto da obra e põe na cota do chão do modelo: zDesloc = zChão − hChão).
+     Coluna a coluna, como o three guarda (elements[col * 4 + lin]). */
+  var WA = 6378137, WF = 1 / 298.257223563, WE2 = WF * (2 - WF);
+  function ecef(lat, lon, h) {
+    var fi = lat * RAD, la = lon * RAD, sf = Math.sin(fi), cf = Math.cos(fi), N = WA / Math.sqrt(1 - WE2 * sf * sf), hh = +h || 0;
+    return [(N + hh) * cf * Math.cos(la), (N + hh) * cf * Math.sin(la), (N * (1 - WE2) + hh) * sf];
+  }
+  function matrizEcefMotor(geo, zDesloc) {
+    var fi = geo.lat * RAD, la = geo.lon * RAD, sf = Math.sin(fi), cf = Math.cos(fi), sl = Math.sin(la), cl = Math.cos(la);
+    var E = [-sl, cl, 0], N = [-sf * cl, -sf * sl, cf], U = [cf * cl, cf * sl, sf], O = ecef(geo.lat, geo.lon, 0);
+    var t = (+geo.norte || 0) * RAD, c = Math.cos(t), s = Math.sin(t);
+    /* motor x = x0 + e·cos θ − n·sen θ ; y = y0 + e·sen θ + n·cos θ ; z = u + zDesloc  (e, n, u = linhas E, N, U aplicadas a P − O) */
+    var rx = [E[0] * c - N[0] * s, E[1] * c - N[1] * s, E[2] * c - N[2] * s], ry = [E[0] * s + N[0] * c, E[1] * s + N[1] * c, E[2] * s + N[2] * c], rz = U;
+    function pe(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+    var tx = (+geo.x0 || 0) - pe(rx, O), ty = (+geo.y0 || 0) - pe(ry, O), tz = (+zDesloc || 0) - pe(rz, O);
+    return [rx[0], ry[0], rz[0], 0, rx[1], ry[1], rz[1], 0, rx[2], ry[2], rz[2], 0, tx, ty, tz, 1];
+  }
+  /* aplica a matriz (coluna a coluna) a um ponto */
+  function aplicarMatriz(m, p) { return [m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12], m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13], m[2] * p[0] + m[6] * p[1] + m[10] * p[2] + m[14]]; }
   /* IfcMapConversion (Eastings, Northings, XAxisAbscissa, XAxisOrdinate, Scale) + EPSG → georreferência do motor */
   function geoDoMapConversion(mc, epsg) {
     var fz = fusoDoEpsg(epsg); if (!fz || !mc) return null;
@@ -154,7 +177,7 @@
 
   var IcarGeo = { deslocar: deslocar, enu: enu, raios: raios, utm: utm, deUtm: deUtm, fusoDe: fusoDe, fusoDoEpsg: fusoDoEpsg, tileDe: tileDe, resolucao: resolucao,
     sol: sol, nascerPor: nascerPor, lerCoordenada: lerCoordenada, anguloIfc: anguloIfc, norteDeTrueNorth: norteDeTrueNorth, paraMotor: paraMotor, deMotor: deMotor,
-    geoDoMapConversion: geoDoMapConversion };
+    geoDoMapConversion: geoDoMapConversion, ecef: ecef, matrizEcefMotor: matrizEcefMotor, aplicarMatriz: aplicarMatriz };
   global.IcarGeo = IcarGeo;
   if (typeof module !== "undefined" && module.exports) module.exports = IcarGeo;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

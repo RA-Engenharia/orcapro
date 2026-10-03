@@ -1,6 +1,12 @@
 ﻿POLÍTICA DE PRIVACIDADE — OrçaPRO IA
-Versão 1.11 — vigente a partir de 02/10/2026
+Versão 1.12 — vigente a partir de 03/10/2026
 Elaborada conforme a Lei nº 13.709/2018 (LGPD)
+
+O que mudou na 1.12: entrou no item 4.16 o 3D FOTORREALISTA DO GOOGLE do plano
+de içamento. É o único recurso daquela aba em que o SEU NAVEGADOR fala direto
+com o provedor: ao ligar, ele pede ao Google (Map Tiles API) os blocos 3D da
+região da obra — o Google recebe, por esses pedidos, a localização da obra e o
+seu IP. O Google entrou na lista do item 8 para isso.
 
 O que mudou na 1.11: o CLIMA DO DIÁRIO DE OBRA (item 4.9) deixou de ser
 buscado direto do seu navegador no Open-Meteo. Agora o programa manda o
@@ -727,6 +733,16 @@ que você mandar guardar.
 O link "conferir no mapa" abre o site do OpenStreetMap numa aba nova, com a
 coordenada da obra, só quando você clica nele.
 
+3D fotorrealista do Google — a EXCEÇÃO desta aba: quando você aperta "Ligar o
+3D do Google", o nosso servidor entrega ao programa a chave de acesso da RA (só
+para licença ativa) e o SEU NAVEGADOR passa a pedir DIRETO ao Google (Map Tiles
+API) os blocos 3D da região que aparece na tela. Por esses pedidos o Google
+recebe a localização da obra (a região dos blocos) e o seu IP, como em qualquer
+mapa; não recebe o nome da obra, o cliente, o seu nome nem o modelo 3D. Os
+blocos ficam só na tela enquanto o 3D está ligado (os termos do Google não
+deixam guardá-los), com o logo e os créditos do Google, e não entram nas fotos
+do plano nem no modo foto. Desligar o botão para os pedidos.
+
 
 5. O QUE NUNCA FAZEMOS
 
@@ -837,6 +853,9 @@ Boa parte disso você resolve sozinho e na hora, dentro do programa — exportan
     coordenada.
   · Esri (EUA) — imagem de satélite, quando habilitada no nosso servidor:
     recebe os quadros de mapa que cobrem a obra (item 4.16).
+  · Google LLC — Google Maps Platform (Map Tiles API, 3D fotorrealista): recebe,
+    direto do seu navegador, os pedidos dos blocos 3D da região da obra quando
+    você liga o "3D do Google" no plano de içamento (item 4.16).
   · Google LLC — Google Maps: recebe o endereço da obra quando você abre a
     aba Mapa dela (item 4.11).
   · Google LLC — app do Google no Android (Scene Viewer): quando alguém escolhe

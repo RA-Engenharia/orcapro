@@ -1,0 +1,5 @@
+3d-tiles-renderer 0.3.40 (NASA-AMMOS/3DTilesRendererJS) - licenca Apache-2.0 (arquivo LICENSE ao lado).
+Copia SEM ALTERACAO de src/base, src/three e src/utilities do pacote npm (sem src/r3f e sem os .d.ts).
+Usado so pelo "3D fotorrealista do Google" do plano de icamento (js/bim.js, import dinamico):
+nada disso carrega se a pessoa nao ligar o 3D do Google.
+Os imports 'three/examples/jsm/...' resolvem pelo importmap do index.html para bim/vendor/jsm/ (three r150).

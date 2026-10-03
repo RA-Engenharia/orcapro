@@ -4272,6 +4272,160 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     /* a neblina acompanha a câmera: perto fica nítido, o que passa da visibilidade some (a distância da órbita muda com o zoom) */
     if (icLocalEst.nevoaVis && scene.fog) { var D = camera.position.distanceTo(orbit.target); scene.fog.near = D * 0.6; scene.fog.far = D + icLocalEst.nevoaVis; }
   });
+  /* =====================================================================
+   * 3D FOTORREALISTA DO GOOGLE (ESPEC §II.9.2) — Map Tiles API pelo 3d-tiles-renderer 0.3.40 (bim/vendor/3dtiles, Apache-2.0),
+   * carregado por IMPORT DINÂMICO: quem não liga não baixa nada. A chave vem do servidor da RA (só para licença ativa) e vai em
+   * cada pedido ao Google — é chave de navegador, restrita à Map Tiles API e com teto diário no console (quem paga é a RA).
+   * ⚠ TERMOS (developers.google.com/maps/documentation/tile/policies, conferidos em 03/10/2026): o LOGO do Google Maps e os
+   *   créditos dos blocos visíveis ficam SEMPRE na tela enquanto o 3D está ligado (o selo no canto); nada guardado para usar sem
+   *   rede; o modelo pode ficar por cima, nada copiado dos blocos. O 3D do Google SAI das fotos do plano e do modo foto: os termos
+   *   não dão permissão escrita para imagem estática impressa.
+   * ⚠ POSIÇÃO: ECEF → motor por IcarGeo.matrizEcefMotor (a MESMA conta do mapa 2D, < 2 cm em 100 m) e a altura achada no chão do
+   *   Google num anel em volta do modelo (quartil de baixo: telhado e árvore não puxam para cima), posta na cota do chão do modelo.
+   * ⚠ RECORTE: a área do modelo (+3 m) sai do 3D do Google — senão a casa que existe hoje no lote atravessa o projeto.
+   * ===================================================================== */
+  var IC_G3_VENDOR = new URL('../bim/vendor/', import.meta.url).href, IC_G3_LOGO = new URL('../img/terceiros/GoogleMaps_Logo_WithDarkOutline.svg', import.meta.url).href;
+  var icG3 = { on: false, mod: null, tiles: null, draco: null, cfg: null, zDesloc: 0, hChao: null, buscas: 0, ultBusca: 0, selo: null, erro: null, carregados: 0, planos: null, clipAntes: null, versao: 0, quadros: 0 };
+  var icG3G = new THREE.Group(); icG3G.name = 'google-3d'; icG3G.matrixAutoUpdate = false; scene.add(icG3G);
+  var icG3Ray = new THREE.Raycaster();
+  function icG3Carregar() {
+    if (icG3.mod) return Promise.resolve(icG3.mod);
+    return Promise.all([import('../bim/vendor/3dtiles/three/TilesRenderer.js'), import('../bim/vendor/3dtiles/three/plugins/GoogleCloudAuthPlugin.js'),
+      import('three/examples/jsm/loaders/GLTFLoader.js'), import('three/examples/jsm/loaders/DRACOLoader.js')])
+      .then(function (m) { icG3.mod = { TilesRenderer: m[0].TilesRenderer, Auth: m[1].GoogleCloudAuthPlugin, GLTFLoader: m[2].GLTFLoader, DRACOLoader: m[3].DRACOLoader }; return icG3.mod; });
+  }
+  function icG3Matriz() {
+    var c = icG3.cfg; if (!c || !window.IcarGeo) return;
+    var M = new THREE.Matrix4().fromArray(IcarGeo.matrizEcefMotor({ lat: +c.lat, lon: +c.lon, x0: +c.x0 || 0, y0: +c.y0 || 0, norte: +c.norte || 0 }, icG3.zDesloc + (+c.ajuste || 0)));
+    modelRoot.updateMatrixWorld();
+    icG3G.matrix.copy(modelRoot.matrixWorld).multiply(IC_M_MOTOR).multiply(M); icG3G.matrixWorldNeedsUpdate = true; icG3G.updateMatrixWorld(true);
+  }
+  /* o recorte: 4 planos verticais em volta da caixa do modelo (+3 m) com clipIntersection — some só o que está DENTRO dos quatro */
+  function icG3Planos() {
+    var b = icLocalCaixa(), mg = 3;
+    return [new THREE.Plane(new THREE.Vector3(1, 0, 0), -(b.max.x + mg)), new THREE.Plane(new THREE.Vector3(-1, 0, 0), b.min.x - mg),
+      new THREE.Plane(new THREE.Vector3(0, 0, 1), -(b.max.z + mg)), new THREE.Plane(new THREE.Vector3(0, 0, -1), b.min.z - mg)];
+  }
+  function icG3RecorteEm(obj) {
+    var pl = icG3.cfg && icG3.cfg.recortar !== false ? icG3.planos : null;
+    obj.traverse(function (o) { if (!o.material) return; (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { m.clippingPlanes = pl; m.clipIntersection = true; m.needsUpdate = true; }); });
+  }
+  function icG3AplicarRecorte() { icG3.planos = icG3Planos(); if (icG3.tiles) icG3RecorteEm(icG3.tiles.group); }
+  /* o chão do Google: 36 raios verticais em 3 anéis em volta do modelo; vale o 20º percentil (telhado e árvore não puxam para cima).
+     ⚠ SÓ BLOCO FINO conta (erro geométrico até IC_G3_ERRO_MAX m): os primeiros blocos do Google são a Terra em poucos triângulos e o
+       "chão" neles sai quilômetros fora — medido em 03/10/2026 com o Google de verdade: 2.020 m e depois 997 m, e deslocar o 3D
+       por isso afastava a câmera da superfície e os blocos nunca refinavam. A 1ª altura vem da altitude do relevo (cfg.altitude). */
+  var IC_G3_ERRO_MAX = 15;
+  function icG3AcharChao() {
+    var c = icG3.cfg, t = icG3.tiles; if (!c || !t) return false;
+    var porCena = new Map(); if (t.visibleTiles) t.visibleTiles.forEach(function (tl) { if (tl && tl.cached && tl.cached.scene) porCena.set(tl.cached.scene, +tl.geometricError || 0); });
+    function erroDo(o) { for (var q = o; q; q = q.parent) { if (porCena.has(q)) return porCena.get(q); } return Infinity; }
+    var b = icLocalCaixa(), inv = new THREE.Matrix4().copy(modelRoot.matrixWorld).invert();
+    var ctrM = icM(b.getCenter(new THREE.Vector3()).applyMatrix4(inv)), R = Math.max(10, b.getSize(new THREE.Vector3()).setY(0).length() / 2 + 5), zs = [];
+    /* 3 anéis × 12 raios (R, 1,6R, 2,4R): no centro da cidade o anel de dentro pode cair todo em telhado — a rua aparece nos de fora */
+    for (var k = 0; k < 36; k++) {
+      var a = (k % 12) / 12 * Math.PI * 2 + Math.floor(k / 12) * 0.26, Rk = R * [1, 1.6, 2.4][Math.floor(k / 12)], px = ctrM.x + Rk * Math.cos(a), py = ctrM.y + Rk * Math.sin(a);
+      var topo = icL({ x: px, y: py, z: (+c.zChao || 0) + 3000 }).applyMatrix4(modelRoot.matrixWorld), fundo = icL({ x: px, y: py, z: (+c.zChao || 0) - 3000 }).applyMatrix4(modelRoot.matrixWorld);
+      icG3Ray.set(topo, fundo.clone().sub(topo).normalize()); icG3Ray.far = 6000;
+      var hs = []; try { hs = icG3Ray.intersectObject(t.group, true); } catch (_) {}
+      hs = hs.filter(function (h) { return erroDo(h.object) <= IC_G3_ERRO_MAX; });
+      if (hs.length) { hs.sort(function (p, q) { return p.distance - q.distance; }); zs.push(icM(hs[0].point.clone().applyMatrix4(inv)).z); }
+    }
+    if (zs.length < 3) return false;
+    zs.sort(function (p, q) { return p - q; });
+    var zAchado = zs[Math.floor(zs.length * 0.2)], u = zAchado - (icG3.zDesloc + (+c.ajuste || 0));
+    icG3.hChao = Math.round(u * 100) / 100; icG3.zDesloc = (+c.zChao || 0) - u; icG3.buscas++;
+    return true;
+  }
+  function icG3Selo() {
+    var el = icG3.selo;
+    if (!el) {
+      el = document.createElement('div'); el.setAttribute('data-google-selo', '1');
+      el.style.cssText = 'position:absolute;left:8px;bottom:8px;z-index:6;display:none;align-items:center;gap:6px;padding:3px 8px;border-radius:6px;background:rgba(15,23,42,.6);color:#fff;font:11px/1.3 system-ui,sans-serif;pointer-events:none;max-width:72%';
+      el.innerHTML = '<img alt="Google Maps" style="height:16px;width:auto;display:block" src="' + IC_G3_LOGO + '"><span data-g3-cred></span>';
+      var pai = renderer.domElement.parentElement || document.body; if (pai !== document.body && getComputedStyle(pai).position === 'static') pai.style.position = 'relative';
+      pai.appendChild(el); icG3.selo = el;
+    }
+    var at = []; try { if (icG3.tiles) icG3.tiles.getAttributions(at); } catch (_) {}
+    var txt = at.filter(function (a) { return a.type === 'string' && a.value; }).map(function (a) { return a.value; }).join('; ');
+    el.querySelector('[data-g3-cred]').textContent = txt;
+    el.style.display = icG3.on ? 'flex' : 'none';   // ⚠ termos: o logo fica na tela enquanto o 3D do Google está ligado
+  }
+  function icG3Desligar() {
+    icG3.versao++;
+    if (icG3.tiles) { try { icG3G.remove(icG3.tiles.group); icG3.tiles.dispose(); } catch (_) {} icG3.tiles = null; }
+    if (icG3.draco) { try { icG3.draco.dispose(); } catch (_) {} icG3.draco = null; }
+    icG3.on = false; icG3.cfg = null; icG3.carregados = 0; icG3.hChao = null; icG3.buscas = 0;
+    if (icG3.selo) icG3.selo.style.display = 'none';
+    if (icG3.clipAntes != null) { renderer.localClippingEnabled = icG3.clipAntes; icG3.clipAntes = null; }
+  }
+  /* cfg = { chave, lat, lon, norte, x0, y0, zChao, altitude?, ajuste?, recortar? } — null ou { ligar: false } desliga */
+  function icGoogle3d(cfg) {
+    if (!cfg || cfg.ligar === false) { icG3Desligar(); return Promise.resolve({ ok: true, ligado: false }); }
+    if (!cfg.chave) return Promise.resolve({ ok: false, erro: 'sem a chave do Google' });
+    if (!(isFinite(+cfg.lat) && isFinite(+cfg.lon))) return Promise.resolve({ ok: false, erro: 'a obra ainda não foi localizada' });
+    if (icG3.on && icG3.cfg && icG3.cfg.chave === cfg.chave && +icG3.cfg.lat === +cfg.lat && +icG3.cfg.lon === +cfg.lon) {
+      /* mesma obra: só ajustes (altura, recorte, origem, norte) — sem pedir outra sessão ao Google (cada sessão é cobrada) */
+      var recAntes = icG3.cfg.recortar !== false; icG3.cfg = cfg;
+      if (recAntes !== (cfg.recortar !== false)) icG3AplicarRecorte();
+      if (cfg.reajustar) { icG3.buscas = 0; icG3.ultBusca = 0; }
+      return Promise.resolve({ ok: true, ligado: true, mesmaSessao: true });
+    }
+    icG3Desligar();
+    icG3.cfg = cfg; icG3.on = true; icG3.erro = null;
+    icG3.zDesloc = (+cfg.zChao || 0) - (isFinite(+cfg.altitude) ? +cfg.altitude : 0);
+    if (icG3.clipAntes == null) icG3.clipAntes = renderer.localClippingEnabled;
+    icG3Selo();
+    var ver = ++icG3.versao;
+    return icG3Carregar().then(function (M) {
+      if (ver !== icG3.versao || !icG3.on) return { ok: false, erro: 'desligado antes de carregar' };
+      var t = new M.TilesRenderer(cfg.url || undefined), au = new M.Auth({ apiToken: String(cfg.chave), autoRefreshToken: true });
+      /* chave recusada / sem cota: o pedido da raiz volta 4xx — a tela diz, em vez de ficar "carregando" para sempre */
+      var f0 = au.fetchData.bind(au);
+      /* ⚠ com a renovação de sessão ligada, o 4xx da raiz volta como EXCEÇÃO (a biblioteca tenta renovar e a resposta não tem sessão) */
+      au.fetchData = function (u, o) { var raiz = /root\.json/.test(String(u)); return f0(u, o).then(function (r) { if (r && !r.ok && raiz) icG3.erro = 'o Google recusou o pedido (HTTP ' + r.status + ') — confira a chave e a cota no console do Google Cloud'; return r; }, function (err) { if (raiz) icG3.erro = 'o Google recusou o pedido — confira a chave e a cota no console do Google Cloud'; throw err; }); };
+      t.registerPlugin(au);
+      var dr = new M.DRACOLoader(); dr.setDecoderPath(IC_G3_VENDOR + 'jsm/libs/draco/gltf/');
+      var gl = new M.GLTFLoader(t.manager); gl.setDRACOLoader(dr); t.manager.addHandler(/\.(gltf|glb)$/, gl);   // sem /g: o LoadingManager testa a regex várias vezes (lastIndex)
+      t.addEventListener('load-model', function (e) { icG3.carregados++; if (e && e.scene) icG3RecorteEm(e.scene); });
+      icG3.tiles = t; icG3.draco = dr; icG3G.add(t.group);
+      icG3AplicarRecorte(); icG3Matriz();
+      return { ok: true, ligado: true };
+    }).catch(function (e) { icG3.erro = 'não consegui carregar o módulo do 3D: ' + String((e && e.message) || e).slice(0, 160); icG3Desligar(); return { ok: false, erro: icG3.erro }; });
+  }
+  S._tickExtra.push(function () {
+    if (!icG3.on || !icG3.tiles) return;
+    var t = icG3.tiles;
+    icG3Matriz();
+    if (icG3.cfg && icG3.cfg.recortar !== false) renderer.localClippingEnabled = true;
+    t.setCamera(camera); t.setResolutionFromRenderer(camera, renderer); camera.updateMatrixWorld(); t.update();
+    icG3.quadros++;
+    /* a altura: até 6 vezes no começo (os blocos finos chegam depois dos grossos) — com a fila vazia a cada 1,5 s e, com blocos
+       ainda chegando, a cada 4 s. ⚠ Com o Google de verdade a fila NÃO esvazia enquanto a câmera anda (medido em 03/10/2026:
+       154 blocos e nenhuma busca em 2 min) — esperar só a fila vazia deixava o 3D na altura do elipsoide */
+    var agora = Date.now(), ocioso = t.stats && !t.stats.downloading && !t.stats.parsing;
+    if (t.visibleTiles && t.visibleTiles.size && icG3.buscas < 6 && agora - icG3.ultBusca > (ocioso ? 1500 : 4000)) { icG3.ultBusca = agora; icG3AcharChao(); }
+    if (icG3.quadros % 20 === 0) icG3Selo();
+  });
+  /* gancho de teste e de conferência: a cota (motor) do primeiro bloco do Google na vertical de (x, y) do motor */
+  function icG3Sondar(x, y) {
+    var t = icG3.tiles; if (!t) return null;
+    var inv = new THREE.Matrix4().copy(modelRoot.matrixWorld).invert();
+    var topo = icL({ x: +x, y: +y, z: 3000 }).applyMatrix4(modelRoot.matrixWorld), fundo = icL({ x: +x, y: +y, z: -3000 }).applyMatrix4(modelRoot.matrixWorld);
+    icG3Ray.set(topo, fundo.clone().sub(topo).normalize()); icG3Ray.far = 6000;
+    var hs = []; try { hs = icG3Ray.intersectObject(t.group, true); } catch (_) {}
+    if (!hs.length) return null; hs.sort(function (p, q) { return p.distance - q.distance; });
+    return Math.round(icM(hs[0].point.clone().applyMatrix4(inv)).z * 1000) / 1000;
+  }
+  function icG3Estado() {
+    var t = icG3.tiles, nPl = 0;
+    if (t) t.group.traverse(function (o) { if (o.material && !Array.isArray(o.material) && o.material.clippingPlanes && o.material.clippingPlanes.length === 4 && o.material.clipIntersection) nPl++; });
+    return { on: icG3.on, modulo: !!icG3.mod, raiz: !!(t && t.rootTileSet), visiveis: t && t.visibleTiles ? t.visibleTiles.size : 0, carregados: icG3.carregados, hChao: icG3.hChao, zDesloc: Math.round(icG3.zDesloc * 1000) / 1000,
+      fila: t && t.stats ? { baixando: t.stats.downloading, processando: t.stats.parsing, falhas: t.stats.failed } : null,
+      erroMin: (function () { var m = Infinity; if (t && t.visibleTiles) t.visibleTiles.forEach(function (tl) { m = Math.min(m, +tl.geometricError || 0); }); return isFinite(m) ? Math.round(m * 10) / 10 : null; })(),
+      buscas: icG3.buscas, erro: icG3.erro, recorte: !!(icG3.cfg && icG3.cfg.recortar !== false && icG3.planos), clipLocal: renderer.localClippingEnabled, planosNosBlocos: nPl, filhos: icG3G.children.length,
+      selo: icG3.selo && icG3.selo.style.display !== 'none' ? (icG3.selo.textContent || '') : null, logo: !!(icG3.selo && icG3.selo.querySelector('img[alt="Google Maps"]')), visivel: icG3G.visible };
+  }
   /* GEORREFERÊNCIA QUE O PRÓPRIO IFC TRAZ: IfcMapConversion (+ IfcProjectedCRS com o EPSG) vale mais; senão IfcSite
      (RefLatitude/RefLongitude no ponto de inserção do terreno) com o TrueNorth do contexto do modelo.
      ⚠ O motor trabalha nas coordenadas do IFC (o modelo abre sem COORDINATE_TO_ORIGIN): a origem do site, em unidade do
@@ -4394,6 +4548,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       camera.position.copy(c).add(dir.multiplyScalar(dist));
       icMapaG.visible = false;   // o mapa do agente ajuda a escolher, não vai para a foto do plano
       var ceuC = icLocalMundo.getObjectByName('local-ceu'); if (ceuC) ceuC.visible = false;   // foto do plano é técnica, fundo branco
+      var g3C = icG3G.visible; icG3G.visible = false;   // ⚠ 3D do Google fora da foto impressa (termos: ver o 3D DO GOOGLE)
       camera.near = Math.max(0.05, dist - raio * 3); camera.far = dist + raio * 4;
       camera.lookAt(c); camera.updateProjectionMatrix();
       scene.background = new THREE.Color(0xffffff);
@@ -4404,6 +4559,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       camera.position.copy(bk.p); camera.up.copy(bk.up); camera.fov = bk.fov; camera.near = bk.near; camera.far = bk.far; scene.background = bk.bg;
       icMapaG.visible = true;
       var ceuV = icLocalMundo.getObjectByName('local-ceu'); if (ceuV) ceuV.visible = true;
+      icG3G.visible = g3C !== false;
       if (_selLn && vLn !== null) _selLn.visible = vLn;
       camera.lookAt(orbit.target); camera.updateProjectionMatrix();
     }
@@ -4426,6 +4582,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var cv = renderer.domElement, tam = new THREE.Vector2(); renderer.getSize(tam);
     var sc = dir.shadow.camera, bk = { w: cv.width, h: cv.height, pr: renderer.getPixelRatio(), asp: camera.aspect, cast: dir.castShadow, map: dir.shadow.mapSize.clone(),
       cam: [sc.left, sc.right, sc.top, sc.bottom, sc.near, sc.far], pos: dir.position.clone(), tgt: dir.target.position.clone() };
+    var g3F = icG3G.visible; icG3G.visible = false;   // ⚠ o 3D do Google não vai para o PNG (termos: ver o 3D DO GOOGLE)
     var marcadas = [], envs = [], trocas = [], luzes = { d: dir.intensity, h: hemi.intensity, f: fill.intensity, g: grid.visible }, out = null;
     try {
       /* LUZ DE FOTO: o 3D de todo dia é claro por igual (ambiente + hemisfério + preenchimento) e a sombra some nele — medido: 1.445
@@ -4476,6 +4633,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       renderer.setPixelRatio(1); renderer.setSize(W * ss, H * ss, false);
       camera.aspect = W / H; camera.updateProjectionMatrix();
       renderer.setScissorTest(false); renderer.setViewport(0, 0, W * ss, H * ss);
+      var g3NaFoto = icG3G.visible && icG3G.children.length > 0;
       renderer.render(scene, camera);
       var mapaOk = !!(dir.shadow.map && dir.shadow.map.texture);
       var c2 = document.createElement('canvas'); c2.width = W; c2.height = H;
@@ -4487,7 +4645,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       x2.fillStyle = 'rgba(15,23,42,.55)'; x2.fillRect(W - tw - fs * 1.6, H - fs * 2.2, tw + fs * 1.2, fs * 1.7);
       x2.fillStyle = '#fff'; x2.fillText(txt, W - tw - fs, H - fs * 0.95);
       out = { ok: true, url: c2.toDataURL('image/png'), largura: W, altura: H, superamostra: ss, sombras: marcadas.filter(function (x) { return x[0].castShadow; }).length,
-        mescladas: marcadas.filter(function (x) { return x[0].userData.agregado; }).length, satelite: trocas.length,
+        mescladas: marcadas.filter(function (x) { return x[0].userData.agregado; }).length, satelite: trocas.length, google3dNaFoto: g3NaFoto,
         ceu: !!icLocalMundo.getObjectByName('local-ceu'), mapaSombra: dir.shadow.mapSize.x, mapaGerado: mapaOk, recebem: marcadas.length, luz: Math.round(dir.intensity * 100) / 100 };
     } catch (e) { out = { ok: false, erro: String((e && e.message) || e) }; }
     finally {
@@ -4499,6 +4657,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       sc.left = bk.cam[0]; sc.right = bk.cam[1]; sc.top = bk.cam[2]; sc.bottom = bk.cam[3]; sc.near = bk.cam[4]; sc.far = bk.cam[5]; sc.updateProjectionMatrix();
       dir.position.copy(bk.pos); dir.target.position.copy(bk.tgt); dir.target.updateMatrixWorld();
       renderer.setPixelRatio(bk.pr); renderer.setSize(tam.x, tam.y, false); camera.aspect = bk.asp; camera.updateProjectionMatrix();
+      icG3G.visible = g3F;
       if (out) out.restaurado = cv.width === bk.w && cv.height === bk.h && dir.castShadow === bk.cast && dir.intensity === luzes.d && hemi.intensity === luzes.h && grid.visible === luzes.g;
     }
     return out;
@@ -4517,7 +4676,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
   S._icar = { geometria: icGeometria, chao: function () { return icM(new THREE.Vector3(0, icChao(), 0)).z; }, pontoNoChao: icPontoNoChao, sondar: icSondar, desenhar: icDesenhar, limpar: icLimpar,
     simular: icSimular, simulando: function () { return !!icar.sim; }, parar: function () { icLimparSim(); return true; },
-    colisoes: icColisoes, caixas: icCaixas, fotoHD: icFotoHD, mapa: icMapa, planta: icPlanta, plantaPonto: icPlantaPonto, visada: icVisada, local: icLocal, geoIfc: icGeoIfc,
+    colisoes: icColisoes, caixas: icCaixas, fotoHD: icFotoHD, google3d: icGoogle3d, google3dEstado: icG3Estado, google3dSondar: icG3Sondar, mapa: icMapa, planta: icPlanta, plantaPonto: icPlantaPonto, visada: icVisada, local: icLocal, geoIfc: icGeoIfc,
     localEstado: function () {
       var c = { gramados: 0, ceu: !!icLocalMundo.getObjectByName('local-ceu'), faixas: 0, arvores: 0, levantamento: 0, curvas: 0, imagem: 0, relevo: 0, ruas: 0, verdes: 0, postes: 0, redes: 0, chuva: 0, vento: 0, neblina: !!(icLocalEst.nevoaVis && scene.fog), sol: !!icLocalEst.sol, luz: { x: dir.position.x, y: dir.position.y, z: dir.position.z, i: dir.intensity } };
       c.graos = []; icLocalG.children.forEach(function (o) { var gr = (o.name === 'local-gramado' || o.name === 'local-rua-faixa') && o.material && o.material.userData.grao; if (gr && c.graos.indexOf(gr) < 0) c.graos.push(gr); });
@@ -12919,6 +13078,9 @@ window.BIM = {
   icarCaixas: function (fora, regiao) { return (S && S._icar) ? S._icar.caixas(fora, regiao) : []; },     // caixa (motor) de cada peça visível — para o agente do equipamento
   icarMapa: function (mp) { return (S && S._icar) ? S._icar.mapa(mp) : { ok: false, erro: 'visualizador não montado' }; },   // mapa do agente no chão (null apaga)
   icarPlanta: function (cfg) { return (S && S._icar) ? S._icar.planta(cfg) : { ok: false, erro: 'visualizador não montado' }; }, // planta PDF/DXF + entorno (null apaga)
+  icarGoogle3d: function (cfg) { return (S && S._icar) ? S._icar.google3d(cfg) : Promise.resolve({ ok: false, erro: 'visualizador não montado' }); },   // 3D fotorrealista do Google (null desliga)
+  icarGoogle3dEstado: function () { return (S && S._icar) ? S._icar.google3dEstado() : null; },
+  _icarGoogle3dSondar: function (x, y) { return (S && S._icar) ? S._icar.google3dSondar(x, y) : null; },   // gancho de teste
   icarFotoHD: function (o) { return (S && S._icar) ? S._icar.fotoHD(o) : { ok: false, erro: 'visualizador não montado' }; },   // modo foto: PNG grande, com sombra e anti-serrilhado
   icarLocal: function (cfg) { return (S && S._icar) ? S._icar.local(cfg) : { ok: false, erro: 'visualizador não montado' }; },   // relevo, ruas, postes, sol e clima da obra (null apaga)
   icarGeoIfc: function () { return (S && S._icar) ? S._icar.geoIfc() : { ok: false, motivo: 'visualizador não montado' }; },     // latitude/longitude e norte que o IFC traz

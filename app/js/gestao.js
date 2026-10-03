@@ -17054,6 +17054,17 @@
       if (lc.ocupado) h += '<div class="muted" data-icar-loc-ocupado="1">' + esc(lc.ocupado) + "…</div>";
       if (lc.semSatelite) h += '<div class="muted" style="margin-top:3px" data-icar-sem-satelite="1">Imagem de satélite: ' + esc(lc.semSatelite) + " Por enquanto, use a planta de situação na aba Cenário.</div>";
       if (lc.imagem) h += '<div class="muted" style="margin-top:3px" data-icar-satelite="' + lc.imagem.plano.tiles.length + '">Satélite no chão: ' + lc.imagem.plano.nx + " × " + lc.imagem.plano.ny + " quadros de " + f(lc.imagem.plano.resolucao_m, 2) + " m por ponto · " + esc(lc.imagem.atrib || "") + "</div>";
+      /* 3D FOTORREALISTA DO GOOGLE (o navegador pede direto ao Google; a chave vem do servidor da RA) */
+      var g3 = lc.g3 || {}, eg3 = window.BIM && BIM.icarGoogle3dEstado ? BIM.icarGoogle3dEstado() : null, g3on = !!(eg3 && eg3.on);
+      h += '<div style="margin-top:8px;padding-top:6px;border-top:1px dashed var(--linha)" data-icar-g3="' + (g3on ? "on" : "off") + '"><b>3D fotorrealista do Google</b> <span class="muted">· prédios, árvores e terreno de verdade em volta</span>' +
+        '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px"><button class="btn sm' + (g3on ? "" : " primary") + '" data-icar="loc-g3-ligar"' + dis + ">" + (g3on ? "Desligar o 3D do Google" : "Ligar o 3D do Google") + "</button>" +
+        (g3on ? '<label style="display:flex;gap:4px;align-items:center"><input type="checkbox" data-icar-local="g3-recortar"' + (g3.recortar !== false ? " checked" : "") + ">recortar a área da obra</label>" +
+          '<span>ajuste de altura <input type="text" inputmode="decimal" data-icar-local="g3-ajuste" value="' + (g3.ajuste ? esc(String(g3.ajuste).replace(".", ",")) : "") + '" placeholder="0" style="width:56px;text-align:right"> m</span>' +
+          '<button class="btn sm" data-icar="loc-g3-reajustar">Achar o chão de novo</button>' : "") + "</div>";
+      if (g3.semChave) h += '<div class="muted" style="margin-top:3px" data-icar-g3-semchave="1">Ainda não habilitado no servidor da RA (falta a chave do Google Cloud).</div>';
+      if (g3on) h += '<div class="muted" style="margin-top:3px" data-icar-g3-status="1">' + esc(this._icarG3Status(eg3)) + "</div>";
+      h += '<div class="muted" style="margin-top:3px;font-size:11px">Ao ligar, o navegador pede ao Google os blocos 3D da região da obra — a localização da obra vai ao Google (Política de Privacidade, item 4.16). ' +
+        "Cada vez que liga conta uma sessão de até 3 h na conta da RA. Não entra nas fotos do plano nem no modo foto.</div></div>";
       if (lc.malha) h += '<div style="margin-top:4px" data-icar-relevo="' + lc.malha.n + '">Relevo: desnível de ' + f(lc.malha.desnivel, 1) + " m no raio · cota da obra " + f(lc.malha.cotaObra, 1) + " m (grade de " + f(lc.malha.passo, 0) + ' m) <span class="muted">— superfície de satélite (~30 m, inclui prédios e árvores): serve para o entorno, não para nivelar patola.</span></div>';
       if (lc.mapa) {
         var mp = lc.mapa, vivas = mp.propostas.filter(function (q) { return !q.aceita && !q.descartada && !q.jaAceita; }), rot = { edificacao: "Edificação", muro: "Muro", agua: "Água" };
@@ -17125,12 +17136,45 @@
       }).join("") + "</div>";
       return h + "</div>";
     },
+    /* manda ao 3D o que a tela sabe agora: a obra (geo), o chão do modelo (cota do apoio), a altitude do relevo (só a 1ª estimativa:
+       a altura certa sai do chão do Google achado em volta), o ajuste e o recorte. Mesma obra = mesma sessão no Google. */
+    _icarG3Aplicar: function (reajustar) {
+      var p = this._icarPlano(), lc = this._icarLocalEst(), g = this._icarGeo(p), g3 = lc.g3 || {};
+      if (!window.BIM || !BIM.icarGoogle3d || !g3.on || !lc.g3chave || !g) return;
+      BIM.icarGoogle3d({ chave: lc.g3chave, lat: +g.lat, lon: +g.lon, norte: +g.norte || 0, x0: +g.x0 || 0, y0: +g.y0 || 0, zChao: +this._icarApoio(p).cota || 0,
+        altitude: lc.malha ? lc.malha.cotaObra : (g3.altitude != null ? g3.altitude : null), ajuste: +g3.ajuste || 0, recortar: g3.recortar !== false, reajustar: !!reajustar })
+        .then(function (r) { if (r && !r.ok && r.erro) UI.toast("3D do Google: " + r.erro + ".", "erro", 9000); });
+    },
+    _icarG3Status: function (e) {
+      if (!e) return "";
+      if (e.erro) return e.erro;
+      if (!e.raiz) return "pedindo o 3D ao Google…";
+      return e.visiveis + " bloco(s) na tela" + (e.hChao != null ? " · chão do Google achado em volta do modelo e posto na cota do apoio" + (e.buscas > 1 ? " (refinado " + e.buscas + "×)" : "") : " · achando o chão…") +
+        (e.recorte ? " · área da obra recortada" : "");
+    },
+    /* o status do 3D se atualiza sozinho enquanto ele está ligado (os blocos chegam aos poucos) — só o texto, sem redesenhar o painel */
+    _icarG3Relogio: function (ligar) {
+      var self = this, st = this._icarEst();
+      if (st.g3Relogio) { clearInterval(st.g3Relogio); st.g3Relogio = null; }
+      if (!ligar) return;
+      st.g3Relogio = setInterval(function () {
+        var e = window.BIM && BIM.icarGoogle3dEstado ? BIM.icarGoogle3dEstado() : null, el = document.querySelector("#bim-icamento [data-icar-g3-status]");
+        if (!e || !e.on) { clearInterval(st.g3Relogio); st.g3Relogio = null; return; }
+        if (el) el.textContent = self._icarG3Status(e);
+      }, 1500);
+    },
     _icarLocalCampo: function (t) {
       var lc = this._icarLocalEst(), k = t.getAttribute("data-icar-local"), v = t.value;
       if (k === "busca") { lc.buscaTxt = v; return; }
       if (k === "raio") { lc.raio = +v || 150; return; }
       if (k === "dia") { lc.dia = v; lc.hora = null; this._icarRender(); return; }
       if (k === "propAlt") { var q = lc.mapa && lc.mapa.propostas[+t.getAttribute("data-n")], a = Util.parseNum(String(v || "")); if (q && isFinite(a) && a > 0) q.alturaEditada = Math.round(a * 100) / 100; this._icarPlantaDesenhar(); return; }
+      if (k === "g3-recortar") { lc.g3 = lc.g3 || {}; lc.g3.recortar = !!t.checked; this._icarG3Aplicar(); return; }
+      if (k === "g3-ajuste") {
+        var tx3 = String(v || "").trim(), n3 = tx3 === "" ? 0 : Util.parseNum(tx3);
+        if (!isFinite(n3) || Math.abs(n3) > 200) { UI.toast("“" + tx3 + "” não é um ajuste de altura em metros (até 200 m).", "erro"); this._icarRender(); return; }
+        lc.g3 = lc.g3 || {}; lc.g3.ajuste = Math.round(n3 * 100) / 100; this._icarG3Aplicar(); this._icarRender(); return;
+      }
       if (k === "redeKv") { lc.redeKv[t.getAttribute("data-k")] = v; return; }
       if (k === "redeAlt") { lc.redeAlt[t.getAttribute("data-k")] = v; return; }
       if (k === "anem") {
@@ -17150,8 +17194,31 @@
           norte: ng.norte != null ? +ng.norte : (a.norte != null ? a.norte : 0), fonte: ng.fonte || "", endereco: ng.endereco || "" };
         /* a obra mudou de lugar: o que veio do mapa e do clima do lugar antigo não vale mais */
         lc.mapaResp = null; lc.mapa = null; lc.relevoResp = null; lc.malha = null; lc.imagem = null; lc.clima = null; lc.hora = null; lc.resultados = null; lc.semSatelite = null;
-        if (self._icarSalvar(p)) { self._icarRender(); if (msg) UI.toast(msg, "ok", 7000); }
+        if (self._icarSalvar(p)) { self._icarRender(); if (msg) UI.toast(msg, "ok", 7000); if (lc.g3 && lc.g3.on) self._icarG3Aplicar(); }
       }
+      if (acao === "loc-g3-ligar") {
+        lc.g3 = lc.g3 || {};
+        if (window.BIM && BIM.icarGoogle3dEstado && (BIM.icarGoogle3dEstado() || {}).on) { BIM.icarGoogle3d(null); lc.g3.on = false; this._icarG3Relogio(false); this._icarRender(); return; }
+        if (!g) { UI.toast("Localize a obra primeiro (link do Google Maps, coordenada ou endereço).", "aviso"); return; }
+        ocupar("pedindo a chave do 3D do Google ao servidor da RA");
+        this._icarGeoPost("/ia/geo/google3d", {}).then(function (x) {
+          livre();
+          if (x.s === 503 && x.j.semChave) { lc.g3.semChave = true; self._icarRender(); return; }
+          if (x.s !== 200 || !x.j.ok || !x.j.chave) { UI.toast(self._icarGeoErro(x, "3D do Google"), "erro", 9000); self._icarRender(); return; }
+          lc.g3.semChave = false; lc.g3chave = x.j.chave; lc.g3.on = true;   // ⚠ a chave fica SÓ na memória desta tela (nada gravado)
+          var segue = function () { self._icarG3Aplicar(); self._icarG3Relogio(true); self._icarRender(); };
+          if (lc.malha || lc.g3.altitude != null) { segue(); return; }
+          /* ⚠ a 1ª altura do 3D: a altitude do terreno no ponto da obra (o relevo do servidor da RA). Os primeiros blocos do Google
+             são grosseiros e não servem para achar o chão — sem esta estimativa, numa obra a 800 m de altitude o 3D nasceria 800 m
+             acima do modelo e os blocos finos (os que medem o chão) nem carregariam perto da câmera */
+          self._icarGeoPost("/ia/geo/relevo", { lat: +g.lat, lon: +g.lon, raio: 150, n: 41 }).then(function (y) {
+            if (y.s === 200 && y.j && y.j.ok) { try { var g4 = self._icarGeo(self._icarPlano()), m4 = g4 ? IcarEntorno.malhaRelevo(y.j, g4, 0) : null; if (m4 && isFinite(m4.cotaObra)) lc.g3.altitude = m4.cotaObra; } catch (e) {} }
+            segue();
+          });
+        });
+        return;
+      }
+      if (acao === "loc-g3-reajustar") { this._icarG3Aplicar(true); UI.toast("Procurando o chão do Google em volta do modelo de novo.", "ok"); return; }
       if (acao === "loc-buscar") {
         var txt = String(lc.buscaTxt || "").trim(), c = IcarGeo.lerCoordenada(txt);
         if (c) { usarGeo({ lat: c.lat, lon: c.lon, fonte: c.fonte }, "Obra localizada pelo " + c.fonte + ". Confira no mapa."); return; }

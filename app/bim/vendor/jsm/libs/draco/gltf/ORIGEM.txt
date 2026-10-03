@@ -1,0 +1,2 @@
+Decodificador Draco (Google) - licenca Apache-2.0 - copia sem alteracao de three@0.150.1/examples/jsm/libs/draco/gltf/.
+Usado pelo DRACOLoader (bim/vendor/jsm/loaders/DRACOLoader.js) para ler os blocos comprimidos do 3D fotorrealista do Google.

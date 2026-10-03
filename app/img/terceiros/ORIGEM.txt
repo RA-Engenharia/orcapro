@@ -1,0 +1,3 @@
+Logo oficial do Google Maps (Google_Maps_Attribution_Assets.zip, da pagina de politicas da Map Tiles API:
+https://developers.google.com/maps/documentation/tile/policies), SEM ALTERACAO.
+Uso unico: a atribuicao exigida pelos termos quando o 3D fotorrealista do Google esta na tela (plano de icamento).
