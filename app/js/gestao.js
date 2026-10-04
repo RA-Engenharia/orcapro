@@ -10221,6 +10221,22 @@
         try { BimShell.repintarVista(); } catch (eV) {}
         return true;
       };
+      /* MATERIAIS REALISTAS: a escolha fica gravada neste aparelho e vale sobre o
+         automático (o modelo que traz textura liga sozinho) */
+      reg.materiais = function (e) {
+        var b = B(); if (!b || !b.materiaisRealistas) return false;
+        if (window.CONFIG && CONFIG.bimRecursos && CONFIG.bimRecursos.materiais === false) { UI.toast("Os materiais realistas estão desligados nesta versão.", "aviso"); try { BimRibbon.setAtivo("materiais", false); } catch (eR0) {} return true; }
+        BimShell.status(e.ligado ? "Carregando as texturas dos materiais…" : "Materiais realistas desligados — a cor do IFC volta.");
+        b.materiaisRealistas(!!e.ligado).then(function (st) {
+          try { BimRibbon.setAtivo("materiais", !!st.on); BimShell.pintarFita(); } catch (eR) {}
+          if (st.on) {
+            var n = st.vestidos || 0;
+            BimShell.status(n ? ("Materiais realistas ligados — " + n + " material(is) com textura" + (st.erros && st.erros.length ? "; não carregou: " + st.erros.join(", ") : "") + ".")
+              : "Nenhum material deste modelo tem textura na biblioteca (o nome não casou com tijolo, madeira, telha, concreto…).");
+          }
+        });
+        return true;
+      };
       reg["nova-vista"] = function () { self._bimVxNova(); return true; };
       reg["lado-a-lado"] = function (e) { self._bimVxEst().lado = !!e.ligado; self._bimVxLayout(); return true; };
       reg["tamanho-ui"] = function () {
@@ -13093,7 +13109,7 @@
         { nome: "Obra", params: [ ro("peca-etapa", "Etapa", info.etapa), ro("peca-fase", "Fase", info.fase) ]
           .concat(el && el.detalhe ? [{ id: "peca-det", rotulo: "Detalhe", tipo: "botao", rotuloBotao: "Detalhe " + el.detalhe, fn: function () { self._pecaDetalhe(el.detalhe); } }] : []) },
         { nome: "Quantidades", params: [ ro("peca-comp", "Comprimento", num(q.comprimento, "m")), ro("peca-area", "Área", num(q.area, "m²")), ro("peca-vol", "Volume", num(q.volume, "m³")) ] }
-      ].concat(this._pesoSecaoProps(el, ro)).concat([
+      ].concat(this._pesoSecaoProps(el, ro)).concat(this._abrSecaoProps(info, ro)).concat([
         { nome: "Dados", params: [ { id: "peca-ifc", rotulo: "Parâmetros do IFC", tipo: "botao", rotuloBotao: "Ver todos", fn: function () { self._bimVerProps(info); } },
           { id: "peca-familia-salvar", rotulo: "Banco de famílias", tipo: "botao", rotuloBotao: "Salvar família", fn: function () { self._bimSalvarFamilia(info); } } ] }
       ]);
@@ -13104,6 +13120,25 @@
         secoes: secoes,
         onMudar: function () { return self._bimPropsPeca(info); }
       };
+    },
+    /* PORTA/JANELA QUE ABRE (pset RA_Abertura, js/bimabrir.js): selecionada a
+       esquadria OU uma peça da folha, aparece o botão. É o caminho da abertura —
+       o clique na peça é da seleção e das ferramentas (ver bim.js, "PORTAS"). */
+    _abrSecaoProps: function (info, ro) {
+      var self = this, ab = null;
+      try { ab = window.BIM && BIM.aberturaDe ? BIM.aberturaDe(info.uid) : null; } catch (e) { ab = null; }
+      if (!ab) return [];
+      var params = [ro("peca-ab-tipo", "Tipo", ab.nomeTipo + (ab.folhas ? " · " + ab.folhas + (ab.folhas > 1 ? " folhas" : " folha") : ""))];
+      if (ab.moveis) {
+        params.push({ id: "peca-abrir", rotulo: ab.aberta ? "Aberta" : "Fechada", tipo: "botao", rotuloBotao: ab.aberta ? "Fechar" : "Abrir",
+          fn: function () {
+            var on = BIM.abrirFechar(info.uid);
+            try { BimShell.status(on ? "Abrindo " + (info.nome || "a esquadria") + "…" : "Fechando " + (info.nome || "a esquadria") + "…"); } catch (e1) {}
+            try { BimShell.pintarProps(self._bimPropsPeca(info)); } catch (e2) {}
+          } });
+      } else params.push(ro("peca-ab-fixa", "Movimento", "não abre (folhas fixas ou a definir no projeto)"));
+      if (ab.avisos && ab.avisos.length) params.push(ro("peca-ab-aviso", "Aviso", ab.avisos.join("; ")));
+      return [{ nome: "Abertura", params: params }];
     },
     /* Propriedades com nada selecionado = a VISTA ativa, como no Revit */
     _bimPropsVista: function () {
@@ -24359,6 +24394,8 @@
               self._bimVxAtivar("3d");
               UI.toast("A mudança de visibilidade vale para a vista {3D}; as abas de ponto de vista continuam como foram abertas.", "info");
             },
+            /* o modelo que traz textura liga os materiais realistas sozinho: a fita acompanha */
+            onMateriais: function (st) { try { BimRibbon.setAtivo("materiais", !!(st && st.on)); BimShell.pintarFita(); } catch (e) {} },
             onCaixaCorte: function (on) { if (self._bimVxEst().ativa === "3d") { try { BimRibbon.setAtivo("caixa-corte", !!on); BimShell.pintarFita(); BimShell.repintarVista(); } catch (e) {} } },
             onOrto: function (on) { if (self._bimVxEst().ativa === "3d") { try { BimRibbon.setAtivo("ortogonal", !!on); BimShell.pintarFita(); BimShell.repintarVista(); } catch (e) {} } },
             onSalvarVista: function () { self._bimVistaSalvar(); },

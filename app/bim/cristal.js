@@ -53,6 +53,9 @@ function texturaConcreto() {
   g.putImageData(img, 0, 0);
   for (var k = 0; k < 90; k++) { g.fillStyle = 'rgba(70,70,66,' + (0.25 + Math.random() * 0.35) + ')'; g.beginPath(); g.arc(Math.random() * 128, Math.random() * 128, 0.6 + Math.random() * 1.6, 0, Math.PI * 2); g.fill(); }
   var t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(1.5, 3);
+  /* ⚠ no r150 quem vale é `encoding` (o `colorSpace` chegou no r152): sem
+     ele a textura sai lavada desde que a saída do BIM passou a ser sRGB */
+  t.encoding = THREE.sRGBEncoding;
   try { t.colorSpace = THREE.SRGBColorSpace; } catch (e) {}
   return t;
 }
@@ -61,11 +64,11 @@ function texturaHalo(cor, semCruz) {
   var g = c.getContext('2d'), gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
   gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.18, cor); gr.addColorStop(0.55, 'rgba(60,207,115,0.18)'); gr.addColorStop(1, 'rgba(60,207,115,0)');
   g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
-  if (semCruz) return new THREE.CanvasTexture(c);
+  if (semCruz) { var t0 = new THREE.CanvasTexture(c); t0.encoding = THREE.sRGBEncoding; return t0; }
   /* o brilho cruzado da estrela (4 raios) */
   g.globalCompositeOperation = 'lighter'; g.strokeStyle = 'rgba(220,255,230,0.55)'; g.lineWidth = 2;
   g.beginPath(); g.moveTo(64, 4); g.lineTo(64, 124); g.moveTo(4, 64); g.lineTo(124, 64); g.stroke();
-  return new THREE.CanvasTexture(c);
+  var t1 = new THREE.CanvasTexture(c); t1.encoding = THREE.sRGBEncoding; return t1;
 }
 
 /* opts = { renderer, transmissao (bool), textos (o JSON de bim/cristal-textos.json) } */

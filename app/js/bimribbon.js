@@ -236,7 +236,9 @@
           { id: "estilo", rotulo: "Estilo de\nexibição", icone: "pincel", tipo: "menu", dica: "Sombreado, linhas, desenho técnico." },
           /* como no Revit: a caixa de corte da vista ativa, com as setas azuis nas seis faces */
           { id: "caixa-corte", rotulo: "Caixa de\ncorte", icone: "corte", grande: true, tipo: "alterna", requer: "modelo", dica: "Liga a caixa de corte da vista ativa: puxe as setas azuis de cada face para cortar o modelo de cima, de baixo e dos lados." },
-          { id: "ortogonal", rotulo: "Ortogonal", icone: "grade", tipo: "alterna", requer: "modelo", dica: "Vista ortogonal (sem perspectiva) na vista ativa — também no botão direito do ViewCube." }
+          { id: "ortogonal", rotulo: "Ortogonal", icone: "grade", tipo: "alterna", requer: "modelo", dica: "Vista ortogonal (sem perspectiva) na vista ativa — também no botão direito do ViewCube." },
+          /* textura por material (js/bimtextura.js): liga sozinho quando o IFC traz a textura dos materiais */
+          { id: "materiais", rotulo: "Materiais\nrealistas", icone: "azulejo", tipo: "alterna", requer: "modelo", dica: "Veste as peças com a textura do material (tijolo, madeira, telha, concreto, porcelanato…) na escala real. Liga sozinho quando o IFC traz as texturas; usa mais a placa de vídeo." }
         ] },
         { nome: "Janelas", comandos: [
           { id: "nova-vista", rotulo: "Nova vista\n3D", icone: "mais", grande: true, requer: "modelo", dica: "Duplica a vista 3D numa aba nova, com câmera, caixa de corte e ViewCube próprios. A peça selecionada numa aparece em todas." },

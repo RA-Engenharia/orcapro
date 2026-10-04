@@ -37,7 +37,7 @@
        novo. Com as duas fontes, vale sempre a MAIOR. */
     manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
 
-    versao: "1.2.124",
+    versao: "1.2.125",
     schemaVersao: 3, // usado nas migrações de persistência
 
     // Oferta de lançamento do Plus — data/hora que a condição termina (após isso, a urgência some sozinha)
@@ -149,8 +149,11 @@
     /* ---- Cristal OrçaPRO no BIM + cubo de navegação novo (ESPEC-BIM-CUBO-LOGO.md) — PRÉVIA ----
        Desligado na FROTA (o BIM vazio e o cubo de antes); ligado numa instalação pela chave local
        `orcapro:tela:bim-cristal:v1` ({"cristal":true}), gravada pelo `App._previaDaUrl` com `?previa=cristal`
-       (e apagada com `?previa=cristal-desligar`). Quem lê é o `cristalLigado()` do js/bim.js. */
-    bimRecursos: { cristal: false },
+       (e apagada com `?previa=cristal-desligar`). Quem lê é o `cristalLigado()` do js/bim.js.
+       `materiais` (04/10/2026): MATERIAIS REALISTAS (texturas, js/bimtextura.js). Ligado na frota, mas o
+       BIM só veste sozinho o modelo que TRAZ a textura (pset RA_Material) e num aparelho que aguenta; o resto
+       liga pela fita (Vista → Exibir). `false` aqui desliga para todas as instalações, até a escolha da pessoa. */
+    bimRecursos: { cristal: false, materiais: true },
 
     medccRecursos: {
       medAvanco: true, medAvancoAuto: true, medOrigem: true,

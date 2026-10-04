@@ -71,12 +71,16 @@
 
   function num(x) { var n = +x; return isFinite(n) ? n : 0; }
 
-  /* a mesma chave de material que o viewer já usa no `matCache`: cor em 8 bits
-     por canal + alfa com duas casas. Mudar isto aqui sem mudar lá criaria dois
-     agrupamentos diferentes para a mesma cor. */
-  function chaveMaterial(cor) {
+  /* a chave do bucket: cor em 8 bits por canal + alfa com duas casas, e a
+     TEXTURA quando a peça veste uma (materiais realistas, js/bimtextura.js).
+     ⚠ A cor que chega aqui é a do MATERIAL, já LINEAR desde 03/10/2026 (o
+     viewer converte a cor sRGB do IFC); a do `matCache` é a do arquivo. As duas
+     chaves não precisam coincidir: o bucket só agrupa (a cor de cada peça vai
+     por vértice). O que NÃO pode é juntar peças de texturas diferentes num
+     bucket só — o material do bucket é um, e a textura é dele. */
+  function chaveMaterial(cor, tx) {
     var c = cor || [1, 1, 1, 1];
-    return (num(c[0]) * 255 | 0) + "_" + (num(c[1]) * 255 | 0) + "_" + (num(c[2]) * 255 | 0) + "_" + num(c[3]).toFixed(2);
+    return (num(c[0]) * 255 | 0) + "_" + (num(c[1]) * 255 | 0) + "_" + (num(c[2]) * 255 | 0) + "_" + num(c[3]).toFixed(2) + (tx ? "|" + String(tx) : "");
   }
 
   /* ---------------------------------------------------------------
@@ -121,10 +125,12 @@
       var it = insts[i];
       var g = geos[String(it.g)];
       if (!g || !g.idx || !g.idx.length) continue;      /* instância órfã não vira nada */
-      var k = chaveMaterial(it.cor);
+      var k = chaveMaterial(it.cor, it.tx);
       if (!buckets[k]) {
         buckets[k] = { chave: k, cor: [num(it.cor[0]), num(it.cor[1]), num(it.cor[2]), num(it.cor[3])],
                        membros: [], nVert: 0, nIdx: 0 };
+        /* repasse OPACO, como o `ref`: o viewer veste o material do bucket */
+        if (it.tx) { buckets[k].tx = String(it.tx); buckets[k].tex = it.tex || null; }
         ordem.push(k);
       }
       var b = buckets[k];

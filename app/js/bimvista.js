@@ -212,6 +212,7 @@
      recalculado ao desenhar, e por isso nunca diverge do risco na tela. Um
      número guardado sozinho sobreviveria a um modelo corrigido e continuaria
      afirmando a medida velha em cima da peça nova. */
+  var MAPA_FONTES = { google: 1, entorno: 1, terreno: 1, satelite: 1, planta: 1, chao: 1 };
   function medida(d) {
     d = d || {};
     var tipo = txt(d.tipo);
@@ -219,7 +220,13 @@
     var pts = [];
     (Array.isArray(d.pts) ? d.pts : []).forEach(function (p) { var q = ponto3(p); if (q) pts.push(q); });
     if (tipo === "area" ? pts.length < 3 : pts.length !== PONTOS_MEDIDA[tipo]) return null;
-    return { tipo: tipo, pts: pts, horizontal: !!d.horizontal };
+    var out = { tipo: tipo, pts: pts, horizontal: !!d.horizontal };
+    /* a medida tomada sobre o MAPA (js/bimtrenamapa.js) volta dizendo isso: só
+       os nomes conhecidos, e o campo só existe quando há marca (as vistas
+       gravadas antes continuam idênticas) */
+    var mp = (Array.isArray(d.mapa) ? d.mapa : []).map(txt).filter(function (x) { return MAPA_FONTES[x]; });
+    if (mp.length) out.mapa = mp;
+    return out;
   }
 
   /* ---------------------------------------------------------------
