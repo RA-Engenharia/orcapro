@@ -52,6 +52,16 @@
     var tem = {}; arr(grupos).forEach(function (g) { tem[g.id] = g.n; });
     var atalhos = arr(est.atalhos).filter(function (a) { return tem[a.id] > 0; });
     var h = '<div class="edisc">';
+    /* vistas prontas (BimDisc.vistasDisponiveis): combinações num clique; "Tudo" fecha a linha */
+    var vistas = arr(est.vistas);
+    if (vistas.length) {
+      h += '<div class="edisc-vistas" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 8px">' +
+        '<span class="muted" style="font-size:12px;width:100%">Vistas prontas</span>' +
+        vistas.map(function (v) {
+          return '<button type="button" class="btn sm' + (est.vistaAtiva === v.id ? " primary" : "") + '" data-edisc="vista" data-v="' + esc(v.id) + '">' + esc(v.rotulo) + "</button>";
+        }).join("") +
+        '<button type="button" class="btn sm' + (est.vistaAtiva === "tudo" ? " primary" : "") + '" data-edisc="tudo">Tudo</button></div>';
+    }
     if (atalhos.length) {
       h += '<div class="edisc-atalhos">' + atalhos.map(function (a) {
         return '<button type="button" class="btn sm" data-edisc="so" data-v="' + esc(a.id) + '">' + esc(a.rotulo) + "</button>";

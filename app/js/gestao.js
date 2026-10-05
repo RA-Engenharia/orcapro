@@ -19099,6 +19099,7 @@
       var self = this, st = this._bimDiscEst(), g = this._bimDiscGrupos();
       this._bimDiscCache = g;
       box.innerHTML = EstrutUI.htmlDisc(g.grupos, g.etapas, { aba: st.aba, marcados: st.marcados, atalhos: BimDisc.ATALHOS,
+        vistas: BimDisc.vistasDisponiveis ? BimDisc.vistasDisponiveis(g.grupos) : [], vistaAtiva: st.vistaAtiva || null,
         montagens: g.montagens, seq: st.seq || null });
       if (box._ligado) return;
       box._ligado = true;
@@ -19124,6 +19125,24 @@
       if (!window.BIM || !window.BimDisc) return;
       var g = this._bimDiscCache || this._bimDiscGrupos();
       if (acao === "seq") { this._bimSeqPasso(v); return; }
+      /* VISTA PRONTA (BimDisc.VISTAS): mostra a combinação de grupos — a mesma isolação do "Só", com vários grupos */
+      if (acao === "vista") {
+        if (st.seq || this._bimSeqTimer) this._bimSeqParar();
+        var vIds = BimDisc.idsDaVista(g.grupos, v);
+        var vDef = (BimDisc.VISTAS || []).filter(function (x) { return x.id === v; })[0];
+        var vRot = vDef ? vDef.rotulo : "vista";
+        var vCh = BimDisc.chavesDe(g.grupos, vIds);
+        if (!vCh.length) { UI.toast("Nada para mostrar em “" + vRot + "” no modelo aberto.", "aviso"); return; }
+        try { BIM.limparRaioX(); } catch (eV1) {}
+        try { if (BIM.donoDaPintura && BIM.donoDaPintura() === "disciplina") BIM.limparPintura(); } catch (eV2) {}
+        var vNi = BIM.isolarChaves(vCh);
+        if (vNi) this._bimEnquadrarLivre(vCh);
+        this._b3Espelhar({ modo: "isolar", chaves: vCh, rotulo: vRot });
+        st.vistaAtiva = v; this._bimDiscRender();
+        var vNp = vNi ? BIM.contarVisiveis() : 0;
+        UI.toast(vNp ? vRot + ": " + vNp + " peça(s). “Tudo” volta o modelo inteiro." : "As peças de “" + vRot + "” estão fora da cena agora (4D ou modelo desligado).", vNp ? "ok" : "aviso");
+        return;
+      }
       /* "Mostrar tudo" também encerra o passo a passo e devolve as cores */
       if (acao === "tudo" && (st.seq || this._bimSeqTimer)) { this._bimSeqParar(); this._bimDiscRender(); }
       if (acao === "tudo") {
@@ -19131,6 +19150,7 @@
         try { BIM.restaurarVisibilidade(); } catch (e2) {}
         try { if (BIM.donoDaPintura && BIM.donoDaPintura() === "disciplina") BIM.limparPintura(); } catch (e3) {}
         this._b3Espelhar({ modo: "limpar", rotulo: "modelo inteiro" });
+        if (st.vistaAtiva) { st.vistaAtiva = null; this._bimDiscRender(); }      /* a vista pronta marcada deixa de valer */
         UI.toast("Modelo inteiro de volta.", "ok");
         return;
       }
@@ -19150,6 +19170,7 @@
       var nomes = lista.filter(function (x) { return ids.indexOf(x.id) >= 0; }).map(function (x) { return x.nome; });
       var rot = nomes.join(" + ") || "o grupo";
       if (!chaves.length) { UI.toast("Nenhuma peça de " + rot + " no modelo aberto.", "aviso"); return; }
+      if (st.vistaAtiva) { st.vistaAtiva = null; this._bimDiscRender(); }        /* isolar à mão sai da vista pronta */
       try { BIM.limparRaioX(); } catch (e4) {}
       if (acao === "raiox") {
         try { BIM.restaurarVisibilidade(); } catch (e5) {}

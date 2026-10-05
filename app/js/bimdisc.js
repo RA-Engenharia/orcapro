@@ -266,6 +266,70 @@
   }
 
   /* os atalhos "Só …" da tela: o id do grupo e o rótulo curto */
+  /* ------------------------------------------------------------------
+   * VISTAS PRONTAS: combinações de grupos num clique (pedido do Rogério,
+   * 05/10/2026, no modelo do Quiosque: "só a fundação, fundação com a
+   * estrutura, sem topografia, só a armação, sem equipamentos e hidráulica,
+   * com tudo, com/sem a passarela — para eu só ficar clicando").
+   *
+   * Cada vista diz o que MOSTRA (inclui) ou o que ESCONDE (exceto). Um termo
+   * é o id de um grupo da lista ou "rx:<padrão>", que casa com o NOME de
+   * grupo livre carimbado ("Instalações hidrossanitárias", "Passarela
+   * existente", "Equipamentos e mobiliário") — o modelo da obra escreve
+   * disciplina que não está na lista, e a vista tem de achá-la.
+   * ⚠ A vista só aparece quando muda alguma coisa: "Só armação" sem armação
+   *   no modelo, ou "Sem a topografia" sem terreno, seria botão que não faz
+   *   nada — e botão que não faz nada ensina a desconfiar dos outros.
+   * ------------------------------------------------------------------ */
+  var ESTRUTURA = ["fundacao", "armacao", "concreto", "metalica", "madeira", "ligacoes", "paineis"];
+  var INSTAL = ["instalacoes", "rx:instala|hidrau|hidross|eletric|sanitar"];
+  var EQUIP = ["mobiliario", "rx:equipament|mobili"];
+  var EXISTENTE = ["rx:existente|a demolir|passarela"];
+  var VISTAS = [
+    { id: "v:fundacao", rotulo: "Só fundação", inclui: ["fundacao"] },
+    { id: "v:estrutura", rotulo: "Fundação + estrutura", inclui: ESTRUTURA },
+    { id: "v:fund-terreno", rotulo: "Fundação + topografia", inclui: ["fundacao", "entorno"] },
+    { id: "v:armacao", rotulo: "Só armação", inclui: ["armacao"] },
+    { id: "v:sem-terreno", rotulo: "Tudo sem a topografia", exceto: ["entorno"] },
+    { id: "v:sem-equip", rotulo: "Sem equipamentos e instalações", exceto: EQUIP.concat(INSTAL) },
+    { id: "v:sem-existente", rotulo: "Sem o existente (passarela…)", exceto: EXISTENTE }
+  ];
+  var VISTA_POR_ID = {}; VISTAS.forEach(function (v) { VISTA_POR_ID[v.id] = v; });
+
+  function casaTermo(g, termo) {
+    if (termo.indexOf("rx:") !== 0) return g.id === termo;
+    /* ⚠ casa pelo NOME normalizado: é como "Instalações hidrossanitárias" (grupo livre, fora da lista)
+       entra em "sem instalações" — pelo id ele nunca entraria */
+    return new RegExp(termo.slice(3)).test(norm(g.nome));
+  }
+  function casaAlgum(g, termos) { for (var i = 0; i < termos.length; i++) if (casaTermo(g, termos[i])) return true; return false; }
+
+  /* ids dos grupos que a vista MOSTRA, entre os grupos do modelo aberto; [] = nada a mostrar */
+  function idsDaVista(grupos, vistaId) {
+    var v = VISTA_POR_ID[vistaId];
+    if (!v) return [];
+    return arr(grupos).filter(function (g) {
+      if (!(g.n > 0)) return false;
+      return v.inclui ? casaAlgum(g, v.inclui) : !casaAlgum(g, v.exceto || []);
+    }).map(function (g) { return g.id; });
+  }
+
+  /* as vistas que fazem diferença NESTE modelo, com o número de grupos que cada uma mostra */
+  function vistasDisponiveis(grupos) {
+    var comPeca = arr(grupos).filter(function (g) { return g.n > 0; });
+    var ja = {};
+    return VISTAS.map(function (v) {
+      var ids = idsDaVista(comPeca, v.id);
+      var util = v.inclui ? ids.length > 0 : (ids.length > 0 && ids.length < comPeca.length);
+      /* ⚠ mesma combinação de uma vista anterior = botão repetido ("Fundação + topografia" sem terreno no modelo é
+         "Só fundação" de novo — achado na e2e de 05/10/2026) */
+      var assin = ids.slice().sort().join("|");
+      if (!util || ja[assin]) return null;
+      ja[assin] = 1;
+      return { id: v.id, rotulo: v.rotulo, grupos: ids.length };
+    }).filter(Boolean);
+  }
+
   var ATALHOS = [
     { id: "fundacao", rotulo: "Só fundação" },
     { id: "armacao", rotulo: "Só armação" },
@@ -277,7 +341,7 @@
   ];
 
   var BimDisc = {
-    GRUPOS: GRUPOS, ATALHOS: ATALHOS, norm: norm,
+    GRUPOS: GRUPOS, ATALHOS: ATALHOS, VISTAS: VISTAS, idsDaVista: idsDaVista, vistasDisponiveis: vistasDisponiveis, norm: norm,
     regra: regra, classificar: classificar, grupoDoCarimbo: grupoDoCarimbo,
     agrupar: agrupar, agruparPorEtapa: agruparPorEtapa, ordemEtapa: ordemEtapa,
     agruparPorMontagem: agruparPorMontagem, ordemMontagem: ordemMontagem, sequencia: sequencia,
