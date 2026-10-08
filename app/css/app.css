@@ -1937,6 +1937,68 @@ table.tbl tr.etapa-row:hover td { box-shadow: inset 3px 0 0 var(--aco); }
   background: rgba(46, 111, 158, .1); border-radius: var(--raio-sm); padding: 1px 6px;
 }
 .lp-qtag.crono { color: var(--texto-fraco); background: var(--surface-2); }
+
+/* O MIOLO DO PREVISTO × REALIZADO COMPLETO (redesenho pedido pelo Rogério em
+   08/10/2026: "tá muito feio, principalmente a parte de cronograma — coisa
+   repetida, mal organizada, poluindo demais: fora").
+   O HTML é do js/cronoexecui.js (painelPR completo → _prCompleto) e já sai com
+   as peças do kit (mod-aviso, mod-kpis, mod-sec): vale igual no módulo
+   "Cronograma da obra" e na sub-aba Previsto × Realizado do orçamento. Aqui só
+   o que é do painel: a barra de origem (a "barra de filtros" — é onde mora a
+   data de corte e as ações da linha de base), o segundo número do indicador
+   (IDP), a lista de observações recolhível e o corpo das seções.
+   ⚠ Seletor `.cx-pr.cx-pr-full`: o <style> do painel (CSS_PR) vem DEPOIS do
+   app.css, e com especificidade igual ele venceria. */
+.cx-pr.cx-pr-full { font-size: var(--t-peq); }
+.cx-pr.cx-pr-full .cx-pr-origem { display: flex; align-items: center; justify-content: space-between; gap: 10px 20px; flex-wrap: wrap; padding: 10px 14px; margin: 0 0 16px; background: var(--card-bg); border: 1px solid var(--linha); border-radius: var(--raio-lg); font-size: var(--t-peq); }
+.cx-pr.cx-pr-full .cx-pr-orig { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; color: var(--texto-fraco); min-width: 0; }
+.cx-pr.cx-pr-full .cx-pr-orig b { color: var(--texto); font-weight: var(--p-forte); }
+.cx-pr.cx-pr-full .cx-pr-sep { font-style: normal; color: var(--linha-forte); }
+.cx-pr.cx-pr-full .cx-pr-sembase { color: var(--amarelo); font-weight: var(--p-medio); }
+.cx-pr.cx-pr-full .cx-pr-orig-dir { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; margin-left: auto; }
+.cx-pr.cx-pr-full .cx-pr-corte { display: inline-flex; align-items: center; gap: 8px; margin: 0; color: var(--texto-fraco); font-weight: var(--p-normal); white-space: nowrap; }
+.cx-pr.cx-pr-full .cx-pr-corte input { width: 150px; }
+.cx-pr.cx-pr-full .cx-pr-fc { font-size: var(--t-micro); }
+.cx-pr.cx-pr-full .cx-pr-origem .cx-pr-acoes { margin: 0; gap: 8px; }
+/* o segundo número do indicador "Previsto na data" (IDP, só com linha de base) */
+.cx-pr.cx-pr-full .mod-kpi .cx-kpi-idp { display: inline; white-space: nowrap; }
+.cx-pr.cx-pr-full .mod-kpi .cx-kpi-idp .cx-kpi-rot { font-size: inherit; text-transform: none; letter-spacing: 0; font-weight: var(--p-normal); color: inherit; }
+.cx-pr.cx-pr-full .mod-kpi .cx-kpi-idp .cx-kpi-v { font-size: inherit; font-weight: var(--p-forte); color: var(--texto); }
+.cx-pr.cx-pr-full .mod-kpi .cx-sit { font-size: var(--t-micro); padding: 0 7px; }
+.cx-pr.cx-pr-full .mod-kpi .cx-kpi-acao { margin-top: 8px; }
+/* as observações sobre a conta: UM aviso, a lista abre no clique */
+.cx-pr.cx-pr-full .mod-aviso .cx-obs > summary { cursor: pointer; font-weight: var(--p-forte); color: var(--texto); }
+.cx-pr.cx-pr-full .mod-aviso .cx-obs > summary:focus-visible { outline: 2px solid var(--aco-claro); outline-offset: 2px; border-radius: var(--raio-sm); }
+.cx-pr.cx-pr-full .mod-aviso .cx-obs .cx-lista { margin: 8px 0 2px; font-size: var(--t-peq); line-height: 1.55; color: var(--texto-fraco); }
+/* a leitura executiva (só na sub-aba do orçamento) como um bloco do kit */
+.cx-pr.cx-pr-full .cx-pr-leitura { margin: 0 0 18px; }
+.cx-pr.cx-pr-full .cx-pr-leitura .nr { margin: 0 0 10px; padding: 14px 18px; border: 1px solid var(--linha); border-left: 3px solid var(--aco); border-radius: var(--raio-lg); background: var(--card-bg); }
+.cx-pr.cx-pr-full .cx-pr-leitura .nr-cab { font-size: var(--t-micro); text-transform: uppercase; letter-spacing: .7px; color: var(--texto-fraco); margin-bottom: 6px; }
+.cx-pr.cx-pr-full .cx-pr-leitura .nr-cab .muted { text-transform: none; letter-spacing: 0; font-weight: var(--p-normal); }
+.cx-pr.cx-pr-full .cx-pr-leitura .nr-txt { font-size: var(--t-peq); }
+.cx-pr.cx-pr-full .cx-pr-leitura .nr-ress { padding: 10px 18px; border-left-color: var(--linha-forte); }
+.cx-pr.cx-pr-full .cx-pr-leitura .nr-ress .nr-falta { margin: 0; }
+.cx-pr.cx-pr-full .cx-pr-leitura .nr-ress summary { cursor: pointer; color: var(--texto-fraco); }
+.cx-pr.cx-pr-full .cx-pr-leitura .nr-ress summary:focus-visible { outline: 2px solid var(--aco-claro); outline-offset: 2px; border-radius: var(--raio-sm); }
+.cx-pr.cx-pr-full .cx-pr-leitura .nr-ress .cx-lista { font-size: var(--t-micro); margin-top: 6px; }
+/* o corpo das seções */
+.cx-pr.cx-pr-full .cx-pr-curva .cx-curva { border: 0; border-radius: 0; }
+.cx-pr.cx-pr-full .cx-pr-gantt .cx-gantt { border-radius: var(--raio); }
+.cx-pr.cx-pr-full .cx-pr-nos .cx-tabela { margin: 0 -18px -16px; }
+.cx-pr.cx-pr-full .cx-pr-nos table.tbl.cx-pr-tab { margin: 0; width: 100%; }
+.cx-pr.cx-pr-full .cx-pr-fora { margin: 0; padding-left: 18px; line-height: 1.5; }
+.cx-pr.cx-pr-full .cx-pr-fora li + li { margin-top: 8px; }
+.cx-pr.cx-pr-full .cx-fora-it { margin-top: 2px; color: var(--texto-fraco); font-size: var(--t-micro); }
+.cx-pr.cx-pr-full .cx-fora-it .cx-pr-sep { margin: 0 6px; font-style: normal; color: var(--linha-forte); }
+.cx-pr.cx-pr-full .cx-pr-nada { margin: 0 0 18px; font-size: var(--t-micro); color: var(--texto-fraco); }
+@media (max-width: 720px) {
+  .cx-pr.cx-pr-full .cx-pr-orig-dir { margin-left: 0; width: 100%; }
+  .cx-pr.cx-pr-full .cx-pr-corte input { width: auto; flex: 1 1 auto; }
+  /* a curva desenhada em 1000 de largura, espremida em 350 px, deixava a letra
+     dos eixos com 3 px: no celular ela guarda 560 px e rola no corpo da seção */
+  .cx-pr.cx-pr-full .cx-pr-curva .cx-curva { min-width: 560px; }
+}
+
 .lp-qtit { font-size: var(--t-peq); font-weight: var(--p-medio); line-height: 1.35; color: var(--texto); }
 .lp-qmotivo {
   font-size: var(--t-micro); font-weight: var(--p-medio); color: var(--lp-vermelho-texto);
@@ -2107,6 +2169,11 @@ input.cell.cell-erro { border-color: #dc2626 !important; background: rgba(220,38
    do TEXTO do tema — escuro sobre a cena escura. Mesmo tropeço do nome da
    obra (ver .ov-palco .ov-nome). */
 .ov-cena .tela-head h1 { color: var(--ov-texto); }
+/* o cabeçalho do kit de módulo (roteiro de 08/10/2026) sobre a cena: as
+   tintas da cena, não as do tema — a cena é escura nos dois temas */
+.ov-cena .mod-cab h1 { color: var(--ov-texto); }
+.ov-cena .mod-cab .mod-sub { color: var(--ov-fraco); }
+.ov-cena .mod-cab .mod-ic { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.16); color: var(--ov-aco); }
 /* O CENÁRIO: preso no topo da área de rolagem (sticky), da altura dela
    (--ov-alt, medida pelo JS em #main), e sem ocupar lugar no fluxo (a
    margem de baixo devolve a altura). Rolar a grade não leva a foto embora.
@@ -2766,90 +2833,11 @@ input.coef-edit.mexido { border-color: var(--amarelo); background: rgba(170, 98,
    volta a --texto (N2), e a hierarquia continua dita pelo preenchimento do
    `.primary`, que é o único cheio da área. */
 
-/* =====================================================================
- * A BARRA DO EDITOR DE ORCAMENTO — DUAS LINHAS, GRUPOS POR PROXIMIDADE
- *
- * Mesmo principio do `.tela-acoes` acima (um forte, o resto discreto), so
- * que aplicado a uma barra de treze botoes que nao cabe em uma frase. O que
- * carrega o significado e a PROXIMIDADE: 6px dentro do grupo, 10px entre
- * grupos, 8px entre as duas linhas. O `.acoes-sep` so confirma o que o
- * espaco ja disse.
- *
- * ⚠ NAO USA `.btn.ghost` PARA O SECUNDARIO. Neste app `ghost` ja significa
- *   voltar/desfazer (ver `.btn.ghost` la em cima e o botao Voltar no topo
- *   desta mesma tela). Pintar "Parametros" de ghost daria a nove botoes de
- *   acao a roupa de um botao de saida. O secundario aqui e o `.btn` cru (N2:
- *   superficie, borda --linha, sem sombra, rotulo --texto) — desde 14/09/2026
- *   sem regra propria, ver a nota logo abaixo.
- *
- * ⚠ `!important` na margem: as 37 telas carregam `margin-right` INLINE nos
- *   botoes, e `_aprovBotoesOrc` monta a pilula com `margin-right:6px` inline.
- *   Com o `gap` fazendo o espacamento, a margem antiga soma e abre um vao que
- *   quebra justamente a leitura de grupo. Mesma decisao do `.tela-acoes`.
- * ===================================================================== */
-.tela-titulo { margin-bottom: 12px; }
-/* o nome do orçamento: 20/600. Era `style="font-size:20px;font-weight:800"`
-   em linha (ui.js renderEditor), e o 800 desenhava 600 — o Plex Sans só tem
-   400–600 (memória "peso de fonte que não existe"). Continua <span> e não
-   <h2>: `.main h2` (0,1,1) venceria esta classe calado (memória ".main h2
-   vence o componente"). Duas classes, para ninguém "simplificar" para uma. */
-.tela-titulo .tela-nome { font-size: var(--t-tit); font-weight: var(--p-forte); margin-left: 8px; }
-.barra-acoes { display: flex; flex-direction: column; gap: 8px; }
-.acoes-linha { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
-/* o grupo NAO quebra por dentro: quem quebra e a linha, entre grupos */
-.acoes-grp { display: flex; align-items: center; flex-wrap: nowrap; gap: 6px; }
-.acoes-grp > * { margin-right: 0 !important; align-self: center !important; }
-.acoes-sep { width: 1px; align-self: stretch; min-height: 18px; background: var(--linha); flex: 0 0 auto; }
-/* ⚠ APAGADAS AQUI (14/09/2026): `.barra-acoes .btn:not(.primary):not(.success)
-   :not(.danger):not(.acao-forte)` (0,6,0), o hover dela, `.barra-acoes
-   .btn.acao-forte` e `.barra-acoes .btn.primary/.success {600}`. Os valores
-   foram para as declarações originais (`.btn`, `.btn.acao-forte`,
-   `.btn.primary`, `.btn.success`, perto da linha 600). Com a regra de 0,6,0
-   viva, o mesmo `btn sm` desenhava um botão aqui e outro na barra do
-   Cronograma — e qualquer correção no `.btn` perdia calada para ela.
-   ⚠ Não recrie: e2e-padrao-cronograma lista cada botão fora da régua. */
-/* no celular o traco sai e sobra a quebra de linha; o grupo passa a poder
-   quebrar por dentro para nenhum botao vazar da tela. */
-@media (max-width: 640px) {
-  .acoes-sep { display: none; }
-  .acoes-grp { flex-wrap: wrap; }
-}
-/* ⚠ O [Editar com IA] DIZ O NOME INTEIRO SÓ ONDE CABE (revisão 4B). Medido a
-   1366×768 com o menu lateral aberto: a linha 1 da barra tem 1086 px e
-   sobravam 79 px antes do botão, que ocupa 127 px. Sem isto a linha quebrava:
-   Comparar cenários e Relatório completo desciam para uma 2ª linha e tudo
-   abaixo (KPIs, abas, Gantt) descia 40 px. Abaixo de 1440 px o botão diz "IA"
-   (o nome inteiro fica no aria-label e no title). Sem este CSS — cache velho —
-   o rótulo inteiro aparece: degrada para a quebra de linha, nunca some. */
-/* ⚠ .rot-largo — O MESMO APERTO, DE NOVO (21/09/2026). O botão Orçamentista
-   entrou nessa linha na 1.2.83 com 127 px e ela voltou a quebrar. Medido no
-   navegador: só coube encurtando "Escopo Inteligente" e "Relatório completo"
-   abaixo de 1440 px (sobram 15 px). Classe separada da .ia-rot-largo porque a
-   e2e mede o PRIMEIRO .ia-rot-largo da página. A história está em js/ui.js,
-   em "O ORÇAMENTISTA ENTROU NA LINHA 1 SEM CABER". Mesma degradação: sem este
-   CSS o nome inteiro aparece e a linha quebra — nunca some. */
-@media (max-width: 1439px) {
-  .barra-acoes .ia-rot-largo,
-  .barra-acoes .rot-largo { display: none; }
-}
-/* ⚠ AS FAIXAS DE PENDÊNCIA DO EDITOR (item sem preço / sem quantidade), entre
-   os KPIs e as abas: 12 px, 6×12 de vão e raio 8 — a mesma pele do selo
-   "Este orçamento foi fechado em…" logo acima. Eram `style=` em linha com 13 px
-   (fora da régua), 10×14 de vão e raio 10.
-   Roteiro do defeito (14/09/2026, revisão da fatia F5): a 2ª linha da barra do
-   Cronograma (D1) custa ~34 px, e com a faixa "1 item(ns) sem quantidade"
-   aberta a 1ª barra do Gantt foi a y 771–787 numa janela de 768 — a
-   e2e-cronograma-executivo reprovou. Medido a 1366 com o menu aberto: em 13 px
-   o texto tem 1123 px para 1060 úteis (2 linhas, 62 px); em 12 px, 1038 px
-   (1 linha, 33 px). A faixa inteira (altura + margem) devolve 34 px: a 1ª
-   barra voltou a y 737–753 (na 1.2.77, 740–756). Com o estilo antigo de volta
-   ela vai de novo a 771–787 e a e2e reprova (controle negativo executado).
-   Com mais itens listados o texto volta a quebrar em 2 linhas — ainda 15 px
-   menor que antes. O texto não mudou: é recado de bloqueio, e o número e a
-   porta ([Calcular]) continuam nele. */
-.faixa-pend { padding: 6px 12px; border-radius: var(--raio-ctl); font-size: var(--t-micro); margin-bottom: 8px; }
-.faixa-pend.erro { background: rgba(220,38,38,.10); border: 1px solid rgba(220,38,38,.3); }
-.faixa-pend.aviso { background: rgba(234,88,12,.10); border: 1px solid rgba(234,88,12,.35); }
+/* A BARRA DO EDITOR DE ORÇAMENTO (duas linhas de 16 botões, separadores,
+   rótulos encurtados abaixo de 1440 px) e as FAIXAS DE PENDÊNCIA saíram em
+   08/10/2026: o editor monta com o kit do padrão de tela (js/modulo.js,
+   a seção do padrão de tela no fim deste arquivo) — 2 ações à vista,
+   o resto no "Mais", um aviso só. Ver js/ui.js renderEditor. */
 
 /* =====================================================================
  * GRAFICOS — MARCAS FINAS, MOLDURA RECUADA, LEITURA NO HOVER
@@ -3120,36 +3108,9 @@ table.tbl tbody tr:hover .btn:not(.primary):not(.success):not(.danger) {
 }
 
 /* ---- Janela destacada (js/janelas.js): só o orçamento, sem menu e sem topo ---- */
-/* ⚠ o ⧉ mora na LINHA DO TÍTULO do editor (ui.js renderEditor, `_bJanela`):
-   no fim da `.tabs`, que rola, ele ficava fora da vista abaixo de ~1650 px.
-   O lado direito do título não encolhe (`flex: none`); quem cede é o nome do
-   orçamento, com reticências — só na mesa: no celular o título quebra em
-   duas linhas (regra de 820 px) e o nome inteiro continua legível. */
-.orc-titulo { gap: 12px; }
-.orc-titulo-acoes { display: flex; align-items: center; gap: 6px; flex: none; }
+/* o ⧉ "Abrir em outra janela" mora no menu "Mais" do cabeçalho do editor
+   (padrão de tela, 08/10/2026); o nome do botão não quebra */
 .jan-abrir { white-space: nowrap; }
-/* ⚠ NA MESA, UMA LINHA SÓ — e quem cede é o NOME, não o número nem as portas.
-   Roteiro do defeito (revisão adversarial da 1.2.81, nome de 110 caracteres):
-   `.main .flex { flex-wrap: wrap }` (lá em cima) vencia o comentário acima; as
-   portas desciam para uma 2ª linha a 1280, 1366 e 1920, o modo foco perdia
-   ~44 px de Gantt, e a 1280/1366 o "ORC-2026-099" sumia dentro do corte.
-   ⚠ E O CORTE MORA NO `.tela-nome`, NÃO NO CONTÊINER: com `overflow: hidden`
-   no `.orc-titulo-nome` o anel de foco do [← Voltar] (box-shadow de 3 px) saía
-   cortado em três lados — o botão encosta no contêiner. */
-@media (min-width: 821px) {
-  .main .flex.orc-titulo { flex-wrap: nowrap; }
-  .orc-titulo-nome { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; }
-  .orc-titulo-nome > .btn { flex: none; }
-  .orc-titulo-nome > .tela-nome { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .orc-titulo-nome > .muted { flex: none; margin-left: 8px; white-space: nowrap; }
-}
-/* ⚠ NO CELULAR AS PORTAS OCUPAM A LINHA DE BAIXO E QUEBRAM. Com `flex: none`
-   os três botões (Gerar Proposta, Apresentar, ⧉) somavam ~430 px e o #main
-   rolava de lado a 390 px (442 × 390, revisão adversarial da 1.2.81). */
-@media (max-width: 820px) {
-  .orc-titulo-acoes { flex: 1 1 100%; min-width: 0; flex-wrap: wrap; }
-  body.foco-crono #main > .orc-titulo .orc-foco-acoes { flex-wrap: wrap; }
-}
 body.modo-janela #sidebar, body.modo-janela #topbar { display: none !important; }
 body.modo-janela .app, body.modo-janela .app.com-sidebar { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); grid-template-areas: "main"; height: calc(100vh - 34px); height: calc(100dvh - 34px); }
 body.modo-janela .main { grid-area: main; padding: 14px 18px; }
@@ -3170,11 +3131,10 @@ body.modo-janela .main { grid-area: main; padding: 14px 18px; }
    ela apagava os cartões da lista e o bloco OPERAÇÃO do Painel. Duas travas:
    o App.render tira a classe no topo, e esta regra não alcança KPI de outra tela. */
 body.foco-crono #main > .orc-cab { display: none !important; }
-body.foco-crono #main > .orc-titulo { margin-bottom: 6px; }
-/* as portas [Gerar Proposta] e [Apresentar] do modo foco: só com ele ligado
-   (fora dele a barra de ações já as mostra) */
-.orc-foco-acoes { display: none; }
-body.foco-crono #main > .orc-titulo .orc-foco-acoes { display: flex; align-items: center; gap: 6px; }
+/* o cabeçalho do editor (Modulo.cab) FICA no foco: é nele que moram a
+   primária [Gerar Proposta] e o "Mais" (Apresentar, Excel…) — sem botão em
+   dobro. Só encosta mais nas abas para o Gantt ganhar a altura. */
+body.foco-crono #main > .mod-cab { margin-bottom: 12px; }
 /* ---- Janela destacada: só o painel (sem título, ações, KPIs nem abas) ---- */
 /* ⚠ o recado (#jan-recado) é a exceção: escondido por esta regra, orçamento
    excluído e endereço inválido viravam janela EM BRANCO (ver App._janelaRecado) */
@@ -3526,6 +3486,10 @@ table.tbl.cxb-tab tr.cxb-mudou td.num { color: var(--graf-aviso); }
 /* os <select> ficam com o estilo nativo do app (seta, borda, tema): o rótulo é só texto */
 .pn-filtro { display: inline-flex; align-items: center; gap: 8px; font-size: var(--t-peq); font-weight: var(--p-medio); color: var(--texto-fraco); }
 .pn-filtro select { max-width: 240px; }
+/* o recorte do Painel mora no slot de obra do cabeçalho do kit (08/10/2026):
+   o período é curto e não herda a largura mínima do seletor de obra */
+.mod-obra .pn-filtros { flex-wrap: wrap; }
+.mod-obra .pn-filtro select[data-gacao="dash-periodo"] { min-width: 0; }
 .pn-ctl:hover { border-color: var(--linha-forte); }
 
 /* superfícies e títulos de seção */
@@ -3823,9 +3787,9 @@ table.tbl.cxb-tab tr.cxb-mudou td.num { color: var(--graf-aviso); }
 .pn-impresso .main { padding: 18px 22px; }
 .pn-imp-cab { font-size: var(--t-peq); color: var(--texto-fraco); border-bottom: 1px solid var(--linha); padding-bottom: 8px; margin-bottom: 14px; }
 .pn-impresso .pn-filtros, .pn-impresso .pn-acao, .pn-impresso .pn-seg, .pn-impresso .pn-ctl, .pn-impresso .pn-fim, .pn-impresso .pn-chip { pointer-events: none; }
-.pn-impresso .pn-filtros, .pn-impresso .pn-acao, .pn-impresso .pn-fim, .pn-impresso .pn-ctl-mini { display: none !important; }
+.pn-impresso .pn-filtros, .pn-impresso .pn-acao, .pn-impresso .pn-fim, .pn-impresso .pn-ctl-mini, .pn-impresso .mod-lado { display: none !important; }
 @media print {
-  .pn-filtros, .pn-acao, .pn-seg, .pn-fim, .pn-ctl-mini, .pn-btn { display: none !important; }
+  .pn-filtros, .pn-acao, .pn-seg, .pn-fim, .pn-ctl-mini, .pn-btn, .pn .mod-lado { display: none !important; }
   .pn-grid { grid-template-columns: 1fr; }
   .pn-card, .pn-tile { break-inside: avoid; box-shadow: none; }
   .pn-grupo, .pn-sem-mov, .pn-detalhe { break-inside: avoid; }
@@ -4124,3 +4088,102 @@ body.modo-bim3d .b4h-a { font-size: var(--t-base); }
 .est-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .est-chip { font-size: var(--t-micro); padding: 2px 9px; border-radius: 99px; background: var(--surface-2); border: 1px solid var(--linha); }
 .est-dim { margin: 0; }
+
+/* =====================================================================
+   PADRÃO DE TELA DE MÓDULO (js/modulo.js + ROTEIRO-MODULO.md, 08/10/2026)
+   Uma ordem só em todo módulo: cabeçalho → aviso → filtros → indicadores →
+   abas → seções/tabela. Só tokens: nenhum hex solto aqui.
+   ===================================================================== */
+.mod-cab { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px 24px; flex-wrap: wrap; margin: 0 0 20px; }
+.mod-tit { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1 1 260px; }
+/* título e contexto ENCOLHEM com reticências em vez de empurrar as ações para
+   baixo (a 1280 px o editor de orçamento quebrava o cabeçalho em 2 faixas) */
+.mod-tit > div { min-width: 0; }
+.mod-tit h1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* a linha de contexto NÃO corta: ela leva botão ("← Orçamentos") e o
+   overflow escondido cortava o anel de foco dele (e2e-crono-foco-sai) */
+.mod-ic { flex: 0 0 auto; width: 40px; height: 40px; border-radius: var(--raio); display: inline-grid; place-items: center; background: var(--surface-2); color: var(--aco); border: 1px solid var(--linha); }
+.mod-ic svg { width: 22px; height: 22px; }
+.mod-tit h1 { margin: 0; font-size: var(--t-tit); line-height: 1.2; font-weight: var(--p-forte); letter-spacing: -.2px; }
+.mod-sub { margin: 3px 0 0; color: var(--texto-fraco); font-size: var(--t-peq); line-height: 1.4; }
+.mod-lado { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
+.mod-obra select { min-width: 200px; max-width: 280px; }
+.mod-acoes { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mod-mais { position: relative; }
+.mod-mais-seta { margin-left: 6px; font-size: var(--t-micro); opacity: .7; }
+.mod-mais-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 60; min-width: 220px; padding: 6px; background: var(--surface); border: 1px solid var(--linha); border-radius: var(--raio); box-shadow: var(--sombra-lg); display: flex; flex-direction: column; gap: 2px; }
+.mod-mais-menu[hidden] { display: none; }
+.mod-mais-item > .btn, .mod-mais-item > button, .mod-mais-item > a { width: 100%; justify-content: flex-start; text-align: left; border-color: transparent; background: transparent; box-shadow: none; }
+.mod-mais-item > .btn:hover, .mod-mais-item > button:hover { background: var(--surface-2); }
+.mod-mais-sep { height: 1px; margin: 4px 6px; background: var(--linha); }
+
+.mod-filtros { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; padding: 10px 12px; margin: 0 0 16px; background: var(--card-bg); border: 1px solid var(--linha); border-radius: var(--raio-lg); }
+/* max-width: com um seletor só na barra (Semana, Situação, Mês) o campo
+   esticava por 1.200 px — um select do tamanho da tela. A busca, que pede
+   espaço, usa `.mod-busca`. */
+.mod-filtros .field { margin: 0; min-width: 160px; flex: 1 1 180px; max-width: 340px; }
+.mod-filtros .field.mod-busca { flex: 2 1 320px; max-width: 640px; }
+.mod-filtros-dir { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
+.mod-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0; margin: 0 0 20px; background: var(--card-bg); border: 1px solid var(--linha); border-radius: var(--raio-lg); overflow: hidden; }
+.mod-kpi { display: flex; flex-direction: column; gap: 4px; padding: 14px 18px; border-left: 1px solid var(--linha); min-width: 0; }
+.mod-kpi:first-child { border-left: 0; }
+.mod-kpi-r { font-size: var(--t-micro); text-transform: uppercase; letter-spacing: .7px; color: var(--texto-fraco); font-weight: var(--p-forte); }
+.mod-kpi-v { font-size: var(--t-med); font-weight: var(--p-forte); color: var(--texto); font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mod-kpi-s { font-size: var(--t-micro); color: var(--texto-fraco); line-height: 1.35; }
+.mod-kpi-pos .mod-kpi-v { color: var(--verde); }
+.mod-kpi-neg .mod-kpi-v { color: var(--vermelho); }
+.mod-kpi-alerta .mod-kpi-v { color: var(--amarelo); }
+.mod-kpi-info .mod-kpi-v { color: var(--aco); }
+
+.mod-abas { margin-bottom: 18px; }
+.mod-abas .tab:focus-visible { outline: 2px solid var(--aco-claro); outline-offset: -2px; }
+
+.mod-sec { background: var(--card-bg); border: 1px solid var(--linha); border-radius: var(--raio-lg); margin: 0 0 18px; overflow: hidden; }
+.mod-sec-cab { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 14px 18px 0; }
+.mod-sec-cab h2 { margin: 0; font-size: var(--t-med); font-weight: var(--p-forte); }
+.mod-sec-acoes { display: flex; gap: 8px; flex-wrap: wrap; }
+/* overflow-x: a seção é `overflow:hidden` (cantos), e tabela larga — a Folha
+   Semanal tem 12 colunas — era CORTADA entre 720 e ~1200 px, sem rolagem.
+   A rolagem fica no corpo; a margem negativa da tabela cabe no padding. */
+.mod-sec-corpo { padding: 14px 18px 16px; overflow-x: auto; }
+.mod-sec-corpo > table.tbl { margin: 0 -18px -16px; width: calc(100% + 36px); }
+/* Número de tabela DENTRO do kit: a letra do texto, com algarismos tabulares
+   (a vírgula continua no prumo — o Plex e a Source têm `tnum`). O Mono da
+   regra "NÚMERO EM COLUNA" é da planilha do orçamento, onde a conferência é
+   dígito a dígito; numa lista de lançamentos ele deixava a tabela com cara de
+   terminal (queixa do Rogério, 08/10/2026). */
+.mod-sec table.tbl td.num, .mod-sec table.tbl th.num { font-family: inherit; white-space: nowrap; }
+/* Ação de LINHA (ROTEIRO §4): coluna própria, à direita, sem quebrar — nunca
+   embaixo da pílula de status, que dobrava a altura de toda linha. */
+.mod-sec table.tbl th.mod-lin-acoes, .mod-sec table.tbl td.mod-lin-acoes { width: 1%; text-align: right; white-space: nowrap; }
+.mod-sec table.tbl td.mod-lin-acoes .btn + .btn { margin-left: 4px; }
+
+.mod-aviso { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; margin: 0 0 16px; border-radius: var(--raio); border: 1px solid var(--linha); border-left-width: 4px; background: var(--card-bg); font-size: var(--t-peq); }
+.mod-aviso-txt { display: flex; flex-direction: column; gap: 2px; }
+.mod-aviso-info { border-left-color: var(--aco); }
+.mod-aviso-alerta { border-left-color: var(--amarelo); }
+.mod-aviso-erro { border-left-color: var(--vermelho); }
+.mod-aviso-ok { border-left-color: var(--verde); }
+
+/* pílula de status (Modulo.pilula): tons fixos pelos tokens */
+.mod-pil { display: inline-block; padding: 2px 9px; border-radius: 99px; font-size: var(--t-micro); font-weight: var(--p-forte); line-height: 18px; white-space: nowrap; }
+.mod-pil-ok { color: var(--verde); background: color-mix(in srgb, var(--verde) 13%, transparent); }
+.mod-pil-alerta { color: var(--amarelo); background: color-mix(in srgb, var(--amarelo) 15%, transparent); }
+.mod-pil-erro { color: var(--vermelho); background: color-mix(in srgb, var(--vermelho) 12%, transparent); }
+.mod-pil-info { color: var(--aco); background: color-mix(in srgb, var(--aco) 13%, transparent); }
+.mod-pil-neutro { color: var(--texto-fraco); background: var(--surface-2); }
+
+.mod-vazio { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; padding: 40px 20px; color: var(--texto-fraco); }
+.mod-vazio b { color: var(--texto); font-size: var(--t-med); font-weight: var(--p-forte); }
+.mod-vazio p { margin: 0; max-width: 460px; font-size: var(--t-peq); }
+.mod-vazio-ic { width: 52px; height: 52px; border-radius: 50%; display: inline-grid; place-items: center; background: var(--surface-2); color: var(--aco); }
+
+@media (max-width: 720px) {
+  .mod-cab { align-items: stretch; }
+  .mod-lado { justify-content: flex-start; width: 100%; }
+  .mod-obra, .mod-obra select { width: 100%; max-width: none; }
+  .mod-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mod-kpi:nth-child(odd) { border-left: 0; }
+  .mod-kpi:nth-child(n+3) { border-top: 1px solid var(--linha); }
+}

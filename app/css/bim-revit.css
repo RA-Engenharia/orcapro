@@ -707,3 +707,103 @@
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 8px;
   color: var(--rv-tx-fraco); font-size: 12.5px; z-index: 5; background: var(--rv-tela-2);
 }
+
+/* ---------- VISTAS 2D: planta e corte em desenho técnico (js/bim2dui.js + js/desenho2d.js) ----------
+   Papel e tinta seguem o tema do BIM (claro = papel branco, escuro = cinza do Revit Dark).
+   A espessura da linha mora no SVG (penas fina/média/grossa, non-scaling-stroke). */
+.bim-grade > .bim-tela.bim-tela-2d { --d2-papel: #ffffff; --d2-tinta: #111111; --d2-fraco: #2b2b2b; --d2-sel: #1a6cb5; background: var(--d2-papel); }
+.bim-revit[data-rv-tema="escuro"] .bim-grade > .bim-tela.bim-tela-2d { --d2-papel: #232323; --d2-tinta: #ececec; --d2-fraco: #d2d2d2; --d2-sel: #4a9fe0; }
+.d2-vista-tela { position: absolute; inset: 0; overflow: hidden; cursor: grab; touch-action: none; user-select: none; }
+.d2-vista-tela[data-d2-arrasta] { cursor: grabbing; }
+.d2-vista-tela[data-d2-pick] { cursor: crosshair; }
+.d2-vista-tela svg { width: 100%; height: 100%; display: block; }
+.d2-papel { fill: var(--d2-papel); }
+.d2-corte { stroke: var(--d2-tinta); stroke-linejoin: miter; }
+.d2-vista { stroke: var(--d2-fraco); fill: none; stroke-linecap: round; }
+.d2-cota line, .d2-eixo, .d2-nivel-l, .d2-tit-l { stroke: var(--d2-tinta); }
+.d2-cota-tx, .d2-nivel-tx, .d2-tit-tx, .d2-tit-esc, .d2-marca-tx { fill: var(--d2-tinta); font-family: "IBM Plex Sans", "Segoe UI", Arial, sans-serif; }
+.d2-tit-tx, .d2-marca-tx { font-weight: 600; }
+.d2-cota-pt, .d2-marca-seta, .d2-nivel-tri { fill: var(--d2-tinta); }
+.d2-marca-circ { fill: var(--d2-papel); stroke: var(--d2-tinta); }
+.d2-marca { cursor: pointer; }
+.d2-marca:hover .d2-marca-circ, .d2-marca:hover .d2-marca-seta { stroke: var(--d2-sel); fill: var(--d2-sel); }
+.d2-marca:hover .d2-marca-tx { fill: #fff; }
+.d2-svg pattern line { stroke: var(--d2-tinta); }
+.d2-pick { stroke: var(--d2-sel); stroke-width: 2; stroke-dasharray: 6 4; }
+.d2-vazio { position: absolute; inset: 0; display: grid; place-items: center; color: var(--d2-fraco); font-size: var(--t-peq); padding: 20px; text-align: center; }
+/* vínculo CAD na planta: meio-tom, por baixo do modelo */
+.d2-cad-l { stroke: #9aa3ad; fill: none; stroke-linecap: round; }
+.d2-cad-tx { fill: #9aa3ad; font-family: "IBM Plex Sans", "Segoe UI", Arial, sans-serif; }
+.bim-revit[data-rv-tema="escuro"] .d2-cad-l { stroke: #6f7780; }
+.bim-revit[data-rv-tema="escuro"] .d2-cad-tx { fill: #6f7780; }
+
+/* ---------- FAMÍLIAS PARAMÉTRICAS: biblioteca e editor (js/familiaui.js) ---------- */
+.fe-topo { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+.fe-busca { flex: 1 1 140px; min-width: 120px; height: 28px; padding: 0 8px; border: 1px solid var(--rv-linha); border-radius: 6px; background: var(--rv-painel-bg); color: var(--rv-painel-tx); }
+.fe-ajuda, .fe-dica { font-size: 11.5px; color: var(--rv-tx-fraco); margin: 6px 0; line-height: 1.45; }
+.fe-vazio { color: var(--rv-tx-fraco); font-size: 12.5px; text-align: center; padding: 18px 0; }
+.fe-grupo { margin-bottom: 10px; }
+.fe-grupo-t { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--rv-tx-fraco); margin: 8px 0 4px; }
+.fe-card { border: 1px solid var(--rv-linha); border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; background: var(--rv-painel-bg); }
+.fe-card:hover { border-color: var(--rv-linha-forte); }
+.fe-card-l1 { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.fe-card-d { font-size: 11.5px; color: var(--rv-tx-fraco); margin: 2px 0 4px; }
+.fe-card-l2 { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 4px; }
+.fe-card-l2 select { height: 26px; max-width: 170px; }
+.fe-badge { font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 99px; background: var(--rv-hover); color: var(--rv-painel-tx); white-space: nowrap; }
+.fe-b-ra { background: #1a6cb5; color: #fff; }
+.fe-b-importada { background: #7a5a12; color: #fff; }
+.fe-ed label { display: flex; flex-direction: column; gap: 2px; font-size: 11.5px; color: var(--rv-tx-fraco); }
+.fe-ed input, .fe-ed select, .fe-ed textarea { font-size: 12.5px; padding: 3px 6px; border: 1px solid var(--rv-linha); border-radius: 5px; background: var(--rv-painel-bg); color: var(--rv-painel-tx); min-width: 0; }
+.fe-ed textarea { font-family: "IBM Plex Mono", Consolas, monospace; }
+.fe-form { font-family: "IBM Plex Mono", Consolas, monospace; }
+.fe-prev { position: relative; border: 1px solid var(--rv-linha); border-radius: 8px; overflow: hidden; margin-bottom: 8px; background: var(--rv-tela-2); }
+.fe-canvas { display: block; width: 100%; height: 230px; touch-action: none; }
+.fe-prev-l { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 8px; border-top: 1px solid var(--rv-linha); background: var(--rv-painel-bg); }
+.fe-prev-l label { flex-direction: row; align-items: center; gap: 6px; }
+.fe-msgs { margin-bottom: 8px; }
+.fe-erro, .fe-ok, .fe-aviso { font-size: 12px; padding: 6px 9px; border-radius: 6px; margin-bottom: 4px; line-height: 1.4; }
+.fe-erro { background: #fde8e8; color: #8a1c1c; border: 1px solid #f3b4b4; }
+.fe-ok { background: #e6f5ea; color: #1c5e2e; border: 1px solid #b6dfc0; }
+.fe-aviso { background: #fff5dd; color: #6b4b00; border: 1px solid #f0d58a; }
+.fe-sec { border: 1px solid var(--rv-linha); border-radius: 8px; margin-bottom: 8px; background: var(--rv-painel-bg); }
+.fe-sec > summary { cursor: pointer; padding: 7px 10px; font-weight: 600; font-size: 12.5px; background: var(--rv-painel-cab); border-radius: 8px 8px 0 0; }
+.fe-sec > summary small { color: var(--rv-tx-fraco); font-weight: 400; margin-left: 4px; }
+.fe-sec > :not(summary) { margin-left: 10px; margin-right: 10px; }
+.fe-sec > :last-child { margin-bottom: 10px; }
+.fe-grade2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 10px; margin-top: 8px; }
+.fe-grade4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px 8px; margin-top: 6px; }
+.fe-larga { grid-column: 1 / -1; }
+.fe-tab-env { overflow-x: auto; margin: 8px 10px 6px; }
+.fe-tab { border-collapse: collapse; width: 100%; font-size: 12px; }
+.fe-tab th { text-align: left; font-weight: 600; font-size: 11px; color: var(--rv-tx-fraco); padding: 3px 4px; border-bottom: 1px solid var(--rv-linha); white-space: nowrap; }
+.fe-tab td { padding: 2px 3px; border-bottom: 1px solid var(--rv-linha); }
+.fe-tab input, .fe-tab select { width: 100%; min-width: 64px; }
+.fe-sol { border: 1px dashed var(--rv-linha-forte); border-radius: 7px; padding: 6px 8px; margin: 8px 10px 6px; }
+.fe-sol-cab { display: flex; gap: 6px; align-items: center; }
+.fe-sol-cab input { flex: 1 1 auto; }
+.bim-revit[data-rv-tema="escuro"] .fe-erro { background: #4a1f1f; color: #ffd0d0; border-color: #7a3030; }
+.bim-revit[data-rv-tema="escuro"] .fe-ok { background: #1d3a26; color: #c8f0d2; border-color: #2f5e3c; }
+.bim-revit[data-rv-tema="escuro"] .fe-aviso { background: #3e3214; color: #f6e2a8; border-color: #6b5520; }
+@media (max-width: 720px) { .fe-grade4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .fe-grade2 { grid-template-columns: 1fr; } }
+
+/* ESTILO VISUAL (prévia, 07/10/2026): o menu dos quatro estilos, como o cubinho do Revit.
+   Mora no <body> (como o menu das abas) e é claro sempre, como as outras janelas. */
+.rv-menu-estilo { min-width: 300px; padding: 4px 0 6px; }
+.rv-menu-estilo .rv-me-tit { padding: 6px 14px 4px; font-weight: 700; font-size: 11px; color: #5b6570; text-transform: uppercase; letter-spacing: .04em; cursor: default; }
+.rv-menu-estilo .rv-me-tit:hover { background: transparent; }
+.rv-menu-estilo .rv-me-sep { height: 1px; margin: 4px 10px; padding: 0; background: #d6d6d6; cursor: default; }
+.rv-menu-estilo button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 40px; padding: 5px 14px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.rv-menu-estilo button:hover, .rv-menu-estilo button:focus-visible { background: #d8e6f2; outline: none; }
+.rv-menu-estilo button[aria-checked="true"] { box-shadow: inset 3px 0 0 #1a6cb5; background: #eef4fa; }
+.rv-menu-estilo .rv-me-txt { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.rv-menu-estilo .rv-me-txt small { color: #5b6570; font-size: 11px; white-space: normal; line-height: 1.3; }
+/* a amostra de cada estilo: um cubinho desenhado só com CSS */
+.rv-me-amostra { flex: 0 0 26px; height: 26px; border: 1px solid #8a8f96; border-radius: 3px; }
+.rv-me-amostra[data-amostra="linha"] { background: #fff; box-shadow: inset 0 0 0 4px #fff, inset 0 0 0 5px #222; }
+.rv-me-amostra[data-amostra="sombreado"] { background: linear-gradient(135deg, #cbb89a 0 50%, #9c8a6c 50% 100%); }
+.rv-me-amostra[data-amostra="textura"] { background: repeating-linear-gradient(0deg, #b9653d 0 5px, #e8dccb 5px 6px); }
+.rv-me-amostra[data-amostra="realista"] { background: radial-gradient(circle at 30% 25%, #f3d2b3 0 18%, transparent 19%), repeating-linear-gradient(0deg, #a5502c 0 5px, #d9c5ad 5px 6px); box-shadow: inset -6px -6px 8px rgba(0,0,0,.35); }
+.rv-me-amostra[data-amostra="desenho"] { background: #e9e9e9; box-shadow: inset 0 0 0 5px #e9e9e9, inset 0 0 0 6px #111; }
+.rv-vb.rv-vb-estilo { width: auto; padding: 0 7px; gap: 5px; display: inline-flex; align-items: center; }
+.rv-vb-estilo span { max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: inherit; }

@@ -130,6 +130,11 @@
         var ui = +localStorage.getItem("orcapro:bim:escala-ui"); if (ui >= 0.7 && ui <= 1.3) raiz.style.setProperty("--rv-ui", String(ui));
       } catch (eL) {}
       this._ligarAlcas(raiz, alcaLat, alcaDir);
+      /* pele do BIM na cara nova: "revit" = cinza do Revit (Vista › Janelas › Estilo Revit) */
+      try { if (localStorage.getItem("orcapro:bim:pele") === "revit") raiz.classList.add("bim-pele-revit"); } catch (eP) {}
+      /* lado da coluna Propriedades/Navegador (cara nova): arrastar o cabeçalho encaixa na outra borda */
+      try { if (localStorage.getItem("orcapro:bim:lateral-lado") === "dir") raiz.setAttribute("data-rv-lat-lado", "dir"); } catch (eL2) {}
+      this._ligarEncaixe(raiz);
 
       container.innerHTML = "";
       container.appendChild(raiz);
@@ -158,6 +163,10 @@
         if (ev.key === "Escape" && !self._focoTravado && self.focoAtivo()) { self.alternarFoco(false); ev.preventDefault(); ev.stopPropagation(); return; }
         if (ev.key === "Escape") { var n = CMD() && CMD().cancelar(); if (n) { self.pintarFita(); ev.preventDefault(); } }
         else if (ev.key === "Enter") { var c = CMD(); if (c && c.ultimo()) { c.repetir(); self.pintarFita(); ev.preventDefault(); } }
+        else if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && (ev.key === "z" || ev.key === "Z") && !ev.shiftKey) { self.executar("desfazer"); ev.preventDefault(); }
+        else if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && (ev.key === "y" || ev.key === "Y" || ((ev.key === "z" || ev.key === "Z") && ev.shiftKey))) { self.executar("refazer"); ev.preventDefault(); }
+        /* G = grade do chão (fita Vista › Exibir › Grade), sem Ctrl/Alt: o Ctrl+G do navegador fica livre */
+        else if ((ev.key === "g" || ev.key === "G") && !ev.ctrlKey && !ev.altKey && !ev.metaKey && R() && R().comando("grade")) { self.executar("grade"); ev.preventDefault(); }
       };
       document.addEventListener("keydown", this._onKey);
 
@@ -177,6 +186,78 @@
       "plano-trabalho": "Por enquanto: a altura de referência vem do nível ativo, em Níveis.",
       "graute": "Por enquanto: \"Paginar alvenaria\" já posiciona a cinta, a verga e a contraverga em canaleta — falta só o m³ de graute e o kg de aço.",
       "aplicar-ambiente": "Por enquanto: escolha o tipo em \"Padrões prontos\" e ele vale para as paredes novas."
+    },
+
+    /* CARA NOVA (07/10/2026) — pele do BIM. `revit` true = cinza do Revit;
+       false = padrão novo (vidro). Os comandos e os painéis são os mesmos. */
+    pele: function (revit) {
+      if (revit != null) {
+        try { localStorage.setItem("orcapro:bim:pele", revit ? "revit" : "nova"); } catch (e) {}
+        if (this._raiz) this._raiz.classList.toggle("bim-pele-revit", !!revit);
+      }
+      return !!(this._raiz && this._raiz.classList.contains("bim-pele-revit"));
+    },
+    /* ENCAIXE (B1, 07/10/2026): pegar o cabeçalho de Propriedades ou do
+       Navegador e soltar perto da outra borda leva a coluna inteira para lá.
+       Enquanto arrasta, a borda de destino acende (data-rv-lat-alvo). Só com a
+       cara nova; o clique simples no cabeçalho continua sendo clique (o
+       arrasto só conta depois de 40 px). */
+    _ligarEncaixe: function (raiz) {
+      var self = this;
+      raiz.addEventListener("pointerdown", function (e) {
+        if (e.button !== 0) return;
+        if (document.documentElement.getAttribute("data-visual") !== "nova") return;
+        var cab = e.target && e.target.closest ? e.target.closest(".rv-lateral .rv-doca-cab") : null;
+        if (!cab || e.target.closest("button,input,select,a")) return;
+        var x0 = e.clientX, mexeu = false;
+        function mv(ev) {
+          if (!mexeu && Math.abs(ev.clientX - x0) < 40) return;
+          mexeu = true;
+          var r = raiz.getBoundingClientRect();
+          raiz.setAttribute("data-rv-lat-alvo", ev.clientX > r.left + r.width / 2 ? "dir" : "esq");
+        }
+        function up(ev) {
+          document.removeEventListener("pointermove", mv); document.removeEventListener("pointerup", up); document.removeEventListener("pointercancel", up);
+          var alvo = raiz.getAttribute("data-rv-lat-alvo");
+          raiz.removeAttribute("data-rv-lat-alvo");
+          if (!mexeu || !alvo) return;
+          self.ladoLateral(alvo);
+        }
+        document.addEventListener("pointermove", mv); document.addEventListener("pointerup", up); document.addEventListener("pointercancel", up);
+      });
+    },
+    /* lado da coluna Propriedades/Navegador: "esq" (padrão, como o Revit) ou "dir" */
+    ladoLateral: function (lado) {
+      var raiz = this._raiz;
+      if (lado === "esq" || lado === "dir") {
+        if (raiz) { if (lado === "dir") raiz.setAttribute("data-rv-lat-lado", "dir"); else raiz.removeAttribute("data-rv-lat-lado"); }
+        try { localStorage.setItem("orcapro:bim:lateral-lado", lado); } catch (e) {}
+        this.status(lado === "dir" ? "Propriedades e Navegador encaixados à direita." : "Propriedades e Navegador encaixados à esquerda.");
+        if (this._opts && typeof this._opts.onLayout === "function") this._opts.onLayout();
+        if (this._opts && typeof this._opts.onLayoutVivo === "function") this._opts.onLayoutVivo();
+      }
+      return raiz && raiz.getAttribute("data-rv-lat-lado") === "dir" ? "dir" : "esq";
+    },
+    /* Organizar painéis: tudo de volta ao lugar e ao tamanho padrão — a lateral
+       aberta, larguras e a divisória Propriedades/Navegador esquecidas. */
+    organizarPaineis: function () {
+      try { localStorage.removeItem("orcapro:bim:lateral-lado"); } catch (eLd) {}
+      if (this._raiz) this._raiz.removeAttribute("data-rv-lat-lado");
+      var raiz = this._raiz;
+      try {
+        var tira = [];
+        for (var i = 0; i < localStorage.length; i++) {
+          var k = localStorage.key(i);
+          if (k === "orcapro:bim:lateral-w" || k === "orcapro:bim:props-h" || k === "orcapro:bim:lateral-off" || String(k).indexOf("orcapro:bim:direita-w:") === 0) tira.push(k);
+        }
+        tira.forEach(function (k) { localStorage.removeItem(k); });
+      } catch (e) {}
+      if (raiz) {
+        raiz.removeAttribute("data-rv-lateral-off");
+        raiz.style.removeProperty("--rv-lat-w"); raiz.style.removeProperty("--rv-props-h");
+        if (this._direita) this._direita.style.removeProperty("width");
+      }
+      return true;
     },
 
     _emBreve: function (c) {
@@ -222,6 +303,8 @@
       ].forEach(function (b) {
         var bt = el("button");
         bt.type = "button"; bt.title = b.dica; bt.setAttribute("aria-label", b.dica);
+        /* a cara nova (css/visual.css) esconde os que repetem a fita, por este nome */
+        bt.setAttribute("data-rv-qat", b.id);
         bt.innerHTML = ico(b.ico, 15);
         bt.onclick = function () { self.executar(b.id); };
         qat.appendChild(bt);
@@ -409,6 +492,13 @@
 
     /* despacha e repinta — é por aqui que TODO clique passa */
     executar: function (id) {
+      /* Desfazer/Refazer da barra de título: não são comandos da fita — iam ao
+         roteador e voltavam "Comando desconhecido." (até 07/10/2026) */
+      if (id === "desfazer" || id === "refazer") {
+        var bim = global.BIM, ok = !!(bim && bim[id] && bim[id]());
+        this.status(ok ? (id === "desfazer" ? "Desfeito (Ctrl+Y refaz)." : "Refeito.") : (id === "desfazer" ? "Nada para desfazer na modelagem." : "Nada para refazer."));
+        return { ok: ok, id: id };
+      }
       var c = CMD();
       if (!c) return;
       var res = c.executar(id);
@@ -575,11 +665,17 @@
       if (p.tipo === "lista") {
         var s = el("select");
         s.setAttribute("data-rv-p", p.id);
+        /* `grupo` na opção = <optgroup> (a lista de texturas por categoria,
+           estilo visual 07/10/2026); sem grupo, a lista de sempre */
+        var grupos = {};
         (p.opcoes || []).forEach(function (o) {
           var op = el("option", null, o.rotulo != null ? o.rotulo : o);
           op.value = o.id != null ? o.id : o;
           if (op.value === String(p.valor)) op.selected = true;
-          s.appendChild(op);
+          if (o && o.grupo) {
+            if (!grupos[o.grupo]) { grupos[o.grupo] = el("optgroup"); grupos[o.grupo].label = o.grupo; s.appendChild(grupos[o.grupo]); }
+            grupos[o.grupo].appendChild(op);
+          } else s.appendChild(op);
         });
         s.onchange = function () { self._mudouProp(p, this.value); };
         return s;
@@ -604,6 +700,9 @@
     _mudouProp: function (p, valor) {
       var esq = this._estado.props;
       if (!esq) return;
+      /* o parâmetro pode trazer a PRÓPRIA ação (a troca de textura do material
+         não é do esquema da peça, que só sabe se repintar) */
+      if (typeof p.aoMudar === "function") { try { p.aoMudar(valor); } catch (eA) {} }
       var fn = esq.onMudar || this._opts.onMudarProp;
       if (typeof fn !== "function") return;
       var novo = fn(p.id, valor, esq, p);
@@ -807,6 +906,17 @@
         bt.type = "button"; bt.title = b.dica; bt.setAttribute("aria-label", b.dica);
         bt.setAttribute("data-rv-vb", b.id);
         bt.innerHTML = ico(b.ico, 14);
+        /* ESTILO VISUAL (prévia `?previa=visual`): como o cubinho de estilo no
+           rodapé da vista do Revit — mostra o estilo ativo e abre o menu ali */
+        if (b.id === "estilo" && document.documentElement.getAttribute("data-visual") === "nova" && global.BimEstilo) {
+          bt.className = "rv-vb rv-vb-estilo"; bt.setAttribute("data-rv-estilo", "1");
+          bt.title = "Estilo visual: linha oculta, sombreado, textura ou realista"; bt.setAttribute("aria-label", bt.title);
+          bt.setAttribute("aria-haspopup", "menu");
+          bt.innerHTML = ico(b.ico, 14) + "<span>" + esc(global.BimEstilo.rotulo()) + "</span>";
+          bt.onclick = function () { global.BimEstilo.menu(bt); };
+          d.appendChild(bt);
+          return;
+        }
         bt.onclick = function () {
           var res = self.executar(b.id);
           if (b.alterna && res && res.ok) bt.setAttribute("aria-pressed", res.ligado ? "true" : "false");
@@ -982,7 +1092,9 @@
       var lat = raiz.querySelector(".rv-lateral"), lw0 = 0, dw0 = 0, ph0 = 0;
       arrastar(alcaLat, function (dx) {
         if (!lw0) lw0 = lat.getBoundingClientRect().width;
-        var w = Math.max(200, Math.min(700, lw0 + dx));
+        /* coluna encaixada à DIREITA (cara nova): puxar para a esquerda alarga */
+        var sinal = raiz.getAttribute("data-rv-lat-lado") === "dir" ? -1 : 1;
+        var w = Math.max(200, Math.min(700, lw0 + sinal * dx));
         raiz.style.setProperty("--rv-lat-w", Math.round(w) + "px");
         if (self._opts.onLayoutVivo) self._opts.onLayoutVivo();
       }, function () { lw0 = 0; try { localStorage.setItem("orcapro:bim:lateral-w", String(parseInt(raiz.style.getPropertyValue("--rv-lat-w"), 10) || "")); } catch (e) {} });

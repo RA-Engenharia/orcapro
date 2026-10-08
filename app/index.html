@@ -6,7 +6,20 @@
   try { var _t = localStorage.getItem("orcapro:tema") || "light";
         var _f = localStorage.getItem("orcapro:fonte"); _f = (_f === "source") ? "source" : "plex";
         document.documentElement.setAttribute("data-tema", _t);
-        document.documentElement.setAttribute("data-fonte", _f); } catch (e) {}</script>
+        document.documentElement.setAttribute("data-fonte", _f); } catch (e) {}
+  /* CARA NOVA (prévia `?previa=visual`, 07/10/2026): marca a raiz ANTES do primeiro
+     paint — o css/visual.css só vale sob html[data-visual="nova"], então quem não
+     ligou a prévia vê o app de sempre, byte a byte. A chave é a mesma que o
+     App._previaDaUrl grava; aqui ela só é LIDA (e a URL lida direto, para a 1ª
+     abertura já sair com a cara certa). */
+  try { if (/[?&]previa=[^&]*visual(?!-desligar)/i.test(location.search) || (localStorage.getItem("orcapro:tela:visual:v1") && !/[?&]previa=[^&]*visual-desligar/i.test(location.search))) {
+          document.documentElement.setAttribute("data-visual", "nova");
+          var _lv = document.createElement("link"); _lv.rel = "stylesheet"; _lv.href = "css/fontes-visual.css"; document.head.appendChild(_lv); } } catch (e) {}
+  /* APP DA GOOGLE PLAY (`?origem=play`, o startUrl do TWA em OrcaPRO-Android):
+     a política da loja não deixa vender por fora dela, então quem abre pelo app
+     não vê botão de compra. Fica gravado porque a navegação interna perde a URL. */
+  try { if (/[?&]origem=play\b/i.test(location.search)) localStorage.setItem("orcapro:origem", "play");
+        if (localStorage.getItem("orcapro:origem") === "play") document.documentElement.setAttribute("data-origem", "play"); } catch (e) {}</script>
   <!-- viewport-fit=cover: sem isto o env(safe-area-inset-*) devolve 0 e o
        app instalado no iPhone com notch desenha por baixo da ilha e da barra
        de gestos. So tem efeito com o PWA instalado — que e justamente o que o
@@ -32,6 +45,7 @@
   <link rel="stylesheet" href="css/app.css">
   <link rel="stylesheet" href="css/bim-revit.css">
   <link rel="stylesheet" href="css/tour360.css">
+  <link rel="stylesheet" href="css/visual.css">
 </head>
 <body>
   <div class="app">
@@ -54,6 +68,7 @@
        porque gestao.js, porobra.js e o Portal perguntam por ele. -->
   <script src="js/finstatus.js"></script>
   <script src="js/icones.js"></script>
+  <script src="js/modulo.js"></script>
   <script src="js/idb.js"></script>
   <script src="js/store.js"></script>
   <!-- paineis.js: o tamanho dos painéis (Gantt, histograma, macrofluxo,
@@ -271,6 +286,13 @@
   <script src="js/dxf.js"></script>
   <script src="js/planta3d.js"></script>
   <script src="js/bimedit.js"></script>
+  <script src="js/familia.js"></script>
+  <script src="js/familiasra.js"></script>
+  <!-- F1: orçamento pelo modelo (motor puro, índice SINAPI→classes e famílias orçáveis, todos gerados/testados em tools/) -->
+  <script src="js/sinapimapa.js"></script>
+  <script src="js/familiasorc.js"></script>
+  <script src="js/orcmodelo.js"></script>
+  <script src="js/opformato.js"></script>
   <script src="js/bimqto.js"></script>
   <script src="js/bimorc.js"></script>
   <script src="js/lastplanner.js"></script>
@@ -352,6 +374,14 @@
   <script src="js/bimribbon.js"></script>
   <script src="js/bimcmd.js"></script>
   <script src="js/bimshell.js"></script>
+  <script src="js/bimestilo.js"></script>
+  <script src="js/padraodet.js"></script>
+  <script src="js/desenho2d.js"></script>
+  <script src="js/bim2dui.js"></script>
+  <script src="js/familiaui.js"></script>
+  <script src="js/orcmodeloui.js"></script>
+  <script src="js/iafamilia.js"></script>
+  <script src="js/iarender.js"></script>
   <script src="js/bimmesa.js"></script>
   <script src="js/folhasemanal.js"></script>
   <script src="js/vendor/qrcode.min.js"></script>
@@ -401,6 +431,7 @@
   <script src="js/tour360ui.js"></script>
   <!-- Documentos da obra: motor puro + tela (depois do gestao.js, como o tour) -->
   <script src="js/docobra.js"></script>
+  <script src="js/arquivosnuvem.js"></script>
   <script src="js/docobraui.js"></script>
   <script src="js/autoupdate.js"></script>
   <script src="js/nuvem.js"></script>

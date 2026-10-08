@@ -5,6 +5,18 @@
 (function (global) {
   "use strict";
 
+  /* O KIT DO PADRÃO DE TELA (js/modulo.js + ROTEIRO-MODULO.md, 08/10/2026).
+     Resolvido na hora do uso, e não na carga: o index.html carrega o
+     modulo.js antes deste arquivo, e as bancadas Node que montam só o ui.js
+     num vm acham o mesmo kit pelo require. Sem kit, a tela falha em voz alta
+     (não existe segunda versão "sem padrão" das telas). */
+  function MOD() {
+    if (typeof Modulo !== "undefined") return Modulo;
+    if (global && global.Modulo) return global.Modulo;
+    if (typeof require === "function") { try { return require("./modulo.js"); } catch (e) {} }
+    throw new Error("js/modulo.js (kit do padrão de tela) não carregou");
+  }
+
   var UI = {
     el: function (id) { return document.getElementById(id); },
 
@@ -1072,11 +1084,63 @@
     },
 
     renderLista: function (orcamentos, baseInfo) {
-      var html = "";
+      /* =================================================================
+       * A LISTA NO PADRÃO DE TELA (ROTEIRO-MODULO.md, 08/10/2026)
+       *
+       * Pedido do Rogério: "um módulo está de um jeito, outro de outro".
+       * A lista monta com o kit (js/modulo.js), na ordem fixa:
+       *   cabeçalho → aviso (no máx. 1) → filtros → indicadores → cartões.
+       * O que saiu, e por quê:
+       *  - o título era "Meus Orçamentos"; agora é o nome do menu, "Orçamentos";
+       *  - QUATRO botões soltos no topo viraram 2 à vista + "Mais" + o primário;
+       *    [Copiar de outro] foi para o "Mais" com o mesmo data-acao;
+       *  - DOIS avisos (sem resposta, parados) viraram UM, com as duas frases;
+       *  - os KPIs em cartões soltos (.kpis/.kpi-compacto) viraram a faixa
+       *    única do kit (.mod-kpis) — mesmo desenho do resto do sistema;
+       *  - o cartão com rótulos soltos dos filtros virou a barra do kit.
+       * O que NÃO mudou: cálculo (Orcamento.filtrarLista/indicadoresCarteira),
+       * ids dos filtros (fo-*), data-acao e o texto dos botões.
+       * ================================================================= */
+      var M = MOD(), html = "";
       var ilegiveis = (baseInfo && baseInfo.ilegiveis) || [];
       var listaIlegivel = ilegiveis.some(function (m) { return m && m.entidade === "orcamentos"; });
-      html += this.renderAvisoIlegivel(ilegiveis, !(baseInfo && baseInfo.admin === false));
-      if (!ilegiveis.length && baseInfo && baseInfo.pausa) html += this.renderAvisoPausa(baseInfo.pausa, baseInfo.admin, baseInfo.pausaAntes);
+      var ic = function (n) { return typeof Icones !== "undefined" ? Icones.get(n) : ""; };
+      /* ⚠ ESCOPO POR OBRA (js/auth.js): o usuário restrito vê só os orçamentos
+         ligados às obras dele, e NÃO cria orçamento solto (nasceria sem obra
+         e sumiria da lista dele — Auth.orcNovoRestrito). Os botões de criar
+         saem da tela; a guarda de verdade está nas funções (App.novoOrcamento
+         e as outras). O recorte é dito na linha de contexto do cabeçalho
+         (#orc-escopo-aviso): lista curta sem explicação é a pessoa achando que
+         orçamento sumiu. */
+      var escopo = !!(baseInfo && baseInfo.escopoObras);
+      var n = (orcamentos || []).length;
+      /* ⚠ a contagem, e nunca "Nenhum orçamento ainda" aqui: com a lista
+         ILEGÍVEL (quarentena do Store) essa frase é o convite a gravar por
+         cima — e2e-store-corrompido [3b] reprova */
+      var subTxt = n ? (n + (n === 1 ? " orçamento" : " orçamentos")) : (listaIlegivel ? "a lista deste aparelho não pôde ser lida — veja o aviso" : "a carteira de orçamentos da empresa");
+      var cab = { icone: "calculadora", titulo: "Orçamentos" };
+      if (escopo) {
+        cab.subHtml = Util.esc(subTxt) + ' · <span id="orc-escopo-aviso" title="Para criar orçamento novo ou ver o de outra obra, fale com o administrador da conta.">só os das obras liberadas para o seu usuário</span>';
+      } else {
+        cab.sub = subTxt;
+        /* "RECUPERAR" TEM PORTA PRÓPRIA (v1.1.212). Quem perdeu um orçamento
+           não procura "importar" — procura "recuperar", e por isso ele fica à
+           vista e ANTES do Importar (e2e-restaurar-planilha confere a ordem). São ações diferentes: importar é ler
+           planilha de TERCEIRO por heurística; recuperar é devolver o que ESTE
+           sistema gravou, sem adivinhar nada. */
+        cab.acoes = [
+          '<button class="btn" data-acao="recuperar-planilha" title="Perdeu um orçamento e tem o Excel que o sistema gerou? Ele volta inteiro — etapas, sub etapas, BDI, cronograma e memórias de cálculo">' + ic("reimportar") + 'Recuperar de uma planilha</button>',
+          '<button class="btn" data-acao="importar-planilha" title="Importe uma planilha de orçamento (Excel/CSV) de QUALQUER formato — o agente detecta as etapas e itens e casa o código SINAPI">' + ic("importar") + 'Importar planilha</button>',
+          '<button class="btn" data-acao="copiar-orc" title="Criar um orçamento a partir de outro que já existe">' + ic("copiar") + 'Copiar de outro</button>'
+        ];
+        cab.primariaHtml = '<button class="btn primary" data-acao="novo">+ Novo Orçamento</button>';
+      }
+      html += M.cab(cab);
+      /* o aviso de dado ilegível e o da pausa do backup são os do sistema
+         inteiro (os mesmos da Gestão) e vencem o da carteira: um aviso só */
+      var avisoDado = this.renderAvisoIlegivel(ilegiveis, !(baseInfo && baseInfo.admin === false));
+      if (!ilegiveis.length && baseInfo && baseInfo.pausa) avisoDado = this.renderAvisoPausa(baseInfo.pausa, baseInfo.admin, baseInfo.pausaAntes);
+      html += avisoDado;
       /* ⚠ A BARRA DA SINAPI QUE FICAVA AQUI SAIU (01/10/2026, pedido do
          Rogério: "essa aba não faz sentido"). Ela tinha três defeitos: o botão
          "Atualizar" usava o fetcher local, que gravava a base SEM a marca de
@@ -1084,52 +1148,24 @@
          "base própria importada" para QUALQUER base gravada, inclusive a
          atualização oficial; e a atualização já é automática. Cada orçamento
          escolhe a sua UF e competência no assistente; importar uma base
-         própria ficou em 🗂 Tabelas, na linha da SINAPI. */
-      /* ⚠ ESCOPO POR OBRA (js/auth.js): o usuário restrito vê só os orçamentos
-         ligados às obras dele, e NÃO cria orçamento solto (nasceria sem obra
-         e sumiria da lista dele — Auth.orcNovoRestrito). Os botões de criar
-         saem da tela; a guarda de verdade está nas funções (App.novoOrcamento
-         e as outras). A faixa diz o recorte: lista curta sem explicação é a
-         pessoa achando que orçamento sumiu. */
-      var escopo = !!(baseInfo && baseInfo.escopoObras);
-      if (escopo) {
-        html += '<div class="flex between mb"><h1 style="margin:0">Meus Orçamentos</h1></div>' +
-          '<div class="card" id="orc-escopo-aviso" style="padding:10px 12px;margin-bottom:12px;font-size:13px">' +
-          'Você vê os orçamentos ligados às <b>obras liberadas para o seu usuário</b>. ' +
-          'Para criar orçamento novo ou ver o de outra obra, fale com o administrador da conta.</div>';
-        if (!orcamentos.length && listaIlegivel) return html;
-        if (!orcamentos.length) {
-          return html + '<div class="vazio card"><h3>Nenhum orçamento ligado às suas obras</h3>' +
-            '<p class="muted">Quando o administrador ligar o orçamento à obra (ficha da obra → Vincular a um orçamento), ele aparece aqui.</p></div>';
-        }
-      } else {
-      html += '<div class="flex between mb"><h1 style="margin:0">Meus Orçamentos</h1>' +
-                 /* "RECUPERAR" TEM PORTA PRÓPRIA (v1.1.212). Quem perdeu um orçamento
-                    não procura "importar" — procura "recuperar", e por isso passava
-                    reto pelo botão que resolvia o problema dele. São ações diferentes:
-                    importar é ler planilha de TERCEIRO por heurística; recuperar é
-                    devolver o que ESTE sistema gravou, sem adivinhar nada. */
-                 '<div class="flex"><button class="btn" data-acao="recuperar-planilha" title="Perdeu um orçamento e tem o Excel que o sistema gerou? Ele volta inteiro — etapas, sub etapas, BDI, cronograma e memórias de cálculo">' + Icones.get("reimportar") + 'Recuperar de uma planilha</button>' +
-                 '<button class="btn" data-acao="importar-planilha" title="Importe uma planilha de orçamento (Excel/CSV) de QUALQUER formato — o agente detecta as etapas e itens e casa o código SINAPI">' + Icones.get("importar") + 'Importar planilha</button>' +
-                 '<button class="btn" data-acao="copiar-orc" title="Criar um orçamento a partir de outro que já existe">⧉ Copiar de outro</button> ' +
-                 '<button class="btn primary" data-acao="novo">+ Novo Orçamento</button></div></div>';
-      }
+         própria ficou em Tabelas, na linha da SINAPI. */
       /* lista ilegível: o aviso lá em cima já diz tudo, e "crie o primeiro" é o
          convite para gravar por cima (ver renderAvisoIlegivel) */
-      if (!orcamentos.length && listaIlegivel) return html;
-      if (!orcamentos.length) {
+      if (!n && listaIlegivel) return html;
+      if (!n) {
+        if (escopo) {
+          return html + M.vazio({ icone: "calculadora", titulo: "Nenhum orçamento ligado às suas obras",
+            texto: "Quando o administrador ligar o orçamento à obra (ficha da obra → Vincular a um orçamento), ele aparece aqui." });
+        }
         /* A LISTA VAZIA É EXATAMENTE A TELA DE QUEM PERDEU O ORÇAMENTO.
            Oferecer só "criar o primeiro" a quem acabou de perder o dele é a
            mensagem errada na hora errada — e foi o que aconteceu com um
-           cliente que tinha o Excel na mão e redigitaria tudo. */
-        html += '<div class="vazio card"><h3>Nenhum orçamento ainda</h3>' +
-                '<p>Crie seu primeiro orçamento e comece a buscar composições SINAPI.</p>' +
-                '<button class="btn primary mt" data-acao="novo">+ Criar primeiro orçamento</button>' +
-                '<p class="muted" style="font-size:12.5px;margin:14px 0 0">Já tinha um orçamento aqui e ele sumiu? ' +
-                'Se você exportou o Excel dele, <b>o orçamento inteiro está dentro daquele arquivo</b> — ' +
-                'etapas, sub etapas, BDI, cronograma e memórias de cálculo.</p>' +
-                '<button class="btn mt" data-acao="recuperar-planilha">' + Icones.get("reimportar") + 'Recuperar de uma planilha</button></div>';
-        return html;
+           cliente que tinha o Excel na mão e redigitaria tudo. Por isso o
+           texto fala da recuperação e a porta [Recuperar de uma planilha]
+           está à vista no cabeçalho, logo acima. */
+        return html + M.vazio({ icone: "calculadora", titulo: "Nenhum orçamento ainda",
+          texto: "Crie o primeiro e comece a buscar composições SINAPI. Já tinha um orçamento aqui e ele sumiu? Se você exportou o Excel dele, o orçamento inteiro está dentro daquele arquivo — use Recuperar de uma planilha, aqui em cima.",
+          acaoHtml: '<button class="btn primary" data-acao="novo">+ Criar primeiro orçamento</button>' });
       }
       /* ============ CARTEIRA: filtros, KPIs e prazo (fases 1 e 2) ============
          O motor (Orcamento.filtrarLista) faz a conta; aqui só desenha. O
@@ -1141,130 +1177,110 @@
          um recorte não é conversão, é amostra escolhida a dedo. */
       var ind = Orcamento.indicadoresCarteira(orcamentos, Util.agoraISO());
 
-      /* ⚠ O TERCEIRO DIALETO DE INDICADOR, ate 02/09/2026.
-         Este helper desenhava o numero EM CIMA, centralizado e em 800, com o
-         rotulo pequeno embaixo — enquanto o Painel usa `.kpi` (rotulo em
-         cima, numero embaixo, alinhado a esquerda) e o Financeiro usa a
-         `.fin-faixa`. Tres jeitos de dizer a mesma coisa, e a pessoa
-         reaprendendo a ler a cada tela.
-         Agora usa a MESMA classe do Painel: o CSS ja existia, so nao estava
-         sendo aproveitado aqui. A cor semantica continua vindo por
-         parametro, porque verde/laranja no numero e informacao (prazo
-         vencido, conversao boa), nao decoracao. */
-      /* ⚠ `sub` NAO E ENFEITE: sem ele, frases como "prazo: ligue em
-         Parametros" viravam ROTULO — em caixa alta, quebrando em duas linhas
-         e pesando como titulo. Rotulo nomeia, explicacao explica; cada um
-         faz um trabalho so. */
-      var kpi = function (v, rot, cor, sub) {
-        return '<div class="kpi kpi-compacto" style="min-width:120px">' +
-          '<div class="rotulo">' + rot + '</div>' +
-          '<div class="num"' + (cor ? ' style="color:' + cor + '"' : "") + '>' + v + '</div>' +
-          (sub ? '<div class="kpi-sub">' + sub + '</div>' : "") + '</div>';
-      };
-      html += '<div class="kpis" style="margin-bottom:14px">' +
-        kpi(k.qtd + (temFiltro ? '<span style="font-size:12px;font-weight:600;color:var(--cinza)"> / ' + r.total + '</span>' : ""), temFiltro ? "no filtro" : "orçamentos") +
-        kpi(Util.fmtMoeda(k.carteira), "carteira" + (temFiltro ? " (filtrada)" : "")) +
-        kpi(Util.fmtMoeda(k.medio), "valor médio") +
-        (k.comControle
-          ? kpi(k.aVencer + (k.vencidos ? ' <span style="color:#dc2626">+' + k.vencidos + '</span>' : ""),
-                "prazos", k.vencidos ? "#ea580c" : "#16a34a",
-                k.vencidos ? "a vencer · vencidos" : "a vencer")
-          /* sem nenhum prazo controlado, o KPI vira convite — e explica onde
-             se liga isso, senão o usuário não descobre que existe */
-          : kpi("—", "prazos", null, "ligue em Parâmetros")) +
-        /* FASE 5 — o número que o dono olha. « — » quando nada foi enviado
-           ainda: 0% ali seria mentira sobre um funil que nem começou.
-           ⚠ ATÉ 03/09/2026 ESTE NÚMERO MEDIA A APROVAÇÃO INTERNA (quanto do
-           que o orçamentista fez o gestor aprovou) e era lido como venda.
-           Agora é o funil comercial: aceitas ÷ enviadas ao cliente. Sem
-           nenhum envio registrado ele não inventa: diz onde se registra. */
-        (ind.enviadas
-          ? kpi(Util.fmtNum(ind.conversao, 1) + "%", "conversão",
-                ind.conversao >= 50 ? "#16a34a" : "#0f2740",
-                ind.aceitas + " de " + ind.enviadas + " enviadas ao cliente")
-          : kpi("—", "conversão", null, "registre o envio no orçamento")) +
-      '</div>' +
-      /* orçamento parado: quem preencheu esqueceu, e ninguém cobra o que não
-         aparece. Só conta o que AINDA NÃO FOI ENVIADO — esperar decisão de
-         outra pessoa não é atraso de quem orçou. */
-      /* ⚠ ESTE É O DINHEIRO NA MESA. Proposta enviada e sem resposta há dias
-         não aparece em lugar nenhum do sistema — e é exatamente a que fecha
-         com um telefonema. Vem antes dos "parados" porque já custou trabalho
-         inteiro: foi orçada, virou documento e foi ao cliente. */
-      (ind.semResposta && ind.semResposta.length
-        ? '<div class="card" style="padding:9px 12px;margin-bottom:12px;background:rgba(15,39,64,.06);border-color:rgba(15,39,64,.25);font-size:12.5px">'
-          + "<b>" + ind.semResposta.length + " proposta(s) enviada(s) sem resposta</b> há mais de " + ind.limiteParado + " dias: "
-          + ind.semResposta.slice(0, 4).map(function (x) {
-              return '<a href="#" data-abrir="' + Util.esc(x.orc.id) + '">' + Util.esc(x.orc.nome || x.orc.numero) + "</a> (" + x.dias + "d)";
-            }).join(" · ")
-          + (ind.semResposta.length > 4 ? " e mais " + (ind.semResposta.length - 4) : "")
-          + '<div class="muted" style="margin-top:3px">Um telefonema resolve mais que uma proposta nova. Registre a resposta no orçamento quando souber.</div></div>'
-        : "") +
-      (ind.parados.length
-        ? '<div class="card" style="padding:9px 12px;margin-bottom:12px;background:rgba(234,88,12,.08);border-color:rgba(234,88,12,.3);font-size:12.5px">' +
-          (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "⚠") + ' <b>' + ind.parados.length +
-          ' orçamento(s) parado(s)</b> há mais de ' + ind.limiteParado + ' dias sem edição e ainda não enviados: ' +
-          ind.parados.slice(0, 3).map(function (p) {
-            return Util.esc(p.orc.nome || p.orc.numero) + " (" + p.dias + "d)";
-          }).join(" · ") + (ind.parados.length > 3 ? " …" : "") + '</div>'
-        : "");
+      /* UM AVISO SÓ (roteiro §1). Proposta enviada e sem resposta é o
+         DINHEIRO NA MESA — vem primeiro porque já custou trabalho inteiro: foi
+         orçada, virou documento e foi ao cliente. O orçamento parado (quem
+         preencheu esqueceu, e ninguém cobra o que não aparece) entra na mesma
+         caixa, como segunda frase. Só conta o que AINDA NÃO FOI ENVIADO —
+         esperar decisão de outra pessoa não é atraso de quem orçou. Com aviso
+         de dado ilegível na tela, este cede: um aviso por vez. */
+      var semResp = ind.semResposta || [];
+      if (!avisoDado && (semResp.length || ind.parados.length)) {
+        var frases = [], tituloAv = "";
+        if (semResp.length) {
+          tituloAv = semResp.length + " proposta(s) enviada(s) sem resposta há mais de " + ind.limiteParado + " dias";
+          frases.push(semResp.slice(0, 4).map(function (x) {
+            return '<a href="#" data-abrir="' + Util.esc(x.orc.id) + '">' + Util.esc(x.orc.nome || x.orc.numero) + "</a> (" + x.dias + "d)";
+          }).join(" · ") + (semResp.length > 4 ? " e mais " + (semResp.length - 4) : "") +
+            " — um telefonema resolve mais que uma proposta nova.");
+        }
+        if (ind.parados.length) {
+          var parTxt = ind.parados.length + " orçamento(s) parado(s) há mais de " + ind.limiteParado + " dias sem edição e ainda não enviados: " +
+            ind.parados.slice(0, 3).map(function (p) { return Util.esc(p.orc.nome || p.orc.numero) + " (" + p.dias + "d)"; }).join(" · ") +
+            (ind.parados.length > 3 ? " …" : "");
+          if (!tituloAv) tituloAv = ind.parados.length + " orçamento(s) parado(s)";
+          frases.push(parTxt);
+        }
+        html += M.aviso({ tom: semResp.length ? "info" : "alerta", titulo: tituloAv,
+          textoHtml: frases.map(function (x) { return "<span>" + x + "</span>"; }).join("") });
+      }
 
       var opt = function (v, rot, sel) { return '<option value="' + Util.esc(v) + '"' + (sel === v ? " selected" : "") + '>' + Util.esc(rot) + '</option>'; };
-      html += '<div class="card" style="padding:10px 12px;margin-bottom:12px"><div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end">' +
-        /* min-width:0 em TODO campo da barra: item de flex nasce com
-           min-width:auto e não encolhe abaixo do conteúdo — o placeholder
-           longo da busca empurrava o campo por cima do select de Cliente. */
-        '<div class="field" style="flex:2;min-width:180px;margin:0"><label style="font-size:11px">Buscar</label>' +
-          '<input id="fo-busca" style="width:100%;box-sizing:border-box" placeholder="nome, número, cliente…" value="' + Util.esc(f.busca || "") + '" autocomplete="off"></div>' +
-        '<div class="field" style="flex:1;min-width:0;margin:0"><label style="font-size:11px">Cliente</label><select style="width:100%;box-sizing:border-box" id="fo-cliente">' +
-          opt("", "Todos", f.cliente || "") + r.clientes.map(function (c) { return opt(c, c, f.cliente || ""); }).join("") + '</select></div>' +
-        (k.porEstado && Object.keys(k.porEstado).length > 1 ? '<div class="field" style="flex:1;min-width:0;margin:0"><label style="font-size:11px">Estado</label><select style="width:100%;box-sizing:border-box" id="fo-estado">' +
+      var campo = function (rot, dentro) { return '<div class="field"><label>' + rot + '</label>' + dentro + '</div>'; };
+      html += M.filtros([
+        /* a busca é o campo mais largo (classe do kit: 1º campo cresce) */
+        campo("Buscar", '<input id="fo-busca" placeholder="nome, número, cliente…" value="' + Util.esc(f.busca || "") + '" autocomplete="off">'),
+        campo("Cliente", '<select id="fo-cliente">' + opt("", "Todos", f.cliente || "") + r.clientes.map(function (c) { return opt(c, c, f.cliente || ""); }).join("") + '</select>'),
+        (k.porEstado && Object.keys(k.porEstado).length > 1 ? campo("Estado", '<select id="fo-estado">' +
           opt("", "Todos", f.estado || "") + Orcamento.ORDEM_ESTADO.filter(function (e) { return k.porEstado[e]; }).map(function (e) {
-            return opt(e, ((typeof Aprovacao !== "undefined" && Aprovacao.ESTADOS[e]) ? Aprovacao.ESTADOS[e].rotulo : e) + " (" + k.porEstado[e].qtd + ")", f.estado || ""); }).join("") + '</select></div>' : "") +
-        (r.tipos.length ? '<div class="field" style="flex:1;min-width:0;margin:0"><label style="font-size:11px">Tipo</label><select style="width:100%;box-sizing:border-box" id="fo-tipo">' +
-          opt("", "Todos", f.tipo || "") + r.tipos.map(function (c) { return opt(c, c, f.tipo || ""); }).join("") + '</select></div>' : "") +
-        '<div class="field" style="flex:1;min-width:0;margin:0"><label style="font-size:11px">Valor</label><select style="width:100%;box-sizing:border-box" id="fo-faixa">' +
-          opt("", "Qualquer", f.faixa || "") + Orcamento.FAIXAS.map(function (x) { return opt(x.id, x.rotulo, f.faixa || ""); }).join("") + '</select></div>' +
-        (k.comControle ? '<div class="field" style="flex:1;min-width:0;margin:0"><label style="font-size:11px">Prazo</label><select style="width:100%;box-sizing:border-box" id="fo-prazo">' +
-          opt("", "Todos", f.prazo || "") + opt("avencer", "A vencer", f.prazo || "") + opt("vencidos", "Vencidos", f.prazo || "") + '</select></div>' : "") +
-        '<div class="field" style="flex:1;min-width:0;margin:0"><label style="font-size:11px">Ordenar por</label><select style="width:100%;box-sizing:border-box" id="fo-ordem">' +
+            return opt(e, ((typeof Aprovacao !== "undefined" && Aprovacao.ESTADOS[e]) ? Aprovacao.ESTADOS[e].rotulo : e) + " (" + k.porEstado[e].qtd + ")", f.estado || ""); }).join("") + '</select>') : ""),
+        (r.tipos.length ? campo("Tipo", '<select id="fo-tipo">' + opt("", "Todos", f.tipo || "") + r.tipos.map(function (c) { return opt(c, c, f.tipo || ""); }).join("") + '</select>') : ""),
+        campo("Valor", '<select id="fo-faixa">' + opt("", "Qualquer", f.faixa || "") + Orcamento.FAIXAS.map(function (x) { return opt(x.id, x.rotulo, f.faixa || ""); }).join("") + '</select>'),
+        (k.comControle ? campo("Prazo", '<select id="fo-prazo">' + opt("", "Todos", f.prazo || "") + opt("avencer", "A vencer", f.prazo || "") + opt("vencidos", "Vencidos", f.prazo || "") + '</select>') : ""),
+        campo("Ordenar por", '<select id="fo-ordem">' +
           opt("atualizado", "Atualização", f.ordem || "atualizado") + opt("valor", "Maior valor", f.ordem || "atualizado") +
-          opt("prazo", "Prazo mais próximo", f.ordem || "atualizado") + opt("estado", "Estado da aprovação", f.ordem || "atualizado") + opt("nome", "Nome", f.ordem || "atualizado") + '</select></div>' +
-        '<button class="btn sm" data-acao="fo-exportar" style="margin-bottom:2px" title="Exporta a lista como está na tela — o arquivo registra o filtro aplicado">' +
-          (typeof Icones !== "undefined" ? Icones.get("excel", 15) : "") + 'Exportar</button>' +
-        (temFiltro ? '<button class="btn sm ghost" data-acao="fo-limpar" style="margin-bottom:2px">Limpar filtros</button>' : "") +
-      '</div></div>';
+          opt("prazo", "Prazo mais próximo", f.ordem || "atualizado") + opt("estado", "Estado da aprovação", f.ordem || "atualizado") + opt("nome", "Nome", f.ordem || "atualizado") + '</select>')
+      ], { direitaHtml:
+        (temFiltro ? '<button class="btn sm ghost" data-acao="fo-limpar">Limpar filtros</button>' : "") +
+        '<button class="btn sm" data-acao="fo-exportar" title="Exporta a lista como está na tela — o arquivo registra o filtro aplicado">' +
+          (typeof Icones !== "undefined" ? Icones.get("excel", 15) : "") + 'Exportar</button>' });
+
+      /* ⚠ `sub` NAO E ENFEITE: sem ele, frases como "ligue em Parâmetros"
+         viravam ROTULO — em caixa alta e pesando como titulo. Rotulo nomeia,
+         explicacao explica; cada um faz um trabalho so. A cor so com
+         significado (roteiro §3): prazo vencido em alerta, conversão boa em pos. */
+      html += M.kpis([
+        { rotulo: temFiltro ? "no filtro" : "orçamentos", valor: String(k.qtd), sub: temFiltro ? "de " + r.total + " na carteira" : "" },
+        { rotulo: "carteira" + (temFiltro ? " (filtrada)" : ""), valor: Util.fmtMoeda(k.carteira) },
+        { rotulo: "valor médio", valor: Util.fmtMoeda(k.medio) },
+        (k.comControle
+          ? { rotulo: "prazos", tom: k.vencidos ? "alerta" : "pos", valor: k.aVencer + (k.vencidos ? " + " + k.vencidos : ""), sub: k.vencidos ? "a vencer · vencidos" : "a vencer" }
+          /* sem nenhum prazo controlado, o KPI vira convite — e explica onde
+             se liga isso, senão o usuário não descobre que existe */
+          : { rotulo: "prazos", valor: "—", sub: "ligue em Parâmetros" }),
+        /* FASE 5 — o número que o dono olha. « — » quando nada foi enviado
+           ainda: 0% ali seria mentira sobre um funil que nem começou.
+           ⚠ ATÉ 03/09/2026 ESTE NÚMERO MEDIA A APROVAÇÃO INTERNA e era lido
+           como venda. Agora é o funil comercial: aceitas ÷ enviadas ao cliente. */
+        (ind.enviadas
+          ? { rotulo: "conversão", tom: ind.conversao >= 50 ? "pos" : "", valor: Util.fmtNum(ind.conversao, 1) + "%", sub: ind.aceitas + " de " + ind.enviadas + " enviadas ao cliente" }
+          : { rotulo: "conversão", valor: "—", sub: "registre o envio no orçamento" })
+      ]);
 
       /* VAZIO POR FILTRO ≠ VAZIO DE VERDADE. Sem esta distinção, quem filtra
          demais acha que perdeu orçamento de novo — e a tela de recuperação,
          aqui, seria a resposta errada. */
       if (!r.lista.length) {
-        html += '<div class="vazio card"><h3>Nenhum orçamento neste filtro</h3>' +
-                '<p>São ' + r.total + ' no total — ajuste ou limpe o filtro para vê-los.</p>' +
-                '<button class="btn mt" data-acao="fo-limpar">Limpar filtros</button></div>';
-        return html;
+        return html + M.vazio({ icone: "buscar", titulo: "Nenhum orçamento neste filtro",
+          texto: "São " + r.total + " no total — ajuste ou limpe o filtro para vê-los.",
+          acaoHtml: '<button class="btn" data-acao="fo-limpar">Limpar filtros</button>' });
       }
 
+      /* ⚠ A GRADE DE CARTÕES FICA (é o "quadro" do roteiro), sem moldura de
+         seção em volta: cartão dentro de cartão é o que o roteiro proíbe. E
+         `.orc-card[data-abrir]` é o alvo de clique de sete e2e. */
       html += '<div class="grid-cards">';
       r.lista.forEach(function (m) {
         var o = m.orc, t = m.tot, p = m.prazo;
         var selo = "";
         if (p.controla) {
+          /* ⚠ cor em linha como no resto do sistema: o kit ainda não tem a
+             pílula de status (anotado no relatório do padrão de tela) */
           var cor = p.estado === "vencido" ? "#dc2626" : (p.estado === "ok" ? "#16a34a" : "#ea580c");
           var txt = p.estado === "vencido" ? "vencido há " + Math.abs(p.dias) + "d"
                   : (p.estado === "hoje" ? "vence hoje" : "vence em " + p.dias + "d");
-          selo = '<span class="g-pill" style="background:' + cor + '22;color:' + cor + ';font-weight:700">' + txt + '</span> ';
+          selo = '<span class="g-pill" style="background:' + cor + '22;color:' + cor + '">' + txt + '</span> ';
         }
         /* pilula do estado: rascunho nao vira ruido visual - so aparece quando
            o orcamento JA entrou no ciclo (foi enviado alguma vez) */
         var est = m.estado, info = (typeof Aprovacao !== "undefined" && Aprovacao.ESTADOS[est]) ? Aprovacao.ESTADOS[est] : null;
         var CORES = { cinza: "#64748b", ambar: "#ea580c", verde: "#16a34a", vermelho: "#dc2626" };
         var pilula = (info && est !== "rascunho")
-          ? '<span class="g-pill" style="background:' + CORES[info.cor] + '22;color:' + CORES[info.cor] + ';font-weight:700">' + Util.esc(info.rotulo) + '</span> ' : "";
+          ? '<span class="g-pill" style="background:' + CORES[info.cor] + '22;color:' + CORES[info.cor] + '">' + Util.esc(info.rotulo) + '</span> ' : "";
         var el = Orcamento.tempoElaboracao(o);
         html += '<div class="card orc-card" data-abrir="' + o.id + '">' +
-          // 🗑 dentro do card clicável: o dispatch resolve o botão ANTES do abrir
-          '<button class="btn sm ico danger orc-del" data-del-orc="' + o.id + '" title="Excluir este orçamento (pede confirmação)">' + (typeof Icones !== 'undefined' ? Icones.get('lixeira', 15) : '') + '</button>' +
+          // lixeira dentro do card clicável: o dispatch resolve o botão ANTES do abrir
+          '<button class="btn sm ico danger orc-del" data-del-orc="' + o.id + '" title="Excluir este orçamento (pede confirmação)" aria-label="Excluir este orçamento">' + (typeof Icones !== 'undefined' ? Icones.get('lixeira', 15) : '') + '</button>' +
           '<h3>' + Util.esc(o.nome) + '</h3>' +
           '<div class="meta">' + Util.esc(o.numero) + ' · ' + Util.esc(o.cliente.nome || "Sem cliente") + '</div>' +
           '<div class="meta">' + t.qtdEtapas + ' etapas · ' + t.qtdItens + ' itens · BDI ' + Util.fmtPct(t.bdiPercentual) + '</div>' +
@@ -1308,244 +1324,195 @@
 
     // ---------- Tela: Editor de orçamento ----------
     /* =====================================================================
-     * A BARRA DO EDITOR EM DUAS LINHAS COM SIGNIFICADO — E NENHUM MENU
+     * O EDITOR NO PADRÃO DE TELA (ROTEIRO-MODULO.md, 08/10/2026)
      *
-     * Eram treze botoes do mesmo peso numa fila unica. Com treze pesos iguais
-     * nao existe barra: existe uma lista, e achar "Reimportar" custa o mesmo
-     * que achar "Gerar Proposta". A pessoa nao le a barra, varre.
+     * Pedido do Rogério: "tá muito feio, principalmente a parte do orçamento
+     * … coisa repetida, mal organizada, poluindo demais: fora". Medido antes
+     * desta troca, a 1440 px: título + 3 LINHAS DE BOTÕES (16 botões do mesmo
+     * peso) + 4 cartões de KPI de 128 px + abas = a planilha começava em
+     * y≈480, mais da metade da tela de um notebook. A barra antiga dizia
+     * "nada foi escondido, posição que muda é pior que fila comprida" — o
+     * roteiro novo do dono decide o contrário para TODO módulo: 2 ações à
+     * vista, o resto no menu "Mais" (sempre no mesmo lugar), UMA primária.
      *
-     * A divisao NAO e por frequencia de uso nem por tamanho de tela: e por
-     * PERGUNTA. A primeira linha responde "como esta o orcamento?" (montar,
-     * ajustar, exportar a planilha, conferir); a segunda responde "onde ele
-     * esta com o cliente?" (aprovar, entregar, acompanhar). Sao os dois
-     * assuntos que de fato existem nesta tela, e cada botao pertence a um
-     * deles sem ambiguidade.
+     * A tela agora é, na ordem do kit (js/modulo.js):
+     *   CABEÇALHO  nome do orçamento; na linha de contexto [← Orçamentos],
+     *              número, cliente e os selos (aprovação, proposta);
+     *              à vista [Editar com IA] e [Excel (13 abas)]; "Mais" com o
+     *              resto; primária [Gerar Proposta] (vazio: Escopo Inteligente)
+     *   AVISO      um só: item sem preço / sem quantidade / desfazer da IA
+     *   INDICADORES a faixa única: custo direto, BDI, preço (com o
+     *              [Fechar em um valor…] colado ao número que ele muda), itens
+     *   ABAS       as nove de sempre, acessíveis por teclado
      *
-     * ⚠ NADA FOI ESCONDIDO. Nenhum menu "…", nenhum botao a menos: os treze
-     *   continuam clicaveis com UM clique e no mesmo lugar em todo orcamento.
-     *   Esconder um botao de uso diario atras de um menu troca a varredura por
-     *   um clique extra TODA vez, e faz o endereco do botao depender do estado
-     *   da tela. Quem trabalha na obra decora posicao; posicao que muda e pior
-     *   que fila comprida. O que muda aqui e so o PESO e a VIZINHANCA.
-     *
-     * ⚠ O SEPARADOR E DECORATIVO (`.acoes-sep`, sem texto). Grupo se le pela
-     *   proximidade; o traco so confirma. Em tela estreita ele some e os
-     *   grupos continuam de pe pela quebra de linha — por isso `.acoes-grp`
-     *   nao quebra por dentro: quem quebra e a LINHA, entre grupos.
+     * ⚠ O QUE NÃO MUDOU: todo botão continua com o mesmo data-acao e o mesmo
+     *   texto (o "Mais" só muda o lugar — Modulo.mais), e as guardas de item
+     *   sem preço/sem quantidade são as das funções, não da tela.
+     * ⚠ O "Abrir em outra janela" (⧉) e as PORTAS DO MODO FOCO do Cronograma
+     *   ([Gerar Proposta]/[Apresentar] repetidos na linha do título) SAÍRAM
+     *   da linha do título: o cabeçalho novo não some no foco — só a faixa de
+     *   indicadores e o aviso somem (`.orc-cab`) —, então a primária e o
+     *   "Mais" ficam à mão na aba Cronograma sem botão em dobro.
      * ===================================================================== */
     renderEditor: function (orc, abaAtiva) {
-      var t = Orcamento.totais(orc);
-      var _grp = function (dentro) { return dentro ? ('<div class="acoes-grp">' + dentro + '</div>') : ''; };
+      var t = Orcamento.totais(orc), M = MOD();
+      var ap = (typeof App !== "undefined") ? App : null;
+      var vazio = !t.qtdItens;
+      var ic = function (n, s) { return typeof Icones !== "undefined" ? Icones.get(n, s) : ""; };
+      var bt = function (acao, icone, rot, attrs, classe) {
+        return '<button class="btn' + (classe ? " " + classe : "") + '" data-acao="' + acao + '"' + (attrs || "") + '>' + ic(icone) + rot + '</button>';
+      };
       /* Escopo Inteligente e o unico caminho para o orcamento VAZIO — ali ele e
          o primario da tela. Com itens dentro, virar item a item ja e o normal e
-         ele desce a secundario: destaque permanente em botao que ja cumpriu o
+         ele desce para o "Mais": destaque permanente em botao que ja cumpriu o
          papel e ruido. `t.qtdItens` (do motor) e nao `orc.itens` — os itens
          moram em orc.etapas[].itens[], a lista de primeiro nivel nao existe. */
-      /* ⚠ O ORÇAMENTISTA ENTROU NA LINHA 1 SEM CABER (21/09/2026). Roteiro do
-         defeito: a 1.2.83 pôs o botão aqui e foi à frota sem passar pelo gate
-         deste repo. A 1366×768 a linha tem 1086 px e já vivia com ~13 px de
-         folga (ver o RÓTULO RESPONSIVO do [Editar com IA], abaixo); o botão novo
-         ocupa 127. A linha quebrou, Comparar cenários e Relatório completo
-         desceram e a tela inteira desceu 40 px — o mesmo defeito da revisão 4B,
-         e foi a e2e dela (tools/e2e-ia-editar.js) que acusou.
-         Medido no navegador, variante por variante: nem o Orçamentista só com
-         o ícone cabia (36 px). Cabe, com 15 px de folga, encurtando DOIS
-         vizinhos abaixo de 1440 px — "Escopo" e "Relatório" (.rot-largo,
-         css/app.css) — e o nome do recurso novo fica INTEIRO: esconder atrás
-         de um ícone o botão que a pessoa acabou de receber é escondê-lo.
-         O nome inteiro dos dois segue no aria-label e no title.
-         ⚠ Classe própria, e não .ia-rot-largo: a e2e mede o PRIMEIRO
-         .ia-rot-largo da página, e o Escopo vem antes do [Editar com IA].
+      var bEscopo = bt("escopo", "escopo", "Escopo Inteligente", ' aria-label="Escopo Inteligente" title="Escopo Inteligente — descreva a obra em texto livre e o agente monta etapas e itens"', vazio ? "primary" : "");
+      /* v1.2.83 — o orçamentista também roda num orçamento JÁ montado: pega
+         os itens sem preço (ou todos) e casa/precifica/elabora.
          ⚠ ORÇAMENTO VAZIO NÃO TEM O BOTÃO: sem itens ele só respondia "O
          orçamento não tem itens" — botão morto, e bem na tela em que o Escopo
-         Inteligente é o primário. Ali o Escopo fica com o nome inteiro. */
-      var _bEscopo = '<button class="btn sm' + (t.qtdItens ? '' : ' primary') + '" data-acao="escopo" aria-label="Escopo Inteligente" title="Escopo Inteligente">' + Icones.get("escopo") +
-          (t.qtdItens ? '<span>Escopo<span class="rot-largo"> Inteligente</span></span>' : 'Escopo Inteligente') + '</button>' +
-        /* v1.2.83 — o orçamentista também roda num orçamento JÁ montado: pega
-           os itens sem preço (ou todos) e casa/precifica/elabora. */
-        (t.qtdItens ? '<button class="btn sm" data-acao="orcamentista-orcamento" title="Casa os itens desta planilha nas bases escolhidas (código, depois descrição), precifica e elabora composição própria com insumos e coeficientes para o que não existir">' + Icones.get("ia") + 'Orçamentista</button>' : '');
-      var _aprov = (typeof App !== "undefined" && App._aprovBotoesOrc) ? App._aprovBotoesOrc(orc) : "";
-      var _comercial = (typeof App !== "undefined" && App._propComercialBotoes) ? App._propComercialBotoes(orc) : "";
-      var _sep = '<span class="acoes-sep" aria-hidden="true"></span>';
-
+         Inteligente é o primário. */
+      var bOrcm = vazio ? "" : bt("orcamentista-orcamento", "ia", "Orçamentista", ' title="Casa os itens desta planilha nas bases escolhidas (código, depois descrição), precifica e elabora composição própria com insumos e coeficientes para o que não existir"');
+      /* ⚠ EDITAR COM IA: um botão só para os três alvos (planilha, cronograma,
+         textos da proposta) — o atalho [Refinar com IA] da aba Cronograma abre
+         este MESMO modal (duas portas com validadores diferentes foi o defeito
+         da crítica ia-seguranca). No cabeçalho novo o nome cabe inteiro: o
+         rótulo encurtado ("IA", .ia-rot-largo) era remendo da barra de 16
+         botões a 1366 px, e saiu com ela. */
+      var bIA = '<button class="btn" data-acao="ia-editar" aria-label="Editar com IA" title="Editar com IA — escreva o que mudar: a IA propõe mudanças na planilha, no cronograma ou nos textos da proposta, e você confere cada uma antes de aplicar">' + ic("ia") + 'Editar com IA</button>';
+      /* ⚠ O NÚMERO NO RÓTULO É MEDIDO, NÃO ESCRITO DE MEMÓRIA. Dizia "3 abas"
+         desde a v1.1.x; em 08/09/2026 o workbook do orçamento de exemplo tinha
+         13 planilhas (Resumo, Sintética, Analítica, Parâmetros, Insumos, Curva
+         ABC, Cronograma, Gantt, Feriados, Gráficos, Dados IA, Leia-me, _meta).
+         A loja vende "Excel VIVO de 13 abas": tools/test-loja-home.js amarra
+         os três — rótulo, promessa e exportador. */
+      var bExcel = '<button class="btn" data-acao="exportar-excel" title="Workbook vivo com fórmulas: Resumo, Sintética, Analítica, Insumos, Curva ABC, Cronograma, Gantt e mais">' + ic("excel") + 'Excel (13 abas)</button>';
+      var bProp = bt("proposta", "proposta", "Gerar Proposta", ' title="Gerar a proposta comercial deste orçamento"', "primary");
       /* ⧉ abre a aba de agora numa janela separada (js/janelas.js), para o
          segundo monitor. Some na demo, dentro da própria janela destacada, e
-         sem a trava de carimbo entre janelas (sem ela duas janelas perdiam dado).
-         ⚠ MORA NA LINHA DO TÍTULO, E NÃO NO FIM DA `.tabs` (16/09/2026).
-         Roteiro do defeito: a `.tabs` rola na horizontal e o botão era o último
-         item dela (`margin-left:auto`). Medido na 1.2.80: x 1469–1639 contra a
-         faixa visível até 1322 a 1366 px e até 1556 a 1600 px — abaixo de
-         ~1650 px o recurso da 1.2.79 simplesmente não aparecia, e a rolagem da
-         faixa volta a zero a cada render. A e2e passava porque rolava até ele
-         (`scrollIntoView`) antes de medir. A linha do título não rola e tem o
-         lado direito vazio. tools/e2e-crono-foco-sai.js mede por
-         elementFromPoint, SEM rolar, a 1280, 1366, 1674 e 1920. */
-      var apJ = (typeof App !== "undefined") ? App : null;
+         sem a trava de carimbo entre janelas (sem ela duas janelas perdiam dado). */
       var abasJan = { planilha: 1, sintetico: 1, insumos: 1, cronograma: 1, execucao: 1, graficos: 1, relatorios: 1 };
-      var _bJanela = (typeof Janelas !== "undefined" && Janelas.suportado() && Janelas.podeEditar(typeof Store !== "undefined" ? Store : null) && apJ && !apJ._janela && !apJ._demo && abasJan[abaAtiva])
-        ? '<button type="button" class="btn sm jan-abrir" data-acao="janela-abrir" title="Abrir esta aba numa janela separada, para levar ao outro monitor. O que gravar numa aparece na outra." aria-label="Abrir em outra janela">⧉ Abrir em outra janela</button>'
+      var bJanela = (typeof Janelas !== "undefined" && Janelas.suportado() && Janelas.podeEditar(typeof Store !== "undefined" ? Store : null) && ap && !ap._janela && !ap._demo && abasJan[abaAtiva])
+        ? '<button type="button" class="btn jan-abrir" data-acao="janela-abrir" title="Abrir esta aba numa janela separada, para levar ao outro monitor. O que gravar numa aparece na outra." aria-label="Abrir em outra janela">⧉ Abrir em outra janela</button>'
         : '';
-      /* ⚠ AS PORTAS DO MODO FOCO (16/09/2026). Na aba Cronograma o CSS esconde
-         a `.barra-acoes` inteira (body.foco-crono .orc-cab), e ela era o ÚNICO
-         lugar de [Gerar Proposta] e [Apresentar] — medido: quem apresentava o
-         cronograma ao cliente não tinha como fechar com a proposta, e o Ctrl+K
-         dizia "Nada encontrado". Aqui ficam só as duas, em N2 (32 px, raio 8),
-         e aparecem SÓ com o foco ligado (`.orc-foco-acoes`, app.css) — fora
-         dele a barra de sempre já as mostra, e duas cópias à vista confundem.
-         Os `data-acao` são os MESMOS da barra: um despacho só (App.onClick),
-         com as mesmas guardas de item sem preço e sem quantidade. */
-      var _bFoco = (abaAtiva === "cronograma")
-        ? '<span class="orc-foco-acoes">' +
-            '<button type="button" class="btn sm" data-acao="proposta" title="Gerar a proposta comercial deste orçamento">' + Icones.get("proposta") + 'Gerar Proposta</button>' +
-            '<button type="button" class="btn sm" data-acao="apresentar" title="Modo apresentação: tela cheia pra reunião com o cliente (setas navegam, Esc sai)">' + Icones.get("apresentar") + 'Apresentar</button>' +
-          '</span>'
-        : '';
-      var html = '<div class="flex between tela-titulo orc-titulo">' +
-        /* ⚠ o nome é `.tela-nome` (20/600, app.css) e não `style="…font-weight:800"`:
-           em linha ele escapava de toda folha, e o 800 desenhava 600. Continua
-           <span>: um <h2> perderia cor e tamanho para `.main h2`. ← Voltar é N3
-           com texto (transparente em repouso). */
-        '<div class="orc-titulo-nome"><button class="btn ghost sm n3" data-acao="voltar">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Voltar</button> ' +
-        /* o `title` devolve o nome inteiro quando a mesa o corta com reticências */
-        '<span class="tela-nome" title="' + Util.esc(orc.nome) + '">' + Util.esc(orc.nome) + '</span> ' +
-        '<span class="muted">' + Util.esc(orc.numero) + '</span></div>' +
-        ((_bFoco || _bJanela) ? '<div class="orc-titulo-acoes">' + _bFoco + _bJanela + '</div>' : '') +
-        '</div>';
+      /* O CICLO na mesma fila do "Mais": aprovação interna (aval do gestor
+         sobre o preço) e o que aconteceu com o CLIENTE (enviada, resposta).
+         Os selos dos dois vão para a linha de contexto — são estado, não ação. */
+      var aprov = (ap && ap._aprovBotoesOrc) ? ap._aprovBotoesOrc(orc, true) : null;
+      var comercial = (ap && ap._propComercialBotoes) ? ap._propComercialBotoes(orc, true) : null;
+      aprov = aprov || { selo: "", botoes: [] };
+      comercial = comercial || { selo: "", botoes: [] };
 
-      /* ⚠ `orc-cab` marca o que o modo foco do Cronograma esconde (app.css).
-         A regra antiga mirava `#main > .kpis` — qualquer KPI de qualquer tela —
-         e, com a classe do body vazando, apagava os cartões da lista e do
-         Painel. Marca no próprio bloco: só o que É do editor some. */
-      html += '<div class="barra-acoes mb orc-cab">' +
-        /* LINHA 1 — O ORCAMENTO: montar → ajustar → planilha → conferir */
-        '<div class="acoes-linha" aria-label="O orcamento">' +
-          _grp(_bEscopo) + _sep +
-          _grp('<button class="btn sm" data-acao="config-orc">' + Icones.get("dados") + 'Dados</button>' +
-               '<button class="btn sm" data-acao="parametros-orc" title="Arredondamento, encargos, incidência do BDI, categoria e licitação">' + Icones.get("parametros") + 'Parâmetros</button>') + _sep +
-          _grp(/* ⚠ O NÚMERO AQUI É MEDIDO, NÃO ESCRITO DE MEMÓRIA. Dizia "3 abas" desde a
-                  v1.1.x, quando o workbook tinha três planilhas. Em 08/09/2026 instrumentei
-                  ExcelJS.Workbook.prototype.addWorksheet no navegador com o orçamento de
-                  exemplo: saem 13 (Resumo, Sintética, Analítica, Parâmetros, Insumos, Curva
-                  ABC, Cronograma, Gantt, Feriados, Gráficos, Dados IA, Leia-me, _meta). O
-                  botão entra em toda captura de tela que vai para a loja, e a loja vende
-                  "Excel VIVO de 13 abas": o rótulo velho desmentia a venda na mesma tela.
-                  tools/test-loja-home.js amarra os três — rótulo, promessa e exportador. */
-               '<button class="btn sm" data-acao="exportar-excel" title="Workbook vivo com fórmulas: Resumo, Sintética, Analítica, Insumos, Curva ABC, Cronograma, Gantt e mais">' + Icones.get("excel") + 'Excel (13 abas)</button>' +
-               '<button class="btn sm" data-acao="reimportar-excel" title="Traz de volta as edições de Qtd/Custo feitas no Excel exportado">' + Icones.get("reimportar") + 'Reimportar</button>' +
-               /* ⚠ EDITAR COM IA MORA NA LINHA 1, ao lado da planilha: é edição do
-                  ORÇAMENTO (planilha, cronograma, textos da proposta), não entrega
-                  ao cliente. Um botão só para os três alvos — o atalho [Refinar
-                  com IA] da aba Cronograma abre este MESMO modal (duas portas com
-                  validadores diferentes foi o defeito da crítica ia-seguranca). O
-                  Desfazer só aparece enquanto existe o retrato da última edição.
-                  ⚠ RÓTULO RESPONSIVO (revisão 4B, medido a 1366×768): a linha 1
-                  tem 1086 px e sobravam 79 px; o botão inteiro ocupa 127 px e
-                  empurrava Comparar cenários e Relatório completo para uma 2ª
-                  linha — a tela inteira descia 40 px. Abaixo de 1440 px o CSS
-                  (.ia-rot-largo, css/app.css) esconde "Editar com " e sobra "IA",
-                  como o [Refinar com IA] no cartão compacto do Cronograma. O nome
-                  inteiro fica no aria-label e no title.
-                  ⚠ O RÓTULO É UM ITEM FLEX SÓ (o span de fora): o .btn é flex
-                  com gap — "Editar com " e "IA" soltos viravam dois itens, com
-                  um vão a mais entre eles (visto na foto a 1440 px). */
-               '<button class="btn sm" data-acao="ia-editar" aria-label="Editar com IA" title="Editar com IA — escreva o que mudar: a IA propõe mudanças na planilha, no cronograma ou nos textos da proposta, e você confere cada uma antes de aplicar">' + Icones.get("ia") + '<span><span class="ia-rot-largo">Editar com </span>IA</span></button>' +
-               ((typeof App !== "undefined" && App._iaDesfazerBotao) ? App._iaDesfazerBotao(orc) : '')) + _sep +
-          _grp('<button class="btn sm" data-acao="cenarios">' + Icones.get("cenarios") + 'Comparar cenários</button>' +
-               /* rótulo responsivo: ver ⚠ O ORÇAMENTISTA ENTROU NA LINHA 1 SEM CABER, acima */
-               '<button class="btn sm" data-acao="relatorio" aria-label="Relatório completo" title="Relatório completo">' + Icones.get("relatorio") + '<span>Relatório<span class="rot-largo"> completo</span></span></button>') +
-        '</div>' +
-        /* LINHA 2 — O CLIENTE: aprovar → entregar → acompanhar.
-           FASE 4 — o ciclo de aprovacao vem ANTES da proposta: e o preco
-           conferido que vai ao cliente, nao o contrario. Sai vazio quando o
-           motor nao autoriza nada para esta pessoa — a tela nao inventa botao,
-           e por isso o separador so aparece quando o grupo aparece. */
-        '<div class="acoes-linha" aria-label="O cliente">' +
-          (_aprov ? (_grp(_aprov) + _sep) : '') +
-          _grp('<button class="btn sm success" data-acao="proposta">' + Icones.get("proposta") + 'Gerar Proposta</button>') +
-          /* depois de gerar vem o que aconteceu com ela: enviada, aceita, recusada */
-          (_comercial ? (_sep + _grp(_comercial)) : '') + _sep +
-          _grp('<button class="btn sm" data-acao="apresentar" title="Modo apresentação: tela cheia pra reunião com o cliente (setas navegam, Esc sai)">' + Icones.get("apresentar") + 'Apresentar</button>' +
-               '<button class="btn sm" data-acao="laudo">' + Icones.get("laudo") + 'Anexo p/ Laudo</button>') +
-        '</div>' +
-      '</div>';
+      /* a ordem do "Mais" segue o trabalho: montar → ajustar → planilha →
+         conferir → aprovar → entregar → acompanhar */
+      var acoes = [bIA, bExcel]
+        .concat(vazio ? [] : [bEscopo, bOrcm])
+        .concat([
+          bt("config-orc", "dados", "Dados", ' title="Cliente, obra, endereço, validade e os textos da proposta"'),
+          bt("parametros-orc", "parametros", "Parâmetros", ' title="Arredondamento, encargos, incidência do BDI, categoria e licitação"'),
+          bt("reimportar-excel", "reimportar", "Reimportar", ' title="Traz de volta as edições de Qtd/Custo feitas no Excel exportado"'),
+          bt("cenarios", "cenarios", "Comparar cenários"),
+          bt("relatorio", "relatorio", "Relatório completo", ' aria-label="Relatório completo" title="Relatório completo"')
+        ])
+        .concat(aprov.botoes || [])
+        .concat(vazio ? [bProp.replace(' primary"', '"')] : [])
+        .concat(comercial.botoes || [])
+        .concat([
+          bt("apresentar", "apresentar", "Apresentar", ' title="Modo apresentação: tela cheia pra reunião com o cliente (setas navegam, Esc sai)"'),
+          bt("laudo", "laudo", "Anexo p/ Laudo"),
+          bJanela
+        ]);
 
-      // KPIs (⚠ `orc-cab`: ver a nota da barra acima)
-      html += '<div class="kpis orc-cab">' +
-        kpi("Custo Direto", Util.fmtMoeda(t.custoDireto), "custo") +
-        kpi("BDI", Util.fmtPct(t.bdiPercentual) + " (" + Util.fmtMoeda(t.bdiValor) + ")", "") +
-        /* FECHAR EM UM VALOR — DENTRO do card de Preço de Venda, porque é a
-           pergunta que nasce olhando exatamente para esse número: "preciso que
-           dê outro". Ficou solto entre os KPIs e as abas na primeira versão e
-           não foi encontrado. Ação longe do número que ela muda é ação que
-           ninguém acha. */
-        kpi("Preço de Venda", Util.fmtMoeda(t.precoVenda), "destaque",
-          (typeof Fechamento === "undefined") ? "" :
-          ('<button class="btn sm primary" data-acao="fechar-valor" style="width:100%" ' +
-           'title="Chegar a um valor final definido, distribuindo a diferença no BDI, nos itens ou numa parcela">' +
-           (typeof Icones !== "undefined" ? Icones.get("dinheiro", 14) : "") + " Fechar em um valor…</button>" +
-           (orc.fechamento
-             ? '<button class="btn sm ghost" data-acao="fechar-desfazer" style="width:100%;margin-top:5px" ' +
-               'title="Volta os preços ao que eram antes do fechamento">Desfazer fechamento</button>'
-             : ""))) +
-        kpi("Itens / Etapas", t.qtdItens + " / " + t.qtdEtapas, "") +
-      '</div>';
+      var html = M.cab({
+        id: "orc-ed-cab", icone: "calculadora", titulo: orc.nome,
+        /* ← Orçamentos é a porta de volta (data-acao="voltar", N3: texto sem
+           moldura em repouso) — na linha de contexto, como uma trilha */
+        subHtml: '<button class="btn ghost sm n3" data-acao="voltar" title="Voltar à lista de orçamentos">' + ic("voltar", 15) + 'Orçamentos</button> ' +
+          Util.esc(orc.numero || "") + (orc.cliente && orc.cliente.nome ? " · " + Util.esc(orc.cliente.nome) : "") +
+          (aprov.selo ? " " + aprov.selo : "") + (comercial.selo ? " " + comercial.selo : ""),
+        acoes: acoes,
+        primariaHtml: vazio ? bEscopo : bProp
+      });
 
-      /* Selo do fechamento ativo: de onde este preço veio. Fica FORA do card
-         porque é informação de rastreio, não ação — e porque o texto é longo
-         demais para caber num KPI sem espremer o número. */
-      if (typeof Fechamento !== "undefined" && orc.fechamento) {
-        var _fx = orc.fechamento, _dl = Util.num(_fx.delta);
-        html += '<div style="margin:-4px 0 12px;font-size:12px;padding:7px 12px;border-radius:8px;' +
-          'background:rgba(46,111,158,.10);border:1px solid rgba(46,111,158,.30)">' +
-          "Este orçamento foi <b>fechado em " + Util.fmtMoeda(_fx.alvo) + "</b>" +
-          /* alvo sem os adicionais (js/fechamento.js): ao lado de um preço de venda que os soma */
-          (_fx.base === "semOpcionais" ? " (valor da proposta, sem os adicionais opcionais)" : "") + " — " +
-          (_dl >= 0 ? "acréscimo" : "desconto") + " de <b>" + Util.fmtMoeda(Math.abs(_dl)) + "</b> sobre os " +
-          Util.fmtMoeda(_fx.valorAnterior) + " originais, " +
-          /* no combinado o interessante é a DIVISÃO, não a palavra "combinado":
-             é ela que responde "de onde saiu esse dinheiro?" seis meses depois */
-          (_fx.modo === "combinado" && _fx.criterios
-            ? _fx.criterios.map(function (c) {
-                return Util.esc(String(((Fechamento.MODOS[c.modo] || {}).rotulo) || c.modo).toLowerCase()) +
-                       /* 1 casa, não 0: com inteiro, 57,5 + 42,5 virava
-                          "58% + 43%" = 101% na cara do usuário */
-                       " <b>" + Util.fmtNum(c.pct, 1) + "%</b>";
-              }).join(" + ")
-            : Util.esc(String(((Fechamento.MODOS[_fx.modo] || {}).rotulo) || _fx.modo).toLowerCase())) + "." +
-          "</div>";
-      }
+      /* ⚠ `.orc-cab` marca o que o modo foco do Cronograma esconde (app.css):
+         o aviso e a faixa de indicadores. A regra antiga mirava `#main > .kpis`
+         — qualquer KPI de qualquer tela — e, com a classe do body vazando,
+         apagava os cartões da lista e do Painel. Marca no próprio bloco: só o
+         que É do editor some. */
+      var cab2 = "";
 
-      // Pendência de preço: faixa de erro ANTES das abas (não finaliza zerado)
+      /* UM AVISO SÓ (roteiro §1): o que exige ação AGORA neste orçamento.
+         Item sem preço (erro: proposta e apresentação ficam bloqueadas), item
+         sem quantidade (v1.1.232: o item trazido sem metragem não soma no
+         total, e a proposta bloqueia por ele) e a última edição da IA que
+         ainda dá para desfazer. Antes eram duas faixas soltas mais o botão
+         perdido na 1ª linha da barra. */
       var _semPreco = Orcamento.itensSemPreco ? Orcamento.itensSemPreco(orc) : [];
+      var _semQtd = Orcamento.itensSemQuantidade ? Orcamento.itensSemQuantidade(orc) : [];
+      var _desf = (ap && ap._iaDesfazerBotao) ? ap._iaDesfazerBotao(orc) : '';
+      var linhasAv = [];
       if (_semPreco.length) {
-        /* ⚠ classe `faixa-pend` (app.css): 12 px e vão 6×12 — ver lá o roteiro da dobra a 1366×768 */
-        html += '<div class="faixa-pend erro orc-cab">' +
-          '⛔ <b>' + _semPreco.length + ' item(ns) sem preço:</b> ' +
+        linhasAv.push('<span><b>' + _semPreco.length + ' item(ns) sem preço:</b> ' +
           _semPreco.slice(0, 5).map(function (i) { return '<b>' + Util.esc(i.numero) + '</b>' + (i.codigo ? ' (' + Util.esc(i.codigo) + ')' : ''); }).join(', ') +
           (_semPreco.length > 5 ? '…' : '') +
-          ' — informe o custo unitário nos campos em vermelho. <b>Proposta e apresentação ficam bloqueadas</b> enquanto houver item zerado.</div>';
+          ' — informe o custo unitário nos campos em vermelho. <b>Proposta e apresentação ficam bloqueadas</b> enquanto houver item zerado.</span>');
       }
-      /* v1.1.232 — a MESMA faixa para quantidade pendente. O item trazido sem
-         metragem (fluxo do memorial) não soma no total, e sem este aviso a
-         única pista era o campo marcado na linha — fácil de não ver num
-         orçamento de 60 itens, e a proposta agora bloqueia por causa dele. */
-      var _semQtd = Orcamento.itensSemQuantidade ? Orcamento.itensSemQuantidade(orc) : [];
       if (_semQtd.length) {
-        html += '<div class="faixa-pend aviso orc-cab">' +
-          '⚠ <b>' + _semQtd.length + ' item(ns) sem quantidade:</b> ' +
+        linhasAv.push('<span><b>' + _semQtd.length + ' item(ns) sem quantidade:</b> ' +
           _semQtd.slice(0, 5).map(function (x) { return '<b>' + Util.esc(x.item.codigo || String(x.item.descricao || '').slice(0, 18)) + '</b>'; }).join(', ') +
           (_semQtd.length > 5 ? '…' : '') +
-          ' — eles não somam no total. Clique em <b>Calcular</b> na linha para levantar a metragem. <b>Proposta e laudo ficam bloqueados</b> enquanto houver item pendente.</div>';
+          ' — eles não somam no total. Clique em <b>Calcular</b> na linha para levantar a metragem. <b>Proposta e laudo ficam bloqueados</b> enquanto houver item pendente.</span>');
+      }
+      if (_desf && !linhasAv.length) linhasAv.push('<span>A última edição da IA ainda pode ser desfeita — o que você mexeu depois dela fica.</span>');
+      if (linhasAv.length || _desf) {
+        cab2 += M.aviso({ tom: _semPreco.length ? "erro" : (_semQtd.length ? "alerta" : "info"),
+          textoHtml: linhasAv.join(""), acaoHtml: _desf });
       }
 
-      // Abas — ícone SVG padronizado em todas (nada de emoji)
-      var abas = [
+      /* FECHAR EM UM VALOR — colado ao Preço de Venda, porque é a pergunta que
+         nasce olhando exatamente para esse número: "preciso que dê outro".
+         Ação longe do número que ela muda é ação que ninguém acha. O selo do
+         fechamento ativo (de onde este preço veio) fica na mesma linha, com o
+         texto inteiro no `title` — rastreio, não parágrafo fixo na tela. */
+      var subPreco = "";
+      if (typeof Fechamento !== "undefined") {
+        if (orc.fechamento) {
+          var _fx = orc.fechamento, _dl = Util.num(_fx.delta);
+          var _rastro = "Este orçamento foi fechado em " + Util.fmtMoeda(_fx.alvo) +
+            /* alvo sem os adicionais (js/fechamento.js): ao lado de um preço de venda que os soma */
+            (_fx.base === "semOpcionais" ? " (valor da proposta, sem os adicionais opcionais)" : "") + " — " +
+            (_dl >= 0 ? "acréscimo" : "desconto") + " de " + Util.fmtMoeda(Math.abs(_dl)) + " sobre os " +
+            Util.fmtMoeda(_fx.valorAnterior) + " originais, " +
+            /* no combinado o interessante é a DIVISÃO: é ela que responde "de
+               onde saiu esse dinheiro?" seis meses depois. 1 casa, não 0: com
+               inteiro, 57,5 + 42,5 virava "58% + 43%" = 101% na cara do usuário */
+            (_fx.modo === "combinado" && _fx.criterios
+              ? _fx.criterios.map(function (c) {
+                  return String(((Fechamento.MODOS[c.modo] || {}).rotulo) || c.modo).toLowerCase() + " " + Util.fmtNum(c.pct, 1) + "%";
+                }).join(" + ")
+              : String(((Fechamento.MODOS[_fx.modo] || {}).rotulo) || _fx.modo).toLowerCase()) + ".";
+          subPreco = '<span title="' + Util.esc(_rastro) + '">fechado em ' + Util.fmtMoeda(_fx.alvo) + '</span> ' +
+            '<button class="btn ghost sm n3" data-acao="fechar-desfazer" title="Volta os preços ao que eram antes do fechamento">Desfazer fechamento</button>';
+        }
+        subPreco += '<button class="btn ghost sm n3" data-acao="fechar-valor" title="Chegar a um valor final definido, distribuindo a diferença no BDI, nos itens ou numa parcela">' +
+          ic("dinheiro", 14) + 'Fechar em um valor…</button>';
+      }
+      cab2 += M.kpis([
+        { rotulo: "custo direto", valor: Util.fmtMoeda(t.custoDireto) },
+        { rotulo: "BDI", valor: Util.fmtPct(t.bdiPercentual), sub: Util.fmtMoeda(t.bdiValor) },
+        { rotulo: "preço de venda", tom: "pos", valor: Util.fmtMoeda(t.precoVenda), subHtml: subPreco },
+        { rotulo: "itens / etapas", valor: t.qtdItens + " / " + t.qtdEtapas }
+      ]);
+      html += '<div class="orc-cab">' + cab2 + '</div>';
+
+      // Abas — ícone SVG padronizado em todas (nada de emoji), pelo kit (teclado)
+      /* ⚠ A LISTA DE COMPRAS FICA COLADA NO RESUMO, e nao no fim. A planilha
+         responde por SERVICO (alvenaria, reboco); "Insumos & ABC" responde a
+         mesma obra por MATERIAL, que e como se compra. */
+      html += M.abas([
         ["planilha", "Planilha", "planilha"],
         ["sintetico", "Sintético", "sintetico"],
-        /* ⚠ A LISTA DE COMPRAS FICA COLADA NO RESUMO, e nao no fim.
-           A planilha responde por SERVICO (alvenaria, reboco); esta aba
-           responde a mesma obra por MATERIAL, que e como se compra. Sao as
-           duas leituras do mesmo orcamento, e andam juntas. */
         ["insumos", "Insumos & ABC", "insumo"],
         ["cronograma", "Cronograma", "cronograma"],
         ["execucao", "Execução", "execucao"],
@@ -1553,14 +1520,7 @@
         ["graficos", "Gráficos", "graficos"],
         ["relatorios", "Relatórios", "relatorios"],
         ["bdi", "BDI & Parâmetros", "bdi"]
-      ];
-      html += '<div class="tabs">';
-      abas.forEach(function (a) {
-        html += '<div class="tab ' + (abaAtiva === a[0] ? "ativa" : "") + '" data-aba="' + a[0] + '">' + Icones.get(a[2], 14) + a[1] + '</div>';
-      });
-      /* o ⧉ "Abrir em outra janela" saiu daqui para a linha do título (ver
-         `_bJanela` no começo desta função) */
-      html += '</div>';
+      ].map(function (a) { return { id: a[0], rotulo: a[1], icone: a[2], ativa: abaAtiva === a[0] }; }));
 
       html += '<div id="aba-conteudo">';
       if (abaAtiva === "sintetico") html += this.renderSintetico(orc);
@@ -1676,7 +1636,7 @@
           (recTudo ? "\u25BE Expandir todas" : "\u25B8 Recolher todas") + '</button>' : "") +
         '<button class="btn sm" data-acao="add-etapa">+ Etapa</button></div></div>';
       if (!orc.etapas.length) {
-        html += '<div class="vazio card">Adicione uma <b>etapa</b> (ex.: Serviços Preliminares) e depois itens da SINAPI.</div>';
+        html += MOD().vazio({ icone: "planilha", titulo: "Planilha vazia", texto: "Adicione uma etapa (ex.: Serviços Preliminares) em + Etapa e depois os itens da SINAPI — ou descreva a obra no Escopo Inteligente." });
         return html;
       }
       html += this._faixaAjustes(orc);
@@ -2378,9 +2338,17 @@
      * orcamento de proposito; quem comparar tem de achar a explicacao
      * escrita, senao procura um erro que nao existe.
      * ================================================================= */
+    /* ABA INSUMOS & ABC no padrão de tela (08/10/2026): os quatro cartões de
+       número viraram a linha de contexto da seção (uma faixa de indicadores
+       por tela é a do orçamento, lá em cima — roteiro §3), a busca e a
+       categoria viraram a barra de filtros do kit, e cada bloco (a lista, o
+       que ficou de fora, o preço que não bate) é uma seção com título. Os ids
+       (ins-busca, ins-cat), os data-acao e os textos que as e2e leem ficaram. */
     renderInsumosOrc: function (orc) {
-      if (typeof InsumosOrc === "undefined") return '<div class="vazio card">Módulo de insumos indisponível.</div>';
-      if (!(orc.etapas || []).length) return '<div class="vazio card"><h3>Sem itens para abrir em insumos</h3><span class="muted">Monte a planilha primeiro: cada serviço lançado vira material, mão de obra e equipamento aqui.</span></div>';
+      var M = MOD();
+      if (typeof InsumosOrc === "undefined") return M.vazio({ icone: "insumo", titulo: "Módulo de insumos indisponível" });
+      if (!(orc.etapas || []).length) return M.vazio({ icone: "insumo", titulo: "Sem itens para abrir em insumos",
+        texto: "Monte a planilha primeiro: cada serviço lançado vira material, mão de obra e equipamento aqui." });
 
       var linhas = (typeof Orcamento !== "undefined") ? Orcamento.linhas(orc) : [];
       var R = App._insumosOrcResolver();
@@ -2391,9 +2359,9 @@
         /* ⚠ NAO CARREGA SOZINHO AO ABRIR A ABA. O analitico tem ~17 MB; puxar
            isso porque alguem passou pela aba gasta a franquia de quem esta no
            celular do canteiro. O botao deixa a escolha com quem le. */
-        return '<div class="card"><h3 style="margin:0 0 8px">Abrir o orçamento em insumos</h3>'
-          + '<p class="muted" style="margin:0 0 12px;font-size:13px">Para listar o material da obra e montar a curva ABC, é preciso carregar a base analítica do estado — são cerca de 17 MB, e só na primeira vez.</p>'
-          + '<button class="btn primary" data-acao="insumos-carregar-base">Carregar a base e abrir</button></div>';
+        return M.vazio({ icone: "insumo", titulo: "Abrir o orçamento em insumos",
+          texto: "Para listar o material da obra e montar a curva ABC, é preciso carregar a base analítica do estado — são cerca de 17 MB, e só na primeira vez.",
+          acaoHtml: '<button class="btn primary" data-acao="insumos-carregar-base">Carregar a base e abrir</button>' });
       }
 
       var res = InsumosOrc.consolidar(linhas, R.obter, { motivoSem: R.motivoSem });
@@ -2402,43 +2370,35 @@
       var lista = InsumosOrc.filtrar(res.insumos, f.busca, f.cat);
       var self = this;
 
-      /* o cabecalho diz de quanto do orcamento esta lista da conta */
-      var corCob = res.cobertura >= 90 ? "var(--verde)" : (res.cobertura >= 60 ? "var(--amarelo)" : "var(--vermelho)");
-      var html = '<div class="card" style="margin-bottom:14px">'
-        + '<div class="kpis" style="margin-bottom:0">'
-        + '<div class="kpi kpi-compacto"><div class="rotulo">Insumos diferentes</div><div class="num">' + res.nInsumos + '</div>'
-        + '<div class="kpi-sub">de ' + res.nLinhas + ' serviço(s) na planilha</div></div>'
-        + '<div class="kpi kpi-compacto"><div class="rotulo">Custo direto aberto</div><div class="num">' + Util.fmtMoeda(res.somaInsumos) + '</div>'
-        + '<div class="kpi-sub">material, mão de obra e equipamento</div></div>'
-        + '<div class="kpi kpi-compacto"><div class="rotulo">Cobertura</div><div class="num" style="color:' + corCob + '">' + Util.fmtNum(res.cobertura, 1) + '%</div>'
-        + '<div class="kpi-sub">' + (res.naoDetalhado.length ? res.naoDetalhado.length + ' item(ns) fora da lista — ver abaixo' : 'todo o orçamento abriu em insumo') + '</div></div>'
-        + '<div class="kpi kpi-compacto"><div class="rotulo">Classe A</div><div class="num">' + abc.A.n + '</div>'
-        + '<div class="kpi-sub">' + Util.fmtMoeda(abc.A.valor) + ' — os que levam 80% do dinheiro</div></div>'
-        + '</div></div>';
+      var html = M.filtros([
+        '<div class="field"><label>Buscar</label><input type="search" id="ins-busca" placeholder="Buscar insumo ou código…" value="' + Util.esc(f.busca) + '"></div>',
+        '<div class="field"><label>Categoria</label><select id="ins-cat"><option value="TODAS">Todas as categorias</option>'
+          + '<option value="MAT"' + (f.cat === "MAT" ? " selected" : "") + '>Só material</option>'
+          + '<option value="MO"' + (f.cat === "MO" ? " selected" : "") + '>Só mão de obra</option>'
+          + '<option value="EQ"' + (f.cat === "EQ" ? " selected" : "") + '>Só equipamento</option></select></div>'
+      ], { direitaHtml: '<button class="btn sm" data-acao="insumos-csv">Exportar CSV</button>' });
 
-      html += '<div class="card" style="margin-bottom:12px;padding:12px 14px">'
-        + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">'
-        + '<input type="search" id="ins-busca" placeholder="Buscar insumo ou código…" value="' + Util.esc(f.busca) + '" style="flex:1;min-width:200px">'
-        + '<select id="ins-cat"><option value="TODAS">Todas as categorias</option>'
-        + '<option value="MAT"' + (f.cat === "MAT" ? " selected" : "") + '>Só material</option>'
-        + '<option value="MO"' + (f.cat === "MO" ? " selected" : "") + '>Só mão de obra</option>'
-        + '<option value="EQ"' + (f.cat === "EQ" ? " selected" : "") + '>Só equipamento</option></select>'
-        + '<button class="btn sm" data-acao="insumos-csv">Exportar CSV</button>'
-        + '</div>'
-        + '<p class="muted" style="font-size:12px;margin:8px 0 0">Quantidade e custo somam o mesmo insumo em todos os serviços. Valores em <b>custo direto, sem BDI</b> — é o que se paga ao fornecedor, não o que vai na proposta.</p>'
-        + '</div>';
+      /* a linha de contexto diz de quanto do orcamento esta lista da conta —
+         a COBERTURA na frente: abaixo de 100% a lista de compras está
+         incompleta, e o bloco "fora da lista de compras" logo abaixo diz o
+         porquê de cada item */
+      var resumo = "Cobertura " + Util.fmtNum(res.cobertura, 1) + "%" +
+        (res.naoDetalhado.length ? " (" + res.naoDetalhado.length + " item(ns) fora da lista — ver abaixo)" : " (todo o orçamento abriu em insumo)") +
+        " · " + res.nInsumos + " insumos diferentes de " + res.nLinhas + " serviço(s) · custo direto aberto " + Util.fmtMoeda(res.somaInsumos) +
+        " · classe A: " + abc.A.n + " insumo(s), " + Util.fmtMoeda(abc.A.valor) + " — os que levam 80% do dinheiro";
 
+      var corpo;
       if (!lista.length) {
-        html += '<div class="vazio card"><h3>Nenhum insumo neste recorte</h3><span class="muted">Tire o filtro para ver a lista inteira.</span></div>';
+        corpo = M.vazio({ icone: "buscar", titulo: "Nenhum insumo neste recorte", texto: "Tire o filtro para ver a lista inteira." });
       } else {
-        html += '<div class="card" style="padding:0;overflow:auto"><table class="tbl"><thead><tr>'
+        corpo = '<table class="tbl"><thead><tr>'
           + '<th style="width:44px">ABC</th><th>Insumo</th><th>Un</th>'
           + '<th class="num">Quantidade</th><th class="num">Custo unit.</th><th class="num">Custo total</th>'
           + '<th class="num">% do custo</th></tr></thead><tbody>';
         lista.forEach(function (x) {
-          html += '<tr><td><span class="ins-abc ins-' + x.classe + '">' + x.classe + '</span></td>'
+          corpo += '<tr><td><span class="ins-abc ins-' + x.classe + '">' + x.classe + '</span></td>'
             + '<td><b>' + Util.esc(x.descricao || "(sem descrição)") + '</b>'
-            + '<div class="muted" style="font-size:11.5px">' + (x.codigo ? Util.esc(x.codigo) + " · " : "")
+            + '<div class="muted" style="font-size:var(--t-micro)">' + (x.codigo ? Util.esc(x.codigo) + " · " : "")
             + self._catRotulo(x.categoria) + (x.emServicos > 1 ? " · em " + x.emServicos + " serviços" : "")
             + (x.subcomposicao ? ' · <span title="Composição usada dentro de outra. Entra aqui como uma linha só: a mão de obra e o material dela não foram separados.">subcomposição, não aberta</span>' : '') + '</div></td>'
             + '<td>' + Util.esc(x.unidade || "") + '</td>'
@@ -2447,50 +2407,52 @@
             + '<td class="num"><b>' + Util.fmtMoeda(x.custoTotal) + '</b></td>'
             + '<td class="num">' + Util.fmtNum(x.pct, 1) + '%</td></tr>';
         });
-        html += '</tbody></table></div>';
+        corpo += '</tbody></table>';
       }
+      /* "Quantidade e custo somam o mesmo insumo em todos os serviços; custo
+         direto, sem BDI — é o que se paga ao fornecedor, não o que vai na
+         proposta": era um parágrafo fixo na tela; virou a dica do título */
+      html += M.secao({ id: "ins-lista", titulo: "Insumos da obra · custo direto, sem BDI", sub: resumo, corpoHtml: corpo });
 
       /* ⚠ O BALDE DO QUE NAO ABRIU FICA VISIVEL, com o motivo de cada um.
          E aqui que a pessoa descobre por que a lista de compras esta
          incompleta — e o que fazer para completa-la. */
       if (res.naoDetalhado.length) {
-        html += '<div class="card" style="margin-top:14px">'
-          + '<h3 style="margin:0 0 6px">' + res.naoDetalhado.length + ' item(ns) fora da lista de compras</h3>'
-          + '<p class="muted" style="font-size:12.5px;margin:0 0 10px">Somam <b>' + Util.fmtMoeda(res.custoFechado)
-          + '</b> do custo direto e não viraram material porque não abriram em insumos — o motivo de cada um está na última coluna. O valor está no orçamento; o que falta é o detalhamento.</p>'
-          + '<table class="tbl"><thead><tr><th>Código</th><th>Serviço</th><th class="num">Custo</th><th>Por quê</th></tr></thead><tbody>';
+        var cND = '<table class="tbl"><thead><tr><th>Código</th><th>Serviço</th><th class="num">Custo</th><th>Por quê</th></tr></thead><tbody>';
         res.naoDetalhado.slice(0, 40).forEach(function (x) {
-          html += '<tr><td>' + Util.esc(x.codigo || "—") + '</td><td>' + Util.esc(x.descricao || "—") + '</td>'
+          cND += '<tr><td>' + Util.esc(x.codigo || "—") + '</td><td>' + Util.esc(x.descricao || "—") + '</td>'
             + '<td class="num">' + Util.fmtMoeda(x.custoTotal) + '</td>'
             + '<td class="muted">' + Util.esc(x.motivo) + '</td></tr>';
         });
-        html += '</tbody></table>';
-        if (res.naoDetalhado.length > 40) html += '<p class="muted" style="font-size:11.5px;margin:8px 0 0">Mostrando os 40 maiores de ' + res.naoDetalhado.length + '.</p>';
-        html += '</div>';
+        cND += '</tbody></table>';
+        html += M.secao({ titulo: res.naoDetalhado.length + " item(ns) fora da lista de compras",
+          sub: "Somam " + Util.fmtMoeda(res.custoFechado) + " do custo direto e não viraram material porque não abriram em insumos — o motivo de cada um está na última coluna. O valor está no orçamento; o que falta é o detalhamento." +
+            (res.naoDetalhado.length > 40 ? " Mostrando os 40 maiores de " + res.naoDetalhado.length + "." : ""),
+          corpoHtml: cND });
       }
 
       /* ⚠ COMPOSICAO PROPRIA COM PRECO DIFERENTE DO ITEM. A lista acima usa
          o custo de cada insumo, e nao o preco do item; quando o item foi
          editado na planilha (ou a composicao mudou depois de lancada), a
-         soma dos insumos nao fecha com o custo direto. Sem este cartao o
+         soma dos insumos nao fecha com o custo direto. Sem este bloco o
          "Custo direto aberto" parece conta errada. NAO se corrige nada
          sozinho: qual dos dois esta certo e decisao de quem orca. */
       var dv = res.divergentes || [];
       if (dv.length) {
         var somaDv = 0;
         dv.forEach(function (x) { somaDv += x.diferencaTotal; });
-        html += '<div class="card" style="margin-top:14px">'
-          + '<h3 style="margin:0 0 6px">' + dv.length + ' item(ns) com preço diferente da composição</h3>'
-          + '<p class="muted" style="font-size:12.5px;margin:0 0 10px">A lista acima soma o custo dos insumos da composição própria; o orçamento usa o preço do item. '
-          + 'Nestes itens os dois não batem e a diferença soma <b>' + Util.fmtMoeda(somaDv) + '</b>. Nada foi alterado: confira qual está certo e ajuste o item ou a composição.</p>'
-          + '<table class="tbl"><thead><tr><th>Código</th><th>Serviço</th><th class="num">Preço do item</th><th class="num">Soma da composição</th><th class="num">Diferença no total</th></tr></thead><tbody>';
+        var cDv = '<table class="tbl"><thead><tr><th>Código</th><th>Serviço</th><th class="num">Preço do item</th><th class="num">Soma da composição</th><th class="num">Diferença no total</th></tr></thead><tbody>';
         dv.slice(0, 40).forEach(function (x) {
-          html += '<tr><td>' + Util.esc(x.codigo || "—") + '</td><td>' + Util.esc(x.descricao || "—") + '</td>'
+          cDv += '<tr><td>' + Util.esc(x.codigo || "—") + '</td><td>' + Util.esc(x.descricao || "—") + '</td>'
             + '<td class="num">' + Util.fmtMoeda(x.custoItem) + '</td>'
             + '<td class="num">' + Util.fmtMoeda(x.custoComposicao) + '</td>'
             + '<td class="num"><b>' + Util.fmtMoeda(x.diferencaTotal) + '</b></td></tr>';
         });
-        html += '</tbody></table></div>';
+        cDv += '</tbody></table>';
+        html += M.secao({ titulo: dv.length + " item(ns) com preço diferente da composição",
+          sub: "A lista acima soma o custo dos insumos da composição própria; o orçamento usa o preço do item. Nestes itens os dois não batem e a diferença soma " +
+            Util.fmtMoeda(somaDv) + ". Nada foi alterado: confira qual está certo e ajuste o item ou a composição.",
+          corpoHtml: cDv });
       }
       return html;
     },
@@ -2501,8 +2463,9 @@
     },
 
     renderSintetico: function (orc) {
+      var M = MOD();
       var lin = Orcamento.sintetico(orc);
-      if (!lin.length) return '<div class="vazio card">Sem etapas para resumir.</div>';
+      if (!lin.length) return M.vazio({ icone: "sintetico", titulo: "Sem etapas para resumir", texto: "Adicione etapas e itens na aba Planilha." });
       var html = '<table class="tbl"><thead><tr><th>Cód</th><th>Etapa</th>' +
         '<th class="num">Itens</th><th class="num">Custo Direto</th><th class="num">Preço Venda</th><th class="num">Peso %</th></tr></thead><tbody>';
       lin.forEach(function (l) {
@@ -2516,7 +2479,7 @@
       html += '</tbody><tfoot><tr class="etapa-row"><td colspan="3">TOTAL GERAL</td>' +
         '<td class="num">' + Util.fmtMoeda(t.custoDireto) + '</td>' +
         '<td class="num">' + Util.fmtMoeda(t.precoVenda) + '</td><td class="num">100%</td></tr></tfoot></table>';
-      return html;
+      return M.secao({ titulo: "Resumo por etapa", sub: lin.length + " etapa(s) · o peso de cada uma no preço de venda", corpoHtml: html });
     },
 
     /* Selo dos feriados: quantos dias de obra eles custaram e quais foram.
@@ -2555,8 +2518,8 @@
        trouxe, ou um teste que monta só o ui.js num vm) a aba cai no desenho
        por etapa de antes (_renderCronogramaEtapa) em vez de sumir. */
     renderCronograma: function (orc) {
-      if (typeof Cronograma === "undefined") return '<div class="vazio card">Módulo de cronograma indisponível.</div>';
-      if (!(orc.etapas || []).length) return '<div class="vazio card">Adicione etapas e itens para o agente montar o cronograma.</div>';
+      if (typeof Cronograma === "undefined") return MOD().vazio({ icone: "cronograma", titulo: "Módulo de cronograma indisponível" });
+      if (!(orc.etapas || []).length) return MOD().vazio({ icone: "cronograma", titulo: "Sem etapas para o cronograma", texto: "Adicione etapas e itens para o agente montar o cronograma." });
       var CX = this._cronoExecUI();
       if (!CX) return this._renderCronogramaEtapa(orc);
       var self = this, ap = (typeof App !== "undefined") ? App : null;
@@ -2943,8 +2906,8 @@
 
     // ----- Aba Execução (agente de canteiro: equipe/prazo/custo × orçamento) -----
     renderExecucao: function (orc) {
-      if (typeof Execucao === "undefined") return '<div class="vazio card">Agente de execução indisponível.</div>';
-      if (!(orc.etapas || []).length) return '<div class="vazio card">Adicione etapas e itens para o agente dimensionar equipe, prazo e custo.</div>';
+      if (typeof Execucao === "undefined") return MOD().vazio({ icone: "execucao", titulo: "Agente de execução indisponível" });
+      if (!(orc.etapas || []).length) return MOD().vazio({ icone: "execucao", titulo: "Sem itens para o agente", texto: "Adicione etapas e itens para o agente dimensionar equipe, prazo e custo." });
       // RBAC: só usa as diárias REAIS do RH se o usuário tem o módulo 'colaboradores'
       // (senão vazaria salário via a aba de orçamento). Sem acesso -> cai no fallback SINAPI.
       var podeRH = (typeof Auth === "undefined" || !Auth.podeModulo) ? true : Auth.podeModulo("colaboradores");
@@ -2975,8 +2938,14 @@
       var ROT = { dentro: "DENTRO DO ORÇADO", acima: "ACIMA DO ORÇADO", abaixo: "ABAIXO DO ORÇADO", "sem-base": "SEM BASE P/ RECONCILIAR" };
       var cor = COR[sim.status] || "#64748b";
 
+      /* PADRÃO DE TELA (08/10/2026): os cartões soltos desta aba viraram as
+         seções do kit — parâmetros, o resultado do agente, a equipe e a
+         tabela por etapa —, os ícones-emoji saíram e o rodapé explicativo
+         virou a linha de contexto da tabela. Os textos que as suítes leem
+         (test-execucao-render, test-execucao-propria) ficaram. */
+      var M = MOD(), html = "", res = "";
       // form de parâmetros
-      var html = '<div class="card" style="margin-bottom:12px"><div class="flex" style="flex-wrap:wrap;gap:12px;align-items:flex-end">' +
+      var form = '<div class="flex" style="flex-wrap:wrap;gap:12px;align-items:flex-end">' +
         '<div class="field" style="margin:0"><label>Início da obra</label><input id="exec-inicio" type="date" value="' + d10(sim.dataInicio) + '"></div>' +
         '<div class="field" style="margin:0"><label>Entrega desejada</label><input id="exec-entrega" type="date" value="' + (p.dataEntrega || "") + '"></div>' +
         '<div class="field" style="margin:0"><label>Jornada (h/dia)</label><input id="exec-jornada" type="number" min="1" max="12" value="' + p.jornadaH + '" style="width:80px"></div>' +
@@ -2986,36 +2955,37 @@
         '<button class="btn sm primary" data-acao="exec-recalc">' + (typeof Icones !== 'undefined' ? Icones.get('ciclo', 15) : '') + ' Recalcular</button>' +
         '<button class="btn sm" data-acao="exec-cronograma" title="Usar estas durações no Cronograma">' + Icones.get("cronograma") + 'Enviar ao cronograma</button>' +
         '</div>' +
-        '<div class="muted" style="font-size:11px;margin-top:8px">Produtividade = coeficientes de mão-de-obra do SINAPI (horas-homem). Custo/dia = diária dos seus colaboradores (RH); onde não há colaborador da profissão, usa a <b>referência SINAPI</b>.' +
-        (colab.length ? '' : ' <b>Cadastre colaboradores em RH</b> para usar suas diárias reais — por ora tudo está na referência SINAPI.') + '</div></div>';
+        '<div class="muted" style="font-size:var(--t-micro);margin-top:8px">Produtividade = coeficientes de mão-de-obra do SINAPI (horas-homem). Custo/dia = diária dos seus colaboradores (RH); onde não há colaborador da profissão, usa a <b>referência SINAPI</b>.' +
+        (colab.length ? '' : ' <b>Cadastre colaboradores em RH</b> para usar suas diárias reais — por ora tudo está na referência SINAPI.') + '</div>';
+      html += M.secao({ titulo: "Parâmetros da execução", corpoHtml: form });
 
       var semBase = sim.semBaseMO;
 
       // headline + semáforo (sem prazo/equipe FANTASMA quando a base não tem MO)
-      html += '<div class="flex" style="gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:10px">';
+      res += '<div class="flex" style="gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:10px">';
       if (semBase) {
-        html += '<b style="font-size:16px;color:#b45309">⏱ prazo/equipe não estimáveis</b>';
+        res += '<b style="font-size:var(--t-med);color:var(--amarelo)">prazo/equipe não estimáveis</b>';
       } else {
         var parcial = sim.nEtapasSemBase > 0; // prazo cobre só as etapas estimáveis; as estaduais ficam de fora
-        html += '<b style="font-size:16px">⏱ ' + sim.prazoDias + ' dias úteis (~' + sim.prazoSemanas + ' semanas)' + (parcial ? ' <span style="color:#b45309">*parcial</span>' : '') + '</b>' +
+        res += '<b style="font-size:var(--t-med)">' + sim.prazoDias + ' dias úteis (~' + sim.prazoSemanas + ' semanas)' + (parcial ? ' <span style="color:var(--amarelo)">*parcial</span>' : '') + '</b>' +
           (sim.dataFim ? '<span class="muted">' + sim.dataInicio.toLocaleDateString("pt-BR") + ' → ' + sim.dataFim.toLocaleDateString("pt-BR") + (parcial ? ' (só etapas estimáveis)' : '') + '</span>' : '') +
           /* a premissa no próprio número: sem entrega, é 1 pessoa por profissão (ver `recados` do motor) */
           (sim.modo === "equipe" ? '<span class="pill" style="background:#64748b18;color:#475569;font-weight:600" title="Sem “Entrega desejada”, o agente põe 1 pessoa de cada profissão em cada etapa, com as etapas em fila. Preencha a entrega para ele dimensionar a equipe.">com a equipe mínima (1 por profissão)</span>' : '') +
           (sim.metaAtingida === false ? '<span class="pill" style="background:#dc262622;color:#dc2626;font-weight:700">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' não bate a entrega pedida</span>' : '') +
           (parcial ? '<span class="pill" style="background:#f59e0b22;color:#b45309;font-weight:700">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' prazo parcial — ' + sim.nEtapasSemBase + ' etapa(s) sem base de MO fora da conta</span>' : '');
       }
-      html += '<span class="pill" style="background:' + cor + '22;color:' + cor + ';font-weight:700">' + (ROT[sim.status] || sim.status) + (sim.reconConfiavel ? ' · ' + (sim.desvioPct >= 0 ? "+" : "") + sim.desvioPct.toFixed(1) + '%' : '') + '</span>';
-      if (!semBase) html += '<span class="muted" style="font-size:12px' + (sim.coberturaBaixa ? ';color:#b45309;font-weight:600' : '') + '">🧠 ' + sim.cobertura.pct + '% dos itens (com qtd) têm produtividade SINAPI' + (sim.coberturaBaixa ? ' — reconciliação parcial' : '') + '</span>';
-      html += '</div>';
+      res += '<span class="pill" style="background:' + cor + '22;color:' + cor + ';font-weight:700">' + (ROT[sim.status] || sim.status) + (sim.reconConfiavel ? ' · ' + (sim.desvioPct >= 0 ? "+" : "") + sim.desvioPct.toFixed(1) + '%' : '') + '</span>';
+      if (!semBase) res += '<span class="muted" style="font-size:var(--t-micro)' + (sim.coberturaBaixa ? ';color:var(--amarelo);font-weight:600' : '') + '">' + sim.cobertura.pct + '% dos itens (com qtd) têm produtividade SINAPI' + (sim.coberturaBaixa ? ' — reconciliação parcial' : '') + '</span>';
+      res += '</div>';
 
       // aviso forte quando é 100% base estadual/própria sem custo de MO
       if (semBase) {
-        html += '<div class="card" style="margin-bottom:12px;border-left:4px solid #b45309;background:#f59e0b0d"><b style="color:#b45309">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Orçamento de base estadual/própria sem custo de mão-de-obra.</b><div class="muted" style="font-size:12px;margin-top:4px">O agente precisa de composições SINAPI (horas-homem) — ou da produtividade informada — para dimensionar equipe, prazo e custo. Os números abaixo NÃO são uma estimativa de obra.</div></div>';
+        res += '<div style="margin:0 0 12px;padding:10px 14px;border-left:4px solid var(--amarelo);background:var(--surface-2);border-radius:var(--raio)"><b style="color:var(--amarelo)">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Orçamento de base estadual/própria sem custo de mão-de-obra.</b><div class="muted" style="font-size:12px;margin-top:4px">O agente precisa de composições SINAPI (horas-homem) — ou da produtividade informada — para dimensionar equipe, prazo e custo. Os números abaixo NÃO são uma estimativa de obra.</div></div>';
       } else {
         // reconciliação — SÓ sobre a porção com DIÁRIA REAL (real × orçado-SINAPI da mesma profissão)
-        html += '<div class="card" style="margin-bottom:12px;border-left:4px solid ' + cor + '">';
+        res += '<div style="margin:0 0 12px;padding:12px 14px;border-left:4px solid ' + cor + ';background:var(--surface-2);border-radius:var(--raio)">';
         if (sim.reconConfiavel) {
-          html += '<div class="flex" style="gap:24px;flex-wrap:wrap;align-items:baseline">' +
+          res += '<div class="flex" style="gap:24px;flex-wrap:wrap;align-items:baseline">' +
             '<div><div class="muted" style="font-size:12px" title="MO orçada (SINAPI) das profissões que têm diária cadastrada no RH">MO orçada (porção reconciliável)</div><b style="font-size:18px">' + moeda(sim.orcadoMOReal) + '</b></div>' +
             '<div style="font-size:20px;color:var(--aco,#64748b)">→</div>' +
             '<div><div class="muted" style="font-size:12px">MO simulada (diárias reais do RH)</div><b style="font-size:18px;color:' + cor + '">' + moeda(sim.custoMOReal) + '</b></div>' +
@@ -3023,21 +2993,22 @@
             '</div>' +
             (sim.coberturaBaixa ? '<div class="pill" style="display:inline-block;margin-top:8px;background:#f59e0b22;color:#b45309;font-weight:600;font-size:11px">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Cobre só ' + Math.round(sim.reconCobPct) + '% do custo de MO-SINAPI — só as profissões com diária real cadastrada</div>' : '');
         } else {
-          html += '<div style="font-size:13px">' + (sim.orcadoMOExato > 0 ? 'Há itens SINAPI, mas nenhuma <b>diária real</b> no RH que case as profissões — comparar SINAPI × SINAPI daria sempre 0%. Cadastre sua equipe em RH para reconciliar custo real × orçado.' : 'Nenhum item com composição SINAPI para reconciliar o custo de MO — a base é própria/estadual.') + '</div>';
+          res += '<div style="font-size:13px">' + (sim.orcadoMOExato > 0 ? 'Há itens SINAPI, mas nenhuma <b>diária real</b> no RH que case as profissões — comparar SINAPI × SINAPI daria sempre 0%. Cadastre sua equipe em RH para reconciliar custo real × orçado.' : 'Nenhum item com composição SINAPI para reconciliar o custo de MO — a base é própria/estadual.') + '</div>';
         }
-        html += '<div class="muted" style="font-size:11px;margin-top:8px">Custo total de MO simulado (obra inteira): <b>' + moeda(sim.custoMOSimulado) + '</b> · MO total orçada: ' + moeda(sim.orcadoMO) +
+        res += '<div class="muted" style="font-size:11px;margin-top:8px">Custo total de MO simulado (obra inteira): <b>' + moeda(sim.custoMOSimulado) + '</b> · MO total orçada: ' + moeda(sim.orcadoMO) +
           /* de onde veio parte do número: a base desses itens não separa MO (ver Execucao._moUnit) */
           (sim.orcadoMODerivado > 0 ? ' (' + moeda(sim.orcadoMODerivado) + ' pela proporção de mão de obra da composição, em ' + sim.nItensMODerivado + ' item(ns) cuja base não separa MO)' : '') +
           (sim.orcadoMOExato ? ' · com produtividade SINAPI: ' + moeda(sim.orcadoMOExato) : '') + '.</div>';
-        html += '</div>';
+        res += '</div>';
       }
 
       // observações do agente (sempre)
-      html += '<div class="card" style="margin-bottom:12px"><ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.6">';
+      res += '<ul style="margin:0;padding-left:18px;font-size:var(--t-peq);line-height:1.6">';
       // `recados` é a chave nova do motor (a premissa da equipe mínima e as opcionais fora); some quando o motor é antigo
-      (Array.isArray(sim.recados) ? sim.recados : []).forEach(function (s) { html += '<li>' + Util.esc(s) + '</li>'; });
-      sim.sugestoes.forEach(function (s) { html += '<li>' + Util.esc(s) + '</li>'; });
-      html += '</ul></div>';
+      (Array.isArray(sim.recados) ? sim.recados : []).forEach(function (s) { res += '<li>' + Util.esc(s) + '</li>'; });
+      sim.sugestoes.forEach(function (s) { res += '<li>' + Util.esc(s) + '</li>'; });
+      res += '</ul>';
+      html += M.secao({ titulo: "Prazo, equipe e custo de mão de obra", corpoHtml: res });
 
       /* ⚠ PICO SIMULTÂNEO × MAIOR EQUIPE DE CADA PROFISSÃO. O título dizia
          "máximo simultâneo no canteiro" sobre a lista `equipePico`, que é o
@@ -3047,26 +3018,27 @@
       var picoKeys = Object.keys(sim.equipePico);
       if (picoKeys.length) {
         var ps = sim.picoSimultaneo;
-        html += '<div class="card" style="margin-bottom:12px">';
+        var eqH = "", eqTit = "Equipe ao longo da obra", eqSub = "";
         if (ps && ps.pessoas > 0) {
-          html += '<h3 style="margin:0 0 4px;font-size:14px">' + (typeof Icones !== 'undefined' ? Icones.get('capacete', 15) : '') + ' Pico simultâneo no canteiro: ' + ps.pessoas + ' pessoa(s)' + (ps.data ? ' a partir de ' + ps.data.toLocaleDateString("pt-BR") : '') + '</h3>' +
-            '<div class="muted" style="font-size:12px;margin-bottom:10px">Etapas ao mesmo tempo nesse dia: ' + Util.esc(ps.etapas.join(" + ")) + '. ' + (sim.modo === "prazo" ? 'Com a equipe dimensionada para a entrega pedida.' : 'Com a equipe mínima deste prazo (1 pessoa por profissão).') + '</div>';
+          eqTit = 'Pico simultâneo no canteiro: ' + ps.pessoas + ' pessoa(s)' + (ps.data ? ' a partir de ' + ps.data.toLocaleDateString("pt-BR") : '');
+          eqSub = 'Etapas ao mesmo tempo nesse dia: ' + ps.etapas.join(" + ") + '. ' + (sim.modo === "prazo" ? 'Com a equipe dimensionada para a entrega pedida.' : 'Com a equipe mínima deste prazo (1 pessoa por profissão).');
         }
-        html += '<h3 style="margin:0 0 8px;font-size:13px">Maior equipe de cada profissão ao longo da obra <span class="muted" style="font-weight:400">(não ficam todas ao mesmo tempo)</span></h3><div class="flex" style="gap:8px;flex-wrap:wrap">';
+        eqH += '<h3 style="margin:0 0 8px;font-size:var(--t-peq)">Maior equipe de cada profissão ao longo da obra <span class="muted" style="font-weight:400">(não ficam todas ao mesmo tempo)</span></h3><div class="flex" style="gap:8px;flex-wrap:wrap">';
         picoKeys.sort(function (a, b) { return sim.equipePico[b] - sim.equipePico[a]; }).forEach(function (pf) {
           var estim = pf.indexOf("estimada") >= 0;
           var lbl = estim ? (sim.equipePico[pf] + '× equipe geral (est.)') : (sim.equipePico[pf] + '× ' + curto(pf));
           var bg = estim ? '#f59e0b18' : '#0f274012', bd = estim ? '#f59e0b55' : 'var(--linha,#e2e8f0)';
-          html += '<span class="pill" title="' + (estim ? 'itens sem código SINAPI — equipe geral estimada pela MO do orçamento' : Util.esc(pf)) + '" style="background:' + bg + ';border:1px solid ' + bd + ';font-weight:600">' + Util.esc(lbl) + '</span>';
+          eqH += '<span class="pill" title="' + (estim ? 'itens sem código SINAPI — equipe geral estimada pela MO do orçamento' : Util.esc(pf)) + '" style="background:' + bg + ';border:1px solid ' + bd + ';font-weight:600">' + Util.esc(lbl) + '</span>';
         });
-        html += '</div></div>';
+        eqH += '</div>';
+        html += M.secao({ titulo: eqTit, sub: eqSub, corpoHtml: eqH });
       }
 
       // tabela por etapa
-      html += '<table class="tbl"><thead><tr><th>Etapa</th><th class="num">Duração</th><th>Equipe por profissão</th><th class="num">Custo MO</th></tr></thead><tbody>';
+      var tb = '<table class="tbl"><thead><tr><th>Etapa</th><th class="num">Duração</th><th>Equipe por profissão</th><th class="num">Custo MO</th></tr></thead><tbody>';
       sim.etapas.forEach(function (et) {
         if (!et.temBaseMO) {
-          html += '<tr><td><b>' + Util.esc(et.nome) + '</b></td><td class="num muted">—</td>' +
+          tb += '<tr><td><b>' + Util.esc(et.nome) + '</b></td><td class="num muted">—</td>' +
             '<td><span class="pill" style="background:#f59e0b22;color:#b45309;font-size:11px" title="base estadual/própria sem custo de MO — sem coeficiente p/ dimensionar equipe/prazo">não estimável (base sem MO)</span></td>' +
             '<td class="num muted">—</td></tr>';
           return;
@@ -3076,20 +3048,26 @@
           return '<span class="pill" title="' + Util.esc(pf) + ' · R$' + Math.round(s.custoDia) + '/dia ' + (ref ? '(ref. SINAPI)' : '(diária real)') + '" style="background:' + (ref ? '#94a3b822' : '#16a34a1a') + ';color:' + (ref ? '#64748b' : '#16a34a') + ';font-size:11px">' + s.equipe + '× ' + Util.esc(curto(pf)) + '</span>';
         }).join(" ");
         if (et.homensDiaEstim > 0) chips += ' <span class="pill" style="background:#f59e0b22;color:#b45309;font-size:11px" title="itens sem código SINAPI mas com custoMO — equipe/produtividade estimada pela MO do orçamento">~' + (et.equipeEstim || 1) + '× equipe geral (est.)</span>';
-        html += '<tr><td><b>' + Util.esc(et.nome) + '</b>' + (et.dataInicio ? '<br><span class="muted" style="font-size:11px">' + et.dataInicio.toLocaleDateString("pt-BR") + ' → ' + et.dataFim.toLocaleDateString("pt-BR") + '</span>' : '') +
+        tb += '<tr><td><b>' + Util.esc(et.nome) + '</b>' + (et.dataInicio ? '<br><span class="muted" style="font-size:11px">' + et.dataInicio.toLocaleDateString("pt-BR") + ' → ' + et.dataFim.toLocaleDateString("pt-BR") + '</span>' : '') +
           (et.foraDoPrazo ? '<br><span class="pill" style="background:#64748b18;color:#475569;font-size:11px" title="Etapa opcional: o Cronograma está com “contar opcionais no prazo” desligado, então ela não entra na data de entrega. A duração e a equipe ao lado são o que ela pede se for contratada.">opcional · fora do prazo</span>' : '') + '</td>' +
           '<td class="num">' + et.duracao + ' d</td>' +
           '<td>' + (chips || '<span class="muted">—</span>') + '</td>' +
           '<td class="num">' + moeda(et.custoMO) + '</td></tr>';
       });
-      html += '<tr style="font-weight:700;border-top:2px solid var(--linha,#e2e8f0)"><td>Total</td><td class="num">' + (semBase ? '—' : sim.prazoDias + ' d') + '</td><td></td><td class="num">' + moeda(sim.custoMOSimulado) + '</td></tr>';
-      html += '</tbody></table>';
-      html += '<div class="muted" style="font-size:11px;margin-top:8px">O custo de MO é pelo conteúdo de trabalho (equipe eficientemente dimensionada). A hora do SINAPI já vem <b>com encargos sociais/complementares</b>; por isso, ao comparar, as diárias de CLT são oneradas em ' + (p.encargosPct || 0) + '% (campo acima — mesmo % da Folha de pagamento) e as de diarista/autônomo/PJ entram cheias. A reconciliação vale <b>só sobre as profissões com diária real cadastrada no RH</b> — se a cobertura for baixa, o veredito é parcial. Itens de base estadual sem custo de MO aparecem como “não estimável”.</div>';
+      tb += '<tr style="font-weight:700;border-top:2px solid var(--linha,#e2e8f0)"><td>Total</td><td class="num">' + (semBase ? '—' : sim.prazoDias + ' d') + '</td><td></td><td class="num">' + moeda(sim.custoMOSimulado) + '</td></tr>';
+      tb += '</tbody></table>';
+      /* o rodapé explicativo virou a linha de contexto da seção (roteiro §5) */
+      html += M.secao({ titulo: "Por etapa", corpoHtml: tb,
+        sub: 'O custo de MO é pelo conteúdo de trabalho (equipe eficientemente dimensionada). A hora do SINAPI já vem com encargos sociais/complementares; por isso, ao comparar, as diárias de CLT são oneradas em ' + (p.encargosPct || 0) + '% (campo acima — mesmo % da Folha de pagamento) e as de diarista/autônomo/PJ entram cheias. A reconciliação vale só sobre as profissões com diária real cadastrada no RH — se a cobertura for baixa, o veredito é parcial. Itens de base estadual sem custo de MO aparecem como “não estimável”.' });
       return html;
     },
 
     renderParedeCebola: function (orc) {
-      if (typeof ParedeCebola === "undefined") return '<div class="vazio card">Parede-Cebola indisponível.</div>';
+      /* PADRÃO DE TELA (08/10/2026): os dois cartões viraram seções do kit
+         (a parede → o resultado), o texto de apresentação virou a linha de
+         contexto e o emoji da cebola saiu dos botões e do título */
+      var M = MOD();
+      if (typeof ParedeCebola === "undefined") return M.vazio({ icone: "paredecebola", titulo: "Parede-Cebola indisponível" });
       // preview TRANSIENTE (não polui o orçamento salvo/sincronizado): vive em App._pcPreview
       var pc = (typeof App !== "undefined" && App._pcPreview && App._pcPreview.orcId === orc.id) ? App._pcPreview : {};
       var esc = Util.esc, inp = pc.inputs || {};
@@ -3097,10 +3075,7 @@
       function selReceita() {
         return receitas.map(function (r) { return '<option value="' + r.id + '"' + (inp.receita === r.id ? " selected" : "") + '>' + esc(r.rotulo) + '</option>'; }).join("");
       }
-      var html = '<div class="card" style="margin-bottom:12px">' +
-        '<h3 style="margin:0 0 4px;font-size:15px;display:flex;align-items:center">' + Icones.get("paredecebola", 16) + 'Parede-Cebola — do 2D à obra real</h3>' +
-        '<p class="muted" style="font-size:12px;margin:0 0 10px">Uma parede é UMA linha, mas na obra ela é um empilhamento: bloco → chapisco → reboco → massa → pintura. Informe a parede e o sistema explode nas camadas de serviço, casando cada uma num <b>código SINAPI real</b> (nunca inventa — sem match vira “pendente”). Você revisa e joga no orçamento.</p>' +
-        '<div class="flex" style="flex-wrap:wrap;gap:10px;align-items:flex-end">' +
+      var form = '<div class="flex" style="flex-wrap:wrap;gap:10px;align-items:flex-end">' +
         '<div class="field" style="margin:0"><label>Nome</label><input id="pc-nome" value="' + esc(inp.nome || "") + '" placeholder="Parede sala" style="width:150px"></div>' +
         '<div class="field" style="margin:0"><label>Área (m²)</label><input id="pc-area" type="number" min="0" step="0.01" value="' + (inp.area != null ? inp.area : "") + '" placeholder="ou C×A →" style="width:100px"></div>' +
         '<div class="field" style="margin:0"><label>Comprim. (m)</label><input id="pc-comp" type="number" min="0" step="0.01" value="' + (inp.comprimento != null ? inp.comprimento : "") + '" style="width:90px"></div>' +
@@ -3109,19 +3084,21 @@
         '<div class="field" style="margin:0"><label>Faces</label><select id="pc-faces"><option value="2"' + (inp.faces == 1 ? "" : " selected") + '>2 faces</option><option value="1"' + (inp.faces == 1 ? " selected" : "") + '>1 face</option></select></div>' +
         '<div class="field" style="margin:0"><label>Receita (tipo de parede)</label><select id="pc-receita">' + selReceita() + '</select></div>' +
         '<div class="field" style="margin:0"><label style="white-space:nowrap"><input id="pc-alv" type="checkbox"' + (inp.incluiAlvenaria === false ? "" : " checked") + '> incluir alvenaria</label></div>' +
-        '<button class="btn sm primary" data-acao="parede-explodir">🧅 Explodir em camadas</button>' +
-        '</div></div>';
+        '<button class="btn sm acao-forte" data-acao="parede-explodir">Explodir em camadas</button>' +
+        '</div>';
+      var html = M.secao({ titulo: "Parede-Cebola — do 2D à obra real",
+        sub: "Uma parede é UMA linha, mas na obra ela é um empilhamento: bloco → chapisco → reboco → massa → pintura. Informe a parede e o sistema explode nas camadas de serviço, casando cada uma num código SINAPI real (nunca inventa — sem match vira “pendente”). Você revisa e joga no orçamento.",
+        corpoHtml: form });
 
       if (pc.resultado) {
         var r = pc.resultado, badge = { ok: ["#16a34a", "casou"], revisar: ["#b45309", "revisar unidade"], pendente: ["#dc2626", "sem código"] };
-        html += '<div class="card" style="margin-bottom:12px"><div class="flex" style="gap:18px;flex-wrap:wrap;align-items:baseline">' +
-          '<b style="font-size:15px">🧅 ' + esc(r.parede.nome) + '</b>' +
+        var rh = '<div class="flex" style="gap:18px;flex-wrap:wrap;align-items:baseline">' +
           '<span class="muted" style="font-size:12px">' + r.parede.areaLiquida + ' m² líquidos' + (r.parede.descontos ? ' (' + r.parede.areaBruta + ' − ' + r.parede.descontos + ' de vãos)' : '') + ' · ' + r.parede.faces + ' face(s) · ' + esc(r.receita.rotulo) + '</span>' +
           '<span class="pill" style="background:#16a34a22;color:#16a34a;font-weight:700">' + r.nOk + ' casaram</span>' +
           (r.nRevisar ? '<span class="pill" style="background:#f59e0b22;color:#b45309;font-weight:700">' + r.nRevisar + ' p/ revisar</span>' : '') +
           (r.nPendentes ? '<span class="pill" style="background:#dc262622;color:#dc2626;font-weight:700">' + r.nPendentes + ' sem código</span>' : '') +
           '</div>';
-        html += '<table class="tbl" style="margin-top:10px;font-size:13px"><thead><tr><th>#</th><th>Camada</th><th style="text-align:right">Qtd</th><th>Un</th><th>Código casado (base)</th><th>Confiança</th><th></th></tr></thead><tbody>';
+        rh += '<table class="tbl" style="margin-top:10px;font-size:13px"><thead><tr><th>#</th><th>Camada</th><th style="text-align:right">Qtd</th><th>Un</th><th>Código casado (base)</th><th>Confiança</th><th></th></tr></thead><tbody>';
         r.camadas.forEach(function (c) {
           var cand = (c.escolhido >= 0 && c.candidatos[c.escolhido]) ? c.candidatos[c.escolhido] : null;
           var b = badge[c.status] || badge.pendente;
@@ -3139,24 +3116,24 @@
           } else {
             codCel = '<span class="muted" style="color:#dc2626">nenhum código casou — ajuste o termo ou lance manualmente</span>';
           }
-          html += '<tr><td>' + c.seq + '</td><td>' + esc(c.camada) + (c.base ? ' <span class="muted" style="font-size:10px">(núcleo)</span>' : '') + '</td>' +
+          rh += '<tr><td>' + c.seq + '</td><td>' + esc(c.camada) + (c.base ? ' <span class="muted" style="font-size:10px">(núcleo)</span>' : '') + '</td>' +
             '<td style="text-align:right">' + c.quantidade + '</td><td>' + c.unidade + '</td>' +
             '<td>' + codCel + '</td>' +
             '<td>' + (cand ? Math.round(c.confianca) + '%' : '—') + '</td>' +
             '<td><span class="pill" style="background:' + b[0] + '22;color:' + b[0] + ';font-size:11px;font-weight:700">' + b[1] + '</span></td></tr>';
         });
-        html += '</tbody></table>';
+        rh += '</tbody></table>';
         var etapas = (orc.etapas || []);
         var selEt = '<select id="pc-etapa"><option value="__nova__">' + (typeof Icones !== 'undefined' ? Icones.get('mais', 15) : '') + ' Nova etapa: Parede — ' + esc(r.parede.nome) + '</option>' +
           etapas.map(function (e) { return '<option value="' + e.id + '">' + esc((e.codigo ? e.codigo + " " : "") + e.nome) + '</option>'; }).join("") + '</select>';
         var aplicaveis = r.nOk + (r.nRevisar ? 0 : 0);
-        html += '<div class="flex" style="gap:10px;align-items:flex-end;margin-top:12px;flex-wrap:wrap">' +
+        rh += '<div class="flex" style="gap:10px;align-items:flex-end;margin-top:12px;flex-wrap:wrap">' +
           '<div class="field" style="margin:0"><label>Adicionar em</label>' + selEt + '</div>' +
-          '<button class="btn sm primary" data-acao="parede-aplicar" title="Só as camadas com código casado (OK) entram. Pendentes e as de unidade divergente ficam de fora.">' + (typeof Icones !== 'undefined' ? Icones.get('mais', 15) : '') + ' Adicionar ' + r.nOk + ' camada(s) ao orçamento</button>' +
+          '<button class="btn sm acao-forte" data-acao="parede-aplicar" title="Só as camadas com código casado (OK) entram. Pendentes e as de unidade divergente ficam de fora.">' + (typeof Icones !== 'undefined' ? Icones.get('mais', 15) : '') + ' Adicionar ' + r.nOk + ' camada(s) ao orçamento</button>' +
           (r.nRevisar || r.nPendentes ? '<span class="muted" style="font-size:11px">' + (r.nRevisar ? r.nRevisar + ' de unidade divergente' : "") + (r.nRevisar && r.nPendentes ? " e " : "") + (r.nPendentes ? r.nPendentes + ' sem código' : "") + ' NÃO entram — resolva antes.</span>' : "") +
           '</div>';
-        html += '<div class="muted" style="font-size:11px;margin-top:8px">Cada camada vira um <b>item normal do orçamento</b> (código SINAPI + qtd) — então o Agente de Execução (aba Execução) dimensiona equipe, prazo e custo dessas camadas automaticamente.</div>';
-        html += '</div>';
+        rh += '<div class="muted" style="font-size:var(--t-micro);margin-top:8px">Cada camada vira um <b>item normal do orçamento</b> (código SINAPI + qtd) — então o Agente de Execução (aba Execução) dimensiona equipe, prazo e custo dessas camadas automaticamente.</div>';
+        html += M.secao({ titulo: r.parede.nome || "Parede", corpoHtml: rh });
       }
       return html;
     },
@@ -3285,14 +3262,17 @@
     },
 
     // ----- Aba Gráficos -----
+    /* ABA GRÁFICOS no padrão de tela: cada gráfico é uma seção com título (o
+       kit), em grade de duas colunas; a Curva S ocupa a largura toda, abaixo */
     renderGraficos: function (orc) {
-      if (!(orc.etapas || []).length) return '<div class="vazio card">Adicione etapas e itens para ver os gráficos.</div>';
+      var M = MOD();
+      if (!(orc.etapas || []).length) return M.vazio({ icone: "graficos", titulo: "Sem dados para os gráficos", texto: "Adicione etapas e itens para ver os gráficos." });
       var sint = Orcamento.sintetico(orc);
-      var html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">';
-      html += '<div class="card"><h3 style="margin:0 0 8px">Custo por etapa</h3>' + this._barH(sint.map(function (s) { return { rotulo: s.codigo + " " + s.nome, valor: s.custoDireto }; }), function (v) { return Util.fmtMoeda(v); }) + '</div>';
-      html += '<div class="card"><h3 style="margin:0 0 8px">Curva ABC (Pareto)</h3>' + this._pareto(sint) + '</div>';
+      var html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));column-gap:18px">';
+      html += M.secao({ titulo: "Custo por etapa", corpoHtml: this._barH(sint.map(function (s) { return { rotulo: s.codigo + " " + s.nome, valor: s.custoDireto }; }), function (v) { return Util.fmtMoeda(v); }) });
+      html += M.secao({ titulo: "Curva ABC das etapas (Pareto)", corpoHtml: this._pareto(sint) });
       var mme = this._mmeOrc(orc);
-      if (mme.total > 0) html += '<div class="card"><h3 style="margin:0 0 8px">Composição (MO/MAT/EQ)</h3>' + this._donut([{ rotulo: "Mão de obra", valor: mme.mo, cor: "#2563eb" }, { rotulo: "Material", valor: mme.mat, cor: "#16a34a" }, { rotulo: "Equipamento", valor: mme.eq, cor: "#f59e0b" }]) + '</div>';
+      if (mme.total > 0) html += M.secao({ titulo: "Composição (MO/MAT/EQ)", corpoHtml: this._donut([{ rotulo: "Mão de obra", valor: mme.mo, cor: "#2563eb" }, { rotulo: "Material", valor: mme.mat, cor: "#16a34a" }, { rotulo: "Equipamento", valor: mme.eq, cor: "#f59e0b" }]) });
       if (typeof Cronograma !== "undefined") {
         var r = Cronograma.estimar(orc), porCat = {};
         r.etapas.forEach(function (e) { porCat[e.categoria] = (porCat[e.categoria] || 0) + e.duracao; });
@@ -3300,10 +3280,11 @@
         /* ⚠ dias, e dito por extenso: sem o formatador este gráfico ganharia
            "R$" no dia em que uma categoria passasse de mil dias, porque o
            padrão antigo do `_barH` escolhia a unidade pela magnitude. */
-        html += '<div class="card"><h3 style="margin:0 0 8px">Prazo por categoria (dias)</h3>' + this._barH(dd, function (v) { return Util.fmtNum(v, 0) + ' dia(s)'; }) + '</div>';
+        html += M.secao({ titulo: "Prazo por categoria (dias)", corpoHtml: this._barH(dd, function (v) { return Util.fmtNum(v, 0) + ' dia(s)'; }) });
       }
-      html += '<div class="card" style="grid-column:1/-1"><h3 style="margin:0 0 8px">Curva S — avanço físico-financeiro acumulado</h3>' + this._curvaS(orc) + '</div>';
-      return html + '</div>';
+      html += '</div>';
+      html += M.secao({ titulo: "Curva S — avanço físico-financeiro acumulado", corpoHtml: this._curvaS(orc) });
+      return html;
     },
 
     _curvaS: function (orc) {
@@ -3399,26 +3380,22 @@
     },
 
     // ----- Aba Relatórios (Curva ABC + Cronograma) -----
+    /* No padrão de tela (08/10/2026): os três cartões A/B/C viraram a linha de
+       contexto da seção da Curva ABC (a faixa de indicadores da tela é a do
+       orçamento, lá em cima), e o físico-financeiro é a segunda seção. */
     renderRelatorios: function (orc) {
+      var M = MOD();
       var abc = Orcamento.curvaABC(orc);
       var cron = Orcamento.cronograma(orc);
-      if (!abc.linhas.length) return '<div class="vazio card">Adicione itens para ver Curva ABC e Cronograma.</div>';
+      if (!abc.linhas.length) return M.vazio({ icone: "relatorios", titulo: "Sem itens para a Curva ABC", texto: "Adicione itens para ver Curva ABC e Cronograma." });
 
       var corClasse = { A: "verde", B: "amarelo", C: "vermelho" };
-      var html = '<h3 style="margin:4px 0 12px">Curva ABC de Itens</h3>';
-
-      // Resumo A/B/C
-      html += '<div class="kpis">';
-      ["A", "B", "C"].forEach(function (k) {
+      var resumo = ["A", "B", "C"].map(function (k) {
         var r = abc.resumo[k];
-        html += '<div class="kpi"><div class="rotulo">Classe ' + k + ' · ' + r.qtd + ' itens</div>' +
-          '<div class="num" style="color:var(--' + corClasse[k] + ')">' + Util.fmtMoeda(r.valor) + '</div>' +
-          '<div class="muted" style="font-size:12px">' + Util.fmtPct(r.pct, 1) + ' do custo</div></div>';
-      });
-      html += '</div>';
+        return "Classe " + k + ": " + r.qtd + " itens, " + Util.fmtMoeda(r.valor) + " (" + Util.fmtPct(r.pct, 1) + " do custo)";
+      }).join(" · ");
 
-      // Tabela ABC
-      html += '<table class="tbl"><thead><tr><th>Classe</th><th>Código</th><th>Descrição</th>' +
+      var html = '<table class="tbl"><thead><tr><th>Classe</th><th>Código</th><th>Descrição</th>' +
         '<th class="num">Custo</th><th class="num">% Indiv.</th><th class="num">% Acum.</th><th style="width:120px">Participação</th></tr></thead><tbody>';
       abc.linhas.forEach(function (x) {
         html += '<tr><td><span class="pill" style="background:var(--' + corClasse[x.classe] + ');color:#fff">' + x.classe + '</span></td>' +
@@ -3430,10 +3407,11 @@
           '<div style="background:var(--' + corClasse[x.classe] + ');height:100%;width:' + Math.max(2, x.pct) + '%"></div></div></td></tr>';
       });
       html += '</tbody></table>';
+      var out = M.secao({ titulo: "Curva ABC de Itens", sub: resumo, corpoHtml: html });
 
       // Cronograma
-      html += this._fisicoFinanceiroEtapa(orc, cron, { link: true });
-      return html;
+      out += this._fisicoFinanceiroEtapa(orc, cron, { link: true });
+      return out;
     },
 
     /* Cronograma FÍSICO-FINANCEIRO por etapa (Orcamento.cronograma) — a MESMA
@@ -3449,21 +3427,24 @@
       /* modo R$ = exatamente as células de antes (a aba Relatórios não muda) */
       function cel(v) { return pctM ? (cron.total ? Util.fmtPct((v / cron.total) * 100, 1) : "—") : (v > 0.005 ? Util.fmtMoeda(v) : "—"); }
       function celT(v) { return pctM ? (cron.total ? Util.fmtPct((v / cron.total) * 100, 1) : "—") : Util.fmtMoeda(v); }
-      html += '<div class="flex between" style="margin:' + (opts.link ? '26px' : '0') + ' 0 12px"><h3 style="margin:0">Cronograma Físico-Financeiro</h3>' +
-        '<div class="flex"><label class="muted" style="font-size:12px">Prazo (meses):</label>' +
-        '<input id="cron-meses" class="cell" style="width:70px;border:1px solid var(--linha)" value="' + cron.meses + '"></div></div>';
-      if (opts.link) html += '<div style="font-size:12px;margin:-6px 0 10px"><a role="button" tabindex="0" style="cursor:pointer;text-decoration:underline" data-acao="crono-ir-ff">ver em Cronograma → Físico-financeiro</a> <span class="muted">(também por subetapa e por serviço, em R$ ou %)</span></div>';
-      /* ⚠ De onde vieram estes meses. A distribuição passou a seguir a DURAÇÃO
-         de cada etapa no Gantt (antes era fatia por peso, e punha dinheiro em
-         mês sem serviço). Quando o prazo digitado é MENOR que a obra, o que
+      /* SEÇÃO DO KIT (padrão de tela, 08/10/2026): o título e o campo do prazo
+         na cabeça da seção; a porta para a sub-aba do Cronograma, o recado do
+         estouro, a tabela e o rodapé no corpo */
+      var prazoHtml = '<label class="muted" for="cron-meses" style="font-size:var(--t-micro);align-self:center">Prazo (meses)</label>' +
+        '<input id="cron-meses" class="cell" style="width:70px;border:1px solid var(--linha)" value="' + cron.meses + '">';
+      if (opts.link) html += '<div style="font-size:var(--t-micro);margin:0 0 10px"><a role="button" tabindex="0" style="cursor:pointer;text-decoration:underline" data-acao="crono-ir-ff">ver em Cronograma → Físico-financeiro</a> <span class="muted">(também por subetapa e por serviço, em R$ ou %)</span></div>';
+      /* ⚠ De onde vieram estes meses. A distribuição segue a DURAÇÃO de cada
+         etapa no Gantt; quando o prazo digitado é MENOR que a obra, o que
          sobra se acumula na última coluna — e isso tem de estar escrito, senão
-         o último mês parece um pico de desembolso que não existe. */
-      if (cron.base === "gantt") {
-        html += '<div class="muted" style="font-size:11.5px;margin:-6px 0 10px">' +
-          (typeof Icones !== 'undefined' ? Icones.get('cronograma', 14) : '') +
-          ' Desembolso distribuído pela duração de cada etapa no <b>cronograma</b> (aba Cronograma) — as colunas são meses do calendário.' +
-          (cron.estouro ? ' <b style="color:#b45309">A obra dura ' + (cron.meses + cron.estouro) + ' meses:</b> os ' + cron.estouro +
-            ' mês(es) que passam do prazo digitado estão somados na última coluna (' + Util.esc(cron.rotulos[cron.meses - 1]) + ').' : '') +
+         o último mês parece um pico de desembolso que não existe.
+         ⚠ A frase geral ("distribuído pela duração de cada etapa no
+         cronograma") saiu DAQUI: ela repetia, com outras palavras, o rodapé
+         da tabela logo abaixo (que é o que as suítes amarram). Fica o recado
+         que só aparece quando há o que dizer: o estouro. */
+      if (cron.base === "gantt" && cron.estouro) {
+        html += '<div class="muted" style="font-size:var(--t-micro);margin:0 0 10px">' +
+          '<b style="color:var(--amarelo)">A obra dura ' + (cron.meses + cron.estouro) + ' meses:</b> os ' + cron.estouro +
+            ' mês(es) que passam do prazo digitado estão somados na última coluna (' + Util.esc(cron.rotulos[cron.meses - 1]) + ').' +
           '</div>';
       }
       html += '<div style="overflow:auto"><table class="tbl"><thead><tr><th>Etapa</th>';
@@ -3488,7 +3469,7 @@
       if (opts.pico && cron.totaisMes.length) {
         var iP = 0;
         cron.totaisMes.forEach(function (v, i) { if (v > cron.totaisMes[iP]) iP = i; });
-        html += '<div class="muted" style="font-size:11.5px;margin-top:6px">Mês de maior desembolso: <b>' + Util.esc((cron.rotulos && cron.rotulos[iP]) || ('Mês ' + (iP + 1))) + '</b> (' + celT(cron.totaisMes[iP]) + ')' +
+        html += '<div class="muted" style="font-size:var(--t-micro);margin-top:6px">Mês de maior desembolso: <b>' + Util.esc((cron.rotulos && cron.rotulos[iP]) || ('Mês ' + (iP + 1))) + '</b> (' + celT(cron.totaisMes[iP]) + ')' +
           (cron.estouro && iP === cron.meses - 1 ? ' — é a coluna que soma os meses além do prazo digitado' : '') + '.</div>';
       }
       /* ⚠ o rodapé diz a régua que RESPONDEU (cron.base). Ele dizia sempre
@@ -3498,7 +3479,7 @@
       html += cron.base === "gantt"
         ? '<p class="watermark-hint mt">Valores com BDI distribuídos pela duração de cada etapa no cronograma (aba Cronograma). O prazo em meses define as colunas — para mudar a distribuição, ajuste as durações no cronograma.</p>'
         : '<p class="watermark-hint mt">Distribuição sequencial proporcional ao peso de cada etapa (valores com BDI). Ajuste o prazo para recalcular.</p>';
-      return html;
+      return MOD().secao({ titulo: "Cronograma Físico-Financeiro", acoesHtml: prazoHtml, corpoHtml: html });
     },
 
     // ----- Relatório completo (sintético + analítico) para impressão/PDF -----
@@ -3729,30 +3710,36 @@
         ["AC", "Administração Central"], ["S", "Seguro"], ["R", "Risco"],
         ["G", "Garantia"], ["DF", "Despesas Financeiras"], ["L", "Lucro"], ["I", "Impostos (PIS+COFINS+ISS)"]
       ];
-      var html = '<div class="card" style="max-width:620px">' +
-        '<div class="flex mb"><b>Modelo:</b>' +
+      /* SEÇÃO DO KIT (padrão de tela, 08/10/2026): o modelo na cabeça da seção,
+         os sete campos no corpo e o resultado com o [Aplicar BDI] no pé. A
+         fórmula (Acórdão TCU 2.622/2013) é a linha de contexto, e o rodapé
+         que repetia "ajuste e clique em Aplicar BDI" saiu. Ids (bdi-*) e o
+         data-acao ficaram: App.recalcBdiPreview e App.salvarBdi os leem. */
+      var modeloHtml = '<label for="bdi-modelo" class="muted" style="font-size:var(--t-micro);align-self:center">Modelo</label>' +
         '<select id="bdi-modelo" class="btn sm">' +
           Object.keys(CONFIG.bdiPresets).map(function (k) {
             return '<option value="' + k + '"' + (modSel === k ? " selected" : "") + '>' + CONFIG.bdiPresets[k].nome + '</option>';
           }).join("") +
-        '<option value="dnit"' + (modSel === "dnit" ? " selected" : "") + '>' + (typeof Icones !== 'undefined' ? Icones.get('pilar', 15) : '') + ' DNIT (Acórdão TCU 2.622/2013)</option>' +
+        '<option value="dnit"' + (modSel === "dnit" ? " selected" : "") + '>DNIT (Acórdão TCU 2.622/2013)</option>' +
         '<option value="custom"' + (modSel === "custom" ? " selected" : "") + '>Personalizado</option>' +
-        '</select></div>' +
-        (typeof DnitBdi !== "undefined" ? '<div class="muted mb" style="font-size:12px">🏛️ <b>DNIT · Acórdão 2.622/2013</b> — CPRB atualiza por ano (Lei 14.973/2024): ' +
-          DnitBdi.cprbDoAno() + '% em ' + (new Date().getFullYear()) + ' · Selic ref. ' + Util.fmtNum(DnitBdi.selic, 2) + '% · ISS ' + Util.fmtNum(DnitBdi.tributos.iss, 2) + '%</div>' : '');
+        '</select>';
+      var html = "";
+      if (typeof DnitBdi !== "undefined") {
+        html += '<div class="muted mb" style="font-size:var(--t-micro)"><b>DNIT · Acórdão 2.622/2013</b> — CPRB atualiza por ano (Lei 14.973/2024): ' +
+          DnitBdi.cprbDoAno() + '% em ' + (new Date().getFullYear()) + ' · Selic ref. ' + Util.fmtNum(DnitBdi.selic, 2) + '% · ISS ' + Util.fmtNum(DnitBdi.tributos.iss, 2) + '%</div>';
+      }
       html += '<div class="row">';
       campos.forEach(function (c) {
         html += '<div class="field"><label>' + c[1] + ' (%)</label>' +
           '<input id="bdi-' + c[0] + '" type="text" value="' + Util.fmtNum(p[c[0]], c[0] === "L" ? 4 : 2) + '"></div>';
       });
       html += '</div>';
-      html += '<div class="flex between mt">' +
-        '<div><div class="muted">BDI resultante</div>' +
-        '<div style="font-size:32px;font-weight:800;color:var(--verde)" id="bdi-resultado">' + Util.fmtPct(orc.bdi.percentual) + '</div></div>' +
-        '<button class="btn primary" data-acao="salvar-bdi">Aplicar BDI</button></div>';
-      html += '<p class="watermark-hint mt">Fórmula Acórdão TCU 2.622/2013. Ajuste e clique em "Aplicar BDI".</p>';
-      html += '</div>';
-      return html;
+      html += '<div class="flex between mt" style="align-items:flex-end">' +
+        '<div><div class="muted" style="font-size:var(--t-micro)">BDI resultante</div>' +
+        '<div style="font-size:var(--t-tit);font-weight:var(--p-forte);color:var(--verde);font-variant-numeric:tabular-nums" id="bdi-resultado">' + Util.fmtPct(orc.bdi.percentual) + '</div></div>' +
+        '<button class="btn acao-forte" data-acao="salvar-bdi">Aplicar BDI</button></div>';
+      return MOD().secao({ titulo: "BDI do orçamento", sub: "Fórmula do Acórdão TCU 2.622/2013 · arredondamento, encargos e licitação ficam em Parâmetros (menu Mais)",
+        acoesHtml: modeloHtml, corpoHtml: html });
     },
 
     // ---------- Importar base SINAPI ----------

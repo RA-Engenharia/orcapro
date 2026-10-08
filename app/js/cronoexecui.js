@@ -70,6 +70,27 @@
      (cache antigo, suíte que não o carrega) tudo cai na fórmula da 1.2.77:
      preferência que não se consegue prender à tela não se usa. */
   function PN() { var p = MOD("Paineis", "./paineis.js"); return (p && typeof p.limitar === "function") ? p : null; }
+  /* AS PEÇAS DO PADRÃO DE TELA (js/modulo.js + ROTEIRO-MODULO.md) no miolo
+     do previsto × realizado completo — redesenho pedido pelo Rogério em
+     08/10/2026. Resolvido na hora da chamada (a receita do MOD acima). Sem o
+     kit (cache antigo, suíte que não o carrega) a reserva escreve as MESMAS
+     classes: o desenho vem do app.css de qualquer jeito, e a tela não fica
+     sem o painel por causa de um arquivo que não chegou. */
+  function KIT() { var m = MOD("Modulo", "./modulo.js"); return (m && typeof m.secao === "function" && typeof m.aviso === "function") ? m : null; }
+  function kitSecao(o) {
+    var K = KIT();
+    if (K) return K.secao(o);
+    return '<section class="mod-sec' + (o.classe ? " " + esc(o.classe) : "") + '">' + (o.titulo ? '<div class="mod-sec-cab"><div><h2>' + esc(o.titulo) + '</h2>' +
+      (o.sub ? '<p class="mod-sub">' + esc(o.sub) + '</p>' : '') + '</div>' + (o.acoesHtml ? '<div class="mod-sec-acoes">' + o.acoesHtml + '</div>' : '') + '</div>' : '') +
+      '<div class="mod-sec-corpo">' + (o.corpoHtml || "") + '</div></section>';
+  }
+  function kitAviso(o) {
+    var K = KIT();
+    if (K) return K.aviso(o);
+    var tom = /^(info|alerta|erro|ok)$/.test(o.tom || "") ? o.tom : "info";
+    return '<div class="mod-aviso mod-aviso-' + tom + '" role="' + (tom === "erro" ? "alert" : "status") + '"><div class="mod-aviso-txt">' + (o.titulo ? '<b>' + esc(o.titulo) + '</b>' : '') +
+      (o.textoHtml || (o.texto ? '<span>' + esc(o.texto) + '</span>' : '')) + '</div>' + (o.acaoHtml ? '<div class="mod-aviso-acao">' + o.acaoHtml + '</div>' : '') + '</div>';
+  }
   function num0(v) { var x = Number(v); return isFinite(x) ? x : 0; }
   function esc(s) {
     var u = Ut();
@@ -177,10 +198,15 @@
     if (x === 0) return "término no dia da linha de base";
     return "término " + Math.abs(x) + " dia(s) útil(eis) " + (x > 0 ? "depois" : "antes") + " da linha de base";
   }
+  /* ⚠ A COR DA SITUAÇÃO VEM DO TEMA (redesenho 08/10/2026): era o hex do SIT
+     cravado no `style` (vermelho #b91c1c sobre o fundo escuro mal se lia).
+     A classe cx-sit-<tom> pinta pelos tokens (CSS_PR); a tabela SIT continua
+     a fonte do rótulo e do tom. */
   function sitHtml(s) {
     if (!s) return '<span class="muted">—</span>';
     var x = own(SIT, s) ? SIT[s] : [s, "#64748b"];
-    return '<span class="cx-sit" style="background:' + x[1] + '1a;color:' + x[1] + '">' + esc(x[0]) + '</span>';
+    var tom = { "#15803d": "bom", "#0d6ebd": "info", "#b91c1c": "mau" }[x[1]] || "neutro";
+    return '<span class="cx-sit cx-sit-' + tom + '">' + esc(x[0]) + '</span>';
   }
   /* previsto / real / desvio numa célula, com a mini-barra (barra = real;
      traço = previsto na data) */
@@ -188,13 +214,14 @@
     var pv = n.previstoPct, rl = n.realPct, d = n.desvioPP;
     if (pv == null && rl == null) return '<span class="muted">—</span>';
     function cl(v) { var x = Number(v); return isFinite(x) ? Math.max(0, Math.min(100, x)) : 0; }
-    var cor = d == null ? "" : (d < 0 ? "color:#b91c1c" : "color:#15803d");
+    // a cor do desvio pelo tema (cx-pp-mau/bom, CSS_PR), não pelo hex cravado
+    var cor = d == null ? "" : (d < 0 ? "cx-pp-mau" : "cx-pp-bom");
     /* ⚠ O REAL VEM COM A ORIGEM (planejador 2B, E-MC5): "real 60% (digitado)"
        e "real 60% (medição 01a)" se discutem de formas diferentes. Sem a
        origem, o número aparece sem dono e quem lê não sabe se pode contestá-lo
        nem onde ele foi lançado. */
     var org = n.realOrigem ? ' <span class="muted cx-pr-org">(' + esc(String(n.realOrigem)) + ')</span>' : '';
-    return '<span>previsto ' + pctOu(pv) + ' · real ' + pctOu(rl) + org + (d != null ? ' · <b style="' + cor + '">' + esc(ppTxt(d)) + '</b>' : '') + '</span>' +
+    return '<span>previsto ' + pctOu(pv) + ' · real ' + pctOu(rl) + org + (d != null ? ' · <b class="' + cor + '">' + esc(ppTxt(d)) + '</b>' : '') + '</span>' +
       '<div class="cx-mb" title="barra = executado; traço = previsto na data">' + (rl != null ? '<i style="width:' + f1(cl(rl)) + '%"></i>' : '') + (pv != null ? '<em style="left:' + f1(cl(pv)) + '%"></em>' : '') + '</div>';
   }
   /* número digitado pela pessoa: "5", "5,5", "1.500" (milhar BR com vírgula
@@ -277,15 +304,63 @@
      ficha da obra e o módulo "Cronograma da obra" usam partes desta tela sem
      garantia de que o token existe no documento.
      tools/e2e-padrao-cronograma.js lista, com seletor e valor, quem sai. */
+  /* A LEGENDA DO GANTT — as duas: a do gantt() (painel previsto × realizado)
+     e a do ganttPro (aba Cronograma do orçamento). Redesenho de 08/10/2026:
+     era um <div style=…> com amostras em hex cravado (#1e293b, #0f172a) e,
+     no tema escuro, "resumo da etapa" e "executado" sumiam no fundo — a
+     legenda mora FORA do papel branco do Gantt, na tela do app. Agora cada
+     amostra leva a classe do que ela representa (cx-gleg-<tipo>), pintada
+     pelos tokens do tema (CSS_GLEG, nas duas folhas), e a legenda é uma
+     linha só. O DESENHO do Gantt (o papel) não mudou um byte. */
+  function gAm(tipo) { return '<i class="cx-gleg-am cx-gleg-' + tipo + '" aria-hidden="true"></i>'; }
+  /* "Como ler": a explicação de método recolhida (redesenho 08/10/2026) —
+     no Prazo × custo, embaixo da tabela da aba Cronograma e em quem mais usar
+     o mesmo desenho. Uma regra só para as três folhas (CSS, CSS_PR, CSS_EVM). */
+  var CSS_COMOLER =
+    ".cx-comoler{margin:10px 0 0;font-size:var(--t-micro,12px);color:var(--texto-fraco,#516375)}" +
+    ".cx-comoler>summary{cursor:pointer;color:var(--aco,#0d6ebd);font-weight:var(--p-medio,500);width:max-content}" +
+    ".cx-comoler>summary:focus-visible{outline:2px solid var(--aco-claro,#3d92cb);outline-offset:2px;border-radius:4px}" +
+    ".cx-comoler p{margin:6px 0 0;line-height:1.5;max-width:880px}" +
+    ".cx-comoler>.cx-legenda{margin-top:6px;line-height:1.55}";
+  var CSS_GLEG =
+    ".cx-gleg{display:flex;gap:4px 16px;flex-wrap:wrap;align-items:center;margin-top:8px;font-size:var(--t-micro,12px);color:var(--texto-fraco,#516375)}" +
+    ".cx-gleg>span{display:inline-flex;align-items:center;white-space:nowrap}" +
+    ".cx-gleg-am{display:inline-block;width:16px;height:0;margin-right:6px;flex:0 0 auto;border-top:2px solid var(--linha-forte,#7e95aa)}" +
+    ".cx-gleg-crit{border-top-color:var(--graf-alerta,#b91c1c)}" +
+    ".cx-gleg-int{border-top:2px dashed var(--texto-fraco,#516375)}" +
+    ".cx-gleg-resumo{height:5px;border:0;background:var(--texto,#111d2b)}" +
+    ".cx-gleg-folga,.cx-gleg-base,.cx-gleg-t,.cx-gleg-cal{width:12px;height:10px;border:1px dashed var(--linha-forte,#7e95aa);border-radius:2px}" +
+    ".cx-gleg-base{border-color:var(--texto-fraco,#516375);background:var(--surface-3,#e5ecf4)}" +
+    ".cx-gleg-t{border:1.5px dashed var(--graf-d,#7c3aed)}" +
+    ".cx-gleg-cal{border:0;background:var(--surface-3,#e5ecf4)}" +
+    ".cx-gleg-real{height:4px;border:0;background:var(--texto,#111d2b);opacity:.6}" +
+    ".cx-gleg-falta,.cx-gleg-feito{height:8px;border:0;background:var(--graf-prev,#94a8bd)}.cx-gleg-falta{opacity:.35}" +
+    ".cx-gleg-hoje{border-top:2px dashed var(--graf-aviso,#b45309)}" +
+    ".cx-gleg-nota{color:var(--texto-fraco,#516375)}" +
+    ".cx-gleg-alerta{color:var(--graf-alerta,#b91c1c);white-space:normal!important}" +
+    ".cx-gleg-uso{display:inline-block}" +
+    ".cx-gleg-uso>summary{cursor:pointer;color:var(--aco,#0d6ebd);font-weight:var(--p-medio,500)}" +
+    ".cx-gleg-uso>summary:focus-visible{outline:2px solid var(--aco-claro,#3d92cb);outline-offset:2px;border-radius:4px}" +
+    ".cx-gleg-uso[open]{display:block;flex-basis:100%}" +
+    ".cx-gleg-uso>span{display:block;margin-top:4px;line-height:1.5}";
   var CSS =
+    CSS_GLEG + CSS_COMOLER +
     ".cx-barra{display:flex;justify-content:space-between;align-items:center;gap:4px 8px;flex-wrap:wrap;margin:0 0 6px}" +
     ".cx-subs,.cx-acoes{display:flex;gap:6px;flex-wrap:wrap;align-items:center}" +
     /* a linha 1 é SÓ segmentado (esquerda) e ícones N3 (direita): as ações
        ficam juntas (2 px) e empurradas para a borda direita */
     ".cx-acoes{gap:2px;margin-left:auto}" +
-    ".cx-sub{border:1px solid var(--linha,#c9d6e4);background:transparent;color:inherit;border-radius:var(--raio-ctl,8px);padding:6px 12px;font:inherit;font-size:13.5px;line-height:18px;font-weight:400;cursor:pointer}" +
-    ".cx-sub:not(.on):hover{background:var(--surface-2,#eef2f7);border-color:var(--linha-forte,#7e95aa)}" +
-    ".cx-sub.on{background:var(--aco,#0d6ebd);border-color:var(--aco,#0d6ebd);color:#fff;font-weight:600}" +
+    /* ⚠ AS SUB-ABAS SÃO ABAS, NÃO BOTÕES (padrão de tela, 08/10/2026 —
+       ROTEIRO-MODULO.md: "visualização é aba, não botão"). Eram cinco caixas
+       com borda e a ativa pintada de azul cheio — lidas como cinco ações, e
+       a azul brigando com a primária do cabeçalho. Agora: texto, a ativa com
+       o traço de --aco embaixo, o mesmo desenho das abas do editor um nível
+       abaixo. A ALTURA FICA 32 (7 + 18 + 5 + 2 do traço): é a régua da linha
+       e o Gantt não desce (e2e-cronograma-executivo mede a 1ª barra). */
+    ".cx-sub{border:0;border-bottom:2px solid transparent;background:transparent;color:var(--texto-fraco,#516375);border-radius:0;padding:7px 12px 5px;font:inherit;font-size:13.5px;line-height:18px;font-weight:500;cursor:pointer}" +
+    ".cx-sub:not(.on):hover{color:var(--texto,inherit);border-bottom-color:var(--linha,#c9d6e4)}" +
+    ".cx-sub.on{color:var(--aco,#0d6ebd);border-bottom-color:var(--aco,#0d6ebd);font-weight:600}" +
+    ".cx-sub:focus-visible{outline:2px solid var(--aco-claro,#5aa9e6);outline-offset:-2px}" +
     ".cx-faixa{font-size:12px;margin:0 0 6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}" +
     /* ⚠ O CHIP É SÓ TEXTO, NUNCA EMBRULHA BOTÃO (a raiz dos dois defeitos da
        1.2.77: botão dentro do texto que encolhe) — ver faixaObra */
@@ -425,7 +500,11 @@
     ".dx-bloq{font-size:12px;color:#b45309}" +
     ".dx-relato{margin:8px 0;padding:8px 11px;border-radius:8px;background:var(--surface-2,#eef2f7);font-size:12.5px;line-height:1.45}" +
     ".cx-mpp-sem{font-size:12px;color:var(--texto-fraco,#64748b);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
-    ".cx-aviso{font-size:12px;margin:6px 0;padding:6px 10px;border-radius:8px;background:rgba(245,158,11,.10);border:1px solid rgba(245,158,11,.35)}" +
+    /* o aviso no desenho do aviso do kit (.mod-aviso: borda fina e o traço
+       de cor à esquerda), pelos tokens — era a caixa amarela de 12 px
+       (redesenho 08/10/2026) */
+    ".cx-aviso{font-size:var(--t-peq,13.5px);line-height:1.5;margin:8px 0;padding:10px 14px;border:1px solid var(--linha,#c9d6e4);border-left:4px solid var(--amarelo,#aa6200);border-radius:var(--raio,10px);background:var(--card-bg,transparent)}" +
+    ".cx-aviso .cx-lista{font-size:inherit}" +
     ".cx-tabela{overflow:auto;max-width:100%}" +
     "table.tbl.cx-eap th,table.tbl.cx-eap td,table.tbl.cx-ff th,table.tbl.cx-ff td{padding:6px 8px;white-space:nowrap}" +
     "table.tbl.cx-eap td.cx-nome{width:100%;min-width:300px;white-space:normal}" +
@@ -619,6 +698,15 @@
     ".hx{--gx-lw:300px;position:relative;border:1px solid var(--linha,#e2e8f0);border-radius:8px;background:#fff;color:#0f172a;margin:6px 0 0}" +
     ".hx-cab{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:4px 8px;background:#f8fafc;border-bottom:1px solid #e2e8f0;border-radius:7px 7px 0 0;font-size:12px;color:#0f172a}" +
     ".hx-cab.so{border-bottom:0;border-radius:7px}" +
+    /* ⚠ FECHADO, O PAINEL É TELA DO APP, NÃO PAPEL (redesenho 08/10/2026).
+       A linha fechada é só o título e o resumo — não tem desenho nenhum —, e
+       no tema escuro ela era uma faixa branca com o resumo em --texto-fraco
+       (claro) por cima: ilegível. Aberto, o painel continua papel branco
+       (regra 4 do cabeçalho), porque aí há gráfico. */
+    ".hx:has(>.hx-cab.so:only-child){background:transparent}" +
+    ".hx>.hx-cab.so{background:var(--card-bg,#f8fafc);color:var(--texto,#0f172a);padding:6px 10px}" +
+    ".hx>.hx-cab.so>.muted{font-size:var(--t-micro,12px)}" +
+    ".hx>.hx-cab.so .hx-tog{flex:0 0 auto;font-size:13.5px}" +
     ".hx-tog{border:0;background:transparent;color:inherit;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;padding:2px 4px;border-radius:6px}" +
     ".hx-tog:hover{background:rgba(13,110,189,.10)}" +
     ".hx-corpo{display:flex;align-items:stretch;border-radius:0 0 7px 7px;overflow:hidden}" +
@@ -655,33 +743,56 @@
   /* Prazo × custo (valor agregado): duas colunas, uma por régua. Exportado
      (`CronoExecUI.CSS_EVM`) porque a Simulação 4D desenha o MESMO bloco
      (`_prEvm`) — uma regra de estilo só para os dois lugares. */
+  /* REDESENHO 08/10/2026 (pedido do Rogério: "padrão fino, de primeira"):
+     as duas colunas sem a borda forte de cada quadro — uma linha fina entre
+     elas —, a sigla em caixa alta discreta com a definição na dica, valores
+     tabulares e a cor do índice pelo tema (era #dc2626/#15803d cravado).
+     ⚠ Tokens com a reserva clara (`var(--x,#hex)`): a Simulação 4D e a
+     ficha usam este bloco sem garantia de que o token existe ali. */
   var CSS_EVM =
-    ".cx-evm{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin:0 0 6px}" +
-    ".cx-evm-col{border:1px solid var(--borda,#e2e8f0);border-radius:8px;padding:8px 10px;background:var(--fundo-card,transparent)}" +
-    ".cx-evm-t{font-weight:600;font-size:12.5px;margin:0 0 4px}" +
-    ".cx-evm-tab{width:100%;border-collapse:collapse;font-size:12.5px}" +
-    ".cx-evm-tab th{width:42px;text-align:left;color:var(--texto-fraco,#64748b);font-weight:600;padding:2px 4px 2px 0}" +
-    ".cx-evm-tab td{padding:2px 0}" +
-    ".cx-evm-v{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}" +
-    ".cx-evm-mau .cx-evm-v{color:#dc2626;font-weight:600}.cx-evm-bom .cx-evm-v{color:#15803d;font-weight:600}" +
-    ".cx-evm-mot{font-size:11.5px;color:var(--texto-fraco,#64748b);margin-top:5px;line-height:1.35}" +
-    ".cx-evm-regua{font-size:11px;margin:0 0 10px;line-height:1.35}";
+    ".cx-evm{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:0;margin:0}" +
+    ".cx-evm-col{padding:0 20px 0 0;min-width:0}" +
+    ".cx-evm-col+.cx-evm-col{padding:0 0 0 20px;border-left:1px solid var(--linha,#c9d6e4)}" +
+    ".cx-evm-t{font-weight:var(--p-forte,600);font-size:var(--t-peq,13.5px);margin:0 0 6px}" +
+    ".cx-evm-tab{width:100%;border-collapse:collapse;font-size:var(--t-peq,13.5px)}" +
+    ".cx-evm-tab tr+tr th,.cx-evm-tab tr+tr td{border-top:1px solid var(--linha,#c9d6e4)}" +
+    ".cx-evm-tab th{width:44px;text-align:left;font-size:var(--t-micro,12px);letter-spacing:.4px;color:var(--texto-fraco,#516375);font-weight:var(--p-forte,600);padding:5px 6px 5px 0;vertical-align:baseline}" +
+    ".cx-evm-tab th abbr{text-decoration:none;cursor:help}" +
+    ".cx-evm-tab td{padding:5px 0;vertical-align:baseline}" +
+    ".cx-evm-v{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;padding-left:12px}" +
+    ".cx-evm-mau .cx-evm-v{color:var(--vermelho,#d61f26);font-weight:var(--p-forte,600)}.cx-evm-bom .cx-evm-v{color:var(--verde,#15803d);font-weight:var(--p-forte,600)}" +
+    ".cx-evm-cab{margin:0 0 8px;font-size:var(--t-micro,12px);color:var(--texto-fraco,#516375)}" +
+    /* no celular as colunas empilham: a segunda perde o recuo e a linha da
+       esquerda e ganha a de cima */
+    "@media (max-width:720px){.cx-evm-col{padding:0}.cx-evm-col+.cx-evm-col{padding:14px 0 0;margin-top:14px;border-left:0;border-top:1px solid var(--linha,#c9d6e4)}}" +
+    ".cx-evm-mot{font-size:var(--t-micro,12px);color:var(--texto-fraco,#516375);margin:10px 0 0;line-height:1.4}" +
+    CSS_COMOLER;
   var CSS_PR =
-    ".cx-pr{font-size:13px}" + CSS_EVM +
+    ".cx-pr{font-size:13px}" + CSS_EVM + CSS_GLEG +
     /* ⚠ o nº EAP antes do nome precisa do espaço AQUI também: a ficha da obra
        não tem o <style> da aba, e na foto saía "2.gServiços" e "3Piscina" */
     ".cx-pr .cx-n{color:var(--texto-fraco,#64748b);font-variant-numeric:tabular-nums;margin-right:5px}" +
     ".cx-pr-cab{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;margin:0 0 8px;font-size:12.5px}" +
-    ".cx-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:0 0 10px}" +
-    ".cx-pr-comp .cx-kpis{grid-template-columns:repeat(auto-fit,minmax(118px,1fr))}" +
-    ".cx-kpi{border:1px solid var(--linha,#c9d6e4);border-radius:10px;padding:8px 10px;background:var(--surface,#fff);min-width:0}" +
-    ".cx-kpi-rot{font-size:11px;color:var(--texto-fraco,#64748b);line-height:1.3}" +
-    ".cx-kpi-v{font-size:19px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:2px}" +
-    ".cx-kpi-sub{font-size:11px;color:var(--texto-fraco,#64748b);margin-top:2px;line-height:1.3}" +
+    /* os cartões soltos ficam SÓ no compacto (a ficha da obra): o completo
+       usa a faixa do kit (.mod-kpis, app.css) — com estas regras valendo para
+       ele, o <style> do painel (que vem depois do app.css) desmancharia a faixa */
+    ".cx-pr-comp .cx-kpis{display:grid;gap:8px;margin:0 0 10px;grid-template-columns:repeat(auto-fit,minmax(118px,1fr))}" +
+    ".cx-pr-comp .cx-kpi{border:1px solid var(--linha,#c9d6e4);border-radius:10px;padding:8px 10px;background:var(--surface,#fff);min-width:0}" +
+    ".cx-pr-comp .cx-kpi-rot{font-size:11px;color:var(--texto-fraco,#64748b);line-height:1.3}" +
+    ".cx-pr-comp .cx-kpi-v{font-size:19px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:2px}" +
+    ".cx-pr-comp .cx-kpi-sub{font-size:11px;color:var(--texto-fraco,#64748b);margin-top:2px;line-height:1.3}" +
     ".cx-pr-acoes{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 4px}" +
     ".cx-pr-sec{margin:14px 0 6px;font-size:13px}" +
-    ".cx-curva{display:block;width:100%;height:auto;background:#fff;border:1px solid var(--linha,#e2e8f0);border-radius:8px}" +
-    ".cx-leg{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;margin-top:4px;color:var(--texto-fraco,#64748b)}" +
+    ".cx-curva{display:block;width:100%;height:auto;background:transparent;border:1px solid var(--linha,#e2e8f0);border-radius:8px}" +
+    /* a CURVA S pelo tema (as classes vencem os atributos de reserva do SVG) */
+    ".cx-curva .cx-c-grade{stroke:var(--linha,#e2e8f0)}" +
+    ".cx-curva .cx-c-txt{fill:var(--texto-fraco,#64748b);font-family:inherit}" +
+    ".cx-curva .cx-c-base{stroke:var(--texto-fraco,#64748b)}" +
+    ".cx-curva .cx-c-atual{stroke:var(--aco,#0d6ebd)}" +
+    ".cx-curva .cx-c-exec{stroke:var(--verde,#15803d)}.cx-curva .cx-c-pto{fill:var(--verde,#15803d)}" +
+    ".cx-leg{display:flex;gap:6px 18px;flex-wrap:wrap;font-size:var(--t-micro,12px);margin-top:8px;color:var(--texto-fraco,#64748b);align-items:center}" +
+    ".cx-leg-am{display:inline-block;width:18px;height:0;vertical-align:middle;margin-right:6px;border-top:2px solid var(--texto-fraco,#64748b)}" +
+    ".cx-leg-am.cx-leg-base{border-top-style:dashed}.cx-leg-am.cx-leg-atual{border-top-color:var(--aco,#0d6ebd)}.cx-leg-am.cx-leg-exec{border-top:3px solid var(--verde,#15803d)}" +
     /* ⚠ ROLAGEM DENTRO DO PRÓPRIO CONTÊINER (revisão 3, lente UX): o
        `.cx-tabela{overflow:auto}` morava só no CSS da ABA do orçamento; no
        módulo "Cronograma da obra" e na ficha — que só recebem este CSS_PR — a
@@ -691,10 +802,16 @@
     "table.tbl.cx-pr-tab th,table.tbl.cx-pr-tab td{padding:5px 8px;white-space:nowrap;vertical-align:top}" +
     "table.tbl.cx-pr-tab td.cx-nome{white-space:normal;min-width:220px;width:100%}" +
     "table.tbl.cx-pr-tab tr.cx-pr-et td{font-weight:600}" +
+    ".cx-pr-ind{display:inline-block;width:14px}" +
     ".cx-mb{position:relative;height:6px;border-radius:3px;background:var(--surface-2,#eef2f7);margin-top:3px;min-width:120px}" +
-    ".cx-mb i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:#0d6ebd}" +
-    ".cx-mb em{position:absolute;top:-2px;bottom:-2px;width:2px;margin-left:-1px;background:#0f172a}" +
-    ".cx-sit{display:inline-block;border-radius:99px;padding:1px 8px;font-size:11.5px;font-weight:600}";
+    ".cx-mb i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:var(--aco,#0d6ebd)}" +
+    ".cx-mb em{position:absolute;top:-2px;bottom:-2px;width:2px;margin-left:-1px;background:var(--texto,#0f172a)}" +
+    ".cx-pp-mau{color:var(--vermelho,#b91c1c)}.cx-pp-bom{color:var(--verde,#15803d)}" +
+    /* a SITUAÇÃO pelo tema: tinta de fundo + texto do mesmo tom (tokens --tinta-*) */
+    ".cx-sit{display:inline-block;border-radius:99px;padding:1px 8px;font-size:11.5px;font-weight:600;white-space:nowrap;background:var(--surface-2,#eef2f7);color:var(--texto-fraco,#64748b)}" +
+    ".cx-sit-mau{background:var(--tinta-alerta,rgba(214,31,38,.11));color:var(--vermelho,#b91c1c)}" +
+    ".cx-sit-bom{background:var(--tinta-ok,rgba(21,128,61,.12));color:var(--verde,#15803d)}" +
+    ".cx-sit-info{background:var(--tinta-aco,rgba(13,110,189,.12));color:var(--aco,#0d6ebd)}";
 
   function normDet(d) { return DETALHES.indexOf(d) > -1 ? d : "subetapa"; }
   /* ⚠ REGISTROS DO PLANEJADOR (Onda 0, T8 e T20). As fatias acrescentam
@@ -1416,17 +1533,16 @@
       if (pro) return s;
       var envolto = papel ? s : '<div class="cx-gantt">' + s + '</div>';
       if (limpo || opts.semLegenda) return envolto;
-      function amostra(css) { return '<span style="display:inline-block;width:16px;' + css + ';vertical-align:middle;margin-right:5px"></span>'; }
-      return envolto + '<div class="muted" style="font-size:11px;margin-top:4px;display:flex;gap:16px;flex-wrap:wrap;align-items:center">' +
-        '<span>' + amostra('height:0;border-top:2px solid ' + CRIT) + 'caminho crítico (sem folga)</span>' +
-        '<span>' + amostra('height:0;border-top:2px solid ' + CINZA) + 'dependência entre etapas</span>' +
-        '<span>' + amostra('height:0;border-top:2px dashed ' + INTERNA) + 'dependência entre subetapas</span>' +
-        '<span>' + amostra('height:5px;background:' + RESUMO) + 'resumo da etapa</span>' +
-        '<span>' + amostra('width:12px;height:10px;border:1px dashed ' + CINZA + ';border-radius:2px') + 'folga</span>' +
-        (gBase ? '<span>' + amostra('width:12px;height:10px;border:1px dashed #475569;background:rgba(203,213,225,.35);border-radius:2px') + 'linha de base (o combinado)</span>' : '') +
-        (gReal ? '<span>' + amostra('height:4px;background:#0f172a;opacity:.6') + 'executado (faixa escura no pé da barra)</span>' : '') +
-        (hojeX != null ? '<span>' + amostra('height:0;border-top:2px dashed ' + HOJE) + esc(rotHoje) + '</span>' : '') +
-        (W > W0 ? '<span>role o desenho para o lado para ver a obra inteira</span>' : '') +
+      return envolto + '<div class="cx-gleg">' +
+        '<span>' + gAm("crit") + 'caminho crítico (sem folga)</span>' +
+        '<span>' + gAm("dep") + 'dependência entre etapas</span>' +
+        '<span>' + gAm("int") + 'dependência entre subetapas</span>' +
+        '<span>' + gAm("resumo") + 'resumo da etapa</span>' +
+        '<span>' + gAm("folga") + 'folga</span>' +
+        (gBase ? '<span>' + gAm("base") + 'linha de base (o combinado)</span>' : '') +
+        (gReal ? '<span>' + gAm("real") + 'executado (faixa escura no pé da barra)</span>' : '') +
+        (hojeX != null ? '<span>' + gAm("hoje") + esc(rotHoje) + '</span>' : '') +
+        (W > W0 ? '<span class="cx-gleg-nota">role o desenho para o lado para ver a obra inteira</span>' : '') +
         '</div>';
     },
 
@@ -2356,15 +2472,20 @@
     ganttProLegenda: function (pro, o) {
       o = o || {};
       if (o.semLegenda) return "";
-      function amostra(css) { return '<span style="display:inline-block;width:16px;' + css + ';vertical-align:middle;margin-right:5px"></span>'; }
       var hier = pro.det !== "etapa";
-      var h = '<div class="muted" style="font-size:11px;margin-top:4px;display:flex;gap:16px;flex-wrap:wrap;align-items:center">' +
-        '<span>' + amostra('height:0;border-top:2px solid ' + CRIT) + 'caminho crítico (sem folga)</span>' +
-        '<span>' + amostra('height:0;border-top:2px solid ' + CINZA) + (hier ? 'dependência entre etapas' : 'dependência') + '</span>';
-      if (hier) h += '<span>' + amostra('height:0;border-top:2px dashed ' + INTERNA) + 'dependência entre subetapas</span>' +
-        '<span>' + amostra('height:5px;background:' + RESUMO) + 'resumo da etapa</span>';
-      h += '<span>' + amostra('width:12px;height:10px;border:1px dashed ' + CINZA + ';border-radius:2px') + 'folga</span>';
-      if (pro.temHoje) h += '<span>' + amostra('height:0;border-top:2px dashed ' + HOJE) + esc(o.rotHoje || "hoje") + '</span>';
+      /* REDESENHO 08/10/2026: UMA linha de símbolos (as amostras pelo tema,
+         ver gAm/CSS_GLEG); o "como mexer" (arrastar, bordas, ligar, digitar
+         nas colunas) foi para um recolhível no fim da linha — era a segunda e
+         a terceira linha fixas embaixo de todo Gantt, lidas uma vez e depois
+         só ocupando lugar. O que é ESTADO (aprovado: as barras não se movem;
+         a obra não cabe nesta largura) continua à vista. */
+      var h = '<div class="cx-gleg">' +
+        '<span>' + gAm("crit") + 'caminho crítico (sem folga)</span>' +
+        '<span>' + gAm("dep") + (hier ? 'dependência entre etapas' : 'dependência') + '</span>';
+      if (hier) h += '<span>' + gAm("int") + 'dependência entre subetapas</span>' +
+        '<span>' + gAm("resumo") + 'resumo da etapa</span>';
+      h += '<span>' + gAm("folga") + 'folga</span>';
+      if (pro.temHoje) h += '<span>' + gAm("hoje") + esc(o.rotHoje || "hoje") + '</span>';
       /* ⚠ A LEGENDA SÓ ENSINA O QUE ESTA TELA DESENHA (a regra de baixo, na
          mesma função): cada símbolo novo da 2A só entra quando EXISTE no
          desenho. Um "⌧ = data guardada pelo app" numa obra sem sombra manda
@@ -2378,10 +2499,10 @@
         if (nL.avanco && nL.avanco.estado !== "nao-iniciada") temAv2A = true;
         if (nL.calendarioId || (rL[iL].et && rL[iL].et.calendarioId)) temCal2A = true;
       }
-      if (temT2A) h += '<span>' + amostra('width:12px;height:10px;border:1.5px dashed ' + ROXO_T + ';border-radius:2px') + 'tarefa sem preço (T) — prazo sem custo no orçamento</span>';
-      if (temAv2A) h += '<span>' + amostra('height:8px;background:' + CINZA + ';opacity:.35') + 'o que falta · ' + amostra('height:8px;background:' + CINZA) + 'o que já foi feito</span>' +
-        '<span>' + amostra('height:0;border-top:2px dashed #b45309') + 'data de corte do avanço (não é hoje)</span>';
-      if (temCal2A) h += '<span>' + amostra('width:12px;height:10px;background:rgba(15,23,42,.10)') + 'dia em que a frente daquela linha não trabalha</span>';
+      if (temT2A) h += '<span>' + gAm("t") + 'tarefa sem preço (T) — prazo sem custo no orçamento</span>';
+      if (temAv2A) h += '<span>' + gAm("falta") + 'o que falta · ' + gAm("feito") + 'o que já foi feito</span>' +
+        '<span>' + gAm("hoje") + 'data de corte do avanço (não é hoje)</span>';
+      if (temCal2A) h += '<span>' + gAm("cal") + 'dia em que a frente daquela linha não trabalha</span>';
       /* ⚠ A LEGENDA SÓ ENSINA O QUE ESTA TELA FAZ. Roteiro do defeito (medido
          no navegador em 12/09/2026, orçamento APROVADO): o Gantt desenhava 6
          barras, `data-gx-drag` em ZERO delas, 0 alças e 0 pontos de ligar — e
@@ -2391,11 +2512,10 @@
          da barra explica a trava, mas `title` não existe no toque e ninguém
          passa o mouse antes de tentar arrastar: quem tenta conclui que o app
          quebrou e vai procurar a saída errada. */
-      var podeArrastar = false, k;
+      var podeArrastar = false, k, uso = [];
       for (k in pro.perm) { if (own(pro.perm, k) && (pro.perm[k].mover || pro.perm[k].inicio || pro.perm[k].fim || pro.perm[k].ligar)) { podeArrastar = true; break; } }
-      h += podeArrastar
-        ? '<span>arraste a barra para mover · as bordas mudam a duração · o ponto da ponta liga uma dependência · Ctrl + roda = zoom</span>'
-        : '<span>' + esc(pro.travado
+      if (podeArrastar) uso.push('<span>arraste a barra para mover · as bordas mudam a duração · o ponto da ponta liga uma dependência · Ctrl + roda = zoom</span>');
+      else h += '<span class="cx-gleg-nota">' + esc(pro.travado
           ? "cronograma aprovado — as barras não se movem aqui: crie uma revisão (ou, se a obra existe, replaneje pelo plano de execução dela) · Ctrl + roda = zoom"
           : "nenhuma barra desta tela se arrasta — o motivo de cada uma está no toque/parada do ponteiro sobre ela · Ctrl + roda = zoom") + '</span>';
       /* ⚠ A GRADE Dur./Depende de SÓ É ENSINADA QUANDO EXISTE (F6): com o
@@ -2407,13 +2527,14 @@
          frase mandava digitar "nas colunas do Gantt", que não existiam — o
          GanttGradeUI._conferirCanto a reescreve pela `gradeW` MEDIDA. */
       if (G("GanttGradeUI") && !pro.travado) {
-        h += '<span data-gx-leg-grade="1">' + this.ganttProLegGrade(pro.gradeW) + '</span>';
+        uso.push('<span data-gx-leg-grade="1">' + this.ganttProLegGrade(pro.gradeW) + '</span>');
       }
+      if (uso.length) h += '<details class="cx-gleg-uso"><summary>Como mexer no Gantt</summary>' + uso.join("") + '</details>';
       /* ⚠ E DIZ QUANDO O DESENHO CONTINUA À DIREITA: com o zoom em "auto" e a
          obra maior que o piso de 3 px/dia, 3 de 6 barras ficavam 100% fora da
          janela e a tela não dizia nada (medido a 1366×768 na OBRA TESTE). */
       if (!this.ganttProCabe(pro)) {
-        h += '<span style="color:var(--graf-alerta,#b91c1c)">⚠ a obra não cabe nesta largura: cabem ' +
+        h += '<span class="cx-gleg-alerta">a obra não cabe nesta largura: cabem ' +
           esc(nBR(Math.round(pro.e.largura / Math.max(0.0001, pro.e.pxDia)), 0)) + ' dos ' + esc(nBR(pro.e.dias, 0)) +
           ' dias úteis — role o painel do tempo para o lado para ver o resto</span>';
       }
@@ -3770,10 +3891,14 @@
       if (!nar || nar.ok !== true) return "";
       var h = "", nd = arr(nar.naoDaParaDizer);
       if (nd.length) {
-        h += '<div class="nr nr-ress"><div class="nr-falta"><b>O que a leitura executiva não pôde dizer:</b><ul class="cx-lista">';
+        /* RECOLHÍVEL (redesenho 08/10/2026): eram quatro parágrafos fixos
+           logo abaixo da leitura, e quase todos repetem as observações do
+           aviso de cima. A ressalva continua a um clique, colada na leitura
+           que ela qualifica — e o título diz quantas são. */
+        h += '<div class="nr nr-ress"><details class="nr-falta"><summary><b>O que a leitura executiva não pôde dizer</b> (' + nd.length + ')</summary><ul class="cx-lista">';
         nd.slice(0, 4).forEach(function (x) { h += '<li>' + esc(String(x)) + '</li>'; });
         if (nd.length > 4) h += '<li>e mais ' + (nd.length - 4) + '</li>';
-        h += '</ul></div></div>';
+        h += '</ul></details></div>';
       }
       arr(nar.avisos).forEach(function (a) { h += '<div class="cx-aviso">' + esc(String(a)) + '</div>'; });
       return h;
@@ -4658,9 +4783,13 @@
          célula. */
       var legF = [["subetapas", "vão das subetapas"], ["usuario", "digitada"], ["estimado", "estimada pelo agente"], ["custoMO", "pelo custo de mão de obra"], ["ia", "sugerida pela IA"], ["exec", "do Hh SINAPI"]]
         .map(function (p) { return '<span class="cx-fonte">' + esc(FONTES[p[0]][0]) + '</span>' + esc(p[1]); }).join(' · ');
-      html += '<div class="muted cx-legenda"><b>Duração:</b> ' + legF + '.<br><b>Depende de:</b> nº das etapas que precisam terminar antes (ex.: <code>1,3</code>). Vazio = a etapa anterior · <code>0</code> = começa no início da obra · <code>1+7</code> = espera 7 dias úteis depois da 1ª (cura, secagem) · <code>1-3</code> = começa 3 dias antes de a 1ª acabar · sem lag, vale a sobreposição do paralelismo. <b>Duração 0</b> = marco (◆). <b>Folga:</b> quanto a etapa pode atrasar sem mudar a entrega — folga zero é o caminho crítico.' +
+      /* REDESENHO 08/10/2026: a legenda das colunas (três a cinco linhas de
+         texto miúdo fixas embaixo da tabela, mais a nota da planilha Excel)
+         virou o "Como ler a tabela" recolhível — é consulta, não leitura de
+         toda vez. O texto é o mesmo, palavra por palavra. */
+      html += '<details class="cx-comoler cx-tab-comoler"><summary>Como ler a tabela</summary><div class="muted cx-legenda"><b>Duração:</b> ' + legF + '.<br><b>Depende de:</b> nº das etapas que precisam terminar antes (ex.: <code>1,3</code>). Vazio = a etapa anterior · <code>0</code> = começa no início da obra · <code>1+7</code> = espera 7 dias úteis depois da 1ª (cura, secagem) · <code>1-3</code> = começa 3 dias antes de a 1ª acabar · sem lag, vale a sobreposição do paralelismo. <b>Duração 0</b> = marco (◆). <b>Folga:</b> quanto a etapa pode atrasar sem mudar a entrega — folga zero é o caminho crítico.' +
         (temF ? '<br><b>Subetapas:</b> com “Detalhar o prazo pelas subetapas” ligado, duração, equipes e “Depende de” das subetapas são editáveis e a etapa passa a durar o vão delas; desligado, elas são desenhadas dentro da duração da etapa (só leitura). “Depende de” da subetapa usa o nº da MESMA etapa: <code>2.1</code>, <code>2.g</code> (serviços gerais da etapa), <code>2.1+3</code> espera, <code>2.1-1</code> avanço, <code>2.1II</code> começa junto (início-início), <code>0</code> = início da etapa. Não há elo entre subetapas de etapas diferentes — o elo entre etapas fica na linha da etapa.' : '') + '</div>';
-      html += '<div class="muted cx-legenda" style="margin-top:8px">A planilha Excel do orçamento leva este cronograma por etapa, com fórmulas vivas (aba Gantt).</div>';
+      html += '<div class="muted cx-legenda" style="margin-top:8px">A planilha Excel do orçamento leva este cronograma por etapa, com fórmulas vivas (aba Gantt).</div></details>';
       return html;
     },
 
@@ -5277,46 +5406,73 @@
         return html + '<div class="cx-aviso">' + esc(p.erro || "O previsto × realizado desta obra não pôde ser montado.") + '</div>' + this._prAcoes(p, dados, opts, comp, true) + '</div>';
       }
       var eixo = arr(p.curva && p.curva.eixo), multi = eixo.length > 1 && String(eixo[0]).slice(0, 4) !== String(eixo[eixo.length - 1]).slice(0, 4);
-      // CABEÇALHO: de onde vêm os números (plano, linha de base, data de corte)
+      var FCo = { informada: "escolhida", ultimoDiario: "último diário publicado", hoje: "hoje — nenhum diário publicado" }, fc = FCo[p.fonteCorte] || "";
+      /* ==================================================================
+         O COMPLETO NO PADRÃO DE TELA (redesenho pedido pelo Rogério em
+         08/10/2026: "tá muito feio, principalmente a parte de cronograma —
+         coisa repetida, mal organizada, poluindo demais: fora").
+         O miolo do módulo "Cronograma da obra" e da sub-aba Previsto ×
+         Realizado do orçamento passa a usar as peças do kit (js/modulo.js):
+         um aviso só (as observações numa lista recolhível), a barra de origem
+         (onde mora a data de corte e as ações da linha de base), UMA faixa de
+         até 5 indicadores com rótulo curto, e cada bloco numa seção com
+         título. A explicação longa saiu da tela fixa: virou dica (title) ou
+         "Como ler" recolhível.
+         ⚠ NADA DE CONTA MUDOU: os números são os do CronoPlan.montarPainel,
+         com as mesmas funções de formato. O compacto (ficha da obra) segue o
+         desenho dele, logo abaixo. Ver _prCompleto.
+         ================================================================== */
+      if (!comp) return html + this._prCompleto(p, dados, opts, multi, fc) + '</div>';
+      // CABEÇALHO (compacto): de onde vêm os números (plano, linha de base, data de corte)
       var cab = [];
       if (!opts.semNomeObra) cab.push('Obra <b>' + esc(corta(ob.nome || "sem nome", 48)) + '</b>');
       if (p.orcamento) cab.push('orçamento ' + esc(p.orcamento.numero || ""));
       cab.push(p.plano && p.plano.fonte === "plano" ? 'plano de execução da obra' + (p.plano.atualizadoEm ? ' <span class="muted">(gravado ' + esc(dmaS(p.plano.atualizadoEm)) + ')</span>' : '') : 'plano: cronograma do orçamento');
       cab.push(p.base ? 'linha de base <b>v' + esc(p.base.versao) + '</b> de ' + esc(dmaS(p.base.criadaEm)) + (p.base.motivo ? ' <span class="muted">— ' + esc(corta(p.base.motivo, 80)) + '</span>' : '') : '<b>sem linha de base</b>');
-      var FCo = { informada: "escolhida", ultimoDiario: "último diário publicado", hoje: "hoje — nenhum diário publicado" }, fc = FCo[p.fonteCorte] || "";
-      if (comp || !obId) cab.push('até <b>' + esc(dmaS(p.dataCorte)) + '</b>' + (fc ? ' <span class="muted">(' + fc + ')</span>' : ''));
-      else cab.push('<label style="display:inline-flex;gap:6px;align-items:center;font-weight:400">Data de corte <input type="date" data-crono-corte="' + esc(obId) + '" value="' + esc(p.dataCorte || "") +
-        '" title="O dia que os números descrevem: executado, Portal e previsto saem todos desta data. Apague para voltar ao último diário publicado." style="width:140px"></label>' + (fc ? '<span class="muted">(' + fc + ')</span>' : ''));
+      cab.push('até <b>' + esc(dmaS(p.dataCorte)) + '</b>' + (fc ? ' <span class="muted">(' + fc + ')</span>' : ''));
       html += '<div class="cx-pr-cab">' + cab.join('<span class="muted">·</span>') + '</div>';
       html += this._prKpis(p, dados, comp);
-      if (!comp) html += this._prEvm(p, dados);
-      /* ⚠ `opts.aposKpis` entra AQUI, e o lugar é medido. A leitura executiva
-         ficava ACIMA do painel e empurrava a faixa dos três números para
-         y 742–893 numa janela de 768 (medido com o layout despejado: o bloco
-         `.nr` tem 157 px, e faltavam 126). Os três números são a resposta de
-         "quanto da obra está feito" — a leitura explica a resposta, então ela
-         vem logo DEPOIS dela e antes dos gráficos. `tools/e2e-planejamento-obra.js`
-         guarda a posição; não mova sem medir de novo. */
       if (opts.aposKpis) html += opts.aposKpis;
       var avs = arr(p.avisos);
       if (avs.length) {
-        var lim = comp ? 3 : 12;
+        var lim = 3;
         html += '<div class="cx-aviso"><ul class="cx-lista" style="margin:0">';
         avs.slice(0, lim).forEach(function (a) { html += '<li>' + esc(a && a.msg) + '</li>'; });
-        if (avs.length > lim) html += '<li>e mais ' + (avs.length - lim) + ' aviso(s)' + (comp ? ' — veja no cronograma completo' : '') + '</li>';
+        if (avs.length > lim) html += '<li>e mais ' + (avs.length - lim) + ' aviso(s) — veja no cronograma completo</li>';
         html += '</ul></div>';
       }
-      if (comp) {
-        html += this.curvaS(p.curva, { mini: true });
-        var at = arr(p.atencao);
-        if (at.length) {
-          html += '<div class="cx-pr-sec"><b>Pedem atenção</b> <span class="muted">(até 5, da mais atrasada)</span></div><ul class="cx-lista cx-pr-atencao">';
-          at.slice(0, 5).forEach(function (n) { html += '<li><span class="cx-n">' + esc(n.numero) + '</span>' + esc(corta(n.nome, 60)) + ' — previsto ' + pctOu(n.previstoPct) + ', real ' + pctOu(n.realPct) + ' (' + esc(ppTxt(n.desvioPP)) + ')</li>'; });
-          html += '</ul>';
-        } else if (p.estado === "ok" && K.situacao) html += '<div class="muted" style="font-size:12px;margin-top:6px">Nenhuma subetapa atrasada nesta data.</div>';
-        return html + this._prAcoes(p, dados, opts, comp, false) + '</div>';
-      }
-      html += '<div class="cx-pr-sec"><b>Curva S</b> <span class="muted">— acumulado mensal, % do valor de venda</span></div>' + this.curvaS(p.curva, {});
+      html += this.curvaS(p.curva, { mini: true });
+      var at = arr(p.atencao);
+      if (at.length) {
+        html += '<div class="cx-pr-sec"><b>Pedem atenção</b> <span class="muted">(até 5, da mais atrasada)</span></div><ul class="cx-lista cx-pr-atencao">';
+        at.slice(0, 5).forEach(function (n) { html += '<li><span class="cx-n">' + esc(n.numero) + '</span>' + esc(corta(n.nome, 60)) + ' — previsto ' + pctOu(n.previstoPct) + ', real ' + pctOu(n.realPct) + ' (' + esc(ppTxt(n.desvioPP)) + ')</li>'; });
+        html += '</ul>';
+      } else if (p.estado === "ok" && K.situacao) html += '<div class="muted" style="font-size:12px;margin-top:6px">Nenhuma subetapa atrasada nesta data.</div>';
+      return html + this._prAcoes(p, dados, opts, comp, false) + '</div>';
+    },
+
+    /* ------------------------------------------------------------------
+       O PREVISTO × REALIZADO COMPLETO, peça a peça do kit (ROTEIRO-MODULO):
+         aviso (0 ou 1) → barra de origem (data de corte + ações da base) →
+         indicadores (máx. 5) → [leitura executiva, só no orçamento] →
+         Prazo × custo → Curva S → Gantt → Por etapa → Fora da conta.
+       ⚠ As ações da linha de base ([Congelar]/[Reprogramar], [Linhas de
+         base]) foram para a barra de origem, ao lado de "Sem linha de base" /
+         "Linha de base v2": a ação mora junto do dado que ela muda. Moravam
+         no pé da página, depois da tabela, onde ninguém as achava.
+       ------------------------------------------------------------------ */
+    _prCompleto: function (p, dados, opts, multi, fc) {
+      var ob = p.obra || dados.obra || {}, obId = ob.id != null ? String(ob.id) : "";
+      var h = this._prAvisos(p) + this._prOrigem(p, dados, opts, fc, obId) + this._prKpis(p, dados, false);
+      /* ⚠ `opts.aposKpis` (a leitura executiva da sub-aba do orçamento) entra
+         LOGO DEPOIS dos indicadores, e o lugar é medido: os três números são a
+         resposta de "quanto da obra está feito" e a leitura explica a
+         resposta. `tools/e2e-planejamento-obra.js` guarda a posição (os três
+         números sem rolar a 1366×768); não mova sem medir de novo. */
+      if (opts.aposKpis) h += '<div class="cx-pr-leitura">' + opts.aposKpis + '</div>';
+      var evm = this._prEvm(p, dados, { semCab: true });
+      if (evm) h += kitSecao({ titulo: "Prazo × custo", sub: this._prEvmSub((p.kpis || {}).evm), corpoHtml: evm, classe: "cx-pr-evm" });
+      h += kitSecao({ titulo: "Curva S", sub: "Acumulado mês a mês, em % do valor de venda", corpoHtml: this.curvaS(p.curva, {}), classe: "cx-pr-curva" });
       var r = dados.r;
       if (r && arr(r.atividades).length) {
         var mB = {}, mR = {};
@@ -5324,13 +5480,126 @@
           if (n.base && n.base.ini) mB[n.id] = { ini: n.base.ini, fim: n.base.fim || n.base.ini };
           if (n.realPct != null) mR[n.id] = n.realPct;
         });
-        html += '<div class="cx-pr-sec"><b>Gantt</b> <span class="muted">— barra = plano atual' + (p.base ? '; tracejado = linha de base v' + esc(p.base.versao) : '') + '; faixa escura = executado; linha laranja = data de corte</span></div>' +
-          this.gantt(r, { detalhe: "subetapa", base: p.base ? mB : null, realizado: mR, hoje: p.dataCorte || null, rotHoje: "data de corte" });
+        /* a legenda do próprio Gantt já diz o que é cada traço (base, executado,
+           data de corte): o subtítulo da seção não repete */
+        h += kitSecao({ titulo: "Gantt", sub: p.base ? "Plano atual sobre a linha de base v" + p.base.versao : "Plano atual, com o executado até a data de corte",
+          corpoHtml: this.gantt(r, { detalhe: "subetapa", base: p.base ? mB : null, realizado: mR, hoje: p.dataCorte || null, rotHoje: "data de corte" }), classe: "cx-pr-gantt" });
       }
-      html += this._prTabela(p, multi) + this._prFora(p, dados);
-      return html + this._prAcoes(p, dados, opts, comp, false) + '</div>';
+      return h + this._prTabela(p, multi) + this._prFora(p, dados);
+    },
+    /* AVISO ÚNICO (ROTEIRO §1): as observações do motor sobre a conta eram um
+       bloco amarelo de texto corrido com 4 a 12 parágrafos ENTRE os números e
+       os gráficos. Agora é um aviso de uma linha; a lista abre no clique. */
+    _prAvisos: function (p) {
+      var avs = arr(p.avisos).filter(function (a) { return a && a.msg; });
+      if (!avs.length) return "";
+      if (avs.length === 1) return kitAviso({ tom: "alerta", texto: String(avs[0].msg) });
+      var li = avs.slice(0, 12).map(function (a) { return '<li>' + esc(a.msg) + '</li>'; }).join("") + (avs.length > 12 ? '<li>e mais ' + (avs.length - 12) + ' observação(ões)</li>' : '');
+      return kitAviso({ tom: "alerta", textoHtml: '<details class="cx-obs"><summary>' + avs.length + ' observações sobre esta conta</summary><ul class="cx-lista">' + li + '</ul></details>' });
+    },
+    /* A BARRA DE ORIGEM: de onde vêm os números (orçamento, plano, linha de
+       base) à esquerda; a data de corte e as ações da linha de base à
+       direita. É a "barra de filtros" do kit — a data de corte é o filtro da
+       tela inteira. O motivo da base e a data em que o plano foi gravado vão
+       na dica: na linha fixa eram o texto que empurrava tudo para baixo. */
+    _prOrigem: function (p, dados, opts, fc, obId) {
+      var ob = p.obra || dados.obra || {}, it = [];
+      if (!opts.semNomeObra) it.push('<span>Obra <b>' + esc(corta(ob.nome || "sem nome", 48)) + '</b></span>');
+      if (p.orcamento) it.push('<span>Orçamento <b>' + esc(p.orcamento.numero || "") + '</b></span>');
+      it.push(p.plano && p.plano.fonte === "plano"
+        ? '<span' + (p.plano.atualizadoEm ? ' title="' + esc("Plano de execução gravado em " + dmaS(p.plano.atualizadoEm)) + '"' : '') + '>Plano de execução da obra</span>'
+        : '<span title="A obra ainda não tem plano de execução próprio: os números saem do cronograma do orçamento.">Plano do orçamento</span>');
+      it.push(p.base
+        ? '<span' + (p.base.motivo ? ' title="' + esc("Motivo: " + corta(p.base.motivo, 200)) + '"' : '') + '>Linha de base <b>v' + esc(p.base.versao) + '</b> de ' + esc(dmaS(p.base.criadaEm)) + '</span>'
+        : '<span class="cx-pr-sembase" title="Sem linha de base congelada, a obra é comparada com o plano atual — que muda a cada edição.">Sem linha de base</span>');
+      var corte = obId
+        ? '<label class="cx-pr-corte">Data de corte <input type="date" data-crono-corte="' + esc(obId) + '" value="' + esc(p.dataCorte || "") +
+          '" title="O dia que os números descrevem: executado, Portal e previsto saem todos desta data. Apague para voltar ao último diário publicado."></label>' + (fc ? '<span class="muted cx-pr-fc">' + fc + '</span>' : '')
+        : '<span>Até <b>' + esc(dmaS(p.dataCorte)) + '</b>' + (fc ? ' <span class="muted">(' + fc + ')</span>' : '') + '</span>';
+      return '<div class="cx-pr-cab cx-pr-origem"><div class="cx-pr-orig">' + it.join('<i class="cx-pr-sep" aria-hidden="true">·</i>') + '</div>' +
+        '<div class="cx-pr-orig-dir">' + corte + this._prAcoes(p, dados, opts, false, false) + '</div></div>';
+    },
+    /* OS INDICADORES DO COMPLETO, na faixa do kit (mod-kpis): rótulo curto em
+       caixa alta, número tabular, uma linha de apoio — e o texto inteiro do
+       motor (o rótulo longo, o denominador do Portal, a régua) na DICA.
+       Antes: 6 a 7 cartões com rótulos de 3 linhas em caixa alta ("EXECUTADO
+       SOBRE O ORÇAMENTO (DIÁRIOS PUBLICÁVEIS)") e apoio de até 5 linhas.
+       ⚠ AS TRÊS RÉGUAS CONTINUAM LADO A LADO E ROTULADAS (memória "seis
+         réguas para o avanço"): Executado, No Portal, Medido.
+       ⚠ NO MÁXIMO 5 (ROTEIRO §3): a Situação foi para o apoio do "Previsto na
+         data" (é a leitura dele), e o IDP — que só existe com linha de base —
+         vai junto, como segundo número do mesmo indicador (classe cx-kpi-idp,
+         lida pelas e2e). A conta de nenhum deles mudou.
+       ⚠ O kit (Modulo.kpis) ainda não aceita classe por indicador; as classes
+         cx-kpi-* são o contrato das e2e e das suítes, então a faixa é escrita
+         aqui com as MESMAS classes do kit (o desenho vem do app.css). */
+    _prKpisKit: function (p, dados) {
+      var K = p.kpis || {}, ex = K.executadoOrcamento || {}, po = K.portal || {}, me = K.medido || {}, pv = K.previstoNaData, idp = K.idp;
+      var semD = !!dados.semDinheiro, semMed = dados.podeMedicoes === false, n = 0;
+      // ⚠ sem dinheiro, ou valor apagado/nulo: nenhum R$ (nunca "R$ 0,00" de um valor que não existe)
+      function rs(v) { if (semD || v == null || !isFinite(Number(v))) return ""; return moeda(v); }
+      function kpi(cls, rot, valor, subHtml, tom, dica, extra) {
+        n++;
+        return '<div class="mod-kpi cx-kpi ' + cls + (tom ? ' mod-kpi-' + tom : '') + '"' + (dica ? ' title="' + esc(dica) + '"' : '') + '>' +
+          '<span class="mod-kpi-r cx-kpi-rot">' + esc(rot) + '</span><b class="mod-kpi-v cx-kpi-v">' + esc(valor) + '</b>' +
+          (subHtml ? '<span class="mod-kpi-s cx-kpi-sub">' + subHtml + '</span>' : '') + (extra || '') + '</div>';
+      }
+      // EXECUTADO sobre o orçamento
+      var bEx = ex.base === "financeira" ? "pesado pelo valor de venda de cada serviço" : (ex.base === "simples" ? "média simples — menos de 60% dos serviços têm valor" : "");
+      var h = kpi("cx-kpi-exec", "Executado", pctOu(ex.pct), esc(ex.base === "financeira" ? "pelo valor de venda" : (ex.base === "simples" ? "média simples dos serviços" : "")), "",
+        (ex.rotulo || "Executado sobre o orçamento (diários publicáveis)") + (bEx ? " — " + bEx : ""));
+      /* NO PORTAL: o apoio visível diz o DENOMINADOR (sobre quantos serviços
+         lançados) — sem ele o engenheiro achava que o cliente vê a obra quase
+         pronta sem saber por quê (revisão 3, lente UX). O resto vai na dica. */
+      var nL = Number(po.servicos) || 0, nO = Number(po.doOrcamento) || 0, subP = "", dP = po.rotulo || "no Portal do cliente";
+      if (po.fonte === "diario") {
+        subP = nL ? (po.base === "simples" ? "média de " : "sobre ") + nL + " serviço(s) lançado(s)" : "o que o cliente vê";
+        dP += " — " + (po.base === "simples" ? "média simples" : (po.base === "financeira" ? "pesado pelo valor" : "sobre")) +
+          (nL ? " dos " + nL + " serviço(s) já lançado(s) nos diários" + (nO ? " (o orçamento tem " + nO + ")" : "") : "") + (po.ate ? " — é o que o cliente vê até " + dmaS(po.ate) : "");
+      } else if (po.fonte) { subP = "número de hoje"; dP += " — é o número de hoje (não foi cortado na data)"; }
+      h += kpi("cx-kpi-portal", "No Portal do cliente", pctOu(po.pct), esc(subP), "", dP);
+      // MEDIDO (boletins aprovados)
+      var dM = me.rotulo || "Medido (boletins aprovados)", subM;
+      if (semMed) h += kpi("cx-kpi-medido", "Medido", "—", esc("sem acesso a medições"), "", dM + " — seu usuário não vê medições");
+      else {
+        if (me.depoisDoCorte) { subM = "acumulado de hoje"; dM += " — acumulado de hoje — inclui " + me.depoisDoCorte + " boletim(ns) com data depois de " + dmaS(p.dataCorte); }
+        else if (me.pct == null && (me.emValor || semD)) { subM = "boletins só em valor, sem %"; dM += " — boletins só em valor" + (rs(me.emValor) ? " (" + rs(me.emValor) + ")" : "") + ", sem % — não dá para dizer quanto da obra é"; }
+        else { subM = me.boletins ? me.boletins + " boletim(ns) aprovado(s)" : "nenhum boletim aprovado"; dM += " — " + (me.boletins ? me.boletins + " boletim(ns) aprovado(s) ou pago(s)" : "nenhum boletim aprovado"); }
+        h += kpi("cx-kpi-medido", "Medido", pctOu(me.pct, 0), esc(subM), "", dM);
+      }
+      /* PREVISTO NA DATA + situação + IDP (com linha de base). ⚠ IDP SÓ COM
+         LINHA DE BASE: o montarPainel já não o entrega sem ela; a tela repete
+         a regra. */
+      var subPv = [], dPv = pv ? (pv.rotulo || "Previsto na data") + (pv.realPct != null ? " — executado na mesma régua: " + pctOu(pv.realPct) : "")
+        : (p.estado === "sem-inicio" ? "Sem data de início — não dá para dizer se está atrasada" : "Sem previsto nesta data");
+      if (K.situacao) {
+        subPv.push(sitHtml(K.situacao));
+        dPv += " · situação" + (K.situacaoContra ? " contra " + K.situacaoContra : "") + ": " + (SIT[K.situacao] || [K.situacao])[0] + (termTxt(K.desvioTerminoDias) ? " (" + termTxt(K.desvioTerminoDias) + ")" : "");
+      } else if (!pv) subPv.push(esc(p.estado === "sem-inicio" ? "sem data de início" : "sem previsto nesta data"));
+      if (p.base && idp && idp.valor != null) {
+        subPv.push('<span class="cx-kpi cx-kpi-idp" title="' + esc("Índice de desempenho de prazo " + (idp.rotulo || "") + ": " + (rs(idp.va) && rs(idp.vp) ? "valor agregado " + rs(idp.va) + " ÷ previsto " + rs(idp.vp) + ". " : "") +
+          "Acima de 1 = à frente da linha de base; abaixo de 1 = atrás.") + '"><span class="cx-kpi-rot">IDP</span> <b class="cx-kpi-v">' + esc(nBR(idp.valor, 2)) + '</b></span>');
+      }
+      h += kpi("cx-kpi-prev", "Previsto na data", pv ? pctOu(pv.pct) : "—", subPv.join('<span class="cx-kpi-sep" aria-hidden="true"> · </span>'), "", dPv);
+      /* TÉRMINO PREVISTO (planejador 2B): UM término em destaque, o da rede.
+         ⚠ A AÇÃO MORA NO INDICADOR DO NÚMERO QUE ELA MUDA ([Atualizar avanço]). */
+      var pt = K.previsaoTermino;
+      if (pt && pt.data) {
+        var subT = pt.comAvanco ? "pela rede, com o avanço até " + dmaS(pt.corte) : "pela rede do plano atual", dT = subT, tomT = "", desv = "";
+        if (pt.base && pt.base.data) {
+          dT += " · linha de base v" + pt.base.versao + ": " + dmaS(pt.base.data) + (pt.desvioDU != null && pt.desvioDU !== 0 ? " (" + (pt.desvioDU > 0 ? "+" : "") + pt.desvioDU + " dias úteis)" : "");
+          if (pt.desvioDU != null && pt.desvioDU !== 0) { desv = (pt.desvioDU > 0 ? "+" : "−") + Math.abs(pt.desvioDU) + " dias úteis × base"; tomT = pt.desvioDU > 0 ? "neg" : "pos"; }
+        }
+        var obPT = (p.obra && p.obra.id != null) ? String(p.obra.id) : "";
+        var acao = (obPT && dados.podeEditar !== false)
+          ? '<div class="cx-kpi-acao"><button class="btn sm" data-acao="crono-avanco-abrir" data-obra="' + esc(obPT) + '">' + (pt.comAvanco ? "Atualizar avanço" : "Lançar avanço") + '</button></div>' : "";
+        h += kpi("cx-kpi-termino", "Término previsto", dmaS(pt.data), esc(subT) + (desv ? '<span class="cx-kpi-sep" aria-hidden="true"> · </span>' + esc(desv) : ''), tomT, dT, acao);
+      }
+      return '<div class="mod-kpis cx-kpis" data-n="' + n + '">' + h + '</div>';
     },
     _prKpis: function (p, dados, comp) {
+      // o completo usa a faixa do kit (ver _prKpisKit); daqui para baixo, o compacto da ficha
+      if (!comp) return this._prKpisKit(p, dados);
       var K = p.kpis || {}, ex = K.executadoOrcamento || {}, po = K.portal || {}, me = K.medido || {}, pv = K.previstoNaData, idp = K.idp;
       /* ⚠ SEM DINHEIRO (dados.semDinheiro — quem não pode Medições nem
          Financeiro; o removedor da ficha zera os valores): os percentuais
@@ -5416,51 +5685,76 @@
        ⚠ SEM DINHEIRO, NADA: quem não vê R$ não vê este bloco (os índices
          sozinhos, sem a conta, se leem errado).
        ================================================================== */
-    _prEvm: function (p, dados) {
+    /* o subtítulo da seção: a data e contra o quê. ⚠ O motor já escreve
+       "contra o plano atual (…)" — a tela antiga prefixava outro "contra" e
+       saía "contra contra o plano atual" (visto na foto de 08/10/2026). */
+    _prEvmSub: function (V) {
+      if (!V) return "";
+      var c = V.contra ? String(V.contra) : "";
+      if (c && !/^contra\b/i.test(c)) c = "contra " + c;
+      return "Valor agregado" + (V.dataCorte ? " na data de corte " + dmaS(V.dataCorte) : "") + (c ? ", " + c : "");
+    },
+    /* `o.semCab`: no completo, a data e o "contra" vão no subtítulo da seção
+       do kit; a Simulação 4D (gestao.js, _b4HtmlEvm) tem título próprio e
+       recebe a linha de contexto aqui dentro.
+       REDESENHO 08/10/2026: duas colunas limpas (sem a borda forte de cada
+       quadro), a sigla com a definição na dica, o motivo de índice que não
+       saiu UMA vez (era a mesma frase embaixo das duas colunas) e a nota da
+       régua num "Como ler" recolhível. Os números e as duas réguas não mudam. */
+    _prEvm: function (p, dados, o) {
+      o = o || {};
       var V = (p.kpis || {}).evm;
       if (!V || !V.ok || (dados && dados.semDinheiro)) return "";
       var R = V.rotulos || {}, G = V.regua || {};
       function rs(v) { return (v == null || !isFinite(Number(v))) ? "—" : moeda(v); }
       function ix(v) { return (v == null || !isFinite(Number(v))) ? "—" : nBR(v, 2); }
       function lin(sig, rot, val, dica, cls) {
-        return '<tr class="' + (cls || "") + '" title="' + esc(dica || "") + '"><th>' + esc(sig) + '</th><td>' + esc(rot) + '</td><td class="cx-evm-v">' + esc(val) + '</td></tr>';
+        return '<tr class="' + (cls || "") + '" title="' + esc(dica || rot) + '"><th>' + (sig ? '<abbr title="' + esc(rot) + '">' + esc(sig) + '</abbr>' : '') + '</th><td>' + esc(rot) + '</td><td class="cx-evm-v">' + esc(val) + '</td></tr>';
       }
       function tom(v) { return (v == null || !isFinite(Number(v))) ? "" : (Number(v) < 0.995 ? "cx-evm-mau" : (Number(v) > 1.005 ? "cx-evm-bom" : "")); }
       function sinal(v) { return (v == null || !isFinite(Number(v))) ? "" : (Number(v) < -0.005 ? "cx-evm-mau" : ""); }
-      var h = '<div class="cx-pr-sec"><b>Prazo × custo</b> <span class="muted">— valor agregado' + (V.dataCorte ? ' na data de corte ' + esc(dmaS(V.dataCorte)) : '') +
-        (V.contra ? ', contra ' + esc(V.contra) : '') + '</span></div><div class="cx-evm">';
-      h += '<div class="cx-evm-col"><div class="cx-evm-t">Prazo <span class="muted">· preço de venda</span></div><table class="cx-evm-tab">' +
+      var h = o.semCab ? '' : '<p class="cx-evm-cab">' + esc(this._prEvmSub(V)) + '</p>';
+      h += '<div class="cx-evm"><div class="cx-evm-col"><div class="cx-evm-t">Prazo <span class="muted">· preço de venda</span></div><table class="cx-evm-tab">' +
         lin("VP", "Valor previsto na data", rs(V.vp), R.vp) + lin("VA", "Valor agregado (feito)", rs(V.va), R.va) +
         lin("ONT", "Orçamento no término", rs(V.ont), R.ont) + lin("IDP", "Índice de desempenho de prazo", ix(V.idp), R.idp, tom(V.idp)) +
-        lin("VPR", "Variação de prazo", rs(V.vpr), R.vpr, sinal(V.vpr)) + '</table>' +
-        (V.idp == null && V.idpMotivo ? '<div class="cx-evm-mot">' + esc(V.idpMotivo) + '</div>' : '') + '</div>';
+        lin("VPR", "Variação de prazo", rs(V.vpr), R.vpr, sinal(V.vpr)) + '</table></div>';
       h += '<div class="cx-evm-col"><div class="cx-evm-t">Custo <span class="muted">· custo direto (Financeiro)</span></div><table class="cx-evm-tab">' +
         lin("CR", "Custo real (despesas da obra)", rs(V.cr), R.cr) + lin("VA", "Valor agregado em custo", rs(V.vaCusto), R.vaCusto) +
         lin("IDC", "Índice de desempenho de custo", ix(V.idc), R.idc, tom(V.idc)) + lin("VC", "Variação de custo", rs(V.vc), R.vc, sinal(V.vc)) +
         lin("ENT", "Estimativa no término", rs(V.ent), R.ent) + lin("VNT", "Variação no término", rs(V.vnt), R.vnt, sinal(V.vnt)) +
         lin("EPT", "Estimativa para terminar", rs(V.ept), R.ept) +
-        (V.comprometido != null ? lin("", "Comprometido (pedidos aprovados)", rs(V.comprometido), R.comprometido) : '') + '</table>' +
-        (V.idc == null && V.idcMotivo ? '<div class="cx-evm-mot">' + esc(V.idcMotivo) + '</div>' : '') +
-        (V.cobertura && V.cobertura.pctApropriado != null ? '<div class="cx-evm-mot" title="' + esc(V.cobertura.rotulo || "") + '">Cobertura de apropriação: ' + esc(nBR(V.cobertura.pctApropriado, 1)) + '% do gasto tem etapa carimbada' +
-          (V.cobertura.suficiente ? '' : ' — abaixo de ' + esc(String(V.cobertura.minimo)) + '%: o IDC da obra inteira vale, o custo POR ETAPA ainda não') + '.</div>' : '') + '</div>';
-      h += '</div><div class="muted cx-evm-regua">' + esc((G.venda || "") + " " + (G.custo || "")) + (V.cr != null ? ' O Custo Real é o de hoje (as despesas da obra não são cortadas na data).' : '') + '</div>';
+        (V.comprometido != null ? lin("", "Comprometido (pedidos aprovados)", rs(V.comprometido), R.comprometido) : '') + '</table></div></div>';
+      // o motivo do índice que não saiu: uma vez só (o do IDP e o do IDC costumam ser a MESMA frase)
+      var mots = [];
+      if (V.idp == null && V.idpMotivo) mots.push(String(V.idpMotivo));
+      if (V.idc == null && V.idcMotivo && mots.indexOf(String(V.idcMotivo)) < 0) mots.push(String(V.idcMotivo));
+      mots.forEach(function (m) { h += '<p class="cx-evm-mot">' + esc(m) + '</p>'; });
+      if (V.cobertura && V.cobertura.pctApropriado != null) h += '<p class="cx-evm-mot" title="' + esc(V.cobertura.rotulo || "") + '">Cobertura de apropriação: ' + esc(nBR(V.cobertura.pctApropriado, 1)) + '% do gasto tem etapa carimbada' +
+        (V.cobertura.suficiente ? '' : ' — abaixo de ' + esc(String(V.cobertura.minimo)) + '%: o IDC da obra inteira vale, o custo POR ETAPA ainda não') + '.</p>';
+      var nota = String((G.venda || "") + " " + (G.custo || "")).trim() + (V.cr != null ? ' O Custo Real é o de hoje (as despesas da obra não são cortadas na data).' : '');
+      if (nota) h += '<details class="cx-comoler"><summary>Como ler</summary><p>' + esc(nota) + '</p><p>Cada sigla traz a definição na dica (passe o ponteiro sobre a linha).</p></details>';
       return h;
     },
     _prTabela: function (p, multi) {
-      var nos = arr(p.nos);
-      if (!nos.length) return '<div class="muted" style="font-size:12px">Sem etapas para comparar.</div>';
+      var nos = arr(p.nos), tit = "Por etapa e subetapa";
+      if (!nos.length) return kitSecao({ titulo: tit, corpoHtml: '<p class="muted cx-pr-nada">Sem etapas para comparar.</p>', classe: "cx-pr-nos" });
       function jan(o) { return o && o.ini ? dmS(o.ini, multi) + "–" + (o.fim ? dmS(o.fim, multi) : "…") : "—"; }
-      var h = '<div class="cx-pr-sec"><b>Por etapa e subetapa</b> <span class="muted">— janela da linha de base · do plano atual · real (1º lançamento → último serviço concluído); previsto × real na data de corte</span></div>' +
-        '<div class="cx-tabela"><table class="tbl cx-pr-tab"><thead><tr><th>Nº</th><th>Etapa / subetapa</th><th>Base</th><th>Atual</th><th>Real</th><th>Previsto × real</th><th>Situação</th></tr></thead><tbody>';
+      var h = '<div class="cx-tabela"><table class="tbl cx-pr-tab"><thead><tr><th>Nº</th><th>Etapa / subetapa</th>' +
+        '<th title="Janela na linha de base congelada">Base</th><th title="Janela no plano atual">Atual</th>' +
+        '<th title="Do 1º lançamento nos diários ao último serviço concluído">Real</th><th title="Previsto e executado na data de corte; a barra é o executado e o traço, o previsto">Previsto × real</th><th>Situação</th></tr></thead><tbody>';
       nos.forEach(function (n) {
         var et = n.tipo === "etapa";
         h += '<tr class="' + (et ? 'cx-pr-et' : 'cx-pr-f') + '" data-no="' + esc(n.id) + '"><td class="cx-n">' + esc(n.numero) + '</td>' +
-          '<td class="cx-nome" title="' + esc(n.nome + (n.nomeBase ? " (na linha de base: " + n.nomeBase + ")" : "")) + '">' + (et ? '' : '<span style="padding-left:14px"></span>') + esc(corta(n.nome, 80)) + '</td>' +
+          '<td class="cx-nome" title="' + esc(n.nome + (n.nomeBase ? " (na linha de base: " + n.nomeBase + ")" : "")) + '">' + (et ? '' : '<span class="cx-pr-ind"></span>') + esc(corta(n.nome, 80)) + '</td>' +
           '<td>' + jan(n.base) + '</td><td>' + jan(n.atual) + '</td><td>' + jan(n.real) + '</td>' +
           '<td>' + celPR(n) + '</td><td>' + sitHtml(n.situacao) + '</td></tr>';
       });
-      return h + '</tbody></table></div>';
+      return kitSecao({ titulo: tit, sub: "Janela de cada etapa na base, no plano atual e no real · previsto × real na data de corte", corpoHtml: h + '</tbody></table></div>', classe: "cx-pr-nos" });
     },
+    /* O QUE FICOU FORA DA CONTA: era um parágrafo corrido com a mesma frase
+       do motor repetida item a item. Agora cada grupo é uma linha com o
+       título e o porquê curto, os itens em seguida — e a frase do motor de
+       cada item na dica dele. */
     _prFora: function (p, dados) {
       var F = p.foraDaConta || {}, li = [];
       var na = arr(F.naoApropriadas), sq = arr(F.semQuantidade), ef = arr(F.escopoForaDaBase);
@@ -5468,15 +5762,16 @@
       var semDF = !!(dados && dados.semDinheiro);
       function rsF(v) { return (semDF || v == null || !isFinite(Number(v))) ? "" : moeda(v); }
       function it(x, n) { return '<span class="cx-n">' + esc(x.numero) + '</span>' + esc(corta(x.nome || x.descricao, n)); }
-      if (na.length) li.push('<b>' + na.length + ' linha(s) de diário fora do avanço sobre o orçamento</b> (sem vínculo com item, item fora do orçamento ligado ou unidade diferente): ' +
-        na.slice(0, 5).map(function (x) { return esc(corta(x.descricao || x.refId || "linha", 50)) + (x.msg ? ' <span class="muted">(' + esc(corta(x.msg, 110)) + ')</span>' : ''); }).join("; ") + (na.length > 5 ? "; e mais " + (na.length - 5) : ""));
-      if (sq.length) li.push('<b>' + sq.length + ' serviço(s) sem quantidade no orçamento</b> com lançamento nos diários (não entram no %): ' + sq.slice(0, 5).map(function (x) { return it(x, 50); }).join("; ") + (sq.length > 5 ? "; e mais " + (sq.length - 5) : ""));
-      arr(F.opcionaisFora).forEach(function (x) { li.push(it(x, 50) + (rsF(x.valor) ? ' (' + esc(rsF(x.valor)) + ')' : '') + ': ' + esc(x.msg)); });
-      if (F.msgForaDaBase) li.push(esc(semDF ? "escopo fora da linha de base — não entra no IDP." : F.msgForaDaBase) + (ef.length ? ' ' + ef.slice(0, 5).map(function (x) { return it(x, 40); }).join("; ") : ''));
-      arr(F.sumiramDoAtual).forEach(function (x) { li.push(it(x, 50) + ': ' + esc(x.msg)); });
-      arr(F.reagrupadas).forEach(function (x) { li.push(it(x, 50) + ': ' + esc(x.msg)); });
-      if (!li.length) return '<div class="muted" style="font-size:12px;margin-top:8px">Nada ficou fora da conta.</div>';
-      return '<div class="cx-pr-sec"><b>O que ficou fora da conta</b></div><ul class="cx-lista cx-pr-fora">' + li.map(function (x) { return '<li>' + x + '</li>'; }).join("") + '</ul>';
+      function itens(lista, fn) { return '<div class="cx-fora-it">' + lista.slice(0, 5).map(fn).join('<span class="cx-pr-sep" aria-hidden="true">·</span>') + (lista.length > 5 ? '<span class="muted"> e mais ' + (lista.length - 5) + '</span>' : '') + '</div>'; }
+      if (na.length) li.push('<b>' + na.length + ' linha(s) de diário fora do avanço</b> <span class="muted">— sem vínculo com item, item fora do orçamento ligado ou unidade diferente</span>' +
+        itens(na, function (x) { return '<span' + (x.msg ? ' title="' + esc(corta(x.msg, 220)) + '"' : '') + '>' + esc(corta(x.descricao || x.refId || "linha", 50)) + '</span>'; }));
+      if (sq.length) li.push('<b>' + sq.length + ' serviço(s) sem quantidade no orçamento</b> <span class="muted">— têm lançamento nos diários, mas não entram no %</span>' + itens(sq, function (x) { return '<span>' + it(x, 50) + '</span>'; }));
+      arr(F.opcionaisFora).forEach(function (x) { li.push(it(x, 50) + (rsF(x.valor) ? ' (' + esc(rsF(x.valor)) + ')' : '') + ' <span class="muted">— ' + esc(x.msg) + '</span>'); });
+      if (F.msgForaDaBase) li.push(esc(semDF ? "escopo fora da linha de base — não entra no IDP." : F.msgForaDaBase) + (ef.length ? itens(ef, function (x) { return '<span>' + it(x, 40) + '</span>'; }) : ''));
+      arr(F.sumiramDoAtual).forEach(function (x) { li.push(it(x, 50) + ' <span class="muted">— ' + esc(x.msg) + '</span>'); });
+      arr(F.reagrupadas).forEach(function (x) { li.push(it(x, 50) + ' <span class="muted">— ' + esc(x.msg) + '</span>'); });
+      if (!li.length) return '<p class="muted cx-pr-nada">Nada ficou fora da conta.</p>';
+      return kitSecao({ titulo: "O que ficou fora da conta", sub: "Não entra no executado nem nos índices desta tela", corpoHtml: '<ul class="cx-pr-fora">' + li.map(function (x) { return '<li>' + x + '</li>'; }).join("") + '</ul>', classe: "cx-pr-forasec" });
     },
     /* ⚠ só as portas que EXISTEM (memória "porta prometida precisa existir"):
        congelar pede orçamento ligado e permissão; histórico só com base */
@@ -5503,24 +5798,31 @@
        ⚠ O executado chega TRUNCADO (acaba no último mês com lançamento) e é
        desenhado só até onde tem valor, com o x calculado sobre o eixo INTEIRO
        — "daqui para frente ninguém mediu", sem a queda a pique que um zero ou
-       null desenham (memória "portal lê null como zero"). Papel branco, como
-       o Gantt. */
+       null desenham (memória "portal lê null como zero").
+       REDESENHO 08/10/2026: deixou de ser papel branco. As tintas saem dos
+       tokens do tema pelas classes (cx-c-*: grade, texto, base, atual,
+       executado — CSS_PR), e os atributos fill/stroke ficam como reserva para
+       quem desenha o SVG sem o CSS. No tema escuro a curva era um retângulo
+       branco (ou, no módulo, uma grade clara gritando sobre o fundo escuro).
+       A curva grande passou de 820 para 1000 de largura (a mesma altura):
+       agora ela ocupa a seção inteira, e com 820 esticados a 1.100 px ficava
+       alta demais. Os pontos são os mesmos (só o x escala). */
     curvaS: function (c, o) {
       o = o || {}; c = c || {};
       var rot = arr(c.rotulos), n = rot.length, mini = !!o.mini;
-      if (!n) return '<div class="muted" style="font-size:12px">Sem meses para a curva S (sem data de início, ou sem valor de venda nos serviços).</div>';
-      var W = mini ? 300 : 820, H = mini ? 78 : 230, L = mini ? 4 : 36, R = mini ? 4 : 12, T = 8, B = mini ? 6 : 30;
+      if (!n) return '<p class="muted cx-pr-nada">Sem meses para a curva S (sem data de início, ou sem valor de venda nos serviços).</p>';
+      var W = mini ? 300 : 1000, H = mini ? 78 : 230, L = mini ? 4 : 36, R = mini ? 4 : 12, T = 8, B = mini ? 6 : 30;
       function X(i) { return n === 1 ? L + (W - L - R) / 2 : L + i * (W - L - R) / (n - 1); }
       function Y(v) { var x = Number(v); if (!isFinite(x)) x = 0; x = Math.max(0, Math.min(100, x)); return T + (H - T - B) * (1 - x / 100); }
       function path(a) { var d = ""; arr(a).forEach(function (v, i) { if (v == null || i >= n) return; d += (d ? " L" : "M") + f1(X(i)) + "," + f1(Y(v)); }); return d; }
-      var s = '<svg class="cx-curva' + (mini ? ' cx-curva-mini' : '') + '" viewBox="0 0 ' + W + ' ' + H + '" style="max-width:' + W + 'px" role="img" aria-label="Curva S: linha de base, plano atual e executado">';
+      var s = '<svg class="cx-curva' + (mini ? ' cx-curva-mini' : '') + '" viewBox="0 0 ' + W + ' ' + H + '"' + (mini ? ' style="max-width:' + W + 'px"' : '') + ' role="img" aria-label="Curva S: linha de base, plano atual e executado">';
       [0, 50, 100].forEach(function (g) {
-        s += '<line x1="' + L + '" y1="' + f1(Y(g)) + '" x2="' + (W - R) + '" y2="' + f1(Y(g)) + '" stroke="#e2e8f0" stroke-width="1"/>';
-        if (!mini) s += '<text x="' + (L - 4) + '" y="' + f1(Y(g) + 3) + '" font-size="9" fill="#94a3b8" text-anchor="end">' + g + '%</text>';
+        s += '<line class="cx-c-grade" x1="' + L + '" y1="' + f1(Y(g)) + '" x2="' + (W - R) + '" y2="' + f1(Y(g)) + '" stroke="#e2e8f0" stroke-width="1"/>';
+        if (!mini) s += '<text class="cx-c-txt" x="' + (L - 4) + '" y="' + f1(Y(g) + 3) + '" font-size="9" fill="#94a3b8" text-anchor="end">' + g + '%</text>';
       });
       if (!mini) {
         var passo = Math.max(1, Math.ceil(n / 12));
-        rot.forEach(function (rt, i) { if (i % passo && i !== n - 1) return; s += '<text x="' + f1(X(i)) + '" y="' + (H - 12) + '" font-size="9" fill="#475569" text-anchor="middle">' + esc(rt) + '</text>'; });
+        rot.forEach(function (rt, i) { if (i % passo && i !== n - 1) return; s += '<text class="cx-c-txt" x="' + f1(X(i)) + '" y="' + (H - 12) + '" font-size="9" fill="#475569" text-anchor="middle">' + esc(rt) + '</text>'; });
       }
       var pb = path(c.base), pa = path(c.atual), pe = path(c.executado);
       if (pb) s += '<path class="cx-c-base" d="' + pb + '" fill="none" stroke="#64748b" stroke-width="1.6" stroke-dasharray="5,3"/>';
@@ -5528,15 +5830,16 @@
       if (pe) {
         var ue = arr(c.executado).length - 1;
         s += '<path class="cx-c-exec" d="' + pe + '" fill="none" stroke="#15803d" stroke-width="2.6"/>';
-        if (ue >= 0 && ue < n) s += '<circle cx="' + f1(X(ue)) + '" cy="' + f1(Y(c.executado[ue])) + '" r="' + (mini ? 2.5 : 3.5) + '" fill="#15803d"><title>' + esc("executado até " + rot[ue] + ": " + pctOu(c.executado[ue])) + '</title></circle>';
+        if (ue >= 0 && ue < n) s += '<circle class="cx-c-pto" cx="' + f1(X(ue)) + '" cy="' + f1(Y(c.executado[ue])) + '" r="' + (mini ? 2.5 : 3.5) + '" fill="#15803d"><title>' + esc("executado até " + rot[ue] + ": " + pctOu(c.executado[ue])) + '</title></circle>';
       }
       s += '</svg>';
       if (mini) return s;
-      function am(css) { return '<span style="display:inline-block;width:18px;height:0;vertical-align:middle;margin-right:5px;' + css + '"></span>'; }
+      // a legenda numa linha, com a amostra pela MESMA classe da linha (o tema pinta as duas)
+      function am(cls) { return '<i class="cx-leg-am ' + cls + '" aria-hidden="true"></i>'; }
       return s + '<div class="cx-leg">' +
-        (pb ? '<span>' + am('border-top:2px dashed #64748b') + esc(c.fonteBase || "linha de base") + '</span>' : '<span>sem linha de base</span>') +
-        '<span>' + am('border-top:2px solid #0d6ebd') + esc(c.fonteAtual || "plano atual") + '</span>' +
-        '<span>' + am('border-top:3px solid #15803d') + 'executado (diários publicados' + (pe ? '' : ' — nada lançado ainda') + ')</span></div>';
+        (pb ? '<span>' + am('cx-leg-base') + esc(c.fonteBase || "linha de base") + '</span>' : '<span class="muted">sem linha de base</span>') +
+        '<span>' + am('cx-leg-atual') + esc(c.fonteAtual || "plano atual") + '</span>' +
+        '<span>' + am('cx-leg-exec') + 'executado (diários publicados' + (pe ? '' : ' — nada lançado ainda') + ')</span></div>';
     },
 
     /* ------------------------------------------------------------------

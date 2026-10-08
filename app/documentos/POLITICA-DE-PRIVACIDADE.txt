@@ -1,6 +1,13 @@
 ﻿POLÍTICA DE PRIVACIDADE — OrçaPRO IA
-Versão 1.12 — vigente a partir de 03/10/2026
+Versão 1.13 — vigente a partir de 08/10/2026
 Elaborada conforme a Lei nº 13.709/2018 (LGPD)
+
+O que mudou na 1.13: entrou o item 4.17 — FAMÍLIA E RENDER POR IA no BIM. Quando
+você pede, o texto e as imagens da família, ou a imagem da vista 3D e o escopo
+do render, passam pelo nosso servidor e vão ao Google (Gemini API), que entrou
+na lista do item 8. E, só quando você escolhe colocar no modelo um objeto 3D
+livre (CC0), o seu navegador baixa a lista e o modelo direto da Poly Haven, que
+também entrou no item 8.
 
 O que mudou na 1.12: entrou no item 4.16 o 3D FOTORREALISTA DO GOOGLE do plano
 de içamento. É o único recurso daquela aba em que o SEU NAVEGADOR fala direto
@@ -743,6 +750,41 @@ blocos ficam só na tela enquanto o 3D está ligado (os termos do Google não
 deixam guardá-los), com o logo e os créditos do Google, e não entram nas fotos
 do plano nem no modo foto. Desligar o botão para os pedidos.
 
+4.17 FAMÍLIA E RENDER POR IA (tela BIM)
+"Família por IA" monta uma família paramétrica a partir do que você descreve e
+das imagens que você anexar; "Renderizar com IA" gera uma ilustração da vista
+3D que está na tela. Nada sai sozinho: cada envio acontece no clique em "Gerar
+família" ou "Renderizar".
+
+Os envios passam pelo NOSSO servidor (o mesmo dos recursos de IA, item 4.1),
+que só atende licença ativa e os repassa ao Google LLC (Gemini API), com
+processamento nos Estados Unidos (transferência internacional, art. 33 da
+LGPD). Vão:
+
+  · na família: o texto do pedido, a categoria escolhida e as imagens que você
+    anexar (planta, corte, isométrico, foto de catálogo);
+  · no render: a IMAGEM DA VISTA 3D que está na tela (e a mesma vista em
+    linhas), o escopo que você escrever e as fotos de referência que anexar.
+
+Não vão: o nome da obra, o cliente, o seu nome, o seu e-mail nem valores. A
+imagem da vista mostra o que estiver na tela — esconda antes o que não quiser
+enviar. O pedido vai marcado para NÃO ficar guardado no Google para consulta
+posterior, e o plano pago da API não usa o conteúdo para treinar modelo,
+conforme os termos do Google. Não anexe imagem de terceiro que você não possa
+compartilhar.
+
+O render volta como imagem e fica SÓ NESTE APARELHO (na galeria da obra); a
+lista da galeria guarda o escopo, a data, o autor e o modelo de IA usado. A
+imagem sai marcada como ilustração gerada por IA, não projeto executivo.
+
+Objeto 3D livre (Poly Haven): ao escolher colocar no modelo um objeto da Poly
+Haven, o SEU NAVEGADOR baixa direto de lá a lista de modelos 3D livres (licença
+CC0) e o modelo escolhido. A busca é feita no próprio aparelho — o texto que
+você digitou não sai; a Poly Haven recebe o seu IP e qual modelo foi baixado,
+como em qualquer download.
+
+Base legal: seu consentimento, manifestado pelo uso do recurso.
+
 
 5. O QUE NUNCA FAZEMOS
 
@@ -829,6 +871,12 @@ Boa parte disso você resolve sozinho e na hora, dentro do programa — exportan
 
   · Google LLC — Firebase/Firestore: guarda a cópia sincronizada (item 3.1).
   · Groq, Inc. — processa o conteúdo enviado aos recursos de IA (item 4.1).
+  · Google LLC — Gemini API: recebe, pelo nosso servidor, o pedido e as imagens
+    da família por IA e a imagem da vista 3D, o escopo e as referências do
+    render por IA (item 4.17).
+  · Poly Haven (polyhaven.com) — entrega, direto ao seu navegador, a lista e o
+    modelo 3D livre (CC0) que você escolher pôr no modelo (item 4.17); recebe o
+    seu IP e qual modelo foi baixado, nada da obra.
   · GitHub Inc. (Microsoft) — entrega o pacote de atualização (item 3.3).
   · Meta Platforms — recebe o que você manda pelos botões de WhatsApp (4.4).
   · Open-Meteo (Alemanha) — se o nosso servidor estiver configurado para o

@@ -147,15 +147,31 @@
   function bytesDoAparelho(chave) {
     if (typeof Idb === "undefined") return Promise.reject(new Error("este navegador não guarda arquivos (sem IndexedDB)."));
     return Idb.get(chave).then(function (v) {
-      if (!v || !v.dados) { var e = new Error("o arquivo não está neste computador — ele foi adicionado em outro aparelho."); e.codigo = "ausente"; throw e; }
-      return new Uint8Array(v.dados);
+      if (v && v.dados) return new Uint8Array(v.dados);
+      /* NUVEM (js/arquivosnuvem.js, 07/10/2026): o arquivo foi guardado em outro
+         aparelho da empresa — baixa a cópia do R2 e guarda aqui para a próxima vez */
+      if (typeof ArquivosNuvem !== "undefined" && ArquivosNuvem.ativo()) {
+        try { UI.toast("Baixando o arquivo da nuvem…", "ok"); } catch (eT) {}
+        return ArquivosNuvem.baixar(chave).then(function (bytes) {
+          var copia = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+          return Idb.set(chave, { nome: "", tipo: "", dados: copia }).then(function () {
+            if (G._dobPresentes) G._dobPresentes[chave] = 1;
+            return bytes;
+          }, function () { return bytes; });
+        }, function (eN) {
+          var e2 = new Error("o arquivo não está neste computador e " + (eN && eN.message ? eN.message : "não veio da nuvem") + "."); e2.codigo = "ausente"; throw e2;
+        });
+      }
+      var e = new Error("o arquivo não está neste computador — ele foi adicionado em outro aparelho."); e.codigo = "ausente"; throw e;
     });
   }
-  function guardarBytes(chave, nome, tipo, bytes) {
+  function guardarBytes(chave, nome, tipo, bytes, obraId) {
     if (typeof Idb === "undefined") return Promise.reject(new Error("este navegador não guarda arquivos (sem IndexedDB)."));
     var copia = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
     return Idb.set(chave, { nome: nome, tipo: tipo, dados: copia }).then(function () {
       if (G._dobPresentes) G._dobPresentes[chave] = 1;
+      /* cópia na nuvem, sem esperar: sem sinal vai para a fila e sobe depois */
+      try { if (obraId && typeof ArquivosNuvem !== "undefined") ArquivosNuvem.subir(chave, { obraId: obraId, pasta: "documentos", nome: nome, tipo: tipo }, bytes); } catch (eN) {}
     });
   }
   function abrirBytes(bytes, tipo, nomeBaixar) {
@@ -184,7 +200,7 @@
     var docs = M.ordenar(M.filtrar(todos, { obraId: G._dobObra === "_sem" ? "" : G._dobObra, tipo: G._dobTipo, situacao: G._dobSit, busca: G._dobBusca }));
     if (G._dobObra === "_sem") docs = docs.filter(function (d) { return !d.obraId; });
 
-    var selObra = '<select data-gacao="dob-obra" title="Documentos de qual obra" style="max-width:230px"><option value="todas">Todas as obras (' + todos.length + ")</option>" +
+    var selObra = '<select data-gacao="dob-obra" title="Documentos de qual obra" aria-label="Obra"><option value="todas">Todas as obras (' + todos.length + ")</option>" +
       obras.map(function (o) {
         var nn = todos.filter(function (d) { return String(d.obraId) === String(o.id); }).length;
         return '<option value="' + esc(o.id) + '"' + (String(o.id) === String(G._dobObra) ? " selected" : "") + ">" + esc(o.nome || "Obra") + " (" + nn + ")</option>";
@@ -195,19 +211,47 @@
     var selSit = '<select data-gacao="dob-sit" title="Situação">' +
       [["vigentes", "Vigentes"], ["", "Todos (com revisões antigas)"], ["assinado", "Assinados"], ["pendencia", "Assinatura com pendência"], ["emitido", "Sem assinatura"], ["enviado", "Enviados"], ["rascunho", "Rascunhos"], ["substituido", "Substituídos"], ["cancelado", "Cancelados"]]
         .map(function (s) { return '<option value="' + s[0] + '"' + (s[0] === G._dobSit ? " selected" : "") + ">" + s[1] + "</option>"; }).join("") + "</select>";
-    var extra = '<div class="flex" style="gap:8px;flex-wrap:wrap;align-items:center">' + selObra + selTipo + selSit +
-      '<input id="dob-busca" type="search" placeholder="Buscar título, código, quem assinou…" value="' + esc(G._dobBusca) + '" style="min-width:210px">' +
-      '<button class="btn ghost" data-gacao="dob-assinantes" title="Quem assina: certificado digital ou assinatura manuscrita autorizada">Assinantes</button></div>';
-
-    var html = '<div id="dob-tela">' + G._head(K.svg("documentos") + "Documentos da obra", "dob-novo", "Adicionar documento", extra);
-    html += '<p class="muted" style="margin:-4px 0 10px;font-size:12.5px">O arquivo técnico de cada obra: PDF, revisão, quem assinou e o histórico. ' +
-      'A ficha sincroniza entre os aparelhos; o <b>arquivo</b> fica no computador onde foi adicionado. ' +
-      'O que o cliente vê no Portal (ART, alvará, validade) continua na ficha da obra: aba <b>Documentos → Gerenciar documentos</b>.</p>';
-    html += faixaAssinador();
+    /* ROTEIRO DE MÓDULO (08/10/2026): eram três selects, a busca, Assinantes
+       e o "+ Adicionar" na mesma linha do título, um parágrafo fixo de duas
+       linhas e a faixa do assinador — quatro andares antes do primeiro
+       documento. Agora: obra no lugar fixo do cabeçalho, o estado do
+       assinador na linha de contexto (a frase longa virou dica), os outros
+       filtros na barra e a explicação de onde fica o arquivo no `title`. */
+    var ondeArq = (typeof ArquivosNuvem !== "undefined" && ArquivosNuvem.ativo())
+      ? "A ficha e o arquivo ficam na nuvem da empresa: qualquer aparelho abre (o primeiro acesso baixa e guarda)."
+      : "A ficha sincroniza entre os aparelhos; o arquivo fica no computador onde foi adicionado.";
+    var html = '<div id="dob-tela">' + global.Modulo.cab({
+      icone: "assinar", titulo: "Documentos da obra",
+      subHtml: '<span title="O arquivo técnico de cada obra: PDF, revisão, quem assinou e o histórico. ' + esc(ondeArq) + '">' + todos.length + " documento(s)</span> · " + faixaAssinador(),
+      obraHtml: selObra,
+      acoes: ['<button class="btn" data-gacao="dob-assinantes" title="Quem assina: certificado digital ou assinatura manuscrita autorizada">Assinantes</button>'],
+      primariaHtml: '<button class="btn primary" data-gacao="dob-novo">+ Adicionar documento</button>'
+    });
+    var temEspaco = (typeof ArquivosNuvem !== "undefined" && ArquivosNuvem.ativo());
+    /* sem documento nenhum, filtro não filtra nada: a barra só aparece com o que filtrar */
+    if (todos.length) html += global.Modulo.filtros([
+      '<div class="field"><label for="dob-busca">Buscar</label><input id="dob-busca" type="search" placeholder="Título, código, quem assinou…" value="' + esc(G._dobBusca) + '"></div>',
+      '<div class="field"><label>Tipo</label>' + selTipo + "</div>",
+      '<div class="field"><label>Situação</label>' + selSit + "</div>"
+    ], { direitaHtml: temEspaco ? '<div id="dob-espaco" class="muted" style="font-size:var(--t-micro)"></div>' : "" });
+    /* espaço da empresa na nuvem (vem no plano). Preenche depois, sem segurar a tela. */
+    if (temEspaco) {
+      setTimeout(function () {
+        ArquivosNuvem.uso().then(function (u) {
+          var el = document.getElementById("dob-espaco"); if (!el || !u || !u.limite) return;
+          var gb = function (b) { return Util.fmtNum(b / 1073741824, b < 1073741824 ? 2 : 1) + " GB"; };
+          var pct = Math.min(100, u.uso / u.limite * 100), cor = pct >= 95 ? "var(--vermelho)" : pct >= 80 ? "var(--amarelo)" : "var(--aco)";
+          el.innerHTML = 'Espaço de arquivos da empresa: <b>' + gb(u.uso) + '</b> de ' + gb(u.limite) +
+            '<span style="display:inline-block;vertical-align:middle;width:120px;height:6px;border-radius:6px;background:var(--surface-3);margin-left:8px;overflow:hidden"><i style="display:block;height:100%;width:' + pct.toFixed(1) + '%;background:' + cor + '"></i></span>' +
+            (pct >= 80 ? ' <b style="color:' + cor + '">' + (pct >= 100 ? "cheio" : "quase cheio") + '</b>' : '');
+        });
+      }, 0);
+    }
 
     if (!docs.length) {
-      var vazio = todos.length ? "Nenhum documento com estes filtros." : "Nenhum documento guardado ainda.";
-      return html + K.vazioBox(vazio, "dob-novo", "Adicionar documento") + "</div>";
+      return html + K.vazioKit({ icone: "assinar", titulo: todos.length ? "Nenhum documento com estes filtros." : "Nenhum documento guardado ainda.",
+        texto: todos.length ? "Troque a obra, o tipo ou a situação para ver os outros."
+          : "O arquivo técnico de cada obra: ART/RRT, alvará, apólice, contrato — com revisão, quem assinou e o histórico. O que o cliente vê no Portal continua na ficha da obra, aba Documentos." }) + "</div>";
     }
 
     var grupos = {}, ordem = [];
@@ -216,31 +260,36 @@
       if (!grupos[k]) { grupos[k] = []; ordem.push(k); }
       grupos[k].push(d);
     });
-    html += '<table class="tbl" id="dob-tabela"><thead><tr><th>Documento</th><th>Data</th><th>Situação</th><th>Assinaturas</th><th>Arquivo</th><th style="text-align:right">Ações</th></tr></thead><tbody>';
+    var antesLista = html;
+    html = '<table class="tbl" id="dob-tabela"><thead><tr><th>Documento</th><th>Data</th><th>Situação</th><th>Assinaturas</th><th>Arquivo</th><th style="text-align:right">Ações</th></tr></thead><tbody>';
     ordem.forEach(function (k) {
       if (G._dobObra === "todas") {
         var nome = k === "_sem" ? "Sem obra (obra excluída)" : (obraNome(k) || (grupos[k][0].obraNome + " (obra não encontrada)"));
-        html += '<tr class="dob-grupo"><td colspan="6" style="background:rgba(0,64,106,.06);font-weight:800;padding:6px 8px">' + esc(nome) + ' <span class="muted" style="font-weight:400">· ' + grupos[k].length + " documento(s)</span></td></tr>";
+        html += '<tr class="dob-grupo"><td colspan="6" style="background:var(--surface-2);font-weight:var(--p-forte);padding:6px 8px">' + esc(nome) + ' <span class="muted" style="font-weight:400">· ' + grupos[k].length + " documento(s)</span></td></tr>";
       }
       grupos[k].forEach(function (d) { html += linha(M, d); });
     });
-    html += "</tbody></table></div>";
-    return html;
+    return antesLista + global.Modulo.secao({ titulo: "Documentos", sub: "O que o cliente vê no Portal (ART, alvará, validade) fica na ficha da obra, aba Documentos.",
+      corpoHtml: html + "</tbody></table>" }) + "</div>";
   };
 
   function faixaAssinador() {
     var st = G._dobAssinador || {};
-    var cor, txt;
-    if (!st.carregado) { cor = "#64748b"; txt = "Conferindo o assinador digital deste computador…"; }
-    else if (st.instalado) { cor = "#15803d"; txt = "Assinador digital pronto neste computador (versão " + esc(st.versao || "?") + "). Os botões Assinar e Verificar usam o certificado instalado no Windows."; }
-    else { cor = "#b45309"; txt = "Assinar e verificar não estão disponíveis aqui: " + esc(st.motivo || "assinador não encontrado.") + " Os documentos continuam abrindo e baixando normalmente."; }
-    return '<div class="dob-faixa" style="border-left:4px solid ' + cor + ';background:' + cor + '12;padding:7px 10px;border-radius:6px;font-size:12.5px;margin-bottom:12px">' + txt + "</div>";
+    /* roteiro de módulo: era uma faixa colorida de largura inteira; o estado
+       do assinador é CONTEXTO e mora na linha de baixo do título — a frase
+       longa virou dica (`title`). A classe `.dob-faixa` fica (e2e-docobra). */
+    var cor, txt, dica = "";
+    if (!st.carregado) { cor = "var(--texto-fraco)"; txt = "Conferindo o assinador digital deste computador…"; }
+    else if (st.instalado) { cor = "var(--verde)"; txt = "Assinador digital pronto neste computador (versão " + esc(st.versao || "?") + ")"; dica = "Os botões Assinar e Verificar usam o certificado instalado no Windows."; }
+    else { cor = "var(--amarelo)"; txt = "Assinar e verificar indisponíveis aqui"; dica = (st.motivo || "assinador não encontrado.") + " Os documentos continuam abrindo e baixando normalmente."; }
+    return '<span class="dob-faixa" style="color:' + cor + '"' + (dica ? ' title="' + esc(dica) + '"' : "") + ">" + txt + "</span>";
   }
 
   function pillEstado(e) {
-    var cores = { assinado: "#15803d", pendencia: "#b45309", emitido: "#475569", rascunho: "#64748b", enviado: "#1d4ed8", substituido: "#64748b", cancelado: "#b91c1c" };
-    var c = cores[e.codigo] || "#475569";
-    return '<span class="g-pill" style="background:' + c + '1f;color:' + c + ';font-weight:700">' + esc(e.rotulo) + "</span>";
+    /* só tokens (roteiro de módulo): os hex soltos sumiam no tema escuro */
+    var cores = { assinado: "var(--verde)", pendencia: "var(--amarelo)", emitido: "var(--texto-fraco)", rascunho: "var(--texto-fraco)", enviado: "var(--aco)", substituido: "var(--texto-fraco)", cancelado: "var(--vermelho)" };
+    var c = cores[e.codigo] || "var(--texto-fraco)";
+    return '<span class="g-pill" style="color:' + c + ';font-weight:var(--p-forte)">' + esc(e.rotulo) + "</span>";
   }
 
   function linha(M, d) {
@@ -253,7 +302,7 @@
     var a = d.arquivo || {};
     var arq = a.nome ? '<div style="font-size:11px;word-break:break-all">' + esc(a.nome) + "</div><div class=\"muted\" style=\"font-size:10.5px\">" + tamanho(a.tam) +
       ((d.versoes || []).length > 1 ? " · " + d.versoes.length + " versões" : "") + "</div>" +
-      (presente(d) ? "" : '<div style="font-size:10.5px;color:#b45309">não está neste computador</div>') : '<span class="muted">—</span>';
+      (presente(d) ? "" : ((typeof ArquivosNuvem !== "undefined" && ArquivosNuvem.ativo()) ? '<div style="font-size:10.5px;color:var(--texto-fraco)">na nuvem: baixa ao abrir</div>' : '<div style="font-size:10.5px;color:#b45309">não está neste computador</div>')) : '<span class="muted">—</span>';
     var pdf = ehPdfReg(d), vivo = e.codigo !== "cancelado" && e.codigo !== "substituido";
     var acoes = '<button class="btn sm" data-gacao="dob-abrir" data-id="' + esc(d.id) + '">Abrir</button> ' +
       (pdf && vivo ? '<button class="btn sm primary" data-gacao="dob-assinar" data-id="' + esc(d.id) + '">Assinar</button> ' : "") +
@@ -369,7 +418,7 @@
         reg.criadoPor = quem();
         var tipoMime = fc.arquivo.type || (/\.pdf$/i.test(fc.arquivo.name) ? "application/pdf" : "application/octet-stream");
         var chave = M.chaveArquivo(eid(), fc.obraId, reg.id, sha);
-        return guardarBytes(chave, fc.arquivo.name, tipoMime, bytes).then(function () {
+        return guardarBytes(chave, fc.arquivo.name, tipoMime, bytes, fc.obraId).then(function () {
           M.trocarArquivo(reg, { chave: chave, nome: fc.arquivo.name, tipo: tipoMime, tam: bytes.length, sha256: sha }, quem(), "original", agora());
           M.evento(reg, "adicionou", quem(), fc.arquivo.name + " · " + tamanho(bytes.length) + " · SHA-256 " + sha.slice(0, 16) + "…", agora());
           var errosF = M.validar(reg);
@@ -556,7 +605,7 @@
       var atual = acharDoc(d.id) || d;
       var chave = M.chaveArquivo(eid(), atual.obraId || "sem", atual.id, sha);
       var nomeArq = String((atual.arquivo && atual.arquivo.nome) || "documento.pdf").replace(/(\s*-\s*assinado)?(\.pdf)?$/i, "") + " - assinado.pdf";
-      return guardarBytes(chave, nomeArq, "application/pdf", novo).then(function () {
+      return guardarBytes(chave, nomeArq, "application/pdf", novo, atual.obraId).then(function () {
         var motivo = "assinado por " + cert.titular + " (" + cert.documentoFormatado + ")" + (manus ? " + manuscrita autorizada de " + manus.nome : "");
         M.trocarArquivo(atual, { chave: chave, nome: nomeArq, tipo: "application/pdf", tam: novo.length, sha256: sha }, quem(), motivo, agora());
         if (manus) {
@@ -656,7 +705,7 @@
           nova.id = Util.uid("dob"); nova.data = data; nova.observacao = obs; nova.criadoPor = quem();
           var tipoMime = f.type || (/\.pdf$/i.test(f.name) ? "application/pdf" : "application/octet-stream");
           var chave = M.chaveArquivo(eid(), nova.obraId, nova.id, sha);
-          return guardarBytes(chave, f.name, tipoMime, bytes).then(function () {
+          return guardarBytes(chave, f.name, tipoMime, bytes, nova.obraId).then(function () {
             M.trocarArquivo(nova, { chave: chave, nome: f.name, tipo: tipoMime, tam: bytes.length, sha256: sha }, quem(), "original", agora());
             M.evento(nova, "adicionou revisão", quem(), revN + " substitui " + (d.revisao || "a anterior") + (obs ? " — " + obs : "") + " · SHA-256 " + sha.slice(0, 16) + "…", agora());
             if (!salvarDoc(nova)) return;

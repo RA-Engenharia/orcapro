@@ -91,6 +91,13 @@
      * so o endereco dela, e no outro aparelho a vista abre sem a foto em vez
      * de nao abrir. */
     "bim_vistas",
+    /* FAMÍLIAS PARAMÉTRICAS da empresa (js/familia.js, js/familiaui.js): é
+     * trabalho autoral — a porta com os tipos dela, a bancada com a fórmula do
+     * tampo. É da EMPRESA, sem obraId. A família vai como TEXTO (campo `json`)
+     * e não como objeto: ela tem listas dentro de listas (tipos, sólidos,
+     * contorno) e o Firestore recusa array dentro de array — foi o que deixou
+     * bim_vistas sem sincronizar (memória orcapro-nuvem-lista-em-lista). */
+    "bim_familias",
     /* o PROJETO ESTRUTURAL lido do PDF (js/estrutpdf.js): locação, armação,
      * cobrimentos e as vistas de cada peça. É o que o mestre de obras abre no
      * celular do canteiro — tem de chegar lá. O PDF em si NÃO viaja (mora no

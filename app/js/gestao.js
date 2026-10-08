@@ -18,6 +18,13 @@
   if (!FinStatus && typeof require === "function") {
     try { FinStatus = require("./finstatus.js"); } catch (eFS) {}
   }
+  /* o kit do PADRÃO DE TELA (js/modulo.js, ROTEIRO-MODULO.md). Mesmo motivo
+     do FinStatus acima: as suítes carregam gestao.js sozinho no Node e
+     renderizam as telas — sem o require, Modulo.cab estourava ReferenceError. */
+  var Modulo = global.Modulo;
+  if (!Modulo && typeof require === "function") {
+    try { Modulo = require("./modulo.js"); } catch (eMd) {}
+  }
 
   // ---------- Fotos dos RDOs (Portal do Cliente) ----------
   var RDO_MAX_FOTOS = 20;           /* teto de fotos por diário. Só pôde subir de 6
@@ -670,6 +677,49 @@
     }
     return '<div class="vazio card"><h3>' + txt + "</h3>" + (gacao ? '<button class="btn primary mt" data-gacao="' + gacao + '">' + (semMais ? "" : "+ ") + btn + "</button>" : "") + "</div>";
   }
+  /* O VAZIO DO KIT (js/modulo.js) com a MESMA guarda do vazioBox: lista vazia
+     por leitura que falhou não pode virar convite para gravar por cima. Quando
+     a entidade da tela está ilegível, quem responde é o vazioBox (o recado e a
+     trava moram lá, num lugar só); senão, o desenho único do roteiro.
+     o = { icone, titulo, texto, gacao, botao } — a ação é UMA (ROTEIRO §1). */
+  /* O kit no navegador é o global que o index.html carrega antes deste
+     arquivo. Nas suítes de Node que fazem `require("js/gestao.js")` ele não
+     foi carregado por ninguém — então vem pelo require, do mesmo diretório,
+     em vez de cada suíte ter de lembrar dele. */
+  function kit() {
+    if (typeof Modulo !== "undefined") return Modulo;
+    try { if (typeof require === "function") return require("./modulo.js"); } catch (eK) {}
+    return null;
+  }
+  /* UM vazioKit só (merge de 08/10/2026: financeiro e canteiro tinham criado um
+     cada, com chamadas diferentes). Aceita as duas formas:
+       { icone, titulo, texto, gacao, botao }  → o botão é montado aqui;
+       { icone, titulo, texto, acaoHtml }      → a ação já vem pronta. */
+  function vazioKit(o) {
+    o = o || {};
+    var entV = "", mV = null, K = kit();
+    try { entV = (typeof App !== "undefined" && App.view) ? String(App.view) : ""; } catch (eV) { entV = ""; }
+    try { mV = (entV && typeof Store !== "undefined" && Store.ilegivel) ? Store.ilegivel(eid(), entV) : null; } catch (eI) { mV = null; }
+    if ((mV && mV.bloqueia) || !K) return vazioBox(Util.esc(o.titulo || ""), o.gacao || "", o.botao || "");
+    return K.vazio({ icone: o.icone, titulo: o.titulo, texto: o.texto,
+      acaoHtml: o.acaoHtml || (o.gacao ? '<button class="btn primary" data-gacao="' + o.gacao + '">+ ' + Util.esc(o.botao || "Novo") + "</button>" : "") });
+  }
+  /* VAZIO NO PADRÃO DE TELA (ROTEIRO-MODULO.md §1: ícone + frase + UMA ação).
+     o = { icone (nome do Icones), titulo, texto, gacao, btn, solto }
+     ⚠ A guarda da quarentena é a MESMA do `vazioBox`, e a caixa também: com a
+       entidade ilegível, "Nenhum pedido · + Criar primeiro" é o convite para
+       gravar por cima do arquivo que não abriu. Por isso delega para ele.
+     `solto`: o vazio já está dentro de uma seção (não abre outro cartão). */
+  function vazioMod(o) {
+    o = o || {};
+    var ent = "", mI = null;
+    try { ent = (typeof App !== "undefined" && App.view) ? String(App.view) : ""; } catch (eV) { ent = ""; }
+    try { mI = (ent && typeof Store !== "undefined" && Store.ilegivel) ? Store.ilegivel(eid(), ent) : null; } catch (eI) { mI = null; }
+    if (mI && mI.bloqueia) return vazioBox("", "", "");
+    var v0 = Modulo.vazio({ icone: o.icone, titulo: o.titulo, texto: o.texto,
+      acaoHtml: o.gacao ? '<button class="btn primary" data-gacao="' + o.gacao + '">+ ' + o.btn + "</button>" : "" });
+    return o.solto ? v0 : Modulo.secao({ corpoHtml: v0 });
+  }
 
   // Ícones profissionais (monoline SVG, estilo Lucide) — sem emoji.
   var ICON = {
@@ -745,6 +795,8 @@
       lista: function (ent) { return lista(ent); },
       rot: rot, opts: opts, optsRec: optsRec, pill: pill,
       campo: campo, inp: inp, sel: sel, vazioBox: vazioBox,
+      /* o vazio do kit de módulo com a trava da quarentena (roteiro de 08/10/2026) */
+      vazioKit: vazioKit,
       v: v, nv: nv, numBR: numBR, svg: svg
     },
 
@@ -890,6 +942,8 @@
       { id: "relatorios", nome: "Relatórios" },
       { id: "usuarios", nome: "Usuários", g: "config" },
       { id: "modelos", nome: "Modelos de Doc.", curto: "Modelos de documento", g: "config" },
+      /* penas, linhas, textos, cotas e notação dos desenhos técnicos (js/padraodet.js) — vale para a empresa toda */
+      { id: "padraodet", nome: "Padrão de detalhamento", curto: "Detalhamento", g: "config" },
       { id: "ajuda", nome: "Ajuda", g: "config" },
       /* fica ao lado da Ajuda porque é para lá que a pessoa vai quando algo dá
          errado — e como a Ajuda é liberada para TODO usuário (Auth.podeModulo),
@@ -1626,6 +1680,7 @@
         case "folha": return this.renderFolha();
         case "relatorios": return this.renderRelatorios();
         case "modelos": return this.renderModelos();
+        case "padraodet": return this.renderPadraoDet();
         case "usuarios": return this.renderUsuarios();
         case "ajuda": return this.renderAjuda();
         case "relatos": return this.renderRelatos();
@@ -1689,6 +1744,10 @@
       return '<div class="flex between mb tela-head"><h1 style="margin:0">' + titulo + "</h1><div class=\"flex tela-acoes\">" + (extra || "") +
         (gacao ? '<button class="btn primary" data-gacao="' + gacao + '">+ ' + btn + "</button>" : "") + "</div></div>";
     },
+    /* o desenho do ícone do MENU para o kit de tela (js/modulo.js): o
+       cabeçalho do módulo mostra o mesmo ícone da barra lateral (ROTEIRO §2).
+       Vazio quando o nome não é de módulo — aí o kit procura no js/icones.js. */
+    iconeModulo: function (id, tam) { return ICON[id] ? svg(id, tam) : ""; },
 
     // =================== PAINEL / DASHBOARD ===================
     /* METAS DA EMPRESA — o Painel julgava todo mundo pela mesma régua, cravada
@@ -3136,15 +3195,28 @@
       var multi = !!this._dashMulti || !!(selIds && selIds.length > 1);
       var campoObra = multi ? '<select data-gacao="dash-obra" multiple size="5" title="Segure ' + (_ehMac() ? "Command" : "Ctrl") + ' para marcar mais de uma obra">' + optO + "</select>" : '<select data-gacao="dash-obra">' + optO + "</select>";
       var optP = ["mes", "6m", "ano", "tudo"].map(function (p) { return '<option value="' + p + '"' + (self._dashPer === p ? " selected" : "") + ">" + perRot[p] + "</option>"; }).join("");
-      var html = '<div class="pn"><div class="pn-cab"><div><h1>Painel de Gestão</h1><p class="pn-cab-sub">' + e(this._pnDataExtenso(m.hoje)) + ". " + N(m.obras.emAndamento, "obra em andamento", "obras em andamento") + " de " + m.obras.total + (m.filtrado ? ", no recorte escolhido" : "") + ".</p></div>"
-        + '<div class="pn-filtros" role="group" aria-label="Recorte do painel">'
+      /* PADRÃO DE TELA (ROTEIRO-MODULO.md): o cabeçalho do Painel é o do kit,
+         igual ao de todo módulo — título com o ícone do menu, a linha de
+         contexto e, à direita, o RECORTE (obra, somar obras e período) no slot
+         de obra; das três ações, as duas mais usadas à vista e "Metas" no
+         "Mais" (mesmo botão, mesmo `data-gacao`). Os blocos abaixo são o
+         produto e não mudam. ⚠ O título continua "Painel de Gestão": é o nome
+         que o relatório impresso (`painelImprimir`) e a ajuda usam. */
+      var K = kit();
+      var recorte = '<div class="pn-filtros" role="group" aria-label="Recorte do painel">'
         + '<label class="pn-filtro">Obra ' + campoObra + "</label>"
         + '<button class="pn-ctl pn-ctl-ghost" data-gacao="dash-obra-multi" title="' + (multi ? "Voltar a escolher uma obra por vez" : "Somar mais de uma obra no mesmo recorte") + '">' + (multi ? "uma obra" : "+ somar obras") + "</button>"
-        + '<label class="pn-filtro">Período <select data-gacao="dash-periodo">' + optP + "</select></label>"
-        + (podeFin ? '<button class="pn-ctl pn-ctl-ghost" data-gacao="dash-metas" title="Definir a margem saudável, a meta de PPC, a meta de recebimento e o aviso de contas a vencer">Metas</button>' : "")
-        + '<button class="pn-ctl pn-ctl-ghost" data-gacao="painel-organizar" title="Escolher quais blocos aparecem e em que ordem">Organizar painel</button>'
-        + '<button class="pn-ctl pn-ctl-ghost" data-gacao="painel-imprimir" title="Abre o painel numa janela de impressão; salve como PDF">Relatório</button>'
-        + "</div></div>";
+        + '<label class="pn-filtro">Período <select data-gacao="dash-periodo">' + optP + "</select></label></div>";
+      var html = '<div class="pn">' + K.cab({
+        icone: "dashboard", titulo: "Painel de Gestão",
+        sub: this._pnDataExtenso(m.hoje) + ". " + N(m.obras.emAndamento, "obra em andamento", "obras em andamento") + " de " + m.obras.total + (m.filtrado ? ", no recorte escolhido" : "") + ".",
+        obraHtml: recorte,
+        acoes: [
+          '<button class="btn" data-gacao="painel-imprimir" title="Abre o painel numa janela de impressão; salve como PDF">Relatório</button>',
+          '<button class="btn" data-gacao="painel-organizar" title="Escolher quais blocos aparecem e em que ordem">Organizar painel</button>',
+          podeFin ? '<button class="btn" data-gacao="dash-metas" title="Definir a margem saudável, a meta de PPC, a meta de recebimento e o aviso de contas a vencer">Metas</button>' : ""
+        ]
+      });
       var blocos = PainelDados.blocosOrdenados(ctx.prefs), fn = { tiles: "_pnBlTiles", posicao: "_pnBlPosicao", agenda: "_pnBlAgenda", previsao: "_pnBlPrevisao", fluxo: "_pnBlFluxo", composicao: "_pnBlComposicao", lucro: "_pnBlLucro", metas: "_pnBlMetas", obras: "_pnBlObras", orcado: "_pnBlOrcado", operacao: "_pnBlOperacao" };
       var esq = "", cheia = "", escondidos = 0;
       blocos.forEach(function (b) {
@@ -4553,8 +4625,20 @@
     // =================== OBRAS ===================
     renderObras: function () {
       var obras = lista("obras"), clientes = lista("clientes");
-      var html = this._head(svg("obras") + "Obras", "nova-obra", "Nova obra");
-      if (!obras.length) return html + vazioBox("Nenhuma obra cadastrada", "nova-obra", "Criar primeira obra");
+      /* ROTEIRO DE MÓDULO (08/10/2026): o PALCO é a identidade desta tela e
+         fica; o cabeçalho e as ações seguem o kit. O "Avaliações dos
+         clientes" morava numa fileira própria entre o título e o palco —
+         subiu para as ações do cabeçalho. */
+      var nAnd = obras.filter(function (o) { return o && o.status === "andamento"; }).length;
+      var html = Modulo.cab({ icone: "obra", titulo: "Obras",
+        sub: obras.length ? obras.length + " obra" + (obras.length === 1 ? "" : "s") + (nAnd ? " · " + nAnd + " em andamento" : "") : "Cadastro e acompanhamento de cada obra",
+        acoes: [obras.some(function (o) { return o.portalUser; })
+          /* atalho para o que o cliente respondeu: a nota do cliente é
+             informação de gestão — quem abre Obras de manhã tem de topar com ela */
+          ? '<button class="btn" data-gacao="avaliacoes-portal">' + (typeof Icones !== 'undefined' ? Icones.get('estrela', 15) : '') + " Avaliações dos clientes</button>" : ""],
+        primariaHtml: '<button class="btn primary" data-gacao="nova-obra">+ Nova obra</button>' });
+      if (!obras.length) return html + vazioKit({ icone: "obra", titulo: "Nenhuma obra cadastrada",
+        texto: "A obra é o centro: orçamento, diário, medições e compras se ligam a ela." });
       /* O PALCO (js/obravitrine.js): a obra em destaque no topo, trocada pelo
          mouse sobre o card. O motor escreve o texto; daqui saem os números da
          régua ÚNICA do engenheiro (_avancoMedido / _medidoEmValor) e as
@@ -4580,12 +4664,6 @@
          o título, o palco e a grade vêm por cima. Sem obra em destaque (motor
          ausente), a tela fica exatamente como era. */
       if (vit.id) html = '<div class="ov-cena' + (fichaCtx ? " ficha-aberta" : "") + '">' + vit.cenario + html;
-      /* atalho para o que o cliente respondeu. Fica aqui, e não escondido dentro
-         do modal do Portal, porque a nota do cliente é informação de gestão:
-         quem abre Obras de manhã tem de topar com ela. */
-      if (obras.some(function (o) { return o.portalUser; })) {
-        html += '<div style="margin:-4px 0 12px"><button class="btn sm" data-gacao="avaliacoes-portal" style="font-size:12.5px">' + (typeof Icones !== 'undefined' ? Icones.get('estrela', 15) : '') + ' Avaliações dos clientes</button></div>';
-      }
       html += vit.html;
       if (fichaCtx) html += ObraVitrine.fichaHtml(fichaCtx);
       /* A FILEIRA (11/09/2026): um trilho só no pé da cena, e o card é a foto
@@ -6209,15 +6287,29 @@
     },
 
     // =================== CLIENTES ===================
+    /* PADRÃO DE TELA (ROTEIRO-MODULO.md, 08/10/2026): cabeçalho do kit com a
+       contagem na linha de contexto, a tabela dentro da seção e o vazio com
+       uma ação. ⚠ O vazio por LEITURA QUE FALHOU continua sendo o do
+       `vazioBox` (quarentena do Store): ali "cadastre o primeiro" seria o
+       convite para gravar por cima — o kit ainda não conhece esse caso. */
     renderClientes: function () {
       var cs = lista("clientes");
-      var html = this._head(svg("clientes") + "Clientes", "nova-cliente", "Novo cliente");
-      if (!cs.length) return html + vazioBox("Nenhum cliente cadastrado", "nova-cliente", "Cadastrar primeiro cliente");
-      html += '<table class="tbl"><thead><tr><th>Nome</th><th>Tipo</th><th>CPF/CNPJ</th><th>Telefone</th><th>Cidade</th><th>Status</th></tr></thead><tbody>';
+      var html = Modulo.cab({ icone: "pessoas", titulo: "Clientes",
+        sub: cs.length ? cs.length + (cs.length === 1 ? " cliente cadastrado" : " clientes cadastrados") : "Quem contrata as suas obras",
+        primariaHtml: '<button class="btn primary" data-gacao="nova-cliente">+ Novo cliente</button>' });
+      if (!cs.length) {
+        var mIl = null;
+        try { mIl = Store.ilegivel ? Store.ilegivel(eid(), "clientes") : null; } catch (eI) { mIl = null; }
+        if (mIl && mIl.bloqueia) return html + vazioBox("Nenhum cliente cadastrado", "nova-cliente", "Cadastrar primeiro cliente");
+        return html + Modulo.vazio({ icone: "pessoas", titulo: "Nenhum cliente cadastrado",
+          texto: "Cadastre quem contrata as suas obras.",
+          acaoHtml: '<button class="btn primary" data-gacao="nova-cliente">+ Cadastrar primeiro cliente</button>' });
+      }
+      var t = '<table class="tbl"><thead><tr><th>Nome</th><th>Tipo</th><th>CPF/CNPJ</th><th>Telefone</th><th>Cidade</th><th>Status</th></tr></thead><tbody>';
       cs.forEach(function (c) {
-        html += '<tr class="lin" style="cursor:pointer" data-gopen="clientes:' + c.id + '"><td><b>' + Util.esc(c.nome) + "</b></td><td>" + rot(P.clienteTipo, c.tipo) + "</td><td>" + Util.esc(c.doc || "—") + "</td><td>" + Util.esc(c.telefone || "—") + "</td><td>" + Util.esc(c.cidade || "—") + (c.uf ? "/" + Util.esc(c.uf) : "") + "</td><td>" + pill(c.status) + "</td></tr>";
+        t += '<tr class="lin" style="cursor:pointer" data-gopen="clientes:' + c.id + '"><td><b>' + Util.esc(c.nome) + "</b></td><td>" + rot(P.clienteTipo, c.tipo) + "</td><td>" + Util.esc(c.doc || "—") + "</td><td>" + Util.esc(c.telefone || "—") + "</td><td>" + Util.esc(c.cidade || "—") + (c.uf ? "/" + Util.esc(c.uf) : "") + "</td><td>" + pill(c.status) + "</td></tr>";
       });
-      return html + "</tbody></table>";
+      return html + Modulo.secao({ corpoHtml: t + "</tbody></table>" });
     },
     novoCliente: function () { this.formCliente(null); },
     formCliente: function (c) {
@@ -6240,22 +6332,73 @@
     },
 
     // =================== CONTRATOS ===================
+    /* PADRÃO DE TELA (ROTEIRO-MODULO.md, 08/10/2026). Antes: a tabela e, embaixo
+       dela, UM CARTÃO POR CONTRATO com três KPIs (assinatura, aditivos,
+       vigente) — numa empresa com 12 contratos, 12 faixas de números e 12
+       "Nenhum termo aditivo" repetidos. Agora:
+         - a faixa única de indicadores soma a carteira (assinatura, aditivos
+           aprovados, vigente, pendentes);
+         - a TABELA mostra, em cada linha, assinatura → aditivos → vigente, e a
+           porta [+ Aditivo] do contrato;
+         - a seção "Termos aditivos — contrato X" só aparece para o contrato
+           que TEM aditivo (ou pendente), com a lista e a aprovação.
+       ⚠ O valor vigente continua sendo a conta do motor (Aditivo.vigente), nunca
+       um campo: `c.valor` é o de ASSINATURA. E o pendente aparece sem somar. */
+    _contratoVigente: function (c) {
+      /* ⚠ COM GUARDA, como os outros seis pontos que chamam o motor. Um PWA
+         cujo pré-cache perdeu js/aditivo.js abre pelo cache no canteiro sem
+         sinal, e sem isto a tela de Contratos inteira morre no primeiro
+         contrato — sem tela e sem mensagem. */
+      return (typeof Aditivo !== "undefined" && Aditivo.vigente)
+        ? Aditivo.vigente(c, listaTodas("aditivos"))
+        : { original: Util.num(c.valor), aditivoAprovado: 0, aditivoPendente: 0,
+            valor: Util.num(c.valor), nPendentes: 0, pctAditivo: 0 };
+    },
     renderContratos: function () {
       var self = this;
-      var cs = lista("contratos"), obras = lista("obras"), clientes = lista("clientes");
-      var html = this._head(svg("contratos") + "Contratos", "novo-contrato", "Novo contrato");
-      if (!cs.length) return html + vazioBox("Nenhum contrato cadastrado", "novo-contrato", "Criar primeiro contrato");
-      html += '<table class="tbl"><thead><tr><th>Nº</th><th>Cliente</th><th>Obra</th><th>Tipo</th><th class="num">Valor</th><th>Status</th></tr></thead><tbody>';
+      var cs = lista("contratos"), obras = lista("obras");
+      var html = Modulo.cab({ icone: "assinar", titulo: "Contratos",
+        sub: cs.length ? cs.length + (cs.length === 1 ? " contrato" : " contratos") + " · o valor vigente é o de assinatura mais os aditivos aprovados" : "Os contratos das suas obras",
+        primariaHtml: '<button class="btn primary" data-gacao="novo-contrato">+ Novo contrato</button>' });
+      if (!cs.length) {
+        var mIl = null;
+        try { mIl = Store.ilegivel ? Store.ilegivel(eid(), "contratos") : null; } catch (eI) { mIl = null; }
+        if (mIl && mIl.bloqueia) return html + vazioBox("Nenhum contrato cadastrado", "novo-contrato", "Criar primeiro contrato");
+        return html + Modulo.vazio({ icone: "assinar", titulo: "Nenhum contrato cadastrado",
+          texto: "O contrato liga o cliente à obra e é o teto do que a medição fatura.",
+          acaoHtml: '<button class="btn primary" data-gacao="novo-contrato">+ Criar primeiro contrato</button>' });
+      }
+      var tot = { orig: 0, apr: 0, vig: 0, pend: 0, nPend: 0 }, vigs = {};
       cs.forEach(function (c) {
-        var ob = obras.filter(function (o) { return o.id === c.obraId; })[0];
-        html += '<tr class="lin" style="cursor:pointer" data-gopen="contratos:' + c.id + '"><td><b>' + Util.esc(c.numero || "—") + "</b></td><td>" + Util.esc(c.clienteNome || "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + rot(P.contratoTipo, c.tipo) + '</td><td class="num">' + Util.fmtMoeda(c.valor) + "</td><td>" + pill(c.status) + "</td></tr>";
+        var v = self._contratoVigente(c); vigs[c.id] = v;
+        tot.orig += Util.num(v.original); tot.apr += Util.num(v.aditivoAprovado); tot.vig += Util.num(v.valor);
+        tot.pend += Util.num(v.aditivoPendente); tot.nPend += Util.num(v.nPendentes);
       });
-      html += "</tbody></table>";
+      html += Modulo.kpis([
+        { rotulo: "Valor de assinatura", valor: Util.fmtMoeda(tot.orig), sub: cs.length + (cs.length === 1 ? " contrato" : " contratos") },
+        { rotulo: "Aditivos aprovados", tom: tot.apr < 0 ? "neg" : (tot.apr > 0 ? "pos" : ""), valor: (tot.apr >= 0 ? "+" : "") + Util.fmtMoeda(tot.apr) },
+        { rotulo: "Valor vigente", tom: "info", valor: Util.fmtMoeda(tot.vig) },
+        { rotulo: "Aguardando aprovação", tom: tot.nPend ? "alerta" : "", valor: tot.nPend ? Util.fmtMoeda(tot.pend) : "—",
+          sub: tot.nPend ? tot.nPend + " aditivo(s) — não entram no vigente" : "nenhum aditivo pendente" }
+      ]);
+      var t = '<table class="tbl"><thead><tr><th>Nº</th><th>Cliente</th><th>Obra</th><th>Tipo</th><th class="num">Assinatura</th><th class="num">Aditivos</th><th class="num">Vigente</th><th>Status</th><th></th></tr></thead><tbody>';
+      cs.forEach(function (c) {
+        var ob = obras.filter(function (o) { return o.id === c.obraId; })[0], v = vigs[c.id];
+        var apr = Util.num(v.aditivoAprovado);
+        t += '<tr class="lin" style="cursor:pointer" data-gopen="contratos:' + c.id + '"><td style="white-space:nowrap"><b>' + Util.esc(c.numero || "—") + "</b></td><td>" + Util.esc(c.clienteNome || "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + rot(P.contratoTipo, c.tipo) + '</td>' +
+          '<td class="num">' + Util.fmtMoeda(c.valor) + '</td>' +
+          '<td class="num"' + (apr < 0 ? ' style="color:var(--vermelho)"' : "") + '>' + (apr ? (apr > 0 ? "+" : "") + Util.fmtMoeda(apr) : "—") + '</td>' +
+          '<td class="num"><b>' + Util.fmtMoeda(v.valor) + '</b></td>' +
+          "<td>" + pill(c.status) + "</td>" +
+          /* a porta do aditivo DESTE contrato: o botão vence o clique da linha
+             (o despacho pega o elemento mais interno com data-gacao) */
+          '<td style="text-align:right;white-space:nowrap"><button class="btn sm" data-gacao="aditivo-novo" data-ctr="' + c.id + '" title="Registrar um termo aditivo deste contrato (valor e/ou prazo) — entra no vigente depois de aprovado">+ Aditivo</button></td></tr>';
+      });
+      html += Modulo.secao({ corpoHtml: t + "</tbody></table>" });
       /* ⚠ O ADITIVO MORA JUNTO DO CONTRATO, e nao numa tela propria: e um
          documento QUE ALTERA outro, e separa-los faria alguem ler o valor de
-         assinatura achando que e o vigente — exatamente o que esta mudanca
-         veio corrigir. Um bloco por contrato, com o valor vigente na frente. */
-      cs.forEach(function (c) { html += self._aditivoBloco(c); });
+         assinatura achando que e o vigente. Uma seção por contrato COM aditivo. */
+      cs.forEach(function (c) { html += self._aditivoBloco(c, vigs[c.id]); });
       return html;
     },
     /* =================================================================
@@ -6294,47 +6437,29 @@
         .sort(function (a, b) { return String(a.data || "").localeCompare(String(b.data || "")); });
     },
 
-    _aditivoBloco: function (c) {
+    _aditivoBloco: function (c, vig) {
       var self = this, ads = this._aditivosDo(c.id);
-      /* ⚠ COM GUARDA, como os outros seis pontos que chamam o motor. Um PWA
-         cujo pré-cache perdeu js/aditivo.js abre pelo cache no canteiro sem
-         sinal, e sem isto a tela de Contratos inteira morre no primeiro
-         contrato — sem tela e sem mensagem. */
-      var vig = (typeof Aditivo !== "undefined" && Aditivo.vigente)
-        ? Aditivo.vigente(c, listaTodas("aditivos"))
-        : { original: Util.num(c.valor), aditivoAprovado: 0, aditivoPendente: 0,
-            valor: Util.num(c.valor), nPendentes: 0, pctAditivo: 0 };
-      var html = '<div class="card" style="margin-top:12px">' +
-        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">' +
-        /* ⚠ O CARD PRECISA DIZER DE QUEM É. Numa empresa com 12 contratos
-           vinham 12 cards visualmente idênticos, todos "Termos aditivos" e
-           todos com "01º TA" na primeira linha — e o botão ao lado levanta o
-           teto de faturamento de um contrato específico. */
-        '<b style="flex:1">' + svg("contratos") + ' Termos aditivos — contrato ' +
-          Util.esc(c.numero || "—") + '</b>' +
-        '<button class="btn sm primary" data-gacao="aditivo-novo" data-ctr="' + c.id + '">+ Novo aditivo</button></div>';
-
-      html += '<div class="kpis" style="margin-bottom:10px">' +
-        '<div class="kpi"><div class="rotulo">Valor de assinatura</div><div class="num">' + Util.fmtMoeda(vig.original) + '</div></div>' +
-        '<div class="kpi"><div class="rotulo">Aditivos aprovados</div><div class="num" style="color:' + (vig.aditivoAprovado < 0 ? "var(--vermelho)" : "var(--verde)") + '">' +
-          (vig.aditivoAprovado >= 0 ? "+" : "") + Util.fmtMoeda(vig.aditivoAprovado) +
-          (vig.original > 0 ? ' <span style="font-size:11px;color:#64748b">(' + Util.fmtNum(vig.pctAditivo, 1) + '%)</span>' : "") + '</div></div>' +
-        '<div class="kpi destaque"><div class="rotulo">Valor vigente</div><div class="num">' + Util.fmtMoeda(vig.valor) + '</div></div>' +
-        '</div>';
-
+      vig = vig || this._contratoVigente(c);
+      /* contrato sem termo aditivo não ganha seção: o vigente dele já está na
+         linha da tabela, e a porta [+ Aditivo] também (padrão de tela) */
+      if (!ads.length && !vig.aditivoPendente) return "";
+      /* ⚠ A SEÇÃO PRECISA DIZER DE QUEM É. Numa empresa com 12 contratos
+         vinham 12 cards visualmente idênticos, todos "Termos aditivos" e
+         todos com "01º TA" na primeira linha — e o botão ao lado levanta o
+         teto de faturamento de um contrato específico. */
+      var tit = "Termos aditivos — contrato " + (c.numero || "—");
+      var sub = "Assinatura " + Util.fmtMoeda(vig.original) + " · aditivos aprovados " + (vig.aditivoAprovado >= 0 ? "+" : "") + Util.fmtMoeda(vig.aditivoAprovado) +
+        (vig.original > 0 ? " (" + Util.fmtNum(vig.pctAditivo, 1) + "%)" : "") + " · vigente " + Util.fmtMoeda(vig.valor);
+      var html = "";
       /* ⚠ O PENDENTE APARECE E NÃO CONTA. Se ele levantasse o teto, bastaria
          digitar um aditivo para faturar o que se quisesse — e a aprovação
          viraria enfeite. Mostrar é informação; somar seria permissão. */
       if (vig.aditivoPendente !== 0) {
-        html += '<div class="muted" style="color:#b45309;margin-bottom:8px;font-size:13px">' +
+        html += '<div class="muted" style="color:var(--amarelo);margin-bottom:8px;font-size:var(--t-peq)">' +
           vig.nPendentes + ' aditivo(s) aguardando aprovação, somando ' + Util.fmtMoeda(vig.aditivoPendente) +
           ' — <b>não entram no valor vigente</b> até serem aprovados.</div>';
       }
-
-      if (!ads.length) {
-        return html + '<p class="muted" style="font-size:13px;margin:0">Nenhum termo aditivo. O contrato vale o valor de assinatura.</p></div>';
-      }
-      html += '<table class="tbl" style="font-size:12.5px"><thead><tr><th>Nº</th><th>Data</th><th>Motivo</th>' +
+      html += '<table class="tbl"><thead><tr><th>Nº</th><th>Data</th><th>Motivo</th>' +
         '<th class="num">Valor</th><th class="num">Prazo</th><th>Status</th><th></th></tr></thead><tbody>';
       ads.forEach(function (a) {
         var vv = Util.num(a.valor);
@@ -6359,7 +6484,8 @@
                 Util.esc(a.motivoRejeicao || "") + '">Corrigir e reenviar</button>'
               : '<span class="muted" style="font-size:11px">' + Util.esc(a.aprovadoPor || "") + '</span>')) + '</td></tr>';
       });
-      return html + '</tbody></table></div>';
+      return Modulo.secao({ titulo: tit, sub: sub, corpoHtml: html + '</tbody></table>',
+        acoesHtml: '<button class="btn sm" data-gacao="aditivo-novo" data-ctr="' + c.id + '">+ Novo aditivo</button>' });
     },
 
     novoAditivo: function (contratoId) {
@@ -6641,41 +6767,35 @@
         .sort(function (a, b) { return b.somaLib - a.somaLib; });
       return { grupos: lista_, totLib: totLib, totPrev: totPrev, totDev: totDev };
     },
+    /* ROTEIRO DE MÓDULO (08/10/2026): a retenção é a aba "Retenção" de
+       Medições — mesmo cabeçalho, indicadores do kit e uma seção por obra
+       (o "Devolver tudo" é a ação da seção). O botão "Voltar às medições"
+       saiu: voltar é a aba "Boletins". */
     renderRetencao: function () {
       var self = this, d = this._retencaoDados();
-      var html = this._head(svg("medicoes") + "Retenção contratual", "", "",
-        '<button class="btn sm" data-gacao="voltar-medicoes" style="margin-right:10px;align-self:center">'
-        + (typeof Icones !== "undefined" ? Icones.get("voltar", 15) : "") + " Voltar às medições</button>");
-
-      html += '<div class="kpis kpis-g" style="margin-bottom:14px">'
-        + '<div class="kpi"><span class="kpi-lbl">Retida — pode devolver</span><span class="kpi-val">' + Util.fmtMoeda(d.totLib) + "</span></div>"
-        + '<div class="kpi"><span class="kpi-lbl">Ainda não retida (medição não paga)</span><span class="kpi-val">' + Util.fmtMoeda(d.totPrev) + "</span></div>"
-        + '<div class="kpi"><span class="kpi-lbl">Já devolvida</span><span class="kpi-val">' + Util.fmtMoeda(d.totDev) + "</span></div></div>";
+      var html = this._medCab(this._medEscopo(), "Retenção contratual: o que está retido e o que já voltou ao cliente");
+      html += Modulo.kpis([
+        { rotulo: "Retida — pode devolver", valor: Util.fmtMoeda(d.totLib), tom: d.totLib > 0 ? "alerta" : "" },
+        { rotulo: "Ainda não retida", valor: Util.fmtMoeda(d.totPrev), sub: "medição não paga" },
+        { rotulo: "Já devolvida", valor: Util.fmtMoeda(d.totDev), tom: "pos" }
+      ]);
 
       if (!d.grupos.length) {
-        return html + vazioBox("Nenhuma medição com retenção", "", "");
+        return html + vazioKit({ icone: "cadeado", titulo: "Nenhuma medição com retenção",
+          texto: "A retenção aparece aqui quando uma medição é lançada com percentual retido." });
       }
-      html += '<p class="muted" style="font-size:13px;margin:0 0 12px">Devolver a retenção lança uma <b>receita</b> no Financeiro. A medição paga já lançou o líquido — juntos, os dois somam o valor cheio da medição, sem contar duas vezes.</p>';
 
       d.grupos.forEach(function (g) {
-        html += '<div class="card mt"><div class="flex between" style="align-items:center;margin-bottom:8px">'
-          + "<h3 style=\"margin:0\">" + Util.esc(g.obra) + "</h3>"
-          + '<div style="text-align:right">'
-          + (g.somaLib > 0
-              ? '<b style="font-size:15px">' + Util.fmtMoeda(g.somaLib) + "</b>"
-                + ' <button class="btn sm primary" data-gacao="retencao-liberar-obra" data-id="' + Util.esc(g.obraId) + '" style="margin-left:8px">Devolver tudo</button>'
-              : '<span class="muted">nada a devolver</span>')
-          + "</div></div>";
-        html += '<table class="tbl"><thead><tr><th>Medição</th><th>Status</th><th class="num">Valor</th><th class="num">Ret. %</th><th class="num">Retido</th><th></th></tr></thead><tbody>';
+        var t = '<table class="tbl"><thead><tr><th>Medição</th><th>Status</th><th class="num">Valor</th><th class="num">Ret. %</th><th class="num">Retido</th><th></th></tr></thead><tbody>';
         [].concat(g.liberavel, g.prevista, g.devolvida).forEach(function (m) {
           var v = Util.num(m.valor) * Util.num(m.retencao) / 100;
           var devolvida = !!m.retencaoLiberadaEm;
           var paga = String(m.status || "").toLowerCase() === "paga";
           var sit = devolvida
-            ? '<span class="g-pill" style="background:#16a34a22;color:#15803d">devolvida em ' + Util.esc(self._brData(m.retencaoLiberadaEm)) + "</span>"
-            : (paga ? '<span class="g-pill" style="background:#f59e0b22;color:#b45309">retida</span>'
-                    : '<span class="g-pill" style="background:#64748b22;color:#475569">medição não paga</span>');
-          html += "<tr><td><b>" + Util.esc(m.numero || m.id) + "</b></td><td>" + sit + "</td>"
+            ? '<span class="g-pill" style="color:var(--verde)">devolvida em ' + Util.esc(self._brData(m.retencaoLiberadaEm)) + "</span>"
+            : (paga ? '<span class="g-pill" style="color:var(--amarelo)">retida</span>'
+                    : '<span class="g-pill" style="color:var(--texto-fraco)">medição não paga</span>');
+          t += "<tr><td><b>" + Util.esc(m.numero || m.id) + "</b></td><td>" + sit + "</td>"
             + '<td class="num">' + Util.fmtMoeda(m.valor) + "</td>"
             + '<td class="num">' + Util.fmtNum(m.retencao, 1) + "%</td>"
             + '<td class="num"><b>' + Util.fmtMoeda(v) + "</b></td>"
@@ -6683,7 +6803,14 @@
                 ? '<button class="btn sm" data-gacao="retencao-liberar" data-id="' + Util.esc(m.id) + '">Devolver</button>' : "")
             + "</td></tr>";
         });
-        html += "</tbody></table></div>";
+        html += Modulo.secao({
+          titulo: g.obra,
+          sub: g.somaLib > 0 ? Util.fmtMoeda(g.somaLib) + " a devolver" : "nada a devolver",
+          /* devolver lança uma RECEITA no Financeiro; a medição paga já lançou
+             o líquido — juntos somam o valor cheio, sem contar duas vezes */
+          acoesHtml: g.somaLib > 0 ? '<button class="btn sm" data-gacao="retencao-liberar-obra" data-id="' + Util.esc(g.obraId) + '" title="Lança uma receita no Financeiro. A medição paga já lançou o líquido — juntos, os dois somam o valor cheio da medição, sem contar duas vezes.">Devolver tudo</button>' : "",
+          corpoHtml: t + "</tbody></table>"
+        });
       });
       return html;
     },
@@ -6723,82 +6850,94 @@
       return v;
     },
 
+    /* ROTEIRO DE MÓDULO (08/10/2026). O cabeçalho tinha seis peças numa
+       linha (Retenção, o seletor de obra com rótulo próprio, Puxar, CSV e o
+       "+ Nova medição"), a faixa de números falava outro dialeto (.fin-faixa,
+       com o "Recorte" fingindo de indicador e um "Ver todas" repetindo o
+       seletor) e as duas tabelas vinham sem título. A retenção, que é uma
+       VISÃO das medições, virou aba; a voltar por "Voltar às medições"
+       também. Cálculo, permissões e ids iguais. */
+    _medCab: function (e, sub) {
+      var ic = function (n) { return typeof Icones !== "undefined" ? Icones.get(n, 15) : ""; };
+      var selMed = (e && e.todos.length && !e.semMotor)
+        ? '<select data-gacao="med-obra" aria-label="Obra" title="Separar as medições por obra">' +
+          PorObra.opcoes(e.todos, e.obras).map(function (o) {
+            return '<option value="' + Util.esc(o.valor) + '"' + (String(o.valor) === String(e.sel) ? " selected" : "") + ">" +
+              Util.esc(o.rotulo) + " (" + o.n + ")</option>";
+          }).join("") + "</select>"
+        : "";
+      return Modulo.cab({
+        icone: "medicao", titulo: "Medições", subHtml: sub, obraHtml: selMed,
+        acoes: [
+          /* Puxar do mês anterior: o pedido do cliente era não redigitar a
+             mesma lista de serviços todo mês. Fica ao lado de "Nova medição"
+             porque é ali que ele decide como começar. */
+          '<button class="btn" data-gacao="puxar-medicao">' + ic("checklist") + " Puxar do mês anterior</button>",
+          '<button class="btn" data-gacao="export-medicoes">' + ic("baixar") + " CSV</button>"
+        ],
+        primariaHtml: '<button class="btn primary" data-gacao="nova-medicao">+ Nova medição</button>'
+      }) + Modulo.abas([
+        /* a retenção mora aqui porque é dinheiro DA medição — não vira módulo
+           novo, herda a permissão de Medições e não gasta linha do menu.
+           ⚠ sem `id` na aba: o kit o gravaria como `data-aba`, que o App.js
+           também escuta (a aba do editor de orçamento). */
+        { rotulo: "Boletins", ativa: this._medAba !== "retencao", attrs: 'data-gacao="voltar-medicoes"' },
+        { rotulo: "Retenção", icone: "cadeado", ativa: this._medAba === "retencao", attrs: 'data-gacao="abrir-retencao" title="Ver e devolver a retenção contratual"' }
+      ]);
+    },
     renderMedicoes: function () {
       if (this._medAba === "retencao") return this.renderRetencao();
       var self = this;
       var e = this._medEscopo(), obras = e.obras, contratos = lista("contratos");
       var ms = e.lista;
       var t = e.semMotor ? null : PorObra.totaisMedicoes(ms);
-      var ops = e.semMotor ? [] : PorObra.opcoes(e.todos, obras);
-      var selMed = (e.todos.length && !e.semMotor)
-        ? '<label style="display:flex;align-items:center;gap:6px;margin-right:12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--texto-fraco)">' +
-          (typeof Icones !== "undefined" ? Icones.get("obra", 15) : "") + 'Obra <select data-gacao="med-obra" title="Separar as medições por obra" style="max-width:230px">' +
-          ops.map(function (o) {
-            return '<option value="' + Util.esc(o.valor) + '"' + (String(o.valor) === String(e.sel) ? " selected" : "") + ">" +
-              Util.esc(o.rotulo) + " (" + o.n + ")</option>";
-          }).join("") + "</select></label>"
-        : "";
-      var html = this._head(svg("medicoes") + "Medições", "nova-medicao", "Nova medição",
-          /* a retenção mora aqui porque é dinheiro DA medição — não vira módulo
-             novo, herda a permissão de Medições e não gasta linha do menu. */
-          '<button class="btn sm" data-gacao="abrir-retencao" style="margin-right:10px;align-self:center" title="Ver e devolver a retenção contratual">'
-          + (typeof Icones !== "undefined" ? Icones.get("cadeado", 15) : "") + " Retenção</button>" +
-          selMed +
-          /* Puxar do mês anterior: o pedido do cliente era não redigitar a
-             mesma lista de serviços todo mês. Fica ao lado de "Nova medição"
-             porque é ali que ele decide como começar. */
-          '<button class="btn sm" data-gacao="puxar-medicao" style="margin-right:8px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('checklist', 15) : '') + ' Puxar do mês anterior</button>' +
-          '<button class="btn sm" data-gacao="export-medicoes" style="margin-right:10px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('baixar', 15) : '') + ' CSV</button>');
-      if (!e.todos.length) return html + vazioBox("Nenhuma medição registrada", "nova-medicao", "Registrar primeira medição");
+      var html = this._medCab(e, e.todos.length
+        ? "<b>" + Util.esc(e.semMotor ? "Todas as obras" : PorObra.rotuloDe(e.sel, obras)) + "</b> · " + ms.length + " medição(ões)"
+        : "Boletins, valores, retenção e acumulado");
+      if (!e.todos.length) return html + vazioKit({ icone: "medicao", titulo: "Nenhuma medição registrada",
+        texto: "A medição é o que a obra fatura: boletim, retenção e o acumulado de cada serviço." });
 
       /* medição é o que a obra FATURA: separar medido, a receber e já pago é a
          diferença entre saber e achar que sabe. Rejeitada fica fora do total e
          visível à parte, como em Compras. */
-      if (t) html += '<div class="fin-faixa">' +
-        '<div class="fin-rec"><span class="fin-lbl">Recorte</span><b>' + Util.esc(PorObra.rotuloDe(e.sel, obras)) + '</b>' +
-          '<span class="fin-sub">' + t.n + ' medição(ões)</span></div>' +
-        '<div class="fin-kpi"><span class="fin-lbl">Medido</span><b>' + Util.fmtMoeda(t.medido) + '</b>' +
-          '<span class="fin-sub">pendente + aprovada + paga</span></div>' +
-        '<div class="fin-kpi"><span class="fin-lbl">Recebido</span><b style="color:var(--verde)">' + Util.fmtMoeda(t.paga) + '</b>' +
-          /* ⚠ É O BRUTO DO BOLETIM, e o Painel mostra o LÍQUIDO que entrou no
-             caixa. Na revisão de 13/09/2026: R$ 24.827,61 aqui e R$ 23.586,23
-             no Financeiro, o mesmo "Recebido" nas duas telas e nenhuma dizendo
-             de onde vinha. A diferença é a retenção — que não foi recebida. */
-          '<span class="fin-sub">' + t.nPaga + ' paga(s) · bruto, antes da retenção</span></div>' +
-        '<div class="fin-kpi"><span class="fin-lbl">A receber</span><b style="color:var(--amarelo)">' + Util.fmtMoeda(t.aReceber) + '</b>' +
-          '<span class="fin-sub">' + t.nAprovada + ' aprovada(s), não paga(s)</span></div>' +
-        '<div class="fin-kpi"><span class="fin-lbl">Em aprovação</span><b>' + Util.fmtMoeda(t.pendente) + '</b>' +
-          '<span class="fin-sub">' + t.nPendente + ' aguardando o cliente</span></div>' +
-        (t.nRejeitada ? '<div class="fin-kpi"><span class="fin-lbl">Fora da conta</span><b class="muted">' + Util.fmtMoeda(t.rejeitada) + '</b>' +
-          '<span class="fin-sub">' + t.nRejeitada + ' rejeitada(s)</span></div>' : "") +
-        (e.sel !== "todas" ? '<button class="btn sm ghost" data-gacao="med-obra" style="align-self:center">Ver todas</button>' : "") +
-        "</div>";
+      if (t) html += Modulo.kpis([
+        { rotulo: "Medido", valor: Util.fmtMoeda(t.medido), sub: "pendente + aprovada + paga" },
+        /* ⚠ É O BRUTO DO BOLETIM, e o Painel mostra o LÍQUIDO que entrou no
+           caixa. Na revisão de 13/09/2026: R$ 24.827,61 aqui e R$ 23.586,23
+           no Financeiro, o mesmo "Recebido" nas duas telas e nenhuma dizendo
+           de onde vinha. A diferença é a retenção — que não foi recebida. */
+        { rotulo: "Recebido", valor: Util.fmtMoeda(t.paga), tom: "pos", sub: t.nPaga + " paga(s) · bruto, antes da retenção" },
+        { rotulo: "A receber", valor: Util.fmtMoeda(t.aReceber), tom: "alerta", sub: t.nAprovada + " aprovada(s), não paga(s)" },
+        { rotulo: "Em aprovação", valor: Util.fmtMoeda(t.pendente), sub: t.nPendente + " aguardando o cliente" },
+        t.nRejeitada ? { rotulo: "Fora da conta", valor: Util.fmtMoeda(t.rejeitada), sub: t.nRejeitada + " rejeitada(s)" } : null
+      ]);
 
       if (!e.semMotor && e.sel === "todas" && obras.length) {
         var grupos = PorObra.porObra(e.todos, obras, PorObra.totaisMedicoes);
         if (grupos.length > 1) {
-          html += '<table class="tbl" style="margin-bottom:14px"><thead><tr><th>Obra</th><th class="num">Medições</th>' +
+          var tq = '<table class="tbl"><thead><tr><th>Obra</th><th class="num">Medições</th>' +
             '<th class="num">Recebido</th><th class="num">A receber</th><th class="num">Em aprovação</th><th class="num">Medido</th></tr></thead><tbody>';
           grupos.forEach(function (g) {
-            html += '<tr class="lin" style="cursor:pointer" data-gacao="med-obra" data-id="' + Util.esc(g.chave) + '">' +
+            tq += '<tr class="lin" style="cursor:pointer" data-gacao="med-obra" data-id="' + Util.esc(g.chave) + '">' +
               "<td><b>" + Util.esc(g.nome) + "</b>" +
               (g.orfao ? ' <span class="pill" style="color:var(--amarelo)">obra excluída — reveja o vínculo</span>' : "") +
-              (g.nRejeitada ? ' <span class="muted" style="font-size:11px">· ' + g.nRejeitada + " fora da conta</span>" : "") + "</td>" +
+              (g.nRejeitada ? ' <span class="muted" style="font-size:var(--t-micro)">· ' + g.nRejeitada + " fora da conta</span>" : "") + "</td>" +
               '<td class="num">' + g.n + "</td>" +
               '<td class="num" style="color:var(--verde)">' + Util.fmtMoeda(g.paga) + "</td>" +
               '<td class="num" style="color:var(--amarelo)">' + Util.fmtMoeda(g.aReceber) + "</td>" +
               '<td class="num muted">' + Util.fmtMoeda(g.pendente) + "</td>" +
               '<td class="num"><b>' + Util.fmtMoeda(g.medido) + "</b></td></tr>";
           });
-          html += "</tbody></table>";
+          html += Modulo.secao({ titulo: "Por obra", sub: "Clique numa obra para filtrar.", corpoHtml: tq + "</tbody></table>" });
         }
       }
 
       if (!ms.length) {
-        return html + '<div class="vazio card">Nenhuma medição em <b>' + Util.esc(PorObra.rotuloDe(e.sel, obras)) +
-          '</b>. <button class="btn sm" data-gacao="med-obra">Ver todas as obras</button></div>';
+        return html + Modulo.vazio({ icone: "medicao", titulo: "Nenhuma medição em " + PorObra.rotuloDe(e.sel, obras),
+          acaoHtml: '<button class="btn" data-gacao="med-obra">Ver todas as obras</button>' });
       }
-      html += '<table class="tbl"><thead><tr><th>Nº</th><th>Obra</th><th>Período</th><th class="num">%</th><th class="num">Valor</th><th>Status</th><th></th></tr></thead><tbody>';
+      var antesLista = html;
+      html = '<table class="tbl"><thead><tr><th>Nº</th><th>Obra</th><th>Período</th><th class="num">%</th><th class="num">Valor</th><th>Status</th><th></th></tr></thead><tbody>';
       /* ⚠ UMA LEITURA DO PLANEJAMENTO PARA A LISTA INTEIRA. O selo "→ avanço"
          e a linha do bloco expansível perguntam a mesma coisa por boletim;
          sem este cache seriam duas leituras de `crono_obra` por LINHA. */
@@ -6812,7 +6951,7 @@
          * que a pessoa digitar. */
         var travadaEd = self._ehAprovado(m.status);
         var docs = '<button class="btn sm" data-gopen="medicoes:' + m.id + '" title="' +
-          (travadaEd ? "Ver a medição (aprovada — travada)" : "Editar a medição") + '">' + (travadaEd ? "🔒" : "✎") + '</button> ' +
+          (travadaEd ? "Ver a medição (aprovada — travada)" : "Editar a medição") + '">' + (typeof Icones !== "undefined" ? Icones.solo(travadaEd ? "cadeado" : "editar", 15) : (travadaEd ? "Ver" : "Editar")) + '</button> ' +
           '<button class="btn sm" data-gacao="boletim-medicao" data-id="' + m.id + '" title="Boletim de medição">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + '</button> <button class="btn sm" data-gacao="excel-medicao" data-id="' + m.id + '" title="Excel de medição">' + (typeof Icones !== 'undefined' ? Icones.get('graficos', 15) : '') + '</button> ';
         /* ⚠ [→ Avanço] SÓ PARA QUEM TEM O MÓDULO OBRAS E ESTA OBRA (crítica
            F15): um botão que leva a uma tela que a pessoa não pode abrir é
@@ -6822,7 +6961,7 @@
           docs += '<button class="btn sm" data-gacao="med-avanco" data-id="' + m.id +
             '" title="Abrir o avanço do cronograma desta obra com o que este boletim mede">→ Avanço</button> ';
         }
-        var acao = docs + (m.status === "pendente" ? '<button class="btn sm success" data-gacao="aprovar-medicao" data-id="' + m.id + '">Aprovar</button> <button class="btn sm" data-gacao="rejeitar-medicao" data-id="' + m.id + '" style="color:#dc2626">Rejeitar</button>' : (m.status === "aprovada" ? '<button class="btn sm primary" data-gacao="pagar-medicao" data-id="' + m.id + '">Registrar pgto</button>' : (m.status === "rejeitada" ? '<span class="muted" title="' + Util.esc(m.motivoRejeicao || "") + '">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' rejeitada</span>' : "✓")));
+        var acao = docs + (m.status === "pendente" ? '<button class="btn sm success" data-gacao="aprovar-medicao" data-id="' + m.id + '">Aprovar</button> <button class="btn sm" data-gacao="rejeitar-medicao" data-id="' + m.id + '" style="color:var(--vermelho)">Rejeitar</button>' : (m.status === "aprovada" ? '<button class="btn sm primary" data-gacao="pagar-medicao" data-id="' + m.id + '">Registrar pgto</button>' : (m.status === "rejeitada" ? '<span class="muted" title="' + Util.esc(m.motivoRejeicao || "") + '">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' rejeitada</span>' : '<span title="Paga" style="color:var(--verde)">' + (typeof Icones !== "undefined" ? Icones.solo("check", 15) : "paga") + "</span>")));
         var nIt = Util.arr(m.itens).length;
         var seta = '<button class="btn sm" data-gacao="med-itens" data-id="' + m.id + '" title="' +
           (nIt ? "Ver os " + nIt + " item(ns) medidos" : "Ver o que foi medido") + '" style="min-width:28px">▸</button> ';
@@ -6832,9 +6971,9 @@
              é o que separa "aprovado" de "aprovado e lançado" */
           (self._medAvancoSeloHtml(m, _avC)) +
           "</td><td>" + (ob ? Util.esc(ob.nome) : (String(m.obraId || "").trim() ? '<span style="color:var(--amarelo)">obra excluída</span>' : "—")) + "</td><td>" + Util.esc((m.periodoInicio || "") + (m.periodoFim ? " a " + m.periodoFim : "")) + '</td><td class="num">' + Util.fmtPct(m.percentual, 1) + '</td><td class="num">' + Util.fmtMoeda(m.valor) + "</td><td>" + pill(m.status) + self._aprovLinha(m) + '</td><td class="num">' + acao + "</td></tr>";
-        html += '<tr id="medi-' + m.id + '" style="display:none"><td colspan="7" style="background:rgba(46,111,158,.06);padding:10px 14px">' + self._medItensHtml(m, _avC) + "</td></tr>";
+        html += '<tr id="medi-' + m.id + '" style="display:none"><td colspan="7" style="background:var(--surface-2);padding:10px 14px">' + self._medItensHtml(m, _avC) + "</td></tr>";
       });
-      return html + "</tbody></table>";
+      return antesLista + Modulo.secao({ titulo: "Boletins", corpoHtml: html + "</tbody></table>" });
     },
 
     /* O QUE foi medido, em texto, fora do formulário e fora do papel impresso.
@@ -9137,83 +9276,88 @@
       var ops = e.semMotor ? [] : PorObra.opcoes(e.todos, obras);
       var temAlgum = e.todos.length > 0 && !e.semMotor;
 
-      var selHtml = '<select data-gacao="fin-obra" title="Separar os lançamentos por obra" style="max-width:230px">' +
+      var K = kit(), ic = function (n) { return typeof Icones !== "undefined" ? Icones.get(n, 15) : ""; };
+      var rotRec = e.semMotor ? "Todas as obras" : PorObra.rotuloDe(e.sel, obras);
+      /* ⚠ PADRÃO DE TELA (ROTEIRO-MODULO.md, 08/10/2026). O seletor de obra
+         ficava DENTRO do título, com rótulo em caixa alta solto; agora mora no
+         slot de obra do cabeçalho, no mesmo lugar de toda tela. Ações: as duas
+         mais usadas à vista, o CSV no "Mais" (mesmo botão, mesmo id/clique),
+         e UMA primária por último. O `data-gacao="fin-obra"` do select não
+         muda: o despacho e as e2e (por-obra) o procuram por ele. */
+      var selHtml = temAlgum ? '<select data-gacao="fin-obra" title="Separar os lançamentos por obra" aria-label="Obra">' +
         ops.map(function (o) {
           return '<option value="' + Util.esc(o.valor) + '"' + (String(o.valor) === String(e.sel) ? " selected" : "") + ">" +
             Util.esc(o.rotulo) + " (" + o.n + ")</option>";
-        }).join("") + "</select>";
+        }).join("") + "</select>" : "";
+      var html = K.cab({
+        icone: "financeiro", titulo: "Financeiro",
+        /* o recorte E a contagem DELE na linha de contexto (era a 1ª célula da
+           faixa antiga). Os data-* são o gancho das e2e, não enfeite. */
+        subHtml: e.todos.length ? '<b data-fin-recorte>' + Util.esc(rotRec) + '</b> · <span data-fin-n>' + fs.length + (fs.length === 1 ? " lançamento" : " lançamentos") + "</span>" : "",
+        obraHtml: selHtml,
+        acoes: [
+          /* ⚠ QUATRO CAMPOS, NÃO QUINZE. O formulário completo pergunta três
+             datas, categoria, status, contrato, etapa, fornecedor e forma de
+             pagamento — necessário para conta a pagar, e burocracia demais para
+             "comprei lixa hoje, R$ 40". Sem um caminho curto, esse gasto não é
+             lançado, e o custo da obra fica errado por baixo justamente nas
+             compras pequenas, que são as mais frequentes. */
+          '<button class="btn" data-gacao="fin-rapido">' + ic("raio") + "Gasto rápido</button>",
+          '<button class="btn" data-gacao="doc-financeiro">' + ic("nota") + "Lançar de documento (IA)</button>",
+          '<button class="btn" data-gacao="export-financeiro">' + ic("baixar") + "Exportar CSV</button>"
+        ],
+        primariaHtml: '<button class="btn primary" data-gacao="novo-lancamento">+ Novo lançamento</button>'
+      });
+      if (!e.todos.length) return html + vazioKit({ icone: "financeiro", titulo: "Nenhum lançamento financeiro", texto: "Receitas, despesas e contas a pagar de cada obra aparecem aqui.", gacao: "novo-lancamento", botao: "Registrar lançamento" });
 
-      var extra = (temAlgum ? '<label style="display:flex;align-items:center;gap:6px;margin-right:12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--texto-fraco)">' +
-          (typeof Icones !== "undefined" ? Icones.get("obra", 15) : "") + "Obra " + selHtml + "</label>" : "") +
-        '<button class="btn sm" data-gacao="doc-financeiro" style="margin-right:10px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Lançar de documento (IA)</button>' +
-        '<button class="btn sm" data-gacao="export-financeiro" style="margin-right:10px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('baixar', 15) : '') + ' CSV</button>' +
-        /* ⚠ QUATRO CAMPOS, NÃO QUINZE. O formulário completo pergunta três
-           datas, categoria, status, contrato, etapa, fornecedor e forma de
-           pagamento — necessário para conta a pagar, e burocracia demais para
-           "comprei lixa hoje, R$ 40". Sem um caminho curto, esse gasto não é
-           lançado, e o custo da obra fica errado por baixo justamente nas
-           compras pequenas, que são as mais frequentes. */
-        '<button class="btn sm" data-gacao="fin-rapido" style="margin-right:10px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('raio', 15) : '') + ' Gasto rápido</button>';
-
-      var html = this._head(svg("financeiro") + "Financeiro", "novo-lancamento", "Novo lançamento", extra);
-      if (!e.todos.length) return html + vazioBox("Nenhum lançamento financeiro", "novo-lancamento", "Registrar lançamento");
-
-      /* faixa de totais: diz o recorte E os números DELE. Saldo por
-         competência e caixa realizado lado a lado — misturar conta paga com
-         conta a pagar num número só não é saldo de nada. */
-      if (t) html += '<div class="fin-faixa">' +
-        '<div class="fin-rec"><span class="fin-lbl">Recorte</span><b>' + Util.esc(PorObra.rotuloDe(e.sel, obras)) + '</b>' +
-          '<span class="fin-sub">' + t.n + ' lançamento(s)</span></div>' +
-        '<div class="fin-kpi"><span class="fin-lbl">Receitas</span><b style="color:var(--verde)">' + Util.fmtMoeda(t.receita) + '</b>' +
-          '<span class="fin-sub">' + Util.fmtMoeda(t.recebido) + ' recebido</span></div>' +
-        '<div class="fin-kpi"><span class="fin-lbl">Despesas</span><b style="color:var(--vermelho)">' + Util.fmtMoeda(t.despesa) + '</b>' +
-          '<span class="fin-sub">' + Util.fmtMoeda(t.pago) + ' pago</span></div>' +
-        '<div class="fin-kpi"><span class="fin-lbl">Saldo</span><b style="color:' + (t.saldo >= 0 ? "var(--verde)" : "var(--vermelho)") + '">' + Util.fmtMoeda(t.saldo) + '</b>' +
-          '<span class="fin-sub">caixa ' + Util.fmtMoeda(t.saldoRealizado) + '</span></div>' +
-        (t.aReceber || t.aPagar ? '<div class="fin-kpi"><span class="fin-lbl">Em aberto</span><b>' + Util.fmtMoeda(t.aReceber - t.aPagar) + '</b>' +
-          '<span class="fin-sub">' + Util.fmtMoeda(t.aReceber) + ' a receber · ' + Util.fmtMoeda(t.aPagar) + ' a pagar</span></div>' : "") +
-        (e.sel !== "todas" ? '<button class="btn sm ghost" data-gacao="fin-obra" style="align-self:center">Ver todas</button>' : "") +
-        "</div>";
+      /* INDICADORES do recorte: saldo por competência e caixa realizado lado a
+         lado — misturar conta paga com conta a pagar num número só não é
+         saldo de nada. Cor só com significado: entra (pos), sai (neg). */
+      if (t) html += K.kpis([
+        { rotulo: "Receitas", valor: Util.fmtMoeda(t.receita), sub: Util.fmtMoeda(t.recebido) + " recebido", tom: "pos" },
+        { rotulo: "Despesas", valor: Util.fmtMoeda(t.despesa), sub: Util.fmtMoeda(t.pago) + " pago", tom: "neg" },
+        { rotulo: "Saldo", valor: Util.fmtMoeda(t.saldo), sub: "caixa " + Util.fmtMoeda(t.saldoRealizado), tom: t.saldo >= 0 ? "pos" : "neg" },
+        (t.aReceber || t.aPagar) ? { rotulo: "Em aberto", valor: Util.fmtMoeda(t.aReceber - t.aPagar), sub: Util.fmtMoeda(t.aReceber) + " a receber · " + Util.fmtMoeda(t.aPagar) + " a pagar" } : null
+      ]);
 
       /* quadro por obra: responde "quanto cada obra consumiu" sem obrigar a
-         escolher uma por vez. Só faz sentido no recorte "todas". */
+         escolher uma por vez. Só faz sentido no recorte "todas". Valores sem
+         cor (eram verde/vermelho fortes em toda célula); só o SALDO negativo
+         pinta — é o único número da linha que pede atenção. */
       if (!e.semMotor && e.sel === "todas" && obras.length) {
         var grupos = PorObra.porObra(e.todos, obras);
         if (grupos.length > 1) {
-          html += '<table class="tbl" style="margin-bottom:14px"><thead><tr><th>Obra</th><th class="num">Lanç.</th>' +
+          var tq = '<table class="tbl"><thead><tr><th>Obra</th><th class="num">Lanç.</th>' +
             '<th class="num">Receitas</th><th class="num">Despesas</th><th class="num">Saldo</th><th class="num">Em aberto</th></tr></thead><tbody>';
           grupos.forEach(function (g) {
-            html += '<tr class="lin" style="cursor:pointer" data-gacao="fin-obra" data-id="' + Util.esc(g.chave) + '">' +
+            tq += '<tr class="lin" style="cursor:pointer" data-gacao="fin-obra" data-id="' + Util.esc(g.chave) + '" title="Ver só os lançamentos desta obra">' +
               "<td><b>" + Util.esc(g.nome) + "</b>" +
               (g.orfao ? ' <span class="pill" style="color:var(--amarelo)">obra excluída — reveja o vínculo</span>' : "") + "</td>" +
               '<td class="num">' + g.n + "</td>" +
-              '<td class="num" style="color:var(--verde)">' + Util.fmtMoeda(g.receita) + "</td>" +
-              '<td class="num" style="color:var(--vermelho)">' + Util.fmtMoeda(g.despesa) + "</td>" +
-              '<td class="num"><b style="color:' + (g.saldo >= 0 ? "var(--verde)" : "var(--vermelho)") + '">' + Util.fmtMoeda(g.saldo) + "</b></td>" +
+              '<td class="num">' + Util.fmtMoeda(g.receita) + "</td>" +
+              '<td class="num">' + Util.fmtMoeda(g.despesa) + "</td>" +
+              '<td class="num"' + (g.saldo < 0 ? ' style="color:var(--vermelho)"' : "") + "><b>" + Util.fmtMoeda(g.saldo) + "</b></td>" +
               '<td class="num muted">' + Util.fmtMoeda(g.aReceber - g.aPagar) + "</td></tr>";
           });
-          html += "</tbody></table>";
+          html += K.secao({ titulo: "Por obra", corpoHtml: tq + "</tbody></table>" });
         }
       }
 
       if (!fs.length) {
-        if (e.semMotor) return html + vazioBox("Nenhum lançamento financeiro", "novo-lancamento", "Registrar lançamento");
-        return html + '<div class="vazio card">Nenhum lançamento em <b>' + Util.esc(PorObra.rotuloDe(e.sel, obras)) +
-          '</b>. <button class="btn sm" data-gacao="fin-obra">Ver todas as obras</button></div>';
+        if (e.semMotor) return html + vazioKit({ icone: "financeiro", titulo: "Nenhum lançamento financeiro", gacao: "novo-lancamento", botao: "Registrar lançamento" });
+        return html + K.secao({ titulo: "Lançamentos", corpoHtml: K.vazio({ icone: "financeiro", titulo: "Nenhum lançamento em " + rotRec,
+          acaoHtml: '<button class="btn" data-gacao="fin-obra">Ver todas as obras</button>' }) });
       }
       /* ⚠ o corte é SÓ da tabela: os totais por obra acima já foram somados
          sobre a lista inteira, e continuam certos. */
       var corteFin = this._cortar(fs, "financeiro");
-      html += this._avisoCorte(corteFin, "financeiro", "lançamentos");
+      var tl = this._avisoCorte(corteFin, "financeiro", "lançamentos");
       /* índice de obras: o `filter` por linha era O(linhas × obras) */
       var idxObraFin = Object.create(null);
       obras.forEach(function (o) { if (o && o.id) idxObraFin[o.id] = o; });
-      html += '<table class="tbl"><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Obra</th><th class="num">Valor</th><th>Status</th></tr></thead><tbody>';
+      tl += '<table class="tbl"><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Obra</th><th class="num">Valor</th><th>Status</th><th class="mod-lin-acoes" aria-label="Ações"></th></tr></thead><tbody>';
       corteFin.linhas.forEach(function (f) {
         var ob = idxObraFin[f.obraId];
-        /* a cor acompanha o SINAL, não o tipo: o espelho de uma despesa
-           devolve dinheiro ao caixa e por isso sai verde, não vermelho */
-        var cor = (Util.num(f.valor) < 0 ? f.tipo !== "receita" : f.tipo === "receita") ? "var(--verde)" : "var(--vermelho)";
         /* obra com vínculo quebrado precisa gritar aqui também: "—" faria
            parecer despesa de escritório, que é outra coisa */
         var celObra = ob ? Util.esc(ob.nome)
@@ -9227,7 +9371,10 @@
            `tipo === "despesa" ? "− " : "+ "` concatenado com fmtMoeda(valor):
            no espelho de uma despesa (valor negativo) isso imprimia
            "− -R$ 17.360,00" — dois menos, que se lêem como positivo. Agora o
-           sinal é calculado e o valor sai em módulo. */
+           sinal é calculado e o valor sai em módulo.
+           A cor acompanha o MESMO sinal: só o dinheiro que ENTRA pinta (verde);
+           o que sai fica na cor do texto, com o "−" dizendo o sentido — a
+           coluna inteira em vermelho forte puxava o olho de tudo. */
         var _neg = Util.num(f.valor) < 0;
         var _saiCaixa = (f.tipo === "despesa") !== _neg;   // despesa positiva OU receita estornada
         var _sinal = _saiCaixa ? "− " : "+ ";
@@ -9235,13 +9382,15 @@
         if (estornados[f.id]) selo = ' <span class="g-pill" style="background:#94a3b822;color:#64748b" title="Este lançamento foi estornado — o par soma zero no resultado">' + _ic + " estornado</span>";
         else if (f.estornoDe) selo = ' <span class="g-pill" style="background:#94a3b822;color:#64748b" title="Este é o estorno de outro lançamento">' + _ic + " estorno</span>";
         /* o botão só aparece no que já foi realizado e ainda não foi
-           estornado — oferecer onde não cabe é convite a erro */
+           estornado — oferecer onde não cabe é convite a erro. Ação de linha
+           em ÍCONE na coluna própria (ROTEIRO §4): embaixo da pílula ele
+           dobrava a altura de toda linha paga. O nome mora no title/aria. */
         var btnEst = (FinStatus.realizado(f) && !estornados[f.id] && !f.estornoDe)
-          ? ' <button class="btn sm ghost" data-gacao="fin-estornar" data-id="' + f.id + '" title="Lançar o estorno deste valor (o original continua na lista)">' + (typeof Icones !== "undefined" ? Icones.get("voltar", 15) : "") + " Estornar</button>"
+          ? '<button class="btn sm icone" data-gacao="fin-estornar" data-id="' + f.id + '" title="Estornar: lançar o estorno deste valor (o original continua na lista)" aria-label="Estornar">' + (typeof Icones !== "undefined" ? Icones.solo("voltar", 16) : "") + "</button>"
           : "";
-        html += '<tr class="lin"><td style="cursor:pointer" data-gopen="financeiro:' + f.id + '">' + Util.esc(f.data ? f.data.split("-").reverse().join("/") : "—") + '</td><td style="cursor:pointer" data-gopen="financeiro:' + f.id + '"><b>' + Util.esc(f.desc) + "</b>" + selo + "</td><td>" + rot(P.finCategoria, f.categoria) + "</td><td>" + celObra + '</td><td class="num" style="color:' + cor + '">' + _sinal + Util.fmtMoeda(Math.abs(Util.num(f.valor))) + '</td><td>' + pill(f.status) + btnEst + "</td></tr>";
+        tl += '<tr class="lin"><td style="cursor:pointer" data-gopen="financeiro:' + f.id + '">' + Util.esc(f.data ? f.data.split("-").reverse().join("/") : "—") + '</td><td style="cursor:pointer" data-gopen="financeiro:' + f.id + '"><b>' + Util.esc(f.desc) + "</b>" + selo + "</td><td>" + rot(P.finCategoria, f.categoria) + "</td><td>" + celObra + '</td><td class="num"' + (_saiCaixa ? "" : ' style="color:var(--verde)"') + ">" + _sinal + Util.fmtMoeda(Math.abs(Util.num(f.valor))) + "</td><td>" + pill(f.status) + '</td><td class="mod-lin-acoes">' + btnEst + "</td></tr>";
       });
-      return html + "</tbody></table>";
+      return html + K.secao({ titulo: "Lançamentos", corpoHtml: tl + "</tbody></table>" });
     },
     novoLancamento: function () { this.formFinanceiro(null); },
     // Etapas do orçamento vinculado à obra (para apropriar custo por etapa)
@@ -9693,58 +9842,64 @@
       // obra selecionada persiste no módulo (default: 1ª com orçamento vinculado)
       var comOrc = obras.filter(function (o) { return o.orcamentoId; });
       if (this._prSel == null) this._prSel = (comOrc[0] && comOrc[0].id) || (obras[0] && obras[0].id) || "";
-      var sel = '<select data-gacao="pr-troca-obra" style="max-width:280px">' +
-        obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === self._prSel ? " selected" : "") + ">" + Util.esc(o.nome) + (o.orcamentoId ? "" : " (sem orçamento)") + "</option>"; }).join("") + "</select>";
-      var html = this._head(svg("previstoreal") + "Previsto × Realizado", "", "", '<span class="muted" style="align-self:center;margin-right:10px">Obra:</span>' + sel);
-      if (!obras.length) return html + vazioBox("Nenhuma obra ainda", "", "Crie uma obra e vincule um orçamento");
+      /* PADRÃO DE TELA (ROTEIRO-MODULO.md): seletor de obra no slot do
+         cabeçalho (era um "Obra:" solto ao lado do título), uma faixa de
+         indicadores do kit (eram quatro cartões grandes em duas linhas) e a
+         tabela numa seção com título. O `data-gacao="pr-troca-obra"` não muda. */
+      var K = kit();
+      var sel = obras.length ? '<select data-gacao="pr-troca-obra" aria-label="Obra">' +
+        obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === self._prSel ? " selected" : "") + ">" + Util.esc(o.nome) + (o.orcamentoId ? "" : " (sem orçamento)") + "</option>"; }).join("") + "</select>" : "";
+      var html = K.cab({ icone: "previstoreal", titulo: "Previsto × Real", sub: "Custo direto do orçamento contra o gasto lançado, etapa por etapa", obraHtml: sel });
+      if (!obras.length) return html + vazioKit({ icone: "obras", titulo: "Nenhuma obra ainda", texto: "Crie uma obra e vincule um orçamento: o previsto por etapa aparece aqui." });
       var d = this._previstoRealDados(this._prSel);
-      if (d.erro === "sem-orcamento") return html + '<div class="card"><p class="muted">Esta obra não tem orçamento vinculado. Abra a obra em <b>Obras</b> e escolha um orçamento no campo "Vincular a um orçamento" — aí o previsto por etapa aparece aqui.</p></div>';
-      if (d.erro) return html + vazioBox("Selecione uma obra", "", "");
-      // cabeçalho de totais
+      if (d.erro === "sem-orcamento") return html + K.secao({ corpoHtml: K.vazio({ icone: "orcamentos", titulo: "Esta obra não tem orçamento vinculado",
+        texto: 'Abra a obra em Obras e escolha um orçamento no campo "Vincular a um orçamento" — aí o previsto por etapa aparece aqui.' }) });
+      if (d.erro) return html + K.secao({ corpoHtml: K.vazio({ icone: "obras", titulo: "Selecione uma obra" }) });
       var corSaldo = d.saldoTotal >= 0 ? "var(--verde)" : "var(--vermelho)";
-      html += '<div class="kpis kpis-g" style="margin-bottom:14px">' +
-        '<div class="kpi custo"><div class="rotulo">Previsto (custo direto)</div><div class="num">' + Util.fmtMoeda(d.totalPrevisto) + "</div></div>" +
-        '<div class="kpi"><div class="rotulo">Realizado (gasto real)</div><div class="num">' + Util.fmtMoeda(d.totalRealizado) + "</div></div>" +
+      /* ⚠ O AVISO QUE IMPEDE A TABELA DE MENTIR. Com a maior parte do gasto
+         sem etiqueta de etapa, as linhas abaixo mostram consumo perto de zero
+         e sugerem folga onde o dinheiro já saiu. Número incompleto sem aviso
+         é pior que número nenhum — e aqui ele decide compra. É o aviso único
+         do topo (ROTEIRO §1), logo abaixo do cabeçalho. */
+      if (d.cobertura && d.cobertura.avisos && d.cobertura.avisos.length) {
+        html += K.aviso({ tom: "alerta", textoHtml: "<span>" + d.cobertura.avisos.map(function (a) { return Util.esc(a); }).join("<br>") + "</span>" });
+      }
+      html += K.kpis([
+        { rotulo: "Previsto", valor: Util.fmtMoeda(d.totalPrevisto), sub: "custo direto do orçamento" },
+        { rotulo: "Realizado", valor: Util.fmtMoeda(d.totalRealizado), sub: "gasto lançado" },
         /* ⚠ COMPROMETIDO É O NÚMERO QUE FALTAVA NA HORA DE AUTORIZAR.
            Pedido de compra APROVADO e ainda não recebido não é despesa — e
            some da tela. Quem lia "orçado 500k · realizado 300k · saldo 200k"
            autorizava a próxima compra sem ver 180k já empenhados. O
            agregador existia (`PorObra.totaisCompras`), testado, e aparecia só
            no KPI da tela de Compras. */
-        '<div class="kpi"><div class="rotulo">Comprometido (pedidos aprovados)</div><div class="num" style="color:#b45309">' + Util.fmtMoeda(d.totalComprometido || 0) + "</div></div>" +
-        '<div class="kpi destaque"><div class="rotulo">Saldo (menos o comprometido)</div><div class="num" style="color:' + corSaldo + '">' + Util.fmtMoeda(d.saldoTotal) + "</div></div>" +
-        "</div>";
-      /* ⚠ O AVISO QUE IMPEDE A TABELA DE MENTIR. Com a maior parte do gasto
-         sem etiqueta de etapa, as linhas abaixo mostram consumo perto de zero
-         e sugerem folga onde o dinheiro já saiu. Número incompleto sem aviso
-         é pior que número nenhum — e aqui ele decide compra. */
-      if (d.cobertura && d.cobertura.avisos && d.cobertura.avisos.length) {
-        html += '<div class="card" style="border-left:4px solid #b45309;background:#fff7ed;margin-bottom:12px">' +
-          '<div style="font-size:13px;color:#7c2d12">' +
-          d.cobertura.avisos.map(function (a) { return Util.esc(a); }).join('<br>') + '</div></div>';
-      }
-      html += '<div class="card"><table class="tbl"><thead><tr><th>Etapa</th><th class="num">Previsto</th><th class="num">Comprometido</th><th class="num">Realizado</th><th style="width:28%">Consumo</th><th class="num">Saldo</th></tr></thead><tbody>';
+        { rotulo: "Comprometido", valor: Util.fmtMoeda(d.totalComprometido || 0), sub: "pedidos aprovados", tom: (d.totalComprometido || 0) > 0.005 ? "alerta" : "" },
+        { rotulo: "Saldo", valor: Util.fmtMoeda(d.saldoTotal), sub: "já descontado o comprometido", tom: d.saldoTotal >= 0 ? "pos" : "neg" }
+      ]);
+      var tb = '<table class="tbl"><thead><tr><th>Etapa</th><th class="num">Previsto</th><th class="num">Comprometido</th><th class="num">Realizado</th><th style="width:26%">Consumo</th><th class="num">Saldo</th></tr></thead><tbody>';
       /* ⚠ A LINHA QUE FAZ O TOTAL FECHAR. `compras` não tem `etapaId`, então o
          comprometido por etapa é sempre zero e o rodapé (que soma o empenhado
          de verdade) não batia com nenhuma célula da coluna. Sem esta linha, a
          diferença não aparece em lugar nenhum — e é uma tabela que decide
          compra. Mesmo molde da linha "Não apropriado". */
       if (d.comprometidoSemEtapa && Util.num(d.comprometidoSemEtapa.valor) > 0.005) {
-        html += '<tr style="background:#fffbeb">' +
-          '<td><b>Comprometido sem etapa</b><div class="muted" style="font-size:11px">' +
+        tb += '<tr style="background:var(--surface-2)">' +
+          '<td><b>Comprometido sem etapa</b><div class="muted" style="font-size:var(--t-micro)">' +
           d.comprometidoSemEtapa.n + ' pedido(s) aprovado(s) que ainda não apontam etapa</div></td>' +
           '<td class="num muted">—</td>' +
-          '<td class="num" style="color:#b45309;font-weight:600">' + Util.fmtMoeda(d.comprometidoSemEtapa.valor) + '</td>' +
-          '<td class="num muted">—</td><td class="muted" style="font-size:11px">já empenhado</td>' +
+          '<td class="num" style="color:var(--amarelo);font-weight:600">' + Util.fmtMoeda(d.comprometidoSemEtapa.valor) + '</td>' +
+          '<td class="num muted">—</td><td class="muted" style="font-size:var(--t-micro)">já empenhado</td>' +
           '<td class="num" style="color:var(--vermelho);font-weight:600">' + Util.fmtMoeda(-Util.num(d.comprometidoSemEtapa.valor)) + '</td></tr>';
       }
       d.etapas.forEach(function (e) {
         var largura = Math.min(100, Math.round(e.pct));
-        var cor = e.estouro ? "var(--vermelho)" : (e.pct >= 85 ? "#f59e0b" : "var(--verde)");
+        var cor = e.estouro ? "var(--vermelho)" : (e.pct >= 85 ? "var(--amarelo)" : "var(--verde)");
         var pctTxt = e.previsto > 0 ? (Math.round(e.pct) + "%") : (e.realizado > 0 ? "s/ previsto" : "—");
-        var barra = '<div style="background:#eef2f7;border-radius:99px;height:16px;overflow:hidden;position:relative">' +
-          '<div style="height:100%;width:' + largura + '%;background:' + cor + ';border-radius:99px;transition:width .3s"></div>' +
-          '<span style="position:absolute;right:8px;top:0;font-size:11px;line-height:16px;color:#334155;font-weight:700">' + pctTxt + (e.estouro ? " ⚠" : "") + "</span></div>";
+        /* barra fina com o número AO LADO (era o número em cima da barra, que
+           sumia no vermelho do estouro) */
+        var barra = '<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;background:var(--surface-3);border-radius:99px;height:8px;overflow:hidden">' +
+          '<div style="height:100%;width:' + largura + '%;background:' + cor + ';border-radius:99px;transition:width .3s"></div></div>' +
+          '<span style="min-width:44px;text-align:right;font-size:var(--t-micro);font-variant-numeric:tabular-nums;' + (e.estouro ? "color:var(--vermelho);font-weight:600" : "color:var(--texto-fraco)") + '">' + pctTxt + (e.estouro ? " ⚠" : "") + "</span></div>";
         /* subetapa entra indentada, sob a raiz que a contem — o total soma
            so nivel 1, entao ela nao conta duas vezes */
         var recuo = e.nivel === 2 ? 'padding-left:22px;font-weight:400' : '';
@@ -9759,18 +9914,19 @@
            ter gasto próprio e aí mostra número como qualquer outra. Enquanto
            não tiver, mostra travessão em vez de afirmar saldo que não conhece. */
         var subSemDado = e.nivel === 2 && !(Util.num(e.realizado) > 0.005) && !(Util.num(e.comprometido) > 0.005);
-        html += '<tr' + (e.nivel === 2 ? ' style="background:#fbfdff"' : '') + '><td style="' + recuo + '">' +
+        tb += '<tr><td style="' + recuo + '">' +
           (e.nivel === 2 ? '<span class="muted">↳ </span>' : '') + (e.nivel === 2 ? Util.esc(e.nome) : "<b>" + Util.esc(e.nome) + "</b>") +
-          (subSemDado ? '<div class="muted" style="font-size:11px">sem gasto apontado nesta subetapa — o lançamento pode escolhê-la agora</div>' : '') + "</td>" +
+          (subSemDado ? '<div class="muted" style="font-size:var(--t-micro)">sem gasto apontado nesta subetapa — o lançamento pode escolhê-la agora</div>' : '') + "</td>" +
           '<td class="num">' + Util.fmtMoeda(e.previsto) + '</td>' +
           /* ⚠ UM `class` SÓ. O ramo do else concatenava um SEGUNDO atributo
              `class` no mesmo <td> (`class="num" class="num muted"`); o parser
              mantém a primeira ocorrência e descarta a segunda, então o cinza
              de "sem comprometido" nunca era aplicado. */
-          '<td class="num' + (e.comprometido > 0.005 ? '" style="color:#b45309"' : ' muted"') + '>' + (e.comprometido > 0.005 ? Util.fmtMoeda(e.comprometido) : "—") + '</td>' +
+          '<td class="num' + (e.comprometido > 0.005 ? '" style="color:var(--amarelo)"' : ' muted"') + '>' + (e.comprometido > 0.005 ? Util.fmtMoeda(e.comprometido) : "—") + '</td>' +
           '<td class="num' + (subSemDado ? ' muted"' : '"') + '>' + (subSemDado ? "—" : Util.fmtMoeda(e.realizado)) + "</td>" +
-          "<td>" + (subSemDado ? '<span class="muted" style="font-size:11px">—</span>' : barra) + '</td>' +
-          '<td class="num' + (subSemDado ? ' muted">—' : '" style="color:' + (e.saldo >= 0 ? "var(--verde)" : "var(--vermelho)") + ';font-weight:600">' + Util.fmtMoeda(e.saldo)) + "</td></tr>";
+          "<td>" + (subSemDado ? '<span class="muted" style="font-size:var(--t-micro)">—</span>' : barra) + '</td>' +
+          /* saldo: só o NEGATIVO pinta — a coluna inteira em verde não dizia nada */
+          '<td class="num' + (subSemDado ? ' muted">—' : '"' + (e.saldo < 0 ? ' style="color:var(--vermelho);font-weight:600"' : '') + '>' + Util.fmtMoeda(e.saldo)) + "</td></tr>";
       });
       /* ⚠ `Math.abs(…) > 0.005`, NÃO `> 0` — E É O MESMO CONSERTO QUE O PAINEL
          GANHOU EM `9da8f46`, que não foi repetido aqui, no consumidor irmão do
@@ -9802,14 +9958,14 @@
         var dica = detalhe ? "entrou por: " + Util.esc(detalhe)
           : (negativo ? "crédito sem etapa (estorno cujo lançamento original não está mais na base) — some as linhas acima e a diferença é esta"
             : "escolha a etapa ao lançar no Financeiro");
-        html += '<tr style="background:#fff7ed"><td><b>Não apropriado</b> <span class="muted" title="Despesas (ou créditos) da obra sem etapa escolhida no lançamento">ⓘ</span></td>' +
+        tb += '<tr style="background:var(--surface-2)"><td><b>Não apropriado</b> <span class="muted" title="Despesas (ou créditos) da obra sem etapa escolhida no lançamento">ⓘ</span></td>' +
           '<td class="num muted">—</td><td class="num muted">—</td><td class="num">' + Util.fmtMoeda(d.naoApropriado) + '</td>' +
-          '<td><span class="muted" style="font-size:12px">' + dica + '</span></td><td class="num muted">—</td></tr>';
+          '<td><span class="muted" style="font-size:var(--t-micro)">' + dica + '</span></td><td class="num muted">—</td></tr>';
       }
-      html += '</tbody><tfoot><tr class="tot"><td><b>TOTAL</b></td><td class="num"><b>' + Util.fmtMoeda(d.totalPrevisto) + '</b></td>' +
+      tb += '</tbody><tfoot><tr class="tot"><td><b>TOTAL</b></td><td class="num"><b>' + Util.fmtMoeda(d.totalPrevisto) + '</b></td>' +
         '<td class="num"><b>' + Util.fmtMoeda(d.totalComprometido || 0) + '</b></td>' +
-        '<td class="num"><b>' + Util.fmtMoeda(d.totalRealizado) + '</b></td><td></td><td class="num" style="color:' + corSaldo + '"><b>' + Util.fmtMoeda(d.saldoTotal) + "</b></td></tr></tfoot></table></div>";
-      return html;
+        '<td class="num"><b>' + Util.fmtMoeda(d.totalRealizado) + '</b></td><td></td><td class="num" style="color:' + corSaldo + '"><b>' + Util.fmtMoeda(d.saldoTotal) + "</b></td></tr></tfoot></table>";
+      return html + K.secao({ titulo: "Por etapa", corpoHtml: tb });
     },
     prTrocaObra: function (obraId) { if (obraId == null) return; this._prSel = obraId; App.render(); },
 
@@ -9888,31 +10044,40 @@
       var obras = lista("obras"), self = this;
       if (this._galSel == null) this._galSel = (obras[0] && obras[0].id) || "";
       if (this._galFiltro == null) this._galFiltro = "";
-      var sel = '<select data-gacao="galeria-troca-obra" style="max-width:280px">' +
+      /* ROTEIRO DE MÓDULO (08/10/2026): "Obra:" solto à direita, a busca num
+         cartão só para ela e a obra sem foto caindo num cartão branco com uma
+         frase. Agora: obra no lugar fixo do cabeçalho, a busca na barra de
+         filtros e o vazio do kit com o caminho (o Diário). */
+      var sel = '<select data-gacao="galeria-troca-obra" aria-label="Obra">' +
         obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === self._galSel ? " selected" : "") + ">" + Util.esc(o.nome) + "</option>"; }).join("") + "</select>";
       var totObra = this._galeriaFotos(this._galSel, "").length;
-      var btnRel = totObra ? '<button class="btn sm" data-gacao="galeria-relatorio" style="margin-right:8px">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Relatório fotográfico</button>' : "";
-      var html = this._head(svg("galeria") + "Galeria de Fotos", "", "", btnRel + '<span class="muted" style="align-self:center;margin-right:10px">Obra:</span>' + sel);
-      if (!obras.length) return html + vazioBox("Nenhuma obra ainda", "", "Crie uma obra e registre diários com fotos");
-      if (!totObra) return html + '<div class="card"><p class="muted">Esta obra ainda não tem fotos. As fotos aparecem aqui automaticamente quando você anexa imagens aos <b>Diários de Obra (RDO)</b> desta obra.</p></div>';
-      html += '<div class="card" style="margin-bottom:12px"><input id="gal-filtro" placeholder="🔍 Filtrar por legenda ou nº do diário" value="' + Util.esc(this._galFiltro) + '" style="width:100%;max-width:360px"></div>';
-      html += '<div id="gal-grid">' + this._galeriaGridHtml(this._galSel, this._galFiltro) + "</div>";
+      var btnRel = totObra ? '<button class="btn" data-gacao="galeria-relatorio">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Relatório fotográfico</button>' : "";
+      var html = Modulo.cab({ icone: "camera", titulo: "Galeria de Fotos",
+        sub: obras.length ? totObra + " foto" + (totObra === 1 ? "" : "s") + " nos diários desta obra" : "As fotos da obra reunidas e filtráveis",
+        obraHtml: obras.length ? sel : "", acoes: [btnRel] });
+      if (!obras.length) return html + vazioKit({ icone: "camera", titulo: "Nenhuma obra ainda", texto: "Crie uma obra e registre diários com fotos.",
+        acaoHtml: '<button class="btn primary" data-gacao="nova-obra">+ Nova obra</button>' });
+      if (!totObra) return html + Modulo.vazio({ icone: "camera", titulo: "Esta obra ainda não tem fotos",
+        texto: "As fotos aparecem aqui automaticamente quando você anexa imagens aos Diários de Obra (RDO) desta obra.",
+        acaoHtml: '<button class="btn" data-view="rdo">Abrir o Diário (RDO)</button>' });
+      html += Modulo.filtros(['<div class="field" style="flex:0 1 360px"><label for="gal-filtro">Buscar</label><input id="gal-filtro" type="search" placeholder="Legenda ou nº do diário" value="' + Util.esc(this._galFiltro) + '"></div>']);
+      html += Modulo.secao({ corpoHtml: '<div id="gal-grid">' + this._galeriaGridHtml(this._galSel, this._galFiltro) + "</div>" });
       return html;
     },
     _galeriaGridHtml: function (obraId, filtro) {
       var self = this;
       var fotos = this._galeriaFotos(obraId, filtro);
       this._galFotos = fotos; // usado pelo lightbox p/ navegar
-      if (!fotos.length) return '<div class="card"><p class="muted">Nenhuma foto com esse filtro.</p></div>';
+      if (!fotos.length) return Modulo.vazio({ icone: "buscar", titulo: "Nenhuma foto com esse filtro", texto: "Troque o texto da busca ou apague-o para ver todas." });
       var idxGlobal = 0, html = "";
       this._galeriaPorMes(fotos).forEach(function (g) {
-        html += '<div style="margin-bottom:6px;font-weight:700;color:#334155">' + self._rotuloMes(g.chave) + ' <span class="muted" style="font-weight:400">· ' + g.fotos.length + " foto" + (g.fotos.length > 1 ? "s" : "") + "</span></div>";
+        html += '<div style="margin-bottom:6px;font-weight:var(--p-forte);color:var(--texto)">' + self._rotuloMes(g.chave) + ' <span class="muted" style="font-weight:400">· ' + g.fotos.length + " foto" + (g.fotos.length > 1 ? "s" : "") + "</span></div>";
         html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:18px">';
         g.fotos.forEach(function (ft) {
           var gi = idxGlobal++;
-          html += '<figure style="margin:0;border:1px solid var(--linha);border-radius:10px;overflow:hidden;cursor:pointer;background:#fff" data-gacao="galeria-abrir" data-idx="' + gi + '" title="' + Util.esc(ft.leg || "Ampliar") + '">'
+          html += '<figure style="margin:0;border:1px solid var(--linha);border-radius:10px;overflow:hidden;cursor:pointer;background:var(--surface)" data-gacao="galeria-abrir" data-idx="' + gi + '" title="' + Util.esc(ft.leg || "Ampliar") + '">'
             + '<img data-galhid="' + gi + '"' + (ft.d ? ' src="' + ft.d + '"' : "") + ' loading="lazy" style="width:100%;height:110px;object-fit:cover;display:block">'
-            + '<figcaption style="padding:5px 7px;font-size:11px;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (ft.leg ? Util.esc(ft.leg) : '<span class="muted">sem legenda</span>') + '<br><span class="muted" style="font-size:10px">' + (ft.data ? ft.data.split("-").reverse().join("/") : "") + (ft.rdoNumero ? " · " + Util.esc(ft.rdoNumero) : "") + "</span></figcaption></figure>";
+            + '<figcaption style="padding:5px 7px;font-size:var(--t-micro);color:var(--texto-fraco);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (ft.leg ? Util.esc(ft.leg) : '<span class="muted">sem legenda</span>') + '<br><span class="muted" style="font-size:10px">' + (ft.data ? ft.data.split("-").reverse().join("/") : "") + (ft.rdoNumero ? " · " + Util.esc(ft.rdoNumero) : "") + "</span></figcaption></figure>";
         });
         html += "</div>";
       });
@@ -10053,6 +10218,15 @@
       var pill = document.getElementById("bim-drawer-pill");
       var obrasTit = [];
       try { obrasTit = (lista("obras") || []).map(function (o) { return { id: o.id, nome: (o.nome || "Obra") + (o.orcamentoId ? "" : " (sem orçamento)") }; }); } catch (eO) {}
+      /* CARA NOVA (prévia `visual`): a fita organizada do B1 — 13 abas, cada
+         comando numa casa só (js/bimribbon.js LAYOUT_B1). Sem a prévia, o mapa
+         de sempre. Se o layout não fechar (comando perdido/repetido), o
+         `reorganizar` recusa e fica o mapa de sempre. */
+      try {
+        if (window.BimRibbon && BimRibbon.reorganizar) {
+          if (document.documentElement.getAttribute("data-visual") === "nova") BimRibbon.reorganizar(); else BimRibbon.restaurar();
+        }
+      } catch (eRb) {}
       BimShell.montar(card, {
         arquivo: (obra && obra.nome) || "",
         tema: BimShell.temaSalvo(),
@@ -10287,7 +10461,10 @@
       /* ---- comandos que já existiam no viewer e estavam sem fio ----
        * A API do bim.js tinha essas funções há versões; a fita nova não as
        * chamava, e o botão respondia "ainda não está disponível". */
-      reg["estilo"] = function (e) { var b = B(); if (b && b.estiloDesenho) { b.estiloDesenho(e.ligado); return true; } return false; };
+      reg["estilo"] = function (e) {
+        /* prévia: o menu do ESTILO VISUAL (linha oculta, sombreado, textura, realista — js/bimestilo.js) */
+        if (window.BimEstilo && BimEstilo.previa()) { var ae = document.activeElement; return BimEstilo.menu(ae && ae.closest && ae.closest('[data-rv-cmd="estilo"],[data-rv-vb="estilo"]') || document.querySelector('[data-rv-cmd="estilo"]') || document.querySelector('[data-rv-vb="estilo"]')); }
+        var b = B(); if (b && b.estiloDesenho) { b.estiloDesenho(e.ligado); return true; } return false; };
       reg["sistemas"] = function (e) { var b = B(); if (b && b.sistema) { b.sistema(e.ligado); return true; } return false; };
       reg["conjuntos"] = function () { self._bimAbrirPainel("conjuntos"); self._bimConjRender(); return true; };
       reg["disciplinas"] = function () { self._bimAbrirPainel("disc"); self._bimDiscRender(); return true; };
@@ -10425,7 +10602,81 @@
         return true;
       };
 
+      /* ---- CARA NOVA / B1 (07/10/2026): comandos que só existiam na barra de
+       * título ganharam casa na fita, e os novos da organização. As ações são
+       * as MESMAS de antes (mesmo `acao`), só o botão mudou de lugar. ---- */
+      reg["quant-ilustrado"] = function () { self.acao("bim-quant-ilustrado", {}); return true; };
+      /* PLANTA e CORTE em desenho técnico (js/bim2dui.js): a planta do nível de
+         trabalho numa aba; o corte é traçado com dois cliques nessa planta */
+      reg["planta-2d"] = function () {
+        var pid = self._d2PlantaPadrao();
+        if (!pid) { UI.toast("Abra um modelo primeiro: a planta é cortada dele.", "aviso"); return true; }
+        self._d2Abrir(pid, (Bim2D.def(pid) || {}).nome || "Planta baixa");
+        return true;
+      };
+      /* MODELAGEM e FAMÍLIAS (07/10/2026): porta, janela e cobertura deixam de ser
+         "em breve" na fita nova; viga e componente (família) entram */
+      reg["familias-param"] = reg.componente = function () { self._famSync(); self._famAbrir("biblioteca"); return true; };
+      reg["editor-familia"] = function () { self._famSync(); self._famAbrir("editor"); return true; };
+      reg["orc-modelo"] = function () { self._famSync(); self._bimAbrirPainel("orcmod"); if (window.OrcModeloUI) OrcModeloUI.renderPainel(); return true; };
+      /* IA (07/10/2026): a lógica e as telas moram em js/iafamilia.js e js/iarender.js; aqui só o contexto da obra */
+      reg["familia-ia"] = function () { if (!window.IAFamilia) return false; self._famSync(); IAFamilia.abrir(self._iaCtx()); return true; };
+      reg["render-ia"] = function () { if (!window.IARender) return false; IARender.abrir(self._iaCtx()); return true; };
+      reg["galeria-ia"] = function () { if (!window.IARender) return false; IARender.galeria(self._iaCtx()); return true; };
+      reg["salvar-opbim"] = function () { self._opbimSalvar(); return true; };
+      reg["abrir-opbim"] = function () { self._opbimAbrir(); return true; };
+      reg.templates = function () {
+        UI.modal("Template OrçaPRO (.optpl)", "<p>O template leva os <b>níveis</b> desta obra, as <b>famílias</b> da sua biblioteca e o <b>estilo das plantas e cortes</b> — o ponto de partida de um projeto novo, como o .rte do Revit.</p>", [
+          { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Usar um template…", onClick: function () { UI.fecharModal(); self._optplAbrir(); } },
+          { texto: "Salvar este projeto como template", classe: "primary", onClick: function () { UI.fecharModal(); self._optplSalvar(); } }
+        ]);
+        return true;
+      };
+      reg["importar-outros"] = function () { self._importarOutros(); return true; };
+      reg.porta = function (e) { if (e.ligado === false) { if (B()) B().editarArmar(null); return true; } self._famSync(); return self._famColocarCategoria("porta"); };
+      reg.janela = function (e) { if (e.ligado === false) { if (B()) B().editarArmar(null); return true; } self._famSync(); return self._famColocarCategoria("janela"); };
+      reg.cobertura = function (e) { if (e.ligado === false) { if (B()) B().editarArmar(null); return true; } self._famCobertura(); return true; };
+      reg.viga = function () {
+        var b = B(); if (!b || !b.editarArmar) return false;
+        b.editarArmar("viga", {});
+        BimShell.status("Viga 14 × 40 com o topo no topo da parede: clique o início e o fim (Shift trava na horizontal/vertical; dá para digitar o comprimento).");
+        return true;
+      };
+      reg["corte-2d"] = function () {
+        var st = self._bimVxEst(), pid = Bim2D && Bim2D.ehVista2d(st.ativa) && /^d2p-/.test(st.ativa) ? st.ativa : self._d2PlantaPadrao();
+        if (!pid) { UI.toast("Abra um modelo primeiro: o corte é traçado na planta dele.", "aviso"); return true; }
+        if (st.ativa !== pid) self._d2Abrir(pid, (Bim2D.def(pid) || {}).nome || "Planta baixa");
+        Bim2D.tracarCorte(pid);
+        return true;
+      };
+      reg["max-3d"] = function () { self.acao("bim-max", {}); return true; };
+      reg["janela-3d"] = function () { self.acao("bim-3d-janela", {}); return true; };
+      reg.grade = function (e) {
+        var b = B(); if (!b || !b.grade) return false;
+        var on = b.grade(!!e.ligado);
+        BimShell.status(on ? "Grade ligada (G desliga)." : "Grade desligada (G liga).");
+        return on !== null;
+      };
+      reg.paineis = function () {
+        BimShell.organizarPaineis(); BimShell.status("Painéis de volta ao lugar e ao tamanho padrão.");
+        try { if (typeof BIM !== "undefined" && BIM.vistasRedimensionar) BIM.vistasRedimensionar(); } catch (eR) {}
+        return true;
+      };
+      reg["pele-revit"] = function (e) {
+        BimShell.pele(!!e.ligado);
+        BimShell.status(e.ligado ? "Estilo Revit: o cinza do Revit, com os mesmos comandos." : "Padrão novo do OrçaPRO.");
+        return true;
+      };
+      try {
+        /* o estado inicial dos dois "alterna" novos vem do que está na tela */
+        var _bg = B(); BimRibbon.setAtivo("grade", !(_bg && _bg.grade && _bg.grade() === false));
+        BimRibbon.setAtivo("pele-revit", !!(BimShell.pele && BimShell.pele()));
+      } catch (eNv) {}
+
       BimCmd.registrar(reg);
+      /* a biblioteca de famílias chega ao visor antes de qualquer edição gravada ser reaplicada */
+      try { this._famSync(); } catch (eFs) {}
       BimCmd.aoCancelar(function () {
         var b = B();
         if (b) { try { ["medir", "area", "angulo", "planta", "corte"].forEach(function (k) { if (b[k]) b[k](false); }); } catch (e) {} }
@@ -10721,9 +10972,30 @@
       var plantas = L.length
         ? L.map(function (n) { return { id: "pl:" + n.id, rotulo: n.nome, icone: "planta", acao: "planta", nivelId: n.id }; })
         : [{ id: "pl:vazio", rotulo: "Planta baixa (corte do modelo)", icone: "planta", acao: "planta" }];
+      /* CARA NOVA (prévia visual): a planta é o DESENHO 2D (js/bim2dui.js), uma por
+         nível, e os cortes A, B, C… ganham pasta própria — como no Revit */
+      var ramoCortes = null;
+      if (document.documentElement.getAttribute("data-visual") === "nova" && this._d2Config()) {
+        var NV = []; try { NV = Bim2D.niveis(); } catch (eNv) { NV = []; }
+        if (NV.length) plantas = NV.map(function (n) {
+          var pid = Bim2D.idPlanta(n.id);
+          return { id: "d2:" + pid, rotulo: n.nome, icone: "planta", fn: function () { self._d2Abrir(pid, "Planta baixa — " + n.nome); } };
+        });
+        var CS = []; try { CS = Bim2D.cortes(); } catch (eCs) { CS = []; }
+        ramoCortes = { id: "cortes", rotulo: "Cortes", icone: "corte", n: CS.length, aberto: CS.length > 0,
+          filhos: CS.map(function (c) {
+            var cid = Bim2D.idCorte(c.id);
+            return { id: "d2:" + cid, rotulo: "Corte " + c.letra, icone: "corte", fn: function () { self._d2Abrir(cid, "Corte " + c.letra); } };
+          }).concat([
+            { id: "d2:novo", rotulo: "+ Traçar corte na planta", icone: "corte", fn: function () { BimShell.executar("corte-2d"); } },
+            { id: "d2:long", rotulo: "+ Longitudinal pelo meio", icone: "corte", fn: function () { Bim2D.corteRapido("longitudinal"); } },
+            { id: "d2:trans", rotulo: "+ Transversal pelo meio", icone: "corte", fn: function () { Bim2D.corteRapido("transversal"); } }
+          ]) };
+      }
       var st = this._bimVxEst();
       var v3d = [{ id: "3d", rotulo: "{3D}", icone: "quadrado", fn: function () { self._bimVxAtivar("3d"); } }];
       st.lista.forEach(function (v) {
+        if (v.tipo === "2d") return;   /* planta/corte 2D aparecem no ramo deles */
         v3d.push({ id: "vx:" + v.id, rotulo: v.nome + (v.janela ? " (outra janela)" : ""), icone: "quadrado",
                    fn: function () { if (v.janela && !v.janela.closed) { try { v.janela.focus(); } catch (e) {} } else self._bimVxAtivar(v.id); } });
       });
@@ -10742,10 +11014,10 @@
       var arv = [
         { id: "vistas", rotulo: "Vistas (todas)", icone: "planta", filhos: [
           { id: "v3d", rotulo: "Vistas 3D", icone: "quadrado", filhos: v3d },
-          { id: "plantas", rotulo: "Plantas de piso", icone: "planta", aberto: false, filhos: plantas },
+          { id: "plantas", rotulo: "Plantas de piso", icone: "planta", aberto: !!ramoCortes, filhos: plantas }].concat(ramoCortes ? [ramoCortes] : []).concat([
           { id: "pvs", rotulo: "Pontos de vista", icone: "camera", n: pv.length, aberto: false,
             filhos: ramoPv.length ? ramoPv : [{ id: "pv:vazio", rotulo: "Nenhum — salve uma vista ou abra o arquivo da obra", icone: "camera", acao: "vistas" }] }
-        ] },
+        ]) },
         { id: "folhas", rotulo: "Folhas (todas)", icone: "prancha", n: pr.length, aberto: false,
           filhos: pr.length ? pr.map(function (r) { return { id: "pr:" + r.id, rotulo: r.nome || "Prancha", icone: "prancha", fn: function () { self._bimAbrirPainel("pranchas"); self._prRender(); } }; })
                             : [{ id: "pr:vazio", rotulo: "Nenhuma — Anotar → Pranchas do projeto", icone: "prancha", acao: "pranchas" }] },
@@ -12842,6 +13114,10 @@
           '<div id="bim-qto-res"><p class="muted" style="font-size:12.5px;margin:0">Conta e mede cada disciplina do modelo (paredes m², vigas m, portas un…) e monta um orçamento pra você casar no SINAPI. Clique em <b>Levantar</b>.</p></div>' +
         "</div>" +
 
+        /* famílias PARAMÉTRICAS (js/familiaui.js): biblioteca + editor — 07/10/2026 */
+        '<div id="bim-famop" style="display:none"><div id="bim-famop-corpo"></div></div>' +
+        /* ORÇAMENTO DO MODELO (js/orcmodeloui.js, F1) */
+        '<div id="bim-orcmod" style="display:none"><div id="bim-orcmod-corpo"></div></div>' +
         '<div id="bim-familias" style="display:none">' +
           '<div class="flex between" style="align-items:center;margin-bottom:8px"><h3 style="margin:0;display:flex;align-items:center">' + _icB("tabela") + 'Banco de famílias</h3></div>' +
           '<p class="muted" style="font-size:11.5px;margin:0 0 8px">Salve famílias do modelo e reuse em qualquer projeto.</p>' +
@@ -12921,10 +13197,10 @@
     },
     /* v1.1.121 — abre a gaveta de análise do viewer no painel pedido (chamado pelo
      * dock do BIM via opts.onPainel; um painel por vez pra leitura limpa). */
-    _BIM_PAINEIS: { modelos: ["bim-modelos", "Modelos carregados"], "4d": ["bim-4d", "Simulação 4D"], clash: ["bim-clash", "Compatibilização"], qto: ["bim-qto", "Quantitativos"], familias: ["bim-familias", "Banco de famílias"], "6d": ["bim-6d", "6D/7D · Ciclo de vida"], conjuntos: ["bim-conjuntos", "Conjuntos de seleção"], vistas: ["bim-vistas", "Pontos de vista"], tarefas4d: ["bim-tarefas", "Cronograma 4D"], disc: ["bim-disc", "Disciplinas e etapas construtivas"], estrut: ["bim-estrut", "Projeto estrutural no canteiro"],
+    _BIM_PAINEIS: { modelos: ["bim-modelos", "Modelos carregados"], "4d": ["bim-4d", "Simulação 4D"], clash: ["bim-clash", "Compatibilização"], qto: ["bim-qto", "Quantitativos"], familias: ["bim-familias", "Banco de famílias"], famop: ["bim-famop", "Famílias paramétricas"], "6d": ["bim-6d", "6D/7D · Ciclo de vida"], conjuntos: ["bim-conjuntos", "Conjuntos de seleção"], vistas: ["bim-vistas", "Pontos de vista"], tarefas4d: ["bim-tarefas", "Cronograma 4D"], disc: ["bim-disc", "Disciplinas e etapas construtivas"], estrut: ["bim-estrut", "Projeto estrutural no canteiro"],
                    peso: ["bim-peso", "Peso das peças"], icamento: ["bim-icamento", "Plano de içamento"],
                    sondagem: ["bim-sondagem", "Sondagem 3D"], pranchas: ["bim-pranchas", "Pranchas do projeto"],
-                   params: ["bim-params", "Parâmetros do elemento"] },
+                   params: ["bim-params", "Parâmetros do elemento"], orcmod: ["bim-orcmod", "Orçamento do modelo"] },
     _bimAbrirPainel: function (chave) {
       var mapa = this._BIM_PAINEIS;
       var alvo = mapa[chave]; if (!alvo) return;
@@ -12949,7 +13225,7 @@
       drawer.style.width = chave === "4d" ? (st4.largo ? "100%" : "min(640px,96%)") : (chave === "estrut" ? "min(640px,96%)" : (chave === "sondagem" ? "min(860px,97%)" : (chave === "icamento" ? "min(560px,96%)" : "min(440px,94%)")));
       /* na janela da direita a largura é da DOCA (lembrada por ferramenta) */
       this._bimDocaChave = chave;
-      this._bimDocaPref = chave === "4d" ? 640 : (chave === "estrut" ? 640 : (chave === "sondagem" ? 860 : (chave === "icamento" ? 560 : 440)));
+      this._bimDocaPref = chave === "famop" || chave === "orcmod" ? 620 : chave === "4d" ? 640 : (chave === "estrut" ? 640 : (chave === "sondagem" ? 860 : (chave === "icamento" ? 560 : 440)));
       if (chave === "4d") {
         /* abrir o painel liga a simulação. A 1ª abertura vai para HOJE quando
            hoje cai dentro da obra (é a pergunta de toda reunião: "onde
@@ -13037,6 +13313,376 @@
      *   janela do 3D que já existe (bim-3d-janela, com o espelho).
      * ===================================================================== */
     _bimVxEst: function () { if (!this._bimVx) this._bimVx = { lado: false, ativa: "3d", lista: [] }; return this._bimVx; },
+    /* ---- FAMÍLIAS PARAMÉTRICAS (js/familia.js + js/familiaui.js, 07/10/2026) ----
+       A biblioteca da empresa mora no Store "bim_familias": um registro por
+       família, com a família inteira em TEXTO (campo json) — a nuvem recusa
+       lista dentro de lista, e família tem várias. */
+    _famConfig: function () {
+      if (!window.FamiliaUI || !window.Familia) return false;
+      var self = this;
+      FamiliaUI.configurar({
+        app: "OrçaPRO " + ((typeof CONFIG !== "undefined" && CONFIG.versao) || ""),
+        autor: (function () { try { return (Auth._usuario && (Auth._usuario.nome || Auth._usuario.email)) || ""; } catch (e) { return ""; } })(),
+        listar: function () {
+          var l = []; try { l = Store.listar(eid(), "bim_familias") || []; } catch (e) { l = []; }
+          return l.map(function (r) { try { var f = JSON.parse(r.json || "null"); if (f) f._origem = r.origem || f._origem || "minha"; return f; } catch (e2) { return null; } }).filter(Boolean);
+        },
+        salvar: function (fam) {
+          var c = JSON.parse(JSON.stringify(fam)), origem = c._origem || "minha";
+          return !!Store.salvar(eid(), "bim_familias", { id: c.id, nome: c.nome, categoria: c.categoria, origem: origem, json: JSON.stringify(c) });
+        },
+        excluir: function (id) { return Store.excluir(eid(), "bim_familias", id); },
+        colocar: function (f, tipoId) {
+          var b = window.BIM; if (!b || !b.editarArmar) return;
+          b.familiasDefinir(FamiliaUI.biblioteca());
+          b.editarArmar("familia", { famId: f.id, tipoId: tipoId });
+          var t = (f.tipos || []).filter(function (x) { return x.id === tipoId; })[0];
+          BimShell.status("Colocar \"" + f.nome + (t ? " : " + t.nome : "") + "\" — " + (f.hospedagem === "parede" ? "clique numa parede criada aqui (o vão abre sozinho)." : "clique no modelo; barra de espaço gira 90°.") + " Esc encerra.");
+        }
+      });
+      return true;
+    },
+    /* ---- ARQUIVOS DO ORÇAPRO: .opbim (projeto), .optpl (template) — js/opformato.js ---- */
+    _opMeta: function () {
+      var a = ""; try { a = (Auth._usuario && (Auth._usuario.nome || Auth._usuario.email)) || ""; } catch (e) {}
+      return { app: "OrçaPRO " + ((typeof CONFIG !== "undefined" && CONFIG.versao) || ""), autor: a };
+    },
+    _opBaixar: function (nome, dados, mime) {
+      try {
+        var blob = new Blob([dados], { type: mime || "application/octet-stream" }), url = URL.createObjectURL(blob), a = document.createElement("a");
+        a.href = url; a.download = nome; document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 5000); return true;
+      } catch (e) { UI.toast("Não consegui gerar o arquivo: " + e.message, "erro"); return false; }
+    },
+    _opEscolherArquivo: function (aceita, fn) {
+      var i = document.createElement("input"); i.type = "file"; i.accept = aceita; i.style.display = "none";
+      i.onchange = function () { var f = i.files && i.files[0]; i.remove(); if (f) fn(f); };
+      document.body.appendChild(i); i.click();
+    },
+    /* o projeto como ele está agora (o que vai para o .opbim) */
+    _opbimMontar: function () {
+      this._famConfig(); this._d2Config();
+      var b = window.BIM, ops = (b && b.editarOps) ? b.editarOps() : [], usados = {};
+      ops.forEach(function (o) { if (o.op === "familia") usados[o.famId] = 1; });
+      var familias = Object.keys(usados).map(function (id) { return FamiliaUI.obter(id); }).filter(Boolean)
+        .map(function (f) { var c = JSON.parse(JSON.stringify(f)); delete c._origem; return c; });
+      var niveis = this._nivLer().map(function (n) { return { id: n.id, nome: n.nome, elevacao: n.elevacao, corte: n.corte, peDireitoDeclarado: n.peDireitoDeclarado }; });
+      var d2 = null; try { d2 = JSON.parse(JSON.stringify(Bim2D.estado())); } catch (e) {}
+      var fontes = (b && b.ifcFontes) ? b.ifcFontes() : [], ifcs = [], semFonte = [];
+      fontes.forEach(function (x) { if (x.bytes) ifcs.push({ nome: /\.ifc$/i.test(x.nome) ? x.nome : x.nome + ".ifc", bytes: x.bytes }); else semFonte.push(x.nome); });
+      /* malhas (glb/obj/… e o .json do SketchUp) vão com o arquivo de origem e as opções da importação */
+      var mf = (b && b.malhaFontes) ? b.malhaFontes() : [], malhas = [], optsMalha = [];
+      mf.forEach(function (x) { if (x.bytes) { malhas.push({ nome: x.nome, bytes: x.bytes }); optsMalha.push({ nome: x.nome, opcoes: x.opcoes }); } else semFonte.push(x.nome); });
+      /* extras: o que veio de outro programa (parâmetros do Revit…) continua no arquivo
+         ao salvar de novo, e as linhas dos vínculos CAD vão junto (cad-<id>.json) */
+      var extras = {}, ex0 = (this._opExtras && this._opExtras.obra === (this._bimSel || "geral")) ? this._opExtras.dados : {};
+      Object.keys(ex0 || {}).forEach(function (k) { if (!/^cad-/.test(k)) extras[k] = ex0[k]; });
+      if (d2 && d2.cad) Object.keys(d2.cad).forEach(function (nv) { (d2.cad[nv] || []).forEach(function (v) { var dd = Bim2D._cadDados(v.id); if (dd) extras["cad-" + v.id + ".json"] = dd; }); });
+      var obra = this._bimSel ? Store.obter(eid(), "obras", this._bimSel) : null;
+      return { proj: { nome: (obra && obra.nome) || "Projeto OrçaPRO", modelo: { edicao: ops, niveis: niveis, desenho2d: d2, malhas: optsMalha, disciplinas: fontes.map(function (x) { return { nome: x.nome, disciplina: x.disciplina }; }) }, familias: familias, ifcs: ifcs, malhas: malhas, extras: extras }, semFonte: semFonte };
+    },
+    _opbimSalvar: function () {
+      if (!window.OpFormato || !window.BimBcf) { UI.toast("O formato .opbim não carregou.", "erro"); return; }
+      var m = this._opbimMontar(), p = m.proj;
+      if (!p.modelo.edicao.length && !p.ifcs.length && !p.malhas.length && !m.semFonte.length) { UI.toast("Não há nada no projeto para salvar: abra um IFC ou modele algo.", "aviso"); return; }
+      var zip;
+      try { zip = OpFormato.projetoParaZip(p, this._opMeta(), BimBcf.zipEscrever); } catch (e) { UI.toast("Não consegui montar o .opbim: " + e.message, "erro"); return; }
+      if (!this._opBaixar(OpFormato.nomeSeguro(p.nome) + OpFormato.EXT.projeto, zip, "application/zip")) return;
+      var mb = Math.round(zip.length / 104857.6) / 10;
+      UI.toast("Projeto salvo (" + String(mb).replace(".", ",") + " MB): " + p.modelo.edicao.length + " operação(ões) de modelagem, " + p.familias.length + " família(s), " + p.ifcs.length + " IFC" + (p.malhas.length ? ", " + p.malhas.length + " malha(s)" : "") + "." +
+        (m.semFonte.length ? " Atenção: sem o arquivo de origem (veio do cache ou passa de 80 MB), só a referência: " + m.semFonte.join(", ") + " — reabra o IFC antes de salvar para ele ir junto." : ""), m.semFonte.length ? "aviso" : "ok", 9000);
+    },
+    _opInflar: function () {
+      if (typeof DecompressionStream === "undefined") return null;
+      return function (bytes) { var ds = new DecompressionStream("deflate-raw"); return new Response(new Blob([bytes]).stream().pipeThrough(ds)).arrayBuffer().then(function (ab) { return new Uint8Array(ab); }); };
+    },
+    _opbimAbrir: function () {
+      var self = this;
+      this._opEscolherArquivo(".opbim,application/zip", function (file) {
+        file.arrayBuffer().then(function (ab) {
+          return OpFormato.lerProjeto(new Uint8Array(ab), BimBcf.zipLer, { validarFamilia: Familia.validar, inflar: self._opInflar() });
+        }).then(function (r) {
+          if (!r.ok) { UI.toast("Não abri o projeto: " + r.erros.join("; "), "erro", 9000); return; }
+          var m = r.modelo || {}, nOps = (m.edicao || []).length, nNiv = (m.niveis || []).length, nCortes = m.desenho2d && m.desenho2d.cortes ? m.desenho2d.cortes.length : 0;
+          var linhas = [["Projeto", Util.esc(r.nome)], ["Gravado por", Util.esc((r.meta && r.meta.autor) || "—") + " em " + Util.esc(((r.meta && r.meta.criadoEm) || "").slice(0, 10)) + " (" + Util.esc((r.meta && r.meta.app) || "") + ")"],
+            ["Modelagem", nOps + " operação(ões)"], ["Famílias", r.familias.length + ""], ["Níveis", nNiv + ""], ["Cortes", nCortes + ""], ["Modelos IFC", r.ifcs.map(function (x) { return Util.esc(x.nome); }).join(", ") || "—"], ["Malhas", (r.malhas || []).map(function (x) { return Util.esc(x.nome); }).join(", ") || "—"],
+            ["Dados de outros programas", Object.keys(r.extras || {}).map(Util.esc).join(", ") || "—"]];
+          var html = '<table class="tbl">' + linhas.map(function (l) { return "<tr><th style=\"text-align:left\">" + l[0] + "</th><td>" + l[1] + "</td></tr>"; }).join("") + "</table>" +
+            (r.avisos && r.avisos.length ? '<p class="muted" style="color:var(--amarelo)">' + r.avisos.map(Util.esc).join("<br>") + "</p>" : "") +
+            '<p class="muted" style="font-size:12.5px">Abrir põe isto na obra escolhida no alto (' + Util.esc(self._bimSel ? ((Store.obter(eid(), "obras", self._bimSel) || {}).nome || "") : "sem obra") + "): a modelagem e os níveis desta obra são SUBSTITUÍDOS pelos do arquivo; as famílias entram na sua biblioteca; os IFC abrem junto.</p>";
+          UI.modal("Abrir Projeto OrçaPRO (.opbim)", html, [
+            { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+            { texto: "Abrir neste projeto", classe: "primary", onClick: function () { UI.fecharModal(); self._opbimAplicar(r); } }
+          ]);
+        })["catch"](function (e) { UI.toast("Não consegui ler o arquivo: " + e.message, "erro"); });
+      });
+    },
+    _opbimAplicar: function (r) {
+      var self = this, b = window.BIM, m = r.modelo || {}, obraId = this._bimSel || "geral";
+      this._famConfig();
+      (r.familias || []).forEach(function (f) { f._origem = "importada"; try { FamiliaUI._ctx.salvar(f); } catch (e) {} });
+      this._famSync();
+      if (Array.isArray(m.niveis)) {
+        try {
+          var velhos = this._nivLer().map(function (n) { return n.id; });
+          if (velhos.length) Store.excluirVarios(eid(), "bim_niveis", velhos);
+          m.niveis.forEach(function (n) { Store.salvar(eid(), "bim_niveis", { id: n.id || Util.uid("niv"), obraId: obraId === "geral" ? null : obraId, nome: n.nome, elevacao: n.elevacao, corte: n.corte, peDireitoDeclarado: n.peDireitoDeclarado }); });
+        } catch (eN) {}
+      }
+      if (m.desenho2d && this._d2Config()) { try { Bim2D._est = m.desenho2d; Bim2D._cache = {}; Bim2D._cadMem = {}; Bim2D._gravar(); } catch (eD) {} }
+      /* linhas dos vínculos CAD que vieram no arquivo */
+      Object.keys(r.extras || {}).forEach(function (k) {
+        var mc = /^cad-(.+)\.json$/.exec(k); if (!mc || !r.extras[k] || !Array.isArray(r.extras[k].s)) return;
+        Bim2D._cadMem[mc[1]] = r.extras[k];
+        try { localStorage.setItem(Bim2D._cadChave(mc[1]), JSON.stringify(r.extras[k])); } catch (eC) {}
+      });
+      this._opExtras = { obra: obraId, dados: r.extras || {} };
+      var seq = Promise.resolve();
+      (r.ifcs || []).forEach(function (x) {
+        var disc = ((m.disciplinas || []).filter(function (d) { return d.nome === x.nome || d.nome + ".ifc" === x.nome; })[0] || {}).disciplina;
+        seq = seq.then(function () { return b && b.abrirBytes ? b.abrirBytes(x.bytes.buffer.slice(x.bytes.byteOffset, x.bytes.byteOffset + x.bytes.byteLength), x.nome, disc) : null; });
+      });
+      (r.malhas || []).forEach(function (x) {
+        var op = ((m.malhas || []).filter(function (q) { return q.nome === x.nome; })[0] || {}).opcoes || {};
+        seq = seq.then(function () { return b && b.importarMalha ? b.importarMalha(x.nome, x.bytes.buffer.slice(x.bytes.byteOffset, x.bytes.byteOffset + x.bytes.byteLength), op) : null; });
+      });
+      seq.then(function () {
+        if (b && b.parametrosExtras && r.extras) { try { b.parametrosExtras(r.extras); } catch (eX) {} }
+        if (b && b.editarAplicar) b.editarAplicar(m.edicao || []);
+        self._bimEdPend = { id: obraId, ops: m.edicao || [] }; self._bimEdFlush();
+        self._nivArvore();
+        UI.toast("Projeto \"" + r.nome + "\" aberto: " + (m.edicao || []).length + " operação(ões), " + (r.familias || []).length + " família(s), " + (r.ifcs || []).length + " IFC" + ((r.malhas || []).length ? ", " + r.malhas.length + " malha(s)" : "") + ".", "ok", 7000);
+      })["catch"](function (e) { UI.toast("Abri só parte do projeto: " + e.message, "erro"); });
+    },
+    /* ---- TRAZER DE OUTROS PROGRAMAS (07/10/2026) ----
+       RVT, SKP e DWG são formatos FECHADOS: o que não perde dado é converter no
+       programa de origem (plugin do Revit, extensão do SketchUp) ou com o
+       AutoCAD/ODA desta máquina (server/dwg.js). Malha e IFC abrem direto. */
+    _importarOutros: function () {
+      var self = this;
+      var bl = function (tit, txt, bts) { return '<div style="border:1px solid var(--linha);border-radius:14px;padding:12px 14px;margin-bottom:10px"><b>' + tit + '</b><p class="muted" style="font-size:12.5px;margin:4px 0 8px">' + txt + '</p><div style="display:flex;gap:6px;flex-wrap:wrap">' + bts + "</div></div>"; };
+      var bt = function (k, rot, pri) { return '<button class="btn sm' + (pri ? " primary" : "") + '" data-imp="' + k + '">' + rot + "</button>"; };
+      var html =
+        bl("Revit (.rvt)", "O RVT só o Revit lê por inteiro. No Revit, aba <b>OrçaPRO › Integração › Exportar para OrçaPRO</b>: sai um <b>.opbim</b> com o IFC e TODOS os parâmetros de instância e de tipo de cada peça, e os níveis. Depois abra o .opbim aqui.", bt("opbim", "Abrir .opbim", true)) +
+        bl("SketchUp (.skp)", "Instale a extensão OrçaPRO no SketchUp (Extensões › Gerenciador de extensões › Instalar extensão › o arquivo .rbz). Depois <b>Extensões › OrçaPRO › Exportar para OrçaPRO</b> gera um .json com cada grupo/componente, etiqueta, material e atributos.", bt("rbz", "Baixar a extensão (.rbz)") + bt("skp", "Importar o .json do SketchUp", true)) +
+        bl("AutoCAD (.dwg / .dxf)", "O DWG é convertido para DXF neste computador, com o AutoCAD ou o ODA File Converter instalados (o arquivo não sai da máquina). O desenho entra como <b>vínculo CAD</b> na planta 2D aberta — ou vira 3D em Arquivo › Planta DXF → 3D.", bt("cad", "Vincular DWG/DXF na planta", true) + bt("p3d", "Planta DXF → 3D") + '<span id="imp-dwg-st" class="muted" style="font-size:12px;align-self:center"></span>') +
+        bl("Malha 3D (glTF/GLB, OBJ, STL, DAE, FBX)", "Do Blender, 3ds Max, Rhino, D5, Lumion, SketchUp (exportado)… Cada objeto vira uma peça com nome, área e volume. Malha não traz parâmetro BIM — nada é inventado.",
+           '<label class="field" style="margin:0">Unidade <select id="imp-un"><option value="auto">detectar</option><option value="m">metro</option><option value="cm">centímetro</option><option value="mm">milímetro</option><option value="pol">polegada</option></select></label>' +
+           '<label style="display:flex;gap:6px;align-items:center;font-size:12.5px"><input type="checkbox" id="imp-zup"> Z para cima (CAD)</label>' + bt("malha", "Importar malha…", true)) +
+        bl("IFC (qualquer programa BIM)", "Revit, ArchiCAD, Tekla, CYPE, Vectorworks, BricsCAD… O IFC abre com todas as propriedades.", bt("ifc", "Abrir IFC"));
+      var bg = UI.modal("Importar de outros programas", html, [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+      var m = bg && bg.querySelector ? bg.querySelector(".modal") : null;
+      /* conversão de DWG nesta máquina? (só existe no OrçaPRO instalado) */
+      try { fetch("/__dwg/status").then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+        var el = document.getElementById("imp-dwg-st"); if (!el) return;
+        el.textContent = !j ? "DWG: só no OrçaPRO instalado; aqui, vincule o .dxf." : j.disponivel ? "DWG convertido pelo " + j.conversor + "." : "DWG: " + j.motivo + ". " + (j.fazer || "");
+      })["catch"](function () {}); } catch (eS) {}
+      if (m) { m.style.maxWidth = "640px"; m.addEventListener("click", function (e) {
+        var b = e.target.closest ? e.target.closest("[data-imp]") : null; if (!b) return;
+        var k = b.getAttribute("data-imp"), un = (document.getElementById("imp-un") || {}).value || "auto", zup = !!(document.getElementById("imp-zup") || {}).checked;
+        UI.fecharModal();
+        if (k === "opbim") self._opbimAbrir();
+        else if (k === "ifc") BimShell.executar("abrir-ifc");
+        else if (k === "p3d") BimShell.executar("p3d");
+        else if (k === "rbz") { var a = document.createElement("a"); a.href = "bim/extensoes/orcapro-sketchup.rbz"; a.download = "orcapro-sketchup.rbz"; document.body.appendChild(a); a.click(); a.remove(); }
+        else if (k === "skp") self._opEscolherArquivo(".json", function (f) { self._importarMalhaArquivo(f, { unidade: "m" }); });
+        else if (k === "malha") self._opEscolherArquivo(".glb,.gltf,.obj,.stl,.dae,.fbx", function (f) { self._importarMalhaArquivo(f, { unidade: un, zUp: zup }); });
+        else if (k === "cad") self._opEscolherArquivo(".dwg,.dxf", function (f) { self._cadVincular(f); });      }); }
+    },
+    _importarMalhaArquivo: function (file, o) {
+      var b = window.BIM; if (!b || !b.importarMalha) { UI.toast("O visualizador 3D não abriu.", "erro"); return; }
+      BimShell.status("Lendo " + file.name + "…");
+      var leitura = /\.(obj|dae|gltf|json)$/i.test(file.name) ? file.text() : file.arrayBuffer();
+      leitura.then(function (d) { return b.importarMalha(file.name, d, o); }).then(function (r) {
+        if (!r || !r.ok) { UI.toast("Não importei " + file.name + ": " + ((r && r.erro) || "erro desconhecido"), "erro", 8000); return; }
+        UI.toast(file.name + ": " + r.pecas + " peça(s), " + Util.fmtNum(r.triangulos, 0) + " triângulos, unidade " + r.unidade + " (" + r.tamanho.join(" × ").replace(/\./g, ",") + " m). " + (/\.json$/i.test(file.name) ? "Atributos do SketchUp em Propriedades › Ver todos." : "Se o tamanho não bater, importe de novo escolhendo a unidade."), "ok", 9000);
+        BimShell.status("Importado: " + file.name + ".");
+      })["catch"](function (e) { UI.toast("Não consegui ler " + file.name + ": " + e.message, "erro"); });
+    },
+    /* DWG/DXF → vínculo CAD na planta 2D ativa (ou na planta de trabalho) */
+    _cadVincular: function (file, plantaId) {
+      var self = this;
+      if (!this._d2Config()) return;
+      var st = this._bimVxEst(), pid = plantaId || (/^d2p-/.test(st.ativa) ? st.ativa : this._d2PlantaPadrao());
+      if (!pid) { UI.toast("Abra um modelo primeiro: o vínculo CAD vai numa planta.", "aviso"); return; }
+      var dxfTexto = /\.dxf$/i.test(file.name) ? file.text() : file.arrayBuffer().then(function (ab) {
+        BimShell.status("Convertendo " + file.name + " para DXF neste computador…");
+        return fetch("/__dwg/converter", { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: ab }).then(function (r) {
+          if (r.status === 404) throw new Error("a conversão de DWG precisa do OrçaPRO instalado no computador (nesta versão online não há). Salve como DXF no AutoCAD e vincule o .dxf.");
+          if (!r.ok) return r.json().then(function (j) { throw new Error(j.erro || ("erro " + r.status)); }, function () { throw new Error("erro " + r.status); });
+          return r.arrayBuffer().then(function (b) { return new TextDecoder("latin1").decode(b); });
+        });
+      });
+      dxfTexto.then(function (txt) {
+        var d = window.DXF ? DXF.parse(txt) : null;
+        if (!d || !d.segmentos || !d.segmentos.length) { UI.toast("O desenho não tem linhas que eu leia (LINE, POLYLINE, ARC, CIRCLE).", "aviso"); return; }
+        var r = Bim2D.vincularCad(pid, file.name, d);
+        if (!r.ok) { UI.toast(r.erro, "erro"); return; }
+        self._d2Abrir(pid, (Bim2D.def(pid) || {}).nome || "Planta baixa");
+        Bim2D.redesenhar(pid, false);
+        try { BimShell.repintarVista(); } catch (eR) {}
+        UI.toast(file.name + " vinculado na planta: " + r.segmentos + " linha(s), " + r.textos + " texto(s)" + (r.cortado ? " (limitado a " + r.segmentos + " para caber no aparelho)" : "") + ". Ajuste o deslocamento em Propriedades › Vínculos CAD.", "ok", 8000);
+      })["catch"](function (e) { UI.toast("Não vinculei " + file.name + ": " + e.message, "erro", 9000); });
+    },
+    /* TEMPLATE (.optpl): níveis + famílias da biblioteca + estilos das vistas 2D */
+    _optplSalvar: function () {
+      this._famConfig(); this._d2Config();
+      var fams = FamiliaUI.biblioteca().filter(function (f) { return f._origem !== "ra"; }).map(function (f) { var c = JSON.parse(JSON.stringify(f)); delete c._origem; return c; });
+      var est = {}; try { var e2 = Bim2D.estado().estilos || {}; Object.keys(e2).forEach(function (k) { var t = /^d2p-/.test(k) ? "planta" : "corte"; if (!est[t]) est[t] = e2[k]; }); } catch (e) {}
+      var tpl = { nome: "Template " + (((Store.obter(eid(), "obras", this._bimSel) || {}).nome) || "OrçaPRO"), niveis: this._nivLer().map(function (n) { return { nome: n.nome, elevacao: n.elevacao, corte: n.corte }; }), familias: fams, estilos2d: est };
+      var txt = OpFormato.templateParaArquivo(tpl, this._opMeta());
+      if (this._opBaixar(OpFormato.nomeSeguro(tpl.nome) + OpFormato.EXT.template, txt, "application/json"))
+        UI.toast("Template salvo: " + tpl.niveis.length + " nível(is), " + fams.length + " família(s) suas e o estilo das vistas.", "ok");
+    },
+    _optplAbrir: function () {
+      var self = this;
+      this._opEscolherArquivo(".optpl,application/json", function (file) {
+        file.text().then(function (t) {
+          var r = OpFormato.lerTemplate(t, Familia.validar);
+          if (!r.ok) { UI.toast("Não abri o template: " + r.erros.join("; "), "erro"); return; }
+          var tp = r.template, temNiv = self._nivLer().length;
+          UI.modal("Usar o template \"" + Util.esc(tp.nome || "") + "\"?", "<p>" + (tp.niveis || []).length + " nível(is), " + (tp.familias || []).length + " família(s) e o estilo das plantas e cortes.</p>" +
+            (temNiv ? '<p class="muted">Esta obra já tem ' + temNiv + " nível(is): eles ficam, e os do template que tiverem o mesmo nome não entram de novo.</p>" : "") + (r.avisos.length ? '<p class="muted">' + r.avisos.map(Util.esc).join("<br>") + "</p>" : ""), [
+            { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+            { texto: "Usar template", classe: "primary", onClick: function () {
+              UI.fecharModal();
+              self._famConfig();
+              (tp.familias || []).forEach(function (f) { f._origem = "importada"; FamiliaUI._ctx.salvar(f); });
+              self._famSync();
+              var tem = {}; self._nivLer().forEach(function (n) { tem[String(n.nome).toLowerCase()] = 1; });
+              (tp.niveis || []).forEach(function (n) { if (!tem[String(n.nome).toLowerCase()]) Store.salvar(eid(), "bim_niveis", { id: Util.uid("niv"), obraId: self._bimSel || null, nome: n.nome, elevacao: n.elevacao, corte: n.corte }); });
+              if (self._d2Config() && tp.estilos2d) { var e = Bim2D.estado(); e.padrao = tp.estilos2d; Bim2D._gravar(); }
+              self._nivArvore();
+              UI.toast("Template aplicado.", "ok");
+            } }
+          ]);
+        });
+      });
+    },
+    _famSync: function () { if (this._famConfig() && window.BIM && BIM.familiasDefinir) { try { BIM.familiasDefinir(FamiliaUI.biblioteca()); } catch (e) {} } },
+    /* contexto da família/render por IA: a obra do BIM, quem gera e o editor de família */
+    _iaCtx: function () {
+      var self = this;
+      return { empresaId: eid, obraId: this._bimSel || "", autor: (function () { try { return (Auth._usuario && (Auth._usuario.nome || Auth._usuario.email)) || ""; } catch (e) { return ""; } })(),
+        abrirEditor: function (fam) { self._famAbrir("editor", fam); } };
+    },
+    _famAbrir: function (modo, fam) {
+      if (!this._famConfig()) { UI.toast("O editor de família não carregou.", "erro"); return; }
+      this._bimAbrirPainel("famop");
+      var corpo = document.getElementById("bim-famop-corpo"); if (!corpo) return;
+      FamiliaUI.montar(corpo);
+      if (modo === "editor") FamiliaUI.editar(fam || Familia.nova("Família nova", "generico"), !!(fam && fam._origem !== "ra") || !fam);
+      else { FamiliaUI._modo = "biblioteca"; FamiliaUI.render(); }
+    },
+    /* Porta/Janela da fita: arma a 1ª família da categoria e abre a biblioteca para trocar o tipo */
+    _famColocarCategoria: function (cat) {
+      if (!this._famConfig()) return false;
+      var f = FamiliaUI.biblioteca().filter(function (x) { return x.categoria === cat; })[0];
+      if (!f) { UI.toast("Não há família de " + cat + " na biblioteca.", "aviso"); return false; }
+      this._famAbrir("biblioteca");
+      FamiliaUI._busca = (Familia.CATEGORIAS[cat] || cat); FamiliaUI.render();
+      FamiliaUI._ctx.colocar(f, (f.tipos || [])[0] ? f.tipos[0].id : "");
+      return true;
+    },
+    _famCobertura: function () {
+      var self = this;
+      UI.modal("Cobertura", '<div class="row" style="gap:10px;flex-wrap:wrap">' +
+        '<div class="field"><label>Inclinação (%)</label><input id="cob-incl" type="number" value="30" min="5" max="200" step="1"></div>' +
+        '<div class="field"><label>Águas</label><select id="cob-aguas"><option value="2">2 águas (cumeeira no lado maior)</option><option value="1">1 água</option></select></div>' +
+        '<div class="field"><label>Beiral (m)</label><input id="cob-beiral" type="number" value="0.50" min="0" max="3" step="0.05"></div></div>' +
+        '<p class="muted" style="font-size:12.5px">Depois, clique dois cantos opostos da área coberta. O apoio fica no topo da parede (nível + altura do editor). O quantitativo sai em m² INCLINADOS (o que se compra de telha).</p>', [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Desenhar cobertura", classe: "primary", onClick: function () {
+          var i = parseFloat(String((document.getElementById("cob-incl") || {}).value || "30").replace(",", ".")), a = +(document.getElementById("cob-aguas") || {}).value || 2,
+              bb = parseFloat(String((document.getElementById("cob-beiral") || {}).value || "0.5").replace(",", "."));
+          UI.fecharModal();
+          if (window.BIM && BIM.editarArmar) BIM.editarArmar("cobertura", { inclinacao: i > 0 ? i : 30, aguas: a === 1 ? 1 : 2, beiral: bb >= 0 ? bb : 0.5 });
+        } }
+      ]);
+    },
+    /* Propriedades de uma família COLOCADA: tipo (lista), parâmetros de instância
+       editáveis, os de tipo e os calculados só de leitura, quantitativo. Mudar
+       vira uma op "instancia" (desfaz como as outras). */
+    _famPropsInstancia: function (id) {
+      var self = this, b = window.BIM; if (!b || !b.instanciaInfo) return null;
+      var info = b.instanciaInfo(id); if (!info) return null;
+      this._famConfig();
+      var fam = FamiliaUI.obter(info.instancia.famId), av = info.avaliado;
+      if (!fam || !av) return { titulo: "Família não carregada", icone: "familia", secoes: [{ nome: "Identidade", params: [{ id: "x", rotulo: "Família", leitura: true, valor: info.instancia.famId }, { id: "y", rotulo: "O que fazer", leitura: true, valor: "Importe a família (.opfam) nesta biblioteca" }] }] };
+      var ro = function (pid, rot, v) { return { id: pid, rotulo: rot, leitura: true, valor: v }; };
+      var fmt = function (v) { return typeof v === "number" ? Util.fmtNum(v, 3) : v; };
+      var inst = [], tipo = [], calc = [];
+      (fam.parametros || []).forEach(function (p) {
+        var v = av.valores[p.nome];
+        if (p.formula) { calc.push(ro("fc:" + p.nome, p.nome, fmt(v))); return; }
+        if (p.escopo === "instancia") {
+          if (p.nome === "Espessura_parede" && info.instancia.host) { inst.push(ro("fi:" + p.nome, "Espessura da parede (hospedeiro)", fmt(v))); return; }
+          inst.push(p.tipoDado === "simnao" ? { id: "fi:" + p.nome, rotulo: p.nome, tipo: "sim-nao", valor: !!v }
+                    : { id: "fi:" + p.nome, rotulo: p.nome, tipo: (p.tipoDado === "texto" || p.tipoDado === "material") ? "texto" : "numero", passo: 0.01, valor: v });
+        } else tipo.push(ro("ft:" + p.nome, p.nome, fmt(v)));
+      });
+      var q = av.quantitativo || {};
+      var secoes = [
+        { nome: "Identidade", params: [ro("fam-nome", "Família", fam.nome), { id: "fam-tipo", rotulo: "Tipo", tipo: "lista", valor: av.tipo.id, opcoes: (fam.tipos || []).map(function (t) { return { id: t.id, rotulo: t.nome }; }) },
+          ro("fam-cat", "Categoria", (Familia.CATEGORIAS[fam.categoria] || fam.categoria)), ro("fam-host", "Hospedada", info.instancia.host ? "Sim (parede " + info.instancia.host.id + ")" : "Não")] }
+      ];
+      if (inst.length) secoes.push({ nome: "Instância", params: inst });
+      if (tipo.length) secoes.push({ nome: "Tipo (mude o tipo ou edite a família)", params: tipo });
+      if (calc.length) secoes.push({ nome: "Calculados", params: calc });
+      secoes.push({ nome: "Quantitativo", params: [ro("fq-q", "Quantidade", Util.fmtNum(q.quantidade || 0, 3) + " " + (q.unidade || "un")), ro("fq-c", "Código", q.codigo || "— (preencha na família)"), ro("fq-d", "Descrição", q.descricao || "")] });
+      /* ORÇAMENTO PELO MODELO (F1, js/orcmodeloui.js) — só na prévia visual */
+      try { if (window.OrcModeloUI) secoes = secoes.concat(OrcModeloUI.secoesFamilia(id)); } catch (eOM) {}
+      secoes.push({ nome: "Ações", params: [{ id: "fam-editar", rotulo: "Família", tipo: "botao", rotuloBotao: "Editar família", fn: function () { self._famAbrir("editor", fam); } }]
+        .concat(info.instancia.host ? [] : [{ id: "fam-girar", rotulo: "Girar", tipo: "botao", rotuloBotao: "Girar 90°", fn: function () { b.instanciaAlterar(id, { rotY: (info.instancia.rotY || 0) + Math.PI / 2 }); } }]) });
+      return {
+        titulo: fam.nome + " : " + av.tipo.nome, icone: "familia", semEditarTipo: true, secoes: secoes,
+        onMudar: function (pid, valor) {
+          if (String(pid).indexOf("orc:") === 0) { if (window.OrcModeloUI) OrcModeloUI.mudar("edit:" + id, pid, valor); }
+          else if (pid === "fam-tipo") b.instanciaAlterar(id, { tipoId: valor });
+          else if (pid.indexOf("fi:") === 0) { var o = {}; o[pid.slice(3)] = valor; b.instanciaAlterar(id, { inst: o }); }
+          return self._famPropsInstancia(id) || true;
+        }
+      };
+    },
+    /* ---- VISTAS 2D (planta por nível, cortes A, B, C…) — js/bim2dui.js ----
+       Abrem como ABAS de vista, iguais às vistas 3D extras, mas a tela leva um
+       desenho em SVG (Bim2D) em vez de outro renderer: lista com tipo "2d". */
+    _d2Config: function () {
+      if (!window.Bim2D || !window.Desenho2D) return false;
+      var self = this;
+      Bim2D.configurar({
+        obraKey: this._bimSel || "geral",
+        niveis: function () {
+          var L = []; try { L = window.Niveis ? Niveis.listar(self._nivLer()) : []; } catch (e) { L = []; }
+          return L.map(function (n) { return { id: n.id, nome: n.nome, y: +n.elevacao || 0 }; });
+        },
+        abrir: function (id, nome) { self._d2Abrir(id, nome); },
+        fechar: function (id) { if (self._bimVxAchar(id)) self._bimVxFechar(id); },
+        aoMudar: function () { self._nivArvore(); try { BimShell.repintarVista(); } catch (eR) {} },
+        vincular: function (id) { self._opEscolherArquivo(".dwg,.dxf", function (f) { self._cadVincular(f, id); }); }
+      });
+      return true;
+    },
+    _d2Abrir: function (id, nome) {
+      if (!this._d2Config()) return null;
+      var st = this._bimVxEst(), v = this._bimVxAchar(id);
+      if (!v) {
+        var tela = this._bimVxCriarTela(id, nome); if (!tela) return null;
+        tela.classList.add("bim-tela-2d");
+        Bim2D.montar(tela, id);
+        st.lista.push({ id: id, nome: nome, janela: null, tipo: "2d" });
+        this._nivArvore();
+      }
+      this._bimVxAtivar(id);
+      return id;
+    },
+    /* a planta "de trabalho": o 1º nível que não é terreno/fundação (o piso do térreo) */
+    _d2PlantaPadrao: function () {
+      if (!this._d2Config()) return null;
+      var L = Bim2D.niveis(); if (!L.length) return null;
+      var nv = L.filter(function (n) { return !/terreno|funda|sondag/i.test(n.nome || ""); })[0] || L[0];
+      return Bim2D.idPlanta(nv.id);
+    },
     /* o BIM está na casca do Revit, no computador e fora do modo foco — é
        quando Propriedades está na tela e o balão da seleção sobra */
     _bimModoRevit: function () {
@@ -13095,6 +13741,8 @@
        quem edita peça é o Editor; parede edita pelo "Editar tipo". */
     _bimPropsPeca: function (info) {
       if (!info) return null;
+      /* família paramétrica colocada aqui (uid "edit:f…"): Propriedades dela */
+      if (info.uid && /^edit:f\d+$/.test(info.uid)) { var pf = this._famPropsInstancia(info.uid.slice(5)); if (pf) return pf; }
       var self = this, el = null;
       try { (BIM.elementos || []).some(function (e) { if (e.uid === info.uid) { el = e; return true; } return false; }); } catch (e0) {}
       var tipo = String(info.tipo || ""), cat = "";
@@ -13109,7 +13757,7 @@
         { nome: "Obra", params: [ ro("peca-etapa", "Etapa", info.etapa), ro("peca-fase", "Fase", info.fase) ]
           .concat(el && el.detalhe ? [{ id: "peca-det", rotulo: "Detalhe", tipo: "botao", rotuloBotao: "Detalhe " + el.detalhe, fn: function () { self._pecaDetalhe(el.detalhe); } }] : []) },
         { nome: "Quantidades", params: [ ro("peca-comp", "Comprimento", num(q.comprimento, "m")), ro("peca-area", "Área", num(q.area, "m²")), ro("peca-vol", "Volume", num(q.volume, "m³")) ] }
-      ].concat(this._pesoSecaoProps(el, ro)).concat(this._abrSecaoProps(info, ro)).concat([
+      ].concat(this._pesoSecaoProps(el, ro)).concat(this._abrSecaoProps(info, ro)).concat(this._orcSecaoProps(info)).concat(window.BimEstilo ? BimEstilo.secaoProps(info) : []).concat([
         { nome: "Dados", params: [ { id: "peca-ifc", rotulo: "Parâmetros do IFC", tipo: "botao", rotuloBotao: "Ver todos", fn: function () { self._bimVerProps(info); } },
           { id: "peca-familia-salvar", rotulo: "Banco de famílias", tipo: "botao", rotuloBotao: "Salvar família", fn: function () { self._bimSalvarFamilia(info); } } ] }
       ]);
@@ -13118,8 +13766,13 @@
         daPeca: true, uid: info.uid, semEditarTipo: !parede,
         titulo: info.nome || tipo || "Elemento", icone: parede ? "parede" : (/^IFCCOLUMN/i.test(tipo) ? "pilar" : "quadrado"),
         secoes: secoes,
-        onMudar: function () { return self._bimPropsPeca(info); }
+        onMudar: function (pid, valor) { if (String(pid).indexOf("orc:") === 0 && window.OrcModeloUI) OrcModeloUI.mudar(info.uid, pid, valor); return self._bimPropsPeca(info); }
       };
+    },
+    /* peça criada no editor (uid "edit:e…"): a seção Orçamento (js/orcmodeloui.js, F1) */
+    _orcSecaoProps: function (info) {
+      if (!info || !window.OrcModeloUI || !/^edit:[^f]/.test(String(info.uid || ""))) return [];
+      try { return OrcModeloUI.secoesElemento(String(info.uid).slice(5)); } catch (e) { return []; }
     },
     /* PORTA/JANELA QUE ABRE (pset RA_Abertura, js/bimabrir.js): selecionada a
        esquadria OU uma peça da folha, aparece o botão. É o caminho da abertura —
@@ -13143,6 +13796,7 @@
     /* Propriedades com nada selecionado = a VISTA ativa, como no Revit */
     _bimPropsVista: function () {
       var self = this, st = this._bimVxEst(), id = st.ativa, v = this._bimVxAchar(id), b = window.BIM;
+      if (v && v.tipo === "2d" && this._d2Config()) { var p2 = Bim2D.props(id); if (p2) return p2; }
       var nome = id === "3d" ? "{3D}" : (v ? v.nome : "{3D}");
       var temModelo = false;
       try { temModelo = !!((b && b.elementos && b.elementos.length) || (this._bimElementos && this._bimElementos.length)); } catch (eT) {}
@@ -13155,10 +13809,13 @@
             { id: "vista-nome", rotulo: "Nome da vista", leitura: true, valor: nome },
             { id: "vista-orto", rotulo: "Ortogonal", tipo: "sim-nao", valor: orto, leitura: !temModelo, motivo: "Abra um modelo primeiro" } ] },
           { nome: "Extensões", params: [
-            { id: "vista-caixa", rotulo: "Caixa de corte", tipo: "sim-nao", valor: caixa, leitura: !temModelo, motivo: "Abra um modelo primeiro" } ] },
+            { id: "vista-caixa", rotulo: "Caixa de corte", tipo: "sim-nao", valor: caixa, leitura: !temModelo, motivo: "Abra um modelo primeiro" } ] }
+        ].concat(
+          /* cara nova (B0): "Enquadrar tudo" já mora em Vista › Navegar — não repete aqui */
+          document.documentElement.getAttribute("data-visual") === "nova" ? [] : [
           { nome: "Câmera", params: [
             { id: "vista-inicio", rotulo: "Enquadrar", tipo: "botao", rotuloBotao: "Enquadrar tudo", acao: "home" } ] }
-        ],
+        ]),
         onMudar: function (pid, valor) {
           var on;
           try {
@@ -13232,6 +13889,8 @@
       if (v && v.janela && !v.janela.closed) { try { v.janela.focus(); } catch (e) {} return; }
       st.ativa = id;
       this._bimVxLayout();
+      /* vista 2D: não tem caixa de corte nem ortogonal — Propriedades mostra os parâmetros do desenho */
+      if (v && v.tipo === "2d") { try { BimShell.repintarVista(); } catch (e2d) {} return; }
       /* a fita segue a vista ativa: caixa de corte e ortogonal são de cada vista */
       try {
         var b = window.BIM;
@@ -13255,7 +13914,7 @@
       try {
         /* ⚠ a vista que não aparece não desenha: GPU de sobra para quem aparece */
         BIM.principalOculta(!st.lado && st.ativa !== "3d");
-        st.lista.forEach(function (v) { BIM.vistaVisivel(v.id, !!(v.janela && !v.janela.closed) || st.lado || st.ativa === v.id); });
+        st.lista.forEach(function (v) { if (v.tipo === "2d") return; BIM.vistaVisivel(v.id, !!(v.janela && !v.janela.closed) || st.lado || st.ativa === v.id); });
       } catch (e) {}
       this._bimVxDocs();
       try { BimRibbon.setAtivo("lado-a-lado", st.lado); BimShell.pintarFita(); } catch (e2) {}
@@ -13265,7 +13924,8 @@
       var st = this._bimVxEst(), v = this._bimVxAchar(id); if (!v) return;
       var w = v.janela; v.janela = null;
       if (w && !w.closed) { try { w.close(); } catch (e) {} }
-      try { BIM.vistaFechar(id); } catch (e2) {}
+      if (v.tipo === "2d") { try { Bim2D.desmontar(id); } catch (e2d) {} }
+      else { try { BIM.vistaFechar(id); } catch (e2) {} }
       var t = this._bimVxTela(id); if (t && t.parentNode) t.parentNode.removeChild(t);
       st.lista = st.lista.filter(function (x) { return x.id !== id; });
       if (st.ativa === id) st.ativa = "3d";
@@ -13276,6 +13936,7 @@
     _bimVxJanela: function (id) {
       if (id === "3d") { this.acao("bim-3d-janela", {}); return; }
       var self = this, st = this._bimVxEst(), v = this._bimVxAchar(id); if (!v) return;
+      if (v.tipo === "2d") { UI.toast("A planta e o corte abrem nesta janela. Para ver junto com o 3D, use Vista › Janelas › Vistas lado a lado.", "info"); return; }
       if (v.janela && !v.janela.closed) { this._bimVxVoltar(id, false); return; }
       var w = null;
       try { w = window.open("", "orcapro-vista-" + id, "width=1200,height=800,resizable=yes"); } catch (e) { w = null; }
@@ -13337,6 +13998,11 @@
     _bimVxRemontar: function () {
       var self = this, st = this._bimVxEst();
       st.lista.forEach(function (v) {
+        if (v.tipo === "2d") {
+          var t2 = self._bimVxCriarTela(v.id, v.nome);
+          if (t2) { t2.classList.add("bim-tela-2d"); try { self._d2Config(); Bim2D.montar(t2, v.id); } catch (e2d) {} }
+          return;
+        }
         if (v.janela && !v.janela.closed) { self._bimVxCriarTela(v.id, v.nome); self._bimVxAviso(v.id); return; }
         var t = self._bimVxCriarTela(v.id, v.nome);
         if (t) { try { BIM.vistaMover(v.id, t); } catch (e) {} }
@@ -22371,6 +23037,7 @@
       clearTimeout(this._bimEdSaveT);
       this._bimEdPend = { id: this._bimSel || "geral", ops: ops };
       this._bimEdSaveT = setTimeout(function () { self._bimEdFlush(); }, 400);
+      try { if (window.OrcModeloUI) OrcModeloUI.aoMudarModelo(); } catch (eOM) {}
     },
     /* ⚠ A LIXEIRA DA JANELA DO 3D NÃO TIRA O MODELO DA OBRA (28/09/2026, revisão da 1.2.98).
        O 🗑 da barra do viewer chama `onModelosRemovidos`, que remove as vagas do modelo na OBRA
@@ -24628,30 +25295,40 @@
         atrasadas: nAtras,
         feitas: todas.filter(function (t) { return t.status === "feita"; }).length
       };
-      var chip = function (k, rot) { return '<button class="btn sm' + (self._tarFiltro === k ? " primary" : "") + '" data-gacao="tar-filtro" data-val="' + k + '">' + rot + ' <b>' + cont[k] + "</b></button>"; };
-      var selObra = '<select data-gacao="tar-obra" style="max-width:220px"><option value="">Todas as obras</option>' +
+      /* ROTEIRO DE MÓDULO (08/10/2026): os quatro recortes eram botões soltos
+         (um deles "primary", competindo com "+ Nova tarefa") e havia uma pílula
+         "1 atrasada" no cabeçalho repetindo a contagem do recorte "Atrasadas".
+         Recorte virou ABA (com a contagem no rótulo) e a pílula saiu. */
+      var aba = function (k, rot) {
+        /* ⚠ sem `id`: o kit o grava como `data-aba`, que o App.js também escuta */
+        return { rotulo: rot + " (" + cont[k] + ")", ativa: self._tarFiltro === k, attrs: 'data-gacao="tar-filtro" data-val="' + k + '"' };
+      };
+      var selObra = '<select data-gacao="tar-obra" aria-label="Obra"><option value="">Todas as obras</option>' +
         obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === self._tarObra ? " selected" : "") + ">" + Util.esc(o.nome) + "</option>"; }).join("") + "</select>";
-      var extra = (nAtras ? '<span class="g-pill" style="background:#dc262622;color:#dc2626;align-self:center;margin-right:10px">⚠ ' + nAtras + " atrasada" + (nAtras > 1 ? "s" : "") + "</span>" : "") + selObra;
-      var html = this._head(svg("tarefas") + "Tarefas", "nova-tarefa", "Nova tarefa", extra);
-      html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:-4px 0 14px">' + chip("afazer", "A fazer") + chip("atrasadas", "Atrasadas") + chip("feitas", "Concluídas") + chip("todas", "Todas") + "</div>";
+      var html = Modulo.cab({ icone: "check", titulo: "Tarefas",
+        sub: cont.afazer + " a fazer" + (nAtras ? " · " + nAtras + " atrasada" + (nAtras > 1 ? "s" : "") : ""),
+        obraHtml: selObra, primariaHtml: '<button class="btn primary" data-gacao="nova-tarefa">+ Nova tarefa</button>' });
+      html += Modulo.abas([aba("afazer", "A fazer"), aba("atrasadas", "Atrasadas"), aba("feitas", "Concluídas"), aba("todas", "Todas")]);
       var ts = this._tarefasFiltradas(this._tarFiltro, this._tarObra);
-      if (!ts.length) return html + vazioBox(todas.length ? "Nenhuma tarefa neste filtro" : "Nenhuma tarefa ainda", "nova-tarefa", "Criar primeira tarefa");
+      if (!ts.length) return html + vazioKit({ icone: "check", titulo: todas.length ? "Nenhuma tarefa neste recorte" : "Nenhuma tarefa ainda",
+        texto: todas.length ? "Troque a aba ou a obra para ver as outras." : "Tarefa é o lembrete com dono e prazo: renovar o seguro, cotar a caçamba, agendar a visita." });
       var cols = lista("colaboradores");
-      html += '<table class="tbl"><thead><tr><th>Tarefa</th><th>Responsável</th><th>Obra</th><th>Prazo</th><th>Prioridade</th><th>Status</th><th></th></tr></thead><tbody>';
+      var antesLista = html;
+      html = '<table class="tbl"><thead><tr><th>Tarefa</th><th>Responsável</th><th>Obra</th><th>Prazo</th><th>Prioridade</th><th>Status</th><th></th></tr></thead><tbody>';
       ts.forEach(function (t) {
         var resp = cols.filter(function (c) { return c.id === t.responsavelId; })[0];
         var ob = obras.filter(function (o) { return o.id === t.obraId; })[0];
         var atras = self._tarefaAtrasada(t);
         var prazoTxt = t.prazo ? t.prazo.split("-").reverse().join("/") : "—";
-        var corPrz = atras ? ' style="color:#dc2626;font-weight:700"' : "";
-        var corPri = t.prioridade === "urgente" ? "#dc2626" : (t.prioridade === "alta" ? "#ea580c" : "#64748b");
+        var corPrz = atras ? ' style="color:var(--vermelho);font-weight:var(--p-forte)"' : "";
+        var corPri = t.prioridade === "urgente" ? "var(--vermelho)" : (t.prioridade === "alta" ? "var(--amarelo)" : "var(--texto-fraco)");
         var acao = "";
-        if (t.status === "afazer") acao = '<button class="btn sm" data-gacao="tar-fazer" data-id="' + t.id + '">▶ Iniciar</button> <button class="btn sm success" data-gacao="tar-concluir" data-id="' + t.id + '">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Concluir</button>';
+        if (t.status === "afazer") acao = '<button class="btn sm" data-gacao="tar-fazer" data-id="' + t.id + '">Iniciar</button> <button class="btn sm success" data-gacao="tar-concluir" data-id="' + t.id + '">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Concluir</button>';
         else if (t.status === "fazendo") acao = '<button class="btn sm success" data-gacao="tar-concluir" data-id="' + t.id + '">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Concluir</button>';
         else if (t.status === "feita") acao = '<button class="btn sm" data-gacao="tar-reabrir" data-id="' + t.id + '">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Reabrir</button>';
         html += '<tr><td style="cursor:pointer" data-gopen="tarefas:' + t.id + '"><b>' + Util.esc(t.titulo || "—") + "</b>" + (atras ? ' <span title="Prazo vencido">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + '</span>' : "") + "</td><td>" + Util.esc(resp ? resp.nome : "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td" + corPrz + ">" + prazoTxt + '</td><td><b style="color:' + corPri + '">' + rot(P.tarefaPrioridade, t.prioridade) + "</b></td><td>" + pill(t.status) + '</td><td class="num">' + acao + "</td></tr>";
       });
-      return html + "</tbody></table>";
+      return antesLista + Modulo.secao({ corpoHtml: html + "</tbody></table>" });
     },
     tarTrocaFiltro: function (k) { this._tarFiltro = k; App.render(); },
     tarTrocaObra: function (obraId) { if (obraId == null) return; this._tarObra = obraId; App.render(); },
@@ -24710,28 +25387,33 @@
     renderAjuda: function () {
       var self = this;
       if (this._ajudaFiltro == null) this._ajudaFiltro = "";
-      var html = this._head(svg("ajuda") + "Central de Ajuda", "", "", "");
+      /* PADRÃO DE TELA (ROTEIRO-MODULO.md): título = nome do menu, "Rever o
+         tour" sobe para o cabeçalho (estava flutuando dentro do título de um
+         cartão), e os três blocos viram seções do kit. Sem emoji na tela
+         (test-sem-emoji): o ✅/⬜ do checklist e a lupa da busca viram ícones. */
+      var K = kit(), ic = function (n, t) { return typeof Icones !== "undefined" ? Icones.get(n, t || 15) : ""; };
+      var html = K.cab({ icone: "ajuda", titulo: "Ajuda", sub: "Primeiros passos, perguntas frequentes e suporte",
+        acoes: ['<button class="btn" data-gacao="rever-tour" title="Tour guiado pelas telas principais">' + ic("alvo") + "Rever o tour</button>"] });
       // checklist de primeiros passos (auto-detectado dos seus dados)
       var chk = this._ajudaChecklist(), feitos = chk.filter(function (c) { return c.feito; }).length;
       var pct = Math.round(feitos / chk.length * 100);
-      html += '<div class="card" style="margin-bottom:14px"><h3 style="margin:0 0 4px">' + (typeof Icones !== 'undefined' ? Icones.get('foguete', 15) : '') + ' Primeiros passos <span class="muted" style="font-weight:400">' + feitos + "/" + chk.length + '</span><button class="btn sm" data-gacao="rever-tour" style="float:right" title="Tour guiado pelas telas principais">' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' Rever o tour</button></h3>' +
-        '<div style="background:#eef2f7;border-radius:99px;height:10px;overflow:hidden;margin:8px 0 12px"><div style="height:100%;width:' + pct + '%;background:var(--verde,#16a34a);border-radius:99px;transition:width .3s"></div></div>';
-      html += chk.map(function (c) {
-        return '<div style="display:flex;align-items:center;gap:10px;padding:5px 0">' +
-          '<span style="font-size:16px">' + (c.feito ? "✅" : "⬜") + "</span>" +
-          '<span style="' + (c.feito ? "color:#16a34a;text-decoration:line-through" : "") + '">' + Util.esc(c.label) + "</span>" +
-          (c.feito ? "" : ' <button class="btn sm" data-view="' + c.view + '" style="margin-left:auto">Ir →</button> <span class="muted" style="font-size:12px;flex:none">' + Util.esc(c.dica) + "</span>") +
-          "</div>";
-      }).join("") + "</div>";
+      var corpoChk = '<div style="background:var(--surface-3);border-radius:99px;height:8px;overflow:hidden;margin:0 0 12px"><div style="height:100%;width:' + pct + '%;background:var(--verde);border-radius:99px;transition:width .3s"></div></div>' +
+        chk.map(function (c) {
+          return '<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-top:1px solid var(--linha)">' +
+            '<span style="flex:0 0 auto;display:inline-flex;color:' + (c.feito ? "var(--verde)" : "var(--texto-fraco)") + '">' + (c.feito ? ic("check", 18) : ic("quadrado", 18)) + "</span>" +
+            '<span style="' + (c.feito ? "color:var(--texto-fraco);text-decoration:line-through" : "") + '">' + Util.esc(c.label) + "</span>" +
+            (c.feito ? "" : ' <span class="muted" style="font-size:var(--t-micro);margin-left:auto;text-align:right">' + Util.esc(c.dica) + '</span><button class="btn sm" data-view="' + c.view + '">Ir →</button>') +
+            "</div>";
+        }).join("");
+      html += K.secao({ titulo: "Primeiros passos", sub: feitos + " de " + chk.length + " feitos", corpoHtml: corpoChk });
       // FAQ pesquisável
-      html += '<div class="card"><h3 style="margin:0 0 8px">Perguntas frequentes</h3>' +
-        '<input id="ajuda-q" placeholder="🔍 Buscar na ajuda (ex.: BDI, medição, portal)" value="' + Util.esc(this._ajudaFiltro) + '" style="width:100%;max-width:420px;margin-bottom:12px">' +
-        '<div id="ajuda-faq">' + this._ajudaFaqHtml(this._ajudaFiltro) + "</div></div>";
+      html += K.secao({ titulo: "Perguntas frequentes",
+        corpoHtml: '<input id="ajuda-q" type="search" aria-label="Buscar na ajuda" placeholder="Buscar na ajuda (ex.: BDI, medição, portal)" value="' + Util.esc(this._ajudaFiltro) + '" style="width:100%;max-width:420px;margin-bottom:12px">' +
+          '<div id="ajuda-faq">' + this._ajudaFaqHtml(this._ajudaFiltro) + "</div>" });
       // suporte
-      html += '<div class="card" style="margin-top:12px"><h3 style="margin:0 0 6px">Ainda precisa de ajuda?</h3>' +
-        '<p class="muted" style="margin:0 0 10px;font-size:14px">Fale direto com o Eng. Rogério (CREA-MG 323736) no WhatsApp — resposta rápida em horário comercial.</p>' +
-        '<a class="btn sm primary" href="https://wa.me/553492869383" target="_blank" rel="noopener">' + (typeof Icones !== 'undefined' ? Icones.get('mensagem', 15) : '') + ' Falar no WhatsApp</a>' +
-        '<span class="muted" style="font-size:12px;margin-left:12px">' + (typeof Icones !== 'undefined' ? Icones.get('camera', 15) : '') + ' Tutoriais em vídeo: em breve.</span></div>';
+      html += K.secao({ titulo: "Ainda precisa de ajuda?", sub: "Fale direto com o Eng. Rogério (CREA-MG 323736) no WhatsApp — resposta rápida em horário comercial.",
+        corpoHtml: '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><a class="btn primary" href="https://wa.me/553492869383" target="_blank" rel="noopener">' + ic("mensagem") + "Falar no WhatsApp</a>" +
+          '<span class="muted" style="font-size:var(--t-micro)">' + ic("camera") + "Tutoriais em vídeo: em breve.</span></div>" });
       return html;
     },
     _ajudaFaqHtml: function (filtro) {
@@ -24742,7 +25424,7 @@
       });
       if (!itens.length) return '<p class="muted">Nada encontrado. Tente outra palavra ou fale no WhatsApp.</p>';
       return itens.map(function (x) {
-        return '<details class="feat" style="margin-bottom:6px"><summary style="cursor:pointer;font-weight:600;padding:8px 0">' + Util.esc(x.p) + "</summary><div style=\"padding:4px 0 10px;color:#475569;font-size:14px\">" + x.r + "</div></details>";
+        return '<details class="feat" style="margin-bottom:6px"><summary style="cursor:pointer;font-weight:600;padding:8px 0">' + Util.esc(x.p) + "</summary><div style=\"padding:4px 0 10px;color:var(--texto-fraco);font-size:var(--t-base)\">" + x.r + "</div></details>";
       }).join("");
     },
     _ajudaWire: function () {
@@ -24760,20 +25442,29 @@
     // =================== FORNECEDORES ===================
     renderFornecedores: function () {
       var fs = lista("fornecedores");
-      var html = this._head(svg("fornecedores") + "Fornecedores", "novo-fornecedor", "Novo fornecedor");
-      if (!fs.length) return html + vazioBox("Nenhum fornecedor cadastrado", "novo-fornecedor", "Cadastrar primeiro fornecedor");
+      /* PADRÃO DE TELA (ROTEIRO-MODULO.md): cabeçalho do kit + a lista numa seção */
+      var inatF = fs.filter(function (f) { return f.status === "inativo"; }).length;
+      var html = Modulo.cab({
+        iconeHtml: svg("fornecedores", 22), titulo: "Fornecedores",
+        sub: fs.length ? fs.length + " cadastrado(s)" + (inatF ? " · " + inatF + " inativo(s)" : "") : "Cadastro de quem vende para a obra, com dados de pagamento e catálogo",
+        primariaHtml: '<button class="btn primary" data-gacao="novo-fornecedor">+ Novo fornecedor</button>'
+      });
+      if (!fs.length) return html + vazioMod({ icone: "caminhao", titulo: "Nenhum fornecedor cadastrado",
+        texto: "Com o fornecedor cadastrado, o pedido de compra sai com CNPJ, contato e dados de pagamento." });
       /* CATÁLOGO DO FORNECEDOR (02/10/2026): quantos itens do catálogo dele
          estão no banco próprio, e a porta para importar/atualizar. O botão
          mora dentro da linha clicável — o despachante pega o elemento mais
          próximo, então o clique nele não abre o cadastro. */
       var nCat = this._catContagem();
+      var iniTb = html.length;
       html += '<table class="tbl"><thead><tr><th>Nome</th><th>Categoria</th><th>CNPJ/CPF</th><th>Telefone</th><th>Cidade</th><th>Status</th><th>Catálogo</th></tr></thead><tbody>';
       fs.forEach(function (f) {
         var nc = nCat[f.id] || 0;
         html += '<tr class="lin" style="cursor:pointer" data-gopen="fornecedores:' + f.id + '"><td><b>' + Util.esc(f.nome) + "</b></td><td>" + rot(P.fornCategoria, f.categoria) + "</td><td>" + Util.esc(f.doc || "—") + "</td><td>" + Util.esc(f.telefone || "—") + "</td><td>" + Util.esc(f.cidade || "—") + (f.uf ? "/" + Util.esc(f.uf) : "") + "</td><td>" + pill(f.status) + "</td>" +
           '<td><button class="btn sm" data-gacao="cat-forn" data-id="' + Util.esc(f.id) + '" title="Ver, importar ou atualizar o catálogo deste fornecedor">' + (nc ? nc + " ite" + (nc > 1 ? "ns" : "m") : "Importar") + "</button></td></tr>";
       });
-      return html + "</tbody></table>";
+      return html.slice(0, iniTb) + Modulo.secao({ titulo: "Cadastro", sub: "Clique na linha para abrir o fornecedor. Catálogo: os itens dele que já estão no seu banco.",
+        corpoHtml: html.slice(iniTb) + "</tbody></table>" });
     },
     novoFornecedor: function () { this.formFornecedor(null); },
     formFornecedor: function (f) {
@@ -26878,53 +27569,31 @@
       var t = e.semMotor ? null : PorObra.totaisCompras(cs, idxD);   /* ⚠ totais do recorte */
       var ops = e.semMotor ? [] : PorObra.opcoes(e.todos, obras);
 
-      var selHtml = '<select data-gacao="compras-obra" title="Separar os pedidos por obra" style="max-width:230px">' +
+      /* PADRÃO DE TELA (ROTEIRO-MODULO.md) — cabeçalho → aviso → filtros →
+         indicadores → seções. O que mudou de LUGAR (nada mudou de conta):
+         - o seletor de obra foi para o `obraHtml` do cabeçalho, o mesmo lugar
+           de Requisições e Cotações;
+         - "Situação" e o CSV, que se espremiam entre os botões do título,
+           foram para a barra de filtros (exportar fica à direita);
+         - a `.fin-faixa` virou `Modulo.kpis` (uma faixa só, como em todo
+           módulo). A célula "Recorte", que não é número, virou o contexto do
+           subtítulo; o "Ver todas" dela saiu porque o seletor de obra, logo
+           acima, faz a mesma coisa (ação repetida na mesma tela: fica uma). */
+      var selHtml = '<select data-gacao="compras-obra" title="Separar os pedidos por obra" aria-label="Obra">' +
         ops.map(function (o) {
           return '<option value="' + Util.esc(o.valor) + '"' + (String(o.valor) === String(e.sel) ? " selected" : "") + ">" +
             Util.esc(o.rotulo) + " (" + o.n + ")</option>";
         }).join("") + "</select>";
 
-      var extra = (e.todos.length && !e.semMotor ? '<label style="display:flex;align-items:center;gap:6px;margin-right:12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--texto-fraco)">' +
-          (typeof Icones !== "undefined" ? Icones.get("obra", 15) : "") + "Obra " + selHtml + "</label>" : "") +
-        /* filtro por SITUAÇÃO (derivada) — "atrasados" e "chegam em 7 dias"
-           não existem como status, só o motor sabe responder */
-        (typeof ComprasLinha !== "undefined" ? '<label style="display:flex;align-items:center;gap:6px;margin-right:12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em">Situação ' +
-          '<select data-gacao="compras-filtro" title="Filtrar pedidos pela situação" style="max-width:220px">' +
-          ComprasLinha.FILTROS.map(function (f) { return '<option value="' + f[0] + '"' + (f[0] === filtro ? " selected" : "") + ">" + Util.esc(f[1]) + "</option>"; }).join("") +
-          "</select></label>" : "") +
-        '<button class="btn sm" data-gacao="export-compras" style="margin-right:10px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('baixar', 15) : '') + ' CSV</button>';
-
-      var html = this._head(svg("compras") + "Compras", "nova-compra", "Novo pedido", extra);
-      if (!e.todos.length) return html + vazioBox("Nenhum pedido de compra", "nova-compra", "Criar primeiro pedido");
-
-      /* ⚠ o "Total" antigo somava TUDO, inclusive rejeitado e cancelado — um
-         pedido recusado de R$ 50 mil entrava na conta de compras da obra.
-         Agora o total é só o que vale, e o descartado aparece à parte para
-         ninguém achar que os pedidos sumiram. */
-      if (t) html += '<div class="fin-faixa">' +
-        '<div class="fin-rec"><span class="fin-lbl">Recorte</span><b>' + Util.esc(PorObra.rotuloDe(e.sel, obras)) + '</b>' +
-          '<span class="fin-sub">' + t.n + ' pedido(s)</span></div>' +
-        '<div class="fin-kpi"><span class="fin-lbl">Total válido</span><b>' + Util.fmtMoeda(t.total) + '</b>' +
-          '<span class="fin-sub">cotação + aprovado + recebido</span></div>' +
-        '<div class="fin-kpi"><span class="fin-lbl">Recebido</span><b style="color:var(--verde)">' + Util.fmtMoeda(t.recebido) + '</b>' +
-          '<span class="fin-sub">' + t.nRecebido + ' pedido(s)</span></div>' +
-        /* ⚠ `t.comprometido`, NÃO `t.aprovado`: com entrega parcial o pedido
-           continua no balde "aprovado" pelo valor cheio, mas parte dele já virou
-           conta a pagar no Financeiro. Somar os dois mostrava R$ 17.500 de
-           exposição para uma compra de R$ 10.000. O sufixo existe porque, sem
-           ele, Comprometido + Recebido não fecha com o Total válido e quem soma
-           as colunas acha que o app perdeu dinheiro. */
-        '<div class="fin-kpi"><span class="fin-lbl">Comprometido</span><b style="color:var(--amarelo)">' + Util.fmtMoeda(t.comprometido) + '</b>' +
-          '<span class="fin-sub">' + t.nAprovado + ' aprovado(s), a entregar' +
-          (t.jaNoFinanceiro > 0.005 ? ' · ' + Util.fmtMoeda(t.jaNoFinanceiro) + ' já virou conta no Financeiro' : "") +
-          (t.semDesconto ? ' · sem o desconto das entregas: recarregue o app' : "") +
-          '</span></div>' +
-        '<div class="fin-kpi"><span class="fin-lbl">Aguardando aprovação</span><b>' + Util.fmtMoeda(t.cotacao) + '</b>' +
-          '<span class="fin-sub">' + t.nCotacao + ' aguardando decisão</span></div>' +
-        (t.nDescartado ? '<div class="fin-kpi"><span class="fin-lbl">Fora da conta</span><b class="muted">' + Util.fmtMoeda(t.descartado) + '</b>' +
-          '<span class="fin-sub">' + t.nDescartado + ' rejeitado(s)/cancelado(s)</span></div>' : "") +
-        (e.sel !== "todas" ? '<button class="btn sm ghost" data-gacao="compras-obra" style="align-self:center">Ver todas</button>' : "") +
-        "</div>";
+      var html = Modulo.cab({
+        iconeHtml: svg("compras", 22), titulo: "Compras",
+        sub: e.todos.length ? (t ? PorObra.rotuloDe(e.sel, obras) + " · " + t.n + " pedido(s)" : e.todos.length + " pedido(s)") +
+          (filtro !== "todos" ? " · " + cs.length + " na situação escolhida" : "") : "Pedidos de compra: da aprovação ao recebimento na obra",
+        obraHtml: (e.todos.length && !e.semMotor) ? selHtml : "",
+        primariaHtml: '<button class="btn primary" data-gacao="nova-compra">+ Novo pedido</button>'
+      });
+      if (!e.todos.length) return html + vazioMod({ icone: "dinheiro", titulo: "Nenhum pedido de compra",
+        texto: "O pedido nasce aqui ou sozinho, da requisição aprovada (Gerar pedido) e da cotação concluída." });
 
       /* ⚠ A PORTA DO PASSIVO. O conserto de 09/09/2026 fez o app ACHAR o
          fornecedor pelo nome quando o pedido não tem vínculo — mas achar não é
@@ -26935,21 +27604,50 @@
          pedido — e ninguém faz isso por 40 pedidos.
          ⚠ A FAIXA SÓ APARECE QUANDO HÁ O QUE FAZER, e conta o que ela mesma
          não resolve: "3 pendentes" com um botão que conserta 1 seria promessa
-         que a tela seguinte desmente. */
+         que a tela seguinte desmente. É o único aviso da tela (Modulo.aviso). */
       var vinc = (typeof ComprasLinha !== "undefined" && ComprasLinha.vinculosPendentes)
         ? ComprasLinha.vinculosPendentes(e.todos, lista("fornecedores")) : null;
       if (vinc && vinc.total) {
         var nRes = vinc.resolviveis.length;
         var restam = vinc.total - nRes;
-        html += '<div class="card" style="margin:0 0 12px;padding:10px 12px;border-left:4px solid var(--amarelo,#d97706)">'
-          + '<b>' + vinc.total + ' pedido(s) não estão ligados ao cadastro de fornecedores.</b> '
-          + '<span class="muted">Eles têm só o nome escrito: o PDF do pedido sai sem CNPJ, contato, endereço e dados de pagamento, e o botão de WhatsApp depende de adivinhar pelo nome.</span> '
-          + (nRes
-            ? '<button class="btn sm primary" data-gacao="compras-vinculos" style="margin-left:6px">Revisar ' + nRes + ' vínculo(s)</button>'
-            : '<button class="btn sm" data-gacao="compras-vinculos" style="margin-left:6px">Ver o que falta</button>')
-          + (restam ? ' <span class="muted" style="font-size:12px">· ' + restam + ' precisa(m) de decisão sua</span>' : "")
-          + "</div>";
+        html += Modulo.aviso({ tom: "alerta",
+          titulo: vinc.total + " pedido(s) não estão ligados ao cadastro de fornecedores.",
+          texto: "Eles têm só o nome escrito: o PDF do pedido sai sem CNPJ, contato, endereço e dados de pagamento, e o botão de WhatsApp depende de adivinhar pelo nome." +
+            (restam ? " " + restam + " precisa(m) de decisão sua." : ""),
+          acaoHtml: nRes
+            ? '<button class="btn sm primary" data-gacao="compras-vinculos">Revisar ' + nRes + ' vínculo(s)</button>'
+            : '<button class="btn sm" data-gacao="compras-vinculos">Ver o que falta</button>' });
       }
+
+      /* filtro por SITUAÇÃO (derivada) — "atrasados" e "chegam em 7 dias"
+         não existem como status, só o motor sabe responder */
+      html += Modulo.filtros([
+        (typeof ComprasLinha !== "undefined" ? '<div class="field"><label>Situação</label>' +
+          '<select data-gacao="compras-filtro" title="Filtrar pedidos pela situação">' +
+          ComprasLinha.FILTROS.map(function (f) { return '<option value="' + f[0] + '"' + (f[0] === filtro ? " selected" : "") + ">" + Util.esc(f[1]) + "</option>"; }).join("") +
+          "</select></div>" : "")
+      ], { direitaHtml: '<button class="btn sm" data-gacao="export-compras">' + (typeof Icones !== 'undefined' ? Icones.get('baixar', 15) : '') + ' CSV</button>' });
+
+      /* ⚠ o "Total" antigo somava TUDO, inclusive rejeitado e cancelado — um
+         pedido recusado de R$ 50 mil entrava na conta de compras da obra.
+         Agora o total é só o que vale, e o descartado aparece à parte para
+         ninguém achar que os pedidos sumiram. */
+      if (t) html += Modulo.kpis([
+        { id: "cp-kpi-total", rotulo: "Total válido", valor: Util.fmtMoeda(t.total), sub: "cotação + aprovado + recebido" },
+        { id: "cp-kpi-recebido", rotulo: "Recebido", valor: Util.fmtMoeda(t.recebido), tom: "pos", sub: t.nRecebido + " pedido(s)" },
+        /* ⚠ `t.comprometido`, NÃO `t.aprovado`: com entrega parcial o pedido
+           continua no balde "aprovado" pelo valor cheio, mas parte dele já virou
+           conta a pagar no Financeiro. Somar os dois mostrava R$ 17.500 de
+           exposição para uma compra de R$ 10.000. O sufixo existe porque, sem
+           ele, Comprometido + Recebido não fecha com o Total válido e quem soma
+           as colunas acha que o app perdeu dinheiro. */
+        { id: "cp-kpi-comprometido", rotulo: "Comprometido", valor: Util.fmtMoeda(t.comprometido), tom: "alerta",
+          sub: t.nAprovado + " aprovado(s), a entregar" +
+            (t.jaNoFinanceiro > 0.005 ? " · " + Util.fmtMoeda(t.jaNoFinanceiro) + " já virou conta no Financeiro" : "") +
+            (t.semDesconto ? " · sem o desconto das entregas: recarregue o app" : "") },
+        { id: "cp-kpi-aguardando", rotulo: "Aguardando aprovação", valor: Util.fmtMoeda(t.cotacao), sub: t.nCotacao + " aguardando decisão" },
+        t.nDescartado ? { id: "cp-kpi-fora", rotulo: "Fora da conta", valor: Util.fmtMoeda(t.descartado), sub: t.nDescartado + " rejeitado(s)/cancelado(s)" } : null
+      ]);
 
       if (!e.semMotor && e.sel === "todas" && obras.length) {
         /* ⚠ CLOSURE, e não `PorObra.totaisCompras` solto: `porObra` chama o
@@ -26957,10 +27655,10 @@
            mostraria 10.000 embaixo do KPI que mostra 2.500, com a mesma palavra. */
         var grupos = PorObra.porObra(e.todos, obras, function (lst) { return PorObra.totaisCompras(lst, idxD); });
         if (grupos.length > 1) {
-          html += '<table class="tbl" style="margin-bottom:14px"><thead><tr><th>Obra</th><th class="num">Pedidos</th>' +
+          var tbObras = '<table class="tbl"><thead><tr><th>Obra</th><th class="num">Pedidos</th>' +
             '<th class="num">Recebido</th><th class="num">Comprometido</th><th class="num">Aguardando aprovação</th><th class="num">Total válido</th></tr></thead><tbody>';
           grupos.forEach(function (g) {
-            html += '<tr class="lin" style="cursor:pointer" data-gacao="compras-obra" data-id="' + Util.esc(g.chave) + '">' +
+            tbObras += '<tr class="lin" style="cursor:pointer" data-gacao="compras-obra" data-id="' + Util.esc(g.chave) + '">' +
               "<td><b>" + Util.esc(g.nome) + "</b>" +
               (g.orfao ? ' <span class="pill" style="color:var(--amarelo)">obra excluída — reveja o vínculo</span>' : "") +
               (g.nDescartado ? ' <span class="muted" style="font-size:11px">· ' + g.nDescartado + " fora da conta</span>" : "") +
@@ -26971,15 +27669,17 @@
               '<td class="num muted">' + Util.fmtMoeda(g.cotacao) + "</td>" +
               '<td class="num"><b>' + Util.fmtMoeda(g.total) + "</b></td></tr>";
           });
-          html += "</tbody></table>";
+          html += Modulo.secao({ titulo: "Por obra", sub: "Clique na obra para ver só os pedidos dela.", corpoHtml: tbObras + "</tbody></table>" });
         }
       }
 
       if (!cs.length) {
-        if (e.semMotor) return html + vazioBox("Nenhum pedido de compra", "nova-compra", "Criar primeiro pedido");
-        return html + '<div class="vazio card">Nenhum pedido em <b>' + Util.esc(PorObra.rotuloDe(e.sel, obras)) +
-          '</b>. <button class="btn sm" data-gacao="compras-obra">Ver todas as obras</button></div>';
+        if (e.semMotor) return html + vazioMod({ icone: "dinheiro", titulo: "Nenhum pedido de compra" });
+        return html + Modulo.secao({ corpoHtml: Modulo.vazio({ icone: "obra",
+          titulo: filtro !== "todos" ? "Nenhum pedido nesta situação" : "Nenhum pedido em " + PorObra.rotuloDe(e.sel, obras),
+          acaoHtml: '<button class="btn" data-gacao="compras-obra">Ver todas as obras</button>' }) });
       }
+      var iniTb = html.length;
       html += '<table class="tbl"><thead><tr><th>Nº</th><th>Fornecedor</th><th>Obra</th><th>Descrição</th><th class="num">Valor</th><th>Status</th><th style="min-width:140px">Entrega</th><th></th></tr></thead><tbody>';
       /* MEDCC 8A — índices montados UMA vez por desenho (a lista pode ter
          centenas de pedidos): centros e decisões `PC_` por id, lista crua */
@@ -27067,7 +27767,8 @@
         if (ccTxt) celObraC += '<div class="muted" style="font-size:11px" data-cc-pedido="' + Util.esc(String(c.id)) + '">Centro: ' + Util.esc(ccTxt) + "</div>";
         html += '<tr><td style="cursor:pointer" data-gopen="compras:' + c.id + '"><b>' + Util.esc(c.numero || "—") + "</b></td><td>" + Util.esc(c.fornecedorNome || "—") + "</td><td>" + celObraC + "</td><td>" + Util.esc(c.descricao || "—") + '</td><td class="num">' + Util.fmtMoeda(c.valor) + "</td><td>" + pill(c.status) + self._aprovLinha(c) + '</td><td data-ct-entrega="' + c.id + '" style="min-width:140px">' + celEntrega + '</td><td class="num">' + acao + "</td></tr>";
       });
-      return html + "</tbody></table>";
+      return html.slice(0, iniTb) + Modulo.secao({ titulo: "Pedidos", sub: cs.length + (cs.length === 1 ? " pedido" : " pedidos") + (totalAntesDoFiltro !== cs.length ? " de " + totalAntesDoFiltro + " (filtro de situação)" : ""),
+        corpoHtml: html.slice(iniTb) + "</tbody></table>" });
     },
 
     /* =====================================================================
@@ -27742,7 +28443,6 @@
       var its = lista("estoque"), obras = lista("obras");
       var valorTotal = its.reduce(function (s, i) { return s + Util.num(i.saldo) * Util.num(i.custoUnit); }, 0);
       var baixos = its.filter(function (i) { return Util.num(i.estoqueMin) > 0 && Util.num(i.saldo) <= Util.num(i.estoqueMin); }).length;
-      var extra = '<span class="muted" style="margin-right:12px;align-self:center">' + (baixos ? '<b style="color:var(--laranja,#f59e0b)">' + baixos + ' abaixo do mínimo</b> · ' : "") + 'Valor: <b>' + Util.fmtMoeda(valorTotal) + "</b></span>";
       /* ⚠ A normalização de nome (Util.itemChave) só vale para o que entrar
        * DAQUI EM DIANTE. Quem já tinha "Cimento CP-II 50kg" e "Cimento CP II
        * 50 kg" no catálogo continua com os dois, cada um com seu saldo — e
@@ -27762,27 +28462,49 @@
             return "<b>" + Util.esc(i.nome) + "</b> (" + Util.fmtNum(i.saldo, 2) + " " + Util.esc(Util.unidadeExibir(i.unidade)) + ")";
           }).join(" &nbsp;·&nbsp; ") + "</li>";
         }).join("");
-        var aviso = '<div class="card" style="border-left:4px solid #f59e0b;margin-bottom:14px">'
-          + "<h3 style=\"margin:0 0 6px\">" + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "")
-          + " " + dups.length + (dups.length > 1 ? " itens parecem repetidos" : " item parece repetido") + "</h3>"
-          + '<p class="muted" style="margin:0 0 8px;font-size:13px">O mesmo material foi cadastrado com grafias diferentes. Cada linha tem saldo próprio, então nenhuma mostra o total real. Junte à mão: escolha qual fica, some o saldo e exclua a outra.</p>'
-          + '<ul style="margin:0;padding-left:18px;font-size:13px">' + listaDup + "</ul></div>";
+        /* o único aviso da tela, no desenho do kit (Modulo.aviso) */
+        var aviso = Modulo.aviso({ tom: "alerta",
+          titulo: dups.length + (dups.length > 1 ? " itens parecem repetidos" : " item parece repetido"),
+          textoHtml: "<span>O mesmo material foi cadastrado com grafias diferentes. Cada linha tem saldo próprio, então nenhuma mostra o total real. Junte à mão: escolha qual fica, some o saldo e exclua a outra.</span>"
+            + '<ul style="margin:4px 0 0;padding-left:18px">' + listaDup + "</ul>" });
         this._estoqueAviso = aviso;
       } else { this._estoqueAviso = ""; }
 
-      extra = '<button class="btn sm" data-gacao="abrir-kardex" style="margin-right:10px;align-self:center" title="Todas as entradas e saidas, com saldo acumulado">'
-        + (typeof Icones !== "undefined" ? Icones.get("checklist", 15) : "") + ' Extrato</button>' + extra;
-      var html = this._head(svg("estoque") + "Estoque / Almoxarifado", "novo-item-estoque", "Novo item", extra);
+      /* PADRÃO DE TELA: o "Extrato" era um botão no título que trocava a tela
+         inteira — é uma VISÃO do mesmo módulo, então virou aba (Itens |
+         Extrato), com o mesmo data-gacao. Valor e "abaixo do mínimo", que
+         eram texto solto entre os botões, viraram indicadores. */
+      var html = this._estoqueCab(its.length ? its.length + " item(ns) · almoxarifado central e das obras" : "Almoxarifado central e das obras");
       html += this._estoqueAviso || "";
-      if (!its.length) return html + vazioBox("Nenhum item em estoque", "novo-item-estoque", "Cadastrar primeiro item");
+      html += this._estoqueAbas("itens");
+      if (!its.length) return html + vazioMod({ icone: "estoque", titulo: "Nenhum item em estoque",
+        texto: "O material entra sozinho ao receber um pedido de compra, ou pelo + Novo item." });
+      html += Modulo.kpis([
+        { rotulo: "Itens", valor: String(its.length) },
+        { rotulo: "Valor em estoque", valor: Util.fmtMoeda(valorTotal), sub: "saldo × custo médio" },
+        { rotulo: "Abaixo do mínimo", valor: String(baixos), tom: baixos ? "alerta" : "", sub: baixos ? "repor" : "nenhum" }
+      ]);
+      var iniTb = html.length;
       html += '<table class="tbl"><thead><tr><th>Item</th><th>Categoria</th><th>Obra</th><th class="num">Saldo</th><th class="num">Custo un.</th><th class="num">Total</th><th></th></tr></thead><tbody>';
       its.forEach(function (i) {
         var ob = obras.filter(function (o) { return o.id === i.obraId; })[0];
         var baixo = Util.num(i.estoqueMin) > 0 && Util.num(i.saldo) <= Util.num(i.estoqueMin);
         var saldoTxt = Util.fmtNum(i.saldo, 2) + " " + Util.esc(Util.unidadeExibir(i.unidade)) + (baixo ? ' <span class="g-pill" style="background:#f59e0b22;color:#f59e0b">baixo</span>' : "");
-        html += '<tr><td style="cursor:pointer" data-gopen="estoque:' + i.id + '"><b>' + Util.esc(i.nome) + "</b></td><td>" + rot(P.estoqueCategoria, i.categoria) + "</td><td>" + Util.esc(ob ? ob.nome : "Central") + '</td><td class="num">' + saldoTxt + '</td><td class="num">' + Util.fmtMoeda(i.custoUnit) + '</td><td class="num">' + Util.fmtMoeda(Util.num(i.saldo) * Util.num(i.custoUnit)) + '</td><td class="num"><button class="btn sm success" data-gacao="entrada-estoque" data-id="' + i.id + '">+ Entrada</button> <button class="btn sm" data-gacao="saida-estoque" data-id="' + i.id + '">− Saída</button> <button class="btn sm ghost" data-gacao="kardex-item" data-id="' + i.id + '" title="Para onde foi este item">Extrato</button></td></tr>';
+        html += '<tr><td style="cursor:pointer" data-gopen="estoque:' + i.id + '"><b>' + Util.esc(i.nome) + "</b></td><td>" + rot(P.estoqueCategoria, i.categoria) + "</td><td>" + Util.esc(ob ? ob.nome : "Central") + '</td><td class="num">' + saldoTxt + '</td><td class="num">' + Util.fmtMoeda(i.custoUnit) + '</td><td class="num">' + Util.fmtMoeda(Util.num(i.saldo) * Util.num(i.custoUnit)) + '</td><td class="num" style="white-space:nowrap"><button class="btn sm success" data-gacao="entrada-estoque" data-id="' + i.id + '">+ Entrada</button> <button class="btn sm" data-gacao="saida-estoque" data-id="' + i.id + '">− Saída</button> <button class="btn sm ghost" data-gacao="kardex-item" data-id="' + i.id + '" title="Extrato: para onde foi este item" aria-label="Extrato do item">' + (typeof Icones !== "undefined" ? Icones.get("lista", 15) : "Extrato") + '</button></td></tr>';
       });
-      return html + "</tbody></table>";
+      return html.slice(0, iniTb) + Modulo.secao({ titulo: "Itens", sub: "Clique no item para editar. Entrada e saída ficam na linha; o ícone abre o extrato do item.",
+        corpoHtml: html.slice(iniTb) + "</tbody></table>" });
+    },
+    /* cabeçalho e abas comuns às duas visões do Estoque (Itens | Extrato) */
+    _estoqueCab: function (sub) {
+      return Modulo.cab({ iconeHtml: svg("estoque", 22), titulo: "Estoque", sub: sub,
+        primariaHtml: '<button class="btn primary" data-gacao="novo-item-estoque">+ Novo item</button>' });
+    },
+    _estoqueAbas: function (ativa) {
+      return Modulo.abas([
+        { id: "itens", rotulo: "Itens", ativa: ativa === "itens", attrs: 'data-gacao="voltar-estoque"' },
+        { id: "extrato", rotulo: "Extrato", ativa: ativa === "extrato", attrs: 'data-gacao="abrir-kardex" title="Todas as entradas e saídas, com saldo acumulado"' }
+      ]);
     },
     /* ===================== KARDEX — EXTRATO DO ALMOXARIFADO =====================
      * Toda entrada e saída já era gravada em `estoque_mov` por TRÊS caminhos
@@ -27855,37 +28577,37 @@
       var umItem = f.itemId ? itens.filter(function (i) { return i.id === f.itemId; })[0] : null;
       var un = umItem ? (Util.unidadeExibir(umItem.unidade) || "un") : "";
 
-      var html = this._head(svg("estoque") + "Extrato do Almoxarifado", "", "",
-        '<button class="btn sm" data-gacao="voltar-estoque" style="margin-right:10px;align-self:center">'
-        + (typeof Icones !== "undefined" ? Icones.get("voltar", 15) : "") + ' Voltar ao estoque</button>');
-      html += '<div class="card" style="margin-bottom:14px"><div class="row">'
-        + campo("Item", '<select id="kx-item"><option value="">— todos os itens —</option>'
+      /* a outra aba do Estoque: mesmo cabeçalho, abas, e os filtros na barra
+         do kit (antes: um cartão com rótulos soltos e o "Voltar ao estoque",
+         que a aba Itens substitui) */
+      var html = this._estoqueCab("Extrato do almoxarifado: entradas e saídas, com saldo acumulado");
+      html += this._estoqueAbas("extrato");
+      html += Modulo.filtros([
+        campo("Item", '<select id="kx-item"><option value="">— todos os itens —</option>'
             + itens.map(function (i) { return '<option value="' + Util.esc(i.id) + '"' + (i.id === f.itemId ? " selected" : "") + ">" + Util.esc(i.nome) + "</option>"; }).join("") + "</select>")
-        + campo("Obra", '<select id="kx-obra"><option value="">— todas —</option>'
+        , campo("Obra", '<select id="kx-obra"><option value="">— todas —</option>'
             + obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === f.obraId ? " selected" : "") + ">" + Util.esc(o.nome) + "</option>"; }).join("") + "</select>")
-        + campo("De", inp("kx-de", f.de, "", "date"))
-        + campo("Até", inp("kx-ate", f.ate, "", "date"))
-        + "</div>"
-        + '<div class="flex" style="gap:8px">'
-        + '<button class="btn primary sm" data-gacao="kardex-filtrar">Aplicar</button>'
-        + '<button class="btn sm" data-gacao="kardex-limpar">Limpar</button></div></div>';
+        , campo("De", inp("kx-de", f.de, "", "date"))
+        , campo("Até", inp("kx-ate", f.ate, "", "date"))
+      ], { direitaHtml: '<button class="btn primary sm" data-gacao="kardex-filtrar">Aplicar</button>'
+        + '<button class="btn sm" data-gacao="kardex-limpar">Limpar</button>' });
 
       if (!d.movs.length) {
-        return html + vazioBox(lista("estoque_mov").length
-          ? "Nenhuma movimentação com esses filtros"
-          : "Nenhuma movimentação registrada ainda — use + Entrada ou − Saída na tela de Estoque", "", "");
+        return html + vazioMod(lista("estoque_mov").length
+          ? { icone: "buscar", titulo: "Nenhuma movimentação com esses filtros" }
+          : { icone: "estoque", titulo: "Nenhuma movimentação registrada ainda", texto: "Use + Entrada ou − Saída na aba Itens." });
       }
 
       /* ⚠ o saldo final só é honesto com UM item filtrado: somar quantidade de
          cimento com quantidade de areia não significa nada. */
-      var kpis = '<div class="kpis kpis-g" style="margin-bottom:14px">'
-        + '<div class="kpi"><span class="kpi-lbl">Entradas</span><span class="kpi-val">' + Util.fmtNum(d.entradas, 2) + " " + Util.esc(un) + "</span></div>"
-        + '<div class="kpi"><span class="kpi-lbl">Saídas</span><span class="kpi-val">' + Util.fmtNum(d.saidas, 2) + " " + Util.esc(un) + "</span></div>"
-        + (umItem && d.temPeriodo ? '<div class="kpi"><span class="kpi-lbl">Saldo anterior</span><span class="kpi-val">' + Util.fmtNum(d.anterior, 2) + " " + Util.esc(un) + "</span></div>" : "")
-        + (umItem ? '<div class="kpi"><span class="kpi-lbl">Saldo final</span><span class="kpi-val">' + Util.fmtNum(d.saldo, 2) + " " + Util.esc(un) + "</span></div>" : "")
-        + '<div class="kpi"><span class="kpi-lbl">Valor que saiu</span><span class="kpi-val">' + Util.fmtMoeda(d.vSai) + "</span></div>"
-        + "</div>";
-      html += kpis;
+      html += Modulo.kpis([
+        { rotulo: "Entradas", valor: Util.fmtNum(d.entradas, 2) + (un ? " " + un : ""), tom: "pos" },
+        { rotulo: "Saídas", valor: Util.fmtNum(d.saidas, 2) + (un ? " " + un : ""), tom: "neg" },
+        umItem && d.temPeriodo ? { rotulo: "Saldo anterior", valor: Util.fmtNum(d.anterior, 2) + " " + un } : null,
+        umItem ? { rotulo: "Saldo final", valor: Util.fmtNum(d.saldo, 2) + " " + un } : null,
+        { rotulo: "Valor que saiu", valor: Util.fmtMoeda(d.vSai) }
+      ]);
+      var iniTb = html.length;
 
       html += '<table class="tbl"><thead><tr><th>Data</th><th>Item</th><th>Movimento</th>'
         + '<th class="num">Qtd</th><th class="num">Custo un.</th><th class="num">Valor</th>'
@@ -27919,7 +28641,9 @@
         html += '<tr><td colspan="9" style="text-align:right" class="muted">saldo anterior a ' + Util.esc(self._brData(f.de)) + "</td>"
           + '<td class="num muted"><b>' + Util.fmtNum(d.anterior, 2) + "</b></td></tr>";
       }
-      return html + "</tbody></table>";
+      return html.slice(0, iniTb) + Modulo.secao({ titulo: umItem ? umItem.nome : "Movimentações",
+        sub: d.movs.length + " movimentação(ões)" + (umItem ? "" : " · escolha um item para ver o saldo acumulado"),
+        corpoHtml: html.slice(iniTb) + "</tbody></table>" });
     },
     /* ===== RECEBIMENTO DE COMPRA → ENTRADA NO ALMOXARIFADO =====
      * Receber um pedido mudava o status e lançava a despesa, e o material
@@ -28361,16 +29085,18 @@
       if (!porObra.length) return "";
       porObra.sort(function (a, b) { return b.faltas.length - a.faltas.length; });
       var self = this;
+      /* ROTEIRO DE MÓDULO (08/10/2026): era um cartão de 150 px com título,
+         parágrafo fixo e lista — o maior bloco da tela para um aviso. Agora
+         devolve só as LINHAS (uma por obra); quem monta o único aviso do topo
+         é o renderRdo, junto com a notícia do WhatsApp. A regra da conta (o
+         parágrafo) passou a dica, no `title`. */
+      var dica = "Entre o primeiro e o último diário de cada obra em andamento. Sábados, domingos e feriados não entram na conta.";
       var linhas = porObra.map(function (g) {
         var ult = g.faltas.slice(-5).map(function (d) { return self._brData(d); }).join(" · ");
-        return "<li><b>" + Util.esc(g.obra) + "</b> — " + g.faltas.length + " dia(s) útil(eis) sem diário"
-          + '<br><span class="muted" style="font-size:12px">' + (g.faltas.length > 5 ? "últimos: " : "") + Util.esc(ult) + "</span></li>";
+        return '<span title="' + dica + '"><b>' + Util.esc(g.obra) + "</b> — " + g.faltas.length + " dia(s) útil(eis) sem diário"
+          + ' <span class="muted">(' + (g.faltas.length > 5 ? "últimos: " : "") + Util.esc(ult) + ")</span></span>";
       }).join("");
-      return '<div class="card" style="border-left:4px solid #f59e0b;margin-bottom:14px">'
-        + '<h3 style="margin:0 0 6px">' + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "")
-        + " Dias úteis sem diário</h3>"
-        + '<p class="muted" style="margin:0 0 8px;font-size:13px">Entre o primeiro e o último diário de cada obra em andamento. Sábados, domingos e feriados não entram na conta.</p>'
-        + '<ul style="margin:0;padding-left:18px;font-size:13px">' + linhas + "</ul></div>";
+      return linhas;
     },
 
     renderRdo: function () {
@@ -28382,19 +29108,39 @@
          e com o motor carregado — botão que abre tela vazia ensina o usuário
          a não clicar nele. */
       var btnPleito = (typeof Pleito !== "undefined" && todos.length)
-        ? '<button class="btn" data-gacao="pleito-dossie" title="Somar os dias pleiteáveis por chuva e impedimento, com a memória de cálculo">Dossiê de prorrogação</button> '
+        ? '<button class="btn" data-gacao="pleito-dossie" title="Somar os dias pleiteáveis por chuva e impedimento, com a memória de cálculo">Dossiê de prorrogação</button>'
         : "";
-      var html = this._head(svg("rdo") + "Diário de Obra (RDO)", "novo-rdo", "Novo diário", btnPleito);
-      html += this._buracosRdoHtml(todos, obras);
+      /* ROTEIRO DE MÓDULO (08/10/2026). Eram 5 faixas antes da lista: título,
+         cartão "Dias úteis sem diário", cartão do WhatsApp, cartão do filtro
+         de obra (com "Fotos da obra" na ponta) e a faixa de números com o
+         "Recorte" — e um "Ver todas" repetindo o que o seletor já faz. Agora:
+         cabeçalho (obra no lugar fixo, 2 ações à vista, o resto no Mais), um
+         aviso só quando há o que fazer, indicadores e as seções com título. */
+      var ic = function (n) { return typeof Icones !== "undefined" ? Icones.get(n, 15) : ""; };
+      var acoesR = [
+        '<button class="btn" data-gacao="rdo-fotos">' + ic("camera") + " Fotos da obra</button>",
+        '<button class="btn" data-gacao="rdo-entrada" title="Áudio do mestre no WhatsApp vira rascunho de diário aqui">' + ic("celular") + " Buscar diários do WhatsApp</button>",
+        btnPleito
+      ];
+      var primR = '<button class="btn primary" data-gacao="novo-rdo">+ Novo diário</button>';
+      var cabR = function (obraHtml, sub) {
+        return Modulo.cab({ icone: "checklist", titulo: "Diário (RDO)", subHtml: sub, obraHtml: obraHtml, acoes: acoesR, primariaHtml: primR });
+      };
 
-      /* DIÁRIO QUE CHEGOU PELO WHATSAPP.
+      /* DIÁRIO QUE CHEGOU PELO WHATSAPP + DIAS SEM DIÁRIO = o aviso único.
          Fica ANTES do `return` de lista vazia de propósito: quem ainda não tem
          nenhum diário é justamente quem pode ter um esperando na caixa. A busca
          automática roda ao abrir a tela (com freio) e o botão existe para quem
          não quer esperar, ou para quando a rede falhou antes. */
       this._entradaAuto();
-      html += this._entradaAviso();
-      if (!todos.length) return html + vazioBox("Nenhum diário registrado", "novo-rdo", "Registrar primeiro diário");
+      var entR = this._entradaAviso(), burR = this._buracosRdoHtml(todos, obras);
+      var avisoR = (entR || burR) ? Modulo.aviso({
+        tom: entR && entR.tom === "erro" ? "erro" : (burR ? "alerta" : entR.tom),
+        titulo: burR ? "Dias úteis sem diário" : "Diários do WhatsApp",
+        textoHtml: (entR ? entR.html : "") + burR
+      }) : "";
+      if (!todos.length) return cabR("", "Nenhum diário ainda") + avisoR + vazioKit({ icone: "checklist", titulo: "Nenhum diário registrado",
+        texto: "O diário guarda clima, efetivo, serviços e fotos de cada dia — é a prova da obra num pleito." });
 
       /* FILTRO POR OBRA. Com 3 obras rodando, uma lista única de diários não
          é consultável: o encarregado procura o diário de ONTEM da obra dele.
@@ -28414,79 +29160,74 @@
       var hojeR = hojeLocal();
       var aggR = function (x) { return PorObra.totaisRdo(x, hojeR); };
       var tR = semMotorR ? null : PorObra.totaisRdo(rs, hojeR);
-      html += '<div class="card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;margin-bottom:10px">'
-        + '<label style="font-weight:700;font-size:13px">Obra</label>'
-        + '<select data-gacao="rdo-obra" style="max-width:280px">'
+      var selR = '<select data-gacao="rdo-obra" aria-label="Obra">'
         + (semMotorR
           ? '<option value="todas">Todas as obras (' + todos.length + ")</option>"
           : PorObra.opcoes(todos, obras).map(function (o) {
               return '<option value="' + Util.esc(o.valor) + '"' + (String(o.valor) === String(fObra) ? " selected" : "") + ">" +
                 Util.esc(o.rotulo) + " (" + o.n + ")</option>";
-            }).join("")) + "</select>"
-        + '<span class="muted" style="font-size:12px">' + rs.length + " diário" + (rs.length === 1 ? "" : "s") + " nesta lista</span>"
-        + '<button class="btn sm" data-gacao="rdo-fotos" style="margin-left:auto">' + (typeof Icones !== 'undefined' ? Icones.get('camera', 15) : '') + ' Fotos da obra</button></div>';
+            }).join("")) + "</select>";
+      /* o RECORTE era um "indicador" a mais na faixa; é contexto, e contexto
+         mora na linha de baixo do título */
+      var html = cabR(selR, "<b>" + Util.esc(semMotorR ? "Todas as obras" : PorObra.rotuloDe(fObra, obras)) + "</b> · " +
+        rs.length + " diário" + (rs.length === 1 ? "" : "s")) + avisoR;
 
-      /* FAIXA DE COBERTURA. No diário não há dinheiro: o que a obra acumula é
-         PROVA. "Faz N dias" é o número que interessa — buraco no diário só
-         aparece quando alguém precisa dele num pleito, e aí não dá mais para
-         preencher. */
-      if (tR) html += '<div class="fin-faixa">' +
-        '<div class="fin-rec"><span class="fin-lbl">Recorte</span><b>' + Util.esc(PorObra.rotuloDe(fObra, obras)) + '</b>' +
-          '<span class="fin-sub">' + tR.n + ' diário(s)</span></div>' +
-        '<div class="fin-kpi"><span class="fin-lbl">Último diário</span><b>' +
-          (tR.ultimaData ? Util.esc(tR.ultimaData.split("-").reverse().join("/")) : "—") + '</b>' +
-          '<span class="fin-sub">' + (tR.diasSemDiario == null ? "sem data válida"
+      /* INDICADORES DE COBERTURA. No diário não há dinheiro: o que a obra
+         acumula é PROVA. "Faz N dias" é o número que interessa — buraco no
+         diário só aparece quando alguém precisa dele num pleito, e aí não dá
+         mais para preencher. */
+      if (tR) html += Modulo.kpis([
+        { rotulo: "Último diário", valor: tR.ultimaData ? tR.ultimaData.split("-").reverse().join("/") : "—",
+          sub: tR.diasSemDiario == null ? "sem data válida"
             : tR.diasSemDiario === 0 ? "hoje"
             : tR.diasSemDiario === 1 ? "ontem"
-            : "há " + tR.diasSemDiario + " dias") + '</span></div>' +
-        '<div class="fin-kpi"><span class="fin-lbl">Homens-dia</span><b>' + Util.fmtNum(tR.homensDia, 0) + '</b>' +
-          '<span class="fin-sub">efetivo somado</span></div>' +
-        '<div class="fin-kpi"><span class="fin-lbl">Com foto</span><b>' + tR.comFoto + '/' + tR.n + '</b>' +
-          '<span class="fin-sub">' + tR.nFotos + ' foto(s)</span></div>' +
-        (tR.emAprovacao || tR.emRevisao || tR.rascunho
-          ? '<div class="fin-kpi"><span class="fin-lbl">Não fechados</span><b style="color:var(--amarelo)">' +
-            (tR.rascunho + tR.emAprovacao + tR.emRevisao) + '</b>' +
-            '<span class="fin-sub">' + tR.rascunho + ' rascunho · ' + tR.emAprovacao + ' aguardando</span></div>' : "") +
+            : "há " + tR.diasSemDiario + " dias",
+          tom: tR.diasSemDiario != null && tR.diasSemDiario >= 7 ? "alerta" : "" },
+        { rotulo: "Homens-dia", valor: Util.fmtNum(tR.homensDia, 0), sub: "efetivo somado" },
+        { rotulo: "Com foto", valor: tR.comFoto + "/" + tR.n, sub: tR.nFotos + " foto(s)" },
+        (tR.emAprovacao || tR.emRevisao || tR.rascunho)
+          ? { rotulo: "Não fechados", valor: String(tR.rascunho + tR.emAprovacao + tR.emRevisao), tom: "alerta",
+              sub: tR.rascunho + " rascunho · " + tR.emAprovacao + " aguardando" } : null,
         /* ⚠ o diário APROVADO e não publicado não caía em KPI nenhum: nem em
            "não fechados" (ele está fechado) nem em "publicados" (o cliente não
            vê). Ficava invisível — e "aprovado que o cliente nunca viu" é um dos
            alertas que o Painel já levanta. Agora aparece aqui, ao lado. */
-        '<div class="fin-kpi"><span class="fin-lbl">Publicados</span><b style="color:var(--verde)">' + tR.publicado + '</b>' +
-          '<span class="fin-sub">' + (tR.aprovado
-            ? tR.aprovado + " aprovado(s) que o cliente ainda não vê"
-            : "o cliente vê") + '</span></div>' +
-        (fObra !== "todas" ? '<button class="btn sm ghost" data-gacao="rdo-obra" data-id="todas" style="align-self:center">Ver todas</button>' : "") +
-        "</div>";
+        { rotulo: "Publicados", valor: String(tR.publicado), tom: "pos",
+          sub: tR.aprovado ? tR.aprovado + " aprovado(s) que o cliente ainda não vê" : "o cliente vê" }
+      ]);
 
       /* QUADRO POR OBRA, ordenado pelo ABANDONO: a obra sem diário há mais
-         tempo sobe, não a que tem mais diários. */
+         tempo sobe, não a que tem mais diários. Era uma tabela solta, sem
+         título, colada na lista de diários — duas tabelas iguais em sequência
+         que ninguém distinguia. */
       if (!semMotorR && fObra === "todas" && obras.length) {
         var gruposR = PorObra.porObra(todos, obras, aggR);
         if (gruposR.length > 1) {
-          html += '<table class="tbl" style="margin-bottom:10px"><thead><tr><th>Obra</th><th class="num">Diários</th>' +
+          var tq = '<table class="tbl"><thead><tr><th>Obra</th><th class="num">Diários</th>' +
             '<th>Último</th><th class="num">Sem diário há</th><th class="num">Homens-dia</th><th class="num">Publicados</th></tr></thead><tbody>';
           gruposR.forEach(function (g) {
             var alerta = g.diasSemDiario != null && g.diasSemDiario >= 7;
-            html += '<tr class="lin" style="cursor:pointer" data-gacao="rdo-obra" data-id="' + Util.esc(g.chave) + '">' +
+            tq += '<tr class="lin" style="cursor:pointer" data-gacao="rdo-obra" data-id="' + Util.esc(g.chave) + '">' +
               "<td><b>" + Util.esc(g.nome) + "</b>" +
               (g.orfao ? ' <span class="pill" style="color:var(--amarelo)">obra excluída — reveja o vínculo</span>' : "") + "</td>" +
               '<td class="num">' + g.n + "</td>" +
               "<td>" + (g.ultimaData ? Util.esc(g.ultimaData.split("-").reverse().join("/")) : "—") + "</td>" +
-              '<td class="num"' + (alerta ? ' style="color:var(--amarelo);font-weight:700"' : "") + ">" +
+              '<td class="num"' + (alerta ? ' style="color:var(--amarelo);font-weight:var(--p-forte)"' : "") + ">" +
                 (g.diasSemDiario == null ? "—" : g.diasSemDiario + " dia" + (g.diasSemDiario === 1 ? "" : "s")) + "</td>" +
               '<td class="num">' + Util.fmtNum(g.homensDia, 0) + "</td>" +
               '<td class="num">' + g.publicado + "</td></tr>";
           });
-          html += "</tbody></table>";
+          html += Modulo.secao({ titulo: "Por obra", sub: "A obra sem diário há mais tempo vem primeiro. Clique para filtrar.", corpoHtml: tq + "</tbody></table>" });
         }
       }
 
-      if (!rs.length) return html + vazioBox("Nenhum diário nesta obra", "novo-rdo", "Registrar diário desta obra");
+      if (!rs.length) return html + vazioKit({ icone: "checklist", titulo: "Nenhum diário nesta obra" });
       /* 2.000 diários davam 1,9 MB de HTML e 4.003 botões numa tacada — e a
          lista já vem da data mais recente para a mais antiga, então o corte
          mantém à vista justamente o que se procura. */
       var corteRdo = this._cortar(rs, "rdo");
-      html += this._avisoCorte(corteRdo, "rdo", "diários");
+      var antesLista = html;
+      html = this._avisoCorte(corteRdo, "rdo", "diários");
       html += '<table class="tbl"><thead><tr><th>Nº</th><th>Data</th><th>Obra</th><th>Clima</th><th class="num">Efetivo</th><th>Atividades</th><th>Status</th><th></th></tr></thead><tbody>';
       /* ⚠ TRÊS COISAS QUE NÃO DEPENDEM DA LINHA, E ESTAVAM DENTRO DELA.
          `lista("equipe")` e `_exigeOutroAprovador()` (que lê prefs) davam a
@@ -28508,7 +29249,7 @@
         var ef = Util.num(r.efetivoDireto) + Util.num(r.efetivoIndireto);
         var clima = rot(P.rdoClima, r.climaManha) + (r.climaTarde && r.climaTarde !== r.climaManha ? " / " + rot(P.rdoClima, r.climaTarde) : "");
         var resumo = (r.atividades || "").replace(/\s+/g, " ").slice(0, 60) + ((r.atividades || "").length > 60 ? "…" : "");
-        var nf = (r.fotos && r.fotos.length) ? ' <span title="fotos anexadas" style="color:#2e6f9e;font-weight:700">📷' + r.fotos.length + "</span>" : "";
+        var nf = (r.fotos && r.fotos.length) ? ' <span title="fotos anexadas" style="color:var(--aco);font-weight:var(--p-forte);white-space:nowrap">' + (typeof Icones !== "undefined" ? Icones.get("camera", 14) : "") + r.fotos.length + "</span>" : "";
         /* Selo do estado. Quando o gestor pediu revisão, o MOTIVO aparece aqui
            mesmo — o app não tem caixa de mensagens, e esconder o pedido atrás
            de um clique faria o autor não ver o que precisa corrigir. */
@@ -28519,10 +29260,11 @@
              telas contando histórias opostas sobre o mesmo diário, sem saída,
              porque Despublicar só aparecia em "publicado". */
           var E = RDO.ESTADOS[RDO.estadoDe ? RDO.estadoDe(r, !!(ob && ob.portalUser)) : (r.estado || "rascunho")] || RDO.ESTADOS.rascunho;
-          var cs = { cinza: "#64748b", ambar: "#b45309", vermelho: "#b91c1c", verde: "#15803d", azul: "#2e6f9e" };
-          selo = '<span style="font-size:11px;font-weight:700;color:' + (cs[E.cor] || "#64748b") + '">' + Util.esc(E.rotulo) + "</span>";
+          /* só tokens (roteiro de módulo): o selo usava cinco hex soltos */
+          var cs = { cinza: "var(--texto-fraco)", ambar: "var(--amarelo)", vermelho: "var(--vermelho)", verde: "var(--verde)", azul: "var(--aco)" };
+          selo = '<span style="font-size:var(--t-micro);font-weight:var(--p-forte);color:' + (cs[E.cor] || "var(--texto-fraco)") + '">' + Util.esc(E.rotulo) + "</span>";
           if ((r.estado === "em_revisao") && r.revisaoMotivo) {
-            selo += '<div style="font-size:11px;color:#b91c1c;max-width:220px">' + Util.esc(r.revisaoMotivo) + "</div>";
+            selo += '<div style="font-size:var(--t-micro);color:var(--vermelho);max-width:220px">' + Util.esc(r.revisaoMotivo) + "</div>";
           }
         } else { selo = pill(r.status); }
         /* AÇÕES DE APROVAÇÃO — cada uma só aparece para quem realmente pode.
@@ -28555,9 +29297,9 @@
           if (RDO.podeAcao("aprovar", eu, r, ctxAp) && est === "em_aprovacao")
             acao += '<button class="btn sm success" data-gacao="rdo-aprovar" data-id="' + r.id + '"' + (ctxAp.semOutroAprovador ? ' title="Você é o único aprovador desta conta — a aprovação fica registrada como sua"' : "") + ">Aprovar</button> ";
           if (RDO.podeAcao("revisar", eu, r, ctxAp) && (est === "em_aprovacao" || est === "aprovado"))
-            acao += '<button class="btn sm" data-gacao="rdo-revisar" data-id="' + r.id + '" style="background:#b45309;color:#fff" title="Devolver para quem escreveu, com o motivo">Pedir revisão</button> ';
+            acao += '<button class="btn sm" data-gacao="rdo-revisar" data-id="' + r.id + '" title="Devolver para quem escreveu, com o motivo">Pedir revisão</button> ';
           if (RDO.podeAcao("publicar", eu, r, ctxAp) && est === "aprovado")
-            acao += '<button class="btn sm" data-gacao="rdo-publicar" data-id="' + r.id + '" style="background:#2e6f9e;color:#fff" title="Liberar para o cliente ver no Portal">Publicar</button> ';
+            acao += '<button class="btn sm" data-gacao="rdo-publicar" data-id="' + r.id + '" title="Liberar para o cliente ver no Portal">Publicar</button> ';
           /* `publicado_legado` entra aqui: é o diário antigo que ESTÁ no Portal.
              Sem ele nesta condição o botão Despublicar nunca apareceria e o
              diário ficaria visível ao cliente sem nenhuma saída pela tela. */
@@ -28588,7 +29330,7 @@
         acao += '<button class="btn sm" data-gacao="imprimir-rdo" data-id="' + r.id + '" title="Diário impresso profissional (com fotos e assinaturas)">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + '</button>';
         html += '<tr><td style="cursor:pointer" data-gopen="rdo:' + r.id + '" title="Abrir este diário"><b>' + Util.esc(r.numero || "—") + "</b></td><td>" + Util.esc(r.data ? r.data.split("-").reverse().join("/") : "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + Util.esc(clima) + '</td><td class="num">' + ef + "</td><td>" + Util.esc(resumo || "—") + nf + "</td><td>" + selo + '</td><td class="num">' + acao + "</td></tr>";
       });
-      return html + "</tbody></table>";
+      return antesLista + Modulo.secao({ titulo: "Diários", corpoHtml: html + "</tbody></table>" });
     },
     // RDO ENTREGÁVEL (benchmark concorrência): diário impresso profissional —
     // identificação completa, clima/efetivo, atividades, ocorrências em destaque,
@@ -30489,16 +31231,17 @@
      * ------------------------------------------------------------------ */
     renderRelatos: function () {
       var self = this;
-      var html = this._head(svg("relatos") + "Falar com o suporte", "", "");
-      html += '<div class="card" style="margin-bottom:12px">'
-        + '<p style="margin:0 0 10px;font-size:14px">Encontrou um problema ou pensou numa melhoria? Conte aqui. '
-        + 'Eu leio <b>todos</b> — problema vira conserto, sugestão vai para avaliação.</p>'
-        + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
-        + '<button class="btn primary" data-gacao="relato-problema">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Relatar um problema</button>'
-        + '<button class="btn" data-gacao="relato-melhoria">' + (typeof Icones !== 'undefined' ? Icones.get('lampada', 15) : '') + ' Sugerir uma melhoria</button></div>'
-        /* a promessa de privacidade fica na tela, não só no documento */
-        + '<div class="muted" style="font-size:12px;margin-top:10px">Vai apenas o que você escrever, mais a tela em que estava e a versão. '
-        + '<b>Nenhum dado de orçamento, obra, cliente ou colaborador é enviado</b> — e você vê tudo antes de mandar.</div></div>';
+      /* PADRÃO DE TELA (ROTEIRO-MODULO.md): as duas portas sobem para o
+         cabeçalho (eram botões dentro de um cartão explicativo), relatar
+         problema como a primária. A promessa de privacidade fica na tela,
+         não só no documento — agora na linha de contexto. */
+      var K = kit(), ic = function (n) { return typeof Icones !== "undefined" ? Icones.get(n, 15) : ""; };
+      var html = K.cab({
+        icone: "relatos", titulo: "Falar com o suporte",
+        subHtml: "Vai só o que você escrever, a tela e a versão — <b>nenhum dado de orçamento, obra, cliente ou colaborador</b>, e você vê tudo antes de mandar.",
+        acoes: ['<button class="btn" data-gacao="relato-melhoria">' + ic("lampada") + "Sugerir uma melhoria</button>"],
+        primariaHtml: '<button class="btn primary" data-gacao="relato-problema">' + ic("alerta") + "Relatar um problema</button>"
+      });
 
       /* A fila de TODOS os clientes, para quem responde por eles. Vem antes
          de "Seus relatos" de proposito: e trabalho pendente, e trabalho
@@ -30506,25 +31249,25 @@
       html += this._filaClientesHtml();
 
       var r = this._relatosMeus;
-      if (!r) { this._carregarRelatos(); return html + '<div class="card muted" style="font-size:13px">Carregando seus relatos…</div>'; }
-      if (r.erro) return html + '<div class="card" style="font-size:13px">Não consegui buscar seus relatos agora. O envio continua funcionando.</div>';
-      if (!r.itens.length) return html + '<div class="card muted" style="font-size:13px">Você ainda não enviou nenhum relato.</div>';
+      if (!r) { this._carregarRelatos(); return html + K.secao({ titulo: "Seus relatos", corpoHtml: '<p class="muted" style="margin:0">Carregando seus relatos…</p>' }); }
+      if (r.erro) return html + K.secao({ titulo: "Seus relatos", corpoHtml: '<p class="muted" style="margin:0">Não consegui buscar seus relatos agora. O envio continua funcionando.</p>' });
+      if (!r.itens.length) return html + K.secao({ titulo: "Seus relatos", corpoHtml: K.vazio({ icone: "relatos", titulo: "Você ainda não enviou nenhum relato",
+        texto: "Encontrou um problema ou pensou numa melhoria? Conte aqui. Eu leio todos — problema vira conserto, sugestão vai para avaliação." }) });
 
-      html += '<div class="card"><h3 style="margin:0 0 10px">Seus relatos</h3><table class="tbl"><thead><tr>'
-        + "<th>Quando</th><th>Tipo</th><th>Assunto</th><th>Situação</th></tr></thead><tbody>";
-      html += r.itens.map(function (i) {
+      var tb = '<table class="tbl"><thead><tr><th>Quando</th><th>Tipo</th><th>Assunto</th><th>Situação</th></tr></thead><tbody>';
+      tb += r.itens.map(function (i) {
         var e = Relatos.estadoDe(i.estado);
         var d = new Date(i.criadoEm || 0);
         var quando = isNaN(d.getTime()) ? "—" : ("0" + d.getDate()).slice(-2) + "/" + ("0" + (d.getMonth() + 1)).slice(-2) + "/" + d.getFullYear();
         return "<tr><td>" + quando + "</td>"
-          + "<td>" + (i.tipo === "melhoria" ? "" + (typeof Icones !== "undefined" ? Icones.get("lampada", 15) : "") + " Melhoria" : "" + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") + " Problema") + "</td>"
+          + "<td>" + (i.tipo === "melhoria" ? ic("lampada") + "Melhoria" : ic("alerta") + "Problema") + "</td>"
           + "<td>" + Util.esc(i.titulo || "—")
-          + (i.resposta ? '<div class="muted" style="font-size:12px;margin-top:3px">↳ ' + Util.esc(i.resposta) + "</div>" : "")
+          + (i.resposta ? '<div class="muted" style="font-size:var(--t-micro);margin-top:3px">↳ ' + Util.esc(i.resposta) + "</div>" : "")
           + "</td>"
           + '<td><span style="color:' + e.cor + ';font-weight:600">' + e.rotulo + "</span>"
-          + '<div class="muted" style="font-size:11px">' + e.diz + "</div></td></tr>";
+          + '<div class="muted" style="font-size:var(--t-micro)">' + e.diz + "</div></td></tr>";
       }).join("");
-      return html + "</tbody></table></div>";
+      return html + K.secao({ titulo: "Seus relatos", corpoHtml: tb + "</tbody></table>" });
     },
 
     _carregarRelatos: function () {
@@ -30764,26 +31507,23 @@
     /* O aviso do que veio de fora. Barra permanente sobre uma função que quase
        nunca tem novidade vira ruído, e o usuário para de ler justo no dia em
        que ela diz algo — por isso o texto muda conforme o que aconteceu. */
+    /* ROTEIRO DE MÓDULO (08/10/2026): era um cartão PERMANENTE com o botão e
+       uma frase de apresentação ("Áudio do mestre…") — ocupava uma faixa da
+       tela mesmo sem notícia nenhuma. O botão subiu para o cabeçalho (com a
+       frase como dica) e daqui sai só a NOTÍCIA, quando há: { tom, html } para
+       o aviso único do topo, ou null. */
     _entradaAviso: function () {
       var r = this._entradaUltimo;
-      var botao = '<button class="btn sm" data-gacao="rdo-entrada">' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' Buscar diários do WhatsApp</button>';
-      var caixa = function (borda, txt) {
-        return '<div class="card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 12px;margin-bottom:10px'
-          + (borda ? ';border-left:3px solid ' + borda : "") + '">' + botao
-          + '<span style="font-size:12px">' + txt + "</span></div>";
-      };
-      if (!r || (!r.criados && !r.erro)) {
-        return caixa("", '<span class="muted">Áudio do mestre no WhatsApp vira rascunho de diário aqui.</span>');
-      }
+      if (!r || (!r.criados && !r.erro)) return null;
       if (r.erro) {
-        return caixa("#c90", "Não consegui falar com o servidor agora. Os diários continuam guardados lá — pode tentar de novo.");
+        return { tom: "erro", html: "<span>Não consegui falar com o servidor agora. Os diários do WhatsApp continuam guardados lá — pode tentar de novo.</span>" };
       }
       var pend = r.comPendencia
         ? " <b>" + r.comPendencia + "</b> precisa" + (r.comPendencia === 1 ? "" : "m")
           + " de conferência (faltou obra, efetivo ou o serviço do dia)."
         : "";
-      return caixa("#2a7", "Chegaram <b>" + r.criados + "</b> diário" + (r.criados === 1 ? "" : "s")
-        + " pelo WhatsApp, como <b>rascunho</b>." + pend + " Confira antes de finalizar.");
+      return { tom: r.comPendencia ? "alerta" : "ok", html: "<span>Chegaram <b>" + r.criados + "</b> diário" + (r.criados === 1 ? "" : "s")
+        + " pelo WhatsApp, como <b>rascunho</b>." + pend + " Confira antes de finalizar.</span>" };
     },
 
     rdoBuscarEntrada: function (manual) {
@@ -31387,16 +32127,25 @@
     renderColaboradores: function () {
       var cs = lista("colaboradores"), obras = lista("obras");
       var ativos = cs.filter(function (c) { return c.status === "ativo"; }).length;
-      var extra = '<button class="btn sm" data-gacao="colab-doc" style="margin-right:10px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Cadastrar de documento (IA)</button><span class="muted" style="margin-right:12px;align-self:center">Ativos: <b>' + ativos + "</b> / " + cs.length + "</span>";
-      var html = this._head(svg("colaboradores") + "Colaboradores", "novo-colaborador", "Novo colaborador", extra);
-      if (!cs.length) return html + vazioBox("Nenhum colaborador cadastrado", "novo-colaborador", "Cadastrar primeiro colaborador");
+      /* PADRÃO DE TELA: "Ativos: N / M", que era texto solto entre os
+         botões, é o contexto do cabeçalho */
+      var html = Modulo.cab({
+        iconeHtml: svg("colaboradores", 22), titulo: "Colaboradores",
+        sub: cs.length ? cs.length + " cadastrado(s) · " + ativos + " ativo(s)" : "Equipe própria e terceirizada: contrato, remuneração e obra",
+        acoes: ['<button class="btn" data-gacao="colab-doc" title="Ler RG, CTPS ou ficha por foto ou PDF e preencher o cadastro">' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Cadastrar de documento (IA)</button>'],
+        primariaHtml: '<button class="btn primary" data-gacao="novo-colaborador">+ Novo colaborador</button>'
+      });
+      if (!cs.length) return html + vazioMod({ icone: "pessoas", titulo: "Nenhum colaborador cadastrado",
+        texto: "O colaborador cadastrado aparece no ponto, na folha, no EPI e no diário de obra." });
+      var iniTb = html.length;
       html += '<table class="tbl"><thead><tr><th>Nome</th><th>Função</th><th>Contrato</th><th>Obra</th><th class="num">Remuneração</th><th>Status</th></tr></thead><tbody>';
       cs.forEach(function (c) {
         var ob = obras.filter(function (o) { return o.id === c.obraId; })[0];
         var rem = Util.fmtMoeda(c.remuneracao) + ' <span class="muted">/ ' + rot(P.unidadeRem, c.unidadeRem) + "</span>";
         html += '<tr class="lin" style="cursor:pointer" data-gopen="colaboradores:' + c.id + '"><td><b>' + Util.esc(c.nome) + "</b></td><td>" + Util.esc(c.funcao || "—") + "</td><td>" + rot(P.tipoContrato, c.tipoContrato) + "</td><td>" + Util.esc(ob ? ob.nome : "—") + '</td><td class="num">' + rem + "</td><td>" + pill(c.status) + "</td></tr>";
       });
-      return html + "</tbody></table>";
+      return html.slice(0, iniTb) + Modulo.secao({ titulo: "Equipe", sub: "Clique na linha para abrir o cadastro.",
+        corpoHtml: html.slice(iniTb) + "</tbody></table>" });
     },
     novoColaborador: function () { this.formColaborador(null); },
     formColaborador: function (c) {
@@ -31517,25 +32266,38 @@
       }); // inclui já vencidos (dias<0) — precisam renovar
       var catN = (typeof Epi !== "undefined" && Epi.carregado) ? Epi.resumo().total : null;
       var catProp = (typeof Epi !== "undefined" && Epi.carregado && Epi.totalFabrica) ? (Epi.resumo().total - Epi.totalFabrica()) : 0;
-      var card = function (val, l, cor) { return '<div class="card" style="flex:1;text-align:center;min-width:90px"><div style="font-size:24px;font-weight:800;color:' + cor + '">' + val + '</div><div class="muted">' + l + "</div></div>"; };
-      var kpis = '<div class="row" style="gap:10px;margin:4px 0 14px">'
-        + card(es.length, "entregas", "#0f2740") + card(Util.fmtMoeda(gasto), "gasto com EPI", "#16a34a")
-        + card(aVencer, "CA vencido/a vencer", aVencer ? "#dc2626" : "#64748b")
-        + card(caPend, "CA pendente", caPend ? "#b45309" : "#64748b")
-        + card(catN != null ? catN : "…", "no catálogo" + (catProp > 0 ? " (" + catProp + " seu" + (catProp > 1 ? "s" : "") + ")" : ""), "#2e6f9e") + "</div>";
-      var extra = '<button class="btn sm" data-gacao="catalogo-epi" style="margin-right:10px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('livro', 15) : '') + ' Catálogo de EPI</button>' +
-        '<button class="btn sm ghost" data-gacao="novo-epi-proprio" style="margin-right:10px;align-self:center" title="Cadastre um EPI que não está na lista — ele passa a aparecer na busca das suas entregas">' + (typeof Icones !== 'undefined' ? Icones.get('mais', 15) : '') + ' EPI próprio</button>';
-      var html = this._head(svg("epi") + "EPI — Entregas &amp; Fichas", "nova-entrega-epi", "Nova entrega", extra) + kpis;
-      html += '<p class="muted" style="margin:-4px 0 14px">Registre a entrega de EPI ao colaborador (com CA e validade), gere a <b>ficha de controle (NR-6)</b> para assinatura e acompanhe o gasto. O catálogo traz os EPIs de obra com valor de referência; o <b>CA é do modelo comprado</b> — use <b>' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + ' Consultar CA</b> para conferir online.</p>';
-      if (!es.length) return html + vazioBox("Nenhuma entrega de EPI registrada", "nova-entrega-epi", "Registrar primeira entrega");
+      /* PADRÃO DE TELA: os cinco cartões de cor própria viraram a faixa do
+         kit (cor só com significado: vermelho no CA vencido, âmbar no CA
+         pendente). O parágrafo fixo de instrução, que só serve na primeira
+         vez, foi para o texto do vazio e para o subtítulo da seção. */
+      var html = Modulo.cab({
+        iconeHtml: svg("epi", 22), titulo: "EPI",
+        sub: "Entregas ao colaborador e ficha de controle (NR-6) para assinatura",
+        acoes: [
+          '<button class="btn" data-gacao="catalogo-epi">' + (typeof Icones !== 'undefined' ? Icones.get('livro', 15) : '') + ' Catálogo de EPI</button>',
+          '<button class="btn" data-gacao="novo-epi-proprio" title="Cadastre um EPI que não está na lista — ele passa a aparecer na busca das suas entregas">' + (typeof Icones !== 'undefined' ? Icones.get('mais', 15) : '') + ' EPI próprio</button>'
+        ],
+        primariaHtml: '<button class="btn primary" data-gacao="nova-entrega-epi">+ Nova entrega</button>'
+      });
+      html += Modulo.kpis([
+        { rotulo: "Entregas", valor: String(es.length) },
+        { rotulo: "Gasto com EPI", valor: Util.fmtMoeda(gasto) },
+        { rotulo: "CA vencido ou a vencer", valor: String(aVencer), tom: aVencer ? "neg" : "", sub: "em até 60 dias" },
+        { rotulo: "CA pendente", valor: String(caPend), tom: caPend ? "alerta" : "", sub: "item sem CA informado" },
+        { rotulo: "No catálogo", valor: catN != null ? String(catN) : "…", sub: catProp > 0 ? catProp + " seu" + (catProp > 1 ? "s" : "") : "EPIs de obra com valor de referência" }
+      ]);
+      if (!es.length) return html + vazioMod({ icone: "capacete", titulo: "Nenhuma entrega de EPI registrada",
+        texto: "Registre a entrega ao colaborador com CA e validade e gere a ficha NR-6 para assinatura. O CA é do modelo comprado: confira em Consultar CA, dentro da entrega." });
+      var iniTb = html.length;
       html += '<table class="tbl"><thead><tr><th>Nº</th><th>Data</th><th>Colaborador</th><th class="num">Itens</th><th class="num">Valor</th><th></th></tr></thead><tbody>';
       es.forEach(function (e) {
         var nI = (e.itens && e.itens.length) || 0;
-        html += '<tr><td style="cursor:pointer" data-gopen="epi:' + e.id + '"><b>' + Util.esc(e.numero || "—") + "</b></td><td>" + Util.esc(e.data ? e.data.split("-").reverse().join("/") : "—") + "</td><td>" + Util.esc(e.colaboradorNome || "—") + '</td><td class="num">' + nI + '</td><td class="num">' + Util.fmtMoeda(e.valorTotal) + '</td><td class="num"><button class="btn sm" data-gacao="epi-editar" data-id="' + e.id + '" title="Editar esta entrega">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + '</button> '
-          + '<button class="btn sm" data-gacao="epi-duplicar" data-id="' + e.id + '" title="Duplicar para outro colaborador">⧉</button> '
+        html += '<tr><td style="cursor:pointer" data-gopen="epi:' + e.id + '"><b>' + Util.esc(e.numero || "—") + "</b></td><td>" + Util.esc(e.data ? e.data.split("-").reverse().join("/") : "—") + "</td><td>" + Util.esc(e.colaboradorNome || "—") + '</td><td class="num">' + nI + '</td><td class="num">' + Util.fmtMoeda(e.valorTotal) + '</td><td class="num"><button class="btn sm" data-gacao="epi-editar" data-id="' + e.id + '" title="Editar esta entrega" aria-label="Editar esta entrega">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + '</button> '
+          + '<button class="btn sm" data-gacao="epi-duplicar" data-id="' + e.id + '" title="Duplicar para outro colaborador" aria-label="Duplicar para outro colaborador">' + (typeof Icones !== 'undefined' ? Icones.get('copiar', 15) : 'Duplicar') + '</button> '
           + '<button class="btn sm" data-gacao="ficha-epi" data-id="' + e.id + '">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Ficha</button></td></tr>';
       });
-      return html + "</tbody></table>";
+      return html.slice(0, iniTb) + Modulo.secao({ titulo: "Entregas", sub: "O CA é do modelo comprado: confira em Consultar CA, dentro da entrega.",
+        corpoHtml: html.slice(iniTb) + "</tbody></table>" });
     },
     novoEntregaEpi: function () { this.formEntregaEpi(null); },
 
@@ -31864,69 +32626,90 @@
       var inj = faltas.filter(function (f) { return f.motivo === "injustificada"; }).length;
       var hes = lista("horas_extras").filter(function (h) { return String(h.data || "").slice(0, 7) === mes; }).sort(function (a, b) { return String(b.data).localeCompare(String(a.data)); });
       var minHE = hes.reduce(function (s, h) { return s + (typeof Ponto !== "undefined" ? Ponto.horasParaMin(h.horas) : 0); }, 0);
-      var extra = '<button class="btn sm" data-gacao="nova-falta" style="margin-right:8px;align-self:center">Registrar falta</button>'
-        + '<button class="btn sm" data-gacao="nova-he" style="margin-right:8px;align-self:center">⏱ Lançar hora extra</button>'
-        + '<button class="btn sm" data-gacao="falta-lote" style="margin-right:8px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('checklist', 15) : '') + ' Lançar em lote</button>'
-        + '<button class="btn sm" data-gacao="espelho-ponto" style="margin-right:8px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Demonstrativo de frequência</button>'
-        + '<button class="btn sm" data-gacao="config-jornada" style="margin-right:12px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + ' Jornada</button>';
-      var html = this._head(svg("ponto") + "Ponto / Cartão de Ponto", "batidas-mes", "Registrar batidas", extra);
-      html += '<div class="row" style="align-items:center;gap:14px;margin:-4px 0 12px">'
-        + '<div class="field" style="max-width:170px"><label>Mês de referência</label><input type="month" id="pt-mes" value="' + mes + '"></div>'
-        + '<span class="muted" style="align-self:center">Ativos: <b>' + ativos + "</b> · Faltas em " + mesBR + ": <b style=\"color:#dc2626\">" + inj + "</b> injustificada(s) de <b>" + faltas.length + "</b></span></div>";
-      html += '<h3 style="margin:6px 0 8px;font-size:15px">Faltas de ' + mesBR + "</h3>";
-      if (!faltas.length) html += vazioBox("Nenhuma falta lançada neste mês", "nova-falta", "Registrar falta");
+      /* PADRÃO DE TELA (ROTEIRO-MODULO.md). Eram SEIS botões no título, de peso
+         igual, e o mês de referência solto num campo com rótulo no meio da
+         tela. Agora: 2 ações à vista (falta e hora extra, o lançamento do dia
+         a dia), o resto no "Mais" — mesmos ids e data-gacao —, o mês na barra
+         de filtros e os números do mês numa faixa de indicadores.
+         Os vazios de cada seção NÃO repetem o botão: "+ Registrar falta" e
+         "Lançar hora extra" já estão no cabeçalho (ação repetida: fica uma). */
+      var ic = function (n) { return typeof Icones !== "undefined" ? Icones.get(n, 15) : ""; };
+      var html = Modulo.cab({
+        iconeHtml: svg("ponto", 22), titulo: "Ponto / Folha",
+        sub: "Faltas, horas extras e cartão de ponto · " + mesBR,
+        acoes: [
+          '<button class="btn" data-gacao="nova-falta">Registrar falta</button>',
+          '<button class="btn" data-gacao="nova-he">' + ic("relogio") + ' Lançar hora extra</button>',
+          '<button class="btn" data-gacao="falta-lote">' + ic("checklist") + ' Lançar em lote</button>',
+          '<button class="btn" data-gacao="espelho-ponto">' + ic("imprimir") + ' Demonstrativo de frequência</button>',
+          '<button class="btn" data-gacao="config-jornada">' + ic("ajustes") + ' Jornada</button>'
+        ],
+        primariaHtml: '<button class="btn primary" data-gacao="batidas-mes">+ Registrar batidas</button>'
+      });
+      html += Modulo.filtros(['<div class="field"><label for="pt-mes">Mês de referência</label><input type="month" id="pt-mes" value="' + mes + '"></div>']);
+      html += Modulo.kpis([
+        { rotulo: "Colaboradores ativos", valor: String(ativos) },
+        { rotulo: "Faltas no mês", valor: String(faltas.length) },
+        { rotulo: "Injustificadas", valor: String(inj), tom: inj ? "neg" : "", sub: "descontam na folha" },
+        { rotulo: "Horas extras", valor: minHE && typeof Ponto !== "undefined" ? Ponto.minParaHhmmExtenso(minHE) : "0", sub: hes.length + " lançamento(s)" }
+      ]);
+      var tbF = "";
+      if (!faltas.length) tbF = vazioMod({ icone: "calendario", titulo: "Nenhuma falta lançada neste mês", solto: true });
       else {
-        html += '<table class="tbl"><thead><tr><th>Data</th><th>Colaborador</th><th>Motivo</th><th></th></tr></thead><tbody>';
+        tbF += '<table class="tbl"><thead><tr><th>Data</th><th>Colaborador</th><th>Motivo</th><th></th></tr></thead><tbody>';
         faltas.forEach(function (f) {
           var col = colabs.filter(function (c) { return c.id === f.colaboradorId; })[0];
           var cor = f.motivo === "injustificada" ? "#dc2626" : "#64748b";
-          html += "<tr><td>" + Util.esc(f.data ? f.data.split("-").reverse().join("/") : "—") + "</td><td><b>" + Util.esc(col ? col.nome : (f.colaboradorNome || "—")) + '</b></td><td><span class="g-pill" style="background:' + cor + "22;color:" + cor + '">' + rot(P.faltaMotivo, f.motivo) + '</span></td><td class="num"><button class="btn sm" data-gacao="excluir-falta" data-id="' + f.id + '" style="color:#dc2626">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></td></tr>';
+          tbF += "<tr><td>" + Util.esc(f.data ? f.data.split("-").reverse().join("/") : "—") + "</td><td><b>" + Util.esc(col ? col.nome : (f.colaboradorNome || "—")) + '</b></td><td><span class="g-pill" style="background:' + cor + "22;color:" + cor + '">' + rot(P.faltaMotivo, f.motivo) + '</span></td><td class="num"><button class="btn sm" data-gacao="excluir-falta" data-id="' + f.id + '" style="color:#dc2626" title="Excluir esta falta" aria-label="Excluir esta falta">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></td></tr>';
         });
-        html += "</tbody></table>";
+        tbF += "</tbody></table>";
       }
+      html += Modulo.secao({ titulo: "Faltas de " + mesBR, corpoHtml: tbF });
       /* Horas extras do mês, dia a dia. É o que alimenta o espelho de ponto:
          estica a saída do dia útil e, em sábado/domingo/feriado, gera as
          batidas de quem foi trabalhar. Sem valor em R$ de propósito —
          aqui é controle de jornada, o pagamento é lançado à parte. */
-      html += '<h3 style="margin:20px 0 8px;font-size:15px">Horas extras de ' + mesBR
-        + (minHE ? ' <span class="muted" style="font-size:13px;font-weight:normal">— total ' + (typeof Ponto !== "undefined" ? Ponto.minParaHhmmExtenso(minHE) : "") + " em " + hes.length + " lançamento(s)</span>" : "") + "</h3>";
-      if (!hes.length) html += vazioBox("Nenhuma hora extra lançada neste mês", "nova-he", "Lançar hora extra");
+      var tbH = "";
+      if (!hes.length) tbH = vazioMod({ icone: "relogio", titulo: "Nenhuma hora extra lançada neste mês", solto: true });
       else {
-        html += '<table class="tbl"><thead><tr><th>Data</th><th>Colaborador</th><th class="num">Horas</th><th>Obra</th><th>Motivo</th><th></th></tr></thead><tbody>';
+        tbH += '<table class="tbl"><thead><tr><th>Data</th><th>Colaborador</th><th class="num">Horas</th><th>Obra</th><th>Motivo</th><th></th></tr></thead><tbody>';
         hes.forEach(function (h) {
           var col = colabs.filter(function (c) { return c.id === h.colaboradorId; })[0];
           var ob = h.obraId ? obras.filter(function (o) { return o.id === h.obraId; })[0] : null;
           var dt = h.data ? new Date(h.data + "T12:00:00") : null;
           var dsem = dt ? ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"][dt.getDay()] : "";
           var fds = dt && (dt.getDay() === 0 || dt.getDay() === 6);
-          html += "<tr><td>" + Util.esc(h.data ? h.data.split("-").reverse().join("/") : "—")
+          tbH += "<tr><td>" + Util.esc(h.data ? h.data.split("-").reverse().join("/") : "—")
             + ' <span class="muted" style="font-size:11px' + (fds ? ";color:#b45309;font-weight:700" : "") + '">' + dsem + "</span></td>"
             + "<td><b>" + Util.esc(col ? col.nome : "—") + "</b></td>"
             + '<td class="num"><b>' + Util.esc(typeof Ponto !== "undefined" ? Ponto.minParaHhmmExtenso(Ponto.horasParaMin(h.horas)) : String(h.horas || "")) + "</b></td>"
             + "<td>" + Util.esc(ob ? ob.nome : "—") + "</td>"
             + '<td class="muted" style="font-size:12px">' + Util.esc(h.motivo || "") + "</td>"
-            + '<td class="num"><button class="btn sm" data-gacao="editar-he" data-id="' + h.id + '">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + '</button> <button class="btn sm" data-gacao="excluir-he" data-id="' + h.id + '" style="color:#dc2626">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></td></tr>';
+            + '<td class="num"><button class="btn sm" data-gacao="editar-he" data-id="' + h.id + '" title="Editar" aria-label="Editar">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + '</button> <button class="btn sm" data-gacao="excluir-he" data-id="' + h.id + '" style="color:#dc2626" title="Excluir" aria-label="Excluir">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></td></tr>';
         });
-        html += "</tbody></table>";
+        tbH += "</tbody></table>";
       }
+      html += Modulo.secao({ titulo: "Horas extras de " + mesBR,
+        sub: minHE ? "Total " + (typeof Ponto !== "undefined" ? Ponto.minParaHhmmExtenso(minHE) : "") + " em " + hes.length + " lançamento(s). Só horas: o pagamento é lançado na folha." : "",
+        corpoHtml: tbH });
       var ps = lista("ponto").slice().sort(function (a, b) { return (b.competencia || "").localeCompare(a.competencia || ""); });
       if (ps.length) {
-        html += '<h3 style="margin:20px 0 8px;font-size:15px">Registros mensais (valor lançado)</h3>';
         /* ⚠ ASSIMETRIA QUE JÁ ESTAVA AQUI: faltas e horas extras logo acima
            são filtradas pelo mês de referência; esta tabela lia `ponto`
            INTEIRO, de todas as competências. Não mudei o que ela mostra (o
            histórico completo é útil), só quantas linhas desenha de uma vez. */
         var cortePt = this._cortar(ps, "ponto");
-        html += this._avisoCorte(cortePt, "ponto", "competências");
+        var tbP = this._avisoCorte(cortePt, "ponto", "competências");
         var idxColP = Object.create(null);
         colabs.forEach(function (c) { if (c && c.id) idxColP[c.id] = c; });
-        html += '<table class="tbl"><thead><tr><th>Competência</th><th>Colaborador</th><th class="num">Dias</th><th class="num">Valor</th><th>Status</th><th></th></tr></thead><tbody>';
+        tbP += '<table class="tbl"><thead><tr><th>Competência</th><th>Colaborador</th><th class="num">Dias</th><th class="num">Valor</th><th>Status</th><th></th></tr></thead><tbody>';
         cortePt.linhas.forEach(function (p) {
           var col = idxColP[p.colaboradorId];
           var acao = p.status !== "lancado" ? '<button class="btn sm success" data-gacao="lancar-ponto" data-id="' + p.id + '">Lançar folha</button>' : "✓";
-          html += '<tr><td style="cursor:pointer" data-gopen="ponto:' + p.id + '"><b>' + Util.esc(p.competencia || "—") + "</b></td><td>" + Util.esc(col ? col.nome : (p.colaboradorNome || "—")) + '</td><td class="num">' + Util.fmtNum(p.dias, 0) + '</td><td class="num">' + Util.fmtMoeda(p.valor) + "</td><td>" + pill(p.status) + '</td><td class="num">' + acao + "</td></tr>";
+          tbP += '<tr><td style="cursor:pointer" data-gopen="ponto:' + p.id + '"><b>' + Util.esc(p.competencia || "—") + "</b></td><td>" + Util.esc(col ? col.nome : (p.colaboradorNome || "—")) + '</td><td class="num">' + Util.fmtNum(p.dias, 0) + '</td><td class="num">' + Util.fmtMoeda(p.valor) + "</td><td>" + pill(p.status) + '</td><td class="num">' + acao + "</td></tr>";
         });
-        html += "</tbody></table>";
+        tbP += "</tbody></table>";
+        html += Modulo.secao({ titulo: "Registros mensais (valor lançado)", sub: "Todas as competências, da mais recente para a mais antiga.", corpoHtml: tbP });
       }
       return html;
     },
@@ -32596,15 +33379,26 @@
       var fs = lista("frota"), obras = lista("obras");
       var proprios = fs.filter(function (f) { return f.posse === "proprio"; }).length;
       var custoMes = lista("frota_mov").reduce(function (s, m) { return s + Util.num(m.valor); }, 0);
-      var extra = '<span class="muted" style="margin-right:12px;align-self:center">Próprios: <b>' + proprios + "</b> · Locados: <b>" + (fs.length - proprios) + "</b> · Custo total: <b>" + Util.fmtMoeda(custoMes) + "</b></span>";
-      var html = this._head(svg("frota") + "Frota &amp; Equipamentos", "nova-frota", "Novo item", extra);
-      if (!fs.length) return html + vazioBox("Nenhum veículo/equipamento cadastrado", "nova-frota", "Cadastrar primeiro");
-      html += '<table class="tbl"><thead><tr><th>Item</th><th>Tipo</th><th>Placa/Nº</th><th>Posse</th><th>Obra</th><th>Status</th><th></th></tr></thead><tbody>';
+      /* PADRÃO DE TELA (ROTEIRO-MODULO.md): os três números saem do texto
+         solto ao lado do botão para a faixa de indicadores; a tabela ganha
+         seção com título; "+ Custo" deixa de ser botão AZUL em toda linha
+         (várias primárias na mesma tela) e vira a ação da linha, com borda.
+         Título = o nome do menu ("Frota"). */
+      var K = kit();
+      var html = K.cab({ icone: "frota", titulo: "Frota", sub: "Veículos e equipamentos, próprios e locados",
+        primariaHtml: '<button class="btn primary" data-gacao="nova-frota">+ Novo item</button>' });
+      if (!fs.length) return html + vazioKit({ icone: "frota", titulo: "Nenhum veículo/equipamento cadastrado", texto: "Cadastre o que roda na obra: combustível e manutenção viram custo da obra no Financeiro.", gacao: "nova-frota", botao: "Cadastrar primeiro" });
+      html += K.kpis([
+        { rotulo: "Próprios", valor: String(proprios) },
+        { rotulo: "Locados", valor: String(fs.length - proprios) },
+        { rotulo: "Custo total", valor: Util.fmtMoeda(custoMes), sub: "combustível, manutenção e uso lançados" }
+      ]);
+      var tb = '<table class="tbl"><thead><tr><th>Item</th><th>Tipo</th><th>Placa/Nº</th><th>Posse</th><th>Obra</th><th>Status</th><th class="mod-lin-acoes" aria-label="Ações"></th></tr></thead><tbody>';
       fs.forEach(function (f) {
         var ob = obras.filter(function (o) { return o.id === f.obraId; })[0];
-        html += '<tr><td style="cursor:pointer" data-gopen="frota:' + f.id + '"><b>' + Util.esc(f.nome) + "</b></td><td>" + rot(P.frotaTipo, f.tipo) + "</td><td>" + Util.esc(f.placa || "—") + "</td><td>" + rot(P.frotaPosse, f.posse) + "</td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + pill(f.status) + '</td><td class="num"><button class="btn sm primary" data-gacao="custo-frota" data-id="' + f.id + '">+ Custo</button></td></tr>';
+        tb += '<tr><td style="cursor:pointer" data-gopen="frota:' + f.id + '"><b>' + Util.esc(f.nome) + "</b></td><td>" + rot(P.frotaTipo, f.tipo) + "</td><td>" + Util.esc(f.placa || "—") + "</td><td>" + rot(P.frotaPosse, f.posse) + "</td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + pill(f.status) + '</td><td class="mod-lin-acoes"><button class="btn sm acao-forte" data-gacao="custo-frota" data-id="' + f.id + '" title="Registrar combustível, manutenção ou uso — vira despesa no Financeiro">+ Custo</button></td></tr>';
       });
-      return html + "</tbody></table>";
+      return html + K.secao({ titulo: "Itens", corpoHtml: tb + "</tbody></table>" });
     },
     novoFrota: function () { this.formFrota(null); },
     formFrota: function (f) {
@@ -32735,31 +33529,42 @@
       var abertas = rs.filter(function (r) { return r.status === "aberta" || r.status === "cotando"; }).length;
       var urgentes = rs.filter(function (r) { return r.prioridade === "urgente" && r.status !== "comprada" && r.status !== "cancelada"; }).length;
       var ops = e.semMotor ? [] : PorObra.opcoes(e.todos, obras);
+      /* PADRÃO DE TELA: o seletor de obra mora no `obraHtml` do cabeçalho (o
+         mesmo lugar em Requisições, Cotações e Compras); a contagem de abertas
+         e urgentes, que era um texto solto entre os botões, é o contexto. */
       var selReq = (e.todos.length && !e.semMotor)
-        ? '<label style="display:flex;align-items:center;gap:6px;margin-right:12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--texto-fraco)">' +
-          (typeof Icones !== "undefined" ? Icones.get("obra", 15) : "") + 'Obra <select data-gacao="req-obra" title="Separar as requisições por obra" style="max-width:230px">' +
+        ? '<select data-gacao="req-obra" title="Separar as requisições por obra" aria-label="Obra">' +
           ops.map(function (o) {
             return '<option value="' + Util.esc(o.valor) + '"' + (String(o.valor) === String(e.sel) ? " selected" : "") + ">" +
               Util.esc(o.rotulo) + " (" + o.n + ")</option>";
-          }).join("") + "</select></label>"
+          }).join("") + "</select>"
         : "";
-      var extra = selReq + '<span class="muted" style="margin-right:12px;align-self:center">Abertas: <b>' + abertas + "</b> · Urgentes: <b>" + urgentes + "</b></span>";
+      var acoesReq = [];
       /* GERAR DO ORÇAMENTO — só aparece quando há obra com orçamento vinculado
          (`obra.orcamentoId`) e o motor carregou. Com uma obra escolhida no
          filtro, o gerador já abre nela. */
       var obrasComOrc = obras.filter(function (o) { return o && o.orcamentoId; });
       if (obrasComOrc.length && typeof ReqOrcamento !== "undefined") {
         var obraSelOrc = obrasComOrc.some(function (o) { return String(o.id) === String(e.sel); }) ? String(e.sel) : "";
-        extra += '<button class="btn" data-gacao="req-do-orcamento" data-id="' + Util.esc(obraSelOrc) + '" style="margin-right:8px" title="Gerar requisições com o saldo do orçamento da obra (por etapa, por tipo ou tudo) — gera só o que ainda não foi requisitado por este botão, etapa por etapa">' +
-          (typeof Icones !== "undefined" ? Icones.get("planilha", 15) : "") + " Gerar do orçamento</button>";
+        acoesReq.push('<button class="btn" data-gacao="req-do-orcamento" data-id="' + Util.esc(obraSelOrc) + '" title="Gerar requisições com o saldo do orçamento da obra (por etapa, por tipo ou tudo) — gera só o que ainda não foi requisitado por este botão, etapa por etapa">' +
+          (typeof Icones !== "undefined" ? Icones.get("planilha", 15) : "") + " Gerar do orçamento</button>");
       }
-      var html = this._head(svg("requisicoes") + "Requisições", "nova-requisicoes", "Nova requisição", extra);
-      if (!e.todos.length) return html + vazioBox("Nenhuma requisição", "nova-requisicoes", "Criar primeira");
+      var html = Modulo.cab({
+        iconeHtml: svg("requisicoes", 22), titulo: "Requisições",
+        sub: e.todos.length ? rs.length + " requisição(ões) · " + abertas + " aberta(s) · " + urgentes + " urgente(s)" : "Pedidos de material da obra, antes da cotação e da compra",
+        obraHtml: selReq, acoes: acoesReq,
+        primariaHtml: '<button class="btn primary" data-gacao="nova-requisicoes">+ Nova requisição</button>'
+      });
+      if (!e.todos.length) return html + vazioMod({ icone: "checklist", titulo: "Nenhuma requisição",
+        texto: "A requisição é o pedido de material da obra: aprovada, ela vira cotação ou pedido de compra." });
       /* ⚠ VAZIO DO RECORTE ≠ VAZIO DO MÓDULO, e precisa de porta: sem o botão,
          quem filtrou uma obra sem requisição lê "nenhuma requisição" e conclui
          que perdeu os dados. */
-      if (!rs.length) return html + '<div class="vazio card">Nenhuma requisição em <b>' + Util.esc(PorObra.rotuloDe(e.sel, obras)) +
-        '</b>. <button class="btn sm" data-gacao="req-obra">Ver todas as obras</button></div>';
+      if (!rs.length) return html + Modulo.secao({ corpoHtml: Modulo.vazio({ icone: "obra", titulo: "Nenhuma requisição em " + PorObra.rotuloDe(e.sel, obras),
+        acaoHtml: '<button class="btn" data-gacao="req-obra">Ver todas as obras</button>' }) });
+      /* a tabela entra numa seção do kit: monta-se a tabela e só no fim ela é
+         embrulhada por Modulo.secao (o laço das linhas fica como estava) */
+      var iniTb = html.length;
       html += '<table class="tbl"><thead><tr><th>Nº</th><th>Data</th><th>Obra</th><th>Descrição</th><th>Prioridade</th><th>Status</th><th></th></tr></thead><tbody>';
       rs.forEach(function (r) {
         var ob = obras.filter(function (o) { return o.id === r.obraId; })[0];
@@ -32781,8 +33586,8 @@
           (fechadaReq ? ' Ver' : ' Editar') + '</button> ' +
           '<button class="btn sm" data-gacao="doc-requisicao" data-id="' + r.id + '" title="Gerar Solicitação de Compra">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + '</button> ';
         if (r.status !== "aprovada" && r.status !== "comprada" && r.status !== "cancelada" && r.status !== "rejeitada" && r.status !== "cotando") acoes += '<button class="btn sm" data-gacao="aprovar-requisicao" data-id="' + r.id + '">Aprovar</button> <button class="btn sm" data-gacao="rejeitar-requisicao" data-id="' + r.id + '" style="color:#dc2626">Rejeitar</button> ';
-        if (r.status === "aprovada") acoes += '<button class="btn sm" data-gacao="cotar-requisicao" data-id="' + r.id + '" title="Comparar fornecedores antes de comprar">🆚 Cotar</button> <button class="btn sm primary" data-gacao="comprar-requisicao" data-id="' + r.id + '">Gerar pedido</button>';
-        else if (r.status === "cotando") acoes += '<span class="muted" title="Cotação em andamento — conclua ou exclua a cotação no módulo Cotações">🆚 em cotação</span>';
+        if (r.status === "aprovada") acoes += '<button class="btn sm" data-gacao="cotar-requisicao" data-id="' + r.id + '" title="Comparar fornecedores antes de comprar">' + (typeof Icones !== 'undefined' ? Icones.get('balanca', 15) : '') + ' Cotar</button> <button class="btn sm primary" data-gacao="comprar-requisicao" data-id="' + r.id + '">Gerar pedido</button>';
+        else if (r.status === "cotando") acoes += '<span class="muted" title="Cotação em andamento — conclua ou exclua a cotação no módulo Cotações">em cotação</span>';
         else if (r.status !== "comprada" && r.status !== "cancelada" && r.status !== "rejeitada") acoes += '<button class="btn sm" disabled title="Aprove a requisição antes de gerar o pedido" style="opacity:.5;cursor:not-allowed">Gerar pedido</button>';
         else if (r.status === "rejeitada") acoes += '<span class="muted" title="' + Util.esc(r.motivoRejeicao || "") + '">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' rejeitada</span>';
         var corPri = r.prioridade === "urgente" ? "#dc2626" : (r.prioridade === "alta" ? "#ea580c" : "#64748b");
@@ -32813,7 +33618,9 @@
             '">do orçamento' + (perdR ? " ⚠" : "") + "</span>" : "");
         html += '<tr><td style="cursor:pointer" data-gopen="requisicoes:' + r.id + '"><b>' + Util.esc(r.numero || "—") + "</b></td><td>" + Util.esc(r.data || "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + '</td><td>' + Util.esc(r.descricao || "—") + reqInfo + '</td><td><b style="color:' + corPri + '">' + rot(P.reqPrioridade, r.prioridade) + "</b></td><td>" + pill(r.status) + self._aprovLinha(r) + '</td><td class="num">' + acoes + "</td></tr>";
       });
-      return html + "</tbody></table>";
+      return html.slice(0, iniTb) + Modulo.secao({ titulo: e.semMotor ? "Requisições" : PorObra.rotuloDe(e.sel, obras),
+        sub: "Aprovada, a requisição vira cotação (Cotar) ou pedido de compra (Gerar pedido).",
+        corpoHtml: html.slice(iniTb) + "</tbody></table>" });
     },
     _proxNumeroReq: function () {
       var rs = lista("requisicoes"), ano = new Date().getFullYear(), max = 0;
@@ -33356,19 +34163,26 @@
       var cs = e.lista;
       var abertas = cs.filter(function (c) { return c.status !== "concluida"; }).length;
       var ops = e.semMotor ? [] : PorObra.opcoes(e.todos, obras);
+      /* PADRÃO DE TELA: obra no `obraHtml` do cabeçalho (mesmo lugar de
+         Requisições e Compras); "Em cotação: N" é o contexto do subtítulo. */
       var selCot = (e.todos.length && !e.semMotor)
-        ? '<label style="display:flex;align-items:center;gap:6px;margin-right:12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--texto-fraco)">' +
-          (typeof Icones !== "undefined" ? Icones.get("obra", 15) : "") + 'Obra <select data-gacao="cot-obra" title="Separar as cotações por obra" style="max-width:230px">' +
+        ? '<select data-gacao="cot-obra" title="Separar as cotações por obra" aria-label="Obra">' +
           ops.map(function (o) {
             return '<option value="' + Util.esc(o.valor) + '"' + (String(o.valor) === String(e.sel) ? " selected" : "") + ">" +
               Util.esc(o.rotulo) + " (" + o.n + ")</option>";
-          }).join("") + "</select></label>"
+          }).join("") + "</select>"
         : "";
-      var extra = selCot + '<span class="muted" style="margin-right:12px;align-self:center">Em cotação: <b>' + abertas + "</b></span>";
-      var html = this._head(svg("cotacoes") + "Cotações", "nova-cotacoes", "Nova cotação", extra);
-      if (!e.todos.length) return html + vazioBox("Nenhuma cotação ainda. Compare 2-3 fornecedores item a item antes de comprar — a economia aparece sozinha.", "nova-cotacoes", "Criar primeira");
-      if (!cs.length) return html + '<div class="vazio card">Nenhuma cotação em <b>' + Util.esc(PorObra.rotuloDe(e.sel, obras)) +
-        '</b>. <button class="btn sm" data-gacao="cot-obra">Ver todas as obras</button></div>';
+      var html = Modulo.cab({
+        iconeHtml: svg("cotacoes", 22), titulo: "Cotações",
+        sub: e.todos.length ? cs.length + " cotação(ões) · " + abertas + " em cotação" : "Mapa de cotação: 2 ou 3 fornecedores lado a lado, item a item",
+        obraHtml: selCot,
+        primariaHtml: '<button class="btn primary" data-gacao="nova-cotacoes">+ Nova cotação</button>'
+      });
+      if (!e.todos.length) return html + vazioMod({ icone: "balanca", titulo: "Nenhuma cotação ainda",
+        texto: "Compare 2 ou 3 fornecedores item a item antes de comprar. Pela requisição aprovada (botão Cotar) os itens já vêm preenchidos." });
+      if (!cs.length) return html + Modulo.secao({ corpoHtml: Modulo.vazio({ icone: "obra", titulo: "Nenhuma cotação em " + PorObra.rotuloDe(e.sel, obras),
+        acaoHtml: '<button class="btn" data-gacao="cot-obra">Ver todas as obras</button>' }) });
+      var iniTb = html.length;
       html += '<table class="tbl"><thead><tr><th>Nº</th><th>Data</th><th>Obra</th><th>Descrição</th><th class="num">Itens</th><th class="num">Fornecedores</th><th class="num">Melhor total</th><th>Status</th><th></th></tr></thead><tbody>';
       cs.forEach(function (c) {
         var ob = obras.filter(function (o) { return o.id === c.obraId; })[0];
@@ -33402,7 +34216,12 @@
         }
         html += '<tr><td style="cursor:pointer" data-gopen="cotacoes:' + c.id + '"><b>' + Util.esc(c.numero || "—") + "</b></td><td>" + Util.esc(c.data || "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + Util.esc(c.descricao || "—") + '</td><td class="num">' + ((c.itens || []).length) + '</td><td class="num">' + ((c.fornecedores || []).length) + online + '</td><td class="num">' + (melhor != null ? "<b>" + Util.fmtMoeda(melhor) + "</b>" : "—") + "</td><td>" + pillCot + '</td><td class="num">' + acoes + "</td></tr>";
       });
-      return html + "</tbody></table><p class=\"muted\" style=\"margin-top:10px\">" + (typeof Icones !== "undefined" ? Icones.get("lampada", 15) : "") + " Crie a cotação a partir de uma <b>Requisição aprovada</b> (botão 🆚 Cotar) — os itens já vêm preenchidos. Ao concluir, os <b>pedidos de compra</b> nascem sozinhos, um por fornecedor vencedor.</p>";
+      /* a dica fixa do rodapé ("crie a partir de uma Requisição aprovada…")
+         virou o subtítulo da seção: explicação longa é dica, não parágrafo
+         solto embaixo da tabela (ROTEIRO-MODULO.md §5) */
+      return html.slice(0, iniTb) + Modulo.secao({ titulo: e.semMotor ? "Cotações" : PorObra.rotuloDe(e.sel, obras),
+        sub: "Concluída a cotação, os pedidos de compra nascem sozinhos, um por fornecedor vencedor.",
+        corpoHtml: html.slice(iniTb) + "</tbody></table>" });
     },
     _proxNumeroCot: function () {
       var cs = lista("cotacoes"), ano = new Date().getFullYear(), max = 0;
@@ -34932,22 +35751,29 @@
     },
     renderBancoInsumos: function () {
       var r = (typeof Insumos !== "undefined") ? Insumos.resumo() : { carregado: false, total: 0 };
-      var card = function (v, l, cor) { return '<div class="card" style="flex:1;text-align:center;min-width:90px"><div style="font-size:26px;font-weight:800;color:' + cor + '">' + v + '</div><div class="muted">' + l + "</div></div>"; };
-      var kpis = r.carregado
-        ? '<div class="row" style="gap:10px;margin:4px 0 14px">'
-          + card(r.total.toLocaleString("pt-BR"), "insumos" + (r.uf ? " · " + Util.esc(r.uf) : ""), "#0f2740")
-          + card(r.mat.toLocaleString("pt-BR"), "Material", "#2e6f9e")
-          + card(r.mo.toLocaleString("pt-BR"), "Mão de obra", "#16a34a")
-          + card(r.eq.toLocaleString("pt-BR"), "Equipamento", "#ea580c")
-          + "</div>"
-        : '<div class="muted" style="margin:4px 0 14px">Banco de preços do estado ativo (SINAPI analítico + bases carregadas em ' + (typeof Icones !== 'undefined' ? Icones.get('tabela', 15) : '') + ' Tabelas). Carrega na 1ª busca.</div>';
-      return this._head(svg("insumos") + "Banco de Insumos", "", "")
-        + kpis
-        + '<div class="field"><input id="bi-q" placeholder="Buscar insumo por código ou descrição (ex.: cimento, vergalhão, tijolo, servente)" autocomplete="off"></div>'
-        + '<div class="muted mb" id="bi-status">Digite ao menos 2 letras…</div>'
-        + '<div id="bi-res"></div>'
-        + '<button type="button" class="btn" id="bi-novo" style="margin-top:10px">' + (typeof Icones !== 'undefined' ? Icones.get('mais', 15) : '') + ' Cadastrar insumo próprio (fora das bases oficiais)</button>'
-        + '<p class="muted" style="margin-top:14px">' + (typeof Icones !== 'undefined' ? Icones.get('lampada', 15) : '') + ' Para montar uma <b>solicitação de compra</b>, vá em <b>Requisições → Nova</b> e use a busca <b>' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + ' no banco de insumos</b> para adicionar itens já com preço de referência.</p>';
+      var n = function (x) { return Number(x || 0).toLocaleString("pt-BR"); };
+      /* PADRÃO DE TELA (ROTEIRO-MODULO.md): cabeçalho → filtros → indicadores
+         → seção. O "Cadastrar insumo próprio" morava solto ABAIXO dos
+         resultados (sumia da vista a cada busca longa) e é a única ação da
+         tela: virou a primária do cabeçalho, com o mesmo id. A dica de
+         "Requisições → Nova" virou o subtítulo da seção de resultados. */
+      var html = Modulo.cab({
+        iconeHtml: svg("insumos", 22), titulo: "Banco de Insumos",
+        sub: "Preços de referência do estado ativo" + (r.uf ? " (" + r.uf + ")" : "") + " · SINAPI e bases carregadas em Tabelas",
+        primariaHtml: '<button type="button" class="btn primary" id="bi-novo" title="Cadastrar insumo próprio (fora das bases oficiais)">+ Insumo próprio</button>'
+      });
+      html += Modulo.filtros(['<div class="field mod-busca"><label for="bi-q">Buscar</label><input id="bi-q" placeholder="Código ou descrição (ex.: cimento, vergalhão, tijolo, servente)" autocomplete="off"></div>']);
+      if (r.carregado) html += Modulo.kpis([
+        { rotulo: "Insumos", valor: n(r.total), sub: r.uf ? "estado " + r.uf : "" },
+        { rotulo: "Material", valor: n(r.mat), tom: "info" },
+        { rotulo: "Mão de obra", valor: n(r.mo) },
+        { rotulo: "Equipamento", valor: n(r.eq) }
+      ]);
+      return html + Modulo.secao({
+        titulo: "Resultados",
+        sub: "+ Requisição leva o insumo para uma solicitação de compra, já com o preço de referência.",
+        corpoHtml: '<div class="muted" id="bi-status">Digite ao menos 2 letras…</div><div id="bi-res"></div>'
+      });
     },
     afterRender: function (view) { if (this._wiresExtras && this._wiresExtras[view]) { try { this._wiresExtras[view].call(this); } catch (eW) {} } if (view === "producao") this.afterRenderProducao(); else if (view === "fiscal") this._triWire(); else if (view === "insumos") this._wireBancoView(); else if (view === "epi") this.afterRenderEpi(); else if (view === "ponto") this.afterRenderPonto(); else if (view === "galeria") this._galeriaWire(); else if (view === "ajuda") this._ajudaWire(); else if (view === "bim") this._bimWire(); else if (view === "lastplanner") this._lpWire(); },
     _wireBancoView: function () {
@@ -35637,30 +36463,155 @@
         { id: "tpl-autorizacao", nome: "Autorização", titulo: "AUTORIZAÇÃO", corpo: "A empresa {empresa}, CNPJ {cnpj}, autoriza {colaborador} a ______________________________________ referente à obra {obra}.\n\n{endereco}, {data}.\n\n\n_______________________________\n{responsavel} — CREA {crea}" }
       ];
     },
+    /* PADRÃO DE TELA (ROTEIRO-MODULO.md, 08/10/2026): o parágrafo fixo com a
+       lista de variáveis saiu da tela e foi para o formulário do modelo, que é
+       onde se escreve com elas; o cartão "Comece com modelos prontos" virou o
+       vazio do kit, com UMA ação ([+ Adicionar exemplos]) — o [+ Novo modelo]
+       é a primária do cabeçalho. Os data-gacao são os mesmos. */
     renderModelos: function () {
       var ts = lista("templates");
-      var html = this._head(svg("modelos") + "Modelos de Documento", "novo-modelo", "Novo modelo");
-      html += '<p class="muted" style="margin:-4px 0 12px">Crie documentos com <b>variáveis</b> entre chaves e gere preenchido em 1 clique. Disponíveis: <code>{empresa} {cnpj} {cidade} {responsavel} {crea} {data} {colaborador} {cpf} {funcao} {admissao} {obra} {cliente} {local}</code></p>';
+      var html = Modulo.cab({ icone: "nota", titulo: "Modelos de documento",
+        sub: ts.length ? ts.length + (ts.length === 1 ? " modelo" : " modelos") + " · variáveis entre chaves, preenchidas em 1 clique" : "Documentos com variáveis entre chaves, preenchidos em 1 clique",
+        primariaHtml: '<button class="btn primary" data-gacao="novo-modelo">+ Novo modelo</button>' });
       if (!ts.length) {
-        html += '<div class="card" style="margin-bottom:12px"><b>Comece com modelos prontos</b> (Declaração, Autorização, Comunicado) e edite como quiser. <button class="btn sm primary" data-gacao="seed-modelos" style="margin-left:8px">＋ Adicionar exemplos</button></div>';
-        return html + vazioBox("Nenhum modelo ainda", "novo-modelo", "Criar primeiro modelo");
+        var mIl = null;
+        try { mIl = Store.ilegivel ? Store.ilegivel(eid(), "templates") : null; } catch (eI) { mIl = null; }
+        if (mIl && mIl.bloqueia) return html + vazioBox("Nenhum modelo ainda", "novo-modelo", "Criar primeiro modelo");
+        return html + Modulo.vazio({ icone: "nota", titulo: "Nenhum modelo ainda",
+          texto: "Comece com modelos prontos (Declaração, Autorização, Comunicado) e edite como quiser — ou crie o seu em + Novo modelo.",
+          acaoHtml: '<button class="btn primary" data-gacao="seed-modelos">+ Adicionar exemplos</button>' });
       }
-      html += '<table class="tbl"><thead><tr><th>Modelo</th><th>Título</th><th></th></tr></thead><tbody>';
+      var tb = '<table class="tbl"><thead><tr><th>Modelo</th><th>Título</th><th></th></tr></thead><tbody>';
       ts.forEach(function (t) {
-        html += '<tr><td style="cursor:pointer" data-gopen="templates:' + t.id + '"><b>' + Util.esc(t.nome || "—") + "</b></td><td>" + Util.esc(t.titulo || "—") + '</td><td class="num"><button class="btn sm primary" data-gacao="gerar-modelo" data-id="' + t.id + '">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Gerar</button> <button class="btn sm" data-gopen="templates:' + t.id + '">Editar</button></td></tr>';
+        tb += '<tr><td style="cursor:pointer" data-gopen="templates:' + t.id + '"><b>' + Util.esc(t.nome || "—") + "</b></td><td>" + Util.esc(t.titulo || "—") + '</td><td style="text-align:right;white-space:nowrap"><button class="btn sm acao-forte" data-gacao="gerar-modelo" data-id="' + t.id + '">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Gerar</button> <button class="btn sm" data-gopen="templates:' + t.id + '">Editar</button></td></tr>';
       });
-      return html + "</tbody></table>";
+      return html + Modulo.secao({ corpoHtml: tb + "</tbody></table>" });
     },
     seedModelos: function () {
       if (this._bloqueado()) return;
       this._templatesDefault().forEach(function (t) { if (!lista("templates").filter(function (x) { return x.id === t.id; })[0]) Store.salvar(eid(), "templates", t); });
       App.render(); UI.toast("Modelos de exemplo adicionados.", "ok");
     },
+    /* ==================================================================
+     * PADRÃO DE DETALHAMENTO (07/10/2026) — js/padraodet.js
+     *
+     * Pedido do Rogério: o estilo de detalhamento (penas, linhas, textos,
+     * cotas, notação das barras) "tem que ser replicado para dentro do nosso
+     * sistema". A empresa parte do Padrão RA embutido e pode ajustar aqui ou
+     * importar o próprio JSON; as vistas 2D aplicam o padrão pelo botão
+     * "Aplicar Padrão de detalhamento" nas Propriedades da vista.
+     * ⚠ Gravado nas prefs da empresa (PadraoDet.salvar), não no localStorage
+     *   da tela: precisa valer em qualquer aparelho da empresa.
+     * ================================================================== */
+    renderPadraoDet: function () {
+      var html = this._head(svg("modelos") + "Padrão de detalhamento", "", "");
+      if (typeof PadraoDet === "undefined") return html + '<p class="muted">Módulo de padrão indisponível nesta versão.</p>';
+      var p = PadraoDet.ler(eid()), pers = PadraoDet.personalizado(eid()), e = Util.esc;
+      var al = p.textos.alturas_plotadas_mm;
+      var ROT_TX = { titulo_desenho: "Título do desenho", escala_sob_titulo: "Escala sob o título", nome_viga_pilar: "Nome da viga/pilar",
+                     secao_ao_lado_do_nome: "Seção ao lado do nome", notacao_barra: "Notação de barra", cota: "Cota", nota: "Nota",
+                     tabela: "Tabela", letra_corte: "Letra de corte", balao_eixo: "Balão de eixo" };
+      html += '<p class="muted" style="margin:-4px 0 12px">Como os desenhos técnicos saem: espessura de pena por cor, tipos de linha, altura dos textos, estilo de cota e a notação das barras. ' +
+              'Parte do <b>Padrão RA</b> (prancha de armação estilo escritório de projeto, NBR 7191 / 8403 / 16752) — ajuste aqui ou importe o arquivo do seu escritório.</p>';
+      html += '<div class="card" style="margin-bottom:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b>' + (pers ? "Padrão da empresa (personalizado)" : "Padrão RA (original)") +
+              '</b><span class="muted">versão ' + e(String(p.versao)) + '</span><span style="flex:1"></span>' +
+              '<button class="btn sm primary" data-gacao="padraodet-salvar">Salvar</button> ' +
+              '<button class="btn sm" data-gacao="padraodet-restaurar">Restaurar Padrão RA</button> ' +
+              '<button class="btn sm" data-gacao="padraodet-importar">Importar JSON…</button> ' +
+              '<button class="btn sm" data-gacao="padraodet-exportar">Exportar JSON</button></div>';
+      html += '<div class="card" style="margin-bottom:12px"><b>Amostra</b> <span class="muted">(viga em elevação e corte, desenhada com o padrão salvo)</span>' +
+              '<div style="max-width:760px;margin-top:8px;border:1px solid #ddd">' + PadraoDet.amostraSVG(p) + '</div></div>';
+      html += '<div class="card" style="margin-bottom:12px"><b>Penas — cor do desenho → espessura na impressão</b><table class="tbl" style="margin-top:6px"><thead><tr><th>Cor</th><th>Nome</th><th>Pena (mm)</th><th>Uso</th></tr></thead><tbody>';
+      Object.keys(p.cor_pena_ctb).sort(function (a, b) { return +a - +b; }).forEach(function (aci) {
+        var c = p.cor_pena_ctb[aci];
+        html += "<tr><td>" + e(aci) + "</td><td>" + e(c.cor || "") + '</td><td><input type="number" step="0.01" min="0.05" max="2" style="width:80px" data-pd="pena:' + e(aci) + '" value="' + e(String(c.pena)) + '"></td><td>' + e(c.uso || "") + "</td></tr>";
+      });
+      html += "</tbody></table></div>";
+      html += '<div class="card" style="margin-bottom:12px"><b>Textos (altura impressa, mm)</b><table class="tbl" style="margin-top:6px"><tbody>';
+      Object.keys(al).forEach(function (k) {
+        html += "<tr><td>" + e(ROT_TX[k] || k) + '</td><td><input type="number" step="0.1" min="1" max="10" style="width:80px" data-pd="texto:' + e(k) + '" value="' + e(String(al[k])) + '"></td></tr>';
+      });
+      html += "</tbody></table><div class=\"muted\" style=\"margin-top:4px\">Fonte: " + e(p.textos.fonte) + "</div></div>";
+      html += '<div class="card" style="margin-bottom:12px"><b>Cotas</b><table class="tbl" style="margin-top:6px"><tbody>' +
+              '<tr><td>Unidade</td><td><select data-pd="cota:unidade">' + ["cm", "m", "mm"].map(function (u) { return '<option value="' + u + '"' + (p.cotas.unidade === u ? " selected" : "") + ">" + u + "</option>"; }).join("") + "</select></td></tr>" +
+              '<tr><td>Casas decimais</td><td><input type="number" min="0" max="3" step="1" style="width:80px" data-pd="cota:casas" value="' + e(String(p.cotas.casas)) + '"></td></tr>' +
+              '<tr><td>Terminal</td><td><input type="text" style="width:320px" data-pd="cota:terminal" value="' + e(String(p.cotas.terminal)) + '"></td></tr></tbody></table></div>';
+      html += '<div class="card" style="margin-bottom:12px"><b>Notação das barras</b> <span class="muted">campos: {q} quantidade · {pos} posição · {bit} bitola · {comp} comprimento (cm) · {esp} espaçamento</span><table class="tbl" style="margin-top:6px"><tbody>' +
+              '<tr><td>Barra</td><td><input type="text" style="width:260px" data-pd="not:barra" value="' + e(p.notacao.barra) + '"></td><td class="muted">ex.: ' + e(PadraoDet.fmtBarra(p, { q: 3, pos: 1, bit: 12.5, comp: 486 })) + "</td></tr>" +
+              '<tr><td>Estribo</td><td><input type="text" style="width:260px" data-pd="not:estribo" value="' + e(p.notacao.estribo) + '"></td><td class="muted">ex.: ' + e(PadraoDet.fmtEstribo(p, { q: 47, pos: 9, bit: 5, esp: 17.5, comp: 179 })) + "</td></tr></tbody></table></div>";
+      html += '<div class="card" style="margin-bottom:12px"><b>Layers</b><table class="tbl" style="margin-top:6px"><thead><tr><th>Layer</th><th>Cor</th><th>Pena</th><th>Linha</th><th>Uso</th></tr></thead><tbody>';
+      p.layers.forEach(function (l) {
+        var ln = PadraoDet.linhaDe(p, l.nome) || {};
+        html += "<tr><td><b>" + e(l.nome) + "</b></td><td>" + e(String(l.aci)) + "</td><td>" + e(String(ln.mm)) + "</td><td>" + e(l.tipo) + (l.plota === false ? " (não imprime)" : "") + "</td><td>" + e(l.uso || "") + "</td></tr>";
+      });
+      html += "</tbody></table></div>";
+      html += '<div class="card" style="margin-bottom:12px"><b>Escalas</b><table class="tbl" style="margin-top:6px"><tbody>';
+      Object.keys(p.escalas).forEach(function (k) { html += "<tr><td>" + e(k.replace(/_/g, " ")) + "</td><td>" + e(String(p.escalas[k])) + "</td></tr>"; });
+      html += "</tbody></table></div>";
+      html += '<div class="card" style="margin-bottom:12px"><b>Massa linear do aço (kg/m)</b> <span class="muted">' + e(p.tabelas.massa_fonte || "") + "</span><div style=\"margin-top:6px\">" +
+              Object.keys(p.tabelas.massa_linear_kg_m).map(function (b) { return "Ø" + e(b.replace(/\.0$/, "")) + " = " + e(String(p.tabelas.massa_linear_kg_m[b])); }).join(" · ") + "</div></div>";
+      html += '<div class="card"><b>Princípios</b><ul style="margin:6px 0 0 18px">' + p.principios.map(function (t) { return "<li>" + e(t) + "</li>"; }).join("") + "</ul></div>";
+      return html;
+    },
+    /* lê os campos da tela por cima do padrão gravado (o que a tela não mostra fica como estava) */
+    padraoDetColher: function () {
+      var p = PadraoDet.ler(eid());
+      Array.prototype.forEach.call(document.querySelectorAll("[data-pd]"), function (el) {
+        var k = el.getAttribute("data-pd").split(":"), v = el.value;
+        if (k[0] === "pena" && p.cor_pena_ctb[k[1]]) p.cor_pena_ctb[k[1]].pena = +String(v).replace(",", ".");
+        else if (k[0] === "texto") p.textos.alturas_plotadas_mm[k[1]] = +String(v).replace(",", ".");
+        else if (k[0] === "cota") p.cotas[k[1]] = k[1] === "casas" ? +v : v;
+        else if (k[0] === "not") p.notacao[k[1]] = v;
+      });
+      return PadraoDet.normPadrao(p);
+    },
+    padraoDetSalvar: function () {
+      if (this._bloqueado() || typeof PadraoDet === "undefined") return;
+      PadraoDet.salvar(eid(), this.padraoDetColher());
+      App.render(); UI.toast("Padrão de detalhamento salvo.", "ok");
+    },
+    padraoDetRestaurar: function () {
+      if (this._bloqueado() || typeof PadraoDet === "undefined") return;
+      UI.modal("Restaurar o Padrão RA?", "<p>As penas, textos, cotas e notação voltam ao Padrão RA original. O que foi personalizado sai (exporte antes se quiser guardar).</p>", [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Restaurar", classe: "primary", onClick: function () {
+          PadraoDet.salvar(eid(), PadraoDet.padraoRA()); UI.fecharModal(); App.render(); UI.toast("Padrão RA restaurado.", "ok");
+        } }
+      ]);
+    },
+    padraoDetImportar: function () {
+      if (this._bloqueado() || typeof PadraoDet === "undefined") return;
+      var inp = document.createElement("input");
+      inp.type = "file"; inp.accept = ".json,application/json";
+      inp.onchange = function () {
+        var f = inp.files && inp.files[0]; if (!f) return;
+        var rd = new FileReader();
+        rd.onload = function () {
+          try {
+            PadraoDet.salvar(eid(), PadraoDet.importarJSON(String(rd.result)));
+            App.render(); UI.toast("Padrão importado de " + f.name + ".", "ok");
+          } catch (ex) { UI.toast(ex.message || "Arquivo inválido.", "erro"); }
+        };
+        rd.readAsText(f, "utf-8");
+      };
+      inp.click();
+    },
+    padraoDetExportar: function () {
+      if (typeof PadraoDet === "undefined") return;
+      var b = new Blob([PadraoDet.exportarJSON(PadraoDet.ler(eid()))], { type: "application/json" });
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(b); a.download = "padrao_detalhamento.json";
+      document.body.appendChild(a); a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); a.parentNode && a.parentNode.removeChild(a); }, 1000);
+    },
     novoModelo: function () { this.formModelo(null); },
     formModelo: function (t) {
       t = t || {};
       var corpo = '<div class="row">' + campo("Nome do modelo *", inp("g-nome", t.nome, "Ex.: Declaração de vínculo")) + campo("Título do documento", inp("g-titulo", t.titulo, "Ex.: DECLARAÇÃO")) + "</div>"
-        + campo("Conteúdo (use {variáveis})", '<textarea id="g-corpo" rows="10" style="font-family:monospace;font-size:12px">' + Util.esc(t.corpo || "") + "</textarea>");
+        + campo("Conteúdo (use {variáveis})", '<textarea id="g-corpo" rows="10" style="font-family:monospace;font-size:12px">' + Util.esc(t.corpo || "") + "</textarea>" +
+          /* a lista de variáveis mora aqui, onde se escreve com elas (antes era
+             um parágrafo fixo na tela da lista) */
+          '<p class="muted" style="margin:6px 0 0;font-size:var(--t-micro)">Variáveis disponíveis: <code>{empresa} {cnpj} {cidade} {responsavel} {crea} {data} {colaborador} {cpf} {funcao} {admissao} {obra} {cliente} {local}</code></p>');
       this._modalForm("templates", t, "Modelo de documento", corpo, function (obj) {
         obj.nome = v("g-nome"); if (!obj.nome) { UI.toast("Informe o nome do modelo.", "erro"); return false; }
         obj.titulo = v("g-titulo") || obj.nome.toUpperCase(); obj.corpo = (document.getElementById("g-corpo") || {}).value || "";
@@ -35762,21 +36713,36 @@
          ela conta todos, como já contava os inativos. */
       var ativos = us.filter(function (u) { return u.ativo !== false && !self._prazoAcesso(u).vencido; }).length;
       var cota = cotaUsuarios();
-      var extra = (cota.tipo === "titular" ? '<button class="btn sm" data-gacao="ver-independentes" style="margin-right:10px;align-self:center" title="Abre a lista das licenças independentes que você emitiu">' + (typeof Icones !== 'undefined' ? Icones.get('chave', 15) : '') + ' Licenças independentes</button>' : '')
-        + '<button class="btn sm" data-gacao="config-aprovacao" style="margin-right:10px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + ' Aprovações</button>'
-        + '<span class="muted" style="margin-right:12px;align-self:center">' + this._rotuloCota(cota, us.length, ativos) + "</span>";
       var podeAdd = cota.tipo === "equipe" ? true : cota.podeCriar;   // licença independente: o botão fica e o clique explica o plano
-      var html = this._head(svg("usuarios") + "Usuários &amp; Permissões", podeAdd ? "novo-usuario" : "", podeAdd ? "Novo usuário" : "", extra);
-      html += '<p class="muted" style="margin:-4px 0 14px">' + this._textoCota(cota) + '</p>';
+      /* PADRÃO DE TELA (ROTEIRO-MODULO.md): a contagem de vagas vai para a
+         linha de contexto do cabeçalho (era texto solto entre os botões), as
+         duas ações de apoio ficam à vista e a primária por último. O texto
+         que explica o plano continua NA TELA — é ele que diz à licença
+         independente o que ela pode fazer (e2e-licenca-independente-usuario) —,
+         mas como abertura da seção, não como parágrafo solto no topo. */
+      var K = kit(), ic = function (n) { return typeof Icones !== "undefined" ? Icones.get(n, 15) : ""; };
+      var html = K.cab({
+        icone: "usuarios", titulo: "Usuários", sub: this._rotuloCota(cota, us.length, ativos),
+        acoes: [
+          '<button class="btn" data-gacao="config-aprovacao" title="Quem aprova medição, compra e requisição, e até que valor">' + ic("ajustes") + "Aprovações</button>",
+          cota.tipo === "titular" ? '<button class="btn" data-gacao="ver-independentes" title="Abre a lista das licenças independentes que você emitiu">' + ic("chave") + "Licenças independentes</button>" : ""
+        ],
+        primariaHtml: podeAdd ? '<button class="btn primary" data-gacao="novo-usuario">+ Novo usuário</button>' : ""
+      });
       // o titular conta ao servidor quantos usuários da empresa existem (vagas somadas)
       try { if (cota.tipo === "titular" && typeof Licenca !== "undefined" && Licenca.informarUso) Licenca.informarUso(cota.empresa); } catch (eIu) {}
-      html += this._bannerMultiAparelho(cota);
+      /* AVISO ÚNICO DO TOPO (ROTEIRO §1): sem vaga é o que exige ação; senão,
+         o convite/estado do acesso multi-aparelho */
       /* "Desative ou exclua" era falso: inativo também ocupa vaga (a conta inclui inativos) */
-      if (!podeAdd) html += '<div class="card" style="background:#fffbeb;border-color:#fde68a;color:#92400e;margin-bottom:12px">' + (cota.tipo === "titular"
+      if (!podeAdd) html += K.aviso({ tom: "alerta", texto: cota.tipo === "titular"
         ? 'As ' + cota.max + ' vagas da sua equipe estão em uso: ' + cota.empresa + ' usuário(s) da empresa e ' + cota.indep + ' licença(s) independente(s). Exclua um usuário da empresa para liberar uma vaga.'
-        : 'Limite de ' + cota.max + ' usuários nesta versão. Exclua um usuário para criar outro.') + '</div>';
-      if (!us.length) return html + ((cota.tipo === "equipe" && !cota.max) ? vazioBox("Sua licença é de uso individual", "novo-usuario", "Ver como cadastrar usuários", true) : vazioBox("Nenhum usuário cadastrado", "novo-usuario", "Cadastrar primeiro usuário"));
-      html += '<table class="tbl"><thead><tr><th>Nome</th><th>Login</th><th>Departamento</th><th class="num">Módulos</th><th>Status</th><th></th></tr></thead><tbody>';
+        : 'Limite de ' + cota.max + ' usuários nesta versão. Exclua um usuário para criar outro.' });
+      else html += this._bannerMultiAparelho(cota);
+      var intro = '<p class="mod-sub" style="margin:0 0 14px">' + this._textoCota(cota) + "</p>";
+      if (!us.length) return html + K.secao({ titulo: "Equipe", corpoHtml: intro + ((cota.tipo === "equipe" && !cota.max)
+        ? K.vazio({ icone: "usuarios", titulo: "Sua licença é de uso individual", acaoHtml: '<button class="btn primary" data-gacao="novo-usuario">Ver como cadastrar usuários</button>' })
+        : K.vazio({ icone: "usuarios", titulo: "Nenhum usuário cadastrado", texto: "Cada pessoa entra com o próprio login e vê só os módulos liberados para o departamento dela." })) });
+      var tb = '<table class="tbl"><thead><tr><th>Nome</th><th>Login</th><th>Departamento</th><th class="num">Módulos</th><th>Status</th><th class="mod-lin-acoes" aria-label="Ações"></th></tr></thead><tbody>';
       us.forEach(function (u) {
         var nMod = (u.modulos && u.modulos.length) || 0;
         /* acesso com prazo: "ativo até dd/mm/aaaa" enquanto vale; "acesso
@@ -35787,9 +36753,9 @@
           : pz.vencido ? self._pillTexto("#dc2626", "acesso vencido", "O acesso terminou em " + pz.br + ". Para liberar de novo, edite o usuário e mude (ou apague) a data.")
           : pz.br ? self._pillTexto("#16a34a", "ativo até " + pz.br, "Vale até o fim deste dia, pelo relógio do aparelho da pessoa")
           : self._pillTexto("#16a34a", "ativo");
-        html += '<tr><td style="cursor:pointer" data-gopen="equipe:' + u.id + '"><b>' + Util.esc(u.nome || "—") + "</b></td><td>" + Util.esc(u.login || "—") + "</td><td>" + rot(P.departamento, u.departamento) + '</td><td class="num">' + nMod + "</td><td>" + st + '</td><td class="num"><button class="btn sm" data-gacao="acesso-movel" data-id="' + u.id + '" title="Enviar o acesso pelo celular/tablet (link + QR — abre já ativado com a licença da empresa)">' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + '</button> <button class="btn sm" data-gopen="equipe:' + u.id + '">Editar</button></td></tr>';
+        tb += '<tr><td style="cursor:pointer" data-gopen="equipe:' + u.id + '"><b>' + Util.esc(u.nome || "—") + "</b></td><td>" + Util.esc(u.login || "—") + "</td><td>" + rot(P.departamento, u.departamento) + '</td><td class="num">' + nMod + "</td><td>" + st + '</td><td class="mod-lin-acoes"><button class="btn sm icone" data-gacao="acesso-movel" data-id="' + u.id + '" title="Enviar o acesso pelo celular/tablet (link + QR — abre já ativado com a licença da empresa)" aria-label="Enviar o acesso pelo celular">' + (typeof Icones !== "undefined" ? Icones.solo("celular", 16) : "") + '</button><button class="btn sm" data-gopen="equipe:' + u.id + '">Editar</button></td></tr>';
       });
-      return html + "</tbody></table>";
+      return html + K.secao({ titulo: "Equipe", corpoHtml: intro + tb + "</tbody></table>" });
     },
     _bannerMultiAparelho: function (cota) {
       /* licença independente: é a MESMA pessoa em até N aparelhos, não "cada usuário" */
@@ -35801,14 +36767,17 @@
       if (!lic || !lic.ativo || lic.trial) return "";                       // só cliente licenciado
       if (typeof Nuvem === "undefined" || !Nuvem.disponivel()) return "";   // nuvem ligada no config
       var conta = (typeof Auth !== "undefined" && Auth.contaMestre) ? Auth.contaMestre() : null;
+      /* aviso do KIT (ROTEIRO §1): era um cartão de cores cravadas em hex, com
+         emoji, e o botão AZUL competia com o "+ Novo usuário" do cabeçalho */
+      var K = kit();
       if (conta) {
-        return '<div class="card" style="background:#eafaf0;border-color:#b9e6c8;color:#0f5132;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">' +
-          '<span>📱 <b>Acesso multi-aparelho ATIVO.</b> Admin: <b>' + Util.esc(conta.email) + '</b> — ' + (indiv ? 'você entra com o mesmo login nos seus até ' + nAp + ' aparelhos.' : 'cada usuário entra no próprio celular/tablet com a mesma licença.') + tetoAp + '</span>' +
-          '<button class="btn sm" data-gacao="config-admin">Trocar senha de admin</button></div>';
+        return K.aviso({ tom: "ok", titulo: "Acesso multi-aparelho ativo",
+          textoHtml: "<span>Admin: <b>" + Util.esc(conta.email) + "</b> — " + (indiv ? "você entra com o mesmo login nos seus até " + nAp + " aparelhos." : "cada usuário entra no próprio celular/tablet com a mesma licença.") + tetoAp + "</span>",
+          acaoHtml: '<button class="btn sm" data-gacao="config-admin">Trocar senha de admin</button>' });
       }
-      return '<div class="card" style="background:#fffbeb;border-color:#fde68a;color:#92400e;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">' +
-        '<span>📱 <b>Ative o acesso multi-aparelho:</b> ' + (indiv ? 'defina sua conta de administrador para entrar com o mesmo login nos seus até ' + nAp + ' aparelhos.' : 'defina sua conta de administrador e cada usuário entra no próprio celular/tablet com a mesma licença.') + tetoAp + '</span>' +
-        '<button class="btn sm primary" data-gacao="config-admin">' + (typeof Icones !== 'undefined' ? Icones.get('link', 15) : '') + ' Configurar admin</button></div>';
+      return K.aviso({ tom: "alerta", titulo: "Ative o acesso multi-aparelho",
+        texto: (indiv ? "Defina sua conta de administrador para entrar com o mesmo login nos seus até " + nAp + " aparelhos." : "Defina sua conta de administrador e cada usuário entra no próprio celular/tablet com a mesma licença.") + tetoAp,
+        acaoHtml: '<button class="btn sm acao-forte" data-gacao="config-admin">' + (typeof Icones !== "undefined" ? Icones.get("link", 15) : "") + "Configurar admin</button>" });
     },
     configurarAdmin: function () {
       if (typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin()) { UI.toast("Só o administrador configura isto.", "erro"); return; }
@@ -36259,16 +37228,33 @@
       var nfs = lista("fiscal"), obras = lista("obras");
       var totEnt = nfs.filter(function (n) { return n.tipo === "entrada" && n.status === "emitida"; }).reduce(function (s, n) { return s + Util.num(n.valorTotal); }, 0);
       var totSai = nfs.filter(function (n) { return n.tipo === "saida" && n.status === "emitida"; }).reduce(function (s, n) { return s + Util.num(n.valorTotal); }, 0);
-      var extra = '<span class="muted" style="margin-right:12px;align-self:center">Entradas: <b>' + Util.fmtMoeda(totEnt) + "</b> · Saídas: <b>" + Util.fmtMoeda(totSai) + "</b></span>" +
-        '<button class="btn" data-gacao="importar-xml-lote" title="Importe vários XMLs de NF-e de uma vez — direto do arquivo, sem IA e sem internet">' + (typeof Icones !== 'undefined' ? Icones.get('baixar', 15) : '') + ' XML em lote</button> ' +
-        '<button class="btn ghost" data-gacao="consultar-chave" title="Cole a chave de acesso (44 dígitos do DANFE) — valida e identifica a nota na hora">' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + ' Chave de acesso</button> ' +
-        /* A leitura por IA já existia, só que escondida no Financeiro — quem chega
-           com o DANFE em PDF (ou uma foto dele) procura na tela Fiscal. Mesmo motor,
-           mesma revisão humana antes de gravar; o XML segue sendo o caminho exato. */
-        '<button class="btn ghost" data-gacao="nf-ia" title="Sem o XML? Envie o PDF do DANFE ou uma foto da nota — a IA lê e abre a nota preenchida para você conferir antes de salvar. O XML continua sendo o caminho mais exato.">' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' NF em PDF/foto</button>';
-      var html = this._head(svg("fiscal") + "Fiscal / NF-e", "nova-fiscal", "Nova nota", extra);
-      if (!nfs.length) return html + vazioBox("Nenhuma nota fiscal", "nova-fiscal", "Cadastrar primeira");
-      html += '<table class="tbl"><thead><tr><th>Nº</th><th>Tipo</th><th>Parceiro</th><th>Obra</th><th class="num">Valor</th><th>Status</th><th></th></tr></thead><tbody>';
+      /* PADRÃO DE TELA (ROTEIRO-MODULO.md): os totais saem do meio dos botões
+         ("Entradas: R$ … · Saídas: R$ …" solto no cabeçalho) para a faixa de
+         indicadores; dos três jeitos de trazer uma nota, os dois mais usados
+         ficam à vista e a chave de acesso vai para o "Mais" — o MESMO botão,
+         com o mesmo `data-gacao` (test-g8-gratis o procura no HTML). */
+      var K = kit(), ic = function (n) { return typeof Icones !== "undefined" ? Icones.get(n, 15) : ""; };
+      var html = K.cab({
+        icone: "fiscal", titulo: "Fiscal / NF-e",
+        sub: nfs.length ? nfs.length + (nfs.length === 1 ? " nota" : " notas") + " · entradas e saídas" : "Notas de entrada e de saída",
+        acoes: [
+          '<button class="btn" data-gacao="importar-xml-lote" title="Importe vários XMLs de NF-e de uma vez — direto do arquivo, sem IA e sem internet">' + ic("baixar") + "XML em lote</button>",
+          /* A leitura por IA já existia, só que escondida no Financeiro — quem chega
+             com o DANFE em PDF (ou uma foto dele) procura na tela Fiscal. Mesmo motor,
+             mesma revisão humana antes de gravar; o XML segue sendo o caminho exato. */
+          '<button class="btn" data-gacao="nf-ia" title="Sem o XML? Envie o PDF do DANFE ou uma foto da nota — a IA lê e abre a nota preenchida para você conferir antes de salvar. O XML continua sendo o caminho mais exato.">' + ic("ia") + "NF em PDF/foto</button>",
+          '<button class="btn" data-gacao="consultar-chave" title="Cole a chave de acesso (44 dígitos do DANFE) — valida e identifica a nota na hora">' + ic("buscar") + "Chave de acesso</button>"
+        ],
+        primariaHtml: '<button class="btn primary" data-gacao="nova-fiscal">+ Nova nota</button>'
+      });
+      if (!nfs.length) return html + vazioKit({ icone: "fiscal", titulo: "Nenhuma nota fiscal", texto: "Traga o XML, o PDF/foto do DANFE ou digite a nota: ela vira conta a pagar e entrada de material.", gacao: "nova-fiscal", botao: "Cadastrar primeira" });
+      /* só notas EMITIDAS somam (a regra de sempre); o número de notas é o
+         contexto que faltava para ler os dois totais */
+      html += K.kpis([
+        { rotulo: "Entradas", valor: Util.fmtMoeda(totEnt), sub: "notas emitidas de compra" },
+        { rotulo: "Saídas", valor: Util.fmtMoeda(totSai), sub: "notas emitidas de venda/serviço" }
+      ]);
+      var tb = '<table class="tbl"><thead><tr><th>Nº</th><th>Tipo</th><th>Parceiro</th><th>Obra</th><th class="num">Valor</th><th>Status</th><th class="mod-lin-acoes" aria-label="Ações"></th></tr></thead><tbody>';
       /* ⚠ v1.1.236 — "já lançada" reconhecia a nota SÓ pela chave de acesso, e
          o resto do módulo já reconhecia por chave OU por docId justamente
          porque NFS-e, cupom e recibo não têm chave (ver _lancamentosDaNota e a
@@ -36296,29 +37282,33 @@
         /* nota antiga (importada antes desta versão) não tem itens gravados —
            o botão não aparece em vez de abrir uma tela vazia sem explicação */
         var btnTri = nItens
-          ? '<button class="btn sm" data-gacao="tri-abrir" data-id="' + n.id + '" title="Diga o que fazer com cada item: estoque, patrimônio, EPI ou consumo na obra">' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' Itens (' + nItens + ')' +
-            (pend ? ' <span class="pill proprio">' + pend + " a triar</span>" : " ✔") + "</button> "
+          ? '<button class="btn sm" data-gacao="tri-abrir" data-id="' + n.id + '" title="Diga o que fazer com cada item: estoque, patrimônio, EPI ou consumo na obra">' + ic("estoque") + 'Itens (' + nItens + ')' +
+            (pend ? ' <span class="pill proprio">' + pend + " a triar</span>" : " ✔") + "</button>"
           /* ⚠ NOTA SEM ITENS NÃO PODE FICAR SEM PORTA. A triagem só existia para
              nota vinda de XML; a digitada à mão (fornecedor pequeno, recibo,
              NFS-e) nascia sem `itens` e o botão nem aparecia — o material dela
              nunca entrava no almoxarifado por caminho nenhum, e ninguém via que
              faltava. Nota de SAÍDA fica de fora: ali não entra material. */
           : (String(n.tipo || "") !== "saida"
-            ? '<button class="btn sm ghost" data-gacao="nf-itens-manuais" data-id="' + n.id + '" title="Esta nota não tem itens (foi digitada à mão ou veio sem XML). Liste o que veio nela para poder triar.">' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' Listar itens</button> '
+            ? '<button class="btn sm" data-gacao="nf-itens-manuais" data-id="' + n.id + '" title="Esta nota não tem itens (foi digitada à mão ou veio sem XML). Liste o que veio nela para poder triar.">' + ic("estoque") + "Listar itens</button>"
             : "");
         /* mesmo critério de _lancamentosDaNota: com chave, vale a chave; sem
            chave, vale o id do documento */
         var jaLanc = n.chaveAcesso ? !!_idxChave[String(n.chaveAcesso)] : !!_idxDoc[String(n.id)];
+        /* "Lançar" deixa de ser botão AZUL em toda linha (eram várias ações
+           primárias na mesma tela — ROTEIRO §1: uma só, a do cabeçalho); segue
+           o mais forte da linha, com borda e peso. */
         var btn = n.status === "emitida"
-          ? (jaLanc ? '<span class="pill" title="Esta nota já virou lançamento no Financeiro">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Lançada</span>'
-            : '<button class="btn sm primary" data-gacao="lancar-fiscal" data-id="' + n.id + '">Lançar</button>')
+          ? (jaLanc ? '<span class="pill" title="Esta nota já virou lançamento no Financeiro">' + ic("check") + "Lançada</span>"
+            : '<button class="btn sm acao-forte" data-gacao="lancar-fiscal" data-id="' + n.id + '">Lançar</button>')
           : "";
         btn = btnTri + btn;
         /* EDITAR e EXCLUIR estavam escondidos: só dava para chegar neles
            clicando no número da nota, o que ninguém adivinha. Agora ficam na
            linha, como no resto do app. E quando a nota já virou dinheiro, o
-           que se oferece é DESFAZER o lançamento — não relançar por cima. */
-        if (jaLanc) btn += ' <button class="btn sm ghost" data-gacao="fiscal-desfazer" data-id="' + n.id + '" title="Apagar as contas a pagar que esta nota gerou (as já pagas ficam)">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Desfazer</button>';
+           que se oferece é DESFAZER o lançamento — não relançar por cima.
+           As ações de apoio são ÍCONE (ROTEIRO §4); o nome mora no title/aria. */
+        if (jaLanc) btn += '<button class="btn sm icone" data-gacao="fiscal-desfazer" data-id="' + n.id + '" title="Desfazer o lançamento: apagar as contas a pagar que esta nota gerou (as já pagas ficam)" aria-label="Desfazer o lançamento">' + (typeof Icones !== "undefined" ? Icones.solo("voltar", 16) : "") + "</button>";
         /* ⚠ A PORTA DO VÍNCULO EXISTIA SÓ DENTRO DO MODAL "LANÇAR": quem lançou
            sem vincular na hora não tinha, em tela nenhuma, como vincular depois —
            e o vínculo é justamente o que impede a mesma compra virar despesa em
@@ -36329,15 +37319,16 @@
            parecia dizer que o outro não estava ali. */
         var _pedN = (typeof CompraNota !== "undefined" && CompraNota.pedidosDaNota) ? CompraNota.pedidosDaNota(n) : [];
         var _sobraN = Util.num(n.valorTotal) - _pedN.reduce(function (a, c) { return a + Util.num(c.valor); }, 0);
-        if (_pedN.length) btn += ' <span class="muted" style="font-size:11.5px" title="Pedido(s) de compra vinculado(s) a esta nota: ' + Util.esc(_pedN.map(function (c) { return c.numero || c.id; }).join(", ")) + '">' + (typeof Icones !== 'undefined' ? Icones.get('link', 13) : '') + ' ' + Util.esc(_pedN[0].numero || _pedN[0].id) + (_pedN.length > 1 ? " +" + (_pedN.length - 1) : "") + '</span>';
+        var pedTxt = _pedN.length ? '<div class="muted" style="font-size:var(--t-micro);margin-top:2px" title="Pedido(s) de compra vinculado(s) a esta nota: ' + Util.esc(_pedN.map(function (c) { return c.numero || c.id; }).join(", ")) + '">' + (typeof Icones !== "undefined" ? Icones.get("link", 13) : "") + Util.esc(_pedN[0].numero || _pedN[0].id) + (_pedN.length > 1 ? " +" + (_pedN.length - 1) : "") + "</div>" : "";
         /* ⚠ e o botão CONTINUA quando sobra valor da nota: era por aqui que a
            segunda entrega coberta pela mesma nota ficava sem onde encostar. */
-        if (String(n.tipo || "") !== "saida" && (!_pedN.length || _sobraN >= 0.01)) btn += ' <button class="btn sm ghost" data-gacao="fiscal-vincular" data-id="' + n.id + '" title="Dizer de qual(is) pedido(s) de compra esta nota é — sem isso a mesma compra pode virar despesa em dobro">' + (typeof Icones !== 'undefined' ? Icones.get('link', 15) : '') + ' Vincular</button>';
-        btn += ' <button class="btn sm ico" data-gacao="fiscal-editar" data-id="' + n.id + '" title="Editar os dados desta nota">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + '</button>' +
-          ' <button class="btn sm ico danger" data-gacao="fiscal-excluir" data-id="' + n.id + '" title="Excluir esta nota">' + (typeof Icones !== 'undefined' ? Icones.get('lixeira', 15) : '') + '</button>';
-        html += '<tr><td style="cursor:pointer" data-gopen="fiscal:' + n.id + '"><b>' + Util.esc(numTxt) + "</b></td><td>" + rot(P.fiscalTipo, n.tipo) + "</td><td>" + Util.esc(n.parceiro || "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + '</td><td class="num">' + Util.fmtMoeda(Util.num(n.valorTotal)) + "</td><td>" + pill(n.status) + '</td><td class="num">' + btn + "</td></tr>";
+        if (String(n.tipo || "") !== "saida" && (!_pedN.length || _sobraN >= 0.01)) btn += '<button class="btn sm icone" data-gacao="fiscal-vincular" data-id="' + n.id + '" title="Vincular ao pedido de compra: sem isso a mesma compra pode virar despesa em dobro" aria-label="Vincular ao pedido de compra">' + (typeof Icones !== "undefined" ? Icones.solo("link", 16) : "") + "</button>";
+        btn += '<button class="btn sm icone" data-gacao="fiscal-editar" data-id="' + n.id + '" title="Editar os dados desta nota" aria-label="Editar">' + (typeof Icones !== "undefined" ? Icones.solo("editar", 16) : "") + "</button>" +
+          '<button class="btn sm icone" data-gacao="fiscal-excluir" data-id="' + n.id + '" title="Excluir esta nota" aria-label="Excluir">' + (typeof Icones !== "undefined" ? Icones.solo("lixeira", 16) : "") + "</button>";
+        /* o pedido vinculado mora sob o PARCEIRO (é dado da nota), não no meio dos botões */
+        tb += '<tr><td style="cursor:pointer" data-gopen="fiscal:' + n.id + '"><b>' + Util.esc(numTxt) + "</b></td><td>" + rot(P.fiscalTipo, n.tipo) + "</td><td>" + Util.esc(n.parceiro || "—") + pedTxt + "</td><td>" + Util.esc(ob ? ob.nome : "—") + '</td><td class="num">' + Util.fmtMoeda(Util.num(n.valorTotal)) + "</td><td>" + pill(n.status) + '</td><td class="mod-lin-acoes">' + btn + "</td></tr>";
       });
-      return html + "</tbody></table>";
+      return html + K.secao({ titulo: "Notas", corpoHtml: tb + "</tbody></table>" });
     },
     /* ============ TRIAGEM DOS ITENS DA NOTA ============================
        A nota do fornecedor de obra vem misturada: EPI, ferramenta de R$ 3 mil
@@ -38672,14 +39663,21 @@ renderPatrimonio: function () {
         return atual < 0 ? 0 : atual;
       };
       ps.forEach(function (p) { totalAquisicao += Util.num(p.valorAquisicao); totalAtual += calcAtual(p); });
-      var extra = '<span class="muted" style="margin-right:12px;align-self:center">Aquisição: <b>' + Util.fmtMoeda(totalAquisicao) + "</b> · Valor atual: <b>" + Util.fmtMoeda(totalAtual) + "</b></span>";
-      var html = this._head(svg("patrimonio") + "Patrimônio", "novo-patrimonio", "Novo bem", extra);
-      if (!ps.length) return html + vazioBox("Nenhum bem cadastrado", "novo-patrimonio", "Cadastrar primeiro");
-      html += '<table class="tbl"><thead><tr><th>Descrição</th><th>Categoria</th><th>Nº</th><th class="num">Aquisição (R$)</th><th class="num">Valor atual</th><th>Estado</th></tr></thead><tbody>';
+      /* PADRÃO DE TELA (ROTEIRO-MODULO.md): os totais saem do texto solto ao
+         lado do botão para a faixa de indicadores; tabela numa seção. */
+      var K = kit();
+      var html = K.cab({ icone: "patrimonio", titulo: "Patrimônio", sub: ps.length ? ps.length + (ps.length === 1 ? " bem cadastrado" : " bens cadastrados") : "Bens da empresa e depreciação",
+        primariaHtml: '<button class="btn primary" data-gacao="novo-patrimonio">+ Novo bem</button>' });
+      if (!ps.length) return html + vazioKit({ icone: "patrimonio", titulo: "Nenhum bem cadastrado", texto: "Notebook, andaime, ferramenta grande: o valor atual sai da depreciação anual de cada um.", gacao: "novo-patrimonio", botao: "Cadastrar primeiro" });
+      html += K.kpis([
+        { rotulo: "Aquisição", valor: Util.fmtMoeda(totalAquisicao), sub: "quanto custou" },
+        { rotulo: "Valor atual", valor: Util.fmtMoeda(totalAtual), sub: "depois da depreciação" }
+      ]);
+      var tb = '<table class="tbl"><thead><tr><th>Descrição</th><th>Categoria</th><th>Nº</th><th class="num">Aquisição</th><th class="num">Valor atual</th><th>Estado</th></tr></thead><tbody>';
       ps.forEach(function (p) {
-        html += '<tr><td style="cursor:pointer" data-gopen="patrimonio:' + p.id + '"><b>' + Util.esc(p.descricao) + "</b></td><td>" + rot(P.patrimonioCategoria, p.categoria) + "</td><td>" + Util.esc(p.numeroPatrimonio || "—") + '</td><td class="num">' + Util.fmtMoeda(Util.num(p.valorAquisicao)) + '</td><td class="num">' + Util.fmtMoeda(calcAtual(p)) + "</td><td>" + pill(p.estado) + "</td></tr>";
+        tb += '<tr><td style="cursor:pointer" data-gopen="patrimonio:' + p.id + '"><b>' + Util.esc(p.descricao) + "</b></td><td>" + rot(P.patrimonioCategoria, p.categoria) + "</td><td>" + Util.esc(p.numeroPatrimonio || "—") + '</td><td class="num">' + Util.fmtMoeda(Util.num(p.valorAquisicao)) + '</td><td class="num">' + Util.fmtMoeda(calcAtual(p)) + "</td><td>" + pill(p.estado) + "</td></tr>";
       });
-      return html + "</tbody></table>";
+      return html + K.secao({ titulo: "Bens", corpoHtml: tb + "</tbody></table>" });
     },
     novoPatrimonio: function () { this.formPatrimonio(null); },
     formPatrimonio: function (p) {
@@ -39341,7 +40339,14 @@ renderPatrimonio: function () {
       }
       var podeGravar = this._ccPode(sel === "todas" ? "" : sel, "gravar").ok;
 
-      var selObra = '<select id="cc-obra-sel" data-gacao="cc-obra" style="min-width:190px"><option value="todas"' +
+      /* PADRÃO DE TELA (ROTEIRO-MODULO.md): o seletor de obra vai para o slot
+         de obra do cabeçalho (ids e `data-gacao` iguais — as e2e o acham por
+         `#cc-obra-sel`); "mostrar desativados" e o CSV formam a barra de
+         filtros (exportar à direita), e as abas são as do kit, com teclado.
+         O que mora dentro de cada aba (`_ccObraHtml`, `_ccTodasHtml`, Fila e
+         Regras) não muda: é a régua de dinheiro, com suíte própria. */
+      var K = kit();
+      var selObra = '<select id="cc-obra-sel" data-gacao="cc-obra" aria-label="Obra"><option value="todas"' +
         (sel === "todas" ? " selected" : "") + ">Todas as obras</option>" +
         obras.map(function (o) {
           return '<option value="' + Util.esc(String(o.id)) + '"' + (String(o.id) === sel ? " selected" : "") + ">" + Util.esc(o.nome || o.id) + "</option>";
@@ -39352,20 +40357,25 @@ renderPatrimonio: function () {
          caixa), e o filtro liga e desliga no mesmo gesto. */
       var chkDesat = '<span style="display:inline-flex;align-items:center;gap:6px">' +
         '<input type="checkbox" id="cc-desat" data-gacao="cc-desativados"' + (st.desativados ? " checked" : "") + ">" +
-        '<label for="cc-desat" class="muted" style="cursor:pointer">mostrar desativados</label></span>';
+        '<label for="cc-desat" class="muted" style="cursor:pointer">Mostrar desativados</label></span>';
       var btnGerar = (podeGravar && sel !== "todas")
         ? '<button class="btn" data-gacao="cc-gerar" data-obra="' + Util.esc(sel) + '">Gerar do orçamento…</button>' : "";
       /* [Exportar] (mc-8B): o recorte que está na tela, pela mesma conta dela */
       var btnExp = st.aba === "centros"
-        ? '<button class="btn sm" data-gacao="export-centrocusto">' + (typeof Icones !== "undefined" ? Icones.get("baixar", 15) : "") + " Exportar CSV</button>" : "";
-      var extra = '<span class="flex" style="gap:10px;align-items:center;margin-right:10px">' + selObra + chkDesat + btnGerar + btnExp + "</span>";
+        ? '<button class="btn sm" data-gacao="export-centrocusto">' + (typeof Icones !== "undefined" ? Icones.get("baixar", 15) : "") + "Exportar CSV</button>" : "";
 
-      var html = this._head(svg("centrocusto") + "Centros de Custo", podeGravar ? "novo-centrocusto" : "", "Novo centro", extra);
-      html += '<div class="tabs" style="margin-bottom:14px">' +
-        ['centros|Centros', 'fila|Fila', 'regras|Regras'].map(function (a) {
-          var p = a.split("|");
-          return '<div class="tab' + (st.aba === p[0] ? " ativa" : "") + '" data-gacao="cc-aba" data-aba="' + p[0] + '">' + p[1] + "</div>";
-        }).join("") + "</div>";
+      var html = K.cab({
+        icone: "centrocusto", titulo: "Centros de Custo",
+        sub: sel === "todas" ? "Todas as obras que você acompanha" : "Quanto do gasto da obra caiu em cada centro",
+        obraHtml: selObra,
+        acoes: [btnGerar],
+        primariaHtml: podeGravar ? '<button class="btn primary" data-gacao="novo-centrocusto">+ Novo centro</button>' : ""
+      });
+      html += K.abas(['centros|Centros', 'fila|Fila', 'regras|Regras'].map(function (a) {
+        var p = a.split("|");
+        return { id: p[0], rotulo: p[1], ativa: st.aba === p[0], attrs: 'data-gacao="cc-aba"' };
+      }));
+      if (st.aba === "centros") html += K.filtros([chkDesat], { direitaHtml: btnExp });
 
       /* ⚠ A FILA RECEBE A OBRA ESCOLHIDA. O seletor fica logo acima das abas:
          uma Fila que ignorasse a escolha mostraria outra obra a quem acabou
@@ -42895,7 +43905,7 @@ renderPatrimonio: function () {
      * Aba Centros sem obra escolhida ("Todas")
      * ------------------------------------------------------------- */
     _ccTodasHtml: function (obras) {
-      var self = this;
+      var self = this, K = kit();
       var ccs = lista("centrocusto");
       var html = '<table class="tbl"><thead><tr><th>Obra</th><th>Como conta</th><th class="num">Centros</th><th class="num">Realizado da obra</th><th class="num">Em centros da obra</th><th class="num">Sem centro</th></tr></thead><tbody>';
       var rot = { "novo": "pelos lançamentos apropriados", "legado-cabecalho": "obra inteira (antigo)",
@@ -42954,9 +43964,12 @@ renderPatrimonio: function () {
       }
       html += '<tr class="etapa-row"><td colspan="3"><b>Total das obras que você acompanha</b><br><span class="muted">a linha "Sem obra" fica de fora</span></td><td class="num"><b>' + Util.fmtMoeda(totReal) + "</b></td><td colspan=\"2\"></td></tr>";
       html += "</tbody></table>";
+      /* cada quadro numa seção do kit (ROTEIRO-MODULO.md §4) — eram uma tabela
+         solta e um <h3> com margem cravada; os números e as linhas não mudam */
+      var secObras = K.secao({ titulo: "Obras", corpoHtml: html });
+      html = "";
 
       var daEmpresa = ccs.filter(function (c) { return !String(c.obraId || ""); });
-      html += '<h3 style="margin:20px 0 8px">Centros da empresa</h3>';
       if (!daEmpresa.length) {
         html += '<p class="muted">Nenhum centro sem obra. Um centro da empresa recebe despesa que não é de obra nenhuma — escritório, administração, frota parada.</p>';
       } else {
@@ -42971,7 +43984,7 @@ renderPatrimonio: function () {
            afirmar que nada caiu — e essa é uma afirmação sobre dinheiro. */
         html += '<p class="muted">O quanto cada centro da empresa recebeu depende das regras de apropriação, que dependem do motor <code>js/ccagente.js</code> — ele não está carregado nesta instalação, então este valor não é mostrado.</p>';
       }
-      return html;
+      return secObras + K.secao({ titulo: "Centros da empresa", corpoHtml: html });
     },
 
     /* ---------------------------------------------------------------
@@ -43790,12 +44803,24 @@ renderFolha: function () {
       var fls = lista("folha"), cols = lista("colaboradores"), obras = lista("obras");
       var totalCusto = fls.reduce(function (s, f) { return s + Util.num(f.custoTotal); }, 0);
       var abertas = fls.filter(function (f) { return f.status === "aberta"; }).length;
-      var extra = '<span class="muted" style="margin-right:12px;align-self:center">Abertas: <b>' + abertas + "</b> · Custo total: <b>" + Util.fmtMoeda(totalCusto) + "</b></span>";
-      var html = this._head(svg("folha") + "Folha / Encargos", "nova-folha", "Nova folha", extra);
-      if (!fls.length) return html + vazioBox("Nenhuma folha lançada", "nova-folha", "Cadastrar primeira");
+      /* PADRÃO DE TELA: "Abertas · Custo total", que era texto solto ao lado
+         do botão, virou a faixa de indicadores; a tabela, uma seção. */
+      var html = Modulo.cab({
+        iconeHtml: svg("folha", 22), titulo: "Folha / Encargos",
+        sub: fls.length ? fls.length + " folha(s) lançada(s) · salário, encargos, horas extras e descontos" : "Folha mensal com encargos: o custo total vira despesa no Financeiro",
+        primariaHtml: '<button class="btn primary" data-gacao="nova-folha">+ Nova folha</button>'
+      });
+      if (!fls.length) return html + vazioMod({ icone: "dinheiro", titulo: "Nenhuma folha lançada",
+        texto: "Cada folha é a competência de um colaborador: salário base, encargos, horas extras e descontos. Lançada, vira despesa da obra no Financeiro." });
+      html += Modulo.kpis([
+        { rotulo: "Custo total", valor: Util.fmtMoeda(totalCusto), sub: "todas as competências" },
+        { rotulo: "Abertas", valor: String(abertas), tom: abertas ? "alerta" : "", sub: abertas ? "ainda não lançadas no Financeiro" : "tudo lançado" },
+        { rotulo: "Folhas", valor: String(fls.length) }
+      ]);
       /* a mais recente primeiro — o corte tem de manter o que se procura */
       fls = fls.slice().sort(function (a, b) { return String(b.competencia || "").localeCompare(String(a.competencia || "")); });
       var corteFolha = this._cortar(fls, "folha");
+      var iniTb = html.length;
       html += this._avisoCorte(corteFolha, "folha", "folhas");
       /* dois índices: o `filter` por linha era O(linhas × (colabs + obras)) —
          com 5.400 folhas e 150 colaboradores isso é quase um milhão de voltas */
@@ -43809,7 +44834,8 @@ renderFolha: function () {
         var acao = '<button class="btn sm" data-gacao="recibo-folha" data-id="' + f.id + '">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Recibo</button> ' + (f.status === "aberta" ? '<button class="btn sm primary" data-gacao="lancar-folha-enc" data-id="' + f.id + '">Lançar</button>' : "");
         html += '<tr><td style="cursor:pointer" data-gopen="folha:' + f.id + '"><b>' + Util.esc(f.competencia || "—") + "</b></td><td>" + Util.esc(col ? col.nome : "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + '</td><td class="num">' + Util.fmtMoeda(Util.num(f.salarioBase)) + '</td><td class="num"><b>' + Util.fmtMoeda(Util.num(f.custoTotal)) + "</b></td><td>" + pill(f.status) + '</td><td class="num">' + acao + "</td></tr>";
       });
-      return html + "</tbody></table>";
+      return html.slice(0, iniTb) + Modulo.secao({ titulo: "Folhas por competência", sub: "A mais recente primeiro. Lançar cria a despesa no Financeiro.",
+        corpoHtml: html.slice(iniTb) + "</tbody></table>" });
     },
     calcFolha: function (f) {
       var base = Util.num(f.salarioBase), enc = Util.num(f.encargosPct), he = Util.num(f.horasExtras), desc = Util.num(f.descontos);
@@ -44195,7 +45221,13 @@ renderFolha: function () {
       var totRec = CustoEtapa.totalVivo(fin, { tipo: "receita" }).valor;
       var totDesp = CustoEtapa.totalVivo(fin, { tipo: "despesa" }).valor;
       var resultado = totRec - totDesp;
-      var html = this._head(svg("relatorios") + "Relatórios Gerenciais", "", "", "");
+      /* PADRÃO DE TELA (ROTEIRO-MODULO.md): cabeçalho do kit com o nome do
+         menu, a faixa de indicadores ANTES do conteúdo (os três cartões
+         soltos tinham rótulo e número grudados na mesma linha), e cada quadro
+         numa seção com título — o relatório executivo inclusive, que era um
+         cartão de desenho próprio no topo. */
+      var K = kit();
+      var html = K.cab({ icone: "relatorios", titulo: "Relatórios", sub: _podeFin ? "Receitas e despesas da empresa, por obra e por categoria" : "Relatório executivo mensal" });
       // Relatório executivo mensal em 1 clique (promessa do site)
       /* `setDate(1)` já põe no dia 1, então a virada de fuso não muda o mês —
          mas a conta sai do mesmo helper para não haver duas réguas de mês. */
@@ -44203,24 +45235,31 @@ renderFolha: function () {
         var d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1);
         return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
       })();
-      html += '<div class="card" style="margin-bottom:16px"><h3 style="margin:0 0 4px">' + (typeof Icones !== 'undefined' ? Icones.get('grafico', 15) : '') + ' Relatório executivo mensal</h3>' +
-        '<p class="muted" style="font-size:12.5px;margin:0 0 10px">Avanço físico, custo real × orçado, medições, diários e fotos do mês — o documento de 1 página pra reunião de diretoria ou pro cliente.</p>' +
-        '<div class="flex" style="flex-wrap:wrap;gap:10px">' +
-        '<select id="rex-obra" style="max-width:280px">' + obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '">' + Util.esc(o.nome) + "</option>"; }).join("") + "</select>" +
-        '<input id="rex-mes" type="month" value="' + mesPassado + '" style="max-width:170px">' +
-        '<button class="btn sm primary" data-gacao="rel-executivo">' + (typeof Icones !== 'undefined' ? Icones.get('grafico', 15) : '') + ' Gerar relatório</button></div>' +
-        (obras.length ? "" : '<p class="muted" style="font-size:12px;margin:8px 0 0">Cadastre uma obra primeiro.</p>') + "</div>";
       if (_podeFin) {
-      html += '<div class="kpis">';
-      html += '<div class="kpi"><span class="rotulo">Receitas totais</span><span class="num">' + Util.fmtMoeda(totRec) + "</span></div>";
-      html += '<div class="kpi"><span class="rotulo">Despesas totais</span><span class="num">' + Util.fmtMoeda(totDesp) + "</span></div>";
-      html += '<div class="kpi"><span class="rotulo">Resultado</span><span class="num" style="color:' + (resultado >= 0 ? "#16a34a" : "#dc2626") + '">' + Util.fmtMoeda(resultado) + "</span></div>";
-      html += "</div>";
-      html += '<div class="card"><h3>Resultado por obra</h3>';
+        html += K.kpis([
+          { rotulo: "Receitas totais", valor: Util.fmtMoeda(totRec), tom: "pos" },
+          { rotulo: "Despesas totais", valor: Util.fmtMoeda(totDesp), tom: "neg" },
+          { rotulo: "Resultado", valor: Util.fmtMoeda(resultado), tom: resultado >= 0 ? "pos" : "neg" }
+        ]);
+      }
+      html += K.secao({
+        titulo: "Relatório executivo mensal",
+        sub: "Avanço físico, custo real × orçado, medições, diários e fotos do mês — 1 página para a diretoria ou o cliente.",
+        corpoHtml: obras.length
+          ? '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">' +
+            '<select id="rex-obra" aria-label="Obra" style="max-width:280px">' + obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '">' + Util.esc(o.nome) + "</option>"; }).join("") + "</select>" +
+            '<input id="rex-mes" type="month" value="' + mesPassado + '" aria-label="Mês" style="max-width:170px">' +
+            '<button class="btn primary" data-gacao="rel-executivo">' + (typeof Icones !== "undefined" ? Icones.get("grafico", 15) : "") + "Gerar relatório</button></div>"
+          /* sem obra não há o que gerar — o campo vazio e o botão que recusa
+             eram porta pintada na parede */
+          : K.vazio({ icone: "obras", titulo: "Cadastre uma obra primeiro", texto: "O relatório executivo é sempre de uma obra e de um mês." })
+      });
+      if (_podeFin) {
+      var tObras = "";
       if (!obras.length) {
-        html += vazioBox("Nenhuma obra cadastrada", "", "");
+        tObras = K.vazio({ icone: "obras", titulo: "Nenhuma obra cadastrada" });
       } else {
-        html += '<table class="tbl"><thead><tr><th>Obra</th><th class="num">Contratado</th><th class="num">Custo</th><th class="num">Recebido</th><th class="num">Margem s/ recebido</th></tr></thead><tbody>';
+        tObras = '<table class="tbl"><thead><tr><th>Obra</th><th class="num">Contratado</th><th class="num">Custo</th><th class="num">Recebido</th><th class="num">Margem s/ recebido</th></tr></thead><tbody>';
         obras.forEach(function (o) {
           var contratado = 0;
           contratos.forEach(function (c) { if (c.obraId === o.id) contratado += Util.num(c.valor); });
@@ -44230,12 +45269,13 @@ renderFolha: function () {
           /* mesma correcao do Painel: margem e sobre o RECEBIDO, e nao existe
              quando nao houve receita (ver Resumo por obra) */
           var margem = recebido > 0 ? (recebido - custo) / recebido * 100 : null;
-          html += "<tr><td><b>" + Util.esc(o.nome) + '</b></td><td class="num">' + Util.fmtMoeda(contratado) + '</td><td class="num">' + Util.fmtMoeda(custo) + '</td><td class="num">' + Util.fmtMoeda(recebido) + '</td><td class="num" style="color:' + (margem == null ? "#94a3b8" : (margem >= 0 ? "#16a34a" : "#dc2626")) + '" title="' + (margem == null ? "sem receita lançada nesta obra" : "sobre o que já foi recebido") + '">' + (margem == null ? "—" : Util.fmtPct(margem, 1)) + "</td></tr>";
+          /* cor só onde a margem é negativa; o resto em texto (eram verdes e
+             vermelhos em hex soltos, fora dos tokens do tema escuro) */
+          tObras += "<tr><td><b>" + Util.esc(o.nome) + '</b></td><td class="num">' + Util.fmtMoeda(contratado) + '</td><td class="num">' + Util.fmtMoeda(custo) + '</td><td class="num">' + Util.fmtMoeda(recebido) + '</td><td class="num' + (margem == null ? " muted" : "") + '"' + (margem != null && margem < 0 ? ' style="color:var(--vermelho)"' : "") + ' title="' + (margem == null ? "sem receita lançada nesta obra" : "sobre o que já foi recebido") + '">' + (margem == null ? "—" : Util.fmtPct(margem, 1)) + "</td></tr>";
         });
-        html += "</tbody></table>";
+        tObras += "</tbody></table>";
       }
-      html += "</div>";
-      html += '<div class="card"><h3>Despesas por categoria</h3>';
+      html += K.secao({ titulo: "Resultado por obra", corpoHtml: tObras });
       var porCat = {};
       fin.forEach(function (l) {
         if (l.tipo !== "despesa") return;
@@ -44244,29 +45284,30 @@ renderFolha: function () {
       });
       var cats = [];
       for (var k in porCat) { if (porCat.hasOwnProperty(k)) cats.push(k); }
+      var tCat = "";
       if (!cats.length) {
-        html += vazioBox("Nenhuma despesa lançada", "", "");
+        tCat = K.vazio({ icone: "financeiro", titulo: "Nenhuma despesa lançada" });
       } else {
         cats.sort(function (a, b) { return porCat[b] - porCat[a]; });
-        html += '<table class="tbl"><thead><tr><th>Categoria</th><th class="num">Valor</th><th class="num">%</th></tr></thead><tbody>';
+        tCat = '<table class="tbl"><thead><tr><th>Categoria</th><th class="num">Valor</th><th class="num">%</th></tr></thead><tbody>';
         cats.forEach(function (cat) {
           var val = porCat[cat];
           var pct = totDesp > 0 ? val / totDesp * 100 : 0;
-          html += "<tr><td>" + Util.esc(rot(P.finCategoria, cat)) + '</td><td class="num">' + Util.fmtMoeda(val) + '</td><td class="num">' + Util.fmtPct(pct, 1) + "</td></tr>";
+          tCat += "<tr><td>" + Util.esc(rot(P.finCategoria, cat)) + '</td><td class="num">' + Util.fmtMoeda(val) + '</td><td class="num">' + Util.fmtPct(pct, 1) + "</td></tr>";
         });
-        html += "</tbody></table>";
+        tCat += "</tbody></table>";
       }
-      html += "</div>";
+      html += K.secao({ titulo: "Despesas por categoria", corpoHtml: tCat });
       /* quadro "Custo por centro de custo" da obra escolhida (mc-8B): a mesma
          conta da tela Centros de Custo, com a soma batendo com o realizado
          da obra — e dizendo quando não bate */
       try { html += this._relCcQuadroHtml(); } catch (eRcc) {
-        html += '<div class="card"><p class="muted" style="margin:0">Não consegui montar o quadro de centros de custo neste aparelho. Os quadros acima não dependem dele.</p></div>';
+        html += K.secao({ corpoHtml: '<p class="muted" style="margin:0">Não consegui montar o quadro de centros de custo neste aparelho. Os quadros acima não dependem dele.</p>' });
       }
       } // fecha o gate do Financeiro
       else {
         /* honesto em vez de tela vazia: diz o que falta e a quem pedir */
-        html += '<div class="card"><p class="muted" style="margin:0">Os números desta tela vêm do módulo <b>Financeiro</b>, que não está liberado para o seu usuário. Fale com o administrador da conta se precisar deles.</p></div>';
+        html += K.secao({ corpoHtml: K.vazio({ icone: "financeiro", titulo: "Os números desta tela vêm do Financeiro", texto: "O módulo Financeiro não está liberado para o seu usuário. Fale com o administrador da conta se precisar deles." }) });
       }
       return html;
     },
@@ -44524,7 +45565,7 @@ renderFolha: function () {
     },
 
     renderProducao: function () {
-      if (typeof Producao === "undefined") return this._head("Produção", "", "") + '<div class="card">Motor de produção não carregado.</div>';
+      if (typeof Producao === "undefined") return Modulo.cab({ icone: "capacete", titulo: "Produção" }) + Modulo.vazio({ icone: "alerta", titulo: "Motor de produção não carregado", texto: "Atualize o app." });
       var self = this, f = this._prodFiltro(), obras = lista("obras");
       var jaPago = this._jaPagoProducao();
       /* acumula SEM filtro para migrar: a chave velha pode pertencer a uma obra
@@ -44550,38 +45591,66 @@ renderFolha: function () {
       var nSugeridos = med.linhas.filter(function (l, iL) { return sugestoes[iL].ok && l.pendente; }).length;
       this._prodSugestoes = sugestoes;
 
-      var selObra = '<select data-gacao="prod-obra" style="max-width:190px"><option value="">Todas as obras</option>' +
+      /* ROTEIRO DE MÓDULO (08/10/2026): o título longo ("Produção · pagamento
+         por serviço executado") ocupava a linha toda e empurrava obra, datas e
+         as duas ações para uma fila embaixo dele, misturadas. Agora: obra no
+         lugar fixo do cabeçalho, ações à direita, as DATAS na barra de
+         filtros e os quatro números numa faixa só (o kit). */
+      var selObra = '<select data-gacao="prod-obra" aria-label="Obra"><option value="">Todas as obras</option>' +
         obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === f.obraId ? " selected" : "") + ">" + Util.esc(o.nome) + "</option>"; }).join("") + "</select>";
-      var extra = selObra +
-        ' <input type="date" id="prod-de" value="' + Util.esc(f.de) + '" title="Diários a partir de" style="max-width:150px">' +
-        ' <input type="date" id="prod-ate" value="' + Util.esc(f.ate) + '" title="Diários até" style="max-width:150px">' +
-        (nSugeridos ? ' <button class="btn sm" data-gacao="prod-doorc" title="Preenche o R$/unidade das linhas sem preço com o custo de mão de obra que já está no orçamento da obra">Puxar preço do orçamento (' + nSugeridos + ")</button>" : "") +
-        (med.linhas.length ? ' <button class="btn sm primary" data-gacao="prod-gerar">Gerar medição de produção</button>' : "");
-      var html = this._head(svg("producao") + "Produção · pagamento por serviço executado", "", "", extra);
+      var html = Modulo.cab({
+        icone: "capacete", titulo: "Produção", sub: "Pagamento por serviço executado, a partir do diário aprovado",
+        obraHtml: selObra,
+        acoes: [nSugeridos ? '<button class="btn" data-gacao="prod-doorc" title="Preenche o R$/unidade das linhas sem preço com o custo de mão de obra que já está no orçamento da obra">Puxar preço do orçamento (' + nSugeridos + ")</button>" : ""],
+        primariaHtml: med.linhas.length ? '<button class="btn primary" data-gacao="prod-gerar">Gerar medição de produção</button>' : ""
+      });
+      /* O AVISO ÚNICO do topo (roteiro de módulo). Eram dois cartões com borda
+         colorida no MEIO da tela, depois da tabela. Mesmo texto, mesmo dado:
+         ⚠ `jaPagos` era calculado pelo motor e descartado pela tela. Quem
+         procurasse a produção de um dia já medido não achava nada e não tinha
+         como saber por quê — parecia que o lançamento tinha se perdido. */
+      var linhasAv = [], porRdo = {}, porPessoaPaga = {};
+      if (ac.pendentes.length) {
+        ac.pendentes.forEach(function (p2) { porRdo[p2.nome || p2.colaboradorId] = (porRdo[p2.nome || p2.colaboradorId] || 0) + 1; });
+        linhasAv.push("<span>" + Object.keys(porRdo).slice(0, 6).map(function (n) { return Util.esc(n) + " (" + porRdo[n] + ")"; }).join(" · ") +
+          ' <span class="muted">— não entra na medição enquanto o diário não for aprovado, porque um diário em rascunho ainda pode mudar.</span></span>');
+      }
+      if (ac.jaPagos.length) {
+        ac.jaPagos.forEach(function (p3) { porPessoaPaga[p3.nome || p3.colaboradorId] = (porPessoaPaga[p3.nome || p3.colaboradorId] || 0) + 1; });
+        linhasAv.push("<span><b>Já medido antes:</b> " + Object.keys(porPessoaPaga).slice(0, 6).map(function (n) { return Util.esc(n) + " (" + porPessoaPaga[n] + " lançamento(s))"; }).join(" · ") +
+          ' <span class="muted">— não aparece na lista porque já virou medição. Se a medição foi cancelada ou rejeitada, a produção volta sozinha.</span></span>');
+      }
+      if (linhasAv.length) html += Modulo.aviso({
+        tom: ac.pendentes.length ? "alerta" : "info",
+        titulo: ac.pendentes.length ? "Produção lançada em diário que ainda não foi aprovado" : "",
+        textoHtml: linhasAv.join(""),
+        acaoHtml: ac.pendentes.length ? '<button class="btn sm" data-view="rdo">Aprovar no Diário (RDO)</button>' : ""
+      });
+      html += Modulo.filtros([
+        '<div class="field" style="flex:0 1 200px"><label for="prod-de">Diários de</label><input type="date" id="prod-de" value="' + Util.esc(f.de) + '" title="Diários a partir de"></div>',
+        '<div class="field" style="flex:0 1 200px"><label for="prod-ate">até</label><input type="date" id="prod-ate" value="' + Util.esc(f.ate) + '" title="Diários até"></div>'
+      ]);
 
-      html += '<div class="kpis kpis-g" style="margin-bottom:14px">' +
+      html += Modulo.kpis([
         /* ⚠ A REGRA 3 VALIA NA LINHA E NÃO VALIA AQUI. Com produção lançada e
            nenhum preço informado, este cartão estampava um "R$ 0,00" verde e
            grande — que se lê como "não há nada a pagar", quando o certo é
            "ainda não sei quanto". Zero só aparece quando é zero mesmo. */
-        '<div class="card kpi destaque"><div class="rotulo">A medir (com preço)</div><div class="num">' +
-          ((med.total === 0 && med.semPreco) ? '<span title="Há produção lançada, mas nenhuma linha tem preço ainda.">—</span>' : Util.fmtMoeda(med.total)) + "</div></div>" +
-        '<div class="card kpi"><div class="rotulo">Pessoas</div><div class="num">' + pessoas.length + "</div></div>" +
-        '<div class="card kpi ' + (med.semPreco ? "custo" : "") + '"><div class="rotulo">Sem preço</div><div class="num">' + med.semPreco + "</div></div>" +
-        '<div class="card kpi ' + (ac.pendentes.length ? "custo" : "") + '"><div class="rotulo">Aguardando aprovação do diário</div><div class="num">' + ac.pendentes.length + "</div></div></div>";
+        { rotulo: "A medir (com preço)", valorHtml: (med.total === 0 && med.semPreco) ? '<span title="Há produção lançada, mas nenhuma linha tem preço ainda.">—</span>' : Util.esc(Util.fmtMoeda(med.total)), tom: (med.total === 0 && med.semPreco) ? "" : "info" },
+        { rotulo: "Pessoas", valor: String(pessoas.length) },
+        { rotulo: "Sem preço", valor: String(med.semPreco), tom: med.semPreco ? "alerta" : "" },
+        { rotulo: "Diário não aprovado", valor: String(ac.pendentes.length), sub: "produção que espera o diário", tom: ac.pendentes.length ? "alerta" : "" }
+      ]);
 
       /* ⚠ a tabela "A medir" só existe se houver o que medir. Com apenas
          pendentes ela renderizava VAZIA, com rodapé "Total a medir R$ 0,00" —
          um zero que parece resultado e é só ausência de linha. */
       if (!med.linhas.length) {
-        html += ac.pendentes.length ? "" : ('<div class="card" style="text-align:center;padding:34px 20px"><b>Nenhuma produção individual lançada ainda.</b><br>' +
-          '<span class="muted">A produção nasce no <b>Diário de obra</b>: em cada serviço do dia há o bloco <b>"produção por pessoa"</b>. ' +
-          'Quem aparece lá é quem recebe por produção (terceirizado, empreiteiro, PJ, autônomo — ou quem você marcou no cadastro). ' +
-          'Depois de o diário ser aprovado, a produção cai aqui e vira medição sem redigitar nada.</span></div>');
+        html += ac.pendentes.length ? "" : vazioKit({ icone: "capacete", titulo: "Nenhuma produção individual lançada ainda",
+          texto: "A produção nasce no Diário de obra: em cada serviço do dia há o bloco \"produção por pessoa\". Quem aparece lá é quem recebe por produção (terceirizado, empreiteiro, PJ, autônomo — ou quem você marcou no cadastro). Depois de o diário ser aprovado, a produção cai aqui e vira medição sem redigitar nada.",
+          acaoHtml: '<button class="btn" data-view="rdo">Abrir o Diário (RDO)</button>' });
       } else {
-        html += '<div class="card" style="margin-bottom:14px;padding:0;overflow:auto">' +
-          '<div style="padding:12px 14px 6px"><b>A medir</b> <span class="muted" style="font-size:12px">— preencha o <b>R$/unidade</b> de cada linha. Linha sem preço não é paga e não vira zero: fica marcada como pendente.</span></div>' +
-          '<table class="tbl"><thead><tr><th>Pessoa</th><th>Serviço</th><th>Obra</th><th class="num">Qtd</th><th>Un</th><th class="num">Dias</th><th class="num">R$/un</th><th class="num">Total</th></tr></thead><tbody>';
+        var tbM = '<table class="tbl"><thead><tr><th>Pessoa</th><th>Serviço</th><th>Obra</th><th class="num">Qtd</th><th>Un</th><th class="num">Dias</th><th class="num">R$/un</th><th class="num">Total</th></tr></thead><tbody>';
         med.linhas.forEach(function (l, iL) {
           /* a chave é a ESTÁVEL (pessoa × obra × serviço × unidade). A antiga
              usava o número POSICIONAL do item, e duas linhas de obras diferentes
@@ -44594,12 +45663,12 @@ renderFolha: function () {
              o total ao vivo parava de atualizar: a pessoa digitava o preço e a
              linha continuava dizendo "sem preço". A chave segue no atributo
              (é ela que grava o preço), mas quem procura no DOM usa o índice. */
-          html += "<tr" + (l.pendente ? ' style="background:rgba(245,158,11,.08)"' : "") + "><td><b>" + Util.esc(l.nome || "—") + "</b></td>" +
+          tbM += "<tr" + (l.pendente ? ' style="background:var(--surface-2)"' : "") + "><td><b>" + Util.esc(l.nome || "—") + "</b></td>" +
             "<td>" + (l.codigo ? '<span class="muted">' + Util.esc(l.codigo) + "</span> " : "") + Util.esc(l.servico || "—") + "</td>" +
             "<td>" + Util.esc(self._prodNomeObra(l.obraId)) + "</td>" +
             '<td class="num" data-prodqtd="' + iL + '">' + Util.fmtNum(l.qtd) + "</td><td>" + Util.esc(l.unidade || "") + '</td><td class="num">' + l.dias + "</td>" +
             '<td class="num"><input inputmode="decimal" data-prodi="' + iL + '" data-prodpu="' + Util.esc(chave) + '" value="' + (l.precoUnit == null ? "" : Util.esc(l.precoUnit)) + '" placeholder="informe" title="Preço por unidade combinado com esta pessoa. Em branco = ainda não definido: a linha fica pendente, não vira zero." style="width:86px;text-align:right;padding:2px 5px;font-size:12px"></td>' +
-            '<td class="num" data-prodtot="' + iL + '">' + (l.pendente ? '<span style="color:#b45309;font-weight:700">sem preço</span>' : "<b>" + Util.fmtMoeda(l.valor) + "</b>") + "</td></tr>" +
+            '<td class="num" data-prodtot="' + iL + '">' + (l.pendente ? '<span style="color:var(--amarelo);font-weight:var(--p-forte)">sem preço</span>' : "<b>" + Util.fmtMoeda(l.valor) + "</b>") + "</td></tr>" +
             /* a sugestão fica NA LINHA, com o valor à vista: quem negocia
                precisa ver de quanto está falando antes de aceitar */
             (sugestoes[iL] && sugestoes[iL].ok
@@ -44618,61 +45687,43 @@ renderFolha: function () {
         });
         /* mesmo motivo do cartão: com tudo pendente, o rodapé dizia
            "Total a medir R$ 0,00" — soma de nada com cara de conta fechada. */
-        html += '</tbody><tfoot><tr><th colspan="7" class="num">Total a medir</th><th class="num">' +
+        tbM += '</tbody><tfoot><tr><th colspan="7" class="num">Total a medir</th><th class="num">' +
           ((med.total === 0 && med.semPreco) ? '<span class="muted">a definir</span>' : Util.fmtMoeda(med.total)) +
           "</th></tr>" +
-          (med.semPreco ? '<tr><td colspan="8" class="muted" style="font-size:11.5px;padding:6px 10px">' + med.semPreco +
+          (med.semPreco ? '<tr><td colspan="8" class="muted" style="font-size:var(--t-micro);padding:6px 10px">' + med.semPreco +
             " linha(s) sem preço não entram no total e não são pagas até você informar o R$/unidade.</td></tr>" : "") +
-          "</tfoot></table></div>";
+          "</tfoot></table>";
+        html += Modulo.secao({ titulo: "A medir", sub: "Preencha o R$/unidade de cada linha. Linha sem preço não é paga e não vira zero: fica marcada como pendente.", corpoHtml: tbM });
       }
 
-      /* ⚠ `jaPagos` era calculado pelo motor e descartado pela tela. Quem
-         procurasse a produção de um dia já medido não achava nada e não tinha
-         como saber por quê — parecia que o lançamento tinha se perdido. */
-      if (ac.jaPagos.length) {
-        var porPessoaPaga = {};
-        ac.jaPagos.forEach(function (p3) { porPessoaPaga[p3.nome || p3.colaboradorId] = (porPessoaPaga[p3.nome || p3.colaboradorId] || 0) + 1; });
-        html += '<div class="card" style="border-left:4px solid var(--verde);margin-bottom:14px;padding:10px 14px"><b>' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Já medido antes:</b> ' +
-          Object.keys(porPessoaPaga).slice(0, 6).map(function (n) { return Util.esc(n) + " (" + porPessoaPaga[n] + " lançamento(s))"; }).join(" · ") +
-          ' <span class="muted">— não aparece na lista acima porque já virou medição. Se a medição foi cancelada ou rejeitada, a produção volta sozinha.</span></div>';
-      }
-
-      if (ac.pendentes.length) {
-        var porRdo = {};
-        ac.pendentes.forEach(function (p2) { porRdo[p2.nome || p2.colaboradorId] = (porRdo[p2.nome || p2.colaboradorId] || 0) + 1; });
-        html += '<div class="card" style="border-left:4px solid var(--amarelo);margin-bottom:14px;padding:10px 14px"><b>' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Produção lançada em diário que ainda não foi aprovado:</b> ' +
-          Object.keys(porRdo).slice(0, 6).map(function (n) { return Util.esc(n) + " (" + porRdo[n] + ")"; }).join(" · ") +
-          ' <span class="muted">— não entra na medição enquanto o diário não for aprovado, porque um diário em rascunho ainda pode mudar. Aprove o diário no módulo <b>Diário (RDO)</b>.</span></div>';
-      }
 
       /* historico: e o que prova o que ja foi pago (e o que impede pagar de novo) */
       var feitas = lista("producao_med").slice().sort(function (a, b) { return String(b.criadoEm || "").localeCompare(String(a.criadoEm || "")); });
       if (feitas.length) {
-        html += '<div class="card" style="padding:0;overflow:auto"><div style="padding:12px 14px 6px"><b>Medições de produção geradas</b></div>' +
-          '<table class="tbl"><thead><tr><th>Pessoa</th><th>Período</th><th>Obra</th><th class="num">Itens</th><th class="num">Valor</th><th>Situação</th><th></th></tr></thead><tbody>';
+        var tbF = '<table class="tbl"><thead><tr><th>Pessoa</th><th>Período</th><th>Obra</th><th class="num">Itens</th><th class="num">Valor</th><th>Situação</th><th></th></tr></thead><tbody>';
         feitas.forEach(function (m) {
           /* ⚠ havia uma pill "paga" desenhada que NINGUÉM gravava — estado
              pintado e inalcançável. O que existe de verdade é "está na folha",
              que é o que o `fsLancamentoId` diz. */
           var pill = m.cancelada ? '<span class="g-pill" style="background:var(--surface-3);text-decoration:line-through">cancelada</span>'
-            : (m.fsLancamentoId ? '<span class="g-pill" style="background:#2563eb22;color:#1d4ed8">na folha</span>'
-            : (m.status === "aprovada" ? '<span class="g-pill" style="background:#16a34a22;color:#15803d">aprovada</span>'
-            : (m.status === "rejeitada" ? '<span class="g-pill" style="background:#dc262622;color:#b91c1c">rejeitada</span>'
+            : (m.fsLancamentoId ? '<span class="g-pill" style="color:var(--aco)">na folha</span>'
+            : (m.status === "aprovada" ? '<span class="g-pill" style="color:var(--verde)">aprovada</span>'
+            : (m.status === "rejeitada" ? '<span class="g-pill" style="color:var(--vermelho)">rejeitada</span>'
             : '<span class="g-pill" style="background:var(--surface-3)">pendente</span>')));
           var acoes = '<button class="btn sm" data-gacao="prod-print" data-id="' + m.id + '" title="Recibo de produção">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + '</button> ';
           if (!m.cancelada) {
-            if (m.status === "pendente") acoes += '<button class="btn sm success" data-gacao="prod-aprovar" data-id="' + m.id + '">Aprovar</button> <button class="btn sm" data-gacao="prod-rejeitar" data-id="' + m.id + '" style="color:#dc2626">Rejeitar</button>';
+            if (m.status === "pendente") acoes += '<button class="btn sm success" data-gacao="prod-aprovar" data-id="' + m.id + '">Aprovar</button> <button class="btn sm" data-gacao="prod-rejeitar" data-id="' + m.id + '" style="color:var(--vermelho)">Rejeitar</button>';
             /* o botão some depois de lançada — antes ficava para sempre, e só
                não repagava por causa de um guard que a exclusão da obra furava */
             else if (m.status === "aprovada" && !m.fsLancamentoId) acoes += '<button class="btn sm primary" data-gacao="prod-folha" data-id="' + m.id + '" title="Lança na Folha Semanal como produtividade medida">Mandar p/ folha</button>';
             acoes += ' <button class="btn sm danger" data-gacao="prod-excluir" data-id="' + m.id + '" title="Cancelar esta medição (a produção volta a ficar disponível)">' + (typeof Icones !== 'undefined' ? Icones.get('lixeira', 15) : '') + '</button>';
           }
-          html += "<tr><td><b>" + Util.esc(m.nome || "—") + "</b>" + self._aprovLinha(m) +
+          tbF += "<tr><td><b>" + Util.esc(m.nome || "—") + "</b>" + self._aprovLinha(m) +
             (m.fsLancamentoId ? '<div class="muted" style="font-size:11px">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' lançada na Folha Semanal</div>' : "") + "</td>" +
             "<td>" + Util.esc(self._prodPeriodo(m)) + "</td><td>" + Util.esc(self._prodNomeObra(m.obraId)) + '</td><td class="num">' + (m.linhas || []).length + '</td>' +
             '<td class="num"><b>' + Util.fmtMoeda(m.total) + "</b></td><td>" + pill + '</td><td class="num" style="white-space:nowrap">' + acoes + "</td></tr>";
         });
-        html += "</tbody></table></div>";
+        html += Modulo.secao({ titulo: "Medições de produção geradas", corpoHtml: tbF + "</tbody></table>" });
       }
       return html;
     },
@@ -45027,24 +46078,39 @@ renderFolha: function () {
     },
 
     renderFolhaSemanal: function () {
-      var FS = window.FolhaSemanal; if (!FS) return this._head("Folha Semanal", "", "") + '<div class="card">Motor da Folha Semanal não carregado.</div>';
+      var FS = window.FolhaSemanal; if (!FS) return Modulo.cab({ iconeHtml: svg("folhasemanal", 22), titulo: "Folha Semanal" }) + Modulo.aviso({ tom: "erro", titulo: "Motor da Folha Semanal não carregado.", texto: "Recarregue a página." });
       var self = this;
       /* semanas só das obras visíveis: a que existe apenas numa obra escondida não aparece nem no seletor */
       if (!this._fsSemana) { var ts = this._fsVisiveis().map(function (l) { return l.semana; }).sort(); this._fsSemana = ts.length ? ts[ts.length - 1] : FS.chaveSemana(new Date()); }
       var semanas = {}; this._fsVisiveis().forEach(function (l) { if (l.semana) semanas[l.semana] = 1; }); semanas[this._fsSemana] = 1; semanas[FS.chaveSemana(new Date())] = 1;
-      var selSem = '<select data-gacao="fs-semana" style="max-width:210px">' + Object.keys(semanas).sort().reverse().map(function (s) { return '<option value="' + s + '"' + (s === self._fsSemana ? " selected" : "") + ">Semana " + FS.periodoDaChave(s) + "</option>"; }).join("") + "</select>";
+      var selSem = '<select data-gacao="fs-semana" aria-label="Semana">' + Object.keys(semanas).sort().reverse().map(function (s) { return '<option value="' + s + '"' + (s === self._fsSemana ? " selected" : "") + ">Semana " + FS.periodoDaChave(s) + "</option>"; }).join("") + "</select>";
       var obras = lista("obras");
-      var selObra = '<select data-gacao="fs-obra" style="max-width:180px"><option value="">Todas as obras</option>' + obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === self._fsObra ? " selected" : "") + ">" + Util.esc(o.nome) + "</option>"; }).join("") + "</select>";
-      var extra = selSem + " " + selObra +
-        ' <button class="btn sm" data-gacao="fs-copiar" title="Recria nesta semana a equipe da semana anterior (só diárias)">⟳ Copiar semana ant.</button>' +
-        ' <button class="btn sm" data-gacao="fs-importar">' + (typeof Icones !== 'undefined' ? Icones.get('baixar', 15) : '') + ' Importar planilha</button>' +
-        ' <button class="btn sm" data-gacao="fs-print" data-val="fechamento">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Fechamento</button>' +
-        ' <button class="btn sm" data-gacao="fs-print" data-val="pix">' + (typeof Icones !== 'undefined' ? Icones.get('relatorio', 15) : '') + ' Lista PIX</button>' +
-        ' <button class="btn sm" data-gacao="fs-recibos">' + (typeof Icones !== 'undefined' ? Icones.get('assinar', 15) : '') + ' Recibos</button>' +
-        ' <button class="btn sm" data-gacao="fs-mes">' + (typeof Icones !== 'undefined' ? Icones.get('calendario', 15) : '') + ' Resumo do mês</button>' +
-        ' <button class="btn sm primary" data-gacao="fs-entregaveis">' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Entregáveis (PDF·Word·Excel)</button>' +
-        ' <button class="btn sm" data-gacao="fs-financeiro">' + (typeof Icones !== 'undefined' ? Icones.get('dinheiro', 15) : '') + ' Lançar no Financeiro</button>';
-      var html = this._head(svg("folhasemanal") + "Folha Semanal · Diaristas", "fs-nova", "Lançamento", extra);
+      var selObra = '<select data-gacao="fs-obra" aria-label="Obra"><option value="">Todas as obras</option>' + obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === self._fsObra ? " selected" : "") + ">" + Util.esc(o.nome) + "</option>"; }).join("") + "</select>";
+      var ic = function (n) { return typeof Icones !== 'undefined' ? Icones.get(n, 15) : ''; };
+      /* PADRÃO DE TELA (ROTEIRO-MODULO.md). Era a tela mais poluída do
+         sistema: 28 botões, oito deles no título em duas fileiras, e o
+         "Entregáveis" escuro como se fosse a ação principal ao lado do
+         "+ Lançamento". Agora: obra no `obraHtml`, semana na barra de filtros,
+         2 ações à vista (as da rotina: copiar a equipe da semana anterior e os
+         entregáveis do fechamento), as outras seis no "Mais" — mesmos
+         data-gacao e data-val — e UMA primária. Os dois avisos (parcial e
+         conflito) viraram UM aviso, e cada obra e o PIX, uma seção. */
+      var html = Modulo.cab({
+        iconeHtml: svg("folhasemanal", 22), titulo: "Folha Semanal",
+        sub: "Diaristas e empreitas · semana " + FS.periodoDaChave(this._fsSemana),
+        obraHtml: selObra,
+        acoes: [
+          '<button class="btn" data-gacao="fs-copiar" title="Recria nesta semana a equipe da semana anterior (só diárias)">' + ic("copiar") + ' Copiar semana ant.</button>',
+          '<button class="btn" data-gacao="fs-entregaveis">' + ic("nota") + ' Entregáveis (PDF·Word·Excel)</button>',
+          '<button class="btn" data-gacao="fs-financeiro">' + ic("dinheiro") + ' Lançar no Financeiro</button>',
+          '<button class="btn" data-gacao="fs-print" data-val="fechamento">' + ic("imprimir") + ' Fechamento</button>',
+          '<button class="btn" data-gacao="fs-print" data-val="pix">' + ic("relatorio") + ' Lista PIX</button>',
+          '<button class="btn" data-gacao="fs-recibos">' + ic("assinar") + ' Recibos</button>',
+          '<button class="btn" data-gacao="fs-mes">' + ic("calendario") + ' Resumo do mês</button>',
+          '<button class="btn" data-gacao="fs-importar">' + ic("baixar") + ' Importar planilha</button>'
+        ],
+        primariaHtml: '<button class="btn primary" data-gacao="fs-nova">+ Lançamento</button>'
+      });
       var lancs = this._fsLancs(), fech = FS.fechamento(lancs);
       /* ⚠ O PIX É POR PESSOA, NÃO POR OBRA. Quem trabalhou em duas obras na
          mesma semana recebe UM pagamento só. A lista vinha de `lancs`, que
@@ -45061,24 +46127,27 @@ renderFolha: function () {
       var fechSemana = FS.fechamento(lancsSemana);
       var pagos = this._fsPagos(), pagosN = 0, pagoTotal = 0;
       pix.forEach(function (p) { if (pagos[p.favKey] && pagos[p.favKey].pago) { pagosN++; pagoTotal += p.total; } });
-      html += '<div class="kpis kpis-g" style="margin-bottom:14px">' +
-        '<div class="card kpi destaque"><div class="rotulo">Total da semana</div><div class="num">' + Util.fmtMoeda(fech.total) + '</div></div>' +
-        '<div class="card kpi"><div class="rotulo">Obras com folha</div><div class="num">' + Object.keys(fech.porObra).length + '</div></div>' +
-        '<div class="card kpi"><div class="rotulo">PIX pagos</div><div class="num">' + pagosN + ' / ' + pix.length + '</div></div>' +
-        '<div class="card kpi ' + (fechSemana.total - pagoTotal > 0 ? 'custo' : 'destaque') + '"><div class="rotulo">Falta pagar</div><div class="num">' + Util.fmtMoeda(Math.max(0, fechSemana.total - pagoTotal)) + '</div></div></div>';
+      /* UM aviso no topo (o kit permite no máx. um): o parcial e o conflito
+         de alocação, quando os dois existem, saem no mesmo quadro */
       var nParc = pix.filter(function (p) { return parciais[p.favKey]; }).length;
-      if (nParc) html += '<div class="card" style="border-left:4px solid var(--amarelo);margin-bottom:14px;padding:10px 14px"><b>' + nParc + ' pessoa(s) desta semana também têm lançamento em obra fora do seu acesso.</b> <span class="muted">O valor delas aqui é só a parte das suas obras; a baixa, a assinatura e o recibo ficam com quem vê todas as obras dessas pessoas.</span></div>';
-      var cfl = FS.conflitos(lancs);
-      if (cfl.length) {
-        html += '<div class="card" style="border-left:4px solid var(--amarelo);margin-bottom:14px;padding:10px 14px"><b>' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Possível conflito de alocação:</b> ' +
-          cfl.slice(0, 3).map(function (c) { return c.nome + " tem diária em " + c.obras.length + " obras na " + c.rotDia; }).join(" · ") +
-          (cfl.length > 3 ? " · +" + (cfl.length - 3) + " caso(s)" : "") + ' <span class="muted">— confira se é proposital (meio período em cada).</span></div>';
-      }
-      if (!lancs.length) return html + '<div class="card" style="text-align:center;padding:34px 20px"><b>Nenhum lançamento nesta semana.</b><br><span class="muted">Clique em <b>+ Lançamento</b> pra lançar as diárias — ou <b>' + (typeof Icones !== 'undefined' ? Icones.get('baixar', 15) : '') + ' Importar planilha</b> pra trazer a sua planilha semanal inteira (uma obra por aba, com favorecido e chave PIX): o sistema cadastra obras, colaboradores e a semana sozinho.</span></div>';
+      var cfl = FS.conflitos(lancs), avisoTxt = [];
+      if (nParc) avisoTxt.push("<span><b>" + nParc + " pessoa(s) desta semana também têm lançamento em obra fora do seu acesso.</b> O valor delas aqui é só a parte das suas obras; a baixa, a assinatura e o recibo ficam com quem vê todas as obras dessas pessoas.</span>");
+      if (cfl.length) avisoTxt.push("<span><b>Possível conflito de alocação:</b> " +
+        Util.esc(cfl.slice(0, 3).map(function (c) { return c.nome + " tem diária em " + c.obras.length + " obras na " + c.rotDia; }).join(" · ")) +
+        (cfl.length > 3 ? " · +" + (cfl.length - 3) + " caso(s)" : "") + " — confira se é proposital (meio período em cada).</span>");
+      if (avisoTxt.length) html += Modulo.aviso({ tom: "alerta", textoHtml: avisoTxt.join("") });
+      html += Modulo.filtros(['<div class="field"><label>Semana</label>' + selSem + "</div>"]);
+      html += Modulo.kpis([
+        { rotulo: "Total da semana", valor: Util.fmtMoeda(fech.total), tom: "info" },
+        { rotulo: "Obras com folha", valor: String(Object.keys(fech.porObra).length) },
+        { rotulo: "PIX pagos", valor: pagosN + " / " + pix.length },
+        { rotulo: "Falta pagar", valor: Util.fmtMoeda(Math.max(0, fechSemana.total - pagoTotal)), tom: (fechSemana.total - pagoTotal > 0 ? "alerta" : "pos") }
+      ]);
+      if (!lancs.length) return html + vazioMod({ icone: "calendario", titulo: "Nenhum lançamento nesta semana",
+        texto: "Lance as diárias pelo + Lançamento, copie a equipe da semana anterior ou traga a sua planilha semanal pelo Importar planilha (no Mais): uma obra por aba, com favorecido e chave PIX — o sistema cadastra obras, colaboradores e a semana sozinho." });
       Object.keys(fech.porObra).forEach(function (ob) {
         var g = fech.porObra[ob];
-        html += '<div class="card" style="margin-bottom:14px;padding:0;overflow:auto"><div style="padding:12px 14px 8px;display:flex;justify-content:space-between;align-items:center"><b>' + Util.esc(self._fsNomeObra(ob)) + '</b><b style="color:var(--verde)">' + Util.fmtMoeda(g.total) + "</b></div>" +
-          '<table class="tbl"><thead><tr><th>Operário / lançamento</th><th class="num">Seg</th><th class="num">Ter</th><th class="num">Qua</th><th class="num">Qui</th><th class="num">Sex</th><th class="num">Sáb</th><th class="num">Dom</th><th class="num">H.E.</th><th class="num">Fechado</th><th class="num">Total</th><th></th></tr></thead><tbody>';
+        var tb = '<table class="tbl"><thead><tr><th>Operário / lançamento</th><th class="num">Seg</th><th class="num">Ter</th><th class="num">Qua</th><th class="num">Qui</th><th class="num">Sex</th><th class="num">Sáb</th><th class="num">Dom</th><th class="num">H.E.</th><th class="num">Fechado</th><th class="num">Total</th><th></th></tr></thead><tbody>';
         g.linhas.forEach(function (l) {
           /* Os dias aparecem SEMPRE que existirem. Antes, linha de tipo ≠ diária
              mostrava "—" nos sete dias mesmo tendo dia preenchido: o valor ficava
@@ -45094,18 +46163,18 @@ renderFolha: function () {
           var rotTipo = l.tipo && l.tipo !== "diaria" ? ' <span class="g-pill" style="background:var(--surface-3)">' + Util.esc(l.tipo) + "</span>" : "";
           /* linha travada pela planilha: os dias não somam, e isso precisa estar ESCRITO */
           var selo = l.usarValor ? ' <span class="g-pill" title="O total desta linha veio da planilha importada, que divergiu do calculado. Os dias ficam como presença e não somam." style="background:var(--surface-3)">total da planilha</span>' : "";
-          html += '<tr><td><b>' + Util.esc(l.nome || "—") + "</b>" + (l.funcao ? ' <span class="muted">· ' + Util.esc(l.funcao) + "</span>" : "") + rotTipo + selo +
+          tb += '<tr><td><b>' + Util.esc(l.nome || "—") + "</b>" + (l.funcao ? ' <span class="muted">· ' + Util.esc(l.funcao) + "</span>" : "") + rotTipo + selo +
             (l.favorecido || l.chavePix ? '<br><span class="muted" style="font-size:11px">' + Util.esc(l.favorecido || "") + (l.chavePix ? " · PIX " + Util.esc(l.chavePix) : "") + "</span>" : "") + "</td>" +
             cels + '<td class="num">' + (FS.num(l.he) ? Util.fmtNum(l.he, 0) : "") + '</td>' +
             '<td class="num">' + (pt.fechado ? Util.fmtNum(pt.fechado, 0) : "") + '</td>' +
             '<td class="num"><b>' + Util.fmtMoeda(FS.totalFinal(l)) + '</b></td>' +
-            '<td class="num" style="white-space:nowrap"><button class="btn sm" data-gacao="fs-edit" data-val="' + l.id + '">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + '</button> <button class="btn sm danger" data-gacao="fs-del" data-val="' + l.id + '">' + (typeof Icones !== 'undefined' ? Icones.get('lixeira', 15) : '') + '</button></td></tr>';
+            '<td class="num" style="white-space:nowrap"><button class="btn sm" data-gacao="fs-edit" data-val="' + l.id + '" title="Editar" aria-label="Editar">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + '</button> <button class="btn sm danger" data-gacao="fs-del" data-val="' + l.id + '" title="Excluir" aria-label="Excluir">' + (typeof Icones !== 'undefined' ? Icones.get('lixeira', 15) : '') + '</button></td></tr>';
         });
-        html += "</tbody></table></div>";
+        html += Modulo.secao({ titulo: self._fsNomeObra(ob), sub: Util.fmtMoeda(g.total) + " na semana · " + g.linhas.length + " lançamento(s)",
+          corpoHtml: tb + "</tbody></table>" });
       });
       // pagamentos da semana: pago na tela + WhatsApp + assinatura
-      html += '<div class="card" style="padding:0;overflow:auto"><div style="padding:12px 14px 8px"><b>' + (typeof Icones !== 'undefined' ? Icones.get('dinheiro', 15) : '') + ' Pagamentos da semana (PIX)</b> <span class="muted" style="font-size:12px">— marque quem já recebeu; o recibo guarda a assinatura</span></div>' +
-        '<table class="tbl"><thead><tr><th>Favorecido</th><th>Chave PIX</th><th class="num">Valor</th><th>Contato</th><th>Assinatura</th><th>Status</th></tr></thead><tbody>';
+      var tbPix = '<table class="tbl"><thead><tr><th>Favorecido</th><th>Chave PIX</th><th class="num">Valor</th><th>Contato</th><th>Assinatura</th><th>Status</th></tr></thead><tbody>';
       pix.forEach(function (p) {
         var pg = pagos[p.favKey], fone = FS.foneDaChave(p.chavePix), parc = !!parciais[p.favKey];
         /* ⚠ pessoa com obra escondida: nem WhatsApp com valor (o parcial iria
@@ -45114,9 +46183,10 @@ renderFolha: function () {
         var ass = pg && pg.assinatura ? '<span style="color:var(--verde);font-weight:700">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' assinado</span>' : parc ? '<span class="muted">—</span>' : '<button class="btn sm" data-gacao="fs-assinar" data-val="' + Util.esc(p.favKey) + '">' + (typeof Icones !== 'undefined' ? Icones.get('assinar', 15) : '') + ' Colher</button>';
         var st = parc ? '<span class="muted" title="' + Util.esc(self._FS_MSG_PARCIAL) + '">' + (pg && pg.pago ? "pago por quem vê todas as obras" : "fora do seu acesso") + '</span>'
           : pg && pg.pago ? '<button class="btn sm success" data-gacao="fs-pago" data-val="' + Util.esc(p.favKey) + '">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Pago</button>' : '<button class="btn sm" data-gacao="fs-pago" data-val="' + Util.esc(p.favKey) + '" style="border-color:var(--amarelo)">Marcar pago</button>';
-        html += '<tr><td><b>' + Util.esc(p.favorecido) + '</b><br><span class="muted" style="font-size:11px">' + p.itens.map(function (i) { return Util.esc(i.nome || ""); }).join(", ") + (parc ? ' · <b>valor parcial — tem obra fora do seu acesso</b>' : "") + '</span></td><td>' + Util.esc(p.chavePix || "—") + '</td><td class="num"><b>' + Util.fmtMoeda(p.total) + "</b></td><td>" + zap + "</td><td>" + ass + "</td><td>" + st + "</td></tr>";
+        tbPix += '<tr><td><b>' + Util.esc(p.favorecido) + '</b><br><span class="muted" style="font-size:11px">' + p.itens.map(function (i) { return Util.esc(i.nome || ""); }).join(", ") + (parc ? ' · <b>valor parcial — tem obra fora do seu acesso</b>' : "") + '</span></td><td>' + Util.esc(p.chavePix || "—") + '</td><td class="num"><b>' + Util.fmtMoeda(p.total) + "</b></td><td>" + zap + "</td><td>" + ass + "</td><td>" + st + "</td></tr>";
       });
-      html += "</tbody></table></div>";
+      html += Modulo.secao({ titulo: "Pagamentos da semana (PIX)", sub: "Marque quem já recebeu; o recibo guarda a assinatura.",
+        corpoHtml: tbPix + "</tbody></table>" });
       return html;
     },
     // pagamentos: mapa favKey → registro {semana, favKey, pago, assinatura}
@@ -48189,6 +49259,8 @@ renderFolha: function () {
       return !!s.ativo && s.tier !== "base";  // licenciado: só Plus (tier vazio = compra antiga = liberado)
     },
     _upsell: function () {
+      /* app da Google Play: nada de oferta nem link de compra (política da loja) */
+      try { if (document.documentElement.getAttribute("data-origem") === "play") { UI.toast("Este módulo não faz parte da sua licença.", "info"); return; } } catch (eP) {}
       var url = (typeof CONFIG !== "undefined" && CONFIG.licencaServer ? String(CONFIG.licencaServer).replace(/\/$/, "") : "") + "/?plano=plus_vitalicia";
       var cd = "";
       try { var fim = new Date(CONFIG.ofertaFim).getTime(), ms = fim - Date.now(); if (ms > 0) { var dd = Math.floor(ms / 86400000), hh = Math.floor((ms % 86400000) / 3600000); cd = "⏳ Termina em " + (dd > 0 ? dd + (dd === 1 ? " dia" : " dias") + " e " + hh + "h" : hh + "h") + " — garanta agora."; } } catch (e) {}
@@ -48472,44 +49544,67 @@ renderFolha: function () {
 
     /* O MÓDULO "Cronograma da obra": o seletor de obra (o padrão do Last
        Planner) e o painel COMPLETO — que traz a data de corte, a curva, o
-       Gantt com a base, a tabela por nó e as ações da linha de base. */
+       Gantt com a base, a tabela por nó e as ações da linha de base.
+       ROTEIRO DE MÓDULO (08/10/2026): o Rogério citou o cronograma entre os
+       piores. O seletor de obra ficava solto à direita do título, as duas
+       portas ("Abrir cronograma no orçamento", "Editar cadastro") eram uma
+       fila de botões avulsa ENTRE o título e o painel, e a obra sem orçamento
+       caía num cartão branco com uma frase e um select — tela vazia sem cara
+       de estado vazio. Agora: cabeçalho do kit com a obra no lugar fixo e as
+       portas como ações dele; os estados sem painel usam o vazio do kit
+       (ícone + frase + UMA ação). O painel em si é do js/cronoexecui.js. */
     renderCronobra: function () {
       var self = this, esc = Util.esc, obras = lista("obras");
       if (!obras.some(function (o) { return o && o.id === self._cronoObra; })) this._cronoObra = obras.length ? obras[0].id : "";
-      var selObra = '<select data-gacao="cronobra-obra" aria-label="Obra" style="max-width:260px">' + (obras.length ? "" : '<option value="">— sem obra —</option>') +
+      var selObra = '<select data-gacao="cronobra-obra" aria-label="Obra">' + (obras.length ? "" : '<option value="">— sem obra —</option>') +
         obras.map(function (o) { return '<option value="' + esc(o.id) + '"' + (o.id === self._cronoObra ? " selected" : "") + ">" + esc(o.nome || "Obra sem nome") + "</option>"; }).join("") + "</select>";
-      var html = this._head(svg("cronobra") + "Cronograma da obra", "", "", selObra);
-      if (!obras.length) return html + vazioBox("Cadastre uma obra primeiro — o cronograma da obra compara o previsto com o realizado de uma obra.", "nova-obra", "Nova obra");
+      var cab = function (acoes, sub) {
+        return Modulo.cab({ icone: "cronograma", titulo: "Cronograma da obra", sub: sub || "Previsto × realizado", obraHtml: obras.length ? selObra : "", acoes: acoes || [] });
+      };
+      if (!obras.length) return cab() + vazioKit({ icone: "obra", titulo: "Cadastre uma obra primeiro",
+        texto: "O cronograma da obra compara o previsto com o realizado de uma obra.",
+        acaoHtml: '<button class="btn primary" data-gacao="nova-obra">+ Nova obra</button>' });
       var obra = obras.filter(function (o) { return o && o.id === self._cronoObra; })[0];
       var c = this._cronoDados(obra, { comGantt: true });
       var id = obra.id, editar = '<button class="btn" data-gopen="obras:' + esc(id) + '">Editar cadastro da obra</button>';
       var blqM = c.estado === "orcamento-sumiu" ? this._cronoTrocaBloqueada(obra, null) : null;
       if (blqM) {
         // com boletim sobre o orçamento sumido: nenhum seletor (ver _cronoTrocaBloqueada)
-        return html + '<div class="card"><p>' + esc("O orçamento ligado à obra " + (obra.nome || "") + " não foi encontrado neste aparelho — pode ter sido excluído, ou ainda não chegou pela sincronização.") +
-          '</p><p class="muted">' + esc(blqM) + "</p></div>";
+        return cab([editar]) + Modulo.vazio({ icone: "alerta", titulo: "O orçamento desta obra não foi encontrado",
+          texto: "O orçamento ligado à obra " + (obra.nome || "") + " não foi encontrado neste aparelho — pode ter sido excluído, ou ainda não chegou pela sincronização. " + blqM });
       }
       if (c.estado === "sem-orcamento" || c.estado === "orcamento-sumiu") {
-        return html + '<div class="card"><p>' + esc(c.estado === "sem-orcamento"
-          ? "A obra " + (obra.nome || "") + " não tem orçamento vinculado — o cronograma da obra mede o avanço (previsto × realizado) contra o orçamento dela."
-          : "O orçamento ligado à obra " + (obra.nome || "") + " não foi encontrado neste aparelho — pode ter sido excluído, ou ainda não chegou pela sincronização. Se foi excluído, vincule o orçamento certo:") + "</p>" +
-          this._cronoVincularHtml(id, this._cronoPode("obras") ? this._cronoOpcoesVinculo(id) : []) + "</div>";
+        return cab([editar]) + Modulo.vazio({ icone: "cronograma",
+          titulo: c.estado === "sem-orcamento" ? "Esta obra ainda não tem orçamento vinculado" : "O orçamento desta obra não foi encontrado",
+          texto: c.estado === "sem-orcamento"
+            ? "A obra " + (obra.nome || "") + " não tem orçamento vinculado — o cronograma da obra mede o avanço (previsto × realizado) contra o orçamento dela."
+            : "O orçamento ligado à obra " + (obra.nome || "") + " não foi encontrado neste aparelho — pode ter sido excluído, ou ainda não chegou pela sincronização. Se foi excluído, vincule o orçamento certo:",
+          acaoHtml: this._cronoVincularHtml(id, this._cronoPode("obras") ? this._cronoOpcoesVinculo(id) : []) });
       }
-      if (c.estado === "sem-motor") return html + '<div class="card"><p>' + esc("O planejamento da obra não carregou neste aparelho (js/cronoplan.js, js/cronobase.js) — atualize o app. Nada foi calculado.") + "</p></div>";
+      if (c.estado === "sem-motor") return cab([editar]) + Modulo.vazio({ icone: "alerta", titulo: "O planejamento não carregou",
+        texto: "O planejamento da obra não carregou neste aparelho (js/cronoplan.js, js/cronobase.js) — atualize o app. Nada foi calculado." });
       var portas = [];
       if (this._cronoPode("orcamentos")) portas.push('<button class="btn" data-gacao="cronobra-orc" data-id="' + esc(id) + '" title="Abre o orçamento da obra na aba Cronograma">Abrir cronograma no orçamento</button>');
       portas.push(editar);
-      html += '<div class="flex" style="gap:8px;flex-wrap:wrap;margin:0 0 14px">' + portas.join("") + "</div>";
+      var html = cab(portas);
       var CX = (typeof CronoExecUI !== "undefined") ? CronoExecUI : null, corpo = null, falhou = "";
       if (CX && typeof CX.painelPR === "function") {
-        try { corpo = CX.painelPR(c.pr, { completo: true }); } catch (eP) { corpo = null; falhou = String((eP && eP.message) || eP); }
+        /* `semNomeObra`: a obra já está no seletor do cabeçalho — repetir o
+           nome dela na primeira linha do painel era a mesma informação duas
+           vezes, uma embaixo da outra */
+        try { corpo = CX.painelPR(c.pr, { completo: true, semNomeObra: true }); } catch (eP) { corpo = null; falhou = String((eP && eP.message) || eP); }
       }
       if (corpo == null || corpo === "") {
         corpo = (typeof ObraVitrine !== "undefined" && ObraVitrine.cronoReservaHtml)
-          ? "<style>" + ObraVitrine.CSS_CRONO + '</style><div class="card">' + ObraVitrine.cronoReservaHtml(c.dados || {}, falhou) + "</div>"
-          : '<div class="card"><p>' + esc("O desenho do painel (js/cronoexecui.js) não carregou — atualize o app.") + "</p></div>";
+          ? "<style>" + ObraVitrine.CSS_CRONO + "</style>" + Modulo.secao({ corpoHtml: ObraVitrine.cronoReservaHtml(c.dados || {}, falhou) })
+          : Modulo.vazio({ icone: "alerta", titulo: "O painel não carregou", texto: "O desenho do painel (js/cronoexecui.js) não carregou — atualize o app." });
       }
-      return html + corpo;
+      /* `.crono-mod`: o painel é do js/cronoexecui.js (o mesmo da sub-aba
+         Previsto × Realizado do orçamento). Desde o redesenho de 08/10/2026 o
+         completo já sai com as peças do kit (aviso, barra de origem, faixa de
+         indicadores, seções) — o desenho mora no css/app.css (`.cx-pr-full`);
+         a classe fica como gancho do módulo. */
+      return html + '<div class="crono-mod">' + corpo + "</div>";
     },
 
     // ================= LAST PLANNER (PPC) — planejamento enxuto (Lean Construction) =================
@@ -48582,9 +49677,19 @@ renderFolha: function () {
         + '<div class="num"' + (cor ? ' style="color:' + cor + '"' : "") + '>' + val + '</div>'
         + '<div class="kpi-sub">' + sub + '</div></div>';
     },
+    /* ROTEIRO DE MÓDULO (08/10/2026). O Rogério citou o Last Planner como o
+       exemplo do "cada módulo de um jeito": o seletor de obra vinha MISTURADO
+       às visões (Quadro e Semanal eram dois botões ao lado de três ações e do
+       "+ Nova Tarefa", sete controles na mesma linha), os indicadores eram
+       cartões soltos de outro desenho e havia parágrafo explicativo fixo em
+       cima do quadro. Agora: cabeçalho do kit (obra no lugar fixo, 2 ações à
+       vista, o resto no Mais), uma faixa de indicadores, ABAS para as visões
+       e cada bloco numa seção com título. Cálculo, gravação e ids iguais. */
     renderLastPlanner: function () {
       var self = this, LP = window.LastPlanner, obras = lista("obras");
-      if (typeof LP === "undefined") return this._head("Last Planner · PPC", "", "") + vazioBox("Módulo Last Planner não carregado.", "", "");
+      var ic = function (n) { return typeof Icones !== "undefined" ? Icones.get(n, 15) : ""; };
+      if (typeof LP === "undefined") return Modulo.cab({ icone: "calendario", titulo: "Last Planner (PPC)" }) +
+        Modulo.vazio({ icone: "alerta", titulo: "Módulo Last Planner não carregado", texto: "Atualize o app para voltar a planejar a semana." });
       if (this._lpObra == null) this._lpObra = obras.length ? obras[0].id : "";
       var look = LP.semanas(new Date(), 6);
       var hb = new Date(); hb.setDate(hb.getDate() - 35);
@@ -48592,30 +49697,52 @@ renderFolha: function () {
       var ts = this._lpTarefas();
       var res = LP.resumo(ts, look);
       var visao = this._lpVisaoAtual();
-      var selObra = '<select data-gacao="lp-obra" style="max-width:230px">' + (obras.length ? "" : '<option value="">— sem obra —</option>') + obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === self._lpObra ? " selected" : "") + ">" + Util.esc(o.nome) + "</option>"; }).join("") + "</select>";
-      var vBtn = function (val, rot) { return '<button class="btn sm' + (visao === val ? " primary" : "") + '" data-gacao="lp-visao" data-val="' + val + '">' + rot + '</button>'; };
-      var extra = selObra + ' <span class="lp-vtoggle">' + vBtn("quadro", "" + (typeof Icones !== "undefined" ? Icones.get("tabela", 15) : "") + " Quadro") + vBtn("semanal", "" + (typeof Icones !== "undefined" ? Icones.get("checklist", 15) : "") + " Semanal") + '</span> <button class="btn sm" data-gacao="lp-puxar" title="Puxa as etapas do cronograma do orçamento vinculado que caem nesta semana e cria as tarefas do plano">' + (typeof Icones !== 'undefined' ? Icones.get('calendario', 15) : '') + ' Puxar do cronograma</button> <button class="btn sm" data-gacao="lp-imprimir" data-val="semana">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Plano semanal</button> <button class="btn sm" data-gacao="lp-imprimir" data-val="ppc">' + (typeof Icones !== 'undefined' ? Icones.get('graficos', 15) : '') + ' Relatório PPC</button>';
-      var html = this._head(svg("lastplanner") + "Last Planner · PPC", "lp-nova", "Nova Tarefa", extra);
-      if (!obras.length) return html + vazioBox("Cadastre uma obra primeiro — o Last Planner planeja a semana de uma obra.", "nova-obra", "Nova obra");
+      var metaPpc = this._metas().ppc;
+      var selObra = '<select data-gacao="lp-obra" aria-label="Obra">' + (obras.length ? "" : '<option value="">— sem obra —</option>') + obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === self._lpObra ? " selected" : "") + ">" + Util.esc(o.nome) + "</option>"; }).join("") + "</select>";
+      var html = Modulo.cab({
+        icone: "calendario", titulo: "Last Planner (PPC)",
+        sub: obras.length ? "Esta semana: " + look[0].periodo + " · " + ts.length + " tarefa" + (ts.length === 1 ? "" : "s") + " na obra" : "Planejamento da semana por obra",
+        obraHtml: obras.length ? selObra : "",
+        acoes: [
+          '<button class="btn" data-gacao="lp-puxar" title="Puxa as etapas do cronograma do orçamento vinculado que caem nesta semana e cria as tarefas do plano">' + ic("calendario") + " Puxar do cronograma</button>",
+          '<button class="btn" data-gacao="lp-imprimir" data-val="semana">' + ic("imprimir") + " Plano semanal</button>",
+          '<button class="btn" data-gacao="lp-imprimir" data-val="ppc">' + ic("graficos") + " Relatório PPC</button>"
+        ],
+        primariaHtml: '<button class="btn primary" data-gacao="lp-nova">+ Nova tarefa</button>'
+      });
+      if (!obras.length) return html + vazioKit({ icone: "obra", titulo: "Cadastre uma obra primeiro",
+        texto: "O Last Planner planeja a semana de uma obra.",
+        acaoHtml: '<button class="btn primary" data-gacao="nova-obra">+ Nova obra</button>' });
 
-      // KPIs
+      // KPIs — uma faixa só, a cor diz se a semana bateu a meta da empresa
       var ppcSem = res.ppcSemana == null ? "—" : Math.round(res.ppcSemana * 100) + "%";
       var ppcMed = res.ppcMedio == null ? "—" : Math.round(res.ppcMedio * 100) + "%";
-      var corPpc = res.ppcSemana == null ? "var(--aco)" : (res.ppcSemana >= this._metas().ppc / 100 ? "var(--verde)" : (res.ppcSemana < .5 ? "#dc2626" : "#ea580c"));
+      var tomPpc = res.ppcSemana == null ? "" : (res.ppcSemana >= metaPpc / 100 ? "pos" : (res.ppcSemana < .5 ? "neg" : "alerta"));
       /* Previsto × Real: com linha de base, o confronto da base; sem base, o
          cartão se chama "Medido × prazo linear" — o nome diz a régua. As
          regras e os textos moram em LastPlanner.kpiPrevReal; aqui só se
-         desenha, com o texto escapado (o recado pode citar nome de etapa). */
-      var kpiPR = "";
+         desenha (o kit escapa o texto — o recado pode citar nome de etapa). */
       var prDados = this._lpPrevRealDados();
       var kpiD = LP.kpiPrevReal ? LP.kpiPrevReal(prDados) : null;
-      if (kpiD) kpiPR = this._lpKpi(Util.esc(kpiD.titulo), Util.esc(kpiD.valor), Util.esc(kpiD.sub), kpiD.positivo ? "var(--verde)" : "#ea580c");
-      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px">' +
-        this._lpKpi("PPC da semana", ppcSem, res.feitas + "/" + res.comprometidas + " tarefas", corPpc) +
-        this._lpKpi("PPC médio (6 sem)", ppcMed, "meta ≥ 80%", "var(--texto)") +
-        this._lpKpi("Restrições abertas", String(res.restricoesAbertas), "a remover no médio prazo", res.restricoesAbertas ? "#ea580c" : "var(--verde)") +
-        this._lpKpi("No lookahead", String(res.naLista), res.comprometiveis + " prontas p/ comprometer", "var(--texto)") +
-        kpiPR + '</div>';
+      html += Modulo.kpis([
+        { rotulo: "PPC da semana", valor: ppcSem, sub: res.feitas + "/" + res.comprometidas + " tarefas", tom: tomPpc },
+        /* ⚠ dizia "meta ≥ 80%" cravado enquanto o gráfico, logo abaixo,
+           desenhava a meta da empresa (85% de fábrica): agora os dois leem
+           `_metas().ppc` */
+        { rotulo: "PPC médio (6 sem)", valor: ppcMed, sub: "meta ≥ " + Util.fmtNum(metaPpc, 0) + "%" },
+        { rotulo: "Restrições abertas", valor: String(res.restricoesAbertas), sub: "a remover no médio prazo", tom: res.restricoesAbertas ? "alerta" : "pos" },
+        { rotulo: "No lookahead", valor: String(res.naLista), sub: res.comprometiveis + " prontas p/ comprometer" },
+        kpiD ? { rotulo: kpiD.titulo, valor: kpiD.valor, sub: kpiD.sub, tom: kpiD.positivo ? "pos" : "alerta" } : null
+      ]);
+
+      /* VISÃO = ABA. Eram dois botões (um deles "primary", competindo com o
+         "+ Nova Tarefa"). O clique continua o mesmo `lp-visao` com `data-val`.
+         ⚠ sem `id` na aba de propósito: o kit o grava como `data-aba`, que o
+         App.js também escuta (é a aba do editor de orçamento). */
+      html += Modulo.abas([
+        { rotulo: "Quadro", icone: "tabela", ativa: visao === "quadro", attrs: 'data-gacao="lp-visao" data-val="quadro"' },
+        { rotulo: "Semanal", icone: "checklist", ativa: visao !== "quadro", attrs: 'data-gacao="lp-visao" data-val="semanal"' }
+      ]);
 
       if (visao === "quadro") {
         html += this._lpQuadroHtml(ts, look);
@@ -48626,32 +49753,35 @@ renderFolha: function () {
       // Plano da Semana
       var estaSem = look[0];
       var comp = LP.daSemana(ts, estaSem.chave).filter(function (t) { return t.comprometida; });
-      html += '<div class="card" style="margin-bottom:16px"><h3 style="margin:0 0 8px">' + (typeof Icones !== 'undefined' ? Icones.get('calendario', 15) : '') + ' Plano da Semana <span class="muted" style="font-weight:400;font-size:13px">· ' + estaSem.periodo + '</span></h3>';
-      if (!comp.length) html += '<p class="muted" style="font-size:13px;margin:0">Nenhuma tarefa comprometida nesta semana. Comprometa tarefas <b>livres</b> (sem restrição) no lookahead abaixo.</p>';
+      var corpoPlano = "";
+      if (!comp.length) corpoPlano = '<p class="muted" style="font-size:var(--t-peq);margin:0">Nenhuma tarefa comprometida nesta semana. Comprometa tarefas <b>livres</b> (sem restrição) no lookahead abaixo.</p>';
       else {
-        html += '<table class="tbl"><thead><tr><th>Tarefa</th><th>Responsável</th><th>Status</th><th></th></tr></thead><tbody>';
+        corpoPlano = '<table class="tbl"><thead><tr><th>Tarefa</th><th>Responsável</th><th>Status</th><th></th></tr></thead><tbody>';
         comp.forEach(function (t) {
-          var st = t.status === "feito" ? '<span class="g-pill" style="background:#16a34a22;color:#16a34a">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Feito</span>' : (t.status === "naofeito" ? '<span class="g-pill" style="background:#dc262622;color:#dc2626">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' Não feito' + (t.causa ? " · " + Util.esc(t.causa) : "") + '</span>' : '<span class="g-pill" style="background:#64748b22;color:#64748b">a fazer</span>');
-          var ac = '<button class="btn sm success" data-gacao="lp-feito" data-id="' + Util.esc(t.id) + '" title="Concluída">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + '</button> <button class="btn sm" data-gacao="lp-naofeito" data-id="' + Util.esc(t.id) + '" title="Não cumprida">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button> <button class="btn sm" data-gacao="lp-descomprometer" data-id="' + Util.esc(t.id) + '" title="Tirar do plano">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + '</button>';
-          html += '<tr><td><b>' + Util.esc(t.titulo) + '</b></td><td>' + Util.esc(t.responsavel || "—") + '</td><td>' + st + '</td><td class="num">' + ac + '</td></tr>';
+          var st = t.status === "feito" ? '<span class="g-pill" style="color:var(--verde)">' + ic("check") + " Feito</span>"
+            : (t.status === "naofeito" ? '<span class="g-pill" style="color:var(--vermelho)">' + ic("fechar") + " Não feito" + (t.causa ? " · " + Util.esc(t.causa) : "") + "</span>"
+            : '<span class="g-pill" style="color:var(--texto-fraco)">a fazer</span>');
+          var ac = '<button class="btn sm success" data-gacao="lp-feito" data-id="' + Util.esc(t.id) + '" title="Concluída">' + ic("check") + '</button> <button class="btn sm" data-gacao="lp-naofeito" data-id="' + Util.esc(t.id) + '" title="Não cumprida">' + ic("fechar") + '</button> <button class="btn sm" data-gacao="lp-descomprometer" data-id="' + Util.esc(t.id) + '" title="Tirar do plano">' + ic("voltar") + "</button>";
+          corpoPlano += "<tr><td><b>" + Util.esc(t.titulo) + "</b></td><td>" + Util.esc(t.responsavel || "—") + "</td><td>" + st + '</td><td class="num">' + ac + "</td></tr>";
         });
-        html += '</tbody></table>';
+        corpoPlano += "</tbody></table>";
       }
-      html += '</div>';
+      html += Modulo.secao({ titulo: "Plano da Semana", sub: estaSem.periodo, corpoHtml: corpoPlano });
 
-      // Lookahead 6 semanas
-      html += '<div class="card" style="margin-bottom:16px"><h3 style="margin:0 0 4px">' + (typeof Icones !== 'undefined' ? Icones.get('checklist', 15) : '') + ' Lookahead 6 semanas</h3><p class="muted" style="font-size:12.5px;margin:0 0 10px">Médio prazo — clique numa tarefa pra <b>gerir restrições</b>. Só tarefa livre (sem restrição aberta) vira comprometida.</p><div style="display:grid;grid-template-columns:repeat(6,minmax(150px,1fr));gap:8px;overflow-x:auto">';
+      // Lookahead 6 semanas — cor só por TOKEN (os pastéis cravados apagavam no tema escuro)
+      var corpoLook = '<div class="lp-look" style="display:grid;grid-template-columns:repeat(6,minmax(150px,1fr));gap:8px;overflow-x:auto">';
       look.forEach(function (s, i) {
-        html += '<div style="background:#f7fafd;border:1px solid var(--linha);border-radius:10px;padding:8px"><div style="text-align:center;font-size:12px;font-weight:700;color:var(--navy)">' + s.rotulo + '</div><div style="text-align:center;font-size:11px;color:#64748b;margin-bottom:6px">' + s.periodo + '</div>';
+        corpoLook += '<div style="background:var(--surface-2);border:1px solid var(--linha);border-radius:var(--raio);padding:8px"><div style="text-align:center;font-size:var(--t-micro);font-weight:var(--p-forte);color:var(--texto)">' + s.rotulo + '</div><div style="text-align:center;font-size:var(--t-micro);color:var(--texto-fraco);margin-bottom:6px">' + s.periodo + "</div>";
         LP.daSemana(ts, s.chave).forEach(function (t) {
           var ra = LP.restricoesAbertas(t);
-          var bg = t.comprometida ? "#dbeafe" : (ra ? "#fff7ed" : "#dcfce7"), bd = t.comprometida ? "#93c5fd" : (ra ? "#fdba74" : "#86efac");
-          var tag = t.comprometida ? "" + (typeof Icones !== "undefined" ? Icones.get("check", 15) : "") + " no plano" : (ra ? "🔒 " + ra + " restr." : "" + (typeof Icones !== "undefined" ? Icones.get("check", 15) : "") + " livre");
-          html += '<div data-gacao="lp-abrir" data-id="' + Util.esc(t.id) + '" style="cursor:pointer;background:' + bg + ';border:1px solid ' + bd + ';border-radius:7px;padding:6px 8px;margin-bottom:5px;font-size:12px"><b>' + Util.esc(t.titulo) + '</b><div style="font-size:10.5px;color:#475569;margin-top:2px">' + Util.esc(t.responsavel || "—") + ' · ' + tag + '</div></div>';
+          var bd = t.comprometida ? "var(--aco)" : (ra ? "var(--amarelo)" : "var(--verde)");
+          var tag = t.comprometida ? ic("check") + " no plano" : (ra ? ic("cadeado") + ra + " restr." : ic("check") + " livre");
+          corpoLook += '<div data-gacao="lp-abrir" data-id="' + Util.esc(t.id) + '" style="cursor:pointer;background:var(--surface);border:1px solid var(--linha);border-left:3px solid ' + bd + ';border-radius:var(--raio-sm);padding:6px 8px;margin-bottom:5px;font-size:var(--t-micro)"><b>' + Util.esc(t.titulo) + '</b><div style="color:var(--texto-fraco);margin-top:2px">' + Util.esc(t.responsavel || "—") + " · " + tag + "</div></div>";
         });
-        html += '<button class="btn sm" data-gacao="lp-nova-sem" data-val="' + i + '" style="width:100%;font-size:11.5px">+ Tarefa</button></div>';
+        corpoLook += '<button class="btn sm" data-gacao="lp-nova-sem" data-val="' + i + '" style="width:100%">+ Tarefa</button></div>';
       });
-      html += '</div></div>';
+      corpoLook += "</div>";
+      html += Modulo.secao({ titulo: "Lookahead 6 semanas", sub: "Clique numa tarefa para gerir as restrições. Só tarefa livre vira comprometida.", corpoHtml: corpoLook });
 
       /* ⚠ os MESMOS dados do cartão (revisão 3, lente código): sem passar o
          prDados a visão Semanal calculava o previsto × real DUAS vezes por
@@ -48756,7 +49886,7 @@ renderFolha: function () {
         svg += '<rect x="' + (cx - bw - 1.5) + '" y="' + y(d.prev) + '" width="' + bw + '" height="' + Math.max(1, y(0) - y(d.prev)) + '" rx="2" fill="var(--graf-prev)" opacity=".75"><title>' + Util.esc(rt.prev) + '</title></rect>' +
           '<rect x="' + (cx + 1.5) + '" y="' + y(d.real) + '" width="' + bw + '" height="' + Math.max(1, y(0) - y(d.real)) + '" rx="2" fill="var(--graf-a)"><title>' + Util.esc(rt.real) + '</title></rect>' +
           '<text x="' + cx + '" y="' + (H - 12) + '" text-anchor="middle" font-size="8.5" fill="var(--texto-fraco)">' + Util.esc(nome) + '</text>' +
-          '<text x="' + cx + '" y="' + (H - 3) + '" text-anchor="middle" font-size="8.5" font-weight="700" fill="' + (d.real >= d.prev ? "var(--verde)" : "#ea580c") + '">' + (d.real >= d.prev ? "+" : "") + (d.real - d.prev) + ' pts</text>';
+          '<text x="' + cx + '" y="' + (H - 3) + '" text-anchor="middle" font-size="8.5" font-weight="700" fill="' + (d.real >= d.prev ? "var(--verde)" : "var(--amarelo)") + '">' + (d.real >= d.prev ? "+" : "") + (d.real - d.prev) + ' pts</text>';
       });
       svg += "</svg>";
       svg += '<div style="display:flex;gap:14px;margin-top:4px;font-size:11px;color:var(--texto-fraco)">' +
@@ -48765,7 +49895,8 @@ renderFolha: function () {
         '<span>· passe o mouse na barra para ver a régua de cada obra</span></div>';
       return svg;
     },
-    _lpDonutCores: ["#2563eb", "#b45309", "#15803d", "#7c3aed", "#be185d", "#64748b"],
+    /* só tokens (roteiro de módulo): as cores do gráfico seguem o tema */
+    _lpDonutCores: ["var(--graf-a)", "var(--graf-b)", "var(--graf-c)", "var(--graf-d)", "var(--graf-prev)", "var(--texto-fraco)"],
     _lpSvgDonut: function (fatias, total) {
       var R = 42, C = 2 * Math.PI * R, off = 0;
       var svg = '<svg viewBox="0 0 120 120" style="width:132px;height:132px;flex:0 0 auto">';
@@ -48781,21 +49912,23 @@ renderFolha: function () {
     // Gráfico PPC + Prev×Real + Donut + Causas (compartilhado entre Quadro e Semanal)
     _lpGraficosHtml: function (ts, hist, prDados) {
       var self = this, LP = window.LastPlanner;
+      var ic = function (n) { return typeof Icones !== "undefined" ? Icones.get(n, 15) : ""; };
       var h = LP.historicoPPC(ts, hist);
-      var html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;align-items:start;margin-bottom:16px">';
+      /* ROTEIRO DE MÓDULO: os quatro blocos viraram seções do kit (título +
+         uma linha de contexto), sem emoji e sem cor cravada */
+      var html = '<div class="lp-graf" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:0 16px;align-items:start">';
 
-      // 1) PPC — linha com meta 85%
-      html += '<div class="card"><h3 style="margin:0 0 2px;font-size:14px">' + (typeof Icones !== 'undefined' ? Icones.get('grafico', 15) : '') + ' PPC — Percentual do Planejamento Concluído</h3><p class="muted" style="font-size:11.5px;margin:0 0 8px">Últimas 6 semanas · meta 85%</p>' + this._lpSvgPpc(h) + '</div>';
+      // 1) PPC — linha com a meta da empresa
+      html += Modulo.secao({ titulo: "PPC — Percentual do Planejamento Concluído", sub: "Últimas 6 semanas · meta " + Util.fmtNum(this._metas().ppc, 0) + "%", corpoHtml: this._lpSvgPpc(h) });
 
       // 2) Avanço físico — Previsto × Realizado por obra (só com dados reais)
       /* os MESMOS dados do cartão (quem renderiza passa; sem isso, calcula) —
          obra cujo confronto falhou fica fora do desenho e o cartão diz por quê */
       var pr = (prDados || this._lpPrevRealDados()).filter(function (d) { return d && !d.erro; });
       var lg = LP.legendaPrevReal ? LP.legendaPrevReal(pr) : { titulo: "Previsto × Realizado", sub: "" };
-      html += '<div class="card"><h3 style="margin:0 0 2px;font-size:14px">' + (typeof Icones !== 'undefined' ? Icones.get('graficos', 15) : '') + ' Avanço físico — ' + Util.esc(lg.titulo) + '</h3><p class="muted" style="font-size:11.5px;margin:0 0 8px">' + Util.esc(lg.sub) + '</p>';
-      if (pr.length) html += this._lpSvgPrevReal(pr);
-      else html += '<p class="muted" style="font-size:12.5px;margin:6px 0">Vincule um orçamento à obra (com data de início) e lance medições — o gráfico compara o prazo decorrido com o medido nos boletins aprovados; com a linha de base congelada, compara o previsto da base com o executado nos diários.</p>';
-      html += '</div>';
+      html += Modulo.secao({ titulo: "Avanço físico — " + lg.titulo, sub: lg.sub,
+        corpoHtml: pr.length ? this._lpSvgPrevReal(pr)
+          : '<p class="muted" style="font-size:var(--t-peq);margin:0">Vincule um orçamento à obra (com data de início) e lance medições — o gráfico compara o prazo decorrido com o medido nos boletins aprovados; com a linha de base congelada, compara o previsto da base com o executado nos diários.</p>' });
 
       // 3) Donut — pendências por frente (deriva do quadro ao vivo)
       var pend = ts.filter(function (t) { return t && t.status !== "feito"; });
@@ -48807,28 +49940,28 @@ renderFolha: function () {
         fatias = fatias.slice(0, 4); fatias.push({ rotulo: "Outras", n: resto });
       }
       fatias.forEach(function (f, i) { f.cor = self._lpDonutCores[Math.min(i, self._lpDonutCores.length - 1)]; });
-      html += '<div class="card"><h3 style="margin:0 0 2px;font-size:14px">🧭 Pendências por frente</h3><p class="muted" style="font-size:11.5px;margin:0 0 8px">Tarefas não concluídas · atualiza com o quadro</p>';
-      if (!pend.length) html += '<p class="muted" style="font-size:12.5px;margin:6px 0">Nenhuma pendência — tudo concluído. 👏</p>';
+      var corpoD = "";
+      if (!pend.length) corpoD = '<p class="muted" style="font-size:var(--t-peq);margin:0">Nenhuma pendência — tudo concluído.</p>';
       else {
-        html += '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">' + this._lpSvgDonut(fatias, pend.length) + '<div style="flex:1;min-width:140px">';
+        corpoD = '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">' + this._lpSvgDonut(fatias, pend.length) + '<div style="flex:1;min-width:140px">';
         fatias.forEach(function (f) {
-          html += '<div style="display:flex;align-items:center;gap:7px;font-size:12px;margin-bottom:5px"><span style="width:9px;height:9px;border-radius:99px;background:' + f.cor + ';flex:0 0 auto"></span><span style="color:var(--texto);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + Util.esc(f.rotulo) + '</span><span style="margin-left:auto;color:var(--texto-fraco);font-variant-numeric:tabular-nums">' + f.n + '</span><b style="width:38px;text-align:right;font-variant-numeric:tabular-nums">' + Math.round(f.n / pend.length * 100) + '%</b></div>';
+          corpoD += '<div style="display:flex;align-items:center;gap:7px;font-size:var(--t-micro);margin-bottom:5px"><span style="width:9px;height:9px;border-radius:99px;background:' + f.cor + ';flex:0 0 auto"></span><span style="color:var(--texto);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + Util.esc(f.rotulo) + '</span><span style="margin-left:auto;color:var(--texto-fraco);font-variant-numeric:tabular-nums">' + f.n + '</span><b style="width:38px;text-align:right;font-variant-numeric:tabular-nums">' + Math.round(f.n / pend.length * 100) + "%</b></div>";
         });
-        html += '</div></div>';
+        corpoD += "</div></div>";
       }
-      html += '</div></div>';
+      html += Modulo.secao({ titulo: "Pendências por frente", sub: "Tarefas não concluídas · atualiza com o quadro", corpoHtml: corpoD });
 
       // 4) Pareto de causas (mantido)
       var ca = LP.causasAgregadas(ts);
-      html += '<div class="card"><h3 style="margin:0 0 10px">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Causas de não-cumprimento</h3>';
-      if (!ca.total) html += '<p class="muted" style="font-size:13px;margin:0">Sem causas registradas ainda.</p>';
+      var corpoC = "";
+      if (!ca.total) corpoC = '<p class="muted" style="font-size:var(--t-peq);margin:0">Sem causas registradas ainda.</p>';
       else {
-        html += '<table class="tbl" style="font-size:13px"><tbody>';
-        ca.linhas.forEach(function (l) { var pct = Math.round(l.pct * 100); html += '<tr><td>' + Util.esc(l.causa) + '</td><td style="width:42%"><div style="background:#eef2f7;border-radius:99px;height:14px;overflow:hidden"><div style="background:#ea580c;height:100%;width:' + pct + '%"></div></div></td><td class="num" style="width:64px"><b>' + l.n + '</b> · ' + pct + '%</td></tr>'; });
-        html += '</tbody></table>';
+        corpoC = '<table class="tbl"><tbody>';
+        ca.linhas.forEach(function (l) { var pct = Math.round(l.pct * 100); corpoC += "<tr><td>" + Util.esc(l.causa) + '</td><td style="width:42%"><div style="background:var(--surface-3);border-radius:99px;height:14px;overflow:hidden"><div style="background:var(--amarelo);height:100%;width:' + pct + '%"></div></div></td><td class="num" style="width:64px"><b>' + l.n + "</b> · " + pct + "%</td></tr>"; });
+        corpoC += "</tbody></table>";
       }
-      html += '</div>';
-      return html;
+      html += Modulo.secao({ titulo: "Causas de não-cumprimento", corpoHtml: corpoC });
+      return html + "</div>";
     },
 
     // ===== Quadro Kanban do Last Planner — colunas DERIVAM do estado LPS =====
@@ -48871,7 +50004,7 @@ renderFolha: function () {
           if (!isNaN(fimSem.getTime())) { fimSem.setDate(fimSem.getDate() + 6); atrasada = fimSem < hoje; }
         }
         var chipSem = t.semana
-          ? '<span class="lp-qchip' + (atrasada ? " vence" : "") + '">' + (atrasada ? "⏰ " : "🗓 ") + esc(fmtSem(t.semana)) + (atrasada ? " · atrasada" : "") + '</span>'
+          ? '<span class="lp-qchip' + (atrasada ? " vence" : "") + '">' + (typeof Icones !== "undefined" ? Icones.get(atrasada ? "relogio" : "calendario", 12) : "") + esc(fmtSem(t.semana)) + (atrasada ? " · atrasada" : "") + '</span>'
           : "";
         if (colId === "feito") chipSem = '<span class="lp-qchip ok">✓ ' + esc(String(t.concluidaEm || t.semana || "").slice(5).split("-").reverse().join("/")) + '</span>';
         var tags = "";
@@ -48881,7 +50014,7 @@ renderFolha: function () {
         if (colId === "impedida") {
           var abertas = (Array.isArray(t.restricoes) ? t.restricoes : []).filter(function (r) { return r && !r.removida; });
           var r0 = abertas[0] || {};
-          extra = '<div class="lp-qmotivo">⚠ ' + esc(r0.tipo ? r0.tipo + ": " : "") + esc(r0.descricao || "restrição aberta") + (abertas.length > 1 ? " (+" + (abertas.length - 1) + ")" : "") + '</div>';
+          extra = '<div class="lp-qmotivo">' + (typeof Icones !== "undefined" ? Icones.get("alerta", 12) : "") + esc(r0.tipo ? r0.tipo + ": " : "") + esc(r0.descricao || "restrição aberta") + (abertas.length > 1 ? " (+" + (abertas.length - 1) + ")" : "") + '</div>';
         } else if (colId === "naofeito" && t.causa) {
           extra = '<div class="lp-qmotivo">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' Causa: ' + esc(t.causa) + '</div>';
         }
@@ -48892,9 +50025,11 @@ renderFolha: function () {
           '<div class="lp-qpe"><span class="lp-qresp"><span class="lp-qav">' + esc(ini) + '</span>' + esc(t.responsavel || "—") + '</span>' + chipSem + '</div>' +
           '</article>';
       };
-      var html = '<div class="card" style="margin-bottom:16px;padding:14px"><h3 style="margin:0 0 2px">' + (typeof Icones !== 'undefined' ? Icones.get('tabela', 15) : '') + ' Quadro da Obra <span class="muted" style="font-weight:400;font-size:13px">· cada coluna é um passo do Last Planner</span></h3>' +
-        '<p class="muted" style="font-size:12px;margin:0 0 10px">No computador, <b>arraste</b> os cartões; no celular/tablet, <b>toque</b> no cartão p/ as ações. Comprometer exige tarefa <b>livre</b> (sem restrição) — a trava do LPS vale nos dois caminhos.' + (ocultas ? " · " + ocultas + " concluída(s) antiga(s) fora do quadro (histórico completo no PPC)." : "") + '</p>' +
-        '<div id="lp-quadro" class="lp-q">';
+      /* ROTEIRO DE MÓDULO: o parágrafo fixo de instrução ("no computador,
+         arraste…") era lido uma vez e ocupava a tela para sempre — virou a
+         dica de cada cartão (o `title` do article já diz arraste/toque) e a
+         regra do LPS ficou numa linha, no subtítulo da seção. */
+      var html = '<div id="lp-quadro" class="lp-q">';
       LP.QUADRO_COLUNAS.forEach(function (c) {
         var doCol = cols[c.id], n = doCol.length;
         html += '<section class="lp-qcol' + (c.id === "impedida" ? " imp" : "") + (c.id === "feito" ? " ok" : "") + '" data-lpcol="' + c.id + '">' +
@@ -48908,8 +50043,10 @@ renderFolha: function () {
           (n ? "" : '<div class="lp-qvazio">' + (c.id === "impedida" ? "Nenhuma restrição ativa" : "Solte um cartão aqui") + '</div>') +
           '</div></section>';
       });
-      html += '</div></div>';
-      return html;
+      html += '</div>';
+      return Modulo.secao({ titulo: "Quadro da obra",
+        sub: "Cada coluna é um passo do Last Planner. Comprometer exige tarefa livre (sem restrição)." + (ocultas ? " " + ocultas + " concluída(s) antiga(s) fora do quadro — o histórico completo está no PPC." : ""),
+        corpoHtml: html });
     },
     _lpWire: function () {
       var self = this, q = document.getElementById("lp-quadro");
@@ -49621,6 +50758,10 @@ renderFolha: function () {
         case "colab-doc": return this.cadastrarColaboradorDoc();
         case "novo-modelo": return this.novoModelo();
         case "seed-modelos": return this.seedModelos();
+        case "padraodet-salvar": return this.padraoDetSalvar();
+        case "padraodet-restaurar": return this.padraoDetRestaurar();
+        case "padraodet-importar": return this.padraoDetImportar();
+        case "padraodet-exportar": return this.padraoDetExportar();
         case "gerar-modelo": return this.gerarModelo(id);
         /* ---------- FLUXO DE APROVAÇÃO DO DIÁRIO ----------
          * Uma porta só: toda transição passa por RDO.transicionar, que decide

@@ -1,4 +1,6 @@
-Texturas PBR (cor, normal OpenGL, rugosidade) reduzidas a 512 px pelo tools/gerar-texturas.py.
+Texturas PBR (cor, normal OpenGL, rugosidade) reduzidas pelo tools/gerar-texturas.py: as 18 primeiras
+(1.2.125) com os três mapas a 512 px; as da leva do estilo visual (07/10/2026) com a cor a 1024 px e
+normal/rugosidade a 512 px, cada mapa até 250 KB. Teto do pacote: 15 MB (tools/test-bim-estilo-visual.js).
 Todas CC0 (domínio público): uso livre, inclusive comercial, sem atribuição obrigatória.
 A fonte de cada uma fica registrada aqui por honestidade e para quem quiser a versão maior.
 
@@ -93,3 +95,164 @@ madeira_deck
   fonte: ambientCG · id: Planks029S
   https://ambientcg.com/view?id=Planks029S
   licença: CC0 · tamanho físico de uma repetição: 2.4 m (dimensionX da API)
+
+bloco_ceramico_furado
+  fonte: ambientCG · id: Bricks088
+  https://ambientcg.com/view?id=Bricks088
+  licença: CC0 1.0 (https://docs.ambientcg.com/license/) · tamanho físico de uma repetição: 1.8 m (dimensionX da API)
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+
+tijolinho_laranja
+  fonte: ambientCG · id: Bricks092
+  https://ambientcg.com/view?id=Bricks092
+  licença: CC0 1.0 (https://docs.ambientcg.com/license/) · tamanho físico de uma repetição: 1.1 m (dimensionX da API)
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+
+bloco_concreto
+  fonte: ambientCG · id: Bricks061
+  https://ambientcg.com/view?id=Bricks061
+  licença: CC0 1.0 (https://docs.ambientcg.com/license/) · tamanho físico de uma repetição: 1.75 m (estimado: ~4,5 peças por repetição = 39 cm)
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+  obs. da origem: a foto é de tijolo cinza delgado (~23 x 8 cm, dimensionX 105 cm); não há bloco de concreto 39x19 CC0 no ambientCG nem no Poly Haven (procurado em 07/10/2026). Escala 1,75 m e proporção forçada 1,4 levam a peça a ~39 x 19 cm.
+
+concreto_aparente_formas
+  fonte: ambientCG · id: Concrete008
+  https://ambientcg.com/view?id=Concrete008
+  licença: CC0 1.0 (https://docs.ambientcg.com/license/) · tamanho físico de uma repetição: 3.6 m (estimado: 3 painéis de fôrma de ~1,2 m)
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+
+concreto_liso_claro
+  fonte: ambientCG · id: Concrete034
+  https://ambientcg.com/view?id=Concrete034
+  licença: CC0 1.0 (https://docs.ambientcg.com/license/) · tamanho físico de uma repetição: 1.1 m (dimensionX da API)
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+
+cimento_queimado
+  fonte: ambientCG · id: Concrete016
+  https://ambientcg.com/view?id=Concrete016
+  licença: CC0 1.0 (https://docs.ambientcg.com/license/) · tamanho físico de uma repetição: 2.0 m (estimado)
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+
+pintura_lisa
+  fonte: ambientCG · id: Plaster003
+  https://ambientcg.com/view?id=Plaster003
+  licença: CC0 1.0 (https://docs.ambientcg.com/license/) · tamanho físico de uma repetição: 1.5 m (estimado)
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+
+
+porcelanato_grafite
+  fonte: ambientCG · id: Tiles140
+  https://ambientcg.com/view?id=Tiles140
+  licença: CC0 1.0 (https://docs.ambientcg.com/license/) · tamanho físico de uma repetição: 3.6 m (6 x 6 peças de 60 cm (a foto, dimensionX 200 cm, tem 33 cm))
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+
+pedra_sao_tome
+  fonte: ambientCG · id: Tiles143
+  https://ambientcg.com/view?id=Tiles143
+  licença: CC0 1.0 (https://docs.ambientcg.com/license/) · tamanho físico de uma repetição: 2.0 m (dimensionX da API)
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+
+pastilha_vidro
+  fonte: ambientCG · id: Tiles133A
+  https://ambientcg.com/view?id=Tiles133A
+  licença: CC0 1.0 (https://docs.ambientcg.com/license/) · tamanho físico de uma repetição: 0.3 m (12 x 12 pastilhas de 2,5 cm)
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+
+ladrilho_hidraulico
+  fonte: ambientCG · id: Tiles131
+  https://ambientcg.com/view?id=Tiles131
+  licença: CC0 1.0 (https://docs.ambientcg.com/license/) · tamanho físico de uma repetição: 0.8 m (estimado: 4 x 4 ladrilhos de 20 cm)
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+
+granito_cinza
+  fonte: ambientCG · id: Granite005A
+  https://ambientcg.com/view?id=Granite005A
+  licença: CC0 1.0 (https://docs.ambientcg.com/license/) · tamanho físico de uma repetição: 1.0 m (estimado)
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+
+marmore_branco
+  fonte: ambientCG · id: Marble012
+  https://ambientcg.com/view?id=Marble012
+  licença: CC0 1.0 (https://docs.ambientcg.com/license/) · tamanho físico de uma repetição: 1.5 m (estimado)
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+
+piso_laminado_claro
+  fonte: ambientCG · id: WoodFloor040
+  https://ambientcg.com/view?id=WoodFloor040
+  licença: CC0 1.0 (https://docs.ambientcg.com/license/) · tamanho físico de uma repetição: 1.9 m (dimensionX da API)
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+
+taco_espinha
+  fonte: ambientCG · id: WoodFloor057
+  https://ambientcg.com/view?id=WoodFloor057
+  licença: CC0 1.0 (https://docs.ambientcg.com/license/) · tamanho físico de uma repetição: 1.5 m (estimado: tacos de ~7 x 35 cm)
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+
+madeira_escura_imbuia
+  fonte: ambientCG · id: Wood066
+  https://ambientcg.com/view?id=Wood066
+  licença: CC0 1.0 (https://docs.ambientcg.com/license/) · tamanho físico de uma repetição: 0.6 m (estimado (dimensionX 40 cm; esticada para não repetir na folha da porta))
+  girada 90° aqui: a foto tem o veio deitado; na folha da porta e no painel o veio fica em pé
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+
+madeira_clara_freijo
+  fonte: ambientCG · id: Wood094
+  https://ambientcg.com/view?id=Wood094
+  licença: CC0 1.0 (https://docs.ambientcg.com/license/) · tamanho físico de uma repetição: 0.8 m (estimado)
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+
+aluminio_escovado
+  fonte: ambientCG · id: Metal009
+  https://ambientcg.com/view?id=Metal009
+  licença: CC0 1.0 (https://docs.ambientcg.com/license/) · tamanho físico de uma repetição: 1.0 m (estimado)
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+
+telha_ceramica
+  fonte: ambientCG · id: RoofingTiles014A
+  https://ambientcg.com/view?id=RoofingTiles014A
+  licença: CC0 1.0 (https://docs.ambientcg.com/license/) · tamanho físico de uma repetição: 2.2 m (estimado: telhas de ~24 cm de largura útil)
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+
+telha_colonial
+  fonte: ambientCG · id: RoofingTiles006
+  https://ambientcg.com/view?id=RoofingTiles006
+  licença: CC0 1.0 (https://docs.ambientcg.com/license/) · tamanho físico de uma repetição: 1.5 m (estimado: 8 canais de ~19 cm)
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+
+telha_fibrocimento
+  fonte: ambientCG · id: CorrugatedSteel003
+  https://ambientcg.com/view?id=CorrugatedSteel003
+  licença: CC0 1.0 (https://docs.ambientcg.com/license/) · tamanho físico de uma repetição: 1.06 m (6 ondas de 17,7 cm (onda da telha ondulada de fibrocimento))
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+  obs. da origem: a foto é de chapa ondulada clara manchada (tag metal); usada como fibrocimento sem metalicidade. Sombra da onda assada na cor (modo Textura).
+
+telha_metalica
+  fonte: ambientCG · id: CorrugatedSteel005
+  https://ambientcg.com/view?id=CorrugatedSteel005
+  licença: CC0 1.0 (https://docs.ambientcg.com/license/) · tamanho físico de uma repetição: 0.76 m (10 ondas de 7,6 cm (telha ondulada de aço))
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+  obs. da origem: sombra da onda assada na cor (modo Textura).
+
+terra
+  fonte: ambientCG · id: Ground067
+  https://ambientcg.com/view?id=Ground067
+  licença: CC0 1.0 (https://docs.ambientcg.com/license/) · tamanho físico de uma repetição: 2.0 m (estimado)
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+
+areia
+  fonte: ambientCG · id: Ground079L
+  https://ambientcg.com/view?id=Ground079L
+  licença: CC0 1.0 (https://docs.ambientcg.com/license/) · tamanho físico de uma repetição: 2.0 m (estimado)
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+
+asfalto
+  fonte: ambientCG · id: Asphalt033
+  https://ambientcg.com/view?id=Asphalt033
+  licença: CC0 1.0 (https://docs.ambientcg.com/license/) · tamanho físico de uma repetição: 2.5 m (dimensionX da API)
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+
+pedra_rachao
+  fonte: ambientCG · id: Bricks089
+  https://ambientcg.com/view?id=Bricks089
+  licença: CC0 1.0 (https://docs.ambientcg.com/license/) · tamanho físico de uma repetição: 2.2 m (dimensionX da API)
+  arquivos: cor 1024 px, normal e rugosidade 512 px

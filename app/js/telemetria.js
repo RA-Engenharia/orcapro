@@ -134,7 +134,14 @@
         '<div class="field"><label>WhatsApp / telefone *</label><input id="tg-fone" value="' + String(fonePre).replace(/"/g, "&quot;") + '" placeholder="(34) 90000-0000" inputmode="tel" autocomplete="tel"></div>' +
         '<div class="field"><label>E-mail *</label><input id="tg-email" value="' + String(emailPre).replace(/"/g, "&quot;") + '" placeholder="voce@empresa.com.br" autocomplete="email"></div>' +
         '<label style="display:flex;gap:9px;align-items:flex-start;cursor:pointer;font-size:12.5px;color:var(--texto-fraco);margin-top:6px"><input type="checkbox" id="tg-ok" style="margin-top:3px">Autorizo o contato da RA Engenharia sobre o meu teste e o uso dos meus dados para esse fim (LGPD).</label>';
+      /* JÁ SOU CLIENTE (07/10/2026). Aparelho novo nasce em teste; até aqui a
+         ÚNICA porta era o cadastro de teste grátis — o cliente pagante que
+         baixava o app da loja (ou abria o sistema num computador novo) caía no
+         formulário de teste, sem caminho para a conta dele. A chave da licença
+         é também a credencial da nuvem (Nuvem._credLicenca): ativou a chave,
+         o boot conecta a nuvem da empresa e traz todos os dados. */
       UI.modal("🚀 Liberar meu teste grátis", corpo, [
+        { texto: "Já sou cliente: entrar", classe: "ghost", onClick: function () { UI.fecharModal(); self._jaSouCliente(aoLiberar); } },
         { texto: "Liberar meu teste grátis →", classe: "primary", onClick: function () {
           var nome = (UI.el("tg-nome") || {}).value || "", fone = (UI.el("tg-fone") || {}).value || "";
           var email = (UI.el("tg-email") || {}).value || "", ok = (UI.el("tg-ok") || {}).checked;
@@ -147,6 +154,44 @@
           if (typeof aoLiberar === "function") aoLiberar();
         } }
       ]);
+      this._semFechar();
+      return true;
+    },
+
+    /* Entrada de quem já comprou: cola a chave, a licença ativa neste aparelho
+       e o boot segue — a nuvem da empresa conecta sozinha (app.js, boot) e
+       traz orçamentos, obras, diários e financeiro. Sem a chave à mão, o
+       /recuperar da loja devolve a chave por e-mail + documento. */
+    _jaSouCliente: function (aoLiberar) {
+      var self = this;
+      var srv = "";
+      try { srv = (typeof Licenca !== "undefined" && Licenca._servidor) ? Licenca._servidor() : ""; } catch (e) {}
+      var corpo =
+        '<p class="muted" style="margin:0 0 12px">Cole a <b>chave de licença</b> que você recebeu por e-mail na compra. Os dados da sua empresa (orçamentos, obras, diários, medições e financeiro) vêm da nuvem para este aparelho.</p>' +
+        '<div class="field"><label>Chave de licença *</label><input id="tg-chave" placeholder="Cole aqui a sua chave" autocomplete="off" spellcheck="false" style="font-family:var(--fonte-num,monospace)"></div>' +
+        (srv ? '<p style="margin:6px 0 0;font-size:13px"><a href="' + srv + '/recuperar" target="_blank" rel="noopener">Não encontro a minha chave</a></p>' : '') +
+        '<p class="muted" style="margin:12px 0 0;font-size:12.5px">Depois, cada pessoa da equipe entra com o próprio usuário e senha.</p>';
+      UI.modal("🔑 Entrar com a minha licença", corpo, [
+        { texto: "Voltar", classe: "ghost", onClick: function () { UI.fecharModal(); self.gate(aoLiberar); } },
+        { texto: "Entrar e trazer meus dados →", classe: "primary", onClick: function () {
+          var chave = String((UI.el("tg-chave") || {}).value || "").trim();
+          if (chave.length < 8) { UI.toast("Cole a sua chave de licença.", "erro"); return; }
+          if (typeof Licenca === "undefined" || !Licenca.ativarOnline) { UI.toast("Não foi possível ativar agora. Tente de novo.", "erro"); return; }
+          UI.toast("Conferindo a licença…", "ok");
+          Licenca.ativarOnline(chave, function (r) {
+            if (!r || !r.ok) { UI.toast((r && r.erro) || "Chave inválida.", "erro"); return; }
+            /* licença nova = empresa nova na nuvem: larga qualquer sessão anterior */
+            try { if (typeof Nuvem !== "undefined" && Nuvem.trocouDeLicenca) Nuvem.trocouDeLicenca(); } catch (eN) {}
+            UI.fecharModal();
+            UI.toast(r.offline ? "Licença ativada. Os dados da nuvem chegam quando houver internet." : "Licença ativada. Trazendo os seus dados da nuvem…", "ok");
+            if (typeof aoLiberar === "function") aoLiberar();
+          });
+        } }
+      ]);
+      this._semFechar();
+    },
+
+    _semFechar: function () {
       /* ⚠ v1.1.235 — ESTE MODAL NÃO PODE SER FECHADO NO ✕. O gate aborta o
          boot ANTES do render: com o modal fechado no ✕ ou no clique fora, o
          que sobra é a tela BRANCA (o index nasce com sidebar/topbar/main
@@ -162,7 +207,6 @@
           bgT.dataset.semFecharFora = "1";
         }
       } catch (eX) {}
-      return true;
     }
   };
 

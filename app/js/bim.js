@@ -807,7 +807,7 @@ function montar(host, opts) {
   function aplicarTema() {
     var T = TEMAS[temaId];
     var h2 = (S && S.host) || host; // re-home troca o host — o closure original aponta pro morto
-    h2.style.background = (S && S._estiloOn && S._estiloOn()) ? '#fff' : T.fundo; // estilo desenho segura o branco
+    h2.style.background = (S && ((S._estiloOn && S._estiloOn()) || (S._linhaOn && S._linhaOn()))) ? '#fff' : T.fundo; // estilo desenho e a linha oculta seguram o branco
     bar.style.background = T.bar;
     bar.style.color = T.texto;
     [S.editPanel, S.snapPanel, S.pavPanel, S.visPanel, S.editDist, S.p3dPanel].forEach(function (pn) {
@@ -1879,6 +1879,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
   S._caixaCorte = caixaCorteMain;
   S._ortoMain = function (on) { aplicarOrto(camera, orbit, on, ortoMain); return ortoMain.on; };
+  /* grade do chão liga/desliga (fita Vista › Exibir › Grade, tecla G) — cara nova, 07/10/2026 */
+  S._grade = function (on) { if (on != null) grid.visible = !!on; return grid.visible; };
   S._ortoEstado = function () { return ortoMain.on; };
   S._camPlanos = function () { return { near: camera.near, far: camera.far, fov: camera.fov }; };
   S._irInicio = function () { irInicio(camera, orbit, function (p, t) { voarCam(p, t, 0.6); }); };
@@ -1992,6 +1994,12 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       }
       v.orbit.update();
       ajustarPlanosOrto(v.camera, v.orbit, v.orto);
+      /* o ESTILO VISUAL é da cena inteira (como o estilo desenho): a linha
+         oculta tira o tom ACES e pinta o fundo de branco também aqui — sem
+         isto a aba lado a lado ficava com faces cinza num fundo escuro */
+      if (v.renderer.toneMapping !== renderer.toneMapping) { v.renderer.toneMapping = renderer.toneMapping; }
+      var fb = !!(S._linhaOn && S._linhaOn());
+      if (v._fundoBranco !== fb) { v._fundoBranco = fb; v.cont.style.background = fb ? '#fff' : ''; }
       var envP = scene.environment; scene.environment = v.env;
       var tr = null;
       try { if (v.est) tr = trocasDaVista(v); v.renderer.render(scene, v.camera); v.cx.desenhar(v.renderer, v.camera); } catch (_) {}
@@ -2164,6 +2172,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var cs = pv.cortes || {};
     if ((cs.planta && cs.planta.on) || (cs.livre && cs.livre.on)) res.globais.push('corte');
     if (pv.estilo && pv.estilo.desenho) res.globais.push('estilo desenho');
+    if (pv.estilo && pv.estilo.visual && pv.estilo.visual !== EST.modo) res.globais.push('estilo visual');
     if (pv.cotaRede && pv.cotaRede.on) res.globais.push('cotas da rede');
     v.est = est; v.cache = {}; v.pv = pv;
     /* cotas: desenhadas no grupo DESTA vista (a principal fica com as dela) */
@@ -5181,27 +5190,60 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     TEXR.ancora = texMotor().ancoraDe(ms);
     return TEXR.ancora;
   }
-  function texCarregar(slug) {
-    if (TEXR.cache[slug]) return TEXR.cache[slug].p;
-    var B = texMotor(), arq = B.arquivos(slug, B.aparelhoFraco(texAparelho()));
-    var ent = { tex: {}, ok: false, erro: '' };
-    TEXR.cache[slug] = ent;
-    if (!arq) { ent.erro = 'textura desconhecida: ' + slug; ent.p = Promise.resolve(ent); return ent.p; }
+  /* ⚠ A COR E O RELEVO CHEGAM EM DUAS LEVAS (estilo visual, 07/10/2026). O
+     modo Textura só usa a cor: baixar normal e rugosidade junto era subir dois
+     mapas por material para a placa de vídeo sem desenhar nenhum. A cor vem
+     primeiro (`ent.p`); o relevo só quando algum modo pede (`ent.pPbr`) — o
+     Realista, ou os Materiais realistas de sempre (`pbr` omitido = os três,
+     como era antes). */
+  function texCarregar(slug, pbr) {
+    if (pbr == null) pbr = true;
+    var B = texMotor(), fraco = B.aparelhoFraco(texAparelho());
+    var ent = TEXR.cache[slug];
     var ld = new THREE.TextureLoader(), an = 4;
     try { an = Math.min(8, renderer.capabilities.getMaxAnisotropy()); } catch (_) {}
     function um(url, cor) {
       if (!url) return Promise.resolve(null);
       return new Promise(function (res) {
-        ld.load(url, function (t) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = an; if (cor) texSRGB(t); res(t); }, undefined, function () { res(null); });
+        ld.load(url, function (t) {
+          t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = an; if (cor) texSRGB(t);
+          /* ⚠ APARELHO FRACO: a cor da leva nova é 1K (~5,6 MB na placa com
+             mipmap). Reduzida a 512 aqui, ANTES de subir, ela custa um quarto —
+             a mesma conta que fez a biblioteca nascer em 512 (gerar-texturas.py) */
+          try {
+            var im = t.image;
+            if (fraco && im && im.width > 512 && typeof document !== 'undefined') {
+              var k = 512 / Math.max(im.width, im.height), cv = document.createElement('canvas');
+              cv.width = Math.max(1, Math.round(im.width * k)); cv.height = Math.max(1, Math.round(im.height * k));
+              cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
+              t.image = cv; t.needsUpdate = true; t.userData = t.userData || {}; t.userData.reduzida = true;
+            }
+          } catch (_) {}
+          res(t);
+        }, undefined, function () { res(null); });
       });
     }
-    ent.p = Promise.all([um(arq.cor, true), um(arq.normal), um(arq.rugosidade)]).then(function (r) {
-      ent.tex = { cor: r[0], normal: r[1], rug: r[2] };
-      ent.ok = !!r[0];
-      if (!r[0]) ent.erro = 'não consegui carregar ' + arq.cor;
-      return ent;
-    });
-    return ent.p;
+    if (!ent) {
+      ent = { tex: {}, ok: false, erro: '' };
+      TEXR.cache[slug] = ent;
+      var arq0 = B.arquivos(slug, true);
+      if (!arq0) { ent.erro = 'textura desconhecida: ' + slug; ent.p = Promise.resolve(ent); ent.pPbr = ent.p; return ent.p; }
+      ent.p = um(arq0.cor, true).then(function (t) {
+        ent.tex.cor = t; ent.ok = !!t;
+        if (!t) ent.erro = 'não consegui carregar ' + arq0.cor;
+        return ent;
+      });
+    }
+    /* leve (aparelho fraco) nunca pede o relevo: só a cor, como sempre foi */
+    if (!pbr || fraco) return ent.p;
+    if (!ent.pPbr) {
+      var arq = B.arquivos(slug, false);
+      ent.pPbr = !arq ? ent.p : Promise.all([ent.p, um(arq.normal), um(arq.rugosidade)]).then(function (r) {
+        ent.tex.normal = r[1]; ent.tex.rug = r[2];
+        return ent;
+      });
+    }
+    return ent.pPbr;
   }
   /* a física e a textura de UM material (de peça ou de bucket) */
   function texVestirMat(mat, t, tinta) {
@@ -5218,9 +5260,14 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (t.classe === 'metal') { mat.roughness = 0.35; mat.metalness = 0.6; mat.needsUpdate = true; return true; }
     var ent = TEXR.cache[t.slug]; if (!ent || !ent.ok) return false;
     delete mat.userData._mapasGuardados;   /* vestiu agora: os guardados pelo fantasma (ver _reaplicarAparencia) ficaram velhos */
-    mat.map = ent.tex.cor; mat.normalMap = ent.tex.normal || null; mat.roughnessMap = ent.tex.rug || null;
-    mat.roughness = ent.tex.rug ? 1 : 0.85;
+    /* estilo Textura: SÓ a cor, com luz simples (sem relevo, rugosidade nem
+       reflexo forte). Fora do estilo visual `nivel` não existe: os três mapas */
+    var pbr = TEXR.nivel !== 'textura';
+    mat.map = ent.tex.cor; mat.normalMap = pbr ? (ent.tex.normal || null) : null; mat.roughnessMap = pbr ? (ent.tex.rug || null) : null;
+    mat.roughness = (pbr && ent.tex.rug) ? 1 : 0.85;
     mat.metalness = (texMotor().BIB[t.slug] && texMotor().BIB[t.slug].metal) || 0.02;
+    if (!pbr) mat.metalness = Math.min(mat.metalness, 0.3);
+    if (TEXR.env != null) mat.envMapIntensity = TEXR.env;
     if (tinta) mat.color.setRGB(tinta[0], tinta[1], tinta[2], THREE.LinearSRGBColorSpace);
     mat.needsUpdate = true;
     return true;
@@ -5291,10 +5338,22 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       Object.keys(v.cache).forEach(function (k) { var c = v.cache[k]; if (c && c.mat) { try { c.mat.dispose(); } catch (_) {} } delete v.cache[k]; });
     });
   }
-  function texMateriais() {
-    var out = [];
-    S.modelos.forEach(function (mo) { Object.keys(mo.matCache || {}).forEach(function (k) { var mt = mo.matCache[k]; if (mt && mt.userData && mt.userData.tex) out.push(mt); }); });
+  /* ⚠ OS MATERIAIS-BASE NÃO MORAM SÓ NO matCache. O IFC guarda os dele lá,
+     mas as paredes do editor (editMat) e os sólidos das famílias (famMat) têm
+     material próprio, compartilhado, fora de qualquer modelo — o estilo visual
+     precisava pintar os dois e só achava os do IFC. A base de cada peça é o
+     `matOrig` dela: varrer as peças acha todos, sem lista paralela. */
+  function estMatsBase() {
+    var vistos = {}, out = [];
+    function por(b) { if (b && b.isMaterial && !vistos[b.id]) { vistos[b.id] = 1; out.push(b); } }
+    S.modelos.forEach(function (mo) {
+      Object.keys(mo.matCache || {}).forEach(function (k) { por(mo.matCache[k]); });
+      mo.grupo.children.forEach(function (m) { if (m.isMesh) por(m.userData && m.userData.matOrig); });
+    });
     return out;
+  }
+  function texMateriais() {
+    return estMatsBase().filter(function (mt) { return mt.userData && mt.userData.tex; });
   }
   function texAplicar(on, motivo) {
     var B = texMotor();
@@ -5316,7 +5375,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       });
     });
     var tUv = (typeof performance !== 'undefined') ? performance.now() - t0 : 0;
-    return Promise.all(Object.keys(slugs).map(texCarregar)).then(function () {
+    var pbr = TEXR.nivel !== 'textura';
+    return Promise.all(Object.keys(slugs).map(function (s) { return texCarregar(s, pbr); })).then(function () {
       /* desligou no meio, ou o viewer é outro: não veste nada */
       if (seq !== TEXR.seq || !TEXR.on || S !== Sm || !S.alive) return texEstado();
       var t1 = (typeof performance !== 'undefined') ? performance.now() : 0;
@@ -5340,7 +5400,15 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
      ligado, veste também o que acabou de chegar */
   function texAuto() {
     if (!texMotor()) return;
+    /* estilo visual escolhido (prévia): quem decide é o estilo, não o
+       automático — um IFC com RA_Material chegando com a linha oculta ligada
+       não pode virar textura sozinho */
+    if (EST.fixo && estPrevia()) { estReaplicar(true); return; }
     var d = texDecisao();
+    /* prévia sem escolha da pessoa: o modelo que pediu textura (RA_Material) abre
+       no estilo Realista — e o seletor DIZ isso, em vez de mostrar "Sombreado"
+       com a textura ligada por baixo */
+    if (estPrevia() && d.ligado) { estiloVisual('realista', { auto: true }); return; }
     if (d.ligado || TEXR.on) texAplicar(d.ligado, d.motivo).then(texAvisar); else { TEXR.motivo = d.motivo; texAvisar(); }
   }
   function texAvisar() { if (S && S.opts && S.opts.onMateriais) { try { S.opts.onMateriais(texEstado()); } catch (_) {} } }
@@ -5459,6 +5527,358 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   /* o espelhamento anda com o quadro — e o mesmo gancho que a lupa e as cotas usam */
   S._tickExtra.push(function () { sincronizarAgregado(); });
   S._tickExtra.push(function () { if (S._cristalTickEscala) S._cristalTickEscala(); });
+
+  /* =====================================================================
+   * ESTILO VISUAL — como no Revit (prévia `?previa=visual`, 07/10/2026)
+   *
+   * Pedido do Rogério: "quero ver a parede com preenchimento de cor normal,
+   * com a textura, com a textura realista, e só preto e branco". Quatro modos,
+   * um seletor (fita Vista › Exibir › Estilo e o botão na barra das vistas):
+   *   Linha oculta  faces claras sem textura + ARESTAS pretas, fundo branco,
+   *                 luz neutra e sem o tom ACES (que puxa o branco para cinza);
+   *   Sombreado     a cor do material (o de sempre);
+   *   Textura       só a COR da textura, luz simples;
+   *   Realista      cor + relevo + rugosidade, reflexo do ambiente e sombra.
+   * O que cada modo liga é decidido pelo motor (BimTextura.planoEstilo).
+   *
+   * ⚠ NENHUM MODO TROCA O MATERIAL DE MALHA NENHUMA. Eles mexem nos
+   * materiais-BASE (o `matOrig` de cada peça) e na cena (luz, fundo, sombra) —
+   * nunca em `m.material`. É isso que deixa a seleção, o raio-X, as cores do
+   * 4D/5D, a cor por sistema e a pintura de conjunto VIVAS em qualquer modo:
+   * esses recursos trocam o material da peça por outro, e o outro não é base.
+   * O estilo desenho da planta faz o contrário (troca tudo por um cinza) e por
+   * isso tira o raio-X ao entrar — é a razão de ele ser outro recurso.
+   *
+   * ⚠ CADA MODO DESFAZ O QUE ELE MESMO LIGOU, guardando o estado de antes no
+   * próprio objeto (`userData._linha`, `EST.luz`, `EST.real`): sair da linha
+   * oculta devolve a cor exata de cada material, a luz, o tom e a grade como
+   * estavam — não "o padrão".
+   *
+   * ⚠ AS ARESTAS SÃO UMA MALHA SÓ POR MODELO, fora do modelRoot (a mesma lição
+   * da agregação: onze varredores tratam os filhos do modelRoot como peças).
+   * Uma LineSegments por peça seriam milhares de chamadas — a armadilha que a
+   * agregação existe para evitar. A visibilidade de cada peça entra por um
+   * índice refeito só quando a assinatura muda (oculta, isolada, 4D futuro,
+   * fantasma do raio-X e porta aberta saem das arestas).
+   *
+   * O estilo é da CENA (como o estilo desenho), lembrado por aparelho e
+   * gravado no ponto de vista (`estilo.visual`).
+   * ===================================================================== */
+  var EST = { modo: 'sombreado', fixo: false, ar: {}, luz: null, real: null, mat: null, ultimo: null };
+  function estPrevia() { try { return document.documentElement.getAttribute('data-visual') === 'nova'; } catch (_) { return false; } }
+  function estPlano(m) { var B = texMotor(); return B ? B.planoEstilo(m) : { estilo: 'sombreado', nome: 'Sombreado', texturas: false }; }
+  function estTrocas() { try { return (window.BimEstilo && window.BimEstilo.trocasAtuais) ? (window.BimEstilo.trocasAtuais() || {}) : {}; } catch (_) { return {}; } }
+  /* o estilo lembrado neste aparelho entra na abertura — só na prévia */
+  try { var _e0 = localStorage.getItem('orcapro:bim:estilo-visual'); if (_e0 && estPrevia() && texMotor() && texMotor().estiloValido(_e0)) { EST.modo = _e0; EST.fixo = true; } } catch (_) {}
+
+  /* ---- linha oculta: as faces ---- */
+  function estLinhaFaces(on) {
+    var mudou = 0;
+    estMatsBase().forEach(function (mt) {
+      if (on) {
+        if (mt.userData._linha) return;
+        mt.userData._linha = { c: mt.color.clone(), po: mt.polygonOffset, pf: mt.polygonOffsetFactor, pu: mt.polygonOffsetUnits, r: mt.roughness, me: mt.metalness, ei: mt.envMapIntensity };
+        /* vidro continua transparente (e mais claro); o resto, branco */
+        var g = (mt.transparent && mt.opacity < 0.95) ? 0.9 : 0.97;
+        mt.color.setRGB(g, g, g);
+        /* ⚠ o polygonOffset empurra a FACE para trás: a aresta, que está no
+           mesmo plano, ganha o teste de profundidade sem z-fighting */
+        mt.polygonOffset = true; mt.polygonOffsetFactor = 1; mt.polygonOffsetUnits = 1;
+        mt.roughness = 1; mt.metalness = 0;
+        mt.needsUpdate = true; mudou++;
+      } else {
+        var s = mt.userData._linha; if (!s) return;
+        mt.color.copy(s.c); mt.polygonOffset = s.po; mt.polygonOffsetFactor = s.pf; mt.polygonOffsetUnits = s.pu;
+        mt.roughness = s.r; mt.metalness = s.me; mt.envMapIntensity = s.ei;
+        delete mt.userData._linha; mt.needsUpdate = true; mudou++;
+      }
+    });
+    estPolyBuckets(!!on);
+    /* a cor por vértice do mesclado, os clones de transparência e as vistas
+       com estado próprio refazem a partir da base nova */
+    if (mudou) texSujar();
+    return mudou;
+  }
+  function estPolyBuckets(on) {
+    S.modelos.forEach(function (mo) {
+      if (!mo._agreg) return;
+      mo._agreg.partes.forEach(function (p) {
+        var mt = p.malha.material; if (!mt || mt.polygonOffset === on) return;
+        mt.polygonOffset = on; mt.polygonOffsetFactor = on ? 1 : 0; mt.polygonOffsetUnits = on ? 1 : 0; mt.needsUpdate = true;
+      });
+    });
+  }
+  /* ---- linha oculta: luz neutra, fundo branco, sem grade nem sombra de contato ---- */
+  function estLuz(on) {
+    if (on) {
+      if (!EST.luz) {
+        EST.luz = { hc: hemi.color.clone(), hg: hemi.groundColor.clone(), fc: fill.color.clone(), tm: renderer.toneMapping, env: scene.environment, grid: grid.visible, chao: _chao.visible };
+        /* ⚠ o chão azulado do hemisfério, a luz de preenchimento azul e o
+           ambiente (sala azul-acinzentada) tingiam as faces brancas — medido
+           no e2e: pixel com croma 9 a 14 onde devia ser cinza puro */
+        hemi.color.setRGB(1, 1, 1); hemi.groundColor.setRGB(0.6, 0.6, 0.6); fill.color.setRGB(1, 1, 1);
+        renderer.toneMapping = THREE.NoToneMapping; scene.environment = null;
+        grid.visible = false; _chao.visible = false;
+      }
+    } else if (EST.luz) {
+      var l = EST.luz; EST.luz = null;
+      hemi.color.copy(l.hc); hemi.groundColor.copy(l.hg); fill.color.copy(l.fc);
+      renderer.toneMapping = l.tm; scene.environment = l.env; grid.visible = l.grid; _chao.visible = l.chao;
+    }
+    try { aplicarTema(); } catch (_) {}
+  }
+  S._linhaOn = function () { return !!EST.luz; };
+  /* ---- linha oculta: as arestas (uma malha por modelo) ---- */
+  function estArestasMontar(mo) {
+    var t0 = (typeof performance !== 'undefined') ? performance.now() : 0;
+    var orig = S._origemAgreg || texAncora(), faixas = [], tot = 0, pulados = 0;
+    mo.grupo.children.forEach(function (m) {
+      if (!m.isMesh || m.userData.expressID == null || !m.geometry || !m.geometry.attributes || !m.geometry.attributes.position) return;
+      /* malha densa (terreno, mobília importada): sem contorno — o mesmo
+         limite do encaixe, porque o EdgesGeometry nela trava a tela */
+      if (nVerts(m.geometry) > SNAP_MAX_VERT) { pulados++; return; }
+      var arr = arestasDe(m.geometry); if (!arr.length) return;
+      faixas.push({ ref: m, ini: tot / 3, n: arr.length / 3, arr: arr, M: (m.userData._matFechada || m.matrix).elements });
+      tot += arr.length;
+    });
+    /* ⚠ a matriz em double e a origem subtraída ANTES do float32 (a lição da
+       agregação, D8): num IFC georreferenciado a aresta "nadaria" meio metro */
+    var pos = new Float32Array(tot), o = 0;
+    faixas.forEach(function (f) {
+      var M = f.M, a = f.arr;
+      for (var i = 0; i < a.length; i += 3) {
+        var x = a[i], y = a[i + 1], z = a[i + 2];
+        pos[o++] = M[0] * x + M[4] * y + M[8] * z + M[12] - orig[0];
+        pos[o++] = M[1] * x + M[5] * y + M[9] * z + M[13] - orig[1];
+        pos[o++] = M[2] * x + M[6] * y + M[10] * z + M[14] - orig[2];
+      }
+      delete f.arr; delete f.M;
+    });
+    var g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    var idx = new Uint32Array(Math.max(1, tot / 3));
+    g.setIndex(new THREE.BufferAttribute(idx, 1)); g.setDrawRange(0, 0);
+    if (!EST.mat) EST.mat = new THREE.LineBasicMaterial({ color: 0x151515 });
+    var ls = new THREE.LineSegments(g, EST.mat);
+    ls.position.set(orig[0], orig[1], orig[2]); ls.frustumCulled = false;
+    ls.raycast = function () {};   /* aresta é desenho: nunca rouba o clique, a trena nem o encaixe */
+    var grupo = new THREE.Group(); grupo.add(ls); grupo.userData.arestasDe = mo.mid;
+    scene.add(grupo);
+    return { mo: mo, grupo: grupo, ls: ls, faixas: faixas, idx: idx, sig: null, segmentos: tot / 6, pulados: pulados,
+             ms: Math.round(((typeof performance !== 'undefined') ? performance.now() : 0) - t0) };
+  }
+  function estArestasSoltar(e) {
+    if (!e) return;
+    try { scene.remove(e.grupo); e.ls.geometry.dispose(); } catch (_) {}
+  }
+  function estArestasSync() {
+    var vivos = {};
+    S.modelos.forEach(function (mo) {
+      var e = EST.ar[mo.mid];
+      /* o modelo do editor é refeito a cada edição (objeto novo, mesmo mid) */
+      if (e && e.mo !== mo) { estArestasSoltar(e); e = null; }
+      if (!e) e = EST.ar[mo.mid] = estArestasMontar(mo);
+      vivos[mo.mid] = 1;
+      e.grupo.position.copy(modelRoot.position); e.grupo.quaternion.copy(modelRoot.quaternion); e.grupo.scale.copy(modelRoot.scale);
+      /* o estilo desenho da planta tem as arestas dele: as duas juntas dobrariam o traço */
+      e.grupo.visible = !estiloD.on && modelRoot.visible !== false && mo.grupo.visible !== false;
+      var fx = e.faixas, sig = 0, k, m, mt, vis;
+      for (k = 0; k < fx.length; k++) {
+        m = fx[k].ref; mt = m.material;
+        vis = m.visible !== false && m.parent === mo.grupo && !(m.userData && m.userData._solta) && !(mt && mt.transparent && mt.opacity < 0.15);
+        fx[k].vis = vis;
+        sig = (sig * 31 + (vis ? 2 : 1)) | 0;
+      }
+      if (sig === e.sig) return;
+      e.sig = sig;
+      var n = 0;
+      for (k = 0; k < fx.length; k++) { if (!fx[k].vis) continue; for (var q = 0; q < fx[k].n; q++) e.idx[n++] = fx[k].ini + q; }
+      e.ls.geometry.index.needsUpdate = true; e.ls.geometry.setDrawRange(0, n);
+    });
+    Object.keys(EST.ar).forEach(function (k) { if (!vivos[k]) { estArestasSoltar(EST.ar[k]); delete EST.ar[k]; } });
+  }
+  function estArestasLigar(on) {
+    if (on) { estArestasSync(); return; }
+    Object.keys(EST.ar).forEach(function (k) { estArestasSoltar(EST.ar[k]); });
+    EST.ar = {};
+  }
+  /* ---- realista: sombra da luz principal, enquadrada no modelo ---- */
+  function estRealista(on) {
+    if (on) {
+      if (EST.real) { ligarSombras(true); return; }   /* modelo novo: as malhas dele entram na sombra */
+      var sc = dir.shadow.camera;
+      EST.real = { cast: dir.castShadow, di: dir.intensity, dp: dir.position.clone(), tp: dir.target.position.clone(), alvoNaCena: !!dir.target.parent,
+                   cam: [sc.left, sc.right, sc.top, sc.bottom, sc.far] };
+      try {
+        var b = new THREE.Box3().setFromObject(modelRoot);
+        if (!b.isEmpty()) {
+          /* ⚠ a câmera de sombra fixa (±80 m em volta da origem) não cobria
+             modelo fora da origem nem obra grande: a sombra sumia ou saía
+             serrilhada. Centrada e dimensionada pelo modelo. */
+          var c = b.getCenter(new THREE.Vector3()), r = Math.max(15, b.getSize(new THREE.Vector3()).length() * 0.6);
+          dir.target.position.copy(c); if (!dir.target.parent) scene.add(dir.target);
+          dir.position.set(c.x + r * 0.6, c.y + r * 1.0, c.z + r * 0.4);
+          sc.left = -r; sc.right = r; sc.top = r; sc.bottom = -r; sc.far = r * 4; sc.updateProjectionMatrix();
+        }
+      } catch (_) {}
+      EST.real.sombra = ligarSombras(true);
+      dir.intensity = 1.15;
+    } else if (EST.real) {
+      var s = EST.real; EST.real = null;
+      if (!s.cast) ligarSombras(false);
+      dir.intensity = s.di; dir.position.copy(s.dp); dir.target.position.copy(s.tp);
+      if (!s.alvoNaCena && dir.target.parent) dir.target.parent.remove(dir.target);
+      var sc2 = dir.shadow.camera; sc2.left = s.cam[0]; sc2.right = s.cam[1]; sc2.top = s.cam[2]; sc2.bottom = s.cam[3]; sc2.far = s.cam[4]; sc2.updateProjectionMatrix();
+    }
+  }
+  /* o que ficou de fora: a malha mesclada é REFEITA sozinha (o raio-X suspende
+     e devolve) e nasce sem o polygonOffset e sem a sombra */
+  S._tickExtra.push(function () {
+    if (EST.luz) { estArestasSync(); estPolyBuckets(true); }
+    if (EST.real) {
+      var falta = false;
+      S.modelos.forEach(function (mo) { if (mo._agreg && mo._agreg.partes.length && !mo._agreg.partes[0].malha.castShadow) falta = true; });
+      if (falta) ligarSombras(true);
+    }
+  });
+
+  function estEstado() {
+    var p = estPlano(EST.modo), seg = 0, ms = 0, pul = 0;
+    Object.keys(EST.ar).forEach(function (k) { seg += EST.ar[k].segmentos; ms += EST.ar[k].ms; pul += EST.ar[k].pulados; });
+    var t = texEstado();
+    return { modo: EST.modo, nome: p.nome, fixo: EST.fixo, previa: estPrevia(), arestas: { modelos: Object.keys(EST.ar).length, segmentos: seg, ms: ms, pulados: pul },
+             linha: !!EST.luz, realista: !!EST.real, sombras: !!dir.castShadow, texturas: { on: t.on, nivel: TEXR.nivel || 'realista', vestidos: t.vestidos, carregadas: t.carregadas, erros: t.erros },
+             tom: renderer.toneMapping === THREE.NoToneMapping ? 'nenhum' : 'aces', ultimo: EST.ultimo };
+  }
+  function estAvisar() {
+    try { window.dispatchEvent(new CustomEvent('bim:estilo', { detail: { modo: EST.modo } })); } catch (_) {}
+  }
+  /* ---- o seletor ---- */
+  function estiloVisual(modo, o) {
+    o = o || {};
+    var B = texMotor();
+    if (!B || !B.estiloValido(modo)) return Promise.resolve(estEstado());
+    var p = B.planoEstilo(modo), t0 = (typeof performance !== 'undefined') ? performance.now() : 0;
+    /* escolha explícita: o estilo desenho da planta sai (os dois disputariam o material) */
+    if (estiloD.on && !o.manterDesenho && !o.auto) setEstiloDesenho(false);
+    EST.modo = p.estilo; if (!o.auto) EST.fixo = true;
+    if (!o.naoGravar && !o.auto) { try { localStorage.setItem('orcapro:bim:estilo-visual', EST.modo); } catch (_) {} }
+    /* 1) sai do que o modo anterior ligou (cada um restaura o seu) */
+    if (!p.arestas) estArestasLigar(false);
+    if (!p.facesClaras) estLinhaFaces(false);
+    if (!p.luzNeutra) estLuz(false);
+    if (!p.sombras) estRealista(false);
+    /* 2) a textura: o mesmo motor dos Materiais realistas, no nível do modo */
+    TEXR.nivel = p.pbr ? 'realista' : 'textura'; TEXR.env = p.env;
+    var querTex = p.texturas && texFrota();
+    var pr = texAplicar(querTex, 'estilo ' + p.nome);
+    /* 3) entra */
+    if (p.facesClaras) estLinhaFaces(true);
+    if (p.luzNeutra) estLuz(true);
+    if (p.arestas) estArestasLigar(true);
+    if (p.sombras) estRealista(true);
+    return pr.then(function () {
+      EST.ultimo = { modo: EST.modo, ms: Math.round(((typeof performance !== 'undefined') ? performance.now() : 0) - t0) };
+      texAvisar(); estAvisar();
+      return estEstado();
+    });
+  }
+  /* modelo novo chegou (ou a cena mudou): o estilo escolhido vale para ele */
+  function estReaplicar() {
+    if (!EST.fixo || !estPrevia()) return;
+    estiloVisual(EST.modo, { auto: true });
+  }
+  S._reaplicarEstiloVisual = function () {
+    if (!EST.fixo || !estPrevia()) return;
+    if (EST.luz) estLinhaFaces(true);   /* idempotente: só as bases novas */
+    if (EST.real) ligarSombras(true);
+  };
+
+  /* ---- TROCA de textura por material (Propriedades, gravada por obra) ---- */
+  /* o nome que as paredes, lajes e coberturas do editor levam ao dicionário */
+  var EST_NOMES_EDITOR = { parede: 'Alvenaria', laje: 'Laje de concreto', pilar: 'Concreto armado', viga: 'Concreto armado', cobertura: 'Telha cerâmica' };
+  function estMarcarMat(mat, nome) {
+    if (!mat || !mat.userData) return false;
+    var B = texMotor(); if (!B) return false;
+    if (!mat.userData.corLin) mat.userData.corLin = mat.color.clone();
+    mat.userData.nomeMaterial = nome;
+    var tex = estPrevia() ? texDe([{ n: nome }], mat.transparent ? mat.opacity : 1) : null;
+    var kN = tex ? B.chave(tex) : '', kV = mat.userData.tex ? B.chave(mat.userData.tex) : '';
+    if (kN === kV) return false;
+    if (mat.map || mat.userData._fis) texDespirMat(mat);   /* vestido com a textura velha: despe antes de trocar */
+    if (tex) { var c = mat.userData.corLin.clone().convertLinearToSRGB(); mat.userData.tex = tex; mat.userData.corIfc = [c.r, c.g, c.b]; }
+    else { delete mat.userData.tex; delete mat.userData.corIfc; }
+    return true;
+  }
+  function estMarcarEditor() {
+    var n = 0;
+    if (editMats) Object.keys(EST_NOMES_EDITOR).forEach(function (k) { if (editMats[k] && estMarcarMat(editMats[k], EST_NOMES_EDITOR[k])) n++; });
+    Object.keys(famMats).forEach(function (k) { if (estMarcarMat(famMats[k], famMats[k].userData.nomeMaterial || k)) n++; });
+    return n;
+  }
+  function estRedecidir() {
+    var B = texMotor(); if (!B) return 0;
+    var afetados = [], n = 0;
+    S.modelos.forEach(function (mo) {
+      if (mo.mid === 'edit') return;
+      var getMat = criarGetMat(mo), porId = {}, trocas = [];
+      (mo.elementos || []).forEach(function (e) { porId[e.id] = e; });
+      mo.grupo.children.forEach(function (m) {
+        if (!m.isMesh || m.userData.expressID == null) return;
+        var velho = m.userData.matOrig, rgba = velho && velho.userData && velho.userData.rgba;
+        if (!rgba) return;   /* só material do IFC (criarGetMat): o do editor é tratado por nome */
+        var el = porId[m.userData.expressID], tex = texDe(el && el.materiais, rgba[3]);
+        if ((tex ? B.chave(tex) : '') === (velho.userData.tex ? B.chave(velho.userData.tex) : '')) return;
+        trocas.push([m, velho, getMat(rgba[0], rgba[1], rgba[2], rgba[3], tex)]);
+      });
+      if (!trocas.length) return;
+      trocas.forEach(function (x) {
+        var m = x[0], velho = x[1], novo = x[2];
+        /* ⚠ a SELEÇÃO e o estilo desenho guardam a base para devolver depois:
+           apontando para a velha (ou para o clone de transparência dela),
+           desselecionar traria a textura antiga */
+        var pm = S.selected === m ? S.prevMat : null;
+        var pmBase = !!pm && (pm === velho || Object.keys(mo.transCache || {}).some(function (k) { return mo.transCache[k] === pm; }));
+        m.userData.matOrig = novo;
+        if (pmBase) S.prevMat = matBase(m);
+        if (m.userData._matAntesEstilo === velho) m.userData._matAntesEstilo = novo;
+      });
+      /* o resto (transparência do modelo, pintura, sistema) sai da base nova */
+      refreshModelo(mo);
+      n += trocas.length; afetados.push(mo);
+    });
+    if (estMarcarEditor()) S.modelos.forEach(function (mo) { if (mo.mid === 'edit') afetados.push(mo); });
+    /* a malha mesclada separa por textura: refeita só nos modelos que mudaram */
+    afetados.forEach(function (mo) { if (mo._agreg) { desagregarModelo(mo); agregarModelo(mo); } });
+    if (estiloD.on) setEstiloDesenho(true, true);
+    if (afetados.length) {
+      if (TEXR.on) texAplicar(true, TEXR.motivo).then(texAvisar); else texSujar();
+      if (EST.luz) estLinhaFaces(true);
+      if (EST.real) ligarSombras(true);
+    }
+    return n;
+  }
+  /* o que Propriedades mostra: os materiais da peça, a textura que ela veste
+     agora, por que casou (o termo do dicionário) e a troca gravada */
+  function estMaterialDaPeca(uid) {
+    var B = texMotor(), m = S.meshPorUid && S.meshPorUid[uid];
+    if (!B || !m) return null;
+    var mo = modeloDe(m.userData.mid), el = null, nomes = [];
+    ((mo && mo.elementos) || []).some(function (e) { if (e.id === m.userData.expressID) { el = e; return true; } return false; });
+    ((el && el.materiais) || []).forEach(function (x) { var nm = String((x && x.n) || '').trim(); if (nm && nomes.indexOf(nm) < 0) nomes.push(nm); });
+    if (!nomes.length && mo) mo.grupo.children.forEach(function (mm) {
+      if (mm.userData.expressID !== m.userData.expressID) return;
+      var nm = mm.userData.matOrig && mm.userData.matOrig.userData && mm.userData.matOrig.userData.nomeMaterial;
+      if (nm && nomes.indexOf(nm) < 0) nomes.push(nm);
+    });
+    var t = m.userData.matOrig && m.userData.matOrig.userData && m.userData.matOrig.userData.tex, tr = estTrocas();
+    return {
+      uid: uid, previa: estPrevia(),
+      materiais: nomes.map(function (nm) { var c = B.casar(nm), k = B.chaveMaterial(nm); return { nome: nm, chave: k, troca: tr[k] || '', casou: c ? (c.slug || ('#' + c.classe)) : '', termo: c ? c.termo : '' }; }),
+      textura: t ? (t.slug || ('#' + t.classe)) : '', nomeTextura: t ? B.nomeDe(t.slug || ('#' + t.classe)) : '', fonte: t ? t.fonte : '', termo: t ? (t.termo || '') : ''
+    };
+  }
+  S._estiloVisual = estiloVisual; S._estEstado = estEstado; S._estRedecidir = estRedecidir; S._estMaterialDaPeca = estMaterialDaPeca; S._estPrevia = estPrevia;
   /* ⚠ `cota.on` PRECISA estar aqui. O `pointerup` sai cedo quando nenhuma
      ferramenta consome clique (a porteira logo abaixo), e sem esta linha o
      botao Cotar ficaria MUDO: sem raycast, sem erro, sem log. */
@@ -5622,7 +6042,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
        handler: nem preview de parede, nem o hover normal do snap. */
     if (S._lupaMover && S._lupaMover(e)) return;
     // v1.1.82 — preview vivo da parede (rubber-band + cota junto ao cursor, estilo Revit)
-    if (S.edit && S.edit.on && S.edit.sub === 'parede' && S.edit.p1 && S._editPreviewMove) {
+    if (S.edit && S.edit.on && (((S.edit.sub === 'parede' || S.edit.sub === 'viga' || S.edit.sub === 'cobertura') && S.edit.p1) || S.edit.sub === 'familia') && S._editPreviewMove) {
       S._editPreviewMove(e);
     }
     if (!ferramentaClique() || !snap.on) return;
@@ -8641,6 +9061,250 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return { url: cnv.toDataURL('image/png'), w: totalW, h: totalH, escala: escalaEf, pxPorMetro: pxM, ajustada: ajustada, cotas: temCotas, diagonais: cad ? cad.diagonais : 0, larguraMM: totalW / 96 * 25.4, alturaMM: totalH / 96 * 25.4 };
   }
   S._gerarPlantaTec = gerarPlantaTec;
+
+  /* =====================================================================
+   * VISTA 2D TÉCNICA (07/10/2026) — os DADOS de uma planta ou de um corte,
+   * em VETOR, para o js/desenho2d.js desenhar como o Revit desenha:
+   *   cortes → o que o plano atravessa: interseção EXATA plano × triângulo,
+   *            encadeada em contornos por peça (vira pena grossa + hachura);
+   *   linhas → as arestas que se VEEM além do plano: as arestas de cada peça
+   *            (arestasDe, 25°) amostradas contra um passe de PROFUNDIDADE na
+   *            GPU com o mesmo recorte — o que está atrás de outra peça sai.
+   * Coordenadas devolvidas = TELA em metros (X à direita, Y para baixo):
+   *   planta: X = x do mundo, Y = z do mundo (norte do modelo para cima);
+   *   corte:  X = distância ao longo de A→B (a partir de A), Y = −y do mundo.
+   * def planta: { tipo:'planta', yCorte, yFundo, res? }
+   * def corte:  { tipo:'corte', ax, az, bx, bz, inv?, prof?, res? }
+   * ⚠ o passe de profundidade desenha SÓ o modelRoot (as peças), com a câmera
+   *   nas camadas 0 e 1: com o modelo mesclado (AGREG) as peças moram na
+   *   camada 1 e a malha mesclada (fora do modelRoot) fica escondida, então o
+   *   resultado é o mesmo com e sem a mescla. Tudo volta no finally.
+   * ===================================================================== */
+  function vista2d(def) {
+    var t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    def = def || {};
+    var box = new THREE.Box3().setFromObject(modelRoot);
+    if (box.isEmpty()) return { ok: false, erro: 'Abra um modelo primeiro.' };
+    var planta = def.tipo !== 'corte';
+    var dir, upv, O, plano, camPos, near = 0.4, far, sFn;
+    if (planta) {
+      var h = +def.yCorte, fundo = (def.yFundo != null) ? +def.yFundo : box.min.y - 0.01;
+      if (!isFinite(h)) return { ok: false, erro: 'Altura do corte inválida.' };
+      dir = new THREE.Vector3(0, -1, 0); upv = new THREE.Vector3(0, 0, -1); O = new THREE.Vector3(0, 0, 0);
+      plano = new THREE.Plane(new THREE.Vector3(0, -1, 0), h);
+      camPos = new THREE.Vector3((box.min.x + box.max.x) / 2, h + 0.5, (box.min.z + box.max.z) / 2);
+      far = 0.5 + Math.max(0.05, h - fundo);
+    } else {
+      var dx = (+def.bx) - (+def.ax), dz = (+def.bz) - (+def.az), L = Math.sqrt(dx * dx + dz * dz);
+      if (!(L > 0.05)) return { ok: false, erro: 'O corte precisa de dois pontos diferentes.' };
+      var nx = dz / L, nz = -dx / L; if (def.inv) { nx = -nx; nz = -nz; }
+      dir = new THREE.Vector3(nx, 0, nz); upv = new THREE.Vector3(0, 1, 0); O = new THREE.Vector3(+def.ax, 0, +def.az);
+      plano = new THREE.Plane(dir.clone(), -(nx * (+def.ax) + nz * (+def.az)));
+      var diag = box.getSize(new THREE.Vector3()).length();
+      var prof = (def.prof != null && +def.prof > 0) ? +def.prof : diag;
+      camPos = O.clone().addScaledVector(dir, -0.5); camPos.y = (box.min.y + box.max.y) / 2;
+      far = 0.5 + prof;
+    }
+    var r = new THREE.Vector3().crossVectors(dir, upv).normalize();
+    sFn = function (x, y, z) { return plano.normal.x * x + plano.normal.y * y + plano.normal.z * z + plano.constant; };
+    /* limites da câmera: os 8 cantos do modelo no plano da tela */
+    var l = Infinity, rr = -Infinity, bt = Infinity, tp = -Infinity, cc = new THREE.Vector3();
+    for (var ci = 0; ci < 8; ci++) {
+      cc.set(ci & 1 ? box.max.x : box.min.x, ci & 2 ? box.max.y : box.min.y, ci & 4 ? box.max.z : box.min.z).sub(camPos);
+      var cxv = cc.dot(r), cyv = cc.dot(upv);
+      if (cxv < l) l = cxv; if (cxv > rr) rr = cxv; if (cyv < bt) bt = cyv; if (cyv > tp) tp = cyv;
+    }
+    l -= 0.2; rr += 0.2; bt -= 0.2; tp += 0.2;
+    var Wm = rr - l, Hm = tp - bt;
+    var res = Math.max(512, Math.min(4096, +def.res || 2400, (renderer.capabilities && renderer.capabilities.maxTextureSize) || 4096));
+    var ppm = res / Math.max(Wm, Hm), W = Math.max(8, Math.ceil(Wm * ppm)), H = Math.max(8, Math.ceil(Hm * ppm));
+    var cam = new THREE.OrthographicCamera(l, rr, tp, bt, near, far);
+    cam.position.copy(camPos); cam.up.copy(upv); cam.lookAt(camPos.clone().add(dir));
+    cam.layers.enable(0); cam.layers.enable(1);
+    cam.updateProjectionMatrix(); cam.updateMatrixWorld(true);
+    /* deslocamento entre a origem do desenho (O) e a câmera, nos dois eixos */
+    var co = camPos.clone().sub(O), offX = co.dot(r), offY = co.dot(upv);
+    function telaX(px, py, pz) { return (px - O.x) * r.x + (py - O.y) * r.y + (pz - O.z) * r.z; }
+    function telaY(px, py, pz) { return -((px - O.x) * upv.x + (py - O.y) * upv.y + (pz - O.z) * upv.z); }
+    function prof3(px, py, pz) { return (px - camPos.x) * dir.x + (py - camPos.y) * dir.y + (pz - camPos.z) * dir.z; }
+
+    /* ---------------- passe de PROFUNDIDADE (GPU) ---------------- */
+    var prevClip = renderer.clippingPlanes, prevLocal = renderer.localClippingEnabled, prevTone = renderer.toneMapping;
+    var prevClear = renderer.getClearColor(new THREE.Color()).clone(), prevAlpha = renderer.getClearAlpha(), prevAuto = renderer.autoClear;
+    var escondidos = [], rt = null, mat = null, buf = null;
+    try {
+      rt = new THREE.WebGLRenderTarget(W, H, { depthBuffer: true });
+      mat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide });
+      renderer.clippingPlanes = [plano]; renderer.localClippingEnabled = false; renderer.toneMapping = THREE.NoToneMapping;
+      scene.children.forEach(function (c) { if (c !== modelRoot && c.visible !== false) { escondidos.push(c); c.visible = false; } });
+      scene.overrideMaterial = mat;
+      renderer.autoClear = true;
+      renderer.setRenderTarget(rt); renderer.setClearColor(0xffffff, 1); renderer.clear();
+      renderer.render(scene, cam);
+      buf = new Uint8Array(W * H * 4);
+      renderer.readRenderTargetPixels(rt, 0, 0, W, H, buf);
+    } finally {
+      scene.overrideMaterial = null;
+      escondidos.forEach(function (c) { c.visible = true; });
+      renderer.setRenderTarget(null);
+      if (rt) try { rt.dispose(); } catch (_) {}
+      if (mat) mat.dispose();
+      renderer.clippingPlanes = prevClip; renderer.localClippingEnabled = prevLocal; renderer.toneMapping = prevTone;
+      renderer.setClearColor(prevClear, prevAlpha); renderer.autoClear = prevAuto;
+    }
+    /* RGBA empacotado (three r150, packing.glsl) → distância em metros */
+    var U0 = (255 / 256) / (256 * 256 * 256), U1 = (255 / 256) / (256 * 256), U2 = (255 / 256) / 256, U3 = 255 / 256;
+    var dist = new Float32Array(W * H);
+    for (var pi = 0; pi < W * H; pi++) {
+      var o4 = pi * 4, d01 = (buf[o4] / 255) * U0 + (buf[o4 + 1] / 255) * U1 + (buf[o4 + 2] / 255) * U2 + (buf[o4 + 3] / 255) * U3;
+      dist[pi] = d01 >= 0.9999 ? Infinity : near + d01 * (far - near);   /* fundo branco = nada */
+    }
+    /* distância no buffer em volta de um ponto da tela (a MAIS FUNDA da vizinhança 3×3:
+       a aresta mora na borda entre duas faces, e meio pixel decide o lado) */
+    function bufDist(X, Y) {
+      var xc = (X - offX - l) / Wm * W, yc = (tp - (-Y - offY)) / Hm * H;   /* linha a partir de CIMA */
+      var ix = Math.floor(xc), iy = Math.floor(yc), m = -Infinity;
+      for (var oy = -1; oy <= 1; oy++) for (var ox = -1; ox <= 1; ox++) {
+        var xx = ix + ox, yy = iy + oy; if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+        var v = dist[(H - 1 - yy) * W + xx]; if (v > m) m = v;
+      }
+      return m;
+    }
+
+    /* ---------------- CORTE exato + ARESTAS visíveis ---------------- */
+    var cortes = [], linhas = [], nMalhas = 0, nTri = 0, nAr = 0, amostras = 0;
+    var tol = Math.max(0.004, 2.0 / ppm), passoPx = 0.9;
+    var bb = new THREE.Box3(), v3 = new THREE.Vector3();
+    modelRoot.children.forEach(function (g) {
+      (g.children || []).forEach(function (m) {
+        if (!m.isMesh || !m.geometry || !cadeiaVisivel(m)) return;
+        var geo = m.geometry, pos = geo.attributes && geo.attributes.position; if (!pos) return;
+        if (!geo.boundingBox) geo.computeBoundingBox();
+        bb.copy(geo.boundingBox).applyMatrix4(m.matrixWorld);
+        /* algum canto do lado que fica? senão a peça inteira foi cortada fora */
+        var algumFica = false, algumSai = false;
+        for (var k8 = 0; k8 < 8; k8++) {
+          var sv = sFn(k8 & 1 ? bb.max.x : bb.min.x, k8 & 2 ? bb.max.y : bb.min.y, k8 & 4 ? bb.max.z : bb.min.z);
+          if (sv >= 0) algumFica = true; else algumSai = true;
+        }
+        if (!algumFica) return;
+        nMalhas++;
+        var e = m.matrixWorld.elements, A = pos.array, idx = geo.index ? geo.index.array : null;
+        var nV = pos.count;
+        var WX = new Float32Array(nV), WY = new Float32Array(nV), WZ = new Float32Array(nV), SS = new Float32Array(nV);
+        for (var vi = 0; vi < nV; vi++) {
+          var x = A[vi * 3], y = A[vi * 3 + 1], z = A[vi * 3 + 2];
+          var wx = e[0] * x + e[4] * y + e[8] * z + e[12], wy = e[1] * x + e[5] * y + e[9] * z + e[13], wz = e[2] * x + e[6] * y + e[10] * z + e[14];
+          WX[vi] = wx; WY[vi] = wy; WZ[vi] = wz; SS[vi] = sFn(wx, wy, wz);
+        }
+        /* (a) corte: só se a peça atravessa o plano */
+        if (algumSai) {
+          var segs = [], nT = idx ? idx.length / 3 : nV / 3;
+          for (var ti = 0; ti < nT; ti++) {
+            var i0 = idx ? idx[ti * 3] : ti * 3, i1 = idx ? idx[ti * 3 + 1] : ti * 3 + 1, i2 = idx ? idx[ti * 3 + 2] : ti * 3 + 2;
+            var s0 = SS[i0], s1 = SS[i1], s2 = SS[i2];
+            var p0 = s0 >= 0, p1 = s1 >= 0, p2 = s2 >= 0;
+            if (p0 === p1 && p1 === p2) continue;
+            nTri++;
+            var pts = [], ar = [[i0, i1, s0, s1], [i1, i2, s1, s2], [i2, i0, s2, s0]];
+            for (var ai = 0; ai < 3; ai++) {
+              var q = ar[ai]; if ((q[2] >= 0) === (q[3] >= 0)) continue;
+              var tt = q[2] / (q[2] - q[3]), ia = q[0], ib = q[1];
+              var ix = WX[ia] + (WX[ib] - WX[ia]) * tt, iy = WY[ia] + (WY[ib] - WY[ia]) * tt, iz = WZ[ia] + (WZ[ib] - WZ[ia]) * tt;
+              pts.push([telaX(ix, iy, iz), telaY(ix, iy, iz)]);
+            }
+            if (pts.length === 2) segs.push(pts);
+          }
+          encadear(segs).forEach(function (c) { cortes.push(c); });
+        }
+        /* (b) arestas que se veem */
+        var arr = arestasDe(geo);
+        for (var ei = 0; ei < arr.length; ei += 6) {
+          nAr++;
+          var ax = arr[ei], ay = arr[ei + 1], az = arr[ei + 2], bx = arr[ei + 3], by = arr[ei + 4], bz = arr[ei + 5];
+          var X1 = e[0] * ax + e[4] * ay + e[8] * az + e[12], Y1 = e[1] * ax + e[5] * ay + e[9] * az + e[13], Z1 = e[2] * ax + e[6] * ay + e[10] * az + e[14];
+          var X2 = e[0] * bx + e[4] * by + e[8] * bz + e[12], Y2 = e[1] * bx + e[5] * by + e[9] * bz + e[13], Z2 = e[2] * bx + e[6] * by + e[10] * bz + e[14];
+          var sa = sFn(X1, Y1, Z1), sb = sFn(X2, Y2, Z2);
+          if (sa < 0 && sb < 0) continue;
+          if (Math.abs(sa) < 1e-3 && Math.abs(sb) < 1e-3) continue;   /* no próprio plano: é o contorno do corte */
+          if (sa < 0 || sb < 0) {   /* recorta no plano */
+            var tc = sa / (sa - sb);
+            var cx2 = X1 + (X2 - X1) * tc, cy2 = Y1 + (Y2 - Y1) * tc, cz2 = Z1 + (Z2 - Z1) * tc;
+            if (sa < 0) { X1 = cx2; Y1 = cy2; Z1 = cz2; } else { X2 = cx2; Y2 = cy2; Z2 = cz2; }
+          }
+          var da = prof3(X1, Y1, Z1), db = prof3(X2, Y2, Z2);
+          if (da > far && db > far) continue;
+          var sx1 = telaX(X1, Y1, Z1), sy1 = telaY(X1, Y1, Z1), sx2 = telaX(X2, Y2, Z2), sy2 = telaY(X2, Y2, Z2);
+          var lenPx = Math.sqrt((sx2 - sx1) * (sx2 - sx1) + (sy2 - sy1) * (sy2 - sy1)) * ppm;
+          var n = Math.max(2, Math.min(4000, Math.ceil(lenPx / passoPx) + 1));
+          amostras += n;
+          var ini = -1, ult = -1;
+          for (var si = 0; si < n; si++) {
+            var f = si / (n - 1), X = sx1 + (sx2 - sx1) * f, Y = sy1 + (sy2 - sy1) * f, dd = da + (db - da) * f;
+            var vis = dd <= far && dd <= bufDist(X, Y) + tol;
+            if (vis) { if (ini < 0) ini = si; ult = si; }
+            if ((!vis || si === n - 1) && ini >= 0) {
+              var fa = ini / (n - 1), fb = ult / (n - 1);
+              if (ult > ini) linhas.push([sx1 + (sx2 - sx1) * fa, sy1 + (sy2 - sy1) * fa, sx1 + (sx2 - sx1) * fb, sy1 + (sy2 - sy1) * fb]);
+              ini = -1;
+            }
+          }
+        }
+      });
+    });
+    var ms = Math.round(((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0));
+    return { ok: true, tipo: planta ? 'planta' : 'corte', cortes: cortes, linhas: linhas,
+      info: { ms: ms, malhas: nMalhas, triCortados: nTri, arestas: nAr, amostras: amostras, px: [W, H], pxPorMetro: Math.round(ppm * 10) / 10 } };
+  }
+  /* segmentos soltos → contornos: liga as pontas que se tocam (grade de 0,5 mm) */
+  function encadear(segs) {
+    var chave = function (p) { return Math.round(p[0] * 2000) + ',' + Math.round(p[1] * 2000); };
+    var mapa = {}, usado = new Array(segs.length), out = [];
+    segs.forEach(function (s, i) { [0, 1].forEach(function (j) { var k = chave(s[j]); (mapa[k] = mapa[k] || []).push(i); }); });
+    function proximo(p, atual) {
+      var lst = mapa[chave(p)] || [];
+      for (var i = 0; i < lst.length; i++) if (!usado[lst[i]] && lst[i] !== atual) return lst[i];
+      return -1;
+    }
+    for (var i = 0; i < segs.length; i++) {
+      if (usado[i]) continue;
+      usado[i] = true;
+      var pts = [segs[i][0], segs[i][1]];
+      /* anda para a frente */
+      var fim = pts[pts.length - 1], nx;
+      while ((nx = proximo(fim, -1)) >= 0) {
+        usado[nx] = true; var s = segs[nx];
+        var outra = chave(s[0]) === chave(fim) ? s[1] : s[0];
+        pts.push(outra); fim = outra;
+      }
+      /* e para trás */
+      var ini = pts[0];
+      while ((nx = proximo(ini, -1)) >= 0) {
+        usado[nx] = true; var s2 = segs[nx];
+        var outra2 = chave(s2[0]) === chave(ini) ? s2[1] : s2[0];
+        pts.unshift(outra2); ini = outra2;
+      }
+      var fechado = pts.length > 3 && chave(pts[0]) === chave(pts[pts.length - 1]);
+      if (fechado) pts.pop();
+      out.push({ pts: simplificar(pts, fechado), fechado: fechado });
+    }
+    return out;
+  }
+  /* tira os pontos colineares (a malha triangulada corta uma face plana em muitos pedaços) */
+  function simplificar(pts, fechado) {
+    if (pts.length < 3) return pts;
+    var out = [], n = pts.length;
+    for (var i = 0; i < n; i++) {
+      var a = pts[(i - 1 + n) % n], b = pts[i], c = pts[(i + 1) % n];
+      if (!fechado && (i === 0 || i === n - 1)) { out.push(b); continue; }
+      var cr = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
+      var la = Math.hypot(b[0] - a[0], b[1] - a[1]), lc = Math.hypot(c[0] - b[0], c[1] - b[1]);
+      if (la > 1e-6 && lc > 1e-6 && Math.abs(cr) / (la * lc) < 1e-4) continue;
+      out.push(b);
+    }
+    return out.length >= 2 ? out : pts;
+  }
+  S._vista2d = vista2d;
   plantaCfg.addEventListener('click', function (e) {
     var b = e.target.closest('[data-q]'); if (!b) return; var k = b.getAttribute('data-q');
     if (k === 'cancelar') { plantaCfg.style.display = 'none'; return; }
@@ -9061,7 +9725,27 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       var px = uid.lastIndexOf(':'); if (px < 0) return [];
       var midStr = uid.slice(0, px), eidRaw2 = uid.slice(px + 1);
       var eid2 = /^\d+$/.test(eidRaw2) ? +eidRaw2 : eidRaw2; // 'eN' do editor é string
-      return propsCompletas(/^\d+$/.test(midStr) ? +midStr : midStr, eid2);
+      var mid2 = /^\d+$/.test(midStr) ? +midStr : midStr;
+      var gr = propsCompletas(mid2, eid2);
+      /* o que veio de OUTRO programa (07/10/2026): parâmetros do Revit pelo GlobalId
+         (BIM.parametrosExtras, do .opbim do plugin) e atributos do SketchUp na malha */
+      try {
+        var moX = modeloDe(mid2), elX = moX ? (moX.elementos || []).filter(function (e) { return e.id === eid2; })[0] : null;
+        var gidX = elX && elX.globalId, ex = gidX && S._extrasPorGuid ? S._extrasPorGuid[gidX] : null;
+        if (ex) Object.keys(ex.grupos || {}).forEach(function (g) {
+          var o = ex.grupos[g] || {};
+          gr.push({ pset: ex.programa + ' › ' + g, origem: /tipo/i.test(g) ? 'tipo' : 'instância', props: Object.keys(o).map(function (k) { return { n: k, v: String(o[k]) }; }) });
+        });
+        var oe = elX && elX.origemExterna;
+        if (oe) {
+          gr.push({ pset: (oe.programa || 'Outro programa') + ' › identidade', origem: 'instância', props: [{ n: 'Componente', v: oe.componente || '—' }, { n: 'Etiqueta (tag)', v: oe.etiqueta || '—' }, { n: 'Material', v: oe.material || '—' }].concat(oe.guid ? [{ n: 'Id de origem', v: oe.guid }] : []) });
+          Object.keys(oe.atributos || {}).forEach(function (dic) {
+            var a = oe.atributos[dic] || {};
+            gr.push({ pset: (oe.programa || 'Outro programa') + ' › ' + dic, origem: 'instância', props: Object.keys(a).map(function (k) { return { n: k, v: String(a[k]) }; }) });
+          });
+        }
+      } catch (eX) {}
+      return gr;
     } catch (e) { return []; }
   };
 
@@ -10313,7 +10997,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
                // v1.1.82 — desenho estilo Revit: trava orto, ângulo predefinido (0=livre),
                // traço ENCADEADO (a próxima parede continua do fim da anterior) e o último
                // ponto ajustado do preview (direção p/ o input de distância)
-               orto: false, angPre: 0, chain: true, pPrev: null, linhaProv: null };
+               orto: false, angPre: 0, chain: true, pPrev: null, linhaProv: null,
+               /* 07/10/2026: viga, cobertura, família e refazer */
+               vigaB: 0.14, vigaH: 0.40, cobIncl: 30, cobAguas: 2, cobBeiral: 0.5, famSel: null, famRot: 0, ghost: null, redo: [], estado: null };
   S.edit = edit;
   var editPanel = document.createElement('div');
   editPanel.style.cssText = 'position:absolute;left:10px;top:52px;z-index:6;display:none;flex-direction:column;gap:8px;background:rgba(255,255,255,.985);border:1px solid #d3dce6;border-radius:12px;padding:10px 12px;color:#1a2b3c;font-size:12px;width:280px;max-width:94%';
@@ -10349,11 +11035,77 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         parede: new THREE.MeshStandardMaterial({ color: 0xd8cfc0, metalness: .05, roughness: .85, side: THREE.DoubleSide }),
         laje: new THREE.MeshStandardMaterial({ color: 0x9aa7b4, metalness: .05, roughness: .9, side: THREE.DoubleSide }),
         pilar: new THREE.MeshStandardMaterial({ color: 0x7fa7d4, metalness: .1, roughness: .8, side: THREE.DoubleSide }),
+        viga: new THREE.MeshStandardMaterial({ color: 0x8fb3d9, metalness: .1, roughness: .8, side: THREE.DoubleSide }),
+        cobertura: new THREE.MeshStandardMaterial({ color: 0xa65a3a, metalness: .05, roughness: .85, side: THREE.DoubleSide }),
         sel: new THREE.MeshStandardMaterial({ color: 0x22c55e, emissive: 0x114422, metalness: .1, roughness: .6, side: THREE.DoubleSide })
       };
     }
+    /* estilo visual: a parede do editor também tem material (o dicionário dá
+       a textura pelo nome — só na prévia; fora dela nada muda) */
+    if (!editMats._marcados) { editMats._marcados = true; Object.keys(EST_NOMES_EDITOR).forEach(function (k) { if (editMats[k]) estMarcarMat(editMats[k], EST_NOMES_EDITOR[k]); }); }
     return editMats[tipo] || editMats.parede;
   }
+  /* ===================== FAMÍLIAS PARAMÉTRICAS (07/10/2026) =====================
+   * O viewer não guarda família: recebe a biblioteca da casca (famDefinir) e
+   * avalia cada instância pelo js/familia.js (motor puro). A geometria vira
+   * malhas DIRETAS do grupo do editor — mesmo nível das paredes —, porque
+   * seleção, raio, vista 2D e quantitativo varrem modelRoot.children[g].children. */
+  var famReg = { lista: {}, cache: {} };
+  function famDefinir(lista) {
+    famReg.lista = {}; famReg.cache = {};
+    (lista || []).forEach(function (f) { if (f && f.id) famReg.lista[f.id] = f; });
+  }
+  function famAval(famId, tipoId, inst) {
+    var f = famReg.lista[famId]; if (!f || !window.Familia) return null;
+    var k = famId + '|' + (tipoId || '') + '|' + JSON.stringify(inst || {});
+    if (!famReg.cache[k]) famReg.cache[k] = window.Familia.avaliar(f, tipoId, inst || {});
+    return famReg.cache[k];
+  }
+  var famMats = {};
+  var FAM_CORES = { madeira: 0xb88a5a, 'alumínio': 0xc9ced6, aluminio: 0xc9ced6, vidro: 0x9fd3f0, concreto: 0xa9b0b8, granito: 0x4a4a4a,
+                    inox: 0xd0d4d8, 'louça branca': 0xf4f4f2, 'mdf branco': 0xf1f1ef, 'polietileno azul': 0x2c6fbf, metal: 0x8a8f96, 'aço': 0x8a8f96 };
+  function famMat(nome) {
+    var k = String(nome || '').toLowerCase().trim();
+    if (famMats[k]) return famMats[k];
+    var cor = FAM_CORES[k];
+    if (cor == null) { var h = 0; for (var i = 0; i < k.length; i++) h = (h * 31 + k.charCodeAt(i)) >>> 0; cor = k ? (0x808080 + (h & 0x3f3f3f)) : 0xc8ccd2; }
+    var vidro = k.indexOf('vidro') >= 0;
+    famMats[k] = new THREE.MeshStandardMaterial({ color: luzNum(cor), metalness: k === 'inox' || k === 'metal' || k === 'alumínio' ? 0.5 : 0.05, roughness: vidro ? 0.1 : 0.7,
+      transparent: vidro, opacity: vidro ? 0.35 : 1, side: THREE.DoubleSide, depthWrite: !vidro });
+    estMarcarMat(famMats[k], String(nome || '').trim() || k);   /* o nome do material do sólido vai ao dicionário (estilo visual) */
+    return famMats[k];
+  }
+  var FAM_IFC = { porta: 'IFCDOOR', janela: 'IFCWINDOW', pilar: 'IFCCOLUMN', viga: 'IFCBEAM', mobiliario: 'IFCFURNISHINGELEMENT',
+                  loucas: 'IFCSANITARYTERMINAL', equipamento: 'IFCFLOWSTORAGEDEVICE', estrutural: 'IFCMEMBER', generico: 'IFCBUILDINGELEMENTPROXY',
+                  parede: 'IFCWALL', laje: 'IFCSLAB', piso: 'IFCCOVERING' };  /* F1: famílias orçáveis (js/familiasorc.js) */
+  /* sólidos avaliados → malhas soltas, já na posição da instância (matriz aplicada) */
+  function famMalhas(av, inst, matSobre) {
+    var out = [], M = new THREE.Matrix4().compose(new THREE.Vector3(inst.x, inst.y, inst.z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, inst.rotY || 0, 0)), new THREE.Vector3(1, 1, 1));
+    (av.solidos || []).forEach(function (s) {
+      var g = null, m;
+      try {
+        if (s.forma === 'caixa') { g = new THREE.BoxGeometry(s.dx, s.dy, s.dz); m = new THREE.Mesh(g); m.position.set(s.x, s.y + s.dy / 2, s.z); m.rotation.y = (s.rot || 0) * Math.PI / 180; }
+        else if (s.forma === 'cilindro') {
+          g = new THREE.CylinderGeometry(s.raio, s.raio, s.altura, 28); m = new THREE.Mesh(g);
+          if (s.eixo === 'x') { m.rotation.z = -Math.PI / 2; m.position.set(s.x + s.altura / 2, s.y, s.z); }
+          else if (s.eixo === 'z') { m.rotation.x = Math.PI / 2; m.position.set(s.x, s.y, s.z + s.altura / 2); }
+          else m.position.set(s.x, s.y + s.altura / 2, s.z);
+        } else {
+          var sh = new THREE.Shape();
+          (s.contorno || []).forEach(function (q, i) { var px = q[0], py = s.plano === 'frente' ? q[1] : -q[1]; if (i) sh.lineTo(px, py); else sh.moveTo(px, py); });
+          g = new THREE.ExtrudeGeometry(sh, { depth: s.altura, bevelEnabled: false });
+          if (s.plano !== 'frente') g.rotateX(-Math.PI / 2);
+          m = new THREE.Mesh(g); m.position.set(s.x, s.y, s.z); m.rotation.y = (s.rot || 0) * Math.PI / 180;
+        }
+      } catch (e) { return; }
+      m.material = matSobre || famMat(s.material);
+      m.updateMatrix(); m.applyMatrix4(M);
+      out.push(m);
+    });
+    return out;
+  }
+  S._famDefinir = famDefinir; S._famAval = famAval;
+
   function editBase() {
     try {
       // só modelos IMPORTADOS ancoram o plano de trabalho — incluir o próprio modelo
@@ -10381,7 +11133,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   // ---- v1.1.82: desenho estilo Revit ----
   // ajusta o 2º ponto pela trava orto (botão OU Shift) e pelos ângulos predefinidos
   function editAjustarPonto(p, ev) {
-    if (!edit.p1 || !p || edit.sub !== 'parede') return p;
+    if (!edit.p1 || !p || (edit.sub !== 'parede' && edit.sub !== 'viga')) return p;
     var dx = p.x - edit.p1.x, dz = p.z - edit.p1.z;
     var dist = Math.sqrt(dx * dx + dz * dz);
     if (dist < 1e-6) return p;
@@ -10450,6 +11202,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     } else dir = { x: 1, z: 0 };
     var p2 = new THREE.Vector3(edit.p1.x + dir.x * num2, edit.p1.y, edit.p1.z + dir.z * num2);
     inp2.value = '';
+    if (edit.sub === 'viga') { editClique({ clientX: 0, clientY: 0, shiftKey: false }, null, p2); return; }
+    if (edit.sub !== 'parede') return;
     editConcluirParede(p2);
   });
   // conclui a parede em p2 (2º clique OU distância digitada) com o traço ENCADEADO
@@ -10481,6 +11235,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   var _edPrevT = 0;
   S._editPreviewMove = function (e) {
     var t2 = performance.now(); if (t2 - _edPrevT < 33) return; _edPrevT = t2;
+    if (edit.sub === 'familia') { editGhostMover(e); return; }
     var hit2 = raycastEm(e.clientX, e.clientY);
     var sn2 = hit2 ? aplicarSnap(hit2, raioToque(e)) : null;
     var pM = sn2 ? sn2.p.clone() : editPontoPlano(e.clientX, e.clientY);
@@ -10534,19 +11289,69 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     edit.sprites.forEach(function (sp) { scene.remove(sp); if (sp.material && sp.material.map) sp.material.map.dispose(); if (sp.material) sp.material.dispose(); });
     edit.sprites = [];
     var st = BimEdit.aplicar(edit.ops);
-    if (st.caixas.length) {
-      var mo = { mid: 'edit', sintetico: true, editor: true, nome: 'Criados no OrçaPRO (' + st.caixas.length + ')', disciplina: 'arquitetura', alpha: 1, visivel: true, grupo: new THREE.Group(), matCache: {}, transCache: {}, elementos: [], tipos: {}, nEl: 0, nTri: 0, pavimentos: [], carimbos: {}, qto: {} };
+    edit.estado = st;
+    if (st.caixas.length || st.familias.length || st.coberturas.length) {
+      var nTot = st.caixas.length + st.familias.length + st.coberturas.length;
+      var mo = { mid: 'edit', sintetico: true, editor: true, nome: 'Criados no OrçaPRO (' + nTot + ')', disciplina: 'arquitetura', alpha: 1, visivel: true, grupo: new THREE.Group(), matCache: {}, transCache: {}, elementos: [], tipos: {}, nEl: 0, nTri: 0, pavimentos: [], carimbos: {}, qto: {} };
       mo.grupo.userData.mid = 'edit';
-      st.caixas.forEach(function (c) {
-        var g = new THREE.BoxGeometry(c.comprimento, c.altura, c.espessura);
-        var m = new THREE.Mesh(g, editMat(c.tipo));
-        m.position.set(c.cx, c.cy, c.cz); m.rotation.y = c.rotY;
-        m.userData.expressID = c.id; m.userData.tipo = c.ifc; m.userData.mid = 'edit'; m.userData.matOrig = editMat(c.tipo);
+      /* vãos das portas/janelas hospedadas: a parede vira PEDAÇOS (sem CSG) */
+      var vaosEd = BimEdit.vaosDasParedes(st, famAval);
+      function addMesh(m, id, ifc, mat) {
+        m.userData.expressID = id; m.userData.tipo = ifc; m.userData.mid = 'edit'; m.userData.matOrig = mat || m.material;
         mo.grupo.add(m);
-        S.meshPorUid['edit:' + c.id] = m;
-        mo.nTri += 12; mo.tipos[c.ifc] = (mo.tipos[c.ifc] || 0) + 1;
-        mo.qto[c.id] = { comprimento: c.tipo === 'pilar' ? (c.comprimentoPilar || c.altura) : c.comprimento, area: c.area, volume: c.volume, contagem: 1 };
-        mo.elementos.push({ id: c.id, uid: 'edit:' + c.id, mid: 'edit', arquivo: mo.nome, tipo: c.ifc, nome: (c.tipo === 'parede' ? 'Parede' : c.tipo === 'laje' ? 'Laje' : 'Pilar') + ' (sintética ' + c.id + ')', etapa: null, codOrc: null, qto: mo.qto[c.id], disciplina: 'arquitetura' });
+        if (!S.meshPorUid['edit:' + id]) S.meshPorUid['edit:' + id] = m;
+        mo.nTri += (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3;
+      }
+      var NOMES_ED = { parede: 'Parede', laje: 'Laje', pilar: 'Pilar', viga: 'Viga' };
+      st.caixas.forEach(function (c) {
+        var mat = editMat(c.tipo), vz = c.tipo === 'parede' ? vaosEd[c.id] : null;
+        if (vz) {
+          var co = Math.cos(c.rotY), si = Math.sin(c.rotY);
+          vz.pedacos.forEach(function (pd) {
+            var xm = (pd.x0 + pd.x1) / 2, ym = (pd.y0 + pd.y1) / 2 - c.altura / 2;
+            var m2 = new THREE.Mesh(new THREE.BoxGeometry(pd.x1 - pd.x0, pd.y1 - pd.y0, c.espessura), mat);
+            m2.position.set(c.cx + xm * co, c.cy + ym, c.cz - xm * si); m2.rotation.y = c.rotY;
+            addMesh(m2, c.id, c.ifc, mat);
+          });
+        } else {
+          var m = new THREE.Mesh(new THREE.BoxGeometry(c.comprimento, c.altura, c.espessura), mat);
+          m.position.set(c.cx, c.cy, c.cz); m.rotation.y = c.rotY;
+          addMesh(m, c.id, c.ifc, mat);
+        }
+        mo.tipos[c.ifc] = (mo.tipos[c.ifc] || 0) + 1;
+        var areaL = vz ? vz.areaLiquida : c.area;
+        mo.qto[c.id] = { comprimento: c.tipo === 'pilar' ? (c.comprimentoPilar || c.altura) : c.comprimento, area: areaL, volume: vz ? Math.round(areaL * c.espessura * 10000) / 10000 : c.volume, contagem: 1, areaVaos: vz ? vz.areaVaos : 0 };
+        mo.elementos.push({ id: c.id, uid: 'edit:' + c.id, mid: 'edit', arquivo: mo.nome, tipo: c.ifc, nome: (NOMES_ED[c.tipo] || 'Elemento') + ' (sintética ' + c.id + ')', etapa: null, codOrc: null, qto: mo.qto[c.id], disciplina: c.tipo === 'viga' || c.tipo === 'pilar' ? 'estrutura' : 'arquitetura' });
+        mo.nEl++;
+      });
+      st.coberturas.forEach(function (cb) {
+        var matC = editMat('cobertura');
+        cb.planos.forEach(function (p) {
+          var mC = new THREE.Mesh(new THREE.BoxGeometry(p.comprimento, p.espessura, p.largura), matC);
+          mC.rotation.order = 'YXZ'; mC.rotation.y = p.rotY; mC.rotation.x = p.rotX; mC.position.set(p.cx, p.cy, p.cz);
+          addMesh(mC, cb.id, 'IFCROOF', matC);
+        });
+        mo.tipos.IFCROOF = (mo.tipos.IFCROOF || 0) + 1;
+        mo.qto[cb.id] = { area: cb.area, areaProjecao: cb.areaProjecao, volume: cb.volume, comprimento: cb.comprimentoCumeeira, contagem: 1 };
+        mo.elementos.push({ id: cb.id, uid: 'edit:' + cb.id, mid: 'edit', arquivo: mo.nome, tipo: 'IFCROOF', nome: 'Cobertura ' + (cb.aguas === 1 ? '1 água' : '2 águas') + ' ' + String(cb.inclinacao).replace('.', ',') + '% (sintética ' + cb.id + ')', etapa: null, codOrc: null, qto: mo.qto[cb.id], disciplina: 'arquitetura' });
+        mo.nEl++;
+      });
+      st.familias.forEach(function (fi) {
+        var av = famAval(fi.famId, fi.tipoId, fi.inst), fam = famReg.lista[fi.famId];
+        var ifc = fam ? (FAM_IFC[fam.categoria] || 'IFCBUILDINGELEMENTPROXY') : 'IFCBUILDINGELEMENTPROXY';
+        var malhas = av && av.solidos && av.solidos.length ? famMalhas(av, fi) : [];
+        if (!malhas.length) {   /* família que não está na biblioteca deste aparelho: um marcador honesto, não some calado */
+          var mx = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), editMat('sel'));
+          mx.position.set(fi.x, fi.y + 0.2, fi.z); malhas = [mx];
+        }
+        malhas.forEach(function (mf) { addMesh(mf, fi.id, ifc, mf.material); });
+        mo.tipos[ifc] = (mo.tipos[ifc] || 0) + 1;
+        var qf = av && av.quantitativo ? av.quantitativo : { unidade: 'un', quantidade: 1 };
+        mo.qto[fi.id] = { contagem: 1, unidade: qf.unidade, quantidade: qf.quantidade, volume: qf.unidade === 'm3' ? qf.quantidade : undefined, area: qf.unidade === 'm2' ? qf.quantidade : undefined, comprimento: qf.unidade === 'm' ? qf.quantidade : undefined };
+        mo.elementos.push({ id: fi.id, uid: 'edit:' + fi.id, mid: 'edit', arquivo: mo.nome, tipo: ifc,
+          nome: (fam ? fam.nome : 'Família não carregada (' + fi.famId + ')') + (av && av.tipo ? ' : ' + av.tipo.nome : ''), etapa: null, codOrc: qf.codigo || null, qto: mo.qto[fi.id],
+          disciplina: fam && (fam.categoria === 'pilar' || fam.categoria === 'viga' || fam.categoria === 'estrutural') ? 'estrutura' : (fam && (fam.categoria === 'loucas' || fam.categoria === 'equipamento') ? 'hidraulica' : 'arquitetura'),
+          familia: { famId: fi.famId, tipoId: fi.tipoId, hospedada: !!fi.host } });
         mo.nEl++;
       });
       modelRoot.add(mo.grupo);
@@ -10555,7 +11360,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         mo.grupo.children.forEach(function (m) {
           var bb = new THREE.Box3().setFromObject(m);
           var elx = mo.elementos.filter(function (e2) { return e2.id === m.userData.expressID; })[0];
-          if (elx && !bb.isEmpty()) elx.aabb = { min: [bb.min.x, bb.min.y, bb.min.z], max: [bb.max.x, bb.max.y, bb.max.z] };
+          /* elemento de VÁRIAS malhas (parede com vão, família, cobertura): a caixa é a união delas */
+          if (elx && !bb.isEmpty()) {
+            if (elx.aabb) { bb.expandByPoint(new THREE.Vector3(elx.aabb.min[0], elx.aabb.min[1], elx.aabb.min[2])); bb.expandByPoint(new THREE.Vector3(elx.aabb.max[0], elx.aabb.max[1], elx.aabb.max[2])); }
+            elx.aabb = { min: [bb.min.x, bb.min.y, bb.min.z], max: [bb.max.x, bb.max.y, bb.max.z] };
+          }
         });
       } catch (_) {}
       S.modelos.push(mo);
@@ -10582,19 +11391,67 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (opts.onEdicao && !edit._replay) { try { opts.onEdicao(edit.ops.slice()); } catch (_) {} }
   }
   S._tickExtra.push(function () { for (var i = 0; i < edit.sprites.length; i++) rescaleObj(edit.sprites[i]); });
-  function editOp(o) { edit.ops.push(o); editRebuild(); }
+  function editOp(o) { edit.ops.push(o); edit.redo = []; editRebuild(); }
+  /* desfazer/refazer da edição (Ctrl+Z / Ctrl+Y e a barra de título) */
+  S._editDesfazer = function () { if (!edit.ops.length) return false; edit.redo.push(edit.ops.pop()); editTirarProv(); editRebuild(); return true; };
+  S._editRefazer = function () { if (!edit.redo.length) return false; edit.ops.push(edit.redo.pop()); editRebuild(); return true; };
+  S._editReconstruir = function () { if (edit.ops.length) editRebuild(); };
+  S._editOpExterna = function (o) { editOp(o); };
+  /* ponto do MUNDO → posição na tela (px do cliente). Só leitura: o e2e clica
+     numa parede como o usuário clica, sem adivinhar pixel */
+  S._telaDe = function (x, y, z) {
+    var v = new THREE.Vector3(x, y, z).project(camera), r = canvasEl.getBoundingClientRect();
+    return { x: r.left + (v.x + 1) / 2 * r.width, y: r.top + (1 - v.y) / 2 * r.height, atras: v.z > 1 };
+  };
+  /* PRÉ-VISUALIZAÇÃO da família no editor: renderer próprio no canvas dado,
+     arrastar gira. O canvas guarda o seu estado (_famPrev) — chamar de novo só
+     troca a geometria. */
+  S._famPreview = function (canvas, av) {
+    if (!canvas || !av) return false;
+    var pv = canvas._famPrev;
+    if (!pv) {
+      var rnd = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+      rnd.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+      var sc = new THREE.Scene(); sc.add(new THREE.HemisphereLight(0xffffff, 0x8899aa, 0.9));
+      var dl = new THREE.DirectionalLight(0xffffff, 0.8); dl.position.set(3, 5, 4); sc.add(dl);
+      var cam = new THREE.PerspectiveCamera(35, 1, 0.01, 200), grp = new THREE.Group(); sc.add(grp);
+      var grade = new THREE.GridHelper(4, 16, 0x7f98b0, 0xc5d3df); sc.add(grade);
+      pv = canvas._famPrev = { rnd: rnd, sc: sc, cam: cam, grp: grp, th: 0.8, ph: 1.05, r: 3, alvo: new THREE.Vector3() };
+      var arr = null;
+      canvas.addEventListener('pointerdown', function (e) { arr = { x: e.clientX, y: e.clientY, th: pv.th, ph: pv.ph }; try { canvas.setPointerCapture(e.pointerId); } catch (_) {} });
+      canvas.addEventListener('pointermove', function (e) { if (!arr) return; pv.th = arr.th - (e.clientX - arr.x) * 0.01; pv.ph = Math.max(0.15, Math.min(1.5, arr.ph - (e.clientY - arr.y) * 0.01)); desenhar(); });
+      canvas.addEventListener('pointerup', function () { arr = null; });
+      canvas.addEventListener('wheel', function (e) { e.preventDefault(); pv.r = Math.max(0.3, Math.min(60, pv.r * (e.deltaY > 0 ? 1.12 : 1 / 1.12))); desenhar(); }, { passive: false });
+      pv.desenhar = desenhar;
+    }
+    function desenhar() {
+      var w = canvas.clientWidth || 300, h = canvas.clientHeight || 220;
+      pv.rnd.setSize(w, h, false); pv.cam.aspect = w / h; pv.cam.updateProjectionMatrix();
+      pv.cam.position.set(pv.alvo.x + pv.r * Math.sin(pv.ph) * Math.sin(pv.th), pv.alvo.y + pv.r * Math.cos(pv.ph), pv.alvo.z + pv.r * Math.sin(pv.ph) * Math.cos(pv.th));
+      pv.cam.lookAt(pv.alvo); pv.rnd.render(pv.sc, pv.cam);
+    }
+    pv.grp.children.slice().forEach(function (m) { pv.grp.remove(m); if (m.geometry) m.geometry.dispose(); });
+    famMalhas(av, { x: 0, y: 0, z: 0, rotY: 0 }).forEach(function (m) { pv.grp.add(m); });
+    var bb = new THREE.Box3().setFromObject(pv.grp);
+    if (!bb.isEmpty()) { bb.getCenter(pv.alvo); var tam = bb.getSize(new THREE.Vector3()).length(); if (!canvas._famPrevAjustado) { pv.r = Math.max(0.8, tam * 1.6); canvas._famPrevAjustado = true; } }
+    pv.desenhar();
+    return true;
+  };
   function editHintSub() {
     var h = { parede: '' + (typeof Icones !== 'undefined' ? Icones.get('bloco', 15) : '') + ' Clique o INÍCIO e o FIM da parede (no modelo ou no chão vazio).',
               laje: '' + (typeof Icones !== 'undefined' ? Icones.get('laje', 15) : '') + ' Clique 2 cantos OPOSTOS do retângulo da laje.',
               pilar: '' + (typeof Icones !== 'undefined' ? Icones.get('pilar', 15) : '') + ' Clique onde o pilar nasce.',
               mover: '↔️ Clique num elemento CRIADO AQUI e depois no novo lugar (IFC não se move — honestidade).',
               apagar: '' + (typeof Icones !== 'undefined' ? Icones.get('lixeira', 15) : '') + ' Clique no elemento: criado aqui = removido; do IFC = ocultado como "removido na edição".',
-              anotar: '' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' Escreva o texto no campo e clique no ponto do modelo.' };
+              anotar: '' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' Escreva o texto no campo e clique no ponto do modelo.',
+              viga: 'Viga: clique o INÍCIO e o FIM (topo na altura do nível + ' + String(edit.alt).replace('.', ',') + ' m).',
+              cobertura: 'Cobertura: clique dois cantos OPOSTOS da área coberta (sem o beiral).',
+              familia: 'Família: clique onde colocar (porta e janela: numa parede criada aqui). Barra de espaço gira.' };
     S._hint(edit.sub ? h[edit.sub] : '' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + ' Editor: escolha uma ferramenta no painel.');
   }
-  function editClique(e, hit) {
-    var sn = hit ? aplicarSnap(hit, raioToque(e)) : null;
-    var p = sn ? sn.p.clone() : editPontoPlano(e.clientX, e.clientY);
+  function editClique(e, hit, pForcado) {
+    var sn = (hit && !pForcado) ? aplicarSnap(hit, raioToque(e)) : null;
+    var p = pForcado ? pForcado.clone() : (sn ? sn.p.clone() : editPontoPlano(e.clientX, e.clientY));
     if (sn) mostrarSnapMarca(sn, e.clientX, e.clientY);
     var sub = edit.sub;
     if (sub === 'apagar') {
@@ -10622,7 +11479,29 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       S._hint('↔️ Movido. Clique noutro elemento pra mover de novo, ou Esc.');
       marcarFechamento(); return;
     }
+    if (sub === 'familia') { editColocarFamilia(e, hit, p); return; }
     if (!p) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + ' Não achei o ponto — clique no modelo ou no plano do chão.'); return; }
+    if ((sub === 'viga' || sub === 'cobertura') && edit.p1) {
+      var p2v = editAjustarPonto(p, e), ini = edit.p1.clone();
+      editTirarProv();
+      if (sub === 'viga') {
+        var cV = BimEdit.viga({ x: ini.x, z: ini.z }, { x: p2v.x, z: p2v.z }, edit.vigaB, edit.vigaH, edit.base + edit.alt);
+        if (!cV) { S._hint('Pontos muito próximos — clique 2 pontos distintos.'); return; }
+        editOp({ op: 'criar', id: 'e' + (++edit.seq), caixa: cV });
+        S._hint('Viga criada (' + cV.comprimento.toFixed(2).replace('.', ',') + ' m, ' + Math.round(edit.vigaB * 100) + ' × ' + Math.round(edit.vigaH * 100) + ', topo a ' + (edit.base + edit.alt).toFixed(2).replace('.', ',') + ' m). Clique o início da próxima, ou Esc.');
+      } else {
+        var cb = BimEdit.cobertura({ x: ini.x, z: ini.z }, { x: p.x, z: p.z }, { base: edit.base + edit.alt, inclinacao: edit.cobIncl, aguas: edit.cobAguas, beiral: edit.cobBeiral, espessura: 0.08 });
+        if (!cb) { S._hint('Retângulo pequeno demais para a cobertura.'); return; }
+        editOp({ op: 'cobertura', id: 'e' + (++edit.seq), cobertura: cb });
+        S._hint('Cobertura criada: ' + cb.area.toFixed(2).replace('.', ',') + ' m² de telhado (' + cb.aguas + (cb.aguas === 1 ? ' água' : ' águas') + ', ' + String(cb.inclinacao).replace('.', ',') + '%, cumeeira a ' + cb.cumeeira.toFixed(2).replace('.', ',') + ' m).');
+      }
+      marcarFechamento(); return;
+    }
+    if (sub === 'viga' || sub === 'cobertura') {
+      edit.p1 = p.clone(); edit.prov = pontoMarca(p); scene.add(edit.prov); rescaleObj(edit.prov);
+      S._hint(sub === 'viga' ? 'Agora clique o FIM da viga.' : 'Agora clique o canto OPOSTO do telhado (o beiral de ' + String(edit.cobBeiral).replace('.', ',') + ' m é somado em volta).');
+      return;
+    }
     if (sub === 'pilar') {
       var cP = BimEdit.pilar({ x: p.x, z: p.z }, edit.secao, edit.alt, edit.base);
       if (cP) { editOp({ op: 'criar', id: 'e' + (++edit.seq), caixa: cP }); S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('pilar', 15) : '') + ' Pilar criado. Clique pra outro, ou Esc.'); }
@@ -10651,8 +11530,74 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       marcarFechamento(); return;
     }
   }
+  /* ---------------- COLOCAR FAMÍLIA (07/10/2026) ----------------
+     Livre: no ponto do plano de trabalho, girada de 90 em 90 (barra de espaço).
+     Hospedada (porta/janela): só em parede CRIADA aqui — a do IFC importado não
+     é alterada (honestidade do editor) —, com o vão a `t` metros do centro da
+     parede e sem passar das pontas. */
+  function editParedeDoHit() {
+    var h0 = _ultimosHits && _ultimosHits[0]; if (!h0) return null;
+    var m = h0.object; if (!m || m.userData.mid !== 'edit' || m.userData.tipo !== 'IFCWALL') return null;
+    var par = ((edit.estado && edit.estado.caixas) || []).filter(function (c) { return c.id === m.userData.expressID; })[0];
+    return par ? { parede: par, ponto: h0.point } : null;
+  }
+  function editColocarFamilia(e, hit, p) {
+    var fsel = edit.famSel, fam = fsel && famReg.lista[fsel.famId];
+    if (!fam) { S._hint('Escolha a família e o tipo na Biblioteca de famílias (Gerenciar › Famílias) antes de clicar.'); return; }
+    if (fam.hospedagem === 'parede') {
+      var ph = hit ? editParedeDoHit() : null;
+      if (!ph) { S._hint('"' + fam.nome + '" vai numa parede: clique numa parede CRIADA no OrçaPRO (a parede do IFC importado não é alterada).'); return; }
+      var av = famAval(fsel.famId, fsel.tipoId, fsel.inst || {}), lv = av && av.abertura ? av.abertura.largura : 0.8;
+      var meia = ph.parede.comprimento / 2 - lv / 2;
+      if (meia <= 0) { S._hint('A parede (' + ph.parede.comprimento.toFixed(2).replace('.', ',') + ' m) é mais curta que o vão (' + lv.toFixed(2).replace('.', ',') + ' m).'); return; }
+      var t = Math.max(-meia, Math.min(meia, BimEdit.tNaParede(ph.parede, ph.ponto)));
+      editOp({ op: 'familia', id: 'f' + (++edit.seq), famId: fsel.famId, tipoId: fsel.tipoId, host: { id: ph.parede.id, t: Math.round(t * 1000) / 1000 }, inst: fsel.inst || {} });
+      S._hint(fam.nome + ' colocada na parede (o vão já foi aberto e descontado). Clique em outra parede, ou Esc.');
+    } else {
+      if (!p) { S._hint('Não achei o ponto — clique no modelo ou no plano do chão.'); return; }
+      editOp({ op: 'familia', id: 'f' + (++edit.seq), famId: fsel.famId, tipoId: fsel.tipoId, x: Math.round(p.x * 1000) / 1000, y: edit.base, z: Math.round(p.z * 1000) / 1000, rotY: edit.famRot, inst: fsel.inst || {} });
+      S._hint(fam.nome + ' colocada. Barra de espaço gira 90°; clique para outra, ou Esc.');
+    }
+    marcarFechamento();
+  }
+  /* fantasma (caixa em linhas ciano) da família sob o cursor
+     ⚠ NÃO SE CHAMA `ghostMat`: este arquivo é UMA função só, e um `var ghostMat`
+     aqui embaixo sobrescrevia a FUNÇÃO ghostMat() do raio-X lá em cima (hoisting:
+     a declaração vira null na montagem). Raio-X quebrado com "ghostMat is not a
+     function" desde 8c5e1ea — achado pela e2e-bim-estilo-visual (07/10/2026). */
+  var famGhostMat = null;
+  function editGhostLimpar() { if (edit.ghost) { scene.remove(edit.ghost); edit.ghost.geometry.dispose(); edit.ghost = null; } }
+  function editGhostMover(e) {
+    var fsel = edit.famSel, fam = fsel && famReg.lista[fsel.famId]; if (!fam) return;
+    var av = famAval(fsel.famId, fsel.tipoId, fsel.inst || {}); if (!av || !av.caixa) return;
+    var pos = null, rotY = edit.famRot;
+    if (fam.hospedagem === 'parede') {
+      var ph = raycastEm(e.clientX, e.clientY) ? editParedeDoHit() : null;
+      if (ph) { var hp = BimEdit.posicaoHospedada(ph.parede, BimEdit.tNaParede(ph.parede, ph.ponto)); pos = hp; rotY = hp.rotY; }
+    } else { var pp = editPontoPlano(e.clientX, e.clientY); if (pp) pos = { x: pp.x, y: edit.base, z: pp.z }; }
+    if (!pos) { if (edit.ghost) edit.ghost.visible = false; return; }
+    var b = av.caixa;
+    if (!edit.ghost) {
+      famGhostMat = famGhostMat || new THREE.LineBasicMaterial({ color: 0x3fb5e5, depthTest: false, transparent: true, opacity: 0.95 });
+      edit.ghost = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)), famGhostMat);
+      edit.ghost.renderOrder = 998; scene.add(edit.ghost);
+    }
+    edit.ghost.visible = true;
+    edit.ghost.scale.set(Math.max(b.x1 - b.x0, 0.01), Math.max(b.y1 - b.y0, 0.01), Math.max(b.z1 - b.z0, 0.01));
+    var cxl = (b.x0 + b.x1) / 2, cyl = (b.y0 + b.y1) / 2, czl = (b.z0 + b.z1) / 2, co = Math.cos(rotY), si = Math.sin(rotY);
+    edit.ghost.position.set(pos.x + cxl * co + czl * si, pos.y + cyl, pos.z - cxl * si + czl * co);
+    edit.ghost.rotation.set(0, rotY, 0);
+  }
+  document.addEventListener('keydown', function (ev) {
+    if (!edit.on || edit.sub !== 'familia' || ev.key !== ' ') return;
+    var t2 = ev.target || {}; if (/^(INPUT|TEXTAREA|SELECT)$/.test(t2.tagName || '')) return;
+    edit.famRot = (edit.famRot + Math.PI / 2) % (2 * Math.PI); ev.preventDefault();
+    S._hint('Girada para ' + Math.round(edit.famRot * 180 / Math.PI) + '°.');
+  });
+
   function setEditSub(sub) {
     edit.sub = (edit.sub === sub) ? null : sub;
+    editGhostLimpar();
     editTirarProv(); editSoltarSel(); editHintSub(); editSt();
     canvasEl.style.cursor = edit.sub ? 'crosshair' : '';
     // ferramenta ativa marcada no painel — sem isso o toggle fica invisível pro usuário
@@ -10679,12 +11624,13 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var be = bar.querySelector('[data-b="editar"]'); if (be) { be.style.background = on ? corAtiva() : ''; be.style.color = on ? '#fff' : ''; }
   }
   S._setEdit = setEdit;
+  S._setEditSub = setEditSub;
   S._editOps = function () { return edit.ops.slice(); };
   S._editAplicar = function (ops) {
     if (!S || !S.alive) return; // viewer morto (ctx perdido): rebuild apagaria o aviso de recarregar
     edit.ops = BimEdit.sanear(ops);
     var mx = 0;
-    edit.ops.forEach(function (o) { var m2 = /^[ea](\d+)$/.exec(String(o.id || '')); if (m2) mx = Math.max(mx, parseInt(m2[1], 10)); });
+    edit.ops.forEach(function (o) { var m2 = /^[eaf](\d+)$/.exec(String(o.id || '')); if (m2) mx = Math.max(mx, parseInt(m2[1], 10)); });
     edit.seq = mx;
     // replay NÃO re-dispara onEdicao (gravaria de volta o que acabou de ser lido)
     edit._replay = true;
@@ -10716,7 +11662,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   editPanel.addEventListener('click', function (e) {
     var b = e.target.closest('[data-ed]'); if (!b) return; var k = b.getAttribute('data-ed');
     if (k === 'fechar') setEdit(false);
-    else if (k === 'undo') { if (edit.ops.length) { edit.ops.pop(); editTirarProv(); editRebuild(); S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Desfeito.'); } else { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Nada pra desfazer.'); } } // TirarProv: cadeia não pode ficar apontando pra parede que sumiu
+    else if (k === 'undo') { if (S._editDesfazer()) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Desfeito.'); } else { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Nada pra desfazer.'); } } // TirarProv: cadeia não pode ficar apontando pra parede que sumiu
     else if (k === 'orto') { edit.orto = !edit.orto; b.style.background = edit.orto ? corAtiva() : ''; b.style.color = edit.orto ? '#fff' : ''; S._hint(edit.orto ? '⟂ Orto LIGADO — paredes só na horizontal/vertical.' : '⟂ Orto desligado (Shift também trava).'); }
     else if (k === 'angpre') {
       edit.angPre = edit.angPre === 0 ? 45 : (edit.angPre === 45 ? 15 : 0);
@@ -11669,7 +12615,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
   function modeloDe(mid) { for (var i = 0; i < S.modelos.length; i++) if (S.modelos[i].mid === mid) return S.modelos[i]; return null; }
   function publicos() { return S.modelos.map(function (mo) { return { mid: mo.mid, nome: mo.nome, disciplina: mo.disciplina, alpha: mo.alpha, visivel: mo.visivel, n: mo.elementos.length, modeloId: mo.modeloId || '', arquivoId: mo.versaoId || '', doCache: !!mo.doCache, sintetico: !!mo.sintetico, temColeta: !!mo._coleta, semCache: mo._semCache || '', exemplo: !!mo.exemplo }; }); }
-  function notifyModelos() { if (S._reaplicarEstilo) S._reaplicarEstilo(); if (S._reaplicarSistema) S._reaplicarSistema(); if (S.opts && S.opts.onModelos) { try { S.opts.onModelos(publicos()); } catch (_) {} } } // estilo desenho E cor-por-sistema pegam modelo que entrar depois
+  function notifyModelos() { if (S._reaplicarEstilo) S._reaplicarEstilo(); if (S._reaplicarSistema) S._reaplicarSistema(); if (S._reaplicarEstiloVisual) S._reaplicarEstiloVisual(); if (S.opts && S.opts.onModelos) { try { S.opts.onModelos(publicos()); } catch (_) {} } } // estilo desenho E cor-por-sistema pegam modelo que entrar depois
   S._publicos = publicos;
 
   /* =====================================================================
@@ -12032,7 +12978,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       visibilidade: { isolados: vis.isolados, ocultos: vis.ocultos, raioX: !!(xray.on && alvoRx.length), raioXAlvo: alvoRx },
       aparencias: aparencias,
       modelos: S.modelos.map(function (mo) { return { arquivoId: mo.versaoId || '', modeloId: mo.modeloId || '', visivel: mo.visivel !== false, alpha: mo.alpha == null ? 1 : mo.alpha }; }),
-      estilo: { desenho: !!estiloD.on },
+      /* o estilo visual só entra quando foi escolhido (prévia): a vista gravada
+         antes dele, ou fora da prévia, não sabe dele e não o muda ao abrir */
+      estilo: (EST.fixo && estPrevia()) ? { desenho: !!estiloD.on, visual: EST.modo } : { desenho: !!estiloD.on },
       medidas: medir.regs.map(function (r) { return { tipo: r.tipo, pts: r.pts.map(function (p) { return p.slice(); }), horizontal: !!r.horizontal }; }),
       cotaRede: { on: !!cota.on, modo: cota.modo, fixados: fixados, chave: cota.chave || '' },
       semChave: semChave
@@ -12106,6 +13054,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       /* 3) estilo desenho */
       var querE = completa ? !!(v.estilo && v.estilo.desenho) : (planta.on && estiloD.on);
       if (!!estiloD.on !== querE) setEstiloDesenho(querE);
+      /* 3b) estilo visual (prévia): só a vista que o gravou o muda */
+      if (completa && v.estilo && v.estilo.visual && estPrevia() && texMotor() && texMotor().estiloValido(v.estilo.visual) && v.estilo.visual !== EST.modo) estiloVisual(v.estilo.visual, { manterDesenho: true });
 
       /* 4) modelos — só a vista completa sabe deles. Casa primeiro pela
          versão exata do arquivo; se não houver, pela identidade do modelo. */
@@ -12571,6 +13521,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
          `bim_modelos`, voltava na cena a cada abertura, era contado por
          "Gerar orçamento do modelo" e subia para a nuvem junto com o resto. */
       modelo.exemplo = !!ehExemplo;
+      /* a FONTE do IFC fica junto (sem cópia) para o Projeto OrçaPRO (.opbim) levar o arquivo; acima de 80 MB só a referência */
+      try { if (arrayBuffer && arrayBuffer.byteLength <= 80 * 1024 * 1024) modelo._fonteIfc = arrayBuffer; } catch (eFo) {}
       modelo._semCache = colOk ? '' : (colBytes > TETO_COLETA
         ? 'a geometria deste modelo passa de ' + Math.round(TETO_COLETA / (1024 * 1024)) + ' MB — ele abre normalmente, mas não fica guardado para reabrir rápido'
         : 'o motor de cache não carregou nesta sessão');
@@ -12634,7 +13586,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   /* a textura que a peça veste (js/bimtextura.js) — vazia sem o motor */
   function texDe(mats, alfa) {
     if (typeof window === 'undefined' || !window.BimTextura) return null;
-    var e = window.BimTextura.escolher(mats, { alfa: alfa });
+    var o = { alfa: alfa };
+    /* estilo visual (prévia): o dicionário v2 e a troca que a pessoa gravou
+       para a obra — fora da prévia, as REGRAS de sempre, sem troca */
+    if (estPrevia()) { o.dic = 'v2'; o.trocas = estTrocas(); }
+    var e = window.BimTextura.escolher(mats, o);
     return (e.slug || e.classe) ? e : null;
   }
   function criarGetMat(modelo) {
@@ -12652,6 +13608,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         /* a cor de base (LINEAR) fica guardada: com a textura ligada o `color`
            vira a TINTA dela, e desligar volta a esta */
         modelo.matCache[k].userData.corLin = modelo.matCache[k].color.clone();
+        /* a cor do ARQUIVO fica junto: trocar a textura do material (estilo
+           visual, Propriedades) pede o material da mesma cor com outra textura */
+        modelo.matCache[k].userData.rgba = [r, g, b, a];
       }
       return modelo.matCache[k];
     };
@@ -12811,6 +13770,119 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   // v1.1.85 — carrega IFC a partir de bytes (compartilhamento em nuvem: o celular baixa o modelo do VPS)
   /* devolve a promessa da fila: o arquivo da obra (.zip) só importa as vistas DEPOIS que as peças chegaram */
   S._abrirBytes = function (ab, nome, disc) { return enfileirar(function () { return carregarIFC(ab, nome || 'modelo.ifc', disc); }); };
+
+  /* =====================================================================
+   * IMPORTAR MALHA DE OUTROS PROGRAMAS (07/10/2026): glTF/GLB, OBJ, STL, DAE,
+   * FBX e o JSON "OrcaPRO-Malha" da extensão do SketchUp. Cada objeto vira uma
+   * PEÇA (nome, área, volume quando é fechado, e — vindo do SketchUp — etiqueta,
+   * componente e atributos). Malha não tem parâmetro BIM: o que não vem no
+   * arquivo NÃO é inventado (a peça fica como "elemento genérico").
+   * o = { unidade: 'auto'|'m'|'cm'|'mm'|'pol', zUp: bool, disciplina }
+   * ===================================================================== */
+  var _malhaSeq = 0;
+  S._importarMalha = function (nome, dados, o) {
+    o = o || {};
+    var ext = String(nome || '').split('.').pop().toLowerCase();
+    var txt = function () { return typeof dados === 'string' ? dados : new TextDecoder('utf-8').decode(new Uint8Array(dados)); };
+    var buf = function () { return typeof dados === 'string' ? new TextEncoder().encode(dados).buffer : dados; };
+    var carregar;
+    if (ext === 'glb' || ext === 'gltf') carregar = import('three/examples/jsm/loaders/GLTFLoader.js').then(function (m) { return new Promise(function (ok, erro) { new m.GLTFLoader().parse(ext === 'gltf' ? txt() : buf(), '', function (g) { ok(g.scene); }, function (e) { erro(new Error('glTF: ' + (e && e.message || e) + (ext === 'gltf' ? ' (o .gltf com arquivos .bin/.png separados não abre sozinho — exporte como .glb)' : ''))); }); }); });
+    else if (ext === 'obj') carregar = import('three/examples/jsm/loaders/OBJLoader.js').then(function (m) { return new m.OBJLoader().parse(txt()); });
+    else if (ext === 'stl') carregar = import('three/examples/jsm/loaders/STLLoader.js').then(function (m) { var g = new m.STLLoader().parse(buf()); var gr = new THREE.Group(); var ms = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0xc8ccd2 })); ms.name = String(nome).replace(/\.[^.]+$/, ''); gr.add(ms); return gr; });
+    else if (ext === 'dae') carregar = import('three/examples/jsm/loaders/ColladaLoader.js').then(function (m) { var c = new m.ColladaLoader().parse(txt(), ''); if (!c || !c.scene) throw new Error('DAE sem cena'); return c.scene; });
+    else if (ext === 'fbx') carregar = import('three/examples/jsm/loaders/FBXLoader.js').then(function (m) { return new m.FBXLoader().parse(buf(), ''); });
+    else if (ext === 'json' || ext === 'skpjson') carregar = Promise.resolve().then(function () { return malhaDoJsonOrcaPRO(JSON.parse(txt())); });
+    else return Promise.resolve({ ok: false, erro: 'formato .' + ext + ' não é malha que o OrçaPRO lê (use glb, gltf, obj, stl, dae, fbx ou o .json da extensão do SketchUp).' });
+    return carregar.then(function (raiz) {
+      var r = montarMalha(nome, raiz, o);
+      /* guarda o arquivo de origem (até 80 MB) para o .opbim levar junto — sem ele,
+         salvar o projeto perderia a malha e os atributos do SketchUp */
+      if (r && r.ok) { try {
+        var by = typeof dados === 'string' ? new TextEncoder().encode(dados) : new Uint8Array(dados);
+        var mo = S.modelos.filter(function (x) { return x.mid === r.mid; })[0];
+        if (mo && by.byteLength <= 80 * 1024 * 1024) mo._fonteMalha = { bytes: by, opcoes: { unidade: r.unidade, zUp: !!o.zUp, disciplina: mo.disciplina } };
+      } catch (eF) {} }
+      return r;
+    })
+      .catch(function (e) { return { ok: false, erro: (e && e.message) || String(e) }; });
+  };
+  /* o JSON da extensão "Exportar para OrçaPRO" do SketchUp (OrcaPRO-Malha v1, em metros) */
+  function malhaDoJsonOrcaPRO(j) {
+    if (!j || j.formato !== 'OrcaPRO-Malha') throw new Error('o .json não é uma malha do OrçaPRO (formato "' + (j && j.formato) + '")');
+    if (!(j.versao >= 1) || j.versao > 1) throw new Error('versão ' + j.versao + ' da malha não suportada; atualize o OrçaPRO');
+    var gr = new THREE.Group();
+    (j.objetos || []).forEach(function (ob) {
+      var g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(ob.posicoes || [], 3));
+      if (ob.indices && ob.indices.length) g.setIndex(ob.indices);
+      g.computeVertexNormals();
+      var cor = Array.isArray(ob.cor) ? new THREE.Color(ob.cor[0] / 255, ob.cor[1] / 255, ob.cor[2] / 255) : new THREE.Color(0xc8ccd2);
+      var ms = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: cor, transparent: ob.opacidade != null && ob.opacidade < 1, opacity: ob.opacidade != null ? ob.opacidade : 1, side: THREE.DoubleSide }));
+      ms.name = ob.nome || ob.definicao || 'Objeto';
+      ms.userData._origem = { programa: j.programa || 'SketchUp', nome: ob.nome, definicao: ob.definicao, tag: ob.tag, material: ob.material, atributos: ob.atributos || {}, guid: ob.guid };
+      gr.add(ms);
+    });
+    gr.userData._unidade = j.unidade || 'm';
+    return gr;
+  }
+  function volumeAssinado(g) {
+    var p = g.attributes.position, ix = g.index, v = 0, a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), area = 0, ab = new THREE.Vector3(), ac = new THREE.Vector3();
+    var n = ix ? ix.count : p.count;
+    for (var i = 0; i < n; i += 3) {
+      var i0 = ix ? ix.getX(i) : i, i1 = ix ? ix.getX(i + 1) : i + 1, i2 = ix ? ix.getX(i + 2) : i + 2;
+      a.fromBufferAttribute(p, i0); b.fromBufferAttribute(p, i1); c.fromBufferAttribute(p, i2);
+      v += a.dot(b.clone().cross(c)) / 6;
+      area += ab.subVectors(b, a).cross(ac.subVectors(c, a)).length() / 2;
+    }
+    return { volume: Math.abs(v), area: area };
+  }
+  function montarMalha(nome, raiz, o) {
+    raiz.updateMatrixWorld(true);
+    var malhas = []; raiz.traverse(function (x) { if (x.isMesh && x.geometry && x.geometry.attributes && x.geometry.attributes.position) malhas.push(x); });
+    if (!malhas.length) return { ok: false, erro: 'o arquivo não tem nenhuma malha (só linhas, câmeras ou vazio).' };
+    /* unidade: fixada, a do JSON, ou pelo tamanho (> 400 → mm; > 40 → cm; senão m) */
+    var bb0 = new THREE.Box3(); malhas.forEach(function (m) { bb0.expandByObject(m); });
+    var tam = bb0.getSize(new THREE.Vector3()), maior = Math.max(tam.x, tam.y, tam.z);
+    var un = o.unidade && o.unidade !== 'auto' ? o.unidade : (raiz.userData._unidade || (maior > 400 ? 'mm' : maior > 40 ? 'cm' : 'm'));
+    var esc = { m: 1, cm: 0.01, mm: 0.001, pol: 0.0254 }[un] || 1;
+    var M = new THREE.Matrix4().makeScale(esc, esc, esc);
+    if (o.zUp) M.premultiply(new THREE.Matrix4().makeRotationX(-Math.PI / 2));
+    /* o.posicao [x,y,z] em metros (a peça CC0 da Poly Haven entra no ponto que a vista olha, no chão — js/iarender.js) */
+    if (Array.isArray(o.posicao) && o.posicao.length === 3 && o.posicao.every(isFinite)) M.premultiply(new THREE.Matrix4().makeTranslation(+o.posicao[0], +o.posicao[1], +o.posicao[2]));
+    var mid = 'malha' + (++_malhaSeq);
+    var mo = { mid: mid, sintetico: false, malha: true, nome: String(nome), disciplina: o.disciplina || 'arquitetura', alpha: 1, visivel: true, grupo: new THREE.Group(), matCache: {}, transCache: {}, elementos: [], tipos: {}, nEl: 0, nTri: 0, pavimentos: [], carimbos: {}, qto: {} };
+    mo.grupo.userData.mid = mid;
+    malhas.forEach(function (m, i) {
+      var g = m.geometry.clone(); g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(M, m.matrixWorld));
+      if (!g.attributes.normal) g.computeVertexNormals();
+      var mat = Array.isArray(m.material) ? m.material.map(function (x) { var c = x.clone(); c.side = THREE.DoubleSide; return c; }) : (m.material ? m.material.clone() : new THREE.MeshStandardMaterial({ color: 0xc8ccd2 }));
+      if (!Array.isArray(mat)) mat.side = THREE.DoubleSide;
+      var nm = new THREE.Mesh(g, mat), id = i + 1, org = m.userData && m.userData._origem;
+      nm.userData.expressID = id; nm.userData.mid = mid; nm.userData.tipo = 'IFCBUILDINGELEMENTPROXY'; nm.userData.matOrig = mat;
+      mo.grupo.add(nm); S.meshPorUid[mid + ':' + id] = nm;
+      var vq = volumeAssinado(g); mo.nTri += (g.index ? g.index.count : g.attributes.position.count) / 3;
+      mo.qto[id] = { area: Math.round(vq.area * 1000) / 1000, volume: Math.round(vq.volume * 10000) / 10000, contagem: 1 };
+      var nomeEl = (org && (org.nome || org.definicao)) || m.name || (m.parent && m.parent.name) || ('Objeto ' + id);
+      mo.elementos.push({ id: id, uid: mid + ':' + id, mid: mid, arquivo: mo.nome, tipo: 'IFCBUILDINGELEMENTPROXY', nome: nomeEl, etapa: null, codOrc: null, qto: mo.qto[id], disciplina: mo.disciplina,
+        origemExterna: org ? { programa: org.programa, componente: org.definicao || '', etiqueta: org.tag || '', material: org.material || '', atributos: org.atributos || {}, guid: org.guid || '' } : null });
+      mo.nEl++;
+    });
+    mo.tipos.IFCBUILDINGELEMENTPROXY = mo.nEl;
+    modelRoot.add(mo.grupo);
+    try {
+      modelRoot.updateMatrixWorld(true);
+      mo.grupo.children.forEach(function (m) { var bb = new THREE.Box3().setFromObject(m); var el = mo.elementos[m.userData.expressID - 1]; if (el && !bb.isEmpty()) el.aabb = { min: [bb.min.x, bb.min.y, bb.min.z], max: [bb.max.x, bb.max.y, bb.max.z] }; });
+    } catch (_) {}
+    S.modelos.push(mo);
+    recarimbarIdentidade();
+    agregarModelo(mo); carimbarConsulta();
+    S.elementos = []; S.modelos.forEach(function (x) { S.elementos = S.elementos.concat(x.elementos); });
+    over.style.display = 'none';
+    /* o.manterCamera: o render por IA importa a peça SEM tirar a câmera do enquadramento que o usuário escolheu */
+    atualizarHud(); notifyModelos(); if (!o.manterCamera) enquadrar();
+    if (opts.onLoaded) { try { opts.onLoaded(elementosVivos()); } catch (_) {} }
+    return { ok: true, mid: mid, nome: mo.nome, pecas: mo.nEl, triangulos: Math.round(mo.nTri), unidade: un, escala: esc, tamanho: [Math.round(tam.x * esc * 100) / 100, Math.round(tam.y * esc * 100) / 100, Math.round(tam.z * esc * 100) / 100] };
+  }
   // modelos IFC atuais com bytes guardados (p/ subir pra nuvem) — sintéticos/editor ficam de fora
   /* arquivoId (hash do conteúdo) vai junto: o link limpa o dinheiro do .ifc antes de enviar e troca o
      arquivoId pelo do arquivo LIMPO — é ele que o celular calcula ao abrir (rvnuvem.limparDinheiroIfc) */
@@ -13666,6 +14738,16 @@ window.BIM = {
   desenharQuadro: function (fundo) { return (S && S._desenharQuadro) ? S._desenharQuadro(fundo) : null; },
   /* a foto no tamanho de um quadro de prancha, sem o solo da sondagem (ver `desenharQuadroEm`) */
   desenharQuadroEm: function (fundo, larg, alt, opts) { return (S && S._desenharQuadroEm) ? S._desenharQuadroEm(fundo, larg, alt, opts) : null; },
+  /* a MESMA vista em linha oculta (estilo desenho: massa clara + arestas pretas) — o guia da forma do render por IA (js/iarender.js).
+     Liga o estilo só para o quadro e devolve como estava, sem recado na tela. */
+  quadroLinhas: function (larg, alt) {
+    if (!S || !S._desenharQuadroEm || !S._setEstiloDesenho || !S._estiloOn) return null;
+    var antes = !!S._estiloOn();
+    try { if (!antes) S._setEstiloDesenho(true, true); return S._desenharQuadroEm('#ffffff', larg, alt); }
+    catch (e) { return null; }
+    finally { if (!antes) { try { S._setEstiloDesenho(false, true); } catch (e2) {} } }
+  },
+  estiloDesenhoLigado: function () { return !!(S && S._estiloOn && S._estiloOn()); },
   /* enquadramento INSTANTANEO (sem tween). O `fit` da fita usa o tween
      cinematografico, que leva ~0,55 s — bonito na tela e inutil para quem vai
      capturar a imagem no mesmo instante: a foto sairia no meio do movimento,
@@ -13681,6 +14763,7 @@ window.BIM = {
     return S._gerarPlantaTec({ y: y, escala: o.escala || 50, cotas: o.cotas !== false, prof: o.prof || 3, rotAlt: o.rotAlt });
   },
   estiloDesenho: function (on) { if (S && S._setEstiloDesenho) S._setEstiloDesenho(on == null ? !(S._estiloOn && S._estiloOn()) : !!on); },
+  estiloDesenhoAtivo: function () { return !!(S && S._estiloOn && S._estiloOn()); },
   // v1.1.96 — colorir por sistema hidrossanitário (3D + planta + RA/RV); sistemaInfo p/ E2E
   sistema: function (on) { if (S && S._setSistema) S._setSistema(on == null ? !(S._sisColorOn && S._sisColorOn()) : !!on); },
   /* tema da CENA 3D: 'orcapro' (navy) | 'revit' (cinza escuro) | 'claro'.
@@ -13712,6 +14795,58 @@ window.BIM = {
   espessuraAtual: function () { return (S && S._espEditor) ? S._espEditor() : null; },
   editarOps: function () { return (S && S._editOps) ? S._editOps() : []; },
   editarAplicar: function (ops) { if (S && S._editAplicar) S._editAplicar(ops); },
+  /* ---- famílias e modelagem (07/10/2026) ---- */
+  familiasDefinir: function (lista) { if (S && S._famDefinir) { S._famDefinir(lista); if (S._editReconstruir) S._editReconstruir(); return true; } return false; },
+  /* arma uma ferramenta do editor: 'parede'|'laje'|'pilar'|'viga'|'cobertura'|'familia'|'mover'|'apagar'|null,
+     com os parâmetros dela ({ famId, tipoId, inst } | { b, h } | { inclinacao, aguas, beiral }) */
+  editarArmar: function (sub, par) {
+    if (!S || !S._setEdit || !S.edit) return false;
+    var ed = S.edit; par = par || {};
+    if (sub === 'familia') { ed.famSel = { famId: par.famId, tipoId: par.tipoId, inst: par.inst || {} }; ed.famRot = 0; }
+    if (sub === 'viga') { if (par.b > 0) ed.vigaB = +par.b; if (par.h > 0) ed.vigaH = +par.h; }
+    if (sub === 'cobertura') { if (par.inclinacao > 0) ed.cobIncl = +par.inclinacao; if (par.aguas) ed.cobAguas = par.aguas === 1 ? 1 : 2; if (par.beiral != null) ed.cobBeiral = Math.max(0, +par.beiral); }
+    if (!ed.on) S._setEdit(true);
+    if (!sub) { if (ed.sub && S._setEditSub) S._setEditSub(ed.sub); return true; }
+    if (ed.sub === sub) { ed.sub = null; }
+    if (S._setEditSub) S._setEditSub(sub);
+    return ed.sub === sub;
+  },
+  desfazer: function () { return !!(S && S._editDesfazer && S._editDesfazer()); },
+  refazer: function () { return !!(S && S._editRefazer && S._editRefazer()); },
+  /* estado da edição já avaliado + quantitativo (paredes líquidas de vão, famílias por tipo) */
+  editarEstado: function () {
+    if (!S || !S.edit) return null;
+    var st = S.edit.estado || BimEdit.aplicar(S.edit.ops || []);
+    return { estado: st, qto: BimEdit.qto(st, S._famAval), ops: (S.edit.ops || []).length, refazer: (S.edit.redo || []).length };
+  },
+  instanciaInfo: function (id) {
+    if (!S || !S.edit || !S.edit.estado) return null;
+    var f = (S.edit.estado.familias || []).filter(function (x) { return x.id === id; })[0];
+    if (!f) return null;
+    return { instancia: JSON.parse(JSON.stringify(f)), avaliado: S._famAval(f.famId, f.tipoId, f.inst) };
+  },
+  /* ORÇAMENTO PELO MODELO (F1, js/orcmodelo.js): os serviços (código + medida) de uma peça criada aqui —
+     parede/laje/pilar/viga/cobertura ou família colocada. Vira uma op "orcar" (desfaz como as outras). */
+  elementoOrcar: function (id, servicos) {
+    if (!S || !S.edit || !S._editOpExterna) return false;
+    S._editOpExterna({ op: 'orcar', id: id, servicos: BimEdit.limparServicos(servicos) }); return true;
+  },
+  /* a família avaliada como o viewer a vê (o mesmo cache do desenho) — para o orçamento do modelo */
+  familiaAvaliar: function (famId, tipoId, inst) { return (S && S._famAval) ? S._famAval(famId, tipoId, inst) : null; },
+  /* troca tipo / parâmetros de instância / giro de uma família colocada (vira uma op: desfaz como as outras) */
+  instanciaAlterar: function (id, mud) {
+    if (!S || !S.edit || !S._editOpExterna) return false;
+    mud = mud || {};
+    var o = { op: 'instancia', id: id };
+    if (mud.tipoId != null) o.tipoId = mud.tipoId;
+    if (mud.inst) o.inst = mud.inst;
+    if (mud.rotY != null) o.rotY = +mud.rotY;
+    if (mud.y != null) o.y = +mud.y;
+    S._editOpExterna(o); return true;
+  },
+  /* pré-visualização 3D de uma família avaliada num canvas próprio (editor de família) */
+  telaDe: function (x, y, z) { return (S && S._telaDe) ? S._telaDe(x, y, z) : null; },
+  familiaPreview: function (canvas, avaliado) { return (S && S._famPreview) ? S._famPreview(canvas, avaliado) : false; },
   // nº de malhas efetivamente visíveis (modelo ligado + mesh visível) — E2E/diagnóstico
   visiveis: function () {
     var v = 0; if (!S) return 0;
@@ -13746,6 +14881,30 @@ window.BIM = {
     return { on: S.snap.on, v: S.snap.v, m: S.snap.m, a: S.snap.a, i: S.snap.i, c: S.snap.c };
   },
   corteTecnico: function (o) { return (S && S._gerarCorteTec) ? S._gerarCorteTec(o || {}) : null; }, // {ax,az,bx,bz,escala,tipo,prof,inv} -> {url,w,h,escala}
+  /* vista 2D técnica (planta/corte em VETOR, para o js/desenho2d.js) — ver vista2d() */
+  /* malha de outro programa (glb, gltf, obj, stl, dae, fbx, .json da extensão do SketchUp) → Promise({ ok, pecas, unidade… }) */
+  importarMalha: function (nome, dados, o) { return (S && S._importarMalha) ? S._importarMalha(nome, dados, o) : Promise.resolve({ ok: false, erro: 'Visualizador não montado.' }); },
+  /* parâmetros que vieram de outro programa (Revit: por GlobalId) — entram no "Ver todos" da peça */
+  parametrosExtras: function (extras) {
+    if (!S) return false;
+    S._extrasPorGuid = S._extrasPorGuid || {};
+    Object.keys(extras || {}).forEach(function (k) {
+      var x = extras[k]; if (!x || !x.porGuid) return;
+      Object.keys(x.porGuid).forEach(function (g) { S._extrasPorGuid[g] = { programa: x.programa || k, grupos: x.porGuid[g] }; });
+    });
+    return true;
+  },
+  /* os IFC abertos e a fonte de cada um (para o .opbim): bytes = Uint8Array ou null (do cache / grande demais) */
+  malhaFontes: function () { return (S && S.modelos ? S.modelos : []).filter(function (m) { return m.malha; }).map(function (m) { return { mid: m.mid, nome: m.nome, bytes: m._fonteMalha ? m._fonteMalha.bytes : null, opcoes: m._fonteMalha ? m._fonteMalha.opcoes : null }; }); },
+  ifcFontes: function () { return (S && S.modelos ? S.modelos : []).filter(function (m) { return !m.sintetico && !m.editor && !m.malha; }).map(function (m) { return { mid: m.mid, nome: m.nome, disciplina: m.disciplina, bytes: (m._fonteIfc && m._fonteIfc.byteLength) ? new Uint8Array(m._fonteIfc) : null }; }); },
+  vista2d: function (def) { return (S && S._vista2d) ? S._vista2d(def || {}) : { ok: false, erro: 'Visualizador não montado.' }; },
+  /* pavimentos do IFC com a cota de MUNDO do piso (y0) e a caixa do modelo — base das plantas e dos níveis do corte */
+  pavimentos2d: function () {
+    if (!S || !S.modelRoot) return { pav: [], caixa: null };
+    var b = new THREE.Box3().setFromObject(S.modelRoot), lst = [];
+    try { lst = (S._pavimentosCorte ? S._pavimentosCorte() : []).map(function (p) { return { nome: p.nome, y: p.y - 1.2 }; }); } catch (e) { lst = []; }
+    return { pav: lst, caixa: b.isEmpty() ? null : { min: [b.min.x, b.min.y, b.min.z], max: [b.max.x, b.max.y, b.max.z] } };
+  },
   /* hook de teste do ⊕ centro: o teste de bancada monta o anel à mão, mas quem
      monta o anel de verdade é o EdgesGeometry do three em cima da malha do IFC.
      Sem este gancho, a única prova possível seria "achei um centro no modelo",
@@ -13911,7 +15070,17 @@ window.BIM = {
   caixaCorte: function (on) { return (S && S._caixaCorte) ? S._caixaCorte(!!on) : false; },
   /* MATERIAIS REALISTAS: a escolha da pessoa (guardada por aparelho); devolve
      uma Promise com o estado depois de as texturas chegarem */
-  materiaisRealistas: function (on) { return (S && S._texEscolher) ? S._texEscolher(!!on) : Promise.resolve({ on: false }); },
+  /* na prévia do estilo visual, o botão Materiais realistas é o atalho do Realista (ligado) e do Sombreado (desligado) */
+  materiaisRealistas: function (on) {
+    if (S && S._estPrevia && S._estPrevia() && S._estiloVisual) return S._estiloVisual(on ? 'realista' : 'sombreado').then(function () { return S._texEstado(); });
+    return (S && S._texEscolher) ? S._texEscolher(!!on) : Promise.resolve({ on: false });
+  },
+  /* ESTILO VISUAL (prévia ?previa=visual): 'linha' | 'sombreado' | 'textura' | 'realista' */
+  estiloVisual: function (modo) { return (S && S._estiloVisual) ? S._estiloVisual(modo) : Promise.resolve(null); },
+  estiloVisualEstado: function () { return (S && S._estEstado) ? S._estEstado() : null; },
+  /* refaz a textura de cada peça depois de uma TROCA gravada (BimEstilo.trocar) */
+  estiloRedecidir: function () { return (S && S._estRedecidir) ? S._estRedecidir() : 0; },
+  materialDaPeca: function (uid) { return (S && S._estMaterialDaPeca) ? S._estMaterialDaPeca(uid) : null; },
   materiaisEstado: function () { return (S && S._texEstado) ? S._texEstado() : { on: false }; },
   /* PORTAS QUE ABREM (js/bimabrir.js): a esquadria da peça `uid` (a própria
      porta/janela ou uma peça da folha), abrir/fechar com animação, e a lista */
@@ -13927,6 +15096,7 @@ window.BIM = {
     return { x: r.left + (p.x + 1) / 2 * r.width, y: r.top + (1 - p.y) / 2 * r.height };
   },
   ortogonal: function (on) { return (S && S._ortoMain) ? S._ortoMain(!!on) : false; },
+  grade: function (on) { return (S && S._grade) ? S._grade(on) : null; },
   ortogonalAtivo: function () { return !!(S && S._ortoEstado && S._ortoEstado()); },
   /* só leitura (near/far/fov da câmera principal) — fora do cameraAtual de
      propósito: aquele é o que o ponto de vista GRAVA */

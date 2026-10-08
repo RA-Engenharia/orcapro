@@ -1,0 +1,466 @@
+/* =====================================================================
+ * visual.css — CARA NOVA DO ORÇAPRO (prévia `?previa=visual`, 07/10/2026)
+ *
+ * O QUE É: o sistema inteiro com a mesma cara do site orcaprogestao.com.br
+ * (aço/ciano, Bricolage nos títulos, IBM Plex no texto, vidro e aurora nas
+ * superfícies escuras). Pedido do Rogério — tarefas a11/a12/b01 da Central de
+ * Crescimento; base: AUDITORIA-DESIGN-SYSTEM.md (29/100) e PLANO-BIM-MODELADOR.md.
+ *
+ * REGRA DE OURO: TUDO aqui mora sob `html[data-visual="nova"]`. Quem não ligou
+ * a prévia vê o app de sempre, byte a byte. O index.html marca a raiz antes do
+ * primeiro paint lendo `orcapro:tela:visual:v1` (gravada por App._previaDaUrl).
+ * Só aparência: nenhuma regra daqui esconde dado, muda conta ou move botão de
+ * lugar — exceto no BIM, onde os atalhos REPETIDOS da barra de título e do
+ * canto da fita somem porque o mesmo comando já mora na fita (B0/B1).
+ *
+ * POR QUE TOKEN PRIMEIRO: o app.css é todo em variáveis. Trocar o valor do
+ * token na raiz leva a cor nova a todos os módulos (Içamento, RDO, Financeiro,
+ * Compras, Portal…) de uma vez — o "padrão único" vem do token, não de 40
+ * telas reescritas. Depois vêm os componentes canônicos (.btn, .card, .tab,
+ * .tbl, .field, .modal) e, por fim, as três telas vitrine e o BIM.
+ *
+ * EFEITOS: curtos e para todos (decisão de 07/10: o Windows do Rogério manda
+ * reduced-motion e ele quer ver os efeitos). Nada pisca nem se mexe enquanto
+ * a pessoa digita; o que anda é só luz de fundo, devagar.
+ * ===================================================================== */
+
+/* ---------------------------------------------------------------- tokens */
+html[data-visual="nova"] {
+  --navy: #0a1322;
+  --navy-2: #111d30;
+  --aco: #2d6a9c;           /* aço do site: 5,9:1 sobre branco */
+  --aco-claro: #2f8fc8;     /* linha de foco e hover de borda: 3,4:1 sobre branco */
+  --ciano: #3fb5e5;
+  --bg: #f3f6f9;
+  --surface: #ffffff;
+  --surface-2: #f5f8fb;
+  --surface-3: #eaf0f6;
+  --linha: #d6e0ea;
+  --linha-forte: #8697a9;
+  --texto: #15181d;
+  --texto-fraco: #4b5563;
+  --faixa-sub: #f5f8fb;
+  --tot-fundo: #0a1322;
+  --card-bg: #ffffff;
+  --bg-grad: radial-gradient(900px 520px at 12% -8%, rgba(207,228,246,.55) 0%, rgba(207,228,246,0) 60%),
+             radial-gradient(900px 560px at 92% -12%, rgba(215,240,251,.6) 0%, rgba(215,240,251,0) 60%),
+             var(--bg);
+  --raio-sm: 8px;
+  --raio: 12px;
+  --raio-lg: 18px;
+  --raio-ctl: 99px;
+  --h-ctl: 36px;
+  --sombra-sm: 0 1px 2px rgba(15,30,50,.05);
+  --sombra: 0 1px 2px rgba(15,30,50,.04), 0 10px 28px -14px rgba(15,30,50,.16);
+  --sombra-lg: 0 2px 6px rgba(15,30,50,.06), 0 34px 70px -28px rgba(10,20,40,.38);
+  --sombra-hover: 0 2px 6px rgba(15,30,50,.06), 0 18px 40px -18px rgba(29,74,114,.35);
+  --realce: inset 0 1px 0 rgba(255,255,255,.7);
+  --anel: 0 0 0 3px rgba(45,106,156,.22);
+  --fonte-tit: "Bricolage Grotesque", "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  /* vidro */
+  --vidro: rgba(255,255,255,.72);
+  --vidro-topo: rgba(255,255,255,.94);
+  --vidro-borda: rgba(21,24,29,.08);
+  --vis-aurora: #060b16;
+}
+html[data-visual="nova"][data-tema="dark"] {
+  --navy: #0a1322;
+  --navy-2: #111d30;
+  --aco: #6fb0e3;
+  --aco-claro: #8fc6ef;
+  --bg: #060b16;
+  --surface: #0d1626;
+  --surface-2: #121d30;
+  --surface-3: #18263c;
+  --linha: #24344b;
+  --linha-forte: #4c6584;
+  --texto: #eaf0f7;
+  --texto-fraco: #a9b8ca;
+  --faixa-sub: #101b2d;
+  --tot-fundo: #142238;
+  --card-bg: linear-gradient(140deg, rgba(255,255,255,.055), rgba(255,255,255,.02)), #0b1424;
+  --bg-grad: radial-gradient(900px 560px at 10% -10%, rgba(31,93,146,.38) 0%, rgba(31,93,146,0) 60%),
+             radial-gradient(800px 520px at 95% -10%, rgba(19,138,184,.28) 0%, rgba(19,138,184,0) 60%),
+             var(--bg);
+  --sombra: inset 0 1px 0 rgba(255,255,255,.05), 0 20px 40px -24px rgba(0,0,0,.7);
+  --sombra-lg: 0 30px 70px -26px rgba(0,0,0,.85);
+  --sombra-hover: inset 0 1px 0 rgba(255,255,255,.07), 0 24px 50px -24px rgba(0,0,0,.8);
+  --realce: inset 0 1px 0 rgba(255,255,255,.05);
+  --anel: 0 0 0 3px rgba(63,181,229,.28);
+  --vidro: rgba(8,14,26,.66);
+  --vidro-topo: rgba(8,13,24,.94);
+  --vidro-borda: rgba(255,255,255,.1);
+}
+
+/* ------------------------------------------------------------- base/tipo */
+html[data-visual="nova"] body { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+html[data-visual="nova"] h1,
+html[data-visual="nova"] h2,
+html[data-visual="nova"] .tela-nome,
+html[data-visual="nova"] .pn-cab h1,
+html[data-visual="nova"] .ov-nome,
+html[data-visual="nova"] .modal-h h3,
+html[data-visual="nova"] .modal-header h3 {
+  font-family: var(--fonte-tit); letter-spacing: -.03em; text-wrap: balance;
+}
+html[data-visual="nova"] h1,
+html[data-visual="nova"] .pn-cab h1 { font-weight: 720; letter-spacing: -.04em; }
+html[data-visual="nova"] .main { background: var(--bg-grad); background-attachment: local; }
+html[data-visual="nova"] :focus-visible { outline: 2px solid var(--aco-claro); outline-offset: 2px; }
+
+/* ---------------------------------------------------- barra de módulos ---
+ * Sempre escura, nos dois temas: é a aurora do site (fundo #060b16 com duas
+ * luzes que derivam devagar) + a luz que segue o mouse que já existia
+ * (Gestao.menuLuz escreve --lx/--ly/--lr). O módulo aberto acende em ciano. */
+html[data-visual="nova"] .sidebar {
+  background:
+    radial-gradient(var(--lr) circle at var(--lx) var(--ly), rgba(255,255,255,.12) 0, rgba(63,181,229,.30) 18%, rgba(63,181,229,.10) 46%, rgba(63,181,229,0) 72%),
+    radial-gradient(220px 260px at -30% 18%, rgba(31,93,146,.55), transparent 70%),
+    radial-gradient(200px 240px at 130% 70%, rgba(19,138,184,.35), transparent 70%),
+    var(--vis-aurora);
+  background-size: auto, 100% 200%, 100% 200%, auto;
+  animation: vis-aurora-sb 26s ease-in-out infinite alternate;
+  box-shadow: 1px 0 0 rgba(255,255,255,.06);
+  color: #c6d3e2;
+}
+@keyframes vis-aurora-sb { from { background-position: 0 0, 0 0, 0 100%, 0 0; } to { background-position: 0 0, 0 60%, 0 10%, 0 0; } }
+html[data-visual="nova"] .sb-lbl { color: rgba(198,211,226,.45); }
+html[data-visual="nova"] .sb-item { color: #c6d3e2; border-radius: 14px; }
+html[data-visual="nova"] .sb-ic { color: #7f90a6; }
+html[data-visual="nova"] .sb-item:hover { background: rgba(255,255,255,.06); color: #fff; }
+html[data-visual="nova"] .sb-item:hover .sb-ic { color: #fff; }
+html[data-visual="nova"] .sb-item.on {
+  background: linear-gradient(140deg, rgba(63,181,229,.22), rgba(255,255,255,.04));
+  box-shadow: inset 0 0 0 1px rgba(63,181,229,.38); color: #fff;
+}
+html[data-visual="nova"] .sb-item.on .sb-ic { color: var(--ciano); filter: drop-shadow(0 0 7px rgba(63,181,229,.75)); }
+html[data-visual="nova"] .sb-item.sb-grp-bt.aberto { background: rgba(255,255,255,.09); }
+html[data-visual="nova"] .sb-sep { background: rgba(255,255,255,.08); }
+html[data-visual="nova"] .sb-org { color: rgba(198,211,226,.6); }
+@media screen and (min-width: 821px) {
+  html[data-visual="nova"] .sb-fly.aberta {
+    background: rgba(10,17,30,.86);
+    -webkit-backdrop-filter: blur(18px) saturate(1.4); backdrop-filter: blur(18px) saturate(1.4);
+    border: 1px solid rgba(255,255,255,.12); border-radius: 16px; margin: 8px 0 0 6px;
+    box-shadow: 0 30px 60px -20px rgba(0,0,0,.7);
+  }
+  html[data-visual="nova"] .sb-fly .sb-item.sb-filho { border-radius: 10px; }
+  html[data-visual="nova"] .sb-fly .sb-item.sb-filho:hover { background: rgba(63,181,229,.14); }
+}
+
+/* ------------------------------------------------------------ topo -----
+ * Vidro claro (escuro no tema escuro), como o cabeçalho do site depois de
+ * rolar. A marca continua à esquerda, sem o degradê navy. */
+html[data-visual="nova"] .topbar {
+  background: var(--vidro-topo); color: var(--texto);
+  box-shadow: none; border-bottom: 1px solid var(--vidro-borda);
+}
+html[data-visual="nova"] .topbar::after { display: none; }
+html[data-visual="nova"] .topbar .logo { color: var(--texto); font-family: var(--fonte-tit); letter-spacing: -.02em; }
+html[data-visual="nova"] .topbar .logo small { color: var(--texto-fraco); opacity: 1; font-family: var(--fonte); letter-spacing: 0; }
+html[data-visual="nova"] .topbar .logo .logo-ia { background: var(--aco); color: #fff; }
+html[data-visual="nova"] .topbar-burger { color: var(--texto); }
+html[data-visual="nova"] .badge-plano { background: rgba(31,138,76,.12); color: #1f8a4c; border: 0; border-radius: 99px; }
+html[data-visual="nova"][data-tema="dark"] .badge-plano { background: rgba(91,203,138,.14); color: #6fd59a; }
+html[data-visual="nova"] .topo-ic-btn {
+  background: var(--surface); color: var(--texto); border: 1px solid var(--linha); border-radius: 99px; box-shadow: none;
+}
+html[data-visual="nova"] .topo-ic-btn:hover { border-color: var(--linha-forte); background: var(--surface-2); }
+html[data-visual="nova"] .topo-ic-btn svg { color: currentColor; }
+html[data-visual="nova"] .topo-kbd { background: var(--surface-3); color: var(--texto-fraco); border-color: var(--linha); }
+html[data-visual="nova"] .conta-btn { background: var(--surface); color: var(--texto); border: 1px solid var(--linha); border-radius: 99px; }
+html[data-visual="nova"] .conta-btn:hover { border-color: var(--linha-forte); }
+html[data-visual="nova"] .conta-foto { background: linear-gradient(140deg, #2d6a9c, #143a5e); color: #fff; }
+html[data-visual="nova"] .conta-ic,
+html[data-visual="nova"] .conta-ca { color: var(--texto-fraco); }
+html[data-visual="nova"] .conta-drop { border-radius: 16px; border: 1px solid var(--linha); box-shadow: var(--sombra-lg); }
+/* em Obras o topo vira o vidro escuro da cena (regra do app.css, .app:has(.ov-cena)):
+   letra e botões claros, senão o nome da marca some sobre a cena */
+html[data-visual="nova"] .app:has(.ov-cena) > .topbar .logo,
+html[data-visual="nova"] .app:has(.ov-cena) > .topbar .logo small,
+html[data-visual="nova"] .app:has(.ov-cena) > .topbar .topbar-burger { color: #fff; }
+html[data-visual="nova"] .app:has(.ov-cena) > .topbar .topo-ic-btn,
+html[data-visual="nova"] .app:has(.ov-cena) > .topbar .conta-btn {
+  background: rgba(255,255,255,.08); color: #fff; border-color: rgba(255,255,255,.18);
+}
+html[data-visual="nova"] .app:has(.ov-cena) > .topbar .topo-ic-btn:hover,
+html[data-visual="nova"] .app:has(.ov-cena) > .topbar .conta-btn:hover { background: rgba(255,255,255,.15); }
+html[data-visual="nova"] .app:has(.ov-cena) > .topbar .topo-kbd { background: rgba(255,255,255,.1); color: #dbe6f2; border-color: rgba(255,255,255,.18); }
+html[data-visual="nova"] .app:has(.ov-cena) > .topbar .conta-ic,
+html[data-visual="nova"] .app:has(.ov-cena) > .topbar .conta-ca { color: #c6d3e2; }
+
+/* -------------------------------------------------------- botões -------
+ * Pílula, como no site. O principal é grafite (branco no escuro) — a cor da
+ * marca fica para link, foco e dado, e o "próximo passo" se lê pelo contraste. */
+html[data-visual="nova"] .btn { border-radius: 99px; padding: 9px 17px; font-weight: 600; border-color: var(--linha); }
+html[data-visual="nova"] .btn.sm { padding: 6px 13px; }
+html[data-visual="nova"] .btn.sm.ico,
+html[data-visual="nova"] .btn.ico { padding: 6px 9px; }
+html[data-visual="nova"] .btn:hover { border-color: var(--linha-forte); background-color: var(--surface-2); }
+html[data-visual="nova"] .btn.primary { background: #15181d; border-color: #15181d; color: #fff; }
+html[data-visual="nova"] .btn.primary:hover { background: #1d4a72; border-color: #1d4a72; box-shadow: 0 12px 28px -12px rgba(29,74,114,.55); }
+html[data-visual="nova"][data-tema="dark"] .btn.primary { background: #ffffff; border-color: #ffffff; color: #15181d; }
+html[data-visual="nova"][data-tema="dark"] .btn.primary:hover { background: #d9ecfa; border-color: #d9ecfa; }
+html[data-visual="nova"] .btn.success { background: #1f8a4c; border-color: #1f8a4c; color: #fff; }
+html[data-visual="nova"] .btn.success:hover { background: #18703d; border-color: #18703d; }
+html[data-visual="nova"] .btn.ghost { background: transparent; border-color: transparent; }
+html[data-visual="nova"] .btn.ghost:hover { background: var(--surface-3); border-color: transparent; }
+html[data-visual="nova"] .btn[disabled],
+html[data-visual="nova"] .btn[aria-disabled="true"],
+html[data-visual="nova"] .btn.disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+
+/* ------------------------------------------------- cartões e indicadores */
+html[data-visual="nova"] .card { border-radius: 20px; border-color: var(--linha); box-shadow: var(--sombra); }
+html[data-visual="nova"] .orc-card::before { background: linear-gradient(180deg, var(--ciano), var(--aco)); }
+html[data-visual="nova"] .orc-card:hover { transform: translateY(-2px); border-color: var(--aco-claro); }
+html[data-visual="nova"] .kpi { border-radius: 20px; box-shadow: var(--sombra); }
+html[data-visual="nova"] .kpi .rotulo { font-weight: 600; letter-spacing: .06em; color: var(--texto-fraco); }
+html[data-visual="nova"] .kpi .num {
+  font-family: var(--fonte-tit); font-weight: 700; letter-spacing: -.035em; font-variant-numeric: tabular-nums;
+}
+/* o indicador DESTAQUE (preço de venda) vira a faixa escura de vidro do site */
+html[data-visual="nova"] .kpi.destaque {
+  background: radial-gradient(400px 200px at 90% -40%, rgba(63,181,229,.32), transparent 70%), #0a1322;
+  border-color: rgba(255,255,255,.1); color: #c6d3e2;
+}
+html[data-visual="nova"] .kpi.destaque .rotulo { color: #8fa3ba; }
+html[data-visual="nova"] .kpi.destaque .num { color: #9be3ff; }
+html[data-visual="nova"] .kpi.destaque .btn.primary { background: #fff; border-color: #fff; color: #15181d; }
+
+/* ------------------------------------------------------------------ abas */
+html[data-visual="nova"] .tabs { gap: 2px; border-bottom-color: var(--linha); }
+html[data-visual="nova"] .tab { border-radius: 10px 10px 0 0; color: var(--texto-fraco); transition: color .2s, background .2s; }
+html[data-visual="nova"] .tab:hover { color: var(--texto); background: var(--surface-3); }
+html[data-visual="nova"] .tab.ativa { color: var(--texto); }
+html[data-visual="nova"] .tab.ativa::after { background: var(--aco); height: 2px; left: 10px; right: 10px; }
+html[data-visual="nova"] .tab:focus-visible { outline: 2px solid var(--aco-claro); outline-offset: -2px; }
+
+/* --------------------------------------------------------------- tabelas */
+html[data-visual="nova"] .tbl th {
+  font-size: var(--t-micro); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--texto-fraco);
+}
+html[data-visual="nova"] .tbl td.num,
+html[data-visual="nova"] .tbl th.num { font-variant-numeric: tabular-nums; }
+html[data-visual="nova"] .tbl tbody tr:hover > td { background-color: var(--surface-2); }
+html[data-visual="nova"] .tbl-plan tr.etapa-row > td { background: var(--surface-3); font-weight: 600; }
+html[data-visual="nova"] .tbl tfoot tr.tot-geral > td {
+  background: #0a1322; color: #fff; font-family: var(--fonte-tit); letter-spacing: -.02em;
+}
+html[data-visual="nova"] .tbl tfoot tr.tot-geral > td.num:last-of-type,
+html[data-visual="nova"] .tbl tfoot tr.tot-geral > td.num + td.num { color: #9be3ff; }
+
+/* ------------------------------------------------------------ formulário */
+html[data-visual="nova"] .field input:not([type="checkbox"]):not([type="radio"]),
+html[data-visual="nova"] .field select,
+html[data-visual="nova"] .field textarea { border-radius: 12px; }
+html[data-visual="nova"] .field input:focus,
+html[data-visual="nova"] .field select:focus,
+html[data-visual="nova"] .field textarea:focus {
+  border-color: var(--aco); outline: 2px solid var(--aco-claro); outline-offset: 0; box-shadow: var(--anel);
+}
+html[data-visual="nova"] .field label { font-weight: 600; color: var(--texto-fraco); }
+
+/* ---------------------------------------------------------------- modais */
+html[data-visual="nova"] .modal { border-radius: 22px; border-color: var(--linha); box-shadow: var(--sombra-lg); }
+html[data-visual="nova"] .modal-bg {
+  background: rgba(6,11,22,.55); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+}
+
+/* ------------------------------------------------------------- etiquetas */
+html[data-visual="nova"] .pill { border-radius: 99px; letter-spacing: .03em; }
+html[data-visual="nova"] .toast { border-radius: 14px; -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+
+/* ================================================================ PAINEL */
+html[data-visual="nova"] .pn-card { border-radius: 20px; border-color: var(--linha); box-shadow: var(--sombra); background: var(--card-bg); }
+html[data-visual="nova"] .pn-cab h1 { font-size: clamp(30px, 3vw, 40px); }
+html[data-visual="nova"] .pn-ctl { border-radius: 99px; height: 36px; }
+html[data-visual="nova"] .pn-ctl:hover { border-color: var(--linha-forte); }
+html[data-visual="nova"] .pn-filtro select { border-radius: 99px; }
+html[data-visual="nova"] .pn-sec h2,
+html[data-visual="nova"] .pn-sec h3 { font-family: var(--fonte-tit); letter-spacing: -.02em; }
+html[data-visual="nova"] .pn-tiles > * { border-radius: 20px; transition: transform .25s, border-color .25s, box-shadow .25s; }
+html[data-visual="nova"] .pn-tiles > *:hover { transform: translateY(-2px); box-shadow: var(--sombra-hover); }
+html[data-visual="nova"] .pn-val,
+html[data-visual="nova"] .pn-tiles b,
+html[data-visual="nova"] .pn-tiles strong { font-family: var(--fonte-tit); letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
+html[data-visual="nova"] .pn-chip { border-radius: 99px; }
+html[data-visual="nova"] .pn-btn,
+html[data-visual="nova"] .pn-btn-p,
+html[data-visual="nova"] .pn-btn-mini { border-radius: 99px; }
+
+/* ================================================================= OBRAS
+ * A cena escura continua (com foto quando a obra tem). Sem foto, ela ganha a
+ * aurora do site no lugar do quadro vazio, e a luz acompanha o mouse. */
+html[data-visual="nova"] .ov-cena { --ov-fundo: #060b16; --ov-aco: #8fd3f2; }
+html[data-visual="nova"] .ov-cenario.sem-foto {
+  background:
+    radial-gradient(46vw 46vw at 8% 10%, rgba(31,93,146,.75), transparent 62%),
+    radial-gradient(40vw 40vw at 96% 0%, rgba(19,138,184,.55), transparent 62%),
+    radial-gradient(36vw 36vw at 50% 110%, rgba(58,63,168,.45), transparent 62%),
+    #060b16;
+  background-size: 120% 120%;
+  animation: vis-aurora-cena 30s ease-in-out infinite alternate;
+}
+@keyframes vis-aurora-cena { from { background-position: 0% 0%; } to { background-position: 100% 60%; } }
+html[data-visual="nova"] .ov-nome { font-weight: 750; letter-spacing: -.045em; line-height: 1; }
+html[data-visual="nova"] .ov-numeros dd,
+html[data-visual="nova"] .ov-numeros b { font-family: var(--fonte-tit); letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+html[data-visual="nova"] .ov-acoes .btn.primary { background: #fff; border-color: #fff; color: #15181d; }
+html[data-visual="nova"] .ov-acoes .btn.primary:hover { background: #d9ecfa; border-color: #d9ecfa; }
+html[data-visual="nova"] .ov-acoes .btn.ov-sec {
+  background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.18); color: #fff;
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+}
+html[data-visual="nova"] .ov-acoes .btn.ov-sec:hover { background: rgba(255,255,255,.15); }
+html[data-visual="nova"] .ov-chip { border-radius: 99px; background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.16); }
+html[data-visual="nova"] .ov-chip:hover { background: rgba(255,255,255,.13); }
+html[data-visual="nova"] .ov-trena-med { background: linear-gradient(90deg, #2d6a9c, #3fb5e5); box-shadow: 0 0 14px rgba(63,181,229,.55); }
+html[data-visual="nova"] .ov-card { border-radius: 18px; }
+html[data-visual="nova"] .ov-card.em-cena { box-shadow: 0 0 0 2px var(--ciano), 0 20px 40px -20px rgba(63,181,229,.5); }
+html[data-visual="nova"] .ov-seta { border-radius: 50%; }
+html[data-visual="nova"] .ov-ficha { border-radius: 22px; }
+
+/* ===================================================== EDITOR DE ORÇAMENTO */
+/* o cabeçalho do editor é o Modulo.cab do padrão de tela (08/10/2026): a
+   barra de duas linhas e o título próprio saíram */
+html[data-visual="nova"] .pl-tabela { border-radius: 18px; }
+
+/* =========================================================== APP DA PLAY
+ * Aberto pelo app da Google Play (?origem=play): nenhum botão de compra.
+ * O JS também se recusa (Gestao._upsell, Assinatura.texto) — isto aqui é só
+ * para o botão nem aparecer. Vale com ou sem a prévia visual. */
+html[data-origem="play"] .sb-upsell,
+html[data-origem="play"] .topo-instalar,
+html[data-origem="play"] [data-compra] { display: none !important; }
+
+/* ==================================================================== BIM
+ * PADRÃO NOVO (o padrão da casa): a mesma tela, os mesmos comandos e os
+ * mesmos painéis do molde do Revit — só a pele muda. Quem preferir o cinza do
+ * Revit marca "Estilo Revit" em Vista › Janelas (a casca põe
+ * `.bim-pele-revit` na raiz do BIM e nada daqui vale lá dentro).
+ * Os --rv-* são os tokens do css/bim-revit.css. */
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) {
+  --rv-titulo-bg: rgba(255,255,255,.78);
+  --rv-titulo-tx: #15181d;
+  --rv-fita-bg: rgba(255,255,255,.80);
+  --rv-fita-tx: #15181d;
+  --rv-aba-ativa-bg: #15181d;
+  --rv-aba-ativa-linha: transparent;
+  --rv-abas-bg: rgba(255,255,255,.80);
+  --rv-arquivo-bg: #2d6a9c;
+  --rv-painel-bg: rgba(255,255,255,.82);
+  --rv-painel-tx: #15181d;
+  --rv-painel-cab: rgba(234,240,246,.9);
+  --rv-linha: rgba(21,24,29,.09);
+  --rv-linha-forte: rgba(21,24,29,.2);
+  --rv-hover: rgba(45,106,156,.10);
+  --rv-ativo: rgba(45,106,156,.16);
+  --rv-ativo-borda: #2d6a9c;
+  --rv-sel: rgba(63,181,229,.18);
+  --rv-tx-fraco: #4b5563;
+  --rv-tx-off: #8a94a3;
+  --rv-status-bg: rgba(255,255,255,.8);
+  --rv-foco: #2d6a9c;
+  --rv-sombra: rgba(10,20,40,.22);
+  font-family: var(--fonte);
+  background: radial-gradient(1200px 700px at 70% 0%, #eef3f8, #d5e1ec);
+}
+html[data-visual="nova"] .bim-revit[data-rv-tema="escuro"]:not(.bim-pele-revit) {
+  --rv-titulo-bg: rgba(8,14,26,.72);
+  --rv-titulo-tx: #eaf0f7;
+  --rv-fita-bg: rgba(10,17,30,.72);
+  --rv-fita-tx: #eaf0f7;
+  --rv-aba-ativa-bg: #ffffff;
+  --rv-abas-bg: rgba(10,17,30,.72);
+  --rv-arquivo-bg: #2d6a9c;
+  --rv-painel-bg: rgba(10,17,30,.74);
+  --rv-painel-tx: #eaf0f7;
+  --rv-painel-cab: rgba(255,255,255,.05);
+  --rv-linha: rgba(255,255,255,.1);
+  --rv-linha-forte: rgba(255,255,255,.22);
+  --rv-hover: rgba(63,181,229,.12);
+  --rv-ativo: rgba(63,181,229,.2);
+  --rv-ativo-borda: #3fb5e5;
+  --rv-sel: rgba(63,181,229,.22);
+  --rv-tx-fraco: #a9b8ca;
+  --rv-tx-off: #66758a;
+  --rv-status-bg: rgba(8,14,26,.72);
+  --rv-foco: #3fb5e5;
+  background: radial-gradient(1200px 700px at 70% 0%, #0d1828, #05090f);
+}
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-titulo { border-bottom: 1px solid var(--rv-linha); }
+/* abas da fita em pílula; a ativa é grafite (branca no escuro), como o site */
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-abas { padding: 6px 8px 2px; gap: 2px; }
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-aba { border-radius: 99px; padding: 5px 13px; font-weight: 500; color: var(--rv-tx-fraco); border: 0; box-shadow: none; }
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-aba:hover { background: var(--rv-hover); color: var(--rv-fita-tx); }
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-aba[aria-selected="true"] { background: var(--rv-aba-ativa-bg); color: var(--rv-titulo-bg); color: #fff; }
+html[data-visual="nova"] .bim-revit[data-rv-tema="escuro"]:not(.bim-pele-revit) .rv-aba[aria-selected="true"] { color: #15181d; }
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-aba.rv-aba-arquivo { background: var(--rv-arquivo-bg); color: #fff; }
+/* comandos: ícone na cor da marca, cantos arredondados */
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-fita button { border-radius: 9px; }
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-fita button svg { color: #2d6a9c; }
+html[data-visual="nova"] .bim-revit[data-rv-tema="escuro"]:not(.bim-pele-revit) .rv-fita button svg { color: #3fb5e5; }
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-painel-nome { color: var(--rv-tx-fraco); }
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-sair { border-radius: 99px; background: #15181d; color: #fff; }
+html[data-visual="nova"] .bim-revit[data-rv-tema="escuro"]:not(.bim-pele-revit) .rv-sair { background: #fff; color: #15181d; }
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-obra { border-radius: 99px; }
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-doca-cab { font-weight: 600; }
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-lat-aba { border-radius: 0 12px 12px 0; }
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-docs button,
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-doc { border-radius: 99px; }
+
+/* B0 · NENHUM COMANDO EM DOIS LUGARES (vale nas duas peles, com a prévia).
+ * Cada um destes já mora na fita reorganizada (js/bimribbon.js, LAYOUT_B1):
+ *  - canto direito das abas: +IFC e Arquivo da obra (Arquivo), Órbita, Voo,
+ *    Enquadrar, Mesa e Ultra (Vista);
+ *  - barra de título: Abrir IFC (Arquivo), Foto da vista (Anotar), Reunião,
+ *    Maximizar 3D e 3D em outra janela (Vista › Janelas), Exportar p/ Revit
+ *    (Arquivo), Gerar orçamento e Quantitativo ilustrado (Quantitativos),
+ *    QR · RA/RV (Vista › Realidade virtual).
+ * Os botões continuam no DOM (as e2e e o contador da Reunião os procuram por
+ * id) — só deixam de ser desenhados. Na barra de título ficam: voltar,
+ * Salvar, Desfazer, Refazer, a obra, o tema e Tela cheia. */
+html[data-visual="nova"] .bim-revit .rv-abas-dir,
+html[data-visual="nova"] .bim-revit .rv-titulo-acoes,
+html[data-visual="nova"] .bim-revit .rv-qat [data-rv-qat="abrir-ifc"],
+html[data-visual="nova"] .bim-revit .rv-qat [data-rv-qat="foto"],
+/* ao lado das abas de vista: Nova vista e Lado a lado moram em Vista › Janelas */
+html[data-visual="nova"] .bim-revit .rv-docs-dir,
+/* barra de vista (embaixo do 3D): ficam Sombras, Esconder painéis e Modo foco,
+   que não existem em outro lugar, e o ESTILO VISUAL — este é a exceção de
+   propósito (07/10/2026): no Revit o estilo visual mora no rodapé da vista, e o
+   pedido foi "igual o Revit", com o estilo ativo escrito no botão. Os outros
+   seis são comandos da fita */
+html[data-visual="nova"] .bim-revit .rv-vistabar [data-rv-vb="planta"],
+html[data-visual="nova"] .bim-revit .rv-vistabar [data-rv-vb="corte"],
+html[data-visual="nova"] .bim-revit .rv-vistabar [data-rv-vb="visibilidade"],
+html[data-visual="nova"] .bim-revit .rv-vistabar [data-rv-vb="snap"],
+html[data-visual="nova"] .bim-revit .rv-vistabar [data-rv-vb="home"],
+html[data-visual="nova"] .bim-revit .rv-vistabar [data-rv-vb="foto"] { display: none !important; }
+
+/* ENCAIXE DA COLUNA (B1): Propriedades/Navegador à direita — a ordem do flex
+   inverte (o 3D primeiro, depois a janela da direita, depois a coluna), sem
+   mexer no DOM que as e2e e o resto da casca conhecem. */
+@media (min-width: 901px) {
+  html[data-visual="nova"] .bim-revit[data-rv-lat-lado="dir"] .rv-corpo > .rv-area { order: 1; }
+  html[data-visual="nova"] .bim-revit[data-rv-lat-lado="dir"] .rv-corpo > .rv-alca-dir { order: 2; }
+  html[data-visual="nova"] .bim-revit[data-rv-lat-lado="dir"] .rv-corpo > .rv-direita { order: 3; }
+  html[data-visual="nova"] .bim-revit[data-rv-lat-lado="dir"] .rv-corpo > .rv-alca-lat { order: 4; }
+  html[data-visual="nova"] .bim-revit[data-rv-lat-lado="dir"] .rv-corpo > .rv-lateral { order: 5; }
+  html[data-visual="nova"] .bim-revit[data-rv-lat-lado="dir"] .rv-corpo > .rv-lat-aba { order: 6; border-radius: 12px 0 0 12px; }
+  html[data-visual="nova"] .bim-revit[data-rv-lat-lado="dir"] .rv-lat-aba-seta { transform: rotate(180deg); }
+}
+html[data-visual="nova"] .bim-revit .rv-lateral .rv-doca-cab { cursor: grab; }
+html[data-visual="nova"] .bim-revit[data-rv-lat-alvo] .rv-lateral .rv-doca-cab { cursor: grabbing; }
+html[data-visual="nova"] .bim-revit[data-rv-lat-alvo="dir"] .rv-area { box-shadow: inset -6px 0 0 var(--rv-foco, #2d6a9c); }
+html[data-visual="nova"] .bim-revit[data-rv-lat-alvo="esq"] .rv-area { box-shadow: inset 6px 0 0 var(--rv-foco, #2d6a9c); }
+
+/* campos dentro do BIM escuro (busca do Navegador, valores de Propriedades) */
+html[data-visual="nova"] .bim-revit[data-rv-tema="escuro"]:not(.bim-pele-revit) input:not([type="checkbox"]):not([type="radio"]),
+html[data-visual="nova"] .bim-revit[data-rv-tema="escuro"]:not(.bim-pele-revit) select {
+  background: rgba(255,255,255,.06); color: #eaf0f7; border-color: rgba(255,255,255,.16);
+}
+html[data-visual="nova"] .bim-revit[data-rv-tema="escuro"]:not(.bim-pele-revit) select option { background: #0d1626; color: #eaf0f7; }
+
+/* painel de tile do Painel: o número grande na letra do site */
+html[data-visual="nova"] .pn-tile-val { font-family: var(--fonte-tit); letter-spacing: -.04em; font-weight: 700; font-variant-numeric: tabular-nums; }

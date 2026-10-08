@@ -754,13 +754,16 @@
       return String(b.data || "").localeCompare(String(a.data || ""));
     });
 
-    var html = G._head(K.svg("galeria") + "Tour Virtual 360", "t360-nova", "Nova visita");
-    html += '<p class="muted t360-legenda" style="margin:-4px 0 14px">'
-      + "Cada visita é um conjunto de <b>estações</b> — pontos fixos da obra onde a foto 360 é tirada. "
-      + "A comparação entre dois meses só existe quando a visita nova nasce da anterior, pelo botão "
-      + "<b>Repetir visita</b>: é o que faz a estação de setembro ser a MESMA de agosto.</p>";
+    /* ROTEIRO DE MÓDULO (08/10/2026): cabeçalho do kit e, no lugar do
+       parágrafo fixo sobre estações (lido uma vez, ocupando a tela para
+       sempre), a explicação mora no vazio — onde ela ensina — e no `title`
+       do "Repetir visita", que é onde ela decide alguma coisa. */
+    var html = global.Modulo.cab({ icone: "camera", titulo: "Tour Virtual 360",
+      sub: ts.length ? ts.length + " visita" + (ts.length === 1 ? "" : "s") + " · a foto que gira, comparada mês a mês" : "As visitas em foto 360 navegável",
+      primariaHtml: '<button class="btn primary" data-gacao="t360-nova">+ Nova visita</button>' });
 
-    if (!ts.length) return html + K.vazioBox("Nenhuma visita 360 registrada", "t360-nova", "Registrar a primeira visita");
+    if (!ts.length) return html + K.vazioKit({ icone: "camera", titulo: "Nenhuma visita 360 registrada",
+      texto: "Cada visita é um conjunto de estações — pontos fixos da obra onde a foto 360 é tirada. A comparação entre dois meses existe quando a visita nova nasce da anterior, pelo botão Repetir visita." });
 
     /* ⚠ O AVISO DE ESPAÇO NA NUVEM PRECISA APARECER, E CEDO.
        A entidade inteira vai num documento de 1 MiB e o js/nuvem.js avisa só
@@ -774,11 +777,12 @@
        existisse, a afirmação era falsa. */
     var w = M.peso ? M.peso(listaTours()) : null;
     if (w && w.estado !== "ok") {
-      html += caixaAviso(w.estado === "perigo" ? "A sincronização está prestes a parar" : "Espaço na nuvem",
-        "<p>" + esc(w.aviso) + "</p>");
+      html += global.Modulo.aviso({ tom: w.estado === "perigo" ? "erro" : "alerta",
+        titulo: w.estado === "perigo" ? "A sincronização está prestes a parar" : "Espaço na nuvem", texto: w.aviso });
     }
 
-    html += '<table class="tbl t360-tabela"><thead><tr><th>Data</th><th>Visita</th><th>Obra</th>'
+    var antesLista = html;
+    html = '<table class="tbl t360-tabela"><thead><tr><th>Data</th><th>Visita</th><th>Obra</th>'
       + '<th class="num">Estações</th><th class="num">Com foto</th><th>Situação</th><th></th></tr></thead><tbody>';
 
     ts.forEach(function (t) {
@@ -828,7 +832,7 @@
         + "</td></tr>";
     });
 
-    return html + "</tbody></table>";
+    return antesLista + global.Modulo.secao({ titulo: "Visitas", corpoHtml: html + "</tbody></table>" });
   }
 
   /* ===================================================================

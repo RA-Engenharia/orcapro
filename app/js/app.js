@@ -929,7 +929,20 @@
            com o Gantt medido "comprimido" embaixo dos cards.
            ⚠ Aqui só se LIGA: quem desliga é o topo do render (ver o ⚠ lá). */
         if (this.aba === "cronograma") { try { document.body.classList.add("foco-crono"); } catch (eFc) {} }
+        /* o menu "Mais" do cabeçalho (Modulo.cab, padrão de tela) SOBREVIVE ao
+           redesenho de FUNDO. Roteiro do defeito (08/10/2026, medido com clique
+           real): a pré-carga do analítico termina ~1,2 s depois de abrir o
+           orçamento e redesenha a planilha; o "Mais" que a pessoa tinha acabado
+           de abrir fechava embaixo do mouse, e o clique seguinte caía no que
+           estivesse no lugar. O clique NUM ITEM continua fechando o menu: o
+           Modulo.ligar (carregado antes deste arquivo) o fecha antes do despacho. */
+        var _maisAberto = !!document.querySelector("#orc-ed-cab .mod-mais-menu:not([hidden])");
         main.innerHTML = UI.renderEditor(this.orcAtual, this.aba);
+        if (_maisAberto) {
+          var _mm = document.querySelector("#orc-ed-cab .mod-mais-menu"), _mb = document.querySelector("#orc-ed-cab .mod-mais-bt");
+          if (_mm) _mm.hidden = false;
+          if (_mb) _mb.setAttribute("aria-expanded", "true");
+        }
         /* ⚠ RELIGADO A CADA RENDER, como o filtro da lista. A aba reescreve o
            HTML inteiro; o listener do render anterior morreu junto com o
            elemento, e o que nao e religado vira campo que nao responde. */
@@ -989,8 +1002,12 @@
      *   Enquanto só existia o primeiro, o painel media conversão pelo aval do
      *   chefe — ver a nota em `Orcamento.indicadoresCarteira`.
      * ===================================================================== */
-    _propComercialBotoes: function (orc) {
-      if (typeof Proposta === "undefined" || !Proposta.estadoComercial || !orc || !orc.id) return "";
+    /* `partes` (padrão de tela, 08/10/2026): devolve { selo, botoes:[…] } em
+       vez do HTML corrido — o selo é ESTADO e vai para a linha de contexto do
+       cabeçalho; os botões vão para o menu "Mais" (Modulo.cab), cada um
+       inteiro. Sem `partes`, o HTML de sempre. */
+    _propComercialBotoes: function (orc, partes) {
+      if (typeof Proposta === "undefined" || !Proposta.estadoComercial || !orc || !orc.id) return partes ? null : "";
       var est = Proposta.estadoComercial(orc);
       var v = Proposta.validade(orc, Util.agoraISO());
       var selo = "";
@@ -1021,6 +1038,8 @@
           + (typeof Icones !== "undefined" ? Icones.get("enviar", 15) : "") + "Marcar como enviada</button>"
         : '<button class="btn sm" data-acao="proposta-resposta" title="O que o cliente respondeu">'
           + (typeof Icones !== "undefined" ? Icones.get("check", 15) : "") + (est === "enviada" ? "Resposta do cliente" : "Alterar resposta") + "</button>";
+      /* no menu "Mais" todo item tem o mesmo tamanho: sai o `sm` */
+      if (partes) return { selo: selo, botoes: [zap, btn].filter(Boolean).map(function (x) { return x.replace('class="btn sm', 'class="btn'); }) };
       return selo + zap + btn;
     },
 
@@ -1179,8 +1198,9 @@
          } }]);
     },
 
-    _aprovBotoesOrc: function (orc) {
-      if (typeof Aprovacao === "undefined" || !orc || !orc.id) return "";
+    /* `partes`: { selo, botoes:[…] } — ver `_propComercialBotoes` */
+    _aprovBotoesOrc: function (orc, partes) {
+      if (typeof Aprovacao === "undefined" || !orc || !orc.id) return partes ? null : "";
       var eu = (Auth.usuario && Auth.usuario()) || {};
       var ctx = {};
       try {
@@ -1190,7 +1210,7 @@
         };
       } catch (e) {}
       var acoes = Aprovacao.acoesDisponiveis(orc, eu, ctx) || [];
-      if (!acoes.length) return "";
+      if (!acoes.length) return partes ? null : "";
       /* ⚠ O VERDE SAIU DAQUI, E NAO FOI ENFEITE. Estes botoes dividem a
        *   segunda linha da barra do editor com "Gerar Proposta", que e
        *   `.btn.success` — verde. Com "Aprovar" tambem verde, a linha tinha
@@ -1214,12 +1234,14 @@
       var est = Aprovacao.estadoDe(orc), info = Aprovacao.ESTADOS[est] || {};
       var CORES = { cinza: "#64748b", ambar: "#ea580c", verde: "#16a34a", vermelho: "#dc2626" };
       var cor = CORES[info.cor] || "#64748b";
-      return '<span class="g-pill" style="background:' + cor + '22;color:' + cor + ';font-weight:700;margin-right:6px">' +
-        Util.esc(info.rotulo || est) + '</span>' +
-        acoes.map(function (a) {
-          return '<button class="btn sm ' + (classe[a] || "") + (a === forte ? " acao-forte" : "") + '" data-acao="orc-aprov" data-aprov="' + Util.esc(a) + '">' +
-            Util.esc((Aprovacao.ROTULO_ACAO && Aprovacao.ROTULO_ACAO[a]) || a) + '</button> ';
-        }).join("");
+      var seloA = '<span class="g-pill" style="background:' + cor + '22;color:' + cor + ';font-weight:700;margin-right:6px">' +
+        Util.esc(info.rotulo || est) + '</span>';
+      var botoesA = acoes.map(function (a) {
+        return '<button class="btn sm ' + (classe[a] || "") + (a === forte ? " acao-forte" : "") + '" data-acao="orc-aprov" data-aprov="' + Util.esc(a) + '">' +
+          Util.esc((Aprovacao.ROTULO_ACAO && Aprovacao.ROTULO_ACAO[a]) || a) + '</button>';
+      });
+      if (partes) return { selo: seloA, botoes: botoesA.map(function (x) { return x.replace('class="btn sm', 'class="btn'); }) };
+      return seloA + botoesA.map(function (b) { return b + " "; }).join("");
     },
     /* Executa a ação. Motivo obrigatório em revisar/rejeitar é regra do motor —
      * pedimos aqui e deixamos ELE recusar se vier vazio. */
@@ -16223,7 +16245,9 @@
        chave local por cima), com uma porta que não exige console: o atalho que
        o suporte entrega abre o app assim. Só os nomes da lista valem — nada
        do endereço vira chave arbitrária no aparelho. */
-    _PREVIAS: { icamento: ["orcapro:tela:icamento-recursos:v1", '{"plano":true}'], cristal: ["orcapro:tela:bim-cristal:v1", '{"cristal":true}'] },
+    /* `visual` = cara nova do sistema (07/10/2026): o index.html lê esta chave antes do 1º paint e põe html[data-visual="nova"].
+       ⚠ o objeto fica numa LINHA só: tools/test-previa-url.js recorta esta linha para rodar o _previaDaUrl em Node. */
+    _PREVIAS: { icamento: ["orcapro:tela:icamento-recursos:v1", '{"plano":true}'], cristal: ["orcapro:tela:bim-cristal:v1", '{"cristal":true}'], visual: ["orcapro:tela:visual:v1", '{"visual":true}'] },
     /* `?previa=icamento` ou uma LISTA `?previa=icamento,cristal` (um atalho liga as duas); `-desligar` em cada nome apaga.
        Nome que não existe em _PREVIAS é ignorado — nunca grava chave inventada. */
     _previaDaUrl: function () {

@@ -84,10 +84,19 @@
           : aba === "parceiros" ? ["carp-novo-parceiro", "Novo parceiro"]
             : aba === "propostas" ? ["carp-nova-proposta", "Nova proposta"] : null;
 
-    var html = this._head(K.svg("carpintaria") + "Carpintaria", novo ? novo[0] : null, novo ? novo[1] : null, _avisoParam());
-    html += '<div class="tabs" style="margin-bottom:14px">' + abas.map(function (a) {
-      return '<div class="tab' + (a[0] === aba ? " ativa" : "") + '" data-gacao="carp-aba" data-aba="' + a[0] + '">' + a[1] + "</div>";
-    }).join("") + "</div>";
+    /* ROTEIRO DE MÓDULO (08/10/2026): cabeçalho, aviso e abas do kit. O
+       aviso de parâmetro faltando era um texto colorido espremido ao lado
+       do botão principal; virou o aviso do topo, com o caminho (a aba). */
+    var rotAba = {};
+    abas.forEach(function (a) { rotAba[a[0]] = a[1]; });
+    var html = global.Modulo.cab({ icone: "regua", titulo: "Carpintaria", sub: "Propostas de deck e madeira: " + (rotAba[aba] || "Propostas").toLowerCase(),
+      primariaHtml: novo ? '<button class="btn primary" data-gacao="' + novo[0] + '">+ ' + novo[1] + "</button>" : "" });
+    html += _avisoParam();
+    /* ⚠ `data-aba` vai junto do `data-gacao` (como antes): o App.js trata o
+       gacao primeiro, e a e2e-carpintaria-custos acha a aba por esse par */
+    html += global.Modulo.abas(abas.map(function (a) {
+      return { rotulo: a[1], ativa: a[0] === aba, attrs: 'data-gacao="carp-aba" data-aba="' + a[0] + '"' };
+    }));
 
     if (aba === "madeiras") return html + _madeiras();
     if (aba === "mo") return html + _mo();
@@ -102,8 +111,9 @@
   function _avisoParam() {
     var f = C.validarParametros(paramBruto());
     if (!f.length) return "";
-    return '<span class="muted" style="margin-right:12px;align-self:center;color:var(--ambar,#b45309)">'
-      + f.length + ' parâmetro(s) por preencher — aba <b>Parâmetros</b></span>';
+    return global.Modulo.aviso({ tom: "alerta", titulo: f.length + " parâmetro(s) por preencher",
+      texto: "A proposta não fecha sem eles.",
+      acaoHtml: '<button class="btn sm" data-gacao="carp-aba" data-aba="param">Abrir Parâmetros</button>' });
   }
 
   /* ===================================================================
@@ -111,7 +121,7 @@
    * =================================================================== */
   function _madeiras() {
     var ms = K.lista(ENT_MADEIRA);
-    if (!ms.length) return K.vazioBox("Nenhuma madeira cadastrada", "carp-nova-madeira", "Cadastrar a primeira");
+    if (!ms.length) return K.vazioKit({ icone: "regua", titulo: "Nenhuma madeira cadastrada" });
     var forn = {};
     K.lista("fornecedores").forEach(function (f) { forn[f.id] = f.nome || f.razaoSocial || f.id; });
 
@@ -120,7 +130,7 @@
     ms.forEach(function (m) {
       var precos = C.fornecedoresDe(m).map(function (fid) {
         var p = C.precoFornecedor(m, fid);
-        return '<span class="g-pill" style="background:#2e6f9e18;color:var(--aco,#2e6f9e);margin-right:6px">'
+        return '<span class="g-pill" style="color:var(--aco);margin-right:6px">'
           + esc(forn[fid] || "(fornecedor removido)") + " · " + moeda(p.valor)
           + (p.data ? ' <span class="muted">' + esc(Util.fmtDia(p.data)) + "</span>" : "") + "</span>";
       }).join("");
@@ -128,7 +138,8 @@
         + "<td>" + esc(m.aplicacao || "—") + "</td><td>" + esc(m.dimensao || "—") + "</td><td>" + esc(m.unidade || "—") + "</td>"
         + "<td>" + (precos || '<span class="muted">sem preço — a proposta não fecha com este item</span>') + "</td></tr>";
     });
-    return html + "</tbody></table>";
+    /* roteiro de módulo: a tabela de cada aba numa seção do kit */
+    return global.Modulo.secao({ corpoHtml: html + "</tbody></table>" });
   }
 
   G.carpFormMadeira = function (m) {
@@ -190,7 +201,7 @@
     var nota = '<div class="card mb" style="padding:12px 15px"><span class="muted">'
       + "O valor de tabela é o de obra <b>acima de " + (p.corteM2 == null ? "…" : n2(p.corteM2)) + " " + esc(p.unidadeMO) + "</b>. "
       + "Abaixo disso o sistema aplica sozinho o acréscimo dos Parâmetros — não cadastre duas linhas.</span></div>";
-    if (!ss.length) return nota + K.vazioBox("Nenhum serviço na tabela de mão de obra", "carp-novo-mo", "Cadastrar o primeiro");
+    if (!ss.length) return nota + K.vazioKit({ icone: "regua", titulo: "Nenhum serviço na tabela de mão de obra" });
     var html = nota + '<table class="tbl"><thead><tr><th>Serviço</th><th>Unidade</th><th class="num">Valor de tabela</th></tr></thead><tbody>';
     ss.forEach(function (s) {
       var semPreco = s.valor == null || String(s.valor) === "";
@@ -198,7 +209,8 @@
         + "<td>" + esc(s.unidade || p.unidadeMO) + '</td><td class="num">'
         + (semPreco ? '<span class="muted">sem preço</span>' : moeda(Util.num(s.valor)) + " / " + esc(s.unidade || p.unidadeMO)) + "</td></tr>";
     });
-    return html + "</tbody></table>";
+    /* roteiro de módulo: a tabela de cada aba numa seção do kit */
+    return global.Modulo.secao({ corpoHtml: html + "</tbody></table>" });
   }
 
   G.carpFormMO = function (s) {
@@ -250,7 +262,7 @@
       + "<b>separado para o cliente</b>, em vez de sumir dentro do preço do m².<br>"
       + "O valor daqui é apenas <b>sugestão</b> — o da proposta é o que vale, porque deslocamento e "
       + "diária mudam de obra para obra.</span></div>";
-    if (!cs.length) return nota + K.vazioBox("Nenhum custo cadastrado", "carp-novo-custo", "Cadastrar o primeiro");
+    if (!cs.length) return nota + K.vazioKit({ icone: "regua", titulo: "Nenhum custo cadastrado" });
     var html = nota + '<table class="tbl"><thead><tr><th>Custo</th><th>Grupo</th><th>Unidade</th>'
       + '<th class="num">Valor de referência</th><th>Como cobra</th></tr></thead><tbody>';
     cs.forEach(function (x) {
@@ -262,7 +274,8 @@
           ? '<span title="O valor é o seu custo de compra; o cliente paga custo + a margem da proposta">custo + margem</span>'
           : '<span class="muted">valor direto</span>') + "</td></tr>";
     });
-    return html + "</tbody></table>";
+    /* roteiro de módulo: a tabela de cada aba numa seção do kit */
+    return global.Modulo.secao({ corpoHtml: html + "</tbody></table>" });
   }
 
   /* As unidades que o cliente pediu por escrito ("por hora ou eu escrever
@@ -391,7 +404,7 @@
    * =================================================================== */
   function _propostas() {
     var ps = K.lista(ENT_PROP);
-    if (!ps.length) return K.vazioBox("Nenhuma proposta", "carp-nova-proposta", "Montar a primeira");
+    if (!ps.length) return K.vazioKit({ icone: "regua", titulo: "Nenhuma proposta" });
     var cli = {}; K.lista("clientes").forEach(function (c) { cli[c.id] = c.nome || c.razaoSocial || c.id; });
     var hoje = hojeISO();
     ps = ps.slice().sort(function (a, b) { return String(b.data || "").localeCompare(String(a.data || "")); });
@@ -408,7 +421,8 @@
         + '<td class="num">' + n2(r.metragem) + " " + esc(r.parametros.unidadeMO) + '</td>'
         + '<td class="num">' + moeda(r.total) + "</td><td>" + sit + "</td></tr>";
     });
-    return html + "</tbody></table>";
+    /* roteiro de módulo: a tabela de cada aba numa seção do kit */
+    return global.Modulo.secao({ corpoHtml: html + "</tbody></table>" });
   }
 
   G.carpNovaProposta = function () {
@@ -1009,7 +1023,7 @@
       + '<button class="btn sm" data-gacao="carp-ler-catalogos">' + (typeof Icones !== "undefined" ? Icones.get("ciclo", 15) : "") + " Buscar os catálogos deles</button>"
       + "</div></div>";
 
-    if (!ps.length) return html + K.vazioBox("Nenhum parceiro cadastrado", "carp-novo-parceiro", "Cadastrar o primeiro");
+    if (!ps.length) return html + K.vazioKit({ icone: "regua", titulo: "Nenhum parceiro cadastrado" });
 
     var cx = { madeiras: K.lista(ENT_MADEIRA), servicos: K.lista(ENT_MO) };
     html += '<table class="tbl"><thead><tr><th>Parceiro</th><th>Login</th>'
@@ -1038,7 +1052,8 @@
         + '<td><button class="btn sm primary" data-gacao="carp-publicar-parceiro" data-id="' + esc(p.id) + '">Publicar tabela</button></td>'
         + "</tr>";
     });
-    return html + "</tbody></table>";
+    /* roteiro de módulo: a tabela de cada aba numa seção do kit */
+    return global.Modulo.secao({ corpoHtml: html + "</tbody></table>" });
   }
 
   G.carpFormParceiro = function (raw) {

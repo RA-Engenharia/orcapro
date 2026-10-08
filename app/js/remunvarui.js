@@ -89,22 +89,31 @@
   /* ===================================================================
    * TELA
    * =================================================================== */
+  /* PADRÃO DE TELA (ROTEIRO-MODULO.md, js/modulo.js): cabeçalho → abas →
+     o conteúdo da aba (aviso, filtros, indicadores, seções). As abas vêm logo
+     abaixo do cabeçalho porque filtros e indicadores são DA aba Apuração. O
+     `data-gacao="rv-aba"` continua em cada aba: é ele que o despachante lê
+     (e ele tem precedência sobre o `data-aba` do kit no clique). */
+  var M = global.Modulo;
   G.renderRemunVar = function () {
     var abas = [["apuracao", "Apuração"], ["historico", "Histórico"], ["param", "Parâmetros"]];
-    var html = this._head(K.svg("remunvar") + "Remuneração variável", null, null, _avisoParam());
-    html += '<div class="tabs" style="margin-bottom:14px">' + abas.map(function (a) {
-      return '<div class="tab' + (a[0] === G._rvAba ? " ativa" : "") + '" data-gacao="rv-aba" data-aba="' + a[0] + '">' + a[1] + "</div>";
-    }).join("") + "</div>";
+    var html = M.cab({ iconeHtml: K.svg("remunvar", 22), titulo: "Remuneração variável",
+      sub: "Pagamento por produção medida no diário · apuração, aprovação e envio à Folha Semanal" });
+    html += M.abas(abas.map(function (a) {
+      return { id: a[0], rotulo: a[1], ativa: a[0] === G._rvAba, attrs: 'data-gacao="rv-aba"' };
+    }));
     if (G._rvAba === "param") return html + _param();
-    if (G._rvAba === "historico") return html + _historico();
+    if (G._rvAba === "historico") return html + _avisoParam() + _historico();
     return html + _apuracao();
   };
 
+  /* parâmetro faltando: o aviso do topo, com a porta para a aba que resolve */
   function _avisoParam() {
     var f = RV.validarParametros(paramBruto());
     if (!f.length) return "";
-    return '<span class="muted" style="margin-right:12px;align-self:center;color:var(--ambar,#b45309)">'
-      + f.length + " parâmetro(s) por preencher — aba <b>Parâmetros</b></span>";
+    return M.aviso({ tom: "alerta", titulo: f.length + " parâmetro(s) por preencher",
+      texto: "Sem eles a apuração não fecha.",
+      acaoHtml: '<button class="btn sm" data-gacao="rv-aba" data-aba="param">Abrir Parâmetros</button>' });
   }
 
   /* ---------- APURAÇÃO ---------- */
@@ -115,67 +124,66 @@
     var salva = apuracaoSalva();
     var fechada = salva && (salva.estado === "aprovada" || salva.estado === "paga");
 
-    var html = '<div class="card mb"><div class="row">'
+    /* o aviso do topo da aba: UM só (o kit permite no máx. um). Apuração
+       fechada → o selo verde; senão o que trava a aprovação (rateio que não
+       fecha, pendências) ou, sem nada disso, o parâmetro que falta. */
+    var html = "";
+    if (fechada) {
+      html += M.aviso({ tom: "ok", titulo: "Apuração já " + RV.ESTADOS[salva.estado].toLowerCase() + ".",
+        texto: "Aprovada por " + (salva.aprovadaPor || "—") + " em " + (Util.fmtData(salva.aprovadaEm) || "—") + ". "
+          + "Os valores abaixo são os que foram homologados — o que o diário disser depois não muda esta apuração." });
+    } else if (!r.fecha || r.pendencias.length) {
+      html += M.aviso({ tom: r.fecha ? "alerta" : "erro", titulo: r.fecha ? "Antes de aprovar" : "O rateio não fechou com o pote.",
+        textoHtml: (r.fecha ? "" : "<span>Isso é centavo criado ou perdido — não aprove. Avise o suporte.</span>")
+          + (r.pendencias.length ? '<ul style="margin:4px 0 0 18px">' + r.pendencias.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>" : "") });
+    } else html += _avisoParam();
+
+    html += M.filtros([
       /* ⚠ O <select> fala por CHANGE e o dispatcher entrega só `{value}` —
          por isso a ação lê `ds.value`, e não o DOM. Lendo o DOM no clique, o
          valor era sempre o ANTERIOR e a obra nunca trocava. */
-      + K.campo("Obra *", '<select id="rv-obra" data-gacao="rv-obra">'
-        + K.optsRec(obras, "nome", G._rvObra, "— escolha a obra —") + "</select>")
+      K.campo("Obra *", '<select id="rv-obra" data-gacao="rv-obra">'
+        + K.optsRec(obras, "nome", G._rvObra, "— escolha a obra —") + "</select>"),
       /* ⚠ O campo de MÊS não leva `data-gacao`: o dispatcher escuta clique, e
          clicar dentro do campo re-renderizava a tela — o input sumia debaixo
          do dedo e não dava para trocar a competência. Ele é ligado depois do
          DOM existir, por `Gestao.registrarWire` (fim deste arquivo). */
-      + K.campo("Competência", '<input id="rv-comp" type="month" value="' + esc(G._rvComp) + '">')
-      + K.campo("Período", '<div style="padding-top:9px" class="muted">' + esc(Util.fmtDia(st.per.de)) + " a " + esc(Util.fmtDia(st.per.ate)) + "</div>")
-      + "</div>";
-    html += '<span class="muted">Só entra metragem de diário <b>aprovado</b> (1º nível, o encarregado) e que ainda não foi paga — '
-      + "nem por aqui, nem pela tela de Produção.</span></div>";
+      K.campo("Competência", '<input id="rv-comp" type="month" value="' + esc(G._rvComp) + '">'),
+      K.campo("Período", '<div style="padding-top:9px" class="muted">' + esc(Util.fmtDia(st.per.de)) + " a " + esc(Util.fmtDia(st.per.ate)) + "</div>")
+    ]);
 
-    if (fechada) {
-      html += '<div class="card mb" style="border-left:4px solid #15803d"><b>Apuração já ' + esc(RV.ESTADOS[salva.estado].toLowerCase()) + ".</b> "
-        + "Aprovada por " + esc(salva.aprovadaPor || "—") + " em " + esc(Util.fmtData(salva.aprovadaEm) || "—") + ". "
-        + "Os valores abaixo são os que foram homologados — o que o diário disser depois não muda esta apuração.</div>";
-      return html + _tabelaLinhas(salva.linhas, st.colabs, true) + _botoesFechada(salva);
-    }
+    if (fechada) return html + _tabelaLinhas(salva.linhas, st.colabs, true) + _botoesFechada(salva);
 
-    /* KPIs */
-    html += '<div class="kpis kpis-g mb">'
-      + _kpi("Metragem aprovada", n2(r.m2) + " " + esc(r.unidade), "no período, ainda não paga")
-      + _kpi("Pote", moeda(r.pote), r.porM2 == null ? "falta o R$/m²" : "a " + moeda(r.porM2) + " por " + esc(r.unidade))
-      + _kpi("Parte da equipe", moeda(r.equipeTotal), r.quantosDividem + " pessoa(s) dividem")
-      + _kpi("Parte individual", moeda(r.individualTotal), "de quem produziu")
-      + "</div>";
+    html += M.kpis([
+      { rotulo: "Metragem aprovada", valor: n2(r.m2) + " " + (r.unidade || ""), sub: "no período, ainda não paga" },
+      { rotulo: "Pote", valor: moeda(r.pote), tom: "info", sub: r.porM2 == null ? "falta o R$/m²" : "a " + moeda(r.porM2) + " por " + (r.unidade || "") },
+      { rotulo: "Parte da equipe", valor: moeda(r.equipeTotal), sub: r.quantosDividem + " pessoa(s) dividem" },
+      { rotulo: "Parte individual", valor: moeda(r.individualTotal), sub: "de quem produziu" }
+    ]);
 
     /* quem divide o pote */
-    html += '<div class="card mb"><h3 style="margin:0 0 4px">Quem divide a parte da equipe</h3>'
-      + '<p class="muted" style="margin:0 0 10px">O vínculo pessoa↔obra do sistema é um campo só, sem histórico — '
-      + "quem troca de obra no meio do mês muda o valor de todo mundo. Confira nome a nome antes de aprovar.</p>";
-    if (!st.equipeToda.length) html += '<p class="muted">Ninguém alocado nesta obra e ninguém com produção no período.</p>';
+    var corpoEq;
+    if (!st.equipeToda.length) corpoEq = '<p class="muted" style="margin:0">Ninguém alocado nesta obra e ninguém com produção no período.</p>';
     else {
       var fora = G._rvFora[G._rvObra || "*"] || {};
-      html += '<div class="flex" style="gap:16px;flex-wrap:wrap">' + st.equipeToda.map(function (x) {
+      corpoEq = '<div class="flex" style="gap:16px;flex-wrap:wrap">' + st.equipeToda.map(function (x) {
         var marca = x.origem === "ambos" ? "alocado e produziu" : x.origem === "alocado" ? "alocado" : "produziu";
         return '<label style="display:inline-flex;align-items:center;gap:6px">'
           + '<input type="checkbox" data-gacao="rv-equipe" data-cid="' + esc(x.id) + '"' + (fora[x.id] ? "" : " checked") + "> "
           + esc(x.nome) + ' <span class="muted">(' + marca + (x.semCadastro ? ", sem cadastro" : "") + ")</span></label>";
       }).join("") + "</div>";
     }
-    html += "</div>";
+    html += M.secao({ titulo: "Quem divide a parte da equipe",
+      sub: "O vínculo pessoa↔obra é um campo só, sem histórico: quem troca de obra no meio do mês muda o valor de todo mundo. Confira nome a nome antes de aprovar.",
+      corpoHtml: corpoEq });
 
-    if (r.pendencias.length) {
-      html += '<div class="card mb" style="border-left:4px solid var(--ambar,#b45309)"><b>Antes de aprovar</b><ul style="margin:8px 0 0 18px">'
-        + r.pendencias.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul></div>";
-    }
     /* ⚠ CAIXA DIFERENTE, DE PROPÓSITO. "Antes de aprovar" trava; isto aqui não.
        Metragem que ficou de fora precisa APARECER — sumir calada seria pior que
-       travar. Mesmo padrão da proposta (js/carpintariaui.js). */
+       travar. Mesmo padrão da proposta (js/carpintariaui.js). Como o aviso do
+       topo já é o que trava, este vira uma seção própria. */
     if (Util.arr(r.avisos).length) {
-      html += '<div class="card mb" style="border-left:4px solid var(--aco,#2e6f9e)"><b>Para você saber</b><ul style="margin:8px 0 0 18px">'
-        + r.avisos.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul></div>";
-    }
-    if (!r.fecha) {
-      html += '<div class="card mb" style="border-left:4px solid #dc2626"><b>O rateio não fechou com o pote.</b> '
-        + "Isso é centavo criado ou perdido — não aprove. Avise o suporte.</div>";
+      html += M.secao({ titulo: "Para você saber",
+        corpoHtml: '<ul style="margin:0 0 0 18px">' + r.avisos.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>" });
     }
 
     html += _tabelaLinhas(r.linhas, st.colabs, false);
@@ -188,14 +196,10 @@
     return html;
   }
 
-  function _kpi(rot, val, sub) {
-    return '<div class="kpi"><div class="rotulo">' + esc(rot) + '</div><div class="num">' + val + "</div>"
-      + (sub ? '<div class="muted" style="margin-top:4px;font-size:12px">' + esc(sub) + "</div>" : "") + "</div>";
-  }
-
   function _tabelaLinhas(linhas, colabs, congelada) {
     linhas = Util.arr(linhas);
-    if (!linhas.length) return '<div class="card"><p class="muted">Nenhuma linha para pagar neste período.</p></div>';
+    if (!linhas.length) return M.secao({ corpoHtml: M.vazio({ icone: "grafico", titulo: "Nenhuma linha para pagar neste período",
+      texto: "Só entra metragem de diário aprovado (1º nível, o encarregado) e que ainda não foi paga, nem por aqui, nem pela tela de Produção." }) });
     var ix = {}; Util.arr(colabs).forEach(function (c) { if (c && c.id) ix[c.id] = c; });
     var html = '<table class="tbl"><thead><tr><th>Colaborador</th><th>Função</th><th class="num">Metragem</th>'
       + '<th class="num">Equipe</th><th class="num">Individual</th><th class="num">Total</th></tr></thead><tbody>';
@@ -210,7 +214,7 @@
         + '<td class="num"><b>' + moeda(congelada ? L.totalCent / 100 : L.total) + "</b></td></tr>";
     });
     html += '</tbody><tfoot><tr><td colspan="5" class="num"><b>Total</b></td><td class="num"><b>' + moeda(t / 100) + "</b></td></tr></tfoot></table>";
-    return html;
+    return M.secao({ titulo: "Quem recebe", sub: "Só entra metragem de diário aprovado (1º nível) e ainda não paga, nem por aqui, nem pela Produção.", corpoHtml: html });
   }
 
   function _botoesFechada(salva) {
@@ -231,7 +235,8 @@
   /* ---------- HISTÓRICO ---------- */
   function _historico() {
     var as = K.lista(ENT_APUR).slice().sort(function (a, b) { return String(b.competencia || "").localeCompare(String(a.competencia || "")); });
-    if (!as.length) return K.vazioBox("Nenhuma apuração fechada ainda", null, null);
+    if (!as.length) return M.secao({ corpoHtml: M.vazio({ icone: "grafico", titulo: "Nenhuma apuração fechada ainda",
+      texto: "A apuração aprovada na aba Apuração aparece aqui, com a porta para mandar à Folha Semanal." }) });
     var obras = {}; K.lista("obras").forEach(function (o) { obras[o.id] = o.nome; });
     /* ⚠ O HISTÓRICO NÃO TINHA BOTÃO NENHUM — e o Painel manda gente para cá.
        A regra nova da reconciliação ("apuração aprovada que não foi para a
@@ -254,7 +259,7 @@
         + "<td>" + esc(RV.ESTADOS[a.estado] || a.estado) + "</td><td>" + esc(a.aprovadaPor || "—") + "</td>"
         + "<td>" + acao + "</td></tr>";
     });
-    return html + "</tbody></table>";
+    return M.secao({ titulo: "Apurações", sub: "A mais recente primeiro.", corpoHtml: html + "</tbody></table>" });
   }
 
   /* ---------- PARÂMETROS ---------- */
@@ -263,10 +268,10 @@
     var faltas = RV.validarParametros(b);
     var html = "";
     if (faltas.length) {
-      html += '<div class="card mb" style="border-left:4px solid var(--ambar,#b45309)"><b>Falta preencher</b><ul style="margin:8px 0 0 18px">'
-        + faltas.map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("") + "</ul></div>";
+      html += M.aviso({ tom: "alerta", titulo: "Falta preencher",
+        textoHtml: '<ul style="margin:4px 0 0 18px">' + faltas.map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("") + "</ul>" });
     }
-    html += '<div class="card"><div class="row">'
+    var form = '<div class="row">'
       + K.campo("Valor por m² produzido (R$) *", K.inp("rp-m2", b.porM2))
       + K.campo("Quanto do pote é da equipe (%)", K.inp("rp-rat", b.rateioEquipePct == null ? 50 : b.rateioEquipePct))
       + K.campo("Periodicidade do acerto", K.sel("rp-per", K.opts([["mensal", RV.PERIODOS.mensal], ["quinzenal", RV.PERIODOS.quinzenal], ["semanal", RV.PERIODOS.semanal]], p.periodicidade)))
@@ -278,8 +283,8 @@
       + K.campo("Piso da categoria (R$)", K.inp("rp-piso", b.pisoCategoria))
       + K.campo("Vale alimentação mensal (R$)", K.inp("rp-va", b.valeAlimentacao))
       + "</div>"
-      + '<div class="flex mt"><button class="btn primary" data-gacao="rv-salvar-param">Salvar parâmetros</button></div></div>';
-    return html;
+      + '<div class="flex mt"><button class="btn primary" data-gacao="rv-salvar-param">Salvar parâmetros</button></div>';
+    return html + M.secao({ titulo: "Parâmetros do pagamento", corpoHtml: form });
   }
 
   /* ===================================================================

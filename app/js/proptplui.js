@@ -85,26 +85,25 @@
       return c ? c.nome : "";
     }
 
-    var html = this._head(
-      (typeof Icones !== "undefined" ? Icones.get("tabela", 18) : "") + "Modelos de Proposta",
-      "propmod-novo", "Novo modelo",
-      '<button class="btn sm primary" data-gacao="propmod-agente" style="margin-right:10px;align-self:center" '
-      + 'title="Responder um roteiro e deixar a IA montar a estrutura do seu modelo">'
-      + (typeof Icones !== "undefined" ? Icones.get("ia", 15) : "") + " Montar com a IA</button>"
-      + '<button class="btn sm" data-gacao="propmod-importar" style="margin-right:10px;align-self:center" '
-      + 'title="Abrir um modelo que veio de outra conta (arquivo .json)">'
-      + (typeof Icones !== "undefined" ? Icones.get("importar", 15) : "") + " Trazer de um arquivo</button>"
-      + '<button class="btn sm" data-gacao="propmod-fabrica" style="margin-right:10px;align-self:center">'
-      + (typeof Icones !== "undefined" ? Icones.get("baixar", 15) : "") + " Trazer os modelos de fábrica</button>"
-    );
+    /* PADRÃO DE TELA (ROTEIRO-MODULO.md, 08/10/2026): cabeçalho do kit — à
+       vista [Montar com a IA] e [Trazer de um arquivo] (as duas portas que as
+       e2e conferem na tela), [Trazer os modelos de fábrica] no "Mais" e
+       [+ Novo modelo] como a primária. O parágrafo fixo de apresentação virou
+       a linha de contexto, curta; a tabela mora na seção do kit. */
+    var html = Modulo.cab({ icone: "grade", titulo: "Modelos de Proposta",
+      sub: ms.length + (ms.length === 1 ? " modelo" : " modelos") + " · páginas, fotos, cor e fonte da proposta",
+      acoes: [
+        '<button class="btn" data-gacao="propmod-agente" title="Responder um roteiro e deixar a IA montar a estrutura do seu modelo">'
+          + (typeof Icones !== "undefined" ? Icones.get("ia", 15) : "") + "Montar com a IA</button>",
+        '<button class="btn" data-gacao="propmod-importar" title="Abrir um modelo que veio de outra conta (arquivo .json)">'
+          + (typeof Icones !== "undefined" ? Icones.get("importar", 15) : "") + "Trazer de um arquivo</button>",
+        '<button class="btn" data-gacao="propmod-fabrica" title="Volta a pôr na lista os modelos que vêm com o sistema (os seus não mudam)">'
+          + (typeof Icones !== "undefined" ? Icones.get("baixar", 15) : "") + "Trazer os modelos de fábrica</button>"
+      ],
+      primariaHtml: '<button class="btn primary" data-gacao="propmod-novo">+ Novo modelo</button>' });
 
-    html += '<p class="muted" style="margin:-4px 0 16px;max-width:74ch">'
-      + "O modelo decide como a proposta sai no papel: quais páginas, em que ordem, com quais fotos, "
-      + "em que cor e em que fonte. Monte uma vez, dê um nome, e use em toda proposta — dá para ter "
-      + "vários e escolher na hora de gerar. <b>As fotos ficam no modelo</b>: você troca a foto e todas "
-      + "as próximas propostas saem com a nova.</p>";
-
-    html += '<table class="tbl"><thead><tr><th>Modelo</th><th>Formato</th><th class="num">Páginas</th>'
+    var tb = "";
+    tb += '<table class="tbl"><thead><tr><th>Modelo</th><th>Formato</th><th class="num">Páginas</th>'
       + '<th class="num">Fotos</th><th>Para</th><th></th></tr></thead><tbody>';
 
     ms.forEach(function (raw) {
@@ -112,7 +111,7 @@
       var sl = T.slots(m);
       var comFoto = sl.filter(function (s) { return !!s.ref; }).length;
       var falta = T.validar(m).length;
-      html += "<tr>"
+      tb += "<tr>"
         + '<td style="cursor:pointer" data-gacao="propmod-abrir" data-id="' + esc(raw.id) + '"><b>' + esc(m.nome) + "</b>"
         + (m.padrao ? ' <span class="g-pill" style="background:#16a34a22;color:#16a34a;font-weight:700;font-size:10.5px">padrão</span>' : "")
         + (falta ? ' <span class="g-pill" style="background:#dc262622;color:#dc2626;font-weight:700;font-size:10.5px">incompleto</span>' : "")
@@ -120,15 +119,17 @@
         + "</td>"
         + "<td>" + (m.estilo.formato === "vertical" ? "Vertical (celular)" : "A4") + "</td>"
         + '<td class="num">' + m.paginas.length + "</td>"
-        + '<td class="num">' + comFoto + " / " + sl.length + "</td>"
+        + '<td class="num" style="white-space:nowrap">' + comFoto + " / " + sl.length + "</td>"
         + "<td>" + (m.paraCliente ? esc(nomeCli(m.paraCliente) || "cliente removido") : '<span class="muted">todos</span>') + "</td>"
-        + '<td class="num">'
+        /* ações da linha alinhadas à direita SEM a classe .num: ela põe a
+           fonte tabular (mono) no rótulo do botão */
+        + '<td style="text-align:right;white-space:nowrap">'
         + '<button class="btn sm" data-gacao="propmod-duplicar" data-id="' + esc(raw.id) + '" title="Duplicar">'
         + (typeof Icones !== "undefined" ? Icones.get("copiar", 15) : "cópia") + "</button> "
         + '<button class="btn sm" data-gacao="propmod-abrir" data-id="' + esc(raw.id) + '">Editar</button>'
         + "</td></tr>";
     });
-    html += "</tbody></table>";
+    html += Modulo.secao({ corpoHtml: tb + "</tbody></table>" });
 
     html += '<div id="propmod-editor" style="display:none;margin-top:16px"></div>';
     return html;

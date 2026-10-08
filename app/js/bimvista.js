@@ -192,6 +192,13 @@
    * em vez de fingir que o que aparece é o que foi salvo.
    * ===================================================================== */
   var MODOS_COTA = ["clicado", "iguais", "todas"];
+  /* os quatro estilos visuais (os mesmos de js/bimtextura.js ESTILOS) */
+  var NOMES_VISUAL = { linha: "Linha oculta", sombreado: "Sombreado", textura: "Textura", realista: "Realista" };
+  function estiloDe(e) {
+    var o = { desenho: !!(e && e.desenho) };
+    if (e && NOMES_VISUAL[txt(e.visual)]) o.visual = txt(e.visual);
+    return o;
+  }
   /* quantos pontos cada medida precisa para existir */
   var PONTOS_MEDIDA = { dist: 2, area: 3, ang: 3 };
 
@@ -308,7 +315,9 @@
       modelos: (Array.isArray(d.modelos) ? d.modelos : []).map(function (m) {
         return { arquivoId: txt(m && m.arquivoId), modeloId: txt(m && m.modeloId), visivel: !(m && m.visivel === false), alpha: (m && m.alpha != null) ? num(m.alpha) : 1 };
       }).filter(function (m) { return !!(m.arquivoId || m.modeloId); }),
-      estilo: { desenho: !!(d.estilo && d.estilo.desenho) },
+      /* `visual` (estilo visual do Revit, prévia 07/10/2026) só entra quando é um
+         dos quatro: a vista antiga continua sem ele e não muda o estilo ao abrir */
+      estilo: estiloDe(d.estilo),
       medidas: meds,
       cotaRede: {
         on: !!cr.on,
@@ -410,6 +419,7 @@
     if (v.cotaRede && v.cotaRede.on) out.push("cotas da rede");
     if ((v.aparencias || []).length) out.push("cores");
     if (v.estilo && v.estilo.desenho) out.push("estilo desenho");
+    if (v.estilo && v.estilo.visual && v.estilo.visual !== "sombreado") out.push("estilo " + (NOMES_VISUAL[v.estilo.visual] || v.estilo.visual).toLowerCase());
     var nDesl = (v.modelos || []).filter(function (m) { return m.visivel === false; }).length;
     if (nDesl) out.push(nDesl + (nDesl === 1 ? " modelo desligado" : " modelos desligados"));
     if (!out.length || (out.length === 1 && v.completa !== true)) out.push("modelo inteiro, sem corte");

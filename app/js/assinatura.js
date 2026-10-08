@@ -62,7 +62,21 @@
     /* O que a tela diz, a partir do que o servidor respondeu. Devolve
        { titulo, texto, botao, url, tom } — `botao` vazio = só recado.
        Nenhum valor é calculado aqui: tudo vem do servidor. */
+    /* APP DA GOOGLE PLAY (07/10/2026): a loja não deixa cobrar por fora dela.
+       Aberto com ?origem=play (index.html grava html[data-origem="play"]), o
+       bloco fica só de recado — sem botão nem link de pagamento. */
     texto: function (d) {
+      var r = this._textoBase(d);
+      var play = false;
+      try { play = typeof document !== "undefined" && document.documentElement.getAttribute("data-origem") === "play"; } catch (e) {}
+      if (play && r && (r.botao || r.url)) {
+        r = { tom: r.tom === "oferta" ? "neutro" : r.tom, titulo: r.tom === "oferta" ? "Renovação automática" : r.titulo,
+          texto: r.tom === "oferta" ? "Pelo app da Google Play não há compra nem assinatura. Sua licença continua valendo normalmente." : r.texto,
+          botao: "", url: "" };
+      }
+      return r;
+    },
+    _textoBase: function (d) {
       var self = this;
       if (!d || !d.ok) {
         /* ⚠ SEM REDE, A PESSOA AINDA PRECISA DE UM CAMINHO. O card de licença
