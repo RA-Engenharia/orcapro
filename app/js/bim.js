@@ -5408,7 +5408,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     /* prévia sem escolha da pessoa: o modelo que pediu textura (RA_Material) abre
        no estilo Realista — e o seletor DIZ isso, em vez de mostrar "Sombreado"
        com a textura ligada por baixo */
-    if (estPrevia() && d.ligado) { estiloVisual('realista', { auto: true }); return; }
+    /* ⚠ o MOTIVO vai junto (08/10/2026): sem ele o estado dizia só "estilo
+       Realista" e a pessoa não sabia POR QUE a textura ligou sozinha — o
+       "o modelo traz a textura dos materiais (RA_Material)" do automático
+       se perdia na troca para o estilo (tools/e2e-bim-materiais.js [2]) */
+    if (estPrevia() && d.ligado) { estiloVisual('realista', { auto: true, motivo: d.motivo }); return; }
     if (d.ligado || TEXR.on) texAplicar(d.ligado, d.motivo).then(texAvisar); else { TEXR.motivo = d.motivo; texAvisar(); }
   }
   function texAvisar() { if (S && S.opts && S.opts.onMateriais) { try { S.opts.onMateriais(texEstado()); } catch (_) {} } }
@@ -5427,10 +5431,24 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   function texEscolher(on) {
     /* a chave da frota vale sobre a escolha: não grava nada e DESLIGA o que estiver ligado */
     if (!texFrota()) return texAplicar(false, 'desligado para todas as instalações').then(function (e) { texAvisar(); return e; });
-    TEXR.pref = on ? '1' : '0';
-    try { localStorage.setItem('orcapro:bim:materiais', TEXR.pref); } catch (_) {}
+    texGravarPref(on);
     var d = texDecisao();
     return texAplicar(d.ligado, d.motivo).then(function (e) { texAvisar(); return e; });
+  }
+  /* ⚠ A ESCOLHA DA PESSOA É UMA SÓ NAS DUAS PELES (08/10/2026). Com a cara
+     nova o botão "Materiais realistas" virou atalho do estilo (Realista /
+     Sombreado) e gravava só `orcapro:bim:estilo-visual` — o
+     `orcapro:bim:materiais` ficava parado no que era antes. Quem desligasse
+     a textura (placa de vídeo fraca) e depois voltasse ao visual antigo
+     (`?previa=visual-desligar`) via a textura religar sozinha, e o
+     automático da própria cara nova (texDecisao, para modelo sem estilo
+     escolhido) seguia lendo a escolha velha. Daí a gravação aqui, chamada
+     pelos dois caminhos. A chave da frota vale sobre a escolha: não grava. */
+  function texGravarPref(on) {
+    if (!texFrota()) return false;
+    TEXR.pref = on ? '1' : '0';
+    try { localStorage.setItem('orcapro:bim:materiais', TEXR.pref); } catch (_) {}
+    return true;
   }
   /* =====================================================================
    * PORTAS E JANELAS QUE ABREM — a fiação (o motor é o js/bimabrir.js)
@@ -5522,7 +5540,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   };
 
   S._texVestir = function (mat) { if (TEXR.on) texVestir(mat); };
-  S._texAuto = texAuto; S._texEscolher = texEscolher; S._texEstado = texEstado; S._texLiberar = texLiberar; S._texAplicar = texAplicar;
+  S._texAuto = texAuto; S._texEscolher = texEscolher; S._texEstado = texEstado; S._texLiberar = texLiberar; S._texAplicar = texAplicar; S._texGravarPref = texGravarPref;
 
   /* o espelhamento anda com o quadro — e o mesmo gancho que a lupa e as cotas usam */
   S._tickExtra.push(function () { sincronizarAgregado(); });
@@ -5771,7 +5789,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     /* 2) a textura: o mesmo motor dos Materiais realistas, no nível do modo */
     TEXR.nivel = p.pbr ? 'realista' : 'textura'; TEXR.env = p.env;
     var querTex = p.texturas && texFrota();
-    var pr = texAplicar(querTex, 'estilo ' + p.nome);
+    var pr = texAplicar(querTex, o.motivo || ('estilo ' + p.nome));
     /* 3) entra */
     if (p.facesClaras) estLinhaFaces(true);
     if (p.luzNeutra) estLuz(true);
@@ -13890,7 +13908,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   function carregarExemplo() {
     // v1.1.97 — exemplo = modelo REAL de obra (Murumbir, RA Engenharia) da nuvem; atualizável sem
     // release e sem inchar o pacote. Offline/sem nuvem cai no exemplo embutido (bim/samples/exemplo.ifc).
-    var CLOUD = 'https://orcapro.raengenhariaespecial.com.br/samples/murumbir-demolicao.ifc';
+    var CLOUD = 'https://orcaprogestao.com.br/samples/murumbir-demolicao.ifc';
     function embutido() { fetch('bim/samples/exemplo.ifc').then(function (r) { return r.arrayBuffer(); }).then(function (ab) { enfileirar(function () { return carregarIFC(ab, 'exemplo.ifc', '', true); }); }).catch(function () { over.querySelector('div').innerHTML = '<div style="font-size:30px">' + (typeof Icones !== 'undefined' ? Icones.get('tabela', 15) : '') + '</div><p style="color:#a9c1d8">Abra um arquivo .ifc seu — o exemplo não foi encontrado.</p>'; }); }
     fetch(CLOUD).then(function (r) { if (!r.ok) throw new Error('http'); return r.arrayBuffer(); }).then(function (ab) { enfileirar(function () { return carregarIFC(ab, 'Murumbir — Demolição (exemplo)', '', true); }); }).catch(embutido);
   }
@@ -15072,7 +15090,11 @@ window.BIM = {
      uma Promise com o estado depois de as texturas chegarem */
   /* na prévia do estilo visual, o botão Materiais realistas é o atalho do Realista (ligado) e do Sombreado (desligado) */
   materiaisRealistas: function (on) {
-    if (S && S._estPrevia && S._estPrevia() && S._estiloVisual) return S._estiloVisual(on ? 'realista' : 'sombreado').then(function () { return S._texEstado(); });
+    if (S && S._estPrevia && S._estPrevia() && S._estiloVisual) {
+      /* a escolha fica gravada como nos Materiais realistas de sempre (ver texGravarPref) */
+      if (S._texGravarPref) S._texGravarPref(!!on);
+      return S._estiloVisual(on ? 'realista' : 'sombreado').then(function () { return S._texEstado(); });
+    }
     return (S && S._texEscolher) ? S._texEscolher(!!on) : Promise.resolve({ on: false });
   },
   /* ESTILO VISUAL (prévia ?previa=visual): 'linha' | 'sombreado' | 'textura' | 'realista' */

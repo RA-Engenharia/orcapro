@@ -7,14 +7,28 @@
         var _f = localStorage.getItem("orcapro:fonte"); _f = (_f === "source") ? "source" : "plex";
         document.documentElement.setAttribute("data-tema", _t);
         document.documentElement.setAttribute("data-fonte", _f); } catch (e) {}
-  /* CARA NOVA (prévia `?previa=visual`, 07/10/2026): marca a raiz ANTES do primeiro
-     paint — o css/visual.css só vale sob html[data-visual="nova"], então quem não
-     ligou a prévia vê o app de sempre, byte a byte. A chave é a mesma que o
-     App._previaDaUrl grava; aqui ela só é LIDA (e a URL lida direto, para a 1ª
-     abertura já sair com a cara certa). */
-  try { if (/[?&]previa=[^&]*visual(?!-desligar)/i.test(location.search) || (localStorage.getItem("orcapro:tela:visual:v1") && !/[?&]previa=[^&]*visual-desligar/i.test(location.search))) {
-          document.documentElement.setAttribute("data-visual", "nova");
-          var _lv = document.createElement("link"); _lv.rel = "stylesheet"; _lv.href = "css/fontes-visual.css"; document.head.appendChild(_lv); } } catch (e) {}
+  /* CARA NOVA — PADRÃO PARA TODOS desde a 1.2.128 (aprovada pelo Rogério em
+     08/10/2026; foi prévia `?previa=visual` na 1.2.127). Marca a raiz ANTES do
+     primeiro paint: o css/visual.css e o BIM novo (fita B1, desenho 2D, famílias,
+     estilos) só valem sob html[data-visual="nova"].
+     Volta ao visual antigo NESTE aparelho: `?previa=visual-desligar` (grava
+     `orcapro:tela:visual:off`); `?previa=visual` religa. A chave antiga da prévia
+     (`orcapro:tela:visual:v1`) não decide mais nada. */
+  (function () {
+    var q = location.search, off = /[?&]previa=[^&]*visual-desligar/i.test(q);
+    /* armazenamento bloqueado (aba anônima, política do navegador) não pode
+       derrubar a cara nova: sem como ler a escolha, vale o padrão */
+    try {
+      if (off) localStorage.setItem("orcapro:tela:visual:off", "1");
+      else if (/[?&]previa=[^&]*visual(?!-desligar)/i.test(q)) localStorage.removeItem("orcapro:tela:visual:off");
+      else off = localStorage.getItem("orcapro:tela:visual:off") === "1";
+    } catch (e) {}
+    if (off) return;
+    try {
+      document.documentElement.setAttribute("data-visual", "nova");
+      var lv = document.createElement("link"); lv.rel = "stylesheet"; lv.href = "css/fontes-visual.css"; document.head.appendChild(lv);
+    } catch (e) {}
+  })();
   /* APP DA GOOGLE PLAY (`?origem=play`, o startUrl do TWA em OrcaPRO-Android):
      a política da loja não deixa vender por fora dela, então quem abre pelo app
      não vê botão de compra. Fica gravado porque a navegação interna perde a URL. */

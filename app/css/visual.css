@@ -49,7 +49,12 @@ html[data-visual="nova"] {
   --raio: 12px;
   --raio-lg: 18px;
   --raio-ctl: 99px;
-  --h-ctl: 36px;
+  /* ⚠ --h-ctl NÃO muda aqui (era 36px até 08/10/2026). No app.css ele só
+     desenha duas coisas: o .pn-ctl do Painel — que tem altura própria logo
+     abaixo — e o `.btn.sm.icone`, o botão N3 de ícone. Com 36 só os ícones
+     cresciam: [Imprimir/PDF] [Documentos] [MS Project] saíam 36×36 ao lado
+     de botões de 32 na mesma barra do Cronograma (e2e-padrao-cronograma, régua
+     32). O .btn.sm da cara nova mede 32; o ícone acompanha. */
   --sombra-sm: 0 1px 2px rgba(15,30,50,.05);
   --sombra: 0 1px 2px rgba(15,30,50,.04), 0 10px 28px -14px rgba(15,30,50,.16);
   --sombra-lg: 0 2px 6px rgba(15,30,50,.06), 0 34px 70px -28px rgba(10,20,40,.38);
@@ -92,10 +97,19 @@ html[data-visual="nova"][data-tema="dark"] {
   --vidro-borda: rgba(255,255,255,.1);
 }
 
-/* ------------------------------------------------------------- base/tipo */
+/* ------------------------------------------------------------- base/tipo
+ * ⚠ O DOCUMENTO DO CLIENTE NÃO É TELA DO APP (08/10/2026). `h1`/`h2` soltos
+ * pegavam também o título da proposta comercial (.tp-h2, .tp-h1…), do
+ * relatório (.rel-tit) e das páginas da proposta antiga (.pg h1): o seletor
+ * daqui, (0,1,2), vence o `.tp-h2{font-family:var(--tp-f-tit)}` (0,1,0) do
+ * modelo — e a fonte que a pessoa ESCOLHEU (Editorial = Playfair, Impacto =
+ * Bebas…) virava Bricolage na tela e no PDF. tools/e2e-tipografia-proposta.js
+ * pegou. A exclusão vai num `:where()` para não somar especificidade: os
+ * títulos do app continuam com a letra da cara nova, e dentro de um documento
+ * vale o que o documento disser. A lista é a das folhas que viram papel
+ * (js/app.js `_abrirPrint`, js/proptpl.js, .pg da proposta). */
 html[data-visual="nova"] body { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
-html[data-visual="nova"] h1,
-html[data-visual="nova"] h2,
+html[data-visual="nova"] :is(h1, h2):where(:not(.proposta-overlay *, .tp-doc *, .rel-doc *, .doc-folha *, .pg *)),
 html[data-visual="nova"] .tela-nome,
 html[data-visual="nova"] .pn-cab h1,
 html[data-visual="nova"] .ov-nome,
@@ -103,10 +117,17 @@ html[data-visual="nova"] .modal-h h3,
 html[data-visual="nova"] .modal-header h3 {
   font-family: var(--fonte-tit); letter-spacing: -.03em; text-wrap: balance;
 }
-html[data-visual="nova"] h1,
+html[data-visual="nova"] h1:where(:not(.proposta-overlay *, .tp-doc *, .rel-doc *, .doc-folha *, .pg *)),
 html[data-visual="nova"] .pn-cab h1 { font-weight: 720; letter-spacing: -.04em; }
 html[data-visual="nova"] .main { background: var(--bg-grad); background-attachment: local; }
-html[data-visual="nova"] :focus-visible { outline: 2px solid var(--aco-claro); outline-offset: 2px; }
+/* ⚠ o anel GERAL da cara nova não pode passar por cima do anel que um
+   componente desenhou para o próprio fundo. Com `html[data-visual] :focus-visible`
+   (0,2,1) ele vencia o `.ov-aba:focus-visible` (0,2,0) da ficha de Obras: o
+   anel voltava para FORA (offset 2px, a regra de lá põe -3px justamente porque
+   a barra rola e corta) e na cor da tela clara, #2f8fc8 — que invadia as abas
+   vizinhas e, sobre a foto branca, deixava «Resumo» e «Diário» a 2,11:1
+   (tools/e2e-obras-vitrine.js). No :where() ele vale onde ninguém disse nada. */
+:where(html[data-visual="nova"]) :focus-visible { outline: 2px solid var(--aco-claro); outline-offset: 2px; }
 
 /* ---------------------------------------------------- barra de módulos ---
  * Sempre escura, nos dois temas: é a aurora do site (fundo #060b16 com duas
@@ -258,7 +279,13 @@ html[data-visual="nova"] .field select:focus,
 html[data-visual="nova"] .field textarea:focus {
   border-color: var(--aco); outline: 2px solid var(--aco-claro); outline-offset: 0; box-shadow: var(--anel);
 }
-html[data-visual="nova"] .field label { font-weight: 600; color: var(--texto-fraco); }
+/* ⚠ especificidade do app.css (0,1,1), não (0,2,2): a regra antiga vencia o
+   `.opt-linha.opt-alerta` (0,2,0), que é um <label> DENTRO de .field com fundo
+   creme FIXO — o nome do relatório que revela custo, no Portal da obra, saía
+   em --texto-fraco do tema escuro (#a9b8ca) sobre #fff7ed: 1,9:1
+   (tools/e2e-portal-tema-escuro.js). Com o prefixo no :where() a letra da cara
+   nova vale para o rótulo comum e quem pinta o próprio fundo segue mandando. */
+:where(html[data-visual="nova"]) .field label { font-weight: 600; color: var(--texto-fraco); }
 
 /* ---------------------------------------------------------------- modais */
 html[data-visual="nova"] .modal { border-radius: 22px; border-color: var(--linha); box-shadow: var(--sombra-lg); }
@@ -464,3 +491,38 @@ html[data-visual="nova"] .bim-revit[data-rv-tema="escuro"]:not(.bim-pele-revit) 
 
 /* painel de tile do Painel: o número grande na letra do site */
 html[data-visual="nova"] .pn-tile-val { font-family: var(--fonte-tit); letter-spacing: -.04em; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* ============================================================== IMPRESSÃO
+ * ⚠ O PAPEL É BRANCO E NÃO TEM CARA NOVA (08/10/2026). O app.css já devolve
+ * os tokens aos valores claros no `@media print` — mas com seletor (0,1,0) a
+ * (0,2,0), e o tema escuro daqui é `html[data-visual="nova"][data-tema="dark"]`
+ * (0,2,1): vencia o reset, e quem trabalha no tema escuro voltou a receber o
+ * PDF com --surface #0d1626 e o CARD do documento pintado de #0b1424 — o
+ * mesmo "PDF sai preto" que o cliente relatou na 1.1 (tools/e2e-print.js).
+ * Aqui, com especificidade igual à do tema e depois dele, os tokens voltam
+ * aos do app.css (os da folha impressa), inclusive aço, navy e raios: o
+ * documento é o entregável do cliente, não segue a pele da tela. */
+@media print {
+  html[data-visual="nova"],
+  html[data-visual="nova"][data-tema="dark"] {
+    --navy: #0f2740;
+    --navy-2: #15324f;
+    --aco: #0d6ebd;
+    --aco-claro: #3d92cb;
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --surface-2: #eef2f7;
+    --surface-3: #e5ecf4;
+    --linha: #c9d6e4;
+    --linha-forte: #a6bdd2;
+    --texto: #111d2b;
+    --texto-fraco: #516375;
+    --faixa-sub: #f3f6f9;
+    --tot-fundo: #0f2740;
+    --card-bg: #ffffff;
+    --bg-grad: none;
+    --sombra-sm: none; --sombra: none; --sombra-lg: none; --sombra-hover: none;
+    --realce: none;
+    --raio-sm: 6px; --raio: 10px; --raio-lg: 16px; --raio-ctl: 8px;
+  }
+}

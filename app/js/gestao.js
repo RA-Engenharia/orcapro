@@ -1191,7 +1191,7 @@
        quando ele mudar. */
     _urlLoja: function () {
       var base = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : "";
-      if (base && base.indexOf("sslip.io") > -1) base = "https://orcapro.raengenhariaespecial.com.br";
+      if (base && base.indexOf("sslip.io") > -1) base = "https://orcaprogestao.com.br";
       return base;
     },
 
@@ -8638,7 +8638,7 @@
       if (typeof Empresa !== "undefined" && Empresa.docsCfg && !Empresa.docsCfg().qr) return "";
       var base = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : "";
       if (!base) return "";
-      if (base.indexOf("sslip.io") > -1) base = "https://orcapro.raengenhariaespecial.com.br";
+      if (base.indexOf("sslip.io") > -1) base = "https://orcaprogestao.com.br";
       return QR.blocoImpresso(base + "/portal?u=" + encodeURIComponent(obra.portalUser) + "&obra=" + encodeURIComponent(obra.id), legenda);
     },
 
@@ -37147,7 +37147,7 @@
     },
     _independenteEmitida: function (d) {
       var srv = (typeof Licenca !== "undefined" && Licenca._servidor) ? Licenca._servidor() : "";
-      var link = "https://orcapro.raengenhariaespecial.com.br/baixar";   // o domínio da loja; o licencaServer é o host técnico
+      var link = "https://orcaprogestao.com.br/baixar";   // o domínio da loja; o licencaServer é o host técnico
       var corpo = '<p style="margin:0 0 8px"><b>Licença independente emitida para ' + Util.esc(d.nome || "") + '</b> (' + Util.esc(d.email || "") + ').</p>' +
         (d.repetida ? '<p style="margin:0 0 8px;color:#92400e">Esta licença já tinha sido emitida para este e-mail há poucos minutos: é a mesma chave, e nenhuma vaga nova foi usada.</p>' : '') + '<p class="muted" style="font-size:13px;margin:0 0 8px">Copie a chave e envie <b>só para a pessoa</b>, em conversa particular: ela é o acesso à conta dessa pessoa na nuvem. O OrçaPRO não a envia por e-mail e, depois que você fechar esta tela, ela só aparece mascarada.</p>' +
         '<div style="border:1.5px dashed var(--linha,#e2e8f0);border-radius:10px;background:#f8fafc;padding:10px 12px;font-family:ui-monospace,Consolas,monospace;font-size:12px;word-break:break-all">' + Util.esc(d.licenca || "") + '</div>' +
