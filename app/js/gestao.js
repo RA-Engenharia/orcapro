@@ -535,6 +535,9 @@
        operador, documentos): sem esta linha, o sub-usuário restrito à obra A
        veria o plano — e os anexos listados — da obra B */
     bim_icamento: 1,
+    /* MATERIAIS (09/10/2026, js/bimmateriaisui.js): os materiais do projeto são DAQUELA obra
+       (nome, código, massa): o sub-usuário restrito não vê os das obras que não acompanha */
+    bim_materiais: 1,
     /* ⚠ o planejamento da obra (linhas de base e plano de execução,
        js/cronobase.js) carrega obraId e mostra prazo e valor de venda por
        etapa: sem esta linha, o sub-usuário restrito à obra A abriria o
@@ -5369,6 +5372,8 @@
       /* o plano de içamento é da obra; os anexos no IndexedDB ficam órfãos e a
          política de espaço do navegador os descarta */
       ["bim_icamento", "plano(s) de içamento"],
+      /* MATERIAIS: o material do projeto só existe para as peças DAQUELA obra */
+      ["bim_materiais", "material(is) do projeto"],
       /* a tabela de preços unitários é combinada POR OBRA (o m² de reboco da
          obra A não é o da B). Sai junto; para reaproveitar em outra obra existe
          o "copiar de outra obra", que gera cópias próprias — nunca referência. */
@@ -10193,7 +10198,7 @@
     // e sobrepõe o timeline 4D (motor BIM4D). Cadeia in-app 100% minha; o bim/bim.html
     // da NF8n fica como demo standalone dela. Sem viewer carregado → aviso amigável.
     /* ------------------------------------------------------------------
-     * A CASCA DO BIM na aparência do Revit (v1.1.127).
+     * A CASCA DO BIM: aparência de programa de desktop (v1.1.127).
      * Envolve o card do viewer com fita de comandos, Propriedades,
      * Navegador de Projeto e barra de status, e liga cada comando da fita
      * numa ação real. Comando ainda sem ação avisa em vez de fingir —
@@ -10224,7 +10229,18 @@
          `reorganizar` recusa e fica o mapa de sempre. */
       try {
         if (window.BimRibbon && BimRibbon.reorganizar) {
-          if (document.documentElement.getAttribute("data-visual") === "nova") BimRibbon.reorganizar(); else BimRibbon.restaurar();
+          /* a prévia do MODELADOR (B2–B8) mora na fita nova: ligar só ela também organiza a fita */
+          if (document.documentElement.getAttribute("data-visual") === "nova" || (window.BimPrevia && BimPrevia.modelador())) {
+            BimRibbon.reorganizar();
+            /* B3 (prévia do modelador): Modificar (mover, copiar, espelhar, girar, matriz, snaps) e a cota do modelo */
+            if (window.BimPrevia && BimPrevia.modelador() && window.BimPrecisao && BimRibbon.acrescentar) {
+              BimRibbon.acrescentar("arquitetura", { nome: "Modificar", comandos: BimPrecisao.FITA.modificar });
+              BimRibbon.acrescentar("anotar", { nome: "Cota do modelo", comandos: BimPrecisao.FITA.cotar });
+              /* P4: Geometria (juntas de parede, alternar ordem de união, unir/desunir) e Pintar (pintar, dividir face) */
+              if (BimPrecisao.FITA.geometria) BimRibbon.acrescentar("arquitetura", { nome: "Geometria", comandos: BimPrecisao.FITA.geometria });
+              if (BimPrecisao.FITA.pintar) BimRibbon.acrescentar("acabamentos", { nome: "Pintar", comandos: BimPrecisao.FITA.pintar });
+            }
+          } else BimRibbon.restaurar();
         }
       } catch (eRb) {}
       BimShell.montar(card, {
@@ -10276,12 +10292,15 @@
             requestAnimationFrame(function () { try { if (typeof BIM !== "undefined" && BIM.redimensionar) BIM.redimensionar(); } catch (e) {} });
           });
         },
-        /* a cena 3D acompanha a interface: no claro do Revit a área de desenho
+        /* a cena 3D acompanha a interface: no tema claro a área de desenho
          * é clara, senão fica uma janela navy no meio de uma tela clara */
         onTema: function (t) { self._bimTemaCena(t); }
       });
       card.setAttribute("data-rv-montado", "1");
       card.style.padding = "0";
+      /* PLANTA (js/bimbarraopcoes.js): a barra de opções nasce JUNTO com a casca (altura fixa, sob a
+         fita) — nascer no 1º comando mudaria a altura do palco no meio do uso e o clique cairia fora */
+      try { if (window.BimBarraOpcoes && BimBarraOpcoes.montar) BimBarraOpcoes.montar(); } catch (eBbo) {}
       /* ⚠ A DOCA DA DIREITA SEGUE A GAVETA. Os painéis abrem e fecham mexendo
          no `display` da gaveta em muitos lugares (_bimAbrirPainel, fechar,
          minimizar, outra janela, 4D…); um observador só acompanha todos eles
@@ -10313,7 +10332,7 @@
       return true;
     },
 
-    /* claro do ambiente → cena clara; escuro → o cinza do Revit Dark.
+    /* claro do ambiente → cena clara; escuro → o grafite (tema escuro).
      * O viewer pode demorar a carregar (é módulo ES), então tenta de novo. */
     _bimTemaCena: function (tema) {
       /* guarda a intenção; quem aplica de fato é _bimTemaAplicar, chamado
@@ -10618,19 +10637,36 @@
          "em breve" na fita nova; viga e componente (família) entram */
       reg["familias-param"] = reg.componente = function () { self._famSync(); self._famAbrir("biblioteca"); return true; };
       reg["editor-familia"] = function () { self._famSync(); self._famAbrir("editor"); return true; };
+      /* P2-C — ACABAMENTO POR AMBIENTE (prévia do modelador): o comando arma o clique
+         "dentro do cômodo" do editor (js/bim.js, gancho P2-C); o clique cai em _ambClique */
+      reg["aplicar-ambiente"] = function (e) {
+        var b = B(); if (!b || !b.editarArmar) return false;
+        if (e && e.ligado === false) { b.editarArmar(null); return true; }
+        if (!(window.BimPrevia && BimPrevia.modelador()) || !window.BimAmbiente || !window.BimAcabamento) { UI.toast("O acabamento por ambiente está na prévia do modelador (?previa=modelador).", "aviso"); return true; }
+        b.editarArmar("ambiente", {});
+        BimShell.status("Aplicar por ambiente: clique DENTRO de um cômodo fechado por paredes — o ambiente nasce (ou é escolhido) e os acabamentos ficam em Propriedades.");
+        return true;
+      };
       reg["orc-modelo"] = function () { self._famSync(); self._bimAbrirPainel("orcmod"); if (window.OrcModeloUI) OrcModeloUI.renderPainel(); return true; };
+      /* INSTALAÇÕES (B5, prévia do modelador): tubo, conexão, aparelho, eletroduto — js/biminstui.js */
+      ["tubo", "conexao", "aparelho", "eletroduto"].forEach(function (k) { reg[k] = function (e) { return window.BimInstUI ? BimInstUI.comando(k, e || {}, self) : false; }; });
       /* IA (07/10/2026): a lógica e as telas moram em js/iafamilia.js e js/iarender.js; aqui só o contexto da obra */
       reg["familia-ia"] = function () { if (!window.IAFamilia) return false; self._famSync(); IAFamilia.abrir(self._iaCtx()); return true; };
       reg["render-ia"] = function () { if (!window.IARender) return false; IARender.abrir(self._iaCtx()); return true; };
       reg["galeria-ia"] = function () { if (!window.IARender) return false; IARender.galeria(self._iaCtx()); return true; };
+      /* RENDER-IA: acabamento com IA (js/iaacabamento.js); o painel de Render do motor físico chama IAAcabamento.botao(contêiner, ctx) */
+      reg["acabamento-ia"] = function () { if (!window.IAAcabamento) return false; IAAcabamento.abrir(self._iaCtx()); return true; };
+      /* B8 (08/10/2026): modelagem por comando — a tela e a lógica em js/iamodelar.js; só na prévia do modelador */
+      reg["modelar-ia"] = function () { if (!window.IAModelar || !IAModelar.ligado()) return false; self._famSync(); return IAModelar.abrir(self._modelarCtx()); };
       reg["salvar-opbim"] = function () { self._opbimSalvar(); return true; };
       reg["abrir-opbim"] = function () { self._opbimAbrir(); return true; };
       reg.templates = function () {
-        UI.modal("Template OrçaPRO (.optpl)", "<p>O template leva os <b>níveis</b> desta obra, as <b>famílias</b> da sua biblioteca e o <b>estilo das plantas e cortes</b> — o ponto de partida de um projeto novo, como o .rte do Revit.</p>", [
-          { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        var tplRA = !!(window.TemplatesRA && window.BimPrevia && BimPrevia.modelador());   /* B6: os templates RA prontos, na prévia do modelador */
+        UI.modal("Template OrçaPRO (.optpl)", "<p>O template leva os <b>níveis</b> desta obra, as <b>famílias</b> da sua biblioteca e o <b>estilo das plantas e cortes</b> — o ponto de partida de um projeto novo.</p>", [
+          { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }].concat(tplRA ? [{ texto: "Templates RA…", onClick: function () { UI.fecharModal(); self._optplRA(); } }] : []).concat([
           { texto: "Usar um template…", onClick: function () { UI.fecharModal(); self._optplAbrir(); } },
           { texto: "Salvar este projeto como template", classe: "primary", onClick: function () { UI.fecharModal(); self._optplSalvar(); } }
-        ]);
+        ]));
         return true;
       };
       reg["importar-outros"] = function () { self._importarOutros(); return true; };
@@ -10643,6 +10679,28 @@
         BimShell.status("Viga 14 × 40 com o topo no topo da parede: clique o início e o fim (Shift trava na horizontal/vertical; dá para digitar o comprimento).");
         return true;
       };
+      /* B3 — desenho de precisão (prévia do modelador, js/bimprecisao.js): cada comando arma a ferramenta do editor; Snaps abre o painel */
+      if (window.BimPrecisao) [].concat(BimPrecisao.FITA.modificar, BimPrecisao.FITA.cotar, BimPrecisao.FITA.geometria || [], BimPrecisao.FITA.pintar || []).forEach(function (c) {   /* P4: + geometria e pintar */
+        reg[c.id] = function () {
+          var b = B(); if (!b || !b.editarArmar) return false;
+          if (!c.sub) { var pz = b.precisao && b.precisao(); if (!pz) return false; b.editar(true); pz.painelSnaps(true); BimShell.status("Snaps do editor: ligue e desligue cada um; F3 liga e desliga todos."); return true; }
+          b.editarArmar(c.sub, {}); BimShell.status(c.dica); return true;
+        };
+      });
+      /* MODELADOR B4 (volume livre) e B7 (IFC de saída), prévia `?previa=modelador`.
+         A lógica mora em js/bimvolume.js, js/ifcsaida.js e no editor do js/bim.js;
+         aqui só o liga/desliga da fita. Sem a prévia a fita nem mostra o comando
+         ligado — a guarda é para o atalho (Ctrl+K) não passar por cima. */
+      ["extrusao", "revolucao", "varredura", "unir", "subtrair", "empurrar"].forEach(function (id) {
+        reg[id] = function (e) {
+          var b = B(); if (!b || !b.editarArmar) return false;
+          if (e && e.ligado === false) { b.editarArmar(null); return true; }
+          if (!(window.BimPrevia && BimPrevia.modelador())) { UI.toast("O volume livre está na prévia do modelador (?previa=modelador).", "aviso"); return true; }
+          b.editarArmar(id, {});
+          return true;
+        };
+      });
+      reg["exportar-ifc"] = function () { self._ifcSaidaExportar(); return true; };
       reg["corte-2d"] = function () {
         var st = self._bimVxEst(), pid = Bim2D && Bim2D.ehVista2d(st.ativa) && /^d2p-/.test(st.ativa) ? st.ativa : self._d2PlantaPadrao();
         if (!pid) { UI.toast("Abra um modelo primeiro: o corte é traçado na planta dele.", "aviso"); return true; }
@@ -10665,7 +10723,7 @@
       };
       reg["pele-revit"] = function (e) {
         BimShell.pele(!!e.ligado);
-        BimShell.status(e.ligado ? "Estilo Revit: o cinza do Revit, com os mesmos comandos." : "Padrão novo do OrçaPRO.");
+        BimShell.status(e.ligado ? "Estilo clássico: fita clara e cinza neutro, com os mesmos comandos." : "Padrão novo do OrçaPRO.");
         return true;
       };
       try {
@@ -10673,6 +10731,33 @@
         var _bg = B(); BimRibbon.setAtivo("grade", !(_bg && _bg.grade && _bg.grade() === false));
         BimRibbon.setAtivo("pele-revit", !!(BimShell.pele && BimShell.pele()));
       } catch (eNv) {}
+      /* MODELADOR B2 (prévia `?previa=modelador`): eixos, parede por tipo, laje por
+         contorno, perfis, escada e guarda-corpo — js/bimarqui.js (sem a prévia, sai na hora) */
+      try { if (window.BimArqUI) BimArqUI.registrar(reg, self); } catch (eB2) {}
+      /* P2-D: Arquitetura › Ambiente e área (Ambiente, Separador, Identificador, Esquema de cores)
+         e Vista › Ambientes no 3D — js/bimambienteui.js (sem a prévia do modelador, sai na hora) */
+      try { if (window.BimAmbienteUI) BimAmbienteUI.registrar(reg, self); } catch (eP2d) {}
+      /* P7: Anotar › Cota, Texto, Detalhe e Revisão nas vistas 2D — js/bimanot2dui.js (sem a prévia do modelador, sai na hora) */
+      try { if (window.BimAnot2DUI) BimAnot2DUI.registrar(reg); } catch (eP7) {}
+      /* P5: Vista › Criar (Tabela/Quantidades, Levantamento de material) e Anotar › Identificador — js/bimtabelaui.js, js/bimanot.js */
+      try { if (window.BimTabelaUI) BimTabelaUI.registrar(reg, self); if (window.BimAnot) BimAnot.registrar(reg, self); } catch (eP5) {}
+      /* P6: Vista › Criar (elevação, forro, estrutural, chamada, desenho, duplicar) e › Gráficos (modelos, V/G,
+         estilos de objeto, organizar navegador) — js/bimmodelovista.js (sem a prévia do modelador, sai na hora) */
+      try { if (window.BimModeloVista) { this._d2Config(); BimModeloVista.registrar(reg, self); } } catch (eP6) {}
+      /* P8: Vista › Composição da folha e Exportar (folha, posicionar vista, revisões, listas, DXF, DWG,
+         PDF em lote) — js/bimfolhaui.js (sem a prévia do modelador, sai na hora) */
+      try { if (window.BimFolhaUI) BimFolhaUI.registrar(reg, self); } catch (eP8) {}
+      /* P10: Arquitetura › Grupos e reforma (Demolir, grupos) e Gerenciar › Fases e opções / Consultar — js/bimp10ui.js (sem a prévia do modelador, sai na hora) */
+      try { if (window.BimP10UI) BimP10UI.registrar(reg, self); } catch (eP10) {}
+      /* P12: Instalações › Acessórios e dispositivos (acessório de tubo, tomada/interruptor, luminária, quadro,
+         eletrocalha) e Sistemas (verificar, desconexões, legenda, tabela) — js/biminstui.js (sem a prévia, sai na hora) */
+      try { if (window.BimInstUI && BimInstUI.registrarP12) BimInstUI.registrarP12(reg, self); } catch (eP12) {}
+      /* EMBREVE (09/10/2026): Igualar tipo, Plano de trabalho e Graute e armadura saem do "em breve" — js/bimembreveui.js (sem a prévia do modelador, sai na hora) */
+      try { if (window.BimEmBreveUI) BimEmBreveUI.registrar(reg, self); } catch (eEmb) {}
+      /* RENDER (09/10/2026): Vista › Apresentação › Render — render físico (path tracing) a partir do modelo; js/bimrender.js (sem a prévia do modelador, sai na hora) */
+      try { if (window.BimRender) BimRender.registrar(reg, self); } catch (eRender) {}
+      /* MATERIAIS (09/10/2026): Gerenciar › Biblioteca › Materiais do projeto — js/bimmateriaisui.js (sem a prévia do modelador, sai na hora) */
+      try { if (window.BimMateriaisUI) BimMateriaisUI.registrar(reg, self); } catch (eMat) {}
 
       BimCmd.registrar(reg);
       /* a biblioteca de famílias chega ao visor antes de qualquer edição gravada ser reaplicada */
@@ -10704,7 +10789,7 @@
     _bimCascaAcao: function (id) { if (window.BimCmd) BimCmd.executar(id); },
 
     /* ==================================================================
-     * NÍVEIS DO PROJETO — como no Revit.
+     * NÍVEIS DO PROJETO.
      * O motor (js/niveis.js) já sabe tudo: pé-direito derivado, plano de
      * corte, o que aparece na planta de cada nível. Faltava a tela.
      * Os níveis são da OBRA, não da empresa: o Térreo de uma não é o da
@@ -10952,8 +11037,8 @@
       UI.modal("Peso por nível", h, [{ texto: "Fechar", classe: "", onClick: function () { UI.fecharModal(); } }]);
     },
 
-    /* Os níveis aparecem no Navegador de Projeto, como no Revit. */
-    /* O NAVEGADOR DE PROJETO, no molde do Revit: tudo o que a obra tem e faz
+    /* Os níveis aparecem no Navegador de Projeto. */
+    /* O NAVEGADOR DE PROJETO: tudo o que a obra tem e faz
        sentido abrir por aqui — vistas (3D, extras, pontos de vista por pasta,
        plantas), folhas (pranchas), tabelas/quantidades, sondagens, projeto
        estrutural, níveis, vínculos (modelos) e famílias. Nó com `fn` abre o
@@ -10973,19 +11058,19 @@
         ? L.map(function (n) { return { id: "pl:" + n.id, rotulo: n.nome, icone: "planta", acao: "planta", nivelId: n.id }; })
         : [{ id: "pl:vazio", rotulo: "Planta baixa (corte do modelo)", icone: "planta", acao: "planta" }];
       /* CARA NOVA (prévia visual): a planta é o DESENHO 2D (js/bim2dui.js), uma por
-         nível, e os cortes A, B, C… ganham pasta própria — como no Revit */
+         nível, e os cortes A, B, C… ganham pasta própria */
       var ramoCortes = null;
       if (document.documentElement.getAttribute("data-visual") === "nova" && this._d2Config()) {
         var NV = []; try { NV = Bim2D.niveis(); } catch (eNv) { NV = []; }
         if (NV.length) plantas = NV.map(function (n) {
           var pid = Bim2D.idPlanta(n.id);
-          return { id: "d2:" + pid, rotulo: n.nome, icone: "planta", fn: function () { self._d2Abrir(pid, "Planta baixa — " + n.nome); } };
+          return { id: "d2:" + pid, rotulo: n.nome, icone: "planta", arrastar: pid, fn: function () { self._d2Abrir(pid, "Planta baixa — " + n.nome); } };   /* P8: arrastar = vai para a folha */
         });
         var CS = []; try { CS = Bim2D.cortes(); } catch (eCs) { CS = []; }
         ramoCortes = { id: "cortes", rotulo: "Cortes", icone: "corte", n: CS.length, aberto: CS.length > 0,
           filhos: CS.map(function (c) {
             var cid = Bim2D.idCorte(c.id);
-            return { id: "d2:" + cid, rotulo: "Corte " + c.letra, icone: "corte", fn: function () { self._d2Abrir(cid, "Corte " + c.letra); } };
+            return { id: "d2:" + cid, rotulo: "Corte " + c.letra, icone: "corte", arrastar: cid, fn: function () { self._d2Abrir(cid, "Corte " + c.letra); } };   /* P8 */
           }).concat([
             { id: "d2:novo", rotulo: "+ Traçar corte na planta", icone: "corte", fn: function () { BimShell.executar("corte-2d"); } },
             { id: "d2:long", rotulo: "+ Longitudinal pelo meio", icone: "corte", fn: function () { Bim2D.corteRapido("longitudinal"); } },
@@ -10995,7 +11080,7 @@
       var st = this._bimVxEst();
       var v3d = [{ id: "3d", rotulo: "{3D}", icone: "quadrado", fn: function () { self._bimVxAtivar("3d"); } }];
       st.lista.forEach(function (v) {
-        if (v.tipo === "2d") return;   /* planta/corte 2D aparecem no ramo deles */
+        if (v.tipo === "2d" || v.tipo === "folha") return;   /* planta/corte 2D (e a folha, P8) aparecem no ramo deles */
         v3d.push({ id: "vx:" + v.id, rotulo: v.nome + (v.janela ? " (outra janela)" : ""), icone: "quadrado",
                    fn: function () { if (v.janela && !v.janela.closed) { try { v.janela.focus(); } catch (e) {} } else self._bimVxAtivar(v.id); } });
       });
@@ -11018,6 +11103,8 @@
           { id: "pvs", rotulo: "Pontos de vista", icone: "camera", n: pv.length, aberto: false,
             filhos: ramoPv.length ? ramoPv : [{ id: "pv:vazio", rotulo: "Nenhum — salve uma vista ou abra o arquivo da obra", icone: "camera", acao: "vistas" }] }
         ]) },
+        /* P8: com a prévia do modelador, as FOLHAS uma a uma (abrem numa aba; recebem a vista arrastada) — js/bimfolhaui.js */
+        (function () { try { var rf = window.BimFolhaUI && BimFolhaUI.ativo() ? BimFolhaUI.ramoNavegador() : null; if (rf) return rf; } catch (eRf) {} return null; })() ||
         { id: "folhas", rotulo: "Folhas (todas)", icone: "prancha", n: pr.length, aberto: false,
           filhos: pr.length ? pr.map(function (r) { return { id: "pr:" + r.id, rotulo: r.nome || "Prancha", icone: "prancha", fn: function () { self._bimAbrirPainel("pranchas"); self._prRender(); } }; })
                             : [{ id: "pr:vazio", rotulo: "Nenhuma — Anotar → Pranchas do projeto", icone: "prancha", acao: "pranchas" }] },
@@ -11026,7 +11113,8 @@
           { id: "t:ins", rotulo: "Insumos do modelo", icone: "insumo", acao: "insumos-modelo" },
           { id: "t:peso", rotulo: "Peso por nível", icone: "balanca", acao: "peso-total" },
           { id: "t:ilus", rotulo: "Quantitativo ilustrado", icone: "relatorios", fn: function () { self.acao("bim-quant-ilustrado", {}); } }
-        ] },
+        ].concat((function () { try { return window.BimTabelaUI && BimTabelaUI.ativo() ? BimTabelaUI.ramoNavegador() : []; } catch (eP5) { return []; } })()) },   /* P5: as tabelas configuráveis (js/bimtabelaui.js) */
+        /* P2-D: os AMBIENTES entram pelo registro de ramos (P6, js/bimnavegador.js) — js/bimambienteui.js registra */
         { id: "sond", rotulo: "Sondagens", icone: "niveis", n: sd.length, aberto: false,
           filhos: sd.length ? sd.map(function (r) { return { id: "sd:" + r.id, rotulo: r.nome || "Sondagem", icone: "niveis", fn: function () { self._sdEst().sel = r.id; self._bimAbrirPainel("sondagem"); self._sdRender(); } }; })
                             : [{ id: "sd:vazio", rotulo: "Nenhuma — vem no arquivo da obra", icone: "niveis", acao: "sondagem" }] },
@@ -11039,6 +11127,9 @@
                               : [{ id: "md:vazio", rotulo: "Nenhum — Abrir IFC ou Arquivo da obra", icone: "camadas", acao: "abrir-ifc" }] },
         { id: "fam", rotulo: "Famílias", icone: "tabela", acao: "familias" }
       ];
+      /* P6 — GANCHO: os ramos REGISTRADOS por módulo (js/bimnavegador.js) — Ambientes (P2-D),
+         Vistas (P6), Tabelas (P5), Folhas (P8)… — sem editar esta função */
+      try { if (window.BimNavegador) arv = BimNavegador.aplicar(arv, { G: self, v3d: v3d, plantas: plantas, ramoCortes: ramoCortes, pontosDeVista: arv[0].filhos[arv[0].filhos.length - 1], niveis: L }); } catch (eNav) {}
       BimShell.pintarArvore(arv);
     },
 
@@ -11195,8 +11286,8 @@
 
     /* ------------------------------------------------------------------
      * PROPRIEDADES DA PAREDE — o painel paramétrico.
-     * Mexer numa espessura recalcula o tipo inteiro e repinta na hora. É o
-     * que o Revit faz no "Edit Type": a parede não tem espessura digitada,
+     * Mexer numa espessura recalcula o tipo inteiro e repinta na hora. É por
+     * isso que a parede não tem espessura digitada,
      * ela tem camadas, e a espessura é a soma.
      * ------------------------------------------------------------------ */
     _alvTipoId: "est-14-fachada",
@@ -13118,6 +13209,12 @@
         '<div id="bim-famop" style="display:none"><div id="bim-famop-corpo"></div></div>' +
         /* ORÇAMENTO DO MODELO (js/orcmodeloui.js, F1) */
         '<div id="bim-orcmod" style="display:none"><div id="bim-orcmod-corpo"></div></div>' +
+        /* INSTALAÇÕES (js/biminstui.js, B5): quantitativo por sistema, material e DN */
+        '<div id="bim-inst" style="display:none"><div id="bim-inst-corpo"></div></div>' +
+        /* RENDER (09/10/2026): o painel do render físico — tela e lógica em js/bimrender.js */
+        '<div id="bim-render" style="display:none"><div id="bim-render-corpo"></div></div>' +
+        /* MATERIAIS (09/10/2026): os materiais do projeto — tela e lógica em js/bimmateriaisui.js */
+        '<div id="bim-materiais" style="display:none"><div id="bim-materiais-corpo"></div></div>' +
         '<div id="bim-familias" style="display:none">' +
           '<div class="flex between" style="align-items:center;margin-bottom:8px"><h3 style="margin:0;display:flex;align-items:center">' + _icB("tabela") + 'Banco de famílias</h3></div>' +
           '<p class="muted" style="font-size:11.5px;margin:0 0 8px">Salve famílias do modelo e reuse em qualquer projeto.</p>' +
@@ -13200,7 +13297,7 @@
     _BIM_PAINEIS: { modelos: ["bim-modelos", "Modelos carregados"], "4d": ["bim-4d", "Simulação 4D"], clash: ["bim-clash", "Compatibilização"], qto: ["bim-qto", "Quantitativos"], familias: ["bim-familias", "Banco de famílias"], famop: ["bim-famop", "Famílias paramétricas"], "6d": ["bim-6d", "6D/7D · Ciclo de vida"], conjuntos: ["bim-conjuntos", "Conjuntos de seleção"], vistas: ["bim-vistas", "Pontos de vista"], tarefas4d: ["bim-tarefas", "Cronograma 4D"], disc: ["bim-disc", "Disciplinas e etapas construtivas"], estrut: ["bim-estrut", "Projeto estrutural no canteiro"],
                    peso: ["bim-peso", "Peso das peças"], icamento: ["bim-icamento", "Plano de içamento"],
                    sondagem: ["bim-sondagem", "Sondagem 3D"], pranchas: ["bim-pranchas", "Pranchas do projeto"],
-                   params: ["bim-params", "Parâmetros do elemento"], orcmod: ["bim-orcmod", "Orçamento do modelo"] },
+                   params: ["bim-params", "Parâmetros do elemento"], orcmod: ["bim-orcmod", "Orçamento do modelo"], inst: ["bim-inst", "Instalações"], render: ["bim-render", "Render"], materiais: ["bim-materiais", "Materiais do projeto"] },   /* RENDER; MATERIAIS */
     _bimAbrirPainel: function (chave) {
       var mapa = this._BIM_PAINEIS;
       var alvo = mapa[chave]; if (!alvo) return;
@@ -13222,10 +13319,10 @@
       var st4 = this._b4Estado();
       /* o projeto estrutural mostra os recortes do desenho: precisa de largura como o 4D */
       /* a sondagem mostra o perfil ao lado do boletim (ou da régua do simulador): precisa de largura */
-      drawer.style.width = chave === "4d" ? (st4.largo ? "100%" : "min(640px,96%)") : (chave === "estrut" ? "min(640px,96%)" : (chave === "sondagem" ? "min(860px,97%)" : (chave === "icamento" ? "min(560px,96%)" : "min(440px,94%)")));
+      drawer.style.width = chave === "4d" ? (st4.largo ? "100%" : "min(640px,96%)") : (chave === "estrut" ? "min(640px,96%)" : (chave === "sondagem" ? "min(860px,97%)" : (chave === "icamento" ? "min(560px,96%)" : (chave === "materiais" ? "min(820px,97%)" : "min(440px,94%)"))));   /* MATERIAIS: lista + editor lado a lado */
       /* na janela da direita a largura é da DOCA (lembrada por ferramenta) */
       this._bimDocaChave = chave;
-      this._bimDocaPref = chave === "famop" || chave === "orcmod" ? 620 : chave === "4d" ? 640 : (chave === "estrut" ? 640 : (chave === "sondagem" ? 860 : (chave === "icamento" ? 560 : 440)));
+      this._bimDocaPref = chave === "famop" || chave === "orcmod" ? 620 : chave === "4d" ? 640 : (chave === "estrut" ? 640 : (chave === "sondagem" ? 860 : (chave === "icamento" ? 560 : (chave === "materiais" ? 820 : 440))));
       if (chave === "4d") {
         /* abrir o painel liga a simulação. A 1ª abertura vai para HOJE quando
            hoje cai dentro da obra (é a pergunta de toda reunião: "onde
@@ -13304,7 +13401,7 @@
     },
 
     /* =====================================================================
-     * VISTAS — o {3D} principal e as vistas extras, como no Revit: abas,
+     * VISTAS — o {3D} principal e as vistas extras: abas,
      * lado a lado ("Vistas lado a lado") ou uma vista em outra janela (outro
      * monitor). Cada vista extra tem câmera, caixa de corte e ViewCube
      * próprios (js/bim.js, BIM.vista*); a cena é a mesma, então a peça
@@ -13325,11 +13422,18 @@
         autor: (function () { try { return (Auth._usuario && (Auth._usuario.nome || Auth._usuario.email)) || ""; } catch (e) { return ""; } })(),
         listar: function () {
           var l = []; try { l = Store.listar(eid(), "bim_familias") || []; } catch (e) { l = []; }
+          /* FAMIMPORT: a família importada é do PROJETO (registro com obraId) ou da MINHA biblioteca (registro com dono);
+             o registro sem os dois é da empresa, como sempre */
+          var obra = self._bimSel || "", eu = (function () { try { var u = Auth._usuario; return u ? String(u._usuarioId || u.uid || u.email || "") : ""; } catch (eU) { return ""; } })();
+          l = l.filter(function (r) { return r && (!r.obraId || String(r.obraId) === String(obra)) && (!r.dono || String(r.dono) === eu); });
           return l.map(function (r) { try { var f = JSON.parse(r.json || "null"); if (f) f._origem = r.origem || f._origem || "minha"; return f; } catch (e2) { return null; } }).filter(Boolean);
         },
         salvar: function (fam) {
-          var c = JSON.parse(JSON.stringify(fam)), origem = c._origem || "minha";
-          return !!Store.salvar(eid(), "bim_familias", { id: c.id, nome: c.nome, categoria: c.categoria, origem: origem, json: JSON.stringify(c) });
+          var c = JSON.parse(JSON.stringify(fam)), origem = c._origem || "minha", esc0 = c._escopo || {};
+          var rec = { id: esc0.registro || c.id, nome: c.nome, categoria: c.categoria, origem: origem, json: JSON.stringify(c) };
+          if (esc0.obraId) rec.obraId = String(esc0.obraId);   /* FAMIMPORT */
+          if (esc0.dono) rec.dono = String(esc0.dono);
+          return !!Store.salvar(eid(), "bim_familias", rec);
         },
         excluir: function (id) { return Store.excluir(eid(), "bim_familias", id); },
         colocar: function (f, tipoId) {
@@ -13363,9 +13467,10 @@
     _opbimMontar: function () {
       this._famConfig(); this._d2Config();
       var b = window.BIM, ops = (b && b.editarOps) ? b.editarOps() : [], usados = {};
-      ops.forEach(function (o) { if (o.op === "familia") usados[o.famId] = 1; });
+      /* achatar: a casa modelada por comando (B8) mora num LOTE — as famílias de dentro também vão no .opbim */
+      (window.BimEdit ? BimEdit.achatar(ops) : ops).forEach(function (o) { if (o && o.op === "familia") usados[o.famId] = 1; });
       var familias = Object.keys(usados).map(function (id) { return FamiliaUI.obter(id); }).filter(Boolean)
-        .map(function (f) { var c = JSON.parse(JSON.stringify(f)); delete c._origem; return c; });
+        .map(function (f) { var c = JSON.parse(JSON.stringify(window.FamiliaMalha ? FamiliaMalha.embutir(f) : f)); delete c._origem; delete c._escopo; return c; });   /* FAMIMPORT: a malha importada vai junto no .opbim */
       var niveis = this._nivLer().map(function (n) { return { id: n.id, nome: n.nome, elevacao: n.elevacao, corte: n.corte, peDireitoDeclarado: n.peDireitoDeclarado }; });
       var d2 = null; try { d2 = JSON.parse(JSON.stringify(Bim2D.estado())); } catch (e) {}
       var fontes = (b && b.ifcFontes) ? b.ifcFontes() : [], ifcs = [], semFonte = [];
@@ -13380,6 +13485,26 @@
       if (d2 && d2.cad) Object.keys(d2.cad).forEach(function (nv) { (d2.cad[nv] || []).forEach(function (v) { var dd = Bim2D._cadDados(v.id); if (dd) extras["cad-" + v.id + ".json"] = dd; }); });
       var obra = this._bimSel ? Store.obter(eid(), "obras", this._bimSel) : null;
       return { proj: { nome: (obra && obra.nome) || "Projeto OrçaPRO", modelo: { edicao: ops, niveis: niveis, desenho2d: d2, malhas: optsMalha, disciplinas: fontes.map(function (x) { return { nome: x.nome, disciplina: x.disciplina }; }) }, familias: familias, ifcs: ifcs, malhas: malhas, extras: extras }, semFonte: semFonte };
+    },
+    /* B7 — IFC DE SAÍDA: o que foi modelado aqui vira IFC4 (js/ifcsaida.js) com os
+       níveis da obra. Determinístico: a semente do GlobalId é a obra, então
+       reexportar não troca a identidade das peças no Revit. */
+    _ifcSaidaExportar: function () {
+      var self = this, b = window.BIM;
+      if (!(window.BimPrevia && BimPrevia.modelador())) { UI.toast("A exportação do modelado em IFC está na prévia do modelador (?previa=modelador).", "aviso"); return; }
+      if (!b || !b.ifcSaida) { UI.toast("Abra o BIM primeiro.", "aviso"); return; }
+      var obra = this._bimSel ? Store.obter(eid(), "obras", this._bimSel) : null, meta = this._opMeta();
+      var nome = (obra && obra.nome) || "Projeto OrçaPRO";
+      var arq = (window.OpFormato ? OpFormato.nomeSeguro(nome) : nome.replace(/[^\w.-]+/g, "-")) + "-modelado.ifc";
+      b.ifcSaida({ niveis: this._nivLer().map(function (n) { return { id: n.id, nome: n.nome, elevacao: Number(n.elevacao) }; }), projeto: nome, semente: "obra:" + (this._bimSel || "geral"),
+                   autor: meta.autor, versaoApp: (typeof CONFIG !== "undefined" && CONFIG.versao) || "", arquivo: arq }).then(function (r) {
+        if (!r || !r.ok) { UI.toast("Não exportei o IFC: " + ((r && r.erro) || "erro desconhecido") + ".", "aviso", 7000); return; }
+        self._ifcSaidaUltimo = { nome: arq, texto: r.texto, resumo: r.resumo };
+        if (!self._opBaixar(arq, r.texto, "application/x-step")) return;
+        var pe = r.resumo.porEntidade, NOMES = { IFCWALL: "parede", IFCSLAB: "laje", IFCCOLUMN: "pilar", IFCBEAM: "viga", IFCROOF: "cobertura", IFCDOOR: "porta", IFCWINDOW: "janela", IFCBUILDINGELEMENTPROXY: "outro elemento" };
+        var partes = Object.keys(NOMES).filter(function (k) { return pe[k]; }).map(function (k) { return pe[k] + " " + NOMES[k] + (pe[k] > 1 ? "s" : ""); });
+        UI.toast("IFC4 gerado: " + partes.join(", ") + " em " + r.resumo.niveis.length + " nível(is)." + (r.resumo.avisos.length ? " Atenção: " + r.resumo.avisos.join("; ") + "." : ""), r.resumo.avisos.length ? "aviso" : "ok", 9000);
+      }, function (e) { UI.toast("Não exportei o IFC: " + (e && e.message ? e.message : e), "erro"); });
     },
     _opbimSalvar: function () {
       if (!window.OpFormato || !window.BimBcf) { UI.toast("O formato .opbim não carregou.", "erro"); return; }
@@ -13420,7 +13545,11 @@
     _opbimAplicar: function (r) {
       var self = this, b = window.BIM, m = r.modelo || {}, obraId = this._bimSel || "geral";
       this._famConfig();
-      (r.familias || []).forEach(function (f) { f._origem = "importada"; try { FamiliaUI._ctx.salvar(f); } catch (e) {} });
+      (r.familias || []).forEach(function (f) {
+        if (window.FamiliaMalha) f = FamiliaMalha.desembutir(f);   /* FAMIMPORT: a malha volta ao registro (e ao aparelho) */
+        f._origem = "importada"; try { FamiliaUI._ctx.salvar(f); } catch (e) {}
+        try { if (window.FamiliaImportUI && f.importada && f.importada.ref) FamiliaImportUI._guardarGeometria(f, FamiliaMalha.geometria(f.importada.ref)); } catch (eG) {}
+      });
       this._famSync();
       if (Array.isArray(m.niveis)) {
         try {
@@ -13540,31 +13669,76 @@
         file.text().then(function (t) {
           var r = OpFormato.lerTemplate(t, Familia.validar);
           if (!r.ok) { UI.toast("Não abri o template: " + r.erros.join("; "), "erro"); return; }
-          var tp = r.template, temNiv = self._nivLer().length;
-          UI.modal("Usar o template \"" + Util.esc(tp.nome || "") + "\"?", "<p>" + (tp.niveis || []).length + " nível(is), " + (tp.familias || []).length + " família(s) e o estilo das plantas e cortes.</p>" +
-            (temNiv ? '<p class="muted">Esta obra já tem ' + temNiv + " nível(is): eles ficam, e os do template que tiverem o mesmo nome não entram de novo.</p>" : "") + (r.avisos.length ? '<p class="muted">' + r.avisos.map(Util.esc).join("<br>") + "</p>" : ""), [
-            { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
-            { texto: "Usar template", classe: "primary", onClick: function () {
-              UI.fecharModal();
-              self._famConfig();
-              (tp.familias || []).forEach(function (f) { f._origem = "importada"; FamiliaUI._ctx.salvar(f); });
-              self._famSync();
-              var tem = {}; self._nivLer().forEach(function (n) { tem[String(n.nome).toLowerCase()] = 1; });
-              (tp.niveis || []).forEach(function (n) { if (!tem[String(n.nome).toLowerCase()]) Store.salvar(eid(), "bim_niveis", { id: Util.uid("niv"), obraId: self._bimSel || null, nome: n.nome, elevacao: n.elevacao, corte: n.corte }); });
-              if (self._d2Config() && tp.estilos2d) { var e = Bim2D.estado(); e.padrao = tp.estilos2d; Bim2D._gravar(); }
-              self._nivArvore();
-              UI.toast("Template aplicado.", "ok");
-            } }
-          ]);
+          self._optplAplicar(r.template, r.avisos);
         });
       });
     },
-    _famSync: function () { if (this._famConfig() && window.BIM && BIM.familiasDefinir) { try { BIM.familiasDefinir(FamiliaUI.biblioteca()); } catch (e) {} } },
+    /* confirma e aplica um template (o .optpl aberto ou um dos templates RA) */
+    _optplAplicar: function (tp, avisos) {
+      var self = this, temNiv = this._nivLer().length;
+      var extras = (tp.tiposParede || []).length ? "<p>Tipos de parede: " + tp.tiposParede.map(function (t) { return Util.esc(t.nome) + " (" + String(Math.round(t.espessura * 1000) / 10).replace(".", ",") + " cm)"; }).join(", ") + "." +
+        ((tp.tiposLaje || []).length ? " Lajes: " + tp.tiposLaje.map(function (t) { return Util.esc(t.nome); }).join(", ") + "." : "") + ((tp.materiais || []).length ? " " + tp.materiais.length + " material(is)." : "") +
+        (tp.prancha && tp.prancha.formato ? " Prancha " + Util.esc(tp.prancha.formato) + "." : "") + "</p>" : "";
+      UI.modal("Usar o template \"" + Util.esc(tp.nome || "") + "\"?", "<p>" + (tp.niveis || []).length + " nível(is), " + (tp.familias || []).length + " família(s) e o estilo das plantas e cortes.</p>" + extras +
+        (temNiv ? '<p class="muted">Esta obra já tem ' + temNiv + " nível(is): eles ficam, e os do template que tiverem o mesmo nome não entram de novo.</p>" : "") + ((avisos || []).length ? '<p class="muted">' + avisos.map(Util.esc).join("<br>") + "</p>" : ""), [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Usar template", classe: "primary", onClick: function () {
+          UI.fecharModal();
+          self._famConfig();
+          (tp.familias || []).forEach(function (f) { f = JSON.parse(JSON.stringify(f)); f._origem = "importada"; FamiliaUI._ctx.salvar(f); });
+          self._famSync();
+          var tem = {}; self._nivLer().forEach(function (n) { tem[String(n.nome).toLowerCase()] = 1; });
+          (tp.niveis || []).forEach(function (n) { if (!tem[String(n.nome).toLowerCase()]) Store.salvar(eid(), "bim_niveis", { id: Util.uid("niv"), obraId: self._bimSel || null, nome: n.nome, elevacao: n.elevacao, corte: n.corte }); });
+          if (self._d2Config() && tp.estilos2d) { var e = Bim2D.estado(); e.padrao = tp.estilos2d; Bim2D._gravar(); }
+          /* B6: o tipo de parede ATIVO e a espessura do editor vêm do 1º tipo do template; os tipos, lajes,
+             materiais e a prancha ficam guardados com as vistas 2D da obra (a prancha nova usa o formato e as notas) */
+          var tpar = (tp.tiposParede || [])[0];
+          if (tpar) {
+            if (tpar.base && window.AlvTipos && AlvTipos.TIPOS[tpar.base] && tpar.base !== "crua") self._alvTrocarTipo(tpar.base);
+            if (window.BIM && BIM.espessuraTipo && tpar.espessura > 0) BIM.espessuraTipo(tpar.espessura, tpar.nome);
+          }
+          if ((tpar || tp.prancha) && self._d2Config()) {
+            var e2 = Bim2D.estado();
+            e2.templateAtivo = { nome: tp.nome || "", tiposParede: tp.tiposParede || [], tiposLaje: tp.tiposLaje || [], materiais: tp.materiais || [], prancha: tp.prancha || null };
+            Bim2D._gravar();
+          }
+          self._nivArvore();
+          UI.toast("Template aplicado" + (tpar ? " — parede ativa: " + tpar.nome : "") + ".", "ok");
+        } }
+      ]);
+    },
+    /* B6: os templates RA prontos (js/templatesra.js) — usar aqui ou baixar o .optpl */
+    _optplRA: function () {
+      var self = this, lista = TemplatesRA.lista();
+      UI.modal("Templates RA", '<div data-tpl="ra">' + lista.map(function (t) {
+        return '<div class="tpl-ra" style="border:1px solid var(--linha);border-radius:var(--raio-sm);padding:10px;margin:0 0 8px"><b>' + Util.esc(t.nome) + '</b><p class="muted" style="margin:4px 0 8px;font-size:12.5px">' + Util.esc(t.descricao) + "</p>" +
+          '<button class="btn sm primary" data-tpl-usar="' + Util.esc(t.id) + '">Usar nesta obra</button> <button class="btn sm" data-tpl-baixar="' + Util.esc(t.id) + '">Baixar .optpl</button></div>';
+      }).join("") + "</div>", [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+      var el = document.querySelector('[data-tpl="ra"]');
+      if (el) el.onclick = function (e) {
+        var u = e.target.closest ? e.target.closest("[data-tpl-usar]") : null, b = e.target.closest ? e.target.closest("[data-tpl-baixar]") : null;
+        if (u) { var t = TemplatesRA.obter(u.getAttribute("data-tpl-usar")); UI.fecharModal(); if (t) self._optplAplicar(t, t.familiasFaltando ? ["Família(s) fora da biblioteca: " + t.familiasFaltando.join(", ")] : []); }
+        else if (b) { var id = b.getAttribute("data-tpl-baixar"), txt = TemplatesRA.arquivo(id, self._opMeta()), t2 = TemplatesRA.obter(id); if (txt && t2) self._opBaixar(OpFormato.nomeSeguro(t2.nome) + OpFormato.EXT.template, txt, "application/json"); }
+      };
+    },
+    _famSync: function () {
+      if (this._famConfig() && window.BIM && BIM.familiasDefinir) {
+        try { var l = FamiliaUI.biblioteca(); BIM.familiasDefinir(l); if (window.FamiliaImportUI) FamiliaImportUI.carregarFaltantes(l); } catch (e) {}   /* FAMIMPORT: a malha das importadas vem do IndexedDB/nuvem */
+      }
+    },
     /* contexto da família/render por IA: a obra do BIM, quem gera e o editor de família */
     _iaCtx: function () {
       var self = this;
       return { empresaId: eid, obraId: this._bimSel || "", autor: (function () { try { return (Auth._usuario && (Auth._usuario.nome || Auth._usuario.email)) || ""; } catch (e) { return ""; } })(),
         abrirEditor: function (fam) { self._famAbrir("editor", fam); } };
+    },
+    /* contexto da modelagem por comando (B8): a biblioteca do aparelho, a cota do plano de trabalho e o que já está modelado */
+    _modelarCtx: function () {
+      var self = this, B = window.BIM;
+      return { familias: function () { return self._famConfig() ? FamiliaUI.biblioteca() : []; },
+        base: B && B.editarBase ? B.editarBase() : 0,
+        existentes: (function () { try { return (B && B.editarEstado && B.editarEstado()) ? (B.editarEstado().estado.caixas.length + B.editarEstado().estado.familias.length) : 0; } catch (e) { return 0; } })(),
+        opsExistentes: function () { return B && B.editarOps ? B.editarOps() : []; } };
     },
     _famAbrir: function (modo, fam) {
       if (!this._famConfig()) { UI.toast("O editor de família não carregou.", "erro"); return; }
@@ -13661,6 +13835,8 @@
         aoMudar: function () { self._nivArvore(); try { BimShell.repintarVista(); } catch (eR) {} },
         vincular: function (id) { self._opEscolherArquivo(".dwg,.dxf", function (f) { self._cadVincular(f, id); }); }
       });
+      /* P6 — GANCHO: a vista como objeto (js/bimmodelovista.js) — filtros de V/G pelos conjuntos da obra */
+      try { if (window.BimModeloVista) BimModeloVista.configurar({ obraKey: this._bimSel || "geral", G: self, conjuntos: function () { try { return self._bimConjDaObra() || []; } catch (e) { return []; } }, elementos: function () { return (window.BIM && BIM.elementos) || []; } }); } catch (eP6) {}
       return true;
     },
     _d2Abrir: function (id, nome) {
@@ -13683,7 +13859,7 @@
       var nv = L.filter(function (n) { return !/terreno|funda|sondag/i.test(n.nome || ""); })[0] || L[0];
       return Bim2D.idPlanta(nv.id);
     },
-    /* o BIM está na casca do Revit, no computador e fora do modo foco — é
+    /* o BIM está na casca de programa, no computador e fora do modo foco — é
        quando Propriedades está na tela e o balão da seleção sobra */
     _bimModoRevit: function () {
       try {
@@ -13735,14 +13911,20 @@
         }
       };
     },
-    /* Propriedades com uma PEÇA selecionada (em qualquer vista), como no
-       Revit: o que o balão do 3D mostra, em linhas — identidade, obra e
+    /* Propriedades com uma PEÇA selecionada (em qualquer vista):
+       o que o balão do 3D mostra, em linhas — identidade, obra e
        quantidades — e o botão para todos os parâmetros do IFC. Só leitura:
        quem edita peça é o Editor; parede edita pelo "Editar tipo". */
     _bimPropsPeca: function (info) {
       if (!info) return null;
+      /* P1-C — paleta de Propriedades (js/bimpropsui.js), só
+         na prévia do modelador: peça criada aqui (caixa, cobertura, família)
+         pede tudo ao registro de parâmetros. Instalação e IFC importado: as de antes. */
+      if (window.BimPropsUI && BimPropsUI.ativo()) { var pp = this._bimPropsPaleta(info); if (pp) return pp; }
       /* família paramétrica colocada aqui (uid "edit:f…"): Propriedades dela */
       if (info.uid && /^edit:f\d+$/.test(info.uid)) { var pf = this._famPropsInstancia(info.uid.slice(5)); if (pf) return pf; }
+      /* tubo, peça ou conexão de instalação (B5, js/biminstui.js) */
+      if (window.BimInstUI && BimInstUI.ehInst(info.uid)) { var pin = BimInstUI.props(info.uid); if (pin) return pin; }
       var self = this, el = null;
       try { (BIM.elementos || []).some(function (e) { if (e.uid === info.uid) { el = e; return true; } return false; }); } catch (e0) {}
       var tipo = String(info.tipo || ""), cat = "";
@@ -13757,7 +13939,7 @@
         { nome: "Obra", params: [ ro("peca-etapa", "Etapa", info.etapa), ro("peca-fase", "Fase", info.fase) ]
           .concat(el && el.detalhe ? [{ id: "peca-det", rotulo: "Detalhe", tipo: "botao", rotuloBotao: "Detalhe " + el.detalhe, fn: function () { self._pecaDetalhe(el.detalhe); } }] : []) },
         { nome: "Quantidades", params: [ ro("peca-comp", "Comprimento", num(q.comprimento, "m")), ro("peca-area", "Área", num(q.area, "m²")), ro("peca-vol", "Volume", num(q.volume, "m³")) ] }
-      ].concat(this._pesoSecaoProps(el, ro)).concat(this._abrSecaoProps(info, ro)).concat(this._orcSecaoProps(info)).concat(window.BimEstilo ? BimEstilo.secaoProps(info) : []).concat([
+      ].concat(window.BimArqUI ? BimArqUI.secoesProps(info) : []).concat(this._pesoSecaoProps(el, ro)).concat(this._abrSecaoProps(info, ro)).concat(this._orcSecaoProps(info)).concat(window.BimEstilo ? BimEstilo.secaoProps(info) : []).concat([
         { nome: "Dados", params: [ { id: "peca-ifc", rotulo: "Parâmetros do IFC", tipo: "botao", rotuloBotao: "Ver todos", fn: function () { self._bimVerProps(info); } },
           { id: "peca-familia-salvar", rotulo: "Banco de famílias", tipo: "botao", rotuloBotao: "Salvar família", fn: function () { self._bimSalvarFamilia(info); } } ] }
       ]);
@@ -13766,8 +13948,91 @@
         daPeca: true, uid: info.uid, semEditarTipo: !parede,
         titulo: info.nome || tipo || "Elemento", icone: parede ? "parede" : (/^IFCCOLUMN/i.test(tipo) ? "pilar" : "quadrado"),
         secoes: secoes,
-        onMudar: function (pid, valor) { if (String(pid).indexOf("orc:") === 0 && window.OrcModeloUI) OrcModeloUI.mudar(info.uid, pid, valor); return self._bimPropsPeca(info); }
+        onMudar: function (pid, valor) {
+          if (String(pid).indexOf("b2:") === 0 && window.BimArqUI) BimArqUI.mudar(info, pid, valor);   /* modelador B2 */
+          else if (String(pid).indexOf("orc:") === 0 && window.OrcModeloUI) OrcModeloUI.mudar(info.uid, pid, valor);
+          return self._bimPropsPeca(info);
+        }
       };
+    },
+    /* P1-C — a paleta do registro e, embaixo, as seções que não são parâmetro
+       do registro (modelador, peso, abertura, orçamento, estilo, ações da família) */
+    _bimPropsPaleta: function (info) {
+      var self = this, uid = String(info.uid || ""), extras = [], el = null;
+      var ro = function (id, rot, v) { return { id: id, rotulo: rot, leitura: true, valor: v == null || v === "" ? "—" : v }; };
+      try { (BIM.elementos || []).some(function (e) { if (e.uid === uid) { el = e; return true; } return false; }); } catch (e0) {}
+      var fam = /^edit:f\d+$/.test(uid), fid = uid.slice(5);
+      /* P12: instalação (trecho, conexão, acessório) — a paleta do registro e, embaixo, as seções da B5/P12
+         (material, DN, aplicação, SINAPI, sistema, acessório no tubo, paralelos). Duto e ralo: a tela da B5. */
+      if (window.BimInstUI && BimInstUI.ehInst(uid) && BimInstUI.extrasPaleta) {
+        return BimPropsUI.esquema(info, this, { extras: function () { try { return BimInstUI.extrasPaleta(uid); } catch (eI) { return []; } }, aoMudarExtra: function (pid, valor) {
+          BimInstUI.mudarExtra(uid, pid, valor);
+          try { BimShell.pintarProps(self._bimPropsPeca(info)); } catch (eR) {}
+        } });
+      }
+      /* P2-C: AMBIENTE (js/bimambiente.js) — a paleta do registro e, embaixo, o bloco
+         "Acabamentos" (js/orcmodeloui.js) com o botão Aplicar por ambiente. As seções
+         são uma FUNÇÃO: a paleta refeita depois de uma op pede o bloco de novo (fresco). */
+      if (window.OrcModeloUI && OrcModeloUI.ehAmbiente && OrcModeloUI.ehAmbiente(fid)) {
+        return BimPropsUI.esquema(info, this, { extras: function () { try { return OrcModeloUI.secoesAmbiente(fid); } catch (eA) { return []; } }, aoMudarExtra: function (pid, valor) {
+          if (String(pid).indexOf("acab:") === 0 || String(pid).indexOf("orc:") === 0) OrcModeloUI.mudar(uid, pid, valor);
+          try { BimShell.pintarProps(self._bimPropsPeca(info)); } catch (eR) {}
+        } });
+      }
+      try {
+        if (fam) {
+          if (window.OrcModeloUI) extras = extras.concat(OrcModeloUI.secoesFamilia(fid));
+          var b = window.BIM, inf = b && b.instanciaInfo ? b.instanciaInfo(fid) : null, fd = inf && window.FamiliaUI ? FamiliaUI.obter(inf.instancia.famId) : null;
+          extras.push({ nome: "Ações", params: (fd ? [{ id: "fam-editar", rotulo: "Família", tipo: "botao", rotuloBotao: "Editar família", fn: function () { self._famAbrir("editor", fd); } }] : [])
+            .concat(inf && !inf.instancia.host ? [{ id: "fam-girar", rotulo: "Girar", tipo: "botao", rotuloBotao: "Girar 90°", fn: function () { b.instanciaAlterar(fid, { rotY: (inf.instancia.rotY || 0) + Math.PI / 2 }); } }] : []) });
+        } else {
+          if (window.BimArqUI) extras = extras.concat(BimArqUI.secoesExtrasPaleta(info));
+          extras = extras.concat(this._pesoSecaoProps(el, ro)).concat(this._abrSecaoProps(info, ro)).concat(this._orcSecaoProps(info)).concat(window.BimEstilo ? BimEstilo.secaoProps(info) : []);
+        }
+      } catch (eX) {}
+      extras.push({ nome: "Dados", params: [{ id: "peca-ifc", rotulo: "Parâmetros do IFC", tipo: "botao", rotuloBotao: "Ver todos", fn: function () { self._bimVerProps(info); } }] });
+      return BimPropsUI.esquema(info, this, { extras: extras, aoMudarExtra: function (pid, valor) {
+        if (String(pid).indexOf("b2:") === 0 && window.BimArqUI) BimArqUI.mudar(info, pid, valor);
+        else if (String(pid).indexOf("orc:") === 0 && window.OrcModeloUI) OrcModeloUI.mudar(uid, pid, valor);
+        try { BimShell.pintarProps(self._bimPropsPeca(info)); } catch (eR) {}
+      } });
+    },
+    /* P2-C — o clique "Aplicar por ambiente" (gancho no editor do js/bim.js): o ponto
+       {x, z} no plano de trabalho. Dentro de um ambiente que já existe → escolhe;
+       senão cria o ambiente ali (op "ambiente", desfaz como as outras) — só se a
+       região FECHA (ponto fora de cômodo não deixa ambiente solto no modelo). */
+    _ambClique: function (p) {
+      var b = window.BIM, est = b && b.editarEstado ? b.editarEstado() : null;
+      if (!est || !window.BimAmbiente || !window.BimAcabamento) return false;
+      var st = est.estado, a = BimAcabamento.ambienteNoPonto(st, p);
+      if (!a) {
+        var nv = window.BimArqUI && BimArqUI.nivelAtivo ? BimArqUI.nivelAtivo() : null, campos = {};
+        if (!nv && b.editarBase) campos.deslocBase = Math.round(b.editarBase() * 1e4) / 1e4;   /* obra sem níveis: o plano de trabalho */
+        var r = BimAmbiente.opAmbiente(st, p, nv ? nv.id : null, campos);
+        if (!r.ok) { BimShell.status(r.motivo); return false; }
+        /* a conta antes de gravar: a região fecha? */
+        var niv = window.BimArqUI && BimArqUI.niveis ? BimArqUI.niveis().map(function (n) { return { id: n.id, nome: n.nome, elevacao: +n.elevacao || 0 }; }) : [];
+        var prova = { caixas: st.caixas, separadores: st.separadores || [], ambienteRegra: st.ambienteRegra, ambientes: [JSON.parse(JSON.stringify(r.op))] };
+        var c = BimAmbiente.calcular(prova, { niveis: niv }).porId[r.op.id];
+        if (!c || c.estado !== "delimitado") { BimShell.status((c && c.avisos && c.avisos[0]) || "Ambiente não delimitado: clique dentro de um cômodo fechado."); return false; }
+        if (!b.b2Op(r.op)) { BimShell.status("O editor recusou o ambiente."); return false; }
+        st = b.editarEstado().estado;
+        a = (st.ambientes || []).filter(function (x) { return x.id === r.op.id; })[0];
+        if (!a) return false;
+        BimShell.status("Ambiente " + (BimAmbiente.numero(a) || "") + " criado: " + Util.fmtNum(a.calc.area, 2) + " m², perímetro " + Util.fmtNum(a.calc.perimetro, 2) + " m. Escolha os acabamentos em Propriedades.");
+      } else BimShell.status("Ambiente " + (a.nome || "") + " " + (BimAmbiente.numero(a) || "") + " escolhido.");
+      this._ambSelecionar(a.id);
+      return true;
+    },
+    _ambSelecionar: function (id) {
+      var b = window.BIM, est = b && b.editarEstado ? b.editarEstado() : null;
+      var a = est ? (est.estado.ambientes || []).filter(function (x) { return String(x.id) === String(id); })[0] : null;
+      if (!a) return false;
+      var info = { uid: "edit:" + a.id, tipo: "IFCSPACE", nome: (a.nome || "Ambiente") + " " + (BimAmbiente.numero(a) || ""), ambiente: true };
+      this._bimSelecao = info;
+      try { this._bimCascaContexto(); } catch (e) {}
+      try { BimShell.pintarProps(this._bimPropsPeca(info)); } catch (eP) {}
+      return true;
     },
     /* peça criada no editor (uid "edit:e…"): a seção Orçamento (js/orcmodeloui.js, F1) */
     _orcSecaoProps: function (info) {
@@ -13793,16 +14058,17 @@
       if (ab.avisos && ab.avisos.length) params.push(ro("peca-ab-aviso", "Aviso", ab.avisos.join("; ")));
       return [{ nome: "Abertura", params: params }];
     },
-    /* Propriedades com nada selecionado = a VISTA ativa, como no Revit */
+    /* Propriedades com nada selecionado = a VISTA ativa */
     _bimPropsVista: function () {
       var self = this, st = this._bimVxEst(), id = st.ativa, v = this._bimVxAchar(id), b = window.BIM;
       if (v && v.tipo === "2d" && this._d2Config()) { var p2 = Bim2D.props(id); if (p2) return p2; }
+      if (v && v.tipo === "folha" && window.BimFolhaUI) { var pf = BimFolhaUI.props(id); if (pf) return pf; }   /* P8 */
       var nome = id === "3d" ? "{3D}" : (v ? v.nome : "{3D}");
       var temModelo = false;
       try { temModelo = !!((b && b.elementos && b.elementos.length) || (this._bimElementos && this._bimElementos.length)); } catch (eT) {}
       var caixa = false, orto = false;
       try { caixa = id === "3d" ? b.caixaCorteAtiva() : b.vistaCaixaAtiva(id); orto = id === "3d" ? b.ortogonalAtivo() : b.vistaOrtoAtivo(id); } catch (e) {}
-      return {
+      var ret = {
         daVista: true, semEditarTipo: true, titulo: "Vista 3D: " + nome, icone: "quadrado",
         secoes: [
           { nome: "Gráficos", params: [
@@ -13826,6 +14092,9 @@
           return self._bimPropsVista();
         }
       };
+      /* P10: "Fase" e "Filtro da fase" da vista (js/bimp10ui.js; só com a prévia do modelador) */
+      try { if (window.BimP10UI && BimP10UI.propsVista) BimP10UI.propsVista(ret); } catch (eP10) {}
+      return ret;
     },
     _bimVxAchar: function (id) { return this._bimVxEst().lista.filter(function (v) { return v.id === id; })[0] || null; },
     _bimVxGrade: function () { return document.getElementById("bim-grade"); },
@@ -13862,7 +14131,7 @@
       UI.toast("Vista " + nome + " aberta, com câmera, caixa de corte e ViewCube próprios. \u201CLado a lado\u201D mostra as vistas juntas.", "ok");
     },
     /* abre o ponto de vista `pv` numa aba própria — ou volta para a aba dele,
-       se já estiver aberta (como a vista do Navegador de projeto do Revit) */
+       se já estiver aberta (como a vista do Navegador de projeto) */
     _bimVxAbrirPonto: function (pv) {
       var st = this._bimVxEst(), ja = null;
       st.lista.forEach(function (x) { if (x.pvId === pv.id && BIM.vistaTemEstado(x.id)) ja = x; });
@@ -13890,7 +14159,7 @@
       st.ativa = id;
       this._bimVxLayout();
       /* vista 2D: não tem caixa de corte nem ortogonal — Propriedades mostra os parâmetros do desenho */
-      if (v && v.tipo === "2d") { try { BimShell.repintarVista(); } catch (e2d) {} return; }
+      if (v && (v.tipo === "2d" || v.tipo === "folha")) { try { BimShell.repintarVista(); } catch (e2d) {} return; }   /* P8: a folha também */
       /* a fita segue a vista ativa: caixa de corte e ortogonal são de cada vista */
       try {
         var b = window.BIM;
@@ -13914,7 +14183,7 @@
       try {
         /* ⚠ a vista que não aparece não desenha: GPU de sobra para quem aparece */
         BIM.principalOculta(!st.lado && st.ativa !== "3d");
-        st.lista.forEach(function (v) { if (v.tipo === "2d") return; BIM.vistaVisivel(v.id, !!(v.janela && !v.janela.closed) || st.lado || st.ativa === v.id); });
+        st.lista.forEach(function (v) { if (v.tipo === "2d" || v.tipo === "folha") return; BIM.vistaVisivel(v.id, !!(v.janela && !v.janela.closed) || st.lado || st.ativa === v.id); });
       } catch (e) {}
       this._bimVxDocs();
       try { BimRibbon.setAtivo("lado-a-lado", st.lado); BimShell.pintarFita(); } catch (e2) {}
@@ -13925,6 +14194,7 @@
       var w = v.janela; v.janela = null;
       if (w && !w.closed) { try { w.close(); } catch (e) {} }
       if (v.tipo === "2d") { try { Bim2D.desmontar(id); } catch (e2d) {} }
+      else if (v.tipo === "folha") { try { BimFolhaUI.desmontar(id); } catch (eP8) {} }   /* P8 */
       else { try { BIM.vistaFechar(id); } catch (e2) {} }
       var t = this._bimVxTela(id); if (t && t.parentNode) t.parentNode.removeChild(t);
       st.lista = st.lista.filter(function (x) { return x.id !== id; });
@@ -13936,7 +14206,7 @@
     _bimVxJanela: function (id) {
       if (id === "3d") { this.acao("bim-3d-janela", {}); return; }
       var self = this, st = this._bimVxEst(), v = this._bimVxAchar(id); if (!v) return;
-      if (v.tipo === "2d") { UI.toast("A planta e o corte abrem nesta janela. Para ver junto com o 3D, use Vista › Janelas › Vistas lado a lado.", "info"); return; }
+      if (v.tipo === "2d" || v.tipo === "folha") { UI.toast("A planta, o corte e a folha abrem nesta janela. Para ver junto com o 3D, use Vista › Janelas › Vistas lado a lado.", "info"); return; }
       if (v.janela && !v.janela.closed) { this._bimVxVoltar(id, false); return; }
       var w = null;
       try { w = window.open("", "orcapro-vista-" + id, "width=1200,height=800,resizable=yes"); } catch (e) { w = null; }
@@ -13998,6 +14268,11 @@
     _bimVxRemontar: function () {
       var self = this, st = this._bimVxEst();
       st.lista.forEach(function (v) {
+        if (v.tipo === "folha") {   /* P8: a folha volta na grade nova */
+          var tf = self._bimVxCriarTela(v.id, v.nome);
+          if (tf) { tf.classList.add("bim-tela-folha"); try { BimFolhaUI.montar(tf, v.id); } catch (eP8) {} }
+          return;
+        }
         if (v.tipo === "2d") {
           var t2 = self._bimVxCriarTela(v.id, v.nome);
           if (t2) { t2.classList.add("bim-tela-2d"); try { self._d2Config(); Bim2D.montar(t2, v.id); } catch (e2d) {} }
@@ -14448,7 +14723,7 @@
     _bimVistaDe: function (id) { return this._bimVistaDaObra().filter(function (v) { return v.id === id; })[0] || null; },
     _bimVistaIr: function (id) {
       var v = this._bimVistaDe(id); if (!v || !window.BIM) return;
-      /* ⚠ NA CASCA DO REVIT, O PONTO DE VISTA ABRE NUMA ABA DELE (Rogério,
+      /* ⚠ NA CASCA DO BIM, O PONTO DE VISTA ABRE NUMA ABA DELE (Rogério,
          30/09/2026: "abrir um ponto de vista muda todas as janelas abertas…
          quero que abra uma nova e ela mantenha como foi criada"). A vista nova
          guarda câmera, peças visíveis, cores, raio-X e cotas do ponto de vista;
@@ -14933,13 +15208,16 @@
       var vistas = this._bimVistaDaObra();
       if (!vistas.length) { UI.toast("Salve ou importe pontos de vista antes — a prancha é montada com eles.", "aviso"); return; }
       var grupos = BimVista.porPasta(vistas);
+      /* B6: o template aplicado na obra traz o formato da folha e as notas (Bim2D.estado().templateAtivo) */
+      var prTpl = null; try { if (this._d2Config()) prTpl = (Bim2D.estado().templateAtivo || {}).prancha || null; } catch (eT) { prTpl = null; }
+      var prFmt = (prTpl && prTpl.formato) || "A3";
       var lista = grupos.map(function (g) {
         return '<details' + (grupos.length < 4 ? ' open' : '') + ' style="margin:4px 0"><summary><b>' + Util.esc(g.pasta) + '</b> (' + g.vistas.length + ')</summary>' +
           g.vistas.map(function (v) { return '<label style="display:block;font-size:12.5px;padding:2px 0"><input type="checkbox" data-prv="' + Util.esc(v.id) + '"> ' + Util.esc(v.nome) + '</label>'; }).join("") + '</details>';
       }).join("");
       UI.modal("Nova prancha com pontos de vista",
         '<div class="flex" style="gap:10px;flex-wrap:wrap;margin-bottom:8px"><label>Título<br><input id="pr-nome" value="Estrutura — vistas" style="width:260px"></label>' +
-        '<label>Folha<br><select id="pr-form"><option>A1</option><option>A2</option><option selected>A3</option><option>A4</option><option>A0</option></select></label>' +
+        '<label>Folha<br><select id="pr-form">' + ["A1", "A2", "A3", "A4", "A0"].map(function (f) { return "<option" + (f === prFmt ? " selected" : "") + ">" + f + "</option>"; }).join("") + '</select></label>' +
         '<label>Vistas por folha<br><input type="number" id="pr-por" value="4" min="1" max="12" style="width:70px"></label></div>' +
         '<div style="max-height:46vh;overflow:auto;border:1px solid var(--linha);border-radius:6px;padding:6px">' + lista + '</div>',
         [{ texto: "Criar", classe: "primary", onClick: function () {
@@ -14951,6 +15229,7 @@
           var pr = Prancha.deVistas({ nome: document.getElementById("pr-nome").value || "Pranchas", formato: document.getElementById("pr-form").value,
             porFolha: +document.getElementById("pr-por").value || 4, vistas: sel,
             carimbo: { empresa: d.nome || "", responsavel: d.responsavel || "", registro: d.crea ? "CREA " + d.crea : "", obra: obraNome, data: new Date().toLocaleDateString("pt-BR") } });
+          if (prTpl && prTpl.coluna && prTpl.coluna.length && !(pr.coluna || []).length) pr.coluna = JSON.parse(JSON.stringify(prTpl.coluna));   /* B6: as notas do template */
           pr.obraId = String(self._bimSel); pr.criadoEm = new Date().toISOString();
           if (!pr.id) delete pr.id;
           if (!Store.salvar(eid(), "bim_pranchas", pr)) { UI.toast("Não consegui salvar a prancha.", "erro"); return; }
@@ -16701,6 +16980,12 @@
           else if (+r.kg > 0) mapa.pesosPeca[r.chave] = { kg: +r.kg, ref: r.ref || "" };
         });
       } catch (e) {}
+      /* MATERIAIS (js/bimmateriaisui.js): a massa específica do material DO PROJETO (desta obra),
+         pelo nome — o peso informado à parte (acima) continua mandando quando existe */
+      try {
+        var dm = window.BimMateriaisUI && BimMateriaisUI.ativo() ? BimMateriaisUI.densidades() : {};
+        Object.keys(dm).forEach(function (k) { if (!mapa.densidades[k]) mapa.densidades[k] = dm[k]; });
+      } catch (eM) {}
       return mapa;
     },
     _pesoOpts: function () {
@@ -25032,7 +25317,7 @@
           ]);
         }
       };
-      /* A CASCA (aparência do Revit) entra ANTES do viewer.
+      /* A CASCA (aparência de programa de desktop) entra ANTES do viewer.
        * Ela envolve o card: monta título, fita, Propriedades, Navegador e
        * barra de status, e move o canvas + o balão + a gaveta para dentro do
        * palco. O bim.js continua dono só do que vive sobre o canvas, então o
@@ -25133,6 +25418,7 @@
             },
             onPick: function (info) {
               try { self._b4AoEscolherPeca(info); } catch (e4d) {}   /* peça → etapa na lista da Simulação 4D */
+              try { if (window.BimAmbienteUI) BimAmbienteUI.aoSelecionar(info); } catch (eAm) {}   /* P2-D: o ambiente selecionado (volume no 3D, realce na planta) */
               /* SELEÇÃO É ESTADO DA CASCA, não só um balão na tela.
                  _bimSelecao nunca era escrito — e "Editar tipo" e "Rastrear
                  no orçamento" ficavam mortos para sempre, mesmo com o
@@ -25161,7 +25447,7 @@
               box.style.display = ""; box.style.maxWidth = "260px"; // volta do painel de propriedades expandido (420px)
               box.setAttribute("data-bim-balao", "selecao");
               var h = "<b>" + Util.esc(info.nome || info.tipo || "Elemento") + "</b><br><span style='opacity:.85'>" + Util.esc(BIM4D.nomeCat(BIM4D.catDoTipo(info.tipo))) + " · " + Util.esc(info.tipo || "") + "</span>" + (info.etapa ? "<br><span style='display:inline-block;margin-top:4px;background:rgba(34,197,94,.18);color:#16a34a;font-weight:700;font-size:11px;padding:2px 8px;border-radius:99px'>🏷️ Etapa: " + Util.esc(info.etapa) + " · carimbo OrçaPRO</span>" : "") + (info.fase ? "<br><span style='display:inline-block;margin-top:4px;font-weight:700;font-size:11px;padding:2px 8px;border-radius:99px;" + (info.fase === "demolir" ? "background:rgba(239,68,68,.18);color:#ef4444" : (info.fase === "existente" ? "background:rgba(148,163,184,.18);color:#94a3b8" : "background:rgba(34,197,94,.18);color:#16a34a")) + "'>" + (info.fase === "demolir" ? "🔴" : (info.fase === "existente" ? "⚪" : "🟢")) + " Fase: " + Util.esc(info.fase) + " · reforma</span>" : "") + (info.globalId ? "<br><span style='opacity:.6;font-size:11px'>" + Util.esc(info.globalId) + "</span>" : "");
-              // v1.1.82: família Revit em destaque + quantitativos reais (BaseQuantities, só os >0)
+              // v1.1.82: família em destaque + quantitativos reais (BaseQuantities, só os >0)
               if (info.familia) h += "<br><span style='display:inline-block;margin-top:4px;background:rgba(46,111,158,.28);color:#9fd0f5;font-weight:700;font-size:11px;padding:2px 8px;border-radius:99px'>🧩 " + Util.esc(info.familia) + "</span>";
               if (info.qto) {
                 var qtxt = [];

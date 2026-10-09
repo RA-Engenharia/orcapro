@@ -287,7 +287,7 @@
 
   /* ---------------- DINHEIRO FORA DO IFC ----------------
      O .ifc ia CRU para o link, com custo e venda por peça (pset RA_5D_*,
-     "Custo" do Revit): quem tinha o link baixava o arquivo e lia o orçamento.
+     parâmetro "Custo"): quem tinha o link baixava o arquivo e lia o orçamento.
      A propriedade FICA e perde o VALOR — ('RA_5D_Preco_Venda',$,$,$) — e o
      arquivo continua abrindo. Por nome (custo, preço, venda, valor, BDI…) e
      por tipo (IFCMONETARYMEASURE); IfcCostValue perde o AppliedValue.

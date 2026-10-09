@@ -197,9 +197,9 @@
   }
   function chaveMaterial(nome) { return "mat:" + norm(nome); }
   function chaveClasse(cl) { return "tipo:" + txt(cl).toUpperCase(); }
-  /* a chave do PESO POR PEÇA: pela família (o tipo do Revit — "Geladeira inox
+  /* a chave do PESO POR PEÇA: pela família (o tipo da família — "Geladeira inox
      2 portas" vale para todas as geladeiras iguais); sem família, pelo nome da
-     peça sem o número de instância do Revit (":123456"); sem nome, pela classe */
+     peça sem o número de instância do modelo (":123456"); sem nome, pela classe */
   function chavePeca(el) {
     var f = txt(el && el.familia);
     if (f) return "fam:" + norm(f);

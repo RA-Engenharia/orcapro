@@ -60,7 +60,7 @@
   }
   /* A normal NÃO se transforma pela mesma matriz quando a escala não é
      uniforme: é a inversa-transposta da 3x3. IFC com peça espelhada ou
-     esticada existe (família espelhada no Revit). */
+     esticada existe (família espelhada). */
   function matrizNormal(m) {
     var a = m[0], b = m[4], c = m[8], d = m[1], e = m[5], f = m[9], g = m[2], h = m[6], i = m[10];
     var A = e * i - f * h, B = -(d * i - f * g), C = d * h - e * g;

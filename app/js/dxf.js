@@ -7,6 +7,10 @@
  * Suporte (o que uma planta baixa 2D realmente usa):
  *   LINE · LWPOLYLINE · POLYLINE+VERTEX/SEQEND · ARC · CIRCLE (discretizados)
  *   TEXT/MTEXT (rótulos de ambientes) · $INSUNITS do HEADER (unidade)
+ *   P11 (terreno, 09/10/2026): a COTA (z) — LINE (30/31), LWPOLYLINE
+ *   (elevação 38), POLYLINE 3D (30 do VERTEX; 30 do cabeçalho na 2D) e
+ *   POINT (ponto cotado do levantamento, em `pontos`). O segmento ganha
+ *   z1/z2 só quando o arquivo diz a cota; sem cota, fica como era.
  * DXF é pares de linhas (código, valor). DWG é binário — NÃO suportado
  * (instrução honesta na UI: converter pra DXF no próprio CAD).
  * ===================================================================== */
@@ -50,7 +54,7 @@
     parse: function (texto, opts) {
       opts = opts || {};
       var pares = parsePares(texto);
-      var segs = [], textos = [], layers = {}, insunits = 0;
+      var segs = [], textos = [], layers = {}, insunits = 0, pontos = [];   /* P11: pontos cotados (POINT) */
       var i, n = pares.length;
 
       // HEADER: $INSUNITS (9 "$INSUNITS" -> 70 valor)
@@ -67,18 +71,24 @@
         if (!ent) return;
         if (ent.paper) { sem.ignoradas["paper-space"] = (sem.ignoradas["paper-space"] || 0) + 1; ent = null; return; } // 67=1: margem/carimbo da prancha, não é planta
         var L = ent.layer || "0";
-        function addSeg(x1, y1, x2, y2, curva) {
+        /* P11: a cota da entidade (LWPOLYLINE 38; POLYLINE/CIRCLE/ARC 30) quando o vértice não traz a dele */
+        var zEnt = isFinite(ent.elev) ? ent.elev : (isFinite(ent.z10) ? ent.z10 : null);
+        function addSeg(x1, y1, x2, y2, curva, z1, z2) {
           if (!isFinite(x1) || !isFinite(y1) || !isFinite(x2) || !isFinite(y2)) return;
           if (x1 === x2 && y1 === y2) return; // degenerado
-          segs.push({ x1: x1, y1: y1, x2: x2, y2: y2, layer: L, curva: !!curva });
+          var sg = { x1: x1, y1: y1, x2: x2, y2: y2, layer: L, curva: !!curva };
+          if (z1 != null && z2 != null && isFinite(z1) && isFinite(z2)) { sg.z1 = z1; sg.z2 = z2; }   /* P11 */
+          segs.push(sg);
           layers[L] = (layers[L] || 0) + 1;
         }
-        if (ent.tipo === "LINE") addSeg(ent.x10, ent.y20, ent.x11, ent.y21);
+        if (ent.tipo === "LINE") addSeg(ent.x10, ent.y20, ent.x11, ent.y21, false, ent.z10, isFinite(ent.z11) ? ent.z11 : ent.z10);
+        else if (ent.tipo === "POINT") { if (isFinite(ent.x10) && isFinite(ent.y20)) pontos.push({ x: ent.x10, y: ent.y20, z: isFinite(ent.z10) ? ent.z10 : null, layer: L }); }   /* P11 */
         else if (ent.tipo === "LWPOLYLINE" || ent.tipo === "POLYLINE") {
           var vs = ent.verts || [];
           function trecho(p, q) {
             var b = p[2] || 0; // bulge (código 42): arco entre p e q — achado do gate: ignorar virava corda reta MUDA
-            if (!b || !isFinite(b)) { addSeg(p[0], p[1], q[0], q[1]); return; }
+            var zp = isFinite(p[3]) ? p[3] : zEnt, zq = isFinite(q[3]) ? q[3] : zEnt;   /* P11: a cota do vértice (POLYLINE 3D) ou a da entidade */
+            if (!b || !isFinite(b)) { addSeg(p[0], p[1], q[0], q[1], false, zp, zq); return; }
             var th = 4 * Math.atan(b); // ângulo central (sinal = sentido)
             var dx = q[0] - p[0], dy = q[1] - p[1], d = Math.sqrt(dx * dx + dy * dy) / 2;
             if (!(d > 0)) return;
@@ -93,18 +103,19 @@
             for (var s2 = 1; s2 <= nseg; s2++) {
               var aa = a0 + th * s2 / nseg;
               var qx2 = cxA + r * Math.cos(aa), qy2 = cyA + r * Math.sin(aa);
-              addSeg(px2, py2, qx2, qy2, true); px2 = qx2; py2 = qy2;
+              addSeg(px2, py2, qx2, qy2, true, zp, zq); px2 = qx2; py2 = qy2;
             }
           }
           for (var v = 0; v + 1 < vs.length; v++) trecho(vs[v], vs[v + 1]);
           if (ent.fechada && vs.length > 2) trecho(vs[vs.length - 1], vs[0]);
         }
-        else if (ent.tipo === "ARC" && ent.r > 0) { var antes = segs.length; discretizarArco(ent.x10, ent.y20, ent.r, ent.a0 || 0, ent.a1 != null ? ent.a1 : 360, segs, L); layers[L] = (layers[L] || 0) + (segs.length - antes); }
-        else if (ent.tipo === "CIRCLE" && ent.r > 0) { var antes2 = segs.length; discretizarArco(ent.x10, ent.y20, ent.r, 0, 360, segs, L); layers[L] = (layers[L] || 0) + (segs.length - antes2); }
-        else if ((ent.tipo === "TEXT" || ent.tipo === "MTEXT") && ent.txt) {
+        else if (ent.tipo === "ARC" && ent.r > 0) { var antes = segs.length; discretizarArco(ent.x10, ent.y20, ent.r, ent.a0 || 0, ent.a1 != null ? ent.a1 : 360, segs, L); layers[L] = (layers[L] || 0) + (segs.length - antes); zArco(antes); }
+        else if (ent.tipo === "CIRCLE" && ent.r > 0) { var antes2 = segs.length; discretizarArco(ent.x10, ent.y20, ent.r, 0, 360, segs, L); layers[L] = (layers[L] || 0) + (segs.length - antes2); zArco(antes2); }
+        function zArco(i0) { if (zEnt == null) return; for (var ia = i0; ia < segs.length; ia++) { segs[ia].z1 = zEnt; segs[ia].z2 = zEnt; } }   /* P11: arco/círculo na cota da entidade */
+        if ((ent.tipo === "TEXT" || ent.tipo === "MTEXT") && ent.txt) {
           textos.push({ txt: ent.txt.replace(/\\P/g, " ").replace(/\{[^}]*\}|\\[A-Za-z][^;]*;/g, "").trim(), x: ent.x10 || 0, y: ent.y20 || 0, layer: L });
         }
-        else if (ent.tipo && ent.tipo !== "VERTEX" && ent.tipo !== "SEQEND") sem.ignoradas[ent.tipo] = (sem.ignoradas[ent.tipo] || 0) + 1;
+        else if (ent.tipo && ent.tipo !== "VERTEX" && ent.tipo !== "SEQEND" && ent.tipo !== "LINE" && ent.tipo !== "LWPOLYLINE" && ent.tipo !== "POLYLINE" && ent.tipo !== "ARC" && ent.tipo !== "CIRCLE" && ent.tipo !== "POINT") sem.ignoradas[ent.tipo] = (sem.ignoradas[ent.tipo] || 0) + 1;
         ent = null;
       }
       for (i = 0; i < n; i++) {
@@ -126,6 +137,7 @@
         if (ent.tipo === "POLYLINE" && ent._vert) {
           if (cod === 10) ent._vert.x = f;
           else if (cod === 20) { ent._vert.y = f; if (ent._vert.x != null) { ent.verts.push([ent._vert.x, ent._vert.y]); ent._vert = { x: null, y: null }; } }
+          else if (cod === 30) { var uz = ent.verts[ent.verts.length - 1]; if (uz && ent._vert.x == null) uz[3] = f; }   /* P11: a cota do vértice 3D */
           else if (cod === 8) ent.layer = val;
           else if (cod === 70 && (parseInt(val, 10) & 1)) ent.fechada = true;
           continue;
@@ -139,6 +151,9 @@
             else ent.y20 = f; break;
           case 11: ent.x11 = f; break;
           case 21: ent.y21 = f; break;
+          case 30: ent.z10 = f; break;   /* P11: cota (LINE, POINT, cabeçalho da POLYLINE 2D, centro do ARC/CIRCLE) */
+          case 31: ent.z11 = f; break;
+          case 38: ent.elev = f; break;  /* P11: elevação da LWPOLYLINE (curva de nível) */
           case 40: ent.r = f; break;
           case 42: if (ent.tipo === "LWPOLYLINE") { var uv = ent.verts[ent.verts.length - 1]; if (uv) uv[2] = f; } break;
           case 50: ent.a0 = f; break;
@@ -173,13 +188,14 @@
         else { fator = 1; origem = "heuristica-m"; }
       }
       if (fator > 0 && fator !== 1) {
-        segs.forEach(function (s) { s.x1 *= fator; s.y1 *= fator; s.x2 *= fator; s.y2 *= fator; });
+        segs.forEach(function (s) { s.x1 *= fator; s.y1 *= fator; s.x2 *= fator; s.y2 *= fator; if (s.z1 != null) { s.z1 *= fator; s.z2 *= fator; } });
+        pontos.forEach(function (q) { q.x *= fator; q.y *= fator; if (q.z != null) q.z *= fator; });   /* P11 */
         textos.forEach(function (t) { t.x *= fator; t.y *= fator; });
         x0 *= fator; y0 *= fator; x1 *= fator; y1 *= fator;
       }
 
       return {
-        segmentos: segs, textos: textos, layers: layers,
+        segmentos: segs, textos: textos, layers: layers, pontos: pontos,
         unidade: { insunits: insunits, fator: fator, origem: origem },
         extents: segs.length ? { x0: x0, y0: y0, x1: x1, y1: y1 } : null,
         stats: { segmentos: segs.length, textos: textos.length, ignoradas: sem.ignoradas }

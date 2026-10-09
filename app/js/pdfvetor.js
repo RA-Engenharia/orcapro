@@ -97,7 +97,7 @@
         if (op === OPS.restore) { if (pilha.length) ctm = pilha.pop(); continue; }
         if (op === OPS.transform) { ctm = mult(ctm, a); continue; }
         if (op === OPS.setLineWidth) { larg = num(a[0]); continue; }
-        /* FORM XOBJECT — como o Revit e o AutoCAD empacotam camada.
+        /* FORM XOBJECT — é assim que PDFs exportados do Revit e do AutoCAD empacotam camada.
            O pdf.js abre o form com a MATRIZ PRÓPRIA dele e fecha depois;
            quem ignora os dois perde a matriz (a geometria da camada sai
            deslocada e fora de escala) E deixa o `cm` de dentro vazar para

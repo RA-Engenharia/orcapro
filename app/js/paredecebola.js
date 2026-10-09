@@ -211,6 +211,25 @@
       return { adicionadas: add, puladas: pulou };
     },
 
+    // ---- P2-C: a receita como ACABAMENTO DE PAREDE DE UM AMBIENTE ----------
+    // ("Aplicar por ambiente", js/bimacabamento.js). Só as camadas de FACE
+    // (a alvenaria é a parede, não o acabamento do ambiente): cada camada
+    // casada pelo MESMO caminho fundamentado do explodir (Escopo → SINAPI) vira
+    // um serviço {codigo, medida:"areaParede", fator:1} — a quantidade é a
+    // área da face voltada para o ambiente, uma face só (o outro lado é de
+    // outro ambiente). Camada sem match, ou com unidade que não é m², volta
+    // em `pendentes` com o motivo — nunca vira código inventado.
+    camadasAmbiente: function (receitaId, override) {
+      var r = this.explodir({ nome: "Parede do ambiente", area: 1, faces: 1, receita: receitaId, incluiAlvenaria: false }, override);
+      var servicos = [], pendentes = [];
+      r.camadas.forEach(function (c) {
+        var cand = c.status === "ok" && c.escolhido >= 0 && c.candidatos ? c.candidatos[c.escolhido] : null;
+        if (cand && cand.item && cand.item.codigo != null) servicos.push({ codigo: String(cand.item.codigo), medida: "areaParede", fator: 1, acab: "parede", rotulo: "Parede — " + c.camada });
+        else pendentes.push({ camada: c.camada, motivo: c.unidadeDivergente ? "a composição achada não é em m²" : "sem composição SINAPI casada para \"" + c.descricao + "\"" });
+      });
+      return { receita: r.receita, servicos: servicos, pendentes: pendentes };
+    },
+
     _receita: function (id) {
       return this.RECEITAS[id] || this.RECEITAS[this.DEFAULTS.receita];
     }

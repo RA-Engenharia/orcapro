@@ -1,5 +1,5 @@
 /* =====================================================================
- * niveis.js — NÍVEIS do projeto, como no Revit.
+ * niveis.js — NÍVEIS do projeto.
  *
  * Motor PURO (Node-testável, ES5). Metros.
  *

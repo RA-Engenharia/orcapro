@@ -120,7 +120,7 @@
       return { ok: true, id: id, ligado: ligou, alterna: alterna, retorno: (r === true ? null : r) };
     },
 
-    /* repete a última ação — o Enter/Espaço do Revit */
+    /* repete a última ação — Enter/Espaço (convenção de mercado) */
     repetir: function (ctx) {
       if (!this._ultimo) return { ok: false, motivo: "Nenhum comando para repetir." };
       return this.executar(this._ultimo, ctx);

@@ -1,0 +1,56 @@
+MOTOR DO RENDER FISICO (path tracing) - js/bimrendermotor.js (09/10/2026)
+
+O que esta aqui, de onde veio e a licenca (conferida no LICENSE de cada pacote, copiado ao lado):
+
+  three-gpu-pathtracer 0.0.27 (gkjohnson/three-gpu-pathtracer) - licenca MIT (LICENSE-three-gpu-pathtracer)
+    https://registry.npmjs.org/three-gpu-pathtracer/-/three-gpu-pathtracer-0.0.27.tgz
+    sha256 do .tgz: 592386aa83d42ce15445872e59952215f9580c20735e1abb525fb9a907db2561
+    arquivo usado: build/index.module.js -> three-gpu-pathtracer.module.js
+    sha256 do arquivo daqui: 63086962e3fafd16a058c5b4765496cb271b43448b53da715012920916fe68ad
+    Dentro dele, o filtro de ruido (DenoiseMaterial) e o glslSmartDeNoise de Michele Morrone,
+    licenca BSD 2-Clause - o aviso de copyright e a licenca estao no proprio shader (preservados).
+
+  three-mesh-bvh 0.9.16 (gkjohnson/three-mesh-bvh) - licenca MIT (LICENSE-three-mesh-bvh) - dependencia do de cima
+    https://registry.npmjs.org/three-mesh-bvh/-/three-mesh-bvh-0.9.16.tgz
+    sha256 do .tgz: 114cd1686832f6dbfd10fc7f9789c3a68c6c6059ad7a14e2ead5c88c473c5e1c
+    arquivo usado: build/index.module.js -> three-mesh-bvh.module.js
+    sha256 do arquivo daqui: ce8986c7f664b5e0de8443cdedc69cb86882617e7325dd67c9f105fe25a7611a
+
+  three.js r186 (0.186.1) - licenca MIT (three/LICENSE-three)
+    https://registry.npmjs.org/three/-/three-0.186.1.tgz
+    sha256 do .tgz: 8cd068708ea44f2c73c944b1cead2ba2f0d5c15c8fc194e5700f4e4f4a033fe7
+    arquivos usados: build/three.module.js, build/three.core.js (sem mudanca) e examples/jsm/postprocessing/Pass.js
+    sha256: three.module.js 9052042d676cb0fdc1ddfefe193053f34b7ac0513a616fdac4535d49987812ea
+            three.core.js   9edde002b066a9a05676a6127f67735b62baf399bdea529f2f7e31657da769e6
+            Pass.js (daqui) 9d4db16199e0a742f289535cd755904e6063cdda114e0a1972ddff082875cb00
+
+Baixados do registry do npm em 09/10/2026.
+Os sha256 dos arquivos daqui sao do conteudo com fim de linha LF (como esta no repositorio e no pacote do
+npm); numa copia de trabalho do Windows que converte para CRLF o sha256 local muda.
+
+MUDANCAS: so nas linhas de import (o resto e copia sem alteracao) e a ultima linha
+`//# sourceMappingURL=...` tirada (o .map nao veio: 404 no console a toa).
+  three-gpu-pathtracer: 'three' -> './three/three.module.js'; 'three-mesh-bvh' -> './three-mesh-bvh.module.js';
+                        'three/examples/jsm/postprocessing/Pass.js' -> './three/Pass.js'
+  three-mesh-bvh:       'three' -> './three/three.module.js'
+  Pass.js:              'three' -> './three.module.js'
+Caminho relativo e nao importmap: este three NAO e o do importmap da pagina (ver abaixo).
+
+POR QUE UM SEGUNDO THREE (r186) se o visualizador usa o r150 (bim/vendor/three.module.js):
+  - o three-gpu-pathtracer da epoca do r150 (0.0.16, julho/2023, pede three >= 0.139 e three-mesh-bvh 0.5)
+    NAO compila no Chrome de hoje: o shader do path tracer derruba o contexto WebGL - medido em 09/10/2026
+    no Chrome com ANGLE/D3D11 (RTX 5060) e com o SwiftShader: depois dele, nem um shader vazio compila mais;
+  - o 0.0.27 compila e renderiza nos dois, mas pede three >= 0.185 e three-mesh-bvh >= 0.9.15;
+  - trocar o three do visualizador mexeria em 16 mil linhas de js/bim.js que funcionam.
+  Entao o render roda ISOLADO: js/bimrendermotor.js importa SO estes arquivos, so quando a pessoa clica em
+  Renderizar; a cena chega como dados (posicoes, normais, uv, parametros) - nenhum objeto do r150 atravessa.
+  O canvas e o contexto WebGL do render sao proprios. O three r150 do visualizador continua o mesmo.
+
+TEMPO MEDIDO (09/10/2026, sala de teste de ~200 triangulos):
+  - compilar o shader do path tracer: ~85-90 s no Chrome/ANGLE D3D11 (Windows, RTX 5060), uma vez por sessao
+    da pagina (o compilador de shader do Direct3D e lento com o shader grande; a tela continua respondendo);
+    ~0,5 s no SwiftShader;
+  - depois de compilado: 32 amostras a 160 x 120 em ~1,4 s na RTX 5060.
+
+O 0.0.27 avisa no console que a classe WebGLPathTracer sera trocada pela WebGPUPathTracer numa versao
+futura: o caminho WebGL e o que roda em toda maquina hoje; a WebGPU fica para quando a frota tiver.

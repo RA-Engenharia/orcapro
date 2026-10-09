@@ -56,7 +56,9 @@
     _renderBiblioteca: function () {
       var self = this, L = this.biblioteca(), b = this._busca.toLowerCase(), cats = (F() && F().CATEGORIAS) || {};
       var h = '<div class="fe-topo"><button class="btn sm primary" data-fe="nova">+ Nova família</button>' +
-        '<label class="btn sm" style="position:relative;overflow:hidden">Importar .opfam<input type="file" accept=".opfam,application/json" data-fe="importar" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label>' +
+        /* FAMIMPORT: com a prévia do modelador, importa também o .rfa (e o .txt do catálogo de tipos) e o .zip com a pasta, vários de uma vez */
+        (global.FamiliaImportUI && FamiliaImportUI.ativo() ? '<label class="btn sm" style="position:relative;overflow:hidden" title="Família do OrçaPRO (.opfam), convertida pelo plugin OrçaPRO for Revit (.opfam), do Revit direto (.rfa) ou uma pasta em .zip">Importar família<input type="file" multiple accept=".opfam,.rfa,.txt,.zip,application/json" data-fe="importar" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label>'
+          : '<label class="btn sm" style="position:relative;overflow:hidden">Importar .opfam<input type="file" accept=".opfam,application/json" data-fe="importar" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label>') +
         '<input class="fe-busca" data-fe="busca" placeholder="Buscar família" value="' + esc(this._busca) + '"></div>' +
         '<p class="fe-ajuda">Escolha o tipo e clique <b>Colocar</b>; depois clique no modelo. Porta e janela vão numa parede criada aqui e abrem o vão.</p>';
       var grupos = {};
@@ -68,11 +70,19 @@
         grupos[c].forEach(function (f) {
           var tSel = self._tiposSel[f.id] || ((f.tipos || [])[0] || {}).id || "";
           var orig = f._origem === "ra" ? "RA" : (f._origem === "importada" ? "Importada" : "Minha");
-          h += '<div class="fe-card" data-fam="' + esc(f.id) + '"><div class="fe-card-l1"><b>' + esc(f.nome) + '</b><span class="fe-badge fe-b-' + esc(f._origem || "minha") + '">' + orig + "</span></div>" +
+          /* FAMIMPORT: a família do mercado (js/familiamalha.js) — miniatura, categoria da família e o aviso de geometria pendente */
+          var imp = f.geometria === "malha" && f.importada ? f.importada : null, pend = !!(imp && imp.geometriaPendente);
+          h += '<div class="fe-card' + (imp ? " fe-card-imp" : "") + '" data-fam="' + esc(f.id) + '">' + (imp ? '<div class="fe-mini">' + (f.miniatura ? '<img alt="" data-fe="mini" src="' + esc(f.miniatura) + '">' : '<span aria-hidden="true">' + esc((imp.categoriaNome || "").slice(0, 1)) + "</span>") + "</div>" : "") +
+            '<div class="fe-card-l1"><b>' + esc(f.nome) + '</b><span class="fe-badge fe-b-' + esc(f._origem || "minha") + '">' + orig + "</span>" + (pend ? '<span class="fe-badge fe-b-pendente" title="Veio do .rfa: tipos e parâmetros, sem a forma 3D">Geometria pendente</span>' : "") + "</div>" +
+            (imp ? '<div class="fe-card-d">' + esc(imp.categoriaNome || "") + " · " + (f.tipos || []).length + " tipo(s) · " + (f.parametros || []).length + " parâmetro(s)" + (imp.triangulos ? " · " + imp.triangulos + " triângulos" : "") + "</div>" : "") +
             (f.descricao ? '<div class="fe-card-d">' + esc(f.descricao) + "</div>" : "") +
             '<div class="fe-card-l2"><select data-fe="tipo" aria-label="Tipo">' + (f.tipos || []).map(function (t) { return '<option value="' + esc(t.id) + '"' + (t.id === tSel ? " selected" : "") + ">" + esc(t.nome) + "</option>"; }).join("") + "</select>" +
             '<button class="btn sm primary" data-fe="colocar">Colocar</button><button class="btn sm" data-fe="editar">' + (f._origem === "ra" ? "Ver / duplicar" : "Editar") + "</button>" +
             '<button class="btn sm" data-fe="exportar" title="Exportar como Família OrçaPRO (.opfam)">.opfam</button>' +
+            /* B6 (prévia do modelador): a MESMA família na fonte JSON do pipeline RA do Revit (js/familiarevit.js) */
+            (global.FamiliaRevit && global.BimPrevia && BimPrevia.modelador() && !imp ? '<button class="btn sm" data-fe="revit" title="Exportar a fonte JSON da família para o pipeline RA do Revit (.rfa)">Revit</button>' : "") +
+            (pend ? '<button class="btn sm" data-fe="converter" title="Como trazer a forma 3D pelo plugin OrçaPRO for Revit">Converter geometria</button>' : "") +
+            (imp && global.FamiliaImportUI ? '<button class="btn sm ghost" data-fe="minha" title="Guardar também na sua biblioteca (aparece em todas as suas obras)">Minha biblioteca</button>' : "") +
             (f._origem !== "ra" ? '<button class="btn sm ghost" data-fe="excluir" title="Excluir da biblioteca">Excluir</button>' : "") + "</div></div>";
         });
         h += "</div>";
@@ -89,12 +99,19 @@
         else if (k === "colocar" && f) { self.colocar(f, self._tiposSel[f.id] || ((f.tipos || [])[0] || {}).id); }
         else if (k === "editar" && f) { self.editar(f, f._origem !== "ra"); }
         else if (k === "exportar" && f) { self.exportar(f); }
+        else if (k === "revit" && f) { self.exportarRevit(f); }
+        else if (k === "converter" && f && global.FamiliaImportUI) { FamiliaImportUI.explicarConversao(f); }   /* FAMIMPORT */
+        else if (k === "minha" && f && global.FamiliaImportUI) { FamiliaImportUI.paraMinha(f); }
         else if (k === "excluir" && f) { self._pedirExclusao(f); }
       };
       el.onchange = function (e) {
         var t = e.target, k = t.getAttribute && t.getAttribute("data-fe");
         if (k === "tipo") { var card = t.closest(".fe-card"); if (card) self._tiposSel[card.getAttribute("data-fam")] = t.value; }
-        if (k === "importar" && t.files && t.files[0]) self.importarArquivo(t.files[0]);
+        if (k === "importar" && t.files && t.files[0]) {
+          /* FAMIMPORT: vários arquivos, .rfa, .zip — pelo importador de famílias do mercado */
+          if (global.FamiliaImportUI && FamiliaImportUI.ativo()) { var fs = Array.prototype.slice.call(t.files); t.value = ""; FamiliaImportUI.interceptar(fs, function (r) { toast("\"" + r[0].name + "\" não tem família (.opfam ou .rfa) dentro.", "aviso"); }).forEach(function (r) { toast("\"" + r.name + "\" não é família (.opfam, .rfa ou .zip).", "aviso"); }); }
+          else self.importarArquivo(t.files[0]);
+        }
       };
       el.oninput = function (e) { if (e.target.getAttribute && e.target.getAttribute("data-fe") === "busca") { self._busca = e.target.value; var pos = e.target.selectionStart; self.render(); var i = el.querySelector('[data-fe="busca"]'); if (i) { i.focus(); try { i.setSelectionRange(pos, pos); } catch (x) {} } } };
     },
@@ -104,14 +121,22 @@
       else if (global.BIM && BIM.editarArmar) BIM.editarArmar("familia", { famId: f.id, tipoId: tipoId });
     },
     exportar: function (f) {
-      var limpa = JSON.parse(JSON.stringify(f)); delete limpa._origem;
+      var limpa = JSON.parse(JSON.stringify(global.FamiliaMalha ? FamiliaMalha.embutir(f) : f)); delete limpa._origem; delete limpa._escopo;   /* FAMIMPORT: a malha importada viaja junto */
       var txt = OpFormato.familiaParaArquivo(limpa, { app: this._ctx && this._ctx.app ? this._ctx.app : "OrçaPRO", autor: this._ctx && this._ctx.autor ? this._ctx.autor : "" });
       if (baixar(OpFormato.nomeSeguro(f.nome) + OpFormato.EXT.familia, txt)) toast("\"" + f.nome + "\" exportada como " + OpFormato.EXT.familia + ". Quem receber importa em Famílias › Importar .opfam.", "ok");
+    },
+    /* a fonte JSON do Revit: materiais + primitivas em mm (contrato do bombup230.json) + parâmetros e tipos; sem preço */
+    exportarRevit: function (f) {
+      var r = global.FamiliaRevit ? FamiliaRevit.paraFonteRevit(f, { Familia: F(), sha256: OpFormato.sha256, app: this._ctx && this._ctx.app ? this._ctx.app : "OrçaPRO" }) : { ok: false, erros: ["o conversor não carregou"] };
+      if (!r.ok) { toast("Não exportei para o Revit: " + r.erros[0], "erro"); return false; }
+      if (baixar(OpFormato.nomeSeguro(f.nome) + ".revit.json", JSON.stringify(r.fonte, null, 1)))
+        toast("\"" + f.nome + "\" exportada na fonte do Revit (" + r.fonte.primitivas.length + " sólido(s), " + r.fonte.tipos.length + " tipo(s))" + (r.avisos.length ? ". " + r.avisos[0] : "") + ". O construtor RA gera o .rfa a partir dela.", "ok");
+      return true;
     },
     importarTexto: function (texto) {
       var r = OpFormato.lerFamilia(texto, F().validar);
       if (!r.ok) { toast("Não importei: " + r.erros.join("; "), "erro"); return null; }
-      var fam = r.familia, existe = this.obter(fam.id);
+      var fam = global.FamiliaMalha ? FamiliaMalha.desembutir(r.familia) : r.familia, existe = this.obter(fam.id);   /* FAMIMPORT: a malha embutida volta ao registro */
       if (existe && existe._origem === "ra") { fam.id = "fam-" + Date.now().toString(36); }
       fam._origem = "importada";
       if (!this._salvar(fam)) return null;
@@ -175,8 +200,8 @@
       });
       h += '</tbody></table></div><button class="btn sm" data-fe="add-param">+ Parâmetro</button><p class="fe-ajuda">Fórmula: + − * / ^ ( ), comparações, <b>se(cond; a; b)</b>, min, max, arred(x; casas), raiz, abs, sen/cos/tan (graus), pi(). Separe os argumentos com <b>;</b>. Use vírgula ou ponto nos números.</p></details>';
       /* tipos */
-      var pts = (f.parametros || []).filter(function (p) { return p.escopo !== "instancia" && !p.formula; });
-      h += '<details open class="fe-sec"><summary>Tipos <small>' + (f.tipos || []).length + '</small></summary><div class="fe-tab-env"><table class="fe-tab"><thead><tr><th>Tipo</th><th title="Código de composição do TIPO — vence o da família">Código</th>' + pts.map(function (p) { return "<th>" + esc(p.nome) + "</th>"; }).join("") + "<th></th></tr></thead><tbody>";
+      var pts = (f.parametros || []).filter(function (p) { return p.escopo !== "instancia" && !p.formula && !p.somenteLeitura; });   /* FAMIMPORT: o que tem fórmula é de leitura */
+      h += '<details open class="fe-sec"><summary>Tipos <small>' + (f.tipos || []).length + '</small></summary><div class="fe-tab-env"><table class="fe-tab"><thead><tr><th>Tipo</th><th title="Código de composição do TIPO — vence o da família">Código</th>' + pts.map(function (p) { return "<th>" + esc(p.rotulo || p.nome) + "</th>"; }).join("") + "<th></th></tr></thead><tbody>";
       (f.tipos || []).forEach(function (t, i) {
         h += '<tr data-ti="' + i + '"><td><input data-ft="nome" value="' + esc(t.nome) + '"></td><td><input data-ft="codigo" placeholder="' + esc((f.quantitativo || {}).codigo || "") + '" value="' + esc(t.codigo || "") + '" style="width:76px"></td>' + pts.map(function (p) {
           var v = t.valores && t.valores[p.nome] != null ? t.valores[p.nome] : "";
@@ -185,6 +210,12 @@
       });
       h += '</tbody></table></div><button class="btn sm" data-fe="add-tipo">+ Tipo</button><p class="fe-ajuda">Célula vazia = vale o valor padrão do parâmetro. Código do tipo vazio = vale o código da família (Quantitativo).</p></details>';
       /* geometria */
+      if (f.geometria === "malha" && f.importada) {
+        /* FAMIMPORT: a forma da família importada é a MALHA de cada tipo — não se edita aqui; o vão também vem por tipo */
+        var im = f.importada;
+        h += '<details open class="fe-sec"><summary>Geometria importada</summary><p class="fe-ajuda">' + (im.geometriaPendente ? "Geometria pendente: a família veio do .rfa sem a forma 3D (uma caixa marca o lugar). Converta pelo plugin OrçaPRO for Revit e arraste o .opfam: ele entra no lugar desta."
+          : "Malha de cada tipo (" + (im.triangulos || 0) + " triângulos), de " + esc(im.categoriaNome || "") + ". Mudar um parâmetro de medida muda o valor e a quantidade; a forma 3D continua a do tipo importado.") + "</p></details>";
+      } else {
       h += '<details open class="fe-sec"><summary>Geometria <small>' + (f.solidos || []).length + ' sólido(s)</small></summary>';
       (f.solidos || []).forEach(function (s, i) {
         var campos = [["x", "X"], ["y", "Y (base)"], ["z", "Z"]];
@@ -201,7 +232,8 @@
       });
       h += '<div class="fe-topo"><button class="btn sm" data-fe="add-caixa">+ Caixa</button><button class="btn sm" data-fe="add-cil">+ Cilindro</button><button class="btn sm" data-fe="add-ext">+ Extrusão</button></div>' +
         '<p class="fe-ajuda">Sistema da família: origem no piso; X ao longo da parede, Y para cima, Z para fora. Caixa: X, Y, Z = centro da base. Todo campo aceita número ou fórmula com os parâmetros.</p></details>';
-      if (f.hospedagem === "parede") {
+      }
+      if (f.hospedagem === "parede" && f.geometria !== "malha") {
         var ab = f.abertura || {};
         h += '<details open class="fe-sec"><summary>Vão na parede</summary><div class="fe-grade4"><label>Largura<input class="fe-form" data-fa="largura" value="' + esc(ab.largura || "") + '"></label><label>Altura<input class="fe-form" data-fa="altura" value="' + esc(ab.altura || "") + '"></label><label>Peitoril<input class="fe-form" data-fa="peitoril" value="' + esc(ab.peitoril || "0") + '"></label></div><p class="fe-ajuda">O vão é aberto na parede onde a família é colocada e descontado do quantitativo da parede.</p></details>';
       }

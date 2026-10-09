@@ -1,6 +1,26 @@
 ﻿POLÍTICA DE PRIVACIDADE — OrçaPRO IA
-Versão 1.13 — vigente a partir de 08/10/2026
+Versão 1.15 — vigente a partir de [DATA DA PUBLICAÇÃO — preencher no release]
 Elaborada conforme a Lei nº 13.709/2018 (LGPD)
+
+O que mudou na 1.15: duas coisas.
+1) Na MODELAGEM POR COMANDO do BIM (item 4.1), o pedido e o croqui passam a ir
+ao provedor de IA de mais qualidade para esse trabalho — hoje a Anthropic
+(Claude), que entrou na lista do item 8 —, com o Google (Gemini API) e a Groq
+como reserva quando ele estiver fora do ar. Do pedido, o nosso servidor guarda
+só a contagem e o custo (provedor, modelo e quantidade de texto processado),
+por 12 meses (item 6).
+2) O item 4.17 passou a descrever o ACABAMENTO COM IA do render. Quando você
+pede, a imagem do render (ou da vista 3D), a DESCRIÇÃO TÉCNICA DA CENA
+(materiais, luzes, hora do sol e câmera) e o que você escrever passam pelo
+nosso servidor e vão ao Google (Gemini API), o mesmo fornecedor do render por
+IA. E entrou a CARTEIRA DE CRÉDITOS DE IA: o nosso servidor guarda, ligados à
+sua licença por um código, o saldo, o extrato e o registro de cada acabamento
+ou modelagem paga (item 6).
+
+O que mudou na 1.14: o item 4.1 passou a citar a MODELAGEM POR COMANDO do BIM.
+Quando você pede, o texto do pedido e o croqui que você anexar passam pelo
+nosso servidor e vão à mesma fornecedora de IA dos outros recursos (Groq),
+junto com a lista de famílias da sua biblioteca (só nomes e medidas dos tipos).
 
 O que mudou na 1.13: entrou o item 4.17 — FAMÍLIA E RENDER POR IA no BIM. Quando
 você pede, o texto e as imagens da família, ou a imagem da vista 3D e o escopo
@@ -195,15 +215,28 @@ competência nova das bases públicas, e baixa a base quando necessário.
 
 4.1 RECURSOS DE INTELIGÊNCIA ARTIFICIAL
 Ao usar escopo inteligente, casamento de itens com as bases, cronograma,
-leitura de nota fiscal por PDF/foto ou cadastro de colaborador por documento, o
-conteúdo enviado vai para o servidor da fornecedora e, dele, para o provedor de
-modelo de IA contratado — hoje a Groq, Inc., com processamento em servidores nos
+leitura de nota fiscal por PDF/foto, cadastro de colaborador por documento ou a
+modelagem por comando do BIM, o conteúdo enviado vai para o servidor da
+fornecedora e, dele, para o provedor de modelo de IA contratado — hoje a Groq, Inc., com processamento em servidores nos
 Estados Unidos (transferência internacional, art. 33 da LGPD).
 
   · O que sai, conforme o recurso: o texto do escopo que você escreveu; as
     descrições dos itens do orçamento; as etapas do cronograma; o texto extraído
     do PDF ou A IMAGEM INTEIRA da nota; e, no cadastro por documento, A FOTO DO
-    DOCUMENTO DE IDENTIDADE da pessoa (do qual voltam nome e CPF).
+    DOCUMENTO DE IDENTIDADE da pessoa (do qual voltam nome e CPF); na
+    modelagem por comando, o texto do pedido, A IMAGEM DO CROQUI que você
+    anexar e os nomes e medidas dos tipos das famílias da sua biblioteca (não
+    vão o nome da obra, o cliente nem valores).
+  · Na modelagem por comando, o provedor é o de mais qualidade para esse
+    trabalho: hoje a Anthropic, PBC (Claude), com processamento nos Estados
+    Unidos (transferência internacional, art. 33 da LGPD). Se ela estiver fora
+    do ar ou sem capacidade, o MESMO pedido vai, nesta ordem, ao Google LLC
+    (Gemini API) e à Groq, Inc. Cada pedido é atendido por um deles; o que vai
+    é só o descrito acima.
+  · Da modelagem por comando, o nosso servidor guarda só a CONTAGEM e o CUSTO
+    de cada pedido (qual provedor e modelo atendeu e quanto texto foi
+    processado), ligados a um resumo da licença — nunca o texto, o croqui nem
+    o resultado —, por 12 meses (item 6).
   · Acontece apenas no clique. Nada é enviado em segundo plano.
   · O conteúdo é usado só para produzir aquela resposta; não alimentamos
     treinamento de modelo com ele.
@@ -753,8 +786,9 @@ do plano nem no modo foto. Desligar o botão para os pedidos.
 4.17 FAMÍLIA E RENDER POR IA (tela BIM)
 "Família por IA" monta uma família paramétrica a partir do que você descreve e
 das imagens que você anexar; "Renderizar com IA" gera uma ilustração da vista
-3D que está na tela. Nada sai sozinho: cada envio acontece no clique em "Gerar
-família" ou "Renderizar".
+3D que está na tela; "Acabamento com IA" dá o acabamento fotorrealista ao render
+do modelo. Nada sai sozinho: cada envio acontece no clique em "Gerar família",
+"Renderizar" ou no botão que gera o acabamento.
 
 Os envios passam pelo NOSSO servidor (o mesmo dos recursos de IA, item 4.1),
 que só atende licença ativa e os repassa ao Google LLC (Gemini API), com
@@ -764,7 +798,11 @@ LGPD). Vão:
   · na família: o texto do pedido, a categoria escolhida e as imagens que você
     anexar (planta, corte, isométrico, foto de catálogo);
   · no render: a IMAGEM DA VISTA 3D que está na tela (e a mesma vista em
-    linhas), o escopo que você escrever e as fotos de referência que anexar.
+    linhas), o escopo que você escrever e as fotos de referência que anexar;
+  · no ACABAMENTO COM IA: a imagem do render do modelo (ou, sem ele, a da
+    vista 3D), a DESCRIÇÃO TÉCNICA DA CENA que o programa monta (materiais de
+    cada superfície, luzes, hora do sol e câmera) e o que você escrever no
+    pedido.
 
 Não vão: o nome da obra, o cliente, o seu nome, o seu e-mail nem valores. A
 imagem da vista mostra o que estiver na tela — esconda antes o que não quiser
@@ -776,6 +814,16 @@ compartilhar.
 O render volta como imagem e fica SÓ NESTE APARELHO (na galeria da obra); a
 lista da galeria guarda o escopo, a data, o autor e o modelo de IA usado. A
 imagem sai marcada como ilustração gerada por IA, não projeto executivo.
+
+Cota do plano e CARTEIRA DE CRÉDITOS DE IA: para contar quantos acabamentos
+(e modelagens por comando) a sua licença usou no mês e cobrar os que passam
+da cota — sempre com o preço mostrado ANTES e só depois de você confirmar —,
+o nosso servidor guarda, ligados à sua licença por um código (hash, não a
+chave), o contador do mês, o saldo e o extrato da carteira e o registro de
+cada uso pago (data, recurso, modelo, valor cobrado e o custo do provedor).
+Não guarda a imagem, o pedido nem a descrição da cena. Para converter o custo
+do provedor, o servidor consulta a cotação do dólar no Banco Central (PTAX,
+dados abertos): só a data vai nessa consulta, nada seu.
 
 Objeto 3D livre (Poly Haven): ao escolher colocar no modelo um objeto da Poly
 Haven, o SEU NAVEGADOR baixa direto de lá a lista de modelos 3D livres (licença
@@ -805,6 +853,8 @@ Base legal: seu consentimento, manifestado pelo uso do recurso.
     solicitar, apagamos em até 30 dias.
   · Registros de uso e licença (item 3.2): 12 meses contados do último acesso,
     apagados automaticamente do nosso servidor depois disso.
+  · Contagem e custo da modelagem por comando (item 4.1): 12 meses, apagados
+    automaticamente do nosso servidor depois disso.
   · Portal do Cliente (item 4.2): enquanto a obra estiver publicada. Excluir a
     obra remove a publicação; a pedido, apagamos em até 30 dias.
   · Modelo BIM compartilhado (item 4.3), com os dados que foram junto, os
@@ -855,6 +905,10 @@ Base legal: seu consentimento, manifestado pelo uso do recurso.
     na memória, por 1 hora. Nenhuma dessas cópias leva nome de obra, cliente,
     licença ou usuário.
   · Licença e faturamento: pelo prazo legal aplicável (fiscal e prescricional).
+  · Carteira de créditos de IA e registro dos usos pagos (item 4.17): saldo,
+    extrato e registro pelo prazo legal aplicável (fiscal e prescricional),
+    ligados à licença só por um código; o contador da cota do mês é zerado
+    na virada do mês.
 
 
 7. SEUS DIREITOS
@@ -871,9 +925,14 @@ Boa parte disso você resolve sozinho e na hora, dentro do programa — exportan
 
   · Google LLC — Firebase/Firestore: guarda a cópia sincronizada (item 3.1).
   · Groq, Inc. — processa o conteúdo enviado aos recursos de IA (item 4.1).
+  · Anthropic, PBC (EUA) — Claude: recebe, pelo nosso servidor, o texto do
+    pedido, o croqui e os nomes e medidas das famílias da modelagem por
+    comando do BIM (item 4.1).
   · Google LLC — Gemini API: recebe, pelo nosso servidor, o pedido e as imagens
-    da família por IA e a imagem da vista 3D, o escopo e as referências do
-    render por IA (item 4.17).
+    da família por IA, a imagem da vista 3D, o escopo e as referências do
+    render por IA e, no acabamento com IA, a imagem do render, a descrição
+    técnica da cena e o pedido (item 4.17) e, como reserva, o pedido e o
+    croqui da modelagem por comando (item 4.1).
   · Poly Haven (polyhaven.com) — entrega, direto ao seu navegador, a lista e o
     modelo 3D livre (CC0) que você escolher pôr no modelo (item 4.17); recebe o
     seu IP e qual modelo foi baixado, nada da obra.

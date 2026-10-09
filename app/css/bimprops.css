@@ -1,0 +1,124 @@
+/* =====================================================================
+ * bimprops.css — a paleta de Propriedades (P1-C,
+ * js/bimpropsui.js, prévia ?previa=modelador).
+ *
+ * Só tokens: os da casca do BIM (--rv-*, css/bim-revit.css), que já mudam
+ * com o tema claro/escuro, e o --vermelho do css/app.css para o
+ * erro da linha. Nenhuma cor escrita aqui. A tabela reaproveita a .rv-params
+ * da casca: a paleta nova tem a mesma cara da de antes.
+ * ===================================================================== */
+
+.bp1-paleta { display: flex; flex-direction: column; min-height: 0; }
+
+/* ---- topo: o tipo (família : tipo), com busca */
+.bp1-tipo-sel { position: relative; }
+.bp1-tipo {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  width: 100%; box-sizing: border-box; padding: 3px 22px 3px 6px; text-align: left;
+  background: var(--rv-tela); color: var(--rv-painel-tx);
+  border: 1px solid var(--rv-linha-forte); border-radius: 2px; cursor: pointer;
+  font: inherit; font-size: 11.5px; position: relative;
+}
+.bp1-tipo::after { content: "▾"; position: absolute; right: 7px; top: 50%; transform: translateY(-50%); color: var(--rv-tx-fraco); }
+.bp1-tipo:hover { background: var(--rv-hover); }
+.bp1-tipo:disabled { cursor: default; color: var(--rv-tx-off); }
+.bp1-tipo-fam { font-size: 10.5px; color: var(--rv-tx-fraco); }
+.bp1-tipo-nome { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.bp1-tipos {
+  position: absolute; left: 0; right: 0; top: calc(100% + 2px); z-index: 20;
+  background: var(--rv-painel-bg); color: var(--rv-painel-tx);
+  border: 1px solid var(--rv-linha-forte); box-shadow: 0 6px 18px var(--rv-sombra);
+  max-height: 320px; display: flex; flex-direction: column;
+}
+.bp1-tipos-busca {
+  margin: 4px; padding: 2px 5px; font: inherit; font-size: 11.5px;
+  background: var(--rv-tela); color: var(--rv-painel-tx); border: 1px solid var(--rv-linha-forte); border-radius: 2px;
+}
+.bp1-tipos-lista { list-style: none; margin: 0; padding: 0 0 4px; overflow: auto; font-size: 11.5px; }
+.bp1-tipos-grupo { padding: 4px 8px 2px; font-weight: 700; font-size: 10.5px; color: var(--rv-tx-fraco); }
+.bp1-tipos-item { padding: 3px 8px 3px 16px; cursor: pointer; }
+.bp1-tipos-item:hover, .bp1-tipos-item.bp1-ativo { background: var(--rv-hover); }
+.bp1-tipos-item.bp1-atual { font-weight: 600; }
+.bp1-tipos-vazio { padding: 6px 8px; color: var(--rv-tx-fraco); }
+
+/* ---- linha do filtro, Editar tipo e menu */
+.bp1-linha { flex-wrap: wrap; }
+.bp1-filtro {
+  flex: 1; min-width: 0; font: inherit; font-size: 11.5px;
+  background: var(--rv-tela); color: var(--rv-painel-tx); border: 1px solid var(--rv-linha-forte); border-radius: 2px;
+}
+.bp1-linha .rv-btn-tipo:disabled { color: var(--rv-tx-off); cursor: default; }
+.bp1-menu-caixa { position: relative; }
+.bp1-menu {
+  position: absolute; right: 0; top: calc(100% + 2px); z-index: 20; min-width: 220px;
+  background: var(--rv-painel-bg); border: 1px solid var(--rv-linha-forte); box-shadow: 0 6px 18px var(--rv-sombra);
+  display: flex; flex-direction: column; padding: 3px 0;
+}
+.bp1-menu[hidden] { display: none; }
+.bp1-menu-item {
+  text-align: left; padding: 4px 10px; font: inherit; font-size: 11.5px; cursor: pointer;
+  background: transparent; color: var(--rv-painel-tx); border: 0;
+}
+.bp1-menu-item:hover, .bp1-menu-item:focus { background: var(--rv-hover); }
+
+/* ---- grupos recolhíveis (o cabeçalho é um botão: Tab chega nele) */
+/* sem cabeçalho grudado: com vários grupos, os títulos grudados se
+   sobrepunham no topo (por isso o cabeçalho não gruda) */
+.bp1-params th { padding: 0; position: static; }
+.bp1-g-btn {
+  display: block; width: 100%; text-align: left; padding: 4px 8px;
+  background: transparent; color: inherit; border: 0; font: inherit; font-weight: 700; font-size: 11px; cursor: pointer;
+}
+.bp1-params tbody.bp1-fechado tr:not(.bp1-g) { display: none; }
+.bp1-extra th { font-style: italic; }
+
+/* ---- linhas */
+.bp1-orc { margin-left: 5px; font-size: 10px; font-weight: 700; color: var(--rv-tx-fraco); cursor: help; }
+.bp1-num { display: flex; align-items: center; gap: 4px; }
+.bp1-num input { flex: 1; min-width: 0; }
+.bp1-un { color: var(--rv-tx-fraco); font-size: 10.5px; white-space: nowrap; }
+.bp1-params td.rv-p-val input[type="text"] {
+  width: 100%; max-width: 100%; box-sizing: border-box; font-size: 11.5px; padding: 1px 3px;
+  background: var(--rv-tela); color: var(--rv-painel-tx); border: 1px solid transparent; border-radius: 0; font-family: inherit;
+}
+.bp1-params td.rv-p-val input::placeholder { color: var(--rv-tx-fraco); font-style: italic; }
+.bp1-params td.rv-p-val input[aria-invalid="true"] { border-color: var(--vermelho); }
+.bp1-erro { margin-top: 2px; font-size: 10.5px; line-height: 1.35; color: var(--vermelho); }
+.bp1-erro[hidden] { display: none; }
+
+/* ---- foco visível em tudo o que se alcança com Tab */
+.bp1-paleta button:focus-visible, .bp1-paleta input:focus-visible, .bp1-paleta select:focus-visible,
+.bp1-dlg button:focus-visible, .bp1-dlg input:focus-visible, .bp1-dlg select:focus-visible {
+  outline: 2px solid var(--rv-foco); outline-offset: 1px;
+}
+
+/* ---- diálogo Propriedades de tipo */
+.bp1-dlg-fundo {
+  position: absolute; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center;
+  background: var(--rv-sombra);
+}
+.bp1-dlg {
+  width: min(520px, calc(100% - 32px)); max-height: calc(100% - 48px); display: flex; flex-direction: column;
+  background: var(--rv-painel-bg); color: var(--rv-painel-tx);
+  border: 1px solid var(--rv-linha-forte); box-shadow: 0 10px 30px var(--rv-sombra); font-size: 11.5px;
+}
+.bp1-dlg-tit { padding: 6px 10px; font-weight: 700; background: var(--rv-painel-cab); border-bottom: 1px solid var(--rv-linha); }
+.bp1-dlg-cab { padding: 8px 10px; display: flex; flex-direction: column; gap: 5px; border-bottom: 1px solid var(--rv-linha); }
+.bp1-dlg-tipo { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.bp1-dlg-tipo b { flex: 1; min-width: 120px; }
+.bp1-dlg-afeta { color: var(--rv-tx-fraco); }
+.bp1-dlg-nome { display: flex; align-items: center; gap: 6px; }
+.bp1-dlg-nome[hidden] { display: none; }
+.bp1-dlg-nome input {
+  font: inherit; font-size: 11.5px; padding: 2px 5px; min-width: 200px;
+  background: var(--rv-tela); color: var(--rv-painel-tx); border: 1px solid var(--rv-linha-forte); border-radius: 2px;
+}
+.bp1-dlg-corpo { overflow: auto; flex: 1; min-height: 120px; }
+.bp1-dlg-erro { padding: 4px 10px; }
+.bp1-dlg-pe { display: flex; justify-content: flex-end; gap: 6px; padding: 6px 10px; border-top: 1px solid var(--rv-linha); background: var(--rv-painel-cab); }
+.bp1-primario { font-weight: 700; border-color: var(--rv-foco); }
+
+@media (max-width: 640px) {
+  .bp1-dlg { width: calc(100% - 16px); max-height: calc(100% - 16px); }
+  .bp1-dlg-nome input { min-width: 0; flex: 1; }
+}

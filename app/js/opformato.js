@@ -1,7 +1,7 @@
 /* =====================================================================
  * opformato.js — OS ARQUIVOS DO ORÇAPRO (motor puro, Node-testável)
  *
- * Pedido do Rogério, 07/10/2026: "o Revit gera RVT, RTE, RFA; o nosso tem
+ * Pedido do Rogério, 07/10/2026: "o nosso tem
  * que ter uma sigla e um tipo de arquivo, para compartilhar com outros
  * usuários o que foi criado aqui dentro". Ver PLANO-BIM-FAMILIAS-FORMATOS.md.
  *
@@ -159,7 +159,7 @@
    * proj = { nome, modelo:{ edicao:[ops], niveis:[…], desenho2d:{…}, … },
    *          familias:[família…], ifcs:[{ nome, bytes:Uint8Array }],
  *          malhas:[{ nome, bytes }] (glb/obj/… e o .json do SketchUp; opções em modelo.malhas),
-   *          extras:{ "<nome>.json": objeto } }   (extras: parâmetros do Revit, atributos do SketchUp…)
+   *          extras:{ "<nome>.json": objeto } }   (extras: parâmetros de famílias importadas, atributos do SketchUp…)
    * ZIP: manifesto.json (cabeçalho + lista de arquivos com sha256 e tamanho),
    *      modelo.json, familias/<id>.opfam, ifc/<nome>, malhas/<nome>, extras/<nome>.json */
   function nomeSeguro(s) { return txt(s).replace(/[\\/:*?"<>|]+/g, "_").replace(/\s+/g, " ").trim().slice(0, 120) || "arquivo"; }

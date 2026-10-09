@@ -291,11 +291,14 @@
         '<div id="iar-cota" class="muted" style="font-size:11.5px;margin-top:6px"></div>' +
         '<div id="iar-msg" style="margin-top:6px"></div>' +
         '<p style="font-size:11px;margin:8px 0 0;color:#b45309">' + esc(MARCA) + ".</p></div>";
-      UI.modal(ic("camera") + " Renderizar com IA", h, [
+      var botoes = [
         { texto: "Fechar", classe: "ghost", onClick: function () { self._lerForm(); UI.fecharModal(); } },
-        { texto: "Galeria da obra", onClick: function () { self._lerForm(); self.galeria(self._ctx); } },
-        { texto: "Renderizar", classe: "primary", onClick: function () { self._renderizar(this); } }
-      ]);
+        { texto: "Galeria da obra", onClick: function () { self._lerForm(); self.galeria(self._ctx); } }
+      ];
+      /* RENDER-IA: o acabamento fotorrealista (js/iaacabamento.js — render físico + descritivo, com preço antes de gerar) */
+      if (global.IAAcabamento) botoes.push({ texto: "Acabamento com IA", onClick: function () { self._lerForm(); IAAcabamento.abrir(self._ctx); } });
+      botoes.push({ texto: "Renderizar", classe: "primary", onClick: function () { self._renderizar(this); } });
+      UI.modal(ic("camera") + " Renderizar com IA", h, botoes);
       this._pintarObjetos();
       var IA = IAF();
       if (IA) IA.cota().then(function (c) { var el = document.getElementById("iar-cota"); if (el) el.textContent = IA.textoCota(c, "render"); });

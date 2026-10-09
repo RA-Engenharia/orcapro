@@ -1,6 +1,6 @@
 /* =====================================================================
  * bim2dui.js — as VISTAS 2D do BIM: plantas por nível e cortes A, B, C…
- * (07/10/2026, pedido do Rogério: "planta baixa igual ao Revit, em linha,
+ * (07/10/2026, pedido do Rogério: "planta baixa em linha,
  * com linha fina ou grossa; cortes A, B, C, D na lateral; cota com estilo,
  * com opção de tirar").
  *
@@ -71,8 +71,13 @@
     cortes: function () { return this.estado().cortes.slice(); },
     idPlanta: function (nivelId) { return "d2p-" + String(nivelId).replace(/[^\w-]/g, "_"); },
     idCorte: function (cid) { return "d2c-" + cid; },
-    ehVista2d: function (id) { return /^d2[pc]-/.test(String(id || "")); },
+    ehVista2d: function (id) { return /^d2[pcv]-/.test(String(id || "")); },   /* P6: d2v- = vistas novas (js/bimmodelovista.js) */
+    /* P6 — GANCHO: as vistas novas (d2v-) e o nome dado pelo usuário (renomear) */
     def: function (id) {
+      var M6 = this._p6(), d = this._defBase(id) || (M6 ? this._p6Def(id) : null);
+      return d && M6 ? M6.nomear(id, d) : d;
+    },
+    _defBase: function (id) {
       var self = this;
       if (/^d2p-/.test(id)) {
         var nv = null; this.niveis().forEach(function (n) { if (self.idPlanta(n.id) === id) nv = n; });
@@ -97,34 +102,93 @@
         if (c && c.dados) { var cx = D2().caixa(c.dados); if (cx) e.escala = D2().escalaQueCabe(cx.x1 - cx.x0, cx.y1 - cx.y0); }
         this.estado().estilos[id] = e;
       }
-      return D2().normEstilo(e);
+      var en = D2().normEstilo(e), M6 = this._p6();
+      return M6 ? M6.sobreporEstilo(id, en) : en;   /* P6: a escala da vista (ou do modelo de vista ligado) */
     },
 
     /* ----------------------------------------------------------- dados */
     _extrair: function (d) {
       var b = B(); if (!b || !b.vista2d) return { ok: false, erro: "O visualizador 3D ainda não abriu." };
+      if (this._p6()) { var r6 = this._p6Extrair(d, b); if (r6) return r6; }   /* P6: V/G, faixa, forro, recorte */
       if (d.tipo === "planta") return b.vista2d({ tipo: "planta", yCorte: d.nivel.y + d.altura, yFundo: d.nivel.y - d.abaixo });
       var c = d.corte;
       return b.vista2d({ tipo: "corte", ax: c.ax, az: c.az, bx: c.bx, bz: c.bz, inv: !!c.inv, prof: c.prof > 0 ? c.prof : null });
     },
     /* o que o desenho leva além do modelo: marcas de corte (planta) e níveis (corte) */
     _anotar: function (d, dados) {
+      if (d.tipo === "desenho") return { tipo: "desenho", cortes: dados.cortes || [], linhas: dados.linhas || [], linhasK: dados.linhasK };   /* P6: vista de desenho */
+      var out6 = this._anotarBase(d, dados);
+      if (this._p6()) this._p6Anotar(d, dados, out6);   /* P6: chave de estilo das arestas e as marcas das vistas novas */
+      return out6;
+    },
+    _anotarBase: function (d, dados) {
       var self = this, out = { tipo: dados.tipo, cortes: dados.cortes, linhas: dados.linhas };
+      if (dados.portas && dados.portas.length) out.portas = dados.portas;   /* PORTA: folha aberta + arco do giro (js/simboloporta.js) */
       if (d.tipo === "planta") {
         out.cad = this._cadDesenho(d.nivel.id);
+        /* B5: instalações por cima, na cor do sistema (js/biminst.js planta) */
+        try {
+          var b5 = B(), I5 = global.BimInst;
+          if (I5 && b5 && b5.editarEstado) {
+            var e5 = b5.editarEstado();
+            if (e5 && e5.estado && e5.estado.instalacoes && (e5.estado.instalacoes.trechos.length || e5.estado.instalacoes.pecas.length))
+              /* faixa das instalações: até 0,80 m ABAIXO do nível (o esgoto e o pluvial
+                 correm sob o piso e são desenhados na planta do pavimento, como no
+                 projeto hidrossanitário) e até 3 m acima do corte (forro/laje: tracejado) */
+              out.inst = I5.planta(e5.estado, { yFundo: d.nivel.y - Math.max(d.abaixo, 0.8), yCorte: d.nivel.y + d.altura, yTopo: d.nivel.y + d.altura + 3, rede: I5.rede(e5.estado, b5.familiaAvaliar),
+                legenda: !!(global.BimInstUI && global.BimInstUI.legendaLigada && global.BimInstUI.legendaLigada()) });   /* P12: legenda de tubulação (ligável) */
+          }
+        } catch (eI5) {}
         out.marcas = this.estado().cortes.map(function (c) {
           var dx = c.bx - c.ax, dz = c.bz - c.az, L = Math.sqrt(dx * dx + dz * dz) || 1, nx = dz / L, nz = -dx / L;
           if (c.inv) { nx = -nx; nz = -nz; }
           return { id: c.id, letra: c.letra, a: [c.ax, c.az], b: [c.bx, c.bz], olhar: [nx, nz] };
         });
+        /* B3 (prévia do modelador): as COTAS PERMANENTES do editor entram na planta — o plano (x, z)
+           do mundo é o (x, y) do desenho. Só leitura: a cota mora nas ops do editor. */
+        try {
+          var bz = B(), ez = (global.BimPrevia && global.BimPrevia.modelador() && bz && bz.editarEstado) ? bz.editarEstado() : null;
+          out.cotasModelo = ((ez && ez.estado && ez.estado.cotas) || []).map(function (c) { return { a: [c.a.x, c.a.z], b: [c.b.x, c.b.z], off: c.off, valor: c.valor }; });
+        } catch (eCz) { out.cotasModelo = []; }
+        /* P2-D (js/bimambienteui.js, prévia do modelador): os AMBIENTES do nível —
+           identificador (nome; número · área), esquema de cores e legenda */
+        try {
+          var AU = global.BimAmbienteUI;
+          if (AU && AU.anotarPlanta) { var am = AU.anotarPlanta(d, this.estilo(d.id), this.niveis()); if (am) out.ambientes = am; }
+        } catch (eAm) {}
+        /* P5 (js/bimanot.js, prévia do modelador): identificadores (porta P01, parede PA-1…) — texto do registro */
+        try { var AN5 = global.BimAnot; if (AN5 && AN5.anotarPlanta) { var an5 = AN5.anotarPlanta(d, this.estilo(d.id)); if (an5) out.anotacao = an5; } } catch (eAn5) {}
+        /* P11 (js/bimterrenoui.js): curvas de nível, rótulos, divisa, plataforma e o norte — como vínculo em meio-tom */
+        try { if (global.BimTerrenoUI && global.BimTerrenoUI.ativo()) out.cad = (out.cad || []).concat(global.BimTerrenoUI.anotarPlanta(d, this.niveis())); } catch (eT11) {}
       } else {
         out.niveis = this.niveis().map(function (n) { return { nome: n.nome, y: -n.y, cota: n.y }; });
       }
+      /* EIXOS da grade (B2, modelador): na planta a linha inteira; no corte, onde
+         o eixo cruza a linha do corte vira uma vertical com a bolinha em cima */
+      var eixos = [];
+      try { var ee = B() && B().editarEstado ? B().editarEstado() : null; eixos = (ee && ee.estado && ee.estado.eixos) || []; } catch (eE) { eixos = []; }
+      if (eixos.length) {
+        if (d.tipo === "planta") out.eixos = eixos.map(function (x) { return { id: x.id, nome: x.nome, a: [x.x0, x.z0], b: [x.x1, x.z1] }; });
+        else {
+          var c = d.corte, dx = c.bx - c.ax, dz = c.bz - c.az, L = Math.sqrt(dx * dx + dz * dz) || 1, nx = dz / L, nz = -dx / L;
+          if (c.inv) { nx = -nx; nz = -nz; }
+          out.eixos = [];
+          eixos.forEach(function (x) {
+            var ex = x.x1 - x.x0, ez = x.z1 - x.z0, den = dx * ez - dz * ex; if (Math.abs(den) < 1e-9) return;
+            var r = ((x.x0 - c.ax) * dz - (x.z0 - c.az) * dx) / den; if (r < -1e-6 || r > 1 + 1e-6) return;   /* o eixo não cruza o corte */
+            var X = x.x0 + r * ex, Z = x.z0 + r * ez;
+            out.eixos.push({ id: x.id, nome: x.nome, x: (X - c.ax) * (-nz) + (Z - c.az) * nx });
+          });
+        }
+      }
+      /* P7 (js/bimanot2dui.js, prévia do modelador): a anotação DESTA vista */
+      try { var A7 = global.BimAnot2DUI; if (A7 && A7.anotarVista) { var a7 = A7.anotarVista(d); if (a7) out.anotP7 = a7; } } catch (eA7) {}
       return out;
     },
 
     /* ------------------------------------------------------------ tela */
     montar: function (tela, id) {
+      if (/^d2t-/.test(String(id))) return !!(global.BimTabelaUI && global.BimTabelaUI.montar(tela, id));   /* P5: a TABELA abre numa aba de vista (js/bimtabelaui.js) */
       var d = this.def(id); if (!tela || !d) return false;
       var c = this._cache[id] || (this._cache[id] = {});
       c.tela = tela;
@@ -134,7 +198,7 @@
       this._ligarInteracao(v, id);
       return this.redesenhar(id, !c.dados);
     },
-    desmontar: function (id) { delete this._cache[id]; if (this._pick && this._pick.id === id) this._pick = null; },
+    desmontar: function (id) { if (/^d2t-/.test(String(id)) && global.BimTabelaUI) global.BimTabelaUI.desmontar(id); /* P5 */ delete this._cache[id]; if (this._pick && this._pick.id === id) this._pick = null; },
     /* refaz o SVG (e, com `recalcular`, extrai de novo do modelo) */
     redesenhar: function (id, recalcular) {
       var d = this.def(id), c = this._cache[id]; if (!d || !c || !c.el) return false;
@@ -143,13 +207,15 @@
         if (!r || !r.ok) { c.el.innerHTML = '<div class="d2-vazio">' + ((r && r.erro) || "Não consegui gerar o desenho.") + "</div>"; c.dados = null; return false; }
         c.dados = r; c.info = r.info;
       }
-      var res = D2().svg(this._anotar(d, c.dados), this.estilo(id), { titulo: d.nome });
+      var ex = { titulo: d.nome }, M6 = this._p6(); if (M6) M6.extraSvg(id, c.dados, ex);   /* P6: estilos de objeto RA */
+      var res = D2().svg(this._anotar(d, c.dados), this.estilo(id), ex);
       var vbAnt = c.vb;
       c.el.innerHTML = res.svg;
       c.svg = c.el.querySelector("svg");
       c.vbTotal = res.vb;
       if (vbAnt && !recalcular) this._aplicarVb(id, vbAnt); else this._aplicarVb(id, res.vb);
       if (this._pick && this._pick.id === id) c.el.setAttribute("data-d2-pick", "1");
+      try { if (global.BimPlantaModelar && global.BimPlantaModelar.aposDesenhar) global.BimPlantaModelar.aposDesenhar(id); } catch (ePM) {}   /* PLANTA: o elástico volta por cima do desenho novo */
       return true;
     },
     _aplicarVb: function (id, vb) {
@@ -158,6 +224,15 @@
       c.svg.setAttribute("viewBox", vb.x + " " + vb.y + " " + vb.w + " " + vb.h);
     },
     ajustar: function (id) { var c = this._cache[id]; if (c && c.vbTotal) this._aplicarVb(id, c.vbTotal); },
+    /* P2-D: o modelo mudou — refaz o desenho do modelo SEM perder o zoom (o
+       "Atualizar desenho" volta ao enquadramento; este não) */
+    atualizar: function (id) {
+      var c = this._cache[id]; if (!c || !c.el) return false;
+      var vb = c.vb ? clone(c.vb) : null, ok = this.redesenhar(id, true);
+      if (ok && vb) this._aplicarVb(id, vb);
+      return ok;
+    },
+    plantasAbertas: function () { return Object.keys(this._cache).filter(function (k) { return /^d2p-/.test(k); }); },
     _ptSvg: function (id, ev) {
       var c = this._cache[id]; if (!c || !c.svg || !c.svg.getScreenCTM) return null;
       var m = c.svg.getScreenCTM(); if (!m) return null;
@@ -178,6 +253,25 @@
       v.addEventListener("pointerdown", function (ev) {
         var c = self._cache[id]; if (!c || !c.vb) return;
         if (self._pick && self._pick.id === id && ev.button === 0) { self._clicarPick(id, ev); return; }
+        /* P7 (js/bimanot2dui.js): ferramenta de anotação armada, ou clique numa anotação (seleciona) */
+        var A7 = global.BimAnot2DUI;
+        if (A7 && A7.clique2d && ev.button === 0 && A7.clique2d(id, ev, self._ptSvg(id, ev))) return;
+        /* PLANTA (js/bimplantamodelar.js): ferramenta de modelar armada (parede, porta, laje, pilar…) —
+           o clique na planta é o ponto dela, com snaps e ortogonal; o botão do meio continua arrastando */
+        var PMd = global.BimPlantaModelar;
+        if (PMd && PMd.clique2d && ev.button === 0 && PMd.clique2d(id, ev, self._ptSvg(id, ev))) return;
+        var M6 = self._p6();   /* P6: ferramentas (recorte, chamada, linha, elevação interior) e as marcas das vistas novas */
+        if (M6 && ev.button === 0) {
+          if (M6.clique2d(id, ev, self._ptSvg(id, ev))) return;
+          var mv = ev.target && ev.target.closest ? ev.target.closest("[data-d2-vista]") : null;
+          if (mv) { self.abrir(mv.getAttribute("data-d2-vista")); return; }
+        }
+        /* P2-D (js/bimambienteui.js): com Ambiente/Separador armado o clique na planta é o
+           ponto; sem ferramenta, o clique no identificador seleciona o ambiente */
+        var AU = global.BimAmbienteUI;
+        if (AU && AU.clique2d && ev.button === 0 && AU.clique2d(id, ev, self._ptSvg(id, ev))) return;
+        var AN5 = global.BimAnot;   /* P5: Identificar por categoria (clique na peça) e clique na etiqueta seleciona */
+        if (AN5 && AN5.clique2d && ev.button === 0 && AN5.clique2d(id, ev, self._ptSvg(id, ev))) return;
         var marca = ev.target && ev.target.closest ? ev.target.closest("[data-d2-corte]") : null;
         if (marca && ev.button === 0) { self.abrir(self.idCorte(marca.getAttribute("data-d2-corte"))); return; }
         if (ev.button !== 0 && ev.button !== 1) return;
@@ -188,13 +282,21 @@
       });
       v.addEventListener("pointermove", function (ev) {
         if (self._pick && self._pick.id === id && self._pick.pts.length === 1) self._mostrarPick(id, ev);
+        var AU = global.BimAmbienteUI;   /* P2-D: o realce da região antes do clique */
+        if (!arr && AU && AU.mover2d) AU.mover2d(id, ev, self._ptSvg(id, ev));
+        if (!arr && global.BimAnot2DUI && global.BimAnot2DUI._f) global.BimAnot2DUI.mover2d(id, ev, self._ptSvg(id, ev));   /* P7: o elástico da anotação */
+        if (!arr && global.BimPlantaModelar && global.BimPlantaModelar.mover2d) global.BimPlantaModelar.mover2d(id, ev, self._ptSvg(id, ev));   /* PLANTA: snap, elástico e a forma */
         if (!arr) return;
         var dx = (ev.clientX - arr.x) * arr.s, dy = (ev.clientY - arr.y) * arr.s;
         self._aplicarVb(id, { x: arr.vb.x - dx, y: arr.vb.y - dy, w: arr.vb.w, h: arr.vb.h });
       });
       function solta() { arr = null; v.removeAttribute("data-d2-arrasta"); }
       v.addEventListener("pointerup", solta); v.addEventListener("pointercancel", solta);
-      v.addEventListener("dblclick", function () { self.ajustar(id); });
+      v.addEventListener("dblclick", function () {
+        /* PLANTA: com a ferramenta de modelar armada o duplo clique é ponto, não "enquadrar" */
+        if (global.BimPlantaModelar && global.BimPlantaModelar.ocupado && global.BimPlantaModelar.ocupado()) return;
+        self.ajustar(id);
+      });
     },
 
     /* --------------------------------------------- traçar corte na planta */
@@ -272,7 +374,7 @@
     abrir: function (id) { if (this._cfg.abrir) this._cfg.abrir(id, (this.def(id) || {}).nome || id); },
 
     /* ------------------------------------------ vínculo CAD (DWG/DXF) na planta
-     * Como o "Vincular CAD" do Revit: o desenho fica por baixo da planta, em
+     * Vincular CAD: o desenho fica por baixo da planta, em
      * cinza, com deslocamento e rotação próprios. O que fica gravado:
      *   estado.cad[nivelId] = [{ id, nome, w, h, dx, dy, rot, vis, n, nt, cortado }]
      *   e as LINHAS numa chave separada (orcapro:bim:cad:<obra>:<id>) — um DWG
@@ -350,7 +452,9 @@
 
     /* -------------------------------------------- Propriedades da vista */
     props: function (id) {
+      if (/^d2t-/.test(String(id))) return global.BimTabelaUI ? global.BimTabelaUI.propsVista(id) : null;   /* P5: Propriedades da tabela */
       var self = this, d = this.def(id); if (!d) return null;
+      var M6 = this._p6(); if (M6 && d.tipo === "desenho") return M6.propsDesenho(id, d);   /* P6: vista de desenho */
       var e = this.estilo(id), D = D2(), c = this._cache[id] || {};
       function op(obj) { return Object.keys(obj).map(function (k) { return { id: k, rotulo: typeof obj[k] === "string" ? obj[k] : obj[k].rotulo }; }); }
       var secoes = [
@@ -383,6 +487,10 @@
           { id: "inv", rotulo: "Olhar para o outro lado", tipo: "sim-nao", valor: !!d.corte.inv }
         ] });
       }
+      /* P2-D: "Esquema de cores" e identificadores de ambiente da planta (js/bimambienteui.js) */
+      if (d.tipo === "planta" && global.BimAmbienteUI && global.BimAmbienteUI.secaoVista) {
+        try { var sa = global.BimAmbienteUI.secaoVista(e); if (sa) secoes.push(sa); } catch (eSa) {}
+      }
       if (d.tipo === "planta") {
         var vc = [];
         this.cadLista(d.nivel.id).forEach(function (v) {
@@ -406,13 +514,15 @@
       else ident.push({ id: "excluir", rotulo: "Corte", tipo: "botao", rotuloBotao: "Excluir este corte", fn: function () { self._pedirExclusao(d.corte); } });
       if (c.info) ident.push({ id: "info", rotulo: "Desenho", leitura: true, valor: (c.dados ? c.dados.cortes.length : 0) + " contornos · " + (c.dados ? c.dados.linhas.length : 0) + " linhas · " + c.info.ms + " ms" });
       secoes.push({ nome: "Identidade", params: ident });
-      return {
+      var out = {
         daVista: true, semEditarTipo: true, titulo: d.nome, icone: d.tipo === "planta" ? "planta" : "corte", secoes: secoes,
         onMudar: function (pid, valor) { self._mudar(id, pid, valor); return self.props(id); }
       };
+      return M6 ? M6.estenderProps(id, d, out) : out;   /* P6: modelo de vista, V/G, faixa, recorte, nome */
     },
     _mudar: function (id, pid, valor) {
       var d = this.def(id); if (!d) return;
+      var M6 = this._p6(); if (M6 && M6.mudar(id, pid, valor)) return;   /* P6 */
       var e = this.estado();
       var mc = /^cad-(\w+)-(vis|dx|dy|rot)$/.exec(pid);
       if (mc) {
@@ -456,6 +566,164 @@
           { texto: "Excluir corte", classe: "danger", onClick: function () { UI.fecharModal(); if (self._cfg.fechar) self._cfg.fechar(self.idCorte(c.id)); self.excluirCorte(c.id); toast("Corte " + c.letra + " excluído.", "ok"); } }
         ]);
       }
+    },
+
+    /* =====================================================================
+     * P6 — VISTAS NOVAS (Frente C do plano do BIM): elevação
+     * (as 4 da construção + interior), planta de forro refletido, planta
+     * estrutural, vista de desenho e chamada de detalhe. O OBJETO de cada vista
+     * (escala, modelo, V/G, faixa, recorte) mora no js/bimmodelovista.js, com
+     * id `d2v-…`; aqui fica o que é do DESENHO: a definição para o BIM.vista2d,
+     * as marcas nas vistas-mãe e a criação. Sem a prévia do modelador, `_p6()`
+     * é nulo e nada disto roda.
+     * ===================================================================== */
+    _p6: function () { var M = global.BimModeloVista; return M && M.ativo && M.ativo() ? M : null; },
+    _p6Def: function (id, prof) {
+      var M = this._p6(); if (!M || !/^d2v-/.test(String(id)) || (prof || 0) > 4) return null;
+      var v = M.estado().vistas[id]; if (!v) return null;
+      if (v.tipo === "planta" || v.tipo === "forro" || v.tipo === "estrutural") {
+        var nv = null; this.niveis().forEach(function (n) { if (String(n.id) === String(v.nivelId)) nv = n; });
+        if (!nv) return null;
+        var f = M.efetivo(v, M.estado()).faixa || M.FAIXA_PADRAO[v.tipo];
+        return { id: id, tipo: "planta", p6: v.tipo, nome: v.nome, nivel: nv, altura: f.corte, abaixo: Math.max(0, -Math.min(f.inf, f.prof)), topo: f.sup };
+      }
+      if ((v.tipo === "corte" || v.tipo === "elevacao") && v.linha) {
+        return { id: id, tipo: "corte", p6: v.tipo, nome: v.nome, corte: { id: id, letra: v.marca || "", ax: v.linha.ax, az: v.linha.az, bx: v.linha.bx, bz: v.linha.bz, inv: !!v.linha.inv, prof: v.linha.prof || 0 } };
+      }
+      if (v.tipo === "chamada" && v.paiId && v.paiId !== id && v.ret) {
+        var pai = /^d2v-/.test(v.paiId) ? this._p6Def(v.paiId, (prof || 0) + 1) : this._defBase(v.paiId);
+        if (!pai || pai.tipo === "desenho") return null;
+        var o = {}; Object.keys(pai).forEach(function (k) { o[k] = pai[k]; });
+        o.id = id; o.p6base = pai.p6 || null; o.p6 = "chamada"; o.nome = v.nome; o.pai = v.paiId; o.ret = v.ret;
+        return o;
+      }
+      if (v.tipo === "desenho") return { id: id, tipo: "desenho", p6: "desenho", nome: v.nome };
+      return null;
+    },
+    /* extrai pelo BIM.vista2d com o V/G, a faixa (4 planos) e o forro refletido da vista */
+    _p6Extrair: function (d, b) {
+      var M = this._p6(); if (!M) return null;
+      if (d.tipo === "desenho") {
+        var v = M.estado().vistas[d.id] || {}, L = [], K = [], est = {};
+        Object.keys(v.linhas2d || {}).forEach(function (k) {
+          var q = v.linhas2d[k], ch = "OST_Lines|p" + q.pena;
+          L.push([q.x1, q.y1, q.x2, q.y2]); K.push(ch);
+          if (!est[ch]) { est[ch] = M.estiloCategoria("OST_Lines", M.vistaPadrao("desenho"), M.dados().estilos, null); est[ch].proj = q.pena; }
+        });
+        return { ok: true, tipo: "desenho", cortes: [], linhas: L, linhasK: K, p6Estilos: est, info: { ms: 0 } };
+      }
+      var def, ext = M.defExtracao(d.id);
+      if (d.tipo === "planta") {
+        var vv = d.p6 === "chamada" ? null : M.estado().vistas[d.id], ef = vv ? M.efetivo(vv, M.estado()) : null, f = ef && ef.faixa;
+        var corte = f ? f.corte : d.altura, fundo = f ? Math.min(f.inf, f.prof) : -d.abaixo, topo = f ? f.sup : (d.topo != null ? d.topo : 2.3);
+        def = (d.p6 === "forro" || d.p6base === "forro") ? { tipo: "forro", yCorte: d.nivel.y + corte, yTopo: d.nivel.y + Math.max(topo, corte + 0.1) }
+                                                         : { tipo: "planta", yCorte: d.nivel.y + corte, yFundo: d.nivel.y + fundo };
+      } else {
+        var c = d.corte;
+        def = { tipo: "corte", ax: c.ax, az: c.az, bx: c.bx, bz: c.bz, inv: !!c.inv, prof: c.prof > 0 ? c.prof : null };
+      }
+      Object.keys(ext).forEach(function (k) { def[k] = ext[k]; });
+      return M.posExtracao(d.id, b.vista2d(def), d.p6 === "chamada" ? d.ret : null);
+    },
+    /* o que o desenho leva da P6: a chave de estilo de cada aresta e as marcas */
+    _p6Anotar: function (d, dados, out) {
+      var M = this._p6(); if (!M) return out;
+      out.linhasK = dados.linhasK;
+      var mk = this._p6Marcas(d), v = M.estado().vistas[d.id];
+      if (v && dados.p6Recorte && M.efetivo(v, M.estado()).recorte.visivel) { var r = dados.p6Recorte; mk.push({ tipo: "recorte", x0: r.x0, y0: r.y0, x1: r.x1, y1: r.y1 }); }
+      if (d.p6 === "chamada") {
+        out.marcas = []; out.eixos = [];
+        var R = d.ret;
+        if (out.ambientes && out.ambientes.itens) out.ambientes.itens = out.ambientes.itens.filter(function (it) { return it.x >= R.x0 && it.x <= R.x1 && it.y >= R.y0 && it.y <= R.y1; });
+      }
+      if (mk.length) out.marcasP6 = mk;
+      return out;
+    },
+    /* as marcas das vistas P6 que aparecem nesta vista */
+    _p6Marcas: function (d) {
+      var M = this._p6(), out = []; if (!M) return out;
+      var est = M.estado();
+      function olhar(L) { var dx = L.bx - L.ax, dz = L.bz - L.az, n = Math.sqrt(dx * dx + dz * dz) || 1, nx = dz / n, nz = -dx / n; return L.inv ? [-nx, -nz] : [nx, nz]; }
+      Object.keys(est.vistas).forEach(function (k) {
+        var v = est.vistas[k];
+        if (d.tipo === "planta" && d.p6 !== "chamada" && v.linha) {
+          if (v.tipo === "elevacao" && (!v.interior || String(v.nivelId) === String(d.nivel && d.nivel.id))) {
+            var L = v.linha, cx = v.ponto ? v.ponto.x : (L.ax + L.bx) / 2, cy = v.ponto ? v.ponto.z : (L.az + L.bz) / 2;
+            out.push({ tipo: "elevacao", id: k, x: cx, y: cy, dir: olhar(L), rotulo: v.numero || "" });
+          }
+          if (v.tipo === "corte") out.push({ tipo: "corte", id: k, letra: v.marca || "?", a: [v.linha.ax, v.linha.az], b: [v.linha.bx, v.linha.bz], olhar: olhar(v.linha) });
+        }
+        if (v.tipo === "chamada" && v.paiId === d.id && v.ret) out.push({ tipo: "chamada", id: k, x0: v.ret.x0, y0: v.ret.y0, x1: v.ret.x1, y1: v.ret.y1, rotulo: v.numero || "" });
+      });
+      return out;
+    },
+    _p6Depois: function (v, abrir, msg) {
+      var self = this;
+      Object.keys(this._cache).forEach(function (k) { var dd = self.def(k); if (dd && dd.tipo !== "desenho") self.redesenhar(k, false); });
+      this._avisarMudou();
+      if (abrir !== false) this.abrir(v.id);
+      if (msg) { toast(msg, "ok"); status(msg); }
+      return v;
+    },
+    /* ELEVAÇÃO da construção: a marca fica FORA do modelo olhando para ele
+       (norte = para cima na planta = −z). A linha A→B dá o X da vista; a
+       normal (olhar) aponta para o modelo; profundidade = o modelo inteiro. */
+    linhaElevacao: function (dir, caixa) {
+      var mn = caixa.min, mx = caixa.max, x0 = mn[0], x1 = mx[0], z0 = mn[2], z1 = mx[2], m = 1.0;
+      var af = Math.max(2, 0.12 * Math.max(x1 - x0, z1 - z0)), lx = x1 - x0, lz = z1 - z0;
+      if (dir === "sul") return { ax: x0 - m, az: z1 + af, bx: x1 + m, bz: z1 + af, inv: false, prof: lz + af + 2 };
+      if (dir === "norte") return { ax: x1 + m, az: z0 - af, bx: x0 - m, bz: z0 - af, inv: false, prof: lz + af + 2 };
+      if (dir === "leste") return { ax: x1 + af, az: z1 + m, bx: x1 + af, bz: z0 - m, inv: false, prof: lx + af + 2 };
+      return { ax: x0 - af, az: z0 - m, bx: x0 - af, bz: z1 + m, inv: false, prof: lx + af + 2 };
+    },
+    criarElevacao: function (dir, opts) {
+      var M = this._p6(); if (!M) return null;
+      var p = B() && B().pavimentos2d ? B().pavimentos2d() : null;
+      if (!p || !p.caixa) { toast("Abra um modelo primeiro: a elevação é desenhada dele.", "aviso"); return null; }
+      if (["norte", "sul", "leste", "oeste"].indexOf(dir) < 0) dir = "sul";
+      var NOMES = { norte: "Elevação Norte", sul: "Elevação Sul", leste: "Elevação Leste", oeste: "Elevação Oeste" };
+      var v = M.criar("elevacao", { nome: NOMES[dir], linha: this.linhaElevacao(dir, p.caixa), numero: { norte: "N", sul: "S", leste: "L", oeste: "O" }[dir] });
+      return this._p6Depois(v, opts && opts.abrir, "“" + v.nome + "” criada: a marca está nas plantas e a vista em Navegador › Elevações.");
+    },
+    /* ELEVAÇÃO INTERIOR: o clique dentro do cômodo; olha para a parede CORTADA mais
+       perto; a região de recorte vai de uma parede lateral à outra e do piso ao teto */
+    criarElevacaoInterior: function (idPlanta, pt) {
+      var M = this._p6(), d = this.def(idPlanta), c = this._cache[idPlanta];
+      if (!M || !d || d.tipo !== "planta" || !c || !c.dados) { toast("A elevação interior é marcada numa planta aberta.", "aviso"); return null; }
+      var dirs = [[0, -1], [0, 1], [1, 0], [-1, 0]], melhor = null, dist = Infinity;
+      dirs.forEach(function (q) { var t = M.raioAteCorte(c.dados.cortes, pt, q); if (t < dist) { dist = t; melhor = q; } });
+      if (!melhor || !isFinite(dist)) { toast("Clique DENTRO de um cômodo fechado por paredes.", "aviso"); return null; }
+      var u = [-melhor[1], melhor[0]], sB = M.raioAteCorte(c.dados.cortes, pt, u), sA = M.raioAteCorte(c.dados.cortes, pt, [-u[0], -u[1]]);
+      if (!isFinite(sA) || !isFinite(sB)) { toast("Não achei as paredes dos lados: clique dentro de um cômodo fechado.", "aviso"); return null; }
+      var A = [pt[0] - u[0] * sA, pt[1] - u[1] * sA], Bp = [pt[0] + u[0] * sB, pt[1] + u[1] * sB], nv = d.nivel;
+      var acima = this.niveis().filter(function (n) { return n.y > nv.y + 0.5; }).map(function (n) { return n.y; }).sort(function (a, b) { return a - b; })[0];
+      var topo = (acima != null ? acima : nv.y + 3.0) + 0.15;
+      var n = Object.keys(M.estado().vistas).filter(function (k) { return M.estado().vistas[k].interior; }).length + 1;
+      var v = M.criar("elevacao", { nome: "Elevação interior " + n, interior: true, nivelId: nv.id, ponto: { x: pt[0], z: pt[1] }, numero: String(n),
+        linha: { ax: A[0], az: A[1], bx: Bp[0], bz: Bp[1], inv: false, prof: dist + 0.06 },
+        recorte: { ativo: true, visivel: false, x0: 0, y0: -topo, x1: sA + sB, y1: -(nv.y - 0.15) } });
+      return this._p6Depois(v, true, "“" + v.nome + "” criada, olhando para a parede a " + D2().fmtNum(dist, 2) + " m do clique.");
+    },
+    /* PLANTA DE FORRO REFLETIDO e PLANTA ESTRUTURAL de um nível (o modelo RA do tipo vem ligado) */
+    criarPlantaP6: function (tipo, nivel) {
+      var M = this._p6(); if (!M || !nivel) return null;
+      var rot = tipo === "forro" ? "Planta de forro — " : tipo === "estrutural" ? "Planta estrutural — " : "Planta baixa — ";
+      var v = M.criar(tipo, { nome: rot + nivel.nome, nivelId: nivel.id });
+      return this._p6Depois(v, true, "“" + v.nome + "” criada com o modelo de vista RA do tipo.");
+    },
+    criarDesenhoP6: function () {
+      var M = this._p6(); if (!M) return null;
+      var v = M.criar("desenho", { nome: "Vista de desenho" });
+      this._p6Depois(v, true, "“" + v.nome + "” criada. Em Propriedades: Desenhar linhas.");
+      try { M.armarPick(v.id, "linha"); } catch (e) {}
+      return v;
+    },
+    /* CHAMADA DE DETALHE: a região (coordenadas da vista-mãe) vira uma vista em escala maior */
+    criarChamada: function (idPai, ret) {
+      var M = this._p6(), pai = this.def(idPai); if (!M || !pai || pai.tipo === "desenho") return null;
+      var n = Object.keys(M.estado().vistas).filter(function (k) { return M.estado().vistas[k].tipo === "chamada"; }).length + 1;
+      var v = M.criar("chamada", { nome: "Detalhe " + n, paiId: idPai, ret: ret, numero: String(n) });
+      return this._p6Depois(v, true, "“" + v.nome + "” criada (1:" + v.escala + "): a marca está em " + pai.nome + ".");
     }
   };
 

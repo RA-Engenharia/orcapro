@@ -1,0 +1,95 @@
+/* =====================================================================
+ * bimbarraopcoes.css — a BARRA DE OPÇÕES da ferramenta (sob a fita do BIM)
+ * e a prévia de MODELAR NA PLANTA (js/bimbarraopcoes.js,
+ * js/bimplantamodelar.js). Só tokens da casca (--rv-*) e da planta
+ * (--d2-*): o tema escuro do BIM vem junto, sem cor escrita aqui. Só existe
+ * com a prévia do modelador (a barra não é criada sem ela).
+ * ===================================================================== */
+
+/* ------------------------------------------------------------- a barra */
+/* ⚠ ALTURA FIXA, UMA LINHA, nasce com a casca (js/gestao.js): a barra que aparecesse no 1º
+   comando, ou que quebrasse em duas linhas numa ferramenta e não na outra, mudaria a altura
+   do palco no meio do uso — o canvas do 3D se mede de novo e o clique já mirado cai fora (foi
+   o que a e2e-bim-b3 pegou). Tela estreita: rola na horizontal; a ordem põe à esquerda o que
+   se usa a cada traço (formas e precisão) e por último o que também está em Propriedades. */
+.bbo {
+  position: relative; flex: 0 0 auto; display: flex; align-items: center; gap: 4px;
+  height: 32px; box-sizing: border-box; padding: 0 8px; border-bottom: 1px solid var(--rv-linha-forte);
+  background: var(--rv-fita-bg); color: var(--rv-fita-tx); font-size: 12px; white-space: nowrap;
+}
+.bbo-corpo { display: flex; align-items: center; flex-wrap: nowrap; gap: 4px; flex: 1 1 auto; min-width: 0; height: 100%; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.bbo-corpo::-webkit-scrollbar { display: none; }
+.bbo-nome { font-weight: 600; padding-right: 6px; border-right: 1px solid var(--rv-linha); }
+.bbo-vazio { color: var(--rv-tx-fraco); font-weight: 500; border-right: 0; }
+.bbo-grupo { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 3px; padding-right: 5px; border-right: 1px solid var(--rv-linha); }
+.bbo-grupo:last-child { border-right: 0; }
+.bbo-rot { color: var(--rv-tx-fraco); margin-right: 2px; }
+.bbo-campo { display: inline-flex; align-items: center; gap: 4px; color: var(--rv-tx-fraco); }
+.bbo-campo input, .bbo-campo select {
+  height: 24px; padding: 0 4px; border: 1px solid var(--rv-linha-forte); border-radius: 3px;
+  background: var(--rv-tela); color: var(--rv-fita-tx); font-size: 12px; font-variant-numeric: tabular-nums;
+}
+.bbo-campo input { width: 4.5em; }
+.bbo-campo select { max-width: 8em; text-overflow: ellipsis; }
+.bbo-campo input:focus-visible, .bbo-campo select:focus-visible { outline: 2px solid var(--rv-foco); outline-offset: 0; }
+
+/* liga/desliga (Ortogonal, Snaps, Grade, Encadear) e os botões de forma */
+.bbo-liga, .bbo-menu-bt, .bbo-forma {
+  display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 6px;
+  border: 1px solid transparent; border-radius: 3px; background: transparent; color: var(--rv-fita-tx);
+  font: inherit; cursor: pointer;
+}
+.bbo-forma { width: 28px; justify-content: center; padding: 0; }
+.bbo-liga:hover, .bbo-menu-bt:hover, .bbo-forma:hover { background: var(--rv-hover); }
+.bbo-liga[aria-pressed="true"], .bbo-forma[aria-pressed="true"] { background: var(--rv-ativo); border-color: var(--rv-ativo-borda); }
+.bbo-liga:focus-visible, .bbo-menu-bt:focus-visible, .bbo-forma:focus-visible { outline: 2px solid var(--rv-foco); outline-offset: 1px; }
+.bbo-liga svg, .bbo-menu-bt svg, .bbo-forma svg { flex: 0 0 auto; }
+.bbo-so-seta { padding: 0 3px; margin-left: -4px; }
+.bbo-seta { font-size: 10px; color: var(--rv-tx-fraco); }
+
+/* menus (incrementos de ângulo, tipos de snap) */
+.bbo-pop {
+  position: absolute; top: 100%; z-index: 30; min-width: 170px; padding: 6px 10px;
+  border: 1px solid var(--rv-linha-forte); border-radius: 4px; background: var(--rv-painel-bg);
+  color: var(--rv-painel-tx); box-shadow: 0 6px 18px var(--rv-sombra); white-space: normal;
+}
+.bbo-pop-tit { font-weight: 600; margin-bottom: 4px; }
+.bbo-pop-item { display: flex; align-items: center; gap: 6px; padding: 2px 0; cursor: pointer; }
+.bbo-pop-nota { margin-top: 4px; color: var(--rv-tx-fraco); max-width: 200px; }
+/* a barra fica por cima do palco quando um menu abre (o overflow-x da barra cortaria o menu) */
+.bbo:has(.bbo-pop) { z-index: 30; }
+
+/* as opções de Mover/Copiar/Girar (js/bimprecisaoui.js) dentro da barra */
+.bbo-slot { display: inline-flex; align-items: center; }
+.bbo .bp-opcoes { position: static; transform: none; box-shadow: none; border: 0; background: transparent; padding: 0; color: inherit; font-size: 12px; }
+
+/* ------------------------------------------------------------- a planta */
+.d2-vista-tela[data-pm-ferr] { cursor: crosshair; }
+.pm-elastico { fill: none; stroke: var(--d2-sel); stroke-width: 1.5; }
+.pm-faixa { fill: var(--d2-sel); fill-opacity: .12; stroke: var(--d2-sel); stroke-width: 1; stroke-dasharray: 4 3; }
+.pm-fecho { fill: none; stroke: var(--d2-sel); stroke-width: 1; stroke-dasharray: 3 4; }
+.pm-forma { fill: none; stroke: var(--d2-sel); stroke-width: 1.5; stroke-dasharray: 6 3; }
+.pm-vert { fill: var(--d2-papel); stroke: var(--d2-sel); stroke-width: 1.5; }
+.pm-guia { fill: none; stroke: var(--d2-fraco); stroke-width: 1; stroke-dasharray: 2 4; }
+.pm-mira { stroke: var(--d2-sel); stroke-width: 1; }
+.pm-snap { fill: none; stroke: var(--d2-sel); stroke-width: 2; }
+.pm-snap-intersecao, .pm-snap-perpendicular { stroke-width: 2.2; }
+.pm-hospede { fill: var(--d2-sel); fill-opacity: .08; stroke: var(--d2-sel); stroke-width: 1.5; }
+.pm-vao { fill: var(--d2-papel); stroke: var(--d2-sel); stroke-width: 2; }
+.pm-folha { fill: none; stroke: var(--d2-sel); stroke-width: 2; }
+.pm-seta { cursor: pointer; }
+.pm-seta-fundo { fill: var(--d2-papel); stroke: var(--d2-sel); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.pm-seta path { fill: none; stroke: var(--d2-sel); stroke-width: 1.6; }
+.pm-seta:hover .pm-seta-fundo { fill: var(--d2-sel); }
+.pm-seta:hover path { stroke: var(--d2-papel); }
+
+/* comprimento · ângulo junto ao cursor, e a caixa de digitar */
+.pm-rot, .pm-dig {
+  position: absolute; z-index: 7; padding: 2px 6px; border: 1px solid var(--d2-sel); border-radius: 3px;
+  background: var(--d2-papel); color: var(--d2-tinta); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.pm-rot { pointer-events: none; }
+.pm-dig { display: none; align-items: center; gap: 8px; }
+.pm-dig label { display: inline-flex; align-items: center; gap: 4px; }
+.pm-dig input { width: 5em; height: 22px; padding: 0 4px; border: 1px solid var(--d2-fraco); border-radius: 3px; background: var(--d2-papel); color: var(--d2-tinta); font-size: 12px; }
+.pm-dig input:focus-visible { outline: 2px solid var(--d2-sel); outline-offset: 0; }

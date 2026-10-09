@@ -50,7 +50,13 @@
       return this._prefs;
     },
     gravarPrefs: function () { try { localStorage.setItem(CHAVE, JSON.stringify(this.prefs())); } catch (e) {} },
-    opcoes: function () { var p = this.prefs(); return { equipe: p.equipe, horasDia: p.horasDia, classeDe: global.SinapiMapa ? SinapiMapa.classeDe : null }; },
+    opcoes: function () {
+      var p = this.prefs(), o = { equipe: p.equipe, horasDia: p.horasDia, classeDe: global.SinapiMapa ? SinapiMapa.classeDe : null };
+      /* P10 (js/bimfases.js): a categoria da família (porta/janela demolida) e a fase da vista */
+      if (global.BIM && BIM.familiaCategoria) o.categoriaFamFases = function (id) { return BIM.familiaCategoria(id); };
+      try { if (global.BimP10UI && BimP10UI.ativo() && BimP10UI.fase) o.fase = BimP10UI.fase(); } catch (eF) {}
+      return o;
+    },
 
     /* ------------------------------------------------------------ BASE */
     baseCarregada: function () { return !!(global.Analitico && Analitico.carregado); },
@@ -199,16 +205,25 @@
     _elemento: function (id) {
       var est = global.BIM && BIM.editarEstado ? BIM.editarEstado() : null; if (!est) return null;
       var st = est.estado, el = (st.caixas || []).filter(function (c) { return c.id === id; })[0] || (st.coberturas || []).filter(function (c) { return c.id === id; })[0];
+      /* volume livre (B4): a classe de serviço segue a CATEGORIA escolhida
+         (volume "parede" oferece alvenaria; "genérico", as medidas de volume) */
+      var vol = !el && (st.volumes || []).filter(function (c) { return c.id === id; })[0];
+      if (vol) return { el: vol, tipo: vol.categoria && vol.categoria !== "generico" ? vol.categoria : "volume", areaVaos: 0, volume: true };
+      /* P3: telhado, borda do telhado e fundação (js/bimtelhado.js, js/bimfundacao.js) — o tipo é a categoria do registro */
+      if (!el) el = ["telhados", "bordas", "fundacoes"].map(function (k) { return (st[k] || []).filter(function (c) { return c && c.id === id; })[0]; }).filter(Boolean)[0] || null;
       if (!el) return null;
       var vaos = global.BimEdit && BimEdit.vaosDasParedes ? BimEdit.vaosDasParedes(st, BIM.familiaAvaliar) : {};
       return { el: el, tipo: el.tipo || "cobertura", areaVaos: vaos[id] ? vaos[id].areaVaos : 0 };
     },
-    MEDIDAS_POR_TIPO: {
-      parede: ["area", "areaBruta", "volume", "comprimento", "areaForma", "un", "kgPorM3"],
-      laje: ["area", "volume", "comprimento", "areaForma", "un", "kgPorM3"],
-      pilar: ["volume", "areaForma", "comprimento", "un", "kgPorM3"],
-      viga: ["volume", "areaForma", "comprimento", "un", "kgPorM3"],
-      cobertura: ["area", "areaProjecao", "comprimento", "volume", "un"]
+    /* P1-D: as medidas que o orçamento oferece por categoria vêm do REGISTRO
+       (js/bimparam.js, as definições com `orc`) — OrcModelo.medidasDaCategoria.
+       Só o volume livre (B4), que não é categoria do registro, fica aqui:
+       área = superfície da malha; comprimento = caminho da varredura ou altura
+       da extrusão. A lista na tela só oferece a medida que a peça TEM. */
+    MEDIDAS_VOLUME: ["volume", "area", "areaProjecao", "comprimento", "un", "kgPorM3"],
+    medidasPorTipo: function (tipo, volume) {
+      if (volume) return this.MEDIDAS_VOLUME;
+      return (global.OrcModelo && OrcModelo.medidasDaCategoria ? OrcModelo.medidasDaCategoria(tipo) : null) || ["area", "volume", "comprimento", "un"];
     },
     secoesElemento: function (id) {
       if (!this.ativo() || !global.OrcModelo || !global.BimEdit) return [];
@@ -218,7 +233,7 @@
       var ps = [];
       if (!base) ps.push(this._botaoBase());
       ps.push(ro("orc:med", "Medidas", ["area", "volume", "comprimento", "areaForma"].filter(function (k) { return med[k] != null; }).map(function (k) { return ROT[k] + " " + fmt(med[k], 2) + " " + unTela(MU[k]); }).join(" · ")));
-      var meds = this.MEDIDAS_POR_TIPO[x.tipo] || ["area", "volume", "comprimento", "un"];
+      var meds = this.medidasPorTipo(x.tipo, x.volume).filter(function (k) { return k === "kgPorM3" ? med.volume != null : med[k] != null; });
       (el.servicos || []).forEach(function (s, i) {
         var cl = M ? M.classeDe(s.codigo) : null, n = i === 0 ? "Principal" : "Serviço " + (i + 1);
         var un = s.medida === "kgPorM3" ? "kg" : MU[s.medida];
@@ -250,8 +265,8 @@
         if (cl.medida === "kgPorM3") toast("Armação: informe a TAXA de aço (kg/m³) do projeto estrutural no campo ao lado — o modelo não sabe a armadura.", "aviso", 8000);
       } else if (pid === "orc:edig") {
         var cd = String(valor || "").trim(); if (!cd) return false;
-        var pad = { parede: "area", laje: "area", cobertura: "area", pilar: "volume", viga: "volume" };
-        lista.push({ codigo: cd, medida: pad[x.tipo] || "area", fator: 1 });
+        var pad = { parede: "area", laje: "area", cobertura: "area", pilar: "volume", viga: "volume", telhado: "area", fundacao: "volume", borda: "comprimento" };   /* P3: telhado, fundação, borda */
+        lista.push({ codigo: cd, medida: x.volume ? "volume" : (pad[x.tipo] || "area"), fator: 1 });
       } else return false;
       return BIM.elementoOrcar(id, lista);
     },
@@ -259,10 +274,117 @@
     mudar: function (uid, pid, valor) {
       var id = String(uid || "").replace(/^edit:/, "");
       if (/^orc:carregar$/.test(pid)) { this.carregarBase(); return true; }
+      if (/^acab:/.test(pid)) return this.mudarAmbiente(id, pid, valor);   /* P2-C: rascunho do acabamento (só grava no Aplicar) */
       var ehFam = /^f\d+$/.test(id);
       var ok = ehFam ? this.mudarFamilia(id, pid, valor) : this.mudarElemento(id, pid, valor);
       if (ok) this.aoMudarModelo();
       return ok;
+    },
+
+    /* ------------------------------------- P2-C: ACABAMENTO POR AMBIENTE
+     * Propriedades do ambiente › "Acabamentos": os 4 acabamentos
+     * (piso, base, parede, forro) + a composição de cada serviço (piso,
+     * contrapiso, rodapé, parede, teto). A escolha fica num RASCUNHO na tela
+     * até "Aplicar por ambiente", que grava UMA op ajustarAmbiente (serviços
+     * + textos) — Ctrl+Z desfaz tudo. As quantidades vêm do
+     * js/bimacabamento.js; as linhas, do OrcModelo.daAmbiente (as mesmas do
+     * painel Orçamento do modelo). */
+    _acab: {},
+    _ambiente: function (id) {
+      var est = global.BIM && BIM.editarEstado ? BIM.editarEstado() : null; if (!est) return null;
+      var a = (est.estado.ambientes || []).filter(function (x) { return x && String(x.id) === String(id); })[0];
+      return a ? { a: a, estado: est.estado } : null;
+    },
+    ehAmbiente: function (id) { return !!this._ambiente(String(id || "").replace(/^edit:/, "")); },
+    _rascunho: function (id, a) {
+      var r = this._acab[id], BA = global.BimAcabamento;
+      if (!r || !r.sujo) {
+        var tx = {}; ((BA && BA.ACABS) || []).forEach(function (x) { tx[x.campo] = a[x.campo] || ""; });
+        r = this._acab[id] = { servicos: JSON.parse(JSON.stringify(a.servicos || [])), textos: tx, sujo: false, codMedida: (r && r.codMedida) || "areaPiso" };
+      }
+      return r;
+    },
+    _quant: function (x) {
+      var BA = global.BimAcabamento; if (!BA) return null;
+      var vaos = global.BimEdit && BimEdit.vaosDasParedes ? BimEdit.vaosDasParedes(x.estado, BIM.familiaAvaliar) : {};
+      return BA.quantidades(x.estado, { avaliarFam: BIM.familiaAvaliar, vaos: vaos }).porId[String(x.a.id)] || null;
+    },
+    /* as composições de um item (piso, rodapé…): as classes do mapa, na unidade da medida, agrupadas pela classe */
+    _opcoesItem: function (it, atual) {
+      var self = this, M = global.SinapiMapa, un = global.BimEdit && BimEdit.MEDIDAS_AMBIENTE ? BimEdit.MEDIDAS_AMBIENTE[it.medida] : "", vistos = {}, out = [{ id: "", rotulo: "— sem composição —" }];
+      if (atual) { vistos[atual] = 1; out.push({ id: String(atual), rotulo: self.rotuloCod(atual) }); }
+      it.classes.forEach(function (cl) {
+        var nome = M && M.classes[cl] ? M.classes[cl].nome : cl;
+        self.candidatos(cl, un).forEach(function (c) { if (vistos[c]) return; vistos[c] = 1; out.push({ id: c, rotulo: self.rotuloCod(c), grupo: nome }); });
+      });
+      return out;
+    },
+    secoesAmbiente: function (id) {
+      if (!this.ativo() || !global.OrcModelo || !global.BimAcabamento || !global.BimEdit) return [];
+      var x = this._ambiente(id); if (!x) return [];
+      var self = this, BA = BimAcabamento, a = x.a, r = this._rascunho(String(id), a), base = this.base(), Q = this._quant(x), ps = [];
+      if (!base) ps.push(this._botaoBase());
+      ps.push(ro("acab:q", "Quantidades", BA.resumoTexto(Q, function (v) { return fmt(v, 2); }), Q && Q.portas && Q.portas.length ? "Rodapé sem " + Q.portas.length + " porta(s): " + Q.portas.map(function (p) { return fmt(p.largura, 2) + " m"; }).join(", ") : ""));
+      BA.ACABS.forEach(function (ac) { ps.push({ id: "acab:tx:" + ac.campo, rotulo: ac.nome, tipo: "texto", valor: r.textos[ac.campo] || "" }); });
+      /* as linhas do rascunho (o mesmo motor do painel): quantidade, custo, situação */
+      var linhas = OrcModelo.daAmbiente({ nome: a.nome, servicos: r.servicos }, Q, base, this.opcoes()).linhas;
+      BA.ITENS.forEach(function (it) {
+        var meus = [];
+        r.servicos.forEach(function (s, i) { if (BA.itemDoServico(s) === it) meus.push(i); });
+        meus.forEach(function (i, j) {
+          var s = r.servicos[i], rot = it.rotulo + (meus.length > 1 ? " " + (j + 1) : "") + (s.rotulo && s.rotulo !== it.rotulo ? " (" + String(s.rotulo).replace(/^[^—]*—\s*/, "") + ")" : "");
+          ps.push({ id: "acab:sv:" + i, rotulo: rot + " — composição", tipo: "lista", valor: s.codigo, opcoes: self._opcoesItem(it, s.codigo) });
+          var l = linhas.filter(function (q) { return q.servico === "a" + i; })[0];
+          if (l) ps = ps.concat(self._linhaResultado("acab:sv:" + i, l));
+          ps.push({ id: "acab:rm:" + i, rotulo: rot, tipo: "botao", rotuloBotao: "Tirar", fn: function () { self.mudarAmbiente(id, "acab:rm:" + i); self._repintarProps(); } });
+        });
+        if (!meus.length || it.id === "parede") ps.push({ id: "acab:add:" + it.id, rotulo: it.rotulo + (meus.length ? " — mais uma camada" : " — composição"), tipo: "lista", valor: "", opcoes: self._opcoesItem(it, null) });
+      });
+      if (global.ParedeCebola && ParedeCebola.receitas) ps.push({ id: "acab:receita", rotulo: "Camadas da parede (Parede-Cebola)", tipo: "lista", valor: "", opcoes: [{ id: "", rotulo: "— escolher a receita —" }].concat(ParedeCebola.receitas().map(function (k) { return { id: k.id, rotulo: k.rotulo }; })) });
+      ps.push({ id: "acab:cmed", rotulo: "Serviço por código — medida", tipo: "lista", valor: r.codMedida, opcoes: Object.keys(BA.MEDIDAS).map(function (k) { return { id: k, rotulo: BA.MEDIDAS[k].rotulo }; }) });
+      ps.push({ id: "acab:cod", rotulo: "Serviço por código", tipo: "texto", valor: "" });
+      var tot = 0, nOk = 0; linhas.forEach(function (l) { if (l.status === "ok") { tot += l.custo.total; nOk++; } });
+      ps.push(ro("acab:tot", "Total do ambiente", nOk ? moeda(tot) : "—"));
+      ps.push(ro("acab:st", "Situação", r.sujo ? "Rascunho — clique Aplicar por ambiente" : (r.servicos.length ? "Aplicado (" + r.servicos.length + " serviço(s))" : "Sem acabamento aplicado")));
+      ps.push({ id: "acab:aplicar", rotulo: "Acabamentos", tipo: "botao", rotuloBotao: "Aplicar por ambiente", fn: function () { self.aplicarAmbiente(id); } });
+      return [{ nome: "Acabamentos", params: ps }];
+    },
+    mudarAmbiente: function (id, pid, valor) {
+      var x = this._ambiente(id), BA = global.BimAcabamento; if (!x || !BA) return false;
+      var r = this._rascunho(String(id), x.a), L = r.servicos, m, v = String(valor == null ? "" : valor).trim();
+      function item(med) { for (var i = 0; i < BA.ITENS.length; i++) if (BA.ITENS[i].medida === med) return BA.ITENS[i]; return null; }
+      if ((m = /^acab:sv:(\d+)$/.exec(pid))) { if (!L[+m[1]]) return false; if (v) L[+m[1]].codigo = v; else L.splice(+m[1], 1); }
+      else if ((m = /^acab:rm:(\d+)$/.exec(pid))) { if (!L[+m[1]]) return false; L.splice(+m[1], 1); }
+      else if ((m = /^acab:add:(\w+)$/.exec(pid))) { var it = BA.itemPorId(m[1]); if (!it || !v) return false; L.push({ codigo: v, medida: it.medida, fator: 1, acab: it.acab, rotulo: it.rotulo }); }
+      else if ((m = /^acab:tx:(\w+)$/.exec(pid))) { r.textos[m[1]] = v; }
+      else if (pid === "acab:cmed") { if (!BA.MEDIDAS[v]) return false; r.codMedida = v; return true; }
+      else if (pid === "acab:cod") { if (!v) return false; var ic = item(r.codMedida) || BA.ITENS[0]; L.push({ codigo: v, medida: ic.medida, fator: 1, acab: ic.acab, rotulo: ic.rotulo }); }
+      else if (pid === "acab:receita") {
+        if (!v || !global.ParedeCebola) return false;
+        var pc = ParedeCebola.camadasAmbiente(v, global.App && App._fontesExcluidas ? { excluirFontes: App._fontesExcluidas() } : undefined);
+        r.servicos = L = L.filter(function (s) { return s.medida !== "areaParede"; }).concat(pc.servicos);
+        if (pc.pendentes.length) toast("Parede-Cebola: " + pc.pendentes.length + " camada(s) sem composição — " + pc.pendentes.map(function (p) { return p.camada + " (" + p.motivo + ")"; }).join("; ") + ". Escolha à mão ou deixe de fora.", "aviso", 9000);
+      } else return false;
+      if (L.length > 16) { L.splice(16); toast("No máximo 16 serviços por ambiente.", "aviso"); }
+      r.sujo = true;
+      return true;
+    },
+    /* grava o rascunho no ambiente (UMA op) — o texto do acabamento vazio ganha a descrição da composição */
+    aplicarAmbiente: function (id) {
+      var x = this._ambiente(id), BA = global.BimAcabamento; if (!x || !BA || !global.BIM || !BIM.b2Op) return false;
+      var self = this, r = this._rascunho(String(id), x.a), tx = {};
+      BA.ACABS.forEach(function (ac) {
+        var t = String(r.textos[ac.campo] || "").trim();
+        if (!t) { var s = r.servicos.filter(function (q) { return q.acab === ac.id || (!q.acab && q.medida === ac.medida); })[0]; if (s) t = curto(self.descricao(s.codigo) || "", 120); }
+        tx[ac.campo] = t;
+      });
+      var op = BA.opAplicar(x.a.id, r.servicos, tx);
+      if (!op.ok) { toast(op.motivo, "erro"); return false; }
+      if (!BIM.b2Op(op.op)) { toast("O editor recusou a mudança do ambiente.", "erro"); return false; }
+      r.sujo = false; delete this._acab[String(id)];
+      try { if (global.BimShell) BimShell.status("Acabamentos aplicados ao ambiente " + ((x.a.nome || "Ambiente") + " " + (global.BimAmbiente && BimAmbiente.numero ? BimAmbiente.numero(x.a) || "" : "")).trim() + ": " + op.op.campos.servicos.length + " serviço(s) — as linhas estão no Orçamento do modelo (Ctrl+Z desfaz)."); } catch (e) {}
+      this.aoMudarModelo(); this._repintarProps();
+      return true;
     },
 
     /* ------------------------------------------------ PAINEL DO MODELO */
@@ -310,7 +432,7 @@
       var ok = mod.porComposicao.filter(function (g) { return g.status === "ok"; });
       h += '<div class="om-tab-env"><table class="tbl om-tab"><thead><tr><th>Código</th><th>Descrição</th><th>Qtd</th><th>Total</th><th>Horas</th><th>Dias</th><th>Peças</th></tr></thead><tbody>';
       ok.forEach(function (g) {
-        h += '<tr data-om-linha="' + esc(g.codigo) + '"><td>' + esc(g.codigo) + '</td><td class="om-d" title="' + esc(g.descricao) + '"><span>' + esc(g.descricao) + "</span></td><td>" + fmt(g.quantidade, 2) + " " + esc(unTela(g.unidade)) + "</td><td>" + moeda(g.custo.total) +
+        h += '<tr data-om-linha="' + esc(g.codigo) + '"' + (g.bloco ? ' data-om-bloco="' + esc(g.bloco) + '"' : "") + '><td>' + esc(g.codigo) + '</td><td class="om-d" title="' + esc(g.descricao) + '"><span>' + (g.bloco === "demolicao" ? "<b>Demolição</b> · " : "") + esc(g.descricao) + "</span></td><td>" + fmt(g.quantidade, 2) + " " + esc(unTela(g.unidade)) + "</td><td>" + moeda(g.custo.total) +
           '</td><td title="' + esc(horasTxt(g.horas)) + '">' + fmt(g.horasTotal, 1) + "</td><td>" + fmt(g.duracaoDias, 2) + "</td><td>" + g.elementos.length + "</td></tr>";
       });
       if (!ok.length) h += '<tr><td colspan="7" class="muted">Nenhuma peça com composição ainda — escolha a composição em Propriedades › Orçamento.</td></tr>';
@@ -323,9 +445,16 @@
         });
         h += '</tbody></table><p class="muted om-nota">Em paralelo: cada função sem esperar a outra (o piso). Em sequência: um serviço depois do outro (o teto). A sequência real é a do cronograma.</p></div>';
       }
+      /* P10 (js/bimfases.js): a REFORMA em três blocos — construção, demolição e o existente (fora) */
+      if (mod.fases) {
+        var fz = mod.fases;
+        h += '<div class="om-sec" data-om="fases"><b>Reforma — fase "' + esc(fz.fase) + '"</b><div class="om-nota">Construção: <b data-om="fase-construcao">' + moeda(fz.construcao) + '</b> · Demolição: <b data-om="fase-demolicao">' + moeda(fz.demolicao) + "</b> (" + fz.demolidos.length + " peça(s))</div>" +
+          (fz.existentes.length ? '<div class="om-nota" data-om="fase-existentes">Existente, fora do orçamento (' + fz.existentes.length + "): " + esc(fz.existentes.map(function (x) { return x.rotulo; }).join(", ")) + "</div>" : "") + "</div>";
+      }
       if (mod.pendencias.length) {
         h += '<div class="om-sec om-pend" data-om="pendencias"><b>Fora do orçamento (' + mod.pendencias.length + ")</b><ul>";
-        mod.pendencias.forEach(function (g) { h += "<li><b>" + esc(g.codigo || "sem código") + "</b> " + esc(curto(g.descricao, 70)) + " — " + g.elementos.length + " peça(s): " + esc((g.avisos || [])[0] || g.status) + "</li>"; });
+        /* P11: a pendência com quantidade (o volume de corte/aterro sem composição) mostra a quantidade */
+        mod.pendencias.forEach(function (g) { h += "<li" + (g.quantidade > 0 ? ' data-om-pend-qtd="' + esc(String(g.quantidade)) + '"' : "") + "><b>" + esc(g.codigo || "sem código") + "</b> " + esc(curto(g.descricao, 70)) + (g.quantidade > 0 ? " — " + fmt(g.quantidade, 2) + " " + esc(unTela(g.unidade)) : "") + " — " + g.elementos.length + " peça(s): " + esc((g.avisos || [])[0] || g.status) + "</li>"; });
         h += "</ul></div>";
       }
       h += '<div class="om-acoes"><button class="btn sm" data-om="atualizar">Atualizar</button><button class="btn sm primary" data-om="enviar"' + (ok.length ? "" : " disabled") + ">Enviar ao orçamento da obra</button></div>";
@@ -382,8 +511,10 @@
       if (seed.itens.length > lim) { toast("O modelo tem " + seed.itens.length + " composições e o seu plano aceita " + lim + " itens por orçamento.", "erro", 9000); return null; }
       var orc = Orcamento.novo({ nome: "Orçamento do modelo — " + (obra ? obra.nome : "BIM"), obra: obra ? obra.nome : "" });
       Orcamento.addEtapa(orc, seed.nome);
-      var etapa = orc.etapas[orc.etapas.length - 1], semPreco = 0;
+      var etapa = orc.etapas[orc.etapas.length - 1], semPreco = 0, etapaConstr = etapa, etapaDem = null;
       seed.itens.forEach(function (it) {
+        /* P10: a demolição da reforma vai numa etapa própria */
+        if (it.bloco === "demolicao") { if (!etapaDem) { Orcamento.addEtapa(orc, "Demolição (reforma) — do modelo"); etapaDem = orc.etapas[orc.etapas.length - 1]; } etapa = etapaDem; } else etapa = etapaConstr;
         var b = null;
         try { b = global.Bases && Bases.obter ? Bases.obter("SINAPI", it.codigo) : null; } catch (e) { b = null; }
         if (!b && global.Sinapi && Sinapi.obter) b = Sinapi.obter(it.codigo);

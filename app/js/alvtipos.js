@@ -4,7 +4,7 @@
  * Motor PURO (Node-testável, ES5). Espessuras em MILÍMETROS (é assim que
  * se especifica revestimento), geometria em metros.
  *
- * No Revit isto é o "Edit Type → Structure": a parede não tem uma
+ * Isto é a estrutura do tipo ("Editar tipo → Estrutura"): a parede não tem uma
  * espessura digitada, ela tem CAMADAS, e a espessura é a soma delas. É a
  * diferença entre a parede crua ("14 cm") e a parede executiva:
  *

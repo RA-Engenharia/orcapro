@@ -2,7 +2,7 @@
  * bimestilo.js — ESTILO VISUAL DO BIM: o seletor e a troca de textura
  * (prévia `?previa=visual`, 07/10/2026)
  *
- * Pedido do Rogério: "Igual o Revit: quero ver a parede com preenchimento de
+ * Pedido do Rogério: "quero ver a parede com preenchimento de
  * cor normal, com a textura, com a textura realista, e só preto e branco. O
  * sistema tem que vir com as texturas."
  *
@@ -16,7 +16,7 @@
  * `orcapro:bim:materiais-obra:<obra>` (a mesma forma das vistas 2D,
  * `orcapro:bim:desenho2d:<obra>`). O nome é normalizado (sem acento,
  * minúsculas): "Bloco Cerâmico" e "bloco ceramico" são o mesmo material — e a
- * troca vale para TODAS as peças dele, como o material do Revit.
+ * troca vale para TODAS as peças dele.
  * ⚠ Fora da prévia, nada aqui aparece: o menu não abre e a seção não monta.
  * ===================================================================== */
 (function (global) {
@@ -97,7 +97,7 @@
       var m = document.querySelector(".rv-menu-estilo");
       if (m && m.parentNode) m.parentNode.removeChild(m);
     },
-    /* o menu, como o do cubinho de estilo do Revit, junto de quem o abriu */
+    /* o menu, junto de quem o abriu */
     menu: function (ancora) {
       if (!previa()) return false;
       var self = this;

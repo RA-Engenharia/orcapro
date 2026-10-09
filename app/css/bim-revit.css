@@ -1,7 +1,7 @@
 /* =====================================================================
- * bim-revit.css — A casca do módulo BIM, na aparência do Revit.
+ * bim-revit.css — A casca do módulo BIM: aparência de programa de desktop (fita, navegador de projeto, propriedades, barra de status).
  *
- * Decisão do Rogério (25/jul): o BIM tem a cara do Revit, não a do resto
+ * Decisão do Rogério (25/jul): o BIM tem cara de programa de projeto, não a do resto
  * do OrçaPRO. O engenheiro que abre isto já sabe onde tudo fica — a fita
  * em cima, Propriedades à esquerda, Navegador de Projeto embaixo dela,
  * ViewCube no canto, barra de status no rodapé.
@@ -9,8 +9,8 @@
  * As cores vivem em variáveis PRÓPRIAS (--rv-*), presas ao .bim-revit.
  * Nada aqui vaza para o resto do app, e o tema do app não pinta isto.
  *
- * Tema claro = o do print que ele mandou (Revit 2027 claro).
- * Tema escuro = o Revit Dark, para quem trabalha à noite.
+ * Tema claro = o do print que ele mandou.
+ * Tema escuro = o grafite, para quem trabalha à noite.
  * ===================================================================== */
 
 .bim-revit {
@@ -30,7 +30,7 @@
   --rv-painel-cab: #e1e1e1;
   --rv-linha: #d4d4d4;
   --rv-linha-forte: #b4b4b4;
-  --rv-tela: #ffffff;           /* a área de desenho é BRANCA, como no Revit */
+  --rv-tela: #ffffff;           /* a área de desenho é BRANCA */
   --rv-tela-2: #f7f9fb;
   --rv-hover: #d8e6f2;
   --rv-ativo: #cce4f7;
@@ -57,12 +57,12 @@
   border-radius: 4px;
   overflow: hidden;
   font-size: 12px;
-  /* a fonte do Revit é a de sistema; aqui idem, para não parecer "site" */
+  /* a fonte é a de sistema, para não parecer "site" */
   font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Revit Dark, para quem trabalha à noite. A estrutura é a mesma; só a
+/* Tema escuro, para quem trabalha à noite. A estrutura é a mesma; só a
    paleta muda — inclusive a área de desenho, que fica cinza-escura. */
 .bim-revit[data-rv-tema="escuro"] {
   --rv-titulo-bg: #1c1c1c;
@@ -595,8 +595,8 @@
 .bim-pop-corpo { flex: 1; padding: 12px 14px; }
 
 /* =====================================================================
- * AMBIENTE TIPO REVIT (30/09/2026) — pedido do Rogério, com as capturas do
- * Revit 2027 como referência: o BIM abre como um programa (tela inteira),
+ * AMBIENTE DE PROGRAMA (30/09/2026) — pedido do Rogério, com as capturas de
+ * um programa de projeto como referência: o BIM abre como um programa (tela inteira),
  * Propriedades e Navegador recolhem numa aba com a seta e têm largura de
  * arrastar, as ferramentas abrem numa janela À DIREITA (ao lado do 3D, não
  * por cima), e as vistas abrem em abas, lado a lado ou em outra janela.
@@ -709,7 +709,7 @@
 }
 
 /* ---------- VISTAS 2D: planta e corte em desenho técnico (js/bim2dui.js + js/desenho2d.js) ----------
-   Papel e tinta seguem o tema do BIM (claro = papel branco, escuro = cinza do Revit Dark).
+   Papel e tinta seguem o tema do BIM (claro = papel branco, escuro = cinza do tema escuro).
    A espessura da linha mora no SVG (penas fina/média/grossa, non-scaling-stroke). */
 .bim-grade > .bim-tela.bim-tela-2d { --d2-papel: #ffffff; --d2-tinta: #111111; --d2-fraco: #2b2b2b; --d2-sel: #1a6cb5; background: var(--d2-papel); }
 .bim-revit[data-rv-tema="escuro"] .bim-grade > .bim-tela.bim-tela-2d { --d2-papel: #232323; --d2-tinta: #ececec; --d2-fraco: #d2d2d2; --d2-sel: #4a9fe0; }
@@ -729,6 +729,15 @@
 .d2-marca:hover .d2-marca-circ, .d2-marca:hover .d2-marca-seta { stroke: var(--d2-sel); fill: var(--d2-sel); }
 .d2-marca:hover .d2-marca-tx { fill: #fff; }
 .d2-svg pattern line { stroke: var(--d2-tinta); }
+/* P6 (js/bimmodelovista.js): estilos de objeto RA — meio-tom, marcas de elevação e de chamada, região de recorte */
+.bim-grade > .bim-tela.bim-tela-2d { --d2-meiotom: #9aa0a6; }
+.bim-revit[data-rv-tema="escuro"] .bim-grade > .bim-tela.bim-tela-2d { --d2-meiotom: #7c838b; }
+.d2-p6-l { fill: none; stroke-linecap: round; }
+.d2-p6-chamada-l, .d2-p6-recorte { stroke: var(--d2-tinta); fill: none; }
+.d2-p6-elev, .d2-p6-chamada { cursor: pointer; }
+.d2-p6-elev:hover .d2-marca-circ, .d2-p6-elev:hover .d2-marca-seta, .d2-p6-chamada:hover .d2-marca-circ { stroke: var(--d2-sel); fill: var(--d2-sel); }
+.d2-p6-elev:hover .d2-marca-tx, .d2-p6-chamada:hover .d2-marca-tx { fill: #fff; }
+.d2-p6-chamada:hover .d2-p6-chamada-l { stroke: var(--d2-sel); }
 .d2-pick { stroke: var(--d2-sel); stroke-width: 2; stroke-dasharray: 6 4; }
 .d2-vazio { position: absolute; inset: 0; display: grid; place-items: center; color: var(--d2-fraco); font-size: var(--t-peq); padding: 20px; text-align: center; }
 /* vínculo CAD na planta: meio-tom, por baixo do modelo */
@@ -736,6 +745,29 @@
 .d2-cad-tx { fill: #9aa3ad; font-family: "IBM Plex Sans", "Segoe UI", Arial, sans-serif; }
 .bim-revit[data-rv-tema="escuro"] .d2-cad-l { stroke: #6f7780; }
 .bim-revit[data-rv-tema="escuro"] .d2-cad-tx { fill: #6f7780; }
+/* AMBIENTES na planta (P2-D, js/bimambienteui.js): identificador (nome; número · área),
+   esquema de cores (tokens --d2-amb-N: claro no papel branco, escuro no papel do tema escuro) e legenda */
+.bim-grade > .bim-tela.bim-tela-2d {
+  --d2-amb-0: #e3e5e8; --d2-amb-1: #f6c9a8; --d2-amb-2: #b9dcf2; --d2-amb-3: #c8e6b5; --d2-amb-4: #f3e3a2; --d2-amb-5: #dcc8ef; --d2-amb-6: #f5bfcf;
+  --d2-amb-7: #b5e3dc; --d2-amb-8: #e8d3b9; --d2-amb-9: #c9d3f5; --d2-amb-10: #e2efa8; --d2-amb-11: #f2c2b0; --d2-amb-12: #c4e0ee; --d2-amb-av: #b42318;
+}
+.bim-revit[data-rv-tema="escuro"] .bim-grade > .bim-tela.bim-tela-2d {
+  --d2-amb-0: #3a3d42; --d2-amb-1: #7a4f33; --d2-amb-2: #2f5c7a; --d2-amb-3: #3f6634; --d2-amb-4: #6e6127; --d2-amb-5: #5a4774; --d2-amb-6: #74404f;
+  --d2-amb-7: #2f6a62; --d2-amb-8: #6a5843; --d2-amb-9: #3f4c7a; --d2-amb-10: #5c6a27; --d2-amb-11: #74493a; --d2-amb-12: #355f72; --d2-amb-av: #ff8a7a;
+}
+.d2-amb-cor { stroke: none; }
+.d2-amb-tx, .d2-amb-leg-tit, .d2-amb-leg-tx { fill: var(--d2-tinta); font-family: "IBM Plex Sans", "Segoe UI", Arial, sans-serif; }
+.d2-amb-nome, .d2-amb-leg-tit { font-weight: 600; }
+.d2-amb-av { fill: var(--d2-amb-av); }
+.d2-amb-alvo { fill: transparent; stroke: none; cursor: pointer; }
+.d2-amb-tag:hover .d2-amb-alvo { fill: var(--d2-sel); fill-opacity: .08; }
+.d2-amb-sel .d2-amb-tx { fill: var(--d2-sel); }
+.d2-amb-sel-l { stroke: var(--d2-sel); }
+.d2-amb-sep { stroke: var(--d2-fraco); }
+.d2-amb-leg-cor { stroke: var(--d2-tinta); }
+.d2-amb-previa { fill: var(--d2-sel); fill-opacity: .14; stroke: var(--d2-sel); stroke-width: 2; pointer-events: none; }
+.d2-amb-previa[data-estado="redundante"] { fill: #d97706; stroke: #d97706; }
+.d2-vista-tela[data-d2-amb-ferr] { cursor: crosshair; }
 
 /* ---------- FAMÍLIAS PARAMÉTRICAS: biblioteca e editor (js/familiaui.js) ---------- */
 .fe-topo { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
@@ -753,6 +785,12 @@
 .fe-badge { font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 99px; background: var(--rv-hover); color: var(--rv-painel-tx); white-space: nowrap; }
 .fe-b-ra { background: #1a6cb5; color: #fff; }
 .fe-b-importada { background: #7a5a12; color: #fff; }
+/* FAMIMPORT: família do mercado (js/familiaimportui.js) — miniatura à esquerda e o aviso de geometria pendente */
+.fe-card-imp { display: grid; grid-template-columns: 48px 1fr; column-gap: 8px; }
+.fe-card-imp > :not(.fe-mini) { grid-column: 2; }
+.fe-mini { grid-row: 1 / span 4; width: 48px; height: 48px; border-radius: 6px; border: 1px solid var(--rv-linha); background: var(--rv-tela-2); display: flex; align-items: center; justify-content: center; overflow: hidden; color: var(--rv-tx-fraco); font-weight: 700; }
+.fe-mini img { width: 100%; height: 100%; object-fit: contain; image-rendering: auto; }
+.fe-b-pendente { background: #b45309; color: #fff; }
 .fe-ed label { display: flex; flex-direction: column; gap: 2px; font-size: 11.5px; color: var(--rv-tx-fraco); }
 .fe-ed input, .fe-ed select, .fe-ed textarea { font-size: 12.5px; padding: 3px 6px; border: 1px solid var(--rv-linha); border-radius: 5px; background: var(--rv-painel-bg); color: var(--rv-painel-tx); min-width: 0; }
 .fe-ed textarea { font-family: "IBM Plex Mono", Consolas, monospace; }
@@ -787,7 +825,7 @@
 .bim-revit[data-rv-tema="escuro"] .fe-aviso { background: #3e3214; color: #f6e2a8; border-color: #6b5520; }
 @media (max-width: 720px) { .fe-grade4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .fe-grade2 { grid-template-columns: 1fr; } }
 
-/* ESTILO VISUAL (prévia, 07/10/2026): o menu dos quatro estilos, como o cubinho do Revit.
+/* ESTILO VISUAL (prévia, 07/10/2026): o menu dos quatro estilos.
    Mora no <body> (como o menu das abas) e é claro sempre, como as outras janelas. */
 .rv-menu-estilo { min-width: 300px; padding: 4px 0 6px; }
 .rv-menu-estilo .rv-me-tit { padding: 6px 14px 4px; font-weight: 700; font-size: 11px; color: #5b6570; text-transform: uppercase; letter-spacing: .04em; cursor: default; }
@@ -807,3 +845,15 @@
 .rv-me-amostra[data-amostra="desenho"] { background: #e9e9e9; box-shadow: inset 0 0 0 5px #e9e9e9, inset 0 0 0 6px #111; }
 .rv-vb.rv-vb-estilo { width: auto; padding: 0 7px; gap: 5px; display: inline-flex; align-items: center; }
 .rv-vb-estilo span { max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: inherit; }
+
+/* P8 — FOLHA numa aba de vista (js/bimfolhaui.js, prévia do modelador). O papel é
+   sempre branco (prancha é papel); a mesa em volta escurece com o tema. */
+.bim-grade > .bim-tela.bim-tela-folha { background: var(--rv-tela); }
+.pv-tela { position: absolute; inset: 0; overflow: auto; padding: 16px; outline: none; touch-action: none; background: color-mix(in srgb, var(--rv-tela) 82%, #000 18%); }
+.pv-papel-wrap { position: relative; margin: 0 auto; }
+.pv-papel { position: absolute; left: 0; top: 0; transform-origin: 0 0; background: #fff; box-shadow: 0 2px 14px rgba(0, 0, 0, .35); }
+.pv-papel .folha { margin: 0 !important; box-shadow: none !important; }
+.pv-papel [data-pv-vp] { cursor: move; }
+.pv-papel [data-pv-bloco][data-pv-sel] { outline: 0.6mm solid #1a6cb5; outline-offset: 0.6mm; }
+.rv-no[data-rv-arrasta] { cursor: grab; }
+.pv-dica { position: sticky; top: 0; z-index: 2; margin: 0 auto 10px; max-width: 520px; padding: 6px 12px; border-radius: 6px; background: var(--rv-painel-bg); color: var(--rv-painel-tx); font-size: 12px; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,.18); }

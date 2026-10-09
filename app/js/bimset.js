@@ -80,7 +80,7 @@
   var CAMPOS = [
     { chave: "tipo",        rotulo: "Tipo IFC",            tipo: "texto" },
     { chave: "nome",        rotulo: "Nome",                tipo: "texto" },
-    { chave: "nomeIfc",     rotulo: "Nome no Revit",       tipo: "texto" },
+    { chave: "nomeIfc",     rotulo: "Nome no modelo (IFC)",       tipo: "texto" },
     { chave: "familia",     rotulo: "Família/tipo",        tipo: "texto" },
     /* ⚠ o NOME legivel ("Água fria"), nao a chave interna ("agua_fria"): uma
        regra escrita como "sistema contém água fria" nunca casaria com a chave,

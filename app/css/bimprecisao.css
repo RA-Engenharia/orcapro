@@ -1,0 +1,66 @@
+/* =====================================================================
+ * bimprecisao.css — a tela do desenho de precisão do modelador BIM
+ * (fase B3, js/bimprecisaoui.js). Só tokens do css/app.css: o tema escuro
+ * vem junto, sem cor escrita aqui. Tudo nasce escondido — sem a prévia do
+ * modelador nada disto aparece.
+ * ===================================================================== */
+
+/* caixa de digitar comprimento e ângulo, junto ao cursor */
+.bp-digita {
+  position: absolute; z-index: 7; display: none; align-items: center; gap: 8px;
+  padding: 4px 8px; border: 1px solid var(--verde); border-radius: var(--raio-sm);
+  background: var(--card-bg); color: var(--texto); font-size: var(--t-micro); font-weight: 500;
+  box-shadow: var(--sombra-sm); white-space: nowrap; pointer-events: auto;
+}
+.bp-digita label { display: inline-flex; align-items: center; gap: 4px; color: var(--texto-fraco); }
+.bp-digita input {
+  width: 64px; padding: 1px 4px; border: 1px solid var(--linha); border-radius: var(--raio-sm);
+  background: var(--bg); color: var(--texto); font-size: var(--t-micro); font-variant-numeric: tabular-nums;
+}
+.bp-digita input:focus { outline: 2px solid var(--verde); outline-offset: 0; }
+.bp-vivo { color: var(--verde); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* barra de opções da ferramenta (a "Barra de opções") */
+.bp-opcoes {
+  position: absolute; z-index: 7; top: 8px; left: 50%; transform: translateX(-50%);
+  display: none; align-items: center; gap: 12px; padding: 4px 12px;
+  border: 1px solid var(--linha); border-radius: var(--raio-sm); background: var(--card-bg);
+  color: var(--texto); font-size: var(--t-micro); box-shadow: var(--sombra-sm); white-space: nowrap;
+}
+.bp-opcoes label { display: inline-flex; align-items: center; gap: 4px; }
+.bp-opcoes input[type="number"], .bp-opcoes input[inputmode] { width: 56px; }
+.bp-opcoes input, .bp-opcoes select {
+  padding: 1px 4px; border: 1px solid var(--linha); border-radius: var(--raio-sm);
+  background: var(--bg); color: var(--texto); font-size: var(--t-micro);
+}
+.bp-sel { color: var(--texto-fraco); }
+
+/* painel dos snaps */
+.bp-snaps {
+  position: absolute; z-index: 8; top: 56px; right: 12px; width: 250px; display: none;
+  padding: 8px 12px; border: 1px solid var(--linha); border-radius: var(--raio);
+  background: var(--card-bg); color: var(--texto); font-size: var(--t-micro); box-shadow: var(--sombra);
+}
+.bp-snaps-tit { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.bp-snaps label { display: flex; align-items: center; gap: 6px; padding: 2px 0; cursor: pointer; }
+.bp-snaps-todos { font-weight: 600; border-bottom: 1px solid var(--linha); padding-bottom: 6px; margin-bottom: 4px; }
+.bp-snaps-grade input { width: 56px; padding: 1px 4px; border: 1px solid var(--linha); border-radius: var(--raio-sm); background: var(--bg); color: var(--texto); font-size: var(--t-micro); }
+.bp-snaps-nota { margin-top: 6px; color: var(--texto-fraco); }
+.bp-glifo { display: inline-flex; width: 16px; height: 16px; }
+.bp-tecla { margin-left: auto; padding: 0 4px; border: 1px solid var(--linha); border-radius: var(--raio-sm); color: var(--texto-fraco); font-weight: 500; }
+
+/* cotas temporárias e alças, ancoradas no mundo (reposicionadas a cada quadro) */
+.bp-camada { position: absolute; inset: 0; z-index: 6; pointer-events: none; overflow: hidden; }
+.bp-cota-tmp {
+  position: absolute; transform: translate(-50%, -50%); pointer-events: auto; cursor: pointer;
+  padding: 0 6px; border: 1px solid var(--aco); border-radius: var(--raio-sm);
+  background: var(--bg); color: var(--aco); font-size: var(--t-micro); font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.bp-cota-tmp:hover, .bp-cota-tmp:focus-visible { background: var(--aco); color: var(--bg); outline: none; }
+.bp-cota-tmp input { width: 64px; padding: 0 2px; border: 0; background: transparent; color: inherit; font-size: var(--t-micro); }
+.bp-alca {
+  position: absolute; width: 12px; height: 12px; padding: 0; transform: translate(-50%, -50%);
+  pointer-events: auto; cursor: move; border: 2px solid var(--aco); border-radius: 2px; background: var(--bg);
+  touch-action: none;
+}
+.bp-alca:hover, .bp-alca:focus-visible { background: var(--aco); outline: 2px solid var(--aco); outline-offset: 2px; }

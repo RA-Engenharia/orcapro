@@ -155,7 +155,23 @@
     proibido: '<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/>',
     caminhao: '<rect x="1.5" y="6.5" width="12" height="9" rx="1"/><path d="M13.5 10h4l4 3.5v2h-8z"/><circle cx="6" cy="18" r="2"/><circle cx="17.5" cy="18" r="2"/>',
     reciclar: '<path d="M7 6.5 9.5 2.8l2.5 3.7"/><path d="M9.5 3v7.5"/><path d="M17.5 9.5 21 12l-3.5 2.5"/><path d="M20.5 12H13"/><path d="M6 17.5 3 15l3-2.5"/><path d="M3.5 15H11"/>',
-    olhoFechado: '<path d="M3 12s3.5-6 9-6c1.6 0 3 .5 4.2 1.2"/><path d="M20.4 9.4c.4.9.6 1.6.6 2.6 0 0-3.5 6-9 6-1.2 0-2.3-.3-3.3-.7"/><path d="M4 4l16 16"/>'
+    olhoFechado: '<path d="M3 12s3.5-6 9-6c1.6 0 3 .5 4.2 1.2"/><path d="M20.4 9.4c.4.9.6 1.6.6 2.6 0 0-3.5 6-9 6-1.2 0-2.3-.3-3.3-.7"/><path d="M4 4l16 16"/>',
+
+    /* ---- CURVA: o painel Desenhar do modelador (js/bimdesenho.js) ---- */
+    desLinha: '<path d="M4 20 20 4"/><circle cx="4" cy="20" r="1.4"/><circle cx="20" cy="4" r="1.4"/>',
+    desRetangulo: '<rect x="3.5" y="6" width="17" height="12"/><circle cx="3.5" cy="6" r="1.2"/><circle cx="20.5" cy="18" r="1.2"/>',
+    desPoligonoInscrito: '<circle cx="12" cy="12" r="8.5" stroke-dasharray="2 2"/><path d="M12 3.5 19.4 16.3H4.6z"/>',
+    desPoligonoCircunscrito: '<circle cx="12" cy="13.2" r="4.6" stroke-dasharray="2 2"/><path d="M12 3.2 20.6 18H3.4z"/>',
+    desCirculo: '<circle cx="12" cy="12" r="8.5"/><path d="M12 12h8.5"/><circle cx="12" cy="12" r="1.2"/>',
+    desArco3p: '<path d="M4 18A9 9 0 0 1 20 18"/><circle cx="4" cy="18" r="1.4"/><circle cx="20" cy="18" r="1.4"/><circle cx="12" cy="9.2" r="1.4"/>',
+    desArcoCentro: '<path d="M19 12A7 7 0 0 1 12 19"/><path d="M12 12h7M12 12v7" stroke-dasharray="2 2"/><circle cx="12" cy="12" r="1.3"/>',
+    desArcoTangente: '<path d="M3 17h8"/><path d="M11 17a6 6 0 0 0 6-6V5"/><circle cx="11" cy="17" r="1.3"/>',
+    desArcoConcordancia: '<path d="M4 20V11a7 7 0 0 1 7-7h9"/><path d="M4 4h7M4 4v7" stroke-dasharray="2 2"/>',
+    desElipse: '<ellipse cx="12" cy="12" rx="9" ry="5.5"/><circle cx="12" cy="12" r="1.2"/>',
+    desElipseParcial: '<path d="M3 15a9 6.5 0 0 1 18 0"/><path d="M3 15h18" stroke-dasharray="2 2"/>',
+    desSpline: '<path d="M3 17c3-9 6-9 9-3s6 6 9-6"/><circle cx="3" cy="17" r="1.2"/><circle cx="21" cy="8" r="1.2"/>',
+    desSelecionarLinhas: '<path d="M3 7h18" stroke-dasharray="2.5 2"/><path d="m11 11 3 9 1.6-3.7L19.3 15z"/>',
+    desSelecionarParedes: '<path d="M3 5h18v5H3z"/><path d="m11 12 3 9 1.6-3.7L19.3 16z"/>'
   };
 
   var Icones = {

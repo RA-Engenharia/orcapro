@@ -1,0 +1,32 @@
+/* =====================================================================
+ * bimanot.css — ANOTAÇÃO nas vistas 2D (P7, js/bimanot.js + js/bimanot2dui.js)
+ * Papel e tinta vêm dos tokens da vista 2D (css/bim-revit.css: --d2-papel,
+ * --d2-tinta, --d2-sel): tema claro = papel branco, tema escuro = o cinza
+ * do tema escuro. A ESPESSURA mora no SVG (penas da RA, non-scaling-stroke).
+ * ===================================================================== */
+.a7-l, .a7-marca, .a7-hach { stroke: var(--d2-tinta, #111); fill: none; }
+.a7-l { stroke-linecap: butt; }
+.a7-tx { fill: var(--d2-tinta, #111); font-family: Arial, "IBM Plex Sans", "Segoe UI", sans-serif; }
+.a7-fraco { opacity: .6; }
+.a7-cheio, .a7-hach-p, .a7-solido { fill: var(--d2-tinta, #111); }
+.a7-solido { stroke: none; }
+.a7-cinza { fill: var(--a7-cinza, #cfd3d8); stroke: none; }
+.a7-fundo { fill: var(--d2-papel, #fff); }
+.a7-borda { stroke: var(--d2-tinta, #111); }
+.a7-semtraco, .a7-invisivel { stroke: none !important; }
+.a7-mascara { fill: var(--d2-papel, #fff); stroke: none; }
+.a7-trava { fill: none; stroke: var(--d2-tinta, #111); }
+.a7-nuvem-l { stroke: var(--d2-tinta, #111); fill: none; stroke-linejoin: round; }
+.a7-nuvem-tag { stroke: var(--d2-tinta, #111); }
+.a7-item { cursor: pointer; }
+.a7-item:hover .a7-l, .a7-item:hover .a7-nuvem-l { stroke: var(--d2-sel, #1a6cb5); }
+.a7-item:hover .a7-tx { fill: var(--d2-sel, #1a6cb5); }
+.a7-sel .a7-l, .a7-sel .a7-marca, .a7-sel .a7-nuvem-l, .a7-sel .a7-borda { stroke: var(--d2-sel, #1a6cb5); }
+.a7-sel .a7-tx, .a7-sel .a7-cheio { fill: var(--d2-sel, #1a6cb5); }
+.a7-contorno-sel { stroke: var(--d2-sel, #1a6cb5); stroke-dasharray: 4 3; }
+/* cota travada que deixou de valer: o vermelho do aviso */
+.a7-violada .a7-l, .a7-violada .a7-marca { stroke: var(--a7-erro, #b42318); }
+.a7-violada .a7-tx { fill: var(--a7-erro, #b42318); }
+.a7-previa { stroke: var(--d2-sel, #1a6cb5); stroke-width: 1.5; stroke-dasharray: 5 4; pointer-events: none; }
+.d2-vista-tela[data-a7-ferr] { cursor: crosshair; }
+.bim-revit[data-rv-tema="escuro"] .bim-tela-2d { --a7-cinza: #4a4f55; --a7-erro: #ff8a7a; }

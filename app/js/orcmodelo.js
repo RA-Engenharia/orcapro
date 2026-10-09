@@ -21,6 +21,16 @@
  *   3. O preço vem da base VIGENTE no momento da conta, nunca da família: a
  *      família leva o código, não o valor (PLANO-BIM-FAMILIAS-FORMATOS.md §1).
  *
+ * P1-D (09/10/2026): a QUANTIDADE de cada serviço sai do REGISTRO ÚNICO de
+ *   parâmetros (js/bimparam.js) pelo id do parâmetro (`orc.medida`), e a linha
+ *   leva esse id (l.param) — o mesmo número da tela e do Qto do IFC. A regra 2
+ *   compara com a unidade do PARÂMETRO. Prova: tools/test-p1-saida.js.
+ *
+ * P2 integração (09/10/2026): FORRO (Área, Área bruta, Perímetro = tabica,
+ *   Volume) é peça do orçamento como as outras; AMBIENTE orça também pelas
+ *   medidas DELE no registro (Área, Perímetro, Volume — além do acabamento
+ *   da P2-C). Mesmas três regras. Prova: tools/test-p2-saida.js.
+ *
  * ⚠ HORAS: só entra como hora de mão de obra o insumo que É mão de obra
  *   (`tipoInsumo: mao_obra`, ou "… COM ENCARGOS COMPLEMENTARES/SOCIAIS",
  *   "(HORISTA)", "(MENSALISTA)" — a mesma régua do Analitico._normalizar) e
@@ -254,9 +264,17 @@
    * + os serviços da família + os que a INSTÂNCIA ganhou no editor
    * (servicosInst: [{codigo, medida:'quantidade', fator}]).
    * ------------------------------------------------------------------ */
-  function daFamilia(av, base, opcoes, servicosInst) {
+  function daFamilia(av, base, opcoes, servicosInst, peca) {
     if (!av || !av.quantitativo) return { linhas: [], resumo: resumir([], opcoes), peso: { ok: false, motivo: "família não avaliada", kg: null } };
     var q = av.quantitativo, linhas = [];
+    /* P1-D: com a peça resolvida pelo registro, a quantidade e a unidade do
+       quantitativo são as dos parâmetros RA_FAM_QUANTIDADE / RA_FAM_UNIDADE */
+    var BP = dep("BimParam", "./bimparam.js"), qReg = peca && BP && BP.quantidade ? BP.quantidade(peca, "quantidade") : null;
+    if (qReg) {
+      var unR = peca.porId && peca.porId.RA_FAM_UNIDADE ? peca.porId.RA_FAM_UNIDADE.valor : q.unidade, q2 = {};
+      Object.keys(q).forEach(function (k) { q2[k] = q[k]; });
+      q2.quantidade = qReg.valorOrc != null ? qReg.valorOrc : qReg.valor; q2.unidade = unR; q2.param = qReg.def.id; q = q2;   /* P1-acab: a régua do orçamento */
+    }
     /* serviços da INSTÂNCIA (Propriedades › Orçamento): "servico:<id>" dá o
        código a um serviço da família (SOBREPÕE o dela — nunca soma dois);
        "quantidade" é camada a mais sobre a quantidade da família (ex.: o
@@ -268,6 +286,7 @@
     });
     linhas.push(orcar({ id: "principal", codigo: q.codigo, unidade: q.unidade, quantidade: q.quantidade, descricao: q.descricao, rotulo: "Quantitativo da família" }, base, opcoes));
     linhas[0].codigoOrigem = q.codigoOrigem || "";
+    if (q.param) linhas[0].param = q.param;
     arr(av.servicos).forEach(function (s) {
       var si = sobre[String(s.id).toLowerCase()], cod = si ? txt(si.codigo) : txt(s.codigo);
       if (si) delete sobre[String(s.id).toLowerCase()];
@@ -285,29 +304,106 @@
         lx.status = "unidade"; lx.avisos = ["família colocada só aceita a medida \"quantidade da família\" ou um serviço dela"]; linhas.push(lx); return;
       }
       var l2 = orcar({ id: "inst" + i, codigo: s.codigo, unidade: q.unidade, quantidade: q.quantidade * num(s.fator, 1), rotulo: s.rotulo || "Camada da peça" }, base, opcoes);
-      l2.codigoOrigem = "instancia"; l2.medida = "quantidade"; l2.fator = num(s.fator, 1); linhas.push(l2);
+      l2.codigoOrigem = "instancia"; l2.medida = "quantidade"; l2.fator = num(s.fator, 1); if (q.param) l2.param = q.param; linhas.push(l2);
     });
     linhas.forEach(arredLinha);
     return { linhas: linhas, resumo: resumir(linhas, opcoes), peso: pesoSolidos(av.solidos) };
   }
 
   /* --------------------------------------------------------------------
-   * ELEMENTO do editor (caixa ou cobertura) com `servicos`
+   * P1-D — A QUANTIDADE SAI DO REGISTRO (js/bimparam.js), pelo id do
+   * parâmetro: a mesma "Área" da tela de Propriedades e do Qto do IFC. Este
+   * motor não faz conta de medida. Duas medidas não são parâmetro:
+   *   "un"      = CONTAGEM da peça (1) — o campo "Contagem" da tabela;
+   *   "kgPorM3" = o parâmetro Volume × a taxa de aço (o fator).
+   * A regra 2 segue: a unidade da composição tem de ser a do PARÂMETRO.
+   * Volume livre (B4) não é categoria do registro: as medidas da malha
+   * (BimEdit.medidasDe), como sempre.
    * ------------------------------------------------------------------ */
-  function daElemento(el, areaVaos, base, opcoes) {
+  /* P2 integração: + forro (js/bimforro.js — Área, Área bruta, Perímetro = tabica, Volume) e
+     ambiente (js/bimambiente.js — Área, Perímetro, Volume), as medidas do registro */
+  var CAT_EL = { parede: "parede", laje: "laje", pilar: "pilar", viga: "viga", escada: "escada", guarda: "guarda", cobertura: "cobertura", rampa: "rampa", forro: "forro", ambiente: "ambiente" };   /* P9: rampa (Volume, Área de piso, Projeção, Fôrma, Percurso) */
+  /* P11 (js/bimterreno.js): as peças do terreno e a lista do estado.terreno de cada uma */
+  var CAT_P11 = { topossolido: "topossolido", subregiao: "subregiao", plataforma: "plataforma", divisa: "divisa", compTerreno: "componente_terreno" };
+  var LISTA_P11 = { topossolido: "topos", subregiao: "subregioes", plataforma: "plataformas", divisa: "divisas", componente_terreno: "componentes" };
+  Object.keys(CAT_P11).forEach(function (k) { CAT_EL[k] = CAT_P11[k]; });
+  CAT_EL.telhado = "telhado"; CAT_EL.borda = "borda"; CAT_EL.fundacao = "fundacao";   /* P3: js/bimtelhado.js, js/bimfundacao.js */
+  /* categorias que nunca são de concreto: não oferecem armação por taxa (kg/m³) */
+  var SEM_ARMACAO = { cobertura: 1, guarda: 1, forro: 1, ambiente: 1, topossolido: 1, subregiao: 1, plataforma: 1, divisa: 1, componente_terreno: 1, telhado: 1, borda: 1 };   /* P3: telhado e borda */   /* P11: terreno */
+  var ORDEM_MEDIDAS = ["area", "areaBruta", "volume", "comprimento", "areaForma", "areaProjecao", "un", "kgPorM3", "areaFora", "areaDentro", "massa", "corte", "aterro", "areaEspelho", "comprimentoCorrimao",
+                       /* P3: linhas do telhado e derivados da fundação (BimEdit.MEDIDAS_ORC) */
+                       "espigao", "rincao", "beiral", "empena", "escavacao", "reaterro", "lastro", "lastroArea", "aco", "estacas", "volumeEstacas", "acoEstacas"];   /* P11: corte e aterro da plataforma */
+  function categoriaDe(el) { if (!el || el.tipo === "volume") return null; return el.planos ? "cobertura" : (CAT_EL[el.tipo] || null); }
+  /* a peça do registro de UM elemento (o orçamento de uma peça recebe só ela e a área dos vãos).
+     cat: a categoria quando o elemento não diz (o ambiente não tem `tipo`) */
+  function pecaRegistro(el, areaVaos, catIn) {
+    var BP = dep("BimParam", "./bimparam.js"), cat = catIn || categoriaDe(el);
+    if (!BP || !BP.resolver || !cat || !el) return null;
+    /* peça solta, sem id (montada direto do BimEdit): uma cópia rasa com id — o registro só lê */
+    var e2 = el;
+    if (el.id == null) { e2 = {}; Object.keys(el).forEach(function (k) { e2[k] = el[k]; }); e2.id = "peca"; }
+    if (LISTA_P11[cat]) {   /* P11: a peça do terreno vai na lista dela em estado.terreno */
+      var est11 = { caixas: [], coberturas: [], familias: [], terreno: { topos: [], subregioes: [], plataformas: [], divisas: [], componentes: [] } };
+      est11.terreno[LISTA_P11[cat]].push(e2);
+      return BP.resolver(est11, {}).porId[String(e2.id)] || null;
+    }
+    var est = cat === "cobertura" ? { caixas: [], coberturas: [e2], familias: [] } : (cat === "forro" ? { caixas: [], coberturas: [], familias: [], forros: [e2] }
+      : (cat === "ambiente" ? { caixas: [], coberturas: [], familias: [], ambientes: [e2] } : { caixas: [e2], coberturas: [], familias: [] }));
+    var LP3 = { telhado: "telhados", borda: "bordas", fundacao: "fundacoes" };   /* P3 */
+    if (LP3[cat]) { est = { caixas: [], coberturas: [], familias: [] }; est[LP3[cat]] = [e2]; }
+    var av = {}; av[String(e2.id)] = num(areaVaos, 0);
+    return BP.resolver(est, { areaVaos: av }).porId[String(e2.id)] || null;
+  }
+  /* as medidas que o orçamento oferece numa categoria — as do registro, mais
+     a contagem e a armação por taxa (quando há volume) */
+  function medidasDaCategoria(tipo) {
+    var BP = dep("BimParam", "./bimparam.js"), cat = CAT_EL[tipo];
+    if (!BP || !BP.medidasOrc || !cat) return null;
+    var tem = {}; BP.medidasOrc(cat).forEach(function (k) { tem[k] = 1; });
+    /* armação por taxa é de peça que PODE ser de concreto (parede, laje, pilar,
+       viga, escada); telhado e guarda-corpo nunca ofereceram */
+    tem.un = 1; if (tem.volume && !SEM_ARMACAO[cat]) tem.kgPorM3 = 1;
+    return ORDEM_MEDIDAS.filter(function (k) { return tem[k]; });
+  }
+  /* medida → { valor, def } pelo registro (def null: contagem) */
+  function medidasDaPeca(peca, cat) {
+    var BP = dep("BimParam", "./bimparam.js"), out = {};
+    /* P1-acab: o registro leva a medida EXATA (a do IFC); o orçamento segue com a
+       RÉGUA DE 4 CASAS de sempre (valorOrc) — custo = preço × quantidade sem
+       arredondar a quantidade antes: a medida exata mudaria o total de
+       orçamentos existentes nos centavos (prova: tools/fixtures/orc-antes-p1acab.json) */
+    BP.medidasOrc(cat).forEach(function (k) { var q = BP.quantidade(peca, k); if (q) out[k] = { valor: q.valorOrc != null ? q.valorOrc : q.valor, exato: q.valor, def: q.def }; });
+    out.un = { valor: 1, def: null };
+    return out;
+  }
+
+  /* --------------------------------------------------------------------
+   * ELEMENTO do editor (caixa ou cobertura) com `servicos`. `peca` (opcional):
+   * a peça já resolvida pelo registro (o doModelo resolve o estado inteiro).
+   * ------------------------------------------------------------------ */
+  function daElemento(el, areaVaos, base, opcoes, peca) {
     var BE = dep("BimEdit", "./bimedit.js"), linhas = [];
-    var med = BE && BE.medidasDe ? BE.medidasDe(el, areaVaos) : {};
-    var MU = (BE && BE.MEDIDAS_ORC) || {};
+    var MU = (BE && BE.MEDIDAS_ORC) || {}, cat = categoriaDe(el);
+    var pc = cat ? (peca || pecaRegistro(el, areaVaos)) : null, porMedida = null, med = {};
+    if (pc) { porMedida = medidasDaPeca(pc, cat); Object.keys(porMedida).forEach(function (k) { med[k] = porMedida[k].valor; }); }
+    else if (cat) {
+      var lz = orcar({ id: "s0", codigo: "", unidade: "", quantidade: 0 }, null, opcoes);
+      lz.status = "sem-base"; lz.avisos = ["o registro de parâmetros (js/bimparam.js) não carregou: sem ele o orçamento da peça não sai (a quantidade é do registro)"];
+      return { linhas: arr(el && el.servicos).length ? [lz] : [], resumo: resumir([], opcoes), peso: { ok: false, motivo: "registro de parâmetros não carregado", kg: null }, medidas: med };
+    } else med = BE && BE.medidasDe ? BE.medidasDe(el, areaVaos) : {};
     arr(BE && BE.limparServicos ? BE.limparServicos(el && el.servicos) : el && el.servicos).forEach(function (s, i) {
-      var k = s.medida, fator = num(s.fator, 1), un = MU[k], q;
-      if (k === "kgPorM3") q = num(med.volume) * fator;
-      else q = num(med[k]) * fator;
-      if (!un || med[k === "kgPorM3" ? "volume" : k] == null) {
+      var k = s.medida, fator = num(s.fator, 1), kb = k === "kgPorM3" ? "volume" : k, q;
+      var fonte = porMedida && porMedida[kb] ? porMedida[kb].def : null;
+      /* a unidade da quantidade: a do PARÂMETRO (o kg da armação é volume × kg/m³) */
+      var un = k === "kgPorM3" ? MU.kgPorM3 : (fonte ? fonte.un : MU[k]);
+      if (!MU[k] || med[kb] == null) {
         var lx = orcar({ id: "s" + i, codigo: s.codigo, unidade: "", quantidade: 0 }, null, opcoes);
         lx.status = "unidade"; lx.avisos = ["a medida \"" + k + "\" não existe para " + (el && el.tipo ? el.tipo : "este elemento")]; lx.medida = k; linhas.push(lx); return;
       }
+      q = num(med[kb]) * fator;
       var l = orcar({ id: "s" + i, codigo: s.codigo, unidade: un, quantidade: q, rotulo: s.rotulo || "" }, base, opcoes);
       l.medida = k; l.fator = fator; l.codigoOrigem = "elemento";
+      if (fonte) { l.param = fonte.id; l.paramNome = fonte.nome; } else if (pc && k === "un") l.param = "CONTAGEM";
       linhas.push(arredLinha(l));
     });
     var classeDe = opcoes && typeof opcoes.classeDe === "function" ? opcoes.classeDe : null;
@@ -318,25 +414,89 @@
   }
 
   /* --------------------------------------------------------------------
+   * P2-C — AMBIENTE (js/bimacabamento.js): os serviços do acabamento que o
+   * ambiente guarda (servicos: [{codigo, medida, fator, acab, rotulo}]) ×
+   * as quantidades da fronteira (q = BimAcabamento.quantidades().porId[id]).
+   * As três regras seguem: código fora da base = pendente; unidade da
+   * composição = unidade da medida (m² × m² de piso, m × m de rodapé); preço
+   * da base vigente. Ambiente sem região fechada = PENDENTE com o motivo
+   * (nunca zero calado). Acabamento escolhido (o texto) sem
+   * composição = linha "sem código" — aparece em "Fora do orçamento".
+   * ------------------------------------------------------------------ */
+  /* P2 integração: a medida do PRÓPRIO ambiente (Área, Perímetro, Volume —
+     BimEdit.MEDIDAS_AMBIENTE_REG) sai do REGISTRO (js/bimparam.js, a mesma da
+     tela de Propriedades e do Qto_SpaceBaseQuantities do IFC), na régua do
+     orçamento (valorOrc); a unidade da composição tem de ser a do PARÂMETRO.
+     `peca` (opcional): o ambiente já resolvido pelo registro. */
+  var NOME_MED_AMB = { area: "Área", comprimento: "Perímetro", volume: "Volume" };
+  function daAmbiente(amb, q, base, opcoes, peca) {
+    var BE = dep("BimEdit", "./bimedit.js"), BA = dep("BimAcabamento", "./bimacabamento.js"), BP = dep("BimParam", "./bimparam.js"), linhas = [];
+    var MU = (BE && BE.MEDIDAS_AMBIENTE) || { areaPiso: "m2", rodape: "m", areaParede: "m2", areaTeto: "m2" };
+    var MR = (BE && BE.MEDIDAS_AMBIENTE_REG) || { area: "m2", comprimento: "m", volume: "m3" };
+    var servs = BE && BE.limparServicosAmbiente ? BE.limparServicosAmbiente(amb && amb.servicos) : [];
+    var delim = !!(q && q.estado === "delimitado") || (!q && amb && amb.calc && amb.calc.estado === "delimitado"), nome = txt(amb && amb.nome) || "Ambiente";
+    var pc = null;
+    if (servs.some(function (s) { return MR[s.medida] && !MU[s.medida]; })) pc = peca || (amb ? pecaRegistro(amb, 0, "ambiente") : null);
+    servs.forEach(function (s, i) {
+      var reg = !!MR[s.medida] && !MU[s.medida], qr = reg && pc && BP && BP.quantidade ? BP.quantidade(pc, s.medida) : null;
+      var un = reg ? (qr ? qr.def.un : MR[s.medida]) : MU[s.medida], fator = num(s.fator, 1), it = !reg && BA ? BA.itemDoServico(s) : null;
+      var rot = (s.rotulo || (it && it.rotulo) || (reg ? NOME_MED_AMB[s.medida] + " do ambiente" : s.medida)) + " — " + nome, l;
+      var qv = !delim ? null : (reg ? (qr ? (qr.valorOrc != null ? qr.valorOrc : qr.valor) : null) : (q ? q[s.medida] : null));
+      if (qv == null) {
+        var motivo = !delim ? ((q && q.avisos && q.avisos[0]) || "ambiente sem região fechada: sem quantidade — pendente")
+          : (reg && !BP ? "o registro de parâmetros (js/bimparam.js) não carregou: sem ele a medida do ambiente não sai" : "a medida \"" + s.medida + "\" não existe para este ambiente — pendente");
+        l = { codigo: s.codigo, descricao: rot, unidade: "", unidadeQto: un, quantidade: 0, status: "pendente", horas: [], servico: "a" + i, rotulo: rot, avisos: [motivo] };
+      } else {
+        l = arredLinha(orcar({ id: "a" + i, codigo: s.codigo, unidade: un, quantidade: num(qv) * fator, rotulo: rot }, base, opcoes));
+        if (qr) { l.param = qr.def.id; l.paramNome = qr.def.nome; }
+      }
+      l.medida = s.medida; l.fator = fator; l.codigoOrigem = "ambiente"; if (s.acab) l.acab = s.acab;
+      linhas.push(l);
+    });
+    /* o acabamento escolhido (texto) sem nenhuma composição da medida dele */
+    arr(BA && BA.ACABS).forEach(function (ac) {
+      var t = txt(amb && amb[ac.campo]); if (!t) return;
+      if (servs.some(function (s) { return s.acab === ac.id || (!s.acab && s.medida === ac.medida); })) return;
+      linhas.push({ codigo: "", descricao: ac.nome + " \"" + t + "\" sem composição", unidade: "", unidadeQto: MU[ac.medida], quantidade: 0, status: "sem-codigo", horas: [], servico: "acab:" + ac.id,
+                    avisos: ["escolha a composição em Propriedades do ambiente › Acabamentos e clique Aplicar por ambiente"] });
+    });
+    return { linhas: linhas, resumo: resumir(linhas, opcoes), peso: false, quantidades: q || null };
+  }
+
+  /* --------------------------------------------------------------------
    * O MODELO INTEIRO — estado de BimEdit.aplicar(); avaliarFam(famId,
    * tipoId, inst) = o mesmo do bim.js. Soma por COMPOSIÇÃO (código +
    * unidade): é o que vira linha de orçamento.
    * ------------------------------------------------------------------ */
   function doModelo(estado, avaliarFam, base, opcoes) {
     var BE = dep("BimEdit", "./bimedit.js");
-    var vaos = (BE && BE.vaosDasParedes) ? BE.vaosDasParedes(estado, avaliarFam) : {};
+    /* P10 — OPÇÕES DE PROJETO (js/bimopcoes.js): o orçamento é o do modelo principal +
+       a opção escolhida de cada conjunto (padrão: a principal).
+       FASES (js/bimfases.js): o EXISTENTE fica fora, o DEMOLIDO vira serviço de demolição
+       (bloco "demolicao", no fim). Sem opção e sem fase, nada muda (FX = null). */
+    var BOp = dep("BimOpcoes", "./bimopcoes.js"), BFa = dep("BimFases", "./bimfases.js");
+    if (BOp && BOp.filtrar && estado && estado.opcoes) estado = BOp.filtrar(estado, opcoes && opcoes.escolhaOpcoes);
+    var FX = BFa && BFa.paraOrcamento ? BFa.paraOrcamento(estado, opcoes) : null, estTodo = estado;
+    if (FX) estado = FX.estado;
+    var vaos = (BE && BE.vaosDasParedes) ? BE.vaosDasParedes(estTodo, avaliarFam) : {};
+    /* P1-D: o registro resolve o modelo UMA vez (o mesmo resolver da tela de Propriedades e do IFC) */
+    var BP = dep("BimParam", "./bimparam.js"), reg = null;
+    if (BP && BP.resolver) reg = BP.resolver(estTodo, { avaliarFam: typeof avaliarFam === "function" ? avaliarFam : null, categoriaFam: opcoes && opcoes.categoriaFam, niveis: opcoes && opcoes.niveis });
+    function pecaDe(id) { return reg && reg.porId ? reg.porId[String(id)] || null : null; }
     var elementos = [], todas = [], porCod = {}, ordem = [], pesoKg = 0, comPeso = 0, semPeso = 0;
     function somar(elId, rotulo, r) {
       elementos.push({ id: elId, rotulo: rotulo, linhas: r.linhas, resumo: r.resumo, peso: r.peso });
-      if (r.peso && r.peso.ok) { pesoKg += r.peso.kg; comPeso++; } else semPeso++;
+      /* peso === false: a peça não entra na conta de peso (tubo, conexão — B5) */
+      if (r.peso && r.peso.ok) { pesoKg += r.peso.kg; comPeso++; } else if (r.peso !== false) semPeso++;
       r.linhas.forEach(function (l) {
         todas.push(l);
         /* orçada: soma por composição; problema: agrupa pelo MESMO problema
            (as 12 paredes sem código viram uma linha "12 elementos") */
         var k = l.status === "ok" ? l.codigo + "|" + unidadeChave(l.unidade) : "~" + l.status + "|" + l.codigo + "|" + l.descricao + "|" + unidadeChave(l.unidadeQto);
+        if (l.bloco) k = l.bloco + "#" + k;   /* P10: a demolição não soma com a construção (mesmo código, outro bloco) */
         var g = porCod[k];
         if (!g) {
-          g = porCod[k] = { chave: k, codigo: l.codigo, descricao: l.descricao, unidade: l.unidade || l.unidadeQto, status: l.status, quantidade: 0,
+          g = porCod[k] = { chave: k, codigo: l.codigo, descricao: l.descricao, unidade: l.unidade || l.unidadeQto, status: l.status, quantidade: 0, bloco: l.bloco || null,
                             custo: { mo: 0, mat: 0, eq: 0, total: 0 }, unitario: l.unitario, horasAcc: {}, elementos: [], avisos: [] };
           ordem.push(k);
         }
@@ -351,42 +511,220 @@
     }
     /* peça do editor SEM serviço entra como "sem código" — some do total, mas
        aparece na lista: modelo com 12 paredes e orçamento com 9 tem de se ver */
-    var NOME_EL = { parede: "Parede", laje: "Laje", pilar: "Pilar", viga: "Viga" };
+    var NOME_EL = { parede: "Parede", laje: "Laje", pilar: "Pilar", viga: "Viga", escada: "Escada", guarda: "Guarda-corpo", forro: "Forro", rampa: "Rampa", telhado: "Telhado", borda: "Borda do telhado", fundacao: "Fundação" };   /* P9: rampa */   /* escada e guarda-corpo: modelador B2; forro: P2 */
     function semServico(el, tipo) {
       var nm = (NOME_EL[tipo] || "Cobertura") + " sem composição";
       return { linhas: [{ codigo: "", descricao: nm, unidade: "", unidadeQto: "", quantidade: 0, status: "sem-codigo", avisos: ["dê uma composição à peça em Propriedades › Orçamento"], horas: [], servico: "principal" }],
-               resumo: null, peso: { ok: false, kg: null, motivo: "sem serviço (dê um código à peça)" } };
+               resumo: null, peso: tipo === "forro" ? false : { ok: false, kg: null, motivo: "sem serviço (dê um código à peça)" } };
     }
     arr(estado && estado.caixas).forEach(function (c) {
       if (!arr(c.servicos).length) { somar(c.id, (c.tipo || "elemento") + " " + c.id, semServico(c, c.tipo)); return; }
-      somar(c.id, (c.tipo || "elemento") + " " + c.id, daElemento(c, vaos[c.id] ? vaos[c.id].areaVaos : 0, base, opcoes));
+      somar(c.id, (c.tipo || "elemento") + " " + c.id, daElemento(c, vaos[c.id] ? vaos[c.id].areaVaos : 0, base, opcoes, pecaDe(c.id)));
+    });
+    /* P4 — PINTAR FACE (js/bimpintar.js): cada região pintada (material por face,
+       faixa do barrado) é uma linha em m² pela ÁREA DELA — líquida dos vãos, dos
+       encostos e do que a peça unida tirou. Sem composição: "sem composição"
+       com os m² (aparece em Fora do orçamento, nunca some). Mesmas três regras. */
+    var BPt = dep("BimPintar", "./bimpintar.js");
+    if (BPt && BPt.servicosOrc) BPt.servicosOrc(estado, vaos).forEach(function (s) {
+      var l;
+      if (s.codigo) { l = arredLinha(orcar({ id: s.id, codigo: s.codigo, unidade: s.unidade, quantidade: s.quantidade, rotulo: s.rotulo }, base, opcoes)); l.codigoOrigem = "pintura"; }
+      else l = { codigo: "", descricao: "Pintura \"" + s.material + "\" sem composição", unidade: "", unidadeQto: s.unidade, quantidade: r4(s.quantidade), status: "sem-codigo", horas: [], servico: s.id,
+                 avisos: ["escolha a composição na barra de opções do Pintar (ou pinte de novo a face com o código)"] };
+      l.medida = "pintura"; l.face = s.face; l.regiao = s.regiao; l.material = s.material;
+      somar(s.id, s.rotulo, { linhas: [l], resumo: null, peso: false });
+    });
+    /* EMBREVE — GRAUTE E ARMADURA (js/bimgraute.js): cada parede de alvenaria
+       estrutural grauteada dá o graute (m³ = pontos × furos × área do furo ×
+       altura) e o aço vertical (kg, com o transpasse). Código: o da parede ou a
+       tabela SINAPI do motor pelo fgk/bitola; sem composição = PENDENTE com a
+       quantidade (nunca a parecida). Mesmas três regras. */
+    var BGr = dep("BimGraute", "./bimgraute.js");
+    if (BGr && BGr.servicosOrc) BGr.servicosOrc(estado, vaos).forEach(function (s) {
+      var l;
+      if (s.codigo) { l = arredLinha(orcar({ id: s.id, codigo: s.codigo, unidade: s.unidade, quantidade: s.quantidade, descricao: s.descricao, rotulo: s.rotulo }, base, opcoes)); l.codigoOrigem = s.origemCodigo === "projeto" ? "projeto" : "graute"; }
+      else l = { codigo: "", descricao: s.rotulo, unidade: "", unidadeQto: s.unidade, quantidade: r4(s.quantidade), status: "pendente", avisos: [s.motivo], horas: [], servico: s.id };
+      l.medida = s.medida;
+      somar(s.id, s.rotulo, { linhas: [l], resumo: null, peso: false });
     });
     arr(estado && estado.coberturas).forEach(function (c) {
       if (!arr(c.servicos).length) { somar(c.id, "cobertura " + c.id, semServico(c, "cobertura")); return; }
-      somar(c.id, "cobertura " + c.id, daElemento(c, 0, base, opcoes));
+      somar(c.id, "cobertura " + c.id, daElemento(c, 0, base, opcoes, pecaDe(c.id)));
     });
+    /* P2 integração — FORRO (js/bimforro.js): uma peça como as outras; a
+       quantidade sai do REGISTRO (Área = placa, Área bruta, Perímetro =
+       tabica/negativo, Volume). Forro sem contorno (ok:false) com serviço =
+       PENDENTE com o motivo, nunca zero calado; sem serviço, "sem composição". */
+    arr(estado && estado.forros).forEach(function (f) {
+      if (!f || f.id == null) return;
+      var rot = "forro " + (txt(f.tipoForro && f.tipoForro.rotulo) || "") + " " + f.id;
+      if (!arr(f.servicos).length) { somar(f.id, rot, semServico(f, "forro")); return; }
+      if (f.ok === false) {
+        var mot = "forro sem contorno (" + (arr(f.avisos)[0] || "região não fechada") + "): sem quantidade — pendente";
+        somar(f.id, rot, { linhas: (BE && BE.limparServicos ? BE.limparServicos(f.servicos) : []).map(function (s, i) {
+          return { codigo: s.codigo, descricao: "Forro " + f.id, unidade: "", unidadeQto: (BE.MEDIDAS_ORC || {})[s.medida] || "", quantidade: 0, status: "pendente", horas: [], servico: "s" + i, medida: s.medida, avisos: [mot] };
+        }), resumo: null, peso: false });
+        return;
+      }
+      var rF = daElemento(f, 0, base, opcoes, pecaDe(f.id)); rF.peso = false;   /* forro não entra na conta de peso da estrutura */
+      somar(f.id, rot, rF);
+    });
+    /* P11 — TERRENO (js/bimterreno.js). A PLATAFORMA orça o CORTE e o ATERRO
+       (Corte e Preenchimento do registro, m³ — o método está no js/bimterreno.js).
+       Plataforma SEM composição: as duas linhas saem PENDENTES com a
+       quantidade (o volume aparece no Orçamento do modelo; a composição de
+       movimento de terra o usuário escolhe — nunca se inventa); plataforma
+       sem terreno embaixo, pendente com o motivo. Topossólido, sub-região,
+       divisa e componente entram só quando têm serviço (limpeza de terreno,
+       grama, muro de divisa…), pelas medidas do registro. */
+    var T11 = estado && estado.terreno;
+    if (T11) {
+      arr(T11.plataformas).forEach(function (pl) {
+        if (!pl || pl.id == null) return;
+        var rotP = "plataforma " + (txt(pl.nome) || pl.id);
+        if (!arr(pl.servicos).length || pl.ok === false) {
+          var ls = [];
+          [["corte", "Terraplenagem: corte (escavação)", "escavação"], ["aterro", "Terraplenagem: aterro (preenchimento)", "aterro"]].forEach(function (k) {
+            var q = num(pl[k[0]], 0);
+            var mot = pl.ok === false ? "plataforma sem terreno medido embaixo (" + (arr(pl.avisos)[0] || "sem topossólido") + "): sem quantidade — pendente"
+              : "escolha a composição de " + k[2] + " em Propriedades da plataforma › Orçamento (SINAPI, movimento de terra) — sem composição, pendente";
+            if (pl.ok !== false && !(q > 0)) return;
+            ls.push({ codigo: "", descricao: k[1], unidade: "", unidadeQto: "m3", quantidade: r4(q), status: "pendente", avisos: [mot], horas: [], servico: k[0], medida: k[0] });
+          });
+          if (ls.length) somar(pl.id, rotP, { linhas: ls, resumo: null, peso: false });
+          return;
+        }
+        var rP = daElemento(pl, 0, base, opcoes, pecaDe(pl.id)); rP.peso = false;
+        /* o volume (corte ou aterro) que nenhum serviço cobre segue PENDENTE com a quantidade — não some */
+        [["corte", "Terraplenagem: corte (escavação)", "escavação"], ["aterro", "Terraplenagem: aterro (preenchimento)", "aterro"]].forEach(function (k) {
+          var q = num(pl[k[0]], 0);
+          if (!(q > 0) || arr(pl.servicos).some(function (s) { return s && s.medida === k[0]; })) return;
+          rP.linhas.push({ codigo: "", descricao: k[1], unidade: "", unidadeQto: "m3", quantidade: r4(q), status: "pendente", horas: [], servico: k[0], medida: k[0],
+                           avisos: ["escolha a composição de " + k[2] + " em Propriedades da plataforma › Orçamento (SINAPI, movimento de terra) — sem composição, pendente"] });
+        });
+        somar(pl.id, rotP, rP);
+      });
+      [].concat(arr(T11.topos), arr(T11.subregioes), arr(T11.divisas), arr(T11.componentes)).forEach(function (e) {
+        if (!e || e.id == null || !arr(e.servicos).length) return;
+        var rE = daElemento(e, 0, base, opcoes, pecaDe(e.id)); rE.peso = false;
+        somar(e.id, (txt(e.nome) || e.tipo) + " " + e.id, rE);
+      });
+    }
+    /* P3 — TELHADO, BORDAS e FUNDAÇÃO (js/bimtelhado.js, js/bimfundacao.js):
+       peças como as outras, a quantidade sai do REGISTRO. Peça que não fechou
+       (ok:false) com serviço = PENDENTE com o motivo, nunca zero calado; sem
+       serviço, "sem composição". Telhado e borda não entram no peso da estrutura. */
+    [["telhados", "telhado"], ["bordas", "borda"], ["fundacoes", "fundacao"]].forEach(function (par) {
+      arr(estado && estado[par[0]]).forEach(function (e3) {
+        if (!e3 || e3.id == null) return;
+        var rot = NOME_EL[par[1]].toLowerCase() + " " + e3.id;
+        if (!arr(e3.servicos).length) { var s3 = semServico(e3, par[1]); if (par[1] !== "fundacao") s3.peso = false; somar(e3.id, rot, s3); return; }
+        if (e3.ok === false) {
+          var mot3 = NOME_EL[par[1]].toLowerCase() + " sem geometria (" + (arr(e3.avisos)[0] || "confira as Propriedades") + "): sem quantidade — pendente";
+          somar(e3.id, rot, { linhas: (BE && BE.limparServicos ? BE.limparServicos(e3.servicos) : []).map(function (s, i) {
+            return { codigo: s.codigo, descricao: NOME_EL[par[1]] + " " + e3.id, unidade: "", unidadeQto: (BE.MEDIDAS_ORC || {})[s.medida] || "", quantidade: 0, status: "pendente", horas: [], servico: "s" + i, medida: s.medida, avisos: [mot3] };
+          }), resumo: null, peso: false });
+          return;
+        }
+        var r3 = daElemento(e3, 0, base, opcoes, pecaDe(e3.id)); if (par[1] !== "fundacao") r3.peso = false;
+        /* fundação sem a TAXA de aço: o aço não tem quantidade — pendente com o que fazer (nunca zero calado, nem "medida que não existe") */
+        if (par[1] === "fundacao") r3.linhas.forEach(function (l) {
+          if ((l.medida === "aco" || l.medida === "acoEstacas") && l.status === "unidade") { l.status = "pendente"; l.avisos = ["informe a taxa de aço (kg/m³) " + (l.medida === "aco" ? "da fundação" : "das estacas") + " em Propriedades — sem ela o aço não tem quantidade"]; }
+        });
+        somar(e3.id, rot, r3);
+      });
+    });
+    /* VOLUME LIVRE (B4): orça como a peça do editor — as medidas vêm da malha
+       (BimEdit.medidasDe lê `medidas`); sem serviço, "sem composição" na lista */
+    arr(estado && estado.volumes).forEach(function (v) {
+      var rot = "volume " + (v.categoria || "") + " " + v.id;
+      if (!arr(v.servicos).length) { var s0 = semServico(v, "volume"); s0.linhas[0].descricao = "Volume (" + (v.categoria || "genérico") + ") sem composição"; somar(v.id, rot, s0); return; }
+      somar(v.id, rot, daElemento(v, 0, base, opcoes));
+    });
+    var BIp12 = dep("BimInst", "./biminst.js");
     arr(estado && estado.familias).forEach(function (f) {
       var av = typeof avaliarFam === "function" ? avaliarFam(f.famId, f.tipoId, f.inst) : null;
+      /* P12: dispositivo MEP (tomada, interruptor, luminária, quadro — família com `mep`) sem serviço
+         próprio é orçado pelo js/biminst.js com o código do MAPA (bloco INSTALAÇÕES abaixo): não conta duas vezes */
+      if (av && BIp12 && BIp12.familiaMep && BIp12.familiaMep(av, f)) return;
       if (!av) {
         somar(f.id, "família " + f.famId, { linhas: [{ codigo: "", descricao: "família \"" + f.famId + "\" não está na biblioteca deste aparelho", unidade: "", unidadeQto: "", quantidade: 0, status: "sem-codigo", avisos: ["família não carregada"], horas: [], servico: "principal" }], resumo: null, peso: { ok: false, kg: null, motivo: "família não carregada" } });
         return;
       }
-      somar(f.id, (av.quantitativo && av.quantitativo.descricao) || f.famId, daFamilia(av, base, opcoes, f.servicos));
+      somar(f.id, (av.quantitativo && av.quantitativo.descricao) || f.famId, daFamilia(av, base, opcoes, f.servicos, pecaDe(f.id)));
     });
+    /* P2-C: ACABAMENTO POR AMBIENTE (js/bimacabamento.js) — piso, contrapiso,
+       rodapé, revestimento/pintura de parede e teto, pelas quantidades da
+       fronteira do ambiente. Ambiente sem acabamento escolhido não entra
+       (ambiente não é peça que precise de composição). */
+    var BA = dep("BimAcabamento", "./bimacabamento.js"), ambs = arr(estado && estado.ambientes);
+    if (BA && ambs.length) {
+      /* P10: o acabamento do ambiente mede as paredes de TODAS as fases (pintar a parede existente é serviço de reforma) */
+      var QA = BA.quantidades(estTodo, { avaliarFam: typeof avaliarFam === "function" ? avaliarFam : null, vaos: vaos, forroDe: opcoes && opcoes.forroDe });
+      ambs.forEach(function (a) {
+        if (!a || a.id == null) return;
+        var r = daAmbiente(a, QA.porId[String(a.id)], base, opcoes, pecaDe(a.id));
+        if (r.linhas.length) somar(a.id, "ambiente " + (txt(a.nome) || "Ambiente") + (a.calc && a.calc.numeroAuto && !a.numero ? " " + a.calc.numeroAuto : (a.numero ? " " + a.numero : "")), r);
+      });
+    }
+    /* INSTALAÇÕES (B5, js/biminst.js): cada tubo, conexão e peça chega com a
+       composição da tabela do mapa — ou PENDENTE com o motivo (sem chave na
+       tabela nunca vira "a parecida"). A quantidade é a da geometria. */
+    var BI = dep("BimInst", "./biminst.js");
+    if (BI && BI.servicosOrc && estado && estado.instalacoes) BI.servicosOrc(estado, avaliarFam).forEach(function (s) {
+      var l;
+      if (s.codigo) { l = arredLinha(orcar({ id: s.id, codigo: s.codigo, unidade: s.unidade, quantidade: s.quantidade, descricao: s.descricao, rotulo: s.rotulo }, base, opcoes)); l.codigoOrigem = "mapa"; }
+      else l = { codigo: "", descricao: s.rotulo, unidade: "", unidadeQto: s.unidade, quantidade: r4(s.quantidade), status: "pendente", avisos: [s.motivo], horas: [], servico: s.id };
+      somar(s.id, s.rotulo, { linhas: [l], resumo: null, peso: false });
+    });
+    /* P10 — DEMOLIÇÃO (js/bimfases.js): cada peça demolida na fase do orçamento vira o
+       serviço de demolição do MAPA (código SINAPI conferido) ou do projeto, na medida do
+       REGISTRO (a mesma da tela). Sem composição, ou sem a medida: PENDENTE com o motivo. */
+    if (FX) {
+      var catFx = opcoes && (opcoes.categoriaFamFases || opcoes.categoriaFam);
+      FX.demolir.forEach(function (p) {
+        var sv = BFa.servicoDemolicao(p, FX.mapa), rot = sv.rotulo || ("Demolição — " + p.rotulo), l, q = null;
+        if (sv.codigo && sv.medida !== "un") {
+          var pc = p.origem === "familia" && BP && BP.resolver && catFx ? BP.resolver({ caixas: [], coberturas: [], familias: [p.el] }, { avaliarFam: typeof avaliarFam === "function" ? avaliarFam : null, categoriaFam: catFx }).porId[String(p.id)] : pecaDe(p.id);
+          q = pc && BP && BP.quantidade ? BP.quantidade(pc, sv.medida) : null;
+        }
+        if (!sv.codigo) l = { codigo: "", descricao: rot + " (" + p.rotulo + ")", unidade: "", unidadeQto: (BE && BE.MEDIDAS_ORC || {})[sv.medida] || "", quantidade: 0, status: "pendente", horas: [], servico: "demolicao", avisos: [sv.motivo] };
+        else if (sv.medida !== "un" && !q) l = { codigo: sv.codigo, descricao: rot + " (" + p.rotulo + ")", unidade: "", unidadeQto: (BE && BE.MEDIDAS_ORC || {})[sv.medida] || "", quantidade: 0, status: "pendente", horas: [], servico: "demolicao",
+                                                 avisos: ["a medida \"" + sv.medida + "\" não existe para " + p.rotulo + " no registro de parâmetros — pendente"] };
+        else {
+          l = arredLinha(orcar({ id: "demolicao", codigo: sv.codigo, unidade: q ? q.def.un : "un", quantidade: q ? (q.valorOrc != null ? q.valorOrc : q.valor) : 1, rotulo: rot }, base, opcoes));
+          if (q) { l.param = q.def.id; l.paramNome = q.def.nome; }
+        }
+        l.bloco = "demolicao"; l.medida = sv.medida; l.codigoOrigem = sv.fonte || "mapa"; l.fase = FX.fase; l.statusFase = p.status;
+        somar(p.id, rot + " — " + p.rotulo, { linhas: [l], resumo: resumir([l], opcoes), peso: false });
+      });
+    }
     var porComposicao = ordem.map(function (k) {
       var g = porCod[k], fh = fecharHoras(g.horasAcc, opcoes);
       return { codigo: g.codigo, descricao: g.descricao, unidade: g.unidade, status: g.status, quantidade: r4(g.quantidade),
                custo: g.status === "ok" ? { mo: r2(g.custo.mo), mat: r2(g.custo.mat), eq: r2(g.custo.eq), total: r2(g.custo.total) } : null,
                unitario: g.unitario, horas: fh.horas, horasTotal: fh.horasTotal, duracaoDias: fh.duracaoDias, funcaoCritica: fh.funcaoCritica,
-               elementos: g.elementos, avisos: g.avisos };
+               elementos: g.elementos, avisos: g.avisos, bloco: g.bloco || undefined };
     });
+    porComposicao.forEach(function (g) { if (!g.bloco) delete g.bloco; });   /* P10: só a demolição leva bloco (o resto fica como antes) */
     var ok = porComposicao.filter(function (g) { return g.status === "ok"; });
     var res = resumir(ok.map(function (g) { return { status: "ok", custo: g.custo, duracaoDias: g.duracaoDias, horas: g.horas }; }), opcoes);
-    return {
+    var saida = {
       porComposicao: porComposicao, elementos: elementos, resumo: res,
       peso: { kg: r2(pesoKg), comPeso: comPeso, semPeso: semPeso },
       pendencias: porComposicao.filter(function (g) { return g.status !== "ok"; })
     };
+    /* P10: os três blocos da reforma (só quando o modelo usa fases) */
+    if (FX) {
+      var tot = function (b) { return r2(ok.filter(function (g) { return (g.bloco || "construcao") === b; }).reduce(function (s, g) { return s + g.custo.total; }, 0)); };
+      saida.fases = { fase: FX.fase, lista: FX.lista, n: FX.n, avisos: FX.avisos,
+                      construcao: tot("construcao"), demolicao: tot("demolicao"),
+                      demolidos: FX.demolir.map(function (p) { return p.id; }),
+                      existentes: FX.existentes.map(function (p) { return { id: p.id, rotulo: p.rotulo }; }),
+                      fora: FX.fora.map(function (p) { return { id: p.id, rotulo: p.rotulo, status: p.status }; }) };
+    }
+    if (estTodo && estTodo.opcoesEscolha) saida.opcoes = estTodo.opcoesEscolha;   /* P10: a escolha de opções orçada */
+    return saida;
   }
 
   /* --------------------------------------------------------------------
@@ -428,7 +766,7 @@
     opts = opts || {};
     var itens = [], fora = [];
     arr(modelo && modelo.porComposicao).forEach(function (g) {
-      if (g.status === "ok" && g.quantidade > 0) itens.push({ codigo: g.codigo, descricao: g.descricao, unidade: g.unidade, quantidade: r4(g.quantidade), elementos: g.elementos.slice() });
+      if (g.status === "ok" && g.quantidade > 0) { var it = { codigo: g.codigo, descricao: g.descricao, unidade: g.unidade, quantidade: r4(g.quantidade), elementos: g.elementos.slice() }; if (g.bloco === "demolicao") it.bloco = "demolicao"; itens.push(it); }   /* P10: bloco */
       else fora.push({ codigo: g.codigo, descricao: g.descricao, status: g.status, quantidade: g.quantidade, motivo: (g.avisos || [])[0] || (g.status === "ok" ? "quantidade zero" : g.status), elementos: g.elementos.slice() });
     });
     return { nome: opts.nomeEtapa || "Modelo BIM (orçamento pelo modelo)", itens: itens, fora: fora };
@@ -437,7 +775,8 @@
   var OrcModelo = {
     VERSAO: 1,
     unidadeChave: unidadeChave, mesmaUnidade: mesmaUnidade, funcaoDe: funcaoDe, chaveFuncao: chaveFuncao,
-    orcar: orcar, daFamilia: daFamilia, daElemento: daElemento, doModelo: doModelo, resumir: resumir,
+    orcar: orcar, daFamilia: daFamilia, daElemento: daElemento, daAmbiente: daAmbiente, doModelo: doModelo, resumir: resumir,
+    medidasDaCategoria: medidasDaCategoria, pecaRegistro: pecaRegistro,
     volumeSolido: volumeSolido, pesoSolidos: pesoSolidos, pesoPorDescricao: pesoPorDescricao,
     baseComPreco: baseComPreco, paraOrcamento: paraOrcamento
   };

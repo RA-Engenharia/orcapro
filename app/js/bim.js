@@ -311,7 +311,7 @@ function montar(host, opts) {
   host.style.position = 'relative';
   host.style.background = 'radial-gradient(120% 120% at 50% 0%, #16324f 0%, #0b1a2b 70%)';
 
-  // v1.1.82 — ícones SVG line-art (estilo Revit) no lugar dos emojis: stroke currentColor,
+  // v1.1.82 — ícones SVG line-art no lugar dos emojis: stroke currentColor,
   // 14px, herdam a cor do tema. ico(nome) devolve a tag inline.
   function ico(n) {
     /* ⚠ NOME QUE NAO EXISTE AQUI DESENHA UM SVG VAZIO, em silêncio: `P[n]`
@@ -461,7 +461,7 @@ function montar(host, opts) {
     (blocokLiberado() ? '<button class="btn sm" data-b="blocok" title="Plantas Executivas Blocok: lê as paredes do IFC e gera a prancha de cada parede com as placas 90×90 numeradas e paginadas + tabela de material (placas + insumos calculados) + carga na fundação">' + ico('parede') + 'Blocok</button>' : '') +
     '<button class="btn sm" data-b="foto" title="Salvar foto PNG do modelo com carimbo de data">' + ico('foto') + 'Foto</button>' +
     '<button class="btn sm" data-b="fit">' + ico('fit') + 'Enquadrar</button>' +
-    '<button class="btn sm" data-b="tema" title="Cor da interface do BIM: OrçaPRO → Revit → Claro">' + ico('tema') + '</button>' +
+    '<button class="btn sm" data-b="tema" title="Cor da interface do BIM: OrçaPRO → Grafite → Claro">' + ico('tema') + '</button>' +
     /* ⚠ SEM `accept` NO CELULAR — ver aceitaIFC() logo abaixo. */
     '<input type="file" data-b="file"' + aceitaIFC() + ' multiple style="display:none">';
   host.appendChild(bar);
@@ -795,10 +795,10 @@ function montar(host, opts) {
   window.addEventListener('scroll', aoRolar, true);
   setBarra(barraAberta); // aplica o estado salvo (S._ajustarTop roda depois no setup)
 
-  // v1.1.82 — TEMA de cores da interface do BIM (escolha do usuário; 'revit' = o look do Revit)
+  // v1.1.82 — TEMA de cores da interface do BIM (escolha do usuário; 'revit' = tema grafite, cinza escuro)
   var TEMAS = {
     orcapro: { nome: 'OrçaPRO', ativo: '#16a34a', bar: 'linear-gradient(180deg,rgba(15,39,64,.9),rgba(15,39,64,0))', painel: 'rgba(15,39,64,.97)', borda: '#24435f', texto: '#dbe8f5', fundo: 'radial-gradient(120% 120% at 50% 0%, #16324f 0%, #0b1a2b 70%)' },
-    revit: { nome: 'Revit', ativo: '#1858A8', bar: 'linear-gradient(180deg,rgba(59,68,75,.96),rgba(59,68,75,0))', painel: 'rgba(42,49,56,.97)', borda: '#565f66', texto: '#e8eaec', fundo: 'radial-gradient(120% 120% at 50% 0%, #4a5158 0%, #2e343a 70%)' },
+    revit: { nome: 'Grafite', ativo: '#1858A8', bar: 'linear-gradient(180deg,rgba(59,68,75,.96),rgba(59,68,75,0))', painel: 'rgba(42,49,56,.97)', borda: '#565f66', texto: '#e8eaec', fundo: 'radial-gradient(120% 120% at 50% 0%, #4a5158 0%, #2e343a 70%)' },
     claro: { nome: 'Claro', ativo: '#0e7490', bar: 'linear-gradient(180deg,rgba(235,241,247,.95),rgba(235,241,247,0))', painel: 'rgba(248,250,252,.98)', borda: '#c4d0dc', texto: '#1a2b3c', fundo: 'radial-gradient(120% 120% at 50% 0%, #e6edf4 0%, #c9d6e3 70%)' }
   };
   var temaId = 'orcapro';
@@ -833,7 +833,7 @@ function montar(host, opts) {
     if (S && S._hint) S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('paleta', 15) : '') + ' Tema: ' + TEMAS[temaId].nome);
   }
   /* v1.1.127 — a casca (bimshell) precisa MANDAR o tema, não só ciclar: quando o
-   * ambiente está no claro do Revit, a cena tem de acompanhar, senão fica uma
+   * ambiente está no tema claro, a cena tem de acompanhar, senão fica uma
    * janela navy no meio de uma interface clara. */
   function definirTema(id) {
     if (!TEMAS[id]) return false;
@@ -1288,19 +1288,19 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   S._contornoSelecao = contornoSelecao;
 
   /* =====================================================================
-   * AMBIENTE TIPO REVIT NO 3D (30/09/2026) — pedido do Rogério: "entenda
-   * como é a interface do Revit e faça no nosso sistema; a maioria dos
-   * usuários já é acostumada com o Revit". Aqui moram as peças que vivem
+   * AMBIENTE DE PROGRAMA DE PROJETO NO 3D (30/09/2026) — pedido do Rogério: interface
+   * de programa de projeto, que o usuário já conhece; a maioria dos
+   * usuários já é acostumada com esse tipo de ambiente. Aqui moram as peças que vivem
    * DENTRO do visualizador:
    *   • ViewCube (canto superior direito de cada vista): clicar numa face,
    *     aresta ou canto orienta a câmera; arrastar gira; a casinha volta ao
-   *     início; o botão direito abre o menu do Revit (início, salvar vista,
+   *     início; o botão direito abre o menu do cubo (início, salvar vista,
    *     perspectiva/ortogonal, definir início, orientar para vista…);
    *   • Ortogonal: câmera com abertura mínima e recuada na mesma proporção —
    *     o enquadramento não pula e todo o resto (seleção, trena, foto) segue
    *     igual, porque a câmera continua a mesma;
    *   • Caixa de corte com as setas azuis nas seis faces (puxar e empurrar),
-   *     como no Revit;
+   *     para cortar o modelo;
    *   • Vistas extras: outra câmera sobre a MESMA cena — abas, lado a lado e
    *     outra janela. A peça selecionada numa aparece selecionada em todas
    *     (o material de seleção é da cena, não da vista).
@@ -1466,7 +1466,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       var dx = e.clientX - p0.x, dy = e.clientY - p0.y;
       if (!arrastou && Math.abs(dx) + Math.abs(dy) < 4) return;
       arrastou = true; p0 = { x: e.clientX, y: e.clientY };
-      /* arrastar o cubo GIRA a vista em volta do alvo (como no Revit) */
+      /* arrastar o cubo GIRA a vista em volta do alvo */
       var cam = ctx.cam(), orb = ctx.orbit(), off = cam.position.clone().sub(orb.target);
       var sph = new THREE.Spherical().setFromVector3(off);
       sph.theta -= dx * 0.012; sph.phi = Math.max(0.02, Math.min(Math.PI - 0.02, sph.phi - dy * 0.012));
@@ -2471,7 +2471,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     ]);
   }
   /* funil ÚNICO do seletor e do arrastar-e-soltar (ver classificarEntradaBim) */
-  function receberArquivos(lista) {
+  function receberArquivos(lista, semFamilias) {
+    /* FAMIMPORT (js/familiaimportui.js, prévia do modelador): .opfam, .rfa (e o .txt do catálogo de tipos) e o .zip
+       com famílias entram na BIBLIOTECA; o resto segue o caminho de sempre. O .zip que não tem família volta para cá. */
+    if (!semFamilias && window.FamiliaImportUI && FamiliaImportUI.ativo()) lista = FamiliaImportUI.interceptar(lista, function (resto) { receberArquivos(resto, true); });
+    if (!lista || !lista.length) return;
     var cls = classificarEntradaBim(lista);
     cls.ifc.forEach(function (f) { abrirArquivo(f); });
     if (cls.skp.length) orientarSketchUp(cls.skp.map(function (f) { return f.name; }));
@@ -2525,7 +2529,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       var qC = (moS.qto && moS.qto[expressID]) || null;
       var famC = (moS.familias && moS.familias[expressID]) || null;
       return { id: expressID, mid: mid, uid: mid + ':' + expressID,
-        /* o nome do Revit primeiro; o rotulo da disciplina so se ele faltar */
+        /* o nome do IFC primeiro; o rotulo da disciplina so se ele faltar */
         nome: (elC && (elC.nomeIfc || elC.nome)) || '—', tipo: (elC && elC.tipo) || tipoCache || '',
         globalId: (elC && elC.globalId) || '', tag: (elC && elC.tag) || '',
         familia: famC ? famC.familia : ((elC && elC.familia) || ''),
@@ -3118,7 +3122,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   /* COLETOR DE CLIQUES — "vou clicando nas peças e o sistema vai juntando"
    * (relatório de peso, e depois o içamento). Diferente do `_aoTocar`, que é
    * de UM toque: o coletor fica ligado até quem ligou desligar.
-   * ⚠ O DUPLO-CLIQUE DE HÁBITO: quem passa a vida no Revit clica duas vezes.
+   * ⚠ O DUPLO-CLIQUE DE HÁBITO: quem tem o hábito de clicar duas vezes na peça cai nisto.
    *   Os dois cliques chegavam aqui e a peça entrava e saía na mesma hora — na
    *   tela, "não aconteceu nada". O segundo clique na MESMA peça em menos de
    *   400 ms é o duplo-clique da primeira, e é ignorado; e o `dblclick` não
@@ -5547,7 +5551,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   S._tickExtra.push(function () { if (S._cristalTickEscala) S._cristalTickEscala(); });
 
   /* =====================================================================
-   * ESTILO VISUAL — como no Revit (prévia `?previa=visual`, 07/10/2026)
+   * ESTILO VISUAL (prévia `?previa=visual`, 07/10/2026)
    *
    * Pedido do Rogério: "quero ver a parede com preenchimento de cor normal,
    * com a textura, com a textura realista, e só preto e branco". Quatro modos,
@@ -5988,7 +5992,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     _upAtual = { x: e.clientX, y: e.clientY };
     var hit = raycastEm(e.clientX, e.clientY);
     if (S.edit && S.edit.on && S.edit.sub) { editClique(e, hit); return; } // editor: aceita hit OU plano do chão
-    if (S.edit && S.edit.on && !S.edit.sub) { // editor SEM ferramenta: clique simples mostra os parâmetros (estilo Revit)
+    if (S.edit && S.edit.on && !S.edit.sub) { // editor SEM ferramenta: clique simples mostra os parâmetros
+      if (S._prec) S._prec.selecionar(e, hit);   /* B3: e seleciona a peça do editor (cotas temporárias e alças) */
       if (hit && _ultimosHits[0]) {
         var udP = _ultimosHits[0].object.userData;
         if (opts.onPick) opts.onPick(propsDe(udP.mid !== undefined ? udP.mid : S.modelID, udP.expressID, udP.tipo));
@@ -6059,8 +6064,14 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     /* 🔍 com a lupa aberta o dedo move a MIRA, e mais nada acontece neste
        handler: nem preview de parede, nem o hover normal do snap. */
     if (S._lupaMover && S._lupaMover(e)) return;
-    // v1.1.82 — preview vivo da parede (rubber-band + cota junto ao cursor, estilo Revit)
-    if (S.edit && S.edit.on && (((S.edit.sub === 'parede' || S.edit.sub === 'viga' || S.edit.sub === 'cobertura') && S.edit.p1) || S.edit.sub === 'familia') && S._editPreviewMove) {
+    if (S._p2d && S._p2d.mover(e)) return;   /* P2-D: o realce da região do Ambiente antes do clique (js/bimambienteui.js) */
+    if (S._p3) S._p3.mover(e);   /* P3: a linha de prévia do telhado/fundação (js/bimp3ui.js) — os snaps seguem */
+    if (S._prec && S._prec.mover(e)) {   /* B3: com a prévia do modelador, o editor usa os snaps de precisão (js/bimprecisaoui.js) */
+      if (window.BimPlantaModelar && BimPlantaModelar.moverForma3d) BimPlantaModelar.moverForma3d();   /* PLANTA: a prévia da forma da barra (retângulo, círculo…) segue o cursor também no 3D */
+      return;
+    }
+    // v1.1.82 — preview vivo da parede (rubber-band + cota junto ao cursor)
+    if (S.edit && S.edit.on && (((S.edit.sub === 'parede' || S.edit.sub === 'viga' || S.edit.sub === 'cobertura') && S.edit.p1) || S.edit.sub === 'familia' || (S._volPreviewa && S._volPreviewa())) && S._editPreviewMove) {
       S._editPreviewMove(e);
     }
     if (!ferramentaClique() || !snap.on) return;
@@ -6526,7 +6537,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
      trabalho há espaço de sobra ao lado do modelo. */
   /* ⚠ A LARGURA É DO HOST, NÃO DA JANELA DO NAVEGADOR. `min(1180px,96vw)`
      parece razoável e está errado aqui: o viewer vive dentro da casca do BIM,
-     com barra lateral e faixa do Revit à volta, então 96vw é MUITO mais largo
+     com barra lateral e faixa de comandos à volta, então 96vw é MUITO mais largo
      que o espaço real — e o painel continuava saindo cortado à direita, com o
      "+ insumo" pela metade. Medido em foto: host ≈ 1050 px numa tela de
      1600 px. Ancorar `left` e `right` faz a janela caber no que existe,
@@ -7531,6 +7542,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   host.appendChild(snapMarca);
   S.snapMarca = snapMarca;
   var SNAP_VIS = { vertice: { cor: '#22c55e', borda: '0', rot: 'vértice' }, meio: { cor: '#f59e0b', borda: '50%', rot: 'meio' }, aresta: { cor: '#38bdf8', borda: '0', rot: 'aresta' }, intersecao: { cor: '#e879f9', borda: '0', rot: '✚ interseção' }, centro: { cor: '#facc15', borda: '50%', rot: '⊕ centro' } };
+  /* B3 (08/10/2026): os snaps do EDITOR (js/bimprecisao.js) usam este MESMO marcador, guias e lupa —
+     com o desenho de símbolo padrão (quadrado, triângulo, X, ⊥…) em vez da caixa colorida. `svg` só nos tipos dele. */
+  if (window.BimPrecisao) ['fim', 'perpendicular', 'extensao', 'proximo', 'grade'].forEach(function (k) { SNAP_VIS[k] = { cor: { fim: 'var(--verde)', perpendicular: 'var(--aco)', extensao: 'var(--amarelo)', proximo: 'var(--texto-fraco)', grade: 'var(--texto-fraco)' }[k], borda: '0', rot: BimPrecisao.ROTULO[k], svg: BimPrecisao.glifoSvg(k) }; });
   // o marcador é ANCORADO NO MUNDO e re-projetado a cada frame (achado do usuário: posicionado
   // uma única vez, ficava "pendurado" na tela enquanto o damping da câmera ainda deslizava —
   // o ponto mostrado parecia longe/bugado em relação ao ponto real)
@@ -7748,7 +7762,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
          de imprecião. Agora ele diz o que houve; inventar ponto continua fora. */
       if (sn && sn.pesado && snap.on) {
         var icoP = snapMarca.querySelector('[data-sm="ico"]');
-        icoP.style.borderColor = '#94a3b8'; icoP.style.borderRadius = '50%'; icoP.style.transform = '';
+        icoP.innerHTML = ''; icoP.style.borderWidth = ''; icoP.style.borderColor = '#94a3b8'; icoP.style.borderRadius = '50%'; icoP.style.transform = '';
         var rotP = snapMarca.querySelector('[data-sm="rot"]');
         rotP.textContent = 'sem snap (peça pesada)'; rotP.style.color = '#94a3b8';
         snapVivo = { p: sn.p.clone(), tipo: null };
@@ -7760,7 +7774,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
          o quê?" justo onde a resposta era simples. */
       if (sn && sn.p && snap.on) {
         var icoS = snapMarca.querySelector('[data-sm="ico"]');
-        icoS.style.borderColor = '#cbd5e1'; icoS.style.borderRadius = '50%'; icoS.style.transform = 'scale(.6)';
+        icoS.innerHTML = ''; icoS.style.borderWidth = ''; icoS.style.borderColor = '#cbd5e1'; icoS.style.borderRadius = '50%'; icoS.style.transform = 'scale(.6)';
         var rotS = snapMarca.querySelector('[data-sm="rot"]'), nmS = nomeDaPeca(sn.obj);
         rotS.textContent = sn.mapa && window.BimTrenaMapa ? ('sobre o mapa · ' + window.BimTrenaMapa.nome(sn.mapa)) : ('superfície' + (nmS ? ' · ' + nmS : '')); rotS.style.color = sn.mapa ? '#7dd3fc' : '#cbd5e1';
         snapVivo = { p: sn.p.clone(), tipo: null };
@@ -7771,11 +7785,15 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       return;
     }
     var vis = SNAP_VIS[sn.tipo], ico = snapMarca.querySelector('[data-sm="ico"]');
+    /* B3: o snap do editor chega com o glifo de símbolo (svg); os da trena continuam a caixa de sempre */
+    var glifo = (sn.editor && window.BimPrecisao) ? BimPrecisao.glifoSvg(sn.tipo) : (vis.svg || '');
+    ico.innerHTML = glifo; ico.style.borderWidth = glifo ? '0' : ''; ico.style.color = glifo ? (sn.editor ? sn.cor || vis.cor : vis.cor) : '';
     ico.style.borderColor = vis.cor; ico.style.borderRadius = vis.borda;
-    ico.style.transform = (sn.tipo === 'aresta' || sn.tipo === 'intersecao') ? 'rotate(45deg)' : '';
+    ico.style.transform = (!glifo && (sn.tipo === 'aresta' || sn.tipo === 'intersecao')) ? 'rotate(45deg)' : '';
     var nmP = nomeDaPeca(sn.obj);
     snapMarca.querySelector('[data-sm="rot"]').textContent = vis.rot + (nmP ? ' · ' + nmP : '');
-    snapMarca.querySelector('[data-sm="rot"]').style.color = vis.cor;
+    snapMarca.querySelector('[data-sm="rot"]').style.color = glifo ? (sn.cor || vis.cor) : vis.cor;
+    if (sn.editor && window.BimPrecisao) snapMarca.querySelector('[data-sm="rot"]').textContent = BimPrecisao.ROTULO[sn.tipo] || vis.rot;
     snapVivo = { p: sn.p.clone(), tipo: sn.tipo };
     posicionarSnapMarca();
   }
@@ -8801,7 +8819,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   });
 
   // ============================================================
-  // 📄 PLANTA BAIXA TÉCNICA — desenho 2D de verdade (estilo Revit):
+  // 📄 PLANTA BAIXA TÉCNICA — desenho 2D de verdade:
   // corte horizontal na altura do slider, paredes cortadas HACHURADAS
   // (mesmo stencil por paridade do corte técnico), arestas pretas, fundo
   // branco, escala exata e COTAS AUTOMÁTICAS em cadeia nos 2 eixos
@@ -9082,7 +9100,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
 
   /* =====================================================================
    * VISTA 2D TÉCNICA (07/10/2026) — os DADOS de uma planta ou de um corte,
-   * em VETOR, para o js/desenho2d.js desenhar como o Revit desenha:
+   * em VETOR, para o js/desenho2d.js desenhar a vista técnica:
    *   cortes → o que o plano atravessa: interseção EXATA plano × triângulo,
    *            encadeada em contornos por peça (vira pena grossa + hachura);
    *   linhas → as arestas que se VEEM além do plano: as arestas de cada peça
@@ -9104,8 +9122,20 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var box = new THREE.Box3().setFromObject(modelRoot);
     if (box.isEmpty()) return { ok: false, erro: 'Abra um modelo primeiro.' };
     var planta = def.tipo !== 'corte';
+    /* P6 — GANCHO (js/bimmodelovista.js + js/bim2dui.js): 'forro' = planta de forro
+       refletido (olha para CIMA a partir do corte; o X volta espelhado no fim, igual
+       ao da planta); p6Ocultar(userData) = V/G da vista (sai do corte, das arestas e
+       do passe de profundidade); p6Tag = cada contorno/aresta leva tipo e uid da peça */
+    var p6Forro = def.tipo === 'forro', p6Oc = typeof def.p6Ocultar === 'function' ? def.p6Ocultar : null, p6Tag = !!def.p6Tag, linhasUd = [];
     var dir, upv, O, plano, camPos, near = 0.4, far, sFn;
-    if (planta) {
+    if (p6Forro) {
+      var hF = +def.yCorte, topoF = (def.yTopo != null) ? +def.yTopo : box.max.y + 0.01;
+      if (!isFinite(hF)) return { ok: false, erro: 'Altura do corte inválida.' };
+      dir = new THREE.Vector3(0, 1, 0); upv = new THREE.Vector3(0, 0, -1); O = new THREE.Vector3(0, 0, 0);
+      plano = new THREE.Plane(new THREE.Vector3(0, 1, 0), -hF);
+      camPos = new THREE.Vector3((box.min.x + box.max.x) / 2, hF - 0.5, (box.min.z + box.max.z) / 2);
+      far = 0.5 + Math.max(0.05, topoF - hF);
+    } else if (planta) {
       var h = +def.yCorte, fundo = (def.yFundo != null) ? +def.yFundo : box.min.y - 0.01;
       if (!isFinite(h)) return { ok: false, erro: 'Altura do corte inválida.' };
       dir = new THREE.Vector3(0, -1, 0); upv = new THREE.Vector3(0, 0, -1); O = new THREE.Vector3(0, 0, 0);
@@ -9155,6 +9185,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       mat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide });
       renderer.clippingPlanes = [plano]; renderer.localClippingEnabled = false; renderer.toneMapping = THREE.NoToneMapping;
       scene.children.forEach(function (c) { if (c !== modelRoot && c.visible !== false) { escondidos.push(c); c.visible = false; } });
+      if (p6Oc) modelRoot.traverse(function (o) { if (o.isMesh && o.visible !== false && p6Oc(o.userData || {})) { escondidos.push(o); o.visible = false; } });   /* P6: V/G */
       scene.overrideMaterial = mat;
       renderer.autoClear = true;
       renderer.setRenderTarget(rt); renderer.setClearColor(0xffffff, 1); renderer.clear();
@@ -9190,12 +9221,54 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     }
 
     /* ---------------- CORTE exato + ARESTAS visíveis ---------------- */
-    var cortes = [], linhas = [], nMalhas = 0, nTri = 0, nAr = 0, amostras = 0;
+    var cortes = [], linhas = [], nMalhas = 0, nTri = 0, nAr = 0, amostras = 0, linhasFase = {};   /* P10: linhasFase */
+    var linhasIfc = [];   /* P8 — GANCHO: a categoria (tipo IFC) de cada linha, na ordem de `linhas` (camada do DXF, js/bimdxf.js) */
+    var portasNat = [], portasIfc = {};   /* PORTA: as malhas que levam o símbolo de abertura (js/simboloporta.js) */
     var tol = Math.max(0.004, 2.0 / ppm), passoPx = 0.9;
     var bb = new THREE.Box3(), v3 = new THREE.Vector3();
+    /* CURVA: o corte exato da parede curva, uma vez por parede (as fatias dela são várias malhas) */
+    var curvaFeita = {}, curvaVaos = null;
+    function curvaPlanta(id) {
+      var c = null; (edit.estado.caixas || []).forEach(function (x) { if (x && x.id === id) c = x; });
+      if (!c || !BimCurva.ehCurva(c)) return false;
+      if (curvaFeita[id]) return true;
+      curvaFeita[id] = 1;
+      if (!curvaVaos) { try { curvaVaos = BimEdit.vaosDasParedes(edit.estado, famAval) || {}; } catch (eV) { curvaVaos = {}; } }
+      var hC = +def.yCorte, vz = curvaVaos[id];
+      BimCurva.cortePlanta(c, function (q) { return [telaX(q[0], hC, q[1]), telaY(q[0], hC, q[1])]; }, vz ? vz.aceitos : [], hC).forEach(function (k) {
+        if (p6Tag) { k.t = 'IFCWALL'; k.u = 'edit:' + id; }
+        k.ifc = 'IFCWALL'; cortes.push(k);
+      });
+      return true;
+    }
     modelRoot.children.forEach(function (g) {
       (g.children || []).forEach(function (m) {
         if (!m.isMesh || !m.geometry || !cadeiaVisivel(m)) return;
+        if (p6Oc && p6Oc(m.userData || {})) return;   /* P6: V/G */
+        /* PORTA (js/simboloporta.js): na planta a porta vale pelo SÍMBOLO (folha aberta + arco) —
+           a folha FECHADA da porta nativa sai do corte; a porta do IFC aberto é juntada por peça
+           (uma porta tem várias malhas) e o símbolo sai do eixo dela, depois do laço */
+        if (planta && !p6Forro) {
+          if (m.userData.portaFolha) return;
+          if (m.userData.portaPlanta) portasNat.push(m);
+          else if (m.userData.mid !== 'edit' && !m.userData.fimpSem2d && /^IFCDOOR(STANDARDCASE)?$/.test(String(m.userData.tipo || '').toUpperCase())) {
+            var kPI = m.userData.mid + ':' + m.userData.expressID; (portasIfc[kPI] = portasIfc[kPI] || []).push(m);
+          }
+        }
+        /* FAMIMPORT (js/familiamalha.js): família importada com LINHAS DE PLANTA (giro da porta, folha da
+           janela) — na planta valem elas, não o corte da malha; no corte e no forro, a malha */
+        if (planta && !p6Forro && m.userData.fimpSem2d) {
+          var fp = m.userData.fimpPlanta, fy = m.userData.fimpFaixaY || [-Infinity, Infinity];
+          if (fp && fy[1] >= fundo - 1e-6 && fy[0] <= h + 1e-6) {
+            var udF = p6Tag ? { t: m.userData.tipo || '', u: (m.userData.mid != null ? m.userData.mid : S.modelID) + ':' + m.userData.expressID } : null;
+            for (var iF = 0; iF + 3 < fp.length; iF += 4) {
+              linhas.push([telaX(fp[iF], h, fp[iF + 1]), telaY(fp[iF], h, fp[iF + 1]), telaX(fp[iF + 2], h, fp[iF + 3]), telaY(fp[iF + 2], h, fp[iF + 3])]);
+              linhasIfc.push(m.userData.tipo || ''); if (udF) linhasUd.push(udF);
+            }
+          }
+          return;
+        }
+        var udT = p6Tag ? { t: m.userData.tipo || '', u: m.userData.expressID != null ? ((m.userData.mid != null ? m.userData.mid : S.modelID) + ':' + m.userData.expressID) : '' } : null;   /* P6 */
         var geo = m.geometry, pos = geo.attributes && geo.attributes.position; if (!pos) return;
         if (!geo.boundingBox) geo.computeBoundingBox();
         bb.copy(geo.boundingBox).applyMatrix4(m.matrixWorld);
@@ -9207,6 +9280,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         }
         if (!algumFica) return;
         nMalhas++;
+        /* CURVA: a parede curva (js/bimcurva.js) entra na PLANTA com o contorno exato — os arcos
+           de verdade no SVG (c.arcos), não as cordas da malha; as arestas vistas seguem abaixo */
+        var curvaPl = planta && !p6Forro && algumSai && window.BimCurva && edit && edit.estado && m.userData && m.userData.mid === 'edit' ? curvaPlanta(m.userData.expressID) : false;
         var e = m.matrixWorld.elements, A = pos.array, idx = geo.index ? geo.index.array : null;
         var nV = pos.count;
         var WX = new Float32Array(nV), WY = new Float32Array(nV), WZ = new Float32Array(nV), SS = new Float32Array(nV);
@@ -9216,7 +9292,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           WX[vi] = wx; WY[vi] = wy; WZ[vi] = wz; SS[vi] = sFn(wx, wy, wz);
         }
         /* (a) corte: só se a peça atravessa o plano */
-        if (algumSai) {
+        if (algumSai && !curvaPl) {
           var segs = [], nT = idx ? idx.length / 3 : nV / 3;
           for (var ti = 0; ti < nT; ti++) {
             var i0 = idx ? idx[ti * 3] : ti * 3, i1 = idx ? idx[ti * 3 + 1] : ti * 3 + 1, i2 = idx ? idx[ti * 3 + 2] : ti * 3 + 2;
@@ -9233,10 +9309,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
             }
             if (pts.length === 2) segs.push(pts);
           }
-          encadear(segs).forEach(function (c) { cortes.push(c); });
+          encadear(segs).forEach(function (c) { if (udT) { c.t = udT.t; c.u = udT.u; } c.ifc = m.userData.tipo || ''; if (m.userData._fase) c.fase = m.userData._fase; cortes.push(c); });   /* P6: udT; P8: categoria; P10: status de fase */
         }
         /* (b) arestas que se veem */
-        var arr = arestasDe(geo);
+        var arr = arestasDe(geo), l0p10 = linhas.length;   /* P10 */
         for (var ei = 0; ei < arr.length; ei += 6) {
           nAr++;
           var ax = arr[ei], ay = arr[ei + 1], az = arr[ei + 2], bx = arr[ei + 3], by = arr[ei + 4], bz = arr[ei + 5];
@@ -9259,20 +9335,96 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           var ini = -1, ult = -1;
           for (var si = 0; si < n; si++) {
             var f = si / (n - 1), X = sx1 + (sx2 - sx1) * f, Y = sy1 + (sy2 - sy1) * f, dd = da + (db - da) * f;
-            var vis = dd <= far && dd <= bufDist(X, Y) + tol;
+            var vis = dd <= far && (def.p6Aramado === true || dd <= bufDist(X, Y) + tol);   /* P6: estilo visual Aramado = sem oclusão */
             if (vis) { if (ini < 0) ini = si; ult = si; }
             if ((!vis || si === n - 1) && ini >= 0) {
               var fa = ini / (n - 1), fb = ult / (n - 1);
-              if (ult > ini) linhas.push([sx1 + (sx2 - sx1) * fa, sy1 + (sy2 - sy1) * fa, sx1 + (sx2 - sx1) * fb, sy1 + (sy2 - sy1) * fb]);
+              if (ult > ini) { linhas.push([sx1 + (sx2 - sx1) * fa, sy1 + (sy2 - sy1) * fa, sx1 + (sx2 - sx1) * fb, sy1 + (sy2 - sy1) * fb]); if (udT) linhasUd.push(udT); linhasIfc.push(m.userData.tipo || ''); }   /* P6: udT */
               ini = -1;
             }
           }
         }
+        /* P10: as arestas da peça existente/demolida vão à parte (meio-tom / tracejado no desenho) */
+        if (m.userData._fase && linhas.length > l0p10) { var lf = linhasFase[m.userData._fase] || (linhasFase[m.userData._fase] = []); linhas.splice(l0p10).forEach(function (q) { lf.push(q); }); }
       });
     });
+    /* PORTA: o símbolo de abertura de cada porta cortada pela faixa da planta */
+    var portas = [];
+    if (planta && !p6Forro && window.SimboloPorta) {
+      var naFaixa = function (y0, y1) { return y1 >= fundo - 1e-6 && y0 <= h + 1e-6; };
+      var paraTela = function (sp, u) {
+        function q(p) { return [telaX(p[0], h, p[1]), telaY(p[0], h, p[1])]; }
+        return { t: 'IFCDOOR', u: u, tipo: sp.tipo,
+          folhas: (sp.folhas || []).map(function (f) { return f.map(q); }),
+          arcos: (sp.arcos || []).map(function (a) { return { c: q(a.c), r: a.r, de: q(a.de), ate: q(a.ate) }; }),
+          linhas: (sp.linhas || []).map(function (l) { var a = q([l[0], l[1]]), b = q([l[2], l[3]]); return [a[0], a[1], b[0], b[1]]; }) };
+      };
+      portasNat.forEach(function (m) {
+        var fy = m.userData.portaFaixaY || [-Infinity, Infinity];
+        if (naFaixa(fy[0], fy[1])) portas.push(paraTela(m.userData.portaPlanta, 'edit:' + m.userData.expressID));
+      });
+      Object.keys(portasIfc).forEach(function (kP) {
+        try { var r = portaIfcPlanta(portasIfc[kP]); if (r && naFaixa(r.y0, r.y1)) portas.push(paraTela(r.sp, kP)); } catch (ePI) { /* sem símbolo: fica o corte */ }
+      });
+    }
     var ms = Math.round(((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0));
-    return { ok: true, tipo: planta ? 'planta' : 'corte', cortes: cortes, linhas: linhas,
+    if (p6Forro) {   /* P6: o forro refletido foi visto de baixo — o X volta ao da planta (o forro "refletido") */
+      cortes.forEach(function (c) { c.pts.forEach(function (q) { q[0] = -q[0]; }); });
+      linhas.forEach(function (q) { q[0] = -q[0]; q[2] = -q[2]; });
+    }
+    return { ok: true, tipo: planta ? 'planta' : 'corte', cortes: cortes, linhas: linhas, linhasUd: p6Tag ? linhasUd : undefined, linhasIfc: linhasIfc, linhasFase: Object.keys(linhasFase).length ? linhasFase : undefined,
+      portas: portas.length ? portas : undefined,
       info: { ms: ms, malhas: nMalhas, triCortados: nTri, arestas: nAr, amostras: amostras, px: [W, H], pxPorMetro: Math.round(ppm * 10) / 10 } };
+  }
+  /* PORTA DO IFC ABERTO (js/simboloporta.js): o OperationType da ocorrência (IFC4) ou do tipo
+     (IfcDoorType / IfcDoorStyle do IFC2x3, pelo IfcRelDefinesByType que o lerTipos já leu); sem a
+     API (modelo reaberto do cache) ou sem o dado → '' = giro simples. Lido uma vez por peça. */
+  function opPortaIfc(mid, eid) {
+    var mo = null; S.modelos.forEach(function (x) { if (x.mid === mid) mo = x; });
+    if (!mo) return '';
+    var cache = mo._portaOp || (mo._portaOp = {});
+    if (cache[eid] !== undefined) return cache[eid];
+    function v(o) { return o && o.value != null ? String(o.value) : (typeof o === 'string' ? o : ''); }
+    var op = '';
+    try {
+      if (S.api && S.api.GetLine) {
+        var el = S.api.GetLine(mid, eid, false); op = v(el && el.OperationType);
+        if (!op || /^(NOTDEFINED|USERDEFINED)$/.test(op)) {
+          var ft = mo.familias && mo.familias[eid];
+          if (ft && ft.tipoId != null) { var tp = S.api.GetLine(mid, ft.tipoId, false), o2 = v(tp && tp.OperationType); if (o2) op = o2; }
+        }
+      }
+    } catch (eOp) { op = ''; }
+    cache[eid] = op;
+    return op;
+  }
+  /* as malhas de UMA porta do IFC → { sp (símbolo no plano x, z do mundo), y0, y1 }. O eixo X e o
+     eixo Y locais da porta saem da matriz da malha (o web-ifc assa ali a ObjectPlacement): no IFC a
+     folha abre para +Y local e "LEFT" é a dobradiça à esquerda de quem olha para +Y. Largura e
+     espessura pela malha, medidas no eixo da porta. */
+  function portaIfcPlanta(lista) {
+    var SPi = window.SimboloPorta, m0 = lista[0]; if (!SPi || !m0) return null;
+    m0.updateMatrixWorld(true);
+    var e = m0.matrixWorld.elements, ex = [e[0], e[2]], ey = [e[4], e[6]], pts = [], y0 = Infinity, y1 = -Infinity, v = new THREE.Vector3();
+    lista.forEach(function (m) {
+      var pos = m.geometry && m.geometry.attributes && m.geometry.attributes.position; if (!pos) return;
+      var passo = Math.max(1, Math.floor(pos.count / 4000));   /* porta muito detalhada: amostra (a caixa no eixo não muda) */
+      for (var i = 0; i < pos.count; i += passo) {
+        v.fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld);
+        pts.push([v.x, v.z]); if (v.y < y0) y0 = v.y; if (v.y > y1) y1 = v.y;
+      }
+    });
+    if (!pts.length) return null;
+    /* eixo X deitado na planta? (mapeamento estranho) → o lado maior da caixa */
+    if (Math.hypot(ex[0], ex[1]) < 0.3) {
+      var bx0 = Infinity, bx1 = -Infinity, bz0 = Infinity, bz1 = -Infinity;
+      pts.forEach(function (p) { if (p[0] < bx0) bx0 = p[0]; if (p[0] > bx1) bx1 = p[0]; if (p[1] < bz0) bz0 = p[1]; if (p[1] > bz1) bz1 = p[1]; });
+      ex = (bx1 - bx0) >= (bz1 - bz0) ? [1, 0] : [0, 1]; ey = null;
+    } else if (Math.hypot(ey[0], ey[1]) < 0.3) ey = null;
+    var ent = SPi.entradaIfc(pts, ex, ey, opPortaIfc(m0.userData.mid, m0.userData.expressID));
+    if (!ent) return null;
+    var sp = SPi.gerar(ent);
+    return sp.ok ? { sp: sp, y0: y0, y1: y1 } : null;
   }
   /* segmentos soltos → contornos: liga as pontas que se tocam (grade de 0,5 mm) */
   function encadear(segs) {
@@ -11012,7 +11164,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
                   em silêncio, e a espessura do piso virava função do reboco. */
                moverId: null, moverMesh: null, esp: 0.15, espLaje: 0.15, alt: 2.8, secao: 0.2,
                base: 0, modelo: null, sprites: [], removidosAntes: [],
-               // v1.1.82 — desenho estilo Revit: trava orto, ângulo predefinido (0=livre),
+               // v1.1.82 — desenho com régua: trava orto, ângulo predefinido (0=livre),
                // traço ENCADEADO (a próxima parede continua do fim da anterior) e o último
                // ponto ajustado do preview (direção p/ o input de distância)
                orto: false, angPre: 0, chain: true, pPrev: null, linhaProv: null,
@@ -11034,14 +11186,15 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     '<label style="display:flex;gap:4px;align-items:center">Esp. <input data-ed="esp" class="inp" type="number" value="0.15" step="0.01" min="0.05" max="1.0" style="width:56px"> m</label>' +
     '<label style="display:flex;gap:4px;align-items:center">Alt. <input data-ed="alt" class="inp" type="number" value="2.80" step="0.1" min="0.3" max="8" style="width:56px"> m</label>' +
     '<label style="display:flex;gap:4px;align-items:center">Pilar <input data-ed="secao" class="inp" type="number" value="0.20" step="0.05" min="0.1" max="1" style="width:56px"> m</label></div>' +
-    '<input data-ed="txt" class="inp" placeholder="Texto da anotação (p/ ' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' Anotar)" maxlength="200" style="width:100%">' +
-    // v1.1.82 — controles de desenho estilo Revit (orto/ângulo/encadear)
+    /* sem ícone no placeholder: o SVG dentro do atributo quebrava o campo (aparecia '<svg class=' na tela) */
+    '<input data-ed="txt" class="inp" placeholder="Texto da anotação (para Anotar)" maxlength="200" style="width:100%">' +
+    // v1.1.82 — controles de desenho (orto/ângulo/encadear)
     '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
     '<button class="btn sm" data-ed="orto" title="Trava a parede na horizontal/vertical (ou segure Shift enquanto desenha)">⟂ Orto</button>' +
     '<button class="btn sm" data-ed="angpre" title="Ângulos predefinidos: livre → 45° → 15°">∠ Livre</button>' +
     '<button class="btn sm" data-ed="chain" title="A próxima parede continua do fim da anterior (Esc encerra a cadeia)">⛓ Encadear</button>' +
     '</div>' +
-    '<div style="font-size:10.5px;color:#5b6b7c">' + (typeof Icones !== 'undefined' ? Icones.get('lampada', 15) : '') + ' Desenhando parede: digite a <b>distância</b> na caixinha junto ao cursor e Enter — igual no Revit.</div>' +
+    '<div style="font-size:10.5px;color:#5b6b7c">' + (typeof Icones !== 'undefined' ? Icones.get('lampada', 15) : '') + ' Desenhando parede: digite a <b>distância</b> na caixinha junto ao cursor e Enter.</div>' +
     '<div style="display:flex;gap:6px;align-items:center"><button class="btn sm" data-ed="undo">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Desfazer</button><span data-ed="st" style="color:#5b6b7c;font-size:11.5px"></span></div>' +
     '<div style="font-size:11px;color:#b45309;line-height:1.35">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Volumetria SINTÉTICA de estudo, com QTO exato das peças criadas. Elemento de IFC importado nunca muda — "apagar" só o oculta como removido na edição.</div>';
   host.appendChild(editPanel);
@@ -11095,14 +11248,22 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
   var FAM_IFC = { porta: 'IFCDOOR', janela: 'IFCWINDOW', pilar: 'IFCCOLUMN', viga: 'IFCBEAM', mobiliario: 'IFCFURNISHINGELEMENT',
                   loucas: 'IFCSANITARYTERMINAL', equipamento: 'IFCFLOWSTORAGEDEVICE', estrutural: 'IFCMEMBER', generico: 'IFCBUILDINGELEMENTPROXY',
-                  parede: 'IFCWALL', laje: 'IFCSLAB', piso: 'IFCCOVERING' };  /* F1: famílias orçáveis (js/familiasorc.js) */
+                  parede: 'IFCWALL', laje: 'IFCSLAB', piso: 'IFCCOVERING',  /* F1: famílias orçáveis (js/familiasorc.js) */
+                  acessorio_tubo: 'IFCVALVE', dispositivo_eletrico: 'IFCOUTLET', luminaria: 'IFCLIGHTFIXTURE', equipamento_eletrico: 'IFCELECTRICDISTRIBUTIONBOARD',  /* P12 — GANCHO: famílias MEP */
+                  conexao_tubo: 'IFCPIPEFITTING', conexao_duto: 'IFCDUCTFITTING', conexao_eletroduto: 'IFCCABLECARRIERFITTING' };  /* FAMIMPORT: conexões importadas do Revit */
   /* sólidos avaliados → malhas soltas, já na posição da instância (matriz aplicada) */
   function famMalhas(av, inst, matSobre) {
     var out = [], M = new THREE.Matrix4().compose(new THREE.Vector3(inst.x, inst.y, inst.z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, inst.rotY || 0, 0)), new THREE.Vector3(1, 1, 1));
     (av.solidos || []).forEach(function (s) {
-      var g = null, m;
+      var g = null, m, matProprio = null;
       try {
         if (s.forma === 'caixa') { g = new THREE.BoxGeometry(s.dx, s.dy, s.dz); m = new THREE.Mesh(g); m.position.set(s.x, s.y + s.dy / 2, s.z); m.rotation.y = (s.rot || 0) * Math.PI / 180; }
+        else if (s.forma === 'malha') {   /* FAMIMPORT (js/familiamalha.js): a malha do TIPO, uma por material; faces planas (sem índice) para a luz não "amolecer" a aresta */
+          g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(s.v, 3)); g.setIndex(s.f);
+          if (s.f.length < 600000) g = g.toNonIndexed();
+          g.computeVertexNormals(); m = new THREE.Mesh(g); m.position.set(s.x || 0, s.y || 0, s.z || 0);
+          if (!matSobre && (s.cor || s.transparencia)) matProprio = famMatCor(s.material, s.cor, s.transparencia);
+        }
         else if (s.forma === 'cilindro') {
           g = new THREE.CylinderGeometry(s.raio, s.raio, s.altura, 28); m = new THREE.Mesh(g);
           if (s.eixo === 'x') { m.rotation.z = -Math.PI / 2; m.position.set(s.x + s.altura / 2, s.y, s.z); }
@@ -11116,13 +11277,66 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           m = new THREE.Mesh(g); m.position.set(s.x, s.y, s.z); m.rotation.y = (s.rot || 0) * Math.PI / 180;
         }
       } catch (e) { return; }
-      m.material = matSobre || famMat(s.material);
+      m.material = matSobre || matProprio || famMat(s.material);
       m.updateMatrix(); m.applyMatrix4(M);
+      if (s.id != null) m.userData.famSolido = s.id;   /* PORTA: a planta reconhece o sólido da folha (js/simboloporta.js) */
       out.push(m);
     });
+    /* FAMIMPORT: a planta usa as LINHAS DE PLANTA da família (giro da porta, folha da janela) no lugar da malha —
+       vão no mundo, na 1ª malha; as outras só se escondem do corte da planta (vista2d) */
+    if (av.linhasPlanta && av.linhasPlanta.length && out.length) {
+      var cR = Math.cos(inst.rotY || 0), sR = Math.sin(inst.rotY || 0), lp = av.linhasPlanta, w = [];
+      for (var iL = 0; iL + 3 < lp.length; iL += 4) w.push(inst.x + lp[iL] * cR + lp[iL + 1] * sR, inst.z - lp[iL] * sR + lp[iL + 1] * cR, inst.x + lp[iL + 2] * cR + lp[iL + 3] * sR, inst.z - lp[iL + 2] * sR + lp[iL + 3] * cR);
+      var yF = av.caixa ? [inst.y + av.caixa.y0, inst.y + av.caixa.y1] : [inst.y, inst.y + 2];
+      out.forEach(function (mm, iM) { mm.userData.fimpSem2d = true; if (!iM) { mm.userData.fimpPlanta = w; mm.userData.fimpFaixaY = yF; } });
+    }
+    if (av.luz) out.forEach(function (mm, iM) { if (!iM) mm.userData.luz = { potencia: av.luz.potencia, fluxo: av.luz.fluxo, temperatura: av.luz.temperatura,
+      posicao: [inst.x + av.luz.posicao[0] * Math.cos(inst.rotY || 0) + av.luz.posicao[2] * Math.sin(inst.rotY || 0), inst.y + av.luz.posicao[1], inst.z - av.luz.posicao[0] * Math.sin(inst.rotY || 0) + av.luz.posicao[2] * Math.cos(inst.rotY || 0)] }; });
     return out;
   }
+  /* PORTA (js/simboloporta.js) — a porta NATIVA (família do js/familia.js com categoria porta)
+     ganha o SÍMBOLO DE ABERTURA da planta: a folha aberta a 90° e o arco do giro (giro simples,
+     duplo; correr: folhas nos trilhos + seta), no plano (x, z) do mundo, pendurado na 1ª malha
+     (`portaPlanta`, com a faixa de altura `portaFaixaY`). A malha da FOLHA fechada sai do corte da
+     planta (`portaFolha`): a planta mostra a folha aberta, não fechada no vão. A família importada
+     (FAMIMPORT) já traz as linhas de planta dela e não passa aqui. */
+  function portaNativa(fam, av, fi, malhas) {
+    var SPn = window.SimboloPorta;
+    if (!SPn || !fam || fam.categoria !== 'porta' || !av || !av.solidos || !av.solidos.length || !malhas.length) return;
+    if (av.linhasPlanta && av.linhasPlanta.length) return;
+    try {
+      var pf = SPn.daFamilia(fam, av, fi.inst || {}), cR = Math.cos(fi.rotY || 0), sR = Math.sin(fi.rotY || 0);
+      /* eixo X local da família no mundo = (cos, −sin) no plano (x, z); a normal do motor = z local */
+      var sp = SPn.gerar({ centro: [fi.x, fi.z], dir: [cR, -sR], largura: pf.largura, espParede: pf.espParede, espFolha: pf.espFolha,
+        dobradica: pf.dobradica, abre: pf.abre, tipo: pf.tipo, folhas: pf.folhas });
+      if (!sp.ok) return;
+      malhas[0].userData.portaPlanta = sp;
+      malhas[0].userData.portaFaixaY = av.caixa && isFinite(av.caixa.y0) ? [fi.y + av.caixa.y0, fi.y + av.caixa.y1] : [fi.y, fi.y + 2.1];
+      var fids = {}; pf.folhaIds.forEach(function (x) { fids[x] = 1; });
+      malhas.forEach(function (mm) { if (mm.userData.famSolido != null && fids[mm.userData.famSolido]) mm.userData.portaFolha = true; });
+    } catch (eSp) { /* sem símbolo: a planta continua com o corte da malha */ }
+  }
+  /* FAMIMPORT: o material da família importada tem a COR e a transparência do arquivo (não a do nome) */
+  var famMatsCor = {};
+  function famMatCor(nome, cor, transp) {
+    var k = String(nome || '') + '|' + (cor || '') + '|' + (transp || 0);
+    if (famMatsCor[k]) return famMatsCor[k];
+    var hx = /^#?([0-9a-f]{6})$/i.exec(String(cor || '')), base = hx ? parseInt(hx[1], 16) : null;
+    if (base == null) return (famMatsCor[k] = famMat(nome));
+    var tr = Math.max(0, Math.min(0.95, +transp || 0));
+    famMatsCor[k] = new THREE.MeshStandardMaterial({ color: luzNum(base), metalness: 0.05, roughness: tr > 0.3 ? 0.1 : 0.7, transparent: tr > 0, opacity: 1 - tr, side: THREE.DoubleSide, depthWrite: tr <= 0 });
+    famMatsCor[k].userData.famCor = true;
+    estMarcarMat(famMatsCor[k], String(nome || '').trim() || k);
+    return famMatsCor[k];
+  }
   S._famDefinir = famDefinir; S._famAval = famAval;
+  /* FAMIMPORT: as LUZES das luminárias importadas (potência, fluxo, temperatura de cor e o ponto, no mundo) — o dado à mão para o render */
+  S._luzes = function () {
+    var out = [];
+    try { if (edit.modelo && edit.modelo.grupo) edit.modelo.grupo.children.forEach(function (m) { var l = m.userData && m.userData.luz; if (l) out.push({ id: m.userData.expressID, potencia: l.potencia, fluxo: l.fluxo, temperatura: l.temperatura, posicao: l.posicao.slice() }); }); } catch (e) {}
+    return out;
+  };
+  S._famCat = function (id) { var f = famReg.lista[id]; return f ? f.categoria : null; };   /* P10: a categoria da família (porta/janela) para a demolição */
 
   function editBase() {
     try {
@@ -11140,18 +11354,46 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     mouse.x = ((clientX - rc.left) / rc.width) * 2 - 1; mouse.y = -((clientY - rc.top) / rc.height) * 2 + 1;
     ray.setFromCamera(mouse, camera);
     var alvo = new THREE.Vector3();
-    var plano = new THREE.Plane(new THREE.Vector3(0, 1, 0), -edit.base); // y = base
+    /* PLANO (EMBREVE, js/bimplano.js): com plano de trabalho definido, o ponto é o do plano — o vertical inclusive (o horizontal já virou edit.base) */
+    if (edit.sub !== 'inst' && window.BimPlano && BimPlano.ativo && BimPlano.ativo()) {
+      var pq = BimPlano.pontoNoPlano({ origem: [ray.ray.origin.x, ray.ray.origin.y, ray.ray.origin.z], direcao: [ray.ray.direction.x, ray.ray.direction.y, ray.ray.direction.z] });
+      return pq ? alvo.set(pq[0], pq[1], pq[2]) : null;
+    }
+    /* B5: o tubo se desenha na COTA dele (esgoto abaixo do piso, eletroduto na laje) */
+    var yPl = edit.sub !== 'inst' ? edit.base : (edit.instY != null ? edit.instY : (window.BimInstUI && BimInstUI.planoY ? BimInstUI.planoY(edit.base) : edit.base));
+    var plano = new THREE.Plane(new THREE.Vector3(0, 1, 0), -yPl); // y = base
     return ray.ray.intersectPlane(plano, alvo) ? alvo : null;
   }
+  /* PLANO (EMBREVE): plano de trabalho HORIZONTAL definido (js/bimplano.js) = a base do editor */
+  function planoBase() { try { var yb = window.BimPlano && BimPlano.alturaBase ? BimPlano.alturaBase() : null; if (yb != null && isFinite(yb)) edit.base = yb; } catch (_) {} }
   function editTirarProv() {
     if (edit.prov) { limparMarca(edit.prov); edit.prov = null; }
-    edit.p1 = null;
+    edit.p1 = null; edit.instY = null;
     editPreviewLimpar();
+    volLimpar();   /* B4: contorno/caminho/perfil em andamento sai junto (Esc, troca de ferramenta) */
+    if (S._b2Cancelar) S._b2Cancelar();   /* B2: contorno/caminho pela metade sai junto */
+    if (S._p3) S._p3.cancelar();   /* P3: o contorno do telhado/radier pela metade sai junto */
   }
-  // ---- v1.1.82: desenho estilo Revit ----
+  // ---- v1.1.82: desenho com orto e ângulo predefinido ----
   // ajusta o 2º ponto pela trava orto (botão OU Shift) e pelos ângulos predefinidos
   function editAjustarPonto(p, ev) {
-    if (!edit.p1 || !p || (edit.sub !== 'parede' && edit.sub !== 'viga')) return p;
+    if (!edit.p1 || !p || (edit.sub !== 'parede' && edit.sub !== 'viga' && edit.sub !== 'inst' && !(edit.b2 && /^(eixo|laje|furo|guarda|escada)$/.test(edit.sub)))) return p;
+    /* PLANTA (js/bimbarraopcoes.js): o ponto que já chega ajustado (clique na planta, comprimento
+       digitado) passa direto — ajustar de novo levaria o 30° digitado para o 45° da trava */
+    if (ev && ev._semAjuste) return p;
+    /* PLANTA: laje/furo por RETÂNGULO — o 2º clique é o canto oposto (a diagonal), não um lado: travar
+       o ângulo dele faria todo retângulo virar quadrado a 45° */
+    if (edit.b2 && edit.b2.lajeModo === 'retangulo' && (edit.sub === 'laje' || edit.sub === 'furo') && edit.b2pts && edit.b2pts.length === 1) return p;
+    /* PLANTA: com a barra de opções, quem trava o ângulo é ela (ortogonal + incrementos DA ferramenta,
+       Shift inverte); os botões Orto/∠ do painel antigo saem junto com ele */
+    if (window.BimBarraOpcoes && BimBarraOpcoes.substituiPainel && BimBarraOpcoes.substituiPainel()) {
+      /* o snap de PONTO (fim, interseção, meio, centro, perpendicular) ganha da trava:
+         senão fechar a sala no 1º ponto por um lado fora dos incrementos puxava a ponta para longe dele */
+      var uB = (S._prec && S._prec.api && S._prec.api.estado) ? S._prec.api.estado().ultimo : null;
+      if (uB && uB.tipo && /^(fim|intersecao|meio|centro|perpendicular)$/.test(uB.tipo) && uB.p && Math.abs(uB.p.x - p.x) < 1e-6 && Math.abs(uB.p.z - p.z) < 1e-6) return p;
+      var rB = BimBarraOpcoes.ajustarPonto(edit.sub, { x: edit.p1.x, z: edit.p1.z }, { x: p.x, z: p.z }, !!(ev && ev.shiftKey), { grade: !uB || !uB.tipo || uB.tipo === 'grade' });
+      var qB = p.clone(); qB.x = rB.p.x; qB.z = rB.p.z; qB.y = edit.p1.y; return qB;
+    }
     var dx = p.x - edit.p1.x, dz = p.z - edit.p1.z;
     var dist = Math.sqrt(dx * dx + dz * dz);
     if (dist < 1e-6) return p;
@@ -11209,6 +11451,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     }
     e.stopPropagation(); // não aciona atalhos do viewer (WASD do voo etc.)
     if (e.key !== 'Enter') return;
+    if (S._volDistDigitada && S._volDistDigitada()) return;   /* B4: distância do empurrar/puxar */
     var inp2 = editDist.querySelector('[data-edd="inp"]');
     var num2 = parseFloat(String(inp2.value || '').replace(',', '.'));
     if (!(num2 > 0.01) || !edit.p1) return;
@@ -11220,7 +11463,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     } else dir = { x: 1, z: 0 };
     var p2 = new THREE.Vector3(edit.p1.x + dir.x * num2, edit.p1.y, edit.p1.z + dir.z * num2);
     inp2.value = '';
-    if (edit.sub === 'viga') { editClique({ clientX: 0, clientY: 0, shiftKey: false }, null, p2); return; }
+    if (edit.sub === 'viga' || edit.sub === 'inst') { editClique({ clientX: 0, clientY: 0, shiftKey: false }, null, p2); return; }
     if (edit.sub !== 'parede') return;
     editConcluirParede(p2);
   });
@@ -11228,6 +11471,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   function editConcluirParede(p2) {
     var cxP = BimEdit.parede({ x: edit.p1.x, z: edit.p1.z }, { x: p2.x, z: p2.z }, edit.esp, edit.alt, edit.base);
     if (!cxP) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('bloco', 15) : '') + ' Pontos muito próximos — clique 2 pontos distintos.'); return; }
+    if (edit.b2 && window.BimArq) BimArq.marcarParede(cxP, S._b2CfgParede ? S._b2CfgParede() : {});   /* B2: tipo, união nos cantos, topo */
     editOp({ op: 'criar', id: 'e' + (++edit.seq), caixa: cxP });
     var comp = cxP.comprimento.toFixed(2).replace('.', ',');
     if (edit.chain) {
@@ -11254,6 +11498,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   S._editPreviewMove = function (e) {
     var t2 = performance.now(); if (t2 - _edPrevT < 33) return; _edPrevT = t2;
     if (edit.sub === 'familia') { editGhostMover(e); return; }
+    if (VOL_SUBS[edit.sub]) { volPreviewMove(e); return; }
     var hit2 = raycastEm(e.clientX, e.clientY);
     var sn2 = hit2 ? aplicarSnap(hit2, raioToque(e)) : null;
     var pM = sn2 ? sn2.p.clone() : editPontoPlano(e.clientX, e.clientY);
@@ -11298,6 +11543,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     // (senão o contorno verde fica congelado na posição antiga — mesmo padrão de removerModelo). Gate v1.1.89.
     if (S.selected && S.selected.userData && S.selected.userData.mid === 'edit') { S.selected = null; S.prevMat = null; if (S._contornoSelecao) S._contornoSelecao(null); }
     if (edit.modelo) {
+      /* ⚠ as malhas MESCLADAS (agregarModelo) moram no `scene`, não no grupo: sem
+         desagregar, cada refazer da cena deixava a cópia mesclada antiga visível
+         por cima da nova — o furo da subtração aparecia no quantitativo e não
+         na tela (achado pela e2e-bim-b4b7, 08/10/2026; valia para mover parede) */
+      desagregarModelo(edit.modelo);
       modelRoot.remove(edit.modelo.grupo);
       edit.modelo.grupo.traverse(function (o) { if (o.geometry) o.geometry.dispose(); });
       edit.modelo.grupo.children.slice().forEach(function (m) { delete S.meshPorUid['edit:' + m.userData.expressID]; });
@@ -11306,10 +11556,20 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     }
     edit.sprites.forEach(function (sp) { scene.remove(sp); if (sp.material && sp.material.map) sp.material.map.dispose(); if (sp.material) sp.material.dispose(); });
     edit.sprites = [];
+    if (S._b2Limpar3d) S._b2Limpar3d();   /* B2: eixos da rodada anterior */
     var st = BimEdit.aplicar(edit.ops);
     edit.estado = st;
-    if (st.caixas.length || st.familias.length || st.coberturas.length) {
-      var nTot = st.caixas.length + st.familias.length + st.coberturas.length;
+    /* B5: tubos, conexões deduzidas, ralos/caixas e os pontos de ligação (js/biminstui.js) */
+    var instEls = [];
+    try { if (window.BimInstUI && st.instalacoes) instEls = BimInstUI.malhas(st, famAval, THREE); } catch (eIn) { instEls = []; }
+    var nInst = instEls.filter(function (x) { return !x.marcador; }).length;
+    volMedir(st);   /* B4: malha e medidas de cada volume livre (receita → malha) */
+    var nVol = st.volumes ? st.volumes.length : 0;
+    var nFo = st.forros ? st.forros.length : 0;   /* P2-B: forros (js/bimforro.js) */
+    var nP11 = S._p11 ? S._p11.contar(st) : 0;   /* P11: terreno (js/bimterrenoui.js) */
+    var nP3 = S._p3 ? S._p3.contar(st) : 0;   /* P3: telhados, bordas e fundações (js/bimp3ui.js) */
+    if (st.caixas.length || st.familias.length || st.coberturas.length || nInst || nVol || nFo || nP11 || nP3) {
+      var nTot = st.caixas.length + st.familias.length + st.coberturas.length + nInst + nVol + nFo + nP11 + nP3;
       var mo = { mid: 'edit', sintetico: true, editor: true, nome: 'Criados no OrçaPRO (' + nTot + ')', disciplina: 'arquitetura', alpha: 1, visivel: true, grupo: new THREE.Group(), matCache: {}, transCache: {}, elementos: [], tipos: {}, nEl: 0, nTri: 0, pavimentos: [], carimbos: {}, qto: {} };
       mo.grupo.userData.mid = 'edit';
       /* vãos das portas/janelas hospedadas: a parede vira PEDAÇOS (sem CSG) */
@@ -11320,10 +11580,12 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         if (!S.meshPorUid['edit:' + id]) S.meshPorUid['edit:' + id] = m;
         mo.nTri += (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3;
       }
-      var NOMES_ED = { parede: 'Parede', laje: 'Laje', pilar: 'Pilar', viga: 'Viga' };
+      var NOMES_ED = { parede: 'Parede', laje: 'Laje', pilar: 'Pilar', viga: 'Viga', escada: 'Escada', guarda: 'Guarda-corpo' };
       st.caixas.forEach(function (c) {
         var mat = editMat(c.tipo), vz = c.tipo === 'parede' ? vaosEd[c.id] : null;
-        if (vz) {
+        /* B2: parede unida/recortada, laje por contorno, perfil, escada e guarda-corpo têm desenho próprio */
+        var b2r = (c.b2 && S._b2Malhas) ? S._b2Malhas(c, vz, mat, addMesh) : null;
+        if (b2r) { /* já desenhado */ } else if (vz) {
           var co = Math.cos(c.rotY), si = Math.sin(c.rotY);
           vz.pedacos.forEach(function (pd) {
             var xm = (pd.x0 + pd.x1) / 2, ym = (pd.y0 + pd.y1) / 2 - c.altura / 2;
@@ -11338,7 +11600,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         }
         mo.tipos[c.ifc] = (mo.tipos[c.ifc] || 0) + 1;
         var areaL = vz ? vz.areaLiquida : c.area;
-        mo.qto[c.id] = { comprimento: c.tipo === 'pilar' ? (c.comprimentoPilar || c.altura) : c.comprimento, area: areaL, volume: vz ? Math.round(areaL * c.espessura * 10000) / 10000 : c.volume, contagem: 1, areaVaos: vz ? vz.areaVaos : 0 };
+        mo.qto[c.id] = b2r ? b2r.qto : { comprimento: c.tipo === 'pilar' ? (c.comprimentoPilar || c.altura) : c.comprimento, area: areaL, volume: vz ? Math.round(areaL * c.espessura * 10000) / 10000 : c.volume, contagem: 1, areaVaos: vz ? vz.areaVaos : 0 };
         mo.elementos.push({ id: c.id, uid: 'edit:' + c.id, mid: 'edit', arquivo: mo.nome, tipo: c.ifc, nome: (NOMES_ED[c.tipo] || 'Elemento') + ' (sintética ' + c.id + ')', etapa: null, codOrc: null, qto: mo.qto[c.id], disciplina: c.tipo === 'viga' || c.tipo === 'pilar' ? 'estrutura' : 'arquitetura' });
         mo.nEl++;
       });
@@ -11354,6 +11616,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         mo.elementos.push({ id: cb.id, uid: 'edit:' + cb.id, mid: 'edit', arquivo: mo.nome, tipo: 'IFCROOF', nome: 'Cobertura ' + (cb.aguas === 1 ? '1 água' : '2 águas') + ' ' + String(cb.inclinacao).replace('.', ',') + '% (sintética ' + cb.id + ')', etapa: null, codOrc: null, qto: mo.qto[cb.id], disciplina: 'arquitetura' });
         mo.nEl++;
       });
+      if (nFo && S._p2bForros) S._p2bForros(st, mo, addMesh);   /* P2-B: forros */
+      if (nP11) S._p11.desenhar(st, mo, addMesh);   /* P11: topossólido, sub-região, plataforma, divisa, componentes */
+      if (nP3) S._p3.malhas(st, mo, addMesh);   /* P3: telhados, bordas e fundações */
       st.familias.forEach(function (fi) {
         var av = famAval(fi.famId, fi.tipoId, fi.inst), fam = famReg.lista[fi.famId];
         var ifc = fam ? (FAM_IFC[fam.categoria] || 'IFCBUILDINGELEMENTPROXY') : 'IFCBUILDINGELEMENTPROXY';
@@ -11363,15 +11628,25 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           mx.position.set(fi.x, fi.y + 0.2, fi.z); malhas = [mx];
         }
         malhas.forEach(function (mf) { addMesh(mf, fi.id, ifc, mf.material); });
+        portaNativa(fam, av, fi, malhas);   /* PORTA: a folha aberta e o arco do giro na planta 2D */
         mo.tipos[ifc] = (mo.tipos[ifc] || 0) + 1;
         var qf = av && av.quantitativo ? av.quantitativo : { unidade: 'un', quantidade: 1 };
         mo.qto[fi.id] = { contagem: 1, unidade: qf.unidade, quantidade: qf.quantidade, volume: qf.unidade === 'm3' ? qf.quantidade : undefined, area: qf.unidade === 'm2' ? qf.quantidade : undefined, comprimento: qf.unidade === 'm' ? qf.quantidade : undefined };
         mo.elementos.push({ id: fi.id, uid: 'edit:' + fi.id, mid: 'edit', arquivo: mo.nome, tipo: ifc,
           nome: (fam ? fam.nome : 'Família não carregada (' + fi.famId + ')') + (av && av.tipo ? ' : ' + av.tipo.nome : ''), etapa: null, codOrc: qf.codigo || null, qto: mo.qto[fi.id],
-          disciplina: fam && (fam.categoria === 'pilar' || fam.categoria === 'viga' || fam.categoria === 'estrutural') ? 'estrutura' : (fam && (fam.categoria === 'loucas' || fam.categoria === 'equipamento') ? 'hidraulica' : 'arquitetura'),
+          disciplina: fam && (fam.categoria === 'pilar' || fam.categoria === 'viga' || fam.categoria === 'estrutural') ? 'estrutura' : (fam && (fam.categoria === 'loucas' || fam.categoria === 'equipamento' || fam.categoria === 'acessorio_tubo' || fam.categoria === 'conexao_tubo' || fam.categoria === 'conexao_duto') ? 'hidraulica' : (fam && /^(dispositivo_eletrico|luminaria|equipamento_eletrico|conexao_eletroduto)$/.test(fam.categoria) ? 'eletrica' : 'arquitetura')),   /* P12: famílias MEP; FAMIMPORT: conexões importadas */
           familia: { famId: fi.famId, tipoId: fi.tipoId, hospedada: !!fi.host } });
         mo.nEl++;
       });
+      instEls.forEach(function (ie) {
+        ie.malhas.forEach(function (mi) { addMesh(mi, ie.id, ie.ifc || 'IFCBUILDINGELEMENTPROXY', mi.material); });
+        if (ie.marcador) return;   /* o ponto de ligação é parte da família (já listada) */
+        mo.tipos[ie.ifc] = (mo.tipos[ie.ifc] || 0) + 1;
+        mo.qto[ie.id] = ie.qto;
+        mo.elementos.push({ id: ie.id, uid: 'edit:' + ie.id, mid: 'edit', arquivo: mo.nome, tipo: ie.ifc, nome: ie.nome, etapa: null, codOrc: ie.codigo || null, qto: ie.qto, disciplina: ie.disciplina });
+        mo.nEl++;
+      });
+      volDesenhar(st, mo, addMesh);   /* B4: volumes livres */
       modelRoot.add(mo.grupo);
       try {
         modelRoot.updateMatrixWorld(true);
@@ -11396,6 +11671,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       sp.position.set(a.x, a.y, a.z); sp.userData._anotId = a.id;
       scene.add(sp); rescaleObj(sp); edit.sprites.push(sp);
     });
+    if (S._b2Eixos) S._b2Eixos(st);   /* B2: a grade de eixos (linha + bolinha com o nome) */
     // oculta os removidos (uid resolvido p/ a sessão atual; TODAS as malhas do elemento) e
     // publica S._remEd — todo escritor de visibilidade (4D/isolar/restaurar/focar) compõe com ele
     S._remEd = {};
@@ -11403,8 +11679,18 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (st.removidosIfc.length) todasMalhas(function (m) { if (S._remEd[m.userData.mid + ':' + m.userData.expressID]) m.visible = false; });
     edit.removidosAntes = Object.keys(S._remEd);
     S.elementos = []; S.modelos.forEach(function (mo2) { S.elementos = S.elementos.concat(mo2.elementos); });
-    over.style.display = (S.modelos.length || st.anotacoes.length) ? 'none' : 'flex'; // sintético/anotação também tira o "arraste um IFC"
+    over.style.display = (S.modelos.length || st.anotacoes.length || (st.eixos && st.eixos.length)) ? 'none' : 'flex'; // sintético/anotação/eixo também tira o "arraste um IFC"
     atualizarHud(); notifyModelos(); editSt();
+    if (S._prec) S._prec.aposRebuild(st);   /* B3: seleção, cotas temporárias, alças e cotas permanentes */
+    if (S._p2d) S._p2d.aposRebuild(st);   /* P2-D: volume do ambiente no 3D, planta 2D e Navegador acompanham */
+    if (S._mat) S._mat.aposRebuild(st, edit.modelo);   /* MATERIAIS: a cor e a transparência do material do projeto (js/bimmateriaisui.js) — antes da fase, que meio-tona por cima */
+    if (S._p10) S._p10.aposRebuild(st, edit.modelo);   /* P10: gráficos de fase e opção visível (js/bimp10ui.js) */
+    if (S._p11) S._p11.aposRebuild(st);   /* P11: as curvas de nível do terreno */
+    if (S._emb) S._emb.aposRebuild(st);   /* EMBREVE: as barras e o graute da alvenaria estrutural (js/bimgraute.js) */
+    if (window.BimInstUI && BimInstUI.aoMudarModelo) BimInstUI.aoMudarModelo();
+    if (window.BimPropsUI && BimPropsUI.aoMudarModelo) BimPropsUI.aoMudarModelo();   /* P1-C: a paleta de Propriedades acompanha (op, desfazer, refazer, níveis) */
+    if (window.BimAnot2DUI && BimAnot2DUI.aposRebuild) BimAnot2DUI.aposRebuild(st);   /* P7: as vistas 2D redesenham a anotação (cota acompanha a peça) e a trava confere */
+    if (window.BimTabelaUI && BimTabelaUI.aoMudarModelo) BimTabelaUI.aoMudarModelo();   /* P5: as tabelas abertas (abas) acompanham o modelo */
     if (opts.onLoaded) opts.onLoaded(elementosVivos());
     if (opts.onEdicao && !edit._replay) { try { opts.onEdicao(edit.ops.slice()); } catch (_) {} }
   }
@@ -11415,6 +11701,57 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   S._editRefazer = function () { if (!edit.redo.length) return false; edit.ops.push(edit.redo.pop()); editRebuild(); return true; };
   S._editReconstruir = function () { if (edit.ops.length) editRebuild(); };
   S._editOpExterna = function (o) { editOp(o); };
+  /* B5 (js/biminstui.js): o que o traçado de instalações usa do editor — o
+     ponto inicial (com a marca e a linha elástica), o fim do traço e a op */
+  S._instCtx = function () {
+    return { edit: edit, op: editOp, famAval: famAval, hint: function (t) { S._hint(t); }, marcar: marcarFechamento,
+      inicio: function (p) {
+        if (edit.prov) { limparMarca(edit.prov); edit.prov = null; }
+        editPreviewLimpar();
+        edit.p1 = new THREE.Vector3(p.x, p.y, p.z); edit.instY = p.y;
+        edit.prov = pontoMarca(edit.p1); scene.add(edit.prov); rescaleObj(edit.prov);
+      },
+      fim: function () { editTirarProv(); } };
+  };
+
+  /* PRÉVIA DA MODELAGEM POR COMANDO (B8, js/iamodelar.js): as ops que a IA
+     propôs viram um grupo FANTASMA na cena, FORA da lista de edição — nada é
+     gravado, o desfazer não vê, o quantitativo não soma, a seleção não pega
+     (fica fora do modelRoot). "Aplicar" grava o lote como UMA op (desfaz de
+     uma vez); "Descartar" só tira o grupo. */
+  var editPrevG = null, editPrevMat = null;
+  S._editPrevia = function (ops) {
+    if (editPrevG) { scene.remove(editPrevG); editPrevG.traverse(function (o) { if (o.geometry) o.geometry.dispose(); }); editPrevG = null; }
+    if (!ops || !ops.length) return { ok: true, malhas: 0 };
+    if (!editPrevMat) editPrevMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide });
+    var st = BimEdit.aplicar(ops), g = new THREE.Group(), vz = BimEdit.vaosDasParedes(st, famAval);
+    g.userData.previaIA = true;
+    st.caixas.forEach(function (c) {
+      var v = c.tipo === 'parede' ? vz[c.id] : null, co = Math.cos(c.rotY), si = Math.sin(c.rotY);
+      /* CURVA: a parede curva na prévia pelas fatias do motor (a caixa da corda não é ela) */
+      if (c.arco && window.BimCurva) { BimCurva.pecas(c, v ? v.aceitos : []).pecas.forEach(function (pc) { g.add(new THREE.Mesh(b2Geo(pc.pts, null, pc.y0, pc.ytopo, b2Plano), editPrevMat)); }); return; }
+      (v ? v.pedacos : [{ x0: -c.comprimento / 2, x1: c.comprimento / 2, y0: 0, y1: c.altura }]).forEach(function (pd) {
+        var xm = (pd.x0 + pd.x1) / 2, ym = (pd.y0 + pd.y1) / 2 - c.altura / 2;
+        var m = new THREE.Mesh(new THREE.BoxGeometry(pd.x1 - pd.x0, pd.y1 - pd.y0, c.espessura), editPrevMat);
+        m.position.set(c.cx + xm * co, c.cy + ym, c.cz - xm * si); m.rotation.y = c.rotY; g.add(m);
+      });
+    });
+    st.coberturas.forEach(function (cb) {
+      cb.planos.forEach(function (p) {
+        var m = new THREE.Mesh(new THREE.BoxGeometry(p.comprimento, p.espessura, p.largura), editPrevMat);
+        m.rotation.order = 'YXZ'; m.rotation.y = p.rotY; m.rotation.x = p.rotX; m.position.set(p.cx, p.cy, p.cz); g.add(m);
+      });
+    });
+    st.familias.forEach(function (fi) {
+      var av = famAval(fi.famId, fi.tipoId, fi.inst);
+      var ms = av && av.solidos && av.solidos.length ? famMalhas(av, fi, editPrevMat) : [];
+      if (!ms.length) { var mx = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), editPrevMat); mx.position.set(fi.x, fi.y + 0.2, fi.z); ms = [mx]; }
+      ms.forEach(function (m) { g.add(m); });
+    });
+    scene.add(g); editPrevG = g;
+    try { enquadrarObj(new THREE.Box3().setFromObject(g), 1.4); } catch (e) {}
+    return { ok: true, malhas: g.children.length };
+  };
   /* ponto do MUNDO → posição na tela (px do cliente). Só leitura: o e2e clica
      numa parede como o usuário clica, sem adivinhar pixel */
   S._telaDe = function (x, y, z) {
@@ -11464,14 +11801,56 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
               anotar: '' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' Escreva o texto no campo e clique no ponto do modelo.',
               viga: 'Viga: clique o INÍCIO e o FIM (topo na altura do nível + ' + String(edit.alt).replace('.', ',') + ' m).',
               cobertura: 'Cobertura: clique dois cantos OPOSTOS da área coberta (sem o beiral).',
-              familia: 'Família: clique onde colocar (porta e janela: numa parede criada aqui). Barra de espaço gira.' };
-    S._hint(edit.sub ? h[edit.sub] : '' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + ' Editor: escolha uma ferramenta no painel.');
+              familia: 'Família: clique onde colocar (porta e janela: numa parede criada aqui). Barra de espaço gira.',
+              inst: 'Instalações: clique o início e os pontos do traçado (o sistema, o material e o DN ficam em Propriedades). Esc encerra.',
+              /* B4 — volume livre */
+              extrusao: 'Extrusão: clique os pontos do contorno no plano de trabalho; feche no 1º ponto ou Enter.',
+              revolucao: 'Revolução: clique o EIXO (vertical) no chão.',
+              varredura: 'Varredura: clique os pontos do caminho; Enter corre o perfil do painel.',
+              unir: 'Unir: clique o volume ALVO.', subtrair: 'Subtrair: clique o volume que vai ser RECORTADO.',
+              empurrar: 'Empurrar/puxar: clique numa FACE de um volume criado aqui.',
+              volprops: 'Clique num volume para ele ficar com a categoria e o material do painel.',
+              /* P2-C */
+              ambiente: 'Aplicar por ambiente: clique DENTRO de um cômodo fechado por paredes — o ambiente nasce (ou é escolhido) e os acabamentos ficam em Propriedades.' };
+    var hb = (edit.sub && edit.b2 && S._b2Hint) ? S._b2Hint(edit.sub) : '';   /* B2: a dica da ferramenta do modelador */
+    if (!hb && edit.sub && S._p2d) hb = S._p2d.dica(edit.sub);   /* P2-D: Ambiente / Separador */
+    if (!hb && edit.sub && S._p11) hb = S._p11.dica(edit.sub);   /* P11: terreno */
+    if (!hb && edit.sub && S._p3) hb = S._p3.dica(edit.sub);   /* P3: telhado, bordas, unir, fundação */
+    if (!hb && edit.sub && S._emb) hb = S._emb.dica(edit.sub);   /* EMBREVE: plano de trabalho */
+    S._hint(edit.sub ? (hb || h[edit.sub] || '') : '' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + ' Editor: escolha uma ferramenta no painel.');
   }
   function editClique(e, hit, pForcado) {
+    /* P2-C — GANCHOS: "Aplicar por ambiente" (js/bimacabamento.js + Gestao._ambClique) —
+       o clique DENTRO do cômodo é um ponto no plano de trabalho (sem snap: o snap levaria o
+       ponto para a face da parede). Cria o ambiente ali ou escolhe o que já existe. */
+    if (edit.sub === 'ambiente' && !pForcado) {
+      var pAmb = editPontoPlano(e.clientX, e.clientY);
+      if (pAmb && window.Gestao && Gestao._ambClique) Gestao._ambClique({ x: pAmb.x, z: pAmb.z });
+      return;
+    }
+    /* B3: com a prévia, o ponto vem dos snaps de precisão; as ferramentas novas (copiar, girar…) consomem o clique */
+    /* B5 × B3: no traçado de instalação, o ponto de ligação do aparelho (ou a ponta/peça do mesmo sistema)
+       ganha do snap de precisão — o conector manda. Sem alvo perto, valem os snaps. */
+    var instAlvo = false;
+    if (!pForcado && S._prec && edit.sub === 'inst' && window.BimInstUI && BimInstUI.cfg && BimInstUI.cfg.ferramenta !== 'peca') {
+      try {
+        var snI = hit ? aplicarSnap(hit, raioToque(e)) : null, pI = snI ? snI.p : editPontoPlano(e.clientX, e.clientY);
+        instAlvo = !!(pI && BimInstUI.agarrar(edit.estado, famAval, pI, BimInstUI.cfg.sistema));
+      } catch (eI) { instAlvo = false; }
+    }
+    if (!pForcado && S._prec && !instAlvo) { var rPrec = S._prec.clique(e, hit); if (rPrec === true) return; if (rPrec) pForcado = rPrec; }
     var sn = (hit && !pForcado) ? aplicarSnap(hit, raioToque(e)) : null;
     var p = pForcado ? pForcado.clone() : (sn ? sn.p.clone() : editPontoPlano(e.clientX, e.clientY));
     if (sn) mostrarSnapMarca(sn, e.clientX, e.clientY);
     var sub = edit.sub;
+    /* PLANTA (js/bimplantamodelar.js): com uma forma escolhida na barra (retângulo, polígono,
+       círculo, arcos…) o clique do 3D vira ponto da forma; a planta chama com `_planta` e já resolveu a forma */
+    if (p && !(e && e._planta) && window.BimPlantaModelar && BimPlantaModelar.cliqueForma && BimPlantaModelar.cliqueForma(sub, { x: p.x, z: p.z }, e)) return;
+    if (S._p2d && S._p2d.clique(sub, e, hit, p)) return;   /* P2-D: Ambiente e Separador de ambiente (js/bimambienteui.js) */
+    if (S._p11 && S._p11.clique(sub, e, hit, p)) return;   /* P11: as ferramentas do terreno (js/bimterrenoui.js) */
+    if (S._p3 && S._p3.clique(sub, e, hit, p)) return;   /* P3: telhado, bordas, unir telhado e fundação (js/bimp3ui.js) */
+    if (S._emb && S._emb.clique(sub, e, hit, p)) return;   /* EMBREVE: plano de trabalho por face, por peça e por linha (js/bimembreveui.js) */
+    if (edit.b2 && S._b2Clique && S._b2Clique(sub, e, hit, p)) return;   /* B2: as ferramentas do modelador (prévia) */
     if (sub === 'apagar') {
       if (!hit) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('lixeira', 15) : '') + ' Clique em cima de um elemento.'); return; }
       var mA = _ultimosHits[0].object, midA = mA.userData.mid, idA = mA.userData.expressID;
@@ -11493,11 +11872,17 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         S._hint('↔️ Agora clique no NOVO lugar (o centro vai pra lá).'); return;
       }
       if (!p) { S._hint('↔️ Não achei o ponto — clique no modelo ou no plano do chão.'); return; }
-      editOp({ op: 'mover', id: edit.moverId, cx: p.x, cz: p.z });
+      var opMv = { op: 'mover', id: edit.moverId, cx: p.x, cz: p.z }, vMv = volDoId(edit.moverId);
+      /* volume livre anda por deslocamento: o centro dele é o da malha */
+      if (vMv && vMv.medidas && vMv.medidas.caixa) { var cxv = vMv.medidas.caixa; opMv.dx = Math.round((p.x - (cxv.min[0] + cxv.max[0]) / 2) * 1000) / 1000; opMv.dz = Math.round((p.z - (cxv.min[2] + cxv.max[2]) / 2) * 1000) / 1000; }
+      editOp(opMv);
       S._hint('↔️ Movido. Clique noutro elemento pra mover de novo, ou Esc.');
       marcarFechamento(); return;
     }
     if (sub === 'familia') { editColocarFamilia(e, hit, p); return; }
+    /* B5: tubo, eletroduto, duto e peças — o traçado mora no js/biminstui.js */
+    if (sub === 'inst') { if (window.BimInstUI) BimInstUI.clique(S._instCtx(), p ? (pForcado ? p : editAjustarPonto(p, e)) : null); return; }
+    if (VOL_SUBS[sub]) { volClique(e, hit, p); return; }   /* B4: volume livre */
     if (!p) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + ' Não achei o ponto — clique no modelo ou no plano do chão.'); return; }
     if ((sub === 'viga' || sub === 'cobertura') && edit.p1) {
       var p2v = editAjustarPonto(p, e), ini = edit.p1.clone();
@@ -11510,6 +11895,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       } else {
         var cb = BimEdit.cobertura({ x: ini.x, z: ini.z }, { x: p.x, z: p.z }, { base: edit.base + edit.alt, inclinacao: edit.cobIncl, aguas: edit.cobAguas, beiral: edit.cobBeiral, espessura: 0.08 });
         if (!cb) { S._hint('Retângulo pequeno demais para a cobertura.'); return; }
+        /* P1-B: com o modelador, a cobertura fica presa ao nível (Nível da base + Deslocamento da base) */
+        if (edit.b2 && edit.b2.restricoes && edit.b2.restricoes.cobertura && window.BimArq) BimArq.restringir(cb, edit.b2.restricoes.cobertura, edit.b2.niveis);
         editOp({ op: 'cobertura', id: 'e' + (++edit.seq), cobertura: cb });
         S._hint('Cobertura criada: ' + cb.area.toFixed(2).replace('.', ',') + ' m² de telhado (' + cb.aguas + (cb.aguas === 1 ? ' água' : ' águas') + ', ' + String(cb.inclinacao).replace('.', ',') + '%, cumeeira a ' + cb.cumeeira.toFixed(2).replace('.', ',') + ' m).');
       }
@@ -11613,10 +12000,363 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     S._hint('Girada para ' + Math.round(edit.famRot * 180 / Math.PI) + '°.');
   });
 
+  /* ===================== VOLUME LIVRE (fase B4, 08/10/2026) =====================
+   * Prévia do modelador (BimPrevia.modelador). O motor é puro (js/bimvolume.js:
+   * receita → malha → volume e área exatos); aqui ficam só os cliques e o
+   * desenho provisório. Ferramentas:
+   *   extrusao  — clica o contorno no plano de trabalho; fecha no 1º ponto ou Enter
+   *   revolucao — 1º clique = eixo (vertical), 2º = para onde vai o perfil; depois
+   *               o perfil num plano EM PÉ que passa pelos dois; Enter gira
+   *   varredura — clica o caminho no chão; Enter corre o perfil (retângulo ou círculo)
+   *   unir / subtrair — clica o volume ALVO e depois a FERRAMENTA (que é consumida)
+   *   empurrar  — clica a face; mexe o mouse (ou digita a distância) e clica
+   *   volprops  — clica um volume: ele fica com a categoria e o material do painel
+   * O CSG (three-bvh-csg, bim/vendor/jsm/csg) só carrega quando alguém precisa.
+   * ============================================================================= */
+  var VOL_SUBS = { extrusao: 1, revolucao: 1, varredura: 1, unir: 1, subtrair: 1, empurrar: 1, volprops: 1 };
+  edit.vol = { pts: [], linha: null, marcas: [], eixo: null, dirPerfil: null, alvo: null, face: null, dist: 0,
+               altura: 1, categoria: 'generico', material: 'Concreto', angulo: 360, perfil: 'retangulo', largura: 0.2, alturaPerfil: 0.4, diametro: 0.1, elevacao: 0 };
+  edit.volCache = {};
+  S._volSubs = VOL_SUBS;
+  S._csgFn = null;
+  var csgCarregando = null;
+  function csgCarregar() {
+    if (S._csgFn) return Promise.resolve(S._csgFn);
+    if (csgCarregando) return csgCarregando;
+    csgCarregando = import('../bim/vendor/jsm/csg/three-bvh-csg.module.js').then(function (lib) {
+      if (typeof BimVolume === 'undefined') throw new Error('js/bimvolume.js não carregou');   /* bim/bim.html não traz o editor */
+      S._csgFn = BimVolume.csgCom(THREE, lib);
+      return S._csgFn;
+    }, function (e) { csgCarregando = null; S._hint('Não consegui carregar o motor de união/subtração (CSG): ' + (e && e.message)); throw e; });
+    return csgCarregando;
+  }
+  S._csgCarregar = csgCarregar;
+  function volDoId(id) { return ((edit.estado && edit.estado.volumes) || []).filter(function (v) { return v.id === id; })[0] || null; }
+  /* mede as receitas (antes de desenhar). Volume que precisa do CSG e ele
+     ainda não carregou: carrega e refaz a cena — sem regravar as ops */
+  function volMedir(st) {
+    if (!st.volumes || !st.volumes.length || typeof BimVolume === 'undefined') return;
+    if (Object.keys(edit.volCache).length > 300) edit.volCache = {};
+    var med = BimEdit.medirVolumes(st, S._csgFn, edit.volCache);
+    if (med.pendentes && !S._csgFn) {
+      csgCarregar().then(function () { if (!S || !S.alive) return; var rp = edit._replay; edit._replay = true; try { editRebuild(); } finally { edit._replay = rp; } }, function () {});
+    }
+    if (med.erros.length) S._hint('Volume ' + med.erros[0].id + ': ' + med.erros[0].erro);
+  }
+  /* malha da receita → malhas do grupo do editor (o mesmo nível das paredes:
+     seleção, raio-X, planta e quantitativo varrem esse grupo) */
+  function volDesenhar(st, mo, addMesh) {
+    (st.volumes || []).forEach(function (v) {
+      if (!v.malha) return;   /* pendente (CSG carregando) ou receita com erro: aparece quando sair */
+      var m = v.malha, pos = new Float32Array(m.f.length * 3);
+      for (var i = 0; i < m.f.length; i++) { var k = m.f[i]; pos[3 * i] = m.v[3 * k]; pos[3 * i + 1] = m.v[3 * k + 1]; pos[3 * i + 2] = m.v[3 * k + 2]; }
+      /* normal por FACE (sem índice o computeVertexNormals não suaviza a quina) e
+         DEPOIS o índice sequencial: a agregação (agregarModelo) só mescla malha
+         indexada — sem índice o volume ficava fora do mesclado, na camada 0, e
+         o clique (que só olha a camada 1) passava reto por ele */
+      var g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.computeVertexNormals();
+      var ix = new (m.f.length > 65535 ? Uint32Array : Uint16Array)(m.f.length); for (var j = 0; j < ix.length; j++) ix[j] = j;
+      g.setIndex(new THREE.BufferAttribute(ix, 1));
+      var mat = famMat(v.material), ms = new THREE.Mesh(g, mat);
+      addMesh(ms, v.id, v.ifc, mat);
+      mo.tipos[v.ifc] = (mo.tipos[v.ifc] || 0) + 1;
+      var md = v.medidas || {};
+      mo.qto[v.id] = { volume: md.volume, area: md.area, comprimento: md.comprimento, contagem: 1 };
+      var NOMES_V = { generico: 'Volume', parede: 'Parede (volume)', laje: 'Laje (volume)', pilar: 'Pilar (volume)', viga: 'Viga (volume)', cobertura: 'Cobertura (volume)' };
+      mo.elementos.push({ id: v.id, uid: 'edit:' + v.id, mid: 'edit', arquivo: mo.nome, tipo: v.ifc, nome: (v.nome || NOMES_V[v.categoria] || 'Volume') + ' — ' + v.material + ' (sintético ' + v.id + ')',
+        etapa: null, codOrc: null, qto: mo.qto[v.id], disciplina: v.categoria === 'pilar' || v.categoria === 'viga' ? 'estrutura' : 'arquitetura', volume: { categoria: v.categoria, material: v.material } });
+      mo.nEl++;
+    });
+  }
+  /* ---- desenho provisório: a polilinha dos pontos já clicados ---- */
+  function volLinha() {
+    var vo = edit.vol;
+    if (vo.linha) { scene.remove(vo.linha); vo.linha.geometry.dispose(); vo.linha = null; }
+    var pts = vo.pts.map(function (q) { return q.ponto; });
+    if (pts.length < 2) return;
+    if (!edit._linhaMat) edit._linhaMat = new THREE.LineBasicMaterial({ color: 0x2fbf71, depthTest: false });
+    vo.linha = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), edit._linhaMat);
+    vo.linha.renderOrder = 999; scene.add(vo.linha);
+  }
+  function volLimpar() {
+    var vo = edit.vol; if (!vo) return;
+    vo.pts = []; vo.eixo = null; vo.dirPerfil = null; vo.alvo = null; vo.face = null; vo.dist = 0;
+    if (vo.linha) { scene.remove(vo.linha); vo.linha.geometry.dispose(); vo.linha = null; }
+    vo.marcas.forEach(function (o) { limparMarca(o); }); vo.marcas = [];
+    if (vo.realce) { vo.realce.material = vo.realce.userData.matOrig || vo.realce.material; vo.realce = null; }
+  }
+  S._volLimpar = volLimpar;
+  function volMarca(p) { var mk = pontoMarca(p); scene.add(mk); rescaleObj(mk); edit.vol.marcas.push(mk); }
+  /* plano EM PÉ da revolução: passa pelo eixo e pelo 2º clique */
+  function volPontoPerfil(clientX, clientY) {
+    var vo = edit.vol; if (!vo.eixo || !vo.dirPerfil) return null;
+    var rc = canvasEl.getBoundingClientRect();
+    mouse.x = ((clientX - rc.left) / rc.width) * 2 - 1; mouse.y = -((clientY - rc.top) / rc.height) * 2 + 1;
+    ray.setFromCamera(mouse, camera);
+    var nrm = new THREE.Vector3(vo.dirPerfil.z, 0, -vo.dirPerfil.x);   /* horizontal, ⟂ à direção do perfil */
+    var pl = new THREE.Plane().setFromNormalAndCoplanarPoint(nrm, vo.eixo), alvo = new THREE.Vector3();
+    return ray.ray.intersectPlane(pl, alvo) ? alvo : null;
+  }
+  function volPerfilRH(p) {
+    var vo = edit.vol, r = (p.x - vo.eixo.x) * vo.dirPerfil.x + (p.z - vo.eixo.z) * vo.dirPerfil.z;
+    return [Math.max(0, Math.round(r * 1000) / 1000), Math.round((p.y - vo.eixo.y) * 1000) / 1000];
+  }
+  function volNovo(receita, rotulo) {
+    var vo = edit.vol, id = 'e' + (++edit.seq);
+    editOp({ op: 'volume', id: id, volume: { receita: receita, categoria: vo.categoria, material: vo.material } });
+    var v = volDoId(id);
+    if (v && v.medidas) S._hint(rotulo + ' criada: ' + v.medidas.volume.toFixed(3).replace('.', ',') + ' m³, ' + v.medidas.area.toFixed(2).replace('.', ',') + ' m² de superfície (' + (BimVolume.CATEGORIAS[vo.categoria] || vo.categoria) + ', ' + vo.material + ').');
+    else if (v && v.erro) S._hint(rotulo + ': ' + v.erro);
+    marcarFechamento();
+    return id;
+  }
+  /* fecha a ferramenta de contorno/caminho (Enter, ou clique no 1º ponto) */
+  function volConcluir() {
+    var vo = edit.vol, sub = edit.sub;
+    if (sub === 'extrusao') {
+      if (vo.pts.length < 3) { S._hint('Extrusão: clique pelo menos 3 pontos do contorno.'); return false; }
+      /* PLANO (EMBREVE): o contorno no plano de trabalho ativo (vertical inclusive); sem ele, o horizontal da base */
+      var pl = (window.BimPlano && BimPlano.planoVolume && BimPlano.planoVolume()) || BimVolume.planoHorizontal(edit.base);
+      var cont = vo.pts.map(function (q) { var ab = BimVolume.paraPlano(BimVolume.lerPlano(pl), [q.ponto.x, q.ponto.y, q.ponto.z]); return [Math.round(ab[0] * 1000) / 1000, Math.round(ab[1] * 1000) / 1000]; });
+      var ex = BimVolume.extrusao({ contorno: cont, plano: pl, altura: vo.altura });
+      if (!ex.ok) { S._hint('Extrusão: ' + ex.erro + '.'); return false; }
+      editTirarProv();
+      volNovo({ forma: 'extrusao', contorno: cont, plano: pl, altura: vo.altura }, 'Extrusão');
+      return true;
+    }
+    if (sub === 'revolucao') {
+      if (!vo.eixo || vo.pts.length < 3) { S._hint('Revolução: clique o eixo, a direção e pelo menos 3 pontos do perfil.'); return false; }
+      var rec = { forma: 'revolucao', perfil: vo.pts.map(function (q) { return q.rh; }), angulo: vo.angulo, segmentos: 48,
+                  eixo: { o: [vo.eixo.x, vo.eixo.y, vo.eixo.z], d: [0, 1, 0], ref: [vo.dirPerfil.x, 0, vo.dirPerfil.z] } };
+      var rv = BimVolume.revolucao(rec);
+      if (!rv.ok) { S._hint('Revolução: ' + rv.erro + '.'); return false; }
+      editTirarProv();
+      volNovo(rec, 'Revolução');
+      return true;
+    }
+    if (sub === 'varredura') {
+      if (vo.pts.length < 2) { S._hint('Varredura: clique pelo menos 2 pontos do caminho.'); return false; }
+      var perfil = vo.perfil === 'circulo' ? BimVolume.perfilCirculo(vo.diametro, 24).map(function (q) { return [q[0], q[1] + vo.diametro / 2]; }) : BimVolume.perfilRetangulo(vo.largura, vo.alturaPerfil);
+      var cam = vo.pts.map(function (q) { return [Math.round(q.ponto.x * 1000) / 1000, Math.round((edit.base + vo.elevacao) * 1000) / 1000, Math.round(q.ponto.z * 1000) / 1000]; });
+      var rec2 = { forma: 'varredura', perfil: perfil, caminho: cam }, vr = BimVolume.varredura(rec2);
+      if (!vr.ok) { S._hint('Varredura: ' + vr.erro + '.'); return false; }
+      editTirarProv();
+      volNovo(rec2, 'Varredura');
+      return true;
+    }
+    return false;
+  }
+  S._volConcluir = volConcluir;
+  /* o volume (do editor) debaixo do clique, com a face e a normal do raio */
+  function volDoHit() {
+    var h0 = _ultimosHits && _ultimosHits[0]; if (!h0 || !h0.object || h0.object.userData.mid !== 'edit') return null;
+    var v = volDoId(h0.object.userData.expressID); if (!v) return null;
+    var n = h0.face ? h0.face.normal.clone().transformDirection(h0.object.matrixWorld) : null;
+    return { v: v, mesh: h0.object, ponto: modelRoot.worldToLocal(h0.point.clone()), normal: n };
+  }
+  function volRealcar(mesh) {
+    var vo = edit.vol;
+    if (vo.realce) { vo.realce.material = vo.realce.userData.matOrig || vo.realce.material; vo.realce = null; }
+    if (mesh) { mesh.material = editMat('sel'); vo.realce = mesh; }
+  }
+  /* distância do empurrar: o ponto da reta da normal mais perto do raio do mouse */
+  function volDistMouse(clientX, clientY) {
+    var f = edit.vol.face; if (!f) return 0;
+    var rc = canvasEl.getBoundingClientRect();
+    mouse.x = ((clientX - rc.left) / rc.width) * 2 - 1; mouse.y = -((clientY - rc.top) / rc.height) * 2 + 1;
+    ray.setFromCamera(mouse, camera);
+    var d1 = ray.ray.direction, d2 = new THREE.Vector3(f.normal[0], f.normal[1], f.normal[2]), w0 = ray.ray.origin.clone().sub(new THREE.Vector3(f.ponto[0], f.ponto[1], f.ponto[2]));
+    var a = d1.dot(d1), b = d1.dot(d2), c = d2.dot(d2), d = d1.dot(w0), e2 = d2.dot(w0), den = a * c - b * b;
+    if (Math.abs(den) < 1e-9) return 0;
+    return Math.round(((a * e2 - b * d) / den) * 100) / 100;   /* de 1 em 1 cm */
+  }
+  function volEmpurrarCom(dist) {
+    var vo = edit.vol, f = vo.face;
+    if (!f || !(Math.abs(dist) >= 0.01)) { S._hint('Empurrar: a distância precisa ser de pelo menos 1 cm.'); return false; }
+    var id = f.id;
+    editOp({ op: 'volEmpurrar', id: id, ponto: f.ponto, normal: f.normal, dist: dist });
+    var v = volDoId(id);
+    S._hint(v && v.medidas ? 'Face ' + (dist > 0 ? 'puxada ' : 'empurrada ') + Math.abs(dist).toFixed(2).replace('.', ',') + ' m: o volume ficou com ' + v.medidas.volume.toFixed(3).replace('.', ',') + ' m³.' :
+      (v && v.pendente ? 'Calculando a face pelo CSG…' : 'Não deu para empurrar: ' + ((v && v.erro) || 'a face não foi achada') + '. Desfazer (Ctrl+Z) volta.'));
+    editTirarProv(); marcarFechamento();
+    return true;
+  }
+  /* a caixinha da distância (a junto ao cursor) também serve ao empurrar */
+  S._volDistDigitada = function () {
+    if (edit.sub !== 'empurrar' || !edit.vol.face) return false;
+    var inp = editDist.querySelector('[data-edd="inp"]'), v = parseFloat(String(inp.value || '').replace(',', '.'));
+    inp.value = '';
+    if (isFinite(v)) volEmpurrarCom(v);
+    return true;
+  };
+  function volClique(e, hit, p) {
+    var vo = edit.vol, sub = edit.sub, rotN = BimVolume.CATEGORIAS;
+    if (sub === 'unir' || sub === 'subtrair') {
+      var hv = hit ? volDoHit() : null;
+      if (!hv) { S._hint((sub === 'unir' ? 'Unir' : 'Subtrair') + ': clique num VOLUME criado aqui (parede, laje e IFC não entram).'); return; }
+      if (!vo.alvo) { vo.alvo = hv.v.id; volRealcar(hv.mesh); csgCarregar().catch(function () {}); S._hint(sub === 'unir' ? 'Agora clique o volume que vai JUNTAR a este.' : 'Agora clique o volume que vai RECORTAR este (ele some depois do corte).'); return; }
+      if (hv.v.id === vo.alvo) { S._hint('Clique OUTRO volume.'); return; }
+      var alvo = vo.alvo; volRealcar(null); vo.alvo = null;
+      csgCarregar().then(function () {
+        editOp({ op: 'volBool', id: alvo, ferramenta: hv.v.id, tipo: sub === 'unir' ? 'uniao' : 'subtracao' });
+        var r = volDoId(alvo);
+        S._hint(r && r.medidas ? (sub === 'unir' ? 'Unidos' : 'Recortado') + ': ' + r.medidas.volume.toFixed(3).replace('.', ',') + ' m³. Desfazer (Ctrl+Z) volta.' : 'Não deu: ' + ((r && r.erro) || 'sem volume') + '. Desfazer (Ctrl+Z) volta.');
+        marcarFechamento();
+      }, function () {});
+      return;
+    }
+    if (sub === 'empurrar') {
+      if (!vo.face) {
+        var hf = hit ? volDoHit() : null;
+        if (!hf || !hf.normal) { S._hint('Empurrar: clique numa FACE de um volume criado aqui.'); return; }
+        vo.face = { id: hf.v.id, ponto: [hf.ponto.x, hf.ponto.y, hf.ponto.z], normal: [hf.normal.x, hf.normal.y, hf.normal.z] };
+        volRealcar(hf.mesh); csgCarregar().catch(function () {});
+        S._hint('Mexa o mouse para longe (puxa) ou para dentro (empurra) e clique — ou digite a distância em metros e Enter (negativo empurra).');
+        return;
+      }
+      volEmpurrarCom(volDistMouse(e.clientX, e.clientY));
+      return;
+    }
+    if (sub === 'volprops') {
+      var hp = hit ? volDoHit() : null;
+      if (!hp) { S._hint('Clique num volume criado aqui para ele ficar com a categoria e o material do painel.'); return; }
+      editOp({ op: 'volProps', id: hp.v.id, categoria: vo.categoria, material: vo.material });
+      S._hint('Volume ' + hp.v.id + ': ' + (rotN[vo.categoria] || vo.categoria) + ', ' + vo.material + '.'); marcarFechamento();
+      return;
+    }
+    if (sub === 'revolucao') {
+      if (!vo.eixo) { if (!p) return; vo.eixo = new THREE.Vector3(p.x, edit.base, p.z); volMarca(vo.eixo); S._hint('Revolução: agora clique PARA ONDE vai o perfil (define o plano em pé).'); return; }
+      if (!vo.dirPerfil) {
+        if (!p) return;
+        var dx = p.x - vo.eixo.x, dz = p.z - vo.eixo.z, L = Math.sqrt(dx * dx + dz * dz);
+        if (L < 0.05) { S._hint('Clique um pouco mais longe do eixo.'); return; }
+        vo.dirPerfil = { x: dx / L, z: dz / L };
+        S._hint('Revolução: clique os pontos do perfil no plano em pé (a distância ao eixo é o raio). Enter gira ' + vo.angulo + '°.'); return;
+      }
+      var pp = volPontoPerfil(e.clientX, e.clientY); if (!pp) return;
+      var rh = volPerfilRH(pp), pr = new THREE.Vector3(vo.eixo.x + vo.dirPerfil.x * rh[0], vo.eixo.y + rh[1], vo.eixo.z + vo.dirPerfil.z * rh[0]);
+      vo.pts.push({ ponto: pr, rh: rh }); volMarca(pr); volLinha();
+      edit.p1 = pr.clone();
+      S._hint('Perfil: ' + vo.pts.length + ' ponto(s). Enter gira; Esc cancela.');
+      return;
+    }
+    /* extrusão e varredura: pontos no plano de trabalho */
+    if (!p) { S._hint('Não achei o ponto — clique no modelo ou no plano do chão.'); return; }
+    var q = new THREE.Vector3(p.x, edit.base, p.z);
+    if (sub === 'extrusao' && window.BimPlano && BimPlano.ativo() && !BimPlano.horizontalAtivo()) q = p.clone();   /* PLANO (EMBREVE): no plano vertical o ponto tem altura */
+    if (sub === 'extrusao' && vo.pts.length >= 3) {
+      var p0 = vo.pts[0].ponto, t0 = S._telaDe(p0.x, p0.y, p0.z);
+      if (q.distanceTo(p0) < 0.15 || (t0 && Math.hypot(t0.x - e.clientX, t0.y - e.clientY) < 12)) { volConcluir(); return; }
+    }
+    vo.pts.push({ ponto: q }); volMarca(q); volLinha();
+    edit.p1 = q.clone();
+    S._hint(sub === 'extrusao' ? 'Contorno: ' + vo.pts.length + ' ponto(s). Clique o 1º ponto ou Enter para extrudar ' + String(vo.altura).replace('.', ',') + ' m.' :
+      'Caminho: ' + vo.pts.length + ' ponto(s). Enter corre o perfil.');
+  }
+  /* preview: a reta de borracha até o cursor (e a distância do empurrar) */
+  function volPreviewMove(e) {
+    var vo = edit.vol, sub = edit.sub;
+    if (sub === 'empurrar' && vo.face) {
+      var d = volDistMouse(e.clientX, e.clientY), rc2 = canvasEl.getBoundingClientRect();
+      editDist.style.display = ''; editDist.style.left = (e.clientX - rc2.left + 16) + 'px'; editDist.style.top = (e.clientY - rc2.top + 12) + 'px';
+      var tx = editDist.querySelector('[data-edd="txt"]'); if (tx) tx.textContent = (d > 0 ? '+' : '') + d.toFixed(2).replace('.', ',') + ' m';
+      vo.dist = d; return;
+    }
+    if (!edit.p1) return;
+    var pM = sub === 'revolucao' ? volPontoPerfil(e.clientX, e.clientY) : editPontoPlano(e.clientX, e.clientY);
+    if (pM) editPreview(pM, e.clientX, e.clientY);
+  }
+  S._volPreviewa = function () { return !!(edit.on && VOL_SUBS[edit.sub] && (edit.p1 || (edit.sub === 'empurrar' && edit.vol.face))); };
+  /* Enter fecha o contorno/caminho/perfil. ⚠ Na CAPTURA e parando a propagação:
+     o Enter da casca (js/bimshell.js) REPETE o último comando, e
+     ele está no mesmo `document` — chegava antes, rearmava a ferramenta (que
+     desligava) e o desenho em andamento sumia sem virar volume (e2e-bim-b4b7,
+     08/10/2026). Sem desenho em andamento, o Enter segue para a casca. */
+  document.addEventListener('keydown', function (ev) {
+    if (!edit.on || !VOL_SUBS[edit.sub] || ev.key !== 'Enter') return;
+    var t2 = ev.target || {}; if (/^(INPUT|TEXTAREA|SELECT)$/.test(t2.tagName || '')) return;
+    if (!edit.vol.pts.length && !edit.vol.eixo) return;
+    ev.preventDefault(); ev.stopPropagation();
+    volConcluir();
+  }, true);
+  /* parâmetros das ferramentas: vêm da fita/gestão (editarArmar) ou do painel */
+  S._volParametros = function (par) {
+    var vo = edit.vol; par = par || {};
+    ['altura', 'angulo', 'largura', 'alturaPerfil', 'diametro', 'elevacao'].forEach(function (k) { var n2 = Number(par[k]); if (par[k] != null && isFinite(n2)) vo[k] = n2; });
+    if (par.categoria && BimVolume.CATEGORIAS[par.categoria]) vo.categoria = par.categoria;
+    if (par.material != null && String(par.material).trim()) vo.material = String(par.material).trim().slice(0, 60);
+    if (par.perfil === 'circulo' || par.perfil === 'retangulo') vo.perfil = par.perfil;
+    vo.angulo = Math.max(1, Math.min(360, vo.angulo));
+    volPainelPintar();
+    return JSON.parse(JSON.stringify({ altura: vo.altura, angulo: vo.angulo, largura: vo.largura, alturaPerfil: vo.alturaPerfil, diametro: vo.diametro, elevacao: vo.elevacao, categoria: vo.categoria, material: vo.material, perfil: vo.perfil }));
+  };
+  /* painel das ferramentas de volume, dentro do painel do editor */
+  var volPainel = document.createElement('div');
+  volPainel.setAttribute('data-ed', 'vol');
+  volPainel.style.cssText = 'display:none;flex-direction:column;gap:6px;border-top:1px solid #d3dce6;padding-top:6px';
+  volPainel.innerHTML =
+    '<b>Volume livre</b>' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
+    '<label>Altura <input data-vol="altura" class="inp" type="number" step="0.05" style="width:58px"> m</label>' +
+    '<label>Ângulo <input data-vol="angulo" class="inp" type="number" step="15" min="1" max="360" style="width:52px">°</label></div>' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
+    '<label>Perfil <select data-vol="perfil" class="inp"><option value="retangulo">Retângulo</option><option value="circulo">Círculo</option></select></label>' +
+    '<label>L <input data-vol="largura" class="inp" type="number" step="0.01" style="width:52px"></label>' +
+    '<label>A <input data-vol="alturaPerfil" class="inp" type="number" step="0.01" style="width:52px"></label>' +
+    '<label>Ø <input data-vol="diametro" class="inp" type="number" step="0.01" style="width:52px"></label></div>' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
+    '<label>Categoria <select data-vol="categoria" class="inp">' + (typeof BimVolume !== 'undefined' ? Object.keys(BimVolume.CATEGORIAS).map(function (k) { return '<option value="' + k + '">' + BimVolume.CATEGORIAS[k] + '</option>'; }).join('') : '') + '</select></label>' +
+    '<label>Material <input data-vol="material" class="inp" maxlength="60" style="width:110px"></label></div>' +
+    '<div style="font-size:10.5px;color:#5b6b7c" data-vol="dica"></div>';
+  editPanel.insertBefore(volPainel, editPanel.lastChild);
+  function volPainelPintar() {
+    var vo = edit.vol;
+    volPainel.querySelectorAll('[data-vol]').forEach(function (el) { var k = el.getAttribute('data-vol'); if (k !== 'dica' && document.activeElement !== el) el.value = vo[k]; });
+    var dica = { extrusao: 'Clique o contorno no plano de trabalho; feche no 1º ponto ou Enter.', revolucao: 'Eixo, direção do perfil e o perfil em pé; Enter gira.',
+                 varredura: 'Clique o caminho; Enter corre o perfil.', unir: 'Clique o volume alvo e depois o que junta.', subtrair: 'Clique o volume alvo e depois o que recorta (ele some).',
+                 empurrar: 'Clique a face, mexa o mouse e clique (ou digite a distância).', volprops: 'Clique um volume: ele fica com a categoria e o material acima.' }[edit.sub] || '';
+    var dd = volPainel.querySelector('[data-vol="dica"]'); if (dd) dd.textContent = dica;
+    volPainel.style.display = VOL_SUBS[edit.sub] ? 'flex' : 'none';
+  }
+  S._volPainelPintar = volPainelPintar;
+  volPainel.addEventListener('change', function (e) {
+    var el = e.target.closest('[data-vol]'); if (!el) return;
+    var par = {}; par[el.getAttribute('data-vol')] = el.value; S._volParametros(par);
+  });
+  /* exporta o modelado em IFC4 (js/ifcsaida.js). Volume pendente de CSG espera o CSG. */
+  S._ifcSaida = function (o) {
+    o = o || {};
+    if (typeof IfcSaida === 'undefined') return Promise.resolve({ ok: false, erro: 'o escritor de IFC (js/ifcsaida.js) não carregou' });
+    var st = BimEdit.aplicar(edit.ops);
+    if (window.BimOpcoes && BimOpcoes.filtrar && st.opcoes) st = BimOpcoes.filtrar(st);   /* P10: o modelo principal (opção principal de cada conjunto), como os exportadores de mercado gravam */
+    var precisa = (st.volumes || []).some(function (v) { return BimVolume.precisaCsg(v.receita); });
+    return (precisa ? csgCarregar() : Promise.resolve(null)).then(function () {
+      BimEdit.medirVolumes(st, S._csgFn, edit.volCache);
+      /* B2/B5: eixos e instalações também são o modelado (sem eles, só tubo e eixo davam "nada modelado") */
+      var inst = st.instalacoes || {};
+      var n = st.caixas.length + st.coberturas.length + st.familias.length + (st.volumes || []).length + (st.eixos || []).length + (inst.trechos || []).length + (inst.pecas || []).length
+        + (S._p11 ? S._p11.contar(st) : 0);   /* P11: o terreno também é modelado */
+      if (!n) return { ok: false, erro: 'nada modelado no OrçaPRO para exportar (o IFC importado já é um IFC)' };
+      var r = IfcSaida.gerar(st, { avaliarFam: famAval, csg: S._csgFn, cacheVolume: edit.volCache,
+        categoriaFam: function (id) { var f = famReg.lista[id]; return f ? f.categoria : null; }, nomeFam: function (id) { var f = famReg.lista[id]; return f ? f.nome : id; },
+        /* P1-acab: a família (os parâmetros PRÓPRIOS dela vão no Pset_OrcaPRO) e os parâmetros do
+           projeto (Pset_OrcaPRO_Projeto) — sem eles o IFC da tela saía sem esses Psets */
+        familia: function (id) { return famReg.lista[id] || null; },
+        parametrosProjeto: o.parametrosProjeto || S._paramProjeto || null,
+        /* MATERIAIS (js/bimmateriaisui.js): nome, cor e transparência do material do projeto de cada peça */
+        materiaisProjeto: o.materiaisProjeto || ((window.BimMateriaisUI && BimMateriaisUI.ativo() && BimMateriaisUI.ifcOpts) ? BimMateriaisUI.ifcOpts() : null),
+        niveis: o.niveis, projeto: o.projeto, semente: o.semente, autor: o.autor, empresa: o.empresa, versaoApp: o.versaoApp, arquivo: o.arquivo, agora: o.agora });
+      r.ok = true; r.n = n;
+      return r;
+    });
+  };
+
   function setEditSub(sub) {
     edit.sub = (edit.sub === sub) ? null : sub;
     editGhostLimpar();
     editTirarProv(); editSoltarSel(); editHintSub(); editSt();
+    if (S._volPainelPintar) S._volPainelPintar();
+    if (edit.sub === 'unir' || edit.sub === 'subtrair' || edit.sub === 'empurrar') csgCarregar().catch(function () {});   /* B4: o CSG chega antes do 2º clique */
     canvasEl.style.cursor = edit.sub ? 'crosshair' : '';
     // ferramenta ativa marcada no painel — sem isso o toggle fica invisível pro usuário
     ['parede', 'laje', 'pilar', 'mover', 'apagar', 'anotar'].forEach(function (k) {
@@ -11624,6 +12364,12 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       var on2 = edit.sub === k;
       b.style.background = on2 ? corAtiva() : ''; b.style.color = on2 ? '#fff' : '';
     });
+    if (S._prec) S._prec.aoSub(edit.sub);
+    if (S._p2d) S._p2d.aoSub(edit.sub);   /* P2-D */
+    if (S._p11) S._p11.aoSub(edit.sub);   /* P11 */
+    if (S._p3) S._p3.aoSub(edit.sub);   /* P3 */
+    if (S._emb) S._emb.aoSub(edit.sub);   /* EMBREVE */
+    if (window.BimBarraOpcoes && BimBarraOpcoes.armou) BimBarraOpcoes.armou(edit.sub);   /* PLANTA: a barra de opções da ferramenta */
   }
   function setEdit(on) {
     edit.on = !!on;
@@ -11631,13 +12377,23 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       if (medir.on) setMedir(false); if (area.on) setArea(false); if (ang.on) setAng(false);
       if (ctec.ativo && S._ctecCancelar) S._ctecCancelar(true);
       setMode(false); fecharPaineis(null);
-      edit.base = editBase();
-      editPanel.style.display = 'flex';
+      /* B2: com nível ativo, o plano de trabalho é a elevação dele */
+      edit.base = (edit.b2 && edit.b2.nivel && isFinite(+edit.b2.nivel.elevacao)) ? +edit.b2.nivel.elevacao : editBase();
+      planoBase();   /* PLANO (EMBREVE) */
+      /* PLANTA (09/10/2026, pedido do Rogério: "aquele painel não tem que mostrar"): com a prévia
+         do modelador e a casca montada, as opções da ferramenta moram na BARRA DE OPÇÕES sob a fita
+         (js/bimbarraopcoes.js) e o tipo/parâmetros em Propriedades — o painel antigo não abre */
+      editPanel.style.display = (window.BimBarraOpcoes && BimBarraOpcoes.substituiPainel && BimBarraOpcoes.substituiPainel()) ? 'none' : 'flex';
       editHintSub(); editSt();
     } else {
       editTirarProv(); editSoltarSel();
       edit.sub = null; editPanel.style.display = 'none';
       canvasEl.style.cursor = ''; S._hint('');
+      if (S._prec) S._prec.aoSub(null);
+      if (S._p2d) S._p2d.aoSub(null);   /* P2-D */
+      if (S._p11) S._p11.aoSub(null);   /* P11 */
+      if (S._p3) S._p3.aoSub(null);   /* P3 */
+      if (window.BimBarraOpcoes && BimBarraOpcoes.armou) BimBarraOpcoes.armou(null);   /* PLANTA */
     }
     var be = bar.querySelector('[data-b="editar"]'); if (be) { be.style.background = on ? corAtiva() : ''; be.style.color = on ? '#fff' : ''; }
   }
@@ -11648,7 +12404,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (!S || !S.alive) return; // viewer morto (ctx perdido): rebuild apagaria o aviso de recarregar
     edit.ops = BimEdit.sanear(ops);
     var mx = 0;
-    edit.ops.forEach(function (o) { var m2 = /^[eaf](\d+)$/.exec(String(o.id || '')); if (m2) mx = Math.max(mx, parseInt(m2[1], 10)); });
+    /* as ops de DENTRO dos lotes também (a escada e os guarda-corpos dela): senão o próximo id repetiria um deles */
+    edit.ops.concat(BimEdit.achatar(edit.ops)).forEach(function (o) { var m2 = /^[eaf](\d+)$/.exec(String(o.id || '')); if (m2) mx = Math.max(mx, parseInt(m2[1], 10)); });
     edit.seq = mx;
     // replay NÃO re-dispara onEdicao (gravaria de volta o que acabou de ser lido)
     edit._replay = true;
@@ -11674,6 +12431,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     edit.ops = []; edit.seq = 0; edit.removidosAntes = []; edit.modelo = null; S._remEd = null;
     edit.sprites.forEach(function (sp) { scene.remove(sp); if (sp.material && sp.material.map) sp.material.map.dispose(); if (sp.material) sp.material.dispose(); });
     edit.sprites = [];
+    if (S._b2Limpar3d) S._b2Limpar3d();
     if (edit.on) setEdit(false);
     if (opts.onEdicao) { try { opts.onEdicao([]); } catch (_) {} }
   };
@@ -11691,7 +12449,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     else if (k === 'chain') { edit.chain = !edit.chain; b.style.background = edit.chain ? corAtiva() : ''; b.style.color = edit.chain ? '#fff' : ''; S._hint(edit.chain ? '⛓ Encadear LIGADO — cada parede continua da anterior (Esc encerra o traço).' : '⛓ Encadear desligado.'); }
     else if (['parede', 'laje', 'pilar', 'mover', 'apagar', 'anotar'].indexOf(k) >= 0) setEditSub(k);
   });
-  // estado inicial dos toggles (chain nasce ligado — fluxo Revit)
+  // estado inicial dos toggles (chain nasce ligado — traçado contínuo)
   (function () { var bC = editPanel.querySelector('[data-ed="chain"]'); if (bC) { bC.style.background = corAtiva(); bC.style.color = '#fff'; } })();
   editPanel.addEventListener('change', function (e) {
     var i = e.target.closest('input[data-ed]'); if (!i) return; var k = i.getAttribute('data-ed'), v = parseFloat(i.value);
@@ -11733,6 +12491,631 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return true;
   };
   S._espEditor = function () { return { esp: edit.esp, espLaje: edit.espLaje, tipo: edit.tipoRotulo || "" }; };
+
+  /* B3 — DESENHO DE PRECISÃO (08/10/2026): snaps do editor, digitar comprimento e ângulo,
+     cotas temporárias e permanentes, alças, copiar/espelhar/girar/matriz. A conta mora em
+     js/bimprecisao.js (puro) e a tela em js/bimprecisaoui.js; aqui só se entrega o que a
+     tela precisa do visualizador. Sem a prévia do modelador, S._prec responde "não é comigo"
+     e o editor fica como na 1.2.128. */
+  S._prec = (window.BimPrecisaoUI && window.BimPrecisao) ? BimPrecisaoUI.montar({
+    THREE: THREE, S: S, edit: edit, canvas: canvasEl, scene: scene,
+    host: function () { return (S && S.host) || host; }, camera: function () { return camera; },
+    planoPonto: editPontoPlano, raio: raioToque, raycast: raycastEm, hits: function () { return _ultimosHits; },
+    snapMalha: function (e, h) { return h ? aplicarSnap(h, raioToque(e)) : null; },
+    marca: mostrarSnapMarca, marcaEsconder: esconderSnapMarca,
+    op: editOp, clique: editClique, concluirParede: editConcluirParede, ajustar: editAjustarPonto, ghost: editGhostMover,
+    armar: function (sub) { if (!edit.on) setEdit(true); if (edit.sub !== sub) setEditSub(sub); },
+    desarmar: function () { if (edit.sub) setEditSub(edit.sub); },
+    rotulo: labelSprite, reescalar: rescaleObj, avaliar: famAval, matSel: function () { return editMat('sel'); },
+    fechou: marcarFechamento, hint: function (t) { S._hint(t); }
+  }) : null;
+  /* P2-D — GANCHOS (ambientes na tela, js/bimambienteui.js; 09/10/2026): o comando
+     Ambiente (clique dentro da região fechada — o realce mostra a região antes,
+     de confirmar), o Separador de ambiente (dois cliques) e o volume translúcido
+     do ambiente no 3D (selecionado, ou todos com "Ambientes no 3D"). Sem a prévia
+     do modelador, S._p2d é null e o editor fica como estava. */
+  S._p2d = (window.BimAmbienteUI && BimAmbienteUI.montar3d) ? BimAmbienteUI.montar3d({
+    THREE: THREE, S: S, edit: edit, scene: scene,
+    op: editOp, planoPonto: editPontoPlano, hint: function (t) { S._hint(t); }, fechou: marcarFechamento,
+    enquadrar: function (box) { enquadrarObj(box, 2.2); },
+    /* seleciona o ambiente: a peça destacada no 3D solta e a casca recebe a seleção (Propriedades) */
+    pick: function (info) {
+      if (S.selected) { S.selected.material = S.prevMat; S.selected = null; S.prevMat = null; }
+      if (S._contornoSelecao) S._contornoSelecao(null);
+      var o = (S && S.opts) || opts; if (o.onPick) o.onPick(info);
+    }
+  }) : null;
+  /* P10 — GANCHOS (fases, grupos, opções de projeto, js/bimp10ui.js): os gráficos
+     de fase (existente em meio-tom, demolido tracejado; o que o filtro esconde
+     some) e a opção de projeto visível, no 3D. Sem a prévia, S._p10 é null. */
+  S._p10 = (window.BimP10UI && BimP10UI.montar3d) ? BimP10UI.montar3d({ THREE: THREE, scene: scene }) : null;
+  /* P11 — GANCHOS (terreno e implantação, js/bimterreno.js + js/bimterrenoui.js;
+     09/10/2026): as ferramentas do terreno (pontos, contornos, rotular, componente),
+     o desenho do topossólido/plataforma/divisa no refazer e as curvas de nível. Sem
+     a prévia do modelador, S._p11 é null e o editor fica como estava. */
+  S._p11 = (window.BimTerrenoUI && BimTerrenoUI.montar3d) ? BimTerrenoUI.montar3d({
+    THREE: THREE, S: S, edit: edit, scene: scene,
+    op: editOp, planoPonto: editPontoPlano, hint: function (t) { S._hint(t); }, fechou: marcarFechamento
+  }) : null;
+  /* P3 — GANCHOS (telhado, bordas, unir telhado e fundação; js/bimp3ui.js com
+     os motores js/bimtelhado.js e js/bimfundacao.js): os cliques das
+     ferramentas, a linha de prévia e o desenho das peças. Sem a prévia do
+     modelador S._p3 é null e o editor fica como estava. */
+  S._p3 = (window.BimP3UI && BimP3UI.montar3d) ? BimP3UI.montar3d({
+    THREE: THREE, S: S, edit: edit, scene: scene, op: editOp, hint: function (t) { S._hint(t); }, fechou: marcarFechamento,
+    planoPonto: editPontoPlano, telaDe: function (x, y, z) { return S._telaDe ? S._telaDe(x, y, z) : null; },
+    marca: pontoMarca, limparMarca: limparMarca, reescalar: rescaleObj,
+    alvo: function () { var h = _ultimosHits[0]; return h && h.object && h.object.userData.mid === 'edit' ? h.object.userData.expressID : null; }
+  }) : null;
+  /* MATERIAIS — GANCHO (09/10/2026, js/bimmateriaisui.js): a peça com material do projeto
+     ganha a cor e a transparência dele no 3D (material trocado por cópia); o THREE daqui
+     também desenha a prévia (esfera/cubo) da tela de materiais. Sem a prévia do modelador
+     o módulo não troca nada. */
+  S._mat = (window.BimMateriaisUI && BimMateriaisUI.montar3d) ? BimMateriaisUI.montar3d({ THREE: THREE, S: S, edit: edit }) : null;
+  /* EMBREVE — GANCHOS (09/10/2026, js/bimembreveui.js): plano de trabalho (a grade do
+     plano, os cliques "face", "peça" e "linha", a base do editor) e o graute da
+     alvenaria estrutural (as barras e o furo no 3D). Sem a prévia do modelador o
+     módulo não desenha nada e os cliques não são dele. */
+  S._emb = (window.BimEmBreveUI && BimEmBreveUI.montar3d) ? BimEmBreveUI.montar3d({
+    THREE: THREE, S: S, edit: edit, scene: scene, hits: function () { return _ultimosHits; }, hint: function (t) { S._hint(t); }, fechou: marcarFechamento,
+    desarmar: function () { if (edit.sub) setEditSub(edit.sub); },
+    baseNivel: function () { return (edit.b2 && edit.b2.nivel && isFinite(+edit.b2.nivel.elevacao)) ? +edit.b2.nivel.elevacao : editBase(); },
+    vaos: function (st) { return BimEdit.vaosDasParedes(st, famAval); },
+    alvo: function () { return orbit && orbit.target ? orbit.target.clone() : null; }
+  }) : null;
+  /* ======================================================================
+   * B2 — MODELADOR (prévia `?previa=modelador`, js/bimprevia.js; motor puro
+   * js/bimarq.js; tela js/bimarqui.js). 08/10/2026.
+   * Tudo aqui só roda com `edit.b2` ligado (BIM.editarB2): sem a prévia o
+   * editor é exatamente o da 1.2.128. O que este bloco faz:
+   *   · desenha as peças do modelador (parede unida/recortada, laje por
+   *     contorno com furo, pilar/viga por perfil, escada, guarda-corpo) como
+   *     prismas INDEXADOS — a malha mesclada (agregarModelo) só leva malha
+   *     com índice, e peça sem índice sumiria do 3D depois de mesclar;
+   *   · a grade de eixos (linha traço-ponto + bolinha com o nome);
+   *   · as ferramentas de clique: eixo, laje por contorno, furo, pilar e
+   *     viga por perfil, escada, guarda-corpo (Enter fecha; Esc cancela).
+   * ====================================================================== */
+  edit.b2 = null; edit.b2pts = null; edit.b2linha = null; edit.b2objs = []; edit.b2moverEixo = null;
+  var b2Mats = null;
+  function b2Mat(k) {
+    if (!b2Mats) {
+      b2Mats = {
+        aco: new THREE.MeshStandardMaterial({ color: 0x8a9099, metalness: .55, roughness: .45, side: THREE.DoubleSide }),
+        madeira: new THREE.MeshStandardMaterial({ color: 0xb88a5a, metalness: .02, roughness: .85, side: THREE.DoubleSide }),
+        escada: new THREE.MeshStandardMaterial({ color: 0xb9c0c8, metalness: .05, roughness: .9, side: THREE.DoubleSide }),
+        eixo: new THREE.LineDashedMaterial({ color: 0x2e6f9e, dashSize: 0.6, gapSize: 0.18, depthTest: false, transparent: true, opacity: 0.9 }),
+        poli: new THREE.LineBasicMaterial({ color: 0x2fbf71, depthTest: false })
+      };
+    }
+    return b2Mats[k];
+  }
+  /* polígono 2D (com furos) extrudado de z0 a z1 (z1 número ou um por
+     vértice do contorno — o topo inclinado da parede sob o telhado); `mapa`
+     leva (a, b, z) do local ao mundo. Vértices NÃO compartilhados (normal
+     reta por face) e índice sequencial. */
+  function b2Geo(poli, furos, z0, z1, mapa) {
+    var V2 = function (q) { return new THREE.Vector2(q[0], q[1]); };
+    var cont = poli.map(V2), fur = (furos || []).map(function (f) { return f.map(V2); });
+    var todos = poli.concat.apply(poli.slice(), furos || []), nC = poli.length;
+    var zt = function (i) { return Array.isArray(z1) ? (i < nC ? z1[i] : z1.reduce(function (s, v) { return s + v; }, 0) / z1.length) : z1; };
+    var pos = [];
+    function v(i, z) { var w = mapa(todos[i][0], todos[i][1], z); pos.push(w[0], w[1], w[2]); }
+    var tris = [];
+    try { tris = THREE.ShapeUtils.triangulateShape(cont, fur); } catch (eT) { tris = []; }
+    tris.forEach(function (t) { v(t[0], z0); v(t[2], z0); v(t[1], z0); v(t[0], zt(t[0])); v(t[1], zt(t[1])); v(t[2], zt(t[2])); });
+    var aneis = [[0, nC]], ini = nC;
+    (furos || []).forEach(function (f) { aneis.push([ini, f.length]); ini += f.length; });
+    aneis.forEach(function (an) {
+      for (var k = 0; k < an[1]; k++) {
+        var i = an[0] + k, j = an[0] + (k + 1) % an[1];
+        v(i, z0); v(j, z0); v(j, zt(j)); v(i, z0); v(j, zt(j)); v(i, zt(i));
+      }
+    });
+    var g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    var idx = []; for (var q = 0; q < pos.length / 3; q++) idx.push(q);
+    g.setIndex(idx); g.computeVertexNormals(); g.computeBoundingBox();
+    return g;
+  }
+  /* P2-B — GANCHOS (forro, js/bimforro.js + js/bimforroui.js): o desenho
+     mínimo do forro — o contorno (com furos) extrudado da face de baixo
+     (a cota do forro, ou a do plano inclinado) para cima a espessura do
+     tipo, prisma INDEXADO como a laje da B2 (a malha mesclada só leva malha
+     com índice). Forro inválido (sala aberta…) não desenha: o motivo está
+     nas Propriedades e no quantitativo fica zero. */
+  var p2bMatForro = null;
+  S._p2bForros = function (st, mo, addMesh) {
+    var BF = window.BimForro; if (!BF) return;
+    if (!p2bMatForro) p2bMatForro = new THREE.MeshStandardMaterial({ color: 0xf1eee6, metalness: 0, roughness: .95, side: THREE.DoubleSide });
+    (st.forros || []).forEach(function (f) {
+      if (!f || !f.ok || !f.contorno || f.contorno.length < 3) return;
+      var C = f.contorno.map(function (p) { return [p.x, p.z]; }), Fu = (f.furos || []).map(function (q) { return q.pts.map(function (p) { return [p.x, p.z]; }); });
+      var g = b2Geo(C, Fu, 0, f.espessura, function (a, b, z) { return [a, BF.cotaEm(f, a, b) + z, b]; });
+      addMesh(new THREE.Mesh(g, p2bMatForro), f.id, 'IFCCOVERING', p2bMatForro);
+      mo.tipos.IFCCOVERING = (mo.tipos.IFCCOVERING || 0) + 1;
+      mo.qto[f.id] = { area: f.area, comprimento: f.perimetro, volume: f.volume, contagem: 1 };
+      mo.elementos.push({ id: f.id, uid: 'edit:' + f.id, mid: 'edit', arquivo: mo.nome, tipo: 'IFCCOVERING', nome: 'Forro ' + (f.tipoForro ? f.tipoForro.rotulo : '') + ' (sintético ' + f.id + ')', etapa: null, codOrc: null, qto: mo.qto[f.id], disciplina: 'arquitetura' });
+      mo.nEl++;
+    });
+  };
+  /* a ferramenta: o automático é UM clique (dentro da sala); o contorno usa
+     a coleta de cantos da laje (b2pts + Enter/1º ponto → b2Fechar) */
+  function p2bForroCriar(dados) {
+    var b = edit.b2 || {};
+    if (!window.BimForroUI) { S._hint('A tela do forro (js/bimforroui.js) não carregou.'); return false; }
+    var rF = BimForroUI.criar(edit.estado, dados, b.nivel || null, edit.base, 'e' + (edit.seq + 1), b.niveis || null);
+    if (!rF.ok) { S._hint(rF.motivo); return false; }
+    edit.seq++; editTirarProv(); editOp(rF.op); S._hint(rF.resumo + ' Clique para outro, ou Esc.'); marcarFechamento();
+    return true;
+  }
+  function p2bForroAuto() { return window.BimForroUI && BimForroUI.cfg().modo !== 'contorno'; }
+  function b2Barra(a, b, s, mat) {   /* barra de seção s entre dois pontos 3D (corrimão) */
+    var A = new THREE.Vector3(a.x, a.y, a.z), Bv = new THREE.Vector3(b.x, b.y, b.z), L = A.distanceTo(Bv);
+    var m = new THREE.Mesh(new THREE.BoxGeometry(Math.max(L, 0.01), s, s), mat);
+    m.position.copy(A).add(Bv).multiplyScalar(0.5);
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), Bv.clone().sub(A).normalize());
+    return m;
+  }
+  function b2Plano(a, b, z) { return [a, z, b]; }   /* planta (x, z) extrudada em y */
+  S._b2Malhas = function (c, vz, mat, addMesh) {
+    var A = window.BimArq; if (!A || !c || !c.b2) return null;
+    var me = null;
+    if (c.tipo === 'parede') {
+      var r = A.pecasParede(c, vz ? vz.aceitos : []);
+      if (!r.pecas.length) return null;
+      r.pecas.forEach(function (pc) { var m = new THREE.Mesh(b2Geo(pc.pts, null, pc.y0, pc.ytopo, b2Plano), mat); addMesh(m, c.id, c.ifc, mat); });
+      me = BimEdit.medidasDe(c, vz ? vz.areaVaos : 0);
+      return { qto: { comprimento: me.comprimento, area: me.area, volume: me.volume, contagem: 1, areaVaos: vz ? vz.areaVaos : 0, areaFora: me.areaFora, areaDentro: me.areaDentro } };
+    }
+    if (c.tipo === 'laje' && c.contorno) {
+      /* CURVA: a aresta em arco vira cordas de 2 mm no desenho (a área é a exata, do motor) */
+      var C = window.BimCurva && BimCurva.temArco(c.contorno) ? BimCurva.pontosContorno(c.contorno) : c.contorno.map(function (p) { return [p.x, p.z]; }), F = (c.furos || []).map(function (f) { return f.pts.map(function (p) { return [p.x, p.z]; }); });
+      addMesh(new THREE.Mesh(b2Geo(C, F, c.cy - c.altura / 2, c.cy + c.altura / 2, b2Plano), mat), c.id, c.ifc, mat);
+      return { qto: { comprimento: c.perimetro, area: c.area, volume: c.volume, contagem: 1 } };
+    }
+    if ((c.tipo === 'pilar' || c.tipo === 'viga') && c.perfil) {
+      var s = A.secao(c.perfil); if (!s.ok) return null;
+      var mp = c.material === 'aco' ? b2Mat('aco') : (c.material === 'madeira' ? b2Mat('madeira') : mat);
+      var co = Math.cos(c.rotY), si = Math.sin(c.rotY), g;
+      /* P9 — GANCHO: viga com justificação/inclinação/extensão e pilar inclinado (js/bimestrut.js);
+         sem campo P9 o mapa é null e a peça sai como sempre */
+      var m9 = window.BimEstrut ? (c.tipo === 'pilar' ? BimEstrut.malhaPilar(c, s) : BimEstrut.malhaViga(c, s)) : null;
+      var vc9 = c.tipo === 'viga' && c.arco && window.BimCurva ? BimCurva.vigaPlanta(c) : null;   /* CURVA: o anel da viga curva */
+      if (vc9) g = b2Geo(vc9.pts, null, vc9.y0, vc9.y1, b2Plano);
+      else if (m9) g = b2Geo(s.contorno, s.furos, m9.z0, m9.z1, m9.mapa);
+      else if (c.tipo === 'pilar') {
+        g = b2Geo(s.contorno, s.furos, c.cy - c.altura / 2, c.cy + c.altura / 2, function (a, b, z) { return [c.cx + a * co + b * si, z, c.cz - a * si + b * co]; });
+      } else {
+        /* a viga para na face do pilar (recuos do BimArq.derivar): desenho = corte = orçamento */
+        g = b2Geo(s.contorno, s.furos, -c.comprimento / 2 + (+c.recuoIni || 0), c.comprimento / 2 - (+c.recuoFim || 0), function (a, b, u) { return [c.cx + u * co + a * si, c.cy + b, c.cz - u * si + a * co]; });
+      }
+      addMesh(new THREE.Mesh(g, mp), c.id, c.ifc, mp);
+      me = BimEdit.medidasDe(c, 0);
+      return { qto: { comprimento: me.comprimento, area: me.areaForma, volume: me.volume, contagem: 1, massa: c.massa } };
+    }
+    if (c.tipo === 'escada' && c.escada && c.escada.lances) {
+      var me2 = b2Mat('escada');
+      c.escada.lances.forEach(function (l) {
+        var dx = Math.cos(l.ang), dz = Math.sin(l.ang), rx = -dz, rz = dx;
+        var g2 = b2Geo(l.perfil.map(function (q) { return [q.u, q.y]; }), null, -l.largura / 2, l.largura / 2,
+          function (u, y, w) { return [l.x + u * dx + w * rx, l.y + y, l.z + u * dz + w * rz]; });
+        addMesh(new THREE.Mesh(g2, me2), c.id, c.ifc, me2);
+      });
+      if (c.escada.patamar) addMesh(new THREE.Mesh(b2Geo(c.escada.patamar.pts.map(function (p) { return [p.x, p.z]; }), null, c.escada.patamar.y0, c.escada.patamar.y1, b2Plano), me2), c.id, c.ifc, me2);
+      var md = c.medidas || {};
+      return { qto: { comprimento: md.comprimento, area: md.area, volume: md.volume, contagem: 1 } };
+    }
+    if (c.tipo === 'rampa' && c.rampa && c.rampa.lances) {   /* P9 — GANCHO: rampa (js/bimestrut.js), como a escada */
+      var mR = b2Mat('escada');
+      c.rampa.lances.forEach(function (l) {
+        var dx = Math.cos(l.ang), dz = Math.sin(l.ang), rx = -dz, rz = dx;
+        addMesh(new THREE.Mesh(b2Geo(l.perfil.map(function (q) { return [q.u, q.y]; }), null, -l.largura / 2, l.largura / 2,
+          function (u, y, w) { return [l.x + u * dx + w * rx, l.y + y, l.z + u * dz + w * rz]; }), mR), c.id, c.ifc, mR);
+      });
+      (c.rampa.patamares || []).forEach(function (pt) { addMesh(new THREE.Mesh(b2Geo(pt.pts.map(function (q) { return [q.x, q.z]; }), null, pt.y0, pt.y1, b2Plano), mR), c.id, c.ifc, mR); });
+      var mdR = c.medidas || {};
+      return { qto: { comprimento: mdR.comprimento, area: mdR.area, volume: mdR.volume, contagem: 1 } };
+    }
+    if (c.tipo === 'guarda' && c.guarda && c.guarda.montantes) {
+      var ma = b2Mat('aco'), par = c.guarda.par || {}, sm = par.secMontante || 0.04;
+      c.guarda.montantes.forEach(function (q) {
+        var mm = new THREE.Mesh(new THREE.BoxGeometry(sm, par.altura, sm), ma);
+        mm.position.set(q.x, q.y + par.altura / 2, q.z); addMesh(mm, c.id, c.ifc, ma);
+      });
+      (c.guarda.corrimao || []).forEach(function (sg) { addMesh(b2Barra(sg.a, sg.b, par.secCorrimao || 0.05, ma), c.id, c.ifc, ma); });
+      (c.guarda.corrimaos || []).forEach(function (sg) { addMesh(b2Barra(sg.a, sg.b, 0.04, ma), c.id, c.ifc, ma); });   /* P9: corrimãos 1 e 2 */
+      var mg = c.medidas || {};
+      return { qto: { comprimento: mg.comprimento, area: mg.area, volume: 0, contagem: 1 } };
+    }
+    return null;
+  };
+  /* bolinha com o nome do eixo (sprite que mantém o tamanho na tela) */
+  function b2Bolha(txt) {
+    var cv = document.createElement('canvas'); cv.width = 128; cv.height = 128;
+    var g = cv.getContext('2d');
+    g.fillStyle = '#ffffff'; g.beginPath(); g.arc(64, 64, 58, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#2e6f9e'; g.lineWidth = 7; g.stroke();
+    g.fillStyle = '#1a2b3c'; g.font = 'bold ' + (String(txt).length > 2 ? 40 : 58) + 'px Arial'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(String(txt), 64, 68);
+    var tex = texSRGB(new THREE.CanvasTexture(cv)); tex.minFilter = THREE.LinearFilter;
+    var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+    sp.userData._sc = 0.035; sp.renderOrder = 999; return sp;
+  }
+  S._b2Limpar3d = function () {
+    (edit.b2objs || []).forEach(function (o) { scene.remove(o); if (o.geometry) o.geometry.dispose(); if (o.material && o.material.map) { o.material.map.dispose(); o.material.dispose(); } });
+    edit.b2objs = [];
+  };
+  S._b2Eixos = function (st) {
+    var y = (edit.b2 && edit.b2.nivel && isFinite(+edit.b2.nivel.elevacao)) ? +edit.b2.nivel.elevacao : edit.base;
+    (st.eixos || []).forEach(function (ex) {
+      var a = new THREE.Vector3(ex.x0, y + 0.01, ex.z0), b = new THREE.Vector3(ex.x1, y + 0.01, ex.z1), d = b.clone().sub(a).normalize();
+      var ln = new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), b2Mat('eixo'));
+      ln.computeLineDistances(); ln.renderOrder = 997; ln.userData.eixoId = ex.id;
+      scene.add(ln); edit.b2objs.push(ln);
+      [a.clone().addScaledVector(d, -0.45), b.clone().addScaledVector(d, 0.45)].forEach(function (pp) {
+        var sp = b2Bolha(ex.nome); sp.position.copy(pp); sp.userData.eixoId = ex.id;
+        scene.add(sp); rescaleObj(sp); edit.b2objs.push(sp);
+      });
+    });
+  };
+  S._tickExtra.push(function () { for (var i = 0; i < edit.b2objs.length; i++) if (edit.b2objs[i].isSprite) rescaleObj(edit.b2objs[i]); });
+  S._b2Cancelar = function () {
+    if (edit.b2linha) { scene.remove(edit.b2linha); edit.b2linha.geometry.dispose(); edit.b2linha = null; }
+    edit.b2pts = null; edit.b2moverEixo = null;
+  };
+  function b2Linha() {
+    if (edit.b2linha) { scene.remove(edit.b2linha); edit.b2linha.geometry.dispose(); edit.b2linha = null; }
+    if (!edit.b2pts || edit.b2pts.length < 2) return;
+    edit.b2linha = new THREE.Line(new THREE.BufferGeometry().setFromPoints(edit.b2pts), b2Mat('poli'));
+    edit.b2linha.renderOrder = 998; scene.add(edit.b2linha);
+  }
+  /* o que a parede nova leva (tipo, anexar topo, unir, nível) */
+  S._b2CfgParede = function () {
+    var b = edit.b2 || {};
+    return { tipoParede: b.tipoParede || null, anexarTopo: !!b.anexarTopo, unir: b.unir !== false, juntaCanto: b.juntaCanto === 'esquadria' ? 'esquadria' : null, nivelId: b.nivel ? b.nivel.id : null,
+             restricoes: b2Restr('parede'), niveis: b.niveis || null,   /* P1-B */
+             linhaLoc: b.linhaLoc || null };   /* PLANTA: a linha de localização escolhida na barra de opções (js/bimbarraopcoes.js) */
+  };
+  /* P1-B — GANCHOS (restrições por nível, js/bimarq.js): as restrições que a
+     ferramenta manda para a peça nova (null = obra sem níveis) */
+  function b2Restr(sub) {
+    var b = edit.b2 || {}, r = (b.restricoes && b.restricoes[sub]) || null;
+    /* PLANO (EMBREVE): com plano de trabalho horizontal acima/abaixo do nível, a peça presa ao nível ganha o deslocamento da base */
+    var dP = r && b.nivel && window.BimPlano && BimPlano.deslocDoNivel ? BimPlano.deslocDoNivel(b.nivel) : 0;
+    if (dP) { r = JSON.parse(JSON.stringify(r)); r.deslocBase = Math.round(((+r.deslocBase || 0) + dP) * 1e6) / 1e6; }
+    return r;
+  }
+  /* mudou a elevação de um nível da obra (tela de Níveis) → refaz o modelo: o
+     que está preso a ele acompanha. Confere de tempos em tempos, só quando
+     há peça presa a nível. */
+  var p1bVisto = 0;
+  S._tickExtra.push(function () {
+    var t = Date.now(); if (t - p1bVisto < 1200) return; p1bVisto = t;
+    var st = edit.estado; if (!st || !st.restricoes || !st.restricoes.n || !edit.ops.length || !window.BimArq || !BimEdit.niveisAtuais) return;
+    var L = BimEdit.niveisAtuais(); if (!L) return;
+    if (BimArq.assinaturaNiveis(L) !== st.niveisAssinatura) { editRebuild(); if (window.BimArqUI && BimArqUI.ativo()) BimArqUI.enviar(); }
+  });
+  /* configuração vinda da tela (js/bimarqui.js): tipos, perfis, nível ativo */
+  S._b2Config = function (cfg) {
+    if (cfg === null) { edit.b2 = null; S._b2Cancelar(); return null; }
+    var b = edit.b2 || (edit.b2 = {});
+    Object.keys(cfg || {}).forEach(function (k) { b[k] = cfg[k]; });
+    if (cfg && cfg.nivel && isFinite(+cfg.nivel.elevacao)) {
+      edit.base = +cfg.nivel.elevacao;
+      planoBase();   /* PLANO (EMBREVE): o plano de trabalho horizontal manda na base */
+      if (+cfg.nivel.peDireito > 0) {
+        edit.alt = Math.min(8, Math.max(0.3, +cfg.nivel.peDireito));
+        var iA = editPanel.querySelector('input[data-ed="alt"]'); if (iA) iA.value = String(edit.alt);
+      }
+    }
+    if (b.tipoParede && b.tipoParede.espessura > 0 && S._setEspEditor) S._setEspEditor(b.tipoParede.espessura, b.tipoParede.rotulo);
+    return JSON.parse(JSON.stringify(b));
+  };
+  S._b2Hint = function (sub) {
+    var H = {
+      eixo: 'Eixo: clique as duas pontas (Shift trava na horizontal/vertical). O nome sai sozinho: número na vertical, letra na horizontal.',
+      laje: (edit.b2 && edit.b2.lajeModo === 'retangulo') ? 'Laje: clique dois cantos opostos.' : 'Laje por contorno: clique os cantos; feche clicando no primeiro ponto ou com Enter. Esc cancela.',
+      furo: 'Furo na laje: clique os cantos do furo dentro da laje; feche no primeiro ponto ou com Enter.',
+      escada: 'Escada: clique o meio do primeiro degrau e depois a direção da subida. Degraus pelas regras do tipo; os guarda-corpos nascem junto.',
+      guarda: 'Guarda-corpo: clique os pontos do caminho e Enter para terminar — ou clique numa escada para seguir a lateral dela.',
+      pilar: (edit.b2 && edit.b2.perfilPilar) ? 'Pilar por perfil: clique onde ele nasce.' : '',
+      viga: (edit.b2 && edit.b2.perfilViga) ? 'Viga por perfil: clique o início e o fim (o topo fica no topo da parede).' : '',
+      forro: p2bForroAuto() ? 'Forro automático: clique DENTRO da sala fechada por paredes.' : 'Forro por contorno: clique os cantos; feche no primeiro ponto ou com Enter. Esc cancela.',   /* P2-B */
+      /* P9 */
+      rampa: 'Rampa: clique o meio do pé da rampa e depois a direção da subida. Segmentos e patamares pela NBR 9050 (inclinação × desnível); guarda-corpo com corrimão duplo nasce junto.',
+      trelica: 'Treliça: clique os dois apoios. Banzos, montantes e diagonais viram vigas e pilares de madeira (Propriedades: tipo, altura, painéis, seções).'
+    };
+    return H[sub] || '';
+  };
+  function b2Num(v) { return String(Math.round(v * 100) / 100).replace('.', ','); }
+  function b2Fechar() {
+    var sub = edit.sub, pts = edit.b2pts || [], b = edit.b2 || {}, A = window.BimArq;
+    if (!A) return false;
+    if ((sub === 'laje' || sub === 'furo') && pts.length >= 3) {
+      var P = pts.map(function (q) { return { x: q.x, z: q.z }; });
+      if (sub === 'laje') {
+        var tl = b.tipoLaje || { id: 'macica-12', rotulo: 'Laje maciça 12 cm', espessura: 0.12 };
+        var v0 = A.validarPoligono(P); if (!v0.ok) { S._hint(v0.motivo); return false; }
+        var cl = A.lajeContorno(P, { topo: edit.base, espessura: tl.espessura, tipoLaje: tl, nivelId: b.nivel ? b.nivel.id : null, restricoes: b2Restr('laje'), niveis: b.niveis || null });
+        if (!cl) { S._hint('Contorno inválido para a laje.'); return false; }
+        editTirarProv();
+        editOp({ op: 'criar', id: 'e' + (++edit.seq), caixa: A.paraOp(cl) });
+        S._hint('Laje criada: ' + b2Num(cl.area) + ' m², ' + b2Num(cl.volume) + ' m³ (' + tl.rotulo + '). Clique o próximo contorno, ou Esc.');
+      } else {
+        /* a laje que recebe o furo: a de contorno que contém o furo inteiro, com o topo mais perto do plano de trabalho */
+        var alvo = ((edit.estado && edit.estado.caixas) || []).filter(function (c) {
+          return c.tipo === 'laje' && c.contorno && A.validarFuro(c.contorno, P, c.furos).ok;
+        }).sort(function (x, y) { return Math.abs(x.cy + x.altura / 2 - edit.base) - Math.abs(y.cy + y.altura / 2 - edit.base); })[0];
+        if (!alvo) {
+          var qq = ((edit.estado && edit.estado.caixas) || []).filter(function (c) { return c.tipo === 'laje' && c.contorno; })[0];
+          S._hint(qq ? A.validarFuro(qq.contorno, P, qq.furos).motivo : 'O furo vai numa laje por contorno criada aqui.'); return false;
+        }
+        editTirarProv();
+        editOp({ op: 'furo', id: alvo.id, furo: A.validarFuro(alvo.contorno, P, alvo.furos).pts.map(function (q) { return { x: Math.round(q[0] * 1e6) / 1e6, z: Math.round(q[1] * 1e6) / 1e6 }; }) });
+        S._hint('Furo aberto na laje (a área e o volume já descontam).');
+      }
+      marcarFechamento(); return true;
+    }
+    if (sub === 'forro' && pts.length >= 3) return p2bForroCriar({ contorno: pts.map(function (q) { return { x: q.x, z: q.z }; }) });   /* P2-B */
+    if (sub === 'guarda' && pts.length >= 2) {
+      var g = A.guarda(pts.map(function (q) { return { x: q.x, y: q.y, z: q.z }; }), b.guarda || {});
+      if (!g) { S._hint('Caminho inválido para o guarda-corpo.'); return false; }
+      editTirarProv();
+      editOp({ op: 'criar', id: 'e' + (++edit.seq), caixa: A.paraOp(g) });
+      S._hint('Guarda-corpo: ' + b2Num(g.medidas.comprimento) + ' m, ' + g.medidas.montantes + ' montantes.');
+      marcarFechamento(); return true;
+    }
+    return false;
+  }
+  S._b2FecharExt = b2Fechar;
+  /* Enter fecha o contorno/caminho. Captura no window: o Enter da casca
+     (BimShell) repete o último comando da fita, e aqui ele desligaria a
+     ferramenta no meio do desenho. */
+  window.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Enter' || !edit.on || !edit.b2 || !edit.b2pts || !edit.b2pts.length) return;
+    var t3 = ev.target || {}; if (/^(INPUT|TEXTAREA|SELECT)$/.test(t3.tagName || '') || t3.isContentEditable) return;
+    if (b2Fechar()) { ev.preventDefault(); ev.stopPropagation(); }
+  }, true);
+  function b2EixoPerto(p) {
+    var melhor = null, dm = 0.5;
+    ((edit.estado && edit.estado.eixos) || []).forEach(function (ex) {
+      var dx = ex.x1 - ex.x0, dz = ex.z1 - ex.z0, L2 = dx * dx + dz * dz, t = L2 > 0 ? Math.max(0, Math.min(1, ((p.x - ex.x0) * dx + (p.z - ex.z0) * dz) / L2)) : 0;
+      var d = Math.sqrt(Math.pow(ex.x0 + t * dx - p.x, 2) + Math.pow(ex.z0 + t * dz - p.z, 2));
+      if (d < dm) { dm = d; melhor = ex; }
+    });
+    return melhor;
+  }
+  /* PAREDE: o clique a até 12 px da PONTA de uma parede do modelador vai
+     exatamente para ela (fechar a sala, emendar em L); perto do EIXO de outra,
+     vai para o eixo (T). Sem isto o canto dependia do pixel e a junta (3 cm de
+     tolerância) falhava calada. Muda o ponto NO LUGAR: o fluxo da parede segue. */
+  function b2Imantar(p, e) {
+    if (!p || !e || !isFinite(e.clientX)) return;
+    var ws = ((edit.estado && edit.estado.caixas) || []).filter(function (c) { return c.tipo === 'parede' && c.b2; });
+    var melhor = null, dm = 12;
+    ws.forEach(function (c) {
+      BimEdit.eixoDaCaixa(c).forEach(function (q) {
+        var s = S._telaDe(q.x, edit.base, q.z), d = Math.sqrt(Math.pow(s.x - e.clientX, 2) + Math.pow(s.y - e.clientY, 2));
+        if (!s.atras && d < dm) { dm = d; melhor = q; }
+      });
+    });
+    if (!melhor) {
+      dm = 8;
+      ws.forEach(function (c) {
+        var pp = BimEdit.eixoDaCaixa(c), dx = pp[1].x - pp[0].x, dz = pp[1].z - pp[0].z, L2 = dx * dx + dz * dz; if (!(L2 > 0)) return;
+        var t = Math.max(0, Math.min(1, ((p.x - pp[0].x) * dx + (p.z - pp[0].z) * dz) / L2)), q = { x: pp[0].x + t * dx, z: pp[0].z + t * dz };
+        var s = S._telaDe(q.x, edit.base, q.z), d = Math.sqrt(Math.pow(s.x - e.clientX, 2) + Math.pow(s.y - e.clientY, 2));
+        if (!s.atras && d < dm) { dm = d; melhor = q; }
+      });
+    }
+    if (melhor) { p.x = melhor.x; p.z = melhor.z; }
+  }
+  S._b2Clique = function (sub, e, hit, p) {
+    var A = window.BimArq, b = edit.b2 || {};
+    if (!A) return false;
+    if (sub === 'parede') { b2Imantar(p, e); return false; }
+    /* MOVER um eixo: clique perto da linha (os eixos não são peças do modelo) */
+    if (sub === 'mover') {
+      if (edit.b2moverEixo) {
+        if (!p) return true;
+        editOp({ op: 'mover', id: edit.b2moverEixo, cx: p.x, cz: p.z }); edit.b2moverEixo = null;
+        S._hint('Eixo movido. Clique noutro elemento, ou Esc.'); marcarFechamento(); return true;
+      }
+      if (edit.moverId || !p) return false;
+      if (hit && _ultimosHits[0] && _ultimosHits[0].object.userData.mid === 'edit') return false;
+      var ex = b2EixoPerto(p); if (!ex) return false;
+      edit.b2moverEixo = ex.id; S._hint('Eixo ' + ex.nome + ' escolhido: clique o novo lugar do meio dele.'); return true;
+    }
+    if (!p) return false;
+    if (sub === 'eixo' || sub === 'escada' || sub === 'rampa' || sub === 'trelica' || (sub === 'viga' && b.perfilViga)) {   /* P9: rampa, treliça */
+      if (!edit.p1) { edit.p1 = p.clone(); edit.prov = pontoMarca(p); scene.add(edit.prov); rescaleObj(edit.prov); S._hint(sub === 'escada' || sub === 'rampa' ? 'Agora clique a DIREÇÃO da subida.' : 'Agora clique a outra ponta.'); return true; }
+      var p2 = editAjustarPonto(p, e), ini = edit.p1.clone();
+      editTirarProv();
+      if (sub === 'eixo') {
+        var nome = A.proximoNomeEixo((edit.estado && edit.estado.eixos) || [], [ini.x, ini.z], [p2.x, p2.z]);
+        var ei = A.eixo([ini.x, ini.z], [p2.x, p2.z], nome);
+        if (!ei) { S._hint('Eixo curto demais (mínimo 30 cm).'); return true; }
+        editOp({ op: 'eixo', id: 'e' + (++edit.seq), eixo: ei });
+        S._hint('Eixo ' + ei.nome + ' criado. Clique o próximo, ou Esc. O nome se troca em Propriedades.');
+      } else if (sub === 'escada') {
+        var ce = b.escada || {}, ang = Math.atan2(p2.z - ini.z, p2.x - ini.x);
+        if (Math.sqrt(Math.pow(p2.x - ini.x, 2) + Math.pow(p2.z - ini.z, 2)) < 0.05) { S._hint('Clique a direção um pouco mais longe do primeiro ponto.'); return true; }
+        var H = +ce.desnivel > 0 ? +ce.desnivel : edit.alt;
+        var pEsc = { emax: ce.emax, pmin: ce.pmin, piso: ce.piso, tipoId: ce.tipoId, larguraMin: ce.larguraMin };
+        var esc = A.escada({ x: ini.x, z: ini.z, ang: ang, base: edit.base, desnivel: H, largura: ce.largura || 1.0, forma: ce.forma || 'reta', giro: ce.giro || 'direita', espessura: ce.espessura || 0.12,
+          emax: pEsc.emax, pmin: pEsc.pmin, piso: pEsc.piso, tipoId: pEsc.tipoId, larguraMin: pEsc.larguraMin, guarda: ce.guarda, nivelId: b.nivel ? b.nivel.id : null, restricoes: b2Restr('escada'), niveis: b.niveis || null,
+          /* P9: regra de cálculo, escada em U (vão), começar/terminar com espelho, revestimento */
+          regra: ce.regra, vao: ce.vao, comecaEspelho: ce.comecaEspelho, terminaEspelho: ce.terminaEspelho, revPiso: ce.revPiso, revEspelho: ce.revEspelho, matPiso: ce.matPiso, matEspelho: ce.matEspelho });
+        if (!esc) { var cc = A.escadaCalc(H, { emax: pEsc.emax, pmin: pEsc.pmin, piso: pEsc.piso, tipoId: pEsc.tipoId, larguraMin: pEsc.larguraMin, regra: ce.regra }); S._hint(cc.ok ? 'Escada em L ou em U precisa de pelo menos 4 degraus.' : cc.motivo); return true; }
+        /* a escada e os guarda-corpos automáticos dela numa op só: o desfazer tira tudo junto */
+        var lote = A.opsEscada(esc, function () { return 'e' + (++edit.seq); }, { altura: b.guarda && b.guarda.altura, espac: b.guarda && b.guarda.espac });
+        editOp(lote);
+        var k = esc.escada.calc, nG = lote.ops.length - 1;
+        S._hint('Escada: ' + k.n + ' espelhos de ' + b2Num(k.e * 100) + ' cm, piso de ' + b2Num(k.p * 100) + ' cm (regras do tipo; 2e + p = ' + b2Num(k.blondel * 100) + ' cm)' +
+          (nG ? ', com ' + nG + ' guarda-corpo' + (nG > 1 ? 's' : '') : ', sem guarda-corpo') + '.' + (k.avisos.length ? ' ' + k.avisos.join(' ') : ''));
+      } else if ((sub === 'rampa' || sub === 'trelica') && window.BimEstrutUI) {
+        /* P9 — GANCHO: rampa (NBR 9050) e treliça de madeira (js/bimestrutui.js monta a op) */
+        var r9 = BimEstrutUI.criar(sub, ini, p2, { base: edit.base, alt: edit.alt, nivel: b.nivel || null, novoId: function () { return 'e' + (++edit.seq); } });
+        if (!r9.ok) { S._hint(r9.motivo); return true; }
+        editOp(r9.op); S._hint(r9.resumo);
+      } else {
+        var cv = A.vigaPerfil([ini.x, ini.z], [p2.x, p2.z], { perfil: b.perfilViga, material: b.materialViga || 'concreto', topo: edit.base + edit.alt, nivelId: b.nivel ? b.nivel.id : null, restricoes: b2Restr('viga'), niveis: b.niveis || null });
+        if (!cv) { S._hint('Viga: pontos muito próximos ou perfil inválido.'); return true; }
+        editOp({ op: 'criar', id: 'e' + (++edit.seq), caixa: A.paraOp(cv) });
+        S._hint('Viga ' + cv.perfilRotulo + ' criada (' + b2Num(cv.comprimento) + ' m). Clique o início da próxima, ou Esc.');
+      }
+      marcarFechamento(); return true;
+    }
+    if (sub === 'pilar' && b.perfilPilar) {
+      var cp = A.pilarPerfil([p.x, p.z], { perfil: b.perfilPilar, material: b.materialPilar || 'concreto', base: edit.base, altura: edit.alt, rotY: (+b.giroPilar || 0) * Math.PI / 180, nivelId: b.nivel ? b.nivel.id : null, restricoes: b2Restr('pilar'), niveis: b.niveis || null });
+      if (!cp) { S._hint('Perfil do pilar inválido — confira as medidas em Propriedades.'); return true; }
+      editOp({ op: 'criar', id: 'e' + (++edit.seq), caixa: A.paraOp(cp) });
+      S._hint('Pilar ' + cp.perfilRotulo + ' criado. Clique para outro, ou Esc.'); marcarFechamento(); return true;
+    }
+    if (sub === 'forro' && p2bForroAuto()) { p2bForroCriar({ ponto: { x: p.x, z: p.z } }); return true; }   /* P2-B: forro automático */
+    if (sub === 'laje' || sub === 'furo' || sub === 'guarda' || sub === 'forro') {
+      /* guarda-corpo pela lateral de uma escada criada aqui */
+      if (sub === 'guarda' && !(edit.b2pts && edit.b2pts.length) && hit && _ultimosHits[0] && _ultimosHits[0].object.userData.mid === 'edit' && _ultimosHits[0].object.userData.tipo === 'IFCSTAIR') {
+        var eid2 = _ultimosHits[0].object.userData.expressID, ec = ((edit.estado && edit.estado.caixas) || []).filter(function (c) { return c.id === eid2; })[0];
+        var cams = ec && ec.escada && ec.escada.caminhos, lado = (b.guarda && b.guarda.lado) || '';
+        var cam = cams ? (cams[lado] || cams.direita || cams.externo) : null;
+        var gg = cam ? A.guarda(cam, b.guarda || {}) : null;
+        if (!gg) { S._hint('Não consegui seguir a lateral desta escada.'); return true; }
+        editOp({ op: 'criar', id: 'e' + (++edit.seq), caixa: A.paraOp(gg) });
+        S._hint('Guarda-corpo na escada: ' + b2Num(gg.medidas.comprimento) + ' m, ' + gg.medidas.montantes + ' montantes.'); marcarFechamento(); return true;
+      }
+      var q = (edit.b2pts && edit.b2pts.length) ? editAjustarPonto(p, e) : p.clone();
+      if (sub !== 'guarda') q.y = edit.base;
+      if (!edit.b2pts) edit.b2pts = [];
+      /* retângulo (laje/furo): o segundo clique fecha os quatro cantos */
+      if (sub !== 'guarda' && sub !== 'forro' && b.lajeModo === 'retangulo' && edit.b2pts.length === 1) {
+        var a0 = edit.b2pts[0];
+        edit.b2pts = [a0, new THREE.Vector3(q.x, a0.y, a0.z), new THREE.Vector3(q.x, a0.y, q.z), new THREE.Vector3(a0.x, a0.y, q.z)];
+        b2Fechar(); return true;
+      }
+      /* clique no primeiro ponto fecha o contorno */
+      if (sub !== 'guarda' && edit.b2pts.length >= 3 && e && isFinite(e.clientX)) {
+        var t0 = S._telaDe(edit.b2pts[0].x, edit.b2pts[0].y, edit.b2pts[0].z);
+        if (Math.abs(t0.x - e.clientX) <= 12 && Math.abs(t0.y - e.clientY) <= 12) { b2Fechar(); return true; }
+      }
+      edit.b2pts.push(q);
+      if (edit.prov) { limparMarca(edit.prov); edit.prov = null; }
+      edit.p1 = q.clone(); edit.prov = pontoMarca(q); scene.add(edit.prov); rescaleObj(edit.prov);
+      b2Linha();
+      var nP = edit.b2pts.length;
+      S._hint(sub === 'guarda' ? nP + ' ponto(s) — Enter termina o guarda-corpo.' : nP + ' ponto(s)' + (nP >= 3 ? ' — clique no primeiro ponto ou Enter para fechar.' : ' — siga clicando os cantos.'));
+      return true;
+    }
+    return false;
+  };
+
+  /* ======================================================================
+   * PLANTA — MODELAR NA PLANTA BAIXA (09/10/2026; js/bimplantamodelar.js +
+   * js/bimbarraopcoes.js). Pedido do Rogério: "a maioria dos projetistas
+   * modelam na planta baixa, olhando de cima, com a vista travada… parede,
+   * janela, cota, tudo é pela planta". A planta 2D (SVG, js/bim2dui.js) não
+   * tem raio nem malha: ela resolve o ponto (snaps, ortogonal, incrementos)
+   * no plano (x, z) e entrega aqui. Este bloco só traduz para o editor de
+   * sempre — a MESMA editClique, as MESMAS ops, o mesmo desfazer —, então o
+   * que nasce na planta é idêntico ao que nasce no 3D.
+   * ====================================================================== */
+  var pmPrevia3d = null;
+  S._planta2d = {
+    /* o traço em andamento, para a planta desenhar o elástico */
+    traco: function () {
+      return { on: !!edit.on, sub: edit.sub || null, base: edit.base, alt: edit.alt, esp: edit.esp,
+        p1: edit.p1 ? { x: edit.p1.x, z: edit.p1.z } : null,
+        pts: (edit.b2pts || []).map(function (q) { return { x: q.x, z: q.z }; }),
+        vol: ((edit.vol && edit.vol.pts) || []).map(function (q) { return { x: q.ponto.x, z: q.ponto.z }; }),
+        chain: !!edit.chain, famSel: edit.famSel ? JSON.parse(JSON.stringify(edit.famSel)) : null, moverId: edit.moverId || null, b2: !!edit.b2, lajeModo: (edit.b2 && edit.b2.lajeModo) || null,
+        dica: S._hintUltimo || '' };
+    },
+    /* o clique da planta: `p` = {x, z} já com snap e ângulo; `o.alvoId` = a peça do editor sob o
+       cursor (a planta acha pela pegada) — vira o "raio" que porta/janela, apagar, mover e o
+       guarda-corpo na escada esperam. ⚠ clientX NaN de propósito: o que mede em PIXEL DO 3D
+       (imantar 12 px, fechar no 1º ponto) não pode medir a câmera escondida — a planta faz isso
+       com a escala dela. */
+    clique: function (p, o) {
+      if (!edit.on || !edit.sub || !p || !isFinite(p.x) || !isFinite(p.z)) return false;
+      o = o || {};
+      var m = o.alvoId != null ? S.meshPorUid['edit:' + o.alvoId] : null;
+      var hitF = m ? { object: m, point: new THREE.Vector3(p.x, edit.base + 0.5, p.z), distance: 1 } : null;
+      var ant = _ultimosHits; _ultimosHits = hitF ? [hitF] : [];
+      try { editClique({ clientX: NaN, clientY: NaN, shiftKey: !!o.shift, ctrlKey: !!o.ctrl, metaKey: false, _semAjuste: true, _planta: true }, hitF, new THREE.Vector3(p.x, edit.base, p.z)); }
+      finally { _ultimosHits = ant; }
+      return true;
+    },
+    /* Esc: encerra o traço (a ferramenta continua armada) */
+    cancelar: function () { editTirarProv(); if (pmPrevia3d) this.previa3d(null); return true; },
+    /* sai da ferramenta de modelar (o editor continua aberto) — o mesmo do 2º Esc. Quem arma
+       OUTRA ferramenta da planta (P5: Identificar por categoria) chama isto: uma ferramenta por vez */
+    desarmar: function () { if (!edit.sub) return false; if (pmPrevia3d) this.previa3d(null); setEditSub(edit.sub); return true; },
+    /* Enter: fecha o contorno/caminho da B2 */
+    fechar: function () { return b2Fechar(); },
+    /* o contorno pronto de uma forma (laje, forro, furo; guarda-corpo = caminho aberto) */
+    contorno: function (pts) {
+      if (!edit.on || !edit.sub || !pts || pts.length < 2) return false;
+      editTirarProv();
+      edit.b2pts = pts.map(function (q) { return new THREE.Vector3(q.x, edit.base, q.z); });
+      var ok = b2Fechar();
+      if (!ok) editTirarProv();   /* recusado (contorno inválido): o resto do traço não fica pendurado */
+      return ok;
+    },
+    /* as peças LINEARES de uma forma (parede, viga, eixo) numa op só: um Ctrl+Z desfaz a
+       forma inteira. segs = [{tipo:'reta'|'arco', a:{x,z}, b:{x,z}, m?:{x,z}}] */
+    criarSegmentos: function (sub, segs) {
+      var A = window.BimArq, b = edit.b2 || {}, ops = [], eixosNovos = ((edit.estado && edit.estado.eixos) || []).slice();
+      (segs || []).forEach(function (s) {
+        if (!s || !s.a || !s.b || !isFinite(s.a.x) || !isFinite(s.a.z) || !isFinite(s.b.x) || !isFinite(s.b.z)) return;
+        if (sub === 'parede') {
+          var cx = BimEdit.parede({ x: s.a.x, z: s.a.z }, { x: s.b.x, z: s.b.z }, edit.esp, edit.alt, edit.base); if (!cx) return;
+          if (edit.b2 && A) A.marcarParede(cx, S._b2CfgParede());
+          /* CONTRATO com a frente da parede curva (js/bimarq.js/js/bimedit.js): o arco vai na caixa como
+             `arco: {m}` (o ponto médio do arco); a caixa reta de a até b é a corda — quem entende o arco
+             desenha a curva, quem não entende fica com a corda (nunca some) */
+          if (s.tipo === 'arco' && s.m && isFinite(s.m.x) && isFinite(s.m.z)) cx.arco = { m: { x: s.m.x, z: s.m.z } };
+          ops.push({ op: 'criar', id: 'e' + (++edit.seq), caixa: cx });
+        } else if (sub === 'viga') {
+          var cv = (b.perfilViga && A) ? A.vigaPerfil([s.a.x, s.a.z], [s.b.x, s.b.z], { perfil: b.perfilViga, material: b.materialViga || 'concreto', topo: edit.base + edit.alt, nivelId: b.nivel ? b.nivel.id : null, restricoes: b2Restr('viga'), niveis: b.niveis || null }) : null;
+          var cxV = cv ? A.paraOp(cv) : BimEdit.viga({ x: s.a.x, z: s.a.z }, { x: s.b.x, z: s.b.z }, edit.vigaB, edit.vigaH, edit.base + edit.alt);
+          if (cxV) ops.push({ op: 'criar', id: 'e' + (++edit.seq), caixa: cxV });
+        } else if (sub === 'eixo' && A) {
+          var nome = A.proximoNomeEixo(eixosNovos, [s.a.x, s.a.z], [s.b.x, s.b.z]), ei = A.eixo([s.a.x, s.a.z], [s.b.x, s.b.z], nome);
+          if (ei) { eixosNovos.push(ei); ops.push({ op: 'eixo', id: 'e' + (++edit.seq), eixo: ei }); }
+        }
+      });
+      if (!ops.length) return { ok: false, n: 0 };
+      editTirarProv();
+      editOp(ops.length === 1 ? ops[0] : { op: 'lote', id: 'e' + (++edit.seq), origem: 'desenho', ops: ops });
+      marcarFechamento();
+      return { ok: true, n: ops.length, ids: ops.map(function (x) { return x.id; }) };
+    },
+    encadear: function (v) { if (v != null) edit.chain = !!v; return !!edit.chain; },
+    /* o texto do pino "Anotar" (o campo mora no painel antigo, escondido com a barra de opções) */
+    anotarTexto: function (tx) { var i = editPanel.querySelector('[data-ed="txt"]'); if (i) i.value = String(tx == null ? '' : tx).slice(0, 200); return !!i; },
+    /* parâmetro de instância da família que vai ser colocada (o lado da folha da porta) */
+    famInst: function (o) {
+      if (!edit.famSel || !o) return null;
+      edit.famSel.inst = edit.famSel.inst || {};
+      Object.keys(o).forEach(function (k) { edit.famSel.inst[k] = o[k]; });
+      return JSON.parse(JSON.stringify(edit.famSel.inst));
+    },
+    /* a prévia de uma forma no 3D: polilinhas [[{x,z}…]] no plano de trabalho (null limpa) */
+    previa3d: function (L) {
+      if (pmPrevia3d) { scene.remove(pmPrevia3d); pmPrevia3d.traverse(function (o2) { if (o2.geometry) o2.geometry.dispose(); }); pmPrevia3d = null; }
+      if (!L || !L.length) return 0;
+      if (!edit._linhaMat) edit._linhaMat = new THREE.LineBasicMaterial({ color: 0x2fbf71, depthTest: false });
+      var g = new THREE.Group(); g.name = 'planta-forma-previa';
+      L.forEach(function (pts) {
+        if (!pts || pts.length < 2) return;
+        var ln = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts.map(function (q) { return new THREE.Vector3(q.x, edit.base + 0.02, q.z); })), edit._linhaMat);
+        ln.renderOrder = 999; ln.frustumCulled = false; g.add(ln);
+      });
+      scene.add(g); pmPrevia3d = g;
+      return g.children.length;
+    }
+  };
 
   var p3d = { parse: null, det: null };
   var p3dPanel = document.createElement('div');
@@ -12202,7 +13585,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
    * `rho` a massa específica que o PRÓPRIO IFC publica (Pset_MaterialCommon
    * .MassDensity, kg/m³), quando publica.
    *
-   * ⚠ O MATERIAL PODE ESTAR NO TIPO, não na peça (o Revit faz isso com
+   * ⚠ O MATERIAL PODE ESTAR NO TIPO, não na peça (é o caso de
    *   família). O mapa sai por objeto — peça OU tipo — e quem monta o elemento
    *   cai no do tipo (`familias[eid].tipoId`) quando a peça não tem o seu.
    * ⚠ Sem fração, NADA de dividir igual entre os materiais: uma janela de
@@ -12282,7 +13665,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return mapa;
   }
 
-  // v1.1.98 — SISTEMA por elemento (IfcRelAssignsToGroup → IfcSystem/IfcDistributionSystem): o Revit
+  // v1.1.98 — SISTEMA por elemento (IfcRelAssignsToGroup → IfcSystem/IfcDistributionSystem): a modelagem
   // agrupa a tubulação em sistemas nomeados ("Sanitário 1", "Água Fria 3", "Ventilação 2"…). É esse
   // Name que diz o SISTEMA de verdade — o nome do elemento costuma ser genérico ("Tubo/duto"). Só
   // aceita grupos que SÃO sistema (filtra IfcGroup genérico, ex.: "Grupo de modelos"). Blindado.
@@ -14784,7 +16167,7 @@ window.BIM = {
   estiloDesenhoAtivo: function () { return !!(S && S._estiloOn && S._estiloOn()); },
   // v1.1.96 — colorir por sistema hidrossanitário (3D + planta + RA/RV); sistemaInfo p/ E2E
   sistema: function (on) { if (S && S._setSistema) S._setSistema(on == null ? !(S._sisColorOn && S._sisColorOn()) : !!on); },
-  /* tema da CENA 3D: 'orcapro' (navy) | 'revit' (cinza escuro) | 'claro'.
+  /* tema da CENA 3D: 'orcapro' (navy) | 'revit' (grafite, cinza escuro) | 'claro'.
    * A casca do ambiente chama isto para a cena acompanhar a interface. */
   tema: function (id) { return !!(S && S._definirTema && S._definirTema(id)); },
   sistemaOn: function () { return !!(S && S._sisColorOn && S._sisColorOn()); },
@@ -14813,6 +16196,17 @@ window.BIM = {
   espessuraAtual: function () { return (S && S._espEditor) ? S._espEditor() : null; },
   editarOps: function () { return (S && S._editOps) ? S._editOps() : []; },
   editarAplicar: function (ops) { if (S && S._editAplicar) S._editAplicar(ops); },
+  /* B3: o desenho de precisão (só com a prévia do modelador): snaps, seleção, estado — fita, e2e e suporte */
+  precisao: function () { return (S && S._prec) ? S._prec.api : null; },
+  /* B8 (modelagem por comando): a prévia é um grupo fantasma (nada gravado); o lote aplicado é UMA op na lista — desfaz de uma vez */
+  editarPrevia: function (ops) { return (S && S._editPrevia) ? S._editPrevia(ops) : { ok: false, malhas: 0 }; },
+  editarBase: function () { return S && S.edit && isFinite(S.edit.base) ? S.edit.base : 0; },
+  editarLote: function (lote) {
+    if (!S || !S._editOpExterna || !lote || lote.op !== 'lote') return false;
+    if (window.BimGrupos && BimGrupos.redirecionar && S.edit && S.edit.estado) lote = BimGrupos.redirecionar(lote, S.edit.estado);   /* P10: edição nas cópias de grupo */
+    var l = BimEdit.sanear([lote])[0]; if (!l) return false;
+    S._editOpExterna(l); return true;
+  },
   /* ---- famílias e modelagem (07/10/2026) ---- */
   familiasDefinir: function (lista) { if (S && S._famDefinir) { S._famDefinir(lista); if (S._editReconstruir) S._editReconstruir(); return true; } return false; },
   /* arma uma ferramenta do editor: 'parede'|'laje'|'pilar'|'viga'|'cobertura'|'familia'|'mover'|'apagar'|null,
@@ -14823,11 +16217,54 @@ window.BIM = {
     if (sub === 'familia') { ed.famSel = { famId: par.famId, tipoId: par.tipoId, inst: par.inst || {} }; ed.famRot = 0; }
     if (sub === 'viga') { if (par.b > 0) ed.vigaB = +par.b; if (par.h > 0) ed.vigaH = +par.h; }
     if (sub === 'cobertura') { if (par.inclinacao > 0) ed.cobIncl = +par.inclinacao; if (par.aguas) ed.cobAguas = par.aguas === 1 ? 1 : 2; if (par.beiral != null) ed.cobBeiral = Math.max(0, +par.beiral); }
+    if (sub && S._volSubs && S._volSubs[sub] && S._volParametros) S._volParametros(par);   /* B4: altura, ângulo, perfil, categoria, material */
     if (!ed.on) S._setEdit(true);
     if (!sub) { if (ed.sub && S._setEditSub) S._setEditSub(ed.sub); return true; }
     if (ed.sub === sub) { ed.sub = null; }
     if (S._setEditSub) S._setEditSub(sub);
     return ed.sub === sub;
+  },
+  /* ---- VOLUME LIVRE (B4) e IFC DE SAÍDA (B7), 08/10/2026 ---- */
+  volumeParametros: function (par) { return (S && S._volParametros) ? S._volParametros(par || {}) : null; },
+  volumeConcluir: function () { return !!(S && S._volConcluir && S._volConcluir()); },   /* = Enter: fecha o contorno/caminho/perfil */
+  volumeProps: function (id, mud) {   /* categoria/material/nome de um volume (vira op: desfaz como as outras) */
+    if (!S || !S._editOpExterna || !mud) return false;
+    var o = { op: 'volProps', id: id }; if (mud.categoria) o.categoria = mud.categoria; if (mud.material != null) o.material = mud.material; if (mud.nome != null) o.nome = mud.nome;
+    S._editOpExterna(o); return true;
+  },
+  _volEstado: function () { var e = S && S.edit; return e && e.vol ? { on: !!e.on, sub: e.sub, pts: e.vol.pts.length, face: !!e.vol.face, alvo: e.vol.alvo, eixo: !!e.vol.eixo, dica: S._hintUltimo || "", mesclados: S.scene.children.filter(function (g) { return g.userData && g.userData.agregadoDe === 'edit'; }).length } : null; },   // gancho de teste
+  csgCarregar: function () { return (S && S._csgCarregar) ? S._csgCarregar().then(function () { return true; }, function () { return false; }) : Promise.resolve(false); },
+  /* o modelado em IFC4: Promise → { ok, texto, resumo, n } (js/ifcsaida.js) */
+  ifcSaida: function (o) { return (S && S._ifcSaida) ? S._ifcSaida(o) : Promise.resolve({ ok: false, erro: 'visualizador não montado' }); },
+  /* P1-acab: os PARÂMETROS DO PROJETO ({ parametros, globais } — BimParam.sanearProjeto) que a
+     tela usa: a exportação IFC e a paleta de Propriedades leem daqui. Sem argumento, devolve. */
+  parametrosProjeto: function (p) {
+    if (!S) return null;
+    if (arguments.length) S._paramProjeto = p && typeof p === 'object' ? JSON.parse(JSON.stringify(p)) : null;
+    return S._paramProjeto || null;
+  },
+  /* B2 — MODELADOR (prévia): a configuração das ferramentas novas (tipo de parede,
+     tipo de laje, perfis, escada, guarda-corpo, nível ativo). null desliga. */
+  editarB2: function (cfg) { return (S && S._b2Config) ? S._b2Config(cfg) : null; },
+  /* PLANTA (js/bimplantamodelar.js): o clique da planta 2D entra no editor de sempre (ponto já resolvido) */
+  planta2d: function () { return (S && S._planta2d) ? S._planta2d : null; },
+  /* fecha o contorno/caminho em andamento (o mesmo que o Enter) */
+  b2Fechar: function () { return !!(S && S._b2FecharExt && S._b2FecharExt()); },
+  /* uma operação do modelador vinda da tela (Propriedades): ajustar, renomear,
+     apagar, mover — vira op como as outras (desfaz/refaz).
+     P1-C: e as do registro de parâmetros (js/bimparam.js, js/bimpropsui.js):
+     ajustarTipo (Editar tipo, trocar o tipo) e marcar (Marca, Comentários, fases) */
+  b2Op: function (o) {
+    /* P5: a tabela (js/bimtabela.js) e o identificador (js/bimanot.js) — ops próprias, conferidas pelo sanear (extensões do BimEdit) */
+    if (S && S._editOpExterna && o && ['tabela', 'tabelaApagar', 'identificar', 'desidentificar'].indexOf(o.op) >= 0) { if (!BimEdit.sanear([o]).length) return false; S._editOpExterna(o); return true; }
+    /* P2-C/P2-D: e as do AMBIENTE (+ separador, delimitar, regra) (js/bimambiente.js) — criar por ponto e ajustar (acabamentos, nome, número, limites) */
+    /* P10: a edição feita na CÓPIA de um grupo vai para a peça do grupo (vale para todas as instâncias) */
+    if (o && window.BimGrupos && BimGrupos.redirecionar && S && S.edit && S.edit.estado) o = BimGrupos.redirecionar(o, S.edit.estado);
+    if (!S || !S._editOpExterna || !o || ['ajustar', 'renomear', 'apagar', 'mover', 'eixo', 'ajustarTipo', 'marcar', 'forro', 'ambiente', 'ajustarAmbiente', 'separador', 'delimitar', 'ambienteRegra', 'fases', 'grupo', 'opcoes',
+      'topossolido', 'subregiao', 'plataforma', 'divisa', 'implantacao', 'compTerreno', 'rotuloCurvas',
+      'telhado', 'borda', 'fundacao', 'graute'].indexOf(o.op) < 0 && !(window.BimAnotP7 && BimAnotP7.ehOp(o.op))) return false;   /* EMBREVE: graute (js/bimgraute.js) */   /* P7: anot2d, anot2dAjustar, anot2dTipo, revisao (js/bimanot.js) */   /* P2-B: forro (Propriedades do forro); P11: terreno */
+    if (!BimEdit.sanear([o]).length) return false;
+    S._editOpExterna(o); return true;
   },
   desfazer: function () { return !!(S && S._editDesfazer && S._editDesfazer()); },
   refazer: function () { return !!(S && S._editRefazer && S._editRefazer()); },
@@ -14849,8 +16286,18 @@ window.BIM = {
     if (!S || !S.edit || !S._editOpExterna) return false;
     S._editOpExterna({ op: 'orcar', id: id, servicos: BimEdit.limparServicos(servicos) }); return true;
   },
+  /* B5 (js/biminstui.js): uma op de instalação (instAlterar…) — desfaz como as outras; e o contexto do traçado */
+  instOp: function (o) { if (!S || !S._editOpExterna || !o || !o.op) return false; S._editOpExterna(o); return true; },
+  /* P12 — GANCHO: refaz a cena do editor sem op nova (Mostrar desconexões liga/desliga as marcas) */
+  editarReconstruir: function () { if (S && S._editReconstruir) { S._editReconstruir(); return true; } return false; },
+  _instCtx: function () { return (S && S._instCtx) ? S._instCtx() : null; },
+  /* gancho de teste (só leitura): a cor (sRGB, hex) da malha de uma peça criada aqui */
+  _corMalha: function (id) { var m = S && S.meshPorUid['edit:' + id]; return m && m.material && m.material.color ? m.material.color.getHexString() : null; },
   /* a família avaliada como o viewer a vê (o mesmo cache do desenho) — para o orçamento do modelo */
   familiaAvaliar: function (famId, tipoId, inst) { return (S && S._famAval) ? S._famAval(famId, tipoId, inst) : null; },
+  /* FAMIMPORT: as luzes das luminárias importadas (js/familiamalha.js) — [{id, potencia, fluxo, temperatura, posicao}] */
+  luzesDoModelo: function () { return (S && S._luzes) ? S._luzes() : []; },
+  familiaCategoria: function (famId) { return (S && S._famCat) ? S._famCat(famId) : null; },   /* P10 */
   /* troca tipo / parâmetros de instância / giro de uma família colocada (vira uma op: desfaz como as outras) */
   instanciaAlterar: function (id, mud) {
     if (!S || !S.edit || !S._editOpExterna) return false;
@@ -14882,7 +16329,11 @@ window.BIM = {
   home: function () { if (S && S._fit) { S._fit(); return true; } return false; },
   painelVis: function () { if (S && S._toggleVis) { S._toggleVis(); return true; } return false; },
   painelPav: function () { if (S && S._togglePav) { S._togglePav(); return true; } return false; },
-  planta: function (on) { if (S && S._setPlanta) S._setPlanta(on == null ? !(S.planta && S.planta.on) : !!on); },
+  /* ⚠ desligar o que JÁ está desligado não faz nada (08/10/2026, B2): o Esc da fita
+     (BimCmd.aoCancelar) chama planta(false) sempre, e o ramo de desligar ENQUADRA o
+     modelo inteiro — cada Esc no meio do desenho jogava a câmera para longe. Os
+     chamadores internos já conferiam `planta.on`; faltava a porta pública. */
+  planta: function (on) { if (S && S._setPlanta) { var q = on == null ? !(S.planta && S.planta.on) : !!on; if (!q && !(S.planta && S.planta.on)) return; S._setPlanta(q); } },
   corte: function (on) { if (S && S._setCorteL) S._setCorteL(on == null ? !(S.corteL && S.corteL.on) : !!on); },
   corteConfig: function (cfg) { // {az?, inc?, pos0a1?, inv?} — programático/testes
     if (!S || !S.corteL || !S.corteL.on) return;
@@ -15084,7 +16535,7 @@ window.BIM = {
     b.click();
     return true;
   },
-  /* ---- ambiente tipo Revit (ViewCube, ortogonal, caixa de corte, vistas) ---- */
+  /* ---- ambiente 3D (ViewCube, ortogonal, caixa de corte, vistas) ---- */
   caixaCorte: function (on) { return (S && S._caixaCorte) ? S._caixaCorte(!!on) : false; },
   /* MATERIAIS REALISTAS: a escolha da pessoa (guardada por aparelho); devolve
      uma Promise com o estado depois de as texturas chegarem */
@@ -15104,6 +16555,9 @@ window.BIM = {
   estiloRedecidir: function () { return (S && S._estRedecidir) ? S._estRedecidir() : 0; },
   materialDaPeca: function (uid) { return (S && S._estMaterialDaPeca) ? S._estMaterialDaPeca(uid) : null; },
   materiaisEstado: function () { return (S && S._texEstado) ? S._texEstado() : { on: false }; },
+  /* RENDER (09/10/2026, js/bimrender.js): o que o render físico LÊ da cena — as peças de cada modelo (malha, matriz,
+     material de base), a câmera e a origem da agregação. Só leitura: o render monta a cena dele com outro three. */
+  renderFonte: function () { return S ? { modelos: S.modelos, scene: S.scene, camera: S.camera, alvo: S.orbit ? S.orbit.target : null, origem: S._origemAgreg || null, modelRoot: S.modelRoot } : null; },
   /* PORTAS QUE ABREM (js/bimabrir.js): a esquadria da peça `uid` (a própria
      porta/janela ou uma peça da folha), abrir/fechar com animação, e a lista */
   aberturaDe: function (uid) { return (S && S._aberturaDe) ? S._aberturaDe(uid) : null; },

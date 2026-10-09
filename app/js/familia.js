@@ -1,7 +1,7 @@
 /* =====================================================================
  * familia.js — FAMÍLIA PARAMÉTRICA do OrçaPRO (motor puro, Node-testável)
  *
- * O equivalente da família do Revit (.rfa), criado DENTRO do OrçaPRO e
+ * A família paramétrica (o equivalente do .rfa de terceiros), criada DENTRO do OrçaPRO e
  * gravado como `.opfam` (js/opformato.js). Pedido do Rogério, 07/10/2026:
  * "cria os parâmetros para a gente conseguir criar a família aí dentro,
  * parametrizado". Ver PLANO-BIM-FAMILIAS-FORMATOS.md.
@@ -35,7 +35,11 @@
     porta: "Porta", janela: "Janela", pilar: "Pilar", viga: "Viga", mobiliario: "Mobiliário",
     equipamento: "Equipamento", loucas: "Louças e metais", estrutural: "Estrutural", generico: "Genérico",
     /* F1 (orçamento pelo modelo): as famílias orçáveis de alvenaria, laje e piso */
-    parede: "Parede", laje: "Laje", piso: "Piso"
+    parede: "Parede", laje: "Laje", piso: "Piso",
+    /* P12: instalações (acessório de tubo e dispositivos com conector) — nomes das categorias em PT-BR (convenção de mercado) */
+    acessorio_tubo: "Acessórios do tubo", dispositivo_eletrico: "Dispositivos elétricos", luminaria: "Luminárias", equipamento_eletrico: "Equipamento elétrico",
+    /* FAMIMPORT (js/familiamalha.js): as conexões das famílias importadas de .rfa */
+    conexao_tubo: "Conexões de tubo", conexao_duto: "Conexões de duto", conexao_eletroduto: "Conexões do conduite"
   };
   var FORMAS = { caixa: "Caixa", cilindro: "Cilindro", extrusao: "Extrusão de contorno" };
   var UNIDADES_QTO = { un: "unidade", m: "metro", m2: "m²", m3: "m³", kg: "kg" };
@@ -221,7 +225,8 @@
       });
       if (s.forma === "extrusao" && arr(s.contorno).length < 3) erros.push("sólido \"" + (s.nome || i + 1) + "\": o contorno precisa de 3 pontos ou mais");
     });
-    if (fam.hospedagem === "parede" && !(fam.abertura && fam.abertura.largura && fam.abertura.altura)) erros.push("família hospedada em parede precisa dizer a largura e a altura do vão");
+    /* FAMIMPORT: a família importada (malha) traz o vão POR TIPO (tipo.vao), não em fórmula */
+    if (fam.hospedagem === "parede" && fam.geometria !== "malha" && !(fam.abertura && fam.abertura.largura && fam.abertura.altura)) erros.push("família hospedada em parede precisa dizer a largura e a altura do vão");
     /* ORÇAMENTO (F1, 07/10/2026): o tipo pode ter o próprio código (sobrepõe o
        da família) e a família pode ter SERVIÇOS a mais além do quantitativo
        (ex.: a fôrma do pilar além do concreto). Código é texto; preço NUNCA. */
@@ -323,6 +328,12 @@
       ["dx", "dy", "dz", "raio", "altura"].forEach(function (c) { if (o[c] != null && o[c] <= 0) erros.push("sólido \"" + (s.nome || s.id) + "\": " + c + " ficou ≤ 0 (" + o[c] + ")"); });
       solidos.push(o);
     });
+    /* B5 (instalações, js/biminst.js): pontos de LIGAÇÃO do aparelho — sistema,
+       DN e a posição LOCAL (fórmula, como os sólidos). O tubo que chega nele
+       está ligado; família sem `conectores` continua igual. */
+    var conectores = arr(fam.conectores).filter(function (k) { return k && k.sistema; }).map(function (k, i) {
+      return { id: txt(k.id) || ("c" + (i + 1)), nome: txt(k.nome), sistema: txt(k.sistema), dn: f(k.dn, 0), x: f(k.x, 0), y: f(k.y, 0), z: f(k.z, 0) };
+    });
     var abertura = null;
     if (fam.hospedagem === "parede" && fam.abertura) {
       abertura = { largura: f(fam.abertura.largura, 0.8), altura: f(fam.abertura.altura, 2.1), peitoril: f(fam.abertura.peitoril, 0) };
@@ -338,7 +349,15 @@
       var ct = tipo.codigos ? txt(lerChave(tipo.codigos, s.id)).trim() : "", cf = txt(s.codigo).trim();
       return { id: s.id, descricao: txt(s.descricao) || s.id, unidade: s.unidade, quantidade: f(s.quantidade, 0), codigo: ct || cf, codigoOrigem: ct ? "tipo" : (cf ? "familia" : "") };
     });
-    return { ok: !erros.length, erros: erros, tipo: { id: tipo.id, nome: tipo.nome }, valores: valores, solidos: solidos, abertura: abertura, quantitativo: qtd, servicos: servicos, caixa: caixaDe(solidos) };
+    var saida = { ok: !erros.length, erros: erros, tipo: { id: tipo.id, nome: tipo.nome }, valores: valores, solidos: solidos, abertura: abertura, quantitativo: qtd, servicos: servicos, caixa: caixaDe(solidos), conectores: conectores };
+    /* P12: a família MEP diz ao js/biminst.js que peça SINAPI ela é ({peca}); sem `mep`, nada muda */
+    if (fam.mep && typeof fam.mep === "object" && fam.mep.peca) saida.mep = { peca: txt(fam.mep.peca) };
+    /* FAMIMPORT: família importada (js/familiamalha.js) — a geometria, o vão, os conectores e a luz vêm da malha do TIPO */
+    if (fam.geometria === "malha") {
+      var FM = global.FamiliaMalha || (typeof require === "function" ? (function () { try { return require("./familiamalha.js"); } catch (eR) { return null; } })() : null);
+      if (FM) FM.completar(fam, tipo, inst, saida); else { saida.ok = false; saida.erros.push("o leitor de família importada (js/familiamalha.js) não carregou"); }
+    }
+    return saida;
   }
   function lerChave(o, nome) {
     if (!o) return undefined;

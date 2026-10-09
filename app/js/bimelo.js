@@ -170,12 +170,12 @@
         var pn = porNome(I, c.nome);
         if (pn && pn.id) {
           return alvo(I, pn.id, id
-            ? "o carimbo diz “" + t + "”, mas o nº " + c.numero + " agora é “" + I.porId[id].nome + "”: liguei pelo nome, à tarefa " + I.porId[pn.id].numero + " (o plano foi renumerado — recarimbe no Revit)"
-            : "o nº " + c.numero + " não existe mais neste plano: liguei pelo nome, à tarefa " + I.porId[pn.id].numero + " (recarimbe no Revit)");
+            ? "o carimbo diz “" + t + "”, mas o nº " + c.numero + " agora é “" + I.porId[id].nome + "”: liguei pelo nome, à tarefa " + I.porId[pn.id].numero + " (o plano foi renumerado — recarimbe pelo plugin)"
+            : "o nº " + c.numero + " não existe mais neste plano: liguei pelo nome, à tarefa " + I.porId[pn.id].numero + " (recarimbe pelo plugin)");
         }
         if (pn && pn.erro) return { erro: pn.erro };
         return { erro: id
-          ? "o nº " + c.numero + " é “" + I.porId[id].nome + "” e o carimbo diz “" + c.nome + "”; nenhuma tarefa tem esse nome — o plano foi renumerado? Recarimbe no Revit"
+          ? "o nº " + c.numero + " é “" + I.porId[id].nome + "” e o carimbo diz “" + c.nome + "”; nenhuma tarefa tem esse nome — o plano foi renumerado? Recarimbe pelo plugin"
           : "não há tarefa nº " + c.numero + " nem com o nome “" + c.nome + "” neste plano" };
       }
       return { erro: "não há tarefa nº " + c.numero + " neste plano" };

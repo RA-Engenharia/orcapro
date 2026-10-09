@@ -416,7 +416,7 @@
    * padrao — ligado ou não, sem a pessoa ter escolhido
    *
    * ⚠ LIGA SOZINHO SÓ QUANDO O MODELO PEDIU. Um modelo que traz a propriedade
-   * RA_Material foi preparado para isso; um IFC qualquer do Revit casaria só
+   * RA_Material foi preparado para isso; um IFC qualquer casaria só
    * por palavra-chave, e virar a frota inteira de uma vez para textura
    * adivinhada mudaria a cara de todo modelo que já está aberto nas 38
    * instalações. Para esses, o botão está na fita.
@@ -494,7 +494,7 @@
   }
 
   /* ---------------------------------------------------------------
-   * ESTILO VISUAL — o que cada modo liga, como no Revit
+   * ESTILO VISUAL — o que cada modo liga
    *
    * Uma tabela, e não `if` espalhado pelo viewer: é ela que diz que a linha
    * oculta é preto e branco (faces claras sem textura, arestas, fundo branco,

@@ -1,5 +1,5 @@
 /* =====================================================================
- * bimshell.js — A CASCA do módulo BIM, na organização do Revit.
+ * bimshell.js — A CASCA do módulo BIM: aparência de programa de desktop (fita, navegador de projeto, propriedades, barra de status).
  *
  * Monta em volta do viewer 3D: barra de título, acesso rápido, abas,
  * fita de comandos, Propriedades, Navegador de Projeto, abas de documento,
@@ -55,7 +55,7 @@
     /* ---------------------------------------------------------------
      * montar(container, opts)
      * opts = {
-     *   arquivo: "Obra Murumbir",          // vai no alto, como no Revit
+     *   arquivo: "Obra Murumbir",          // vai no alto da janela
      *   tema: "claro" | "escuro",
      *   onPalco: function(divDoPalco) {},  // aqui o bim.js monta o viewer
      *   onComando: function(id, res) {},   // depois de cada comando
@@ -90,7 +90,7 @@
       var corpo = el("div", "rv-corpo");
       corpo.appendChild(this._lateral());
       /* a lateral recolhida vira só uma ABA com a seta, na borda esquerda —
-         clicar nela traz Propriedades e Navegador de volta (como no Revit) */
+         clicar nela traz Propriedades e Navegador de volta */
       var abaLat = el("button", "rv-lat-aba");
       abaLat.type = "button"; abaLat.title = "Mostrar Propriedades e Navegador de projeto";
       abaLat.innerHTML = '<span class="rv-lat-aba-seta">▶</span><span class="rv-lat-aba-rot">Propriedades</span>';
@@ -130,7 +130,7 @@
         var ui = +localStorage.getItem("orcapro:bim:escala-ui"); if (ui >= 0.7 && ui <= 1.3) raiz.style.setProperty("--rv-ui", String(ui));
       } catch (eL) {}
       this._ligarAlcas(raiz, alcaLat, alcaDir);
-      /* pele do BIM na cara nova: "revit" = cinza do Revit (Vista › Janelas › Estilo Revit) */
+      /* pele do BIM na cara nova: "revit" = cinza clássico (Vista › Janelas › Estilo clássico) */
       try { if (localStorage.getItem("orcapro:bim:pele") === "revit") raiz.classList.add("bim-pele-revit"); } catch (eP) {}
       /* lado da coluna Propriedades/Navegador (cara nova): arrastar o cabeçalho encaixa na outra borda */
       try { if (localStorage.getItem("orcapro:bim:lateral-lado") === "dir") raiz.setAttribute("data-rv-lat-lado", "dir"); } catch (eL2) {}
@@ -143,7 +143,7 @@
       this.pintarProps(null);
       this.pintarArvore(opts.arvore || null);
 
-      /* teclado: Esc cancela, Enter repete — como no Revit */
+      /* teclado: Esc cancela, Enter repete */
       this._onKey = function (ev) {
         if (!self._raiz || !document.body.contains(self._raiz)) return;
         var alvo = ev.target || {};
@@ -188,7 +188,7 @@
       "aplicar-ambiente": "Por enquanto: escolha o tipo em \"Padrões prontos\" e ele vale para as paredes novas."
     },
 
-    /* CARA NOVA (07/10/2026) — pele do BIM. `revit` true = cinza do Revit;
+    /* CARA NOVA (07/10/2026) — pele do BIM. `revit` true = cinza clássico;
        false = padrão novo (vidro). Os comandos e os painéis são os mesmos. */
     pele: function (revit) {
       if (revit != null) {
@@ -226,7 +226,7 @@
         document.addEventListener("pointermove", mv); document.addEventListener("pointerup", up); document.addEventListener("pointercancel", up);
       });
     },
-    /* lado da coluna Propriedades/Navegador: "esq" (padrão, como o Revit) ou "dir" */
+    /* lado da coluna Propriedades/Navegador: "esq" (padrão) ou "dir" */
     ladoLateral: function (lado) {
       var raiz = this._raiz;
       if (lado === "esq" || lado === "dir") {
@@ -479,7 +479,7 @@
           if (c.grande) {
             corpo.appendChild(b); col = null;
           } else {
-            /* pequenos empilham de três em três, como no Revit */
+            /* pequenos empilham de três em três */
             if (!col || col.childNodes.length >= 3) { col = el("div", "rv-col"); corpo.appendChild(col); }
             col.appendChild(b);
           }
@@ -561,7 +561,7 @@
       if (!this._raiz) return;
       var corpo = this._raiz.querySelector(".rv-props .rv-doca-corpo");
       if (!corpo) return;
-      /* nada selecionado: como no Revit, Propriedades mostra a VISTA ativa
+      /* nada selecionado: Propriedades mostra a VISTA ativa
          (nome, ortogonal, caixa de corte em "Extensões", início) */
       if (!esquema && typeof this._opts.propsVista === "function") { try { esquema = this._opts.propsVista() || null; } catch (eV) { esquema = null; } }
       this._estado.props = esquema;
@@ -572,6 +572,11 @@
         vazio.style.cssText = "padding:14px 10px;color:var(--rv-tx-fraco);font-size:11.5px;line-height:1.5";
         corpo.appendChild(vazio);
         return;
+      }
+      /* P1-C: a paleta do registro de parâmetros (js/bimpropsui.js) desenha
+         sozinha — tipo com busca, Editar tipo, grupos de parâmetros, ‹vários› */
+      if (typeof esquema.render === "function") {
+        try { esquema.render(corpo); return; } catch (eR) { corpo.innerHTML = ""; }
       }
 
       var topo = el("div", "rv-tipo");
@@ -768,6 +773,11 @@
         var tx = el("span", "rv-no-tx", no.rotulo);
         d.appendChild(tx);
         if (no.n != null) d.appendChild(el("span", "rv-no-n", "(" + no.n + ")"));
+        /* P8: nó com `arrastar` (id da vista) vai para a folha arrastando (js/bimfolhaui.js) */
+        if (no.arrastar && global.BimFolhaUI && global.BimFolhaUI.ativo()) {
+          d.draggable = true; d.setAttribute("data-rv-arrasta", no.arrastar);
+          d.ondragstart = function (ev) { global.BimFolhaUI.arrastarInicio(ev, no.arrastar, no.rotulo); };
+        }
         li.appendChild(d);
 
         if (temFilhos) {
@@ -819,7 +829,7 @@
         if (doc.fora) b.setAttribute("data-rv-fora", "1");
         b.appendChild(el("span", null, doc.nome + (doc.fora ? " ↗" : "")));
         b.title = doc.fora ? "Esta vista está em outra janela — clique para trazê-la para a frente" : "Botão direito: outra janela, duplicar, fechar";
-        /* o {3D} principal não fecha; as vistas abertas fecham no ✕, como no Revit */
+        /* o {3D} principal não fecha; as vistas abertas fecham no ✕ */
         if (doc.fechavel !== false && doc.id !== "3d") {
           var x = el("span", "rv-x", "✕");
           x.title = "Fechar esta vista";
@@ -907,7 +917,7 @@
         bt.setAttribute("data-rv-vb", b.id);
         bt.innerHTML = ico(b.ico, 14);
         /* ESTILO VISUAL (prévia `?previa=visual`): como o cubinho de estilo no
-           rodapé da vista do Revit — mostra o estilo ativo e abre o menu ali */
+           rodapé da vista — mostra o estilo ativo e abre o menu ali */
         if (b.id === "estilo" && document.documentElement.getAttribute("data-visual") === "nova" && global.BimEstilo) {
           bt.className = "rv-vb rv-vb-estilo"; bt.setAttribute("data-rv-estilo", "1");
           bt.title = "Estilo visual: linha oculta, sombreado, textura ou realista"; bt.setAttribute("aria-label", bt.title);
@@ -968,7 +978,7 @@
       d.appendChild(dir);
       return d;
     },
-    /* texto da esquerda: o que está sob o cursor, no formato do Revit
+    /* texto da esquerda: o que está sob o cursor, em formato de caminho
        ("Pisos : Piso : PI_15cm_Concreto : R0") */
     status: function (texto) {
       if (!this._raiz) return;

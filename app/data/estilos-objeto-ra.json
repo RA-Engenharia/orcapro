@@ -1,0 +1,3182 @@
+{
+ "_leia": "ESTILOS DE OBJETO RA (P6-A do PLANO-BIM-PARIDADE-REVIT.md, seção 3.3). Para cada categoria de MODELO do Revit (as 137 do revit_inventario.json, com o nome PT-BR e as subcategorias): pena de PROJEÇÃO e de CORTE (índice da tabela data/penas-ra.json, 1-16), cor de tela, padrão de linha e preenchimento do corte por material. Os VALORES são da RA (Padrão RA de detalhamento v1.3: parede/concreto cortado 0,50 = pena 6; em vista 0,25 = pena 4; oculta/projeção 0,18 = pena 3; cota/eixo 0,13 = pena 2; hachura 0,09 = pena 1). O inventário do Revit só confere que nenhuma categoria ficou de fora e dá os nomes. Padrões de linha pela NBR 8403 e preenchimentos desenhados pela RA a partir da NBR 6492 — nenhum .pat da Autodesk. `ifc` liga a categoria às peças do OrçaPRO (userData.tipo da malha); tipo sem categoria cai em OST_GenericModel.",
+ "versao": "1.0",
+ "data": "09/10/2026",
+ "fontes": [
+  "Padrão RA de detalhamento v1.3 (penas_mm, cor_pena_ctb, tipos_de_linha, hachuras)",
+  "ABNT NBR 6492:2021 — representação de projetos de arquitetura",
+  "ABNT NBR 8403 — aplicação de linhas em desenhos técnicos",
+  "docs/revit-paridade/revit_inventario.json — só nomes e lista de categorias"
+ ],
+ "anotacaoMm": {
+  "cota": 0.13,
+  "eixo": 0.13,
+  "nivel": 0.13,
+  "marcaCorte": 0.35,
+  "marcaElevacao": 0.25,
+  "chamada": 0.25,
+  "titulo": 0.35,
+  "texto": 0.25,
+  "recorte": 0.13
+ },
+ "meioTom": {
+  "cor": "#9aa0a6"
+ },
+ "padroesLinha": {
+  "continua": {
+   "nome": "Contínua",
+   "mm": [],
+   "nbr8403": "A/B — contornos e arestas visíveis; cotas e hachuras na estreita"
+  },
+  "oculta": {
+   "nome": "Oculta (tracejada)",
+   "mm": [
+    3,
+    -1.5
+   ],
+   "nbr8403": "E/F — arestas e contornos não visíveis",
+   "ra": "TRACEJADA do Padrão RA (3 / 1,5 mm)"
+  },
+  "projecao": {
+   "nome": "Projeção (tracejada longa)",
+   "mm": [
+    6,
+    -1.5
+   ],
+   "nbr8403": "variação da E/F para o que está ACIMA do plano de corte (beiral, laje, viga) — NBR 6492",
+   "ra": "decisão RA: traço maior que o da oculta para não confundir as duas"
+  },
+  "centro": {
+   "nome": "Centro (traço-ponto)",
+   "mm": [
+    9.6,
+    -1.6,
+    0.2,
+    -1.6
+   ],
+   "nbr8403": "G — linhas de centro e de simetria",
+   "ra": "TRACO-PONTO do Padrão RA (9,6 / 1,6 / ponto / 1,6)"
+  },
+  "eixo": {
+   "nome": "Eixo (traço-ponto)",
+   "mm": [
+    9.6,
+    -1.6,
+    0.2,
+    -1.6
+   ],
+   "nbr8403": "G — eixos de locação",
+   "ra": "TRACO-PONTO do Padrão RA"
+  },
+  "corte": {
+   "nome": "Plano de corte (traço-ponto)",
+   "mm": [
+    9.6,
+    -1.6,
+    0.2,
+    -1.6
+   ],
+   "nbr8403": "H — plano de corte (traço largo nas pontas)",
+   "ra": "EST-CORTE-IND do Padrão RA"
+  },
+  "demolido": {
+   "nome": "Demolido (tracejado curto)",
+   "mm": [
+    1.5,
+    -1
+   ],
+   "nbr8403": "variação da E/F para elemento a demolir (reforma) — NBR 6492",
+   "ra": "decisão RA: tracejado curto, em pena fina"
+  },
+  "limite": {
+   "nome": "Limite (traço-dois-pontos)",
+   "mm": [
+    9.6,
+    -1.6,
+    0.2,
+    -1.6,
+    0.2,
+    -1.6
+   ],
+   "nbr8403": "K — contornos de peças adjacentes, limites (divisa, recuo, APP)",
+   "ra": "EST-LIMITE do Padrão RA"
+  }
+ },
+ "preenchimentos": {
+  "vazio": {
+   "nome": "Sem preenchimento",
+   "tipo": "vazio"
+  },
+  "solido": {
+   "nome": "Sólido",
+   "tipo": "solido",
+   "cor": "#3a3a3a"
+  },
+  "cinza": {
+   "nome": "Cinza claro (poché)",
+   "tipo": "solido",
+   "cor": "#cfd3d8"
+  },
+  "concreto": {
+   "nome": "Concreto",
+   "tipo": "padrao",
+   "w": 6,
+   "h": 6,
+   "traco": "M0.8 1.2L1.6 0.6L1.9 1.5Z M3.6 3.9L4.5 3.4L4.6 4.4Z M1.4 4.6L2.0 5.3L1.1 5.4Z M4.6 0.7L5.3 1.3L4.5 1.6Z",
+   "cheio": "M2.9 1.0h0.25v0.25h-0.25Z M0.6 3.0h0.25v0.25h-0.25Z M3.0 5.0h0.25v0.25h-0.25Z M5.2 3.0h0.25v0.25h-0.25Z M2.6 2.7h0.2v0.2h-0.2Z",
+   "espessura": 0.09,
+   "nota": "NBR 6492: concreto em corte por pontos e pedriscos (triângulos); desenho RA em ladrilho de 6 × 6 mm"
+  },
+  "alvenaria": {
+   "nome": "Alvenaria",
+   "tipo": "padrao",
+   "w": 1.5,
+   "h": 1.5,
+   "rot": 45,
+   "traco": "M0 0V1.5",
+   "espessura": 0.09,
+   "nota": "NBR 6492: alvenaria em corte por hachura a 45°; passo de 1,5 mm (ANSI31 fino do Padrão RA)"
+  },
+  "bloco": {
+   "nome": "Alvenaria de bloco de concreto",
+   "tipo": "padrao",
+   "w": 2,
+   "h": 2,
+   "rot": 45,
+   "traco": "M0 0V2 M0 0H2",
+   "espessura": 0.09,
+   "nota": "hachura cruzada a 45°, passo 2 mm (desenho RA)"
+  },
+  "terra": {
+   "nome": "Terra / solo",
+   "tipo": "padrao",
+   "w": 8,
+   "h": 8,
+   "traco": "M0.5 2.5L2.5 0.5 M1.3 3.0L3.0 1.3 M2.1 3.5L3.5 2.1 M4.5 6.5L6.5 4.5 M5.3 7.0L7.0 5.3 M6.1 7.5L7.5 6.1",
+   "cheio": "M5.8 1.6h0.25v0.25h-0.25Z M1.8 6.2h0.25v0.25h-0.25Z",
+   "espessura": 0.09,
+   "nota": "solo: grupos de três traços a 45° e pontos (desenho RA, no espírito do EARTH do Padrão RA)"
+  },
+  "areia": {
+   "nome": "Areia",
+   "tipo": "padrao",
+   "w": 3,
+   "h": 3,
+   "cheio": "M0.4 0.5h0.18v0.18h-0.18Z M1.9 0.9h0.18v0.18h-0.18Z M1.0 2.0h0.18v0.18h-0.18Z M2.5 2.5h0.18v0.18h-0.18Z M0.2 2.7h0.18v0.18h-0.18Z",
+   "nota": "pontos soltos (desenho RA)"
+  },
+  "brita": {
+   "nome": "Brita / lastro",
+   "tipo": "padrao",
+   "w": 5,
+   "h": 5,
+   "traco": "M0.6 1.0a0.5 0.4 0 1 0 1.0 0a0.5 0.4 0 1 0 -1.0 0 M2.8 3.2a0.6 0.45 0 1 0 1.2 0a0.6 0.45 0 1 0 -1.2 0 M3.4 0.8a0.35 0.3 0 1 0 0.7 0a0.35 0.3 0 1 0 -0.7 0 M0.9 3.9a0.4 0.35 0 1 0 0.8 0a0.4 0.35 0 1 0 -0.8 0",
+   "espessura": 0.09,
+   "nota": "lastro de brita: pedras ovais (desenho RA; GRAVEL do Padrão RA)"
+  },
+  "madeira": {
+   "nome": "Madeira",
+   "tipo": "padrao",
+   "w": 8,
+   "h": 2,
+   "traco": "M0 1C2 0.4 2 1.6 4 1S6 0.4 8 1",
+   "espessura": 0.09,
+   "nota": "veio ondulado (WOOD do Padrão RA), desenho RA"
+  },
+  "aco": {
+   "nome": "Aço",
+   "tipo": "solido",
+   "cor": "#1f1f1f",
+   "nota": "perfil de aço em corte: cheio (seção fina), como na prancha metálica"
+  },
+  "isolamento": {
+   "nome": "Isolamento",
+   "tipo": "padrao",
+   "w": 4,
+   "h": 3,
+   "traco": "M0 2.6L1 0.4L2 2.6L3 0.4L4 2.6",
+   "espessura": 0.09,
+   "nota": "isolante: zigue-zague (desenho RA)"
+  },
+  "gesso": {
+   "nome": "Gesso / argamassa",
+   "tipo": "padrao",
+   "w": 1.2,
+   "h": 1.2,
+   "cheio": "M0.5 0.5h0.15v0.15h-0.15Z",
+   "nota": "pontilhado fino (desenho RA)"
+  },
+  "telha": {
+   "nome": "Telha",
+   "tipo": "padrao",
+   "w": 3,
+   "h": 3,
+   "rot": 45,
+   "traco": "M0 0V3",
+   "espessura": 0.09,
+   "nota": "hachura espaçada a 45° (desenho RA)"
+  },
+  "vidro": {
+   "nome": "Vidro",
+   "tipo": "vazio",
+   "nota": "vidro em corte: só o contorno"
+  }
+ },
+ "categorias": {
+  "OST_ShaftOpening": {
+   "nome": "Aberturas de shaft",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura",
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "oculta"
+    }
+   }
+  },
+  "OST_DuctAccessory": {
+   "nome": "Acessórios de duto",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "mecanica"
+  },
+  "OST_PipeAccessory": {
+   "nome": "Acessórios do tubo",
+   "penaProj": 3,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "hidraulica",
+   "ifc": [
+    "IFCVALVE",
+    "IFCFLOWCONTROLLER"
+   ]
+  },
+  "OST_Coupler": {
+   "nome": "Acopladores do vergalhão estrutural",
+   "penaProj": 5,
+   "penaCorte": 6,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "solido",
+   "disciplina": "estrutural",
+   "nota": "armadura: barra GROSSA sobre contorno fino (Padrão RA); armadura detalhada é fase posterior do plano",
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 3,
+     "penaCorte": 6,
+     "padraoLinha": "oculta"
+    }
+   }
+  },
+  "OST_Entourage": {
+   "nome": "Ambiente",
+   "penaProj": 1,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura",
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 1,
+     "penaCorte": 3,
+     "padraoLinha": "oculta"
+    }
+   }
+  },
+  "OST_Rooms": {
+   "nome": "Ambientes",
+   "penaProj": 1,
+   "penaCorte": 1,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura",
+   "ifc": [
+    "IFCSPACE"
+   ],
+   "subcategorias": {
+    "Referência": {
+     "penaProj": 1,
+     "penaCorte": 1
+    },
+    "Preenchimento de cores": {
+     "penaProj": 1,
+     "penaCorte": 1
+    },
+    "Preenchimento interno": {
+     "penaProj": 1,
+     "penaCorte": 1
+    }
+   }
+  },
+  "OST_BridgeBearings": {
+   "nome": "Aparelhos de apoio",
+   "penaProj": 3,
+   "penaCorte": 5,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "concreto",
+   "disciplina": "estrutural",
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 3,
+     "penaCorte": 5,
+     "padraoLinha": "oculta"
+    }
+   }
+  },
+  "OST_Areas": {
+   "nome": "Áreas",
+   "penaProj": 1,
+   "penaCorte": 1,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura",
+   "subcategorias": {
+    "Referência": {
+     "penaProj": 1,
+     "penaCorte": 1
+    },
+    "Preenchimento de cor": {
+     "penaProj": 1,
+     "penaCorte": 1
+    },
+    "Preenchimento interno": {
+     "penaProj": 1,
+     "penaCorte": 1
+    }
+   }
+  },
+  "OST_FabricAreas": {
+   "nome": "Áreas de tela soldada estrutural",
+   "penaProj": 5,
+   "penaCorte": 6,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "solido",
+   "disciplina": "estrutural",
+   "nota": "armadura: barra GROSSA sobre contorno fino (Padrão RA); armadura detalhada é fase posterior do plano",
+   "subcategorias": {
+    "Limite": {
+     "penaProj": 5,
+     "penaCorte": 6
+    }
+   }
+  },
+  "OST_FabricReinforcement": {
+   "nome": "Armadura da tela soldada estrutural",
+   "penaProj": 5,
+   "penaCorte": 6,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "solido",
+   "disciplina": "estrutural",
+   "nota": "armadura: barra GROSSA sobre contorno fino (Padrão RA); armadura detalhada é fase posterior do plano",
+   "subcategorias": {
+    "Limite": {
+     "penaProj": 5,
+     "penaCorte": 6
+    },
+    "Fiação da tela soldada": {
+     "penaProj": 5,
+     "penaCorte": 6
+    }
+   }
+  },
+  "OST_PathRein": {
+   "nome": "Armadura do caminho estrutural",
+   "penaProj": 5,
+   "penaCorte": 6,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "solido",
+   "disciplina": "estrutural",
+   "nota": "armadura: barra GROSSA sobre contorno fino (Padrão RA); armadura detalhada é fase posterior do plano",
+   "subcategorias": {
+    "Limite": {
+     "penaProj": 5,
+     "penaCorte": 6
+    }
+   }
+  },
+  "OST_AreaRein": {
+   "nome": "Armadura estrutural da área",
+   "penaProj": 5,
+   "penaCorte": 6,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "solido",
+   "disciplina": "estrutural",
+   "nota": "armadura: barra GROSSA sobre contorno fino (Padrão RA); armadura detalhada é fase posterior do plano",
+   "subcategorias": {
+    "Limite": {
+     "penaProj": 5,
+     "penaCorte": 6
+    }
+   }
+  },
+  "OST_CableTray": {
+   "nome": "Bandejas de cabos",
+   "penaProj": 3,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "eletrica",
+   "ifc": [
+    "IFCCABLECARRIERSEGMENT"
+   ],
+   "subcategorias": {
+    "Subida": {
+     "penaProj": 3,
+     "penaCorte": 3
+    },
+    "Linha de centro": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "centro"
+    },
+    "Descida": {
+     "penaProj": 3,
+     "penaCorte": 3
+    }
+   }
+  },
+  "OST_MEPAnalyticalBus": {
+   "nome": "Barramento analítico elétrico",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "eletrica"
+  },
+  "OST_BridgeCables": {
+   "nome": "Cabos da ponte",
+   "penaProj": 3,
+   "penaCorte": 5,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "concreto",
+   "disciplina": "estrutural"
+  },
+  "OST_MEPAnalyticalWaterLoop": {
+   "nome": "Ciclos de água",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "hidraulica"
+  },
+  "OST_ElectricalCircuit": {
+   "nome": "Circuitos elétricos",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "eletrica"
+  },
+  "OST_VerticalCirculation": {
+   "nome": "Circulação vertical",
+   "penaProj": 3,
+   "penaCorte": 5,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "concreto",
+   "disciplina": "estrutural",
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 3,
+     "penaCorte": 5,
+     "padraoLinha": "oculta"
+    }
+   }
+  },
+  "OST_SheetCollections": {
+   "nome": "Coleções de folhas",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura"
+  },
+  "OST_Columns": {
+   "nome": "Colunas",
+   "penaProj": 4,
+   "penaCorte": 6,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "concreto",
+   "material": "Concreto",
+   "disciplina": "arquitetura",
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 3,
+     "penaCorte": 6,
+     "padraoLinha": "oculta"
+    }
+   }
+  },
+  "OST_MEPAnalyticalTransferSwitch": {
+   "nome": "Comando de transferência analítico elétrico",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "eletrica"
+  },
+  "OST_Casework": {
+   "nome": "Componentes de gabinete",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura",
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "oculta"
+    },
+    "Giro da elevação": {
+     "penaProj": 1,
+     "penaCorte": 1
+    }
+   }
+  },
+  "OST_Conduit": {
+   "nome": "Conduites",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "eletrica",
+   "subcategorias": {
+    "Subida": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "Linha de centro": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "centro"
+    },
+    "Descida": {
+     "penaProj": 2,
+     "penaCorte": 3
+    }
+   }
+  },
+  "OST_CableTrayFitting": {
+   "nome": "Conexões da bandeja de cabos",
+   "penaProj": 3,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "eletrica",
+   "ifc": [
+    "IFCCABLECARRIERFITTING"
+   ],
+   "subcategorias": {
+    "Linha de centro": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "centro"
+    }
+   }
+  },
+  "OST_DuctFitting": {
+   "nome": "Conexões de duto",
+   "penaProj": 3,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "mecanica",
+   "ifc": [
+    "IFCDUCTFITTING"
+   ],
+   "subcategorias": {
+    "Linha de centro": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "centro"
+    }
+   }
+  },
+  "OST_PipeFitting": {
+   "nome": "Conexões de tubo",
+   "penaProj": 3,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "hidraulica",
+   "ifc": [
+    "IFCPIPEFITTING",
+    "IFCFLOWFITTING"
+   ],
+   "subcategorias": {
+    "Linha de centro": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "centro"
+    }
+   }
+  },
+  "OST_ConduitFitting": {
+   "nome": "Conexões do conduite",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "eletrica",
+   "subcategorias": {
+    "Linha de centro": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "centro"
+    }
+   }
+  },
+  "OST_StructConnections": {
+   "nome": "Conexões estruturais",
+   "penaProj": 3,
+   "penaCorte": 5,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "aco",
+   "material": "Aço",
+   "disciplina": "estrutural",
+   "subcategorias": {
+    "Conectores": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Parafusos": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Referência": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Soldas": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "<Linhas ocultas>": {
+     "penaProj": 3,
+     "penaCorte": 5,
+     "padraoLinha": "oculta"
+    },
+    "Modificadores": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Perfis": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Outros": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Âncoras": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Placas": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Símbolo": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Furos": {
+     "penaProj": 3,
+     "penaCorte": 5
+    }
+   }
+  },
+  "OST_ElectricalLoadSet": {
+   "nome": "Conjunto de carga analítica elétrica",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "eletrica"
+  },
+  "OST_MechanicalEquipmentSet": {
+   "nome": "Conjuntos de equipamentos mecânicos",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "mecanica"
+  },
+  "OST_FabricationContainment": {
+   "nome": "Containers de fabricação MEP",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "hidraulica",
+   "subcategorias": {
+    "Subida": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "Simbologia": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "Linha de centro": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "centro"
+    },
+    "Descida": {
+     "penaProj": 2,
+     "penaCorte": 3
+    }
+   }
+  },
+  "OST_CableTrayRun": {
+   "nome": "Direções da bandeja de cabos",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "eletrica"
+  },
+  "OST_ConduitRun": {
+   "nome": "Direções do conduite",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "eletrica"
+  },
+  "OST_AudioVisualDevices": {
+   "nome": "Dispositivos audiovisuais",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "eletrica",
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "oculta"
+    }
+   }
+  },
+  "OST_FireAlarmDevices": {
+   "nome": "Dispositivos de alarme de incêndio",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "eletrica"
+  },
+  "OST_NurseCallDevices": {
+   "nome": "Dispositivos de chamada de enfermeira",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "eletrica"
+  },
+  "OST_CommunicationDevices": {
+   "nome": "Dispositivos de comunicação",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "eletrica"
+  },
+  "OST_MechanicalControlDevices": {
+   "nome": "Dispositivos de controle mecânico",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "mecanica",
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "oculta"
+    }
+   }
+  },
+  "OST_DataDevices": {
+   "nome": "Dispositivos de dados",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "eletrica"
+  },
+  "OST_LightingDevices": {
+   "nome": "Dispositivos de iluminação",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "eletrica"
+  },
+  "OST_SecurityDevices": {
+   "nome": "Dispositivos de segurança",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "eletrica"
+  },
+  "OST_TelephoneDevices": {
+   "nome": "Dispositivos de telefonia",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "eletrica"
+  },
+  "OST_ElectricalFixtures": {
+   "nome": "Dispositivos elétricos",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "eletrica",
+   "ifc": [
+    "IFCOUTLET",
+    "IFCSWITCHINGDEVICE"
+   ],
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "oculta"
+    }
+   }
+  },
+  "OST_DuctCurves": {
+   "nome": "Dutos",
+   "penaProj": 3,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "mecanica",
+   "ifc": [
+    "IFCDUCTSEGMENT"
+   ],
+   "subcategorias": {
+    "Subida": {
+     "penaProj": 3,
+     "penaCorte": 3
+    },
+    "Linha de centro": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "centro"
+    },
+    "Descida": {
+     "penaProj": 3,
+     "penaCorte": 3
+    }
+   }
+  },
+  "OST_FlexDuctCurves": {
+   "nome": "Dutos flexíveis",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "mecanica",
+   "subcategorias": {
+    "Padrão": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "Linha de centro": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "centro"
+    }
+   }
+  },
+  "OST_CurtainGrids": {
+   "nome": "Eixos cortina",
+   "penaProj": 1,
+   "penaCorte": 2,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura"
+  },
+  "OST_BridgeAbutments": {
+   "nome": "Encontros",
+   "penaProj": 3,
+   "penaCorte": 5,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "concreto",
+   "disciplina": "estrutural",
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 3,
+     "penaCorte": 5,
+     "padraoLinha": "oculta"
+    },
+    "Pilares de encontro": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Fundações dos encontros": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Paredes de apoio": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Lajes de aproximação": {
+     "penaProj": 3,
+     "penaCorte": 5
+    }
+   }
+  },
+  "OST_FabricationDuctworkStiffeners": {
+   "nome": "Enrijecedores de dutos de fabricação MEP",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "mecanica"
+  },
+  "OST_StructuralStiffener": {
+   "nome": "Enrijecedores estruturais",
+   "penaProj": 3,
+   "penaCorte": 5,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "aco",
+   "material": "Aço",
+   "disciplina": "estrutural",
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 3,
+     "penaCorte": 5,
+     "padraoLinha": "oculta"
+    }
+   }
+  },
+  "OST_FoodServiceEquipment": {
+   "nome": "Equipamento de serviço de comida",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura",
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "oculta"
+    }
+   }
+  },
+  "OST_ZoneEquipment": {
+   "nome": "Equipamento de zona",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "mecanica"
+  },
+  "OST_ElectricalEquipment": {
+   "nome": "Equipamento elétrico",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "eletrica",
+   "ifc": [
+    "IFCELECTRICDISTRIBUTIONBOARD"
+   ],
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "oculta"
+    }
+   }
+  },
+  "OST_SpecialityEquipment": {
+   "nome": "Equipamento especial",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura",
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "oculta"
+    }
+   }
+  },
+  "OST_PlumbingEquipment": {
+   "nome": "Equipamento hidráulico",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "hidraulica",
+   "ifc": [
+    "IFCFLOWSTORAGEDEVICE",
+    "IFCTANK"
+   ],
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "oculta"
+    }
+   }
+  },
+  "OST_MechanicalEquipment": {
+   "nome": "Equipamento mecânico",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "mecanica",
+   "ifc": [
+    "IFCPUMP",
+    "IFCFLOWMOVINGDEVICE"
+   ],
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "oculta"
+    }
+   }
+  },
+  "OST_MedicalEquipment": {
+   "nome": "Equipamento médico",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura",
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "oculta"
+    }
+   }
+  },
+  "OST_Stairs": {
+   "nome": "Escadas",
+   "penaProj": 3,
+   "penaCorte": 5,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "concreto",
+   "material": "Concreto",
+   "disciplina": "arquitetura",
+   "ifc": [
+    "IFCSTAIR",
+    "IFCSTAIRFLIGHT"
+   ],
+   "subcategorias": {
+    "Patamares": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Contornos": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Linhas do espelho": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "<Linhas ocultas>": {
+     "penaProj": 3,
+     "penaCorte": 5,
+     "padraoLinha": "oculta"
+    },
+    "Linhas do bocel": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Pisos/Espelhos": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "<Acima> Marcas de corte": {
+     "penaProj": 3,
+     "penaCorte": 5,
+     "padraoLinha": "projecao"
+    },
+    "Marcas de corte": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Suportes": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "<Acima> Contornos": {
+     "penaProj": 3,
+     "penaCorte": 5,
+     "padraoLinha": "projecao"
+    },
+    "<Acima> Linhas do espelho": {
+     "penaProj": 3,
+     "penaCorte": 5,
+     "padraoLinha": "projecao"
+    },
+    "Lances": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "<Acima> Linhas do bocel": {
+     "penaProj": 3,
+     "penaCorte": 5,
+     "padraoLinha": "projecao"
+    },
+    "<Acima> Suportes": {
+     "penaProj": 3,
+     "penaCorte": 5,
+     "padraoLinha": "projecao"
+    }
+   }
+  },
+  "OST_MEPSpaces": {
+   "nome": "Espaços",
+   "penaProj": 1,
+   "penaCorte": 1,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura",
+   "subcategorias": {
+    "Referência": {
+     "penaProj": 1,
+     "penaCorte": 1
+    },
+    "Preenchimento de cores": {
+     "penaProj": 1,
+     "penaCorte": 1
+    },
+    "Interno": {
+     "penaProj": 1,
+     "penaCorte": 1
+    }
+   }
+  },
+  "OST_Parking": {
+   "nome": "Estacionamento",
+   "penaProj": 1,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura",
+   "subcategorias": {
+    "Esquema de estacionamento": {
+     "penaProj": 1,
+     "penaCorte": 3
+    },
+    "Listra": {
+     "penaProj": 1,
+     "penaCorte": 3
+    },
+    "<Linhas ocultas>": {
+     "penaProj": 1,
+     "penaCorte": 3,
+     "padraoLinha": "oculta"
+    },
+    "Linha de referência": {
+     "penaProj": 1,
+     "penaCorte": 3
+    }
+   }
+  },
+  "OST_AnalysisDisplayStyle": {
+   "nome": "Estilo de visualização da análise",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura"
+  },
+  "OST_Roads": {
+   "nome": "Estradas",
+   "penaProj": 1,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura",
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 1,
+     "penaCorte": 3,
+     "padraoLinha": "oculta"
+    }
+   }
+  },
+  "OST_MEPAncillaryFraming": {
+   "nome": "Estrutura auxiliar MEP",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "mecanica"
+  },
+  "OST_BridgeFraming": {
+   "nome": "Estrutura de ponte",
+   "penaProj": 3,
+   "penaCorte": 5,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "concreto",
+   "disciplina": "estrutural",
+   "subcategorias": {
+    "Contraventamento cruzado": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Vigas-mestras": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "<Linhas ocultas>": {
+     "penaProj": 3,
+     "penaCorte": 5,
+     "padraoLinha": "oculta"
+    },
+    "Arcos": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Treliças": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Diafragmas": {
+     "penaProj": 3,
+     "penaCorte": 5
+    }
+   }
+  },
+  "OST_TemporaryStructure": {
+   "nome": "Estruturas temporárias",
+   "penaProj": 3,
+   "penaCorte": 5,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "concreto",
+   "disciplina": "estrutural",
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 3,
+     "penaCorte": 5,
+     "padraoLinha": "oculta"
+    }
+   }
+  },
+  "OST_Wire": {
+   "nome": "Fiação",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "eletrica",
+   "subcategorias": {
+    "Seta para painel": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "Marcas da fiação": {
+     "penaProj": 2,
+     "penaCorte": 3
+    }
+   }
+  },
+  "OST_Sheets": {
+   "nome": "Folhas",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura"
+  },
+  "OST_ElectricalPowerSource": {
+   "nome": "Fonte de alimentação analítica elétrica",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "eletrica"
+  },
+  "OST_RebarShape": {
+   "nome": "Formato do vergalhão",
+   "penaProj": 5,
+   "penaCorte": 6,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "solido",
+   "disciplina": "estrutural",
+   "nota": "armadura: barra GROSSA sobre contorno fino (Padrão RA); armadura detalhada é fase posterior do plano"
+  },
+  "OST_Ceilings": {
+   "nome": "Forros",
+   "penaProj": 2,
+   "penaCorte": 4,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "gesso",
+   "material": "Gesso",
+   "disciplina": "arquitetura",
+   "ifc": [
+    "IFCCOVERING"
+   ],
+   "subcategorias": {
+    "Padrão de corte": {
+     "penaProj": 1,
+     "penaCorte": 1
+    },
+    "Camada térmica/ar": {
+     "penaProj": 1,
+     "penaCorte": 2
+    },
+    "<Linhas ocultas>": {
+     "penaProj": 2,
+     "penaCorte": 4,
+     "padraoLinha": "oculta"
+    },
+    "Estrutura": {
+     "penaProj": 2,
+     "penaCorte": 4
+    },
+    "Acabamento 1": {
+     "penaProj": 1,
+     "penaCorte": 2
+    },
+    "Padrão de superfície": {
+     "penaProj": 1,
+     "penaCorte": 1
+    },
+    "Acabamento 2": {
+     "penaProj": 1,
+     "penaCorte": 2
+    },
+    "Arestas comuns": {
+     "penaProj": 1,
+     "penaCorte": 2
+    },
+    "Substrato": {
+     "penaProj": 1,
+     "penaCorte": 2
+    },
+    "Camada da membrana": {
+     "penaProj": 1,
+     "penaCorte": 2
+    }
+   }
+  },
+  "OST_StructuralFoundation": {
+   "nome": "Fundações estruturais",
+   "penaProj": 4,
+   "penaCorte": 6,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "concreto",
+   "material": "Concreto",
+   "disciplina": "estrutural",
+   "ifc": [
+    "IFCFOOTING",
+    "IFCPILE"
+   ],
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 3,
+     "penaCorte": 6,
+     "padraoLinha": "oculta"
+    }
+   }
+  },
+  "OST_VibrationManagement": {
+   "nome": "Gerenciamento de vibrações",
+   "penaProj": 3,
+   "penaCorte": 5,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "concreto",
+   "disciplina": "estrutural",
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 3,
+     "penaCorte": 5,
+     "padraoLinha": "oculta"
+    },
+    "Isoladores de vibração": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Amortecedores de vibrações": {
+     "penaProj": 3,
+     "penaCorte": 5
+    }
+   }
+  },
+  "OST_StairsRailing": {
+   "nome": "Guarda-corpos",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura",
+   "ifc": [
+    "IFCRAILING"
+   ],
+   "subcategorias": {
+    "<Acima > Corrimãos": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "Corrimãos": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "Balaústres": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "<Linhas ocultas>": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "oculta"
+    },
+    "Terminações": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "Corrimão": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "<Acima > Corrimãos superiores": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "Suportes": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "<Acima> Linha de corte do corrimão": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "projecao"
+    },
+    "Corrimãos superiores": {
+     "penaProj": 2,
+     "penaCorte": 3
+    }
+   }
+  },
+  "OST_RasterImages": {
+   "nome": "Imagens raster",
+   "penaProj": 1,
+   "penaCorte": 2,
+   "cor": "#808080",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura",
+   "meioTom": true,
+   "nota": "contexto vinculado: cinza (a pena 8 do CTB RA mantém o cinza)"
+  },
+  "OST_ImportObjectStyles": {
+   "nome": "Importações nas famílias",
+   "penaProj": 1,
+   "penaCorte": 2,
+   "cor": "#808080",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura",
+   "meioTom": true,
+   "nota": "contexto vinculado: cinza (a pena 8 do CTB RA mantém o cinza)"
+  },
+  "OST_ProjectInformation": {
+   "nome": "Informações do projeto",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura"
+  },
+  "OST_DataExchanges": {
+   "nome": "Intercâmbios de dados",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura"
+  },
+  "OST_PipeInsulations": {
+   "nome": "Isolamentos da tubulação",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "hidraulica"
+  },
+  "OST_DuctInsulations": {
+   "nome": "Isolamentos do duto",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "mecanica"
+  },
+  "OST_DetailComponents": {
+   "nome": "Itens de detalhe",
+   "penaProj": 2,
+   "penaCorte": 2,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura",
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 2,
+     "penaCorte": 2,
+     "padraoLinha": "oculta"
+    },
+    "Linhas de luz": {
+     "penaProj": 2,
+     "penaCorte": 2
+    },
+    "Linhas pesadas": {
+     "penaProj": 2,
+     "penaCorte": 2
+    },
+    "Linhas médias": {
+     "penaProj": 2,
+     "penaCorte": 2
+    }
+   }
+  },
+  "OST_Windows": {
+   "nome": "Janelas",
+   "penaProj": 3,
+   "penaCorte": 4,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vidro",
+   "material": "Vidro",
+   "disciplina": "arquitetura",
+   "ifc": [
+    "IFCWINDOW"
+   ],
+   "subcategorias": {
+    "Recortar": {
+     "penaProj": 3,
+     "penaCorte": 4
+    },
+    "<Linhas ocultas>": {
+     "penaProj": 3,
+     "penaCorte": 4,
+     "padraoLinha": "oculta"
+    },
+    "Peitoril/Extremidade inicial": {
+     "penaProj": 3,
+     "penaCorte": 4
+    },
+    "Moldura/Montante": {
+     "penaProj": 3,
+     "penaCorte": 4
+    },
+    "Giro da planta": {
+     "penaProj": 1,
+     "penaCorte": 1
+    },
+    "Vidro": {
+     "penaProj": 1,
+     "penaCorte": 2
+    },
+    "Giro da elevação": {
+     "penaProj": 1,
+     "penaCorte": 1
+    },
+    "Abertura": {
+     "penaProj": 3,
+     "penaCorte": 4
+    }
+   }
+  },
+  "OST_ExpansionJoints": {
+   "nome": "Juntas de expansão",
+   "penaProj": 3,
+   "penaCorte": 5,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "concreto",
+   "disciplina": "estrutural",
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 3,
+     "penaCorte": 5,
+     "padraoLinha": "oculta"
+    }
+   }
+  },
+  "OST_Signage": {
+   "nome": "Letreiros",
+   "penaProj": 1,
+   "penaCorte": 2,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura",
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 1,
+     "penaCorte": 2,
+     "padraoLinha": "oculta"
+    }
+   }
+  },
+  "OST_Lines": {
+   "nome": "Linhas",
+   "penaProj": 2,
+   "penaCorte": 2,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura",
+   "subcategorias": {
+    "<Em vista>": {
+     "penaProj": 2,
+     "penaCorte": 2
+    },
+    "<Linhas do percurso de deslocamento>": {
+     "penaProj": 2,
+     "penaCorte": 2
+    },
+    "<Limite da área>": {
+     "penaProj": 2,
+     "penaCorte": 2
+    },
+    "<Linhas médias>": {
+     "penaProj": 2,
+     "penaCorte": 2
+    },
+    "<Linhas grossas>": {
+     "penaProj": 2,
+     "penaCorte": 2
+    },
+    "<Linhas ocultas>": {
+     "penaProj": 2,
+     "penaCorte": 2,
+     "padraoLinha": "oculta"
+    },
+    "<Linha de centro>": {
+     "penaProj": 2,
+     "penaCorte": 2,
+     "padraoLinha": "centro"
+    },
+    "<Separação de ambiente>": {
+     "penaProj": 2,
+     "penaCorte": 2
+    },
+    "<Envoltório de tela soldada>": {
+     "penaProj": 2,
+     "penaCorte": 2
+    },
+    "<Folhas de tela soldada>": {
+     "penaProj": 2,
+     "penaCorte": 2
+    },
+    "<Projeção>": {
+     "penaProj": 2,
+     "penaCorte": 2
+    },
+    "<Separação de espaço>": {
+     "penaProj": 2,
+     "penaCorte": 2
+    },
+    "<Linhas de isolamento de lã de vidro>": {
+     "penaProj": 1,
+     "penaCorte": 2
+    },
+    "<Oculto>": {
+     "penaProj": 2,
+     "penaCorte": 2
+    },
+    "<Linhas finas>": {
+     "penaProj": 2,
+     "penaCorte": 2
+    },
+    "<Linhas>": {
+     "penaProj": 2,
+     "penaCorte": 2
+    },
+    "<Demolido>": {
+     "penaProj": 2,
+     "penaCorte": 2,
+     "padraoLinha": "demolido"
+    },
+    "<Croqui>": {
+     "penaProj": 2,
+     "penaCorte": 2
+    },
+    "<Limite da carga com base na área>": {
+     "penaProj": 2,
+     "penaCorte": 2
+    },
+    "<Eixo de rotação>": {
+     "penaProj": 2,
+     "penaCorte": 2,
+     "padraoLinha": "centro"
+    }
+   }
+  },
+  "OST_LightingFixtures": {
+   "nome": "Luminárias",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "eletrica",
+   "ifc": [
+    "IFCLIGHTFIXTURE"
+   ],
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "oculta"
+    },
+    "Fonte luminosa": {
+     "penaProj": 2,
+     "penaCorte": 3
+    }
+   }
+  },
+  "OST_PlaceHolderDucts": {
+   "nome": "Marcadores de posição de duto",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "mecanica"
+  },
+  "OST_PlaceHolderPipes": {
+   "nome": "Marcadores de posição de tubulação",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "hidraulica"
+  },
+  "OST_Mass": {
+   "nome": "Massa",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura",
+   "subcategorias": {
+    "Linhas de eixo": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "centro"
+    },
+    "Parede interna da massa": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "Sombreado da massa": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "Abertura da massa": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "<Linhas ocultas>": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "oculta"
+    },
+    "Parede externa da massa": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "Linhas de padrão": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "Nós": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "Telhado da massa": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "Piso de massa": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "Forma": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "Claraboia da massa": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "Preenchimento de padrão": {
+     "penaProj": 1,
+     "penaCorte": 1
+    },
+    "Zona de massa": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "Vidraça da massa": {
+     "penaProj": 2,
+     "penaCorte": 3
+    }
+   }
+  },
+  "OST_Materials": {
+   "nome": "Materiais",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura"
+  },
+  "OST_Furniture": {
+   "nome": "Mobiliário",
+   "penaProj": 2,
+   "penaCorte": 2,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura",
+   "ifc": [
+    "IFCFURNISHINGELEMENT",
+    "IFCFURNITURE"
+   ],
+   "subcategorias": {
+    "Linhas em projeção": {
+     "penaProj": 2,
+     "penaCorte": 2
+    },
+    "<Linhas ocultas>": {
+     "penaProj": 2,
+     "penaCorte": 2,
+     "padraoLinha": "oculta"
+    },
+    "Linhas ocultas": {
+     "penaProj": 2,
+     "penaCorte": 2,
+     "padraoLinha": "oculta"
+    }
+   }
+  },
+  "OST_Coordination_Model": {
+   "nome": "Modelo de coordenação",
+   "penaProj": 1,
+   "penaCorte": 2,
+   "cor": "#808080",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura",
+   "meioTom": true,
+   "nota": "contexto vinculado: cinza (a pena 8 do CTB RA mantém o cinza)"
+  },
+  "OST_GenericModel": {
+   "nome": "Modelos genéricos",
+   "penaProj": 2,
+   "penaCorte": 4,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura",
+   "ifc": [
+    "IFCBUILDINGELEMENTPROXY"
+   ],
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 2,
+     "penaCorte": 4,
+     "padraoLinha": "oculta"
+    }
+   }
+  },
+  "OST_CurtainWallMullions": {
+   "nome": "Montantes de parede cortina",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "solido",
+   "disciplina": "arquitetura",
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "oculta"
+    }
+   }
+  },
+  "OST_PointClouds": {
+   "nome": "Nuvens de ponto",
+   "penaProj": 1,
+   "penaCorte": 2,
+   "cor": "#808080",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura",
+   "meioTom": true,
+   "nota": "contexto vinculado: cinza (a pena 8 do CTB RA mantém o cinza)"
+  },
+  "OST_CurtainWallPanels": {
+   "nome": "Painéis cortina",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vidro",
+   "disciplina": "arquitetura",
+   "ifc": [
+    "IFCPLATE"
+   ],
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "oculta"
+    },
+    "Vidro": {
+     "penaProj": 1,
+     "penaCorte": 2
+    }
+   }
+  },
+  "OST_Hardscape": {
+   "nome": "Paisagismo duro",
+   "penaProj": 1,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura",
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 1,
+     "penaCorte": 3,
+     "padraoLinha": "oculta"
+    }
+   }
+  },
+  "OST_Walls": {
+   "nome": "Paredes",
+   "penaProj": 4,
+   "penaCorte": 6,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "alvenaria",
+   "material": "Alvenaria",
+   "disciplina": "arquitetura",
+   "ifc": [
+    "IFCWALL",
+    "IFCWALLSTANDARDCASE",
+    "IFCCURTAINWALL"
+   ],
+   "subcategorias": {
+    "Padrão de corte": {
+     "penaProj": 1,
+     "penaCorte": 1
+    },
+    "Camada térmica/ar": {
+     "penaProj": 3,
+     "penaCorte": 4
+    },
+    "Molduras de parede": {
+     "penaProj": 4,
+     "penaCorte": 6
+    },
+    "<Linhas ocultas>": {
+     "penaProj": 3,
+     "penaCorte": 6,
+     "padraoLinha": "oculta"
+    },
+    "Estrutura": {
+     "penaProj": 4,
+     "penaCorte": 6
+    },
+    "Acabamento 1": {
+     "penaProj": 3,
+     "penaCorte": 4
+    },
+    "Padrão de superfície": {
+     "penaProj": 1,
+     "penaCorte": 1
+    },
+    "Eixos de parede cortina": {
+     "penaProj": 2,
+     "penaCorte": 6,
+     "padraoLinha": "centro"
+    },
+    "Acabamento 2": {
+     "penaProj": 3,
+     "penaCorte": 4
+    },
+    "Camadas não principais": {
+     "penaProj": 3,
+     "penaCorte": 4
+    },
+    "Arestas comuns": {
+     "penaProj": 3,
+     "penaCorte": 4
+    },
+    "Substrato": {
+     "penaProj": 3,
+     "penaCorte": 4
+    },
+    "Moldura de parede - Cornija": {
+     "penaProj": 4,
+     "penaCorte": 6
+    },
+    "Camada da membrana": {
+     "penaProj": 3,
+     "penaCorte": 4
+    }
+   }
+  },
+  "OST_Parts": {
+   "nome": "Peças",
+   "penaProj": 2,
+   "penaCorte": 4,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura",
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 2,
+     "penaCorte": 4,
+     "padraoLinha": "oculta"
+    }
+   }
+  },
+  "OST_PlumbingFixtures": {
+   "nome": "Peças hidrossanitárias",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "hidraulica",
+   "ifc": [
+    "IFCSANITARYTERMINAL",
+    "IFCFLOWTERMINAL"
+   ],
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "oculta"
+    }
+   }
+  },
+  "OST_BridgePiers": {
+   "nome": "Pilares",
+   "penaProj": 3,
+   "penaCorte": 5,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "concreto",
+   "disciplina": "estrutural",
+   "subcategorias": {
+    "Colunas do pilar": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Coberturas do pilar": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Fundações do pilar": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "<Linhas ocultas>": {
+     "penaProj": 3,
+     "penaCorte": 5,
+     "padraoLinha": "oculta"
+    },
+    "Torres do pilar": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Paredes do pilar": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Estacas do pilar": {
+     "penaProj": 3,
+     "penaCorte": 5
+    }
+   }
+  },
+  "OST_StructuralColumns": {
+   "nome": "Pilares estruturais",
+   "penaProj": 4,
+   "penaCorte": 6,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "concreto",
+   "material": "Concreto",
+   "disciplina": "estrutural",
+   "ifc": [
+    "IFCCOLUMN"
+   ],
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 3,
+     "penaCorte": 6,
+     "padraoLinha": "oculta"
+    },
+    "Faces ocultas": {
+     "penaProj": 3,
+     "penaCorte": 6,
+     "padraoLinha": "oculta"
+    },
+    "Linhas de localização": {
+     "penaProj": 2,
+     "penaCorte": 6,
+     "padraoLinha": "centro"
+    },
+    "Símbolos de verga": {
+     "penaProj": 4,
+     "penaCorte": 6
+    }
+   }
+  },
+  "OST_Floors": {
+   "nome": "Pisos",
+   "penaProj": 3,
+   "penaCorte": 6,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "concreto",
+   "material": "Concreto",
+   "disciplina": "estrutural",
+   "ifc": [
+    "IFCSLAB"
+   ],
+   "subcategorias": {
+    "Padrão de corte": {
+     "penaProj": 1,
+     "penaCorte": 1
+    },
+    "Arestas da laje": {
+     "penaProj": 3,
+     "penaCorte": 6
+    },
+    "Linhas de dobra": {
+     "penaProj": 2,
+     "penaCorte": 4
+    },
+    "Camada térmica/ar": {
+     "penaProj": 2,
+     "penaCorte": 4
+    },
+    "<Linhas ocultas>": {
+     "penaProj": 3,
+     "penaCorte": 6,
+     "padraoLinha": "oculta"
+    },
+    "Estrutura": {
+     "penaProj": 3,
+     "penaCorte": 6
+    },
+    "Acabamento 1": {
+     "penaProj": 2,
+     "penaCorte": 4
+    },
+    "Padrão de superfície": {
+     "penaProj": 1,
+     "penaCorte": 1
+    },
+    "Acabamento 2": {
+     "penaProj": 2,
+     "penaCorte": 4
+    },
+    "Arestas comuns": {
+     "penaProj": 2,
+     "penaCorte": 4
+    },
+    "Substrato": {
+     "penaProj": 2,
+     "penaCorte": 4
+    },
+    "Linhas divisórias": {
+     "penaProj": 2,
+     "penaCorte": 4
+    },
+    "Camada da membrana": {
+     "penaProj": 2,
+     "penaCorte": 4
+    }
+   }
+  },
+  "OST_Doors": {
+   "nome": "Portas",
+   "penaProj": 3,
+   "penaCorte": 4,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "madeira",
+   "material": "Madeira",
+   "disciplina": "arquitetura",
+   "ifc": [
+    "IFCDOOR"
+   ],
+   "subcategorias": {
+    "Painel": {
+     "penaProj": 3,
+     "penaCorte": 4
+    },
+    "<Linhas ocultas>": {
+     "penaProj": 3,
+     "penaCorte": 4,
+     "padraoLinha": "oculta"
+    },
+    "Moldura/Montante": {
+     "penaProj": 3,
+     "penaCorte": 4
+    },
+    "Giro da planta": {
+     "penaProj": 1,
+     "penaCorte": 1
+    },
+    "Vidro": {
+     "penaProj": 1,
+     "penaCorte": 2
+    },
+    "Giro da elevação": {
+     "penaProj": 1,
+     "penaCorte": 1
+    },
+    "Abertura": {
+     "penaProj": 3,
+     "penaCorte": 4
+    }
+   }
+  },
+  "OST_RoutingPreferences": {
+   "nome": "Preferências de roteamento",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "hidraulica"
+  },
+  "OST_FireProtection": {
+   "nome": "Proteção contra incêndio",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "hidraulica",
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "oculta"
+    }
+   }
+  },
+  "OST_StructuralFraming": {
+   "nome": "Quadro estrutural",
+   "penaProj": 4,
+   "penaCorte": 6,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "concreto",
+   "material": "Concreto",
+   "disciplina": "estrutural",
+   "ifc": [
+    "IFCBEAM",
+    "IFCMEMBER"
+   ],
+   "subcategorias": {
+    "Caibro": {
+     "penaProj": 4,
+     "penaCorte": 6
+    },
+    "<Linhas ocultas>": {
+     "penaProj": 3,
+     "penaCorte": 6,
+     "padraoLinha": "oculta"
+    },
+    "Viga mestre": {
+     "penaProj": 4,
+     "penaCorte": 6
+    },
+    "Outro": {
+     "penaProj": 4,
+     "penaCorte": 6
+    },
+    "Banzo": {
+     "penaProj": 4,
+     "penaCorte": 6
+    },
+    "Contraventamento": {
+     "penaProj": 4,
+     "penaCorte": 6
+    },
+    "Faces ocultas": {
+     "penaProj": 3,
+     "penaCorte": 6,
+     "padraoLinha": "oculta"
+    },
+    "Mão-francesa vertical": {
+     "penaProj": 4,
+     "penaCorte": 6
+    },
+    "Linhas de localização": {
+     "penaProj": 2,
+     "penaCorte": 6,
+     "padraoLinha": "centro"
+    },
+    "Contraventamento horizontal": {
+     "penaProj": 4,
+     "penaCorte": 6
+    },
+    "Símbolos de vara": {
+     "penaProj": 4,
+     "penaCorte": 6
+    },
+    "Terça": {
+     "penaProj": 4,
+     "penaCorte": 6
+    },
+    "Teia": {
+     "penaProj": 4,
+     "penaCorte": 6
+    }
+   }
+  },
+  "OST_Ramps": {
+   "nome": "Rampas",
+   "penaProj": 3,
+   "penaCorte": 5,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "concreto",
+   "material": "Concreto",
+   "disciplina": "arquitetura",
+   "ifc": [
+    "IFCRAMP",
+    "IFCRAMPFLIGHT"
+   ],
+   "subcategorias": {
+    "Vigas de suporte": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Seta para cima": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "<Linhas ocultas>": {
+     "penaProj": 3,
+     "penaCorte": 5,
+     "padraoLinha": "oculta"
+    },
+    "Rampas além da linha de corte": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Seta para baixo": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Vigas de suporte além da linha de corte": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Texto acima": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Texto abaixo": {
+     "penaProj": 3,
+     "penaCorte": 5
+    }
+   }
+  },
+  "OST_MaskingRegion": {
+   "nome": "Região de máscara",
+   "penaProj": 1,
+   "penaCorte": 2,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura"
+  },
+  "OST_FilledRegion": {
+   "nome": "Região preenchida",
+   "penaProj": 1,
+   "penaCorte": 2,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura"
+  },
+  "OST_AnalysisResults": {
+   "nome": "Resultados da análise",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura"
+  },
+  "OST_DuctLinings": {
+   "nome": "Revestimentos do duto",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "mecanica"
+  },
+  "OST_PipeSegments": {
+   "nome": "Segmentos de tubulação",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "hidraulica"
+  },
+  "OST_SwitchSystem": {
+   "nome": "Sistema de comando",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "eletrica"
+  },
+  "OST_CurtaSystem": {
+   "nome": "Sistema de cortina",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vidro",
+   "disciplina": "arquitetura",
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "oculta"
+    },
+    "Eixos de sistema cortina": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "centro"
+    }
+   }
+  },
+  "OST_FabricationDuctwork": {
+   "nome": "Sistema de duto de fabricação MEP",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "mecanica",
+   "subcategorias": {
+    "Revestimento": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "Isolamento": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "Subida": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "Simbologia": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "Linha de centro": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "centro"
+    },
+    "Descida": {
+     "penaProj": 2,
+     "penaCorte": 3
+    }
+   }
+  },
+  "OST_FurnitureSystems": {
+   "nome": "Sistema de mobiliário",
+   "penaProj": 2,
+   "penaCorte": 2,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura",
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 2,
+     "penaCorte": 2,
+     "padraoLinha": "oculta"
+    }
+   }
+  },
+  "OST_StructuralFramingSystem": {
+   "nome": "Sistema de viga estrutural",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura"
+  },
+  "OST_MEPAnalyticalAirLoop": {
+   "nome": "Sistemas de ar",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "mecanica"
+  },
+  "OST_DuctSystem": {
+   "nome": "Sistemas de duto",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "mecanica",
+   "subcategorias": {
+    "Linhas de referência": {
+     "penaProj": 2,
+     "penaCorte": 3
+    }
+   }
+  },
+  "OST_PipingSystem": {
+   "nome": "Sistemas de tubulação",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "hidraulica",
+   "subcategorias": {
+    "Linhas de referência": {
+     "penaProj": 2,
+     "penaCorte": 3
+    }
+   }
+  },
+  "OST_Toposolid": {
+   "nome": "Sólido topográfico",
+   "penaProj": 2,
+   "penaCorte": 6,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "terra",
+   "material": "Solo",
+   "disciplina": "arquitetura",
+   "ifc": [
+    "IFCGEOGRAPHICELEMENT",
+    "IFCSITE"
+   ],
+   "subcategorias": {
+    "Curvas de nível principais": {
+     "penaProj": 3,
+     "penaCorte": 6
+    },
+    "Padrão de corte": {
+     "penaProj": 1,
+     "penaCorte": 1
+    },
+    "Linhas de dobra": {
+     "penaProj": 1,
+     "penaCorte": 4
+    },
+    "Camada térmica/ar": {
+     "penaProj": 1,
+     "penaCorte": 4
+    },
+    "<Linhas ocultas>": {
+     "penaProj": 2,
+     "penaCorte": 6,
+     "padraoLinha": "oculta"
+    },
+    "Estrutura": {
+     "penaProj": 2,
+     "penaCorte": 6
+    },
+    "Acabamento 1": {
+     "penaProj": 1,
+     "penaCorte": 4
+    },
+    "Padrão de superfície": {
+     "penaProj": 1,
+     "penaCorte": 1
+    },
+    "Subdivisões": {
+     "penaProj": 2,
+     "penaCorte": 6
+    },
+    "Vínculos Toposolid": {
+     "penaProj": 2,
+     "penaCorte": 6
+    },
+    "Acabamento 2": {
+     "penaProj": 1,
+     "penaCorte": 4
+    },
+    "Arestas comuns": {
+     "penaProj": 1,
+     "penaCorte": 4
+    },
+    "Curvas de nível secundárias": {
+     "penaProj": 1,
+     "penaCorte": 6
+    },
+    "Substrato": {
+     "penaProj": 1,
+     "penaCorte": 4
+    },
+    "Linhas divisórias": {
+     "penaProj": 1,
+     "penaCorte": 4
+    },
+    "Camada da membrana": {
+     "penaProj": 1,
+     "penaCorte": 4
+    }
+   }
+  },
+  "OST_Sprinklers": {
+   "nome": "Sprinklers",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "hidraulica"
+  },
+  "OST_BridgeDecks": {
+   "nome": "Tabuleiros da ponte",
+   "penaProj": 3,
+   "penaCorte": 5,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "concreto",
+   "disciplina": "estrutural",
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 3,
+     "penaCorte": 5,
+     "padraoLinha": "oculta"
+    }
+   }
+  },
+  "OST_Roofs": {
+   "nome": "Telhados",
+   "penaProj": 3,
+   "penaCorte": 5,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "telha",
+   "material": "Telha",
+   "disciplina": "arquitetura",
+   "ifc": [
+    "IFCROOF"
+   ],
+   "subcategorias": {
+    "Calhas": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Padrão de corte": {
+     "penaProj": 1,
+     "penaCorte": 1
+    },
+    "Camada térmica/ar": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "<Linhas ocultas>": {
+     "penaProj": 3,
+     "penaCorte": 5,
+     "padraoLinha": "oculta"
+    },
+    "Intradorsos de telhado": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Estrutura": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Acabamento 1": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "Padrão de superfície": {
+     "penaProj": 1,
+     "penaCorte": 1
+    },
+    "Acabamento 2": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "Arestas internas": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Bordas": {
+     "penaProj": 3,
+     "penaCorte": 5
+    },
+    "Eixos de telhado cortina": {
+     "penaProj": 2,
+     "penaCorte": 5,
+     "padraoLinha": "centro"
+    },
+    "Arestas comuns": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "Substrato": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "Camada da membrana": {
+     "penaProj": 2,
+     "penaCorte": 3
+    }
+   }
+  },
+  "OST_StructuralTendons": {
+   "nome": "Tendões estruturais",
+   "penaProj": 5,
+   "penaCorte": 6,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "solido",
+   "disciplina": "estrutural",
+   "nota": "armadura: barra GROSSA sobre contorno fino (Padrão RA); armadura detalhada é fase posterior do plano",
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 3,
+     "penaCorte": 6,
+     "padraoLinha": "oculta"
+    }
+   }
+  },
+  "OST_DuctTerminal": {
+   "nome": "Terminais de ar",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "mecanica"
+  },
+  "OST_Site": {
+   "nome": "Terreno",
+   "penaProj": 1,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "terra",
+   "disciplina": "arquitetura",
+   "subcategorias": {
+    "Paisagem": {
+     "penaProj": 1,
+     "penaCorte": 3
+    },
+    "Origem interna": {
+     "penaProj": 1,
+     "penaCorte": 3
+    },
+    "Propriedades dos segmentos de linha": {
+     "penaProj": 1,
+     "penaCorte": 3
+    },
+    "Listra": {
+     "penaProj": 1,
+     "penaCorte": 3
+    },
+    "Linhas de divisa": {
+     "penaProj": 1,
+     "penaCorte": 3
+    },
+    "<Linhas ocultas>": {
+     "penaProj": 1,
+     "penaCorte": 3,
+     "padraoLinha": "oculta"
+    },
+    "Ponto base do projeto": {
+     "penaProj": 1,
+     "penaCorte": 3
+    },
+    "Serviços públicos": {
+     "penaProj": 1,
+     "penaCorte": 3
+    },
+    "Ponto de levantamento topográfico": {
+     "penaProj": 1,
+     "penaCorte": 3
+    },
+    "Plataformas": {
+     "penaProj": 1,
+     "penaCorte": 3
+    }
+   }
+  },
+  "OST_FabricationHangers": {
+   "nome": "Tirantes de fabricação MEP",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "hidraulica"
+  },
+  "OST_Topography": {
+   "nome": "Topografia",
+   "penaProj": 2,
+   "penaCorte": 6,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "terra",
+   "material": "Solo",
+   "disciplina": "arquitetura",
+   "subcategorias": {
+    "Vínculos de topografia": {
+     "penaProj": 2,
+     "penaCorte": 6
+    },
+    "Curvas de nível principais": {
+     "penaProj": 3,
+     "penaCorte": 6
+    },
+    "<Linhas ocultas>": {
+     "penaProj": 2,
+     "penaCorte": 6,
+     "padraoLinha": "oculta"
+    },
+    "Arestas de triangulação": {
+     "penaProj": 2,
+     "penaCorte": 6
+    },
+    "Ponto limite": {
+     "penaProj": 2,
+     "penaCorte": 6
+    },
+    "Curvas de nível secundárias": {
+     "penaProj": 1,
+     "penaCorte": 6
+    },
+    "Ponto interno": {
+     "penaProj": 2,
+     "penaCorte": 6
+    }
+   }
+  },
+  "OST_ElectricalAnalyticalTransformer": {
+   "nome": "Transformador analítico elétrico",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "eletrica"
+  },
+  "OST_StructuralTruss": {
+   "nome": "Treliças estruturais",
+   "penaProj": 3,
+   "penaCorte": 5,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "aco",
+   "material": "Aço",
+   "disciplina": "estrutural",
+   "subcategorias": {
+    "Símbolos de verga": {
+     "penaProj": 3,
+     "penaCorte": 5
+    }
+   }
+  },
+  "OST_PipeCurves": {
+   "nome": "Tubulação",
+   "penaProj": 3,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "hidraulica",
+   "ifc": [
+    "IFCPIPESEGMENT",
+    "IFCFLOWSEGMENT"
+   ],
+   "subcategorias": {
+    "Símbolos de separação hidráulica": {
+     "penaProj": 3,
+     "penaCorte": 3
+    },
+    "Subida": {
+     "penaProj": 3,
+     "penaCorte": 3
+    },
+    "Linha de centro": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "centro"
+    },
+    "Descida": {
+     "penaProj": 3,
+     "penaCorte": 3
+    }
+   }
+  },
+  "OST_FlexPipeCurves": {
+   "nome": "Tubulação flexível",
+   "penaProj": 3,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "hidraulica",
+   "subcategorias": {
+    "Padrão": {
+     "penaProj": 3,
+     "penaCorte": 3
+    },
+    "Linha de centro": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "centro"
+    }
+   }
+  },
+  "OST_FabricationPipework": {
+   "nome": "Tubulações de fabricação MEP",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "hidraulica",
+   "subcategorias": {
+    "Isolamento": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "Subida": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "Simbologia": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "Linha de centro": {
+     "penaProj": 2,
+     "penaCorte": 3,
+     "padraoLinha": "centro"
+    },
+    "Descida": {
+     "penaProj": 2,
+     "penaCorte": 3
+    }
+   }
+  },
+  "OST_Planting": {
+   "nome": "Vegetação",
+   "penaProj": 1,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura",
+   "subcategorias": {
+    "<Linhas ocultas>": {
+     "penaProj": 1,
+     "penaCorte": 3,
+     "padraoLinha": "oculta"
+    }
+   }
+  },
+  "OST_Rebar": {
+   "nome": "Vergalhão estrutural",
+   "penaProj": 5,
+   "penaCorte": 6,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "solido",
+   "disciplina": "estrutural",
+   "nota": "armadura: barra GROSSA sobre contorno fino (Padrão RA); armadura detalhada é fase posterior do plano",
+   "subcategorias": {
+    "Linhas de localização de emenda": {
+     "penaProj": 2,
+     "penaCorte": 6,
+     "padraoLinha": "centro"
+    },
+    "<Linhas ocultas>": {
+     "penaProj": 3,
+     "penaCorte": 6,
+     "padraoLinha": "oculta"
+    },
+    "Bordas de concreto": {
+     "penaProj": 5,
+     "penaCorte": 6
+    },
+    "Caminho de distribuição": {
+     "penaProj": 5,
+     "penaCorte": 6
+    }
+   }
+  },
+  "OST_RvtLinks": {
+   "nome": "Vínculos RVT",
+   "penaProj": 1,
+   "penaCorte": 2,
+   "cor": "#808080",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "arquitetura",
+   "meioTom": true,
+   "nota": "contexto vinculado: cinza (a pena 8 do CTB RA mantém o cinza)"
+  },
+  "OST_HVAC_Zones": {
+   "nome": "Zonas AVAC",
+   "penaProj": 2,
+   "penaCorte": 3,
+   "cor": "#000000",
+   "padraoLinha": "continua",
+   "preenchimento": "vazio",
+   "disciplina": "mecanica",
+   "subcategorias": {
+    "Limite": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "Linhas de referência": {
+     "penaProj": 2,
+     "penaCorte": 3
+    },
+    "Preenchimento de cores": {
+     "penaProj": 1,
+     "penaCorte": 1
+    },
+    "Preenchimento interno": {
+     "penaProj": 1,
+     "penaCorte": 1
+    }
+   }
+  }
+ }
+}

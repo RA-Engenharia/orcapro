@@ -1052,7 +1052,7 @@
     },
 
     /* O mesmo diagnóstico quando o CÓDIGO já é conhecido (linha pendente do
-     * Escopo, item que a busca recusou, resíduo vindo do Revit) — sem passar
+     * Escopo, item que a busca recusou, resíduo vindo do plugin) — sem passar
      * pela busca por semelhança, que aqui não tem o que decidir. */
     rotaDoCodigo: function (codigo, ctx) {
       ctx = ctx || {};

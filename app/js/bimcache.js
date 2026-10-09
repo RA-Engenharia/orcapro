@@ -176,7 +176,7 @@
    * mesmo defeito que o B0 existe para consertar.
    * ------------------------------------------------------------- */
   /* ⚠ `nomeIfc` é o `Name` da linha IFC — "Parede básica:ALV 14 CHAPISCO:987654",
-   * o nome pelo qual o engenheiro acha a peça no Revit e conversa com o
+   * o nome pelo qual o engenheiro acha a peça no modelo e conversa com o
    * projetista. `nome` é o rótulo da disciplina ("Parede"), que é o que o
    * elemento carrega hoje. Sem guardar os dois, o modelo restaurado passava a
    * chamar TODAS as paredes de "Parede" e todos os tubos de "Tubo" — a peça
@@ -453,7 +453,7 @@
     /* o resto (elementos, mapas) estimado por contagem — medir com
        JSON.stringify custaria mais do que a decisão vale */
     /* ⚠ 280, e não 220: o registro do elemento passou a levar `descricao` (o
-       nome de mercado vindo do Revit, dezenas de caracteres) e
+       nome de mercado vindo do modelo de origem, dezenas de caracteres) e
        `descricaoFonte`. Estimativa que não acompanha o registro que ela
        estima envelhece calada e a política de espaço passa a decidir com um
        número que já não descreve nada. */

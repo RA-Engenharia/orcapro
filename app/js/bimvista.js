@@ -315,7 +315,7 @@
       modelos: (Array.isArray(d.modelos) ? d.modelos : []).map(function (m) {
         return { arquivoId: txt(m && m.arquivoId), modeloId: txt(m && m.modeloId), visivel: !(m && m.visivel === false), alpha: (m && m.alpha != null) ? num(m.alpha) : 1 };
       }).filter(function (m) { return !!(m.arquivoId || m.modeloId); }),
-      /* `visual` (estilo visual do Revit, prévia 07/10/2026) só entra quando é um
+      /* `visual` (estilo visual, prévia 07/10/2026) só entra quando é um
          dos quatro: a vista antiga continua sem ele e não muda o estilo ao abrir */
       estilo: estiloDe(d.estilo),
       medidas: meds,

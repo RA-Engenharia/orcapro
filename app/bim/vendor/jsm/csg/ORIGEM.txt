@@ -1,0 +1,20 @@
+three-bvh-csg 0.0.5 (gkjohnson/three-bvh-csg) - licenca MIT (LICENSE-three-bvh-csg ao lado).
+three-mesh-bvh 0.5.24 (gkjohnson/three-mesh-bvh) - licenca MIT (LICENSE-three-mesh-bvh ao lado). Dependencia da primeira.
+
+De onde: registry do npm, baixado em 08/10/2026:
+  https://registry.npmjs.org/three-bvh-csg/-/three-bvh-csg-0.0.5.tgz    sha256 3aaa91eefa55a2d2a9bc697abe79f883141df072d77bf87ea5dd1d615e339233
+  https://registry.npmjs.org/three-mesh-bvh/-/three-mesh-bvh-0.5.24.tgz  sha256 7046a9a772e564e665716d9a68fcab46f12d5e217877eb0a6e46c7173ee0d00a
+Arquivo usado: build/index.module.js de cada pacote (um arquivo so, ES module).
+
+Por que estas versoes: o three do vendor e o r150. three-bvh-csg 0.0.6 em diante pede three-mesh-bvh 0.6,
+que pede three >= 0.151. A 0.0.5 (marco/2023) pede three-mesh-bvh ^0.5.13, e a 0.5.24 aceita three >= 0.123.
+
+DUAS mudancas, so nas linhas de import (o resto e copia sem alteracao):
+  1) `from 'three'` -> `from '../../three.module.js'` e `from 'three-mesh-bvh'` -> `from './three-mesh-bvh.module.js'`.
+     Caminho relativo e nao importmap: o index.html, o bim/bim.html e o demo-bim.html teriam de ganhar a entrada,
+     e o teste em Node (tools/test-bim-b4.js) nao le importmap. A URL final do three e a MESMA do importmap
+     (bim/vendor/three.module.js), entao o navegador usa o MESMO modulo do js/bim.js (um three so na pagina).
+  2) tirada a ultima linha `//# sourceMappingURL=index.module.js.map` (o .map nao veio: 404 no console a toa).
+
+Usado so pelo modelador de volume (fase B4, js/bimvolume.js + js/bim.js, import dinamico): nada disto
+carrega se ninguem fizer uniao, subtracao ou empurrar uma face inclinada.

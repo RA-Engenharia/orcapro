@@ -130,6 +130,10 @@
      * canteiro. Os ANEXOS (laudo, ART, certificados) NÃO viajam — moram no
      * IndexedDB de quem anexou; no outro aparelho a tela diz isso. */
     "bim_icamento",
+    /* MATERIAIS DO PROJETO (js/bimmateriaisui.js): os materiais da obra (cor, padrão de corte,
+     * aparência de render, código, massa). UM registro PLANO por material, com obraId — nada de
+     * lista dentro de lista (BimMateriais.plano confere antes de gravar). */
+    "bim_materiais",
     /* compatibilizacao: o TESTE salvo e o RESULTADO com o ciclo de vida.
      * O resultado carrega responsavel, prazo, comentario e historico — e
      * e justamente isso que precisa atravessar aparelhos: o engenheiro

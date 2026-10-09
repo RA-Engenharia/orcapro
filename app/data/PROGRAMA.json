@@ -1,0 +1,26 @@
+{
+  "_leia": "CLASSIFICAÇÃO DE TODO ARQUIVO DE data/ (09/10/2026). data/ mistura duas coisas que a atualização trata ao contrário: a BASE DO CLIENTE (SINAPI e bases estaduais por UF e competência, a escolha de base da instalação) — que o pacote de ATUALIZAÇÃO nunca pode levar, porque sobrescreveria o que o cliente coletou ou escolheu — e DADO DO PROGRAMA (tabelas que o código carrega por fetch, como os estilos de objeto e as penas do BIM e os materiais do render), que TEM de ir em toda atualização, senão a instalação atualizada fica com o código novo procurando um arquivo que nunca chegou. Até 09/10/2026 o -Update não levava data/ nenhum, e as fases do BIM puseram dado do programa ali. Este manifesto é a lista ÚNICA: o empacotar-cliente.ps1 (pelos dois pacotes), o /__update/apply (server/static.js: promove do stage só o que está em `programa`, e nunca um nome de base), o sync-pwa, o sync-rvapp e o conferir-pacotes-irmaos leem daqui. Arquivo novo em data/ sem classificação REPROVA o empacotamento e o tools/test-pacote-dados-app.js. Categorias: `programa` = vai nos dois pacotes, no PWA e no visor da nuvem; `carimbo` = escrito pelo próprio empacotador nos dois pacotes; `cliente` = base do cliente, só no pacote completo (ou nem nele), NUNCA na atualização — por padrão de nome, porque a coleta cria competências novas; `repositorio` = fonte de gerador ou de teste, o app usa a tabela já embutida no JS, não vai a pacote nenhum.",
+  "versao": 1,
+  "programa": [
+    { "arquivo": "PROGRAMA.json", "motivo": "este manifesto: o /__update/apply do server/static.js lê a lista do stage para saber o que promover de data/" },
+    { "arquivo": "estilos-objeto-ra.json", "carregadoPor": "js/bimmodelovista.js (fetch)", "motivo": "estilos de objeto RA (P6-A): pena de projeção/corte, cor, linha e preenchimento das 137 categorias — tabela do programa, igual em toda instalação" },
+    { "arquivo": "penas-ra.json", "carregadoPor": "js/bimmodelovista.js (fetch) → js/desenho2d.js", "motivo": "penas 1–16 em mm por escala (P6-A) — tabela do programa" },
+    { "arquivo": "materiais-render-ra.json", "carregadoPor": "js/rendermat.js (fetch, URL_BIB)", "motivo": "biblioteca de materiais PBR do render físico — tabela do programa" }
+  ],
+  "carimbo": [
+    { "arquivo": "build.json", "motivo": "versão + commit do pacote; o empacotador o reescreve nos dois pacotes (o do repositório é só o último que alguém commitou)" }
+  ],
+  "cliente": [
+    { "padrao": "^sinapi-[A-Z]{2}-\\d{4}-\\d{2}(-desonerada)?\\.json$", "motivo": "SINAPI sintético por UF e competência; a coleta grava competências novas na instalação" },
+    { "padrao": "^sinapi-[A-Z]{2}(-\\d{4}-\\d{2})?(-desonerada)?-analitico\\.json(\\.gz)?$", "motivo": "SINAPI analítico por UF (o do mês embarcado e os coletados); o desonerado vem do espelho" },
+    { "padrao": "^sinapi-sample\\.json$", "motivo": "base de demonstração (30 itens) no formato SINAPI: vai só no pacote completo, como as bases; o js/basescat.js já a trata como base (lista NUNCA)" },
+    { "padrao": "^(goinfra|setop|seinfra|sudecap|sicro|iopes|orse)-.+\\.json(\\.gz)?$", "motivo": "bases estaduais e rodoviárias (GOINFRA, SETOP, SEINFRA, SUDECAP, SICRO, IOPES, ORSE), por UF e competência" },
+    { "padrao": "^base-ativa\\.json$", "motivo": "a base que ESTA instalação usa (UF-sede do pacote completo)" },
+    { "padrao": "^estados\\.json$", "motivo": "o manifesto 'Brasil todo' das bases instaladas" },
+    { "padrao": "^bases-status\\.json$", "motivo": "acervo publicado pelo pipeline das bases (espelho da landing)" }
+  ],
+  "repositorio": [
+    { "arquivo": "perfis-gerdau.json", "usadoPor": "tools/gerar-perfisaco.js, tools/test-p9-estrutura.js", "motivo": "fonte da tabela Gerdau; o app usa a tabela já embutida em js/perfisaco.js" },
+    { "arquivo": "sinapi-familias-mapa.json", "usadoPor": "tools/gerar-sinapi-familias-mapa.js, gerar-familias-orc.js, gerar-biminst-sinapi.js e testes", "motivo": "fonte dos índices gerados (js/sinapimapa.js, js/familiasorc.js, js/biminstsinapi.js); o app não o carrega" }
+  ]
+}

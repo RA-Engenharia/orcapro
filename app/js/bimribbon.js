@@ -2,7 +2,7 @@
  * bimribbon.js — Motor da FAIXA DE OPÇÕES (ribbon) do módulo BIM.
  *
  * O BIM do OrçaPRO virou um AMBIENTE de trabalho, não uma página: a
- * organização é a mesma que o engenheiro já conhece do Revit — abas de
+ * organização é a de programa de projeto que o engenheiro já conhece — abas de
  * contexto, cada uma com painéis nomeados, cada painel com seus comandos.
  *
  * Este arquivo é o MODELO, não o desenho: descreve quais abas existem,
@@ -29,7 +29,7 @@
    * O MAPA DE COMANDOS.
    * Cada aba tem painéis; cada painel tem comandos. Um comando é:
    *   id       — identificador estável (é o que o app recebe no clique)
-   *   rotulo   — vai em DUAS linhas embaixo do ícone, como no Revit;
+   *   rotulo   — vai em DUAS linhas embaixo do ícone;
    *              use "\n" para escolher onde quebra
    *   icone    — nome no registry de ícones (js/icones.js)
    *   dica     — tooltip; texto de engenheiro, não de programador
@@ -234,7 +234,7 @@
           { id: "conjuntos", rotulo: "Conjuntos\nde seleção", icone: "alvo", requer: "modelo", dica: "Monta \u201Ctubos de água fria do térreo\u201D por regra e usa isso no lugar de clicar peça por peça." },
           { id: "disciplinas", rotulo: "Disciplinas\ne etapas", icone: "camadas", grande: true, requer: "modelo", dica: "Só a fundação, só a armação, só os painéis de parede, só os pilares e vigas de madeira: filtra o modelo por disciplina ou etapa construtiva, com raio-X e cores." },
           { id: "estilo", rotulo: "Estilo de\nexibição", icone: "pincel", tipo: "menu", dica: "Sombreado, linhas, desenho técnico." },
-          /* como no Revit: a caixa de corte da vista ativa, com as setas azuis nas seis faces */
+          /* a caixa de corte da vista ativa, com as setas azuis nas seis faces */
           { id: "caixa-corte", rotulo: "Caixa de\ncorte", icone: "corte", grande: true, tipo: "alterna", requer: "modelo", dica: "Liga a caixa de corte da vista ativa: puxe as setas azuis de cada face para cortar o modelo de cima, de baixo e dos lados." },
           { id: "ortogonal", rotulo: "Ortogonal", icone: "grade", tipo: "alterna", requer: "modelo", dica: "Vista ortogonal (sem perspectiva) na vista ativa — também no botão direito do ViewCube." },
           /* textura por material (js/bimtextura.js): liga sozinho quando o IFC traz a textura dos materiais */
@@ -337,9 +337,16 @@
 
     /* Um comando está disponível? Devolve o MOTIVO quando não está — a dica do
      * botão desabilitado explica o que fazer, em vez de só ficar cinza. */
+    /* comando de PRÉVIA (`previa: "modelador"`, fases B2–B8): só aparece com a
+       prévia ligada (js/bimprevia.js) — fora dela some da fita e da busca */
+    visivel: function (c) {
+      if (!c || !c.previa) return true;
+      try { var P = global.BimPrevia; return !!(P && typeof P[c.previa] === "function" && P[c.previa]()); } catch (e) { return false; }
+    },
     disponibilidade: function (id) {
       var c = this.comando(id);
       if (!c) return { ok: false, motivo: "Comando não existe." };
+      if (!this.visivel(c)) return { ok: false, motivo: "Recurso em prévia — ligue a prévia do modelador." };
       if (this._st.desabilitados[id]) return { ok: false, motivo: this._st.desabilitados[id] };
       /* `emBreve` é o comando que ainda NÃO existe. Fica na fita de propósito
        * — é o roteiro do que vem, e o engenheiro precisa saber que está no
@@ -369,10 +376,10 @@
       if (!a) return null;
       return {
         id: a.id, rotulo: a.rotulo, tipo: a.tipo || "normal",
-        paineis: arr(a.paineis).map(function (p) {
+        paineis: arr(a.paineis).filter(function (p) { return arr(p.comandos).some(function (c) { return self.visivel(c); }); }).map(function (p) {
           return {
             nome: p.nome,
-            comandos: arr(p.comandos).map(function (c) {
+            comandos: arr(p.comandos).filter(function (c) { return self.visivel(c); }).map(function (c) {
               var d = self.disponibilidade(c.id);
               return {
                 id: c.id, rotulo: str(c.rotulo), linhas: str(c.rotulo).split("\n"),
@@ -400,7 +407,7 @@
         arr(a.paineis).forEach(function (p) {
           arr(p.comandos).forEach(function (c) {
             var alvo = (str(c.rotulo).replace(/\n/g, " ") + " " + str(c.dica) + " " + a.rotulo + " " + p.nome).toLowerCase();
-            if (alvo.indexOf(t) >= 0) {
+            if (alvo.indexOf(t) >= 0 && self.visivel(c)) {
               out.push({ id: c.id, rotulo: str(c.rotulo).replace(/\n/g, " "), aba: a.id, abaRotulo: a.rotulo, painel: p.nome, habilitado: self.disponibilidade(c.id).ok });
             }
           });
@@ -419,7 +426,7 @@
 
   /* ===================================================================
    * B0/B1 — FITA ORGANIZADA (cara nova, prévia `?previa=visual`, 07/10/2026)
-   * Pedido do Rogério: o BIM continua no molde do Revit, mas com as abas
+   * Pedido do Rogério: o BIM continua com cara de programa de projeto, mas com as abas
    * certas e NENHUM comando em dois lugares (PLANO-BIM-MODELADOR.md).
    *
    * Como: o mapa de cima continua sendo a fonte de cada comando (rótulo, ícone,
@@ -430,10 +437,10 @@
    * perdido na reorganização é botão que o cliente usava e sumiu.
    * NOVOS = o que só existia na barra de título (Maximizar 3D, 3D em outra
    * janela, Quantitativo ilustrado), o que a B1 pede (Grade, Organizar
-   * painéis, Estilo Revit) e o roteiro B2–B6 marcado "em breve".
+   * painéis, Estilo clássico) e o roteiro B2–B6 marcado "em breve".
    * `restaurar` volta ao mapa de sempre (prévia desligada).
    * =================================================================== */
-  var ABAS_ORIG = ABAS;
+  var ABAS_ORIG = ABAS, ABAS_BASE = ABAS;
   var B = function (id, rotulo, icone, dica) { return { id: id, rotulo: rotulo, icone: icone, grande: true, emBreve: true, dica: dica }; };
   Ribbon.NOVOS = {
     "viga": { id: "viga", rotulo: "Viga", icone: "estrutura", grande: true, dica: "Viga de dois cliques, seção 14 × 40, com o topo no topo da parede. Dá para digitar o comprimento. Volume e forma no quantitativo." },
@@ -457,18 +464,20 @@
     "abrir-opbim": { id: "abrir-opbim", rotulo: "Abrir\n.opbim", icone: "abrir", grande: true, dica: "Abrir um Projeto OrçaPRO (.opbim) recebido: entra o modelo, as famílias, os níveis e as vistas." },
     "importar-outros": { id: "importar-outros", rotulo: "Importar de\noutros programas", icone: "importar", grande: true, dica: "Revit, SketchUp, AutoCAD (DWG/DXF), glTF/GLB, OBJ, STL e IFC: o que dá para trazer de cada um e como." },
     "materiais-proj": B("materiais-proj", "Materiais\ndo projeto", "paleta", "Biblioteca de materiais do projeto — fase B6."),
-    "planta-2d": { id: "planta-2d", rotulo: "Planta\nbaixa", icone: "planta", grande: true, requer: "modelo", dica: "Planta baixa em desenho técnico, como no Revit: o que o plano corta em linha grossa, o resto em linha fina, com cotas. Abre numa aba; os parâmetros ficam em Propriedades." },
+    "planta-2d": { id: "planta-2d", rotulo: "Planta\nbaixa", icone: "planta", grande: true, requer: "modelo", dica: "Planta baixa em desenho técnico: o que o plano corta em linha grossa, o resto em linha fina, com cotas. Abre numa aba; os parâmetros ficam em Propriedades." },
     "corte-2d": { id: "corte-2d", rotulo: "Corte\nA, B, C…", icone: "corte", grande: true, requer: "modelo", dica: "Trace o corte com dois cliques na planta. Ele ganha a próxima letra, abre numa aba e fica em Navegador de projeto › Cortes." },
     "quant-ilustrado": { id: "quant-ilustrado", rotulo: "Quantitativo\nilustrado", icone: "tabela", grande: true, requer: "modelo", dica: "Caderno com a imagem de cada família, descrição, dimensões e quantidades do projeto inteiro." },
     "max-3d": { id: "max-3d", rotulo: "Só o 3D", icone: "expandir", grande: true, dica: "O 3D ocupa a tela inteira; as análises continuam na gaveta lateral. Esc volta." },
     "janela-3d": { id: "janela-3d", rotulo: "3D em outra\njanela", icone: "abrir", grande: true, dica: "Abre o 3D desta obra numa janela própria (2º monitor ou projetor)." },
     "grade": { id: "grade", rotulo: "Grade", icone: "grade", tipo: "alterna", dica: "Liga e desliga a grade do chão (tecla G)." },
     "paineis": { id: "paineis", rotulo: "Organizar\npainéis", icone: "camadas", grande: true, dica: "Põe Propriedades, Navegador e a janela da direita de volta no lugar e no tamanho padrão." },
-    "pele-revit": { id: "pele-revit", rotulo: "Estilo Revit", icone: "revit", tipo: "alterna", dica: "Troca a pele do BIM para o cinza do Revit. Os comandos e os painéis são os mesmos." },
+    "pele-revit": { id: "pele-revit", rotulo: "Estilo clássico", icone: "revit", tipo: "alterna", dica: "Troca a pele do BIM para o cinza clássico (fita clara). Os comandos e os painéis são os mesmos." },
     /* IA (07/10/2026): família por IA (js/iafamilia.js) e render por IA (js/iarender.js) */
     "familia-ia": { id: "familia-ia", rotulo: "Família\npor IA", icone: "ia", grande: true, dica: "Descreva a peça ou anexe planta, corte, isométrico ou foto: a IA monta a família paramétrica, o OrçaPRO confere e ela abre no editor para você revisar e salvar." },
     "render-ia": { id: "render-ia", rotulo: "Renderizar\ncom IA", icone: "camera", grande: true, requer: "modelo", dica: "Render fotorrealista desta vista sem placa de vídeo: escreva o escopo (luz, paisagismo, materiais, objetos) e a IA mantém a geometria e o enquadramento. Ilustração, não projeto executivo." },
-    "galeria-ia": { id: "galeria-ia", rotulo: "Galeria de\nrenders", icone: "prancha", grande: true, dica: "Os renders por IA desta obra: imagem, escopo, data, autor e modelo de IA; baixar em PNG com a marca de IA." }
+    "galeria-ia": { id: "galeria-ia", rotulo: "Galeria de\nrenders", icone: "prancha", grande: true, dica: "Os renders por IA desta obra: imagem, escopo, data, autor e modelo de IA; baixar em PNG com a marca de IA." },
+    /* B8 (08/10/2026): modelagem por comando (js/iamodelar.js) — só na prévia do modelador */
+    "modelar-ia": { id: "modelar-ia", rotulo: "Modelar por\ncomando", icone: "ia", grande: true, previa: "modelador", dica: "Escreva o que é para modelar (\u201Ccasa térrea 8 x 10 com 2 quartos, sala, cozinha e banheiro, laje e telhado 2 águas\u201D) ou anexe o croqui: a IA monta paredes, laje, cobertura, portas e janelas, o OrçaPRO confere e você vê a prévia antes de aplicar." }
   };
   /* na fita nova "Planta baixa" e "Corte" são o DESENHO técnico (planta-2d, corte-2d);
      os dois antigos são o recorte do 3D e ganham o nome do que fazem */
@@ -477,10 +486,38 @@
     "porta": { emBreve: false, dica: "Porta hospedada: clique numa parede criada aqui — o vão abre e sai do quantitativo da parede. O tipo se escolhe na biblioteca de famílias." },
     "janela": { emBreve: false, dica: "Janela hospedada: clique numa parede criada aqui — o vão abre (com o peitoril) e sai do quantitativo da parede." },
     "cobertura": { emBreve: false, dica: "Cobertura de uma ou duas águas por dois cantos: inclinação, beiral e área INCLINADA no quantitativo." },
-    /* estilo visual (07/10/2026): o menu dos quatro estilos, como no Revit (js/bimestilo.js) */
-    "estilo": { rotulo: "Estilo\nvisual", dica: "Como no Revit: linha oculta (preto e branco com as arestas), sombreado (a cor do material), textura e realista (relevo, brilho e sombra). Também no botão da barra das vistas.", requer: "modelo" }
+    /* estilo visual (07/10/2026): o menu dos quatro estilos (js/bimestilo.js) */
+    "estilo": { rotulo: "Estilo\nvisual", dica: "Quatro estilos: linha oculta (preto e branco com as arestas), sombreado (a cor do material), textura e realista (relevo, brilho e sombra). Também no botão da barra das vistas.", requer: "modelo" }
   };
   Ribbon.ROTULOS_B1 = { "planta": "Plano de\ncorte 3D", "corte": "Corte 3D\nlivre" };
+  /* MODELADOR (prévia `modelador`, js/bimprevia.js): o que cada fase B2–B8 tira
+     do "em breve". Quem preenche é o módulo da fase (B5: js/biminstui.js); só
+     vale com a prévia ligada — sem ela, a fita é a de antes. */
+  Ribbon.SOBRE_MODELADOR = Ribbon.SOBRE_MODELADOR || {};
+
+  /* B4 (volume livre) e B7 (IFC de saída) acrescentam as chaves delas no mesmo registro */
+  (function (o) { for (var k in o) if (o.hasOwnProperty(k)) Ribbon.SOBRE_MODELADOR[k] = o[k]; })({
+    /* B4 — volume livre (js/bimvolume.js) */
+    "extrusao": { emBreve: false, tipo: "alterna", dica: "Extrusão: clique o contorno de qualquer forma no plano de trabalho, feche no 1º ponto (ou Enter) e ele sobe a altura do painel. Volume e área exatos no quantitativo." },
+    "revolucao": { emBreve: false, tipo: "alterna", dica: "Revolução: clique o eixo, a direção do perfil e os pontos do perfil em pé; Enter gira (360° ou o ângulo do painel). Pilar torneado, vaso, cúpula." },
+    "varredura": { emBreve: false, tipo: "alterna", dica: "Varredura: clique o caminho e o perfil do painel (retângulo ou círculo) corre por ele, com meia-esquadria nas dobras. Rodapé, mureta, meio-fio, tubo." },
+    "unir": { emBreve: false, tipo: "alterna", dica: "Unir: clique um volume e depois outro — viram um só (o volume que sobrepõe não conta duas vezes)." },
+    "subtrair": { emBreve: false, tipo: "alterna", dica: "Subtrair: clique o volume que vai ser recortado e depois o que recorta (ele some)." },
+    "empurrar": { emBreve: false, tipo: "alterna", dica: "Empurrar e puxar, como no SketchUp: clique a face de um volume, mexa o mouse e clique — ou digite a distância (negativa empurra para dentro)." },
+    /* P2-C — acabamento por ambiente (js/bimacabamento.js; o ambiente é o js/bimambiente.js) */
+    "aplicar-ambiente": { emBreve: false, tipo: "alterna", dica: "Clique dentro de um cômodo fechado por paredes: o ambiente nasce (ou é escolhido) e, em Propriedades › Acabamentos, você escolhe piso, contrapiso, rodapé, parede e teto. As quantidades saem da fronteira do ambiente (rodapé sem as portas, parede por face sem os vãos) e as linhas entram no Orçamento do modelo." },
+    /* B7 — IFC de saída (js/ifcsaida.js) */
+    "exportar-ifc": { emBreve: false, rotulo: "Exportar IFC\ndo modelado", dica: "Gera um IFC4 com o que foi MODELADO aqui (paredes, lajes, pilares, vigas, coberturas, famílias, portas e janelas com o vão, volumes) com níveis, materiais, quantidades e o código de orçamento — para abrir no Revit e no CYPE. O IFC importado não entra: ele já é um IFC." },
+    /* EMBREVE (09/10/2026) — os três que saíram do roteiro (js/bimembreveui.js).
+       Igualar tipo É o "corresponder propriedades de tipo" da P4: um comando numa
+       casa só (o Modificar não leva mais o dele — js/bimprecisao.js FITA). */
+    "combinar": { emBreve: false, requer: null, dica: "Igualar tipo: clique a peça de ORIGEM (ou selecione antes) e depois cada peça que passa a ser do tipo dela — só da mesma categoria (parede com parede, laje com laje, pilar, viga, família da mesma família). Cada clique é um Ctrl+Z; Esc encerra." },
+    "plano-trabalho": { emBreve: false, dica: "Plano de trabalho: onde o próximo elemento é desenhado — um nível com deslocamento, a face plana de uma peça (topo da laje, face da parede), um eixo ou linha de referência (plano vertical), ou o plano de outra peça. Mostra a grade do plano; o plano ativo aparece na barra de status." },
+    "graute": { emBreve: false, dica: "Alvenaria estrutural: marque as paredes e o OrçaPRO põe o graute nos furos dos cantos, encontros, bordas de vão e a cada espaçamento máximo do projeto, com a armadura vertical. Volume (m³) e aço (kg) no Orçamento do modelo; espaçamento, transpasse e área do furo são parâmetros do projeto a conferir na NBR 16868-1." },
+    /* MATERIAIS (09/10/2026) — o último do roteiro (js/bimmateriaisui.js, motor js/bimmateriais.js) */
+    "materiais-proj": { emBreve: false, dica: "Os materiais desta obra: identidade (classe, fabricante, código SINAPI), gráficos (cor, transparência, padrões de superfície e de corte), aparência do render com a prévia e massa específica. Novo, duplicar, importar da biblioteca RA, substituir em todo o modelo e exportar ou importar a biblioteca (.json). Na peça, o campo Material de Propriedades." }
+  });
+  Ribbon.EXCLUSIVOS_MODELADOR = ["extrusao", "revolucao", "varredura", "unir", "subtrair", "empurrar", "aplicar-ambiente"];   /* P2-C: aplicar-ambiente */
   Ribbon.LAYOUT_B1 = [
     { id: "arquivo", rotulo: "Arquivo", tipo: "backstage", paineis: [
       { nome: "Projeto", ids: ["novo-projeto", "abrir-opbim", "abrir-ifc", "arquivo-obra", "exemplo"] },
@@ -489,7 +526,8 @@
     { id: "arquitetura", rotulo: "Arquitetura", paineis: [
       { nome: "Construir", ids: ["parede", "piso", "porta", "janela", "cobertura", "componente", "editor"] },
       { nome: "Tipo", ids: ["tipos-parede", "editar-tipo", "combinar"] },
-      { nome: "Referência", ids: ["niveis", "nivel-atual", "plano-trabalho"] }] },
+      { nome: "Referência", ids: ["niveis", "nivel-atual", "plano-trabalho"] },
+      { nome: "Por comando", ids: ["modelar-ia"] }] },
     { id: "alvenaria", rotulo: "Alvenaria", paineis: [
       { nome: "Bloco", ids: ["familia-bloco", "modular", "junta"] },
       { nome: "Paginação", ids: ["paginar-alvenaria", "elevacoes", "graute", "blocok"] },
@@ -540,31 +578,75 @@
     var falt = orig.filter(function (id) { return !vistos[id]; });
     return { ok: !rep.length && !desc.length && !falt.length, repetidos: rep, desconhecidos: desc, faltando: falt, idx: idx };
   };
-  Ribbon.reorganizar = function (layout) {
+  /* `modelador` = a prévia do modelador ligada (padrão: pergunta ao BimPrevia
+     do aparelho; o teste em Node passa explícito) */
+  Ribbon.reorganizar = function (layout, opcoes) {
     var c = this.conferirLayout(layout || Ribbon.LAYOUT_B1);
     if (!c.ok) return { ok: false, repetidos: c.repetidos, desconhecidos: c.desconhecidos, faltando: c.faltando };
+    var mod = opcoes && opcoes.modelador != null ? !!opcoes.modelador : !!(global.BimPrevia && global.BimPrevia.modelador && global.BimPrevia.modelador());
+    var self = this;
+    if (mod) Ribbon.EXCLUSIVOS_MODELADOR.forEach(function (id) { if (self._EXCLUSIVOS.indexOf(id) < 0) self._EXCLUSIVOS.push(id); });
+    else this._EXCLUSIVOS = this._EXCLUSIVOS.filter(function (id) { return Ribbon.EXCLUSIVOS_MODELADOR.indexOf(id) < 0; });
     ABAS = arr(layout || Ribbon.LAYOUT_B1).map(function (a) {
       var o = { id: a.id, rotulo: a.rotulo, paineis: arr(a.paineis).map(function (p) { return { nome: p.nome, comandos: p.ids.map(function (id) {
         /* rótulo trocado só na fita nova: CÓPIA do comando, o original fica como era para o restaurar */
-        var ro = Ribbon.ROTULOS_B1[id], so = Ribbon.SOBRE_B1[id]; if (!ro && !so) return c.idx[id];
+        var ro = Ribbon.ROTULOS_B1[id], so = Ribbon.SOBRE_B1[id], sm = mod ? Ribbon.SOBRE_MODELADOR[id] : null; if (!ro && !so && !sm) return c.idx[id];
         var cp = {}; Object.keys(c.idx[id]).forEach(function (k) { cp[k] = c.idx[id][k]; });
         if (ro) cp.rotulo = ro;
         if (so) Object.keys(so).forEach(function (k) { cp[k] = so[k]; });
+        if (sm) Object.keys(sm).forEach(function (k) { cp[k] = sm[k]; });
         return cp;
       }) }; }) };
       if (a.tipo) o.tipo = a.tipo;
       return o;
     });
-    Ribbon.ABAS = ABAS;
+    Ribbon.ABAS = ABAS; ABAS_BASE = ABAS;
     if (!this.aba(this._st.aba)) this._st.aba = "arquitetura";
     return { ok: true, abas: ABAS.length };
   };
   Ribbon.restaurar = function () {
-    ABAS = ABAS_ORIG; Ribbon.ABAS = ABAS;
+    ABAS = ABAS_ORIG; Ribbon.ABAS = ABAS; ABAS_BASE = ABAS;
     if (!this.aba(this._st.aba)) this._st.aba = "arquitetura";
     return true;
   };
-  Ribbon.reorganizado = function () { return ABAS !== ABAS_ORIG; };
+  Ribbon.reorganizado = function () { return ABAS_BASE !== ABAS_ORIG; };   /* acrescentar (prévias) copia as abas, mas não reorganiza */
+  /* PRÉVIAS (modelador B2+, js/bimprevia.js): põe comandos novos na fita
+     ATUAL — a de sempre ou a reorganizada — sem tocar nos mapas fixos (o
+     `conferirLayout` continua valendo para eles). Cria a aba/painel se faltar
+     e PULA o id que já existe em qualquer aba: comando em dois lugares é o
+     que o B0 proibiu. As abas são cópias rasas: o mapa de sempre não muda, e
+     o próximo `reorganizar`/`restaurar` volta ao que era. */
+  Ribbon.acrescentar = function (abaId, abaRotulo, painelNome, comandos, antesDe) {
+    /* forma da B3 — acrescentar(abaId, {nome, comandos}): só na fita organizada; devolve
+       {ok} / {ok, ja} / {ok:false, repetidos} (comando em duas casas é recusado inteiro) */
+    if (abaRotulo && typeof abaRotulo === "object") {
+      var painel = abaRotulo;
+      if (ABAS_BASE === ABAS_ORIG) return { ok: false, motivo: "fita de sempre" };
+      var a = this.aba(abaId); if (!a || !painel.nome || !arr(painel.comandos).length) return { ok: false, motivo: "aba ou painel inválido" };
+      if (arr(a.paineis).some(function (p) { return p.nome === painel.nome; })) return { ok: true, ja: true };
+      var ids = this.ids(), repet = arr(painel.comandos).filter(function (c) { return ids.indexOf(c.id) >= 0; }).map(function (c) { return c.id; });
+      if (repet.length) return { ok: false, repetidos: repet };
+      this.acrescentar(abaId, a.rotulo, painel.nome, painel.comandos);
+      return { ok: true };
+    }
+    var self = this, novos = arr(comandos).filter(function (c) { return c && c.id && !self.comando(c.id); });
+    if (!novos.length) return 0;
+    ABAS = ABAS.map(function (a) { return { id: a.id, rotulo: a.rotulo, tipo: a.tipo, paineis: arr(a.paineis).map(function (p) { return { nome: p.nome, comandos: arr(p.comandos).slice() }; }) }; })
+      .map(function (a) { if (!a.tipo) delete a.tipo; return a; });
+    var aba = null;
+    ABAS.forEach(function (a) { if (a.id === abaId) aba = a; });
+    if (!aba) {
+      aba = { id: abaId, rotulo: abaRotulo || abaId, paineis: [] };
+      var ix = -1; ABAS.forEach(function (a, i) { if (a.id === antesDe) ix = i; });
+      if (ix >= 0) ABAS.splice(ix, 0, aba); else ABAS.push(aba);
+    }
+    var pn = null;
+    aba.paineis.forEach(function (p) { if (p.nome === painelNome) pn = p; });
+    if (!pn) { pn = { nome: painelNome, comandos: [] }; aba.paineis.push(pn); }
+    novos.forEach(function (c) { pn.comandos.push(c); });
+    Ribbon.ABAS = ABAS;
+    return novos.length;
+  };
 
   global.BimRibbon = Ribbon;
   if (typeof module !== "undefined" && module.exports) module.exports = Ribbon;

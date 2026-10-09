@@ -29,8 +29,8 @@
    *
    * A primeira versão dizia "não descontam a folga de bolsa das conexões".
    * Eu deduzi que o IFC publicava o vão livre entre as faces das conexões —
-   * o que É o comportamento comum quando o comprimento vem do conector do
-   * Revit. Não é o que este arquivo faz, e o cliente viu antes de mim, na
+   * o que É o comportamento comum quando o comprimento vem do conector da
+   * conexão. Não é o que este arquivo faz, e o cliente viu antes de mim, na
    * tela: o tubo aparece entrando por dentro da conexão.
    *
    * Medido depois, no arquivo real: em 1.725 de 1.725 tubos o `Length`

@@ -829,6 +829,8 @@
          servidor — daí o espaço nascer vazio: sem módulo ou sem internet,
          fica exatamente a tela que existia antes. */
       html += '<div id="assin-box"></div>';
+      /* RENDER-IA: a carteira de créditos de IA (saldo e extrato) — quem preenche é js/iaacabamento.js; sem servidor fica vazio */
+      html += '<div id="iacart-box"></div>';
       html += '<div class="field" style="margin-top:12px"><label>Chave de licença</label><input id="lic-chave" placeholder="cole aqui a chave que você recebeu"></div>';
       return html;
     },

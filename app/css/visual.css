@@ -362,8 +362,8 @@ html[data-origem="play"] [data-compra] { display: none !important; }
 
 /* ==================================================================== BIM
  * PADRÃO NOVO (o padrão da casa): a mesma tela, os mesmos comandos e os
- * mesmos painéis do molde do Revit — só a pele muda. Quem preferir o cinza do
- * Revit marca "Estilo Revit" em Vista › Janelas (a casca põe
+ * mesmos painéis — só a pele muda. Quem preferir o cinza
+ * clássico marca "Estilo clássico" em Vista › Janelas (a casca põe
  * `.bim-pele-revit` na raiz do BIM e nada daqui vale lá dentro).
  * Os --rv-* são os tokens do css/bim-revit.css. */
 html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) {
@@ -455,8 +455,8 @@ html[data-visual="nova"] .bim-revit .rv-qat [data-rv-qat="foto"],
 html[data-visual="nova"] .bim-revit .rv-docs-dir,
 /* barra de vista (embaixo do 3D): ficam Sombras, Esconder painéis e Modo foco,
    que não existem em outro lugar, e o ESTILO VISUAL — este é a exceção de
-   propósito (07/10/2026): no Revit o estilo visual mora no rodapé da vista, e o
-   pedido foi "igual o Revit", com o estilo ativo escrito no botão. Os outros
+   propósito (07/10/2026): o estilo visual mora no rodapé da vista, e o
+   pedido foi o menu ali, com o estilo ativo escrito no botão. Os outros
    seis são comandos da fita */
 html[data-visual="nova"] .bim-revit .rv-vistabar [data-rv-vb="planta"],
 html[data-visual="nova"] .bim-revit .rv-vistabar [data-rv-vb="corte"],

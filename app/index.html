@@ -58,6 +58,12 @@
   <link rel="stylesheet" href="css/fontes.css">
   <link rel="stylesheet" href="css/app.css">
   <link rel="stylesheet" href="css/bim-revit.css">
+  <link rel="stylesheet" href="css/bimprecisao.css">
+  <!-- PLANTA: barra de opções da ferramenta (sob a fita) e a prévia de modelar na planta baixa — só com a prévia do modelador -->
+  <link rel="stylesheet" href="css/bimbarraopcoes.css">
+  <link rel="stylesheet" href="css/bimanot.css">
+  <link rel="stylesheet" href="css/bimprops.css">
+  <link rel="stylesheet" href="css/bimtabela.css">
   <link rel="stylesheet" href="css/tour360.css">
   <link rel="stylesheet" href="css/visual.css">
 </head>
@@ -83,6 +89,7 @@
   <script src="js/finstatus.js"></script>
   <script src="js/icones.js"></script>
   <script src="js/modulo.js"></script>
+  <script src="js/bimprevia.js"></script>
   <script src="js/idb.js"></script>
   <script src="js/store.js"></script>
   <!-- paineis.js: o tamanho dos painéis (Gantt, histograma, macrofluxo,
@@ -299,13 +306,65 @@
   <script src="js/bimtri.js"></script>
   <script src="js/dxf.js"></script>
   <script src="js/planta3d.js"></script>
+  <script src="js/bimvolume.js"></script>
   <script src="js/bimedit.js"></script>
+  <!-- B3: desenho de precisão do modelador (motor puro + tela; só com a prévia do modelador) -->
+  <script src="js/bimprecisao.js"></script>
+  <script src="js/bimprecisaoui.js"></script>
+  <!-- P4: pintar e dividir face (motor puro; aplica as ops pintar/removerPintura/dividirFace no replay do js/bimedit.js) -->
+  <script src="js/bimpintar.js"></script>
+  <!-- EMBREVE (09/10/2026): plano de trabalho e graute/armadura da alvenaria estrutural (motores puros; o graute é extensão do replay do js/bimedit.js) e a tela dos três comandos que saíram do "em breve" -->
+  <script src="js/bimplano.js"></script>
+  <script src="js/bimgraute.js"></script>
+  <script src="js/bimembreveui.js"></script>
+  <script src="js/ifcsaida.js"></script>
+  <!-- B2: motor puro do modelador (eixos, parede por tipo, laje por contorno, perfis, escada, guarda-corpo) — js/bimarq.js -->
+  <!-- catálogo de perfis de aço (AISC v15.0) — gerado por tools/gerar-perfisaco.js -->
+  <script src="js/perfisaco.js"></script>
+  <script src="js/bimarq.js"></script>
+  <!-- CURVA: o painel Desenhar (formas: retângulo, polígono, círculo, arcos — motor puro) e a parede curva / aresta em arco (motor puro, ganchos CURVA no bimarq/bimedit/bimambiente/ifcsaida) -->
+  <script src="js/bimdesenho.js"></script>
+  <script src="js/bimcurva.js"></script>
+  <!-- P9: estrutura (viga justificada/inclinada, pilar inclinado, marca da localização, treliça, rampa NBR 9050, propriedades de seção) — motor puro -->
+  <script src="js/bimestrut.js"></script>
   <script src="js/familia.js"></script>
+  <!-- FAMIMPORT: família importada (malha por tipo, .opfam v2 do plugin) e o leitor do .rfa (CFB/PartAtom) -->
+  <script src="js/cfb.js"></script>
+  <script src="js/familiamalha.js"></script>
+  <!-- P1-A: registro único de parâmetros (motor puro; aplica as ops ajustarTipo/marcar no replay do js/bimedit.js) -->
+  <script src="js/bimparam.js"></script>
+  <!-- P2-A: ambiente (o ambiente/sala; motor puro — contorno pelas paredes no replay do js/bimedit.js) -->
+  <script src="js/bimambiente.js"></script>
+  <!-- P2-B: forro (motor puro; aplica a op forro no replay do js/bimedit.js — forro por contorno e automático pelas paredes) -->
+  <script src="js/bimforro.js"></script>
+  <!-- P11: terreno e implantação (motor puro: topossólido por Delaunay, curvas de nível, corte/aterro da plataforma, divisa, implantação) -->
+  <script src="js/bimterreno.js"></script>
+  <!-- P3: telhado (+ bordas) e fundação (motores puros; aplicam as ops telhado/borda/fundacao no replay do js/bimedit.js) e o escritor IFC deles -->
+  <script src="js/bimtelhado.js"></script>
+  <script src="js/bimfundacao.js"></script>
+  <script src="js/ifcp3.js"></script>
+  <!-- P2-C: acabamento por ambiente (motor puro: piso, rodapé sem as portas, parede por face sem os vãos, teto) -->
+  <script src="js/bimacabamento.js"></script>
+  <!-- P5: tabela/quantidades (motor puro; a op tabela no replay do js/bimedit.js) e anotação parte 1 (identificadores) -->
+  <script src="js/bimtabela.js"></script>
+  <script src="js/bimanot.js"></script>
+  <!-- P10: fases (existente / demolido / novo), grupos, opções de projeto e utilidades de Gerenciar (motores puros; as ops entram no replay do js/bimedit.js por extensão) -->
+  <script src="js/bimfases.js"></script>
+  <script src="js/bimgrupos.js"></script>
+  <script src="js/bimopcoes.js"></script>
+  <script src="js/bimgerenciar.js"></script>
   <script src="js/familiasra.js"></script>
+  <!-- B6/B8 (08/10/2026): família -> fonte JSON, templates RA e o validador da modelagem por comando (motores puros) -->
+  <script src="js/familiarevit.js"></script>
+  <script src="js/templatesra.js"></script>
+  <script src="js/bimmodelar.js"></script>
   <!-- F1: orçamento pelo modelo (motor puro, índice SINAPI→classes e famílias orçáveis, todos gerados/testados em tools/) -->
   <script src="js/sinapimapa.js"></script>
   <script src="js/familiasorc.js"></script>
   <script src="js/orcmodelo.js"></script>
+  <!-- B5: instalações do modelador (tabela SINAPI gerada por tools/gerar-biminst-sinapi.js + motor puro) -->
+  <script src="js/biminstsinapi.js"></script>
+  <script src="js/biminst.js"></script>
   <script src="js/opformato.js"></script>
   <script src="js/bimqto.js"></script>
   <script src="js/bimorc.js"></script>
@@ -386,16 +445,53 @@
   <script src="js/imgplanta.js"></script>
   <script src="js/pdfvetor.js"></script>
   <script src="js/bimribbon.js"></script>
+  <!-- P6: registro de ramos do Navegador de projeto (cada módulo registra o seu; o gestao.js só aplica) — antes de quem registra -->
+  <script src="js/bimnavegador.js"></script>
   <script src="js/bimcmd.js"></script>
   <script src="js/bimshell.js"></script>
   <script src="js/bimestilo.js"></script>
   <script src="js/padraodet.js"></script>
+  <!-- PORTA: o símbolo de abertura na planta (folha aberta + arco do giro) — motor puro -->
+  <script src="js/simboloporta.js"></script>
   <script src="js/desenho2d.js"></script>
   <script src="js/bim2dui.js"></script>
+  <!-- P6: vista como objeto — modelo de vista, V/G, estilos de objeto RA, vistas novas no Navegador (só com a prévia do modelador) -->
+  <script src="js/bimmodelovista.js"></script>
   <script src="js/familiaui.js"></script>
+  <script src="js/familiaimportui.js"></script>
   <script src="js/orcmodeloui.js"></script>
+  <script src="js/biminstui.js"></script>
+  <script src="js/bimforroui.js"></script>
+  <script src="js/bimterrenoui.js"></script>
+  <!-- P9: Rampa, Escada em U e Treliça na fita (só com a prévia do modelador) -->
+  <script src="js/bimestrutui.js"></script>
+  <script src="js/bimp3ui.js"></script>
+  <script src="js/bimarqui.js"></script>
+  <script src="js/bimpropsui.js"></script>
+  <!-- P2-D: ambientes na tela (comando Ambiente, identificador na planta, esquema de cores, Navegador) — só com a prévia do modelador -->
+  <script src="js/bimambienteui.js"></script>
+  <!-- P7: anotação nas vistas 2D (cotas por referência, texto, nuvem de revisão, linhas e regiões) — só com a prévia do modelador -->
+  <script src="js/bimanot2dui.js"></script>
+  <!-- PLANTA: modelar na planta baixa (parede, porta, laje, pilar… clicando na planta 2D) e a barra de opções da ferramenta (ortogonal, incrementos, snaps, formas) — só com a prévia do modelador -->
+  <script src="js/bimbarraopcoes.js"></script>
+  <script src="js/bimplantamodelar.js"></script>
+  <!-- P5: a tabela numa aba de vista, o editor (Propriedades da tabela) e o .xlsx — só com a prévia do modelador -->
+  <script src="js/bimtabelaui.js"></script>
+  <!-- P8: folhas no BIM (vista em escala, carimbo parametrizado, listas, revisões) e o DXF da vista e da folha — só com a prévia do modelador -->
+  <script src="js/bimdxf.js"></script>
+  <script src="js/bimfolhaui.js"></script>
+  <!-- P10: fases, grupos, opções de projeto e utilidades na tela (fita, diálogos, gráficos de fase no 3D) — só com a prévia do modelador -->
+  <script src="js/bimp10ui.js"></script>
   <script src="js/iafamilia.js"></script>
   <script src="js/iarender.js"></script>
+  <!-- RENDER (09/10/2026): render físico a partir do modelo — números em js/rendermat.js, tela em js/bimrender.js; o motor (js/bimrendermotor.js) só carrega quando o render abre -->
+  <script src="js/rendermat.js"></script>
+  <script src="js/bimrender.js"></script>
+  <!-- MATERIAIS (09/10/2026): materiais do projeto (Gerenciar › Biblioteca) — motor puro em js/bimmateriais.js, tela e ganchos em js/bimmateriaisui.js -->
+  <script src="js/bimmateriais.js"></script>
+  <script src="js/bimmateriaisui.js"></script>
+  <script src="js/iaacabamento.js"></script>
+  <script src="js/iamodelar.js"></script>
   <script src="js/bimmesa.js"></script>
   <script src="js/folhasemanal.js"></script>
   <script src="js/vendor/qrcode.min.js"></script>
