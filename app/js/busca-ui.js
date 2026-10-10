@@ -20,6 +20,8 @@
       if (!logado) return f;
       var eid = Auth.empresaId();
       var podeGestao = (typeof Gestao !== "undefined" && Gestao.podeGestao) ? Gestao.podeGestao() : false;
+      /* licença só do OrçaPRO Modela: a busca oferece o BIM e a Ajuda (o resto é trancado) */
+      var soModela = !!(typeof Gestao !== "undefined" && Gestao.soModela && Gestao.soModela());
 
       // ações rápidas (primeiro no ranking por tipo)
       // v1.1.233 — RBAC também aqui: sub-usuário sem o módulo Orçamentos criava
@@ -27,7 +29,7 @@
       /* escopo por obra: o restrito não cria orçamento solto (Auth.orcNovoRestrito) —
          a ação sai daqui; a recusa de verdade está no App.novoOrcamento */
       var restritoOrc = !!(typeof Auth !== "undefined" && Auth.orcNovoRestrito && Auth.orcNovoRestrito());
-      if (this._pode("orcamentos") && !restritoOrc) f.push({ tipo: "acao", id: "novo-orcamento", titulo: "Novo Orçamento", subtitulo: "criar um orçamento em branco", palavras: "criar novo adicionar" });
+      if (this._pode("orcamentos") && !restritoOrc && !soModela) f.push({ tipo: "acao", id: "novo-orcamento", titulo: "Novo Orçamento", subtitulo: "criar um orçamento em branco", palavras: "criar novo adicionar" });
       if (typeof Tour !== "undefined") f.push({ tipo: "acao", id: "tour", titulo: "Rever o tour guiado", subtitulo: "conheça o sistema em 60 segundos", palavras: "ajuda tutorial guia" });
       // backup é ação de DONO (sub-usuário não tem o menu — sem beco sem saída)
       if (logado.papel !== "usuario") f.push({ tipo: "acao", id: "backup", titulo: "Backup dos dados", subtitulo: "exportar ou restaurar", palavras: "exportar salvar restaurar seguranca" });
@@ -65,7 +67,8 @@
         Gestao.modulos.forEach(function (m) {
           // sem plano de gestão, listar módulo de gestão é beco sem saída (o render
           // devolve pro Orçamentos calado) — plano base vê só orçamentos + ajuda
-          if (!podeGestao && m.id !== "orcamentos" && m.id !== "ajuda") return;
+          if (soModela) { if (m.id !== "bim" && m.id !== "ajuda") return; }
+          else if (!podeGestao && m.id !== "orcamentos" && m.id !== "ajuda") return;
           if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo(m.id)) return;
           f.push({ tipo: "modulo", id: m.id, titulo: m.nome, subtitulo: "módulo", palavras: m.id + " " + (ALIAS[m.id] || "") });
         });

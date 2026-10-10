@@ -91,7 +91,16 @@
      * responder algo menor (registro incompleto, resposta velha em cache), o
      * cliente não perde o que pagou.
      * ================================================================== */
+    /* ⚠ "modela" NÃO está na escada, e é de propósito. É o OrçaPRO MODELA
+       vendido sozinho (09/10/2026: "para quem quer comprar só o BIM; o
+       sistema vai liberar SÓ a modelagem") — outro produto, não "um degrau
+       acima do base". Por estar fora: chave "modela" sem concessão fica
+       "modela" (o _maiorTier devolve o tier desconhecido como veio), e uma
+       concessão plus/bim por cima a SOBE para o OrçaPRO (o da escada vence).
+       Quem decide o que a licença "modela" abre é `soModela()`, abaixo — e
+       todo guarda que liberava por `tier !== "base"` tem de perguntar a ele. */
     TIERS: ["base", "plus", "bim"],
+    TIER_MODELA: "modela",
     _maiorTier: function (a, b) {
       var T = this.TIERS;
       var ia = T.indexOf(String(a || "").toLowerCase());
@@ -353,6 +362,24 @@
         var c = JSON.parse(localStorage.getItem("orcapro:cobranca") || "null");
         return !!(c && c.suspensa === true && c.chaveRef && c.chaveRef === String(chave || "").slice(-16));
       } catch (e) { return false; }
+    },
+
+    /* O tier da licença VERIFICADA deste aparelho (a chave + a concessão do
+       servidor), mesmo vencida — "" sem chave verificada (teste). */
+    tierDaLicenca: function () {
+      var l = this._ler() || {};
+      if (!l.chave || !l.verificado) return "";
+      var info = this._lerExpDe(l.chave);
+      return String(this._maiorTier((info && info.tier) || "", l.tierServidor || "")).toLowerCase();
+    },
+    /* A licença deste aparelho é do OrçaPRO Modela SOZINHO? Então o app abre
+       só o BIM com o modelador; os outros módulos aparecem trancados com
+       "Faz parte do OrçaPRO". Vale também com a chave VENCIDA (o que muda aí
+       é só salvar/exportar, pelo App._trialBloqueado) — senão o cliente do
+       Modela, ao vencer, cairia no Orçamento como se fosse do plano base.
+       Teste de 7 dias (sem chave verificada) não é "só modela": libera tudo. */
+    soModela: function () {
+      return this.tierDaLicenca() === this.TIER_MODELA;
     },
 
     status: function () {

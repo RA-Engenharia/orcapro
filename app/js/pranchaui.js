@@ -16,8 +16,37 @@
   function mm(v) { return (+v).toFixed(2) + 'mm'; }
   function abs(x, y, w, h, extra) { return 'position:absolute;left:' + mm(x) + ';top:' + mm(y) + ';width:' + mm(w) + ';height:' + mm(h) + ';' + (extra || ''); }
 
+  /* ---------------------------------------------------------- CARIMBO RA
+   * O modelo "RA" (js/prancha.js carimboRA: o gabarito 180 × 115 do
+   * escritório, no fator do formato) em SVG: as mesmas primitivas que o DXF
+   * desenha. Os campos ligados a parâmetro levam data-pr-param (o editor e
+   * as e2e leem). Logos: os DA PRANCHA, senão o da conta. */
+  var COR_DESTAQUE = '#00406A';
+  var COR_CAMADA = { 'RA-CARIMBO-ROTULO': '#444', 'RA-CARIMBO-DESTAQUE': COR_DESTAQUE };
+  function carimboRA(pr, fl, g, rec) {
+    var PR = global.Prancha, c = pr.carimbo || {}, k = g.carimbo;
+    var daPrancha = (c.logos || []).map(function (ch) { return rec.imagens && rec.imagens[ch]; }).filter(function (s) { return !!s; });
+    var logos = daPrancha.length ? daPrancha : (rec.logo ? [rec.logo] : []);
+    var L = PR.carimboRA(pr, fl, rec.projeto, rec.empresa, g, { logos: logos.length }), cam = PR.CAMADAS_CARIMBO_RA, A = PR.ALT_MAIUSCULA, s = [];
+    function n(v) { return Math.round(v * 1000) / 1000; }
+    function pena(c0) { return n((cam[c0] || [0, 0.18])[1]); }
+    s.push('<rect x="0" y="0" width="' + n(L.w) + '" height="' + n(L.h) + '" fill="#fff"/>');
+    L.logos.forEach(function (b, i) { s.push('<image href="' + esc(logos[i]) + '" x="' + n(b.x) + '" y="' + n(b.y) + '" width="' + n(b.w) + '" height="' + n(b.h) + '" preserveAspectRatio="xMidYMid meet"/>'); });
+    L.retangulos.forEach(function (r) { s.push('<rect x="' + n(r.x) + '" y="' + n(r.y) + '" width="' + n(r.w) + '" height="' + n(r.h) + '" fill="none" stroke="#111" stroke-width="' + pena(r.camada) + '"/>'); });
+    L.linhas.forEach(function (l) { s.push('<line x1="' + n(l.x1) + '" y1="' + n(l.y1) + '" x2="' + n(l.x2) + '" y2="' + n(l.y2) + '" stroke="' + (l.camada === 'RA-CARIMBO-DESTAQUE' ? COR_DESTAQUE : '#111') + '" stroke-width="' + pena(l.camada) + '"/>'); });
+    L.textos.forEach(function (t) {
+      s.push('<text x="' + n(t.x) + '" y="' + n(t.y) + '" font-size="' + n(t.h / A) + '" text-anchor="' + (t.al === 'C' ? 'middle' : 'start') + '" fill="' + (COR_CAMADA[t.camada] || '#111') + '"' +
+        (t.negrito ? ' font-weight="bold"' : '') + (t.param ? ' data-pr-param="' + t.param + '"' : '') + (t.campo ? ' data-cr="' + t.campo + '"' : '') + '>' + esc(t.s) + '</text>');
+    });
+    return '<div data-pr-carimbo="RA" style="' + abs(k.x, k.y, k.w, k.h, 'background:#fff') + '"><svg xmlns="http://www.w3.org/2000/svg" width="' + mm(L.w) + '" height="' + mm(L.h) + '" viewBox="0 0 ' + n(L.w) + ' ' + n(L.h) + '" style="display:block;overflow:visible;white-space:pre;font-family:Arial,Helvetica,sans-serif">' + s.join('') + '</svg></div>';
+  }
+
   function carimbo(pr, fl, g, rec) {
+    if (global.Prancha && global.Prancha.modeloCarimbo && global.Prancha.modeloCarimbo(pr) === 'RA' && global.Prancha.carimboRA) return carimboRA(pr, fl, g, rec || {});
     var c = pr.carimbo || {}, k = g.carimbo, total = (pr.folhas || []).length;
+    /* sem os dados na prancha, os do cadastro da conta (rec.empresa = Empresa.dados()) */
+    var E = (rec && rec.empresa) || {}, cResp = c.responsavel || E.responsavel || '';
+    var cReg = c.registro || (global.Prancha && global.Prancha.fmtRegistro ? global.Prancha.fmtRegistro(E.crea, c.titulo || E.titulo) : '');
     /* P8 — CARIMBO PARAMETRIZADO: os rótulos leem os parâmetros da folha (js/prancha.js
        parametrosFolha, nomes em PT-BR). Sem parâmetro preenchido, sai o carimbo de antes. */
     var PR = global.Prancha, pm = (PR && PR.mapaParametros) ? PR.mapaParametros(pr, fl, rec.projeto) : null;
@@ -31,7 +60,7 @@
     var logos = (c.logos || []).map(function (ch) { return rec.imagens && rec.imagens[ch]; }).filter(function (s) { return !!s; });
     if (!logos.length && rec.logo) logos = [rec.logo];
     var faixaLogo = logos.length ? logos.map(function (s) { return '<img src="' + esc(s) + '" style="max-height:' + mm(k.h * 0.15) + ';max-width:' + mm(k.w * 0.9 / logos.length) + '">'; }).join('')
-      : '<b>' + esc(c.empresa) + '</b>';
+      : '<b>' + esc(c.empresa || E.nome || '') + '</b>';
     return '<div style="' + abs(k.x, k.y, k.w, k.h, 'border-top:0.35mm solid #111;font-size:' + fs + 'pt;display:flex;flex-direction:column;background:#fff') + '">' +
       (revs ? '<table style="border-collapse:collapse;width:100%"><tr><th style="border:0.2mm solid #111;width:10%">REV</th><th style="border:0.2mm solid #111">DESCRIÇÃO</th><th style="border:0.2mm solid #111;width:18%">DATA</th></tr>' +
         revs.replace(/<td>/g, '<td style="border:0.2mm solid #111;padding:0.4mm 1mm">') + '</table>' : '') +
@@ -39,7 +68,7 @@
         faixaLogo + '</div>' +
       '<div style="padding:0.8mm 1mm;border-bottom:0.2mm solid #111;text-align:center;font-weight:bold;color:#00406A">' + esc(c.obra || pr.nome) + '</div>' +
       '<div style="padding:0.6mm 1mm;border-bottom:0.2mm solid #111"><span style="font-size:0.8em;color:#444">CONTEÚDO DA PRANCHA</span><div style="text-align:center;font-weight:bold" data-pr-param="SHEET_NAME">' + esc(fl.conteudo || pr.nome) + '</div></div>' +
-      '<div style="padding:0.6mm 1mm;border-bottom:0.2mm solid #111;flex:1"><span style="font-size:0.8em;color:#444">RESPONSÁVEL TÉCNICO</span><div>' + esc(c.responsavel) + (c.registro ? ' — ' + esc(c.registro) : '') + '</div>' +
+      '<div style="padding:0.6mm 1mm;border-bottom:0.2mm solid #111;flex:1"><span style="font-size:0.8em;color:#444">RESPONSÁVEL TÉCNICO</span><div>' + esc(cResp) + (cReg ? ' — ' + esc(cReg) : '') + '</div>' +
         (c.contratante ? '<span style="font-size:0.8em;color:#444">CONTRATANTE</span><div>' + esc(c.contratante) + '</div>' : '') +
         (c.proprietario ? '<span style="font-size:0.8em;color:#444">PROPRIETÁRIO</span><div>' + esc(c.proprietario) + '</div>' : '') +
         (c.local ? '<span style="font-size:0.8em;color:#444">LOCAL</span><div>' + esc(c.local) + '</div>' : '') + '</div>' +
@@ -81,7 +110,12 @@
     var idp = 'd2-hach-' + String(b.vistaId).replace(/[^\w-]/g, '_');
     return String(vp.svg || '')
       .replace(/^<svg[^>]*>/, '<svg xmlns="http://www.w3.org/2000/svg" class="pv-vp" width="100%" height="100%" viewBox="' + vb.x + ' ' + vb.y + ' ' + vb.w + ' ' + vb.h + '" preserveAspectRatio="xMidYMid meet" style="display:block;overflow:hidden"><style>' + ESTILO_PAPEL + '</style>')
-      .replace(/stroke-width="([\d.]+)" vector-effect="non-scaling-stroke"/g, function (m, px) { return 'stroke-width="' + (Math.round(penaMm(+px, vp) * esc0 / 1000 * 1e6) / 1e6) + '"'; })
+      /* P6: a linha do estilo de objeto traz a pena de papel em `data-mm` (já com o fator de
+         "Espessura das linhas", js/desenho2d.js FATOR_PENA) — vale ela, não o px de tela */
+      .replace(/(data-mm="([\d.]+)"[^>]*?)?stroke-width="([\d.]+)" vector-effect="non-scaling-stroke"/g, function (m, pre, dmm, px) {
+        var mmP = dmm != null && dmm !== '' && isFinite(+dmm) && +dmm > 0 ? +dmm : penaMm(+px, vp);
+        return (pre || '') + 'stroke-width="' + (Math.round(mmP * esc0 / 1000 * 1e6) / 1e6) + '"';
+      })
       .replace(/d2-hach/g, idp);
   }
   /* o título de vista: número de detalhe no círculo, nome sublinhado e a escala */
@@ -96,6 +130,7 @@
 
   function coluna(pr, g) {
     var k = g.coluna, altura = k.h - g.carimbo.h - 2;
+    if (g.semColuna || altura < 6) return '';   /* folha em pé no modelo RA: sem coluna (o carimbo fica no pé) */
     var fs = Math.max(5.6, Math.min(7.6, k.w / 28));
     var h = (pr.coluna || []).map(function (s) {
       return '<div style="padding:1.6mm 2.5mm 0.6mm"><div style="font-weight:bold;text-decoration:underline;margin-bottom:0.8mm">' + esc(s.titulo) + '</div><ul style="margin:0;padding-left:3mm">' +
@@ -168,7 +203,7 @@
     return h;
   }
 
-  var PranchaUI = { folha: folha, documento: documento, viewportSvg: viewportSvg, tituloVista: tituloVista, ESTILO_PAPEL: ESTILO_PAPEL };
+  var PranchaUI = { folha: folha, documento: documento, viewportSvg: viewportSvg, tituloVista: tituloVista, ESTILO_PAPEL: ESTILO_PAPEL, carimboRA: carimboRA, COR_DESTAQUE: COR_DESTAQUE };
   global.PranchaUI = PranchaUI;
   if (typeof module !== 'undefined' && module.exports) module.exports = PranchaUI;
 })(typeof window !== 'undefined' ? window : this);

@@ -547,6 +547,9 @@
 .rv-qat .rv-tacao svg { width: 14px; height: 14px; flex: 0 0 auto; }
 /* tela mais estreita: só os ícones (o nome fica na dica) — a barra não quebra */
 @media (max-width: 1560px) { .rv-qat .rv-tacao .rv-tacao-rot { display: none; } .rv-qat .rv-tacao { padding: 0 6px; } }
+/* PRANCHAS à vista (09/10/2026): o nome sempre escrito — o dono não achava onde ficam as pranchas */
+.rv-qat .rv-tacao.rv-qat-pranchas { margin-left: 8px; }
+@media (max-width: 1560px) { .rv-qat .rv-tacao.rv-qat-pranchas .rv-tacao-rot { display: inline; } .rv-qat .rv-tacao.rv-qat-pranchas { padding: 0 8px; } }
 
 /* os botões rápidos, à direita das abas (o que flutuava em cima do 3D) */
 .rv-abas-dir { margin-left: auto; display: flex; align-items: center; gap: 4px; padding: 3px 4px 3px 12px; flex: 0 0 auto; }
@@ -713,7 +716,9 @@
    A espessura da linha mora no SVG (penas fina/média/grossa, non-scaling-stroke). */
 .bim-grade > .bim-tela.bim-tela-2d { --d2-papel: #ffffff; --d2-tinta: #111111; --d2-fraco: #2b2b2b; --d2-sel: #1a6cb5; background: var(--d2-papel); }
 .bim-revit[data-rv-tema="escuro"] .bim-grade > .bim-tela.bim-tela-2d { --d2-papel: #232323; --d2-tinta: #ececec; --d2-fraco: #d2d2d2; --d2-sel: #4a9fe0; }
-.d2-vista-tela { position: absolute; inset: 0; overflow: hidden; cursor: grab; touch-action: none; user-select: none; }
+.d2-vista-tela { position: absolute; inset: 0; overflow: hidden; cursor: default; touch-action: none; user-select: none; }
+/* SELECIONAR (js/bimselecao.js, 09/10/2026): seta no padrão; a mão só com a Mão ligada e durante o mover */
+.d2-vista-tela[data-d2-mao] { cursor: grab; }
 .d2-vista-tela[data-d2-arrasta] { cursor: grabbing; }
 .d2-vista-tela[data-d2-pick] { cursor: crosshair; }
 .d2-vista-tela svg { width: 100%; height: 100%; display: block; }
@@ -857,3 +862,91 @@
 .pv-papel [data-pv-bloco][data-pv-sel] { outline: 0.6mm solid #1a6cb5; outline-offset: 0.6mm; }
 .rv-no[data-rv-arrasta] { cursor: grab; }
 .pv-dica { position: sticky; top: 0; z-index: 2; margin: 0 auto 10px; max-width: 520px; padding: 6px 12px; border-radius: 6px; background: var(--rv-painel-bg); color: var(--rv-painel-tx); font-size: 12px; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,.18); }
+
+/* =====================================================================
+ * DISCIPLINA DA MODELAGEM (09/10/2026, js/bimdisciplinas.js) — pedido do
+ * Rogério: cada disciplina com a sua cor, para que o PRINT da tela diga de
+ * longe em qual módulo a pessoa estava. A casca põe na raiz:
+ *   --rv-disc        fundo (aba Arquivo, aba ativa, selo)
+ *   --rv-disc-texto  letra sobre o fundo (AA conferido; elétrica = letra escura)
+ *   --rv-disc-acento linha, ícone e foco (≥ 3:1 sobre a fita, outro no escuro)
+ * e `data-rv-disc-on` quando a disciplina NÃO é "Todas" — sem ele, nada
+ * aqui muda o que já existia (as e2e da fita medem a cor de sempre).
+ * ===================================================================== */
+.bim-revit[data-rv-disc-on] {
+  --rv-aba-ativa-linha: var(--rv-disc-acento);
+  --rv-arquivo-bg: var(--rv-disc);
+  --rv-arquivo-tx: var(--rv-disc-texto);
+  --rv-foco: var(--rv-disc-acento);
+  --rv-ativo-borda: var(--rv-disc-acento);
+}
+/* a faixa da disciplina embaixo da barra de título */
+.bim-revit[data-rv-disc-on] .rv-titulo { box-shadow: inset 0 -3px 0 var(--rv-disc); }
+.bim-revit[data-rv-disc-on] .rv-aba[aria-selected="true"] { border-bottom-width: 3px; }
+/* o botão grande em foco (ou aceso) com a borda da disciplina */
+.bim-revit[data-rv-disc-on] .rv-cmd[aria-pressed="true"] { box-shadow: inset 0 -3px 0 var(--rv-disc-acento), inset 0 1px 2px var(--rv-sombra); }
+
+/* o seletor, à esquerda do Arquivo */
+.rv-disc-sel {
+  appearance: none; font-family: inherit; flex: 0 0 auto;
+  display: inline-flex; align-items: center; gap: 6px;
+  align-self: center; margin: 2px 6px 2px 0; padding: 3px 9px 3px 7px; min-height: 26px;
+  background: var(--rv-tela); color: var(--rv-fita-tx);
+  border: 1px solid var(--rv-linha-forte); border-left: 4px solid var(--rv-disc, #2d6a9c); border-radius: 4px;
+  font-size: 12px; font-weight: 600; white-space: nowrap; cursor: pointer;
+}
+.rv-disc-sel:hover { background: var(--rv-hover); }
+.rv-disc-sel:focus-visible { outline: 2px solid var(--rv-foco); outline-offset: 1px; }
+.rv-disc-ponto { flex: 0 0 auto; width: 10px; height: 10px; border-radius: 50%; background: var(--rv-disc, #2d6a9c); box-shadow: 0 0 0 1px rgba(0,0,0,.18); }
+.rv-disc-seta { font-size: 10px; opacity: .7; }
+.rv-disc-menu {
+  position: absolute; z-index: 60; min-width: 250px; padding: 4px 0;
+  background: var(--rv-painel-bg); color: var(--rv-painel-tx);
+  border: 1px solid var(--rv-linha-forte); border-radius: 6px;
+  box-shadow: 0 10px 28px var(--rv-sombra);
+}
+.bim-revit[data-rv-tema="escuro"] .rv-disc-menu { background: #2b2b2b; }
+.rv-disc-op {
+  appearance: none; font: inherit; display: flex; align-items: center; gap: 10px;
+  width: 100%; min-height: 34px; padding: 4px 14px; border: 0; background: transparent; color: inherit;
+  text-align: left; cursor: pointer;
+}
+.rv-disc-op:hover, .rv-disc-op:focus-visible { background: var(--rv-hover); outline: none; }
+.rv-disc-op[aria-checked="true"] { font-weight: 700; box-shadow: inset 3px 0 0 var(--rv-disc-acento, #2d6a9c); }
+.rv-disc-op .rv-disc-ponto { width: 12px; height: 12px; }
+.rv-disc-op-nome { flex: 1; }
+.rv-disc-op[data-rv-disc-trancada] { color: var(--rv-tx-fraco); }
+.rv-disc-cadeado { display: inline-flex; color: var(--rv-tx-fraco); }
+.rv-disc-cadeado svg { width: 13px; height: 13px; }
+
+/* o SELO no canto da vista: sai no print da tela; não pega clique */
+.rv-disc-selo {
+  position: absolute; left: 10px; bottom: 10px; z-index: 5;
+  padding: 4px 11px; border-radius: 999px;
+  background: var(--rv-disc, #2d6a9c); color: var(--rv-disc-texto, #fff);
+  font-size: 11.5px; font-weight: 700; letter-spacing: .01em; white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0,0,0,.28);
+  pointer-events: none; user-select: none;
+}
+.rv-disc-selo:empty { display: none; }
+@media print { .rv-disc-selo { display: none; } }
+
+/* =====================================================================
+ * SELECIONAR (js/bimselecao.js, 09/10/2026): realce da seleção e do que está sob o
+ * cursor na vista 2D, as alças da parede, o fantasma do arrasto e a JANELA — da
+ * esquerda para a direita (só o que está inteiro dentro) em linha contínua; da
+ * direita para a esquerda (o que toca) tracejada. O 3D usa a mesma regra.
+ * ===================================================================== */
+.sl-cam { pointer-events: none; }
+.sl-cam .sl-sel { fill: none; stroke: var(--d2-sel, #1a6cb5); stroke-width: 3; stroke-linejoin: round; opacity: .9; }
+.sl-cam .sl-hover { fill: none; stroke: var(--d2-sel, #1a6cb5); stroke-width: 2; opacity: .45; }
+.sl-cam .sl-alca { fill: var(--d2-papel, #fff); stroke: var(--d2-sel, #1a6cb5); stroke-width: 2; pointer-events: all; cursor: move; }
+.sl-cam .sl-alca:hover { fill: var(--d2-sel, #1a6cb5); }
+.sl-cam .sl-fantasma { stroke: #2fbf71; stroke-width: 1.6; fill: none; }
+.sl-cam .sl-guia { stroke: #d99a1e; stroke-width: 1.2; stroke-dasharray: 5 4; fill: none; }
+.sl-cam .sl-janela { fill: rgba(26, 108, 181, .08); stroke: var(--d2-sel, #1a6cb5); stroke-width: 1.4; }
+.sl-cam .sl-janela-cruzando { fill: rgba(22, 163, 74, .08); stroke: #16a34a; stroke-dasharray: 6 4; }
+.bim-sel-janela { position: absolute; z-index: 19; pointer-events: none; display: none; box-sizing: border-box; border: 1.5px solid #1a6cb5; background: rgba(26, 108, 181, .10); }
+.bim-sel-janela[data-modo="cruzando"] { border: 1.5px dashed #16a34a; background: rgba(22, 163, 74, .10); }
+html[data-bim-mao="1"] canvas[data-bim-nav] { cursor: grab !important; }
+canvas[data-bim-nav][data-bim-pan] { cursor: grabbing !important; }

@@ -625,7 +625,7 @@
       }
       var L = num(el.comprimento, 0), H = num(el.altura, 0), E = num(el.espessura, 0);
       /* B2: escada e guarda-corpo trazem as medidas prontas (js/bimarq.js) */
-      if (el.medidas && (el.tipo === "escada" || el.tipo === "guarda" || el.tipo === "rampa")) {   /* P9: rampa */
+      if (el.medidas && (el.tipo === "escada" || el.tipo === "guarda" || el.tipo === "rampa" || el.tipo === "metal")) {   /* P9: rampa; METÁLICA (js/metalpeca.js): chapa, perfil, parafuso */
         var XM = X && X.medidas ? X.medidas : {};
         Object.keys(el.medidas).forEach(function (k) { if (typeof el.medidas[k] === "number") m[k] = R(typeof XM[k] === "number" && isFinite(XM[k]) ? XM[k] : el.medidas[k]); });
         if (m.area != null) m.areaBruta = m.area;

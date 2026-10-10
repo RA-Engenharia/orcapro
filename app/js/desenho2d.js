@@ -30,6 +30,14 @@
     media:  { rotulo: "Média",  corte: 2.4, vista: 0.9,  cota: 0.8, marca: 1.2 },
     grossa: { rotulo: "Grossa", corte: 3.4, vista: 1.3,  cota: 1.1, marca: 1.6 }
   };
+  /* "Espessura das linhas" com os ESTILOS DE OBJETO (P6) ativos: um FATOR sobre a
+     pena em mm de cada categoria — Média = o estilo exato. É a proporção do jogo
+     de papel (js/prancha.js PENAS_PAPEL, corte 0,35 / 0,50 / 0,70 mm — a mesma do
+     DXF e da folha; o teste confere), quase igual à de tela acima (1,6 / 2,4 / 3,4).
+     Só muda a SAÍDA (px na tela e data-mm para a folha/PDF/DXF): o estilo de objeto
+     gravado não muda. Antes, com P6 ativo, o controle só mexia em cota, marca e título. */
+  var FATOR_PENA = { fina: 0.7, media: 1, grossa: 1.4 };
+  function fatorPena(p) { return FATOR_PENA[p] || 1; }
   var PREENCHIMENTOS = {
     hachura: "Hachura 45°", solido: "Sólido escuro", cinza: "Cinza claro", vazio: "Sem preenchimento"
   };
@@ -465,7 +473,7 @@
       if (p6) {
         var est = p6.estilos || {}, st = est[key] || est._ || { proj: 2, cor: "#000000" };
         if (st.visivel === false) return;
-        var pj = Math.max(1, Math.min(16, Math.round(+st.proj) || 2)), mmG = p6PenaMm(p6.penas, pj, e.escala), mmF = p6PenaMm(p6.penas, Math.min(16, pj + 1), e.escala);
+        var pj = Math.max(1, Math.min(16, Math.round(+st.proj) || 2)), mmG = p6PenaEf(p6.penas, pj, e), mmF = p6PenaEf(p6.penas, Math.min(16, pj + 1), e);
         wg = p6Px(mmG, p6.penas); wf = p6Px(mmF, p6.penas);
         aG = ' data-cat="' + esc(key) + '" data-mm="' + mmG + '" style="stroke:' + p6Cor(st) + '"';
         aF = ' data-cat="' + esc(key) + '" data-mm="' + mmF + '" style="stroke:' + p6Cor(st) + '"';
@@ -586,6 +594,11 @@
     n = Math.max(1, Math.min(16, Math.round(+n) || 1));
     return t && t[n - 1] != null ? t[n - 1] : 0.25;
   }
+  /* a pena EFETIVA da vista: a do estilo de objeto × o fator de "Espessura das linhas" */
+  function p6PenaEf(penas, n, e) {
+    var mm = p6PenaMm(penas, n, e.escala), f = fatorPena(e.pena);
+    return f === 1 ? mm : Math.round(mm * f * 10000) / 10000;
+  }
   function p6Px(mm, penas) {
     var px = mm * ((penas && penas.pxPorMm) || P6_PX_MM), min = (penas && penas.pxMinimo) || 0.5;
     return Math.round(Math.max(min, px) * 1000) / 1000;
@@ -621,14 +634,14 @@
     var corpo = "";
     Object.keys(gL).sort().forEach(function (key) {
       var s = st(key); if (s.visivel === false || !gL[key]) return;
-      var mm = p6PenaMm(penas, s.proj, e.escala), tr = p6Traco(p6.padroes, s.padrao, e.escala);
+      var mm = p6PenaEf(penas, s.proj, e), tr = p6Traco(p6.padroes, s.padrao, e.escala);
       corpo += '<path d="' + gL[key] + '" class="d2-vista d2-p6-l" data-cat="' + esc(key) + '" data-mm="' + mm + '" stroke-width="' + p6Px(mm, penas) + '" ' + NS +
         (tr ? ' stroke-dasharray="' + tr + '"' : "") + ' style="stroke:' + p6Cor(s) + '"/>';
     });
     var chC = {}; Object.keys(gF).concat(Object.keys(gA)).forEach(function (x) { chC[x] = 1; });
     Object.keys(chC).sort().forEach(function (key) {
       var s = st(key); if (s.visivel === false) return;
-      var mm = p6PenaMm(penas, s.corte, e.escala), w = p6Px(mm, penas), cor = p6Cor(s);
+      var mm = p6PenaEf(penas, s.corte, e), w = p6Px(mm, penas), cor = p6Cor(s);
       var pr = (p6.preenchimentos || {})[s.preench], fill = "none";
       if (p6.nivelDetalhe !== "baixo" && pr) {
         if (pr.tipo === "solido") fill = s.meioTom ? "#cfd3d8" : corOk(s.corPreench || pr.cor);   /* MATERIAIS: corPreench = a cor do padrão do material do projeto */
@@ -689,12 +702,12 @@
   }
 
   var Desenho2D = {
-    PENAS: PENAS, PREENCHIMENTOS: PREENCHIMENTOS, MARCAS_COTA: MARCAS_COTA, UNIDADES: UNIDADES, ESCALAS: ESCALAS, ESQUEMAS: ESQUEMAS,
+    PENAS: PENAS, FATOR_PENA: FATOR_PENA, fatorPena: fatorPena, PREENCHIMENTOS: PREENCHIMENTOS, MARCAS_COTA: MARCAS_COTA, UNIDADES: UNIDADES, ESCALAS: ESCALAS, ESQUEMAS: ESQUEMAS,
     estiloPadrao: estiloPadrao, normEstilo: normEstilo,
     fmtNum: fmtNum, fmtMedida: fmtMedida, fmtCota: fmtCota, agrupar: agrupar,
     caixa: caixa, cotas: cotasDe, svg: svg, pontosPorta: pontosPorta, arcoPorta: arcoPorta, proximaLetra: proximaLetra, escalaQueCabe: escalaQueCabe, cotaAlinhada: svgCotaAlinhada,
     /* P6 */
-    P6: { colunaEscala: p6ColunaEscala, penaMm: p6PenaMm, px: p6Px, traco: p6Traco, corpo: p6Corpo, marcas: p6Marcas, caixa: p6Caixa, padrao: p6Padrao }
+    P6: { colunaEscala: p6ColunaEscala, penaMm: p6PenaMm, penaEf: p6PenaEf, px: p6Px, traco: p6Traco, corpo: p6Corpo, marcas: p6Marcas, caixa: p6Caixa, padrao: p6Padrao }
   };
   global.Desenho2D = Desenho2D;
   if (typeof module !== "undefined" && module.exports) module.exports = Desenho2D;

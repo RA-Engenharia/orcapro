@@ -678,6 +678,7 @@
          ao "Mark" dos importadores); o id do OrçaPRO passa para a Description — a ida e
          volta e os testes acham a peça por ele */
       var rp = entidade !== "IFCOPENINGELEMENT" ? regPorChave[chave] : null, marca = rp && rp.marca ? String(rp.marca) : "";
+      if (!marca && o.marca) marca = String(o.marca);   /* METÁLICA: a marca de fabricação (P1, CH3, A2) */
       var tag = marca ? S(marca) : S("ORC_edit_" + chave), desc = marca ? S("ORC_edit_" + chave) : "$";
       var nv = nivel || nivelDe(yBase), args = [S(guid(semente + "|" + sem)), OH, S(nome), desc, objType ? S(objType) : "$", ref(pl), rep ? ref(rep) : "$", tag];
       /* P2: o IfcSpace é ELEMENTO ESPACIAL — não tem Tag (depois da Representation
@@ -790,9 +791,128 @@
     /* referencial de uma peça: origem O e eixo X horizontal (IFC); devolve o ponto no local */
     function quadro(O, X) { var Y = [-X[1], X[0], 0]; return function (p) { var d = sub(p, O); return [dot(d, X), dot(d, Y), d[2]]; }; }
 
+    /* ================= METÁLICA & MECÂNICA (js/metalpeca.js, js/metalfab.js) =================
+     * chapa → IfcPlate (contorno com os furos em IfcArbitraryProfileDefWithVoids), perfil →
+     * IfcColumn/IfcBeam/IfcMember (perfil paramétrico; com corte inclinado, Brep do prisma
+     * cortado), parafuso/chumbador → IfcMechanicalFastener (BOLT/ANCHORBOLT, diâmetro e
+     * comprimento nominais, a norma da classe por classificação), peça mecânica →
+     * IfcDiscreteAccessory. Furo nos perfis (das ligações) → IfcOpeningElement +
+     * IfcRelVoidsElement. Com opts.fabricacao: um IfcElementAssembly por CONJUNTO de
+     * montagem (a peça principal + o que é soldado nela), por IfcRelAggregates. */
+    var BMt = dep("BimMetal", "./metalpeca.js"), BMf = dep("BimMetalFab", "./metalfab.js"), metalPorChave = {}, clsNorma = null, refsNorma = {};
+    var PRE_MEMBRO = [[/terça/i, "PURLIN"], [/contravento/i, "BRACE"], [/banzo/i, "CHORD"], [/montante/i, "POST"], [/diagonal/i, "STRUT"]];
+    function metalSolido(sd, nv, cisalhaOk) {
+      var Ui = cena2ifc(sd.U), Wi = cena2ifc(sd.W), Vi = cena2ifc(sd.Vv), h = dot(cross(Wi, Ui), Vi) < 0 ? -1 : 1;
+      var poli = sd.poli.map(function (q) { return [q[0], h * q[1]]; }), furos = arr(sd.furos).map(function (f) { return f.map(function (q) { return [q[0], h * q[1]]; }); });
+      if (sd.cisalha && cisalhaOk) {
+        /* prisma CORTADO (as duas pontas inclinadas): Brep — o contorno de baixo, o de cima e as faces laterais, para fora */
+        var Co = sentido(sd.poli, true), hR = dot(cross(sd.U, sd.Vv), sd.W) > 0;
+        var bot = Co.map(function (q) { return W2I(sd.ponto(q[0], q[1], sd.z0), nv); }), top = Co.map(function (q) { return W2I(sd.ponto(q[0], q[1], sd.z1), nv); });
+        var fs = [bot.slice().reverse(), top.slice()];
+        for (var i = 0; i < Co.length; i++) { var j = (i + 1) % Co.length; fs.push([bot[i], bot[j], top[j], top[i]]); }
+        if (!hR) fs = fs.map(function (f) { return f.slice().reverse(); });
+        return { item: brepFaces(fs), tipo: "Brep" };
+      }
+      var perf = perfilPoli(poli, furos, null, "peça metálica");
+      var pos = w("IFCAXIS2PLACEMENT3D", [ref(pt3(W2I(sd.ponto(0, 0, sd.z0), nv))), ref(D(Wi)), ref(D(Ui))]);
+      return { item: extrudado(perf, pos, sd.z1 - sd.z0), tipo: "SweptSolid" };
+    }
+    function metalPeca(c) {
+      if (!BMt) { avisos.push("peça metálica " + c.id + ": o motor da metálica (js/metalpeca.js) não carregou — ficou de fora"); return; }
+      var m = c.metal, sols = BMt.solidos(c);
+      if (!sols.length) { avisos.push("peça metálica " + c.id + " sem geometria — ficou de fora"); return; }
+      var yb = num(c.cy, 0) - num(c.altura, 0) / 2, nv = nivelDe(yb), itens = [], tipos = {};
+      var temFuroInterno = sols.some(function (s) { return arr(s.furos).length; });
+      sols.forEach(function (sd) {
+        if (sd.cisalha && temFuroInterno) avisos.push("peça metálica " + c.id + ": tubo com corte inclinado foi como prisma reto no IFC (o corte está no DSTV)");
+        var r = metalSolido(sd, nv, !temFuroInterno); if (!r || !r.item) return;
+        pintar(r.item, "Aço"); itens.push(r.item); tipos[r.tipo] = 1;
+      });
+      if (!itens.length) { avisos.push("peça metálica " + c.id + ": o sólido não fechou — ficou de fora"); return; }
+      var tipoRep = Object.keys(tipos).length === 1 ? Object.keys(tipos)[0] : "SolidModel";
+      var pl = placement(nv.pl, [0, 0, 0]), nome = BMt.nome(c), ent, extra, objType = m.papel;
+      if (m.kind === "parafuso") { ent = "IFCMECHANICALFASTENER"; extra = [R(num(m.db, 0) / 1000), R(num(m.Lmm, 0) / 1000), E(m.chumbador ? "ANCHORBOLT" : "BOLT")]; }
+      else if (m.kind === "chapa") { ent = "IFCPLATE"; extra = [E("USERDEFINED")]; }
+      else if (m.kind === "perfil") {
+        ent = c.ifc === "IFCCOLUMN" ? "IFCCOLUMN" : (c.ifc === "IFCBEAM" ? "IFCBEAM" : "IFCMEMBER");
+        var pre = ent === "IFCCOLUMN" ? "COLUMN" : (ent === "IFCBEAM" ? "BEAM" : "MEMBER");
+        PRE_MEMBRO.forEach(function (k) { if (ent === "IFCMEMBER" && k[0].test(m.papel)) pre = k[1]; });
+        extra = [E(pre)];
+      } else { ent = "IFCDISCRETEACCESSORY"; extra = [E("USERDEFINED")]; }
+      var el = peca(c.id, ent, nome, objType, pl, forma(itens, tipoRep), extra, yb, nv, { marca: c.marca || null });
+      var matN = "Aço " + (m.aco || (m.kind === "parafuso" ? ((BimNormaClasse(m.classe) || {}).nome || m.classe) : ""));
+      ligarMaterial(el, matN.trim());
+      var ps = [["Funcao", "IFCLABEL", m.papel], ["Aco", "IFCLABEL", m.aco || ""], ["Massa", "IFCMASSMEASURE", c.massa], ["Ligacao", "IFCIDENTIFIER", m.lig || ""]];
+      if (m.kind === "chapa") ps.push(["Espessura", "IFCPOSITIVELENGTHMEASURE", m.t]);
+      if (m.kind === "perfil") ps.push(["Perfil", "IFCLABEL", m.perfilRotulo || (m.perfil && (m.perfil.cat || m.perfil.forma))], ["Comprimento", "IFCPOSITIVELENGTHMEASURE", m.L]);
+      if (m.kind === "parafuso") ps.push(["Classe", "IFCLABEL", m.classe], ["Comprimento", "IFCPOSITIVELENGTHMEASURE", num(m.Lmm, 0) / 1000], ["Aperto", "IFCPOSITIVELENGTHMEASURE", m.aperto]);
+      if (m.solda) ps.push(["Solda", "IFCLABEL", (m.solda.tipo === "topo" ? "Topo" : "Filete") + " " + m.solda.perna + " mm" + (m.solda.campo ? " (campo)" : " (oficina)")]);
+      pset(el, "OrcaPRO_Fabricacao", ps);
+      if (m.kind === "parafuso") {
+        var BN = dep("BimMetalNorma", "./metalnorma.js"), pf = BN ? BN.parafuso(m.id) : null;
+        pset(el, "Pset_MechanicalFastenerBolt", [["ThreadDiameter", "IFCPOSITIVELENGTHMEASURE", num(m.db, 0) / 1000], ["NutsCount", "IFCCOUNTMEASURE", 1], ["WashersCount", "IFCCOUNTMEASURE", num(m.arrCabeca, 0) + num(m.arrPorca, 0)],
+                                                      ["HeadShape", "IFCLABEL", m.chumbador ? "" : "Sextavada"], ["NutShape", "IFCLABEL", "Sextavada"]]);
+        /* a norma da classe por classificação (ASTM F3125 A325, ISO 898-1 8.8…) */
+        var cl = (BN && BN.CLASSES[m.classe]) || { norma: m.classe };
+        if (!clsNorma) clsNorma = w("IFCCLASSIFICATION", ["$", "$", "$", S("Normas de parafusos e chumbadores"), S("Classe e norma do fixador (OrçaPRO Modela — metálica)"), "$", "$"]);
+        if (!refsNorma[m.classe]) refsNorma[m.classe] = { r: w("IFCCLASSIFICATIONREFERENCE", ["$", S(m.classe), S(cl.norma), ref(clsNorma), "$", "$"]), els: [] };
+        refsNorma[m.classe].els.push(el.ent);
+        void pf;
+      }
+      qto(el, m.kind === "chapa" ? "Qto_PlateBaseQuantities" : (m.kind === "perfil" ? (ent === "IFCCOLUMN" ? "Qto_ColumnBaseQuantities" : (ent === "IFCBEAM" ? "Qto_BeamBaseQuantities" : "Qto_MemberBaseQuantities")) : "Qto_BuildingElementProxyQuantities"),
+          [["NetVolume", "V", c.volume], ["NetWeight", "W", c.massa]].concat(m.kind === "perfil" ? [["Length", "L", m.L]] : []).concat(m.kind === "chapa" ? [["NetArea", "A", m.dim && m.dim.areaLiq]] : []));
+      origemPset(el, [["Modelador", "IFCLABEL", "Metálica"]]);
+      el.volume = r6(num(c.volume, 0)); el.massa = num(c.massa, 0); el.metal = m.kind;
+      metalPorChave[String(c.id)] = el;
+    }
+    function BimNormaClasse(k) { var BN = dep("BimMetalNorma", "./metalnorma.js"); return BN && BN.CLASSES[k]; }
+    function metalFinal() {
+      if (!BMt) return;
+      /* os FUROS dos perfis (pilar/viga do modelador e perfil da metálica) → IfcOpeningElement */
+      var nAb = 0;
+      arr(st.caixas).forEach(function (c) {
+        if (!c) return;
+        var fs = BMt.furosDe(c); if (!fs.length) return;
+        var dono = null;
+        for (var i = 0; i < todosEls.length; i++) { var e0 = todosEls[i]; if (String(e0.chave) === String(c.id) && /^(IFCBEAM|IFCCOLUMN|IFCMEMBER)$/.test(e0.entidade)) { dono = e0; break; } }
+        var mb = BMt.membro(c); if (!dono || !mb) return;
+        fs.forEach(function (f, k) {
+          var fm = BMt.furoMundo(mb, f); if (!fm) return;
+          var nv = nivelDe(fm.P[1]), prof = fm.t + 0.004, raio = num(f.d, num(f.db, 0) + 1.5) / 2000;
+          var O = W2I([fm.P[0] - fm.eixo[0] * prof / 2, fm.P[1] - fm.eixo[1] * prof / 2, fm.P[2] - fm.eixo[2] * prof / 2], nv), Z = cena2ifc(fm.eixo);
+          var Xr = Math.abs(Z[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0], X = norm(sub(Xr, mul(Z, dot(Xr, Z))));
+          var sol = extrudado(circulo(raio), pos3(O, Z, X), prof);
+          var chave = c.id + "-furo" + (k + 1);
+          var ab = peca(chave, "IFCOPENINGELEMENT", "Furo Ø" + num(f.d, 0) + " mm (" + (f.face || "") + ")", "Furo", placement(nv.pl, [0, 0, 0]), forma([sol], "SweptSolid"), [E("OPENING")], fm.P[1], nv);
+          w("IFCRELVOIDSELEMENT", [G("void:" + chave), OH, "$", "$", ref(dono.ent), ref(ab.ent)]);
+          nAb++;
+        });
+      });
+      Object.keys(refsNorma).forEach(function (k) { var r = refsNorma[k]; w("IFCRELASSOCIATESCLASSIFICATION", [G("clsnorma:" + k), OH, "$", "$", L(r.els.map(ref)), ref(r.r)]); });
+      if (!opts.fabricacao || !BMf) return;
+      /* CONJUNTOS DE MONTAGEM: o conjunto fica no nível; as peças, agregadas a ele (saem do nível) */
+      var nu = BMf.numerar(st), nAs = 0;
+      nu.conjuntos.forEach(function (g) {
+        g.conjuntos.forEach(function (k, ix) {
+          var partes = k.ids.map(function (id) { return metalPorChave[String(id)] || todosEls.filter(function (e1) { return String(e1.chave) === String(id) && /^(IFCBEAM|IFCCOLUMN|IFCMEMBER|IFCPLATE|IFCDISCRETEACCESSORY)$/.test(e1.entidade); })[0]; }).filter(Boolean);
+          if (!partes.length) return;
+          var pr = partes[0], nv = niveis.filter(function (x) { return x.nome === pr.nivel; })[0] || niveis[0];
+          var asm = peca("conj:" + k.principal, "IFCELEMENTASSEMBLY", g.marca, "Conjunto de montagem", placement(nv.pl, [0, 0, 0]), null, [E("FACTORY"), E("USERDEFINED")], nv.elevacao, nv, { marca: g.marca });
+          pset(asm, "OrcaPRO_Fabricacao", [["Conjunto", "IFCLABEL", g.marca], ["PecaPrincipal", "IFCLABEL", g.principal], ["Partes", "IFCLABEL", g.partes.join(", ")], ["Massa", "IFCMASSMEASURE", g.massa]]);
+          var ents = partes.map(function (e2) { return e2.ent; });
+          niveis.forEach(function (nv2) { nv2.contidos = nv2.contidos.filter(function (x) { return ents.indexOf(x) < 0; }); });
+          partes.forEach(function (e3) { e3.parteDe = asm.ent; e3.conjunto = g.marca; pset(e3, "OrcaPRO_Fabricacao", [["Marca", "IFCLABEL", nu.marcaDe[e3.chave] || ""], ["Conjunto", "IFCLABEL", g.marca]]); });
+          w("IFCRELAGGREGATES", [G("conj:" + k.principal + ":" + ix), OH, S(g.marca), "$", ref(asm.ent), L(ents.map(ref))]);
+          nAs++;
+        });
+      });
+      void nAb; void nAs;
+    }
+
     /* ================= B2 — MODELADOR (js/bimarq.js) ================= */
     /* devolve true se a peça foi escrita (ou ficou de fora COM aviso); false = segue o caminho antigo da caixa */
     function b2Peca(c) {
+      if (c.tipo === "metal" && c.metal) { metalPeca(c); return true; }   /* METÁLICA & MECÂNICA */
       if (c.tipo === "parede" && c.b2) {
         if (!BA || !BA.pecasParede) { avisos.push("parede " + c.id + ": o motor da B2 (js/bimarq.js) não carregou — foi como caixa, sem a união dos cantos e o topo recortado"); return false; }
         paredeB2(c); return true;
@@ -1288,6 +1408,25 @@
       }
     }));
 
+    /* ================= UNIÃO DE PAREDES (js/bimuniao.js) =================
+     * Cada par unido (L, T, X, emenda — as juntas que o BimArq derivou) vira
+     * IfcRelConnectsPathElements: RelatingElement = a que passa (L em topo),
+     * a que recebe (T) ou a primeira criada (X); AtStart/AtEnd = a ponta do
+     * eixo no encontro, AtPath = no meio. A geometria já sai aparada (os
+     * prismas do BimArq.pecasParede). Ordem do IFC4: ... RelatingPriorities,
+     * RelatedPriorities, RelatedConnectionType, RelatingConnectionType. */
+    var BU = dep("BimUniao", "./bimuniao.js"), nCon = 0;
+    if (BU && BU.conexoes) {
+      BU.conexoes(arr(st.caixas).filter(function (c) { return c && c.tipo === "parede" && paredesIfc[c.id]; })).forEach(function (k) {
+        var pa = paredesIfc[k.a], pb = paredesIfc[k.b]; if (!pa || !pb) return;
+        var rot = { L: "Canto em L", T: "Encontro em T", X: "Cruzamento em X", I: "Emenda" }[k.tipo] || "Junta";
+        w("IFCRELCONNECTSPATHELEMENTS", [G("uniao:" + k.a + "|" + k.b), OH, S(rot + (k.modo ? " (" + k.modo + ")" : "")), S("Parede " + k.a + " × parede " + k.b), "$",
+          ref(pa.el.ent), ref(pb.el.ent), "()", "()", E(k.ondeB), E(k.ondeA)]);
+        nCon++;
+      });
+    }
+    void nCon;
+
     /* ================= COBERTURA ================= */
     arr(st.coberturas).forEach(comMat(function (cb) {   /* MATERIAIS: a peça com material do projeto */
       var nv = nivelDe(num(cb.base, 0)), itens = [];   /* a cobertura é do nível onde ela apoia */
@@ -1359,11 +1498,44 @@
           var a2 = 0; for (var i = 0; i < pts.length; i++) { var u = pts[i], v = pts[(i + 1) % pts.length]; a2 += u[0] * v[1] - v[0] * u[1]; }
           volTot += Math.abs(a2) / 2 * s.altura;
         }
-        var mn = s.material || "Indefinido"; pintar(solido, mn); contMat[mn] = (contMat[mn] || 0) + 1;
+        var mn = s.material || "Indefinido", hxS = /^#([0-9a-f]{6})$/i.exec(String(s.cor || ""));   /* MARCENARIA: a cor da chapa (catálogo) */
+        pintar(solido, mn, hxS ? parseInt(hxS[1], 16) : undefined); contMat[mn] = (contMat[mn] || 0) + 1;
         itens.push(solido);
       });
       if (!itens.length) { avisos.push("família " + f.id + " sem sólido exportável"); return; }
       if (volAberto) volTot = NaN;   /* FAMIMPORT: malha aberta — o Qto não recebe volume (filtra o não finito) */
+      /* MARCENARIA (js/marcenaria.js): o móvel sai como IfcFurniture (a estrutura de madeira, IfcElementAssembly)
+         SEM forma própria; cada PEÇA do corte é uma parte com a sua forma (IfcBuildingElementPart; na madeira,
+         IfcMember), agregada a ele (IfcRelAggregates) — o mesmo arranjo da escada e dos lances */
+      if (av.marcenaria && arr(av.solidos).length === itens.length) {
+        var carpM = !!av.marcenaria.carpintaria, tipoM = av.marcenaria.modulo ? av.marcenaria.modulo.tipo : "";
+        var nomeTipoM = av.tipo ? av.tipo.nome : "", nomeFamM = (opts.nomeFam && opts.nomeFam(f.famId)) || f.famId;
+        var extraM = carpM ? [E("NOTDEFINED"), E(av.marcenaria.carpintaria === "tesoura" ? "TRUSS" : "NOTDEFINED")] : [E(tipoM === "prateleira" || tipoM === "nicho" ? "SHELF" : "NOTDEFINED")];
+        var elM = peca(f.id, carpM ? "IFCELEMENTASSEMBLY" : "IFCFURNITURE", nomeFamM + (nomeTipoM ? " : " + nomeTipoM : ""), nomeTipoM || nomeFamM, pl, null, extraM, num(f.y, 0), nv, { mapa: "generico" });
+        var partesM = [], volM = 0, contM = {}, MEMB = { COLUMN: "POST", BEAM: "MEMBER", RAFTER: "RAFTER", CHORD: "CHORD", POST: "POST", STRUT: "STRUT", PLATE: "PLATE" };
+        av.solidos.forEach(function (s, i) {
+          var pe = s.peca || {}, vol = 0;
+          if (s.forma === "caixa") vol = s.dx * s.dy * s.dz;
+          else { var aM = 0, ct = arr(s.contorno); for (var iM = 0; iM < ct.length; iM++) { var uM = ct[iM], vM = ct[(iM + 1) % ct.length]; aM += uM[0] * vM[1] - vM[0] * uM[1]; } vol = Math.abs(aM) / 2 * num(s.altura, 0); }
+          var parte = peca(f.id + ":pc" + (i + 1), carpM ? "IFCMEMBER" : "IFCBUILDINGELEMENTPART", s.nome || ("Peça " + (i + 1)), pe.funcao || s.nome || "peça", placement(pl, [0, 0, 0]),
+            forma([itens[i]], "SweptSolid"), [E(carpM ? (MEMB[pe.ifc] || "MEMBER") : "USERDEFINED")], num(f.y, 0), nv, { parte: f.id });
+          ligarMaterial(parte, s.material || "Indefinido"); contM[s.material || "Indefinido"] = (contM[s.material || "Indefinido"] || 0) + 1;
+          pset(parte, "OrcaPRO_Marcenaria", [["Funcao", "IFCLABEL", pe.funcao], ["Medidas", "IFCLABEL", pe.medidas], ["Veio", "IFCBOOLEAN", pe.veio == null ? null : !!pe.veio],
+            ["Fitas", "IFCLABEL", pe.fitas], ["Secao", "IFCLABEL", pe.secao], ["Corte1", "IFCLABEL", pe.corte1], ["Corte2", "IFCLABEL", pe.corte2], ["Especie", "IFCLABEL", pe.especie]]);
+          origemPset(parte, [["Movel", "IFCIDENTIFIER", f.id]]);
+          parte.volume = r6(vol); volM += vol; partesM.push(parte.ent);
+        });
+        w("IFCRELAGGREGATES", [G("rel:marcenaria:" + f.id), OH, "$", "$", ref(elM.ent), L(partesM.map(ref))]);
+        ligarMaterial(elM, Object.keys(contM).sort(function (a, b) { return contM[b] - contM[a]; })[0]);
+        var qM = av.quantitativo || {};
+        pset(elM, "OrcaPRO_Quantitativo", [["Descricao", "IFCTEXT", qM.descricao], ["CodigoOrcamento", "IFCIDENTIFIER", qM.codigo]]);
+        pset(elM, "OrcaPRO_Marcenaria", [["Pecas", "IFCINTEGER", partesM.length], ["Tipo", "IFCLABEL", carpM ? av.marcenaria.carpintaria : tipoM]]);
+        ligarCodigos(elM, [qM.codigo].concat(arr(f.servicos).map(function (s) { return s.codigo; })), qM.fonte);
+        origemPset(elM, [["Familia", "IFCLABEL", nomeFamM], ["Tipo", "IFCLABEL", nomeTipoM]]);
+        elM.volume = r6(volM); elM.partes = partesM.length; elM.semGeometriaPropria = true;
+        famIfc[f.id] = { el: elM, pl: pl, av: av };
+        return;
+      }
       var nomeTipo = av.tipo ? av.tipo.nome : "";
       var nomeFam = (opts.nomeFam && opts.nomeFam(f.famId)) || f.famId;
       var extra = [E(entidade === "IFCDOOR" ? "DOOR" : entidade === "IFCWINDOW" ? "WINDOW" : entidade === "IFCCOLUMN" ? "COLUMN" : entidade === "IFCBEAM" ? "BEAM" : entidade === "IFCSLAB" ? "FLOOR" : entidade === "IFCWALL" ? "NOTDEFINED" : "ELEMENT")];
@@ -2018,12 +2190,14 @@
         } else por(conj(el, nomePs, false), prop, pv.tipo, pv.valor, d.id);
       });
     });
+    metalFinal();   /* METÁLICA: furos dos perfis (IfcOpeningElement) e, na saída de fabricação, os conjuntos (IfcElementAssembly) */
     /* um IfcTypeObject por tipo usado (IfcWallType, IfcSlabType, IfcColumnType…), com
        os parâmetros de TIPO em HasPropertySets e o IfcRelDefinesByType das ocorrências */
     ordemTiposReg.forEach(function (k) {
       var tp = tiposReg[k], hps = escreverConjuntos(tp, "tipo:" + k, false);
       var a = [G("tipo:" + k), OH, S(tp.nome), "$", "$", hps.length ? L(hps.map(ref)) : "$", "$", S(tp.tipoId), "$", E(preTipo(tp))];
       if (tp.classe === "IFCDOORTYPE" || tp.classe === "IFCWINDOWTYPE") a.push(E("NOTDEFINED"), "$", "$");
+      if (tp.classe === "IFCFURNITURETYPE") a.splice(9, 0, E("NOTDEFINED"));   /* MARCENARIA: o IfcFurnitureType tem AssemblyPlace antes do PredefinedType */
       tp.ent = w(tp.classe, a);
       w("IFCRELDEFINESBYTYPE", [G("rdtipo:" + k), OH, "$", "$", L(tp.els.map(ref)), ref(tp.ent)]);
       resumoTipos.push({ chave: k, classe: tp.classe, nome: tp.nome, categoria: tp.categoria, tipoId: tp.tipoId, guid: guid(semente + "|tipo:" + k), n: tp.els.length, predefinido: preTipo(tp),

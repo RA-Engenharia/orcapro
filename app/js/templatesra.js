@@ -11,8 +11,9 @@
  *   tiposLaje   [{ id, nome, espessura (m), material, funcao }]
  *   materiais   [{ nome, cor "#rrggbb", classe, pesoEspecifico (kN/m³), fonte }]
  *   prancha     { formato, orientacao, carimbo {...}, coluna [{ titulo, itens }] }
- *               (o formato do js/prancha.js; o carimbo vai VAZIO de propósito:
- *                quem preenche é o cadastro da empresa na hora da prancha)
+ *               (o formato do js/prancha.js; o carimbo leva SÓ o modelo "RA" — o
+ *                desenho do carimbo do escritório; os DADOS vêm do cadastro da
+ *                empresa de quem usa, na hora da prancha: nada de dado aqui)
  *   familias    ids da biblioteca RA (js/familiasra.js) — viram as famílias
  *               inteiras no arquivo (TemplatesRA.obter resolve)
  *
@@ -63,7 +64,7 @@
         planta: { escala: 50, pena: "media", preenchimento: "hachura", cotas: true, marcaCota: "obliquo", textoCota: 2.5, unidade: "m", casas: 2, cotaParcial: true, niveis: true, marcasCorte: true, titulo: true, identAmbiente: true, esquemaCores: "nenhum" },
         corte: { escala: 50, pena: "media", preenchimento: "hachura", cotas: true, marcaCota: "obliquo", textoCota: 2.5, unidade: "m", casas: 2, cotaParcial: true, niveis: true, marcasCorte: true, titulo: true, identAmbiente: true, esquemaCores: "nenhum" }
       },
-      prancha: { formato: "A1", orientacao: "paisagem", carimbo: {}, coluna: [{ titulo: "Notas", itens: NOTAS_RES }] },
+      prancha: { formato: "A1", orientacao: "paisagem", carimbo: { modelo: "RA" }, coluna: [{ titulo: "Notas", itens: NOTAS_RES }] },
       familias: ["ra-porta-giro", "ra-porta-giro-2f", "ra-porta-correr", "ra-janela-correr", "ra-janela-basculante", "ra-bacia", "ra-lavatorio-coluna", "ra-tanque", "ra-bancada", "ra-caixa-dagua"]
     },
     {
@@ -90,7 +91,7 @@
         planta: { escala: 50, pena: "media", preenchimento: "hachura", cotas: true, marcaCota: "obliquo", textoCota: 2.5, unidade: "cm", casas: 0, cotaParcial: true, niveis: true, marcasCorte: true, titulo: true, identAmbiente: true, esquemaCores: "nenhum" },
         corte: { escala: 25, pena: "media", preenchimento: "hachura", cotas: true, marcaCota: "obliquo", textoCota: 2.5, unidade: "mm", casas: 0, cotaParcial: true, niveis: true, marcasCorte: true, titulo: true, identAmbiente: true, esquemaCores: "nenhum" }
       },
-      prancha: { formato: "A1", orientacao: "paisagem", carimbo: {}, coluna: [{ titulo: "Notas", itens: NOTAS_MAD }] },
+      prancha: { formato: "A1", orientacao: "paisagem", carimbo: { modelo: "RA" }, coluna: [{ titulo: "Notas", itens: NOTAS_MAD }] },
       familias: ["ra-madeira-viga", "ra-madeira-pilar", "ra-caixa-dagua", "ra-bombup230"]
     }
   ];

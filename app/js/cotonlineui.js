@@ -126,7 +126,8 @@
   function _plus() {
     if (typeof Licenca === "undefined" || !Licenca.status) return false;
     var s = Licenca.status() || {};
-    return !!s.ativo && !s.trial && s.tier !== "base";
+    /* "modela" (o OrçaPRO Modela sozinho) é outro produto, não "acima do base" — o servidor recusa igual */
+    return !!s.ativo && !s.trial && s.tier !== "base" && s.tier !== "modela";
   }
   function _quem() {
     try { var u = (typeof Auth !== "undefined" && Auth.usuario) ? Auth.usuario() : null; return (u && (u.nome || u.login || u.empresa)) || ""; } catch (e) { return ""; }

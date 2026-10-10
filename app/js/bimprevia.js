@@ -9,7 +9,14 @@
  * (`orcapro:tela:bim-modelador:v1`) só desliga quando grava
  * {"modelador":false} (é assim que as e2e testam o modelador desligado).
  * Todo comando novo do modelador pergunta AQUI se aparece — um lugar só para
- * ligar e desligar (e, na próxima versão, para a licença da Modelagem).
+ * ligar e desligar.
+ *
+ * DESDE A COBRANÇA DO ORÇAPRO MODELA (09/10/2026): "o modelador aparece?" =
+ * o Modela libera alguma disciplina (compra, vitalícia, teste de 7 dias ou
+ * ?demo=1 — a regra mora em js/modela.js) E este aparelho não desligou.
+ * `disciplina(id)` responde por disciplina (civil, estrutura, hidraulica,
+ * eletrica, metalica, marcenaria) para as abas do modelador.
+ * Sem o js/modela.js carregado vale o comportamento de antes (aparece).
  * ===================================================================== */
 (function (global) {
   "use strict";
@@ -25,13 +32,24 @@
     CHAVE: CHAVE,
     OFF: OFF,
     /* armazenamento bloqueado (aba anônima) não pode esconder o modelador: sem como ler a escolha, vale o padrão */
-    modelador: function () {
+    /* o aparelho desligou? OFF = "1", ou a chave antiga dizendo {"modelador":false} de propósito (as e2e desligam assim) */
+    _aparelho: function () {
       try {
         if (global.localStorage.getItem(OFF) === "1") return false;
-        /* a chave antiga só desliga quando diz false de propósito (as e2e desligam assim) */
         var o = JSON.parse(global.localStorage.getItem(CHAVE) || "null");
         return !(o && o.modelador === false);
       } catch (e) { return true; }
+    },
+    _modela: function () { return (global.Modela && typeof global.Modela.status === "function") ? global.Modela : null; },
+    modelador: function () {
+      if (!BimPrevia._aparelho()) return false;
+      var M = BimPrevia._modela(); if (!M) return true;
+      try { return !!M.status().liberado; } catch (e) { return true; }
+    },
+    disciplina: function (id) {
+      if (!BimPrevia._aparelho()) return false;
+      var M = BimPrevia._modela(); if (!M) return true;
+      try { return !!M.tem(id); } catch (e) { return true; }
     }
   };
   global.BimPrevia = BimPrevia;

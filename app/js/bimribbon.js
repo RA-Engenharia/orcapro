@@ -370,16 +370,36 @@
     /* ---- o que a camada de desenho consome ----
      * Devolve a aba inteira já resolvida: cada comando com ativo/disponível/motivo,
      * para o desenho ser burro (só pinta o que recebe). */
+    /* DISCIPLINA (js/bimdisciplinas.js, 09/10/2026): com uma disciplina
+       escolhida, a fita mostra só os comandos dela e os comuns — os outros
+       SOMEM (não ficam cinza). Sem o motor de disciplinas, tudo aparece. */
+    naDisciplina: function (c, abaId) {
+      try { var D = global.BimDisciplinas; return !D || !c || D.mostra(c.id, abaId); } catch (e) { return true; }
+    },
+    /* as abas que a fita desenha: com disciplina, só as que têm algum comando
+       à vista (com o nome da aba trocado quando a disciplina pede); em "Todas
+       as disciplinas", exatamente as de `abas()` */
+    abasVisiveis: function () {
+      var self = this, D = global.BimDisciplinas, filtra = false;
+      try { filtra = !!(D && D.filtrando()); } catch (e) { filtra = false; }
+      if (!filtra) return this.abas();
+      return ABAS.filter(function (a) {
+        return a.tipo === "backstage" || arr(a.paineis).some(function (p) {
+          return arr(p.comandos).some(function (c) { return self.visivel(c) && self.naDisciplina(c, a.id); });
+        });
+      }).map(function (a) { return { id: a.id, rotulo: D.rotuloAba(a.id, a.rotulo), tipo: a.tipo || "normal" }; });
+    },
     render: function (abaId) {
       var self = this;
       var a = this.aba(abaId || this._st.aba);
       if (!a) return null;
+      var ve = function (c) { return self.visivel(c) && self.naDisciplina(c, a.id); };
       return {
         id: a.id, rotulo: a.rotulo, tipo: a.tipo || "normal",
-        paineis: arr(a.paineis).filter(function (p) { return arr(p.comandos).some(function (c) { return self.visivel(c); }); }).map(function (p) {
+        paineis: arr(a.paineis).filter(function (p) { return arr(p.comandos).some(ve); }).map(function (p) {
           return {
             nome: p.nome,
-            comandos: arr(p.comandos).filter(function (c) { return self.visivel(c); }).map(function (c) {
+            comandos: arr(p.comandos).filter(ve).map(function (c) {
               var d = self.disponibilidade(c.id);
               return {
                 id: c.id, rotulo: str(c.rotulo), linhas: str(c.rotulo).split("\n"),

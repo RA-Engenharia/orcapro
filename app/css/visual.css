@@ -465,6 +465,23 @@ html[data-visual="nova"] .bim-revit .rv-vistabar [data-rv-vb="snap"],
 html[data-visual="nova"] .bim-revit .rv-vistabar [data-rv-vb="home"],
 html[data-visual="nova"] .bim-revit .rv-vistabar [data-rv-vb="foto"] { display: none !important; }
 
+/* DISCIPLINA DA MODELAGEM (09/10/2026, js/bimdisciplinas.js): na pele nova a
+   aba ativa é a pílula — ela, a aba Arquivo e os ícones da fita ganham a cor
+   da disciplina (só com `data-rv-disc-on`; em "Todas" fica a cor da marca).
+   Depois das regras da pele (mesma especificidade: a ordem decide). */
+html[data-visual="nova"] .bim-revit[data-rv-disc-on]:not(.bim-pele-revit) {
+  --rv-aba-ativa-bg: var(--rv-disc);
+  --rv-arquivo-bg: var(--rv-disc);
+  --rv-foco: var(--rv-disc-acento);
+  --rv-ativo-borda: var(--rv-disc-acento);
+  --rv-aba-ativa-linha: transparent;
+}
+html[data-visual="nova"] .bim-revit[data-rv-disc-on]:not(.bim-pele-revit) .rv-aba[aria-selected="true"],
+html[data-visual="nova"] .bim-revit[data-rv-disc-on]:not(.bim-pele-revit) .rv-aba.rv-aba-arquivo { color: var(--rv-disc-texto); }
+html[data-visual="nova"] .bim-revit[data-rv-disc-on]:not(.bim-pele-revit) .rv-fita button svg { color: var(--rv-disc-acento); }
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-disc-sel { border-radius: 99px; border-left-width: 1px; padding-left: 9px; }
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-disc-menu { border-radius: 14px; }
+
 /* ENCAIXE DA COLUNA (B1): Propriedades/Navegador à direita — a ordem do flex
    inverte (o 3D primeiro, depois a janela da direita, depois a coluna), sem
    mexer no DOM que as e2e e o resto da casca conhecem. */

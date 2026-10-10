@@ -97,6 +97,8 @@
     area: '<path d="M4 4h16v16H4z" stroke-dasharray="3 2.5"/><path d="M8 16 16 8"/><path d="M8 12v4h4"/>',
     angulo: '<path d="M4 20h16"/><path d="M4 20 16 4"/><path d="M4 20a9 9 0 0 0 5.2-1.7" stroke-dasharray="2.5 2"/>',
     ima: '<path d="M6 4v8a6 6 0 0 0 12 0V4"/><path d="M6 4h4v8M14 4h4v8"/>',
+    /* a MÃO de mover a vista (rodapé da vista, js/bimselecao.js) */
+    mao: '<path d="M18 11V6a1.5 1.5 0 0 0-3 0v4"/><path d="M15 10V4.5a1.5 1.5 0 0 0-3 0V10"/><path d="M12 10V5.5a1.5 1.5 0 0 0-3 0V12"/><path d="M18 8.5a1.5 1.5 0 0 1 3 0V14a7 7 0 0 1-7 7h-1.6a7 7 0 0 1-5.2-2.3L3.6 15.8a1.6 1.6 0 0 1 2.4-2.1L9 16"/>',
     nota: '<path d="M4 4h16v11H9l-5 5z"/><path d="M8 8h8M8 11h5"/>',
     camera: '<path d="M4 8h3l2-2.5h6L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.6"/>',
     clash: '<path d="M4 6h9v9H4z"/><path d="M11 11h9v9h-9z"/><path d="M11 11h2v2h-2z" fill="currentColor"/>',

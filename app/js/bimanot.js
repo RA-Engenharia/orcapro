@@ -617,7 +617,8 @@
   }
   var TIPOS_COTA = [
     tipoC("linear", "Linear - 2,5 mm Arial", "Linear"),
-    tipoC("linear-cm", "Linear - 2 mm Arial (cm)", "Linear", { texto: 2.0, unidade: "cm", casas: 0 }),
+    /* a cota estrutural: unidade, casas e texto do Padrão de detalhamento (v2: 2,5 mm — test-bimanot-cotas confere) */
+    tipoC("linear-cm", "Linear - 2,5 mm Arial (cm)", "Linear", { texto: 2.5, unidade: "cm", casas: 0 }),
     tipoC("linear-centro", "Linear com centro - 2,5 mm Arial", "Linear", { centro: true }),
     tipoC("angular", "Angular - 2,5 mm Arial", "Angular", { casas: 2 }),
     tipoC("radial", "Radial - 2,5 mm Arial", "Radial", { marca: "seta", prefixo: "R " }),

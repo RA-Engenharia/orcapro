@@ -260,7 +260,8 @@
       // (#rv?t=<token>, `_abrirRVCloud` acima) — este #rv puro é só o QR da rede local.
       try {
         if (/(^|[#&])rv\b/i.test(location.hash || "")) {
-          if (typeof Gestao !== "undefined" && Gestao.podeGestao && Gestao.podeGestao()) {
+          /* podeBim: a licença só do Modela também abre o BIM (é o produto dela) */
+          if (typeof Gestao !== "undefined" && (Gestao.podeBim ? Gestao.podeBim() : (Gestao.podeGestao && Gestao.podeGestao()))) {
             this.view = "bim"; this.render();
             var _t = 0, _iv = setInterval(function () {
               _t++;
@@ -378,7 +379,8 @@
     _bim3dMotivo: function (obraId) {
       if (!Auth.usuario()) return "Entre na janela principal do OrçaPRO para continuar.";
       if (typeof Gestao === "undefined" || typeof Gestao.renderBim !== "function") return "O módulo BIM não carregou nesta janela. Feche-a e use o 3D da janela principal.";
-      if (!this._demo && Gestao.podeGestao && !Gestao.podeGestao()) return "O 3D da Simulação 4D é da Gestão de Obras (plano Plus), que esta licença não inclui. Para liberar, renove a licença pela janela principal (🔑). Feche esta janela.";
+      /* podeBim: a licença só do Modela abre o 3D (a obra é conferida logo abaixo) */
+      if (!this._demo && Gestao.podeGestao && !(Gestao.podeBim ? Gestao.podeBim() : Gestao.podeGestao())) return "O 3D da Simulação 4D é da Gestão de Obras (plano Plus), que esta licença não inclui. Para liberar, renove a licença pela janela principal (🔑). Feche esta janela.";
       if (Auth.podeModulo && !Auth.podeModulo("bim")) return "Seu usuário não tem acesso ao módulo BIM. Peça ao administrador da conta, ou feche esta janela.";
       var obra = null;
       try { obra = Store.obter(Auth.empresaId(), "obras", obraId); } catch (eO) { obra = null; }
@@ -843,12 +845,20 @@
       var podeGestao = typeof Gestao !== "undefined" && (this._demo || Gestao.podeGestao()); // demo: vitrine explora a Gestão com dados fake
       // Tela inicial = Painel de Gestão (visão executiva). Vitrine/demo continua no editor
       // de orçamento; sem Gestão (plano base) cai em Orçamentos como sempre.
-      var view = this.view || (podeGestao && !this._demo && (!Auth.podeModulo || Auth.podeModulo("dashboard")) ? "dashboard" : "orcamentos");
+      /* LICENÇA SÓ DO ORÇAPRO MODELA (tier "modela", js/licenca.js soModela):
+         a casa é o BIM; os outros módulos aparecem trancados ("Faz parte do
+         OrçaPRO", Gestao.renderTrancadoModela). ⚠ NÃO pode cair no ramo do
+         "sem Plus → só Orçamento" logo abaixo: abriria o orçamento para quem
+         comprou só a modelagem, e trancaria o BIM que ele comprou. */
+      var soModela = typeof Gestao !== "undefined" && !this._demo && !!Gestao.soModela && Gestao.soModela();
+      var view = this.view || (soModela ? "bim" : (podeGestao && !this._demo && (!Auth.podeModulo || Auth.podeModulo("dashboard")) ? "dashboard" : "orcamentos"));
       // Rede de segurança: quem seta App.view direto (deep-link ?view=xxx, console,
       // harness de screenshot) não passa por irPara. View desconhecida deixava o
       // #main VAZIO — normaliza aqui p/ o padrão seguro antes de qualquer render.
       if (!this.viewValida(view)) { view = this.viewPadrao(); this.view = view; }
-      if (typeof Gestao !== "undefined" && !this._demo && !Gestao.podeGestao()) {
+      if (soModela) {
+        /* nada a redirecionar: o menu mostra tudo (trancado) e a tela trancada tem saída para o BIM */
+      } else if (typeof Gestao !== "undefined" && !this._demo && !Gestao.podeGestao()) {
         // Sem Plus (base/sem licença): Gestão bloqueada p/ TODOS (dono e sub-usuário) → só Orçamento
         if (view !== "orcamentos") { view = "orcamentos"; this.view = "orcamentos"; }
         /* v1.1.233 — o RBAC continua valendo SEM o Plus. Este ramo jogava todo
@@ -903,6 +913,13 @@
              o recurso pela metade, do tipo que o gate não pega. */
           if (Gestao.menuMontar) Gestao.menuMontar();
         }
+      }
+      /* licença só do Modela: módulo trancado (o Orçamentos inclusive, que não
+         passa pelo Gestao.render) vira a tela "Faz parte do OrçaPRO" */
+      if (soModela && Gestao._trancadoModela && Gestao._trancadoModela(view)) {
+        this._gxDesligar();
+        main.innerHTML = Gestao.renderTrancadoModela(view);
+        return;
       }
       // módulos da Gestão
       if (view !== "orcamentos" && typeof Gestao !== "undefined") {
@@ -1844,6 +1861,8 @@
     /* Destino seguro quando a view pedida não existe: Painel (se a Gestão está
      * liberada e permitida ao usuário), senão a lista de Orçamentos. */
     viewPadrao: function () {
+      /* licença só do OrçaPRO Modela: a casa é o BIM */
+      if (!this._demo && typeof Gestao !== "undefined" && Gestao.soModela && Gestao.soModela()) return "bim";
       var podeG = typeof Gestao !== "undefined" && (this._demo || Gestao.podeGestao());
       if (podeG && (typeof Auth === "undefined" || !Auth.podeModulo || Auth.podeModulo("dashboard"))) return "dashboard";
       return "orcamentos";
@@ -15608,6 +15627,11 @@
          dentro da proposta aprovada. Nenhum caminho deve trazê-lo até aqui —
          esta é a última porta, e ela recusa dizendo o que aconteceu. */
       if (this.orcAtual._planoDaObra) { UI.toast("Isto é o plano de execução da obra, não o orçamento — nada foi gravado no orçamento. Recarregue a tela.", "erro"); return false; }
+      /* licença só do OrçaPRO Modela: o orçamento é do OrçaPRO. A tela já vem
+         trancada (App.render); esta é a porta de gravação, para nenhum caminho
+         lateral (atalho, modal, BIM) gravar orçamento por baixo. */
+      if (!this._demo && typeof Gestao !== "undefined" && Gestao.soModela && Gestao.soModela()) {
+        UI.toast("Orçamentos faz parte do OrçaPRO. A sua licença é do OrçaPRO Modela (a modelagem BIM) — nada foi gravado.", "erro"); return false; }
       if (this._trialBloqueado()) {
         /* ⚠ quem está SUSPENSO não está em "modo demonstração": esse texto
            mandaria um cliente pagante ativar uma licença que ele já tem */

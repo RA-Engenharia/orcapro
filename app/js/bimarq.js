@@ -37,6 +37,13 @@
  *     extremidades livres e nos vãos; UNIR GEOMETRIA parede × pilar × viga
  *     × laje com a regra escrita de quem corta quem (PRIORIDADE_UNIAO).
  *     Teste: node tools/test-p4-paredes.js.
+ *   · UNIÃO (09/10/2026, js/bimuniao.js): o canto também pela PROXIMIDADE
+ *     (as duas pontas a meia espessura da outra + 1 cm do encontro dos
+ *     eixos — a parede que começa no canto da face vira L, sem o dente) e a
+ *     FOLGA do T (a ponta que parou até meia espessura + 1 cm antes da face
+ *     chega nela). A planta une os contornos (sem a linha cortando o
+ *     encontro) e o IFC leva o IfcRelConnectsPathElements. Teste: node
+ *     tools/test-bimuniao.js.
  *
  * REGRAS DA CASA
  *   · Quantitativo EXATO da geometria que se desenha: o volume é a soma dos
@@ -73,6 +80,13 @@
   function Curva() {
     if (global.BimCurva) return global.BimCurva;
     if (typeof require === "function") { try { return require("./bimcurva.js"); } catch (e) {} }
+    return null;
+  }
+  /* UNIÃO — GANCHO: a detecção do canto pela proximidade e a folga do T (js/bimuniao.js).
+     Sem ele (teste em vm que não o carrega), o encontro de sempre (pontas a 3 cm). */
+  function Uniao() {
+    if (global.BimUniao) return global.BimUniao;
+    if (typeof require === "function") { try { return require("./bimuniao.js"); } catch (e) {} }
     return null;
   }
   function fin(v) { return typeof v === "number" && isFinite(v); }
@@ -1388,9 +1402,10 @@
          P4: a face sai do EIXO DE J (o meio da espessura), não do ponto de
          encontro — com a linha de localização numa face, as pontas desenhadas
          se encontram fora do eixo (no eixo, dá a mesma reta de antes) */
+      var geralPar = false;   /* UNIÃO: o canto pela proximidade (as faces saem do eixo de cada parede) */
       function retaFace(I, J, P, dJ, lado) {
         var nJ = rn(dJ); if (nJ[0] * lado[0] + nJ[1] * lado[1] < 0) nJ = [-nJ[0], -nJ[1]];
-        var C = (I.c.linhaLoc || J.c.linhaLoc) ? aMundo(J.f, 0, 0) : P, Q = [C[0] + nJ[0] * J.f.t / 2, C[1] + nJ[1] * J.f.t / 2];   /* sem linha de localização: a conta de sempre, número a número */
+        var C = (geralPar || I.c.linhaLoc || J.c.linhaLoc) ? aMundo(J.f, 0, 0) : P, Q = [C[0] + nJ[0] * J.f.t / 2, C[1] + nJ[1] * J.f.t / 2];   /* sem linha de localização: a conta de sempre, número a número */
         return retaLocal(I.f, Q, [Q[0] + dJ[0], Q[1] + dJ[1]]);
       }
       /* P4 — a configuração do canto entre A e B (modo e "alternar ordem de
@@ -1446,15 +1461,24 @@
         for (a = 0; a < 2; a++) for (b = 0; b < 2; b++) {
           if (A.usado[a] || B.usado[b]) continue;
           var PA = A.E[a], PB = B.E[b];
-          if (!encostam(A, a, B, b)) continue;
           var di = a === 1 ? A.d : [-A.d[0], -A.d[1]], ej = b === 0 ? B.d : [-B.d[0], -B.d[1]];
+          /* UNIÃO (js/bimuniao.js): as pontas não se tocam, mas as duas estão a menos de meia
+             espessura da OUTRA (+ 1 cm) do encontro dos eixos — a 2ª parede começou no canto da
+             face da 1ª. É canto em L (antes virava T e sobrava um dente no canto de fora) */
+          var perto = false;
+          if (!encostam(A, a, B, b)) {
+            perto = !!(Uniao() && Uniao().encontroL({ E: PA, d: di, t: A.f.t }, { E: PB, d: [-ej[0], -ej[1]], t: B.f.t }));
+            if (!perto) continue;
+          }
+          var geral = perto || !!(A.c.linhaLoc || B.c.linhaLoc);
+          geralPar = perto;
           var cr = di[0] * ej[1] - di[1] * ej[0], dt = di[0] * ej[0] + di[1] * ej[1];
           if (Math.abs(cr) < 0.02) { if (dt > 0) { A.usado[a] = B.usado[b] = true; junta(A, B, "I"); } continue; }
           /* as faces vêm de cada parede (P4: com a linha de localização numa face as
              pontas desenhadas não são o eixo; no eixo é a mesma conta de sempre).
              sA/sB: o lado (+w) de cada uma que fica à esquerda de di/ej (rn) */
           var P = [(PA[0] + PB[0]) / 2, (PA[1] + PB[1]) / 2], ni = rn(di), nj = rn(ej), Qr, Ql;
-          if (A.c.linhaLoc || B.c.linhaLoc) {
+          if (geral) {
             var sA = a === 1 ? 1 : -1, sB = b === 0 ? 1 : -1;
             Qr = interRetas(aMundo(A.f, 0, sA * A.f.t / 2), di, aMundo(B.f, 0, sB * B.f.t / 2), ej);
             Ql = interRetas(aMundo(A.f, 0, -sA * A.f.t / 2), di, aMundo(B.f, 0, -sB * B.f.t / 2), ej);
@@ -1494,7 +1518,9 @@
           var I = W[i]; if (!sobrepoe(I, J) || desunidas(I, J)) continue;
           if (Math.abs(I.d[0] * J.d[1] - I.d[1] * J.d[0]) < 0.2) continue;   /* quase paralelas: não é T */
           var lc = aLocal(I.f, Ep[0], Ep[1]);
-          if (Math.abs(lc[1]) > I.f.t / 2 + TOL || lc[0] < -I.f.L / 2 - TOL || lc[0] > I.f.L / 2 + TOL) continue;
+          /* UNIÃO (js/bimuniao.js): a ponta que parou ANTES da face (até meia espessura dela + 1 cm) também chega */
+          var folga = Uniao() ? Uniao().folgaT(J.f.t, TOL) : TOL;
+          if (Math.abs(lc[1]) > I.f.t / 2 + folga || lc[0] < -I.f.L / 2 - TOL || lc[0] > I.f.L / 2 + TOL) continue;
           var outro = J.E[1 - b], lo = aLocal(I.f, outro[0], outro[1]);
           if (Math.abs(lo[1]) <= I.f.t / 2) continue;                         /* a outra ponta não sai de I */
           var s = lo[1] > 0 ? 1 : -1;

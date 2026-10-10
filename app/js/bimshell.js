@@ -43,6 +43,7 @@
     return '<svg viewBox="0 0 24 24" width="' + t + '" height="' + t + '" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>';
   }
   function R() { return global.BimRibbon || null; }
+  function D() { return global.BimDisciplinas || null; }
   function CMD() { return global.BimCmd || null; }
 
   var Shell = {
@@ -104,6 +105,12 @@
       area.appendChild(this._docs());
       var palco = el("div", "rv-palco");
       this._palco = palco;
+      /* SELO DA DISCIPLINA (09/10/2026): "OrçaPRO Modela · Hidráulica & Sanitária"
+         no canto da vista, na cor da disciplina — sai no print da tela. É da
+         TELA: prancha, PDF e DXF são desenhados do modelo e não o levam. */
+      var selo = el("div", "rv-disc-selo");
+      selo.setAttribute("aria-hidden", "true");
+      palco.appendChild(selo);
       area.appendChild(palco);
       area.appendChild(this._vistabar());
       corpo.appendChild(area);
@@ -135,6 +142,15 @@
       /* lado da coluna Propriedades/Navegador (cara nova): arrastar o cabeçalho encaixa na outra borda */
       try { if (localStorage.getItem("orcapro:bim:lateral-lado") === "dir") raiz.setAttribute("data-rv-lat-lado", "dir"); } catch (eL2) {}
       this._ligarEncaixe(raiz);
+      /* com disciplina escolhida, abre numa aba que tenha ferramenta DELA
+         (e não na Arquitetura de sempre, que fora do civil só tem as comuns) */
+      try {
+        var dd0 = D(), r0 = R();
+        if (dd0 && r0 && dd0.filtrando() && !dd0.temNaAba(r0.abaAtiva(), dd0.atual(), true, r0)) {
+          var ai0 = dd0.abaInicial(dd0.atual(), r0); if (ai0) r0.irPara(ai0);
+        }
+      } catch (eD0) {}
+      this._aplicarDisc();
 
       container.innerHTML = "";
       container.appendChild(raiz);
@@ -270,6 +286,7 @@
 
     desmontar: function () {
       if (this._onKey) { document.removeEventListener("keydown", this._onKey); this._onKey = null; }
+      if (this._fecharDisc) { document.removeEventListener("pointerdown", this._fecharDisc, true); document.removeEventListener("keydown", this._fecharDisc, true); this._fecharDisc = null; }
       /* ⚠ `_btnSairFoco` TEM de morrer junto. `Shell` é singleton e o app remonta
          a casca a cada visita à aba BIM. Se a referência sobrevive, a guarda
          `if (novo && !this._btnSairFoco)` fica falsa para sempre e o botão de sair
@@ -309,6 +326,18 @@
         bt.onclick = function () { self.executar(b.id); };
         qat.appendChild(bt);
       });
+      /* PRANCHAS À VISTA (09/10/2026: o dono não achava onde ficam as pranchas): botão com o nome,
+         ao lado do Salvar/Desfazer — a cara nova esconde as ações da direita, esta fica. Quem monta
+         passa onPranchas (js/gestao.js → painel das folhas do js/bimfolhaui.js) */
+      if (typeof opts.onPranchas === "function") {
+        var bp = el("button", "rv-tacao rv-qat-pranchas");
+        bp.type = "button"; bp.id = "bim-btn-pranchas"; bp.setAttribute("data-rv-qat", "pranchas");
+        bp.title = "Pranchas do projeto: abrir as folhas, Gerar pranchas (o jogo do modelo num clique, com o carimbo do escritório), nova folha e PDF em lote";
+        bp.setAttribute("aria-label", "Pranchas");
+        bp.innerHTML = ico("prancha", 14) + '<span class="rv-tacao-rot">Pranchas</span>';
+        bp.onclick = function () { opts.onPranchas(); };
+        qat.appendChild(bp);
+      }
       t.appendChild(qat);
 
       var nome = el("div", "rv-titulo-nome");
@@ -368,23 +397,167 @@
       var d = el("div", "rv-abas");
       d.setAttribute("role", "tablist");
       if (!r) return d;
-      r.abas().forEach(function (a) {
-        var b = el("button", "rv-aba" + (a.id === "arquivo" ? " rv-aba-arquivo" : ""), a.rotulo);
-        b.type = "button";
-        b.setAttribute("role", "tab");
-        b.setAttribute("data-rv-aba", a.id);
-        b.setAttribute("aria-selected", a.id === r.abaAtiva() ? "true" : "false");
-        b.onclick = function () {
-          r.irPara(a.id);
-          self._raiz.querySelectorAll("[data-rv-aba]").forEach(function (x) {
-            x.setAttribute("aria-selected", x.getAttribute("data-rv-aba") === a.id ? "true" : "false");
-          });
-          self.pintarFita();
-        };
-        d.appendChild(b);
-      });
+      /* o SELETOR DE DISCIPLINA vem antes do Arquivo (js/bimdisciplinas.js) */
+      if (D()) d.appendChild(this._seletorDisc());
+      this._listaAbas(r).forEach(function (a) { d.appendChild(self._botaoAba(a)); });
+      this._assinAbas = this._assinaturaAbas(this._listaAbas(r));
       d.appendChild(this._rapidos());
       return d;
+    },
+    _listaAbas: function (r) { return r.abasVisiveis ? r.abasVisiveis() : r.abas(); },
+    _assinaturaAbas: function (lista) { return lista.map(function (a) { return a.id + "=" + a.rotulo; }).join("|"); },
+    _botaoAba: function (a) {
+      var self = this, r = R();
+      var b = el("button", "rv-aba" + (a.id === "arquivo" ? " rv-aba-arquivo" : ""), a.rotulo);
+      b.type = "button";
+      b.setAttribute("role", "tab");
+      b.setAttribute("data-rv-aba", a.id);
+      b.setAttribute("aria-selected", a.id === r.abaAtiva() ? "true" : "false");
+      b.onclick = function () {
+        r.irPara(a.id);
+        self._raiz.querySelectorAll("[data-rv-aba]").forEach(function (x) {
+          x.setAttribute("aria-selected", x.getAttribute("data-rv-aba") === a.id ? "true" : "false");
+        });
+        self.pintarFita();
+      };
+      return b;
+    },
+    /* As abas acompanham a disciplina (e as que os módulos acrescentam depois
+       de montar): se a lista mudou, troca só os botões das abas — o seletor e
+       os botões rápidos ficam. A aba ativa que sumiu cede lugar à aba de
+       entrada da disciplina. */
+    _sincAbas: function () {
+      var self = this, r = R();
+      if (!this._raiz || !r) return;
+      var barra = this._raiz.querySelector(".rv-abas");
+      if (!barra) return;
+      var lista = this._listaAbas(r);
+      if (lista.length && !lista.some(function (a) { return a.id === r.abaAtiva(); })) {
+        var dd = D(), alvo = dd ? dd.abaInicial(dd.atual(), r) : null;
+        r.irPara(alvo || lista[0].id);
+      }
+      var assin = this._assinaturaAbas(lista);
+      if (assin === this._assinAbas) {
+        barra.querySelectorAll("[data-rv-aba]").forEach(function (x) { x.setAttribute("aria-selected", x.getAttribute("data-rv-aba") === r.abaAtiva() ? "true" : "false"); });
+        return;
+      }
+      this._assinAbas = assin;
+      barra.querySelectorAll("[data-rv-aba]").forEach(function (x) { x.parentNode.removeChild(x); });
+      var antes = barra.querySelector(".rv-abas-dir");
+      lista.forEach(function (a) { barra.insertBefore(self._botaoAba(a), antes); });
+    },
+
+    /* --------------------------------------------- SELETOR DE DISCIPLINA
+     * Botão com a cor e o nome da disciplina; o menu lista todas, com o
+     * cadeado nas que não foram compradas (o clique nelas abre a oferta). */
+    _seletorDisc: function () {
+      var self = this, b = el("button", "rv-disc-sel");
+      b.type = "button";
+      b.setAttribute("data-rv-disc-sel", "1");
+      b.setAttribute("aria-haspopup", "menu");
+      b.setAttribute("aria-expanded", "false");
+      b.innerHTML = '<span class="rv-disc-ponto" aria-hidden="true"></span><span class="rv-disc-nome"></span><span class="rv-disc-seta" aria-hidden="true">▾</span>';
+      b.onclick = function (ev) { if (ev) ev.stopPropagation(); self.menuDisciplina(); };
+      return b;
+    },
+    menuDisciplina: function (abrir) {
+      var self = this, dd = D(), raiz = this._raiz;
+      if (!raiz || !dd) return false;
+      var velho = raiz.querySelector(".rv-disc-menu"), sel = raiz.querySelector("[data-rv-disc-sel]");
+      if (velho || abrir === false) {
+        if (velho) velho.parentNode.removeChild(velho);
+        if (sel) sel.setAttribute("aria-expanded", "false");
+        if (this._fecharDisc) { document.removeEventListener("pointerdown", this._fecharDisc, true); document.removeEventListener("keydown", this._fecharDisc, true); this._fecharDisc = null; }
+        if (velho || abrir === false) return false;
+      }
+      var atual = dd.atual(), m = el("div", "rv-disc-menu");
+      m.setAttribute("role", "menu");
+      m.setAttribute("aria-label", "Disciplina da modelagem");
+      dd.lista().forEach(function (d) {
+        var tr = dd.trancada(d.id);
+        var o = el("button", "rv-disc-op");
+        o.type = "button";
+        o.setAttribute("role", "menuitemradio");
+        o.setAttribute("aria-checked", d.id === atual ? "true" : "false");
+        o.setAttribute("data-rv-disc-op", d.id);
+        if (tr) o.setAttribute("data-rv-disc-trancada", "1");
+        o.title = tr ? "Disponível no OrçaPRO Modela " + d.nome : d.descricao;
+        o.innerHTML = '<span class="rv-disc-ponto" aria-hidden="true" style="background:' + esc(d.cor) + '"></span>' +
+          '<span class="rv-disc-op-nome">' + esc(d.nome) + "</span>" +
+          (tr ? '<span class="rv-disc-cadeado" aria-label="trancada">' + ico("cadeado", 13) + "</span>" : "");
+        o.onclick = function () { self.menuDisciplina(false); self.escolherDisciplina(d.id); };
+        m.appendChild(o);
+      });
+      raiz.appendChild(m);
+      if (sel) {
+        var rr = raiz.getBoundingClientRect(), rs = sel.getBoundingClientRect();
+        m.style.left = Math.max(4, rs.left - rr.left) + "px";
+        m.style.top = (rs.bottom - rr.top + 2) + "px";
+        sel.setAttribute("aria-expanded", "true");
+      }
+      var marcado = m.querySelector('[aria-checked="true"]') || m.querySelector("button");
+      try { if (marcado) marcado.focus(); } catch (eF) {}
+      this._fecharDisc = function (ev) {
+        if (ev.type === "keydown") {
+          if (ev.key === "Escape") { ev.stopPropagation(); ev.preventDefault(); self.menuDisciplina(false); try { if (sel) sel.focus(); } catch (e) {} }
+          else if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+            var ops = [].slice.call(m.querySelectorAll("button")), i = ops.indexOf(document.activeElement);
+            var j = ev.key === "ArrowDown" ? (i + 1) % ops.length : (i - 1 + ops.length) % ops.length;
+            if (ops[j]) ops[j].focus(); ev.preventDefault();
+          }
+          return;
+        }
+        if (!m.contains(ev.target) && !(sel && sel.contains(ev.target))) self.menuDisciplina(false);
+      };
+      document.addEventListener("pointerdown", this._fecharDisc, true);
+      document.addEventListener("keydown", this._fecharDisc, true);
+      return true;
+    },
+    /* troca a disciplina: a fita mostra só o que é dela + os comuns, a cor
+       muda, e abre a aba de entrada da disciplina. Trancada → a oferta. */
+    escolherDisciplina: function (id) {
+      var dd = D(), r = R();
+      if (!dd) return { ok: false, motivo: "sem disciplinas" };
+      var res = dd.escolher(id);
+      if (!res.ok) {
+        if (res.trancada) {
+          var M = global.Modela;
+          if (M && typeof M.oferta === "function") { try { M.oferta(id); } catch (e) {} }
+          else { this.status(res.motivo); try { if (global.UI && UI.toast) UI.toast(res.motivo, "aviso"); } catch (e2) {} }
+        }
+        return res;
+      }
+      if (r && res.mudou) {
+        var alvo = dd.abaInicial(id, r);
+        if (alvo) r.irPara(alvo);
+      }
+      this._aplicarDisc();
+      this.pintarFita();
+      this.status("Disciplina: " + dd.get(id).nome + (id === dd.PADRAO ? " — a fita inteira." : " — só as ferramentas dela e as comuns."));
+      return res;
+    },
+    disciplina: function () { var dd = D(); return dd ? dd.atual() : "completo"; },
+    /* a cor da disciplina na casca: variáveis --rv-disc* na raiz (o CSS pinta
+       a faixa do título, a aba Arquivo, a aba ativa, o foco e o selo) */
+    _aplicarDisc: function () {
+      var raiz = this._raiz, dd = D();
+      if (!raiz || !dd) return;
+      var id = dd.atual(), tema = raiz.getAttribute("data-rv-tema") === "escuro" ? "escuro" : "claro";
+      var c = dd.cores(id, tema), s = dd.selo(id), reg = dd.get(id);
+      raiz.setAttribute("data-rv-disc", id);
+      if (id !== dd.PADRAO) raiz.setAttribute("data-rv-disc-on", "1"); else raiz.removeAttribute("data-rv-disc-on");
+      raiz.style.setProperty("--rv-disc", c.cor);
+      raiz.style.setProperty("--rv-disc-texto", c.texto);
+      raiz.style.setProperty("--rv-disc-acento", c.acento);
+      var sel = raiz.querySelector("[data-rv-disc-sel]");
+      if (sel) {
+        var nm = sel.querySelector(".rv-disc-nome");
+        if (nm) nm.textContent = reg.curto;
+        sel.title = "Disciplina: " + reg.nome + " — trocar (a fita mostra só as ferramentas da disciplina e as comuns)";
+        sel.setAttribute("aria-label", "Disciplina: " + reg.nome);
+      }
+      var selo = raiz.querySelector(".rv-disc-selo");
+      if (selo) { selo.textContent = s.texto; selo.setAttribute("data-rv-disc-selo", id); }
     },
 
     /* ------------------------------------------------- BOTÕES RÁPIDOS
@@ -437,6 +610,7 @@
       if (!this._raiz || !r) return;
       var fita = this._raiz.querySelector(".rv-fita");
       if (!fita) return;
+      this._sincAbas();
       this._pintarRapidos();
       var v = r.render();
       fita.innerHTML = "";
@@ -942,6 +1116,21 @@
        * Por que existem: a coluna de Propriedades + Navegador ocupa 268px
        * fixos no computador, e a fita ocupa a faixa de cima. Num notebook
        * sobra pouco para o 3D, e a tela fica cheia demais para trabalhar. */
+      /* SELECIONAR (js/bimselecao.js, 09/10/2026): o esquerdo SELECIONA; a Mão é a ferramenta explícita
+         de mover a vista com o esquerdo (o botão do meio move sempre). Estado da tela, como os de baixo. */
+      var bMao = el("button", "rv-vb");
+      bMao.type = "button";
+      bMao.title = "Mão: o botão esquerdo move a vista (desligada, o esquerdo seleciona; o botão do meio move sempre)";
+      bMao.setAttribute("aria-label", bMao.title);
+      bMao.setAttribute("data-rv-vb", "mao");
+      bMao.setAttribute("aria-pressed", global.BimSelecao && global.BimSelecao.mao() ? "true" : "false");
+      bMao.innerHTML = ico("mao", 14);
+      bMao.onclick = function () {
+        var SL = global.BimSelecao; if (!SL) return;
+        bMao.setAttribute("aria-pressed", SL.mao(!SL.mao()) ? "true" : "false");
+      };
+      d.appendChild(bMao);
+
       var bLat = el("button", "rv-vb");
       bLat.type = "button";
       bLat.title = "Esconder/mostrar Propriedades e Navegador de projeto";
@@ -999,6 +1188,7 @@
       var atual = this._raiz.getAttribute("data-rv-tema");
       var novo = tema || (atual === "escuro" ? "claro" : "escuro");
       this._raiz.setAttribute("data-rv-tema", novo);
+      this._aplicarDisc();   /* o acento da disciplina é outro na fita escura */
       try { localStorage.setItem("orcapro:bim:tema-revit", novo); } catch (e) {}
       if (typeof this._opts.onTema === "function") this._opts.onTema(novo);
       return novo;

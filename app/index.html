@@ -89,6 +89,8 @@
   <script src="js/finstatus.js"></script>
   <script src="js/icones.js"></script>
   <script src="js/modulo.js"></script>
+  <!-- modela.js: o direito ao OrçaPRO Modela (teste de 7 dias, disciplinas compradas, vitalícia). Antes do bimprevia.js, que pergunta a ele se o modelador aparece -->
+  <script src="js/modela.js"></script>
   <script src="js/bimprevia.js"></script>
   <script src="js/idb.js"></script>
   <script src="js/store.js"></script>
@@ -325,8 +327,16 @@
   <!-- CURVA: o painel Desenhar (formas: retângulo, polígono, círculo, arcos — motor puro) e a parede curva / aresta em arco (motor puro, ganchos CURVA no bimarq/bimedit/bimambiente/ifcsaida) -->
   <script src="js/bimdesenho.js"></script>
   <script src="js/bimcurva.js"></script>
+  <!-- UNIÃO DE PAREDES (09/10/2026): o canto pela proximidade, o contorno único na planta (sem a linha cortando o encontro) e os pares do IfcRelConnectsPathElements — motor puro -->
+  <script src="js/bimuniao.js"></script>
   <!-- P9: estrutura (viga justificada/inclinada, pilar inclinado, marca da localização, treliça, rampa NBR 9050, propriedades de seção) — motor puro -->
   <script src="js/bimestrut.js"></script>
+  <!-- METÁLICA & MECÂNICA (09/10/2026): regras de furo/parafuso (NBR 8800), peças (chapa, perfil cortado, parafuso, mecânica — extensão do replay do js/bimedit.js), ligações, galpão e fabricação (marcas, DSTV, DXF, listas) — motores puros -->
+  <script src="js/metalnorma.js"></script>
+  <script src="js/metalpeca.js"></script>
+  <script src="js/metalligacao.js"></script>
+  <script src="js/metalgalpao.js"></script>
+  <script src="js/metalfab.js"></script>
   <script src="js/familia.js"></script>
   <!-- FAMIMPORT: família importada (malha por tipo, .opfam v2 do plugin) e o leitor do .rfa (CFB/PartAtom) -->
   <script src="js/cfb.js"></script>
@@ -354,6 +364,9 @@
   <script src="js/bimopcoes.js"></script>
   <script src="js/bimgerenciar.js"></script>
   <script src="js/familiasra.js"></script>
+  <!-- CARPINTARIA & MARCENARIA (09/10/2026): módulos em chapa, plano de corte, arquivos para a empresa de corte (motores puros) -->
+  <script src="js/marcenaria.js"></script>
+  <script src="js/marcenariasaida.js"></script>
   <!-- B6/B8 (08/10/2026): família -> fonte JSON, templates RA e o validador da modelagem por comando (motores puros) -->
   <script src="js/familiarevit.js"></script>
   <script src="js/templatesra.js"></script>
@@ -444,6 +457,8 @@
   <script src="js/elevacao.js"></script>
   <script src="js/imgplanta.js"></script>
   <script src="js/pdfvetor.js"></script>
+  <!-- DISCIPLINAS do modelador (09/10/2026): registro, cor e o mapa comando → disciplina; a fita pergunta aqui o que mostrar -->
+  <script src="js/bimdisciplinas.js"></script>
   <script src="js/bimribbon.js"></script>
   <!-- P6: registro de ramos do Navegador de projeto (cada módulo registra o seu; o gestao.js só aplica) — antes de quem registra -->
   <script src="js/bimnavegador.js"></script>
@@ -465,7 +480,11 @@
   <script src="js/bimterrenoui.js"></script>
   <!-- P9: Rampa, Escada em U e Treliça na fita (só com a prévia do modelador) -->
   <script src="js/bimestrutui.js"></script>
+  <!-- METÁLICA & MECÂNICA: a aba da disciplina (Peças, Ligações, Galpão, Fabricação) — só com a prévia do modelador -->
+  <script src="js/metalui.js"></script>
   <script src="js/bimp3ui.js"></script>
+  <!-- CARPINTARIA & MARCENARIA: a tela (aba da disciplina; só com o modelador) -->
+  <script src="js/marcenariaui.js"></script>
   <script src="js/bimarqui.js"></script>
   <script src="js/bimpropsui.js"></script>
   <!-- P2-D: ambientes na tela (comando Ambiente, identificador na planta, esquema de cores, Navegador) — só com a prévia do modelador -->
@@ -475,6 +494,7 @@
   <!-- PLANTA: modelar na planta baixa (parede, porta, laje, pilar… clicando na planta 2D) e a barra de opções da ferramenta (ortogonal, incrementos, snaps, formas) — só com a prévia do modelador -->
   <script src="js/bimbarraopcoes.js"></script>
   <script src="js/bimplantamodelar.js"></script>
+  <script src="js/bimselecao.js"></script>
   <!-- P5: a tabela numa aba de vista, o editor (Propriedades da tabela) e o .xlsx — só com a prévia do modelador -->
   <script src="js/bimtabelaui.js"></script>
   <!-- P8: folhas no BIM (vista em escala, carimbo parametrizado, listas, revisões) e o DXF da vista e da folha — só com a prévia do modelador -->
@@ -517,6 +537,8 @@
   <script src="js/obrademo.js"></script>
   <script src="js/empresa.js"></script>
   <script src="js/licenca.js"></script>
+  <!-- modelaui.js: selo do Modela na barra do BIM e o aviso de teste terminado / disciplina não contratada -->
+  <script src="js/modelaui.js"></script>
   <script src="js/cobranca.js"></script>
   <script src="js/assinatura.js"></script>
   <script src="js/laudo.js"></script>

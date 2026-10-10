@@ -110,9 +110,10 @@
     _extrair: function (d) {
       var b = B(); if (!b || !b.vista2d) return { ok: false, erro: "O visualizador 3D ainda não abriu." };
       if (this._p6()) { var r6 = this._p6Extrair(d, b); if (r6) return r6; }   /* P6: V/G, faixa, forro, recorte */
-      if (d.tipo === "planta") return b.vista2d({ tipo: "planta", yCorte: d.nivel.y + d.altura, yFundo: d.nivel.y - d.abaixo });
+      /* p6Tag: cada contorno/aresta leva o uid da peça — é por ele que o clique na vista SELECIONA (js/bimselecao.js) */
+      if (d.tipo === "planta") return b.vista2d({ tipo: "planta", yCorte: d.nivel.y + d.altura, yFundo: d.nivel.y - d.abaixo, p6Tag: true });
       var c = d.corte;
-      return b.vista2d({ tipo: "corte", ax: c.ax, az: c.az, bx: c.bx, bz: c.bz, inv: !!c.inv, prof: c.prof > 0 ? c.prof : null });
+      return b.vista2d({ tipo: "corte", ax: c.ax, az: c.az, bx: c.bx, bz: c.bz, inv: !!c.inv, prof: c.prof > 0 ? c.prof : null, p6Tag: true });
     },
     /* o que o desenho leva além do modelo: marcas de corte (planta) e níveis (corte) */
     _anotar: function (d, dados) {
@@ -216,6 +217,7 @@
       if (vbAnt && !recalcular) this._aplicarVb(id, vbAnt); else this._aplicarVb(id, res.vb);
       if (this._pick && this._pick.id === id) c.el.setAttribute("data-d2-pick", "1");
       try { if (global.BimPlantaModelar && global.BimPlantaModelar.aposDesenhar) global.BimPlantaModelar.aposDesenhar(id); } catch (ePM) {}   /* PLANTA: o elástico volta por cima do desenho novo */
+      try { if (global.BimSelecao && global.BimSelecao.aposDesenhar) global.BimSelecao.aposDesenhar(id); } catch (eSL) {}   /* SELECIONAR: o realce e as alças voltam por cima */
       return true;
     },
     _aplicarVb: function (id, vb) {
@@ -274,13 +276,23 @@
         if (AN5 && AN5.clique2d && ev.button === 0 && AN5.clique2d(id, ev, self._ptSvg(id, ev))) return;
         var marca = ev.target && ev.target.closest ? ev.target.closest("[data-d2-corte]") : null;
         if (marca && ev.button === 0) { self.abrir(self.idCorte(marca.getAttribute("data-d2-corte"))); return; }
-        if (ev.button !== 0 && ev.button !== 1) return;
+        /* SELECIONAR (js/bimselecao.js, 09/10/2026): sem ferramenta, o botão ESQUERDO seleciona (clique),
+           faz a janela (arrastar no vazio), move a peça e estica pela alça. Mover a vista é o botão do
+           MEIO — o esquerdo só move a vista com a Mão ligada ou com o dedo (o toque fica como era). */
+        var SL = global.BimSelecao;
+        if (SL && SL.down2d && SL.down2d(id, ev, self._ptSvg(id, ev))) return;
+        if (SL ? !SL.panPlanta(ev) : (ev.button !== 0 && ev.button !== 1)) return;
         var m = c.svg.getScreenCTM(); if (!m) return;
-        arr = { x: ev.clientX, y: ev.clientY, vb: clone(c.vb), s: 1 / m.a };
+        arr = { x: ev.clientX, y: ev.clientY, vb: clone(c.vb), s: 1 / m.a, toque: ev.pointerType === "touch" };
         try { v.setPointerCapture(ev.pointerId); } catch (e) {}
         v.setAttribute("data-d2-arrasta", "1");
       });
+      /* o botão do meio não liga a rolagem automática do navegador (ele é o "mover a vista") */
+      v.addEventListener("mousedown", function (ev) { if (ev.button === 1) ev.preventDefault(); });
+      v.addEventListener("auxclick", function (ev) { if (ev.button === 1) ev.preventDefault(); });
       v.addEventListener("pointermove", function (ev) {
+        var SLm = global.BimSelecao;   /* SELECIONAR: a janela, o arrasto da peça/alça e o realce sob o cursor */
+        if (!arr && SLm && SLm.move2d && SLm.move2d(id, ev, self._ptSvg(id, ev))) return;
         if (self._pick && self._pick.id === id && self._pick.pts.length === 1) self._mostrarPick(id, ev);
         var AU = global.BimAmbienteUI;   /* P2-D: o realce da região antes do clique */
         if (!arr && AU && AU.mover2d) AU.mover2d(id, ev, self._ptSvg(id, ev));
@@ -290,7 +302,13 @@
         var dx = (ev.clientX - arr.x) * arr.s, dy = (ev.clientY - arr.y) * arr.s;
         self._aplicarVb(id, { x: arr.vb.x - dx, y: arr.vb.y - dy, w: arr.vb.w, h: arr.vb.h });
       });
-      function solta() { arr = null; v.removeAttribute("data-d2-arrasta"); }
+      function solta(ev) {
+        var SLu = global.BimSelecao;
+        /* SELECIONAR: o toque simples (o dedo não andou) seleciona; o arrasto do esquerdo termina aqui */
+        if (arr && arr.toque && ev && ev.type === "pointerup" && SLu && SLu.clique2d && Math.abs(ev.clientX - arr.x) + Math.abs(ev.clientY - arr.y) < 8) SLu.clique2d(id, ev, self._ptSvg(id, ev));
+        else if (!arr && SLu && SLu.up2d && ev) SLu.up2d(id, ev, self._ptSvg(id, ev), ev.type === "pointercancel");
+        arr = null; v.removeAttribute("data-d2-arrasta");
+      }
       v.addEventListener("pointerup", solta); v.addEventListener("pointercancel", solta);
       v.addEventListener("dblclick", function () {
         /* PLANTA: com a ferramenta de modelar armada o duplo clique é ponto, não "enquadrar" */

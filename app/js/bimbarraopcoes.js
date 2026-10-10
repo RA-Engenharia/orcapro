@@ -66,7 +66,8 @@
   /* o padrão da PRIMEIRA vez (o pedido: ortogonal e snaps ligados, 45°, 90° e 180°) */
   function padrao(sub) {
     return { orto: true, inc: PADRAO_INC.slice(), snap: true, tipos: null, grade: true, passo: 0.10,
-             forma: "linha", encadear: true, desloc: 0, raio: 0, linhaLoc: "eixo", lados: 6, virar: false };
+             forma: "linha", encadear: true, desloc: 0, raio: 0, linhaLoc: "eixo", lados: 6, virar: false,
+             unir: true };   /* UNIÃO (js/bimuniao.js): a parede nova une com as que encontra — ligado por padrão */
   }
   /* o que vem do armazenamento passa pela mesma peneira: lixo vira o padrão daquele campo */
   function sanear(c, sub) {
@@ -86,6 +87,7 @@
     o.linhaLoc = typeof c.linhaLoc === "string" && /^[a-zA-Z]{1,20}$/.test(c.linhaLoc) ? c.linhaLoc : p.linhaLoc;
     var la = Math.round(num(c.lados, p.lados)); o.lados = la >= 3 && la <= 64 ? la : p.lados;
     o.virar = !!c.virar;
+    o.unir = typeof c.unir === "boolean" ? c.unir : p.unir;
     return o;
   }
 
@@ -318,6 +320,9 @@
       var LL = (A() && A().LINHAS_LOC) ? A().LINHAS_LOC.map(function (x) { return { id: x.id, rotulo: x.nome }; }) : [];
       if (LL.length) esp += campoSel("linhaLoc", "Localização", LL, c.linhaLoc, "Linha de localização: qual linha da parede é a linha que você desenha");
       esp += liga("encadear", "Encadear", c.encadear, "Cada parede continua do fim da anterior (Esc encerra o traço)");
+      /* UNIÃO (js/bimuniao.js): a parede nova une com as que ela encontra — canto, T, X, emenda — e
+         a planta sai sem a linha cortando o encontro. Desligado: a junta fica separada (lembrado) */
+      esp += liga("unir", "Unir automaticamente", c.unir, "Ligado: a parede nova une com as que encontra (canto em L, T, X, emenda) e a planta sai sem a linha no encontro. Desligado: a junta fica separada. Para mudar depois: Propriedades › Unir nos cantos, ou Modificar › Desunir geometria.", "parede");
       esp += campoNum("desloc", "Desloc.", fmt(c.desloc), "m", "Deslocamento: a parede nasce paralela à linha clicada, a esta distância (positivo: à esquerda de quem desenha)", "3.4em");
       esp += campoNum("raio", "Raio", fmt(c.raio), "m", "Raio de concordância nos cantos do traço (0 = canto vivo)", "3.4em");
     }
@@ -409,13 +414,14 @@
       var k = b.getAttribute("data-bbo"), sub = UIst.sub; if (!sub) return;
       if (k === "incMenu" || k === "snapMenu") { self._abrirMenu(k); return; }
       if (k === "forma") { self.mudar(sub, "forma", b.getAttribute("data-forma")); self._aplicar(sub, "forma"); self.pintar(); return; }
-      if (k === "orto" || k === "snap" || k === "grade" || k === "encadear" || k === "virar") {
+      if (k === "orto" || k === "snap" || k === "grade" || k === "encadear" || k === "virar" || k === "unir") {
         var c = self.cfg(sub), v = !c[k];
         if (k === "virar") { var P = PM(); if (P && P.familiaVirar) P.familiaVirar(v); }
         self.mudar(sub, k, v); self._aplicar(sub, k); self.pintar();
         status(({ orto: v ? "Ortogonal ligado: o traço anda só nos ângulos dos incrementos." : "Ortogonal desligado: ângulo livre (atraído a ±" + JANELA + "° dos incrementos).",
                   snap: v ? "Snaps ligados." : "Snaps desligados: o ponto fica onde o cursor está.", grade: v ? "Grade ligada." : "Grade desligada.",
-                  encadear: v ? "Encadear ligado: cada parede continua da anterior." : "Encadear desligado.", virar: v ? "A folha abre para fora." : "A folha abre para dentro." })[k]);
+                  encadear: v ? "Encadear ligado: cada parede continua da anterior." : "Encadear desligado.", virar: v ? "A folha abre para fora." : "A folha abre para dentro.",
+                  unir: v ? "Unir automaticamente: a parede nova une com as que encontra (sem linha no encontro)." : "Unir desligado: a parede nova nasce com a junta separada." })[k]);
       }
     });
     el.addEventListener("change", function (e) {
@@ -504,6 +510,13 @@
          12 px nas pontas, laje por contorno) — foi o que a e2e-bim-b3 pegou */
       var pl = b.planta2d ? b.planta2d() : null;
       if ((!campo || campo === "linhaLoc") && sub === "parede" && b.editarB2 && pl && pl.traco().b2) b.editarB2({ linhaLoc: c.linhaLoc === "eixo" ? null : c.linhaLoc });
+      /* UNIÃO: "Unir automaticamente" vale para a parede NOVA — a configuração do modelador (js/bimarqui.js)
+         acompanha; o visor só recebe se o modo B2 já estiver ligado (a mesma ressalva do editarB2 acima) */
+      if ((!campo || campo === "unir") && sub === "parede") {
+        var U = AU(), cu = U && U.cfg ? U.cfg() : null;
+        if (cu) cu.unir = c.unir !== false;
+        if (b.editarB2 && pl && pl.traco().b2) b.editarB2({ unir: c.unir !== false });
+      }
     } catch (e) {}
     var P = PM(); if (P && P.aoMudarBarra) P.aoMudarBarra(sub, campo);
   };

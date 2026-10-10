@@ -73,7 +73,7 @@
       var pr = PR().normalizar(reg), ix = -1;
       pr.folhas.forEach(function (f, i) { if (f.id === m[2]) ix = i; });
       if (ix < 0) return null;
-      return { reg: reg, pr: pr, folha: pr.folhas[ix], ix: ix, geo: PR().geometria(pr.formato, pr.orientacao) };
+      return { reg: reg, pr: pr, folha: pr.folhas[ix], ix: ix, geo: PR().geometriaDe(pr) };
     },
     /* grava a folha `f` (normalizada) de volta no registro */
     gravarFolha: function (a, f) {
@@ -84,16 +84,33 @@
     },
     nomeFolha: function (pr, f) { return PR().numeroFolha(pr, f) + " - " + (f.conteudo || "Sem nome"); },
 
+    /* o cadastro da conta (⚙ Empresa): nome, CNPJ, título, responsável, CREA, endereço, contato */
+    empresaDados: function () { try { return global.Empresa && global.Empresa.dados ? global.Empresa.dados() : {}; } catch (e) { return {}; } },
+    /* o prancha do template aplicado na obra (.optpl: formato, notas, modelo de carimbo) */
+    templatePrancha: function () { try { var b = B2(); return (b && b.estado && (b.estado().templateAtivo || {}).prancha) || null; } catch (e) { return null; } },
+    /* o conjunto "Folhas do projeto" da obra — criado na 1ª vez com o CARIMBO RA. Os dados da empresa
+       NÃO são copiados para a prancha: o carimbo lê o cadastro da conta na hora (mudou lá, muda aqui).
+       Registro de antes do modelo de carimbo (sem `modelo`) passa a RA: é o padrão das folhas do modelador. */
+    conjunto: function (formato) {
+      var regs = this.registros(), reg = regs.filter(function (r) { return r.origem === "folhas"; })[0];
+      if (reg) {
+        if (!reg.carimbo || !reg.carimbo.modelo) { reg = clone(reg); reg.carimbo = reg.carimbo || {}; reg.carimbo.modelo = "RA"; }
+        return reg;
+      }
+      var tpl = this.templatePrancha() || {}, obra = null;
+      try { obra = global.Store.obter(this.empresa(), "obras", this.G()._bimSel); } catch (e2) { obra = null; }
+      obra = obra || {};
+      var tc = tpl.carimbo || {};
+      reg = PR().normalizar({ nome: "Folhas do projeto", formato: formato || tpl.formato || "A1", orientacao: tpl.orientacao, origem: "folhas", folhas: [], coluna: tpl.coluna || [],
+        carimbo: { modelo: tc.modelo === "simples" ? "simples" : "RA", obra: obra.nome || "", proprietario: obra.clienteNome || "",
+                   local: obra.local || obra.endereco || "", data: new Date().toLocaleDateString("pt-BR") } });
+      reg.obraId = String(this.G()._bimSel || ""); reg.criadoEm = new Date().toISOString(); delete reg.id;
+      return reg;
+    },
+
     /* uma folha nova no conjunto "Folhas do projeto" da obra (criado na 1ª vez) */
     novaFolha: function (formato) {
-      var regs = this.registros(), reg = regs.filter(function (r) { return r.origem === "folhas"; })[0];
-      if (!reg) {
-        var d = {}; try { d = global.Empresa && global.Empresa.dados ? global.Empresa.dados() : {}; } catch (e) { d = {}; }
-        var obraNome = ""; try { var o = global.Store.obter(this.empresa(), "obras", this.G()._bimSel); obraNome = (o && o.nome) || ""; } catch (e2) {}
-        reg = PR().normalizar({ nome: "Folhas do projeto", formato: formato || "A1", origem: "folhas", folhas: [],
-          carimbo: { empresa: d.nome || "", responsavel: d.responsavel || "", registro: d.crea ? "CREA " + d.crea : "", obra: obraNome, data: new Date().toLocaleDateString("pt-BR") } });
-        reg.obraId = String(this.G()._bimSel || ""); reg.criadoEm = new Date().toISOString(); delete reg.id;
-      }
+      var reg = this.conjunto(formato);
       var pr = PR().normalizar(reg), n = pr.folhas.length + 1;
       pr.folhas.push(PR().normalizar({ folhas: [{ id: "f" + Date.now().toString(36) + n, n: n, conteudo: "Folha " + ("0" + n).slice(-2), escala: "indicada" }] }).folhas[0]);
       pr.id = reg.id; pr.obraId = reg.obraId; pr.criadoEm = reg.criadoEm;
@@ -161,6 +178,7 @@
       var self = this, rec = { imagens: {}, vistas: {}, viewports: {}, projeto: this.projeto(), editor: !!editor };
       a.folha.blocos.forEach(function (b) { if (b.tipo === "viewport") { var dz = self.desenho(b.vistaId); if (dz) rec.viewports[b.vistaId] = dz; } });
       try { rec.logo = global.Empresa && global.Empresa.logo ? global.Empresa.logo() : null; } catch (e) {}
+      rec.empresa = this.empresaDados();   /* o carimbo lê nome, CNPJ, RT e registro do cadastro da conta */
       return rec;
     },
     pintar: function (id) {
@@ -308,11 +326,46 @@
       outros.push({ id: "atualizar", rotulo: "Modelo mudou?", tipo: "botao", rotuloBotao: "Atualizar vistas", fn: function () { self._desenhos = {}; self.pintar(id); } });
       return {
         daVista: true, semEditarTipo: true, titulo: "Folha: " + this.nomeFolha(a.pr, a.folha), icone: "prancha",
-        secoes: [{ nome: "Gráficos", params: graf }, { nome: "Dados de identidade", params: ident }, { nome: "Outros", params: outros }],
+        secoes: [{ nome: "Gráficos", params: graf }, { nome: "Dados de identidade", params: ident }, { nome: "Carimbo (todas as folhas do conjunto)", params: this.paramsCarimbo(a) }, { nome: "Outros", params: outros }],
         onMudar: function (pid, valor) { self._mudarFolha(id, pid, valor); return self.props(id); }
       };
     },
+    /* o carimbo é do CONJUNTO (as folhas do registro): modelo, código-base e os dados do projeto. Empresa,
+       CNPJ, RT e registro vêm do cadastro da conta (⚙ Empresa) — não se digitam aqui */
+    paramsCarimbo: function (a) {
+      var c = a.pr.carimbo || {};
+      return [
+        { id: "c:modelo", rotulo: "Modelo de carimbo", tipo: "lista", valor: c.modelo, opcoes: PR().MODELOS_CARIMBO.map(function (m) { return { id: m.id, rotulo: m.nome }; }) },
+        { id: "c:codigo", rotulo: "Código-base (código-nn)", tipo: "texto", valor: c.codigo },
+        { id: "c:obra", rotulo: "Obra", tipo: "texto", valor: c.obra },
+        { id: "c:proprietario", rotulo: "Proprietário", tipo: "texto", valor: c.proprietario },
+        { id: "c:contratante", rotulo: "Contratante", tipo: "texto", valor: c.contratante },
+        { id: "c:local", rotulo: "Local", tipo: "texto", valor: c.local },
+        { id: "c:data", rotulo: "Data do carimbo", tipo: "texto", valor: c.data }
+      ];
+    },
+    mudarCarimbo: function (id, campo, valor) {
+      var a = this.achar(id); if (!a) return false;
+      var CAMPOS = { modelo: 1, codigo: 1, obra: 1, proprietario: 1, contratante: 1, local: 1, data: 1 };
+      if (!CAMPOS[campo]) return false;
+      var pr = PR().normalizar(a.reg);
+      pr.carimbo[campo] = campo === "modelo" ? (valor === "simples" ? "simples" : "RA") : String(valor == null ? "" : valor);
+      pr.id = a.reg.id; pr.obraId = a.reg.obraId; pr.criadoEm = a.reg.criadoEm;
+      if (!this.salvarRegistro(pr)) return false;
+      this._repintarTodas(); this._renomearAbas();
+      var cf = PR().conferir(pr);
+      if (campo === "modelo" && !cf.ok) toast(cf.fora.length + " vista(s) ficaram fora da área de desenho com o carimbo novo: arraste para dentro ou use Gerar pranchas.", "aviso");
+      return true;
+    },
+    /* o nome das abas e do Navegador acompanha número/nome das folhas */
+    _renomearAbas: function () {
+      var self = this, g = this.G(), st = g && g._bimVxEst && g._bimVxEst(); if (!st) return;
+      st.lista.forEach(function (v) { if (v.tipo !== "folha") return; var b = self.achar(v.id); if (b) v.nome = "Folha: " + self.nomeFolha(b.pr, b.folha); });
+      try { g._bimVxDocs(); } catch (e) {}
+      try { g._nivArvore(); } catch (e2) {}
+    },
     _mudarFolha: function (id, pid, valor) {
+      if (/^c:/.test(String(pid))) { this.mudarCarimbo(id, String(pid).slice(2), valor); return; }
       var a = this.achar(id); if (!a) return;
       var f = clone(a.folha), mapa = { "p:SHEET_NAME": "conteudo", "p:SHEET_NUMBER": "numero", "p:SHEET_ISSUE_DATE": "dataEmissao", "p:SHEET_DESIGNED_BY": "projetadoPor",
         "p:SHEET_DRAWN_BY": "desenhadoPor", "p:SHEET_CHECKED_BY": "verificadoPor", "p:SHEET_APPROVED_BY": "aprovadoPor", "p:SHEET_SCHEDULED": "apareceNaLista" };
@@ -457,7 +510,8 @@
           var a = this.achar(id); if (!a) return null;
           var vps = {}, self = this;
           a.folha.blocos.forEach(function (b) { if (b.tipo === "viewport") { var dz = self.desenho(b.vistaId); if (dz) vps[b.vistaId] = { dados: dz.dados, estilo: dz.estilo, vb: dz.vb, svgSemTitulo: dz.svg }; } });
-          var doc = X.daFolha(a.pr, a.folha, a.geo, vps, { projeto: this.projeto() });
+          var logoConta = null; try { logoConta = global.Empresa && global.Empresa.logo ? global.Empresa.logo() : null; } catch (eL) {}
+          var doc = X.daFolha(a.pr, a.folha, a.geo, vps, { projeto: this.projeto(), empresa: this.empresaDados(), logo: !!logoConta });
           var nome = PR().nomeArquivo(a.pr, a.folha, this.projeto(), "dxf");
           this._baixar(nome, X.escrever(doc));
           toast("DXF da folha: " + nome + " (" + doc.ordem.length + " camadas, papel " + a.geo.papel.w + " × " + a.geo.papel.h + " mm)." + (doc.avisos.length ? " " + doc.avisos.join("; ") + "." : ""), doc.avisos.length ? "aviso" : "ok");
@@ -531,6 +585,121 @@
          { texto: "Cancelar", onClick: function () { global.UI.fecharModal(); } }]);
     },
 
+    /* --------------------------------------------- GERAR PRANCHAS (o jogo num clique)
+     * Quem decide é o motor (js/prancha.js gerarJogo: agrupamento, escala,
+     * posição, número, idempotência); aqui só a fiação: as vistas do modelo
+     * aberto, a escala do Padrão de detalhamento da empresa, aplicar a escala
+     * escolhida NA VISTA (a escala é da vista: o viewport acompanha) e gravar.
+     * Duas passadas: a 1ª escolhe a escala com folga (o desenho cresce um
+     * pouco ao mudar de escala — textos e cotas são em mm de papel); a 2ª mede
+     * o desenho já na escala escolhida e posiciona exato. */
+    vistasParaGerar: function () {
+      var b2 = B2(), M = global.BimModeloVista, itens = []; if (!b2) return [];
+      try { var g = this.G(); if (g && g._d2Config) g._d2Config(); } catch (e0) {}
+      try { if (M && M.ativo && M.ativo() && M.itensVistas) itens = M.itensVistas(); } catch (e) { itens = []; }
+      if (!itens.length) itens = this.vistas2d().map(function (v) { return { id: v.id, tipo: v.tipo === "Corte" ? "corte" : "planta", nome: v.nome, disciplina: "arquitetura" }; });
+      var niv = {}; try { b2.niveis().forEach(function (n, i) { niv[n.nome] = i; }); } catch (e2) {}
+      var TIPO = { planta: "planta", forro: "planta", estrutural: "planta", corte: "corte", elevacao: "elevacao" };
+      return itens.filter(function (it) { return TIPO[it.tipo]; }).map(function (it) {
+        return { id: it.id, nome: it.nome, tipo: TIPO[it.tipo], tipoVista: it.tipo, disciplina: it.disciplina || "arquitetura", nivel: it.nivel || "", ordem: niv[it.nivel] != null ? niv[it.nivel] : 0 };
+      });
+    },
+    /* a escala do Padrão de detalhamento da empresa: planta de fôrma / corte de fôrma (1:50) */
+    escalaPadrao: function (tipo) {
+      var P = global.PadraoDet, e = null;
+      try { e = P ? P.ler(this.empresa()).escalas : null; } catch (x) { e = null; }
+      var n = parseInt(String((e && (tipo === "planta" ? e.planta_forma : e.corte_forma)) || "1:50").split(":")[1], 10);
+      return n > 0 ? n : 50;
+    },
+    /* a escala é travada quando um modelo de vista manda nela (não se muda por fora) */
+    escalaTravada: function (id) {
+      var M = global.BimModeloVista; if (!M || !M.ativo || !M.ativo()) return false;
+      try { var v = M.estado().vistas[id]; if (!v) return false; var ef = M.efetivo(v, M.estado()); return !!(ef.travados && ef.travados.escala); } catch (e) { return false; }
+    },
+    definirEscala: function (id, esc) {
+      var b2 = B2(), M = global.BimModeloVista; if (!b2 || this.escalaTravada(id)) return false;
+      try {
+        b2.estilo(id);
+        b2.estado().estilos[id].escala = esc;
+        if (M && M.ativo && M.ativo()) { var v = M.vistaObj(id, b2.def(id)); if (v) v.escala = esc; }
+        b2._gravar();
+      } catch (x) { return false; }
+      delete this._desenhos[id];
+      try { if (b2._cache[id]) b2.redesenhar(id, false); } catch (e2) {}
+      return true;
+    },
+    gerar: function (opts) {
+      opts = opts || {};
+      if (!this.ativo()) return null;
+      var self = this, PRm = PR(), b2 = B2(), g = this.G();
+      var todas = this.vistasParaGerar(), ids = opts.vistas ? opts.vistas.map(String) : null;
+      var escolhidas = todas.filter(function (v) { return !ids || ids.indexOf(v.id) >= 0; });
+      if (!escolhidas.length) { toast("Nenhuma vista para pôr em folha: crie as plantas, os cortes ou as elevações (Navegador › Vistas).", "aviso"); return null; }
+      var reg = this.conjunto(opts.formato), formato = PRm.FORMATOS[opts.formato] ? opts.formato : (reg.formato || "A1");
+      var outras = this.registros().filter(function (r) { return !reg.id || String(r.id) !== String(reg.id); });
+      function vistas(fixas) {
+        return escolhidas.filter(function (v) { return !fixas || fixas[v.id]; }).map(function (v) {
+          var trav = self.escalaTravada(v.id), dz = self.desenho(v.id, true), esc = fixas ? fixas[v.id] : self.escalaPadrao(v.tipo);
+          if (trav) { try { esc = b2.estilo(v.id).escala; } catch (e) {} }
+          return { id: v.id, nome: dz ? dz.nome : v.nome, tipo: v.tipo, disciplina: v.disciplina, ordem: v.ordem, escala: esc, fixa: !!fixas || trav,
+                   caixa: dz ? { w: dz.vb.w, h: dz.vb.h } : null };
+        });
+      }
+      var r1 = PRm.gerarJogo({ formato: formato, base: reg, vistas: vistas(null), outras: outras, folga: 0.9 });
+      Object.keys(r1.escalas).forEach(function (id) { var e0 = null; try { e0 = b2.estilo(id).escala; } catch (e) {} if (e0 !== r1.escalas[id]) self.definirEscala(id, r1.escalas[id]); });
+      var r = PRm.gerarJogo({ formato: formato, base: reg, vistas: vistas(r1.escalas), outras: outras, folga: 1 });
+      r.puladas = r1.puladas.concat(r.puladas);
+      var pr = r.prancha; pr.id = reg.id; pr.obraId = reg.obraId; pr.criadoEm = reg.criadoEm;
+      if (!pr.id) delete pr.id;
+      var salvo = this.salvarRegistro(pr); if (!salvo) return null;
+      this._repintarTodas(); this._renomearAbas();
+      var primeira = pr.folhas.filter(function (f) { return !!f.auto; })[0];
+      if (primeira && opts.abrir !== false) this.abrir(this.idFolha(salvo.id, primeira.id));
+      var msg = "Pranchas geradas em " + formato + ": " + r.criadas + " folha(s) nova(s), " + r.atualizadas + " atualizada(s)" + (r.puladas.length ? "; fora: " + r.puladas.map(function (p) { return p.nome + " (" + p.motivo + ")"; }).join("; ") : "") + ".";
+      toast(msg, r.puladas.length ? "aviso" : "ok"); status(msg);
+      return { ok: true, id: salvo.id, criadas: r.criadas, atualizadas: r.atualizadas, puladas: r.puladas, escalas: r1.escalas, folhas: pr.folhas.length, conferir: PRm.conferir(pr) };
+    },
+    /* a pergunta mínima: o formato e quais vistas (todas marcadas) */
+    abrirGerar: function () {
+      if (!this.ativo()) return false;
+      var self = this, vs = this.vistasParaGerar(), reg = this.registros().filter(function (r) { return r.origem === "folhas"; })[0], f0 = (reg && reg.formato) || "A1";
+      if (!vs.length) { toast("Nenhuma planta, corte ou elevação ainda: abra o modelo da obra e crie as vistas (Navegador › Vistas).", "aviso"); return false; }
+      var DISC = { arquitetura: "Arquitetura", estrutural: "Estrutural", hidraulica: "Hidráulica", eletrica: "Elétrica", mecanica: "Mecânica", coordenacao: "Coordenação" };
+      var TIPO = { planta: "planta", corte: "corte", elevacao: "elevação" };
+      var h = '<p class="muted" style="font-size:12px;margin:0 0 8px">Uma folha por planta; os cortes e as elevações juntos. Escala do Padrão de detalhamento (1:50) ou a maior que couber; carimbo do escritório; numeração código-nn. Gerar de novo <b>atualiza</b> as mesmas folhas (não duplica) e não mexe nas folhas feitas à mão.</p>' +
+        '<label style="font-size:12.5px">Formato <select id="pv-ger-formato">' + ["A0", "A1", "A2", "A3", "A4"].map(function (f) { return '<option value="' + f + '"' + (f === f0 ? " selected" : "") + ">" + f + "</option>"; }).join("") + "</select></label>" +
+        '<div style="margin-top:8px;max-height:46vh;overflow:auto">' + vs.map(function (v) {
+          return '<label style="display:block;font-size:12.5px;padding:2px 0"><input type="checkbox" checked data-pv-ger="' + esc(v.id) + '"> ' + esc(v.nome) + ' <span class="muted">(' + esc(DISC[v.disciplina] || v.disciplina) + " · " + esc(TIPO[v.tipo] || v.tipo) + ")</span></label>";
+        }).join("") + "</div>";
+      global.UI.modal("Gerar pranchas", h, [
+        { texto: "Gerar", classe: "primary", onClick: function () {
+          var fm = (document.getElementById("pv-ger-formato") || {}).value || f0;
+          var ids = [].slice.call(document.querySelectorAll("[data-pv-ger]")).filter(function (c) { return c.checked; }).map(function (c) { return c.getAttribute("data-pv-ger"); });
+          global.UI.fecharModal();
+          if (!ids.length) { toast("Marque ao menos uma vista.", "aviso"); return; }
+          self.gerar({ formato: fm, vistas: ids });
+        } },
+        { texto: "Cancelar", onClick: function () { global.UI.fecharModal(); } }]);
+      return true;
+    },
+    /* "Pranchas" (barra de título): onde ficam as folhas e o que fazer com elas */
+    painel: function () {
+      if (!this.ativo()) return false;
+      var self = this, itens = [];
+      this.registros().forEach(function (r) { var pr = PR().normalizar(r); pr.folhas.forEach(function (f) { itens.push({ id: self.idFolha(r.id, f.id), rot: self.nomeFolha(pr, f), formato: pr.formato, modelo: pr.carimbo.modelo }); }); });
+      var h = '<p class="muted" style="font-size:12px;margin:0 0 8px">As pranchas do projeto também ficam no <b>Navegador de projeto › Folhas (todas)</b> e na fita <b>Vista › Composição da folha</b>.</p>' +
+        (itens.length ? itens.map(function (it) {
+          return '<div style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:12.5px"><span style="flex:1">' + esc(it.rot) + ' <span class="muted">' + esc(it.formato) + (it.modelo === "RA" ? " · carimbo RA" : "") + '</span></span><button class="btn sm" data-pv-abrir="' + esc(it.id) + '">Abrir</button></div>';
+        }).join("") : '<p style="font-size:13px">Nenhuma folha ainda. <b>Gerar pranchas</b> monta o jogo do modelo aberto — plantas, cortes e elevações — com o carimbo do escritório.</p>');
+      global.UI.modal("Pranchas do projeto", h, [
+        { texto: "Gerar pranchas", classe: "primary", onClick: function () { global.UI.fecharModal(); self.abrirGerar(); } },
+        { texto: "Nova folha", onClick: function () { global.UI.fecharModal(); self.novaFolha(); } },
+        { texto: "PDF em lote", onClick: function () { global.UI.fecharModal(); self.pdfLote(); } },
+        { texto: "Fechar", onClick: function () { global.UI.fecharModal(); } }]);
+      [].forEach.call(document.querySelectorAll("[data-pv-abrir]"), function (b) { b.onclick = function () { global.UI.fecharModal(); self.abrir(b.getAttribute("data-pv-abrir")); }; });
+      return true;
+    },
+
     /* --------------------------------------------- Navegador e fita */
     ramoNavegador: function () {
       if (!this.ativo()) return null;
@@ -543,14 +712,17 @@
           filhos.push({ id: "fl:" + id, rotulo: self.nomeFolha(pr, f) + (regs.length > 1 ? " (" + pr.nome + ")" : ""), icone: "prancha", fn: function () { self.abrir(id); } });
         });
       });
+      /* as ações ficam À VISTA no nó (o dono não achava onde ficam as pranchas) */
+      filhos.unshift({ id: "fl:gerar", rotulo: "Gerar pranchas…", icone: "prancha", fn: function () { self.abrirGerar(); } });
       filhos.push({ id: "fl:nova", rotulo: "+ Nova folha", icone: "prancha", fn: function () { self.novaFolha(); } });
-      return { id: "folhas", rotulo: "Folhas (todas)", icone: "prancha", n: n, aberto: n > 0, filhos: filhos };
+      return { id: "folhas", rotulo: "Folhas (todas)", icone: "prancha", n: n, aberto: true, filhos: filhos };
     },
     registrar: function (reg, G) {
       this._G = G || this._G;
       if (!this.ativo() || !global.BimRibbon) return false;
       var self = this, R = global.BimRibbon;
       R.acrescentar("vista", "Vista", "Composição da folha", [
+        { id: "gerar-pranchas", rotulo: "Gerar\npranchas", icone: "prancha", grande: true, dica: "Monta o jogo de folhas do modelo aberto num clique: uma folha por planta, os cortes e as elevações juntos, na escala do Padrão de detalhamento (1:50 ou a que couber), centralizados, com o carimbo do escritório e numeração código-nn. Gerar de novo atualiza as mesmas folhas." },
         { id: "nova-folha", rotulo: "Folha", icone: "prancha", grande: true, dica: "Folha nova (A1, carimbo RA) no conjunto \"Folhas do projeto\" da obra. Arraste uma planta ou um corte do Navegador para dentro dela: a vista entra em ESCALA, em vetor, com o título de vista." },
         { id: "posicionar-vista", rotulo: "Posicionar\nvista", icone: "planta", grande: true, dica: "Escolhe uma planta ou um corte e põe na folha aberta (o mesmo que arrastar do Navegador)." },
         { id: "revisoes-folha", rotulo: "Revisões", icone: "lista", dica: "Revisões e emissões do PROJETO (número, data, descrição, emitido por/para). Cada folha escolhe as dela; a última vira a Revisão atual do carimbo." },
@@ -562,6 +734,7 @@
         { id: "exportar-dwg", rotulo: "DWG", icone: "exportar", dica: "DWG pelo servidor depende de licença comercial do conversor — por enquanto, use o DXF (o AutoCAD salva em DWG)." },
         { id: "pdf-lote", rotulo: "PDF em\nlote", icone: "imprimir", grande: true, dica: "Várias folhas num PDF só, cada uma no tamanho do papel, com o nome automático (número - nome - revisão)." }
       ]);
+      reg["gerar-pranchas"] = function () { return self.abrirGerar(); };
       reg["nova-folha"] = function () { return !!self.novaFolha(); };
       reg["posicionar-vista"] = function () { self.escolherVista(); return true; };
       reg["revisoes-folha"] = function () { self.editarRevisoes(); return true; };

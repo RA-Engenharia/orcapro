@@ -357,6 +357,11 @@
       var FM = global.FamiliaMalha || (typeof require === "function" ? (function () { try { return require("./familiamalha.js"); } catch (eR) { return null; } })() : null);
       if (FM) FM.completar(fam, tipo, inst, saida); else { saida.ok = false; saida.erros.push("o leitor de família importada (js/familiamalha.js) não carregou"); }
     }
+    /* MARCENARIA (js/marcenaria.js): o módulo em chapa / a estrutura de madeira — os sólidos são as PEÇAS do corte */
+    if (fam.geometria === "marcenaria") {
+      var MC = global.Marcenaria || (typeof require === "function" ? (function () { try { return require("./marcenaria.js"); } catch (eR) { return null; } })() : null);
+      if (MC) MC.completar(fam, tipo, inst, saida); else { saida.ok = false; saida.erros.push("o motor de marcenaria (js/marcenaria.js) não carregou"); }
+    }
     return saida;
   }
   function lerChave(o, nome) {

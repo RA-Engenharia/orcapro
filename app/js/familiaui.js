@@ -37,6 +37,8 @@
       (global.FamiliasRA ? FamiliasRA.lista() : []).forEach(function (f) { f._origem = "ra"; mapa[f.id] = f; });
       /* F1: as famílias ORÇÁVEIS (cada tipo = uma composição SINAPI real, js/familiasorc.js) — da RA, só leitura */
       (global.FamiliasOrc ? FamiliasOrc.lista() : []).forEach(function (f) { f._origem = "ra"; mapa[f.id] = f; });
+      /* CARPINTARIA & MARCENARIA (js/marcenaria.js): os módulos em chapa e a carpintaria — só com o modelador e a disciplina ligados */
+      (global.FamiliasMarcenaria ? FamiliasMarcenaria.lista() : []).forEach(function (f) { f._origem = "ra"; mapa[f.id] = f; });
       var minhas = []; try { minhas = (this._ctx && this._ctx.listar) ? this._ctx.listar() : []; } catch (e) { minhas = []; }
       minhas.forEach(function (f) { if (f && f.id) mapa[f.id] = f; });
       Object.keys(mapa).forEach(function (k) { out.push(mapa[k]); });

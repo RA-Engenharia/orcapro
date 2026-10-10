@@ -1219,11 +1219,13 @@
        linhas — quatro itens quebravam assim. */
     _sbItem: function (m, viewAtiva, dentroDeGrupo) {
       var nome = dentroDeGrupo && typeof MenuArvore !== "undefined" ? MenuArvore.rotulo(m) : m.nome;
+      /* licença só do Modela: o módulo aparece, trancado (cadeado + dica) */
+      var tr = !!this._trancadoModela && this._trancadoModela(m.id);
       /* 22 no azulejo da barra (com o rótulo embaixo, o ícone é o que se lê
          de longe); 16 na linha da aba lateral, onde o nome vem ao lado */
-      return '<button class="sb-item' + (m.id === viewAtiva ? " on" : "") + (dentroDeGrupo ? " sb-filho" : "")
-        + '" data-view="' + m.id + '"><span class="sb-ic">' + svg(m.id, dentroDeGrupo ? 16 : 22) + "</span><span>"
-        + Util.esc(nome) + "</span></button>";
+      return '<button class="sb-item' + (m.id === viewAtiva ? " on" : "") + (dentroDeGrupo ? " sb-filho" : "") + (tr ? " sb-trancado" : "")
+        + '" data-view="' + m.id + '"' + (tr ? ' data-modela-tranca="1" title="Faz parte do OrçaPRO" style="opacity:.6"' : "") + '><span class="sb-ic">' + svg(m.id, dentroDeGrupo ? 16 : 22) + "</span><span>"
+        + Util.esc(nome) + (tr && typeof Icones !== "undefined" ? ' <span class="sb-cadeado" aria-label="trancado">' + Icones.get("cadeado", 11) + "</span>" : "") + "</span></button>";
     },
 
     /* A chave do "grupo aberto" de antes da aba lateral. Não é mais lida para
@@ -1444,6 +1446,11 @@
       // Vitrine (?demo=1): Gestão sempre liberada, mesmo que a licença do navegador
       // diga outra coisa (cliente já licenciado explorando a demo) — espelha App.render().
       var pode = (typeof App !== "undefined" && App._demo) || this.podeGestao();
+      /* licença só do Modela: o menu INTEIRO aparece (a pessoa vê o que o
+         OrçaPRO tem), com cadeado nos trancados (`_sbItem`); o clique abre a
+         tela "Faz parte do OrçaPRO". Sem o "Desbloquear Gestão" do base. */
+      var soMod = !!this.soModela && this.soModela();
+      if (soMod) pode = true;
       var mods;
       if (!pode) mods = this.modulos.filter(function (m) { return m.id === "orcamentos"; });
       else mods = this.modulos.filter(function (m) { return (typeof Auth === "undefined" || !Auth.podeModulo) ? true : Auth.podeModulo(m.id); }); // RBAC: sub-usuário só vê seus módulos
@@ -1495,11 +1502,13 @@
              de sanfona, e num azulejo de 122 px ela roubava a linha do
              r\u00f3tulo. aria-haspopup/aria-controls contam ao leitor de tela o
              que a seta contava ao olho. */
-          var cab = '<button class="sb-item sb-grp-bt' + (no.temAtivo ? " tem-ativo" : "")
+          /* licença só do Modela: o grupo inteiro trancado ganha o cadeado no azulejo (abre igual, os itens dizem o resto) */
+          var grpTr = soMod && no.filhos.every(function (f) { return self._trancadoModela(f.id); });
+          var cab = '<button class="sb-item sb-grp-bt' + (no.temAtivo ? " tem-ativo" : "") + (grpTr ? " sb-trancado" : "")
             + '" data-gacao="menu-grupo" data-id="' + gid + '" aria-haspopup="true" aria-expanded="false"'
-            + ' aria-controls="sb-fly-' + gid + '">'
+            + ' aria-controls="sb-fly-' + gid + '"' + (grpTr ? ' title="Faz parte do OrçaPRO" style="opacity:.6"' : "") + '>'
             + '<span class="sb-ic">' + svg(icone, 22) + "</span>"
-            + "<span>" + Util.esc(no.nome) + "</span></button>";
+            + "<span>" + Util.esc(no.nome) + (grpTr && typeof Icones !== "undefined" ? ' <span class="sb-cadeado" aria-label="trancado">' + Icones.get("cadeado", 11) + "</span>" : "") + "</span></button>";
           /* a aba vai SEMPRE ao DOM (fechada): \u00e9 o que mant\u00e9m todo m\u00f3dulo
              alcan\u00e7\u00e1vel por `#sidebar [data-view]` sem abrir nada, e o que
              deixa a busca de teste e o leitor de tela verem a lista inteira.
@@ -1564,7 +1573,8 @@
             return "";
           })()
           + escondidos.map(function (m) {
-            return '<button class="sb-item" data-view="' + m.id + '"><span class="sb-ic">' + svg(m.id, 19) + "</span><span>" + m.nome + "</span></button>";
+            var trM = !!self._trancadoModela && self._trancadoModela(m.id);
+            return '<button class="sb-item' + (trM ? " sb-trancado" : "") + '" data-view="' + m.id + '"' + (trM ? ' data-modela-tranca="1" title="Faz parte do OrçaPRO" style="opacity:.6"' : "") + '><span class="sb-ic">' + svg(m.id, 19) + "</span><span>" + m.nome + "</span></button>";
           }).join("") + "</div></div>";
       }
       /* estilo injetado de propósito: o css/app.css já ficou preso no cache
@@ -1636,6 +1646,8 @@
       if (view !== "obras") this._ovFicha = null;
       // RBAC: guarda em função (não só ocultar) — sub-usuário sem permissão vê aviso
       if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo(view)) return this._semPermissao(view);
+      /* licença só do OrçaPRO Modela: fora do BIM (e da Ajuda), a tela trancada — guarda em FUNÇÃO */
+      if (this._trancadoModela && this._trancadoModela(view)) return this.renderTrancadoModela(view);
       switch (view) {
         case "dashboard": return this.renderPainelNovo();
         case "obras": return this.renderObras();
@@ -10247,6 +10259,8 @@
         arquivo: (obra && obra.nome) || "",
         tema: BimShell.temaSalvo(),
         acoes: this._bimAcoesTitulo || [],
+        /* PRANCHAS à vista na barra de título (js/bimshell.js, ao lado do Salvar) */
+        onPranchas: function () { self.bimPranchas(); },
         /* a obra na barra de título e a volta ao OrçaPRO: no modo programa
            (tela inteira) o cabeçalho e o menu da página não aparecem */
         obras: this._b4Janela3d ? null : obrasTit, obraSel: this._bimSel || "",
@@ -10297,6 +10311,8 @@
         onTema: function (t) { self._bimTemaCena(t); }
       });
       card.setAttribute("data-rv-montado", "1");
+      /* OrçaPRO Modela: o selo (teste/disciplinas) na barra de título; teste terminado avisa (js/modelaui.js) */
+      try { if (window.ModelaUI && !this._b4Janela3d) ModelaUI.montarSelo(card); } catch (eMs) {}
       card.style.padding = "0";
       /* PLANTA (js/bimbarraopcoes.js): a barra de opções nasce JUNTO com a casca (altura fixa, sob a
          fita) — nascer no 1º comando mudaria a altura do palco no meio do uso e o clique cairia fora */
@@ -10758,6 +10774,8 @@
       try { if (window.BimRender) BimRender.registrar(reg, self); } catch (eRender) {}
       /* MATERIAIS (09/10/2026): Gerenciar › Biblioteca › Materiais do projeto — js/bimmateriaisui.js (sem a prévia do modelador, sai na hora) */
       try { if (window.BimMateriaisUI) BimMateriaisUI.registrar(reg, self); } catch (eMat) {}
+      /* METÁLICA & MECÂNICA (09/10/2026): a aba da disciplina — peças, ligações, galpão e fabricação (DSTV, DXF, listas, IFC) — js/metalui.js (sem a prévia do modelador, sai na hora) */
+      try { if (window.BimMetalUI) BimMetalUI.registrar(reg, self); } catch (eMet) {}
 
       BimCmd.registrar(reg);
       /* a biblioteca de famílias chega ao visor antes de qualquer edição gravada ser reaplicada */
@@ -15230,6 +15248,7 @@
             porFolha: +document.getElementById("pr-por").value || 4, vistas: sel,
             carimbo: { empresa: d.nome || "", responsavel: d.responsavel || "", registro: d.crea ? "CREA " + d.crea : "", obra: obraNome, data: new Date().toLocaleDateString("pt-BR") } });
           if (prTpl && prTpl.coluna && prTpl.coluna.length && !(pr.coluna || []).length) pr.coluna = JSON.parse(JSON.stringify(prTpl.coluna));   /* B6: as notas do template */
+          if (prTpl && prTpl.carimbo && prTpl.carimbo.modelo === "RA") { pr.carimbo.modelo = "RA"; pr = Prancha.deVistas({ nome: pr.nome, formato: pr.formato, porFolha: +document.getElementById("pr-por").value || 4, vistas: sel, carimbo: pr.carimbo, coluna: pr.coluna }); }   /* o template RA traz o carimbo RA (a grade refeita na geometria dele) */
           pr.obraId = String(self._bimSel); pr.criadoEm = new Date().toISOString();
           if (!pr.id) delete pr.id;
           if (!Store.salvar(eid(), "bim_pranchas", pr)) { UI.toast("Não consegui salvar a prancha.", "erro"); return; }
@@ -15238,8 +15257,8 @@
         } }, { texto: "Cancelar", onClick: function () { UI.fecharModal(); } }]);
     },
     _prImprimir: function (reg) {
-      var self = this, pr = Prancha.normalizar(reg), geo = Prancha.geometria(pr.formato, pr.orientacao);
-      var rec = { imagens: {}, vistas: {}, logo: (window.Empresa && Empresa.logo) ? Empresa.logo() : null };
+      var self = this, pr = Prancha.normalizar(reg), geo = Prancha.geometriaDe(pr);
+      var rec = { imagens: {}, vistas: {}, logo: (window.Empresa && Empresa.logo) ? Empresa.logo() : null, empresa: (window.Empresa && Empresa.dados) ? Empresa.dados() : {} };
       var chavesImg = {};
       pr.folhas.forEach(function (f) { if (f.imagemInteira) chavesImg[f.imagemInteira] = 1; f.blocos.forEach(function (b) { if (b.tipo === "imagem") chavesImg[b.chave] = 1; }); });
       (pr.carimbo.logos || []).forEach(function (k) { chavesImg[k] = 1; });
@@ -25138,6 +25157,12 @@
     },
     // 📕 Quantitativo ilustrado — caderno impresso: foto de cada família, descrição,
     // dimensões e quantidade principal (área/comprimento/unidade) do projeto inteiro
+    /* "Pranchas" da barra de título: com o modelador, o painel das folhas (js/bimfolhaui.js); sem ele, as Pranchas do projeto */
+    bimPranchas: function () {
+      try { if (window.BimFolhaUI && BimFolhaUI.ativo()) return BimFolhaUI.painel(); } catch (e) {}
+      this._bimAbrirPainel("pranchas"); this._prRender();
+      return true;
+    },
     bimQuantIlustrado: function () {
       var els = this._bimElementos || [];
       if (!els.length) { UI.toast("Carregue um modelo .IFC no visualizador primeiro.", "erro"); return; }
@@ -26057,7 +26082,8 @@
       var chave = (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "";
       var st = (typeof Licenca !== "undefined" && Licenca.status) ? (Licenca.status() || {}) : {};
       if (!chave || !back) { UI.toast("A leitura de foto/print por IA precisa da licença ativa e de internet. PDF com texto é lido sem IA.", "erro", 9000); cb([], []); return; }
-      if (!st.ativo || st.trial || st.tier === "base") {
+      /* "modela" (o OrçaPRO Modela sozinho) não é "acima do base" — o servidor recusa igual */
+      if (!st.ativo || st.trial || st.tier === "base" || st.tier === "modela") {
         UI.toast("A leitura de catálogo por IA (foto, print, PDF escaneado) é do plano Plus. PDF com texto continua sendo lido aqui.", "erro", 9000);
         if (self._upsell) self._upsell();
         cb([], []); return;
@@ -36061,7 +36087,7 @@
         corpoHtml: '<div class="muted" id="bi-status">Digite ao menos 2 letras…</div><div id="bi-res"></div>'
       });
     },
-    afterRender: function (view) { if (this._wiresExtras && this._wiresExtras[view]) { try { this._wiresExtras[view].call(this); } catch (eW) {} } if (view === "producao") this.afterRenderProducao(); else if (view === "fiscal") this._triWire(); else if (view === "insumos") this._wireBancoView(); else if (view === "epi") this.afterRenderEpi(); else if (view === "ponto") this.afterRenderPonto(); else if (view === "galeria") this._galeriaWire(); else if (view === "ajuda") this._ajudaWire(); else if (view === "bim") this._bimWire(); else if (view === "lastplanner") this._lpWire(); },
+    afterRender: function (view) { if (this._trancadoModela && this._trancadoModela(view)) return; /* tela trancada do Modela: não há o que ligar */ if (this._wiresExtras && this._wiresExtras[view]) { try { this._wiresExtras[view].call(this); } catch (eW) {} } if (view === "producao") this.afterRenderProducao(); else if (view === "fiscal") this._triWire(); else if (view === "insumos") this._wireBancoView(); else if (view === "epi") this.afterRenderEpi(); else if (view === "ponto") this.afterRenderPonto(); else if (view === "galeria") this._galeriaWire(); else if (view === "ajuda") this._ajudaWire(); else if (view === "bim") this._bimWire(); else if (view === "lastplanner") this._lpWire(); },
     _wireBancoView: function () {
       var self = this;
       this._wireInsumoSearch("bi-q", "bi-res", function (ins) { self.novaRequisicaoComItem(ins); }, { status: "bi-status", comAcao: true, comEditar: true });
@@ -36796,7 +36822,10 @@
       var al = p.textos.alturas_plotadas_mm;
       var ROT_TX = { titulo_desenho: "Título do desenho", escala_sob_titulo: "Escala sob o título", nome_viga_pilar: "Nome da viga/pilar",
                      secao_ao_lado_do_nome: "Seção ao lado do nome", notacao_barra: "Notação de barra", cota: "Cota", nota: "Nota",
-                     tabela: "Tabela", letra_corte: "Letra de corte", balao_eixo: "Balão de eixo" };
+                     tabela: "Tabela", letra_corte: "Letra de corte", balao_eixo: "Balão de eixo",
+                     /* v2 (TQS) */
+                     notacao_estribo_trecho: "Trecho de estribo", nome_apoio: "Nome do apoio", tabela_cabecalho: "Cabeçalho de tabela",
+                     titulo_pilar_lance: "Título do pilar (lance)", nivel: "Nível", titulo_bloco_sapata: "Título do bloco/sapata", titulo_quadro: "Título de quadro" };
       html += '<p class="muted" style="margin:-4px 0 12px">Como os desenhos técnicos saem: espessura de pena por cor, tipos de linha, altura dos textos, estilo de cota e a notação das barras. ' +
               'Parte do <b>Padrão RA</b> (prancha de armação estilo escritório de projeto, NBR 7191 / 8403 / 16752) — ajuste aqui ou importe o arquivo do seu escritório.</p>';
       html += '<div class="card" style="margin-bottom:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b>' + (pers ? "Padrão da empresa (personalizado)" : "Padrão RA (original)") +
@@ -49542,9 +49571,74 @@ renderFolha: function () {
       if (typeof Licenca === "undefined") return true;
       var s = Licenca.status() || {};
       if (s.trial) return true;               // demonstração: explora a gestão (mas não salva)
+      /* ⚠ "modela" (o OrçaPRO Modela sozinho) passaria no `!== "base"` de baixo
+         e ganharia a Gestão inteira. Ele não é "acima do base": é só o BIM. */
+      /* `this.soModela &&`: bancadas emprestam este método a objetos sem o resto da Gestao */
+      if (this.soModela && this.soModela()) return false;
       return !!s.ativo && s.tier !== "base";  // licenciado: só Plus (tier vazio = compra antiga = liberado)
     },
+
+    /* ==================================================================
+     * O ORÇAPRO MODELA SOZINHO (licença tier "modela", js/licenca.js soModela)
+     *
+     * Decisão do dono (09/10/2026): o Modela se vende também a quem não tem
+     * o OrçaPRO, e "o sistema vai liberar SÓ a modelagem". Então, com essa
+     * licença: o BIM abre com o modelador nas disciplinas compradas
+     * (js/modela.js decide quais) e TODO o resto aparece no menu, TRANCADO,
+     * com o aviso "Faz parte do OrçaPRO" — nunca some (a pessoa precisa ver
+     * o que existe) e nunca quebra a navegação (a tela trancada tem saída).
+     * O guarda é em FUNÇÃO (Gestao.render, App.render, Gestao.acao), não só
+     * no menu. Ajuda continua aberta: é o manual do próprio BIM também.
+     * ================================================================== */
+    MODELA_VIEWS: ["bim", "ajuda"],
+    soModela: function () {
+      try { return typeof Licenca !== "undefined" && !!Licenca.soModela && Licenca.soModela() && !(typeof App !== "undefined" && App._demo); } catch (e) { return false; }
+    },
+    /* o módulo BIM abre? Gestão liberada OU licença só do Modela (o BIM é o produto dela) */
+    podeBim: function () { return this.soModela() || this.podeGestao(); },
+    /* este módulo está trancado para a licença só-modela? */
+    _trancadoModela: function (view) {
+      return this.soModela() && this.MODELA_VIEWS.indexOf(String(view || "")) < 0;
+    },
+    _modelaPlay: function () {
+      try { if (document.documentElement.getAttribute("data-origem") === "play") return true; } catch (e) {}
+      try { return localStorage.getItem("orcapro:origem") === "play"; } catch (e2) { return false; }
+    },
+    _modelaUrlPlanos: function () {
+      var srv = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : "";
+      return srv ? srv + "/planos" : "";
+    },
+    /* a TELA de um módulo trancado (o #main inteiro). Puro: devolve HTML. */
+    renderTrancadoModela: function (view) {
+      var nome = view === "orcamentos" ? "Orçamentos" : String(view || "");
+      try { var m = (this.modulos || []).filter(function (x) { return x.id === view; })[0]; if (m) nome = m.nome; } catch (eN) {}
+      var esc = (typeof Util !== "undefined" && Util.esc) ? Util.esc : function (s) { return String(s); };
+      var url = this._modelaPlay() ? "" : this._modelaUrlPlanos();
+      var ic = (typeof Icones !== "undefined") ? Icones.get("cadeado", 30) : "";
+      return '<div class="flex between mb"><h1 style="margin:0">' + esc(nome) + "</h1></div>"
+        + '<div class="card modela-tranca" data-modela-tranca="' + esc(view) + '" style="text-align:center;padding:36px 22px;max-width:620px;margin:0 auto">'
+        + '<div style="opacity:.75;margin-bottom:8px">' + ic + "</div>"
+        + '<p style="font-size:17px;font-weight:700;margin:0 0 8px">Faz parte do OrçaPRO</p>'
+        + '<p class="muted" style="font-size:14px;margin:0 0 4px"><b>' + esc(nome) + "</b> é um módulo do OrçaPRO. A sua licença é do <b>OrçaPRO Modela</b>: a modelagem BIM, no módulo BIM.</p>"
+        + '<p class="muted" style="font-size:13px;margin:0">O que você modelar continua seu: orçamento, cronograma e gestão sobre o modelo chegam com um plano do OrçaPRO.</p>'
+        + '<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:18px">'
+        + '<button class="btn primary" data-view="bim">Abrir o BIM</button>'
+        + (url ? '<a class="btn" href="' + esc(url) + '" target="_blank" rel="noopener" data-modela-planos="1">Conhecer os planos do OrçaPRO</a>' : "")
+        + "</div></div>";
+    },
+    /* o mesmo recado em MODAL, para ação disparada de dentro do BIM */
+    _avisoModela: function (oque) {
+      var url = this._modelaPlay() ? "" : this._modelaUrlPlanos();
+      var msg = '<p>' + (oque ? "<b>" + ((typeof Util !== "undefined" && Util.esc) ? Util.esc(oque) : oque) + "</b> faz parte do OrçaPRO. " : "Faz parte do OrçaPRO. ")
+        + "A sua licença é do OrçaPRO Modela (a modelagem BIM).</p>";
+      var bts = [{ texto: "Fechar", classe: "ghost", onClick: function () { try { UI.fecharModal(); } catch (e) {} } }];
+      if (url) bts.push({ texto: "Conhecer os planos", classe: "primary", onClick: function () { try { window.open(url, "_blank", "noopener"); } catch (e) {} try { UI.fecharModal(); } catch (e2) {} } });
+      try { if (typeof UI !== "undefined" && UI.modal) UI.modal("Faz parte do OrçaPRO", msg, bts); } catch (eM) {}
+      return true;
+    },
     _upsell: function () {
+      /* licença só do Modela: o recado é "faz parte do OrçaPRO", não a oferta do Plus */
+      if (this.soModela && this.soModela()) return this._avisoModela("");
       /* app da Google Play: nada de oferta nem link de compra (política da loja) */
       try { if (document.documentElement.getAttribute("data-origem") === "play") { UI.toast("Este módulo não faz parte da sua licença.", "info"); return; } } catch (eP) {}
       var url = (typeof CONFIG !== "undefined" && CONFIG.licencaServer ? String(CONFIG.licencaServer).replace(/\/$/, "") : "") + "/?plano=plus_vitalicia";
@@ -50595,6 +50689,9 @@ renderFolha: function () {
     // ---------- Dispatcher de ações (chamado pelo app.js) ----------
     acao: function (gacao, dataset, app) {
       var id = dataset.id;
+      /* licença só do Modela: gerar ORÇAMENTO a partir do modelo é do OrçaPRO
+         (o botão mora na barra do BIM, que ele usa). Guarda em função. */
+      if (gacao === "bimeap-abrir" && this.soModela && this.soModela()) return this._avisoModela("Gerar orçamento do modelo");
       if (!this._isentoDoBloqueio(gacao) && this._bloqueado()) return;
       // RBAC em FUNÇÃO (regra A.5 / achado do gate v1.1.63): ação de cotação exige o módulo, não basta esconder o botão
       if ((gacao === "nova-cotacoes" || gacao === "cotar-requisicao" || gacao === "doc-cotacao" || gacao === "excluir-cotacao") && typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("cotacoes")) { if (typeof UI !== "undefined") UI.toast("Seu usuário não tem permissão no módulo Cotações.", "erro"); return; }
@@ -50648,6 +50745,7 @@ renderFolha: function () {
         case "bim-tela-cheia": return this._b3TelaCheia();
         case "bimeap-abrir": return this.bimeapAbrir();
         case "bim-quant-ilustrado": return this.bimQuantIlustrado();
+        case "bim-pranchas": return this.bimPranchas();
         case "bim-qr-rv": return this.bimQRImersivo();
         case "alv-pesos": return this._alvPesos();
         case "alv-preset": return this._alvUsarPreset(dataset.tipo);

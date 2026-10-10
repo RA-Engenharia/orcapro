@@ -1240,6 +1240,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       if (!fly.on && !xr.on && !planta.on && !corteL.on && !visitante && !trava.on) enquadrarObj(new THREE.Box3().setFromObject(hit.object), 2.6); // foco cinematográfico — NÃO na planta/corte (quebraria a moldura travada); nem no visitante, que toca para LER a peça, não para voar até ela
       if (opts.onPick) opts.onPick(propsDe(hit.object.userData.mid != null ? hit.object.userData.mid : S.modelID, hit.object.userData.expressID, hit.object.userData.tipo));
     } else if (opts.onPick) { contornoSelecao(null); opts.onPick(null); }
+    try { if (window.BimSelecao && BimSelecao.mudou) BimSelecao.mudou(); } catch (_) {}   /* SELECIONAR: a planta realça o mesmo */
   }
   S._selecionarEm = selecionarEm;
 
@@ -1927,6 +1928,18 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     });
     /* duplo clique seleciona NESTA vista — e a seleção aparece em todas */
     rr.domElement.addEventListener('dblclick', function (e) { selecionarNaVista(v, e.clientX, e.clientY); });
+    /* SELECIONAR (js/bimselecao.js): os mesmos botões da principal (meio move, Shift + meio gira) e o
+       clique simples do esquerdo seleciona nesta vista */
+    rr.domElement.addEventListener('pointerdown', function (e) {
+      navBotoes(v.orbit, e);
+      v._sel = (e.button === 0 && e.pointerType !== 'touch' && !visitante) ? { x: e.clientX, y: e.clientY } : null;
+    }, true);
+    rr.domElement.addEventListener('pointerup', function (e) {
+      var d = v._sel, SL = SLx(); v._sel = null;
+      if (!d || e.button !== 0 || !SL || SL.mao() || SL.arrastou(d, { x: e.clientX, y: e.clientY }) || !semFerramenta3d()) return;
+      var u = selecionarNaVista(v, e.clientX, e.clientY, true);
+      if (u) selAplicar([u], (e.ctrlKey || e.metaKey) ? 'alternar' : 'trocar'); else if (!(e.ctrlKey || e.metaKey)) selAplicar([], 'trocar');
+    });
     redimVista(v);
   }
   function desmontarVista(v) {
@@ -1941,7 +1954,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var w = v.cont.clientWidth, h = v.cont.clientHeight;
     if (w && h) { v.renderer.setSize(w, h, false); v.camera.aspect = w / h; v.camera.updateProjectionMatrix(); }
   }
-  function selecionarNaVista(v, cx0, cy0) {
+  function selecionarNaVista(v, cx0, cy0, soUid) {   /* soUid: só diz QUAL peça está sob o ponto (o clique simples seleciona pela seleção única) */
     if (S._limparRaioX) S._limparRaioX();
     var cv = v.renderer.domElement, r = cv.getBoundingClientRect(), rr = new THREE.Raycaster(), m = new THREE.Vector2();
     m.x = ((cx0 - r.left) / r.width) * 2 - 1; m.y = -((cy0 - r.top) / r.height) * 2 + 1;
@@ -1958,6 +1971,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       var fora = false; for (var k = 0; k < pls.length; k++) if (pls[k].distanceToPoint(hits[i].point) < -1e-6) fora = true;
       if (!fora) hit = hits[i];
     }
+    if (soUid) return hit ? uidDeMalha(hit.object) : null;
     if (S.selected) { S.selected.material = S.prevMat; S.selected = null; }
     var o = (S && S.opts) || opts;
     if (hit && hit.object.userData && hit.object.userData.expressID != null) {
@@ -1973,6 +1987,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     S.selected = m; S.prevMat = m.material; m.material = selMat; contornoSelecao(m);
     var o = (S && S.opts) || opts;
     if (o.onPick) o.onPick(propsDe(m.userData.mid != null ? m.userData.mid : S.modelID, m.userData.expressID, m.userData.tipo));
+    try { if (window.BimSelecao && BimSelecao.mudou) BimSelecao.mudou(); } catch (_) {}   /* SELECIONAR */
     return true;
   };
   function novaVista(cont, nome) {
@@ -5957,7 +5972,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var alvoLupa = S._lupaSoltar ? S._lupaSoltar(e) : null;
     _dedos = Math.max(0, _dedos - 1);
     var tq = _toque; _toque = null;
-    if (tq && tq.id === e.pointerId && !ferramentaClique() && !fly.on && !xr.on && (visitante || S._aoTocar || S._aoClicarPeca || S._aoMarcarPonto)) {
+    /* SELECIONAR (js/bimselecao.js): o esquerdo sem ferramenta — clique seleciona, arrasto faz a janela ou move a peça */
+    if (S._sel3Up && S._sel3Up(e)) { medir.down = null; return; }
+    if (tq && tq.id === e.pointerId && !ferramentaClique() && !fly.on && !xr.on && (visitante || S._aoTocar || S._aoClicarPeca || S._aoMarcarPonto || (S._sel3Clique && e.pointerType === 'touch'))) {
       var tdx = e.clientX - tq.x, tdy = e.clientY - tq.y;
       /* ⚠ DURAÇÃO PELO RELÓGIO DO DEDO (timeStamp do evento), não pela hora em
          que o código rodou. Com o 3D na tela inteira, cada quadro de um modelo
@@ -5969,6 +5986,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         if (S._aoMarcarPonto) { var fm = S._aoMarcarPonto, om = S._aoMarcarOpts; S._aoMarcarPonto = null; S._aoMarcarOpts = null; try { fm(S._icar.pontoNoChao(e.clientX, e.clientY, om)); } catch (eM) {} } // içamento: um clique = um ponto no chão
         else if (S._aoTocar) { var fn = S._aoTocar; S._aoTocar = null; try { fn(pontoNaTela(e.clientX, e.clientY)); } catch (eT) {} }
         else if (S._aoClicarPeca) cliqueColetor(e);
+        else if (!visitante && S._sel3Clique) S._sel3Clique(e);   /* SELECIONAR: tocar seleciona (sem voar até a peça) */
         else selecionarEm(e.clientX, e.clientY);
         return;
       }
@@ -5993,6 +6011,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var hit = raycastEm(e.clientX, e.clientY);
     if (S.edit && S.edit.on && S.edit.sub) { editClique(e, hit); return; } // editor: aceita hit OU plano do chão
     if (S.edit && S.edit.on && !S.edit.sub) { // editor SEM ferramenta: clique simples mostra os parâmetros
+      if (S._sel3Clique) { S._sel3Clique(e); return; }   /* SELECIONAR: a seleção única da tela (planta e 3D juntas) */
       if (S._prec) S._prec.selecionar(e, hit);   /* B3: e seleciona a peça do editor (cotas temporárias e alças) */
       if (hit && _ultimosHits[0]) {
         var udP = _ultimosHits[0].object.userData;
@@ -6081,6 +6100,214 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (!sn || !sn.p) { esconderSnapMarca(); return; }
     mostrarSnapMarca(sn, e.clientX, e.clientY);
   });
+
+  /* =====================================================================
+   * SELECIONAR É O PADRÃO (09/10/2026, js/bimselecao.js). Pedido do Rogério:
+   * "tem que ficar como PADRÃO o SELECIONAR: eu clico na parede, quero alterar
+   * a parede, quero puxar a parede"; a mão vira o botão do meio.
+   *   · os botões da órbita são decididos a CADA pointerdown, na captura (que
+   *     no alvo roda antes do OrbitControls): esquerdo = nada (é a seleção),
+   *     meio = mover a vista, Ctrl + meio = mover, Shift + meio = girar; a
+   *     Mão ligada devolve o esquerdo à vista; o visitante fica como sempre;
+   *   · esquerdo sem ferramenta: clique seleciona, arrastar no vazio faz a
+   *     janela (com o modelador), arrastar a peça do editor move;
+   *   · a seleção é UMA para a tela toda: as peças do editor moram na seleção
+   *     do desenho de precisão (alças, cotas temporárias, Delete) e a peça do
+   *     IFC no realce de sempre (S.selected); Propriedades mostram a primeira;
+   *   · a roda dá zoom no ponto sob o cursor (o ponto fica parado na tela).
+   * O toque não passa por aqui: um dedo gira, dois dão zoom, tocar seleciona.
+   * ===================================================================== */
+  function modeladorOn() { try { return !!(window.BimPrevia && BimPrevia.modelador()); } catch (_) { return false; } }
+  function SLx() { return window.BimSelecao || null; }
+  function uidDeMalha(m) { var ud = m && m.userData; return ud && ud.expressID != null ? (ud.mid != null ? ud.mid : S.modelID) + ':' + ud.expressID : null; }
+  /* nenhuma ferramenta de clique armada (trena, área, ângulo, corte, cota, ferramenta do editor, coletores) */
+  function semFerramenta3d() {
+    if (medir.on || area.on || ang.on || ctec.ativo || cota.on) return false;
+    if (S.edit && S.edit.on && S.edit.sub) return false;
+    if (S._aoClicarPeca || S._aoMarcarPonto || S._aoTocar) return false;
+    return !(fly.on || (xr && xr.on));
+  }
+  function selAtual() {
+    var r = [];
+    try { if (S._prec && S._prec.api) S._prec.api.selecao().forEach(function (id) { r.push('edit:' + id); }); } catch (_) {}
+    var u = S.selected ? uidDeMalha(S.selected) : null; if (u && r.indexOf(u) < 0) r.push(u);
+    return r;
+  }
+  /* a seleção única: uids ('edit:e3', '0:1234'); modo 'trocar' | 'somar' | 'alternar' */
+  function selAplicar(uids, modo) {
+    var SL = SLx(), novo = SL ? SL.combinar(selAtual(), uids || [], modo || 'trocar') : (uids || []).slice();
+    novo = novo.filter(function (u) { return !!(S.meshPorUid && S.meshPorUid[u]); });
+    var mod = modeladorOn() && S._prec && S._prec.api;
+    var eds = mod ? novo.filter(function (u) { return /^edit:/.test(u); }).map(function (u) { return u.slice(5); }) : [];
+    var outros = novo.filter(function (u) { return !(mod && /^edit:/.test(u)); });
+    if (mod) { if (eds.length && !edit.on) setEdit(true); S._prec.api.selecionar(eds); }
+    if (S._limparRaioX) S._limparRaioX();
+    if (S.selected) { S.selected.material = S.prevMat; S.selected = null; S.prevMat = null; }
+    contornoSelecao(null);
+    var ult = outros.length ? S.meshPorUid[outros[outros.length - 1]] : null;
+    if (ult) { S.selected = ult; S.prevMat = ult.material; ult.material = selMat; contornoSelecao(ult); }
+    var o = (S && S.opts) || opts, m0 = novo.length ? S.meshPorUid[novo[0]] : null;
+    if (o.onPick) { try { o.onPick(m0 ? propsDe(m0.userData.mid != null ? m0.userData.mid : S.modelID, m0.userData.expressID, m0.userData.tipo) : null); } catch (_) {} }
+    if (novo.length > 1) S._hint(novo.length + ' peças selecionadas. Arraste uma delas para mover; Delete apaga; Esc limpa.');
+    else if (eds.length === 1) S._hint('Selecionada. Arraste a peça para mover; as alças esticam a ponta; Delete apaga; Esc limpa.');
+    try { if (SL && SL.mudou) SL.mudou(); } catch (_) {}
+    return novo;
+  }
+  S._selAplicar = selAplicar; S._selAtual = selAtual;
+  function sel3Clique(e) {
+    var hit = raycastEm(e.clientX, e.clientY), u = uidDeMalha(hit && hit.object), ctrl = !!(e.ctrlKey || e.metaKey);
+    if (u) selAplicar([u], ctrl ? 'alternar' : 'trocar'); else if (!ctrl) selAplicar([], 'trocar');
+  }
+  S._sel3Clique = function (e) { if (!S || !S.alive || visitante) return false; sel3Clique(e); return true; };
+  /* os botões da órbita: decididos na CAPTURA do pointerdown (no alvo ela roda antes do OrbitControls) */
+  function navBotoes(orb, e) {
+    var SL = SLx(); if (!SL || !orb || e.pointerType === 'touch') return;
+    var b = SL.botoesOrbita({ visitante: visitante, mao: SL.mao(), ctrl: e.ctrlKey, meta: e.metaKey, shift: e.shiftKey });
+    orb.mouseButtons.LEFT = b.LEFT; orb.mouseButtons.MIDDLE = b.MIDDLE; orb.mouseButtons.RIGHT = b.RIGHT;
+  }
+  S._navBotoes = navBotoes;
+  canvasEl.setAttribute('data-bim-nav', '1');
+  canvasEl.addEventListener('pointerdown', function (e) {
+    if (!S || !S.alive) return;
+    navBotoes(orbit, e);
+    var SL = SLx();
+    if (SL && e.pointerType !== 'touch' && (e.button === 1 || e.button === 2 || (e.button === 0 && SL.mao() && !visitante))) canvasEl.setAttribute('data-bim-pan', '1');   /* a mão aparece SÓ durante o mover */
+  }, true);
+  function soltarPan() { canvasEl.removeAttribute('data-bim-pan'); }
+  canvasEl.addEventListener('pointerup', soltarPan); canvasEl.addEventListener('pointercancel', soltarPan);
+  canvasEl.addEventListener('mousedown', function (e) { if (e.button === 1) e.preventDefault(); });   /* sem a rolagem automática do navegador */
+  canvasEl.addEventListener('auxclick', function (e) { if (e.button === 1) e.preventDefault(); });
+  /* ---- o arrasto do esquerdo (janela ou mover a peça) ---- */
+  var sel3 = null, selRet = null;
+  canvasEl.addEventListener('pointerdown', function (e) {
+    sel3 = null;
+    if (!S || !S.alive || e.button !== 0 || e.pointerType === 'touch' || visitante) return;
+    var SL = SLx(); if (!SL || SL.mao() || !semFerramenta3d()) return;
+    var hit = raycastEm(e.clientX, e.clientY), u = uidDeMalha(hit && hit.object), mod = modeladorOn() && !!S._prec;
+    var a = SL.acao({ botao: 0, vista: '3d', alvo: u ? 'peca' : 'vazio', editavel: !!(u && /^edit:/.test(u)), modelador: mod, ctrl: !!(e.ctrlKey || e.metaKey), shift: e.shiftKey });
+    sel3 = { x: e.clientX, y: e.clientY, u: u, acao: a, ctrl: !!(e.ctrlKey || e.metaKey), modo: null, id: e.pointerId, tipo: e.pointerType };
+  });
+  canvasEl.addEventListener('pointermove', function (e) {
+    var s = sel3; if (!s || e.pointerId !== s.id) return;
+    var SL = SLx(); if (!SL) return;
+    if (!s.modo) {
+      if (!SL.arrastou({ x: s.x, y: s.y }, { x: e.clientX, y: e.clientY })) return;
+      s.modo = 'nada';
+      if (s.acao === 'janela') s.modo = 'janela';
+      else if (s.acao === 'peca-mover') {
+        if (selAtual().indexOf(s.u) < 0) selAplicar([s.u], 'trocar');
+        if (S._prec && S._prec.arrastoIniciar && S._prec.arrastoIniciar({ clientX: s.x, clientY: s.y, pointerType: s.tipo })) s.modo = 'mover';
+      }
+      try { canvasEl.setPointerCapture(e.pointerId); } catch (_) {}
+    }
+    if (s.modo === 'mover') S._prec.arrastoMover(e);
+    else if (s.modo === 'janela') selRetDesenhar(s, e);
+  });
+  function selRetDesenhar(s, e) {
+    var SL = SLx(), h = S.host || host, hr = h.getBoundingClientRect();
+    if (!selRet) { selRet = document.createElement('div'); selRet.className = 'bim-sel-janela'; selRet.setAttribute('data-bim', 'janela'); }
+    if (selRet.parentNode !== h) h.appendChild(selRet);
+    selRet.setAttribute('data-modo', SL.modoJanela(s.x, e.clientX));
+    var x0 = Math.min(s.x, e.clientX), y0 = Math.min(s.y, e.clientY);
+    selRet.style.left = (x0 - hr.left) + 'px'; selRet.style.top = (y0 - hr.top) + 'px';
+    selRet.style.width = Math.abs(e.clientX - s.x) + 'px'; selRet.style.height = Math.abs(e.clientY - s.y) + 'px';
+    selRet.style.display = 'block';
+  }
+  function selRetTirar() { if (selRet) selRet.style.display = 'none'; }
+  /* a janela no 3D: a pegada de cada peça do editor (cantos × base/topo) projetada na tela → casco */
+  function janela3d(s, e) {
+    var SL = SLx(), j = SL.janela([s.x, s.y], [e.clientX, e.clientY], SL.modoJanela(s.x, e.clientX));
+    var mo = edit.modelo; if (!mo || !mo.grupo) return [];
+    var st0 = edit.estado || BimEdit.aplicar(edit.ops), pg = {};
+    try { if (window.BimPrecisao) BimPrecisao.geometria(st0, { avaliar: famAval }).els.forEach(function (g) { pg[g.id] = g; }); } catch (_) {}
+    var por = {};
+    mo.grupo.children.forEach(function (m) {
+      if (!m.isMesh || m.userData.expressID == null || !cadeiaVisivel(m)) return;
+      (por[m.userData.expressID] = por[m.userData.expressID] || []).push(m);
+    });
+    var pecas = [];
+    Object.keys(por).forEach(function (id) {
+      var bx = new THREE.Box3(); por[id].forEach(function (m) { bx.expandByObject(m); });
+      if (bx.isEmpty()) return;
+      var pts = [], atras = false, g = pg[id], cs = g && g.cantos && g.cantos.length >= 2 ? g.cantos : null;
+      function pj(x, y, z) { var t = S._telaDe(x, y, z); if (t.atras) atras = true; else pts.push([t.x, t.y]); }
+      if (cs) cs.forEach(function (c) { pj(c.x, bx.min.y, c.z); pj(c.x, bx.max.y, c.z); });
+      else [bx.min.x, bx.max.x].forEach(function (x) { [bx.min.y, bx.max.y].forEach(function (y) { [bx.min.z, bx.max.z].forEach(function (z) { pj(x, y, z); }); }); });
+      if (atras && j.modo === 'dentro') return;   /* atrás da câmera não está "inteiro dentro" */
+      if (pts.length) pecas.push(SL.pecaDoCasco('edit:' + id, pts));
+    });
+    return SL.pegaJanela(j, pecas);
+  }
+  /* o soltar do esquerdo (chamado pelo pointerup de sempre, antes das ferramentas): true = era seleção */
+  S._sel3Up = function (e) {
+    var s = sel3; if (!s || e.button !== 0 || e.pointerId !== s.id) return false;
+    sel3 = null; selRetTirar();
+    try { canvasEl.releasePointerCapture(e.pointerId); } catch (_) {}
+    if (!s.modo) { sel3Clique(e); return true; }
+    if (s.modo === 'mover') { if (S._prec && S._prec.arrastoSoltar) S._prec.arrastoSoltar(); marcarFechamento(); return true; }
+    if (s.modo === 'janela') {
+      var ids = janela3d(s, e);
+      selAplicar(ids, s.ctrl ? 'somar' : 'trocar');
+      S._hint(ids.length ? ids.length + ' peça(s) selecionada(s) pela janela (' + (SLx().modoJanela(s.x, e.clientX) === 'dentro' ? 'só o que está inteiro dentro' : 'o que a janela toca') + ').' : 'A janela não pegou nenhuma peça do modelo.');
+    }
+    return true;
+  };
+  canvasEl.addEventListener('pointercancel', function () { if (sel3 && sel3.modo === 'mover' && S._prec && S._prec.arrastoCancelar) S._prec.arrastoCancelar(); sel3 = null; selRetTirar(); });
+  /* Esc limpa a seleção (e cancela o arrasto); Delete apaga a do editor. Na CAPTURA da JANELA: roda antes
+     do Esc do desenho de precisão e do Esc de sempre (que fecharia o editor) — e só para a tecla quando a
+     usou. Digitando num campo, ou com ferramenta armada, segue o caminho de sempre. */
+  S._selTeclas = function (e) {
+    if (!S || S !== Sm || !S.alive) return;
+    var k = e.key; if (k !== 'Escape' && k !== 'Delete' && k !== 'Del') return;
+    var t = e.target || {}; if (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || '') || t.isContentEditable) return;
+    /* o BIM não está na tela (outro módulo aberto): a tecla não é daqui. ⚠ O host do 3D fica ESCONDIDO com a
+       planta na frente — quem diz se o BIM está na tela é a casca (ou o host, sem casca) */
+    var h = S.host || host, raiz = h && h.closest ? (h.closest('.bim-revit') || h) : h;
+    if (!raiz || !raiz.isConnected || !raiz.getClientRects().length) return;
+    var SL = SLx();
+    if (k === 'Escape') {
+      if (sel3 && sel3.modo) { if (sel3.modo === 'mover' && S._prec && S._prec.arrastoCancelar) S._prec.arrastoCancelar(); sel3 = null; selRetTirar(); e.preventDefault(); e.stopPropagation(); return; }
+      if (SL && SL.arrastando && SL.arrastando()) { SL.cancelar(); e.preventDefault(); e.stopPropagation(); return; }
+      if (!semFerramenta3d() || (SL && SL.ferramenta2d && SL.ferramenta2d()) || (edit.on && edit.p1)) return;
+      if (!selAtual().length) return;
+      selAplicar([], 'trocar'); S._hint('Seleção limpa.');
+      e.preventDefault(); e.stopPropagation(); return;
+    }
+    if (!semFerramenta3d()) return;
+    var temEd = !!(S._prec && S._prec.api && S._prec.api.selecao().length);
+    if (!temEd && S.selected) { S._hint('A peça do IFC importado não sai pelo Delete: use Modificar › Apagar (ela fica oculta e marcada como removida; o arquivo não muda).'); return; }
+    if (temEd) setTimeout(function () { if (S && S.alive) selAplicar(selAtual(), 'trocar'); }, 0);   /* o desenho de precisão apaga; Propriedades acompanha */
+  };
+  window.addEventListener('keydown', S._selTeclas, true);
+  /* ---- a RODA: zoom no ponto sob o cursor (o ponto fica parado na tela) ---- */
+  var _rayZ = new THREE.Raycaster(), _mZ = new THREE.Vector2(), _zMem = null;
+  function pontoDoZoom(cx, cy) {
+    var agora = performance.now();
+    if (_zMem && agora - _zMem.t < 180 && Math.abs(cx - _zMem.x) + Math.abs(cy - _zMem.y) < 4) { _zMem.t = agora; return _zMem.p.clone(); }
+    var rc = canvasEl.getBoundingClientRect(); if (!rc.width || !rc.height) return null;
+    _mZ.x = ((cx - rc.left) / rc.width) * 2 - 1; _mZ.y = -((cy - rc.top) / rc.height) * 2 + 1;
+    _rayZ.layers.mask = ray.layers.mask; _rayZ.setFromCamera(_mZ, camera);
+    var h = primeiroHit(_rayZ.intersectObjects(modelRoot.children, true)), p = null;
+    if (h) p = h.point.clone();
+    else {
+      var n = new THREE.Vector3(); camera.getWorldDirection(n);
+      var pl = new THREE.Plane().setFromNormalAndCoplanarPoint(n, orbit.target), q = new THREE.Vector3();
+      p = _rayZ.ray.intersectPlane(pl, q) ? q : null;
+    }
+    _zMem = p ? { x: cx, y: cy, t: agora, p: p.clone() } : null;
+    return p;
+  }
+  canvasEl.addEventListener('wheel', function (e) {
+    if (!S || S !== Sm || !S.alive || visitante || !orbit.enabled || orbit.enableZoom === false || fly.on || !e.deltaY) return;
+    var P = pontoDoZoom(e.clientX, e.clientY); if (!P) return;
+    var f = e.deltaY > 0 ? 1.12 : 1 / 1.12, nd = camera.position.distanceTo(orbit.target) * f;
+    if (nd < orbit.minDistance || nd > orbit.maxDistance) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    if (S._cancelTween) S._cancelTween();
+    camera.position.sub(P).multiplyScalar(f).add(P);
+    orbit.target.sub(P).multiplyScalar(f).add(P);
+    orbit.update();
+  }, { capture: true, passive: false });
 
   // ============================================================
   // ▱ ÁREA (polígono) e ∠ ÂNGULO — mesmas garantias da trena: todo ponto
@@ -9237,7 +9464,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       var hC = +def.yCorte, vz = curvaVaos[id];
       BimCurva.cortePlanta(c, function (q) { return [telaX(q[0], hC, q[1]), telaY(q[0], hC, q[1])]; }, vz ? vz.aceitos : [], hC).forEach(function (k) {
         if (p6Tag) { k.t = 'IFCWALL'; k.u = 'edit:' + id; }
-        k.ifc = 'IFCWALL'; cortes.push(k);
+        k.ifc = 'IFCWALL'; k._pid = id; cortes.push(k);   /* UNIÃO: _pid = a parede (sai depois da união) */
       });
       return true;
     }
@@ -9309,7 +9536,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
             }
             if (pts.length === 2) segs.push(pts);
           }
-          encadear(segs).forEach(function (c) { if (udT) { c.t = udT.t; c.u = udT.u; } c.ifc = m.userData.tipo || ''; if (m.userData._fase) c.fase = m.userData._fase; cortes.push(c); });   /* P6: udT; P8: categoria; P10: status de fase */
+          encadear(segs).forEach(function (c) { if (udT) { c.t = udT.t; c.u = udT.u; } c.ifc = m.userData.tipo || ''; if (m.userData._fase) c.fase = m.userData._fase; if (m.userData.mid === 'edit') c._pid = m.userData.expressID; cortes.push(c); });   /* P6: udT; P8: categoria; P10: status de fase; UNIÃO: _pid */
         }
         /* (b) arestas que se veem */
         var arr = arestasDe(geo), l0p10 = linhas.length;   /* P10 */
@@ -9367,6 +9594,24 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         try { var r = portaIfcPlanta(portasIfc[kP]); if (r && naFaixa(r.y0, r.y1)) portas.push(paraTela(r.sp, kP)); } catch (ePI) { /* sem símbolo: fica o corte */ }
       });
     }
+    /* UNIÃO DE PAREDES (js/bimuniao.js, 09/10/2026 — "não ficar aquela LINHA CORTANDO"): as
+       paredes do modelador ligadas por junta (L, T, X; emenda colinear do mesmo tipo e espessura) e
+       do mesmo tipo/material/fase saem como UM contorno — sem a face de uma atravessando a ponta da
+       outra — e as arestas vistas por dentro do corte delas (a junta de baixo, a malha é oca) saem.
+       Vale para a tela, a folha/PDF e o DXF (todos leem este desenho). */
+    var uniaoInfo = null;
+    if (window.BimUniao && edit && edit.estado) {
+      try {
+        var dU = { cortes: cortes, linhas: linhas, linhasIfc: linhasIfc, linhasUd: linhasUd };
+        uniaoInfo = BimUniao.planta(dU, edit.estado, { vizinhas: p6Tag ? ['linhasIfc', 'linhasUd'] : ['linhasIfc'],
+          chave: function (c) {   /* o material do projeto da peça (js/bimmateriaisui.js) entra na assinatura: hachura diferente não une */
+            var mt = null; try { mt = window.BimModeloVista && typeof BimModeloVista.materialDe === 'function' ? BimModeloVista.materialDe('edit:' + c.id) : null; } catch (eM) { mt = null; }
+            return BimUniao.assinatura(c) + (mt && mt.id ? '|mat:' + mt.id : '');
+          } });
+        cortes = dU.cortes; linhas = dU.linhas; linhasIfc = dU.linhasIfc; if (p6Tag) linhasUd = dU.linhasUd;
+      } catch (eU) { uniaoInfo = { erro: String(eU && eU.message || eU) }; }
+    }
+    cortes.forEach(function (c) { delete c._pid; });
     var ms = Math.round(((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0));
     if (p6Forro) {   /* P6: o forro refletido foi visto de baixo — o X volta ao da planta (o forro "refletido") */
       cortes.forEach(function (c) { c.pts.forEach(function (q) { q[0] = -q[0]; }); });
@@ -9374,7 +9619,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     }
     return { ok: true, tipo: planta ? 'planta' : 'corte', cortes: cortes, linhas: linhas, linhasUd: p6Tag ? linhasUd : undefined, linhasIfc: linhasIfc, linhasFase: Object.keys(linhasFase).length ? linhasFase : undefined,
       portas: portas.length ? portas : undefined,
-      info: { ms: ms, malhas: nMalhas, triCortados: nTri, arestas: nAr, amostras: amostras, px: [W, H], pxPorMetro: Math.round(ppm * 10) / 10 } };
+      info: { ms: ms, malhas: nMalhas, triCortados: nTri, arestas: nAr, amostras: amostras, px: [W, H], pxPorMetro: Math.round(ppm * 10) / 10, uniao: uniaoInfo || undefined } };
   }
   /* PORTA DO IFC ABERTO (js/simboloporta.js): o OperationType da ocorrência (IFC4) ou do tipo
      (IfcDoorType / IfcDoorStyle do IFC2x3, pelo IfcRelDefinesByType que o lerTipos já leu); sem a
@@ -10092,6 +10337,17 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         var rotEl = rotuloElementos();
         g2.fillStyle = '#15803d'; g2.font = 'bold 16px Segoe UI, Arial';
         g2.fillText((((typeof Empresa!=='undefined'&&Empresa.nomeDoc&&Empresa.nomeDoc())||'') ? ((typeof Empresa!=='undefined'&&Empresa.nomeDoc&&Empresa.nomeDoc())||'') + ' · ' : '') + ((typeof Empresa!=='undefined'&&Empresa.creditoTexto&&Empresa.creditoTexto())?'OrçaPRO BIM · ':'') + new Date().toLocaleString('pt-BR') + ' · ' + rotEl + (pav.isolado ? ' · pavimento: ' + pav.isolado : ''), 12, img.height + 28);
+        /* o SELO DA DISCIPLINA (js/bimdisciplinas.js) no canto direito da faixa:
+           a foto da vista diz de qual módulo de modelagem ela saiu */
+        try {
+          var sDisc = window.BimDisciplinas && BimDisciplinas.selo ? BimDisciplinas.selo() : null;
+          if (sDisc) {
+            g2.font = 'bold 13px Segoe UI, Arial';
+            var wS = g2.measureText(sDisc.texto).width + 24, xS = cnv.width - wS - 10, yS = img.height + 10;
+            g2.fillStyle = sDisc.cor; g2.fillRect(xS, yS, wS, 24);
+            g2.fillStyle = sDisc.textoCor; g2.fillText(sDisc.texto, xS + 12, yS + 17);
+          }
+        } catch (_) {}
         var a2 = document.createElement('a'); a2.href = cnv.toDataURL('image/png'); a2.download = 'bim-foto.png'; a2.click();
         S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('camera', 15) : '') + ' Foto salva (bim-foto.png).');
       } catch (_) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('camera', 15) : '') + ' Não consegui montar o arquivo da foto.'); }
@@ -11277,6 +11533,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           m = new THREE.Mesh(g); m.position.set(s.x, s.y, s.z); m.rotation.y = (s.rot || 0) * Math.PI / 180;
         }
       } catch (e) { return; }
+      if (!matSobre && !matProprio && s.peca && s.cor) matProprio = famMatCor(s.material, s.cor, 0);   /* MARCENARIA: a cor da chapa do catálogo (js/marcenaria.js) */
       m.material = matSobre || matProprio || famMat(s.material);
       m.updateMatrix(); m.applyMatrix4(M);
       if (s.id != null) m.userData.famSolido = s.id;   /* PORTA: a planta reconhece o sólido da folha (js/simboloporta.js) */
@@ -11601,7 +11858,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         mo.tipos[c.ifc] = (mo.tipos[c.ifc] || 0) + 1;
         var areaL = vz ? vz.areaLiquida : c.area;
         mo.qto[c.id] = b2r ? b2r.qto : { comprimento: c.tipo === 'pilar' ? (c.comprimentoPilar || c.altura) : c.comprimento, area: areaL, volume: vz ? Math.round(areaL * c.espessura * 10000) / 10000 : c.volume, contagem: 1, areaVaos: vz ? vz.areaVaos : 0 };
-        mo.elementos.push({ id: c.id, uid: 'edit:' + c.id, mid: 'edit', arquivo: mo.nome, tipo: c.ifc, nome: (NOMES_ED[c.tipo] || 'Elemento') + ' (sintética ' + c.id + ')', etapa: null, codOrc: null, qto: mo.qto[c.id], disciplina: c.tipo === 'viga' || c.tipo === 'pilar' ? 'estrutura' : 'arquitetura' });
+        mo.elementos.push({ id: c.id, uid: 'edit:' + c.id, mid: 'edit', arquivo: mo.nome, tipo: c.ifc, nome: (c.tipo === 'metal' && window.BimMetal ? BimMetal.nome(c) + (c.marca ? ' [' + c.marca + ']' : '') : (NOMES_ED[c.tipo] || 'Elemento')) + ' (sintética ' + c.id + ')', etapa: null, codOrc: null, qto: mo.qto[c.id], disciplina: c.tipo === 'viga' || c.tipo === 'pilar' || c.tipo === 'metal' ? 'estrutura' : 'arquitetura' });
         mo.nEl++;
       });
       st.coberturas.forEach(function (cb) {
@@ -11695,7 +11952,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (opts.onEdicao && !edit._replay) { try { opts.onEdicao(edit.ops.slice()); } catch (_) {} }
   }
   S._tickExtra.push(function () { for (var i = 0; i < edit.sprites.length; i++) rescaleObj(edit.sprites[i]); });
-  function editOp(o) { edit.ops.push(o); edit.redo = []; editRebuild(); }
+  function editOp(o) {
+    /* OrçaPRO Modela: a 1ª peça modelada começa o teste de 7 dias (js/modela.js; não faz nada se já começou ou se há direito) */
+    try { if (window.Modela && Modela.iniciarTeste) Modela.iniciarTeste(); } catch (_m) {}
+    edit.ops.push(o); edit.redo = []; editRebuild();
+  }
   /* desfazer/refazer da edição (Ctrl+Z / Ctrl+Y e a barra de título) */
   S._editDesfazer = function () { if (!edit.ops.length) return false; edit.redo.push(edit.ops.pop()); editTirarProv(); editRebuild(); return true; };
   S._editRefazer = function () { if (!edit.redo.length) return false; edit.ops.push(edit.redo.pop()); editRebuild(); return true; };
@@ -12345,7 +12606,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         parametrosProjeto: o.parametrosProjeto || S._paramProjeto || null,
         /* MATERIAIS (js/bimmateriaisui.js): nome, cor e transparência do material do projeto de cada peça */
         materiaisProjeto: o.materiaisProjeto || ((window.BimMateriaisUI && BimMateriaisUI.ativo() && BimMateriaisUI.ifcOpts) ? BimMateriaisUI.ifcOpts() : null),
-        niveis: o.niveis, projeto: o.projeto, semente: o.semente, autor: o.autor, empresa: o.empresa, versaoApp: o.versaoApp, arquivo: o.arquivo, agora: o.agora });
+        niveis: o.niveis, projeto: o.projeto, semente: o.semente, autor: o.autor, empresa: o.empresa, versaoApp: o.versaoApp, arquivo: o.arquivo, agora: o.agora,
+        fabricacao: !!o.fabricacao });   /* METÁLICA: o IFC de fabricação (conjuntos em IfcElementAssembly) */
       r.ok = true; r.n = n;
       return r;
     });
@@ -12584,6 +12846,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         aco: new THREE.MeshStandardMaterial({ color: 0x8a9099, metalness: .55, roughness: .45, side: THREE.DoubleSide }),
         madeira: new THREE.MeshStandardMaterial({ color: 0xb88a5a, metalness: .02, roughness: .85, side: THREE.DoubleSide }),
         escada: new THREE.MeshStandardMaterial({ color: 0xb9c0c8, metalness: .05, roughness: .9, side: THREE.DoubleSide }),
+        parafuso: new THREE.MeshStandardMaterial({ color: 0x4a4f57, metalness: .7, roughness: .35, side: THREE.DoubleSide }),   /* METÁLICA: parafuso, porca, arruela (js/metalpeca.js) */
         eixo: new THREE.LineDashedMaterial({ color: 0x2e6f9e, dashSize: 0.6, gapSize: 0.18, depthTest: false, transparent: true, opacity: 0.9 }),
         poli: new THREE.LineBasicMaterial({ color: 0x2fbf71, depthTest: false })
       };
@@ -12661,6 +12924,15 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   S._b2Malhas = function (c, vz, mat, addMesh) {
     var A = window.BimArq; if (!A || !c || !c.b2) return null;
     var me = null;
+    /* METÁLICA & MECÂNICA (js/metalpeca.js): chapa, perfil cortado, parafuso e peça mecânica — cada sólido é um contorno
+       (com furos) extrudado pelo mapa da peça; o corte inclinado vem no mapa (as duas pontas). Desenho = corte = lista. */
+    if (c.tipo === 'metal' && c.metal) {
+      if (!window.BimMetal) return null;
+      var mM = b2Mat(c.metal.kind === 'parafuso' ? 'parafuso' : 'aco');
+      BimMetal.solidos(c).forEach(function (sd) { if (sd.poli.length >= 3) addMesh(new THREE.Mesh(b2Geo(sd.poli, sd.furos, sd.z0, sd.z1, sd.ponto), mM), c.id, c.ifc, mM); });
+      var mdM = c.medidas || {};
+      return { qto: { comprimento: mdM.comprimento, area: mdM.area, volume: mdM.volume, contagem: 1, massa: c.massa } };
+    }
     if (c.tipo === 'parede') {
       var r = A.pecasParede(c, vz ? vz.aceitos : []);
       if (!r.pecas.length) return null;
@@ -15308,6 +15580,7 @@ function desmontarMorto() {
   try { if (Reuniao.on) Reuniao.sair(); } catch (_) {}
   try { if (S._onKeyDown) window.removeEventListener('keydown', S._onKeyDown); } catch (_) {}
   try { if (S._onKeyUp) window.removeEventListener('keyup', S._onKeyUp); } catch (_) {}
+  try { if (S._selTeclas) window.removeEventListener('keydown', S._selTeclas, true); } catch (_) {}   /* SELECIONAR */
   try { if (S._onMouseMove) document.removeEventListener('mousemove', S._onMouseMove); } catch (_) {}
   try { if (S._resize) window.removeEventListener('resize', S._resize); } catch (_) {}
   try { if (S._ajustarTop) window.removeEventListener('resize', S._ajustarTop); } catch (_) {}
@@ -16113,6 +16386,11 @@ window.BIM = {
   arquivoRA: function (formato, modo) { return S && S._arquivoRA ? S._arquivoRA(formato, modo) : { ok: false, erro: 'visualizador não montado' }; },
   selecionarEm: function (x, y) { if (S && S._selecionarEm) S._selecionarEm(x, y); },
   _selecionarUid: function (uid) { return !!(S && S._selecionarUid && S._selecionarUid(uid)); }, // hook de teste
+  /* SELECIONAR (js/bimselecao.js): a seleção ÚNICA da tela (planta e 3D) — uids 'edit:e3' / '0:1234';
+     modo 'trocar' | 'somar' | 'alternar'. Peça do editor vai para a seleção do desenho de precisão
+     (alças, Delete, arrastar); a do IFC, para o realce de sempre. Propriedades mostram a primeira. */
+  selecionar: function (uids, modo) { return (S && S._selAplicar) ? S._selAplicar(uids || [], modo || 'trocar') : []; },
+  selecao: function () { return { uids: (S && S._selAtual) ? S._selAtual() : [] }; },
   imersivo: function (modo) { if (!S || !S.xr) return false; if (S.xr.on) return true; if (S._toggleXR && (!S.xrPanel || S.xrPanel.style.display !== 'flex')) S._toggleXR(); var b = S.xrPanel && S.xrPanel.querySelector('[data-x="' + (modo || 'caminhar') + '"]'); if (b) { b.click(); return true; } return false; },
   imersivoAtivo: function () { return !!(S && S.xr && S.xr.on); },
   sairImersivo: function () { if (S && S._sairImersivo) S._sairImersivo(); },

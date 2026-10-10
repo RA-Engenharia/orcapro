@@ -54,6 +54,7 @@
     IFCRAILING: ["ARQ-GUARDA-CORPO", "medio"], IFCFURNISHINGELEMENT: ["ARQ-MOBILIARIO", "leve"], IFCFURNITURE: ["ARQ-MOBILIARIO", "leve"],
     IFCSPACE: ["ARQ-AMBIENTE", "leve"],
     IFCCOLUMN: ["EST-PILAR", "forte"], IFCBEAM: ["EST-VIGA", "forte"], IFCMEMBER: ["EST-PERFIL", "forte"], IFCPLATE: ["EST-CHAPA", "medio"],
+    IFCMECHANICALFASTENER: ["EST-PARAFUSO", "leve"], IFCDISCRETEACCESSORY: ["EST-ACESSORIO", "leve"],   /* METÁLICA (js/metalpeca.js) */
     IFCFOOTING: ["EST-FUNDACAO", "forte"], IFCPILE: ["EST-FUNDACAO", "forte"], IFCREINFORCINGBAR: ["EST-ARMADURA", "medio"],
     IFCPIPESEGMENT: ["HID-TUBULACAO", "medio"], IFCFLOWSEGMENT: ["HID-TUBULACAO", "medio"], IFCPIPEFITTING: ["HID-TUBULACAO", "medio"],
     IFCFLOWFITTING: ["HID-TUBULACAO", "medio"], IFCSANITARYTERMINAL: ["HID-APARELHO", "leve"], IFCFLOWTERMINAL: ["HID-APARELHO", "leve"],
@@ -625,14 +626,15 @@
     });
     /* coluna e carimbo */
     var col = geo.coluna, car = geo.carimbo;
-    doc.linha(cMold, col.x, Y(col.y), col.x, Y(col.y + col.h));
+    if (!geo.semColuna) doc.linha(cMold, col.x, Y(col.y), col.x, Y(col.y + col.h));
     var yy = col.y + 6;
     (pr.coluna || []).forEach(function (sx) {
       doc.texto(cTx, col.x + 3, Y(yy), 2.2, sx.titulo, 0, false); yy += 4.2;
       (sx.itens || []).forEach(function (it) { if (yy < car.y - 4) { doc.texto(cTx, col.x + 5, Y(yy), 1.8, "- " + it, 0, false); yy += 3.4; } });
       yy += 2;
     });
-    carimboDxf(doc, cMold, cCar, cTx, pr, folha, geo, opts.projeto, Y);
+    if (PR && PR.modeloCarimbo && PR.modeloCarimbo(pr) === "RA" && PR.carimboRA) carimboRADxf(doc, pr, folha, geo, opts, Y);
+    else carimboDxf(doc, cMold, cCar, cTx, pr, folha, geo, opts.projeto, Y);
     return doc;
   }
   function tabelaDxf(doc, cL, cT, b, Y) {
@@ -645,7 +647,24 @@
     });
     if (b.titulo) doc.texto(cT, b.x, Y(b.y - 2), 2.5, b.titulo, 0, false);
   }
-  /* o carimbo RA (mesmos campos da tela: js/pranchaui.js), em faixas */
+  /* o carimbo RA, modelo "RA": as MESMAS primitivas da tela (js/prancha.js carimboRA), nas layers
+     do gabarito (RA-CARIMBO-MOLDURA/LINHA/TEXTO/ROTULO/LOGO/DESTAQUE, cor e pena de lá — o
+     pos_dwg_ra.py não mexe nelas). O logo é imagem: no DXF fica a marca [LOGO] na caixa dele
+     (o DXF é um arquivo só; a imagem vai no PDF). opts.empresa = o cadastro da conta. */
+  function carimboRADxf(doc, pr, folha, geo, opts, Y) {
+    var PR = global.Prancha, c = pr.carimbo || {};
+    var nLogos = (c.logos || []).length || (opts.logo ? 1 : 0);
+    var L = PR.carimboRA(pr, folha, opts.projeto, opts.empresa, geo, { logos: nLogos }), cam = PR.CAMADAS_CARIMBO_RA;
+    Object.keys(cam).forEach(function (nome) { doc.especificar(nome, cam[nome][1], null, cam[nome][0]); });
+    function px(x) { return L.x + x; }
+    function py(y) { return Y(L.y + y); }
+    L.retangulos.forEach(function (r) { doc.poli(r.camada, [[px(r.x), py(r.y)], [px(r.x + r.w), py(r.y)], [px(r.x + r.w), py(r.y + r.h)], [px(r.x), py(r.y + r.h)]], true); });
+    L.linhas.forEach(function (l) { doc.linha(l.camada, px(l.x1), py(l.y1), px(l.x2), py(l.y2)); });
+    L.logos.forEach(function (b) { doc.texto("RA-CARIMBO-LOGO", px(b.x + b.w / 2), py(b.y + b.h / 2) - 1.25 * L.k, 2.5 * L.k, "[LOGO]", 0, true); });
+    L.textos.forEach(function (t) { doc.texto(t.camada, px(t.x), py(t.y), t.h, t.s, 0, t.al === "C"); });
+    return L;
+  }
+  /* o carimbo "Simples" (mesmos campos da tela: js/pranchaui.js), em faixas */
   function carimboDxf(doc, cMold, cL, cT, pr, folha, geo, projeto, Y) {
     var k = geo.carimbo, PR = global.Prancha, c = pr.carimbo || {};
     var pm = PR && PR.parametrosFolha ? PR.mapaParametros(pr, folha, projeto) : {};

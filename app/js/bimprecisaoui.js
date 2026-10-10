@@ -322,7 +322,10 @@
         });
       }
       function existe(id) { return !!Pr().tipoNoEstado(estado(), id); }
-      function selDefinir(ids) { pr.sel = ids.filter(existe); pr.geo = null; realcar(); montarTemporarias(); pintarOpcoes(); }
+      function selDefinir(ids) {
+        pr.sel = ids.filter(existe); pr.geo = null; realcar(); montarTemporarias(); pintarOpcoes();
+        try { if (global.BimSelecao && global.BimSelecao.mudou) global.BimSelecao.mudou(); } catch (eSL) {}   /* SELECIONAR: a planta realça o mesmo */
+      }
       function idDoHit() {
         var h = api.hits() && api.hits()[0]; var m = h && h.object;
         return m && m.userData && m.userData.mid === "edit" ? m.userData.expressID : null;
@@ -797,12 +800,53 @@
           selDefinir(e && (e.ctrlKey || e.metaKey || e.shiftKey) ? (ja ? pr.sel.filter(function (x) { return x !== id; }) : pr.sel.concat([id])) : [id]);
           if (pr.sel.length === 1 && pr.cotasTmp.length) hint("Clique numa cota para mudar a distância; arraste as alças para esticar. Delete apaga; CO copia, MV move, RO gira, MM espelha.");
         },
+        /* SELECIONAR (09/10/2026, js/bimselecao.js): ARRASTAR a peça selecionada no 3D move — o
+           ponto com o snap do que não está andando e o ortogonal/incrementos da barra de opções
+           (a configuração de "Mover"); o fantasma é o do Mover; soltar grava UMA op transformar. */
+        arrastoIniciar: function (e) {
+          if (!ativo() || ferramenta() || !pr.sel.length || !global.BimSelecao) return false;
+          var st0 = estado();
+          if (pr.sel.some(function (id) { return Pr().fixado(st0, id); })) { hint("Elemento fixado: use Desafixar antes (a peça fixada não anda)."); return false; }
+          var pl = api.planoPonto(e.clientX, e.clientY); if (!pl) return false;
+          var geoT = Pr().geometria(st0, { avaliar: api.avaliar }), s = {}; pr.sel.forEach(function (id) { s[id] = 1; });
+          var geoSel = { els: geoT.els.filter(function (g) { return s[g.id]; }), segs: geoT.segs.filter(function (g) { return s[g.id]; }), pontos: geoT.pontos.filter(function (g) { return s[g.id]; }) };
+          var cur = { x: pl.x, z: pl.z }, sn0 = Pr().snap(cur, geoSel, { tol: tolM(e), tipos: { fim: true, meio: true, centro: true, intersecao: true } });
+          var base = sn0 ? { x: sn0.p.x, z: sn0.p.z } : cur;
+          pr.mov = { base: base, dest: base, geoSel: geoSel, geo: Pr().geometria(st0, { excluir: pr.sel.slice(), avaliar: api.avaliar }) };
+          camadaDom.style.display = "none";   /* as alças e cotas temporárias somem enquanto a peça anda */
+          return true;
+        },
+        arrastoMover: function (e) {
+          var m = pr.mov; if (!m) return false;
+          var pl = api.planoPonto(e.clientX, e.clientY); if (!pl) return true;
+          var cfg = global.BimBarraOpcoes && global.BimBarraOpcoes.cfg ? global.BimBarraOpcoes.cfg("mover") : null;
+          var r = global.BimSelecao.pontoArrasto(m.base, { x: pl.x, z: pl.z }, m.geo, tolM(e), cfg, !!e.shiftKey);
+          m.dest = r.p;
+          mostrarMarca({ p: r.p, sn: r.sn, malha: false });
+          var T = { tipo: "mover", dx: r.p.x - m.base.x, dz: r.p.z - m.base.z }, ar = [];
+          m.geoSel.segs.forEach(function (sg) { if (sg.k !== "eixo") ar.push([Pr().ponto(sg.a, T), Pr().ponto(sg.b, T)]); });
+          var lf = segs(ar, matFant, edit.base + 0.03); if (lf) grp.add(lf);
+          var lb = segs([[m.base, r.p]], matLinha, edit.base + 0.02); if (lb) grp.add(lb);
+          caixaMostrar(e, m.base, r.p);
+          return true;
+        },
+        arrastoSoltar: function () {
+          var m = pr.mov; pr.mov = null;
+          camadaDom.style.display = ""; limparGrupo(grp); api.marcaEsconder(); caixaEsconder();
+          if (!m) return null;
+          var dx = Math.round((m.dest.x - m.base.x) * 10000) / 10000, dz = Math.round((m.dest.z - m.base.z) * 10000) / 10000;
+          if (Math.abs(dx) + Math.abs(dz) < 1e-4) { posicionar(); return null; }
+          return self.api.mover(dx, dz);
+        },
+        arrastoCancelar: function () { if (!pr.mov) return false; pr.mov = null; camadaDom.style.display = ""; limparGrupo(grp); api.marcaEsconder(); caixaEsconder(); posicionar(); return true; },
         /* o modelo foi refeito (op nova, desfazer, refazer, reabrir) */
         aposRebuild: function (st) {
           pr.geo = null;
+          var n0 = pr.sel.length;
           pr.sel = pr.sel.filter(function (id) { return !!Pr().tipoNoEstado(st, id); });
           realcar(); desenharCotas(st); montarTemporarias(); pintarOpcoes();
           try { desenharPinturas(st); } catch (eP) {}   /* P4 */
+          if (pr.sel.length !== n0) { try { if (global.BimSelecao && global.BimSelecao.mudou) global.BimSelecao.mudou(); } catch (eSL) {} }
         },
         aoSub: function (sub) {
           pr.pts = []; caixaEsconder(); limparGrupo(grp);
@@ -843,6 +887,21 @@
           ferramenta: function () { return ativo() ? ferramenta() : null; },
           selecionar: function (ids) { selDefinir(ids || []); if (ferramenta()) reiniciarPasso(); return pr.sel.slice(); },
           selecao: function () { return pr.sel.slice(); },
+          /* SELECIONAR (js/bimselecao.js): arrastar a seleção na planta/3D e a alça da planta — as MESMAS
+             ops do Mover (transformar) e das alças (esticar): Ctrl+Z desfaz */
+          mover: function (dx, dz) {
+            var r = Pr().opTransformar(estado(), pr.sel, { tipo: "mover", dx: Math.round(dx * 10000) / 10000, dz: Math.round(dz * 10000) / 10000 }, false, nid);
+            if (!r || r.erro) { hint((r && r.erro) || "Não deu para mover."); return { ok: false, erro: r && r.erro }; }
+            api.op(r.op); hint("Movido " + fmt(Math.sqrt(dx * dx + dz * dz)) + " m (Ctrl+Z desfaz).");
+            return { ok: true };
+          },
+          esticar: function (id, ponta, p) {
+            if (!p || !isFinite(p.x) || !isFinite(p.z) || !existe(id)) return { ok: false };
+            if (Pr().fixado(estado(), id)) { hint("Elemento fixado: use Desafixar antes."); return { ok: false }; }
+            api.op({ op: "esticar", id: id, ponta: ponta, x: Math.round(p.x * 10000) / 10000, z: Math.round(p.z * 10000) / 10000 });
+            hint("Esticado (Ctrl+Z desfaz).");
+            return { ok: true };
+          },
           estado: function () {
             return { passo: pr.passo, ferramenta: ferramenta(), pts: pr.pts.slice(), sel: pr.sel.slice(), ultimo: pr.ult ? { p: pr.ult.p, tipo: pr.ult.sn ? pr.ult.sn.tipo : null } : null,
                      cotasTemporarias: pr.cotasTmp.map(function (c) { return { k: c.k, valor: c.valor, vizinho: c.vizinho }; }), alcas: (pr.alcas || []).map(function (a) { return { k: a.k, p: a.p }; }),
