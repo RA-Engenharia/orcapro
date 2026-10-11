@@ -75,9 +75,25 @@
   </div>
   <div class="toasts" id="toasts"></div>
 
+  <!-- ⚠ CARREGAMENTO EM GRUPOS (10/10/2026). Os <script> deste arquivo moram
+       em <template data-grupo="...">, que o navegador NÃO executa sozinho:
+       - "nucleo": tudo que a abertura precisa. Roda pelos dois
+         js/pacotes/nucleo-*.js lá embaixo, NA ORDEM em que aparece aqui.
+       - "bim": o BIM e o modelador (motores, fitas, famílias, içamento e o
+         js/bim.js com o three e o web-ifc), mais de um terço do que o app
+         baixava para abrir. Roda inteiro, nesta ordem, quando a tela do BIM
+         (ou o visor do link, a placa, a janela do 3D) pede
+         `Carregar.grupo("bim")` (js/carregar.js).
+       Arquivo NOVO entra no bloco do seu grupo, na posição de sempre. Arquivo
+       que o núcleo usa fora da tela do BIM fica no "nucleo" mesmo sendo
+       bim-alguma-coisa (ex.: js/dxf.js, js/icarlanca.js — o escopo e o RDO os
+       usam): no "bim" ele só existiria depois que alguém abrisse o BIM. -->
+  <template data-grupo="nucleo">
   <!-- Camadas: config -> util -> store/auth -> motores -> ui -> app -->
   <script src="js/config.js"></script>
   <script src="js/util.js"></script>
+  <!-- carregamento sob demanda dos grupos: antes de todo mundo que pergunta por ele -->
+  <script src="js/carregar.js"></script>
   <!-- ⚠ ANTES do store.js: a migração do financeiro (v1→v2) converte o valor
        para centavos e precisa do Dinheiro já definido. Ele não depende de
        ninguém — só usa Util.num, resolvido na hora da chamada.
@@ -242,6 +258,8 @@
   <script src="js/cronoia.js"></script>
   <script src="js/revit.js"></script>
   <script src="js/paredecebola.js"></script>
+  </template>
+  <template data-grupo="bim">
   <!-- B0: identidade duravel do elemento BIM. Antes de TODO bim*, e antes do
        modulo ES js/bim.js (que so executa depois do parse) -->
   <script src="js/bimid.js"></script>
@@ -263,7 +281,15 @@
   <script src="js/bimclashx.js"></script>
   <script src="js/bimtarefa.js"></script>
   <script src="js/bimavanco.js"></script>
+  </template>
+  <template data-grupo="nucleo">
+  <!-- ⚠ NO NÚCLEO, não no "bim": o Tour 360 (js/tour360rel.js) grava o vídeo
+       do passeio com o BimVideo. No grupo do BIM, "Gerar vídeo" recusava com
+       "o gravador de vídeo não carregou" para quem não tinha aberto o BIM
+       antes na sessão (medido em 10/10/2026, junção do app leve). -->
   <script src="js/bimvideo.js"></script>
+  </template>
+  <template data-grupo="bim">
   <script src="js/bimbcf.js"></script>
   <script src="js/bim4d.js"></script>
   <!-- o ELO peça ↔ tarefa do plano ↔ prazo ↔ custo (OrcaPRO_Tarefa): motor puro,
@@ -280,15 +306,23 @@
   <!-- o PESO de cada peça (IFC → volume × NBR 6120 → sem peso): motor puro da
        aba Içamento; a fiação é do gestao.js -->
   <script src="js/bimpeso.js"></script>
+  </template>
+  <template data-grupo="nucleo">
   <script src="js/icarcatalogo.js"></script>
   <script src="js/icarplano.js"></script>
+  </template>
+  <template data-grupo="bim">
   <script src="js/icarficha.js"></script>
   <script src="js/icarcinematica.js"></script>
   <script src="js/icarfisica.js"></script>
   <script src="js/icarcolisao.js"></script>
   <script src="js/icarplanta.js"></script>
   <script src="js/icaragente.js"></script>
+  </template>
+  <template data-grupo="nucleo">
   <script src="js/icarlanca.js"></script>
+  </template>
+  <template data-grupo="bim">
   <script src="js/icarliberacao.js"></script>
   <script src="js/icargeo.js"></script>
   <script src="js/icarclima.js"></script>
@@ -306,7 +340,11 @@
   <script src="js/pacoteobra.js"></script>
   <script src="js/bimclash.js"></script>
   <script src="js/bimtri.js"></script>
+  </template>
+  <template data-grupo="nucleo">
   <script src="js/dxf.js"></script>
+  </template>
+  <template data-grupo="bim">
   <script src="js/planta3d.js"></script>
   <script src="js/bimvolume.js"></script>
   <script src="js/bimedit.js"></script>
@@ -381,6 +419,8 @@
   <script src="js/opformato.js"></script>
   <script src="js/bimqto.js"></script>
   <script src="js/bimorc.js"></script>
+  </template>
+  <template data-grupo="nucleo">
   <script src="js/lastplanner.js"></script>
   <script src="js/fotos.js"></script>
   <!-- palco da lista de Obras: motor puro, sem DOM (a fiação mora no gestao.js) -->
@@ -434,19 +474,27 @@
   <script src="js/reqorcamento.js"></script>
   <!-- catálogo do fornecedor: leitura de catálogo, conferência de preço, plano de aplicação no banco próprio e lembrete de atualização — puro, sem DOM (a tela é Gestao.catalogoFornecedor) -->
   <script src="js/catalogoforn.js"></script>
+  </template>
+  <template data-grupo="bim">
   <script src="js/bimeap.js"></script>
   <script src="js/bimplanta.js"></script>
+  </template>
+  <template data-grupo="nucleo">
   <script src="js/blocok.js"></script>
   <script src="js/blocokxls.js"></script>
   <!-- Vínculo compra x nota fiscal: decide o que substituir, sem adivinhar.
        Puro, sem DOM — roda no gate sem navegador. -->
   <script src="js/compranota.js"></script>
+  </template>
+  <template data-grupo="bim">
   <!-- Cotar rede: motor da numeração por encadeamento + a planilha dela.
        O motor NÃO depende de three.js nem de web-ifc — é lógica pura, e por
        isso roda no gate sem navegador. -->
   <script src="js/bimtubo.js"></script>
   <script src="js/bimpeca.js"></script>
   <script src="js/bimtuboxls.js"></script>
+  </template>
+  <template data-grupo="nucleo">
   <!-- alvenaria em bloco de concreto: catálogo/modulação e regras de projeto -->
   <script src="js/blocos.js"></script>
   <script src="js/alvenaria.js"></script>
@@ -457,6 +505,8 @@
   <script src="js/elevacao.js"></script>
   <script src="js/imgplanta.js"></script>
   <script src="js/pdfvetor.js"></script>
+  </template>
+  <template data-grupo="bim">
   <!-- DISCIPLINAS do modelador (09/10/2026): registro, cor e o mapa comando → disciplina; a fita pergunta aqui o que mostrar -->
   <script src="js/bimdisciplinas.js"></script>
   <script src="js/bimribbon.js"></script>
@@ -465,7 +515,11 @@
   <script src="js/bimcmd.js"></script>
   <script src="js/bimshell.js"></script>
   <script src="js/bimestilo.js"></script>
+  </template>
+  <template data-grupo="nucleo">
   <script src="js/padraodet.js"></script>
+  </template>
+  <template data-grupo="bim">
   <!-- PORTA: o símbolo de abertura na planta (folha aberta + arco do giro) — motor puro -->
   <script src="js/simboloporta.js"></script>
   <script src="js/desenho2d.js"></script>
@@ -510,9 +564,15 @@
   <!-- MATERIAIS (09/10/2026): materiais do projeto (Gerenciar › Biblioteca) — motor puro em js/bimmateriais.js, tela e ganchos em js/bimmateriaisui.js -->
   <script src="js/bimmateriais.js"></script>
   <script src="js/bimmateriaisui.js"></script>
+  </template>
+  <template data-grupo="nucleo">
   <script src="js/iaacabamento.js"></script>
+  </template>
+  <template data-grupo="bim">
   <script src="js/iamodelar.js"></script>
   <script src="js/bimmesa.js"></script>
+  </template>
+  <template data-grupo="nucleo">
   <script src="js/folhasemanal.js"></script>
   <script src="js/vendor/qrcode.min.js"></script>
   <script src="js/qr.js"></script>
@@ -530,7 +590,11 @@
   <script src="js/avisos-ui.js"></script>
   <script src="js/tour.js"></script>
   <script src="js/apresentacao.js"></script>
+  </template>
+  <template data-grupo="bim">
   <script src="js/bim6d.js"></script>
+  </template>
+  <template data-grupo="nucleo">
   <script src="js/telemetria.js"></script>
   <script src="js/demo.js"></script>
   <script src="js/demo-gestao.js"></script>
@@ -570,12 +634,37 @@
   <script src="js/pacote.js"></script>
   <script src="js/app.js"></script>
   <script src="js/orcamentistaui.js"></script>
+  </template>
+  <!-- o módulo ES do visualizador também é do grupo: o Carregar o injeta
+       depois do último clássico do BIM, como o navegador fazia com ele aqui -->
+  <template data-grupo="bim">
   <script type="module" src="js/bim.js"></script>
+  </template>
+
+  <!-- ⚠ QUEM RODA O NÚCLEO SÃO ESTES DOIS (10/10/2026). Os <script> acima
+       estão dentro de <template> — inertes — e a ordem deles É o contrato.
+       NESTE REPOSITÓRIO os dois arquivos de js/pacotes/ são carregadores: o
+       primeiro escreve, na ordem, cada <script> dos blocos
+       <template data-grupo="nucleo"> (document.write, para continuar
+       bloqueando o parse como antes: o App.iniciar espera o DOMContentLoaded);
+       o segundo é vazio. NA PUBLICAÇÃO (pacote do cliente, PWA, visor da
+       nuvem) o tools/construir-pacotes-js.js troca os dois pelo núcleo
+       concatenado em duas metades, e este index.html continua o MESMO.
+       O grupo "bim" não roda aqui: é o js/carregar.js que o puxa quando a tela
+       pede. -->
+  <script src="js/pacotes/nucleo-1.js"></script>
+  <script src="js/pacotes/nucleo-2.js"></script>
 
   <!-- PWA: instala o OrçaPRO como aplicativo (ícone + tela cheia + abre offline) -->
   <script>
   (function () {
     if ('serviceWorker' in navigator) { window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); }); }
+    /* ⚠ AS FAMÍLIAS SÓ DE PROPOSTA (css/fontes-proposta.css, 165 KB comprimidos)
+       entram DEPOIS que o app abriu: no <head> elas seguravam o primeiro desenho
+       de todo mundo para servir a uma tela só (ver o comentário do arquivo). */
+    window.addEventListener('load', function () {
+      try { var lf = document.createElement('link'); lf.rel = 'stylesheet'; lf.href = 'css/fontes-proposta.css'; document.head.appendChild(lf); } catch (e) {}
+    });
     /* ⚠ O BOTÃO SAIU DAQUI E FOI PARA A BARRA DE CIMA (js/ui.js).
        O balão flutuante que morava aqui tinha três defeitos que o deixavam
        invisível justamente para quem mais precisa dele:

@@ -57,6 +57,7 @@
   var _ilegivel = {};        // chave -> marca (com a string original, só em memória)
   var _avisoIlegivelEm = {}; // chave -> ms do último recado na tela
   var _lidas = {};           // chave -> 1: já passou por `ler` nesta sessão
+  var _avisoGravar = {};     // "empresa:entidade:tipo" -> 1: o recado de gravação recusada já saiu nesta sessão
 
   /* vazio de verdade: nada a proteger. "undefined" é o que o localStorage
      guarda de `setItem(k, JSON.stringify(undefined))` — não é dado de
@@ -205,6 +206,583 @@
     /* Documentos da obra: entram no sync no mesmo commit (regra acima) */
     obra_docs: "lista", doc_assinantes: "lista" };
 
+  /* =====================================================================
+   * ⚠ OS DADOS MORAM NO INDEXEDDB; O localStorage FICA SÓ COM O PEQUENO
+   *   (10/10/2026)
+   *
+   * O DEFEITO (relato do dono, celular, PWA): "a memória de armazenamento
+   *   está esgotada", em vermelho, toda hora. O localStorage tem teto de
+   *   ~5,24 M caracteres POR ORIGEM, e os dados da empresa dele somavam
+   *   ~5,96 M (pontos de vista do BIM, orçamentos, composições próprias,
+   *   modelos de proposta, diário…). O celular baixa tudo da nuvem e CADA
+   *   gravação estourava a cota: a alteração não era salva e o toast
+   *   vermelho de armazenamento cheio voltava a cada tentativa.
+   *
+   * A CORREÇÃO: as entidades de DADO (as que crescem com o uso — a lista
+   *   ENT_IDB abaixo) moram no IndexedDB, que não tem esse teto. Os callers
+   *   continuam síncronos porque esta camada mantém um ESPELHO EM MEMÓRIA.
+   *
+   * ⚠ O ESPELHO GUARDA O TEXTO CRU (a mesma string que ia para o
+   *   localStorage), NUNCA o objeto. Cada leitura faz JSON.parse, como
+   *   sempre fez. Guardar o objeto devolveria a MESMA referência a todos os
+   *   leitores: o orçamento aberto na tela seria o próprio objeto do
+   *   espelho, a trava de carimbo (`salvarOrcamento`) compararia o objeto
+   *   com ele mesmo e passaria sempre, e uma edição não salva apareceria
+   *   "gravada" na gravação seguinte de outro orçamento. Com o texto, a
+   *   quarentena (`_vazio`, `_abre`), a compactação das vistas e a saúde
+   *   funcionam sem mudar uma linha.
+   *
+   * AS QUATRO REGRAS QUE NÃO SE NEGOCIAM (dado de cliente):
+   *  1) LER ANTES DE GRAVAR. Entidade que JÁ mora no banco e ainda não foi
+   *     carregada nesta aba está TRANCADA: a leitura devolve vazio (a tela
+   *     não trava) e a gravação é RECUSADA e logada. Ler vazio e gravar por
+   *     cima apagaria o dado — e a nuvem levaria o vazio para os outros
+   *     aparelhos. O App só começa depois de `Store.pronto()`.
+   *  2) MIGRAÇÃO COM PROVA: lê do localStorage → grava no banco → LÊ DE
+   *     VOLTA e compara caractere a caractere → confere que o localStorage
+   *     não mudou no meio → só então marca e remove. Falhou em qualquer
+   *     passo: fica onde estava. Conteúdo ilegível NÃO migra (a quarentena
+   *     de sempre cuida dele no localStorage).
+   *  3) SEM IndexedDB (aba anônima, navegador bloqueando): tudo continua no
+   *     localStorage, como antes. Entidade que JÁ mudou para o banco e o
+   *     banco não abre fica trancada (regra 1) — nunca vira lista vazia.
+   *  4) ENTRE ABAS: cada gravação leva uma VERSÃO (relógio + sequência +
+   *     aba) e é avisada às outras abas (BroadcastChannel). O banco só
+   *     aceita versão mais nova; o espelho também. A aba que recebe dispara
+   *     o evento `storage` de sempre, que é o que o App já escuta para
+   *     reler (js/app.js `_relerOuvir`).
+   *
+   * ⚠ A MARCA DE CASA: `orcapro:<empresa>:_idb` (no localStorage, pequena)
+   *   diz quais entidades daquela empresa moram no banco. Ela nasce na
+   *   migração ou na PRIMEIRA gravação depois do `pronto()` — e não antes:
+   *   entidade que nunca foi gravada continua lendo o localStorage, então
+   *   quem semeia o localStorage antes do boot (suítes, socorro) ainda é
+   *   migrado. Sem a marca não há como saber, SÍNCRONO, que a leitura vazia
+   *   é "ainda não carregou" e não "não existe".
+   *
+   * ⚠ A SOBRA: valor que aparece no localStorage para uma entidade que já
+   *   mora no banco. Quem escreve ali é uma aba de VERSÃO ANTIGA ainda
+   *   aberta (ela lê o localStorage vazio e grava por cima) ou uma
+   *   ferramenta. Ela NUNCA substitui o banco (substituir apagaria tudo o
+   *   que a aba antiga não via): a cópia vai inteira para o banco como
+   *   `<chave>:sobra:<quando>`, conferida, e só depois sai do localStorage; e
+   *   se for lista legível, ENTRA pelo mesmo merge da nuvem (união por id, o
+   *   mais novo vence, lápides respeitadas) — que é exatamente o que
+   *   aconteceria se ela tivesse chegado de outro aparelho.
+   *
+   * Rollback: `CONFIG.dadosIdb = false` (frota) ou
+   *   `localStorage["orcapro:dados:so-local"] = "1"` (instalação) param de
+   *   MIGRAR e de mandar entidade nova para o banco. O que já está no banco
+   *   continua sendo lido de lá — não há volta automática, porque o motivo
+   *   da mudança é justamente que não cabe no localStorage.
+   * Prova: tools/test-store-idb.js (unidade) e tools/e2e-armazenamento-idb.js.
+   * ===================================================================== */
+  /* As entidades que crescem com o uso. Ficam no localStorage: `prefs`,
+     `conta`, `equipe` e `usuarios` — pequenas, e lidas pelo login (o
+     js/auth.js varre `orcapro:*:conta` direto no localStorage). Lista
+     PRÓPRIA (e não `Nuvem.ENTIDADES`): a rota não pode depender da ordem
+     de carga dos scripts. tools/test-store-idb.js reprova se uma entidade
+     nova da nuvem ficar de fora daqui. */
+  var ENT_IDB = (function () {
+    var o = {};
+    ["orcamentos", "obras", "clientes", "contratos", "medicoes", "aditivos", "financeiro", "compras", "estoque", "rdo",
+     "colaboradores", "frota", "requisicoes", "epi", "faltas", "templates", "documentos", "pesos_bloco", "epi_catalogo",
+     "fiscal", "patrimonio", "estoque_mov", "prop_modelos", "producao_med", "producao_preco", "composicoes_proprias",
+     "bim_niveis", "tour360", "bim_modelos", "bim_conjuntos", "bim_vistas", "bim_familias", "bim_estrut", "bim_sondagens",
+     "bim_pranchas", "obra_docs", "doc_assinantes", "bim_pesos_esp", "bim_icamento", "bim_materiais", "bim_clash_testes",
+     "bim_clash_resultados", "bim_orc_vinculos", "bim_tarefas", "bim_4d_aparencias", "atividades", "horas_extras", "batidas",
+     "fornecedores", "familias", "centrocusto", "cc_regras", "cc_aprop", "cotacoes", "lp_tarefas", "tarefas", "bim_edicoes",
+     "crono_obra", "crono_selo", "folha", "fs_lancamentos", "fs_pagamentos", "ponto", "frota_mov", "carp_param",
+     "carp_madeiras", "carp_mo", "carp_propostas", "carp_parceiros", "remun_param", "remun_apur", "portal_padrao",
+     "precosinsumos", "perfil_impl", "crono_alt", "_lapides", "_syncmarcas"].forEach(function (e) { o[e] = 1; });
+    return o;
+  })();
+  var DB_DADOS = "orcapro-dados", DB_DADOS_VER = 1, ST_ENT = "ent", ST_VER = "ver";
+  var CASA = "_idb";
+  var SUFIXO_SOBRA = ":sobra:";
+  var CHAVE_SO_LOCAL = "orcapro:dados:so-local";
+  var CHAVE_PING = "orcapro:dados:ping";
+  /* o boot não espera mais que isto: com o banco travado (outra aba segurando
+     uma versão antiga), o app abre com as entidades do banco TRANCADAS — e
+     destranca sozinho quando o banco responder */
+  var TETO_PRONTO_MS = 15000;
+  /* ⚠ empresa SEM ":" — os ids reais são `emp_…`, `demo`, `local`, `default`
+     (o de prévia, `prev:…`, fica fora do banco de propósito). Com `(.+)` a
+     varredura leria `orcapro:nuvem:grande:orcamentos` (a marca do aviso de
+     tamanho) como a entidade "orcamentos" da empresa "nuvem:grande". */
+  var RE_CHAVE_ENT = /^orcapro:([^:]+):([a-z0-9_]+)$/;
+
+  function _temProp(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+  function _pad(n, w) { var s = String(n); while (s.length < w) s = "0" + s; return s; }
+  var _d = {
+    db: null,          // conexão aberta
+    ok: null,          // null = ainda não sabe; true = banco aberto e lido; false = sem banco nesta sessão
+    completo: false,   // o `pronto()` terminou (com ou sem banco)
+    promessa: null,
+    esp: {},           // chave -> { raw: string|null, ver: string } — o espelho
+    carregada: {},     // chave -> 1: o espelho desta chave está em dia
+    casa: {},          // empresa -> { entidade: quando } (o disco UNIDO ao que esta aba soube)
+    casaLida: {},      // empresa -> 1
+    fila: {},          // chave -> { voo, pend }: uma gravação por vez por chave
+    pendentes: {},     // chave -> entidade: está só no espelho (o banco recusou ou não abriu)
+    trancadas: {},     // chave -> { entidade, empresaId, em }
+    avisoTrancada: 0, falhaAvisada: {}, retentar: {},
+    sobraEmCurso: {}, sobras: [], migradas: [], falhas: [],
+    tab: (Math.random().toString(36) + "00000000").slice(2, 10),
+    bc: null, despachando: false, mesclando: false, ouvindo: false, fechadoPorVersao: false
+  };
+
+  function _migracaoLigada() {
+    try { if (global.CONFIG && global.CONFIG.dadosIdb === false) return false; } catch (e) {}
+    try { if (localStorage.getItem(CHAVE_SO_LOCAL) === "1") return false; } catch (e2) {}
+    return true;
+  }
+  function _naIdb(empresaId, entidade) {
+    /* a prévia de cliente (js/previewcli.js) vive num namespace `prev:` que
+       ela mesma varre e apaga no localStorage: fica fora do banco */
+    return _temProp(ENT_IDB, entidade) && String(empresaId || "default").indexOf("prev:") !== 0;
+  }
+  function _casa(empresaId, fresco) {
+    var e = String(empresaId || "default"), c = _d.casa[e] || (_d.casa[e] = {});
+    if (fresco || !_d.casaLida[e]) {
+      _d.casaLida[e] = 1;
+      try {
+        var raw = localStorage.getItem(chave(e, CASA)), o = raw ? JSON.parse(raw) : null;
+        /* UNIÃO, nunca troca: a marca só nasce, e a desta aba pode ter vindo
+           pelo aviso de outra aba antes de o localStorage dela chegar aqui */
+        if (o && typeof o === "object") for (var k in o) if (_temProp(o, k) && o[k] && !c[k]) c[k] = String(o[k]);
+      } catch (eC) {}
+    }
+    return c;
+  }
+  function _casaMarcar(empresaId, entidade) {
+    var e = String(empresaId || "default"), c = _casa(e, true);
+    if (!c[entidade]) c[entidade] = new Date().toISOString();
+    try { localStorage.setItem(chave(e, CASA), JSON.stringify(c)); return true; }
+    catch (eM) { return false; }   // cota cheia: a memória vale; o próximo boot adota pelo banco (`_adotarOrfaos`)
+  }
+  /* "ls" | "idb" | "nova" (primeira gravação: vai para o banco) | "trancada" */
+  function _rota(empresaId, entidade, k, gravar) {
+    if (!_naIdb(empresaId, entidade)) return "ls";
+    var c = _casa(empresaId, !!gravar);
+    if (c[entidade]) {
+      if (_d.ok === false) return "trancada";
+      return (_d.carregada[k] || (_d.completo && _d.ok === true)) ? "idb" : "trancada";
+    }
+    if (gravar && _d.completo && _d.ok === true && _d.db && _migracaoLigada()) {
+      var temLs = true;
+      try { temLs = localStorage.getItem(k) != null; } catch (eL) { temLs = true; }
+      if (!temLs) return "nova";
+    }
+    return "ls";
+  }
+  function _rawDe(empresaId, entidade, k) {
+    var r = _rota(empresaId, entidade, k, false);
+    if (r === "trancada") throw new Error("os dados deste aparelho ainda não carregaram");
+    if (r === "idb") { var e = _d.esp[k]; return e ? e.raw : null; }
+    return localStorage.getItem(k);
+  }
+
+  function _novaVer(k) {
+    var ms = Date.now(), seq = 0, cur = _d.esp[k];
+    if (cur && cur.ver) {
+      var p = String(cur.ver).split("."), cms = parseInt(p[0], 10) || 0;
+      if (cms >= ms) { ms = cms; seq = (parseInt(p[1], 10) || 0) + 1; }
+    }
+    return _pad(ms, 15) + "." + _pad(seq, 6) + "." + _d.tab;
+  }
+
+  function _avisarTrancada(empresaId, entidade, k, gravacao) {
+    var ja = _d.trancadas[k];
+    _d.trancadas[k] = { entidade: entidade, empresaId: String(empresaId || "default"), em: (ja && ja.em) || new Date().toISOString() };
+    if (!ja || gravacao) {
+      try { console.error("[store] \"" + entidade + "\" " + (gravacao ? "GRAVAÇÃO RECUSADA" : "lida vazia") + ": ela mora no banco do aparelho (IndexedDB) e " + (_d.ok === false ? "o banco não abriu nesta sessão" : "ainda não foi carregada") + " — gravar agora apagaria o que está lá."); } catch (eL) {}
+    }
+    if (gravacao && Date.now() - _d.avisoTrancada > 20000) {
+      _d.avisoTrancada = Date.now();
+      try {
+        if (global.UI && global.UI.toast) global.UI.toast(_d.ok === false
+          ? "⚠ O navegador não abriu o banco de dados deste aparelho, onde estão os seus dados — a última alteração NÃO foi gravada. Feche TODAS as janelas do OrçaPRO e abra de novo. Nada foi apagado."
+          : "⚠ Os dados deste aparelho ainda estão carregando — a última alteração NÃO foi gravada. Espere alguns segundos e repita. Nada foi apagado.", "erro", 12000);
+      } catch (eT) {}
+    }
+  }
+  function _falhaPersistir(k, entidade, err) {
+    _d.pendentes[k] = entidade;
+    try { console.error("[store] \"" + entidade + "\" NÃO chegou ao banco do aparelho:", (err && (err.name || err.message)) || err); } catch (eL) {}
+    if (!_d.falhaAvisada[entidade]) {
+      _d.falhaAvisada[entidade] = 1;
+      try {
+        var nome = (global.Store && global.Store.nomeEntidade) ? global.Store.nomeEntidade(entidade) : entidade;
+        if (global.UI && global.UI.toast) global.UI.toast(_d.fechadoPorVersao
+          ? "⚠ Esta janela do OrçaPRO ficou desatualizada (outra abriu uma versão nova): a alteração em \"" + nome + "\" vale só até fechá-la. Feche esta janela e continue na outra."
+          : "⚠ Não consegui gravar \"" + nome + "\" no banco deste aparelho — a alteração vale só até fechar o app. Faça 💾 Backup agora.", "erro", 14000);
+      } catch (eT) {}
+    }
+    if (!_d.retentar[k] && typeof setTimeout === "function") {
+      _d.retentar[k] = 1;
+      setTimeout(function () { _d.retentar[k] = 0; if (_d.pendentes[k] && _d.db) _persistir(k, entidade); }, 5000);
+    }
+  }
+
+  /* ---- o banco (IndexedDB cru: get+put na MESMA transação, que o js/idb.js não faz) ---- */
+  function _abrir() {
+    return new Promise(function (res, rej) {
+      var rq;
+      try { rq = global.indexedDB.open(DB_DADOS, DB_DADOS_VER); } catch (e) { rej(e); return; }
+      rq.onupgradeneeded = function () {
+        var db = rq.result;
+        if (!db.objectStoreNames.contains(ST_ENT)) db.createObjectStore(ST_ENT);
+        if (!db.objectStoreNames.contains(ST_VER)) db.createObjectStore(ST_VER);
+      };
+      rq.onsuccess = function () {
+        var db = rq.result;
+        /* uma versão nova do banco noutra aba: solta a conexão para não
+           travá-la. Esta aba continua LENDO o espelho; o que gravar daqui em
+           diante fica pendente e avisa (ver `_falhaPersistir`). */
+        try { db.onversionchange = function () { try { db.close(); } catch (eC) {} _d.db = null; _d.fechadoPorVersao = true; }; } catch (eV) {}
+        res(db);
+      };
+      rq.onerror = function () { rej(rq.error || new Error("o banco do aparelho não abriu")); };
+      rq.onblocked = function () { /* espera; o teto do pronto() protege o boot */ };
+    });
+  }
+  function _tx(lojas, modo) { return _d.db.transaction(lojas, modo); }
+  /* grava (raw null = apaga) se a versão do banco não for MAIS NOVA — a não
+     ser que `forcar` (a migração: o localStorage é quem manda ali) */
+  function _txGravar(k, raw, ver, forcar) {
+    return new Promise(function (res, rej) {
+      var tx, pulou = false;
+      try { tx = _tx([ST_ENT, ST_VER], "readwrite"); } catch (e) { rej(e); return; }
+      tx.oncomplete = function () { res({ pulou: pulou }); };
+      tx.onerror = function () { rej(tx.error || new Error("a transação falhou")); };
+      tx.onabort = function () { rej(tx.error || new Error("a transação foi abortada")); };
+      try {
+        var sE = tx.objectStore(ST_ENT), sV = tx.objectStore(ST_VER), rq = sV.get(k);
+        rq.onsuccess = function () {
+          var cur = rq.result;
+          if (!forcar && typeof cur === "string" && cur > ver) { pulou = true; return; }
+          if (raw == null) sE["delete"](k); else sE.put({ raw: raw, ver: ver }, k);
+          sV.put(ver, k);
+        };
+      } catch (e2) { try { tx.abort(); } catch (eA) {} rej(e2); }
+    });
+  }
+  function _txLer(k) {
+    return new Promise(function (res, rej) {
+      var tx;
+      try { tx = _tx([ST_ENT], "readonly"); } catch (e) { rej(e); return; }
+      try {
+        var rq = tx.objectStore(ST_ENT).get(k);
+        rq.onsuccess = function () { res(rq.result); };
+        rq.onerror = function () { rej(rq.error || new Error("a leitura falhou")); };
+      } catch (e2) { rej(e2); }
+    });
+  }
+  /* apaga a cópia da migração que não se provou — só se ainda for a NOSSA */
+  function _txApagarSe(k, ver) {
+    return new Promise(function (res, rej) {
+      var tx;
+      try { tx = _tx([ST_ENT, ST_VER], "readwrite"); } catch (e) { rej(e); return; }
+      tx.oncomplete = function () { res(); };
+      tx.onerror = function () { rej(tx.error); };
+      tx.onabort = function () { rej(tx.error); };
+      try {
+        var sE = tx.objectStore(ST_ENT), sV = tx.objectStore(ST_VER), rq = sV.get(k);
+        rq.onsuccess = function () { if (rq.result === ver) { sE["delete"](k); sV["delete"](k); } };
+      } catch (e2) { rej(e2); }
+    });
+  }
+  /* percorre uma loja inteira (cursor: vale em todo navegador) */
+  function _txVarrer(loja, cada) {
+    return new Promise(function (res, rej) {
+      var tx;
+      try { tx = _tx([loja], "readonly"); } catch (e) { rej(e); return; }
+      tx.oncomplete = function () { res(); };
+      tx.onerror = function () { rej(tx.error || new Error("a leitura do banco falhou")); };
+      tx.onabort = function () { rej(tx.error || new Error("a leitura do banco foi abortada")); };
+      try {
+        var rq = tx.objectStore(loja).openCursor();
+        rq.onsuccess = function () { var c = rq.result; if (!c) return; cada(String(c.key), c.value); c["continue"](); };
+      } catch (e2) { rej(e2); }
+    });
+  }
+  function _aplicar(k, raw, ver) {
+    var cur = _d.esp[k];
+    if (cur && cur.ver && !(String(ver) > String(cur.ver))) return false;
+    _d.esp[k] = { raw: raw == null ? null : String(raw), ver: String(ver) };
+    _d.carregada[k] = 1;
+    delete _d.trancadas[k];
+    return true;
+  }
+
+  /* uma gravação por vez por chave; a que chega durante o voo vira "pend" */
+  function _persistir(k, entidade) {
+    var f = _d.fila[k] || (_d.fila[k] = { voo: false, pend: false });
+    if (f.voo) { f.pend = true; return; }
+    var alvo = _d.esp[k];
+    if (!alvo) return;
+    if (!_d.db) { _falhaPersistir(k, entidade, new Error(_d.fechadoPorVersao ? "conexão fechada por versão nova" : "banco fechado")); return; }
+    f.voo = true; f.pend = false;
+    _txGravar(k, alvo.raw, alvo.ver, false).then(function () {
+      f.voo = false;
+      if (f.pend) _persistir(k, entidade);   // gravou de novo durante o voo: manda a mais nova
+      else delete _d.pendentes[k];
+    }, function (err) {
+      f.voo = false; f.pend = false;
+      _falhaPersistir(k, entidade, err);     // fica pendente; tenta de novo em 5 s com o que estiver no espelho
+    });
+  }
+  function _discoGravar(k, raw, empresaId, entidade) {
+    var ver = _novaVer(k);
+    _d.esp[k] = { raw: raw == null ? null : String(raw), ver: ver };
+    _d.carregada[k] = 1;
+    delete _d.trancadas[k];
+    _d.pendentes[k] = entidade;
+    _bcPostar({ t: raw == null ? "x" : "g", k: k, e: String(empresaId || "default"), n: entidade, raw: raw == null ? null : String(raw), ver: ver });
+    _persistir(k, entidade);
+  }
+
+  /* ---- entre abas ---- */
+  function _bcAbrir() {
+    if (_d.bc !== null) return;
+    _d.bc = false;
+    try {
+      if (typeof global.BroadcastChannel === "function") {
+        _d.bc = new global.BroadcastChannel("orcapro-dados");
+        _d.bc.onmessage = function (ev) { try { _bcReceber(ev && ev.data); } catch (e) {} };
+      }
+    } catch (e) { _d.bc = false; }
+  }
+  function _bcPostar(m) {
+    if (_d.bc) { try { _d.bc.postMessage(m); return; } catch (e) {} }
+    /* navegador sem BroadcastChannel: um aviso pequeno pelo localStorage; a
+       outra aba busca o conteúdo no banco */
+    try { localStorage.setItem(CHAVE_PING, JSON.stringify({ k: m.k, e: m.e, n: m.n, ver: m.ver, t: m.t })); } catch (e2) {}
+  }
+  function _bcReceber(m) {
+    if (!m || typeof m.k !== "string" || typeof m.ver !== "string") return;
+    if (m.e && m.n) { var c = _casa(m.e, false); if (!c[m.n]) c[m.n] = new Date().toISOString(); }
+    /* versão mais nova de outra aba: ela é quem a leva ao banco (e o que
+       esta aba tinha pendente para a mesma chave ficou para trás) */
+    if (_aplicar(m.k, m.t === "x" ? null : m.raw, m.ver)) { delete _d.pendentes[m.k]; _avisarJanela(m.k); }
+  }
+  /* o evento `storage` de sempre, para o App reler (js/app.js `_relerOuvir`) */
+  function _avisarJanela(k) {
+    try {
+      if (typeof global.dispatchEvent !== "function") return;
+      var ev = null;
+      try { ev = new global.StorageEvent("storage", { key: k }); }
+      catch (e1) { try { ev = global.document.createEvent("Event"); ev.initEvent("storage", false, false); ev.key = k; } catch (e2) { ev = null; } }
+      if (!ev) return;
+      _d.despachando = true;
+      try { global.dispatchEvent(ev); } finally { _d.despachando = false; }
+    } catch (e) {}
+  }
+  function _buscarNoBanco(k, verMin, tentativas) {
+    if (!_d.db) return;
+    _txLer(k).then(function (rec) {
+      if (rec && typeof rec.raw === "string" && String(rec.ver) >= String(verMin)) { if (_aplicar(k, rec.raw, rec.ver)) _avisarJanela(k); return; }
+      if (!rec && verMin) { /* apagado lá */ if (_aplicar(k, null, verMin)) _avisarJanela(k); return; }
+      if (tentativas > 0) setTimeout(function () { _buscarNoBanco(k, verMin, tentativas - 1); }, 250);
+    }, function () {});
+  }
+  /* janela que volta do segundo plano confere as versões (o aviso pode ter
+     se perdido com a aba congelada) — só a loja de versões, que é pequena */
+  function _conferirVersoes() {
+    if (!_d.db || _d.ok !== true) return;
+    var mudou = [];
+    _txVarrer(ST_VER, function (k, ver) {
+      var cur = _d.esp[k];
+      if (typeof ver === "string" && (!cur || String(ver) > String(cur.ver))) mudou.push({ k: k, ver: ver });
+    }).then(function () { mudou.forEach(function (x) { _buscarNoBanco(x.k, x.ver, 0); }); }, function () {});
+  }
+  function _ouvirJanelas() {
+    if (_d.ouvindo || typeof global.addEventListener !== "function") return;
+    _d.ouvindo = true;
+    global.addEventListener("storage", function (ev) {
+      if (_d.despachando || !ev || typeof ev.key !== "string") return;
+      var k = ev.key;
+      if (k === CHAVE_PING) {
+        try { var p = JSON.parse(ev.newValue || "null"); if (p && p.k) { if (p.e && p.n) { var cp = _casa(p.e, false); if (!cp[p.n]) cp[p.n] = new Date().toISOString(); } _buscarNoBanco(p.k, p.ver, 8); } } catch (eP) {}
+        return;
+      }
+      var m = RE_CHAVE_ENT.exec(k);
+      if (!m) return;
+      if (m[2] === CASA) { _d.casaLida[m[1]] = 0; return; }
+      /* aba de versão ANTIGA gravou no localStorage o que mora no banco */
+      if (ev.newValue != null && _naIdb(m[1], m[2]) && _casa(m[1], false)[m[2]] && _d.ok === true) {
+        setTimeout(function () { try { _sobraConferir(m[1], m[2], k); } catch (eS) {} }, 0);
+      }
+    });
+    try {
+      if (global.document && global.document.addEventListener) global.document.addEventListener("visibilitychange", function () {
+        try { if (global.document.visibilityState === "visible") _conferirVersoes(); } catch (eV) {}
+      });
+    } catch (eD) {}
+  }
+
+  /* ---- a sobra (ver a nota lá em cima) ---- */
+  function _guardarSobraBanco(k, raw, origem) {
+    var sk = k + SUFIXO_SOBRA + new Date().toISOString().replace(/[:.]/g, "-") + "-" + origem + "-" + _d.tab;
+    var ver = _novaVer(sk);
+    return _txGravar(sk, raw, ver, true).then(function () { return _txLer(sk); }).then(function (rec) {
+      if (!rec || rec.raw !== raw) throw new Error("a cópia da sobra não confere");
+      _d.esp[sk] = { raw: raw, ver: ver };
+      _d.sobras.push({ chave: sk, origem: origem, chars: raw.length, em: new Date().toISOString() });
+      return sk;
+    });
+  }
+  function _sobraMesclar(empresaId, entidade, k, raw) {
+    var cur = _d.esp[k], atual = cur ? cur.raw : null, forma = FORMA_PADRAO[entidade];
+    var vSobra;
+    try { if (_vazio(raw)) return; vSobra = _abre(raw, forma); }
+    catch (eS) { try { console.warn("[store] sobra ilegível de \"" + entidade + "\" no localStorage: guardada à parte no banco, o que está no banco continua valendo"); } catch (eW) {} return; }
+    if (atual == null || _vazio(atual)) { _discoGravar(k, raw, empresaId, entidade); return; }   // nada no banco: a sobra É o dado
+    var vAtual;
+    try { vAtual = _abre(atual, forma); } catch (eA) { return; }
+    var N = global.Nuvem;
+    if (OBJETO_UNICO[entidade] || entidade === "_syncmarcas" || !Array.isArray(vSobra) || !Array.isArray(vAtual) || !N || typeof N._merge !== "function") {
+      try { console.warn("[store] sobra de \"" + entidade + "\" no localStorage: guardada à parte no banco; vale o que está no banco"); } catch (eW2) {}
+      return;
+    }
+    var F = FORMAS[entidade];
+    var merged = N._merge(F ? F(vAtual) : vAtual, F ? F(vSobra) : vSobra, entidade, String(empresaId || "default"));
+    var txt = JSON.stringify(_temProp(GUARDAR, entidade) ? GUARDAR[entidade](merged) : merged);
+    if (txt !== atual) _discoGravar(k, txt, empresaId, entidade);
+    try { console.warn("[store] sobra de \"" + entidade + "\" no localStorage (aba de versão antiga?) unida ao banco pelo merge da nuvem; a cópia original ficou guardada à parte"); } catch (eW3) {}
+  }
+  function _sobraConferir(empresaId, entidade, k) {
+    if (_d.mesclando || _d.ok !== true || !_d.db) return null;
+    var raw;
+    try { raw = localStorage.getItem(k); } catch (e) { return null; }
+    if (raw == null || _d.sobraEmCurso[k] === raw) return null;
+    _d.sobraEmCurso[k] = raw;
+    var cur = _d.esp[k];
+    if (!(cur && cur.raw === raw)) {
+      _d.mesclando = true;
+      try { _sobraMesclar(empresaId, entidade, k, raw); }
+      catch (eM) { try { console.error("[store] a sobra de \"" + entidade + "\" não entrou (fica guardada à parte):", eM); } catch (eL) {} }
+      finally { _d.mesclando = false; }
+    }
+    /* a cópia vai para o banco, CONFERIDA, e só então sai do localStorage */
+    var p = (cur && cur.raw === raw) ? Promise.resolve(null) : _guardarSobraBanco(k, raw, "localStorage");
+    return p.then(function () {
+      try { if (localStorage.getItem(k) === raw) localStorage.removeItem(k); } catch (eR) {}
+      if (_d.sobraEmCurso[k] === raw) delete _d.sobraEmCurso[k];
+    }, function (eG) {
+      try { console.error("[store] a cópia da sobra de \"" + entidade + "\" não se provou — ela continua no localStorage:", eG && eG.message); } catch (eL2) {}
+      /* tenta de novo daqui a 30 s, e não a cada leitura */
+      if (typeof setTimeout === "function") setTimeout(function () { if (_d.sobraEmCurso[k] === raw) delete _d.sobraEmCurso[k]; }, 30000);
+    });
+  }
+
+  /* ---- a migração (ver as regras lá em cima) ---- */
+  function _migrarUma(empresaId, entidade, k) {
+    var raw;
+    try { raw = localStorage.getItem(k); } catch (e) { return Promise.resolve(); }
+    if (raw == null) return Promise.resolve();
+    if (_casa(empresaId, true)[entidade]) return _sobraConferir(empresaId, entidade, k) || Promise.resolve();
+    if (!_vazio(raw)) {
+      try { _abre(raw, FORMA_PADRAO[entidade]); }
+      catch (eA) {
+        _d.falhas.push({ entidade: entidade, empresaId: empresaId, motivo: "ilegível — fica no localStorage, na quarentena de sempre" });
+        return Promise.resolve();
+      }
+    }
+    var ver = null, antes = _d.esp[k];
+    /* cópia no banco SEM marca (migração anterior interrompida): o
+       localStorage é quem manda; a cópia antiga não se perde */
+    var guarda = (antes && antes.raw != null && antes.raw !== raw) ? _guardarSobraBanco(k, antes.raw, "banco-sem-marca") : Promise.resolve();
+    return guarda.then(function () {
+      ver = _novaVer(k);
+      return _txGravar(k, raw, ver, true);
+    }).then(function () { return _txLer(k); }).then(function (rec) {
+      if (!rec || rec.raw !== raw || rec.ver !== ver) throw new Error("a leitura de volta não confere com o localStorage");
+      /* ⚠ DAQUI ATÉ O FIM É UM BLOCO SÍNCRONO: ninguém desta aba grava no meio */
+      var agora = null;
+      try { agora = localStorage.getItem(k); } catch (eG) { agora = null; }
+      if (agora !== raw) throw new Error("o localStorage mudou durante a migração");
+      _d.esp[k] = { raw: raw, ver: ver }; _d.carregada[k] = 1; delete _d.trancadas[k];
+      var marcou = _casaMarcar(empresaId, entidade);
+      try { localStorage.removeItem(k); } catch (eR) {}
+      if (!marcou) marcou = _casaMarcar(empresaId, entidade);   // com a cota cheia, a marca cabe depois de liberar
+      _d.migradas.push({ entidade: entidade, empresaId: String(empresaId), chars: raw.length, marca: marcou });
+      logMigracao("localStorage", "IndexedDB", entidade + " (" + raw.length + " caracteres)");
+      _bcPostar({ t: "g", k: k, e: String(empresaId), n: entidade, raw: raw, ver: ver });
+    })["catch"](function (e) {
+      _d.falhas.push({ entidade: entidade, empresaId: String(empresaId), motivo: String((e && e.message) || e) });
+      try { console.error("[store] \"" + entidade + "\" NÃO migrou (continua no localStorage, nada foi removido):", e && e.message); } catch (eL) {}
+      if (ver) return _txApagarSe(k, ver)["catch"](function () {});
+    });
+  }
+  function _migrarTudo() {
+    if (!_migracaoLigada()) return Promise.resolve();
+    var cand = [];
+    try {
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i), m = k ? RE_CHAVE_ENT.exec(k) : null;
+        if (m && _naIdb(m[1], m[2])) cand.push({ k: k, e: m[1], n: m[2] });
+      }
+    } catch (e) {}
+    return cand.reduce(function (p, c) { return p.then(function () { return _migrarUma(c.e, c.n, c.k); }); }, Promise.resolve());
+  }
+  /* registro no banco sem marca e sem nada no localStorage: nasceu numa
+     gravação cuja marca não coube (cota) ou a migração caiu entre remover e
+     marcar — o banco é a única cópia, e passa a valer */
+  function _adotarOrfaos() {
+    Object.keys(_d.esp).forEach(function (k) {
+      var e = _d.esp[k], m = RE_CHAVE_ENT.exec(k);
+      if (!e || e.raw == null || !m || !_naIdb(m[1], m[2]) || _casa(m[1], false)[m[2]]) return;
+      var temLs = true;
+      try { temLs = localStorage.getItem(k) != null; } catch (eL) { temLs = true; }
+      if (!temLs) _casaMarcar(m[1], m[2]);
+    });
+  }
+  function _prime() {
+    _ouvirJanelas();
+    _bcAbrir();
+    if (!global.indexedDB) { _d.ok = false; _d.completo = true; return Promise.resolve(); }
+    return _abrir().then(function (db) {
+      _d.db = db;
+      return _txVarrer(ST_ENT, function (k, v) {
+        if (v && typeof v.raw === "string" && typeof v.ver === "string") _aplicar(k, v.raw, v.ver);
+      });
+    }).then(function () {
+      _d.ok = true;
+      return _migrarTudo();
+    }).then(function () {
+      _adotarOrfaos();
+      _d.completo = true;
+      Object.keys(_d.pendentes).forEach(function (k) { _persistir(k, _d.pendentes[k]); });
+      _pedirPersistencia();
+    }, function (e) {
+      try { console.error("[store] o banco do aparelho (IndexedDB) não abriu — os dados continuam no localStorage:", e && (e.name || e.message)); } catch (eL) {}
+      _d.ok = false; _d.completo = true;
+    });
+  }
+  /* ⚠ PEDE AO NAVEGADOR PARA NÃO APAGAR O BANCO SOB PRESSÃO DE ESPAÇO.
+     Armazenamento de site é "melhor esforço": com o disco do celular cheio o
+     navegador pode limpar a origem inteira (banco e localStorage juntos — o
+     risco já existia antes da mudança). `persist()` é silencioso no Chrome
+     (PWA instalado ganha) e no Safari; no Firefox vira uma PERGUNTA na tela,
+     e lá não se pede. Só melhora: negado é o comportamento de antes. */
+  function _pedirPersistencia() {
+    try {
+      var st = global.navigator && global.navigator.storage;
+      if (!st || typeof st.persist !== "function" || typeof st.persisted !== "function") return;
+      if (/Firefox\//.test(String(global.navigator.userAgent || ""))) return;
+      st.persisted().then(function (ja) {
+        _d.persistente = !!ja;
+        if (!ja) return st.persist().then(function (ok) { _d.persistente = !!ok; });
+      })["catch"](function () {});
+    } catch (e) {}
+  }
+  function _resumo() {
+    return { ok: _d.ok === true, idb: _d.ok === true, completo: _d.completo,
+      migradas: _d.migradas.slice(), falhas: _d.falhas.slice(), sobras: _d.sobras.slice() };
+  }
+
   /* ---------- Adapter local (localStorage) ---------- */
   var LocalAdapter = {
     /* `forma` (opcional): "lista" = JSON válido que não é lista também conta
@@ -212,12 +790,22 @@
     ler: function (empresaId, entidade, fallback, forma) {
       if (!forma && Object.prototype.hasOwnProperty.call(FORMA_PADRAO, entidade)) forma = FORMA_PADRAO[entidade];
       var k = chave(empresaId, entidade), raw;
-      try { raw = localStorage.getItem(k); }
-      catch (e) {
-        /* armazenamento inacessível (navegador bloqueando): não é conteúdo
-           corrompido — a gravação também vai falhar, e avisa sozinha */
-        console.warn("[store] leitura impossível em", entidade, e);
-        return fallback;
+      /* ⚠ MORA NO BANCO (ver a nota do IndexedDB): lê o espelho; ainda não
+         carregado → vazio na tela e gravação RECUSADA (regra 1) */
+      var rota = _rota(empresaId, entidade, k, false);
+      if (rota === "trancada") { _avisarTrancada(empresaId, entidade, k, false); return fallback; }
+      if (rota === "idb") {
+        _sobraConferir(empresaId, entidade, k);
+        var ee = _d.esp[k];
+        raw = ee ? ee.raw : null;
+      } else {
+        try { raw = localStorage.getItem(k); }
+        catch (e) {
+          /* armazenamento inacessível (navegador bloqueando): não é conteúdo
+             corrompido — a gravação também vai falhar, e avisa sozinha */
+          console.warn("[store] leitura impossível em", entidade, e);
+          return fallback;
+        }
       }
       _lidas[k] = 1;
       if (_vazio(raw)) { delete _ilegivel[k]; return fallback; }
@@ -242,30 +830,52 @@
         _avisarIlegivel(mG);
         return false;
       }
+      /* ⚠ A TRAVA DO PRIME (regra 1 da nota do IndexedDB): a entidade mora
+         no banco e esta aba ainda não a leu de lá — quem montou `valor` leu
+         vazio. Mesma família da recusa da quarentena logo acima. */
+      var rotaG = _rota(empresaId, entidade, kG, true);
+      if (rotaG === "trancada") { _avisarTrancada(empresaId, entidade, kG, true); return false; }
       try {
         /* a forma GUARDADA da entidade (ver GUARDAR: bim_vistas sem o
            prefixo repetido); `valor` em si não muda */
         var gd = Object.prototype.hasOwnProperty.call(GUARDAR, entidade) ? GUARDAR[entidade](valor) : valor;
-        localStorage.setItem(chave(empresaId, entidade), JSON.stringify(gd));
+        var txt = JSON.stringify(gd);
+        if (rotaG === "nova") { _casaMarcar(empresaId, entidade); rotaG = "idb"; }
+        if (rotaG === "idb") { _discoGravar(kG, String(txt), empresaId, entidade); return true; }
+        localStorage.setItem(kG, txt);
         return true;
       } catch (e) {
         console.error("[store] falha ao gravar", entidade, e);
         // LOTE 1: falha de gravação NUNCA é silenciosa — o usuário precisa saber
         // que a última alteração não persistiu (antes só ia p/ o console).
         var cota = e && (e.name === "QuotaExceededError" || e.code === 22);
+        /* ⚠ UMA VEZ POR SESSÃO POR ENTIDADE (10/10/2026). O celular do dono
+           mostrava este recado a CADA gravação ("toda hora"): cada autosave e
+           cada snapshot da nuvem batiam aqui. Quem precisa saber da recusa
+           ainda sabe — `salvarOrcamento`/`salvar` devolvem null e a tela diz
+           que não gravou; o que não se repete é o aviso genérico. */
+        var kAv = String(empresaId || "default") + ":" + entidade + ":" + (cota ? "cota" : "erro");
+        if (_avisoGravar[kAv]) return false;
+        _avisoGravar[kAv] = 1;
         try {
           if (global.UI && global.UI.toast) global.UI.toast(cota
             /* ⚠ NÃO MANDE LIMPAR AS BASES: elas moram no IndexedDB e não ocupam
                um byte do que está cheio. Ver a nota em `saude()`. O que enche é
                orçamento e histórico da obra. */
-            ? "⚠ Armazenamento CHEIO — a última alteração NÃO foi salva. Faça 💾 Backup AGORA. Depois abra 🗂 Tabelas › Saúde do armazenamento para ver o que está ocupando o espaço (as bases SINAPI não contam: elas ficam fora deste limite)."
-            : "⚠ Falha ao salvar \"" + entidade + "\" — a última alteração não persistiu.", "erro");
+            ? "⚠ Armazenamento CHEIO — a alteração em \"" + ((global.Store && global.Store.nomeEntidade) ? global.Store.nomeEntidade(entidade) : entidade) + "\" NÃO foi salva. Faça 💾 Backup AGORA e veja o que ocupa espaço em 🗂 Tabelas › Saúde do armazenamento (as bases SINAPI não contam neste limite)."
+            : "⚠ Falha ao salvar \"" + entidade + "\" — a última alteração não persistiu.", "erro", 12000);
         } catch (e2) {}
         return false;
       }
     },
     apagar: function (empresaId, entidade) {
-      try { localStorage.removeItem(chave(empresaId, entidade)); return true; }
+      var k = chave(empresaId, entidade), r = _rota(empresaId, entidade, k, true);
+      if (r === "trancada") { _avisarTrancada(empresaId, entidade, k, true); return false; }
+      /* no banco: apaga lá (com versão, para outra aba não ressuscitar). No
+         localStorage: se sobrou uma cópia de migração sem marca no banco,
+         ela sai junto — senão o próximo boot a ADOTARIA (`_adotarOrfaos`). */
+      if (r === "idb" || (r === "ls" && _d.ok === true && _d.esp[k] && _d.esp[k].raw != null)) _discoGravar(k, null, empresaId, entidade);
+      try { localStorage.removeItem(k); return true; }
       catch (e) { return false; }
     },
 
@@ -309,7 +919,9 @@
     liberar: function (empresaId, entidade, forma) {
       if (!forma && Object.prototype.hasOwnProperty.call(FORMA_PADRAO, entidade)) forma = FORMA_PADRAO[entidade];
       var k = chave(empresaId, entidade), raw;
-      try { raw = localStorage.getItem(k); }
+      /* o original pode morar no banco (ver a nota do IndexedDB); a CÓPIA da
+         quarentena continua no localStorage, como sempre */
+      try { raw = _rawDe(empresaId, entidade, k); }
       catch (e) { return { ok: false, motivo: "leitura", erro: String((e && e.message) || e) }; }
       if (_vazio(raw)) { delete _ilegivel[k]; return { ok: true, nada: true }; }
       var abriu = true;
@@ -324,6 +936,7 @@
       var confere = false;
       try { confere = m.copiaOk && localStorage.getItem(m.quarentena) === raw; } catch (eQ) { confere = false; }
       if (!confere) return { ok: false, motivo: "copia", bytes: raw.length, erro: m.erroCopia || "" };
+      if (_rota(empresaId, entidade, k, true) === "idb") _discoGravar(k, null, empresaId, entidade);
       try { localStorage.removeItem(k); }
       catch (eR) { return { ok: false, motivo: "remover", erro: String((eR && eR.message) || eR) }; }
       delete _ilegivel[k];
@@ -790,6 +1403,97 @@
   var Store = {
     adapter: LocalAdapter,
 
+    /* =================================================================
+     * O PORTÃO DO BOOT (ver a nota do IndexedDB). Abre o banco, carrega o
+     * espelho, migra o que ainda está no localStorage e só então resolve.
+     * NUNCA rejeita e NUNCA espera mais que TETO_PRONTO_MS: com o banco
+     * travado o app abre com as entidades do banco TRANCADAS (leitura vazia,
+     * gravação recusada) e destranca sozinho quando o banco responder —
+     * nesse caso a tela é redesenhada.
+     * `empresaId` é aceito por compatibilidade: o prime vale para TODAS as
+     * empresas deste aparelho (o login ainda não aconteceu quando ele roda).
+     * ================================================================= */
+    pronto: function () {
+      if (_d.promessa) return _d.promessa;
+      _d.promessa = new Promise(function (res) {
+        var feito = false;
+        var t = (typeof setTimeout === "function") ? setTimeout(function () {
+          if (feito) return;
+          feito = true;
+          try { console.warn("[store] o banco do aparelho não respondeu em " + (TETO_PRONTO_MS / 1000) + " s — o app abre com os dados do banco trancados até ele responder"); } catch (eW) {}
+          var r = _resumo(); r.atrasou = true; res(r);
+        }, TETO_PRONTO_MS) : null;
+        _prime().then(function () {
+          if (!feito) { feito = true; if (t && typeof clearTimeout === "function") clearTimeout(t); res(_resumo()); return; }
+          /* chegou depois do teto: a tela que abriu trancada se redesenha.
+             ⚠ SÓ REDESENHA — nada de evento `storage` por chave: na janela
+             principal cada um viraria `Nuvem.push` da entidade inteira, sem
+             merge, por cima do que outro aparelho tenha mandado. A
+             sincronização seguinte (que mescla) cuida da nuvem. */
+          try { if (global.App && typeof global.App.render === "function") global.App.render(); } catch (eR) {}
+          try { if (global.UI && global.UI.toast && _d.ok === true) global.UI.toast("Os dados deste aparelho terminaram de carregar.", "ok"); } catch (eT) {}
+        });
+      });
+      return _d.promessa;
+    },
+    /* a entidade mora no banco e esta aba ainda não a tem: quem sincroniza
+       (js/nuvem.js) consulta antes de mesclar ou subir */
+    naoCarregada: function (empresaId, entidade) {
+      return _rota(empresaId, entidade, chave(empresaId, entidade), false) === "trancada";
+    },
+    ENT_IDB: ENT_IDB,
+    /* O TEXTO GUARDADO de uma entidade, onde quer que ele more (banco ou
+       localStorage) — para o suporte e para as e2e que conferem o "disco
+       cru": `localStorage.getItem` deixou de ser o lugar único.
+       `discoEscreverTexto` grava o texto cru pelo MESMO caminho do adapter
+       (sem carimbo, sem nuvem, com o aviso às outras abas): é o "outra
+       janela gravou por baixo". Trancada → null / false. */
+    discoTexto: function (empresaId, entidade) {
+      try { return _rawDe(empresaId, entidade, chave(empresaId, entidade)); } catch (e) { return null; }
+    },
+    discoEscreverTexto: function (empresaId, entidade, raw) {
+      var k = chave(empresaId, entidade), r = _rota(empresaId, entidade, k, true);
+      if (r === "trancada") return false;
+      if (r === "nova") { _casaMarcar(empresaId, entidade); r = "idb"; }
+      if (r === "idb") { _discoGravar(k, raw == null ? null : String(raw), empresaId, entidade); return true; }
+      try { if (raw == null) localStorage.removeItem(k); else localStorage.setItem(k, String(raw)); return true; } catch (e) { return false; }
+    },
+    /* onde cada coisa está, para a Saúde do armazenamento e o suporte */
+    discoEstado: function (empresaId) {
+      var pre = chave(empresaId, ""), ent = [], kb = 0, sob = [];
+      Object.keys(_d.esp).forEach(function (k) {
+        var e = _d.esp[k];
+        if (!e || e.raw == null || k.indexOf(pre) !== 0) return;
+        if (k.indexOf(SUFIXO_SOBRA) > 0) { sob.push({ chave: k, kb: Math.round(e.raw.length / 1024) }); return; }
+        var m = RE_CHAVE_ENT.exec(k);
+        if (!m || !_casa(m[1], false)[m[2]]) return;
+        kb += e.raw.length;
+        ent.push({ chave: m[2], kb: Math.round(e.raw.length / 1024) });
+      });
+      ent.sort(function (a, b) { return b.kb - a.kb; });
+      var pend = Object.keys(_d.pendentes).filter(function (k) { return k.indexOf(pre) === 0; }).map(function (k) { return _d.pendentes[k]; });
+      var tr = Object.keys(_d.trancadas).filter(function (k) { return k.indexOf(pre) === 0; }).map(function (k) { return _d.trancadas[k].entidade; });
+      return { ativo: _d.ok === true, completo: _d.completo, migracaoLigada: _migracaoLigada(),
+        persistente: _d.persistente === true ? true : (_d.persistente === false ? false : null),
+        tamanhoKB: Math.round(kb / 1024), entidades: ent.length, maiores: ent.slice(0, 5),
+        pendentes: pend, trancadas: tr, sobras: sob,
+        migradas: _d.migradas.filter(function (x) { return x.empresaId === String(empresaId || "default"); }),
+        falhas: _d.falhas.filter(function (x) { return x.empresaId === String(empresaId || "default"); }) };
+    },
+    /* quanto o navegador deu e quanto já foi usado (estimativa da ORIGEM
+       inteira: banco, bases SINAPI, fotos e cache do BIM no mesmo balde).
+       `null` = o navegador não sabe responder. */
+    espaco: function () {
+      try {
+        var st = global.navigator && global.navigator.storage;
+        if (!st || !st.estimate) return Promise.resolve(null);
+        return st.estimate().then(function (e) {
+          if (!e || typeof e.quota !== "number" || !(e.quota > 0)) return null;
+          return { cota: e.quota, usado: e.usage || 0, pct: Math.round((e.usage || 0) / e.quota * 100) };
+        }, function () { return null; });
+      } catch (e) { return Promise.resolve(null); }
+    },
+
     // Prime o cache em memória dos blobs grandes (chamar no boot antes de ler a base).
     initBigStore: function (empresaId) {
       if (_bigInit[empresaId]) return _bigInit[empresaId];
@@ -881,7 +1585,12 @@
       crono_obra: "Cronograma da obra", aditivos: "Termos aditivos", _lapides: "registro de exclusões",
       /* as duas entidades novas do planejador (Onda 0, T10): o recado da
          quarentena diz o nome que a pessoa reconhece, não a chave técnica */
-      crono_selo: "Linhas de base seladas", crono_alt: "Histórico de alterações do cronograma" },
+      crono_selo: "Linhas de base seladas", crono_alt: "Histórico de alterações do cronograma",
+      /* as maiores listas, para a Saúde do armazenamento (10/10/2026) */
+      bim_vistas: "Pontos de vista do BIM", composicoes_proprias: "Composições próprias", prop_modelos: "Modelos de proposta",
+      bim_pranchas: "Pranchas do projeto", cotacoes: "Cotações", centrocusto: "Centros de custo", fiscal: "Notas fiscais",
+      obra_docs: "Documentos da obra", familias: "Famílias", bim_icamento: "Plano de içamento", fs_lancamentos: "Folha semanal",
+      batidas: "Ponto (batidas)", estoque_mov: "Movimento do almoxarifado", templates: "Modelos", _syncmarcas: "marcas da sincronização" },
     nomeEntidade: function (entidade) {
       var e = String(entidade == null ? "" : entidade);
       if (e === "orcamentos") return "lista de orçamentos";
@@ -1520,7 +2229,7 @@
       for (var ent in GUARDAR) {
         if (!Object.prototype.hasOwnProperty.call(GUARDAR, ent)) continue;
         try {
-          var k = chave(empresaId, ent), raw = localStorage.getItem(k);
+          var k = chave(empresaId, ent), raw = _rawDe(empresaId, ent, k);   // no banco ou no localStorage
           if (_vazio(raw) || raw.length < 4096) continue;     // pequeno: nada a ganhar
           var lista = this._lerLista(empresaId, ent);
           if (this.ilegivel(empresaId, ent)) continue;        // quarentena: não se toca
@@ -1700,8 +2409,11 @@
       var usoPct = Math.min(100, Math.round(bytes / (5 * 1024 * 1024) * 100));
       var migr = [];
       try { migr = JSON.parse(localStorage.getItem(NS + ":migracoes") || "[]"); } catch (e) {}
+      /* ⚠ `usoPct`, `tamanhoKB` e `maiores` contam SÓ o localStorage, que é
+         o que tem o teto de ~5 M caracteres (o aviso de boot olha isto). O
+         que mora no banco do aparelho vem em `idb` — ver `discoEstado`. */
       return { orcamentos: orcs.length, tamanhoKB: Math.round(bytes / 1024), usoPct: usoPct,
-        migracoes: migr.length, schemaVersao: CONFIG.schemaVersao,
+        migracoes: migr.length, schemaVersao: CONFIG.schemaVersao, idb: this.discoEstado(empresaId),
         /* `orcamentos: 0` com a lista ilegível NÃO é carteira vazia: quem lê
            a saúde confere aqui antes (e as cópias guardadas ficam à vista) */
         ilegiveis: this.ilegiveis(empresaId), quarentenas: this.quarentenas(empresaId),

@@ -11,7 +11,7 @@
  * lugar nenhum. Passo manual em release é passo que uma hora não acontece:
  * agora o packer REPROVA o pacote se os dois números divergirem
  * (tools/check-versao.js, chamado no empacotar-cliente.ps1). */
-var CACHE = 'orcapro-app-v1.2.130';
+var CACHE = 'orcapro-app-v1.2.131';
 
 self.addEventListener('install', function (e) {
   self.skipWaiting();
@@ -32,13 +32,32 @@ self.addEventListener('install', function (e) {
        A lista vem do próprio index.html em runtime (fetch + regex nos <script>
        e <link>): lista à mão aqui dessincronizaria na primeira release. */
     var fixos = ['./', './index.html', './manifest.webmanifest',
+      /* pedido pelo index.html só depois do load, por script: a varredura
+         abaixo (src="/href=") não o vê */
+      './css/fontes-proposta.css',
+      /* ⚠ OS import DO VISUALIZADOR (js/bim.js). Até 10/10/2026 eles vinham
+         em toda abertura (o módulo estava no index.html) e o fetch abaixo os
+         guardava; com o BIM sob demanda (js/carregar.js), quem nunca abriu o
+         BIM com sinal não os teria no canteiro sem internet. */
+      './bim/vendor/three.module.js', './bim/vendor/web-ifc-api.js', './bim/vendor/OrbitControls.js',
+      './bim/vendor/Sky.js', './bim/cristal.js', './bim/vendor/RoomEnvironment.js', './bim/vendor/RoundedBoxGeometry.js',
       './js/vendor/xlsx.full.min.js', './js/vendor/exceljs.min.js',
       './js/vendor/pdfjs/pdf.min.mjs', './js/vendor/pdfjs/pdf.worker.min.mjs'];
-    return fetch('./index.html').then(function (r) { return r.ok ? r.text() : ''; }).catch(function () { return ''; })
-      .then(function (html) {
-        var extras = [];
+    /* ⚠ NA PUBLICAÇÃO OS SCRIPTS SÃO PACOTES (tools/construir-pacotes-js.js,
+       10/10/2026). O index.html é o mesmo do desenvolvimento e continua citando
+       os ~300 arquivos (dentro de <template>); guardar todos eles aqui faria o
+       celular baixar de novo, em segundo plano, tudo que os pacotes acabaram de
+       evitar. A lista do que guardar vem então do js/pacotes/lista.json, que só
+       existe na publicação; sem ele (desenvolvimento), vale a varredura do
+       index.html de antes. O CSS sai do index.html nos dois casos. */
+    var lista = fetch('./js/pacotes/lista.json').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
+    var indice = fetch('./index.html').then(function (r) { return r.ok ? r.text() : ''; }).catch(function () { return ''; });
+    return Promise.all([lista, indice])
+      .then(function (rs) {
+        var pac = rs[0] && rs[0].precache && rs[0].precache.length ? rs[0].precache : null, html = rs[1], extras = [];
         var re = /(?:src|href)="((?:js|css)\/[^"]+)"/g, m;
-        while ((m = re.exec(html))) extras.push('./' + m[1]);
+        while ((m = re.exec(html))) { if (!pac || m[1].indexOf('css/') === 0) extras.push('./' + m[1]); }
+        if (pac) pac.forEach(function (u) { extras.push('./' + u); });
         return Promise.all(fixos.concat(extras).map(function (u) { return c.add(u).catch(function () {}); }));
       });
   }));
@@ -63,6 +82,18 @@ self.addEventListener('fetch', function (e) {
      guarda o que precisa com validade própria; aqui o .ifc (até 80 MB) ficaria
      guardado DUAS vezes no celular */
   if (url.pathname.indexOf('/rv/') === 0) return;
+  /* PACOTE COM CARIMBO DE CONTEÚDO (js/pacotes/bim.js?v=<hash>, gerado na
+     publicação): o endereço muda quando o conteúdo muda, então o que está
+     guardado nunca fica velho — sai do cache sem ir à rede. É o que deixa a
+     segunda entrada no BIM instantânea no celular, com ou sem sinal. */
+  if (/\.js$/.test(url.pathname) && /^\?v=[0-9a-f]{8,}$/.test(url.search)) {
+    e.respondWith(caches.open(CACHE).then(function (c) {
+      return c.match(req).then(function (m) {
+        return m || fetch(req).then(function (r) { if (r && r.ok) c.put(req, r.clone()); return r; });
+      });
+    }));
+    return;
+  }
   e.respondWith(
     fetch(req).then(function (r) {
       if (r && r.ok) { var cp = r.clone(); caches.open(CACHE).then(function (c) { c.put(req, cp); }); }

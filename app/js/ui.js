@@ -764,7 +764,38 @@
         '<div class="field"><label>UF</label><input id="scan-uf" placeholder="MG (auto)"></div>' +
         '<div class="field"><label>Competência</label><input id="scan-mes" placeholder="2026-01 (auto)"></div></div>' +
         '<div class="flex" style="align-items:center;gap:12px"><label style="cursor:pointer"><input type="checkbox" id="scan-deson"> com desoneração</label>' +
-        '<button class="btn sm primary" data-acao="escanear-pasta">' + (typeof Icones !== 'undefined' ? Icones.get('pasta', 15) : '') + ' Escanear e organizar</button></div>';
+        '<button class="btn sm primary" data-acao="escanear-pasta">' + (typeof Icones !== 'undefined' ? Icones.get('pasta', 15) : '') + ' Escanear e organizar</button></div>' +
+        /* ⚠ OS RECADOS DE "ARMAZENAMENTO CHEIO" MANDAVAM A PESSOA PARA CÁ, E
+           ESTA SEÇÃO NÃO EXISTIA (achado de 10/10/2026). Quem preenche é o
+           App.abrirTabelas (a estimativa do navegador é assíncrona). */
+        '<h3 id="tab-saude-h" style="margin:18px 0 6px">Saúde do armazenamento</h3>' +
+        '<div id="tab-saude"><p class="muted" style="font-size:12px">Medindo…</p></div>';
+    },
+    /* A Saúde do armazenamento: onde está cada coisa e o que tem teto.
+       `sd` = Store.saude(empresa); `es` = Store.espaco() (null = o navegador
+       não sabe responder). Texto puro escapado — nada vem cru para o HTML. */
+    renderSaudeArmazenamento: function (sd, es) {
+      sd = sd || {}; var idb = sd.idb || {};
+      var nome = function (e) { return (typeof Store !== "undefined" && Store.nomeEntidade) ? Store.nomeEntidade(e) : e; };
+      var lista = function (l) {
+        return (l || []).map(function (x) { return '<li>' + Util.esc(nome(x.chave)) + ' — ' + Number(x.kb || 0).toLocaleString("pt-BR") + ' KB</li>'; }).join("");
+      };
+      var mb = function (b) { return (Math.round(b / 104857.6) / 10).toLocaleString("pt-BR"); };
+      var h = '<div style="font-size:12.5px;line-height:1.5">';
+      h += '<p style="margin:0 0 6px"><b>Banco de dados do aparelho</b> (onde ficam orçamentos, obras, diário, BIM…): ' +
+        (idb.ativo ? 'ativo — ' + Number(idb.tamanhoKB || 0).toLocaleString("pt-BR") + ' KB em ' + (idb.entidades || 0) + ' lista(s).'
+                   : '<b style="color:#b45309">indisponível nesta sessão</b> — os dados continuam no armazenamento local do navegador, que tem limite de cerca de 5 MB.') + '</p>';
+      if (idb.ativo && idb.maiores && idb.maiores.length) h += '<ul style="margin:0 0 8px 18px;padding:0">' + lista(idb.maiores) + '</ul>';
+      if (idb.ativo && idb.persistente !== null && idb.persistente !== undefined) h += '<p style="margin:0 0 6px" class="muted">Proteção contra a limpeza automática do navegador: ' + (idb.persistente ? 'ativa.' : 'não concedida pelo navegador — mantenha o 💾 Backup em dia.') + '</p>';
+      h += '<p style="margin:0 0 6px"><b>Armazenamento local</b> (preferências; limite de cerca de 5 MB): ' + Number(sd.usoPct || 0) + '% — ' + Number(sd.tamanhoKB || 0).toLocaleString("pt-BR") + ' KB.</p>';
+      if ((sd.usoPct || 0) >= 50 && sd.maiores && sd.maiores.length) h += '<ul style="margin:0 0 8px 18px;padding:0">' + lista(sd.maiores) + '</ul>';
+      h += '<p style="margin:0 0 6px"><b>Espaço que o navegador reserva para o OrçaPRO</b>: ' +
+        (es ? es.pct + '% usado (' + mb(es.usado) + ' de ' + mb(es.cota) + ' MB — inclui as bases de preço, as fotos e o cache do 3D).' : 'o navegador não informa.') + '</p>';
+      if (idb.trancadas && idb.trancadas.length) h += '<p style="margin:0 0 6px;color:#b45309"><b>Não carregadas</b> (nada foi apagado; feche e abra o OrçaPRO): ' + Util.esc(idb.trancadas.map(nome).join(", ")) + '</p>';
+      if (idb.pendentes && idb.pendentes.length) h += '<p style="margin:0 0 6px;color:#b45309"><b>Ainda não gravadas no banco</b> (valem até fechar o app — faça 💾 Backup): ' + Util.esc(idb.pendentes.map(nome).join(", ")) + '</p>';
+      if (idb.falhas && idb.falhas.length) h += '<p style="margin:0 0 6px" class="muted">Ficaram no armazenamento local nesta abertura: ' + Util.esc(idb.falhas.map(function (f) { return nome(f.entidade) + " (" + f.motivo + ")"; }).join("; ")) + '</p>';
+      if (idb.sobras && idb.sobras.length) h += '<p style="margin:0 0 6px" class="muted">' + idb.sobras.length + ' cópia(s) guardada(s) à parte (de uma janela de versão antiga) — o suporte consegue recuperá-las.</p>';
+      return h + '</div>';
     },
 
     // ---------- Comparar cenários de preço ----------

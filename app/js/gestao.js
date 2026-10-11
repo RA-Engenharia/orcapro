@@ -1648,6 +1648,13 @@
       if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo(view)) return this._semPermissao(view);
       /* licença só do OrçaPRO Modela: fora do BIM (e da Ajuda), a tela trancada — guarda em FUNÇÃO */
       if (this._trancadoModela && this._trancadoModela(view)) return this.renderTrancadoModela(view);
+      /* ⚠ TELA CUJO GRUPO AINDA NÃO CHEGOU (js/carregar.js): o BIM e o
+         modelador não baixam na abertura do app. Desenhar a tela do BIM antes
+         do grupo inteiro rodar estouraria `BimShell is not defined` no meio da
+         casca — então aqui vai a espera, e o Carregar redesenha quando chega.
+         Depois das guardas de permissão e da licença de propósito: quem não
+         pode abrir o módulo não baixa 6 MB para ver um cadeado. */
+      if (typeof Carregar !== "undefined" && Carregar.faltaPara && Carregar.faltaPara(view)) return Carregar.telaEsperando(view);
       switch (view) {
         case "dashboard": return this.renderPainelNovo();
         case "obras": return this.renderObras();
@@ -36087,7 +36094,7 @@
         corpoHtml: '<div class="muted" id="bi-status">Digite ao menos 2 letras…</div><div id="bi-res"></div>'
       });
     },
-    afterRender: function (view) { if (this._trancadoModela && this._trancadoModela(view)) return; /* tela trancada do Modela: não há o que ligar */ if (this._wiresExtras && this._wiresExtras[view]) { try { this._wiresExtras[view].call(this); } catch (eW) {} } if (view === "producao") this.afterRenderProducao(); else if (view === "fiscal") this._triWire(); else if (view === "insumos") this._wireBancoView(); else if (view === "epi") this.afterRenderEpi(); else if (view === "ponto") this.afterRenderPonto(); else if (view === "galeria") this._galeriaWire(); else if (view === "ajuda") this._ajudaWire(); else if (view === "bim") this._bimWire(); else if (view === "lastplanner") this._lpWire(); },
+    afterRender: function (view) { if (this._trancadoModela && this._trancadoModela(view)) return; /* tela trancada do Modela: não há o que ligar */ if (typeof Carregar !== "undefined" && Carregar.faltaPara && Carregar.faltaPara(view)) return; /* tela de espera do grupo (js/carregar.js): a fiação do BIM só existe depois dele */ if (this._wiresExtras && this._wiresExtras[view]) { try { this._wiresExtras[view].call(this); } catch (eW) {} } if (view === "producao") this.afterRenderProducao(); else if (view === "fiscal") this._triWire(); else if (view === "insumos") this._wireBancoView(); else if (view === "epi") this.afterRenderEpi(); else if (view === "ponto") this.afterRenderPonto(); else if (view === "galeria") this._galeriaWire(); else if (view === "ajuda") this._ajudaWire(); else if (view === "bim") this._bimWire(); else if (view === "lastplanner") this._lpWire(); },
     _wireBancoView: function () {
       var self = this;
       this._wireInsumoSearch("bi-q", "bi-res", function (ins) { self.novaRequisicaoComItem(ins); }, { status: "bi-status", comAcao: true, comEditar: true });

@@ -1,0 +1,13 @@
+{
+ "gerador": "tools/construir-pacotes-js.js",
+ "fonte": "3ce3e383b676d440a160159aefe44c1d",
+ "precache": [
+  "js/pacotes/nucleo-1.js",
+  "js/pacotes/nucleo-2.js",
+  "js/pacotes/bim.js?v=dff4a9410a",
+  "js/bim-pacote.js?v=9f34ca88d8"
+ ],
+ "pulados": [
+  "venda/perfis-clientes.js"
+ ]
+}

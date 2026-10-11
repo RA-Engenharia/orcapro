@@ -1116,6 +1116,20 @@
   /* O botão da planta do BIM só nasce quando o BIM foi montado nesta sessão —
      `cameraAtual()` é o mesmo sinal que a âncora usa. Botão que aparece e
      falha depois é pior que botão ausente. */
+  /* O recado de quando o BIM não está na página. ⚠ DESDE O APP LEVE (10/10/2026,
+     js/carregar.js) o BIM só baixa quando alguém abre a tela dele: `global.BIM`
+     indefinido quase sempre quer dizer "ainda não aberto nesta sessão", e não
+     "esta instalação não tem BIM" — que era o que o recado dizia, mandando a
+     pessoa procurar um defeito que não existe. Ancorar, ver no BIM, retratar e
+     a planta precisam do modelo MONTADO de qualquer jeito: o caminho é abrir. */
+  function semBim() {
+    var C = global.Carregar;
+    if (C && C.temGrupo && C.temGrupo("bim") && !(C.pronto && C.pronto("bim"))) {
+      return "O BIM ainda não foi aberto nesta sessão: abra o módulo BIM, carregue o modelo da obra e volte aqui.";
+    }
+    return "O visualizador BIM não está disponível nesta instalação.";
+  }
+
   function temPlantaBIM() {
     var B = global.BIM;
     if (!B || typeof B.plantaBaixa !== "function" || typeof B.cameraAtual !== "function") return false;
@@ -4279,7 +4293,7 @@
       if (!t) return;
       var B = global.BIM;
       if (!B || typeof B.plantaBaixa !== "function") {
-        UI.toast("O visualizador BIM não está disponível nesta instalação.", "erro"); return;
+        UI.toast(semBim(), "erro"); return;
       }
       var r = null;
       try { r = B.plantaBaixa(); } catch (e) { r = null; }
@@ -4351,7 +4365,7 @@
       var t = tourAberto(), p = pontoAberto(t);
       if (!p) return;
       if (typeof global.BIM === "undefined" || !global.BIM.cameraAtual) {
-        UI.toast("O visualizador BIM não está disponível nesta instalação.", "erro"); return;
+        UI.toast(semBim(), "erro"); return;
       }
       var cam = global.BIM.cameraAtual();
       if (!cam) {
@@ -4383,7 +4397,7 @@
       var v = M.vistaDoPonto(p, pose.yaw, pose.pitch, { fov: pose.fov });
       if (!v.ok) { UI.toast(v.motivo, "erro"); return; }
       if (typeof global.BIM === "undefined" || !global.BIM.aplicarVista) {
-        UI.toast("O visualizador BIM não está disponível nesta instalação.", "erro"); return;
+        UI.toast(semBim(), "erro"); return;
       }
       var r = global.BIM.aplicarVista({ camera: v.camera });
       if (!r || !r.ok) {
@@ -4404,7 +4418,7 @@
       if (!p) return;
       var B = global.BIM;
       if (!B || !B.aplicarVista || !B.desenharQuadro) {
-        UI.toast("O visualizador BIM não está disponível nesta instalação.", "erro"); return;
+        UI.toast(semBim(), "erro"); return;
       }
       var V = vista();
       var pose = (V && V.pose) ? V.pose() : { yaw: 0, pitch: 0, fov: 75 };

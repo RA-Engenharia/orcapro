@@ -84,25 +84,53 @@
 
     // ---------- Boot ----------
     iniciar: function () {
+      /* =================================================================
+       * ⚠ O PORTÃO DOS DADOS (10/10/2026) — NADA LÊ NEM GRAVA ANTES DELE.
+       * Orçamentos, obras, diário, BIM… moram no banco do aparelho
+       * (IndexedDB, ver a nota em js/store.js) e chegam à memória de forma
+       * assíncrona. Login, sincronização da nuvem, autosave e a primeira
+       * tela só começam depois do `Store.pronto()`: ler vazio e gravar por
+       * cima apagaria o dado, e a nuvem levaria o vazio para os outros
+       * aparelhos. (O Store também RECUSA a gravação antes disso — é a
+       * segunda trava, não a primeira.)
+       * Antes do portão roda só o que é de TELA e não toca em dado: o tema
+       * não pode piscar, e as e2e que trocam o tema logo depois do
+       * DOMContentLoaded não podem ter a troca desfeita por um boot atrasado.
+       * ================================================================= */
+      if (!this._dadosProntos) {
+        if (!this._dadosEsperando) {
+          this._dadosEsperando = true;
+          /* as chaves de desligar do cronograma (planejador, Onda 0, T12) ANTES de
+             qualquer desenho: o motor calcula a primeira tela já com elas */
+          this._cronoRecursosBoot();
+          /* prévia por instalação (?previa=icamento): grava a chave local ANTES do
+             primeiro desenho e tira o parâmetro do endereço */
+          this._previaDaUrl();
+          /* aparencia salva: dois eixos independentes — iluminacao (claro/escuro)
+             e letra (Plex/Source). `aplicarTema` faz a migracao de quem ainda
+             tem o `orcapro:tom` antigo gravado no aparelho. */
+          this.aplicarTema(localStorage.getItem("orcapro:tema") || "light", null);
+          /* terceiro eixo da aparência: o movimento da cena de Obras (ver
+             aplicarMovimento). Aqui, e não depois, pelo mesmo motivo do tema: a
+             demo sai do iniciar logo abaixo e precisa dele aplicado também. */
+          this.aplicarMovimento(null);
+          var selfP = this;
+          var segue = function (r) {
+            selfP._dadosProntos = true; selfP._dadosInfo = r || null;
+            try { if (r && r.migradas && r.migradas.length) console.info("[store] " + r.migradas.length + " lista(s) passaram do localStorage para o banco do aparelho"); } catch (eI) {}
+            selfP.iniciar();
+          };
+          var pp = (typeof Store !== "undefined" && Store.pronto) ? Store.pronto() : null;
+          if (pp && typeof pp.then === "function") pp.then(segue, function () { segue(null); });
+          else segue(null);
+        }
+        return;
+      }
       Auth.init();
       /* acesso com prazo (js/auth.js, `acessoAte`): o `init` acima já
          desligou quem venceu antes de abrir; o relógio pega quem vence com o
          app aberto, mesmo sem ninguém clicar em nada */
       this._ligarRelogioAcesso();
-      /* as chaves de desligar do cronograma (planejador, Onda 0, T12) ANTES de
-         qualquer desenho: o motor calcula a primeira tela já com elas */
-      this._cronoRecursosBoot();
-      /* prévia por instalação (?previa=icamento): grava a chave local ANTES do
-         primeiro desenho e tira o parâmetro do endereço */
-      this._previaDaUrl();
-      /* aparencia salva: dois eixos independentes — iluminacao (claro/escuro)
-         e letra (Plex/Source). `aplicarTema` faz a migracao de quem ainda
-         tem o `orcapro:tom` antigo gravado no aparelho. */
-      this.aplicarTema(localStorage.getItem("orcapro:tema") || "light", null);
-      /* terceiro eixo da aparência: o movimento da cena de Obras (ver
-         aplicarMovimento). Aqui, e não depois, pelo mesmo motivo do tema: a
-         demo sai do iniciar logo abaixo e precisa dele aplicado também. */
-      this.aplicarMovimento(null);
 
       /* JANELA DESTACADA (#janela=v1/<orc>/<aba>[/<sub>], js/janelas.js): a
          mesma aplicação numa segunda janela, só com o orçamento, para ir ao
@@ -225,6 +253,26 @@
               + ". Faça " + (typeof Icones !== "undefined" ? Icones.get("salvar", 15) : "")
               + " Backup agora. (As bases SINAPI não contam neste limite.)", "erro");
           }
+          /* ⚠ O QUE TEM TETO AGORA (10/10/2026). Os dados foram para o banco do
+             aparelho (js/store.js, nota do IndexedDB) e o `usoPct` acima conta
+             só o que sobrou no localStorage — preferências, quase nada. O teto
+             que resta é a cota que o navegador dá à ORIGEM inteira (banco,
+             bases SINAPI, fotos e cache do BIM juntos): avisa a 80%, uma vez
+             por abertura. E a entidade que ficou TRANCADA (banco que não abriu)
+             é dito aqui, antes de a pessoa tentar gravar. */
+          var idb0 = sd.idb || {};
+          if (idb0.trancadas && idb0.trancadas.length) {
+            UI.toast("⚠ O navegador não entregou o banco de dados deste aparelho, onde estão os seus dados (" + idb0.trancadas.map(function (e) { return Store.nomeEntidade(e); }).join(", ") + "). Nada foi apagado e nada será gravado por cima. Feche TODAS as janelas do OrçaPRO e abra de novo.", "erro", 16000);
+          }
+          if (Store.espaco && !this._avisouEspaco) {
+            var selfE = this;
+            Store.espaco().then(function (es) {
+              if (!es || !(es.pct >= 80) || selfE._avisouEspaco) return;
+              selfE._avisouEspaco = true;
+              var mb = function (b) { return Math.round(b / 1048576).toLocaleString("pt-BR"); };
+              UI.toast("⚠ O espaço que o navegador reserva para o OrçaPRO neste aparelho está em " + es.pct + "% (" + mb(es.usado) + " de " + mb(es.cota) + " MB). Faça 💾 Backup e veja o que ocupa espaço em 🗂 Tabelas › Saúde do armazenamento.", "erro", 14000);
+            }, function () {});
+          }
         }
       } catch (eSd) {}
       /* ⚠ CONTEÚDO ILEGÍVEL NO DISCO (js/store.js, nota da quarentena). A
@@ -263,11 +311,17 @@
           /* podeBim: a licença só do Modela também abre o BIM (é o produto dela) */
           if (typeof Gestao !== "undefined" && (Gestao.podeBim ? Gestao.podeBim() : (Gestao.podeGestao && Gestao.podeGestao()))) {
             this.view = "bim"; this.render();
-            var _t = 0, _iv = setInterval(function () {
-              _t++;
-              if (window.BIM && BIM.imersivo && BIM.visiveis && BIM.visiveis() > 0) { clearInterval(_iv); BIM.imersivo("caminhar"); }
-              else if (_t > 48) { clearInterval(_iv); if (typeof UI !== "undefined") UI.toast("Abra ou gere o modelo 3D e toque em " + (typeof Icones !== "undefined" ? Icones.get("vr", 15) : "") + " RA/RV.", "info"); }
-            }, 250);
+            /* o relógio de 12 s do modelo só começa quando o grupo do BIM
+               chegou (js/carregar.js): no celular baixar o grupo já leva
+               alguns segundos, e eles não são do modelo */
+            var _rvEsperar = function () {
+              var _t = 0, _iv = setInterval(function () {
+                _t++;
+                if (window.BIM && BIM.imersivo && BIM.visiveis && BIM.visiveis() > 0) { clearInterval(_iv); BIM.imersivo("caminhar"); }
+                else if (_t > 48) { clearInterval(_iv); if (typeof UI !== "undefined") UI.toast("Abra ou gere o modelo 3D e toque em " + (typeof Icones !== "undefined" ? Icones.get("vr", 15) : "") + " RA/RV.", "info"); }
+              }, 250);
+            };
+            if (typeof Carregar !== "undefined" && Carregar.grupo) Carregar.grupo("bim").then(_rvEsperar, _rvEsperar); else _rvEsperar();
           } else if (typeof UI !== "undefined") { UI.toast("A RA/RV fica no módulo BIM (plano com Gestão de Obras).", "erro"); }
         }
       } catch (eRv) {}
@@ -506,11 +560,29 @@
        do Android, uso sem internet). Aqui só a porta de entrada: sem login,
        sem gestão, antes de todo o app. As funções de reunião (_rvReuniao e
        os selos) continuam no App — o visor as chama. */
+    /* ⚠ O VISOR É DO GRUPO "bim" (js/carregar.js): o js/rvvisor.js e o
+       visualizador não baixam na abertura do app. Quem chega pelo link ou pela
+       placa espera o grupo aqui, com uma faixa por cima — sem isto o
+       `typeof RvVisor` abaixo daria "undefined" e o visitante veria o recado
+       de "não carregou por completo" num link que está perfeito. */
+    _esperarVisor: function (refazer) {
+      if (typeof RvVisor !== "undefined" || typeof Carregar === "undefined" || !Carregar.temGrupo || !Carregar.temGrupo("bim") || Carregar.pronto("bim")) return false;
+      /* uma tentativa só: se o grupo não chegar, segue para o recado honesto
+         do `_abrirRVCloud` em vez de pedir de novo para sempre */
+      if (this._visorEsperou) return false;
+      this._visorEsperou = true;
+      Carregar.comEspera("bim", "Abrindo o projeto 3D…").then(refazer, refazer);
+      return true;
+    },
     _abrirPlacaObra: function (slug) {
+      var self = this;
+      if (this._esperarVisor(function () { self._abrirPlacaObra(slug); })) return;
       if (typeof RvVisor !== "undefined" && RvVisor.abrirPlaca) return RvVisor.abrirPlaca(slug, this);
       return this._abrirRVCloud("");
     },
     _abrirRVCloud: function (token) {
+      var self = this;
+      if (token && this._esperarVisor(function () { self._abrirRVCloud(token); })) return;
       if (token && typeof RvVisor !== "undefined" && RvVisor.abrir) return RvVisor.abrir(token, this);
       /* ⚠ sem o módulo, diz isso — nunca uma tela vazia (o /rvapp/ do VPS é
          uma cópia do app, e cópia incompleta já aconteceu) */
@@ -10423,6 +10495,16 @@
         { texto: "Importar base", classe: "primary", onClick: function () { self.importarBase(); } }
       ]);
       var m = bg && bg.querySelector(".modal"); if (m) m.style.maxWidth = "740px";
+      /* a Saúde do armazenamento (fim do modal): o que está onde, e a
+         estimativa do navegador, que chega depois */
+      try {
+        var eidS = Auth.empresaId(), sdS = Store.saude(eidS), pinta = function (es) {
+          var box = document.getElementById("tab-saude");
+          if (box && UI.renderSaudeArmazenamento) box.innerHTML = UI.renderSaudeArmazenamento(sdS, es);
+        };
+        pinta(null);
+        if (Store.espaco) Store.espaco().then(pinta, function () {});
+      } catch (eS) {}
     },
     importarBase: function () {
       if (!this._podeBases()) { this._recusaBases("Importar uma tabela de preço"); return; }

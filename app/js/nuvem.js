@@ -386,6 +386,19 @@
       return !!(m && m.bloqueia);
     } catch (e) { return false; }
   }
+  /* ⚠ DADO QUE AINDA NÃO CARREGOU DO BANCO DO APARELHO NÃO ENTRA NO MERGE
+   * NEM SOBE (js/store.js, nota do IndexedDB, regra 1). A leitura de uma
+   * entidade trancada devolve `[]`: o merge gravaria por cima (o Store
+   * recusa) e o `push` mandaria o vazio para os outros aparelhos. Vale
+   * também quando as LÁPIDES ou as MARCAS do sync estão trancadas: sem
+   * elas o merge ressuscitaria o que foi apagado e veria conflito em tudo.
+   * A entidade volta a sincronizar sozinha quando o banco carregar. */
+  function naoCarregadaLocal(empresaId, ent) {
+    try {
+      if (!Store.naoCarregada) return false;
+      return !!(Store.naoCarregada(empresaId, ent) || Store.naoCarregada(empresaId, "_lapides") || Store.naoCarregada(empresaId, "_syncmarcas"));
+    } catch (e) { return true; }   // na dúvida, não mexe
+  }
 
   /* ===================================================================
    * A NUVEM NÃO TOCA EM NAMESPACE DE PRÉVIA
@@ -986,6 +999,7 @@
       self._conflitosCrono = [];
       self._conflitosCc = [];
       self._ilegiveisUltimoSync = [];
+      self._naoCarregadasUltimoSync = [];
       var falhou = 0, tentadas = 0;
       var uma = function (ent) {
         tentadas++;
@@ -1005,6 +1019,13 @@
         return self._doc(ent).get().then(function (snap) {
           var cloud = snap.exists ? daNuvem(ent, snap.data().v) : null;
           var local = lerEnt(empresaId, ent);
+          /* ⚠ ver `naoCarregadaLocal`: nem merge, nem marca, nem subida */
+          if (naoCarregadaLocal(empresaId, ent)) {
+            falhou++;
+            self._naoCarregadasUltimoSync.push(ent);
+            self._registrarFalha(ent, { code: "dado-local-nao-carregado", message: "os dados desta entidade ainda não carregaram do banco do aparelho" });
+            return false;
+          }
           /* ⚠ ver `ilegivelLocal`: nem merge, nem marca, nem subida */
           if (ilegivelLocal(empresaId, ent)) {
             falhou++;
@@ -1092,10 +1113,12 @@
         /* ⚠ a parte ilegível NÃO "vai de novo sozinha": sem a pessoa agir, ela
            fica parada para sempre — o recado geral mentiria sobre ela */
         var nIleg = (self._ilegiveisUltimoSync || []).length;
+        /* a parte trancada (o banco do aparelho ainda carregando) entra na
+           conta do "vai de novo sozinho" — e é verdade: destrancou, sincroniza */
         if (falhou > 0) {
           try {
             if (global.UI && global.UI.toast) {
-              if (falhou > nIleg) global.UI.toast("☁ Sincronização parcial: " + (falhou - nIleg) + " de " + tentadas + " partes não subiram. O trabalho está salvo neste aparelho e vai de novo sozinho.", "erro");
+              if (falhou > nIleg) global.UI.toast("☁ Sincronização parcial: " + (falhou - nIleg) + " de " + tentadas + " partes não subiram" + ((self._naoCarregadasUltimoSync || []).length ? " (" + self._naoCarregadasUltimoSync.length + " ainda carregando do aparelho)" : "") + ". O trabalho está salvo neste aparelho e vai de novo sozinho.", "erro");
               if (nIleg) global.UI.toast("☁ " + nIleg + " parte(s) NÃO sincronizam: " + self._ilegiveisUltimoSync.join(", ") + " — o conteúdo delas neste aparelho está ilegível (arquivo corrompido) e foi guardado à parte. Restaure o backup (💾); depois disso a nuvem volta a sincronizar essa parte.", "erro", 16000);
             }
           } catch (e) {}
@@ -1148,7 +1171,7 @@
        * entram num laço de escrita que não converge. */
       var deFora = function (ent2, valor) {
         /* ⚠ ver `ilegivelLocal` (a leitura que renovou a marca é do chamador) */
-        if (ilegivelLocal(empresaId, ent2)) return;
+        if (ilegivelLocal(empresaId, ent2) || naoCarregadaLocal(empresaId, ent2)) return;
         self._aplicandoDaNuvem = true;
         try { Store.adapter.gravar(empresaId, ent2, valor); }
         finally { self._aplicandoDaNuvem = false; }
@@ -1168,6 +1191,7 @@
           var aplicar = function () {
             var local = lerEnt(empresaId, ent);
             if (ilegivelLocal(empresaId, ent)) return;   // ⚠ ver `ilegivelLocal`
+            if (naoCarregadaLocal(empresaId, ent)) return;   // ⚠ ver `naoCarregadaLocal`
             var merged = self._merge(local, cloud, ent, empresaId);
             /* nada mudou depois do merge? então não grava e não avisa a tela —
                gravar aqui acionaria o patch e reabriria o caminho do laço */
@@ -1252,6 +1276,8 @@
         /* entidades paradas no último sync por conteúdo local ilegível: quem
            anuncia "Sincronizado!" confere aqui antes */
         dadoLocalIlegivel: (this._ilegiveisUltimoSync || []).slice(),
+        /* entidades paradas por ainda não terem carregado do banco do aparelho */
+        dadoLocalNaoCarregado: (this._naoCarregadasUltimoSync || []).slice(),
         donoDoBalde: bloq ? (bloq.dono && (bloq.dono.empresa || "")) : "",
         ok: !!this.ligado && !bloq && !!(this._un && this._un.length) && !cota && !permissao && !grande && !formato
       };
@@ -1319,6 +1345,8 @@
           /* ⚠ o `[]` de uma leitura ilegível NÃO sobe: ele substituiria na
              nuvem a lista que os outros aparelhos ainda têm (ver `ilegivelLocal`) */
           if (ilegivelLocal(empresaId, ent)) return;
+          /* ⚠ nem o `[]` de uma entidade ainda trancada (ver `naoCarregadaLocal`) */
+          if (naoCarregadaLocal(empresaId, ent)) return;
           var vN = paraNuvem(ent, v);                                   // a forma guardada (ver `paraNuvem`)
           try { carga = JSON.stringify(vN); } catch (e) { carga = ""; }
           if (carga && self._ultimoEnviado[chave] === carga) return;   // nada mudou: não escreve

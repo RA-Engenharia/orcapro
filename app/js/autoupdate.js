@@ -96,18 +96,27 @@
    * ⚠ A MESMA EXPRESSÃO do `sw.js` (pré-cache do shell): as duas listas têm de
    * ser a mesma, e tools/test-foto-obra-remoto.js confere. */
   var RE_SHELL = /(?:src|href)="((?:js|css)\/[^"]+)"/g;
-  function urlsDoShell(html) {
+  /* ⚠ NA PUBLICAÇÃO OS SCRIPTS SÃO PACOTES (10/10/2026, mesma regra do
+     sw.js). O index.html continua citando os ~300 arquivos soltos (dentro de
+     <template>), e renovar todos faria o celular baixar de novo, a cada
+     atualização, tudo o que os pacotes evitam. Com o js/pacotes/lista.json
+     (só existe na publicação), os scripts são os pacotes dele; o CSS sai do
+     index.html. Sem a lista (desenvolvimento), tudo como antes. */
+  function urlsDoShell(html, pacotes) {
     var out = [], m;
     RE_SHELL.lastIndex = 0;
-    while ((m = RE_SHELL.exec(String(html || "")))) out.push(m[1]);
+    while ((m = RE_SHELL.exec(String(html || "")))) { if (!pacotes || m[1].indexOf("css/") === 0) out.push(m[1]); }
+    if (pacotes) pacotes.forEach(function (u) { out.push(u); });
     return out;
   }
   function renovarShell() {
     if (typeof fetch !== "function") return Promise.resolve([]);
-    return fetch("index.html", { cache: "reload" })
-      .then(function (r) { return r.ok ? r.text() : ""; })
-      .then(function (html) {
-        var us = urlsDoShell(html);
+    var lista = fetch("js/pacotes/lista.json", { cache: "reload" })
+      .then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
+    return Promise.all([fetch("index.html", { cache: "reload" }).then(function (r) { return r.ok ? r.text() : ""; }), lista])
+      .then(function (rs) {
+        var html = rs[0], pac = rs[1] && rs[1].precache && rs[1].precache.length ? rs[1].precache : null;
+        var us = urlsDoShell(html, pac);
         return Promise.all(us.map(function (u) { return fetch(u, { cache: "reload" }).catch(function () {}); }))
           .then(function () { return us; });
       })

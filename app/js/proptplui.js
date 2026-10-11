@@ -1237,12 +1237,16 @@
      *   origem, mas o caminho relativo de um documento `about:blank` é frágil
      *   quando o app é servido de uma subpasta.
      * =============================================================== */
-    var urlFontes = "";
+    var urlFontes = "", urlFontesProp = "";
     try { urlFontes = new URL("css/fontes.css", location.href).href; } catch (eU) { urlFontes = "css/fontes.css"; }
+    /* ⚠ e as famílias SÓ de proposta, que desde 10/10/2026 moram num arquivo
+       à parte (css/fontes-proposta.css: fora do caminho da abertura do app) */
+    try { urlFontesProp = new URL("css/fontes-proposta.css", location.href).href; } catch (eU2) { urlFontesProp = "css/fontes-proposta.css"; }
 
     w.document.write('<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">'
       + "<title>" + esc(txt(dados && dados.tituloDoc) || "Proposta") + "</title>"
       + '<link rel="stylesheet" href="' + urlFontes + '">'
+      + '<link rel="stylesheet" href="' + urlFontesProp + '">'
       + "<style>body{margin:0}" + T.css(m.estilo.formato) + "</style></head><body>" + html + "</body></html>");
     w.document.close();
 
