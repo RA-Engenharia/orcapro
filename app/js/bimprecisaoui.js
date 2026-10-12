@@ -120,7 +120,7 @@
       var matFant = new THREE.LineBasicMaterial({ color: 0x3fb5e5, depthTest: false, transparent: true, opacity: 0.95 });
       var matCota = new THREE.LineBasicMaterial({ color: 0x1f6fb2, depthTest: false });
       var matTmp = new THREE.LineDashedMaterial({ color: 0x1f6fb2, depthTest: false, dashSize: 0.1, gapSize: 0.06, transparent: true, opacity: 0.85 });
-      function limparGrupo(g) { g.children.slice().forEach(function (o) { g.remove(o); if (o.geometry) o.geometry.dispose(); if (o.material && o.material.map) { o.material.map.dispose(); o.material.dispose(); } }); }
+      function limparGrupo(g) { g.children.slice().forEach(function (o) { g.remove(o); if (o.geometry && !(o.geometry.userData && o.geometry.userData._guardada)) o.geometry.dispose(); if (o.material && o.material.map) { o.material.map.dispose(); o.material.dispose(); } }); }
       function segs(lista, mat, y) {
         if (!lista.length) return null;
         var pts = []; lista.forEach(function (s) { pts.push(V3(s[0], y), V3(s[1], y)); });
@@ -314,12 +314,39 @@
         limparGrupo(selGrp);
         var mo = edit.modelo; if (!mo || !mo.grupo || !pr.sel.length) return;
         var s = {}; pr.sel.forEach(function (id) { s[id] = 1; });
+        /* ⚠ MUITAS PEÇAS (janela pegando um galpão): o contorno vira a CAIXA de cada peça, num traço
+           só. As arestas exatas de 300 peças (parafusos, perfis com concordância) levavam 1 s para
+           calcular — selecionar travava a tela antes mesmo do Delete. */
+        if (pr.sel.length > MUITAS_SEL) { realcarCaixas(s, mo); return; }
         mo.grupo.children.forEach(function (m) {
           if (!s[m.userData.expressID] || !m.geometry) return;
-          var ln = new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry), matSelLinha);
+          /* a peça metálica tem a malha GUARDADA entre as reconstruções (js/bim.js, metGeo): as arestas
+             dela também ficam — selecionar 300 peças de novo não recalcula as arestas de cada uma */
+          var gd = m.geometry.userData || {}, ge = gd.metGeo ? (gd._arestas || (gd._arestas = new THREE.EdgesGeometry(m.geometry))) : new THREE.EdgesGeometry(m.geometry);
+          if (gd.metGeo) ge.userData._guardada = true;
+          var ln = new THREE.LineSegments(ge, matSelLinha);
           ln.matrixAutoUpdate = false; ln.matrix.copy(m.matrixWorld); ln.renderOrder = 1000; ln.raycast = function () {};
           selGrp.add(ln);
         });
+      }
+      var MUITAS_SEL = 24;
+      function realcarCaixas(s, mo) {
+        var st = estado(), pos = [], feito = {};
+        function caixa(c) {
+          var h = [c.comprimento / 2, c.altura / 2, c.espessura / 2], co = Math.cos(+c.rotY || 0), si = Math.sin(+c.rotY || 0), v = [];
+          [-1, 1].forEach(function (a) { [-1, 1].forEach(function (b) { [-1, 1].forEach(function (d) { var x = a * h[0], z = d * h[2]; v.push([c.cx + x * co + z * si, c.cy + b * h[1], c.cz - x * si + z * co]); }); }); });
+          [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]].forEach(function (k) { pos.push(v[k[0]][0], v[k[0]][1], v[k[0]][2], v[k[1]][0], v[k[1]][1], v[k[1]][2]); });
+        }
+        (st.caixas || []).forEach(function (c) { if (s[c.id] && isFinite(c.cx) && c.comprimento > 0) { caixa(c); feito[c.id] = 1; } });
+        (mo.elementos || []).forEach(function (e) {
+          if (!s[e.id] || feito[e.id] || !e.aabb) return; feito[e.id] = 1;
+          var a = e.aabb.min, b = e.aabb.max;
+          caixa({ cx: (a[0] + b[0]) / 2, cy: (a[1] + b[1]) / 2, cz: (a[2] + b[2]) / 2, comprimento: b[0] - a[0], altura: b[1] - a[1], espessura: b[2] - a[2], rotY: 0 });
+        });
+        if (!pos.length) return;
+        var g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+        var ln = new THREE.LineSegments(g, matSelLinha); ln.renderOrder = 1000; ln.frustumCulled = false; ln.raycast = function () {};
+        selGrp.add(ln);
       }
       function existe(id) { return !!Pr().tipoNoEstado(estado(), id); }
       function selDefinir(ids) {
@@ -704,8 +731,12 @@
         if ((e.key === "Delete" || e.key === "Del") && !edit.sub && pr.sel.length) {
           e.preventDefault(); e.stopPropagation();
           var stD = estado(), fix = pr.sel.filter(function (id) { return Pr().fixado(stD, id); }), lib = pr.sel.filter(function (id) { return fix.indexOf(id) < 0; });   /* P4: fixada não sai */
-          lib.forEach(function (id) { api.op({ op: "apagar", id: id }); });
-          hint(lib.length + " elemento(s) apagado(s) (Ctrl+Z desfaz um por vez)." + (fix.length ? " " + fix.length + " fixado(s) ficou(aram): use Desafixar antes." : "")); return;
+          /* UM lote para a seleção inteira: cada op refaz a cena toda (editRebuild), e apagar 276 peças uma a uma
+             travava o sistema por minutos (o Rogério achou em 12/10/2026). Um Ctrl+Z desfaz tudo de uma vez. */
+          var opsD = lib.map(function (id) { return { op: "apagar", id: id }; });
+          if (opsD.length === 1) api.op(opsD[0]);
+          else if (opsD.length) api.op({ op: "lote", id: "l" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), origem: "modificar", pedido: "Apagar " + opsD.length + " elementos", ops: opsD });
+          hint(lib.length + " elemento(s) apagado(s)" + (lib.length > 1 ? " (Ctrl+Z desfaz de uma vez)." : " (Ctrl+Z desfaz).") + (fix.length ? " " + fix.length + " fixado(s) ficou(aram): use Desafixar antes." : "")); return;
         }
         if (e.ctrlKey || e.metaKey || e.altKey) return;
         /* número com um traço em andamento: vai direto para a caixa */

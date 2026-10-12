@@ -43,6 +43,9 @@
       }
       if (typeof fn !== "function") return false;
       var R = this._R();
+      /* id que saiu da fita atual por ter substituto (BimRibbon.SUBSTITUIDOS_*):
+         quem o registra é o código da fita de sempre — não é erro, só não entra */
+      if (R && !R.comando(id) && R.substituto && R.substituto(id)) return false;
       if (R && !R.comando(id)) {
         try { console.warn('[BimCmd] ação registrada para "' + id + '", que não existe na fita.'); } catch (e) {}
         return false;
@@ -77,6 +80,12 @@
     executar: function (id, ctx) {
       var R = this._R();
       var c = R ? R.comando(id) : null;
+      /* o id antigo (atalho, busca de comandos, IA, botão de outra tela) vai
+         para o comando que o substituiu na fita atual */
+      if (!c && R && R.substituto) {
+        var novo = R.substituto(id);
+        if (novo) { var rs = this.executar(novo, ctx); rs.substituiu = id; return rs; }
+      }
       if (!c) return { ok: false, motivo: "Comando desconhecido.", id: id };
 
       var d = R.disponibilidade(id);

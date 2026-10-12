@@ -54,7 +54,11 @@
   /* o canto em L: topo (união pela linha de centro — a parede criada antes passa) ou meia-esquadria */
   var OPC_CANTO = [{ id: "topo", rotulo: "Topo — a criada antes passa (padrão)" }, { id: "esquadria", rotulo: "Meia-esquadria" }];
   var ROT_SUB = { parede: "Parede", laje: "Laje por contorno", furo: "Furo na laje", pilar: "Pilar por perfil", viga: "Viga por perfil", eixo: "Eixos", escada: "Escada", guarda: "Guarda-corpo", forro: "Forro", rampa: "Rampa", trelica: "Treliça",
-                  telhado: "Telhado", fundacao: "Fundação", "telhado-borda": "Bordas do telhado", "telhado-unir": "Unir telhado" };   /* P9: rampa, treliça */
+                  telhado: "Telhado", fundacao: "Fundação", "telhado-borda": "Bordas do telhado", "telhado-unir": "Unir telhado",
+                  /* P11 (Massa e terreno): sem o nome aqui a barra de status e Propriedades mostravam o
+                     id interno ("p11-topo — o tipo e os parâmetros…") — auditoria de 12/10/2026 */
+                  "p11-topo": "Topossólido", "p11-subregiao": "Sub-região", "p11-rotular": "Rotular curvas",
+                  "p11-plataforma": "Plataforma", "p11-divisa": "Linha de divisa", "p11-comp": "Componente de terreno" };   /* P9: rampa, treliça */
 
   var BimArqUI = {
     ativo: previa,

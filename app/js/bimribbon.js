@@ -345,6 +345,8 @@
     },
     disponibilidade: function (id) {
       var c = this.comando(id);
+      /* o id que saiu da fita atual responde pelo substituto (o executar vai para ele) */
+      if (!c && this.substituto && this.substituto(id)) return this.disponibilidade(this.substituto(id));
       if (!c) return { ok: false, motivo: "Comando não existe." };
       if (!this.visivel(c)) return { ok: false, motivo: "Recurso em prévia — ligue a prévia do modelador." };
       if (this._st.desabilitados[id]) return { ok: false, motivo: this._st.desabilitados[id] };
@@ -541,7 +543,7 @@
   Ribbon.LAYOUT_B1 = [
     { id: "arquivo", rotulo: "Arquivo", tipo: "backstage", paineis: [
       { nome: "Projeto", ids: ["novo-projeto", "abrir-opbim", "abrir-ifc", "arquivo-obra", "exemplo"] },
-      { nome: "Gerar e importar", ids: ["importar-outros", "gerar-volumetria", "p3d"] },
+      { nome: "Gerar e importar", ids: ["importar-outros", "gerar-volumetria"] },
       { nome: "Salvar e enviar", ids: ["salvar-opbim", "salvar-modelo", "exportar-ifc", "exportar-revit"] }] },
     { id: "arquitetura", rotulo: "Arquitetura", paineis: [
       { nome: "Construir", ids: ["parede", "piso", "porta", "janela", "cobertura", "componente", "editor"] },
@@ -549,9 +551,8 @@
       { nome: "Referência", ids: ["niveis", "nivel-atual", "plano-trabalho"] },
       { nome: "Por comando", ids: ["modelar-ia"] }] },
     { id: "alvenaria", rotulo: "Alvenaria", paineis: [
-      { nome: "Bloco", ids: ["familia-bloco", "modular", "junta"] },
       { nome: "Paginação", ids: ["paginar-alvenaria", "elevacoes", "graute", "blocok"] },
-      { nome: "Conferência", ids: ["conferir-modulacao", "peso-alvenaria"] }] },
+      { nome: "Conferência", ids: ["conferir-modulacao"] }] },
     { id: "acabamentos", rotulo: "Acabamentos", paineis: [
       { nome: "Parede", ids: ["parede-cebola", "presets-acabamento", "aplicar-ambiente"] },
       { nome: "Piso e revestimento", ids: ["paginar-piso", "paginar-parede", "pranchas-paginacao"] }] },
@@ -566,9 +567,9 @@
       { nome: "Combinar", ids: ["unir", "subtrair", "empurrar"] }] },
     { id: "anotar", rotulo: "Anotar", paineis: [
       { nome: "Medir", ids: ["medir", "area", "angulo", "snap", "limpar-medidas"] },
-      { nome: "Documentar", ids: ["cotas-auto", "anotacao", "foto", "pranchas"] }] },
+      { nome: "Documentar", ids: ["anotacao", "foto", "pranchas"] }] },
     { id: "analisar", rotulo: "Analisar", paineis: [
-      { nome: "Desenho", ids: ["planta-2d", "corte-2d", "corte-tecnico"] },
+      { nome: "Desenho", ids: ["planta-2d", "corte-2d"] },
       { nome: "Compatibilizar", ids: ["clash", "planta", "corte"] },
       { nome: "Tempo e custo", ids: ["quatro-d", "tarefas4d", "curva-s", "seis-d"] }] },
     { id: "quantitativos", rotulo: "Quantitativos", paineis: [
@@ -587,6 +588,32 @@
       { nome: "Modelos", ids: ["modelos", "remover-modelos"] },
       { nome: "Colaborar", ids: ["reuniao", "compartilhar"] }] }
   ];
+  /* ⚠ AUDITORIA DAS FERRAMENTAS (12/10/2026, pedido do Rogério: "ferramenta da
+     primeira versão que já tem ferramenta nova sai da fita"). Estes ids NÃO
+     entram na fita nova de propósito — cada um tem um substituto que faz o
+     mesmo trabalho no padrão atual. Eles continuam no mapa de sempre (fita sem
+     a cara nova) e quem chamar o id antigo (busca de comandos, IA, atalho,
+     botão de outra tela, e2e antiga) cai no substituto (`substituto`, usado
+     pelo BimCmd.executar). Roteiro do defeito: "Planta DXF → 3D" abria o
+     painel verde da primeira versão (só DXF) ao lado de "Gerar de desenho"
+     (DXF, PDF e foto); "Corte técnico" e "Cotas automáticas" ligavam o corte
+     3D antigo com o balão verde, quando o Corte A, B, C… e a Planta baixa 2D
+     (já com as cotas) fazem o desenho; os quatro botões da Alvenaria abriam
+     a MESMA tela da Conferência de alvenaria. docs/bim/AUDITORIA-FERRAMENTAS.md */
+  Ribbon.SUBSTITUIDOS_B1 = {
+    "p3d": "gerar-volumetria", "corte-tecnico": "corte-2d", "cotas-auto": "planta-2d",
+    "familia-bloco": "conferir-modulacao", "modular": "conferir-modulacao", "junta": "conferir-modulacao", "peso-alvenaria": "conferir-modulacao"
+  };
+  /* com o MODELADOR ligado o editor sintético da primeira versão sai: o painel
+     dele já não abre (pedido de 09/10/2026) e Parede, Piso, Pilar, Viga, o
+     Modificar e a tecla Delete fazem tudo o que ele fazia */
+  Ribbon.SUBSTITUIDOS_MODELADOR = { "editor": "parede" };
+  /* o id antigo que não está na fita atual → o comando que o substitui (ou null) */
+  Ribbon.substituto = function (id) {
+    if (this.comando(id)) return null;
+    var alvo = Ribbon.SUBSTITUIDOS_B1[id] || Ribbon.SUBSTITUIDOS_MODELADOR[id] || null;
+    return alvo && this.comando(alvo) ? alvo : null;
+  };
   /* confere o layout contra o mapa de sempre; devolve o relatório sem trocar nada */
   Ribbon.conferirLayout = function (layout) {
     var idx = {}, orig = [], vistos = {}, rep = [], desc = [];
@@ -595,7 +622,8 @@
     arr(layout).forEach(function (a) { arr(a.paineis).forEach(function (p) { arr(p.ids).forEach(function (id) {
       if (vistos[id]) rep.push(id); vistos[id] = true; if (!idx[id]) desc.push(id);
     }); }); });
-    var falt = orig.filter(function (id) { return !vistos[id]; });
+    /* o substituído só pode faltar se o substituto estiver no layout */
+    var falt = orig.filter(function (id) { var sb = Ribbon.SUBSTITUIDOS_B1[id]; return !vistos[id] && !(sb && vistos[sb]); });
     return { ok: !rep.length && !desc.length && !falt.length, repetidos: rep, desconhecidos: desc, faltando: falt, idx: idx };
   };
   /* `modelador` = a prévia do modelador ligada (padrão: pergunta ao BimPrevia
@@ -608,7 +636,7 @@
     if (mod) Ribbon.EXCLUSIVOS_MODELADOR.forEach(function (id) { if (self._EXCLUSIVOS.indexOf(id) < 0) self._EXCLUSIVOS.push(id); });
     else this._EXCLUSIVOS = this._EXCLUSIVOS.filter(function (id) { return Ribbon.EXCLUSIVOS_MODELADOR.indexOf(id) < 0; });
     ABAS = arr(layout || Ribbon.LAYOUT_B1).map(function (a) {
-      var o = { id: a.id, rotulo: a.rotulo, paineis: arr(a.paineis).map(function (p) { return { nome: p.nome, comandos: p.ids.map(function (id) {
+      var o = { id: a.id, rotulo: a.rotulo, paineis: arr(a.paineis).map(function (p) { return { nome: p.nome, comandos: p.ids.filter(function (id) { return !(mod && Ribbon.SUBSTITUIDOS_MODELADOR[id]); }).map(function (id) {
         /* rótulo trocado só na fita nova: CÓPIA do comando, o original fica como era para o restaurar */
         var ro = Ribbon.ROTULOS_B1[id], so = Ribbon.SOBRE_B1[id], sm = mod ? Ribbon.SOBRE_MODELADOR[id] : null; if (!ro && !so && !sm) return c.idx[id];
         var cp = {}; Object.keys(c.idx[id]).forEach(function (k) { cp[k] = c.idx[id][k]; });

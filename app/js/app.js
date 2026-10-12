@@ -1973,6 +1973,13 @@
      * incluído. Fecha modal CRUD aberto (senão a view troca por baixo e o modal
      * fica órfão por cima). Só recebe view JÁ validada por irPara. */
     _navegar: function (view) {
+      /* PROJETOS BIM (12/10/2026, js/bimprojetosui.js): sair do BIM com um projeto
+         alterado pergunta "Salvar as alterações em <nome>?" (Salvar / Não salvar /
+         Cancelar). A pergunta é um quadro, e a resposta volta a chamar esta função:
+         aqui só se PARA. Sem projeto aberto (ou sem alteração), segue como sempre. */
+      if (this.view === "bim" && view !== "bim" && typeof BimProjetosUI !== "undefined" && BimProjetosUI.antesDeSair) {
+        try { if (BimProjetosUI.antesDeSair(view) === false) return false; } catch (eBp) {}
+      }
       /* O CLIQUE ACIDENTAL NÃO PODE CUSTAR O FORMULÁRIO.
          Reproduzido: duplo-clique rápido mirando a sidebar com um cadastro
          aberto — o 1º clique fechava o modal (perdendo tudo digitado) e o

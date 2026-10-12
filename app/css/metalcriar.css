@@ -1,0 +1,48 @@
+/* =====================================================================
+ * metalcriar.css — a tela de criar peças metálicas clicando
+ * (js/metalcriarui.js): a parte da barra de opções da ferramenta, a busca
+ * de perfil e a caixa de medida junto ao cursor. Só tokens do css/app.css
+ * (tema claro e escuro); tudo nasce escondido — sem a prévia do modelador
+ * nada disto aparece.
+ * ===================================================================== */
+
+/* a parte da ferramenta metálica na barra de opções (dentro do .bbo-slot) */
+.mcr-barra { position: relative; display: none; align-items: center; gap: 10px; flex-wrap: nowrap; font-size: var(--t-micro); color: var(--texto); }
+.mcr-campo { display: inline-flex; align-items: center; gap: 4px; color: var(--texto-fraco); white-space: nowrap; }
+.mcr-campo input, .mcr-campo select {
+  padding: 1px 4px; border: 1px solid var(--linha); border-radius: var(--raio-sm);
+  background: var(--bg); color: var(--texto); font-size: var(--t-micro);
+}
+.mcr-campo input:focus-visible, .mcr-campo select:focus-visible { outline: 2px solid var(--aco-claro); outline-offset: 0; }
+.mcr-perfil input { width: 15em; font-variant-numeric: tabular-nums; }
+.mcr-bt { white-space: nowrap; }
+
+/* a lista da busca de perfil (abre embaixo do campo) */
+.mcr-pop {
+  position: absolute; top: calc(100% + 4px); z-index: 30; width: 300px; max-height: 340px; overflow: auto;
+  padding: 4px; border: 1px solid var(--linha); border-radius: var(--raio-sm);
+  background: var(--card-bg); color: var(--texto); box-shadow: var(--sombra);
+}
+.mcr-pop-grupo { padding: 6px 6px 2px; color: var(--texto-fraco); font-size: var(--t-micro); font-weight: 600; }
+.mcr-pop-item {
+  display: flex; justify-content: space-between; gap: 8px; width: 100%; padding: 3px 6px; border: 0; border-radius: var(--raio-sm);
+  background: transparent; color: var(--texto); font-size: var(--t-micro); text-align: left; cursor: pointer;
+}
+.mcr-pop-item:hover, .mcr-pop-item:focus-visible { background: var(--surface-2); outline: none; }
+.mcr-pop-kg { color: var(--texto-fraco); font-variant-numeric: tabular-nums; }
+.mcr-pop-vazio { padding: 6px; color: var(--texto-fraco); font-size: var(--t-micro); }
+
+/* medida viva e digitar comprimento/ângulo junto ao cursor (3D) */
+.mcr-digita {
+  position: absolute; z-index: 7; display: none; align-items: center; gap: 8px;
+  padding: 4px 8px; border: 1px solid var(--aco); border-radius: var(--raio-sm);
+  background: var(--card-bg); color: var(--texto); font-size: var(--t-micro); font-weight: 500;
+  box-shadow: var(--sombra-sm); white-space: nowrap; pointer-events: auto;
+}
+.mcr-digita label { display: inline-flex; align-items: center; gap: 4px; color: var(--texto-fraco); }
+.mcr-digita input {
+  width: 64px; padding: 1px 4px; border: 1px solid var(--linha); border-radius: var(--raio-sm);
+  background: var(--bg); color: var(--texto); font-size: var(--t-micro); font-variant-numeric: tabular-nums;
+}
+.mcr-digita input:focus { outline: 2px solid var(--aco); outline-offset: 0; }
+.mcr-vivo { color: var(--aco); font-weight: 600; font-variant-numeric: tabular-nums; }

@@ -193,11 +193,15 @@
     var res = novoRes("placaBase", par, [mb]);
     var s = mb.s, bal = 0.075, Bp = num(par.B, Math.ceil((s.larg + 2 * bal) * 100 - 1e-9) / 100), Np = num(par.N, Math.ceil((s.alt + 2 * bal) * 100 - 1e-9) / 100), t = num(par.t, 0.025);
     var e = par.borda != null ? c.eP : Math.max(c.eP, cima5(N().bordaMin(c.db, "laminada").e) / 1000);   /* a borda pedida vale (e a conferência avisa) */
-    var n6 = Math.round(num(par.nChumb, 4)) === 6;
+    var n6 = Math.round(num(par.nChumb, 4)) === 6, porLado = Math.round(num(par.porLado, 2));
     /* a placa EMBAIXO do pilar: u na largura (A), v na altura (B), espessura para BAIXO (A × B = −X) */
     var P0 = mb.P0, O = V().add(V().add(P0, V().mul(mb.A, -Bp / 2)), V().mul(mb.B, -Np / 2));
     var pts = [[e, e], [Bp - e, e], [Bp - e, Np - e], [e, Np - e]];
-    if (n6) pts.push([e, Np / 2], [Bp - e, Np / 2]);
+    if (porLado > 2) {
+      /* base engastada (js/acoligcalc.js): porLado chumbadores em CADA extremidade da direção do momento (v = e e v = N − e) */
+      pts = [];
+      [e, Np - e].forEach(function (vv) { for (var iq = 0; iq < porLado; iq++) pts.push([e + iq * (Bp - 2 * e) / (porLado - 1), vv]); });
+    } else if (n6) pts.push([e, Np / 2], [Bp - e, Np / 2]);
     var fx = N().furo(c.db, c.furo);
     var pl = M().chapa({ origem: O, ex: mb.A, ey: mb.B, t: t, ret: { L: Bp, B: Np }, papel: "Placa de base", aco: par.aco || "ASTM A36", lig: res.lig, soldadaEm: pilar.id,
       solda: solda(pernaMin(t, Math.min(num(mb.perfil.tf, t), num(mb.perfil.tw, t))), "contorno", 2 * (s.larg + s.alt), false),

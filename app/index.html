@@ -61,6 +61,7 @@
   <link rel="stylesheet" href="css/bimprecisao.css">
   <!-- PLANTA: barra de opções da ferramenta (sob a fita) e a prévia de modelar na planta baixa — só com a prévia do modelador -->
   <link rel="stylesheet" href="css/bimbarraopcoes.css">
+  <link rel="stylesheet" href="css/metalcriar.css">
   <link rel="stylesheet" href="css/bimanot.css">
   <link rel="stylesheet" href="css/bimprops.css">
   <link rel="stylesheet" href="css/bimtabela.css">
@@ -375,6 +376,8 @@
   <script src="js/metalligacao.js"></script>
   <script src="js/metalgalpao.js"></script>
   <script src="js/metalfab.js"></script>
+  <!-- METÁLICA — CRIAR CLICANDO (12/10/2026): pilar, viga, diagonal, terça e chapa pelos pontos clicados, encaixe 3D, editar pelas Propriedades (op metalAjustar), grade e cotas de eixos — motor puro -->
+  <script src="js/metalcriar.js"></script>
   <script src="js/familia.js"></script>
   <!-- FAMIMPORT: família importada (malha por tipo, .opfam v2 do plugin) e o leitor do .rfa (CFB/PartAtom) -->
   <script src="js/cfb.js"></script>
@@ -534,8 +537,37 @@
   <script src="js/bimterrenoui.js"></script>
   <!-- P9: Rampa, Escada em U e Treliça na fita (só com a prévia do modelador) -->
   <script src="js/bimestrutui.js"></script>
-  <!-- METÁLICA & MECÂNICA: a aba da disciplina (Peças, Ligações, Galpão, Fabricação) — só com a prévia do modelador -->
+  <!-- METÁLICA — CÁLCULO DO GALPÃO (12/10/2026): os motores puros do cálculo na ordem do docs/metalica/CONTRATO.md
+       (materiais, seção, formados a frio, terças e travessas, análise, ações, modelo, NBR 8800, vento, ligações,
+       orquestrador — o js/perfisaco.js já carregou acima), memorial, pranchas, CYPE, as telhas e paredes dos catálogos,
+       as normas, as dicas ilustradas e a tela do cálculo. O js/acocalcworker.js é o mesmo arquivo que roda no Web
+       Worker: aqui ele só dá a prévia do vento (V0, q, vão da telha) e o cálculo sem Worker. -->
+  <script src="js/acomateriais.js"></script>
+  <script src="js/acosecao.js"></script>
+  <script src="js/acofsm.js"></script>
+  <script src="js/acodim14762.js"></script>
+  <script src="js/acosecundarias.js"></script>
+  <script src="js/acoanalise.js"></script>
+  <script src="js/acocargas.js"></script>
+  <script src="js/acomodelo.js"></script>
+  <script src="js/acodim8800.js"></script>
+  <script src="js/acoisopletas.js"></script>
+  <script src="js/acovento.js"></script>
+  <script src="js/acoligcalc.js"></script>
+  <script src="js/acodimensionar.js"></script>
+  <script src="js/acomemorial.js"></script>
+  <script src="js/acopranchas.js"></script>
+  <script src="js/acocype.js"></script>
+  <script src="js/acofechamentos.js"></script>
+  <script src="js/aconormas.js"></script>
+  <script src="js/metaldicas.js"></script>
+  <script src="js/dicarica.js"></script>
+  <script src="js/acocalcworker.js"></script>
+  <script src="js/metalcalcui.js"></script>
+  <!-- METÁLICA & MECÂNICA: a aba da disciplina (Peças, Ligações, Galpão, Cálculo, Fabricação) — só com a prévia do modelador -->
   <script src="js/metalui.js"></script>
+  <!-- METÁLICA — CRIAR CLICANDO: a tela (ferramentas no 3D e na planta, plano de trabalho visível, níveis no 3D, cotas dos eixos, Propriedades da ferramenta e da peça) — só com a prévia do modelador -->
+  <script src="js/metalcriarui.js"></script>
   <script src="js/bimp3ui.js"></script>
   <!-- CARPINTARIA & MARCENARIA: a tela (aba da disciplina; só com o modelador) -->
   <script src="js/marcenariaui.js"></script>
@@ -564,6 +596,9 @@
   <!-- MATERIAIS (09/10/2026): materiais do projeto (Gerenciar › Biblioteca) — motor puro em js/bimmateriais.js, tela e ganchos em js/bimmateriaisui.js -->
   <script src="js/bimmateriais.js"></script>
   <script src="js/bimmateriaisui.js"></script>
+  <!-- PROJETOS BIM (12/10/2026): o BIM abre na tela inicial (nada carrega sozinho); projeto com nome e obra, salvo no sistema (IndexedDB) e na pasta do computador, recentes — motor puro em js/bimprojetos.js, tela e ganchos em js/bimprojetosui.js -->
+  <script src="js/bimprojetos.js"></script>
+  <script src="js/bimprojetosui.js"></script>
   </template>
   <template data-grupo="nucleo">
   <script src="js/iaacabamento.js"></script>
@@ -639,6 +674,8 @@
        depois do último clássico do BIM, como o navegador fazia com ele aqui -->
   <template data-grupo="bim">
   <script type="module" src="js/bim.js"></script>
+  <!-- METÁLICA: a vista 3D dos resultados do cálculo (deformada, esforços, flambagem, aproveitamento) — módulo ES; window.MetalCalcVista -->
+  <script type="module" src="js/metalcalcvista.js"></script>
   </template>
 
   <!-- ⚠ QUEM RODA O NÚCLEO SÃO ESTES DOIS (10/10/2026). Os <script> acima

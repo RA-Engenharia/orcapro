@@ -465,6 +465,17 @@ html[data-visual="nova"] .bim-revit .rv-vistabar [data-rv-vb="snap"],
 html[data-visual="nova"] .bim-revit .rv-vistabar [data-rv-vb="home"],
 html[data-visual="nova"] .bim-revit .rv-vistabar [data-rv-vb="foto"] { display: none !important; }
 
+/* AUDITORIA DAS FERRAMENTAS (12/10/2026): "Só o 3D" (modo foco) trazia de volta a barra
+   flutuante da PRIMEIRA VERSÃO (+ IFC, Exemplo, lixeira, Ultra roxo, Órbita verde, o dock de
+   ícones à esquerda) por cima do ViewCube e do "Sair do foco" — o "modo antigo" que o
+   Rogério via ao clicar. Na cara nova, no computador, ela não volta: cada botão dela mora
+   na fita, e Esc (ou "Sair do foco") devolve a fita. No celular (≤ 640 px) continua sendo
+   a barra de ferramentas (css/bim-revit.css). */
+@media (min-width: 641px) {
+  html[data-visual="nova"] .bim-revit .rv-palco [data-bim-barra],
+  html[data-visual="nova"] .bim-revit .rv-palco [data-bim-barra-toggle] { display: none !important; }
+}
+
 /* DISCIPLINA DA MODELAGEM (09/10/2026, js/bimdisciplinas.js): na pele nova a
    aba ativa é a pílula — ela, a aba Arquivo e os ícones da fita ganham a cor
    da disciplina (só com `data-rv-disc-on`; em "Todas" fica a cor da marca).

@@ -127,7 +127,10 @@
       var u2 = eixoU(rot), n2 = eixoN(rot), hL = el.comprimento / 2, hE = el.espessura / 2;
       cantos = retangulo(c, u2, n2, hL, hE);
       bordas(cantos, id, "face", segs, pontos);
-      if (el.tipo === "parede" || el.tipo === "viga") {
+      /* METÁLICA (js/metalcriar.js): a barra de aço deitada (viga, terça, diagonal) nasce com o eixo no X
+         local — a linha de centro da pegada é o eixo dela na planta, e a ponta agarra como a da viga */
+      var barraAco = el.tipo === "metal" && el.metal && el.metal.kind === "perfil" && el.metal.ex && Math.abs(num(el.metal.ex.y, 0)) < 0.9 && Math.abs(num(el.metal.ex.z, 0)) < 1e-6;   /* eixo no X local (a terça do galpão, com o eixo em Z, fica de fora) */
+      if (el.tipo === "parede" || el.tipo === "viga" || barraAco) {
         /* a LINHA DE CENTRO da parede: pontas e meio são o que o cursor agarra primeiro */
         var e0 = soma(c, u2, -hL), e1 = soma(c, u2, hL);
         segs.push({ a: e0, b: e1, id: id, k: "eixo" });

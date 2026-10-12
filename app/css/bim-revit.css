@@ -950,3 +950,49 @@
 .bim-sel-janela[data-modo="cruzando"] { border: 1.5px dashed #16a34a; background: rgba(22, 163, 74, .10); }
 html[data-bim-mao="1"] canvas[data-bim-nav] { cursor: grab !important; }
 canvas[data-bim-nav][data-bim-pan] { cursor: grabbing !important; }
+
+/* =====================================================================
+ * PAINÉIS FLUTUANTES DA PRIMEIRA VERSÃO DO VISUALIZADOR (auditoria das
+ * ferramentas da fita, 12/10/2026 — docs/bim/AUDITORIA-FERRAMENTAS.md).
+ * Plano de corte 3D, Corte 3D livre, Visibilidade, Pavimentos, Cores por
+ * sistema, Realidade virtual, Requisitar material, Blocok, Snap e o editor
+ * nascem no js/bim.js com a cor em linha; ela passou para os tokens
+ * (--card-bg, --linha, --texto, --aco) e a classe `bim-flut` dá o resto do
+ * padrão atual (o mesmo dos Snaps do editor, css/bimprecisao.css). O
+ * tools/e2e-bim-ferramentas.js reprova painel da fita sem ela ou com a cor
+ * da primeira versão de volta.
+ * ===================================================================== */
+.bim-flut { box-shadow: var(--sombra, 0 10px 28px -14px rgba(15,30,50,.25)); font-family: var(--fonte, inherit); line-height: 1.45; }
+.bim-flut b { font-weight: 600; }
+.bim-flut input[type="range"] { accent-color: var(--aco, #2d6a9c); }
+/* na casca o canto de baixo à esquerda é do selo da disciplina: os painéis de
+   baixo sobem acima dele (antes o último botão do Plano de corte ficava atrás) */
+.rv-palco .bim-flut.bim-flut-baixo { bottom: 46px !important; max-height: calc(100% - 120px); overflow: auto; }
+/* o carimbo da data do 4D também sobe acima do selo (os dois se cobriam) */
+.rv-palco .b4-hud { left: 10px; bottom: 46px; }
+/* o balão de dica (js/bim.js S._hint): pílula grafite do padrão, não o verde-limão da 1ª versão */
+.bim-dica { font-family: var(--fonte, inherit); letter-spacing: .005em; }
+
+/* AVISO DENTRO DAS TELAS DO BIM (Níveis, Conferência de alvenaria, Paginar, Elevação,
+   Gerar de desenho): eram caixas com o hex escrito em linha (#dc262618, #f59e0b18…). O
+   desenho é o do Modulo.aviso (faixa colorida à esquerda), pelos tokens — claro e escuro. */
+.bim-aviso { padding: 8px 10px; border-radius: var(--raio-sm, 8px); border: 1px solid var(--linha); border-left: 4px solid var(--aco); background: var(--card-bg); color: var(--texto); font-size: var(--t-peq, 12.5px); line-height: 1.5; }
+.bim-aviso-erro { border-left-color: var(--vermelho); }
+.bim-aviso-alerta { border-left-color: var(--amarelo); }
+.bim-aviso-info { border-left-color: var(--aco); }
+.bim-aviso-ok { border-left-color: var(--verde); }
+td.bim-aviso { border-radius: 0; border-width: 0 0 0 4px; }
+
+/* CAMPOS CRUS DAS TELAS DO BIM: o app só desenha select/busca/data fora do `.field`, e os
+   quadros do BIM (Níveis, Conferência de alvenaria, Paginar, Elevação, Novo projeto…) têm
+   <input> de número e texto soltos — saíam com a caixa fina do navegador ao lado de selects
+   do padrão. Mesmo desenho do select do app (css/app.css). */
+body.bim-app .modal .body input:not([type]):not(.cell),
+body.bim-app .modal .body input[type="text"]:not(.cell),
+body.bim-app .modal .body input[type="number"]:not(.cell) {
+  background-color: var(--surface); border: 1px solid var(--linha); border-radius: var(--raio-sm);
+  padding: 5px 9px; color: var(--texto); line-height: 1.4; font: inherit;
+}
+body.bim-app .modal .body input:not([type]):not(.cell):focus-visible,
+body.bim-app .modal .body input[type="text"]:not(.cell):focus-visible,
+body.bim-app .modal .body input[type="number"]:not(.cell):focus-visible { border-color: var(--aco); outline: none; box-shadow: var(--anel); }

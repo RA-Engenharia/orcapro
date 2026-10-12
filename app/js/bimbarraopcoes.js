@@ -175,6 +175,14 @@
       return (o && o.grade && c.snap && c.grade) ? this.arredondar(base, aj, c.passo) : aj;
     },
     ehTraco: function (sub) { return !!TRACO[sub]; },
+    /* uma ferramenta de OUTRO módulo (as da metálica, js/metalcriarui.js) diz o nome que a barra
+       mostra e se é de TRAÇO (tem ponto base: ortogonal, incrementos e o comprimento digitado na planta) */
+    declarar: function (sub, o) {
+      if (!sub || !o || typeof sub !== "string") return false;
+      if (o.rotulo) ROTULOS[sub] = String(o.rotulo).slice(0, 40);
+      if (o.traco) TRACO[sub] = 1; else delete TRACO[sub];
+      return true;
+    },
     rotulo: function (sub) { return ROTULOS[sub] || (sub ? String(sub) : ""); },
     textoInc: function (inc) { return inc && inc.length ? inc.map(function (g) { return g + "°"; }).join(" ") : "livre"; },
     fmtAng: fmtAng

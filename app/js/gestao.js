@@ -5900,7 +5900,9 @@
       } catch (e) {}
     },
 
-    formObra: function (o) {
+    /* `depois(obra, ehNova)`: quem abriu o cadastro e precisa da obra gravada
+       (o "+ Criar obra nova…" do Novo projeto do BIM) — roda depois do save */
+    formObra: function (o, depois) {
       /* ⚠ NOME PRÓPRIO, DE PROPÓSITO. Não use `self` aqui: o navegador já tem
          um `self` embutido (é o `window`), então escrever `self` por engano
          não dá erro — dá silêncio, e o silêncio custou o cadastro do diário
@@ -6097,6 +6099,7 @@
         if (!ehNovo && String(obj.inicio || "") !== String(o.inicio || "") && typeof App !== "undefined" && App._cronoInicioObraMudou) {
           try { App._cronoInicioObraMudou(obj, o.inicio || null); } catch (eIn) {}
         }
+        if (typeof depois === "function") { try { depois(obj, ehNovo); } catch (eDp) {} }
       });
 
       /* UI.modal ja colocou o form no DOM (sincrono) — mesma ordem usada no
@@ -10385,7 +10388,9 @@
         reg[k] = function (e) { var b = B(); if (b && b[k]) { b[k](e.ligado); return true; } return false; };
       });
       reg.voo = function (e) { var b = B(); if (b && b.voo) { b.voo(e.ligado); return true; } return false; };
-      reg.home = function () { var b = B(); if (b && b.home) { b.home(); return true; } return false; };
+      /* Enquadrar e Órbita mexem só na câmera: o recado na barra de status confirma o clique (sem ele o
+         botão parecia não fazer nada — auditoria da fita, 12/10/2026) */
+      reg.home = function () { var b = B(); if (b && b.home) { b.home(); BimShell.status("Modelo inteiro enquadrado."); return true; } return false; };
       /* ⚠ MODO MESA (js/bimmesa.js): tablet ou tela deitada na mesa — o 3D ocupa
          a tela (foco), as ferramentas ficam numa barra ao lado e a câmera TRAVA.
          Quem sai (pela fita, pelo botão rápido ou pelo "Sair da mesa" da própria
@@ -10415,7 +10420,10 @@
       ["cota", "cota-iguais", "cota-todas", "cota-numerar", "cota-planilha", "cota-limpar", "limpar-medidas", "p3d", "blocok", "req-bim", "exemplo"].forEach(function (k) { reg[k] = botao(k); });
       reg.editor = botao("editar");
       reg["remover-modelos"] = botao("limpar");
-      reg.orbita = function () { var b = B(); if (!b || !b.botao) return false; try { BimRibbon.setAtivo("voo", false); } catch (e) {} return b.botao("orbita"); };
+      reg.orbita = function () { var b = B(); if (!b || !b.botao) return false; try { BimRibbon.setAtivo("voo", false); } catch (e) {} var ok = b.botao("orbita"); if (ok) BimShell.status("Órbita: arraste para girar em volta do modelo (o modo de voo saiu)."); return ok; };
+      /* apagar cotas também confirma (sem cota nenhuma o clique era mudo) */
+      reg["limpar-medidas"] = function () { var ok = botao("limpar-medidas")(); if (ok) BimShell.status("Medidas da trena, da área e do ângulo apagadas."); return ok; };
+      reg["cota-limpar"] = function () { var ok = botao("cota-limpar")(); if (ok) BimShell.status("Cotas da rede apagadas."); return ok; };
       reg.ultra = function (e) { var b = B(); if (b && b.setUltra) { b.setUltra(!!e.ligado); return true; } return false; };
       reg.familias = function () { self._bimAbrirPainel("familias"); return true; };
       /* o arquivo da obra (.zip) não pede modelo aberto: é ele que traz o modelo */
@@ -10542,8 +10550,19 @@
       reg["corte-tecnico"] = function () { var b = B(); if (b && b.corte) { b.corte(true); BimShell.status("Trace a linha do corte na planta: o desenho técnico sai dela."); return true; } return false; };
       reg["anotacao"] = function (e) {
         var b = B(); if (!b || !b.editar) return false;
+        /* ⚠ COM A BARRA DE OPÇÕES (modelador + casca) O PAINEL DO EDITOR NÃO ABRE. Ligar só o
+           editor deixava um balão "escolha uma ferramenta no painel" e o recado mandava procurar
+           "a barra do viewer" — nenhuma das duas existe na tela (auditoria de 12/10/2026). Aqui a
+           ferramenta Anotar é armada direto, com o campo Texto na barra de opções. */
+        var semPainel = !!(window.BimBarraOpcoes && BimBarraOpcoes.substituiPainel && BimBarraOpcoes.substituiPainel());
+        if (semPainel && b.editarArmar) {
+          if (!e.ligado) { b.editarArmar(null); BimShell.status("Anotação desligada."); return true; }
+          b.editarArmar("anotar", {});
+          BimShell.status("Anotação: escreva o texto na barra de opções (Texto) e clique no ponto do modelo. Esc encerra.");
+          return true;
+        }
         b.editar(!!e.ligado);
-        BimShell.status(e.ligado ? "Modo de edição ligado — a anotação fica na barra do viewer." : "Editor desligado.");
+        BimShell.status(e.ligado ? "Editor ligado: escolha Anotar no painel do editor, escreva o texto e clique no ponto do modelo." : "Editor desligado.");
         return true;
       };
       /* os três abrem o mesmo editor; qual peça criar é escolha dentro dele */
@@ -10783,6 +10802,8 @@
       try { if (window.BimMateriaisUI) BimMateriaisUI.registrar(reg, self); } catch (eMat) {}
       /* METÁLICA & MECÂNICA (09/10/2026): a aba da disciplina — peças, ligações, galpão e fabricação (DSTV, DXF, listas, IFC) — js/metalui.js (sem a prévia do modelador, sai na hora) */
       try { if (window.BimMetalUI) BimMetalUI.registrar(reg, self); } catch (eMet) {}
+      /* PROJETOS BIM (12/10/2026): Novo/Abrir/Salvar passam pelo projeto, e um comando com a tela inicial na frente é a pessoa começando a trabalhar — js/bimprojetosui.js. POR ÚLTIMO: ele embrulha o que os outros registraram */
+      try { if (window.BimProjetosUI) BimProjetosUI.registrar(reg, self); } catch (eProj) {}
 
       BimCmd.registrar(reg);
       /* a biblioteca de famílias chega ao visor antes de qualquer edição gravada ser reaplicada */
@@ -10865,7 +10886,7 @@
       var L = N.listar(lista), v = N.validar(lista);
       var h = "";
       if (novo) {
-        h += '<div style="padding:8px 10px;border-radius:8px;background:#2e6f9e14;border:1px solid #2e6f9e33;font-size:12.5px;margin-bottom:10px">' +
+        h += '<div class="bim-aviso bim-aviso-info" style="margin-bottom:10px">' +
              "Esta obra ainda não tem níveis. Abaixo está uma sugestão de térreo e cobertura com pé-direito de 2,80 m — " +
              "ajuste e clique em <b>Salvar</b> para criar.</div>";
       }
@@ -10877,9 +10898,9 @@
              '<td><input type="number" step="0.01" data-gniv="elevacao" data-id="' + Util.esc(n.id) + '" value="' + n.elevacao + '" style="width:90px"></td>' +
              "<td>" + (n.peDireito != null
                ? "<b>" + n.peDireito.toFixed(2) + "</b>" + (n.ultimo ? ' <span class="muted" style="font-size:11px">(informado)</span>' : ' <span class="muted" style="font-size:11px">(até o de cima)</span>')
-               : '<span style="color:#b45309">—</span>') + "</td>" +
+               : '<span style="color:var(--amarelo)">—</span>') + "</td>" +
              '<td><input type="number" step="0.05" data-gniv="corte" data-id="' + Util.esc(n.id) + '" value="' + n.corte + '" style="width:80px"></td>' +
-             '<td><button class="btn sm" data-gacao="niv-excluir" data-id="' + Util.esc(n.id) + '" style="color:#dc2626;font-size:11px;padding:1px 6px" title="excluir nível">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></td></tr>';
+             '<td><button class="btn sm" data-gacao="niv-excluir" data-id="' + Util.esc(n.id) + '" style="color:var(--vermelho);font-size:11px;padding:1px 6px" title="excluir nível">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></td></tr>';
       });
       h += "</tbody></table>";
       h += '<p class="muted" style="font-size:11.5px;margin:8px 0 0">' +
@@ -10887,11 +10908,11 @@
            "é a elevação que está errada. O <b>corte da planta</b> é a altura em que o desenho corta a parede — " +
            "1,20 m passa acima do peitoril e abaixo do topo da porta.</p>";
       if (v.erros.length) {
-        h += '<div style="margin-top:10px;padding:8px 10px;border-radius:8px;background:#dc262618;border:1px solid #dc262644;font-size:12.5px">' +
+        h += '<div class="bim-aviso bim-aviso-erro" style="margin-top:10px">' +
              v.erros.map(function (x) { return "• " + Util.esc(x); }).join("<br>") + "</div>";
       }
       if (v.avisos.length) {
-        h += '<div style="margin-top:8px;padding:8px 10px;border-radius:8px;background:#f59e0b18;border:1px solid #f59e0b44;font-size:12.5px">' +
+        h += '<div class="bim-aviso bim-aviso-alerta" style="margin-top:8px">' +
              v.avisos.map(function (x) { return "• " + Util.esc(x); }).join("<br>") + "</div>";
       }
       return h;
@@ -11048,7 +11069,7 @@
       h += "</table>";
 
       if (!comPeso) {
-        h += '<div style="margin-top:10px;padding:10px 12px;border-radius:8px;background:#f59e0b18;border:1px solid #f59e0b44;font-size:12.5px">' +
+        h += '<div class="bim-aviso bim-aviso-alerta" style="margin-top:10px">' +
              "<b>Ainda não há como lançar parede num nível.</b> Os níveis estão prontos e o peso dos blocos é calculado " +
              "na <b>Conferência de modulação</b> — mas a conferência ainda não pergunta o nível, e nada é gravado. " +
              "Esta tela está aqui com a estrutura montada; enquanto o lançamento não existir, ela não tem o que somar.<br><br>" +
@@ -11196,14 +11217,14 @@
              "<th>Peça</th><th>Dimensão</th><th>Peso (kg)</th><th>De onde vem</th><th></th></tr></thead><tbody>";
         B.familia(f.id).pecas.forEach(function (pc) {
           var o = B.origemDoPeso(pc.id);
-          var cor = { "MEU FORNECEDOR": "#16a34a", "REFERÊNCIA": "#6b7280", "CALCULADO": "#b45309", "SEM FONTE": "#dc2626" }[o.rotulo] || "#6b7280";
+          var tom = { "MEU FORNECEDOR": "ok", "REFERÊNCIA": "neutro", "CALCULADO": "alerta", "SEM FONTE": "erro" }[o.rotulo] || "neutro";
           var dica = [o.nota, o.formula, o.confere ? "Conferido: " + o.confere : ""].filter(Boolean).join(" ");
           h += '<tr data-peca="' + Util.esc(pc.id) + '">' +
                "<td>" + Util.esc(pc.nome) + "</td>" +
                "<td class='muted'>" + Math.round(pc.l * 100) + "×" + Math.round(pc.a * 100) + "×" + Math.round(pc.c * 100) + "</td>" +
                '<td><input type="number" step="0.01" min="0" style="width:80px" data-gpeso="' + Util.esc(pc.id) + '" value="' +
                  (o.kg == null ? "" : o.kg) + '" placeholder="informe"></td>' +
-               "<td><span class='g-pill' style='background:" + cor + "1a;color:" + cor + ";font-size:10px'>" + Util.esc(o.rotulo) + "</span> " +
+               "<td><span class='mod-pil mod-pil-" + tom + "' data-gpeso-selo>" + Util.esc(o.rotulo) + "</span> " +
                  (o.fabricante ? '<span class="muted" style="font-size:11px">' + Util.esc(String(o.fabricante).split("|").join(" e ")) + "</span>" : "") +
                  (dica ? ' <span class="muted" style="font-size:10.5px" title="' + Util.esc(dica) + '">ⓘ</span>' +
                          '<span class="rv-nota-peca">' + Util.esc(dica) + "</span>" : "") +
@@ -11302,9 +11323,9 @@
       var tr = box.querySelector('tr[data-peca="' + pecaId + '"]');
       if (!tr) return;
       var o = B.origemDoPeso(pecaId);
-      var cor = { "MEU FORNECEDOR": "#16a34a", "REFERÊNCIA": "#6b7280", "CALCULADO": "#b45309", "SEM FONTE": "#dc2626" }[o.rotulo] || "#6b7280";
-      var pill = tr.querySelector(".g-pill");
-      if (pill) { pill.textContent = o.rotulo; pill.style.background = cor + "1a"; pill.style.color = cor; }
+      var tom = { "MEU FORNECEDOR": "ok", "REFERÊNCIA": "neutro", "CALCULADO": "alerta", "SEM FONTE": "erro" }[o.rotulo] || "neutro";
+      var pill = tr.querySelector("[data-gpeso-selo]");
+      if (pill) { pill.textContent = o.rotulo; pill.className = "mod-pil mod-pil-" + tom; }
       var inp = tr.querySelector("[data-gpeso]");
       if (inp && o.kg != null) inp.value = o.kg;
     },
@@ -11632,7 +11653,7 @@
         '<span class="muted">— muda a classe da argamassa e o tamanho do pano entre juntas</span></label>';
 
       if (st.erro) {
-        return h + '<div style="padding:10px;border-radius:8px;background:#dc262618;border:1px solid #dc262644;font-size:12.5px">' + Util.esc(st.erro) + "</div>";
+        return h + '<div class="bim-aviso bim-aviso-erro">' + Util.esc(st.erro) + "</div>";
       }
 
       /* ---- vãos, só em parede ---- */
@@ -11649,7 +11670,7 @@
                  return '<label style="font-size:10.5px">' + ["da esquerda", "do piso", "largura", "altura"][ki] +
                    '<input type="number" step="0.05" data-pagvao="' + i + ":" + k + '" value="' + v[k] + '" style="width:72px;display:block"></label>';
                }).join("") +
-               '<button class="btn sm" data-pagacao="vao-del" data-i="' + i + '" style="color:#dc2626">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>';
+               '<button class="btn sm" data-pagacao="vao-del" data-i="' + i + '" style="color:var(--vermelho)">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>';
         });
         h += "</div>";
       }
@@ -11663,9 +11684,9 @@
                 tres linhas se sobrepunham. Aqui o botao volta a ser bloco. */
              'style="flex:1 1 190px;min-width:170px;display:block;white-space:normal;line-height:1.4;' +
              'text-align:left;padding:8px 10px;height:auto;border:1px solid ' +
-             (sel ? "var(--azul,#2e6f9e)" : "var(--linha)") + ";" + (sel ? "background:#2e6f9e12;" : "") + '" title="' + Util.esc(o.quando) + '">' +
+             (sel ? "var(--aco)" : "var(--linha)") + ";" + (sel ? "background:color-mix(in srgb,var(--aco) 7%,transparent);" : "") + '" title="' + Util.esc(o.quando) + '">' +
              '<b style="font-size:11.5px;display:block">' + Util.esc(o.rotulo) + "</b>" +
-             '<span style="font-size:11px;color:' + (r.bolachas || r.rentes ? "#dc2626" : "#15803d") + '">' +
+             '<span style="font-size:11px;color:' + (r.bolachas || r.rentes ? "var(--vermelho)" : "var(--verde)") + '">' +
              (r.bolachas ? r.bolachas + " recorte(s) abaixo de " + Math.round(r.recorteMin * 100) + " cm"
               : r.rentes ? r.rentes + " corte(s) rente(s) — lasca de poucos mm"
                          : "menor recorte " + Math.round((r.menorRecorte || Math.min(r.peca.l, r.peca.c)) * 100) + " cm") +
@@ -11680,7 +11701,7 @@
       if (sel) h += '<p class="muted" style="font-size:11.5px;margin:-4px 0 10px">' + Util.esc(sel.quando) + "</p>";
 
       /* ---- o desenho ---- */
-      h += '<div style="border:1px solid var(--linha);border-radius:8px;padding:6px;background:#fff;margin-bottom:10px;overflow-x:auto">' +
+      h += '<div style="border:1px solid var(--linha);border-radius:8px;padding:6px;background:var(--surface);margin-bottom:10px;overflow-x:auto">' +
            Paginacao.svg(st.res, { largura: 820 }) + "</div>";
 
       /* ---- os números ---- */
@@ -11705,7 +11726,7 @@
           co.sacosMin + " a " + co.sacosMax + " sacos de 20 kg)<br>" +
           '<span class="muted" style="font-size:11px">' + Util.esc(co.porqueClasse) + "</span>",
           co.classeFonte);
-        if (co.aviso) h += '<tr><td colspan="2" style="padding:6px 8px;background:#f59e0b18;font-size:11.5px">' + Util.esc(co.aviso) + "</td></tr>";
+        if (co.aviso) h += '<tr><td colspan="2" class="bim-aviso bim-aviso-alerta">' + Util.esc(co.aviso) + "</td></tr>";
       }
       if (st.rodape && st.rodape.ok) {
         h += this._pagLinha("Rodapé", st.rodape.metros.toFixed(2).replace(".", ",") + " m · " +
@@ -11719,7 +11740,7 @@
              st.juntas.areaPorPano.toFixed(1).replace(".", ",") + " m²"
            : "não precisa — o pano cabe no limite"),
           st.juntas.fonte);
-        h += '<tr><td colspan="2" style="padding:6px 8px;background:#2e6f9e12;font-size:11.5px">' +
+        h += '<tr><td colspan="2" style="padding:6px 8px;background:color-mix(in srgb,var(--aco) 7%,transparent);font-size:11.5px">' +
           Util.esc(st.juntas.precisa ? st.juntas.nota : "") + (st.juntas.precisa ? "<br>" : "") +
           Util.esc(st.juntas.sempre) + "</td></tr>";
       }
@@ -11932,15 +11953,15 @@
             : '<label style="font-size:10.5px">peitoril<input type="number" step="0.05" data-elevao="' + i + ':y" value="' + v.y + '" style="width:72px;display:block"></label>') +
           '<label style="font-size:10.5px">largura<input type="number" step="0.05" data-elevao="' + i + ':l" value="' + v.l + '" style="width:72px;display:block"></label>' +
           '<label style="font-size:10.5px">altura<input type="number" step="0.05" data-elevao="' + i + ':a" value="' + v.a + '" style="width:72px;display:block"></label>' +
-          '<button class="btn sm" data-elevacao="del" data-i="' + i + '" style="color:#dc2626">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>';
+          '<button class="btn sm" data-elevacao="del" data-i="' + i + '" style="color:var(--vermelho)">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>';
       });
       h += "</div>";
 
       if (!res.ok) {
-        return h + '<div style="padding:10px;border-radius:8px;background:#dc262618;border:1px solid #dc262644;font-size:12.5px">' + Util.esc(res.motivo) + "</div>";
+        return h + '<div class="bim-aviso bim-aviso-erro">' + Util.esc(res.motivo) + "</div>";
       }
 
-      h += '<div style="border:1px solid var(--linha);border-radius:8px;padding:6px;background:#fff;margin-bottom:10px;overflow-x:auto">' +
+      h += '<div style="border:1px solid var(--linha);border-radius:8px;padding:6px;background:var(--surface);margin-bottom:10px;overflow-x:auto">' +
            Elevacao.svg(res, { largura: 840, titulo: "Elevação" }) + "</div>";
 
       /* números */
@@ -11962,7 +11983,7 @@
         "<th>Peça</th><th>Qtd</th><th>Peso un.</th><th>Origem</th></tr></thead><tbody>";
       res.resumo.forEach(function (r) {
         h += "<tr><td>" + Util.esc(r.nome) + "</td><td>" + r.qtd + "</td><td>" +
-          (r.peso != null ? Util.fmtNum(r.peso, 2) + " kg" : "<span style='color:#b45309'>informe</span>") + "</td><td>" +
+          (r.peso != null ? Util.fmtNum(r.peso, 2) + " kg" : "<span style='color:var(--amarelo)'>informe</span>") + "</td><td>" +
           '<span class="g-pill" style="font-size:9.5px">' + Util.esc(r.selo || "") + "</span> " +
           '<span class="muted" style="font-size:10px">' + Util.esc(r.fabricante || "") + "</span></td></tr>";
       });
@@ -11971,7 +11992,7 @@
         '. Troque pelo do seu fornecedor em <b>Alvenaria → Peso por parede</b>.</p>';
 
       if (res.avisos.length) {
-        h += '<div style="margin-top:9px;padding:8px 10px;border-radius:8px;background:#f59e0b18;border:1px solid #f59e0b44;font-size:12px">' +
+        h += '<div class="bim-aviso bim-aviso-alerta" style="margin-top:9px">' +
           res.avisos.map(function (a) { return "• " + Util.esc(a); }).join("<br>") + "</div>";
       }
       return h;
@@ -12028,6 +12049,20 @@
         tipo: this._alvTipoId || "bloco_concreto_14_est",
         contorno: "retangulo", largura: 8.00, comprimento: 6.00
       });
+      /* PROJETOS BIM (12/10/2026): o projeto tem OBRA e NOME DO ARQUIVO.
+         A obra começa na do alto (quem já está numa obra cria nela); sem obra
+         no alto, fica a última escolhida, se ainda existir. O nome do arquivo
+         acompanha nome e obra ("Projeto <nome> — <obra>") até a pessoa
+         escrever o dela. */
+      var obrasNp = lista("obras");
+      /* a obra que acabou de ser criada pelo "+ Criar obra nova…" vence a do alto */
+      if (g.obraNova) { g.obra = g.obraNova; g.obraNova = ""; }
+      else if (this._bimSel) g.obra = this._bimSel;
+      if (g.obra && !obrasNp.some(function (o) { return o.id === g.obra; })) g.obra = "";
+      this._npArquivoPadrao();
+      var optObras = '<option value="">— escolha a obra —</option>' + obrasNp.map(function (o) {
+        return '<option value="' + Util.esc(o.id) + '"' + (o.id === g.obra ? " selected" : "") + ">" + Util.esc(o.nome || "Obra") + "</option>";
+      }).join("") + '<option value="__nova__">+ Criar obra nova…</option>';
 
       var tipos = AlvTipos.listar().map(function (t) {
         return '<option value="' + Util.esc(t.id) + '"' + (t.id === g.tipo ? " selected" : "") + ">" +
@@ -12038,6 +12073,10 @@
         '<p class="muted" style="font-size:12.5px;margin:0 0 12px">' +
         "Cria os níveis da obra, fixa o tipo de parede e joga o contorno no 3D. " +
         "Daí em diante é só desenhar — o quantitativo e o peso acompanham.</p>" +
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:10px">' +
+          '<label>Obra<select data-np="obra" style="width:100%">' + optObras + "</select></label>" +
+          '<label>Nome do arquivo<input type="text" data-np="arquivo" value="' + Util.esc(g.arquivo || "") + '" style="width:100%" title="É o nome do arquivo .opbim — no sistema, nos recentes e na pasta do computador"></label>' +
+        "</div>" +
         '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">' +
           '<label>Nome do projeto<input type="text" data-np="nome" value="' + Util.esc(g.nome) + '" style="width:100%"></label>' +
           '<label>Pavimentos<input type="number" min="1" max="30" step="1" data-np="pavimentos" value="' + g.pavimentos + '" style="width:100%"></label>' +
@@ -12059,6 +12098,25 @@
       this._npResumo();
     },
 
+    /* "Projeto <nome> — <obra>", enquanto a pessoa não escrever o nome dela */
+    _npArquivoPadrao: function () {
+      var g = this._npCfg;
+      if (!g || g.arquivoManual) return;
+      var ob = g.obra ? (Store.obter(eid(), "obras", g.obra) || {}) : {};
+      g.arquivo = window.BimProjetos ? BimProjetos.nomePadrao(g.nome, ob.nome || "") : (g.nome || "Projeto");
+      var el = document.querySelector('#modal-bg [data-np="arquivo"]');
+      if (el && el.value !== g.arquivo) el.value = g.arquivo;
+    },
+    /* "+ Criar obra nova…": o MESMO cadastro de obra do sistema (formObra); salvo,
+       o diálogo do projeto volta com a obra nova escolhida */
+    _npNovaObra: function () {
+      var self = this;
+      UI.fecharModal();
+      this.formObra(null, function (obj) {
+        if (obj && obj.id) self._npCfg.obraNova = obj.id;
+        setTimeout(function () { self._novoProjeto(); }, 0);
+      });
+    },
     _npLigar: function () {
       var self = this, box = document.querySelector("#modal-bg .modal");
       if (!box) return;
@@ -12066,8 +12124,19 @@
         var el = e.target, k = el && el.getAttribute && el.getAttribute("data-np");
         if (!k) return;
         var g = self._npCfg;
-        if (k === "nome" || k === "tipo" || k === "contorno") g[k] = el.value;
-        else {
+        if (k === "obra") {
+          if (el.value === "__nova__") { el.value = g.obra || ""; self._npNovaObra(); return; }
+          g.obra = el.value;
+          self._npArquivoPadrao();
+        } else if (k === "arquivo") {
+          g.arquivo = el.value;
+          /* apagou o nome: volta a seguir nome e obra */
+          g.arquivoManual = !!String(el.value).trim();
+          if (!g.arquivoManual) self._npArquivoPadrao();
+        } else if (k === "nome" || k === "tipo" || k === "contorno") {
+          g[k] = el.value;
+          if (k === "nome") self._npArquivoPadrao();
+        } else {
           var v = parseFloat(String(el.value).replace(",", "."));
           if (!isFinite(v) || v <= 0) { UI.toast("Informe um número maior que zero, em metros.", "aviso"); return; }
           if ((k === "largura" || k === "comprimento") && v > 300) { UI.toast("A medida é em METROS.", "aviso"); return; }
@@ -12078,7 +12147,9 @@
       }
       box.addEventListener("change", mexeu);
       box.addEventListener("input", function (e) {
-        if (e.target && e.target.tagName === "INPUT" && e.target.type === "number") mexeu(e);
+        var k = e.target && e.target.getAttribute ? e.target.getAttribute("data-np") : "";
+        /* o nome do arquivo acompanha o nome do projeto enquanto se digita */
+        if (e.target && e.target.tagName === "INPUT" && (e.target.type === "number" || k === "nome" || k === "arquivo")) mexeu(e);
       });
     },
 
@@ -12109,14 +12180,48 @@
       } else {
         h += this._pagLinha("Contorno", "nenhum — o 3D abre vazio", "você desenha as paredes com o editor");
       }
+      /* PROJETOS BIM: onde o projeto fica e o que acontece com a obra */
+      var obNp = g.obra ? Store.obter(eid(), "obras", g.obra) : null;
+      h += this._pagLinha("Arquivo", Util.esc(String(g.arquivo || "").trim() || "—") + ".opbim",
+        "salvo no sistema (abre rápido) e no computador, em Documentos › OrçaPRO › Projetos BIM; na versão online, baixado");
+      if (obNp && window.BimProjetosUI) {
+        var cfNp = BimProjetosUI.conferirObra(g.obra);
+        if (cfNp.tem && !cfNp.salva) {
+          h += this._pagLinha("Atenção", '<b style="color:var(--amarelo)">a obra já tem modelagem no BIM fora de um projeto salvo (' + cfNp.nOps + " operação(ões), " + cfNp.nNiveis + " nível(is))</b>",
+            "o projeto novo começa do zero e a substitui na obra — antes, ela é guardada sozinha como o projeto “Modelagem anterior — " + (obNp.nome || "") + " — <data e hora>”, que fica em Projetos recentes");
+        }
+      }
       h += "</tbody></table>";
       el.innerHTML = h;
     },
 
-    _npCriar: function () {
-      var g = this._npCfg, self = this;
+    /* `opts.guardada` (PROJETOS BIM): a modelagem desta obra já foi guardada como
+       "Modelagem anterior" — segue sem perguntar de novo (ver abaixo) */
+    _npCriar: function (opts) {
+      var g = this._npCfg, self = this, BP = window.BimProjetos, BPU = window.BimProjetosUI;
+      if (this._npGuardando) return;   /* a cópia da modelagem anterior está sendo gravada */
       if (this._semSessao()) { UI.toast("Entre na sua conta antes: sem sessão o projeto iria para um lugar que some no login.", "erro"); return; }
-      if (!this._bimSel) { UI.toast("Escolha a obra no alto da tela — o projeto pertence a ela.", "aviso"); return; }
+      /* PROJETOS BIM: o projeto é DA obra escolhida no diálogo (quem chama sem o
+         campo — a fita antiga, um teste — fica com a obra do alto) */
+      if (!g.obra && this._bimSel) g.obra = this._bimSel;
+      if (!g.obra) { UI.toast("Escolha a obra do projeto — ou crie uma nova pela opção “+ Criar obra nova…”.", "aviso"); return; }
+      var obraNp = Store.obter(eid(), "obras", g.obra);
+      /* a obra do alto sem cadastro (quem chama por fora com um id próprio):
+         o caminho antigo aceitava, e aceita */
+      var semCadastro = !obraNp && g.obra === this._bimSel;
+      if (!obraNp && !semCadastro) { UI.toast("A obra escolhida não existe mais. Escolha outra.", "erro"); return; }
+      obraNp = obraNp || { id: g.obra, nome: "" };
+      if (!String(g.arquivo || "").trim()) { g.arquivoManual = false; this._npArquivoPadrao(); }
+      var arquivo = String(g.arquivo || "").replace(/\s+/g, " ").trim();
+      if (BP) {
+        /* ⚠ this.ui.lista, não `lista`: aqui dentro `lista` é a variável dos
+           níveis (logo abaixo), e o `var` sobe — a chamada estourava "lista is
+           not a function" e o Criar projeto não fazia nada */
+        var vNp = BP.validarNovo({ obra: g.obra, arquivo: arquivo }, semCadastro ? [g.obra] : this.ui.lista("obras").map(function (o) { return o.id; }));
+        if (!vNp.ok) { UI.toast(vNp.erros[0], "erro"); return; }
+        var dup = BP.conflitoDeNome(BPU && BPU._ix, arquivo, g.obra, "");
+        if (dup) { UI.toast("Já existe o projeto “" + dup.nome + "” nesta obra — dê outro nome ao arquivo.", "erro"); return; }
+      }
 
       /* 1) níveis */
       var lista = [], i;
@@ -12128,15 +12233,46 @@
                    corte: 1.20, peDireitoDeclarado: g.peDireito });
       var v = Niveis.validar(lista);
       if (v.erros.length) { UI.toast(v.erros[0], "erro"); return; }
-      /* A obra pode JÁ TER níveis, e os ids aqui são fixos ("nivel-1",
-         "nivel-cob"): gravar por cima apagaria o que o usuário montou,
-         sem aviso e sem volta. */
-      var jaTem = this._nivLer();
-      if (jaTem.length) {
-        var nomes = jaTem.map(function (n) { return n.nome; }).join(", ");
-        if (!confirm("Esta obra já tem " + jaTem.length + " nível(is): " + nomes + ".\n\n" +
-                     "Criar o projeto vai SUBSTITUIR esses níveis pelos novos. Continuar?")) return;
+      /* A editarEstado só existe com o visualizador de pé: sem ele as paredes
+         não teriam onde entrar e a tela diria "projeto criado" com o 3D vazio */
+      if (!window.BIM || !BIM.editarAplicar || !(BIM.editarEstado && BIM.editarEstado())) { UI.toast("O visualizador 3D ainda não está de pé — espere ele abrir e crie o projeto de novo.", "erro"); return; }
+      /* ⚠ A OBRA PODE JÁ TER MODELAGEM (níveis, paredes): o projeto novo começa do
+         zero e a SUBSTITUI. Pergunta com os números — e não pergunta quando o que
+         está lá já é um projeto salvo (ele continua no arquivo dele). Sem o motor
+         de projetos, a pergunta de antes (só os níveis). */
+      if (BPU) { try { this._bimEdFlush(); } catch (eFl) {} }   /* o pendente vai para a obra dele ANTES de conferir */
+      var fotoNp = BPU ? BPU.fotoObra(g.obra) : null;
+      if (BPU) {
+        var cfNp = BPU.conferirObra(g.obra);
+        /* ⚠ NADA SE PERDE SEM VOLTA (regra da RA, revisão de 12/10/2026): antes de
+           substituir, a modelagem que está na obra vira o projeto "Modelagem
+           anterior — <obra> — <data hora>" (recentes, sistema e computador) — e,
+           SEM essa cópia, nada é substituído: o diálogo fica aberto e o recado diz
+           por quê. Gravada a cópia, volta aqui com `guardada` e segue. */
+        if (cfNp.tem && !cfNp.salva && !(opts && opts.guardada === g.obra)) {
+          var nomeAnt = BPU.nomeAnterior(g.obra);
+          if (!confirm(BPU._textoSubstituir(g.obra, cfNp, "Criar o projeto “" + arquivo + "”", nomeAnt))) return;
+          this._npGuardando = true;
+          var obraAnt = g.obra;
+          BPU.guardarAnterior(obraAnt, nomeAnt).then(function (ga) {
+            self._npGuardando = false;
+            /* (fechou o diálogo ou trocou a obra enquanto gravava: a cópia fica, nada é substituído) */
+            if (ga && ga.ok && self._npCfg === g && g.obra === obraAnt && document.querySelector("#modal-bg [data-np]")) self._npCriar({ guardada: obraAnt });
+          }, function () { self._npGuardando = false; });
+          return;
+        }
+        BPU.prepararNovo(this, g.obra);
+      } else {
+        if (g.obra !== this._bimSel) this.bimTrocaObra(g.obra);
+        var jaTem = this._nivLer();
+        if (jaTem.length && !confirm("Esta obra já tem " + jaTem.length + " nível(is): " + jaTem.map(function (n) { return n.nome; }).join(", ") + ".\n\n" +
+                                     "Criar o projeto vai SUBSTITUIR esses níveis pelos novos. Continuar?")) return;
       }
+      /* os níveis da obra saem inteiros: os ids daqui são fixos ("nivel-1",
+         "nivel-cob") e um nível de outro id (os do Revit, "rvt-…") ficava
+         sobrando no projeto novo */
+      var velhos = this._nivLer().map(function (n) { return n.id; });
+      if (velhos.length) { try { Store.excluirVarios(eid(), "bim_niveis", velhos); } catch (eNv) {} }
       var gravados = 0;
       lista.forEach(function (n) { if (self._nivGravar(n)) gravados++; });
       if (gravados !== lista.length) { UI.toast("Não consegui gravar todos os níveis.", "erro"); return; }
@@ -12146,41 +12282,26 @@
       var t = AlvTipos.tipo(g.tipo);
       var esp = t && t.ok ? t.espessura / 1000 : 0.14;
 
-      /* 3) contorno no 3D */
-      var caixas = [];
-      if (g.contorno === "retangulo" && window.Planta3D) {
-        var L = g.largura, C = g.comprimento, paredes = [];
-        for (i = 0; i < g.pavimentos; i++) {
-          var z = i * g.peDireito;
-          [[0, 0, L, 0], [L, 0, L, C], [L, C, 0, C], [0, C, 0, 0]].forEach(function (p) {
-            paredes.push({ x1: p[0], y1: p[1], x2: p[2], y2: p[3], espessura: esp,
-                           comprimento: 0, layer: "Nível " + (i + 1), ligada: true, _base: z });
-          });
-        }
-        caixas = Planta3D.extrudar(paredes, g.peDireito);
-        /* Planta3D põe tudo na base zero; aqui cada pavimento sobe */
-        caixas.forEach(function (c, k) {
-          var pav = Math.floor(k / 4);
-          c.cy = pav * g.peDireito + g.peDireito / 2;
-          c.layer = "Nível " + (pav + 1);
-        });
-      }
-
-      /* A função existe mesmo com o viewer desmontado — e devolve null.
-         Testar só a existência dava "projeto criado" com o 3D vazio. */
-      if (!window.BIM || !BIM.carregarSintetico) { UI.toast("Viewer 3D não está pronto.", "erro"); return; }
-      var mid = caixas.length ? BIM.carregarSintetico(caixas, g.nome) : null;
-      if (caixas.length && !mid) {
-        UI.toast("Os níveis foram criados, mas o 3D ainda não está de pé — abra a aba BIM e o contorno entra lá.", "aviso");
-      }
+      /* 3) contorno no 3D — como OPERAÇÕES do editor (js/bimprojetos.js
+         `paredesRetangulo`). ⚠ Eram caixas sintéticas (BIM.carregarSintetico):
+         apareciam no 3D e não eram gravadas em lugar nenhum — F5 e o contorno
+         sumia, e o arquivo do projeto saía sem ele. */
+      var ops = (g.contorno === "retangulo" && BP && window.BimEdit) ? BP.paredesRetangulo(g, esp, BimEdit) : [];
+      BIM.editarAplicar(ops);
+      this._bimCenaObra = g.obra;
+      this._bimEdPend = { id: g.obra, ops: ops };
+      this._bimEdFlush();
+      var noTres = (BIM.editarOps ? BIM.editarOps() : []).length;
+      if (ops.length && noTres !== ops.length) UI.toast("Os níveis foram criados, mas o 3D não recebeu as paredes — feche e abra o BIM e o contorno entra lá.", "aviso");
       UI.fecharModal();
       if (window.BIM.editar) BIM.editar(true);
       if (window.BimShell) {
-        BimShell.status(caixas.length
-          ? g.nome + " criado: " + lista.length + " níveis e " + caixas.length + " paredes no 3D. O editor já está ligado."
-          : g.nome + " criado com " + lista.length + " níveis. O editor está ligado — desenhe a primeira parede.");
+        BimShell.status(ops.length
+          ? arquivo + ": " + lista.length + " níveis e " + ops.length + " paredes no 3D. O editor já está ligado."
+          : arquivo + ": " + lista.length + " níveis. O editor está ligado — desenhe a primeira parede.");
       }
-      UI.toast("Projeto criado nesta obra.", "ok");
+      if (BPU) BPU.criado(this, { nome: arquivo, obraId: g.obra, obraNome: obraNp.nome || "", foto: fotoNp });
+      UI.toast("Projeto “" + arquivo + "” criado na obra “" + (obraNp.nome || "") + "”. Salve para ele ir aos recentes e à pasta do computador.", "ok", 6000);
       try { this._bimCascaContexto(); } catch (e) {}
     },
 
@@ -12231,14 +12352,14 @@
       passos.forEach(function (p, i) {
         var at = g.passo === i + 1, feito = g.passo > i + 1;
         h += '<div style="flex:1;padding:6px 8px;border-radius:8px;font-size:11.5px;text-align:center;border:1px solid ' +
-          (at ? "var(--azul,#2e6f9e)" : "var(--linha)") + ";" +
-          (at ? "background:#2e6f9e14;font-weight:600;" : feito ? "opacity:.6;" : "opacity:.45;") + '">' +
+          (at ? "var(--aco)" : "var(--linha)") + ";" +
+          (at ? "background:color-mix(in srgb,var(--aco) 8%,transparent);font-weight:600;" : feito ? "opacity:.6;" : "opacity:.45;") + '">' +
           (feito ? "✓ " : (i + 1) + ". ") + p + "</div>";
       });
       h += "</div>";
 
       if (g.erro) {
-        h += '<div style="padding:10px;border-radius:8px;background:#dc262618;border:1px solid #dc262644;font-size:12.5px;margin-bottom:10px">' +
+        h += '<div class="bim-aviso bim-aviso-erro" style="margin-bottom:10px">' +
           Util.esc(g.erro) + "</div>";
       }
 
@@ -12264,32 +12385,32 @@
             '" style="width:70px"> de ' + g.paginas + "</label>";
         }
         if (g.escala) {
-          h += '<div style="padding:9px 11px;border-radius:8px;background:#15803d14;border:1px solid #15803d44;font-size:12.5px;margin-bottom:10px">' +
+          h += '<div class="bim-aviso bim-aviso-ok" style="margin-bottom:10px">' +
             "Escala definida: <b>" + Util.esc(g.calib) + "</b></div>";
         } else {
-          h += '<div style="padding:9px 11px;border-radius:8px;background:#f59e0b18;border:1px solid #f59e0b44;font-size:12.5px;margin-bottom:10px">' +
+          h += '<div class="bim-aviso bim-aviso-alerta" style="margin-bottom:10px">' +
             "<b>Clique em dois pontos do desenho</b> cujo tamanho real você sabe — de preferência a MAIOR cota " +
             "que existir — e digite a medida. Sem isso não há metro, e sem metro não há volumetria.</div>";
         }
         h += '<div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;align-items:center">' +
           '<span class="muted" style="font-size:11.5px">No desenho:</span>' +
           '<button class="btn sm" data-volacao="modo-escala" style="' +
-            (g.modo !== "recorte" ? "border-color:var(--azul,#2e6f9e);background:#2e6f9e14;font-weight:600;" : "") +
+            (g.modo !== "recorte" ? "border-color:var(--aco);background:color-mix(in srgb,var(--aco) 8%,transparent);font-weight:600;" : "") +
             '">Marcar 2 pontos da escala</button>' +
           '<button class="btn sm" data-volacao="modo-recorte" style="' +
-            (g.modo === "recorte" ? "border-color:var(--azul,#2e6f9e);background:#2e6f9e14;font-weight:600;" : "") +
+            (g.modo === "recorte" ? "border-color:var(--aco);background:color-mix(in srgb,var(--aco) 8%,transparent);font-weight:600;" : "") +
             '">Recortar só a planta</button>' +
-          (g.recorte ? '<button class="btn sm" data-volacao="limpar-recorte" style="color:#dc2626">\u2715 recorte</button>' : "") +
+          (g.recorte ? '<button class="btn sm" data-volacao="limpar-recorte" style="color:var(--vermelho)">\u2715 recorte</button>' : "") +
           "</div>";
         if (g.modo === "recorte") {
-          h += '<div style="padding:9px 11px;border-radius:8px;background:#2e6f9e14;border:1px solid #2e6f9e33;font-size:12.5px;margin-bottom:8px">' +
+          h += '<div class="bim-aviso bim-aviso-info" style="margin-bottom:8px">' +
             "<b>Arraste um ret\u00e2ngulo em volta da planta.</b> Uma prancha tem corte, fachada, quadro de esquadrias " +
             "e carimbo na mesma folha \u2014 e TUDO isso vira parede se entrar. Recortar \u00e9 o que separa." +
             (g.recorte ? " <b>Recorte ativo:</b> " + Math.round(g.recorte.x1 - g.recorte.x0) + " \u00d7 " +
                          Math.round(g.recorte.y1 - g.recorte.y0) + " " + Util.esc(g.unidade) + "." : "") +
             "</div>";
         }
-        h += '<div style="border:1px solid var(--linha);border-radius:8px;overflow:auto;background:#fff;max-height:420px">' +
+        h += '<div style="border:1px solid var(--linha);border-radius:8px;overflow:auto;background:var(--surface);max-height:420px">' +
           '<canvas id="vol-canvas" style="display:block;cursor:crosshair;max-width:100%"></canvas></div>';
         h += '<div style="display:flex;gap:8px;align-items:flex-end;margin-top:10px;flex-wrap:wrap">' +
           '<label style="font-size:12px">Medida real entre os dois pontos (m)' +
@@ -12304,7 +12425,7 @@
             Util.esc(g.unidade) + " um do outro.</p>";
         }
         if (g.avisos && g.avisos.length) {
-          h += '<div style="margin-top:10px;padding:8px 10px;border-radius:8px;background:#f59e0b14;border:1px solid #f59e0b33;font-size:11.5px">' +
+          h += '<div class="bim-aviso bim-aviso-alerta" style="margin-top:10px">' +
             g.avisos.map(function (a) { return "• " + Util.esc(a); }).join("<br>") + "</div>";
         }
       }
@@ -12318,7 +12439,7 @@
            avançava, e decidia numa tela que não lembrava mais dele. */
         var truncado = (g.avisos || []).filter(function (a) { return /PASSOU DO TETO/.test(a); });
         if (truncado.length) {
-          h += '<div style="margin-bottom:10px;padding:10px 12px;border-radius:8px;background:#fee2e2;border:1px solid #fecaca;font-size:12.5px">' +
+          h += '<div class="bim-aviso bim-aviso-erro" style="margin-bottom:10px">' +
             truncado.map(function (a) { return Util.esc(a); }).join("<br>") +
             "<br><b>Os metros abaixo são só do que foi lido — não da prancha inteira.</b></div>";
         }
@@ -12327,7 +12448,7 @@
           g.peDireito + '" style="width:90px;display:block"></label>' +
           '<button class="btn sm primary" data-volacao="gerar">Gerar o 3D</button>' +
           '<button class="btn sm" data-volacao="voltar2">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' voltar à escala</button></div>';
-        h += '<div style="border:1px solid var(--linha);border-radius:8px;background:#fff;padding:6px;margin-bottom:10px;overflow:auto">' +
+        h += '<div style="border:1px solid var(--linha);border-radius:8px;background:var(--surface);padding:6px;margin-bottom:10px;overflow:auto">' +
           '<canvas id="vol-canvas" style="display:block;max-width:100%"></canvas></div>';
         h += '<table class="tbl pag-num" style="width:100%;font-size:12px"><tbody>';
         /* o total é das LIGADAS — o que está desmarcado não vai para o 3D
@@ -12335,7 +12456,7 @@
         var nDesl = det.paredes.length - ligadas.length;
         h += this._pagLinha("Paredes encontradas", "<b>" + ligadas.length + "</b> de " + det.paredes.length +
           " · " + Math.round(ligadas.reduce(function (s, p) { return s + p.comprimento; }, 0) * 10) / 10 + " m no total" +
-          (nDesl ? ' <span style="color:#b45309">(' + nDesl + " fora, não entram na conta)</span>" : ""),
+          (nDesl ? ' <span style="color:var(--amarelo)">(' + nDesl + " fora, não entram na conta)</span>" : ""),
           ligadas.length ? "desligue no quadro abaixo o que não for parede"
                          : "nada entrou marcado — leia o aviso abaixo e ligue o que você confirmar");
         /* o número que o detector viu é DEPOIS do filtro de famílias — dizer
@@ -12369,34 +12490,34 @@
           var conf = Math.round((p.confianca || 0) * 100);
           /* o SELO diz por que desconfiar — porcentagem sozinha não ensina nada */
           var selo = p.espessuraAssumida
-            ? '<span style="color:#dc2626;font-weight:700"> ESPESSURA NÃO MEDIDA</span>'
-            : (p.viaTrio ? '<span style="color:#b45309;font-weight:700"> 3 linhas — pode ser COTA</span>'
-            : (p.provavelPilar ? '<span style="color:#b45309;font-weight:700"> parece PILAR</span>' : ""));
+            ? '<span style="color:var(--vermelho);font-weight:600"> ESPESSURA NÃO MEDIDA</span>'
+            : (p.viaTrio ? '<span style="color:var(--amarelo);font-weight:600"> 3 linhas — pode ser COTA</span>'
+            : (p.provavelPilar ? '<span style="color:var(--amarelo);font-weight:600"> parece PILAR</span>' : ""));
           h += '<tr><td><input type="checkbox" data-volpar="' + i + '"' + (p.ligada !== false ? " checked" : "") + "></td>" +
             "<td>P" + (i + 1) + '<span class="muted" style="font-size:10px"> ' + Util.esc(p.layer || "") + "</span>" + selo + "</td>" +
             "<td>" + p.comprimento.toFixed(2).replace(".", ",") + " m</td>" +
             "<td>" + Math.round(p.espessura * 100) + " cm" +
               (p.espessuraAssumida ? '<span class="muted" style="font-size:10px"> (declarada)</span>' : "") + "</td>" +
-            '<td><span style="color:' + (conf >= 70 ? "#15803d" : conf >= 40 ? "#b45309" : "#dc2626") + '">' + conf + " %</span></td></tr>";
+            '<td><span style="color:' + (conf >= 70 ? "var(--verde)" : conf >= 40 ? "var(--amarelo)" : "var(--vermelho)") + '">' + conf + " %</span></td></tr>";
         });
         h += "</tbody></table></div>";
         var nAssum = det.paredes.filter(function (p) { return p.espessuraAssumida; }).length;
         var nPilar = det.paredes.filter(function (p) { return p.provavelPilar; }).length;
         if (nAssum) {
-          h += '<div style="margin-top:8px;padding:9px 11px;border-radius:8px;background:#fee2e2;border:1px solid #fecaca;font-size:12px">' +
+          h += '<div class="bim-aviso bim-aviso-erro" style="margin-top:8px">' +
             "<b>" + nAssum + " parede(s) com espessura que o sistema NÃO mediu.</b> Num croqui de traço único não " +
             "existe espessura no desenho — o valor é o que você declarou. Elas entram <b>desmarcadas</b>: " +
             "confira uma a uma antes de ligar, porque cada uma vira m² de alvenaria no orçamento.</div>";
         }
         if (nPilar) {
-          h += '<div style="margin-top:8px;padding:9px 11px;border-radius:8px;background:#fef3c7;border:1px solid #fde68a;font-size:12px">' +
+          h += '<div class="bim-aviso bim-aviso-alerta" style="margin-top:8px">' +
             "<b>" + nPilar + " item(ns) com cara de pilar, não de parede</b> — comprimento próximo da espessura. " +
             "Um pilar desenhado fechado vira DOIS pares de faces perfeitos e seria contado em dobro. " +
             "Também entram desmarcados.</div>";
         }
         var nTrio = det.paredes.filter(function (p) { return p.viaTrio; }).length;
         if (nTrio) {
-          h += '<div style="margin-top:8px;padding:9px 11px;border-radius:8px;background:#fef3c7;border:1px solid #fde68a;font-size:12px">' +
+          h += '<div class="bim-aviso bim-aviso-alerta" style="margin-top:8px">' +
             "<b>" + nTrio + " item(ns) formados por TRÊS linhas paralelas.</b> No papel, uma parede desenhada com " +
             "a linha de centro no meio e uma cadeia de cotas são o mesmo desenho — não existe conta que separe " +
             "as duas. Quem sabe é você: se for parede, marque; se for cota, régua de forro ou hachura, deixe " +
@@ -12930,11 +13051,11 @@
         var dentro = (t.dentro || []).map(function (c) { return c.rotulo; }).join(" → ") || "sem acabamento";
         var fora = (t.fora || []).map(function (c) { return c.rotulo; }).join(" → ") || "sem acabamento";
         var ativo = x.id === atual;
-        h += '<div style="border:1px solid ' + (ativo ? "var(--azul,#2e6f9e)" : "var(--linha)") + ';border-radius:10px;padding:10px 12px;' +
-             (ativo ? "background:#2e6f9e0f;" : "") + '">' +
+        h += '<div style="border:1px solid ' + (ativo ? "var(--aco)" : "var(--linha)") + ';border-radius:10px;padding:10px 12px;' +
+             (ativo ? "background:color-mix(in srgb,var(--aco) 6%,transparent);" : "") + '">' +
              '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">' +
              '<b style="font-size:12.5px;flex:1">' + Util.esc(x.rotulo) + "</b>" +
-             (ativo ? '<span class="g-pill" style="background:#2e6f9e22;color:#2e6f9e;font-size:10px">EM USO</span>' : "") + "</div>" +
+             (ativo ? '<span class="mod-pil mod-pil-info">EM USO</span>' : "") + "</div>" +
              '<div style="font-size:11.5px;margin-bottom:6px"><b>' + (x.espessura / 10).toFixed(1) + " cm</b> " +
              '<span class="muted">· ' + Util.esc(x.funcao === "estrutural" ? "estrutural" : "vedação") + "</span></div>" +
              '<div class="muted" style="font-size:11px;line-height:1.5">' +
@@ -13027,8 +13148,8 @@
       if (!p.ok) { out.innerHTML = '<p class="muted">' + Util.esc(p.motivo) + "</p>"; return; }
 
       var selo = p.fecha
-        ? '<span class="g-pill" style="background:#16a34a22;color:#16a34a">Fecha na modulação</span>'
-        : '<span class="g-pill" style="background:#dc262622;color:#dc2626">Não fecha</span>';
+        ? '<span class="mod-pil mod-pil-ok">Fecha na modulação</span>'
+        : '<span class="mod-pil mod-pil-erro">Não fecha</span>';
       h += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><b>' + Util.esc(p.familiaRotulo) + "</b>" + selo + "</div>";
 
       h += '<table class="tbl" style="width:100%;font-size:12.5px"><tbody>';
@@ -13039,10 +13160,10 @@
          para a fundação erra para menos. */
       h += "<tr><td>Peso dos blocos<br><span class='muted' style='font-size:11px'>para compra e transporte</span></td><td><b>" +
            (p.parcial ? "≥ " : "") + Util.fmtNum(p.peso) + " kg</b>" +
-           (p.parcial ? ' <span style="color:#b45309">(parcial: ' + p.pecasSemPeso + " peça(s) sem peso)</span>" : "") +
+           (p.parcial ? ' <span style="color:var(--amarelo)">(parcial: ' + p.pecasSemPeso + " peça(s) sem peso)</span>" : "") +
            '<br><span class="muted" style="font-size:11px">' + Util.esc(p.escopoDoPeso) + "</span></td></tr>";
       h += "<tr><td>Junta</td><td>" + Math.round(p.junta * 1000) + " mm" +
-           (p.fiadaImpar.juntaAjustada ? ' <span style="color:#b45309">(ajustada para fechar sem compensador)</span>' : "") + "</td></tr>";
+           (p.fiadaImpar.juntaAjustada ? ' <span style="color:var(--amarelo)">(ajustada para fechar sem compensador)</span>' : "") + "</td></tr>";
       h += "</tbody></table>";
 
       /* argamassa — só se houver coeficiente para essa combinação */
@@ -13052,7 +13173,7 @@
         h += "<b>Argamassa de assentamento:</b> " + ar.volume.toFixed(4) + " m³ (" + ar.m3porM2 + " m³/m² · " + Util.esc(ar.fonte) + ")" +
              '<br><span class="muted" style="font-size:11.5px">' + Util.esc(ar.nota) + "</span>";
       } else {
-        h += '<span style="color:#b45309">Argamassa: ' + Util.esc(ar.motivo) + "</span>";
+        h += '<span style="color:var(--amarelo)">Argamassa: ' + Util.esc(ar.motivo) + "</span>";
       }
       h += "</p>";
 
@@ -13062,7 +13183,7 @@
         h += '<p style="margin:8px 0 0;font-size:12.5px"><b>Verga do vão de ' + g.vao.toFixed(2) + " m:</b> " +
              v.comprimentoModular.toFixed(2) + " m, apoio de " + Math.round(v.apoioCada * 100) + " cm de cada lado " +
              '<span class="muted">(' + Util.esc(v.fonte) + ")</span>";
-        if (v.viga) h += '<br><span style="color:#dc2626">' + Util.esc(v.aviso) + "</span>";
+        if (v.viga) h += '<br><span style="color:var(--vermelho)">' + Util.esc(v.aviso) + "</span>";
         h += "</p>";
       }
 
@@ -13079,12 +13200,12 @@
 
       /* avisos e alertas de base */
       if (p.avisos.length) {
-        h += '<div style="margin-top:10px;padding:8px 10px;border-radius:8px;background:#f59e0b18;border:1px solid #f59e0b44;font-size:12.5px">' +
+        h += '<div class="bim-aviso bim-aviso-alerta" style="margin-top:10px">' +
              p.avisos.map(function (a) { return "• " + Util.esc(a); }).join("<br>") + "</div>";
       }
       var al = A.alertasDeBase(g.fam, p.pecas);
       if (al.length) {
-        h += '<div style="margin-top:8px;padding:8px 10px;border-radius:8px;background:#2e6f9e14;border:1px solid #2e6f9e33;font-size:12px">' +
+        h += '<div class="bim-aviso bim-aviso-info" style="margin-top:8px">' +
              al.map(function (a) { return "• " + Util.esc(a.texto); }).join("<br>") + "</div>";
       }
       /* ---- DE ONDE VEIO O PESO ----------------------------------------
@@ -13096,12 +13217,12 @@
            '<b style="font-size:12px">De onde vem o peso</b>' +
            '<button class="btn btn-sm" data-gacao="alv-pesos" style="font-size:11px;padding:2px 8px">Informar o peso do meu fornecedor</button></div>';
       h += '<table class="tbl" style="width:100%;font-size:11.5px"><tbody>';
-      var SELO = { "MEU FORNECEDOR": "#16a34a", "REFERÊNCIA": "#6b7280", "CALCULADO": "#b45309", "SEM FONTE": "#dc2626" };
+      var SELO = { "MEU FORNECEDOR": "ok", "REFERÊNCIA": "neutro", "CALCULADO": "alerta", "SEM FONTE": "erro" };   /* tons de Modulo.pilula */
       p.pecas.forEach(function (x) {
-        var cor = SELO[x.selo] || "#6b7280";
+        var tom = SELO[x.selo] || "neutro";
         h += "<tr><td style='width:42%'>" + x.qtd + "× " + Util.esc(x.nome) + "</td>" +
-             "<td style='width:18%'>" + (x.peso == null ? '<span style="color:#dc2626">sem peso</span>' : Util.fmtNum(x.peso) + " kg") + "</td>" +
-             "<td><span class='g-pill' style='background:" + cor + "1a;color:" + cor + ";font-size:10px'>" + Util.esc(x.selo) + "</span> " +
+             "<td style='width:18%'>" + (x.peso == null ? '<span style="color:var(--vermelho)">sem peso</span>' : Util.fmtNum(x.peso) + " kg") + "</td>" +
+             "<td><span class='mod-pil mod-pil-" + tom + "'>" + Util.esc(x.selo) + "</span> " +
              (x.fabricante ? '<span class="muted">' + Util.esc(String(x.fabricante).split("|").join(" e ")) + "</span>" : "") +
              (x.faixa ? ' <span class="muted">(' + x.faixa.min + "–" + x.faixa.max + " kg em " + x.faixa.n + " catálogos)</span>" : "") +
              "</td></tr>";
@@ -13144,7 +13265,12 @@
          (css/bim-revit.css, body.bim-app). Sai pelo botão "OrçaPRO" da barra de
          título ou por qualquer navegação (App._navegar tira a classe). */
       try { document.body.classList.add("bim-app"); } catch (eBa) {}
-      if (this._bimSel == null) this._bimSel = (obras.filter(function (o) { return o.orcamentoId; })[0] || obras[0] || {}).id || "";
+      /* ⚠ PROJETOS BIM (12/10/2026): o BIM abre SEM obra, na tela inicial
+         (js/bimprojetosui.js). Escolher sozinho "a primeira obra com orçamento"
+         abria a obra e a volumetria dela sem ninguém pedir — e, com o
+         visualizador ainda segurando a cena da obra anterior, a modelagem de uma
+         obra ia parar na outra (o roteiro está no cabeçalho de bimprojetosui.js). */
+      if (this._bimSel == null) this._bimSel = "";
       var sel = '<select data-gacao="bim-troca-obra" style="max-width:260px">' +
         '<option value="">— sem cronograma (sequência padrão) —</option>' +
         obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === self._bimSel ? " selected" : "") + ">" + Util.esc(o.nome) + (o.orcamentoId ? "" : " (sem orçamento)") + "</option>"; }).join("") + "</select>";
@@ -13391,6 +13517,11 @@
     },
     _bimFecharDrawer: function () {
       var drawer = document.getElementById("bim-drawer");
+      /* ⚠ FECHAR A SIMULAÇÃO 4D ENCERRA A SIMULAÇÃO (auditoria da fita, 12/10/2026). O carimbo
+         da data e o modelo pintado pela data ficavam na tela depois do ✕ — por cima do selo
+         da disciplina e dos painéis das outras ferramentas, sem o painel que os explica.
+         Minimizar e "outra janela" continuam guardando a simulação. */
+      try { if (this._bimDocaChave === "4d" && drawer && drawer.style.display !== "none" && this._b4Estado().ativo) this._b4Encerrar(); } catch (e4d) {}
       if (drawer) drawer.style.display = "none";
       this._bimPillEsconder();
       try { this._b4Casca(false); } catch (e4) {}   /* a coluna Propriedades e a fita voltam */
@@ -13488,27 +13619,31 @@
       i.onchange = function () { var f = i.files && i.files[0]; i.remove(); if (f) fn(f); };
       document.body.appendChild(i); i.click();
     },
-    /* o projeto como ele está agora (o que vai para o .opbim) */
-    _opbimMontar: function () {
+    /* o projeto como ele está agora (o que vai para o .opbim). `fonte` (PROJETOS
+       BIM, a cópia "Modelagem anterior" do js/bimprojetosui.js): monta do que está
+       GRAVADO numa obra — { obraId, ops, niveis, d2 } — e não da cena; sem IFC nem
+       malha (os modelos registrados na obra continuam nela) */
+    _opbimMontar: function (fonte) {
       this._famConfig(); this._d2Config();
-      var b = window.BIM, ops = (b && b.editarOps) ? b.editarOps() : [], usados = {};
+      var b = window.BIM, ops = fonte ? (fonte.ops || []) : ((b && b.editarOps) ? b.editarOps() : []), usados = {};
       /* achatar: a casa modelada por comando (B8) mora num LOTE — as famílias de dentro também vão no .opbim */
       (window.BimEdit ? BimEdit.achatar(ops) : ops).forEach(function (o) { if (o && o.op === "familia") usados[o.famId] = 1; });
       var familias = Object.keys(usados).map(function (id) { return FamiliaUI.obter(id); }).filter(Boolean)
         .map(function (f) { var c = JSON.parse(JSON.stringify(window.FamiliaMalha ? FamiliaMalha.embutir(f) : f)); delete c._origem; delete c._escopo; return c; });   /* FAMIMPORT: a malha importada vai junto no .opbim */
-      var niveis = this._nivLer().map(function (n) { return { id: n.id, nome: n.nome, elevacao: n.elevacao, corte: n.corte, peDireitoDeclarado: n.peDireitoDeclarado }; });
-      var d2 = null; try { d2 = JSON.parse(JSON.stringify(Bim2D.estado())); } catch (e) {}
-      var fontes = (b && b.ifcFontes) ? b.ifcFontes() : [], ifcs = [], semFonte = [];
+      var niveis = (fonte ? (fonte.niveis || []) : this._nivLer()).map(function (n) { return { id: n.id, nome: n.nome, elevacao: n.elevacao, corte: n.corte, peDireitoDeclarado: n.peDireitoDeclarado }; });
+      var d2 = null; try { d2 = JSON.parse(JSON.stringify(fonte ? (fonte.d2 || null) : Bim2D.estado())); } catch (e) {}
+      var fontes = fonte ? [] : ((b && b.ifcFontes) ? b.ifcFontes() : []), ifcs = [], semFonte = [];
       fontes.forEach(function (x) { if (x.bytes) ifcs.push({ nome: /\.ifc$/i.test(x.nome) ? x.nome : x.nome + ".ifc", bytes: x.bytes }); else semFonte.push(x.nome); });
       /* malhas (glb/obj/… e o .json do SketchUp) vão com o arquivo de origem e as opções da importação */
-      var mf = (b && b.malhaFontes) ? b.malhaFontes() : [], malhas = [], optsMalha = [];
+      var mf = fonte ? [] : ((b && b.malhaFontes) ? b.malhaFontes() : []), malhas = [], optsMalha = [];
       mf.forEach(function (x) { if (x.bytes) { malhas.push({ nome: x.nome, bytes: x.bytes }); optsMalha.push({ nome: x.nome, opcoes: x.opcoes }); } else semFonte.push(x.nome); });
       /* extras: o que veio de outro programa (parâmetros do Revit…) continua no arquivo
          ao salvar de novo, e as linhas dos vínculos CAD vão junto (cad-<id>.json) */
-      var extras = {}, ex0 = (this._opExtras && this._opExtras.obra === (this._bimSel || "geral")) ? this._opExtras.dados : {};
+      var obraM = fonte ? String(fonte.obraId || "geral") : (this._bimSel || "geral");
+      var extras = {}, ex0 = (this._opExtras && this._opExtras.obra === obraM) ? this._opExtras.dados : {};
       Object.keys(ex0 || {}).forEach(function (k) { if (!/^cad-/.test(k)) extras[k] = ex0[k]; });
       if (d2 && d2.cad) Object.keys(d2.cad).forEach(function (nv) { (d2.cad[nv] || []).forEach(function (v) { var dd = Bim2D._cadDados(v.id); if (dd) extras["cad-" + v.id + ".json"] = dd; }); });
-      var obra = this._bimSel ? Store.obter(eid(), "obras", this._bimSel) : null;
+      var obra = obraM !== "geral" ? Store.obter(eid(), "obras", obraM) : null;
       return { proj: { nome: (obra && obra.nome) || "Projeto OrçaPRO", modelo: { edicao: ops, niveis: niveis, desenho2d: d2, malhas: optsMalha, disciplinas: fontes.map(function (x) { return { nome: x.nome, disciplina: x.disciplina }; }) }, familias: familias, ifcs: ifcs, malhas: malhas, extras: extras }, semFonte: semFonte };
     },
     /* B7 — IFC DE SAÍDA: o que foi modelado aqui vira IFC4 (js/ifcsaida.js) com os
@@ -13600,9 +13735,12 @@
         var op = ((m.malhas || []).filter(function (q) { return q.nome === x.nome; })[0] || {}).opcoes || {};
         seq = seq.then(function () { return b && b.importarMalha ? b.importarMalha(x.nome, x.bytes.buffer.slice(x.bytes.byteOffset, x.bytes.byteOffset + x.bytes.byteLength), op) : null; });
       });
-      seq.then(function () {
+      /* devolve a promessa: quem abre um PROJETO (js/bimprojetosui.js) só marca
+         "aberto e sem alteração" depois que os IFC e a modelagem entraram */
+      return seq.then(function () {
         if (b && b.parametrosExtras && r.extras) { try { b.parametrosExtras(r.extras); } catch (eX) {} }
         if (b && b.editarAplicar) b.editarAplicar(m.edicao || []);
+        self._bimCenaObra = obraId;   /* a cena agora é desta obra (ver _bimAoEditar) */
         self._bimEdPend = { id: obraId, ops: m.edicao || [] }; self._bimEdFlush();
         self._nivArvore();
         UI.toast("Projeto \"" + r.nome + "\" aberto: " + (m.edicao || []).length + " operação(ões), " + (r.familias || []).length + " família(s), " + (r.ifcs || []).length + " IFC" + ((r.malhas || []).length ? ", " + r.malhas.length + " malha(s)" : "") + ".", "ok", 7000);
@@ -13619,7 +13757,7 @@
       var html =
         bl("Revit (.rvt)", "O RVT só o Revit lê por inteiro. No Revit, aba <b>OrçaPRO › Integração › Exportar para OrçaPRO</b>: sai um <b>.opbim</b> com o IFC e TODOS os parâmetros de instância e de tipo de cada peça, e os níveis. Depois abra o .opbim aqui.", bt("opbim", "Abrir .opbim", true)) +
         bl("SketchUp (.skp)", "Instale a extensão OrçaPRO no SketchUp (Extensões › Gerenciador de extensões › Instalar extensão › o arquivo .rbz). Depois <b>Extensões › OrçaPRO › Exportar para OrçaPRO</b> gera um .json com cada grupo/componente, etiqueta, material e atributos.", bt("rbz", "Baixar a extensão (.rbz)") + bt("skp", "Importar o .json do SketchUp", true)) +
-        bl("AutoCAD (.dwg / .dxf)", "O DWG é convertido para DXF neste computador, com o AutoCAD ou o ODA File Converter instalados (o arquivo não sai da máquina). O desenho entra como <b>vínculo CAD</b> na planta 2D aberta — ou vira 3D em Arquivo › Planta DXF → 3D.", bt("cad", "Vincular DWG/DXF na planta", true) + bt("p3d", "Planta DXF → 3D") + '<span id="imp-dwg-st" class="muted" style="font-size:12px;align-self:center"></span>') +
+        bl("AutoCAD (.dwg / .dxf)", "O DWG é convertido para DXF neste computador, com o AutoCAD ou o ODA File Converter instalados (o arquivo não sai da máquina). O desenho entra como <b>vínculo CAD</b> na planta 2D aberta — ou vira 3D em Arquivo › Gerar de desenho.", bt("cad", "Vincular DWG/DXF na planta", true) + bt("p3d", "Gerar de desenho") + '<span id="imp-dwg-st" class="muted" style="font-size:12px;align-self:center"></span>') +
         bl("Malha 3D (glTF/GLB, OBJ, STL, DAE, FBX)", "Do Blender, 3ds Max, Rhino, D5, Lumion, SketchUp (exportado)… Cada objeto vira uma peça com nome, área e volume. Malha não traz parâmetro BIM — nada é inventado.",
            '<label class="field" style="margin:0">Unidade <select id="imp-un"><option value="auto">detectar</option><option value="m">metro</option><option value="cm">centímetro</option><option value="mm">milímetro</option><option value="pol">polegada</option></select></label>' +
            '<label style="display:flex;gap:6px;align-items:center;font-size:12.5px"><input type="checkbox" id="imp-zup"> Z para cima (CAD)</label>' + bt("malha", "Importar malha…", true)) +
@@ -13635,9 +13773,12 @@
         var b = e.target.closest ? e.target.closest("[data-imp]") : null; if (!b) return;
         var k = b.getAttribute("data-imp"), un = (document.getElementById("imp-un") || {}).value || "auto", zup = !!(document.getElementById("imp-zup") || {}).checked;
         UI.fecharModal();
-        if (k === "opbim") self._opbimAbrir();
+        /* PROJETOS BIM: o .opbim abre como PROJETO (escolhe a obra e guarda a
+           modelagem que estiver nela antes de substituir — js/bimprojetosui.js) */
+        if (k === "opbim") { if (window.BimProjetosUI) BimProjetosUI._escolherArquivo(); else self._opbimAbrir(); }
         else if (k === "ifc") BimShell.executar("abrir-ifc");
-        else if (k === "p3d") BimShell.executar("p3d");
+        /* o assistente "Gerar de desenho" (DXF, PDF e foto) substituiu o painel "Planta DXF → 3D" da primeira versão */
+        else if (k === "p3d") BimShell.executar("gerar-volumetria");
         else if (k === "rbz") { var a = document.createElement("a"); a.href = "bim/extensoes/orcapro-sketchup.rbz"; a.download = "orcapro-sketchup.rbz"; document.body.appendChild(a); a.click(); a.remove(); }
         else if (k === "skp") self._opEscolherArquivo(".json", function (f) { self._importarMalhaArquivo(f, { unidade: "m" }); });
         else if (k === "malha") self._opEscolherArquivo(".glb,.gltf,.obj,.stl,.dae,.fbx", function (f) { self._importarMalhaArquivo(f, { unidade: un, zUp: zup }); });
@@ -13942,6 +14083,9 @@
        quem edita peça é o Editor; parede edita pelo "Editar tipo". */
     _bimPropsPeca: function (info) {
       if (!info) return null;
+      /* METÁLICA (js/metalcriarui.js): perfil e chapa criados aqui — perfil, giro, justificação,
+         comprimento, cotas, posição e aço editáveis (op metalAjustar, um Ctrl+Z por mudança) */
+      if (window.MetalCriarUI && MetalCriarUI.ehPecaMetal && MetalCriarUI.ehPecaMetal(info.uid)) { var pmt = MetalCriarUI.propsPeca(info, this); if (pmt) return pmt; }
       /* P1-C — paleta de Propriedades (js/bimpropsui.js), só
          na prévia do modelador: peça criada aqui (caixa, cobertura, família)
          pede tudo ao registro de parâmetros. Instalação e IFC importado: as de antes. */
@@ -14439,7 +14583,10 @@
       try { delete D.getElementById; delete D.querySelector; delete D.querySelectorAll; delete D.body.contains; } catch (eD) {}
       this._bimPonteOrig = null;
     },
-    bimTrocaObra: function (obraId) {
+    /* `opts.semCena` (PROJETOS BIM, js/bimprojetosui.js): troca a obra do alto
+       SEM trazer a modelagem guardada dela para a cena — quem chama vai pôr ali
+       o conteúdo de um projeto (ou a tela inicial, vazia). */
+    bimTrocaObra: function (obraId, opts) {
       if (obraId == null) return; // clique da delegação (sem value): não zera a obra do 4D
       /* ⚠ a janela do 3D é DA OBRA: ela só ouve mensagens com o id dela.
          Trocar de obra com ela aberta deixaria no projetor a obra anterior,
@@ -14479,9 +14626,14 @@
         this._bimEdFlush();
         this._bimSemana = null; // slider 4D da obra anterior não vale pra nova
         this._b4Resetar();      // nem a data, a fonte e o filtro da simulação 4D
-        var edN = Store.obter(eid(), "bim_edicoes", obraId || "geral");
-        if (window.BIM && BIM.editarAplicar) BIM.editarAplicar((edN && edN.ops) || []);
+        if (!(opts && opts.semCena)) {
+          var edN = Store.obter(eid(), "bim_edicoes", obraId || "geral");
+          if (window.BIM && BIM.editarAplicar) BIM.editarAplicar((edN && edN.ops) || []);
+        }
       } catch (eEd2) {}
+      /* ⚠ A CENA AGORA É DESTA OBRA: é para ela que vai a próxima edição (ver
+         `_bimAoEditar`). Com `semCena`, quem chama diz de quem é a cena. */
+      this._bimCenaObra = (opts && opts.semCena) ? null : (obraId || "geral");
       /* ⚠ O CRONOGRAMA 4D TAMBÉM É POR OBRA — a data da régua, a lista e o
          passeio ficavam na obra anterior. Pior que ficar velho: os handlers da
          régua guardam a JANELA da obra antiga no closure, então arrastar depois
@@ -14516,6 +14668,7 @@
       } catch (eB6) {}
       if (this._bimElementos && this._bimElementos.length) this._bimReplanejar();
       try { this._nivArvore(); } catch (e) {}   /* a árvore é da OBRA: sem isto continuava mostrando os níveis da anterior */
+      try { if (window.BimProjetosUI) BimProjetosUI.aoTrocarObra(this); } catch (eBp) {}   /* a tela inicial e o título acompanham */
     },
     /* =====================================================================
      * B1 — CACHE DO MODELO E FEDERAÇÃO DA OBRA
@@ -21238,9 +21391,12 @@
       var self = this, obraId = this._bimSel || "";
       if (!obraId || !window.BimFed || !window.BimCache || !window.Idb || !window.BIM) return;
       if (!BIM.abrirDoCache) return;
-      /* só restaura em cena vazia: reentrar na aba com modelo aberto não pode
-         duplicar o que já está lá */
-      try { if ((BIM.modelos || []).length) return; } catch (e) { return; }
+      /* só restaura sem IFC na cena: reentrar na aba com modelo aberto não pode
+         duplicar o que já está lá. ⚠ O modelo do EDITOR (as paredes desenhadas,
+         `sintetico`) não conta: ele não vem do banco do aparelho e não duplica —
+         contá-lo impedia abrir os IFC guardados de uma obra que tem modelagem
+         (o "Modelos IFC salvos na obra" da tela inicial, 12/10/2026). */
+      try { if ((BIM.modelos || []).some(function (m) { return m && !m.sintetico; })) return; } catch (e) { return; }
       if (this._bimRestaurando) return;
       var regs = this._bimFedCarregar();
       var meus = BimFed.daObra(regs, obraId);
@@ -21253,8 +21409,14 @@
       if (!meus.length) { if (mudo) { this._b4Restauro = { total: 0 }; this._b4StatusJanela(); } return; }
       this._bimRestaurando = true;
       var emp = eid();
+      /* ⚠ PRESA À OBRA (12/10/2026). A reabertura é assíncrona (banco do
+         aparelho, um modelo por vez) e não conferia se a obra ainda era a mesma
+         quando cada modelo ficava pronto: trocando de obra no meio, os IFC da
+         obra A entravam na cena da obra B e o "Falta o arquivo de: …" da A
+         aparecia com a B na tela — medido na base do Rogério. */
+      var aindaNaObra = function () { return String(self._bimSel || "") === String(obraId); };
 
-      this._bimFila(function () {
+      return this._bimFila(function () {
         return Idb.pronto().then(function (pronto) {
           if (!pronto) return null;
           return Idb.chaves(BimCache.PREFIXO).then(function (ks) {
@@ -21265,7 +21427,9 @@
             var seq = Idb.get(BimCache.chaveIndice(emp)).then(function (b) { ix = BimCache.indiceNormal(b); });
             plano.abrir.forEach(function (r) {
               seq = seq.then(function () {
+                if (!aindaNaObra()) return;
                 return Idb.get(BimCache.chave(emp, r.arquivoId)).then(function (reg) {
+                  if (!aindaNaObra()) return;
                   var c = BimCache.conferir(reg, r.arquivoId);
                   /* ⚠ na dúvida NÃO monta: cena a partir de registro estranho é
                      o modo silencioso de mostrar o modelo errado */
@@ -21296,6 +21460,7 @@
             return;
           }
           if (!res) return;
+          if (!aindaNaObra()) return;   /* o recado é da obra que saiu da tela */
           if (res.abertos) {
             var msg = res.abertos + (res.abertos > 1 ? " modelos restaurados" : " modelo restaurado") + " do que estava guardado — não precisei dos arquivos.";
             UI.toast(msg, "ok");
@@ -21434,16 +21599,17 @@
       // checklist de cobertura (o "não esquecer nada")
       var chk = plano.cobertura.map(function (c) {
         if (!c.presente && !c.aviso) return "";
-        return '<span class="g-pill" style="background:' + (c.aviso ? "#dc262622;color:#dc2626" : "#16a34a22;color:#16a34a") + ';margin:2px">' + (c.aviso ? "⚠️ " : "✓ ") + Util.esc(c.nome) + "</span>";
+        /* tom da pílula do padrão (auditoria da fita, 12/10/2026): era hex + "22" com emoji */
+        return '<span class="mod-pil mod-pil-' + (c.aviso ? "alerta" : "ok") + '" style="margin:2px" title="' + (c.aviso ? "Nada desta etapa no modelo" : "Etapa presente no modelo") + '">' + Util.esc(c.nome) + "</span>";
       }).join("");
       var linhas = "";
       plano.etapas.forEach(function (et) {
         linhas += '<tr><td colspan="4" style="background:var(--surface-2);font-weight:800;font-size:12px">' + Util.esc(et.nome) + "</td></tr>";
         et.servicos.forEach(function (s) {
-          linhas += "<tr><td>" + Util.esc(s.nome) + (s.carimbo ? ' <span class="g-pill" style="background:#0e749022;color:#0e7490;font-size:10px" title="Vem carimbado do Revit (OrcaPRO_Etapa)">' + (typeof Icones !== 'undefined' ? Icones.get('link', 15) : '') + ' Revit</span>' : "") + (s.aviso ? ' <span class="muted" style="font-size:11px" title="' + Util.esc(s.aviso) + '">ⓘ</span>' : "") + '</td><td class="num">' + (s.quantidade != null ? Util.fmtNum(s.quantidade) : "—") + "</td><td>" + Util.esc(s.unidade || "—") + '</td><td>' + self._eapChipFonte(s.fonte) + "</td></tr>";
+          linhas += "<tr><td>" + Util.esc(s.nome) + (s.carimbo ? ' <span class="mod-pil mod-pil-info" title="Vem carimbado do Revit (OrcaPRO_Etapa)">' + (typeof Icones !== 'undefined' ? Icones.get('link', 15) : '') + ' Revit</span>' : "") + (s.aviso ? ' <span class="muted" style="font-size:11px" title="' + Util.esc(s.aviso) + '">ⓘ</span>' : "") + '</td><td class="num">' + (s.quantidade != null ? Util.fmtNum(s.quantidade) : "—") + "</td><td>" + Util.esc(s.unidade || "—") + '</td><td>' + self._eapChipFonte(s.fonte) + "</td></tr>";
         });
       });
-      var avisos = plano.avisos.length ? '<div class="card" style="padding:8px 10px;margin-top:8px;font-size:12px;background:#fffbeb;border:1px solid #fde68a;color:#92400e">' + plano.avisos.map(function (a) { return "• " + Util.esc(a); }).join("<br>") + "</div>" : "";
+      var avisos = plano.avisos.length ? '<div class="bim-aviso bim-aviso-alerta" style="margin-top:8px">' + plano.avisos.map(function (a) { return "• " + Util.esc(a); }).join("<br>") + "</div>" : "";
       var corpo =
         '<p class="muted" style="font-size:12.5px;margin-bottom:8px">O agente leu <b>' + plano.resumo.nElementos + " elementos</b> (" + plano.resumo.nOrcaveis + " orçáveis · " + plano.resumo.pctCarimbo + "% carimbados no Revit" + (plano.resumo.nDemolir ? " · " + plano.resumo.nDemolir + " a demolir" : "") + (plano.resumo.nExistentes ? " · " + plano.resumo.nExistentes + " existentes preservados" : "") + ") e montou a EAP abaixo. Ajuste os parâmetros e siga pro casamento com a base.</p>" +
         '<div style="margin-bottom:6px">' + chk + "</div>" +
@@ -21521,12 +21687,12 @@
           return '<option value="' + k + '"' + (k === l.escolhido ? " selected" : "") + ">[" + Util.esc(c.fonte) + "] " + Util.esc(c.item.codigo) + " · " + Util.esc(String(c.item.descricao || "").slice(0, 60)) + " — " + Util.esc(c.item.unidade || "?") + " (" + c.conf + "%)</option>";
         }).join("") + '<option value="-1"' + (l.escolhido === -1 ? " selected" : "") + ">— pendente (sem código; custo 0) —</option>";
         var conf = l.cands.length && l.escolhido >= 0 ? l.cands[l.escolhido].conf : null;
-        var nivel = conf == null ? ["Pendente", "#dc2626"] : conf >= 70 ? ["Alta", "#16a34a"] : conf >= 40 ? ["Média", "#d97706"] : ["Baixa", "#dc2626"];
+        var nivel = conf == null ? ["Pendente", "erro"] : conf >= 70 ? ["Alta", "ok"] : conf >= 40 ? ["Média", "alerta"] : ["Baixa", "erro"];
         html += '<tr data-eap-linha="' + idx + '"><td style="width:24px"><input type="checkbox" data-eap-inc="' + idx + '"' + (l.incluir ? " checked" : "") + ' style="width:auto"></td>' +
           "<td>" + Util.esc(l.sv.nome) + '<div class="muted" style="font-size:10.5px">' + (l.sv.nElementos || 0) + " elem. · " + Util.esc(l.sv.unidade || "") + "</div></td>" +
           '<td style="width:90px"><input data-eap-qtd="' + idx + '" value="' + (l.quantidade != null ? String(l.quantidade).replace(".", ",") : "") + '" style="width:80px" inputmode="decimal"></td>' +
           '<td><select data-eap-pick="' + idx + '" style="max-width:340px;font-size:11.5px">' + optsSel + "</select></td>" +
-          '<td style="width:70px"><span class="g-pill" data-eap-conf="' + idx + '" style="background:' + nivel[1] + '22;color:' + nivel[1] + ';font-size:10.5px">' + nivel[0] + "</span></td></tr>";
+          '<td style="width:70px"><span class="mod-pil mod-pil-' + nivel[1] + '" data-eap-conf="' + idx + '">' + nivel[0] + "</span></td></tr>";
         idx++;
       });
       var vinculo = "";
@@ -21534,7 +21700,7 @@
         var jaTem = !!obra.orcamentoId;
         vinculo = '<label style="display:flex;gap:6px;align-items:center;font-size:12.5px;margin-top:8px"><input type="checkbox" id="eap-vincular"' + (jaTem ? "" : " checked") + ' style="width:auto"> Vincular o orçamento gerado à obra <b>' + Util.esc(obra.nome) + "</b>" + (jaTem ? ' <span class="muted">(substitui o vínculo atual — o 4D passa a usar o novo)</span>' : " (liga o 4D/cronograma)") + "</label>";
       }
-      var avisoBase = temBase ? "" : '<div class="card" style="padding:8px 10px;margin-bottom:8px;font-size:12px;background:#fef2f2;border:1px solid #fecaca;color:#991b1b">Nenhuma base de preços carregada — todos os serviços sairão PENDENTES (custo 0). Carregue a SINAPI e rode de novo pra casar códigos.</div>';
+      var avisoBase = temBase ? "" : '<div class="bim-aviso bim-aviso-erro" style="margin-bottom:8px">Nenhuma base de preços carregada — todos os serviços sairão PENDENTES (custo 0). Carregue a SINAPI e rode de novo pra casar códigos.</div>';
       var corpo = avisoBase +
         '<p class="muted" style="font-size:12.5px;margin-bottom:8px">Escolha a composição de cada serviço (o agente sugere por confiança — <b>nunca inventa código</b>: sem escolha, o item entra pendente com custo 0 pra você completar). Quantidades são editáveis; o memorial de cálculo rastreável (elementos IFC + fórmula) vai junto em cada item.</p>' +
         '<div style="max-height:48vh;overflow:auto"><table class="tbl" style="font-size:12px"><thead><tr><th></th><th>Serviço</th><th>Qtd</th><th>Composição da base</th><th>Conf.</th></tr></thead><tbody>' + html + "</tbody></table></div>" + vinculo;
@@ -21565,8 +21731,8 @@
           var pill2 = raiz.querySelector('[data-eap-conf="' + i + '"]');
           if (pill2) {
             var c3 = l2.escolhido >= 0 ? l2.cands[l2.escolhido].conf : null;
-            var nv2 = c3 == null ? ["Pendente", "#dc2626"] : c3 >= 70 ? ["Alta", "#16a34a"] : c3 >= 40 ? ["Média", "#d97706"] : ["Baixa", "#dc2626"];
-            pill2.textContent = nv2[0]; pill2.style.background = nv2[1] + "22"; pill2.style.color = nv2[1];
+            var nv2 = c3 == null ? ["Pendente", "erro"] : c3 >= 70 ? ["Alta", "ok"] : c3 >= 40 ? ["Média", "alerta"] : ["Baixa", "erro"];
+            pill2.textContent = nv2[0]; pill2.className = "mod-pil mod-pil-" + nv2[1];
           }
         }
         if (t && t.hasAttribute && t.hasAttribute("data-eap-qtd")) { var i4 = +t.getAttribute("data-eap-qtd"); self._eapLinhas[i4].quantidade = Util.num(t.value); }
@@ -23345,10 +23511,34 @@
     _bimAoEditar: function (ops) {
       var self = this;
       if (this._b4Janela3d) { this._b4EdicaoRecusada(); return; }
+      /* tirando a cena da tela (PROJETOS BIM, `descarregarCena`): apagar da
+         TELA não é editar — nada vai para o disco */
+      if (this._bimCenaMuda) return;
+      /* ⚠ A EDIÇÃO É DA OBRA DONA DA CENA, NÃO DA QUE ESTÁ NO ALTO.
+         Roteiro do defeito (reproduzido em 12/10/2026 na base do Rogério): o
+         visualizador vive a sessão inteira; entrando no BIM com outra obra no
+         alto, a casca recarregava as famílias, o editor reconstruía a cena da
+         obra ANTERIOR e avisava "edição" — e esta função carimbava a obra NOVA
+         nela. O flush da montagem gravava; a obra nova perdia a modelagem dela
+         e passava a mostrar a da anterior. `_bimCenaObra` é escrito por quem
+         põe conteúdo na cena (troca de obra, replay da montagem, projeto). */
+      var dono = this._bimCenaObra;
+      if (dono == null) {
+        /* cena sem dono (a tela inicial, vazia): a primeira edição define o dono
+           — mas não grava por cima de modelagem guardada que nunca entrou na cena */
+        var chave = this._bimSel || "geral", guardadas = [];
+        try { var g0 = Store.obter(eid(), "bim_edicoes", chave); guardadas = (g0 && g0.ops) || []; } catch (eG) {}
+        if (guardadas.length && JSON.stringify((ops || []).slice(0, guardadas.length)) !== JSON.stringify(guardadas)) {
+          if (!this._bimAvisouSemDono) { this._bimAvisouSemDono = 1; UI.toast("Esta obra já tem modelagem guardada que não estava aberta: o que foi feito agora NÃO foi gravado por cima dela. Abra a obra pela tela inicial do BIM e refaça.", "aviso", 9000); }
+          return;
+        }
+        dono = this._bimCenaObra = chave;
+      }
       clearTimeout(this._bimEdSaveT);
-      this._bimEdPend = { id: this._bimSel || "geral", ops: ops };
+      this._bimEdPend = { id: dono, ops: ops };
       this._bimEdSaveT = setTimeout(function () { self._bimEdFlush(); }, 400);
       try { if (window.OrcModeloUI) OrcModeloUI.aoMudarModelo(); } catch (eOM) {}
+      try { if (window.BimProjetosUI) BimProjetosUI.aoEditar(); } catch (eBp) {}   /* o ● de "não salvo" no título */
     },
     /* ⚠ A LIXEIRA DA JANELA DO 3D NÃO TIRA O MODELO DA OBRA (28/09/2026, revisão da 1.2.98).
        O 🗑 da barra do viewer chama `onModelosRemovidos`, que remove as vagas do modelo na OBRA
@@ -25377,7 +25567,10 @@
                   self._bimSelecao ? (self._bimSelecao.nome || self._bimSelecao.tipo) : null);
               } catch (e) {}
             },
-            onModelos: function (lista) { self._bimRenderModelos(lista); },
+            onModelos: function (lista) {
+              self._bimRenderModelos(lista);
+              try { if (window.BimProjetosUI) BimProjetosUI.aoMudarCena(); } catch (eBp) {}   /* PROJETOS BIM: modelo chegou → sai a tela inicial; o ● do título */
+            },
             /* B1: modelo chegou (do arquivo ou do cache) — a casca grava a vaga
                dele na obra e a geometria convertida. É aqui que "Salvar no
                projeto" deixa de ser uma frase e vira um arquivo no disco. */
@@ -25511,16 +25704,29 @@
           // FLUSH antes de ler (re-render em <400ms leria ops velhas e REVERTERIA a última
           // edição); replay pulado se o viewer re-homed JÁ tem as mesmas ops (senão a
           // câmera pularia pro enquadramento a cada reentrada na aba)
+          /* ⚠ PROJETOS BIM (12/10/2026): só a JANELA DO 3D reabre sozinha o que
+             está guardado (ela existe para mostrar o modelo da obra). A tela do
+             BIM abre na tela inicial e os IFC guardados abrem SOB PEDIDO
+             ("Modelos IFC salvos na obra", js/bimprojetosui.js) — abrir sozinho
+             era o "abre com a obra e a volumetria lá dentro". Antes do replay, o
+             pendente vai para a obra DONA dele (ver _bimAoEditar) e a cena que é
+             de OUTRA obra sai; sem obra e sem projeto, nada carrega (a tela
+             inicial). Se o js/bimprojetosui.js não carregou, fica tudo como
+             antes. O aviso de obra (B0) fica colado no replay de propósito. */
+          var _bpMont = (window.BimProjetosUI && !self._b4Janela3d) ? BimProjetosUI : null;
           try { if (BIM.setObra) BIM.setObra(self._bimSel || ""); } catch (eB0m) {}   /* B0: a obra ANTES do replay */
           try { self._bimFedCarregar(); } catch (eB1m) {}                               /* B1: a federação da obra */
-          try { self._bimRestaurar(); } catch (eB1r) {}                                 /* B1: reabre do que está guardado */
+          if (!_bpMont) { try { self._bimRestaurar(); } catch (eB1r) {} }               /* B1: reabre do que está guardado */
           try {
             self._bimEdFlush();
-            var edSalva = Store.obter(eid(), "bim_edicoes", self._bimSel || "geral");
-            var opsSalvas = (edSalva && edSalva.ops) || [];
-            var opsVivas = BIM.editarOps ? BIM.editarOps() : [];
-            if (BIM.editarAplicar && (opsSalvas.length || opsVivas.length) &&
-                JSON.stringify(opsVivas) !== JSON.stringify(opsSalvas)) BIM.editarAplicar(opsSalvas);
+            if (!_bpMont || _bpMont.antesDoReplay(self)) {
+              var edSalva = Store.obter(eid(), "bim_edicoes", self._bimSel || "geral");
+              var opsSalvas = (edSalva && edSalva.ops) || [];
+              var opsVivas = BIM.editarOps ? BIM.editarOps() : [];
+              if (BIM.editarAplicar && (opsSalvas.length || opsVivas.length) &&
+                  JSON.stringify(opsVivas) !== JSON.stringify(opsSalvas)) BIM.editarAplicar(opsSalvas);
+              self._bimCenaObra = self._bimSel || "geral";
+            }
           } catch (eEd) {}
           // re-home: se o modelo já estava carregado (reentrou na aba / App.render), o onLoaded não
           // refira — re-popula o timeline 4D a partir do que o viewer já tem.
@@ -25549,6 +25755,8 @@
             else self._bimRenderModelos([]);
           } catch (e2) {}
           if (self._b4Janela3d) self._b4Janela3dMontada();
+          /* PROJETOS BIM: a tela inicial (nada aberto) e o projeto no título */
+          if (_bpMont) { try { _bpMont.aoMontar(self); } catch (eBpM) {} }
           return;
         }
         if (tentativas++ < 60) setTimeout(montarViewer, 200);

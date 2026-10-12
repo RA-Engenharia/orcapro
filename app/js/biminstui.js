@@ -669,11 +669,15 @@
       this._planoCota();
       this.dica();
     },
+    /* o NOME da peça vai no recado: a tomada, a luminária e o quadro diziam "Clique onde
+       colocar a louça" (auditoria de 12/10/2026) */
+    NOMES_FAM: { "ra-tomada": "a tomada", "ra-luminaria": "a luminária", "ra-quadro-distribuicao": "o quadro de distribuição",
+      "ra-bacia": "a bacia", "ra-lavatorio": "o lavatório", "ra-chuveiro": "o chuveiro", "ra-caixa-dagua": "a caixa d'água" },
     colocarFamilia: function (famId, tipoId) {
       var b = B(), G = this._G; if (!b || !b.editarArmar) return false;
       try { if (G && G._famSync) G._famSync(); } catch (e) {}
       b.editarArmar("familia", { famId: famId, tipoId: tipoId, inst: {} });
-      status("Clique onde colocar a louça (barra de espaço gira 90°). O ponto de ligação aparece como uma bolinha na cor do sistema.");
+      status("Clique onde colocar " + (this.NOMES_FAM[famId] || "a peça") + " (barra de espaço gira 90°). O ponto de ligação aparece como uma bolinha na cor do sistema.");
       return true;
     },
 

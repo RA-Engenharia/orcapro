@@ -88,6 +88,10 @@
    *
    * `m` é coluna-maior, como o three entrega (`Matrix4.elements`).
    * ------------------------------------------------------------- */
+  function identidade(m) {
+    return !!m && m.length >= 16 && m[0] === 1 && m[1] === 0 && m[2] === 0 && m[3] === 0 && m[4] === 0 && m[5] === 1 && m[6] === 0 && m[7] === 0 &&
+      m[8] === 0 && m[9] === 0 && m[10] === 1 && m[11] === 0 && m[12] === 0 && m[13] === 0 && m[14] === 0 && m[15] === 1;
+  }
   function pontoPorMatriz(m, x, y, z, fora) {
     var w = m[3] * x + m[7] * y + m[11] * z + m[15];
     if (!w) w = 1;
@@ -213,7 +217,18 @@
       var nv = g.pos.length / 3, ni = g.idx.length;
       var m = mb.m;
 
-      for (var v = 0; v < nv; v++) {
+      /* MATRIZ IDENTIDADE (as peças criadas no editor já vêm no mundo — a malha metálica, a laje,
+         a parede unida): o mesmo resultado sem as duas multiplicações por vértice. Era a maior parte
+         de refazer a cena de um galpão de 920 peças (apagar 300 delas: 0,66 s só aqui). */
+      if (identidade(m)) {
+        for (var vi = 0, n3 = nv * 3; vi < n3; vi += 3) {
+          pos[pv + vi] = g.pos[vi] - o[0]; pos[pv + vi + 1] = g.pos[vi + 1] - o[1]; pos[pv + vi + 2] = g.pos[vi + 2] - o[2];
+          var nx = g.nor[vi], ny = g.nor[vi + 1], nz = g.nor[vi + 2], dn = Math.sqrt(nx * nx + ny * ny + nz * nz);
+          if (dn > 1e-12) { nx /= dn; ny /= dn; nz /= dn; }
+          nor[pv + vi] = nx; nor[pv + vi + 1] = ny; nor[pv + vi + 2] = nz;
+        }
+        pv += nv * 3;
+      } else for (var v = 0; v < nv; v++) {
         pontoPorMatriz(m, g.pos[v * 3], g.pos[v * 3 + 1], g.pos[v * 3 + 2], p);
         /* ⚠ a subtração é feita ANTES de estreitar para float32: é ela que
            tira a coordenada georreferenciada do alcance do erro */

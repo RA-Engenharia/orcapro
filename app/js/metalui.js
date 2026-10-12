@@ -7,11 +7,14 @@
  *   js/metalligacao.js (as macros de ligação)
  *   js/metalgalpao.js (o assistente de galpão)
  *   js/metalfab.js    (marcas, DSTV, DXF, listas, desenho de fabricação)
- * Aqui: a fita (painéis Peças, Ligações, Galpão, Fabricação), os diálogos e
- * a entrega dos arquivos. Sem a prévia NADA daqui aparece.
+ * Aqui: a fita (painéis Peças, Ligações, Galpão, Cálculo, Fabricação), os
+ * diálogos e a entrega dos arquivos. Sem a prévia NADA daqui aparece.
  *
- * ⚠ A tela diz, em todo diálogo: isto é MODELAGEM, DETALHAMENTO e
- *   FABRICAÇÃO — não é cálculo estrutural.
+ * ⚠ A tela diz, em todo diálogo de Peças/Ligações/Galpão/Fabricação: isto
+ *   é MODELAGEM, DETALHAMENTO e FABRICAÇÃO — não é cálculo estrutural.
+ *   O CÁLCULO (painel "Cálculo") é outra tela: js/metalcalcui.js (assistente
+ *   endereço → vento → fechamentos → telha → perfis, cálculo num Web Worker,
+ *   resultado com as decisões do sistema, normas configuradas).
  * ===================================================================== */
 (function (global) {
   "use strict";
@@ -56,11 +59,25 @@
 
     /* ================================================= FITA */
     COMANDOS: {
+      /* CRIAR CLICANDO (js/metalcriarui.js, 12/10/2026): as cinco ferramentas desenham no 3D e na planta,
+         no plano de trabalho, com encaixe em eixos, pontas e meios; os diálogos por coordenadas ficam ao lado */
       "Peças": [
-        { id: "met-chapa", rotulo: "Chapa", icone: "quadrado", grande: true, dica: "Chapa paramétrica: retângulo ou contorno, espessura, furos em grade (furo-padrão = parafuso + 1,5 mm, NBR 8800), recortes e chanfros. Vai para o DXF de corte e para o DSTV." },
-        { id: "met-perfil", rotulo: "Perfil\ncortado", icone: "regua", grande: true, dica: "Barra de perfil do catálogo (W, U, L, tubo — AISC e Gerdau) cortada no comprimento, com corte reto ou inclinado (ângulo na alma e na aba). Vai para o DSTV (serra e furação)." },
-        { id: "met-enrijecedor", rotulo: "Enrijecedor", icone: "estrutura", grande: true, dica: "Enrijecedor no perfil I/U selecionado: chapas no plano da seção, soldadas na alma e nas mesas, com chanfro para livrar a concordância." },
-        { id: "met-mecanica", rotulo: "Peça\nmecânica", icone: "ajustes", grande: true, dica: "Família paramétrica de peça mecânica: flange (disco com furação), suporte em L, eixo maciço e bucha." }
+        { id: "met-pilar", rotulo: "Pilar", icone: "pilar", grande: true, tipo: "alterna", dica: "Pilar de perfil do catálogo: escolha o perfil (busca por nome, série ou fabricante) e clique onde ele nasce — no 3D ou na planta. Encaixa no cruzamento dos eixos; base e topo pelos níveis (Propriedades)." },
+        { id: "met-viga", rotulo: "Viga", icone: "estrutura", grande: true, tipo: "alterna", dica: "Viga de perfil: clique o início e o fim (encaixa no topo dos pilares, nas pontas, nos meios e nos eixos). O topo fica na linha clicada; digite o comprimento e Tab o ângulo." },
+        { id: "met-diagonal", rotulo: "Diagonal", icone: "desLinha", grande: true, tipo: "alterna", dica: "Diagonal / contraventamento: clique as duas pontas — encaixa em pontas de barras em cotas diferentes (base de um pilar ao topo do outro). Com plano vertical, desenha no plano do pórtico." },
+        { id: "met-terca", rotulo: "Terça /\ntravessa", icone: "regua", grande: true, tipo: "alterna", dica: "Terça ou travessa (Ue, U, C…): clique o início e o fim; a base da terça fica na linha (apoia em cima da viga). Giro em Propriedades para acompanhar o telhado." },
+        { id: "met-chapa-cliques", rotulo: "Chapa", icone: "desRetangulo", grande: true, tipo: "alterna", dica: "Chapa por dois cantos opostos: no plano de trabalho ou na face de uma peça (o 1º clique na face leva a chapa para ela). Espessura e lado em Propriedades." },
+        { id: "met-chapa", rotulo: "Chapa\nparamétrica", icone: "quadrado", dica: "Chapa paramétrica por medidas: retângulo ou contorno, espessura, furos em grade (furo-padrão = parafuso + 1,5 mm, NBR 8800), recortes e chanfros. Vai para o DXF de corte e para o DSTV." },
+        { id: "met-perfil", rotulo: "Perfil por\ncoordenadas", icone: "regua", dica: "Barra de perfil do catálogo pelas coordenadas do início, com corte reto ou inclinado (ângulo na alma e na aba). Vai para o DSTV (serra e furação)." },
+        { id: "met-enrijecedor", rotulo: "Enrijecedor", icone: "estrutura", dica: "Enrijecedor no perfil I/U selecionado: chapas no plano da seção, soldadas na alma e nas mesas, com chanfro para livrar a concordância." },
+        { id: "met-mecanica", rotulo: "Peça\nmecânica", icone: "ajustes", dica: "Família paramétrica de peça mecânica: flange (disco com furação), suporte em L, eixo maciço e bucha." }
+      ],
+      "Referência": [
+        { id: "met-plano", rotulo: "Plano de\ntrabalho", icone: "camadas", grande: true, dica: "Onde o próximo clique cai: horizontal no nível da ferramenta, na face de uma peça ou vertical por dois pontos. A grade do plano aparece no 3D com o nome." },
+        { id: "met-eixo", rotulo: "Eixo", icone: "grade", grande: true, dica: "Um eixo da grade por dois cliques, com a bolinha e o nome (número na vertical, letra na horizontal). Mover leva o pilar que está sobre ele." },
+        { id: "met-grade-eixos", rotulo: "Grade de\neixos", icone: "planta", grande: true, dica: "A grade inteira de uma vez: os vãos entre os eixos numerados e entre os de letra (6; 6; 6 ou 3x6), a origem e a extensão." },
+        { id: "met-cotas-eixos", rotulo: "Cotas dos\neixos", icone: "medir", tipo: "alterna", dica: "Cotas entre os eixos paralelos (e a total), no 3D e na planta." },
+        { id: "met-niveis-3d", rotulo: "Níveis\nno 3D", icone: "niveis", tipo: "alterna", dica: "Cada nível da obra como um plano no 3D, com o nome e a cota; o nível atual em destaque." }
       ],
       "Ligações": [
         { id: "met-placa-base", rotulo: "Placa\nde base", icone: "pilar", grande: true, dica: "Placa de base no pilar selecionado: placa, chumbadores (comprimento pela placa + ancoragem), furos alargados e solda em volta do pilar." },
@@ -74,7 +91,18 @@
         { id: "met-apagar-lig", rotulo: "Desfazer\nligação", icone: "lixeira", grande: true, dica: "Apaga a ligação inteira da peça selecionada: chapas, parafusos e os furos que ela abriu." }
       ],
       "Galpão": [
-        { id: "met-galpao", rotulo: "Assistente\nde galpão", icone: "casa", grande: true, dica: "Galpão de duas águas: pórticos de alma cheia ou treliçados, terças, tirantes, contraventamentos e colunas de tapamento, com os perfis do catálogo que você escolher e as ligações padrão aplicadas. Não dimensiona." }
+        { id: "met-galpao", rotulo: "Assistente\nde galpão", icone: "casa", grande: true, dica: "Galpão de duas águas: pórticos de alma cheia ou treliçados, terças, tirantes, contraventamentos e colunas de tapamento, com os perfis do catálogo que você escolher e as ligações padrão aplicadas. Não dimensiona — para calcular, use Cálculo › Assistente de cálculo." }
+      ],
+      /* o CÁLCULO (js/metalcalcui.js): os comandos só chamam a tela */
+      "Cálculo": [
+        { id: "met-calc-assistente", rotulo: "Assistente\nde cálculo", icone: "calculadora", grande: true, dica: "Galpão de aço calculado de ponta a ponta: o endereço dá o vento (NBR 6123); você diz as faces, a telha e os aços. O sistema decide terças, travamentos, flambagem e o perfil mais leve que passa (NBR 8800)." },
+        { id: "met-calc-modelos", rotulo: "Modelos\nprontos", icone: "camadas", grande: true, dica: "Galpões prontos para só ajustar: cobertura aberta, fechado com telha, misto alvenaria + telha, centro logístico, uma água e oficina em bloco." },
+        { id: "met-calc-calcular", rotulo: "Calcular", icone: "raio", grande: true, dica: "Calcula o galpão desta obra com os dados do assistente, em paralelo (a tela continua livre), e mostra o resultado." },
+        { id: "met-calc-resultados", rotulo: "Resultados", icone: "grafico", grande: true, dica: "Aprovado ou não, peso e kg/m², aproveitamento por grupo, as decisões do sistema com o motivo e os problemas com as soluções." },
+        { id: "met-calc-memorial", rotulo: "Memorial", icone: "relatorio", grande: false, dica: "Memorial de cálculo: ações, vento com o mapa, combinações, verificações passo a passo, cargas na fundação e as normas usadas." },
+        { id: "met-calc-pranchas", rotulo: "Pranchas", icone: "prancha", grande: false, dica: "Pranchas no padrão da casa: locação, cobertura, elevações, pórtico típico, detalhes e lista de materiais." },
+        { id: "met-calc-cype", rotulo: "Para o CYPE 3D", icone: "exportar", grande: false, dica: "Arquivo para o CYPE 3D com os perfis (inclusive os que o CYPE não tem), as cargas e os apoios." },
+        { id: "met-calc-normas", rotulo: "Normas", icone: "livro", grande: true, dica: "As normas configuradas: a edição em vigor, a que o motor usa e o que falta conferir." }
       ],
       "Fabricação": [
         { id: "met-numerar", rotulo: "Numerar\npeças", icone: "lista", grande: true, dica: "Marca as peças (iguais = mesma marca: P1, CH12…) e os conjuntos de montagem (peça principal + o que é soldado nela = A1…). Sempre a mesma marca para o mesmo modelo." },
@@ -100,10 +128,15 @@
         "met-emenda": function () { self.dlgLigacao("emendaCobrejunta"); }, "met-clip": function () { self.dlgLigacao("clipTerca"); }, "met-contravento": function () { self.dlgLigacao("contraventamento"); }, "met-no": function () { self.dlgLigacao("noTrelica"); },
         "met-conferir": function () { self.conferirTudo(); }, "met-apagar-lig": function () { self.apagarLigacao(); },
         "met-galpao": function () { self.dlgGalpao(); },
+        "met-calc-assistente": function () { self.calc("abrir"); }, "met-calc-modelos": function () { self.calc("modelos"); }, "met-calc-calcular": function () { self.calc("calcular"); },
+        "met-calc-resultados": function () { self.calc("resultados"); }, "met-calc-memorial": function () { self.calc("memorial"); }, "met-calc-pranchas": function () { self.calc("pranchas"); },
+        "met-calc-cype": function () { self.calc("cype"); }, "met-calc-normas": function () { self.calc("normas"); },
         "met-numerar": function () { self.numerar(); }, "met-desenho": function () { self.desenhos(); }, "met-dstv": function () { self.exportar("dstv"); }, "met-dxf": function () { self.exportar("dxf"); },
         "met-listas": function () { self.listas(); }, "met-ifc": function () { self.ifc(); }, "met-pacote": function () { self.pacote(); }, "met-fontes": function () { self.fontes(); }
       };
       Object.keys(h).forEach(function (k) { reg[k] = function () { try { h[k](); } catch (e) { toast("Metálica: " + (e && e.message ? e.message : e), "erro", 8000); } return true; }; });
+      /* criar clicando e a referência (plano, eixos, cotas, níveis): js/metalcriarui.js */
+      if (global.MetalCriarUI && global.MetalCriarUI.registrar) { try { global.MetalCriarUI.registrar(reg); } catch (eC) { toast("Metálica (criar clicando): " + (eC && eC.message ? eC.message : eC), "erro", 8000); } }
       /* a aba é NOVA: se a casca já estava montada, ela ressincroniza a barra de abas
          (BimShell._sincAbas — o mesmo mecanismo da troca de disciplina, que respeita o
          filtro: escolhida outra disciplina, a aba não aparece). Quando a casca monta
@@ -112,6 +145,13 @@
         try { var sh = global.BimShell; if (sh && sh._raiz && typeof sh._sincAbas === "function") sh._sincAbas(); } catch (e) {}
       }, 0);
       return true;
+    },
+
+    /* o painel Cálculo: a tela é o js/metalcalcui.js (que pode ainda não ter carregado) */
+    calc: function (qual) {
+      var C = global.MetalCalcUI;
+      if (!C || typeof C[qual] !== "function") { toast("O cálculo da metálica não carregou nesta tela (js/metalcalcui.js).", "erro", 8000); return false; }
+      return C[qual]();
     },
 
     /* =============================================== DIÁLOGO genérico de campos */
@@ -290,7 +330,15 @@
     /* ============================================================= GALPÃO */
     dlgGalpao: function () {
       var self = this, G0 = global.BimMetalGalpao.PADRAO, P = this.pontoPadrao();
-      this.form("Assistente de galpão", [
+      /* com uma peça de um galpão selecionada, o assistente EDITA esse galpão (abre com os dados dele e refaz no lugar);
+         sem seleção, cria um novo */
+      var selC = this.caixas(this.selecao())[0], alvo = selC && selC.galpao ? this.galpao(selC.galpao) : null;
+      if (alvo && alvo.info && alvo.info.calc) { toast("Este galpão veio do Cálculo do galpão: edite os dados lá (Metálica › Cálculo) e use “Atualizar o galpão no modelo”.", "aviso", 9000); if (global.MetalCalcUI && MetalCalcUI.abrir) MetalCalcUI.abrir(); return; }
+      if (alvo && alvo.info && alvo.info.par) {
+        var ap = alvo.info.par, g2 = {}; Object.keys(G0).forEach(function (k) { g2[k] = G0[k]; }); Object.keys(ap).forEach(function (k) { if (ap[k] != null) g2[k] = ap[k]; });
+        G0 = g2; P = [num(ap.x0, P[0]), num(ap.base, P[1]), num(ap.z0, P[2])];
+      }
+      this.form(alvo ? "Editar galpão (" + alvo.n + " peças)" : "Assistente de galpão", [
         { id: "vao", rotulo: "Vão (m, eixo a eixo)", valor: G0.vao, num: 1 }, { id: "comprimento", rotulo: "Comprimento (m)", valor: G0.comprimento, num: 1 }, { id: "espacamento", rotulo: "Espaçamento dos pórticos (m)", valor: G0.espacamento, num: 1 },
         { id: "peDireito", rotulo: "Pé-direito (m)", valor: G0.peDireito, num: 1 }, { id: "inclinacao", rotulo: "Inclinação do telhado (%)", valor: G0.inclinacao, num: 1 },
         { id: "tipo", rotulo: "Pórtico", valor: G0.tipo, opcoes: [["alma-cheia", "Alma cheia"], ["trelicado", "Treliçado"]] },
@@ -302,23 +350,89 @@
         { id: "tapamentos", rotulo: "Colunas de tapamento por oitão", valor: G0.tapamentos, num: 1 }, { id: "tapamento", rotulo: "Perfil da coluna de tapamento", valor: G0.tapamento, lista: this.catalogo(), partida: 1 },
         { id: "contraventos", rotulo: "Contraventamentos nos vãos extremos", valor: G0.contraventos, tipo: "check" }, { id: "ligacoes", rotulo: "Aplicar as ligações padrão", valor: G0.ligacoes, tipo: "check" },
         { id: "x0", rotulo: "Origem X (m)", valor: br(P[0], 2), num: 1 }, { id: "z0", rotulo: "Origem Z (m)", valor: br(P[2], 2), num: 1 }, { id: "base", rotulo: "Cota da base (m)", valor: br(P[1], 2), num: 1 }
-      ], function (v) { self.gerarGalpao(v); }, "", "Gerar galpão");
+      ], function (v) { self.gerarGalpao(v, alvo ? { substituir: alvo.id } : {}); }, "", alvo ? "Atualizar este galpão" : "Gerar galpão");
     },
-    gerarGalpao: function (v) {
+    /* v = os campos do diálogo (tirante em MM) ou, com op.doCalculo, o par do
+       BimMetalGalpao.parDoCalculo (já em METROS: o modelo do cálculo, com perfis,
+       terças, travessas, contraventamento e ligações dimensionadas).
+       ⚠ Sem o op.doCalculo, o tirante de 9,5 mm do cálculo virava 0,0095 mm ÷ 1000 e
+         o modelador não desenhava corrente nenhuma (exige tirante > 5 mm). */
+    /* GALPÕES NO MODELO: cada galpão gerado leva uma identidade (caixa.galpao = id em TODAS as peças dele, inclusive
+       chapas das ligações) e a 1ª peça guarda os dados (caixa.galpaoInfo = { id, par, calc, em }). É isso que deixa o
+       cálculo ATUALIZAR o galpão que já está no modelo em vez de desenhar outro por cima (pedido do Rogério, 12/10/2026). */
+    galpoes: function () {
+      var st = this.estado(), por = {}, ordem = [];
+      ((st && st.caixas) || []).forEach(function (c) {
+        if (!c || !c.galpao) return; var g = String(c.galpao);
+        if (!por[g]) { por[g] = { id: g, pecas: [], info: null }; ordem.push(g); }
+        por[g].pecas.push(String(c.id)); if (c.galpaoInfo) por[g].info = c.galpaoInfo;
+      });
+      return ordem.map(function (g) {
+        var o = por[g], P = (o.info && o.info.par) || {};
+        o.n = o.pecas.length; o.x0 = num(P.x0, 0); o.z0 = num(P.z0, 0); o.base = num(P.base, 0); o.vao = num(P.vao, 0); o.comprimento = num(P.comprimento, 0);
+        return o;
+      });
+    },
+    galpao: function (id) { return this.galpoes().filter(function (g) { return g.id === String(id); })[0] || null; },
+    gerarGalpao: function (v, op) {
+      op = op || {};
       var par = {};
       Object.keys(v || {}).forEach(function (k) { par[k] = v[k]; });
+      /* atualizar: o galpão op.substituir é refeito no MESMO lugar (origem guardada nele) */
+      var alvo = op.substituir ? this.galpao(op.substituir) : null;
+      if (op.substituir && !alvo) { toast("O galpão que este cálculo desenhou não está mais no modelo — use “Gerar o modelo 3D”.", "aviso", 8000); return { ok: false, motivo: "galpão não encontrado" }; }
+      if (alvo && alvo.info && alvo.info.par) ["x0", "z0", "base"].forEach(function (k) { if (alvo.info.par[k] != null) par[k] = alvo.info.par[k]; });
       ["vao", "comprimento", "espacamento", "peDireito", "inclinacao", "alturaTrelica", "espTercas", "tapamentos", "x0", "z0", "base"].forEach(function (k) { if (par[k] != null) par[k] = num(par[k], undefined); });
-      if (par.tirante != null) par.tirante = num(par.tirante, 0) / 1000;
-      if (par.tirante === 0) par.tirantes = false;
+      if (!op.doCalculo) {
+        if (par.tirante != null) par.tirante = num(par.tirante, 0) / 1000;
+        if (par.tirante === 0) par.tirantes = false;
+      }
       var r = global.BimMetalGalpao.gerar(par, this.novoId.bind(this));
       if (!r.ok) { toast("Galpão: " + r.motivo, "aviso", 8000); return r; }
+      /* identidade: todas as peças criadas (também as das ligações, nos lotes de dentro) levam o id do galpão */
+      var gid = alvo ? alvo.id : "galpao-" + this.novoId(), primeira = true, info = { id: gid, par: JSON.parse(JSON.stringify(par)), calc: op.calc ? JSON.parse(JSON.stringify(op.calc)) : null, em: new Date().toISOString() };
+      (function marcar(ops) { (ops || []).forEach(function (o) {
+        if (!o) return;
+        if (o.op === "criar" && o.caixa) { o.caixa.galpao = gid; if (primeira) { o.caixa.galpaoInfo = info; primeira = false; } }
+        if (o.op === "lote") marcar(o.ops);
+      }); })(r.op.ops);
+      /* atualizar = apagar as peças do galpão antigo e criar as novas NUM lote só (um Ctrl+Z volta tudo); as peças
+         que o usuário desenhou à parte não têm a marca e ficam */
+      if (alvo) {
+        r.op.ops = alvo.pecas.map(function (id) { return { op: "apagar", id: id }; }).concat(r.op.ops);
+        r.op.pedido = "Atualizar o galpão (" + alvo.n + " peças refeitas)";
+      }
+      r.galpaoId = gid; r.atualizou = !!alvo;
       if (!this.enviar(r.op)) { toast("O editor recusou o galpão.", "erro"); r.ok = false; return r; }
-      this.ultimo = { tipo: "galpao", resumo: r.resumo, avisos: r.avisos.concat(r.avisosLigacoes) };
-      status(r.resumo + " Não dimensiona: confira os perfis no projeto estrutural. Ctrl+Z desfaz.");
+      this.ultimo = { tipo: "galpao", resumo: r.resumo, avisos: r.avisos.concat(r.avisosLigacoes), doCalculo: !!op.doCalculo, galpaoId: gid };
+      status(r.resumo + (op.doCalculo ? " Modelo do cálculo: perfis, terças, travessas, contraventamento e ligações dimensionadas. Ctrl+Z desfaz." : " Não dimensiona: confira os perfis no projeto estrutural. Ctrl+Z desfaz."));
+      if (op.doCalculo) { this.enquadrarGalpao(r); return r; }
       if (r.avisos.length || r.avisosLigacoes.length) this.mostrarAvisos(r.resumo, r.avisos.concat(r.avisosLigacoes));
       else toast(r.resumo, "ok", 9000);
-      try { if (B() && B().enquadrar) B().enquadrar(); } catch (e) {}
+      this.enquadrarGalpao(r);
       return r;
+    },
+    /* depois de gerar, a câmera vai até o galpão. ⚠ O BIM não tem enquadrar() (a chamada antiga
+       não fazia nada) e o Enquadrar da barra só mede o modelo IFC (modelRoot): as peças do
+       modelador ficavam fora do quadro. BIM.olharPara(centro, distância) voa até o ponto pela
+       direção atual da câmera; a distância cabe o galpão inteiro no campo de visão. */
+    enquadrarGalpao: function (r) {
+      var b = B(); if (!b || !b.olharPara || !r) return false;
+      var p = r.par || {}, vao = num(p.vao, 0), L = num(p.comprimento, 0), mn, mx;
+      if (vao > 0 && L > 0) {
+        var H = num(p.peDireito, 0) + vao / 2 * num(p.inclinacao, 0) / 100;
+        mn = [num(p.x0, 0), num(p.base, 0), num(p.z0, 0)]; mx = [mn[0] + vao, mn[1] + H, mn[2] + L];
+      } else {
+        mn = [Infinity, Infinity, Infinity]; mx = [-Infinity, -Infinity, -Infinity];
+        (r.pecas || []).forEach(function (c) { [c.cx, c.cy, c.cz].forEach(function (v, i) { v = Number(v); if (isFinite(v)) { mn[i] = Math.min(mn[i], v); mx[i] = Math.max(mx[i], v); } }); });
+        if (!isFinite(mn[0])) return false;
+      }
+      var cam = b.cameraAtual ? b.cameraAtual() : null, fov = cam && cam.fov > 0 ? cam.fov : 50;
+      /* a esfera que envolve o galpão (meia diagonal) cabe no campo de visão VERTICAL (o menor,
+         na tela deitada): d = R ÷ sen(fov/2), com 10 % de folga. ⚠ Com a meia maior dimensão
+         no lugar de R, o 12 × 24 saía cortado em cima e embaixo (a diagonal passa do quadro). */
+      var dx = mx[0] - mn[0], dy = mx[1] - mn[1], dz = mx[2] - mn[2], raio = Math.max(Math.sqrt(dx * dx + dy * dy + dz * dz) / 2, 1);
+      try { b.olharPara([(mn[0] + mx[0]) / 2, (mn[1] + mx[1]) / 2, (mn[2] + mx[2]) / 2], raio / Math.sin(fov * Math.PI / 360) * 1.1); return true; } catch (e) { return false; }
     },
 
     /* ========================================================= FABRICAÇÃO */
@@ -376,6 +490,8 @@
     },
     pacote: function () {
       var st = this.estado(), self = this; if (!st) { toast("Abra o modelador primeiro.", "aviso"); return; }
+      /* sem peça de aço o pacote saía MUDO (nem .zip nem recado) — os vizinhos da Fabricação já avisavam (auditoria da fita, 12/10/2026) */
+      if (!F().listas(st).pecas.length) { toast("Não há peça de aço no modelo para o pacote da fábrica.", "aviso"); return; }
       var r = F().arquivos(st, { pedido: this.nomeObra().slice(0, 20) }), arqs = {};
       Object.keys(r.arquivos).forEach(function (k) { arqs[k] = r.arquivos[k]; });
       var fim = function (buf) {

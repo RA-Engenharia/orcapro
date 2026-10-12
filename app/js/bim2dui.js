@@ -151,6 +151,8 @@
           var bz = B(), ez = (global.BimPrevia && global.BimPrevia.modelador() && bz && bz.editarEstado) ? bz.editarEstado() : null;
           out.cotasModelo = ((ez && ez.estado && ez.estado.cotas) || []).map(function (c) { return { a: [c.a.x, c.a.z], b: [c.b.x, c.b.z], off: c.off, valor: c.valor }; });
         } catch (eCz) { out.cotasModelo = []; }
+        /* METÁLICA (js/metalcriarui.js): as cotas entre os eixos paralelos da grade (6,00 · 6,00 · total) */
+        try { if (global.MetalCriarUI && global.MetalCriarUI.cotasEixosPlanta) out.cotasModelo = out.cotasModelo.concat(global.MetalCriarUI.cotasEixosPlanta()); } catch (eCe) {}
         /* P2-D (js/bimambienteui.js, prévia do modelador): os AMBIENTES do nível —
            identificador (nome; número · área), esquema de cores e legenda */
         try {

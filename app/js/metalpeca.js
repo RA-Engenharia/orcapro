@@ -39,6 +39,9 @@
  * de baixo; mesa = a partir da borda). A referência não muda quando o recuo
  * no pilar muda — o furo fica onde está; o x da máquina sai na exportação.
  * `metalApagarLig` {lig} tira a ligação inteira (peças e furos).
+ * `metalAjustar` {id, caixa} troca a geometria da peça refeita pelas
+ * Propriedades (js/metalcriar.js) e guarda a identidade dela (marca, furos
+ * das ligações, serviços, fixada).
  *
  * Unidades: metros no modelo; db/d/l dos furos em MILÍMETROS (como na
  * norma e na fábrica). Massa específica 7 850 kg/m³ (js/metalnorma.js).
@@ -155,7 +158,22 @@
    *       aba), furos:[{face, x, y, db, tipo, ang}], papel, ifc, aco } */
   /* a seção do BimArq; a BARRA REDONDA fina (tirante, Ø < 2 cm, que o
      BimArq recusa para pilar de concreto) sai aqui, com a mesma forma */
+  /* PERFIL FORMADO A FRIO (NBR 6355, do js/perfisaco.js: forma "frio", tipoFrio "Ue" | "U", bw, bf, D, t em m):
+     contorno de parede fina com cantos vivos, na convenção do U laminado — caixa centrada na origem, alma à
+     esquerda (x = −bf/2), altura bw em y; enrijecedores de borda voltados para dentro. Área = a do contorno. */
+  function secaoFrio(p) {
+    var tipo = String(p.tipoFrio || "Ue"), bw = num(p.bw, 0), bf = num(p.bf, 0), D = tipo === "Ue" ? num(p.D, 0) : 0, t = num(p.t, 0);
+    if (!(bw > 0 && bf > 0 && t > 0) || !(2 * t < bw) || !(t < bf) || (tipo === "Ue" && !(D > t && D < bw / 2))) return { ok: false, motivo: "Perfil formado a frio " + tipo + ": bw, bf, D e t incoerentes." };
+    if (tipo !== "Ue" && tipo !== "U") return { ok: false, motivo: "Perfil formado a frio " + tipo + ": só Ue e U são desenhados." };
+    var x0 = -bf / 2, x1 = bf / 2, y0 = -bw / 2, y1 = bw / 2, c;
+    if (tipo === "Ue") c = [[x0, y0], [x1, y0], [x1, y0 + D], [x1 - t, y0 + D], [x1 - t, y0 + t], [x0 + t, y0 + t], [x0 + t, y1 - t], [x1 - t, y1 - t], [x1 - t, y1 - D], [x1, y1 - D], [x1, y1], [x0, y1]];
+    else c = [[x0, y0], [x1, y0], [x1, y0 + t], [x0 + t, y0 + t], [x0 + t, y1 - t], [x1, y1 - t], [x1, y1], [x0, y1]];
+    var A = 0, P = 0;
+    for (var i = 0; i < c.length; i++) { var q = c[i], r = c[(i + 1) % c.length]; A += q[0] * r[1] - r[0] * q[1]; P += Math.sqrt((r[0] - q[0]) * (r[0] - q[0]) + (r[1] - q[1]) * (r[1] - q[1])); }
+    return { ok: true, forma: "frio", contorno: c, furos: [], area: Math.abs(A) / 2, perimetro: P, larg: bf, alt: bw, rotulo: p.cat ? String(p.cat) : tipo + " " + Math.round(bw * 1000) + " × " + Math.round(bf * 1000) + (D ? " × " + Math.round(D * 1000) : "") + " × " + String(Math.round(t * 10000) / 10).replace(".", ",") };
+  }
   function secaoDe(p) {
+    if (p && p.forma === "frio") return secaoFrio(p);
     if (p && p.forma === "circ" && num(p.d, 0) > 0.003 && num(p.d, 0) < 0.02) {
       var d = num(p.d, 0); return { ok: true, forma: "circ", contorno: circ(0, 0, d / 2, 24), furos: [], area: Math.PI * d * d / 4, perimetro: Math.PI * d, larg: d, alt: d, rotulo: "Ø " + Math.round(d * 10000) / 10 + " mm" };
     }
@@ -435,6 +453,7 @@
     if (p.forma === "L" || p.forma === "tubo-ret" || p.forma === "tubo-circ") return num(p.t, 0);
     if (p.forma === "ret") return num(p.b, 0);
     if (p.forma === "circ") return num(p.d, 0);
+    if (p.forma === "frio") return num(p.t, 0);
     return 0;
   }
   function faces(p) {
@@ -459,6 +478,12 @@
     } else if (f === "circ" || f === "tubo-circ") {
       var D = f === "circ" ? g("d") : g("D");
       F.push({ face: "v", n: "a", meio: 0, t: D, y0: -D / 2, eixoY: "b", larg: D });
+    } else if (f === "frio") {
+      /* Ue/U formado a frio: alma (v) à esquerda e as duas mesas (o em cima, u embaixo) */
+      var bwf = g("bw"), bff = g("bf"), tf2 = g("t");
+      F.push({ face: "v", n: "a", meio: -bff / 2 + tf2 / 2, t: tf2, y0: -bwf / 2, eixoY: "b", larg: bwf });
+      F.push({ face: "o", n: "b", meio: bwf / 2 - tf2 / 2, t: tf2, y0: -bff / 2, eixoY: "a", larg: bff });
+      F.push({ face: "u", n: "b", meio: -bwf / 2 + tf2 / 2, t: tf2, y0: -bff / 2, eixoY: "a", larg: bff });
     }
     return F;
   }
@@ -494,6 +519,7 @@
       if (!o) return undefined;
       if (o.op === "metalFuros") return o.id != null && typeof o.lig === "string" && o.lig.length > 0 && Array.isArray(o.furos) && o.furos.every(furoOpOk);
       if (o.op === "metalApagarLig") return typeof o.lig === "string" && o.lig.length > 0;
+      if (o.op === "metalAjustar") return o.id != null && caixaMetalOk(o.caixa);
       return undefined;
     },
     aplicar: function (o, ctx) {
@@ -512,9 +538,27 @@
         });
         return true;
       }
+      if (o.op === "metalAjustar") {
+        /* a peça REFEITA pelas Propriedades (js/metalcriar.js): a geometria nova entra
+           e o que é da IDENTIDADE fica — marca, furos das ligações, serviços do orçamento,
+           fixada, material do projeto. ⚠ Peça fixada não muda (a mesma regra do mover). */
+        var c0 = ctx.caixas[o.id]; if (!c0 || c0.tipo !== "metal" || c0.fixo || !caixaMetalOk(o.caixa)) return false;
+        var nv = clone(o.caixa);
+        Object.keys(c0).forEach(function (k) { if (!GEOM_AJUSTAR[k] && !(k in nv)) nv[k] = c0[k]; });
+        ["lig", "soldadaEm", "solda", "nome"].forEach(function (k) { if (c0.metal && c0.metal[k] != null && nv.metal[k] == null) nv.metal[k] = c0.metal[k]; });
+        nv.id = o.id; ctx.caixas[o.id] = nv;
+        return true;
+      }
       return false;
     }
   };
+  /* metalAjustar: os campos que a op TROCA (o resto da caixa é identidade e fica) */
+  var GEOM_AJUSTAR = { tipo: 1, ifc: 1, b2: 1, metal: 1, cx: 1, cy: 1, cz: 1, comprimento: 1, altura: 1, espessura: 1, rotY: 1, volume: 1, massa: 1, area: 1, medidas: 1 };
+  function caixaMetalOk(c) {
+    if (!c || typeof c !== "object" || c.tipo !== "metal" || !c.metal || typeof c.metal !== "object") return false;
+    if (c.metal.kind !== "perfil" && c.metal.kind !== "chapa") return false;
+    return ["cx", "cy", "cz", "comprimento", "altura", "espessura", "rotY"].every(function (k) { return fin(c[k]); }) && c.comprimento > 0 && c.altura > 0 && c.espessura > 0;
+  }
   /* os furos de UM membro: os da própria peça (perfil daqui) + os das ligações */
   function furosDe(c) { return arr(c && c.metal && c.metal.furos).concat(arr(c && c.metalFuros)); }
 
@@ -533,7 +577,7 @@
     chapa: chapa, perfil: perfil, parafuso: parafuso, mecanica: mecanica, flange: flange, suporte: suporte,
     quadro: quadro, solidos: solidos, recalc: recalc, membro: membro, membroPonto: membroPonto, faces: faces, espessuraFace: espessuraFace,
     furoMundo: furoMundo, furosDoEixo: furosDoEixo, furosDe: furosDe, normFuroFace: normFuroFace, furoPoli: furoPoli, furoMedidas: furoMedidas,
-    nome: nome, extensao: extensao,
+    nome: nome, extensao: extensao, secao: secaoDe,   /* a seção desenhada (larg, alt, contorno) — js/metalcriar.js justifica a peça por ela */
     /* utilitários para os outros módulos metálicos */
     vet: { add: add, sub: sub, mul: mul, dot: dot, cross: cross, len: len, unit: unit, V: V, O3: O3, base: base, rotY: rotY },
     pol: { area: area2, perim: perim2, circ: circ, oblongo: oblongo, chanfrar: chanfrar, centroide: centroide, uv: ptsUV }

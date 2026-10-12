@@ -271,8 +271,11 @@
     _geo: function (id) {
       var b = B(), est = null; try { est = b && b.editarEstado ? b.editarEstado().estado : null; } catch (e) { est = null; }
       var P2 = D2(), c = P2 && P2._cache ? P2._cache[id] : null, dados = c ? c.dados : null;
-      if (st.geo && st.gk1 === est && st.gk2 === dados && st.geo.id === id) return st.geo;
-      var R = Pr(), g = R ? R.geometria(est || {}, { avaliar: b && b.familiaAvaliar ? function (f, t, i) { return b.familiaAvaliar(f, t, i); } : null }) : { els: [], segs: [], pontos: [] };
+      /* METÁLICA (js/metalcriarui.js): com pilar, viga, diagonal, terça ou chapa armados, os EIXOS da
+         grade também encaixam — o cruzamento de dois eixos é o ponto do pilar na planta de locação */
+      var sub0 = this.ferramenta(), comEixos = !!(sub0 && global.MetalCriarUI && global.MetalCriarUI.querEixos && global.MetalCriarUI.querEixos(sub0));
+      if (st.geo && st.gk1 === est && st.gk2 === dados && st.geo.id === id && st.gk3 === comEixos) return st.geo;
+      var R = Pr(), g = R ? R.geometria(est || {}, { avaliar: b && b.familiaAvaliar ? function (f, t, i) { return b.familiaAvaliar(f, t, i); } : null, eixos: comEixos }) : { els: [], segs: [], pontos: [] };
       var segs = g.segs.slice(), pontos = g.pontos.slice(), n = 0, MAX = 4000;
       function seg(a, q) {
         if (n >= MAX || dist(a, q) < 1e-4) return;
@@ -289,7 +292,7 @@
         });
         (dados.linhas || []).forEach(function (l) { if (l && fin(l[0]) && fin(l[1]) && fin(l[2]) && fin(l[3])) seg(P(l[0], l[1]), P(l[2], l[3])); });
       }
-      st.geo = { id: id, els: g.els, segs: segs, pontos: pontos }; st.gk1 = est; st.gk2 = dados;
+      st.geo = { id: id, els: g.els, segs: segs, pontos: pontos }; st.gk1 = est; st.gk2 = dados; st.gk3 = comEixos;
       return st.geo;
     },
     /* a peça do editor sob o ponto (pegada); porta/janela só aceita parede */

@@ -978,12 +978,13 @@ function montar(host, opts) {
 
   var over = document.createElement('div');
   over.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:2;pointer-events:none';
-  over.innerHTML = '<div style="pointer-events:auto;text-align:center;background:rgba(15,39,64,.82);border:2px dashed #2e6f9e;border-radius:16px;padding:28px 34px;max-width:420px;color:#dbe8f5"><div style="font-size:34px">' + (typeof Icones !== 'undefined' ? Icones.get('obra', 15) : '') + '</div><h3 style="margin:8px 0 6px">Arraste um <b>.IFC</b> aqui</h3><p style="color:#a9c1d8;font-size:13px;margin:4px 0">Exporte do Revit/pyRevit e solte — abre em 3D, offline. Recebeu o <b>arquivo da obra (.zip)</b> no grupo? Solte ele aqui, ou use <b>Arquivo da obra</b> no alto.</p></div>';
+  /* AUDITORIA (12/10/2026): o cartão do palco vazio era o navy da primeira versão — tokens do sistema agora */
+  over.innerHTML = '<div class="bim-flut" style="pointer-events:auto;text-align:center;background:var(--card-bg,#fff);border:2px dashed var(--linha-forte,#8697a9);border-radius:var(--raio-lg,16px);padding:28px 34px;max-width:420px;color:var(--texto,#15181d)"><div style="font-size:34px;color:var(--aco,#2d6a9c)">' + (typeof Icones !== 'undefined' ? Icones.get('obra', 22) : '') + '</div><h3 style="margin:8px 0 6px;font-weight:600">Arraste um <b>.IFC</b> aqui</h3><p style="color:var(--texto-fraco,#4b5563);font-size:13px;margin:4px 0">Exporte o IFC do programa de projeto e solte — abre em 3D, offline. Recebeu o <b>arquivo da obra (.zip)</b> no grupo? Solte ele aqui, ou use <b>Arquivo da obra</b> no alto.</p></div>';
   host.appendChild(over);
 
   var loading = document.createElement('div');
-  loading.style.cssText = 'position:absolute;inset:0;background:rgba(11,26,43,.86);display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;z-index:5;color:#1a2b3c';
-  loading.innerHTML = '<div style="width:40px;height:40px;border:4px solid #d3dce6;border-top-color:#16a34a;border-radius:50%;animation:bimsp 1s linear infinite"></div><div data-l="txt">Lendo o IFC…</div>';
+  loading.style.cssText = 'position:absolute;inset:0;background:rgba(11,26,43,.86);display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;z-index:5;color:var(--texto,#1a2b3c)';
+  loading.innerHTML = '<div style="width:40px;height:40px;border:4px solid var(--linha,#d3dce6);border-top-color:var(--aco,#2d6a9c);border-radius:50%;animation:bimsp 1s linear infinite"></div><div data-l="txt">Lendo o IFC…</div>';
   host.appendChild(loading);
   if (!document.getElementById('bim-spin-style')) { var st = document.createElement('style'); st.id = 'bim-spin-style'; st.textContent = '@keyframes bimsp{to{transform:rotate(360deg)}}'; document.head.appendChild(st); }
 
@@ -1096,7 +1097,7 @@ function montar(host, opts) {
   S.trava = trava;
   var travaChip = document.createElement('button');
   travaChip.type = 'button'; travaChip.setAttribute('data-bim', 'trava');
-  travaChip.style.cssText = 'position:absolute;left:10px;top:' + ((opts.topoReservado || 0) + 10) + 'px;z-index:21;display:none;border:0;border-radius:16px;padding:6px 12px;font:700 12px Inter,system-ui,sans-serif;color:#fff;background:#15803d;box-shadow:0 2px 10px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation';
+  travaChip.style.cssText = 'position:absolute;left:10px;top:' + ((opts.topoReservado || 0) + 10) + 'px;z-index:21;display:none;border:0;border-radius:16px;padding:6px 12px;font:600 12px var(--fonte,system-ui),sans-serif;color:#fff;background:var(--aco,#2d6a9c);box-shadow:0 2px 10px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation';
   host.appendChild(travaChip); S.travaChip = travaChip;   /* ⚠ e entra na lista do RE-HOME, lá em cima */
   travaChip.addEventListener('click', function (e) { e.stopPropagation(); setTrava(false); });
   function orbitaPode() { return !trava.on && !fly.on && !(S.lupa && S.lupa.on) && !(S.xr && S.xr.on); }
@@ -2367,7 +2368,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     else if (k === 'req-bim') { if (S._reqAbrir) S._reqAbrir(); }
     else if (k === 'cota') { setCota(!cota.on, 'clicado'); }
     else if (k === 'cota-iguais') {
-      if (!cota.chave) { UI0('Toque primeiro num tubo — aí eu cotô todos os iguais a ele.', 'info'); }
+      if (!cota.chave) { UI0('Toque primeiro num tubo — aí eu coto todos os iguais a ele.', 'info'); }
       else setCota(true, 'iguais');
     }
     else if (k === 'cota-todas') { setCota(true, 'todas'); }
@@ -2605,10 +2606,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   // ============================================================
   var hint = document.createElement('div');
   hint.setAttribute('data-bim', 'hint'); // âncora estável p/ testes/depuração
+  hint.className = 'bim-dica';   /* AUDITORIA 12/10/2026: era verde-limão (#22c55e) — a pílula grafite do padrão atual */
   /* ⚠ width:max-content: com left:50% e sem largura, o encolher-para-caber
      do navegador limita a caixa à METADE da tela. No celular (390 px) a dica
      da trena saía com 195 px e quatro linhas no meio do modelo. */
-  hint.style.cssText = 'position:absolute;left:50%;top:52px;transform:translateX(-50%);z-index:4;display:none;pointer-events:none;background:rgba(34,197,94,.94);color:#04240f;font-weight:600;font-size:12.5px;padding:7px 15px;border-radius:20px;box-shadow:0 6px 16px rgba(0,0,0,.35);width:max-content;max-width:90%;box-sizing:border-box;text-align:center';
+  hint.style.cssText = 'position:absolute;left:50%;top:52px;transform:translateX(-50%);z-index:4;display:none;pointer-events:none;background:var(--texto,#15181d);color:var(--surface,#fff);font-weight:500;font-size:12.5px;padding:7px 15px;border-radius:99px;box-shadow:var(--sombra,0 6px 16px rgba(0,0,0,.25));width:max-content;max-width:90%;box-sizing:border-box;text-align:center';
   host.appendChild(hint);
   S.hint = hint; // guardado p/ re-parentar no re-home (senão some ao revisitar a aba)
   /* ⚠ O BALÃO MOSTRAVA O CÓDIGO DO ÍCONE, NÃO O ÍCONE.
@@ -6085,6 +6087,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (S._lupaMover && S._lupaMover(e)) return;
     if (S._p2d && S._p2d.mover(e)) return;   /* P2-D: o realce da região do Ambiente antes do clique (js/bimambienteui.js) */
     if (S._p3) S._p3.mover(e);   /* P3: a linha de prévia do telhado/fundação (js/bimp3ui.js) — os snaps seguem */
+    if (S._metc && S._metc.mover(e)) return;   /* METÁLICA: pilar, viga, diagonal, terça e chapa clicando — encaixe 3D e a prévia da peça (js/metalcriarui.js) */
     if (S._prec && S._prec.mover(e)) {   /* B3: com a prévia do modelador, o editor usa os snaps de precisão (js/bimprecisaoui.js) */
       if (window.BimPlantaModelar && BimPlantaModelar.moverForma3d) BimPlantaModelar.moverForma3d();   /* PLANTA: a prévia da forma da barra (retângulo, círculo…) segue o cursor também no 3D */
       return;
@@ -6496,10 +6499,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   var planta = { on: false, plane: null, y0: 0, y1: 1 };
   S.planta = planta;
   var cortePanel = document.createElement('div');
-  cortePanel.style.cssText = 'position:absolute;left:10px;bottom:10px;z-index:4;display:none;flex-direction:column;gap:7px;background:rgba(255,255,255,.98);border:1px solid #d3dce6;border-radius:11px;padding:11px 13px;color:#1a2b3c;font-size:12px;width:220px';
-  cortePanel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:baseline"><b>' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Altura do corte</b><span data-c="v" style="color:#15803d;font-weight:700">—</span></div>' +
-    '<input type="range" data-c="alt" min="0" max="1000" value="620" style="width:100%;accent-color:#22c55e">' +
-    '<div style="font-size:11px;color:#5b6b7c">Esconde o que está acima do corte — a planta baixa do pavimento. A ' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' trena funciona aqui (cota horizontal).</div>' +
+  cortePanel.style.cssText = 'position:absolute;left:10px;bottom:10px;z-index:4;display:none;flex-direction:column;gap:7px;background:var(--card-bg,#fff);border:1px solid var(--linha,#d3dce6);border-radius:var(--raio,12px);padding:11px 13px;color:var(--texto,#1a2b3c);font-size:12px;width:220px';
+  cortePanel.classList.add('bim-flut', 'bim-flut-baixo');   /* painel flutuante do visualizador: tokens do sistema (css/bim-revit.css) */
+  cortePanel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:baseline"><b>' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Altura do corte</b><span data-c="v" style="color:var(--aco,#2d6a9c);font-weight:600">—</span></div>' +
+    '<input type="range" data-c="alt" min="0" max="1000" value="620" style="width:100%;accent-color:var(--aco,#2d6a9c)">' +
+    '<div style="font-size:11px;color:var(--texto-fraco,#5b6b7c)">Esconde o que está acima do corte — a planta baixa do pavimento. A ' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' trena funciona aqui (cota horizontal).</div>' +
     '<button class="btn sm primary" data-c="planta2d" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Planta baixa técnica (2D)</button>' +
     '<button class="btn sm" data-c="estilo" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + ' Estilo desenho (branco)</button>' +
     '<button class="btn sm" data-c="cortetec" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Gerar corte técnico (A–A)</button>';
@@ -6564,9 +6568,17 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
   S._replanejarCorte = replanejarCorte;
   cortePanel.querySelector('[data-c="alt"]').addEventListener('input', function () { setAlturaCorte(this.value / 1000); });
-  cortePanel.querySelector('[data-c="cortetec"]').addEventListener('click', function () { ctecIniciar(); });
-  cortePanel.querySelector('[data-c="planta2d"]').addEventListener('click', function () { fecharPaineis(); ctecCancelar(); plantaCfg.style.display = 'flex'; }); // planta técnica e corte A–A são modais centrais no mesmo z — não empilham
-  cortePanel.querySelector('[data-c="estilo"]').addEventListener('click', function () { setEstiloDesenho(!estiloD.on); });
+  /* ⚠ AUDITORIA (12/10/2026): com a fita nova, "Planta baixa técnica" e "Gerar corte técnico"
+     levam à Planta baixa 2D e ao Corte A, B, C… (o desenho atual, com cotas e hachura) e
+     "Estilo desenho" ao menu Estilo visual — os quadros da primeira versão (plantaCfg/ctec)
+     só ficam para a fita de sempre, onde as ferramentas novas não existem. */
+  function cmdNovo(id) {
+    try { if (window.BimRibbon && BimRibbon.comando(id) && window.BimShell && BimShell.executar) { BimShell.executar(id); return true; } } catch (_) {}
+    return false;
+  }
+  cortePanel.querySelector('[data-c="cortetec"]').addEventListener('click', function () { if (cmdNovo('corte-2d')) return; ctecIniciar(); });
+  cortePanel.querySelector('[data-c="planta2d"]').addEventListener('click', function () { if (cmdNovo('planta-2d')) return; fecharPaineis(); ctecCancelar(); plantaCfg.style.display = 'flex'; }); // planta técnica e corte A–A são modais centrais no mesmo z — não empilham
+  cortePanel.querySelector('[data-c="estilo"]').addEventListener('click', function () { if (window.BimEstilo && BimEstilo.previa && BimEstilo.previa() && BimEstilo.menu) { BimEstilo.menu(this); return; } setEstiloDesenho(!estiloD.on); });
 
   // ============================================================
   // ✂️ CORTE LIVRE — plano de corte em QUALQUER orientação, ao vivo
@@ -6576,18 +6588,19 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   var corteL = { on: false, plane: new THREE.Plane(new THREE.Vector3(0, -1, 0), 0), az: 0, inc: 0, inv: false, d0: 0, d1: 1 };
   S.corteL = corteL;
   var corteLPanel = document.createElement('div');
-  corteLPanel.style.cssText = 'position:absolute;left:10px;bottom:10px;z-index:4;display:none;flex-direction:column;gap:7px;background:rgba(255,255,255,.98);border:1px solid #d3dce6;border-radius:11px;padding:11px 13px;color:#1a2b3c;font-size:12px;width:240px';
+  corteLPanel.style.cssText = 'position:absolute;left:10px;bottom:10px;z-index:4;display:none;flex-direction:column;gap:7px;background:var(--card-bg,#fff);border:1px solid var(--linha,#d3dce6);border-radius:var(--raio,12px);padding:11px 13px;color:var(--texto,#1a2b3c);font-size:12px;width:240px';
+  corteLPanel.classList.add('bim-flut', 'bim-flut-baixo');   /* painel flutuante do visualizador: tokens do sistema (css/bim-revit.css) */
   corteLPanel.innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:baseline"><b>' + (typeof Icones !== 'undefined' ? Icones.get('corte', 15) : '') + ' Plano de corte</b><span data-k="v" style="color:#15803d;font-weight:700">—</span></div>' +
+    '<div style="display:flex;justify-content:space-between;align-items:baseline"><b>' + (typeof Icones !== 'undefined' ? Icones.get('corte', 15) : '') + ' Plano de corte</b><span data-k="v" style="color:var(--aco,#2d6a9c);font-weight:600">—</span></div>' +
     '<div style="display:flex;gap:5px"><button class="btn sm" data-k="ph" style="flex:1">Horizontal</button><button class="btn sm" data-k="pns" style="flex:1">N–S</button><button class="btn sm" data-k="plo" style="flex:1">L–O</button></div>' +
-    '<label style="display:flex;justify-content:space-between;font-size:11px;color:#5b6b7c">Ângulo (azimute) <span data-k="azv">0°</span></label>' +
-    '<input type="range" data-k="az" min="0" max="359" value="0" style="width:100%;accent-color:#22c55e">' +
-    '<label style="display:flex;justify-content:space-between;font-size:11px;color:#5b6b7c">Inclinação (0=vertical, 90=horizontal) <span data-k="incv">0°</span></label>' +
-    '<input type="range" data-k="inc" min="0" max="90" value="0" style="width:100%;accent-color:#22c55e">' +
-    '<label style="display:flex;justify-content:space-between;font-size:11px;color:#5b6b7c">Posição do corte <span data-k="posv">50%</span></label>' +
-    '<input type="range" data-k="pos" min="0" max="1000" value="500" style="width:100%;accent-color:#22c55e">' +
+    '<label style="display:flex;justify-content:space-between;font-size:11px;color:var(--texto-fraco,#5b6b7c)">Ângulo (azimute) <span data-k="azv">0°</span></label>' +
+    '<input type="range" data-k="az" min="0" max="359" value="0" style="width:100%;accent-color:var(--aco,#2d6a9c)">' +
+    '<label style="display:flex;justify-content:space-between;font-size:11px;color:var(--texto-fraco,#5b6b7c)">Inclinação (0=vertical, 90=horizontal) <span data-k="incv">0°</span></label>' +
+    '<input type="range" data-k="inc" min="0" max="90" value="0" style="width:100%;accent-color:var(--aco,#2d6a9c)">' +
+    '<label style="display:flex;justify-content:space-between;font-size:11px;color:var(--texto-fraco,#5b6b7c)">Posição do corte <span data-k="posv">50%</span></label>' +
+    '<input type="range" data-k="pos" min="0" max="1000" value="500" style="width:100%;accent-color:var(--aco,#2d6a9c)">' +
     '<button class="btn sm" data-k="inv" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('ciclo', 15) : '') + ' Inverter lado visível</button>' +
-    '<div style="font-size:11px;color:#5b6b7c">O modelo some do lado cortado conforme você move. Gire a órbita normalmente. A ' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' trena funciona na face do corte.</div>';
+    '<div style="font-size:11px;color:var(--texto-fraco,#5b6b7c)">O modelo some do lado cortado conforme você move. Gire a órbita normalmente. A ' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' trena funciona na face do corte.</div>';
   corteLPanel.setAttribute('data-bim', 'corteL');   /* o modo mesa troca este painel pelo controle de dedo */
   host.appendChild(corteLPanel);
   S.corteLPanel = corteLPanel;
@@ -6726,7 +6739,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   function salvarSnap() { try { localStorage.setItem('orcapro:bim:snap', JSON.stringify({ on: snap.on, v: snap.v, m: snap.m, a: snap.a, i: snap.i, c: snap.c })); } catch (_) {} }
   S.snap = snap;
   var snapPanel = document.createElement('div');
-  snapPanel.style.cssText = 'position:absolute;right:10px;top:52px;z-index:4;display:none;flex-direction:column;gap:7px;background:rgba(255,255,255,.98);border:1px solid #d3dce6;border-radius:11px;padding:11px 13px;color:#1a2b3c;font-size:12px;width:210px';
+  snapPanel.style.cssText = 'position:absolute;right:10px;top:52px;z-index:4;display:none;flex-direction:column;gap:7px;background:var(--card-bg,#fff);border:1px solid var(--linha,#d3dce6);border-radius:var(--raio,12px);padding:11px 13px;color:var(--texto,#1a2b3c);font-size:12px;width:210px';
+  snapPanel.classList.add('bim-flut');   /* painel flutuante do visualizador: tokens do sistema (css/bim-revit.css) */
   snapPanel.innerHTML =
     '<div style="display:flex;justify-content:space-between;align-items:center"><b>' + (typeof Icones !== 'undefined' ? Icones.get('ima', 15) : '') + ' Snap da trena</b><button class="btn sm" data-s="on" style="padding:2px 9px">ON</button></div>' +
     '<div style="display:flex;gap:5px;flex-wrap:wrap">' +
@@ -6735,7 +6749,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     '<button class="btn sm" data-s="a" style="flex:1" title="Agarra no ponto mais próximo da aresta">◆ Aresta</button>' +
     '<button class="btn sm" data-s="i" style="flex:1" title="Agarra no CRUZAMENTO real de duas arestas (canto parede×viga)">✚ Interseção</button>' +
     '<button class="btn sm" data-s="c" style="flex:1" title="Agarra no EIXO de uma boca redonda: ponta de tubo, furo, pilar circular">⊕ Centro</button></div>' +
-    '<div style="font-size:11px;color:#5b6b7c">Aproxime o clique de um canto/aresta: a cota agarra no ponto exato (o marcador mostra o tipo). Sem alvo por perto, mede na superfície livre.</div>';
+    '<div style="font-size:11px;color:var(--texto-fraco,#5b6b7c)">Aproxime o clique de um canto/aresta: a cota agarra no ponto exato (o marcador mostra o tipo). Sem alvo por perto, mede na superfície livre.</div>';
   host.appendChild(snapPanel);
   S.snapPanel = snapPanel;
 
@@ -6770,7 +6784,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
      1600 px. Ancorar `left` e `right` faz a janela caber no que existe,
      qualquer que seja o tamanho da tela, e o `max-width` só impede que ela
      fique larga demais para ler numa tela grande. */
-  reqPanel.style.cssText = 'position:absolute;left:10px;right:10px;top:56px;z-index:5;display:none;flex-direction:column;gap:8px;background:rgba(255,255,255,.985);border:1px solid #d3dce6;border-radius:11px;padding:12px 14px;color:#1a2b3c;font-size:12px;max-width:1180px;max-height:86%;overflow:auto;box-shadow:0 14px 38px rgba(12,31,51,.28)';
+  reqPanel.style.cssText = 'position:absolute;left:10px;right:10px;top:56px;z-index:5;display:none;flex-direction:column;gap:8px;background:var(--card-bg,#fff);border:1px solid var(--linha,#d3dce6);border-radius:11px;padding:12px 14px;color:var(--texto,#1a2b3c);font-size:12px;max-width:1180px;max-height:86%;overflow:auto;box-shadow:0 14px 38px rgba(12,31,51,.28)';
+  reqPanel.classList.add('bim-flut');   /* painel flutuante do visualizador: tokens do sistema (css/bim-revit.css) */
   host.appendChild(reqPanel);
   S.reqPanel = reqPanel;
   var reqEstado = null;
@@ -7018,7 +7033,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       /* linha removida continua VISIVEL, riscada e apagada: sumir de vez
          tiraria da pessoa a chance de perceber que removeu a errada */
       return '<tr' + (x.removido ? ' style="opacity:.45;text-decoration:line-through"' : '') + '>' +
-        '<td style="padding:5px 4px;vertical-align:top;border-top:1px solid #d3dce6">' +
+        '<td style="padding:5px 4px;vertical-align:top;border-top:1px solid var(--linha,#d3dce6)">' +
           /* ⚠ O NOME DE MERCADO NA FRENTE, A FAMÍLIA LOGO ABAIXO — nunca só um
              dos dois. É a descrição que casa com a base e que o fornecedor
              entende; é a família que o engenheiro reconhece para achar a peça
@@ -7026,13 +7041,13 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
              pessoas sem a referência que ela usa. */
           (p.descricao
             ? '<div><b>' + esc(String(p.descricao).slice(0, 54)) + '</b>' +
-                '<span title="O nome de mercado veio do campo Descrição do modelo — é ele que foi usado para casar com a base" style="margin-left:5px;font-size:9.5px;font-weight:700;color:#15803d;border:1px solid #86efac;border-radius:99px;padding:0 5px">Descrição</span></div>' +
+                '<span title="O nome de mercado veio do campo Descrição do modelo — é ele que foi usado para casar com a base" style="margin-left:5px;font-size:9.5px;font-weight:700;color:var(--verde,#15803d);border:1px solid #86efac;border-radius:99px;padding:0 5px">Descrição</span></div>' +
               '<div style="color:#6b7a8a;font-size:10.5px">' + esc(String(p.familia || p.rotulo || '(sem família)').slice(0, 54)) + '</div>' +
               (p.descricaoVariantes > 1
                 ? '<div style="color:#b45309;font-size:10.5px">' + p.descricaoVariantes + ' descrições diferentes nestas peças — comprando pela primeira</div>'
                 : '')
             : '<div><b>' + esc(String(p.familia || p.rotulo || '(sem nome no modelo)').slice(0, 54)) + '</b></div>') +
-          '<div style="color:#5b6b7c;font-size:11px">' + p.n + ' pç · ' +
+          '<div style="color:var(--texto-fraco,#5b6b7c);font-size:11px">' + p.n + ' pç · ' +
             (p.fonteQtd === 'contagem' ? 'por contagem'
               : p.fonteQtd === 'parcial'
                 ? ('<span style="color:#b45309">' + p.quantidade.toFixed(2) + ' ' + p.unidade + ' — INCOMPLETO, ' + p.faltamMedida + ' peça(s) sem medida no IFC</span>')
@@ -7044,23 +7059,23 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
              outro deixaria metade das duas pessoas sem a referência que usa —
              a mesma razão de a linha mostrar descrição E família. */
           (p.barras
-            ? '<div style="color:#15803d;font-size:11px;font-weight:700">' + p.barras +
+            ? '<div style="color:var(--verde,#15803d);font-size:11px;font-weight:700">' + p.barras +
                 ' barra(s) de ' + p.barraM + ' m para comprar</div>'
             : '') +
           /* ⚠ O QUE FOI FUNDIDO APARECE. Juntar por descrição some com a
              família, e é pela família que o engenheiro acha a peça de volta
              no Revit. Linha que ninguém rastreia é pior que linha repetida. */
           (p.familiasReunidas > 1
-            ? '<div style="color:#5b6b7c;font-size:10.5px" title="' +
+            ? '<div style="color:var(--texto-fraco,#5b6b7c);font-size:10.5px" title="' +
                 esc((p.familiasOutras || []).join(' · ')) + '">' +
                 p.familiasReunidas + ' famílias do modelo reunidas nesta descrição</div>'
             : '') +
         '</td>' +
-        '<td style="padding:5px 4px;vertical-align:top;min-width:260px;border-top:1px solid #d3dce6">' +
+        '<td style="padding:5px 4px;vertical-align:top;min-width:260px;border-top:1px solid var(--linha,#d3dce6)">' +
           (opcoes
             ? '<select data-rq-sel="' + x.idx + '" style="width:100%;font-size:11px"><option value="">— deixar pendente —</option>' + opcoes + '</select>'
             : '<span style="color:#b45309">sem candidato na base</span>') +
-          '<div style="color:#5b6b7c;font-size:11px;margin-top:3px">' + esc(v.porque) + '</div>' +
+          '<div style="color:var(--texto-fraco,#5b6b7c);font-size:11px;margin-top:3px">' + esc(v.porque) + '</div>' +
           /* ⚠ A PORTA DE SAÍDA DA LISTA CURTA. Os candidatos são os 6 melhores
              de um casamento automático, e quando ele erra a pessoa ficava sem
              caminho: ou aceitava um dos seis, ou criava insumo próprio
@@ -7073,13 +7088,13 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
             ? '<div style="margin-top:5px;border-top:1px dashed #c9d5e1;padding-top:5px">' +
                 '<input data-rq-busca="' + x.idx + '" value="' + esc(reqBusca.termo || '') + '" ' +
                   'placeholder="buscar na base: codigo ou palavras da descricao" ' +
-                  'style="width:100%;padding:4px 7px;border-radius:6px;border:1px solid #9db4c8;background:#ffffff;color:#1a2b3c;font-size:11px">' +
+                  'style="width:100%;padding:4px 7px;border-radius:6px;border:1px solid #9db4c8;background:#ffffff;color:var(--texto,#1a2b3c);font-size:11px">' +
                 '<div id="rq-res-' + x.idx + '" style="max-height:150px;overflow:auto;margin-top:4px">' +
                   reqBuscaResultados(x.idx, reqBusca.termo) + '</div></div>'
             : '') +
         '</td>' +
-        '<td style="padding:5px 4px;vertical-align:top;text-align:right;border-top:1px solid #d3dce6;white-space:nowrap">' +
-          (x.escolhido ? '<div style="color:#15803d;margin-bottom:3px">✓</div>' : '') +
+        '<td style="padding:5px 4px;vertical-align:top;text-align:right;border-top:1px solid var(--linha,#d3dce6);white-space:nowrap">' +
+          (x.escolhido ? '<div style="color:var(--verde,#15803d);margin-bottom:3px">✓</div>' : '') +
           /* ⚠ A DÚVIDA SE TIRA NA OBRA. Quando dois insumos parecem iguais no
              papel, quem sabe qual é a peça é o modelo — e ele está do lado.
              Este botão leva a câmera até as peças desta linha e as contorna. */
@@ -7104,8 +7119,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       '<div style="display:flex;align-items:center;gap:8px">' +
         '<b style="flex:1">Requisitar pelo modelo</b>' +
         '<button class="btn sm" data-rq="fechar" title="Fechar">' + ico('fechar') + '</button></div>' +
-      '<div style="color:#5b6b7c">' + pecas.length + ' peças distintas · ' +
-        '<span style="color:#15803d">' + cont.ok + ' casadas</span> · ' + cont.escolher + ' a escolher · ' +
+      '<div style="color:var(--texto-fraco,#5b6b7c)">' + pecas.length + ' peças distintas · ' +
+        '<span style="color:var(--verde,#15803d)">' + cont.ok + ' casadas</span> · ' + cont.escolher + ' a escolher · ' +
         '<span style="color:#b45309">' + cont.sem + ' sem candidato</span>' +
         /* ⚠ O QUE FOI REMOVIDO TEM DE APARECER NO CABEÇALHO. Com 182 linhas a
            pessoa rola a lista e não vê o que riscou lá em cima; sem este
@@ -7125,7 +7140,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         var r = reqEstado.resumo || {};
         var cd = r.comDescricao || 0, tot = pecas.length;
         if (cd) {
-          return '<div style="color:#15803d;font-size:11px">' + cd + ' de ' + tot +
+          return '<div style="color:var(--verde,#15803d);font-size:11px">' + cd + ' de ' + tot +
             ' peças trouxeram a <b>Descrição</b> do modelo — é por ela que o casamento com a base foi feito' +
             (r.descricaoDivergente ? ', e em ' + r.descricaoDivergente + ' há descrições diferentes na mesma peça' : '') + '</div>';
         }
@@ -7342,7 +7357,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   };
 
   var sisPanel = document.createElement('div');
-  sisPanel.style.cssText = 'position:absolute;left:10px;bottom:14px;z-index:4;display:none;flex-direction:column;gap:6px;background:rgba(255,255,255,.98);border:1px solid #d3dce6;border-radius:11px;padding:11px 13px;color:#1a2b3c;font-size:12px;width:238px;max-height:72%;overflow:auto';
+  sisPanel.style.cssText = 'position:absolute;left:10px;bottom:14px;z-index:4;display:none;flex-direction:column;gap:6px;background:var(--card-bg,#fff);border:1px solid var(--linha,#d3dce6);border-radius:var(--raio,12px);padding:11px 13px;color:var(--texto,#1a2b3c);font-size:12px;width:238px;max-height:72%;overflow:auto';
+  sisPanel.classList.add('bim-flut', 'bim-flut-baixo');   /* painel flutuante do visualizador: tokens do sistema (css/bim-revit.css) */
   host.appendChild(sisPanel);
   S.sisPanel = sisPanel;
   function pintarSisPanel() {
@@ -7351,14 +7367,14 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       return '<label style="display:flex;align-items:center;gap:8px;cursor:pointer">' +
         '<input type="color" data-sk="' + k + '" value="' + sisCores[k] + '" style="width:26px;height:22px;border:0;background:none;padding:0;cursor:pointer">' +
         '<span style="flex:1">' + esc(SIS_PADRAO[k].nome) + '</span>' +
-        '<b style="color:#5b6b7c;font-weight:600">' + cnt[k] + '</b></label>';
+        '<b style="color:var(--texto-fraco,#5b6b7c);font-weight:600">' + cnt[k] + '</b></label>';
     }).join('');
     sisPanel.innerHTML =
       '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>' + (typeof Icones !== 'undefined' ? Icones.get('paleta', 15) : '') + ' Sistemas hidrossanitários</b>' +
-      '<button class="btn sm" data-sx="fechar" style="padding:2px 8px" title="Desligar as cores por sistema">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>' +
-      (linhas || '<div style="color:#5b6b7c;line-height:1.4">Nenhum sistema hidráulico reconhecido pelos nomes dos elementos. As cores aparecem quando o IFC tiver tubulação nomeada (água fria, esgoto, pluvial, gás, incêndio…).</div>') +
+      '<button class="btn sm" data-sx="fechar" style="padding:2px 8px" title="Desligar as cores por sistema">Desligar cores</button></div>' +
+      (linhas || '<div style="color:var(--texto-fraco,#5b6b7c);line-height:1.4">Nenhum sistema hidráulico reconhecido pelos nomes dos elementos. As cores aparecem quando o IFC tiver tubulação nomeada (água fria, esgoto, pluvial, gás, incêndio…).</div>') +
       '<div style="display:flex;gap:6px;margin-top:2px"><button class="btn sm" data-sx="padrao" style="flex:1" title="Voltar às cores padrão">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Cores padrão</button></div>' +
-      '<div style="font-size:11px;color:#5b6b7c;line-height:1.4">Estas cores também valem na <b>Planta baixa</b> e no <b>RA/RV</b>. Clique numa cor pra trocar.</div>';
+      '<div style="font-size:11px;color:var(--texto-fraco,#5b6b7c);line-height:1.4">Estas cores também valem na <b>Planta baixa</b> e no <b>RA/RV</b>. Clique numa cor pra trocar.</div>';
   }
   // legenda compacta (chips) para o overlay do imersivo — pintada dentro do xrHud
   function montarLegendaChips() {
@@ -7667,12 +7683,13 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
 
   // painel flutuante do Blocok (espessura + peso + insumos editáveis + desconto de vãos)
   var blocokPanel = document.createElement('div');
-  blocokPanel.style.cssText = 'position:absolute;left:10px;bottom:14px;z-index:4;display:none;flex-direction:column;gap:7px;background:rgba(255,255,255,.985);border:1px solid #d3dce6;border-radius:11px;padding:12px 13px;color:#1a2b3c;font-size:12px;width:264px;max-height:80%;overflow:auto';
+  blocokPanel.style.cssText = 'position:absolute;left:10px;bottom:14px;z-index:4;display:none;flex-direction:column;gap:7px;background:var(--card-bg,#fff);border:1px solid var(--linha,#d3dce6);border-radius:11px;padding:12px 13px;color:var(--texto,#1a2b3c);font-size:12px;width:264px;max-height:80%;overflow:auto';
+  blocokPanel.classList.add('bim-flut', 'bim-flut-baixo');   /* painel flutuante do visualizador: tokens do sistema (css/bim-revit.css) */
   host.appendChild(blocokPanel);
   S.blocokPanel = blocokPanel;
-  var INP = 'width:58px;background:#0b1a2b;border:1px solid #d3dce6;color:#1a2b3c;border-radius:5px;padding:2px 5px';
+  var INP = 'width:58px;background:var(--surface,#fff);border:1px solid var(--linha,#d3dce6);color:var(--texto,#1a2b3c);border-radius:5px;padding:2px 5px';
   function linhaNum(rot, attrs, val, unid) {
-    return '<label style="display:flex;align-items:center;gap:5px;margin-top:3px"><span style="flex:1;color:#5b6b7c;font-size:11px">' + rot + '</span><input type="number" min="0" step="0.1" ' + attrs + ' value="' + val + '" style="' + INP + '"><span style="color:#5b6b7c;font-size:10px;width:40px">' + unid + '</span></label>';
+    return '<label style="display:flex;align-items:center;gap:5px;margin-top:3px"><span style="flex:1;color:var(--texto-fraco,#5b6b7c);font-size:11px">' + rot + '</span><input type="number" min="0" step="0.1" ' + attrs + ' value="' + val + '" style="' + INP + '"><span style="color:var(--texto-fraco,#5b6b7c);font-size:10px;width:40px">' + unid + '</span></label>';
   }
   function pintarBlocokPanel() {
     var c = ensureInsCfg();
@@ -7680,7 +7697,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var juntaOpts = [['cola', 'Cola/adesivo polimérico (cordão)'], ['argamassa', 'Argamassa polimérica (junta preenchida)'], ['seca', 'Encaixe seco (sem argamassa)']].map(function (o) { return '<option value="' + o[0] + '"' + (c.junta.tipo === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('');
     var juntaExtra = (c.junta.tipo === 'cola') ? linhaNum('Consumo do adesivo', 'data-bkj="cola"', c.junta.colaKgM2, 'kg/m²')
       : (c.junta.tipo === 'argamassa') ? linhaNum('Espessura da junta', 'data-bkj="gap"', c.junta.gapCm, 'cm') : '';
-    var pesos = [10, 13, 15, 20].map(function (e) { return '<label style="display:flex;align-items:center;gap:5px;margin-top:3px"><span style="width:36px;color:#5b6b7c">' + e + ' cm</span><input type="number" min="1" step="0.5" data-bkp="peso" data-esp="' + e + '" value="' + blocokCfg.pesoPorEsp[e] + '" style="' + INP + '"><span style="color:#5b6b7c;font-size:11px">kg/placa</span></label>'; }).join('');
+    var pesos = [10, 13, 15, 20].map(function (e) { return '<label style="display:flex;align-items:center;gap:5px;margin-top:3px"><span style="width:36px;color:var(--texto-fraco,#5b6b7c)">' + e + ' cm</span><input type="number" min="1" step="0.5" data-bkp="peso" data-esp="' + e + '" value="' + blocokCfg.pesoPorEsp[e] + '" style="' + INP + '"><span style="color:var(--texto-fraco,#5b6b7c);font-size:11px">kg/placa</span></label>'; }).join('');
     var traco = linhaNum('Cimento CP-V', 'data-bkm="cimento"', c.mix.cimento, 'kg/m³')
       + linhaNum('Areia industrial', 'data-bkm="areia"', c.mix.areia, 'm³/m³')
       + linhaNum('Pedrisco', 'data-bkm="pedrisco"', c.mix.pedrisco, 'm³/m³')
@@ -7696,12 +7713,12 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       + linhaNum('Placas/pallet', 'data-bklg="placasPallet"', lc.placasPallet, 'un');
     blocokPanel.innerHTML =
       '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>' + (typeof Icones !== 'undefined' ? Icones.get('bloco', 15) : '') + ' Plantas Executivas Blocok</b><button class="btn sm" data-bk="fechar" style="padding:2px 8px">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>'
-      + '<div style="font-size:11px;color:#5b6b7c;line-height:1.35">Lê as paredes do IFC → pranchas 90×90 numeradas + material + <b>insumos calculados</b> + carga na fundação.</div>'
-      + '<label style="display:flex;flex-direction:column;gap:2px"><span style="color:#5b6b7c">Espessura Blocok</span><select data-bk="esp" style="background:#0b1a2b;border:1px solid #d3dce6;color:#1a2b3c;border-radius:5px;padding:3px 5px">' + espOpts + '</select></label>'
-      + '<label style="display:flex;flex-direction:column;gap:2px;margin-top:2px"><span style="color:#5b6b7c">Junta de assentamento</span><select data-bk="junta" style="background:#0b1a2b;border:1px solid #d3dce6;color:#1a2b3c;border-radius:5px;padding:3px 5px">' + juntaOpts + '</select></label>' + juntaExtra
-      + '<details style="border-top:1px solid #d3dce6;padding-top:5px"><summary style="cursor:pointer;font-size:11px;color:#243b52">Traço do micro concreto (avançado)</summary>' + traco + '</details>'
-      + '<details style="border-top:1px solid #d3dce6;padding-top:5px"><summary style="cursor:pointer;font-size:11px;color:#243b52">Peso por placa (compra)</summary>' + pesos + '</details>'
-      + '<details style="border-top:1px solid #d3dce6;padding-top:5px"><summary style="cursor:pointer;font-size:11px;color:#243b52">Mão de obra & logística (planilha)</summary>' + molog + '</details>'
+      + '<div style="font-size:11px;color:var(--texto-fraco,#5b6b7c);line-height:1.35">Lê as paredes do IFC → pranchas 90×90 numeradas + material + <b>insumos calculados</b> + carga na fundação.</div>'
+      + '<label style="display:flex;flex-direction:column;gap:2px"><span style="color:var(--texto-fraco,#5b6b7c)">Espessura Blocok</span><select data-bk="esp" style="background:var(--surface,#fff);border:1px solid var(--linha,#d3dce6);color:var(--texto,#1a2b3c);border-radius:5px;padding:3px 5px">' + espOpts + '</select></label>'
+      + '<label style="display:flex;flex-direction:column;gap:2px;margin-top:2px"><span style="color:var(--texto-fraco,#5b6b7c)">Junta de assentamento</span><select data-bk="junta" style="background:var(--surface,#fff);border:1px solid var(--linha,#d3dce6);color:var(--texto,#1a2b3c);border-radius:5px;padding:3px 5px">' + juntaOpts + '</select></label>' + juntaExtra
+      + '<details style="border-top:1px solid var(--linha,#d3dce6);padding-top:5px"><summary style="cursor:pointer;font-size:11px;color:#243b52">Traço do micro concreto (avançado)</summary>' + traco + '</details>'
+      + '<details style="border-top:1px solid var(--linha,#d3dce6);padding-top:5px"><summary style="cursor:pointer;font-size:11px;color:#243b52">Peso por placa (compra)</summary>' + pesos + '</details>'
+      + '<details style="border-top:1px solid var(--linha,#d3dce6);padding-top:5px"><summary style="cursor:pointer;font-size:11px;color:#243b52">Mão de obra & logística (planilha)</summary>' + molog + '</details>'
       + '<label style="display:flex;align-items:center;gap:6px;margin-top:2px"><input type="checkbox" data-bk="vaos"' + (blocokCfg.descontarVaos ? ' checked' : '') + '> descontar vãos (portas/janelas)</label>'
       + '<button class="btn sm primary" data-bk="gerar" style="margin-top:2px">' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Gerar plantas executivas</button>'
       + '<button class="btn sm" data-bk="planilha" style="margin-top:2px">' + (typeof Icones !== 'undefined' ? Icones.get('graficos', 15) : '') + ' Gerar planilha (Excel)</button>'
@@ -8834,7 +8851,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
   // painel de configuração do corte
   var ctecCfg = document.createElement('div');
-  ctecCfg.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:6;display:none;flex-direction:column;gap:8px;background:rgba(255,255,255,.985);border:1px solid #d3dce6;border-radius:12px;padding:14px 16px;color:#1a2b3c;font-size:12px;width:260px;box-shadow:0 12px 34px rgba(0,0,0,.5)';
+  ctecCfg.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:6;display:none;flex-direction:column;gap:8px;background:var(--card-bg,#fff);border:1px solid var(--linha,#d3dce6);border-radius:12px;padding:14px 16px;color:var(--texto,#1a2b3c);font-size:12px;width:260px;box-shadow:0 12px 34px rgba(0,0,0,.5)';
+  ctecCfg.classList.add('bim-flut');   /* painel flutuante do visualizador: tokens do sistema (css/bim-revit.css) */
   ctecCfg.innerHTML =
     '<b>' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Gerar corte técnico</b>' +
     '<label style="display:flex;justify-content:space-between;align-items:center">Tipo de vista <select data-t="tipo" class="inp" style="width:130px"><option value="corte">Corte (A–A)</option><option value="fachada">Fachada/Elevação</option></select></label>' +
@@ -8849,8 +8867,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   var ctecModal = document.createElement('div');
   ctecModal.style.cssText = 'position:absolute;inset:0;z-index:7;display:none;align-items:center;justify-content:center;background:rgba(4,12,22,.82)';
   ctecModal.innerHTML =
-    '<div style="display:flex;flex-direction:column;gap:9px;max-width:92%;max-height:92%;background:#ffffff;border:1px solid #d3dce6;border-radius:12px;padding:13px">' +
-    '<div style="display:flex;justify-content:space-between;align-items:center;color:#1a2b3c;font-size:13px"><b data-r="titulo">Corte técnico</b>' +
+    '<div style="display:flex;flex-direction:column;gap:9px;max-width:92%;max-height:92%;background:#ffffff;border:1px solid var(--linha,#d3dce6);border-radius:12px;padding:13px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;color:var(--texto,#1a2b3c);font-size:13px"><b data-r="titulo">Corte técnico</b>' +
     '<span><button class="btn sm" data-r="ajustar" title="Mudar escala/tipo/profundidade sem redesenhar a linha">🔧 Ajustar</button> <button class="btn sm" data-r="imprimir">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Imprimir</button> <button class="btn sm" data-r="baixar">' + (typeof Icones !== 'undefined' ? Icones.get('baixar', 15) : '') + ' PNG</button> <button class="btn sm" data-r="fechar">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></span></div>' +
     '<div style="overflow:auto;background:#fff;border-radius:6px;text-align:center"><img data-r="img" style="max-width:100%;display:block;margin:0 auto"></div></div>';
   host.appendChild(ctecModal);
@@ -9114,7 +9132,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   S._edgesEstilo = function (mostrar) { if (!estiloD.on) return; todasMalhas(function (m) { if (m.userData._edgeLn) m.userData._edgeLn.visible = !!mostrar; }); };
 
   var plantaCfg = document.createElement('div');
-  plantaCfg.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:6;display:none;flex-direction:column;gap:8px;background:rgba(255,255,255,.985);border:1px solid #d3dce6;border-radius:12px;padding:14px 16px;color:#1a2b3c;font-size:12px;width:270px;box-shadow:0 12px 34px rgba(0,0,0,.5)';
+  plantaCfg.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:6;display:none;flex-direction:column;gap:8px;background:var(--card-bg,#fff);border:1px solid var(--linha,#d3dce6);border-radius:12px;padding:14px 16px;color:var(--texto,#1a2b3c);font-size:12px;width:270px;box-shadow:0 12px 34px rgba(0,0,0,.5)';
+  plantaCfg.classList.add('bim-flut');   /* painel flutuante do visualizador: tokens do sistema (css/bim-revit.css) */
   plantaCfg.innerHTML =
     '<b>' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Planta baixa técnica</b>' +
     '<label style="display:flex;justify-content:space-between;align-items:center">Escala <select data-q="esc" class="inp" style="width:130px"><option value="50" selected>1:50</option><option value="75">1:75</option><option value="100">1:100</option><option value="200">1:200</option></select></label>' +
@@ -9774,7 +9793,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return v;
   }
   var pavPanel = document.createElement('div');
-  pavPanel.style.cssText = 'position:absolute;left:10px;top:52px;z-index:4;display:none;flex-direction:column;gap:6px;background:rgba(255,255,255,.98);border:1px solid #d3dce6;border-radius:11px;padding:11px 13px;color:#1a2b3c;font-size:12px;width:250px;max-height:55%;overflow:auto';
+  pavPanel.style.cssText = 'position:absolute;left:10px;top:52px;z-index:4;display:none;flex-direction:column;gap:6px;background:var(--card-bg,#fff);border:1px solid var(--linha,#d3dce6);border-radius:var(--raio,12px);padding:11px 13px;color:var(--texto,#1a2b3c);font-size:12px;width:250px;max-height:55%;overflow:auto';
+  pavPanel.classList.add('bim-flut');   /* painel flutuante do visualizador: tokens do sistema (css/bim-revit.css) */
   host.appendChild(pavPanel);
   S.pavPanel = pavPanel;
   function todasMalhas(fn) { modelRoot.children.forEach(function (g) { (g.children || []).forEach(fn); }); }
@@ -9812,19 +9832,19 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var lst = pavLista();
     var html = '<div style="display:flex;justify-content:space-between;align-items:center"><b>' + (typeof Icones !== 'undefined' ? Icones.get('niveis', 15) : '') + ' Pavimentos</b><button class="btn sm" data-p="todos" title="Mostrar todos os pavimentos de novo">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Todos</button></div>';
     if (!lst.length) {
-      html += '<div style="font-size:11px;color:#5b6b7c">Este IFC não declara pavimentos (IfcBuildingStorey). Use a ' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Planta com o slider de altura.</div>';
+      html += '<div style="font-size:11px;color:var(--texto-fraco,#5b6b7c)">Este IFC não declara pavimentos (IfcBuildingStorey). Use a ' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Planta com o slider de altura.</div>';
     } else {
       var base = null;
       lst.forEach(function (pv) { if (pv.y0 != null && (base == null || pv.y0 < base)) base = pv.y0; });
       lst.forEach(function (pv) {
         var atv = pav.isolado === pv.nome;
-        var nivel = (pv.y0 != null && base != null) ? ' <span style="color:#5b6b7c;font-size:11px">nível +' + fmtDist(Math.max(0, pv.y0 - base)) + '</span>' : '';
+        var nivel = (pv.y0 != null && base != null) ? ' <span style="color:var(--texto-fraco,#5b6b7c);font-size:11px">nível +' + fmtDist(Math.max(0, pv.y0 - base)) + '</span>' : '';
         html += '<div style="display:flex;align-items:center;gap:5px;border:1px solid ' + (atv ? corAtiva() : 'transparent') + ';border-radius:7px;padding:2px 4px">' +
           '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(pv.nome) + ' · ' + pv.n + ' elementos">' + esc(pv.nome) + nivel + '</span>' +
           '<button class="btn sm" data-p="iso" data-n="' + esc(pv.nome) + '" title="Isolar este pavimento">' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + '</button>' +
           '<button class="btn sm" data-p="pl" data-n="' + esc(pv.nome) + '" title="Planta baixa deste pavimento">' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + '</button></div>';
       });
-      html += '<div style="font-size:11px;color:#5b6b7c">Isolar mostra só o que o IFC declara nesse andar — o que não está em pavimento nenhum também some. ' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Todos restaura.</div>';
+      html += '<div style="font-size:11px;color:var(--texto-fraco,#5b6b7c)">Isolar mostra só o que o IFC declara nesse andar — o que não está em pavimento nenhum também some. ' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Todos restaura.</div>';
     }
     pavPanel.innerHTML = html;
     var bp2 = bar.querySelector('[data-b="pav"]'); if (bp2) { bp2.style.background = pav.isolado ? corAtiva() : ''; bp2.style.color = pav.isolado ? '#fff' : ''; bp2.style.outline = (pavPanel.style.display === 'flex') ? '2px solid #15803d' : ''; }
@@ -9887,7 +9907,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   // todos do mesmo tipo. Só mexe em mesh.visible (materiais intactos).
   // ============================================================
   var visPanel = document.createElement('div');
-  visPanel.style.cssText = 'position:absolute;right:10px;top:52px;z-index:4;display:none;flex-direction:column;gap:6px;background:rgba(255,255,255,.98);border:1px solid #d3dce6;border-radius:11px;padding:11px 13px;color:#1a2b3c;font-size:12px;width:220px';
+  visPanel.style.cssText = 'position:absolute;right:10px;top:52px;z-index:4;display:none;flex-direction:column;gap:6px;background:var(--card-bg,#fff);border:1px solid var(--linha,#d3dce6);border-radius:var(--raio,12px);padding:11px 13px;color:var(--texto,#1a2b3c);font-size:12px;width:220px';
+  visPanel.classList.add('bim-flut');   /* painel flutuante do visualizador: tokens do sistema (css/bim-revit.css) */
   visPanel.innerHTML =
     // ✕ próprio (padrão dos outros painéis): sem ele, o único jeito de fechar era o
     // botão "Ver" lá dentro do leque do dock — e com a barra recolhida o painel ficava
@@ -9900,7 +9921,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     '<button class="btn sm" data-v="rx" title="Raio-X: deixa o resto translúcido (não some) e destaca o elemento. Enxergue o que está atrás/dentro.">' + (typeof Icones !== 'undefined' ? Icones.get('camadas', 15) : '') + ' Raio-X da seleção</button>' +
     '<button class="btn sm" data-v="rxt" title="Raio-X por tipo: destaca todos deste tipo (ex.: toda a hidráulica) e translucidez o resto — bom pra ver onde há cano antes de furar.">' + (typeof Icones !== 'undefined' ? Icones.get('camadas', 15) : '') + ' Raio-X deste tipo</button>' +
     '<button class="btn sm" data-v="tudo" title="Volta a mostrar tudo">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Restaurar tudo</button>' +
-    '<div style="font-size:11px;color:#5b6b7c">Dê <b>dois cliques</b> num elemento do modelo pra selecionar antes.</div>';
+    '<div style="font-size:11px;color:var(--texto-fraco,#5b6b7c)">Dê <b>dois cliques</b> num elemento do modelo pra selecionar antes.</div>';
   host.appendChild(visPanel);
   S.visPanel = visPanel;
   function selInfo() { return (S.selected && S.selected.userData && S.selected.userData.expressID != null) ? { mid: S.selected.userData.mid, eid: S.selected.userData.expressID, tipo: S.selected.userData.tipo } : null; }
@@ -9985,7 +10006,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var abrir = (visPanel.style.display === 'none' || !visPanel.style.display);
     fecharPaineis(abrir ? visPanel : null);
     visPanel.style.display = abrir ? 'flex' : 'none';
-    var bv = bar.querySelector('[data-b="vis"]'); if (bv) bv.style.outline = abrir ? '2px solid #15803d' : '';
+    var bv = bar.querySelector('[data-b="vis"]'); if (bv) bv.style.outline = abrir ? '2px solid var(--aco,#2d6a9c)' : '';
   }
   // um painel flutuante por vez (snap/pav/vis disputam os cantos da tela)
   function fecharPaineis(exceto) {
@@ -10376,7 +10397,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
 
   // painel de controle (fica sobre o canvas; entra no re-home)
   var xrPanel = document.createElement('div');
-  xrPanel.style.cssText = 'position:absolute;left:10px;top:52px;z-index:5;display:none;flex-direction:column;gap:8px;background:rgba(255,255,255,.985);border:1px solid #d3dce6;border-radius:12px;padding:12px 13px;color:#1a2b3c;font-size:12px;width:250px;max-height:78vh;overflow:auto';
+  xrPanel.style.cssText = 'position:absolute;left:10px;top:52px;z-index:5;display:none;flex-direction:column;gap:8px;background:var(--card-bg,#fff);border:1px solid var(--linha,#d3dce6);border-radius:12px;padding:12px 13px;color:var(--texto,#1a2b3c);font-size:12px;width:250px;max-height:78vh;overflow:auto';
+  xrPanel.classList.add('bim-flut');   /* painel flutuante do visualizador: tokens do sistema (css/bim-revit.css) */
   host.appendChild(xrPanel);
   S.xrPanel = xrPanel;
   // HUD imersivo (joystick + sair + mira) — some quando não está no modo
@@ -10400,7 +10422,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var vazio = box.isEmpty();
     var discs = disciplinasPresentes();
     var html = '<div style="display:flex;justify-content:space-between;align-items:center"><b>' + (typeof Icones !== 'undefined' ? Icones.get('vr', 15) : '') + ' Realidade Mista / Virtual</b><button class="btn sm" data-x="fechar" title="Fechar painel">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>';
-    if (vazio) { html += '<div style="font-size:11px;color:#5b6b7c">Carregue um modelo primeiro.</div>'; xrPanel.innerHTML = html; return; }
+    if (vazio) { html += '<div style="font-size:11px;color:var(--texto-fraco,#5b6b7c)">Carregue um modelo primeiro.</div>'; xrPanel.innerHTML = html; return; }
     if (!xr.on) {
       /* ⚠ `longo` nos botões de modo: o `.btn` não quebra linha, e a 390 px
          os rótulos saíam cortados dos dois lados ("âmera + Projeto (ver no
@@ -10413,7 +10435,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
          que o Quick Look nem usa. */
       var pavsXR = (S._pavLista ? S._pavLista() : []).map(function (x) { return x.nome; });
       if (discs.length > 1 || pavsXR.length > 1) {
-        html += '<div style="font-size:11px;color:#5b6b7c;margin-top:2px">O que aparece (vale para todos os modos):</div>';
+        html += '<div style="font-size:11px;color:var(--texto-fraco,#5b6b7c);margin-top:2px">O que aparece (vale para todos os modos):</div>';
         if (discs.length > 1) {
           html += '<div style="display:flex;flex-wrap:wrap;gap:5px">';
           discs.forEach(function (d) { var off = !!xr.discOcultas[d.chave]; html += '<button class="btn sm" data-xd="' + esc(d.chave) + '" style="' + (off ? 'opacity:.45' : 'background:' + corAtiva() + ';color:#fff') + '">' + esc(d.nome) + '</button>'; });
@@ -10425,23 +10447,23 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         }
       }
       var android = /Android/i.test(navigator.userAgent || '') && !!(S.opts && S.opts.onSceneViewer);
-      html += '<button class="btn sm longo" data-x="ratrava" style="width:100%;' + (raTrava ? 'background:#15803d;color:#fff' : '') + '">' +
+      html += '<button class="btn sm longo" data-x="ratrava" style="width:100%;' + (raTrava ? 'background:var(--aco,#2d6a9c);color:#fff' : '') + '">' +
         (raTrava ? (typeof Icones !== 'undefined' ? Icones.get('cadeado', 15) : '') + ' RA travada: encostar a mão não muda o tamanho nem tira do lugar' : (typeof Icones !== 'undefined' ? Icones.get('destravado', 15) : '') + ' RA livre: a pinça muda o tamanho da maquete') + '</button>';
-      html += '<div style="font-size:11px;color:#5b6b7c">Veja o projeto no ambiente ou ande dentro dele. Escolha o modo:</div>' +
+      html += '<div style="font-size:11px;color:var(--texto-fraco,#5b6b7c)">Veja o projeto no ambiente ou ande dentro dele. Escolha o modo:</div>' +
         (ql ? '<button class="btn sm primary longo" data-x="quicklook" data-ql="real" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA do iPhone — no chão, tamanho real</button>' +
               '<button class="btn sm longo" data-x="quicklook" data-ql="maquete" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA do iPhone — maquete na mesa</button>' : '') +
         (android ? '<button class="btn sm primary longo" data-x="sceneviewer" data-ql="real" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA do Android (app do Google) — tamanho real</button>' +
                    '<button class="btn sm longo" data-x="sceneviewer" data-ql="maquete" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA do Android — maquete na mesa</button>' : '') +
         '<button class="btn sm ' + (ql || android ? '' : 'primary ') + 'longo" data-x="camera" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('camera', 15) : '') + ' Câmera + Projeto (ver no seu ambiente)</button>' +
         '<button class="btn sm longo" data-x="caminhar" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('caminhar', 15) : '') + ' Caminhar no projeto (fundo liso)</button>' +
-        (ql ? '' : '<button class="btn sm longo" data-x="ar" style="width:100%" disabled>' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA com âncora (Android) <span data-x="arst" style="color:#5b6b7c">(verificando…)</span></button>') +
-        '<button class="btn sm longo" data-x="vr" style="width:100%" disabled>' + (typeof Icones !== 'undefined' ? Icones.get('vr', 15) : '') + ' VR imersivo <span data-x="vrst" style="color:#5b6b7c">(verificando…)</span></button>' +
+        (ql ? '' : '<button class="btn sm longo" data-x="ar" style="width:100%" disabled>' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA com âncora (Android) <span data-x="arst" style="color:var(--texto-fraco,#5b6b7c)">(verificando…)</span></button>') +
+        '<button class="btn sm longo" data-x="vr" style="width:100%" disabled>' + (typeof Icones !== 'undefined' ? Icones.get('vr', 15) : '') + ' VR imersivo <span data-x="vrst" style="color:var(--texto-fraco,#5b6b7c)">(verificando…)</span></button>' +
         (ql
-          ? '<div style="font-size:11px;color:#5b6b7c;line-height:1.35"><b>RA do iPhone</b>: abre a realidade aumentada do próprio iPhone — o projeto fica preso no chão enquanto você anda em volta. Nada é instalado e o arquivo não sai do aparelho.</div>'
-          : '<div style="font-size:11px;color:#5b6b7c;line-height:1.35">📷 <b>funciona no iPhone e Android</b>: liga a câmera e o projeto aparece no ambiente real — mova o celular pra olhar, joystick pra chegar perto (precisa HTTPS: use o link ' + (typeof Icones !== 'undefined' ? Icones.get('nuvem', 15) : '') + ' da nuvem). ' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA com âncora (fixa no chão): Android com ARCore; no iPhone, pela RA do iPhone.</div>');
+          ? '<div style="font-size:11px;color:var(--texto-fraco,#5b6b7c);line-height:1.35"><b>RA do iPhone</b>: abre a realidade aumentada do próprio iPhone — o projeto fica preso no chão enquanto você anda em volta. Nada é instalado e o arquivo não sai do aparelho.</div>'
+          : '<div style="font-size:11px;color:var(--texto-fraco,#5b6b7c);line-height:1.35">📷 <b>funciona no iPhone e Android</b>: liga a câmera e o projeto aparece no ambiente real — mova o celular pra olhar, joystick pra chegar perto (precisa HTTPS: use o link ' + (typeof Icones !== 'undefined' ? Icones.get('nuvem', 15) : '') + ' da nuvem). ' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA com âncora (fixa no chão): Android com ARCore; no iPhone, pela RA do iPhone.</div>');
     } else {
       var em = xr.mode === 'ar' ? '' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA no ambiente' : xr.mode === 'vr' ? '' + (typeof Icones !== 'undefined' ? Icones.get('vr', 15) : '') + ' VR imersivo' : xr.mode === 'camera' ? '' + (typeof Icones !== 'undefined' ? Icones.get('camera', 15) : '') + ' Câmera + Projeto' : '' + (typeof Icones !== 'undefined' ? Icones.get('caminhar', 15) : '') + ' Caminhando';
-      html += '<div style="font-size:11px;color:#15803d"><b>' + em + '</b> ativo</div>';
+      html += '<div style="font-size:11px;color:var(--aco,#2d6a9c)"><b>' + em + '</b> ativo</div>';
       // escala — no AR de mesa (hit-test) e agora TAMBÉM no câmera/caminhar (1:1 real OU miniatura na sala)
       if (xr.mode === 'ar') {
         var ESCS = [['1', '1:1 (real)'], ['0.04', '1:25'], ['0.02', '1:50'], ['0.01', '1:100'], ['0.005', '1:200']];
@@ -10458,25 +10480,25 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           '<div style="display:flex;gap:6px">' +
           '<button class="btn sm" data-x="centralizar" style="flex:1">' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' Centralizar</button>' +
           '<button class="btn sm" data-x="travarcam" style="flex:1">' + (xr.travado ? '' + (typeof Icones !== 'undefined' ? Icones.get('destravado', 15) : '') + ' Destravar' : '' + (typeof Icones !== 'undefined' ? Icones.get('cadeado', 15) : '') + ' Travar') + '</button></div>' +
-          '<div style="font-size:11px;color:#5b6b7c;line-height:1.3">1:1 = andar DENTRO em tamanho real. Miniatura = ver o projeto inteiro na sua frente. ' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' recoloca à frente; ' + (typeof Icones !== 'undefined' ? Icones.get('cadeado', 15) : '') + ' fixa no lugar.</div>';
+          '<div style="font-size:11px;color:var(--texto-fraco,#5b6b7c);line-height:1.3">1:1 = andar DENTRO em tamanho real. Miniatura = ver o projeto inteiro na sua frente. ' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' recoloca à frente; ' + (typeof Icones !== 'undefined' ? Icones.get('cadeado', 15) : '') + ' fixa no lugar.</div>';
       }
       // altura do corte de visão (reflete o valor atual — não reseta no repaint)
       var cf = (xr.cortefrac == null ? 1000 : xr.cortefrac);
       html += '<div style="display:flex;justify-content:space-between;align-items:baseline"><span>' + (typeof Icones !== 'undefined' ? Icones.get('corte', 15) : '') + ' Teto de visão</span><span data-x="cortev" style="color:#15803d">' + (cf >= 999 ? 'inteiro' : '') + '</span></div>' +
-        '<input type="range" data-x="corte" min="0" max="1000" value="' + cf + '" style="width:100%;accent-color:#22c55e">';
+        '<input type="range" data-x="corte" min="0" max="1000" value="' + cf + '" style="width:100%;accent-color:var(--aco,#2d6a9c)">';
       // passos: sensibilidade (só caminhar/câmera — no AR a locomoção é do WebXR). Tablet precisa de mais
       // sensibilidade (movimento gentil); o usuário ajusta se não anda ou anda demais.
       if (xr.mode !== 'ar' && xr.mode !== 'vr') {
         var ps = Math.round(_passSens() * 100); // valor REAL (localStorage c/ fallback), não o default fixo — bate com o aplicado
         html += '<div style="display:flex;justify-content:space-between;align-items:baseline"><span>' + (typeof Icones !== 'undefined' ? Icones.get('caminhar', 15) : '') + ' Sensibilidade dos passos</span><span data-x="passv" style="color:#15803d">' + (ps / 100).toFixed(1) + '×</span></div>' +
           '<input type="range" data-x="passsens" min="40" max="300" value="' + ps + '" style="width:100%;accent-color:#0d9488">' +
-          '<div style="font-size:10.5px;color:#5b6b7c;line-height:1.25;margin-top:-2px">Ande com o aparelho na mão pra andar no projeto. Se o projeto não anda, <b>aumente</b>; se anda sozinho, <b>diminua</b>. (No tablet costuma precisar mais.)</div>';
+          '<div style="font-size:10.5px;color:var(--texto-fraco,#5b6b7c);line-height:1.25;margin-top:-2px">Ande com o aparelho na mão pra andar no projeto. Se o projeto não anda, <b>aumente</b>; se anda sozinho, <b>diminua</b>. (No tablet costuma precisar mais.)</div>';
       }
       // medir
       html += '<button class="btn sm" data-x="medir" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' Medir na escala (toque 2 pontos)</button>';
       // disciplinas
       if (discs.length > 1) {
-        html += '<div style="font-size:11px;color:#5b6b7c;margin-top:2px">Disciplinas (toque pra ligar/desligar):</div><div style="display:flex;flex-wrap:wrap;gap:5px">';
+        html += '<div style="font-size:11px;color:var(--texto-fraco,#5b6b7c);margin-top:2px">Disciplinas (toque pra ligar/desligar):</div><div style="display:flex;flex-wrap:wrap;gap:5px">';
         discs.forEach(function (d) {
           var off = !!xr.discOcultas[d.chave];
           html += '<button class="btn sm" data-xd="' + esc(d.chave) + '" style="' + (off ? 'opacity:.45' : 'background:' + corAtiva() + ';color:#fff') + '">' + esc(d.nome) + '</button>';
@@ -10485,7 +10507,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       }
       if (xr.mode === 'ar') {
         html += '<button class="btn sm" data-x="travar" style="width:100%">' + (xr.travado ? '' + (typeof Icones !== 'undefined' ? Icones.get('destravado', 15) : '') + ' Destravar do ponto' : '' + (typeof Icones !== 'undefined' ? Icones.get('cadeado', 15) : '') + ' Travar neste ponto') + '</button>' +
-          '<div style="font-size:11px;color:#5b6b7c;line-height:1.3">Aponte pro chão, toque pra fixar o projeto no lugar real; trave pra ele não sair do lugar.</div>';
+          '<div style="font-size:11px;color:var(--texto-fraco,#5b6b7c);line-height:1.3">Aponte pro chão, toque pra fixar o projeto no lugar real; trave pra ele não sair do lugar.</div>';
       }
       html += '<button class="btn sm" data-x="sair" style="width:100%">⏹ Sair do imersivo</button>';
     }
@@ -10740,7 +10762,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       (comReticulo ? '<div style="position:absolute;left:50%;top:50%;width:22px;height:22px;margin:-11px 0 0 -11px;border:2px solid #15803d;border-radius:50%;box-shadow:0 0 0 1px rgba(0,0,0,.4)"></div>' : '') +
       barra +
       (S._montarLegendaChips ? S._montarLegendaChips() : '') + // legenda de cores por sistema (só quando o modo está ligado)
-      '<div style="position:absolute;left:0;right:0;top:0;display:flex;justify-content:center;pointer-events:none"><div data-h="dica" style="margin-top:8px;background:rgba(11,26,43,.82);color:#1a2b3c;font-size:12px;padding:5px 12px;border-radius:20px;max-width:88%;text-align:center"></div></div>';
+      '<div style="position:absolute;left:0;right:0;top:0;display:flex;justify-content:center;pointer-events:none"><div data-h="dica" style="margin-top:8px;background:rgba(11,26,43,.82);color:var(--texto,#1a2b3c);font-size:12px;padding:5px 12px;border-radius:20px;max-width:88%;text-align:center"></div></div>';
     xrHud.style.display = 'block';
     if (!comReticulo) ligarJoystick();
   }
@@ -11428,9 +11450,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
                vigaB: 0.14, vigaH: 0.40, cobIncl: 30, cobAguas: 2, cobBeiral: 0.5, famSel: null, famRot: 0, ghost: null, redo: [], estado: null };
   S.edit = edit;
   var editPanel = document.createElement('div');
-  editPanel.style.cssText = 'position:absolute;left:10px;top:52px;z-index:6;display:none;flex-direction:column;gap:8px;background:rgba(255,255,255,.985);border:1px solid #d3dce6;border-radius:12px;padding:10px 12px;color:#1a2b3c;font-size:12px;width:280px;max-width:94%';
+  editPanel.style.cssText = 'position:absolute;left:10px;top:52px;z-index:6;display:none;flex-direction:column;gap:8px;background:var(--card-bg,#fff);border:1px solid var(--linha,#d3dce6);border-radius:12px;padding:10px 12px;color:var(--texto,#1a2b3c);font-size:12px;width:280px;max-width:94%';
+  editPanel.classList.add('bim-flut');   /* painel flutuante do visualizador: tokens do sistema (css/bim-revit.css) */
   editPanel.innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:center"><b>' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + ' Editor <span style="color:#5b6b7c;font-weight:400">(sintético)</span></b><button class="btn sm" data-ed="fechar">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>' +
+    '<div style="display:flex;justify-content:space-between;align-items:center"><b>' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + ' Editor <span style="color:var(--texto-fraco,#5b6b7c);font-weight:400">(sintético)</span></b><button class="btn sm" data-ed="fechar">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>' +
     '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
     '<button class="btn sm" data-ed="parede">' + (typeof Icones !== 'undefined' ? Icones.get('bloco', 15) : '') + ' Parede</button>' +
     '<button class="btn sm" data-ed="laje">' + (typeof Icones !== 'undefined' ? Icones.get('laje', 15) : '') + ' Laje</button>' +
@@ -11450,8 +11473,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     '<button class="btn sm" data-ed="angpre" title="Ângulos predefinidos: livre → 45° → 15°">∠ Livre</button>' +
     '<button class="btn sm" data-ed="chain" title="A próxima parede continua do fim da anterior (Esc encerra a cadeia)">⛓ Encadear</button>' +
     '</div>' +
-    '<div style="font-size:10.5px;color:#5b6b7c">' + (typeof Icones !== 'undefined' ? Icones.get('lampada', 15) : '') + ' Desenhando parede: digite a <b>distância</b> na caixinha junto ao cursor e Enter.</div>' +
-    '<div style="display:flex;gap:6px;align-items:center"><button class="btn sm" data-ed="undo">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Desfazer</button><span data-ed="st" style="color:#5b6b7c;font-size:11.5px"></span></div>' +
+    '<div style="font-size:10.5px;color:var(--texto-fraco,#5b6b7c)">' + (typeof Icones !== 'undefined' ? Icones.get('lampada', 15) : '') + ' Desenhando parede: digite a <b>distância</b> na caixinha junto ao cursor e Enter.</div>' +
+    '<div style="display:flex;gap:6px;align-items:center"><button class="btn sm" data-ed="undo">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Desfazer</button><span data-ed="st" style="color:var(--texto-fraco,#5b6b7c);font-size:11.5px"></span></div>' +
     '<div style="font-size:11px;color:#b45309;line-height:1.35">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Volumetria SINTÉTICA de estudo, com QTO exato das peças criadas. Elemento de IFC importado nunca muda — "apagar" só o oculta como removido na edição.</div>';
   host.appendChild(editPanel);
   S.editPanel = editPanel; // re-home re-parenteia via S.* — fora da lista o painel fica órfão
@@ -11630,6 +11653,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     volLimpar();   /* B4: contorno/caminho/perfil em andamento sai junto (Esc, troca de ferramenta) */
     if (S._b2Cancelar) S._b2Cancelar();   /* B2: contorno/caminho pela metade sai junto */
     if (S._p3) S._p3.cancelar();   /* P3: o contorno do telhado/radier pela metade sai junto */
+    if (S._metc) S._metc.cancelar();   /* METÁLICA: a peça pela metade (1º ponto da viga, canto da chapa) sai junto (js/metalcriarui.js) */
   }
   // ---- v1.1.82: desenho com orto e ângulo predefinido ----
   // ajusta o 2º ponto pela trava orto (botão OU Shift) e pelos ângulos predefinidos
@@ -11669,8 +11693,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   // preview vivo (rubber-band) + caixinha de distância junto ao cursor (padrão do snapMarca:
   // DOM fora da cena — nunca é clipado nem raycastado)
   var editDist = document.createElement('div');
-  editDist.style.cssText = 'position:absolute;z-index:6;display:none;background:rgba(255,255,255,.98);border:1px solid #2FBF71;border-radius:8px;padding:3px 6px;color:#1a2b3c;font-size:12px;white-space:nowrap;pointer-events:auto';
-  editDist.innerHTML = '<span data-edd="txt" style="font-weight:700;color:#15803d"></span> <input data-edd="inp" inputmode="decimal" placeholder="m" style="width:52px;background:#ffffff;border:1px solid #9db4c8;border-radius:5px;color:#1a2b3c;font-size:12px;padding:1px 4px">';
+  editDist.style.cssText = 'position:absolute;z-index:6;display:none;background:rgba(255,255,255,.98);border:1px solid var(--aco,#2d6a9c);border-radius:var(--raio-sm,8px);padding:3px 6px;color:var(--texto,#1a2b3c);font-size:12px;white-space:nowrap;pointer-events:auto';
+  editDist.innerHTML = '<span data-edd="txt" style="font-weight:600;color:var(--aco,#2d6a9c)"></span> <input data-edd="inp" inputmode="decimal" placeholder="m" style="width:52px;background:#ffffff;border:1px solid #9db4c8;border-radius:5px;color:var(--texto,#1a2b3c);font-size:12px;padding:1px 4px">';
   host.appendChild(editDist);
   S.editDist = editDist; // re-home
   function editPreviewLimpar() {
@@ -11789,6 +11813,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return info.uid;
   }
   function editRebuild() {
+    var tR = { t0: performance.now() };   /* o tempo de cada parte (S._ultimoRebuild: e2e e suporte) */
     // restaura visibilidade dos IFC ocultados na rodada anterior (diff limpo) — TODAS as
     // malhas do elemento (multi-material tem várias), compondo com o 4D
     if (edit.removidosAntes.length) {
@@ -11806,7 +11831,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
          na tela (achado pela e2e-bim-b4b7, 08/10/2026; valia para mover parede) */
       desagregarModelo(edit.modelo);
       modelRoot.remove(edit.modelo.grupo);
-      edit.modelo.grupo.traverse(function (o) { if (o.geometry) o.geometry.dispose(); });
+      /* ⚠ a geometria GUARDADA da peça metálica (metGeo, abaixo) não se descarta: ela volta na cena nova */
+      edit.modelo.grupo.traverse(function (o) { if (o.geometry && !(o.geometry.userData && o.geometry.userData.metGeo)) o.geometry.dispose(); });
       edit.modelo.grupo.children.slice().forEach(function (m) { delete S.meshPorUid['edit:' + m.userData.expressID]; });
       var ix = S.modelos.indexOf(edit.modelo); if (ix >= 0) S.modelos.splice(ix, 1);
       edit.modelo = null;
@@ -11814,7 +11840,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     edit.sprites.forEach(function (sp) { scene.remove(sp); if (sp.material && sp.material.map) sp.material.map.dispose(); if (sp.material) sp.material.dispose(); });
     edit.sprites = [];
     if (S._b2Limpar3d) S._b2Limpar3d();   /* B2: eixos da rodada anterior */
+    tR.a = performance.now();
     var st = BimEdit.aplicar(edit.ops);
+    tR.b = performance.now();
     edit.estado = st;
     /* B5: tubos, conexões deduzidas, ralos/caixas e os pontos de ligação (js/biminstui.js) */
     var instEls = [];
@@ -11907,9 +11935,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       modelRoot.add(mo.grupo);
       try {
         modelRoot.updateMatrixWorld(true);
+        /* o elemento de cada malha por MAPA: o filtro por malha era n × m (2,5 mil malhas × 920 peças do galpão) */
+        var elPorId = {}; mo.elementos.forEach(function (e2) { if (!(e2.id in elPorId)) elPorId[e2.id] = e2; });
         mo.grupo.children.forEach(function (m) {
           var bb = new THREE.Box3().setFromObject(m);
-          var elx = mo.elementos.filter(function (e2) { return e2.id === m.userData.expressID; })[0];
+          var elx = elPorId[m.userData.expressID];
           /* elemento de VÁRIAS malhas (parede com vão, família, cobertura): a caixa é a união delas */
           if (elx && !bb.isEmpty()) {
             if (elx.aabb) { bb.expandByPoint(new THREE.Vector3(elx.aabb.min[0], elx.aabb.min[1], elx.aabb.min[2])); bb.expandByPoint(new THREE.Vector3(elx.aabb.max[0], elx.aabb.max[1], elx.aabb.max[2])); }
@@ -11918,11 +11948,13 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         });
       } catch (_) {}
       S.modelos.push(mo);
-      recarimbarIdentidade();   /* B0: criados no editor, GlobalId proprio */
+      recarimbarIdentidade(); tR.c = performance.now();   /* B0: criados no editor, GlobalId proprio (tR: medida do apagar em lote) */
       agregarModelo(mo);        /* B2 */
+      tR.d = performance.now();
       carimbarConsulta();     /* B3 */
       edit.modelo = mo;
     }
+    if (S._metGeoVarrer) S._metGeoVarrer();   /* METÁLICA: descarta a malha guardada da peça que não está mais na cena */
     st.anotacoes.forEach(function (a) {
       var sp = labelSprite('📍 ' + a.texto);
       sp.position.set(a.x, a.y, a.z); sp.userData._anotId = a.id;
@@ -11944,12 +11976,16 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (S._p10) S._p10.aposRebuild(st, edit.modelo);   /* P10: gráficos de fase e opção visível (js/bimp10ui.js) */
     if (S._p11) S._p11.aposRebuild(st);   /* P11: as curvas de nível do terreno */
     if (S._emb) S._emb.aposRebuild(st);   /* EMBREVE: as barras e o graute da alvenaria estrutural (js/bimgraute.js) */
+    if (S._metc) S._metc.aposRebuild(st);   /* METÁLICA: cotas entre eixos, níveis no 3D e o plano da ferramenta acompanham */
     if (window.BimInstUI && BimInstUI.aoMudarModelo) BimInstUI.aoMudarModelo();
     if (window.BimPropsUI && BimPropsUI.aoMudarModelo) BimPropsUI.aoMudarModelo();   /* P1-C: a paleta de Propriedades acompanha (op, desfazer, refazer, níveis) */
     if (window.BimAnot2DUI && BimAnot2DUI.aposRebuild) BimAnot2DUI.aposRebuild(st);   /* P7: as vistas 2D redesenham a anotação (cota acompanha a peça) e a trava confere */
     if (window.BimTabelaUI && BimTabelaUI.aoMudarModelo) BimTabelaUI.aoMudarModelo();   /* P5: as tabelas abertas (abas) acompanham o modelo */
     if (opts.onLoaded) opts.onLoaded(elementosVivos());
     if (opts.onEdicao && !edit._replay) { try { opts.onEdicao(edit.ops.slice()); } catch (_) {} }
+    var tF = performance.now();
+    S._ultimoRebuild = { total: Math.round(tF - tR.t0), limpar: Math.round(tR.a - tR.t0), replay: Math.round(tR.b - tR.a), malhas: tR.c ? Math.round(tR.c - tR.b) : 0,
+                         agregar: tR.d ? Math.round(tR.d - tR.c) : 0, ganchos: Math.round(tF - (tR.d || tR.b)) };
   }
   S._tickExtra.push(function () { for (var i = 0; i < edit.sprites.length; i++) rescaleObj(edit.sprites[i]); });
   function editOp(o) {
@@ -12078,7 +12114,13 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (!hb && edit.sub && S._p11) hb = S._p11.dica(edit.sub);   /* P11: terreno */
     if (!hb && edit.sub && S._p3) hb = S._p3.dica(edit.sub);   /* P3: telhado, bordas, unir, fundação */
     if (!hb && edit.sub && S._emb) hb = S._emb.dica(edit.sub);   /* EMBREVE: plano de trabalho */
-    S._hint(edit.sub ? (hb || h[edit.sub] || '') : '' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + ' Editor: escolha uma ferramenta no painel.');
+    /* ⚠ SEM O PAINEL NÃO HÁ "ESCOLHA NO PAINEL" (auditoria de 12/10/2026). Com a barra de
+       opções no lugar do painel do editor (modelador + casca) o balão mandava escolher uma
+       ferramenta num painel que não abre — e ficava no meio do 3D. Ali, sem ferramenta, não
+       há dica; e o "Anotar" pede o texto na barra de opções, não no campo do painel. */
+    var semPainel = !!(window.BimBarraOpcoes && BimBarraOpcoes.substituiPainel && BimBarraOpcoes.substituiPainel());
+    if (semPainel) h.anotar = '' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' Escreva o texto na barra de opções (Texto) e clique no ponto do modelo.';
+    S._hint(edit.sub ? (hb || h[edit.sub] || '') : (semPainel ? '' : '' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + ' Editor: escolha uma ferramenta no painel.'));
   }
   function editClique(e, hit, pForcado) {
     /* P2-C — GANCHOS: "Aplicar por ambiente" (js/bimacabamento.js + Gestao._ambClique) —
@@ -12089,6 +12131,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       if (pAmb && window.Gestao && Gestao._ambClique) Gestao._ambClique({ x: pAmb.x, z: pAmb.z });
       return;
     }
+    /* METÁLICA (js/metalcriarui.js): as ferramentas de criar peça metálica resolvem o ponto elas mesmas
+       (encaixe 3D em pontas de barra em qualquer cota + o do plano); da planta o ponto já vem em pForcado */
+    if (S._metc && S._metc.clique(e, hit, pForcado)) return;
     /* B3: com a prévia, o ponto vem dos snaps de precisão; as ferramentas novas (copiar, girar…) consomem o clique */
     /* B5 × B3: no traçado de instalação, o ponto de ligação do aparelho (ou a ponta/peça do mesmo sistema)
        ganha do snap de precisão — o conector manda. Sem alvo perto, valem os snaps. */
@@ -12175,7 +12220,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     }
     if (sub === 'anotar') {
       var txt = (editPanel.querySelector('[data-ed="txt"]').value || '').trim();
-      if (!txt) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' Escreva o texto da anotação no painel primeiro.'); return; }
+      if (!txt) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ((window.BimBarraOpcoes && BimBarraOpcoes.substituiPainel && BimBarraOpcoes.substituiPainel()) ? ' Escreva o texto da anotação na barra de opções (Texto) primeiro.' : ' Escreva o texto da anotação no painel primeiro.')); return; }
       editOp({ op: 'anotar', id: 'a' + (++edit.seq), x: p.x, y: p.y, z: p.z, texto: txt });
       S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' Anotado! O pin fica salvo com a obra.');
       marcarFechamento(); return;
@@ -12554,7 +12599,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   /* painel das ferramentas de volume, dentro do painel do editor */
   var volPainel = document.createElement('div');
   volPainel.setAttribute('data-ed', 'vol');
-  volPainel.style.cssText = 'display:none;flex-direction:column;gap:6px;border-top:1px solid #d3dce6;padding-top:6px';
+  volPainel.style.cssText = 'display:none;flex-direction:column;gap:6px;border-top:1px solid var(--linha,#d3dce6);padding-top:6px';
   volPainel.innerHTML =
     '<b>Volume livre</b>' +
     '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
@@ -12568,7 +12613,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
     '<label>Categoria <select data-vol="categoria" class="inp">' + (typeof BimVolume !== 'undefined' ? Object.keys(BimVolume.CATEGORIAS).map(function (k) { return '<option value="' + k + '">' + BimVolume.CATEGORIAS[k] + '</option>'; }).join('') : '') + '</select></label>' +
     '<label>Material <input data-vol="material" class="inp" maxlength="60" style="width:110px"></label></div>' +
-    '<div style="font-size:10.5px;color:#5b6b7c" data-vol="dica"></div>';
+    '<div style="font-size:10.5px;color:var(--texto-fraco,#5b6b7c)" data-vol="dica"></div>';
   editPanel.insertBefore(volPainel, editPanel.lastChild);
   function volPainelPintar() {
     var vo = edit.vol;
@@ -12631,6 +12676,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (S._p11) S._p11.aoSub(edit.sub);   /* P11 */
     if (S._p3) S._p3.aoSub(edit.sub);   /* P3 */
     if (S._emb) S._emb.aoSub(edit.sub);   /* EMBREVE */
+    if (S._metc) S._metc.aoSub(edit.sub);   /* METÁLICA: o plano de trabalho visível, a barra e as Propriedades da ferramenta */
     if (window.BimBarraOpcoes && BimBarraOpcoes.armou) BimBarraOpcoes.armou(edit.sub);   /* PLANTA: a barra de opções da ferramenta */
   }
   function setEdit(on) {
@@ -12655,6 +12701,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       if (S._p2d) S._p2d.aoSub(null);   /* P2-D */
       if (S._p11) S._p11.aoSub(null);   /* P11 */
       if (S._p3) S._p3.aoSub(null);   /* P3 */
+      if (S._metc) S._metc.aoSub(null);   /* METÁLICA */
       if (window.BimBarraOpcoes && BimBarraOpcoes.armou) BimBarraOpcoes.armou(null);   /* PLANTA */
     }
     var be = bar.querySelector('[data-b="editar"]'); if (be) { be.style.background = on ? corAtiva() : ''; be.style.color = on ? '#fff' : ''; }
@@ -12825,6 +12872,23 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     vaos: function (st) { return BimEdit.vaosDasParedes(st, famAval); },
     alvo: function () { return orbit && orbit.target ? orbit.target.clone() : null; }
   }) : null;
+  /* METÁLICA — GANCHOS (12/10/2026, js/metalcriarui.js + js/metalcriar.js): criar pilar, viga,
+     diagonal, terça e chapa CLICANDO no 3D (e na planta, pela editClique de sempre): o raio do
+     cursor, os pontos na tela para o encaixe, a marca do snap, o plano de trabalho visível, os
+     níveis no 3D e as cotas entre eixos. Sem a prévia do modelador o módulo não arma nada. */
+  S._raioDe = function (cx, cy) {
+    var rc = canvasEl.getBoundingClientRect(), m2 = new THREE.Vector2(((cx - rc.left) / rc.width) * 2 - 1, -((cy - rc.top) / rc.height) * 2 + 1), rr = new THREE.Raycaster();
+    rr.setFromCamera(m2, camera);
+    return { origem: [rr.ray.origin.x, rr.ray.origin.y, rr.ray.origin.z], direcao: [rr.ray.direction.x, rr.ray.direction.y, rr.ray.direction.z] };
+  };
+  S._metc = (window.MetalCriarUI && MetalCriarUI.montar3d) ? MetalCriarUI.montar3d({
+    THREE: THREE, S: S, edit: edit, scene: scene, canvas: canvasEl,
+    host: function () { return (S && S.host) || host; }, camera: function () { return camera; },
+    raio: function (cx, cy) { return S._raioDe(cx, cy); }, raycast: raycastEm, hits: function () { return _ultimosHits; },
+    marca: mostrarSnapMarca, marcaEsconder: esconderSnapMarca, hint: function (t) { S._hint(t); }, fechou: marcarFechamento,
+    telaDe: function (x, y, z) { return S._telaDe ? S._telaDe(x, y, z) : null; }, reescalar: rescaleObj, avaliar: famAval,
+    alvo: function () { return orbit && orbit.target ? orbit.target.clone() : null; }
+  }) : null;
   /* ======================================================================
    * B2 — MODELADOR (prévia `?previa=modelador`, js/bimprevia.js; motor puro
    * js/bimarq.js; tela js/bimarqui.js). 08/10/2026.
@@ -12921,6 +12985,18 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return m;
   }
   function b2Plano(a, b, z) { return [a, z, b]; }   /* planta (x, z) extrudada em y */
+  /* a geometria guardada das peças metálicas (ver S._b2Malhas) e a varredura do fim de cada editRebuild:
+     a peça que não apareceu nesta rodada (apagada, mudada, desfeita) tem a malha descartada */
+  var metGeo = { mapa: {}, rodada: 1, feitas: 0, ligado: true };
+  function metGeoDescartar(e) { e.geos.forEach(function (g) { if (g.userData._arestas) g.userData._arestas.dispose(); g.dispose(); }); }
+  S._metGeoVarrer = function () {
+    var r = metGeo.rodada;
+    Object.keys(metGeo.mapa).forEach(function (id) { var e = metGeo.mapa[id]; if (e.usado !== r) { metGeoDescartar(e); delete metGeo.mapa[id]; } });
+    metGeo.rodada = r + 1;
+  };
+  /* gancho de teste: quantas peças guardadas, quantas malhas refeitas desde o início e a chave
+     para DESLIGAR a guarda (o controle negativo da e2e mede o apagar sem ela) */
+  S._metGeoEstado = function (ligar) { if (ligar != null) metGeo.ligado = !!ligar; return { pecas: Object.keys(metGeo.mapa).length, rodada: metGeo.rodada, feitas: metGeo.feitas, ligado: metGeo.ligado }; };
   S._b2Malhas = function (c, vz, mat, addMesh) {
     var A = window.BimArq; if (!A || !c || !c.b2) return null;
     var me = null;
@@ -12929,7 +13005,19 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (c.tipo === 'metal' && c.metal) {
       if (!window.BimMetal) return null;
       var mM = b2Mat(c.metal.kind === 'parafuso' ? 'parafuso' : 'aco');
-      BimMetal.solidos(c).forEach(function (sd) { if (sd.poli.length >= 3) addMesh(new THREE.Mesh(b2Geo(sd.poli, sd.furos, sd.z0, sd.z1, sd.ponto), mM), c.id, c.ifc, mM); });
+      /* ⚠ GEOMETRIA GUARDADA POR PEÇA (12/10/2026). Cada op refaz a cena inteira, e a triangulação
+         das peças metálicas era a maior parte do tempo: apagar 300 peças de um galpão de 920 levava
+         0,58 s, 0,31 s só refazendo a malha das 620 que NÃO mudaram. A peça igual (mesmos dados e
+         mesma posição) reusa a malha da rodada anterior; a que mudou (ou sumiu) é descartada na
+         varredura do fim do editRebuild. Desfazer/refazer não muda: é o mesmo replay. */
+      var chM = JSON.stringify([c.metal, c.cx, c.cy, c.cz, c.rotY]), enM = metGeo.mapa[c.id];
+      if (!enM || enM.chave !== chM || !metGeo.ligado) {
+        if (enM) metGeoDescartar(enM);
+        enM = metGeo.mapa[c.id] = { chave: chM, geos: [] };
+        BimMetal.solidos(c).forEach(function (sd) { if (sd.poli.length >= 3) { var gM = b2Geo(sd.poli, sd.furos, sd.z0, sd.z1, sd.ponto); gM.userData.metGeo = true; enM.geos.push(gM); metGeo.feitas++; } });
+      }
+      enM.usado = metGeo.rodada;
+      enM.geos.forEach(function (gM) { addMesh(new THREE.Mesh(gM, mM), c.id, c.ifc, mM); });
       var mdM = c.medidas || {};
       return { qto: { comprimento: mdM.comprimento, area: mdM.area, volume: mdM.volume, contagem: 1, massa: c.massa } };
     }
@@ -13391,7 +13479,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
 
   var p3d = { parse: null, det: null };
   var p3dPanel = document.createElement('div');
-  p3dPanel.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:6;display:none;flex-direction:column;gap:8px;background:rgba(255,255,255,.985);border:1px solid #d3dce6;border-radius:12px;padding:14px 16px;color:#1a2b3c;font-size:12px;width:480px;max-width:94%;max-height:92%;overflow:auto;box-shadow:0 12px 34px rgba(0,0,0,.5)';
+  p3dPanel.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:6;display:none;flex-direction:column;gap:8px;background:var(--card-bg,#fff);border:1px solid var(--linha,#d3dce6);border-radius:12px;padding:14px 16px;color:var(--texto,#1a2b3c);font-size:12px;width:480px;max-width:94%;max-height:92%;overflow:auto;box-shadow:0 12px 34px rgba(0,0,0,.5)';
+  p3dPanel.classList.add('bim-flut');   /* painel flutuante do visualizador: tokens do sistema (css/bim-revit.css) */
   p3dPanel.innerHTML =
     '<div style="display:flex;justify-content:space-between;align-items:center"><b>' + (typeof Icones !== 'undefined' ? Icones.get('obra', 15) : '') + ' Planta 2D → 3D (DXF)</b><button class="btn sm" data-p3="fechar">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>' +
     '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
@@ -13399,8 +13488,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     '<label style="display:flex;gap:5px;align-items:center">Pé-direito <input data-p3="pd" class="inp" type="number" value="2.80" step="0.1" min="2" max="6" style="width:64px"> m</label>' +
     '<label style="display:flex;gap:5px;align-items:center">Unidade <select data-p3="un" class="inp" style="width:76px"><option value="">auto</option><option value="0.001">mm</option><option value="0.01">cm</option><option value="1">m</option></select></label>' +
     '<input type="file" data-p3="file"' + (ehToque() ? '' : ' accept=".dxf"') + ' style="display:none"></div>' +
-    '<div data-p3="info" style="font-size:11.5px;color:#5b6b7c">Exporte a planta baixa do seu CAD em <b>DXF</b> (AutoCAD/QCAD/LibreCAD; DWG? salve-como DXF). O sistema propõe as paredes — você confirma.</div>' +
-    '<canvas data-p3="cv" width="448" height="300" style="background:#0b1a2b;border:1px solid #d3dce6;border-radius:8px;cursor:pointer;display:none"></canvas>' +
+    '<div data-p3="info" style="font-size:11.5px;color:var(--texto-fraco,#5b6b7c)">Exporte a planta baixa do seu CAD em <b>DXF</b> (AutoCAD/QCAD/LibreCAD; DWG? salve-como DXF). O sistema propõe as paredes — você confirma.</div>' +
+    '<canvas data-p3="cv" width="448" height="300" style="background:#0b1a2b;border:1px solid var(--linha,#d3dce6);border-radius:8px;cursor:pointer;display:none"></canvas>' +
     '<div data-p3="res" style="font-size:12px"></div>' +
     '<button class="btn sm primary" data-p3="gerar" style="display:none">' + (typeof Icones !== 'undefined' ? Icones.get('obra', 15) : '') + ' Gerar 3D</button>' +
     '<div style="font-size:11px;color:#b45309;line-height:1.35">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Volumetria de ESTUDO (paredes por par de linhas paralelas de 6–40 cm) — clique numa parede verde do preview pra ligar/desligar. Portas, janelas e cobertura não entram nesta fase. Não substitui o projeto.</div>';
@@ -13434,7 +13523,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (!p3d.det) { res.innerHTML = ''; bg.style.display = 'none'; return; }
     var ligadas = p3d.det.paredes.filter(function (p) { return p.ligada !== false; });
     var mTot = ligadas.reduce(function (s, p) { return s + p.comprimento; }, 0);
-    res.innerHTML = '<b style="color:#15803d">' + ligadas.length + ' parede(s) ligadas</b> (' + mTot.toFixed(1).replace('.', ',') + ' m lineares) · ' +
+    res.innerHTML = '<b style="color:var(--verde,#15803d)">' + ligadas.length + ' parede(s) ligadas</b> (' + mTot.toFixed(1).replace('.', ',') + ' m lineares) · ' +
       /* NÃO AFIRMAR A CAUSA. "portas/mobiliário/cotas" era chute apresentado
          como fato: no DXF com a parede fatiada em LINEs, boa parte dos
          sem-par é FACE DE PAREDE que o pareador não casou — e o texto
