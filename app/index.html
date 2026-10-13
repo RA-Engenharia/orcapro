@@ -571,6 +571,16 @@
   <script src="js/bimp3ui.js"></script>
   <!-- CARPINTARIA & MARCENARIA: a tela (aba da disciplina; só com o modelador) -->
   <script src="js/marcenariaui.js"></script>
+  <!-- MADEIRA — CÁLCULO DA ESTRUTURA (12/10/2026): a tela (aba Carpintaria & Marcenaria › Cálculo estrutural, ao lado
+       da Metálica; só com o modelador). Aqui entram só os motores LEVES que a tela lê (materiais, espécies, o orquestrador
+       para as premissas padrão) e o js/madcalcworker.js (pacote da obra + o mesmo arquivo que roda no Web Worker). Os
+       motores pesados (catálogo, modelo, análise, piso, memorial, pranchas, manual, CYPE: ~1,4 MB) o Worker carrega por
+       importScripts quando a pessoa calcula — e a tela os injeta só se o navegador recusar o Worker. -->
+  <script src="js/madmateriais.js"></script>
+  <script src="js/madespecie.js"></script>
+  <script src="js/maddimensionar.js"></script>
+  <script src="js/madcalcworker.js"></script>
+  <script src="js/madcalcui.js"></script>
   <script src="js/bimarqui.js"></script>
   <script src="js/bimpropsui.js"></script>
   <!-- P2-D: ambientes na tela (comando Ambiente, identificador na planta, esquema de cores, Navegador) — só com a prévia do modelador -->

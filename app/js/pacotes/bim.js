@@ -69831,6 +69831,1651 @@ global.MarcenariaUI = MarcenariaUI;
 if (typeof module !== "undefined" && module.exports) module.exports = MarcenariaUI;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/madmateriais.js ==== */
+try {
+(function (global) {
+"use strict";
+var F97 = "NBR 7190:1997";
+var CLASSES_1997 = {
+"C20-con": { grupo: "conifera", nome: "C 20 (conífera)", fc0k: 20, fvk: 4, Ec0m: 3500, rhoBas: 400, rhoAp: 500, fonte: F97 + ", Tabela 8" },
+"C25-con": { grupo: "conifera", nome: "C 25 (conífera)", fc0k: 25, fvk: 5, Ec0m: 8500, rhoBas: 450, rhoAp: 550, fonte: F97 + ", Tabela 8" },
+"C30-con": { grupo: "conifera", nome: "C 30 (conífera)", fc0k: 30, fvk: 6, Ec0m: 14500, rhoBas: 500, rhoAp: 600, fonte: F97 + ", Tabela 8" },
+"C20-dic": { grupo: "dicotiledonea", nome: "C 20 (dicotiledônea)", fc0k: 20, fvk: 4, Ec0m: 9500, rhoBas: 500, rhoAp: 650, fonte: F97 + ", Tabela 9" },
+"C30-dic": { grupo: "dicotiledonea", nome: "C 30 (dicotiledônea)", fc0k: 30, fvk: 5, Ec0m: 14500, rhoBas: 650, rhoAp: 800, fonte: F97 + ", Tabela 9" },
+"C40-dic": { grupo: "dicotiledonea", nome: "C 40 (dicotiledônea)", fc0k: 40, fvk: 6, Ec0m: 19500, rhoBas: 750, rhoAp: 950, fonte: F97 + ", Tabela 9" },
+"C60-dic": { grupo: "dicotiledonea", nome: "C 60 (dicotiledônea)", fc0k: 60, fvk: 8, Ec0m: 24500, rhoBas: 800, rhoAp: 1000, fonte: F97 + ", Tabela 9" }
+};
+var KMOD1_1997 = { permanente: 0.60, longa: 0.70, media: 0.80, curta: 0.90, instantanea: 1.10, fonte: F97 + ", Tabela 10 (madeira serrada, MLC, compensado)" };
+var KMOD2_1997 = { 1: 1.0, 2: 1.0, 3: 0.8, 4: 0.8, fonte: F97 + ", Tabela 11 (madeira serrada, MLC, compensado)" };
+var KMOD3_1997 = { primeira: 1.0, segunda: 0.8, fonte: F97 + ", 6.4.4 (conífera: sempre 0,8)" };
+var GAMA_1997 = { c: 1.4, t: 1.8, v: 1.8, fonte: F97 + ", 6.4.5" };
+var PHI_1997 = {
+"12": { permanente: 0.8, longa: 0.8, media: 0.3, curta: 0.1 },
+"34": { permanente: 2.0, longa: 2.0, media: 1.0, curta: 0.5 },
+fonte: F97 + ", Tabela 15"
+};
+var ESPECIES = {
+tatajuba: { nome: "Tatajuba (Bagassa guianensis)", grupo: "dicotiledonea", classe1997: "C40-dic", classe2022: "nativa:D40", gamaCarga: 10.0,
+classeLiteratura: "nativa:D60 (7190-3:2022 Tab. A.1, fc0,k 64,62 MPa — fonte secundária R2)",
+fonteGama: "NBR 6120:2019, Tabela 1 (adotado 10 kN/m³ no PROJ-EST, a favor da segurança)", rhoKLig: 550,
+fonteRhoK: "PROJ-EST R00 calc_ligacoes.py: classe ≥ D40, ρk 550 kg/m³ (EN 338) — premissa do RT", uso: "pilares, vigas, piso seco" },
+itauba: { nome: "Itaúba (Mezilaurus itauba)", grupo: "dicotiledonea", classe1997: "C40-dic", classe2022: "nativa:D40", gamaCarga: 10.0,
+fonteGama: "NBR 6120:2019, Tabela 1 (p. 16): Itaúba não consta pelo nome; dicotiledônea classe C60 = 10 kN/m³ (a 7190-3:2022 Tab. A.1 a põe em D60, fonte secundária)",
+rhoKLig: 550, fonteRhoK: "mesma premissa do RT para a Tatajuba (classe ≥ D40, ρk 550 kg/m³, EN 338) — a favor da segurança",
+classeLiteratura: "nativa:D60 (7190-3:2022 Tab. A.1, fc0,k 61,71 MPa — fonte secundária R2)", uso: "pergolado, brise, ripado (especificação do cliente 11/10/2026)" },
+pinus_cca: { nome: "Pinus elliottii/taeda tratado em autoclave (CCA)", grupo: "conifera", classe1997: "C25-con", gamaCarga: 6.0,
+fonteGama: null, rhoKLig: 330, fonteRhoK: "PROJ-EST R00 calc_ligacoes.py: Pinus ≥ C20, ρk 330 kg/m³ — premissa do RT",
+uso: "wood frame (montantes, guias, travessas), forro", duvida: "γ de carga do pinus a conferir na NBR 6120:2019 Tab. 1" }
+};
+var PERFIS = {
+QUIO_R03_PISO: {
+nome: "PROJ-EST R03 — piso seco (critério conservador do RT, NBR 7190:1997)",
+kmod: 0.70 * 0.80 * 0.80, kmodPartes: "kmod1 0,70 (longa) × kmod2 0,80 (umidade 3/4) × kmod3 0,80",
+gw: { c: 1.4, t: 1.8, v: 1.8 }, flexaoPor: "fc0d", fc90Fator: 0.25,
+gamaG: 1.4, gamaQ: 1.4, psi2: 0.4, phi: 2.0, limVao: 350, limBalanco: 175, eRigidez: "kmod·Ec0m",
+fonte: "calc_piso_v18.py / piso_pw.py (quiosque de referência) — NBR 7190:1997 6.4 e Tab. 10–11, 15; NBR 8681 (γ 1,4)",
+completo: true
+},
+NBR7190_2022: {
+nome: "NBR 7190-1:2022 (vigente)", completo: false, edicao: "2022",
+falta: "use MadMateriais.perfil2022({carregamento, umidade, produto, limVao, limBalanco}) — o kmod depende da obra"
+}
+};
+var F22 = "NBR 7190-1:2022 (fonte secundária R2 — pesquisa de 12/10/2026)";
+var CLASSES_2022 = {};
+[["D20", 20, 4, 10000, 500], ["D30", 30, 5, 12000, 625], ["D40", 40, 6, 14500, 750], ["D50", 50, 7, 16500, 850], ["D60", 60, 8, 19500, 1000]]
+.forEach(function (r) {
+CLASSES_2022["nativa:" + r[0]] = { origem: "nativa_cp", grupo: "dicotiledonea", nome: r[0] + " (nativa, corpo de prova)", fc0k: r[1], fvk: r[2], Ec0m: r[3],
+rho12: r[4], E005: 0.7 * r[3], fonte: F22 + ", Tabela 2 (fm,d = ft0,d = fc0,d e E0,05 = 0,7·Ec0,m para nativas)" };
+});
+var PECAS22 = {
+C14: [14, 8, 0.4, 16, 2.0, 3.0, 7, 4.7, 0.2, 0.4, 290, 350], C16: [16, 10, 0.4, 17, 2.2, 3.2, 8, 5.4, 0.3, 0.5, 310, 370],
+C18: [18, 11, 0.4, 18, 2.2, 3.4, 9, 6.0, 0.3, 0.6, 320, 380], C20: [20, 12, 0.4, 19, 2.3, 3.6, 9.5, 6.4, 0.3, 0.6, 330, 390],
+C22: [22, 13, 0.4, 20, 2.4, 3.8, 10, 6.7, 0.3, 0.6, 340, 410], C24: [24, 14, 0.4, 21, 2.5, 4.0, 11, 7.4, 0.4, 0.7, 350, 420],
+C27: [27, 16, 0.4, 22, 2.6, 4.0, 12, 7.7, 0.4, 0.7, 370, 450], C30: [30, 18, 0.4, 23, 2.7, 4.0, 12, 8.0, 0.4, 0.8, 380, 460],
+C35: [35, 21, 0.4, 25, 2.8, 4.0, 13, 8.7, 0.4, 0.8, 400, 480], C40: [40, 24, 0.4, 26, 2.9, 4.0, 14, 9.4, 0.5, 0.9, 420, 500],
+C45: [45, 27, 0.4, 27, 3.1, 4.0, 15, 10, 0.5, 0.9, 440, 520], C50: [50, 30, 0.4, 29, 3.2, 4.0, 16, 11, 0.5, 1.0, 460, 550],
+D18: [18, 11, 0.6, 18, 7.5, 3.4, 9.5, 8, 0.6, 0.6, 475, 570], D24: [24, 14, 0.6, 21, 7.8, 4.0, 10, 8.5, 0.7, 0.6, 485, 580],
+D30: [30, 18, 0.6, 23, 8.0, 4.0, 11, 9.2, 0.7, 0.7, 530, 640], D35: [35, 21, 0.6, 25, 8.1, 4.0, 12, 10, 0.8, 0.8, 540, 650],
+D40: [40, 24, 0.6, 26, 8.3, 4.0, 13, 11, 0.9, 0.8, 560, 660], D50: [50, 30, 0.6, 29, 9.3, 4.0, 14, 12, 0.9, 0.9, 620, 750],
+D60: [60, 36, 0.6, 32, 11, 4.5, 17, 14, 1.1, 1.1, 700, 840], D70: [70, 42, 0.6, 34, 13.5, 5.0, 20, 16.8, 1.33, 1.25, 900, 1080]
+};
+Object.keys(PECAS22).forEach(function (k) {
+var r = PECAS22[k];
+CLASSES_2022["peca:" + k] = { origem: "peca", grupo: k.charAt(0) === "C" ? "conifera" : "dicotiledonea", nome: k + " (peça estrutural)",
+fmk: r[0], ft0k: r[1], ft90k: r[2], fc0k: r[3], fc90k: r[4], fvk: r[5], Ec0m: r[6] * 1000, E005: r[7] * 1000, E90m: r[8] * 1000,
+Gm: r[9] * 1000, rhok: r[10], rhom: r[11], fonte: F22 + ", tabela de peças estruturais (7190-4)" };
+});
+var KMOD1_2022 = {
+serrada: { permanente: 0.60, longa: 0.70, media: 0.80, curta: 0.90, instantanea: 1.10 },
+recomposta: { permanente: 0.30, longa: 0.45, media: 0.65, curta: 0.90, instantanea: 1.10 },
+fonte: F22 + ", Tabela 4 (serrada, roliça, MLC, MLCC, LVL × recomposta)"
+};
+var KMOD2_2022 = { serrada: { 1: 1.00, 2: 0.90, 3: 0.80, 4: 0.70 }, recomposta: { 1: 1.00, 2: 0.95, 3: 0.93, 4: 0.90 },
+fonte: F22 + ", Tabela 5 (MLCC proibido na classe 4)" };
+var PHI_2022 = { serrada: { 1: 0.60, 2: 0.80, 3: 0.80, 4: 2.00 }, compensado: { 1: 0.80, 2: 1.00, 3: 1.00, 4: 2.50 },
+osb: { 1: 1.50, 2: 2.25, 3: 2.25, 4: null }, fonte: F22 + ", coeficiente de fluência φ por classe de umidade" };
+var GAMA_2022 = { c: 1.4, t: 1.4, m: 1.4, v: 1.8, lig: 1.4, fonte: F22 + " (tração 1,8 → 1,4; cisalhamento 1,8)" };
+var MadMateriais = {
+CLASSES_1997: CLASSES_1997, KMOD1_1997: KMOD1_1997, KMOD2_1997: KMOD2_1997, KMOD3_1997: KMOD3_1997,
+GAMA_1997: GAMA_1997, PHI_1997: PHI_1997, ESPECIES: ESPECIES, PERFIS: PERFIS,
+CLASSES_2022: CLASSES_2022, KMOD1_2022: KMOD1_2022, KMOD2_2022: KMOD2_2022, PHI_2022: PHI_2022, GAMA_2022: GAMA_2022
+};
+MadMateriais.perfil2022 = function (o) {
+o = o || {};
+var prod = o.produto || "serrada", u = o.umidade, car = o.carregamento;
+var k1 = (KMOD1_2022[prod] || {})[car], k2 = (KMOD2_2022[prod] || {})[u];
+var phi = (PHI_2022[o.fluencia || prod] || PHI_2022.serrada)[u];
+if (k1 == null || k2 == null) throw new Error("madmateriais: perfil2022 sem kmod para " + prod + "/" + car + "/umidade " + u);
+if (phi == null) throw new Error("madmateriais: perfil2022 sem φ para umidade " + u + " (OSB na classe 4 não se aplica)");
+if (!o.limVao || !o.limBalanco) throw new Error("madmateriais: perfil2022 exige limVao e limBalanco (a Tabela 21 dá faixas; decisão de projeto)");
+return {
+nome: "NBR 7190-1:2022 — " + prod + ", " + car + ", umidade " + u, edicao: "2022", completo: true, fonteSecundaria: true,
+kmod: k1 * k2, kmodPartes: "kmod1 " + String(k1).replace(".", ",") + " (" + car + ") × kmod2 " + String(k2).replace(".", ",") + " (umidade " + u + ")",
+gw: { c: GAMA_2022.c, t: GAMA_2022.t, m: GAMA_2022.m, v: GAMA_2022.v }, flexaoPor: "fmd", fc90Fator: null,
+gamaG: o.gamaG || 1.4, gamaQ: o.gamaQ || 1.4, psi2: o.psi2 == null ? 0.4 : o.psi2, phi: phi,
+limVao: o.limVao, limBalanco: o.limBalanco, eRigidez: "E0m", flecha: "2022",
+kM: 0.7, betaC: prod === "serrada" ? 0.2 : 0.1,
+fonte: F22 + "; ações NBR 8681:2003 (γ 1,4 edificação tipo 2; ψ2 Tab. 6) — 8681:2025 vigente, não conferida"
+};
+};
+MadMateriais.classe2022 = function (id) {
+var c = CLASSES_2022[id];
+if (!c) throw new Error("madmateriais: classe 2022 desconhecida " + id + (/C25$/.test(id) ? " (C25 não existe na 7190-1:2022)" : ""));
+return c;
+};
+MadMateriais.resistencias2022 = function (classeId, perfil) {
+var c = MadMateriais.classe2022(classeId), p = perfil, k = p.kmod;
+var nat = c.origem === "nativa_cp";
+var fc0d = k * c.fc0k / p.gw.c;
+return {
+fc0d: fc0d, ft0d: nat ? fc0d : k * c.ft0k / p.gw.t, fmd: nat ? fc0d : k * c.fmk / p.gw.m, fvd: k * c.fvk / p.gw.v,
+fc90d: c.fc90k != null ? k * c.fc90k / p.gw.c : null, E0m: c.Ec0m, E005: c.E005, Eef: k * c.Ec0m, fc0k: c.fc0k,
+classe: c, perfil: p
+};
+};
+MadMateriais.classe = function (id) {
+var c = CLASSES_1997[id];
+if (!c) throw new Error("madmateriais: classe desconhecida " + id);
+return c;
+};
+MadMateriais.especie = function (id) {
+var e = ESPECIES[id];
+if (!e) throw new Error("madmateriais: espécie desconhecida " + id);
+return e;
+};
+MadMateriais.perfil = function (id) {
+var p = PERFIS[id];
+if (!p) throw new Error("madmateriais: perfil desconhecido " + id);
+if (!p.completo) throw new Error("madmateriais: perfil " + id + " incompleto — falta " + p.falta);
+return p;
+};
+MadMateriais.kmod1997 = function (carregamento, umidade, categoria, grupo) {
+var k1 = KMOD1_1997[carregamento], k2 = KMOD2_1997[umidade];
+var k3 = grupo === "conifera" ? 0.8 : KMOD3_1997[categoria || "segunda"];
+if (k1 == null || k2 == null || k3 == null) throw new Error("madmateriais: kmod1997 com parâmetro inválido");
+return k1 * k2 * k3;
+};
+MadMateriais.resistencias = function (classeId, perfilId) {
+var c = MadMateriais.classe(classeId), p = MadMateriais.perfil(perfilId);
+var fc0d = p.kmod * c.fc0k / p.gw.c;
+return {
+fc0d: fc0d, ft0d: p.kmod * c.fc0k / 0.77 / p.gw.t, fvd: p.kmod * c.fvk / p.gw.v,
+fmd: p.flexaoPor === "fc0d" ? fc0d : null, fc90d: p.fc90Fator * fc0d,
+Eef: p.kmod * c.Ec0m, classe: c, perfil: p
+};
+};
+if (typeof module !== "undefined" && module.exports) module.exports = MadMateriais;
+else global.MadMateriais = MadMateriais;
+})(typeof window !== "undefined" ? window : this);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/madespecie.js ==== */
+try {
+(function (global) {
+"use strict";
+var ME = {};
+function chave(sec) { return sec ? Math.min(sec[0], sec[1]) + "x" + Math.max(sec[0], sec[1]) : ""; }
+function chaveOriginal(sec) { return sec ? sec[0] + "x" + sec[1] : ""; }
+var CLIENTE = "cliente (mensagem de 11/10/2026 21:33)";
+ME.QUIOSQUE = [
+{ grupo: /^WF_GUIA_SUP$/, secoes: ["10x20"], especie: "tatajuba", origem: "DEFINIÇÃO RA (RT, 12/10/2026 — decisão delegada pelo Rogério)", data: "2026-10-12",
+nota: "Viga de topo embutida na parede de wood frame: madeira dura POR CÁLCULO (Pinus 5×10 deitado chegava a 592 %; Tatajuba 10×20 dá η 0,66). Tatajuba = mesma compra do piso, peça não aparente; a Itaúba fica para o aparente (pergolado/brise)." },
+{ grupo: /^WF_VERGA$/, secoes: ["5x20"], especie: "tatajuba", origem: "DEFINIÇÃO RA (RT, 12/10/2026 — decisão delegada pelo Rogério)", data: "2026-10-12",
+nota: "Verga 5×20 em madeira dura por cálculo, embutida na parede de Pinus — Tatajuba, como a viga de topo." },
+{ grupo: /^FORRO_BARROTE$/, especie: "tatajuba", origem: "DEFINIÇÃO RA (RT, 12/10/2026 — decisão delegada pelo Rogério)", data: "2026-10-12",
+nota: "Barrotes do forro dos blocos: Pinus 5×15 reprovava (η até 2,96, escora do vento no topo das paredes) → Tatajuba 10×15 (η 0,61). A seção nova vem de MadDimensionar.QUIOSQUE.decisoesRT." },
+{ grupo: /^WF_|^FORRO_/, especie: "pinus_cca", origem: CLIENTE, data: "2026-10-11" },
+{ grupo: /^PISO_/, especie: "tatajuba", origem: CLIENTE, data: "2026-10-11" },
+{ grupo: /^PILAR_|^COB_/, especie: "itauba", origem: CLIENTE + "; pilares incluídos no pergolado — confirmado pelo Rogério em 12/10/2026", data: "2026-10-12",
+nota: "\"Pergolado\" = a estrutura aparente da cobertura sobre o vidro: pilares compostos, vigas e bloqueadores das coberturas (era Tatajuba pelo projeto original)." },
+{ grupo: /^BRISE|^RIPADO|^PERGOLADO/, especie: "itauba", origem: CLIENTE, data: "2026-10-11" }
+];
+ME.regraDe = function (peca, regras) {
+var g = String(peca.grupo || ""), k = chave(peca.secao_cm), ko = chaveOriginal(peca.secao_cm);
+for (var i = 0; i < regras.length; i++) {
+var r = regras[i];
+if (!r.grupo.test(g)) continue;
+if (r.secoes && r.secoes.indexOf(k) < 0 && r.secoes.indexOf(ko) < 0) continue;
+return r;
+}
+return null;
+};
+ME.especieDaFonte = function (peca) {
+var s = String(peca.especie || peca.material || "").toLowerCase();
+if (/tatajuba/.test(s)) return "tatajuba";
+if (/ita[uú]ba/.test(s)) return "itauba";
+if (/pinus/.test(s)) return "pinus_cca";
+return null;
+};
+ME.aplicar = function (pecas, regras) {
+var out = [], trocas = {}, por = {}, sem = [], conf = {};
+pecas.forEach(function (p) {
+if (!p.secao_cm) return;
+var r = ME.regraDe(p, regras), de = ME.especieDaFonte(p);
+if (!r) { sem.push(p.id + " (" + p.grupo + ")"); return; }
+var v = p.volume_m3 || 0, L = p.comprimento_m || 0;
+out.push({ id: p.id, grupo: p.grupo, secao: chaveOriginal(p.secao_cm), de: de, para: r.especie, regra: r });
+if (de !== r.especie) {
+var k = (de || "?") + "→" + r.especie;
+trocas[k] = trocas[k] || { n: 0, volume_m3: 0 };
+trocas[k].n++; trocas[k].volume_m3 += v;
+}
+por[r.especie] = por[r.especie] || { n: 0, volume_m3: 0, m: 0 };
+por[r.especie].n++; por[r.especie].volume_m3 += v; por[r.especie].m += L;
+if (r.conferir) { conf[r.nota] = (conf[r.nota] || 0) + 1; }
+});
+return { pecas: out, trocas: trocas, porEspecie: por, semRegra: sem,
+conferir: Object.keys(conf).map(function (n) { return { nota: n, n: conf[n] }; }) };
+};
+if (typeof module !== "undefined" && module.exports) module.exports = ME;
+else global.MadEspecie = ME;
+})(typeof window !== "undefined" ? window : this);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/maddimensionar.js ==== */
+try {
+(function (global) {
+"use strict";
+function req(nome, arq) { return global[nome] || (typeof require === "function" ? require("./" + arq) : null); }
+var MM = req("MadMateriais", "madmateriais.js"), MD = req("MadDim", "maddim7190.js"), ME = req("MadEspecie", "madespecie.js");
+var MP = req("MadPiso", "madpiso.js"), MO = req("MadModelo", "madmodelo.js"), MA = req("MadAnalise", "madanalise.js");
+var MER = req("MadMercado", "madmercado.js");
+function opc(nome, arq) { try { return req(nome, arq); } catch (e) { return null; } }
+var WF = opc("MadWoodFrame", "madwoodframe.js"), ML = opc("MadLigCalc", "madligcalc.js");
+function br(x, c) { return (Math.round(x * Math.pow(10, c == null ? 2 : c)) / Math.pow(10, c == null ? 2 : c)).toFixed(c == null ? 2 : c).replace(".", ","); }
+var MadDimensionar = {};
+MadDimensionar.QUIOSQUE = {
+grupoEspecie: [
+[/^PILAR$|^COB_|^COBINF_/, "itauba"],
+[/^GUIA_10x20$|^VERGA_10x20$/, "tatajuba"],
+[/^BAR_|^VP_|^DORM_|^TEST_/, "tatajuba"],
+[/^FORRO_|^GUIA_10x5$/, "pinus_cca"]
+],
+decisoesRT: {
+FORRO_5x15: { b_cm: 10, h_cm: 15, especie: "tatajuba", grupoFonte: "FORRO_BARROTE",
+motivo: "DEFINIÇÃO RA (RT, 12/10/2026): barrotes do forro em Pinus 5×15 reprovavam (η até 2,96 — escora do vento no topo das paredes); alternativas testadas: Tatajuba 10×15 η 0,61 (adotada: mais folga, largura da viga de topo, mesma compra do piso), Pinus 10×15 η 0,84 (sem bitola no catálogo), Tatajuba 7×15 η 0,82" }
+},
+verificar: /^PILAR$|^COB_|^COBINF_|^GUIA_10x20$|^VERGA_10x20$|^FORRO_/,
+pilar: /^PILAR$/,
+funcoes: { PILAR: "Pilares compostos 4×(7×7)", COB_7x20: "Vigas da cobertura superior 7×20", COBINF_7x20: "Vigas e bloqueadores da cobertura inferior 7×20",
+GUIA_10x20: "Viga de topo das paredes 10×20", VERGA_10x20: "Verga da frente do bar", FORRO_5x15: "Barrotes do forro (coberturas internas)" },
+diagnostico: {
+FORRO_5x15: {
+mecanismo: "No modelo analítico os barrotes do forro estão ligados às paredes e aos pilares sem liberação de giro. Com o vento, o topo das paredes desloca e o forro passa a trabalhar como escora horizontal entre as paredes: compressão axial somada à flexão no eixo fraco da seção 5×15 de Pinus (kc baixo no plano de 5 cm). Os bloqueadores do forro recebem torção e cortante pela mesma ligação rígida. A reprovação vem desse papel de contraventamento que o modelo atribui ao forro, não da carga de gravidade do forro.",
+alternativas: [
+"Rotular as ligações do forro (barrote e bloqueador) no modelo, para que o forro não participe do contraventamento, e garantir na execução a ligação correspondente (fixação que não transmita momento) — recalcular.",
+"Manter o forro como escora e trocar a seção ou a espécie dos barrotes e bloqueadores (madeira dura ou seção maior no plano fraco) — recalcular.",
+"Travar o topo das paredes por outro elemento (viga de topo contínua ou diafragma do forro com chapa pregada) que leve a força horizontal, deixando o forro só para a gravidade — recalcular.",
+"Conferir a rigidez das paredes de contraventamento adotada (chapa, pregação, redução de 50 %): parede mais rígida reduz o deslocamento do topo e a força no forro."
+]
+}
+}
+};
+MadDimensionar.ligacoesEmitidas = function (CL, LQ) {
+if (!ML || !CL || !CL.premissas) return { lista: [], difs: ["MadLigCalc ou calc_ligacoes ausente"] };
+var L = ML, P = CL.premissas, RHO = P.rho_k.Tatajuba, FUB = P.fub, GL = P.gama_lig, out = [], difs = [];
+function kmodDe(combo) { var curta = /1,4V/.test(combo) && /\+ 1,4V/.test(combo), k1 = curta ? P.kmod1_curta : P.kmod1_longa; return { k: k1 * P.kmod2, txt: "kmod = " + br(k1, 1) + " (" + (curta ? "curta — vento principal" : "longa") + ") × " + br(P.kmod2, 1) + " (umidade 3) = " + br(k1 * P.kmod2, 2) }; }
+function r2(x) { return Math.round(x * 100) / 100; }
+function maior(l, f) { return l.slice().sort(function (a, b) { return f(b) - f(a); })[0]; }
+function confere(nome, a, b) { if (Math.abs(a - b) > 0.01 + 0.01 * Math.abs(b)) difs.push(nome + ": refeito " + a + " × emitido " + b); }
+var tipo = {};
+((LQ && LQ.ligacoes) || []).forEach(function (x) { var k = x.codigo.split("-")[0]; if (!tipo[k]) tipo[k] = { tipo: x.tipo, descricao: x.descricao, status: x.status, regra: x.regra, n: 0 }; tipo[k].n++; });
+function T(k) { return tipo[k] || { tipo: k, descricao: "", n: null }; }
+if (CL.L01) {
+var x = maior(CL.L01, function (v) { return Math.max(v.eta_H, v.eta_T); }), ap = L.acoPino(16, FUB), My = L.myRk(16, FUB), fh = L.fhAlfa(16, RHO, 90) / 3, cs = L.corteSimples(fh, fh, 200, 200, 16, My);
+var kH = kmodDe(x.combo_H), kT = kmodDe(x.combo_T), RdM = L.rd(cs.Rk, kH.k) / 1000, Rax = L.rd(L.barraColadaRaxK(16, 200), kT.k) / 1000, e1 = Math.max(x.eta_H, x.eta_T);
+confere("L01 Rd madeira", r2(RdM), x.Rd_madeira_kN); confere("L01 Rax,d", r2(Rax), x.Rax_d_kN); confere("L01 Fv,Rd aço", r2(ap.FvRd), x.Fv_Rd_aco);
+out.push({ codigo: "L01", tipo: T("L01").tipo, descricao: T("L01").descricao, quantidade: T("L01").n, governante: "pilar " + x.pilar, eta: e1, ok: e1 <= 1,
+norma: "EN 1995-1-1:2004+A2:2014 8.2 (Johansen); EN 1993-1-8 Tab. 3.4 (aço do pino); DIN 1052:2008 (barra colada)",
+passos: [
+"Barra M16 A4-70 (fub = " + FUB + " MPa, As = " + br(ap.As, 0) + " mm²): Fv,Rd = 0,6·fub·As/γM2 = " + br(ap.FvRd) + " kN; Ft,Rd = 0,9·fub·As/γM2 = " + br(ap.FtRd) + " kN (γM2 = 1,25).",
+"Madeira (ρk = " + RHO + " kg/m³): fh,90,k = 0,081·(1 − 0,01·d)·ρk/(k90·sen²α + cos²α) = " + br(L.fhAlfa(16, RHO, 90)) + " MPa, reduzido a 1/3 no topo = " + br(fh) + " MPa; My,Rk = 0,3·fu·d^2,6 = " + br(My / 1000, 1) + " N·m.",
+"Corte simples madeira–madeira 200/200 mm (EN 1995-1-1 eq. 8.6): Rk = " + br(cs.Rk / 1000) + " kN (modo " + cs.modo + "); " + kH.txt + "; Rd = kmod·Rk/γlig = " + br(RdM) + " kN (γlig = " + br(GL, 1) + ").",
+"Arrancamento da barra colada (DIN 1052:2008): Rax,k = π·d·ℓad·f1,k = π·16·200·4,0 = " + br(L.barraColadaRaxK(16, 200) / 1000) + " kN; " + kT.txt + "; Rax,d = " + br(Rax) + " kN.",
+"Esforços (pilar " + x.pilar + "): H = " + br(x.H_kN) + " kN (" + x.combo_H + ") → η = H/Rd = " + br(x.eta_H, 3) + "; T = " + br(x.T_kN) + " kN (" + x.combo_T + ") → η = T/Rax,d = " + br(x.eta_T, 3) + "."],
+lista: CL.L01.map(function (v) { return { id: v.pilar, combo: v.combo_H + " / " + v.combo_T, Sd: "H " + br(v.H_kN) + " / T " + br(v.T_kN) + " kN", Rd: br(v.Rd_madeira_kN) + " / " + br(v.Rax_d_kN) + " kN", eta: Math.max(v.eta_H, v.eta_T) }; }) });
+}
+if (CL.L02) {
+var x2 = maior(CL.L02, function (v) { return v.eta; }), k2 = kmodDe(x2.combo), f90 = L.fhAlfa(10, RHO, 90), cd = L.corteDuplo(f90, f90, 70, 70, 10, L.myRk(10, FUB)), Rd2 = L.rd(2 * cd.Rk, k2.k) / 1000 * 2;
+CL.L02.forEach(function (v) { confere("L02 " + v.pilar, r2(L.rd(2 * cd.Rk, kmodDe(v.combo).k) / 1000 * 2), v.Rd_bloqueador_kN); });
+out.push({ codigo: "L02", tipo: T("L02").tipo, descricao: T("L02").descricao, quantidade: T("L02").n, governante: "pilar " + x2.pilar, eta: x2.eta, ok: x2.eta <= 1, norma: "EN 1995-1-1:2004+A2:2014 8.2.2 (corte duplo, eq. 8.7)",
+passos: [
+"Barra M10 A4-70 em corte duplo madeira–madeira, peças de 70 mm (7 + 7 + 7), força a 90° das fibras: fh,90,k = " + br(f90) + " MPa; My,Rk = " + br(L.myRk(10, FUB) / 1000, 1) + " N·m.",
+"Rk por plano = " + br(cd.Rk / 1000) + " kN (modo " + cd.modo + "); 2 planos por barra, 2 barras por braço: Rd = kmod·(2·Rk)/γlig × 2 = " + br(Rd2) + " kN (" + k2.txt + ").",
+"Vd = " + br(x2.Vd_kN) + " kN (" + x2.combo + ", pilar " + x2.pilar + ") → η = Vd/Rd = " + br(x2.eta, 3) + "."],
+lista: CL.L02.map(function (v) { return { id: v.pilar, combo: v.combo, Sd: br(v.Vd_kN) + " kN", Rd: br(v.Rd_bloqueador_kN) + " kN", eta: v.eta }; }) });
+}
+if (CL.L03) {
+var x3 = maior(CL.L03, function (v) { return v.eta; }), k3 = kmodDe(x3.combo), alfa = Math.atan2(x3.Fh_kN, x3.Fv_kN) * 180 / Math.PI;
+var a1 = L.fhAlfa(10, RHO, alfa), a2 = L.fhAlfa(10, RHO, 90 - alfa), c3 = L.corteDuplo(a1, a2, 70, 70, 10, L.myRk(10, FUB)), nef = L.nef(2, 100, 10), Rd3 = L.rd(2 * c3.Rk, k3.k) / 1000 * 2 * nef;
+confere("L03 governante", r2(Rd3), x3.Rd_kN);
+out.push({ codigo: "L03", tipo: T("L03").tipo, descricao: T("L03").descricao, quantidade: T("L03").n, governante: "pilar " + x3.pilar + ", nó z = " + br(x3.no_z, 3) + " m (" + x3.cobertura + ")", eta: x3.eta, ok: x3.eta <= 1,
+norma: "EN 1995-1-1:2004+A2:2014 8.2.2 (eq. 8.7), 8.1.2 (nef, eq. 8.34), eq. 8.31 (fh,α)",
+passos: [
+"Resultante Fd = √(Fv² + Fh²) = √(" + br(x3.Fv_kN) + "² + " + br(x3.Fh_kN) + "²) = " + br(x3.Fd_kN) + " kN; α = " + br(alfa, 1) + "° → fh,α,pilar = " + br(a1, 1) + " MPa; fh,viga = " + br(a2, 1) + " MPa.",
+"Rk por plano = " + br(c3.Rk / 1000) + " kN (modo " + c3.modo + "); nef = mín(n; n^0,9·(a1/13d)^0,25) = " + br(nef, 2) + " (n = 2, a1 = 100 mm); Rd = kmod·2·Rk/γlig × 2 × nef = " + br(Rd3) + " kN (" + k3.txt + ").",
+"η = Fd/Rd = " + br(x3.Fd_kN) + "/" + br(Rd3) + " = " + br(x3.eta, 3) + " (" + x3.combo + ")."],
+lista: CL.L03.map(function (v) { return { id: v.pilar + " z " + br(v.no_z, 3), combo: v.combo, Sd: br(v.Fd_kN) + " kN", Rd: br(v.Rd_kN) + " kN", eta: v.eta }; }) });
+}
+var dEf = 1.1 * 7, fl = L.fhAlfa(dEf, RHO, 90);
+if (CL.L04) {
+var rkt = L.corteSimples(fl, fl, 70, 80, dEf, L.myRk(dEf, FUB)).Rk / 3;
+["bloqueador", "longarina"].forEach(function (t) {
+var x4 = CL.L04[t]; if (!x4) return;
+var k4 = kmodDe(x4.combo), Rd4 = L.rd(2 * rkt, k4.k) / 1000;
+confere("L04 " + t, r2(Rd4), x4.Rd_2_tirefonds_topo_kN);
+out.push({ codigo: "L04", sub: t, tipo: T("L04").tipo + " — " + t, descricao: T("L04").descricao, quantidade: t === "bloqueador" ? T("L04").n : null, governante: x4.peca, eta: x4.eta, ok: x4.eta <= 1, substituidaPor: x4.eta > 1 && CL.L08 ? "L08" : null,
+norma: "EN 1995-1-1:2004+A2:2014 8.2.2 (eq. 8.6) com diâmetro efetivo 1,1·d1 (8.7.1)",
+passos: [
+"Tirefond DIN 571 10×150 A4: diâmetro efetivo d,ef = 1,1 × 7 = " + br(dEf, 1) + " mm; fh,90,k = " + br(fl) + " MPa; corte simples 70/80 mm.",
+"Rk = " + br(rkt * 3 / 1000) + " kN, reduzido a 1/3 por entrar no topo da peça = " + br(rkt / 1000) + " kN; 2 tirefonds: Rd = kmod·2·Rk/γlig = " + br(Rd4) + " kN (" + k4.txt + ").",
+"Fd = " + br(x4.Fd_kN) + " kN (" + x4.combo + "; " + x4.peca + ") → η = " + br(x4.eta, 3) + (x4.eta > 1 && CL.L08 ? ". Não atende: na longarina de topo a ligação foi substituída pela L08 (cantoneiras de apoio)." : ".")] });
+});
+}
+if (CL.L08) {
+var x8 = CL.L08, k8 = kmodDe(x8.combo), t1 = 50 - 6.35, rk8 = L.acoMadeiraSimples(fl, t1, dEf, L.myRk(dEf, FUB), 1), Rd8 = L.rd(rk8.Rk, k8.k) / 1000 * 4;
+confere("L08 Rk", r2(rk8.Rk / 1000), x8.Rk_tirefond_kN); confere("L08 Rd", r2(Rd8), x8.Rd_4_tirefonds_kN);
+out.push({ codigo: "L08", tipo: T("L08").tipo, descricao: T("L08").descricao, quantidade: T("L08").n, governante: x8.peca, eta: x8.eta, ok: x8.eta <= 1, norma: "EN 1995-1-1:2004+A2:2014 8.2.3 (aço–madeira, eq. 8.9)",
+passos: [
+"Tirefond DIN 571 10×50 A4 na cantoneira inox 76×76×6,35: madeira t1 = 50 − 6,35 = " + br(t1) + " mm; d,ef = " + br(dEf, 1) + " mm; chapa tratada como fina (t ≤ 0,5·d), como no cálculo emitido R03.",
+"Modos (eq. 8.9): a = 0,4·fh·t1·d = " + br(rk8.modos.a / 1000) + " kN; b = 1,15·√(2·My·fh·d) = " + br(rk8.modos.b / 1000) + " kN → Rk = " + br(rk8.Rk / 1000) + " kN (modo " + rk8.modo + ").",
+"4 tirefonds por peça: Rd = kmod·Rk/γlig × 4 = " + br(Rd8) + " kN (" + k8.txt + "); Fd = " + br(x8.Fd_kN) + " kN (" + x8.combo + ") → η = " + br(x8.eta, 3) + "."] });
+}
+["L05", "L06", "L07", "L09", "L10", "L11", "L12", "L13", "L14", "L15"].forEach(function (k) {
+var d = tipo[k]; if (!d) return;
+out.push({ codigo: k, tipo: d.tipo, descricao: d.descricao, quantidade: d.n, eta: null, status: d.status, regra: d.regra,
+nota: k === "L06" && CL.L06 ? "Cortante de vento de cálculo na base de todo o quiosque: " + br(CL.L06.H_vento_total_d_kN) + " kN — " + CL.L06.nota + "." : null });
+});
+return { lista: out, difs: difs, premissas: P };
+};
+function conclusaoPainel(zonas, cfg, ref) {
+var acima = zonas.filter(function (z) { return z.acimaFicha; }).length;
+var txt = "G + Q característico acima do valor publicado na ficha (4,90 kN/m² a ≤ 1,25 m) em " + acima + " de " + zonas.length + " zonas; a ficha não diz se o valor é admissível, característico ou de ruptura.";
+if (zonas.some(function (z) { return z.capReferencia_kN_m2 != null; })) {
+txt += " Pela tabela de referência (" + (ref && ref.produto || "Decorlit") + ") com o vão de cada zona: " + zonas.map(function (z) {
+return z.zona + " " + br(z.total, 2) + " kN/m² a " + br(z.vao_m, 2) + " m → " + (z.atendeReferencia ? "atende" : "NÃO atende") + " (" + br(z.capReferencia_kN_m2, 2) + (z.foraTabela ? ", vão abaixo da tabela: adotado o do menor vão" : "") + ")";
+}).join("; ") + ".";
+}
+return txt + " Liberar o piso só com a carta do fabricante (Eternit/Nibra) com a carga para esses vãos e a natureza do valor.";
+}
+MadDimensionar.painelPiso = function (cfg, piso, MC) {
+if (!cfg || !MC || !MC.produto || !piso || !piso.cargasZona) return null;
+var p = MC.produto(cfg.produtoId); if (!p) return null;
+var dt = p.dados_tecnicos || {}, cap = dt.carga_distribuida_kN_m2_40mm_conversao, G = piso.cargasZona.G_Z_kN_m2, Q = piso.cargasZona.Q_Z_kN_m2;
+var zonas = Object.keys(G).map(function (z) {
+var tot = G[z] + Q[z], vz = (cfg.vaoPorZona && cfg.vaoPorZona[z]) || cfg.vaoApoios_m;
+return { zona: z, G: G[z], Q: Q[z], total: tot, vao_m: vz, acimaFicha: tot > cap };
+});
+var ref = null, alt = cfg.referenciaVaoCarga ? MC.produto(cfg.referenciaVaoCarga) : null;
+if (alt) {
+var tb = (alt.tabelas_resistencia || [])[0];
+if (tb) {
+var lin = tb.linhas.filter(function (l) { return l[0] === cfg.espessuraMm; })[0], vaos = tb.colunas.slice(1).map(function (c) { return Number(/(\d+)_mm/.exec(c)[1]) / 1000; });
+var pts = []; vaos.forEach(function (v, i) { if (lin && lin[i + 1] != null) pts.push([v, lin[i + 1], tb.linhas_kN_m2_conversao.filter(function (l) { return l[0] === cfg.espessuraMm; })[0][i + 1]]); });
+var noVao = null, vv = cfg.vaoApoios_m;
+for (var i = 0; i + 1 < pts.length; i++) if (vv >= pts[i][0] && vv <= pts[i + 1][0]) { var w = (vv - pts[i][0]) / (pts[i + 1][0] - pts[i][0]); noVao = { kgf: pts[i][1] + w * (pts[i + 1][1] - pts[i][1]), kN: pts[i][2] + w * (pts[i + 1][2] - pts[i][2]) }; }
+ref = { produto: [alt.fabricante, alt.linha].filter(Boolean).join(" "), pagina: tb.pagina, url: tb.url, titulo: tb.titulo, hipoteses: tb.hipoteses, pontos: pts, noVao: noVao };
+}
+}
+if (ref && ref.pontos && ref.pontos.length) {
+zonas.forEach(function (z) {
+var P = ref.pontos, v = z.vao_m, c = null, i;
+if (v <= P[0][0]) { c = P[0][2]; z.foraTabela = v < P[0][0]; }
+else for (i = 0; i + 1 < P.length; i++) if (v >= P[i][0] && v <= P[i + 1][0]) { c = P[i][2] + (v - P[i][0]) / (P[i + 1][0] - P[i][0]) * (P[i + 1][2] - P[i][2]); }
+z.capReferencia_kN_m2 = c; z.atendeReferencia = c != null && z.total <= c;
+});
+}
+return { produto: [p.fabricante, p.linha].filter(Boolean).join(" "), produtoId: p.id, pagina: dt.pagina, link: p.link,
+ficha: { carga_kgf_m2: dt.carga_distribuida_kgf_m2_40mm, carga_kN_m2: cap, apoios: dt.apoios_minimos_por_painel, vaoMax_m: dt.vao_maximo_entre_apoios_piso_mm_40mm / 1000,
+concentrada_kgf: dt.carga_concentrada_vertical_kgf_40mm, hipoteses: dt.carga_distribuida_hipoteses },
+fabricanteConfirmado: !!(p.item_orcamento_nibra && p.item_orcamento_nibra.fabricante_do_item_confirmado), obsFabricante: p.item_orcamento_nibra && p.item_orcamento_nibra.obs,
+vaoApoios_m: cfg.vaoApoios_m, fonteVao: cfg.fonteVao, premissaR03: cfg.premissaR03, zonas: zonas, referencia: ref,
+impedeUso: zonas.some(function (z) { return z.acimaFicha; }),
+conclusao: conclusaoPainel(zonas, cfg, ref) };
+};
+function especieDoGrupo(g, tab) {
+for (var i = 0; i < tab.length; i++) if (tab[i][0].test(g)) return tab[i][1];
+return null;
+}
+MadDimensionar.combinacoes = function (hips) {
+var G = { PP: 1.4, CP: 1.4 }, out = [];
+function c(nome, f, car) { var x = {}; Object.keys(f).forEach(function (k) { if (hips.indexOf(k) >= 0) x[k] = f[k]; }); out.push({ nome: nome, fatores: x, carregamento: car }); }
+function mais(a, b) { var x = {}; [a, b].forEach(function (o) { Object.keys(o).forEach(function (k) { x[k] = o[k]; }); }); return x; }
+c("1,4G + 1,4Q", mais(G, { SCpiso: 1.4, SCcob: 1.4 }), "longa");
+["V1", "V2", "V3", "V4"].forEach(function (v) {
+var fv = {}; fv[v] = 1.4;
+c("1,4G + 1,4" + v + " + 0,98Q", mais(mais(G, fv), { SCpiso: 0.98, SCcob: 0.98 }), "curta");
+var fv2 = {}; fv2[v] = 0.84;
+c("1,4G + 1,4Q + 0,84" + v, mais(mais(G, { SCpiso: 1.4, SCcob: 1.4 }), fv2), "longa");
+var fv3 = {}; fv3[v] = 1.4;
+c("1,0G + 1,4" + v, mais({ PP: 1.0, CP: 1.0 }, fv3), "curta");
+});
+return out;
+};
+MadDimensionar.calcular = function (e) {
+var t0 = Date.now(), Q = e.grupos || MadDimensionar.QUIOSQUE;
+var classes = e.classes || { tatajuba: "nativa:D40", itauba: "nativa:D40", pinus_cca: "peca:C20" };
+var perfBase = e.perfil || { umidade: 3, limVao: 350, limBalanco: 175, psi2: 0.4 };
+var pend = [], avisos = [], naoAbr = [], premissas = [];
+var esp = ME.aplicar(e.fonte.pecas, e.especies || ME.QUIOSQUE);
+esp.conferir.forEach(function (c) { pend.push("Confirmar com o cliente (" + c.n + " peças): " + c.nota); });
+Object.keys(classes).forEach(function (k) {
+var es = MM.especie(k), cl = MM.classe2022(classes[k]);
+premissas.push({ item: "Classe de resistência — " + es.nome, valor: cl.nome, fonte: cl.fonte, confianca: "fonte secundária R2 (premissa conservadora do RT)" });
+});
+var piso = e.entradasPiso ? MP.calcular(e.entradasPiso, { reacaoPorNo: true }) : null;
+if (!piso) naoAbr.push("Piso seco: entradas do MadPiso não informadas.");
+var G = MO.gerar(e.fonte, { sobreposicao: e.sobreposicao, calcPiso: e.calcPiso, cargasCype: e.cargasCype, ventoParedes: e.ventoParedes, rotulaVertical: "baixo" });
+var mod = JSON.parse(JSON.stringify(G.modelo)), gama = {};
+var troca = e.trocaSecao || (e.semDecisoesRT ? {} : (Q.decisoesRT || {}));
+Object.keys(troca).forEach(function (g) {
+var s0 = mod.secoes[g], t = troca[g];
+if (!s0) {
+if (e.trocaSecao) throw new Error("trocaSecao: grupo " + g + " não existe no modelo");
+return;
+}
+if (t.b_cm) s0.b_cm = t.b_cm; if (t.h_cm) s0.h_cm = t.h_cm; s0.perfil = s0.b_cm + "x" + s0.h_cm;
+if (t.especie) { (Q = JSON.parse(JSON.stringify(Q, function (k, v) { return v instanceof RegExp ? { __re: v.source } : v; }), function (k, v) { return v && v.__re ? new RegExp(v.__re) : v; })).grupoEspecie.unshift([new RegExp("^" + g + "$"), t.especie]); }
+premissas.push({ item: "Seção alterada pelo RT — " + g, valor: s0.b_cm + "×" + s0.h_cm + (t.especie ? " " + t.especie : ""), fonte: t.motivo || "decisão de projeto", confianca: "decisão do RT" });
+});
+Object.keys(mod.secoes).forEach(function (g) {
+var s = mod.secoes[g], k = especieDoGrupo(g, Q.grupoEspecie);
+if (!k || s.E_MPa) return;
+var es = MM.especie(k), cl = MM.classe2022(classes[k]);
+s.especie = es.nome; s.especieId = k; s.classe = classes[k];
+s.material = es.nome + " — " + cl.nome;
+s.E_MPa = cl.Ec0m;
+gama[s.material] = es.gamaCarga;
+});
+premissas.push({ item: "Rigidez na análise global", valor: "E0,med da classe adotada (nativa D40: 14 500 MPa; C20: 9 500 MPa)", fonte: "NBR 7190-1:2022 (fonte secundária)", confianca: "R2" });
+var opA = e.analise || { placa: "casca", cortante: true };
+var M = MA.montar(mod, { placas: G.placas }, { placa: opA.placa || "casca", cortante: opA.cortante !== false, gama: gama });
+var C = MA.cargas(M, { hipoteses: G.hipoteses, ops: G.ops }, { cargaNodal: "consistente" });
+var R = MA.resolver(M, C);
+var ES = MA.esforcos(M, C, R, { estacoes: 5 });
+var combs = MadDimensionar.combinacoes(R.hips);
+var EC = MA.combinar(ES, combs.map(function (c) { return { nome: c.nome, fatores: c.fatores }; }));
+var beta = {}, alphaCr = null, betaDet = {}, estab = null;
+if (typeof MA.estabilidade === "function") {
+try {
+var st = MA.estabilidade(M, C, R, { grupos: ["PILAR"] });
+alphaCr = st.alphaCrMin;
+estab = { alphaCrMin: st.alphaCrMin, combinacaoCritica: st.combinacaoCritica, alphaRefPilares: st.alphaRefPilares, grupos: ["PILAR"] };
+Object.keys(st.betaPorPilar || {}).forEach(function (k) {
+var bp = st.betaPorPilar[k], bv = bp && isFinite(bp.beta) ? bp.beta : null;
+beta[k] = bv == null ? 1.0 : Math.max(1.0, bv);
+betaDet[k] = { N: bp ? bp.N : null, L: bp ? bp.L : null, L0: bp ? bp.L0 : null, betaAutovalor: bv, betaProjeto: beta[k] };
+});
+premissas.push({ item: "Estabilidade global", valor: "α_cr = " + alphaCr.toFixed(1).replace(".", ",") + (alphaCr >= 10 ? " ≥ 10 → estrutura indeslocável (efeitos de 2ª ordem globais desprezíveis)" : " < 10 → considerar 2ª ordem"),
+fonte: "autovalor (K + α·Kg)φ = 0, Kg dos pilares, combinações ELU com vento", confianca: "cálculo do sistema" });
+premissas.push({ item: "Comprimento de flambagem dos pilares", valor: "L0 = máx(1,0; β do autovalor)·L, L = altura total do pilar (pé ao topo)", fonte: "decisão de projeto (RT)", confianca: "a favor da segurança" });
+if (alphaCr < 10) avisos.push("α_cr = " + alphaCr.toFixed(1) + " < 10: estrutura deslocável — verificar 2ª ordem global.");
+pend.push("Modelo analítico sem o diafragma do Painel Wall: com a Kg de todas as barras aparece mecanismo local nos barrotes 16×20 da ducha — representar o travamento do painel no gerador.");
+} catch (er) { pend.push("Estabilidade global não calculada: " + er.message); }
+} else pend.push("Estabilidade global (β dos pilares por autovalor) ainda não disponível no motor — pilares verificados com β = 1,0 (na V18 o estudo deu β 1,2): reverificar.");
+var porMembro = {};
+mod.barras.forEach(function (b) {
+if (!Q.verificar.test(b.grupo)) return;
+(porMembro[b.membro] = porMembro[b.membro] || []).push(b);
+});
+var verifs = [];
+Object.keys(porMembro).forEach(function (mid) {
+var segs = porMembro[mid].sort(function (a, b) { return a.seg - b.seg; });
+var g = segs[0].grupo, s = mod.secoes[g];
+var Ls = segs.map(function (b) { return ES.porId[b.id].L; }), Ltot = Ls.reduce(function (a, x) { return a + x; }, 0);
+var Lmax = Math.max.apply(null, Ls), ehPilar = Q.pilar.test(g);
+var nomeP = ehPilar ? (/\b(P\d+)\b/.exec(String(segs[0].desc || "")) || [])[1] : null;
+var be = ehPilar ? (beta[nomeP] || beta[segs[0].id] || beta[mid] || 1.0) : 1.0;
+var pior = null;
+combs.forEach(function (cb) {
+var perfil = MM.perfil2022({ carregamento: cb.carregamento, umidade: perfBase.umidade, limVao: perfBase.limVao, limBalanco: perfBase.limBalanco, psi2: perfBase.psi2 });
+segs.forEach(function (b) {
+var cs = EC.porId[b.id].casos[cb.nome];
+cs.est.forEach(function (q) {
+var r = MD.barra2022({ N: q.N, My: q.My, Mz: q.Mz, Vy: q.Vy, Vz: q.Vz, T: q.T, b: s.b_cm / 100, h: s.h_cm / 100,
+L0y: ehPilar ? be * Ltot : Ltot, L0z: ehPilar ? be * Ltot : Lmax, L1: Lmax, classe: s.classe, perfil: perfil });
+if (!pior || r.eta > pior.r.eta) pior = { r: r, comb: cb.nome, barra: b.id, x: q.x, esf: q };
+});
+});
+});
+verifs.push({ membro: mid, grupo: g, funcao: (Q.funcoes || {})[g] || g, pilar: nomeP, desc: segs[0].desc, especie: s.especie, classe: s.classe, secao: s.b_cm + "×" + s.h_cm,
+L: Ltot, beta: ehPilar ? be : null, L0: ehPilar ? be * Ltot : null, eta: pior.r.eta, ok: pior.r.ok, governa: pior.r.governa, combinacao: pior.comb,
+esforcos: { N: pior.esf.N, My: pior.esf.My, Mz: pior.esf.Mz, Vy: pior.esf.Vy, Vz: pior.esf.Vz, T: pior.esf.T },
+verif: pior.r.verif, norma: "NBR 7190-1:2022 (fonte secundária) — conferir no texto da norma" });
+});
+verifs.sort(function (a, b) { return b.eta - a.eta; });
+naoAbr.push("Flecha das vigas das coberturas pela análise global (o limite do vidro depende da NBR 7199:2025, sem texto).");
+naoAbr.push("Ligações a partir dos esforços desta análise global: nesta versão valem os esforços do cálculo emitido PROJ-EST R03 (calc_ligacoes), com as resistências refeitas.");
+naoAbr.push("Vidro da cobertura (NBR 7199:2025 — texto não disponível na RA).");
+naoAbr.push("Vibração do piso (NBR 7190-1:2022: f ≥ 8 Hz — fonte secundária; critério de aceleração não encontrado).");
+var reac = R.reacoes.map(function (rp) {
+var o = { pilarete: rp.id }, cs = rp.casos;
+o.G = { N: (cs.PP ? cs.PP.N : 0) + (cs.CP ? cs.CP.N : 0) };
+o.Q = { N: (cs.SCpiso ? cs.SCpiso.N : 0) + (cs.SCcob ? cs.SCcob.N : 0) };
+["V1", "V2", "V3", "V4"].forEach(function (v) { if (cs[v]) o[v] = { N: cs[v].N, Vx: cs[v].Vx, Vy: cs[v].Vy }; });
+return o;
+});
+var compra = null;
+if (MER && e.catalogoMadeira) {
+var porId = {}; esp.pecas.forEach(function (p) { porId[p.id] = p.para; });
+var pecasC = e.fonte.pecas.filter(function (p) { return p.secao_cm && porId[p.id]; }).map(function (p) {
+var tr = null;
+Object.keys(troca).forEach(function (g) { if (troca[g].grupoFonte === p.grupo) tr = troca[g]; });
+return { id: p.id, especie: tr && tr.especie ? tr.especie : porId[p.id], b_cm: tr ? tr.b_cm : p.secao_cm[0], h_cm: tr ? tr.h_cm : p.secao_cm[1], comprimento_m: p.comprimento_m };
+});
+compra = MER.listaDeCompra(pecasC, e.catalogoMadeira);
+if (e.catalogoMadeiraFonte) compra.catalogoFonte = e.catalogoMadeiraFonte;
+compra.pendencias.forEach(function (x) { pend.push("Compra: " + x); });
+}
+var paredes = null, premParedes = null;
+if (WF && e.paineis) {
+premParedes = e.premissasParedes || WF.EVOPLY_12;
+paredes = WF.calcular(e.paineis, premParedes, e.planos || []);
+delete paredes.bruto;
+if (premParedes.catalogo) {
+premissas.push({ item: "Chapa de contraventamento das paredes", valor: premParedes.catalogo.produto + " (" + br(premParedes.catalogo.largura_m, 2) + " × " + br(premParedes.catalogo.altura_m, 2) + " m, " + premParedes.catalogo.massa_kg + " kg), montantes ≤ " + premParedes.catalogo.montantesMaxCm + " cm", fonte: premParedes.catalogo.fonte, confianca: "premissa pelo orçamento recebido — confirmar" });
+premissas.push({ item: "G e ρk da chapa", valor: "G = " + premParedes.gChapa + " MPa; ρk = " + premParedes.rhoKChapa + " kg/m³", fonte: premParedes.fonte, confianca: "premissa do RT (catálogo não informa)" });
+pend.push("Confirmar o " + premParedes.catalogo.produto + " como chapa de contraventamento das paredes (no lugar do OSB do modelo R03).");
+}
+naoAbr.push("Solicitação de cálculo de cada painel de parede e dos hold-downs a partir da análise com casca (o memorial traz a resistência e a rigidez dos painéis, sem η).");
+}
+var ligs = [];
+if (e.calcLigacoes) {
+var LG = MadDimensionar.ligacoesEmitidas(e.calcLigacoes, e.ligacoesFonte);
+ligs = LG.lista;
+LG.difs.forEach(function (x) { avisos.push("Ligação — resistência refeita difere do emitido: " + x); });
+if (LG.premissas) premissas.push({ item: "Ligações — coeficientes", valor: "γlig = " + br(LG.premissas.gama_lig, 1) + "; kmod1 " + br(LG.premissas.kmod1_longa, 1) + " (longa) / " + br(LG.premissas.kmod1_curta, 1) + " (curta); kmod2 " + br(LG.premissas.kmod2, 1) + "; ρk " + LG.premissas.rho_k.Tatajuba + " kg/m³ (folhosa) e " + LG.premissas.rho_k.Pinus + " kg/m³ (Pinus); fub " + LG.premissas.fub + " MPa (inox A4-70)", fonte: ML.PAR.fonte, confianca: "premissa do RT (cálculo emitido R03)" });
+ligs.filter(function (l) { return l.eta == null; }).forEach(function (l) { naoAbr.push("Ligação " + l.codigo + " (" + l.tipo + "): especificada, sem verificação de resistência."); });
+}
+var painel = MadDimensionar.painelPiso(e.painelPiso, piso, e.catalogo), impedimentos = [];
+if (painel && painel.impedeUso) { impedimentos.push("Painel Wall 40 mm do piso: " + painel.conclusao); pend.unshift("IMPEDE O USO — Painel Wall 40 mm: " + painel.conclusao); }
+if (piso && MP.PADRAO) {
+try { var pf = MM.perfil(MP.PADRAO.perfil); premissas.push({ item: "Perfil de cálculo do piso", valor: pf.nome + " — kmod " + br(pf.kmod, 3) + ", γ " + br(pf.gamaG, 1) + ", ψ2 " + br(pf.psi2, 1) + ", φ " + br(pf.phi, 1) + ", L/" + pf.limVao + " e L/" + pf.limBalanco, fonte: pf.fonte, confianca: "regressão do emitido R03" }); } catch (er) {}
+piso.classe = piso.classe || MP.PADRAO.classe; piso.perfil = piso.perfil || MP.PADRAO.perfil;
+(piso.avisos || []).forEach(function (a) { pend.push("Piso: " + a + " — só a faixa de carga foi calculada (sem verificação)."); });
+}
+var esPinus = MM.ESPECIES && MM.ESPECIES.pinus_cca;
+if (esPinus && esPinus.duvida) pend.push(esPinus.duvida + ".");
+pend.push("Texto da NBR 7190-1:2022 (convênio Confea) para conferir os valores de fonte secundária usados nas verificações.");
+(e.pendenciasObra || []).forEach(function (x) { pend.push(x); });
+var combMem = [];
+if (piso && MP.PADRAO) { try { var pp = MM.perfil(MP.PADRAO.perfil); combMem.push({ tipo: "ELU", expressao: br(pp.gamaG, 1) + "G + " + br(pp.gamaQ, 1) + "Q", kmod: pp.kmod, kmodTxt: pp.kmodPartes.replace(/\./g, ","), uso: "piso seco (perfil " + MP.PADRAO.perfil + ", verificação local)" }); } catch (er) {} }
+combs.forEach(function (cb) {
+var pf2 = MM.perfil2022({ carregamento: cb.carregamento, umidade: perfBase.umidade, limVao: perfBase.limVao, limBalanco: perfBase.limBalanco, psi2: perfBase.psi2 });
+combMem.push({ tipo: "ELU", expressao: cb.nome, kmod: pf2.kmod, kmodTxt: pf2.kmodPartes, uso: "análise global e verificação das barras" + (cb.carregamento === "curta" ? " (vento principal)" : ""), fatores: cb.fatores });
+});
+combMem.push({ tipo: "ELS", expressao: "G + " + br(perfBase.psi2, 1) + "·Q (quase permanente), flecha final com fluência", kmod: null, uso: "flecha do piso seco" });
+var posP = {};
+if (piso) piso.reacoesPilaretes.pilaretes.forEach(function (p) { posP[p.id] = p; });
+reac.forEach(function (o) {
+var p = posP[o.pilarete]; if (!p) return;
+o.x = p.xt; o.y = p.yt; o.Gpiso = p.casos_kN.G.piso; o.Qpiso = p.casos_kN.Q.piso;
+});
+var cm = MP.QUIOSQUE && MP.QUIOSQUE.cypeParaMadeira;
+var convencao = "Reações características por hipótese da análise global (barras + casca das paredes): N > 0 = compressão no pilarete; Vx, Vy = forças horizontais nos eixos do MODELO de madeira (x ao longo do quiosque, y transversal)" +
+(cm ? "; eixos da fundação (concepção): x_f = y + " + br(-cm.yt0, 3) + " m, y_f = " + br(cm.xt0, 3) + " − x m" : "") + ". G = peso próprio + permanentes; Q = sobrecarga do piso + da cobertura; V1 a V4 = vento. M no topo do pilarete = 0 (sela inox sobre graute: articulação). As combinações da fundação ficam a cargo do projetista da fundação.";
+var pecasOut = e.fonte.pecas.map(function (p) {
+var tr = null;
+Object.keys(troca).forEach(function (g) { if (troca[g].grupoFonte && troca[g].grupoFonte === p.grupo) tr = troca[g]; });
+if (tr && p.secao_cm) {
+var sec = [tr.b_cm || p.secao_cm[0], tr.h_cm || p.secao_cm[1]];
+return { id: p.id, grupo: p.grupo, nome: p.nome, marca: p.marca || null, secao_cm: sec, secaoFonte_cm: p.secao_cm,
+volume_m3: (p.comprimento_m || 0) * sec[0] * sec[1] / 1e4, comprimento_m: p.comprimento_m, p0: p.p0, p1: p.p1,
+dir_largura: p.dir_largura, extensoes_m: p.extensoes_m ? [p.extensoes_m[0], sec[1] / 100, sec[0] / 100] : null,
+etapa_montagem: p.etapa_montagem || null, especie: tr.especie || null, ifc: p.ifc || null, decisaoRT: tr.motivo };
+}
+return { id: p.id, grupo: p.grupo, nome: p.nome, marca: p.marca || null, secao_cm: p.secao_cm, volume_m3: p.volume_m3, comprimento_m: p.comprimento_m,
+p0: p.p0, p1: p.p1, dir_largura: p.dir_largura, extensoes_m: p.extensoes_m, etapa_montagem: p.etapa_montagem || null,
+especie: (esp.pecas.filter(function (q) { return q.id === p.id; })[0] || {}).para || null, ifc: p.ifc || null };
+});
+var porEsp = {};
+pecasOut.forEach(function (p) {
+if (!p.secao_cm || !p.especie) return;
+var x = porEsp[p.especie] = porEsp[p.especie] || { n: 0, volume_m3: 0, m: 0 };
+x.n++; x.volume_m3 += p.volume_m3 || 0; x.m += p.comprimento_m || 0;
+});
+esp.porEspecieFonte = esp.porEspecie; esp.porEspecie = porEsp;
+var reprov = verifs.filter(function (v) { return !v.ok; });
+reprov.forEach(function (v) { avisos.push(v.desc + " (" + v.secao + ", " + v.especie + "): η = " + br(v.eta, 2) + " em " + v.governa + " — " + v.combinacao); });
+var diag = [], gruposR = {};
+reprov.forEach(function (v) { (gruposR[v.grupo] = gruposR[v.grupo] || []).push(v); });
+Object.keys(gruposR).forEach(function (g) {
+var d = (Q.diagnostico || {})[g], l = gruposR[g], nomeF = (Q.funcoes || {})[g] || g, emax = Math.max.apply(null, l.map(function (v) { return v.eta; }));
+impedimentos.push(l.length + " membro(s) de " + nomeF + " não atendem (η até " + br(emax, 2) + ").");
+diag.push({ grupo: g, funcao: nomeF, membros: l.map(function (v) { return v.membro; }), etaMax: emax, mecanismo: d ? d.mecanismo : null, alternativas: d ? d.alternativas.slice() : [] });
+pend.unshift("IMPEDE O USO — decisão do RT: " + l.length + " membro(s) de " + nomeF + " não atendem (η até " + br(emax, 2) + ")" + (d ? "; alternativas: " + d.alternativas.map(function (a, i) { return "(" + (i + 1) + ") " + a; }).join(" ") : "") + ".");
+});
+return {
+ok: impedimentos.length === 0, impedimentos: impedimentos, versao: "MadDimensionar 1 (12/10/2026)", ms: Date.now() - t0,
+premissas: premissas, especies: esp, piso: piso,
+analise: { hips: R.hips, somas: R.somas, reacoes: R.reacoes, alphaCr: alphaCr, beta: beta, betaDetalhe: betaDet, estabilidade: estab, opcoes: opA,
+criterioBeta: "L0 = máx(1,0; β do autovalor)·L, L = altura total do pilar (pé ao topo); β do autovalor = π·√(E·I/(α_ref·N))/L, com α_ref do modo em que os pilares levam ≥ 30 % do deslocamento",
+combinacoes: combs.map(function (c) { return { nome: c.nome, carregamento: c.carregamento }; }) },
+modelo: { nos: mod.nos.length, barras: mod.barras.length, placas: G.placas.length, regras: MO.REGRAS, textosCype: G.textosCype,
+modelo: mod, placasLista: G.placas, hipoteses: G.hipoteses, ops: G.ops, balanco: G.balanco, resumo: G.resumo },
+verificacoes: verifs, reprovacoes: diag, reacoesFundacao: reac, reacoesConvencao: convencao, compra: compra,
+ligacoes: ligs, paredes: paredes, paredesPremissas: premParedes, painelWall: painel, combinacoes: combMem,
+acoes: { camadasPiso: e.camadasPiso || null, cargasCype: e.cargasCype || null, ventoParedes: e.ventoParedes || null },
+pecas: pecasOut,
+niveisFonte: (e.fonte.piso_pw && e.fonte.piso_pw.niveis) || null, classes: classes,
+nivel: { deltaPisoCm: 0, mensagem: "Nenhuma seção do piso foi alterada nesta rodada: o nível do piso acabado e o topo dos pilaretes não mudam." },
+pendencias: pend, avisos: avisos, naoAbrangido: naoAbr
+};
+};
+if (typeof module !== "undefined" && module.exports) module.exports = MadDimensionar;
+else global.MadDimensionar = MadDimensionar;
+})(typeof window !== "undefined" ? window : this);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/madcalcworker.js ==== */
+try {
+(function (global) {
+"use strict";
+var NO_WORKER = typeof global.importScripts === "function" && typeof global.document === "undefined";
+var MOTORES = ["madmateriais.js", "madviga.js", "maddim7190.js", "madespecie.js", "madmodelo.js", "madanalise.js", "madligcalc.js",
+"madpiso.js", "madmercado.js", "madwoodframe.js", "madcatalogo.js", "maddimensionar.js"];
+var SAIDAS = ["prancha.js", "padraodet.js", "acopranchas.js", "madmemorial.js", "madpranchas.js", "madmanual.js", "madcype.js"];
+var GLOBAL_DE = { "madmateriais.js": "MadMateriais", "madviga.js": "MadViga", "maddim7190.js": "MadDim", "madespecie.js": "MadEspecie", "madmodelo.js": "MadModelo",
+"madanalise.js": "MadAnalise", "madligcalc.js": "MadLigCalc", "madpiso.js": "MadPiso", "madmercado.js": "MadMercado", "madwoodframe.js": "MadWoodFrame",
+"madcatalogo.js": "MadCatalogo", "maddimensionar.js": "MadDimensionar", "prancha.js": "Prancha", "padraodet.js": "PadraoDet", "acopranchas.js": "AcoPranchas",
+"madmemorial.js": "MadMemorial", "madpranchas.js": "MadPranchas", "madmanual.js": "MadManual", "madcype.js": "MadCype" };
+var FORMATO = "orcapro-madeira-obra", VERSAO = 1;
+function arr(v) { return Array.isArray(v) ? v : []; }
+function obj(v) { return v && typeof v === "object" && !Array.isArray(v); }
+function num(v, d) { var n = Number(v); return v == null || v === "" || !isFinite(n) ? d : n; }
+function tem(o, ks) { return obj(o) && ks.every(function (k) { return o[k] !== undefined; }); }
+function clonar(o) {
+if (o instanceof RegExp) return new RegExp(o.source, o.flags);
+if (Array.isArray(o)) return o.map(clonar);
+if (obj(o)) { var r = {}; Object.keys(o).forEach(function (k) { r[k] = clonar(o[k]); }); return r; }
+return o;
+}
+function G(nome) { return global[nome] || null; }
+var ARQUIVOS = [
+{ id: "fonte", rotulo: "Fonte de peças (peças com seção, espécie e posição)", obrigatorio: true, arquivo: "madeira_*.json", e: function (j) { return obj(j) && Array.isArray(j.pecas) && j.piso_pw !== undefined; } },
+{ id: "sobreposicao", rotulo: "Sobreposição do modelo (pilaretes e painéis)", obrigatorio: true, arquivo: "*_sobreposicao.json", e: function (j) { return tem(j, ["pilaretes_v18"]) || tem(j, ["paineis_v18", "novas"]); } },
+{ id: "calcPiso", rotulo: "Cargas do piso por zona (calc_piso_v18)", obrigatorio: true, arquivo: "calc_piso_v18.json", e: function (j) { return tem(j, ["G_Z_kN_m2", "cargas_area_barrotes"]); } },
+{ id: "cargasCype", rotulo: "Cargas da cobertura e das paredes", obrigatorio: true, arquivo: "cargas_cype.json", e: function (j) { return tem(j, ["cobertura_g_kN_m2", "piso_SC_kN_m2"]); } },
+{ id: "ventoParedes", rotulo: "Vento nas paredes (NBR 6123)", obrigatorio: true, arquivo: "vento_paredes.json", e: function (j) { return tem(j, ["q_kPa", "X", "Y"]); } },
+{ id: "ligacoes", rotulo: "Ligações da fonte (tipos, quantidades, ferragens)", obrigatorio: false, arquivo: "ligacoes_*.json", e: function (j) { return tem(j, ["ligacoes", "ferragens", "regras"]); } },
+{ id: "calcLigacoes", rotulo: "Cálculo das ligações emitido (L01–L15)", obrigatorio: false, arquivo: "calc_ligacoes.json", e: function (j) { return obj(j) && j.premissas !== undefined && Object.keys(j).some(function (k) { return /^L\d{2}$/.test(k); }); } },
+{ id: "cena", rotulo: "Cena 3D (piso e manual de montagem)", obrigatorio: false, arquivo: "cena_*.json", e: function (j) { return tem(j, ["objetos", "mats"]); } },
+{ id: "resultadosCype", rotulo: "Resultados do CYPE 3D (reações e esforços)", obrigatorio: false, arquivo: "resultados_*.json", e: function (j) { return tem(j, ["reacoes", "esforcos", "bandas_placas"]); } },
+{ id: "calcPisoPrevio", rotulo: "Piso — hold-downs e cortante do vento", obrigatorio: false, arquivo: "calc_piso.json", e: function (j) { return tem(j, ["hold_downs", "cortante_vento", "painel"]); } },
+{ id: "paredes", rotulo: "Paredes de contraventamento (painéis e planos)", obrigatorio: false, arquivo: "entrada.json (wood frame)", e: function (j) { return obj(j) && j.paineis && typeof j.paineis === "object" && Array.isArray(j.planos); } },
+{ id: "camadasPiso", rotulo: "Camadas do piso por zona", obrigatorio: false, arquivo: "camadas_piso.json", e: function (j) { return tem(j, ["pacotes", "zonas", "camadas"]); } }
+];
+function reconhecer(json) {
+if (obj(json) && json.formato === FORMATO) return "pacote";
+for (var i = 0; i < ARQUIVOS.length; i++) { try { if (ARQUIVOS[i].e(json)) return ARQUIVOS[i].id; } catch (e) {} }
+return null;
+}
+function novoPacote(obra) {
+return { formato: FORMATO, versao: VERSAO, nome: (obra && obra.nome) || "", criadoEm: new Date().toISOString().slice(0, 10), obra: { nome: (obra && obra.nome) || "", local: (obra && obra.local) || "" },
+arquivos: {}, premissasObra: {} };
+}
+function juntar(pacote, nome, json) {
+var id = reconhecer(json);
+if (id === "pacote") {
+if (num(json.versao, 0) > VERSAO) return { ok: false, motivo: "“" + nome + "” é de uma versão mais nova do pacote (" + json.versao + "): atualize o OrçaPRO." };
+Object.keys(json.arquivos || {}).forEach(function (k) { pacote.arquivos[k] = json.arquivos[k]; });
+if (json.obra) pacote.obra = json.obra;
+if (json.nome) pacote.nome = json.nome;
+if (json.premissasObra) pacote.premissasObra = json.premissasObra;
+if (json.exemplo) pacote.exemplo = json.exemplo;
+return { ok: true, id: "pacote", rotulo: "Pacote da obra (" + Object.keys(json.arquivos || {}).length + " arquivos)" };
+}
+if (!id) return { ok: false, motivo: "“" + nome + "” não é um arquivo que o cálculo da madeira conheça (fonte de peças, sobreposição, cargas, vento, ligações, cena, piso, paredes)." };
+pacote.arquivos[id] = json;
+var d = ARQUIVOS.filter(function (a) { return a.id === id; })[0];
+return { ok: true, id: id, rotulo: d.rotulo };
+}
+function conferir(pacote) {
+var a = (pacote && pacote.arquivos) || {}, falta = [], tem2 = [], opc = [];
+ARQUIVOS.forEach(function (d) {
+if (a[d.id]) tem2.push({ id: d.id, rotulo: d.rotulo, obrigatorio: d.obrigatorio });
+else if (d.obrigatorio) falta.push({ id: d.id, rotulo: d.rotulo, arquivo: d.arquivo });
+else opc.push({ id: d.id, rotulo: d.rotulo, arquivo: d.arquivo });
+});
+var avisos = [];
+if (!a.cena || !a.resultadosCype || !a.calcPisoPrevio || !a.ligacoes) avisos.push("Sem cena, resultados do CYPE, piso prévio e ligações da fonte o piso seco não é verificado localmente (fica em “não abrangido”) e o manual de montagem sai sem ilustração.");
+if (!a.paredes) avisos.push("Sem os painéis de wood frame as paredes de contraventamento ficam fora do cálculo.");
+return { ok: !falta.length, falta: falta, tem: tem2, opcionais: opc, avisos: avisos,
+pecas: a.fonte ? arr(a.fonte.pecas).length : 0 };
+}
+var FUNCOES = [
+{ id: "pergolado", rotulo: "Pergolado — pilares compostos e vigas das coberturas", modelo: "^PILAR$|^COB_|^COBINF_", fonte: ["^PILAR_|^COB_"] },
+{ id: "embutida", rotulo: "Viga de topo e vergas (embutidas na parede)", modelo: "^GUIA_10x20$|^VERGA_10x20$", fonte: ["^WF_GUIA_SUP$", "^WF_VERGA$"] },
+{ id: "piso", rotulo: "Piso seco — barrotes, vigas principais e testeiras", modelo: "^BAR_|^VP_|^DORM_|^TEST_", fonte: ["^PISO_"] },
+{ id: "woodframe", rotulo: "Wood frame (montantes, guias) e forro", modelo: "^FORRO_|^GUIA_10x5$", fonte: ["^WF_|^FORRO_"] },
+{ id: "aparente", rotulo: "Brise e ripado (fora do modelo analítico)", modelo: null, fonte: ["^BRISE|^RIPADO|^PERGOLADO"] }
+];
+function regraModelo(Q, src) { var g = arr(Q && Q.grupoEspecie); for (var i = 0; i < g.length; i++) if (g[i][0] && g[i][0].source === src) return g[i]; return null; }
+function regraFonte(regras, src) { for (var i = 0; i < regras.length; i++) if (regras[i].grupo && regras[i].grupo.source === src && !regras[i].secoes) return regras[i]; for (var j = 0; j < regras.length; j++) if (regras[j].grupo && regras[j].grupo.source === src) return regras[j]; return null; }
+function premissasPadrao() {
+var D = G("MadDimensionar"), ME = G("MadEspecie"), Q = D && D.QUIOSQUE, R = (ME && ME.QUIOSQUE) || [], esp = {};
+FUNCOES.forEach(function (f) {
+var rm = f.modelo ? regraModelo(Q, f.modelo) : null, rf = regraFonte(R, f.fonte[0]);
+esp[f.id] = (rm && rm[1]) || (rf && rf.especie) || "";
+});
+var dec = {};
+Object.keys((Q && Q.decisoesRT) || {}).forEach(function (g) { var d = Q.decisoesRT[g]; dec[g] = { ativo: true, b_cm: d.b_cm, h_cm: d.h_cm, especie: d.especie || "", motivo: d.motivo || "" }; });
+return { especiePorFuncao: esp, classes: { tatajuba: "nativa:D40", itauba: "nativa:D40", pinus_cca: "peca:C20" },
+perfil: { umidade: 3, limVao: 350, limBalanco: 175, psi2: 0.4 }, decisoesRT: dec };
+}
+function opcoes() {
+var MM = G("MadMateriais"), o = { especies: [], classes: [], funcoes: FUNCOES.map(function (f) { return { id: f.id, rotulo: f.rotulo, modelo: !!f.modelo }; }) };
+if (MM) {
+Object.keys(MM.ESPECIES || {}).forEach(function (k) { o.especies.push({ id: k, nome: MM.ESPECIES[k].nome, classe2022: MM.ESPECIES[k].classe2022 }); });
+Object.keys(MM.CLASSES_2022 || {}).forEach(function (k) { o.classes.push({ id: k, nome: MM.CLASSES_2022[k].nome, grupo: MM.CLASSES_2022[k].grupo }); });
+}
+return o;
+}
+function catalogoMadeira() {
+var MC = G("MadCatalogo"), MER = G("MadMercado");
+if (!MC || !MER || !MC.DADOS) return { lista: null, fonte: "" };
+var f = MC.DADOS.fontes && MC.DADOS.fontes.nibra_pro_2025;
+var lista = MER.catalogoDeJson({ fonte: f, produtos: MC.DADOS.produtos.filter(function (p) { return p.catalogo === "nibra_pro_2025"; }) }, "Nibra");
+return { lista: lista, fonte: "Nibra — " + ((f && (f.titulo || f.arquivo)) || "Catálogo Pro 2025") + " (Wood Framing, p. 5)" };
+}
+function entrada(pacote, premissas) {
+var a = (pacote && pacote.arquivos) || {}, P = premissas || premissasPadrao(), D = G("MadDimensionar"), ME = G("MadEspecie"), MP = G("MadPiso"), MC = G("MadCatalogo");
+if (!D || !ME) throw new Error("os motores da madeira não carregaram (maddimensionar.js / madespecie.js)");
+var cf = conferir(pacote);
+if (!cf.ok) throw new Error("faltam no pacote: " + cf.falta.map(function (x) { return x.rotulo; }).join("; "));
+var Q = clonar(D.QUIOSQUE), regras = clonar(ME.QUIOSQUE), hoje = new Date().toISOString().slice(0, 10), mudou = [];
+FUNCOES.forEach(function (f) {
+var e2 = (P.especiePorFuncao || {})[f.id]; if (!e2) return;
+if (f.modelo) { var rm = regraModelo(Q, f.modelo); if (rm && rm[1] !== e2) { rm[1] = e2; mudou.push(f.id); } }
+f.fonte.forEach(function (src) {
+regras.forEach(function (r) {
+if (r.grupo && r.grupo.source === src && r.especie !== e2) { r.especie = e2; r.origem = "premissa alterada na tela do cálculo (" + hoje + ")"; r.data = hoje; if (mudou.indexOf(f.id) < 0) mudou.push(f.id); }
+});
+});
+});
+var dec = {};
+Object.keys(P.decisoesRT || {}).forEach(function (g) {
+var d = P.decisoesRT[g], base = (D.QUIOSQUE.decisoesRT || {})[g] || {};
+if (!d || d.ativo === false) return;
+dec[g] = { b_cm: num(d.b_cm, base.b_cm), h_cm: num(d.h_cm, base.h_cm), especie: d.especie || base.especie, grupoFonte: base.grupoFonte, motivo: d.motivo || base.motivo || "decisão do RT (tela do cálculo)" };
+});
+Q.decisoesRT = dec;
+var po = pacote.premissasObra || {}, cat = catalogoMadeira();
+var e = {
+fonte: a.fonte, sobreposicao: a.sobreposicao, calcPiso: a.calcPiso, cargasCype: a.cargasCype, ventoParedes: a.ventoParedes,
+especies: regras, grupos: Q, semDecisoesRT: !Object.keys(dec).length,
+classes: clonar(P.classes || premissasPadrao().classes),
+perfil: { umidade: num(P.perfil && P.perfil.umidade, 3), limVao: num(P.perfil && P.perfil.limVao, 350), limBalanco: num(P.perfil && P.perfil.limBalanco, 175), psi2: num(P.perfil && P.perfil.psi2, 0.4) },
+catalogo: MC || undefined, catalogoMadeira: cat.lista || undefined, catalogoMadeiraFonte: cat.lista ? cat.fonte : undefined,
+calcLigacoes: a.calcLigacoes, ligacoesFonte: a.ligacoes, camadasPiso: a.camadasPiso,
+painelPiso: po.painelPiso, pendenciasObra: arr(po.pendenciasObra).slice()
+};
+if (a.paredes) { e.paineis = a.paredes.paineis; e.planos = a.paredes.planos; }
+if (MP && MP.entradasQuiosque && a.cena && a.resultadosCype && a.calcPisoPrevio && a.ligacoes) {
+e.entradasPiso = MP.entradasQuiosque({ madeira: a.fonte, sobreposicao: a.sobreposicao, ligacoes: a.ligacoes, cena: a.cena, cype: a.resultadosCype, calcPiso: a.calcPisoPrevio });
+}
+e._mudou = mudou;
+return e;
+}
+var ETAPAS = ["motores", "especies", "piso", "modelo", "analise", "esforcos", "estabilidade", "verificacao", "compra", "paredes"];
+function comProgresso(fn, aviso) {
+var orig = [], nVer = 0, ultimo = 0, t0 = Date.now();
+function av(x) { x.ms = Date.now() - t0; try { aviso(x); } catch (e) {} }
+function embrulha(o, nome, antes) {
+if (!o || typeof o[nome] !== "function") return;
+var f0 = o[nome]; orig.push([o, nome, f0]);
+o[nome] = function () { antes.apply(this, arguments); return f0.apply(this, arguments); };
+}
+embrulha(G("MadEspecie"), "aplicar", function () { av({ etapa: "especies" }); });
+embrulha(G("MadPiso"), "calcular", function () { av({ etapa: "piso" }); });
+embrulha(G("MadModelo"), "gerar", function () { av({ etapa: "modelo" }); });
+embrulha(G("MadAnalise"), "montar", function (m) { av({ etapa: "analise", barras: m && m.barras ? m.barras.length : 0, nos: m && m.nos ? m.nos.length : 0 }); });
+embrulha(G("MadAnalise"), "esforcos", function () { av({ etapa: "esforcos" }); });
+embrulha(G("MadAnalise"), "estabilidade", function () { av({ etapa: "estabilidade" }); });
+embrulha(G("MadDim"), "barra2022", function () { nVer++; var t = Date.now(); if (t - ultimo > 150) { ultimo = t; av({ etapa: "verificacao", n: nVer }); } });
+embrulha(G("MadMercado"), "listaDeCompra", function () { av({ etapa: "compra" }); });
+embrulha(G("MadWoodFrame"), "calcular", function () { av({ etapa: "paredes" }); });
+try { return fn(); }
+finally { orig.forEach(function (o) { o[0][o[1]] = o[2]; }); }
+}
+var ULTIMO = null;
+function rodar(pacote, premissas, aviso) {
+aviso = typeof aviso === "function" ? aviso : function () {};
+var D = G("MadDimensionar");
+if (!D || !D.calcular) throw new Error("O motor do cálculo da madeira (js/maddimensionar.js) não carregou.");
+var t0 = Date.now();
+var r = comProgresso(function () { var e = entrada(pacote, premissas); var x = D.calcular(e); x._mudou = e._mudou; return x; }, aviso);
+r.msTotal = Date.now() - t0;
+ULTIMO = { r: r, pacote: pacote, premissas: premissas || premissasPadrao() };
+return r;
+}
+function nomeEspecie(id) { var MM = G("MadMateriais"); try { return (MM && MM.especie(id).nome) || id; } catch (e) { return id; } }
+function curto(nome) { return String(nome || "").split(" (")[0]; }
+function resumir(r) {
+if (!r) return null;
+var Q = (G("MadDimensionar") || {}).QUIOSQUE || {}, nomes = Q.funcoes || {}, por = {}, ordem = [];
+arr(r.verificacoes).forEach(function (v) {
+var g = por[v.grupo];
+if (!g) { g = por[v.grupo] = { grupo: v.grupo, funcao: v.funcao || nomes[v.grupo] || v.grupo, n: 0, reprovados: 0, max: null }; ordem.push(v.grupo); }
+g.n++; if (!(v.eta <= 1)) g.reprovados++;
+if (!g.max || v.eta > g.max.eta) g.max = v;
+});
+var funcoes = ordem.map(function (k) {
+var g = por[k], m = g.max;
+return { grupo: g.grupo, funcao: g.funcao, n: g.n, reprovados: g.reprovados, etaMax: m.eta, governa: m.governa, combinacao: m.combinacao, membro: m.membro,
+especie: curto(m.especie), classe: m.classe, secao: m.secao, beta: m.beta, ok: g.reprovados === 0 };
+});
+var an = r.analise || {}, est = an.estabilidade || {};
+var comp = r.compra ? { pendencias: arr(r.compra.pendencias), catalogoFonte: r.compra.catalogoFonte || "", grupos: arr(r.compra.grupos).map(function (x) {
+var pl = x.plano || null;
+return { especie: x.especie, especieNome: curto(nomeEspecie(x.especie)), secao: x.secao, b_mm: x.b_mm, h_mm: x.h_mm, n: x.n, util_m: x.util_m, volume_m3: x.volume_m3,
+fornecedor: x.catalogo ? x.catalogo.fornecedor : "", produto: x.catalogo ? (x.catalogo.nome || x.catalogo.produtoId) : "", bruta: !!(x.catalogo && x.catalogo.bruta),
+porComprimento: pl ? pl.porComprimento : null, barras: pl ? arr(pl.barras).length : 0, comprado_m: pl ? pl.comprado_m : null, aproveitamento: pl ? pl.aproveitamento : null,
+pendencia: x.pendencia || "" };
+}) } : null;
+return {
+ok: !!r.ok, msTotal: r.msTotal || r.ms || 0, mudou: arr(r._mudou),
+impedimentos: arr(r.impedimentos), pendencias: arr(r.pendencias), avisos: arr(r.avisos), naoAbrangido: arr(r.naoAbrangido),
+premissas: arr(r.premissas).map(function (p) { return { item: p.item, valor: p.valor, fonte: p.fonte, confianca: p.confianca }; }),
+alphaCr: an.alphaCr == null ? null : an.alphaCr, alphaCrMin: est.alphaCrMin == null ? null : est.alphaCrMin, combinacaoCritica: est.combinacaoCritica || "",
+criterioBeta: an.criterioBeta || "", beta: an.beta || {}, combinacoes: arr(r.combinacoes).length,
+funcoes: funcoes, verificados: arr(r.verificacoes).length,
+reprovacoes: arr(r.reprovacoes).map(function (x) { return { grupo: x.grupo, funcao: x.funcao, membros: arr(x.membros).length, etaMax: x.etaMax, mecanismo: x.mecanismo, alternativas: arr(x.alternativas) }; }),
+reacoes: arr(r.reacoesFundacao).map(function (x) {
+var o = { pilarete: x.pilarete, x: x.x, y: x.y, G: x.G ? x.G.N : null, Q: x.Q ? x.Q.N : null };
+["V1", "V2", "V3", "V4"].forEach(function (k) { o[k] = x[k] ? { N: x[k].N, Vx: x[k].Vx, Vy: x[k].Vy } : null; });
+return o;
+}),
+reacoesConvencao: r.reacoesConvencao || "",
+ligacoes: arr(r.ligacoes).map(function (l) { return { codigo: l.codigo, sub: l.sub || "", tipo: l.tipo, descricao: l.descricao, quantidade: l.quantidade, eta: l.eta == null ? null : l.eta, ok: l.ok }; }),
+painelWall: r.painelWall ? { conclusao: r.painelWall.conclusao || "", impedeUso: !!r.painelWall.impedeUso } : null,
+nivel: r.nivel || null,
+modelo: r.modelo ? { nos: r.modelo.nos, barras: r.modelo.barras, placas: r.modelo.placas } : null,
+porEspecie: r.especies && r.especies.porEspecie ? Object.keys(r.especies.porEspecie).map(function (k) { var x = r.especies.porEspecie[k]; return { especie: k, nome: curto(nomeEspecie(k)), n: x.n, volume_m3: x.volume_m3 }; }) : [],
+compra: comp
+};
+}
+var TRANSLIT = { "\u2014": "-", "\u2013": "-", "\u2212": "-", "\u2264": "<=", "\u2265": ">=", "\u2192": "->", "\u2018": "'", "\u2019": "'", "\u201c": "\"", "\u201d": "\"",
+"\u2026": "...", "\u03b7": "eta", "\u03c3": "sigma", "\u03a3": "Soma", "\u03b1": "alfa", "\u03b2": "beta", "\u03b3": "gama", "\u03bb": "lambda", "\u2248": "~", "\u26a0": "!" };
+function latin1Seguro(t) { return String(t).replace(/[^\u0000-\u00ff]/g, function (ch) { return TRANSLIT[ch] || "?"; }); }
+function gerar(qual, opcoes) {
+if (!ULTIMO || !ULTIMO.r) throw new Error("Calcule primeiro: os documentos saem do resultado do cálculo.");
+var r = ULTIMO.r, a = ULTIMO.pacote.arquivos || {}, o = clonar(opcoes || {});
+if (qual === "memorial") {
+var MM = G("MadMemorial"); if (!MM) throw new Error("o gerador do memorial (js/madmemorial.js) não carregou");
+var m = MM.gerar(r, o);
+return { ok: m.ok, html: m.html, titulo: m.titulo, secoes: arr(m.secoes).length, avisos: arr(m.avisos) };
+}
+if (qual === "pranchas") {
+var MP = G("MadPranchas"); if (!MP) throw new Error("o gerador das pranchas (js/madpranchas.js) não carregou");
+o.fonte = a.fonte; o.ligacoesFonte = a.ligacoes; o.catalogo = G("MadCatalogo");
+var p = MP.gerar(r, o);
+return { ok: p.ok, avisos: arr(p.avisos), folhas: arr(p.folhas).map(function (f) { return { id: f.id, numero: f.numero, titulo: f.titulo, formato: f.formato, escala: f.escala, svg: f.svg }; }) };
+}
+if (qual === "manual") {
+var MN = G("MadManual"); if (!MN) throw new Error("o gerador do manual (js/madmanual.js) não carregou");
+o.fonte = a.fonte; o.cena = a.cena; o.catalogo = G("MadCatalogo");
+var n = MN.gerar(r, o);
+return { ok: n.ok, html: n.html, paginas: arr(n.paginas).length, etapas: arr(n.etapas).length, avisos: arr(n.avisos) };
+}
+if (qual === "cype") {
+var MC = G("MadCype"); if (!MC) throw new Error("o exportador do CYPE (js/madcype.js) não carregou");
+var c = MC.pacote(r, o), arqs = {};
+Object.keys(c.arquivos || {}).forEach(function (k) { arqs[k] = { latin1: !/\.md$/i.test(k), texto: /\.md$/i.test(k) ? c.arquivos[k] : latin1Seguro(MC.paraLatin1(c.arquivos[k])) }; });
+return { ok: true, arquivos: arqs, avisos: arr(c.avisos), series: arr(c.series).length, cargas: arr(c.cargas).length };
+}
+throw new Error("saída desconhecida: " + qual);
+}
+var API = { FORMATO: FORMATO, VERSAO: VERSAO, MOTORES: MOTORES, SAIDAS: SAIDAS, GLOBAL_DE: GLOBAL_DE, ARQUIVOS: ARQUIVOS, FUNCOES: FUNCOES, ETAPAS: ETAPAS,
+reconhecer: reconhecer, novoPacote: novoPacote, juntar: juntar, conferir: conferir, premissasPadrao: premissasPadrao, opcoes: opcoes,
+catalogoMadeira: catalogoMadeira, entrada: entrada, comProgresso: comProgresso, rodar: rodar, resumir: resumir, gerar: gerar,
+ultimo: function () { return ULTIMO; }, clonar: clonar };
+if (!NO_WORKER) {
+global.MadCalcWorker = API;
+if (typeof module !== "undefined" && module.exports) module.exports = API;
+return;
+}
+var carregados = null, faltam = [], ver = "";
+try { var mv = /[?&]v=([^&]+)/.exec(String(global.location && global.location.search || "")); if (mv) ver = "?v=" + mv[1]; } catch (e) {}
+function carregar() {
+if (carregados) return;
+carregados = [];
+MOTORES.concat(SAIDAS).forEach(function (arq) {
+try { global.importScripts(arq + ver); carregados.push(arq); }
+catch (e) { faltam.push(arq); }
+});
+}
+global.onmessage = function (ev) {
+var m = ev.data || {}, t0 = Date.now();
+try {
+carregar();
+if (m.tipo === "calcular") {
+global.postMessage({ tipo: "motores", id: m.id, carregados: carregados, faltam: faltam });
+var obrig = faltam.filter(function (f) { return MOTORES.indexOf(f) >= 0; });
+if (obrig.length) { global.postMessage({ tipo: "erro", id: m.id, mensagem: "Não carregou: " + obrig.join(", ") }); return; }
+var prog = function (p) { p.tipo = "progresso"; p.id = m.id; global.postMessage(p); };
+var r = rodar(m.pacote, m.premissas, prog);
+global.postMessage({ tipo: "fim", id: m.id, ms: Date.now() - t0, texto: JSON.stringify(resumir(r)) });
+} else if (m.tipo === "gerar") {
+var s = gerar(m.qual, m.opcoes);
+global.postMessage({ tipo: "saida", id: m.id, qual: m.qual, ms: Date.now() - t0, texto: JSON.stringify(s) });
+}
+} catch (e) {
+global.postMessage({ tipo: "erro", id: m.id, qual: m.qual, mensagem: e && e.message ? e.message : String(e), pilha: e && e.stack ? String(e.stack).slice(0, 1200) : "" });
+}
+};
+})(typeof window !== "undefined" ? window : (typeof self !== "undefined" ? self : (typeof global !== "undefined" ? global : this)));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/madcalcui.js ==== */
+try {
+(function (global) {
+"use strict";
+var doc = global.document;
+function W() { return global.MadCalcWorker || null; }
+function arr(v) { return Array.isArray(v) ? v : []; }
+function num(v, d) { if (v == null || v === "") return d; var n = Number(String(v).replace(/\s/g, "").replace(",", ".")); return isFinite(n) ? n : d; }
+function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+function fmt(v, c) {
+if (v == null || !isFinite(v)) return "—";
+c = c == null ? 2 : c;
+var s = Math.abs(v).toFixed(c).split("."), i = s[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+return (v < 0 && Number(s.join(".")) !== 0 ? "−" : "") + i + (c ? "," + s[1] : "");
+}
+function pct(v) { return v == null || !isFinite(v) ? "—" : fmt(v * 100, 0) + " %"; }
+function toast(t, tipo, ms) { try { if (global.UI && UI.toast) UI.toast(t, tipo || "ok", ms || 6000); } catch (e) {} }
+function status(t) { try { if (global.BimShell && BimShell.status) BimShell.status(t); } catch (e) {} }
+function ico(nome, t) { try { if (global.Icones && Icones.get) return Icones.get(nome, t || 16) || ""; } catch (e) {} return ""; }
+function Ges() { return global.Gestao; }
+function obraId() { var g = Ges(); return String((g && g._bimSel) || "geral"); }
+function obraApp() { var g = Ges(), o = null; try { if (g && g._bimSel && global.Store && global.Auth) o = Store.obter(Auth.empresaId(), "obras", g._bimSel); } catch (e) {} return o; }
+function versao() { try { return (global.CONFIG && CONFIG.versao) || ""; } catch (e) { return ""; } }
+function hojeBR() { var d = new Date(); function z(n) { return (n < 10 ? "0" : "") + n; } return z(d.getDate()) + "/" + z(d.getMonth() + 1) + "/" + d.getFullYear(); }
+function nomeSeguro(s) { var t = String(s || "obra"); return global.OpFormato && OpFormato.nomeSeguro ? OpFormato.nomeSeguro(t) : t.replace(/[^\w.-]+/g, "-"); }
+function chave() { return "orcapro:madeira:calc:" + obraId(); }
+function lerSalvo() { try { var t = global.localStorage.getItem(chave()); return t ? JSON.parse(t) : null; } catch (e) { return null; } }
+function salvar() { try { global.localStorage.setItem(chave(), JSON.stringify({ premissas: UIC.prem, documento: UIC.docu, em: Date.now() })); return true; } catch (e) { return false; } }
+function baixar(nome, dados, mime) {
+UIC.baixados.push(nome);
+if (global.BimMetalUI && BimMetalUI.baixar) return BimMetalUI.baixar(nome, dados, mime);
+try { var bl = new Blob([dados], { type: mime || "application/octet-stream" }), u = URL.createObjectURL(bl), a = doc.createElement("a"); a.href = u; a.download = nome; doc.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 60000); return true; } catch (e) { return false; }
+}
+function bt(acao, texto, o) {
+o = o || {};
+return '<button type="button" class="btn' + (o.pri ? " primary" : "") + (o.sm ? " sm" : "") + '" data-mdc-acao="' + acao + '"' + (o.v != null ? ' data-mdc-v="' + esc(o.v) + '"' : "") + (o.dis ? " disabled" : "") + (o.dica ? ' title="' + esc(o.dica) + '"' : "") + ">" + (o.ico ? ico(o.ico, 15) + " " : "") + esc(texto) + "</button>";
+}
+function M() { return global.Modulo || null; }
+function sec(o) { var Mo = M(); if (Mo) return Mo.secao(o); return '<section class="mod-sec"><div class="mod-sec-cab"><div><h2>' + esc(o.titulo) + '</h2></div>' + (o.acoesHtml ? '<div class="mod-sec-acoes">' + o.acoesHtml + "</div>" : "") + '</div><div class="mod-sec-corpo">' + (o.corpoHtml || "") + "</div></section>"; }
+function pil(t, tom) { var Mo = M(); return Mo ? Mo.pilula(t, tom) : '<span class="mod-pil mod-pil-' + tom + '">' + esc(t) + "</span>"; }
+var UIC = {
+aba: "dados", pacote: null, msgs: [], prem: null, docu: null, resumo: null, calc: null, modoCalc: null, worker: null, obra: null,
+pranchas: null, saidas: {}, baixados: [], erro: null, carregando: false
+};
+var ETAPA_NOME = { motores: "Carregando os motores do cálculo", especies: "Espécies por função", piso: "Piso seco — barrotes, vigas e Painel Wall", modelo: "Modelo analítico (barras e paredes em casca)",
+analise: "Análise global — montagem e solução", esforcos: "Esforços por barra", estabilidade: "Estabilidade global (α_cr)", verificacao: "Verificação por membro — NBR 7190-1:2022",
+compra: "Lista de compra", paredes: "Paredes de contraventamento e ligações" };
+function conferirObra() {
+if (UIC.obra === obraId()) return;
+UIC.obra = obraId(); UIC.resumo = null; UIC.pranchas = null; UIC.saidas = {};
+if (UIC.worker && !(UIC.calc && UIC.calc.rodando)) { try { UIC.worker.terminate(); } catch (e) {} UIC.worker = null; }
+var s = lerSalvo(), W0 = W();
+UIC.prem = s && s.premissas ? s.premissas : (W0 ? W0.premissasPadrao() : null);
+UIC.docu = s && s.documento ? s.documento : null;
+}
+function garantirDocu() {
+if (UIC.docu) return UIC.docu;
+var o = obraApp() || {}, p = UIC.pacote;
+UIC.docu = { obra: (p && p.obra && p.obra.nome) || o.nome || "", local: (p && p.obra && p.obra.local) || o.local || "", proprietario: o.clienteNome || "", contratante: "", codigo: "EST-MAD", revisao: "R00" };
+return UIC.docu;
+}
+function estilo() {
+if (!doc || doc.getElementById("mdc-estilo")) return;
+var st = doc.createElement("style"); st.id = "mdc-estilo";
+st.textContent = [
+".mdc-veu{position:fixed;inset:0;z-index:49;background:var(--bg);color:var(--texto);display:flex;flex-direction:column}",
+".mdc-jan{position:relative;flex:1;overflow:auto;padding:18px 24px 40px;outline:none}",
+".mdc-in{max-width:1320px;margin:0 auto;display:flex;flex-direction:column;gap:16px}",
+".mdc-fechar{position:absolute;top:14px;right:16px;z-index:2}",
+".mdc-in .mod-cab{padding-right:48px}",
+".mdc-grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px 16px}",
+".mdc-campo{display:flex;flex-direction:column;gap:4px;font-size:var(--t-peq);color:var(--texto-fraco)}",
+".mdc-campo input,.mdc-campo select{font-size:var(--t-base);color:var(--texto)}",
+".mdc-arqs{list-style:none;margin:0;padding:0}",
+".mdc-arqs li{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--linha)}",
+".mdc-arqs li:last-child{border-bottom:0} .mdc-arqs .mdc-q{flex:1;min-width:0}",
+".mdc-arqs small,.mdc-fraco{color:var(--texto-fraco)}",
+".mdc-msgs{margin:8px 0 0;padding-left:18px;color:var(--texto-fraco);font-size:var(--t-peq)}",
+".mdc-eta{display:flex;align-items:center;gap:8px;justify-content:flex-end}",
+".mdc-eta i{display:block;width:72px;height:6px;border-radius:var(--raio-sm);background:var(--surface-2);overflow:hidden;position:relative}",
+".mdc-eta i b{position:absolute;left:0;top:0;bottom:0;background:var(--verde)} .mdc-eta i b.al{background:var(--amarelo)} .mdc-eta i b.er{background:var(--vermelho)}",
+".mdc-prog{max-width:640px;margin:24px auto;text-align:center}",
+".mdc-barra{height:8px;border-radius:var(--raio-sm);background:var(--surface-2);overflow:hidden;margin:14px 0}",
+".mdc-barra i{display:block;height:100%;background:var(--aco);transition:width .4s var(--ease)}",
+".mdc-etapas{list-style:none;margin:12px auto 0;padding:0;text-align:left;max-width:460px}",
+".mdc-etapas li{padding:5px 0 5px 22px;position:relative;color:var(--texto-fraco)}",
+".mdc-etapas li::before{content:'';position:absolute;left:4px;top:11px;width:8px;height:8px;border-radius:50%;background:var(--linha-forte)}",
+".mdc-etapas li.feito{color:var(--texto)} .mdc-etapas li.feito::before{background:var(--verde)}",
+".mdc-etapas li.agora{color:var(--aco);font-weight:var(--p-forte)} .mdc-etapas li.agora::before{background:var(--aco)}",
+".mdc-lista{margin:0;padding-left:18px} .mdc-lista li{margin:4px 0}",
+".mdc-docs{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}",
+".mdc-doc{border:1px solid var(--linha);border-radius:var(--raio);padding:14px;display:flex;flex-direction:column;gap:8px;background:var(--surface)}",
+".mdc-doc b{font-weight:var(--p-forte)} .mdc-doc p{margin:0;color:var(--texto-fraco);font-size:var(--t-peq)} .mdc-doc .btn{align-self:flex-start}",
+".mdc-folhas{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}",
+".mdc-folha{border:1px solid var(--linha);border-radius:var(--raio);overflow:hidden;background:var(--surface)}",
+".mdc-folha .mdc-fig{background:white;aspect-ratio:841/594;cursor:zoom-in}",
+".mdc-folha .mdc-fig svg{width:100%;height:100%;display:block}",
+".mdc-folha .mdc-fc{padding:10px 12px;display:flex;gap:8px;align-items:center;justify-content:space-between}",
+".mdc-tab-rola{overflow-x:auto}",
+"table.tbl.mdc-t th,table.tbl.mdc-t td{padding:8px 10px}",
+".mdc-det summary{cursor:pointer;color:var(--aco)}",
+"@media (max-width:640px){.mdc-jan{padding:12px 12px 32px}.mdc-folhas,.mdc-docs{grid-template-columns:1fr}}"
+].join("\n");
+(doc.head || doc.documentElement).appendChild(st);
+}
+function raiz() { return doc ? doc.getElementById("mdc-veu") : null; }
+function garantir() {
+estilo(); conferirObra();
+var v = raiz(); if (v) return v;
+v = doc.createElement("div"); v.id = "mdc-veu"; v.className = "mdc-veu";
+v.innerHTML = '<div class="mdc-jan" role="dialog" aria-modal="true" aria-labelledby="mdc-tit" tabindex="-1"></div>';
+doc.body.appendChild(v);
+ligar(v);
+return v;
+}
+function fechar() {
+var v = raiz(); if (!v) return;
+if (UIC.calc && UIC.calc.rodando && !global.confirm("O cálculo está rodando. Fechar e cancelar?")) return;
+if (UIC.calc && UIC.calc.rodando) cancelar(true);
+salvar(); v.remove();
+}
+function cabecalho() {
+var Mo = M(), p = UIC.pacote, nome = (UIC.docu && UIC.docu.obra) || (p && p.obra && p.obra.nome) || ((obraApp() || {}).nome) || "";
+var sub = (nome ? nome + " · " : "") + "NBR 7190-1:2022 · NBR 6120 · NBR 6123 · NBR 8681";
+var acoes = [bt("exemplo", "Carregar exemplo", { ico: "camadas", dica: "Abre o pacote de exemplo: um quiosque de madeira real anonimizado (866 peças, piso seco, wood frame e duas coberturas)" }),
+bt("arquivos", "Carregar arquivos", { ico: "pasta", dica: "O pacote da obra (.json ou .json.gz), os arquivos soltos da obra ou um .zip com eles" })];
+if (Mo) acoes.push(Mo.SEP);
+acoes.push(bt("baixar-pacote", "Baixar pacote da obra", { ico: "baixar", dis: !p, dica: "Junta os arquivos carregados num pacote só (.json.gz) para abrir de novo depois" }));
+acoes.push(bt("restaurar", "Restaurar premissas padrão", { ico: "livro" }));
+var cal = UIC.calc && UIC.calc.rodando;
+var pri = '<button type="button" class="btn primary" data-mdc-acao="calcular"' + (cal || !pacoteOk() ? " disabled" : "") + ' title="Calcula em paralelo (a tela continua livre) — leva cerca de meio minuto">' + ico("raio", 15) + " Calcular</button>";
+var h = Mo ? Mo.cab({ iconeHtml: ico("estrutura", 22), titulo: "Estrutura de madeira", sub: sub, acoes: acoes, primariaHtml: pri }).replace("<h1>", '<h1 id="mdc-tit">')
+: '<header class="mod-cab"><h1 id="mdc-tit">Estrutura de madeira</h1>' + acoes.join("") + pri + "</header>";
+return h;
+}
+function pacoteOk() { var w = W(); return !!(UIC.pacote && w && w.conferir(UIC.pacote).ok); }
+function avisoTopo() {
+var Mo = M(), r = UIC.resumo; if (!Mo) return "";
+if (UIC.erro) return Mo.aviso({ tom: "erro", titulo: "O cálculo não terminou", texto: UIC.erro });
+if (UIC.calc && UIC.calc.modo === "pagina" && UIC.calc.rodando) return Mo.aviso({ tom: "alerta", titulo: "Calculando na própria página", texto: "O navegador não abriu o processo paralelo (" + (UIC.calc.motivo || "") + "): a tela fica parada até terminar." });
+if (!r) return "";
+if (r.impedimentos.length) return Mo.aviso({ tom: "erro", titulo: "Não emitir: " + r.impedimentos.length + " impedimento(s)", texto: r.impedimentos[0] + (r.impedimentos.length > 1 ? " (e mais " + (r.impedimentos.length - 1) + " — ver Resultado)" : ""), acaoHtml: bt("aba", "Ver impedimentos", { v: "resultado", sm: 1 }) });
+if (r.reprovacoes.length) return Mo.aviso({ tom: "erro", titulo: r.reprovacoes.length + " função(ões) reprovada(s)", texto: r.reprovacoes.map(function (x) { return x.funcao + " (η " + fmt(x.etaMax, 2) + ")"; }).join("; ") });
+if (r.pendencias.length) return Mo.aviso({ tom: "alerta", titulo: r.pendencias.length + " pendência(s) para o RT", texto: r.pendencias[0] });
+return "";
+}
+function kpis() {
+var Mo = M(), r = UIC.resumo; if (!Mo || !r) return "";
+var pior = r.funcoes.slice().sort(function (a, b) { return b.etaMax - a.etaMax; })[0], vol = 0;
+r.porEspecie.forEach(function (x) { vol += x.volume_m3 || 0; });
+return Mo.kpis([
+{ rotulo: "Situação", valor: r.ok ? "Atende" : "Não atende", sub: r.ok ? "sem reprovação nem impedimento" : (r.reprovacoes.length ? r.reprovacoes.length + " reprovação(ões)" : r.impedimentos.length + " impedimento(s)"), tom: r.ok ? "pos" : "neg", id: "mdc-k-situacao" },
+{ rotulo: "Aproveitamento", valor: pior ? fmt(pior.etaMax, 2) : "—", sub: pior ? "η máximo · " + pior.funcao : "", tom: pior && pior.etaMax > 1 ? "neg" : (pior && pior.etaMax > 0.9 ? "alerta" : ""), id: "mdc-k-eta" },
+{ rotulo: "Estabilidade global", valor: r.alphaCr == null ? "—" : fmt(r.alphaCr, 1), sub: r.alphaCr == null ? "α_cr não calculado" : "α_cr · " + (r.alphaCr >= 10 ? "indeslocável (≥ 10)" : "deslocável — 2ª ordem"), tom: "info", id: "mdc-k-alpha" },
+{ rotulo: "Membros", valor: String(r.verificados), sub: r.funcoes.length + " funções verificadas", id: "mdc-k-membros" },
+{ rotulo: "Madeira", valor: fmt(vol, 2) + " m³", sub: r.porEspecie.map(function (x) { return x.nome + " " + fmt(x.volume_m3, 2); }).join(" · "), id: "mdc-k-volume" }
+]);
+}
+function abas() {
+var Mo = M(), L = [{ id: "dados", rotulo: "Dados da obra" }, { id: "premissas", rotulo: "Premissas" }, { id: "resultado", rotulo: "Resultado" }, { id: "documentos", rotulo: "Documentos" }];
+var lista = L.map(function (a) { return { rotulo: a.rotulo, ativa: UIC.aba === a.id, attrs: 'data-mdc-acao="aba" data-mdc-v="' + a.id + '"' }; });
+return Mo ? Mo.abas(lista) : "";
+}
+function render() {
+var v = garantir(), jan = v.querySelector(".mdc-jan"), top = jan.scrollTop;
+var corpo = "";
+if (UIC.calc && UIC.calc.rodando) corpo = calculandoHtml();
+else if (UIC.aba === "dados") corpo = dadosHtml();
+else if (UIC.aba === "premissas") corpo = premissasHtml();
+else if (UIC.aba === "resultado") corpo = resultadoHtml();
+else if (UIC.aba === "documentos") corpo = documentosHtml();
+jan.innerHTML = '<button type="button" class="btn sm icone mdc-fechar" data-mdc-acao="fechar" aria-label="Fechar" title="Fechar (Esc) — as premissas ficam salvas na obra">' + (ico("fechar", 16) || "×") + "</button>" +
+'<div class="mdc-in">' + cabecalho() + avisoTopo() + kpis() + abas() + '<div data-mdc="corpo" data-mdc-aba="' + UIC.aba + '">' + corpo + "</div></div>";
+jan.setAttribute("data-mdc-aba", UIC.aba);
+if (UIC.manterRolagem) jan.scrollTop = top;
+UIC.manterRolagem = false;
+if (!v.contains(doc.activeElement)) { try { jan.focus({ preventScroll: true }); } catch (e) { try { jan.focus(); } catch (e2) {} } }
+}
+function dadosHtml() {
+var w = W(); if (!w) return '<p>O módulo do cálculo da madeira não carregou (js/madcalcworker.js).</p>';
+var p = UIC.pacote, Mo = M();
+var input = '<input type="file" data-mdc="arquivo" multiple accept=".json,.gz,.zip,application/json,application/gzip,application/zip" hidden>';
+if (!p) {
+return input + (Mo ? Mo.vazio({ icone: "estrutura", titulo: "Nenhuma obra carregada", texto: "Carregue o pacote da obra de madeira (.json ou .json.gz) — ou os arquivos da obra: fonte de peças, sobreposição, cargas, vento, ligações, cena, piso e paredes. Para ver o caminho inteiro, abra o exemplo pronto.",
+acaoHtml: '<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">' + bt("exemplo", "Carregar exemplo: Quiosque", { pri: 1, ico: "camadas" }) + bt("arquivos", "Carregar arquivos", { ico: "pasta" }) + "</div>" }) : "") +
+(UIC.carregando ? '<p class="mdc-fraco" data-mdc="carregando">Lendo os arquivos…</p>' : "");
+}
+var cf = w.conferir(p);
+var linhas = w.ARQUIVOS.map(function (d) {
+var t = !!p.arquivos[d.id];
+return '<li data-mdc-arq="' + d.id + '"' + (t ? ' data-mdc-tem="1"' : "") + '><span class="mdc-q"><b>' + esc(d.rotulo) + "</b><br><small>" + esc(d.arquivo) + (d.obrigatorio ? " · obrigatório" : " · opcional") + "</small></span>" +
+(t ? pil("Carregado", "ok") : pil(d.obrigatorio ? "Falta" : "Sem este arquivo", d.obrigatorio ? "erro" : "neutro")) + "</li>";
+}).join("");
+var h = input;
+h += sec({ titulo: "Pacote da obra", sub: (p.obra && p.obra.nome ? p.obra.nome + " · " : "") + cf.pecas + " peças na fonte" + (p.exemplo ? " · exemplo" : ""),
+acoesHtml: bt("arquivos", "Acrescentar arquivos", { sm: 1, ico: "pasta" }) + bt("limpar", "Limpar", { sm: 1 }),
+corpoHtml: (p.exemplo ? '<p class="mdc-fraco" style="margin:0 0 8px">' + esc(p.exemplo.texto) + "</p>" : "") + '<ul class="mdc-arqs" data-mdc="arquivos">' + linhas + "</ul>" +
+(UIC.msgs.length ? '<ul class="mdc-msgs">' + UIC.msgs.slice(-6).map(function (m) { return "<li>" + esc(m) + "</li>"; }).join("") + "</ul>" : "") });
+if (cf.avisos.length) h += sec({ titulo: "O que fica de fora com o que foi carregado", corpoHtml: '<ul class="mdc-lista">' + cf.avisos.map(function (a) { return "<li>" + esc(a) + "</li>"; }).join("") + "</ul>" });
+if (cf.ok) h += '<div style="display:flex;justify-content:flex-end;gap:8px">' + bt("aba", "Conferir as premissas", { v: "premissas" }) + bt("calcular", "Calcular", { pri: 1, ico: "raio" }) + "</div>";
+else h += '<p class="mdc-fraco">Falta: ' + esc(cf.falta.map(function (f) { return f.rotulo; }).join("; ")) + ".</p>";
+return h;
+}
+function bytesDe(f) {
+if (f.arrayBuffer) return f.arrayBuffer().then(function (b) { return new Uint8Array(b); });
+return new Promise(function (ok, erro) { var r = new FileReader(); r.onload = function () { ok(new Uint8Array(r.result)); }; r.onerror = function () { erro(r.error); }; r.readAsArrayBuffer(f); });
+}
+function descomprimir(bytes, formato) {
+if (typeof global.DecompressionStream === "undefined") return Promise.reject(new Error("este navegador não descomprime arquivos (" + formato + "); use o .json sem compressão"));
+return new Response(new Blob([bytes]).stream().pipeThrough(new global.DecompressionStream(formato))).arrayBuffer().then(function (b) { return new Uint8Array(b); });
+}
+function texto(bytes) { return typeof global.TextDecoder !== "undefined" ? new global.TextDecoder("utf-8").decode(bytes) : String.fromCharCode.apply(null, bytes); }
+function jsonsDe(nome, bytes) {
+if (bytes[0] === 0x1f && bytes[1] === 0x8b) return descomprimir(bytes, "gzip").then(function (b) { return jsonsDe(nome.replace(/\.gz$/i, ""), b); });
+if (bytes[0] === 0x50 && bytes[1] === 0x4b) {
+if (!global.BimBcf || !BimBcf.zipLer) return Promise.reject(new Error("o leitor de .zip não carregou"));
+return BimBcf.zipLer(bytes, { inflar: function (b) { return descomprimir(b, "deflate-raw"); } }).then(function (ents) {
+var nomes = Object.keys(ents).filter(function (k) { return /\.json(\.gz)?$/i.test(k) && !/(^|\/)__MACOSX\//.test(k); });
+return Promise.all(nomes.map(function (k) { return jsonsDe(k.split("/").pop(), ents[k]); })).then(function (ls) { return [].concat.apply([], ls); });
+});
+}
+try { return Promise.resolve([{ nome: nome, json: JSON.parse(texto(bytes).replace(/^﻿/, "")) }]); }
+catch (e) { return Promise.reject(new Error("“" + nome + "” não é JSON válido (" + e.message + ")")); }
+}
+function juntarLista(lista) {
+var w = W(); if (!UIC.pacote) UIC.pacote = w.novoPacote({ nome: ((obraApp() || {}).nome) || "" });
+var ok = 0;
+lista.forEach(function (x) {
+var r = w.juntar(UIC.pacote, x.nome, x.json);
+if (r.ok) { ok++; UIC.msgs.push(x.nome + " → " + r.rotulo); } else UIC.msgs.push(r.motivo);
+});
+UIC.resumo = null; UIC.pranchas = null; UIC.saidas = {}; UIC.erro = null;
+if (UIC.docu && !UIC.docu.obra && UIC.pacote.obra && UIC.pacote.obra.nome) UIC.docu.obra = UIC.pacote.obra.nome;
+return ok;
+}
+function lerArquivos(files) {
+var lista = Array.prototype.slice.call(files || []);
+if (!lista.length) return Promise.resolve(0);
+UIC.carregando = true; render();
+return Promise.all(lista.map(function (f) { return bytesDe(f).then(function (b) { return jsonsDe(f.name, b); }).catch(function (e) { UIC.msgs.push(e.message); return []; }); }))
+.then(function (ls) {
+var n = juntarLista([].concat.apply([], ls)); UIC.carregando = false; UIC.aba = "dados"; render();
+toast(n ? n + " arquivo(s) no pacote da obra." : "Nenhum arquivo reconhecido — veja a lista na tela.", n ? "ok" : "aviso");
+return n;
+});
+}
+function exemplo() {
+var w = W(); if (!w) { toast("O módulo do cálculo da madeira não carregou.", "erro"); return Promise.resolve(false); }
+garantir(); UIC.carregando = true; UIC.aba = "dados"; render();
+var url = "data/madeira-exemplo.json.gz" + (versao() ? "?v=" + encodeURIComponent(versao()) : "");
+return fetch(url).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.arrayBuffer(); })
+.then(function (b) { return jsonsDe("madeira-exemplo.json.gz", new Uint8Array(b)); })
+.then(function (ls) {
+UIC.pacote = null; UIC.msgs = []; UIC.docu = null;
+juntarLista(ls); garantirDocu(); UIC.carregando = false; render();
+var cf = w.conferir(UIC.pacote);
+status("Exemplo carregado: " + cf.pecas + " peças, " + cf.tem.length + " arquivos da obra.");
+return cf.ok;
+}, function (e) { UIC.carregando = false; render(); toast("Não consegui abrir o exemplo (data/madeira-exemplo.json.gz): " + e.message, "erro", 9000); return false; });
+}
+function baixarPacote() {
+var p = UIC.pacote; if (!p) { toast("Carregue os arquivos da obra primeiro.", "aviso"); return; }
+var t = JSON.stringify(p), nome = nomeSeguro((UIC.docu && UIC.docu.obra) || p.nome || "obra") + "-madeira-obra.json";
+if (typeof global.CompressionStream === "undefined") { baixar(nome, t, "application/json"); return; }
+new Response(new Blob([t]).stream().pipeThrough(new global.CompressionStream("gzip"))).arrayBuffer().then(function (b) {
+baixar(nome + ".gz", new Uint8Array(b), "application/gzip"); toast("Pacote da obra baixado (" + fmt(b.byteLength / 1048576, 1) + " MB).", "ok");
+}, function () { baixar(nome, t, "application/json"); });
+}
+function premissasHtml() {
+var w = W(); if (!w) return "";
+var P = UIC.prem || (UIC.prem = w.premissasPadrao()), op = w.opcoes();
+function selEsp(campo, val) { return '<select data-mdc-campo="' + campo + '">' + op.especies.map(function (e) { return '<option value="' + esc(e.id) + '"' + (e.id === val ? " selected" : "") + ">" + esc(e.nome.split(" (")[0]) + "</option>"; }).join("") + "</select>"; }
+var h = "";
+h += sec({ titulo: "Espécie por função", sub: "Quem escolhe a madeira é o cliente; o cálculo recusa a que não passa. Trocar a função troca o modelo, a compra, as pranchas e o memorial juntos.",
+corpoHtml: '<div class="mdc-tab-rola"><table class="tbl mdc-t" data-mdc="funcoes"><thead><tr><th>Função</th><th>Espécie</th><th>No cálculo</th></tr></thead><tbody>' + op.funcoes.map(function (f) {
+return "<tr><td>" + esc(f.rotulo) + "</td><td>" + selEsp("esp." + f.id, P.especiePorFuncao[f.id]) + "</td><td>" + (f.modelo ? pil("Verificada", "info") : pil("Só compra e desenho", "neutro")) + "</td></tr>";
+}).join("") + "</tbody></table></div>" });
+var usadas = {}; Object.keys(P.especiePorFuncao).forEach(function (k) { usadas[P.especiePorFuncao[k]] = 1; }); Object.keys(P.classes || {}).forEach(function (k) { usadas[k] = 1; });
+h += sec({ titulo: "Classe de resistência (NBR 7190-1:2022)", sub: "Premissa conservadora do RT — os valores da 2022 vêm de fonte secundária enquanto o texto da norma não estiver na biblioteca.",
+corpoHtml: '<div class="mdc-grade">' + Object.keys(usadas).map(function (k) {
+var e = op.especies.filter(function (x) { return x.id === k; })[0]; if (!e) return "";
+var val = (P.classes || {})[k] || e.classe2022;
+return '<label class="mdc-campo"><span>' + esc(e.nome.split(" (")[0]) + '</span><select data-mdc-campo="cls.' + esc(k) + '">' + op.classes.map(function (c) { return '<option value="' + esc(c.id) + '"' + (c.id === val ? " selected" : "") + ">" + esc(c.nome) + "</option>"; }).join("") + "</select></label>";
+}).join("") + "</div>" });
+var pf = P.perfil || {};
+h += sec({ titulo: "Umidade e deslocamentos", corpoHtml: '<div class="mdc-grade">' +
+'<label class="mdc-campo"><span>Classe de umidade</span><select data-mdc-campo="perfil.umidade">' + [1, 2, 3, 4].map(function (u) { return '<option value="' + u + '"' + (num(pf.umidade, 3) === u ? " selected" : "") + ">Classe " + u + (u === 3 ? " (ambiente externo coberto, litoral)" : "") + "</option>"; }).join("") + "</select></label>" +
+'<label class="mdc-campo"><span>Flecha no vão: L /</span><input data-mdc-campo="perfil.limVao" inputmode="decimal" value="' + esc(pf.limVao == null ? 350 : pf.limVao) + '"></label>' +
+'<label class="mdc-campo"><span>Flecha no balanço: L /</span><input data-mdc-campo="perfil.limBalanco" inputmode="decimal" value="' + esc(pf.limBalanco == null ? 175 : pf.limBalanco) + '"></label>' +
+'<label class="mdc-campo"><span>ψ2 da sobrecarga (quase permanente)</span><input data-mdc-campo="perfil.psi2" inputmode="decimal" value="' + esc(String(pf.psi2 == null ? 0.4 : pf.psi2).replace(".", ",")) + '"></label>' +
+"</div>" });
+var dec = P.decisoesRT || {}, kd = Object.keys(dec);
+h += sec({ titulo: "Decisões do RT (troca de seção)", sub: "Valem no cálculo e na compra. Desligar mostra o resultado sem a decisão.",
+corpoHtml: kd.length ? '<div class="mdc-tab-rola"><table class="tbl mdc-t" data-mdc="decisoes"><thead><tr><th>Usar</th><th>Grupo</th><th class="num">b (cm)</th><th class="num">h (cm)</th><th>Espécie</th><th>Motivo</th></tr></thead><tbody>' + kd.map(function (g) {
+var d = dec[g];
+return '<tr><td><input type="checkbox" data-mdc-campo="dec.' + esc(g) + '.ativo"' + (d.ativo !== false ? " checked" : "") + ' aria-label="Usar a decisão ' + esc(g) + '"></td><td>' + esc(g) + '</td><td class="num"><input style="width:64px" inputmode="decimal" data-mdc-campo="dec.' + esc(g) + '.b_cm" value="' + esc(d.b_cm) + '"></td><td class="num"><input style="width:64px" inputmode="decimal" data-mdc-campo="dec.' + esc(g) + '.h_cm" value="' + esc(d.h_cm) + '"></td><td>' + selEsp("dec." + g + ".especie", d.especie) + '</td><td class="mdc-fraco" style="max-width:520px">' + esc(d.motivo) + "</td></tr>";
+}).join("") + "</tbody></table></div>" : '<p class="mdc-fraco">Nenhuma decisão registrada.</p>' });
+h += '<div style="display:flex;justify-content:flex-end;gap:8px">' + bt("restaurar", "Restaurar padrão") + bt("calcular", "Calcular", { pri: 1, ico: "raio", dis: !pacoteOk() }) + "</div>";
+return h;
+}
+function mudarCampo(campo, valor, el) {
+var P = UIC.prem || (UIC.prem = W().premissasPadrao()), p = campo.split(".");
+if (p[0] === "esp") P.especiePorFuncao[p[1]] = valor;
+else if (p[0] === "cls") { P.classes = P.classes || {}; P.classes[p[1]] = valor; }
+else if (p[0] === "perfil") { P.perfil = P.perfil || {}; P.perfil[p[1]] = num(valor, null); }
+else if (p[0] === "dec") { var d = P.decisoesRT[p[1]]; if (!d) return; d[p[2]] = p[2] === "ativo" ? !!(el && el.checked) : (p[2] === "especie" ? valor : num(valor, d[p[2]])); }
+else if (p[0] === "docu") { garantirDocu()[p[1]] = valor; }
+salvar();
+if (UIC.resumo && p[0] !== "docu") { UIC.desatualizado = true; }
+}
+function calcular() {
+var w = W(); if (!w) { toast("O módulo do cálculo da madeira não carregou.", "erro"); return false; }
+garantir();
+if (!pacoteOk()) { UIC.aba = "dados"; render(); toast("Faltam arquivos no pacote da obra — veja a lista.", "aviso", 6000); return false; }
+if (UIC.calc && UIC.calc.rodando) return false;
+if (UIC.worker) { try { UIC.worker.terminate(); } catch (e) {} UIC.worker = null; }
+salvar();
+var prem = JSON.parse(JSON.stringify(UIC.prem || w.premissasPadrao())), id = "m" + Date.now();
+UIC.calc = { rodando: true, id: id, t0: Date.now(), etapa: "motores", feitas: {}, n: 0, modo: null };
+UIC.erro = null; UIC.resumo = null; UIC.pranchas = null; UIC.saidas = {}; UIC.desatualizado = false; render();
+var relogio = setInterval(function () { if (!UIC.calc || UIC.calc.id !== id) { clearInterval(relogio); return; } var el = doc.querySelector("[data-mdc='progresso']"); if (el) el.innerHTML = progressoHtml(); }, 500);
+var wk = null;
+try { wk = new global.Worker("js/madcalcworker.js" + (versao() ? "?v=" + encodeURIComponent(versao()) : "")); } catch (eW) { wk = null; }
+if (!wk) { naPagina(prem, "o navegador não abriu o processo paralelo"); return true; }
+UIC.worker = wk; UIC.calc.modo = "worker"; UIC.modoCalc = "worker";
+wk.onmessage = function (ev) {
+var m = ev.data || {};
+if (m.tipo === "saida" || (m.tipo === "erro" && m.qual)) { respostaSaida(m); return; }
+if (!UIC.calc || m.id !== UIC.calc.id) return;
+if (m.tipo === "progresso") progresso(m);
+else if (m.tipo === "motores") { UIC.calc.feitas.motores = true; if (UIC.calc.etapa === "motores") UIC.calc.etapa = null; }
+else if (m.tipo === "fim") { var r = null; try { r = JSON.parse(m.texto); } catch (eP) { falhou("resumo ilegível: " + eP.message); return; } terminar(r, m.ms); }
+else if (m.tipo === "erro") { if (/Não carregou/.test(m.mensagem || "")) { try { wk.terminate(); } catch (e) {} UIC.worker = null; naPagina(prem, m.mensagem); } else falhou(m.mensagem); }
+};
+wk.onerror = function (ev) { if (!UIC.calc || UIC.calc.id !== id) return; if (ev && ev.preventDefault) ev.preventDefault(); try { wk.terminate(); } catch (e) {} UIC.worker = null; naPagina(prem, "o processo paralelo falhou (" + ((ev && ev.message) || "erro") + ")"); };
+wk.postMessage({ tipo: "calcular", id: id, pacote: UIC.pacote, premissas: prem });
+return true;
+}
+var motoresPagina = null;
+function carregarMotoresPagina() {
+if (motoresPagina) return motoresPagina;
+var w = W(), lista = w.MOTORES.concat(w.SAIDAS.filter(function (a) { return /^mad/.test(a) || !global[w.GLOBAL_DE[a]]; }));
+motoresPagina = new Promise(function (ok, erro) {
+var i = 0;
+(function prox() {
+if (i >= lista.length) { ok(true); return; }
+var arq = lista[i++], s = doc.createElement("script");
+s.src = "js/" + arq + (versao() ? "?v=" + encodeURIComponent(versao()) : ""); s.async = false;
+s.onload = prox; s.onerror = function () { motoresPagina = null; erro(new Error("não carregou js/" + arq)); };
+(doc.head || doc.documentElement).appendChild(s);
+})();
+});
+return motoresPagina;
+}
+function naPagina(prem, motivo) {
+var c = UIC.calc; if (!c) return;
+c.modo = "pagina"; c.motivo = motivo; UIC.modoCalc = "pagina"; render();
+carregarMotoresPagina().then(function () {
+setTimeout(function () {
+if (UIC.calc !== c) return;
+var t0 = Date.now(), r;
+try { r = W().resumir(W().rodar(UIC.pacote, prem, function (p) { c.etapa = p.etapa; })); } catch (e) { falhou(e && e.message ? e.message : String(e)); return; }
+terminar(JSON.parse(JSON.stringify(r)), Date.now() - t0);
+}, 60);
+}, function (e) { falhou(e.message); });
+}
+function progresso(m) {
+var c = UIC.calc; if (!c) return;
+var et = W().ETAPAS, i = et.indexOf(m.etapa);
+et.forEach(function (k, j) { if (j < i) c.feitas[k] = true; });
+c.etapa = m.etapa; if (m.n) c.n = m.n; if (m.barras) c.barras = m.barras;
+var el = doc && doc.querySelector("[data-mdc='progresso']"); if (el) el.innerHTML = progressoHtml();
+}
+function cancelar(calado) {
+if (UIC.worker) { try { UIC.worker.terminate(); } catch (e) {} UIC.worker = null; }
+UIC.calc = null; if (!calado) { render(); toast("Cálculo cancelado.", "aviso", 3000); }
+}
+function falhou(msg) {
+UIC.calc = null; UIC.erro = msg || "erro desconhecido"; UIC.aba = "dados";
+if (UIC.worker) { try { UIC.worker.terminate(); } catch (e) {} UIC.worker = null; }
+if (raiz()) render(); toast("Cálculo da madeira: " + UIC.erro, "erro", 9000);
+}
+function terminar(r, ms) {
+var c = UIC.calc; UIC.calc = null;
+r.tempoTela = ms || (c ? Date.now() - c.t0 : 0); r.modoCalculo = c ? c.modo : null;
+UIC.resumo = r; UIC.aba = "resultado";
+if (raiz()) render();
+var pior = r.funcoes.slice().sort(function (a, b) { return b.etaMax - a.etaMax; })[0];
+status("Estrutura de madeira: " + (r.ok ? "atende" : "não atende") + " — " + r.funcoes.length + " funções, pior η " + (pior ? fmt(pior.etaMax, 2) + " (" + pior.funcao + ")" : "—") + (r.alphaCr != null ? ", α_cr " + fmt(r.alphaCr, 1) : "") + (r.impedimentos.length ? "; " + r.impedimentos.length + " impedimento(s)" : "") + ".");
+}
+function calculandoHtml() {
+var c = UIC.calc || {};
+return '<div class="mdc-prog" data-mdc="calculando"><h2 style="margin:0 0 6px">Calculando a estrutura de madeira</h2><p class="mdc-fraco">' +
+(c.modo === "pagina" ? "Rodando na própria página — a tela fica parada até terminar." : "O cálculo roda em paralelo; esta janela continua respondendo.") +
+'</p><div data-mdc="progresso">' + progressoHtml() + '</div><p style="margin-top:16px">' + bt("cancelar", "Cancelar o cálculo") + "</p></div>";
+}
+function progressoHtml() {
+var c = UIC.calc || {}, et = W() ? W().ETAPAS : [], seg = Math.round((Date.now() - (c.t0 || Date.now())) / 1000), i = Math.max(0, et.indexOf(c.etapa));
+var h = '<div class="mdc-fraco">' + seg + " s" + (c.etapa === "verificacao" && c.n ? " · " + c.n + " verificações" : "") + (c.barras ? " · " + c.barras + " barras" : "") + "</div>";
+h += '<div class="mdc-barra" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + Math.round(100 * i / Math.max(1, et.length)) + '"><i style="width:' + Math.max(4, Math.round(100 * (i + 0.5) / Math.max(1, et.length))) + '%"></i></div><ul class="mdc-etapas">';
+et.forEach(function (k) {
+if (k === "motores" && c.modo === "pagina") return;
+var cls = c.etapa === k ? "agora" : (c.feitas && c.feitas[k] ? "feito" : "");
+h += '<li class="' + cls + '">' + esc(ETAPA_NOME[k] || k) + "</li>";
+});
+return h + "</ul>";
+}
+function barraEta(e) {
+var w = Math.min(100, Math.max(2, Math.round((e || 0) * 100))), cl = e > 1 ? "er" : (e > 0.9 ? "al" : "");
+return '<span class="mdc-eta"><span>' + fmt(e, 2) + '</span><i aria-hidden="true"><b class="' + cl + '" style="width:' + w + '%"></b></i></span>';
+}
+function resultadoHtml() {
+var r = UIC.resumo, Mo = M();
+if (!r) return Mo ? Mo.vazio({ icone: "grafico", titulo: "Ainda não há cálculo", texto: pacoteOk() ? "Os dados da obra estão completos: calcule para ver o resultado." : "Carregue o pacote da obra (ou o exemplo) e calcule.", acaoHtml: pacoteOk() ? bt("calcular", "Calcular", { pri: 1, ico: "raio" }) : bt("exemplo", "Carregar exemplo: Quiosque", { pri: 1 }) }) : "";
+var h = "";
+if (UIC.desatualizado) h += Mo.aviso({ tom: "alerta", titulo: "Premissas alteradas depois do cálculo", texto: "O resultado abaixo é o do cálculo anterior.", acaoHtml: bt("calcular", "Calcular de novo", { sm: 1, pri: 1 }) });
+h += sec({ titulo: "Resumo por função", sub: r.verificados + " membros verificados (pior estação × combinação) · " + r.combinacoes + " combinações (NBR 8681) · cálculo em " + fmt((r.msTotal || r.tempoTela || 0) / 1000, 0) + " s",
+corpoHtml: '<div class="mdc-tab-rola"><table class="tbl mdc-t" data-mdc="funcoes-res"><thead><tr><th>Função</th><th>Espécie · seção</th><th class="num">Membros</th><th class="num">Aproveitamento</th><th>Governa</th><th>Combinação</th><th>Situação</th></tr></thead><tbody>' +
+r.funcoes.map(function (f) {
+return '<tr data-mdc-funcao="' + esc(f.grupo) + '"><td>' + esc(f.funcao) + '</td><td>' + esc(f.especie + " " + (f.secao || "")) + (f.classe ? '<br><small class="mdc-fraco">' + esc(f.classe) + "</small>" : "") + '</td><td class="num">' + f.n + '</td><td class="num">' + barraEta(f.etaMax) + "</td><td>" + esc(f.governa || "") + "</td><td>" + esc(f.combinacao || "") + "</td><td>" + (f.ok ? pil("Atende", "ok") : pil(f.reprovados + " reprovado(s)", "erro")) + "</td></tr>";
+}).join("") + "</tbody></table></div>" +
+'<p class="mdc-fraco" data-mdc="alpha" style="margin:10px 0 0">Estabilidade global: α_cr = <b>' + (r.alphaCr == null ? "não calculado" : fmt(r.alphaCr, 1)) + "</b>" + (r.combinacaoCritica ? " (combinação crítica " + esc(r.combinacaoCritica) + ")" : "") + (r.alphaCr != null ? (r.alphaCr >= 10 ? " — estrutura indeslocável; β de projeto dos pilares = máx(1,0; β do autovalor)." : " — estrutura deslocável: efeitos de 2ª ordem relevantes.") : "") + "</p>" });
+h += sec({ titulo: "Reprovações", id: "mdc-reprovacoes", corpoHtml: r.reprovacoes.length ? r.reprovacoes.map(function (x) {
+return '<div data-mdc-reprovacao="' + esc(x.grupo) + '" style="margin-bottom:12px"><b>' + esc(x.funcao) + "</b> — " + x.membros + " membro(s), η até " + fmt(x.etaMax, 2) + "<p>" + esc(x.mecanismo) + '</p><p class="mdc-fraco" style="margin:4px 0">Alternativas (decisão do RT):</p><ol class="mdc-lista">' + x.alternativas.map(function (a) { return "<li>" + esc(a) + "</li>"; }).join("") + "</ol></div>";
+}).join("") : '<p data-mdc="sem-reprovacao" style="margin:0">' + pil("Nenhuma reprovação", "ok") + " — todos os membros verificados com η ≤ 1,0.</p>" });
+var ip = r.impedimentos.map(function (t) { return '<li data-mdc-imped="1">' + pil("Impede o uso", "erro") + " " + esc(t) + "</li>"; })
+.concat(r.pendencias.map(function (t) { return "<li>" + pil("Pendência", "alerta") + " " + esc(t) + "</li>"; }));
+h += sec({ titulo: "Impedimentos e pendências", sub: r.impedimentos.length + " impedimento(s) · " + r.pendencias.length + " pendência(s)", corpoHtml: ip.length ? '<ul class="mdc-lista" style="list-style:none;padding:0">' + ip.join("") + "</ul>" : '<p style="margin:0">Nenhum.</p>' });
+h += sec({ titulo: "Reações para a fundação", sub: r.reacoes.length + " pilaretes · características por hipótese, kN",
+corpoHtml: '<div class="mdc-tab-rola"><table class="tbl mdc-t" data-mdc="reacoes"><thead><tr><th>Pilarete</th><th class="num">x (m)</th><th class="num">y (m)</th><th class="num">N G</th><th class="num">N Q</th><th class="num">N V1</th><th class="num">N V2</th><th class="num">N V3</th><th class="num">N V4</th><th class="num">H máx. vento</th></tr></thead><tbody>' +
+r.reacoes.map(function (x) {
+var hm = 0; ["V1", "V2", "V3", "V4"].forEach(function (k) { if (x[k]) hm = Math.max(hm, Math.sqrt(Math.pow(x[k].Vx || 0, 2) + Math.pow(x[k].Vy || 0, 2))); });
+return "<tr><td>" + esc(x.pilarete) + '</td><td class="num">' + fmt(x.x, 2) + '</td><td class="num">' + fmt(x.y, 2) + '</td><td class="num">' + fmt(x.G, 2) + '</td><td class="num">' + fmt(x.Q, 2) + "</td>" +
+["V1", "V2", "V3", "V4"].map(function (k) { return '<td class="num">' + fmt(x[k] ? x[k].N : null, 2) + "</td>"; }).join("") + '<td class="num">' + fmt(hm, 2) + "</td></tr>";
+}).join("") + "</tbody></table></div>" + (r.reacoesConvencao ? '<p class="mdc-fraco" style="margin:8px 0 0">' + esc(r.reacoesConvencao) + "</p>" : "") });
+h += compraSecao(r);
+if (r.ligacoes.length) h += sec({ titulo: "Ligações", sub: r.ligacoes.length + " tipos",
+corpoHtml: '<div class="mdc-tab-rola"><table class="tbl mdc-t"><thead><tr><th>Código</th><th>Tipo</th><th>Descrição</th><th class="num">Qtd.</th><th class="num">η</th><th>Situação</th></tr></thead><tbody>' +
+r.ligacoes.map(function (l) { return "<tr><td>" + esc(l.codigo + (l.sub ? " " + l.sub : "")) + "</td><td>" + esc(l.tipo || "") + "</td><td>" + esc(l.descricao || "") + '</td><td class="num">' + esc(l.quantidade == null ? "—" : l.quantidade) + '</td><td class="num">' + (l.eta == null ? "—" : fmt(l.eta, 2)) + "</td><td>" + (l.eta == null ? pil("Sem verificação", "alerta") : (l.ok ? pil("Atende", "ok") : pil("Não atende", "erro"))) + "</td></tr>"; }).join("") + "</tbody></table></div>" });
+h += sec({ titulo: "Premissas e o que não foi calculado", corpoHtml:
+'<details class="mdc-det"><summary>' + r.premissas.length + " premissas do cálculo</summary>" + '<div class="mdc-tab-rola"><table class="tbl mdc-t"><thead><tr><th>Item</th><th>Valor</th><th>Fonte</th><th>Confiança</th></tr></thead><tbody>' + r.premissas.map(function (p) { return "<tr><td>" + esc(p.item) + "</td><td>" + esc(p.valor) + "</td><td>" + esc(p.fonte) + "</td><td>" + esc(p.confianca || "") + "</td></tr>"; }).join("") + "</tbody></table></div></details>" +
+(r.naoAbrangido.length ? '<p style="margin:12px 0 4px"><b>Não abrangido nesta versão</b> (nunca aparece como "OK"):</p><ul class="mdc-lista">' + r.naoAbrangido.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ul>" : "") +
+(r.avisos.length ? '<p style="margin:12px 0 4px"><b>Avisos</b></p><ul class="mdc-lista">' + r.avisos.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ul>" : "") +
+(r.nivel && r.nivel.mensagem ? '<p style="margin:12px 0 0"><b>Nível do piso:</b> ' + esc(r.nivel.mensagem) + "</p>" : "") });
+return h;
+}
+function compraSecao(r) {
+var c = r.compra; if (!c) return sec({ titulo: "Lista de compra", corpoHtml: '<p style="margin:0">Sem catálogo de madeira serrada para montar a compra.</p>' });
+return sec({ titulo: "Lista de compra", sub: c.grupos.length + " itens por espécie e seção" + (c.catalogoFonte ? " · " + c.catalogoFonte : ""), acoesHtml: bt("compra", "Baixar .xlsx", { sm: 1, ico: "planilha" }),
+corpoHtml: '<div class="mdc-tab-rola"><table class="tbl mdc-t" data-mdc="compra"><thead><tr><th>Espécie</th><th>Seção</th><th class="num">Peças</th><th class="num">Útil (m)</th><th class="num">Volume (m³)</th><th>Fornecedor</th><th>Barras</th><th class="num">Aprov.</th><th>Pendência</th></tr></thead><tbody>' +
+c.grupos.map(function (g) {
+var barras = g.porComprimento ? Object.keys(g.porComprimento).map(function (L) { return g.porComprimento[L] + " × " + fmt(Number(L), 1) + " m"; }).join(" + ") : "—";
+return "<tr><td>" + esc(g.especieNome) + "</td><td>" + esc(g.secao) + '</td><td class="num">' + g.n + '</td><td class="num">' + fmt(g.util_m, 1) + '</td><td class="num">' + fmt(g.volume_m3, 3) + "</td><td>" + esc(g.fornecedor || "—") + (g.bruta ? ' <small class="mdc-fraco">(medida bruta)</small>' : "") + "</td><td>" + esc(barras) + '</td><td class="num">' + pct(g.aproveitamento) + "</td><td>" + (g.pendencia ? pil("Pendência", "alerta") + ' <small>' + esc(g.pendencia) + "</small>" : "") + "</td></tr>";
+}).join("") + "</tbody></table></div>" });
+}
+function documentosHtml() {
+var r = UIC.resumo, Mo = M(), d = garantirDocu(), s = UIC.saidas;
+if (!r) return Mo ? Mo.vazio({ icone: "relatorio", titulo: "Os documentos saem do cálculo", texto: "Calcule primeiro: memorial, pranchas, manual de montagem, pacote do CYPE 3D e lista de compra saem do resultado.", acaoHtml: pacoteOk() ? bt("calcular", "Calcular", { pri: 1, ico: "raio" }) : "" }) : "";
+function campo(k, rot) { return '<label class="mdc-campo"><span>' + esc(rot) + '</span><input data-mdc-campo="docu.' + k + '" value="' + esc(d[k] || "") + '"></label>'; }
+var h = sec({ titulo: "Dados do documento", sub: "Responsável técnico, empresa e logo vêm de Configurações › Empresa.", corpoHtml: '<div class="mdc-grade">' + campo("obra", "Obra") + campo("local", "Local") + campo("proprietario", "Proprietário") + campo("contratante", "Contratante") + campo("codigo", "Código do projeto") + campo("revisao", "Revisão") + "</div>" });
+function cartao(acao, titulo, texto, ok, rot) { return '<div class="mdc-doc" data-mdc-doc="' + acao + '"><b>' + esc(titulo) + "</b><p>" + esc(texto) + "</p>" + (ok ? '<p data-mdc-feito="' + acao + '">' + pil(ok, "ok") + "</p>" : "") + bt(acao, rot, { pri: acao === "memorial", ico: acao === "compra" ? "planilha" : (acao === "cype" ? "exportar" : "relatorio") }) + "</div>"; }
+h += sec({ titulo: "Documentos do projeto", sub: r.ok ? "" : "O cálculo tem impedimento: os documentos saem marcados como “não atende” até a pendência ser resolvida.",
+corpoHtml: '<div class="mdc-docs">' +
+cartao("memorial", "Memorial de cálculo", "Ações, combinações, modelo, verificações passo a passo, ligações, reações para a fundação e normas — abre para imprimir ou salvar em PDF.", s.memorial ? s.memorial.secoes + " seções" : "", "Abrir memorial") +
+cartao("pranchas", "Pranchas do projeto executivo", "Locação, piso seco em camadas, coberturas, pilares, paredes, ligações e lista de materiais — folhas A1 no padrão da casa.", s.pranchas ? s.pranchas + " folhas" : "", "Gerar pranchas") +
+cartao("manual", "Manual de montagem", "Uma etapa por página, a mesma câmera em todas, peças e fixações de cada etapa — para a equipe de obra.", s.manual ? s.manual.paginas + " páginas" : "", "Abrir manual") +
+cartao("cype", "Pacote para o CYPE 3D", "Geometria por etiqueta (texto latin-1), séries e materiais, liberações, cargas por hipótese e o roteiro na ordem certa (.zip).", s.cype ? s.cype.length + " arquivos" : "", "Baixar .zip") +
+cartao("compra", "Lista de compra", "Madeira por espécie e seção, barras comerciais, aproveitamento e pendências de fornecedor (.xlsx).", s.compra ? "baixada" : "", "Baixar .xlsx") +
+"</div>" });
+if (UIC.pranchas) h += pranchasSecao();
+return h;
+}
+function pranchasSecao() {
+var x = UIC.pranchas;
+return sec({ titulo: "Pranchas", sub: x.folhas.length + " folhas " + ((x.folhas[0] || {}).formato || "A1") + (x.avisos.length ? " · " + x.avisos.length + " aviso(s)" : ""), id: "mdc-pranchas",
+acoesHtml: bt("pranchas-zip", "Baixar todas (.zip)", { sm: 1 }) + bt("pranchas-imprimir", "Imprimir / PDF", { sm: 1, pri: 1 }),
+corpoHtml: (x.avisos.length ? '<ul class="mdc-lista mdc-fraco">' + x.avisos.slice(0, 8).map(function (a) { return "<li>" + esc(a) + "</li>"; }).join("") + "</ul>" : "") +
+'<div class="mdc-folhas">' + x.folhas.map(function (f, i) {
+return '<div class="mdc-folha" data-mdc="folha"><div class="mdc-fig" data-mdc-acao="folha-abrir" data-mdc-v="' + i + '" title="Abrir a folha grande">' + f.svg + '</div><div class="mdc-fc"><span><b>' + esc(f.numero || "") + "</b> " + esc(f.titulo || "") + '<br><small class="mdc-fraco">Escala ' + esc(f.escala || "indicada") + "</small></span>" + bt("folha-svg", "SVG", { sm: 1, v: i, ico: "baixar" }) + "</div></div>";
+}).join("") + "</div>" });
+}
+function empresa() { var d = {}, logo = null; try { if (global.Empresa && Empresa.dados) d = Empresa.dados() || {}; if (global.Empresa && Empresa.logo) logo = Empresa.logo(); } catch (e) {} return { d: d, logo: logo }; }
+function opcoesDoc(qual) {
+var em = empresa(), d = garantirDocu(), e = em.d, cod = d.codigo || "EST-MAD", rev = d.revisao || "R00", data = hojeBR();
+var resp = { nome: e.responsavel || "", titulo: e.titulo || "", abrev: e.titulo || "", conselho: "CREA", crea: e.crea || "", empresa: e.nome || "", cnpj: e.cnpj || "", endereco: [e.endereco, e.cidade].filter(Boolean).join(" — "), contato: [e.telefone, e.email].filter(Boolean).join(" · ") };
+var obra = { nome: d.obra || "", endereco: d.local || "", cidade: "", proprietario: d.proprietario || "", contratante: d.contratante || "" };
+var situacao = "Gerado pelo OrçaPRO em " + data + " — conferir antes de emitir";
+if (qual === "memorial") return { obra: obra, documento: { numero: cod + "-MEM", revisao: rev, data: data, situacao: situacao }, revisoes: [{ rev: rev, data: data, descricao: "Emissão inicial gerada pelo OrçaPRO", por: e.nome || "" }],
+responsavel: resp, local: e.cidade || "", logos: em.logo ? { ra: em.logo } : {}, versao: versao() };
+if (qual === "pranchas") return { empresa: e.nome || "", responsavel: e.responsavel || "", registro: e.crea ? "CREA nº " + e.crea : "", tituloProfissional: e.titulo || "", obra: (d.obra || "") + " - estrutura de madeira",
+proprietario: d.proprietario || "", contratante: d.contratante || "", local: d.local || "", codigo: cod, revisao: rev, data: data, descricaoRevisao: "EMISSÃO INICIAL", formato: "A1", logo: em.logo || null };
+if (qual === "manual") return { obra: obra, documento: { numero: cod + "-LIV", revisao: rev, data: data, situacao: situacao }, responsavel: resp, logos: em.logo ? { ra: em.logo } : {} };
+if (qual === "cype") return { obra: { nome: d.obra || "" } };
+return {};
+}
+var pendentes = {};
+function pedirSaida(qual) {
+var opc = opcoesDoc(qual);
+if (UIC.modoCalc === "worker" && UIC.worker) {
+return new Promise(function (ok, erro) {
+var id = "s" + Date.now() + qual; pendentes[id] = { ok: ok, erro: erro };
+UIC.worker.postMessage({ tipo: "gerar", id: id, qual: qual, opcoes: opc });
+});
+}
+if (UIC.modoCalc === "pagina" && W().ultimo()) { try { return Promise.resolve(W().gerar(qual, opc)); } catch (e) { return Promise.reject(e); } }
+return Promise.reject(new Error("o resultado do cálculo não está mais disponível nesta sessão — calcule de novo"));
+}
+function respostaSaida(m) {
+var p = pendentes[m.id]; if (!p) return; delete pendentes[m.id];
+if (m.tipo === "erro") { p.erro(new Error(m.mensagem)); return; }
+try { p.ok(JSON.parse(m.texto)); } catch (e) { p.erro(e); }
+}
+function abrirJanela(titulo) {
+var w = null; try { w = global.open("", "_blank"); } catch (e) { w = null; }
+if (w && w.document) { try { w.document.write('<!doctype html><meta charset="utf-8"><title>' + esc(titulo) + '</title><p style="font:15px system-ui;padding:40px">Montando o documento…</p>'); } catch (e) {} }
+return w;
+}
+function mostrarHtml(w, html, nomeArq) {
+if (w && !w.closed && w.document) { w.document.open(); w.document.write(html); w.document.close(); return "aba"; }
+baixar(nomeArq, html, "text/html"); return "baixado";
+}
+function semResultado() {
+if (UIC.resumo) return false;
+try { API.abrir(); } catch (e) {}
+toast("Calcule primeiro: o memorial, as pranchas, o manual, o pacote do CYPE e a lista de compra saem do resultado do cálculo.", "aviso");
+return true;
+}
+function base() { return nomeSeguro((UIC.docu && UIC.docu.obra) || "obra"); }
+function memorial() {
+if (semResultado()) return Promise.resolve(false);
+var w = abrirJanela("Memorial de cálculo"); status("Montando o memorial de cálculo da madeira…");
+return pedirSaida("memorial").then(function (x) {
+if (!x || !x.html) throw new Error("o memorial não gerou conteúdo");
+UIC.saidas.memorial = { secoes: x.secoes, bytes: x.html.length, avisos: x.avisos.length };
+var onde = mostrarHtml(w, x.html, base() + "-memorial-madeira.html");
+toast(onde === "aba" ? "Memorial aberto em outra aba: imprima ou salve em PDF (Ctrl+P)." : "Memorial baixado (.html): abra e imprima em PDF.", "ok", 8000);
+if (raiz() && UIC.aba === "documentos") { UIC.manterRolagem = true; render(); }
+return true;
+}).catch(function (e) { if (w) try { w.close(); } catch (e2) {} toast("Memorial: " + e.message, "erro", 9000); return false; });
+}
+function manual() {
+if (semResultado()) return Promise.resolve(false);
+var w = abrirJanela("Manual de montagem"); status("Montando o manual de montagem…");
+return pedirSaida("manual").then(function (x) {
+if (!x || !x.html) throw new Error("o manual não gerou conteúdo");
+UIC.saidas.manual = { paginas: x.paginas, etapas: x.etapas, bytes: x.html.length };
+var onde = mostrarHtml(w, x.html, base() + "-manual-montagem.html");
+toast(onde === "aba" ? "Manual aberto em outra aba (A3 paisagem): imprima ou salve em PDF." : "Manual baixado (.html).", "ok", 8000);
+if (raiz() && UIC.aba === "documentos") { UIC.manterRolagem = true; render(); }
+return true;
+}).catch(function (e) { if (w) try { w.close(); } catch (e2) {} toast("Manual: " + e.message, "erro", 9000); return false; });
+}
+function pranchas() {
+if (semResultado()) return Promise.resolve(false);
+status("Desenhando as pranchas…");
+return pedirSaida("pranchas").then(function (x) {
+if (!x || !x.ok || !x.folhas.length) throw new Error((x && x.avisos[0]) || "nada gerado");
+UIC.pranchas = x; UIC.saidas.pranchas = x.folhas.length; UIC.aba = "documentos";
+if (raiz()) { render(); var el = doc.getElementById("mdc-pranchas"); if (el && el.scrollIntoView) el.scrollIntoView({ block: "start" }); }
+toast(x.folhas.length + " pranchas prontas: abra, baixe o SVG ou imprima em PDF.", "ok", 7000);
+return true;
+}).catch(function (e) { toast("Pranchas: " + e.message, "erro", 9000); return false; });
+}
+function folhaHtml(f) { return '<!doctype html><meta charset="utf-8"><title>' + esc((f.numero || "") + " " + (f.titulo || "")) + '</title><style>html,body{margin:0;background:white}svg{width:100vw;height:auto;display:block}</style>' + f.svg; }
+function folhaAbrir(i) {
+var f = UIC.pranchas && UIC.pranchas.folhas[i]; if (!f) return;
+var w = abrirJanela(f.titulo || "Prancha"); mostrarHtml(w, folhaHtml(f), base() + "-" + nomeSeguro(f.numero || "folha" + (i + 1)) + ".html");
+}
+function pranchasImprimir() {
+var x = UIC.pranchas; if (!x) return;
+var fmtF = (x.folhas[0] || {}).formato || "A1";
+var html = '<!doctype html><meta charset="utf-8"><title>Pranchas</title><style>@page{size:' + fmtF + ' landscape;margin:0}html,body{margin:0;background:white}.pg{page-break-after:always;break-after:page}.pg:last-child{page-break-after:auto}svg{width:100%;height:auto;display:block}</style>' +
+x.folhas.map(function (f) { return '<div class="pg">' + f.svg + "</div>"; }).join("") + "<script>setTimeout(function(){try{window.print()}catch(e){}},400)<\/script>";
+var w = abrirJanela("Pranchas"); mostrarHtml(w, html, base() + "-pranchas-madeira.html");
+}
+function pranchasZip() {
+var x = UIC.pranchas; if (!x) return;
+if (!global.BimBcf || !BimBcf.zipEscrever) { toast("O gerador de .zip não carregou.", "erro"); return; }
+var arqs = {}; x.folhas.forEach(function (f, i) { arqs[nomeSeguro((f.numero || "folha-" + (i + 1)) + " " + (f.titulo || "")).slice(0, 80) + ".svg"] = f.svg; });
+baixar(base() + "-pranchas-madeira.zip", BimBcf.zipEscrever(arqs), "application/zip");
+}
+function latin1Bytes(t) { var b = new Uint8Array(t.length); for (var i = 0; i < t.length; i++) b[i] = t.charCodeAt(i) & 255; return b; }
+function cype() {
+if (semResultado()) return Promise.resolve(false);
+if (!global.BimBcf || !BimBcf.zipEscrever) { toast("O gerador de .zip não carregou.", "erro"); return Promise.resolve(false); }
+return pedirSaida("cype").then(function (x) {
+var arqs = {}, nomes = Object.keys(x.arquivos || {});
+if (!nomes.length) throw new Error("o exportador não devolveu arquivos");
+nomes.forEach(function (k) { var a = x.arquivos[k]; arqs[k] = a.latin1 ? latin1Bytes(a.texto) : a.texto; });
+baixar(base() + "-cype3d-madeira.zip", BimBcf.zipEscrever(arqs), "application/zip");
+UIC.saidas.cype = nomes;
+toast("Pacote para o CYPE 3D baixado: " + nomes.length + " arquivos — siga o ROTEIRO_CYPE.md dentro do .zip.", "ok", 9000);
+if (raiz() && UIC.aba === "documentos") { UIC.manterRolagem = true; render(); }
+return true;
+}).catch(function (e) { toast("CYPE 3D: " + e.message, "erro", 9000); return false; });
+}
+function comExcel(fn) {
+if (global.ExcelJS) { fn(global.ExcelJS); return; }
+if (global.ExcelOrc && ExcelOrc.ensureExcelJS) ExcelOrc.ensureExcelJS(function () { fn(global.ExcelJS); });
+else toast("O gerador de Excel não carregou.", "erro");
+}
+function compra() {
+var r = UIC.resumo; if (semResultado()) return Promise.resolve(false);
+if (!r.compra) { toast("Este cálculo não tem lista de compra (sem catálogo de madeira serrada).", "aviso"); return Promise.resolve(false); }
+return new Promise(function (ok) {
+comExcel(function (EJ) {
+if (!EJ) { ok(false); return; }
+var wb = new EJ.Workbook(), d = garantirDocu();
+wb.creator = "OrçaPRO"; wb.created = new Date();
+var ws = wb.addWorksheet("Compra", { views: [{ state: "frozen", ySplit: 4 }] });
+ws.getCell("A1").value = "Lista de compra — estrutura de madeira" + (d.obra ? " — " + d.obra : ""); ws.getCell("A1").font = { bold: true, size: 14 };
+ws.getCell("A2").value = "Gerada pelo OrçaPRO em " + hojeBR() + (r.compra.catalogoFonte ? " · catálogo: " + r.compra.catalogoFonte : "") + " · conferir medidas brutas com o fornecedor";
+var cab = ["Espécie", "Seção", "Peças", "Comprimento útil (m)", "Volume (m³)", "Fornecedor", "Produto", "Barras a comprar", "Comprado (m)", "Aproveitamento", "Pendência"];
+ws.getRow(4).values = cab; ws.getRow(4).font = { bold: true };
+ws.getRow(4).eachCell(function (c) { c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8EEF5" } }; c.border = { bottom: { style: "thin" } }; });
+r.compra.grupos.forEach(function (g) {
+var barras = g.porComprimento ? Object.keys(g.porComprimento).map(function (L) { return g.porComprimento[L] + " × " + String(L).replace(".", ",") + " m"; }).join(" + ") : "";
+var row = ws.addRow([g.especieNome, g.secao, g.n, g.util_m, g.volume_m3, g.fornecedor || "", g.produto || "", barras, g.comprado_m == null ? null : g.comprado_m, g.aproveitamento == null ? null : g.aproveitamento, g.pendencia || ""]);
+row.getCell(4).numFmt = "#,##0.0"; row.getCell(5).numFmt = "#,##0.000"; row.getCell(9).numFmt = "#,##0.0"; row.getCell(10).numFmt = "0%";
+});
+var tot = ws.addRow(["Total", "", r.compra.grupos.reduce(function (s, g) { return s + g.n; }, 0), r.compra.grupos.reduce(function (s, g) { return s + (g.util_m || 0); }, 0), r.compra.grupos.reduce(function (s, g) { return s + (g.volume_m3 || 0); }, 0)]);
+tot.font = { bold: true }; tot.getCell(4).numFmt = "#,##0.0"; tot.getCell(5).numFmt = "#,##0.000";
+[16, 12, 8, 14, 12, 14, 34, 26, 13, 13, 60].forEach(function (w, i) { ws.getColumn(i + 1).width = w; });
+var ws2 = wb.addWorksheet("Por espécie");
+ws2.addRow(["Espécie", "Peças", "Volume (m³)"]).font = { bold: true };
+r.porEspecie.forEach(function (x) { var rw = ws2.addRow([x.nome, x.n, x.volume_m3]); rw.getCell(3).numFmt = "#,##0.000"; });
+[24, 10, 14].forEach(function (w, i) { ws2.getColumn(i + 1).width = w; });
+if (r.compra.pendencias.length) { var ws3 = wb.addWorksheet("Pendências"); ws3.addRow(["Pendência de compra"]).font = { bold: true }; r.compra.pendencias.forEach(function (p) { ws3.addRow([p]); }); ws3.getColumn(1).width = 120; }
+wb.xlsx.writeBuffer().then(function (buf) {
+baixar(base() + "-compra-madeira.xlsx", buf, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+UIC.saidas.compra = true; toast("Lista de compra baixada (.xlsx): " + r.compra.grupos.length + " itens.", "ok", 7000);
+if (raiz() && UIC.aba === "documentos") { UIC.manterRolagem = true; render(); }
+ok(true);
+}, function (e) { toast("Lista de compra: " + e.message, "erro", 9000); ok(false); });
+});
+});
+}
+function ligar(v) {
+v.addEventListener("click", function (ev) {
+var el = ev.target && ev.target.closest ? ev.target.closest("[data-mdc-acao]") : null;
+if (!el || !v.contains(el) || el.disabled) return;
+var a = el.getAttribute("data-mdc-acao"), val = el.getAttribute("data-mdc-v");
+if (a === "fechar") fechar();
+else if (a === "aba") { UIC.aba = val; render(); }
+else if (a === "exemplo") exemplo();
+else if (a === "arquivos") { var inp = v.querySelector("[data-mdc='arquivo']"); if (!inp) { UIC.aba = "dados"; render(); inp = v.querySelector("[data-mdc='arquivo']"); } if (inp) { inp.value = ""; inp.click(); } }
+else if (a === "limpar") { UIC.pacote = null; UIC.msgs = []; UIC.resumo = null; UIC.pranchas = null; UIC.saidas = {}; render(); }
+else if (a === "baixar-pacote") baixarPacote();
+else if (a === "restaurar") { UIC.prem = W().premissasPadrao(); salvar(); if (UIC.resumo) UIC.desatualizado = true; UIC.aba = "premissas"; render(); toast("Premissas de volta ao padrão (especificação do cliente e decisões do RT).", "ok"); }
+else if (a === "calcular") calcular();
+else if (a === "cancelar") cancelar();
+else if (a === "memorial") memorial();
+else if (a === "pranchas") pranchas();
+else if (a === "manual") manual();
+else if (a === "cype") cype();
+else if (a === "compra") compra();
+else if (a === "pranchas-zip") pranchasZip();
+else if (a === "pranchas-imprimir") pranchasImprimir();
+else if (a === "folha-abrir") folhaAbrir(+val);
+else if (a === "folha-svg") { var f = UIC.pranchas && UIC.pranchas.folhas[+val]; if (f) baixar(base() + "-" + nomeSeguro(f.numero || "folha") + ".svg", f.svg, "image/svg+xml"); }
+});
+v.addEventListener("change", function (ev) {
+var el = ev.target; if (!el) return;
+if (el.getAttribute("data-mdc") === "arquivo") { lerArquivos(el.files); return; }
+var c = el.getAttribute("data-mdc-campo"); if (!c) return;
+mudarCampo(c, el.value, el);
+if (/^(esp|cls|dec)\./.test(c) && el.tagName !== "INPUT") { UIC.manterRolagem = true; render(); }
+});
+v.addEventListener("keydown", function (ev) {
+if (ev.key === "Escape" && !doc.querySelector(".modal-bg, .mod-mais-menu:not([hidden])")) { ev.stopPropagation(); fechar(); }
+});
+v.addEventListener("dragover", function (ev) { ev.preventDefault(); });
+v.addEventListener("drop", function (ev) { ev.preventDefault(); if (ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files.length) lerArquivos(ev.dataTransfer.files); });
+}
+function previa() { var P = global.BimPrevia; if (!P || !P.modelador || !P.modelador()) return false; if (P.disciplina) { try { return P.disciplina("marcenaria") !== false; } catch (e) { return true; } } return true; }
+var COMANDOS = [
+{ id: "mad-calc-abrir", rotulo: "Estrutura de\nmadeira", icone: "estrutura", grande: true, dica: "Cálculo da estrutura de madeira pela NBR 7190-1:2022: carregue o pacote da obra (ou o exemplo), confira as premissas e calcule — piso seco, pilares, coberturas, paredes, ligações, reações e compra." },
+{ id: "mad-calc-exemplo", rotulo: "Carregar\nexemplo", icone: "camadas", grande: true, dica: "Abre o exemplo pronto: um quiosque de madeira real anonimizado (866 peças, piso seco, wood frame e duas coberturas)." },
+{ id: "mad-calc-calcular", rotulo: "Calcular", icone: "raio", grande: true, dica: "Calcula a estrutura carregada em paralelo (a tela continua livre) — cerca de meio minuto." },
+{ id: "mad-calc-resultados", rotulo: "Resultados", icone: "grafico", grande: true, dica: "Resumo por função (η, o que governa, a combinação), reprovações e impedimentos, α_cr, reações para a fundação e compra." },
+{ id: "mad-calc-memorial", rotulo: "Memorial", icone: "relatorio", dica: "Memorial de cálculo da madeira (abre para imprimir ou salvar em PDF)." },
+{ id: "mad-calc-pranchas", rotulo: "Pranchas", icone: "prancha", dica: "Pranchas A1 do projeto executivo no padrão da casa." },
+{ id: "mad-calc-manual", rotulo: "Manual de\nmontagem", icone: "livro", dica: "Manual de montagem: uma etapa por página, para a equipe de obra." },
+{ id: "mad-calc-cype", rotulo: "Para o CYPE 3D", icone: "exportar", dica: "Pacote para o CYPE 3D: geometria, séries, liberações, cargas e o roteiro (.zip)." },
+{ id: "mad-calc-compra", rotulo: "Lista de\ncompra", icone: "planilha", dica: "Madeira por espécie e seção com as barras comerciais (.xlsx)." }
+];
+function registrar(reg) {
+var R = global.BimRibbon;
+if (!previa() || !R || !reg || !W()) return false;
+R.acrescentar("marcenaria", "Carpintaria & Marcenaria", "Cálculo estrutural", COMANDOS);
+var ids = COMANDOS.map(function (c) { return c.id; });
+if (global.BimDisciplinas && typeof global.BimDisciplinas.declarar === "function") { try { global.BimDisciplinas.declarar(ids, "marcenaria"); } catch (e) {} }
+ids.forEach(function (k) { if (R._EXCLUSIVOS && R._EXCLUSIVOS.indexOf(k) < 0) R._EXCLUSIVOS.push(k); });
+var h = {
+"mad-calc-abrir": function () { API.abrir(); }, "mad-calc-exemplo": function () { API.exemplo(); }, "mad-calc-calcular": function () { API.calcular(); },
+"mad-calc-resultados": function () { API.resultados(); }, "mad-calc-memorial": function () { API.memorial(); }, "mad-calc-pranchas": function () { API.pranchas(); },
+"mad-calc-manual": function () { API.manual(); }, "mad-calc-cype": function () { API.cype(); }, "mad-calc-compra": function () { API.compra(); }
+};
+Object.keys(h).forEach(function (k) { reg[k] = function () { try { h[k](); } catch (e) { toast("Estrutura de madeira: " + (e && e.message ? e.message : e), "erro", 8000); } return true; }; });
+setTimeout(function () { try { var sh = global.BimShell; if (sh && sh._raiz && typeof sh._sincAbas === "function") sh._sincAbas(); } catch (e) {} }, 0);
+return true;
+}
+function abrirEm(aba) { garantir(); if (aba) UIC.aba = aba; render(); return true; }
+var API = {
+COMANDOS: COMANDOS, registrar: registrar,
+abrir: function () { return abrirEm(null); },
+exemplo: function () { garantir(); return exemplo(); },
+calcular: function () { garantir(); return calcular(); },
+resultados: function () { return abrirEm(UIC.resumo ? "resultado" : (UIC.pacote ? "dados" : "dados")); },
+premissas: function () { return abrirEm("premissas"); },
+documentos: function () { return abrirEm("documentos"); },
+memorial: function () { garantir(); if (!UIC.resumo) { abrirEm("documentos"); } return memorial(); },
+pranchas: function () { garantir(); if (!UIC.resumo) { abrirEm("documentos"); } return pranchas(); },
+manual: function () { garantir(); if (!UIC.resumo) { abrirEm("documentos"); } return manual(); },
+cype: function () { garantir(); if (!UIC.resumo) { abrirEm("documentos"); } return cype(); },
+compra: function () { garantir(); if (!UIC.resumo) { abrirEm("documentos"); } return compra(); },
+fechar: fechar,
+lerArquivos: lerArquivos,
+estado: function () {
+var w = W(), cf = UIC.pacote && w ? w.conferir(UIC.pacote) : null;
+return { aberta: !!raiz(), aba: UIC.aba, pacote: cf ? { ok: cf.ok, pecas: cf.pecas, arquivos: cf.tem.length, falta: cf.falta.map(function (f) { return f.id; }) } : null,
+calculando: !!(UIC.calc && UIC.calc.rodando), etapa: UIC.calc ? UIC.calc.etapa : null, modoCalculo: UIC.modoCalc, erro: UIC.erro,
+resumo: UIC.resumo ? { ok: UIC.resumo.ok, funcoes: UIC.resumo.funcoes.length, reprovacoes: UIC.resumo.reprovacoes.length, alphaCr: UIC.resumo.alphaCr, impedimentos: UIC.resumo.impedimentos.length, reacoes: UIC.resumo.reacoes.length } : null,
+saidas: JSON.parse(JSON.stringify(UIC.saidas)), baixados: UIC.baixados.slice() };
+},
+resumo: function () { return UIC.resumo; },
+premissasAtuais: function () { return UIC.prem; }
+};
+global.MadCalcUI = API;
+if (typeof module !== "undefined" && module.exports) module.exports = API;
+})(typeof window !== "undefined" ? window : this);
+} catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/bimarqui.js ==== */
 try {
 (function (global) {

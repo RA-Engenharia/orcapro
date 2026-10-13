@@ -6698,6 +6698,7 @@ try { if (window.BimEmBreveUI) BimEmBreveUI.registrar(reg, self); } catch (eEmb)
 try { if (window.BimRender) BimRender.registrar(reg, self); } catch (eRender) {}
 try { if (window.BimMateriaisUI) BimMateriaisUI.registrar(reg, self); } catch (eMat) {}
 try { if (window.BimMetalUI) BimMetalUI.registrar(reg, self); } catch (eMet) {}
+try { if (window.MadCalcUI) MadCalcUI.registrar(reg, self); } catch (eMad) {}
 try { if (window.BimProjetosUI) BimProjetosUI.registrar(reg, self); } catch (eProj) {}
 BimCmd.registrar(reg);
 try { this._famSync(); } catch (eFs) {}
@@ -66850,5 +66851,5 @@ UI.toast("Orçamentista: " + n.casado + " casados · " + n.revisar + " para revi
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=47a5d7e6d4"},{"src":"js/bim-pacote.js?v=893cd67a5b","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=e18fd80047","modulo":true}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=235ef4648e"},{"src":"js/bim-pacote.js?v=893cd67a5b","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=e18fd80047","modulo":true}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

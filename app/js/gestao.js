@@ -10802,6 +10802,8 @@
       try { if (window.BimMateriaisUI) BimMateriaisUI.registrar(reg, self); } catch (eMat) {}
       /* METÁLICA & MECÂNICA (09/10/2026): a aba da disciplina — peças, ligações, galpão e fabricação (DSTV, DXF, listas, IFC) — js/metalui.js (sem a prévia do modelador, sai na hora) */
       try { if (window.BimMetalUI) BimMetalUI.registrar(reg, self); } catch (eMet) {}
+      /* MADEIRA (12/10/2026): Carpintaria & Marcenaria › Cálculo estrutural — o cálculo da estrutura de madeira (NBR 7190-1:2022), memorial, pranchas, manual, CYPE e compra — js/madcalcui.js (sem a prévia do modelador ou sem a disciplina, sai na hora) */
+      try { if (window.MadCalcUI) MadCalcUI.registrar(reg, self); } catch (eMad) {}
       /* PROJETOS BIM (12/10/2026): Novo/Abrir/Salvar passam pelo projeto, e um comando com a tela inicial na frente é a pessoa começando a trabalhar — js/bimprojetosui.js. POR ÚLTIMO: ele embrulha o que os outros registraram */
       try { if (window.BimProjetosUI) BimProjetosUI.registrar(reg, self); } catch (eProj) {}
 
