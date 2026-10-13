@@ -117,14 +117,21 @@
       return {
         creditos: d.creditos !== false,          // "Gerado pelo OrçaPRO IA" nos rodapés (default: mostra)
         marcaDagua: d.marcaDagua || "empresa",   // "empresa" (nome do cliente) | "nenhuma"
-        qr: d.qr !== false                       // bloco QR de verificação nos impressos
+        qr: d.qr !== false,                      // bloco QR de verificação nos impressos
+        /* a frase "elaborada… na base de preços SINAPI…, regime desonerado"
+           da proposta (13/10/2026): quem não quer contar ao cliente DELE de
+           onde vieram os preços desliga aqui. Vale para o documento padrão e
+           para os modelos que dizem "como o documento padrão faz". */
+        citarBase: d.citarBase !== false
       };
     },
     salvarDocsCfg: function (cfg) {
       var p = this._prefs();
-      p.docs = { creditos: !!cfg.creditos, marcaDagua: cfg.marcaDagua === "nenhuma" ? "nenhuma" : "empresa", qr: !!cfg.qr };
+      p.docs = { creditos: !!cfg.creditos, marcaDagua: cfg.marcaDagua === "nenhuma" ? "nenhuma" : "empresa", qr: !!cfg.qr, citarBase: cfg.citarBase !== false };
       Store.salvarPrefs(Auth.empresaId(), p);
     },
+    /* A proposta cita a base de preços (SINAPI, SICRO…) e o regime? Default: sim. */
+    citarBasePrecos: function () { return this.docsCfg().citarBase; },
 
     /* Nome que ASSINA os documentos: sempre a empresa do cliente (nunca o fabricante). */
     nomeDoc: function () {

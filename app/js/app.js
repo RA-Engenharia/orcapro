@@ -5158,8 +5158,8 @@
       Empresa.campos.forEach(function (k) { var el = UI.el("emp-" + k); dados[k] = el ? el.value : ""; });
       Empresa.salvar(dados, this._logoPendente);
       // White-label dos entregáveis (créditos / marca d'água / QR)
-      var elC = UI.el("emp-doc-creditos"), elQ = UI.el("emp-doc-qr"), elW = UI.el("emp-doc-wm");
-      if (elC && Empresa.salvarDocsCfg) Empresa.salvarDocsCfg({ creditos: elC.checked, qr: elQ ? elQ.checked : true, marcaDagua: elW ? elW.value : "empresa" });
+      var elC = UI.el("emp-doc-creditos"), elQ = UI.el("emp-doc-qr"), elW = UI.el("emp-doc-wm"), elB = UI.el("emp-doc-base");
+      if (elC && Empresa.salvarDocsCfg) Empresa.salvarDocsCfg({ creditos: elC.checked, qr: elQ ? elQ.checked : true, marcaDagua: elW ? elW.value : "empresa", citarBase: elB ? elB.checked : true });
 
       /* ---------- PERFIL DE IMPLANTAÇÃO ----------
        * ⚠ SÓ O DONO. `abrirEmpresa` e o `case "empresa"` do dispatcher não

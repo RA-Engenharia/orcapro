@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.135",
+versao: "1.2.136",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -11059,10 +11059,11 @@ rowRaw("Valor total", '<b style="color:var(--p-verde)">' + Util.fmtMoeda(TP.tota
 (emp && Util.naoVazio(emp.endereco) ? ' · ' + Util.esc(emp.endereco) : (emp && Util.naoVazio(emp.cidade) ? ' · ' + Util.esc(emp.cidade) : '')) +
 ((typeof Empresa !== "undefined" && Empresa.creditoTexto && Empresa.creditoTexto()) ? ' · ' + Util.esc(Empresa.creditoTexto()) : '') + '</div>' +
 '</section>');
+var citarBase = Proposta.citarBasePrecos();
 P.push(pg(sc("Apresentação"), '<p>' + apresentacao + '</p>' +
-'<p>Esta proposta foi elaborada com base nas informações disponibilizadas e em composições de ' +
+(citarBase ? '<p>Esta proposta foi elaborada com base nas informações disponibilizadas e em composições de ' +
 'custos referenciadas ' + (Orcamento.basesUsadas(orc).length > 1 ? 'nas bases de preços' : 'na base de preços') + ' <b>' + Util.esc(Orcamento.basesUsadasTexto(orc)) + '</b>, ' +
-'acrescidas de BDI de <b>' + Util.fmtPct(t.bdiPercentual) + '</b>.</p>'));
+'acrescidas de BDI de <b>' + Util.fmtPct(t.bdiPercentual) + '</b>.</p>' : '')));
 function liEscopo(s) { return '<li><b>' + Util.esc(s.codigo) + '</b> — ' + Util.esc(s.nome) + ' (' + s.qtdItens + ' itens)</li>'; }
 var escopoLi = sintObr.map(liEscopo).join("");
 var escopoOpcLi = sintOpc.map(liEscopo).join("");
@@ -11079,9 +11080,9 @@ P.push(pg(sc("Premissas e Metodologia"),
 (Util.naoVazio(c.metodologia) ? this._paragrafoOuLista("Metodologia:", c.metodologia) :
 '<p><b>Metodologia:</b> execução por etapas com medição mensal, controle de qualidade e ' +
 'acompanhamento técnico responsável, seguindo normas técnicas vigentes (ABNT).</p>') +
-'<p><b>' + (Orcamento.basesUsadas(orc).length > 1 ? 'Bases de preços:' : 'Base de preços:') + '</b> ' + Util.esc(Orcamento.basesUsadasTexto(orc)) +
+(citarBase ? '<p><b>' + (Orcamento.basesUsadas(orc).length > 1 ? 'Bases de preços:' : 'Base de preços:') + '</b> ' + Util.esc(Orcamento.basesUsadasTexto(orc)) +
 ', regime <b>' + Util.esc(Orcamento.regimeDe ? Orcamento.regimeDe(orc) : (orc.desonerado ? 'desonerado' : 'onerado')) + '</b>, ' +
-'BDI conforme metodologia do Acórdão TCU nº 2.622/2013.</p>'));
+'BDI conforme metodologia do Acórdão TCU nº 2.622/2013.</p>' : '')));
 var cronoHTML = this._cronograma(orc);
 if (cronoHTML) P.push(pg(sc("Cronograma de Execução"), cronoHTML));
 var custoRef = t.custoDireto;
@@ -11462,8 +11463,13 @@ total: unit * coef * q
 });
 return out.length ? out : null;
 };
+Proposta.citarBasePrecos = function () {
+try { return !(typeof Empresa !== "undefined" && Empresa && typeof Empresa.citarBasePrecos === "function" && Empresa.citarBasePrecos() === false); }
+catch (e) { return true; }
+};
 Proposta.referenciaParaModelo = function (orc) {
 var out = { bases: "", nBases: 0, regime: "", bdiPct: 0 };
+if (!Proposta.citarBasePrecos()) out.citar = false;
 try { out.bases = Orcamento.basesUsadasTexto(orc); out.nBases = (Orcamento.basesUsadas(orc) || []).length || 1; } catch (e1) {}
 try { out.regime = Orcamento.regimeDe ? Orcamento.regimeDe(orc) : ((orc && orc.desonerado) ? "desonerado" : "onerado"); } catch (e2) {}
 try { out.bdiPct = Util.num(Orcamento.totais(orc).bdiPercentual); } catch (e3) {}
@@ -12822,6 +12828,7 @@ return '' +
 '<p class="muted" style="font-size:12px;margin:4px 0 8px">Todos os documentos saem com a SUA logo e os SEUS dados. Aqui você escolhe o que mais aparece neles.</p>' +
 '<label class="flex" style="gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="emp-doc-creditos"' + (cfg.creditos ? " checked" : "") + '> Mencionar “Gerado pelo OrçaPRO IA” no rodapé dos documentos</label>' +
 '<label class="flex" style="gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="emp-doc-qr"' + (cfg.qr ? " checked" : "") + '> Incluir QR de verificação (Portal do Cliente) nos impressos</label>' +
+'<label class="flex" style="gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="emp-doc-base"' + (cfg.citarBase !== false ? " checked" : "") + '> Citar na proposta a base de preços (SINAPI, SICRO…) e o regime (onerado / desonerado)</label>' +
 '<div class="field" style="margin:6px 0 0"><label>Marca d’água das páginas internas (Proposta / Laudo / Relatório)</label>' +
 '<select id="emp-doc-wm">' +
 '<option value="empresa"' + (cfg.marcaDagua !== "nenhuma" ? " selected" : "") + '>Nome da minha empresa</option>' +
@@ -60908,6 +60915,7 @@ return txt(texto) ? '<div class="tp-rodape tp-rodape-nome"><span>' + esc(texto) 
 }
 function fraseBases(p, ref, comBdi) {
 if (p.fonteDePrecos === "ocultar") return "";
+if (ref.citar === false && p.fonteDePrecos === "padrao") return "";
 if (p.fonteDePrecos === "proprio") return txt(p.textoFonte) ? '<p class="tp-p">' + escML(p.textoFonte) + "</p>" : "";
 var bases = txt(ref.bases);
 if (!bases) return "";
@@ -60976,9 +60984,10 @@ var com = d.comercial || {}, ref = d.referencia || {};
 var html = paragrafoOuLista(p.rotuloPremissas, linhasOu(p.premissas, com.premissas))
 + paragrafoOuLista(p.rotuloMetodologia, linhasOu(p.metodologia, com.metodologia));
 var partes = [];
-if (p.fonteDePrecos === "padrao" && txt(ref.bases)) partes.push("<b>" + (num(ref.nBases) > 1 ? "Bases de preços:" : "Base de preços:") + "</b> " + esc(ref.bases));
+var semBase = ref.citar === false;
+if (p.fonteDePrecos === "padrao" && !semBase && txt(ref.bases)) partes.push("<b>" + (num(ref.nBases) > 1 ? "Bases de preços:" : "Base de preços:") + "</b> " + esc(ref.bases));
 else if (p.fonteDePrecos === "proprio" && txt(p.textoFonte)) partes.push(escML(p.textoFonte));
-if (p.mostrarRegime && txt(ref.regime)) partes.push("regime <b>" + esc(ref.regime) + "</b>");
+if (p.mostrarRegime && !semBase && txt(ref.regime)) partes.push("regime <b>" + esc(ref.regime) + "</b>");
 if (p.mostrarBdiTcu) partes.push("BDI conforme metodologia do Acórdão TCU nº 2.622/2013");
 if (partes.length) html += '<p class="tp-p">' + partes.join(", ") + ".</p>";
 return html;
@@ -71958,14 +71967,16 @@ var d = this._prefs().docs || {};
 return {
 creditos: d.creditos !== false,
 marcaDagua: d.marcaDagua || "empresa",
-qr: d.qr !== false
+qr: d.qr !== false,
+citarBase: d.citarBase !== false
 };
 },
 salvarDocsCfg: function (cfg) {
 var p = this._prefs();
-p.docs = { creditos: !!cfg.creditos, marcaDagua: cfg.marcaDagua === "nenhuma" ? "nenhuma" : "empresa", qr: !!cfg.qr };
+p.docs = { creditos: !!cfg.creditos, marcaDagua: cfg.marcaDagua === "nenhuma" ? "nenhuma" : "empresa", qr: !!cfg.qr, citarBase: cfg.citarBase !== false };
 Store.salvarPrefs(Auth.empresaId(), p);
 },
+citarBasePrecos: function () { return this.docsCfg().citarBase; },
 nomeDoc: function () {
 var n = this.dados().nome;
 if (n) return n;

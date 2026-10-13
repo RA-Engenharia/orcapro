@@ -352,11 +352,14 @@
             ((typeof Empresa !== "undefined" && Empresa.creditoTexto && Empresa.creditoTexto()) ? ' · ' + Util.esc(Empresa.creditoTexto()) : '') + '</div>' +
         '</section>');
 
-      // 2) APRESENTAÇÃO
+      // 2) APRESENTAÇÃO — a frase da base de preços sai só se ⚙ Empresa › Documentos
+      // mandar (13/10/2026: cliente que não quer contar ao cliente DELE de onde
+      // vieram os preços desliga lá; ligado, o texto é byte a byte o de sempre)
+      var citarBase = Proposta.citarBasePrecos();
       P.push(pg(sc("Apresentação"), '<p>' + apresentacao + '</p>' +
-        '<p>Esta proposta foi elaborada com base nas informações disponibilizadas e em composições de ' +
+        (citarBase ? '<p>Esta proposta foi elaborada com base nas informações disponibilizadas e em composições de ' +
         'custos referenciadas ' + (Orcamento.basesUsadas(orc).length > 1 ? 'nas bases de preços' : 'na base de preços') + ' <b>' + Util.esc(Orcamento.basesUsadasTexto(orc)) + '</b>, ' +
-        'acrescidas de BDI de <b>' + Util.fmtPct(t.bdiPercentual) + '</b>.</p>'));
+        'acrescidas de BDI de <b>' + Util.fmtPct(t.bdiPercentual) + '</b>.</p>' : '')));
 
       // 3) ENTENDIMENTO DO ESCOPO
       function liEscopo(s) { return '<li><b>' + Util.esc(s.codigo) + '</b> — ' + Util.esc(s.nome) + ' (' + s.qtdItens + ' itens)</li>'; }
@@ -389,9 +392,9 @@
         (Util.naoVazio(c.metodologia) ? this._paragrafoOuLista("Metodologia:", c.metodologia) :
         '<p><b>Metodologia:</b> execução por etapas com medição mensal, controle de qualidade e ' +
         'acompanhamento técnico responsável, seguindo normas técnicas vigentes (ABNT).</p>') +
-        '<p><b>' + (Orcamento.basesUsadas(orc).length > 1 ? 'Bases de preços:' : 'Base de preços:') + '</b> ' + Util.esc(Orcamento.basesUsadasTexto(orc)) +
+        (citarBase ? '<p><b>' + (Orcamento.basesUsadas(orc).length > 1 ? 'Bases de preços:' : 'Base de preços:') + '</b> ' + Util.esc(Orcamento.basesUsadasTexto(orc)) +
         ', regime <b>' + Util.esc(Orcamento.regimeDe ? Orcamento.regimeDe(orc) : (orc.desonerado ? 'desonerado' : 'onerado')) + '</b>, ' +
-        'BDI conforme metodologia do Acórdão TCU nº 2.622/2013.</p>'));
+        'BDI conforme metodologia do Acórdão TCU nº 2.622/2013.</p>' : '')));
 
       // 5b) CRONOGRAMA DE EXECUÇÃO (só quando há como calcular)
       var cronoHTML = this._cronograma(orc);
@@ -1070,8 +1073,17 @@
    * troca por texto próprio; aqui só se entrega o dado.
    * ⚠ Só o PERCENTUAL do BDI, nunca o valor em R$: `auditar` acusa o valor.
    * ===================================================================== */
+  /* ⚙ Empresa › Documentos: a proposta cita a base de preços e o regime?
+     Sem o módulo (Node, testes) ou sem a preferência: sim, como sempre. */
+  Proposta.citarBasePrecos = function () {
+    try { return !(typeof Empresa !== "undefined" && Empresa && typeof Empresa.citarBasePrecos === "function" && Empresa.citarBasePrecos() === false); }
+    catch (e) { return true; }
+  };
+
   Proposta.referenciaParaModelo = function (orc) {
     var out = { bases: "", nBases: 0, regime: "", bdiPct: 0 };
+    /* chave só nasce quando desligado: o payload de quem não mexeu não muda */
+    if (!Proposta.citarBasePrecos()) out.citar = false;
     try { out.bases = Orcamento.basesUsadasTexto(orc); out.nBases = (Orcamento.basesUsadas(orc) || []).length || 1; } catch (e1) {}
     try { out.regime = Orcamento.regimeDe ? Orcamento.regimeDe(orc) : ((orc && orc.desonerado) ? "desonerado" : "onerado"); } catch (e2) {}
     try { out.bdiPct = Util.num(Orcamento.totais(orc).bdiPercentual); } catch (e3) {}

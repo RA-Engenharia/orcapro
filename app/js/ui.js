@@ -972,6 +972,9 @@
           '<p class="muted" style="font-size:12px;margin:4px 0 8px">Todos os documentos saem com a SUA logo e os SEUS dados. Aqui você escolhe o que mais aparece neles.</p>' +
           '<label class="flex" style="gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="emp-doc-creditos"' + (cfg.creditos ? " checked" : "") + '> Mencionar “Gerado pelo OrçaPRO IA” no rodapé dos documentos</label>' +
           '<label class="flex" style="gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="emp-doc-qr"' + (cfg.qr ? " checked" : "") + '> Incluir QR de verificação (Portal do Cliente) nos impressos</label>' +
+          /* a frase "elaborada… na base de preços SINAPI…, regime desonerado" (13/10/2026):
+             vale para a proposta padrão e para os modelos que seguem o padrão */
+          '<label class="flex" style="gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="emp-doc-base"' + (cfg.citarBase !== false ? " checked" : "") + '> Citar na proposta a base de preços (SINAPI, SICRO…) e o regime (onerado / desonerado)</label>' +
           '<div class="field" style="margin:6px 0 0"><label>Marca d’água das páginas internas (Proposta / Laudo / Relatório)</label>' +
             '<select id="emp-doc-wm">' +
               '<option value="empresa"' + (cfg.marcaDagua !== "nenhuma" ? " selected" : "") + '>Nome da minha empresa</option>' +

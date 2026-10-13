@@ -1688,6 +1688,10 @@
      ou o texto que a empresa escreveu no lugar */
   function fraseBases(p, ref, comBdi) {
     if (p.fonteDePrecos === "ocultar") return "";
+    /* ⚙ Empresa › Documentos desligou a citação (13/10/2026): "como o documento
+       padrão faz" segue o padrão — que, desligado, não cita. O texto próprio
+       da empresa continua saindo. */
+    if (ref.citar === false && p.fonteDePrecos === "padrao") return "";
     if (p.fonteDePrecos === "proprio") return txt(p.textoFonte) ? '<p class="tp-p">' + escML(p.textoFonte) + "</p>" : "";
     var bases = txt(ref.bases);
     if (!bases) return "";
@@ -1763,9 +1767,11 @@
     var html = paragrafoOuLista(p.rotuloPremissas, linhasOu(p.premissas, com.premissas))
       + paragrafoOuLista(p.rotuloMetodologia, linhasOu(p.metodologia, com.metodologia));
     var partes = [];
-    if (p.fonteDePrecos === "padrao" && txt(ref.bases)) partes.push("<b>" + (num(ref.nBases) > 1 ? "Bases de preços:" : "Base de preços:") + "</b> " + esc(ref.bases));
+    /* ⚙ Empresa › Documentos desligou a citação: nem base nem regime (13/10/2026) */
+    var semBase = ref.citar === false;
+    if (p.fonteDePrecos === "padrao" && !semBase && txt(ref.bases)) partes.push("<b>" + (num(ref.nBases) > 1 ? "Bases de preços:" : "Base de preços:") + "</b> " + esc(ref.bases));
     else if (p.fonteDePrecos === "proprio" && txt(p.textoFonte)) partes.push(escML(p.textoFonte));
-    if (p.mostrarRegime && txt(ref.regime)) partes.push("regime <b>" + esc(ref.regime) + "</b>");
+    if (p.mostrarRegime && !semBase && txt(ref.regime)) partes.push("regime <b>" + esc(ref.regime) + "</b>");
     if (p.mostrarBdiTcu) partes.push("BDI conforme metodologia do Acórdão TCU nº 2.622/2013");
     if (partes.length) html += '<p class="tp-p">' + partes.join(", ") + ".</p>";
     return html;
