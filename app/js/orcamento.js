@@ -389,9 +389,45 @@
       return orc;
     },
     removerEtapa: function (orc, etapaId) {
+      /* ⚠ MODO LICITAÇÃO: a etapa leva junto os itens dela. Antes desta guarda
+         o "Remover etapa" apagava de uma vez os itens da planilha do órgão que
+         o "Remover item" recusava um a um — a trava tinha uma porta dos fundos
+         do tamanho de uma etapa inteira. Quem chama pela tela pergunta antes
+         (App.removerEtapa); aqui é a segunda camada, para qualquer outro
+         caminho. */
+      var alvo = Util.arr(orc && orc.etapas).filter(function (e) { return e.id === etapaId; })[0];
+      if (alvo && this.travadosNaEtapa(orc, alvo)) {
+        this._avisoTrava("remover");
+        return orc;
+      }
       orc.etapas = Util.arr(orc.etapas).filter(function (e) { return e.id !== etapaId; });
       this._renumerarEtapas(orc);
       return orc;
+    },
+
+    /* ===== TRAVA DO MODO LICITAÇÃO — a porta única dos mutadores =====
+       A regra (o que é item do órgão, quando a trava vale, o recado) mora em
+       js/licitacao.js. Aqui fica só a pergunta que cada mutador faz antes de
+       escrever: atualizarItem, removerItem, removerEtapa,
+       aplicarMemoriaQuantidade, restaurarQuantidade e reprecificarPorCodigo
+       (editar a composição própria em Composições) — e, por eles, o
+       Reimportar Excel (js/roundtrip.js) e a edição por IA (js/iaedit.js).
+       Sem o js/licitacao.js carregado não há trava (nem modo licitação). */
+    _travadoOrgao: function (orc, it) {
+      var L = global.Licitacao;
+      return !!(L && L.itemTravado && L.itemTravado(orc, it));
+    },
+    travadosNaEtapa: function (orc, etapa) {
+      var self = this, n = 0;
+      Util.arr(etapa && etapa.itens).forEach(function (it) { if (self._travadoOrgao(orc, it)) n++; });
+      return n;
+    },
+    _recadoTrava: function (acao) {
+      var L = global.Licitacao;
+      return (L && L.recadoTrava) ? L.recadoTrava(acao) : "Item da planilha do órgão: travado no modo licitação.";
+    },
+    _avisoTrava: function (acao) {
+      try { if (global.UI && global.UI.toast) global.UI.toast(this._recadoTrava(acao), "aviso"); } catch (eT) {}
     },
     // Sobe (dir<0) ou desce (dir>0) uma ETAPA, trocando com a vizinha, e renumera.
     moverEtapa: function (orc, etapaId, dir) {
@@ -751,7 +787,7 @@
      * e persiste. codigoAntigo cobre edição que renomeia o código.
      * Devolve quantos itens mudaram. */
     reprecificarPorCodigo: function (orc, codigoAntigo, novo) {
-      var n = 0;
+      var self = this, n = 0, travouCampo = false;
       /* ⚠ ORÇAMENTO APROVADO NÃO SE REPRECIFICA (v1.1.232). A varredura de
          cpSalvar/_propriaPropagarInsumo passava por TODOS os orçamentos da
          empresa — inclusive os aprovados, que a trava de aprovação promete
@@ -759,15 +795,32 @@
          orçamento já aceito pelo cliente. Preço aprovado é contrato: quem
          quiser o preço novo cria uma revisão. */
       if (this.travadoPorAprovacao && this.travadoPorAprovacao(orc)) return 0;
+      /* ⚠ MODO LICITAÇÃO: item da planilha do órgão precificado por composição
+         PRÓPRIA (código próprio, origem PROPRIA) também passa pela porta única
+         (_travadoOrgao). Até 13/10/2026 esta varredura era a sétima porta da
+         trava, aberta: editar a composição em Composições reescrevia a
+         DESCRIÇÃO e a UNIDADE do item do órgão em todos os orçamentos da
+         empresa — e a proposta saía diferente do edital sem ninguém ter
+         tocado na planilha. O preço (unitário e parcelas) continua acompanhando
+         a composição: é o que se disputa. Os campos seguros são os da lista
+         da regra (Licitacao.CAMPOS_TRAVADOS), a mesma do atualizarItem; o
+         recado só sai quando o valor MUDARIA, uma vez por chamada. */
+      var camposTrav = (global.Licitacao && global.Licitacao.CAMPOS_TRAVADOS) || ["quantidade", "descricao", "unidade"];
       ((orc && orc.etapas) || []).forEach(function (et) {
         (et.itens || []).forEach(function (it) {
           var deProprio = String(it.baseFonte || it.origem || "").toUpperCase() === "PROPRIA" ||
                           String(it.origem || "").toUpperCase() === "PROPRIO";
           if (!deProprio) return;
           if (String(it.codigo) !== String(codigoAntigo) && String(it.codigo) !== String(novo.codigo)) return;
-          it.codigo = novo.codigo;
-          it.descricao = Util.fixEnc(novo.descricao || it.descricao);
-          it.unidade = novo.unidade || it.unidade;
+          var ident = { codigo: novo.codigo, descricao: Util.fixEnc(novo.descricao || it.descricao), unidade: novo.unidade || it.unidade };
+          if (self._travadoOrgao(orc, it)) {
+            camposTrav.forEach(function (k) {
+              if (!(k in ident)) return;
+              if (String(ident[k] == null ? "" : ident[k]) !== String(it[k] == null ? "" : it[k])) travouCampo = true;
+              delete ident[k];
+            });
+          }
+          for (var k in ident) { if (Object.prototype.hasOwnProperty.call(ident, k)) it[k] = ident[k]; }
           it.custoMO = Util.num(novo.custoMO);
           it.custoMAT = Util.num(novo.custoMAT);
           it.custoEQ = Util.num(novo.custoEQ);
@@ -793,6 +846,7 @@
           n++;
         });
       });
+      if (travouCampo) this._avisoTrava("campos");
       return n;
     },
     atualizarItem: function (orc, etapaId, itemId, campos) {
@@ -801,6 +855,23 @@
       var it = etapa.itens.filter(function (x) { return x.id === itemId; })[0];
       if (!it) return orc;
       // LOTE 2: quantidade ≤ 0 vira item fantasma silencioso — rejeita e mantém o valor
+      /* MODO LICITAÇÃO (js/licitacao.js): item que veio da planilha do órgão não
+         muda descrição, unidade nem quantidade — só o preço. O recado diz como
+         liberar, porque trava sem porta empurra a pessoa a refazer a planilha
+         fora do sistema. ⚠ A UNIDADE entra na lista mesmo sem este mutador
+         gravá-la hoje: o dia em que alguém ensinar o atualizarItem a trocar
+         unidade, ela já nasce travada. O recado só sai quando o valor MUDARIA:
+         o Reimportar Excel devolve o mesmo número em toda linha e não pode
+         encher a tela de aviso por item que ninguém mexeu. */
+      if (this._travadoOrgao(orc, it)) {
+        var _camposTrav = (global.Licitacao && Licitacao.CAMPOS_TRAVADOS) || ["quantidade", "descricao", "unidade"], _mudaria = false;
+        _camposTrav.forEach(function (k) {
+          if (campos[k] == null) return;
+          if (k === "quantidade" ? Util.num(campos[k]) !== Util.num(it.quantidade) : String(campos[k]) !== String(it[k] == null ? "" : it[k])) _mudaria = true;
+          delete campos[k];
+        });
+        if (_mudaria) this._avisoTrava("campos");
+      }
       if (campos.quantidade != null) {
         var q = Util.num(campos.quantidade);
         // quantidade real chegou: o item deixa de ser pendente e volta a somar
@@ -930,6 +1001,11 @@
     },
     removerItem: function (orc, etapaId, itemId) {
       var etapa = this._etapa(orc, etapaId);
+      /* modo licitação: item do órgão não sai da planilha (ver atualizarItem) */
+      if (etapa) {
+        var alvo = etapa.itens.filter(function (x) { return x.id === itemId; })[0];
+        if (alvo && this._travadoOrgao(orc, alvo)) { this._avisoTrava("remover"); return orc; }
+      }
       if (etapa) etapa.itens = etapa.itens.filter(function (x) { return x.id !== itemId; });
       return orc;
     },
@@ -2066,6 +2142,15 @@
       var etapa = this._etapa(orc, etapaId);
       var it = etapa && (etapa.itens || []).filter(function (x) { return x.id === itemId; })[0];
       if (!it) return { ok: false, erro: "Item não encontrado." };
+      /* ⚠ MODO LICITAÇÃO: a memória de cálculo era uma porta aberta na trava —
+         "Subir quantidade" gravava direto em it.quantidade, por baixo da célula
+         travada, e a edição por IA (js/iaedit.js) passa por aqui também. A
+         memória que só DOCUMENTA a quantidade do órgão (a conta dá o mesmo
+         número) continua entrando: a trava protege o número, não o texto. */
+      if (this._travadoOrgao(orc, it) && (it.qtdPendente || Math.abs(Util.num(r.qtd) - Util.num(it.quantidade)) > 1e-9)) {
+        return { ok: false, travado: true, erro: this._recadoTrava("quantidade") +
+          " (A conta deu " + Util.fmtNum(r.qtd, 2) + "; o edital traz " + Util.fmtNum(it.quantidade, 2) + ".)" };
+      }
       if (it.unidade && r.unidade && !this.unidadeCompativel(it.unidade, r.unidade)) {
         return { ok: false, erro: "A conta deu " + Util.fmtNum(r.qtd, 2) + " " + Util.unidadeExibir(r.unidade) +
                  ", mas este item é em " + Util.unidadeExibir(it.unidade) + ". Ajuste a descrição ou a unidade do item." };
@@ -2101,6 +2186,12 @@
       var etapa = this._etapa(orc, etapaId);
       var it = etapa && Util.arr(etapa.itens).filter(function (x) { return x.id === itemId; })[0];
       if (!it || !antes) return { ok: false, erro: "Item não encontrado." };
+      /* modo licitação: o desfazer da IA também é escrita de quantidade. Só
+         acontece se a trava foi liberada, a IA mexeu e alguém travou de novo —
+         aí o item fica com o número de agora e o desfazer DIZ que não voltou. */
+      if (this._travadoOrgao(orc, it) && (Util.num(antes.q) !== Util.num(it.quantidade) || !!antes.p !== !!it.qtdPendente)) {
+        return { ok: false, travado: true, erro: this._recadoTrava("quantidade") };
+      }
       it.quantidade = Util.num(antes.q);
       if (antes.p) it.qtdPendente = true; else delete it.qtdPendente;
       if (antes.m != null && String(antes.m) !== "") it.memoriaCalculo = String(antes.m); else delete it.memoriaCalculo;

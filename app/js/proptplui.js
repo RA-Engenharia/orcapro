@@ -480,7 +480,7 @@
       var mm = modelo ? T.modelo(modelo) : null;
       usaPadrao = !!(mm && mm.paginas.some(function (p) {
         return /^(capa_classica|apresentacao|escopo_etapas|incluso|premissas|comercial|responsabilidades)$/.test(p.tipo)
-          || (p.tipo === "investimento" && p.nivel) || (p.tipo === "cronograma" && p.modo === "completo");
+          || (p.tipo === "investimento" && p.nivel) || (p.tipo === "cronograma" && (p.modo === "completo" || p.modo === "gantt"));
       }));
     } catch (eU) { usaPadrao = false; }
     if (usaPadrao) {
@@ -520,6 +520,22 @@
           { rotulo: "abr/27", valor: 2300, pct: 10, acumPct: 100 }], total: 22300 },
         notaPrazos: "Prazos em dias úteis (5 dias por semana), contados a partir da liberação da obra, com os feriados nacionais descontados."
       };
+      /* o Gantt do sistema e as composições abertas na prévia (13/10/2026):
+         desenho e insumos de exemplo — os de verdade só existem com o
+         orçamento aberto */
+      try {
+        if (mm && mm.paginas.some(function (p) { return p.tipo === "cronograma" && p.modo === "gantt"; })) d.cronograma.ganttHtml = G._ganttDemoSvg();
+        if (mm && mm.paginas.some(function (p) { return p.tipo === "investimento" && p.nivel === "composicoes"; })) {
+          var l1 = d.blocos.grupos[0].linhas[0], l3 = d.blocos.grupos[1].linhas[0];
+          l1.codigo = "00001";
+          l1.insumos = [
+            { codigo: "00011", descricao: "Material de exemplo", unidade: "m²", categoria: "MAT", coef: 1.05, qtd: 42, unitario: 160, total: 6720 },
+            { codigo: "00012", descricao: "Oficial de exemplo", unidade: "h", categoria: "MO", coef: 0.5, qtd: 20, unitario: 164, total: 3280 }];
+          l3.codigo = "00003";
+          l3.insumos = [{ codigo: "00031", descricao: "Ajudante de exemplo", unidade: "h", categoria: "MO", coef: 1, qtd: 58, unitario: 150, total: 8700 }];
+          d.blocos.temComposicoes = true;
+        }
+      } catch (eG) {}
     }
     return d;
   };
@@ -1437,6 +1453,78 @@
    * ⚠ Cor e letra vêm do modelo (ou da paleta do clássico, por quem chama):
    *   o Word não lê o CSS do papel; recebe os valores prontos.
    * =================================================================== */
+  /* =====================================================================
+   * O GANTT DO SISTEMA NO WORD (13/10/2026)
+   * O .docx não leva SVG (js/docx.js pula o desenho, de propósito: ornamento
+   * e marca d'água ficam no papel). O Gantt é diferente — é conteúdo. Então,
+   * SÓ para o SVG dentro de `.tp-gantt`, o desenho vira PNG pelo canvas do
+   * navegador antes de montar o arquivo, e o docx embute a imagem como
+   * qualquer foto. Falhou (canvas sem permissão, SVG estranho, demora) →
+   * segue sem a imagem, com as tabelas; nunca trava o Word.
+   * ⚠ O SVG da tela não tem xmlns nem fonte própria: sem o xmlns a imagem
+   *   não decodifica; `font-family:inherit` fora do documento vira a fonte
+   *   padrão do sistema — trocada por Arial para o texto não mudar de largura.
+   * ===================================================================== */
+  G._ganttParaPng = function (html, cb) {
+    var RE = /<div class="tp-gantt">([\s\S]*?)<\/div>/g, achados = [], m0;
+    while ((m0 = RE.exec(html))) achados.push(m0[1]);
+    if (!achados.length || typeof document === "undefined" || typeof Image === "undefined") { cb(html); return; }
+    var feitos = {}, pend = achados.length, acabou = false;
+    function fim() {
+      if (acabou) return;
+      acabou = true;
+      cb(html.replace(/<div class="tp-gantt">([\s\S]*?)<\/div>/g, function (tudo, svg) {
+        return feitos[svg] ? '<div class="tp-gantt"><img src="' + feitos[svg] + '" alt="Cronograma" style="width:100%"></div>' : tudo;
+      }));
+    }
+    function um(svg) {
+      try {
+        var s = svg.replace(/&nbsp;/g, "&#160;").replace(/font-family:inherit/g, "font-family:Arial,Helvetica,sans-serif");
+        if (!/xmlns=/.test(s.slice(0, 300))) s = s.replace(/^\s*<svg/i, '<svg xmlns="http://www.w3.org/2000/svg"');
+        var vb = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(s), W = vb ? parseFloat(vb[1]) : 1000, H = vb ? parseFloat(vb[2]) : 300;
+        var img = new Image();
+        img.onload = function () {
+          try {
+            var k = 2, c = document.createElement("canvas");
+            c.width = Math.round(W * k); c.height = Math.round(H * k);
+            var ctx = c.getContext("2d");
+            ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
+            ctx.drawImage(img, 0, 0, c.width, c.height);
+            feitos[svg] = c.toDataURL("image/png");
+          } catch (e) {}
+          if (--pend === 0) fim();
+        };
+        img.onerror = function () { if (--pend === 0) fim(); };
+        img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(s);
+      } catch (e2) { if (--pend === 0) fim(); }
+    }
+    achados.forEach(um);
+    setTimeout(fim, 4000);   /* imagem que não carrega não prende o Word */
+  };
+
+  /* o Gantt de exemplo da prévia: estático, com a cara do desenho do sistema
+     (régua de meses, etapa em barra fina escura, serviço em barra azul) —
+     o de verdade só existe com o orçamento aberto */
+  G._ganttDemoSvg = function () {
+    var s = '<svg class="gantt gantt-exec" viewBox="0 0 1000 190" style="width:100%;display:block;background:#fff;font-family:inherit">';
+    var meses = ["fev/27", "mar/27", "abr/27", "mai/27"], x0 = 250, w = (1000 - x0) / 4;
+    s += '<line x1="' + x0 + '" y1="0" x2="' + x0 + '" y2="190" stroke="#cbd5e1"/>';
+    meses.forEach(function (mn, i) {
+      var x = x0 + i * w;
+      s += '<line x1="' + x + '" y1="0" x2="' + x + '" y2="190" stroke="#cbd5e1"/><text x="' + (x + 6) + '" y="14" font-size="11" fill="#334155">' + mn + "</text>";
+      for (var k = 1; k < 4; k++) s += '<line x1="' + (x + k * w / 4) + '" y1="30" x2="' + (x + k * w / 4) + '" y2="190" stroke="#eef2f7"/>';
+    });
+    var linhas = [["1 Etapa de exemplo A", 0, 2.2, true], ["1.1 Serviço de exemplo", 0, 1.2, false], ["1.2 Outro serviço", 1.1, 1.1, false], ["2 Etapa de exemplo B", 2.1, 1.8, true], ["2.1 Serviço de exemplo", 2.1, 1.8, false]];
+    linhas.forEach(function (l, i) {
+      var y = 34 + i * 30, x = x0 + l[1] * w, lw = l[2] * w;
+      s += '<text x="8" y="' + (y + 14) + '" font-size="11" fill="#0f172a"' + (l[3] ? ' font-weight="600"' : "") + ">" + l[0] + "</text>";
+      s += l[3] ? '<rect x="' + x + '" y="' + (y + 8) + '" width="' + lw + '" height="5" fill="#0f172a"/>'
+                : '<rect x="' + x + '" y="' + (y + 4) + '" width="' + lw + '" height="14" rx="3" fill="#2563eb" opacity=".85"/>';
+      s += '<text x="' + (x + lw + 4) + '" y="' + (y + 15) + '" font-size="10" fill="#475569">' + Math.round(l[2] * 22) + "d</text>";
+    });
+    return s + "</svg>";
+  };
+
   G.docxBaixar = function (html, op) {
     if (typeof Docx === "undefined") { UI.toast("A saída em Word não está disponível nesta versão.", "erro"); return false; }
     op = op || {};
@@ -1488,7 +1576,12 @@
       return false;
     }
     /* Word em vez da janela de impressão — depois da auditoria, nunca antes */
-    if (op && op.word) return G.docxBaixar(html, G.propModOpcoesDocx(m, dados));
+    if (op && op.word) {
+      /* o Gantt do sistema vira PNG antes do .docx (o Word não leva SVG) */
+      var opD = G.propModOpcoesDocx(m, dados);
+      G._ganttParaPng(html, function (h2) { G.docxBaixar(h2, opD); });
+      return true;
+    }
     var w = window.open("", "_blank");
     if (!w) { UI.toast("O navegador bloqueou a janela. Libere a abertura de janelas para este endereço.", "erro"); return false; }
     /* =================================================================

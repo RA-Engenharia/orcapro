@@ -2219,10 +2219,14 @@
         var rotuloI = btnI.textContent;
         btnI.disabled = true; btnI.textContent = "Instalando…";
         Bases.instalar(catId, selI, { pesoMb: eI.pesoMb }).then(function (r) {
+          /* competência FIXADA (licitação): diz de qual fonte veio e que ela
+             não anda sozinha — "do servidor, mais recente" seria falso */
+          var deOnde = r.fixada
+            ? " — competência fixada, " + ({ disco: "do disco desta máquina", servidor: "do servidor da RA", espelho: "do espelho do app" }[r.origem] || r.origem) + "; não atualiza sozinha"
+            : (r.live ? " — do servidor, mais recente" : " — a que veio no app");
           UI.toast(eI.nome + " instalada: " + r.total.toLocaleString("pt-BR") + " itens (" +
             ((typeof BasesCat !== "undefined" && BasesCat.fmtVersao(r.competencia)) || r.competencia || "") +
-            (r.uf ? " · " + r.uf : "") + ")" +
-            (r.live ? " — do servidor, mais recente" : " — a que veio no app") + "." +
+            (r.uf ? " · " + r.uf : "") + ")" + deOnde + "." +
             (r.persistido ? "" : " ⚠ " + r.gravErro), r.persistido ? "ok" : "erro");
           selfI.abrirTabelas();                       // re-render com a linha já instalada
         }).catch(function (err) {
@@ -2536,6 +2540,12 @@
         // memorial de cálculo: agente, IA de reforço e calculadora
         case "fechar-valor": this.fecharValor(); break;
         case "fechar-desfazer": this.fecharDesfazer(); break;
+        case "lic-desconto": this.licitacaoDesconto(); break;
+        case "lic-desconto-desfazer": this.licitacaoDescontoDesfazer(); break;
+        case "lic-trava": this.licitacaoTrava(); break;
+        case "lic-devolver": this.devolverCertame(); break;
+        case "lic-base-instalar": this.licBaseInstalar(t.dataset.licBase); break;
+        case "lic-base-outra": this.licBaseOutra(t.dataset.licBase); break;
         case "mem-agente": this.memAgente(false); break;
         case "mem-agente-ia": this.memAgente(true); break;
         case "mem-calc": this.memCalcular(); break;
@@ -3778,6 +3788,9 @@
         return fetch(b + "/data/bases-status.json", { cache: "no-store" })
           .then(function (r) { return r.ok ? r.json() : null; })
           .then(function (j) {
+            /* guardado inteiro: as bases com histórico (desonerada, SICRO) e o
+               painel das bases exigidas leem o acervo daqui (BasesCat.competenciasConhecidas) */
+            if (j) self._espelhoStatus = j;
             if (!j || !Array.isArray(j.acervo)) return;
             j.acervo.forEach(function (a) {
               (a.ufs || []).forEach(function (uf) { juntar(uf, a.competencia); });
@@ -3790,6 +3803,9 @@
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (j) {
           if (!j) return;
+          /* a resposta inteira fica guardada: além da onerada, ela lista a
+             desonerada e o SICRO por competência (server/static.js, /__bases) */
+          self._basesDisco = j;
           if (Array.isArray(j.bases)) j.bases.forEach(function (b) { juntar(b.uf, b.competencia); });
           if (Array.isArray(j.analiticos)) j.analiticos.forEach(function (a) { marcar(a.uf, a.competencia); });
           if (Array.isArray(j.analiticoLegado)) j.analiticoLegado.forEach(function (uf) { legado[String(uf).toUpperCase()] = 1; });
@@ -10497,6 +10513,15 @@
           if (document.querySelector("#modal-bg [data-instalar]")) selfT0.abrirTabelas();
         }).catch(function () {});
       }
+      /* as competências que o DISCO tem (desonerada e SICRO por mês, para o
+         seletor de competência) vêm do /__bases, que o boot já pergunta; se a
+         tela abriu antes, pergunta e redesenha só se a resposta trouxe algo */
+      if (!this._basesDisco && this._carregarEstados) {
+        var selfT1 = this;
+        this._carregarEstados().then(function () {
+          if (selfT1._basesDisco && document.querySelector("#modal-bg [data-instalar]")) selfT1.abrirTabelas();
+        }).catch(function () {});
+      }
       var self = this;
       var bg = UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("tabela", 15) : "") + " Tabelas de Preço (multi-base)", UI.renderTabelas(Bases.lista()), [
         { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
@@ -11397,6 +11422,15 @@
       var et = orc && (orc.etapas || []).filter(function (e) { return e.id === etapaId; })[0];
       var nItens = et ? (et.itens || []).length : 0;
       var nSubs = et ? Orcamento.subEtapas(et).length : 0;
+      /* ⚠ MODO LICITAÇÃO: recusa ANTES de perguntar. Perguntar "remover a etapa
+         com 12 itens?" e depois não remover (o motor recusa — ver
+         Orcamento.removerEtapa) seria a confirmação que mente. */
+      var nTrav = et ? Orcamento.travadosNaEtapa(orc, et) : 0;
+      if (nTrav) {
+        UI.toast("A etapa " + ((et && et.nome) || "") + " tem " + nTrav + " item(ns) da planilha do órgão e não pode ser removida. " +
+          Orcamento._recadoTrava("remover"), "aviso", 12000);
+        return;
+      }
       UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("lixeira", 15) : "") + " Remover etapa",
         '<p>Remover a etapa <b>' + Util.esc((et && et.nome) || "") + '</b>' +
         (nSubs ? ' com <b>' + nSubs + ' sub etapa(s)</b>' + (nItens ? ' e' : '') : '') +
@@ -11685,6 +11719,358 @@
       } else {
         aplicar();
       }
+    },
+
+    /* =================================================================
+     * MODO LICITAÇÃO — ações do painel (a regra mora em js/licitacao.js;
+     * aqui só a tela, o salvar e a rede)
+     * ================================================================= */
+    licitacaoDesconto: function () {
+      var self = this, orc = this.orcAtual;
+      if (!orc || typeof Licitacao === "undefined") return;
+      UI.modal("Desconto linear sobre a referência do órgão",
+        '<p style="font-size:13px;margin-top:0">Um percentual único sobre o preço de referência <b>com BDI</b> de cada item da planilha do órgão. ' +
+        'Os itens sem referência no pacote ficam como estão. É possível desfazer depois.</p>' +
+        '<div class="field"><label>Desconto (%)</label><input id="lic-desc-pct" type="text" inputmode="decimal" placeholder="Ex.: 12,5"></div>' +
+        '<div id="lic-desc-prev" class="muted" style="font-size:13px;min-height:54px">Informe o percentual para ver o total que resulta.</div>',
+        [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Aplicar desconto", classe: "primary", onClick: function () {
+              var pct = Util.num((UI.el("lic-desc-pct") || {}).value);
+              var r = Licitacao.aplicarDesconto(orc, pct);
+              if (!r.ok) { UI.toast(r.erro, "erro"); return; }
+              var g = self.persistir(); UI.fecharModal(); self.render();
+              if (self._gravou(g)) UI.toast("Desconto linear de " + Util.fmtNum(r.pct, 2) + "% aplicado em " + r.itens + " item(ns): de " + Util.fmtMoeda(r.totalAntes) + " para " + Util.fmtMoeda(r.totalDepois) + ".", "ok");
+            } }
+        ]);
+      var inp = UI.el("lic-desc-pct");
+      if (inp) {
+        var prev = function () {
+          var box = UI.el("lic-desc-prev"); if (!box) return;
+          var v = Util.num(inp.value);
+          if (!(v > 0)) { box.textContent = "Informe o percentual para ver o total que resulta."; return; }
+          var s = Licitacao.simularDesconto(orc, v);
+          if (!s.ok) { box.textContent = s.erro; return; }
+          var h = "Total da proposta: <b>" + Util.esc(Util.fmtMoeda(s.totalAntes)) + "</b> → <b>" + Util.esc(Util.fmtMoeda(s.totalDepois)) + "</b> (" + s.itens + " item(ns)" +
+            (s.semReferencia ? ", " + s.semReferencia + " sem referência ficam como estão" : "") + ").";
+          s.avisos.resumo.forEach(function (a) { if (a.chave === "teto" || a.chave === "exeq") h += "<br><b>" + Util.esc(a.texto) + "</b>"; });
+          box.innerHTML = h;
+        };
+        inp.addEventListener("input", prev);
+        try { inp.focus(); } catch (e) {}
+      }
+    },
+
+    licitacaoDescontoDesfazer: function () {
+      var self = this, orc = this.orcAtual;
+      if (!orc || typeof Licitacao === "undefined") return;
+      var lic = Licitacao.cfg(orc);
+      if (!lic || !lic.descontoLinear) { UI.toast("Não há desconto linear para desfazer.", "erro"); return; }
+      UI.modal("Desfazer o desconto linear",
+        '<p style="font-size:13px;margin-top:0">Os preços voltam ao que eram antes do desconto de <b>' + Util.fmtNum(lic.descontoLinear.pct, 2) + '%</b>. ' +
+        'Preços que você editou à mão depois do desconto também voltam ao valor de antes.</p>',
+        [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Desfazer", classe: "primary", onClick: function () {
+              var r = Licitacao.desfazerDesconto(orc);
+              if (!r.ok) { UI.toast(r.erro, "erro"); return; }
+              var g = self.persistir(); UI.fecharModal(); self.render();
+              if (self._gravou(g)) UI.toast("Desconto linear desfeito (" + r.itens + " item(ns)).", "ok");
+            } }
+        ]);
+    },
+
+    /* =================================================================
+     * BASES EXIGIDAS PELO EDITAL — a fiação (a regra mora em
+     * js/licitacao.js: situacaoBases, registrarEscolhaBase).
+     * ================================================================= */
+    /* o que o app SABE agora, para o motor decidir a situação de cada base */
+    _licCtxBases: function () {
+      var sn = (typeof Sinapi !== "undefined") ? Sinapi : {};
+      return {
+        sinapi: { uf: String(this._baseUf || sn.uf || "").toUpperCase(), competencia: sn.competencia || "", carregado: !!sn.carregado },
+        instaladas: (typeof Bases !== "undefined" && Bases.lista) ? Bases.lista() : [],
+        compsOnerada: this._compsPorUf || {},
+        fatos: { servidor: (typeof Atualizacao !== "undefined" && Atualizacao._ultimoStatus) || null, disco: this._basesDisco || null, espelho: this._espelhoStatus || null },
+        catalogo: (typeof BasesCat !== "undefined") ? BasesCat : null
+      };
+    },
+    /* "disponível" depende do que o disco (/__bases) e o servidor anunciaram;
+       a primeira tela da sessão ainda não tem isso. Pergunta UMA vez e
+       redesenha se o mesmo orçamento continuar aberto — sem travar a tela. */
+    _licBasesFatos: function () {
+      if (this._licFatosPedidos) return;
+      this._licFatosPedidos = true;
+      var self = this, id = this.orcAtual && this.orcAtual.id, ps = [];
+      if (!this._basesDisco && this._carregarEstados) ps.push(this._carregarEstados().catch(function () {}));
+      if (typeof Atualizacao !== "undefined" && Atualizacao.statusServidor && !Atualizacao._ultimoStatus) ps.push(Atualizacao.statusServidor().catch(function () {}));
+      if (!ps.length) return;
+      Promise.all(ps).then(function () {
+        if (self.orcAtual && self.orcAtual.id === id && self.tela === "editor") self.render();
+      });
+    },
+    _licExigida: function (chave) {
+      var orc = this.orcAtual;
+      if (!orc || typeof Licitacao === "undefined") return null;
+      return Licitacao.basesExigidas(orc).filter(function (e) { return Licitacao.chaveBase(e) === chave; })[0] || null;
+    },
+
+    /* INSTALAR a base exigida: o mês exato, conferido pelo conteúdo. Não
+       achou: nada é trocado, e o recado diz o que cada fonte respondeu e
+       qual é a porta (usar outra e registrar). */
+    licBaseInstalar: function (chave) {
+      var self = this, orc = this.orcAtual, e = this._licExigida(chave);
+      if (!orc || !e) return;
+      if (!this._podeBases()) { this._recusaBases("Instalar a tabela exigida pelo edital"); return; }
+      var nome = Licitacao.fmtBase(e);
+      var feito = function (uso, txt) {
+        Licitacao.declararBaseUsada(orc, uso);
+        var g = self.persistir(); self.render();
+        if (self._gravou(g)) UI.toast(txt, "ok", 9000);
+      };
+      var falhou = function (txt) {
+        self.render();
+        UI.toast(txt + " Nada foi trocado. Se for usar outra competência, clique em \"Usar outra e registrar\" no painel Bases exigidas pelo edital — a escolha sai na justificativa de preços.", "erro", 16000);
+      };
+      if (e.catId === "SINAPI") {
+        UI.toast("Carregando " + nome + "…", "ok");
+        this.trocarBaseSinapi(e.uf, e.competencia, function (ok) {
+          if (ok) feito({ catId: "SINAPI", uf: e.uf, competencia: e.competencia }, nome + " carregada — é a base em uso agora.");
+          else falhou(nome + " não foi encontrada no disco, no servidor da RA nem no espelho (ou veio sem o detalhamento do mesmo mês).");
+        });
+        return;
+      }
+      if (typeof BasesCat !== "undefined" && BasesCat.temHistorico(e.catId)) {
+        UI.toast("Procurando " + nome + " no disco, no servidor e no espelho…", "ok");
+        Bases.instalarCompetencia(e.catId, { uf: e.uf, competencia: e.competencia, regime: e.regime }, { pesoMb: 3 }).then(function (r) {
+          feito({ catId: e.catId, uf: e.uf, competencia: e.competencia }, nome + " instalada (" + r.total.toLocaleString("pt-BR") + " itens, " +
+            ({ disco: "do disco desta máquina", servidor: "do servidor da RA", espelho: "do espelho do app" }[r.origem] || r.origem) + "). A competência fica fixada: a atualização automática não a troca.");
+        }).catch(function (err) {
+          var ach = (err && err.achadas && err.achadas.length) ? " Existe(m): " + err.achadas.map(Licitacao.fmtComp).join(", ") + "." : "";
+          falhou(nome + " não foi encontrada (" + ((err && err.tentativas) || []).join("; ") + ")." + ach);
+        });
+        return;
+      }
+      var ent = (typeof BasesCat !== "undefined") ? BasesCat.get(e.catId) : null;
+      if (!ent) { falhou(nome + ": esta base não é distribuída pelo OrçaPRO — importe a planilha oficial do órgão desta competência em Tabelas."); return; }
+      /* base sem histórico (SETOP, ORSE…): só existe a atual — instala e CONFERE o mês */
+      Bases.instalar(e.catId, e.uf ? { uf: e.uf } : null, { pesoMb: ent.pesoMb }).then(function (r) {
+        var c = Licitacao._comp(r.competencia);
+        if (c === e.competencia) feito({ catId: e.catId, uf: r.uf || e.uf, competencia: c }, nome + " instalada.");
+        else falhou(ent.nome + " instalada é de " + (Licitacao.fmtComp(c) || "competência não declarada") + ", não de " + Licitacao.fmtComp(e.competencia) + ".");
+      }).catch(function (err) { falhou("Não consegui instalar " + nome + ": " + ((err && err.message) || err) + "."); });
+    },
+
+    /* USAR OUTRA BASE no lugar da exigida — escolha de quem orça, com motivo,
+       data e autor, que sai no Quadro de Justificativa de Preços. A outra é a
+       que está EM USO; sem nenhuma em uso, a ATUAL da fonte (o `current` do
+       SICRO, a mais recente da desonerada), com o aviso "usando X, o edital
+       pede Y". ⚠ Nunca escolhida pelo sistema: a pessoa lê os dois meses e
+       confirma. */
+    licBaseOutra: function (chave) {
+      var self = this, orc = this.orcAtual, e = this._licExigida(chave);
+      if (!orc || !e) return;
+      var sit = Licitacao.situacaoBases(orc, this._licCtxBases()).filter(function (x) { return Licitacao.chaveBase(x.exigida) === chave; })[0];
+      var uso = sit && sit.emUso;
+      var temAtual = !uso && typeof BasesCat !== "undefined" && !!BasesCat.get(e.catId) && e.catId !== "SINAPI";
+      if (!uso && !temAtual) { UI.toast("Não há " + e.fonte + " em uso para registrar no lugar de " + Licitacao.fmtBase(e) + " — importe a planilha do órgão em Tabelas.", "erro", 10000); return; }
+      /* sem base em uso, este caminho INSTALA a atual — e base de preço é da
+         empresa inteira (a mesma guarda do Instalar) */
+      if (!uso && !this._podeBases()) { this._recusaBases("Instalar a tabela atual no lugar da exigida"); return; }
+      var usoTxt = uso ? Licitacao.fmtBase(uso) : ("a " + e.fonte + (e.uf ? "-" + e.uf : "") + " atual (a mais recente que o servidor tiver)");
+      UI.modal("Usar outra base no lugar da exigida pelo edital",
+        '<p style="font-size:13px;margin-top:0">O edital exige <b>' + Util.esc(Licitacao.fmtBase(e)) + '</b>. Os preços vão usar <b>' + Util.esc(usoTxt) + '</b>.</p>' +
+        '<p style="font-size:12.5px">A escolha fica registrada no <b>Quadro de Justificativa de Preços</b> (Excel e impressão), com data e autor, e a base declarada no orçamento passa a ser a usada. ' +
+        'Preço em tabela diferente da exigida pode desclassificar: confira no edital se ele aceita.</p>' +
+        '<div class="field"><label>Motivo (sai na justificativa)</label><input id="lic-base-motivo" value="' +
+        Util.esc("a tabela exigida não foi encontrada no disco, no servidor da RA nem no espelho do OrçaPRO") + '"></div>',
+        [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Usar e registrar", classe: "primary", onClick: function () {
+              var motivo = String((UI.el("lic-base-motivo") || {}).value || "").trim();
+              var por = "";
+              try { por = (Auth.usuario && Auth.usuario() && (Auth.usuario().nome || Auth.usuario().email)) || ""; } catch (eU) {}
+              UI.fecharModal();
+              var registrar = function (u, aviso) {
+                Licitacao.registrarEscolhaBase(orc, e, u, { motivo: motivo, por: por });
+                var g = self.persistir(); self.render();
+                if (self._gravou(g)) UI.toast((aviso ? aviso + " " : "") + "Escolha registrada na justificativa de preços: o edital exige " + Licitacao.fmtBase(e) + ", os preços usam " + Licitacao.fmtBase(u) + ".", "aviso", 14000);
+              };
+              if (uso) { registrar(uso, ""); return; }
+              Bases.garantirCompetencia(e.catId, { uf: e.uf, competencia: e.competencia, regime: e.regime }, { permitirAtual: true }).then(function (r) {
+                var u = { catId: e.catId, fonte: e.fonte, uf: String(r.uf || e.uf).toUpperCase(), competencia: Licitacao._comp(r.competencia), regime: e.regime };
+                if (!r.fallback) {   // achou a exata no caminho: não há escolha a registrar
+                  Licitacao.declararBaseUsada(orc, u);
+                  var g2 = self.persistir(); self.render();
+                  if (self._gravou(g2)) UI.toast(Licitacao.fmtBase(e) + " foi encontrada e instalada — não há escolha a registrar.", "ok", 9000);
+                  return;
+                }
+                registrar(u, r.aviso);
+              }).catch(function (err) { self.render(); UI.toast("Não consegui instalar a " + e.fonte + " atual: " + ((err && err.message) || err) + ". Nada foi registrado.", "erro", 12000); });
+            } }
+        ]);
+    },
+
+    /* ⚠ TRAVA COM PORTA: a trava dos itens do órgão tem saída, mas a saída
+       pede confirmação — quantidade alterada em item do edital é causa de
+       desclassificação. */
+    licitacaoTrava: function () {
+      var self = this, orc = this.orcAtual;
+      if (!orc || typeof Licitacao === "undefined") return;
+      var lic = Licitacao.cfg(orc); if (!lic) return;
+      var feito = function (liberar) {
+        Licitacao.liberarTrava(orc, liberar);
+        var g = self.persistir(); UI.fecharModal(); self.render();
+        if (self._gravou(g)) UI.toast(liberar ? "Edição liberada: quantidade, descrição e remoção dos itens do órgão voltam a funcionar." : "Itens do órgão travados de novo.", "ok");
+      };
+      if (lic.travaLiberada) { feito(false); return; }
+      UI.modal("Liberar a edição dos itens do órgão",
+        '<p style="font-size:13px;margin-top:0">Hoje a quantidade, a descrição e a remoção dos itens que vieram da planilha do órgão estão travadas, para a proposta não sair diferente do edital. ' +
+        'Libere só se o edital permitir alterar a planilha. O preço continua livre de qualquer forma.</p>',
+        [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Liberar edição", classe: "primary", onClick: function () { feito(true); } }
+        ]);
+    },
+
+    /* DEVOLVER AO CERTAMEPRO: gera o MESMO _PRO.xlsx da exportação e faz POST
+       multipart para `devolverPara` com X-Licitacoes: 1. Se a rede ou o
+       CertamePRO falhar, o arquivo é baixado e o recado ensina a enviar à mão —
+       o trabalho do orçamentista nunca fica preso num servidor que não responde. */
+    devolverCertame: function () {
+      var self = this, orc = this.orcAtual;
+      if (!orc || typeof Licitacao === "undefined") return;
+      var lic = Licitacao.cfg(orc);
+      if (!lic || !lic.devolverPara) { UI.toast("Este orçamento não veio de um certame com endereço de devolução.", "erro"); return; }
+      if (this._trialBloqueado()) { this._avisoTrial(); return; }
+      if (!Auth.podeUsar("exportar")) { UI.toast("Exportar é recurso PRO. Faça upgrade.", "erro"); return; }
+      if (Orcamento.totais(orc).qtdItens < 1) { UI.toast("Adicione itens antes de devolver.", "erro"); return; }
+      var d = Licitacao.destino(lic.devolverPara);
+      if (!d.ok) { UI.toast(d.erro, "erro"); return; }
+      var seguir = function () {
+        UI.toast("Gerando o Excel para devolver ao CertamePRO…", "ok");
+        self._analiticoDoOrc(orc, function () {
+          ExcelOrc.gerar(orc, {
+            aoBlob: function (blob, nome) { self._licEnviar(orc, d, blob, nome); },
+            aoErro: function (e) { UI.toast("Não consegui gerar o Excel (" + (e && e.message ? e.message : e) + "). Nada foi enviado.", "erro"); }
+          });
+        });
+      };
+      var destinoOk = function () {
+        if (d.local) { seguir(); return; }
+        /* ⚠ destino que NÃO é a própria máquina: o endereço veio de um arquivo de
+           fora, e o Excel leva custos e BDI. Mostra o endereço e pede o aval. */
+        UI.modal("Enviar o orçamento para fora desta máquina?",
+          '<p style="font-size:13px;margin-top:0">O pacote do certame pede a devolução para <b class="mono">' + Util.esc(d.host) + '</b>, que não é este computador. ' +
+          'O Excel leva seus custos, BDI e preços. Envie só se você reconhece esse endereço.</p>',
+          [
+            { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+            { texto: "Enviar", classe: "primary", onClick: function () { UI.fecharModal(); seguir(); } }
+          ]);
+      };
+      /* ⚠ TRAVA COM PORTA: item ainda no preço simbólico de R$ 0,01 do pacote
+         (Licitacao.itensSimbolicos) iria para a carta com um preço que ninguém
+         escolheu — e o CertamePRO não o confere, porque não há referência.
+         Pergunta, dizendo quais; a pessoa pode devolver assim mesmo (um item
+         que de fato não será cobrado, por exemplo). */
+      var simb = Licitacao.itensSimbolicos ? Licitacao.itensSimbolicos(orc) : [];
+      if (!simb.length) { destinoOk(); return; }
+      UI.modal("Itens ainda com o preço simbólico de R$ 0,01",
+        '<p style="font-size:13px;margin-top:0">' + Util.esc(Licitacao.textoSimbolicos(simb)) + '</p>' +
+        '<p style="font-size:13px">Se devolver assim, a proposta e a carta saem com esse preço, e o CertamePRO não confere esses itens (não há preço do órgão para comparar).</p>',
+        [
+          { texto: "Voltar e preencher", classe: "primary", onClick: function () { UI.fecharModal(); } },
+          { texto: "Devolver assim mesmo", classe: "ghost", onClick: function () { UI.fecharModal(); destinoOk(); } }
+        ]);
+    },
+
+    /* O que o CertamePRO gravou, em português (Licitacao.lerDevolucao): valor,
+       custo e BDI da disputa, carta, modelo do órgão, onde o Excel ficou e as
+       conferências com o tom de cada uma. ⚠ A divergência entre o total que o
+       CertamePRO calculou e o deste orçamento vai em vermelho: é o número que
+       entra na carta. */
+    _licHtmlDevolucao: function (nome, r) {
+      var M = (typeof Modulo !== "undefined" && Modulo.aviso) ? Modulo : null;
+      var av = function (tom, texto) { return M ? M.aviso({ tom: tom, texto: texto }) : '<p style="font-size:13px">' + Util.esc(texto) + "</p>"; };
+      var li = function (rot, valHtml) { return "<li><b>" + Util.esc(rot) + ":</b> " + valHtml + "</li>"; };
+      var h = '<p style="font-size:13px;margin-top:0">O CertamePRO recebeu <b class="mono">' + Util.esc(nome) + '</b> e preencheu o certame:</p><ul style="font-size:13px">' +
+        li("Valor da proposta", "<b>" + Util.esc(Util.fmtMoeda(r.valor)) + "</b> (vai para a carta)") +
+        (r.custo != null ? li("Custo direto (custo da disputa)", Util.esc(Util.fmtMoeda(r.custo))) : "") +
+        (r.bdi != null ? li("BDI mínimo da disputa", Util.esc(Util.fmtNum(r.bdi, 2)) + "%") : "") +
+        (r.carta ? li("Carta de apresentação", r.carta.refeita ? "refeita com o valor novo" : "<b>não refeita</b>" + (r.carta.aviso ? " — " + Util.esc(r.carta.aviso) : "")) : "") +
+        (r.modelo ? li("Planilha no modelo do órgão", r.modelo.gerado ? Util.esc(String(r.modelo.itens)) + " item(ns) preenchido(s)" : "não gerada") : "") +
+        (r.arquivo ? li("Excel guardado em", '<span class="mono" style="font-size:11.5px">' + Util.esc(r.arquivo) + "</span>") : "") + "</ul>";
+      if (r.divergencia) h += av("erro", "O CertamePRO gravou " + Util.fmtMoeda(r.divergencia.certame) + " como valor da proposta, e este orçamento soma " +
+        Util.fmtMoeda(r.divergencia.local) + ". É o valor do CertamePRO que vai para a carta: confira o arredondamento e o BDI antes de enviar a proposta.");
+      h += '<p style="font-size:13px;margin:10px 0 4px"><b>Conferências do CertamePRO</b> <span class="muted">(também ficam no certame)</span></p>';
+      if (r.alertas.length) r.alertas.forEach(function (a) { h += av(a.tom, a.texto); });
+      else h += av("ok", "Nenhum alerta nas conferências do CertamePRO.");
+      return h;
+    },
+
+    _licEnviar: function (orc, d, blob, nome) {
+      var self = this;
+      var baixar = function () {
+        try {
+          var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = nome;
+          document.body.appendChild(a); a.click(); document.body.removeChild(a);
+          setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+        } catch (e) {}
+      };
+      var falha = function (motivo) {
+        baixar();
+        UI.modal("Não consegui devolver ao CertamePRO",
+          '<p style="font-size:13px;margin-top:0">' + Util.esc(motivo) + '</p>' +
+          '<p style="font-size:13px">O arquivo <b class="mono">' + Util.esc(nome) + '</b> foi <b>baixado</b> na sua pasta de downloads. Para enviar à mão: abra o certame no CertamePRO, ' +
+          'use <b>Receber orçamento do OrçaPRO</b> e escolha esse arquivo. Nada foi perdido neste orçamento.</p>',
+          [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+      };
+      var fd;
+      try { fd = new FormData(); fd.append("arquivo", blob, nome); } catch (e0) { falha("Este navegador não montou o envio (" + e0.message + ")."); return; }
+      var tempo = null, ctl = null;
+      try { if (typeof AbortController !== "undefined") { ctl = new AbortController(); tempo = setTimeout(function () { ctl.abort(); }, 45000); } } catch (e1) {}
+      fetch(d.url, { method: "POST", headers: { "X-Licitacoes": "1" }, body: fd, signal: ctl ? ctl.signal : undefined })
+        .then(function (r) {
+          if (tempo) clearTimeout(tempo);
+          return r.text().then(function (txt) { return { ok: r.ok, status: r.status, txt: txt }; });
+        })
+        .then(function (res) {
+          var j = null; try { j = JSON.parse(res.txt); } catch (e2) {}
+          if (!res.ok) {
+            var dt = j && (j.detail || j.erro || j.mensagem);
+            var det = dt ? (typeof dt === "string" ? dt : JSON.stringify(dt)) : "";
+            falha("O CertamePRO recusou o envio (HTTP " + res.status + (det ? ": " + det : "") + ").");
+            return;
+          }
+          /* ⚠ daqui para baixo o envio JÁ deu certo: erro ao montar a tela não
+             pode cair no .catch, que diria "não consegui falar com o
+             CertamePRO" (recado que mente) e mandaria reenviar à mão */
+          var lido = null, htmlLido = "";
+          try { lido = Licitacao.lerDevolucao(j, Licitacao.totalProposta(orc)); if (lido) htmlLido = self._licHtmlDevolucao(nome, lido); } catch (eL) { lido = null; }
+          if (lido && htmlLido) {
+            UI.modal("Orçamento devolvido ao CertamePRO", htmlLido, [{ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+            return;
+          }
+          var msg = (j && (j.mensagem || j.message)) ? String(j.mensagem || j.message) : "";
+          var linhas = "";
+          if (j && typeof j === "object") {
+            Object.keys(j).slice(0, 12).forEach(function (k) {
+              if (k === "mensagem" || k === "message") return;
+              var v = j[k]; if (v && typeof v === "object") v = JSON.stringify(v);
+              linhas += "<li><b>" + Util.esc(k) + ":</b> " + Util.esc(String(v)) + "</li>";
+            });
+          }
+          UI.modal("Orçamento devolvido ao CertamePRO",
+            '<p style="font-size:13px;margin-top:0">O CertamePRO recebeu <b class="mono">' + Util.esc(nome) + '</b>' + (msg ? ": " + Util.esc(msg) : ".") + '</p>' +
+            (linhas ? '<ul style="font-size:13px">' + linhas + '</ul>' : "") +
+            '<p class="muted" style="font-size:12px">As conferências (teto, 75% e 85%, preço acima da referência) aparecem no certame.</p>',
+            [{ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+        })
+        .catch(function (e) {
+          if (tempo) clearTimeout(tempo);
+          var abortou = e && e.name === "AbortError";
+          falha(abortou ? "O CertamePRO não respondeu em 45 segundos." : "Não consegui falar com o CertamePRO em " + d.host + " (ele está aberto?). " + (e && e.message ? "Detalhe: " + e.message : ""));
+        });
     },
 
     fecharDesfazer: function () {
@@ -12650,9 +13036,9 @@
             var rec = difs.recusadas || [];
             if (!difs.length) {
               if (rec.length) {
-                UI.toast("⚠ " + rec.length + " edição(ões) do Excel NÃO aplicada(s): " +
-                  rec.slice(0, 3).map(function (r) { return r.codigo + " (" + r.campo + " " + r.motivo.split(" — ")[0] + ")"; }).join("; ") +
-                  (rec.length > 3 ? "…" : "") + ". Zero não entra — ajuste no app.", "erro");
+                /* o texto sai do motor: o "Zero não entra" fixo de antes viraria
+                   a explicação da recusa da trava da licitação, que é outra */
+                UI.toast("⚠ " + Roundtrip.textoRecusadas(rec), "erro", 12000);
               } else {
                 UI.toast("Nenhuma diferença entre o Excel e o orçamento — nada a importar.", "ok");
               }
@@ -12675,7 +13061,13 @@
             + '<td>' + rot[d.campo] + '</td>'
             + '<td class="num">' + Util.fmtNum(d.de, 2) + '</td>'
             + '<td class="num"><b>' + Util.fmtNum(d.para, 2) + '</b></td></tr>';
-        }).join("") + '</tbody></table>';
+        }).join("") + '</tbody></table>' +
+        /* ⚠ O QUE NÃO ENTRA TAMBÉM APARECE AQUI, e não só quando não sobra
+           nenhuma mudança: com uma mudança aceitável na lista, a quantidade
+           recusada (zero, ou item do órgão travado na licitação) sumia calada
+           e a pessoa saía achando que o Excel inteiro tinha entrado. */
+        ((difs.recusadas && difs.recusadas.length)
+          ? '<p style="font-size:12.5px;margin:10px 0 0;color:#b45309"><b>Não entram:</b> ' + Util.esc(Roundtrip.textoRecusadas(difs.recusadas)) + '</p>' : '');
       UI.modal("Reimportar Excel — revisar mudanças", html, [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "" + (typeof Icones !== "undefined" ? Icones.get("check", 15) : "") + " Aplicar selecionadas", classe: "primary", onClick: function () {
@@ -14846,8 +15238,38 @@
     },
 
     /* o documento desenhado pelo modelo que o usuário montou */
+    /* =================================================================
+     * O GANTT DO SISTEMA NA PROPOSTA POR MODELO (13/10/2026)
+     * A página de cronograma do modelo no modo "gantt" pede o MESMO desenho
+     * da tela e do PDF do cronograma (CronoExecUI.gantt, versão papel). A
+     * decisão de detalhe é a do PDF (ver o bloco do cronograma em
+     * `_imprimirCronograma`): subetapa só quando o orçamento tem algo abaixo
+     * da etapa; senão, por etapa. Sem o plano de execução, desenha sobre a
+     * estimativa do cronograma. `limpo` é a versão do CLIENTE (sem folga,
+     * setas, crítico e hoje — o porquê está em UI._gantt); a página escolhe
+     * mostrar as setas.
+     * ⚠ Devolve "" quando não dá: o motor do modelo avisa e cai na tabela,
+     *   nunca inventa gráfico. Não grava nada no orçamento nem no plano. */
+    _ganttParaProposta: function (orc, g) {
+      if (typeof CronoExecUI === "undefined" || !orc) return "";
+      g = g || {};
+      var det = g.detalhe === "etapa" ? "etapa" : "subetapa", r = null;
+      try {
+        r = CronoExecUI.preparar(orc, {}).r;
+        if (!r || !r.atividades || (r.exec && r.exec.erro)) r = null;
+        else if (det !== "etapa" && !CronoExecUI.temFilhos(r, det)) det = "etapa";
+      } catch (e) { r = null; }
+      if (!r) {
+        try { r = (typeof Cronograma !== "undefined" && Cronograma.estimar) ? Cronograma.estimar(orc) : null; } catch (e2) { r = null; }
+        det = "etapa";
+      }
+      if (!r) return "";
+      try { return CronoExecUI.gantt(r, { detalhe: det, papel: true, limpo: !!g.limpo, semLegenda: true }) || ""; }
+      catch (e3) { return ""; }
+    },
+
     _propostaPorModelo: function (modeloId, op) {
-      var orc = this.orcAtual;
+      var orc = this.orcAtual, self = this;
       var raw = null;
       try { raw = Store.obter(Auth.empresaId(), "prop_modelos", modeloId); } catch (e) {}
       if (!raw) { UI.toast("Modelo não encontrado.", "erro"); return; }
@@ -14857,6 +15279,11 @@
       var c = orc.comercial || {};
       var hoje = Util.agoraISO().slice(0, 10);
 
+      /* as composições abertas (nível "composicoes" da página de preços) e o
+         Gantt do sistema (modo "gantt" da página de cronograma) — 13/10/2026 */
+      var invPg = (m.paginas || []).filter(function (x) { return x.tipo === "investimento"; })[0];
+      var precisaComp = !!(invPg && invPg.nivel === "composicoes");
+      var montar = function () {
       Gestao._propModImagens(m, function (imgs) {
         var dados = {
           empresa: temEmp && Empresa.dados ? Empresa.dados() : {},
@@ -14887,12 +15314,20 @@
           cronograma: (function () {
             var pg = (m.paginas || []).filter(function (x) { return x.tipo === "cronograma"; })[0];
             var n = pg ? Util.num(pg.periodos) : 0;
+            var modo = pg ? String(pg.modo || "") : "";
             /* o modo "completo" da página pede os dados do cronograma de
-               execução (datas, barras, desembolso); sem a página, ou no modo
-               resumido, o payload é o de sempre (13/10/2026) */
-            return Proposta.cronogramaParaModelo(orc, n > 0 ? n : null, { completo: !!(pg && pg.modo === "completo") });
+               execução (datas, barras, desembolso); o "gantt" pede também o
+               desenho do sistema (`_ganttParaProposta`); sem a página, ou no
+               modo resumido, o payload é o de sempre (13/10/2026) */
+            return Proposta.cronogramaParaModelo(orc, n > 0 ? n : null, {
+              completo: modo === "completo" || modo === "gantt",
+              gantt: modo === "gantt" ? { detalhe: pg.ganttDetalhe === "etapa" ? "etapa" : "subetapa", limpo: !pg.ganttSetas } : null,
+              desenharGantt: function (o2, g) { return self._ganttParaProposta(o2, g); }
+            });
           })(),
-          blocos: Proposta.blocosParaModelo(orc),
+          /* os insumos de cada item só viajam quando a página pede as
+             composições abertas: o payload de quem não pediu não muda */
+          blocos: Proposta.blocosParaModelo(orc, precisaComp ? { composicoes: true, analitico: (typeof Analitico !== "undefined") ? Analitico : null } : undefined),
           comercial: Proposta.comercialParaModelo(orc),
           /* links que o modelo pode transformar em botão (ver bloco Contato) */
           links: { planilha: String(c.linkPlanilha || "").trim() },
@@ -14904,6 +15339,21 @@
            na varredura grossa de palavras e um custo passa como número. */
         Gestao.propModImprimir(m, dados, function (html) { return Proposta.auditar(html, orc); }, op);
       });
+      };
+      /* as composições da base (SINAPI etc.) vivem no analítico da UF do
+         orçamento, carregado sob demanda — a mesma garantia do Excel
+         (`_analiticoDoOrc` chama `montar` SEMPRE, com ou sem a base). Só vai
+         buscar quando algum item precisa dela: orçamento só de composições
+         próprias (os insumos moram no item) não carrega 17 MB à toa. */
+      var precisaBase = false;
+      if (precisaComp) {
+        try {
+          precisaBase = (Orcamento.linhas(orc) || []).some(function (L) {
+            return /[A-Za-z0-9]/.test(String(L.codigo || "")) && !(L.item && Array.isArray(L.item.insumos) && L.item.insumos.length);
+          });
+        } catch (eB) { precisaBase = true; }
+      }
+      if (precisaBase && typeof self._analiticoDoOrc === "function") self._analiticoDoOrc(orc, montar); else montar();
     },
 
     // Anexo Técnico de Orçamento p/ LAUDO pericial (não comercial)

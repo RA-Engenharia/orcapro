@@ -148,6 +148,21 @@
         res.orcIds.push(c.id);
         if (idx[c.id] != null && idx[c.id] >= String(c.atualizadoEm)) { res.orcMantidos++; return; }
         try { Orcamento.garantirConfig(c); Orcamento.garantirComercial(c); } catch (e) {}
+        /* BLOCO `certamepro` (js/licitacao.js): vira config.licitacao e trava os
+           itens do órgão. Com mais de um orçamento no pacote só recebe o que
+           tem o número do certame — não se carimba licitação em orçamento alheio. */
+        try {
+          if (dump.certamepro && typeof Licitacao !== "undefined" && Licitacao.aplicarPacote) {
+            var _nOrcs = arr(dump.orcamentos).length;
+            if (_nOrcs === 1 || String(c.numero || "") === String(dump.certamepro.certame || "")) {
+              var _lic = Licitacao.aplicarPacote(c, dump.certamepro);
+              if (_lic) {
+                res.licitacao = (res.licitacao || 0) + 1;
+                if (_lic.basesExigidas && _lic.basesExigidas.length) res.basesExigidas = (res.basesExigidas || 0) + _lic.basesExigidas.length;
+              }
+            }
+          }
+        } catch (eLic) {}
         entramOrc.push(c);
       });
       /* a lápide de uma exclusão anterior tem de ser desfeita, senão o
@@ -195,6 +210,8 @@
     mensagem: function (res) {
       if (!res || !res.ok) return "Pacote não importado.";
       var partes = [res.nOrc + " orçamento(s) importado(s)"];
+      if (res.licitacao) partes.push("modo licitação ligado (itens do órgão travados; avisos de preço e teto ativos)");
+      if (res.basesExigidas) partes.push(res.basesExigidas + " base(s) de preço exigida(s) pelo edital — confira o painel \"Bases exigidas pelo edital\" antes de rodar o Orçamentista");
       if (res.orcMantidos) partes.push(res.orcMantidos + " já estava(m) mais novo(s) aqui e foi(ram) mantido(s)");
       if (res.orcIlegivel) partes.push(res.orcIlegivel + " NÃO entrou(aram): a lista de orçamentos deste aparelho está ilegível (arquivo corrompido) — veja o aviso na lista de orçamentos");
       ENT_PERMITIDAS.forEach(function (ent) {

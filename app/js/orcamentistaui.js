@@ -41,7 +41,16 @@
     var fontesLidas = {};
     (st.etapas || []).forEach(function (e) { (e.itens || []).forEach(function (it) { if (it.fonte) fontesLidas[it.fonte] = (fontesLidas[it.fonte] || 0) + 1; }); });
     var lidas = Object.keys(fontesLidas).map(function (f) { return f + " (" + fontesLidas[f] + ")"; }).join(", ");
+    /* licitação: diz ANTES de rodar que a família SINAPI é a do edital */
+    var famL = (App._orcmFamiliaLic && App._orcmFamiliaLic()) || null, exL = "";
+    if (famL && typeof Licitacao !== "undefined") {
+      var exS = Licitacao.basesExigidas(App.orcAtual).filter(function (e) { return e.catId === famL; })[0];
+      exL = '<p style="font-size:12.5px;margin:0 0 8px;padding:6px 8px;border-left:3px solid #b45309;background:rgba(234,88,12,.08)"><b>Licitação:</b> o edital exige ' +
+        esc(exS ? Licitacao.fmtBase(exS) : famL) + ". Para item SINAPI o Orçamentista usa <b>só " + (famL === "SINAPI_DES" ? "a SINAPI desonerada" : "a SINAPI onerada") +
+        "</b> (mesmo desmarcada abaixo) — nunca a do outro regime.</p>";
+    }
     return '<p style="font-size:13px;margin:0 0 8px">O agente vai casar <b>' + st.total + ' item(ns)</b> pelo <b>código</b> (na base que a planilha declara, depois nas bases abaixo, na ordem de prioridade), depois pela <b>descrição</b>; o que não existir em nenhuma base vira <b>composição própria com insumos e coeficientes</b>, elaborada por analogia com a base analítica SINAPI.</p>' +
+      exL +
       (lidas ? '<p class="muted" style="font-size:12px;margin:0 0 8px">Fontes declaradas na planilha: ' + esc(lidas) + '.</p>' : '') +
       (lista.length ? rows : '<p class="muted">Nenhuma base carregada — abra Tabelas e carregue a SINAPI ou importe a planilha do órgão.</p>') +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">' +
@@ -125,6 +134,22 @@
        não tem botão permanente na tela — recado que aponta para um caminho
        que a pessoa não acha é trava sem porta.
        Guardado por tools/test-orcamentista-fiacao.js. */
+    /* ⚠ LICITAÇÃO: o Orçamentista precifica pela TABELA DO EDITAL. Com uma
+       base exigida que não está em uso (nem registrada como substituída), ele
+       não roda: rodar seria precificar com outra tabela em silêncio — o
+       defeito que desclassifica. A porta está no próprio quadro: instalar a
+       exigida ou usar outra registrando na justificativa de preços. */
+    if (typeof Licitacao !== "undefined" && Licitacao.temBasesExigidas && Licitacao.temBasesExigidas(orc) && this._licCtxBases) {
+      var pendL = Licitacao.basesPendentes(orc, this._licCtxBases());
+      if (pendL.length) {
+        UI.modal(ic("alerta") + " Bases exigidas pelo edital — o Orçamentista espera",
+          '<p style="font-size:13px;margin-top:0">O edital fixa a tabela de preços, e ' + (pendL.length === 1 ? "esta" : "estas " + pendL.length) +
+          ' ainda não ' + (pendL.length === 1 ? "está" : "estão") + ' em uso. Instale a exigida ou registre o uso de outra — a escolha sai na justificativa de preços.</p>' +
+          UI._licBasesLinhas(pendL),
+          [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+        return;
+      }
+    }
     if (typeof Orcamento !== "undefined" && Orcamento.travadoPorAprovacao && Orcamento.travadoPorAprovacao(orc)) {
       var selfT = this;
       UI.modal(ic("cadeado") + " Orçamento aprovado — o Orçamentista não roda nele",
@@ -179,11 +204,31 @@
     return { fontes: fontes, elaborar: el("orcm-elaborar"), planilhaVence: el("orcm-planilha-vence"), soSemPreco: document.getElementById("orcm-so-sem-preco") ? el("orcm-so-sem-preco") : false };
   };
 
+  /* ⚠ LICITAÇÃO: só a família SINAPI que o edital exige. O motor acrescenta
+     sempre a base canônica da fonte declarada ("SINAPI") — com o edital
+     pedindo DESONERADO, o item declarado SINAPI que não estivesse na
+     desonerada caía na onerada calado. Com a exigida definida: a outra família
+     sai da lista, e `obter`/`itensDe` respondem nada por ela. */
+  var FAMILIA_SINAPI = { SINAPI: 1, SINAPI_DES: 1 };
+  App._orcmFamiliaLic = function () {
+    var st = this._orcm, orc = this.orcAtual;
+    if (!st || st.modo !== "orcamento" || !orc || orc.id !== st.orcId || typeof Licitacao === "undefined" || !Licitacao.familiaSinapiExigida) return null;
+    return Licitacao.familiaSinapiExigida(orc);
+  };
+  App._orcmFontesLic = function (fontes, fam) {
+    if (!fam) return fontes.slice();
+    var out = fontes.filter(function (f) { return !FAMILIA_SINAPI[f] || f === fam; });
+    if (out.indexOf(fam) < 0) out.unshift(fam);   // a exigida entra mesmo desmarcada: é ela que o edital pede
+    return out;
+  };
+
   /* ctx do motor amarrado às bases do app — fonte honesta, sem fallback amplo */
   App._orcmCtx = function (cfg) {
-    var self = this;
+    var self = this, famLic = this._orcmFamiliaLic();
+    var barrada = function (f) { return !!(famLic && FAMILIA_SINAPI[f] && f !== famLic); };
     return {
-      fontes: cfg.fontes.slice(),
+      fontes: this._orcmFontesLic(cfg.fontes, famLic),
+      familiaLicitacao: famLic,
       normalizar: function (s) { return Util.normalizar(s); },
       unidadeChave: function (u) { return Util.unidadeChave ? Util.unidadeChave(u) : String(u || "").toLowerCase(); },
       sinonimos: (typeof Escopo !== "undefined" && Escopo.SINONIMOS) || null,
@@ -191,11 +236,13 @@
          resposta: senão o item pendente "casa" consigo mesmo na 2ª rodada */
       ehCasca: function (it) { return !!it && it.origem === "PROPRIA" && (it.pendente || (!((it.insumos || []).length) && !(Number(it.custoUnitario) > 0))); },
       obter: function (f, cod) {
+        if (barrada(f)) return null;
         var it = (f === "SINAPI") ? ((typeof Sinapi !== "undefined" && Sinapi.obter) ? Sinapi.obter(cod) : null)
           : ((typeof Bases !== "undefined" && Bases.obter) ? Bases.obter(f, cod) : null);
         return (f === "PROPRIA" && this.ehCasca(it)) ? null : it;
       },
       itensDe: function (f) {
+        if (barrada(f)) return [];
         if (f === "SINAPI") return (typeof Sinapi !== "undefined" && Sinapi._itens) || [];
         var b = (typeof Bases !== "undefined" && Bases.extras) ? Bases.extras().filter(function (x) { return x.fonte === f; })[0] : null;
         var lista = b ? b.itens : [];
@@ -204,8 +251,8 @@
       buscar: function (txt, o) {
         if (typeof Bases === "undefined" || !Bases.buscar) return [];
         var self2 = this;
-        return Bases.buscar(txt, { max: (o && o.max) || 120, fontes: (o && o.fontes) || cfg.fontes, tipo: o && o.tipo })
-          .filter(function (r) { return !(r.fonte === "PROPRIA" && self2.ehCasca(r.item)); })
+        return Bases.buscar(txt, { max: (o && o.max) || 120, fontes: (o && o.fontes) || self2.fontes, tipo: o && o.tipo })
+          .filter(function (r) { return !(r.fonte === "PROPRIA" && self2.ehCasca(r.item)) && !barrada(r.fonte); })
           .map(function (r) { return { item: r.item, fonte: r.fonte }; });
       },
       elaborar: cfg.elaborar ? function (desc, o) {

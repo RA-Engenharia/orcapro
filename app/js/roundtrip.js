@@ -106,7 +106,14 @@
         var it = porId[ed.itemId];
         if (!it) return; // item removido no app depois do export — ignora
         if (r4(it.quantidade) !== r4(ed.qtd)) {
-          if (ed.qtd > 0) mudancas.push({ itemId: ed.itemId, codigo: ed.codigo, descricao: ed.descricao, etapa: ed.etapa, campo: "quantidade", de: Util.num(it.quantidade), para: r4(ed.qtd) });
+          /* ⚠ MODO LICITAÇÃO: quantidade de item da planilha do órgão não entra
+             pelo Excel. Antes, a mudança aparecia no quadro como aplicável, o
+             atualizarItem a descartava calado e o toast contava "N mudanças
+             aplicadas" — a planilha entregue e o app divergiam com o recado
+             dizendo que estavam iguais. Agora ela vai para as RECUSADAS, com o
+             motivo e a porta, como o zero já ia. */
+          if (Roundtrip._travado(orcAtual, it)) mudancas.recusadas.push({ codigo: ed.codigo, campo: "quantidade", travado: true, motivo: "item da planilha do órgão — quantidade travada no modo licitação (se o edital permitir alterar, use 'Liberar edição' no painel Licitação)" });
+          else if (ed.qtd > 0) mudancas.push({ itemId: ed.itemId, codigo: ed.codigo, descricao: ed.descricao, etapa: ed.etapa, campo: "quantidade", de: Util.num(it.quantidade), para: r4(ed.qtd) });
           else mudancas.recusadas.push({ codigo: ed.codigo, campo: "quantidade", motivo: "zerada no Excel — zero não é quantidade; para remover o item, remova no app" });
         }
         if (r4(it.custoUnitario) !== r4(ed.custoUnit)) {
@@ -126,13 +133,26 @@
       return { ok: true };
     },
 
-    /* Aplica as mudanças ACEITAS no orçamento (via motor oficial). */
+    /* item travado pelo modo licitação (js/licitacao.js, pela porta única de
+       js/orcamento.js). Sem o Orcamento carregado não há trava. */
+    _travado: function (orc, it) {
+      return !!(typeof Orcamento !== "undefined" && Orcamento._travadoOrgao && Orcamento._travadoOrgao(orc, it));
+    },
+
+    /* Aplica as mudanças ACEITAS no orçamento (via motor oficial).
+       ⚠ Campo travado pela licitação NÃO conta como aplicado: o `diff` já o
+       manda para as recusadas, mas a lista que chega aqui pode ter sido
+       montada antes de alguém travar de novo — e o número devolvido vira o
+       "N mudança(s) aplicadas" da tela. Contar o que o atualizarItem descarta
+       é o recado que mente. */
     aplicar: function (orc, mudancas) {
-      var n = 0;
+      var n = 0, self = this;
+      var trav = (typeof Licitacao !== "undefined" && Licitacao.CAMPOS_TRAVADOS) || ["quantidade", "descricao", "unidade"];
       Util.arr(orc && orc.etapas).forEach(function (e) {
         Util.arr(e.itens).forEach(function (it) {
           (mudancas || []).forEach(function (m) {
             if (m.itemId !== it.id) return;
+            if (trav.indexOf(m.campo) >= 0 && self._travado(orc, it)) return;
             var campos = {};
             campos[m.campo] = m.para;
             Orcamento.atualizarItem(orc, e.id, it.id, campos);
@@ -141,6 +161,23 @@
         });
       });
       return n;
+    },
+
+    /* O texto das edições RECUSADAS, para o toast e para o quadro. Cada motivo
+       com a sua consequência: a regra antiga terminava SEMPRE em "Zero não
+       entra", e a recusa da trava da licitação herdaria uma explicação que
+       não é a dela. */
+    textoRecusadas: function (rec) {
+      rec = Util.arr(rec);
+      if (!rec.length) return "";
+      var trav = rec.filter(function (r) { return r.travado; }), zero = rec.filter(function (r) { return !r.travado; });
+      var lista = function (l) {
+        return l.slice(0, 3).map(function (r) { return (r.codigo || "item") + " (" + r.campo + ")"; }).join("; ") + (l.length > 3 ? "…" : "");
+      };
+      var p = [];
+      if (trav.length) p.push(trav.length + " de item da planilha do órgão, travado no modo licitação: " + lista(trav) + ". Para alterar, use 'Liberar edição' no painel Licitação (se o edital permitir)");
+      if (zero.length) p.push(zero.length + " zerada(s) no Excel: " + lista(zero) + ". Zero não entra — ajuste no app");
+      return rec.length + " edição(ões) do Excel NÃO aplicada(s) — " + p.join(" · ") + ".";
     }
   };
 

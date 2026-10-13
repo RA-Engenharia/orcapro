@@ -562,6 +562,20 @@
     wsi.mergeCells('A1:G1'); wsi.getCell('A1').value = empresa; wsi.getCell('A1').font = { bold: true, size: 14, color: { argb: navy } };
     wsi.mergeCells('A2:G2'); wsi.getCell('A2').value = 'PLANILHA SINTÉTICA (por etapa) — ' + (orc.numero || ''); wsi.getCell('A2').font = { bold: true, size: 11 };
     wsi.mergeCells('A3:G3'); wsi.getCell('A3').value = 'Cliente: ' + ((orc.cliente && orc.cliente.nome) || '-') + '   |   ' + ((orc.obra && orc.obra.nome) || '-'); wsi.getCell('A3').font = { size: 9, color: { argb: muted } };
+    /* MODO LICITAÇÃO — identificação do certame no cabeçalho (linhas 4 e 5, que
+       eram vazias: o cabeçalho de colunas é a 6, então nenhuma fórmula muda de
+       lugar). Só ACRESCENTA; sem licitação ligada nada aparece. `_idl` também é
+       lido pelo Resumo (bloco final) e pelo cabeçalho de impressão (pset). */
+    var _idl = (global.Licitacao && Licitacao.identificacao) ? Licitacao.identificacao(orc) : null;
+    if (_idl) {
+      wsi.mergeCells('A4:G4');
+      wsi.getCell('A4').value = 'LICITAÇÃO — Órgão: ' + (_idl.orgao || '-') + (_idl.cnpj ? ' (CNPJ ' + _idl.cnpj + ')' : '');
+      wsi.getCell('A4').font = { bold: true, size: 9, color: { argb: navy } };
+      wsi.mergeCells('A5:G5');
+      wsi.getCell('A5').value = [_idl.processo ? 'Processo ' + _idl.processo : '', _idl.edital ? 'Edital/PNCP ' + _idl.edital : '',
+        _idl.sessao ? 'Sessão pública ' + _idl.sessao : '', _idl.modalidade || ''].filter(Boolean).join('   |   ') || 'Dados do edital não informados';
+      wsi.getCell('A5').font = { size: 9, color: { argb: muted } };
+    }
     var colsS = ['Item', 'Etapa', 'Custo Direto', 'BDI %', 'BDI (R$)', 'Preço de Venda', 'Peso %'];
     colsS.forEach(function (h, i) { hStyle(wsi.getRow(6).getCell(i + 1)); wsi.getRow(6).getCell(i + 1).value = h; });
     var s0 = 7, sr = s0, totVenda = grandVenda;
@@ -1652,6 +1666,48 @@
       });
     }
 
+    /* ⚠ LICITAÇÃO: BASE DIFERENTE DA EXIGIDA PELO EDITAL (13/10/2026). Quando
+       quem orça usa outra competência (a exigida não existia em fonte
+       nenhuma), a escolha — com motivo, autor e data — sai AQUI, no mesmo
+       quadro que o analista do órgão lê para entender o preço. Sem ajuste de
+       item a aba nasce só para isto: a divergência de tabela é justamente o
+       que não pode ficar fora do papel (js/licitacao.js, justificativaBases). */
+    var _jBases = (typeof Licitacao !== "undefined" && Licitacao.justificativaBases) ? Licitacao.justificativaBases(orc) : [];
+    if (_jBases.length) {
+      if (!wajs) {
+        wajs = wb.addWorksheet('Justificativa de Preços', { properties: { tabColor: { argb: 'FFF59E0B' } } });
+        wajs.columns = [{ width: 8 }, { width: 12 }, { width: 44 }, { width: 6 }, { width: 11 },
+          { width: 14 }, { width: 14 }, { width: 9 }, { width: 15 }, { width: 52 }];
+        wajs.mergeCells('A1:J1'); wajs.getCell('A1').value = empresa;
+        wajs.getCell('A1').font = { bold: true, size: 14, color: { argb: navy } };
+        wajs.mergeCells('A2:J2');
+        wajs.getCell('A2').value = 'QUADRO DE JUSTIFICATIVA DE PREÇOS — ' + (orc.numero || '');
+        wajs.getCell('A2').font = { bold: true, size: 11 };
+        wajs.mergeCells('A3:J3');
+        wajs.getCell('A3').value = 'Nenhum item com preço diferente do da base de referência. Abaixo, a base de preço usada no lugar da exigida pelo edital.';
+        wajs.getCell('A3').font = { size: 9, italic: true, color: { argb: 'FF64748B' } };
+      }
+      var rb = wajs.rowCount + 2;
+      wajs.mergeCells('A' + rb + ':J' + rb);
+      wajs.getCell('A' + rb).value = 'BASE DE PREÇO DIFERENTE DA EXIGIDA PELO EDITAL';
+      wajs.getCell('A' + rb).font = { bold: true, size: 11, color: { argb: navy } };
+      rb++;
+      [['A', 'C', 'Exigida pelo edital'], ['D', 'G', 'Usada nos preços'], ['H', 'J', 'Motivo e registro']].forEach(function (c) {
+        wajs.mergeCells(c[0] + rb + ':' + c[1] + rb);
+        var cel = wajs.getCell(c[0] + rb); hStyle(cel); cel.value = c[2];
+      });
+      rb++;
+      _jBases.forEach(function (j) {
+        wajs.mergeCells('A' + rb + ':C' + rb); wajs.mergeCells('D' + rb + ':G' + rb); wajs.mergeCells('H' + rb + ':J' + rb);
+        wajs.getCell('A' + rb).value = j.exigida;
+        wajs.getCell('D' + rb).value = j.usada;
+        wajs.getCell('H' + rb).value = (j.motivo ? j.motivo + '. ' : '') + 'Escolha registrada' + (j.por ? ' por ' + j.por : '') + (j.em ? ' em ' + j.em : '') + '.';
+        ['A', 'D', 'H'].forEach(function (c) { wajs.getCell(c + rb).alignment = { wrapText: true, vertical: 'top' }; wajs.getCell(c + rb).border = thin(); });
+        wajs.getRow(rb).height = 30;
+        rb++;
+      });
+    }
+
     // ===================== DADOS IA (Excel Table viva p/ Copilot) =====================
     // Tabela plana tblItens: 1 linha por item, TODA por fórmula referenciando a
     // Analítica — editou lá, aqui acompanha. É a superfície que IA/Copilot lê bem
@@ -1808,12 +1864,22 @@
       }
     } catch (ePr) { propriasJson = ''; propriasPartes = 0; propriasQtd = 0; }
 
-    wmeta.getCell('A1').value = JSON.stringify({
+    var metaCab = {
       v: 1, tipo: 'orcapro-meta', partes: metaPartes,
       schemaVersao: orc.schemaVersao || null, id: orc.id || '', numero: orc.numero || '',
       geradoEm: dtEmissao.toISOString(),
       propriasPartes: propriasPartes, propriasQtd: propriasQtd
-    });
+    };
+    /* regime tributário da EMPRESA (js/empresa.js): "simples" | "presumido" |
+       "real". Informativo — o CertamePRO lê para a disputa; nenhuma conta do
+       OrçaPRO muda por causa dele. Fora do JSON do orçamento de propósito: não
+       é dado do orçamento e não deve voltar na reimportação.
+       ⚠ SÓ ENTRA QUANDO INFORMADO: planilha de quem não cadastrou o regime sai
+       byte a byte como saía (tools/test-opcional-fechar-e-papeis.js compara o
+       _meta célula a célula com a de b8953c8). */
+    var _regT = String((deps.responsavel && deps.responsavel.regimeTributario) || '');
+    if (_regT) metaCab.regimeTributario = _regT;
+    wmeta.getCell('A1').value = JSON.stringify(metaCab);
     /* v1.1.232 — FRONTEIRA SEGURA. O slice cego em i*FATIA podia cair no MEIO
        de um par substituto (um emoji na descrição de um item basta): cada
        metade vira U+FFFD ao gravar, e o orçamento RESTAURADO do Excel volta
@@ -1887,6 +1953,28 @@
     wr.getCell('A' + (ri + 7)).value = (resp.responsavel || '[nome]') + ' — ' + (resp.crea || '[CREA/CAU]');
     wr.getCell('A' + (ri + 7)).font = { size: 9, color: { argb: muted } };
 
+    /* MODO LICITAÇÃO — identificação do certame e assinatura da EMPRESA
+       (representante legal), no fim do Resumo: as linhas de cima têm fórmulas
+       apontando para elas e não podem andar. Só acrescenta. */
+    if (_idl) {
+      var li0 = ri + 9;
+      wr.mergeCells('A' + li0 + ':B' + li0);
+      wr.getCell('A' + li0).value = 'LICITAÇÃO — IDENTIFICAÇÃO E ASSINATURA DA EMPRESA';
+      wr.getCell('A' + li0).font = { bold: true, color: { argb: navy } };
+      lin(li0 + 1, 'Órgão', (_idl.orgao || '-') + (_idl.cnpj ? ' · CNPJ ' + _idl.cnpj : ''));
+      lin(li0 + 2, 'Processo / Edital', [_idl.processo ? 'Processo ' + _idl.processo : '', _idl.edital ? 'Edital/PNCP ' + _idl.edital : ''].filter(Boolean).join('  ·  ') || '[informar]');
+      lin(li0 + 3, 'Data da sessão pública', _idl.sessao || '[informar]');
+      lin(li0 + 4, 'Modalidade / critério', [_idl.modalidade, _idl.criterio].filter(Boolean).join('  ·  ') || '[informar]');
+      if (_idl.valorEstimado > 0) lin(li0 + 5, 'Valor estimado pelo órgão', _idl.valorEstimado, MOEDA);
+      if (_idl.dataBase) lin(li0 + 6, 'Data-base do órgão', _idl.dataBase);
+      var la = li0 + 8;
+      wr.getCell('A' + la).value = '___________________________________';
+      wr.getCell('A' + (la + 1)).value = (resp.nome || empresa || '[EMPRESA]') + (resp.cnpj ? ' — CNPJ ' + resp.cnpj : '');
+      wr.getCell('A' + (la + 2)).value = 'Representante legal: ' + (resp.responsavel || '[nome do representante legal]');
+      wr.getCell('A' + (la + 3)).value = (resp.cidade || '[cidade]') + ', ____ de ______________ de ________';
+      [1, 2, 3].forEach(function (k) { wr.getCell('A' + (la + k)).font = { size: 9, color: { argb: muted } }; });
+    }
+
     // ===================== FASE 2: impressão + proteção =====================
     // Impressão pronta p/ PDF/licitação: A4, ajusta à largura, cabeçalho repetido
     // e rodapé com nº do orçamento + página.
@@ -1903,6 +1991,11 @@
          se imprime continua idêntico e a memória fica só na tela (e na aba
          "Memória de Cálculo", que é a que se imprime para isso). */
       if (area) ws.pageSetup.printArea = area;
+      /* licitação: o certame vai no cabeçalho impresso do Resumo e da Sintética
+         ('&' vira '&&' — é caractere de controle do cabeçalho do Excel) */
+      if (_idl && (ws === wr || ws === wsi)) {
+        ws.headerFooter.oddHeader = '&L&8' + String('Licitação: ' + (_idl.orgao || '') + (_idl.processo ? ' · Proc. ' + _idl.processo : '') + (_idl.sessao ? ' · Sessão ' + _idl.sessao : '')).replace(/&/g, '&&');
+      }
       ws.headerFooter.oddFooter = '&L&8' + (credito ? 'OrçaPRO — ' : '') + (orc.numero || '') + '&C&8' + (empresa || '') + '&R&8Pág. &P de &N';
     }
     pset(wr, 'portrait'); pset(wsi, 'portrait', '1:6');
@@ -1978,7 +2071,12 @@
       document.head.appendChild(s);
     },
 
-    gerar: function (orc) {
+    /* `opcoes.aoBlob(blob, nomeDoArquivo)`: em vez de baixar o arquivo, entrega o
+       .xlsx a quem pediu (usado por "Devolver ao CertamePRO", js/app.js). O
+       arquivo é o MESMO — uma só exportação, nunca uma segunda planilha com
+       números diferentes. `opcoes.aoErro(erro)` recebe a falha em vez do toast. */
+    gerar: function (orc, opcoes) {
+      opcoes = opcoes || {};
       this.ensureExcelJS(function () {
         var finalizar = function (insumosMap) {
           try {
@@ -2008,13 +2106,14 @@
               return wb.xlsx.writeBuffer();
             }).then(function (buf) {
               var blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+              if (typeof opcoes.aoBlob === 'function') { opcoes.aoBlob(blob, (orc.numero || 'orcamento') + '_PRO.xlsx'); return; }
               var a = document.createElement('a'); a.href = URL.createObjectURL(blob);
               a.download = (orc.numero || 'orcamento') + '_PRO.xlsx';
               document.body.appendChild(a); a.click(); document.body.removeChild(a);
               setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
               if (global.UI) UI.toast(insumosMap ? "Excel gerado (com aba Insumos)!" : "Excel gerado (com fórmulas)!", "ok");
-            }).catch(function (e) { console.error('[excel write]', e); if (global.UI) UI.toast("Falha ao escrever Excel: " + e.message, "erro"); });
-          } catch (e) { console.error('[excel]', e); if (global.UI) UI.toast("Falha ao gerar Excel: " + e.message, "erro"); }
+            }).catch(function (e) { console.error('[excel write]', e); if (typeof opcoes.aoErro === 'function') { opcoes.aoErro(e); return; } if (global.UI) UI.toast("Falha ao escrever Excel: " + e.message, "erro"); });
+          } catch (e) { console.error('[excel]', e); if (typeof opcoes.aoErro === 'function') { opcoes.aoErro(e); return; } if (global.UI) UI.toast("Falha ao gerar Excel: " + e.message, "erro"); }
         };
         // tenta incluir a aba "Insumos" (carrega a base analítica sob demanda)
         var montarMapa = function () {

@@ -111,6 +111,13 @@
         if (!srv || !srv.competencia) return;
         var inst = (instaladas || []).filter(function (b) { return String((b && b.fonte) || "").toUpperCase() === e.id; })[0];
         if (!inst || !inst.competencia) return;
+        /* ⚠ COMPETÊNCIA FIXADA NÃO ANDA SOZINHA (13/10/2026). Quem instala o
+           mês do edital (SICRO 01/2026 para uma licitação) fixa a competência
+           (`sel.competencia`, Bases.instalarCompetencia). Sem esta guarda a
+           varredura do dia seguinte trocava pela mais nova — o orçamento
+           passava a precificar com outra tabela, calado, que é exatamente o
+           que desclassifica. Volta a andar quem reinstalar com "mais recente". */
+        if (inst.sel && inst.sel.competencia) return;
         if (cmpVersao(srv.competencia, inst.competencia) !== 1) return;
         plano.push({ id: e.id, nome: e.nome, sel: inst.sel || null, de: inst.competencia, para: srv.competencia, pesoMb: e.pesoMb || 0 });
       });

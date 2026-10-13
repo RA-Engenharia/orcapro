@@ -853,6 +853,13 @@
         if (!own(S.ids.itens, id)) return recusa("serviço fora do contexto enviado à IA");
         loc = acharItem(work, id);
         if (!loc) return recusa("o serviço não existe mais no orçamento");
+        /* ⚠ MODO LICITAÇÃO (js/licitacao.js): item da planilha do órgão não
+           muda de quantidade — nem pela IA. Recusada AQUI, no diff, com o
+           motivo e a porta; o aplicarMemoriaQuantidade do motor segura de novo
+           no aplicar (é a 2ª camada, e a que sustenta se esta sumir). */
+        if (O()._travadoOrgao && O()._travadoOrgao(work, loc.it)) {
+          return recusa("item da planilha do órgão — a quantidade está travada no modo licitação (se o edital permitir alterar, use 'Liberar edição' no painel Licitação)");
+        }
         var FM = O().FORMAS_MEMORIA || {}, forma = str(op.forma);
         if (!own(FM, forma)) return recusa("forma de cálculo fora da lista (" + cortar(forma, 30) + ")");
         if (!op.dados || typeof op.dados !== "object" || Array.isArray(op.dados)) return recusa("veio sem as medidas (dados)");
@@ -1293,7 +1300,8 @@
         if (atualQ.q === num(inv.antes.q) && atualQ.p === !!inv.antes.p && atualQ.m === String(inv.antes.m || "")) return { ok: true, silencioso: true };
         if (atualQ.q !== num(inv.para.q) || atualQ.m !== String(inv.para.m || "")) return nao("a quantidade foi mudada depois (agora " + fmtN(atualQ.q) + ")");
         x = Orc.restaurarQuantidade(orc, loc.etapa.id, loc.it.id, inv.antes);
-        return x && x.ok ? { ok: true } : nao("não consegui voltar a quantidade");
+        /* o motivo do motor (ex.: a trava da licitação voltou) vale mais que o genérico */
+        return x && x.ok ? { ok: true } : nao((x && x.travado && x.erro) ? "a quantidade está travada de novo (item da planilha do órgão, modo licitação) — ficou " + fmtN(num(loc.it.quantidade)) : "não consegui voltar a quantidade");
       case "criarEtapa":
         loc = acharEtapa(orc, inv.etapaId);
         if (!loc) return { ok: true, silencioso: true };

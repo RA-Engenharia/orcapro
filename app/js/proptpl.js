@@ -65,6 +65,8 @@
     return "R$ " + n.toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, ".");
   }
   function n2(v) { return num(v).toFixed(2).replace(".", ","); }
+  /* coeficiente de composição: até 4 casas, sem zeros à direita (1,02 · 0,5 · 2) */
+  function n4(v) { return num(v).toFixed(4).replace(/\.?0+$/, "").replace(".", ","); }
   function dia(iso) {
     var s = txt(iso);
     return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(8, 10) + "/" + s.slice(5, 7) + "/" + s.slice(0, 4) : s;
@@ -175,7 +177,10 @@
         { id: "nivel", nome: "O que a tabela mostra", tipo: "lista", padrao: "", opcoes: [
           ["", "Cada item com o seu valor"],
           ["resumido", "Só o valor de cada etapa (resumido)"],
-          ["analitico", "Analítico: quantidade, unidade, unitário e total de cada item"]] },
+          ["analitico", "Analítico: quantidade, unidade, unitário e total de cada item"],
+          /* as composições abertas (13/10/2026): os insumos chegam prontos em
+             `linhas[].insumos` (Proposta._insumosDaLinha) — ver tabelaComposicoes */
+          ["composicoes", "Composições abertas: cada item com os seus insumos, coeficientes e preços"]] },
         { id: "mostrarPeso", nome: "Coluna com o peso (%) de cada etapa no total — só no resumido", tipo: "sim_nao", padrao: false },
         { id: "nota", nome: "Nota abaixo da tabela", tipo: "multi", dica: "Ex.: Valores válidos para pagamento conforme as condições desta proposta." },
         { id: "tituloOpcionais", nome: "Título do bloco de adicionais", padrao: "ADICIONAIS OPCIONAIS" },
@@ -203,9 +208,17 @@
          * ============================================================= */
         { id: "modo", nome: "Como mostrar", tipo: "lista", padrao: "", opcoes: [
           ["", "Resumido: cada etapa por período, com barras"],
-          ["completo", "Completo: prazo em dias úteis, início e término por etapa, desembolso por mês"]] },
-        { id: "mostrarDesembolso", nome: "No completo, incluir a tabela de desembolso por mês", tipo: "sim_nao", padrao: true },
-        { id: "mostrarPremissas", nome: "No completo, incluir as premissas de prazo a cargo do contratante", tipo: "sim_nao", padrao: true },
+          ["completo", "Completo: prazo em dias úteis, início e término por etapa, desembolso por mês"],
+          /* o Gantt do sistema (13/10/2026): o desenho chega pronto em
+             `cronograma.ganttHtml` (CronoExecUI.gantt, versão papel, pela
+             fiação) — ver cronogramaGantt */
+          ["gantt", "Gantt do sistema: o mesmo desenho da tela do cronograma (etapas, subetapas, meses e semanas)"]] },
+        { id: "ganttDetalhe", nome: "No Gantt, até que nível", tipo: "lista", padrao: "subetapa", opcoes: [
+          ["subetapa", "Etapas e subetapas"],
+          ["etapa", "Só as etapas"]] },
+        { id: "ganttSetas", nome: "No Gantt, mostrar setas de dependência, folgas e caminho crítico", tipo: "sim_nao", padrao: false },
+        { id: "mostrarDesembolso", nome: "No completo ou no Gantt, incluir a tabela de desembolso por mês", tipo: "sim_nao", padrao: true },
+        { id: "mostrarPremissas", nome: "No completo ou no Gantt, incluir as premissas de prazo a cargo do contratante", tipo: "sim_nao", padrao: true },
         { id: "mostrarValores", nome: "Mostrar o valor previsto em cada mês", tipo: "sim_nao", padrao: false },
         /* ⚠ OBRA DE 20 DIAS NÃO TEM CRONOGRAMA MENSAL: o orçamento vem com 1
            mês e a tabela sai com uma coluna só, que não informa nada. Aqui a
@@ -1441,6 +1454,8 @@
       if (carimbo) corpo = '<div class="tp-wm">' + esc(carimbo) + "</div>" + corpo;
       if (wmEmp && !cheia) corpo = '<div class="tp-wm tp-wm-emp">' + esc(wmEmp) + "</div>" + corpo;
       var cls = "tp-pg" + (vertical ? " tp-vert" : "")
+        /* a página do Gantt do sistema sai deitada — só quando há desenho de verdade */
+        + (p.tipo === "cronograma" && p.modo === "gantt" && !vertical && temGanttSvg(d.cronograma) ? " tp-paisagem" : "")
         + (cheia ? " tp-cheia" : "")
         + (cheia && m.estilo.logoEscuro ? " tp-logo-" + m.estilo.logoEscuro : "")
         + (escuro ? " tp-escura" : "")
@@ -1802,15 +1817,72 @@
   /* o cronograma do clássico: prazo em dias úteis, barra no tempo, início e
      término por etapa, desembolso por mês e as premissas do contratante.
      `cr.execucao` chega pronto de Proposta.cronogramaParaModelo */
+  /* as composições abertas (13/10/2026): cada item como faixa clara e,
+     embaixo, os insumos que a planilha analítica da tela mostra com tudo
+     aberto — coeficiente, quantidade, unitário e total JÁ EM PREÇO (quem
+     converteu foi Proposta._insumosDaLinha; aqui só se escreve o que veio).
+     Sem insumo em linha nenhuma (base analítica indisponível, fiação
+     antiga), sai a tabela por item com o aviso — nunca uma composição
+     inventada. */
+  function tabelaComposicoes(p, gs, b) {
+    var temAlgum = gs.some(function (g) { return arr(g.linhas).some(function (l) { return arr(l.insumos).length > 0; }); });
+    if (!temAlgum) {
+      return '<p class="tp-leg">As composições deste orçamento não estavam disponíveis ao gerar o documento; abaixo, cada item com quantidade, unidade, unitário e total.</p>'
+        + tabelaAnalitica(p, gs, b);
+    }
+    var CAT = { MO: "Mão de obra", MAT: "Material", EQ: "Equipamento" };
+    /* o "—" que o orçamento escreve no lugar do código vazio não é código */
+    function cod(c) { c = txt(c); return /[A-Za-z0-9]/.test(c) ? '<span class="tp-cod">' + esc(c) + "</span> " : ""; }
+    var corpo = "";
+    gs.forEach(function (g) {
+      if (txt(g.nome)) corpo += '<tr class="tp-grupo"><td colspan="6">' + (txt(g.codigo) ? esc(g.codigo) + " — " : "") + esc(g.nome) + "</td></tr>";
+      arr(g.linhas).forEach(function (l) {
+        corpo += '<tr class="tp-item"><td>' + cod(l.codigo) + esc(l.descricao) + "</td><td>" + esc(txt(l.unidade))
+          + '</td><td class="tp-num"></td><td class="tp-num">' + (num(l.qtd) > 0 ? esc(n2(l.qtd)) : "")
+          + '</td><td class="tp-num">' + (l.unitario !== undefined && l.unitario !== null ? esc(moeda(l.unitario)) : "") + '</td><td class="tp-num">' + esc(moeda(l.total)) + "</td></tr>";
+        arr(l.insumos).forEach(function (i) {
+          corpo += '<tr class="tp-ins"><td class="tp-ins-d">' + cod(i.codigo) + esc(i.descricao)
+            + (CAT[i.categoria] ? ' <span class="tp-cat">' + CAT[i.categoria] + "</span>" : "") + (i.sub ? ' <span class="tp-cat">composição</span>' : "")
+            + "</td><td>" + esc(txt(i.unidade)) + '</td><td class="tp-num">' + esc(n4(i.coef)) + '</td><td class="tp-num">' + esc(n2(i.qtd))
+            + '</td><td class="tp-num">' + esc(moeda(i.unitario)) + '</td><td class="tp-num">' + esc(moeda(i.total)) + "</td></tr>";
+        });
+      });
+    });
+    return '<table class="tp-tbl tp-comp"><thead><tr><th>' + esc(p.colTrabalho) + " / composição</th><th>Un.</th>"
+      + '<th class="tp-num">Coef.</th><th class="tp-num">Quant.</th><th class="tp-num">Unitário</th><th class="tp-num">' + esc(p.colValor) + "</th></tr></thead>"
+      + "<tbody>" + corpo + "</tbody></table>"
+      + '<p class="tp-total">Valor total: <b>' + esc(moeda(b.total)) + "</b></p>"
+      + '<p class="tp-leg">Insumos, coeficientes e preços conforme a planilha analítica do orçamento; os valores dos insumos estão na mesma base de preço dos itens.</p>';
+  }
+
+  /* a frase do prazo, as premissas e o desembolso do modo completo — em
+     partes, porque o modo "gantt" (13/10/2026) escreve as MESMAS partes em
+     volta do desenho do sistema; o texto de cada uma não mudou */
+  function fraseExecucao(ex) {
+    if (!(num(ex.totalDias) > 0)) return "";
+    return '<p class="tp-p">A execução está prevista em <b>' + num(ex.totalDias) + " dias úteis</b>"
+      + (num(ex.totalSemanas) > 0 ? " (aproximadamente <b>" + num(ex.totalSemanas) + " semanas</b>)" : "")
+      + (txt(ex.inicio) ? ", com início em <b>" + esc(ex.inicio) + "</b>" : "")
+      + (txt(ex.fim) ? " e conclusão prevista para <b>" + esc(ex.fim) + "</b>" : "") + ".</p>";
+  }
+  function notaPrazos(ex) { return txt(ex.notaPrazos) ? '<p class="tp-leg">' + esc(ex.notaPrazos) + "</p>" : ""; }
+
+  /* o Gantt do sistema (13/10/2026): o desenho chega pronto em `cr.ganttHtml`
+     (o mesmo CronoExecUI.gantt da tela e do PDF do cronograma, versão papel,
+     já conferido por Proposta.cronogramaParaModelo: só SVG, sem script); aqui
+     só se emoldura e se escrevem, em volta, a frase do prazo, as premissas e
+     o desembolso do modo completo. */
+  function cronogramaGantt(p, cr) {
+    var ex = cr.execucao || null;
+    var html = ex ? fraseExecucao(ex) : "";
+    html += '<div class="tp-gantt">' + String(cr.ganttHtml) + "</div>";
+    if (ex) html += premissasExec(p, ex) + desembolsoExec(p, cr) + notaPrazos(ex);
+    return html;
+  }
+
   function cronogramaCompleto(p, cr) {
     var ex = cr.execucao;
-    var html = "";
-    if (num(ex.totalDias) > 0) {
-      html += '<p class="tp-p">A execução está prevista em <b>' + num(ex.totalDias) + " dias úteis</b>"
-        + (num(ex.totalSemanas) > 0 ? " (aproximadamente <b>" + num(ex.totalSemanas) + " semanas</b>)" : "")
-        + (txt(ex.inicio) ? ", com início em <b>" + esc(ex.inicio) + "</b>" : "")
-        + (txt(ex.fim) ? " e conclusão prevista para <b>" + esc(ex.fim) + "</b>" : "") + ".</p>";
-    }
+    var html = fraseExecucao(ex);
     var linhas = arr(ex.etapas).map(function (e) {
       var pos = Math.max(0, Math.min(100, num(e.posPct))), larg = Math.max(0, Math.min(100 - pos, num(e.largPct)));
       var barra = e.marco
@@ -1827,30 +1899,33 @@
     }).join("");
     html += '<table class="tp-tbl tp-gt"><thead><tr><th>Etapa</th><th class="tp-gt-c">Período</th><th class="tp-num">Prazo</th><th class="tp-num">Início</th><th class="tp-num">Término</th></tr></thead>'
       + "<tbody>" + linhas + "</tbody></table>";
-    if (p.mostrarPremissas && arr(ex.premissas).length) {
-      html += '<h3 class="tp-h3 tp-h3-sec">Premissas de prazo a cargo do contratante</h3>'
-        + '<table class="tp-tbl tp-gt"><thead><tr><th>Nº</th><th>Premissa</th><th class="tp-num">Prazo</th><th class="tp-num">Até</th></tr></thead><tbody>'
-        + ex.premissas.map(function (x) {
-            return "<tr><td>" + esc(txt(x.numero)) + "</td><td>" + esc(txt(x.nome)) + '</td><td class="tp-num">' + (x.marco ? "na data" : num(x.prazoDias) + " d") + '</td><td class="tp-num">' + esc(txt(x.fim)) + "</td></tr>";
-          }).join("") + "</tbody></table>"
-        + (txt(ex.fraseDasPremissas) ? '<p class="tp-leg"><b>' + esc(ex.fraseDasPremissas) + "</b> Estas linhas não têm preço nesta proposta: elas ocupam prazo e dependem do contratante.</p>" : "");
+    html += premissasExec(p, ex) + desembolsoExec(p, cr) + notaPrazos(ex);
+    return html;
+  }
+  function premissasExec(p, ex) {
+    if (!(p.mostrarPremissas && arr(ex.premissas).length)) return "";
+    return '<h3 class="tp-h3 tp-h3-sec">Premissas de prazo a cargo do contratante</h3>'
+      + '<table class="tp-tbl tp-gt"><thead><tr><th>Nº</th><th>Premissa</th><th class="tp-num">Prazo</th><th class="tp-num">Até</th></tr></thead><tbody>'
+      + ex.premissas.map(function (x) {
+          return "<tr><td>" + esc(txt(x.numero)) + "</td><td>" + esc(txt(x.nome)) + '</td><td class="tp-num">' + (x.marco ? "na data" : num(x.prazoDias) + " d") + '</td><td class="tp-num">' + esc(txt(x.fim)) + "</td></tr>";
+        }).join("") + "</tbody></table>"
+      + (txt(ex.fraseDasPremissas) ? '<p class="tp-leg"><b>' + esc(ex.fraseDasPremissas) + "</b> Estas linhas não têm preço nesta proposta: elas ocupam prazo e dependem do contratante.</p>" : "");
+  }
+  function desembolsoExec(p, cr) {
+    var ex = cr.execucao, des = ex.desembolso, html = "";
+    if (!(p.mostrarDesembolso && des && arr(des.lista).length)) return "";
+    html += '<h3 class="tp-h3 tp-h3-sec">Cronograma físico-financeiro</h3>'
+      + '<table class="tp-tbl tp-gt"><thead><tr><th>Mês</th><th class="tp-num">Previsão de desembolso</th><th class="tp-num">% do mês</th><th class="tp-num">% acumulado</th></tr></thead><tbody>'
+      + des.lista.map(function (x) {
+          return "<tr><td>" + esc(txt(x.rotulo)) + '</td><td class="tp-num">' + esc(moeda(x.valor)) + '</td><td class="tp-num">' + esc(pctTxt(x.pct)) + '</td><td class="tp-num">' + esc(pctTxt(x.acumPct)) + "</td></tr>";
+        }).join("")
+      + '</tbody><tfoot><tr><td>Total</td><td class="tp-num">' + esc(moeda(des.total)) + '</td><td class="tp-num">100%</td><td></td></tr></tfoot></table>'
+      + '<p class="tp-leg">Distribuição estimada a partir da duração de cada etapa no cronograma acima. A medição e o faturamento seguem as condições comerciais desta proposta.</p>';
+    /* a mesma frase honesta da tabela resumida: a curva inclui os adicionais */
+    if (num(cr.totalOpcional) > 0) {
+      html += '<p class="tp-leg">Este cronograma de desembolso inclui os <b>adicionais opcionais</b> (' + esc(moeda(cr.totalOpcional))
+        + "). Sem eles, o valor total da proposta é <b>" + esc(moeda(cr.totalObrigatorio)) + "</b>.</p>";
     }
-    var des = ex.desembolso;
-    if (p.mostrarDesembolso && des && arr(des.lista).length) {
-      html += '<h3 class="tp-h3 tp-h3-sec">Cronograma físico-financeiro</h3>'
-        + '<table class="tp-tbl tp-gt"><thead><tr><th>Mês</th><th class="tp-num">Previsão de desembolso</th><th class="tp-num">% do mês</th><th class="tp-num">% acumulado</th></tr></thead><tbody>'
-        + des.lista.map(function (x) {
-            return "<tr><td>" + esc(txt(x.rotulo)) + '</td><td class="tp-num">' + esc(moeda(x.valor)) + '</td><td class="tp-num">' + esc(pctTxt(x.pct)) + '</td><td class="tp-num">' + esc(pctTxt(x.acumPct)) + "</td></tr>";
-          }).join("")
-        + '</tbody><tfoot><tr><td>Total</td><td class="tp-num">' + esc(moeda(des.total)) + '</td><td class="tp-num">100%</td><td></td></tr></tfoot></table>'
-        + '<p class="tp-leg">Distribuição estimada a partir da duração de cada etapa no cronograma acima. A medição e o faturamento seguem as condições comerciais desta proposta.</p>';
-      /* a mesma frase honesta da tabela resumida: a curva inclui os adicionais */
-      if (num(cr.totalOpcional) > 0) {
-        html += '<p class="tp-leg">Este cronograma de desembolso inclui os <b>adicionais opcionais</b> (' + esc(moeda(cr.totalOpcional))
-          + "). Sem eles, o valor total da proposta é <b>" + esc(moeda(cr.totalObrigatorio)) + "</b>.</p>";
-      }
-    }
-    if (txt(ex.notaPrazos)) html += '<p class="tp-leg">' + esc(ex.notaPrazos) + "</p>";
     return html;
   }
 
@@ -1920,6 +1995,7 @@
       if (temTotais) return tabelaResumida(p, gs, b);
     }
     if (p.nivel === "analitico") return tabelaAnalitica(p, gs, b);
+    if (p.nivel === "composicoes") return tabelaComposicoes(p, gs, b);
     var corpo;
     if (p.detalhar) {
       corpo = gs.map(function (g) {
@@ -1963,9 +2039,28 @@
    *   mês DENTRO da etapa) só para mostrar QUANDO cada etapa acontece; o valor
    *   por mês, quando pedido, sai por extenso.
    * ===================================================================== */
+  /* o desenho do Gantt do sistema vale quando é um SVG de verdade, sem script
+     (a fiação já conferiu; aqui confere-se de novo porque é o documento do cliente) */
+  function temGanttSvg(cr) {
+    var gH = String((cr && cr.ganttHtml) || "");
+    return /^\s*<svg[\s>]/i.test(gH) && !/<script/i.test(gH);
+  }
+
   function tabelaCronograma(p, cr) {
     if (!cr || !arr(cr.etapas).length) {
       return '<p class="tp-vaziotxt">Cronograma indisponível: o orçamento ainda não tem etapas com preço.</p>';
+    }
+    /* o modo "gantt" (13/10/2026) emoldura o desenho do sistema que veio em
+       `cr.ganttHtml` — só um SVG de verdade, sem script (a fiação já conferiu;
+       aqui confere-se de novo porque é o documento do cliente); sem ele, sai
+       o completo ou a tabela de sempre, com o aviso — nunca um gráfico
+       inventado */
+    if (p.modo === "gantt") {
+      var temSvg = temGanttSvg(cr);
+      if (temSvg) return cronogramaGantt(p, cr);
+      var temExec = !!(cr.execucao && arr(cr.execucao.etapas).length);
+      return '<p class="tp-leg">O desenho do cronograma não pôde ser montado para este orçamento; abaixo, ' + (temExec ? "o cronograma por data." : "a distribuição por período.") + "</p>"
+        + (temExec ? cronogramaCompleto(p, cr) : tabelaCronograma({ modo: "", rotuloMes: p.rotuloMes, mostrarValores: p.mostrarValores }, cr));
     }
     /* o modo completo (13/10/2026) desenha o que veio em `cr.execucao`; sem
        ele (fiação antiga, ou o cálculo por data não deu), sai a tabela de
@@ -2031,10 +2126,16 @@
     var papel = (txt(formato) === "vertical") ? "120mm 213mm" : "210mm 297mm";
     return [
       "@page{margin:0;size:" + papel + "}",
+      /* a página do Gantt do sistema sai DEITADA (13/10/2026): o desenho da
+         tela é feito para 1000 px de largura; em pé ele encolhia a 62% e a
+         letra de 9 px virava 5,6 px no papel. Página nomeada (`page:`), que o
+         Chromium imprime em paisagem no meio das outras em pé. */
+      "@page tp-paisagem{margin:0;size:297mm 210mm}",
       ".tp-doc{color:var(--tp-texto);font-family:var(--tp-f-txt);line-height:1.5}",
 
 
       ".tp-pg{position:relative;width:210mm;min-height:297mm;padding:18mm 16mm;box-sizing:border-box;overflow:hidden;page-break-after:always;background-color:#fff}",
+      ".tp-pg.tp-paisagem{width:297mm;min-height:210mm;page:tp-paisagem}",
       ".tp-pg.tp-vert{width:120mm;min-height:213mm;padding:14mm 12mm}",
       ".tp-pg:last-child{page-break-after:auto}",
       ".tp-cheia{padding:0;color:#fff}",
@@ -2235,6 +2336,17 @@
       ".tp-gt-trilho{position:relative;display:block;height:3.2mm;background:rgba(0,0,0,.06);border-radius:1.6mm}",
       ".tp-gt-b{position:absolute;top:0;bottom:0;background:var(--tp-destaque2);border-radius:1.6mm}",
       ".tp-gt-marco{position:absolute;top:-.6mm;width:4.4mm;height:4.4mm;background:var(--tp-destaque);transform:translateX(-50%) rotate(45deg);border-radius:.6mm}",
+      /* o Gantt do sistema na página (13/10/2026): o SVG escala à largura do papel */
+      ".tp-gantt{margin:2mm 0 3mm;padding:1.5mm;border:1px solid #e2e8f0;border-radius:2mm;background:#fff;overflow:hidden}",
+      ".tp-gantt svg{width:100%;height:auto;display:block}",
+      /* as composições abertas: o item em faixa clara, os insumos recuados */
+      ".tp-comp{font-size:calc(8.6pt * var(--tp-esc-txt,1))}",
+      ".tp-comp th,.tp-comp td{padding:1.6mm 2mm}",
+      ".tp-comp tr.tp-item td{font-weight:600;background:#f8fafc}",
+      ".tp-comp tr.tp-ins td{color:#334155}",
+      ".tp-comp td.tp-ins-d{padding-left:6mm}",
+      ".tp-cod{color:#64748b;font-weight:500;font-size:.9em}",
+      ".tp-cat{display:inline-block;font-size:.8em;line-height:1.5;padding:0 1.2mm;border-radius:1mm;background:#eef2f7;color:#475569;margin-left:1.2mm;vertical-align:middle;white-space:nowrap}",
       /* a marca d'água do nome da empresa: cinza, apagada, atrás do texto */
       ".tp-wm.tp-wm-emp{font-size:46pt;letter-spacing:4px;color:rgba(15,39,64,.06);transform:rotate(-30deg);z-index:0}",
       ".tp-escura .tp-wm.tp-wm-emp{color:rgba(255,255,255,.07)}",

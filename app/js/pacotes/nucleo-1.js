@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.134",
+versao: "1.2.135",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -5291,6 +5291,7 @@ var ativaU = (opts.ativaUsuario !== undefined) ? !!opts.ativaUsuario
 var b = this._indexar({
 fonte: fonte, label: meta.label, cor: meta.cor,
 competencia: (pacote && pacote.mes) || null, uf: (pacote && pacote.uf) || null,
+desonerado: (pacote && (pacote.desonerado === true || pacote.desonerado === false)) ? pacote.desonerado : null,
 itens: dados,
 ativaUsuario: ativaU,
 inativaPorUf: false,
@@ -5319,7 +5320,7 @@ out.push({ fonte: "SINAPI", label: "SINAPI", cor: "sinapi", competencia: Sinapi.
 }
 EXTRA.forEach(function (b) {
 out.push({
-fonte: b.fonte, label: b.label, cor: b.cor, competencia: b.competencia, uf: b.uf,
+fonte: b.fonte, label: b.label, cor: b.cor, competencia: b.competencia, uf: b.uf, desonerado: b.desonerado,
 total: b.itens.length, ativa: self.usavel(b),
 ativaUsuario: b.ativaUsuario !== false, inativaPorUf: !!b.inativaPorUf,
 sel: b.sel || null, catId: b.catId || b.fonte
@@ -5444,6 +5445,9 @@ opts = opts || {};
 if (typeof BasesCat === "undefined") return Promise.reject(new Error("catálogo indisponível"));
 var e = BasesCat.get(catId);
 if (!e) return Promise.reject(new Error("banco fora do catálogo: " + catId));
+if (sel && sel.competencia && BasesCat.temHistorico && BasesCat.temHistorico(e.id)) {
+return this.instalarCompetencia(e.id, { uf: sel.uf, competencia: sel.competencia }, opts);
+}
 if (!opts.ctx) {
 try { if (typeof Atualizacao !== "undefined" && Atualizacao._ultimoStatus) opts.ctx = { servidor: Atualizacao._ultimoStatus }; } catch (eCtx) {}
 }
@@ -5467,6 +5471,74 @@ throw new Error(e.nome + " vem do servidor e não veio no aplicativo — precisa
 return live
 ? chamar(live, true).catch(function () { return chamar(r.arquivo, false); })
 : chamar(r.arquivo, false);
+},
+instalarCompetencia: function (catId, pedido, opts) {
+var self = this;
+opts = opts || {};
+pedido = pedido || {};
+var id = String(catId || "").toUpperCase();
+if (typeof BasesCat === "undefined" || !BasesCat.temHistorico || !BasesCat.temHistorico(id)) {
+return Promise.reject(new Error(id + " não tem tabela por competência — instale a atual em Tabelas."));
+}
+var cfg = {};
+try { cfg.servidor = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) || ""; cfg.espelho = (typeof CONFIG !== "undefined" && CONFIG.appWebUrl) || ""; } catch (eC) {}
+if (opts.cfg) cfg = opts.cfg;
+var uf = String(pedido.uf || "").trim().toUpperCase(), comp = BasesCat._iso(pedido.competencia);
+var fontes = BasesCat.fontesCompetencia(id, uf, comp, cfg);
+var e = BasesCat.get(id) || { nome: id };
+var rotulo = e.nome + " " + uf + " " + BasesCat.fmtVersao(comp);
+if (!fontes.length) return Promise.reject(new Error("Pedido inválido para " + e.nome + ": informe a UF e a competência (AAAA-MM)."));
+var regime = (BasesCat.HISTORICO[id] && BasesCat.HISTORICO[id].regime) || pedido.regime || "";
+var tentativas = [], achadas = [];
+var pegar = opts.pegar || function (f) { return self._pegarFonte(f, opts); };
+var tentar = function (k) {
+if (k >= fontes.length) {
+var err = new Error(rotulo + " não foi encontrada (" + tentativas.join("; ") + ").");
+err.naoEncontrada = true; err.tentativas = tentativas; err.achadas = achadas;
+return Promise.reject(err);
+}
+var f = fontes[k], nomeF = f.origem + (f.atual ? " (atual)" : "");
+return Promise.resolve().then(function () { return pegar(f); }).then(function (j) {
+var c = BasesCat.pacoteConfere(j, { uf: uf, competencia: comp, regime: regime });
+if (!c.ok) {
+tentativas.push(nomeF + ": " + c.motivo);
+if (c.competenciaAchada && achadas.indexOf(c.competenciaAchada) < 0) achadas.push(c.competenciaAchada);
+return tentar(k + 1);
+}
+var n = self.registrar(id, j, { sel: { uf: uf, competencia: comp }, catId: id });
+var grav = { ok: true };
+if (typeof Store !== "undefined" && typeof Auth !== "undefined") grav = self.persistir(Auth.empresaId());
+return { total: n, fonte: id, competencia: j.mes || comp, uf: uf, origem: f.origem, atual: !!f.atual,
+live: f.origem !== "disco", fixada: true, persistido: grav.ok, gravErro: grav.erro, tentativas: tentativas };
+}, function (erro) {
+tentativas.push(nomeF + ": " + String((erro && erro.message) || erro || "falhou"));
+return tentar(k + 1);
+});
+};
+return tentar(0);
+},
+_pegarFonte: function (f, opts) {
+if (f.gz && global.App && typeof global.App._fetchBase === "function") return global.App._fetchBase(f.url);
+return this._pegar(f.url, { pesoMb: (opts && opts.pesoMb) || 3 });
+},
+garantirCompetencia: function (catId, pedido, opts) {
+var self = this;
+opts = opts || {};
+var id = String(catId || "").toUpperCase(), comp = BasesCat._iso(pedido && pedido.competencia), uf = String((pedido && pedido.uf) || "").toUpperCase();
+var inst = this.lista().filter(function (b) { return String(b.fonte).toUpperCase() === id; })[0];
+if (inst && String(inst.uf || "").toUpperCase() === uf && BasesCat._iso(inst.competencia) === comp) {
+return Promise.resolve({ ok: true, ja: true, fonte: id, uf: uf, competencia: comp });
+}
+var e = BasesCat.get(id) || { nome: id };
+return this.instalarCompetencia(id, pedido, opts).then(function (r) { r.ok = true; return r; }, function (err) {
+if (!err || !err.naoEncontrada || !opts.permitirAtual) throw err;
+return self.instalar(id, { uf: uf, competencia: "" }, { pesoMb: opts.pesoMb }).then(function (r) {
+var usada = BasesCat._iso(r.competencia) || r.competencia || "";
+r.ok = true; r.fallback = true; r.pedida = comp; r.tentativas = err.tentativas;
+r.aviso = "Usando " + e.nome + " de " + (BasesCat.fmtVersao(usada) || "competência não declarada") + " — o edital pede " + BasesCat.fmtVersao(comp) + ".";
+return r;
+});
+});
 },
 importarTexto: function (fonte, texto, nome, opts) {
 opts = opts || {};
@@ -5529,6 +5601,7 @@ var op = opcoes || {};
 var payload = EXTRA.map(function (b) {
 return {
 fonte: b.fonte, mes: b.competencia, uf: b.uf, dados: b.itens,
+desonerado: (b.desonerado === true || b.desonerado === false) ? b.desonerado : undefined,
 ativaUsuario: b.ativaUsuario !== false,
 sel: b.sel || null, catId: b.catId || null
 };
@@ -5642,7 +5715,8 @@ regiao: "nacional", uf: "BR", localRotulo: "",
 entrega: { vps: "sinapi-<UF>-<COMP>-desonerada.json" },
 chaveStatus: "sinapiDes", coleta: "diario",
 versaoPacote: "2026-06", itens: 324702, pesoMb: 3.12,
-eixos: [{ id: "uf", rotulo: "Local", de: "sinapiDesUfs", padrao: "MG", opcoes: [] }],
+eixos: [{ id: "uf", rotulo: "Local", de: "sinapiDesUfs", padrao: "MG", opcoes: [] },
+{ id: "competencia", rotulo: "Competência", de: "sinapiDesComps", padrao: "", opcoes: [] }],
 nota: "O par desonerado da SINAPI. Em Minas, 7.740 dos 12.815 preços diferem do regime não desonerado (−2,4% em média). Baixa do servidor: 3 MB do estado escolhido. O detalhamento (composição → insumos) deste regime é um arquivo à parte, um por estado. Onde ele não estiver disponível, o app avisa — nunca abre o desdobramento do outro regime."
 },
 {
@@ -5651,7 +5725,8 @@ regiao: "nacional", uf: "BR", localRotulo: "",
 entrega: { local: "data/sicro-<UF>-current.json", vps: "sicro-<UF>-current.json" },
 chaveStatus: "sicro", coleta: "cron",
 versaoPacote: "2026-04", itens: 6618, pesoMb: 1.44,
-eixos: [{ id: "uf", rotulo: "Local", de: "sicroUfs", padrao: "ES", opcoes: [{ v: "ES", r: "Espírito Santo" }] }],
+eixos: [{ id: "uf", rotulo: "Local", de: "sicroUfs", padrao: "ES", opcoes: [{ v: "ES", r: "Espírito Santo" }] },
+{ id: "competencia", rotulo: "Competência", de: "sicroComps", padrao: "", opcoes: [] }],
 nota: "Publicação trimestral do DNIT (jan/abr/jul/out)."
 },
 {
@@ -5741,6 +5816,11 @@ var AUSENTES = [
 { id: "DERPR", nome: "DER-PR", orgao: "Departamento de Estradas de Rodagem do Paraná", regiao: "sul", uf: "PR" }
 ];
 function up(s) { return String(s == null ? "" : s).trim().toUpperCase(); }
+var HISTORICO = {
+SINAPI_DES: { arquivo: "sinapi-<UF>-<COMP>-desonerada.json", regime: "desonerado" },
+SICRO: { arquivo: "sicro-<UF>-<COMP>.json", atual: "sicro-<UF>-current.json", regime: "" }
+};
+function semBarra(u) { return String(u == null ? "" : u).trim().replace(/\/+$/, ""); }
 var BasesCat = {
 REGIOES: REGIOES,
 CATALOGO: CATALOGO,
@@ -5821,7 +5901,7 @@ opcoesDoEixo: function (entrada, eixo, ctx) {
 ctx = ctx || {};
 if (eixo.de && ctx[eixo.de] && ctx[eixo.de].length) {
 return ctx[eixo.de].map(function (o) {
-return (o && o.v) ? o : { v: String(o), r: String(o) };
+return (o && typeof o === "object" && o.v !== undefined) ? o : { v: String(o), r: String(o) };
 });
 }
 return (eixo.opcoes || []).slice();
@@ -5898,6 +5978,61 @@ versaoServidor: versaoServidor,
 temNova: temNova,
 nota: e.nota || ""
 };
+},
+HISTORICO: HISTORICO,
+temHistorico: function (id) { return Object.prototype.hasOwnProperty.call(HISTORICO, up(id)); },
+fontesCompetencia: function (id, uf, comp, cfg) {
+var h = HISTORICO[up(id)];
+var iso = this._iso(comp), U2 = up(uf);
+if (!h || !iso || !/^[A-Z]{2}$/.test(U2)) return [];
+cfg = cfg || {};
+var srv = semBarra(cfg.servidor), esp = semBarra(cfg.espelho);
+var lista = [], nomes = [h.arquivo.replace("<UF>", U2).replace("<COMP>", iso)];
+if (h.atual) nomes.push(h.atual.replace("<UF>", U2));
+nomes.forEach(function (nome, i) {
+var atual = i > 0;
+lista.push({ origem: "disco", url: "data/" + nome, gz: true, atual: atual });
+if (srv) lista.push({ origem: "servidor", url: srv + "/bases/" + nome, gz: false, atual: atual });
+if (esp) lista.push({ origem: "espelho", url: esp + "/data/" + nome, gz: true, atual: atual });
+});
+return lista;
+},
+pacoteConfere: function (j, pedido) {
+pedido = pedido || {};
+if (!j || !Array.isArray(j.dados) || !j.dados.length) return { ok: false, motivo: "o arquivo não tem itens" };
+if (up(j.uf) !== up(pedido.uf)) return { ok: false, motivo: "o arquivo é de " + (up(j.uf) || "UF não declarada") + ", não de " + up(pedido.uf) };
+var cj = this._iso(j.mes || j.competencia), cp = this._iso(pedido.competencia);
+if (!cj || cj !== cp) return { ok: false, competenciaAchada: cj || "", motivo: "o arquivo é de " + (this.fmtVersao(cj) || "competência não declarada") + ", não de " + this.fmtVersao(cp) };
+var reg = pedido.regime;
+if (reg === "desonerado" || reg === "onerado") {
+var decl = (j.desonerado === true || j.desonerado === false) ? j.desonerado : null;
+for (var i = 0; decl === null && i < j.dados.length && i < 50; i++) {
+var d = j.dados[i];
+if (d && (d.desonerado === true || d.desonerado === false)) decl = d.desonerado;
+}
+if (decl !== null && decl !== (reg === "desonerado")) return { ok: false, motivo: "o arquivo é do regime " + (decl ? "desonerado" : "onerado") + ", não " + reg };
+}
+return { ok: true, competencia: cj };
+},
+competenciasConhecidas: function (id, uf, fatos) {
+fatos = fatos || {};
+var k = up(id), U2 = up(uf), self = this, out = [];
+var add = function (c) { var iso = self._iso(c); if (iso && out.indexOf(iso) < 0) out.push(iso); };
+var daUf = function (x) { return !U2 || !x || !x.uf || up(x.uf) === U2; };
+(fatos.instaladas || []).forEach(function (b) { if (b && up(b.fonte) === k && daUf(b)) add(b.competencia); });
+var chave = k === "SINAPI_DES" ? "sinapiDes" : (k === "SICRO" ? "sicro" : "");
+var srv = chave && fatos.servidor ? fatos.servidor[chave] : null;
+if (srv) { add(srv.competencia); (srv.competencias || []).forEach(add); }
+var d = fatos.disco || {};
+(k === "SINAPI_DES" ? (d.desoneradas || []) : (k === "SICRO" ? (d.sicro || []).concat(d.sicroCurrent || []) : []))
+.forEach(function (x) { if (daUf(x)) add(x.competencia); });
+var esp = fatos.espelho || {};
+(esp.acervo || []).forEach(function (a) {
+var ufs = k === "SINAPI_DES" ? a.desonerada : (k === "SICRO" ? a.sicro : null);
+if (Array.isArray(ufs) && (!U2 || ufs.indexOf(U2) >= 0)) add(a.competencia);
+});
+out.sort(function (a, b) { return a < b ? 1 : (a > b ? -1 : 0); });
+return out;
 },
 porRegiao: function (ctx, incluirAusentes) {
 var self = this, out = [];
@@ -6278,6 +6413,7 @@ var srv = status && status[e.chaveStatus];
 if (!srv || !srv.competencia) return;
 var inst = (instaladas || []).filter(function (b) { return String((b && b.fonte) || "").toUpperCase() === e.id; })[0];
 if (!inst || !inst.competencia) return;
+if (inst.sel && inst.sel.competencia) return;
 if (cmpVersao(srv.competencia, inst.competencia) !== 1) return;
 plano.push({ id: e.id, nome: e.nome, sel: inst.sel || null, de: inst.competencia, para: srv.competencia, pesoMb: e.pesoMb || 0 });
 });
@@ -7887,9 +8023,30 @@ Util.arr(orc && orc.etapas).forEach(function (e) { self._normalizarEtapa(e); });
 return orc;
 },
 removerEtapa: function (orc, etapaId) {
+var alvo = Util.arr(orc && orc.etapas).filter(function (e) { return e.id === etapaId; })[0];
+if (alvo && this.travadosNaEtapa(orc, alvo)) {
+this._avisoTrava("remover");
+return orc;
+}
 orc.etapas = Util.arr(orc.etapas).filter(function (e) { return e.id !== etapaId; });
 this._renumerarEtapas(orc);
 return orc;
+},
+_travadoOrgao: function (orc, it) {
+var L = global.Licitacao;
+return !!(L && L.itemTravado && L.itemTravado(orc, it));
+},
+travadosNaEtapa: function (orc, etapa) {
+var self = this, n = 0;
+Util.arr(etapa && etapa.itens).forEach(function (it) { if (self._travadoOrgao(orc, it)) n++; });
+return n;
+},
+_recadoTrava: function (acao) {
+var L = global.Licitacao;
+return (L && L.recadoTrava) ? L.recadoTrava(acao) : "Item da planilha do órgão: travado no modo licitação.";
+},
+_avisoTrava: function (acao) {
+try { if (global.UI && global.UI.toast) global.UI.toast(this._recadoTrava(acao), "aviso"); } catch (eT) {}
 },
 moverEtapa: function (orc, etapaId, dir) {
 var arr = Util.arr(orc && orc.etapas), i = -1;
@@ -8108,17 +8265,24 @@ if (this.subEtapas(etapa).length) this._normalizarEtapa(etapa);
 return orc;
 },
 reprecificarPorCodigo: function (orc, codigoAntigo, novo) {
-var n = 0;
+var self = this, n = 0, travouCampo = false;
 if (this.travadoPorAprovacao && this.travadoPorAprovacao(orc)) return 0;
+var camposTrav = (global.Licitacao && global.Licitacao.CAMPOS_TRAVADOS) || ["quantidade", "descricao", "unidade"];
 ((orc && orc.etapas) || []).forEach(function (et) {
 (et.itens || []).forEach(function (it) {
 var deProprio = String(it.baseFonte || it.origem || "").toUpperCase() === "PROPRIA" ||
 String(it.origem || "").toUpperCase() === "PROPRIO";
 if (!deProprio) return;
 if (String(it.codigo) !== String(codigoAntigo) && String(it.codigo) !== String(novo.codigo)) return;
-it.codigo = novo.codigo;
-it.descricao = Util.fixEnc(novo.descricao || it.descricao);
-it.unidade = novo.unidade || it.unidade;
+var ident = { codigo: novo.codigo, descricao: Util.fixEnc(novo.descricao || it.descricao), unidade: novo.unidade || it.unidade };
+if (self._travadoOrgao(orc, it)) {
+camposTrav.forEach(function (k) {
+if (!(k in ident)) return;
+if (String(ident[k] == null ? "" : ident[k]) !== String(it[k] == null ? "" : it[k])) travouCampo = true;
+delete ident[k];
+});
+}
+for (var k in ident) { if (Object.prototype.hasOwnProperty.call(ident, k)) it[k] = ident[k]; }
 it.custoMO = Util.num(novo.custoMO);
 it.custoMAT = Util.num(novo.custoMAT);
 it.custoEQ = Util.num(novo.custoEQ);
@@ -8135,6 +8299,7 @@ if (it.custoBase != null) it.custoBase = Util.num(novo.custoUnitario);
 n++;
 });
 });
+if (travouCampo) this._avisoTrava("campos");
 return n;
 },
 atualizarItem: function (orc, etapaId, itemId, campos) {
@@ -8142,6 +8307,15 @@ var etapa = this._etapa(orc, etapaId);
 if (!etapa) return orc;
 var it = etapa.itens.filter(function (x) { return x.id === itemId; })[0];
 if (!it) return orc;
+if (this._travadoOrgao(orc, it)) {
+var _camposTrav = (global.Licitacao && Licitacao.CAMPOS_TRAVADOS) || ["quantidade", "descricao", "unidade"], _mudaria = false;
+_camposTrav.forEach(function (k) {
+if (campos[k] == null) return;
+if (k === "quantidade" ? Util.num(campos[k]) !== Util.num(it.quantidade) : String(campos[k]) !== String(it[k] == null ? "" : it[k])) _mudaria = true;
+delete campos[k];
+});
+if (_mudaria) this._avisoTrava("campos");
+}
 if (campos.quantidade != null) {
 var q = Util.num(campos.quantidade);
 if (q > 0) { it.quantidade = q; delete it.qtdPendente; }
@@ -8212,6 +8386,10 @@ por: (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) ? (Auth.usu
 },
 removerItem: function (orc, etapaId, itemId) {
 var etapa = this._etapa(orc, etapaId);
+if (etapa) {
+var alvo = etapa.itens.filter(function (x) { return x.id === itemId; })[0];
+if (alvo && this._travadoOrgao(orc, alvo)) { this._avisoTrava("remover"); return orc; }
+}
 if (etapa) etapa.itens = etapa.itens.filter(function (x) { return x.id !== itemId; });
 return orc;
 },
@@ -8938,6 +9116,10 @@ if (!r || !r.ok || !(r.qtd > 0) || !isFinite(r.qtd)) return { ok: false, erro: "
 var etapa = this._etapa(orc, etapaId);
 var it = etapa && (etapa.itens || []).filter(function (x) { return x.id === itemId; })[0];
 if (!it) return { ok: false, erro: "Item não encontrado." };
+if (this._travadoOrgao(orc, it) && (it.qtdPendente || Math.abs(Util.num(r.qtd) - Util.num(it.quantidade)) > 1e-9)) {
+return { ok: false, travado: true, erro: this._recadoTrava("quantidade") +
+" (A conta deu " + Util.fmtNum(r.qtd, 2) + "; o edital traz " + Util.fmtNum(it.quantidade, 2) + ".)" };
+}
 if (it.unidade && r.unidade && !this.unidadeCompativel(it.unidade, r.unidade)) {
 return { ok: false, erro: "A conta deu " + Util.fmtNum(r.qtd, 2) + " " + Util.unidadeExibir(r.unidade) +
 ", mas este item é em " + Util.unidadeExibir(it.unidade) + ". Ajuste a descrição ou a unidade do item." };
@@ -8959,6 +9141,9 @@ restaurarQuantidade: function (orc, etapaId, itemId, antes) {
 var etapa = this._etapa(orc, etapaId);
 var it = etapa && Util.arr(etapa.itens).filter(function (x) { return x.id === itemId; })[0];
 if (!it || !antes) return { ok: false, erro: "Item não encontrado." };
+if (this._travadoOrgao(orc, it) && (Util.num(antes.q) !== Util.num(it.quantidade) || !!antes.p !== !!it.qtdPendente)) {
+return { ok: false, travado: true, erro: this._recadoTrava("quantidade") };
+}
 it.quantidade = Util.num(antes.q);
 if (antes.p) it.qtdPendente = true; else delete it.qtdPendente;
 if (antes.m != null && String(antes.m) !== "") it.memoriaCalculo = String(antes.m); else delete it.memoriaCalculo;
@@ -9806,7 +9991,7 @@ numero: "ORC-" + new Date().getFullYear() + "-" + Math.floor(Math.random() * 900
 nome: "", cliente: "", obra: "", local: "",
 categoria: "", prazoEntrega: "", controlarPrazo: false, permitirZerado: false,
 memorial: { laudo: true, excel: true, proposta: false },
-licitacao: { ativo: false, tipo: "", abertura: "", processo: "" },
+licitacao: { ativo: false, tipo: "", abertura: "", processo: "", obra: false },
 arredondamento: base.arredondamento,
 bdiIncidencia: base.bdiIncidencia,
 bdiPercentual: bdiPad, bdiInicial: bdiPad, bdiEraManual: false, bdiManual: false,
@@ -9835,7 +10020,10 @@ licitacao: {
 ativo: !!(cfg.licitacao && cfg.licitacao.ativo),
 tipo: (cfg.licitacao && cfg.licitacao.tipo) || "",
 abertura: (cfg.licitacao && cfg.licitacao.abertura) || "",
-processo: (cfg.licitacao && cfg.licitacao.processo) || ""
+processo: (cfg.licitacao && cfg.licitacao.processo) || "",
+obra: !!(cfg.licitacao && cfg.licitacao.obra === true),
+obraInformada: !!(cfg.licitacao && cfg.licitacao.obraInformada),
+certamepro: !!(cfg.licitacao && cfg.licitacao.certamepro)
 },
 arredondamento: cfg.arredondamento,
 bdiIncidencia: cfg.bdiIncidencia,
@@ -9899,12 +10087,18 @@ cfg.memorial = { v: 2, laudo: !!s.memorial.laudo, excel: !!s.memorial.excel, pro
 cfg.permitirZerado = s.permitirZerado;
 cfg.arredondamento = s.arredondamento; cfg.bdiIncidencia = s.bdiIncidencia;
 cfg.encargos = { tipo: s.encargos.tipo, horista: s.encargos.horista, mensalista: s.encargos.mensalista };
-cfg.licitacao = {
-ativo: !!s.licitacao.ativo,
-tipo: s.licitacao.ativo ? s.licitacao.tipo : "",
-abertura: s.licitacao.ativo ? s.licitacao.abertura : "",
-processo: s.licitacao.ativo ? s.licitacao.processo : ""
-};
+var _licAnt = (cfg.licitacao && typeof cfg.licitacao === "object") ? cfg.licitacao : {};
+if (global.Licitacao && Licitacao.mesclarParametros) {
+cfg.licitacao = Licitacao.mesclarParametros(_licAnt, s.licitacao);
+} else {
+var _licNovo = {};
+for (var _lk in _licAnt) { if (Object.prototype.hasOwnProperty.call(_licAnt, _lk)) _licNovo[_lk] = _licAnt[_lk]; }
+_licNovo.ativo = !!s.licitacao.ativo;
+_licNovo.tipo = s.licitacao.ativo ? s.licitacao.tipo : "";
+_licNovo.abertura = s.licitacao.ativo ? s.licitacao.abertura : "";
+_licNovo.processo = s.licitacao.ativo ? s.licitacao.processo : "";
+cfg.licitacao = _licNovo;
+}
 if (s._p3 && UI.el("ow-p3")) {
 this._lerTabela3();
 cfg.basesExcluidas = BasesUI.coletar(s._p3, this._ctx3()).excluir;
@@ -9987,6 +10181,10 @@ return '<div class="row"><div class="field"><label>Código do orçamento</label>
 '<div class="field"><label>Modalidade / tipo</label><select id="ow-lic-tipo"><option value="">— selecione —</option>' + tips + "</select></div>" +
 '<div class="row"><div class="field"><label>Data e hora da abertura</label><input id="ow-lic-abertura" type="datetime-local" value="' + esc(s.licitacao.abertura) + '"></div>' +
 '<div class="field"><label>Nº do processo / edital</label><input id="ow-lic-processo" value="' + esc(s.licitacao.processo) + '" placeholder="Ex.: 001/2026"></div></div>' +
+'<label class="ow-check"><input type="checkbox" id="ow-lic-obra"' + (s.licitacao.obra ? " checked" : "") + "> " +
+"<span><b>Obra ou serviço de engenharia (limites de 75%/85%)</b> <small>(Lei 14.133/2021, art. 59, §§ 4º e 5º: abaixo de 75% do valor orçado pela Administração a proposta é considerada inexequível; abaixo de 85%, o vencedor presta garantia adicional. Desmarcado, esses limites não são aplicados.)</small></span></label>" +
+(s.licitacao.certamepro && !s.licitacao.obraInformada
+? '<small class="ow-hint" id="ow-lic-obra-hint">O pacote do certame não informou se o objeto é obra ou serviço de engenharia — por isso a caixa está desmarcada e os limites não estão sendo aplicados. Marque se for.</small>' : "") +
 "</div>";
 },
 _coletar1: function () {
@@ -10000,11 +10198,15 @@ s.prazoEntrega = val("ow-prazo");
 s.controlarPrazo = marcado("ow-controlar-prazo");
 s.permitirZerado = marcado("ow-zerado");
 s.memorial = { laudo: marcado("ow-mem-laudo"), excel: marcado("ow-mem-excel"), proposta: marcado("ow-mem-proposta") };
+var licAnt = s.licitacao || {};
 s.licitacao = {
 ativo: marcado("ow-lic"),
 tipo: val("ow-lic-tipo"),
 abertura: val("ow-lic-abertura"),
-processo: val("ow-lic-processo").trim()
+processo: val("ow-lic-processo").trim(),
+obra: marcado("ow-lic-obra"),
+obraInformada: !!licAnt.obraInformada,
+certamepro: !!licAnt.certamepro
 };
 if (!s.nome) { UI.toast("Dê uma descrição ao orçamento para continuar.", "erro"); return false; }
 return true;
@@ -10340,7 +10542,9 @@ licitacao: {
 ativo: !!s.licitacao.ativo,
 tipo: s.licitacao.ativo ? s.licitacao.tipo : "",
 abertura: s.licitacao.ativo ? s.licitacao.abertura : "",
-processo: s.licitacao.ativo ? s.licitacao.processo : ""
+processo: s.licitacao.ativo ? s.licitacao.processo : "",
+obra: s.licitacao.obra === true,
+obraInformada: s.licitacao.obra === true
 },
 bases: [{ fonte: "SINAPI", uf: s.uf, competencia: s.competencia }].concat(
 s.basesExtras.map(function (f) {
@@ -11117,8 +11321,13 @@ pcts: Util.arr(e.meses).map(function (v) { return tot ? (Util.num(v) / tot) * 10
 };
 if (premissas.length) { saida.premissas = premissas; saida.fraseDasPremissas = Proposta.FRASE_PREMISSAS; }
 if (rodapeCal.length) saida.rodapeCalendarios = rodapeCal;
-if (opts.completo && rP && Util.arr(rP.etapas).length && rP.totalDias && rP.dataInicio && rP.dataFim) {
+if ((opts.completo || opts.gantt) && rP && Util.arr(rP.etapas).length && rP.totalDias && rP.dataInicio && rP.dataFim) {
 try { saida.execucao = Proposta._execucaoParaModelo(orc, rP, premissas); } catch (e4) {}
+}
+if (opts.gantt && typeof opts.desenharGantt === "function") {
+var gH = "";
+try { gH = String(opts.desenharGantt(orc, opts.gantt) || ""); } catch (e5) { gH = ""; }
+if (/^\s*<svg[\s>]/i.test(gH) && !/<script/i.test(gH)) saida.ganttHtml = gH;
 }
 return saida;
 };
@@ -11171,7 +11380,9 @@ out.notaPrazos = "Prazos em dias úteis (" + out.diasUteisSemana + " dias por se
 + ". O cronograma pode ser reajustado em função de condições climáticas, liberação de frentes de serviço e fornecimento de materiais.";
 return out;
 };
-Proposta.blocosParaModelo = function (orc) {
+Proposta.blocosParaModelo = function (orc, opts) {
+opts = opts || {};
+var comComp = !!opts.composicoes, temComp = false;
 var linhas = Orcamento.linhas(orc) || [];
 var t = Orcamento.totais(orc);
 var ordem = [], porEtapa = {};
@@ -11179,13 +11390,19 @@ linhas.forEach(function (L) {
 var nome = String(L.etapaNome || "").trim();
 var chave = String(L.etapaId || nome || "");
 if (!porEtapa[chave]) { porEtapa[chave] = { nome: nome, linhas: [], opcional: !!L.opcional }; ordem.push(chave); }
-porEtapa[chave].linhas.push({
+var ln = {
 descricao: L.descricao || L.codigo || "",
 unidade: L.unidade || "",
 qtd: Util.num(L.quantidade),
 unitario: Util.num(L.precoUnit),
 total: Util.num(L.precoTotal)
-});
+};
+if (comComp) {
+ln.codigo = String(L.codigo || "");
+var ins = Proposta._insumosDaLinha(L, opts);
+if (ins) { ln.insumos = ins; temComp = true; }
+}
+porEtapa[chave].linhas.push(ln);
 });
 var todos = ordem.map(function (k) { return porEtapa[k]; });
 var totalPapel = Util.num(t.precoObrigatorio != null ? t.precoObrigatorio : t.precoVenda);
@@ -11202,13 +11419,48 @@ g.qtdItens = Util.num(s.qtdItens);
 g.peso = g.opcional ? 0 : (totalPapel > 0 ? (g.total / totalPapel) * 100 : 0);
 });
 } catch (eS) {}
-return {
+var saida = {
 grupos: todos.filter(function (g) { return !g.opcional; }),
 opcionais: todos.filter(function (g) { return g.opcional; }),
 total: totalPapel,
 totalOpcional: Util.num(t.precoOpcional),
 totalComOpcionais: Util.num(t.precoVenda)
 };
+if (comComp) saida.temComposicoes = temComp;
+return saida;
+};
+Proposta._insumosDaLinha = function (L, opts) {
+var it = (L && L.item) || {}, lista = null;
+if (Array.isArray(it.insumos) && it.insumos.length) lista = it.insumos;
+else if (opts && opts.analitico && typeof opts.analitico.obter === "function" && L && /[A-Za-z0-9]/.test(String(L.codigo || ""))) {
+var comp = null;
+try { comp = opts.analitico.obter(L.codigo); } catch (eA) { comp = null; }
+if (comp && Array.isArray(comp.insumos) && comp.insumos.length) lista = comp.insumos;
+}
+if (!lista) return null;
+var base = 0;
+lista.forEach(function (i) { if (i && typeof i === "object") base += Util.num(i.coeficiente) * Util.num(i.custoUnitario); });
+var cu = Util.num(L.custoUnitario), pu = Util.num(L.precoUnit), q = Util.num(L.quantidade);
+var escala = (base > 0 && cu > 0) ? cu / base : 1;
+var fator = (cu > 0 && pu > 0) ? pu / cu : 1;
+var out = [];
+lista.forEach(function (i) {
+if (!i || typeof i !== "object") return;
+var coef = Util.num(i.coeficiente), unit = Util.num(i.custoUnitario) * escala * fator;
+var cat = String(i.categoria || "").toUpperCase();
+out.push({
+codigo: String(i.codigo == null ? "" : i.codigo),
+descricao: String(i.descricao || ""),
+unidade: String(i.unidade || ""),
+categoria: (cat === "MO" || cat === "MAT" || cat === "EQ") ? cat : "",
+sub: String(i.tipo || "").toUpperCase() === "COMPOSICAO",
+coef: coef,
+qtd: coef * q,
+unitario: unit,
+total: unit * coef * q
+});
+});
+return out.length ? out : null;
 };
 Proposta.referenciaParaModelo = function (orc) {
 var out = { bases: "", nBases: 0, regime: "", bdiPct: 0 };
@@ -12210,6 +12462,16 @@ instaladas: inst,
 sicroUfs: (srv.sicroUfs || []).map(function (u) { return { v: u, r: u }; }),
 sinapiDesUfs: (srv.sinapiDesoneradaUfs || []).map(function (u) { return { v: u, r: u }; })
 };
+if (typeof BasesCat !== "undefined" && BasesCat.competenciasConhecidas) {
+var fatosC = { instaladas: lista || [], servidor: srv,
+disco: (typeof App !== "undefined" && App._basesDisco) || null, espelho: (typeof App !== "undefined" && App._espelhoStatus) || null };
+var opsComp = function (id) {
+var cs = BasesCat.competenciasConhecidas(id, "", fatosC);
+return cs.length ? [{ v: "", r: "Mais recente" }].concat(cs.map(function (c) { return { v: c, r: BasesCat.fmtVersao(c) + " (fixa)" }; })) : [];
+};
+ctxSrv.sinapiDesComps = opsComp("SINAPI_DES");
+ctxSrv.sicroComps = opsComp("SICRO");
+}
 var ic = (typeof Icones !== "undefined") ? Icones.get("estoque", 15) : "";
 var linhas = BasesCat.CATALOGO.filter(function (e) {
 return !e.principal && !(e.entrega && e.entrega.autoral);
@@ -12225,10 +12487,12 @@ BasesCat.opcoesDoEixo(e, ex, ctxSrv).map(function (o) {
 return '<option value="' + Util.esc(o.v) + '"' + (String(o.v) === String(atual) ? " selected" : "") + ">" + Util.esc(o.r || o.v) + "</option>";
 }).join("") + "</select>";
 }).join("");
+var fixada = jaTem && jaTem.sel && jaTem.sel.competencia;
 return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 0;border-bottom:1px dashed var(--linha)">' +
 '<b style="font-size:12.5px;min-width:92px">' + Util.esc(e.nome) + "</b>" +
-'<span class="muted" style="font-size:11.5px;flex:1;min-width:150px">' + Util.esc(e.localRotulo || e.uf) +
+'<span class="muted" style="font-size:11.5px;flex:1;min-width:150px">' + Util.esc(e.localRotulo || (jaTem && jaTem.uf) || e.uf) +
 " · " + Util.esc(BasesCat.fmtVersao(av.versao) || "—") +
+(fixada ? ' <b data-fixada="' + Util.esc(e.id) + '" title="Competência fixada (licitação): a atualização automática não troca o mês. Para voltar a atualizar, reinstale com Mais recente.">· fixada</b>' : "") +
 (e.pesoMb ? " · " + String(e.pesoMb).replace(".", ",") + " MB" : "") + "</span>" +
 selects +
 '<button class="btn sm ' + (jaTem ? "" : "primary") + '" data-instalar="' + Util.esc(e.id) + '">' + ic + " " +
@@ -12397,11 +12661,12 @@ auto +
 comCanal.forEach(function (e) {
 var inst = (lista || []).filter(function (b) { return String(b.fonte).toUpperCase() === e.id; })[0];
 var comp = inst ? (BasesCat.fmtVersao(inst.competencia) || "—") : "";
+var fix = inst && inst.sel && inst.sel.competencia;
 atuLinhas += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0;border-bottom:1px dashed var(--linha)">' +
 '<span class="pill ' + Util.esc((inst && inst.cor) || "proprio") + '">' + Util.esc(e.nome) + '</span>' +
 '<span style="font-size:12.5px">' + (inst ? "competência ativa: <b>" + Util.esc(comp) + "</b> · " + Util.esc(inst.uf || "") : '<span class="muted">não instalada — instale nos botões ' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' abaixo</span>') + '</span>' +
-(inst ? auto : '') +
-(inst ? resExtra(e.id) : '') + '</div>';
+(inst ? (fix ? '<span class="muted" style="margin-left:auto;font-size:11.5px">competência fixada — não atualiza sozinha</span>' : auto) : '') +
+(inst && !fix ? resExtra(e.id) : '') + '</div>';
 });
 return '<h3 style="margin:0 0 6px;display:flex;align-items:center">' + _icT("reimportar") + 'Atualização dos bancos de preço</h3>' +
 '<p class="muted" style="font-size:12px;margin:0 0 8px">As tabelas se atualizam <b>sozinhas</b>, <b>1× por dia</b>, ao abrir o app: quando sai competência nova da SINAPI (onerada e desonerada), do SICRO, ORSE, IOPES ou GOINFRA, o app baixa e aplica sem você clicar em nada. Uma base <b>própria</b> que você importou nunca é substituída.</p>' +
@@ -12508,6 +12773,12 @@ return '<p class="muted mb">Estes dados aparecem nos documentos (Anexo de Laudo,
 '<div class="row">' + f("crea", "Registro CREA/CAU", emp.crea) + f("registroNacional", "Reg. Nacional", emp.registroNacional) + '</div>' +
 '<div class="row">' + f("cidade", "Cidade / UF", emp.cidade) + f("contato", "Contato (tel/e-mail)", emp.contato) + '</div>' +
 '<div class="field"><label>Endereço (rua, nº, bairro — usado nos documentos)</label><input id="emp-endereco" value="' + Util.esc(emp.endereco || "") + '"></div>' +
+'<div class="field"><label>Regime tributário</label><select id="emp-regimeTributario">' +
+'<option value=""' + (!emp.regimeTributario ? " selected" : "") + '>Não informado</option>' +
+[["simples", "Simples Nacional"], ["presumido", "Lucro Presumido"], ["real", "Lucro Real"]].map(function (r) {
+return '<option value="' + r[0] + '"' + (emp.regimeTributario === r[0] ? " selected" : "") + '>' + r[1] + '</option>';
+}).join("") + '</select>' +
+'<div class="muted" style="font-size:11.5px;margin-top:3px">Não muda nenhum cálculo. Aparece como dica na aba BDI e segue no Excel exportado.</div></div>' +
 '<div class="field"><label>Responsável pelo planejamento e gestão</label><input id="emp-gestao" value="' + Util.esc(emp.gestao || "") + '" placeholder="Nome de quem responde pelo planejamento e gestão das obras">' +
 '<div class="muted" style="font-size:11.5px;margin-top:3px">Aparece nas composições próprias (criadas ou editadas daqui em diante) e nas requisições geradas do orçamento.</div></div>' +
 '<h3 style="margin:10px 0 4px;border-top:1px solid var(--linha);padding-top:12px;font-size:13px">Canais de contato (viram links clicáveis na proposta em PDF)</h3>' +
@@ -12846,6 +13117,7 @@ _semQtd.slice(0, 5).map(function (x) { return '<b>' + Util.esc(x.item.codigo || 
 (_semQtd.length > 5 ? '…' : '') +
 ' — eles não somam no total. Clique em <b>Calcular</b> na linha para levantar a metragem. <b>Proposta e laudo ficam bloqueados</b> enquanto houver item pendente.</span>');
 }
+cab2 += this._licitacaoPainel(orc);
 if (_desf && !linhasAv.length) linhasAv.push('<span>A última edição da IA ainda pode ser desfeita — o que você mexeu depois dela fica.</span>');
 if (linhasAv.length || _desf) {
 cab2 += M.aviso({ tom: _semPreco.length ? "erro" : (_semQtd.length ? "alerta" : "info"),
@@ -12940,6 +13212,7 @@ out.alca = Paineis.alcaHtml("idxLargura", "vertical", "Largura do índice de eta
 return out;
 },
 renderPlanilha: function (orc) {
+var _licAv = (typeof Licitacao !== "undefined" && Licitacao.ativo(orc)) ? Licitacao.avisos(orc) : null;
 var recTudo = (typeof App !== "undefined" && App._etapasRecolhidas && orc.etapas.length)
 ? !orc.etapas.some(function (e) { return !App.etapaRecolhida(orc.id, e.id); }) : false;
 var _idxOn = (typeof App !== "undefined") ? !!App._idxAberto : false;
@@ -13053,10 +13326,13 @@ Util.esc(Orcamento.MODOS_CUSTO[it.modoCusto].ajuda) + '">' +
 Util.esc(Orcamento.MODOS_CUSTO[it.modoCusto].curto) + '</span>' : "") + '</td>' +
 '<td>' + Util.esc(Util.unidadeDe(it.unidade, orc)) + '</td>' +
 '<td class="num"><input class="cell' + (it.qtdPendente ? ' cell-erro' : '') + '" data-edit="quantidade" data-eta="' + e.id + '" data-itm="' + it.id + '" value="' + (it.qtdPendente ? '' : Util.fmtNum(it.quantidade, 2)) + '"' +
+(_licAv && Licitacao.itemTravado(orc, it) ? ' readonly title="Item do órgão: quantidade travada no modo licitação (o preço é editável)."' : '') +
 (it.qtdPendente ? ' placeholder="pendente" title="QUANTIDADE PENDENTE — este item não está somando no total. Abra a memória de cálculo para calcular e lançar."' : '') + '></td>' +
 '<td class="num"><input class="cell' + (Util.num(it.custoUnitario) > 0 ? '' : ' cell-erro') + '" data-edit="custoUnitario" data-eta="' + e.id + '" data-itm="' + it.id + '" value="' + Util.fmtNum(it.custoUnitario, 2) + '"' +
 (Util.num(it.custoUnitario) > 0 ? '' : ' title="SEM PREÇO — informe o custo unitário. Orçamento com item zerado não gera proposta nem apresentação."') + '>' +
-UI._seloAjuste(e.id, it) + '</td>' +
+UI._seloAjuste(e.id, it) +
+(_licAv && _licAv.porItem[it.id]
+? '<br><span class="pill lic-alerta" title="Preço unitário COM BDI de ' + Util.esc(Util.fmtMoeda(_licAv.porItem[it.id].precoUnit)) + ' acima da referência do órgão (' + Util.esc(Util.fmtMoeda(_licAv.porItem[it.id].refComBdi)) + ' com BDI). Não bloqueia; confira.">acima do órgão</span>' : '') + '</td>' +
 '<td class="num">' + Util.fmtMoeda(L.custoTotal) + '</td>' +
 '<td class="num">' + Util.fmtMoeda(L.precoTotal) + '</td>' +
 '<td class="right"><div class="acoes">' +
@@ -13066,7 +13342,9 @@ UI._seloAjuste(e.id, it) + '</td>' +
 _optsSub.replace('value="' + (subId || "") + '"', 'value="' + (subId || "") + '" selected') + '</select>' : '') +
 (ehSinapi || ehPropriaDet ? '<button class="btn sm" data-ver-insumos="' + Util.esc(it.codigo) + '" data-vi-item="' + e.id + '|' + it.id + '" title="Analítico do item: os insumos e coeficientes desta composição — ver e ajustar">' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + ' Analítico do item</button>' : '') +
 '<button class="btn sm' + (it.qtdPendente ? ' primary' : ' ico') + (!it.qtdPendente && it.memoriaCalculo ? ' primary' : '') + '" data-memoria="' + e.id + '|' + it.id + '" title="' + (it.qtdPendente ? 'CALCULAR A QUANTIDADE — descreva o serviço e o agente monta a conta' : 'Memória de cálculo do quantitativo (Lei 14.133) — sai na aba Memória do Excel') + '">' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + (it.qtdPendente ? ' Calcular' : '') + '</button>' +
-'<button class="btn sm ico danger" data-del-item="' + e.id + '|' + it.id + '" title="Remover item">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div></td></tr>';
+(_licAv && Licitacao.itemTravado(orc, it)
+? '<span class="pill" title="Item da planilha do órgão: não pode ser removido no modo licitação.">órgão</span>'
+: '<button class="btn sm ico danger" data-del-item="' + e.id + '|' + it.id + '" title="Remover item">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button>') + '</div></td></tr>';
 if (ehSinapi) {
 var nSem = UI._insumosSemPrecoDe(it.codigo);
 if (nSem > 0) {
@@ -13320,9 +13598,24 @@ html += '<p class="muted mt" style="font-size:12px">Base analítica SINAPI ' +
 return html;
 },
 renderQuadroAjustes: function (orc, numeroSecao) {
-if (typeof Ajustes === "undefined" || !Ajustes.resumo) return "";
+var jb = (typeof Licitacao !== "undefined" && Licitacao.justificativaBases) ? Licitacao.justificativaBases(orc) : [];
+var blocoBases = "";
+if (jb.length) {
+blocoBases = '<h3 style="font-size:13px;margin:12px 0 6px">Base de preço diferente da exigida pelo edital</h3>' +
+'<table class="prop-tbl"><thead><tr><th>Exigida pelo edital</th><th>Usada nos preços</th><th>Motivo e registro</th></tr></thead><tbody>' +
+jb.map(function (j) {
+return "<tr><td>" + Util.esc(j.exigida) + "</td><td><b>" + Util.esc(j.usada) + "</b></td><td>" +
+Util.esc((j.motivo ? j.motivo + ". " : "") + "Escolha registrada" + (j.por ? " por " + j.por : "") + (j.em ? " em " + j.em : "") + ".") + "</td></tr>";
+}).join("") + "</tbody></table>";
+}
+if (typeof Ajustes === "undefined" || !Ajustes.resumo) {
+return blocoBases ? '<h2 class="rel-tit">' + (numeroSecao ? numeroSecao + ". " : "") + 'Quadro de Justificativa de Preços</h2>' + blocoBases : "";
+}
 var r = Ajustes.resumo(orc);
-if (!r.n) return "";
+if (!r.n) {
+return blocoBases ? '<h2 class="rel-tit">' + (numeroSecao ? numeroSecao + ". " : "") + 'Quadro de Justificativa de Preços</h2>' +
+'<p class="muted" style="margin:-6px 0 10px;font-size:12px">Nenhum item com preço diferente do da base de referência ' + Util.esc(Orcamento.basesUsadasTexto(orc)) + '.</p>' + blocoBases : "";
+}
 var semJust = r.itens.filter(function (i) { return i.preco && i.preco.dif > 0 && !i.preco.motivo; }).length;
 var numDe = {};
 try {
@@ -13375,7 +13668,7 @@ if (semJust) {
 html += '<p class="muted" style="font-size:11.5px;margin-top:6px">' +
 '<b>' + semJust + '</b> item(ns) acima do preço de referência ainda sem justificativa registrada.</p>';
 }
-return html;
+return html + blocoBases;
 },
 _celCoeficiente: function (ins) {
 var ctx = UI._ajusteCtx;
@@ -14174,6 +14467,75 @@ html += cron.base === "gantt"
 : '<p class="watermark-hint mt">Distribuição sequencial proporcional ao peso de cada etapa (valores com BDI). Ajuste o prazo para recalcular.</p>';
 return MOD().secao({ titulo: "Cronograma Físico-Financeiro", acoesHtml: prazoHtml, corpoHtml: html });
 },
+_dicaRegimeBdi: function () {
+var r = (typeof Empresa !== "undefined" && Empresa.regime) ? Empresa.regime() : "";
+var txt;
+if (r === "simples") txt = "Simples Nacional: os tributos saem em guia única (DAS), pela alíquota efetiva da empresa. Confira se o item Impostos do BDI reflete isso em vez de somar PIS, COFINS e ISS por fora.";
+else if (r === "presumido") txt = "Lucro Presumido: PIS e COFINS são cumulativos. Confira se o item Impostos do BDI usa as alíquotas desse regime; o ISS depende do município da obra.";
+else if (r === "real") txt = "Lucro Real: PIS e COFINS são não cumulativos (com créditos). Confira se o item Impostos do BDI reflete o regime e os créditos que a empresa realmente aproveita.";
+else txt = "Regime tributário não informado. Cadastre em Empresa para ver aqui uma orientação sobre o item Impostos do BDI.";
+return '<div class="muted" style="font-size:var(--t-micro);margin-top:8px" data-regime="' + Util.esc(r) + '"><b>Regime da empresa' + (r ? ": " + Util.esc(Empresa.regimeRotulo()) : "") + '.</b> ' + Util.esc(txt) + '</div>';
+},
+_licitacaoPainel: function (orc) {
+if (typeof Licitacao === "undefined" || !Licitacao.ativo(orc)) return "";
+var M = MOD(), lic = Licitacao.cfg(orc), id = Licitacao.identificacao(orc) || {}, av = Licitacao.avisos(orc);
+var partes = [id.orgao, id.processo ? "processo " + id.processo : "", id.sessao ? "sessão " + id.sessao : "", id.criterio,
+id.valorEstimado > 0 ? "estimado " + Util.fmtMoeda(id.valorEstimado) : "", id.dataBase ? "data-base " + id.dataBase : ""].filter(function (x) { return !!x; });
+var bt = function (acao, rot, tit) { return '<button class="btn ghost sm n3" data-acao="' + acao + '" title="' + Util.esc(tit) + '">' + rot + '</button>'; };
+var acoes = "";
+if (lic.certamepro) {
+acoes += bt("lic-desconto", "Desconto linear…", "Um percentual único sobre os preços de referência do órgão");
+if (lic.descontoLinear) acoes += bt("lic-desconto-desfazer", "Desfazer desconto (" + Util.fmtNum(lic.descontoLinear.pct, 2) + "%)", "Volta os preços ao que eram antes do desconto linear");
+acoes += bt("lic-trava", lic.travaLiberada ? "Travar itens do órgão" : "Liberar edição", lic.travaLiberada
+? "Trava de novo quantidade, descrição e remoção dos itens do órgão"
+: "Permite alterar quantidade, descrição e remover itens do órgão (só quando o edital permitir)");
+}
+if (lic.devolverPara) acoes += bt("lic-devolver", "Devolver ao CertamePRO", "Gera o Excel _PRO.xlsx e envia ao certame de origem");
+var h = M.aviso({ tom: "info", titulo: "Licitação" + (lic.certamepro ? " (CertamePRO)" : ""),
+textoHtml: "<span> " + Util.esc(partes.join(" · ") || "dados do edital não informados") + "</span>" +
+(lic.certamepro && !lic.travaLiberada ? " <span class=\"muted\">· itens do órgão travados (só o preço muda)</span>" : "") +
+(lic.travaLiberada ? " <span class=\"muted\">· trava liberada</span>" : ""),
+acaoHtml: acoes });
+av.resumo.forEach(function (a) { h += M.aviso({ tom: a.tom, texto: a.texto }); });
+h += this._licBasesPainel(orc);
+return h;
+},
+_licBasesPainel: function (orc) {
+if (typeof Licitacao === "undefined" || !Licitacao.temBasesExigidas || !Licitacao.temBasesExigidas(orc)) return "";
+var ctx = (typeof App !== "undefined" && App._licCtxBases) ? App._licCtxBases() : {};
+if (typeof App !== "undefined" && App._licBasesFatos) App._licBasesFatos();
+var sits = Licitacao.situacaoBases(orc, ctx);
+var pend = sits.filter(function (x) { return x.estado !== "instalada" && x.estado !== "outra"; }).length;
+var outras = sits.filter(function (x) { return x.estado === "outra"; });
+var lic = Licitacao.cfg(orc) || {};
+var M = MOD();
+var txt = this._licBasesLinhas(sits) +
+(lic.basesExigidasIgnoradas ? '<div class="muted" style="font-size:11.5px;margin-top:4px">' + lic.basesExigidasIgnoradas +
+" entrada(s) do pacote sem fonte ou competência válida foram ignoradas — confira no edital.</div>" : "") +
+(pend ? '<div style="font-size:12px;margin-top:6px"><b>O Orçamentista fica bloqueado</b> até cada base estar em uso ou com a escolha registrada — nunca precifica com outra tabela em silêncio.</div>' : "");
+var h = M.aviso({ tom: pend ? "alerta" : (outras.length ? "alerta" : "ok"), titulo: "Bases exigidas pelo edital", textoHtml: txt });
+outras.forEach(function (x) {
+h += M.aviso({ tom: "alerta", texto: "Usando " + Licitacao.fmtBase(x.emUso) + " — o edital pede " + Licitacao.fmtBase(x.exigida) + ". A escolha está registrada no Quadro de Justificativa de Preços." });
+});
+return h;
+},
+_licBasesLinhas: function (sits) {
+var cor = { instalada: "var(--verde)", outra: "#b45309", disponivel: "#1d4ed8", indisponivel: "#b91c1c" };
+var rot = { instalada: "em uso", outra: "outra em uso (registrada)", disponivel: "disponível para baixar", indisponivel: "indisponível" };
+return '<div class="lic-bases" style="margin-top:4px">' + sits.map(function (x) {
+var k = Util.esc(Licitacao.chaveBase(x.exigida));
+var bts = "";
+if (x.estado === "disponivel" || x.estado === "indisponivel" || x.estado === "outra") {
+if (!x.semFonte) bts += '<button class="btn ghost sm n3" data-acao="lic-base-instalar" data-lic-base="' + k + '" title="Procura o mês exato no disco, no servidor da RA e no espelho, e confere UF, mês e regime pelo conteúdo">' +
+(x.estado === "disponivel" ? "Instalar" : "Procurar e instalar") + "</button>";
+if (x.estado !== "outra") bts += '<button class="btn ghost sm n3" data-acao="lic-base-outra" data-lic-base="' + k + '" title="Usar a base em uso (ou a atual) no lugar da exigida — fica registrado na justificativa de preços">Usar outra e registrar</button>';
+}
+return '<div class="lic-base" data-lic-base-linha="' + k + '" data-estado="' + Util.esc(x.estado) + '" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:3px 0">' +
+"<b>" + Util.esc(Licitacao.fmtBase(x.exigida)) + "</b>" +
+'<span style="font-size:12px;color:' + (cor[x.estado] || "inherit") + '">' + Util.esc(rot[x.estado] || x.estado) + "</span>" +
+'<span class="muted" style="font-size:11.5px">' + Util.esc(x.texto) + "</span>" + bts + "</div>";
+}).join("") + "</div>";
+},
 _dataBr: function (s) {
 var m = String(s || "").match(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/);
 return m ? (m[3] + "/" + m[2] + "/" + m[1] + (m[4] ? " " + m[4] + ":" + m[5] : "")) : "";
@@ -14370,6 +14732,7 @@ html += '<div class="field"><label>' + c[1] + ' (%)</label>' +
 '<input id="bdi-' + c[0] + '" type="text" value="' + Util.fmtNum(p[c[0]], c[0] === "L" ? 4 : 2) + '"></div>';
 });
 html += '</div>';
+html += this._dicaRegimeBdi();
 html += '<div class="flex between mt" style="align-items:flex-end">' +
 '<div><div class="muted" style="font-size:var(--t-micro)">BDI resultante</div>' +
 '<div style="font-size:var(--t-tit);font-weight:var(--p-forte);color:var(--verde);font-variant-numeric:tabular-nums" id="bdi-resultado">' + Util.fmtPct(orc.bdi.percentual) + '</div></div>' +
@@ -14921,6 +15284,16 @@ wsi.columns = [{ width: 10 }, { width: 46 }, { width: 16 }, { width: 9 }, { widt
 wsi.mergeCells('A1:G1'); wsi.getCell('A1').value = empresa; wsi.getCell('A1').font = { bold: true, size: 14, color: { argb: navy } };
 wsi.mergeCells('A2:G2'); wsi.getCell('A2').value = 'PLANILHA SINTÉTICA (por etapa) — ' + (orc.numero || ''); wsi.getCell('A2').font = { bold: true, size: 11 };
 wsi.mergeCells('A3:G3'); wsi.getCell('A3').value = 'Cliente: ' + ((orc.cliente && orc.cliente.nome) || '-') + '   |   ' + ((orc.obra && orc.obra.nome) || '-'); wsi.getCell('A3').font = { size: 9, color: { argb: muted } };
+var _idl = (global.Licitacao && Licitacao.identificacao) ? Licitacao.identificacao(orc) : null;
+if (_idl) {
+wsi.mergeCells('A4:G4');
+wsi.getCell('A4').value = 'LICITAÇÃO — Órgão: ' + (_idl.orgao || '-') + (_idl.cnpj ? ' (CNPJ ' + _idl.cnpj + ')' : '');
+wsi.getCell('A4').font = { bold: true, size: 9, color: { argb: navy } };
+wsi.mergeCells('A5:G5');
+wsi.getCell('A5').value = [_idl.processo ? 'Processo ' + _idl.processo : '', _idl.edital ? 'Edital/PNCP ' + _idl.edital : '',
+_idl.sessao ? 'Sessão pública ' + _idl.sessao : '', _idl.modalidade || ''].filter(Boolean).join('   |   ') || 'Dados do edital não informados';
+wsi.getCell('A5').font = { size: 9, color: { argb: muted } };
+}
 var colsS = ['Item', 'Etapa', 'Custo Direto', 'BDI %', 'BDI (R$)', 'Preço de Venda', 'Peso %'];
 colsS.forEach(function (h, i) { hStyle(wsi.getRow(6).getCell(i + 1)); wsi.getRow(6).getCell(i + 1).value = h; });
 var s0 = 7, sr = s0, totVenda = grandVenda;
@@ -15693,6 +16066,41 @@ rt.getCell(k).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cinza
 rt.getCell(k).border = thin();
 });
 }
+var _jBases = (typeof Licitacao !== "undefined" && Licitacao.justificativaBases) ? Licitacao.justificativaBases(orc) : [];
+if (_jBases.length) {
+if (!wajs) {
+wajs = wb.addWorksheet('Justificativa de Preços', { properties: { tabColor: { argb: 'FFF59E0B' } } });
+wajs.columns = [{ width: 8 }, { width: 12 }, { width: 44 }, { width: 6 }, { width: 11 },
+{ width: 14 }, { width: 14 }, { width: 9 }, { width: 15 }, { width: 52 }];
+wajs.mergeCells('A1:J1'); wajs.getCell('A1').value = empresa;
+wajs.getCell('A1').font = { bold: true, size: 14, color: { argb: navy } };
+wajs.mergeCells('A2:J2');
+wajs.getCell('A2').value = 'QUADRO DE JUSTIFICATIVA DE PREÇOS — ' + (orc.numero || '');
+wajs.getCell('A2').font = { bold: true, size: 11 };
+wajs.mergeCells('A3:J3');
+wajs.getCell('A3').value = 'Nenhum item com preço diferente do da base de referência. Abaixo, a base de preço usada no lugar da exigida pelo edital.';
+wajs.getCell('A3').font = { size: 9, italic: true, color: { argb: 'FF64748B' } };
+}
+var rb = wajs.rowCount + 2;
+wajs.mergeCells('A' + rb + ':J' + rb);
+wajs.getCell('A' + rb).value = 'BASE DE PREÇO DIFERENTE DA EXIGIDA PELO EDITAL';
+wajs.getCell('A' + rb).font = { bold: true, size: 11, color: { argb: navy } };
+rb++;
+[['A', 'C', 'Exigida pelo edital'], ['D', 'G', 'Usada nos preços'], ['H', 'J', 'Motivo e registro']].forEach(function (c) {
+wajs.mergeCells(c[0] + rb + ':' + c[1] + rb);
+var cel = wajs.getCell(c[0] + rb); hStyle(cel); cel.value = c[2];
+});
+rb++;
+_jBases.forEach(function (j) {
+wajs.mergeCells('A' + rb + ':C' + rb); wajs.mergeCells('D' + rb + ':G' + rb); wajs.mergeCells('H' + rb + ':J' + rb);
+wajs.getCell('A' + rb).value = j.exigida;
+wajs.getCell('D' + rb).value = j.usada;
+wajs.getCell('H' + rb).value = (j.motivo ? j.motivo + '. ' : '') + 'Escolha registrada' + (j.por ? ' por ' + j.por : '') + (j.em ? ' em ' + j.em : '') + '.';
+['A', 'D', 'H'].forEach(function (c) { wajs.getCell(c + rb).alignment = { wrapText: true, vertical: 'top' }; wajs.getCell(c + rb).border = thin(); });
+wajs.getRow(rb).height = 30;
+rb++;
+});
+}
 var wdad = null;
 if (itensFlat.length) {
 wdad = wb.addWorksheet('Dados IA', { properties: { tabColor: { argb: 'FF64748B' } } });
@@ -15806,12 +16214,15 @@ propriasQtd = lista.length;
 }
 }
 } catch (ePr) { propriasJson = ''; propriasPartes = 0; propriasQtd = 0; }
-wmeta.getCell('A1').value = JSON.stringify({
+var metaCab = {
 v: 1, tipo: 'orcapro-meta', partes: metaPartes,
 schemaVersao: orc.schemaVersao || null, id: orc.id || '', numero: orc.numero || '',
 geradoEm: dtEmissao.toISOString(),
 propriasPartes: propriasPartes, propriasQtd: propriasQtd
-});
+};
+var _regT = String((deps.responsavel && deps.responsavel.regimeTributario) || '');
+if (_regT) metaCab.regimeTributario = _regT;
+wmeta.getCell('A1').value = JSON.stringify(metaCab);
 var fatiar = function (str, total) {
 var out = [], ini = 0;
 for (var fi = 0; fi < total; fi++) {
@@ -15861,6 +16272,24 @@ lin(ri + 4, 'Empresa', (resp.nome || empresa || '') + (resp.cnpj ? ' · CNPJ ' +
 wr.getCell('A' + (ri + 6)).value = '___________________________________';
 wr.getCell('A' + (ri + 7)).value = (resp.responsavel || '[nome]') + ' — ' + (resp.crea || '[CREA/CAU]');
 wr.getCell('A' + (ri + 7)).font = { size: 9, color: { argb: muted } };
+if (_idl) {
+var li0 = ri + 9;
+wr.mergeCells('A' + li0 + ':B' + li0);
+wr.getCell('A' + li0).value = 'LICITAÇÃO — IDENTIFICAÇÃO E ASSINATURA DA EMPRESA';
+wr.getCell('A' + li0).font = { bold: true, color: { argb: navy } };
+lin(li0 + 1, 'Órgão', (_idl.orgao || '-') + (_idl.cnpj ? ' · CNPJ ' + _idl.cnpj : ''));
+lin(li0 + 2, 'Processo / Edital', [_idl.processo ? 'Processo ' + _idl.processo : '', _idl.edital ? 'Edital/PNCP ' + _idl.edital : ''].filter(Boolean).join('  ·  ') || '[informar]');
+lin(li0 + 3, 'Data da sessão pública', _idl.sessao || '[informar]');
+lin(li0 + 4, 'Modalidade / critério', [_idl.modalidade, _idl.criterio].filter(Boolean).join('  ·  ') || '[informar]');
+if (_idl.valorEstimado > 0) lin(li0 + 5, 'Valor estimado pelo órgão', _idl.valorEstimado, MOEDA);
+if (_idl.dataBase) lin(li0 + 6, 'Data-base do órgão', _idl.dataBase);
+var la = li0 + 8;
+wr.getCell('A' + la).value = '___________________________________';
+wr.getCell('A' + (la + 1)).value = (resp.nome || empresa || '[EMPRESA]') + (resp.cnpj ? ' — CNPJ ' + resp.cnpj : '');
+wr.getCell('A' + (la + 2)).value = 'Representante legal: ' + (resp.responsavel || '[nome do representante legal]');
+wr.getCell('A' + (la + 3)).value = (resp.cidade || '[cidade]') + ', ____ de ______________ de ________';
+[1, 2, 3].forEach(function (k) { wr.getCell('A' + (la + k)).font = { size: 9, color: { argb: muted } }; });
+}
 function pset(ws, orient, titles, area) {
 if (!ws) return;
 ws.pageSetup = {
@@ -15869,6 +16298,9 @@ margins: { left: 0.4, right: 0.4, top: 0.55, bottom: 0.55, header: 0.2, footer: 
 printTitlesRow: titles
 };
 if (area) ws.pageSetup.printArea = area;
+if (_idl && (ws === wr || ws === wsi)) {
+ws.headerFooter.oddHeader = '&L&8' + String('Licitação: ' + (_idl.orgao || '') + (_idl.processo ? ' · Proc. ' + _idl.processo : '') + (_idl.sessao ? ' · Sessão ' + _idl.sessao : '')).replace(/&/g, '&&');
+}
 ws.headerFooter.oddFooter = '&L&8' + (credito ? 'OrçaPRO — ' : '') + (orc.numero || '') + '&C&8' + (empresa || '') + '&R&8Pág. &P de &N';
 }
 pset(wr, 'portrait'); pset(wsi, 'portrait', '1:6');
@@ -15914,7 +16346,8 @@ s.onload = function () { cb(); };
 s.onerror = function () { var el = document.getElementById("sheetjs-vendor"); if (el) el.remove(); avisarFalha(); };
 document.head.appendChild(s);
 },
-gerar: function (orc) {
+gerar: function (orc, opcoes) {
+opcoes = opcoes || {};
 this.ensureExcelJS(function () {
 var finalizar = function (insumosMap) {
 try {
@@ -15936,13 +16369,14 @@ Promise.resolve(construir(global.ExcelJS, orc, deps)).then(function (wb) {
 return wb.xlsx.writeBuffer();
 }).then(function (buf) {
 var blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+if (typeof opcoes.aoBlob === 'function') { opcoes.aoBlob(blob, (orc.numero || 'orcamento') + '_PRO.xlsx'); return; }
 var a = document.createElement('a'); a.href = URL.createObjectURL(blob);
 a.download = (orc.numero || 'orcamento') + '_PRO.xlsx';
 document.body.appendChild(a); a.click(); document.body.removeChild(a);
 setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
 if (global.UI) UI.toast(insumosMap ? "Excel gerado (com aba Insumos)!" : "Excel gerado (com fórmulas)!", "ok");
-}).catch(function (e) { console.error('[excel write]', e); if (global.UI) UI.toast("Falha ao escrever Excel: " + e.message, "erro"); });
-} catch (e) { console.error('[excel]', e); if (global.UI) UI.toast("Falha ao gerar Excel: " + e.message, "erro"); }
+}).catch(function (e) { console.error('[excel write]', e); if (typeof opcoes.aoErro === 'function') { opcoes.aoErro(e); return; } if (global.UI) UI.toast("Falha ao escrever Excel: " + e.message, "erro"); });
+} catch (e) { console.error('[excel]', e); if (typeof opcoes.aoErro === 'function') { opcoes.aoErro(e); return; } if (global.UI) UI.toast("Falha ao gerar Excel: " + e.message, "erro"); }
 };
 var montarMapa = function () {
 var m = {};
@@ -16059,7 +16493,8 @@ var r4 = function (n) { return Math.round((Util.num(n) + Number.EPSILON) * 10000
 var it = porId[ed.itemId];
 if (!it) return;
 if (r4(it.quantidade) !== r4(ed.qtd)) {
-if (ed.qtd > 0) mudancas.push({ itemId: ed.itemId, codigo: ed.codigo, descricao: ed.descricao, etapa: ed.etapa, campo: "quantidade", de: Util.num(it.quantidade), para: r4(ed.qtd) });
+if (Roundtrip._travado(orcAtual, it)) mudancas.recusadas.push({ codigo: ed.codigo, campo: "quantidade", travado: true, motivo: "item da planilha do órgão — quantidade travada no modo licitação (se o edital permitir alterar, use 'Liberar edição' no painel Licitação)" });
+else if (ed.qtd > 0) mudancas.push({ itemId: ed.itemId, codigo: ed.codigo, descricao: ed.descricao, etapa: ed.etapa, campo: "quantidade", de: Util.num(it.quantidade), para: r4(ed.qtd) });
 else mudancas.recusadas.push({ codigo: ed.codigo, campo: "quantidade", motivo: "zerada no Excel — zero não é quantidade; para remover o item, remova no app" });
 }
 if (r4(it.custoUnitario) !== r4(ed.custoUnit)) {
@@ -16075,12 +16510,17 @@ if (cab.schemaVersao && cab.schemaVersao > schemaApp) return { erro: "schema-nov
 if (orcAtual && cab.id && orcAtual.id !== cab.id) return { erro: "outro-orcamento", numero: cab.numero || "" };
 return { ok: true };
 },
+_travado: function (orc, it) {
+return !!(typeof Orcamento !== "undefined" && Orcamento._travadoOrgao && Orcamento._travadoOrgao(orc, it));
+},
 aplicar: function (orc, mudancas) {
-var n = 0;
+var n = 0, self = this;
+var trav = (typeof Licitacao !== "undefined" && Licitacao.CAMPOS_TRAVADOS) || ["quantidade", "descricao", "unidade"];
 Util.arr(orc && orc.etapas).forEach(function (e) {
 Util.arr(e.itens).forEach(function (it) {
 (mudancas || []).forEach(function (m) {
 if (m.itemId !== it.id) return;
+if (trav.indexOf(m.campo) >= 0 && self._travado(orc, it)) return;
 var campos = {};
 campos[m.campo] = m.para;
 Orcamento.atualizarItem(orc, e.id, it.id, campos);
@@ -16089,6 +16529,18 @@ n++;
 });
 });
 return n;
+},
+textoRecusadas: function (rec) {
+rec = Util.arr(rec);
+if (!rec.length) return "";
+var trav = rec.filter(function (r) { return r.travado; }), zero = rec.filter(function (r) { return !r.travado; });
+var lista = function (l) {
+return l.slice(0, 3).map(function (r) { return (r.codigo || "item") + " (" + r.campo + ")"; }).join("; ") + (l.length > 3 ? "…" : "");
+};
+var p = [];
+if (trav.length) p.push(trav.length + " de item da planilha do órgão, travado no modo licitação: " + lista(trav) + ". Para alterar, use 'Liberar edição' no painel Licitação (se o edital permitir)");
+if (zero.length) p.push(zero.length + " zerada(s) no Excel: " + lista(zero) + ". Zero não entra — ajuste no app");
+return rec.length + " edição(ões) do Excel NÃO aplicada(s) — " + p.join(" · ") + ".";
 }
 };
 global.Roundtrip = Roundtrip;
@@ -35081,6 +35533,9 @@ id = str(op.itemId);
 if (!own(S.ids.itens, id)) return recusa("serviço fora do contexto enviado à IA");
 loc = acharItem(work, id);
 if (!loc) return recusa("o serviço não existe mais no orçamento");
+if (O()._travadoOrgao && O()._travadoOrgao(work, loc.it)) {
+return recusa("item da planilha do órgão — a quantidade está travada no modo licitação (se o edital permitir alterar, use 'Liberar edição' no painel Licitação)");
+}
 var FM = O().FORMAS_MEMORIA || {}, forma = str(op.forma);
 if (!own(FM, forma)) return recusa("forma de cálculo fora da lista (" + cortar(forma, 30) + ")");
 if (!op.dados || typeof op.dados !== "object" || Array.isArray(op.dados)) return recusa("veio sem as medidas (dados)");
@@ -35463,7 +35918,7 @@ var atualQ = { q: num(loc.it.quantidade), p: !!loc.it.qtdPendente, m: String(loc
 if (atualQ.q === num(inv.antes.q) && atualQ.p === !!inv.antes.p && atualQ.m === String(inv.antes.m || "")) return { ok: true, silencioso: true };
 if (atualQ.q !== num(inv.para.q) || atualQ.m !== String(inv.para.m || "")) return nao("a quantidade foi mudada depois (agora " + fmtN(atualQ.q) + ")");
 x = Orc.restaurarQuantidade(orc, loc.etapa.id, loc.it.id, inv.antes);
-return x && x.ok ? { ok: true } : nao("não consegui voltar a quantidade");
+return x && x.ok ? { ok: true } : nao((x && x.travado && x.erro) ? "a quantidade está travada de novo (item da planilha do órgão, modo licitação) — ficou " + fmtN(num(loc.it.quantidade)) : "não consegui voltar a quantidade");
 case "criarEtapa":
 loc = acharEtapa(orc, inv.etapaId);
 if (!loc) return { ok: true, silencioso: true };
@@ -52769,6 +53224,549 @@ baseDe: baseDe, itensElegiveis: itensElegiveis, elegivel: elegivel
 if (typeof module !== "undefined" && module.exports) module.exports = global.Fechamento;
 })(typeof window !== "undefined" ? window : globalThis);
 } catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/licitacao.js ==== */
+try {
+(function (global) {
+"use strict";
+function _dep(nome) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") {
+try { var m = require("./" + nome.toLowerCase() + ".js"); if (m) return m; } catch (e) {}
+}
+return null;
+}
+function U() { return _dep("Util"); }
+function O() { return _dep("Orcamento"); }
+function A() {
+if (global.Arred) return global.Arred;
+if (typeof require === "function") { try { return require("./arredondamento.js"); } catch (e) {} }
+return null;
+}
+function num(v) { var u = U(); return u ? u.num(v) : (Number(v) || 0); }
+function fmt(v) { var u = U(); return u && u.fmtMoeda ? u.fmtMoeda(v) : ("R$ " + Number(v).toFixed(2)); }
+function fmtPct(v) { var u = U(); return (u && u.fmtNum ? u.fmtNum(v, 2) : Number(v).toFixed(2)) + "%"; }
+function tr2(v) {
+var a = A();
+if (a && a.valor) return a.valor(v, "truncar2");
+var n = Number(v); if (!isFinite(n)) return 0;
+return (n < 0 ? -1 : 1) * (Math.floor(Math.abs(n) * 100 + 1e-9) / 100);
+}
+function s(v) { return String(v == null ? "" : v).trim(); }
+var LIM_INEXEQUIVEL = 0.75;
+var LIM_GARANTIA = 0.85;
+var Licitacao = {
+LIM_INEXEQUIVEL: LIM_INEXEQUIVEL,
+LIM_GARANTIA: LIM_GARANTIA,
+cfg: function (orc) {
+return (orc && orc.config && orc.config.licitacao && typeof orc.config.licitacao === "object") ? orc.config.licitacao : null;
+},
+ativo: function (orc) { var c = this.cfg(orc); return !!(c && c.ativo); },
+temPacote: function (orc) { var c = this.cfg(orc); return !!(c && c.certamepro); },
+aplicarPacote: function (orc, bloco) {
+if (!orc || !bloco || typeof bloco !== "object") return null;
+orc.config = (orc.config && typeof orc.config === "object") ? orc.config : {};
+var lic = (orc.config.licitacao && typeof orc.config.licitacao === "object") ? orc.config.licitacao : {};
+orc.config.licitacao = lic;
+lic.ativo = true;
+lic.certamepro = true;
+lic.certame = s(bloco.certame);
+lic.pncp = s(bloco.numero_controle_pncp);
+var org = (bloco.orgao && typeof bloco.orgao === "object") ? bloco.orgao : {};
+lic.orgao = { nome: s(org.nome), cnpj: s(org.cnpj) };
+lic.criterio = s(bloco.criterio_julgamento);
+lic.valorEstimado = num(bloco.valor_estimado) > 0 ? num(bloco.valor_estimado) : 0;
+lic.bdiRef = (bloco.bdi_referencia_pct != null && isFinite(Number(bloco.bdi_referencia_pct))) ? Number(bloco.bdi_referencia_pct) : null;
+lic.dataBase = s(bloco.data_base);
+lic.precosIncluemBdi = bloco.precos_incluem_bdi === true;
+lic.devolverPara = s(bloco.devolver_para);
+lic.avisosPacote = (Array.isArray(bloco.avisos) ? bloco.avisos : []).map(function (x) { return s(x); }).filter(function (x) { return !!x; }).slice(0, 10);
+if (bloco.obra_engenharia === true || bloco.obra_engenharia === false) {
+lic.obra = bloco.obra_engenharia; lic.obraInformada = true;
+} else if (!lic.obraInformada) {
+lic.obra = false; lic.obraInformada = false;
+}
+var porN = {}, porC = {}, cont = {}, n = 0;
+var itens = Array.isArray(bloco.itens_referencia) ? bloco.itens_referencia : [];
+var comBdiDe = function (r) { var v = num(r.preco_unitario_bdi); return v > 0 ? v : null; };
+itens.forEach(function (r) {
+if (!r || typeof r !== "object") return;
+var p = num(r.preco_unitario);
+if (!(p > 0)) return;
+var reg = { numero: s(r.numero), codigo: s(r.codigo), fonte: s(r.fonte), preco: p, precoBdi: comBdiDe(r) };
+if (reg.numero) { porN[reg.numero] = reg; n++; }
+if (reg.codigo) cont[reg.codigo] = (cont[reg.codigo] || 0) + 1;
+});
+itens.forEach(function (r) {
+if (!r || typeof r !== "object") return;
+var cod = s(r.codigo), p = num(r.preco_unitario);
+if (cod && p > 0 && cont[cod] === 1) porC[cod] = { numero: s(r.numero), codigo: cod, fonte: s(r.fonte), preco: p, precoBdi: comBdiDe(r) };
+});
+lic.refs = { n: porN, c: porC };
+lic.nRefs = n || Object.keys(porC).length;
+lic.travaLiberada = false;
+if (Array.isArray(bloco.bases_exigidas)) {
+lic.basesExigidas = this.lerBasesExigidas(bloco.bases_exigidas);
+lic.basesExigidasIgnoradas = bloco.bases_exigidas.length - lic.basesExigidas.length;
+}
+var travados = 0;
+(orc.etapas || []).forEach(function (e) {
+((e && e.itens) || []).forEach(function (it) { if (it) { it.travadoOrgao = true; travados++; } });
+});
+lic.nTravados = travados;
+return lic;
+},
+itemTravado: function (orc, it) {
+var c = this.cfg(orc);
+return !!(c && c.ativo && !c.travaLiberada && it && it.travadoOrgao);
+},
+liberarTrava: function (orc, liberar) {
+var c = this.cfg(orc); if (!c) return false;
+c.travaLiberada = !!liberar; return true;
+},
+CAMPOS_TRAVADOS: ["quantidade", "descricao", "unidade"],
+recadoTrava: function (acao) {
+var o = {
+quantidade: "a quantidade está travada",
+campos: "quantidade, descrição e unidade estão travadas",
+remover: "ele não pode ser removido"
+}[acao] || "quantidade, descrição e unidade estão travadas, e ele não pode ser removido";
+return "Item da planilha do órgão: " + o + " no modo licitação, para a proposta sair igual ao edital. O preço continua editável. " +
+"Se o edital permitir alterar a planilha, use 'Liberar edição' no painel Licitação, no topo do orçamento.";
+},
+PRECO_SIMBOLICO: 0.01,
+itensSimbolicos: function (orc) {
+var self = this, out = [];
+if (!this.ativo(orc)) return out;
+(orc.etapas || []).forEach(function (e) {
+((e && e.itens) || []).forEach(function (it) {
+if (it && it.semPrecoReferencia === true && num(it.custoUnitario) <= self.PRECO_SIMBOLICO + 1e-9) {
+out.push({ itemId: it.id, etapaId: e.id, numero: s(it.numeroOrigem) || s(it.codigo) || s(it.descricao).slice(0, 40) });
+}
+});
+});
+return out;
+},
+textoSimbolicos: function (lista) {
+var ns = (lista || []).map(function (x) { return x.numero; }), mostra = ns.slice(0, 8);
+return lista.length + " item(ns) do órgão vieram SEM preço na planilha do órgão e estão com o preço simbólico de R$ 0,01, que o CertamePRO põe só para o pacote entrar: " +
+"preencha o preço antes de devolver (itens " + mostra.join(", ") + (ns.length > mostra.length ? " e mais " + (ns.length - mostra.length) : "") + ").";
+},
+contarTravados: function (orc, itens) {
+var self = this, n = 0;
+(itens || []).forEach(function (it) { if (self.itemTravado(orc, it)) n++; });
+return n;
+},
+mesclarParametros: function (anterior, novo) {
+var ant = (anterior && typeof anterior === "object") ? anterior : {}, out = {}, k;
+for (k in ant) { if (Object.prototype.hasOwnProperty.call(ant, k)) out[k] = ant[k]; }
+novo = novo || {};
+out.ativo = !!novo.ativo;
+out.tipo = novo.ativo ? (novo.tipo || "") : "";
+out.abertura = novo.ativo ? (novo.abertura || "") : "";
+out.processo = novo.ativo ? (novo.processo || "") : "";
+if (novo.obra !== undefined) {
+var obra = novo.obra === true;
+if (obra !== (ant.obra === true)) out.obraInformada = true;
+out.obra = obra;
+}
+return out;
+},
+refDoItem: function (orc, it) {
+var c = this.cfg(orc);
+if (!c || !c.refs || !it) return null;
+var reg = null;
+var n = s(it.numeroOrigem);
+if (n && c.refs.n && c.refs.n[n]) reg = c.refs.n[n];
+else if (!n && it.codigo && c.refs.c && c.refs.c[s(it.codigo)]) reg = c.refs.c[s(it.codigo)];
+if (!reg) return null;
+var base = { preco: reg.preco, fonte: reg.fonte, numero: reg.numero, codigo: reg.codigo };
+var pb = num(reg.precoBdi);
+if (pb > 0 && (c.bdiRef != null || pb > num(reg.preco) + 0.005)) {
+base.comBdi = tr2(pb); base.bdiAssumido = false; base.doOrgao = true;
+return base;
+}
+var pct, assumido = false;
+if (c.precosIncluemBdi) pct = 0;
+else if (c.bdiRef != null) pct = num(c.bdiRef);
+else { pct = (orc.bdi ? num(orc.bdi.percentual) : 0); assumido = true; }
+base.comBdi = c.precosIncluemBdi ? tr2(reg.preco) : tr2(reg.preco * (1 + pct / 100));
+base.bdiAssumido = assumido; base.doOrgao = false;
+return base;
+},
+_puComBdi: function (orc, linha) {
+var cfg = O().garantirConfig(orc);
+if (cfg.bdiIncidencia !== "final") return num(linha.precoUnit);
+var pct = (orc.bdi ? num(orc.bdi.percentual) : 0);
+var a = A();
+return a && a.unitario ? a.unitario(num(linha.custoUnitario) * (1 + pct / 100), cfg.arredondamento) : tr2(num(linha.custoUnitario) * (1 + pct / 100));
+},
+totalProposta: function (orc) {
+var t = O().totais(orc);
+var temOpc = (orc.etapas || []).some(function (e) { return e && e.opcional; });
+return temOpc ? num(t.precoObrigatorio) : num(t.precoVenda);
+},
+avisos: function (orc) {
+var out = { ativo: false, itens: [], porItem: {}, semReferencia: 0, comReferencia: 0, bdiAssumido: false,
+total: null, estimado: 0, razao: null, faixa: "", resumo: [], simbolicos: [] };
+var c = this.cfg(orc);
+if (!c || !c.ativo) return out;
+out.ativo = true;
+var self = this, calc = O().calcular(orc);
+(calc.linhas || []).forEach(function (L) {
+var ref = self.refDoItem(orc, L.item);
+if (!ref) { if (L.item && L.item.travadoOrgao) out.semReferencia++; return; }
+out.comReferencia++;
+if (ref.bdiAssumido) out.bdiAssumido = true;
+var pu = self._puComBdi(orc, L);
+if (pu > ref.comBdi + 0.005) {
+var a = { itemId: L.itemId, numero: L.numero, codigo: L.codigo, descricao: L.descricao,
+precoUnit: pu, refComBdi: ref.comBdi, excesso: tr2(pu - ref.comBdi),
+excessoPct: ref.comBdi > 0 ? (pu / ref.comBdi - 1) * 100 : 0,
+qtd: L.quantidade, impacto: tr2((pu - ref.comBdi) * L.quantidade) };
+out.itens.push(a); out.porItem[L.itemId] = a;
+}
+});
+var est = num(c.valorEstimado);
+out.estimado = est;
+out.obra = c.obra === true;
+if (est > 0) {
+var tot = this.totalProposta(orc);
+out.total = tot; out.razao = tot / est;
+var pctTxt = fmtPct(out.razao * 100), dif = fmt(tr2(est - tot));
+var base = "O total (" + fmt(tot) + ") é " + pctTxt + " do valor orçado pela Administração (" + fmt(est) + ", o valor estimado do edital). ";
+if (tot > est + 0.005) {
+out.faixa = "acima";
+out.resumo.push({ tom: "erro", chave: "teto", texto: "O total da proposta (" + fmt(tot) + ") está ACIMA do valor estimado do edital (" + fmt(est) + ") em " + fmt(tr2(tot - est)) +
+". Preço acima do orçado pela Administração costuma desclassificar." });
+} else if (!out.obra) {
+out.faixa = "sem-limites";
+} else if (out.razao < LIM_INEXEQUIVEL) {
+out.faixa = "inexequivel";
+out.resumo.push({ tom: "erro", chave: "exeq", texto: base +
+"Lei 14.133/2021, art. 59, § 4º: no caso de obras e serviços de engenharia, são consideradas inexequíveis as propostas inferiores a 75% do valor orçado pela Administração. " +
+"O § 2º permite à Administração exigir que a exequibilidade seja demonstrada — confira no edital como ela é aferida. " +
+"Se a proposta for aceita, vale também o § 5º: garantia adicional equivalente à diferença entre o valor orçado e a proposta (" + dif + "), sem prejuízo das demais garantias." });
+} else if (out.razao < LIM_GARANTIA) {
+out.faixa = "garantia";
+out.resumo.push({ tom: "alerta", chave: "exeq", texto: base +
+"Lei 14.133/2021, art. 59, § 5º: nas contratações de obras e serviços de engenharia, será exigida do licitante vencedor cuja proposta for inferior a 85% do valor orçado pela Administração " +
+"garantia adicional equivalente à diferença entre esse valor e o da proposta (" + dif + "), sem prejuízo das demais garantias exigíveis." });
+} else {
+out.faixa = "ok";
+}
+if (!out.obra) {
+out.resumo.push(c.obraInformada
+? { tom: "info", chave: "obra", texto: "Objeto marcado como NÃO sendo obra nem serviço de engenharia: os limites de 75% e 85% do valor orçado (Lei 14.133/2021, art. 59, §§ 4º e 5º) não se aplicam e não são calculados aqui." }
+: { tom: "alerta", chave: "obra", texto: (c.certamepro ? "O pacote do certame não informou se o objeto é obra ou serviço de engenharia. " : "O orçamento não está marcado como obra ou serviço de engenharia. ") +
+"Os limites de 75% e 85% do valor orçado pela Administração (Lei 14.133/2021, art. 59, §§ 4º e 5º) NÃO estão sendo aplicados. " +
+"Se for obra ou serviço de engenharia, marque \"Obra ou serviço de engenharia (limites de 75%/85%)\" em ⚙ Parâmetros, no bloco da licitação." });
+}
+}
+if (out.itens.length) {
+var imp = 0; out.itens.forEach(function (a) { imp += a.impacto; });
+out.resumo.push({ tom: "alerta", chave: "itens", texto: out.itens.length + " item(ns) com preço unitário COM BDI acima da referência do órgão (excesso somado de " + fmt(tr2(imp)) + " nas quantidades do edital). Marcados na planilha." });
+}
+if (out.bdiAssumido) {
+out.resumo.push({ tom: "info", chave: "bdi", texto: "O pacote não trouxe o BDI de referência do órgão; a referência sem BDI foi levada a COM BDI pelo BDI deste orçamento (" + fmtPct(orc.bdi ? num(orc.bdi.percentual) : 0) + "). Informe o BDI do edital para uma comparação fiel." });
+}
+if (out.semReferencia) {
+out.resumo.push({ tom: "info", chave: "semref", texto: out.semReferencia + " item(ns) do órgão sem preço de referência no pacote — não há como compará-los." });
+}
+var simb = this.itensSimbolicos(orc);
+out.simbolicos = simb;
+if (simb.length) out.resumo.unshift({ tom: "erro", chave: "simbolico", texto: this.textoSimbolicos(simb) });
+(c.avisosPacote || []).forEach(function (t) {
+if (/R\$\s?0,01/.test(t)) return;
+out.resumo.push({ tom: "info", chave: "pacote", texto: "Ao montar o pacote, o CertamePRO avisou: " + t });
+});
+return out;
+},
+_custoParaPU: function (orc, alvoPU) {
+var cfg = O().garantirConfig(orc), a = A(), modo = cfg.arredondamento;
+var pct = (orc.bdi ? num(orc.bdi.percentual) : 0), f = 1 + pct / 100;
+function pu(cu) { return a && a.unitario ? a.unitario(cu * f, modo) : tr2(cu * f); }
+var cu = tr2(alvoPU / f);
+if (!(cu > 0)) cu = 0.01;
+for (var i = 0; i < 5; i++) {
+var prox = Math.round((cu + 0.01) * 100) / 100;
+if (pu(prox) <= alvoPU + 0.0049) cu = prox; else break;
+}
+while (cu > 0.01 && pu(cu) > alvoPU + 0.0049) cu = Math.round((cu - 0.01) * 100) / 100;
+return cu;
+},
+descontoPlano: function (orc, pct) {
+var self = this, plano = [], d = num(pct);
+if (!(d > 0 && d < 100)) return { ok: false, erro: "Informe um desconto entre 0 e 100%." };
+if (!this.ativo(orc)) return { ok: false, erro: "Este orçamento não está em modo licitação." };
+var calc = O().calcular(orc), semRef = 0;
+(calc.linhas || []).forEach(function (L) {
+var it = L.item;
+if (L.opcional) return;
+var ref = self.refDoItem(orc, it);
+if (!ref) { semRef++; return; }
+if (it.qtdPendente || !(num(it.quantidade) > 0)) return;
+var alvo = tr2(ref.comBdi * (1 - d / 100));
+plano.push({ etapaId: L.etapaId, itemId: L.itemId, numero: L.numero, alvoPU: alvo, custo: self._custoParaPU(orc, alvo), item: it });
+});
+if (!plano.length) return { ok: false, erro: "Nenhum item tem preço de referência do órgão para aplicar o desconto." };
+return { ok: true, pct: d, plano: plano, semReferencia: semRef };
+},
+simularDesconto: function (orc, pct) {
+var p = this.descontoPlano(orc, pct);
+if (!p.ok) return p;
+var cp = JSON.parse(JSON.stringify(orc));
+var r = this.aplicarDesconto(cp, pct, { semRegistro: true });
+if (!r.ok) return r;
+var av = this.avisos(cp);
+return { ok: true, pct: p.pct, itens: p.plano.length, semReferencia: p.semReferencia,
+totalAntes: this.totalProposta(orc), totalDepois: this.totalProposta(cp), avisos: av };
+},
+aplicarDesconto: function (orc, pct, opts) {
+opts = opts || {};
+var Orc = O();
+if (orc.fechamento) return { ok: false, erro: "Este orçamento tem um \"Fechar valor\" ativo. Desfaça o fechamento antes de aplicar o desconto linear." };
+var lic = this.cfg(orc);
+if (lic && lic.descontoLinear) return { ok: false, erro: "Já existe um desconto linear aplicado (" + fmtPct(lic.descontoLinear.pct) + "). Desfaça-o antes de aplicar outro." };
+var p = this.descontoPlano(orc, pct);
+if (!p.ok) return p;
+var antes = [];
+p.plano.forEach(function (x) {
+var it = x.item;
+antes.push({ etapaId: x.etapaId, itemId: x.itemId, custoUnitario: num(it.custoUnitario), custoMO: it.custoMO, custoMAT: it.custoMAT, custoEQ: it.custoEQ,
+custoBase: it.custoBase != null ? num(it.custoBase) : null });
+});
+var antesTotal = this.totalProposta(orc);
+p.plano.forEach(function (x) { Orc.atualizarItem(orc, x.etapaId, x.itemId, { custoUnitario: x.custo }); });
+lic.descontoLinear = { pct: p.pct, em: (U() && U().agoraISO) ? U().agoraISO() : new Date().toISOString(), antes: antes, totalAntes: antesTotal };
+return { ok: true, pct: p.pct, itens: p.plano.length, semReferencia: p.semReferencia, totalAntes: antesTotal, totalDepois: this.totalProposta(orc) };
+},
+desfazerDesconto: function (orc) {
+var lic = this.cfg(orc);
+if (!lic || !lic.descontoLinear) return { ok: false, erro: "Não há desconto linear para desfazer." };
+var d = lic.descontoLinear, n = 0;
+d.antes.forEach(function (a) {
+var e = (orc.etapas || []).filter(function (x) { return x.id === a.etapaId; })[0];
+var it = e && (e.itens || []).filter(function (x) { return x.id === a.itemId; })[0];
+if (!it) return;
+it.custoUnitario = a.custoUnitario;
+if (a.custoMO !== undefined) it.custoMO = a.custoMO;
+if (a.custoMAT !== undefined) it.custoMAT = a.custoMAT;
+if (a.custoEQ !== undefined) it.custoEQ = a.custoEQ;
+if (a.custoBase != null) it.custoBase = a.custoBase;
+n++;
+});
+delete lic.descontoLinear;
+return { ok: true, itens: n };
+},
+_regime: function (r) {
+var t = s(r).toLowerCase();
+try { t = t.normalize("NFD").replace(/[̀-ͯ]/g, ""); } catch (e) {}
+if (/^(nao|sem)[ -]desoner/.test(t) || /^oner/.test(t)) return "onerado";
+if (/^desoner/.test(t) || /^com[ -]desoner/.test(t)) return "desonerado";
+return "";
+},
+_comp: function (c) {
+var t = s(c), m = /^(\d{4})-(\d{2})$/.exec(t) || null;
+if (m) return t;
+m = /^(\d{2})\/(\d{4})$/.exec(t);
+return m ? (m[2] + "-" + m[1]) : "";
+},
+lerBasesExigidas: function (lista) {
+var self = this, out = [], vistos = {};
+(Array.isArray(lista) ? lista : []).forEach(function (b) {
+if (!b || typeof b !== "object") return;
+var fonte = s(b.fonte).toUpperCase().replace(/[^A-Z0-9_]/g, "");
+var comp = self._comp(b.competencia), reg = self._regime(b.regime), uf = s(b.uf).toUpperCase();
+if (!fonte || !comp || (uf && !/^[A-Z]{2}$/.test(uf))) return;
+if (fonte === "SINAPIDESONERADA" || fonte === "SINAPI_DES") { fonte = "SINAPI"; reg = "desonerado"; }
+var catId = fonte === "SINAPI" ? (reg === "desonerado" ? "SINAPI_DES" : "SINAPI") : fonte;
+if (fonte === "SINAPI" && !reg) reg = "onerado";
+var e = { fonte: fonte, catId: catId, uf: uf, competencia: comp, regime: reg };
+var k = self.chaveBase(e);
+if (vistos[k]) return;
+vistos[k] = 1; out.push(e);
+});
+return out;
+},
+chaveBase: function (e) { return [s(e.catId || e.fonte).toUpperCase(), s(e.uf).toUpperCase(), s(e.competencia), s(e.regime)].join("|"); },
+fmtComp: function (c) { var m = /^(\d{4})-(\d{2})$/.exec(s(c)); return m ? (m[2] + "/" + m[1]) : s(c); },
+fmtBase: function (e) {
+if (!e) return "";
+return s(e.fonte || e.catId).replace(/_DES$/, "") + (e.uf ? "-" + e.uf : "") + " " + this.fmtComp(e.competencia) + (e.regime ? " " + e.regime : "");
+},
+basesExigidas: function (orc) { var c = this.cfg(orc); return (c && c.ativo && Array.isArray(c.basesExigidas)) ? c.basesExigidas : []; },
+temBasesExigidas: function (orc) { return this.basesExigidas(orc).length > 0; },
+escolhaDe: function (orc, exig) {
+var c = this.cfg(orc), k = this.chaveBase(exig);
+return ((c && c.basesEscolhas) || []).filter(function (x) { return x && x.chave === k; })[0] || null;
+},
+_emUso: function (exig, ctx) {
+ctx = ctx || {};
+if (exig.catId === "SINAPI") {
+var sn = ctx.sinapi || {};
+return sn.carregado === false || !sn.competencia ? null : { catId: "SINAPI", fonte: "SINAPI", uf: s(sn.uf).toUpperCase(), competencia: this._comp(sn.competencia), regime: "onerado" };
+}
+var inst = (ctx.instaladas || []).filter(function (b) { return b && s(b.fonte).toUpperCase() === exig.catId; })[0];
+if (!inst) return null;
+var reg = inst.desonerado === true ? "desonerado" : (inst.desonerado === false ? "onerado" : (exig.catId === "SINAPI_DES" ? "desonerado" : ""));
+return { catId: exig.catId, fonte: exig.fonte, uf: s(inst.uf).toUpperCase(), competencia: this._comp(inst.competencia), regime: reg, fixada: !!(inst.sel && inst.sel.competencia) };
+},
+_confere: function (exig, uso) {
+if (!uso) return false;
+if (exig.uf && uso.uf !== exig.uf) return false;
+if (uso.competencia !== exig.competencia) return false;
+if (exig.regime && uso.regime && uso.regime !== exig.regime) return false;
+return true;
+},
+situacaoBases: function (orc, ctx) {
+var self = this;
+ctx = ctx || {};
+var Cat = ctx.catalogo || global.BasesCat || null;
+var fatos = ctx.fatos || {};
+return this.basesExigidas(orc).map(function (e) {
+var uso = self._emUso(e, ctx), esc = self.escolhaDe(orc, e), r = { exigida: e, emUso: uso, escolha: esc, estado: "", onde: "", texto: "" };
+if (self._confere(e, uso)) { r.estado = "instalada"; r.texto = "em uso"; return r; }
+if (esc && self._confere(esc.usada, uso)) {
+r.estado = "outra";
+r.texto = "em uso " + self.fmtBase(uso) + " — o edital pede " + self.fmtComp(e.competencia) + " (escolha registrada na justificativa de preços)";
+return r;
+}
+var conhecidas = [];
+if (e.catId === "SINAPI") {
+conhecidas = ((ctx.compsOnerada || {})[e.uf] || []).slice();
+var sv = fatos.servidor && fatos.servidor.sinapi;
+if (sv && self._comp(sv.competencia)) conhecidas.push(self._comp(sv.competencia));
+} else if (Cat && Cat.temHistorico && Cat.temHistorico(e.catId)) {
+conhecidas = Cat.competenciasConhecidas(e.catId, e.uf, fatos);
+} else if (Cat && Cat.get && Cat.get(e.catId)) {
+var ent = Cat.get(e.catId), sv2 = ent.chaveStatus && fatos.servidor ? fatos.servidor[ent.chaveStatus] : null;
+if (ent.versaoPacote) conhecidas.push(self._comp(ent.versaoPacote));
+if (sv2 && sv2.competencia) conhecidas.push(self._comp(sv2.competencia));
+r.semHistorico = true;
+} else {
+r.semFonte = true;
+}
+if (conhecidas.indexOf(e.competencia) >= 0) { r.estado = "disponivel"; r.texto = "disponível para baixar"; }
+else {
+r.estado = "indisponivel";
+r.texto = r.semFonte ? "não distribuída pelo OrçaPRO — importe a planilha oficial do órgão desta competência em Tabelas"
+: "não encontrada nas fontes conhecidas (disco, servidor da RA, espelho)";
+}
+if (uso) r.texto += " · em uso agora: " + self.fmtBase(uso);
+return r;
+});
+},
+basesPendentes: function (orc, ctx) {
+return this.situacaoBases(orc, ctx).filter(function (x) { return x.estado !== "instalada" && x.estado !== "outra"; });
+},
+familiaSinapiExigida: function (orc) {
+var fams = [];
+this.basesExigidas(orc).forEach(function (e) { if ((e.catId === "SINAPI" || e.catId === "SINAPI_DES") && fams.indexOf(e.catId) < 0) fams.push(e.catId); });
+return fams.length === 1 ? fams[0] : null;
+},
+declararBaseUsada: function (orc, uso) {
+if (!orc || !uso || !uso.catId) return;
+if (uso.catId === "SINAPI") {
+if (uso.uf) orc.uf = uso.uf;
+if (uso.competencia) orc.competenciaSinapi = uso.competencia;
+return;
+}
+orc.config = (orc.config && typeof orc.config === "object") ? orc.config : {};
+var lista = Array.isArray(orc.config.bases) ? orc.config.bases : (orc.config.bases = []);
+var reg = lista.filter(function (b) { return b && s(b.fonte).toUpperCase() === uso.catId; })[0];
+if (!reg) { reg = { fonte: uso.catId }; lista.push(reg); }
+reg.uf = uso.uf || reg.uf || ""; reg.competencia = uso.competencia || reg.competencia || "";
+},
+registrarEscolhaBase: function (orc, exig, usada, extra) {
+var c = this.cfg(orc);
+if (!c || !exig || !usada || !usada.competencia) return null;
+extra = extra || {};
+var k = this.chaveBase(exig);
+var reg = { chave: k, exigida: { fonte: exig.fonte, catId: exig.catId, uf: exig.uf, competencia: exig.competencia, regime: exig.regime },
+usada: { fonte: usada.fonte || exig.fonte, catId: usada.catId || exig.catId, uf: s(usada.uf).toUpperCase(), competencia: this._comp(usada.competencia), regime: usada.regime || exig.regime },
+motivo: s(extra.motivo), por: s(extra.por), em: s(extra.em) || ((U() && U().agoraISO) ? U().agoraISO() : new Date().toISOString()) };
+c.basesEscolhas = (Array.isArray(c.basesEscolhas) ? c.basesEscolhas : []).filter(function (x) { return x && x.chave !== k; });
+c.basesEscolhas.push(reg);
+this.declararBaseUsada(orc, reg.usada);
+return reg;
+},
+justificativaBases: function (orc) {
+var self = this, c = this.cfg(orc);
+if (!c || !c.ativo) return [];
+var vigentes = {};
+this.basesExigidas(orc).forEach(function (e) { vigentes[self.chaveBase(e)] = 1; });
+return ((c.basesEscolhas) || []).filter(function (x) { return x && vigentes[x.chave]; }).map(function (x) {
+var dt = /^(\d{4})-(\d{2})-(\d{2})/.exec(s(x.em));
+var quando = dt ? (dt[3] + "/" + dt[2] + "/" + dt[1]) : "";
+return { exigida: self.fmtBase(x.exigida), usada: self.fmtBase(x.usada), motivo: x.motivo, por: x.por, em: quando,
+texto: "O edital exige " + self.fmtBase(x.exigida) + "; os preços usam " + self.fmtBase(x.usada) + "." +
+(x.motivo ? " Motivo: " + x.motivo + "." : "") + " Escolha registrada" + (x.por ? " por " + x.por : "") + (quando ? " em " + quando : "") + "." };
+});
+},
+destino: function (url) {
+var u = s(url);
+var m = u.match(/^(https?):\/\/([^\/:?#]+)(?::(\d+))?(\/[^?#]*)?/i);
+if (!m) return { ok: false, erro: "O endereço de devolução do certame é inválido." };
+var host = m[2].toLowerCase();
+var local = (host === "127.0.0.1" || host === "localhost" || host === "[::1]");
+return { ok: true, url: u, host: host + (m[3] ? ":" + m[3] : ""), local: local };
+},
+lerDevolucao: function (j, totalLocal) {
+if (!j || typeof j !== "object" || !Array.isArray(j.alertas)) return null;
+var pre = (j.preenchido && typeof j.preenchido === "object") ? j.preenchido : {};
+var temV = function (v) { return v != null && v !== "" && isFinite(Number(v)); };
+var valor = temV(pre.valor_proposta) ? num(pre.valor_proposta) : (temV(j.total) ? num(j.total) : null);
+if (valor == null) return null;
+var out = {
+valor: valor,
+custo: temV(pre.custo_estimado) ? num(pre.custo_estimado) : (temV(j.custo_direto) ? num(j.custo_direto) : null),
+bdi: temV(pre.bdi_minimo_pct) ? num(pre.bdi_minimo_pct) : (temV(j.bdi_pct) ? num(j.bdi_pct) : null),
+arquivo: s(j.arquivo),
+carta: (j.carta && typeof j.carta === "object") ? { refeita: j.carta.refeita === true, aviso: s(j.carta.aviso) } : null,
+modelo: (j.modelo_orgao && typeof j.modelo_orgao === "object") ? { gerado: j.modelo_orgao.gerado === true, itens: num(j.modelo_orgao.itens_preenchidos) } : null,
+alertas: [], divergencia: null
+};
+var peso = { critica: 0, alta: 1, media: 2, baixa: 3, info: 4 };
+j.alertas.forEach(function (a) {
+if (!a || typeof a !== "object") return;
+var g = s(a.gravidade).toLowerCase(), texto = s(a.mensagem) || s(a.tipo);
+var ns = Array.isArray(a.itens) ? a.itens.map(function (x) { return x && typeof x === "object" ? (s(x.numero) || s(x.descricao)) : ""; }).filter(function (x) { return !!x; }) : [];
+if (ns.length) {
+var tot = Math.max(num(a.total_itens), ns.length), mostra = ns.slice(0, 8);
+texto += " Itens: " + mostra.join(", ") + (tot > mostra.length ? " e mais " + (tot - mostra.length) : "") + ".";
+}
+out.alertas.push({ tipo: s(a.tipo), gravidade: g, tom: (g === "critica" || g === "alta") ? "erro" : (g === "info" ? "info" : "alerta"),
+texto: texto, peso: peso[g] != null ? peso[g] : 2 });
+});
+out.alertas.sort(function (a, b) { return a.peso - b.peso; });
+if (totalLocal != null && isFinite(Number(totalLocal)) && Math.abs(num(totalLocal) - valor) > 0.005) out.divergencia = { certame: valor, local: num(totalLocal) };
+return out;
+},
+identificacao: function (orc) {
+var c = this.cfg(orc);
+if (!c || !c.ativo) return null;
+function dt(x) {
+var m = String(x || "").match(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/);
+return m ? (m[3] + "/" + m[2] + "/" + m[1] + (m[4] ? " " + m[4] + ":" + m[5] : "")) : "";
+}
+var orgao = (c.orgao && c.orgao.nome) || (orc.cliente && orc.cliente.nome) || "";
+return {
+orgao: orgao,
+cnpj: (c.orgao && c.orgao.cnpj) || (orc.cliente && orc.cliente.doc) || "",
+processo: s(c.processo),
+edital: s(c.pncp) || s(c.certame),
+sessao: dt(c.abertura),
+modalidade: s(c.tipo),
+criterio: s(c.criterio),
+valorEstimado: num(c.valorEstimado),
+dataBase: s(c.dataBase)
+};
+}
+};
+global.Licitacao = Licitacao;
+if (typeof module !== "undefined" && module.exports) module.exports = Licitacao;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/porobra.js ==== */
 try {
 (function (global) {
@@ -58738,6 +59736,7 @@ var n = num(v);
 return "R$ " + n.toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 }
 function n2(v) { return num(v).toFixed(2).replace(".", ","); }
+function n4(v) { return num(v).toFixed(4).replace(/\.?0+$/, "").replace(".", ","); }
 function dia(iso) {
 var s = txt(iso);
 return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(8, 10) + "/" + s.slice(5, 7) + "/" + s.slice(0, 4) : s;
@@ -58822,7 +59821,8 @@ campos: [
 { id: "nivel", nome: "O que a tabela mostra", tipo: "lista", padrao: "", opcoes: [
 ["", "Cada item com o seu valor"],
 ["resumido", "Só o valor de cada etapa (resumido)"],
-["analitico", "Analítico: quantidade, unidade, unitário e total de cada item"]] },
+["analitico", "Analítico: quantidade, unidade, unitário e total de cada item"],
+["composicoes", "Composições abertas: cada item com os seus insumos, coeficientes e preços"]] },
 { id: "mostrarPeso", nome: "Coluna com o peso (%) de cada etapa no total — só no resumido", tipo: "sim_nao", padrao: false },
 { id: "nota", nome: "Nota abaixo da tabela", tipo: "multi", dica: "Ex.: Valores válidos para pagamento conforme as condições desta proposta." },
 { id: "tituloOpcionais", nome: "Título do bloco de adicionais", padrao: "ADICIONAIS OPCIONAIS" },
@@ -58841,9 +59841,14 @@ campos: [
 dica: "Ex.: A distribuição abaixo é uma previsão; o cronograma detalhado é fechado na reunião de início." },
 { id: "modo", nome: "Como mostrar", tipo: "lista", padrao: "", opcoes: [
 ["", "Resumido: cada etapa por período, com barras"],
-["completo", "Completo: prazo em dias úteis, início e término por etapa, desembolso por mês"]] },
-{ id: "mostrarDesembolso", nome: "No completo, incluir a tabela de desembolso por mês", tipo: "sim_nao", padrao: true },
-{ id: "mostrarPremissas", nome: "No completo, incluir as premissas de prazo a cargo do contratante", tipo: "sim_nao", padrao: true },
+["completo", "Completo: prazo em dias úteis, início e término por etapa, desembolso por mês"],
+["gantt", "Gantt do sistema: o mesmo desenho da tela do cronograma (etapas, subetapas, meses e semanas)"]] },
+{ id: "ganttDetalhe", nome: "No Gantt, até que nível", tipo: "lista", padrao: "subetapa", opcoes: [
+["subetapa", "Etapas e subetapas"],
+["etapa", "Só as etapas"]] },
+{ id: "ganttSetas", nome: "No Gantt, mostrar setas de dependência, folgas e caminho crítico", tipo: "sim_nao", padrao: false },
+{ id: "mostrarDesembolso", nome: "No completo ou no Gantt, incluir a tabela de desembolso por mês", tipo: "sim_nao", padrao: true },
+{ id: "mostrarPremissas", nome: "No completo ou no Gantt, incluir as premissas de prazo a cargo do contratante", tipo: "sim_nao", padrao: true },
 { id: "mostrarValores", nome: "Mostrar o valor previsto em cada mês", tipo: "sim_nao", padrao: false },
 { id: "periodos", nome: "Quantos períodos mostrar (0 = como está no orçamento)", padrao: "0" },
 { id: "rotuloMes", nome: "Como chamar cada coluna", padrao: "Mês",
@@ -59741,6 +60746,7 @@ if (!cheia) corpo = ornCanto + corpo + rodape;
 if (carimbo) corpo = '<div class="tp-wm">' + esc(carimbo) + "</div>" + corpo;
 if (wmEmp && !cheia) corpo = '<div class="tp-wm tp-wm-emp">' + esc(wmEmp) + "</div>" + corpo;
 var cls = "tp-pg" + (vertical ? " tp-vert" : "")
++ (p.tipo === "cronograma" && p.modo === "gantt" && !vertical && temGanttSvg(d.cronograma) ? " tp-paisagem" : "")
 + (cheia ? " tp-cheia" : "")
 + (cheia && m.estilo.logoEscuro ? " tp-logo-" + m.estilo.logoEscuro : "")
 + (escuro ? " tp-escura" : "")
@@ -60013,15 +61019,53 @@ return '<table class="tp-tbl tp-ana"><thead><tr><th>' + esc(p.colTrabalho) + '</
 + "<tbody>" + corpo + "</tbody></table>"
 + '<p class="tp-total">Valor total: <b>' + esc(moeda(b.total)) + "</b></p>";
 }
-function cronogramaCompleto(p, cr) {
-var ex = cr.execucao;
-var html = "";
-if (num(ex.totalDias) > 0) {
-html += '<p class="tp-p">A execução está prevista em <b>' + num(ex.totalDias) + " dias úteis</b>"
+function tabelaComposicoes(p, gs, b) {
+var temAlgum = gs.some(function (g) { return arr(g.linhas).some(function (l) { return arr(l.insumos).length > 0; }); });
+if (!temAlgum) {
+return '<p class="tp-leg">As composições deste orçamento não estavam disponíveis ao gerar o documento; abaixo, cada item com quantidade, unidade, unitário e total.</p>'
++ tabelaAnalitica(p, gs, b);
+}
+var CAT = { MO: "Mão de obra", MAT: "Material", EQ: "Equipamento" };
+function cod(c) { c = txt(c); return /[A-Za-z0-9]/.test(c) ? '<span class="tp-cod">' + esc(c) + "</span> " : ""; }
+var corpo = "";
+gs.forEach(function (g) {
+if (txt(g.nome)) corpo += '<tr class="tp-grupo"><td colspan="6">' + (txt(g.codigo) ? esc(g.codigo) + " — " : "") + esc(g.nome) + "</td></tr>";
+arr(g.linhas).forEach(function (l) {
+corpo += '<tr class="tp-item"><td>' + cod(l.codigo) + esc(l.descricao) + "</td><td>" + esc(txt(l.unidade))
++ '</td><td class="tp-num"></td><td class="tp-num">' + (num(l.qtd) > 0 ? esc(n2(l.qtd)) : "")
++ '</td><td class="tp-num">' + (l.unitario !== undefined && l.unitario !== null ? esc(moeda(l.unitario)) : "") + '</td><td class="tp-num">' + esc(moeda(l.total)) + "</td></tr>";
+arr(l.insumos).forEach(function (i) {
+corpo += '<tr class="tp-ins"><td class="tp-ins-d">' + cod(i.codigo) + esc(i.descricao)
++ (CAT[i.categoria] ? ' <span class="tp-cat">' + CAT[i.categoria] + "</span>" : "") + (i.sub ? ' <span class="tp-cat">composição</span>' : "")
++ "</td><td>" + esc(txt(i.unidade)) + '</td><td class="tp-num">' + esc(n4(i.coef)) + '</td><td class="tp-num">' + esc(n2(i.qtd))
++ '</td><td class="tp-num">' + esc(moeda(i.unitario)) + '</td><td class="tp-num">' + esc(moeda(i.total)) + "</td></tr>";
+});
+});
+});
+return '<table class="tp-tbl tp-comp"><thead><tr><th>' + esc(p.colTrabalho) + " / composição</th><th>Un.</th>"
++ '<th class="tp-num">Coef.</th><th class="tp-num">Quant.</th><th class="tp-num">Unitário</th><th class="tp-num">' + esc(p.colValor) + "</th></tr></thead>"
++ "<tbody>" + corpo + "</tbody></table>"
++ '<p class="tp-total">Valor total: <b>' + esc(moeda(b.total)) + "</b></p>"
++ '<p class="tp-leg">Insumos, coeficientes e preços conforme a planilha analítica do orçamento; os valores dos insumos estão na mesma base de preço dos itens.</p>';
+}
+function fraseExecucao(ex) {
+if (!(num(ex.totalDias) > 0)) return "";
+return '<p class="tp-p">A execução está prevista em <b>' + num(ex.totalDias) + " dias úteis</b>"
 + (num(ex.totalSemanas) > 0 ? " (aproximadamente <b>" + num(ex.totalSemanas) + " semanas</b>)" : "")
 + (txt(ex.inicio) ? ", com início em <b>" + esc(ex.inicio) + "</b>" : "")
 + (txt(ex.fim) ? " e conclusão prevista para <b>" + esc(ex.fim) + "</b>" : "") + ".</p>";
 }
+function notaPrazos(ex) { return txt(ex.notaPrazos) ? '<p class="tp-leg">' + esc(ex.notaPrazos) + "</p>" : ""; }
+function cronogramaGantt(p, cr) {
+var ex = cr.execucao || null;
+var html = ex ? fraseExecucao(ex) : "";
+html += '<div class="tp-gantt">' + String(cr.ganttHtml) + "</div>";
+if (ex) html += premissasExec(p, ex) + desembolsoExec(p, cr) + notaPrazos(ex);
+return html;
+}
+function cronogramaCompleto(p, cr) {
+var ex = cr.execucao;
+var html = fraseExecucao(ex);
 var linhas = arr(ex.etapas).map(function (e) {
 var pos = Math.max(0, Math.min(100, num(e.posPct))), larg = Math.max(0, Math.min(100 - pos, num(e.largPct)));
 var barra = e.marco
@@ -60035,16 +61079,21 @@ return "<tr><td>" + (txt(e.codigo) ? "<b>" + esc(e.codigo) + "</b> " : "") + esc
 }).join("");
 html += '<table class="tp-tbl tp-gt"><thead><tr><th>Etapa</th><th class="tp-gt-c">Período</th><th class="tp-num">Prazo</th><th class="tp-num">Início</th><th class="tp-num">Término</th></tr></thead>'
 + "<tbody>" + linhas + "</tbody></table>";
-if (p.mostrarPremissas && arr(ex.premissas).length) {
-html += '<h3 class="tp-h3 tp-h3-sec">Premissas de prazo a cargo do contratante</h3>'
+html += premissasExec(p, ex) + desembolsoExec(p, cr) + notaPrazos(ex);
+return html;
+}
+function premissasExec(p, ex) {
+if (!(p.mostrarPremissas && arr(ex.premissas).length)) return "";
+return '<h3 class="tp-h3 tp-h3-sec">Premissas de prazo a cargo do contratante</h3>'
 + '<table class="tp-tbl tp-gt"><thead><tr><th>Nº</th><th>Premissa</th><th class="tp-num">Prazo</th><th class="tp-num">Até</th></tr></thead><tbody>'
 + ex.premissas.map(function (x) {
 return "<tr><td>" + esc(txt(x.numero)) + "</td><td>" + esc(txt(x.nome)) + '</td><td class="tp-num">' + (x.marco ? "na data" : num(x.prazoDias) + " d") + '</td><td class="tp-num">' + esc(txt(x.fim)) + "</td></tr>";
 }).join("") + "</tbody></table>"
 + (txt(ex.fraseDasPremissas) ? '<p class="tp-leg"><b>' + esc(ex.fraseDasPremissas) + "</b> Estas linhas não têm preço nesta proposta: elas ocupam prazo e dependem do contratante.</p>" : "");
 }
-var des = ex.desembolso;
-if (p.mostrarDesembolso && des && arr(des.lista).length) {
+function desembolsoExec(p, cr) {
+var ex = cr.execucao, des = ex.desembolso, html = "";
+if (!(p.mostrarDesembolso && des && arr(des.lista).length)) return "";
 html += '<h3 class="tp-h3 tp-h3-sec">Cronograma físico-financeiro</h3>'
 + '<table class="tp-tbl tp-gt"><thead><tr><th>Mês</th><th class="tp-num">Previsão de desembolso</th><th class="tp-num">% do mês</th><th class="tp-num">% acumulado</th></tr></thead><tbody>'
 + des.lista.map(function (x) {
@@ -60056,8 +61105,6 @@ if (num(cr.totalOpcional) > 0) {
 html += '<p class="tp-leg">Este cronograma de desembolso inclui os <b>adicionais opcionais</b> (' + esc(moeda(cr.totalOpcional))
 + "). Sem eles, o valor total da proposta é <b>" + esc(moeda(cr.totalObrigatorio)) + "</b>.</p>";
 }
-}
-if (txt(ex.notaPrazos)) html += '<p class="tp-leg">' + esc(ex.notaPrazos) + "</p>";
 return html;
 }
 function estiloRaiz(m, f) {
@@ -60099,6 +61146,7 @@ var temTotais = gs.length && !gs.some(function (g) { return !isFinite(+g.total) 
 if (temTotais) return tabelaResumida(p, gs, b);
 }
 if (p.nivel === "analitico") return tabelaAnalitica(p, gs, b);
+if (p.nivel === "composicoes") return tabelaComposicoes(p, gs, b);
 var corpo;
 if (p.detalhar) {
 corpo = gs.map(function (g) {
@@ -60115,9 +61163,20 @@ return '<table class="tp-tbl"><thead><tr><th>' + esc(p.colTrabalho) + '</th><th 
 + "<tbody>" + corpo + "</tbody></table>"
 + '<p class="tp-total">Valor total: <b>' + esc(moeda(b.total)) + "</b></p>";
 }
+function temGanttSvg(cr) {
+var gH = String((cr && cr.ganttHtml) || "");
+return /^\s*<svg[\s>]/i.test(gH) && !/<script/i.test(gH);
+}
 function tabelaCronograma(p, cr) {
 if (!cr || !arr(cr.etapas).length) {
 return '<p class="tp-vaziotxt">Cronograma indisponível: o orçamento ainda não tem etapas com preço.</p>';
+}
+if (p.modo === "gantt") {
+var temSvg = temGanttSvg(cr);
+if (temSvg) return cronogramaGantt(p, cr);
+var temExec = !!(cr.execucao && arr(cr.execucao.etapas).length);
+return '<p class="tp-leg">O desenho do cronograma não pôde ser montado para este orçamento; abaixo, ' + (temExec ? "o cronograma por data." : "a distribuição por período.") + "</p>"
++ (temExec ? cronogramaCompleto(p, cr) : tabelaCronograma({ modo: "", rotuloMes: p.rotuloMes, mostrarValores: p.mostrarValores }, cr));
 }
 if (p.modo === "completo") {
 if (cr.execucao && arr(cr.execucao.etapas).length) return cronogramaCompleto(p, cr);
@@ -60164,8 +61223,10 @@ PropTpl.css = function (formato) {
 var papel = (txt(formato) === "vertical") ? "120mm 213mm" : "210mm 297mm";
 return [
 "@page{margin:0;size:" + papel + "}",
+"@page tp-paisagem{margin:0;size:297mm 210mm}",
 ".tp-doc{color:var(--tp-texto);font-family:var(--tp-f-txt);line-height:1.5}",
 ".tp-pg{position:relative;width:210mm;min-height:297mm;padding:18mm 16mm;box-sizing:border-box;overflow:hidden;page-break-after:always;background-color:#fff}",
+".tp-pg.tp-paisagem{width:297mm;min-height:210mm;page:tp-paisagem}",
 ".tp-pg.tp-vert{width:120mm;min-height:213mm;padding:14mm 12mm}",
 ".tp-pg:last-child{page-break-after:auto}",
 ".tp-cheia{padding:0;color:#fff}",
@@ -60326,6 +61387,15 @@ return [
 ".tp-gt-trilho{position:relative;display:block;height:3.2mm;background:rgba(0,0,0,.06);border-radius:1.6mm}",
 ".tp-gt-b{position:absolute;top:0;bottom:0;background:var(--tp-destaque2);border-radius:1.6mm}",
 ".tp-gt-marco{position:absolute;top:-.6mm;width:4.4mm;height:4.4mm;background:var(--tp-destaque);transform:translateX(-50%) rotate(45deg);border-radius:.6mm}",
+".tp-gantt{margin:2mm 0 3mm;padding:1.5mm;border:1px solid #e2e8f0;border-radius:2mm;background:#fff;overflow:hidden}",
+".tp-gantt svg{width:100%;height:auto;display:block}",
+".tp-comp{font-size:calc(8.6pt * var(--tp-esc-txt,1))}",
+".tp-comp th,.tp-comp td{padding:1.6mm 2mm}",
+".tp-comp tr.tp-item td{font-weight:600;background:#f8fafc}",
+".tp-comp tr.tp-ins td{color:#334155}",
+".tp-comp td.tp-ins-d{padding-left:6mm}",
+".tp-cod{color:#64748b;font-weight:500;font-size:.9em}",
+".tp-cat{display:inline-block;font-size:.8em;line-height:1.5;padding:0 1.2mm;border-radius:1mm;background:#eef2f7;color:#475569;margin-left:1.2mm;vertical-align:middle;white-space:nowrap}",
 ".tp-wm.tp-wm-emp{font-size:46pt;letter-spacing:4px;color:rgba(15,39,64,.06);transform:rotate(-30deg);z-index:0}",
 ".tp-escura .tp-wm.tp-wm-emp{color:rgba(255,255,255,.07)}",
 ".tp-rodape-nome{justify-content:center;border-top-color:var(--tp-titulo);opacity:.75}",
@@ -70832,10 +71902,17 @@ whatsapp: "",
 email: "",
 site: "",
 instagram: "",
-gestao: ""
+gestao: "",
+regimeTributario: ""
 };
 var Empresa = {
-campos: ["nome", "cnpj", "responsavel", "titulo", "crea", "registroNacional", "cidade", "endereco", "contato", "telefone", "whatsapp", "email", "site", "instagram", "gestao"],
+campos: ["nome", "cnpj", "responsavel", "titulo", "crea", "registroNacional", "cidade", "endereco", "contato", "telefone", "whatsapp", "email", "site", "instagram", "gestao", "regimeTributario"],
+REGIMES: { simples: "Simples Nacional", presumido: "Lucro Presumido", real: "Lucro Real" },
+regime: function () {
+var r = String(this.dados().regimeTributario || "").toLowerCase();
+return this.REGIMES[r] ? r : "";
+},
+regimeRotulo: function () { var r = this.regime(); return r ? this.REGIMES[r] : ""; },
 _prefs: function () {
 try { return (typeof Store !== "undefined" && typeof Auth !== "undefined") ? (Store.lerPrefs(Auth.empresaId()) || {}) : {}; }
 catch (e) { return {}; }

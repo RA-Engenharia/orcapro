@@ -49,7 +49,7 @@
         categoria: "", prazoEntrega: "", controlarPrazo: false, permitirZerado: false,
         /* padrao: so no laudo - ver o comentario no passo 1 */
         memorial: { laudo: true, excel: true, proposta: false },
-        licitacao: { ativo: false, tipo: "", abertura: "", processo: "" },
+        licitacao: { ativo: false, tipo: "", abertura: "", processo: "", obra: false },
         arredondamento: base.arredondamento,
         bdiIncidencia: base.bdiIncidencia,
         bdiPercentual: bdiPad, bdiInicial: bdiPad, bdiEraManual: false, bdiManual: false,
@@ -87,7 +87,11 @@
           ativo: !!(cfg.licitacao && cfg.licitacao.ativo),
           tipo: (cfg.licitacao && cfg.licitacao.tipo) || "",
           abertura: (cfg.licitacao && cfg.licitacao.abertura) || "",
-          processo: (cfg.licitacao && cfg.licitacao.processo) || ""
+          processo: (cfg.licitacao && cfg.licitacao.processo) || "",
+          /* obra/serviço de engenharia: liga os limites de 75%/85% (js/licitacao.js) */
+          obra: !!(cfg.licitacao && cfg.licitacao.obra === true),
+          obraInformada: !!(cfg.licitacao && cfg.licitacao.obraInformada),
+          certamepro: !!(cfg.licitacao && cfg.licitacao.certamepro)
         },
         arredondamento: cfg.arredondamento,
         bdiIncidencia: cfg.bdiIncidencia,
@@ -179,12 +183,25 @@
       cfg.permitirZerado = s.permitirZerado;
       cfg.arredondamento = s.arredondamento; cfg.bdiIncidencia = s.bdiIncidencia;
       cfg.encargos = { tipo: s.encargos.tipo, horista: s.encargos.horista, mensalista: s.encargos.mensalista };
-      cfg.licitacao = {
-        ativo: !!s.licitacao.ativo,
-        tipo: s.licitacao.ativo ? s.licitacao.tipo : "",
-        abertura: s.licitacao.ativo ? s.licitacao.abertura : "",
-        processo: s.licitacao.ativo ? s.licitacao.processo : ""
-      };
+      /* ⚠ MESCLA, não substitui: o bloco do CertamePRO (valor estimado, mapa de
+         referência, destino da devolução, desconto linear, bases exigidas —
+         js/licitacao.js) mora em config.licitacao. Trocar o objeto inteiro
+         apagava tudo isso ao salvar Parâmetros, e o modo licitação morria em
+         silêncio. A regra (inclusive a de `obraInformada`) mora em
+         Licitacao.mesclarParametros; o ramo de baixo só existe para o app sem
+         o js/licitacao.js, e não sabe da obra. */
+      var _licAnt = (cfg.licitacao && typeof cfg.licitacao === "object") ? cfg.licitacao : {};
+      if (global.Licitacao && Licitacao.mesclarParametros) {
+        cfg.licitacao = Licitacao.mesclarParametros(_licAnt, s.licitacao);
+      } else {
+        var _licNovo = {};
+        for (var _lk in _licAnt) { if (Object.prototype.hasOwnProperty.call(_licAnt, _lk)) _licNovo[_lk] = _licAnt[_lk]; }
+        _licNovo.ativo = !!s.licitacao.ativo;
+        _licNovo.tipo = s.licitacao.ativo ? s.licitacao.tipo : "";
+        _licNovo.abertura = s.licitacao.ativo ? s.licitacao.abertura : "";
+        _licNovo.processo = s.licitacao.ativo ? s.licitacao.processo : "";
+        cfg.licitacao = _licNovo;
+      }
       /* DENYLIST pela MESMA regra do assistente (BasesUI.coletar): só banco
          INSTALADO e desmarcado fica de fora. Ler os checkboxes na mão aqui
          voltaria a jogar banco não instalado na denylist e mataria o "banco
@@ -317,6 +334,13 @@
         '<div class="field"><label>Modalidade / tipo</label><select id="ow-lic-tipo"><option value="">— selecione —</option>' + tips + "</select></div>" +
         '<div class="row"><div class="field"><label>Data e hora da abertura</label><input id="ow-lic-abertura" type="datetime-local" value="' + esc(s.licitacao.abertura) + '"></div>' +
         '<div class="field"><label>Nº do processo / edital</label><input id="ow-lic-processo" value="' + esc(s.licitacao.processo) + '" placeholder="Ex.: 001/2026"></div></div>' +
+        /* OBRA OU SERVIÇO DE ENGENHARIA — liga os limites do art. 59, §§ 4º e
+           5º (js/licitacao.js, avisos). Sem marcar, os limites NÃO são
+           aplicados, e o painel da licitação diz isso. */
+        '<label class="ow-check"><input type="checkbox" id="ow-lic-obra"' + (s.licitacao.obra ? " checked" : "") + "> " +
+        "<span><b>Obra ou serviço de engenharia (limites de 75%/85%)</b> <small>(Lei 14.133/2021, art. 59, §§ 4º e 5º: abaixo de 75% do valor orçado pela Administração a proposta é considerada inexequível; abaixo de 85%, o vencedor presta garantia adicional. Desmarcado, esses limites não são aplicados.)</small></span></label>" +
+        (s.licitacao.certamepro && !s.licitacao.obraInformada
+          ? '<small class="ow-hint" id="ow-lic-obra-hint">O pacote do certame não informou se o objeto é obra ou serviço de engenharia — por isso a caixa está desmarcada e os limites não estão sendo aplicados. Marque se for.</small>' : "") +
         "</div>";
     },
     _coletar1: function () {
@@ -330,11 +354,17 @@
       s.controlarPrazo = marcado("ow-controlar-prazo");
       s.permitirZerado = marcado("ow-zerado");
       s.memorial = { laudo: marcado("ow-mem-laudo"), excel: marcado("ow-mem-excel"), proposta: marcado("ow-mem-proposta") };
+      var licAnt = s.licitacao || {};
       s.licitacao = {
         ativo: marcado("ow-lic"),
         tipo: val("ow-lic-tipo"),
         abertura: val("ow-lic-abertura"),
-        processo: val("ow-lic-processo").trim()
+        processo: val("ow-lic-processo").trim(),
+        obra: marcado("ow-lic-obra"),
+        /* só para redesenhar a dica do passo 1; quem decide o que grava é o
+           Licitacao.mesclarParametros, comparando com o que está no orçamento */
+        obraInformada: !!licAnt.obraInformada,
+        certamepro: !!licAnt.certamepro
       };
       if (!s.nome) { UI.toast("Dê uma descrição ao orçamento para continuar.", "erro"); return false; }
       return true;
@@ -775,7 +805,11 @@
           ativo: !!s.licitacao.ativo,
           tipo: s.licitacao.ativo ? s.licitacao.tipo : "",
           abertura: s.licitacao.ativo ? s.licitacao.abertura : "",
-          processo: s.licitacao.ativo ? s.licitacao.processo : ""
+          processo: s.licitacao.ativo ? s.licitacao.processo : "",
+          /* marcada no assistente = informada por quem orça; desmarcada fica
+             "não informada" (o aviso dos limites desligados é alerta) */
+          obra: s.licitacao.obra === true,
+          obraInformada: s.licitacao.obra === true
         },
         bases: [{ fonte: "SINAPI", uf: s.uf, competencia: s.competencia }].concat(
           s.basesExtras.map(function (f) {

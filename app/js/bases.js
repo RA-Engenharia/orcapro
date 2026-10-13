@@ -87,6 +87,10 @@
       var b = this._indexar({
         fonte: fonte, label: meta.label, cor: meta.cor,
         competencia: (pacote && pacote.mes) || null, uf: (pacote && pacote.uf) || null,
+        /* o regime que o PRÓPRIO arquivo declara (true/false), ou null quando
+           não declara — o painel das bases exigidas pelo edital confere o
+           regime, e "não sei" não pode virar "confere" */
+        desonerado: (pacote && (pacote.desonerado === true || pacote.desonerado === false)) ? pacote.desonerado : null,
         itens: dados,
         ativaUsuario: ativaU,
         inativaPorUf: false,           // runtime; quem decide é carregar()
@@ -123,7 +127,7 @@
       }
       EXTRA.forEach(function (b) {
         out.push({
-          fonte: b.fonte, label: b.label, cor: b.cor, competencia: b.competencia, uf: b.uf,
+          fonte: b.fonte, label: b.label, cor: b.cor, competencia: b.competencia, uf: b.uf, desonerado: b.desonerado,
           total: b.itens.length, ativa: self.usavel(b),
           ativaUsuario: b.ativaUsuario !== false, inativaPorUf: !!b.inativaPorUf,
           sel: b.sel || null, catId: b.catId || b.fonte
@@ -308,6 +312,13 @@
       if (typeof BasesCat === "undefined") return Promise.reject(new Error("catálogo indisponível"));
       var e = BasesCat.get(catId);
       if (!e) return Promise.reject(new Error("banco fora do catálogo: " + catId));
+      /* ⚠ COMPETÊNCIA FIXADA vai pelo caminho que CONFERE o mês. O resolver
+         abaixo monta o nome do arquivo com o mês ANUNCIADO pelo servidor; com
+         `sel.competencia` passando por ele, a base subiria com o mês novo e o
+         `sel` gravado diria o mês do edital — rótulo sem lastro. */
+      if (sel && sel.competencia && BasesCat.temHistorico && BasesCat.temHistorico(e.id)) {
+        return this.instalarCompetencia(e.id, { uf: sel.uf, competencia: sel.competencia }, opts);
+      }
       /* ⚠ SEM CONTEXTO, O ÚLTIMO ANÚNCIO DO SERVIDOR. O arquivo da SINAPI
          desonerada tem a competência no nome (<COMP>), que sai do que o
          servidor anuncia. O botão de instalar não passa contexto nenhum — e
@@ -340,6 +351,109 @@
       return live
         ? chamar(live, true).catch(function () { return chamar(r.arquivo, false); })
         : chamar(r.arquivo, false);
+    },
+
+    /* ==================================================================
+     * instalarCompetencia — UM MÊS ESPECÍFICO de uma base com histórico
+     * (SINAPI desonerada, SICRO). Pedido = { uf, competencia: "AAAA-MM" }.
+     *
+     * Ordem: disco → servidor → espelho (BasesCat.fontesCompetencia), cada
+     * arquivo CONFERIDO pelo conteúdo (UF, mês e regime — BasesCat.pacoteConfere)
+     * antes de tocar na base instalada. Arquivo errado não para a busca: vira
+     * uma "tentativa" com o motivo, e a próxima fonte é tentada.
+     *
+     * Não achou em nenhuma: rejeita com `naoEncontrada`, as `tentativas` (o que
+     * cada fonte respondeu) e `achadas` (os meses que existem mas não são o
+     * pedido — "o atual é 04/2026"). ⚠ NÃO cai em outro mês por conta própria:
+     * em licitação isso é decisão de quem orça (garantirCompetencia +
+     * permitirAtual, com o aviso e o registro na justificativa).
+     *
+     * opts.pegar(fonte) → Promise<pacote> substitui o download (testes).
+     * ================================================================== */
+    instalarCompetencia: function (catId, pedido, opts) {
+      var self = this;
+      opts = opts || {};
+      pedido = pedido || {};
+      var id = String(catId || "").toUpperCase();
+      if (typeof BasesCat === "undefined" || !BasesCat.temHistorico || !BasesCat.temHistorico(id)) {
+        return Promise.reject(new Error(id + " não tem tabela por competência — instale a atual em Tabelas."));
+      }
+      var cfg = {};
+      try { cfg.servidor = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) || ""; cfg.espelho = (typeof CONFIG !== "undefined" && CONFIG.appWebUrl) || ""; } catch (eC) {}
+      if (opts.cfg) cfg = opts.cfg;
+      var uf = String(pedido.uf || "").trim().toUpperCase(), comp = BasesCat._iso(pedido.competencia);
+      var fontes = BasesCat.fontesCompetencia(id, uf, comp, cfg);
+      var e = BasesCat.get(id) || { nome: id };
+      var rotulo = e.nome + " " + uf + " " + BasesCat.fmtVersao(comp);
+      if (!fontes.length) return Promise.reject(new Error("Pedido inválido para " + e.nome + ": informe a UF e a competência (AAAA-MM)."));
+      var regime = (BasesCat.HISTORICO[id] && BasesCat.HISTORICO[id].regime) || pedido.regime || "";
+      var tentativas = [], achadas = [];
+      var pegar = opts.pegar || function (f) { return self._pegarFonte(f, opts); };
+      var tentar = function (k) {
+        if (k >= fontes.length) {
+          var err = new Error(rotulo + " não foi encontrada (" + tentativas.join("; ") + ").");
+          err.naoEncontrada = true; err.tentativas = tentativas; err.achadas = achadas;
+          return Promise.reject(err);
+        }
+        var f = fontes[k], nomeF = f.origem + (f.atual ? " (atual)" : "");
+        return Promise.resolve().then(function () { return pegar(f); }).then(function (j) {
+          var c = BasesCat.pacoteConfere(j, { uf: uf, competencia: comp, regime: regime });
+          if (!c.ok) {
+            tentativas.push(nomeF + ": " + c.motivo);
+            if (c.competenciaAchada && achadas.indexOf(c.competenciaAchada) < 0) achadas.push(c.competenciaAchada);
+            return tentar(k + 1);
+          }
+          /* `sel.competencia` = FIXADA: a varredura diária não troca o mês
+             (Atualizacao.planoExtras) e a tela diz que está fixada */
+          var n = self.registrar(id, j, { sel: { uf: uf, competencia: comp }, catId: id });
+          var grav = { ok: true };
+          if (typeof Store !== "undefined" && typeof Auth !== "undefined") grav = self.persistir(Auth.empresaId());
+          return { total: n, fonte: id, competencia: j.mes || comp, uf: uf, origem: f.origem, atual: !!f.atual,
+            live: f.origem !== "disco", fixada: true, persistido: grav.ok, gravErro: grav.erro, tentativas: tentativas };
+        }, function (erro) {
+          tentativas.push(nomeF + ": " + String((erro && erro.message) || erro || "falhou"));
+          return tentar(k + 1);
+        });
+      };
+      return tentar(0);
+    },
+
+    /* Baixa UMA fonte: `.gz` antes quando ela é do acervo comprimido (o mesmo
+       helper da onerada, App._fetchBase, que sabe descomprimir), senão o
+       _pegar com prazo. */
+    _pegarFonte: function (f, opts) {
+      if (f.gz && global.App && typeof global.App._fetchBase === "function") return global.App._fetchBase(f.url);
+      return this._pegar(f.url, { pesoMb: (opts && opts.pesoMb) || 3 });
+    },
+
+    /* ==================================================================
+     * garantirCompetencia — a pergunta do orçamento: "a base X de tal mês
+     * está em uso?". Já instalada → nada a fazer. Senão tenta o mês exato.
+     * Não existe em fonte nenhuma:
+     *   · sem `permitirAtual` → rejeita (quem chama mostra e pergunta);
+     *   · com `permitirAtual` → instala a ATUAL (o `current` do SICRO, a mais
+     *     recente da desonerada) e devolve `fallback:true` com o `aviso` pronto
+     *     ("usando SICRO de 04/2026, o edital pede 01/2026") — a tela mostra e
+     *     o registro vai para a justificativa de preços. Nunca calado.
+     * ================================================================== */
+    garantirCompetencia: function (catId, pedido, opts) {
+      var self = this;
+      opts = opts || {};
+      var id = String(catId || "").toUpperCase(), comp = BasesCat._iso(pedido && pedido.competencia), uf = String((pedido && pedido.uf) || "").toUpperCase();
+      var inst = this.lista().filter(function (b) { return String(b.fonte).toUpperCase() === id; })[0];
+      if (inst && String(inst.uf || "").toUpperCase() === uf && BasesCat._iso(inst.competencia) === comp) {
+        return Promise.resolve({ ok: true, ja: true, fonte: id, uf: uf, competencia: comp });
+      }
+      var e = BasesCat.get(id) || { nome: id };
+      return this.instalarCompetencia(id, pedido, opts).then(function (r) { r.ok = true; return r; }, function (err) {
+        if (!err || !err.naoEncontrada || !opts.permitirAtual) throw err;
+        return self.instalar(id, { uf: uf, competencia: "" }, { pesoMb: opts.pesoMb }).then(function (r) {
+          var usada = BasesCat._iso(r.competencia) || r.competencia || "";
+          r.ok = true; r.fallback = true; r.pedida = comp; r.tentativas = err.tentativas;
+          r.aviso = "Usando " + e.nome + " de " + (BasesCat.fmtVersao(usada) || "competência não declarada") + " — o edital pede " + BasesCat.fmtVersao(comp) + ".";
+          return r;
+        });
+      });
     },
 
     /* Importa base extra de texto colado/arquivo (JSON do fetcher ou CSV). */
@@ -443,6 +557,8 @@
       var payload = EXTRA.map(function (b) {
         return {
           fonte: b.fonte, mes: b.competencia, uf: b.uf, dados: b.itens,
+          /* aditivo: versão anterior ignora o campo; null não é gravado */
+          desonerado: (b.desonerado === true || b.desonerado === false) ? b.desonerado : undefined,
           ativaUsuario: b.ativaUsuario !== false,
           sel: b.sel || null, catId: b.catId || null
         };

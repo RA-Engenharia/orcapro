@@ -848,8 +848,22 @@
        ⚠ A barra é posição por DATA (fração do período), não dinheiro; o
          desembolso é `Cronograma.periodos` com o preço de venda por etapa —
          exatamente o que o clássico imprime (ver `_desembolso`). */
-    if (opts.completo && rP && Util.arr(rP.etapas).length && rP.totalDias && rP.dataInicio && rP.dataFim) {
+    if ((opts.completo || opts.gantt) && rP && Util.arr(rP.etapas).length && rP.totalDias && rP.dataInicio && rP.dataFim) {
       try { saida.execucao = Proposta._execucaoParaModelo(orc, rP, premissas); } catch (e4) {}
+    }
+    /* =================================================================
+       O GANTT DO SISTEMA NA PÁGINA (13/10/2026) — modo "gantt" do bloco.
+       O desenho é o MESMO da tela e do PDF do cronograma (CronoExecUI.gantt,
+       versão papel), mas quem o desenha é a fiação (`opts.desenharGantt`,
+       App._ganttParaProposta): este arquivo é núcleo e não conhece a tela.
+       ⚠ CHAVE NOVA SÓ NASCE QUANDO O BLOCO PEDE — e só com um SVG de
+         verdade: texto que não começa em <svg (ou traz script) é descartado,
+         e o motor do modelo avisa e cai na tabela. Nunca um gráfico
+         inventado, nunca HTML solto dentro do documento do cliente. */
+    if (opts.gantt && typeof opts.desenharGantt === "function") {
+      var gH = "";
+      try { gH = String(opts.desenharGantt(orc, opts.gantt) || ""); } catch (e5) { gH = ""; }
+      if (/^\s*<svg[\s>]/i.test(gH) && !/<script/i.test(gH)) saida.ganttHtml = gH;
     }
     return saida;
   };
@@ -907,7 +921,12 @@
     return out;
   };
 
-  Proposta.blocosParaModelo = function (orc) {
+  Proposta.blocosParaModelo = function (orc, opts) {
+    opts = opts || {};
+    /* as composições abertas (13/10/2026) só viajam quando o bloco pede —
+       ver Proposta._insumosDaLinha; sem `opts.composicoes` o payload é o de
+       sempre, chave por chave (ele é comparado com o do master na paridade) */
+    var comComp = !!opts.composicoes, temComp = false;
     var linhas = Orcamento.linhas(orc) || [];
     var t = Orcamento.totais(orc);
     var ordem = [], porEtapa = {};
@@ -915,14 +934,20 @@
       var nome = String(L.etapaNome || "").trim();
       var chave = String(L.etapaId || nome || "");
       if (!porEtapa[chave]) { porEtapa[chave] = { nome: nome, linhas: [], opcional: !!L.opcional }; ordem.push(chave); }
-      porEtapa[chave].linhas.push({
+      var ln = {
         descricao: L.descricao || L.codigo || "",
         unidade: L.unidade || "",
         qtd: Util.num(L.quantidade),
         /* o motor escreve `l.total`; o unitário viaja para quem quiser conferir */
         unitario: Util.num(L.precoUnit),
         total: Util.num(L.precoTotal)
-      });
+      };
+      if (comComp) {
+        ln.codigo = String(L.codigo || "");
+        var ins = Proposta._insumosDaLinha(L, opts);
+        if (ins) { ln.insumos = ins; temComp = true; }
+      }
+      porEtapa[chave].linhas.push(ln);
     });
     /* ⚠ O TOTAL DA PROPOSTA É O OBRIGATÓRIO. As etapas marcadas como
        opcionais saem em `opcionais`, num bloco à parte com o próprio subtotal
@@ -971,13 +996,70 @@
         g.peso = g.opcional ? 0 : (totalPapel > 0 ? (g.total / totalPapel) * 100 : 0);
       });
     } catch (eS) {}
-    return {
+    var saida = {
       grupos: todos.filter(function (g) { return !g.opcional; }),
       opcionais: todos.filter(function (g) { return g.opcional; }),
       total: totalPapel,
       totalOpcional: Util.num(t.precoOpcional),
       totalComOpcionais: Util.num(t.precoVenda)
     };
+    if (comComp) saida.temComposicoes = temComp;
+    return saida;
+  };
+
+  /* =====================================================================
+   * AS COMPOSIÇÕES ABERTAS NA PROPOSTA (13/10/2026) — nível "composicoes"
+   * do bloco Investimento do modelo: cada item com os seus insumos
+   * (coeficiente, quantidade, unitário e total), como a planilha analítica
+   * da tela com as composições todas abertas.
+   * ⚠ OS NÚMEROS SÃO PREÇO, NÃO CUSTO. O insumo sai pelo MESMO fator que
+   *   levou o custo unitário da linha ao preço unitário (`precoUnit /
+   *   custoUnitario`; 1 no BDI "final", em que a linha já sai a custo e o
+   *   BDI é uma linha à parte) e na MESMA escala do custo que o orçamento
+   *   usa (custo unitário da linha ÷ coef × custo dos insumos da base): quem
+   *   negociou o preço de um item vê os insumos acompanharem — é o que
+   *   `Analitico.quebra` faz com MO/MAT/EQ. Somados, os insumos fecham com a
+   *   linha salvo o arredondamento de cada um; a linha continua a verdade.
+   * ⚠ DE ONDE VEM: item de composição própria carrega `insumos` no próprio
+   *   item (ver cpSalvar em js/app.js); item da base (SINAPI etc.) vem de
+   *   `opts.analitico.obter(codigo)` — o `Analitico` carregado para a UF do
+   *   orçamento, que a fiação garante antes de gerar (`_analiticoDoOrc`).
+   *   Sem composição conhecida a linha sai SEM `insumos` e o motor mostra só
+   *   o item: nunca uma composição inventada.
+   * ===================================================================== */
+  Proposta._insumosDaLinha = function (L, opts) {
+    var it = (L && L.item) || {}, lista = null;
+    if (Array.isArray(it.insumos) && it.insumos.length) lista = it.insumos;
+    /* item sem código de verdade (o "—" que o orçamento escreve no lugar do vazio) não vai à base */
+    else if (opts && opts.analitico && typeof opts.analitico.obter === "function" && L && /[A-Za-z0-9]/.test(String(L.codigo || ""))) {
+      var comp = null;
+      try { comp = opts.analitico.obter(L.codigo); } catch (eA) { comp = null; }
+      if (comp && Array.isArray(comp.insumos) && comp.insumos.length) lista = comp.insumos;
+    }
+    if (!lista) return null;
+    var base = 0;
+    lista.forEach(function (i) { if (i && typeof i === "object") base += Util.num(i.coeficiente) * Util.num(i.custoUnitario); });
+    var cu = Util.num(L.custoUnitario), pu = Util.num(L.precoUnit), q = Util.num(L.quantidade);
+    var escala = (base > 0 && cu > 0) ? cu / base : 1;
+    var fator = (cu > 0 && pu > 0) ? pu / cu : 1;
+    var out = [];
+    lista.forEach(function (i) {
+      if (!i || typeof i !== "object") return;
+      var coef = Util.num(i.coeficiente), unit = Util.num(i.custoUnitario) * escala * fator;
+      var cat = String(i.categoria || "").toUpperCase();
+      out.push({
+        codigo: String(i.codigo == null ? "" : i.codigo),
+        descricao: String(i.descricao || ""),
+        unidade: String(i.unidade || ""),
+        categoria: (cat === "MO" || cat === "MAT" || cat === "EQ") ? cat : "",
+        sub: String(i.tipo || "").toUpperCase() === "COMPOSICAO",
+        coef: coef,
+        qtd: coef * q,
+        unitario: unit,
+        total: unit * coef * q
+      });
+    });
+    return out.length ? out : null;
   };
 
   /* =====================================================================

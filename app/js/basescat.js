@@ -153,8 +153,15 @@
       chaveStatus: "sinapiDes", coleta: "diario",
       versaoPacote: "2026-06", itens: 324702, pesoMb: 3.12,
       /* as UFs saem do servidor, como no SICRO. Sem resposta, nao ha opcao —
-         e a linha, sem `local`, nem se oferece para instalar. */
-      eixos: [{ id: "uf", rotulo: "Local", de: "sinapiDesUfs", padrao: "MG", opcoes: [] }],
+         e a linha, sem `local`, nem se oferece para instalar.
+         ⚠ COMPETÊNCIA (13/10/2026): o edital fixa o mês. "" = a mais recente
+         (a varredura diária atualiza); um AAAA-MM = competência FIXADA, que
+         instala pelo Bases.instalarCompetencia (disco, servidor, espelho) e
+         que a varredura NÃO troca (Atualizacao.planoExtras). As opções saem
+         do que as fontes dizem ter (competenciasConhecidas) — nunca de uma
+         lista de meses imaginada. */
+      eixos: [{ id: "uf", rotulo: "Local", de: "sinapiDesUfs", padrao: "MG", opcoes: [] },
+              { id: "competencia", rotulo: "Competência", de: "sinapiDesComps", padrao: "", opcoes: [] }],
       nota: "O par desonerado da SINAPI. Em Minas, 7.740 dos 12.815 preços diferem do regime não desonerado (−2,4% em média). Baixa do servidor: 3 MB do estado escolhido. O detalhamento (composição → insumos) deste regime é um arquivo à parte, um por estado. Onde ele não estiver disponível, o app avisa — nunca abre o desdobramento do outro regime."
     },
     {
@@ -166,7 +173,9 @@
       /* as UFs coletadas saem do servidor em runtime (ctx.sicroUfs). Sem
          resposta do servidor, vale o que veio no pacote — hoje só o ES.
          Desenhar 27 opções antes de coletar 27 seria criar 26 opções mortas. */
-      eixos: [{ id: "uf", rotulo: "Local", de: "sicroUfs", padrao: "ES", opcoes: [{ v: "ES", r: "Espírito Santo" }] }],
+      eixos: [{ id: "uf", rotulo: "Local", de: "sicroUfs", padrao: "ES", opcoes: [{ v: "ES", r: "Espírito Santo" }] },
+              /* competência com histórico (`sicro-UF-AAAA-MM.json`): ver a nota da SINAPI desonerada */
+              { id: "competencia", rotulo: "Competência", de: "sicroComps", padrao: "", opcoes: [] }],
       nota: "Publicação trimestral do DNIT (jan/abr/jul/out)."
     },
     /* ---------------- Sudeste ---------------- */
@@ -286,6 +295,26 @@
   ];
 
   function up(s) { return String(s == null ? "" : s).trim().toUpperCase(); }
+
+  /* ------------------------------------------------------------------
+   * BASES COM HISTÓRICO — um arquivo por UF × competência (licitação).
+   *
+   * POR QUE ISTO EXISTE (13/10/2026). O edital fixa fonte, UF, competência e
+   * regime ("SINAPI-MG 06/2026 desonerado", "SICRO-PA 04/2026"); usar outra
+   * tabela muda o preço e pode desclassificar. A desonerada só instalava o mês
+   * que o servidor anunciava, e o SICRO era um `current` sobrescrito: não havia
+   * como pedir o mês do edital. Aqui mora a REGRA (nomes e ordem das fontes); o
+   * download fica em js/bases.js (instalarCompetencia).
+   *
+   * `atual` = o arquivo "current" (SICRO), tentado POR ÚLTIMO e aceito só se o
+   * "mes" de dentro dele for o pedido — o VPS ainda guarda o SICRO só assim, e
+   * quando o trimestre pedido é o atual, ele É o arquivo certo.
+   * ------------------------------------------------------------------ */
+  var HISTORICO = {
+    SINAPI_DES: { arquivo: "sinapi-<UF>-<COMP>-desonerada.json", regime: "desonerado" },
+    SICRO: { arquivo: "sicro-<UF>-<COMP>.json", atual: "sicro-<UF>-current.json", regime: "" }
+  };
+  function semBarra(u) { return String(u == null ? "" : u).trim().replace(/\/+$/, ""); }
 
   var BasesCat = {
     REGIOES: REGIOES,
@@ -407,8 +436,11 @@
     opcoesDoEixo: function (entrada, eixo, ctx) {
       ctx = ctx || {};
       if (eixo.de && ctx[eixo.de] && ctx[eixo.de].length) {
+        /* ⚠ objeto com `v` VAZIO é opção de verdade: é o "Mais recente" do
+           eixo de competência (v:"" = não fixar). Testar `o.v` por verdade
+           transformava a opção em "[object Object]". */
         return ctx[eixo.de].map(function (o) {
-          return (o && o.v) ? o : { v: String(o), r: String(o) };
+          return (o && typeof o === "object" && o.v !== undefined) ? o : { v: String(o), r: String(o) };
         });
       }
       return (eixo.opcoes || []).slice();
@@ -540,6 +572,94 @@
         temNova: temNova,
         nota: e.nota || ""
       };
+    },
+
+    /* ----------------------------------------------------------------
+     * COMPETÊNCIA PEDIDA (bases com histórico)
+     * ---------------------------------------------------------------- */
+    HISTORICO: HISTORICO,
+    temHistorico: function (id) { return Object.prototype.hasOwnProperty.call(HISTORICO, up(id)); },
+
+    /* De onde baixar UM mês, na ordem: DISCO (o servidor local da instalação
+       serve data/), SERVIDOR da RA (/bases/), ESPELHO do app (/data/). É a
+       mesma ordem do `App.trocarBaseSinapi` da onerada — disco primeiro porque
+       não gasta rede e é o que a pessoa já tem; espelho por último porque é o
+       acervo que atende quem não tem servidor. `gz` = tentar o `.gz` antes (o
+       acervo é gravado comprimido; a rota /bases/ do VPS só serve `.json`).
+       cfg = { servidor, espelho } (CONFIG.licencaServer, CONFIG.appWebUrl).
+       Pedido inválido (UF sem 2 letras, mês que não é AAAA-MM) → [] : sem
+       nome de arquivo montado no chute. */
+    fontesCompetencia: function (id, uf, comp, cfg) {
+      var h = HISTORICO[up(id)];
+      var iso = this._iso(comp), U2 = up(uf);
+      if (!h || !iso || !/^[A-Z]{2}$/.test(U2)) return [];
+      cfg = cfg || {};
+      var srv = semBarra(cfg.servidor), esp = semBarra(cfg.espelho);
+      var lista = [], nomes = [h.arquivo.replace("<UF>", U2).replace("<COMP>", iso)];
+      if (h.atual) nomes.push(h.atual.replace("<UF>", U2));
+      nomes.forEach(function (nome, i) {
+        var atual = i > 0;
+        lista.push({ origem: "disco", url: "data/" + nome, gz: true, atual: atual });
+        if (srv) lista.push({ origem: "servidor", url: srv + "/bases/" + nome, gz: false, atual: atual });
+        if (esp) lista.push({ origem: "espelho", url: esp + "/data/" + nome, gz: true, atual: atual });
+      });
+      return lista;
+    },
+
+    /* O pacote baixado é MESMO o pedido? UF, competência e — quando o pedido
+       diz — regime. ⚠ O arquivo é conferido pelo CONTEÚDO, não pelo nome: um
+       espelho que servisse o mês errado (ou o `current` de outro trimestre)
+       entraria rotulado com o mês do edital, e o documento mentiria a data-base.
+       O regime vem do cabeçalho (`desonerado`) e, sem ele, do primeiro item
+       que declara; sem declaração nenhuma não há como conferir e o pacote
+       passa (bases antigas não carimbam o regime). */
+    pacoteConfere: function (j, pedido) {
+      pedido = pedido || {};
+      if (!j || !Array.isArray(j.dados) || !j.dados.length) return { ok: false, motivo: "o arquivo não tem itens" };
+      if (up(j.uf) !== up(pedido.uf)) return { ok: false, motivo: "o arquivo é de " + (up(j.uf) || "UF não declarada") + ", não de " + up(pedido.uf) };
+      var cj = this._iso(j.mes || j.competencia), cp = this._iso(pedido.competencia);
+      if (!cj || cj !== cp) return { ok: false, competenciaAchada: cj || "", motivo: "o arquivo é de " + (this.fmtVersao(cj) || "competência não declarada") + ", não de " + this.fmtVersao(cp) };
+      var reg = pedido.regime;
+      if (reg === "desonerado" || reg === "onerado") {
+        var decl = (j.desonerado === true || j.desonerado === false) ? j.desonerado : null;
+        for (var i = 0; decl === null && i < j.dados.length && i < 50; i++) {
+          var d = j.dados[i];
+          if (d && (d.desonerado === true || d.desonerado === false)) decl = d.desonerado;
+        }
+        if (decl !== null && decl !== (reg === "desonerado")) return { ok: false, motivo: "o arquivo é do regime " + (decl ? "desonerado" : "onerado") + ", não " + reg };
+      }
+      return { ok: true, competencia: cj };
+    },
+
+    /* Competências que as FONTES dizem ter, para uma base com histórico (mais
+       nova primeiro). Fatos, nunca suposição:
+         instaladas  Bases.lista()                     — a instalada
+         servidor    /api/bases-status                 — a mais recente anunciada
+                     (+ `competencias`, se o servidor um dia anunciar o histórico)
+         disco       /__bases (desoneradas, sicro, sicroCurrent)
+         espelho     bases-status.json do espelho (`desonerada`/`sicro` do acervo,
+                     quando ele passar a publicar)
+       `uf` filtra quando a fonte diz a UF; quem não diz (o anúncio do servidor)
+       entra para qualquer UF — a instalação confere o conteúdo de qualquer jeito. */
+    competenciasConhecidas: function (id, uf, fatos) {
+      fatos = fatos || {};
+      var k = up(id), U2 = up(uf), self = this, out = [];
+      var add = function (c) { var iso = self._iso(c); if (iso && out.indexOf(iso) < 0) out.push(iso); };
+      var daUf = function (x) { return !U2 || !x || !x.uf || up(x.uf) === U2; };
+      (fatos.instaladas || []).forEach(function (b) { if (b && up(b.fonte) === k && daUf(b)) add(b.competencia); });
+      var chave = k === "SINAPI_DES" ? "sinapiDes" : (k === "SICRO" ? "sicro" : "");
+      var srv = chave && fatos.servidor ? fatos.servidor[chave] : null;
+      if (srv) { add(srv.competencia); (srv.competencias || []).forEach(add); }
+      var d = fatos.disco || {};
+      (k === "SINAPI_DES" ? (d.desoneradas || []) : (k === "SICRO" ? (d.sicro || []).concat(d.sicroCurrent || []) : []))
+        .forEach(function (x) { if (daUf(x)) add(x.competencia); });
+      var esp = fatos.espelho || {};
+      (esp.acervo || []).forEach(function (a) {
+        var ufs = k === "SINAPI_DES" ? a.desonerada : (k === "SICRO" ? a.sicro : null);
+        if (Array.isArray(ufs) && (!U2 || ufs.indexOf(U2) >= 0)) add(a.competencia);
+      });
+      out.sort(function (a, b) { return a < b ? 1 : (a > b ? -1 : 0); });
+      return out;
     },
 
     /* Linhas agrupadas por região, na ordem de REGIOES — o que a tela desenha.

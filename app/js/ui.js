@@ -458,6 +458,22 @@
         sicroUfs: (srv.sicroUfs || []).map(function (u) { return { v: u, r: u }; }),
         sinapiDesUfs: (srv.sinapiDesoneradaUfs || []).map(function (u) { return { v: u, r: u }; })
       };
+      /* COMPETÊNCIA da desonerada e do SICRO (licitação): "" = a mais recente,
+         que se atualiza sozinha; um mês = FIXADA (Bases.instalarCompetencia).
+         As opções são só os meses que alguma fonte DIZ ter — o disco (/__bases),
+         o anúncio do servidor, o acervo do espelho, a instalada. Mês do edital
+         que não aparece aqui ainda pode existir: o painel "Bases exigidas pelo
+         edital" procura o mês exato nas três fontes. */
+      if (typeof BasesCat !== "undefined" && BasesCat.competenciasConhecidas) {
+        var fatosC = { instaladas: lista || [], servidor: srv,
+          disco: (typeof App !== "undefined" && App._basesDisco) || null, espelho: (typeof App !== "undefined" && App._espelhoStatus) || null };
+        var opsComp = function (id) {
+          var cs = BasesCat.competenciasConhecidas(id, "", fatosC);
+          return cs.length ? [{ v: "", r: "Mais recente" }].concat(cs.map(function (c) { return { v: c, r: BasesCat.fmtVersao(c) + " (fixa)" }; })) : [];
+        };
+        ctxSrv.sinapiDesComps = opsComp("SINAPI_DES");
+        ctxSrv.sicroComps = opsComp("SICRO");
+      }
       var ic = (typeof Icones !== "undefined") ? Icones.get("estoque", 15) : "";
       var linhas = BasesCat.CATALOGO.filter(function (e) {
         return !e.principal && !(e.entrega && e.entrega.autoral);
@@ -476,10 +492,15 @@
               return '<option value="' + Util.esc(o.v) + '"' + (String(o.v) === String(atual) ? " selected" : "") + ">" + Util.esc(o.r || o.v) + "</option>";
             }).join("") + "</select>";
         }).join("");
+        /* a competência FIXADA aparece na linha: sem isto, "SICRO · 01/2026"
+           fixado para uma licitação e "SICRO · 01/2026" que ainda não atualizou
+           seriam a mesma frase — e só um dos dois anda sozinho */
+        var fixada = jaTem && jaTem.sel && jaTem.sel.competencia;
         return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 0;border-bottom:1px dashed var(--linha)">' +
           '<b style="font-size:12.5px;min-width:92px">' + Util.esc(e.nome) + "</b>" +
-          '<span class="muted" style="font-size:11.5px;flex:1;min-width:150px">' + Util.esc(e.localRotulo || e.uf) +
+          '<span class="muted" style="font-size:11.5px;flex:1;min-width:150px">' + Util.esc(e.localRotulo || (jaTem && jaTem.uf) || e.uf) +
           " · " + Util.esc(BasesCat.fmtVersao(av.versao) || "—") +
+          (fixada ? ' <b data-fixada="' + Util.esc(e.id) + '" title="Competência fixada (licitação): a atualização automática não troca o mês. Para voltar a atualizar, reinstale com Mais recente.">· fixada</b>' : "") +
           (e.pesoMb ? " · " + String(e.pesoMb).replace(".", ",") + " MB" : "") + "</span>" +
           selects +
           '<button class="btn sm ' + (jaTem ? "" : "primary") + '" data-instalar="' + Util.esc(e.id) + '">' + ic + " " +
@@ -734,11 +755,14 @@
       comCanal.forEach(function (e) {
         var inst = (lista || []).filter(function (b) { return String(b.fonte).toUpperCase() === e.id; })[0];
         var comp = inst ? (BasesCat.fmtVersao(inst.competencia) || "—") : "";
+        /* fixada (licitação): o "atualiza sozinha" seria mentira — a varredura
+           não toca nela (Atualizacao.planoExtras) */
+        var fix = inst && inst.sel && inst.sel.competencia;
         atuLinhas += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0;border-bottom:1px dashed var(--linha)">' +
           '<span class="pill ' + Util.esc((inst && inst.cor) || "proprio") + '">' + Util.esc(e.nome) + '</span>' +
           '<span style="font-size:12.5px">' + (inst ? "competência ativa: <b>" + Util.esc(comp) + "</b> · " + Util.esc(inst.uf || "") : '<span class="muted">não instalada — instale nos botões ' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' abaixo</span>') + '</span>' +
-          (inst ? auto : '') +
-          (inst ? resExtra(e.id) : '') + '</div>';
+          (inst ? (fix ? '<span class="muted" style="margin-left:auto;font-size:11.5px">competência fixada — não atualiza sozinha</span>' : auto) : '') +
+          (inst && !fix ? resExtra(e.id) : '') + '</div>';
       });
       return '<h3 style="margin:0 0 6px;display:flex;align-items:center">' + _icT("reimportar") + 'Atualização dos bancos de preço</h3>' +
         '<p class="muted" style="font-size:12px;margin:0 0 8px">As tabelas se atualizam <b>sozinhas</b>, <b>1× por dia</b>, ao abrir o app: quando sai competência nova da SINAPI (onerada e desonerada), do SICRO, ORSE, IOPES ou GOINFRA, o app baixa e aplica sem você clicar em nada. Uma base <b>própria</b> que você importou nunca é substituída.</p>' +
@@ -878,6 +902,13 @@
         '<div class="row">' + f("crea", "Registro CREA/CAU", emp.crea) + f("registroNacional", "Reg. Nacional", emp.registroNacional) + '</div>' +
         '<div class="row">' + f("cidade", "Cidade / UF", emp.cidade) + f("contato", "Contato (tel/e-mail)", emp.contato) + '</div>' +
         '<div class="field"><label>Endereço (rua, nº, bairro — usado nos documentos)</label><input id="emp-endereco" value="' + Util.esc(emp.endereco || "") + '"></div>' +
+        /* REGIME TRIBUTÁRIO — só o campo (vai no _meta do Excel e vira dica ao lado do BDI) */
+        '<div class="field"><label>Regime tributário</label><select id="emp-regimeTributario">' +
+          '<option value=""' + (!emp.regimeTributario ? " selected" : "") + '>Não informado</option>' +
+          [["simples", "Simples Nacional"], ["presumido", "Lucro Presumido"], ["real", "Lucro Real"]].map(function (r) {
+            return '<option value="' + r[0] + '"' + (emp.regimeTributario === r[0] ? " selected" : "") + '>' + r[1] + '</option>';
+          }).join("") + '</select>' +
+        '<div class="muted" style="font-size:11.5px;margin-top:3px">Não muda nenhum cálculo. Aparece como dica na aba BDI e segue no Excel exportado.</div></div>' +
         /* PARÂMETRO "PLANEJAMENTO E GESTÃO" — vai para as composições próprias
            criadas/editadas e para as requisições geradas do orçamento */
         '<div class="field"><label>Responsável pelo planejamento e gestão</label><input id="emp-gestao" value="' + Util.esc(emp.gestao || "") + '" placeholder="Nome de quem responde pelo planejamento e gestão das obras">' +
@@ -1500,6 +1531,7 @@
           (_semQtd.length > 5 ? '…' : '') +
           ' — eles não somam no total. Clique em <b>Calcular</b> na linha para levantar a metragem. <b>Proposta e laudo ficam bloqueados</b> enquanto houver item pendente.</span>');
       }
+      cab2 += this._licitacaoPainel(orc);
       if (_desf && !linhasAv.length) linhasAv.push('<span>A última edição da IA ainda pode ser desfeita — o que você mexeu depois dela fica.</span>');
       if (linhasAv.length || _desf) {
         cab2 += M.aviso({ tom: _semPreco.length ? "erro" : (_semQtd.length ? "alerta" : "info"),
@@ -1651,6 +1683,10 @@
     },
 
     renderPlanilha: function (orc) {
+      /* MODO LICITAÇÃO (js/licitacao.js): quem passou da referência do órgão
+         ganha selo na linha; item do órgão trava quantidade e remoção. Sem
+         licitação ligada `_licAv` é null e a planilha sai como sempre saiu. */
+      var _licAv = (typeof Licitacao !== "undefined" && Licitacao.ativo(orc)) ? Licitacao.avisos(orc) : null;
       var recTudo = (typeof App !== "undefined" && App._etapasRecolhidas && orc.etapas.length)
         ? !orc.etapas.some(function (e) { return !App.etapaRecolhida(orc.id, e.id); }) : false;
       /* o índice de etapas (barra lateral) ROUBA largura da planilha, então
@@ -1843,11 +1879,14 @@
                total — e some do total calado seria pior que o 1 fabricado que
                isto substituiu. Por isso o campo grita, igual ao custo zerado. */
             '<td class="num"><input class="cell' + (it.qtdPendente ? ' cell-erro' : '') + '" data-edit="quantidade" data-eta="' + e.id + '" data-itm="' + it.id + '" value="' + (it.qtdPendente ? '' : Util.fmtNum(it.quantidade, 2)) + '"' +
+              (_licAv && Licitacao.itemTravado(orc, it) ? ' readonly title="Item do órgão: quantidade travada no modo licitação (o preço é editável)."' : '') +
               (it.qtdPendente ? ' placeholder="pendente" title="QUANTIDADE PENDENTE — este item não está somando no total. Abra a memória de cálculo para calcular e lançar."' : '') + '></td>' +
             // custo ZERADO = pendência que trava a finalização: o campo grita
             '<td class="num"><input class="cell' + (Util.num(it.custoUnitario) > 0 ? '' : ' cell-erro') + '" data-edit="custoUnitario" data-eta="' + e.id + '" data-itm="' + it.id + '" value="' + Util.fmtNum(it.custoUnitario, 2) + '"' +
               (Util.num(it.custoUnitario) > 0 ? '' : ' title="SEM PREÇO — informe o custo unitário. Orçamento com item zerado não gera proposta nem apresentação."') + '>' +
-              UI._seloAjuste(e.id, it) + '</td>' +
+              UI._seloAjuste(e.id, it) +
+              (_licAv && _licAv.porItem[it.id]
+                ? '<br><span class="pill lic-alerta" title="Preço unitário COM BDI de ' + Util.esc(Util.fmtMoeda(_licAv.porItem[it.id].precoUnit)) + ' acima da referência do órgão (' + Util.esc(Util.fmtMoeda(_licAv.porItem[it.id].refComBdi)) + ' com BDI). Não bloqueia; confira.">acima do órgão</span>' : '') + '</td>' +
             '<td class="num">' + Util.fmtMoeda(L.custoTotal) + '</td>' +
             '<td class="num">' + Util.fmtMoeda(L.precoTotal) + '</td>' +
             '<td class="right"><div class="acoes">' +
@@ -1861,7 +1900,9 @@
               /* com quantidade pendente o botão do memorial vira o caminho
                  principal: é lá que a metragem nasce, então ele se destaca */
               '<button class="btn sm' + (it.qtdPendente ? ' primary' : ' ico') + (!it.qtdPendente && it.memoriaCalculo ? ' primary' : '') + '" data-memoria="' + e.id + '|' + it.id + '" title="' + (it.qtdPendente ? 'CALCULAR A QUANTIDADE — descreva o serviço e o agente monta a conta' : 'Memória de cálculo do quantitativo (Lei 14.133) — sai na aba Memória do Excel') + '">' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + (it.qtdPendente ? ' Calcular' : '') + '</button>' +
-              '<button class="btn sm ico danger" data-del-item="' + e.id + '|' + it.id + '" title="Remover item">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div></td></tr>';
+              (_licAv && Licitacao.itemTravado(orc, it)
+                ? '<span class="pill" title="Item da planilha do órgão: não pode ser removido no modo licitação.">órgão</span>'
+                : '<button class="btn sm ico danger" data-del-item="' + e.id + '|' + it.id + '" title="Remover item">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button>') + '</div></td></tr>';
           // v1.1.123 — SEMPRE que a composição tiver insumo sem preço coletado no
           // detalhamento, o aviso fica AQUI, embaixo dela na planilha (pedido do
           // Rogério): o usuário clica e informa a cotação manualmente no modal.
@@ -2217,9 +2258,28 @@
      * quem revisa tem tempo para os primeiros da lista.
      * ----------------------------------------------------------------- */
     renderQuadroAjustes: function (orc, numeroSecao) {
-      if (typeof Ajustes === "undefined" || !Ajustes.resumo) return "";
+      /* ⚠ LICITAÇÃO: a base usada no lugar da exigida pelo edital sai neste
+         quadro mesmo SEM ajuste de item (js/licitacao.js, justificativaBases) —
+         a divergência de tabela é exatamente o que o analista do órgão
+         precisa ler junto do preço. */
+      var jb = (typeof Licitacao !== "undefined" && Licitacao.justificativaBases) ? Licitacao.justificativaBases(orc) : [];
+      var blocoBases = "";
+      if (jb.length) {
+        blocoBases = '<h3 style="font-size:13px;margin:12px 0 6px">Base de preço diferente da exigida pelo edital</h3>' +
+          '<table class="prop-tbl"><thead><tr><th>Exigida pelo edital</th><th>Usada nos preços</th><th>Motivo e registro</th></tr></thead><tbody>' +
+          jb.map(function (j) {
+            return "<tr><td>" + Util.esc(j.exigida) + "</td><td><b>" + Util.esc(j.usada) + "</b></td><td>" +
+              Util.esc((j.motivo ? j.motivo + ". " : "") + "Escolha registrada" + (j.por ? " por " + j.por : "") + (j.em ? " em " + j.em : "") + ".") + "</td></tr>";
+          }).join("") + "</tbody></table>";
+      }
+      if (typeof Ajustes === "undefined" || !Ajustes.resumo) {
+        return blocoBases ? '<h2 class="rel-tit">' + (numeroSecao ? numeroSecao + ". " : "") + 'Quadro de Justificativa de Preços</h2>' + blocoBases : "";
+      }
       var r = Ajustes.resumo(orc);
-      if (!r.n) return "";
+      if (!r.n) {
+        return blocoBases ? '<h2 class="rel-tit">' + (numeroSecao ? numeroSecao + ". " : "") + 'Quadro de Justificativa de Preços</h2>' +
+          '<p class="muted" style="margin:-6px 0 10px;font-size:12px">Nenhum item com preço diferente do da base de referência ' + Util.esc(Orcamento.basesUsadasTexto(orc)) + '.</p>' + blocoBases : "";
+      }
       var semJust = r.itens.filter(function (i) { return i.preco && i.preco.dif > 0 && !i.preco.motivo; }).length;
 
       /* o número do item vem da MESMA fonte da planilha (Orcamento.calcular) —
@@ -2281,7 +2341,7 @@
         html += '<p class="muted" style="font-size:11.5px;margin-top:6px">' +
           '<b>' + semJust + '</b> item(ns) acima do preço de referência ainda sem justificativa registrada.</p>';
       }
-      return html;
+      return html + blocoBases;
     },
 
     /* -----------------------------------------------------------------
@@ -3522,6 +3582,90 @@
     /* Linhas de metadados do orçamento que precisam sair NO documento: critério de
      * arredondamento (quem confere a planilha em licitação checa isso) e o bloco
      * de licitação quando o orçamento foi marcado como tal. */
+    /* Dica do regime tributário da empresa, ao lado do BDI. ⚠ SÓ ORIENTA: não
+       toca em nenhum percentual. Os impostos do BDI (campo "Impostos") dependem
+       do regime, e quem monta BDI de licitação precisa conferir que o item
+       reflete o regime da empresa. Sem regime informado, diz onde informar. */
+    _dicaRegimeBdi: function () {
+      var r = (typeof Empresa !== "undefined" && Empresa.regime) ? Empresa.regime() : "";
+      var txt;
+      if (r === "simples") txt = "Simples Nacional: os tributos saem em guia única (DAS), pela alíquota efetiva da empresa. Confira se o item Impostos do BDI reflete isso em vez de somar PIS, COFINS e ISS por fora.";
+      else if (r === "presumido") txt = "Lucro Presumido: PIS e COFINS são cumulativos. Confira se o item Impostos do BDI usa as alíquotas desse regime; o ISS depende do município da obra.";
+      else if (r === "real") txt = "Lucro Real: PIS e COFINS são não cumulativos (com créditos). Confira se o item Impostos do BDI reflete o regime e os créditos que a empresa realmente aproveita.";
+      else txt = "Regime tributário não informado. Cadastre em Empresa para ver aqui uma orientação sobre o item Impostos do BDI.";
+      return '<div class="muted" style="font-size:var(--t-micro);margin-top:8px" data-regime="' + Util.esc(r) + '"><b>Regime da empresa' + (r ? ": " + Util.esc(Empresa.regimeRotulo()) : "") + '.</b> ' + Util.esc(txt) + '</div>';
+    },
+
+    /* PAINEL DA LICITAÇÃO — topo do editor, só com o modo ligado. Mostra o
+       certame, os avisos (sem bloquear) e as ações: desconto linear, liberar a
+       trava dos itens do órgão e devolver ao CertamePRO. */
+    _licitacaoPainel: function (orc) {
+      if (typeof Licitacao === "undefined" || !Licitacao.ativo(orc)) return "";
+      var M = MOD(), lic = Licitacao.cfg(orc), id = Licitacao.identificacao(orc) || {}, av = Licitacao.avisos(orc);
+      var partes = [id.orgao, id.processo ? "processo " + id.processo : "", id.sessao ? "sessão " + id.sessao : "", id.criterio,
+        id.valorEstimado > 0 ? "estimado " + Util.fmtMoeda(id.valorEstimado) : "", id.dataBase ? "data-base " + id.dataBase : ""].filter(function (x) { return !!x; });
+      var bt = function (acao, rot, tit) { return '<button class="btn ghost sm n3" data-acao="' + acao + '" title="' + Util.esc(tit) + '">' + rot + '</button>'; };
+      var acoes = "";
+      if (lic.certamepro) {
+        acoes += bt("lic-desconto", "Desconto linear…", "Um percentual único sobre os preços de referência do órgão");
+        if (lic.descontoLinear) acoes += bt("lic-desconto-desfazer", "Desfazer desconto (" + Util.fmtNum(lic.descontoLinear.pct, 2) + "%)", "Volta os preços ao que eram antes do desconto linear");
+        acoes += bt("lic-trava", lic.travaLiberada ? "Travar itens do órgão" : "Liberar edição", lic.travaLiberada
+          ? "Trava de novo quantidade, descrição e remoção dos itens do órgão"
+          : "Permite alterar quantidade, descrição e remover itens do órgão (só quando o edital permitir)");
+      }
+      if (lic.devolverPara) acoes += bt("lic-devolver", "Devolver ao CertamePRO", "Gera o Excel _PRO.xlsx e envia ao certame de origem");
+      var h = M.aviso({ tom: "info", titulo: "Licitação" + (lic.certamepro ? " (CertamePRO)" : ""),
+        textoHtml: "<span> " + Util.esc(partes.join(" · ") || "dados do edital não informados") + "</span>" +
+          (lic.certamepro && !lic.travaLiberada ? " <span class=\"muted\">· itens do órgão travados (só o preço muda)</span>" : "") +
+          (lic.travaLiberada ? " <span class=\"muted\">· trava liberada</span>" : ""),
+        acaoHtml: acoes });
+      av.resumo.forEach(function (a) { h += M.aviso({ tom: a.tom, texto: a.texto }); });
+      h += this._licBasesPainel(orc);
+      return h;
+    },
+
+    /* BASES EXIGIDAS PELO EDITAL — uma linha por tabela que o edital fixa, com
+       a situação conferida (js/licitacao.js, situacaoBases) e a porta de cada
+       uma: instalar a exigida, ou usar a que está em uso registrando a escolha
+       na justificativa de preços. Sem `bases_exigidas` no pacote, não aparece. */
+    _licBasesPainel: function (orc) {
+      if (typeof Licitacao === "undefined" || !Licitacao.temBasesExigidas || !Licitacao.temBasesExigidas(orc)) return "";
+      var ctx = (typeof App !== "undefined" && App._licCtxBases) ? App._licCtxBases() : {};
+      if (typeof App !== "undefined" && App._licBasesFatos) App._licBasesFatos();
+      var sits = Licitacao.situacaoBases(orc, ctx);
+      var pend = sits.filter(function (x) { return x.estado !== "instalada" && x.estado !== "outra"; }).length;
+      var outras = sits.filter(function (x) { return x.estado === "outra"; });
+      var lic = Licitacao.cfg(orc) || {};
+      var M = MOD();
+      var txt = this._licBasesLinhas(sits) +
+        (lic.basesExigidasIgnoradas ? '<div class="muted" style="font-size:11.5px;margin-top:4px">' + lic.basesExigidasIgnoradas +
+          " entrada(s) do pacote sem fonte ou competência válida foram ignoradas — confira no edital.</div>" : "") +
+        (pend ? '<div style="font-size:12px;margin-top:6px"><b>O Orçamentista fica bloqueado</b> até cada base estar em uso ou com a escolha registrada — nunca precifica com outra tabela em silêncio.</div>' : "");
+      var h = M.aviso({ tom: pend ? "alerta" : (outras.length ? "alerta" : "ok"), titulo: "Bases exigidas pelo edital", textoHtml: txt });
+      /* ⚠ o aviso de base diferente da exigida fica À VISTA enquanto durar,
+         não só no toast da hora em que foi escolhida */
+      outras.forEach(function (x) {
+        h += M.aviso({ tom: "alerta", texto: "Usando " + Licitacao.fmtBase(x.emUso) + " — o edital pede " + Licitacao.fmtBase(x.exigida) + ". A escolha está registrada no Quadro de Justificativa de Preços." });
+      });
+      return h;
+    },
+    _licBasesLinhas: function (sits) {
+      var cor = { instalada: "var(--verde)", outra: "#b45309", disponivel: "#1d4ed8", indisponivel: "#b91c1c" };
+      var rot = { instalada: "em uso", outra: "outra em uso (registrada)", disponivel: "disponível para baixar", indisponivel: "indisponível" };
+      return '<div class="lic-bases" style="margin-top:4px">' + sits.map(function (x) {
+        var k = Util.esc(Licitacao.chaveBase(x.exigida));
+        var bts = "";
+        if (x.estado === "disponivel" || x.estado === "indisponivel" || x.estado === "outra") {
+          if (!x.semFonte) bts += '<button class="btn ghost sm n3" data-acao="lic-base-instalar" data-lic-base="' + k + '" title="Procura o mês exato no disco, no servidor da RA e no espelho, e confere UF, mês e regime pelo conteúdo">' +
+            (x.estado === "disponivel" ? "Instalar" : "Procurar e instalar") + "</button>";
+          if (x.estado !== "outra") bts += '<button class="btn ghost sm n3" data-acao="lic-base-outra" data-lic-base="' + k + '" title="Usar a base em uso (ou a atual) no lugar da exigida — fica registrado na justificativa de preços">Usar outra e registrar</button>';
+        }
+        return '<div class="lic-base" data-lic-base-linha="' + k + '" data-estado="' + Util.esc(x.estado) + '" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:3px 0">' +
+          "<b>" + Util.esc(Licitacao.fmtBase(x.exigida)) + "</b>" +
+          '<span style="font-size:12px;color:' + (cor[x.estado] || "inherit") + '">' + Util.esc(rot[x.estado] || x.estado) + "</span>" +
+          '<span class="muted" style="font-size:11.5px">' + Util.esc(x.texto) + "</span>" + bts + "</div>";
+      }).join("") + "</div>";
+    },
     _dataBr: function (s) {
       var m = String(s || "").match(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/);
       return m ? (m[3] + "/" + m[2] + "/" + m[1] + (m[4] ? " " + m[4] + ":" + m[5] : "")) : "";
@@ -3770,6 +3914,7 @@
           '<input id="bdi-' + c[0] + '" type="text" value="' + Util.fmtNum(p[c[0]], c[0] === "L" ? 4 : 2) + '"></div>';
       });
       html += '</div>';
+      html += this._dicaRegimeBdi();
       html += '<div class="flex between mt" style="align-items:flex-end">' +
         '<div><div class="muted" style="font-size:var(--t-micro)">BDI resultante</div>' +
         '<div style="font-size:var(--t-tit);font-weight:var(--p-forte);color:var(--verde);font-variant-numeric:tabular-nums" id="bdi-resultado">' + Util.fmtPct(orc.bdi.percentual) + '</div></div>' +

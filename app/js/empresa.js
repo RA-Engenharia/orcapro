@@ -30,11 +30,23 @@
     /* PARÂMETRO "PLANEJAMENTO E GESTÃO": o responsável que vai para as
        composições próprias (campo `gestao`) e para as requisições geradas do
        orçamento. Vazio de fábrica — nome nenhum mora no código. */
-    gestao: ""
+    gestao: "",
+    /* REGIME TRIBUTÁRIO da empresa: "simples" | "presumido" | "real" | "" (não
+       informado). Só o CAMPO: não entra em nenhuma conta. Vai no _meta do Excel
+       e dá uma dica ao lado do BDI (impostos do BDI dependem do regime). */
+    regimeTributario: ""
   };
 
   var Empresa = {
-    campos: ["nome", "cnpj", "responsavel", "titulo", "crea", "registroNacional", "cidade", "endereco", "contato", "telefone", "whatsapp", "email", "site", "instagram", "gestao"],
+    campos: ["nome", "cnpj", "responsavel", "titulo", "crea", "registroNacional", "cidade", "endereco", "contato", "telefone", "whatsapp", "email", "site", "instagram", "gestao", "regimeTributario"],
+
+    REGIMES: { simples: "Simples Nacional", presumido: "Lucro Presumido", real: "Lucro Real" },
+    /* valor válido ou "" — nunca devolve texto livre vindo de fora */
+    regime: function () {
+      var r = String(this.dados().regimeTributario || "").toLowerCase();
+      return this.REGIMES[r] ? r : "";
+    },
+    regimeRotulo: function () { var r = this.regime(); return r ? this.REGIMES[r] : ""; },
 
     _prefs: function () {
       try { return (typeof Store !== "undefined" && typeof Auth !== "undefined") ? (Store.lerPrefs(Auth.empresaId()) || {}) : {}; }
