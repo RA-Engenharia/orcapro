@@ -765,8 +765,9 @@
    *   `Orcamento.cronograma`: ele é comparado com o do master na régua de
    *   paridade, e campo novo ali vira "diferença" no dia da publicação.
    * ===================================================================== */
-  Proposta.cronogramaParaModelo = function (orc, meses) {
+  Proposta.cronogramaParaModelo = function (orc, meses, opts) {
     var c;
+    opts = opts || {};
     /* ⚠ SÓ PASSA O 2º ARGUMENTO QUANDO ALGUÉM PEDIU O NÚMERO — e isto é
      * dinheiro com data (12/09/2026).
      *
@@ -806,14 +807,14 @@
          próprio devolve o payload de hoje, CHAVE POR CHAVE — uma
          `premissas: []` a mais já seria "a proposta de quem não usa a função
          mudou", e este payload é comparado com o do master na paridade. */
-    var premissas = [], rodapeCal = [];
+    var premissas = [], rodapeCal = [], rP = null;
     try {
       if (typeof Cronograma !== "undefined" && Cronograma.estimar) {
-        var rP = Cronograma.estimar(orc);
+        rP = Cronograma.estimar(orc);
         premissas = Proposta.premissasDoContratante(rP);
         rodapeCal = Proposta.rodapeCalendarios(rP);
       }
-    } catch (e3) { premissas = []; rodapeCal = []; }
+    } catch (e3) { premissas = []; rodapeCal = []; rP = null; }
     var saida = {
       meses: c.meses,
       total: Util.num(c.total),
@@ -835,7 +836,75 @@
     };
     if (premissas.length) { saida.premissas = premissas; saida.fraseDasPremissas = Proposta.FRASE_PREMISSAS; }
     if (rodapeCal.length) saida.rodapeCalendarios = rodapeCal;
+    /* =================================================================
+       O CRONOGRAMA COMPLETO DO MODELO (13/10/2026) — SÓ QUANDO PEDIDO.
+       É a seção "Cronograma de Execução" do clássico (`_cronograma` +
+       `_desembolso`) em DADOS: dias úteis, início e término por etapa, a
+       posição de cada barra no tempo, o desembolso por mês e a nota dos
+       prazos. O motor do modelo só desenha.
+       ⚠ CHAVE NOVA SÓ NASCE QUANDO O BLOCO PEDE (`opts.completo`): sem
+         isso o payload é o de sempre, chave por chave — ele é comparado com
+         o do master na paridade e alimenta o modelo de todo cliente.
+       ⚠ A barra é posição por DATA (fração do período), não dinheiro; o
+         desembolso é `Cronograma.periodos` com o preço de venda por etapa —
+         exatamente o que o clássico imprime (ver `_desembolso`). */
+    if (opts.completo && rP && Util.arr(rP.etapas).length && rP.totalDias && rP.dataInicio && rP.dataFim) {
+      try { saida.execucao = Proposta._execucaoParaModelo(orc, rP, premissas); } catch (e4) {}
+    }
     return saida;
+  };
+
+  Proposta._execucaoParaModelo = function (orc, r, premissas) {
+    function br(d) { return (d && d.toLocaleDateString) ? d.toLocaleDateString("pt-BR") : ""; }
+    var t0 = r.dataInicio.getTime(), t1 = r.dataFim.getTime();
+    /* a régua da barra vai até a ÚLTIMA data desenhada (opcional fora do
+       prazo pode terminar depois do fim contratual) */
+    Util.arr(r.etapas).forEach(function (e) { if (e.dataFim && e.dataFim.getTime && e.dataFim.getTime() > t1) t1 = e.dataFim.getTime(); });
+    var span = Math.max(1, t1 - t0);
+    var etsOrc = Util.arr(orc && orc.etapas);
+    var etapas = Util.arr(r.etapas).map(function (e, i) {
+      var a = (e.dataInicio && e.dataInicio.getTime) ? e.dataInicio.getTime() : t0;
+      var b = (e.dataFim && e.dataFim.getTime) ? e.dataFim.getTime() : a;
+      var pos = ((a - t0) / span) * 100, larg = e.marco ? 0 : Math.max(0, ((b - a) / span) * 100);
+      return {
+        codigo: String(e.codigo || ""), nome: String(e.nome || ""), frente: String(e.categoriaNome || ""),
+        duracao: Util.num(e.duracao), marco: !!e.marco,
+        inicio: br(e.dataInicio), fim: br(e.dataFim),
+        posPct: Math.round(pos * 10) / 10, largPct: Math.round(larg * 10) / 10,
+        opcional: !!(etsOrc[i] && etsOrc[i].opcional)
+      };
+    });
+    var out = {
+      totalDias: Util.num(r.totalDias), totalSemanas: Util.num(r.totalSemanas),
+      inicio: br(r.dataInicio), fim: br(r.dataFim),
+      diasUteisSemana: Util.num((r.params && r.params.diasUteisSemana) || 5),
+      etapas: etapas
+    };
+    if (premissas && premissas.length) { out.premissas = premissas; out.fraseDasPremissas = Proposta.FRASE_PREMISSAS; }
+    /* o desembolso por mês: a mesma conta do clássico (`_desembolso`) */
+    try {
+      if (typeof Cronograma !== "undefined" && Cronograma.periodos) {
+        var sint = Orcamento.sintetico(orc);
+        if (sint && sint.length === r.etapas.length) {
+          var vmap = {};
+          r.etapas.forEach(function (e, i) { vmap[e.id] = sint[i].precoVenda || 0; });
+          var per = Cronograma.periodos(r, { valores: vmap });
+          if (per && per.lista && per.lista.length && per.total) {
+            out.desembolso = {
+              lista: per.lista.map(function (p) { return { rotulo: String(p.rotulo || ""), valor: Util.num(p.valor), pct: Util.num(p.pct), acumPct: Util.num(p.acumPct) }; }),
+              total: Util.num(per.total)
+            };
+          }
+        }
+      }
+    } catch (eD) {}
+    var nFer = ((r.feriados || {}).noPeriodo || []).length;
+    out.notaPrazos = "Prazos em dias úteis (" + out.diasUteisSemana + " dias por semana), contados a partir da liberação da obra"
+      + (r.params && r.params.descontarFeriados === false
+        ? " e sem desconto de feriados"
+        : (nFer ? ", já descontados " + nFer + " feriado" + (nFer === 1 ? "" : "s") + " do período" : ", com os feriados nacionais descontados"))
+      + ". O cronograma pode ser reajustado em função de condições climáticas, liberação de frentes de serviço e fornecimento de materiais.";
+    return out;
   };
 
   Proposta.blocosParaModelo = function (orc) {
@@ -874,25 +943,82 @@
        da opcional cobrado dentro do obrigatório, e o adicional vendido sem BDI
        nenhum. O certo é R$ 110 e R$ 110. */
     var todos = ordem.map(function (k) { return porEtapa[k]; });
+    var totalPapel = Util.num(t.precoObrigatorio != null ? t.precoObrigatorio : t.precoVenda);
+    /* =================================================================
+       O TOTAL DE CADA ETAPA, PRONTO (13/10/2026) — para o bloco
+       "Investimento" no nível resumido (o "Resumo Financeiro" do clássico)
+       e para o "Entendimento do escopo" do modelo.
+       ⚠ VEM DE `Orcamento.sintetico`, a MESMA conta da tela, do Excel e do
+         clássico (`precoVenda` por etapa = `calcular().porEtapa`). O motor
+         do modelo tem regra escrita de não somar; se ele somasse as linhas
+         daria outro número no modo de BDI "final" (linha a custo, etapa com
+         BDI). O peso é sobre o total QUE A FOLHA IMPRIME (o obrigatório),
+         como a coluna "Peso" do clássico quando há adicional.
+       ⚠ CASADO POR ID DA ETAPA, nunca por nome: duas etapas com o mesmo
+         nome receberiam o total uma da outra. Grupo sem etapa (chave pelo
+         nome, orçamento antigo) fica sem total — e o resumido cai na lista
+         de itens, por regra do motor. */
+    try {
+      var sint = Orcamento.sintetico(orc) || [];
+      var porId = {};
+      Util.arr(orc && orc.etapas).forEach(function (e, i) { if (e && e.id && sint[i]) porId[String(e.id)] = sint[i]; });
+      ordem.forEach(function (k) {
+        var s = porId[k], g = porEtapa[k];
+        if (!s || !g) return;
+        g.codigo = String(s.codigo == null ? "" : s.codigo);
+        g.total = Util.num(s.precoVenda);
+        g.qtdItens = Util.num(s.qtdItens);
+        g.peso = g.opcional ? 0 : (totalPapel > 0 ? (g.total / totalPapel) * 100 : 0);
+      });
+    } catch (eS) {}
     return {
       grupos: todos.filter(function (g) { return !g.opcional; }),
       opcionais: todos.filter(function (g) { return g.opcional; }),
-      total: Util.num(t.precoObrigatorio != null ? t.precoObrigatorio : t.precoVenda),
+      total: totalPapel,
       totalOpcional: Util.num(t.precoOpcional),
       totalComOpcionais: Util.num(t.precoVenda)
     };
   };
 
+  /* =====================================================================
+   * A REFERÊNCIA DO ORÇAMENTO QUE O MODELO PODE CITAR (13/10/2026)
+   *
+   * Base de preços, regime e BDI — o que a "Apresentação" e as "Premissas"
+   * do documento clássico escrevem. O modelo decide se cita, esconde ou
+   * troca por texto próprio; aqui só se entrega o dado.
+   * ⚠ Só o PERCENTUAL do BDI, nunca o valor em R$: `auditar` acusa o valor.
+   * ===================================================================== */
+  Proposta.referenciaParaModelo = function (orc) {
+    var out = { bases: "", nBases: 0, regime: "", bdiPct: 0 };
+    try { out.bases = Orcamento.basesUsadasTexto(orc); out.nBases = (Orcamento.basesUsadas(orc) || []).length || 1; } catch (e1) {}
+    try { out.regime = Orcamento.regimeDe ? Orcamento.regimeDe(orc) : ((orc && orc.desonerado) ? "desonerado" : "onerado"); } catch (e2) {}
+    try { out.bdiPct = Util.num(Orcamento.totais(orc).bdiPercentual); } catch (e3) {}
+    return out;
+  };
+
   /* as condições comerciais que o modelo escreve, com os nomes que ele espera */
   Proposta.comercialParaModelo = function (orc) {
     var c = (orc && orc.comercial) || {};
+    /* os textos que o clássico imprime com padrão quando vazios (premissas,
+       metodologia, responsabilidades) chegam ao modelo JÁ RESOLVIDOS pela
+       mesma função do clássico — vazio aqui seria uma página em branco */
+    function resolvido(campo) {
+      try { return (Orcamento.textoComercial ? Orcamento.textoComercial(orc, campo) : (c[campo] || "")) || ""; } catch (e) { return c[campo] || ""; }
+    }
     return {
       condicoesPagamento: c.condicoesPagamento || "",
       prazoExecucao: c.prazoExecucao || "",
       garantia: c.garantia || "",
       /* o bloco "Escopo em texto" pode ler a lista daqui (usarComercial) */
       incluso: c.incluso || "",
-      excluso: c.excluso || ""
+      excluso: c.excluso || "",
+      /* os blocos do documento padrão do sistema (13/10/2026) */
+      apresentacao: c.apresentacao || "",
+      validadeProposta: c.validadeProposta || "",
+      premissas: resolvido("premissas"),
+      metodologia: resolvido("metodologia"),
+      respContratada: resolvido("respContratada"),
+      respContratante: resolvido("respContratante")
     };
   };
 
@@ -931,6 +1057,8 @@
        auditoria acusar de "custo vazado" justamente o preço que o documento
        precisa mostrar — e travaria a proposta por um defeito do auditor. */
     b.grupos.concat(b.opcionais || []).forEach(function (g) {
+      /* o total da etapa (resumido) também é preço que o papel deve mostrar */
+      if (g.total !== undefined) legitimos[_achatar(Util.fmtMoeda(g.total))] = 1;
       g.linhas.forEach(function (l) {
         legitimos[_achatar(Util.fmtMoeda(l.total))] = 1;
         legitimos[_achatar(Util.fmtMoeda(l.unitario))] = 1;

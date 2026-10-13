@@ -2571,6 +2571,7 @@
         case "laudo": this.gerarLaudo(); break;
         case "relatorio": this.gerarRelatorio(); break;
         case "proposta-imprimir": window.print(); break;
+        case "proposta-word": if (this._propostaWord) this._propostaWord(); break;
         case "proposta-fechar": this.fecharProposta(); break;
       }
     },
@@ -14796,8 +14797,17 @@
       try { sug = (typeof Gestao !== "undefined" && Gestao.propModeloPara) ? Gestao.propModeloPara(cliId) : null; } catch (eS) {}
       var sugId = sug ? sug.id : "";
 
+      /* as duas saídas (13/10/2026): PDF pela impressão, ou o .docx para o
+         cliente que pede "manda em Word" — mesmo HTML, mesma auditoria */
+      var gerar = function (op) {
+        var sel = document.querySelector('input[name="opl"]:checked');
+        var escolhido = sel ? sel.value : "";
+        UI.fecharModal();
+        if (!escolhido) { self._propostaClassica(op); return; }
+        self._propostaPorModelo(escolhido, op);
+      };
       UI.modal("Com qual desenho?",
-        '<p class="muted">O conteúdo e os preços são os mesmos; muda o layout do papel.</p>'
+        '<p class="muted">O conteúdo e os preços são os mesmos; muda o layout do papel. <b>Gerar</b> abre para imprimir ou salvar em PDF; <b>Word</b> baixa o .docx com o texto editável.</p>'
         + '<label style="display:flex;gap:9px;align-items:flex-start;padding:9px;border:1px solid var(--linha);border-radius:5px;margin-bottom:7px;cursor:pointer">'
         + '<input type="radio" name="opl" value=""' + (sugId ? "" : " checked") + ' style="margin-top:3px">'
         + "<span><b>Documento padrão do sistema</b><br><span class=\"muted\" style=\"font-size:12.5px\">Capa, apresentação, escopo, metodologia, condições e assinatura.</span></span></label>"
@@ -14811,24 +14821,32 @@
           }).join(""),
         [
           { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
-          { texto: "Gerar", classe: "primary", onClick: function () {
-              var sel = document.querySelector('input[name="opl"]:checked');
-              var escolhido = sel ? sel.value : "";
-              UI.fecharModal();
-              if (!escolhido) { self._propostaClassica(); return; }
-              self._propostaPorModelo(escolhido);
-          } }
+          { texto: "Gerar em Word", classe: "", onClick: function () { gerar({ word: true }); } },
+          { texto: "Gerar", classe: "primary", onClick: function () { gerar(null); } }
         ]);
     },
 
-    /* o documento de sempre — o caminho que existia antes dos modelos */
-    _propostaClassica: function () {
+    /* o documento de sempre — o caminho que existia antes dos modelos.
+       `op.word` (13/10/2026): o MESMO HTML vira .docx (js/docx.js) em vez
+       de abrir para imprimir; sem `op`, nada muda, e a janela de impressão
+       ganha o botão "Baixar em Word" ao lado do PDF. */
+    _propostaClassica: function (op) {
+      var titulo = "Proposta — " + this.orcAtual.numero;
+      var html = Proposta.gerarHTML(this.orcAtual, Auth.usuario());
+      /* a paleta do documento clássico (css/app.css: --p-navy/--p-aco/--p-verde) */
+      var word = function () {
+        if (typeof Gestao === "undefined" || !Gestao.docxBaixar) { UI.toast("A saída em Word não está disponível nesta versão.", "erro"); return; }
+        Gestao.docxBaixar(html, { titulo: titulo, corTitulo: "#0F2740", corTexto: "#1A2632", corDestaque: "#2E6F9E", corFundoEscuro: "#143454", formato: "a4" });
+      };
+      if (op && op.word) { this._iaLimparNaProposta(); word(); return; }
+      /* ⚠ as duas linhas abaixo ficam JUNTAS: tools/test-ia-fiacao.js sabota
+         exatamente este par para provar que a proposta apaga o desfazer da IA */
       this._iaLimparNaProposta();   // o documento vai ao cliente: o desfazer da IA não atravessa
-      this._abrirPrint("Proposta — " + this.orcAtual.numero, Proposta.gerarHTML(this.orcAtual, Auth.usuario()), "nota");
+      this._abrirPrint(titulo, html, "nota", { word: word });
     },
 
     /* o documento desenhado pelo modelo que o usuário montou */
-    _propostaPorModelo: function (modeloId) {
+    _propostaPorModelo: function (modeloId, op) {
       var orc = this.orcAtual;
       var raw = null;
       try { raw = Store.obter(Auth.empresaId(), "prop_modelos", modeloId); } catch (e) {}
@@ -14845,19 +14863,35 @@
           logoHTML: temEmp && Empresa.logoHTML ? Empresa.logoHTML(120) : "",
           cliente: (orc.cliente && orc.cliente.nome) || "",
           obra: orc.nome || "",
+          /* a capa clássica do modelo escreve o nome da OBRA abaixo do nome do
+             orçamento, como o documento padrão (13/10/2026) */
+          obraNome: (orc.obra && orc.obra.nome) || "",
           numero: orc.numero || "",
           data: hoje,
+          /* base de preços, regime e BDI (%) — o modelo decide se cita */
+          referencia: Proposta.referenciaParaModelo ? Proposta.referenciaParaModelo(orc) : {},
+          /* a marca d'água e o rodapé "nome" leem os MESMOS interruptores de
+             ⚙ Empresa › Documentos que o clássico (marcaDaguaTexto/creditos) */
+          textos: (function () {
+            var wm = (temEmp && Empresa.marcaDaguaTexto) ? Empresa.marcaDaguaTexto() : "";
+            var nd = (temEmp && Empresa.nomeDoc) ? Empresa.nomeDoc() : "";
+            var cr = (temEmp && Empresa.creditoTexto) ? Empresa.creditoTexto() : "";
+            return { marcaDagua: wm, credito: cr, rodape: nd ? (cr ? nd + " · " + cr : nd) : cr };
+          })(),
           /* a validade agora tem DATA (js/proposta.js): o texto sai pronto,
              ancorado no envio quando ele existe */
           validade: (function () { var v = Proposta.validade(orc, Util.agoraISO()); return { texto: v.texto, ate: v.ateBR || "", vencida: !!v.vencida }; })(),
           /* calculado por Orcamento.cronograma; o motor só desenha.
              A página de cronograma pode pedir outra régua (6 semanas em vez
              de 1 mês) — quem calcula é aqui, porque o motor não faz conta. */
-          cronograma: Proposta.cronogramaParaModelo(orc, (function () {
+          cronograma: (function () {
             var pg = (m.paginas || []).filter(function (x) { return x.tipo === "cronograma"; })[0];
             var n = pg ? Util.num(pg.periodos) : 0;
-            return n > 0 ? n : null;
-          })()),
+            /* o modo "completo" da página pede os dados do cronograma de
+               execução (datas, barras, desembolso); sem a página, ou no modo
+               resumido, o payload é o de sempre (13/10/2026) */
+            return Proposta.cronogramaParaModelo(orc, n > 0 ? n : null, { completo: !!(pg && pg.modo === "completo") });
+          })(),
           blocos: Proposta.blocosParaModelo(orc),
           comercial: Proposta.comercialParaModelo(orc),
           /* links que o modelo pode transformar em botão (ver bloco Contato) */
@@ -14868,7 +14902,7 @@
         /* ⚠ o auditor é o DO ORÇAMENTO: ele sabe quais números são custo e
            quais são os preços que o papel deve mostrar. Sem ele, o motor cai
            na varredura grossa de palavras e um custo passa como número. */
-        Gestao.propModImprimir(m, dados, function (html) { return Proposta.auditar(html, orc); });
+        Gestao.propModImprimir(m, dados, function (html) { return Proposta.auditar(html, orc); }, op);
       });
     },
 
@@ -15619,8 +15653,11 @@
      *   qualquer marcação antes de ir para o `document.title`. A limpeza é
      *   defensiva de propósito: são mais de 20 pontos de chamada, e basta um
      *   deles repetir o erro para o cliente receber um PDF sujo de novo. */
-    _abrirPrint: function (titulo, htmlConteudo, icone) {
+    _abrirPrint: function (titulo, htmlConteudo, icone, extras) {
       this.fecharProposta();
+      /* a saída em Word (13/10/2026): só o documento que a trouxe ganha o
+         botão — por enquanto a proposta comercial (js/docx.js) */
+      this._propostaWord = (extras && typeof extras.word === "function") ? extras.word : null;
       var limpo = String(titulo == null ? "" : titulo).replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
       // White-label: o <title> da página sai no cabeçalho/rodapé de impressão do
       // navegador — enquanto o documento está aberto, o título vira o do DOCUMENTO
@@ -15634,6 +15671,7 @@
       overlay.innerHTML =
         '<div class="prop-toolbar no-print"><span class="ttl">' + ic + Util.esc(limpo) + '</span>' +
         '<button class="btn sm success" data-acao="proposta-imprimir">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Imprimir / Salvar PDF</button>' +
+        (this._propostaWord ? '<button class="btn sm" data-acao="proposta-word" title="Baixar este documento em Word (.docx), com o texto editável">' + (typeof Icones !== 'undefined' ? Icones.get('baixar', 15) : '') + ' Baixar em Word</button>' : '') +
         '<button class="btn sm" data-acao="proposta-fechar">Fechar</button></div>' +
         htmlConteudo;
       /* ⚠ A PRÉ-VISUALIZAÇÃO TEM QUE SER O PAPEL, NÃO A MESA.

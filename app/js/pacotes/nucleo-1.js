@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.133",
+versao: "1.2.134",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -11080,8 +11080,9 @@ var texto = "Válida até " + _br(ate)
 return { temData: true, dias: dias, baseISO: base, ateISO: ate, ateBR: _br(ate),
 faltam: faltam, vencida: vencida, frase: frase, texto: texto };
 };
-Proposta.cronogramaParaModelo = function (orc, meses) {
+Proposta.cronogramaParaModelo = function (orc, meses, opts) {
 var c;
+opts = opts || {};
 try { c = Orcamento.cronograma(orc, meses || undefined); }
 catch (e) { return null; }
 if (!c || !Util.arr(c.etapas).length) return null;
@@ -11089,14 +11090,14 @@ var etsOrc = Util.arr(orc && orc.etapas);
 var tOpc = 0, tObr = 0;
 try { var tt = Orcamento.totais(orc); tOpc = Util.num(tt.precoOpcional); tObr = Util.num(tt.precoObrigatorio != null ? tt.precoObrigatorio : tt.precoVenda); }
 catch (e2) { tOpc = 0; tObr = Util.num(c.total); }
-var premissas = [], rodapeCal = [];
+var premissas = [], rodapeCal = [], rP = null;
 try {
 if (typeof Cronograma !== "undefined" && Cronograma.estimar) {
-var rP = Cronograma.estimar(orc);
+rP = Cronograma.estimar(orc);
 premissas = Proposta.premissasDoContratante(rP);
 rodapeCal = Proposta.rodapeCalendarios(rP);
 }
-} catch (e3) { premissas = []; rodapeCal = []; }
+} catch (e3) { premissas = []; rodapeCal = []; rP = null; }
 var saida = {
 meses: c.meses,
 total: Util.num(c.total),
@@ -11116,7 +11117,59 @@ pcts: Util.arr(e.meses).map(function (v) { return tot ? (Util.num(v) / tot) * 10
 };
 if (premissas.length) { saida.premissas = premissas; saida.fraseDasPremissas = Proposta.FRASE_PREMISSAS; }
 if (rodapeCal.length) saida.rodapeCalendarios = rodapeCal;
+if (opts.completo && rP && Util.arr(rP.etapas).length && rP.totalDias && rP.dataInicio && rP.dataFim) {
+try { saida.execucao = Proposta._execucaoParaModelo(orc, rP, premissas); } catch (e4) {}
+}
 return saida;
+};
+Proposta._execucaoParaModelo = function (orc, r, premissas) {
+function br(d) { return (d && d.toLocaleDateString) ? d.toLocaleDateString("pt-BR") : ""; }
+var t0 = r.dataInicio.getTime(), t1 = r.dataFim.getTime();
+Util.arr(r.etapas).forEach(function (e) { if (e.dataFim && e.dataFim.getTime && e.dataFim.getTime() > t1) t1 = e.dataFim.getTime(); });
+var span = Math.max(1, t1 - t0);
+var etsOrc = Util.arr(orc && orc.etapas);
+var etapas = Util.arr(r.etapas).map(function (e, i) {
+var a = (e.dataInicio && e.dataInicio.getTime) ? e.dataInicio.getTime() : t0;
+var b = (e.dataFim && e.dataFim.getTime) ? e.dataFim.getTime() : a;
+var pos = ((a - t0) / span) * 100, larg = e.marco ? 0 : Math.max(0, ((b - a) / span) * 100);
+return {
+codigo: String(e.codigo || ""), nome: String(e.nome || ""), frente: String(e.categoriaNome || ""),
+duracao: Util.num(e.duracao), marco: !!e.marco,
+inicio: br(e.dataInicio), fim: br(e.dataFim),
+posPct: Math.round(pos * 10) / 10, largPct: Math.round(larg * 10) / 10,
+opcional: !!(etsOrc[i] && etsOrc[i].opcional)
+};
+});
+var out = {
+totalDias: Util.num(r.totalDias), totalSemanas: Util.num(r.totalSemanas),
+inicio: br(r.dataInicio), fim: br(r.dataFim),
+diasUteisSemana: Util.num((r.params && r.params.diasUteisSemana) || 5),
+etapas: etapas
+};
+if (premissas && premissas.length) { out.premissas = premissas; out.fraseDasPremissas = Proposta.FRASE_PREMISSAS; }
+try {
+if (typeof Cronograma !== "undefined" && Cronograma.periodos) {
+var sint = Orcamento.sintetico(orc);
+if (sint && sint.length === r.etapas.length) {
+var vmap = {};
+r.etapas.forEach(function (e, i) { vmap[e.id] = sint[i].precoVenda || 0; });
+var per = Cronograma.periodos(r, { valores: vmap });
+if (per && per.lista && per.lista.length && per.total) {
+out.desembolso = {
+lista: per.lista.map(function (p) { return { rotulo: String(p.rotulo || ""), valor: Util.num(p.valor), pct: Util.num(p.pct), acumPct: Util.num(p.acumPct) }; }),
+total: Util.num(per.total)
+};
+}
+}
+}
+} catch (eD) {}
+var nFer = ((r.feriados || {}).noPeriodo || []).length;
+out.notaPrazos = "Prazos em dias úteis (" + out.diasUteisSemana + " dias por semana), contados a partir da liberação da obra"
++ (r.params && r.params.descontarFeriados === false
+? " e sem desconto de feriados"
+: (nFer ? ", já descontados " + nFer + " feriado" + (nFer === 1 ? "" : "s") + " do período" : ", com os feriados nacionais descontados"))
++ ". O cronograma pode ser reajustado em função de condições climáticas, liberação de frentes de serviço e fornecimento de materiais.";
+return out;
 };
 Proposta.blocosParaModelo = function (orc) {
 var linhas = Orcamento.linhas(orc) || [];
@@ -11135,22 +11188,52 @@ total: Util.num(L.precoTotal)
 });
 });
 var todos = ordem.map(function (k) { return porEtapa[k]; });
+var totalPapel = Util.num(t.precoObrigatorio != null ? t.precoObrigatorio : t.precoVenda);
+try {
+var sint = Orcamento.sintetico(orc) || [];
+var porId = {};
+Util.arr(orc && orc.etapas).forEach(function (e, i) { if (e && e.id && sint[i]) porId[String(e.id)] = sint[i]; });
+ordem.forEach(function (k) {
+var s = porId[k], g = porEtapa[k];
+if (!s || !g) return;
+g.codigo = String(s.codigo == null ? "" : s.codigo);
+g.total = Util.num(s.precoVenda);
+g.qtdItens = Util.num(s.qtdItens);
+g.peso = g.opcional ? 0 : (totalPapel > 0 ? (g.total / totalPapel) * 100 : 0);
+});
+} catch (eS) {}
 return {
 grupos: todos.filter(function (g) { return !g.opcional; }),
 opcionais: todos.filter(function (g) { return g.opcional; }),
-total: Util.num(t.precoObrigatorio != null ? t.precoObrigatorio : t.precoVenda),
+total: totalPapel,
 totalOpcional: Util.num(t.precoOpcional),
 totalComOpcionais: Util.num(t.precoVenda)
 };
 };
+Proposta.referenciaParaModelo = function (orc) {
+var out = { bases: "", nBases: 0, regime: "", bdiPct: 0 };
+try { out.bases = Orcamento.basesUsadasTexto(orc); out.nBases = (Orcamento.basesUsadas(orc) || []).length || 1; } catch (e1) {}
+try { out.regime = Orcamento.regimeDe ? Orcamento.regimeDe(orc) : ((orc && orc.desonerado) ? "desonerado" : "onerado"); } catch (e2) {}
+try { out.bdiPct = Util.num(Orcamento.totais(orc).bdiPercentual); } catch (e3) {}
+return out;
+};
 Proposta.comercialParaModelo = function (orc) {
 var c = (orc && orc.comercial) || {};
+function resolvido(campo) {
+try { return (Orcamento.textoComercial ? Orcamento.textoComercial(orc, campo) : (c[campo] || "")) || ""; } catch (e) { return c[campo] || ""; }
+}
 return {
 condicoesPagamento: c.condicoesPagamento || "",
 prazoExecucao: c.prazoExecucao || "",
 garantia: c.garantia || "",
 incluso: c.incluso || "",
-excluso: c.excluso || ""
+excluso: c.excluso || "",
+apresentacao: c.apresentacao || "",
+validadeProposta: c.validadeProposta || "",
+premissas: resolvido("premissas"),
+metodologia: resolvido("metodologia"),
+respContratada: resolvido("respContratada"),
+respContratante: resolvido("respContratante")
 };
 };
 Proposta.PALAVRAS_PROIBIDAS = [
@@ -11170,6 +11253,7 @@ var b = Proposta.blocosParaModelo(orc);
 var legitimos = {};
 legitimos[_achatar(Util.fmtMoeda(b.total))] = 1;
 b.grupos.concat(b.opcionais || []).forEach(function (g) {
+if (g.total !== undefined) legitimos[_achatar(Util.fmtMoeda(g.total))] = 1;
 g.linhas.forEach(function (l) {
 legitimos[_achatar(Util.fmtMoeda(l.total))] = 1;
 legitimos[_achatar(Util.fmtMoeda(l.unitario))] = 1;
@@ -11205,6 +11289,655 @@ return achados.length === 1 ? achados[0] : "";
 };
 global.Proposta = Proposta;
 })(window);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/docx.js ==== */
+try {
+(function (global) {
+"use strict";
+var Docx = {};
+Docx.MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+function txt(v) { return String(v == null ? "" : v).trim(); }
+function num(v) { var n = +v; return isFinite(n) ? n : 0; }
+function esc(s) {
+return String(s == null ? "" : s)
+.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+.replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+}
+function xmlSeguro(s) { return String(s).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]/g, ""); }
+function utf8(s) {
+s = String(s == null ? "" : s);
+if (typeof TextEncoder !== "undefined") return new TextEncoder().encode(s);
+var out = [], i, c;
+for (i = 0; i < s.length; i++) {
+c = s.charCodeAt(i);
+if (c >= 0xD800 && c <= 0xDBFF && i + 1 < s.length) {
+var d = s.charCodeAt(i + 1);
+if (d >= 0xDC00 && d <= 0xDFFF) { c = 0x10000 + ((c - 0xD800) << 10) + (d - 0xDC00); i++; }
+}
+if (c < 0x80) out.push(c);
+else if (c < 0x800) out.push(0xC0 | (c >> 6), 0x80 | (c & 63));
+else if (c < 0x10000) out.push(0xE0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+else out.push(0xF0 | (c >> 18), 0x80 | ((c >> 12) & 63), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+}
+return new Uint8Array(out);
+}
+Docx.utf8 = utf8;
+var B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+var B64_INV = null;
+function deBase64(b64) {
+var s = String(b64 || "").replace(/[^A-Za-z0-9+\/=]/g, "");
+if (!B64_INV) { B64_INV = {}; for (var q = 0; q < 64; q++) B64_INV[B64.charAt(q)] = q; }
+var n = s.length, pad = 0;
+if (n && s.charAt(n - 1) === "=") pad++;
+if (n > 1 && s.charAt(n - 2) === "=") pad++;
+var out = new Uint8Array(Math.floor((n * 3) / 4) - pad), o = 0, i;
+for (i = 0; i < n; i += 4) {
+var a = B64_INV[s.charAt(i)] || 0, b = B64_INV[s.charAt(i + 1)] || 0,
+c = B64_INV[s.charAt(i + 2)] || 0, d = B64_INV[s.charAt(i + 3)] || 0;
+var tri = (a << 18) | (b << 12) | (c << 6) | d;
+if (o < out.length) out[o++] = (tri >> 16) & 255;
+if (o < out.length) out[o++] = (tri >> 8) & 255;
+if (o < out.length) out[o++] = tri & 255;
+}
+return out;
+}
+Docx.deBase64 = deBase64;
+var CRC_T = null;
+function crc32(b) {
+if (!CRC_T) {
+CRC_T = new Int32Array(256);
+for (var i = 0; i < 256; i++) { var c = i; for (var k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); CRC_T[i] = c; }
+}
+var crc = -1;
+for (var j = 0; j < b.length; j++) crc = CRC_T[(crc ^ b[j]) & 255] ^ (crc >>> 8);
+return (crc ^ -1) >>> 0;
+}
+Docx.crc32 = crc32;
+function u16(a, p, v) { a[p] = v & 255; a[p + 1] = (v >>> 8) & 255; }
+function u32(a, p, v) { a[p] = v & 255; a[p + 1] = (v >>> 8) & 255; a[p + 2] = (v >>> 16) & 255; a[p + 3] = (v >>> 24) & 255; }
+var DOS_DATA = ((2026 - 1980) << 9) | (1 << 5) | 1, DOS_HORA = 0;
+Docx.zip = function (arquivos) {
+var itens = [], total = 0;
+(arquivos || []).forEach(function (a) {
+var dados = (typeof a.dados === "string") ? utf8(a.dados) : (a.dados || new Uint8Array(0));
+var nome = utf8(a.nome);
+itens.push({ nome: nome, dados: dados, crc: crc32(dados), off: 0 });
+total += 30 + nome.length + dados.length + 46 + nome.length;
+});
+var out = new Uint8Array(total + 22), p = 0, i, it;
+for (i = 0; i < itens.length; i++) {
+it = itens[i]; it.off = p;
+u32(out, p, 0x04034b50); u16(out, p + 4, 20); u16(out, p + 6, 0x0800); u16(out, p + 8, 0);
+u16(out, p + 10, DOS_HORA); u16(out, p + 12, DOS_DATA); u32(out, p + 14, it.crc);
+u32(out, p + 18, it.dados.length); u32(out, p + 22, it.dados.length);
+u16(out, p + 26, it.nome.length); u16(out, p + 28, 0);
+p += 30; out.set(it.nome, p); p += it.nome.length; out.set(it.dados, p); p += it.dados.length;
+}
+var cd = p;
+for (i = 0; i < itens.length; i++) {
+it = itens[i];
+u32(out, p, 0x02014b50); u16(out, p + 4, 20); u16(out, p + 6, 20); u16(out, p + 8, 0x0800); u16(out, p + 10, 0);
+u16(out, p + 12, DOS_HORA); u16(out, p + 14, DOS_DATA); u32(out, p + 16, it.crc);
+u32(out, p + 20, it.dados.length); u32(out, p + 24, it.dados.length);
+u16(out, p + 28, it.nome.length); u16(out, p + 30, 0); u16(out, p + 32, 0); u16(out, p + 34, 0); u16(out, p + 36, 0);
+u32(out, p + 38, 0); u32(out, p + 42, it.off);
+p += 46; out.set(it.nome, p); p += it.nome.length;
+}
+u32(out, p, 0x06054b50); u16(out, p + 4, 0); u16(out, p + 6, 0); u16(out, p + 8, itens.length); u16(out, p + 10, itens.length);
+u32(out, p + 12, p - cd); u32(out, p + 16, cd); u16(out, p + 20, 0);
+return out;
+};
+function dimensoes(b, tipo) {
+try {
+if (tipo === "png" && b.length > 24) return { w: (b[16] << 24 | b[17] << 16 | b[18] << 8 | b[19]) >>> 0, h: (b[20] << 24 | b[21] << 16 | b[22] << 8 | b[23]) >>> 0 };
+if (tipo === "gif" && b.length > 10) return { w: b[6] | (b[7] << 8), h: b[8] | (b[9] << 8) };
+if (tipo === "jpeg") {
+var p = 2;
+while (p + 9 < b.length) {
+if (b[p] !== 0xFF) { p++; continue; }
+var m = b[p + 1];
+if (m === 0xD8 || m === 0x01 || (m >= 0xD0 && m <= 0xD7)) { p += 2; continue; }
+var len = (b[p + 2] << 8) | b[p + 3];
+if (m >= 0xC0 && m <= 0xCF && m !== 0xC4 && m !== 0xC8 && m !== 0xCC) {
+return { h: (b[p + 5] << 8) | b[p + 6], w: (b[p + 7] << 8) | b[p + 8] };
+}
+p += 2 + len;
+}
+}
+} catch (e) {}
+return { w: 3, h: 2 };
+}
+Docx.dimensoes = dimensoes;
+var VAZIOS = { br: 1, img: 1, hr: 1, input: 1, meta: 1, link: 1, source: 1, wbr: 1, col: 1 };
+var PULAR = { script: 1, style: 1, svg: 1, template: 1, head: 1, noscript: 1, canvas: 1, video: 1, audio: 1, iframe: 1 };
+var ENT = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", middot: "·", ndash: "–", mdash: "—",
+hellip: "…", laquo: "«", raquo: "»", copy: "©", reg: "®", deg: "°", times: "×", bull: "•", rsquo: "’", lsquo: "‘", ldquo: "“", rdquo: "”" };
+function decodeEnt(s) {
+return String(s).replace(/&(#x[0-9a-fA-F]+|#\d+|[a-zA-Z]+);/g, function (m, e) {
+if (e.charAt(0) === "#") {
+var cp = (e.charAt(1) === "x" || e.charAt(1) === "X") ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+if (!isFinite(cp) || cp < 0 || cp > 0x10FFFF) return m;
+if (cp > 0xFFFF) { cp -= 0x10000; return String.fromCharCode(0xD800 + (cp >> 10), 0xDC00 + (cp & 0x3FF)); }
+return String.fromCharCode(cp);
+}
+return ENT.hasOwnProperty(e) ? ENT[e] : m;
+});
+}
+function atributos(s) {
+var out = {}, re = /([a-zA-Z_:][-\w:.]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g, m;
+while ((m = re.exec(s))) out[m[1].toLowerCase()] = decodeEnt(m[2] !== undefined ? m[2] : (m[3] !== undefined ? m[3] : (m[4] !== undefined ? m[4] : "")));
+return out;
+}
+Docx.arvore = function (html) {
+var s = String(html == null ? "" : html);
+var raiz = { tag: "#root", attrs: {}, filhos: [] }, pilha = [raiz], i = 0, n = s.length;
+function topo() { return pilha[pilha.length - 1]; }
+function texto(t) { if (t) topo().filhos.push({ tag: "#text", texto: decodeEnt(t) }); }
+while (i < n) {
+var lt = s.indexOf("<", i);
+if (lt < 0) { texto(s.slice(i)); break; }
+texto(s.slice(i, lt));
+if (s.substr(lt, 4) === "<!--") { var fim = s.indexOf("-->", lt + 4); i = fim < 0 ? n : fim + 3; continue; }
+if (s.substr(lt, 2) === "<!") { var gt0 = s.indexOf(">", lt); i = gt0 < 0 ? n : gt0 + 1; continue; }
+var gt = s.indexOf(">", lt);
+if (gt < 0) { texto(s.slice(lt)); break; }
+var dentro = s.slice(lt + 1, gt);
+i = gt + 1;
+if (dentro.charAt(0) === "/") {
+var fecha = dentro.slice(1).trim().toLowerCase();
+for (var k = pilha.length - 1; k > 0; k--) { if (pilha[k].tag === fecha) { pilha.length = k; break; } }
+continue;
+}
+var auto = /\/\s*$/.test(dentro);
+if (auto) dentro = dentro.replace(/\/\s*$/, "");
+var mt = dentro.match(/^([a-zA-Z][\w:-]*)([\s\S]*)$/);
+if (!mt) continue;
+var tag = mt[1].toLowerCase();
+var no = { tag: tag, attrs: atributos(mt[2] || ""), filhos: [] };
+if (PULAR[tag]) {
+var fe = s.indexOf("</" + tag, i);
+var gt2 = fe < 0 ? -1 : s.indexOf(">", fe);
+i = gt2 < 0 ? n : gt2 + 1;
+continue;
+}
+topo().filhos.push(no);
+if (!auto && !VAZIOS[tag]) pilha.push(no);
+}
+return raiz;
+};
+function classes(no) { return (" " + String((no && no.attrs && no.attrs["class"]) || "") + " "); }
+function temClasse(no, c) { return classes(no).indexOf(" " + c + " ") > -1; }
+function estiloDe(no, prop) {
+var st = String((no && no.attrs && no.attrs.style) || "");
+var re = new RegExp("(?:^|;)\\s*" + prop.replace(/[-]/g, "\\-") + "\\s*:\\s*([^;]+)", "i");
+var m = st.match(re);
+return m ? m[1].trim() : "";
+}
+function textoDe(no) {
+if (!no) return "";
+if (no.tag === "#text") return no.texto;
+var s = "";
+(no.filhos || []).forEach(function (f) { s += (f.tag === "br") ? "\n" : textoDe(f); });
+return s;
+}
+function hex6(c) {
+var s = txt(c);
+var m = s.match(/^#([0-9a-fA-F]{6})$/);
+if (m) return m[1].toUpperCase();
+m = s.match(/^#([0-9a-fA-F]{3})$/);
+if (m) return (m[1].charAt(0) + m[1].charAt(0) + m[1].charAt(1) + m[1].charAt(1) + m[1].charAt(2) + m[1].charAt(2)).toUpperCase();
+m = s.match(/^rgba?\((\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+if (m) return [m[1], m[2], m[3]].map(function (x) { var h = (+x).toString(16); return (h.length < 2 ? "0" : "") + h; }).join("").toUpperCase();
+return "";
+}
+function familia(stack) {
+var s = txt(stack);
+if (!s) return "";
+var m = s.match(/^\s*["']([^"']+)["']/) || s.match(/^\s*([^,]+)/);
+var f = m ? m[1].trim() : "";
+return /^(serif|sans-serif|monospace|system-ui)$/i.test(f) ? "" : f;
+}
+var TW_A4 = { w: 11906, h: 16838, mt: 1021, mb: 1021, ml: 907, mr: 907 };
+var TW_VERT = { w: 6803, h: 12076, mt: 794, mb: 794, ml: 680, mr: 680 };
+var EMU_TW = 635;
+function Gerador(op) {
+op = op || {};
+this.op = op;
+this.pg = (op.formato === "vertical") ? TW_VERT : TW_A4;
+this.largura = this.pg.w - this.pg.ml - this.pg.mr;
+this.cores = {
+titulo: hex6(op.corTitulo) || "0F2740", texto: hex6(op.corTexto) || "1A2632",
+destaque: hex6(op.corDestaque) || "2E6F9E", escuro: hex6(op.corFundoEscuro) || "143454"
+};
+this.fontes = { titulo: familia(op.fonteTitulo) || familia(op.fonteTexto) || "Calibri", texto: familia(op.fonteTexto) || "Calibri" };
+this.corpo = [];
+this.media = [];
+this.rels = [];
+this.avisos = [];
+this.idImg = 0;
+this.usaBullet = false; this.usaNumero = false;
+}
+Gerador.prototype.rId = function () { return "rId" + (100 + this.rels.length); };
+function rPr(f) {
+var s = "";
+if (f.fonte) s += '<w:rFonts w:ascii="' + esc(f.fonte) + '" w:hAnsi="' + esc(f.fonte) + '" w:cs="' + esc(f.fonte) + '"/>';
+if (f.negrito) s += "<w:b/><w:bCs/>";
+if (f.italico) s += "<w:i/><w:iCs/>";
+if (f.caixaAlta) s += "<w:caps/>";
+if (f.cor) s += '<w:color w:val="' + f.cor + '"/>';
+if (f.tamanho) s += '<w:sz w:val="' + Math.round(f.tamanho * 2) + '"/><w:szCs w:val="' + Math.round(f.tamanho * 2) + '"/>';
+if (f.espaco) s += '<w:spacing w:val="' + f.espaco + '"/>';
+return s ? "<w:rPr>" + s + "</w:rPr>" : "";
+}
+function run(texto, f) {
+var t = xmlSeguro(String(texto == null ? "" : texto));
+if (!t) return "";
+var partes = t.split("\n"), out = "";
+for (var i = 0; i < partes.length; i++) {
+if (i) out += "<w:r>" + rPr(f) + "<w:br/></w:r>";
+if (partes[i]) out += "<w:r>" + rPr(f) + '<w:t xml:space="preserve">' + esc(partes[i]) + "</w:t></w:r>";
+}
+return out;
+}
+function herda(f, extra) { var o = {}; for (var k in f) if (Object.prototype.hasOwnProperty.call(f, k)) o[k] = f[k]; for (var k2 in extra) if (Object.prototype.hasOwnProperty.call(extra, k2)) o[k2] = extra[k2]; return o; }
+function pPr(p) {
+var s = "";
+if (p.estilo) s += '<w:pStyle w:val="' + p.estilo + '"/>';
+if (p.numId) s += '<w:numPr><w:ilvl w:val="0"/><w:numId w:val="' + p.numId + '"/></w:numPr>';
+if (p.bordaBaixo || p.bordaCima || p.bordaEsq) {
+s += "<w:pBdr>";
+if (p.bordaCima) s += '<w:top w:val="single" w:sz="' + (p.bordaCima.sz || 6) + '" w:space="1" w:color="' + (p.bordaCima.cor || "000000") + '"/>';
+if (p.bordaEsq) s += '<w:left w:val="single" w:sz="' + (p.bordaEsq.sz || 18) + '" w:space="8" w:color="' + (p.bordaEsq.cor || "000000") + '"/>';
+if (p.bordaBaixo) s += '<w:bottom w:val="single" w:sz="' + (p.bordaBaixo.sz || 8) + '" w:space="1" w:color="' + (p.bordaBaixo.cor || "000000") + '"/>';
+s += "</w:pBdr>";
+}
+if (p.fundo) s += '<w:shd w:val="clear" w:color="auto" w:fill="' + p.fundo + '"/>';
+s += '<w:spacing w:before="' + (p.antes != null ? p.antes : 0) + '" w:after="' + (p.depois != null ? p.depois : 120) + '"' + (p.entrelinha ? ' w:line="' + p.entrelinha + '" w:lineRule="auto"' : "") + "/>";
+if (p.numId) s += '<w:ind w:left="567" w:hanging="283"/>';
+else if (p.recuo) s += '<w:ind w:left="' + p.recuo + '"/>';
+if (p.alinha) s += '<w:jc w:val="' + p.alinha + '"/>';
+if (p.juntos) s += "<w:keepNext/>";
+return "<w:pPr>" + s + "</w:pPr>";
+}
+function paragrafo(p, runs) { return "<w:p>" + pPr(p || {}) + (runs || "") + "</w:p>"; }
+var QUEBRA = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
+Gerador.prototype.imagem = function (no, maxW, maxH, alinha) {
+var src = String((no.attrs && no.attrs.src) || "");
+var m = src.match(/^data:image\/(png|jpe?g|gif|webp);base64,([\s\S]+)$/i);
+if (!m) { if (src) this.avisos.push("imagem fora do formato embutido foi deixada de fora"); return ""; }
+var tipo = m[1].toLowerCase() === "jpg" ? "jpeg" : m[1].toLowerCase();
+if (tipo === "webp") { this.avisos.push("uma imagem WebP ficou de fora (o Word não a abre)"); return ""; }
+var dados = deBase64(m[2]);
+if (!dados.length) return "";
+var dim = dimensoes(dados, tipo);
+var razao = (dim.w > 0 && dim.h > 0) ? dim.w / dim.h : 1.5;
+var w = maxW, h = w / razao;
+if (maxH && h > maxH) { h = maxH; w = h * razao; }
+this.idImg++;
+var rid = this.rId();
+var nome = "image" + this.idImg + "." + (tipo === "jpeg" ? "jpg" : tipo);
+this.media.push({ nome: nome, dados: dados, tipo: tipo });
+this.rels.push({ id: rid, tipo: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image", alvo: "media/" + nome });
+var cx = Math.round(w * EMU_TW), cy = Math.round(h * EMU_TW);
+var desenho = "<w:r><w:drawing><wp:inline distT=\"0\" distB=\"0\" distL=\"0\" distR=\"0\"><wp:extent cx=\"" + cx + "\" cy=\"" + cy + "\"/>"
++ '<wp:docPr id="' + this.idImg + '" name="Imagem ' + this.idImg + '"/>'
++ '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
++ '<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
++ '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="' + this.idImg + '" name="' + esc(nome) + '"/><pic:cNvPicPr/></pic:nvPicPr>'
++ '<pic:blipFill><a:blip r:embed="' + rid + '"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
++ '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="' + cx + '" cy="' + cy + '"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>'
++ "</a:graphicData></a:graphic></wp:inline></w:drawing></w:r>";
+return paragrafo({ alinha: alinha || "center", depois: 120 }, desenho);
+};
+Gerador.prototype.inline = function (no, f, saida) {
+var self = this;
+(no.filhos || []).forEach(function (c) {
+if (c.tag === "#text") { saida.runs += run(c.texto.replace(/\s+/g, " "), f); return; }
+if (c.tag === "br") { saida.runs += "<w:r>" + rPr(f) + "<w:br/></w:r>"; return; }
+if (c.tag === "img") { saida.imagens.push(c); return; }
+var g = f;
+if (c.tag === "b" || c.tag === "strong") g = herda(f, { negrito: true });
+else if (c.tag === "i" || c.tag === "em") g = herda(f, { italico: true });
+else if (c.tag === "small" || temClasse(c, "tp-qtd") || temClasse(c, "tp-cc-nota") || temClasse(c, "tp-opc-nota")) g = herda(f, { tamanho: Math.max(7, (f.tamanho || 11) - 2), cor: f.cor === "FFFFFF" ? "FFFFFF" : "6B7280" });
+else if (c.tag === "span" && temClasse(c, "tp-cr-v")) g = herda(f, { tamanho: 7.5 });
+if (c.tag === "span" && (temClasse(c, "tp-cr-b") || temClasse(c, "tp-gt-b") || temClasse(c, "tp-gt-marco") || temClasse(c, "tp-gt-trilho"))) {
+if (temClasse(c, "tp-gt-trilho")) {
+var barra = (c.filhos || []).filter(function (x) { return x.tag === "span"; })[0];
+var larg = barra ? num(estiloDe(barra, "width").replace("%", "")) : 0;
+var pos = barra ? num(estiloDe(barra, "left").replace("%", "")) : 0;
+var nTr = 24, ini = Math.round((pos / 100) * nTr), fim = Math.max(ini + 1, Math.round(((pos + (temClasse(barra || {}, "tp-gt-marco") ? 2 : larg)) / 100) * nTr));
+var tr = ""; for (var q = 0; q < nTr; q++) tr += (q >= ini && q < fim) ? "█" : "░";
+saida.runs += run(tr, herda(f, { cor: self.cores.destaque, tamanho: 7, fonte: "Consolas" }));
+return;
+}
+var w2 = num(estiloDe(c, "width").replace("%", ""));
+var nB = Math.max(1, Math.round((w2 / 100) * 8)), bb = ""; for (var r = 0; r < nB; r++) bb += "█";
+saida.runs += run(bb, herda(f, { cor: self.cores.destaque, tamanho: 7 }));
+return;
+}
+if (c.tag === "a") { self.inline(c, g, saida); return; }
+self.inline(c, g, saida);
+});
+};
+var BLOCOS = { div: 1, section: 1, article: 1, header: 1, footer: 1, main: 1, p: 1, h1: 1, h2: 1, h3: 1, h4: 1, h5: 1, h6: 1, ul: 1, ol: 1, li: 1, table: 1, figure: 1, figcaption: 1, blockquote: 1, pre: 1, hr: 1, nav: 1 };
+function temBlocoDentro(no) { return (no.filhos || []).some(function (c) { return c.tag !== "#text" && (BLOCOS[c.tag] || (c.filhos && c.filhos.length && temBlocoDentro(c))); }); }
+Gerador.prototype.bloco = function (no, ctx) {
+var self = this;
+if (!no) return;
+if (no.tag === "#text") { var t = no.texto.replace(/\s+/g, " ").trim(); if (t) this.corpo.push(paragrafo({ alinha: ctx.alTxt, depois: 120 }, run(t, ctx.f))); return; }
+var tag = no.tag;
+if (temClasse(no, "tp-wm") || temClasse(no, "wm") || temClasse(no, "tp-orn") || temClasse(no, "tp-sombra") || temClasse(no, "no-print") || temClasse(no, "prop-toolbar")) return;
+if (tag === "img") { this.corpo.push(this.imagemBloco(no, ctx)); return; }
+if (tag === "hr" || temClasse(no, "tp-rule")) { this.corpo.push(paragrafo({ bordaBaixo: { cor: ctx.corTitulo || this.cores.titulo, sz: 8 }, depois: 160, antes: 0 }, "")); return; }
+if (tag === "table") { this.tabela(no, ctx); return; }
+if (tag === "ul" || tag === "ol") { this.lista(no, ctx, tag === "ol"); return; }
+if (temClasse(no, "tp-cols") || temClasse(no, "cols") || temClasse(no, "tp-assin") || temClasse(no, "assinaturas")) { this.colunas(no, ctx); return; }
+if (temClasse(no, "tp-cc") || temClasse(no, "tp-full")) { this.capa(no, ctx); return; }
+var cab = /^h[1-6]$/.test(tag);
+if (cab || tag === "p" || tag === "figcaption" || tag === "li" || (!temBlocoDentro(no) && (no.filhos || []).length)) {
+var p = this.estiloParagrafo(no, ctx), f = this.estiloRun(no, ctx, cab);
+var saida = { runs: "", imagens: [] };
+this.inline(no, f, saida);
+saida.imagens.forEach(function (im) { self.corpo.push(self.imagemBloco(im, ctx)); });
+if (saida.runs) this.corpo.push(paragrafo(p, saida.runs));
+return;
+}
+var ctx2 = this.contexto(no, ctx);
+(no.filhos || []).forEach(function (c) { self.bloco(c, ctx2); });
+};
+Gerador.prototype.contexto = function (no, ctx) {
+var c2 = herda(ctx, {});
+var at = estiloDe(no, "--tp-al-tit"), ax = estiloDe(no, "--tp-al-txt");
+if (at) c2.alTit = (at === "left" ? "left" : at === "right" ? "right" : at === "center" ? "center" : c2.alTit);
+if (ax) c2.alTxt = (ax === "justify" ? "both" : ax === "right" ? "right" : ax === "center" ? "center" : "left");
+if (temClasse(no, "tp-bloco") || temClasse(no, "bloco")) c2.bloco = true;
+if (temClasse(no, "tp-serv-card")) c2.cartao = true;
+if (temClasse(no, "tp-ci-row") || temClasse(no, "ci-row") || temClasse(no, "tp-cc-row")) c2.linhaInfo = true;
+return c2;
+};
+Gerador.prototype.estiloParagrafo = function (no, ctx) {
+var tag = no.tag, p = { alinha: ctx.alTxt, depois: 120 };
+var cl = classes(no);
+if (/^h[1-6]$/.test(tag)) { p.estilo = "Heading" + Math.min(3, +tag.charAt(1)); p.juntos = true; p.antes = tag === "h1" ? 0 : 200; p.depois = 120; p.alinha = ctx.alTit || (temClasse(no, "tp-h1c") || temClasse(no, "tp-vazado") || temClasse(no, "tp-cc-h1") ? "center" : undefined); }
+if (/ tp-total | tp-pag | tp-opc-tot | tp-opc-txt | tp-contatos | tp-fim-p /.test(cl)) p.alinha = "center";
+if (/ tp-total | tp-opc-tot /.test(cl)) { p.antes = 160; }
+if (/ tp-leg | nota | tp-cc-rod | tp-rodape | capa-rod | pg-rod /.test(cl)) { p.depois = 80; }
+if (/ tp-rodape | pg-rod | capa-rod /.test(cl)) { p.alinha = "center"; p.antes = 240; p.bordaCima = { cor: this.cores.destaque, sz: 4 }; }
+if (/ tp-cc-kicker | kicker /.test(cl)) { p.depois = 60; }
+if (/ tp-linha | linha-assin /.test(cl)) { p.bordaCima = { cor: ctx.corTexto || this.cores.texto, sz: 6 }; p.antes = 480; p.depois = 40; }
+if (temClasse(no, "tp-cc-row") || temClasse(no, "ci-row")) { p.bordaBaixo = { cor: "FFFFFF", sz: 2 }; p.depois = 60; }
+if (ctx.bloco && /^h[1-6]$/.test(tag)) { p.antes = 120; }
+if (ctx.bloco && tag === "p") { p.bordaEsq = { cor: this.cores.destaque, sz: 18 }; p.recuo = 0; p.depois = 200; }
+if (ctx.cartao) { p.bordaEsq = { cor: this.cores.destaque, sz: 18 }; p.depois = 60; }
+if (ctx.alTxt && tag === "p" && !p.alinha) p.alinha = ctx.alTxt;
+if (ctx.fundo) p.fundo = ctx.fundo;
+return p;
+};
+Gerador.prototype.estiloRun = function (no, ctx, cab) {
+var cl = classes(no), f = herda(ctx.f, {});
+if (cab) {
+f.negrito = true; f.fonte = this.fontes.titulo; f.cor = ctx.branco ? "FFFFFF" : this.cores.titulo;
+f.tamanho = no.tag === "h1" ? 26 : no.tag === "h2" ? 17 : 12.5;
+if (temClasse(no, "tp-h1c") || temClasse(no, "tp-vazado")) { f.tamanho = 22; f.caixaAlta = true; }
+if (temClasse(no, "tp-cc-h1") || temClasse(no, "tp-h1")) { f.tamanho = 26; }
+if (temClasse(no, "pg-tit")) { f.tamanho = 18; }
+}
+if (/ tp-cc-kicker | kicker /.test(cl)) { f.tamanho = 10; f.espaco = 60; f.caixaAlta = true; f.negrito = true; }
+if (/ tp-chamada /.test(cl)) { f.tamanho = 13; f.caixaAlta = true; f.fonte = this.fontes.titulo; }
+if (/ tp-cli | tp-num-capa /.test(cl)) { f.tamanho = 12; f.espaco = 40; f.caixaAlta = true; }
+if (/ tp-cc-obra | capa-obra /.test(cl)) { f.tamanho = 13; }
+if (/ tp-total | tp-opc-tot /.test(cl)) { f.tamanho = 14; f.cor = ctx.branco ? "FFFFFF" : this.cores.titulo; }
+if (/ tp-pag | tp-contatos /.test(cl)) { f.cor = ctx.branco ? "FFFFFF" : this.cores.titulo; }
+if (/ tp-leg | nota | tp-cc-rod | tp-rodape | capa-rod | pg-rod | tp-fig | tp-opc-nota /.test(cl)) { f.tamanho = 9.5; f.cor = ctx.branco ? "FFFFFF" : "4B5563"; }
+if (/ tp-marca /.test(cl)) { f.tamanho = 11; f.espaco = 40; f.caixaAlta = true; f.cor = this.cores.titulo; }
+if (/ tp-sobre-p | tp-fim-p /.test(cl)) { f.tamanho = 12.5; }
+if (/ tp-rot /.test(cl)) { f.negrito = true; }
+if (ctx.cartao && no.tag === "span") { f.tamanho = 10.5; }
+return f;
+};
+Gerador.prototype.imagemBloco = function (no, ctx) {
+var cl = classes(no);
+if (/ tp-logo | logo /.test(cl) || (no.attrs && /logo/i.test(no.attrs.alt || ""))) return this.imagem(no, Math.min(2600, this.largura), 1400, ctx.alTit === "center" ? "center" : "left");
+if (/ tp-bg | tp-gal | tp-contato-img /.test(cl)) return this.imagem(no, this.largura, Math.round(this.pg.h * 0.4), "center");
+return this.imagem(no, Math.round(this.largura * 0.8), Math.round(this.pg.h * 0.45), "center");
+};
+Gerador.prototype.lista = function (no, ctx, numerada) {
+var self = this;
+if (numerada) this.usaNumero = true; else this.usaBullet = true;
+(no.filhos || []).forEach(function (li) {
+if (li.tag !== "li") return;
+var saida = { runs: "", imagens: [] };
+self.inline(li, ctx.f, saida);
+self.corpo.push(paragrafo({ numId: numerada ? 2 : 1, alinha: ctx.alTxt, depois: 60 }, saida.runs));
+});
+};
+Gerador.prototype.colunas = function (no, ctx) {
+var self = this;
+var cols = (no.filhos || []).filter(function (c) { return c.tag !== "#text"; });
+if (!cols.length) return;
+var larg = Math.floor(this.largura / cols.length);
+var xml = '<w:tbl><w:tblPr><w:tblW w:w="' + this.largura + '" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="60" w:type="dxa"/><w:right w:w="160" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>';
+cols.forEach(function () { xml += '<w:gridCol w:w="' + larg + '"/>'; });
+xml += "</w:tblGrid><w:tr>";
+var assinatura = temClasse(no, "tp-assin") || temClasse(no, "assinaturas");
+cols.forEach(function (c) {
+var g = new Gerador(self.op); g.cores = self.cores; g.fontes = self.fontes; g.media = self.media; g.rels = self.rels; g.idImg = self.idImg; g.avisos = self.avisos;
+var ctx2 = herda(ctx, {});
+if (assinatura) { ctx2.alTxt = "center"; }
+(c.filhos || []).forEach(function (f) { g.bloco(f, ctx2); });
+self.idImg = g.idImg; self.usaBullet = self.usaBullet || g.usaBullet; self.usaNumero = self.usaNumero || g.usaNumero;
+var celula = g.corpo.join("") || paragrafo({}, "");
+if (assinatura && !/<w:pBdr>/.test(celula)) celula = paragrafo({ bordaCima: { cor: self.cores.texto, sz: 6 }, antes: 480, alinha: "center" }, run(textoDe(c).replace(/\s+/g, " ").trim(), herda(ctx.f, { tamanho: 10.5 })));
+xml += '<w:tc><w:tcPr><w:tcW w:w="' + larg + '" w:type="dxa"/></w:tcPr>' + celula + "</w:tc>";
+});
+xml += "</w:tr></w:tbl>" + paragrafo({ depois: 120 }, "");
+this.corpo.push(xml);
+};
+Gerador.prototype.capa = function (no, ctx) {
+var self = this;
+var fundo = hex6(estiloDe(no, "background-color")) || this.cores.escuro;
+var imgs = [], textos = [];
+function colher(n) {
+(n.filhos || []).forEach(function (c) {
+if (c.tag === "#text") { if (c.texto.trim()) textos.push(c); return; }
+if (c.tag === "img" && temClasse(c, "tp-bg")) { imgs.push(c); return; }
+if (temClasse(c, "tp-sombra") || temClasse(c, "tp-orn") || temClasse(c, "tp-bg-cor") || temClasse(c, "tp-vazio")) return;
+textos.push(c);
+});
+}
+colher(no);
+imgs.forEach(function (im) { self.corpo.push(self.imagem(im, self.largura, Math.round(self.pg.h * 0.42), "center")); });
+var g = new Gerador(this.op); g.cores = this.cores; g.fontes = this.fontes; g.media = this.media; g.rels = this.rels; g.idImg = this.idImg; g.avisos = this.avisos;
+var ctx2 = herda(ctx, { branco: true, f: herda(ctx.f, { cor: "FFFFFF" }), fundo: fundo, alTit: ctx.alTit });
+textos.forEach(function (t) { g.bloco(t, ctx2); });
+this.idImg = g.idImg;
+var dentro = g.corpo.join("") || paragrafo({}, "");
+var xml = '<w:tbl><w:tblPr><w:tblW w:w="' + this.largura + '" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="500" w:type="dxa"/><w:left w:w="500" w:type="dxa"/><w:bottom w:w="500" w:type="dxa"/><w:right w:w="500" w:type="dxa"/></w:tblCellMar></w:tblPr>'
++ '<w:tblGrid><w:gridCol w:w="' + this.largura + '"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="' + Math.round((this.pg.h - this.pg.mt - this.pg.mb) * (imgs.length ? 0.42 : 0.85)) + '" w:hRule="atLeast"/></w:trPr>'
++ '<w:tc><w:tcPr><w:tcW w:w="' + this.largura + '" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="' + fundo + '"/><w:vAlign w:val="center"/></w:tcPr>' + dentro + "</w:tc></w:tr></w:tbl>";
+this.corpo.push(xml + paragrafo({ depois: 0 }, ""));
+};
+Gerador.prototype.tabela = function (no, ctx) {
+var self = this;
+var linhas = [];
+function colher(n) {
+(n.filhos || []).forEach(function (c) {
+if (c.tag === "tr") linhas.push({ tr: c, pai: n.tag });
+else if (c.tag === "thead" || c.tag === "tbody" || c.tag === "tfoot") colher(c);
+});
+}
+colher(no);
+if (!linhas.length) return;
+var nCols = 0;
+linhas.forEach(function (l) { var k = 0; (l.tr.filhos || []).forEach(function (c) { if (c.tag === "td" || c.tag === "th") k += Math.max(1, num(c.attrs.colspan) || 1); }); if (k > nCols) nCols = k; });
+if (!nCols) return;
+var cab = linhas[0].tr, numerica = [], i;
+for (i = 0; i < nCols; i++) numerica.push(false);
+var k0 = 0;
+(cab.filhos || []).forEach(function (c) { if (c.tag !== "td" && c.tag !== "th") return; var sp = Math.max(1, num(c.attrs.colspan) || 1); if (temClasse(c, "tp-num") || temClasse(c, "r") || temClasse(c, "tp-cr-m") || temClasse(c, "tp-gt-c")) for (var q = 0; q < sp; q++) numerica[k0 + q] = true; k0 += sp; });
+var nNum = numerica.filter(Boolean).length, nTx = nCols - nNum;
+var largNum = Math.round(this.largura * (nNum >= 4 ? 0.1 : 0.2)), largTx = nTx ? Math.floor((this.largura - largNum * nNum) / nTx) : 0;
+var larguras = numerica.map(function (b) { return b ? largNum : largTx; });
+var corB = ctx.corTitulo || this.cores.titulo;
+var semBorda = temClasse(no, "tp-cols");
+var xml = '<w:tbl><w:tblPr><w:tblW w:w="' + this.largura + '" w:type="dxa"/><w:tblLayout w:type="fixed"/>'
++ (semBorda ? "" : '<w:tblBorders><w:top w:val="single" w:sz="4" w:color="' + corB + '"/><w:left w:val="single" w:sz="4" w:color="' + corB + '"/><w:bottom w:val="single" w:sz="4" w:color="' + corB + '"/><w:right w:val="single" w:sz="4" w:color="' + corB + '"/><w:insideH w:val="single" w:sz="4" w:color="' + corB + '"/><w:insideV w:val="single" w:sz="4" w:color="' + corB + '"/></w:tblBorders>')
++ '<w:tblCellMar><w:top w:w="60" w:type="dxa"/><w:left w:w="100" w:type="dxa"/><w:bottom w:w="60" w:type="dxa"/><w:right w:w="100" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>';
+larguras.forEach(function (w) { xml += '<w:gridCol w:w="' + w + '"/>'; });
+xml += "</w:tblGrid>";
+var tamanho = (temClasse(no, "tp-cr") || temClasse(no, "tp-gt") || temClasse(no, "tp-ana")) ? 9 : 10;
+linhas.forEach(function (l) {
+var grupo = temClasse(l.tr, "tp-grupo"), rodape = l.pai === "tfoot";
+xml += "<w:tr>" + (l.pai === "thead" ? "<w:trPr><w:tblHeader/></w:trPr>" : "");
+var col = 0;
+(l.tr.filhos || []).forEach(function (c) {
+if (c.tag !== "td" && c.tag !== "th") return;
+var sp = Math.max(1, num(c.attrs.colspan) || 1), w = 0;
+for (var q = 0; q < sp; q++) w += larguras[col + q] || 0;
+var th = c.tag === "th";
+var fill = th ? corB : (grupo ? "E5E7EB" : (rodape ? "EEF4FA" : ""));
+var f = herda(ctx.f, { tamanho: tamanho, negrito: th || grupo || rodape, cor: th ? "FFFFFF" : ctx.f.cor, caixaAlta: grupo });
+var alinha = (temClasse(c, "tp-num") || temClasse(c, "r") || numerica[col]) ? "right" : (temClasse(c, "tp-cr-c") || temClasse(c, "tp-gt-c") ? "center" : "left");
+var saida = { runs: "", imagens: [] };
+if (temBlocoDentro(c)) {
+var g = new Gerador(self.op); g.cores = self.cores; g.fontes = self.fontes; g.media = self.media; g.rels = self.rels; g.idImg = self.idImg; g.avisos = self.avisos;
+(c.filhos || []).forEach(function (fh) { g.bloco(fh, herda(ctx, { f: f, alTxt: alinha })); });
+self.idImg = g.idImg;
+saida.runs = g.corpo.join("");
+} else {
+self.inline(c, f, saida);
+saida.runs = paragrafo({ alinha: alinha, depois: 0 }, saida.runs);
+}
+xml += '<w:tc><w:tcPr><w:tcW w:w="' + w + '" w:type="dxa"/>' + (sp > 1 ? '<w:gridSpan w:val="' + sp + '"/>' : "")
++ (fill ? '<w:shd w:val="clear" w:color="auto" w:fill="' + fill + '"/>' : "") + "<w:vAlign w:val=\"center\"/></w:tcPr>" + saida.runs + "</w:tc>";
+col += sp;
+});
+while (col < nCols) { xml += '<w:tc><w:tcPr><w:tcW w:w="' + (larguras[col] || 0) + '" w:type="dxa"/></w:tcPr>' + paragrafo({ depois: 0 }, "") + "</w:tc>"; col++; }
+xml += "</w:tr>";
+});
+xml += "</w:tbl>" + paragrafo({ depois: 120 }, "");
+this.corpo.push(xml);
+};
+Gerador.prototype.documento = function (raiz) {
+var self = this;
+var secoes = [];
+function achar(n) {
+(n.filhos || []).forEach(function (c) {
+if (c.tag === "section" || temClasse(c, "pg") || temClasse(c, "tp-pg")) secoes.push(c);
+else if (c.tag !== "#text" && c.filhos && c.filhos.length) achar(c);
+});
+}
+achar(raiz);
+var ctx = { f: { fonte: this.fontes.texto, tamanho: 11, cor: this.cores.texto }, alTxt: undefined, alTit: undefined, corTitulo: this.cores.titulo, corTexto: this.cores.texto };
+if (!secoes.length) { (raiz.filhos || []).forEach(function (c) { self.bloco(c, ctx); }); return; }
+secoes.forEach(function (s, i) {
+if (i) self.corpo.push(QUEBRA);
+var c2 = self.contexto(s, ctx);
+var cheia = temClasse(s, "tp-cheia") || temClasse(s, "capa");
+if (cheia && !(s.filhos || []).some(function (c) { return temClasse(c, "tp-full") || temClasse(c, "tp-cc"); })) {
+self.capa(s, c2);
+return;
+}
+(s.filhos || []).forEach(function (c) { self.bloco(c, c2); });
+});
+};
+var NS_W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
++ 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
++ 'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
++ 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
++ 'xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"';
+var XMLH = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
+function stylesXml(g) {
+function cab(id, nome, tam, antes) {
+return '<w:style w:type="paragraph" w:styleId="' + id + '"><w:name w:val="' + nome + '"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/>'
++ '<w:pPr><w:keepNext/><w:spacing w:before="' + antes + '" w:after="120"/></w:pPr>'
++ '<w:rPr><w:rFonts w:ascii="' + esc(g.fontes.titulo) + '" w:hAnsi="' + esc(g.fontes.titulo) + '" w:cs="' + esc(g.fontes.titulo) + '"/><w:b/><w:bCs/><w:color w:val="' + g.cores.titulo + '"/><w:sz w:val="' + (tam * 2) + '"/><w:szCs w:val="' + (tam * 2) + '"/></w:rPr></w:style>';
+}
+return XMLH + '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
++ '<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="' + esc(g.fontes.texto) + '" w:hAnsi="' + esc(g.fontes.texto) + '" w:cs="' + esc(g.fontes.texto) + '" w:eastAsia="' + esc(g.fontes.texto) + '"/><w:color w:val="' + g.cores.texto + '"/><w:sz w:val="22"/><w:szCs w:val="22"/><w:lang w:val="pt-BR"/></w:rPr></w:rPrDefault>'
++ '<w:pPrDefault><w:pPr><w:spacing w:after="120" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>'
++ '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>'
++ cab("Heading1", "heading 1", 26, 0) + cab("Heading2", "heading 2", 17, 200) + cab("Heading3", "heading 3", 12.5, 160)
++ '<w:style w:type="table" w:default="1" w:styleId="TableNormal"><w:name w:val="Normal Table"/><w:tblPr><w:tblInd w:w="0" w:type="dxa"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="108" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style>'
++ "</w:styles>";
+}
+function numberingXml() {
+return XMLH + '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
++ '<w:abstractNum w:abstractNumId="0"><w:multiLevelType w:val="hybridMultilevel"/><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val="&#8226;"/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="567" w:hanging="283"/></w:pPr><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr></w:lvl></w:abstractNum>'
++ '<w:abstractNum w:abstractNumId="1"><w:multiLevelType w:val="hybridMultilevel"/><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="567" w:hanging="283"/></w:pPr></w:lvl></w:abstractNum>'
++ '<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num><w:num w:numId="2"><w:abstractNumId w:val="1"/></w:num></w:numbering>';
+}
+function contentTypes(g) {
+var tipos = {};
+g.media.forEach(function (m) { tipos[m.tipo] = 1; });
+var defaults = '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>';
+if (tipos.png) defaults += '<Default Extension="png" ContentType="image/png"/>';
+if (tipos.jpeg) defaults += '<Default Extension="jpg" ContentType="image/jpeg"/>';
+if (tipos.gif) defaults += '<Default Extension="gif" ContentType="image/gif"/>';
+return XMLH + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' + defaults
++ '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
++ '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>'
++ '<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>'
++ '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>'
++ '<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>'
++ "</Types>";
+}
+function relsRaiz() {
+return XMLH + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
++ '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'
++ '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>'
++ '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>'
++ "</Relationships>";
+}
+function relsDoc(g) {
+var s = XMLH + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
++ '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
++ '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>';
+g.rels.forEach(function (r) { s += '<Relationship Id="' + r.id + '" Type="' + r.tipo + '" Target="' + esc(r.alvo) + '"/>'; });
+return s + "</Relationships>";
+}
+function coreXml(op) {
+var agora = (txt(op.data) || "2026-01-01T00:00:00Z").replace(/\.\d+Z$/, "Z");
+if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(agora)) agora = "2026-01-01T00:00:00Z";
+return XMLH + '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
++ "<dc:title>" + esc(txt(op.titulo) || "Proposta") + "</dc:title><dc:creator>" + esc(txt(op.criador) || "") + "</dc:creator>"
++ '<dcterms:created xsi:type="dcterms:W3CDTF">' + esc(agora) + '</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">' + esc(agora) + "</dcterms:modified>"
++ "</cp:coreProperties>";
+}
+function appXml(op) {
+return XMLH + '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" '
++ 'xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>' + esc(txt(op.aplicativo) || "OrçaPRO") + "</Application></Properties>";
+}
+Docx.deHtml = function (html, op) {
+op = op || {};
+var g = new Gerador(op);
+g.documento(Docx.arvore(html));
+var corpo = g.corpo.join("");
+if (!corpo) corpo = paragrafo({}, run("(documento vazio)", g.fontes.texto ? { fonte: g.fontes.texto } : {}));
+var sectPr = '<w:sectPr><w:pgSz w:w="' + g.pg.w + '" w:h="' + g.pg.h + '"/><w:pgMar w:top="' + g.pg.mt + '" w:right="' + g.pg.mr + '" w:bottom="' + g.pg.mb + '" w:left="' + g.pg.ml + '" w:header="709" w:footer="709" w:gutter="0"/></w:sectPr>';
+var documento = XMLH + "<w:document " + NS_W + "><w:body>" + corpo + sectPr + "</w:body></w:document>";
+var partes = [
+{ nome: "[Content_Types].xml", dados: contentTypes(g) },
+{ nome: "_rels/.rels", dados: relsRaiz() },
+{ nome: "word/document.xml", dados: documento },
+{ nome: "word/styles.xml", dados: stylesXml(g) },
+{ nome: "word/numbering.xml", dados: numberingXml() },
+{ nome: "word/_rels/document.xml.rels", dados: relsDoc(g) },
+{ nome: "docProps/core.xml", dados: coreXml(op) },
+{ nome: "docProps/app.xml", dados: appXml(op) }
+];
+g.media.forEach(function (m) { partes.push({ nome: "word/media/" + m.nome, dados: m.dados }); });
+return { bytes: Docx.zip(partes), avisos: g.avisos, partes: partes.map(function (p) { return p.nome; }), imagens: g.media.length };
+};
+Docx.nomeArquivo = function (titulo) {
+var s = txt(titulo).replace(/\s+/g, " ").replace(/[\\\/:*?"<>|]+/g, "-").replace(/\s*[—–]\s*/g, " - ").replace(/^-+|-+$/g, "").trim();
+if (!s) s = "Proposta";
+if (s.length > 120) s = s.slice(0, 120);
+return s + ".docx";
+};
+global.Docx = Docx;
+if (typeof module !== "undefined" && module.exports) module.exports = Docx;
+})(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/ui.js ==== */
 try {
@@ -58086,6 +58819,12 @@ campos: [
 { id: "colValor", nome: "Nome da 2ª coluna", padrao: "Investimento" },
 { id: "tituloPagamento", nome: "Título da forma de pagamento", padrao: "FORMA DE PAGAMENTO" },
 { id: "detalhar", nome: "Separar madeira e mão de obra em blocos", tipo: "sim_nao", padrao: false },
+{ id: "nivel", nome: "O que a tabela mostra", tipo: "lista", padrao: "", opcoes: [
+["", "Cada item com o seu valor"],
+["resumido", "Só o valor de cada etapa (resumido)"],
+["analitico", "Analítico: quantidade, unidade, unitário e total de cada item"]] },
+{ id: "mostrarPeso", nome: "Coluna com o peso (%) de cada etapa no total — só no resumido", tipo: "sim_nao", padrao: false },
+{ id: "nota", nome: "Nota abaixo da tabela", tipo: "multi", dica: "Ex.: Valores válidos para pagamento conforme as condições desta proposta." },
 { id: "tituloOpcionais", nome: "Título do bloco de adicionais", padrao: "ADICIONAIS OPCIONAIS" },
 { id: "textoOpcionais", nome: "Frase acima dos adicionais", tipo: "multi",
 padrao: "Serviços que não estão no valor acima. Se quiser incluir algum, é só avisar antes do início." }
@@ -58100,6 +58839,11 @@ campos: [
 { id: "titulo", nome: "Título", padrao: "CRONOGRAMA" },
 { id: "abertura", nome: "Frase de abertura", tipo: "multi",
 dica: "Ex.: A distribuição abaixo é uma previsão; o cronograma detalhado é fechado na reunião de início." },
+{ id: "modo", nome: "Como mostrar", tipo: "lista", padrao: "", opcoes: [
+["", "Resumido: cada etapa por período, com barras"],
+["completo", "Completo: prazo em dias úteis, início e término por etapa, desembolso por mês"]] },
+{ id: "mostrarDesembolso", nome: "No completo, incluir a tabela de desembolso por mês", tipo: "sim_nao", padrao: true },
+{ id: "mostrarPremissas", nome: "No completo, incluir as premissas de prazo a cargo do contratante", tipo: "sim_nao", padrao: true },
 { id: "mostrarValores", nome: "Mostrar o valor previsto em cada mês", tipo: "sim_nao", padrao: false },
 { id: "periodos", nome: "Quantos períodos mostrar (0 = como está no orçamento)", padrao: "0" },
 { id: "rotuloMes", nome: "Como chamar cada coluna", padrao: "Mês",
@@ -58165,8 +58909,127 @@ dica: "Ex.: A assinatura abaixo formaliza a aprovação do escopo e das condiç�
 { id: "botaoAceite", nome: "Botão “Aceitar pelo WhatsApp” (usa o WhatsApp de ⚙ Empresa)", tipo: "sim_nao", padrao: false },
 { id: "textoAceite", nome: "Texto do botão de aceite", padrao: "Aceitar esta proposta pelo WhatsApp" }
 ]
+},
+{
+tipo: "capa_classica",
+nome: "Capa clássica (sem foto)",
+resumo: "Fundo na cor da marca, logo, nome do orçamento e o quadro com cliente, número, data, validade e valor.",
+imagens: 0,
+campos: [
+{ id: "kicker", nome: "Linha acima do título", padrao: "PROPOSTA COMERCIAL" },
+{ id: "mostrarLogo", nome: "Logo da empresa no alto", tipo: "sim_nao", padrao: true },
+{ id: "mostrarObra", nome: "Escrever o nome da obra abaixo do título", tipo: "sim_nao", padrao: true },
+{ id: "mostrarNumero", nome: "Número e data da proposta", tipo: "sim_nao", padrao: true },
+{ id: "mostrarValidade", nome: "Validade da proposta", tipo: "sim_nao", padrao: true },
+{ id: "mostrarValor", nome: "Valor total na capa", tipo: "sim_nao", padrao: true },
+{ id: "mostrarEmpresa", nome: "Empresa, CNPJ e endereço no pé da capa", tipo: "sim_nao", padrao: true }
+]
+},
+{
+tipo: "apresentacao",
+nome: "Apresentação",
+resumo: "Parágrafo de apresentação da empresa e a frase sobre a base de preços usada no orçamento.",
+imagens: 0,
+campos: [
+{ id: "titulo", nome: "Título", padrao: "Apresentação" },
+{ id: "texto", nome: "Texto de apresentação", tipo: "multi",
+dica: "Vazio = o texto de apresentação do orçamento (⚙ Dados) ou, sem ele, o parágrafo padrão com o nome da empresa." },
+{ id: "fonteDePrecos", nome: "Frase sobre a base de preços (SINAPI, SICRO…)", tipo: "lista", padrao: "padrao", opcoes: [
+["padrao", "Citar a base de preços do orçamento, como o documento padrão faz"],
+["ocultar", "Não citar a base de preços"],
+["proprio", "Escrever um texto no lugar"]] },
+{ id: "textoFonte", nome: "Texto no lugar da frase da base de preços", tipo: "multi",
+dica: "Ex.: Os preços foram compostos a partir de cotações e da nossa base própria de custos." },
+{ id: "mostrarBdi", nome: "Dizer o percentual de BDI incluído nos preços", tipo: "sim_nao", padrao: false }
+]
+},
+{
+tipo: "escopo_etapas",
+nome: "Entendimento do escopo",
+resumo: "As etapas do orçamento em lista — o que o cliente está contratando — com os adicionais opcionais à parte.",
+imagens: 0,
+campos: [
+{ id: "titulo", nome: "Título", padrao: "Entendimento do escopo" },
+{ id: "abertura", nome: "Frase antes da lista", tipo: "multi", padrao: "O escopo dos serviços contempla as seguintes etapas:" },
+{ id: "mostrarCodigo", nome: "Escrever o código de cada etapa", tipo: "sim_nao", padrao: true },
+{ id: "mostrarQtdItens", nome: "Escrever quantos itens cada etapa tem", tipo: "sim_nao", padrao: true },
+{ id: "textoOpcionais", nome: "Frase antes dos adicionais opcionais", tipo: "multi",
+padrao: "Orçadas à parte, como adicionais opcionais (não incluídas no valor total):" },
+{ id: "fechamento", nome: "Frase depois da lista", tipo: "multi" }
+]
+},
+{
+tipo: "incluso",
+nome: "Incluso / Não incluso",
+resumo: "Duas colunas: o que está incluso e o que não está — do orçamento (⚙ Dados) ou escrito aqui.",
+imagens: 0,
+campos: [
+{ id: "titulo", nome: "Título", padrao: "Está incluso / Não está incluso" },
+{ id: "tituloIncluso", nome: "Título da coluna do incluso", padrao: "Incluso" },
+{ id: "textoIncluso", nome: "Itens inclusos (um por linha)", tipo: "multi", dica: "Vazio = a lista do orçamento (⚙ Dados › Incluso)." },
+{ id: "tituloExcluso", nome: "Título da coluna do não incluso", padrao: "Não incluso" },
+{ id: "textoExcluso", nome: "Itens não inclusos (um por linha)", tipo: "multi", dica: "Vazio = a lista do orçamento (⚙ Dados › Não incluso)." }
+]
+},
+{
+tipo: "premissas",
+nome: "Premissas e metodologia",
+resumo: "Premissas, metodologia e a linha sobre base de preços, regime e BDI — cada uma pode sair ou ficar.",
+imagens: 0,
+campos: [
+{ id: "titulo", nome: "Título", padrao: "Premissas e metodologia" },
+{ id: "rotuloPremissas", nome: "Rótulo das premissas", padrao: "Premissas:" },
+{ id: "premissas", nome: "Premissas (uma por linha)", tipo: "multi", dica: "Vazio = as premissas do orçamento (⚙ Dados) ou o texto padrão do sistema." },
+{ id: "rotuloMetodologia", nome: "Rótulo da metodologia", padrao: "Metodologia:" },
+{ id: "metodologia", nome: "Metodologia (uma por linha)", tipo: "multi", dica: "Vazio = a metodologia do orçamento (⚙ Dados) ou o texto padrão do sistema." },
+{ id: "fonteDePrecos", nome: "Linha sobre a base de preços", tipo: "lista", padrao: "padrao", opcoes: [
+["padrao", "Citar a base de preços do orçamento (SINAPI, SICRO…)"],
+["ocultar", "Não citar"],
+["proprio", "Escrever um texto no lugar"]] },
+{ id: "textoFonte", nome: "Texto no lugar da linha da base de preços", tipo: "multi" },
+{ id: "mostrarRegime", nome: "Dizer o regime (onerado / desonerado)", tipo: "sim_nao", padrao: true },
+{ id: "mostrarBdiTcu", nome: "Citar a metodologia de BDI do Acórdão TCU nº 2.622/2013", tipo: "sim_nao", padrao: true }
+]
+},
+{
+tipo: "comercial",
+nome: "Condições comerciais",
+resumo: "Forma de pagamento, prazo de execução, validade e garantia em blocos — cada um pode sair ou ficar.",
+imagens: 0,
+campos: [
+{ id: "titulo", nome: "Título", padrao: "Condições comerciais" },
+{ id: "mostrarPagamento", nome: "Forma de pagamento", tipo: "sim_nao", padrao: true },
+{ id: "rotuloPagamento", nome: "Rótulo da forma de pagamento", padrao: "Forma de pagamento" },
+{ id: "mostrarPrazo", nome: "Prazo de execução", tipo: "sim_nao", padrao: true },
+{ id: "rotuloPrazo", nome: "Rótulo do prazo", padrao: "Prazo de execução" },
+{ id: "mostrarValidade", nome: "Validade da proposta", tipo: "sim_nao", padrao: true },
+{ id: "rotuloValidade", nome: "Rótulo da validade", padrao: "Validade da proposta" },
+{ id: "mostrarGarantia", nome: "Garantia", tipo: "sim_nao", padrao: false },
+{ id: "rotuloGarantia", nome: "Rótulo da garantia", padrao: "Garantia" },
+{ id: "extras", nome: "Outras condições (um bloco por linha, no formato Rótulo | texto)", tipo: "multi",
+dica: "Ex.: Reajuste | Preços fixos e irreajustáveis dentro da validade." }
+]
+},
+{
+tipo: "responsabilidades",
+nome: "Responsabilidades",
+resumo: "Duas colunas: o que é da contratada e o que é do contratante — do orçamento ou escrito aqui.",
+imagens: 0,
+campos: [
+{ id: "titulo", nome: "Título", padrao: "Responsabilidades" },
+{ id: "tituloContratada", nome: "Título da coluna da contratada", padrao: "Contratada" },
+{ id: "textoContratada", nome: "Responsabilidades da contratada (uma por linha)", tipo: "multi", dica: "Vazio = as do orçamento (⚙ Dados) ou o texto padrão do sistema." },
+{ id: "tituloContratante", nome: "Título da coluna do contratante", padrao: "Contratante" },
+{ id: "textoContratante", nome: "Responsabilidades do contratante (uma por linha)", tipo: "multi", dica: "Vazio = as do orçamento (⚙ Dados) ou o texto padrão do sistema." }
+]
 }
 ];
+function opcaoDe(campo, v) {
+var s = txt(v), ops = arr(campo.opcoes);
+for (var i = 0; i < ops.length; i++) if (txt(ops[i][0]) === s) return s;
+return txt(campo.padrao);
+}
+PropTpl.opcaoDe = opcaoDe;
 PropTpl.bloco = function (tipo) {
 var t = txt(tipo);
 for (var i = 0; i < PropTpl.BLOCOS.length; i++) if (PropTpl.BLOCOS[i].tipo === t) return PropTpl.BLOCOS[i];
@@ -58343,7 +59206,14 @@ investimento: { regua: false, marcador: false },
 condicoes: { regua: true, marcador: false },
 encerramento: { regua: false, marcador: false },
 contato: { regua: true, marcador: false },
-assinatura: { regua: true, marcador: false }
+assinatura: { regua: true, marcador: false },
+capa_classica: { regua: false, marcador: false },
+apresentacao: { regua: true, marcador: false },
+escopo_etapas: { regua: true, marcador: true },
+incluso: { regua: true, marcador: true },
+premissas: { regua: true, marcador: true },
+comercial: { regua: true, marcador: false },
+responsabilidades: { regua: true, marcador: true }
 };
 PropTpl.formasDoBloco = function (tipo) {
 var d = PropTpl.FORMAS_DO_BLOCO[txt(tipo)];
@@ -58421,6 +59291,8 @@ corDestaque2: "",
 ornamento: "",
 rodape: "",
 fundoInternas: "",
+marcaDaguaEmpresa: "",
+numerarSecoes: "",
 logoEscuro: "",
 marcaDagua: ""
 };
@@ -58435,10 +59307,12 @@ estilo[k] = txt(est[k]) || ESTILO_PADRAO[k];
 }
 if (estilo.formato !== "vertical") estilo.formato = "a4";
 if (estilo.ornamento !== "curvas") estilo.ornamento = "";
-if (estilo.rodape !== "contatos") estilo.rodape = "";
+if (estilo.rodape !== "contatos" && estilo.rodape !== "nome") estilo.rodape = "";
 if (estilo.fundoInternas !== "claro") estilo.fundoInternas = "";
 if (estilo.logoEscuro !== "clarear" && estilo.logoEscuro !== "pastilha") estilo.logoEscuro = "";
 if (estilo.marcaDagua !== "auto") estilo.marcaDagua = "";
+if (estilo.marcaDaguaEmpresa !== "nome") estilo.marcaDaguaEmpresa = "";
+if (estilo.numerarSecoes !== "sim") estilo.numerarSecoes = "";
 if (!/^#[0-9a-fA-F]{6}$/.test(estilo.corDestaque2)) estilo.corDestaque2 = "";
 var paginas = arr(m.paginas).map(function (p, i) {
 var b = PropTpl.bloco(p && p.tipo);
@@ -58447,6 +59321,7 @@ var out = { id: txt(p.id) || ("pg" + (i + 1)), tipo: b.tipo };
 b.campos.forEach(function (c) {
 var v = p[c.id];
 if (c.tipo === "sim_nao") out[c.id] = (v === undefined || v === null) ? !!c.padrao : !!v;
+else if (c.tipo === "lista") out[c.id] = opcaoDe(c, v);
 else out[c.id] = (v === undefined || v === null || txt(v) === "") ? txt(c.padrao) : txt(v);
 });
 out.tipografia = tipografia(p.tipografia);
@@ -58549,6 +59424,12 @@ av.push('A página "Escopo em texto" está sem conteúdo.');
 if (p.tipo === "condicoes" && !linhasDe(p.paragrafos).length && !p.usarPrazo && !p.usarGarantia) {
 av.push('A página "Condições da entrega" está sem conteúdo.');
 }
+if ((p.tipo === "apresentacao" || p.tipo === "premissas") && p.fonteDePrecos === "proprio" && !txt(p.textoFonte)) {
+av.push('Na página "' + PropTpl.bloco(p.tipo).nome + '" você escolheu escrever um texto no lugar da base de preços, mas o texto está vazio — nada sai no lugar.');
+}
+if (p.tipo === "comercial" && !p.mostrarPagamento && !p.mostrarPrazo && !p.mostrarValidade && !p.mostrarGarantia && !linhasDe(p.extras).length) {
+av.push('A página "Condições comerciais" está com tudo desligado.');
+}
 });
 return av;
 };
@@ -58647,6 +59528,32 @@ paginas: [
 { id: "p1", tipo: "investimento", titulo: "Proposta", colTrabalho: "Trabalho a executar", colValor: "Valor", tituloPagamento: "Forma de pagamento", detalhar: false },
 { id: "p2", tipo: "condicoes", titulo: "Condições", usarPrazo: true, usarGarantia: true }
 ]
+},
+{
+id: "tpl-padrao-sistema",
+nome: "Documento padrão do sistema",
+descricao: "O mesmo documento que o botão Gerar proposta sempre fez — capa, apresentação, escopo, incluso/não incluso, premissas, cronograma, resumo financeiro, condições, responsabilidades, garantias e aceite — com cada parte ajustável.",
+estilo: {
+corTitulo: "#0F2740", corTexto: "#1A2632", corFundo: "#FFFFFF",
+corDestaque: "#15803D", corDestaque2: "#2E6F9E", corFundoEscuro: "#143454",
+textura: "", fonte: "tecnica", formato: "a4",
+ornamento: "", rodape: "nome", fundoInternas: "claro",
+logoEscuro: "clarear", marcaDagua: "auto", marcaDaguaEmpresa: "nome", numerarSecoes: "sim"
+},
+paginas: [
+{ id: "p1", tipo: "capa_classica", kicker: "PROPOSTA COMERCIAL", mostrarLogo: true, mostrarObra: true, mostrarNumero: true, mostrarValidade: true, mostrarValor: true, mostrarEmpresa: true },
+{ id: "p2", tipo: "apresentacao", titulo: "Apresentação", fonteDePrecos: "padrao", mostrarBdi: false },
+{ id: "p3", tipo: "escopo_etapas", titulo: "Entendimento do escopo", mostrarCodigo: true, mostrarQtdItens: true },
+{ id: "p4", tipo: "incluso", titulo: "Está incluso / Não está incluso" },
+{ id: "p5", tipo: "premissas", titulo: "Premissas e metodologia", fonteDePrecos: "padrao", mostrarRegime: true, mostrarBdiTcu: true },
+{ id: "p6", tipo: "cronograma", titulo: "Cronograma de execução", modo: "completo", mostrarDesembolso: true, mostrarPremissas: true, mostrarValores: false },
+{ id: "p7", tipo: "investimento", titulo: "Resumo financeiro", colTrabalho: "Descrição", colValor: "Valor", tituloPagamento: "Forma de pagamento",
+nivel: "resumido", mostrarPeso: true, detalhar: true, tituloOpcionais: "Adicionais opcionais", textoOpcionais: "Etapas orçadas à parte, não incluídas no valor total acima." },
+{ id: "p8", tipo: "comercial", titulo: "Condições comerciais", mostrarPagamento: true, mostrarPrazo: true, mostrarValidade: true, mostrarGarantia: false },
+{ id: "p9", tipo: "responsabilidades", titulo: "Responsabilidades" },
+{ id: "p10", tipo: "condicoes", titulo: "Garantias", paragrafos: "", usarPrazo: false, usarGarantia: true },
+{ id: "p11", tipo: "assinatura", titulo: "Aceite e assinatura", texto: "Declaramos estar de acordo com os termos, valores e condições desta proposta comercial.", mostrarValidade: false, botaoAceite: false }
+]
 }
 ];
 PropTpl.deFabrica = function (id) {
@@ -58704,16 +59611,24 @@ return proxImg(alt, "tp-bg");
 }
 var ornCheia = orn ? curvas("cheia") : "";
 var ornCanto = orn ? (curvas("canto") + curvas("pe")) : "";
-var rodape = comRodape ? rodapeContatos(emp) : "";
+var txts = d.textos || {};
+var rodape = comRodape ? rodapeContatos(emp)
+: (m.estilo.rodape === "nome" ? rodapeNome(txt(txts.rodape) || txt(emp.nome)) : "");
+var wmEmp = (m.estilo.marcaDaguaEmpresa === "nome")
+? (txts.marcaDagua !== undefined ? txt(txts.marcaDagua) : txt(emp.nome)) : "";
+var numerar = m.estilo.numerarSecoes === "sim";
+var nSec = 0;
 var partes = m.paginas.map(function (p) {
 var bl = PropTpl.bloco(p.tipo);
 if (!bl) return "";
 var corpo = "";
+var semNumero = (p.tipo === "capa" || p.tipo === "sobre" || p.tipo === "encerramento" || p.tipo === "capa_classica" || p.tipo === "contato");
+var tit = ((numerar && !semNumero) ? (++nSec) + ". " : "") + txt(p.titulo);
 if (p.tipo === "capa") {
 corpo = '<div class="tp-full">' + proxImgCheia("foto de capa") + '<div class="tp-sombra"></div>' + ornCheia
 + '<div class="tp-capa-txt">'
 + (p.mostrarLogo && logoHTML ? '<div class="tp-logo">' + logoHTML + "</div>" : "")
-+ '<h1 class="tp-h1">' + esc(p.titulo) + (p.subtitulo ? '<br><span>' + esc(p.subtitulo) + "</span>" : "") + "</h1>"
++ '<h1 class="tp-h1">' + esc(tit) + (p.subtitulo ? '<br><span>' + esc(p.subtitulo) + "</span>" : "") + "</h1>"
 + (p.chamada ? '<p class="tp-chamada">' + esc(p.chamada) + "</p>" : "")
 + (p.mostrarCliente && d.cliente ? '<p class="tp-cli">' + esc(d.cliente) + "</p>" : "")
 + (p.mostrarNumero && (txt(d.numero) || txt(d.data)) ? '<p class="tp-cli tp-num-capa">'
@@ -58724,7 +59639,7 @@ else if (p.tipo === "sobre") {
 corpo = '<div class="tp-full">' + proxImgCheia("foto de apresentação") + '<div class="tp-sombra"></div>' + ornCheia
 + '<div class="tp-sobre-txt">'
 + (p.mostrarLogo && logoHTML ? '<div class="tp-logo tp-logo-c">' + logoHTML + "</div>" : "")
-+ '<h2 class="tp-vazado">' + esc(p.titulo) + "</h2>"
++ '<h2 class="tp-vazado">' + esc(tit) + "</h2>"
 + '<p class="tp-sobre-p">' + escML(p.texto) + "</p>"
 + "</div></div>";
 }
@@ -58734,7 +59649,7 @@ var k = x.indexOf("|");
 var tt = k > -1 ? x.slice(0, k).trim() : x, ds = k > -1 ? x.slice(k + 1).trim() : "";
 return '<div class="tp-serv-card"><b>' + esc(tt) + "</b>" + (ds ? "<span>" + esc(ds) + "</span>" : "") + "</div>";
 }).join("");
-corpo = '<h2 class="tp-h2">' + esc(p.titulo) + '</h2><div class="tp-rule"></div>'
+corpo = '<h2 class="tp-h2">' + esc(tit) + '</h2><div class="tp-rule"></div>'
 + (txt(p.abertura) ? '<p class="tp-p">' + escML(p.abertura) + "</p>" : "")
 + (cards ? '<div class="tp-serv">' + cards + "</div>" : "")
 + (txt(p.fechamento) ? '<p class="tp-p tp-solto">' + escML(p.fechamento) + "</p>" : "");
@@ -58744,7 +59659,7 @@ function figura(alt, cap) {
 var img = proxImg(alt, "tp-gal");
 return txt(cap) ? '<figure class="tp-fig">' + img + "<figcaption>" + esc(cap) + "</figcaption></figure>" : img;
 }
-corpo = '<h2 class="tp-h2">' + esc(p.titulo) + '</h2><div class="tp-rule"></div>'
+corpo = '<h2 class="tp-h2">' + esc(tit) + '</h2><div class="tp-rule"></div>'
 + '<div class="tp-galeria">'
 + figura("imagem 1 do projeto", p.cap1) + figura("imagem 2 do projeto", p.cap2) + figura("imagem 3 do projeto", p.cap3)
 + "</div>"
@@ -58755,7 +59670,7 @@ var its = linhasDe(p.itens);
 var doOrc = !its.length && p.usarComercial;
 if (doOrc) its = linhasDe(com.incluso);
 var exc = (doOrc && !txt(p.observacao)) ? linhasDe(com.excluso) : [];
-corpo = '<h2 class="tp-h2">' + esc(p.titulo) + '</h2><div class="tp-rule"></div>'
+corpo = '<h2 class="tp-h2">' + esc(tit) + '</h2><div class="tp-rule"></div>'
 + (txt(p.abertura) ? '<p class="tp-p">' + escML(p.abertura) + "</p>" : "")
 + (its.length ? '<p class="tp-p tp-rot">' + esc(p.rotuloLista) + "</p><ul class=\"tp-ul\">"
 + its.map(function (x) { return "<li>" + esc(x.replace(/;$/, "")) + "</li>"; }).join("") + "</ul>" : "")
@@ -58764,7 +59679,9 @@ corpo = '<h2 class="tp-h2">' + esc(p.titulo) + '</h2><div class="tp-rule"></div>
 + (txt(p.observacao) ? '<p class="tp-obs"><b>' + esc(p.obsTitulo) + "</b> " + escML(p.observacao) + "</p>" : "");
 }
 else if (p.tipo === "investimento") {
-corpo = '<h2 class="tp-h1c">' + esc(p.titulo) + "</h2>" + tabela(p, b, m) + tabelaOpcionais(p, b);
+corpo = '<h2 class="tp-h1c">' + esc(tit) + "</h2>" + tabela(p, b, m)
++ (txt(p.nota) ? '<p class="tp-leg">' + escML(p.nota) + "</p>" : "")
++ tabelaOpcionais(p, b);
 var pag = txt(com.condicoesPagamento);
 if (pag) {
 corpo += '<h3 class="tp-h1c tp-h3pag">' + esc(p.tituloPagamento) + "</h3>"
@@ -58772,7 +59689,7 @@ corpo += '<h3 class="tp-h1c tp-h3pag">' + esc(p.tituloPagamento) + "</h3>"
 }
 }
 else if (p.tipo === "cronograma") {
-corpo = '<h2 class="tp-h2">' + esc(p.titulo) + '</h2><div class="tp-rule"></div>'
+corpo = '<h2 class="tp-h2">' + esc(tit) + '</h2><div class="tp-rule"></div>'
 + (txt(p.abertura) ? '<p class="tp-p">' + escML(p.abertura) + "</p>" : "")
 + tabelaCronograma(p, d.cronograma)
 + (txt(p.legenda) ? '<p class="tp-leg">' + escML(p.legenda) + "</p>" : "");
@@ -58781,7 +59698,7 @@ else if (p.tipo === "condicoes") {
 var ps = linhasDe(p.paragrafos);
 if (p.usarPrazo && txt(com.prazoExecucao)) ps.push("Prazo de execução: " + txt(com.prazoExecucao).replace(/\.$/, "") + ".");
 if (p.usarGarantia && txt(com.garantia)) ps.push("Garantia: " + txt(com.garantia).replace(/\.$/, "") + ".");
-corpo = '<h2 class="tp-h2">' + esc(p.titulo) + '</h2><div class="tp-rule"></div>'
+corpo = '<h2 class="tp-h2">' + esc(tit) + '</h2><div class="tp-rule"></div>'
 + ps.map(function (x) { return '<p class="tp-p tp-solto">' + esc(x) + "</p>"; }).join("");
 }
 else if (p.tipo === "encerramento") {
@@ -58797,13 +59714,13 @@ if (p.mostrarFoto) foto = proxImg("foto da equipe", "tp-contato-img");
 else nSlot++;
 corpo = '<p class="tp-marca">' + esc(txt(emp.nome)) + '</p><div class="tp-rule"></div>'
 + (!foto ? "" : (p.molduraCelular ? '<div class="tp-cel"><div class="tp-cel-tela">' + foto + "</div></div>" : '<div class="tp-contato-livre">' + foto + "</div>"))
-+ '<h2 class="tp-h1c tp-h1e">' + esc(p.titulo) + "</h2>"
++ '<h2 class="tp-h1c tp-h1e">' + esc(tit) + "</h2>"
 + '<div class="tp-contatos">' + contatosHtml(p, emp) + "</div>"
 + botoesHtml(p, emp, links);
 }
 else if (p.tipo === "assinatura") {
 var val = d.validade || {};
-corpo = '<h2 class="tp-h2">' + esc(p.titulo) + '</h2><div class="tp-rule"></div>'
+corpo = '<h2 class="tp-h2">' + esc(tit) + '</h2><div class="tp-rule"></div>'
 + (txt(p.texto) ? '<p class="tp-p">' + escML(p.texto) + "</p>" : "")
 + (p.mostrarValidade && txt(val.texto) ? '<p class="tp-p">' + esc(val.texto) + "</p>" : "")
 + '<p class="tp-p tp-local">' + esc(txt(emp.cidade) || "____________________") + ", " + esc(dia(d.data)) + ".</p>"
@@ -58811,10 +59728,18 @@ corpo = '<h2 class="tp-h2">' + esc(p.titulo) + '</h2><div class="tp-rule"></div>
 + '<div><div class="tp-linha"></div>' + esc(txt(d.cliente) || "Contratante") + "</div></div>"
 + botaoAceite(p, emp, d);
 }
-var cheia = (p.tipo === "capa" || p.tipo === "sobre" || p.tipo === "encerramento");
+else if (p.tipo === "capa_classica") corpo = capaClassica(p, d, m, b, logoHTML);
+else if (p.tipo === "apresentacao") corpo = '<h2 class="tp-h2">' + esc(tit) + '</h2><div class="tp-rule"></div>' + apresentacao(p, d);
+else if (p.tipo === "escopo_etapas") corpo = '<h2 class="tp-h2">' + esc(tit) + '</h2><div class="tp-rule"></div>' + escopoEtapas(p, b);
+else if (p.tipo === "incluso") corpo = '<h2 class="tp-h2">' + esc(tit) + '</h2><div class="tp-rule"></div>' + duasColunas(p.tituloIncluso, linhasOu(p.textoIncluso, com.incluso), p.tituloExcluso, linhasOu(p.textoExcluso, com.excluso));
+else if (p.tipo === "premissas") corpo = '<h2 class="tp-h2">' + esc(tit) + '</h2><div class="tp-rule"></div>' + premissas(p, d);
+else if (p.tipo === "comercial") corpo = '<h2 class="tp-h2">' + esc(tit) + '</h2><div class="tp-rule"></div>' + condicoesComerciais(p, d);
+else if (p.tipo === "responsabilidades") corpo = '<h2 class="tp-h2">' + esc(tit) + '</h2><div class="tp-rule"></div>' + duasColunas(p.tituloContratada, linhasOu(p.textoContratada, com.respContratada), p.tituloContratante, linhasOu(p.textoContratante, com.respContratante));
+var cheia = (p.tipo === "capa" || p.tipo === "sobre" || p.tipo === "encerramento" || p.tipo === "capa_classica");
 var escuro = !internasClaras && (p.tipo === "texto" || p.tipo === "condicoes" || p.tipo === "imagens");
 if (!cheia) corpo = ornCanto + corpo + rodape;
 if (carimbo) corpo = '<div class="tp-wm">' + esc(carimbo) + "</div>" + corpo;
+if (wmEmp && !cheia) corpo = '<div class="tp-wm tp-wm-emp">' + esc(wmEmp) + "</div>" + corpo;
 var cls = "tp-pg" + (vertical ? " tp-vert" : "")
 + (cheia ? " tp-cheia" : "")
 + (cheia && m.estilo.logoEscuro ? " tp-logo-" + m.estilo.logoEscuro : "")
@@ -58948,6 +59873,193 @@ if (txt(emp.endereco)) partes.push(esc(emp.endereco) + (txt(emp.cidade) ? " — 
 if (!partes.length) return "";
 return '<div class="tp-rodape">' + partes.map(function (x) { return "<span>" + x + "</span>"; }).join("") + "</div>";
 }
+function pctTxt(v) { var s = n2(v); return s.replace(/,00$/, "") + "%"; }
+function parRotulo(linha) {
+var k = linha.indexOf("|");
+return k > -1 ? [linha.slice(0, k).trim(), linha.slice(k + 1).trim()] : ["", linha.trim()];
+}
+function linhasOu(doBloco, doOrcamento) {
+var a = linhasDe(doBloco);
+return a.length ? a : linhasDe(doOrcamento);
+}
+function ul(linhas) {
+if (!linhas.length) return "";
+return '<ul class="tp-ul">' + linhas.map(function (x) { return "<li>" + esc(x.replace(/;$/, "")) + "</li>"; }).join("") + "</ul>";
+}
+function paragrafoOuLista(rotulo, linhas) {
+if (!linhas.length) return "";
+if (linhas.length === 1) return '<p class="tp-p"><b>' + esc(rotulo) + "</b> " + esc(linhas[0]) + "</p>";
+return '<p class="tp-p tp-rot"><b>' + esc(rotulo) + "</b></p>" + ul(linhas);
+}
+function duasColunas(tit1, l1, tit2, l2) {
+return '<div class="tp-cols">'
++ '<div><h3 class="tp-h3">' + esc(tit1) + "</h3>" + (l1.length ? ul(l1) : '<p class="tp-vaziotxt">—</p>') + "</div>"
++ '<div><h3 class="tp-h3">' + esc(tit2) + "</h3>" + (l2.length ? ul(l2) : '<p class="tp-vaziotxt">—</p>') + "</div>"
++ "</div>";
+}
+function rodapeNome(texto) {
+return txt(texto) ? '<div class="tp-rodape tp-rodape-nome"><span>' + esc(texto) + "</span></div>" : "";
+}
+function fraseBases(p, ref, comBdi) {
+if (p.fonteDePrecos === "ocultar") return "";
+if (p.fonteDePrecos === "proprio") return txt(p.textoFonte) ? '<p class="tp-p">' + escML(p.textoFonte) + "</p>" : "";
+var bases = txt(ref.bases);
+if (!bases) return "";
+var s = "Esta proposta foi elaborada com base nas informações disponibilizadas e em composições de custos referenciadas "
++ (num(ref.nBases) > 1 ? "nas bases de preços " : "na base de preços ") + "<b>" + esc(bases) + "</b>.";
+if (comBdi && num(ref.bdiPct) > 0) s += " Os preços já incluem o BDI (" + esc(pctTxt(ref.bdiPct)) + ").";
+return '<p class="tp-p">' + s + "</p>";
+}
+function capaClassica(p, d, m, b, logoHTML) {
+var emp = d.empresa || {}, val = d.validade || {}, txts = d.textos || {};
+function linha(k, v, destaque) {
+return '<div class="tp-cc-row"><span>' + esc(k) + "</span><b" + (destaque ? ' class="tp-cc-valor"' : "") + ">" + v + "</b></div>";
+}
+var info = "";
+if (txt(d.cliente)) info += linha("Cliente", esc(d.cliente));
+if (p.mostrarNumero && txt(d.numero)) info += linha("Proposta nº", esc(d.numero));
+if (p.mostrarNumero && txt(d.data)) info += linha("Data", esc(dia(d.data)));
+if (p.mostrarValidade) {
+var vt = txt(val.ate) || txt(val.texto).replace(/^Validade desta proposta:\s*/i, "").replace(/^Válida até\s*/i, "").replace(/\.$/, "");
+if (vt) info += linha("Validade", esc(vt));
+}
+if (p.mostrarValor) {
+if (num(b.totalOpcional) > 0) info += linha("Adicionais opcionais", esc(moeda(b.totalOpcional)) + ' <span class="tp-cc-nota">(não incluídos no valor total)</span>');
+info += linha("Valor total", esc(moeda(b.total)), true);
+}
+var rod = [];
+if (p.mostrarEmpresa) {
+if (txt(emp.nome)) rod.push(esc(emp.nome));
+if (txt(emp.cnpj)) rod.push("CNPJ " + esc(emp.cnpj));
+if (txt(emp.endereco)) rod.push(esc(emp.endereco)); else if (txt(emp.cidade)) rod.push(esc(emp.cidade));
+if (txt(txts.credito)) rod.push(esc(txts.credito));
+}
+return '<div class="tp-cc" style="background-color:' + esc(m.estilo.corFundoEscuro) + '">'
++ '<div class="tp-cc-top">' + (p.mostrarLogo && logoHTML ? '<div class="tp-logo">' + logoHTML + "</div>" : "") + "</div>"
++ '<div class="tp-cc-mid">'
++ (txt(p.kicker) ? '<div class="tp-cc-kicker">' + esc(p.kicker) + "</div>" : "")
++ '<h1 class="tp-cc-h1">' + esc(txt(d.obra) || "Proposta") + "</h1>"
++ (p.mostrarObra && txt(d.obraNome) ? '<div class="tp-cc-obra">' + esc(d.obraNome) + "</div>" : "")
++ "</div>"
++ (info ? '<div class="tp-cc-info">' + info + "</div>" : "")
++ (rod.length ? '<div class="tp-cc-rod">' + rod.join(" · ") + "</div>" : "")
++ "</div>";
+}
+function apresentacao(p, d) {
+var com = d.comercial || {}, emp = d.empresa || {}, ref = d.referencia || {};
+var texto = txt(p.texto) || txt(com.apresentacao);
+var html = texto ? '<p class="tp-p">' + escML(texto) + "</p>"
+: '<p class="tp-p">A <b>' + esc(txt(emp.nome) || "empresa") + "</b> atua em projetos e execução de obras de engenharia e arquitetura, "
++ "comprometida com qualidade técnica, transparência e cumprimento de prazos. Apresentamos a seguir nossa proposta para o empreendimento em referência.</p>";
+return html + fraseBases(p, ref, p.mostrarBdi);
+}
+function escopoEtapas(p, b) {
+function li(g) {
+var qt = (g.qtdItens !== undefined) ? num(g.qtdItens) : arr(g.linhas).length;
+return "<li>" + (p.mostrarCodigo && txt(g.codigo) ? "<b>" + esc(g.codigo) + "</b> — " : "") + esc(txt(g.nome) || "Serviços")
++ (p.mostrarQtdItens ? ' <span class="tp-qtd">(' + qt + (qt === 1 ? " item)" : " itens)") + "</span>" : "") + "</li>";
+}
+var gs = arr(b.grupos), ops = arr(b.opcionais);
+return (txt(p.abertura) ? '<p class="tp-p">' + escML(p.abertura) + "</p>" : "")
++ (gs.length ? '<ul class="tp-ul">' + gs.map(li).join("") + "</ul>" : '<p class="tp-vaziotxt">—</p>')
++ (ops.length ? (txt(p.textoOpcionais) ? '<p class="tp-p">' + escML(p.textoOpcionais) + "</p>" : "") + '<ul class="tp-ul">' + ops.map(li).join("") + "</ul>" : "")
++ (txt(p.fechamento) ? '<p class="tp-p tp-solto">' + escML(p.fechamento) + "</p>" : "");
+}
+function premissas(p, d) {
+var com = d.comercial || {}, ref = d.referencia || {};
+var html = paragrafoOuLista(p.rotuloPremissas, linhasOu(p.premissas, com.premissas))
++ paragrafoOuLista(p.rotuloMetodologia, linhasOu(p.metodologia, com.metodologia));
+var partes = [];
+if (p.fonteDePrecos === "padrao" && txt(ref.bases)) partes.push("<b>" + (num(ref.nBases) > 1 ? "Bases de preços:" : "Base de preços:") + "</b> " + esc(ref.bases));
+else if (p.fonteDePrecos === "proprio" && txt(p.textoFonte)) partes.push(escML(p.textoFonte));
+if (p.mostrarRegime && txt(ref.regime)) partes.push("regime <b>" + esc(ref.regime) + "</b>");
+if (p.mostrarBdiTcu) partes.push("BDI conforme metodologia do Acórdão TCU nº 2.622/2013");
+if (partes.length) html += '<p class="tp-p">' + partes.join(", ") + ".</p>";
+return html;
+}
+function condicoesComerciais(p, d) {
+var com = d.comercial || {}, val = d.validade || {};
+function bloco(rot, v) { return txt(v) ? '<div class="tp-bloco"><h3 class="tp-h3">' + esc(rot) + "</h3><p>" + escML(v) + "</p></div>" : ""; }
+var html = "";
+if (p.mostrarPagamento) html += bloco(p.rotuloPagamento, com.condicoesPagamento);
+if (p.mostrarPrazo) html += bloco(p.rotuloPrazo, com.prazoExecucao);
+if (p.mostrarValidade) html += bloco(p.rotuloValidade, txt(com.validadeProposta) || txt(val.texto).replace(/^Validade desta proposta:\s*/i, ""));
+if (p.mostrarGarantia) html += bloco(p.rotuloGarantia, com.garantia);
+linhasDe(p.extras).forEach(function (l) { var par = parRotulo(l); if (par[1]) html += bloco(par[0] || "Condição", par[1]); });
+return html || '<p class="tp-vaziotxt">—</p>';
+}
+function tabelaResumida(p, gs, b) {
+var comPeso = !!p.mostrarPeso;
+var linhas = gs.map(function (g) {
+return "<tr><td>" + esc(txt(g.codigo)) + "</td><td>" + esc(txt(g.nome) || "Serviços") + '</td><td class="tp-num">' + esc(moeda(g.total)) + "</td>"
++ (comPeso ? '<td class="tp-num">' + esc(pctTxt(g.peso)) + "</td>" : "") + "</tr>";
+}).join("");
+return '<table class="tp-tbl tp-res"><thead><tr><th class="tp-col-cod">Etapa</th><th>' + esc(p.colTrabalho) + '</th><th class="tp-num">' + esc(p.colValor) + "</th>"
++ (comPeso ? '<th class="tp-num">Peso</th>' : "") + "</tr></thead>"
++ "<tbody>" + (linhas || '<tr><td colspan="' + (comPeso ? 4 : 3) + '" class="tp-vaziotxt">Nenhuma etapa com preço.</td></tr>') + "</tbody>"
++ '<tfoot><tr><td colspan="2">Valor total da proposta</td><td class="tp-num">' + esc(moeda(b.total)) + "</td>" + (comPeso ? '<td class="tp-num">100%</td>' : "") + "</tr></tfoot></table>";
+}
+function tabelaAnalitica(p, gs, b) {
+var corpo = "";
+gs.forEach(function (g) {
+if (txt(g.nome)) corpo += '<tr class="tp-grupo"><td colspan="5">' + (txt(g.codigo) ? esc(g.codigo) + " — " : "") + esc(g.nome) + "</td></tr>";
+arr(g.linhas).forEach(function (l) {
+corpo += "<tr><td>" + esc(l.descricao) + "</td><td>" + esc(txt(l.unidade)) + '</td><td class="tp-num">' + (num(l.qtd) > 0 ? esc(n2(l.qtd)) : "")
++ '</td><td class="tp-num">' + (l.unitario !== undefined && l.unitario !== null ? esc(moeda(l.unitario)) : "") + '</td><td class="tp-num">' + esc(moeda(l.total)) + "</td></tr>";
+});
+});
+if (!corpo) corpo = '<tr><td colspan="5" class="tp-vaziotxt">Nenhum item com preço.</td></tr>';
+return '<table class="tp-tbl tp-ana"><thead><tr><th>' + esc(p.colTrabalho) + '</th><th>Un.</th><th class="tp-num">Quant.</th><th class="tp-num">Unitário</th><th class="tp-num">' + esc(p.colValor) + "</th></tr></thead>"
++ "<tbody>" + corpo + "</tbody></table>"
++ '<p class="tp-total">Valor total: <b>' + esc(moeda(b.total)) + "</b></p>";
+}
+function cronogramaCompleto(p, cr) {
+var ex = cr.execucao;
+var html = "";
+if (num(ex.totalDias) > 0) {
+html += '<p class="tp-p">A execução está prevista em <b>' + num(ex.totalDias) + " dias úteis</b>"
++ (num(ex.totalSemanas) > 0 ? " (aproximadamente <b>" + num(ex.totalSemanas) + " semanas</b>)" : "")
++ (txt(ex.inicio) ? ", com início em <b>" + esc(ex.inicio) + "</b>" : "")
++ (txt(ex.fim) ? " e conclusão prevista para <b>" + esc(ex.fim) + "</b>" : "") + ".</p>";
+}
+var linhas = arr(ex.etapas).map(function (e) {
+var pos = Math.max(0, Math.min(100, num(e.posPct))), larg = Math.max(0, Math.min(100 - pos, num(e.largPct)));
+var barra = e.marco
+? '<span class="tp-gt-marco" style="left:' + pos + '%"></span>'
+: (larg > 0 ? '<span class="tp-gt-b" style="left:' + pos + "%;width:" + Math.max(1.5, larg) + '%"></span>' : "");
+return "<tr><td>" + (txt(e.codigo) ? "<b>" + esc(e.codigo) + "</b> " : "") + esc(e.nome)
++ (e.opcional ? " <span class=\"tp-qtd\">(adicional opcional)</span>" : "") + "</td>"
++ '<td class="tp-gt-c"><span class="tp-gt-trilho">' + barra + "</span></td>"
++ '<td class="tp-num">' + (e.marco ? "marco" : num(e.duracao) + " d") + "</td>"
++ '<td class="tp-num">' + esc(txt(e.inicio)) + '</td><td class="tp-num">' + esc(txt(e.fim)) + "</td></tr>";
+}).join("");
+html += '<table class="tp-tbl tp-gt"><thead><tr><th>Etapa</th><th class="tp-gt-c">Período</th><th class="tp-num">Prazo</th><th class="tp-num">Início</th><th class="tp-num">Término</th></tr></thead>'
++ "<tbody>" + linhas + "</tbody></table>";
+if (p.mostrarPremissas && arr(ex.premissas).length) {
+html += '<h3 class="tp-h3 tp-h3-sec">Premissas de prazo a cargo do contratante</h3>'
++ '<table class="tp-tbl tp-gt"><thead><tr><th>Nº</th><th>Premissa</th><th class="tp-num">Prazo</th><th class="tp-num">Até</th></tr></thead><tbody>'
++ ex.premissas.map(function (x) {
+return "<tr><td>" + esc(txt(x.numero)) + "</td><td>" + esc(txt(x.nome)) + '</td><td class="tp-num">' + (x.marco ? "na data" : num(x.prazoDias) + " d") + '</td><td class="tp-num">' + esc(txt(x.fim)) + "</td></tr>";
+}).join("") + "</tbody></table>"
++ (txt(ex.fraseDasPremissas) ? '<p class="tp-leg"><b>' + esc(ex.fraseDasPremissas) + "</b> Estas linhas não têm preço nesta proposta: elas ocupam prazo e dependem do contratante.</p>" : "");
+}
+var des = ex.desembolso;
+if (p.mostrarDesembolso && des && arr(des.lista).length) {
+html += '<h3 class="tp-h3 tp-h3-sec">Cronograma físico-financeiro</h3>'
++ '<table class="tp-tbl tp-gt"><thead><tr><th>Mês</th><th class="tp-num">Previsão de desembolso</th><th class="tp-num">% do mês</th><th class="tp-num">% acumulado</th></tr></thead><tbody>'
++ des.lista.map(function (x) {
+return "<tr><td>" + esc(txt(x.rotulo)) + '</td><td class="tp-num">' + esc(moeda(x.valor)) + '</td><td class="tp-num">' + esc(pctTxt(x.pct)) + '</td><td class="tp-num">' + esc(pctTxt(x.acumPct)) + "</td></tr>";
+}).join("")
++ '</tbody><tfoot><tr><td>Total</td><td class="tp-num">' + esc(moeda(des.total)) + '</td><td class="tp-num">100%</td><td></td></tr></tfoot></table>'
++ '<p class="tp-leg">Distribuição estimada a partir da duração de cada etapa no cronograma acima. A medição e o faturamento seguem as condições comerciais desta proposta.</p>';
+if (num(cr.totalOpcional) > 0) {
+html += '<p class="tp-leg">Este cronograma de desembolso inclui os <b>adicionais opcionais</b> (' + esc(moeda(cr.totalOpcional))
++ "). Sem eles, o valor total da proposta é <b>" + esc(moeda(cr.totalObrigatorio)) + "</b>.</p>";
+}
+}
+if (txt(ex.notaPrazos)) html += '<p class="tp-leg">' + esc(ex.notaPrazos) + "</p>";
+return html;
+}
 function estiloRaiz(m, f) {
 return "--tp-titulo:" + m.estilo.corTitulo
 + ";--tp-texto:" + m.estilo.corTexto
@@ -58968,7 +60080,12 @@ return "<tr><td>" + esc(l.descricao) + (q ? ' <span class="tp-qtd">' + q + "</sp
 function gruposDe(bb) {
 if (Array.isArray(bb.grupos)) {
 return bb.grupos.map(function (g) {
-return { nome: txt(g && g.nome), linhas: arr(g && g.linhas) };
+var o = { nome: txt(g && g.nome), linhas: arr(g && g.linhas) };
+if (g && g.codigo !== undefined) o.codigo = txt(g.codigo);
+if (g && g.total !== undefined && g.total !== null) o.total = g.total;
+if (g && g.peso !== undefined) o.peso = g.peso;
+if (g && g.qtdItens !== undefined) o.qtdItens = g.qtdItens;
+return o;
 }).filter(function (g) { return g.linhas.length; });
 }
 var out = [];
@@ -58977,6 +60094,11 @@ if (arr(bb.mo).length) out.push({ nome: "Mão de obra", linhas: arr(bb.mo) });
 return out;
 }
 var gs = gruposDe(b);
+if (p.nivel === "resumido") {
+var temTotais = gs.length && !gs.some(function (g) { return !isFinite(+g.total) || g.total === undefined || g.total === null; });
+if (temTotais) return tabelaResumida(p, gs, b);
+}
+if (p.nivel === "analitico") return tabelaAnalitica(p, gs, b);
 var corpo;
 if (p.detalhar) {
 corpo = gs.map(function (g) {
@@ -58996,6 +60118,11 @@ return '<table class="tp-tbl"><thead><tr><th>' + esc(p.colTrabalho) + '</th><th 
 function tabelaCronograma(p, cr) {
 if (!cr || !arr(cr.etapas).length) {
 return '<p class="tp-vaziotxt">Cronograma indisponível: o orçamento ainda não tem etapas com preço.</p>';
+}
+if (p.modo === "completo") {
+if (cr.execucao && arr(cr.execucao.etapas).length) return cronogramaCompleto(p, cr);
+return '<p class="tp-leg">O cronograma detalhado por data não pôde ser montado para este orçamento; abaixo, a distribuição por período.</p>'
++ tabelaCronograma({ modo: "", rotuloMes: p.rotuloMes, mostrarValores: p.mostrarValores }, cr);
 }
 var n = num(cr.meses) || arr(cr.totaisMes).length || 1;
 var rot = txt(p.rotuloMes) || "Mês";
@@ -59164,6 +60291,44 @@ return [
 + "border-top-width:var(--tp-rg-bw,0);"
 + "border-top-color:var(--tp-rg-cor,var(--tp-titulo))}",
 ".tp-pg ul{list-style-type:var(--tp-mk,disc)}",
+".tp-cc{position:absolute;inset:0;display:flex;flex-direction:column;padding:18mm 16mm;box-sizing:border-box;color:#fff;background-image:linear-gradient(155deg,rgba(0,0,0,.28) 0%,rgba(0,0,0,0) 58%,rgba(255,255,255,.08) 100%)}",
+".tp-vert .tp-cc{padding:14mm 12mm}",
+".tp-cc-top{min-height:22mm}",
+".tp-cc-top .tp-logo{margin-bottom:0}",
+".tp-cc-mid{flex:1;display:flex;flex-direction:column;justify-content:center}",
+".tp-cc-kicker{letter-spacing:.3em;font-size:calc(10.5pt * var(--tp-esc-txt,1));font-weight:600;color:rgba(255,255,255,.78);text-transform:uppercase}",
+".tp-cc-kicker::after{content:'';display:block;width:16mm;height:1.2mm;background:var(--tp-destaque);border-radius:1mm;margin-top:4mm}",
+".tp-cc-h1{font-family:var(--tp-f-tit);font-weight:700;font-size:calc(28pt * var(--tp-esc-tit,1));line-height:1.12;letter-spacing:-.01em;margin:6mm 0 3mm;color:#fff}",
+".tp-vert .tp-cc-h1{font-size:calc(22pt * var(--tp-esc-tit,1))}",
+".tp-cc-obra{font-size:calc(13pt * var(--tp-esc-txt,1));color:rgba(255,255,255,.85)}",
+".tp-cc-info{border-top:1px solid rgba(255,255,255,.25);padding-top:5mm;margin-top:6mm}",
+".tp-cc-row{display:flex;justify-content:space-between;align-items:baseline;gap:6mm;padding:2.2mm 0;border-bottom:1px solid rgba(255,255,255,.12);font-size:calc(11pt * var(--tp-esc-txt,1))}",
+".tp-cc-row:last-child{border-bottom:none}",
+".tp-cc-row span{color:rgba(255,255,255,.7)}",
+".tp-cc-row b{font-variant-numeric:tabular-nums;text-align:right}",
+".tp-cc-row b.tp-cc-valor{font-size:calc(15pt * var(--tp-esc-txt,1));color:#fff}",
+".tp-cc-nota{font-weight:400;font-size:9pt;opacity:.8}",
+".tp-cc-rod{margin-top:8mm;font-size:8.5pt;line-height:1.5;color:rgba(255,255,255,.7)}",
+".tp-h3{font-family:var(--tp-f-tit);font-size:calc(12.5pt * var(--tp-esc-tit,1));font-weight:700;color:var(--tp-titulo);margin:0 0 2.5mm}",
+".tp-h3-sec{margin-top:7mm}",
+".tp-cols{display:grid;grid-template-columns:1fr 1fr;gap:8mm;margin-top:2mm}",
+".tp-vert .tp-cols{grid-template-columns:1fr}",
+".tp-bloco{margin:0 0 5mm;padding:3.5mm 4.5mm;border-left:3px solid var(--tp-destaque2);background:rgba(0,0,0,.025)}",
+".tp-bloco h3{margin-bottom:1.5mm}",
+".tp-bloco p{margin:0;font-size:calc(11.5pt * var(--tp-esc-txt,1))}",
+".tp-res td.tp-col-cod,.tp-res th.tp-col-cod{width:16mm;white-space:nowrap}",
+".tp-res tfoot td,.tp-gt tfoot td{background:#eef4fa;font-weight:700}",
+".tp-ana{font-size:calc(9.5pt * var(--tp-esc-txt,1))}",
+".tp-ana th,.tp-ana td{padding:2.2mm 2.6mm}",
+".tp-gt{font-size:calc(9.5pt * var(--tp-esc-txt,1))}",
+".tp-gt th,.tp-gt td{padding:2.2mm 2.6mm}",
+".tp-gt th.tp-gt-c,.tp-gt td.tp-gt-c{width:46mm;padding:2.2mm 2mm;vertical-align:middle}",
+".tp-gt-trilho{position:relative;display:block;height:3.2mm;background:rgba(0,0,0,.06);border-radius:1.6mm}",
+".tp-gt-b{position:absolute;top:0;bottom:0;background:var(--tp-destaque2);border-radius:1.6mm}",
+".tp-gt-marco{position:absolute;top:-.6mm;width:4.4mm;height:4.4mm;background:var(--tp-destaque);transform:translateX(-50%) rotate(45deg);border-radius:.6mm}",
+".tp-wm.tp-wm-emp{font-size:46pt;letter-spacing:4px;color:rgba(15,39,64,.06);transform:rotate(-30deg);z-index:0}",
+".tp-escura .tp-wm.tp-wm-emp{color:rgba(255,255,255,.07)}",
+".tp-rodape-nome{justify-content:center;border-top-color:var(--tp-titulo);opacity:.75}",
 ].join("\n");
 };
 PropTpl.auditar = function (html, proibidos) {
@@ -59349,6 +60514,164 @@ var c = base + " (importado " + i + ")";
 if (!tem[c.toLowerCase()]) return c;
 }
 return base + " (importado)";
+};
+PropTpl.ESTILO_CORES = ["corTitulo", "corTexto", "corFundo", "corDestaque", "corDestaque2", "corFundoEscuro"];
+PropTpl.ESTILO_OPCOES = {
+fonte: PropTpl.FONTES.map(function (f) { return f.id; }),
+formato: ["a4", "vertical"],
+textura: PropTpl.TEXTURAS.map(function (t) { return t.id; }),
+ornamento: ["", "curvas"],
+rodape: ["", "contatos", "nome"],
+fundoInternas: ["", "claro"],
+logoEscuro: ["", "clarear", "pastilha"],
+marcaDagua: ["", "auto"],
+marcaDaguaEmpresa: ["", "nome"],
+numerarSecoes: ["", "sim"]
+};
+var ESTILO_NOMES = {
+corTitulo: "Cor dos títulos e tabelas", corTexto: "Cor do texto", corFundo: "Cor do fundo", corDestaque: "Cor de destaque",
+corDestaque2: "2ª cor de destaque", corFundoEscuro: "Cor das páginas escuras", fonte: "Letra", formato: "Formato do papel",
+textura: "Textura de fundo", ornamento: "Traços da marca", rodape: "Rodapé", fundoInternas: "Páginas internas",
+logoEscuro: "Logo nas páginas escuras", marcaDagua: "Carimbo de vencida", marcaDaguaEmpresa: "Marca d'água da empresa",
+numerarSecoes: "Numeração das seções"
+};
+var ESTILO_VALOR_NOMES = {
+formato: { a4: "A4", vertical: "vertical (celular)" }, ornamento: { "": "sem", curvas: "curvas" },
+rodape: { "": "sem", contatos: "contatos da empresa", nome: "nome da empresa" }, fundoInternas: { "": "escopo e condições em página escura", claro: "todas claras" },
+logoEscuro: { "": "como ele é", clarear: "branco", pastilha: "sobre pastilha branca" }, marcaDagua: { "": "nunca", auto: "quando vencer" },
+marcaDaguaEmpresa: { "": "sem", nome: "nome da empresa" }, numerarSecoes: { "": "sem número", sim: "numeradas" }
+};
+function nomeValorEstilo(k, v) {
+if (k === "fonte") return PropTpl.fonte(v).nome.split(" — ")[0];
+if (k === "textura") { var t = _acha(PropTpl.TEXTURAS, v); return t ? t.nome : v; }
+var tab = ESTILO_VALOR_NOMES[k];
+return (tab && tab[v] !== undefined) ? tab[v] : (txt(v) || "sem");
+}
+PropTpl.catalogoParaIA = function () {
+return {
+blocos: PropTpl.BLOCOS.map(function (b) {
+return {
+tipo: b.tipo, nome: b.nome, resumo: b.resumo, imagens: b.imagens,
+campos: b.campos.map(function (c) {
+var o = { id: c.id, nome: c.nome, tipo: c.tipo || "texto" };
+if (c.tipo === "lista") o.opcoes = arr(c.opcoes).map(function (op) { return { id: op[0], nome: op[1] }; });
+if (c.padrao !== undefined && c.padrao !== "") o.padrao = c.padrao;
+if (c.dica) o.dica = c.dica;
+return o;
+})
+};
+}),
+estilo: {
+cores: PropTpl.ESTILO_CORES.map(function (k) { return { id: k, nome: ESTILO_NOMES[k] }; }),
+opcoes: Object.keys(PropTpl.ESTILO_OPCOES).map(function (k) {
+return { id: k, nome: ESTILO_NOMES[k], valores: PropTpl.ESTILO_OPCOES[k].map(function (v) { return { id: v, nome: nomeValorEstilo(k, v) }; }) };
+})
+}
+};
+};
+PropTpl.paraIA = function (t) {
+var m = PropTpl.modelo(t);
+return {
+nome: m.nome, descricao: m.descricao, estilo: m.estilo,
+paginas: m.paginas.map(function (p) {
+var b = PropTpl.bloco(p.tipo), o = { id: p.id, tipo: p.tipo };
+b.campos.forEach(function (c) { o[c.id] = p[c.id]; });
+return o;
+})
+};
+};
+PropTpl.ajustadoPelaIA = function (original, resposta) {
+var o = PropTpl.modelo(original);
+var r = resposta || {};
+var mr = (r.modelo && typeof r.modelo === "object") ? r.modelo : r;
+var brutas = arr(mr.paginas);
+if (!brutas.length) return { ok: false, erro: "A IA não devolveu as páginas do modelo." };
+var descartadas = [], porId = {};
+o.paginas.forEach(function (p) { porId[p.id] = p; });
+var usados = {};
+var paginas = [];
+brutas.forEach(function (p, i) {
+var tipo = txt(p && p.tipo);
+var b = PropTpl.bloco(tipo);
+if (!b) { descartadas.push(tipo || "(sem tipo)"); return; }
+var out = { tipo: tipo };
+b.campos.forEach(function (c) { if (p[c.id] !== undefined) out[c.id] = p[c.id]; });
+var id = txt(p.id);
+if (!id || usados[id]) id = "pg" + (i + 1) + "n";
+usados[id] = 1;
+out.id = id;
+var antiga = porId[id];
+if (antiga && antiga.tipo === tipo) { out.tipografia = antiga.tipografia; out.formas = antiga.formas; }
+paginas.push(out);
+});
+if (!paginas.length) return { ok: false, erro: "A estrutura devolvida não tem nenhuma página que este sistema saiba desenhar." };
+var costurado = false;
+if (!paginas.some(function (p) { return p.tipo === "investimento"; })) {
+var inv = o.paginas.filter(function (p) { return p.tipo === "investimento"; })[0];
+paginas.push(inv ? JSON.parse(JSON.stringify(inv)) : { id: "pginv", tipo: "investimento", titulo: "INVESTIMENTO", detalhar: true });
+costurado = true;
+}
+var estilo = {};
+for (var k in o.estilo) if (Object.prototype.hasOwnProperty.call(o.estilo, k)) estilo[k] = o.estilo[k];
+var er = (mr.estilo && typeof mr.estilo === "object") ? mr.estilo : {};
+Object.keys(er).forEach(function (k2) {
+var v = txt(er[k2]);
+if (PropTpl.ESTILO_CORES.indexOf(k2) > -1) { if (/^#[0-9a-fA-F]{6}$/.test(v)) estilo[k2] = v.toUpperCase(); return; }
+var ops = PropTpl.ESTILO_OPCOES[k2];
+if (ops && ops.indexOf(v) > -1) estilo[k2] = v;
+});
+var nome = txt(mr.nome) || o.nome;
+if (nome.length > 60) nome = nome.slice(0, 60);
+var descricao = (mr.descricao !== undefined) ? txt(mr.descricao) : o.descricao;
+if (descricao !== o.descricao && descricao.length > 200) descricao = descricao.slice(0, 200);
+var tmp = PropTpl.modelo({ nome: nome, descricao: descricao, estilo: estilo, paginas: paginas });
+var novo = PropTpl.modelo({
+nome: nome, descricao: descricao, estilo: estilo, paginas: paginas,
+logo: o.logo,
+imagens: PropTpl.remapear(o, tmp),
+imagensOrig: PropTpl.remapear({ estilo: o.estilo, paginas: o.paginas, imagens: o.imagensOrig }, tmp)
+});
+var faltas = PropTpl.validar(novo);
+if (faltas.length) return { ok: false, erro: faltas[0] };
+return { ok: true, modelo: novo, mudancas: PropTpl.diferencas(o, novo), descartadas: descartadas, investimentoCosturado: costurado };
+};
+PropTpl.diferencas = function (a, b) {
+var A = PropTpl.modelo(a), B = PropTpl.modelo(b), out = [];
+function curto(v) { var s = txt(v).replace(/\s+/g, " "); return s.length > 60 ? s.slice(0, 57) + "…" : s; }
+function valor(c, v) {
+if (c.tipo === "sim_nao") return v ? "sim" : "não";
+if (c.tipo === "lista") { var op = arr(c.opcoes).filter(function (x) { return x[0] === v; })[0]; return op ? op[1] : txt(v); }
+return txt(v) ? '"' + curto(v) + '"' : "(vazio)";
+}
+if (A.nome !== B.nome) out.push("Nome: " + A.nome + " → " + B.nome);
+if (A.descricao !== B.descricao) out.push("Descrição: " + (curto(A.descricao) || "(vazia)") + " → " + (curto(B.descricao) || "(vazia)"));
+Object.keys(B.estilo).forEach(function (k) {
+if (A.estilo[k] === B.estilo[k]) return;
+var nome = ESTILO_NOMES[k] || k;
+if (PropTpl.ESTILO_CORES.indexOf(k) > -1) out.push(nome + ": " + (A.estilo[k] || "—") + " → " + (B.estilo[k] || "—"));
+else out.push(nome + ": " + nomeValorEstilo(k, A.estilo[k]) + " → " + nomeValorEstilo(k, B.estilo[k]));
+});
+var idxA = {}, idxB = {};
+A.paginas.forEach(function (p, i) { idxA[p.id] = i; });
+B.paginas.forEach(function (p, i) { idxB[p.id] = i; });
+A.paginas.forEach(function (p) {
+var q = B.paginas[idxB[p.id]];
+if (!q || q.tipo !== p.tipo) { out.push("Página removida: " + PropTpl.bloco(p.tipo).nome + (txt(p.titulo) ? " (" + curto(p.titulo) + ")" : "")); return; }
+});
+B.paginas.forEach(function (q, i) {
+var p = A.paginas[idxA[q.id]];
+var b = PropTpl.bloco(q.tipo);
+if (!p || p.tipo !== q.tipo) { out.push("Página nova (" + (i + 1) + "ª): " + b.nome + (txt(q.titulo) ? " (" + curto(q.titulo) + ")" : "")); return; }
+b.campos.forEach(function (c) {
+if (p[c.id] === q[c.id]) return;
+out.push(b.nome + " › " + c.nome + ": " + valor(c, p[c.id]) + " → " + valor(c, q[c.id]));
+});
+});
+var comuns = B.paginas.filter(function (q) { return idxA[q.id] !== undefined && A.paginas[idxA[q.id]].tipo === q.tipo; });
+var antes = comuns.map(function (q) { return idxA[q.id]; });
+var desordem = antes.some(function (v, i) { return i > 0 && v < antes[i - 1]; });
+if (desordem) out.push("Ordem das páginas alterada: " + comuns.map(function (q) { return PropTpl.bloco(q.tipo).nome; }).join(" → "));
+return out;
 };
 global.PropTpl = PropTpl;
 if (typeof module !== "undefined" && module.exports) module.exports = PropTpl;

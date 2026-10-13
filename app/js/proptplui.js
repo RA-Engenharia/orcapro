@@ -159,6 +159,10 @@
       + '<h3 style="margin:0">' + esc(m.nome) + "</h3>"
       + '<div class="flex" style="gap:6px">'
       + '<button class="btn sm" data-gacao="propmod-renomear">Renomear</button>'
+      /* a IA ajusta ESTE modelo e grava um NOVO (13/10/2026): quem gostou do
+         padrão do sistema escreve o que quer diferente, em vez de caçar campo */
+      + '<button class="btn sm" data-gacao="propmod-ia" title="Escrever o que mudar e deixar a IA criar um modelo novo a partir deste">'
+      + (typeof Icones !== "undefined" ? Icones.get("ia", 15) : "") + " Ajustar com a IA</button>"
       + '<button class="btn sm" data-gacao="propmod-padrao">' + (m.padrao ? "Deixar de ser o padrão" : "Usar como padrão") + "</button>"
       + '<button class="btn sm" data-gacao="propmod-exportar" title="Salvar este modelo num arquivo, com as fotos dentro, para usar em outra conta">'
       + (typeof Icones !== "undefined" ? Icones.get("salvar", 15) : "") + " Levar para outra conta</button>"
@@ -220,6 +224,13 @@
             html += '<label style="display:flex;gap:7px;align-items:center;margin-bottom:8px;font-size:13px">'
               + '<input type="checkbox" id="' + idc + '" data-pmc="' + esc(p.id) + '" data-campo="' + esc(c.id) + '"' + (v ? " checked" : "") + ">"
               + esc(c.nome) + "</label>";
+          } else if (c.tipo === "lista") {
+            /* o campo de opções (13/10/2026): resumido/analítico, citar ou
+               esconder a base de preços, cronograma resumido/completo */
+            html += K.campo(c.nome, '<select id="' + idc + '" data-pmc="' + esc(p.id) + '" data-campo="' + esc(c.id) + '">'
+              + (c.opcoes || []).map(function (o) {
+                  return '<option value="' + esc(o[0]) + '"' + (String(v) === String(o[0]) ? " selected" : "") + ">" + esc(o[1]) + "</option>";
+                }).join("") + "</select>");
           } else if (c.tipo === "multi") {
             html += K.campo(c.nome, '<textarea id="' + idc + '" data-pmc="' + esc(p.id) + '" data-campo="' + esc(c.id)
               + '" rows="4" placeholder="' + esc(c.dica || "") + '">' + esc(v) + "</textarea>");
@@ -310,7 +321,7 @@
       + "</div>"
       + '<div class="row">'
       + K.campo("Traços da marca", K.sel("pme-ornamento", K.opts([["", "Sem ornamento"], ["curvas", "Curvas — traços nas capas e nos cantos das páginas"]], e.ornamento)))
-      + K.campo("Rodapé das páginas", K.sel("pme-rodape", K.opts([["", "Sem rodapé"], ["contatos", "Contatos da empresa (links clicáveis no PDF)"]], e.rodape)))
+      + K.campo("Rodapé das páginas", K.sel("pme-rodape", K.opts([["", "Sem rodapé"], ["contatos", "Contatos da empresa (links clicáveis no PDF)"], ["nome", "Nome da empresa (como o documento padrão do sistema)"]], e.rodape)))
       + K.campo("Páginas internas", K.sel("pme-fundoInternas", K.opts([["", "Escopo e condições em página escura"], ["claro", "Todas as páginas internas claras"]], e.fundoInternas)))
       + K.campo("Carimbo de vencida", K.sel("pme-marcaDagua", K.opts([
           ["", "Nunca carimbar"],
@@ -321,7 +332,16 @@
           ["pastilha", "Sobre uma pastilha branca (mantém as cores)"]], e.logoEscuro)))
       + "</div>"
       + '<p class="muted" style="margin:-4px 0 0;font-size:12px">Capa, "quem somos" e encerramento têm fundo escuro: '
-      + "um logo azul-marinho desaparece neles sem dar erro nenhum.</p>";
+      + "um logo azul-marinho desaparece neles sem dar erro nenhum.</p>"
+      /* o que o documento padrão do sistema sempre teve (13/10/2026) */
+      + '<div class="row" style="margin-top:10px">'
+      + K.campo("Marca d'água nas páginas internas", K.sel("pme-marcaDaguaEmpresa", K.opts([
+          ["", "Sem marca d'água"],
+          ["nome", "Nome da empresa atravessado, apagado (segue ⚙ Empresa › Documentos)"]], e.marcaDaguaEmpresa)))
+      + K.campo("Numeração das seções", K.sel("pme-numerarSecoes", K.opts([
+          ["", "Títulos sem número"],
+          ["sim", "Numerar: 1. Apresentação, 2. Escopo…"]], e.numerarSecoes)))
+      + "</div>";
 
     html += '<label style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--texto-fraco)">Letra</label>'
       + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px;margin-top:6px">';
@@ -401,7 +421,9 @@
       + "quando a proposta real for gerada.</p>"
       + '<div class="flex" style="gap:8px;margin-bottom:12px">'
       + '<button class="btn sm primary" data-gacao="propmod-imprimir">'
-      + (typeof Icones !== "undefined" ? Icones.get("imprimir", 15) : "") + " Abrir para imprimir</button></div>"
+      + (typeof Icones !== "undefined" ? Icones.get("imprimir", 15) : "") + " Abrir para imprimir</button>"
+      + '<button class="btn sm" data-gacao="propmod-word" title="Baixar esta prévia em Word (.docx) para ver como o modelo fica no Word">'
+      + (typeof Icones !== "undefined" ? Icones.get("baixar", 15) : "") + " Baixar em Word</button></div>"
       + '<div id="pm-previa" style="border:1px solid var(--linha);border-radius:6px;overflow:auto;max-height:600px;background:#8a8a8a;padding:14px">'
       + '<div class="muted" style="color:#fff">montando…</div></div>';
   };
@@ -412,9 +434,9 @@
    * ⚠ Números redondos e nome "Exemplo", de propósito: uma prévia com cara
    *   de proposta real acaba impressa e enviada por engano.
    * =================================================================== */
-  G._propModDadosDemo = function () {
+  G._propModDadosDemo = function (modelo) {
     var emp = (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : {};
-    return {
+    var d = {
       empresa: (function () {
         var e2 = {}; Object.keys(emp).forEach(function (k) { e2[k] = txt(emp[k]); });
         e2.nome = e2.nome || "Sua Empresa"; return e2;
@@ -447,6 +469,59 @@
       },
       imagens: {}
     };
+    /* =================================================================
+       A PRÉVIA DOS BLOCOS DO DOCUMENTO PADRÃO (13/10/2026). Só quando o
+       modelo usa um deles (ou o resumido/analítico/completo): a prévia dos
+       modelos de antes continua byte a byte igual — inclusive o par
+       "Material / Mão de obra" da carpintaria. Números redondos, como o
+       resto. */
+    var usaPadrao = false;
+    try {
+      var mm = modelo ? T.modelo(modelo) : null;
+      usaPadrao = !!(mm && mm.paginas.some(function (p) {
+        return /^(capa_classica|apresentacao|escopo_etapas|incluso|premissas|comercial|responsabilidades)$/.test(p.tipo)
+          || (p.tipo === "investimento" && p.nivel) || (p.tipo === "cronograma" && p.modo === "completo");
+      }));
+    } catch (eU) { usaPadrao = false; }
+    if (usaPadrao) {
+      d.obraNome = "Obra de exemplo";
+      d.numero = "0001/26";
+      d.referencia = { bases: "SINAPI 09/2026 (UF de exemplo)", nBases: 1, regime: "desonerado", bdiPct: 25 };
+      d.textos = {
+        marcaDagua: (typeof Empresa !== "undefined" && Empresa.marcaDaguaTexto) ? Empresa.marcaDaguaTexto() : d.empresa.nome,
+        credito: (typeof Empresa !== "undefined" && Empresa.creditoTexto) ? Empresa.creditoTexto() : "",
+        rodape: d.empresa.nome
+      };
+      d.comercial.incluso = "Mão de obra e materiais de exemplo\nLimpeza final da obra";
+      d.comercial.excluso = "Projetos e aprovações\nLigações definitivas de água e energia";
+      d.comercial.premissas = "Condições normais de trabalho e acesso à obra;\nFornecimento de água e energia pelo contratante.";
+      d.comercial.metodologia = "Execução por etapas com medição mensal e acompanhamento técnico.";
+      d.comercial.respContratada = "Execução dos serviços conforme escopo e normas técnicas;\nResponsável técnico com ART/RRT.";
+      d.comercial.respContratante = "Liberação da obra e acessos;\nAprovação de projetos e licenças.";
+      d.comercial.validadeProposta = "30 dias";
+      d.blocos = {
+        grupos: [
+          { codigo: "1", nome: "Etapa de exemplo A", total: 13600, peso: 61, qtdItens: 2, linhas: [
+            { descricao: "Item de exemplo 1", unidade: "m²", qtd: 40, unitario: 250, total: 10000 },
+            { descricao: "Item de exemplo 2", unidade: "m²", qtd: 18, unitario: 200, total: 3600 }] },
+          { codigo: "2", nome: "Etapa de exemplo B", total: 8700, peso: 39, qtdItens: 1, linhas: [
+            { descricao: "Item de exemplo 3", unidade: "m²", qtd: 58, unitario: 150, total: 8700 }] }
+        ],
+        opcionais: [], total: 22300, totalOpcional: 0, totalComOpcionais: 22300
+      };
+      d.cronograma.execucao = {
+        totalDias: 44, totalSemanas: 11, inicio: "01/02/2027", fim: "02/04/2027", diasUteisSemana: 5,
+        etapas: [
+          { codigo: "1", nome: "Etapa de exemplo A", frente: "Estrutura", duracao: 26, marco: false, inicio: "01/02/2027", fim: "08/03/2027", posPct: 0, largPct: 58 },
+          { codigo: "2", nome: "Etapa de exemplo B", frente: "Acabamento", duracao: 18, marco: false, inicio: "09/03/2027", fim: "02/04/2027", posPct: 58, largPct: 42 }
+        ],
+        desembolso: { lista: [
+          { rotulo: "fev/27", valor: 10000, pct: 45, acumPct: 45 }, { rotulo: "mar/27", valor: 10000, pct: 45, acumPct: 90 },
+          { rotulo: "abr/27", valor: 2300, pct: 10, acumPct: 100 }], total: 22300 },
+        notaPrazos: "Prazos em dias úteis (5 dias por semana), contados a partir da liberação da obra, com os feriados nacionais descontados."
+      };
+    }
+    return d;
   };
 
   /* resolve os bytes das fotos do modelo (IndexedDB ou servidor) e chama de volta */
@@ -782,6 +857,163 @@
       + '<p class="muted" style="font-size:12.5px;margin-top:10px">As fotos ficam na aba <b>Fotos</b> do modelo; '
       + "os textos, na aba <b>Páginas</b>. A <b>Prévia</b> mostra como está ficando.</p>",
       [{ texto: "Ver o modelo", classe: "primary", onClick: function () { UI.fecharModal(); G._propModAbrir(id); } }]);
+  };
+
+  /* =====================================================================
+   * AJUSTAR O MODELO COM A IA (13/10/2026)
+   *
+   * O usuário abre um modelo — o "Documento padrão do sistema", por exemplo
+   * — e escreve o que quer diferente: "tira a frase do SINAPI, mostra só o
+   * resumo por etapa, muda as cores para verde escuro, acrescenta uma
+   * página de garantias". A IA devolve o modelo inteiro ajustado; o
+   * sistema mostra a LISTA DO QUE MUDOU (calculada aqui, do original para
+   * o ajustado — não o resumo que a IA escreve de si mesma) e, se a pessoa
+   * confirmar, grava como um modelo NOVO. O original não muda.
+   *
+   * ⚠ SEM SERVIDOR NÃO HÁ "MONTAR POR REGRA" COMO NO ROTEIRO: um pedido em
+   *   texto livre não se interpreta sem IA. O botão então diz POR QUE não
+   *   deu (servidor antigo, sem licença, sem internet) e aponta o caminho à
+   *   mão (aba Páginas e Cor e letra). Recado que mente é pior que nenhum.
+   * ⚠ A RESPOSTA PASSA POR `PropTpl.ajustadoPelaIA`: tipo inventado some
+   *   contado, cor fora do #rrggbb volta à original, fotos e tipografia
+   *   seguem a página pelo id. O que a IA não recebeu ela não estraga.
+   * =================================================================== */
+  var IA_AJUSTAR_TIMEOUT = 90000;
+
+  G._propModIA = function () {
+    var raw = obter(this._propModId); if (!raw) { UI.toast("Abra um modelo primeiro.", "erro"); return; }
+    var m = T.modelo(raw);
+    UI.modal("Ajustar “" + esc(m.nome) + "” com a IA",
+      '<p class="muted" style="margin:0 0 10px">Escreva o que você quer diferente neste modelo. A IA cria um <b>modelo novo</b> '
+      + "a partir dele — este continua como está.</p>"
+      + K.campo("O que mudar", '<textarea id="pm-ia-pedido" rows="5" placeholder="Ex.: tire a frase sobre a base de preços SINAPI; mostre o cronograma resumido; '
+        + 'no resumo financeiro mostre só o total de cada etapa; mude as cores para verde escuro; acrescente uma página de garantias com o texto…"></textarea>')
+      + '<div class="card" style="background:#fffbeb;border-color:#fde68a;color:#92400e;padding:9px;margin-top:4px;font-size:12.5px">'
+      + "A IA <b>não inventa fato sobre a sua empresa</b> nem escreve preço, prazo ou pagamento — isso vem do orçamento na hora de gerar. "
+      + "Antes de gravar, você vê a lista exata do que mudou.</div>",
+      [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+       { texto: "Pedir à IA", classe: "primary", onClick: function () { G._propModIAEnviar(); } }]);
+    setTimeout(function () { var t = document.getElementById("pm-ia-pedido"); if (t) t.focus(); }, 50);
+  };
+
+  G._propModIAEnviar = function () {
+    var raw = obter(this._propModId); if (!raw) return;
+    var m = T.modelo(raw);
+    var pedido = txt(K.v("pm-ia-pedido"));
+    if (pedido.length < 5) { UI.toast("Escreva o que você quer mudar no modelo.", "erro"); return; }
+    if (pedido.length > 1500) { UI.toast("O pedido ficou longo demais (" + pedido.length + " caracteres; o máximo é 1500). Divida em dois.", "erro"); return; }
+
+    var back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? CONFIG.iaBackend : "http://localhost:3041";
+    /* carimbo de turno, como no roteiro: resposta de pedido velho some calada */
+    var meuTurno = (G._pmIaReq = (G._pmIaReq || 0) + 1);
+    var origemId = this._propModId;
+    UI.fecharModal();
+    UI.toast("Pedindo o ajuste à IA… isso leva até um minuto.", "ok");
+
+    var ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+    var expirou = setTimeout(function () { try { if (ctrl) ctrl.abort(); } catch (e) {} }, IA_AJUSTAR_TIMEOUT);
+    var corpo = { pedido: pedido, modelo: T.paraIA(m), catalogo: T.catalogoParaIA() };
+
+    function falhou(motivo) {
+      UI.modal("A IA não ajustou o modelo",
+        "<p>" + esc(motivo) + "</p>"
+        + '<p class="muted" style="font-size:12.5px">O modelo não mudou. Você pode fazer o ajuste à mão: textos e opções na aba <b>Páginas</b>, '
+        + "cores e letra em <b>Cor e letra</b>.</p>",
+        [{ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+    }
+
+    fetch(back + "/ia/modelo-proposta/ajustar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-licenca": (typeof Licenca !== "undefined" ? Licenca.chave() : "") },
+      body: JSON.stringify(corpo),
+      signal: ctrl ? ctrl.signal : undefined
+    }).then(function (r) {
+        if (r.status === 404) return { __motivo: "o servidor da IA ainda não tem o ajuste de modelo — peça a atualização do servidor da RA" };
+        if (r.status === 403 || r.status === 401) return { __motivo: "o ajuste pela IA é do plano licenciado — ative a licença do OrçaPRO" };
+        if (r.status === 429) return r.json().then(function (j) {
+          return { __motivo: (j && j.error) ? j.error : "limite de pedidos à IA atingido — tente mais tarde" };
+        })["catch"](function () { return { __motivo: "limite de pedidos à IA atingido — tente mais tarde" }; });
+        if (r.status === 413) return { __motivo: "o modelo ficou grande demais para o servidor de IA — tire páginas ou textos longos e tente de novo" };
+        if (!r.ok) return r.json().then(function (j) {
+          return { __motivo: (j && j.error) ? j.error : ("o servidor da IA respondeu " + r.status) };
+        })["catch"](function () { return { __motivo: "o servidor da IA respondeu " + r.status }; });
+        return r.json()["catch"](function () { return { __motivo: "a resposta da IA não era JSON" }; });
+      })
+      .then(function (j) {
+        clearTimeout(expirou);
+        if (meuTurno !== G._pmIaReq) return;
+        if (j && j.__motivo) { falhou(j.__motivo); return; }
+        if (!j || !j.ok || !j.resultado) { falhou(j && j.error ? j.error : "a IA não devolveu um modelo"); return; }
+        var v = T.ajustadoPelaIA(m, j.resultado);
+        if (!v.ok) { falhou("a resposta da IA não passou na conferência: " + v.erro); return; }
+        G._propModIAConfirmar(origemId, m, v, j.resultado, pedido);
+      })
+      ["catch"](function (e) {
+        clearTimeout(expirou);
+        if (meuTurno !== G._pmIaReq) return;
+        falhou((e && e.name === "AbortError") ? "a IA passou de " + Math.round(IA_AJUSTAR_TIMEOUT / 1000) + " segundos sem responder"
+          : "não consegui falar com o servidor da IA" + (e && e.message ? " (" + e.message + ")" : ""));
+      });
+  };
+
+  /* a conferência: o que muda, em palavras — e só então a gravação */
+  G._propModIAConfirmar = function (origemId, original, v, resultado, pedido) {
+    var novo = v.modelo;
+    var muds = v.mudancas || [];
+    var resumo = Array.isArray(resultado.resumo) ? resultado.resumo.filter(function (x) { return typeof x === "string" && x.trim(); }).slice(0, 12) : [];
+    var perguntas = Array.isArray(resultado.perguntas) ? resultado.perguntas.filter(function (x) { return typeof x === "string" && x.trim(); }).slice(0, 3) : [];
+    var html = '<p class="muted" style="margin:0 0 8px;font-size:12.5px">Seu pedido: <i>' + esc(pedido.length > 160 ? pedido.slice(0, 157) + "…" : pedido) + "</i></p>";
+    if (!muds.length) {
+      html += '<div class="card" style="background:#fffbeb;border-color:#fde68a;color:#92400e;padding:9px;font-size:12.5px">'
+        + "A IA respondeu, mas <b>nada mudou</b> em relação ao modelo atual. Reformule o pedido com o nome da página e o que trocar.</div>";
+    } else {
+      html += '<p style="margin:0 0 4px"><b>' + muds.length + (muds.length === 1 ? " mudança" : " mudanças") + "</b> em relação a “" + esc(original.nome) + "”:</p>"
+        + '<ul style="margin:0 0 0 18px;font-size:13px;line-height:1.6;max-height:260px;overflow:auto">'
+        + muds.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>";
+    }
+    if (v.descartadas && v.descartadas.length) {
+      html += '<p class="muted" style="font-size:12px;margin:8px 0 0">A IA propôs ' + v.descartadas.length + " página(s) que este sistema não sabe desenhar ("
+        + esc(v.descartadas.join(", ")) + "). Foram deixadas de fora.</p>";
+    }
+    if (v.investimentoCosturado) {
+      html += '<p class="muted" style="font-size:12px;margin:6px 0 0">A página de <b>Investimento</b> foi mantida: é ela que leva os preços do orçamento.</p>';
+    }
+    if (resumo.length) {
+      html += '<details style="margin-top:8px"><summary class="muted" style="cursor:pointer;font-size:12.5px">O que a IA disse que fez</summary>'
+        + '<ul style="margin:4px 0 0 18px;font-size:12.5px">' + resumo.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul></details>";
+    }
+    if (perguntas.length) {
+      html += '<div class="card" style="background:#eff6ff;border-color:#bfdbfe;color:#1e3a8a;padding:9px;margin-top:8px;font-size:12.5px"><b>A IA ficou em dúvida:</b><ul style="margin:4px 0 0 18px">'
+        + perguntas.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>Você pode criar assim mesmo e ajustar na aba Páginas, ou pedir de novo com a resposta.</div>";
+    }
+    html += K.campo("Nome do modelo novo", '<input id="pm-ia-nome" value="' + esc(novo.nome === original.nome ? original.nome + " (ajustado)" : novo.nome) + '">')
+      + '<p class="muted" style="font-size:12px;margin:-4px 0 0">O modelo “' + esc(original.nome) + "” continua como está. Fotos, logo e tipografia vêm junto para o novo.</p>";
+
+    UI.modal("Confira o que a IA mudou",
+      html,
+      [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+       { texto: "Pedir de novo", classe: "ghost", onClick: function () { UI.fecharModal(); G._propModId = origemId; G._propModIA(); } },
+       { texto: muds.length ? "Criar modelo novo" : "Criar assim mesmo", classe: "primary", onClick: function () {
+         var nome = txt(K.v("pm-ia-nome"));
+         UI.fecharModal();
+         G._propModIAAplicar(novo, nome);
+       } }]);
+  };
+
+  G._propModIAAplicar = function (novo, nome) {
+    var usados = lista().map(function (x) { return T.modelo(x).nome; });
+    var m = T.modelo(novo);
+    m.nome = T.nomeLivre(nome || m.nome, usados);
+    m.id = ""; m.padrao = false; m.base = "";
+    var faltas = T.validar(m);
+    if (faltas.length) { UI.toast(faltas[0], "erro"); return; }
+    var salvo = gravar(m);
+    if (!salvo) { UI.toast("Não consegui gravar o modelo (armazenamento cheio?).", "erro"); return; }
+    G._propModId = salvo.id;
+    G._propModAba = "previa";
+    App.render();
+    setTimeout(function () { G._propModAbrir(salvo.id); }, 60);
+    UI.toast("Modelo “" + m.nome + "” criado pela IA. Confira a prévia.", "ok");
   };
 
   /* =====================================================================
@@ -1144,7 +1376,9 @@
     var campos = cx.querySelectorAll("[data-pmc]");
     for (var i = 0; i < campos.length; i++) {
       (function (el) {
-        var ev = el.type === "checkbox" ? "change" : "blur";
+        /* select grava no "change": ele não ganha foco ao escolher com o mouse
+           em todo navegador, e o "blur" podia nunca vir */
+        var ev = (el.type === "checkbox" || el.tagName === "SELECT") ? "change" : "blur";
         el.addEventListener(ev, function () {
           var pg = el.getAttribute("data-pmc"), campo = el.getAttribute("data-campo");
           var r = obter(self._propModId); if (!r) return;
@@ -1179,7 +1413,7 @@
     if (this._propModAba === "previa") {
       var alvo = document.getElementById("pm-previa");
       this._propModImagens(m, function (imgs) {
-        var dados = self._propModDadosDemo();
+        var dados = self._propModDadosDemo(m);
         dados.imagens = imgs;
         if (!alvo) return;
         alvo.innerHTML = "<style>" + T.css() + '</style><div style="transform:scale(.52);transform-origin:top left;width:192%">'
@@ -1195,7 +1429,40 @@
    *   um caminho NOVO até o mesmo papel; deixar a proteção só no caminho
    *   antigo é ter meia proteção no dia em que alguém trocar de layout.
    * =================================================================== */
-  G.propModImprimir = function (modelo, dados, auditor) {
+  /* =====================================================================
+   * BAIXAR EM WORD (13/10/2026) — o MESMO HTML auditado vira .docx
+   *
+   * ⚠ Só se chama DEPOIS da varredura de vazamento: o Word é outro formato
+   *   do documento já aprovado, nunca um atalho em volta da auditoria.
+   * ⚠ Cor e letra vêm do modelo (ou da paleta do clássico, por quem chama):
+   *   o Word não lê o CSS do papel; recebe os valores prontos.
+   * =================================================================== */
+  G.docxBaixar = function (html, op) {
+    if (typeof Docx === "undefined") { UI.toast("A saída em Word não está disponível nesta versão.", "erro"); return false; }
+    op = op || {};
+    if (!op.criador) { try { op.criador = (typeof Empresa !== "undefined" && Empresa.excelCreator) ? Empresa.excelCreator() : ""; } catch (eC) { op.criador = ""; } }
+    if (!op.data) { try { op.data = Util.agoraISO(); } catch (eD) {} }
+    if (!op.aplicativo) op.aplicativo = (typeof CONFIG !== "undefined" && CONFIG.marca && CONFIG.marca.nome) || "OrçaPRO";
+    var r;
+    try { r = Docx.deHtml(html, op); }
+    catch (e) { UI.toast("Não consegui montar o Word: " + (e && e.message ? e.message : e), "erro"); return false; }
+    Util.baixar(Docx.nomeArquivo(op.titulo || "Proposta"), r.bytes, Docx.MIME);
+    UI.toast("Word baixado: " + Docx.nomeArquivo(op.titulo || "Proposta") + (r.avisos && r.avisos.length ? " — " + r.avisos[0] : "") + ".", "ok");
+    return true;
+  };
+
+  /* as opções do .docx a partir do modelo: cores, o par de fontes e o papel */
+  G.propModOpcoesDocx = function (m, dados) {
+    var f = T.fonte(m.estilo.fonte);
+    return {
+      titulo: txt(dados && dados.tituloDoc) || ("Proposta — " + m.nome),
+      corTitulo: m.estilo.corTitulo, corTexto: m.estilo.corTexto,
+      corDestaque: m.estilo.corDestaque2 || m.estilo.corDestaque, corFundoEscuro: m.estilo.corFundoEscuro,
+      fonteTitulo: f.titulo, fonteTexto: f.texto, formato: m.estilo.formato
+    };
+  };
+
+  G.propModImprimir = function (modelo, dados, auditor, op) {
     var m = T.modelo(modelo);
     var faltas = T.validar(m);
     if (faltas.length) { UI.toast(faltas[0], "erro"); return false; }
@@ -1220,6 +1487,8 @@
         [{ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
       return false;
     }
+    /* Word em vez da janela de impressão — depois da auditoria, nunca antes */
+    if (op && op.word) return G.docxBaixar(html, G.propModOpcoesDocx(m, dados));
     var w = window.open("", "_blank");
     if (!w) { UI.toast("O navegador bloqueou a janela. Libere a abertura de janelas para este endereço.", "erro"); return false; }
     /* =================================================================
@@ -1376,6 +1645,7 @@
     "propmod-corte-desfazer": function (ds) { G._propModCorteDesfazer(ds.n); },
 
     "propmod-agente": function () { G._propModAgente(); },
+    "propmod-ia": function () { G._propModIA(); },
 
     "propmod-importar": function () {
       var inp = document.createElement("input");
@@ -1550,7 +1820,7 @@
       });
       var fm = K.v("pme-formato"); if (fm) e.formato = fm;
       var tx = document.getElementById("pme-textura"); e.textura = tx ? tx.value : e.textura;
-      ["ornamento", "rodape", "fundoInternas", "logoEscuro", "marcaDagua"].forEach(function (k) {
+      ["ornamento", "rodape", "fundoInternas", "logoEscuro", "marcaDagua", "marcaDaguaEmpresa", "numerarSecoes"].forEach(function (k) {
         var sel = document.getElementById("pme-" + k);
         if (sel) e[k] = sel.value;
       });
@@ -1564,10 +1834,20 @@
       var r = obter(G._propModId); if (!r) return;
       var m = T.modelo(r);
       G._propModImagens(m, function (imgs) {
-        var d = G._propModDadosDemo();
+        var d = G._propModDadosDemo(m);
         d.imagens = imgs;
         d.tituloDoc = "Prévia — " + m.nome;
         G.propModImprimir(m, d, null);
+      });
+    },
+    "propmod-word": function () {
+      var r = obter(G._propModId); if (!r) return;
+      var m = T.modelo(r);
+      G._propModImagens(m, function (imgs) {
+        var d = G._propModDadosDemo(m);
+        d.imagens = imgs;
+        d.tituloDoc = "Prévia — " + m.nome;
+        G.propModImprimir(m, d, null, { word: true });
       });
     }
   });

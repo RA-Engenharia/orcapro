@@ -161,6 +161,23 @@
         { id: "colValor", nome: "Nome da 2ª coluna", padrao: "Investimento" },
         { id: "tituloPagamento", nome: "Título da forma de pagamento", padrao: "FORMA DE PAGAMENTO" },
         { id: "detalhar", nome: "Separar madeira e mão de obra em blocos", tipo: "sim_nao", padrao: false },
+        /* =============================================================
+         * NÍVEL DE DETALHE (13/10/2026) — o que o documento clássico sempre
+         * teve como "Resumo Financeiro" (só o total de cada etapa, com o
+         * peso) e o analítico que alguns clientes pedem (quantidade, unidade
+         * e unitário por item). "" = exatamente o que o bloco fazia antes:
+         * modelo antigo não muda de desenho.
+         * ⚠ O TOTAL DA ETAPA NO RESUMIDO VEM PRONTO (`grupo.total`, de
+         *   Proposta.blocosParaModelo → Orcamento.sintetico). Grupo sem
+         *   total (o par madeira/mão de obra da carpintaria) cai na lista de
+         *   itens de sempre — o motor não soma para preencher a lacuna.
+         * ============================================================= */
+        { id: "nivel", nome: "O que a tabela mostra", tipo: "lista", padrao: "", opcoes: [
+          ["", "Cada item com o seu valor"],
+          ["resumido", "Só o valor de cada etapa (resumido)"],
+          ["analitico", "Analítico: quantidade, unidade, unitário e total de cada item"]] },
+        { id: "mostrarPeso", nome: "Coluna com o peso (%) de cada etapa no total — só no resumido", tipo: "sim_nao", padrao: false },
+        { id: "nota", nome: "Nota abaixo da tabela", tipo: "multi", dica: "Ex.: Valores válidos para pagamento conforme as condições desta proposta." },
         { id: "tituloOpcionais", nome: "Título do bloco de adicionais", padrao: "ADICIONAIS OPCIONAIS" },
         { id: "textoOpcionais", nome: "Frase acima dos adicionais", tipo: "multi",
           padrao: "Serviços que não estão no valor acima. Se quiser incluir algum, é só avisar antes do início." }
@@ -175,6 +192,20 @@
         { id: "titulo", nome: "Título", padrao: "CRONOGRAMA" },
         { id: "abertura", nome: "Frase de abertura", tipo: "multi",
           dica: "Ex.: A distribuição abaixo é uma previsão; o cronograma detalhado é fechado na reunião de início." },
+        /* =============================================================
+         * RESUMIDO × COMPLETO (13/10/2026). O resumido é a tabela de sempre
+         * (etapa × período, com barras). O completo é o que o documento
+         * clássico imprime: prazo em dias úteis, início e término de cada
+         * etapa, barras no tempo, desembolso por mês e as premissas a cargo
+         * do contratante. Os dois são DESENHO: tudo chega calculado de
+         * `Proposta.cronogramaParaModelo` (que só monta a parte completa
+         * quando este campo pede — o payload de quem não pediu não muda).
+         * ============================================================= */
+        { id: "modo", nome: "Como mostrar", tipo: "lista", padrao: "", opcoes: [
+          ["", "Resumido: cada etapa por período, com barras"],
+          ["completo", "Completo: prazo em dias úteis, início e término por etapa, desembolso por mês"]] },
+        { id: "mostrarDesembolso", nome: "No completo, incluir a tabela de desembolso por mês", tipo: "sim_nao", padrao: true },
+        { id: "mostrarPremissas", nome: "No completo, incluir as premissas de prazo a cargo do contratante", tipo: "sim_nao", padrao: true },
         { id: "mostrarValores", nome: "Mostrar o valor previsto em cada mês", tipo: "sim_nao", padrao: false },
         /* ⚠ OBRA DE 20 DIAS NÃO TEM CRONOGRAMA MENSAL: o orçamento vem com 1
            mês e a tabela sai com uma coluna só, que não informa nada. Aqui a
@@ -249,8 +280,165 @@
         { id: "botaoAceite", nome: "Botão “Aceitar pelo WhatsApp” (usa o WhatsApp de ⚙ Empresa)", tipo: "sim_nao", padrao: false },
         { id: "textoAceite", nome: "Texto do botão de aceite", padrao: "Aceitar esta proposta pelo WhatsApp" }
       ]
+    },
+
+    /* =================================================================
+     * OS BLOCOS DO DOCUMENTO PADRÃO DO SISTEMA (13/10/2026)
+     *
+     * POR QUE EXISTEM. O "Documento padrão do sistema" (js/proposta.js) é
+     * um layout escrito no código: capa, apresentação, escopo, incluso/não
+     * incluso, premissas, cronograma, resumo financeiro, condições,
+     * responsabilidades, garantias e aceite. Um cliente gostou dele e quis
+     * mexer em três coisas — tirar a frase da base de preços, mostrar o
+     * cronograma resumido, trocar a cor — e não havia onde. Os blocos
+     * abaixo são aquelas seções viradas CADASTRO, com cada decisão que o
+     * código tomava sozinho exposta como campo: o que citar, o que
+     * esconder, o que escrever no lugar.
+     *
+     * ⚠ O CLÁSSICO CONTINUA INTACTO. js/proposta.js não lê nada daqui e
+     *   segue saindo byte a byte igual para quem escolhe "Documento padrão
+     *   do sistema" na hora de gerar. Isto é uma SEGUNDA porta para o mesmo
+     *   desenho, editável — não uma troca.
+     *
+     * ⚠ "VAZIO = O DO ORÇAMENTO". Os textos que o orçamento já tem
+     *   (⚙ Dados: apresentação, incluso, não incluso, premissas,
+     *   metodologia, responsabilidades, garantia) entram sozinhos quando o
+     *   campo do bloco fica vazio. O campo do bloco só existe para quem
+     *   quer um texto FIXO no modelo, igual em toda proposta.
+     *
+     * ⚠ E NADA AQUI ESCREVE CUSTO. O clássico imprime "Custo direto de
+     *   referência" no resumo financeiro; este caminho não — `Proposta.auditar`
+     *   trava o documento com essa expressão, e é correto que trave: o
+     *   modelo é white-label e vai para a mão do cliente da empresa.
+     * ================================================================= */
+    {
+      tipo: "capa_classica",
+      nome: "Capa clássica (sem foto)",
+      resumo: "Fundo na cor da marca, logo, nome do orçamento e o quadro com cliente, número, data, validade e valor.",
+      imagens: 0,
+      campos: [
+        { id: "kicker", nome: "Linha acima do título", padrao: "PROPOSTA COMERCIAL" },
+        { id: "mostrarLogo", nome: "Logo da empresa no alto", tipo: "sim_nao", padrao: true },
+        { id: "mostrarObra", nome: "Escrever o nome da obra abaixo do título", tipo: "sim_nao", padrao: true },
+        { id: "mostrarNumero", nome: "Número e data da proposta", tipo: "sim_nao", padrao: true },
+        { id: "mostrarValidade", nome: "Validade da proposta", tipo: "sim_nao", padrao: true },
+        { id: "mostrarValor", nome: "Valor total na capa", tipo: "sim_nao", padrao: true },
+        { id: "mostrarEmpresa", nome: "Empresa, CNPJ e endereço no pé da capa", tipo: "sim_nao", padrao: true }
+      ]
+    },
+    {
+      tipo: "apresentacao",
+      nome: "Apresentação",
+      resumo: "Parágrafo de apresentação da empresa e a frase sobre a base de preços usada no orçamento.",
+      imagens: 0,
+      campos: [
+        { id: "titulo", nome: "Título", padrao: "Apresentação" },
+        { id: "texto", nome: "Texto de apresentação", tipo: "multi",
+          dica: "Vazio = o texto de apresentação do orçamento (⚙ Dados) ou, sem ele, o parágrafo padrão com o nome da empresa." },
+        /* ⚠ A FRASE DA BASE DE PREÇOS É O CAMPO QUE MOTIVOU TUDO ISTO. "Esta
+           proposta foi elaborada ... na base de preços SINAPI" é argumento de
+           venda para uns e informação demais para outros. Três saídas, e a
+           terceira é a que faltava: escrever outra coisa no lugar. */
+        { id: "fonteDePrecos", nome: "Frase sobre a base de preços (SINAPI, SICRO…)", tipo: "lista", padrao: "padrao", opcoes: [
+          ["padrao", "Citar a base de preços do orçamento, como o documento padrão faz"],
+          ["ocultar", "Não citar a base de preços"],
+          ["proprio", "Escrever um texto no lugar"]] },
+        { id: "textoFonte", nome: "Texto no lugar da frase da base de preços", tipo: "multi",
+          dica: "Ex.: Os preços foram compostos a partir de cotações e da nossa base própria de custos." },
+        { id: "mostrarBdi", nome: "Dizer o percentual de BDI incluído nos preços", tipo: "sim_nao", padrao: false }
+      ]
+    },
+    {
+      tipo: "escopo_etapas",
+      nome: "Entendimento do escopo",
+      resumo: "As etapas do orçamento em lista — o que o cliente está contratando — com os adicionais opcionais à parte.",
+      imagens: 0,
+      campos: [
+        { id: "titulo", nome: "Título", padrao: "Entendimento do escopo" },
+        { id: "abertura", nome: "Frase antes da lista", tipo: "multi", padrao: "O escopo dos serviços contempla as seguintes etapas:" },
+        { id: "mostrarCodigo", nome: "Escrever o código de cada etapa", tipo: "sim_nao", padrao: true },
+        { id: "mostrarQtdItens", nome: "Escrever quantos itens cada etapa tem", tipo: "sim_nao", padrao: true },
+        { id: "textoOpcionais", nome: "Frase antes dos adicionais opcionais", tipo: "multi",
+          padrao: "Orçadas à parte, como adicionais opcionais (não incluídas no valor total):" },
+        { id: "fechamento", nome: "Frase depois da lista", tipo: "multi" }
+      ]
+    },
+    {
+      tipo: "incluso",
+      nome: "Incluso / Não incluso",
+      resumo: "Duas colunas: o que está incluso e o que não está — do orçamento (⚙ Dados) ou escrito aqui.",
+      imagens: 0,
+      campos: [
+        { id: "titulo", nome: "Título", padrao: "Está incluso / Não está incluso" },
+        { id: "tituloIncluso", nome: "Título da coluna do incluso", padrao: "Incluso" },
+        { id: "textoIncluso", nome: "Itens inclusos (um por linha)", tipo: "multi", dica: "Vazio = a lista do orçamento (⚙ Dados › Incluso)." },
+        { id: "tituloExcluso", nome: "Título da coluna do não incluso", padrao: "Não incluso" },
+        { id: "textoExcluso", nome: "Itens não inclusos (um por linha)", tipo: "multi", dica: "Vazio = a lista do orçamento (⚙ Dados › Não incluso)." }
+      ]
+    },
+    {
+      tipo: "premissas",
+      nome: "Premissas e metodologia",
+      resumo: "Premissas, metodologia e a linha sobre base de preços, regime e BDI — cada uma pode sair ou ficar.",
+      imagens: 0,
+      campos: [
+        { id: "titulo", nome: "Título", padrao: "Premissas e metodologia" },
+        { id: "rotuloPremissas", nome: "Rótulo das premissas", padrao: "Premissas:" },
+        { id: "premissas", nome: "Premissas (uma por linha)", tipo: "multi", dica: "Vazio = as premissas do orçamento (⚙ Dados) ou o texto padrão do sistema." },
+        { id: "rotuloMetodologia", nome: "Rótulo da metodologia", padrao: "Metodologia:" },
+        { id: "metodologia", nome: "Metodologia (uma por linha)", tipo: "multi", dica: "Vazio = a metodologia do orçamento (⚙ Dados) ou o texto padrão do sistema." },
+        { id: "fonteDePrecos", nome: "Linha sobre a base de preços", tipo: "lista", padrao: "padrao", opcoes: [
+          ["padrao", "Citar a base de preços do orçamento (SINAPI, SICRO…)"],
+          ["ocultar", "Não citar"],
+          ["proprio", "Escrever um texto no lugar"]] },
+        { id: "textoFonte", nome: "Texto no lugar da linha da base de preços", tipo: "multi" },
+        { id: "mostrarRegime", nome: "Dizer o regime (onerado / desonerado)", tipo: "sim_nao", padrao: true },
+        { id: "mostrarBdiTcu", nome: "Citar a metodologia de BDI do Acórdão TCU nº 2.622/2013", tipo: "sim_nao", padrao: true }
+      ]
+    },
+    {
+      tipo: "comercial",
+      nome: "Condições comerciais",
+      resumo: "Forma de pagamento, prazo de execução, validade e garantia em blocos — cada um pode sair ou ficar.",
+      imagens: 0,
+      campos: [
+        { id: "titulo", nome: "Título", padrao: "Condições comerciais" },
+        { id: "mostrarPagamento", nome: "Forma de pagamento", tipo: "sim_nao", padrao: true },
+        { id: "rotuloPagamento", nome: "Rótulo da forma de pagamento", padrao: "Forma de pagamento" },
+        { id: "mostrarPrazo", nome: "Prazo de execução", tipo: "sim_nao", padrao: true },
+        { id: "rotuloPrazo", nome: "Rótulo do prazo", padrao: "Prazo de execução" },
+        { id: "mostrarValidade", nome: "Validade da proposta", tipo: "sim_nao", padrao: true },
+        { id: "rotuloValidade", nome: "Rótulo da validade", padrao: "Validade da proposta" },
+        { id: "mostrarGarantia", nome: "Garantia", tipo: "sim_nao", padrao: false },
+        { id: "rotuloGarantia", nome: "Rótulo da garantia", padrao: "Garantia" },
+        { id: "extras", nome: "Outras condições (um bloco por linha, no formato Rótulo | texto)", tipo: "multi",
+          dica: "Ex.: Reajuste | Preços fixos e irreajustáveis dentro da validade." }
+      ]
+    },
+    {
+      tipo: "responsabilidades",
+      nome: "Responsabilidades",
+      resumo: "Duas colunas: o que é da contratada e o que é do contratante — do orçamento ou escrito aqui.",
+      imagens: 0,
+      campos: [
+        { id: "titulo", nome: "Título", padrao: "Responsabilidades" },
+        { id: "tituloContratada", nome: "Título da coluna da contratada", padrao: "Contratada" },
+        { id: "textoContratada", nome: "Responsabilidades da contratada (uma por linha)", tipo: "multi", dica: "Vazio = as do orçamento (⚙ Dados) ou o texto padrão do sistema." },
+        { id: "tituloContratante", nome: "Título da coluna do contratante", padrao: "Contratante" },
+        { id: "textoContratante", nome: "Responsabilidades do contratante (uma por linha)", tipo: "multi", dica: "Vazio = as do orçamento (⚙ Dados) ou o texto padrão do sistema." }
+      ]
     }
   ];
+
+  /* o campo "lista": a opção gravada tem de ser uma das declaradas, senão
+     volta ao padrão — valor inventado (por import, por IA, por versão
+     antiga) não pode chegar ao desenho */
+  function opcaoDe(campo, v) {
+    var s = txt(v), ops = arr(campo.opcoes);
+    for (var i = 0; i < ops.length; i++) if (txt(ops[i][0]) === s) return s;
+    return txt(campo.padrao);
+  }
+  PropTpl.opcaoDe = opcaoDe;
 
   PropTpl.bloco = function (tipo) {
     var t = txt(tipo);
@@ -520,7 +708,15 @@
     condicoes:    { regua: true,  marcador: false },
     encerramento: { regua: false, marcador: false },
     contato:      { regua: true,  marcador: false },
-    assinatura:   { regua: true,  marcador: false }
+    assinatura:   { regua: true,  marcador: false },
+    /* os blocos do documento padrão do sistema (13/10/2026) */
+    capa_classica:      { regua: false, marcador: false },
+    apresentacao:       { regua: true,  marcador: false },
+    escopo_etapas:      { regua: true,  marcador: true },
+    incluso:            { regua: true,  marcador: true },
+    premissas:          { regua: true,  marcador: true },
+    comercial:          { regua: true,  marcador: false },
+    responsabilidades:  { regua: true,  marcador: true }
   };
   PropTpl.formasDoBloco = function (tipo) {
     var d = PropTpl.FORMAS_DO_BLOCO[txt(tipo)];
@@ -618,6 +814,15 @@
     ornamento: "",
     rodape: "",
     fundoInternas: "",
+    /* ---- acrescentados com o "Documento padrão do sistema" (13/10/2026) ----
+       marcaDaguaEmpresa: "" | "nome" — o nome da empresa atravessado, apagado,
+                          nas páginas internas (o clássico sempre teve; é o
+                          que a pessoa chama de "marca d'água").
+       numerarSecoes:     "" | "sim"  — "1. Apresentação", "2. Escopo"… como o
+                          clássico numera. Vazio = títulos sem número, como
+                          os modelos de antes. */
+    marcaDaguaEmpresa: "",
+    numerarSecoes: "",
     /* ⚠ LOGO ESCURO EM PÁGINA ESCURA SOME — e some sem erro nenhum: a capa
        imprime, o arquivo abre, e a marca simplesmente não está lá. O logo da
        maioria das construtoras é azul-marinho, e a capa cheia é escura por
@@ -645,10 +850,14 @@
     /* formato só aceita os dois que o CSS de impressão conhece */
     if (estilo.formato !== "vertical") estilo.formato = "a4";
     if (estilo.ornamento !== "curvas") estilo.ornamento = "";
-    if (estilo.rodape !== "contatos") estilo.rodape = "";
+    /* "nome" (13/10/2026): o rodapé do documento clássico — nome da empresa e
+       o crédito, sem os canais */
+    if (estilo.rodape !== "contatos" && estilo.rodape !== "nome") estilo.rodape = "";
     if (estilo.fundoInternas !== "claro") estilo.fundoInternas = "";
     if (estilo.logoEscuro !== "clarear" && estilo.logoEscuro !== "pastilha") estilo.logoEscuro = "";
     if (estilo.marcaDagua !== "auto") estilo.marcaDagua = "";
+    if (estilo.marcaDaguaEmpresa !== "nome") estilo.marcaDaguaEmpresa = "";
+    if (estilo.numerarSecoes !== "sim") estilo.numerarSecoes = "";
     if (!/^#[0-9a-fA-F]{6}$/.test(estilo.corDestaque2)) estilo.corDestaque2 = "";
 
     var paginas = arr(m.paginas).map(function (p, i) {
@@ -658,6 +867,7 @@
       b.campos.forEach(function (c) {
         var v = p[c.id];
         if (c.tipo === "sim_nao") out[c.id] = (v === undefined || v === null) ? !!c.padrao : !!v;
+        else if (c.tipo === "lista") out[c.id] = opcaoDe(c, v);
         else out[c.id] = (v === undefined || v === null || txt(v) === "") ? txt(c.padrao) : txt(v);
       });
       out.tipografia = tipografia(p.tipografia);
@@ -830,6 +1040,14 @@
       if (p.tipo === "condicoes" && !linhasDe(p.paragrafos).length && !p.usarPrazo && !p.usarGarantia) {
         av.push('A página "Condições da entrega" está sem conteúdo.');
       }
+      /* "texto próprio no lugar da base de preços" sem texto = a frase some
+         calada, e a pessoa acha que o campo não funcionou */
+      if ((p.tipo === "apresentacao" || p.tipo === "premissas") && p.fonteDePrecos === "proprio" && !txt(p.textoFonte)) {
+        av.push('Na página "' + PropTpl.bloco(p.tipo).nome + '" você escolheu escrever um texto no lugar da base de preços, mas o texto está vazio — nada sai no lugar.');
+      }
+      if (p.tipo === "comercial" && !p.mostrarPagamento && !p.mostrarPrazo && !p.mostrarValidade && !p.mostrarGarantia && !linhasDe(p.extras).length) {
+        av.push('A página "Condições comerciais" está com tudo desligado.');
+      }
     });
     return av;
   };
@@ -941,6 +1159,47 @@
         { id: "p1", tipo: "investimento", titulo: "Proposta", colTrabalho: "Trabalho a executar", colValor: "Valor", tituloPagamento: "Forma de pagamento", detalhar: false },
         { id: "p2", tipo: "condicoes", titulo: "Condições", usarPrazo: true, usarGarantia: true }
       ]
+    },
+    /* =================================================================
+     * O DOCUMENTO PADRÃO DO SISTEMA, COMO MODELO (13/10/2026)
+     *
+     * A mesma sequência de seções do js/proposta.js — capa, apresentação,
+     * entendimento do escopo, incluso/não incluso, premissas e metodologia,
+     * cronograma, resumo financeiro, condições comerciais,
+     * responsabilidades, garantias, aceite — e a mesma paleta (navy, aço,
+     * verde), numerada, com marca d'água do nome da empresa e rodapé.
+     * A diferença é que aqui cada parte tem campo: quem gostou do padrão e
+     * quer tirar a frase do SINAPI, mostrar só o resumo ou trocar a cor
+     * duplica este e mexe.
+     *
+     * ⚠ SEM FOTO E SEM NOME DE EMPRESA, como os outros de fábrica: a marca,
+     *   o CNPJ e o endereço vêm de ⚙ Empresa de quem usa.
+     * ================================================================= */
+    {
+      id: "tpl-padrao-sistema",
+      nome: "Documento padrão do sistema",
+      descricao: "O mesmo documento que o botão Gerar proposta sempre fez — capa, apresentação, escopo, incluso/não incluso, premissas, cronograma, resumo financeiro, condições, responsabilidades, garantias e aceite — com cada parte ajustável.",
+      estilo: {
+        corTitulo: "#0F2740", corTexto: "#1A2632", corFundo: "#FFFFFF",
+        corDestaque: "#15803D", corDestaque2: "#2E6F9E", corFundoEscuro: "#143454",
+        textura: "", fonte: "tecnica", formato: "a4",
+        ornamento: "", rodape: "nome", fundoInternas: "claro",
+        logoEscuro: "clarear", marcaDagua: "auto", marcaDaguaEmpresa: "nome", numerarSecoes: "sim"
+      },
+      paginas: [
+        { id: "p1", tipo: "capa_classica", kicker: "PROPOSTA COMERCIAL", mostrarLogo: true, mostrarObra: true, mostrarNumero: true, mostrarValidade: true, mostrarValor: true, mostrarEmpresa: true },
+        { id: "p2", tipo: "apresentacao", titulo: "Apresentação", fonteDePrecos: "padrao", mostrarBdi: false },
+        { id: "p3", tipo: "escopo_etapas", titulo: "Entendimento do escopo", mostrarCodigo: true, mostrarQtdItens: true },
+        { id: "p4", tipo: "incluso", titulo: "Está incluso / Não está incluso" },
+        { id: "p5", tipo: "premissas", titulo: "Premissas e metodologia", fonteDePrecos: "padrao", mostrarRegime: true, mostrarBdiTcu: true },
+        { id: "p6", tipo: "cronograma", titulo: "Cronograma de execução", modo: "completo", mostrarDesembolso: true, mostrarPremissas: true, mostrarValores: false },
+        { id: "p7", tipo: "investimento", titulo: "Resumo financeiro", colTrabalho: "Descrição", colValor: "Valor", tituloPagamento: "Forma de pagamento",
+          nivel: "resumido", mostrarPeso: true, detalhar: true, tituloOpcionais: "Adicionais opcionais", textoOpcionais: "Etapas orçadas à parte, não incluídas no valor total acima." },
+        { id: "p8", tipo: "comercial", titulo: "Condições comerciais", mostrarPagamento: true, mostrarPrazo: true, mostrarValidade: true, mostrarGarantia: false },
+        { id: "p9", tipo: "responsabilidades", titulo: "Responsabilidades" },
+        { id: "p10", tipo: "condicoes", titulo: "Garantias", paragrafos: "", usarPrazo: false, usarGarantia: true },
+        { id: "p11", tipo: "assinatura", titulo: "Aceite e assinatura", texto: "Declaramos estar de acordo com os termos, valores e condições desta proposta comercial.", mostrarValidade: false, botaoAceite: false }
+      ]
     }
   ];
 
@@ -1038,18 +1297,32 @@
     }
     var ornCheia = orn ? curvas("cheia") : "";
     var ornCanto = orn ? (curvas("canto") + curvas("pe")) : "";
-    var rodape = comRodape ? rodapeContatos(emp) : "";
+    /* rodapé "nome" (o do clássico): nome da empresa e o crédito; o texto
+       pronto vem da tela (`textos.rodape`), e sem ele vale o nome de ⚙ Empresa */
+    var txts = d.textos || {};
+    var rodape = comRodape ? rodapeContatos(emp)
+      : (m.estilo.rodape === "nome" ? rodapeNome(txt(txts.rodape) || txt(emp.nome)) : "");
+    /* marca d'água do nome da empresa nas internas — "" em ⚙ Empresa desliga
+       (é o mesmo interruptor do clássico: `Empresa.marcaDaguaTexto`) */
+    var wmEmp = (m.estilo.marcaDaguaEmpresa === "nome")
+      ? (txts.marcaDagua !== undefined ? txt(txts.marcaDagua) : txt(emp.nome)) : "";
+    var numerar = m.estilo.numerarSecoes === "sim";
+    var nSec = 0;
 
     var partes = m.paginas.map(function (p) {
       var bl = PropTpl.bloco(p.tipo);
       if (!bl) return "";
       var corpo = "";
+      /* "1. Apresentação", "2. Escopo"… só nas internas: capa, quem somos,
+         encerramento e contato não levam número (o clássico também não) */
+      var semNumero = (p.tipo === "capa" || p.tipo === "sobre" || p.tipo === "encerramento" || p.tipo === "capa_classica" || p.tipo === "contato");
+      var tit = ((numerar && !semNumero) ? (++nSec) + ". " : "") + txt(p.titulo);
 
       if (p.tipo === "capa") {
         corpo = '<div class="tp-full">' + proxImgCheia("foto de capa") + '<div class="tp-sombra"></div>' + ornCheia
           + '<div class="tp-capa-txt">'
           + (p.mostrarLogo && logoHTML ? '<div class="tp-logo">' + logoHTML + "</div>" : "")
-          + '<h1 class="tp-h1">' + esc(p.titulo) + (p.subtitulo ? '<br><span>' + esc(p.subtitulo) + "</span>" : "") + "</h1>"
+          + '<h1 class="tp-h1">' + esc(tit) + (p.subtitulo ? '<br><span>' + esc(p.subtitulo) + "</span>" : "") + "</h1>"
           + (p.chamada ? '<p class="tp-chamada">' + esc(p.chamada) + "</p>" : "")
           + (p.mostrarCliente && d.cliente ? '<p class="tp-cli">' + esc(d.cliente) + "</p>" : "")
           + (p.mostrarNumero && (txt(d.numero) || txt(d.data)) ? '<p class="tp-cli tp-num-capa">'
@@ -1060,7 +1333,7 @@
         corpo = '<div class="tp-full">' + proxImgCheia("foto de apresentação") + '<div class="tp-sombra"></div>' + ornCheia
           + '<div class="tp-sobre-txt">'
           + (p.mostrarLogo && logoHTML ? '<div class="tp-logo tp-logo-c">' + logoHTML + "</div>" : "")
-          + '<h2 class="tp-vazado">' + esc(p.titulo) + "</h2>"
+          + '<h2 class="tp-vazado">' + esc(tit) + "</h2>"
           + '<p class="tp-sobre-p">' + escML(p.texto) + "</p>"
           + "</div></div>";
       }
@@ -1070,7 +1343,7 @@
           var tt = k > -1 ? x.slice(0, k).trim() : x, ds = k > -1 ? x.slice(k + 1).trim() : "";
           return '<div class="tp-serv-card"><b>' + esc(tt) + "</b>" + (ds ? "<span>" + esc(ds) + "</span>" : "") + "</div>";
         }).join("");
-        corpo = '<h2 class="tp-h2">' + esc(p.titulo) + '</h2><div class="tp-rule"></div>'
+        corpo = '<h2 class="tp-h2">' + esc(tit) + '</h2><div class="tp-rule"></div>'
           + (txt(p.abertura) ? '<p class="tp-p">' + escML(p.abertura) + "</p>" : "")
           + (cards ? '<div class="tp-serv">' + cards + "</div>" : "")
           + (txt(p.fechamento) ? '<p class="tp-p tp-solto">' + escML(p.fechamento) + "</p>" : "");
@@ -1080,7 +1353,7 @@
           var img = proxImg(alt, "tp-gal");
           return txt(cap) ? '<figure class="tp-fig">' + img + "<figcaption>" + esc(cap) + "</figcaption></figure>" : img;
         }
-        corpo = '<h2 class="tp-h2">' + esc(p.titulo) + '</h2><div class="tp-rule"></div>'
+        corpo = '<h2 class="tp-h2">' + esc(tit) + '</h2><div class="tp-rule"></div>'
           + '<div class="tp-galeria">'
           + figura("imagem 1 do projeto", p.cap1) + figura("imagem 2 do projeto", p.cap2) + figura("imagem 3 do projeto", p.cap3)
           + "</div>"
@@ -1094,7 +1367,7 @@
         var doOrc = !its.length && p.usarComercial;
         if (doOrc) its = linhasDe(com.incluso);
         var exc = (doOrc && !txt(p.observacao)) ? linhasDe(com.excluso) : [];
-        corpo = '<h2 class="tp-h2">' + esc(p.titulo) + '</h2><div class="tp-rule"></div>'
+        corpo = '<h2 class="tp-h2">' + esc(tit) + '</h2><div class="tp-rule"></div>'
           + (txt(p.abertura) ? '<p class="tp-p">' + escML(p.abertura) + "</p>" : "")
           + (its.length ? '<p class="tp-p tp-rot">' + esc(p.rotuloLista) + "</p><ul class=\"tp-ul\">"
               + its.map(function (x) { return "<li>" + esc(x.replace(/;$/, "")) + "</li>"; }).join("") + "</ul>" : "")
@@ -1103,7 +1376,9 @@
           + (txt(p.observacao) ? '<p class="tp-obs"><b>' + esc(p.obsTitulo) + "</b> " + escML(p.observacao) + "</p>" : "");
       }
       else if (p.tipo === "investimento") {
-        corpo = '<h2 class="tp-h1c">' + esc(p.titulo) + "</h2>" + tabela(p, b, m) + tabelaOpcionais(p, b);
+        corpo = '<h2 class="tp-h1c">' + esc(tit) + "</h2>" + tabela(p, b, m)
+          + (txt(p.nota) ? '<p class="tp-leg">' + escML(p.nota) + "</p>" : "")
+          + tabelaOpcionais(p, b);
         var pag = txt(com.condicoesPagamento);
         if (pag) {
           corpo += '<h3 class="tp-h1c tp-h3pag">' + esc(p.tituloPagamento) + "</h3>"
@@ -1111,7 +1386,7 @@
         }
       }
       else if (p.tipo === "cronograma") {
-        corpo = '<h2 class="tp-h2">' + esc(p.titulo) + '</h2><div class="tp-rule"></div>'
+        corpo = '<h2 class="tp-h2">' + esc(tit) + '</h2><div class="tp-rule"></div>'
           + (txt(p.abertura) ? '<p class="tp-p">' + escML(p.abertura) + "</p>" : "")
           + tabelaCronograma(p, d.cronograma)
           + (txt(p.legenda) ? '<p class="tp-leg">' + escML(p.legenda) + "</p>" : "");
@@ -1120,7 +1395,7 @@
         var ps = linhasDe(p.paragrafos);
         if (p.usarPrazo && txt(com.prazoExecucao)) ps.push("Prazo de execução: " + txt(com.prazoExecucao).replace(/\.$/, "") + ".");
         if (p.usarGarantia && txt(com.garantia)) ps.push("Garantia: " + txt(com.garantia).replace(/\.$/, "") + ".");
-        corpo = '<h2 class="tp-h2">' + esc(p.titulo) + '</h2><div class="tp-rule"></div>'
+        corpo = '<h2 class="tp-h2">' + esc(tit) + '</h2><div class="tp-rule"></div>'
           + ps.map(function (x) { return '<p class="tp-p tp-solto">' + esc(x) + "</p>"; }).join("");
       }
       else if (p.tipo === "encerramento") {
@@ -1136,13 +1411,13 @@
         else nSlot++;                      /* o slot continua contado: a numeração das fotos não muda */
         corpo = '<p class="tp-marca">' + esc(txt(emp.nome)) + '</p><div class="tp-rule"></div>'
           + (!foto ? "" : (p.molduraCelular ? '<div class="tp-cel"><div class="tp-cel-tela">' + foto + "</div></div>" : '<div class="tp-contato-livre">' + foto + "</div>"))
-          + '<h2 class="tp-h1c tp-h1e">' + esc(p.titulo) + "</h2>"
+          + '<h2 class="tp-h1c tp-h1e">' + esc(tit) + "</h2>"
           + '<div class="tp-contatos">' + contatosHtml(p, emp) + "</div>"
           + botoesHtml(p, emp, links);
       }
       else if (p.tipo === "assinatura") {
         var val = d.validade || {};
-        corpo = '<h2 class="tp-h2">' + esc(p.titulo) + '</h2><div class="tp-rule"></div>'
+        corpo = '<h2 class="tp-h2">' + esc(tit) + '</h2><div class="tp-rule"></div>'
           + (txt(p.texto) ? '<p class="tp-p">' + escML(p.texto) + "</p>" : "")
           + (p.mostrarValidade && txt(val.texto) ? '<p class="tp-p">' + esc(val.texto) + "</p>" : "")
           + '<p class="tp-p tp-local">' + esc(txt(emp.cidade) || "____________________") + ", " + esc(dia(d.data)) + ".</p>"
@@ -1151,10 +1426,20 @@
           + botaoAceite(p, emp, d);
       }
 
-      var cheia = (p.tipo === "capa" || p.tipo === "sobre" || p.tipo === "encerramento");
+      /* ---- os blocos do documento padrão do sistema (13/10/2026) ---- */
+      else if (p.tipo === "capa_classica") corpo = capaClassica(p, d, m, b, logoHTML);
+      else if (p.tipo === "apresentacao") corpo = '<h2 class="tp-h2">' + esc(tit) + '</h2><div class="tp-rule"></div>' + apresentacao(p, d);
+      else if (p.tipo === "escopo_etapas") corpo = '<h2 class="tp-h2">' + esc(tit) + '</h2><div class="tp-rule"></div>' + escopoEtapas(p, b);
+      else if (p.tipo === "incluso") corpo = '<h2 class="tp-h2">' + esc(tit) + '</h2><div class="tp-rule"></div>' + duasColunas(p.tituloIncluso, linhasOu(p.textoIncluso, com.incluso), p.tituloExcluso, linhasOu(p.textoExcluso, com.excluso));
+      else if (p.tipo === "premissas") corpo = '<h2 class="tp-h2">' + esc(tit) + '</h2><div class="tp-rule"></div>' + premissas(p, d);
+      else if (p.tipo === "comercial") corpo = '<h2 class="tp-h2">' + esc(tit) + '</h2><div class="tp-rule"></div>' + condicoesComerciais(p, d);
+      else if (p.tipo === "responsabilidades") corpo = '<h2 class="tp-h2">' + esc(tit) + '</h2><div class="tp-rule"></div>' + duasColunas(p.tituloContratada, linhasOu(p.textoContratada, com.respContratada), p.tituloContratante, linhasOu(p.textoContratante, com.respContratante));
+
+      var cheia = (p.tipo === "capa" || p.tipo === "sobre" || p.tipo === "encerramento" || p.tipo === "capa_classica");
       var escuro = !internasClaras && (p.tipo === "texto" || p.tipo === "condicoes" || p.tipo === "imagens");
       if (!cheia) corpo = ornCanto + corpo + rodape;
       if (carimbo) corpo = '<div class="tp-wm">' + esc(carimbo) + "</div>" + corpo;
+      if (wmEmp && !cheia) corpo = '<div class="tp-wm tp-wm-emp">' + esc(wmEmp) + "</div>" + corpo;
       var cls = "tp-pg" + (vertical ? " tp-vert" : "")
         + (cheia ? " tp-cheia" : "")
         + (cheia && m.estilo.logoEscuro ? " tp-logo-" + m.estilo.logoEscuro : "")
@@ -1343,6 +1628,232 @@
     return '<div class="tp-rodape">' + partes.map(function (x) { return "<span>" + x + "</span>"; }).join("") + "</div>";
   }
 
+  /* =====================================================================
+   * OS DESENHOS DO DOCUMENTO PADRÃO DO SISTEMA (13/10/2026)
+   *
+   * Cada função abaixo desenha UMA seção do js/proposta.js com os dados que
+   * a tela já traz prontos. Regra 1 do cabeçalho vale aqui dobrado: nenhum
+   * número nasce nestas funções — total por etapa, peso, dias, datas e
+   * desembolso chegam de `Proposta.blocosParaModelo` e
+   * `Proposta.cronogramaParaModelo`, que leem a MESMA conta da tela.
+   * ===================================================================== */
+  function pctTxt(v) { var s = n2(v); return s.replace(/,00$/, "") + "%"; }
+  /* "Rótulo | texto" → [rótulo, texto]; sem a barra, só o texto */
+  function parRotulo(linha) {
+    var k = linha.indexOf("|");
+    return k > -1 ? [linha.slice(0, k).trim(), linha.slice(k + 1).trim()] : ["", linha.trim()];
+  }
+  /* o texto do bloco vence; vazio, o do orçamento (que a tela já resolveu) */
+  function linhasOu(doBloco, doOrcamento) {
+    var a = linhasDe(doBloco);
+    return a.length ? a : linhasDe(doOrcamento);
+  }
+  function ul(linhas) {
+    if (!linhas.length) return "";
+    return '<ul class="tp-ul">' + linhas.map(function (x) { return "<li>" + esc(x.replace(/;$/, "")) + "</li>"; }).join("") + "</ul>";
+  }
+  /* uma linha sai como parágrafo com o rótulo em negrito; várias, como lista
+     — o mesmo desenho de Proposta._paragrafoOuLista */
+  function paragrafoOuLista(rotulo, linhas) {
+    if (!linhas.length) return "";
+    if (linhas.length === 1) return '<p class="tp-p"><b>' + esc(rotulo) + "</b> " + esc(linhas[0]) + "</p>";
+    return '<p class="tp-p tp-rot"><b>' + esc(rotulo) + "</b></p>" + ul(linhas);
+  }
+  function duasColunas(tit1, l1, tit2, l2) {
+    return '<div class="tp-cols">'
+      + '<div><h3 class="tp-h3">' + esc(tit1) + "</h3>" + (l1.length ? ul(l1) : '<p class="tp-vaziotxt">—</p>') + "</div>"
+      + '<div><h3 class="tp-h3">' + esc(tit2) + "</h3>" + (l2.length ? ul(l2) : '<p class="tp-vaziotxt">—</p>') + "</div>"
+      + "</div>";
+  }
+  function rodapeNome(texto) {
+    return txt(texto) ? '<div class="tp-rodape tp-rodape-nome"><span>' + esc(texto) + "</span></div>" : "";
+  }
+
+  /* a frase da base de preços: padrão (com as bases do orçamento), oculta,
+     ou o texto que a empresa escreveu no lugar */
+  function fraseBases(p, ref, comBdi) {
+    if (p.fonteDePrecos === "ocultar") return "";
+    if (p.fonteDePrecos === "proprio") return txt(p.textoFonte) ? '<p class="tp-p">' + escML(p.textoFonte) + "</p>" : "";
+    var bases = txt(ref.bases);
+    if (!bases) return "";
+    var s = "Esta proposta foi elaborada com base nas informações disponibilizadas e em composições de custos referenciadas "
+      + (num(ref.nBases) > 1 ? "nas bases de preços " : "na base de preços ") + "<b>" + esc(bases) + "</b>.";
+    /* ⚠ "BDI (x%)" e não "BDI de x%": `Proposta.auditar` trava o documento com
+       a expressão "bdi de" — ela é a marca do custo vazando, e aqui o
+       percentual só sai quando o bloco pede */
+    if (comBdi && num(ref.bdiPct) > 0) s += " Os preços já incluem o BDI (" + esc(pctTxt(ref.bdiPct)) + ").";
+    return '<p class="tp-p">' + s + "</p>";
+  }
+
+  function capaClassica(p, d, m, b, logoHTML) {
+    var emp = d.empresa || {}, val = d.validade || {}, txts = d.textos || {};
+    function linha(k, v, destaque) {
+      return '<div class="tp-cc-row"><span>' + esc(k) + "</span><b" + (destaque ? ' class="tp-cc-valor"' : "") + ">" + v + "</b></div>";
+    }
+    var info = "";
+    if (txt(d.cliente)) info += linha("Cliente", esc(d.cliente));
+    if (p.mostrarNumero && txt(d.numero)) info += linha("Proposta nº", esc(d.numero));
+    if (p.mostrarNumero && txt(d.data)) info += linha("Data", esc(dia(d.data)));
+    if (p.mostrarValidade) {
+      var vt = txt(val.ate) || txt(val.texto).replace(/^Validade desta proposta:\s*/i, "").replace(/^Válida até\s*/i, "").replace(/\.$/, "");
+      if (vt) info += linha("Validade", esc(vt));
+    }
+    if (p.mostrarValor) {
+      if (num(b.totalOpcional) > 0) info += linha("Adicionais opcionais", esc(moeda(b.totalOpcional)) + ' <span class="tp-cc-nota">(não incluídos no valor total)</span>');
+      info += linha("Valor total", esc(moeda(b.total)), true);
+    }
+    var rod = [];
+    if (p.mostrarEmpresa) {
+      if (txt(emp.nome)) rod.push(esc(emp.nome));
+      if (txt(emp.cnpj)) rod.push("CNPJ " + esc(emp.cnpj));
+      if (txt(emp.endereco)) rod.push(esc(emp.endereco)); else if (txt(emp.cidade)) rod.push(esc(emp.cidade));
+      if (txt(txts.credito)) rod.push(esc(txts.credito));
+    }
+    return '<div class="tp-cc" style="background-color:' + esc(m.estilo.corFundoEscuro) + '">'
+      + '<div class="tp-cc-top">' + (p.mostrarLogo && logoHTML ? '<div class="tp-logo">' + logoHTML + "</div>" : "") + "</div>"
+      + '<div class="tp-cc-mid">'
+      + (txt(p.kicker) ? '<div class="tp-cc-kicker">' + esc(p.kicker) + "</div>" : "")
+      + '<h1 class="tp-cc-h1">' + esc(txt(d.obra) || "Proposta") + "</h1>"
+      + (p.mostrarObra && txt(d.obraNome) ? '<div class="tp-cc-obra">' + esc(d.obraNome) + "</div>" : "")
+      + "</div>"
+      + (info ? '<div class="tp-cc-info">' + info + "</div>" : "")
+      + (rod.length ? '<div class="tp-cc-rod">' + rod.join(" · ") + "</div>" : "")
+      + "</div>";
+  }
+
+  function apresentacao(p, d) {
+    var com = d.comercial || {}, emp = d.empresa || {}, ref = d.referencia || {};
+    var texto = txt(p.texto) || txt(com.apresentacao);
+    var html = texto ? '<p class="tp-p">' + escML(texto) + "</p>"
+      : '<p class="tp-p">A <b>' + esc(txt(emp.nome) || "empresa") + "</b> atua em projetos e execução de obras de engenharia e arquitetura, "
+        + "comprometida com qualidade técnica, transparência e cumprimento de prazos. Apresentamos a seguir nossa proposta para o empreendimento em referência.</p>";
+    return html + fraseBases(p, ref, p.mostrarBdi);
+  }
+
+  function escopoEtapas(p, b) {
+    function li(g) {
+      var qt = (g.qtdItens !== undefined) ? num(g.qtdItens) : arr(g.linhas).length;
+      return "<li>" + (p.mostrarCodigo && txt(g.codigo) ? "<b>" + esc(g.codigo) + "</b> — " : "") + esc(txt(g.nome) || "Serviços")
+        + (p.mostrarQtdItens ? ' <span class="tp-qtd">(' + qt + (qt === 1 ? " item)" : " itens)") + "</span>" : "") + "</li>";
+    }
+    var gs = arr(b.grupos), ops = arr(b.opcionais);
+    return (txt(p.abertura) ? '<p class="tp-p">' + escML(p.abertura) + "</p>" : "")
+      + (gs.length ? '<ul class="tp-ul">' + gs.map(li).join("") + "</ul>" : '<p class="tp-vaziotxt">—</p>')
+      + (ops.length ? (txt(p.textoOpcionais) ? '<p class="tp-p">' + escML(p.textoOpcionais) + "</p>" : "") + '<ul class="tp-ul">' + ops.map(li).join("") + "</ul>" : "")
+      + (txt(p.fechamento) ? '<p class="tp-p tp-solto">' + escML(p.fechamento) + "</p>" : "");
+  }
+
+  function premissas(p, d) {
+    var com = d.comercial || {}, ref = d.referencia || {};
+    var html = paragrafoOuLista(p.rotuloPremissas, linhasOu(p.premissas, com.premissas))
+      + paragrafoOuLista(p.rotuloMetodologia, linhasOu(p.metodologia, com.metodologia));
+    var partes = [];
+    if (p.fonteDePrecos === "padrao" && txt(ref.bases)) partes.push("<b>" + (num(ref.nBases) > 1 ? "Bases de preços:" : "Base de preços:") + "</b> " + esc(ref.bases));
+    else if (p.fonteDePrecos === "proprio" && txt(p.textoFonte)) partes.push(escML(p.textoFonte));
+    if (p.mostrarRegime && txt(ref.regime)) partes.push("regime <b>" + esc(ref.regime) + "</b>");
+    if (p.mostrarBdiTcu) partes.push("BDI conforme metodologia do Acórdão TCU nº 2.622/2013");
+    if (partes.length) html += '<p class="tp-p">' + partes.join(", ") + ".</p>";
+    return html;
+  }
+
+  function condicoesComerciais(p, d) {
+    var com = d.comercial || {}, val = d.validade || {};
+    function bloco(rot, v) { return txt(v) ? '<div class="tp-bloco"><h3 class="tp-h3">' + esc(rot) + "</h3><p>" + escML(v) + "</p></div>" : ""; }
+    var html = "";
+    if (p.mostrarPagamento) html += bloco(p.rotuloPagamento, com.condicoesPagamento);
+    if (p.mostrarPrazo) html += bloco(p.rotuloPrazo, com.prazoExecucao);
+    if (p.mostrarValidade) html += bloco(p.rotuloValidade, txt(com.validadeProposta) || txt(val.texto).replace(/^Validade desta proposta:\s*/i, ""));
+    if (p.mostrarGarantia) html += bloco(p.rotuloGarantia, com.garantia);
+    linhasDe(p.extras).forEach(function (l) { var par = parRotulo(l); if (par[1]) html += bloco(par[0] || "Condição", par[1]); });
+    return html || '<p class="tp-vaziotxt">—</p>';
+  }
+
+  /* o "Resumo Financeiro" do clássico: uma linha por etapa, com o total que
+     a etapa já trouxe pronto e o peso dela no total (também pronto) */
+  function tabelaResumida(p, gs, b) {
+    var comPeso = !!p.mostrarPeso;
+    var linhas = gs.map(function (g) {
+      return "<tr><td>" + esc(txt(g.codigo)) + "</td><td>" + esc(txt(g.nome) || "Serviços") + '</td><td class="tp-num">' + esc(moeda(g.total)) + "</td>"
+        + (comPeso ? '<td class="tp-num">' + esc(pctTxt(g.peso)) + "</td>" : "") + "</tr>";
+    }).join("");
+    return '<table class="tp-tbl tp-res"><thead><tr><th class="tp-col-cod">Etapa</th><th>' + esc(p.colTrabalho) + '</th><th class="tp-num">' + esc(p.colValor) + "</th>"
+      + (comPeso ? '<th class="tp-num">Peso</th>' : "") + "</tr></thead>"
+      + "<tbody>" + (linhas || '<tr><td colspan="' + (comPeso ? 4 : 3) + '" class="tp-vaziotxt">Nenhuma etapa com preço.</td></tr>') + "</tbody>"
+      + '<tfoot><tr><td colspan="2">Valor total da proposta</td><td class="tp-num">' + esc(moeda(b.total)) + "</td>" + (comPeso ? '<td class="tp-num">100%</td>' : "") + "</tr></tfoot></table>";
+  }
+
+  /* o analítico: quantidade, unidade, unitário e total de cada item, com a
+     etapa como faixa — tudo copiado do que a linha já trouxe */
+  function tabelaAnalitica(p, gs, b) {
+    var corpo = "";
+    gs.forEach(function (g) {
+      if (txt(g.nome)) corpo += '<tr class="tp-grupo"><td colspan="5">' + (txt(g.codigo) ? esc(g.codigo) + " — " : "") + esc(g.nome) + "</td></tr>";
+      arr(g.linhas).forEach(function (l) {
+        corpo += "<tr><td>" + esc(l.descricao) + "</td><td>" + esc(txt(l.unidade)) + '</td><td class="tp-num">' + (num(l.qtd) > 0 ? esc(n2(l.qtd)) : "")
+          + '</td><td class="tp-num">' + (l.unitario !== undefined && l.unitario !== null ? esc(moeda(l.unitario)) : "") + '</td><td class="tp-num">' + esc(moeda(l.total)) + "</td></tr>";
+      });
+    });
+    if (!corpo) corpo = '<tr><td colspan="5" class="tp-vaziotxt">Nenhum item com preço.</td></tr>';
+    return '<table class="tp-tbl tp-ana"><thead><tr><th>' + esc(p.colTrabalho) + '</th><th>Un.</th><th class="tp-num">Quant.</th><th class="tp-num">Unitário</th><th class="tp-num">' + esc(p.colValor) + "</th></tr></thead>"
+      + "<tbody>" + corpo + "</tbody></table>"
+      + '<p class="tp-total">Valor total: <b>' + esc(moeda(b.total)) + "</b></p>";
+  }
+
+  /* o cronograma do clássico: prazo em dias úteis, barra no tempo, início e
+     término por etapa, desembolso por mês e as premissas do contratante.
+     `cr.execucao` chega pronto de Proposta.cronogramaParaModelo */
+  function cronogramaCompleto(p, cr) {
+    var ex = cr.execucao;
+    var html = "";
+    if (num(ex.totalDias) > 0) {
+      html += '<p class="tp-p">A execução está prevista em <b>' + num(ex.totalDias) + " dias úteis</b>"
+        + (num(ex.totalSemanas) > 0 ? " (aproximadamente <b>" + num(ex.totalSemanas) + " semanas</b>)" : "")
+        + (txt(ex.inicio) ? ", com início em <b>" + esc(ex.inicio) + "</b>" : "")
+        + (txt(ex.fim) ? " e conclusão prevista para <b>" + esc(ex.fim) + "</b>" : "") + ".</p>";
+    }
+    var linhas = arr(ex.etapas).map(function (e) {
+      var pos = Math.max(0, Math.min(100, num(e.posPct))), larg = Math.max(0, Math.min(100 - pos, num(e.largPct)));
+      var barra = e.marco
+        ? '<span class="tp-gt-marco" style="left:' + pos + '%"></span>'
+        : (larg > 0 ? '<span class="tp-gt-b" style="left:' + pos + "%;width:" + Math.max(1.5, larg) + '%"></span>' : "");
+      /* ⚠ aspas duplas aqui de propósito: tools/test-opcional-consumidores.js
+         sabota a MESMA marca na tabela resumida pelo texto do fonte, e a
+         âncora tem de continuar única */
+      return "<tr><td>" + (txt(e.codigo) ? "<b>" + esc(e.codigo) + "</b> " : "") + esc(e.nome)
+        + (e.opcional ? " <span class=\"tp-qtd\">(adicional opcional)</span>" : "") + "</td>"
+        + '<td class="tp-gt-c"><span class="tp-gt-trilho">' + barra + "</span></td>"
+        + '<td class="tp-num">' + (e.marco ? "marco" : num(e.duracao) + " d") + "</td>"
+        + '<td class="tp-num">' + esc(txt(e.inicio)) + '</td><td class="tp-num">' + esc(txt(e.fim)) + "</td></tr>";
+    }).join("");
+    html += '<table class="tp-tbl tp-gt"><thead><tr><th>Etapa</th><th class="tp-gt-c">Período</th><th class="tp-num">Prazo</th><th class="tp-num">Início</th><th class="tp-num">Término</th></tr></thead>'
+      + "<tbody>" + linhas + "</tbody></table>";
+    if (p.mostrarPremissas && arr(ex.premissas).length) {
+      html += '<h3 class="tp-h3 tp-h3-sec">Premissas de prazo a cargo do contratante</h3>'
+        + '<table class="tp-tbl tp-gt"><thead><tr><th>Nº</th><th>Premissa</th><th class="tp-num">Prazo</th><th class="tp-num">Até</th></tr></thead><tbody>'
+        + ex.premissas.map(function (x) {
+            return "<tr><td>" + esc(txt(x.numero)) + "</td><td>" + esc(txt(x.nome)) + '</td><td class="tp-num">' + (x.marco ? "na data" : num(x.prazoDias) + " d") + '</td><td class="tp-num">' + esc(txt(x.fim)) + "</td></tr>";
+          }).join("") + "</tbody></table>"
+        + (txt(ex.fraseDasPremissas) ? '<p class="tp-leg"><b>' + esc(ex.fraseDasPremissas) + "</b> Estas linhas não têm preço nesta proposta: elas ocupam prazo e dependem do contratante.</p>" : "");
+    }
+    var des = ex.desembolso;
+    if (p.mostrarDesembolso && des && arr(des.lista).length) {
+      html += '<h3 class="tp-h3 tp-h3-sec">Cronograma físico-financeiro</h3>'
+        + '<table class="tp-tbl tp-gt"><thead><tr><th>Mês</th><th class="tp-num">Previsão de desembolso</th><th class="tp-num">% do mês</th><th class="tp-num">% acumulado</th></tr></thead><tbody>'
+        + des.lista.map(function (x) {
+            return "<tr><td>" + esc(txt(x.rotulo)) + '</td><td class="tp-num">' + esc(moeda(x.valor)) + '</td><td class="tp-num">' + esc(pctTxt(x.pct)) + '</td><td class="tp-num">' + esc(pctTxt(x.acumPct)) + "</td></tr>";
+          }).join("")
+        + '</tbody><tfoot><tr><td>Total</td><td class="tp-num">' + esc(moeda(des.total)) + '</td><td class="tp-num">100%</td><td></td></tr></tfoot></table>'
+        + '<p class="tp-leg">Distribuição estimada a partir da duração de cada etapa no cronograma acima. A medição e o faturamento seguem as condições comerciais desta proposta.</p>';
+      /* a mesma frase honesta da tabela resumida: a curva inclui os adicionais */
+      if (num(cr.totalOpcional) > 0) {
+        html += '<p class="tp-leg">Este cronograma de desembolso inclui os <b>adicionais opcionais</b> (' + esc(moeda(cr.totalOpcional))
+          + "). Sem eles, o valor total da proposta é <b>" + esc(moeda(cr.totalObrigatorio)) + "</b>.</p>";
+      }
+    }
+    if (txt(ex.notaPrazos)) html += '<p class="tp-leg">' + esc(ex.notaPrazos) + "</p>";
+    return html;
+  }
+
   function estiloRaiz(m, f) {
     return "--tp-titulo:" + m.estilo.corTitulo
       + ";--tp-texto:" + m.estilo.corTexto
@@ -1385,7 +1896,14 @@
     function gruposDe(bb) {
       if (Array.isArray(bb.grupos)) {
         return bb.grupos.map(function (g) {
-          return { nome: txt(g && g.nome), linhas: arr(g && g.linhas) };
+          /* codigo/total/peso/qtdItens chegam prontos de blocosParaModelo
+             (13/10/2026) e só o resumido lê; grupo sem eles é o de sempre */
+          var o = { nome: txt(g && g.nome), linhas: arr(g && g.linhas) };
+          if (g && g.codigo !== undefined) o.codigo = txt(g.codigo);
+          if (g && g.total !== undefined && g.total !== null) o.total = g.total;
+          if (g && g.peso !== undefined) o.peso = g.peso;
+          if (g && g.qtdItens !== undefined) o.qtdItens = g.qtdItens;
+          return o;
         }).filter(function (g) { return g.linhas.length; });
       }
       var out = [];
@@ -1395,6 +1913,13 @@
     }
 
     var gs = gruposDe(b);
+    /* o nível pedido pelo bloco (13/10/2026): resumido só quando TODO grupo
+       trouxe o próprio total pronto; analítico sempre dá, é só mais coluna */
+    if (p.nivel === "resumido") {
+      var temTotais = gs.length && !gs.some(function (g) { return !isFinite(+g.total) || g.total === undefined || g.total === null; });
+      if (temTotais) return tabelaResumida(p, gs, b);
+    }
+    if (p.nivel === "analitico") return tabelaAnalitica(p, gs, b);
     var corpo;
     if (p.detalhar) {
       corpo = gs.map(function (g) {
@@ -1441,6 +1966,14 @@
   function tabelaCronograma(p, cr) {
     if (!cr || !arr(cr.etapas).length) {
       return '<p class="tp-vaziotxt">Cronograma indisponível: o orçamento ainda não tem etapas com preço.</p>';
+    }
+    /* o modo completo (13/10/2026) desenha o que veio em `cr.execucao`; sem
+       ele (fiação antiga, ou o cálculo por data não deu), sai a tabela de
+       sempre com o aviso — nunca um gráfico inventado */
+    if (p.modo === "completo") {
+      if (cr.execucao && arr(cr.execucao.etapas).length) return cronogramaCompleto(p, cr);
+      return '<p class="tp-leg">O cronograma detalhado por data não pôde ser montado para este orçamento; abaixo, a distribuição por período.</p>'
+        + tabelaCronograma({ modo: "", rotuloMes: p.rotuloMes, mostrarValores: p.mostrarValores }, cr);
     }
     var n = num(cr.meses) || arr(cr.totaisMes).length || 1;
     var rot = txt(p.rotuloMes) || "Mês";
@@ -1659,6 +2192,53 @@
          o fundo continua declarado mas nao pinta nada, e quem desenha e a
          borda. Sem isso sairia um bloco cheio com a borda por cima. */
       ".tp-pg ul{list-style-type:var(--tp-mk,disc)}",
+
+      /* =================================================================
+       * OS BLOCOS DO DOCUMENTO PADRÃO DO SISTEMA (13/10/2026)
+       * ⚠ Regras NOVAS, só com classes novas (tp-cc-*, tp-cols, tp-h3,
+       *   tp-bloco, tp-res, tp-ana, tp-gt-*, tp-wm-emp, tp-rodape-nome):
+       *   nenhum seletor dos blocos de antes foi tocado, para os modelos já
+       *   montados pelos clientes saírem byte a byte como saíam.
+       * =============================================================== */
+      ".tp-cc{position:absolute;inset:0;display:flex;flex-direction:column;padding:18mm 16mm;box-sizing:border-box;color:#fff;background-image:linear-gradient(155deg,rgba(0,0,0,.28) 0%,rgba(0,0,0,0) 58%,rgba(255,255,255,.08) 100%)}",
+      ".tp-vert .tp-cc{padding:14mm 12mm}",
+      ".tp-cc-top{min-height:22mm}",
+      ".tp-cc-top .tp-logo{margin-bottom:0}",
+      ".tp-cc-mid{flex:1;display:flex;flex-direction:column;justify-content:center}",
+      ".tp-cc-kicker{letter-spacing:.3em;font-size:calc(10.5pt * var(--tp-esc-txt,1));font-weight:600;color:rgba(255,255,255,.78);text-transform:uppercase}",
+      ".tp-cc-kicker::after{content:'';display:block;width:16mm;height:1.2mm;background:var(--tp-destaque);border-radius:1mm;margin-top:4mm}",
+      ".tp-cc-h1{font-family:var(--tp-f-tit);font-weight:700;font-size:calc(28pt * var(--tp-esc-tit,1));line-height:1.12;letter-spacing:-.01em;margin:6mm 0 3mm;color:#fff}",
+      ".tp-vert .tp-cc-h1{font-size:calc(22pt * var(--tp-esc-tit,1))}",
+      ".tp-cc-obra{font-size:calc(13pt * var(--tp-esc-txt,1));color:rgba(255,255,255,.85)}",
+      ".tp-cc-info{border-top:1px solid rgba(255,255,255,.25);padding-top:5mm;margin-top:6mm}",
+      ".tp-cc-row{display:flex;justify-content:space-between;align-items:baseline;gap:6mm;padding:2.2mm 0;border-bottom:1px solid rgba(255,255,255,.12);font-size:calc(11pt * var(--tp-esc-txt,1))}",
+      ".tp-cc-row:last-child{border-bottom:none}",
+      ".tp-cc-row span{color:rgba(255,255,255,.7)}",
+      ".tp-cc-row b{font-variant-numeric:tabular-nums;text-align:right}",
+      ".tp-cc-row b.tp-cc-valor{font-size:calc(15pt * var(--tp-esc-txt,1));color:#fff}",
+      ".tp-cc-nota{font-weight:400;font-size:9pt;opacity:.8}",
+      ".tp-cc-rod{margin-top:8mm;font-size:8.5pt;line-height:1.5;color:rgba(255,255,255,.7)}",
+      ".tp-h3{font-family:var(--tp-f-tit);font-size:calc(12.5pt * var(--tp-esc-tit,1));font-weight:700;color:var(--tp-titulo);margin:0 0 2.5mm}",
+      ".tp-h3-sec{margin-top:7mm}",
+      ".tp-cols{display:grid;grid-template-columns:1fr 1fr;gap:8mm;margin-top:2mm}",
+      ".tp-vert .tp-cols{grid-template-columns:1fr}",
+      ".tp-bloco{margin:0 0 5mm;padding:3.5mm 4.5mm;border-left:3px solid var(--tp-destaque2);background:rgba(0,0,0,.025)}",
+      ".tp-bloco h3{margin-bottom:1.5mm}",
+      ".tp-bloco p{margin:0;font-size:calc(11.5pt * var(--tp-esc-txt,1))}",
+      ".tp-res td.tp-col-cod,.tp-res th.tp-col-cod{width:16mm;white-space:nowrap}",
+      ".tp-res tfoot td,.tp-gt tfoot td{background:#eef4fa;font-weight:700}",
+      ".tp-ana{font-size:calc(9.5pt * var(--tp-esc-txt,1))}",
+      ".tp-ana th,.tp-ana td{padding:2.2mm 2.6mm}",
+      ".tp-gt{font-size:calc(9.5pt * var(--tp-esc-txt,1))}",
+      ".tp-gt th,.tp-gt td{padding:2.2mm 2.6mm}",
+      ".tp-gt th.tp-gt-c,.tp-gt td.tp-gt-c{width:46mm;padding:2.2mm 2mm;vertical-align:middle}",
+      ".tp-gt-trilho{position:relative;display:block;height:3.2mm;background:rgba(0,0,0,.06);border-radius:1.6mm}",
+      ".tp-gt-b{position:absolute;top:0;bottom:0;background:var(--tp-destaque2);border-radius:1.6mm}",
+      ".tp-gt-marco{position:absolute;top:-.6mm;width:4.4mm;height:4.4mm;background:var(--tp-destaque);transform:translateX(-50%) rotate(45deg);border-radius:.6mm}",
+      /* a marca d'água do nome da empresa: cinza, apagada, atrás do texto */
+      ".tp-wm.tp-wm-emp{font-size:46pt;letter-spacing:4px;color:rgba(15,39,64,.06);transform:rotate(-30deg);z-index:0}",
+      ".tp-escura .tp-wm.tp-wm-emp{color:rgba(255,255,255,.07)}",
+      ".tp-rodape-nome{justify-content:center;border-top-color:var(--tp-titulo);opacity:.75}",
     ].join("\n");
   };
 
@@ -1973,6 +2553,208 @@
       if (!tem[c.toLowerCase()]) return c;
     }
     return base + " (importado)";
+  };
+
+  /* =====================================================================
+   * 10. AJUSTAR UM MODELO PELA IA (13/10/2026)
+   *
+   * O usuário abre um modelo (o padrão do sistema, por exemplo), escreve o
+   * que quer mudar — "tira a frase do SINAPI, mostra o cronograma resumido,
+   * muda para verde escuro" — e a IA devolve o modelo INTEIRO, ajustado.
+   * O sistema grava como um modelo NOVO; o original não muda.
+   *
+   * ⚠ UNIVERSO FECHADO, COMO NO /ia/editar. A IA só pode usar os tipos de
+   *   página, os campos e os valores de estilo que estão no CATÁLOGO que o
+   *   próprio motor publica (`catalogoParaIA`). Página de tipo inventado é
+   *   descartada e contada; cor que não é #rrggbb volta à original; opção de
+   *   lista fora das declaradas volta ao padrão (é `modelo()` quem garante).
+   *
+   * ⚠ A TELA MOSTRA A DIFERENÇA ANTES DE GRAVAR. `diferencas` lista, em
+   *   palavras, o que mudou entre o original e o ajustado — e é a lista que
+   *   a pessoa confere, não o "resumo" que a IA escreve sobre si mesma.
+   *
+   * ⚠ FOTOS, LOGO, TIPOGRAFIA E FORMAS NÃO PASSAM PELA IA. As fotos seguem
+   *   a página pelo id (`remapear`); tipografia e linhas/símbolos de cada
+   *   página são copiados do original quando a página continua existindo.
+   *   O que a IA não recebeu ela não pode estragar.
+   * ===================================================================== */
+  PropTpl.ESTILO_CORES = ["corTitulo", "corTexto", "corFundo", "corDestaque", "corDestaque2", "corFundoEscuro"];
+  PropTpl.ESTILO_OPCOES = {
+    fonte: PropTpl.FONTES.map(function (f) { return f.id; }),
+    formato: ["a4", "vertical"],
+    textura: PropTpl.TEXTURAS.map(function (t) { return t.id; }),
+    ornamento: ["", "curvas"],
+    rodape: ["", "contatos", "nome"],
+    fundoInternas: ["", "claro"],
+    logoEscuro: ["", "clarear", "pastilha"],
+    marcaDagua: ["", "auto"],
+    marcaDaguaEmpresa: ["", "nome"],
+    numerarSecoes: ["", "sim"]
+  };
+  var ESTILO_NOMES = {
+    corTitulo: "Cor dos títulos e tabelas", corTexto: "Cor do texto", corFundo: "Cor do fundo", corDestaque: "Cor de destaque",
+    corDestaque2: "2ª cor de destaque", corFundoEscuro: "Cor das páginas escuras", fonte: "Letra", formato: "Formato do papel",
+    textura: "Textura de fundo", ornamento: "Traços da marca", rodape: "Rodapé", fundoInternas: "Páginas internas",
+    logoEscuro: "Logo nas páginas escuras", marcaDagua: "Carimbo de vencida", marcaDaguaEmpresa: "Marca d'água da empresa",
+    numerarSecoes: "Numeração das seções"
+  };
+  var ESTILO_VALOR_NOMES = {
+    formato: { a4: "A4", vertical: "vertical (celular)" }, ornamento: { "": "sem", curvas: "curvas" },
+    rodape: { "": "sem", contatos: "contatos da empresa", nome: "nome da empresa" }, fundoInternas: { "": "escopo e condições em página escura", claro: "todas claras" },
+    logoEscuro: { "": "como ele é", clarear: "branco", pastilha: "sobre pastilha branca" }, marcaDagua: { "": "nunca", auto: "quando vencer" },
+    marcaDaguaEmpresa: { "": "sem", nome: "nome da empresa" }, numerarSecoes: { "": "sem número", sim: "numeradas" }
+  };
+  function nomeValorEstilo(k, v) {
+    if (k === "fonte") return PropTpl.fonte(v).nome.split(" — ")[0];
+    if (k === "textura") { var t = _acha(PropTpl.TEXTURAS, v); return t ? t.nome : v; }
+    var tab = ESTILO_VALOR_NOMES[k];
+    return (tab && tab[v] !== undefined) ? tab[v] : (txt(v) || "sem");
+  }
+
+  /* o que a IA pode usar — e só isto */
+  PropTpl.catalogoParaIA = function () {
+    return {
+      blocos: PropTpl.BLOCOS.map(function (b) {
+        return {
+          tipo: b.tipo, nome: b.nome, resumo: b.resumo, imagens: b.imagens,
+          campos: b.campos.map(function (c) {
+            var o = { id: c.id, nome: c.nome, tipo: c.tipo || "texto" };
+            if (c.tipo === "lista") o.opcoes = arr(c.opcoes).map(function (op) { return { id: op[0], nome: op[1] }; });
+            if (c.padrao !== undefined && c.padrao !== "") o.padrao = c.padrao;
+            if (c.dica) o.dica = c.dica;
+            return o;
+          })
+        };
+      }),
+      estilo: {
+        cores: PropTpl.ESTILO_CORES.map(function (k) { return { id: k, nome: ESTILO_NOMES[k] }; }),
+        opcoes: Object.keys(PropTpl.ESTILO_OPCOES).map(function (k) {
+          return { id: k, nome: ESTILO_NOMES[k], valores: PropTpl.ESTILO_OPCOES[k].map(function (v) { return { id: v, nome: nomeValorEstilo(k, v) }; }) };
+        })
+      }
+    };
+  };
+
+  /* o modelo como a IA o vê: nome, descrição, estilo e os campos de cada
+     página — sem foto, sem logo, sem tipografia (ela não mexe nisso) */
+  PropTpl.paraIA = function (t) {
+    var m = PropTpl.modelo(t);
+    return {
+      nome: m.nome, descricao: m.descricao, estilo: m.estilo,
+      paginas: m.paginas.map(function (p) {
+        var b = PropTpl.bloco(p.tipo), o = { id: p.id, tipo: p.tipo };
+        b.campos.forEach(function (c) { o[c.id] = p[c.id]; });
+        return o;
+      })
+    };
+  };
+
+  /* a resposta da IA conferida e transformada num modelo NOVO, com as fotos e
+     a tipografia do original levadas junto — ou a recusa, com o motivo */
+  PropTpl.ajustadoPelaIA = function (original, resposta) {
+    var o = PropTpl.modelo(original);
+    var r = resposta || {};
+    var mr = (r.modelo && typeof r.modelo === "object") ? r.modelo : r;
+    var brutas = arr(mr.paginas);
+    if (!brutas.length) return { ok: false, erro: "A IA não devolveu as páginas do modelo." };
+
+    var descartadas = [], porId = {};
+    o.paginas.forEach(function (p) { porId[p.id] = p; });
+    var usados = {};
+    var paginas = [];
+    brutas.forEach(function (p, i) {
+      var tipo = txt(p && p.tipo);
+      var b = PropTpl.bloco(tipo);
+      if (!b) { descartadas.push(tipo || "(sem tipo)"); return; }
+      var out = { tipo: tipo };
+      b.campos.forEach(function (c) { if (p[c.id] !== undefined) out[c.id] = p[c.id]; });
+      var id = txt(p.id);
+      /* id repetido ou vazio ganha um novo: a foto só segue a página certa
+         quando o id é único */
+      if (!id || usados[id]) id = "pg" + (i + 1) + "n";
+      usados[id] = 1;
+      out.id = id;
+      var antiga = porId[id];
+      if (antiga && antiga.tipo === tipo) { out.tipografia = antiga.tipografia; out.formas = antiga.formas; }
+      paginas.push(out);
+    });
+    if (!paginas.length) return { ok: false, erro: "A estrutura devolvida não tem nenhuma página que este sistema saiba desenhar." };
+
+    var costurado = false;
+    if (!paginas.some(function (p) { return p.tipo === "investimento"; })) {
+      var inv = o.paginas.filter(function (p) { return p.tipo === "investimento"; })[0];
+      paginas.push(inv ? JSON.parse(JSON.stringify(inv)) : { id: "pginv", tipo: "investimento", titulo: "INVESTIMENTO", detalhar: true });
+      costurado = true;
+    }
+
+    var estilo = {};
+    for (var k in o.estilo) if (Object.prototype.hasOwnProperty.call(o.estilo, k)) estilo[k] = o.estilo[k];
+    var er = (mr.estilo && typeof mr.estilo === "object") ? mr.estilo : {};
+    Object.keys(er).forEach(function (k2) {
+      var v = txt(er[k2]);
+      if (PropTpl.ESTILO_CORES.indexOf(k2) > -1) { if (/^#[0-9a-fA-F]{6}$/.test(v)) estilo[k2] = v.toUpperCase(); return; }
+      var ops = PropTpl.ESTILO_OPCOES[k2];
+      if (ops && ops.indexOf(v) > -1) estilo[k2] = v;
+    });
+
+    var nome = txt(mr.nome) || o.nome;
+    if (nome.length > 60) nome = nome.slice(0, 60);
+    var descricao = (mr.descricao !== undefined) ? txt(mr.descricao) : o.descricao;
+    /* o corte só vale para texto NOVO: a descrição que a IA só ecoou volta
+       inteira, senão "nada mudou" viraria uma mudança de descrição */
+    if (descricao !== o.descricao && descricao.length > 200) descricao = descricao.slice(0, 200);
+
+    var tmp = PropTpl.modelo({ nome: nome, descricao: descricao, estilo: estilo, paginas: paginas });
+    var novo = PropTpl.modelo({
+      nome: nome, descricao: descricao, estilo: estilo, paginas: paginas,
+      logo: o.logo,
+      imagens: PropTpl.remapear(o, tmp),
+      imagensOrig: PropTpl.remapear({ estilo: o.estilo, paginas: o.paginas, imagens: o.imagensOrig }, tmp)
+    });
+    var faltas = PropTpl.validar(novo);
+    if (faltas.length) return { ok: false, erro: faltas[0] };
+    return { ok: true, modelo: novo, mudancas: PropTpl.diferencas(o, novo), descartadas: descartadas, investimentoCosturado: costurado };
+  };
+
+  /* em palavras, o que muda de `a` para `b` — a lista que a pessoa confere */
+  PropTpl.diferencas = function (a, b) {
+    var A = PropTpl.modelo(a), B = PropTpl.modelo(b), out = [];
+    function curto(v) { var s = txt(v).replace(/\s+/g, " "); return s.length > 60 ? s.slice(0, 57) + "…" : s; }
+    function valor(c, v) {
+      if (c.tipo === "sim_nao") return v ? "sim" : "não";
+      if (c.tipo === "lista") { var op = arr(c.opcoes).filter(function (x) { return x[0] === v; })[0]; return op ? op[1] : txt(v); }
+      return txt(v) ? '"' + curto(v) + '"' : "(vazio)";
+    }
+    if (A.nome !== B.nome) out.push("Nome: " + A.nome + " → " + B.nome);
+    if (A.descricao !== B.descricao) out.push("Descrição: " + (curto(A.descricao) || "(vazia)") + " → " + (curto(B.descricao) || "(vazia)"));
+    Object.keys(B.estilo).forEach(function (k) {
+      if (A.estilo[k] === B.estilo[k]) return;
+      var nome = ESTILO_NOMES[k] || k;
+      if (PropTpl.ESTILO_CORES.indexOf(k) > -1) out.push(nome + ": " + (A.estilo[k] || "—") + " → " + (B.estilo[k] || "—"));
+      else out.push(nome + ": " + nomeValorEstilo(k, A.estilo[k]) + " → " + nomeValorEstilo(k, B.estilo[k]));
+    });
+    var idxA = {}, idxB = {};
+    A.paginas.forEach(function (p, i) { idxA[p.id] = i; });
+    B.paginas.forEach(function (p, i) { idxB[p.id] = i; });
+    A.paginas.forEach(function (p) {
+      var q = B.paginas[idxB[p.id]];
+      if (!q || q.tipo !== p.tipo) { out.push("Página removida: " + PropTpl.bloco(p.tipo).nome + (txt(p.titulo) ? " (" + curto(p.titulo) + ")" : "")); return; }
+    });
+    B.paginas.forEach(function (q, i) {
+      var p = A.paginas[idxA[q.id]];
+      var b = PropTpl.bloco(q.tipo);
+      if (!p || p.tipo !== q.tipo) { out.push("Página nova (" + (i + 1) + "ª): " + b.nome + (txt(q.titulo) ? " (" + curto(q.titulo) + ")" : "")); return; }
+      b.campos.forEach(function (c) {
+        if (p[c.id] === q[c.id]) return;
+        out.push(b.nome + " › " + c.nome + ": " + valor(c, p[c.id]) + " → " + valor(c, q[c.id]));
+      });
+    });
+    /* ordem: só avisa quando páginas que existem nos dois trocaram de lugar */
+    var comuns = B.paginas.filter(function (q) { return idxA[q.id] !== undefined && A.paginas[idxA[q.id]].tipo === q.tipo; });
+    var antes = comuns.map(function (q) { return idxA[q.id]; });
+    var desordem = antes.some(function (v, i) { return i > 0 && v < antes[i - 1]; });
+    if (desordem) out.push("Ordem das páginas alterada: " + comuns.map(function (q) { return PropTpl.bloco(q.tipo).nome; }).join(" → "));
+    return out;
   };
 
   global.PropTpl = PropTpl;
