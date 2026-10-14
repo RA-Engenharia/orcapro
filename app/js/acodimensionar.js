@@ -568,9 +568,15 @@
     else if (mf !== "nunca") G.decisoes.push({ tema: "Mãos-francesas", decisao: "dispensadas", motivo: "as barras passam com a mesa comprimida destravada entre as ligações" });
     /* verificação das barras */
     var resultadosM = {}, grupos = {}, falhas = 0;
+    G.decisoes.push({ tema: "Esbeltez", decisao: "L/r ≤ 200 nas barras comprimidas e ≤ 300 nas tracionadas como EXIGÊNCIA (reprova a barra e limita o perfil mais leve); o contraventamento em barra redonda é isento",
+      motivo: "NBR 8800:2008, 5.3.4.1 (compressão; na 2024, 5.3.7, recomendação) e 5.2.8.1 (tração; recomendação, exceto barra redonda pré-tensionada) — o OrçaPRO adota os dois como exigência (premissa: barras redondas montadas com pré-tensão — esticador)" });
     G.membros.forEach(function (m) {
       var est = []; elu.forEach(function (c) { est = est.concat(estacoesMembro(res, m, c.id)); });
       var v = D.verificarBarra({ secao: m.secao.mm, aco: m.aco, estacoes: est, L: m.L, flambagem: m.flambagem, travamentos: m.travamentos, papel: m.papel });
+      /* SIMULAÇÃO S1 — rodada 2 (decisão do Rogério, 14/10/2026): esbeltez L/r ≤ 200/300 como EXIGÊNCIA também no galpão
+         (js/acodimlivre.js; o contraventamento do galpão é barra redonda — isento) */
+      var DLv = global.AcoDimLivre || (typeof require === "function" ? (function () { try { return require("./acodimlivre.js"); } catch (eL) { return null; } })() : null);
+      if (DLv && DLv.aplicarEsbeltez) v = DLv.aplicarEsbeltez(v, m, est);
       resultadosM[m.id] = v;
       arr(v.avisos).forEach(function (a) { var t = m.id + " (" + m.secao.nome + "): " + a; if (avisos.indexOf(t) < 0) avisos.push(t); });
       var g = grupos[m.grupo] || (grupos[m.grupo] = { razao: 0, membro: null, perfil: m.secao.nome });

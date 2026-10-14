@@ -597,6 +597,30 @@
 
   /* 7. NÓ DE TRELIÇA: várias barras, um gusset aparafusado em todas
    * par: { t (m, partida 9,5 mm), parafusos (por barra, partida 2), parafuso } */
+  /* SIMULAÇÃO S2 (14/10/2026) — CONTRAVENTAMENTO EM BARRA REDONDA: a barra recua da ponta até fora do apoio e leva
+     uma CHAPA DE APOIO perpendicular a ela, com o furo da barra (rosca, arruela biselada, porca e contraporca), soldada
+     no apoio. Desenho esquemático da tipologia "contravento-barra-redonda" (js/acoligtipos.js) — antes ela era só
+     dimensionada (sem desenho) e o "Ligar todos os nós" pulava as diagonais do X.
+     par = { d (mm, a barra), b (mm, lado da chapa), t (m, espessura), lig } */
+  function barraRedonda(diag, apoio, par) {
+    par = par || {};
+    var md = M().membro(diag), ms = M().membro(apoio); if (!md || !ms) return erro("Selecione a BARRA REDONDA e o APOIO (pilar ou viga) — perfis de aço.");
+    var res = novoRes("barraRedonda", par, [md, ms]);
+    var pt = pontaPerto(md, ms), sai = pt.sai, dB = num(par.d, Math.max(md.s.alt, md.s.larg) * 1000), b = Math.max(num(par.b, 0), 3 * dB + 20) / 1000, t = num(par.t, 0.0125);
+    /* recuo: a chapa fica fora da seção do apoio, na linha da barra */
+    var cosA = Math.abs(V().dot(sai, ms.X)), recuo = (Math.max(ms.s.alt, ms.s.larg) / 2 + 0.01) / Math.max(0.2, Math.sqrt(Math.max(0, 1 - cosA * cosA))) + t;
+    if (par.ajustar !== false) { var aj = ajustarPonta(md, pt.qual, -recuo); if (aj) md = aplicarAjuste(res, md, aj); }
+    var P = pontas(md).filter(function (q) { return q.qual === pt.qual; })[0].P;
+    var ref = Math.abs(sai[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0], ex = V().unit(V().cross(sai, ref)), ey = V().cross(sai, ex);
+    var O = V().sub(V().sub(P, V().mul(ex, b / 2)), V().mul(ey, b / 2));
+    var g = M().chapa({ origem: O, ex: ex, ey: ey, t: t, ret: { L: b, B: b }, papel: "Chapa de apoio do tirante", aco: par.aco || "ASTM A36", lig: res.lig, soldadaEm: apoio.id,
+      solda: solda(pernaMin(t, t), "ambos", b, false), furos: [{ u: b / 2, v: b / 2, db: dB, tipo: "padrao" }] });
+    if (g.erro) return erro(g.erro);
+    res.pecas.push(g);
+    res.avisos.push("Desenho esquemático: chapa de apoio perpendicular à barra; a solda no apoio, a arruela biselada, a porca e a contraporca vão no detalhe de fabricação.");
+    res.ok = true; res.resumo = "Barra redonda Ø " + r1(dB) + " mm: chapa de apoio " + Math.round(b * 1000) + " × " + Math.round(b * 1000) + " × " + r1(t * 1000) + " mm com furo, arruela biselada, porca e contraporca";
+    return res;
+  }
   function noTrelica(barras, par) {
     par = par || {};
     var mbs = arr(barras).map(function (b) { return M().membro(b); });
@@ -1053,6 +1077,7 @@
     emendaCobrejunta: { rotulo: "Emenda por cobrejunta", pede: ["viga", "viga"], fn: function (s, p) { return emendaCobrejunta(s[0], s[1], p); } },
     clipTerca: { rotulo: "Clip de terça", pede: ["terça", "viga"], fn: function (s, p) { return clipTerca(s[0], s[1], p); } },
     contraventamento: { rotulo: "Contraventamento com gusset", pede: ["diagonal", "apoio"], fn: function (s, p) { return contraventamento(s[0], s[1], p); } },
+    barraRedonda: { rotulo: "Contraventamento em barra redonda", pede: ["barra redonda", "apoio"], fn: function (s, p) { return barraRedonda(s[0], s[1], p); } },
     noTrelica: { rotulo: "Nó de treliça", pede: ["barras (2 ou mais)"], fn: function (s, p) { return noTrelica(s, p); } },
     enrijecedor: { rotulo: "Enrijecedor", pede: ["pilar ou viga (I/U)"], fn: function (s, p) { return enrijecedor(s[0], p); } },
     chapaSimples: { rotulo: "Chapa simples", pede: ["viga", "apoio"], fn: function (s, p) { return chapaSimples(s[0], s[1], p); } },
@@ -1067,7 +1092,7 @@
   var BimMetalLig = {
     MACROS: MACROS,
     placaBase: placaBase, chapaExtremidade: chapaExtremidade, cantoneiraDupla: cantoneiraDupla, emendaCobrejunta: emendaCobrejunta,
-    clipTerca: clipTerca, contraventamento: contraventamento, noTrelica: noTrelica, enrijecedor: enrijecedor, chapaSimples: chapaSimples, assento: assento, talasMesa: talasMesa, soldadaDireta: soldadaDireta, reforcoAlma: reforcoAlma, prolongar: prolongar, misula: misula, consolo: consolo,
+    clipTerca: clipTerca, contraventamento: contraventamento, noTrelica: noTrelica, enrijecedor: enrijecedor, chapaSimples: chapaSimples, assento: assento, talasMesa: talasMesa, barraRedonda: barraRedonda, soldadaDireta: soldadaDireta, reforcoAlma: reforcoAlma, prolongar: prolongar, misula: misula, consolo: consolo,
     aplicar: function (tipo, caixas, par) { var m = MACROS[tipo]; return m ? m.fn(caixas, par || {}) : erro("Ligação desconhecida: " + tipo + "."); },
     ops: ops, conferirChapa: conferirChapa, conferirMembro: conferirMembro, casca: casca
   };

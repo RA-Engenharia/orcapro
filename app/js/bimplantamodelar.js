@@ -367,7 +367,7 @@
           U.cfg().nivelId = d.nivel.id; U.enviar();
           if (BB() && BB().pintar) BB().pintar();
           status("Nível atual: " + d.nivel.nome + " (a planta aberta).");
-        }
+        } else if (U.garantirContexto) U.garantirContexto();   /* S8: mesma cota, outra vista (piso × estrutural): a regra do topo da viga muda */
       } catch (e) {}
     },
 

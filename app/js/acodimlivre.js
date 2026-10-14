@@ -49,6 +49,7 @@
   function Mod() { return dep("AcoModelo", "./acomodelo.js"); }
   function Met() { return dep("BimMetal", "./metalpeca.js"); }
   function Cri() { return dep("MetalCriar", "./metalcriar.js"); }
+  function Env() { return dep("AcoEnvoltorio", "./acoenvoltorio.js"); }   /* FRENTE S5 (14/10/2026): faces e fechamentos → vento */
 
   function num(v, d) { if (v == null || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
   function arr(v) { return Array.isArray(v) ? v : []; }
@@ -117,6 +118,46 @@
     return D.verificarBarra({ secao: m.secao.mm, aco: m.aco, estacoes: est, L: m.L, flambagem: m.flambagem, travamentos: m.travamentos, papel: m.papel, cb: m.cb });
   }
 
+  /* ================================================================ LIMITES DE ESBELTEZ (EXIGÊNCIA)
+   * Decisão do Rogério (14/10/2026, rodada 2 da simulação): L/r ≤ 200 na barra COMPRIMIDA e ≤ 300 na TRACIONADA são
+   * EXIGÊNCIA no OrçaPRO — reprovam a barra e o "perfil mais leve" não pode furá-los. Na NBR 8800:2008 o limite da
+   * compressão é obrigatório (5.3.4.1: "não deve ser superior a 200"); na 2024 virou recomendação (5.3.7); o da tração
+   * é recomendação nas duas (5.2.8.1), EXCETO tirantes de barra redonda pré-tensionados ou barras montadas com pré-tensão.
+   * Achado que motivou: num X de cantoneira o otimizador desceu a L 22 × 3 com KL/r = 1.268 (força de 0,25 kN).
+   * ISENTAS: barra redonda e cabo (premissa: tracionados e montados com pré-tensão — esticador).
+   * QUANDO a barra é "comprimida"/"tracionada": DIAGONAIS (de perfil) sempre — as duas exigências, porque a força de
+   * contraventamento troca de sinal com o sentido da ação (no X do piso do mezanino ela era de centésimos de kN e a
+   * cantoneira passava sem a exigência); pilares com qualquer força axial (> 0,1 % de Ag·fy/γa1);
+   * vigas e terças só com força axial de pelo menos 5 % de Ag·fy/γa1 — as forças nocionais e numéricas (décimos de kN)
+   * não fazem de uma viga uma barra comprimida (critério do sistema, declarado nas decisões). */
+  var REF_ESB_C = "NBR 8800:2008, 5.3.4.1 (na 2024, 5.3.7, é recomendação — o OrçaPRO adota como EXIGÊNCIA)";
+  var REF_ESB_T = "NBR 8800:2008 e 2024, 5.2.8.1 (recomendação — o OrçaPRO adota como EXIGÊNCIA; barra redonda pré-tensionada isenta)";
+  function isentaEsbeltez(m) { return (m.secao && (m.secao.forma === "circ" || m.secao.forma === "cabo")) || m.papel === "tirante" || /cabo/i.test(String((m.secao && m.secao.nome) || "")); }
+  function esbeltezMembro(m) {
+    var s = (m.secao && m.secao.mm) || {}, fl = m.flambagem || {}, A = num(s.A, 0); if (!(A > 0)) return null;
+    var rx = num(s.rx, Math.sqrt(num(s.Ix, 0) / A)), ry = num(s.ry, Math.sqrt(num(s.Iy, 0) / A)), Lx = num(fl.Lx, m.L) * 1000, Ly = num(fl.Ly, m.L) * 1000;
+    var lam = Math.max(rx > 0 ? Lx / rx : 0, ry > 0 ? Ly / ry : 0), txt = "máx(Lx/rx; Ly/ry) = máx(" + br(Lx, 0) + "/" + br(rx, 1) + "; " + br(Ly, 0) + "/" + br(ry, 1) + ")";
+    if (s.forma === "L" && num(s.rz, 0) > 0) { var lz = Math.min(Lx, Ly) / s.rz; if (lz > lam) { lam = lz; txt += "; cantoneira: mín(Lx; Ly)/rz = " + br(Math.min(Lx, Ly), 0) + "/" + br(s.rz, 1); } }
+    return { lam: lam, txt: txt };
+  }
+  function aplicarEsbeltez(v, m, est) {
+    if (!v || isentaEsbeltez(m)) return v;
+    var e = esbeltezMembro(m); if (!e) return v;
+    var s = m.secao.mm, Ny = num(s.A, 0) * num(m.aco && m.aco.fy, 250) / 1.10 / 1000, diag = m.papelLivre === "diagonal", sempre = m.papelLivre === "pilar" || m.papel === "pilar" || m.papel === "tapamento" || diag, lim = (sempre ? 0.001 : 0.05) * Ny;
+    var Nc = 0, Nt = 0; arr(est).forEach(function (q) { var N = num(q.N, 0); if (-N > Nc) Nc = -N; if (N > Nt) Nt = N; });
+    var vs = arr(v.verificacoes);
+    function add(nome, item, limite, N) {
+      var q = { nome: nome, item: item, passos: [{ rotulo: "Comprimentos de flambagem (K = 1) e raios de giração", formula: e.txt, valor: br(e.lam, 0) }, { rotulo: "Força axial que faz dela uma barra " + (limite === 200 ? "comprimida" : "tracionada"), formula: diag ? "diagonal de contraventamento: sempre (a força troca de sinal com a ação)" : sempre ? "pilar: qualquer força axial" : "viga/terça: ≥ 5 % de Ag·fy/γa1 = " + br(lim, 1) + " kN", valor: br(N, 2) + " kN" }, { rotulo: "Limite", formula: "L/r ≤ " + limite, valor: e.lam <= limite ? "atende" : "NÃO atende" }],
+               resistencia: limite, solicitante: e.lam, unidade: "", razao: e.lam / limite };
+      vs.push(q);
+      if (q.razao > num(v.razao, 0)) { v.razao = q.razao; v.governante = nome; }
+    }
+    if (Nc > lim || diag) add("Esbeltez da barra comprimida (L/r ≤ 200)", REF_ESB_C, 200, Nc);
+    if (Nt > lim || diag) add("Esbeltez da barra tracionada (L/r ≤ 300)", REF_ESB_T, 300, Nt);
+    v.verificacoes = vs; v.ok = num(v.razao, 0) <= 1 + 1e-9; v.esbeltez = e.lam;
+    return v;
+  }
+
   /* ================================================================ UMA RODADA */
   /* cada rodada leva a foto dos perfis com que foi feita (para voltar a ela) */
   function rodada(lido, entrada, op) { var r = rodada0(lido, entrada, op); r._perfis = perfisAtuais(lido); return r; }
@@ -130,6 +171,17 @@
     var base = { ok: false, modelo: G, decisoes: G.decisoes, avisos: G.avisos, tipo: "livre" };
     var est = M.estabilidade(G);
     if (!est.ok) { base.problemas = est.problemas; base.motivo = est.problemas[0].texto; return base; }
+    /* REVISÃO C2 (14/10/2026): a ESCADA (pé apoiado no piso) não pode ser o único travamento da estrutura sem ninguém saber —
+       a estabilidade é refeita SEM as longarinas: se aí for mecanismo, a escada está travando a estrutura e o cálculo REPROVA
+       com o N do pé e do topo para detalhar (achado: mezanino sem o X que trava z saía aprovado só por causa da escada) */
+    var escTrava = null, mEsc = G.membros.filter(function (m) { return /pé da escada/.test(String((m.pontas.ini || {}).motivo || "")) || /pé da escada/.test(String((m.pontas.fim || {}).motivo || "")); });
+    if (mEsc.length) {
+      var ids0 = {}; mEsc.forEach(function (m) { ids0[m.peca] = true; });
+      var lido2 = {}; Object.keys(lido).forEach(function (k) { lido2[k] = lido[k]; }); lido2.pecas = lido.pecas.filter(function (q) { return !ids0[q.id]; });
+      var G2 = lido2.pecas.length ? M.montar(lido2, { bases: ap.bases, basePadrao: ap.basePadrao, apoios: ap.extras, ligacoes: lg.pontas, vigaPilar: lg.vigaPilar, vigaViga: lg.vigaViga, pontos: [] }) : null;
+      var est2 = G2 ? M.estabilidade(G2) : { ok: true };
+      if (!est2.ok && arr(est2.problemas).some(function (q) { return q.tipo === "mecanismo" || q.tipo === "sem-apoio"; })) escTrava = { membros: mEsc.map(function (m) { return m.id; }) };
+    }
     var CG = M.cargas(G, cg);
     if (G.problemas.length) { base.problemas = G.problemas.slice(); base.motivo = G.problemas[0].texto; return base; }
     var casos = CG.casos;
@@ -142,7 +194,20 @@
     if (!res.ok) {
       var tr = G.modelo.barras.some(function (b) { return b.tracao; });
       var tx = "A análise não fechou (" + res.motivo + ")." + (tr && /mecanismo|instável/i.test(res.motivo) ? " Com barra redonda (só tração), a diagonal fica frouxa quando comprimida: sem a do outro sentido (X), o plano vira mecanismo nessa combinação — desenhe o X ou use cantoneira/tubo." : (/instável|mecanismo/i.test(res.motivo) ? " A 2ª ordem pode ter passado da carga crítica de flambagem global: aumente a rigidez (perfis maiores, bases engastadas, contraventamento)." : ""));
-      base.problemas = [{ tipo: "analise", texto: tx, solucoes: [] }]; base.motivo = tx; base.casos = casos; base.combinacoes = combs; return base;
+      /* SIMULAÇÃO S3 (14/10/2026): piso de vigas ROTULADAS sem X no plano horizontal — os pilares internos ficam presos só por
+         vigas articuladas e o piso (chapa/deck) não é diafragma no modelo: quase mecanismo, que a 2ª ordem acusa (achado no
+         mezanino de peças prontas: λcr = 0,05) */
+      var horiz = G.membros.filter(function (m) { return m.papelLivre === "diagonal" && Math.abs(m.X[1]) < 0.2; }).length, vigasRot = G.membros.filter(function (m) { return (m.papelLivre === "viga" || m.papelLivre === "terca") && m.pontas.ini.tipo === "rotulada" && m.pontas.fim.tipo === "rotulada"; }).length;
+      var solP = [];
+      /* o nó que perdeu a rigidez é de uma DIAGONAL (sub-nó "D1_1#3"): é ela que flamba — o recado do piso não serve */
+      var noRuim = (/nó ([^,\s]+)/.exec(String(res.motivo || "")) || [])[1] || "", mDiag = G.membros.filter(function (m) { return m.papelLivre === "diagonal" && noRuim.indexOf(m.id + "_") === 0; })[0];
+      /* REVISÃO M4 (14/10/2026): o recado do piso só quando há base ROTULADA — com todas as bases engastadas cada pilar é um
+         balanço e o piso rotulado não vira mecanismo no plano; a causa é outra (pilar fraco, carga acima da crítica — r4f
+         do test-aco-livre: W 150 × 13,5 com depósito recebia o recado do piso) */
+      var basesRot = arr(G.bases).filter(function (b) { return b.tipo !== "engastada"; }).length;
+      if (mDiag) { var eD = esbeltezMembro(mDiag); tx += " Quem perde a rigidez é a diagonal " + mDiag.id + " (" + mDiag.secao.nome + (eD ? ", L/r = " + br(eD.lam, 0) : "") + "): ela flamba sob a compressão — use barra redonda (só tração, em X) ou um perfil mais robusto."; }
+      else if (/instável|mecanismo/i.test(res.motivo) && !horiz && vigasRot >= 3 && basesRot > 0) { tx += " Provável causa: as vigas do piso são ROTULADAS e não há contraventamento no PLANO do piso — o piso (chapa/steel deck) não entra como diafragma; os pilares internos ficam soltos no plano. Contravente o plano do piso (X horizontal; no mezanino ou na plataforma: 'Contraventamento no plano do piso') ou use ligações rígidas."; solP.push({ id: "contraventar-plano", texto: "Contraventar o plano do piso (X horizontal)" }); }
+      base.problemas = [{ tipo: "analise", texto: tx, solucoes: solP }]; base.motivo = tx; base.casos = casos; base.combinacoes = combs; return base;
     }
     /* deslocabilidade: Δ2/Δ1 por direção nos topos dos pilares (ou em todos os nós) */
     var pils = G.membros.filter(function (m) { return m.papelLivre === "pilar"; }), topos = pils.length ? pils.map(function (m) { return m.nos[m.nos.length - 1]; }) : G.modelo.nos.map(function (n) { return n.id; });
@@ -152,6 +217,8 @@
       [0, 2].forEach(function (dir) { var m1 = 0, m2 = 0; topos.forEach(function (n) { var a = d2.desloc1[n], b = d2.desloc[n]; if (!a || !b) return; m1 = Math.max(m1, Math.abs(a[dir])); m2 = Math.max(m2, Math.abs(b[dir])); }); if (m1 > minDesl) razaoDesl = Math.max(razaoDesl, m2 / m1); });
     });
     var classe = razaoDesl <= 1.13 ? "pequena" : razaoDesl <= 1.55 ? "média" : "grande";
+    G.decisoes.push({ tema: "Esbeltez", decisao: "L/r ≤ 200 nas barras comprimidas e ≤ 300 nas tracionadas como EXIGÊNCIA (reprova a barra e limita o perfil mais leve); barra redonda e cabo isentos",
+      motivo: "NBR 8800:2008, 5.3.4.1 (compressão; na 2024, 5.3.7, recomendação) e 5.2.8.1 (tração; recomendação, exceto barra redonda pré-tensionada) — o OrçaPRO adota os dois como exigência. Premissa: barras redondas e cabos montados com pré-tensão (esticador). Comprimida/tracionada: diagonais de perfil sempre; pilares com qualquer força axial; vigas e terças com força axial ≥ 5 % de Ag·fy/γa1" });
     G.decisoes.push({ tema: "Análise estrutural", decisao: "2ª ordem (P-Δ e P-δ) com forças nocionais de 0,3 % das cargas gravitacionais em x e em z; deslocabilidade " + classe + " (Δ2/Δ1 máx. = " + br(razaoDesl, 3) + ")", motivo: "NBR 8800:2024, 4.10 (limites 1,13 e 1,55)" + (classe !== "pequena" ? " — rigidez reduzida a 80 % (imperfeição de material)" : "") });
     if (classe !== "pequena") {
       var r80 = A.analisar(G.modelo, { combinacoes: elu.map(function (c) { return { id: c.id, fatores: c.fatores, segundaOrdem: true, nocional: c.nocional, reducaoRigidez: 0.8 }; }), estacoes: 7 });
@@ -168,7 +235,7 @@
     var resultadosM = {}, grupos = {}, falhas = estabGlobal.ok ? 0 : 1;
     G.membros.forEach(function (m) {
       var est2 = []; elu.forEach(function (c) { est2 = est2.concat(Dm.estacoesMembro(res, m, c.id)); });
-      var v = verificarMembro(m, est2, elu);
+      var v = aplicarEsbeltez(verificarMembro(m, est2, elu), m, est2);
       resultadosM[m.id] = v;
       arr(v.avisos).forEach(function (a) { var t = m.id + " (" + m.secao.nome + "): " + a; if (avisos.indexOf(t) < 0) avisos.push(t); });
       var g = grupos[m.grupo] || (grupos[m.grupo] = { razao: 0, razaoELU: 0, membro: null, perfil: m.secao.nome, papel: m.papelLivre, membros: [] });
@@ -177,6 +244,14 @@
       g.razaoELU = Math.max(g.razaoELU, v.razao);
       if (!v.ok) falhas++;
     });
+    if (escTrava) {
+      var nPe = 0, nTopo = 0;
+      escTrava.membros.forEach(function (mid) { var m = G.membros.filter(function (x) { return x.id === mid; })[0]; if (!m) return; elu.forEach(function (c) { var e = Dm.estacoesMembro(res, m, c.id); if (!e.length) return; var baixo = m.a[1] <= m.b[1]; nPe = Math.max(nPe, Math.abs((baixo ? e[0] : e[e.length - 1]).N)); nTopo = Math.max(nTopo, Math.abs((baixo ? e[e.length - 1] : e[0]).N)); }); });
+      escTrava.npe = nPe; escTrava.ntopo = nTopo;
+      escTrava.texto = "A estrutura só é estável por causa da ESCADA (" + escTrava.membros.join(", ") + "): sem as longarinas ela é MECANISMO — a escada está travando a estrutura. Contravente a estrutura (X na direção que falta) ou projete o pé e o topo da escada como travamento: N = " + br(nPe, 1) + " kN no pé e " + br(nTopo, 1) + " kN no topo (ELU).";
+      falhas++; avisos.push(escTrava.texto);
+      G.decisoes.push({ tema: "Escada como travamento", decisao: "REPROVA: a estrutura sem a escada é mecanismo", motivo: "a escada não é elemento de contraventamento previsto; o pé e o topo não foram dimensionados para N = " + br(nPe, 1) + " / " + br(nTopo, 1) + " kN" });
+    }
     /* tirantes (barra redonda): a barra que nunca traciona fica frouxa — informação */
     G.membros.filter(function (m) { return m.papel === "tirante"; }).forEach(function (m) {
       var trac = elu.some(function (c) { var cb = res.combinacoes[c.id]; return cb && cb.ok && m.segs.some(function (s) { var b = cb.barras[s]; return b && !b.inativa && b.estacoes[0].N > 1e-6; }); });
@@ -232,7 +307,7 @@
     });
     return {
       ok: true, tipo: "livre", aprovado: falhas === 0, falhas: falhas, modelo: G, casos: casos, combinacoes: combs, analise: res,
-      deslocabilidade: { razao: razaoDesl, classe: classe }, estabilidadeGlobal: estabGlobal, membros: resultadosM, grupos: grupos, contravento: null, servico: servico, reacoes: reacoes,
+      deslocabilidade: { razao: razaoDesl, classe: classe }, estabilidadeGlobal: estabGlobal, escadaTrava: escTrava, membros: resultadosM, grupos: grupos, contravento: null, servico: servico, reacoes: reacoes,
       peso: peso, pesoGrupos: pesoG, pesoTotal: peso, taxa: areaT > 0 ? peso / areaT : null, areaCarregada: areaT, cargasResumo: CG.resumo,
       vento: CG.resumo.vento ? CG.resumo.vento.resultado : null, ventoCasos: CG.resumo.vento ? CG.resumo.vento.casos : null,
       decisoes: G.decisoes, avisos: avisos, flambagem: flamb, naoAbrangidos: NAO_ABRANGIDOS.slice()
@@ -244,6 +319,9 @@
    * corda das pontas do vão; balanço — da ponta em relação ao apoio, L = 2 × o balanço. Pilares: topo × base. */
   function servicoDe(G, res, els) {
     var raras = els.filter(function (c) { return c.tipo === "ELS-rara"; }), Dm = Dim(), out = [];
+    /* SIMULAÇÃO S1 (14/10/2026): só com ações PERMANENTES não há combinação rara — e a flecha saía 0,0 mm ("aprovado"
+       sem verificar). Sem variável, a rara (ΣFg + Fq1 + ΣΨ1·Fq) é a própria ΣFg = a quase permanente: usa-se ela. */
+    if (!raras.length) { raras = els.filter(function (c) { return c.tipo === "ELS-qp"; }); if (raras.length) G.decisoes.push({ tema: "Deslocamentos", decisao: "flechas e deslocamentos com a combinação quase permanente", motivo: "só há ações permanentes: a combinação rara (NBR 8681) é ΣFg, igual à quase permanente" }); }
     var topos = {}; G.membros.forEach(function (m) { if (m.papelLivre === "pilar") topos[Math.round(Math.max(m.a[1], m.b[1]) * 10) / 10] = true; });
     var umPav = Object.keys(topos).length <= 1 && !G.membros.some(function (m) { return m.papelLivre === "pilar" && (m.pontas.ini.tipo === "continua" || m.pontas.fim.tipo === "continua") && G.membros.some(function (o) { return o !== m && o.papelLivre === "pilar" && o.nos.some(function (n) { return m.nos.indexOf(n) >= 0; }); }); });
     var cobPecas = {}, suporta = {};
@@ -321,11 +399,17 @@
     entrada = entrada || {}; op = op || {};
     var t0 = Date.now(), M = ML();
     if (!M || !Car() || !Ana() || !D8800() || !Dim()) return { ok: false, motivo: "Motores do cálculo não carregados.", tipo: "livre" };
-    var lido = M.ler(entrada.caixas, { ids: entrada.ids });
+    /* FRENTE S5 (14/10/2026, js/acoenvoltorio.js): com o ENVOLTÓRIO (faces + fechamento escolhido), o vento sai das faces
+       lidas da geometria e a cobertura de telha vira área de cobertura; o que a norma/o motor não cobre volta como
+       "não verificado" e a situação fica "incompleto" (nunca "aprovado" com o vento sem verificar) */
+    var PE = entrada.envoltorio && Env() ? Env().prepararEntrada(entrada) : null;
+    if (PE) entrada = PE.entrada;
+    if (PE && PE.problemas && PE.problemas.length) return { ok: false, tipo: "livre", problemas: PE.problemas, motivo: PE.problemas[0].texto };
+    var lido = M.ler(entrada.caixas, { ids: entrada.ids, acoEstrutura: entrada.acoEstrutura });
     var probs = [];
     if (lido.motivo) return { ok: false, motivo: lido.motivo, tipo: "livre" };
     if (lido.semPerfil.length) probs.push({ tipo: "perfil", texto: lido.semPerfil.length + " peça(s) sem perfil do catálogo — o cálculo precisa das propriedades da seção: " + lido.semPerfil.map(function (s) { return s.nome + " (" + s.motivo + ")"; }).join("; ") + ".", pecas: lido.semPerfil.map(function (s) { return s.id; }), solucoes: [{ id: "perfil", texto: "Escolha o perfil do catálogo nas Propriedades da peça" }] });
-    if (lido.semAco.length) probs.push({ tipo: "aco", texto: lido.semAco.length + " peça(s) com aço desconhecido: " + lido.semAco.map(function (s) { return s.nome + " (" + s.aco + ")"; }).join("; ") + ".", pecas: lido.semAco.map(function (s) { return s.id; }), solucoes: [{ id: "aco", texto: "Escolha o aço (ASTM A572 Gr.50, A36…) nas Propriedades" }] });
+    if (lido.semAco.length) probs.push({ tipo: "aco", texto: lido.semAco.length + " peça(s) com aço desconhecido: " + lido.semAco.map(function (s) { return s.nome + " (" + s.aco + ")"; }).join("; ") + ".", pecas: lido.semAco.map(function (s) { return s.id; }), solucoes: lido.semAco.some(function (q) { return q.estrutura; }) ? [{ id: "aco-estrutura", texto: "Usar ASTM A572 Gr.50 (o padrão de pilar e viga da Metálica) nas peças de aço da aba Estrutura" }] : [{ id: "aco", texto: "Escolha o aço (ASTM A572 Gr.50, A36…) nas Propriedades" }] });
     if (!lido.pecas.length && !probs.length) probs.push({ tipo: "vazio", texto: "Nenhuma barra de aço desenhada" + (arr(entrada.ids).length ? " na seleção" : "") + ": desenhe pilares, vigas e diagonais com as ferramentas da Metálica (Peças).", solucoes: [] });
     if (probs.length) return { ok: false, tipo: "livre", problemas: probs, motivo: probs[0].texto, lido: { pecas: lido.pecas.length, semPerfil: lido.semPerfil, ignoradas: lido.ignoradas } };
     var avisosLeitura = [];
@@ -437,6 +521,17 @@
     }
     if (r.modelo) { delete r.modelo.lido; r.modelo.pecas = (r.modelo.pecas || []).map(function (p) { return { id: p.id, mid: p.mid, nome: p.nome, papel: p.papel, cat: p.cat }; }); }
     delete r._perfis;
+    if (PE) Env().completarResultado(r, PE);
+    if (r.ok) {
+      /* REVISÃO S5 M2 (14/10/2026): o aço adotado para as peças da aba Estrutura (que não guarda a classe) é PREMISSA */
+      if (entrada.acoEstrutura && lido.estrutura && lido.estrutura.adotado) r.decisoes.push({ tema: "Aço adotado (aba Estrutura)", decisao: "aço ADOTADO pelo engenheiro: " + entrada.acoEstrutura + " em " + lido.estrutura.adotado + " pilar(es)/viga(s) da aba Estrutura (a aba Estrutura não guarda a classe do aço)", motivo: "premissa: confirmar a classe do aço com o fornecedor/projeto antes de emitir" });
+      /* REVISÃO S5 C3: os apoios declarados (parede/estrutura existente) */
+      var ex = (entrada.apoios && entrada.apoios.extras) || {}, kx = Object.keys(ex);
+      if (kx.length) {
+        var Gx = r.modelo, ptos = kx.map(function (k) { var pc = k.split(":")[0], lado = k.split(":")[1], m = arr(Gx.membros).filter(function (q) { return String(q.peca) === pc; })[0]; if (!m) return k; var no = lado === "fim" ? m.nos[m.nos.length - 1] : m.nos[0], I = Gx.noInfo && Gx.noInfo[no]; return m.id + " " + (lado === "fim" ? "fim" : "início") + (I ? " (" + br(I.P[0], 2) + "; " + br(I.P[1], 2) + "; " + br(I.P[2], 2) + ")" : ""); });
+        r.decisoes.push({ tema: "Apoios declarados", decisao: kx.length + " apoio(s) " + ex[kx[0]] + " declarado(s) pelo engenheiro: " + ptos.join("; "), motivo: "a estrutura se apoia numa parede/estrutura existente nesses pontos — confirmar na obra que ela recebe as reações do quadro de cargas" });
+      }
+    }
     r.tempoMs = Date.now() - t0;
     return r;
   }
@@ -453,6 +548,13 @@
     Object.keys(r.pecas).forEach(function (id) {
       var t = r.pecas[id]; if (!t.mudou) return;
       var c = por[id]; if (!c) { erros.push("peça " + id + " não está mais no modelo"); return; }
+      /* FRENTE S5 (14/10/2026): pilar/viga de aço da aba Estrutura — troca o perfil pela op `ajustar` (a mesma das
+         Propriedades da peça: campos perfil + material) */
+      if ((c.tipo === "pilar" || c.tipo === "viga") && !c.metal) {
+        var C0 = Cat(), pf = C0 && C0.paraPerfil ? C0.paraPerfil(t.para) : null;
+        if (!pf) { erros.push(t.para + " sem perfil no catálogo"); return; }
+        ops.push({ op: "ajustar", id: id, campos: { perfil: pf, material: "aco" } }); return;
+      }
       var cat = MC.perfilCat(t.para); if (!cat) { erros.push(t.para + " não é desenhável no 3D"); return; }
       var e = MC.editar(c, { cat: cat });
       if (!e || e.erro) { erros.push((c.metal && c.metal.papel) + " " + id + ": " + (e && e.erro)); return; }
@@ -462,7 +564,7 @@
     return { lote: { op: "lote", id: String(typeof novoId === "function" ? novoId() : "lote-" + Date.now()), origem: "metal-calc-livre", ops: ops }, n: ops.length, erros: erros };
   }
 
-  var AcoDimLivre = { calcular: calcular, opsAplicar: opsAplicar, LIMITES: LIMITES, NAO_ABRANGIDOS: NAO_ABRANGIDOS, familia: familia, verificarMembro: verificarMembro, REF_C1: REF_C1 };
+  var AcoDimLivre = { aplicarEsbeltez: aplicarEsbeltez, esbeltezMembro: esbeltezMembro, calcular: calcular, opsAplicar: opsAplicar, LIMITES: LIMITES, NAO_ABRANGIDOS: NAO_ABRANGIDOS, familia: familia, verificarMembro: verificarMembro, REF_C1: REF_C1 };
   global.AcoDimLivre = AcoDimLivre;
   if (typeof module !== "undefined" && module.exports) module.exports = AcoDimLivre;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

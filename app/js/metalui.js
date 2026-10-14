@@ -154,9 +154,9 @@
         "met-emenda": function () { self.dlgLigacao("emendaCobrejunta"); }, "met-clip": function () { self.dlgLigacao("clipTerca"); }, "met-contravento": function () { self.dlgLigacao("contraventamento"); }, "met-no": function () { self.dlgLigacao("noTrelica"); },
         "met-conferir": function () { self.conferirTudo(); }, "met-apagar-lig": function () { self.apagarLigacao(); },
         "met-galpao": function () { self.dlgGalpao(); },
-        "met-calc-assistente": function () { self.calc("abrir"); }, "met-calc-livre": function () { if (!global.MetalCalcLivreUI) { toast("O cálculo da estrutura desenhada não carregou (js/metalcalclivreui.js).", "erro", 8000); return; } global.MetalCalcLivreUI.abrir(); }, "met-calc-modelos": function () { self.calc("modelos"); }, "met-calc-calcular": function () { self.calc("calcular"); },
-        "met-calc-resultados": function () { self.calc("resultados"); }, "met-calc-memorial": function () { self.calc("memorial"); }, "met-calc-pranchas": function () { self.calc("pranchas"); },
-        "met-calc-cype": function () { self.calc("cype"); }, "met-calc-normas": function () { self.calc("normas"); },
+        "met-calc-assistente": function () { self.calc("abrir"); }, "met-calc-livre": function () { if (!global.MetalCalcLivreUI) { toast("O cálculo da estrutura desenhada não carregou (js/metalcalclivreui.js).", "erro", 8000); return; } global.MetalCalcLivreUI.abrir(); }, "met-calc-modelos": function () { self.calc("modelos"); }, "met-calc-calcular": function () { self.calcRota("calcular"); },
+        "met-calc-resultados": function () { self.calcRota("resultados"); }, "met-calc-memorial": function () { self.calcRota("memorial"); }, "met-calc-pranchas": function () { self.calcRota("pranchas"); },
+        "met-calc-cype": function () { self.calcRota("cype"); }, "met-calc-normas": function () { self.calc("normas"); },
         "met-numerar": function () { self.numerar(); }, "met-desenho": function () { self.fab("desenhos"); }, "met-corte": function () { self.fab("corte"); }, "met-dobrada": function () { self.fab("dobrada"); },
         "met-planif": function () { self.fab("planificacao"); }, "met-nesting": function () { self.fab("nesting"); }, "met-pintura": function () { self.fab("pintura"); }, "met-dstv": function () { self.exportar("dstv"); }, "met-dxf": function () { self.exportar("dxf"); },
         "met-listas": function () { self.listas(); }, "met-ifc": function () { self.ifc(); }, "met-pacote": function () { self.pacote(); }, "met-fontes": function () { self.fontes(); }
@@ -188,6 +188,43 @@
       return X[qual]();
     },
 
+    /* METÁLICA › S5 (14/10/2026, js/metalcalclivreui.js): Calcular / Resultados / Memorial / Pranchas / CYPE da fita vão
+       para a ESTRUTURA DESENHADA quando o modelo tem barras de aço desenhadas (Metálica, Peças prontas ou a aba Estrutura) e
+       nenhum galpão do assistente — antes iam sempre para o assistente do galpão, que calculava um galpão pré-configurado
+       (o "não consegui calcular a estrutura desenhada" do Rogério). Com os dois no modelo, a tela pergunta qual. */
+    calcRota: function (qual) {
+      var L = global.MetalCalcLivreUI, st = this.estado ? this.estado() : null, cx = (st && st.caixas) || [], desenhadas = 0, galpao = 0, antigo = 0;
+      cx.forEach(function (c) {
+        if (!c) return;
+        if (c.galpao) { galpao++; return; }
+        if (c.tipo === "metal" && c.metal && c.metal.kind === "perfil" && !c.metal.lig) { desenhadas++; if (/ — (pórtico|vão) \d+/.test(String(c.metal.nome || ""))) antigo++; }
+        else if ((c.tipo === "pilar" || c.tipo === "viga") && c.material === "aco") desenhadas++;
+      });
+      var self = this;
+      function livre() {
+        if (!L) { toast("O cálculo da estrutura desenhada não carregou (js/metalcalclivreui.js).", "erro", 8000); return false; }
+        if (qual === "calcular") return L.abrir(1);
+        if (qual === "resultados") return L.abrirResultado() || true;
+        if (qual === "memorial") return L.memorial();
+        if (qual === "pranchas") return L.pranchas();
+        if (qual === "cype") return L.cype();
+        return L.abrir();
+      }
+      if (!desenhadas || !L) return this.calc(qual);
+      /* REVISÃO S5 M3 (14/10/2026): o galpão gerado ANTES da marca c.galpao não se distingue das barras desenhadas — se a
+         obra tem o estado do assistente salvo (orcapro:metal:calc:<obra>), pergunta também (antes ia direto para a
+         estrutura desenhada e calculava o galpão antigo como barras soltas) */
+      var salvo = false;
+      if (!galpao) { try { var gS = global.Gestao, sS = global.localStorage && JSON.parse(global.localStorage.getItem("orcapro:metal:calc:" + String((gS && gS._bimSel) || "geral")) || "null"); salvo = !!(sS && sS.estado); } catch (eS) { salvo = false; } }
+      /* e as peças com o nome que o gerador do galpão dá ("… — pórtico 2", "… — vão 3") também contam como galpão antigo */
+      if (!galpao && !salvo && !antigo) return livre();
+      if (global.UI && UI.modal) {
+        UI.modal("Qual estrutura?", '<p style="font-size:13px;line-height:1.5">' + (galpao ? "O modelo tem um <b>galpão do assistente</b> (" + galpao + " peças) e <b>" + desenhadas + " barra(s) desenhada(s)</b> fora dele." : "O modelo tem <b>" + desenhadas + " barra(s) de aço</b> e " + (antigo ? "<b>" + antigo + "</b> delas têm o nome que o gerador do <b>galpão do assistente</b> dá" : "esta obra tem um <b>galpão do assistente</b> salvo") + " (um galpão gerado antes desta versão não leva a marca de galpão e aparece como barras).") + " Qual você quer " + ({ calcular: "calcular", resultados: "ver", memorial: "no memorial", pranchas: "nas pranchas", cype: "exportar" }[qual] || "abrir") + "?</p>",
+          [{ texto: "Estrutura desenhada", classe: "primary", onClick: function () { UI.fecharModal(); livre(); } }, { texto: "Galpão do assistente", onClick: function () { UI.fecharModal(); self.calc(qual); } }]);
+        return true;
+      }
+      return livre();
+    },
     /* o painel Cálculo: a tela é o js/metalcalcui.js (que pode ainda não ter carregado) */
     calc: function (qual) {
       var C = global.MetalCalcUI;

@@ -62,12 +62,14 @@
     IFCBUILDINGELEMENTPROXY: ["ARQ-GENERICO", "medio"]
   };
   function categoria(ifc) { return CATEGORIAS[String(ifc || "").toUpperCase()] || ["ARQ-GENERICO", "medio"]; }
+  /* FASES (P10): status → [sufixo da camada, tipo de linha] */
+  var FASE_DXF = { demolido: ["DEMOLIDO", "DEMOLIDO"], temporario: ["TEMPORARIO", "TRACO-PONTO"] };
 
   /* a camada da anotação pela classe do grupo do SVG do desenho 2D */
   var CAMADA_CLASSE = [
     ["d2-eixo-g", "ANOT-EIXO"], ["d2-marca", "ANOT-MARCA-CORTE"], ["d2-nivel", "ANOT-NIVEL"], ["d2-titulo", "ANOT-TITULO"],
     ["d2-amb-legenda", "ANOT-LEGENDA"], ["d2-ambientes", "ARQ-AMBIENTE-IDENT"], ["d2-inst", "INST-REDE"], ["d2-cad", "CAD-VINCULO"],
-    ["d2-cota", "ANOT-COTA"]
+    ["d2-cota", "ANOT-COTA"], ["d2-acima", "ANOT-ACIMA"]
   ];
 
   /* --------------------------------------------------------------- doc */
@@ -111,7 +113,7 @@
       /* ARC: centro, raio e ângulos em GRAUS, no sentido anti-horário (Y para cima) de a0 até a1 */
       arco: function (c, x, y, r, a0, a1) { if (!(r > 0)) return null; return this.add({ t: "ARC", camada: c, x: x, y: y, r: r, a0: a0, a1: a1 }); },
       texto: function (c, x, y, h, s, ang, centro) { if (!String(s || "").trim()) return null; return this.add({ t: "TEXT", camada: c, x: x, y: y, h: h, s: s, ang: ang || 0, centro: !!centro }); },
-      hachura: function (c, laços, espaco) { if (!laços || !laços.length) return null; return this.add({ t: "HATCH", camada: c, lacos: laços, espaco: espaco }); },
+      hachura: function (c, laços, espaco, solido) { if (!laços || !laços.length) return null; var h = { t: "HATCH", camada: c, lacos: laços, espaco: espaco }; if (solido) h.solido = true; return this.add(h); },   /* METÁLICA › S5: solido = preenchimento cheio (seção cortada, ponta de seta) */
       estiloCota: function (nome, o) { this.estilosCota[nome] = o; return nome; },
       /* cota linear girada (0° = horizontal): p1/p2 = origens das linhas de chamada,
          pl = um ponto da linha de cota; `graf` = as entidades do desenho da cota */
@@ -139,7 +141,7 @@
     var hDicRaiz = H(), hDicGrupo = H(), hDicPlot = H(), hPlotNormal = H();
     var hEnt = []; doc.entidades.forEach(function () { hEnt.push(H()); });
     var hBlocoEnts = doc.blocos.map(function (b) { return { b: H(), e: H(), ents: b.ents.map(function () { return H(); }) }; });
-    var hLt = { BYBLOCK: H(), BYLAYER: H(), CONTINUOUS: H(), TRACEJADO: H(), "TRACO-PONTO": H() };
+    var hLt = { BYBLOCK: H(), BYLAYER: H(), CONTINUOUS: H(), TRACEJADO: H(), "TRACO-PONTO": H(), PROJECAO: H(), DEMOLIDO: H() };
     var hEst = { STANDARD: H(), "RA-ARIAL": H() };
     var hDim = { STANDARD: H() }; Object.keys(doc.estilosCota).forEach(function (k) { hDim[k] = H(); });
     var hCam = {}; doc.ordem.forEach(function (n) { hCam[n] = H(); });
@@ -193,12 +195,16 @@
     });
     var lts = [["ByBlock", hLt.BYBLOCK, []], ["ByLayer", hLt.BYLAYER, []], ["Continuous", hLt.CONTINUOUS, []],
       /* padrões RA (NBR 8403) em mm de papel — o $LTSCALE leva para a escala do modelo */
-      ["TRACEJADO", hLt.TRACEJADO, [4, -1.5]], ["TRACO-PONTO", hLt["TRACO-PONTO"], [8, -1.5, 1, -1.5]]];
+      ["TRACEJADO", hLt.TRACEJADO, [4, -1.5]], ["TRACO-PONTO", hLt["TRACO-PONTO"], [8, -1.5, 1, -1.5]],
+      /* ACIMA DO CORTE: o tracejado LONGO de projeção (data/estilos-objeto-ra.json "projecao", 6 / 1,5 mm) */
+      ["PROJECAO", hLt.PROJECAO, [6, -1.5]],
+      /* FASES (P10): o tracejado CURTO do demolido (Padrão RA "demolido", 1,5 / 1 mm) */
+      ["DEMOLIDO", hLt.DEMOLIDO, [1.5, -1]]];
     tabela("LTYPE", lts.length, function () {
       lts.forEach(function (lt) {
         reg("LTYPE", lt[1], "AcDbLinetypeTableRecord", hTabelas.LTYPE);
         g(2, lt[0]); g(70, 0);
-        g(3, lt[2].length ? (lt[0] === "TRACEJADO" ? "Tracejado RA __ __ __" : "Traco-ponto RA ____ . ____") : (lt[0] === "Continuous" ? "Solid line" : ""));
+        g(3, lt[2].length ? (lt[0] === "TRACEJADO" ? "Tracejado RA __ __ __" : lt[0] === "PROJECAO" ? "Projecao RA (acima do corte) ______ ______" : lt[0] === "DEMOLIDO" ? "Demolido RA _ _ _ _" : "Traco-ponto RA ____ . ____") : (lt[0] === "Continuous" ? "Solid line" : ""));
         g(72, 65); g(73, lt[2].length);
         var tot = 0; lt[2].forEach(function (v) { tot += Math.abs(v); }); g(40, num(tot));
         lt[2].forEach(function (v) { g(49, num(v)); g(74, 0); });
@@ -314,12 +320,13 @@
       } else if (e.t === "HATCH") {
         comum("HATCH", hh, owner, e.camada, "AcDbHatch");
         g(10, 0); g(20, 0); g(30, 0); g(210, 0); g(220, 0); g(230, 1);
-        g(2, "ANSI31"); g(70, 0); g(71, 0); g(91, e.lacos.length);
+        g(2, e.solido ? "SOLID" : "ANSI31"); g(70, e.solido ? 1 : 0); g(71, 0); g(91, e.lacos.length);
         e.lacos.forEach(function (pts) {
           g(92, 2); g(72, 0); g(73, 1); g(93, pts.length);
           pts.forEach(function (p) { g(10, num(p[0])); g(20, num(p[1])); });
           g(97, 0);
         });
+        if (e.solido) { g(75, 0); g(76, 1); g(98, 0); return; }
         /* ANSI31: família única a 45°, espaçamento 3,175 na escala 1 */
         var S = (+e.espaco || 3.175) / 3.175, d = 2.2450640303 * S;
         g(75, 0); g(76, 1); g(52, 0); g(41, num(S)); g(77, 0); g(78, 1);
@@ -483,6 +490,17 @@
     var hach = {};
     (dados.cortes || []).forEach(function (c) {
       var ct = categoria(c.ifc), mm = ct[1] === "forte" ? pn.corte : ct[1] === "medio" ? pn.marca : pn.vista;
+      /* FASES (P10, 14/10/2026): o DEMOLIDO e o TEMPORÁRIO saíam aqui como corte comum (contínuo e hachurado) e de
+         novo, tracejados, pela anotação do SVG. Agora vão UMA vez, na camada <CAT>-DEMOLIDO / <CAT>-TEMPORARIO com o
+         tipo de linha dela (DEMOLIDO 1,5 / 1 mm; TRACO-PONTO) e sem hachura — como na tela */
+      var fz = FASE_DXF[c.fase];
+      if (fz) {
+        var nf = cam(ct[0] + "-" + fz[0], mm, fz[1]), Pf = (c.pts || []).map(function (q) { return xf.pt(q[0], q[1]); });
+        if (Pf.length < 2) return;
+        if (!rec || Pf.every(function (q) { return dentro(q[0], q[1], rec); })) { doc.poli(nf, Pf, !!c.fechado); return; }
+        for (var j = 0; j + 1 < Pf.length + (c.fechado ? 1 : 0); j++) { var a1 = Pf[j], b1 = Pf[(j + 1) % Pf.length], r1 = recortarSeg(a1[0], a1[1], b1[0], b1[1], rec); if (r1) doc.linha(nf, r1[0], r1[1], r1[2], r1[3]); }
+        return;
+      }
       var n = cam(ct[0] + "-CORTE", mm);
       var P = (c.pts || []).map(function (q) { return xf.pt(q[0], q[1]); });
       if (P.length < 2) return;
@@ -498,6 +516,23 @@
       }
     });
     Object.keys(hach).forEach(function (ct) { doc.hachura(cam("HACHURA-" + ct, pn.cota), hach[ct], 1.6 * k * xf.s); });
+    /* FASES: as arestas VISTAS da peça demolida/temporária (quando o desenho as traz) */
+    Object.keys(dados.linhasFase || {}).forEach(function (st) {
+      var fz = FASE_DXF[st]; if (!fz) return;
+      var nl = cam("FASE-" + fz[0] + "-VISTA", pn.vista, fz[1]);
+      (dados.linhasFase[st] || []).forEach(function (l) { var p1 = xf.pt(l[0], l[1]), p2 = xf.pt(l[2], l[3]), r = recortarSeg(p1[0], p1[1], p2[0], p2[1], rec); if (r) doc.linha(nl, r[0], r[1], r[2], r[3]); });
+    });
+    /* 2a) ACIMA DO CORTE (js/desenho2d.js Acima): a projeção da peça acima do plano na camada
+       <CAT>-ACIMA (EST-VIGA-ACIMA, EST-PERFIL-ACIMA…), pena de vista e tipo de linha PROJECAO na camada —
+       o mesmo tracejado da tela; o rótulo vem do SVG (ANOT-ACIMA) */
+    if (dados.tipo === "planta") (dados.acima || []).forEach(function (it) {
+      if (!it) return;
+      var n = cam(categoria(it.t)[0] + "-ACIMA", pn.vista, "PROJECAO");
+      if (it.segs) { it.segs.forEach(function (q) { var p1 = xf.pt(q[0], q[1]), p2 = xf.pt(q[2], q[3]), r = recortarSeg(p1[0], p1[1], p2[0], p2[1], rec); if (r) doc.linha(n, r[0], r[1], r[2], r[3]); }); return; }
+      var P = (it.pts || []).map(function (q) { return xf.pt(q[0], q[1]); }); if (P.length < 2) return;
+      if (!rec || P.every(function (q) { return dentro(q[0], q[1], rec); })) { doc.poli(n, P, P.length > 2); return; }
+      for (var i = 0; i < P.length; i++) { var a = P[i], b = P[(i + 1) % P.length], r = recortarSeg(a[0], a[1], b[0], b[1], rec); if (r) doc.linha(n, r[0], r[1], r[2], r[3]); }
+    });
     /* 2b) PORTA (js/simboloporta.js): a FOLHA aberta em ARQ-PORTA-FOLHA (pena média) e o GIRO
        (ARC de verdade) e a seta do correr em ARQ-PORTA-GIRO (pena fina) — o mesmo desenho da tela */
     (dados.portas || []).forEach(function (sp) {
@@ -553,7 +588,7 @@
     var svg = opts.svg || D2.svg(dados, e, { titulo: opts.titulo || "" }).svg;
     var mapa = {}; CAMADA_CLASSE.forEach(function (cc) { mapa[cc[1]] = doc.especificar(pre + cc[1], cc[1] === "ANOT-TITULO" || cc[1] === "ANOT-EIXO" || cc[1] === "ANOT-MARCA-CORTE" ? pn.marca : cc[1] === "CAD-VINCULO" ? pn.vista : pn.cota); });
     mapa.ANOT = doc.especificar(pre + "ANOT", pn.cota);
-    svgParaDxf(svg, doc, xf, { recorte: rec, camadas: mapa, pular: { "d2-papel": 1, "d2-vista": 1, "d2-corte": 1, "d2-porta": 1, "d2-cota": 1, "d2-amb-alvo": 1, "d2-amb-cores": 1, "d2-amb-sel-l": 1 } });
+    svgParaDxf(svg, doc, xf, { recorte: rec, camadas: mapa, pular: { "d2-papel": 1, "d2-vista": 1, "d2-corte": 1, "d2-porta": 1, "d2-cota": 1, "d2-amb-alvo": 1, "d2-amb-cores": 1, "d2-amb-sel-l": 1, "d2-acima-l": 1, "d2-fase-demolido": 1, "d2-fase-temporario": 1 } });
     doc.camadasUsadas = Object.keys(camadasUsadas);
     return doc;
   }

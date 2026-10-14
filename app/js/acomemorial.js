@@ -82,6 +82,12 @@
   }
   function un(v, c, u) { return br(v, c) + NB + u; }
   function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"); }
+  /* AJUSTE DA GERENTE (14/10/2026): o símbolo de PERFIL vai com índice no HTML do memorial — t<sub>f</sub>, t<sub>w</sub>,
+     b<sub>f</sub>, h<sub>w</sub> e afins (b<sub>w</sub>, t<sub>fs</sub>, b<sub>fi</sub>…): na aba de unidades (kgf/tf) "tf" é
+     tonelada-força e "Ff = M/(d − tf) = 4,06 tf" ficava ambíguo. SÓ no HTML do memorial: o dado do motor (a fórmula em
+     texto) não muda — a tela, a prancha e o DXF continuam com "tf" sem tag. Recebe texto JÁ escapado. */
+  var RE_IX = /(^|[^A-Za-z_\u00C0-\u024F])([tbh])([fw])(s|i|1|2)?(?![A-Za-z0-9_\u00C0-\u024F])/g;
+  function ix(h) { return String(h == null ? "" : h).replace(RE_IX, function (m0, a, l, s, k) { return a + l + "<sub>" + s + (k || "") + "</sub>"; }); }
   /* Anotações de trabalho que os motores carregam nos textos ("(conferir na 2023)", "— conferir na NBR …", "numeração
      não conferida no texto oficial", "(texto oficial pendente)") são rastreio interno da base de normas: o memorial
      registra O QUE foi aplicado (edição, item, expressão), não a lista de tarefas. ⚠ Item de norma marcado como não
@@ -1008,7 +1014,7 @@
     var origem = {}; ord2.forEach(function (nome) { var o = obj(obj(perf[nome].mm).origem); Object.keys(o).forEach(function (k) { (origem[o[k]] = origem[o[k]] || []).indexOf(k) < 0 && origem[o[k]].push(k); }); });
     var notaOrig = Object.keys(origem).length ? "Origem das propriedades: " + Object.keys(origem).map(function (k) { return t(k) + " — " + origem[k].filter(function (x) { return /^(A|Ix|Iy|Wx|Wy|Zx|Zy|rx|ry|J|Cw|massa)$/.test(x); }).join(", "); }).filter(function (x) { return !/— $/.test(x); }).join("; ") + "." : "";
     h += h3(n + (GM ? ".5" : ".4"), "Perfis");
-    h += d.tab("Perfis — dimensões e área", ["Perfil", thn("d (mm)"), thn("bf (mm)"), thn("tw (mm)"), thn("tf (mm)"), thn("A (cm²)"), thn("Massa (kg/m)")], lg);
+    h += d.tab("Perfis — dimensões e área", ["Perfil", thn("d (mm)"), thn("b<sub>f</sub> (mm)"), thn("t<sub>w</sub> (mm)"), thn("t<sub>f</sub> (mm)"), thn("A (cm²)"), thn("Massa (kg/m)")], lg);
     h += d.tab("Perfis — propriedades geométricas", ["Perfil", thn("Ix (cm⁴)"), thn("Wx (cm³)"), thn("Zx (cm³)"), thn("rx (cm)"), thn("Iy (cm⁴)"), thn("Wy (cm³)"), thn("ry (cm)"), thn("J (cm⁴)"), thn("Cw (cm⁶)")], lpz,
       { nota: (notaOrig ? notaOrig + "<br>" : "") + (fontes.length ? "Catálogos: " + unicos(fontes).join("; ") + "." : "") });
     return h;
@@ -1378,13 +1384,13 @@
     return br(v, c2);
   }
   function verificacaoTab(c, d, v, onde) {
-    var lin = objs(v.passos).map(function (p) { return trw([td(t(p.rotulo, onde)), td(p.formula ? '<span class="eq">' + t(p.formula, onde) + "</span>" : ""), td(valorPasso(p.valor, onde), "r"), td(p.extra ? t(p.extra, onde) : "")]); });
+    var lin = objs(v.passos).map(function (p) { return trw([td(ix(t(p.rotulo, onde))), td(p.formula ? '<span class="eq">' + ix(t(p.formula, onde)) + "</span>" : ""), td(ix(valorPasso(p.valor, onde)), "r"), td(p.extra ? ix(t(p.extra, onde)) : "")]); });
     var ok = num(v.razao, NaN) <= 1 + 1e-9, temU = unidadeOk(v.unidade), u = temU ? NB + esc(v.unidade) : "";
     var rel = ok ? " ≤ " : " > ";   /* o sinal acompanha o resultado: "≤" numa verificação que falha seria falso */
     var fim = temU ? "S<sub>d</sub> = " + br(num(v.solicitante, NaN), 2) + u + rel + "R<sub>d</sub> = " + br(num(v.resistencia, NaN), 2) + u + " → S<sub>d</sub>/R<sub>d</sub> = " + br(num(v.razao, NaN), 3)
       : "valor da expressão = " + br(num(v.solicitante, NaN), 3) + rel + br(num(v.resistencia, NaN), 2);
     lin.push(trw([td("<b>Verificação</b>"), td(fim), tn("<b>" + br(num(v.razao, NaN), 3) + "</b>"), td(situacao(ok))], "tot"));
-    return d.tab(t(v.nome, onde) + " — " + t(v.item, onde), ["Passo", "Expressão", thn("Resultado"), "Observação"], lin, { classe: "verif" });
+    return d.tab(ix(t(v.nome, onde)) + " — " + ix(t(v.item, onde)), ["Passo", "Expressão", thn("Resultado"), "Observação"], lin, { classe: "verif" });
   }
   function unidadeOk(u) { return u != null && String(u).trim() !== "" && String(u).trim() !== "—"; }
 
@@ -1394,7 +1400,7 @@
     if (s.ok === false && !objs(s.verificacoes).length) return caixa("<b>" + esc(nome) + ": nenhum perfil passa.</b> " + t(s.motivo) + (s.sugestao ? ". " + t(s.sugestao) : "") + ".", true);
     var sc = obj(s.secao), h = "", ehTerca = s.tipo === "terca", lin = [];
     lin.push(trw([td("Perfil"), td(t(s.perfil) + (sc.tipo ? " (" + t(sc.tipo) + ", formado a frio)" : ""))]));
-    if (fin(num(sc.bw, NaN))) lin.push(trw([td("Seção"), td("bw = " + un(num(sc.bw, NaN), 0, "mm") + "; bf = " + un(num(sc.bf, NaN), 0, "mm") + "; D = " + un(num(sc.D, NaN), 0, "mm") + "; t = " + un(num(sc.t, NaN), 2, "mm"))]));
+    if (fin(num(sc.bw, NaN))) lin.push(trw([td("Seção"), td("b<sub>w</sub> = " + un(num(sc.bw, NaN), 0, "mm") + "; b<sub>f</sub> = " + un(num(sc.bf, NaN), 0, "mm") + "; D = " + un(num(sc.D, NaN), 0, "mm") + "; t = " + un(num(sc.t, NaN), 2, "mm"))]));
     lin.push(trw([td("Aço"), td(t(s.aco) + (fin(num(sc.fy, NaN)) ? ": fy = " + un(sc.fy, 0, "MPa") + "; fu = " + un(num(sc.fu, NaN), 0, "MPa") : ""))]));
     if (fin(num(s.massa, NaN))) lin.push(trw([td("Massa"), td(un(s.massa, 2, "kg/m"))]));
     lin.push(trw([td("Vão (biapoiada entre " + (ehTerca ? "pórticos" : "pilares") + ")"), td(un(num(s.vao, NaN), 3, "m"))]));

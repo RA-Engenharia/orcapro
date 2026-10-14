@@ -90,7 +90,12 @@
       ["principal", "Perfil das principais", "cat", ["W", "GERDAU"]], ["secundaria", "Perfil das secundárias", "cat", ["W", "GERDAU", "C"]], ["pilar", "Perfil dos pilares", "cat", ["W", "GERDAU", "HSSR"]],
       ["piso", "Piso", "sel", [["xadrez", "Chapa xadrez"], ["grade", "Grade (piso gradeado)"], ["deck", "Steel deck"], ["nenhum", "Sem piso"]]], ["tPiso", "Espessura da chapa xadrez (mm)", "mm"],
       ["frente", "Guarda-corpo na frente (Z mínimo)", "check"], ["fundo", "Guarda-corpo no fundo (Z máximo)", "check"], ["esquerda", "Guarda-corpo à esquerda (X mínimo)", "check"], ["direita", "Guarda-corpo à direita (X máximo)", "check"],
-      ["contraventar", "Contraventamento em X nos vãos de canto", "check"], ["contravento", "Perfil do contraventamento", "cat", ["L"]], ["placaBase", "Placa de base nos pilares", "check"], giro];
+      ["contraventar", "Contraventamento em X nos vãos de canto", "check"], ["contravento", "Perfil do contraventamento", "cat", ["L", "BR"]], ["placaBase", "Placa de base nos pilares", "check"],
+      /* SIMULAÇÃO S3 (14/10/2026): o motor já fazia — faltavam na tela (sem o X no plano, vigas rotuladas deixam os pilares
+         internos soltos no cálculo; a abertura é a chegada da escada) */
+      ["contraventoPlano", "Contraventamento no plano do piso (X horizontal)", "check"],
+      ["abertura", "Abertura no guarda-corpo (chegada da escada)", "sel", [["", "Sem abertura"], ["frente", "Na frente (Z mínimo)"], ["fundo", "No fundo (Z máximo)"], ["esquerda", "À esquerda (X mínimo)"], ["direita", "À direita (X máximo)"]]],
+      ["aberturaPos", "Posição da abertura ao longo da borda (0 a 1)", "num"], ["aberturaLarg", "Largura da abertura (m)", "num"], giro];
     if (tipo === "rolamento") return [
       ["cotaTrilho", "Cota do topo do trilho (m; 0 = 30 cm abaixo do topo do pilar)", "num"], ["excentricidade", "Do eixo dos pilares ao eixo do trilho (m)", "num"],
       ["viga", "Perfil da viga de rolamento", "cat", ["W", "GERDAU"]], ["console", "Perfil do console", "cat", ["W", "GERDAU"]],

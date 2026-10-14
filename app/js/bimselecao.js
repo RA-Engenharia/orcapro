@@ -218,6 +218,19 @@
       var l = L[k], ud = U[k]; if (!l || !ud || !ud.u) continue;
       var d2 = dSeg(p, [l[0], l[1]], [l[2], l[3]]); if (d2 < dm) { dm = d2; best = ud.u; }
     }
+    /* ACIMA DO CORTE (js/desenho2d.js Acima): o tracejado da peça acima do plano — perto da linha
+       (junto com as outras), e por último o clique DENTRO da projeção (a viga sobre o cômodo) */
+    var AC = dados.acima || [];
+    AC.forEach(function (it) {
+      if (!it || !it.u) return;
+      if (it.segs) it.segs.forEach(function (q) { var d3 = dSeg(p, [q[0], q[1]], [q[2], q[3]]); if (d3 < dm) { dm = d3; best = it.u; } });
+      else if (it.pts) for (var i = 0, n = it.pts.length; i < n; i++) { var d4 = dSeg(p, it.pts[i], it.pts[(i + 1) % n]); if (d4 < dm) { dm = d4; best = it.u; } }
+    });
+    if (best) return best;
+    AC.forEach(function (it) {
+      if (!it || !it.u || !it.pts || it.pts.length < 3) return;
+      if (pontoEmPol(p, it.pts)) { var a = area(it.pts); if (a < bestA) { bestA = a; best = it.u; } }
+    });
     return best;
   }
   /* as peças de um desenho 2D para a janela, agrupadas por uid */
@@ -236,6 +249,18 @@
       var ud = U[k]; if (!ud || !ud.u || (filtro && !filtro(ud.u))) continue;
       peca(ud.u).segs.push([L[k][0], L[k][1], L[k][2], L[k][3]]);
     }
+    /* ACIMA DO CORTE: a projeção tracejada também entra na janela */
+    ((dados && dados.acima) || []).forEach(function (it) {
+      if (!it || !it.u || (filtro && !filtro(it.u))) return;
+      var pc = peca(it.u);
+      if (it.segs) it.segs.forEach(function (q) { pc.segs.push([q[0], q[1], q[2], q[3]]); pc.pts.push([q[0], q[1]], [q[2], q[3]]); });
+      else if (it.pts && it.pts.length) {
+        var n = it.pts.length;
+        it.pts.forEach(function (q) { pc.pts.push([q[0], q[1]]); });
+        for (var i = 0; i < n; i++) { var a = it.pts[i], b = it.pts[(i + 1) % n]; pc.segs.push([a[0], a[1], b[0], b[1]]); }
+        if (n > 2) pc.polis.push(it.pts);
+      }
+    });
     return ordem.map(function (u) { return m[u]; });
   }
 
@@ -440,6 +465,14 @@
         });
         var L = dados.linhas || [], U = dados.linhasUd || [];
         for (var k = 0; k < L.length && k < U.length; k++) if (U[k] && U[k].u === u) el("line", { x1: L[k][0], y1: L[k][1], x2: L[k][2], y2: L[k][3], "class": cls, "vector-effect": "non-scaling-stroke" });
+        /* ACIMA DO CORTE: o realce da peça acima do plano é o contorno da projeção */
+        (dados.acima || []).forEach(function (it) {
+          if (!it || it.u !== u) return;
+          var s2 = "";
+          if (it.segs) it.segs.forEach(function (q) { s2 += "M" + q[0] + " " + q[1] + "L" + q[2] + " " + q[3]; });
+          else if (it.pts && it.pts.length > 1) { it.pts.forEach(function (q, i) { s2 += (i ? "L" : "M") + q[0] + " " + q[1]; }); s2 += "Z"; }
+          if (s2) el("path", { d: s2, "class": cls + " sl-acima", "vector-effect": "non-scaling-stroke" });
+        });
       }
       if (st.hover && st.hoverId === id && !sm[st.hover] && !d) contorno(st.hover, "sl-hover");
       sel.forEach(function (u) { contorno(u, "sl-sel"); });

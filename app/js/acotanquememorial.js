@@ -35,6 +35,12 @@
   }
   function un(v, c, u) { return br(v, c) + NB + u; }
   function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+  /* AJUSTE DA GERENTE (14/10/2026): o símbolo de PERFIL vai com índice no HTML do memorial — t<sub>f</sub>, t<sub>w</sub>,
+     b<sub>f</sub>, h<sub>w</sub> e afins (b<sub>w</sub>, t<sub>fs</sub>, b<sub>fi</sub>…): na aba de unidades (kgf/tf) "tf" é
+     tonelada-força e "Ff = M/(d − tf) = 4,06 tf" ficava ambíguo. SÓ no HTML do memorial: o dado do motor (a fórmula em
+     texto) não muda — a tela, a prancha e o DXF continuam com "tf" sem tag. Recebe texto JÁ escapado. */
+  var RE_IX = /(^|[^A-Za-z_\u00C0-\u024F])([tbh])([fw])(s|i|1|2)?(?![A-Za-z0-9_\u00C0-\u024F])/g;
+  function ix(h) { return String(h == null ? "" : h).replace(RE_IX, function (m0, a, l, s, k) { return a + l + "<sub>" + s + (k || "") + "</sub>"; }); }
   function t(s, onde) { var x = String(s == null ? "" : s); if (/\b(undefined|NaN|null|Infinity)\b/.test(x)) { indef.push((onde || "texto") + ": " + x.slice(0, 120)); x = x.replace(/\b(undefined|NaN|null|Infinity)\b/g, "[valor indefinido]"); } return esc(x); }
   function ph(v, rot) { var s = v == null ? "" : String(v).trim(); return s ? esc(s) : '<span class="ph">[' + esc(rot) + "]</span>"; }
   function tabela(cab, linhas, o) {
@@ -113,8 +119,8 @@
 
     /* 6. verificações */
     var vh = arr(r.verificacoes).map(function (x, i) {
-      return "<h3>" + (i + 1) + ". " + t(x.nome, "verificação") + " — " + sit(x) + "</h3><p class=\"nota\">" + t(x.item, "item") + (x.conferir ? ' <span class="ph">(conferir na edição vigente)</span>' : "") + "</p>" +
-        tabela(["Passo", "Fórmula / critério", "Valor"], arr(x.passos).map(function (s) { return [t(s.rotulo, x.nome), '<span class="eq">' + t(s.formula, x.nome) + "</span>", "<b>" + t(s.valor, x.nome) + "</b>"]; }), { cls: "compacta" }) +
+      return "<h3>" + (i + 1) + ". " + ix(t(x.nome, "verificação")) + " — " + sit(x) + "</h3><p class=\"nota\">" + ix(t(x.item, "item")) + (x.conferir ? ' <span class="ph">(conferir na edição vigente)</span>' : "") + "</p>" +
+        tabela(["Passo", "Fórmula / critério", "Valor"], arr(x.passos).map(function (s) { return [ix(t(s.rotulo, x.nome)), '<span class="eq">' + ix(t(s.formula, x.nome)) + "</span>", "<b>" + ix(t(s.valor, x.nome)) + "</b>"]; }), { cls: "compacta" }) +
         (fin(x.razao) && !x.info ? '<p class="nota">Razão solicitante/resistente = ' + br(x.razao, 3) + "</p>" : "");
     }).join("");
     var nOk = arr(r.verificacoes).filter(function (x) { return x.ok && !x.info; }).length, nF = arr(r.verificacoes).filter(function (x) { return !x.ok && !x.info; }).length;

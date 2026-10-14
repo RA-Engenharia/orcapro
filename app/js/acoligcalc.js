@@ -56,6 +56,8 @@
   function Mat() { return dep("AcoMateriais", "./acomateriais.js"); }
   function Nor() { return dep("BimMetalNorma", "./metalnorma.js"); }
   function Cat() { return dep("PerfisAco", "./perfisaco.js"); }
+  /* SIMULAÇÃO S1 (14/10/2026, js/acoligfundacao.js): o topo da fundação do modelo dá o A2/A1 de cada placa tentada */
+  function LF() { return dep("AcoLigFundacao", "./acoligfundacao.js"); }
   /* distância mínima do centro do furo à borda (NBR 8800, Tabela 14 — a do desenho, js/metalnorma.js); sem o módulo, 1,25·d */
   function bordaMin(d, tipo) { var N = Nor(); if (N && N.bordaMin) { var r = N.bordaMin(d, tipo || "laminada"); if (r && r.e) return r.e; } return Math.ceil(1.25 * d); }
   function num(v, d) { if (v == null || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
@@ -122,6 +124,7 @@
     var g = gamas(), pil = p.pilar || {}, eng = p.tipo === "engastada", esf = p.esforcos || [];
     var fyP = num(p.aco && p.aco.fy, 250), fuC = num(p.chumbador && p.chumbador.fu, 400), fyC = num(p.chumbador && p.chumbador.fy, 250);
     var fck = num(p.concreto && p.concreto.fck, 25), A2A1 = num(p.concreto && p.concreto.A2_A1, 1), fw = num(p.eletrodo && p.eletrodo.fw, 485);
+    var suporte = p.concreto && Array.isArray(p.concreto.suporte) && p.concreto.suporte.length >= 3 && LF() ? p.concreto.suporte : null;   /* [{u, w}] mm, no centro da placa */
     var balB = 75, balN = eng ? 150 : 75;
     var B = cima10(pil.bf + 2 * balB), L = cima10(pil.d + 2 * balN), nCh = 4, melhor = null;
     /* mínimos construtivos: chumbador 3/4" (Guia 1: o diâmetro mais comum e o menor recomendado) e placa 12,5 mm.
@@ -136,7 +139,9 @@
       var cands = [];
       for (var pl = 0; pl < porLados.length; pl++) {
         nLado = porLados[pl]; nCh = 2 * nLado;
-        for (var ci = 1; ci < CHUMB.length; ci++) {
+        /* REVISÃO A4 (14/10/2026): p.dMinChumb (mm) = o menor chumbador a tentar — a fundação (gancho/cone) pede mais */
+        var ci0 = 1; if (num(p.dMinChumb, 0) > 0) { for (var k0 = 1; k0 < CHUMB.length; k0++) if (CHUMB[k0].d >= num(p.dMinChumb, 0) - 1e-6) { ci0 = k0; break; } if (CHUMB[CHUMB.length - 1].d < num(p.dMinChumb, 0) - 1e-6) ci0 = CHUMB.length; }
+        for (var ci = ci0; ci < CHUMB.length; ci++) {
           if (nLado > 2 && (B - 2 * bordaChumb(CHUMB[ci].d)) / (nLado - 1) < 3 * CHUMB[ci].d) continue;
           for (var ti = 3; ti < CHAPAS.length; ti++) { var r = avaliar(CHUMB[ci], CHAPAS[ti]); if (r.ok) { r.porLado = nLado; cands.push(r); break; } }
           if (!eng && cands.length) break;
@@ -160,7 +165,8 @@
 
     function avaliar(ch, tp) {
       var d = ch.d, e = bordaChumb(d), f = L / 2 - e;                                      /* braço do chumbador ao centro (mm) */
-      var A1 = B * L, sigRd = concreto(fck, A2A1), qmax = sigRd * B;                        /* MPa; N/mm */
+      var A2A1x = suporte ? LF().a2a1(suporte, B, L).A2A1 : A2A1;                          /* com a fundação do modelo: A2/A1 desta placa */
+      var A1 = B * L, sigRd = concreto(fck, A2A1x), qmax = sigRd * B;                       /* MPa; N/mm */
       var FtRd = parafusoTracao(d, fuC), FvRd = parafusoCisal(d, fuC, true);
       var piorSig = 0, piorSigTxt = "", piorT = 0, piorV = 0, piorInt = 0, piorMc = 0, piorMt = 0, piorDem = 0, excede = false, cg = {};
       var m = (L - 0.95 * pil.d) / 2, n = (B - 0.8 * pil.bf) / 2, lmb = Math.sqrt(pil.d * pil.bf) / 4, l = Math.max(m, n, lmb);
@@ -207,7 +213,7 @@
       var vs = [];
       vs.push(verif("Pressão no concreto sob a placa", ED24 + ", 6.6 (σc,Rd = 0,85·fck/γc·√(A2/A1) ≤ 1,7·fck/γc); " + DG1,
         [passo("Placa B × L", "B = bf + 2·" + balB + "; L = d + 2·" + balN + " (arredondadas a 10 mm)", br(B, 0) + " × " + br(L, 0) + " mm"),
-         passo("σc,Rd", "0,85·" + br(fck, 0) + "/" + br(g.c, 1) + "·√(" + br(A2A1, 2) + ")", br(sigRd, 2) + " MPa", A2A1 > 1 ? "" : "A2/A1 = 1: um bloco de fundação maior que a placa aumenta a resistência"),
+         passo("σc,Rd", "0,85·" + br(fck, 0) + "/" + br(g.c, 1) + "·√(" + br(A2A1x, 2) + ")", br(sigRd, 2) + " MPa", suporte ? "A2/A1 do topo da fundação do modelo (limitado a 4)" : (A2A1x > 1 ? "" : "A2/A1 = 1: um bloco de fundação maior que a placa aumenta a resistência")),
          passo("Situação governante", piorSigTxt || "—", br(piorSig, 2) + " MPa", cg.sig ? "combinação " + cg.sig : "")],
         sigRd, excede ? sigRd * Math.max(1.0001, piorDem) : piorSig, "MPa"));
       vs.push(verif("Placa à flexão (t = " + br(tp, 1) + " mm)", DG1 + " — momento plástico t²·fy/4 por unidade de largura, γa1",

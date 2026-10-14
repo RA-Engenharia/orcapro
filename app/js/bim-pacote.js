@@ -4858,6 +4858,7 @@ cortePanel.classList.add('bim-flut', 'bim-flut-baixo');
 cortePanel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:baseline"><b>' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Altura do corte</b><span data-c="v" style="color:var(--aco,#2d6a9c);font-weight:600">—</span></div>' +
 '<input type="range" data-c="alt" min="0" max="1000" value="620" style="width:100%;accent-color:var(--aco,#2d6a9c)">' +
 '<div style="font-size:11px;color:var(--texto-fraco,#5b6b7c)">Esconde o que está acima do corte — a planta baixa do pavimento. A ' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' trena funciona aqui (cota horizontal).</div>' +
+'<label style="display:flex;gap:6px;align-items:center;font-size:11.5px;cursor:pointer"><input type="checkbox" data-c="acima" checked> Peças acima do corte tracejadas (até o nível de cima)</label>' +
 '<button class="btn sm primary" data-c="planta2d" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Planta baixa técnica (2D)</button>' +
 '<button class="btn sm" data-c="estilo" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + ' Estilo desenho (branco)</button>' +
 '<button class="btn sm" data-c="cortetec" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Gerar corte técnico (A–A)</button>';
@@ -4867,7 +4868,57 @@ function setAlturaCorte(frac) {
 if (!planta.plane) return;
 var y = planta.y0 + (planta.y1 - planta.y0) * frac; planta.plane.constant = y;
 var rot = cortePanel.querySelector('[data-c="v"]'); if (rot) rot.textContent = fmtDist(Math.max(0, y - planta.y0)) + ' do piso';
+acima3dAgendar();
 }
+var acima3d = { on: true, grupo: null, tm: 0, n: 0, topo: null };
+S.acima3d = acima3d;
+function acima3dLimpar() {
+if (acima3d.grupo) { scene.remove(acima3d.grupo); acima3d.grupo.traverse(function (o) { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); acima3d.grupo = null; }
+acima3d.n = 0; acima3d.topo = null;
+}
+function acima3dTopo(h) {
+var A = window.Desenho2D && Desenho2D.Acima, nv = []; if (!A) return null;
+try { if (window.Bim2D && Bim2D.niveis) nv = Bim2D.niveis() || []; } catch (eN) { nv = []; }
+var base = null; nv.forEach(function (n) { var y = +n.y; if (isFinite(y) && y <= h + 1e-6 && (base == null || y > base)) base = y; });
+return A.topo({}, base == null ? planta.y0 : base, h, nv);
+}
+function acima3dAtualizar() {
+acima3dLimpar();
+if (!planta.on || !planta.plane || !acima3d.on) return 0;
+var h = planta.plane.constant, topo = acima3dTopo(h); if (topo == null) return 0;
+var gr = {}, ord = [], bb = new THREE.Box3();
+modelRoot.children.forEach(function (g) {
+(g.children || []).forEach(function (m) {
+if (!m.isMesh || !m.geometry || !m.userData || m.userData.expressID == null || !cadeiaVisivel(m)) return;
+if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+bb.copy(m.geometry.boundingBox).applyMatrix4(m.matrixWorld);
+if (!(bb.min.y > h) || !(bb.min.y < topo - 0.005) || !Desenho2D.Acima.tipoPode(m.userData.tipo)) return;
+var u = (m.userData.mid != null ? m.userData.mid : S.modelID) + ':' + m.userData.expressID;
+if (!gr[u]) { gr[u] = { ms: [], t: m.userData.tipo || '', mid: m.userData.mid, eid: m.userData.expressID }; ord.push(u); }
+gr[u].ms.push(m);
+});
+});
+var itens = acimaItens(gr, ord, function (x) { return x; }, function (x, y, z) { return z; }), v = [], yL = h - 0.003;
+itens.forEach(function (it) {
+if (it.segs) it.segs.forEach(function (q) { v.push(q[0], yL, q[1], q[2], yL, q[3]); });
+else if (it.pts && it.pts.length > 1) for (var i = 0, n = it.pts.length; i < n; i++) { var a = it.pts[i], b = it.pts[(i + 1) % n]; v.push(a[0], yL, a[1], b[0], yL, b[1]); }
+});
+acima3d.topo = topo;
+if (!v.length) return 0;
+var geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+var ls = new THREE.LineSegments(geo, new THREE.LineDashedMaterial({ color: 0x6b7480, dashSize: 0.3, gapSize: 0.075, depthTest: false, transparent: true, opacity: 0.95 }));
+ls.computeLineDistances(); ls.renderOrder = 998; ls.userData.acimaCorte = true;
+var gp = new THREE.Group(); gp.name = 'acima-do-corte'; gp.userData.acimaCorte = true; gp.add(ls);
+gp.userData.uids = itens.map(function (it) { return it.u; });
+scene.add(gp); acima3d.grupo = gp; acima3d.n = itens.length;
+return itens.length;
+}
+function acima3dAgendar() {
+if (acima3d.tm) clearTimeout(acima3d.tm);
+if (!planta.on) { acima3dLimpar(); return; }
+acima3d.tm = setTimeout(function () { acima3d.tm = 0; try { acima3dAtualizar(); } catch (eA) { acima3dLimpar(); } }, 120);
+}
+S._acima3d = { atualizar: acima3dAtualizar, agendar: acima3dAgendar, limpar: acima3dLimpar, estado: function () { return { on: acima3d.on, n: acima3d.n, topo: acima3d.topo, uids: acima3d.grupo ? acima3d.grupo.userData.uids.slice() : [], plantaOn: !!planta.on, corte: planta.plane ? planta.plane.constant : null }; } };
 function setPlanta(on) {
 planta.on = !!on;
 if (S._pintarEixo) setTimeout(S._pintarEixo, 0);
@@ -4890,6 +4941,7 @@ if (bp) { bp.style.background = corAtiva(); bp.style.color = '#fff'; }
 if (!estiloD.on && !sisColor.on) setEstiloDesenho(true);
 S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Planta baixa. Ajuste a altura do corte e gere a ' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' planta técnica com cotas no painel. Toque em ' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' de novo pra sair.');
 } else {
+acima3dLimpar(); if (acima3d.tm) { clearTimeout(acima3d.tm); acima3d.tm = 0; }
 ctecCancelar();
 plantaCfg.style.display = 'none';
 if (estiloD.on) setEstiloDesenho(false);
@@ -4920,6 +4972,7 @@ setAlturaCorte((sl ? +sl.value : 620) / 1000);
 }
 S._replanejarCorte = replanejarCorte;
 cortePanel.querySelector('[data-c="alt"]').addEventListener('input', function () { setAlturaCorte(this.value / 1000); });
+cortePanel.querySelector('[data-c="acima"]').addEventListener('change', function () { acima3d.on = !!this.checked; if (acima3d.on) acima3dAgendar(); else acima3dLimpar(); });
 function cmdNovo(id) {
 try { if (window.BimRibbon && BimRibbon.comando(id) && window.BimShell && BimShell.executar) { BimShell.executar(id); return true; } } catch (_) {}
 return false;
@@ -6917,6 +6970,53 @@ g2.fillStyle = '#111'; g2.fillText(titulo, 10, yBase + 29);
 return { url: cnv.toDataURL('image/png'), w: totalW, h: totalH, escala: escalaEf, pxPorMetro: pxM, ajustada: ajustada, cotas: temCotas, diagonais: cad ? cad.diagonais : 0, larguraMM: totalW / 96 * 25.4, alturaMM: totalH / 96 * 25.4 };
 }
 S._gerarPlantaTec = gerarPlantaTec;
+function acimaItens(acimaGr, acimaOrd, telaX, telaY) {
+var acima = [];
+if (!acimaOrd.length || !window.Desenho2D || !Desenho2D.Acima) return acima;
+var caixasA = null, tagsA = null;
+acimaOrd.forEach(function (uA) {
+var gA = acimaGr[uA], pts = [], segs = [], y0 = Infinity, y1 = -Infinity, areaB = 0, vis = {};
+gA.ms.forEach(function (m) {
+var geo = m.geometry, pos = geo.attributes.position, e = m.matrixWorld.elements, A = pos.array, nV = pos.count, idx = geo.index ? geo.index.array : null;
+var passo = Math.max(1, Math.floor(nV / 6000));
+var WX = new Float32Array(nV), WY = new Float32Array(nV), WZ = new Float32Array(nV);
+for (var vi = 0; vi < nV; vi++) {
+var x = A[vi * 3], y = A[vi * 3 + 1], z = A[vi * 3 + 2];
+WX[vi] = e[0] * x + e[4] * y + e[8] * z + e[12]; WY[vi] = e[1] * x + e[5] * y + e[9] * z + e[13]; WZ[vi] = e[2] * x + e[6] * y + e[10] * z + e[14];
+if (WY[vi] < y0) y0 = WY[vi]; if (WY[vi] > y1) y1 = WY[vi];
+if (vi % passo === 0) pts.push([telaX(WX[vi], WY[vi], WZ[vi]), telaY(WX[vi], WY[vi], WZ[vi])]);
+}
+var nT = idx ? idx.length / 3 : nV / 3;
+if (nT <= 200000) for (var ti = 0; ti < nT; ti++) {
+var i0 = idx ? idx[ti * 3] : ti * 3, i1 = idx ? idx[ti * 3 + 1] : ti * 3 + 1, i2 = idx ? idx[ti * 3 + 2] : ti * 3 + 2;
+var ax = WX[i1] - WX[i0], ay = WY[i1] - WY[i0], az = WZ[i1] - WZ[i0], bx = WX[i2] - WX[i0], by = WY[i2] - WY[i0], bz = WZ[i2] - WZ[i0];
+var ny = az * bx - ax * bz;
+if (ny < 0) areaB += -ny / 2;
+}
+var arr = arestasDe(geo);
+for (var ei = 0; ei < arr.length; ei += 6) {
+var X1 = e[0] * arr[ei] + e[4] * arr[ei + 1] + e[8] * arr[ei + 2] + e[12], Z1 = e[2] * arr[ei] + e[6] * arr[ei + 1] + e[10] * arr[ei + 2] + e[14];
+var X2 = e[0] * arr[ei + 3] + e[4] * arr[ei + 4] + e[8] * arr[ei + 5] + e[12], Z2 = e[2] * arr[ei + 3] + e[6] * arr[ei + 4] + e[10] * arr[ei + 5] + e[14];
+var sx1 = telaX(X1, 0, Z1), sy1 = telaY(X1, 0, Z1), sx2 = telaX(X2, 0, Z2), sy2 = telaY(X2, 0, Z2);
+if (Math.abs(sx2 - sx1) + Math.abs(sy2 - sy1) < 1e-3) continue;
+var ka = Math.round(sx1 * 1000) + ',' + Math.round(sy1 * 1000), kb = Math.round(sx2 * 1000) + ',' + Math.round(sy2 * 1000), kk = ka < kb ? ka + '|' + kb : kb + '|' + ka;
+if (vis[kk]) continue; vis[kk] = 1;
+if (segs.length < 20000) segs.push([sx1, sy1, sx2, sy2]);
+}
+});
+var marca = '';
+if (gA.mid === 'edit' && edit && edit.estado) {
+if (!caixasA) { caixasA = {}; (edit.estado.caixas || []).forEach(function (c) { if (c && c.id != null) caixasA[c.id] = c; }); }
+var cA = caixasA[gA.eid]; if (cA && cA.marca) marca = String(cA.marca);
+} else {
+if (!tagsA) { tagsA = {}; (S.elementos || []).forEach(function (el) { if (el && el.uid && el.tag) tagsA[el.uid] = el.tag; }); }
+var tg = tagsA[uA]; if (tg && String(tg).length <= 12 && /[A-Za-z]/.test(String(tg))) marca = String(tg);
+}
+var itA = Desenho2D.Acima.peca({ u: uA, t: gA.t, pts: pts, segs: segs, areaBaixo: areaB, fundo: y0, topo: y1, marca: marca });
+if (itA) acima.push(itA);
+});
+return acima;
+}
 function vista2d(def) {
 var t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
 def = def || {};
@@ -7012,6 +7112,8 @@ return m;
 var cortes = [], linhas = [], nMalhas = 0, nTri = 0, nAr = 0, amostras = 0, linhasFase = {};
 var linhasIfc = [];
 var portasNat = [], portasIfc = {};
+var acimaTopo = (planta && !p6Forro && window.Desenho2D && Desenho2D.Acima && def.acimaTopo != null && isFinite(+def.acimaTopo) && +def.acimaTopo > +def.yCorte + 0.01) ? +def.acimaTopo : null;
+var acimaGr = {}, acimaOrd = [];
 var tol = Math.max(0.004, 2.0 / ppm), passoPx = 0.9;
 var bb = new THREE.Box3(), v3 = new THREE.Vector3();
 var curvaFeita = {}, curvaVaos = null;
@@ -7059,7 +7161,14 @@ for (var k8 = 0; k8 < 8; k8++) {
 var sv = sFn(k8 & 1 ? bb.max.x : bb.min.x, k8 & 2 ? bb.max.y : bb.min.y, k8 & 4 ? bb.max.z : bb.min.z);
 if (sv >= 0) algumFica = true; else algumSai = true;
 }
-if (!algumFica) return;
+if (!algumFica) {
+if (acimaTopo != null && bb.min.y < acimaTopo - 0.005 && m.userData && m.userData.expressID != null && Desenho2D.Acima.tipoPode(m.userData.tipo)) {
+var uA = (m.userData.mid != null ? m.userData.mid : S.modelID) + ':' + m.userData.expressID;
+if (!acimaGr[uA]) { acimaGr[uA] = { ms: [], t: m.userData.tipo || '', mid: m.userData.mid, eid: m.userData.expressID }; acimaOrd.push(uA); }
+acimaGr[uA].ms.push(m);
+}
+return;
+}
 nMalhas++;
 var curvaPl = planta && !p6Forro && algumSai && window.BimCurva && edit && edit.estado && m.userData && m.userData.mid === 'edit' ? curvaPlanta(m.userData.expressID) : false;
 var e = m.matrixWorld.elements, A = pos.array, idx = geo.index ? geo.index.array : null;
@@ -7142,6 +7251,7 @@ Object.keys(portasIfc).forEach(function (kP) {
 try { var r = portaIfcPlanta(portasIfc[kP]); if (r && naFaixa(r.y0, r.y1)) portas.push(paraTela(r.sp, kP)); } catch (ePI) { }
 });
 }
+var acima = acimaTopo != null ? acimaItens(acimaGr, acimaOrd, telaX, telaY) : [];
 var uniaoInfo = null;
 if (window.BimUniao && edit && edit.estado) {
 try {
@@ -7162,6 +7272,7 @@ linhas.forEach(function (q) { q[0] = -q[0]; q[2] = -q[2]; });
 }
 return { ok: true, tipo: planta ? 'planta' : 'corte', cortes: cortes, linhas: linhas, linhasUd: p6Tag ? linhasUd : undefined, linhasIfc: linhasIfc, linhasFase: Object.keys(linhasFase).length ? linhasFase : undefined,
 portas: portas.length ? portas : undefined,
+acima: acimaTopo != null ? acima : undefined, acimaTopo: acimaTopo != null ? acimaTopo : undefined,
 info: { ms: ms, malhas: nMalhas, triCortados: nTri, arestas: nAr, amostras: amostras, px: [W, H], pxPorMetro: Math.round(ppm * 10) / 10, uniao: uniaoInfo || undefined } };
 }
 function opPortaIfc(mid, eid) {
@@ -9051,6 +9162,7 @@ if (window.BimInstUI && BimInstUI.aoMudarModelo) BimInstUI.aoMudarModelo();
 if (window.BimPropsUI && BimPropsUI.aoMudarModelo) BimPropsUI.aoMudarModelo();
 if (window.BimAnot2DUI && BimAnot2DUI.aposRebuild) BimAnot2DUI.aposRebuild(st);
 if (window.BimTabelaUI && BimTabelaUI.aoMudarModelo) BimTabelaUI.aoMudarModelo();
+if (S._acima3d && planta.on) S._acima3d.agendar();
 if (opts.onLoaded) opts.onLoaded(elementosVivos());
 if (opts.onEdicao && !edit._replay) { try { opts.onEdicao(edit.ops.slice()); } catch (_) {} }
 var tF = performance.now();

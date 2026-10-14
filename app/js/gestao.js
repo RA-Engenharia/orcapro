@@ -10897,16 +10897,21 @@
              "Esta obra ainda não tem níveis. Abaixo está uma sugestão de térreo e cobertura com pé-direito de 2,80 m — " +
              "ajuste e clique em <b>Salvar</b> para criar.</div>";
       }
+      var copias = this._nivCopias || {}, temCopia = false;
       h += '<table class="tbl" style="width:100%;font-size:12.5px"><thead><tr>' +
-           "<th>Nome</th><th>Elevação (m)</th><th>Pé-direito (m)</th><th>Corte da planta (m)</th><th></th></tr></thead><tbody>";
+           "<th>Nome</th><th>Elevação (m)</th><th>Pé-direito (m)</th><th>Corte da planta (m)</th><th></th><th></th></tr></thead><tbody>";
       L.forEach(function (n) {
-        h += '<tr data-niv="' + Util.esc(n.id) + '">' +
-             '<td><input type="text" data-gniv="nome" data-id="' + Util.esc(n.id) + '" value="' + Util.esc(n.nome) + '" style="width:100%"></td>' +
+        var cp = copias[String(n.id)];
+        if (cp) temCopia = true;
+        h += '<tr data-niv="' + Util.esc(n.id) + '"' + (cp ? ' data-niv-copia="1" style="background:var(--azul-fundo,rgba(46,111,158,.10))"' : "") + ">" +
+             '<td><input type="text" data-gniv="nome" data-id="' + Util.esc(n.id) + '" value="' + Util.esc(n.nome) + '" style="width:100%">' +
+               (cp ? '<div class="muted" style="font-size:10.5px">novo — cópia do ' + Util.esc(cp) + " (entra ao salvar)</div>" : "") + "</td>" +
              '<td><input type="number" step="0.01" data-gniv="elevacao" data-id="' + Util.esc(n.id) + '" value="' + n.elevacao + '" style="width:90px"></td>' +
              "<td>" + (n.peDireito != null
                ? "<b>" + n.peDireito.toFixed(2) + "</b>" + (n.ultimo ? ' <span class="muted" style="font-size:11px">(informado)</span>' : ' <span class="muted" style="font-size:11px">(até o de cima)</span>')
                : '<span style="color:var(--amarelo)">—</span>') + "</td>" +
              '<td><input type="number" step="0.05" data-gniv="corte" data-id="' + Util.esc(n.id) + '" value="' + n.corte + '" style="width:80px"></td>' +
+             '<td><button class="btn sm" data-gacao="niv-copiar" data-id="' + Util.esc(n.id) + '" style="font-size:11px;padding:1px 6px;white-space:nowrap" title="Novo nível ACIMA deste, na cota dele + o pé-direito dele, com os mesmos parâmetros">Copiar para cima</button></td>' +
              '<td><button class="btn sm" data-gacao="niv-excluir" data-id="' + Util.esc(n.id) + '" style="color:var(--vermelho);font-size:11px;padding:1px 6px" title="excluir nível">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></td></tr>';
       });
       h += "</tbody></table>";
@@ -10914,6 +10919,7 @@
            "O <b>pé-direito não se digita</b>: ele é a distância até o nível de cima. Se não bater com o que você espera, " +
            "é a elevação que está errada. O <b>corte da planta</b> é a altura em que o desenho corta a parede — " +
            "1,20 m passa acima do peitoril e abaixo do topo da porta.</p>";
+      if (temCopia) h += this._nivOpcHtml();
       if (v.erros.length) {
         h += '<div class="bim-aviso bim-aviso-erro" style="margin-top:10px">' +
              v.erros.map(function (x) { return "• " + Util.esc(x); }).join("<br>") + "</div>";
@@ -10938,6 +10944,8 @@
       if (novo) lista = N.padrao(2.80);
       this._nivRascunho = lista;
       this._nivNovo1 = novo;
+      this._nivCopias = {};   /* id do rascunho → nome do nível de origem (Copiar para cima) */
+      this._nivOpc = { planta: true, estrutural: false };
 
       var bg = UI.modal("Níveis do projeto", this._nivCorpo(lista, novo), [
         { texto: "+ Nível acima", classe: "", onClick: function () { self._nivNovo(); } },
@@ -10955,6 +10963,271 @@
         inp.onchange = function () { self._nivCampo(this.getAttribute("data-id"), this.getAttribute("data-gniv"), this.value); };
         inp.onkeydown = function (ev) { if (ev.key === "Enter") { ev.preventDefault(); this.blur(); } };
       });
+      this._nivOpcLigar(box);
+    },
+
+    /* ---- COPIAR NÍVEL PARA CIMA (de qualquer nível) — o motor é o
+       Niveis.copiarAcima (js/niveis.js); aqui ficam as duas telas: a linha do
+       diálogo de Níveis (entra no rascunho, grava no Salvar) e o diálogo curto
+       do Navegador (grava na hora). As opções de planta são as mesmas. */
+    _nivOpcHtml: function (pref) {
+      var o = this._nivOpc || { planta: true, estrutural: false }, p = pref || "niv";
+      var temP6 = !!(window.BimModeloVista && BimModeloVista.ativo && BimModeloVista.ativo());
+      return '<div class="bim-aviso bim-aviso-info" style="margin-top:10px;font-size:12px" data-niv-opcoes="1">' +
+        '<label style="display:flex;gap:6px;align-items:center;margin:0 0 4px"><input type="checkbox" data-gniv-opc="planta" data-pref="' + p + '"' + (o.planta ? " checked" : "") + "> Criar a planta de piso do nível novo</label>" +
+        '<label style="display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" data-gniv-opc="estrutural" data-pref="' + p + '"' + (o.estrutural ? " checked" : "") + (temP6 ? "" : " disabled") + "> Criar também a planta estrutural</label>" +
+        '<div class="muted" style="font-size:10.5px;margin-top:4px">A planta de piso de cada nível fica no Navegador › Plantas de piso; marcada, ela já abre numa aba para você modelar.' +
+        (temP6 ? " A estrutural nasce com o modelo de vista Planta Estrutural RA (fôrma)." : " A planta estrutural pede o modelador ligado.") + "</div></div>";
+    },
+    _nivOpcLigar: function (box) {
+      var self = this;
+      if (!box) return;
+      box.querySelectorAll("[data-gniv-opc]").forEach(function (c) {
+        c.onchange = function () { self._nivOpc = self._nivOpc || { planta: true, estrutural: false }; self._nivOpc[this.getAttribute("data-gniv-opc")] = !!this.checked; };
+      });
+    },
+    /* a linha do diálogo de Níveis: o novo nível entra no RASCUNHO (o Salvar grava) */
+    _nivCopiar: function (id) {
+      var N = window.Niveis, r = this._nivRascunho || [];
+      if (!N || !N.copiarAcima) return;
+      var c = N.copiarAcima(r, id);
+      if (!c.ok) { UI.toast(c.motivo, "erro"); return; }
+      r.push(c.nivel);
+      this._nivRascunho = r;
+      this._nivCopias = this._nivCopias || {};
+      this._nivCopias[String(c.nivel.id)] = c.origem.nome;
+      this._nivRepintar();
+      if (c.aviso) UI.toast(c.aviso, "aviso");
+      else UI.toast("“" + c.nivel.nome + "” a " + (c.nivel.elevacao >= 0 ? "+" : "") + c.nivel.elevacao.toFixed(2).replace(".", ",") + " m, acima do " + c.origem.nome + ". Clique em Salvar para gravar.", "info");
+    },
+    /* o diálogo CURTO (Navegador › clique direito num nível ou planta): grava na hora */
+    _nivCopiarDialogo: function (nivelId) {
+      var N = window.Niveis, self = this;
+      if (!N || !N.copiarAcima) return null;
+      if (this._bloqueado && this._bloqueado()) return null;
+      var lista = this._nivLer();
+      var c = N.copiarAcima(lista, nivelId);
+      if (!c.ok) { UI.toast(c.motivo + " Abra Arquitetura › Referência › Níveis.", "erro"); return null; }
+      this._nivOpc = this._nivOpc || { planta: true, estrutural: false };
+      var nv = c.nivel;
+      var h = '<p class="muted" style="margin:0 0 10px;font-size:12px">Novo nível acima do <b>' + Util.esc(c.origem.nome) + "</b> (" + (c.origem.elevacao >= 0 ? "+" : "") + c.origem.elevacao.toFixed(2).replace(".", ",") +
+        " m), na cota dele + o pé-direito dele, com os mesmos parâmetros (corte da planta " + (nv.corte != null ? nv.corte : N.CORTE_PADRAO).toFixed(2).replace(".", ",") + " m).</p>" +
+        '<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center;font-size:12.5px">' +
+        '<label for="niv-cp-nome">Nome</label><input id="niv-cp-nome" type="text" value="' + Util.esc(nv.nome) + '">' +
+        '<label for="niv-cp-elev">Elevação (m)</label><input id="niv-cp-elev" type="number" step="0.01" value="' + nv.elevacao + '">' +
+        '<label for="niv-cp-pd">Pé-direito (m)</label><input id="niv-cp-pd" type="number" step="0.01" value="' + nv.peDireitoDeclarado + '">' +
+        "</div>" +
+        '<div id="niv-cp-aviso" class="bim-aviso bim-aviso-alerta" style="margin-top:8px;font-size:12px;' + (c.aviso ? "" : "display:none") + '">' + Util.esc(c.aviso || "") + "</div>" +
+        this._nivOpcHtml("cp");
+      UI.modal("Copiar nível para cima", h, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Copiar", classe: "primary", onClick: function () { self._nivCopiarConfirmar(nivelId); } }
+      ]);
+      this._nivOpcLigar(document.querySelector("#modal-bg .modal"));
+      return c;
+    },
+    _nivCopiarConfirmar: function (nivelId) {
+      var N = window.Niveis, self = this;
+      if (this._semSessao()) { UI.toast("Entre na sua conta para salvar os níveis.", "erro"); return false; }
+      function val(id) { var e = document.getElementById(id); return e ? e.value : ""; }
+      var lista = this._nivLer();
+      var c = N.copiarAcima(lista, nivelId, { nome: val("niv-cp-nome"), elevacao: val("niv-cp-elev"), peDireito: val("niv-cp-pd") });
+      if (!c.ok) { UI.toast(c.motivo, "erro"); return false; }
+      /* a cota digitada já tem nível: NÃO grava em cima — avisa e põe a próxima livre no campo */
+      if (c.ocupadaPor) {
+        var el = document.getElementById("niv-cp-elev"); if (el) el.value = c.nivel.elevacao;
+        var av = document.getElementById("niv-cp-aviso"); if (av) { av.textContent = c.aviso + " Confira e clique em Copiar de novo."; av.style.display = ""; }
+        UI.toast(c.aviso, "aviso");
+        return false;
+      }
+      var v = N.validar(lista.concat([c.nivel]));
+      if (!v.ok) { UI.toast(v.erros[0], "erro"); return false; }
+      if (!this._nivGravar(c.nivel)) { UI.toast("Não consegui salvar o nível. Confira o espaço do navegador.", "erro"); return false; }
+      UI.fecharModal();
+      var idGravado = this._nivChave(c.nivel.id);
+      this._nivArvore();
+      this._nivDepoisCopia([{ id: idGravado, nome: c.nivel.nome }], this._nivOpc);
+      UI.toast("“" + c.nivel.nome + "” criado a " + (c.nivel.elevacao >= 0 ? "+" : "") + c.nivel.elevacao.toFixed(2).replace(".", ",") + " m, acima do " + c.origem.nome + ".", "ok");
+      return idGravado;
+    },
+    /* depois de gravar os níveis copiados: a planta estrutural (se pedida) e a
+       planta de piso aberta numa aba (se pedida). Sem a tela do BIM, só grava. */
+    _nivDepoisCopia: function (novos, opc) {
+      var self = this; opc = opc || {};
+      if (!novos || !novos.length) return;
+      novos.forEach(function (n) { self._nivVistasDoNivel(n.id, { planta: !!opc.planta, estrutural: !!opc.estrutural, abrir: true }); });
+    },
+    /* as VISTAS de um nível (o copiado para cima ou o criado numa peça):
+       opc = { planta, estrutural, abrir, atual }. A planta de piso do nível
+       existe sempre (Navegador › Plantas de piso); "criar" a liga ao modelo de
+       vista Planta Arquitetônica RA. A estrutural nasce com o modelo dela.
+       `atual`: o Nível atual passa a ser este (para modelar direto nele). */
+    _nivVistasDoNivel: function (idNivel, opc) {
+      opc = opc || {};
+      if (!this._d2Config || !this._d2Config()) return null;
+      try { if (window.BimArqUI && BimArqUI.ativo && BimArqUI.ativo()) BimArqUI.enviar(); } catch (eE) {}
+      var NV = []; try { NV = Bim2D.niveis(); } catch (e) { NV = []; }
+      var nb = NV.filter(function (x) { return String(x.id) === String(idNivel); })[0];
+      if (!nb) return null;
+      var M = window.BimModeloVista && BimModeloVista.ativo && BimModeloVista.ativo() ? BimModeloVista : null;
+      var pid = Bim2D.idPlanta(nb.id), est = null;
+      if (M && opc.planta) {
+        try { var vp = M.vistaObj(pid, Bim2D.def(pid)); if (vp && !vp.modeloId) { vp.modeloId = "ra-planta-arq"; M.gravar(); } } catch (eP) {}
+      }
+      if (opc.estrutural) {
+        if (M) {
+          /* idempotente: a planta estrutural RA que este nível JÁ tem é reaproveitada (abre), não duplica */
+          try {
+            var V = M.estado().vistas, ja = Object.keys(V).filter(function (k) { return /^d2v-/.test(k) && V[k].tipo === "estrutural" && String(V[k].nivelId) === String(nb.id) && V[k].modeloId === "ra-planta-estrutural"; })[0];
+            est = ja ? V[ja] : M.criar("estrutural", { nome: "Planta estrutural — " + nb.nome, nivelId: nb.id });
+          } catch (eS) { est = null; }
+        }
+        else UI.toast("A planta estrutural pede o modelador ligado: só a planta de piso foi criada.", "aviso");
+      }
+      try { Bim2D._avisarMudou(); } catch (eM) {}
+      if (opc.atual && window.BimArqUI && BimArqUI.ativo && BimArqUI.ativo()) {
+        try { BimArqUI.cfg().nivelId = nb.id; BimArqUI.enviar(); BimShell.status("Nível atual: " + nb.nome + " — o que você modelar agora nasce nele."); } catch (eA) {}
+      }
+      if (opc.abrir) {
+        /* a que fica na FRENTE é a última aberta: a estrutural quando pedida (focar), senão a de piso */
+        var abrirEst = function () { if (est) this._d2Abrir(est.id, est.nome); }.bind(this);
+        if (opc.focar !== "estrutural") abrirEst();
+        if (opc.planta) this._d2Abrir(pid, (Bim2D.def(pid) || {}).nome || "Planta baixa — " + nb.nome);
+        if (opc.focar === "estrutural") abrirEst();
+      }
+      this._nivArvore();
+      return { pid: pid, estrutural: est ? est.id : null, nivel: nb };
+    },
+
+    /* ---- CRIAR NÍVEL AQUI (a partir de uma peça: topo do pilar, face de cima
+       da laje…) — pedido do Rogério em 14/10/2026: "criei um nível pegando do
+       topo de um pilar: ali vai ser um piso novo, e ele já gerar a vista".
+       Entra pelo clique direito na peça (3D, planta, corte) e pelo botão em
+       Propriedades. Peça do modelador: cota exata (cy ± altura/2); outra peça:
+       a caixa da malha. Num corte, também "onde cliquei". */
+    _nivAquiInfo: function (uid, leve) {
+      var N = window.Niveis; uid = String(uid || "");
+      if (!N || !N.cotasDaPeca || !uid) return null;
+      var est = null, c = null;
+      try { est = BIM.editarEstado().estado; } catch (e) { est = null; }
+      if (/^edit:/.test(uid) && est) {
+        var id = uid.slice(5);
+        c = (est.caixas || []).concat(est.coberturas || []).filter(function (x) { return x && String(x.id) === id; })[0] || null;
+      }
+      var cotas = c ? N.cotasDaPeca(c) : [];
+      /* leve (Propriedades, a cada repintura): a caixa da malha só quando o diálogo abrir */
+      if (!cotas.length && leve) return { uid: uid, tipo: c ? c.tipo : "", nome: c ? c.tipo : "Peça", cotas: null };
+      if (!cotas.length) {
+        try { var g = BIM.icarGeometria ? BIM.icarGeometria([uid])[uid] : null; if (g) cotas = N.cotasDaPeca({ tipo: c ? c.tipo : "", min: g.min.z, max: g.max.z }); } catch (eG) {}
+      }
+      if (!cotas.length) return null;
+      var ROT = { pilar: "Pilar", viga: "Viga", laje: "Laje", parede: "Parede", escada: "Escada", cobertura: "Cobertura", metal: "Peça metálica" };
+      return { uid: uid, tipo: c ? c.tipo : "", nome: c ? (ROT[c.tipo] || c.tipo) : "Peça", cotas: cotas };
+    },
+    _nivAquiDialogo: function (info, extra) {
+      var N = window.Niveis, self = this;
+      if (!N || !N.criarNaCota) return null;
+      if (this._bloqueado && this._bloqueado()) return null;
+      info = info || { cotas: [] }; extra = extra || {};
+      if (info.cotas == null && info.uid) info = this._nivAquiInfo(info.uid) || { uid: info.uid, cotas: [] };
+      var ops = (info.cotas || []).slice();
+      if (extra.cotaClique != null && isFinite(extra.cotaClique)) ops.push({ id: "clique", rotulo: "Onde cliquei (no corte)", cota: Math.round(extra.cotaClique * 100) / 100 });
+      if (!ops.length) { UI.toast("Não achei a cota desta peça. Selecione uma peça modelada (pilar, viga, laje, parede).", "aviso"); return null; }
+      function br(z) { return (z >= 0 ? "+" : "") + z.toFixed(2).replace(".", ","); }
+      this._nivAquiCtx = { info: info, ops: ops };
+      var h = '<p class="muted" style="margin:0 0 8px;font-size:12px">' + (info.uid ? "<b>" + Util.esc(info.nome || "Peça") + "</b> selecionada. " : "") +
+        "O nível novo nasce na cota escolhida; a planta dele abre para você modelar o piso novo.</p>" +
+        '<div style="display:grid;grid-template-columns:auto 1fr;gap:8px 12px;align-items:start;font-size:12.5px">' +
+        "<b>Cota</b><div>" + ops.map(function (o, i) {
+          return '<label style="display:flex;gap:6px;align-items:center;padding:2px 0"><input type="radio" name="niv-aq-ref" value="' + o.id + '"' + (i === 0 ? " checked" : "") + "> " + Util.esc(o.rotulo) + ' <b style="margin-left:4px">' + br(o.cota) + " m</b></label>";
+        }).join("") + "</div>" +
+        '<label for="niv-aq-nome"><b>Nome</b></label><input id="niv-aq-nome" type="text" value="' + Util.esc(N.nomeSugerido(this._nivLer())) + '">' +
+        "</div>" +
+        '<div id="niv-aq-aviso" class="bim-aviso bim-aviso-alerta" style="margin-top:8px;font-size:12px;display:none"></div>' +
+        '<div class="bim-aviso bim-aviso-info" style="margin-top:10px;font-size:12px">' +
+        '<label style="display:flex;gap:6px;align-items:center;margin:0 0 4px"><input type="checkbox" data-niv-aq="planta" checked> Criar a planta de piso (com o modelo de vista Planta Arquitetônica RA)</label>' +
+        /* pilar: o piso novo é estrutural (o mezanino) — a planta estrutural vem marcada e é ela que abre na frente */
+        '<label style="display:flex;gap:6px;align-items:center;margin:0 0 4px"><input type="checkbox" data-niv-aq="estrutural"' + (info.tipo === "pilar" ? " checked" : "") + "> Criar a planta estrutural (modelo Planta Estrutural RA; a viga desenhada nela nasce com o topo no nível)</label>" +
+        '<label style="display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" data-niv-aq="abrir" checked> Abrir a vista criada</label>' +
+        '<div class="muted" style="font-size:10.5px;margin-top:4px">O Nível atual passa a ser o novo: o que você modelar em seguida nasce nele.</div></div>';
+      UI.modal("Criar nível aqui", h, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Criar", classe: "primary", onClick: function () { self._nivAquiConfirmar(); } }
+      ]);
+      var box = document.querySelector("#modal-bg .modal");
+      if (box) box.querySelectorAll('input[name="niv-aq-ref"]').forEach(function (r) { r.onchange = function () { self._nivAquiAtualizar(); }; });
+      this._nivAquiAtualizar();
+      return ops;
+    },
+    _nivAquiCota: function () {
+      var ctx = this._nivAquiCtx || { ops: [] }, r = document.querySelector('#modal-bg input[name="niv-aq-ref"]:checked');
+      var o = ctx.ops.filter(function (x) { return r && x.id === r.value; })[0] || ctx.ops[0];
+      return o ? o.cota : null;
+    },
+    /* cota já ocupada: avisa e o Criar passa a criar só a vista daquele nível */
+    _nivAquiAtualizar: function () {
+      var N = window.Niveis, r = N.criarNaCota(this._nivLer(), this._nivAquiCota(), {});
+      var av = document.getElementById("niv-aq-aviso"), nm = document.getElementById("niv-aq-nome");
+      if (!av || !nm) return r;
+      if (r.ok && r.existente) { av.textContent = r.aviso + " Criar vai só criar a vista do " + r.existente.nome + "."; av.style.display = ""; nm.disabled = true; }
+      else { av.textContent = ""; av.style.display = "none"; nm.disabled = false; }
+      return r;
+    },
+    _nivAquiConfirmar: function () {
+      var N = window.Niveis, self = this;
+      if (this._semSessao()) { UI.toast("Entre na sua conta para salvar os níveis.", "erro"); return null; }
+      function marcado(k) { var c = document.querySelector('#modal-bg [data-niv-aq="' + k + '"]'); return !!(c && c.checked); }
+      var nmEl = document.getElementById("niv-aq-nome");
+      var opc = { planta: marcado("planta"), estrutural: marcado("estrutural"), abrir: marcado("abrir"), atual: true };
+      if (opc.estrutural) opc.focar = "estrutural";   /* pediu a estrutural: é nela que vai modelar (a viga nasce no nível) */
+      var lista = this._nivLer(), r = N.criarNaCota(lista, this._nivAquiCota(), { nome: nmEl ? nmEl.value : "" });
+      if (!r.ok) { UI.toast(r.motivo, "erro"); return null; }
+      var idN, nome;
+      if (r.existente) { idN = r.existente.id; nome = r.existente.nome; }
+      else {
+        var v = N.validar(lista.concat([r.nivel]));
+        if (!v.ok) { UI.toast(v.erros[0], "erro"); return null; }
+        if (!this._nivGravar(r.nivel)) { UI.toast("Não consegui salvar o nível. Confira o espaço do navegador.", "erro"); return null; }
+        idN = this._nivChave(r.nivel.id); nome = r.nivel.nome;
+      }
+      UI.fecharModal();
+      this._nivArvore();
+      var res = this._nivVistasDoNivel(idN, opc);
+      UI.toast(r.existente ? "O " + nome + " já existia nessa cota: criei só a vista dele." : "“" + nome + "” criado a " + (r.nivel.elevacao >= 0 ? "+" : "") + r.nivel.elevacao.toFixed(2).replace(".", ",") + " m — é o Nível atual.", "ok");
+      return { id: idN, nome: nome, existente: !!r.existente, vistas: res };
+    },
+    /* o clique direito na peça (3D, planta, corte) → "Criar nível aqui…".
+       Um só ouvinte no documento (fase de captura: o 3D tem os seus); botão
+       direito ARRASTADO é pan/órbita, não menu. */
+    _nivAquiLigarMenu: function () {
+      if (this._nivAquiLigado) return;
+      this._nivAquiLigado = true;
+      var self = this, baixo = null;
+      document.addEventListener("pointerdown", function (ev) { if (ev.button === 2) baixo = { x: ev.clientX, y: ev.clientY }; }, true);
+      document.addEventListener("contextmenu", function (ev) {
+        var t = ev.target; if (!t || !t.closest || !window.BimShell) return;
+        var tela2d = t.closest(".bim-tela .d2-vista-tela"), em3d = !tela2d && t.closest("#bim-canvas");
+        if (!tela2d && !em3d) return;
+        var mexeu = baixo && (Math.abs(ev.clientX - baixo.x) > 5 || Math.abs(ev.clientY - baixo.y) > 5);
+        baixo = null;
+        if (mexeu) return;
+        var uid = null, extra = {};
+        if (tela2d && window.Bim2D) {
+          var tela = t.closest(".bim-tela"), vid = tela ? tela.getAttribute("data-vista") : null, svg = tela2d.querySelector("svg"), d = vid ? Bim2D.def(vid) : null;
+          var m = svg && svg.getScreenCTM ? svg.getScreenCTM() : null;
+          if (d && m) {
+            var pt = svg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY;
+            var q = pt.matrixTransform(m.inverse());
+            try { uid = window.BimSelecao ? BimSelecao.pecaEm(vid, [q.x, q.y]) : null; } catch (eP) { uid = null; }
+            if (d.tipo === "corte") extra.cotaClique = -q.y;   /* no corte, o y do desenho é a cota com o sinal trocado */
+          }
+        }
+        if (!uid) { try { var s = BIM.selecao().uids || []; if (s.length === 1) uid = s[0]; } catch (eS) {} }
+        var info = uid ? self._nivAquiInfo(uid) : null;
+        if (!info && extra.cotaClique == null) return;
+        ev.preventDefault();
+        BimShell._menuNo(ev.clientX, ev.clientY, [{ id: "niv-aqui", rotulo: "Criar nível aqui…", fn: function () { self._nivAquiDialogo(info || { cotas: [] }, extra); } }]);
+      }, true);
     },
 
     /* troca SÓ o corpo do modal aberto. Repinta inteiro de propósito: mexer
@@ -11035,7 +11308,12 @@
       if (falhou) { UI.toast("Não consegui salvar " + falhou + " nível(is). Confira o espaço do navegador.", "erro"); return; }
       UI.fecharModal();
       UI.toast(r.length + " nível(is) salvos.", "ok");
+      /* os copiados para cima nesta abertura: as plantas que as opções pediram */
+      var cps = this._nivCopias || {}, novos = [];
+      r.forEach(function (n) { if (cps[String(n.id)]) novos.push({ id: self._nivChave(n.id), nome: n.nome }); });
+      this._nivCopias = {};
       this._nivArvore();
+      if (novos.length) this._nivDepoisCopia(novos, this._nivOpc);
     },
 
     /* PESO POR NÍVEL — o que o Rogério pediu para conferir carga.
@@ -11097,14 +11375,25 @@
        estrutural, níveis, vínculos (modelos) e famílias. Nó com `fn` abre o
        que ele é; nó com `acao` roda o comando da fita. Só existe nó onde
        existe ação: clique no vazio é pior que nó nenhum. */
+    /* o menu do clique direito num NÍVEL ou numa PLANTA do Navegador */
+    _nivMenu: function (nivelId) {
+      var self = this, id = String(nivelId), itens = [
+        { id: "niv-copiar", rotulo: "Copiar nível para cima…", fn: function () { self._nivCopiarDialogo(id); } }
+      ];
+      if (window.BimModeloVista && BimModeloVista.ativo && BimModeloVista.ativo())
+        itens.push({ id: "niv-planta", rotulo: "Criar planta deste nível…", fn: function () { BimModeloVista.abrirCriarPlanta({ nivelIds: [id] }); } });
+      itens.push({ id: "niv-editar", rotulo: "Editar os níveis…", fn: function () { self._niveis(); } });
+      return itens;
+    },
     _nivArvore: function () {
       if (!window.BimShell) return;
+      this._nivAquiLigarMenu();   /* o "Criar nível aqui…" do clique direito na peça (liga uma vez só) */
       var self = this, L = [];
       try { L = window.Niveis ? Niveis.listar(this._nivLer()) : []; } catch (eN) { L = []; }
       var ramoNiveis = L.length
         ? L.slice().reverse().map(function (n) {
             return { id: "niv:" + n.id, rotulo: n.nome + " · " + (n.elevacao >= 0 ? "+" : "") + n.elevacao.toFixed(2),
-                     icone: "niveis", acao: "niveis", nivelId: n.id };
+                     icone: "niveis", acao: "niveis", nivelId: n.id, menu: self._nivMenu(n.id) };
           })
         : [{ id: "niv:vazio", rotulo: "Nenhum nível — clique para criar", icone: "niveis", acao: "niveis" }];
       var plantas = L.length
@@ -11117,7 +11406,7 @@
         var NV = []; try { NV = Bim2D.niveis(); } catch (eNv) { NV = []; }
         if (NV.length) plantas = NV.map(function (n) {
           var pid = Bim2D.idPlanta(n.id);
-          return { id: "d2:" + pid, rotulo: n.nome, icone: "planta", arrastar: pid, fn: function () { self._d2Abrir(pid, "Planta baixa — " + n.nome); } };   /* P8: arrastar = vai para a folha */
+          return { id: "d2:" + pid, rotulo: n.nome, icone: "planta", arrastar: pid, menu: self._nivMenu(n.id), fn: function () { self._d2Abrir(pid, "Planta baixa — " + n.nome); } };   /* P8: arrastar = vai para a folha */
         });
         var CS = []; try { CS = Bim2D.cortes(); } catch (eCs) { CS = []; }
         ramoCortes = { id: "cortes", rotulo: "Cortes", icone: "corte", n: CS.length, aberto: CS.length > 0,
@@ -14166,6 +14455,11 @@
           extras = extras.concat(this._pesoSecaoProps(el, ro)).concat(this._abrSecaoProps(info, ro)).concat(this._orcSecaoProps(info)).concat(window.BimEstilo ? BimEstilo.secaoProps(info) : []);
         }
       } catch (eX) {}
+      /* S8: a peça vira referência de um piso novo (topo do pilar, face de cima da laje…) */
+      try {
+        var nAqui = fam ? null : this._nivAquiInfo(uid, true);
+        if (nAqui) extras.push({ nome: "Nível", params: [{ id: "niv-aqui", rotulo: "Piso novo nesta peça", tipo: "botao", rotuloBotao: "Criar nível aqui…", fn: function () { self._nivAquiDialogo(nAqui); } }] });
+      } catch (eNa) {}
       extras.push({ nome: "Dados", params: [{ id: "peca-ifc", rotulo: "Parâmetros do IFC", tipo: "botao", rotuloBotao: "Ver todos", fn: function () { self._bimVerProps(info); } }] });
       return BimPropsUI.esquema(info, this, { extras: extras, aoMudarExtra: function (pid, valor) {
         if (String(pid).indexOf("b2:") === 0 && window.BimArqUI) BimArqUI.mudar(info, pid, valor);
@@ -14334,6 +14628,8 @@
       if (v && v.janela && !v.janela.closed) { try { v.janela.focus(); } catch (e) {} return; }
       st.ativa = id;
       this._bimVxLayout();
+      /* S8: a regra do topo da viga é da vista na frente (planta estrutural × piso/3D) */
+      try { if (window.BimArqUI && BimArqUI.garantirContexto) BimArqUI.garantirContexto(); } catch (eCtx) {}
       /* vista 2D: não tem caixa de corte nem ortogonal — Propriedades mostra os parâmetros do desenho */
       if (v && (v.tipo === "2d" || v.tipo === "folha")) { try { BimShell.repintarVista(); } catch (e2d) {} return; }   /* P8: a folha também */
       /* a fita segue a vista ativa: caixa de corte e ortogonal são de cada vista */
@@ -50988,6 +51284,7 @@ renderFolha: function () {
         case "paginar-parede": return this._paginar("parede");
         case "elevacao-parede": return this._elevacao();
         case "niv-excluir": return this._nivExcluir(dataset.id);
+        case "niv-copiar": return this._nivCopiar(dataset.id);
         case "dash-periodo": return this.dashTrocaPeriodo(dataset.value);
         /* de propósito sem valor: numa seleção múltipla o dataset carrega UM
            valor só, e passá-lo descartaria as outras obras escolhidas. */

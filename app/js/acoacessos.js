@@ -744,6 +744,12 @@
 
   /* ============================================================ MEMORIAL */
   function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+  /* AJUSTE DA GERENTE (14/10/2026): o símbolo de PERFIL vai com índice no HTML do memorial — t<sub>f</sub>, t<sub>w</sub>,
+     b<sub>f</sub>, h<sub>w</sub> e afins (b<sub>w</sub>, t<sub>fs</sub>, b<sub>fi</sub>…): na aba de unidades (kgf/tf) "tf" é
+     tonelada-força e "Ff = M/(d − tf) = 4,06 tf" ficava ambíguo. SÓ no HTML do memorial: o dado do motor (a fórmula em
+     texto) não muda — a tela, a prancha e o DXF continuam com "tf" sem tag. Recebe texto JÁ escapado. */
+  var RE_IX = /(^|[^A-Za-z_\u00C0-\u024F])([tbh])([fw])(s|i|1|2)?(?![A-Za-z0-9_\u00C0-\u024F])/g;
+  function ix(h) { return String(h == null ? "" : h).replace(RE_IX, function (m0, a, l, s, k) { return a + l + "<sub>" + s + (k || "") + "</sub>"; }); }
   function t(s) { return esc(String(s == null ? "" : s).replace(/\b(undefined|NaN|null|Infinity)\b/g, "[valor indefinido]")); }
   function tab(cab, linhas) { return '<table class="t"><thead><tr>' + cab.map(function (c) { return "<th>" + c + "</th>"; }).join("") + "</tr></thead><tbody>" + linhas.map(function (l) { return "<tr" + (l.cls ? ' class="' + l.cls + '"' : "") + ">" + (l.c || l).map(function (x) { return "<td>" + (x == null ? "" : x) + "</td>"; }).join("") + "</tr>"; }).join("") + "</tbody></table>"; }
   var CSS = "body{font-family:Arial,Helvetica,sans-serif;color:#1d2733;font-size:11pt;margin:24px}h1{font-size:16pt;margin:0 0 4px}h2{font-size:13pt;border-bottom:2px solid #1d2733;margin:22px 0 8px;padding-bottom:3px}h3{font-size:11pt;margin:14px 0 4px}" +
@@ -772,8 +778,8 @@
     if (dm && dm.ok) {
       h += "<p><b>" + t(dm.resumo) + "</b></p>";
       dm.verificacoes.forEach(function (x) {
-        h += "<h3>" + t(x.nome) + (x.info ? "" : " — " + (x.ok ? '<span class="ok">atende</span>' : '<span class="falha">não atende</span>') + " (" + br(num(x.razao, 0) * 100, 0) + " %)") + "</h3><p class=\"muted\">" + t(x.item) + (x.conferir ? ' <span class="ph">[conferir]</span>' : "") + "</p>";
-        h += tab(["Passo", "Fórmula", "Valor"], arr(x.passos).map(function (p) { return [t(p.rotulo), t(p.formula || ""), t(p.valor || "")]; }));
+        h += "<h3>" + ix(t(x.nome)) + (x.info ? "" : " — " + (x.ok ? '<span class="ok">atende</span>' : '<span class="falha">não atende</span>') + " (" + br(num(x.razao, 0) * 100, 0) + " %)") + "</h3><p class=\"muted\">" + ix(t(x.item)) + (x.conferir ? ' <span class="ph">[conferir]</span>' : "") + "</p>";
+        h += tab(["Passo", "Fórmula", "Valor"], arr(x.passos).map(function (p) { return [ix(t(p.rotulo)), ix(t(p.formula || "")), ix(t(p.valor || ""))]; }));
       });
       if (dm.avisos.length) h += "<h3>Premissas e avisos do cálculo</h3><ul>" + dm.avisos.map(function (a) { return "<li>" + t(a) + "</li>"; }).join("") + "</ul>";
     } else h += caixa("Dimensionamento não executado.", true);

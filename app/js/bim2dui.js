@@ -51,6 +51,7 @@
       if (!Array.isArray(e.cortes)) e.cortes = [];
       if (!e.estilos || typeof e.estilos !== "object") e.estilos = {};
       if (!e.plantas || typeof e.plantas !== "object") e.plantas = {};
+      if (!e.acima || typeof e.acima !== "object" || Array.isArray(e.acima)) e.acima = {};   /* ACIMA DO CORTE: a opção de cada vista (id → {on, modo, altura, rotulo}) */
       this._est = e;
       return e;
     },
@@ -69,6 +70,16 @@
       return L;
     },
     cortes: function () { return this.estado().cortes.slice(); },
+    /* ACIMA DO CORTE (14/10/2026, js/desenho2d.js Acima): a opção da vista — mostrar as peças acima do
+       plano de corte em projeção tracejada, até o nível de cima (padrão) ou até uma altura do piso.
+       Gravada POR VISTA; ligada por padrão. Planta de forro não tem (ela já olha para cima). */
+    acimaCfg: function (id) { var D = D2(); return D && D.Acima ? D.Acima.cfg(this.estado().acima[id]) : { on: false }; },
+    _acimaVale: function (d) { return !!(d && d.tipo === "planta" && d.p6 !== "forro" && d.p6base !== "forro"); },
+    /* o topo da faixa acima do corte em cota de MUNDO (null = desligado) */
+    acimaTopo: function (d, yCorte) {
+      var D = D2(); if (!D || !D.Acima || !this._acimaVale(d)) return null;
+      return D.Acima.topo(this.acimaCfg(d.id), d.nivel.y, yCorte, this.niveis());
+    },
     idPlanta: function (nivelId) { return "d2p-" + String(nivelId).replace(/[^\w-]/g, "_"); },
     idCorte: function (cid) { return "d2c-" + cid; },
     ehVista2d: function (id) { return /^d2[pcv]-/.test(String(id || "")); },   /* P6: d2v- = vistas novas (js/bimmodelovista.js) */
@@ -111,7 +122,7 @@
       var b = B(); if (!b || !b.vista2d) return { ok: false, erro: "O visualizador 3D ainda não abriu." };
       if (this._p6()) { var r6 = this._p6Extrair(d, b); if (r6) return r6; }   /* P6: V/G, faixa, forro, recorte */
       /* p6Tag: cada contorno/aresta leva o uid da peça — é por ele que o clique na vista SELECIONA (js/bimselecao.js) */
-      if (d.tipo === "planta") return b.vista2d({ tipo: "planta", yCorte: d.nivel.y + d.altura, yFundo: d.nivel.y - d.abaixo, p6Tag: true });
+      if (d.tipo === "planta") return b.vista2d({ tipo: "planta", yCorte: d.nivel.y + d.altura, yFundo: d.nivel.y - d.abaixo, p6Tag: true, acimaTopo: this.acimaTopo(d, d.nivel.y + d.altura) });   /* ACIMA DO CORTE */
       var c = d.corte;
       return b.vista2d({ tipo: "corte", ax: c.ax, az: c.az, bx: c.bx, bz: c.bz, inv: !!c.inv, prof: c.prof > 0 ? c.prof : null, p6Tag: true });
     },
@@ -125,6 +136,8 @@
     _anotarBase: function (d, dados) {
       var self = this, out = { tipo: dados.tipo, cortes: dados.cortes, linhas: dados.linhas };
       if (dados.portas && dados.portas.length) out.portas = dados.portas;   /* PORTA: folha aberta + arco do giro (js/simboloporta.js) */
+      /* ACIMA DO CORTE: a projeção tracejada e o rótulo (o modo do rótulo é da vista) */
+      if (d.tipo === "planta" && dados.acima && dados.acima.length && this.acimaCfg(d.id).on) { out.acima = dados.acima; out.acimaRotulo = this.acimaCfg(d.id).rotulo; }
       if (d.tipo === "planta") {
         out.cad = this._cadDesenho(d.nivel.id);
         /* B5: instalações por cima, na cor do sistema (js/biminst.js planta) */
@@ -507,6 +520,18 @@
           { id: "inv", rotulo: "Olhar para o outro lado", tipo: "sim-nao", valor: !!d.corte.inv }
         ] });
       }
+      /* ACIMA DO CORTE: a opção da vista (planta baixa, estrutural e o detalhe dela; o forro não) */
+      if (this._acimaVale(d)) {
+        var ac = this.acimaCfg(id), D3 = D2().Acima, nAc = c.dados && c.dados.acima ? c.dados.acima.length : 0;
+        var pa = [
+          { id: "acima:on", rotulo: "Mostrar acima do corte", tipo: "sim-nao", valor: ac.on },
+          { id: "acima:modo", rotulo: "Faixa acima do corte", tipo: "lista", valor: ac.modo, opcoes: op(D3.MODOS) }
+        ];
+        if (ac.modo === "altura") pa.push({ id: "acima:altura", rotulo: "Topo da faixa (do piso)", unidade: "m", tipo: "numero", passo: 0.1, valor: ac.altura });
+        pa.push({ id: "acima:rotulo", rotulo: "Rótulo das peças acima", tipo: "lista", valor: ac.rotulo, opcoes: op(D3.ROTULOS) });
+        if (ac.on) pa.push({ id: "acima:info", rotulo: "Peças acima", leitura: true, valor: nAc + (nAc === 1 ? " peça tracejada" : " peças tracejadas") + (c.dados && c.dados.acimaTopo != null ? " (até " + D2().fmtCota(c.dados.acimaTopo) + ")" : "") });
+        secoes.push({ nome: "Acima do plano de corte", params: pa });
+      }
       /* P2-D: "Esquema de cores" e identificadores de ambiente da planta (js/bimambienteui.js) */
       if (d.tipo === "planta" && global.BimAmbienteUI && global.BimAmbienteUI.secaoVista) {
         try { var sa = global.BimAmbienteUI.secaoVista(e); if (sa) secoes.push(sa); } catch (eSa) {}
@@ -549,6 +574,18 @@
         var v = this._cadAchar(mc[1]); if (!v) return;
         v[mc[2]] = mc[2] === "vis" ? !!valor : num(valor, v[mc[2]] || 0);
         this._gravar(); this.redesenhar(id, false); return;
+      }
+      var ma = /^acima:(on|modo|altura|rotulo)$/.exec(pid);
+      if (ma) {   /* ACIMA DO CORTE: gravado por vista; ligar/desligar e a faixa re-extraem, o rótulo só redesenha */
+        var D4 = D2().Acima, cur = D4.cfg(e.acima[id]);
+        if (ma[1] === "on") cur.on = !!valor && valor !== "false";
+        else if (ma[1] === "modo") cur.modo = D4.MODOS[valor] ? valor : cur.modo;
+        else if (ma[1] === "altura") cur.altura = num(valor, cur.altura);
+        else cur.rotulo = D4.ROTULOS[valor] ? valor : cur.rotulo;
+        e.acima[id] = D4.cfg(cur);
+        this._gravar(); if (ma[1] !== "rotulo") this.atualizar(id); else this.redesenhar(id, false);   /* sem perder o zoom */
+        status(cur.on ? (ma[1] === "rotulo" ? "Rótulo das peças acima do corte: " + D4.ROTULOS[e.acima[id].rotulo] + "." : "Peças acima do corte em projeção tracejada, " + (e.acima[id].modo === "altura" ? "até " + D2().fmtNum(e.acima[id].altura, 2) + " m do piso." : "até o nível de cima.")) : "Peças acima do corte escondidas nesta vista.");
+        return;
       }
       if (pid === "altura" || pid === "abaixo") {
         var pp = e.plantas[d.nivel.id] || (e.plantas[d.nivel.id] = {});
@@ -637,7 +674,7 @@
         var vv = d.p6 === "chamada" ? null : M.estado().vistas[d.id], ef = vv ? M.efetivo(vv, M.estado()) : null, f = ef && ef.faixa;
         var corte = f ? f.corte : d.altura, fundo = f ? Math.min(f.inf, f.prof) : -d.abaixo, topo = f ? f.sup : (d.topo != null ? d.topo : 2.3);
         def = (d.p6 === "forro" || d.p6base === "forro") ? { tipo: "forro", yCorte: d.nivel.y + corte, yTopo: d.nivel.y + Math.max(topo, corte + 0.1) }
-                                                         : { tipo: "planta", yCorte: d.nivel.y + corte, yFundo: d.nivel.y + fundo };
+                                                         : { tipo: "planta", yCorte: d.nivel.y + corte, yFundo: d.nivel.y + fundo, acimaTopo: this.acimaTopo(d, d.nivel.y + corte) };   /* ACIMA DO CORTE */
       } else {
         var c = d.corte;
         def = { tipo: "corte", ax: c.ax, az: c.az, bx: c.bx, bz: c.bz, inv: !!c.inv, prof: c.prof > 0 ? c.prof : null };

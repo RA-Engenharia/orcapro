@@ -637,7 +637,7 @@
   /* ================================================================ BASES */
   function baseEnt(p, tipo) {
     var e = ent(p);
-    return { tipo: tipo, pilar: e.apoio && e.apoio.d ? e.apoio : e.viga, aco: { fy: e.fy, fu: e.fu }, chumbador: p.chumbador || { id: "ASTM F1554 Gr.36", fy: 250, fu: 400 }, concreto: p.concreto || { fck: 25 },
+    return { tipo: tipo, dMinChumb: p.dMinChumb, pilar: e.apoio && e.apoio.d ? e.apoio : e.viga, aco: { fy: e.fy, fu: e.fu }, chumbador: p.chumbador || { id: "ASTM F1554 Gr.36", fy: 250, fu: 400 }, concreto: p.concreto || { fck: 25 },   /* dMinChumb: revisão A4 (js/acoligsugere.js) */
              acoPilar: { fy: e.fyA }, eletrodo: { fw: e.fw },
              esforcos: e.esf.map(function (s) { return { comb: s.comb, N: num(s.N, 0), Vx: num(s.V, num(s.Vx, 0)), Vz: num(s.Vz, 0), M: num(s.M, 0) }; }) };
   }
@@ -695,6 +695,10 @@
     var r = placaBase(p, { tipo: p.tipoBase === "engastada" ? "engastada" : "rotulada" });
     r.tipo = "chumbadorQuimico"; r.tipologia = "base-chumbador-quimico";
     r.naoVerificado = ["Aderência do adesivo e cone de concreto do chumbador químico: dados do fabricante (avaliação técnica do produto) — NÃO verificados.", "Bloco existente: conferir fck, cobrimento e distância às bordas no local."];
+    /* REVISÃO S5 N1 (14/10/2026): sem os dados do fabricante a aderência, o cone e o embutimento NÃO são verificados — é
+       pendência CRÍTICA: a ligação pode ser aplicada (escolha do engenheiro), mas o memorial não diz "atendem" e as pranchas
+       saem com NÃO EMITIR até verificar à parte */
+    r.naoVerificadoCritico = ["Chumbador químico: aderência do adesivo, cone de concreto, embutimento (hef) e distância mínima à borda dependem dos dados do fabricante (avaliação técnica do produto) — NÃO VERIFICADOS"];
     r.resumo = String(r.resumo || "").replace(/chumbadores ([^ ]+) com gancho, ancoragem mínima [^;]+/, "barras roscadas $1 com chumbador químico (embutimento do fabricante)");
     return r;
   }
@@ -927,11 +931,17 @@
   }
   /* o memorial de UMA ligação (HTML simples, sem estilo próprio — o memorial da estrutura dá o estilo) */
   function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+  /* AJUSTE DA GERENTE (14/10/2026): o símbolo de PERFIL vai com índice no HTML do memorial — t<sub>f</sub>, t<sub>w</sub>,
+     b<sub>f</sub>, h<sub>w</sub> e afins (b<sub>w</sub>, t<sub>fs</sub>, b<sub>fi</sub>…): na aba de unidades (kgf/tf) "tf" é
+     tonelada-força e "Ff = M/(d − tf) = 4,06 tf" ficava ambíguo. SÓ no HTML do memorial: o dado do motor (a fórmula em
+     texto) não muda — a tela, a prancha e o DXF continuam com "tf" sem tag. Recebe texto JÁ escapado. */
+  var RE_IX = /(^|[^A-Za-z_\u00C0-\u024F])([tbh])([fw])(s|i|1|2)?(?![A-Za-z0-9_\u00C0-\u024F])/g;
+  function ix(h) { return String(h == null ? "" : h).replace(RE_IX, function (m0, a, l, s, k) { return a + l + "<sub>" + s + (k || "") + "</sub>"; }); }
   function memorialHtml(r, titulo) {
     if (!r || !r.verificacoes) return "";
-    var h = "<h3>" + esc(titulo || r.nome || r.tipo) + "</h3><p><b>" + esc(r.resumo || "") + "</b> — " + (r.ok ? "PASSA" : "NÃO PASSA") + " (aproveitamento " + br(r.razao * 100, 0) + " %; governa: " + esc(r.governante || "—") + ")" + (r.estimativa ? " <b>[ESTIMATIVA]</b>" : "") + "</p>";
+    var h = "<h3>" + esc(titulo || r.nome || r.tipo) + "</h3><p><b>" + esc(r.resumo || "") + "</b> — " + (r.ok ? "PASSA" : "NÃO PASSA") + " (aproveitamento " + br(r.razao * 100, 0) + " %; governa: " + ix(esc(r.governante || "—")) + ")" + (r.estimativa ? " <b>[ESTIMATIVA]</b>" : "") + "</p>";
     r.verificacoes.forEach(function (v) {
-      h += "<h4>" + esc(v.nome) + " — " + esc(v.item) + "</h4><ul>" + arr(v.passos).map(function (q) { return "<li>" + esc(q.rotulo) + (q.formula ? ' <span class="eq">' + esc(q.formula) + "</span>" : "") + (q.valor != null && q.valor !== "" ? " = <b>" + esc(q.valor) + "</b>" : "") + (q.extra ? ' <span class="nota">' + esc(q.extra) + "</span>" : "") + "</li>"; }).join("") +
+      h += "<h4>" + ix(esc(v.nome)) + " — " + ix(esc(v.item)) + "</h4><ul>" + arr(v.passos).map(function (q) { return "<li>" + ix(esc(q.rotulo)) + (q.formula ? ' <span class="eq">' + ix(esc(q.formula)) + "</span>" : "") + (q.valor != null && q.valor !== "" ? " = <b>" + ix(esc(q.valor)) + "</b>" : "") + (q.extra ? ' <span class="nota">' + ix(esc(q.extra)) + "</span>" : "") + "</li>"; }).join("") +
         "<li>Solicitante " + br(v.solicitante, 2) + " " + esc(v.unidade) + " / resistente " + br(v.resistencia, 2) + " " + esc(v.unidade) + " → razão <b>" + br(v.razao, 3) + "</b> " + (v.razao <= 1 + 1e-9 ? "(ok)" : "(NÃO PASSA)") + "</li></ul>";
     });
     if (r.reforcos.length) h += "<p><b>Reforços:</b> " + r.reforcos.map(esc).join("; ") + ".</p>";

@@ -69,7 +69,9 @@
     document.head.appendChild(s);
   }
 
-  var U = { preferir: "", ultimo: null, ctx: null, sg: null };
+  var U = { preferir: "", execucao: "", ultimo: null, ctx: null, sg: null };
+  /* SIMULAÇÃO S1 (14/10/2026): as fundações do BIM (a placa de base é verificada na sapata/bloco sob o pilar) */
+  function fundacoes() { try { var st = global.BIM && BIM.editarEstado ? BIM.editarEstado().estado : null; return (st && st.fundacoes) || []; } catch (e) { return []; } }
   /* PADRÃO por combinação de seções (R-TAB): guardado NESTE navegador (conveniência; não é dado da obra) */
   var CHAVE_TAB = "orcapro:metal:ligpadrao:v1";
   function lerTabela() { try { var t = JSON.parse(global.localStorage.getItem(CHAVE_TAB) || "{}"); return t && typeof t === "object" ? t : {}; } catch (e) { return {}; } }
@@ -123,7 +125,9 @@
     var h = '<div class="lsg" data-lsg="painel" data-modal-largo data-lsg-relacao="' + esc(ctx.relacao) + '" data-lsg-face="' + esc(ctx.face) + '">' +
       '<div class="lsg-topo"><span><b>Encontro:</b> ' + esc(rel) + (ctx.relacao === "viga-pilar" ? " — na <b data-lsg=\"face\">" + esc(ctx.face) + "</b> do pilar" + (ctx.topoPilar ? " (topo do pilar)" : "") : "") + "</span>" +
       "<span><b>Nó:</b> " + esc(no.rigido === true ? "rígido" : no.rigido === false ? "rotulado" : "padrão (rotulado)") + " — " + esc(no.texto || "") + "</span>" +
-      '<label>Preferência <select data-lsg="preferir"><option value=""' + (!U.preferir ? " selected" : "") + '>pelo cálculo</option><option value="rigida"' + (U.preferir === "rigida" ? " selected" : "") + '>rígida</option><option value="flexivel"' + (U.preferir === "flexivel" ? " selected" : "") + ">flexível</option></select></label></div>" +
+      '<label>Preferência <select data-lsg="preferir"><option value=""' + (!U.preferir ? " selected" : "") + '>pelo cálculo</option><option value="rigida"' + (U.preferir === "rigida" ? " selected" : "") + '>rígida</option><option value="flexivel"' + (U.preferir === "flexivel" ? " selected" : "") + ">flexível</option></select></label>" +
+      '<label>Na obra <select data-lsg="execucao"><option value=""' + (!U.execucao ? " selected" : "") + '>solda ou parafuso</option><option value="parafusada"' + (U.execucao === "parafusada" ? " selected" : "") + ">tudo parafusado</option></select></label></div>" +
+      (ctx.fundacao ? '<p class="lsg-nota" data-lsg="fundacao">Fundação sob o pilar: ' + esc(ctx.fundacao.rotulo) + " " + esc(ctx.fundacao.id) + (ctx.fundacao.dimensoes ? " " + br(ctx.fundacao.dimensoes.B, 2) + " × " + br(ctx.fundacao.dimensoes.L, 2) + " × " + br(ctx.fundacao.dimensoes.h, 2) + " m" : "") + " · fck " + br(ctx.fundacao.fck, 0) + " MPa" + (ctx.fundacao.fckInformado ? "" : " (adotado — informe nas Propriedades da fundação)") + " — a ancoragem é verificada nela.</p>" : "") +
       '<p class="lsg-nota">Peças: ' + pecas + ". Esforços: " + esc(ctx.origemEsforcos || "—") + "</p>";
     var av = arr(sg.avisos);
     if (av.length) h += '<ul class="lsg-av" data-lsg="avisos">' + av.map(function (a) { return "<li" + (/INCOER/.test(a) ? ' class="inc"' : "") + ">" + esc(a) + "</li>"; }).join("") + "</ul>";
@@ -146,6 +150,8 @@
     });
     var sel = raiz.querySelector("[data-lsg='preferir']");
     if (sel) sel.addEventListener("change", function () { U.preferir = sel.value; MetalLigSugUI.abrir({ manter: true }); });
+    var selE = raiz.querySelector("[data-lsg='execucao']");
+    if (selE) selE.addEventListener("change", function () { U.execucao = selE.value; MetalLigSugUI.abrir({ manter: true }); });
   }
   function apDe(ctx) {
     if (!ctx) return "";
@@ -211,6 +217,8 @@
     var S0 = S(), ent = o.entrada || (S0 ? S0.entradaCalc(ctx, {}) : null);
     if (primeira) primeira.caixa.ligInfo = { v: 1, tipologia: o.tipologia, nome: o.nome, familia: o.familia, regra: o.regra.id, pecas: arr(ctx.ordem).slice(), entrada: ent, notaCorte: (o.resultado && o.resultado.notaCorte) || null,
       resumo: (o.resultado || {}).resumo || "", razao: num((o.resultado || {}).razao, 0), ok: !!o.passa, estimativa: !!ctx.estimativa, em: new Date().toISOString() };
+    /* SIMULAÇÃO S1: a fundação em que a placa foi verificada (contornos como lista de objetos — a nuvem recusa lista em lista) */
+    if (primeira && o.fundacao) primeira.caixa.ligInfo.fundacao = clone(o.fundacao);
     return { ok: true, lote: lote, r: r, lig: lig, n: lote.ops.length, aviso: ap.aviso };
   }
 
@@ -239,9 +247,9 @@
       css();
       var cxs = o.manter && U.cxs ? U.cxs : selCaixas();
       if (!cxs.length) { var t = "Ligação inteligente: selecione as peças que se encontram — clique no PILAR e, com Ctrl, na VIGA (ou um pilar sozinho para a base)."; status(t); toast(t, "aviso", 8000); return null; }
-      var ctx = S0.analisar(cxs, { resultado: resultadoCalc() });
+      var ctx = S0.analisar(cxs, { resultado: resultadoCalc(), fundacoes: fundacoes() });
       if (!ctx.ok) { status("Ligação inteligente: " + ctx.motivo); toast(ctx.motivo, "aviso", 8000); return null; }
-      var sg = S0.sugerir(ctx, { preferir: U.preferir || null, tabela: lerTabela() });
+      var sg = S0.sugerir(ctx, { preferir: U.preferir || null, execucao: U.execucao || null, tabela: lerTabela() });
       U.cxs = cxs; U.ctx = ctx; U.sg = sg;
       if (!sg.ok || !sg.opcoes.length) { toast("Ligação inteligente: nenhuma tipologia para este encontro (" + (REL[ctx.relacao] || ctx.relacao) + ").", "aviso", 8000); return sg; }
       UI.modal("Ligação inteligente — " + (REL[ctx.relacao] || ctx.relacao), painelHtml(ctx, sg), [{ texto: "Catálogo", onClick: function () { MetalLigSugUI.catalogo(apDe(ctx)); } }, { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
@@ -260,6 +268,8 @@
       return true;
     },
     tabela: function () { return lerTabela(); },
+    /* "tudo parafusado na obra" (sem solda de campo) vale também para Ligar todos os nós */
+    execucao: function (v) { if (v !== undefined) U.execucao = v === "parafusada" ? "parafusada" : ""; return U.execucao || null; },
     podeAplicar: podeAplicar, _cartao: function (o, i) { return cartao(o, i || 0); },
     limparTabela: function () { return gravarTabela({}); },
     contexto: function () { return U.ctx; },
@@ -310,8 +320,32 @@
       arr(caixas || todasCaixas()).forEach(function (c) {
         var li = c && c.ligInfo; if (!li || !li.tipologia) return;
         var ent = clone(li.entrada) || {};
-        var r = C.verificar(li.tipologia, ent);
+        var r = C.verificar(li.tipologia, ent), LF0 = global.AcoLigFundacao;
+        if (li.fundacao && LF0 && r && r.dimensoes && r.dimensoes.chumbadores) r = LF0.verificar(r, li.fundacao, { suporte: ent.concreto && ent.concreto.suporte, esforcos: arr(ent.esforcos).map(function (s) { return { comb: s.comb, N: num(s.N, 0), Vx: num(s.Vx, num(s.V, 0)), Vz: num(s.Vz, 0), M: num(s.M, 0) }; }) });
         out.push({ id: String((c.metal && c.metal.lig) || c.id), titulo: (li.nome || li.tipologia) + " — peças " + arr(li.pecas).join(" × "), resultado: r, info: li });
+      });
+      return out;
+    },
+    /* SIMULAÇÃO S1: as ligações do modelo REFEITAS com os esforços do cálculo `r` (o último da Estrutura desenhada) —
+       cada uma diz se o que está desenhado é o que esse cálculo dimensiona (confere) ou se precisa reaplicar */
+    ligacoesComCalculo: function (r, caixas) {
+      var S0 = S(), C = C2(); if (!S0 || !C) return [];
+      var todas = arr(caixas || todasCaixas()), por = {}; todas.forEach(function (c) { por[String(c.id)] = c; });
+      var antigas = this.ligacoesDoModelo(todas), out = [];
+      antigas.forEach(function (l) {
+        var li = l.info, cxs = arr(li.pecas).map(function (id) { return por[String(id)]; }).filter(Boolean), novo = null;
+        if (cxs.length === arr(li.pecas).length && r && r.ok) {
+          var ctx = S0.analisar(cxs, { resultado: r, fundacoes: fundacoes() });
+          if (ctx.ok && !ctx.estimativa) {
+            /* REVISÃO M1 (14/10/2026): a ligação JÁ DESENHADA é refeita pela tipologia dela, sem o filtro da execução
+               escolhida depois (antes, "tudo parafusado" tirava a soldada da lista e ela voltava com os esforços guardados) */
+            var sg = S0.sugerir(ctx, {}), o = arr(sg.todasOpcoes).filter(function (x) { return x.tipologia === li.tipologia; })[0];
+            if (o) novo = { resultado: o.resultado, passa: o.passa, origem: ctx.origemEsforcos, no: ctx.no };
+          }
+        }
+        var r0 = novo ? novo.resultado : l.resultado, confere = !!novo && String(r0.resumo || "") === String(li.resumo || "");
+        out.push({ id: l.id, titulo: l.titulo, resultado: r0, info: li, confere: confere, comCalculo: !!novo, origem: novo ? novo.origem : "esforços guardados na ligação (" + (li.em || "") + ")",
+                   diferenca: novo && !confere ? "desenhada: " + (li.resumo || "—") + " · com os esforços deste cálculo: " + (r0.resumo || "—") : null });
       });
       return out;
     },
@@ -344,27 +378,67 @@
     },
 
     /* ------------------------------------------------------------ ligar todos os nós */
-    nos: function (caixas) {
+    /* `todas`: o modelo inteiro, de onde saem as ligações JÁ feitas (chapas soldadas e furos) — SIMULAÇÃO S1 (14/10/2026):
+       o "Ligar todos os nós" passava só os perfis, as chapas da ligação já aplicada ficavam de fora e o joelho era
+       ligado DE NOVO (três talas no mesmo nó) */
+    nos: function (caixas, todas) {
       var M = global.BimMetal, S0 = S(); if (!M || !S0) return [];
       var mbs = [];
       arr(caixas).forEach(function (c) { var mb = M.membro(c); if (mb && !(c.metal && c.metal.lig)) mbs.push({ c: c, mb: mb, vert: Math.abs(mb.X[1]) >= Math.cos(15 * Math.PI / 180) }); });
       var V = M.vet, pares = [], vistos = {}, ligados = {};
-      arr(caixas).forEach(function (c) { if (c && c.metal && c.metal.lig && c.metal.soldadaEm) (ligados[String(c.metal.lig)] = ligados[String(c.metal.lig)] || {})[String(c.metal.soldadaEm)] = 1; arr(c && c.metalFuros).forEach(function (f) { if (f.lig) (ligados[String(f.lig)] = ligados[String(f.lig)] || {})[String(c.id)] = 1; }); });
+      arr(todas || caixas).forEach(function (c) { if (c && c.metal && c.metal.lig && c.metal.soldadaEm) (ligados[String(c.metal.lig)] = ligados[String(c.metal.lig)] || {})[String(c.metal.soldadaEm)] = 1; arr(c && c.metalFuros).forEach(function (f) { if (f.lig) (ligados[String(f.lig)] = ligados[String(f.lig)] || {})[String(c.id)] = 1; });
+        /* SIMULAÇÃO S2: as peças que a ligação escolhida liga (ligInfo) — a barra redonda não leva furo nem é soldada, e o lote a ligava de novo */
+        if (c && c.metal && c.metal.lig && c.ligInfo) arr(c.ligInfo.pecas).forEach(function (id) { (ligados[String(c.metal.lig)] = ligados[String(c.metal.lig)] || {})[String(id)] = 1; }); });
       function jaLigados(a, b) { return Object.keys(ligados).some(function (k) { return ligados[k][a] && ligados[k][b]; }); }
       mbs.forEach(function (A) {
         if (A.vert) return;
         [A.mb.P0, V.add(A.mb.P0, V.mul(A.mb.X, A.mb.L))].forEach(function (P) {
-          var melhor = null, dm = Infinity;
+          var melhor = null, dm = Infinity, melhorP = null, dmP = Infinity, jaFeita = false;
+          /* a PONTA já ligada (a peça recuada pela ligação fica até 60 cm fora do apoio: a mesma ponta não ganha outra) */
+          mbs.forEach(function (B) {
+            if (B === A || jaFeita) return;
+            var d = V.sub(P, B.mb.P0), t = V.dot(d, B.mb.X), perp = V.len(V.sub(d, V.mul(B.mb.X, t)));
+            if (t < -0.65 || t > B.mb.L + 0.65 || perp > Math.max(B.mb.s.alt, B.mb.s.larg) / 2 + A.mb.s.alt / 2 + 0.65) return;
+            if (jaLigados(String(A.c.id), String(B.c.id))) jaFeita = true;
+          });
+          if (jaFeita) return;
           mbs.forEach(function (B) {
             if (B === A) return;
             var d = V.sub(P, B.mb.P0), t = V.dot(d, B.mb.X), perp = V.len(V.sub(d, V.mul(B.mb.X, t)));
             if (t < -0.05 || t > B.mb.L + 0.05 || Math.abs(V.dot(A.mb.X, B.mb.X)) > 0.996) return;
-            if (perp < Math.max(B.mb.s.alt, B.mb.s.larg) / 2 + A.mb.s.alt / 2 + 0.05 && perp < dm) { dm = perp; melhor = B; }
+            if (perp < Math.max(B.mb.s.alt, B.mb.s.larg) / 2 + A.mb.s.alt / 2 + 0.05) {
+              if (perp < dm) { dm = perp; melhor = B; }
+              /* REVISÃO A3: o pilar só tem a preferência se a ponta está DENTRO da seção dele (a secundária que apoia na
+                 principal a 20 cm do eixo do pilar é viga × viga — reprodução h15) */
+              if (B.vert && perp <= Math.max(B.mb.s.alt, B.mb.s.larg) / 2 + 0.01 && perp < dmP) { dmP = perp; melhorP = B; }
+            }
           });
+          /* SIMULAÇÃO S2 (14/10/2026): ponta de viga no topo de um PILAR onde chega outra viga (canto do pórtico espacial):
+             a ligação é com o pilar — antes o empate de distância escolhia a outra viga pela ordem das peças ("cumeeira") */
+          if (melhorP) melhor = melhorP;
           if (!melhor) return;
           var k = A.c.id + "|" + melhor.c.id + "|" + (V.dot(V.sub(P, A.mb.P0), A.mb.X) < A.mb.L / 2 ? "i" : "f");
           if (vistos[k] || jaLigados(String(A.c.id), String(melhor.c.id))) return; vistos[k] = 1;
           pares.push([A.c, melhor.c]);
+        });
+      });
+      /* REVISÃO C3: a ponta de PILAR (topo ou pé que não é base) dentro de uma peça CONTÍNUA (a viga passa por ela) ou na
+         ponta de outro pilar colinear (emenda): também é encontro. Pilar × viga contínua não tem tipologia automática — vai
+         para "puladas" com o motivo (e o memorial a lista sem ligação: a capa não diz "atendem") */
+      mbs.forEach(function (A) {
+        if (!A.vert) return;
+        [A.mb.P0, V.add(A.mb.P0, V.mul(A.mb.X, A.mb.L))].forEach(function (P) {
+          mbs.forEach(function (B) {
+            if (B === A) return;
+            var d = V.sub(P, B.mb.P0), t = V.dot(d, B.mb.X), perp = V.len(V.sub(d, V.mul(B.mb.X, t))), tolS = Math.max(B.mb.s.alt, B.mb.s.larg) / 2 + A.mb.s.alt / 2 + 0.05;
+            if (perp > tolS) return;
+            var dentro = t > 0.05 && t < B.mb.L - 0.05, colinear = B.vert && Math.abs(V.dot(A.mb.X, B.mb.X)) > 0.996 && (t < 0.05 || t > B.mb.L - 0.05);
+            if (!(dentro && !B.vert) && !colinear) return;
+            var k2 = [A.c.id, B.c.id].sort().join("|") + "|pilar";
+            if (vistos[k2] || jaLigados(String(A.c.id), String(B.c.id))) return; vistos[k2] = 1;
+            var par = [A.c, B.c]; if (dentro) par.pular = "pilar (" + A.c.id + ") com a ponta numa viga CONTÍNUA (" + B.c.id + "): chapa de topo do pilar / apoio da viga a detalhar — não há tipologia automática; o memorial lista o encontro sem ligação";
+            pares.push(par);
+          });
         });
       });
       /* bases: a ponta de baixo do pilar sem nada embaixo */
@@ -375,34 +449,56 @@
     lote: function () {
       var S0 = S(), M = MU(); if (!S0 || !M) return null;
       var sel = selCaixas(), base = sel.length ? sel : todasCaixas().filter(function (c) { return c.tipo === "metal" && c.metal && c.metal.kind === "perfil" && !c.metal.lig; });
-      var pares = this.nos(base);
+      var pares = this.nos(base, todasCaixas());
       if (!pares.length) { toast("Ligar todos os nós: nenhum encontro sem ligação nas peças " + (sel.length ? "selecionadas" : "do modelo") + ".", "aviso", 7000); return null; }
       /* o estado LOCAL anda junto: a 2ª ligação da mesma viga vê a ponta já ajustada e os furos da 1ª (replay do BimEdit) */
       var E = global.BimEdit, baseOps = todasCaixas().map(function (c) { return { op: "criar", id: String(c.id), caixa: clone(c) }; });
-      var res = { feitas: [], puladas: [] }, ops = [], rc = resultadoCalc();
+      var res = { feitas: [], puladas: [], ajustes: [] }, ops = [], rc = resultadoCalc();
       function porAtual() {
         var lst = todasCaixas();
         if (ops.length && E && E.aplicar) { try { var st = E.aplicar(baseOps.concat([{ op: "lote", id: "lsg-tmp", origem: "metal-lig", ops: ops }])); if (st && st.caixas) lst = st.caixas; } catch (e) {} }
         var o = {}; lst.forEach(function (c) { o[String(c.id)] = c; }); return o;
       }
       pares.forEach(function (pp0) {
+        if (pp0.pular) { res.puladas.push({ pecas: pp0.map(function (c) { return c.id; }), motivo: pp0.pular }); return; }
         var por = porAtual(), pp = pp0.map(function (c) { return por[String(c.id)] || c; });
-        var ctx = S0.analisar(pp, { resultado: rc }); if (!ctx.ok) { res.puladas.push({ pecas: pp.map(function (c) { return c.id; }), motivo: ctx.motivo }); return; }
-        var sg = S0.sugerir(ctx, {}), o = sg.opcoes.filter(function (x) { return x.passa && x.aplicar && !x.avisos.some(function (a) { return /INCOER/.test(a); }); })[0];
-        if (!o) { res.puladas.push({ pecas: ctx.ordem, motivo: "nenhuma opção que passa com desenho automático" }); return; }
+        var ctx = S0.analisar(pp, { resultado: rc, fundacoes: fundacoes() }); if (!ctx.ok) { res.puladas.push({ pecas: pp.map(function (c) { return c.id; }), motivo: ctx.motivo }); return; }
+        /* REVISÃO S5 N1: a escolha do lote é do motor (AcoLigSugere.escolherLote): nunca o químico nem reforço sozinho; na
+           sapata do modelo, a placa verificada nela — e, se ela só reprova pela cota, aplicada com a proposta do ajuste */
+        var sg = S0.sugerir(ctx, { execucao: U.execucao || null }), esc = S0.escolherLote ? S0.escolherLote(sg) : { opcao: sg.opcoes.filter(function (x) { return x.passa && x.aplicar && !x.avisos.some(function (a) { return /INCOER/.test(a); }); })[0] || null }, o = esc.opcao;
+        if (!o) { res.puladas.push({ pecas: ctx.ordem, motivo: esc.motivo || "nenhuma opção que passa com desenho automático" }); return; }
         var a = aplicarOpcao(o, ctx, por, M.novoId.bind(M));
         if (!a.ok) { res.puladas.push({ pecas: ctx.ordem, motivo: a.motivo }); return; }
-        ops = ops.concat(a.lote.ops); res.feitas.push({ pecas: ctx.ordem, tipologia: o.tipologia, resumo: a.r.resumo });
+        ops = ops.concat(a.lote.ops); res.feitas.push({ pecas: ctx.ordem, tipologia: o.tipologia, resumo: a.r.resumo, pendente: esc.pendente || null });
+        /* FRENTE S5 (14/10/2026): a base aplicada com o topo da sapata fora do graute (20–50 mm) traz a PROPOSTA do topo */
+        var aj = (a.r && a.r.ajusteCota) || (o.resultado && o.resultado.ajusteCota);
+        if (aj && !res.ajustes.some(function (x) { return x.fundacao === aj.fundacao; })) res.ajustes.push(aj);
       });
       if (ops.length && !M.enviar({ op: "lote", id: M.novoId(), origem: "metal-lig", ops: ops })) { toast("O editor recusou o lote.", "erro"); return null; }
       var msg = res.feitas.length + " ligação(ões) aplicada(s)" + (res.puladas.length ? "; " + res.puladas.length + " encontro(s) sem solução automática" : "") + ". Ctrl+Z desfaz.";
       status("Ligar todos os nós: " + msg); toast(msg, res.feitas.length ? "ok" : "aviso", 8000);
-      if (res.puladas.length && global.UI) {
+      if (res.ajustes.length && global.UI) {
+        var self0 = this;
+        UI.modal("Ligar todos os nós — ajuste de cota", '<div class="lsg" data-lsg="ajuste-cota"><p>' + esc(msg) + "</p>" + (res.puladas.length ? "<ul>" + res.puladas.map(function (p) { return "<li>" + esc(arr(p.pecas).join(" × ")) + ": " + esc(p.motivo) + "</li>"; }).join("") + "</ul>" : "") +
+          "<p><b>" + res.ajustes.length + " fundação(ões) com o topo fora do graute do detalhe</b> (25 mm sob a placa; abaixo de 20 mm o graute não cabe e acima de 25 mm o chumbador perde ancoragem). O sistema propõe o topo em −(placa + 25 mm) abaixo do pé do pilar:</p><ul>" +
+          res.ajustes.map(function (x) { return "<li>" + esc(x.texto) + "</li>"; }).join("") + '</ul><p class="lsg-nota">É ajuste de cota (o desenho da fundação), não da ligação. Um lote só — Ctrl+Z desfaz.</p></div>',
+          [{ texto: "Ajustar o topo das fundações (" + res.ajustes.length + ")", classe: "primary", onClick: function () { UI.fecharModal(); self0.ajustarTopos(res.ajustes); } }, { texto: "Agora não", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+      } else if (res.puladas.length && global.UI) {
         UI.modal("Ligar todos os nós", '<div class="lsg" data-lsg="lote"><p>' + esc(msg) + "</p><ul>" + res.puladas.map(function (p) { return "<li>" + esc(arr(p.pecas).join(" × ")) + ": " + esc(p.motivo) + "</li>"; }).join("") + "</ul><p class=\"lsg-nota\">Os que ficaram: selecione as peças e use a Ligação inteligente.</p></div>", [{ texto: "Ok", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
       }
       this._ultimoLote = res;
       return res;
-    }
+    },
+    /* FRENTE S5 (14/10/2026): aplica as propostas de topo das fundações (op "fundacao" com o deslocamento novo) num lote */
+    ajustarTopos: function (ajustes) {
+      var M = MU(), L0 = arr(ajustes).filter(function (x) { return x && x.fundacao != null && isFinite(x.deslocTopoNovo); });
+      if (!M || !L0.length) return false;
+      var ok = M.enviar({ op: "lote", id: M.novoId(), origem: "metal-lig-cota", ops: L0.map(function (x) { return { op: "fundacao", id: String(x.fundacao), deslocTopo: x.deslocTopoNovo }; }) });
+      toast(ok ? L0.length + " fundação(ões) com o topo ajustado (graute de 25 mm sob a placa). Ctrl+Z desfaz." : "O editor recusou o ajuste do topo das fundações.", ok ? "ok" : "erro", 7000);
+      if (ok) { this._ultimosAjustes = L0; if (this._ultimoLote) this._ultimoLote.ajustes = []; }
+      return ok;
+    },
+    ajustesCota: function () { return (this._ultimoLote && this._ultimoLote.ajustes) || []; }
   };
   global.MetalLigSugUI = MetalLigSugUI;
   if (typeof module !== "undefined" && module.exports) module.exports = MetalLigSugUI;

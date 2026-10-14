@@ -215,7 +215,7 @@
     piso: "grade", tPiso: 0.00635, gradeH: 0.030, gradeT: 0.003, gradeA: 0.030, gradeB: 0.100, gradeS: 0.005,
     frente: true, fundo: true, esquerda: true, direita: true, abertura: "frente", aberturaPos: 0.5, aberturaLarg: 0.80, cancela: true,
     montante: "HSS73X5.2", corrimao: "HSS48.3X3.7", espac: 1.0, rodape: true, hRodape: 0.20, intermediaria: 0.70,
-    contraventar: true, contraventoPlano: true, contravento: "L51X51X4.8", placaBase: true, usoPiso: "area-tecnica", usoGuarda: "industrial", qInformado: 0, abastecimento: false, aco: "ASTM A572 Gr.50" },
+    contraventar: true, contraventoPlano: true, contravento: "BR 5/8\" (D 15,88 mm) Gerdau", placaBase: true, usoPiso: "area-tecnica",   /* rodada 2 da simulação S1: X de barra redonda (a L 51 fura a esbeltez exigida) */ usoGuarda: "industrial", qInformado: 0, abastecimento: false, aco: "ASTM A572 Gr.50" },
     nums: ["Lx", "Lz", "vaosX", "vaosZ", "altura", "espSec", "tPiso", "gradeH", "gradeT", "gradeA", "gradeB", "gradeS", "aberturaPos", "aberturaLarg", "espac", "hRodape", "intermediaria", "qInformado"],
     bools: ["frente", "fundo", "esquerda", "direita", "cancela", "rodape", "contraventar", "contraventoPlano", "placaBase", "abastecimento"],
     perfis: ["principal", "secundaria", "pilar", "montante", "corrimao"],
@@ -273,7 +273,7 @@
   var PASSARELA = { rotulo: "Passarela", cliques: 2, modo: "linha", calcula: true, PADRAO: {
     comprimento: 6, largura: 1.0, altura: 3.0, vaos: 1, apoio: "pontas", viga: "W250X25.3", travessa: "W150X13", pilar: "W150X22.5", espSec: 1.0,
     piso: "grade", tPiso: 0.00635, gradeH: 0.030, gradeT: 0.003, gradeA: 0.030, gradeB: 0.100, gradeS: 0.005,
-    montante: "HSS73X5.2", corrimao: "HSS48.3X3.7", espac: 1.0, rodape: true, hRodape: 0.20, intermediaria: 0.70, usoPiso: "escada-sem-publico", usoGuarda: "industrial", qInformado: 0, placaBase: true, contraventar: true, contraventoPlano: true, contravento: "L51X51X4.8", aco: "ASTM A572 Gr.50" },
+    montante: "HSS73X5.2", corrimao: "HSS48.3X3.7", espac: 1.0, rodape: true, hRodape: 0.20, intermediaria: 0.70, usoPiso: "escada-sem-publico", usoGuarda: "industrial", qInformado: 0, placaBase: true, contraventar: true, contraventoPlano: true, contravento: "BR 5/8\" (D 15,88 mm) Gerdau", aco: "ASTM A572 Gr.50" },
     nums: ["comprimento", "largura", "altura", "vaos", "espSec", "tPiso", "gradeH", "gradeT", "gradeA", "gradeB", "gradeS", "espac", "hRodape", "intermediaria", "qInformado"],
     bools: ["rodape", "placaBase", "contraventar", "contraventoPlano"], perfis: ["viga", "travessa", "montante", "corrimao"],
     validar: function (p, H) {
@@ -306,7 +306,7 @@
     return { Lx: p.comprimento, Lz: p.largura, vaosX: nV, vaosZ: 1, altura: p.altura, direcao: "x", principal: p.viga, secundaria: p.travessa, pilar: p.pilar, espSec: p.espSec,
       piso: p.piso === "grade" ? "grade" : "xadrez", tPiso: p.tPiso, gradeH: p.gradeH, gradeT: p.gradeT, gradeA: p.gradeA, gradeB: p.gradeB, gradeS: p.gradeS,
       frente: true, fundo: true, esquerda: false, direita: false, montante: p.montante, corrimao: p.corrimao, espac: p.espac, travessas: 1,
-      contraventar: p.apoio !== "pontas" && p.contraventar !== false, contraventoPlano: p.apoio !== "pontas" && p.contraventar !== false && p.contraventoPlano !== false && nV > 1, contravento: p.contravento || "L51X51X4.8", placaBase: p.apoio !== "pontas" && p.placaBase, rodape: p.rodape, hRodape: p.hRodape, intermediaria: p.intermediaria,
+      contraventar: p.apoio !== "pontas" && p.contraventar !== false, contraventoPlano: p.apoio !== "pontas" && p.contraventar !== false && p.contraventoPlano !== false && nV > 1, contravento: p.contravento || "BR 5/8\" (D 15,88 mm) Gerdau", placaBase: p.apoio !== "pontas" && p.placaBase, rodape: p.rodape, hRodape: p.hRodape, intermediaria: p.intermediaria,
       semPilares: p.apoio === "pontas", aco: p.aco, x0: p.x0, y0: p.y0, z0: p.z0, giro: p.giro };
   }
 

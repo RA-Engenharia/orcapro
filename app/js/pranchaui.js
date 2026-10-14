@@ -99,7 +99,9 @@
     '.pv-vp .d2-cota-tx,.pv-vp .d2-nivel-tx,.pv-vp .d2-tit-tx,.pv-vp .d2-tit-esc,.pv-vp .d2-marca-tx,.pv-vp .d2-amb-tx,.pv-vp .d2-amb-leg-tit,.pv-vp .d2-amb-leg-tx{fill:#111;font-family:Arial,Helvetica,sans-serif}' +
     '.pv-vp .d2-tit-tx,.pv-vp .d2-marca-tx,.pv-vp .d2-amb-nome{font-weight:bold}.pv-vp .d2-cota-pt,.pv-vp .d2-marca-seta,.pv-vp .d2-nivel-tri{fill:#111}' +
     '.pv-vp .d2-marca-circ{fill:#fff;stroke:#111}.pv-vp pattern line{stroke:#111}.pv-vp .d2-cad-l{stroke:#9aa3ad;fill:none}.pv-vp .d2-cad-tx{fill:#9aa3ad}' +
-    '.pv-vp .d2-amb-alvo{fill:none;stroke:none}.pv-vp .d2-amb-sep{stroke:#2b2b2b}.pv-vp .d2-amb-cor{stroke:none}.pv-vp .d2-amb-leg-cor{stroke:#111}.pv-vp .d2-amb-sel-l{display:none}';
+    '.pv-vp .d2-amb-alvo{fill:none;stroke:none}.pv-vp .d2-amb-sep{stroke:#2b2b2b}.pv-vp .d2-amb-cor{stroke:none}.pv-vp .d2-amb-leg-cor{stroke:#111}.pv-vp .d2-amb-sel-l{display:none}' +
+    /* ACIMA DO CORTE (js/desenho2d.js Acima): projeção tracejada em cinza escuro no papel (sai legível em P&B) */
+    '.pv-vp .d2-acima-l{stroke:#4a4f57;fill:none}.pv-vp .d2-acima-tx{fill:#4a4f57;font-family:Arial,Helvetica,sans-serif}';
   function penaMm(px, vp) {
     var r = vp.penasPx || {}, P = global.Prancha, t = vp.penasMm || (P && P.PENAS_PAPEL && P.PENAS_PAPEL[vp.pena]) || {};
     for (var k in r) if (r.hasOwnProperty(k) && Math.abs(+r[k] - px) < 1e-6 && t[k] != null) return t[k];
@@ -116,6 +118,9 @@
         var mmP = dmm != null && dmm !== '' && isFinite(+dmm) && +dmm > 0 ? +dmm : penaMm(+px, vp);
         return (pre || '') + 'stroke-width="' + (Math.round(mmP * esc0 / 1000 * 1e6) / 1e6) + '"';
       })
+      /* TRACEJADO (js/desenho2d.js tracoAttr): o traço de TELA é em px; no papel volta o traço do desenho
+         (mm × escala, guardado em data-traco) — o mesmo texto de antes, byte a byte */
+      .replace(/stroke-dasharray="[^"]*" data-traco="([^"]*)"/g, 'stroke-dasharray="$1"')
       .replace(/d2-hach/g, idp);
   }
   /* o título de vista: número de detalhe no círculo, nome sublinhado e a escala */

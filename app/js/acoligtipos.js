@@ -377,7 +377,7 @@
         fabricacao: 1, montagem: 1, custo: 1, rotacao: "articulada",
         dica: "No X do contraventamento, as diagonais se cruzam com uma emenda e um parafuso de travamento.", desenho: { cena: "cv", el: "cruz" } }),
     T({ id: "contravento-barra-redonda", nome: "Contraventamento em barra redonda (rosca, porca e chapa de apoio)", familia: "flexivel", meio: "mista",
-        aplicacoes: ["contraventamento", "tirante"], calc: "barraRedonda", geometria: null,
+        aplicacoes: ["contraventamento", "tirante"], calc: "barraRedonda", geometria: { macro: "barraRedonda" },   /* SIMULAÇÃO S2 (14/10/2026): desenho esquemático (js/metalligacao.js) */
         parametros: [["d", "Diâmetro da barra (mm)", "do cálculo"]],
         limitacoes: ["Só tração (a barra frouxa sai na compressão); arruela biselada e contraporca."],
         verificacoes: ["barra-redonda", "chapa-flex", "solda-filete"], reforcos: [],

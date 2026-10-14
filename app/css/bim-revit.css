@@ -734,6 +734,11 @@
 .d2-marca:hover .d2-marca-circ, .d2-marca:hover .d2-marca-seta { stroke: var(--d2-sel); fill: var(--d2-sel); }
 .d2-marca:hover .d2-marca-tx { fill: #fff; }
 .d2-svg pattern line { stroke: var(--d2-tinta); }
+/* ACIMA DO CORTE (js/desenho2d.js Acima, 14/10/2026): a projeção tracejada da peça acima do plano, em cinza */
+.bim-grade > .bim-tela.bim-tela-2d { --d2-acima: #6b7480; }
+.bim-revit[data-rv-tema="escuro"] .bim-grade > .bim-tela.bim-tela-2d { --d2-acima: #a3acb7; }
+.d2-acima-l { stroke: var(--d2-acima, #6b7480); fill: none; stroke-linecap: butt; }
+.d2-acima-tx { fill: var(--d2-acima, #6b7480); font-family: "IBM Plex Sans", "Segoe UI", Arial, sans-serif; }
 /* P6 (js/bimmodelovista.js): estilos de objeto RA — meio-tom, marcas de elevação e de chamada, região de recorte */
 .bim-grade > .bim-tela.bim-tela-2d { --d2-meiotom: #9aa0a6; }
 .bim-revit[data-rv-tema="escuro"] .bim-grade > .bim-tela.bim-tela-2d { --d2-meiotom: #7c838b; }

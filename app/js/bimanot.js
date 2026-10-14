@@ -1658,7 +1658,14 @@
     s += txS([c[0], c[1] + T * 0.52], 1.9 * k, esc(String(num0).replace(/^R/i, "")), "a7-tx a7-nuvem-tx", "middle", 0, { negrito: true });
     return '<g class="a7-item a7-nuvem' + (sel ? " a7-sel" : "") + '" data-a7="' + esc(it.id) + '" data-a7-rev="' + esc(num0) + '">' + s + "</g>";
   }
-  function dashDe(est, k) { return est && est.traco ? ' stroke-dasharray="' + est.traco.map(function (v) { return n4(Math.max(0.0001, v * k)); }).join(" ") + '"' : ""; }
+  /* TRACEJADO (js/desenho2d.js tracoAttr): na TELA em px (non-scaling-stroke mede o traço em pixels — em metros
+     a linha oculta saía pontilhada); o traço de papel de sempre vai em data-traco (a folha o põe de volta) */
+  function dashDe(est, k) {
+    if (!est || !est.traco) return "";
+    var papel = est.traco.map(function (v) { return n4(Math.max(0.0001, v * k)); }).join(" "), D2g = (typeof window !== "undefined" ? window : global).Desenho2D;
+    var f = D2g && D2g.TRACO_PX_POR_MM ? D2g.TRACO_PX_POR_MM : 5 / 3;
+    return ' stroke-dasharray="' + est.traco.map(function (v) { return Math.round(Math.max(1, Math.abs(+v || 0) * f) * 1000) / 1000; }).join(" ") + '" data-traco="' + papel + '"';
+  }
   function svgLinha(it, k, jogo, sel) {
     var est = ESTILOS_LINHA[it.estilo] || ESTILOS_LINHA["<Linhas finas>"], w = penaPx(est.pena, jogo), d = "";
     if (it.arco) {

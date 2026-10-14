@@ -106,6 +106,12 @@
     (d.linhas || []).forEach(function (l) { p(l[0], l[1]); p(l[2], l[3]); });
     /* PORTA (js/simboloporta.js): a folha aberta e o arco do giro também ocupam o papel */
     (d.portas || []).forEach(function (sp) { pontosPorta(sp).forEach(function (q) { p(q[0], q[1]); }); });
+    /* ACIMA DO CORTE: a projeção da viga em balanço também ocupa o papel */
+    (d.acima || []).forEach(function (it) {
+      if (!it) return;
+      (it.pts || []).forEach(function (q) { p(q[0], q[1]); });
+      (it.segs || []).forEach(function (l) { p(l[0], l[1]); p(l[2], l[3]); });
+    });
     if (b.x0 === Infinity) return null;
     return b;
   }
@@ -198,6 +204,20 @@
     return s + (fecha ? "Z" : "");
   }
   var NS = 'vector-effect="non-scaling-stroke"';
+  /* TRACEJADO NA TELA × NO PAPEL (14/10/2026). ⚠ Com vector-effect="non-scaling-stroke" o navegador aplica o
+     stroke-dasharray em PIXELS de tela: o traço medido em metros de desenho (a 1:50, o eixo de 8 mm de papel =
+     0,40 m) virava 0,4 px — eixo, marca de corte, nível, instalação, linha oculta saíam como pontilhado quase
+     contínuo. Na TELA o traço vai em px, proporcional ao tipo de linha em mm de papel (TRACO_PX_POR_MM); o
+     traço de PAPEL de sempre (mm × escala, o mesmo texto de antes) vai em data-traco, e a folha/PDF
+     (js/pranchaui.js viewportSvg) o põe de volta — o papel sai igual, byte a byte. O DXF lê só a
+     QUANTIDADE de valores (tracejado × traço-ponto) e usa o LTYPE dele. */
+  var TRACO_PX_POR_MM = 5 / 3;
+  function tracoPx(mm) {
+    return (mm || []).map(function (v) { var px = Math.abs(+v || 0) * TRACO_PX_POR_MM; return Math.round(Math.max(1, px) * 1000) / 1000; }).join(" ");
+  }
+  /* mm = o padrão em mm de papel; papel = o texto do traço no desenho (metros), o mesmo de antes */
+  function tracoAttr(mm, papel) { return ' stroke-dasharray="' + tracoPx(mm) + '" data-traco="' + papel + '"'; }
+  function tracoK(mm, k) { return tracoAttr(mm, mm.map(function (v) { return n4(v * k); }).join(" ")); }
   /* TEXTO: o desenho está em METROS, e a letra de uma cota mede 0,1 m. Com
      font-size < 1 o navegador arredonda o espaço entre letras e a cota sai
      "1 5 , 2 5". Por isso a letra é desenhada em corpo 100 e ENCOLHIDA por
@@ -267,7 +287,7 @@
     var k = e.escala / 1000, R = 4 * k, a = m.a, b = m.b;
     var dx = b[0] - a[0], dy = b[1] - a[1], L = Math.sqrt(dx * dx + dy * dy) || 1, ux = dx / L, uy = dy / L;
     var ox = (m.olhar && m.olhar[0]) || -uy, oy = (m.olhar && m.olhar[1]) || ux;
-    var s = '<line x1="' + n4(a[0]) + '" y1="' + n4(a[1]) + '" x2="' + n4(b[0]) + '" y2="' + n4(b[1]) + '" stroke-width="' + pena.marca + '" ' + NS + ' stroke-dasharray="' + n4(8 * k) + " " + n4(1.5 * k) + " " + n4(1 * k) + " " + n4(1.5 * k) + '" class="d2-eixo"/>';
+    var s = '<line x1="' + n4(a[0]) + '" y1="' + n4(a[1]) + '" x2="' + n4(b[0]) + '" y2="' + n4(b[1]) + '" stroke-width="' + pena.marca + '" ' + NS + tracoK([8, 1.5, 1, 1.5], k) + ' class="d2-eixo"/>';
     [a, b].forEach(function (p, i) {
       var cx = p[0] - (i ? -1 : 1) * ux * R * 1.2, cy = p[1] - (i ? -1 : 1) * uy * R * 1.2;
       var tip = [cx + ox * R * 1.9, cy + oy * R * 1.9], l1 = [cx + ux * R * 0.9, cy + uy * R * 0.9], l2 = [cx - ux * R * 0.9, cy - uy * R * 0.9];
@@ -285,7 +305,7 @@
     var k = e.escala / 1000, R = 4 * k, s = "", a = ex.a, b = ex.b, cent = [];
     if (!a) { a = [ex.x, cx.y1 + 4 * k]; b = [ex.x, cx.y0 - 4 * k]; }
     var dx = b[0] - a[0], dy = b[1] - a[1], L = Math.sqrt(dx * dx + dy * dy) || 1, ux = dx / L, uy = dy / L;
-    s += '<line x1="' + n4(a[0]) + '" y1="' + n4(a[1]) + '" x2="' + n4(b[0]) + '" y2="' + n4(b[1]) + '" stroke-width="' + pena.marca + '" ' + NS + ' stroke-dasharray="' + n4(8 * k) + " " + n4(1.5 * k) + " " + n4(1 * k) + " " + n4(1.5 * k) + '" class="d2-eixo"/>';
+    s += '<line x1="' + n4(a[0]) + '" y1="' + n4(a[1]) + '" x2="' + n4(b[0]) + '" y2="' + n4(b[1]) + '" stroke-width="' + pena.marca + '" ' + NS + tracoK([8, 1.5, 1, 1.5], k) + ' class="d2-eixo"/>';
     if (ex.a) cent = [[a[0] - ux * R, a[1] - uy * R], [b[0] + ux * R, b[1] + uy * R]]; else cent = [[b[0], b[1] - R]];
     cent.forEach(function (c) {
       s += '<circle cx="' + n4(c[0]) + '" cy="' + n4(c[1]) + '" r="' + n4(R) + '" stroke-width="' + pena.marca + '" ' + NS + ' class="d2-marca-circ"/>';
@@ -296,7 +316,7 @@
 
   function svgNivel(nv, cx, e, pena) {
     var k = e.escala / 1000, x = cx.x1 + 22 * k, s = "";
-    s += '<line x1="' + n4(cx.x0 - 3 * k) + '" y1="' + n4(nv.y) + '" x2="' + n4(x + 12 * k) + '" y2="' + n4(nv.y) + '" stroke-width="' + pena.cota + '" ' + NS + ' stroke-dasharray="' + n4(4 * k) + " " + n4(1.5 * k) + '" class="d2-nivel-l"/>';
+    s += '<line x1="' + n4(cx.x0 - 3 * k) + '" y1="' + n4(nv.y) + '" x2="' + n4(x + 12 * k) + '" y2="' + n4(nv.y) + '" stroke-width="' + pena.cota + '" ' + NS + tracoK([4, 1.5], k) + ' class="d2-nivel-l"/>';
     var t = 1.8 * k;
     s += '<path d="M' + n4(x) + " " + n4(nv.y) + "L" + n4(x - t) + " " + n4(nv.y - t * 1.4) + "L" + n4(x + t) + " " + n4(nv.y - t * 1.4) + 'Z" class="d2-nivel-tri"/>';
     s += txt(x + 2.6 * k, nv.y - 1.6 * k, 2.5 * k, esc(nv.nome) + " " + esc(fmtCota(nv.cota != null ? nv.cota : -nv.y)), "d2-nivel-tx");
@@ -365,6 +385,9 @@
     if (cadPath) p.push('<g class="d2-cad"><path d="' + cadPath + '" class="d2-cad-l" stroke-width="' + n4(pena.vista * 0.8) + '" ' + NS + "/>" + cadTx + "</g>");
     /* 0b) P2-D: a COR de cada ambiente (esquema de cores) — por baixo das linhas */
     if (amb) p.push(svgAmbCores(amb));
+    /* 0c) ACIMA DO CORTE (14/10/2026): a projeção tracejada das peças acima do plano, por BAIXO do
+       que é visto e do que é cortado (a parede cortada sob a viga ganha do tracejado) */
+    if (d.tipo === "planta" && d.acima && d.acima.length) p.push(svgAcima(d.acima, e, pena, d.acimaRotulo, extra && extra.p6 ? extra.p6 : null));
     if (p6) p.push(p6.corpo); else {   /* P6: 1) e 2) pelos estilos de objeto RA */
     /* 1) o que se VÊ além do corte — pena fina, por baixo */
     var lin = "";
@@ -382,7 +405,7 @@
     }
     /* 2a) P10 (js/bimfases.js): GRÁFICOS DE FASE — o existente em meio-tom (cinza, preenchimento claro),
        o demolido TRACEJADO e sem preenchimento, o temporário em traço-ponto */
-    p.push(svgFases(fase, d.linhasFase, pena));
+    p.push(svgFases(fase, d.linhasFase, pena, k));
     /* 2a') PORTA (js/simboloporta.js): a folha aberta a 90° (pena média) e o arco do giro (pena fina) */
     if (d.portas && d.portas.length) p.push(svgPortas(d.portas, e, pena, extra && extra.p6 ? extra.p6 : null));
     /* 2b) INSTALAÇÕES (B5, js/biminst.js planta): o eixo de cada trecho na cor do
@@ -418,22 +441,31 @@
 
   /* ---------------------------------------------------- FASES (P10)
    * cortes: { status: { f: caminhos fechados, a: abertos } }; linhas: { status: [[x1,y1,x2,y2]…] } */
+  /* ⚠ 14/10/2026: o traço de TELA destes (6 4 / 9 3 2 3) já era em px e fica; o de PAPEL não existia — na
+     folha/PDF o "6 4" virava 6 m de traço (o viewport tira o non-scaling) e a demolição saía quase contínua. Agora o
+     papel vai em data-traco (tracoAttr), pelo tipo de linha em mm: DEMOLIDO = o "demolido" do Padrão RA
+     (data/estilos-objeto-ra.json, 1,5 / 1 mm, tracejado curto); TEMPORÁRIO = o traço-ponto do desenho (8 / 1,5 / 1 /
+     1,5 mm, o mesmo do eixo e do LTYPE TRACO-PONTO do DXF — o Padrão RA não tem um "temporário" próprio). */
   var FASE_SVG = {
     existente: { cor: "#8a8a8a", fill: "#e4e4e4", tr: "" },
-    demolido: { cor: "#3a3a3a", fill: "none", tr: ' stroke-dasharray="6 4"' },
-    temporario: { cor: "#3a3a3a", fill: "none", tr: ' stroke-dasharray="9 3 2 3"' }
+    demolido: { cor: "#3a3a3a", fill: "none", px: "6 4", mm: [1.5, 1] },
+    temporario: { cor: "#3a3a3a", fill: "none", px: "9 3 2 3", mm: [8, 1.5, 1, 1.5] }
   };
-  function svgFases(cortesF, linhasF, pena) {
+  function trFase(g, k) {
+    if (g.tr != null) return g.tr;
+    return ' stroke-dasharray="' + g.px + '" data-traco="' + g.mm.map(function (v) { return n4(v * (k > 0 ? k : 0.05)); }).join(" ") + '"';
+  }
+  function svgFases(cortesF, linhasF, pena, k) {
     var s = "";
-    Object.keys(linhasF || {}).forEach(function (k) {
-      var g = FASE_SVG[k] || FASE_SVG.existente, l = "";
-      (linhasF[k] || []).forEach(function (q) { l += "M" + n4(q[0]) + " " + n4(q[1]) + "L" + n4(q[2]) + " " + n4(q[3]); });
-      if (l) s += '<path d="' + l + '" fill="none" class="d2-fase d2-fase-' + k + '" stroke="' + g.cor + '"' + g.tr + ' stroke-width="' + pena.vista + '" ' + NS + "/>";
+    Object.keys(linhasF || {}).forEach(function (st) {
+      var g = FASE_SVG[st] || FASE_SVG.existente, l = "";
+      (linhasF[st] || []).forEach(function (q) { l += "M" + n4(q[0]) + " " + n4(q[1]) + "L" + n4(q[2]) + " " + n4(q[3]); });
+      if (l) s += '<path d="' + l + '" fill="none" class="d2-fase d2-fase-' + st + '" stroke="' + g.cor + '"' + trFase(g, k) + ' stroke-width="' + pena.vista + '" ' + NS + "/>";
     });
-    Object.keys(cortesF || {}).forEach(function (k) {
-      var g = FASE_SVG[k] || FASE_SVG.existente, q = cortesF[k];
-      if (q.f) s += '<path d="' + q.f + '" fill="' + g.fill + '" fill-rule="evenodd" class="d2-fase d2-fase-' + k + '" stroke="' + g.cor + '"' + g.tr + ' stroke-width="' + pena.corte + '" ' + NS + "/>";
-      if (q.a) s += '<path d="' + q.a + '" fill="none" class="d2-fase d2-fase-' + k + '" stroke="' + g.cor + '"' + g.tr + ' stroke-width="' + pena.corte + '" ' + NS + "/>";
+    Object.keys(cortesF || {}).forEach(function (st) {
+      var g = FASE_SVG[st] || FASE_SVG.existente, q = cortesF[st];
+      if (q.f) s += '<path d="' + q.f + '" fill="' + g.fill + '" fill-rule="evenodd" class="d2-fase d2-fase-' + st + '" stroke="' + g.cor + '"' + trFase(g, k) + ' stroke-width="' + pena.corte + '" ' + NS + "/>";
+      if (q.a) s += '<path d="' + q.a + '" fill="none" class="d2-fase d2-fase-' + st + '" stroke="' + g.cor + '"' + trFase(g, k) + ' stroke-width="' + pena.corte + '" ' + NS + "/>";
     });
     return s;
   }
@@ -518,7 +550,7 @@
     if (sp) s += '<path d="' + sp + '" class="d2-amb-sep" fill="none" stroke-width="' + pena.vista + '" ' + NS + "/>";
     (amb.itens || []).forEach(function (it) {
       if (it.sel && it.pts && it.pts.length >= 3)
-        s += '<path d="' + caminhoAmb(it) + '" fill="none" class="d2-amb-sel-l" stroke-width="' + n4(pena.marca * 1.6) + '" ' + NS + ' stroke-dasharray="' + n4(3 * k) + " " + n4(1.5 * k) + '"/>';
+        s += '<path d="' + caminhoAmb(it) + '" fill="none" class="d2-amb-sel-l" stroke-width="' + n4(pena.marca * 1.6) + '" ' + NS + tracoK([3, 1.5], k) + "/>";
       if (!e.identAmbiente || !isFinite(it.x) || !isFinite(it.y)) return;
       var h1 = 3 * k, h2 = 2.5 * k, l1 = String(it.linha1 || ""), l2 = String(it.linha2 || "");
       var w = Math.max(l1.length * h1 * 0.6, l2.length * h2 * 0.58, 8 * k);
@@ -545,7 +577,7 @@
     (ins.linhas || []).forEach(function (l) {
       var q = l.seg || [];
       s += '<line x1="' + n4(q[0]) + '" y1="' + n4(q[1]) + '" x2="' + n4(q[2]) + '" y2="' + n4(q[3]) + '" stroke="' + corOk(l.cor) + '" stroke-width="' + n4(pena.corte * 0.8) + '" ' + NS +
-        (l.tracejado ? ' stroke-dasharray="' + n4(3 * k) + " " + n4(1.5 * k) + '"' : "") + ' data-d2-inst="' + esc(l.id) + '"/>';
+        (l.tracejado ? tracoK([3, 1.5], k) : "") + ' data-d2-inst="' + esc(l.id) + '"/>';
     });
     (ins.simbolos || []).forEach(function (m) {
       var cor = corOk(m.cor), r = Math.max(+m.r || 0, 0.6 * k);
@@ -640,9 +672,9 @@
     var corpo = "";
     Object.keys(gL).sort().forEach(function (key) {
       var s = st(key); if (s.visivel === false || !gL[key]) return;
-      var mm = p6PenaEf(penas, s.proj, e), tr = p6Traco(p6.padroes, s.padrao, e.escala);
+      var mm = p6PenaEf(penas, s.proj, e), tr = p6Traco(p6.padroes, s.padrao, e.escala), pdT = p6.padroes && p6.padroes[s.padrao];
       corpo += '<path d="' + gL[key] + '" class="d2-vista d2-p6-l" data-cat="' + esc(key) + '" data-mm="' + mm + '" stroke-width="' + p6Px(mm, penas) + '" ' + NS +
-        (tr ? ' stroke-dasharray="' + tr + '"' : "") + ' style="stroke:' + p6Cor(s) + '"/>';
+        (tr ? tracoAttr(pdT.mm, tr) : "") + ' style="stroke:' + p6Cor(s) + '"/>';
     });
     var chC = {}; Object.keys(gF).concat(Object.keys(gA)).forEach(function (x) { chC[x] = 1; });
     Object.keys(chC).sort().forEach(function (key) {
@@ -690,7 +722,7 @@
       else if (m.tipo === "chamada") s += p6MarcaChamada(m, k, pena);
       else if (m.tipo === "corte" && m.a && m.b) s += svgMarcaCorte(m, e, pena).replace('data-d2-corte="', 'data-d2-vista="');
       else if (m.tipo === "recorte") s += '<rect x="' + n4(Math.min(m.x0, m.x1)) + '" y="' + n4(Math.min(m.y0, m.y1)) + '" width="' + n4(Math.abs(m.x1 - m.x0)) + '" height="' + n4(Math.abs(m.y1 - m.y0)) +
-        '" fill="none" stroke-width="' + pena.cota + '" ' + NS + ' stroke-dasharray="' + n4(4 * k) + " " + n4(1.5 * k) + '" class="d2-p6-recorte"/>';
+        '" fill="none" stroke-width="' + pena.cota + '" ' + NS + tracoK([4, 1.5], k) + ' class="d2-p6-recorte"/>';
     });
     return '<g class="d2-p6-marcas">' + s + "</g>";
   }
@@ -707,7 +739,167 @@
     return { x: q.x0, y: q.y0, w: q.x1 - q.x0, h: q.y1 - q.y0 };
   }
 
+  /* =====================================================================
+   * ACIMA DO PLANO DE CORTE (14/10/2026) — pedido do Rogério: "quando eu
+   * criar uma viga na planta baixa e ela estiver ACIMA do corte, mostra ela
+   * com alguma visibilidade diferente, para a gente não ter que ficar subindo
+   * para uma outra referência de nível".
+   *
+   * A planta é um corte horizontal: o que o plano atravessa sai CORTADO (pena
+   * grossa), o que está abaixo sai VISTO (pena fina) e o que está ACIMA do
+   * corte, até o topo da faixa (por padrão o nível de cima), sai em PROJEÇÃO:
+   * contorno tracejado longo na pena fina, em cinza, com um rótulo discreto
+   * ("V12 · fundo +2,60"). Representação:
+   *   · traço: o padrão "projecao" de data/estilos-objeto-ra.json (6 / 1,5 mm
+   *     de papel — a variação da linha tracejada E/F da NBR 8403 para o que
+   *     está acima do corte; o traço maior que o da oculta, 3 / 1,5, é decisão
+   *     RA para não confundir as duas);
+   *   · pena: a de VISTA do jogo (0,18 mm no jogo médio = EST-OCULTA do Padrão
+   *     RA de detalhamento, "arestas ocultas, projeções, vigas invertidas");
+   *   · só PEÇA LINEAR (viga, perfil, pilar, escada, rampa, guarda-corpo; chapa
+   *     e genérico só quando compridos): laje, forro e telhado do pavimento de
+   *     cima não entram — a planta viraria um emaranhado tracejado;
+   *   · o que atravessa o corte continua CORTADO (o pilar do pavimento).
+   * Motor PURO: quem extrai a geometria é o BIM.vista2d (js/bim.js), quem
+   * guarda a opção da vista é o js/bim2dui.js.
+   * ===================================================================== */
+  var ACIMA_TIPOS = { IFCBEAM: 1, IFCMEMBER: 1, IFCCOLUMN: 1, IFCSTAIR: 1, IFCSTAIRFLIGHT: 1, IFCRAMP: 1, IFCRAMPFLIGHT: 1, IFCRAILING: 1 };
+  var ACIMA_COMPRIDOS = { IFCPLATE: 1, IFCBUILDINGELEMENTPROXY: 1, IFCELEMENTASSEMBLY: 1, "": 1 };
+  var ACIMA_MODOS = { nivel: "Até o nível de cima", altura: "Até uma altura do piso" };
+  var ACIMA_ROTULOS = { fundo: "Marca · fundo", topo: "Marca · topo", ambos: "Marca · fundo e topo", nenhum: "Sem rótulo" };
+  var ACIMA_TRACO_MM = [6, 1.5], ACIMA_TEXTO_MM = 2, ACIMA_COR = "#6b7480", ACIMA_PENA_RA = 3;   /* pena 3 da tabela RA = 0,18 mm a 1:50 */
+  /* na TELA o traço vai em px (tracoK: 6 / 1,5 mm → 10 / 2,5 px); no papel, 6 / 1,5 mm na escala (data-traco) */
+  var ACIMA_TRACO_PX = [10, 2.5];
+  var ACIMA_PADRAO_ALTURA = 3;   /* último nível (sem nível de cima): 3 m acima do piso */
+  function acimaCfg(c) {
+    c = c || {};
+    var alt = +c.altura;
+    return { on: c.on !== false && c.on !== "false" && c.on !== 0,
+             modo: ACIMA_MODOS[c.modo] ? c.modo : "nivel",
+             altura: isFinite(alt) && alt > 0 ? Math.max(0.2, Math.min(50, Math.round(alt * 1000) / 1000)) : ACIMA_PADRAO_ALTURA,
+             rotulo: ACIMA_ROTULOS[c.rotulo] ? c.rotulo : "fundo" };
+  }
+  /* o TOPO da faixa acima do corte, em cota de MUNDO; null = não mostra.
+     niveis = [{ y }] (cota do piso de cada nível) */
+  function acimaTopo(cfg, nivelY, yCorte, niveis) {
+    var c = acimaCfg(cfg), t = null; if (!c.on) return null;
+    nivelY = +nivelY || 0;
+    if (c.modo === "altura") t = nivelY + c.altura;
+    else {
+      (niveis || []).forEach(function (n) { var y = n ? +n.y : NaN; if (isFinite(y) && y > nivelY + 0.05 && (t == null || y < t)) t = y; });
+      if (t == null) t = nivelY + ACIMA_PADRAO_ALTURA;
+    }
+    return t > yCorte + 0.01 ? Math.round(t * 10000) / 10000 : null;
+  }
+  /* COMO a peça entra na planta (fundo/topo = cota de mundo): o mesmo critério do js/niveis.js —
+     "cortado" (o plano atravessa), "abaixo" (visto), "acima" (projeção, até o topo da faixa), "fora" */
+  function acimaClassificar(fundo, topo, yCorte, yTopo) {
+    var tol = 0.005;
+    if (fundo <= yCorte + tol && topo >= yCorte - tol) return "cortado";
+    if (topo < yCorte) return "abaixo";
+    if (yTopo != null && fundo < yTopo - tol) return "acima";
+    return "fora";
+  }
+  /* entra no tracejado? tipo IFC da peça e o tamanho dela na planta (L × W, retângulo mínimo) */
+  function acimaElegivel(tipo, L, W) {
+    var t = String(tipo || "").toUpperCase();
+    L = +L || 0; W = +W || 0;
+    if (Math.max(L, W) < 0.05) return false;
+    if (ACIMA_TIPOS[t]) return true;
+    if (ACIMA_COMPRIDOS[t]) return t === "IFCPLATE" ? L >= 1.0 : (L >= 1.0 && L >= 3 * W);   /* chapa de ligação não; passarela sim */
+    return false;
+  }
+  /* o TIPO pode entrar? (filtro barato antes de projetar a malha: mobiliário, luminária, laje… nem são lidos) */
+  function acimaTipoPode(tipo) { var t = String(tipo || "").toUpperCase(); return !!(ACIMA_TIPOS[t] || ACIMA_COMPRIDOS[t]); }
+  /* casco convexo (cadeia monótona); pontos [x, y] */
+  function casco(pts) {
+    var P = (pts || []).filter(function (q) { return q && isFinite(q[0]) && isFinite(q[1]); }).map(function (q) { return [q[0], q[1]]; });
+    P.sort(function (a, b) { return a[0] - b[0] || a[1] - b[1]; });
+    var U = [];
+    P.forEach(function (q) { if (!U.length || Math.abs(U[U.length - 1][0] - q[0]) > 1e-9 || Math.abs(U[U.length - 1][1] - q[1]) > 1e-9) U.push(q); });
+    if (U.length < 3) return U;
+    function cr(o, a, b) { return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]); }
+    var lo = [], hi = [];
+    U.forEach(function (q) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 1e-12) lo.pop(); lo.push(q); });
+    for (var i = U.length - 1; i >= 0; i--) { var q = U[i]; while (hi.length >= 2 && cr(hi[hi.length - 2], hi[hi.length - 1], q) <= 1e-12) hi.pop(); hi.push(q); }
+    lo.pop(); hi.pop();
+    return lo.concat(hi);
+  }
+  function areaPol(pts) { var s = 0, n = (pts || []).length; for (var i = 0, j = n - 1; i < n; j = i++) s += (pts[j][0] + pts[i][0]) * (pts[j][1] - pts[i][1]); return Math.abs(s / 2); }
+  /* o retângulo de menor área em volta do casco: eixo da peça (u ao longo do lado MAIOR), L, W e o centro */
+  function retMin(h) {
+    if (!h || !h.length) return null;
+    if (h.length < 3) {
+      var a0 = h[0], b0 = h[h.length - 1], dx = b0[0] - a0[0], dy = b0[1] - a0[1], L0 = Math.sqrt(dx * dx + dy * dy);
+      return { cx: (a0[0] + b0[0]) / 2, cy: (a0[1] + b0[1]) / 2, ux: L0 > 1e-9 ? dx / L0 : 1, uy: L0 > 1e-9 ? dy / L0 : 0, L: L0, W: 0 };
+    }
+    var best = null;
+    for (var i = 0; i < h.length; i++) {
+      var p = h[i], q = h[(i + 1) % h.length], ex = q[0] - p[0], ey = q[1] - p[1], le = Math.sqrt(ex * ex + ey * ey);
+      if (le < 1e-9) continue;
+      var ux = ex / le, uy = ey / le, a = Infinity, b = -Infinity, c = Infinity, d = -Infinity;
+      h.forEach(function (r) { var s = r[0] * ux + r[1] * uy, t = -r[0] * uy + r[1] * ux; if (s < a) a = s; if (s > b) b = s; if (t < c) c = t; if (t > d) d = t; });
+      var A = (b - a) * (d - c);
+      if (!best || A < best.A - 1e-12) best = { A: A, ux: ux, uy: uy, s: (a + b) / 2, t: (c + d) / 2, Ls: b - a, Lt: d - c };
+    }
+    if (!best) return null;
+    var cx = best.s * best.ux - best.t * best.uy, cy = best.s * best.uy + best.t * best.ux;
+    if (best.Lt > best.Ls) return { cx: cx, cy: cy, ux: -best.uy, uy: best.ux, L: best.Lt, W: best.Ls };
+    return { cx: cx, cy: cy, ux: best.ux, uy: best.uy, L: best.Ls, W: best.Lt };
+  }
+  /* a PEÇA acima do corte para o desenho. o = { u, t (tipo IFC), pts (vértices projetados na planta),
+     segs? (arestas projetadas [x1,y1,x2,y2] — contorno de peça NÃO convexa: viga curva, escada em L),
+     areaBaixo? (área projetada das faces de baixo — compara com o casco), fundo, topo, marca }.
+     → { u, t, pts (casco, fechado) | segs, eixo:{cx,cy,ux,uy,L,W}, fundo, topo, marca } ou null */
+  function acimaPeca(o) {
+    if (!o) return null;
+    var h = casco(o.pts), ret = retMin(h); if (!ret) return null;
+    if (!acimaElegivel(o.t, ret.L, ret.W)) return null;
+    var it = { u: String(o.u || ""), t: String(o.t || ""), eixo: { cx: n4(ret.cx), cy: n4(ret.cy), ux: n4(ret.ux), uy: n4(ret.uy), L: n4(ret.L), W: n4(ret.W) },
+               fundo: Math.round((+o.fundo || 0) * 1000) / 1000, topo: Math.round((+o.topo || 0) * 1000) / 1000, marca: String(o.marca || "").slice(0, 24) };
+    var aC = areaPol(h), aB = +o.areaBaixo || 0;
+    /* casco muito maior que a peça (curva, L, U): vale o contorno pelas arestas */
+    if (o.segs && o.segs.length && aB > 1e-6 && aC > aB * 1.15) it.segs = o.segs.map(function (s) { return [n4(s[0]), n4(s[1]), n4(s[2]), n4(s[3])]; });
+    else it.pts = h.map(function (q) { return [n4(q[0]), n4(q[1])]; });
+    return it;
+  }
+  function acimaTexto(it, modo) {
+    var m = ACIMA_ROTULOS[modo] ? modo : "fundo"; if (m === "nenhum") return "";
+    var p = [];
+    if (it.marca) p.push(it.marca);
+    if (m === "fundo" || m === "ambos") p.push("fundo " + fmtCota(+it.fundo || 0));
+    if (m === "topo" || m === "ambos") p.push("topo " + fmtCota(+it.topo || 0));
+    return p.join(" · ");
+  }
+  /* o tracejado de projeção + o rótulo; `p6` = os estilos de objeto (pena em mm no data-mm, para a folha) */
+  /* a pena de PAPEL de vista de cada jogo (a mesma do js/prancha.js PENAS_PAPEL e do DXF): vai no data-mm, e a
+     tela pode engrossar um pouco o cinza (o cinza fino a 0,9 px sumia na tela) sem mudar o papel */
+  var ACIMA_PAPEL_MM = { fina: 0.13, media: 0.18, grossa: 0.25 };
+  function svgAcima(lista, e, pena, modo, p6) {
+    var k = e.escala / 1000, tr = tracoK(ACIMA_TRACO_MM, k), w = Math.round(pena.vista * 1.25 * 1000) / 1000, mm = ' data-mm="' + (ACIMA_PAPEL_MM[e.pena] || 0.18) + '"';
+    if (p6 && p6.penas) { var mmP = p6PenaEf(p6.penas, ACIMA_PENA_RA, e); w = Math.max(p6Px(mmP, p6.penas), w); mm = ' data-mm="' + mmP + '"'; }
+    var s = "", tx = "", h = ACIMA_TEXTO_MM * k;
+    (lista || []).forEach(function (it) {
+      if (!it) return;
+      var dd = "";
+      if (it.segs && it.segs.length) it.segs.forEach(function (q) { dd += "M" + n4(q[0]) + " " + n4(q[1]) + "L" + n4(q[2]) + " " + n4(q[3]); });
+      else if (it.pts && it.pts.length >= 2) dd = caminho(it.pts, it.pts.length > 2);
+      if (!dd) return;
+      s += '<path d="' + dd + '" fill="none" stroke="' + ACIMA_COR + '" class="d2-acima-l" data-d2-acima="' + esc(it.u) + '"' + mm + ' stroke-width="' + w + '" ' + NS + tr + "/>";
+      var t = acimaTexto(it, modo), ex = it.eixo; if (!t || !ex) return;
+      /* ao longo da peça, por baixo dela (nunca de cabeça para baixo) */
+      var ang = Math.atan2(ex.uy, ex.ux) * 180 / Math.PI; if (ang > 90.001) ang -= 180; if (ang <= -89.999) ang += 180;
+      var ra = ang * Math.PI / 180, ux = Math.cos(ra), uy = Math.sin(ra), nx = -uy, ny = ux, off = (+ex.W || 0) / 2 + 1.0 * k + h * 0.8;
+      tx += txt(ex.cx + nx * off, ex.cy + ny * off, h, esc(t), "d2-acima-tx", "middle", Math.abs(ang) > 1e-6 ? n4(ang) : 0);
+    });
+    if (!s) return "";
+    return '<g class="d2-acima">' + s + (tx ? '<g class="d2-acima-rot" fill="' + ACIMA_COR + '">' + tx + "</g>" : "") + "</g>";
+  }
+  var Acima = { TIPOS: ACIMA_TIPOS, MODOS: ACIMA_MODOS, ROTULOS: ACIMA_ROTULOS, TRACO_MM: ACIMA_TRACO_MM, TRACO_PX: ACIMA_TRACO_PX, TEXTO_MM: ACIMA_TEXTO_MM, PENA_RA: ACIMA_PENA_RA, COR: ACIMA_COR, PAPEL_MM: ACIMA_PAPEL_MM,
+    cfg: acimaCfg, topo: acimaTopo, classificar: acimaClassificar, elegivel: acimaElegivel, tipoPode: acimaTipoPode, casco: casco, area: areaPol, retMin: retMin, peca: acimaPeca, texto: acimaTexto, svg: svgAcima };
+
   var Desenho2D = {
+    FASE_SVG: FASE_SVG, Acima: Acima, TRACO_PX_POR_MM: TRACO_PX_POR_MM, tracoPx: tracoPx, tracoAttr: tracoAttr, tracoK: tracoK,
     PENAS: PENAS, FATOR_PENA: FATOR_PENA, fatorPena: fatorPena, PREENCHIMENTOS: PREENCHIMENTOS, MARCAS_COTA: MARCAS_COTA, UNIDADES: UNIDADES, ESCALAS: ESCALAS, ESQUEMAS: ESQUEMAS,
     estiloPadrao: estiloPadrao, normEstilo: normEstilo,
     fmtNum: fmtNum, fmtMedida: fmtMedida, fmtCota: fmtCota, agrupar: agrupar,

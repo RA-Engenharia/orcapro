@@ -382,6 +382,20 @@
       });
       var out = {}; Object.keys(dados).forEach(function (k) { out[k] = dados[k]; });
       out.linhas = linhas; out.cortes = cortes;
+      /* ACIMA DO CORTE (js/desenho2d.js Acima): a projeção tracejada também fica só dentro do recorte */
+      if (dados.acima) out.acima = arr(dados.acima).map(function (it) {
+        if (!it) return null;
+        var o = {}; Object.keys(it).forEach(function (k) { o[k] = it[k]; });
+        if (it.segs) {
+          o.segs = arr(it.segs).map(function (q) { return BimModeloVista._clipSeg(q[0], q[1], q[2], q[3], x0, y0, x1, y1); }).filter(Boolean);
+          return o.segs.length ? o : null;
+        }
+        var pts = arr(it.pts); if (pts.length < 3) return null;
+        o.pts = BimModeloVista._clipPoly(pts, x0, y0, x1, y1);
+        if (o.pts.length < 3) return null;
+        if (o.eixo && !(o.eixo.cx >= x0 && o.eixo.cx <= x1 && o.eixo.cy >= y0 && o.eixo.cy <= y1)) o.eixo = null;   /* rótulo fora do recorte: sai */
+        return o;
+      }).filter(Boolean);
       if (dados.linhasK) out.linhasK = lk; if (dados.linhasUd) out.linhasUd = lud;
       /* PORTA: o símbolo fica inteiro ou sai inteiro — fica a porta cuja dobradiça (centro do arco) está no recorte */
       if (dados.portas) out.portas = arr(dados.portas).filter(function (p) {
@@ -469,6 +483,101 @@
     },
     novoId: function () { return "d2v-" + Date.now().toString(36) + Math.floor(Math.random() * 1e5).toString(36); },
 
+    /* --------------------------------------------- PLANTA DE QUALQUER NÍVEL (puro)
+       Vista › Criar › Planta… e o clique direito num nível: o TIPO escolhe o
+       tipo de vista e o modelo de vista RA que vem marcado (dá para trocar ou
+       tirar). A fundação é uma planta estrutural com o modelo de fundação. */
+    TIPOS_PLANTA: [
+      { id: "planta", rotulo: "Planta de piso", tipo: "planta", modelo: "ra-planta-arq", nome: "Planta de piso" },
+      { id: "estrutural", rotulo: "Planta estrutural (fôrma)", tipo: "estrutural", modelo: "ra-planta-estrutural", nome: "Planta estrutural" },
+      { id: "forro", rotulo: "Planta de forro", tipo: "forro", modelo: "ra-planta-forro", nome: "Planta de forro" },
+      { id: "fundacao", rotulo: "Planta de fundação", tipo: "estrutural", modelo: "ra-planta-fundacao", nome: "Planta de fundação" }
+    ],
+    MARCA_NIVEL: "{nível}",
+    tipoPlanta: function (id) { return this.TIPOS_PLANTA.filter(function (t) { return t.id === id; })[0] || null; },
+    /* o tipo da lista que uma vista é (a fundação se reconhece pelo modelo) */
+    tipoPlantaDe: function (v) {
+      v = obj(v);
+      if (v.tipo === "estrutural" && v.modeloId === "ra-planta-fundacao") return "fundacao";
+      return PLANTAS[v.tipo] ? v.tipo : null;
+    },
+    nomePlanta: function (molde, nivelNome) {
+      var m = txt(molde).trim() || "Planta";
+      return m.indexOf(this.MARCA_NIVEL) >= 0 ? m.split(this.MARCA_NIVEL).join(txt(nivelNome)) : m;
+    },
+    /* o que o diálogo vai criar: uma vista por nível marcado, nome sem repetir
+       ("(2)", "(3)"…) e a vista IGUAL que já existe (mesmo tipo, nível e modelo)
+       apontada — o diálogo avisa, não recusa.
+       p = { niveis: [{id, nome}], nivelIds: [...], tipoId, modeloId (""/null =
+       nenhum; undefined = o RA do tipo), escala, nome (molde com {nível}) } */
+    planejarPlantas: function (estado, p, extras) {
+      p = obj(p);
+      var self = this, tp = this.tipoPlanta(p.tipoId);
+      if (!tp) return { ok: false, erro: "Escolha o tipo de planta." };
+      var marcados = {}; arr(p.nivelIds).forEach(function (i) { marcados[String(i)] = 1; });
+      var NV = arr(p.niveis).filter(function (n) { return n && marcados[String(n.id)]; });
+      if (!NV.length) return { ok: false, erro: "Marque pelo menos um nível." };
+      var modeloId = p.modeloId === undefined ? tp.modelo : (p.modeloId ? txt(p.modeloId) : null);
+      if (modeloId && !this.modelo(estado, modeloId)) return { ok: false, erro: "Modelo de vista não encontrado." };
+      var mo = modeloId ? this.modelo(estado, modeloId) : null;
+      var escala = Math.max(1, Math.round(num(p.escala, 50)));
+      if (mo && mo.campos && mo.campos.escala && mo.valores && mo.valores.escala) escala = mo.valores.escala;
+      var usados = {};
+      Object.keys(obj(estado && estado.vistas)).forEach(function (k) { usados[txt(estado.vistas[k].nome).toLowerCase()] = 1; });
+      arr(extras).forEach(function (n) { usados[txt(n).toLowerCase()] = 1; });
+      var molde = txt(p.nome).trim() || (tp.nome + " — " + this.MARCA_NIVEL);
+      var itens = NV.map(function (n) {
+        var base = self.nomePlanta(molde, n.nome).slice(0, 110), nome = base, k = 1;
+        while (usados[nome.toLowerCase()]) nome = base + " (" + (++k) + ")";
+        usados[nome.toLowerCase()] = 1;
+        var igual = null;
+        Object.keys(obj(estado && estado.vistas)).forEach(function (q) {
+          var w = estado.vistas[q];
+          if (!igual && w && w.tipo === tp.tipo && String(w.nivelId) === String(n.id) && (w.modeloId || null) === modeloId) igual = w.nome;
+        });
+        return { nivelId: String(n.id), nivelNome: n.nome, tipo: tp.tipo, tipoId: tp.id, modeloId: modeloId, escala: escala, nome: nome, repetida: nome !== base, igual: igual };
+      });
+      return { ok: true, itens: itens, tipo: tp, modeloId: modeloId, escala: escala };
+    },
+    /* Propriedades › Tipo de vista. O modelo RA do tipo antigo vira o do novo
+       (modelo do usuário ou <Nenhum> ficam); a faixa volta ao padrão só quando
+       passa de/para forro (o forro olha para cima: os planos são outros); o
+       nome automático ("Planta de piso — X") acompanha. */
+    trocarTipoPlanta: function (estado, id, tipoId, extras) {
+      var v = obj(estado && estado.vistas)[id], tp = this.tipoPlanta(tipoId);
+      if (!v || !PLANTAS[v.tipo]) return { ok: false, erro: "Só as plantas trocam de tipo." };
+      if (!tp) return { ok: false, erro: "Tipo de planta desconhecido." };
+      var antigo = this.tipoPlanta(this.tipoPlantaDe(v));
+      if (antigo && antigo.id === tp.id) return { ok: true, msg: "A vista já é " + tp.rotulo + "." };
+      if ((v.tipo === "forro") !== (tp.tipo === "forro")) v.faixa = clone(FAIXA_PADRAO[tp.tipo]);
+      if (v.modeloId && antigo && v.modeloId === antigo.modelo) v.modeloId = tp.modelo;
+      else if (tp.id === "fundacao") v.modeloId = tp.modelo;   /* a fundação É o modelo de fundação */
+      v.tipo = tp.tipo;
+      v.disciplina = tp.tipo === "estrutural" ? "estrutural" : "arquitetura";
+      /* o nome automático de QUALQUER tipo de planta ("Planta de fundação — X") troca o prefixo */
+      var auto = this.TIPOS_PLANTA.concat([{ nome: "Planta baixa" }]).filter(function (t) { return txt(v.nome).indexOf(t.nome + " — ") === 0; })[0];
+      if (auto) {
+        var novo = tp.nome + txt(v.nome).slice(auto.nome.length), r = this.renomear(estado, id, novo, extras);
+        if (!r.ok) this.renomear(estado, id, this.nomeUnico(estado, novo, id, extras), extras);
+      }
+      return { ok: true, msg: "A vista agora é " + tp.rotulo + (v.modeloId ? ", com o modelo de vista “" + ((this.modelo(estado, v.modeloId) || {}).nome || v.modeloId) + "”" : "") + "." };
+    },
+    /* Propriedades › Nível associado: a planta passa a cortar outro nível (o nome automático acompanha) */
+    trocarNivelPlanta: function (estado, id, nivelId, niveis, extras) {
+      var v = obj(estado && estado.vistas)[id];
+      if (!v || !PLANTAS[v.tipo]) return { ok: false, erro: "Só as plantas têm nível associado." };
+      var L = arr(niveis), novo = L.filter(function (n) { return String(n.id) === String(nivelId); })[0];
+      if (!novo) return { ok: false, erro: "Nível não encontrado." };
+      var velho = L.filter(function (n) { return String(n.id) === String(v.nivelId); })[0];
+      v.nivelId = String(novo.id);
+      var suf = velho ? " — " + velho.nome : null, nm = txt(v.nome);
+      if (suf && nm.length > suf.length && nm.slice(-suf.length) === suf) {
+        var alvo = nm.slice(0, -suf.length) + " — " + novo.nome, r = this.renomear(estado, id, alvo, extras);
+        if (!r.ok) this.renomear(estado, id, this.nomeUnico(estado, alvo, id, extras), extras);
+      }
+      return { ok: true, msg: "A planta agora corta o " + novo.nome + "." };
+    },
+
     /* --------------------------------------------- Navegador (puro) */
     /* itens = [{ id, tipo, nome, disciplina, nivel, interior }] → nós por organização */
     GRUPOS: [
@@ -487,6 +596,7 @@
       function folha(it) {
         var no = { id: "d2:" + it.id, rotulo: it.nome, icone: it.icone || "planta", vistaId: it.id };
         if (it.tipo === "planta" || it.tipo === "corte") no.arrastar = it.id;   /* P8: planta e corte vão para a folha arrastando (js/bimfolhaui.js) */
+        if (it.nivelId != null && PLANTAS[it.tipo]) no.nivelId = it.nivelId;   /* S8: o clique direito da planta (copiar o nível, criar planta) */
         return no;
       }
       function grupos(lista, prefixo) {
@@ -686,6 +796,19 @@
           { id: "p6:modelos", rotulo: "Modelos de vista", tipo: "botao", rotuloBotao: "Gerenciar modelos de vista…", fn: function () { self.abrirModelos(id); } },
           { id: "p6:duplicar", rotulo: "Vista", tipo: "botao", rotuloBotao: "Duplicar vista", fn: function () { self.duplicarVista(id); } }
         );
+        /* S8: a planta criada de um nível troca de TIPO (piso ↔ estrutural ↔ forro ↔ fundação) e de nível */
+        if (PLANTAS[v.tipo] && d.p6 !== "chamada") {
+          var NVp = []; try { NVp = P2() ? P2().niveis() : []; } catch (eN) { NVp = []; }
+          if (/^d2v-/.test(id)) {
+            ide.params.splice(1, 0,
+              { id: "p6:tipo", rotulo: "Tipo de vista", tipo: "lista", valor: this.tipoPlantaDe(v) || v.tipo, opcoes: this.TIPOS_PLANTA.map(function (t) { return { id: t.id, rotulo: t.rotulo }; }) },
+              { id: "p6:nivel", rotulo: "Nível associado", tipo: "lista", valor: v.nivelId != null ? String(v.nivelId) : "", opcoes: NVp.map(function (n) { return { id: String(n.id), rotulo: n.nome }; }) });
+          } else if (d.nivel) {
+            ide.params.splice(1, 0,
+              { id: "p6:tipo", rotulo: "Tipo de vista", leitura: true, valor: "Planta de piso (a planta do nível)", motivo: "a planta do nível é fixa; para outro tipo, Vista › Criar › Planta… (ou Duplicar vista e trocar o tipo na cópia)" },
+              { id: "p6:nivel", rotulo: "Nível associado", leitura: true, valor: d.nivel.nome });
+          }
+        }
         if (/^d2v-/.test(id)) ide.params.push({ id: "p6:excluir", rotulo: "Vista", tipo: "botao", rotuloBotao: "Excluir esta vista", fn: function () { self.pedirExclusao(id); } });
       }
       out.titulo = d.nome;
@@ -732,6 +855,13 @@
         var mo = this.modelo(est, valor);
         this.vincularModelo(v, mo ? mo.id : null); this.gravar(); this._redesenhar(id, true);
         status(mo ? "Modelo de vista “" + mo.nome + "” ligado: os parâmetros dele ficam travados nesta vista." : "Vista sem modelo de vista: os parâmetros voltam a ser desta vista.");
+        return true;
+      }
+      if ((pid === "p6:tipo" || pid === "p6:nivel") && /^d2v-/.test(id) && PLANTAS[v.tipo]) {
+        var tr = pid === "p6:tipo" ? this.trocarTipoPlanta(est, id, valor, this._nomesNativos()) : this.trocarNivelPlanta(est, id, valor, P.niveis(), this._nomesNativos());
+        if (!tr.ok) { toast(tr.erro, "aviso"); return true; }
+        this.gravar(); this._renomearAba(id, v.nome); this._redesenhar(id, true); this._arvore(); this._repintarProps();
+        status(tr.msg);
         return true;
       }
       if (pid === "p6:nome") {
@@ -1033,6 +1163,7 @@
       var self = this, R = global.BimRibbon;
       this.carregarDados();
       R.acrescentar("vista", "Vista", "Criar", [
+        { id: "planta-nova", rotulo: "Planta…", icone: "planta", grande: true, dica: "Planta de QUALQUER nível: escolha o(s) nível(is), o tipo (piso, estrutural/fôrma, forro, fundação), o modelo de vista RA, a escala e o nome. Uma vista por nível, sem trocar o Nível atual." },
         { id: "elevacao-vista", rotulo: "Elevação", icone: "casa", grande: true, dica: "Elevação da construção (Norte, Sul, Leste, Oeste): a marca fica na planta, a vista abre numa aba e entra no Navegador › Elevações." },
         { id: "elevacao-interior", rotulo: "Elevação\ninterior", icone: "casa", dica: "Clique dentro do cômodo, perto da parede: a elevação interior olha para ela, recortada pelas paredes do cômodo." },
         { id: "planta-forro", rotulo: "Planta\nde forro", icone: "planta", dica: "Planta de forro refletido do nível de trabalho: corte a 2,30 m olhando para CIMA, desenhada como a planta (o forro, as vigas e a laje acima)." },
@@ -1056,6 +1187,7 @@
         if (d && d.tipo === "planta" && d.nivel) return d.nivel;
         try { var pid = self._G && self._G._d2PlantaPadrao ? self._G._d2PlantaPadrao() : null, dp = pid ? P.def(pid) : null; return dp ? dp.nivel : null; } catch (e) { return null; }
       }
+      reg["planta-nova"] = function () { self.abrirCriarPlanta({}); return true; };
       reg["elevacao-vista"] = function () { self.escolherElevacao(); return true; };
       reg["elevacao-interior"] = function () {
         var a = ativa2d(), P = P2(), d = a ? P.def(a) : null;
@@ -1089,6 +1221,107 @@
       return true;
     },
 
+    /* --- PLANTA… (Vista › Criar, + Criar vista, clique direito num nível) ----
+       opts = { nivelIds?: [...] (os marcados ao abrir), tipoId? }. Sem nível
+       marcado no opts, vem marcado o Nível atual. Cria sem trocar o Nível atual. */
+    abrirCriarPlanta: function (opts) {
+      opts = opts || {};
+      var self = this, P = P2(), UIx = global.UI;
+      if (!P || !UIx || !UIx.modal) return false;
+      var NV = []; try { NV = P.niveis(); } catch (e) { NV = []; }
+      if (!NV.length) { toast("Esta obra ainda não tem níveis: crie os níveis (Arquitetura › Referência › Níveis) e volte aqui.", "aviso"); return false; }
+      var marc = {}; arr(opts.nivelIds).forEach(function (i) { marc[String(i)] = 1; });
+      if (!Object.keys(marc).length) {
+        var at = null; try { at = global.BimArqUI && global.BimArqUI.nivelAtivo ? global.BimArqUI.nivelAtivo() : null; } catch (e2) { at = null; }
+        marc[String(at ? at.id : NV[0].id)] = 1;
+      }
+      var tp0 = this.tipoPlanta(opts.tipoId) || this.TIPOS_PLANTA[0];
+      var st = this._plDlg = { nomeMexido: false };
+      var h = '<div class="pl6" style="display:grid;grid-template-columns:auto 1fr;gap:8px 12px;align-items:start;font-size:12.5px">' +
+        '<b style="padding-top:2px">Nível(is)</b><div data-pl6="niveis" style="max-height:170px;overflow:auto;border:1px solid var(--borda,#ccc);border-radius:6px;padding:4px 8px">' +
+        NV.slice().sort(function (a, b) { return (+b.y || 0) - (+a.y || 0); }).map(function (n) {
+          return '<label style="display:flex;gap:6px;align-items:center;padding:3px 0"><input type="checkbox" data-pl6-niv="' + escH(n.id) + '"' + (marc[String(n.id)] ? " checked" : "") + "> " +
+            escH(n.nome) + ' <span class="muted">' + ((+n.y || 0) >= 0 ? "+" : "") + (+n.y || 0).toFixed(2).replace(".", ",") + " m</span></label>";
+        }).join("") + "</div>" +
+        '<label for="pl6-tipo"><b>Tipo</b></label><select id="pl6-tipo" data-pl6="tipo">' +
+        this.TIPOS_PLANTA.map(function (t) { return '<option value="' + t.id + '"' + (t.id === tp0.id ? " selected" : "") + ">" + escH(t.rotulo) + "</option>"; }).join("") + "</select>" +
+        '<label for="pl6-modelo"><b>Modelo de vista</b></label><select id="pl6-modelo" data-pl6="modelo"></select>' +
+        '<label for="pl6-escala"><b>Escala</b></label><div><select id="pl6-escala" data-pl6="escala">' + ESCALAS.map(function (s) { return '<option value="' + s + '"' + (s === 50 ? " selected" : "") + ">1:" + s + "</option>"; }).join("") + "</select>" +
+        ' <span class="muted" data-pl6="escala-nota" style="font-size:11px"></span></div>' +
+        '<label for="pl6-nome"><b>Nome</b></label><div><input id="pl6-nome" data-pl6="nome" type="text" style="width:100%" value="' + escH(tp0.nome + " — " + this.MARCA_NIVEL) + '">' +
+        '<div class="muted" style="font-size:10.5px;margin-top:2px">' + escH(this.MARCA_NIVEL) + " vira o nome de cada nível marcado.</div></div>" +
+        "</div>" +
+        '<div data-pl6="previa" class="bim-aviso bim-aviso-info" style="margin-top:10px;font-size:12px"></div>' +
+        '<p class="muted" style="margin:8px 0 0;font-size:11px">Uma vista por nível marcado, sem trocar o Nível atual. A vista abre numa aba e entra no Navegador no grupo do tipo; depois, em Propriedades, dá para trocar o tipo, o modelo de vista, a faixa da vista e o nome.</p>';
+      UIx.modal("Planta", h, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UIx.fecharModal(); } },
+        { texto: "Criar", classe: "primary", onClick: function () { self._plCriarDoDialogo(); } }
+      ]);
+      var box = document.querySelector("#modal-bg .modal"); if (!box) return true;
+      var q = function (k) { return box.querySelector('[data-pl6="' + k + '"]'); };
+      q("tipo").onchange = function () { self._plTipoMudou(box, true); };
+      q("modelo").onchange = function () { self._plTipoMudou(box, false); };
+      q("escala").onchange = function () { self._plPrevia(box); };
+      q("nome").oninput = function () { st.nomeMexido = true; self._plPrevia(box); };
+      box.querySelectorAll("[data-pl6-niv]").forEach(function (c) { c.onchange = function () { self._plPrevia(box); }; });
+      this._plTipoMudou(box, true);
+      return true;
+    },
+    _plLer: function (box) {
+      var q = function (k) { return box.querySelector('[data-pl6="' + k + '"]'); }, P = P2(), NV = [];
+      try { NV = P.niveis(); } catch (e) { NV = []; }
+      var ids = []; box.querySelectorAll("[data-pl6-niv]").forEach(function (c) { if (c.checked) ids.push(c.getAttribute("data-pl6-niv")); });
+      return { niveis: NV.map(function (n) { return { id: n.id, nome: n.nome }; }), nivelIds: ids, tipoId: q("tipo").value, modeloId: q("modelo").value || null, escala: q("escala").value, nome: q("nome").value };
+    },
+    /* trocou o tipo: o modelo RA do tipo vem marcado e o nome acompanha (se não foi mexido) */
+    _plTipoMudou: function (box, doTipo) {
+      var self = this, est = this.estado(), q = function (k) { return box.querySelector('[data-pl6="' + k + '"]'); };
+      var tp = this.tipoPlanta(q("tipo").value) || this.TIPOS_PLANTA[0];
+      if (doTipo) {
+        var mods = this.modelos(est, tp.tipo);
+        q("modelo").innerHTML = '<option value="">&lt;Nenhum&gt;</option>' + mods.map(function (m) { return '<option value="' + escH(m.id) + '"' + (m.id === tp.modelo ? " selected" : "") + ">" + escH(m.nome) + "</option>"; }).join("");
+        if (!this._plDlg || !this._plDlg.nomeMexido) q("nome").value = tp.nome + " — " + this.MARCA_NIVEL;
+      }
+      var mo = this.modelo(est, q("modelo").value), trava = !!(mo && mo.campos && mo.campos.escala && mo.valores && mo.valores.escala);
+      if (trava) q("escala").value = String(mo.valores.escala);
+      q("escala").disabled = trava;
+      q("escala-nota").textContent = trava ? "controlada pelo modelo de vista (escolha <Nenhum> para outra)" : "";
+      this._plPrevia(box);
+    },
+    _plPrevia: function (box) {
+      var pv = box.querySelector('[data-pl6="previa"]'); if (!pv) return null;
+      var r = this.planejarPlantas(this.estado(), this._plLer(box), this._nomesNativos());
+      if (!r.ok) { pv.className = "bim-aviso bim-aviso-alerta"; pv.textContent = r.erro; return r; }
+      pv.className = "bim-aviso bim-aviso-info";
+      pv.innerHTML = "<b>Vai criar " + r.itens.length + (r.itens.length === 1 ? " vista" : " vistas") + ":</b> " + r.itens.map(function (it) {
+        return escH(it.nome) + (it.igual ? ' <span style="color:var(--amarelo)">(já existe uma igual: “' + escH(it.igual) + "”)</span>" : "");
+      }).join("; ");
+      return r;
+    },
+    _plCriarDoDialogo: function () {
+      var box = document.querySelector("#modal-bg .modal"); if (!box) return null;
+      var r = this.planejarPlantas(this.estado(), this._plLer(box), this._nomesNativos());
+      if (!r.ok) { toast(r.erro, "aviso"); return null; }
+      if (global.UI && global.UI.fecharModal) global.UI.fecharModal();
+      return this.criarPlantas(r.itens);
+    },
+    /* cria as vistas planejadas, abre cada uma numa aba (a última fica na frente) e avisa as repetidas */
+    criarPlantas: function (itens) {
+      var self = this, P = P2(); if (!P) return [];
+      var feitas = arr(itens).map(function (it) {
+        return self.criar(it.tipo, { nome: it.nome, nivelId: it.nivelId, modeloId: it.modeloId || null, semModelo: !it.modeloId, escala: it.escala });
+      });
+      if (!feitas.length) return feitas;
+      try { Object.keys(P._cache || {}).forEach(function (k) { var dd = P.def(k); if (dd && dd.tipo !== "desenho") P.redesenhar(k, false); }); } catch (eR) {}
+      try { P._avisarMudou(); } catch (eM) {}
+      feitas.forEach(function (v) { try { P.abrir(v.id); } catch (eA) {} });
+      var rep = arr(itens).filter(function (it) { return it.repetida || it.igual; });
+      var msg = (feitas.length === 1 ? "“" + feitas[0].nome + "” criada" : feitas.length + " plantas criadas (" + feitas.map(function (v) { return v.nome; }).join("; ") + ")") + ": está no Navegador › Vistas.";
+      toast(msg, "ok"); status(msg);
+      if (rep.length) toast("Já existia vista com o mesmo nome ou igual: " + rep.map(function (it) { return "“" + it.nome + "”" + (it.igual ? " (igual a “" + it.igual + "”)" : ""); }).join("; ") + ". As novas ficaram com (2), (3)…", "aviso");
+      return feitas;
+    },
+
     /* --- Navegador: o ramo "Vistas" (registro de ramos) ---- */
     _registrarRamos: function () {
       var N = NAV(), self = this; if (!N || this._ramosOk) return;
@@ -1106,13 +1339,13 @@
     itensVistas: function () {
       var P = P2(), est = this.estado(), out = [], self = this; if (!P) return out;
       var NV = []; try { NV = P.niveis(); } catch (e) { NV = []; }
-      NV.forEach(function (n) { var id = P.idPlanta(n.id), v = est.vistas[id]; out.push({ id: id, tipo: "planta", nome: (v && v.nome) || "Planta baixa — " + n.nome, disciplina: v ? v.disciplina : "arquitetura", nivel: n.nome, icone: "planta" }); });
+      NV.forEach(function (n) { var id = P.idPlanta(n.id), v = est.vistas[id]; out.push({ id: id, tipo: "planta", nome: (v && v.nome) || "Planta baixa — " + n.nome, disciplina: v ? v.disciplina : "arquitetura", nivel: n.nome, nivelId: n.id, icone: "planta" }); });
       var CS = []; try { CS = P.cortes(); } catch (e2) { CS = []; }
       CS.forEach(function (c) { var id = P.idCorte(c.id), v = est.vistas[id]; out.push({ id: id, tipo: "corte", nome: (v && v.nome) || "Corte " + c.letra, disciplina: v ? v.disciplina : "arquitetura", icone: "corte" }); });
       Object.keys(est.vistas).forEach(function (k) {
         if (!/^d2v-/.test(k)) return;
         var v = est.vistas[k], nv = NV.filter(function (n) { return String(n.id) === String(v.nivelId); })[0];
-        out.push({ id: k, tipo: v.tipo, nome: v.nome, disciplina: self.efetivo(v, est).disciplina, nivel: nv ? nv.nome : "", interior: !!v.interior,
+        out.push({ id: k, tipo: v.tipo, nome: v.nome, disciplina: self.efetivo(v, est).disciplina, nivel: nv ? nv.nome : "", nivelId: nv ? nv.id : null, interior: !!v.interior,
                    icone: { forro: "planta", estrutural: "estrutura", elevacao: "casa", corte: "corte", chamada: "alvo", desenho: "regua" }[v.tipo] || "planta" });
       });
       return out;
@@ -1120,9 +1353,17 @@
     ramoVistas: function (ctx) {
       var self = this, G = (ctx && ctx.G) || this._G, N = NAV(), org = N ? N.organizacao() : "tipo";
       var nos = this.arvoreVistas(this.itensVistas(), org);
-      (function ligar(L) { L.forEach(function (n) { if (n.vistaId) { var vid = n.vistaId, nm = n.rotulo; n.fn = function () { if (G && G._d2Abrir) G._d2Abrir(vid, nm); }; } if (n.filhos) ligar(n.filhos); }); })(nos);
+      (function ligar(L) { L.forEach(function (n) {
+        if (n.vistaId) {
+          var vid = n.vistaId, nm = n.rotulo; n.fn = function () { if (G && G._d2Abrir) G._d2Abrir(vid, nm); };
+          /* planta (de piso, forro, estrutural): o clique direito copia o nível dela para cima ou cria outra planta dele */
+          if (n.nivelId != null && G && G._nivMenu) n.menu = G._nivMenu(n.nivelId).concat([{ id: "vista-duplicar", rotulo: "Duplicar esta vista", fn: function () { self.duplicarVista(vid); } }]);
+        }
+        if (n.filhos) ligar(n.filhos);
+      }); })(nos);
       /* as ações de criar, dentro do grupo de cada tipo (e um grupo "Criar vista" com todas) */
       var criar = { id: "p6:criar", rotulo: "+ Criar vista", icone: "mais", aberto: false, filhos: [
+        { id: "p6:c:planta", rotulo: "+ Planta… (nível, tipo, modelo)", icone: "planta", fn: function () { self.abrirCriarPlanta({}); } },
         { id: "p6:c:elev", rotulo: "+ Elevação (N, S, L, O)", icone: "casa", fn: function () { self.escolherElevacao(); } },
         { id: "p6:c:forro", rotulo: "+ Planta de forro", icone: "planta", fn: function () { try { global.BimShell.executar("planta-forro"); } catch (e) {} } },
         { id: "p6:c:estr", rotulo: "+ Planta estrutural", icone: "estrutura", fn: function () { try { global.BimShell.executar("planta-estrutural"); } catch (e) {} } },

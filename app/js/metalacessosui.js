@@ -241,6 +241,8 @@
       if (!ent.ok) { status("Calcular a estrutura: " + ent.motivo); toast(ent.motivo, "aviso", 8000); return false; }
       try { if (B && B.precisao) B.precisao().selecionar(ent.entrada.ids); } catch (e) {}
       var e = L.estado(); e.soSelecao = true; e.areas = [ent.area]; e.pontuais = ent.pontuais || []; e.apoios = ent.entrada.apoios; e.ligacoes = ent.entrada.ligacoes; e.vento = e.vento || {}; e.vento.ativo = false; e.otimizar = false;
+      /* REVISÃO S5 A4: as faces que a plataforma não escolhe são ABERTAS por declaração (sem isso o cálculo pede o fechamento) */
+      e.envoltorio = { situacao: "livre", porChave: {}, cobertura: { tipo: "sem" }, todasAbertas: true };
       this.ultimoCalculo = { prontaId: alvo.id, tipo: alvo.tipo, barras: ent.barras, area: ent.area.id, rigida: !!ent.rigida, premissa: ent.premissa };
       var antes = L.resultado();
       L.abrir(3); L.calcular();

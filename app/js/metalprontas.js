@@ -131,13 +131,17 @@
       aco: "ASTM A36", x0: 0, y0: 0, z0: 0, giro: 0 } },
     mezanino: { id: "mezanino", rotulo: "Mezanino / plataforma", cliques: 2, PADRAO: {
       Lx: 6, Lz: 4, vaosX: 2, vaosZ: 1, altura: 3.0, direcao: "x",
-      principal: "W250X25.3", secundaria: "W150X13", pilar: "W150X22.5", espSec: 1.5,
+      /* SIMULAÇÃO S1 — rodada 2 (decisão do Rogério, 14/10/2026): o mezanino PADRÃO sai calculável e aprovado na
+         Estrutura desenhada — secundária W 200 × 15 (a W 150 × 13 passava de 4 % no escritório), X de BARRA REDONDA (a
+         cantoneira L 51 de 4 a 5 m fura a esbeltez exigida: L/r ≈ 500) e X no PLANO DO PISO (sem ele, vigas rotuladas
+         deixam os pilares internos soltos e a 2ª ordem não fecha). O engenheiro tira o X do piso com o aviso do cálculo. */
+      principal: "W250X25.3", secundaria: "W200X15", pilar: "W150X22.5", espSec: 1.5,
       piso: "xadrez", tPiso: 0.00635, tDeck: 0.0008, painelMax: 3.0,
       gradeH: 0.025, gradeT: 0.003, gradeA: 0.030, gradeB: 0.100, gradeS: 0.005,
       frente: true, fundo: true, esquerda: true, direita: true,
       montante: "HSS73X5.2", corrimao: "HSS48.3X3.7", espac: 1.0, travessas: 2,
-      contraventar: true, contravento: "L51X51X4.8", placaBase: true,
-      rodape: false, hRodape: 0.20, tRodape: 0.00475, intermediaria: 0, semPilares: false, abertura: "", aberturaPos: 0.5, aberturaLarg: 0.9, contraventoPlano: false,
+      contraventar: true, contravento: "BR 5/8\" (D 15,88 mm) Gerdau", placaBase: true,
+      rodape: false, hRodape: 0.20, tRodape: 0.00475, intermediaria: 0, semPilares: false, abertura: "", aberturaPos: 0.5, aberturaLarg: 0.9, contraventoPlano: true,
       aco: "ASTM A572 Gr.50", x0: 0, y0: 0, z0: 0, giro: 0 } },
     rolamento: { id: "rolamento", rotulo: "Viga de rolamento", cliques: 1, pedeSelecao: true, PADRAO: {
       capacidade: 5, vaoPonte: 15, cotaTrilho: 0, excentricidade: 0.5,

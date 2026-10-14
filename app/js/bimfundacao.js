@@ -250,7 +250,10 @@
     x: [-1e5, 1e5], z: [-1e5, 1e5], x1: [-1e5, 1e5], z1: [-1e5, 1e5], giro: [-3600, 3600], base: [-10000, 10000],
     largura: LIM.dim, comprimento: LIM.dim, altura: LIM.altura, alturaBase: LIM.altura, larguraTopo: LIM.dim, comprimentoTopo: LIM.dim,
     nEstacas: LIM.nEstacas, diametro: LIM.diametro, comprimentoEstaca: LIM.estaca, espacamento: [0.1, 20],
-    deslocTopo: LIM.desloc, taxaAco: LIM.taxa, taxaAcoEstaca: LIM.taxa, lastro: LIM.lastro, folga: LIM.folga, terreno: LIM.terreno
+    deslocTopo: LIM.desloc, taxaAco: LIM.taxa, taxaAcoEstaca: LIM.taxa, lastro: LIM.lastro, folga: LIM.folga, terreno: LIM.terreno,
+    /* SIMULAÇÃO S1 (14/10/2026): o fck do concreto (MPa) — a placa de base da Metálica é ancorada nesta fundação
+       (js/acoligfundacao.js); sem ele a ancoragem usa 25 MPa com aviso */
+    fck: [10, 100]
   };
   function opValida(o) {
     if (!o || o.op !== "fundacao" || !idOk(o.id)) return false;

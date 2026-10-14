@@ -107,7 +107,7 @@
     "visibilidade", "pavimentos", "disciplinas", "sistemas", "conjuntos", "estilo", "materiais", "caixa-corte", "ortogonal", "grade",
     "nova-vista", "lado-a-lado", "vistas", "max-3d", "janela-3d", "paineis", "tamanho-ui", "pele-revit",
     "render-ia", "galeria-ia", "render-fisico",
-    "elevacao-vista", "elevacao-interior", "planta-forro", "planta-estrutural", "chamada-detalhe", "vista-desenho", "duplicar-vista",
+    "elevacao-vista", "elevacao-interior", "planta-forro", "planta-estrutural", "planta-nova", "chamada-detalhe", "vista-desenho", "duplicar-vista",
     "modelos-vista", "vg-vista", "estilos-objeto", "navegador-org", "tabela-quantidades", "levantamento-material",
     /* Folhas e exportação técnica */
     "nova-folha", "posicionar-vista", "revisoes-folha", "lista-folhas", "lista-vistas", "exportar-dxf", "exportar-dwg", "pdf-lote",

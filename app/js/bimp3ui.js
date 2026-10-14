@@ -35,7 +35,7 @@
   var cfg = {
     telhado: { modo: "retangulo", aguas: 4, inclinacao: 30, beiral: 0.5, tipoId: "generico-8", deslocBase: null, comprimentoExtrusao: null },
     fundacao: { tipoFundacao: "sapata", largura: 1.2, comprimento: 1.2, altura: 0.4, alturaBase: null, larguraTopo: null, comprimentoTopo: null,
-                nEstacas: 2, diametro: 0.3, comprimentoEstaca: 6, espacamento: 0.9, deslocTopo: 0, taxaAco: null, lastro: 0.05, folga: 0, terreno: 0, radierModo: "retangulo" },
+                nEstacas: 2, diametro: 0.3, comprimentoEstaca: 6, espacamento: 0.9, deslocTopo: 0, taxaAco: null, fck: null, lastro: 0.05, folga: 0, terreno: 0, radierModo: "retangulo" },
     borda: { tipoBorda: "calha" }
   };
   var ROT_FUND = { sapata: "Sapata isolada", bloco: "Bloco sobre estacas", estaca: "Estaca", baldrame: "Baldrame (viga de fundação)", radier: "Radier" };
@@ -108,6 +108,7 @@
         if (tf === "bloco" || tf === "estaca") { nm("diametro", "Diâmetro da estaca"); nm("comprimentoEstaca", "Comprimento da estaca"); }
         nm("deslocTopo", "Deslocamento do topo (em relação ao nível)");
         nm("taxaAco", "Taxa de aço (vazio = a informar)", "kg/m³", "5");
+        if (tf !== "estaca" && tf !== "baldrame") nm("fck", "fck do concreto (vazio = a informar)", "MPa", "5");   /* SIMULAÇÃO S1: a placa de base da Metálica ancora aqui */
         if (tf !== "estaca") { nm("lastro", "Lastro (espessura)", "m", "0.01"); nm("folga", "Folga da escavação (cada lado)"); }
         nm("terreno", "Cota do terreno (em relação ao nível)");
         secs.push({ nome: ROT_FUND[tf], params: ps });

@@ -10,7 +10,10 @@
  *         face: "mesa"|"alma", angulo (°), topoPilar (a viga chega a menos de d do topo do pilar),
  *         mesmoTopo (viga-viga: topos alinhados → recorte), pecas: [{ id, papel, perfil (mm), aco }],
  *         no: { rigido: true|false|null, fonte, texto } (do cálculo), esforcos: [{comb, V, M, N}], estimativa, avisos }
- *     op = { resultado (o último AcoDimLivre.calcular — esforços e condição do nó), preferir: "rigida"|"flexivel" }
+ *     op = { resultado (o último AcoDimLivre.calcular — esforços e condição do nó), preferir: "rigida"|"flexivel",
+ *            fundacoes (estado.fundacoes do BIM: a placa de base é verificada NA fundação sob o pilar — js/acoligfundacao.js) }
+ *   sugerir: op.execucao = "parafusada" → só ligações sem SOLDA NA OBRA (as "mistas" — soldadas na fábrica e
+ *            parafusadas na obra — ficam; as de meio "soldada" saem, com o aviso de quantas saíram)
  *   sugerir(ctx, op)       CONTEXTO → { ok, opcoes: [até 3], regras: [as que dispararam], avisos }
  *       opção = { tipologia, nome, familia, regra: {id, texto}, confianca: "alta"|"média"|"baixa", justificativa,
  *                 pros[], contras[], custo {fabricacao, montagem, custo}, resultado (o dimensionamento), passa,
@@ -54,6 +57,8 @@
   function Tip() { return dep("AcoLigTipos", "./acoligtipos.js"); }
   function C2() { return dep("AcoLigCalc2", "./acoligcalc2.js"); }
   function Dim() { return dep("AcoDimensionar", "./acodimensionar.js"); }
+  /* SIMULAÇÃO S1 (14/10/2026, js/acoligfundacao.js): a placa de base ancorada na FUNDAÇÃO desenhada no BIM */
+  function LF() { return dep("AcoLigFundacao", "./acoligfundacao.js"); }
 
   function num(v, d) { if (v == null || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
   function arr(v) { return Array.isArray(v) ? v : []; }
@@ -160,7 +165,9 @@
       else {
         var col = Math.abs(dot(p1.mb.X, p2.mb.X)) > 0.996, pn = pontaMaisPerto(p1.mb, p2.mb);
         if (col) { ctx.relacao = (p1.perfil.forma === "I" || (p1.perfil.bf > 0 && p1.perfil.tw > 0)) ? "emenda-viga" : "emenda-barra"; A = p1; Bp = p2; }
-        else if (pn.dPontas < Math.max(p1.perfil.d || 200, p2.perfil.d || 200) / 1000 + 0.05) { ctx.relacao = "cumeeira"; A = p1; Bp = p2; }
+        /* SIMULAÇÃO S2 (14/10/2026): cumeeira = as duas no MESMO plano vertical (as direções em planta paralelas); duas vigas
+           que se encontram em CANTO (planta em L) não são cumeeira — viram viga × viga */
+        else if (pn.dPontas < Math.max(p1.perfil.d || 200, p2.perfil.d || 200) / 1000 + 0.05 && mesmoPlano(p1.mb.X, p2.mb.X)) { ctx.relacao = "cumeeira"; A = p1; Bp = p2; }
         else {
           /* a secundária é a que tem a PONTA perto do eixo da outra */
           var d12 = Math.min.apply(null, pontasMb(p1.mb).map(function (q) { return distReta(q.P, p2.mb.P0, p2.mb.X); })), d21 = Math.min.apply(null, pontasMb(p2.mb).map(function (q) { return distReta(q.P, p1.mb.P0, p1.mb.X); }));
@@ -179,7 +186,10 @@
       ctx.ponta = pt.qual; ctx.no = ctx.no || {}; ctx.ponto = pt.P;
       if (ctx.relacao === "viga-pilar" || ctx.relacao === "viga-viga" || ctx.relacao === "contraventamento") {
         var rel = sub(pt.P, Bp.mb.P0); rel = sub(rel, mul(Bp.mb.X, dot(rel, Bp.mb.X)));
-        var dir = len(rel) > 1e-6 ? unit(rel) : unit(sub(mul(A.mb.X, pt.qual === "ini" ? 1 : -1), mul(Bp.mb.X, dot(A.mb.X, Bp.mb.X))));
+        /* SIMULAÇÃO S2 (14/10/2026): a ponta desenhada de eixo a eixo cai NO eixo do apoio — o ruído de micrômetro das receitas
+           (1,8 µm) dava a direção errada e a viga que chega na ALMA virava "mesa" + "oblíqua 90°" (achado no pórtico espacial):
+           até 5 mm do eixo, vale a direção de chegada da peça */
+        var dir = len(rel) > 0.005 ? unit(rel) : unit(sub(mul(A.mb.X, pt.qual === "ini" ? 1 : -1), mul(Bp.mb.X, dot(A.mb.X, Bp.mb.X))));
         ctx.face = Math.abs(dot(dir, Bp.mb.B)) >= Math.abs(dot(dir, Bp.mb.A)) ? "mesa" : "alma";
         if (ctx.relacao === "viga-viga") ctx.face = "alma";
         var tP = projT(pt.P, Bp.mb), topoT = Bp.mb.L;
@@ -212,6 +222,12 @@
     try { Object.defineProperty(ctx, "_caixas", { value: pecas.map(function (p) { return p.caixa; }), enumerable: false }); } catch (eC) {}
     esforcosDoCalculo(ctx, pecas, op.resultado, A, Bp);
     if (!ctx.esforcos || !ctx.esforcos.length) estimar(ctx, A, Bp);
+    /* SIMULAÇÃO S1: a fundação sob o pé do pilar (base) — o topo dá o A2/A1, a altura e o fck dão a ancoragem */
+    if (ctx.relacao === "base" && A && LF() && op.fundacoes) {
+      var pe = A.mb.X[1] >= 0 ? A.mb.P0 : add(A.mb.P0, mul(A.mb.X, A.mb.L)), fs = LF().fundacaoSob(pe, op.fundacoes, {});
+      if (fs.ok) { ctx.fundacao = fs.fundacao; ctx.suporte = LF().suporteLocal(fs.fundacao, pe, [num(A.mb.B[0], 1), num(A.mb.B[2], 0)]); }
+      else { ctx.semFundacao = fs.motivo; avisos.push("Placa de base sem fundação no modelo (" + fs.motivo + "): fck 25 MPa e A2/A1 = 1 de padrão, e a ancoragem no concreto (cone, gancho, borda) NÃO é verificada — desenhe a sapata/bloco sob o pilar (BIM › Fundação)."); }
+    }
     return ctx;
   }
   /* duas barras que se cruzam no meio (contraventamento em X): a menor distância entre os eixos cai dentro das duas */
@@ -222,6 +238,11 @@
     return dist(P1, P2) < 0.3 && s1 > 0.15 * m1.L && s1 < 0.85 * m1.L && s2 > 0.15 * m2.L && s2 < 0.85 * m2.L;
   }
   function topoDe(mb) { var a = mb.P0, b = add(mb.P0, mul(mb.X, mb.L)); return Math.max(a[1], b[1]) + Math.abs(dot(mb.B, UP)) * num(mb.s && mb.s.alt, 0) / 2; }   /* o eixo é o centro da seção */
+  function mesmoPlano(X1, X2) {
+    var h1 = [X1[0], 0, X1[2]], h2 = [X2[0], 0, X2[2]], l1 = len(h1), l2 = len(h2);
+    if (l1 < 1e-6 || l2 < 1e-6) return true;
+    return Math.abs(dot(h1, h2)) / (l1 * l2) > 0.996;
+  }
   function angulo(X1, X2) { var c = Math.min(1, Math.abs(dot(X1, X2))); return Math.round(Math.acos(c) * 180 / Math.PI); }
   function pontaMaisPerto(m1, m2) { var best = Infinity; pontasMb(m1).forEach(function (a) { pontasMb(m2).forEach(function (b) { best = Math.min(best, dist(a.P, b.P)); }); }); return { dPontas: best }; }
 
@@ -277,7 +298,7 @@
   function entradaCalc(ctx, extra) {
     var pp = {}; arr(ctx.pecas).forEach(function (p) { pp[p.id] = p; });
     var A = pp[ctx.A] || {}, B = pp[ctx.B] || {}, e = { viga: A.perfil, apoio: B.perfil || A.perfil, face: /^(cumeeira|emenda)/.test(ctx.relacao) ? "nenhuma" : ctx.face, acoViga: A.aco, acoApoio: B.aco || A.aco, esforcos: ctx.esforcos, estimativa: ctx.estimativa, topoPilar: !!ctx.topoPilar };
-    if (ctx.relacao === "base") { e.apoio = A.perfil; e.acoApoio = A.aco; }
+    if (ctx.relacao === "base") { e.apoio = A.perfil; e.acoApoio = A.aco; if (ctx.fundacao) e.concreto = { fck: ctx.fundacao.fck, A2_A1: 1, suporte: LF() ? LF().objsUW(ctx.suporte) : [] }; }
     if (ctx.relacao === "emenda-barra" || ctx.relacao === "cruz") {
       var bb = A.perfil || {}; e.barra = bb.forma === "L" ? { forma: "L", b: bb.b, t: bb.t, A: bb.A, xc: bb.xc, fy: A.aco.fy, fu: A.aco.fu } : { forma: bb.forma === "U" ? "U" : "chapa", b: num(bb.d, num(bb.b, 100)), t: num(bb.tw, num(bb.t, 8)), A: bb.A, xc: num(bb.xc, 15), fy: A.aco.fy, fu: A.aco.fu };
     }
@@ -352,7 +373,7 @@
   function sugerir(ctx, op) {
     op = op || {};
     if (!ctx || !ctx.ok) return { ok: false, motivo: (ctx && ctx.motivo) || "Sem contexto.", opcoes: [] };
-    var T = Tip(), C = C2(), out = [], regras = [], avisos = arr(ctx.avisos).slice(), vistos = {};
+    var T = Tip(), C = C2(), out = [], regras = [], avisos = arr(ctx.avisos).slice(), vistos = {}, foraSolda = [];
     var rig = ctx.no ? ctx.no.rigido : null;
     if (ctx.estimativa) avisos.push("Esforços ESTIMADOS: " + String(ctx.origemEsforcos || "").replace(/^ESTIMATIVA \(sem cálculo da estrutura\): /, "") + ". Calcule a estrutura (Cálculo › Estrutura desenhada) para dimensionar com os esforços reais.");
     if (rig === false && op.preferir === "rigida") avisos.push("INCOERÊNCIA (R-INC): o cálculo trata este nó como ROTULADO (" + ctx.no.texto + "). Uma ligação rígida muda a estrutura — recalcule com a ligação rígida antes de detalhar.");
@@ -361,11 +382,45 @@
       grupo[1].forEach(function (tid, k) {
         if (vistos[tid]) return; vistos[tid] = 1;
         var t = T.obter(tid); if (!t) return;
+        if (op.execucao === "parafusada" && t.meio === "soldada" && ctx.relacao !== "base") { foraSolda.push(t.nome); return; }   /* base: a solda é de fábrica (pilar na placa); na obra só as porcas dos chumbadores */
         var extra = {};
         if (ctx.relacao === "contraventamento" || ctx.relacao === "no-trelica") { var N = 0; arr(ctx.esforcos).forEach(function (s) { if (Math.abs(num(s.N, 0)) > Math.abs(N)) N = num(s.N, 0); }); extra.N = N; arr(ctx.esforcos).forEach(function (s) { if (num(s.N, 0) < 0) extra.Nc = Math.max(num(extra.Nc, 0), -num(s.N, 0)); else extra.Nt = Math.max(num(extra.Nt, 0), num(s.N, 0)); }); }
-        var ent = entradaCalc(ctx, extra), r = C.verificar(tid, ent);
+        var ent = entradaCalc(ctx, extra), r = C.verificar(tid, ent), avF = [], rPlaca = r, passaAj = false;
+        /* SIMULAÇÃO S1: a placa verificada NA fundação do modelo (cone, gancho, borda, altura, A2/A1)
+           REVISÃO S5 N1 (14/10/2026): o chumbador químico TAMBÉM (o AcoLigFundacao verifica o que cabe sem o fabricante:
+           placa no topo, cobrimento lateral, graute/cota; o resto vira pendência crítica) — antes ele pulava a fundação */
+        if (ctx.relacao === "base" && ctx.fundacao && LF() && r && r.dimensoes && r.dimensoes.chumbadores) {
+          var esfF = arr(ctx.esforcos).map(function (s) { return { comb: s.comb, N: num(s.N, 0), Vx: num(s.Vx, num(s.V, 0)), Vz: num(s.Vz, 0), M: num(s.M, 0) }; });
+          r = LF().verificar(r, ctx.fundacao, { suporte: ctx.suporte, esforcos: esfF });
+          /* REVISÃO A4 (14/10/2026): a placa reprovada pela FUNDAÇÃO (gancho, cone, borda, pryout, interação no concreto)
+             tenta o próximo chumbador antes de desistir (reprodução h2: 3/4" reprovava no gancho e 7/8" passava) */
+          var DIAS = [15.875, 19.05, 22.225, 25.4, 28.575, 31.75];
+          for (var tent = 0; tent < 5 && r && !r.ok && /cone|gancho|borda por cisalhamento|pryout|cisalhamento no concreto/i.test(String(r.governante || "")); tent++) {
+            var dAt = num(r.dimensoes && r.dimensoes.chumbadores && r.dimensoes.chumbadores.d, 19.05), prox = DIAS.filter(function (d) { return d > dAt + 0.5; })[0]; if (!prox) break;
+            var ent2 = JSON.parse(JSON.stringify(ent)); ent2.dMinChumb = prox;
+            var r2 = C.verificar(tid, ent2); if (!r2 || !r2.dimensoes || !r2.dimensoes.chumbadores) break;
+            rPlaca = r2;
+            r2 = LF().verificar(r2, ctx.fundacao, { suporte: ctx.suporte, esforcos: esfF });
+            r2.notas = arr(r2.notas).concat(["Chumbador aumentado para Ø " + br(r2.dimensoes.chumbadores.d, 1) + " mm pela fundação (o de Ø " + br(dAt, 1) + " mm reprovava em: " + r.governante + ")."]);
+            r = r2; ent = ent2;
+          }
+          avF = arr(r.avisosFundacao);
+          /* REVISÃO S5 N1: a placa que reprova SÓ por causa da cota (graute fora) passa com o topo proposto? — é o que o
+             "Ligar todos os nós" aplica (com a proposta do ajuste), em vez de trocar de tipologia */
+          if (r && !r.ok && r.ajusteCota && isFinite(r.ajusteCota.deslocTopoNovo)) {
+            var fAj = {}; Object.keys(ctx.fundacao).forEach(function (k) { fAj[k] = ctx.fundacao[k]; });
+            var dMov = num(r.ajusteCota.deslocTopoNovo, 0) - num(ctx.fundacao.deslocTopo, 0);
+            fAj.folgaPe = num(ctx.fundacao.folgaPe, 0) - dMov; fAj.deslocTopo = r.ajusteCota.deslocTopoNovo; fAj.cotaTopo = num(ctx.fundacao.cotaTopo, 0) + dMov;
+            var rAj = LF().verificar(rPlaca, fAj, { suporte: ctx.suporte, esforcos: esfF });
+            passaAj = !!(rAj && rAj.ok && !rAj.ajusteCota);
+          }
+        }
         var o = { entrada: ent, tipologia: tid, nome: t.nome, familia: t.familia, meio: t.meio, regra: { id: rid, texto: REGRAS[rid] }, ordemRegra: k, resultado: r, passa: !!(r && r.ok), reforcos: arr(r && r.reforcos), avisos: [], custo: { fabricacao: t.fabricacao, montagem: t.montagem, custo: t.custo } };
+        if (passaAj) { o.passaComAjuste = true; o.avisos.push("Passa com o AJUSTE DE COTA da fundação: " + String(r.ajusteCota.texto || "").split("AJUSTE DE COTA: ")[1]); }
+        if (r && arr(r.naoVerificadoCritico).length) o.avisos.push("PENDÊNCIA (bloqueia a emissão): " + r.naoVerificadoCritico.join("; ") + ". O \"Ligar todos os nós\" não escolhe esta opção — só o engenheiro, aqui.");
         var pc = prosContras(t, r); o.pros = pc.pros; o.contras = pc.contras;
+        if (avF.length) o.avisos = o.avisos.concat(avF);
+        if (r && r.fundacao) o.fundacao = r.fundacao;
         /* R-INC: nunca rígida em nó rotulado sem aviso (nem flexível em nó rígido) */
         if (rig === false && t.familia === "rigida") o.avisos.push("INCOERÊNCIA (R-INC): rígida num nó que o cálculo trata como ROTULADO (" + ctx.no.texto + ") — recalcule com a ligação rígida antes de usar.");
         if (rig === true && t.familia === "flexivel" && /viga-pilar|viga-viga|emenda|cumeeira/.test(ctx.relacao)) o.avisos.push("INCOERÊNCIA (R-INC): flexível num nó que o cálculo trata como RÍGIDO (" + ctx.no.texto + ") — o momento do cálculo não teria caminho.");
@@ -398,9 +453,31 @@
     out.sort(function (a, b) { return peso(a) - peso(b); });
     /* chapa estendida que precisou de enrijecedor: a tipologia "com enrijecedores" (é o que vai para o modelo) */
     out.forEach(function (o) { if (o.tipologia === "chapa-ext-estendida" && o.resultado && o.resultado.dimensoes && o.resultado.dimensoes.enrijecedores) { o.tipologia = "chapa-ext-estendida-enrij"; o.nome = T.obter("chapa-ext-estendida-enrij").nome; o.justificativa = o.justificativa + " A mesa/alma do pilar não resiste sozinha à força da mesa da viga: vão enrijecedores de continuidade."; o.aplicar = aplicacao(o, ctx); } });
+    if (foraSolda.length) avisos.push("Execução \"tudo parafusado na obra\": " + foraSolda.length + " tipologia(s) com solda na obra fora da lista (" + foraSolda.join("; ") + ").");
     var top = out.slice(0, 3);
     if (!top.some(function (o) { return o.passa; }) && top.length) avisos.push("Nenhuma das opções passa com estes perfis e esforços: veja a sugestão de cada uma (perfil maior, reforço ou outra tipologia).");
-    return { ok: true, chave: chaveTabela(ctx), escopo: Tip() ? Tip().ESCOPO : null, relacao: ctx.relacao, face: ctx.face, no: ctx.no, estimativa: !!ctx.estimativa, origemEsforcos: ctx.origemEsforcos, opcoes: top, todas: out.length, todasOpcoes: out, regras: regras, avisos: avisos };
+    return { ok: true, chave: chaveTabela(ctx), escopo: Tip() ? Tip().ESCOPO : null, relacao: ctx.relacao, face: ctx.face, no: ctx.no, execucao: op.execucao || null, fundacao: ctx.fundacao || null, estimativa: !!ctx.estimativa, origemEsforcos: ctx.origemEsforcos, opcoes: top, todas: out.length, todasOpcoes: out, regras: regras, avisos: avisos };
+  }
+  /* REVISÃO S5 N1 (14/10/2026): a escolha do "Ligar todos os nós" (o lote) — a 1ª opção que passa, com desenho
+     automático, sem incoerência, SEM pendência crítica (chumbador químico: dados do fabricante) e que não é reforço
+     sozinho; na base sobre a fundação do modelo, só a placa verificada NELA. Sem nenhuma: a placa que passa com o AJUSTE
+     DE COTA proposto (o lote aplica e mostra o botão "Ajustar o topo das fundações"). Antes: a 1ª que passava — com o
+     graute de 45 ou 100 mm a placa moldada reprovava e entrava o químico, que pulava a fundação.
+     → { opcao, pendente: null | "ajuste-cota", motivo } */
+  function escolherLote(sg) {
+    var L0 = arr(sg && (sg.todasOpcoes || sg.opcoes)), base = sg && sg.relacao === "base", fund = !!(sg && sg.fundacao);
+    function serve(x) {
+      if (!x || !x.aplicar || arr(x.resultado && x.resultado.bloqueante).length || x.avisos.some(function (a) { return /INCOER/.test(a); })) return false;
+      if (x.tipologia === "base-chumbador-quimico" || x.familia === "reforco" || arr(x.resultado && x.resultado.naoVerificadoCritico).length) return false;
+      if (base && fund && !(x.resultado && x.resultado.fundacao)) return false;
+      return true;
+    }
+    var o = L0.filter(function (x) { return serve(x) && x.passa; })[0];
+    if (o) return { opcao: o, pendente: null };
+    o = L0.filter(function (x) { return serve(x) && x.passaComAjuste; })[0];
+    if (o) return { opcao: o, pendente: "ajuste-cota", motivo: "aplicada com a proposta do topo da fundação (" + String(o.resultado.ajusteCota.texto || "").split("AJUSTE DE COTA: ")[1] + ")" };
+    var q = L0.filter(function (x) { return x.passa && (x.tipologia === "base-chumbador-quimico" || arr(x.resultado && x.resultado.naoVerificadoCritico).length); })[0];
+    return { opcao: null, pendente: null, motivo: q ? "só " + q.nome + " passaria, com verificação que depende do fabricante — escolha do engenheiro (Ligação inteligente)" : "nenhuma opção que passa com desenho automático" };
   }
   /* o peso da ligação: a macro do 3D rodada em ensaio (nada vai para o modelo) — chapas, cantoneiras e parafusos */
   function pesoEnsaio(o, ctx) {
@@ -452,6 +529,7 @@
       ["B", "N", "t", "parafuso", "classe", "ancoragem", "graute", "furo"].forEach(function (k) { if (d[k] != null) par[k] = d[k]; });
       if (d.nChumb) par.nChumb = d.nChumb; if (d.porLado) par.porLado = d.porLado; ordem = [ctx.A];
     } else if (g.macro === "contraventamento") { if (d.t) par.t = d.t; if (d.parafuso) par.parafuso = d.parafuso; if (d.parafusos) par.parafusos = d.parafusos; }
+    else if (g.macro === "barraRedonda") { if (dd0.d) par.d = dd0.d; if (dd0.chapa) { if (dd0.chapa.b) par.b = dd0.chapa.b; if (dd0.chapa.t) par.t = dd0.chapa.t / 1000; } }   /* SIMULAÇÃO S2 */
     else if (g.macro === "emendaCobrejunta") { ["tMesa", "tAlma", "parafuso", "colunas", "colunasAlma", "linhasAlma"].forEach(function (k) { if (d[k] != null) par[k] = d[k]; }); }
     else if (g.macro === "noTrelica") { if (d.t) par.t = d.t; if (d.parafuso) par.parafuso = d.parafuso; if (d.parafusos) par.parafusos = d.parafusos; ordem = arr(ctx.ordem); }
     else if (g.macro === "clipTerca") { if (d.cat) par.cat = d.cat; if (d.parafuso) par.parafuso = d.parafuso; if (d.parafusos) par.parafusos = d.parafusos; }
@@ -465,7 +543,7 @@
   }
 
   var AcoLigSugere = {
-    REGRAS: REGRAS, analisar: analisar, sugerir: sugerir, aplicacao: aplicacao, entradaCalc: entradaCalc, chaveTabela: chaveTabela, pesoEnsaio: pesoEnsaio,
+    REGRAS: REGRAS, analisar: analisar, sugerir: sugerir, escolherLote: escolherLote, aplicacao: aplicacao, entradaCalc: entradaCalc, chaveTabela: chaveTabela, pesoEnsaio: pesoEnsaio,
     sugerirPecas: function (caixas, op) { return sugerir(analisar(caixas, op), op); },
     /* a seção do memorial das ligações aplicadas: lista [{ id, titulo, resultado }] → HTML */
     secaoMemorial: function (ligs) {

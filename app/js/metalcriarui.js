@@ -103,14 +103,21 @@
   function baseModelo() { var b = B(); try { return b && b.editarBase ? b.editarBase() : 0; } catch (e) { return 0; } }
   function peDireito(n) { return n && n.peDireito > 0 ? n.peDireito : 3; }
   /* a cota da linha de uma barra/chapa: 'atual' | 'acima' | id do nível, + deslocamento */
+  /* S8: a viga numa planta ESTRUTURAL nasce com o topo no nível da vista (a regra mora no
+     js/bimarqui.js, a mesma da viga de concreto: Restrições › Topo da viga, por tipo de vista) */
+  function refEf(ferr) {
+    var c = C()[ferr];
+    if (ferr === "viga") { try { var U = AU(); if (U && U.vigaTopo && U.vigaTopo() === "nivel") return "atual"; } catch (e) {} }
+    return c.ref;
+  }
   function cotaRef(ferr) {
-    var c = C()[ferr], at = nivelAtivo(), d = num(c.desl, 0);
-    if (!at) return baseModelo() + (c.ref === "acima" ? 3 : 0) + d;
-    if (c.ref === "acima") { var ac = acimaDe(at); return (ac ? ac.elevacao : at.elevacao + peDireito(at)) + d; }
-    if (c.ref && c.ref !== "atual") { var n = nivelPorId(c.ref); if (n) return n.elevacao + d; }
+    var c = C()[ferr], at = nivelAtivo(), d = num(c.desl, 0), ref = refEf(ferr);
+    if (!at) return baseModelo() + (ref === "acima" ? 3 : 0) + d;
+    if (ref === "acima") { var ac = acimaDe(at); return (ac ? ac.elevacao : at.elevacao + peDireito(at)) + d; }
+    if (ref && ref !== "atual") { var n = nivelPorId(ref); if (n) return n.elevacao + d; }
     return at.elevacao + d;
   }
-  function infoNivelRef(ferr) { var c = C()[ferr], at = nivelAtivo(); return { ref: c.ref, nivel: at ? at.id : null, desl: num(c.desl, 0) }; }
+  function infoNivelRef(ferr) { var c = C()[ferr], at = nivelAtivo(); return { ref: refEf(ferr), nivel: at ? at.id : null, desl: num(c.desl, 0) }; }
   function cotasPilar() {
     var c = C().pilar, at = nivelAtivo(), nb = c.nivelBase ? (nivelPorId(c.nivelBase) || at) : at;
     var base = (nb ? nb.elevacao : baseModelo()) + num(c.deslBase, 0), topo, h = c.altura > 0 ? c.altura : peDireito(nb);
@@ -272,7 +279,11 @@
         else rs.push({ id: pre + "deslTopo", rotulo: "Deslocamento do topo", unidade: "m", tipo: "numero", passo: "0.05", valor: c.deslTopo });
         rs.push({ id: pre + "cotas", rotulo: "Base → topo", leitura: true, valor: sinal(cp.base) + " → " + sinal(cp.topo) + " m (" + br(cp.topo - cp.base) + " m)" });
       } else {
-        if (L.length) rs.push({ id: pre + "ref", rotulo: ferr === "chapa" || ferr === "diagonal" ? "Nível" : "Nível de referência", tipo: "lista", valor: c.ref, opcoes: this._opcoesNivel(true, false) });
+        /* S8: a viga mostra a regra do topo desta vista (planta estrutural: no nível da vista) */
+        var U8 = AU(), vt8 = ferr === "viga" && U8 && U8.vigaTopo ? U8.vigaTopo() : null;
+        if (vt8) rs.push({ id: pre + "vigaTopo", rotulo: "Topo da viga (" + (U8.contextoVista() === "estrutural" ? "planta estrutural" : "planta de piso e 3D") + ")", tipo: "lista", valor: vt8, opcoes: Object.keys(U8.VIGA_TOPO).map(function (k) { return { id: k, rotulo: U8.VIGA_TOPO[k] }; }) });
+        if (L.length && vt8 === "nivel") rs.push({ id: pre + "refNivel", rotulo: "Nível de referência", leitura: true, valor: (nivelAtivo() || {}).nome + " (o nível da vista)" });
+        else if (L.length) rs.push({ id: pre + "ref", rotulo: ferr === "chapa" || ferr === "diagonal" ? "Nível" : "Nível de referência", tipo: "lista", valor: c.ref, opcoes: this._opcoesNivel(true, false) });
         rs.push({ id: pre + "desl", rotulo: ferr === "viga" ? "Deslocamento do topo" : "Deslocamento", unidade: "m", tipo: "numero", passo: "0.05", valor: c.desl });
         rs.push({ id: pre + "cotaLinha", rotulo: ferr === "viga" ? "Topo da viga na cota" : "Linha na cota", leitura: true, valor: sinal(cotaRef(ferr)) + " m" });
       }
@@ -299,6 +310,7 @@
       else if (k === "nivelBase") c.nivelBase = v === "atual" ? "" : String(v);
       else if (k === "topo") c.topo = String(v);
       else if (k === "ref") c.ref = String(v);
+      else if (k === "vigaTopo") { var U9 = AU(); if (U9 && U9.definirVigaTopo) U9.definirVigaTopo(String(v)); }   /* S8 */
       else if (k === "deslBase" || k === "deslTopo" || k === "desl") { var d = num(v, NaN); if (fin(d) && Math.abs(d) <= 200) c[k] = d; }
       else if (k === "altura") { var h = num(v, NaN); if (h > 0.05 && h <= 60) c.altura = h; }
       else if (k === "aco") c.aco = String(v);

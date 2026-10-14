@@ -40,6 +40,12 @@
   }
   function un(v, c, u) { return br(v, c) + NB + u; }
   function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+  /* AJUSTE DA GERENTE (14/10/2026): o símbolo de PERFIL vai com índice no HTML do memorial — t<sub>f</sub>, t<sub>w</sub>,
+     b<sub>f</sub>, h<sub>w</sub> e afins (b<sub>w</sub>, t<sub>fs</sub>, b<sub>fi</sub>…): na aba de unidades (kgf/tf) "tf" é
+     tonelada-força e "Ff = M/(d − tf) = 4,06 tf" ficava ambíguo. SÓ no HTML do memorial: o dado do motor (a fórmula em
+     texto) não muda — a tela, a prancha e o DXF continuam com "tf" sem tag. Recebe texto JÁ escapado. */
+  var RE_IX = /(^|[^A-Za-z_\u00C0-\u024F])([tbh])([fw])(s|i|1|2)?(?![A-Za-z0-9_\u00C0-\u024F])/g;
+  function ix(h) { return String(h == null ? "" : h).replace(RE_IX, function (m0, a, l, s, k) { return a + l + "<sub>" + s + (k || "") + "</sub>"; }); }
   function t(s, onde) { var x = String(s == null ? "" : s); if (/\b(undefined|NaN|null|Infinity)\b/.test(x)) { indef.push((onde || "texto") + ": " + x.slice(0, 120)); x = x.replace(/\b(undefined|NaN|null|Infinity)\b/g, "[valor indefinido]"); } return esc(x); }
   function ph(v, rot) { var s = v == null ? "" : String(v).trim(); return s ? esc(s) : '<span class="ph">[' + esc(rot) + "]</span>"; }
   function td(h, cls) { return "<td" + (cls ? ' class="' + cls + '"' : "") + ">" + (h == null ? "" : h) + "</td>"; }
@@ -126,6 +132,52 @@
   }
 
   /* ================================================================ SEÇÕES */
+  /* SIMULAÇÃO S1: os encontros que pedem ligação e a ligação (do modelo) de cada um; coerência com a condição do cálculo */
+  function encontros(r, ligs) {
+    var G = r.modelo || {}, P = arr(G.pecas), out = [], NI = G.noInfo || {};
+    function ligDe(pecas, base) {
+      return arr(ligs).filter(function (l) { var pp = arr(l.info && l.info.pecas).map(String), tip = String(l.info && l.info.tipologia || ""); return base ? (pp.length === 1 && pp[0] === String(pecas[0]) && /^base-/.test(tip)) : (pp.indexOf(String(pecas[0])) >= 0 && pecas.slice(1).some(function (q) { return pp.indexOf(String(q)) >= 0; })); })[0] || null;
+    }
+    arr(G.membros).forEach(function (m) {
+      /* REVISÃO C3 (14/10/2026): a PONTA DE PILAR que não é base e cai numa peça CONTÍNUA (topo sob viga que passa, pilarete
+         sobre a viga) ou noutro pilar (emenda) também pede ligação — antes ela ficava fora e a capa dizia "atendem" com o nó
+         rígido sem ligação (reproduções h11 e h13) */
+      if (m.papelLivre === "pilar") {
+        var ipP = -1; P.forEach(function (q, i) { if (q && String(q.id) === String(m.peca)) ipP = i; });
+        ["ini", "fim"].forEach(function (k) {
+          var c = obj(m.pontas)[k] || {}; if (c.tipo === "livre" || c.tipo === "apoio") return;
+          var no = k === "ini" ? m.nos[0] : m.nos[m.nos.length - 1], I = NI[no]; if (!I) return;
+          var passa = arr(I.passa).map(function (ip) { return P[ip]; }).filter(Boolean), emenda = arr(I.ends).filter(function (e) { return e.ip !== ipP && P[e.ip] && P[e.ip].papel === "pilar"; }).map(function (e) { return P[e.ip]; });
+          var outros = passa.concat(emenda); if (!outros.length) return;
+          var l = ligDe([m.peca].concat(outros.map(function (q) { return q.id; })), false);
+          out.push({ tipo: "pilar", peca: m.peca, no: no, cond: c.tipo, texto: m.id + " (" + (k === "ini" ? "pé" : "topo") + ") × " + outros.map(function (q) { return q.mid || q.id; }).join(", ") + (emenda.length ? " (emenda)" : " (peça contínua)"), lig: l, incoerente: null });
+        });
+        return;
+      }
+      ["ini", "fim"].forEach(function (k) {
+        var c = obj(m.pontas)[k] || {}; if (c.tipo === "livre" || c.tipo === "apoio") return;
+        var no = k === "ini" ? m.nos[0] : m.nos[m.nos.length - 1], I = NI[no]; if (!I) return;
+        var outros = arr(I.ends).map(function (e) { return e.ip; }).concat(arr(I.passa)).map(function (ip) { return P[ip]; }).filter(function (p) { return p && String(p.id) !== String(m.peca); });
+        if (!outros.length) return;
+        var l = ligDe([m.peca].concat(outros.map(function (p) { return p.id; })), false), fam = l && l.info ? l.info.familia : null;
+        var inc = l && fam ? ((c.tipo === "rigida" || c.tipo === "continua") && fam === "flexivel" ? "flexível num nó rígido do cálculo" : (c.tipo === "rotulada" && (fam === "rigida" || fam === "semirrigida") ? "rígida num nó rotulado do cálculo" : null)) : null;
+        out.push({ tipo: "no", peca: m.peca, no: no, cond: c.tipo, texto: m.id + " (" + (k === "ini" ? "início" : "fim") + ") × " + outros.map(function (p) { return p.mid || p.id; }).join(", "), lig: l, incoerente: inc });
+      });
+    });
+    arr(G.bases).forEach(function (b) {
+      var l = ligDe([b.peca], true), tip = l && l.info ? String(l.info.tipologia) : "", t0 = /engastada/.test(tip) ? "engastada" : (/rotulada|quimico/.test(tip) ? "rotulada" : null);
+      out.push({ tipo: "base", peca: b.peca, no: b.no, cond: b.tipo, texto: "base de " + b.mid, lig: l, incoerente: l && t0 && t0 !== (b.tipo === "engaste" ? "engastada" : b.tipo) ? "placa " + t0 + " numa base " + b.tipo + " do cálculo" : null });
+    });
+    return out;
+  }
+  /* FRENTE S5 (14/10/2026): o mapa de isopletas da NBR 6123 com a obra marcada (o mesmo do memorial do galpão) */
+  function mapaVento(V) {
+    var I = dep("AcoIsopletas", "./acoisopletas.js"), vi = obj(V && V.v0Info), lat = num(vi.lat, NaN), lon = num(vi.lon, NaN);
+    if (!I || typeof I.svgMapa !== "function" || !fin(lat) || !fin(lon)) return '<p class="nota">Mapa de isopletas não incluído: coordenadas da obra não informadas (V0 informado direto).</p>';
+    var m1 = "", m2 = "", mp = obj(vi.mapa), dk = arr(mp.distanciasKm).filter(fin), zoom = Math.max(150, Math.min(700, (dk.length ? Math.max.apply(null, dk) : 300) * 1.25));
+    try { m1 = I.svgMapa(lat, lon, { largura: 318, rotulo: "Obra" }); m2 = I.svgMapa(lat, lon, { largura: 318, rotulo: "Obra", zoomKm: zoom }); } catch (e) { return '<p class="nota">Mapa de isopletas não gerado: ' + esc(e && e.message) + "</p>"; }
+    return '<figure class="fig"><div class="par" style="display:flex;gap:10px;flex-wrap:wrap">' + m1 + m2 + "</div><figcaption>Mapa de isopletas da velocidade básica V0 (m/s) com a obra marcada; à direita, a região da obra. Fonte: " + esc((I.FONTE && I.FONTE.citacao) || "NBR 6123, Figura 1") + ".</figcaption></figure>";
+  }
   function gerar(r, opcoes) {
     indef = [];
     opcoes = opcoes || {};
@@ -140,6 +192,31 @@
     var L = obj(G.layout), dims = fin(L.vao) ? un(L.vao, 2, "m") + " × " + un(L.Lt, 2, "m") + " em planta, altura " + un(L.H, 2, "m") : "";
     var descr = Object.keys(cont).map(function (k) { return cont[k] + " " + (NOMES[k] || k).toLowerCase() + (cont[k] > 1 ? (k === "viga" ? "s" : k === "pilar" ? "es" : "s") : ""); }).join(", ");
 
+    /* SIMULAÇÃO S1 (14/10/2026): as LIGAÇÕES do modelo entram na situação do memorial — cada encontro (ponta de viga ×
+       peça, base de pilar) com a ligação dimensionada com os esforços DESTE cálculo, ou listado como sem ligação */
+    var LSg = dep("AcoLigSugere", "./acoligsugere.js"), ligsDim = arr(opcoes.ligacoes).length ? opcoes.ligacoes : (global.MetalLigSugUI && global.MetalLigSugUI.ligacoesDoModelo ? global.MetalLigSugUI.ligacoesDoModelo() : []);
+    var enc = encontros(r, ligsDim), encSem = enc.filter(function (e) { return !e.lig; }), encFalha = enc.filter(function (e) { return e.lig && (!e.lig.resultado || !e.lig.resultado.ok); }),
+        encDif = enc.filter(function (e) { return e.lig && e.lig.comCalculo && !e.lig.confere; }), encInc = enc.filter(function (e) { return e.incoerente; });
+    /* REVISÃO M1 (14/10/2026): ligação que NÃO foi refeita com os esforços deste cálculo (esforços guardados nela) não
+       entra no "atendem com os esforços deste cálculo" nem no "TODAS dimensionadas" (reprodução h4) */
+    var encGuard = enc.filter(function (e) { return e.lig && !e.lig.comCalculo; });
+    /* REVISÃO S5 N1 (14/10/2026): ligação com verificação crítica NÃO feita (chumbador químico sem os dados do fabricante)
+       não entra no "atendem" — antes a capa dizia "todas as verificações do cálculo atendem; as 12 ligações atendem" */
+    var encNV = enc.filter(function (e) { return e.lig && e.lig.resultado && arr(e.lig.resultado.naoVerificadoCritico).length; });
+    var ligOk = enc.length > 0 && !encSem.length && !encFalha.length && !encDif.length && !encInc.length && !encGuard.length && !encNV.length;
+    var ligPend = (encSem.length ? encSem.length + " sem ligação; " : "") + (encGuard.length ? encGuard.length + " com os esforços guardados na ligação (NÃO refeita(s) com este cálculo — recalcule com a estrutura desenhada); " : "") +
+      (encDif.length ? encDif.length + " desenhada(s) diferente(s) do que este cálculo dimensiona (reaplique); " : "") + (encFalha.length ? encFalha.length + " NÃO atende(m); " : "") + (encInc.length ? encInc.length + " incoerente(s) com o modelo; " : "") + (encNV.length ? encNV.length + " com verificação NÃO feita (" + encNV[0].lig.resultado.naoVerificadoCritico[0] + "); " : "");
+    var sitLig = !enc.length || !ligsDim.length ? "" : (ligOk ? "; as " + enc.length + " ligações (nós e bases) atendem com os esforços deste cálculo" :
+      "; ligações: " + (enc.length - encSem.length) + " de " + enc.length + " desenhadas" + (encGuard.length ? ", " + encGuard.length + " NÃO refeita(s) com os esforços deste cálculo" : "") + (encFalha.length ? ", " + encFalha.length + " NÃO atende(m)" : "") + (encDif.length ? ", " + encDif.length + " desenhada(s) diferente(s) do dimensionado" : "") + (encInc.length ? ", " + encInc.length + " incoerente(s) com o modelo" : "") + (encNV.length ? ", " + encNV.length + " com verificação NÃO feita (chumbador químico: dados do fabricante) — não emitir" : ""));
+    /* FRENTE S5 (14/10/2026): com verificação crítica NÃO feita (vento fora das tabelas, face sem pilar…) a capa diz
+       "INCOMPLETO" com o que faltou — nunca "atende" */
+    var nvS = arr(r.naoVerificados), incompleto = r.situacao && r.situacao.id === "incompleto";
+    /* REVISÃO S5 A2: "todas atendem" só com as ligações e as placas de base dimensionadas, todas atendendo, e nenhum ajuste de
+       cota pendente (antes: sem nenhuma ligação dimensionada a capa dizia "todas as verificações do cálculo atendem") */
+    var ajPend = arr(ligsDim).some(function (l) { return l && l.resultado && l.resultado.ajusteCota; }), semLig = !ligsDim.length || !enc.length;
+    if (!incompleto && r.aprovado && (semLig || ajPend)) sitLig = sitLig + (semLig ? "; ligações e placas de base NÃO dimensionadas" : "") + (ajPend ? "; AJUSTE DE COTA da fundação pendente" : "") + " — não emitir";
+    var situacao = incompleto ? '<span class="falha">INCOMPLETO — barras ' + (r.aprovado ? "atendem" : "não atendem") + "; NÃO verificado: " + esc(nvS.map(function (x) { return x.tema + " (" + x.motivo + ")"; }).join("; ")) + esc(sitLig) + "</span>" : r.aprovado && ligOk && !semLig && !ajPend ? '<span class="ok">todas as verificações do cálculo atendem' + esc(sitLig) + "</span>" : (r.aprovado ? '<span class="falha">barras atendem' + esc(sitLig) + "</span>" : '<span class="falha">' + r.falhas + " verificação(ões) das barras não atende(m)" + esc(sitLig) + "</span>");
+
     /* 1. objeto */
     sec("objeto", "Objeto, escopo e premissas",
       "<p>Este memorial apresenta o cálculo da estrutura de aço <b>modelada no OrçaPRO</b> peça a peça (" + esc(descr) + "; " + esc(dims) + "), com as ações da NBR 6120:2019 lançadas por área e por ponto" + (r.vento ? ", e o vento da NBR 6123" : "") + ". A análise é de 2ª ordem (P-Δ e P-δ) com imperfeições, e cada barra é verificada pela NBR 8800 (perfis laminados, soldados, tubos e barras) ou pela NBR 14762 (formados a frio).</p>" +
@@ -147,7 +224,7 @@
       tabela(["Item", "Valor"], [
         ["Barras do modelo", membros.length + " (" + esc(descr) + ")"], ["Nós", String(arr(G.modelo.nos).length)], ["Apoios", String(arr(G.modelo.apoios).length)],
         ["Peso de aço dos perfis", un(r.peso, 0, "kg") + (fin(r.taxa) ? " (" + un(r.taxa, 1, "kg/m²") + " da área carregada de " + un(r.areaCarregada, 1, "m²") + ")" : "")],
-        ["Situação", r.aprovado ? '<span class="ok">todas as verificações do cálculo atendem</span>' : '<span class="falha">' + r.falhas + " verificação(ões) não atende(m)</span>"]
+        ["Situação", situacao]
       ], { legenda: leg("Resumo da estrutura calculada") }) +
       (img.perspectiva ? fig('<img src="' + esc(img.perspectiva) + '" alt="Perspectiva">', "Perspectiva do modelo calculado (aproveitamento das barras)") : fig(svgModelo(r), "Modelo de cálculo em perspectiva isométrica (barras e apoios; em vermelho as que não atendem)")));
 
@@ -159,6 +236,27 @@
     var acos = {}; membros.forEach(function (m) { var a = obj(m.aco); if (!acos[a.id]) acos[a.id] = { a: a, ps: [] }; acos[a.id].ps.push(m.id); });
     sec("materiais", "Materiais", tabela(["Aço", { t: "fy (MPa)", n: 1 }, { t: "fu (MPa)", n: 1 }, "Barras"], Object.keys(acos).map(function (k) { var a = acos[k].a; return [esc(a.id), br(a.fy, 0), br(a.fu, 0), esc(acos[k].ps.join(", "))]; }), { legenda: leg("Aços das barras") }) +
       "<p>Constantes do aço (NBR 8800:2008, 4.5.2.9): E = 200.000 MPa, G = 77.000 MPa, ν = 0,3; peso específico 78,5 kN/m³ (NBR 6120:2019, Tabela 1). Coeficientes das resistências: γa1 = 1,10 e γa2 = 1,35 (NBR 8800:2008, Tabela 3).</p>");
+
+    /* FRENTE S5 (14/10/2026): a GEOMETRIA que o sistema leu do modelo e o ENVOLTÓRIO (faces + fechamento → vento) */
+    var EN = obj(r.envoltorio);
+    if (EN.tipo) {
+      var fcs = arr(EN.faces), gsvg = (function () {
+        var cx0 = obj(EN.caixa); if (!fin(cx0.x0)) return "";
+        var W = 520, H = 300, m = 40, dx = Math.max(0.5, cx0.x1 - cx0.x0), dz = Math.max(0.5, cx0.z1 - cx0.z0), k = Math.min((W - 2 * m) / dx, (H - 2 * m) / dz);
+        function X(x) { return m + (x - cx0.x0) * k + ((W - 2 * m) - dx * k) / 2; } function Z(z) { return m + (z - cx0.z0) * k + ((H - 2 * m) - dz * k) / 2; }
+        var h = '<svg viewBox="0 0 ' + W + " " + H + '" width="' + W + '" height="' + H + '" xmlns="http://www.w3.org/2000/svg" font-family="Arial" font-size="11">';
+        arr(EN.eixos).forEach(function (e) { h += '<line x1="' + f1(X(e.x0)) + '" y1="' + f1(Z(e.z0)) + '" x2="' + f1(X(e.x1)) + '" y2="' + f1(Z(e.z1)) + '" stroke="#9aa8b6" stroke-width="0.7" stroke-dasharray="8 3 2 3"/><text x="' + f1(e.dir === "x" ? X(e.c) : X(e.x0) - 10) + '" y="' + f1(e.dir === "x" ? Z(e.z0) - 6 : Z(e.c) + 4) + '" text-anchor="middle" fill="#5a6b7c">' + esc(e.nome) + "</text>"; });
+        if (arr(EN.contorno).length >= 3) h += '<polygon points="' + EN.contorno.map(function (q) { return f1(X(q[0])) + "," + f1(Z(q[1])); }).join(" ") + '" fill="#e8f1fa" stroke="none"/>';
+        fcs.forEach(function (f, i) { var fe = obj(f.fechamento), fech = fe.tipo && fe.tipo !== "aberta"; h += '<line x1="' + f1(X(f.a[0])) + '" y1="' + f1(Z(f.a[1])) + '" x2="' + f1(X(f.b[0])) + '" y2="' + f1(Z(f.b[1])) + '" stroke="' + (fech ? "#0d6ebd" : "#d08a1e") + '" stroke-width="' + (fech ? 3.5 : 1.8) + '"' + (fech ? "" : ' stroke-dasharray="6 4"') + "/>"; var mx = (X(f.a[0]) + X(f.b[0])) / 2 + f.normal[0] * 14, mz = (Z(f.a[1]) + Z(f.b[1])) / 2 + f.normal[1] * 14; h += '<text x="' + f1(mx) + '" y="' + f1(mz + 4) + '" text-anchor="middle" font-weight="bold" fill="' + (fech ? "#0d6ebd" : "#d08a1e") + '">' + (i + 1) + "</text>"; });
+        return h + '<text x="' + (W - 8) + '" y="14" text-anchor="end" fill="#5a6b7c">N ↑ (z−)</text></svg>';
+      })();
+      var vSit = EN.vento === "calculado" ? "calculado pela NBR 6123 com o fechamento das faces (Tabela 4 nas paredes, Tabelas 5/6 ou 17/18 na cobertura, cpi pelo 6.2 e Anexo D)" : EN.vento === "interna" ? "não considerado: estrutura dentro de outra edificação (declarado pelo engenheiro)" : "NÃO VERIFICADO — " + nvS.filter(function (x) { return /Vento/.test(x.tema); }).map(function (x) { return x.motivo; }).join("; ");
+      sec("geometria", "Geometria lida do modelo e envoltório",
+        "<p>O sistema leu a estrutura desenhada (sem formulário): " + arr(EN.resumo).map(function (x) { return t(x, "envoltório"); }).join(" ") + "</p>" +
+        (gsvg ? fig(gsvg, "Planta: contorno da estrutura, eixos e as faces do envoltório (azul cheio = fechada; laranja tracejado = aberta)") : "") +
+        (fcs.length ? tabela(["#", "Face", { t: "Comprimento (m)", n: 1 }, { t: "Altura (m)", n: 1 }, "Pilares na face", "Fechamento"], fcs.map(function (f, i) { var fe = obj(f.fechamento); return [String(i + 1), t(f.nome, "face"), br(f.L, 2), br(f.altura, 2), esc(arr(f.marcas).join(", ") || "—"), t(fe.nome || "Aberta", "face") + (fe.h != null ? " (h = " + br(fe.h, 2) + " m)" : "")]; }), { legenda: leg("Faces do envoltório (lidas da geometria) e o fechamento escolhido pelo engenheiro") }) : "") +
+        tabela(["Item", "Valor"], [["Tipo de planta", esc({ retangular: "retangular", poligonal: "poligonal", plano: "num plano vertical só (pórtico/treliça plana)", pontual: "um pilar", vazio: "—" }[EN.tipo] || EN.tipo)], ["Área em planta", un(num(EN.area, 0), 2, "m²")], ["Cobertura", t(obj(EN.coberturaFechamento).nome || "Sem cobertura", "cobertura") + (obj(obj(EN.coberturaFechamento).telha).nome ? " — " + t(EN.coberturaFechamento.telha.nome, "telha") + " (" + br(num(EN.coberturaFechamento.telha.peso, NaN), 4) + " kN/m², " + t(EN.coberturaFechamento.telha.texto, "telha") + ")" : "")], ["Vento", esc(vSit)]], { legenda: leg("Envoltório") }));
+    }
 
     /* 4. modelo */
     var linhasM = membros.map(function (m) {
@@ -187,8 +285,8 @@
               Object.keys(obj(d.aplicada)).map(function (k) { return k + ": " + br(d.aplicada[k], 2) + " kN" + (fin(obj(d.esperada)[k]) ? " (q × A = " + br(d.esperada[k], 2) + ")" : ""); }).join("<br>")];
     });
     var pt = arr(CR.pontuais).map(function (p) { return [t(p.nome, "pontual"), esc(p.no), br(p.F[0], 2) + "; " + br(p.F[1], 2) + "; " + br(p.F[2], 2), esc(p.caso)]; });
-    var vt = r.vento ? (function (V) { return "<h3>Vento (NBR 6123)</h3>" + tabela(["Grandeza", "Valor"], [["V0", un(V.v0, 1, "m/s") + (V.v0Info ? " — " + t(V.v0Info.texto || V.v0Info.motivo || "", "vento") : "")], ["S1", br(obj(V.s1).valor, 2)], ["S2", br(obj(V.s2).valor, 3)], ["S3", br(obj(V.s3).valor, 2)], ["q", un(V.q, 3, "kN/m²")], ["Casos", String(arr(r.ventoCasos).length)]], { legenda: leg("Vento") }) +
-      '<p class="nota">Paredes fechadas → pilares da face por faixa de influência; cobertura → vigas das áreas de cobertura por faixas (normal à cobertura). Coeficientes da NBR 6123:1988 (conferir na 2023).</p>'; })(r.vento) : "<p>Vento: não considerado (estrutura interna/coberta por outra edificação, ou não indicado pelo engenheiro) — ver itens não abrangidos.</p>";
+    var vt = r.vento ? (function (V) { return "<h3>Vento (NBR 6123)</h3>" + tabela(["Grandeza", "Valor"], [].concat(V.v0Info && (V.v0Info.descricao || fin(V.v0Info.lat)) ? [["Local da obra", esc(V.v0Info.descricao || "") + (fin(V.v0Info.lat) ? (V.v0Info.descricao ? " — " : "") + br(V.v0Info.lat, 4) + "°; " + br(V.v0Info.lon, 4) + "°" : "")]] : [], [["V0", un(V.v0, 1, "m/s") + (V.v0Info ? " — " + t(V.v0Info.texto || V.v0Info.motivo || (V.v0Info.mapa && V.v0Info.mapa.texto) || "", "vento") : "")], ["S1", br(obj(V.s1).valor, 2)], ["S2", br(obj(V.s2).valor, 3)], ["S3", br(obj(V.s3).valor, 2)], ["q", un(V.q, 3, "kN/m²")], ["Casos", String(arr(r.ventoCasos).length)]]), { legenda: leg("Vento") }) +
+      '<p class="nota">Paredes fechadas → pilares da face por faixa de influência; cobertura → vigas das áreas de cobertura por faixas (normal à cobertura). Coeficientes da NBR 6123:1988 (conferir na 2023).</p>' + mapaVento(V); })(r.vento) : "<p>Vento: não considerado (estrutura interna/coberta por outra edificação, ou não indicado pelo engenheiro) — ver itens não abrangidos.</p>";
     sec("acoes", "Ações",
       "<h3>Permanentes</h3><p>Peso próprio dos perfis: 78,5 kN/m³ × área da seção × " + br(1 + num(CR.acrescimo, 0.05), 2) + " (acréscimo de " + br(num(CR.acrescimo, 0.05) * 100, 0) + " % de chapas, parafusos e soldas das ligações — premissa de projeto), caso G (γ 1,25).</p>" +
       "<h3>Ações por área (permanentes de revestimento e sobrecarga de uso)</h3>" +
@@ -226,11 +324,11 @@
     var dim = membros.map(function (m) {
       var v = obj(r.membros[m.id]), vs = arr(v.verificacoes), pr = obj(v.pior);
       var h = "<h3>" + esc(m.id) + " — " + t(m.nome, "peça") + " — " + esc(m.secao.nome) + " (" + esc(obj(m.aco).id) + ")</h3>" +
-        "<p>Razão máxima <b>" + br(v.razao, 3) + "</b> — " + sit(v.ok) + (v.governante ? "; governa: " + t(v.governante, m.id) : "") + (pr.comb ? " (combinação " + esc(pr.comb) + ", x = " + br(pr.x, 2) + " m)" : "") + ". Norma: " + esc(v.edicao || "NBR 8800") + ".</p>" +
-        tabela(["Verificação", "Item", { t: "Solicitante", n: 1 }, { t: "Resistente", n: 1 }, { t: "Razão", n: 1 }], vs.map(function (q) { return { c: [t(q.nome, m.id), t(q.item, m.id), br(q.solicitante, 2) + (q.unidade ? NB + esc(q.unidade) : ""), br(q.resistencia, 2) + (q.unidade ? NB + esc(q.unidade) : ""), br(q.razao, 3)], cls: q.razao > 1 ? "linha-falha" : "" }; }), { cls: "compacta" });
+        "<p>Razão máxima <b>" + br(v.razao, 3) + "</b> — " + sit(v.ok) + (v.governante ? "; governa: " + ix(t(v.governante, m.id)) : "") + (pr.comb ? " (combinação " + esc(pr.comb) + ", x = " + br(pr.x, 2) + " m)" : "") + ". Norma: " + esc(v.edicao || "NBR 8800") + ".</p>" +
+        tabela(["Verificação", "Item", { t: "Solicitante", n: 1 }, { t: "Resistente", n: 1 }, { t: "Razão", n: 1 }], vs.map(function (q) { return { c: [ix(t(q.nome, m.id)), ix(t(q.item, m.id)), br(q.solicitante, 2) + (q.unidade ? NB + esc(q.unidade) : ""), br(q.resistencia, 2) + (q.unidade ? NB + esc(q.unidade) : ""), br(q.razao, 3)], cls: q.razao > 1 ? "linha-falha" : "" }; }), { cls: "compacta" });
       var gov = vs.filter(function (q) { return q.nome === v.governante; })[0];
-      if (gov && arr(gov.passos).length) h += "<h4>Passos — " + t(gov.nome, m.id) + "</h4><ul>" + arr(gov.passos).slice(0, 18).map(function (p) { return "<li>" + t(p.rotulo, m.id) + (p.formula ? ' <span class="eq">' + t(p.formula, m.id) + "</span>" : "") + (p.valor != null ? " = <b>" + t(typeof p.valor === "number" ? br(p.valor, 3) : p.valor, m.id) + "</b>" : "") + (p.extra ? ' <span class="nota">' + t(p.extra, m.id) + "</span>" : "") + "</li>"; }).join("") + "</ul>";
-      if (arr(v.avisos).length) h += '<p class="nota">' + arr(v.avisos).map(function (a) { return t(a, m.id); }).join(" · ") + "</p>";
+      if (gov && arr(gov.passos).length) h += "<h4>Passos — " + ix(t(gov.nome, m.id)) + "</h4><ul>" + arr(gov.passos).slice(0, 18).map(function (p) { return "<li>" + ix(t(p.rotulo, m.id)) + (p.formula ? ' <span class="eq">' + ix(t(p.formula, m.id)) + "</span>" : "") + (p.valor != null ? " = <b>" + ix(t(typeof p.valor === "number" ? br(p.valor, 3) : p.valor, m.id)) + "</b>" : "") + (p.extra ? ' <span class="nota">' + ix(t(p.extra, m.id)) + "</span>" : "") + "</li>"; }).join("") + "</ul>";
+      if (arr(v.avisos).length) h += '<p class="nota">' + arr(v.avisos).map(function (a) { return ix(t(a, m.id)); }).join(" · ") + "</p>";
       if (v.sugestao) h += caixa("<b>Sugestão:</b> " + t(v.sugestao, m.id), true);
       return h;
     }).join("");
@@ -253,13 +351,24 @@
       }).join(""));
 
     /* 12. esforços nas pontas (para as ligações) */
-    sec("ligacoes", "Esforços nas pontas das barras (para o detalhamento das ligações)", "<p>As ligações NÃO foram dimensionadas por este cálculo (ver itens não abrangidos): a tabela traz, para cada ponta, o maior esforço normal, a maior cortante e o maior momento das combinações últimas, para o projeto das ligações.</p>" +
+    sec("ligacoes", "Esforços nas pontas das barras (para o detalhamento das ligações)", (ligOk ? "<p>Todas as ligações foram dimensionadas com estes esforços (seções seguintes). A tabela traz, para cada ponta, o maior esforço normal, a maior cortante e o maior momento das combinações últimas.</p>" : "<p>" + (ligsDim.length && enc.length - encSem.length ? (enc.length - encSem.length - encGuard.length) + " de " + enc.length + " ligações foram dimensionadas com estes esforços (seções seguintes); pendentes: " + ligPend.replace(/; $/, "") + " (ver itens não abrangidos)" : "As ligações NÃO foram dimensionadas por este cálculo (ver itens não abrangidos)") + ": a tabela traz, para cada ponta, o maior esforço normal, a maior cortante e o maior momento das combinações últimas, para o projeto das ligações.</p>") +
       tabela(["Barra", "Ponta", "Condição", { t: "N (kN)", n: 1 }, { t: "V (kN)", n: 1 }, { t: "M (kN·m)", n: 1 }], [].concat.apply([], membros.map(function (m) { var e = envs[m.id]; return ["ini", "fim"].map(function (k) { var p = e.pontas[k], c = obj(m.pontas)[k] || {}; return [esc(m.id), k === "ini" ? "início" : "fim", esc(COND[c.tipo] || c.tipo || "—"), br(p.N, 2), br(p.V, 2), br(p.M, 2)]; }); })), { legenda: leg("Esforços de cálculo nas pontas"), cls: "compacta" }));
 
     /* METÁLICA › L (14/10/2026, js/acoligsugere.js): as ligações escolhidas e dimensionadas pela ligação inteligente
        (opcoes.ligacoes = [{ id, titulo, resultado }]; na tela, as do modelo — js/metalligsugui.js) */
-    var LSg = dep("AcoLigSugere", "./acoligsugere.js"), ligsDim = arr(opcoes.ligacoes).length ? opcoes.ligacoes : (global.MetalLigSugUI && global.MetalLigSugUI.ligacoesDoModelo ? global.MetalLigSugUI.ligacoesDoModelo() : []);
     var secLig = LSg && LSg.secaoMemorial ? LSg.secaoMemorial(ligsDim) : null;
+    if (enc.length && ligsDim.length) {
+      var nRef = enc.filter(function (e) { return e.lig && e.lig.comCalculo; }).length;
+      var resumoLig = "<p>Encontros do modelo (pontas de viga × peça de apoio e bases de pilar) e a ligação de cada um, " + (nRef && !encGuard.length ? "REFEITA com os esforços deste cálculo (o que está desenhado é comparado com o que este cálculo dimensiona)" : nRef ? "REFEITA com os esforços deste cálculo em " + nRef + " encontro(s); nas " + encGuard.length + " marcadas \"não refeita\", a verificação é a dos esforços guardados na ligação — NÃO vale para este cálculo" : "com os esforços guardados na ligação — NÃO refeitas com este cálculo (recalcule com a estrutura desenhada)") + ".</p>" +
+        tabela(["Encontro", "Condição no cálculo", "Ligação", { t: "Razão", n: 1 }, "Situação", "Desenho × cálculo"], enc.map(function (e) {
+          var l = e.lig, rr = l && l.resultado;
+          return [esc(e.texto), esc(COND[e.cond] || e.cond || "—"), l ? esc(l.info && l.info.nome ? l.info.nome : l.titulo) : '<span class="falha">sem ligação</span>', rr ? br(rr.razao, 2) : "—", rr ? sit(rr.ok) : '<span class="falha">não dimensionada</span>',
+                  !l ? "—" : (e.incoerente ? '<span class="falha">' + esc(e.incoerente) + "</span>" : (l.comCalculo ? (l.confere ? '<span class="ok">confere</span>' : '<span class="falha">' + esc(l.diferenca || "difere") + " — reaplique</span>") : '<span class="falha">não refeita (esforços guardados na ligação)</span>'))];
+        }), { legenda: leg("Ligações por encontro"), cls: "compacta" });
+      var fundTxt = ligsDim.filter(function (l) { return l.resultado && l.resultado.fundacao; }).map(function (l) { var f = l.resultado.fundacao; return esc(f.rotulo + " " + f.id) + (f.dimensoes ? " " + br(f.dimensoes.B, 2) + " × " + br(f.dimensoes.L, 2) + " × " + br(f.dimensoes.h, 2) + " m" : "") + ", fck " + br(f.fck, 0) + " MPa" + (f.fckInformado ? "" : " (adotado)") + ", A2/A1 = " + br(f.A2A1, 2); });
+      if (fundTxt.length) resumoLig += "<p><b>Placas de base ancoradas na fundação do modelo:</b> " + fundTxt.join("; ") + ". Verificados: pressão no concreto com o A2/A1 do topo, a placa dentro do topo, o chumbador dentro da altura (menos o cobrimento), o cone de concreto, o arrancamento do gancho, a ruptura da borda por cisalhamento, o pryout e a interação (ACI 318-19, cap. 17, SI — a NBR 6118 não traz o método). A armadura, a punção e a flexão da fundação e a tensão no solo são do projeto da fundação, com as reações da seção de reações.</p>";
+      sec("ligacoes-resumo", "Ligações do modelo (resumo)", resumoLig);
+    }
     if (secLig) sec(secLig.id, secLig.titulo, secLig.html);
 
     /* 13. materiais (lista) */
@@ -270,7 +379,10 @@
       (Math.abs(tot - num(r.peso, tot)) > 0.5 ? (avisos.push("Peso da lista (" + br(tot, 1) + " kg) diferente do resultado (" + br(r.peso, 1) + " kg)."), "") : ""));
 
     /* 14. decisões, avisos, não abrangidos */
-    var naoAb = arr(r.naoAbrangidos).slice(); if (!r.vento) naoAb.unshift("Ação do VENTO (NBR 6123): não considerada neste cálculo.");
+    var naoAb = arr(r.naoAbrangidos).slice(); if (!r.vento && !nvS.some(function (x) { return /Vento/.test(x.tema); })) naoAb.unshift(EN.vento === "interna" ? "Ação do VENTO (NBR 6123): não considerada — estrutura dentro de outra edificação (declarado pelo engenheiro)." : "Ação do VENTO (NBR 6123): não considerada neste cálculo.");
+    if (enc.length && ligsDim.length && !encSem.length && !ligOk) naoAb = naoAb.map(function (x) { return /^Dimensionamento das LIGAÇÕES/.test(x) ? "Ligações desenhadas em todos os encontros, mas NÃO todas dimensionadas com os esforços deste cálculo: " + ligPend.replace(/; $/, "") + " (seção \"Ligações do modelo\"). Fora: o projeto da fundação (armadura, punção, solo)." : x; });
+    if (ligOk) naoAb = naoAb.map(function (x) { return /^Dimensionamento das LIGAÇÕES/.test(x) ? "Ligações: TODAS dimensionadas pela ligação inteligente com os esforços deste cálculo (seção \"Ligações do modelo\"); as placas de base, ancoradas na fundação do modelo quando ela está desenhada. Fora: o projeto da fundação (armadura, punção, solo)." : x; });
+    else if (ligsDim.length && encSem.length) naoAb.unshift("Ligações SEM dimensionamento (" + encSem.length + "): " + encSem.map(function (e) { return e.texto; }).join("; ") + ".");
     sec("decisoes", "Decisões do sistema", tabela(["Tema", "Decisão", "Motivo"], arr(r.decisoes).map(function (d) { return [t(d.tema, "decisão"), t(d.decisao, "decisão"), t(d.motivo, "decisão")]; }), { legenda: leg("O que o sistema decidiu e por quê"), cls: "decisoes" }) +
       (r.otimizacao && arr(r.otimizacao.log).length ? "<h3>Otimização dos perfis</h3><ul>" + r.otimizacao.log.map(function (x) { return "<li>" + t(x, "otimização") + "</li>"; }).join("") + "</ul>" : ""));
     sec("avisos", "Avisos, conferências e itens não abrangidos",
@@ -287,7 +399,7 @@
     var capa = '<section class="capa"><div class="capa-topo">' + (em.logoDataUrl && /^data:image\//.test(em.logoDataUrl) ? '<img class="logo" src="' + esc(em.logoDataUrl) + '" alt="Logotipo">' : ph("", "LOGOTIPO")) + '<div class="emp"><b>' + ph(em.nome, "EMPRESA") + "</b>" + (em.cnpj ? "<br>CNPJ " + esc(em.cnpj) : "") + "</div></div>" +
       '<div class="faixa"></div><div class="sobre">MEMORIAL DE CÁLCULO</div><h1>Estrutura metálica</h1><div class="obra">' + esc(obraNome) + "</div>" + (ob.endereco || ob.cidade ? '<div class="end">' + esc([ob.endereco, ob.cidade].filter(Boolean).join(" — ")) + "</div>" : "") +
       '<div class="arte">' + (img.perspectiva ? '<img src="' + esc(img.perspectiva) + '" alt="Perspectiva">' : svgModelo(r, { alturaMax: 320 })) + "</div>" +
-      tabela(["Item", ""], [["Cliente", ph(ob.cliente, "CLIENTE")], ["Estrutura", esc(descr) + (dims ? " — " + esc(dims) : "") + "; " + un(r.peso, 0, "kg") + " de aço"], ["Situação", r.aprovado ? '<span class="ok">todas as verificações atendem</span>' : '<span class="falha">' + r.falhas + " verificação(ões) não atende(m)</span>"],
+      tabela(["Item", ""], [["Cliente", ph(ob.cliente, "CLIENTE")], ["Estrutura", esc(descr) + (dims ? " — " + esc(dims) : "") + "; " + un(r.peso, 0, "kg") + " de aço"], ["Situação", situacao],
         ["Responsável técnico", ph(rp.nome, "NOME DO RESPONSÁVEL TÉCNICO") + " — CREA " + ph(rp.crea, "Nº DO CREA")], ["Revisão / data", esc(rev) + " — " + esc(data)]]) + "</section>";
     var sum = '<section class="sum"><h2>Sumário</h2><ol>' + secs.map(function (s, i) { return '<li><a href="#sec-' + s.id + '">' + (i + 1) + ". " + esc(s.titulo) + "</a></li>"; }).join("") + "</ol></section>";
     var html = '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="generator" content="OrçaPRO — AcoMemorialLivre"><title>' + esc(titulo) + "</title><style>" + CSS(obraNome, rev, em, rp) + "</style></head><body>" + capa + sum + corpo + "</body></html>";
@@ -318,7 +430,7 @@
       ".assin { margin: 22mm auto 0; width: 95mm; text-align: center; font-size: 9pt; break-inside: avoid; } .assin .linha { border-top: 0.6pt solid #1d2733; margin-bottom: 2mm; }";
   }
 
-  var AcoMemorialLivre = { gerar: gerar, _int: { somaCargas: somaCargas, somaReacoes: somaReacoes, svgModelo: svgModelo } };
+  var AcoMemorialLivre = { gerar: gerar, _int: { somaCargas: somaCargas, somaReacoes: somaReacoes, svgModelo: svgModelo, encontros: encontros } };
   global.AcoMemorialLivre = AcoMemorialLivre;
   if (typeof module !== "undefined" && module.exports) module.exports = AcoMemorialLivre;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

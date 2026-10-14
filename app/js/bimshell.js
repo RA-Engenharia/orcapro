@@ -970,6 +970,16 @@
           d.setAttribute("aria-selected", "true");
           if (typeof self._opts.onNo === "function") self._opts.onNo(no);
         };
+        /* nó com `menu` ([{ id, rotulo, fn }]): o clique direito abre as ações dele (nível/planta: copiar para cima, criar planta) */
+        if (no.menu && no.menu.length) {
+          d.setAttribute("data-rv-menu", "1");
+          d.oncontextmenu = function (ev) {
+            ev.preventDefault(); ev.stopPropagation();
+            self._raiz.querySelectorAll("[data-rv-no]").forEach(function (x) { x.removeAttribute("aria-selected"); });
+            d.setAttribute("aria-selected", "true");
+            self._menuNo(ev.clientX, ev.clientY, no.menu);
+          };
+        }
         ul.appendChild(li);
       });
       return ul;
@@ -1029,13 +1039,18 @@
       c.appendChild(dirD);
     },
     _menuDoc: function (x, y, doc, acao) {
-      var velho = document.querySelector(".rv-menu-doc"); if (velho) velho.parentNode.removeChild(velho);
-      var m = el("div", "rv-menu-doc");
       var itens = [["janela", doc.fora ? "Trazer de volta para esta janela" : "Abrir em outra janela (outro monitor)"], ["duplicar", "Duplicar esta vista"], ["lado", this._estado.lado ? "Voltar para abas" : "Vistas lado a lado"]];
       if (doc.id !== "3d") itens.push(["fechar", "Fechar"]);
-      itens.forEach(function (it) {
-        var d = el("div", null, it[1]);
-        d.onclick = function () { if (m.parentNode) m.parentNode.removeChild(m); acao(it[0], doc.id); };
+      this._menuNo(x, y, itens.map(function (it) { return { id: it[0], rotulo: it[1], fn: function () { acao(it[0], doc.id); } }; }));
+    },
+    /* menu flutuante do clique direito (abas e nós do Navegador): itens = [{ id, rotulo, fn }] */
+    _menuNo: function (x, y, itens) {
+      var velho = document.querySelector(".rv-menu-doc"); if (velho) velho.parentNode.removeChild(velho);
+      var m = el("div", "rv-menu-doc");
+      (itens || []).forEach(function (it) {
+        var d = el("div", null, it.rotulo);
+        if (it.id) d.setAttribute("data-rv-menu-item", it.id);
+        d.onclick = function () { if (m.parentNode) m.parentNode.removeChild(m); if (typeof it.fn === "function") it.fn(); };
         m.appendChild(d);
       });
       document.body.appendChild(m);

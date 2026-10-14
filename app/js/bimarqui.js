@@ -49,6 +49,21 @@
       cobertura: { ref: "acima", deslocBase: 0 }
     }
   };
+  /* S8 (14/10/2026) — O TOPO DA VIGA DEPENDE DA VISTA. Numa planta ESTRUTURAL
+     (fôrma) de um nível, a viga é a que sustenta o piso DAQUELE nível: nasce com
+     o topo no nível da vista (deslocamento 0). Na planta de piso/arquitetura (e
+     no 3D) continua a regra da P1-B: pendurada do nível acima (a viga do teto).
+     Antes, a viga desenhada na planta do "Piso do mezanino" (último nível) ia
+     para mezanino + pé-direito — topo a +6,00 num mezanino a +3,00. A escolha
+     aparece na ferramenta (Restrições › Topo da viga) e fica gravada POR TIPO
+     DE VISTA neste aparelho. Peças já existentes não mudam (vale para a peça nova). */
+  var CHAVE_VIGA_TOPO = "orcapro:bim:viga-topo:v1";
+  var VIGA_TOPO_PADRAO = { estrutural: "nivel", piso: "acima" };
+  cfg.vigaTopo = (function () {
+    var o = { estrutural: VIGA_TOPO_PADRAO.estrutural, piso: VIGA_TOPO_PADRAO.piso };
+    try { var g = JSON.parse((global.localStorage && global.localStorage.getItem(CHAVE_VIGA_TOPO)) || "null"); if (g) ["estrutural", "piso"].forEach(function (k) { if (g[k] === "nivel" || g[k] === "acima") o[k] = g[k]; }); } catch (e) {}
+    return o;
+  })();
   var G = null;   /* o Gestao: níveis da obra (_nivLer) e o tipo de parede ativo (_alvTipo) */
 
   /* o canto em L: topo (união pela linha de centro — a parede criada antes passa) ou meia-esquadria */
@@ -96,6 +111,38 @@
       ]);
     },
 
+    /* --------------------------------- S8 — topo da viga por tipo de vista */
+    VIGA_TOPO: { nivel: "No nível da vista (sustenta o piso dele)", acima: "Pendurada do nível acima (viga do teto)" },
+    /* o tipo da vista na frente: "estrutural" (planta estrutural/fôrma, a de
+       fundação e a chamada delas) ou "piso" (planta de piso, forro, 3D, corte) */
+    contextoVista: function () {
+      try {
+        var P = global.Bim2D, a = G && G._bimVxEst ? G._bimVxEst().ativa : null;
+        var d = P && a && P.ehVista2d && P.ehVista2d(a) ? P.def(a) : null;
+        if (d && d.tipo === "planta" && (d.p6 === "estrutural" || d.p6base === "estrutural")) return "estrutural";
+      } catch (e) {}
+      return "piso";
+    },
+    vigaTopo: function (ctx) {
+      var k = ctx === "estrutural" || ctx === "piso" ? ctx : this.contextoVista(), v = cfg.vigaTopo && cfg.vigaTopo[k];
+      return v === "nivel" || v === "acima" ? v : VIGA_TOPO_PADRAO[k];
+    },
+    definirVigaTopo: function (valor, ctx) {
+      if (valor !== "nivel" && valor !== "acima") return false;
+      var k = ctx === "estrutural" || ctx === "piso" ? ctx : this.contextoVista();
+      cfg.vigaTopo[k] = valor;
+      try { if (global.localStorage) global.localStorage.setItem(CHAVE_VIGA_TOPO, JSON.stringify(cfg.vigaTopo)); } catch (e) {}
+      this.enviar();
+      return true;
+    },
+    /* a vista na frente mudou de tipo desde o último envio? Reenvia (a regra da viga é por vista) */
+    garantirContexto: function () {
+      if (!this.ativo()) return false;
+      if (this._ctxEnviado === this.contextoVista()) return false;
+      this.enviar();
+      return true;
+    },
+
     /* ------------------------------------------------------------ tipos */
     tipoParede: function () {
       var t = null;
@@ -111,6 +158,7 @@
     enviar: function () {
       var b = B(); if (!b || !b.editarB2) return null;
       var self = this, rs = {};
+      this._ctxEnviado = this.contextoVista();   /* S8: a regra do topo da viga é da vista na frente */
       ["parede", "pilar", "escada", "laje", "viga", "cobertura"].forEach(function (k) { rs[k] = self.restricoesFerramenta(k); });
       return b.editarB2({ nivel: this.nivelAtivo(), tipoParede: this.tipoParede(), anexarTopo: cfg.anexarTopo, unir: cfg.unir, juntaCanto: cfg.juntaCanto, lajeModo: cfg.lajeModo,
         tipoLaje: this.tipoLaje(), perfilPilar: cfg.perfilPilar, materialPilar: cfg.materialPilar, giroPilar: cfg.giroPilar,
@@ -131,6 +179,8 @@
         return { nivelBase: String(at.id), deslocBase: num0(r.deslocBase, 0), restricaoSuperior: sup, deslocSuperior: num0(r.deslocSuperior, 0), alturaNaoConectada: anc };
       }
       if (sub === "laje") return { nivelBase: String(at.id), deslocBase: num0(r.deslocBase, 0) };
+      /* S8: na planta estrutural (ou com "no nível da vista" escolhido), o topo da viga é o nível da vista */
+      if (sub === "viga" && this.vigaTopo() === "nivel") return { nivelBase: String(at.id), deslocBase: num0(r.deslocBase, 0) };
       /* viga e cobertura: o nível de referência (padrão: o de cima — a viga
          pendura do nível de cima); sem nível acima, o atual +
          o pé-direito (a cota de antes) */
@@ -165,9 +215,16 @@
         ps.push(ro("b2f:rs:base", RT.nivelBase, at.nome + " (o nível atual)"));
         ps.push({ id: "b2f:rs:deslocBase", rotulo: RT.deslocBase, unidade: "m", tipo: "numero", passo: "0.01", valor: num0(r.deslocBase, 0) });
       } else {
-        var opR = [{ id: "acima", rotulo: acima ? "O nível acima: " + acima.nome : "O nível acima (não há: o atual + o pé-direito)" }]
-          .concat(L.filter(function (n) { return !acima || String(n.id) !== String(acima.id); }).map(function (n) { return { id: String(n.id), rotulo: n.nome }; }));
-        ps.push({ id: "b2f:rs:ref", rotulo: RT.nivelBase, tipo: "lista", valor: r.ref || "acima", opcoes: opR });
+        /* S8: a viga mostra a regra do topo DESTA vista (trocável; gravada por tipo de vista) */
+        var ctxV = sub === "viga" ? this.contextoVista() : null, vt = sub === "viga" ? this.vigaTopo(ctxV) : null, self2 = this;
+        if (sub === "viga") ps.push({ id: "b2f:vigaTopo", rotulo: "Topo da viga (" + (ctxV === "estrutural" ? "planta estrutural" : "planta de piso e 3D") + ")", tipo: "lista", valor: vt,
+          opcoes: Object.keys(this.VIGA_TOPO).map(function (k) { return { id: k, rotulo: self2.VIGA_TOPO[k] }; }) });
+        if (vt === "nivel") ps.push(ro("b2f:rs:refNivel", RT.nivelBase, at.nome + " (o nível da vista)"));
+        else {
+          var opR = [{ id: "acima", rotulo: acima ? "O nível acima: " + acima.nome : "O nível acima (não há: o atual + o pé-direito)" }]
+            .concat(L.filter(function (n) { return !acima || String(n.id) !== String(acima.id); }).map(function (n) { return { id: String(n.id), rotulo: n.nome }; }));
+          ps.push({ id: "b2f:rs:ref", rotulo: RT.nivelBase, tipo: "lista", valor: r.ref || "acima", opcoes: opR });
+        }
         ps.push({ id: "b2f:rs:deslocBase", rotulo: RT.deslocBase, unidade: "m", tipo: "numero", passo: "0.01", valor: num0(r.deslocBase, 0) });
       }
       return { nome: "Restrições", params: ps };
@@ -406,6 +463,7 @@
     mudarFerramenta: function (sub, pid, valor) {
       var k = String(pid).replace(/^b2f:/, ""), num = parseFloat(String(valor).replace(",", "."));
       if (k === "nivel") cfg.nivelId = valor;
+      else if (k === "vigaTopo") this.definirVigaTopo(String(valor));   /* S8 */
       else if (k.indexOf("rs:") === 0) this._mudarRestrFerr(sub, k.slice(3), valor);   /* P1-B */
       else if (k === "tipoParede" && G && global.AlvTipos && global.AlvTipos.TIPOS[valor]) {
         /* o tipo ativo é o MESMO do painel "Tipos de parede" (Gestao._alvTipoId) */

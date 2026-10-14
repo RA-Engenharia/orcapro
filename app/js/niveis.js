@@ -96,17 +96,114 @@
       /* id derivado do TAMANHO da lista colide: exclua o do meio e crie outro,
          e o novo nasce com o id de um que ainda existe — o salvar então
          sobrescreve o errado e some com um pavimento. Usa o maior sufixo. */
-      var maior = 0;
-      ns.forEach(function (x) {
-        var m = /^nivel-(\d+)$/.exec(String(x.id));
-        if (m) maior = Math.max(maior, parseInt(m[1], 10));
-      });
       return {
-        id: opts.id || ("nivel-" + (maior + 1)),
+        id: opts.id || this.idLivre(ns),
         nome: opts.nome || (n === 0 ? "Térreo" : n + "º pavimento"),
         elevacao: r3(base + (ultimo ? pd : 0)),
         peDireitoDeclarado: r3(pd)
       };
+    },
+
+    /* id novo que não colide. O gravado leva a obra na frente
+     * ("obra::nivel-2", js/gestao.js _nivChave): o sufixo é lido nos dois
+     * formatos — só com "^nivel-" o maior de uma obra já gravada era 0 e o
+     * novo nascia "nivel-1", a chave de um nível que JÁ existe. */
+    idLivre: function (niveis) {
+      var maior = 0, usados = {};
+      (niveis || []).forEach(function (x) {
+        if (!x || x.id == null) return;
+        var s = String(x.id); usados[s] = 1;
+        var cauda = s.indexOf("::") >= 0 ? s.slice(s.lastIndexOf("::") + 2) : s;
+        usados[cauda] = 1;
+        var m = /^nivel-(\d+)$/.exec(cauda);
+        if (m) maior = Math.max(maior, parseInt(m[1], 10));
+      });
+      var k = maior + 1;
+      while (usados["nivel-" + k]) k++;
+      return "nivel-" + k;
+    },
+
+    /* ---------------------------------------------------------------
+     * COPIAR UM NÍVEL PARA CIMA (de QUALQUER nível, não só do último):
+     * o novo nasce na cota DELE + o pé-direito DELE, com os mesmos
+     * parâmetros (corte da planta, pé-direito) e um nome sugerido.
+     * Se a cota já tem nível, NÃO duplica: avisa quem está lá e sugere a
+     * próxima livre (subindo de pé-direito em pé-direito).
+     * opts = { peDireito?, nome?, elevacao? (cota pedida pelo usuário) }
+     * Devolve { ok, nivel, cotaPedida, ocupadaPor, aviso } ou { ok:false, motivo }.
+     * --------------------------------------------------------------- */
+    copiarAcima: function (niveis, id, opts) {
+      opts = opts || {};
+      var ns = this.listar(niveis), base = null;
+      for (var i = 0; i < ns.length; i++) if (String(ns[i].id) === String(id)) base = ns[i];
+      if (!base) return { ok: false, motivo: "Nível de origem não encontrado." };
+      var bruto = this.normalizar(niveis).filter(function (x) { return String(x.id) === String(base.id); })[0] || {};
+      var pd = opts.peDireito != null ? num(opts.peDireito) : (base.peDireito || bruto.peDireitoDeclarado || 2.80);
+      if (!(pd > 0)) return { ok: false, motivo: "O pé-direito tem que ser maior que zero." };
+      var pedida = opts.elevacao != null && String(opts.elevacao).trim() !== "" ? r3(opts.elevacao) : r3(base.elevacao + pd);
+      function quem(z) { for (var j = 0; j < ns.length; j++) if (Math.abs(ns[j].elevacao - z) < 0.005) return ns[j]; return null; }
+      var ocupada = quem(pedida), cota = pedida, voltas = 0;
+      while (quem(cota) && voltas < 200) { cota = r3(cota + pd); voltas++; }
+      var nome = str(opts.nome).trim() || this.nomeSugerido(ns);
+      function br(z) { return z.toFixed(2).replace(".", ","); }
+      var aviso = ocupada ? "Já existe o " + ocupada.nome + " na cota " + br(ocupada.elevacao) + " m. O novo nível vai para a próxima cota livre, " + br(cota) + " m." : "";
+      return {
+        ok: true,
+        nivel: { id: this.idLivre(ns), nome: nome, elevacao: cota, corte: bruto.corte != null ? bruto.corte : null, peDireitoDeclarado: r3(pd) },
+        origem: { id: base.id, nome: base.nome, elevacao: base.elevacao },
+        cotaPedida: pedida, ocupadaPor: ocupada ? { id: ocupada.id, nome: ocupada.nome } : null, aviso: aviso
+      };
+    },
+    /* ---------------------------------------------------------------
+     * CRIAR NÍVEL AQUI (a partir de uma PEÇA: topo do pilar, face de cima
+     * da laje…). Cota já ocupada NÃO vira um segundo nível: devolve o que
+     * está lá (`existente`), e a tela oferece só criar a vista dele.
+     * Se o nível novo fica no TOPO, leva o pé-direito do de baixo (ou 2,80)
+     * para o que nascer nele ter altura; no meio, o pé-direito se deriva.
+     * --------------------------------------------------------------- */
+    criarNaCota: function (niveis, cota, opts) {
+      opts = opts || {};
+      var bruta = typeof cota === "number" ? cota : parseFloat(String(cota == null ? "" : cota).trim().replace(",", "."));
+      if (typeof bruta !== "number" || !isFinite(bruta)) return { ok: false, motivo: "Cota inválida." };
+      var z = r3(cota), ns = this.listar(niveis), i;
+      function br(v) { return v.toFixed(2).replace(".", ","); }
+      for (i = 0; i < ns.length; i++) {
+        if (Math.abs(ns[i].elevacao - z) < 0.005) {
+          return { ok: true, nivel: null, existente: { id: ns[i].id, nome: ns[i].nome, elevacao: ns[i].elevacao },
+            aviso: "Já existe o " + ns[i].nome + " na cota " + br(ns[i].elevacao) + " m — não dá para ter dois níveis na mesma cota. Dá para criar só a vista dele." };
+        }
+      }
+      var nome = str(opts.nome).trim() || this.nomeSugerido(ns);
+      for (i = 0; i < ns.length; i++) if (ns[i].nome.toUpperCase().trim() === nome.toUpperCase()) return { ok: false, motivo: "Já existe um nível chamado “" + nome + "”." };
+      var abaixo = null, acima = null;
+      ns.forEach(function (n) { if (n.elevacao < z) abaixo = n; else if (!acima && n.elevacao > z) acima = n; });
+      var pd = acima ? null : r3((abaixo && abaixo.peDireitoDeclarado) || (abaixo && abaixo.peDireito) || 2.80);
+      return { ok: true, existente: null, aviso: "",
+        nivel: { id: this.idLivre(ns), nome: nome, elevacao: z, corte: null, peDireitoDeclarado: pd },
+        abaixo: abaixo ? { id: abaixo.id, nome: abaixo.nome } : null, acima: acima ? { id: acima.id, nome: acima.nome } : null };
+    },
+    /* as cotas que uma peça oferece para "Criar nível aqui": topo e base.
+     * peca = { tipo, cy, altura } (peça do modelador: cy é o centro) ou
+     * { tipo, min, max } (a caixa da malha, em cota). Laje fala em face. */
+    cotasDaPeca: function (peca) {
+      var p = peca || {}, base, topo;
+      if (isFinite(num(p.cy)) && p.cy != null && num(p.altura) > 0) { base = num(p.cy) - num(p.altura) / 2; topo = num(p.cy) + num(p.altura) / 2; }
+      else if (p.min != null && p.max != null && isFinite(num(p.min)) && isFinite(num(p.max))) { base = Math.min(num(p.min), num(p.max)); topo = Math.max(num(p.min), num(p.max)); }
+      else return [];
+      var t = str(p.tipo).toLowerCase(), laje = /laje|piso|slab/.test(t), viga = /viga|beam/.test(t);
+      return [
+        { id: "topo", rotulo: laje ? "Face de cima da laje" : viga ? "Topo da viga" : "Topo da peça", cota: r3(topo) },
+        { id: "base", rotulo: laje ? "Face de baixo da laje" : viga ? "Fundo da viga" : "Base da peça", cota: r3(base) }
+      ];
+    },
+
+    /* "Nível N" com N = quantos níveis vão existir; pula o nome que já há */
+    nomeSugerido: function (niveis) {
+      var ns = niveis || [], usados = {};
+      ns.forEach(function (x) { if (x) usados[str(x.nome).toUpperCase().trim()] = 1; });
+      var k = ns.length + 1;
+      while (usados[("Nível " + k).toUpperCase()]) k++;
+      return "Nível " + k;
     },
 
     /* Em que nível está esta altura? (para classificar elemento importado) */
