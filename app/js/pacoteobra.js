@@ -30,6 +30,14 @@
   function arr(a) { return Array.isArray(a) ? a : []; }
   function tamanhoDataUrl(s) { var i = txt(s).indexOf(','); return i < 0 ? 0 : Math.floor((s.length - i - 1) * 3 / 4); }
 
+  /* os modelos do pacote: "modelos" (lista — arquivo da obra FEDERADO: arquitetura,
+     estrutura, fundação… cada um no seu .ifc, sem juntar) ou o "modelo" único de antes */
+  function modelosDe(p) {
+    var l = arr(p && p.modelos).filter(function (m) { return m && txt(m.arquivo).trim(); });
+    if (l.length) return l;
+    return p && p.modelo && txt(p.modelo.arquivo).trim() ? [p.modelo] : [];
+  }
+
   function validar(p) {
     var erros = [], avisos = [];
     if (!p || typeof p !== 'object') return { ok: false, erros: ['o arquivo não é um pacote (JSON vazio ou inválido)'], avisos: [], resumo: null };
@@ -54,7 +62,9 @@
     if (!vistas.length && !pranchas.length && !sond.length && !dets.length) erros.push('o pacote não traz vistas, pranchas, sondagem nem fichas de detalhe');
     return {
       ok: !erros.length, erros: erros, avisos: avisos,
-      resumo: { nome: txt(p.nome), modelo: txt(p.modelo && p.modelo.arquivo), revisao: txt(p.modelo && p.modelo.revisao),
+      resumo: { nome: txt(p.nome), modelo: modelosDe(p).map(function (m) { return txt(m.arquivo); }).join(', '),
+                revisao: modelosDe(p).map(function (m) { return txt(m.revisao); }).filter(Boolean).join(', '),
+                modelos: modelosDe(p).map(function (m) { return { arquivo: txt(m.arquivo), revisao: txt(m.revisao), disciplina: txt(m.disciplina) }; }),
                 vistas: vistas.length - semNome, pastas: Object.keys(pastas).length, referencias: refs,
                 pranchas: pranchas.length, folhas: folhas, sondagens: sond.length, detalhes: dets.length,
                 imagens: Object.keys(imgs).length, arquivos: Object.keys(arqs).length, megabytes: Math.round(bytes / 1048576 * 10) / 10 }
@@ -171,14 +181,26 @@
       var ifcs = nomes.filter(function (n) { return /\.ifc$/i.test(n); });
       if (!jsons.length) throw new Error('o .zip não traz o pacote da obra (.json)');
       if (jsons.length > 1) throw new Error('o .zip traz ' + jsons.length + ' arquivos .json — o arquivo da obra leva um pacote só');
-      if (ifcs.length > 1) throw new Error('o .zip traz ' + ifcs.length + ' modelos .ifc — o pacote é de um modelo só');
       var p;
       try { p = JSON.parse((opts.decodificar || utf8)(arqs[jsons[0]])); } catch (e) { throw new Error('o pacote dentro do .zip não é um JSON válido (' + txt(e && e.message) + ')'); }
-      var ifc = ifcs.length ? { nome: nomeBase(ifcs[0]), bytes: arqs[ifcs[0]] } : null;
-      var esperado = nomeBase(p && p.modelo && p.modelo.arquivo);
+      /* 14/10/2026: arquivo da obra FEDERADO — vários .ifc, cada um listado no pacote (p.modelos). Sem a lista, continua um modelo só. */
+      var lista = modelosDe(p).map(function (m) { return nomeBase(m.arquivo); }), listaMin = lista.map(function (n) { return n.toLowerCase(); });
+      if (ifcs.length > 1 && lista.length < 2) throw new Error('o .zip traz ' + ifcs.length + ' modelos .ifc — o pacote é de um modelo só');
+      var lidos = ifcs.map(function (n) { return { nome: nomeBase(n), bytes: arqs[n] }; });
+      if (lista.length > 1) {
+        var sobra = lidos.filter(function (i) { return listaMin.indexOf(i.nome.toLowerCase()) < 0; });
+        if (sobra.length) throw new Error('o .zip traz "' + sobra.map(function (i) { return i.nome; }).join('", "') + '", que o pacote não lista — gere o arquivo da obra de novo');
+        var nomesZip = lidos.map(function (i) { return i.nome.toLowerCase(); });
+        var falta = lista.filter(function (n) { return nomesZip.indexOf(n.toLowerCase()) < 0; });
+        if (lidos.length && falta.length) throw new Error('o pacote lista "' + falta.join('", "') + '" e o .zip não traz — gere o arquivo da obra de novo');
+        lidos.sort(function (a, b) { return listaMin.indexOf(a.nome.toLowerCase()) - listaMin.indexOf(b.nome.toLowerCase()); });   // na ordem do pacote
+        return { pacote: p, ifc: lidos[0] || null, ifcs: lidos };
+      }
+      var ifc = lidos[0] || null;
+      var esperado = lista[0] || '';
       if (ifc && esperado && esperado.toLowerCase() !== ifc.nome.toLowerCase())
         throw new Error('o pacote é do modelo "' + esperado + '" e o .zip traz "' + ifc.nome + '" — gere o arquivo da obra de novo');
-      return { pacote: p, ifc: ifc };
+      return { pacote: p, ifc: ifc, ifcs: ifc ? [ifc] : [] };
     });
   }
   /* o modelo do pacote já está aberto no visualizador? (pelo nome do arquivo,
@@ -203,7 +225,7 @@
     return arr(abertos).filter(function (n) { return semRevisao(n) === base && nomeBase(n).toLowerCase() !== alvo; });
   }
 
-  var PacoteObra = { TIPO: TIPO, validar: validar, conferirModelo: conferirModelo, casar: casar, base64ParaBytes: base64ParaBytes,
+  var PacoteObra = { TIPO: TIPO, validar: validar, modelosDe: modelosDe, conferirModelo: conferirModelo, casar: casar, base64ParaBytes: base64ParaBytes,
                      chaveDetalhe: chaveDetalhe, detalhes: detalhes, mapaDetalhes: mapaDetalhes, ficha: ficha,
                      ehZip: ehZip, lerObraCompleta: lerObraCompleta, modeloAberto: modeloAberto, outraRevisao: outraRevisao };
   global.PacoteObra = PacoteObra;

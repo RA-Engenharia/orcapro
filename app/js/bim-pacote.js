@@ -1097,14 +1097,14 @@ menu: function (a) { menuDaVista(a, camera, orbit, function (p, t) { voarCam(p, 
 S.vcubeEl = vcMain.el;
 if (visitante) vcMain.el.style.display = 'none';
 S._tickPos.push(function () { vcMain.atualizar(); ajustarPlanosOrto(camera, orbit, ortoMain); });
-var cris = { hist: ['centro'], congelado: null, obj: null, estado: 'centro', t0: 0, tCarga: 0, curta: null, mo: null, c: null, escalado: null, ultimo: performance.now(), abriuEm: performance.now(), arr: null, semMov: false };
+var cris = { hist: ['cubo'], congelado: null, obj: null, estado: 'cubo', t0: 0, tCarga: 0, curta: null, mo: null, c: null, escalado: null, ultimo: performance.now(), abriuEm: performance.now(), arr: null, semMov: false };
 try { cris.semMov = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (_) {}
 function crisBA() { return (typeof window !== 'undefined') ? window.BimAbertura : null; }
 function crisSet(e) { if (e === cris.estado) return; cris.estado = e; cris.hist.push(e); if (cris.hist.length > 40) cris.hist.shift(); }
 function crisT(t0) { return cris.congelado != null ? cris.congelado : performance.now() - t0; }
 function cristalDom() {
 if (S.vcubeEl) { S.vcubeEl.style.visibility = (!cris.obj || cris.estado === 'cubo') ? '' : 'hidden'; S.vcubeEl.classList.toggle('com-cristal', !!cris.obj); }
-if (cris.obj) {
+if (cris.obj && cris.estado !== 'cubo') {
 over.style.alignItems = 'flex-end'; over.style.paddingBottom = '3vh';
 var cxo = over.firstElementChild; if (cxo && !cxo._compacto) { cxo._compacto = 1; cxo.style.padding = '10px 22px'; cxo.style.maxWidth = '560px'; cxo.style.background = 'rgba(15,39,64,.72)'; if (cxo.firstElementChild) cxo.firstElementChild.style.display = 'none'; }
 loading.style.background = 'rgba(11,26,43,.12)'; loading.style.justifyContent = 'flex-end'; loading.style.paddingBottom = '8vh';
@@ -1128,7 +1128,7 @@ if (cris.estado === 'cubo') { cris.curta = { t0: performance.now(), mo: mo, c: c
 crisSet(BA.proximo(cris.estado === 'centro' ? 'carregando' : cris.estado, 'pronto'));
 cris.t0 = performance.now(); cris.mo = mo; cris.c = cristalCentroDe(mo); cris.abriuEm = cris.t0; cristalDom();
 }
-function cristalFechouTudo() { if (!S.modelos.length) { crisSet('centro'); cris.mo = null; cris.curta = null; cristalDom(); } }
+function cristalFechouTudo() { if (!S.modelos.length) { crisSet('cubo'); cris.mo = null; cris.curta = null; cristalDom(); } }
 S._cristalEvento = cristalEvento; S._cristalModeloPronto = cristalModeloPronto; S._cristalFechouTudo = cristalFechouTudo;
 S._cristalEstado = function () { return cris.obj ? cris.estado : 'sem-cristal'; };
 S._cristalCanto = function () {

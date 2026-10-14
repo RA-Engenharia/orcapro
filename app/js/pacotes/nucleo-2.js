@@ -10065,11 +10065,14 @@ PacoteObra.lerObraCompleta(bytes, { inflar: this._zipInflar, decodificar: functi
 var v = PacoteObra.validar(r.pacote);
 if (!v.ok) { UI.toast("Arquivo da obra recusado: " + v.erros.join("; ") + ".", "erro"); return; }
 var abertos = []; try { abertos = (BIM.modelos || []).map(function (m) { return m && m.nome; }); } catch (e) {}
-if (!r.ifc || PacoteObra.modeloAberto(r.ifc.nome, abertos)) { self._bimPacoteResumo(r.pacote, null); return; }
-var velhos = PacoteObra.outraRevisao(r.ifc.nome, abertos);
+var lista = (r.ifcs && r.ifcs.length) ? r.ifcs : (r.ifc ? [r.ifc] : []);
+r._abrir = lista.filter(function (i) { return !PacoteObra.modeloAberto(i.nome, abertos); });
+if (!r._abrir.length) { self._bimPacoteResumo(r.pacote, null); return; }
+var velhos = [];
+r._abrir.forEach(function (i) { PacoteObra.outraRevisao(i.nome, abertos).forEach(function (n) { if (velhos.indexOf(n) < 0) velhos.push(n); }); });
 if (velhos.length && !r._revisaoDecidida) {
 UI.modal("Trocar a revisão do modelo?",
-"<p style=\"margin:0 0 8px\">O arquivo da obra traz <b>" + Util.esc(r.ifc.nome) + "</b>. Nesta obra já está aberto <b>" + velhos.map(Util.esc).join("</b>, <b>") + "</b> — o mesmo modelo em outra revisão.</p>" +
+"<p style=\"margin:0 0 8px\">O arquivo da obra traz <b>" + r._abrir.map(function (i) { return Util.esc(i.nome); }).join("</b>, <b>") + "</b>. Nesta obra já está aberto <b>" + velhos.map(Util.esc).join("</b>, <b>") + "</b> — o mesmo modelo em outra revisão.</p>" +
 "<p style=\"margin:0\"><b>Trocar</b> tira a revisão antiga desta obra e abre a nova (vistas, fichas e carimbos casam pelo GlobalId). <b>Abrir os dois</b> deixa os dois modelos, um sobre o outro.</p>",
 [{ texto: "Trocar pela nova", classe: "primary", onClick: function () {
 UI.fecharModal();
@@ -10085,18 +10088,22 @@ self._bimObraZipAbrir(r);
 },
 _bimObraZipAbrir: function (r) {
 var self = this;
-(function () {
-var b = r.ifc.bytes, mb = String(Math.round(b.length / 1048576 * 10) / 10).replace(".", ",");
+var lista = r._abrir || (r.ifc ? [r.ifc] : []), abriu = [];
+if (!(window.BIM && BIM.abrirBytes)) { UI.toast("O visualizador 3D não está aberto: entre no BIM da obra e importe o arquivo de novo.", "erro"); return; }
+(function proximo(k) {
+if (k >= lista.length) { self._bimPacoteResumo(r.pacote, { abriu: abriu.join(", ") }); return; }
+var ifc = lista[k];
+var b = ifc.bytes, mb = String(Math.round(b.length / 1048576 * 10) / 10).replace(".", ",");
 var ab = (b.byteOffset === 0 && b.byteLength === b.buffer.byteLength) ? b.buffer : b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
-var pr = (window.BIM && BIM.abrirBytes) ? BIM.abrirBytes(ab, r.ifc.nome) : null;
+var pr = BIM.abrirBytes(ab, ifc.nome);
 if (!pr || typeof pr.then !== "function") { UI.toast("O visualizador 3D não está aberto: entre no BIM da obra e importe o arquivo de novo.", "erro"); return; }
-UI.toast("Abrindo o modelo " + r.ifc.nome + " (" + mb + " MB) — as vistas entram quando as peças chegarem…", "info");
+UI.toast("Abrindo o modelo " + ifc.nome + " (" + mb + " MB)" + (lista.length > 1 ? " — " + (k + 1) + " de " + lista.length : "") + " — as vistas entram quando as peças chegarem…", "info");
 pr.then(function () {
 var agora = []; try { agora = (BIM.modelos || []).map(function (m) { return m && m.nome; }); } catch (e2) {}
-if (!PacoteObra.modeloAberto(r.ifc.nome, agora)) { UI.toast("O modelo " + r.ifc.nome + " não abriu (veja o aviso do visualizador). Nada foi importado.", "erro"); return; }
-self._bimPacoteResumo(r.pacote, { abriu: r.ifc.nome });
-}, function (e3) { UI.toast("O modelo " + r.ifc.nome + " não abriu: " + ((e3 && e3.message) || e3) + ". Nada foi importado.", "erro"); });
-})();
+if (!PacoteObra.modeloAberto(ifc.nome, agora)) { UI.toast("O modelo " + ifc.nome + " não abriu (veja o aviso do visualizador). Nada foi importado.", "erro"); return; }
+abriu.push(ifc.nome); proximo(k + 1);
+}, function (e3) { UI.toast("O modelo " + ifc.nome + " não abriu: " + ((e3 && e3.message) || e3) + ". Nada foi importado.", "erro"); });
+})(0);
 },
 _zipInflar: function (b) {
 if (typeof DecompressionStream === "undefined") return Promise.reject(new Error("este navegador não sabe descomprimir"));
@@ -10123,7 +10130,7 @@ var corpo = '<p style="margin:0 0 6px"><b>' + Util.esc(r.nome || "Pacote da obra
 '<li>' + (r.imagens + r.arquivos) + ' desenho(s)/arquivo(s) — ' + String(r.megabytes).replace(".", ",") + ' MB, guardados neste computador</li></ul>' +
 (els.length && conf.total ? '<p class="muted" style="font-size:12px;margin:0 0 6px">Peças conferidas no modelo aberto: ' + conf.achados + ' de ' + conf.total + '.</p>' : '') +
 alertaModelo + (v.avisos.length ? '<p class="muted" style="font-size:12px">' + v.avisos.map(Util.esc).join("<br>") + '</p>' : '') +
-(extra && extra.abriu ? '<p class="muted" style="font-size:12px;margin:6px 0 0">O modelo ' + Util.esc(extra.abriu) + ' foi aberto a partir do arquivo da obra e fica guardado nesta obra, neste computador.</p>' : '');
+(extra && extra.abriu ? '<p class="muted" style="font-size:12px;margin:6px 0 0">' + (extra.abriu.indexOf(", ") > 0 ? 'Os modelos ' + Util.esc(extra.abriu) + ' foram abertos' : 'O modelo ' + Util.esc(extra.abriu) + ' foi aberto') + ' a partir do arquivo da obra e ficam guardados nesta obra, neste computador.</p>' : '');
 UI.modal("Importar pacote da obra", corpo, [
 { texto: "Importar", classe: "primary", onClick: function () { UI.fecharModal(); self._bimPacoteGravar(p, gid2ch, els.length > 0); } },
 { texto: "Cancelar", onClick: function () { UI.fecharModal(); } }]);
@@ -67669,5 +67676,5 @@ UI.toast("Orçamentista: " + n.casado + " casados · " + n.revisar + " para revi
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=b2aa529e8d"},{"src":"js/bim-pacote.js?v=c18b27c2d1","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=e18fd80047","modulo":true}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=a86e31684b"},{"src":"js/bim-pacote.js?v=b6af37cb11","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=e18fd80047","modulo":true}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

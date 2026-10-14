@@ -11104,6 +11104,11 @@ var TIPO = 'orcapro-pacote-obra';
 function txt(v) { return v == null ? '' : String(v); }
 function arr(a) { return Array.isArray(a) ? a : []; }
 function tamanhoDataUrl(s) { var i = txt(s).indexOf(','); return i < 0 ? 0 : Math.floor((s.length - i - 1) * 3 / 4); }
+function modelosDe(p) {
+var l = arr(p && p.modelos).filter(function (m) { return m && txt(m.arquivo).trim(); });
+if (l.length) return l;
+return p && p.modelo && txt(p.modelo.arquivo).trim() ? [p.modelo] : [];
+}
 function validar(p) {
 var erros = [], avisos = [];
 if (!p || typeof p !== 'object') return { ok: false, erros: ['o arquivo não é um pacote (JSON vazio ou inválido)'], avisos: [], resumo: null };
@@ -11127,7 +11132,9 @@ if (detSemDesenho) avisos.push(detSemDesenho + ' ficha(s) de detalhe apontam um 
 if (!vistas.length && !pranchas.length && !sond.length && !dets.length) erros.push('o pacote não traz vistas, pranchas, sondagem nem fichas de detalhe');
 return {
 ok: !erros.length, erros: erros, avisos: avisos,
-resumo: { nome: txt(p.nome), modelo: txt(p.modelo && p.modelo.arquivo), revisao: txt(p.modelo && p.modelo.revisao),
+resumo: { nome: txt(p.nome), modelo: modelosDe(p).map(function (m) { return txt(m.arquivo); }).join(', '),
+revisao: modelosDe(p).map(function (m) { return txt(m.revisao); }).filter(Boolean).join(', '),
+modelos: modelosDe(p).map(function (m) { return { arquivo: txt(m.arquivo), revisao: txt(m.revisao), disciplina: txt(m.disciplina) }; }),
 vistas: vistas.length - semNome, pastas: Object.keys(pastas).length, referencias: refs,
 pranchas: pranchas.length, folhas: folhas, sondagens: sond.length, detalhes: dets.length,
 imagens: Object.keys(imgs).length, arquivos: Object.keys(arqs).length, megabytes: Math.round(bytes / 1048576 * 10) / 10 }
@@ -11207,14 +11214,25 @@ var jsons = nomes.filter(function (n) { return /\.json$/i.test(n); });
 var ifcs = nomes.filter(function (n) { return /\.ifc$/i.test(n); });
 if (!jsons.length) throw new Error('o .zip não traz o pacote da obra (.json)');
 if (jsons.length > 1) throw new Error('o .zip traz ' + jsons.length + ' arquivos .json — o arquivo da obra leva um pacote só');
-if (ifcs.length > 1) throw new Error('o .zip traz ' + ifcs.length + ' modelos .ifc — o pacote é de um modelo só');
 var p;
 try { p = JSON.parse((opts.decodificar || utf8)(arqs[jsons[0]])); } catch (e) { throw new Error('o pacote dentro do .zip não é um JSON válido (' + txt(e && e.message) + ')'); }
-var ifc = ifcs.length ? { nome: nomeBase(ifcs[0]), bytes: arqs[ifcs[0]] } : null;
-var esperado = nomeBase(p && p.modelo && p.modelo.arquivo);
+var lista = modelosDe(p).map(function (m) { return nomeBase(m.arquivo); }), listaMin = lista.map(function (n) { return n.toLowerCase(); });
+if (ifcs.length > 1 && lista.length < 2) throw new Error('o .zip traz ' + ifcs.length + ' modelos .ifc — o pacote é de um modelo só');
+var lidos = ifcs.map(function (n) { return { nome: nomeBase(n), bytes: arqs[n] }; });
+if (lista.length > 1) {
+var sobra = lidos.filter(function (i) { return listaMin.indexOf(i.nome.toLowerCase()) < 0; });
+if (sobra.length) throw new Error('o .zip traz "' + sobra.map(function (i) { return i.nome; }).join('", "') + '", que o pacote não lista — gere o arquivo da obra de novo');
+var nomesZip = lidos.map(function (i) { return i.nome.toLowerCase(); });
+var falta = lista.filter(function (n) { return nomesZip.indexOf(n.toLowerCase()) < 0; });
+if (lidos.length && falta.length) throw new Error('o pacote lista "' + falta.join('", "') + '" e o .zip não traz — gere o arquivo da obra de novo');
+lidos.sort(function (a, b) { return listaMin.indexOf(a.nome.toLowerCase()) - listaMin.indexOf(b.nome.toLowerCase()); });
+return { pacote: p, ifc: lidos[0] || null, ifcs: lidos };
+}
+var ifc = lidos[0] || null;
+var esperado = lista[0] || '';
 if (ifc && esperado && esperado.toLowerCase() !== ifc.nome.toLowerCase())
 throw new Error('o pacote é do modelo "' + esperado + '" e o .zip traz "' + ifc.nome + '" — gere o arquivo da obra de novo');
-return { pacote: p, ifc: ifc };
+return { pacote: p, ifc: ifc, ifcs: ifc ? [ifc] : [] };
 });
 }
 function modeloAberto(arquivo, abertos) {
@@ -11230,7 +11248,7 @@ var base = semRevisao(arquivo), alvo = nomeBase(arquivo).toLowerCase();
 if (!base) return [];
 return arr(abertos).filter(function (n) { return semRevisao(n) === base && nomeBase(n).toLowerCase() !== alvo; });
 }
-var PacoteObra = { TIPO: TIPO, validar: validar, conferirModelo: conferirModelo, casar: casar, base64ParaBytes: base64ParaBytes,
+var PacoteObra = { TIPO: TIPO, validar: validar, modelosDe: modelosDe, conferirModelo: conferirModelo, casar: casar, base64ParaBytes: base64ParaBytes,
 chaveDetalhe: chaveDetalhe, detalhes: detalhes, mapaDetalhes: mapaDetalhes, ficha: ficha,
 ehZip: ehZip, lerObraCompleta: lerObraCompleta, modeloAberto: modeloAberto, outraRevisao: outraRevisao };
 global.PacoteObra = PacoteObra;
@@ -94850,6 +94868,22 @@ if (!g) return false;
 this._fecharComPergunta(function () { g._novoProjeto(); });
 return true;
 },
+areaTeste: function () {
+var self = this, g = G();
+if (!g) return false;
+this._fecharComPergunta(function () {
+self.descarregarCena();
+try { g.bimTrocaObra("", {}); } catch (e) {}
+self.esconderInicio();
+self.pintarTitulo();
+toast("Área de teste: o BIM sem obra. O que você modelar aqui fica só nesta área — não entra em obra nenhuma. Para guardar de verdade, use Novo projeto (Início).", "ok", 9000);
+});
+return true;
+},
+emAreaTeste: function () {
+var g = G();
+return !this._proj && !!g && String(g._bimSel || "") === "" && g._bimCenaObra === "geral";
+},
 salvarComo: function () {
 var self = this, g = G();
 if (!g) return;
@@ -95239,6 +95273,7 @@ var h = '<div class="bp-cartao">' +
 '<button type="button" class="bp-bt bp-pri" data-bp="novo"><b>' + ico("obra", 16) + "Novo projeto</b><span>Nome do arquivo, obra, níveis, pé-direito e paredes</span></button>" +
 '<button type="button" class="bp-bt" data-bp="abrir-sistema"><b>' + ico("abrir", 16) + "Abrir projeto do sistema</b><span>Os projetos guardados neste aparelho</span></button>" +
 '<button type="button" class="bp-bt" data-bp="abrir-computador"><b>' + ico("pasta", 16) + "Abrir projeto do computador</b><span>Um arquivo .opbim" + (srv && srv.pasta ? " — " + esc(srv.pasta) : "") + "</span></button>" +
+'<button type="button" class="bp-bt" data-bp="teste"><b>' + ico("editar", 16) + "Área de teste</b><span>O BIM vazio, sem obra: experimente as ferramentas — nada entra em obra nenhuma</span></button>" +
 "</div>" +
 '<div class="bp-colunas">' +
 '<section class="bp-sec" data-bp-recentes><h3>Projetos recentes</h3>' + this._htmlRecentes(rec, srv) + "</section>" +
@@ -95291,6 +95326,7 @@ var a = b.getAttribute("data-bp"), id = b.getAttribute("data-id");
 if (a === "novo") self.novo();
 else if (a === "abrir-sistema") self.abrirDoSistema();
 else if (a === "abrir-computador") self.abrirDoComputador();
+else if (a === "teste") self.areaTeste();
 else if (a === "abrir-recente") self.abrirRecente(id);
 else if (a === "tirar") self.tirarDaLista(id);
 else if (a === "pasta") self.abrirPasta(id);
@@ -95338,9 +95374,11 @@ if (a === "fechar") self._fecharComPergunta(function () { self.mostrarInicio(); 
 else if (a === "inicio") self.mostrarInicio();
 });
 }
+if (sel && !sel._bpOuve) { sel._bpOuve = 1; sel.addEventListener("change", function () { setTimeout(function () { self.pintarTitulo(); }, 0); }); }
 if (!p) {
 if (sel) sel.style.display = "";
-tag.innerHTML = '<button type="button" class="bp-tbt" data-bp-tit="inicio" title="A tela inicial do BIM: novo projeto, abrir projeto, recentes">' + ico("obra", 13) + "<span>Início</span></button>";
+tag.innerHTML = '<button type="button" class="bp-tbt" data-bp-tit="inicio" title="A tela inicial do BIM: novo projeto, abrir projeto, recentes">' + ico("obra", 13) + "<span>Início</span></button>" +
+(this.emAreaTeste() ? '<span class="bp-titulo-obra" data-bp-teste title="O BIM sem obra: o que se modela aqui não entra em obra nenhuma. Para guardar, use Novo projeto.">Área de teste (sem obra)</span>' : "");
 return;
 }
 if (sel) sel.style.display = "none";

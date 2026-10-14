@@ -462,6 +462,26 @@
       this._fecharComPergunta(function () { g._novoProjeto(); });
       return true;
     },
+    /* ÁREA DE TESTE (14/10/2026): o BIM sem obra e sem projeto — a área de trabalho "sem obra" que o editor já
+       guarda à parte (Store "bim_edicoes", chave "geral"). Nada do que se modela aqui entra numa obra. Com um
+       projeto aberto, pergunta antes se salva (como o Novo projeto). */
+    areaTeste: function () {
+      var self = this, g = G();
+      if (!g) return false;
+      this._fecharComPergunta(function () {
+        self.descarregarCena();
+        try { g.bimTrocaObra("", {}); } catch (e) {}
+        self.esconderInicio();
+        self.pintarTitulo();
+        toast("Área de teste: o BIM sem obra. O que você modelar aqui fica só nesta área — não entra em obra nenhuma. Para guardar de verdade, use Novo projeto (Início).", "ok", 9000);
+      });
+      return true;
+    },
+    /* a cena na tela é a área de teste: sem projeto, sem obra no alto e com a área "sem obra" carregada */
+    emAreaTeste: function () {
+      var g = G();
+      return !this._proj && !!g && String(g._bimSel || "") === "" && g._bimCenaObra === "geral";
+    },
     /* "Salvar projeto" sem projeto aberto: o que está na obra do alto vira um projeto */
     salvarComo: function () {
       var self = this, g = G();
@@ -886,6 +906,8 @@
           '<button type="button" class="bp-bt bp-pri" data-bp="novo"><b>' + ico("obra", 16) + "Novo projeto</b><span>Nome do arquivo, obra, níveis, pé-direito e paredes</span></button>" +
           '<button type="button" class="bp-bt" data-bp="abrir-sistema"><b>' + ico("abrir", 16) + "Abrir projeto do sistema</b><span>Os projetos guardados neste aparelho</span></button>" +
           '<button type="button" class="bp-bt" data-bp="abrir-computador"><b>' + ico("pasta", 16) + "Abrir projeto do computador</b><span>Um arquivo .opbim" + (srv && srv.pasta ? " — " + esc(srv.pasta) : "") + "</span></button>" +
+          /* ÁREA DE TESTE (14/10/2026, pedido do Rogério): abrir o BIM sem criar obra nem projeto, para experimentar */
+          '<button type="button" class="bp-bt" data-bp="teste"><b>' + ico("editar", 16) + "Área de teste</b><span>O BIM vazio, sem obra: experimente as ferramentas — nada entra em obra nenhuma</span></button>" +
         "</div>" +
         '<div class="bp-colunas">' +
           '<section class="bp-sec" data-bp-recentes><h3>Projetos recentes</h3>' + this._htmlRecentes(rec, srv) + "</section>" +
@@ -938,6 +960,7 @@
         if (a === "novo") self.novo();
         else if (a === "abrir-sistema") self.abrirDoSistema();
         else if (a === "abrir-computador") self.abrirDoComputador();
+        else if (a === "teste") self.areaTeste();
         else if (a === "abrir-recente") self.abrirRecente(id);
         else if (a === "tirar") self.tirarDaLista(id);
         else if (a === "pasta") self.abrirPasta(id);
@@ -988,9 +1011,11 @@
           else if (a === "inicio") self.mostrarInicio();
         });
       }
+      if (sel && !sel._bpOuve) { sel._bpOuve = 1; sel.addEventListener("change", function () { setTimeout(function () { self.pintarTitulo(); }, 0); }); }   /* a etiqueta da área de teste sai quando se escolhe uma obra */
       if (!p) {
         if (sel) sel.style.display = "";
-        tag.innerHTML = '<button type="button" class="bp-tbt" data-bp-tit="inicio" title="A tela inicial do BIM: novo projeto, abrir projeto, recentes">' + ico("obra", 13) + "<span>Início</span></button>";
+        tag.innerHTML = '<button type="button" class="bp-tbt" data-bp-tit="inicio" title="A tela inicial do BIM: novo projeto, abrir projeto, recentes">' + ico("obra", 13) + "<span>Início</span></button>" +
+          (this.emAreaTeste() ? '<span class="bp-titulo-obra" data-bp-teste title="O BIM sem obra: o que se modela aqui não entra em obra nenhuma. Para guardar, use Novo projeto.">Área de teste (sem obra)</span>' : "");
         return;
       }
       /* com projeto aberto a obra é a DELE: o seletor sai do caminho */

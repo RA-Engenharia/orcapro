@@ -1726,7 +1726,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
    * ⚠ "Reduzir movimento" (preferência do sistema — e o Chrome sem tela das e2e): sem animação, direto ao fim.
    * ⚠ Visitante (link da RA/RV): sem cristal.
    * ===================================================================== */
-  var cris = { hist: ['centro'], congelado: null, obj: null, estado: 'centro', t0: 0, tCarga: 0, curta: null, mo: null, c: null, escalado: null, ultimo: performance.now(), abriuEm: performance.now(), arr: null, semMov: false };
+  /* 14/10/2026 (Rogério: "retira esse cubo que está ficando no meio da tela"): o cristal NÃO fica mais no centro com o BIM
+     vazio — nasce e volta sempre como o cubo pequeno do canto; o modelo novo entra pela abertura curta (cresce no lugar). */
+  var cris = { hist: ['cubo'], congelado: null, obj: null, estado: 'cubo', t0: 0, tCarga: 0, curta: null, mo: null, c: null, escalado: null, ultimo: performance.now(), abriuEm: performance.now(), arr: null, semMov: false };
   try { cris.semMov = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (_) {}
   function crisBA() { return (typeof window !== 'undefined') ? window.BimAbertura : null; }
   function crisSet(e) { if (e === cris.estado) return; cris.estado = e; cris.hist.push(e); if (cris.hist.length > 40) cris.hist.shift(); }
@@ -1734,7 +1736,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   function crisT(t0) { return cris.congelado != null ? cris.congelado : performance.now() - t0; }
   function cristalDom() {
     if (S.vcubeEl) { S.vcubeEl.style.visibility = (!cris.obj || cris.estado === 'cubo') ? '' : 'hidden'; S.vcubeEl.classList.toggle('com-cristal', !!cris.obj); }
-    if (cris.obj) {
+    if (cris.obj && cris.estado !== 'cubo') {   /* só com o cristal no centro (não acontece mais desde 14/10/2026): o aviso do IFC desce para não cobri-lo */
       over.style.alignItems = 'flex-end'; over.style.paddingBottom = '3vh';
       var cxo = over.firstElementChild; if (cxo && !cxo._compacto) { cxo._compacto = 1; cxo.style.padding = '10px 22px'; cxo.style.maxWidth = '560px'; cxo.style.background = 'rgba(15,39,64,.72)'; if (cxo.firstElementChild) cxo.firstElementChild.style.display = 'none'; }
       loading.style.background = 'rgba(11,26,43,.12)'; loading.style.justifyContent = 'flex-end'; loading.style.paddingBottom = '8vh';
@@ -1758,7 +1760,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     crisSet(BA.proximo(cris.estado === 'centro' ? 'carregando' : cris.estado, 'pronto'));
     cris.t0 = performance.now(); cris.mo = mo; cris.c = cristalCentroDe(mo); cris.abriuEm = cris.t0; cristalDom();
   }
-  function cristalFechouTudo() { if (!S.modelos.length) { crisSet('centro'); cris.mo = null; cris.curta = null; cristalDom(); } }
+  function cristalFechouTudo() { if (!S.modelos.length) { crisSet('cubo'); cris.mo = null; cris.curta = null; cristalDom(); } }   /* sem modelo: o cubo do canto, nunca o centro (14/10/2026) */
   S._cristalEvento = cristalEvento; S._cristalModeloPronto = cristalModeloPronto; S._cristalFechouTudo = cristalFechouTudo;
   S._cristalEstado = function () { return cris.obj ? cris.estado : 'sem-cristal'; };
   /* hook de teste: a menor escala que a abertura APLICOU no desenho (prova que o modelo sai pequeno da caixa) */
