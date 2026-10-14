@@ -70,7 +70,7 @@
   /* ---------- ligações do cálculo emitido (calc_ligacoes.json do PROJ-EST R03), passos refeitos pelo MadLigCalc ----------
    * Os esforços e os η são os do emitido; as resistências são refeitas aqui com as mesmas expressões (teste: tools/test-mad-lig.js)
    * e conferidas com o emitido — diferença > 1 % vira aviso. Ligações sem cálculo no emitido entram com eta null ("não verificada"). */
-  MadDimensionar.ligacoesEmitidas = function (CL, LQ) {
+  MadDimensionar.ligacoesEmitidas = function (CL, LQ, extra) {
     if (!ML || !CL || !CL.premissas) return { lista: [], difs: ["MadLigCalc ou calc_ligacoes ausente"] };
     var L = ML, P = CL.premissas, RHO = P.rho_k.Tatajuba, FUB = P.fub, GL = P.gama_lig, out = [], difs = [];
     function kmodDe(combo) { var curta = /1,4V/.test(combo) && /\+ 1,4V/.test(combo), k1 = curta ? P.kmod1_curta : P.kmod1_longa; return { k: k1 * P.kmod2, txt: "kmod = " + br(k1, 1) + " (" + (curta ? "curta — vento principal" : "longa") + ") × " + br(P.kmod2, 1) + " (umidade 3) = " + br(k1 * P.kmod2, 2) }; }
@@ -140,8 +140,21 @@
           "Modos (eq. 8.9): a = 0,4·fh·t1·d = " + br(rk8.modos.a / 1000) + " kN; b = 1,15·√(2·My·fh·d) = " + br(rk8.modos.b / 1000) + " kN → Rk = " + br(rk8.Rk / 1000) + " kN (modo " + rk8.modo + ").",
           "4 tirefonds por peça: Rd = kmod·Rk/γlig × 4 = " + br(Rd8) + " kN (" + k8.txt + "); Fd = " + br(x8.Fd_kN) + " kN (" + x8.combo + ") → η = " + br(x8.eta, 3) + "."] });
     }
+    /* L15 (barrote da fila no pilar composto, "igual à L08") no barrote em BINÁRIO pilar + VP: a ponta presa no pilar segura o
+     * arrancamento do balanço (13/10/2026). Mesma resistência da L08 (4 tirefonds 10×50 por peça, cantoneira 6,35 mm), kmod longa. */
+    var bins = (extra && extra.binarios) || [], fezL15 = false;
+    if (bins.length && CL.L08 && tipo.L15) {
+      var kL = kmodDe("1,4G + 1,4Q"), rkB = L.acoMadeiraSimples(fl, 50 - 6.35, dEf, L.myRk(dEf, FUB), 1), RdB = L.rd(rkB.Rk, kL.k) / 1000 * 4;
+      var cB = bins.map(function (b) { var Fd = 1.4 * Math.max(0, -b.R_G_kN) + 1.4 * Math.max(0, -b.R_Q_kN); return { b: b, Fd: Fd, eta: Fd / RdB }; });
+      var gB = maior(cB, function (x) { return x.eta; });
+      out.push({ codigo: "L15", tipo: tipo.L15.tipo, descricao: tipo.L15.descricao, quantidade: tipo.L15.n, governante: gB.b.marca, eta: gB.eta, ok: gB.eta <= 1, norma: "EN 1995-1-1:2004+A2:2014 8.2.3 (aço–madeira, eq. 8.9) — igual à L08",
+        passos: ["Barrote " + gB.b.marca + " em binário: preso no pilar composto" + (gB.b.pilar ? " (" + gB.b.pilar + ")" : "") + " e apoiado na VP, balanço de " + br(gB.b.balanco_m) + " m; reação no pilar (característica) G = " + br(gB.b.R_G_kN) + " kN, Q = " + br(gB.b.R_Q_kN) + " kN (negativa = arrancamento).",
+          "Fd = 1,4·|G| + 1,4·|Q| = " + br(gB.Fd) + " kN (vertical, perpendicular às fibras do barrote).",
+          "Rk por tirefond = " + br(rkB.Rk / 1000) + " kN (modo " + rkB.modo + "); 4 tirefonds na peça: Rd = kmod·Rk/γlig × 4 = " + br(RdB) + " kN (" + kL.txt + ") → η = " + br(gB.eta, 3) + "."] });
+      fezL15 = true;
+    }
     ["L05", "L06", "L07", "L09", "L10", "L11", "L12", "L13", "L14", "L15"].forEach(function (k) {
-      var d = tipo[k]; if (!d) return;
+      var d = tipo[k]; if (!d || (k === "L15" && fezL15)) return;
       out.push({ codigo: k, tipo: d.tipo, descricao: d.descricao, quantidade: d.n, eta: null, status: d.status, regra: d.regra,
         nota: k === "L06" && CL.L06 ? "Cortante de vento de cálculo na base de todo o quiosque: " + br(CL.L06.H_vento_total_d_kN) + " kN — " + CL.L06.nota + "." : null });
     });
@@ -151,10 +164,11 @@
   /* ---------- Painel Wall do piso: carga característica por zona × ficha do fabricante (sem η: a ficha não define a natureza do valor) ---------- */
   function conclusaoPainel(zonas, cfg, ref) {
     var acima = zonas.filter(function (z) { return z.acimaFicha; }).length;
-    var txt = "G + Q característico acima do valor publicado na ficha (4,90 kN/m² a ≤ 1,25 m) em " + acima + " de " + zonas.length + " zonas; a ficha não diz se o valor é admissível, característico ou de ruptura.";
+    var todas = zonas.length && zonas.every(function (z) { return z.atendeReferencia; });
+    var txt = (todas ? "Atende pela tabela de referência nas " + zonas.length + " zonas, mas o " : "") + "G + Q característico " + (todas ? "fica " : "") + "acima do valor publicado na ficha (4,90 kN/m² a ≤ 1,25 m) em " + acima + " de " + zonas.length + " zonas; a ficha não diz se o valor é admissível, característico ou de ruptura.";
     if (zonas.some(function (z) { return z.capReferencia_kN_m2 != null; })) {
       txt += " Pela tabela de referência (" + (ref && ref.produto || "Decorlit") + ") com o vão de cada zona: " + zonas.map(function (z) {
-        return z.zona + " " + br(z.total, 2) + " kN/m² a " + br(z.vao_m, 2) + " m → " + (z.atendeReferencia ? "atende" : "NÃO atende") + " (" + br(z.capReferencia_kN_m2, 2) + (z.foraTabela ? ", vão abaixo da tabela: adotado o do menor vão" : "") + ")";
+        return z.zona + " " + br(z.total, 2) + " kN/m²" + (z.gParedeFora ? " (sem as paredes de tijolo, " + br(z.gParedeFora, 2) + " kN/m², que descem pelos barrotes)" : "") + " a " + br(z.vao_m, 2) + " m → " + (z.atendeReferencia ? "atende" : "NÃO atende") + " (" + br(z.capReferencia_kN_m2, 2) + (z.foraTabela ? ", vão abaixo da tabela: adotado o do menor vão" : "") + ")";
       }).join("; ") + ".";
     }
     return txt + " Liberar o piso só com a carta do fabricante (Eternit/Nibra) com a carga para esses vãos e a natureza do valor.";
@@ -165,8 +179,14 @@
     var p = MC.produto(cfg.produtoId); if (!p) return null;
     var dt = p.dados_tecnicos || {}, cap = dt.carga_distribuida_kN_m2_40mm_conversao, G = piso.cargasZona.G_Z_kN_m2, Q = piso.cargasZona.Q_Z_kN_m2;
     var zonas = Object.keys(G).map(function (z) {
-      var tot = G[z] + Q[z], vz = (cfg.vaoPorZona && cfg.vaoPorZona[z]) || cfg.vaoApoios_m;
-      return { zona: z, G: G[z], Q: Q[z], total: tot, vao_m: vz, acimaFicha: tot > cap };
+      var vz = (cfg.vaoPorZona && cfg.vaoPorZona[z]) || cfg.vaoApoios_m;
+      /* paredes apoiadas sobre a zona (tijolo da ducha): com vão LIVRE entre barrotes pequeno (16 cm de barrote a 20 cm de eixo = 4 cm)
+       * a parede descarrega nos barrotes através da pedra e da chapa, que só trabalha à compressão — o peso dela sai da FLEXÃO da chapa
+       * (decisão do RT 13/10/2026). O cálculo dos barrotes, VPs e pilaretes continua com o peso espalhado (mesmo total). */
+      var pf = cfg.paredesNosBarrotes && cfg.paredesNosBarrotes[z] && piso.gTijolo && piso.zonaTijolo === z ? piso.gTijolo : 0;
+      var tot = G[z] - pf + Q[z];
+      return { zona: z, G: G[z] - pf, Q: Q[z], total: tot, vao_m: vz, acimaFicha: tot > cap, gParedeFora: pf || null,
+        vaoLivre_m: cfg.larguraBarrotePorZona && cfg.larguraBarrotePorZona[z] ? vz - cfg.larguraBarrotePorZona[z] : null };
     });
     var ref = null, alt = cfg.referenciaVaoCarga ? MC.produto(cfg.referenciaVaoCarga) : null;
     if (alt) {
@@ -187,13 +207,30 @@
         z.capReferencia_kN_m2 = c; z.atendeReferencia = c != null && z.total <= c;
       });
     }
+    /* ESPECIFICAÇÃO DE DESEMPENHO (decisão do Rogério 13/10/2026: "não ficar preso na carta; se mudar de fornecedor, mudou — o
+     * memorial diz a capacidade por m² que o painel tem de garantir"). O cálculo fixa, por zona, a carga de serviço mínima no vão
+     * do projeto; o painel fornecido (Eternit, Decorlit ou outro) tem de declará-la. Impede só se nem a referência publicada atende
+     * (aí a geometria do piso é que tem de mudar). */
+    var desempenho = cfg.criterio === "desempenho";
+    var requisitos = zonas.map(function (z) {
+      return { zona: z.zona, vao_m: z.vao_m, vaoLivre_m: z.vaoLivre_m, cargaServicoMin_kN_m2: Math.ceil(z.total * 100 - 1e-9) / 100,
+        cargaServicoMin_kgf_m2: Math.ceil(z.total / 0.00980665 - 1e-9), referencia_kN_m2: z.capReferencia_kN_m2, referenciaAtende: !!z.atendeReferencia };
+    });
+    var semRef = desempenho && requisitos.filter(function (q) { return !q.referenciaAtende; });
+    var concl = desempenho
+      ? (semRef.length ? "Nem o produto de referência atende em " + semRef.map(function (q) { return q.zona; }).join(", ") + ": aproximar os barrotes nessa zona. " : "") +
+        "Especificação de desempenho: o painel de piso de 40 mm (Painel Wall da Eternit, da Decorlit ou equivalente) deve ter carga distribuída ADMISSÍVEL (de serviço), declarada pelo fabricante, de no mínimo " +
+        requisitos.map(function (q) { return br(q.cargaServicoMin_kN_m2, 2) + " kN/m² (" + q.cargaServicoMin_kgf_m2 + " kgf/m²) com apoios a " + br(q.vao_m, 2) + " m na zona " + q.zona; }).join("; ") +
+        ". Referência que atende: " + (ref ? ref.produto : "tabela publicada") + " (" + requisitos.map(function (q) { return q.zona + " " + br(q.referencia_kN_m2, 2) + " kN/m²"; }).join("; ") + "). A troca de fabricante é livre desde que a capacidade declarada atenda."
+      : conclusaoPainel(zonas, cfg, ref);
     return { produto: [p.fabricante, p.linha].filter(Boolean).join(" "), produtoId: p.id, pagina: dt.pagina, link: p.link,
+      criterio: desempenho ? "desempenho" : "ficha", requisitos: requisitos,
       ficha: { carga_kgf_m2: dt.carga_distribuida_kgf_m2_40mm, carga_kN_m2: cap, apoios: dt.apoios_minimos_por_painel, vaoMax_m: dt.vao_maximo_entre_apoios_piso_mm_40mm / 1000,
         concentrada_kgf: dt.carga_concentrada_vertical_kgf_40mm, hipoteses: dt.carga_distribuida_hipoteses },
       fabricanteConfirmado: !!(p.item_orcamento_nibra && p.item_orcamento_nibra.fabricante_do_item_confirmado), obsFabricante: p.item_orcamento_nibra && p.item_orcamento_nibra.obs,
       vaoApoios_m: cfg.vaoApoios_m, fonteVao: cfg.fonteVao, premissaR03: cfg.premissaR03, zonas: zonas, referencia: ref,
-      impedeUso: zonas.some(function (z) { return z.acimaFicha; }),
-      conclusao: conclusaoPainel(zonas, cfg, ref) };
+      impedeUso: desempenho ? semRef.length > 0 : zonas.some(function (z) { return z.acimaFicha; }),
+      conclusao: concl };
   };
 
   function especieDoGrupo(g, tab) {
@@ -233,7 +270,7 @@
     esp.conferir.forEach(function (c) { pend.push("Confirmar com o cliente (" + c.n + " peças): " + c.nota); });
     Object.keys(classes).forEach(function (k) {
       var es = MM.especie(k), cl = MM.classe2022(classes[k]);
-      premissas.push({ item: "Classe de resistência — " + es.nome, valor: cl.nome, fonte: cl.fonte, confianca: "fonte secundária R2 (premissa conservadora do RT)" });
+      premissas.push({ item: "Classe de resistência — " + es.nome, valor: cl.nome, fonte: cl.fonte, confianca: "premissa conservadora do RT" });
     });
 
     /* 2. piso seco (verificação local) */
@@ -245,6 +282,17 @@
     var mod = JSON.parse(JSON.stringify(G.modelo)), gama = {};
     /* troca de seção/espécie por grupo do modelo (estudo de alternativa ou decisão do RT): { GRUPO: { b_cm, h_cm, especie } } */
     var troca = e.trocaSecao || (e.semDecisoesRT ? {} : (Q.decisoesRT || {}));
+    /* espécie de cada grupo do modelo = a das SUAS peças na fonte depois das regras de espécie (maioria por volume). A tabela por nome
+     * (Q.grupoEspecie) fica só para grupo sem peça conhecida. Até 13/10 valia só a tabela: na R04 o forro já veio 10×15 Tatajuba na
+     * fonte, o nome virou FORRO_10x15 e a tabela ("^FORRO_" → pinus) verificava o forro como Pinus. */
+    var paraId = {}; esp.pecas.forEach(function (p) { paraId[p.id] = p.para; });
+    var volId = {}; e.fonte.pecas.forEach(function (p) { volId[p.id] = p.volume_m3 || 0; });
+    var espFonte = {};
+    Object.keys(G.idsPorEtiqueta || {}).forEach(function (g) {
+      var v = {}; G.idsPorEtiqueta[g].forEach(function (id) { var k = paraId[id]; if (k) v[k] = (v[k] || 0) + (volId[id] || 1e-6); });
+      var ks = Object.keys(v).sort(function (a, b) { return v[b] - v[a]; }); if (ks.length) espFonte[g] = ks[0];
+    });
+    var espDecisao = {};
     Object.keys(troca).forEach(function (g) {
       var s0 = mod.secoes[g], t = troca[g];
       if (!s0) {
@@ -252,11 +300,12 @@
         return;                                          // decisão padrão do RT já incorporada à fonte (ex.: R04 com o forro 10×15)
       }
       if (t.b_cm) s0.b_cm = t.b_cm; if (t.h_cm) s0.h_cm = t.h_cm; s0.perfil = s0.b_cm + "x" + s0.h_cm;
+      if (t.especie) espDecisao[g] = t.especie;
       if (t.especie) { (Q = JSON.parse(JSON.stringify(Q, function (k, v) { return v instanceof RegExp ? { __re: v.source } : v; }), function (k, v) { return v && v.__re ? new RegExp(v.__re) : v; })).grupoEspecie.unshift([new RegExp("^" + g + "$"), t.especie]); }
       premissas.push({ item: "Seção alterada pelo RT — " + g, valor: s0.b_cm + "×" + s0.h_cm + (t.especie ? " " + t.especie : ""), fonte: t.motivo || "decisão de projeto", confianca: "decisão do RT" });
     });
     Object.keys(mod.secoes).forEach(function (g) {
-      var s = mod.secoes[g], k = especieDoGrupo(g, Q.grupoEspecie);
+      var s = mod.secoes[g], k = espDecisao[g] || espFonte[g] || especieDoGrupo(g, Q.grupoEspecie);
       if (!k || s.E_MPa) return;                           // ligações e apoios (aço genérico) mantêm o E próprio
       var es = MM.especie(k), cl = MM.classe2022(classes[k]);
       s.especie = es.nome; s.especieId = k; s.classe = classes[k];
@@ -264,7 +313,7 @@
       s.E_MPa = cl.Ec0m;                                    // análise com E0,med (NBR 7190-1:2022; fluência só na flecha)
       gama[s.material] = es.gamaCarga;
     });
-    premissas.push({ item: "Rigidez na análise global", valor: "E0,med da classe adotada (nativa D40: 14 500 MPa; C20: 9 500 MPa)", fonte: "NBR 7190-1:2022 (fonte secundária)", confianca: "R2" });
+    premissas.push({ item: "Rigidez na análise global", valor: "E0,med da classe adotada (nativa D40: 14 500 MPa; C20: 9 500 MPa)", fonte: "NBR 7190-1:2022", confianca: "premissa do RT" });
 
     /* 4. análise global */
     var opA = e.analise || { placa: "casca", cortante: true };
@@ -298,7 +347,14 @@
           fonte: "autovalor (K + α·Kg)φ = 0, Kg dos pilares, combinações ELU com vento", confianca: "cálculo do sistema" });
         premissas.push({ item: "Comprimento de flambagem dos pilares", valor: "L0 = máx(1,0; β do autovalor)·L, L = altura total do pilar (pé ao topo)", fonte: "decisão de projeto (RT)", confianca: "a favor da segurança" });
         if (alphaCr < 10) avisos.push("α_cr = " + alphaCr.toFixed(1) + " < 10: estrutura deslocável — verificar 2ª ordem global.");
-        pend.push("Modelo analítico sem o diafragma do Painel Wall: com a Kg de todas as barras aparece mecanismo local nos barrotes 16×20 da ducha — representar o travamento do painel no gerador.");
+        /* mecanismo local (barrote só apoiado em VPs girando em torno do próprio eixo): o gerador põe GARFO nesses barrotes (13/10/2026).
+         * Prova opcional (≈ 30 s a mais): autovalor com a Kg de TODAS as barras — R03: sem garfo α_cr = 0 (mecanismo), com garfo 16,9. */
+        var nGarfo = 0; (mod.barras || []).forEach(function (b) { if (/^GARFO_/.test(b.grupo)) nGarfo++; });
+        var stT = null;
+        if (opA.estabilidadeCompleta) { try { stT = MA.estabilidade(M, C, R, {}); estab.alphaCrTodas = stT.alphaCrMin; estab.combinacaoCriticaTodas = stT.combinacaoCritica; } catch (er2) { stT = null; } }
+        if (stT && !(stT.alphaCrMin >= 1)) pend.push("Mecanismo local no modelo analítico: com a Kg de todas as barras α_cr = " + br(stT.alphaCrMin, 2) + " — conferir as ligações dos barrotes (garfos: " + nGarfo + ").");
+        else premissas.push({ item: "Torção dos barrotes apoiados só em VPs", valor: (nGarfo ? nGarfo + " ligações com GARFO no barrote (giro de flexão livre, torção presa pelo Painel Wall parafusado e pelos bloqueadores)" : "nenhum barrote só apoiado em VPs") +
+          (stT ? "; autovalor com a Kg de todas as barras: α_cr = " + br(stT.alphaCrMin, 1) + " (sem mecanismo local)" : ""), fonte: "decisão do RT (13/10/2026); regra 2 do gerador", confianca: stT ? "cálculo do sistema" : "decisão de modelagem" });
       } catch (er) { pend.push("Estabilidade global não calculada: " + er.message); }
     } else pend.push("Estabilidade global (β dos pilares por autovalor) ainda não disponível no motor — pilares verificados com β = 1,0 (na V18 o estudo deu β 1,2): reverificar.");
 
@@ -331,13 +387,18 @@
       verifs.push({ membro: mid, grupo: g, funcao: (Q.funcoes || {})[g] || g, pilar: nomeP, desc: segs[0].desc, especie: s.especie, classe: s.classe, secao: s.b_cm + "×" + s.h_cm,
         L: Ltot, beta: ehPilar ? be : null, L0: ehPilar ? be * Ltot : null, eta: pior.r.eta, ok: pior.r.ok, governa: pior.r.governa, combinacao: pior.comb,
         esforcos: { N: pior.esf.N, My: pior.esf.My, Mz: pior.esf.Mz, Vy: pior.esf.Vy, Vz: pior.esf.Vz, T: pior.esf.T },
-        verif: pior.r.verif, norma: "NBR 7190-1:2022 (fonte secundária) — conferir no texto da norma" });
+        verif: pior.r.verif, norma: "NBR 7190-1:2022" });
     });
     verifs.sort(function (a, b) { return b.eta - a.eta; });
-    naoAbr.push("Flecha das vigas das coberturas pela análise global (o limite do vidro depende da NBR 7199:2025, sem texto).");
+    naoAbr.push("Flecha das vigas das coberturas que apoiam o vidro: conferir com a flecha admissível do apoio informada pelo vidraceiro (NBR 7199:2025).");
     naoAbr.push("Ligações a partir dos esforços desta análise global: nesta versão valem os esforços do cálculo emitido PROJ-EST R03 (calc_ligacoes), com as resistências refeitas.");
-    naoAbr.push("Vidro da cobertura (NBR 7199:2025 — texto não disponível na RA).");
-    naoAbr.push("Vibração do piso (NBR 7190-1:2022: f ≥ 8 Hz — fonte secundária; critério de aceleração não encontrado).");
+    /* vidro da cobertura: dimensionado e fornecido pelo vidraceiro (NBR 7199:2025) com as ações desta estrutura — mesma lógica de
+     * desempenho do painel do piso (decisão do Rogério 13/10/2026) */
+    var qv = e.ventoParedes && isFinite(e.ventoParedes.q_kPa) ? Number(e.ventoParedes.q_kPa) : null;
+    premissas.push({ item: "Vidro laminado da cobertura — fornecimento", valor: "Espessura, composição, calços, vedação e fixação dimensionados e garantidos pelo fabricante/vidraceiro conforme a ABNT NBR 7199:2025, para as ações desta estrutura: peso próprio, sobrecarga de cobertura de 0,50 kN/m² (NBR 6120:2019, 6.4)" +
+      (qv != null ? " e vento com pressão dinâmica q = " + br(qv, 2) + " kN/m² (NBR 6123:2023; coeficientes de pressão da cobertura pela mesma norma)" : " e vento da NBR 6123:2023") + ". As vigas da cobertura que apoiam o vidro são verificadas neste memorial; o vidraceiro informa a flecha admissível do apoio.",
+      fonte: "decisão do RT (13/10/2026)", confianca: "especificação de fornecimento" });
+    naoAbr.push("Vibração do piso (NBR 7190-1:2022).");
 
     /* 8. reações para a fundação (característicos, por pilarete) */
     var reac = R.reacoes.map(function (rp) {
@@ -355,11 +416,25 @@
       var pecasC = e.fonte.pecas.filter(function (p) { return p.secao_cm && porId[p.id]; }).map(function (p) {
         var tr = null;
         Object.keys(troca).forEach(function (g) { if (troca[g].grupoFonte === p.grupo) tr = troca[g]; });
-        return { id: p.id, especie: tr && tr.especie ? tr.especie : porId[p.id], b_cm: tr ? tr.b_cm : p.secao_cm[0], h_cm: tr ? tr.h_cm : p.secao_cm[1], comprimento_m: p.comprimento_m };
+        return { id: p.id, grupo: p.grupo, especie: tr && tr.especie ? tr.especie : porId[p.id], b_cm: tr ? tr.b_cm : p.secao_cm[0], h_cm: tr ? tr.h_cm : p.secao_cm[1], comprimento_m: p.comprimento_m };
       });
-      compra = MER.listaDeCompra(pecasC, e.catalogoMadeira);
+      /* espécie sem NENHUMA bitola no catálogo (folhosa nativa) = madeireira, serrada sob medida → cotação por m³ (decisão do RT 13/10/2026:
+       * Tatajuba e Itaúba não têm bitola comercial em catálogo de ninguém; a madeireira serra na medida e cobra por m³) */
+      var sobMedida = e.sobMedida;
+      if (!sobMedida) {
+        sobMedida = [];
+        pecasC.forEach(function (p) {
+          if (sobMedida.some(function (s) { return s.especie === p.especie; })) return;
+          if (e.catalogoMadeira.some(function (c) { return c.especie === p.especie; })) return;
+          var es = MM.ESPECIES && MM.ESPECIES[p.especie];
+          sobMedida.push({ especie: p.especie, nome: es ? es.nome : p.especie, fornecedor: "Madeireira (serrada sob medida)", obs: "cotar por m³ com a lista de corte; madeira seca ao ar, classe de resistência do memorial, sem medula nem nó na região de ligação" });
+        });
+      }
+      compra = MER.listaDeCompra(pecasC, e.catalogoMadeira, { sobMedida: sobMedida, comporGrupo: /BLOQ/ });
       if (e.catalogoMadeiraFonte) compra.catalogoFonte = e.catalogoMadeiraFonte;
       compra.pendencias.forEach(function (x) { pend.push("Compra: " + x); });
+      (compra.cotacao || []).forEach(function (c) { avisos.push("Cotação: " + br(c.volume_m3, 2) + " m³ de " + c.nomeEspecie + " em " + c.fornecedor + " (" + c.secoes.length + " seções; maior peça " + br(c.maiorPeca_m, 2) + " m)."); });
+      compra.grupos.filter(function (gr) { return gr.origem; }).forEach(function (gr) { avisos.push("Compra: " + gr.secao + " de " + gr.especie + " — " + gr.origem.texto + "."); });
     }
 
     /* 10. paredes de contraventamento (MadWoodFrame, chapa da premissa: Evoply 12 do orçamento) */
@@ -369,9 +444,9 @@
       paredes = WF.calcular(e.paineis, premParedes, e.planos || []);
       delete paredes.bruto;
       if (premParedes.catalogo) {
-        premissas.push({ item: "Chapa de contraventamento das paredes", valor: premParedes.catalogo.produto + " (" + br(premParedes.catalogo.largura_m, 2) + " × " + br(premParedes.catalogo.altura_m, 2) + " m, " + premParedes.catalogo.massa_kg + " kg), montantes ≤ " + premParedes.catalogo.montantesMaxCm + " cm", fonte: premParedes.catalogo.fonte, confianca: "premissa pelo orçamento recebido — confirmar" });
+        premissas.push({ item: "Chapa de contraventamento das paredes", valor: premParedes.catalogo.produto + " (" + br(premParedes.catalogo.largura_m, 2) + " × " + br(premParedes.catalogo.altura_m, 2) + " m, " + premParedes.catalogo.massa_kg + " kg), montantes ≤ " + premParedes.catalogo.montantesMaxCm + " cm", fonte: premParedes.catalogo.fonte + (premParedes.catalogo.decisaoRT ? "; " + premParedes.catalogo.decisaoRT : ""), confianca: premParedes.catalogo.decisaoRT ? "decisão do RT" : "premissa pelo orçamento recebido — confirmar" });
         premissas.push({ item: "G e ρk da chapa", valor: "G = " + premParedes.gChapa + " MPa; ρk = " + premParedes.rhoKChapa + " kg/m³", fonte: premParedes.fonte, confianca: "premissa do RT (catálogo não informa)" });
-        pend.push("Confirmar o " + premParedes.catalogo.produto + " como chapa de contraventamento das paredes (no lugar do OSB do modelo R03).");
+        if (!premParedes.catalogo.decisaoRT) pend.push("Confirmar o " + premParedes.catalogo.produto + " como chapa de contraventamento das paredes (no lugar do OSB do modelo R03).");
       }
       naoAbr.push("Solicitação de cálculo de cada painel de parede e dos hold-downs a partir da análise com casca (o memorial traz a resistência e a rigidez dos painéis, sem η).");
     }
@@ -379,7 +454,8 @@
     /* 11. ligações (cálculo emitido, passos refeitos) */
     var ligs = [];
     if (e.calcLigacoes) {
-      var LG = MadDimensionar.ligacoesEmitidas(e.calcLigacoes, e.ligacoesFonte);
+      var binarios = ((piso && piso.pecas) || []).filter(function (p) { return p.binarioPilar; }).map(function (p) { var b = p.binarioPilar; return { marca: p.marca, pilar: b.pilar, balanco_m: b.balanco_m, R_G_kN: b.R_G_kN, R_Q_kN: b.R_Q_kN }; });
+      var LG = MadDimensionar.ligacoesEmitidas(e.calcLigacoes, e.ligacoesFonte, { binarios: binarios });
       ligs = LG.lista;
       LG.difs.forEach(function (x) { avisos.push("Ligação — resistência refeita difere do emitido: " + x); });
       if (LG.premissas) premissas.push({ item: "Ligações — coeficientes", valor: "γlig = " + br(LG.premissas.gama_lig, 1) + "; kmod1 " + br(LG.premissas.kmod1_longa, 1) + " (longa) / " + br(LG.premissas.kmod1_curta, 1) + " (curta); kmod2 " + br(LG.premissas.kmod2, 1) + "; ρk " + LG.premissas.rho_k.Tatajuba + " kg/m³ (folhosa) e " + LG.premissas.rho_k.Pinus + " kg/m³ (Pinus); fub " + LG.premissas.fub + " MPa (inox A4-70)", fonte: ML.PAR.fonte, confianca: "premissa do RT (cálculo emitido R03)" });
@@ -388,17 +464,21 @@
 
     /* 12. Painel Wall do piso × ficha do fabricante */
     var painel = MadDimensionar.painelPiso(e.painelPiso, piso, e.catalogo), impedimentos = [];
-    if (painel && painel.impedeUso) { impedimentos.push("Painel Wall 40 mm do piso: " + painel.conclusao); pend.unshift("IMPEDE O USO — Painel Wall 40 mm: " + painel.conclusao); }
+    /* o impedimento aparece UMA vez (na lista de impedimentos); até 13/10 repetia como 1ª pendência e a tela contava duas vezes */
+    if (painel && painel.impedeUso) impedimentos.push("Painel Wall 40 mm do piso: " + painel.conclusao);
+    else if (painel && painel.criterio === "desempenho") premissas.push({ item: "Painel do piso (40 mm) — especificação de desempenho", valor: painel.conclusao, fonte: "cálculo do sistema (G + Q característico por zona, NBR 6120:2019) e tabela publicada do produto de referência", confianca: "decisão do RT (13/10/2026)" });
 
     /* 13. premissas do piso, pendências da obra */
     if (piso && MP.PADRAO) {
       try { var pf = MM.perfil(MP.PADRAO.perfil); premissas.push({ item: "Perfil de cálculo do piso", valor: pf.nome + " — kmod " + br(pf.kmod, 3) + ", γ " + br(pf.gamaG, 1) + ", ψ2 " + br(pf.psi2, 1) + ", φ " + br(pf.phi, 1) + ", L/" + pf.limVao + " e L/" + pf.limBalanco, fonte: pf.fonte, confianca: "regressão do emitido R03" }); } catch (er) {}
       piso.classe = piso.classe || MP.PADRAO.classe; piso.perfil = piso.perfil || MP.PADRAO.perfil;
       (piso.avisos || []).forEach(function (a) { pend.push("Piso: " + a + " — só a faixa de carga foi calculada (sem verificação)."); });
+      (piso.informacoes || []).forEach(function (a) { avisos.push("Piso: " + a + "."); });
     }
     var esPinus = MM.ESPECIES && MM.ESPECIES.pinus_cca;
     if (esPinus && esPinus.duvida) pend.push(esPinus.duvida + ".");
-    pend.push("Texto da NBR 7190-1:2022 (convênio Confea) para conferir os valores de fonte secundária usados nas verificações.");
+    /* conferência dos valores da 7190-1:2022 com o texto da norma: registro INTERNO (não é pendência do memorial — Rogério 13/10/2026) */
+    var interno = ["Conferir com o texto da NBR 7190-1:2022 (convênio Confea) os valores usados de fonte técnica secundária: classes D/C, kmod1/kmod2, γw, kc (βc), kM, βM, φ e flecha final."];
     (e.pendenciasObra || []).forEach(function (x) { pend.push(x); });
 
     /* 14. combinações para o memorial (kmod de cada uma pelo perfil 2022 da obra) */
@@ -468,7 +548,7 @@
       pecas: pecasOut,
       niveisFonte: (e.fonte.piso_pw && e.fonte.piso_pw.niveis) || null, classes: classes,
       nivel: { deltaPisoCm: 0, mensagem: "Nenhuma seção do piso foi alterada nesta rodada: o nível do piso acabado e o topo dos pilaretes não mudam." },
-      pendencias: pend, avisos: avisos, naoAbrangido: naoAbr
+      pendencias: pend, avisos: avisos, naoAbrangido: naoAbr, conferenciaInterna: interno
     };
   };
 

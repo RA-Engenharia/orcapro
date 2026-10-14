@@ -138,7 +138,12 @@
      * é contínuo sobre a VP mas não a torce). O gerar_modelo_V18.py criava a ligação com i = peça de CIMA e rotulava o nó i
      * — contra a própria regra. Achado em 12/10/2026 pela casca do madanalise: com a rótula embaixo os 73 pilaretes ficam a
      * < 10 % do CYPE 3D; com ela em cima, 46 de 73. "cima" só existe para a regressão contra o Python emitido. */
-    rotulaVertical: "baixo"
+    rotulaVertical: "baixo",
+    /* Barrote do piso apoiado em cima de VP: GARFO no barrote (só o giro de flexão livre, torção travada) no lugar da rótula
+     * nos 2 planos. Com a rótula, o barrote que só se apoia em VPs (ducha, 16×20) girava solto em torno do próprio eixo:
+     * mecanismo no autovalor com Kg de todas as barras e 42 rótulas trocadas à mão no CYPE 3D R04. Na obra o Painel Wall
+     * parafusado e os bloqueadores travam essa torção. Decisão do RT 13/10/2026. Só vale com rotulaVertical "baixo". */
+    garfoBarrote: true
   };
 
   /* ==================== helpers Python × JS ==================== */
@@ -441,8 +446,30 @@
 
     /** LIG_ROT vertical: a rótula fica no nó i → i = peça de BAIXO (regra 2); "cima" = como o Python emitido */
     function ligVertical(pCima, pBaixo, origem) {
-      if (O.rotulaVertical === "cima") addLig("LIG_ROT", pCima, pBaixo, origem);
-      else addLig("LIG_ROT", pBaixo, pCima, origem);
+      if (O.rotulaVertical === "cima") { addLig("LIG_ROT", pCima, pBaixo, origem); return; }
+      addLig("LIG_ROT", pBaixo, pCima, origem);
+      ligs[ligs.length - 1].vertical = true;
+    }
+    /** barrote do piso que SÓ se apoia em cima de VPs (nenhuma outra ligação o segura): as rótulas viram GARFO no barrote —
+     *  giro livre só em torno de cross(Z, u), torção presa (o Painel Wall e os bloqueadores travam). Os outros barrotes já têm a
+     *  torção presa por uma ligação de ponta e ficam como estavam (o vento das paredes não muda de caminho). */
+    function garfosDosBarrotes() {
+      if (O.rotulaVertical !== "baixo" || !O.garfoBarrote) return 0;
+      var porM = {}, q, n = 0;
+      for (q = 0; q < ligs.length; q++) {
+        [ligs[q].i[0], ligs[q].j[0]].forEach(function (mm, lado) {
+          if (!(mm instanceof Membro)) return;
+          var x = porM[mm.id] || (porM[mm.id] = { M: mm, ok: true, ligs: [] });
+          if (ligs[q].tipo === "LIG_ROT" && ligs[q].vertical && lado === 1) x.ligs.push(ligs[q]); else x.ok = false;
+        });
+      }
+      Object.keys(porM).forEach(function (k) {
+        var x = porM[k], Mc = x.M;
+        if (!x.ok || Mc.grupo !== "PISO_BARROTE" || !x.ligs.length) return;
+        var rl = cross3([0, 0, 1.0], Mc.u), nrl = norm(rl); rl = r4([rl[0] / nrl, rl[1] / nrl, rl[2] / nrl]);
+        x.ligs.forEach(function (l) { l.tipo = Math.abs(Mc.u[0]) >= Math.abs(Mc.u[1]) ? "GARFO_X" : "GARFO_Y"; l.rot_livre = rl; l.origem += " (garfo)"; n++; });
+      });
+      return n;
     }
 
     var cont = {};
@@ -627,7 +654,8 @@
       if (ligs[i].tipo.indexOf("APOIO") === 0) { nApoio++; }
       if (ligs[i].tipo === "PE_PILAR") { nPe++; }
     }
-    log.push("ligações: " + reprDict(cont) + " | apoios VP " + nApoio + ", pés de pilar " + nPe);
+    var nGarfo = garfosDosBarrotes();
+    log.push("ligações: " + reprDict(cont) + " | apoios VP " + nApoio + ", pés de pilar " + nPe + (nGarfo ? " | garfos em barrotes só apoiados em VP " + nGarfo : ""));
 
     // pilar aparado na ligação mais alta (o toco acima não tem função no modelo)
     for (i = 0; i < pilares.length; i++) {
@@ -816,7 +844,7 @@
       }
       var kw = { desc: l.origem };
       if (l.tipo === "LIG_ROT" || l.tipo === "PE_PILAR") { kw.art_ini = true; }   // rótula nos 2 planos no nó i
-      else if (l.tipo.indexOf("APOIO") === 0) { kw.garfo_fim = true; kw.rot_livre = l.rot_livre; }
+      else if (l.tipo.indexOf("APOIO") === 0 || l.tipo.indexOf("GARFO") === 0) { kw.garfo_fim = true; kw.rot_livre = l.rot_livre; }
       barra(ni, nj, l.tipo, kw);
     }
 
@@ -836,7 +864,7 @@
     //   a peça de maior seção; ligação só se não houver peça. A barra retirada empresta o trecho para a mantida (cargas).
     var MB = {};
     for (i = 0; i < membros.length; i++) { MB[membros[i].id] = membros[i]; }
-    function ehLig(g) { return g === "LIG_ROT" || g === "PE_PILAR" || g === "APOIO_X" || g === "APOIO_Y"; }
+    function ehLig(g) { return g === "LIG_ROT" || g === "PE_PILAR" || g === "APOIO_X" || g === "APOIO_Y" || g === "GARFO_X" || g === "GARFO_Y"; }
     function pesoSecao(bx) {
       if (ehLig(bx.grupo)) { return -1.0; }
       var M_ = MB[bx.membro];
@@ -882,7 +910,7 @@
     apoioNos = apoioNos2;
     var gr = {}, etiqs = [];
     for (i = 0; i < barras.length; i++) { if (!gr[barras[i].grupo]) { gr[barras[i].grupo] = true; etiqs.push(barras[i].grupo); } }
-    function ehLigApoio(g) { return g.indexOf("LIG") === 0 || g.indexOf("APOIO") === 0; }
+    function ehLigApoio(g) { return g.indexOf("LIG") === 0 || g.indexOf("APOIO") === 0 || g.indexOf("GARFO") === 0; }
     var ETIQS = etiqs.sort(function (x, y) {
       var bx = ehLigApoio(x), by = ehLigApoio(y);
       if (bx !== by) { return bx ? 1 : -1; }
@@ -913,8 +941,12 @@
     }
     var LIBERACAO = { LIG_ROT: "rótula nos 2 planos no nó i", PE_PILAR: "rótula nos 2 planos no nó i (pé do pilar)",
       APOIO_X: "garfo no nó j (VP): giro livre em torno de Y global — engastamento (1,1,0,1)",
-      APOIO_Y: "garfo no nó j (VP): giro livre em torno de X global — engastamento (1,1,1,0)" };
+      APOIO_Y: "garfo no nó j (VP): giro livre em torno de X global — engastamento (1,1,1,0)",
+      GARFO_X: "garfo no nó j (barrote sobre VP): giro livre em torno de Y global — engastamento (1,1,0,1)",
+      GARFO_Y: "garfo no nó j (barrote sobre VP): giro livre em torno de X global — engastamento (1,1,1,0)" };
     var ge = ["LIG_ROT", "PE_PILAR", "APOIO_X", "APOIO_Y"];
+    if (gr.GARFO_X) ge.push("GARFO_X");
+    if (gr.GARFO_Y) ge.push("GARFO_Y");
     for (i = 0; i < ge.length; i++) {
       secoes[ge[i]] = { serie: "genérico", perfil: "aço 10x10", b_cm: 10, h_cm: 10, E_MPa: 200000.0, nu: 0.25, gama_kN_m3: 0.01, liberacao: LIBERACAO[ge[i]] };
     }
@@ -1257,6 +1289,8 @@
     log.push("avisos (" + avisos.length + ")");
     return {
       modelo: mod, placas: placasOut, ops: ops, balanco: balOut, hipoteses: hipOut, textosCype: textos, log: log,
+      /* peças da fonte em cada etiqueta (quem chama descobre a espécie do grupo pelas peças — 13/10/2026) */
+      idsPorEtiqueta: (function () { var o = {}; membros.forEach(function (Mx) { var k = Mx.etiq(); (o[k] = o[k] || []).push.apply(o[k], Mx.ids); }); return o; })(),
       resumo: { nos: outNos.length, barras: barras.length, etiquetas: ETIQS.length, placas: placasOut.length, ops: ops.length,
         avisos: avisos.length, areaCoberturaM2: area_cob }
     };

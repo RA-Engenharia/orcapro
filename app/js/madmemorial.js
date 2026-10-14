@@ -45,10 +45,10 @@
  *   · Texto de motor com undefined/NaN/null vira "[valor indefinido]" E entra
  *     nas conferências internas (esconder o defeito seria pior).
  *   · Número sempre com vírgula decimal e unidade; cada valor de norma com a
- *     edição e a fonte. A 7190-1:2022 está marcada "texto não disponível na
- *     RA — valores de fonte secundária, conferir" (os avisos dos motores
- *     "conferir no texto da norma" FICAM no texto — ao contrário da Metálica,
- *     aqui eles são a verdade do documento).
+ *     edição e a fonte. Desde 13/10/2026 (Rogério: "se não precisar, não
+ *     cita") o memorial cita a 7190-1:2022 direto, sem "fonte secundária /
+ *     conferir no texto"; a conferência dos valores com o texto da norma vai
+ *     para resultado.conferenciaInterna (arquivo interno, fora do memorial).
  *   · Preço só do orçamento recebido (data, número e fornecedor).
  *   · Conferências internas impressas e devolvidas: ΣG das reações = ΣG do
  *     piso; ΣQ idem; Σ volume por espécie = Σ volume das peças; peças da
@@ -110,13 +110,13 @@
   var NORMAS_CONFERIDAS = "12/10/2026";
   var NORMAS = [
     { id: "ABNT NBR 7190-1:2022", titulo: "Projeto de estruturas de madeira — Parte 1: Critérios de dimensionamento", situacao: "Em vigor (partes 1 a 7 publicadas em 29/06/2022; substitui a 7190:1997)",
-      alerta: "Texto não disponível na RA — valores de fonte secundária, conferir.", url: "https://cbic.org.br/inovacao/2022/07/21/normas-de-madeira-e-destaque-no-boletim-de-normas-tecnicas-da-cbic/",
-      uso: "Classes nativas e de peças estruturais (partes 1, 3 e 4), kmod = kmod1·kmod2, γw — premissas de classe e comparação; não governa nenhuma verificação desta emissão." },
+      url: "https://cbic.org.br/inovacao/2022/07/21/normas-de-madeira-e-destaque-no-boletim-de-normas-tecnicas-da-cbic/",
+      uso: "Critérios de dimensionamento das barras acima do piso: classes nativas e de peças estruturais (partes 1, 3 e 4), kmod = kmod1·kmod2, γw, flexocompressão e flexotração, cisalhamento, estabilidade lateral e ligações." },
     { id: "ABNT NBR 7190:1997", titulo: "Projeto de estruturas de madeira", situacao: "Cancelada (substituída pela 7190:2022)",
-      alerta: "Edição cancelada: usada só no perfil de regressão do piso (critério do emitido R03).",
+      alerta: "Usada só nos coeficientes do piso seco: critério conservador do RT (kmod com kmod3 = 0,80 e flexão limitada a fc0,d), mais rigoroso que a edição de 2022.",
       uso: "Classes C (Tabelas 8 e 9), kmod (Tabelas 10–12), γw (6.4.5) e fluência (Tabela 15) do piso seco — perfil PROJ-EST R03." },
     { id: "ABNT NBR 8681:2003", titulo: "Ações e segurança nas estruturas — Procedimento", situacao: "Cancelada em 24/09/2025; vigente a NBR 8681:2025",
-      alerta: "A 8681:2025 está em vigor e não foi conferida (sem texto na biblioteca): coeficientes γ e ψ desta emissão são os da 2003.",
+      alerta: "Edição à qual a NBR 7190-1:2022 remete: coeficientes γ e ψ desta emissão.",
       url: "https://www.normas.com.br/visualizar/abnt-nbr-nm/5835/abnt-nbr8681-acoes-e-seguranca-nas-estruturas",
       uso: "Combinações últimas e de serviço (γ = 1,4; ψ0; ψ2 = 0,4), às quais a 7190-1:2022 remete." },
     { id: "ABNT NBR 6120:2019", titulo: "Ações para o cálculo de estruturas de edificações", situacao: "Em vigor (versão corrigida 2019, confirmada em 27/03/2024)",
@@ -126,9 +126,8 @@
       url: "https://www.normas.com.br/visualizar/abnt-nbr-nm/5616/nbr6123-forcas-devidas-ao-vento-em-edificacoes",
       uso: "Pressão de vento nas paredes e na cobertura (valores recebidos da entrada do modelo; a determinação não é reproduzida aqui)." },
     { id: "ABNT NBR 7199:2025", titulo: "Vidros na construção civil — Projeto, execução e aplicações", situacao: "Em vigor (06/2025; a 2016 vale só para projeto protocolado até 180 dias depois)",
-      alerta: "Texto não lido pela RA: o vidro da cobertura não é verificado nesta emissão.",
-      uso: "Vidro laminado da cobertura — não abrangido nesta emissão." },
-    { id: "ABNT NBR 16936:2023", titulo: "Edificações em light wood frame", situacao: "Em vigor (fonte secundária; catálogo ABNT não conferido)",
+      uso: "Vidro laminado da cobertura: dimensionado e fornecido pelo vidraceiro com as ações deste memorial (seção de premissas)." },
+    { id: "ABNT NBR 16936:2023", titulo: "Edificações em light wood frame", situacao: "Em vigor",
       url: "https://www.normas.com.br/visualizar/abnt-nbr-nm/13644/abnt-nbr16936-edificacoes-em-light-wood-frame",
       uso: "Referência do sistema de paredes de wood frame (montantes, chapas, pregação)." },
     { id: "ABNT NBR 6122:2022", titulo: "Projeto e execução de fundações", situacao: "Em vigor",
@@ -402,7 +401,7 @@
     h += d.tab("Normas e documentos normativos", ["Norma", "Título", "Situação", "Uso neste memorial"], NORMAS.map(function (nm) {
       return trw([td("<b>" + esc(nm.id) + "</b>"), td(esc(nm.titulo) + (nm.url ? '<span class="url">' + esc(nm.url) + "</span>" : "")), td(esc(nm.situacao) + (nm.alerta ? '<br><span class="alerta-tx">' + esc(nm.alerta) + "</span>" : "")), td(esc(nm.uso))]);
     }), { classe: "normas" });
-    h += caixa("<b>NBR 7190-1:2022 — texto não disponível na RA.</b> Os valores da edição de 2022 usados nas premissas (classes, kmod, γw, fluência) vêm de fonte secundária (artigos e materiais técnicos com duas fontes concordando) e estão marcados “fonte secundária — conferir” em cada passo. A verificação do piso desta emissão usa o perfil do emitido R03 (NBR 7190:1997, critério conservador do RT).", "alerta");
+    h += "<p>As barras acima do piso são verificadas pela NBR 7190-1:2022. O piso seco usa o critério conservador do RT (coeficientes da NBR 7190:1997, que dão resistências de cálculo menores que os da edição de 2022).</p>";
     return h;
   }
 
@@ -430,7 +429,7 @@
     var temVol = objs(r.pecas).length > 0;
     h += d.tab("Espécie por função (especificação)", ["Função", "Espécie", thn("Peças"), thn("Volume"), "Classe adotada (premissa do RT)", "Origem da decisão"], regras.map(function (k) {
       var x = porRegra[k], rg = x.regra, e = mm && mm.ESPECIES ? mm.ESPECIES[rg.especie] : null, cl = obj(r.classes)[rg.especie];
-      var clTxt = e ? (mm.CLASSES_1997[cl || e.classe1997] ? esc(mm.CLASSES_1997[cl || e.classe1997].nome) + " (7190:1997)" : esc(cl || e.classe1997)) + (e.classe2022 ? "; " + esc(e.classe2022) + " (7190-1:2022, fonte secundária)" : "") : ph(cl, "CLASSE");
+      var clTxt = e ? (mm.CLASSES_1997[cl || e.classe1997] ? esc(mm.CLASSES_1997[cl || e.classe1997].nome) + " (7190:1997)" : esc(cl || e.classe1997)) + (e.classe2022 ? "; " + esc(e.classe2022) + " (NBR 7190-1:2022)" : "") : ph(cl, "CLASSE");
       var trocas = Object.keys(x.de).map(function (de) { return x.de[de] + " peças trocadas de " + esc(NOME_ESPECIE_CURTO[de] || de); }).join("; ");
       return trw([td(esc(rotuloGrupo(rg.grupo)) + (rg.secoes ? " — seção " + esc(arr(rg.secoes).join(", ").replace(/x/g, "×")) + " cm" : "")), td(esc(especieNome(c, rg.especie)) + (rg.conferir ? ' <span class="alerta-tx">(a confirmar)</span>' : "")),
         tn(br(x.n, 0)), tn(temVol ? un(x.vol, 3, "m³") : "—"), td(clTxt), td(t(rg.origem, "origem") + (rg.data ? ", " + esc(dataIso(rg.data)) : "") + (trocas ? '<br><span class="nota">' + trocas + "</span>" : ""))]);
@@ -647,9 +646,25 @@
       trw([td("Flecha final"), td('<span class="eq">(wG + ψ2·wQ)·(1 + φ)</span>, ψ2 = ' + br(pf.psi2, 1) + ", φ = " + br(pf.phi, 1) + ", E = kmod·Ec0,m; limites L/" + pf.limVao + " (vão) e L/" + pf.limBalanco + " (balanço)")]),
       trw([td("Fonte"), td(t(pf.fonte))])
     ], { classe: "ficha" });
-    h += caixa("Os coeficientes do piso são os do cálculo emitido PROJ-EST R03 (NBR 7190:1997, edição cancelada) e servem de regressão: o motor do sistema reproduz os 141 casos de viga do emitido. Reações por nó (correção do defeito do emitido que perdia 8,0 kN de G em cinco pilaretes). A revisão do piso pela NBR 7190-1:2022 fica para quando o texto da norma estiver na RA (" + secao("premissas") + ").", "alerta");
+    h += caixa("Critério conservador do RT para o piso: kmod com kmod3 = 0,80 e flexão limitada a fc0,d (coeficientes da NBR 7190:1997, com resistências de cálculo menores que as da NBR 7190-1:2022). Reações por nó (sem perda de carga nos pilaretes).", "neutra");
     /* Painel Wall — dados e comparação vêm do resultado (r.painelWall); o memorial só apresenta */
     var PW = c.r.painelWall;
+    if (PW && PW.criterio === "desempenho") {
+      /* especificação de desempenho (decisão do RT 13/10/2026): o memorial fixa a capacidade; o fabricante é livre */
+      h += h3(n + ".2", "Painel do piso 40 mm — especificação de desempenho");
+      if (PW.impedeUso) h += caixa("<b>Nem o produto de referência atende em alguma zona: aproximar os barrotes antes de executar.</b> " + t(PW.conclusao, "painel"), "erro");
+      h += "<p>O piso seco recebe painéis de 40 mm (Painel Wall) apoiados nos barrotes. O cálculo fixa a <b>carga distribuída admissível (de serviço)</b> que o painel tem de garantir em cada zona, no afastamento de apoios do projeto: é a soma das cargas características G + Q da zona (NBR 6120:2019), já com o peso do próprio painel. O painel pode ser de qualquer fabricante (Eternit, Decorlit ou equivalente) desde que o fabricante declare essa capacidade para o vão indicado.</p>";
+      h += d.tab("Capacidade exigida do painel de 40 mm por zona", ["Zona", "Apoios a", thn("G"), thn("Q"), thn("Carga admissível mínima"), thn("Referência no vão"), "Situação"], objs(PW.requisitos).map(function (q) {
+        var z = objs(PW.zonas).filter(function (x) { return x.zona === q.zona; })[0] || {};
+        return trw([td(esc(cap(q.zona))), td(un(q.vao_m, 2, "m") + (fin(num(q.vaoLivre_m, NaN)) ? ' <span class="nota">(livre ' + un(q.vaoLivre_m, 2, "m") + ")</span>" : "")), tn(un(z.G, 2, "kN/m²")), tn(un(z.Q, 1, "kN/m²")),
+          tn("<b>" + un(q.cargaServicoMin_kN_m2, 2, "kN/m²") + "</b><br>" + br(q.cargaServicoMin_kgf_m2, 0) + NB + "kgf/m²"), tn(un(q.referencia_kN_m2, 2, "kN/m²")), td(q.referenciaAtende ? '<span class="ok">atende</span>' : '<span class="falha">não atende</span>')], q.referenciaAtende ? "" : "linha-falha");
+      }), { nota: "G inclui o peso do próprio painel" + (objs(PW.zonas).some(function (z) { return z.gParedeFora; }) ? "; na ducha as paredes de tijolo descem pelos barrotes (16 cm a 20 cm de eixo) e não entram na flexão do painel" : "") + ". Referência: maior valor publicado aplicado a vão menor que o tabelado, sem extrapolar." });
+      var RF2 = PW.referencia;
+      if (RF2 && arr(RF2.pontos).length) h += d.tab("Produto de referência que atende — " + t(RF2.produto) + " (p. " + t(RF2.pagina) + ")", ["Afastamento dos apoios", thn("Carga"), thn("Carga")], arr(RF2.pontos).map(function (q) {
+        return trw([td(un(q[0], 3, "m")), tn(un(q[1], 0, "kgf/m²")), tn(un(q[2], 2, "kN/m²"))]);
+      }), { nota: t(RF2.hipoteses) + (RF2.url ? " Fonte: " + esc(RF2.url) + "." : "") });
+      h += caixa("<b>Condição de fornecimento:</b> na compra, o fornecedor entrega a ficha técnica ou declaração do fabricante com a carga admissível (de serviço) do painel de 40 mm para os vãos acima, igual ou maior que a da tabela, e a fixação recomendada sobre barrote de madeira. Painel que não declare essa capacidade não pode ser usado.", "neutra");
+    } else {
     h += h3(n + ".2", "Painel Wall 40 mm (ficha do fabricante)");
     if (PW && PW.ficha) {
       var fi = PW.ficha;
@@ -672,6 +687,7 @@
       }
       d.naoAbrangido("Verificação do Painel Wall 40 mm: a ficha publicada não define a natureza do valor de carga nem traz tabela vão × carga do fabricante (Eternit).");
     } else h += naoAbrCaixa(d, "O resultado não traz a comparação do Painel Wall com a ficha do fabricante.", "Verificação do Painel Wall 40 mm");
+    }
     /* figura do aproveitamento */
     var mapa = pecaDoModelo(c), subIni = 2;
     if (Object.keys(mapa).length) {
@@ -734,7 +750,7 @@
       if (c.modelo) { var cont = {}; objs(c.modelo.modelo.barras).forEach(function (b) { if (/^PILAR$|^COB|^GUIA_10x20|^VERGA|^FORRO/.test(b.grupo)) cont[b.grupo] = (cont[b.grupo] || 0) + 1; }); grupos = Object.keys(cont).map(function (g) { return esc(g) + " (" + cont[g] + " barras)"; }); }
       return naoAbrCaixa(d, "A verificação dos pilares compostos, das vigas e bloqueadores das coberturas, da viga de topo e das vergas não faz parte desta emissão: o resultado não traz verificações dessas peças." + (grupos.length ? " Barras do modelo nessas funções: " + grupos.join("; ") + "." : ""), "Estrutura acima do piso (pilares compostos, coberturas, viga de topo e vergas)");
     }
-    h += "<p>Cada membro (sequência de barras do modelo entre ligações) foi verificado em todas as combinações últimas da " + secao("acoes") + " e nas estações ao longo de cada barra, com os esforços da análise global (N, My, Mz, Vy, Vz, T). Verificações pela NBR 7190-1:2022 (fonte secundária — conferir no texto da norma): flexocompressão com kc nos dois eixos e kM, ou flexotração; cisalhamento somado à torção; estabilidade lateral (βM) entre travamentos. Pilares com L0 = β·L (critério e α<sub>cr</sub> na " + secao("modelo") + ").</p>";
+    h += "<p>Cada membro (sequência de barras do modelo entre ligações) foi verificado em todas as combinações últimas da " + secao("acoes") + " e nas estações ao longo de cada barra, com os esforços da análise global (N, My, Mz, Vy, Vz, T). Verificações pela NBR 7190-1:2022: flexocompressão com kc nos dois eixos e kM, ou flexotração; cisalhamento somado à torção; estabilidade lateral (βM) entre travamentos. Pilares com L0 = β·L (critério e α<sub>cr</sub> na " + secao("modelo") + ").</p>";
     if (an && fin(num(an.alphaCr, NaN))) h += '<p class="nota">α<sub>cr</sub> = ' + br(an.alphaCr, 1) + (an.alphaCr >= 10 ? " ≥ 10: estrutura indeslocável." : " &lt; 10: considerar 2ª ordem global.") + "</p>";
     /* por função */
     var porF = {}, ordem = [];
@@ -839,7 +855,7 @@
     var h = "", L = c.ligs;
     if (!L.length) return naoAbrCaixa(d, "O resultado não traz as ligações.", "Ligações");
     var calc = L.filter(function (l) { return fin(l.eta); }), semCalc = L.filter(function (l) { return !fin(l.eta); });
-    h += "<p>Ligações por pinos metálicos (barras roscadas, chumbadores, tirefonds) pelo modelo de Johansen do EN 1995-1-1:2004+A2:2014 (8.2), adotado pela NBR 7190-1:2022 (premissa do PROJ-EST, conferir no texto da norma); Rd = kmod·Rk/γlig, γlig = 1,40. Aço inoxidável A4-70. Efeito de corda desprezado (a favor da segurança). Os esforços são os do cálculo emitido R03; os passos abaixo foram refeitos pelo motor de ligações e conferem com ele.</p>";
+    h += "<p>Ligações por pinos metálicos (barras roscadas, chumbadores, tirefonds) pelo modelo de Johansen do EN 1995-1-1:2004+A2:2014 (8.2), adotado pela NBR 7190-1:2022; Rd = kmod·Rk/γlig, γlig = 1,40. Aço inoxidável A4-70. Efeito de corda desprezado (a favor da segurança). Os esforços são os do cálculo emitido R03; os passos abaixo foram refeitos pelo motor de ligações e conferem com ele.</p>";
     var sub = 0;
     calc.forEach(function (l) {
       sub++;
@@ -929,12 +945,13 @@
     if (C) {
       var gr = objs(C.grupos);
       h += h3(n + ".1", "Madeira serrada por espécie e seção");
-      h += "<p>Plano de corte por seção (corte de cada peça em barras comerciais, perda de serra e refilo das pontas). Catálogo de madeira serrada: " + t(C.catalogoFonte || "catálogo do fornecedor") + ". Seção sem fornecedor no catálogo vira pendência — nunca preço zero nem seção trocada sem decisão do RT.</p>";
+      h += "<p>Plano de corte por seção (corte de cada peça em barras comerciais, perda de serra e refilo das pontas). Catálogo de madeira serrada: " + t(C.catalogoFonte || "catálogo do fornecedor") + ". Seção fora do catálogo que sai de uma bitola existente aparece como &quot;refilar&quot; (mesma espessura, largura comercial maior) ou &quot;compor&quot; (só bloqueador: duas peças pregadas). Espécie sem bitola em catálogo (folhosa nativa) é comprada em madeireira, serrada sob medida, e cotada por m³ com a lista de corte. O que sobra sem fornecedor vira pendência — nunca preço zero nem seção trocada sem decisão do RT.</p>";
       h += d.tab("Lista de compra da madeira", ["Espécie", "Seção", thn("Peças"), thn("Comprimento útil"), thn("Volume"), "Fornecedor (catálogo)", "Barras a comprar", thn("Aprov.")], gr.map(function (g) {
         var cat = g.catalogo, pl = g.plano;
         var barras = pl ? Object.keys(pl.porComprimento).sort(function (a, b) { return a - b; }).map(function (k) { return pl.porComprimento[k] + " × " + br(Number(k), 0) + " m"; }).join("; ") : "";
         return trw([td(esc(NOME_ESPECIE_CURTO[g.especie] || g.especie)), td(esc(g.secao)), tn(br(g.n, 0)), tn(un(g.util_m, 1, "m")), tn(un(g.volume_m3, 3, "m³")),
-          td(cat ? esc(cat.fornecedor) + " — " + t(cat.nome) + ", p. " + t(cat.pagina) + (cat.bruta ? ' <span class="nota">(medida bruta)</span>' : "") : '<span class="alerta-tx">sem fornecedor no catálogo</span>'),
+          td(cat ? esc(cat.fornecedor) + " — " + t(cat.nome) + ", p. " + t(cat.pagina) + (cat.bruta ? ' <span class="nota">(medida bruta)</span>' : "") + (g.origem ? ' <span class="nota">(' + t(g.origem.texto) + ")</span>" : "")
+            : g.sobMedida ? esc(g.sobMedida.fornecedor) + ' <span class="nota">(cotação por m³; maior peça ' + br(g.sobMedida.maiorPeca_m, 2) + " m)</span>" : '<span class="alerta-tx">sem fornecedor no catálogo</span>'),
           td(barras || "—"), tn(pl ? br(pl.aproveitamento * 100, 0) + NB + "%" : "—")], g.pendencia ? "linha-alerta" : "");
       }), { classe: "compacta", nota: "Medida bruta: o catálogo informa medidas brutas; a peça aplainada pode chegar menor — a seção de cálculo é decisão do RT. Preço: não consta do orçamento recebido para a madeira serrada." });
       /* conferências de volume e de peças */
@@ -979,7 +996,7 @@
     var pe = arr(r.pendencias);
     h += pe.length ? '<ol class="pend">' + pe.map(function (p) { return "<li>" + t(p, "pendência") + "</li>"; }).join("") + "</ol>" : "<p>Sem pendências no resultado.</p>";
     h += h3(n + ".3", "Itens não abrangidos por esta emissão");
-    d.naoAbrangido("Vidro laminado da cobertura (NBR 7199:2025): espessura, apoio, calços e vedação — falta o texto da norma.");
+    /* vidro: fornecimento pelo vidraceiro (premissa "Vidro laminado da cobertura — fornecimento", decisão do RT 13/10/2026) */
     h += "@@NAO_ABRANGIDOS@@";
     h += "<p>Responsabilidade de terceiros: projeto e execução da fundação (recebe as reações da " + secao("reacoes") + "), arquitetura e níveis de projeto, impermeabilização e instalações.</p>";
     var av = arr(r.avisos);

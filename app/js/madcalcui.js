@@ -146,6 +146,18 @@
     v.innerHTML = '<div class="mdc-jan" role="dialog" aria-modal="true" aria-labelledby="mdc-tit" tabindex="-1"></div>';
     doc.body.appendChild(v);
     ligar(v);
+    /* foco na janela ao abrir e Esc no documento: aberta por um comando da fita, a janela ficava sem foco, o Esc não chegava
+     * nela e o véu continuava por cima da fita — o clique no comando seguinte caía no véu (e2e-bim-ferramentas intermitente,
+     * achado da frente da Metálica em 13/10/2026) */
+    setTimeout(function () { var j = v.querySelector(".mdc-jan"); if (j && raiz() === v && !v.contains(doc.activeElement)) try { j.focus({ preventScroll: true }); } catch (e) {} }, 0);
+    if (!garantir.escDoc) {
+      garantir.escDoc = true;
+      doc.addEventListener("keydown", function (ev) {
+        var r = raiz();
+        if (!r || ev.key !== "Escape" || r.contains(ev.target) || doc.querySelector(".modal-bg, .mod-mais-menu:not([hidden])")) return;
+        fechar();
+      });
+    }
     return v;
   }
   function fechar() {
@@ -158,7 +170,7 @@
   function cabecalho() {
     var Mo = M(), p = UIC.pacote, nome = (UIC.docu && UIC.docu.obra) || (p && p.obra && p.obra.nome) || ((obraApp() || {}).nome) || "";
     var sub = (nome ? nome + " · " : "") + "NBR 7190-1:2022 · NBR 6120 · NBR 6123 · NBR 8681";
-    var acoes = [bt("exemplo", "Carregar exemplo", { ico: "camadas", dica: "Abre o pacote de exemplo: um quiosque de madeira real anonimizado (866 peças, piso seco, wood frame e duas coberturas)" }),
+    var acoes = [bt("exemplo", "Carregar exemplo", { ico: "camadas", dica: "Abre o pacote de exemplo: um quiosque de madeira real anonimizado (907 peças, piso seco, wood frame e duas coberturas)" }),
                  bt("arquivos", "Carregar arquivos", { ico: "pasta", dica: "O pacote da obra (.json ou .json.gz), os arquivos soltos da obra ou um .zip com eles" })];
     if (Mo) acoes.push(Mo.SEP);
     acoes.push(bt("baixar-pacote", "Baixar pacote da obra", { ico: "baixar", dis: !p, dica: "Junta os arquivos carregados num pacote só (.json.gz) para abrir de novo depois" }));
@@ -319,7 +331,7 @@
         return "<tr><td>" + esc(f.rotulo) + "</td><td>" + selEsp("esp." + f.id, P.especiePorFuncao[f.id]) + "</td><td>" + (f.modelo ? pil("Verificada", "info") : pil("Só compra e desenho", "neutro")) + "</td></tr>";
       }).join("") + "</tbody></table></div>" });
     var usadas = {}; Object.keys(P.especiePorFuncao).forEach(function (k) { usadas[P.especiePorFuncao[k]] = 1; }); Object.keys(P.classes || {}).forEach(function (k) { usadas[k] = 1; });
-    h += sec({ titulo: "Classe de resistência (NBR 7190-1:2022)", sub: "Premissa conservadora do RT — os valores da 2022 vêm de fonte secundária enquanto o texto da norma não estiver na biblioteca.",
+    h += sec({ titulo: "Classe de resistência (NBR 7190-1:2022)", sub: "Premissa conservadora do RT.",
       corpoHtml: '<div class="mdc-grade">' + Object.keys(usadas).map(function (k) {
         var e = op.especies.filter(function (x) { return x.id === k; })[0]; if (!e) return "";
         var val = (P.classes || {})[k] || e.classe2022;
@@ -495,10 +507,11 @@
   function compraSecao(r) {
     var c = r.compra; if (!c) return sec({ titulo: "Lista de compra", corpoHtml: '<p style="margin:0">Sem catálogo de madeira serrada para montar a compra.</p>' });
     return sec({ titulo: "Lista de compra", sub: c.grupos.length + " itens por espécie e seção" + (c.catalogoFonte ? " · " + c.catalogoFonte : ""), acoesHtml: bt("compra", "Baixar .xlsx", { sm: 1, ico: "planilha" }),
-      corpoHtml: '<div class="mdc-tab-rola"><table class="tbl mdc-t" data-mdc="compra"><thead><tr><th>Espécie</th><th>Seção</th><th class="num">Peças</th><th class="num">Útil (m)</th><th class="num">Volume (m³)</th><th>Fornecedor</th><th>Barras</th><th class="num">Aprov.</th><th>Pendência</th></tr></thead><tbody>' +
+      corpoHtml: (arr(c.cotacao).length ? '<p class="mdc-fraco" style="margin:0 0 8px" data-mdc="cotacao">Cotação em madeireira (serrada sob medida, por m³): ' + arr(c.cotacao).map(function (x) { return "<b>" + esc(String(x.nomeEspecie).replace(/\s*\(.*$/, "")) + "</b> " + fmt(x.volume_m3, 2) + " m³ em " + x.secoes.length + " seções (maior peça " + fmt(x.maiorPeca_m, 2) + " m)"; }).join(" · ") + ".</p>" : "") +
+        '<div class="mdc-tab-rola"><table class="tbl mdc-t" data-mdc="compra"><thead><tr><th>Espécie</th><th>Seção</th><th class="num">Peças</th><th class="num">Útil (m)</th><th class="num">Volume (m³)</th><th>Fornecedor</th><th>Barras</th><th class="num">Aprov.</th><th>Pendência</th></tr></thead><tbody>' +
         c.grupos.map(function (g) {
-          var barras = g.porComprimento ? Object.keys(g.porComprimento).map(function (L) { return g.porComprimento[L] + " × " + fmt(Number(L), 1) + " m"; }).join(" + ") : "—";
-          return "<tr><td>" + esc(g.especieNome) + "</td><td>" + esc(g.secao) + '</td><td class="num">' + g.n + '</td><td class="num">' + fmt(g.util_m, 1) + '</td><td class="num">' + fmt(g.volume_m3, 3) + "</td><td>" + esc(g.fornecedor || "—") + (g.bruta ? ' <small class="mdc-fraco">(medida bruta)</small>' : "") + "</td><td>" + esc(barras) + '</td><td class="num">' + pct(g.aproveitamento) + "</td><td>" + (g.pendencia ? pil("Pendência", "alerta") + ' <small>' + esc(g.pendencia) + "</small>" : "") + "</td></tr>";
+          var barras = g.porComprimento ? Object.keys(g.porComprimento).map(function (L) { return g.porComprimento[L] + " × " + fmt(Number(L), 1) + " m"; }).join(" + ") : (g.sobMedida ? "sob medida" : "—");
+          return "<tr><td>" + esc(g.especieNome) + "</td><td>" + esc(g.secao) + '</td><td class="num">' + g.n + '</td><td class="num">' + fmt(g.util_m, 1) + '</td><td class="num">' + fmt(g.volume_m3, 3) + "</td><td>" + esc(g.fornecedor || "—") + (g.bruta ? ' <small class="mdc-fraco">(medida bruta)</small>' : "") + (g.origem ? ' <small class="mdc-fraco">(' + esc(g.origem) + ")</small>" : "") + "</td><td>" + esc(barras) + '</td><td class="num">' + pct(g.aproveitamento) + "</td><td>" + (g.pendencia ? pil("Pendência", "alerta") + ' <small>' + esc(g.pendencia) + "</small>" : "") + "</td></tr>";
         }).join("") + "</tbody></table></div>" });
   }
 
@@ -738,7 +751,7 @@
   function previa() { var P = global.BimPrevia; if (!P || !P.modelador || !P.modelador()) return false; if (P.disciplina) { try { return P.disciplina("marcenaria") !== false; } catch (e) { return true; } } return true; }
   var COMANDOS = [
     { id: "mad-calc-abrir", rotulo: "Estrutura de\nmadeira", icone: "estrutura", grande: true, dica: "Cálculo da estrutura de madeira pela NBR 7190-1:2022: carregue o pacote da obra (ou o exemplo), confira as premissas e calcule — piso seco, pilares, coberturas, paredes, ligações, reações e compra." },
-    { id: "mad-calc-exemplo", rotulo: "Carregar\nexemplo", icone: "camadas", grande: true, dica: "Abre o exemplo pronto: um quiosque de madeira real anonimizado (866 peças, piso seco, wood frame e duas coberturas)." },
+    { id: "mad-calc-exemplo", rotulo: "Carregar\nexemplo", icone: "camadas", grande: true, dica: "Abre o exemplo pronto: um quiosque de madeira real anonimizado (907 peças, piso seco, wood frame e duas coberturas)." },
     { id: "mad-calc-calcular", rotulo: "Calcular", icone: "raio", grande: true, dica: "Calcula a estrutura carregada em paralelo (a tela continua livre) — cerca de meio minuto." },
     { id: "mad-calc-resultados", rotulo: "Resultados", icone: "grafico", grande: true, dica: "Resumo por função (η, o que governa, a combinação), reprovações e impedimentos, α_cr, reações para a fundação e compra." },
     { id: "mad-calc-memorial", rotulo: "Memorial", icone: "relatorio", dica: "Memorial de cálculo da madeira (abre para imprimir ou salvar em PDF)." },
@@ -787,7 +800,7 @@
       var w = W(), cf = UIC.pacote && w ? w.conferir(UIC.pacote) : null;
       return { aberta: !!raiz(), aba: UIC.aba, pacote: cf ? { ok: cf.ok, pecas: cf.pecas, arquivos: cf.tem.length, falta: cf.falta.map(function (f) { return f.id; }) } : null,
                calculando: !!(UIC.calc && UIC.calc.rodando), etapa: UIC.calc ? UIC.calc.etapa : null, modoCalculo: UIC.modoCalc, erro: UIC.erro,
-               resumo: UIC.resumo ? { ok: UIC.resumo.ok, funcoes: UIC.resumo.funcoes.length, reprovacoes: UIC.resumo.reprovacoes.length, alphaCr: UIC.resumo.alphaCr, impedimentos: UIC.resumo.impedimentos.length, reacoes: UIC.resumo.reacoes.length } : null,
+               resumo: UIC.resumo ? { ok: UIC.resumo.ok, funcoes: UIC.resumo.funcoes.length, reprovacoes: UIC.resumo.reprovacoes.length, alphaCr: UIC.resumo.alphaCr, impedimentos: UIC.resumo.impedimentos.length, pendencias: (UIC.resumo.pendencias || []).length, reacoes: UIC.resumo.reacoes.length } : null,
                saidas: JSON.parse(JSON.stringify(UIC.saidas)), baixados: UIC.baixados.slice() };
     },
     resumo: function () { return UIC.resumo; },

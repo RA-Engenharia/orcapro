@@ -865,7 +865,12 @@
     if (pwr) {
       notasPW.push("Produto: " + pwr.produto + (pwr.pagina ? " (ficha p. " + pwr.pagina + ")" : "") + "; apoios a " + br(pwr.vaoApoios_m, 3) + " m (barrotes).");
       if (pwr.impedeUso) notasPW.push({ t: "NÃO EXECUTAR: " + pwr.conclusao, cor: VERMELHO, attr: ' data-pend="painel-wall"' });
-      arr(pwr.zonas).forEach(function (z) { notasPW.push({ t: "Zona " + z.zona + ": G + Q = " + br(z.total, 2) + " kN/m2 x ficha " + br(pwr.ficha && pwr.ficha.carga_kN_m2, 2) + " kN/m2" + (z.acimaFicha ? " - ACIMA DA FICHA" : ""), cor: z.acimaFicha ? VERMELHO : null }); });
+      if (pwr.criterio === "desempenho") {
+        /* especificação de desempenho (RT 13/10/2026): a prancha diz a capacidade que o painel comprado tem de declarar */
+        notasPW.push("Painel de 40 mm de qualquer fabricante, com carga admissível (de serviço) declarada pelo fabricante de no mínimo:");
+        arr(pwr.requisitos).forEach(function (q) { notasPW.push("  zona " + q.zona + ": " + br(q.cargaServicoMin_kN_m2, 2) + " kN/m2 (" + q.cargaServicoMin_kgf_m2 + " kgf/m2) com apoios a " + br(q.vao_m, 2) + " m"); });
+        notasPW.push("Exigir a ficha ou declaração do fabricante na compra (ver memorial).");
+      } else arr(pwr.zonas).forEach(function (z) { notasPW.push({ t: "Zona " + z.zona + ": G + Q = " + br(z.total, 2) + " kN/m2 x ficha " + br(pwr.ficha && pwr.ficha.carga_kN_m2, 2) + " kN/m2" + (z.acimaFicha ? " - ACIMA DA FICHA" : ""), cor: z.acimaFicha ? VERMELHO : null }); });
       if (pwr.fabricanteConfirmado === false && pwr.obsFabricante) notasPW.push({ t: "Fabricante não confirmado: " + pwr.obsFabricante, cor: VERMELHO });
     }
     if (maiores.length) notasPW.push({ t: maiores.length + " contorno(s) da paginação maiores que a chapa " + br(cat.L, 2) + " x " + br(cat.b, 2) + " m (" + maiores.slice(0, 6).map(function (m) { return m.nome.replace(/^Painel Wall 40\s*/i, "") + " " + br(m.L, 2) + " x " + br(m.b, 2); }).join("; ") + (maiores.length > 6 ? "…" : "") + "): rever a paginação com o fabricante [PENDENTE].", cor: VERMELHO, attr: ' data-pend="paginacao"' });
@@ -1097,7 +1102,8 @@
     /* notas no pé */
     var yN = a.y + a.h - hNotas;
     var notas = [{ t: "Solicitação de cálculo dos painéis e dos hold-downs não calculada: os painéis trazem a resistência (FvRd) e a rigidez, sem eta [PENDENTE].", cor: VERMELHO, attr: ' data-pend="paineis"' }];
-    if (pc) notas.push({ t: "Confirmar o " + pc.produto + " como chapa de contraventamento (premissa pelo orçamento; a fonte R03 traz OSB) [PENDENTE].", cor: VERMELHO });
+    if (pc && pc.decisaoRT) notas.push("Chapa de contraventamento: " + pc.produto + " - " + pc.decisaoRT.replace(/^Decisão do RT \(([^)]*)\): .*$/, "decisão do RT de $1") + " (no lugar do OSB da fonte R03).");
+    else if (pc) notas.push({ t: "Confirmar o " + pc.produto + " como chapa de contraventamento (premissa pelo orçamento; a fonte R03 traz OSB) [PENDENTE].", cor: VERMELHO });
     notas.push("Juntas tracejadas = paginação da chapa " + br(chapaL, 2) + " x " + br(chapaH, 2) + " m a partir da extremidade esquerda do painel; montantes a no máximo " + (pc ? pc.montantesMaxCm : 60) + " cm; pregação L07.");
     D.textos(a.x + 4, yN, notas, T.nota * 0.88, { wmax: a.w - 8 });
     return { escala: "1:" + eE };
@@ -1143,7 +1149,7 @@
       return [{ t: q.nome, attr: ' data-pilar-linha="' + q.nome + '"' }, q.eixo, mk.length + " (" + mk[0] + (mk.length > 1 ? " a " + mk[mk.length - 1] : "") + ")", mb.length + " (" + (mb.filter(function (m, k) { return mb.indexOf(m) === k; }).join(", ") || "-") + ")", cm(q.z1 - q.z0), q.pecas[0].especie ? especieCurta(q.pecas[0].especie) : "-",
         v ? br(v.beta, 2) : "-", v && v.L0 ? cm(v.L0) : "-", { t: v ? br(v.eta, 2) : "-", cor: cor }, v ? v.governa : "-", { t: v ? (v.ok ? "ATENDE" : "NÃO ATENDE") : "SEM VERIFICAÇÃO", cor: v && v.ok ? null : VERMELHO }];
     });
-    var hq = tituloVista(D, a.x + 4, yB, "QUADRO DOS PILARES COMPOSTOS", "flexocompressão do cálculo (NBR 7190-1:2022, fonte secundária); L0 = beta x L") + 1;
+    var hq = tituloVista(D, a.x + 4, yB, "QUADRO DOS PILARES COMPOSTOS", "flexocompressão do cálculo (NBR 7190-1:2022); L0 = beta x L") + 1;
     var tq = D.tabela(a.x + 4, yB + hq, cols, lin, {});
     var be = r.analise && r.analise.estabilidade;
     if (be && be.alphaCrMin != null) D.textos(a.x + 4, yB + hq + tq.h + 3, ["Estabilidade global (autovalor): alfa_cr = " + br(be.alphaCrMin, 1) + (be.combinacaoCritica ? " em " + be.combinacaoCritica : "") + "; beta de projeto = máx(1,0; beta do autovalor); L = altura total do pilar (pé ao topo)."], T.nota * 0.86, { wmax: tq.w });
@@ -1330,9 +1336,10 @@
       var gs = porEsp[k].slice().sort(function (p, q) { return (p.b_mm * p.h_mm) - (q.b_mm * q.h_mm); }), sv = 0, sm = 0, sn = 0;
       lin.push({ titulo: nomeEspecie(k).toUpperCase(), attr: ' data-especie="' + esc(k) + '"' });
       gs.forEach(function (g) {
-        var barras = "-", forn = "-", pend = !g.catalogo || !g.plano;
+        var barras = "-", forn = "-", smd = g.sobMedida, pend = !smd && (!g.catalogo || !g.plano);
         if (g.plano && g.plano.barras) { var cont = {}; g.plano.barras.forEach(function (b) { cont[b.L_m] = (cont[b.L_m] || 0) + 1; }); barras = Object.keys(cont).sort(function (p, q) { return q - p; }).map(function (L) { return cont[L] + " x " + br(+L, 2) + " m"; }).join(" + "); }
-        if (g.catalogo) forn = g.catalogo.fornecedor + " p. " + g.catalogo.pagina;
+        if (g.catalogo) forn = g.catalogo.fornecedor + " p. " + g.catalogo.pagina + (g.origem ? " - " + g.origem.texto.replace(/\s*\([^)]*\)$/, "") : "");
+        if (smd) { barras = "sob medida (maior peça " + br(smd.maiorPeca_m, 2) + " m)"; forn = smd.fornecedor + " - cotação por m3"; }
         lin.push([especieCurta(k), cm(g.b_mm / 1000) + "x" + cm(g.h_mm / 1000), String(g.n), br(g.util_m, 2), { t: br(g.volume_m3, 3), attr: ' data-vol="' + (Math.round(g.volume_m3 * 1e6) / 1e6) + '" data-esp="' + esc(k) + '"' },
           pend ? { t: "sem fornecedor no catálogo [PENDENTE]", cor: VERMELHO, attr: ' data-pend="compra"' } : barras, pend ? { t: "cadastrar ou trocar a seção (RT)", cor: VERMELHO } : forn]);
         sv += g.volume_m3; sm += g.util_m; sn += g.n;
@@ -1379,7 +1386,7 @@
     y2 += tituloVista(D, x2, y2, "PAINÉIS E CHAPAS", null) + 1;
     var linP = [], cat = c.painelCat;
     var aPW = d.paineisPW.reduce(function (s, p) { return s + num(p.area_m2, 0); }, 0);
-    if (d.paineisPW.length) linP.push(["Painel Wall 40 mm (piso)", d.paineisPW.length + " contornos", br(aPW, 2) + " m2", (r.painelWall && r.painelWall.impedeUso) ? { t: "acima da ficha [PENDENTE]", cor: VERMELHO } : "chapa " + br(cat.L, 2) + " x " + br(cat.b, 2) + " m"]);
+    if (d.paineisPW.length) linP.push(["Painel Wall 40 mm (piso)", d.paineisPW.length + " contornos", br(aPW, 2) + " m2", (r.painelWall && r.painelWall.impedeUso) ? { t: r.painelWall.criterio === "desempenho" ? "aproximar barrotes [PENDENTE]" : "acima da ficha [PENDENTE]", cor: VERMELHO } : "chapa " + br(cat.L, 2) + " x " + br(cat.b, 2) + " m"]);
     var pc = r.paredesPremissas && r.paredesPremissas.catalogo;
     var chs = d.pecas.filter(function (p) { return p.grupo === "WF_CHAPA"; }), aCh = chs.reduce(function (s, p) { return s + num(p.ext[0], 0) * num(p.ext[1], 0); }, 0);
     if (chs.length) { var ach = pc ? num(pc.largura_m, 1.2) * num(pc.altura_m, 2.4) : 2.88; linP.push([(pc ? pc.produto : "Chapa do fechamento") + " (paredes)", chs.length + " faces", br(aCh, 2) + " m2", { t: Math.ceil(aCh / ach) + " chapas " + (pc ? br(pc.largura_m, 2) + " x " + br(pc.altura_m, 2) : "1,20 x 2,40") + " (sem perdas) [CONFIRMAR]", cor: VERMELHO }]); }
@@ -1436,14 +1443,14 @@
     var notas = [
       "Cotas em centímetros; níveis em metros (z = 0,00 no piso acabado" + (nv.nota && /\+\d/.test(nv.nota) ? ", " + (/(\+\d+[,.]?\d*)/.exec(nv.nota) || [""])[0] + " da arquitetura" : "") + "). Não medir no desenho.",
       "Marca da peça: {marca} - {espécie} {b}x{h} x {comprimento} (cm), igual em todas as folhas e na lista de materiais.",
-      "Classes de resistência (NBR 7190-1:2022, premissa do RT - fonte secundária): " + partes.join("; ") + ".",
+      "Classes de resistência (NBR 7190-1:2022, premissa do RT): " + partes.join("; ") + ".",
       txt(nv.fixacao) ? "Madeira nunca em contato com o concreto: " + nv.fixacao + "." : "",
       "Ligações e ferragens: conforme a folha 07 (texto de cada ligação); ferragem inox A4-70 (AISI 316) onde indicado.",
       "Hachura: seção cortada com anéis de crescimento; corte ao longo da fibra com linhas de fibra; peça em vista sem hachura.",
       "VERMELHO = pendência ou reprovação: não executar nem comprar o item antes de resolver.",
       "Projeto executivo - revisão " + rev + "."
     ].filter(Boolean);
-    var normas = ["ABNT NBR 7190-1:2022 - projeto de estruturas de madeira (valores de fonte secundária, conferir no texto)", "ABNT NBR 7190:1997, Anexo A - desenho de estruturas de madeira (referência do desenho)",
+    var normas = ["ABNT NBR 7190-1:2022 - projeto de estruturas de madeira", "ABNT NBR 7190:1997, Anexo A - desenho de estruturas de madeira (referência do desenho)",
       "ABNT NBR 16936:2023 - edificações em light wood frame (paredes)", "ABNT NBR 6120:2019 - ações", "ABNT NBR 6123:2023 - vento", "ABNT NBR 8681:2003 - ações e segurança (combinações)",
       "EN 1995-1-1:2004+A2:2014 - ligações (Johansen)", "ABNT NBR 7199:2025 - vidros (texto não lido: vidro pendente)",
       "ABNT NBR 16861:2020, 17006:2021, 17067:2022, 17068:2022 e 16752:2020 - desenho técnico (linhas, projeções, hachuras, cotagem, folhas)"];

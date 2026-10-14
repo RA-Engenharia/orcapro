@@ -262,10 +262,11 @@
                especie: curto(m.especie), classe: m.classe, secao: m.secao, beta: m.beta, ok: g.reprovados === 0 };
     });
     var an = r.analise || {}, est = an.estabilidade || {};
-    var comp = r.compra ? { pendencias: arr(r.compra.pendencias), catalogoFonte: r.compra.catalogoFonte || "", grupos: arr(r.compra.grupos).map(function (x) {
+    var comp = r.compra ? { pendencias: arr(r.compra.pendencias), catalogoFonte: r.compra.catalogoFonte || "", cotacao: arr(r.compra.cotacao), grupos: arr(r.compra.grupos).map(function (x) {
       var pl = x.plano || null;
       return { especie: x.especie, especieNome: curto(nomeEspecie(x.especie)), secao: x.secao, b_mm: x.b_mm, h_mm: x.h_mm, n: x.n, util_m: x.util_m, volume_m3: x.volume_m3,
-               fornecedor: x.catalogo ? x.catalogo.fornecedor : "", produto: x.catalogo ? (x.catalogo.nome || x.catalogo.produtoId) : "", bruta: !!(x.catalogo && x.catalogo.bruta),
+               fornecedor: x.catalogo ? x.catalogo.fornecedor : (x.sobMedida ? x.sobMedida.fornecedor : ""), produto: x.catalogo ? (x.catalogo.nome || x.catalogo.produtoId) + (x.origem ? " — " + x.origem.texto : "") : (x.sobMedida ? "serrada sob medida (cotação por m³)" : ""), bruta: !!(x.catalogo && x.catalogo.bruta),
+               origem: x.origem ? x.origem.texto : "", sobMedida: !!x.sobMedida,
                porComprimento: pl ? pl.porComprimento : null, barras: pl ? arr(pl.barras).length : 0, comprado_m: pl ? pl.comprado_m : null, aproveitamento: pl ? pl.aproveitamento : null,
                pendencia: x.pendencia || "" };
     }) } : null;

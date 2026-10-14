@@ -58,16 +58,18 @@
    * não um ensaio; o memorial diz isso. `gamaCarga` = peso específico para cargas (kN/m³). */
   var ESPECIES = {
     tatajuba: { nome: "Tatajuba (Bagassa guianensis)", grupo: "dicotiledonea", classe1997: "C40-dic", classe2022: "nativa:D40", gamaCarga: 10.0,
-      classeLiteratura: "nativa:D60 (7190-3:2022 Tab. A.1, fc0,k 64,62 MPa — fonte secundária R2)",
+      classeLiteratura: "nativa:D60 (NBR 7190-3:2022, Tab. A.1, fc0,k 64,62 MPa)",
       fonteGama: "NBR 6120:2019, Tabela 1 (adotado 10 kN/m³ no PROJ-EST, a favor da segurança)", rhoKLig: 550,
       fonteRhoK: "PROJ-EST R00 calc_ligacoes.py: classe ≥ D40, ρk 550 kg/m³ (EN 338) — premissa do RT", uso: "pilares, vigas, piso seco" },
     itauba: { nome: "Itaúba (Mezilaurus itauba)", grupo: "dicotiledonea", classe1997: "C40-dic", classe2022: "nativa:D40", gamaCarga: 10.0,
-      fonteGama: "NBR 6120:2019, Tabela 1 (p. 16): Itaúba não consta pelo nome; dicotiledônea classe C60 = 10 kN/m³ (a 7190-3:2022 Tab. A.1 a põe em D60, fonte secundária)",
+      fonteGama: "NBR 6120:2019, Tabela 1 (p. 16): Itaúba não consta pelo nome; dicotiledônea classe C60 = 10 kN/m³ (NBR 7190-3:2022, Tab. A.1: D60)",
       rhoKLig: 550, fonteRhoK: "mesma premissa do RT para a Tatajuba (classe ≥ D40, ρk 550 kg/m³, EN 338) — a favor da segurança",
-      classeLiteratura: "nativa:D60 (7190-3:2022 Tab. A.1, fc0,k 61,71 MPa — fonte secundária R2)", uso: "pergolado, brise, ripado (especificação do cliente 11/10/2026)" },
+      classeLiteratura: "nativa:D60 (NBR 7190-3:2022, Tab. A.1, fc0,k 61,71 MPa)", uso: "pergolado, brise, ripado (especificação do cliente 11/10/2026)" },
     pinus_cca: { nome: "Pinus elliottii/taeda tratado em autoclave (CCA)", grupo: "conifera", classe1997: "C25-con", gamaCarga: 6.0,
-      fonteGama: null, rhoKLig: 330, fonteRhoK: "PROJ-EST R00 calc_ligacoes.py: Pinus ≥ C20, ρk 330 kg/m³ — premissa do RT",
-      uso: "wood frame (montantes, guias, travessas), forro", duvida: "γ de carga do pinus a conferir na NBR 6120:2019 Tab. 1" }
+      /* conferido no texto em 13/10/2026: coníferas C20 5 / C25 5,5 / C30 6 kN/m³ (U = 12 %) — o pinus tratado entra com o MAIOR (6) */
+      fonteGama: "NBR 6120:2019, Tabela 1 (p. 16): coníferas C20 = 5, C25 = 5,5, C30 = 6 kN/m³ (U = 12 %); adotado 6 kN/m³, o maior, a favor da segurança (pinus tratado em autoclave)",
+      rhoKLig: 330, fonteRhoK: "PROJ-EST R00 calc_ligacoes.py: Pinus ≥ C20, ρk 330 kg/m³ — premissa do RT",
+      uso: "wood frame (montantes, guias, travessas), forro" }
   };
 
   /* PERFIS DE CÁLCULO — conjunto fechado de coeficientes. */
@@ -98,7 +100,7 @@
    *   peça estrutural (fm,k = 40, fc0,k = 26). Chaves distintas:
    *   "nativa:D40" e "peca:D40". Não existe C25 na 2022.
    * ------------------------------------------------------------------ */
-  var F22 = "NBR 7190-1:2022 (fonte secundária R2 — pesquisa de 12/10/2026)";
+  var F22 = "NBR 7190-1:2022";   // valores conferidos em fonte técnica secundária (pesquisa de 12/10/2026) — registro interno, não vai ao memorial
   var CLASSES_2022 = {};
   [["D20", 20, 4, 10000, 500], ["D30", 30, 5, 12000, 625], ["D40", 40, 6, 14500, 750], ["D50", 50, 7, 16500, 850], ["D60", 60, 8, 19500, 1000]]
     .forEach(function (r) {

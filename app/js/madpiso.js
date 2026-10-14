@@ -106,7 +106,8 @@
               guiaInf: "WF_GUIA_INF", prefixoWF: "WF" },
     reacaoPorNo: true,         // só vale com revisao "R03": false = igual ao emitido R03 (regressão); no R04 a reação é SEMPRE pelo nó mais próximo
     revisao: "R04",            // "R04" (padrão) | "R03" (regressão do emitido de 11/10/2026)
-    tolCabeceiraUmApoio: 0.16  // R04: tolerância de cabeceira (requadro) com um apoio só (com 2 ou mais: tolPonta.requadro)
+    tolCabeceiraUmApoio: 0.16, // R04: tolerância de cabeceira (requadro) com um apoio só (com 2 ou mais: tolPonta.requadro)
+    binarioPilar: true         // R04: barrote com 1 VP perto da ponta presa no pilar composto = binário + balanço (13/10/2026)
   };
 
   /* ------------------------------------------------------------------ utilidades numéricas */
@@ -466,7 +467,7 @@
     var PERDA = { apoios: 0, G_kN: 0.0, Q_kN: 0.0, casos: [] };
     function reacao(R, x, L, quem) { return R04 ? reacaoNo(R, x, L, PERDA, quem) : reacaoDe(cfg, R, x, L); }
     var P = entradas.pecas;
-    var LOG = [];
+    var LOG = [], INFO = [];                                       // INFO: o que foi resolvido e verificado (não é aviso)
 
     var G_Z = {}, Q_Z = {};
     for (k in cfg.G) G_Z[k] = cfg.G[k];
@@ -547,12 +548,19 @@
         quem.push(q.p.id);
       });
       /* ponta no pilar composto (barrote da fila no pilar B): apoio na própria ponta */
+      var binario = null;
       [[0.0, 0], [L, 1]].forEach(function (tl) {
         var t = tl[0], lado = tl[1], E = [a2[0] + u[0] * t, a2[1] + u[1] * t];
-        if (ap.some(function (x) { return Math.abs(t - x) < cfg.tolPonta.filtro; })) return;
+        /* binário (13/10/2026): barrote com UM apoio (VP) perto da ponta presa no pilar composto pela L15 (cantoneiras + tirefonds) —
+         * o pilar e a VP formam um binário e o resto é balanço (BR-39 do quiosque: VP a ~0,11 m, balanço 0,76 m). Antes o apoio do
+         * pilar era filtrado pela VP próxima e o barrote ficava sem verificação. */
+        var bin = cfg.binarioPilar && R04 && ap.length === 1 && Math.abs(t - ap[0]) < cfg.tolPonta.filtro;
+        if (!bin && ap.some(function (x) { return Math.abs(t - x) < cfg.tolPonta.filtro; })) return;
         for (var j = 0; j < PILPEC.length; j++) {
           if (norm2(sub2(PILPEC[j].a2, E)) < cfg.tolPonta.pilar) {
-            ap.push(clamp(t + (lado === 0 ? cfg.tolPonta.deslocPilar : -cfg.tolPonta.deslocPilar), 0.0, L));
+            var sp = clamp(t + (lado === 0 ? cfg.tolPonta.deslocPilar : -cfg.tolPonta.deslocPilar), 0.0, L);
+            if (bin) { if (Math.abs(sp - ap[0]) < 0.02) break; binario = { s_pilar: sp, s_vp: ap[0], pilar: PILPEC[j].p ? PILPEC[j].p.marca || PILPEC[j].p.id : null }; }
+            ap.push(sp);
             quem.push("pilar");
             break;
           }
@@ -572,7 +580,7 @@
           }
         }
       });
-      var jj = MV.juntarApoios(ap, quem, cfg.juntarTol);
+      var jj = MV.juntarApoios(ap, quem, binario ? 0.01 : cfg.juntarTol);      // binário: pilar e VP NÃO se fundem
       ap = jj.apoios; quem = jj.quem;
       var poucos = ap.length < 2;                                   // faixa de carga calculada mesmo assim
       /* largura de influência: meia distância aos barrotes paralelos vizinhos (≤ 0,8 m de cada lado) */
@@ -639,8 +647,15 @@
         }
       });
       var vr = verificar(cfg, L, ap, gd, gp, qd, [], bw, hh);
+      var rb = null;
+      if (binario) {                                              // reação no pilar (negativa = arrancamento) para a verificação da L15
+        var gqP = reacao(vr.R, binario.s_pilar, L, "barrote " + p.marca);
+        rb = { s_pilar_m: pyRound(binario.s_pilar, 3), s_vp_m: pyRound(binario.s_vp, 3), balanco_m: pyRound(L - Math.max(binario.s_pilar, binario.s_vp), 3), pilar: binario.pilar,
+               R_G_kN: pyRound(gqP[0], 3), R_Q_kN: pyRound(gqP[1], 3) };
+        INFO.push("barrote " + p.marca + " (" + p.id.slice(0, 8) + "): binário pilar composto + VP (balanço " + rb.balanco_m.toFixed(2) + " m), reação no pilar G " + rb.R_G_kN.toFixed(2) + " / Q " + rb.R_Q_kN.toFixed(2) + " kN (negativa = arrancamento) — verificado");
+      }
       res.push({ id: p.id, marca: p.marca, grupo: p.grupo, nome: p.nome, secao_cm: p.secao_cm,
-                 L: pyRound(L, 3), zona: zona((a2[0] + c.b2[0]) / 2, (a2[1] + c.b2[1]) / 2), verif: vr.v, cargas_area: areaB, casoViga: vr.caso });
+                 L: pyRound(L, 3), zona: zona((a2[0] + c.b2[0]) / 2, (a2[1] + c.b2[1]) / 2), verif: vr.v, cargas_area: areaB, casoViga: vr.caso, binarioPilar: rb });
       ap.forEach(function (x, ix) {
         var gq = reacao(vr.R, x, L, "barrote " + p.marca), qids = quem[ix].filter(function (q) { return q !== "pilar"; });
         qids.forEach(function (qid) { carga(qid).push([ponto(c, x), gq[0] / qids.length, gq[1] / qids.length]); });
@@ -806,8 +821,8 @@
       pecas: res,
       reacoesPilaretes: { versao: cfg.textos.versao, convencao: cfg.textos.convencao, nao_inclui: cfg.textos.naoInclui, pilaretes: saida, sem_apoio: LOG },
       etaMax: eta,
-      avisos: LOG,
-      gTijolo: pyRound(gTijolo, 3),
+      avisos: LOG, informacoes: INFO,
+      gTijolo: pyRound(gTijolo, 3), zonaTijolo: cfg.tijolo ? cfg.tijolo.zona : null,
       perdaRound: PERDA,                                            // R04: o que a busca antiga round(x,4) zeraria (perda_round_R03 do Python)
       reacaoSomaPiso: [soma(Object.keys(REAC).map(function (id) { return REAC[id][0]; })), soma(Object.keys(REAC).map(function (id) { return REAC[id][1]; }))]
     };

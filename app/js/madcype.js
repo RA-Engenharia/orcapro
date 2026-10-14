@@ -39,7 +39,9 @@
     LIG_ROT: "Articulação nos 2 planos no NÓ INICIAL (a rótula fica na peça de baixo — regra 2 — ou na que recebe — regra 3)",
     PE_PILAR: "Articulação nos 2 planos no nó inicial (pé do pilar, L01: uma barra colada não transmite momento)",
     APOIO_X: "Garfo no nó final: só o giro em torno de Y global livre (VP no pilarete, L09)",
-    APOIO_Y: "Garfo no nó final: só o giro em torno de X global livre (VP no pilarete, L09)"
+    APOIO_Y: "Garfo no nó final: só o giro em torno de X global livre (VP no pilarete, L09)",
+    GARFO_X: "Garfo no nó final: só o giro em torno de Y global livre (barrote do piso apoiado em cima de VP — torção travada pelo Painel Wall)",
+    GARFO_Y: "Garfo no nó final: só o giro em torno de X global livre (barrote do piso apoiado em cima de VP — torção travada pelo Painel Wall)"
   };
 
   function num(x, n) { return (Math.round(x * Math.pow(10, n)) / Math.pow(10, n)).toFixed(n).replace(".", ","); }
@@ -90,7 +92,7 @@
       "## 2. Séries e materiais (`series_materiais.csv`)",
       "| Etiqueta | Barras | Perfil | Espécie | Classe no sistema (7190-1:2022) | Material no CYPE |", "|---|---|---|---|---|---|",
       series.map(function (s) { return "| " + s.etiqueta + " | " + s.barras + " | " + s.perfil + " | " + (s.especie || "—") + " | " + (s.classeSistema || "—") + " | " + s.materialCype + " |"; }).join("\n"),
-      "", "O CYPE verifica pela nomenclatura de 1997; o sistema pela 2022 (fonte secundária). Diferença de η entre os dois é esperada; o memorial do sistema é o que vale para a emissão — o CYPE é conferência.", "",
+      "", "O CYPE verifica pela nomenclatura de 1997; o sistema pela 2022. Diferença de η entre os dois é esperada; o memorial do sistema é o que vale para a emissão — o CYPE é conferência.", "",
       "## 3. Liberações e apoios",
       series.filter(function (s) { return LIBERACAO[s.etiqueta]; }).map(function (s) { return "- **" + s.etiqueta + "** — " + s.liberacao; }).join("\n"),
       "- Apoios: nós do topo dos pilaretes (z = " + (mod.z_apoios != null ? num(mod.z_apoios, 3) : "?") + " m) engastados (o garfo está na barra APOIO).", "",

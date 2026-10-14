@@ -93,7 +93,7 @@
     Object.keys(sG.reacoes).forEach(function (x) { reac[x] = [sG.reacoes[x], sQ.reacoes[x] || 0]; });
     var passos = [
       "Seção " + br(b * 100, 0) + " × " + br(h * 100, 0) + " cm, classe " + f.classe.nome + "; W = b·h²/6 = " + br(W * 1e6, 0) + " cm³; vão total " + br(L) + " m sobre " + ap.length + " apoios.",
-      "Coeficientes (" + p.nome + "): kmod = " + br(p.kmod, 3) + " (" + (p.kmodPartes || "") + "); γG = " + br(p.gamaG, 1) + ", γQ = " + br(p.gamaQ, 1) + "; " + (p.flexaoPor === "fmd" && f.fmd !== f.fc0d ? "fm,d = kmod·fm,k/γw = " + br(f.fmd) + " MPa; " : "fc0,d = kmod·fc0,k/γwc = " + br(f.fc0d) + " MPa (flexão pela borda comprimida); ") + "fv,d = kmod·fv,k/γwv = " + br(f.fvd) + " MPa; E da flecha = " + br(Eflecha, 0) + " MPa." + (p.fonteSecundaria ? " ⚠ Valores da 7190-1:2022 de fonte secundária — conferir no texto da norma." : ""),
+      "Coeficientes (" + p.nome + "): kmod = " + br(p.kmod, 3) + " (" + (p.kmodPartes || "") + "); γG = " + br(p.gamaG, 1) + ", γQ = " + br(p.gamaQ, 1) + "; " + (p.flexaoPor === "fmd" && f.fmd !== f.fc0d ? "fm,d = kmod·fm,k/γw = " + br(f.fmd) + " MPa; " : "fc0,d = kmod·fc0,k/γwc = " + br(f.fc0d) + " MPa (flexão pela borda comprimida); ") + "fv,d = kmod·fv,k/γwv = " + br(f.fvd) + " MPa; E da flecha = " + br(Eflecha, 0) + " MPa." + "",
       "Flexão: Md = " + br(Md) + " kN·m → σMd = Md/W = " + br(sigma) + " MPa ≤ fd = " + br(f.fmd) + " MPa → η = " + br(eF, 3) + ".",
       "Cisalhamento: Vd = " + br(Vd) + " kN → τd = 1,5·Vd/(b·h) = " + br(tau, 3) + " MPa ≤ fv,d = " + br(f.fvd, 3) + " MPa → η = " + br(eV, 3) + ".",
       critF ? "Flecha final " + (p.flecha === "2022" ? "wG(1 + φ) + wQ(1 + ψ2·φ)" : "(wG + ψ2·wQ)(1 + φ)") + ", E = " + (p.eRigidez === "E0m" ? "E0,med" : "kmod·Ec0,m") + ", ψ2 = " + br(p.psi2, 1) + ", φ = " + br(p.phi, 1) + ": " + br(critF.w * 1000, 1) + " mm no " + (critF.balanco ? "balanço" : "vão") + " de " + br(critF.c - critF.a) + " m ≤ " + br(critF.lim * 1000, 1) + " mm (" + (critF.balanco ? "L/" + p.limBalanco : "L/" + p.limVao) + ") → η = " + br(etaF, 3) + "." : "Flecha: sem trecho verificável."
@@ -155,7 +155,7 @@
       dispensa ? "λrel ≤ 0,30 nos dois eixos: dispensa a verificação de estabilidade (6.5.5); resistência da seção (σN/fc0,d)² + σM/fm,d (+ kM·σM do outro eixo) = " + br(eta, 3) + "." :
         "kc = 1/(k + √(k² − λrel²)), k = 0,5[1 + βc(λrel − 0,3) + λrel²], βc = " + br(p.betaC, 1) + ": kcx = " + br(kcx, 3) + ", kcy = " + br(kcy, 3) + ".",
       dispensa ? "" : "σN,d = " + br(sN, 3) + " MPa; σMx,d = " + br(sMx, 3) + "; σMy,d = " + br(sMy, 3) + " MPa. σN/(kcx·fc0,d) + σMx/fm,d + kM·σMy/fm,d = " + br(e1, 3) + "; σN/(kcy·fc0,d) + kM·σMx/fm,d + σMy/fm,d = " + br(e2, 3) + " (kM = " + br(p.kM, 1) + ").",
-      "⚠ NBR 7190-1:2022 por fonte secundária (itens 6.5.3–6.5.5, Ineq. 13–14) — conferir no texto da norma."
+      "NBR 7190-1:2022, itens 6.5.3–6.5.5 (Ineq. 13–14)."
     ].filter(Boolean);
     return { eta: eta, ok: eta <= 1 + 1e-9 && !esbelto, lambda: [lx, ly], lambdaRel: [lrx, lry], kc: [kcx, kcy], esbelto: esbelto, passos: passos, norma: p.fonte };
   };
@@ -173,7 +173,7 @@
     return {
       eta: eta, ok: eta <= 1 + 1e-9, dispensa: dispensa, betaM: bM, limite: lim,
       passos: ["βM = " + br(bM, 2) + " (h/b = " + br(o.h / o.b, 2) + "); E0,ef = kmod·E0,med = " + br(Eef, 0) + " MPa; L1/b = " + br(esb, 1) + (dispensa ? " ≤ E0,ef/(βM·fm,d) = " + br(lim, 1) + " → dispensada." : " > " + br(lim, 1) + " → σc,d = " + br(o.sigmaMd, 2) + " ≤ E0,ef/(βM·L1/b) = " + br(sLim, 2) + " MPa → η = " + br(eta, 3) + "."),
-        "⚠ NBR 7190-1:2022 por fonte secundária (6.5.6, Eq. 25–28) — conferir no texto da norma."]
+        "NBR 7190-1:2022, item 6.5.6 (Eq. 25–28)."]
     };
   };
 

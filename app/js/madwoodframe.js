@@ -125,6 +125,8 @@
     catalogo: {
       produto: "Plywood Evoply 12 mm", fonte: "Nibra Pro 2025, p. 2",
       largura_m: 1.20, altura_m: 2.40, espessura_mm: 12, massa_kg: 19, montantesMaxCm: 60,
+      /* fechado em 13/10/2026: a chapa É a do orçamento (65 chapas no 3863); o OSB da fonte R03 sai */
+      decisaoRT: "Decisão do RT (12/10/2026): Plywood Evoply 12 mm do orçamento de materiais (65 chapas) no lugar do OSB da fonte R03",
       rhoMedioKgM3: 19 / (1.2 * 2.4 * 0.012),           // ≈ 549,8 — SÓ informação, não entra no cálculo
       gChapa: "premissa do RT, catálogo não informa (500 MPa, valor do Python)",
       rhoKChapa: "premissa do RT, catálogo não informa (400 kg/m³, valor do Python)"

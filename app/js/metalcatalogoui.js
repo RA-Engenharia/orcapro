@@ -449,12 +449,36 @@
 
   /* ------------------------------------------------------------ ABA Normas e pendências */
   function abaNormas() {
-    var K = C(), n = K.normas(), p = K.pendencias();
+    var K = C(), n = K.normas(), p = K.pendencias(), g = K.pendenciasAgrupadas ? K.pendenciasAgrupadas() : null;
     return '<p class="cat-nota">Edição vigente conferida em catálogo oficial (ABNT, ISO, ASTM) e a situação de cada norma citada no catálogo.</p>' +
       tabela([{ t: "Norma" }, { t: "Título" }, { t: "Edição vigente" }, { t: "Situação" }, { t: "Fonte" }],
         n.map(function (x) { return "<tr><td><b>" + esc(x.norma) + "</b></td><td>" + esc(x.titulo || "") + "</td><td>" + esc(corta(x.edicaoVigente || x.edicao || "—", 70)) + "</td><td title=\"" + esc(x.status || "") + "\">" + esc(corta(x.status || "", 64)) + (x.substituidaPor ? " → " + esc(x.substituidaPor) : "") + pilulaConferir(x.status === "conferir", x.observacao) + "</td><td>" + link(fi(x)) + "</td></tr>"; }), "Nenhuma norma registrada.") +
-      '<h4 style="margin:12px 0 6px">Pendências (' + p.length + ") — o que não pôde ser confirmado em fonte pública</h4>" +
-      tabela([{ t: "Onde" }, { t: "Item" }, { t: "Pendência" }], p.map(function (x) { return "<tr><td class='cat-fonte'>" + esc(x.caminho) + "</td><td>" + esc(x.item) + "</td><td>" + esc(x.pendencia) + "</td></tr>"; }), "Nenhuma pendência registrada.");
+      '<h4 style="margin:12px 0 6px">Pendências (' + p.length + (g ? " itens em " + g.length + " grupos" : "") + ") — o que não pôde ser confirmado em fonte pública</h4>" +
+      (g ? pendenciasPorSecao(g) :
+      tabela([{ t: "Onde" }, { t: "Item" }, { t: "Pendência" }], p.map(function (x) { return "<tr><td class='cat-fonte'>" + esc(x.caminho) + "</td><td>" + esc(x.item) + "</td><td>" + esc(x.pendencia) + "</td></tr>"; }), "Nenhuma pendência registrada."));
+  }
+  /* uma seção recolhida por parte do catálogo; uma linha por grupo; os itens do grupo (e as linhas de tabela dentro deles) abrem no clique */
+  function pendenciasPorSecao(grupos) {
+    if (!grupos.length) return '<p class="cat-nota">Nenhuma pendência registrada.</p>';
+    var ordem = [], porSec = {};
+    grupos.forEach(function (x) { if (!porSec[x.secao]) { porSec[x.secao] = []; ordem.push(x.secao); } porSec[x.secao].push(x); });
+    function sub(s) { return "<li>" + esc(s.item || s.caminho) + (s.pendencia && s.pendencia !== "conferir na fonte" ? ' <span class="cat-fonte">— ' + esc(s.pendencia) + "</span>" : "") + "</li>"; }
+    function itens(x) {
+      var m = x.membros, nSub = m.reduce(function (s, y) { return s + y.subitens.length; }, 0);
+      if (m.length === 1 && !nSub) return esc(m[0].item || "—");
+      var rot = m.length > 1 ? m.length + " itens" : esc(m[0].item || "item");
+      if (nSub) rot += " · " + nSub + " subite" + (nSub > 1 ? "ns" : "m");
+      return "<details><summary>" + rot + "</summary><ul style='margin:4px 0 0 16px;padding:0'>" + m.map(function (y) {
+        return "<li><b>" + esc(y.item || y.caminho) + "</b>" + (y.pendencia !== x.pendencia ? ' <span class="cat-fonte">— ' + esc(y.pendencia) + "</span>" : "") +
+          (y.subitens.length ? "<ul style='margin:2px 0 0 14px;padding:0'>" + y.subitens.map(sub).join("") + "</ul>" : "") + "</li>";
+      }).join("") + "</ul></details>";
+    }
+    return ordem.map(function (s) {
+      var gs = porSec[s], tot = gs.reduce(function (a, x) { return a + x.total; }, 0);
+      return sec(s + " — " + tot + " pendência" + (tot > 1 ? "s" : "") + " em " + gs.length + " grupo" + (gs.length > 1 ? "s" : ""),
+        tabela([{ t: "Onde" }, { t: "Item" }, { t: "Pendência" }], gs.map(function (x) {
+          return "<tr><td class='cat-fonte'>" + esc(x.onde) + "</td><td>" + itens(x) + "</td><td>" + esc(x.pendencia) + "</td></tr>"; })), false);
+    }).join("");
   }
 
   /* ------------------------------------------------------------ casca */

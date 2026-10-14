@@ -654,7 +654,9 @@
             "Parafusar no barrote com a cabeça embutida e nivelada com massa, e silicone ou mastique sobre cada apoio (L11).",
             "Dormentes sobre o painel no traçado das paredes (topo no piso acabado " + nv(N.piso_acabado || 0) + "): recebem a guia dos painéis de wood frame e a barra passante (L06, etapa " + (EN.paineis || "dos painéis") + ")."
           ],
-          atencao: resultado.painelWall && resultado.painelWall.impedeUso ? "a carga do piso passa do valor publicado na ficha do Painel Wall (" + br(resultado.painelWall.ficha.carga_kN_m2, 2) + " kN/m², apoios a " + br(resultado.painelWall.ficha.vaoMax_m, 2) + " m): o piso só recebe carga de uso depois da confirmação do fabricante para o vão de " + br(resultado.painelWall.vaoApoios_m, 3) + " m." : null };
+          atencao: resultado.painelWall && !resultado.painelWall.impedeUso && resultado.painelWall.criterio === "desempenho"
+            ? "receber o painel só com a ficha ou declaração do fabricante de carga admissível (de serviço) de no mínimo " + (resultado.painelWall.requisitos || []).map(function (q) { return br(q.cargaServicoMin_kN_m2, 2) + " kN/m² com apoios a " + br(q.vao_m, 2) + " m (" + q.zona + ")"; }).join("; ") + " — qualquer fabricante que declare essa capacidade serve."
+            : resultado.painelWall && resultado.painelWall.impedeUso ? "a carga do piso passa do valor publicado na ficha do Painel Wall (" + br(resultado.painelWall.ficha.carga_kN_m2, 2) + " kN/m², apoios a " + br(resultado.painelWall.ficha.vaoMax_m, 2) + " m): o piso só recebe carga de uso depois da confirmação do fabricante para o vão de " + br(resultado.painelWall.vaoApoios_m, 3) + " m." : null };
       },
       pilares: function () {
         var gs = ["PILAR_PECA", "PILAR_BLOQ"], ez = pecasG(["PILAR_PECA"]), zt = ez.length ? Math.max.apply(null, ez.map(function (p) { return Math.max(p.p0[2], p.p1[2]); })) : null;
