@@ -14048,6 +14048,7 @@ dividir: ["pontoDiv"], fixar: ["pecaF"], desafixar: ["pecaF"], similar: ["fonte"
 escala: ["sel", "baseE"], juntas: ["canto"], "alternar-uniao": ["pecaU1", "pecaU2"], "unir-geo": ["pecaU1", "pecaU2"], "desunir-geo": ["pecaU1", "pecaU2"],
 pintar: ["face"], "dividir-face": ["face"], "remover-pintura": ["face"]
 };
+var PASSO_TRACO = { destino: 1, eixo2: 1, p2: 1, ref: 1, final: 1 };
 var P4 = { linhaRef: 1, linhaAlvo: 1, alvoD: 1, pecaA: 1, pecaB: 1, alvoV: 1, pontoDiv: 1, pecaF: 1, fonte: 1, pS1: 1, pS2: 1, alvoT: 1, baseE: 1, canto: 1, pecaU1: 1, pecaU2: 1, face: 1 };
 var DICA = {
 sel: "Clique no elemento criado no OrçaPRO (Ctrl soma outro; Enter segue).",
@@ -14079,8 +14080,37 @@ var pr = { snapOn: true, tipos: {}, grade: 0.10, sel: [], passo: null, pts: [], 
 mat: { tipo: "linear", n: 3, graus: 360 }, ult: null, geo: null, geoExc: "", tecla: "", teclaT: 0, arrasto: null, cotasTmp: [],
 p4: { desl: 0.15, deslCopia: true, juntaModo: "topo", fator: 2, material: "Pintura acrílica", codigo: "", barrado: 1.5, ref: null, a: null, fonte: null, pts: [] } };
 Pr().TIPOS.forEach(function (t) { pr.tipos[t] = true; });
-try { var g0 = JSON.parse(global.localStorage.getItem(CHAVE) || "null"); if (g0) { if (g0.tipos) Object.keys(g0.tipos).forEach(function (k) { if (k in pr.tipos) pr.tipos[k] = !!g0.tipos[k]; }); if (g0.grade >= 0) pr.grade = +g0.grade; if (g0.snapOn === false) pr.snapOn = false; } } catch (eL) {}
-function guardarPref() { try { global.localStorage.setItem(CHAVE, JSON.stringify({ tipos: pr.tipos, grade: pr.grade, snapOn: pr.snapOn })); } catch (eG) {} }
+function BBO() { var b = global.BimBarraOpcoes; return b && typeof b.precisao === "function" ? b : null; }
+var sairUnico = null;
+function lerUnico() {
+var b = BBO(); if (!b) return false;
+var p = b.precisao(); pr.snapOn = !!p.snap;
+Pr().TIPOS.forEach(function (t) { pr.tipos[t] = p.tipos[t] !== false; });
+pr.tipos.grade = !!p.grade && p.tipos.grade !== false; pr.grade = +p.passo;
+ouvirUnico();
+return true;
+}
+if (!lerUnico()) { try { var g0 = JSON.parse(global.localStorage.getItem(CHAVE) || "null"); if (g0) { if (g0.tipos) Object.keys(g0.tipos).forEach(function (k) { if (k in pr.tipos) pr.tipos[k] = !!g0.tipos[k]; }); if (g0.grade >= 0) pr.grade = +g0.grade; if (g0.snapOn === false) pr.snapOn = false; } } catch (eL) {} }
+function guardarPref() {
+var b = BBO();
+if (b) {
+var pat = { snap: pr.snapOn, tipos: pr.tipos, grade: !!pr.tipos.grade && pr.grade > 0 };
+if (pr.grade > 0) pat.passo = pr.grade;
+b.precisaoMudar(pat); lerUnico(); return;
+}
+try { global.localStorage.setItem(CHAVE, JSON.stringify({ tipos: pr.tipos, grade: pr.grade, snapOn: pr.snapOn })); } catch (eG) {}
+}
+function ouvirUnico() {
+if (sairUnico || !BBO() || !BBO().assinar) return;
+try {
+sairUnico = BBO().assinar(function () {
+if (S.alive === false) { sairUnico(); return; }
+lerUnico(); pr.geo = null;
+if (painel.style.display === "block") pintarPainel();
+if (!pr.snapOn) { try { api.marcaEsconder(); limparGrupo(grp); } catch (eM) {} }
+});
+} catch (eA) { sairUnico = null; }
+}
 function ativo() { return previa() && edit.on && S.alive !== false; }
 function host() { return api.host(); }
 function cam() { return api.camera(); }
@@ -14125,7 +14155,8 @@ ls.renderOrder = 998; ls.frustumCulled = false; return ls;
 }
 function geometria() {
 var exc = (pr.arrasto ? [pr.arrasto.id] : []).join("|");
-if (!pr.geo || pr.geoExc !== exc) { pr.geo = Pr().geometria(estado(), { excluir: exc ? exc.split("|") : [], avaliar: api.avaliar }); pr.geoExc = exc; }
+var eix = !pr.arrasto && !!(BBO() && BBO().querEixos && BBO().querEixos(edit.sub)), chave = exc + "|" + (eix ? "E" : "");
+if (!pr.geo || pr.geoExc !== chave) { pr.geo = Pr().geometria(estado(), { excluir: exc ? exc.split("|") : [], avaliar: api.avaliar, eixos: eix }); pr.geoExc = chave; }
 return pr.geo;
 }
 function tolM(e) {
@@ -14141,6 +14172,7 @@ return null;
 }
 function pontoSnap(e, hit) {
 var pl = api.planoPonto(e.clientX, e.clientY); if (!pl) return null;
+lerUnico();
 var cur = { x: pl.x, z: pl.z }, ref = baseAtual(), tol = tolM(e), sn = null, malha = false;
 if (pr.snapOn) sn = Pr().snap(cur, geometria(), { tol: tol, tipos: pr.tipos, ref: ref, grade: pr.tipos.grade ? pr.grade : 0 });
 if (pr.snapOn && (!sn || Pr().CLASSE[sn.sub || sn.tipo] > 0) && hit && hit.object && hit.object.userData && hit.object.userData.mid !== "edit") {
@@ -14149,6 +14181,10 @@ if (ms && ms.tipo) { sn = { p: { x: ms.p.x, z: ms.p.z }, tipo: ms.tipo, malha: t
 }
 var p = sn ? { x: sn.p.x, z: sn.p.z } : cur;
 if (e.shiftKey && ref) { p = Pr().orto(ref, p); if (sn && !malha) sn = { p: p, tipo: sn.tipo === "grade" ? "grade" : null }; }
+else if (ref && ferramenta() && PASSO_TRACO[pr.passo] && BBO() && BBO().travar) {
+var aj = BBO().travar(ref, (!sn || sn.tipo === "grade") ? cur : p, { tipoSnap: sn ? sn.tipo : null });
+if (aj.travado) { p = aj.p; sn = sn && sn.tipo === "grade" ? { p: p, tipo: "grade" } : null; malha = false; }
+}
 return { p: p, sn: sn, malha: malha, tol: tol };
 }
 function mostrarMarca(sp) {
@@ -14260,6 +14296,7 @@ else if (k === "barrado") { var bv = Pr().lerNumero(e.target.value); if (bv != n
 });
 opcoes.addEventListener("keydown", function (e) { e.stopPropagation(); });
 function pintarPainel() {
+lerUnico();
 painel.innerHTML = '<div class="bp-snaps-tit"><b>Snaps do editor</b><button type="button" class="btn sm" data-bps="fechar" aria-label="Fechar">Fechar</button></div>' +
 '<label class="bp-snaps-todos"><input type="checkbox" data-bps="on"' + (pr.snapOn ? " checked" : "") + '> Snaps ligados <span class="bp-tecla">F3</span></label>' +
 Pr().TIPOS.map(function (t) {
@@ -14278,7 +14315,7 @@ guardarPref();
 painel.addEventListener("click", function (e) { var b = e.target.closest ? e.target.closest('[data-bps="fechar"]') : null; if (b) painel.style.display = "none"; });
 painel.addEventListener("keydown", function (e) { e.stopPropagation(); if (e.key === "Escape") painel.style.display = "none"; });
 function alternarSnaps() {
-pr.snapOn = !pr.snapOn; guardarPref();
+lerUnico(); pr.snapOn = !pr.snapOn; guardarPref();
 if (painel.style.display === "block") pintarPainel();
 if (!pr.snapOn) { api.marcaEsconder(); limparGrupo(grp); }
 hint(pr.snapOn ? "Snaps ligados (F3 desliga)." : "Snaps desligados (F3 liga): o ponto fica onde o cursor está.");
@@ -14656,7 +14693,7 @@ document.addEventListener("keydown", function (e) {
 if (!ativo()) return;
 var alvo = e.target || {};
 if (digitandoFora(alvo) || caixa.contains(alvo)) return;
-if (e.key === "F3") { e.preventDefault(); e.stopPropagation(); alternarSnaps(); return; }
+if (e.key === "F3") { if (global.BimBarraSnaps && global.BimBarraSnaps.atendeTeclas && global.BimBarraSnaps.atendeTeclas()) return; e.preventDefault(); e.stopPropagation(); alternarSnaps(); return; }
 if (e.key === "Escape") {
 if (pr.arrasto) { pr.arrasto = null; posicionar(); e.stopPropagation(); return; }
 if (ferramenta() && pr.pts.length) { e.preventDefault(); e.stopPropagation(); cancelarPasso(); hint("Passo cancelado. Esc de novo sai da ferramenta."); return; }
@@ -14824,6 +14861,8 @@ montarTemporarias();
 },
 api: {
 painelSnaps: function (on) {
+var BS = global.BimBarraSnaps;
+if (BS && BS.garantir && BS.garantir()) { painel.style.display = "none"; return BS.abrirMenu("snap", on == null ? undefined : !!on); }
 pendurar();
 var abrir = on == null ? painel.style.display !== "block" : !!on;
 if (abrir) pintarPainel();
@@ -14831,6 +14870,7 @@ painel.style.display = abrir ? "block" : "none";
 return abrir;
 },
 snaps: function (cfg) {
+lerUnico();
 if (cfg) {
 if (cfg.on != null) pr.snapOn = !!cfg.on;
 if (cfg.tipos) Object.keys(cfg.tipos).forEach(function (k) { if (k in pr.tipos) pr.tipos[k] = !!cfg.tipos[k]; });
@@ -45697,12 +45737,19 @@ var pj = opc.proj || (opc.vista != null ? projDe(opc.vista) : (opc.corte ? null 
 if (!pj) return ponto();
 return BCo.resolverP7(I.estado, ref, { proj: pj, niveis: opc.niveis });
 }
+if (ref.r === "lin") { var dl = unit([num(ref.dx, 1), num(ref.dy, 0)]); return cl && dl ? { ok: true, p: cl, d: dl } : { ok: false }; }
 if (ref.r === "ponto" || el == null || el === "") {
 if (ref.r === "nivel") return cl ? { ok: true, p: cl, d: null, y: num(opc.nivelY, num(ref.yRef, 0)) } : { ok: false };
 return ponto();
 }
 var c = I.caixa[el];
 if (c) {
+if (ref.r === "rampa") {
+var la = c.rampa ? arr(c.rampa.lances)[Math.round(num(ref.i, 0))] : null; if (!la) return { ok: false, orfa: !c.rampa };
+var dR = [Math.cos(num(la.ang, 0)), Math.sin(num(la.ang, 0))], par = c.rampa.par || {}, cal = c.rampa.calc || {};
+var inc = fin(+par.inclinacao) ? +par.inclinacao : num(cal.inclinacao, 0);
+return { ok: true, p: cl || [num(la.x, 0), num(la.z, 0)], d: null, incl: inc, desce: mul(dR, -1) };
+}
 if (c.arco && (ref.r === "eixo" || ref.r === "face+" || ref.r === "face-" || ref.r === "contorno")) {
 var BCr = dep("BimCurva", "./bimcurva.js"), ra = BCr ? BCr.refArco(c, ref.r) : null; if (ra) return ra;
 }
@@ -45810,7 +45857,7 @@ var S = R[0], incl = null, desce = null;
 if (fin(S.incl)) { incl = S.incl; desce = S.desce; }
 else if (R.length >= 2) {
 var dv = sub(R[1].p, R[0].p);
-if (opc.corte && Math.abs(dv[0]) > 1e-6) { incl = Math.abs(dv[1] / dv[0]) * 100; desce = unit(dv[1] > 0 ? dv : mul(dv, -1)); }
+if (opc.corte && Math.abs(dv[0]) > 1e-6) { incl = Math.abs(dv[1] / dv[0]) * 100; desce = unit(dv[1] > 0 ? dv : mul(dv, -1)); S = { p: mul(add(R[0].p, R[1].p), 0.5) }; }
 else if (!opc.corte && fin(R[0].y) && fin(R[1].y) && len(dv) > 1e-6) { incl = Math.abs(R[1].y - R[0].y) / len(dv) * 100; desce = unit(R[1].y <= R[0].y ? dv : mul(dv, -1)); S = { p: mul(add(R[0].p, R[1].p), 0.5) }; }
 } else if (fin(+it.inclManual)) { incl = +it.inclManual; desce = unit([num(it.dir && it.dir.x, 1), num(it.dir && it.dir.y, 0)]); }
 if (!fin(incl)) return { ok: false };
@@ -45975,12 +46022,14 @@ if (((a[1] > p[1]) !== (b[1] > p[1])) && (p[0] < (b[0] - a[0]) * (p[1] - a[1]) /
 }
 return dentro;
 }
-function acharRef(estado, p, tol, filtro, vista, pref) {
+function acharRef(estado, p, tol, filtro, vista, pref, lim) {
 var melhor = null, I = indice(estado);
+var corteV = /^d2c-/.test(String(vista == null ? "" : vista));
 var FORA = pref === "face" ? { eixo: 1, centro: 1 } : pref === "eixo" ? { "face+": 1, "face-": 1, fim0: 1, fim1: 1, aresta: 1 } : {};
 function cand(ref, dist, rot) { if (FORA[ref.r] && ref.el != null && !(I.eixo[ref.el])) return; if (dist <= tol && (!melhor || dist < melhor.dist - 1e-9)) melhor = { ref: ref, dist: dist, rotulo: rot }; }
 function sOf(b, d) { return r6(dot(sub(p, b), d)); }
 var ptRef = { x: r6(p[0]), y: r6(p[1]) };
+if (corteV && (filtro === "topo" || filtro === "plano")) return null;
 if (filtro === "topo") {
 var alvo = null;
 arr(estado && estado.caixas).forEach(function (c) {
@@ -45988,6 +46037,7 @@ if (!c || (c.tipo !== "laje" && c.tipo !== "pilar" && c.tipo !== "viga" && c.tip
 var ok = c.contorno ? dentroPoli(p, c.contorno.map(function (q) { return [q.x, q.z]; })) : dentroRet(p, c);
 if (!ok) return;
 var top = num(c.cy, 0) + num(c.altura, 0) / 2;
+if (lim && fin(+lim.yMax) && top > +lim.yMax + 1e-6) return;
 if (!alvo || top > alvo.top) alvo = { c: c, top: top };
 });
 if (alvo) return { ref: { el: alvo.c.id, r: "topo", x: ptRef.x, y: ptRef.y }, dist: 0, rotulo: "topo da " + (alvo.c.tipo || "peça") };
@@ -46001,10 +46051,19 @@ var q = { cx: pl.cx, cz: pl.cz, rotY: pl.rotY, comprimento: pl.comprimento, espe
 if (dentroRet(p, q)) ach = { ref: { el: cb.id, r: "plano", i: i, x: ptRef.x, y: ptRef.y }, dist: 0, rotulo: "água " + (i + 1) + " da cobertura" };
 });
 });
+if (!ach) arr(estado && estado.caixas).forEach(function (c) {
+if (!c || c.tipo !== "rampa" || !c.rampa) return;
+var Ls = num(c.rampa.calc && c.rampa.calc.comprimentoSegmento, 0);
+arr(c.rampa.lances).forEach(function (la, i) {
+var dR = [Math.cos(num(la.ang, 0)), Math.sin(num(la.ang, 0))], v = sub(p, [num(la.x, 0), num(la.z, 0)]), uu = dot(v, dR), ww = dot(v, [-dR[1], dR[0]]);
+var Lx = Ls > 0 ? Ls : Math.max.apply(null, arr(la.perfil).map(function (q) { return num(q.u, 0); }).concat([0]));
+if (uu >= -1e-9 && uu <= Lx + 1e-9 && Math.abs(ww) <= num(la.largura, 1.2) / 2 + 1e-9) ach = { ref: { el: c.id, r: "rampa", i: i, x: ptRef.x, y: ptRef.y }, dist: 0, rotulo: "rampa (segmento " + (i + 1) + ")" };
+});
+});
 return ach;
 }
 arr(estado && estado.caixas).forEach(function (c) {
-if (!c || c.id == null) return;
+if (!c || c.id == null || corteV) return;
 var R = secaoCirc(c);
 if (R) {
 var C = [num(c.cx, 0), num(c.cz, 0)], dc = Math.abs(len(sub(p, C)) - R);
@@ -46041,7 +46100,7 @@ var ea = add(Cc, mul(u, -L / 2)), eb = add(Cc, mul(u, L / 2));
 cand({ el: c.id, r: "eixo", s: sOf(Cc, u), x: ptRef.x, y: ptRef.y }, distSeg(p, ea, eb) * 1.6, "eixo da " + nome);
 }
 });
-if (filtro !== "circulo") {
+if (filtro !== "circulo" && !corteV) {
 arr(estado && estado.familias).forEach(function (f) {
 if (!f || f.id == null) return;
 var fc = [num(f.x, 0), num(f.z, 0)], nd = eixoN(num(f.rotY, 0));
@@ -46231,14 +46290,25 @@ var dv = mul(v, 1 / L);
 s += lnS(add(p, mul(dv, Math.min(gap, L * 0.5))), add(q, mul(dv, extC)), wL, "a7-l");
 });
 var ini = qs[0], fim = qs[qs.length - 1], dl = unit(sub(fim, ini)) || n;
-s += lnS(sub(ini, mul(dl, t.marca === "obliquo" ? extL : 0)), add(fim, mul(dl, t.marca === "obliquo" ? extL : 0)), wL, "a7-l");
-qs.forEach(function (q, i) { s += marcaS(q, i === 0 ? mul(dl, -1) : dl, t, k, wM); });
 var rot = angLegivel(dl);
 var acima = mul(perp([Math.cos(rot * Math.PI / 180), Math.sin(rot * Math.PI / 180)]), -1);
-m.segs.forEach(function (sg, i) {
-var mid = mul(add(qs[i], qs[i + 1]), 0.5), tx = textoCota(it, t, sg.valor, it.eq && m.segs.length >= 2), p = add(add(mid, mul(acima, dT)), tmv(i));
-if (opaco) s += fundoTexto(p, largTexto(tx, h, t), h, rot, "middle");
-s += seg(txS(p, h, esc(tx), "a7-tx", "middle", rot, t), i);
+var nS = m.segs.length, ext0 = 0, ext1 = 0, degrau = 0, folga = h * 0.5;
+var textos = m.segs.map(function (sg, i) {
+var mid = mul(add(qs[i], qs[i + 1]), 0.5), tx = textoCota(it, t, sg.valor, it.eq && nS >= 2), wT = largTexto(tx, h, t), Ls = len(sub(qs[i + 1], qs[i]));
+var base = add(mid, mul(acima, dT));
+if (wT + folga > Ls) {
+if (i === nS - 1) { var d1 = extL + wT / 2 + folga; base = add(add(fim, mul(dl, d1)), mul(acima, dT)); ext1 = Math.max(ext1, d1 + wT / 2); degrau = 0; }
+else if (i === 0) { var d0 = extL + wT / 2 + folga; base = add(sub(ini, mul(dl, d0)), mul(acima, dT)); ext0 = Math.max(ext0, d0 + wT / 2); }
+else { degrau = degrau === 1 ? 2 : 1; base = add(base, mul(acima, (h * 1.25) * degrau)); }
+} else degrau = 0;
+return { tx: tx, p: add(base, tmv(i)), w: wT };
+});
+var e0 = Math.max(t.marca === "obliquo" ? extL : 0, ext0), e1 = Math.max(t.marca === "obliquo" ? extL : 0, ext1);
+s += lnS(sub(ini, mul(dl, e0)), add(fim, mul(dl, e1)), wL, "a7-l");
+qs.forEach(function (q, i) { s += marcaS(q, i === 0 ? mul(dl, -1) : dl, t, k, wM); });
+textos.forEach(function (o, i) {
+if (opaco) s += fundoTexto(o.p, o.w, h, rot, "middle");
+s += seg(txS(o.p, h, esc(o.tx), "a7-tx", "middle", rot, t), i);
 });
 if (it.travada) {
 var mc = mul(add(ini, fim), 0.5), cs = 1.2 * k, ab = add(mc, mul(acima, -1.6 * k));
@@ -46252,6 +46322,8 @@ s += '<path d="M' + n4(p1[0]) + " " + n4(p1[1]) + "A" + n4(R) + " " + n4(R) + " 
 s += lnS(G.O, add(G.O, mul(G.v1, R + extC)), wL, "a7-l") + lnS(G.O, add(G.O, mul(G.v2, R + extC)), wL, "a7-l");
 s += marcaS(p1, perp(G.v1), t, k, wM) + marcaS(p2, perp(G.v2), t, k, wM);
 var am = a1 + da / 2, pm = add(add(G.O, mul([Math.cos(am), Math.sin(am)], R + dT + h * 0.4)), tmv(0)), txA = textoCota(it, t, m.valor, false), ra = angLegivel(perp([Math.cos(am), Math.sin(am)]));
+var wA = largTexto(txA, h, t);
+if (R * Math.abs(da) < wA + h * 0.5) { var bA = [Math.cos(am), Math.sin(am)]; pm = add(add(G.O, mul(bA, R + dT + Math.abs(bA[0]) * (wA / 2 + h * 0.3) + Math.abs(bA[1]) * h * 0.9)), tmv(0)); ra = 0; }
 if (opaco) s += fundoTexto(pm, largTexto(txA, h, t), h, ra, "middle");
 s += txS(pm, h, esc(txA), "a7-tx", "middle", ra, t);
 } else if (m.tipo === "radial" || m.tipo === "diametro" || m.tipo === "arco") {
@@ -46625,7 +46697,10 @@ g = geomMembro(B.membro(o), false); if (g) { g.tipo = o.tipo; g.caixa = o; retur
 }
 return geomCaixa(o);
 }
-if (pc.k === "familia") { var pf = [num(o.x, 0), num(o.y, 0), num(o.z, 0)]; return { c: pf, m: pf, a: pf, b: pf, topo: pf, base: pf, tipo: "familia", cantos: [], furos: [] }; }
+if (pc.k === "familia") {
+var gv = o.host ? geomVao(o) : null; if (gv) return gv;
+var pf = [num(o.x, 0), num(o.y, 0), num(o.z, 0)]; return { c: pf, m: pf, a: pf, b: pf, topo: pf, base: pf, tipo: "familia", cantos: [], furos: [] };
+}
 if (pc.k === "peca") { var pp = [num(o.x, 0), num(o.y, 0), num(o.z, 0)]; return { c: pp, m: pp, a: pp, b: pp, topo: pp, base: pp, tipo: "peca", cantos: [], furos: [] }; }
 if (pc.k === "trecho") {
 var a = V3(o.p1), b = V3(o.p2); if (!a || !b) return null;
@@ -46664,6 +46739,33 @@ return { c: cen, m: cen, a: C[0] || cen, b: C[1] || cen, topo: topo, base: base,
 quadro: { O: q.O, X: q.X, Y: q.Y, Z: q.Z, t: t, u0: Math.min.apply(null, us.length ? us : [0]), u1: Math.max.apply(null, us.length ? us : [0]), v0: Math.min.apply(null, vs.length ? vs : [0]), v1: Math.max.apply(null, vs.length ? vs : [0]) },
 furosUV: arr(m.furos).map(function (f) { return { u: num(f.u, 0), v: num(f.v, 0), d: num(f.d, 0) }; }) };
 }
+var _avalFam = null;
+function aberturaDe(f) {
+var av = null;
+try { av = _avalFam ? _avalFam(f) : null; } catch (e) { av = null; }
+var a = av && av.abertura;
+if (!a || !(num(a.largura, 0) > 0) || !(num(a.altura, 0) > 0)) return null;
+return { largura: num(a.largura, 0), altura: num(a.altura, 0), peitoril: num(a.peitoril, 0), desloc: num(a.deslocX, 0) };
+}
+function geomVao(f) {
+var ab = aberturaDe(f); if (!ab) return null;
+var th = num(f.rotY, 0), u = rotY([1, 0, 0], th), n = rotY([0, 0, 1], th), E = num(f.inst && f.inst.Espessura_parede, 0.15);
+var C = add([num(f.x, 0), num(f.y, 0), num(f.z, 0)], mul(u, ab.desloc));
+var y0 = C[1] + ab.peitoril, y1 = y0 + ab.altura, ym = (y0 + y1) / 2;
+function em(p, y) { return [p[0], y, p[2]]; }
+var c0 = add(C, mul(u, -ab.largura / 2)), c1 = add(C, mul(u, ab.largura / 2));
+return { c: em(C, ym), m: em(C, ym), a: em(c0, ym), b: em(c1, ym), topo: em(C, y1), base: em(C, y0), tipo: "abertura", cantos: [], furos: [],
+vao: { a0: em(c0, ym), a1: em(c1, ym), pe: em(C, y0), ve: em(C, y1), c0: c0, c1: c1, C: C, u: u, n: n, E: E, y0: y0, y1: y1, ym: ym, largura: ab.largura, altura: ab.altura, peitoril: ab.peitoril } };
+}
+function tracosVao(g, r) {
+var V = g && g.vao; if (!V) return [];
+var h = mul(V.n, V.E / 2);
+function em(p, y) { return [p[0], y, p[2]]; }
+if (r === "vao0" || r === "vao1") { var P = r === "vao0" ? V.c0 : V.c1; return [[sub(em(P, V.ym), h), add(em(P, V.ym), h)], [em(P, V.y0), em(P, V.y1)]]; }
+if (r === "peitoril" || r === "verga") { var Y = r === "peitoril" ? V.y0 : V.y1; return [[sub(em(V.C, Y), h), add(em(V.C, Y), h)], [em(V.c0, Y), em(V.c1, Y)]]; }
+return [];
+}
+var REFS_VAO = { vao0: 1, vao1: 1, peitoril: 1, verga: 1 };
 function geomCaixa(o) {
 var C = [num(o.cx, 0), num(o.cy, 0), num(o.cz, 0)], th = num(o.rotY, 0), u = rotY([1, 0, 0], th), n = rotY([0, 0, 1], th);
 var L = num(o.comprimento, 0), H = num(o.altura, 0), E = num(o.espessura, 0), t = o.tipo || "peca";
@@ -46686,8 +46788,9 @@ if (!L) { var E = BE(); try { L = E && E.niveisAtuais ? E.niveisAtuais() : null;
 return arr(L).map(function (n) { return { id: String(n.id), nome: txt(n.nome), y: fin(+n.elevacao) ? +n.elevacao : num(n.y, 0) }; })
 .sort(function (a, b) { return a.y - b.y; });
 }
-var REFS = { fim0: 1, fim1: 1, meio: 1, centro: 1, topo: 1, base: 1, canto: 1, furo: 1, loc: 1, eixo: 1, cruz: 1, nivel: 1, p: 1 };
-var ROT_REF = { fim0: "ponta", fim1: "ponta", meio: "meio", centro: "centro", topo: "topo", base: "base", canto: "canto", furo: "centro do furo", loc: "face", eixo: "eixo", cruz: "cruzamento de eixos", nivel: "nível", p: "ponto" };
+var REFS = { fim0: 1, fim1: 1, meio: 1, centro: 1, topo: 1, base: 1, canto: 1, furo: 1, loc: 1, eixo: 1, cruz: 1, nivel: 1, p: 1, vao0: 1, vao1: 1, peitoril: 1, verga: 1 };
+var ROT_REF = { fim0: "ponta", fim1: "ponta", meio: "meio", centro: "centro", topo: "topo", base: "base", canto: "canto", furo: "centro do furo", loc: "face", eixo: "eixo", cruz: "cruzamento de eixos", nivel: "nível", p: "ponto",
+vao0: "ombreira do vão", vao1: "ombreira do vão", peitoril: "peitoril", verga: "verga" };
 function fallback(ref) { return V3(ref); }
 function resolver(estado, ref, opc) {
 if (!ref || typeof ref !== "object") return { ok: false };
@@ -46728,6 +46831,10 @@ case "topo": p = g.topo; break;
 case "base": p = g.base; break;
 case "canto": p = g.cantos[Math.round(num(ref.i, 0))] || null; break;
 case "furo": p = g.furos[Math.round(num(ref.i, 0))] || null; break;
+case "vao0": p = g.vao ? g.vao.a0 : null; break;
+case "vao1": p = g.vao ? g.vao.a1 : null; break;
+case "peitoril": p = g.vao ? g.vao.pe : null; break;
+case "verga": p = g.vao ? g.vao.ve : null; break;
 case "loc":
 var q = g.quadro; if (!q) { p = g.c; break; }
 p = add(add(add(q.O, mul(q.X, num(ref.u, 0) * (q.hx != null ? q.hx : 1))), mul(q.Y, num(ref.v, 0) * (q.hy != null ? q.hy : 1))), mul(q.Z, num(ref.w, 0) * (q.hz != null ? q.hz : 1)));
@@ -46736,6 +46843,7 @@ default: p = g.c;
 }
 if (!p) return { ok: false, orfa: true, p: fb };
 if (g.linha && (r === "fim0" || r === "fim1" || r === "meio")) d = unit(sub(g.b, g.a));
+if (g.vao && REFS_VAO[r]) d = g.vao.n.slice();
 return { ok: true, p: p.slice(), d: d, metal: !!g.metal, tipo: g.tipo };
 }
 function refDaFace(estado, id, P) {
@@ -46762,6 +46870,11 @@ function R(id, r, i) { var o = { el: id, r: r }; if (i != null) o.i = i; return 
 Object.keys(I.caixa).concat(Object.keys(I.trecho), Object.keys(I.familia), Object.keys(I.peca)).forEach(function (id) {
 var pc = acharPeca(estado, id), g = geom(pc); if (!g) return;
 var nome = g.tipo || "peça";
+if (g.vao) {
+pt(g.vao.a0, "fim", R(id, "vao0"), "ombreira do vão"); pt(g.vao.a1, "fim", R(id, "vao1"), "ombreira do vão");
+pt(g.vao.pe, "fim", R(id, "peitoril"), g.vao.peitoril > 0.005 ? "peitoril" : "soleira"); pt(g.vao.ve, "fim", R(id, "verga"), "verga (topo do vão)");
+return;
+}
 if (g.chapa) {
 if (modo !== "face") {
 g.furos.forEach(function (p, i) { pt(p, "centro", R(id, "furo", i), "centro do furo " + (i + 1)); });
@@ -47030,7 +47143,7 @@ ref = { el: id, r: "meio" }; linha = [g.a, g.b];
 var x = resolver(estado, ref); if (!x.ok) return null;
 if (ref.x == null) { ref.x = r6(x.p[0]); ref.y = r6(x.p[1]); ref.z = r6(x.p[2]); }
 var q = plano(x.p), d = null, ext = [q, q];
-if (linha) { var la = plano(linha[0]), lb = plano(linha[1]), dl = [lb[0] - la[0], lb[1] - la[1]], L = Math.sqrt(dl[0] * dl[0] + dl[1] * dl[1]); if (L > 1e-6) { d = [dl[0] / L, dl[1] / L]; ext = [la, lb]; } }
+if (linha) { var la = plano(linha[0]), lb = plano(linha[1]), dl = [lb[0] - la[0], lb[1] - la[1]], L = Math.sqrt(dl[0] * dl[0] + dl[1] * dl[1]); if (L > 1e-3) { d = [dl[0] / L, dl[1] / L]; ext = [la, lb]; } }
 return { id: id, ref: ref, q: q, d: d, ext: ext, p3: x.p, g: g, metal: !!g.metal, eixo: pc.k === "eixo" };
 }
 function dot2(a, b) { return a[0] * b[0] + a[1] * b[1]; }
@@ -47111,8 +47224,10 @@ function projetor(proj) {
 if (!proj || proj.tipo !== "corte") return { tipo: "planta", p: function (p) { return [p[0], p[2]]; }, d: function (d) { var u = [d[0], d[2]], L = Math.sqrt(u[0] * u[0] + u[1] * u[1]); return L > 1e-6 ? [u[0] / L, u[1] / L] : null; } };
 var ax = num(proj.ax, 0), az = num(proj.az, 0), dx = num(proj.bx, 0) - ax, dz = num(proj.bz, 0) - az, L = Math.sqrt(dx * dx + dz * dz) || 1, nx = dz / L, nz = -dx / L;
 if (proj.inv) { nx = -nx; nz = -nz; }
+var prof = num(proj.prof, 0);
 return {
-tipo: "corte", nx: nx, nz: nz,
+tipo: "corte", nx: nx, nz: nz, ax: ax, az: az, prof: prof,
+visivel: function (p) { var s = (p[0] - ax) * nx + (p[2] - az) * nz; return s >= -0.01 && (!(prof > 0) || s <= prof + 0.01); },
 p: function (p) { return [(p[0] - ax) * (-nz) + (p[2] - az) * nx, -p[1]]; },
 d: function (d) { var u = [d[0] * (-nz) + d[2] * nx, -d[1]], l = Math.sqrt(u[0] * u[0] + u[1] * u[1]); return l > 1e-6 ? [u[0] / l, u[1] / l] : null; },
 eixo: function (e) {
@@ -47132,6 +47247,14 @@ return { ok: true, p: [cl ? cl[0] : 0, J.tipo === "corte" ? -nv.y : (cl ? cl[1] 
 }
 var pc = acharPeca(estado, ref.el);
 if (!pc) return { ok: false, orfa: true };
+if (ref.k === "aresta") {
+var A0 = ref.a || {}, B0 = ref.b || {}, ra = resolver(estado, { el: ref.el, r: "loc", u: A0.u, v: A0.v, w: A0.w, hx1: ref.hx1 }, opc), rb = resolver(estado, { el: ref.el, r: "loc", u: B0.u, v: B0.v, w: B0.w, hx1: ref.hx1 }, opc);
+if (!ra.ok || !rb.ok) return { ok: false, orfa: true };
+var pa = J.p(ra.p), pb = J.p(rb.p), dl = [pb[0] - pa[0], pb[1] - pa[1]], Ll = Math.sqrt(dl[0] * dl[0] + dl[1] * dl[1]);
+if (!(Ll > 1e-9)) return { ok: false };
+var sl = fin(+ref.s) ? +ref.s : 0.5;
+return { ok: true, p: [pa[0] + dl[0] * sl, pa[1] + dl[1] * sl], d: [dl[0] / Ll, dl[1] / Ll], aresta: [pa, pb] };
+}
 if (pc.k === "eixo" && ref.k !== "cruz") {
 if (J.tipo === "corte") { var xe = J.eixo(pc.o); if (xe == null) return { ok: false, orfa: true }; return { ok: true, p: [xe, cl ? cl[1] : 0], d: [0, 1] }; }
 var g = geom(pc), dd = unit(sub(g.b, g.a)); if (!dd) return { ok: false };
@@ -47161,23 +47284,119 @@ return o;
 }
 function candidatosVista(estado, proj, opc) {
 var J = projetor(proj), C = candidatos(estado, { y: num(opc && opc.y, 0), modo: opc && opc.modo });
-var pts = C.pontos.map(function (q) { var v = J.p(q.p); return { p: v, tipo: q.tipo, id: q.id, rotulo: q.rotulo, ref: refParaP7(estado, q.ref.r === "eixo" ? q.ref : q.ref, proj) }; });
+var yC = opc && fin(+opc.yCorte) ? +opc.yCorte : null, baseOk = {};
+var pts = C.pontos.filter(function (q) {
+if (J.tipo === "planta" && q.ref && (q.ref.r === "peitoril" || q.ref.r === "verga")) return false;
+if (J.tipo === "corte") return J.visivel(q.p);
+if (yC != null && q.id != null) {
+var k = String(q.id); if (baseOk[k] == null) { var gq = geom(acharPeca(estado, q.id)); baseOk[k] = !gq || !gq.base || gq.base[1] <= yC + 0.01; }
+return baseOk[k];
+}
+return true;
+}).map(function (q) {
+var v = J.p(q.p), o = { p: v, tipo: q.tipo, id: q.id, rotulo: q.rotulo, ref: refParaP7(estado, q.ref, proj) };
+if (q.ref && REFS_VAO[q.ref.r]) {
+var sg = tracosVao(geom(acharPeca(estado, q.ref.el)), q.ref.r).map(function (s) { return [J.p(s[0]), J.p(s[1])]; })
+.filter(function (s) { return Math.abs(s[1][0] - s[0][0]) + Math.abs(s[1][1] - s[0][1]) > 1e-6; });
+if (sg.length) o.segs = sg;
+}
+return o;
+});
 if (J.tipo === "corte") {
 arr(estado && estado.eixos).forEach(function (e) { var xe = J.eixo(e); if (xe != null) pts.push({ p: [xe, num(opc && opc.yEixo, 0)], tipo: "intersecao", id: e.id, rotulo: "eixo " + txt(e.nome), ref: { el: e.id, r: "p3", k: "eixo", x: r6(xe), y: r6(num(opc && opc.yEixo, 0)) }, linhaV: true }); });
 }
 return pts;
 }
+function noSeg(p, a, b) {
+var dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy, t = L2 > 1e-18 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2)) : 0;
+var q = [a[0] + dx * t, a[1] + dy * t]; return { q: q, t: t, d: Math.sqrt(Math.pow(q[0] - p[0], 2) + Math.pow(q[1] - p[1], 2)) };
+}
 function maisPerto(pts, p, tol) {
 var best = null;
 arr(pts).forEach(function (q) {
-var d = q.linhaV ? Math.abs(q.p[0] - p[0]) : Math.sqrt(Math.pow(q.p[0] - p[0], 2) + Math.pow(q.p[1] - p[1], 2));
+var d = q.linhaV ? Math.abs(q.p[0] - p[0]) : Math.sqrt(Math.pow(q.p[0] - p[0], 2) + Math.pow(q.p[1] - p[1], 2)), pp = null;
+arr(q.segs).forEach(function (s) { var r = noSeg(p, s[0], s[1]); if (r.d < d) { d = r.d; pp = r.q; } });
 if (d > tol) return;
-var cl = CLASSE[q.tipo] != null ? CLASSE[q.tipo] : 5;
-if (!best || cl < best.cl || (cl === best.cl && d < best.d - 1e-9)) best = { q: q, d: d, cl: cl };
+var cl = q.linhaV ? CLASSE.proximo : (CLASSE[q.tipo] != null ? CLASSE[q.tipo] : 5);
+if (!best || cl < best.cl || (cl === best.cl && d < best.d - 1e-9)) best = { q: q, d: d, cl: cl, pp: pp };
 });
 if (!best) return null;
 var r = clone(best.q.ref); if (best.q.linhaV) r.y = r6(p[1]);
-return { ref: r, dist: best.d, rotulo: best.q.rotulo, tipo: best.q.tipo, p: best.q.linhaV ? [best.q.p[0], p[1]] : best.q.p };
+return { ref: r, dist: best.d, rotulo: best.q.rotulo, tipo: best.q.tipo, p: best.q.linhaV ? [best.q.p[0], p[1]] : (best.pp || best.q.p), cl: best.cl, linhaV: !!best.q.linhaV };
+}
+function candidatosDesenho(dados, opc) {
+opc = opc || {};
+var pts = [], segs = [], visto = {};
+function chave(p, u) { return Math.round(p[0] * 1e4) + "," + Math.round(p[1] * 1e4) + "," + u; }
+function vert(p, u, fonte) { if (!p || !fin(+p[0]) || !fin(+p[1])) return; var k = chave(p, u); if (visto[k]) return; visto[k] = 1; pts.push({ p: [+p[0], +p[1]], u: u, fonte: fonte }); }
+arr(dados && dados.cortes).forEach(function (c) {
+var P = arr(c && c.pts), u = (c && c.u) || "", n = P.length; if (n < 2) return;
+var fecha = c.fechado !== false && n > 2;
+P.forEach(function (q) { vert(q, u, "corte"); });
+for (var i = 0; i + 1 < n + (fecha ? 1 : 0); i++) { var a = P[i], b = P[(i + 1) % n]; if (Math.abs(b[0] - a[0]) + Math.abs(b[1] - a[1]) > 1e-6) segs.push({ a: [+a[0], +a[1]], b: [+b[0], +b[1]], u: u, fonte: "corte" }); }
+});
+var L = arr(dados && dados.linhas), U = arr(dados && dados.linhasUd);
+for (var k = 0; k < L.length; k++) {
+var l = L[k], u2 = (U[k] && U[k].u) || ""; if (!l || l.length < 4) continue;
+var a2 = [+l[0], +l[1]], b2 = [+l[2], +l[3]];
+if (Math.abs(b2[0] - a2[0]) + Math.abs(b2[1] - a2[1]) < 1e-6) continue;
+vert(a2, u2, "linha"); vert(b2, u2, "linha"); segs.push({ a: a2, b: b2, u: u2, fonte: "linha" });
+}
+return { pts: pts, segs: segs };
+}
+function desprojetar(J, p2, opc, alvo) {
+if (J.tipo !== "corte") return [p2[0], alvo ? alvo[1] : num(opc && opc.yCorte, 0), p2[1]];
+var b = [J.ax + p2[0] * (-J.nz), -p2[1], J.az + p2[0] * J.nx];
+if (alvo) { var s = (alvo[0] - b[0]) * J.nx + (alvo[2] - b[2]) * J.nz; b = [b[0] + J.nx * s, b[1], b[2] + J.nz * s]; }
+return b;
+}
+function pecaDoUid(estado, u) {
+var m = /^edit:(.+)$/.exec(String(u || "")); if (!m) return null;
+var pc = acharPeca(estado, m[1]), g = pc ? geom(pc) : null;
+return g && g.quadro ? { id: m[1], g: g } : null;
+}
+function refDoDesenho(estado, u, p2, proj, opc, fonte) {
+var solto = { x: r6(p2[0]), y: r6(p2[1]) }, pk = pecaDoUid(estado, u); if (!pk) return solto;
+var J = projetor(proj), P3 = desprojetar(J, p2, opc, fonte === "corte" ? null : pk.g.quadro.O);
+var r3 = refDaFace(estado, pk.id, P3); if (!r3 || r3.r !== "loc") return solto;
+var o = refParaP7(estado, r3, proj); if (!o || o.r !== "p3") return solto;
+o.x = solto.x; o.y = solto.y; o.des = 1;
+return o;
+}
+function refLinhaDesenho(estado, sg, q, proj, opc) {
+var dx = sg.b[0] - sg.a[0], dy = sg.b[1] - sg.a[1], L = Math.sqrt(dx * dx + dy * dy); if (!(L > 1e-9)) return null;
+var t = Math.max(0, Math.min(1, ((q[0] - sg.a[0]) * dx + (q[1] - sg.a[1]) * dy) / (L * L)));
+var A = refDoDesenho(estado, sg.u, sg.a, proj, opc, sg.fonte), Bq = refDoDesenho(estado, sg.u, sg.b, proj, opc, sg.fonte);
+if (A.r === "p3" && Bq.r === "p3" && A.k === "loc" && Bq.k === "loc" && String(A.el) === String(Bq.el)) {
+var o = { el: A.el, r: "p3", k: "aresta", a: { u: A.u, v: A.v, w: A.w }, b: { u: Bq.u, v: Bq.v, w: Bq.w }, s: r6(t), x: r6(q[0]), y: r6(q[1]), des: 1 };
+if (A.hx1) o.hx1 = 1;
+return o;
+}
+return { r: "lin", x: r6(sg.a[0] + dx * t), y: r6(sg.a[1] + dy * t), dx: r6(dx / L), dy: r6(dy / L) };
+}
+function nomeDoUid(estado, u) {
+var pk = /^edit:(.+)$/.exec(String(u || "")), pc = pk ? acharPeca(estado, pk[1]) : null;
+if (pc && pc.k === "caixa") return pc.o.tipo === "metal" ? "perfil" : (pc.o.tipo || "peça");
+if (pc && pc.k === "familia") return "esquadria";
+return "peça";
+}
+function encaixeDesenho(estado, cand, p, tol, proj, opc) {
+opc = opc || {};
+if (!cand || !p) return null;
+var bp = null, bs = null;
+arr(cand.pts).forEach(function (q) { var d = Math.sqrt(Math.pow(q.p[0] - p[0], 2) + Math.pow(q.p[1] - p[1], 2)); if (d <= tol && (!bp || d < bp.d - 1e-12)) bp = { q: q, d: d }; });
+if (bp) return { ref: refDoDesenho(estado, bp.q.u, bp.q.p, proj, opc, bp.q.fonte), dist: bp.d, rotulo: "canto da " + nomeDoUid(estado, bp.q.u), tipo: "fim", p: bp.q.p.slice() };
+if (opc.soCantos) return null;
+arr(cand.segs).forEach(function (s) { var r = noSeg(p, s.a, s.b); if (r.d <= tol && (!bs || r.d < bs.d - 1e-12)) bs = { s: s, d: r.d, q: r.q }; });
+if (!bs) return null;
+return { ref: refDoDesenho(estado, bs.s.u, bs.q, proj, opc, bs.s.fonte), dist: bs.d, rotulo: "aresta da " + nomeDoUid(estado, bs.s.u), tipo: "proximo", p: bs.q, seg: bs.s };
+}
+function linhaDesenho(estado, cand, p, tol, proj, opc) {
+var bs = null;
+arr(cand && cand.segs).forEach(function (s) { var r = noSeg(p, s.a, s.b); if (r.d <= tol && (!bs || r.d < bs.d - 1e-12)) bs = { s: s, d: r.d, q: r.q }; });
+if (!bs) return null;
+var ref = refLinhaDesenho(estado, bs.s, bs.q, proj, opc); if (!ref) return null;
+return { ref: ref, dist: bs.d, rotulo: "aresta da " + nomeDoUid(estado, bs.s.u), p: bs.q };
 }
 function cotarSelecaoVista(estado, ids, vista, proj, opc) {
 opc = opc || {};
@@ -47340,6 +47559,8 @@ padraoDe: padraoDe, formatoDe: formatoDe, fmtComp: fmtComp, fmtNum: fmtNum, fmtN
 medir: medir, opCota3d: opCota3d, valida: valida, aplicarOp: aplicarOp, fim: fim, registrar: registrar,
 estacao: estacao, cadeias: cadeias, cotarSelecao: cotarSelecao, cotarSelecaoVista: cotarSelecaoVista,
 projetor: projetor, resolverP7: resolverP7, refParaP7: refParaP7, candidatosVista: candidatosVista, maisPerto: maisPerto,
+fonteFamilias: function (fn) { _avalFam = typeof fn === "function" ? fn : null; return true; }, aberturaDe: aberturaDe, tracosVao: tracosVao,
+candidatosDesenho: candidatosDesenho, encaixeDesenho: encaixeDesenho, linhaDesenho: linhaDesenho, refDoDesenho: refDoDesenho, refLinhaDesenho: refLinhaDesenho, desprojetar: desprojetar, noSeg: noSeg,
 furacao: furacao, furacaoVista: furacaoVista, cotarVista: cotarVista, cotarVista3d: cotarVista3d,
 itens: function (estado) { return arr(estado && estado.cotas3d); },
 item: function (estado, id) { return arr(estado && estado.cotas3d).filter(function (x) { return String(x.id) === String(id); })[0] || null; }
@@ -58286,6 +58507,8 @@ return '<text x="0" y="0" font-size="100"' + (ancora ? ' text-anchor="' + ancora
 function svgCota(c, e, pena) {
 var k = e.escala / 1000, h = e.textoCota * k, ext = 2 * k, gap = 1.5 * k, tk = 1.6 * k;
 var s = "", t = esc(fmtMedida(c.valor, e)), mid = (c.a + c.b) / 2, sent = c.linha >= c.base ? 1 : -1;
+var wT = String(fmtMedida(c.valor, e)).length * h * 0.56, fora = wT + h * 0.5 > Math.abs(c.b - c.a), hi = Math.max(c.a, c.b);
+if (fora) mid = hi + ext + h * 0.4 + wT / 2;
 function ln(x1, y1, x2, y2, w) { return '<line x1="' + n4(x1) + '" y1="' + n4(y1) + '" x2="' + n4(x2) + '" y2="' + n4(y2) + '" stroke-width="' + w + '" ' + NS + "/>"; }
 function marca(x, y, ang) {
 if (e.marcaCota === "ponto") return '<circle cx="' + n4(x) + '" cy="' + n4(y) + '" r="' + n4(0.7 * k) + '" class="d2-cota-pt"/>';
@@ -58300,12 +58523,14 @@ if (c.eixo === "h") {
 var y = c.linha;
 s += ln(c.a, c.base + sent * gap, c.a, y + sent * ext, pena.cota) + ln(c.b, c.base + sent * gap, c.b, y + sent * ext, pena.cota);
 s += ln(c.a - (e.marcaCota === "obliquo" ? ext : 0), y, c.b + (e.marcaCota === "obliquo" ? ext : 0), y, pena.cota);
+if (fora) s += ln(hi, y, mid + wT / 2, y, pena.cota);
 s += marca(c.a, y, Math.PI) + marca(c.b, y, 0);
 s += txt(mid, y - 0.8 * k, h, t, "d2-cota-tx", "middle");
 } else {
 var x = c.linha;
 s += ln(c.base + sent * gap, c.a, x + sent * ext, c.a, pena.cota) + ln(c.base + sent * gap, c.b, x + sent * ext, c.b, pena.cota);
 s += ln(x, c.a - (e.marcaCota === "obliquo" ? ext : 0), x, c.b + (e.marcaCota === "obliquo" ? ext : 0), pena.cota);
+if (fora) s += ln(x, hi, x, mid + wT / 2, pena.cota);
 s += marca(x, c.a, -Math.PI / 2) + marca(x, c.b, Math.PI / 2);
 s += txt(x - 0.8 * k, mid, h, t, "d2-cota-tx", "middle", -90);
 }
@@ -76155,6 +76380,587 @@ global.postMessage({ tipo: "erro", id: m.id, mensagem: e && e.message ? e.messag
 };
 })(typeof window !== "undefined" ? window : (typeof self !== "undefined" ? self : (typeof global !== "undefined" ? global : this)));
 } catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/unidades.js ==== */
+try {
+(function (global) {
+"use strict";
+var G = 9.80665;
+var KGF = G / 1000;
+var GRANDEZAS = {
+forca: { nome: "força", interna: "kN",
+unidades: { "kN": 1, "N": 0.001, "kgf": KGF, "tf": G },
+seletor: ["kN", "kgf", "tf"], tecnicas: ["kgf", "tf"] },
+momento: { nome: "momento", interna: "kN·m",
+unidades: { "kN·m": 1, "kN·cm": 0.01, "N·m": 0.001, "N·mm": 1e-6, "kgf·m": KGF, "kgf·cm": KGF / 100, "tf·m": G, "tf·cm": G / 100 },
+seletor: ["kN·m", "kgf·m", "tf·m"], tecnicas: ["kgf·m", "tf·m"] },
+linear: { nome: "força por comprimento", interna: "kN/m",
+unidades: { "kN/m": 1, "N/m": 0.001, "N/mm": 1, "kgf/m": KGF, "kgf/mm": G, "tf/m": G },
+seletor: ["kN/m", "kgf/m", "tf/m"], tecnicas: ["kgf/m", "tf/m"] },
+superficie: { nome: "força por área (carga, pressão)", interna: "kN/m²",
+unidades: { "kN/m²": 1, "kPa": 1, "N/m²": 0.001, "Pa": 0.001, "kgf/m²": KGF, "tf/m²": G },
+seletor: ["kN/m²", "kgf/m²", "tf/m²"], tecnicas: ["kgf/m²", "tf/m²"] },
+tensao: { nome: "tensão", interna: "MPa",
+unidades: { "MPa": 1, "N/mm²": 1, "kN/cm²": 10, "GPa": 1000, "kgf/cm²": G / 100, "kgf/mm²": G, "tf/cm²": G * 10 },
+seletor: ["MPa", "kN/cm²", "kgf/cm²"], tecnicas: ["kgf/cm²", "kgf/cm²"] },
+peso: { nome: "peso específico", interna: "kN/m³",
+unidades: { "kN/m³": 1, "N/m³": 0.001, "kgf/m³": KGF, "tf/m³": G },
+seletor: ["kN/m³", "kgf/m³", "tf/m³"], tecnicas: ["kgf/m³", "tf/m³"] },
+momentoLinear: { nome: "momento por comprimento", interna: "kN·m/m",
+unidades: { "kN·m/m": 1, "kgf·m/m": KGF, "tf·m/m": G },
+seletor: ["kN·m/m", "kgf·m/m", "tf·m/m"], tecnicas: ["kgf·m/m", "tf·m/m"] }
+};
+var NOTA_BASE = "Conversão pela convenção do quilograma-força: g = 9,80665 m/s² (gravidade padrão), 1 kgf = 9,80665 N, 1 tf = 1000 kgf = 9,80665 kN; 1 kN/m² = 1 kPa = 101,97 kgf/m²; 1 MPa = 10,197 kgf/cm². O cálculo foi feito em kN, kN·m, kN/m² e MPa (SI); a conversão é só de leitura.";
+var ALIAS = {};
+function normSimbolo(s) {
+return String(s == null ? "" : s).replace(/ /g, " ").trim()
+.replace(/\s*([·*×.⋅∙])\s*/g, "·").replace(/\s+/g, "·")
+.replace(/\^?2(?![\d])/g, "²").replace(/\^?3(?![\d])/g, "³")
+.replace(/·?\/·?/g, "/").toLowerCase();
+}
+function alias(nomes, unidade, aviso) { nomes.forEach(function (n) { ALIAS[normSimbolo(n)] = { unidade: unidade, aviso: aviso || null }; }); }
+(function () {
+Object.keys(GRANDEZAS).forEach(function (g) { Object.keys(GRANDEZAS[g].unidades).forEach(function (u) { alias([u], u); }); });
+var AV_KG = "“kg” foi lido como quilograma-força (kgf): 1 kgf = 9,80665 N.";
+var AV_T = "“t” foi lido como tonelada-força (tf): 1 tf = 9,80665 kN.";
+alias(["kgf", "kgf·", "kg-f", "kilograma-força", "quilograma-força", "quilogramas-força"], "kgf");
+alias(["kg", "quilo", "quilos", "kilo", "kilos", "quilograma", "quilogramas"], "kgf", AV_KG);
+alias(["tf", "t-f", "tonelada-força", "toneladas-força"], "tf");
+alias(["t", "ton", "tonelada", "toneladas"], "tf", AV_T);
+alias(["kn", "kilonewton", "quilonewton", "quilonewtons", "kilonewtons"], "kN");
+alias(["n", "newton", "newtons"], "N");
+alias(["knm", "kn·m", "kn-m", "kn m"], "kN·m");
+alias(["kncm", "kn·cm"], "kN·cm");
+alias(["kgfm", "kgf·m", "kgf-m", "kgf m"], "kgf·m");
+alias(["kgm", "kg·m", "kg-m", "kg m"], "kgf·m", AV_KG);
+alias(["kgfcm", "kgf·cm"], "kgf·cm");
+alias(["kgcm", "kg·cm"], "kgf·cm", AV_KG);
+alias(["tfm", "tf·m", "tf-m", "tf m"], "tf·m");
+alias(["tm", "t·m", "t-m", "t m"], "tf·m", AV_T);
+alias(["kg/m"], "kgf/m", AV_KG); alias(["t/m"], "tf/m", AV_T);
+alias(["kg/m²", "kg/m2"], "kgf/m²", AV_KG); alias(["t/m²", "t/m2"], "tf/m²", AV_T);
+alias(["kg/cm²", "kg/cm2"], "kgf/cm²", AV_KG); alias(["kg/mm²"], "kgf/mm²", AV_KG);
+alias(["kg/m³", "kg/m3"], "kgf/m³", AV_KG); alias(["t/m³", "t/m3"], "tf/m³", AV_T);
+alias(["kg·m/m"], "kgf·m/m", AV_KG); alias(["t·m/m"], "tf·m/m", AV_T);
+alias(["kpa"], "kPa"); alias(["mpa"], "MPa"); alias(["gpa"], "GPa"); alias(["pa"], "Pa");
+alias(["mpa", "n/mm²", "n/mm2"], "MPa");
+})();
+var GRANDEZA_DE = {};
+Object.keys(GRANDEZAS).forEach(function (g) { Object.keys(GRANDEZAS[g].unidades).forEach(function (u) { if (!GRANDEZA_DE[u]) GRANDEZA_DE[u] = g; }); });
+GRANDEZA_DE["kPa"] = "superficie";
+function unidadeDe(texto) {
+var k = normSimbolo(texto); if (!k) return null;
+var a = ALIAS[k]; if (!a) return null;
+var g = GRANDEZA_DE[a.unidade]; if (!g) return null;
+return { grandeza: g, unidade: a.unidade, fator: GRANDEZAS[g].unidades[a.unidade], aviso: a.aviso };
+}
+function lerNumero(texto) {
+var s = String(texto == null ? "" : texto).replace(/[\s ]/g, "").replace(/[−–]/g, "-");
+if (!/^[+-]?(\d[\d.,]*|[.,]\d+)$/.test(s)) return NaN;
+var sinal = 1; if (s.charAt(0) === "-") { sinal = -1; s = s.slice(1); } else if (s.charAt(0) === "+") s = s.slice(1);
+var temV = s.indexOf(",") >= 0, temP = s.indexOf(".") >= 0, n;
+if (temV && temP) {
+var dec = s.lastIndexOf(",") > s.lastIndexOf(".") ? "," : ".", mil = dec === "," ? "." : ",";
+var partes = s.split(dec); if (partes.length !== 2) return NaN;
+if (!new RegExp("^\\d{1,3}(\\" + mil + "\\d{3})*$").test(partes[0])) return NaN;
+n = Number(partes[0].split(mil).join("") + "." + partes[1]);
+} else if (temV) {
+if (s.split(",").length !== 2) return NaN;
+n = Number(s.replace(",", "."));
+} else if (temP) {
+if (/^\d{1,3}(\.\d{3})+$/.test(s)) n = Number(s.replace(/\./g, ""));
+else if (s.split(".").length === 2) n = Number(s);
+else return NaN;
+} else n = Number(s);
+return isFinite(n) ? sinal * n : NaN;
+}
+function numeroBR(v, casas, op) {
+op = op || {}; if (v == null || !isFinite(v)) return "—";
+var c = casas == null ? 2 : casas, s = Math.abs(v).toFixed(c).split("."), i = s[0].replace(/\B(?=(\d{3})+(?!\d))/g, op.semMilhar ? "" : ".");
+var f = c ? s[1] : ""; if (op.aparar && f) { f = f.replace(/0+$/, ""); }
+var neg = v < 0 && Number(s.join(".")) !== 0;
+return (neg ? (op.menos || "−") : "") + i + (f ? "," + f : "");
+}
+function grandezaOk(g) { return !!GRANDEZAS[g]; }
+function ler(texto, grandeza, padrao) {
+if (!grandezaOk(grandeza)) return { ok: false, motivo: "Grandeza desconhecida: " + grandeza };
+var Gd = GRANDEZAS[grandeza], s = String(texto == null ? "" : texto).replace(/ /g, " ").trim();
+if (!s) return { ok: false, vazio: true, motivo: "Vazio." };
+var m = /^([+\-−–]?\s*(?:\d[\d.,]*|[.,]\d+))\s*(.*)$/.exec(s);
+if (!m) return { ok: false, motivo: "“" + s + "” não é um número." };
+var n = lerNumero(m[1]); if (!isFinite(n)) return { ok: false, motivo: "“" + m[1].trim() + "” não é um número válido." };
+var simb = m[2].trim(), u, aviso = null;
+if (!simb) {
+u = padrao && Gd.unidades[padrao] != null ? padrao : Gd.interna;
+} else {
+var d = unidadeDe(simb);
+if (!d) return { ok: false, motivo: "Unidade “" + simb + "” não reconhecida (use " + Gd.seletor.join(", ") + ")." };
+if (d.grandeza !== grandeza || Gd.unidades[d.unidade] == null) {
+var gOutra = GRANDEZAS[d.grandeza];
+return { ok: false, recusada: true, motivo: "“" + d.unidade + "” é unidade de " + (gOutra ? gOutra.nome : d.grandeza) + "; este campo é de " + Gd.nome + " (" + Gd.seletor.join(", ") + ")." };
+}
+u = d.unidade; aviso = d.aviso;
+}
+return { ok: true, valor: n * Gd.unidades[u], unidade: u, numero: n, aviso: aviso, interna: Gd.interna };
+}
+function valor(texto, grandeza, padrao) { var r = ler(texto, grandeza, padrao); return r.ok ? r.valor : null; }
+function converter(v, grandeza, de, para) {
+var Gd = GRANDEZAS[grandeza]; if (!Gd || !isFinite(v)) return NaN;
+var fd = Gd.unidades[de || Gd.interna], fp = Gd.unidades[para || Gd.interna];
+if (fd == null || fp == null) return NaN;
+return v * fd / fp;
+}
+function casasAuto(unidade, x) {
+var a = Math.abs(x);
+if (/^(kgf|N|Pa)/.test(unidade) && !/^N\/mm²/.test(unidade)) return a >= 100 ? 0 : a >= 10 ? 1 : 2;
+return a >= 10000 ? 0 : a >= 1000 ? 1 : (a >= 0.1 || a === 0) ? 2 : a >= 0.01 ? 3 : 4;
+}
+function tecnica(v, grandeza) {
+var Gd = GRANDEZAS[grandeza]; if (!Gd) return null;
+var t = Gd.tecnicas, emKgf = Math.abs(converter(v, grandeza, Gd.interna, t[0]));
+return emKgf >= 999.995 ? t[1] : t[0];
+}
+function formatar(v, grandeza, unidade, op) {
+op = op || {}; var Gd = GRANDEZAS[grandeza]; if (!Gd || v == null || !isFinite(v)) return "—";
+var u = unidade === "tecnica" ? tecnica(v, grandeza) : (unidade || Gd.interna);
+var x = converter(v, grandeza, Gd.interna, u); if (!isFinite(x)) return "—";
+var c = op.casas != null ? op.casas : casasAuto(u, x);
+return numeroBR(x, c, op) + (op.semUnidade ? "" : " " + u);
+}
+function formatarDuplo(v, grandeza, op) {
+op = op || {}; var Gd = GRANDEZAS[grandeza]; if (!Gd || v == null || !isFinite(v)) return "—";
+return formatar(v, grandeza, Gd.interna, { casas: op.casas != null ? op.casas : 2, menos: op.menos }) + " (" + formatar(v, grandeza, "tecnica", { menos: op.menos }) + ")";
+}
+var Unidades = {
+G: G, GRANDEZAS: GRANDEZAS, NOTA_BASE: NOTA_BASE, GRANDEZA_DE: GRANDEZA_DE,
+ler: ler, valor: valor, converter: converter, lerNumero: lerNumero, numeroBR: numeroBR,
+formatar: formatar, formatarDuplo: formatarDuplo, tecnica: tecnica, casasAuto: casasAuto,
+unidadeDe: unidadeDe, normSimbolo: normSimbolo
+};
+global.Unidades = Unidades;
+if (typeof module !== "undefined" && module.exports) module.exports = Unidades;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/unidadesui.js ==== */
+try {
+(function (global) {
+"use strict";
+var doc = global.document;
+function U() { return global.Unidades || null; }
+var SEL = "input[data-grandeza],select[data-grandeza]";
+var PREF = "orcapro:unidades:";
+function usuario() { try { var u = global.Auth && Auth.usuario ? Auth.usuario() : null; return String((u && (u.id || u.uid || u.email)) || "anon"); } catch (e) { return "anon"; } }
+function chave(g) { return PREF + usuario() + ":" + g; }
+function pref(g) { try { var v = global.localStorage.getItem(chave(g)); var Gd = U() && U().GRANDEZAS[g]; return v && Gd && Gd.unidades[v] != null ? v : null; } catch (e) { return null; } }
+function gravar(g, u) { try { global.localStorage.setItem(chave(g), u); } catch (e) {} }
+function numSimples(s) { s = String(s == null ? "" : s).trim().replace(/[−–]/g, "-"); if (!s) return null; var n = Number(s.replace(",", ".")); return isFinite(n) ? n : NaN; }
+function fmtCampo(x, u) {
+if (x == null || !isFinite(x)) return "";
+var casas = /^(kgf|N|Pa)/.test(u) && !/^N\/mm²/.test(u) ? 2 : 4;
+return U().numeroBR(x, casas, { aparar: true, menos: "-" });
+}
+function css() {
+if (!doc || doc.getElementById("un-ui-css")) return;
+var s = doc.createElement("style"); s.id = "un-ui-css";
+s.textContent = ".un-campo{display:flex;flex-wrap:wrap;align-items:center;gap:4px;min-width:0;width:100%}" +
+".un-campo>input{flex:1 1 64px;min-width:0}" +
+".un-campo select.un-sel{flex:0 0 auto;width:auto;min-width:0;max-width:none;height:auto;min-height:28px;padding:0 4px;font:inherit;font-size:12px;border:1px solid var(--linha,#c9d3dd);border-radius:6px;background:var(--surface,#fff);color:var(--texto,#1d2733);cursor:pointer}" +
+".un-campo select.un-sel:focus-visible{outline:2px solid #0d6ebd;outline-offset:1px}" +
+".un-campo .un-eq{flex:1 0 100%;font-size:11px;line-height:1.3;color:var(--texto-2,#5b6774);min-height:0}" +
+".un-campo .un-eq:empty{display:none}.un-campo .un-eq.erro{color:#c81e25}.un-campo .un-eq.aviso{color:#8a5a00}" +
+".mc-in .un-campo{padding-right:4px}.mc-in .un-campo .un-eq{padding:0 0 3px 10px}";
+(doc.head || doc.documentElement).appendChild(s);
+}
+function estado(el) { return el && el.__un ? el.__un : null; }
+function valorInterno(el) {
+var e = estado(el), Un = U(); if (!e || !Un) return numSimples(el && el.value);
+if (el.value === e.texto) return e.valor;
+var r = Un.ler(el.value, e.g, e.u);
+if (r.ok) return r.valor;
+return r.vazio ? null : NaN;
+}
+function texto(el) {
+if (!el || !el.getAttribute || !el.getAttribute("data-grandeza")) return el ? el.value : "";
+if (!estado(el) || el.tagName === "SELECT") return el.value;
+var v = valorInterno(el);
+if (v == null) return "";
+if (!isFinite(v)) return el.value;
+return String(v).replace(".", ",");
+}
+function dica(el) {
+var e = estado(el), Un = U(); if (!e || !e.eq) return;
+var r = Un.ler(el.value, e.g, e.u), Gd = Un.GRANDEZAS[e.g], t = "", cls = "un-eq";
+if (el.value === e.texto && e.valor != null && isFinite(e.valor)) r = { ok: true, valor: e.valor, unidade: e.u, aviso: null };
+if (r.ok) {
+if (r.unidade !== Gd.interna) t = "= " + Un.formatar(r.valor, e.g, Gd.interna, { casas: 2 }) + " no cálculo";
+else if (r.valor) t = "≈ " + Un.formatar(r.valor, e.g, "tecnica");
+if (r.aviso) { t += (t ? " · " : "") + r.aviso; cls += " aviso"; }
+} else if (!r.vazio) { t = r.motivo || "Valor inválido."; cls += " erro"; }
+e.eq.className = cls; e.eq.textContent = t;
+el.setAttribute("aria-invalid", !r.ok && !r.vazio ? "true" : "false");
+}
+function mostrarEm(el, u) {
+var e = estado(el), Un = U(); if (!e || !Un || e.u === u) return;
+var v = valorInterno(el);
+e.u = u; e.sel.value = u;
+if (v != null && isFinite(v)) { el.value = fmtCampo(Un.converter(v, e.g, Un.GRANDEZAS[e.g].interna, u), u); e.valor = v; e.texto = el.value; }
+dica(el);
+}
+function normalizar(el) {
+var e = estado(el), Un = U(); if (!e || !Un) return;
+var r = Un.ler(el.value, e.g, e.u);
+if (r.ok) {
+var Gd = Un.GRANDEZAS[e.g];
+if (r.unidade !== e.u) {
+if (Gd.seletor.indexOf(r.unidade) >= 0) { e.u = r.unidade; e.sel.value = r.unidade; el.value = fmtCampo(r.numero, r.unidade); gravar(e.g, r.unidade); }
+else el.value = fmtCampo(Un.converter(r.valor, e.g, Gd.interna, e.u), e.u);
+}
+e.valor = r.valor; e.texto = el.value;
+}
+dica(el);
+}
+function limparRotulo(el, interna) {
+var lb = el.closest ? el.closest("label") : null; if (!lb) return;
+var esc = interna.replace(/[.*+?^${}()|[\]\\\/]/g, "\\$&");
+function limpar(n) { if (n.nodeType === 3 && n.nodeValue.indexOf(interna) >= 0) n.nodeValue = n.nodeValue.replace(new RegExp("\\s*\\(" + esc + "\\)"), "").replace(new RegExp("\\(" + esc + ",\\s*"), "("); }
+for (var n = lb.firstChild; n; n = n.nextSibling) {
+if (n.nodeType === 3) limpar(n);
+else if (n.nodeType === 1 && n.tagName === "SPAN" && !/un-campo/.test(n.className || "")) for (var m = n.firstChild; m; m = m.nextSibling) limpar(m);
+}
+}
+function anotarOpcoes(el, g) {
+var Un = U(), Gd = Un.GRANDEZAS[g]; el.__un = { g: g, select: true };
+var simb = Object.keys(Gd.unidades).filter(function (u) { return /^(kN|N|kPa|MPa)/.test(u); }).sort(function (a, b) { return b.length - a.length; });
+var re = new RegExp("([+\\-−]?\\d+(?:,\\d+)?)\\s*(" + simb.map(function (s) { return s.replace(/[.*+?^${}()|[\]\\\/]/g, "\\$&"); }).join("|") + ")(?![\\wÀ-ÿ²³·/])");
+[].slice.call(el.options).forEach(function (o) {
+var t = o.textContent, m = re.exec(t); if (!m || /≈/.test(t)) return;
+var v = Un.lerNumero(m[1]) * Gd.unidades[m[2]]; if (!isFinite(v) || !v) return;
+var fim = m.index + m[0].length;
+o.textContent = t.slice(0, fim) + " (≈ " + Un.formatar(v, g, "tecnica") + ")" + t.slice(fim);
+});
+return true;
+}
+function ligar(el) {
+var Un = U(); if (!Un || !el || el.__un || el.type === "checkbox" || el.type === "hidden") return false;
+var g = el.getAttribute("data-grandeza"), Gd = Un.GRANDEZAS[g]; if (!Gd) return false;
+if (el.tagName === "SELECT") return anotarOpcoes(el, g);
+css();
+var v0 = numSimples(el.value), u = pref(g) || Gd.interna;
+var box = doc.createElement("span"); box.className = "un-campo";
+var sel = doc.createElement("select"); sel.className = "un-sel"; sel.setAttribute("aria-label", "Unidade de " + Gd.nome); sel.setAttribute("data-un-sel", g);
+sel.title = "Unidade — o cálculo é em " + Gd.interna + "; 1 kgf = 9,80665 N";
+Gd.seletor.forEach(function (x) { var o = doc.createElement("option"); o.value = x; o.textContent = x; sel.appendChild(o); });
+var eq = doc.createElement("small"); eq.className = "un-eq"; eq.setAttribute("aria-live", "polite"); eq.setAttribute("data-un-eq", g);
+el.parentNode.insertBefore(box, el); box.appendChild(el); box.appendChild(sel); box.appendChild(eq);
+var irmao = box.nextElementSibling; if (irmao && /(^|\s)mc-un(\s|$)/.test(irmao.className || "")) irmao.style.display = "none";
+limparRotulo(el, Gd.interna);
+el.__un = { g: g, u: Gd.interna, sel: sel, eq: eq, valor: isFinite(v0) ? v0 : null, texto: el.value };
+sel.value = Gd.interna;
+if (u !== Gd.interna) mostrarEm(el, u); else dica(el);
+el.addEventListener("input", function () { dica(el); });
+el.addEventListener("change", function () { normalizar(el); });
+sel.addEventListener("change", function (ev) {
+ev.stopPropagation();
+var novo = sel.value; mostrarEm(el, novo); gravar(g, novo);
+if (doc) [].slice.call(doc.querySelectorAll('input[data-grandeza="' + g + '"]')).forEach(function (o) { if (o !== el && estado(o)) mostrarEm(o, novo); });
+});
+return true;
+}
+function ligarEm(raiz) {
+if (!raiz || !U()) return 0; var n = 0;
+if (raiz.nodeType === 1 && raiz.matches && raiz.matches(SEL)) { if (ligar(raiz)) n++; }
+if (raiz.querySelectorAll) [].slice.call(raiz.querySelectorAll(SEL)).forEach(function (el) { if (ligar(el)) n++; });
+return n;
+}
+var obs = null;
+function iniciar() {
+if (!doc || obs || typeof global.MutationObserver !== "function") return;
+obs = new global.MutationObserver(function (lista) {
+for (var i = 0; i < lista.length; i++) {
+var ad = lista[i].addedNodes;
+for (var k = 0; k < ad.length; k++) { var nd = ad[k]; if (nd.nodeType === 1 && (nd.tagName === "INPUT" || nd.tagName === "SELECT" ? nd.hasAttribute("data-grandeza") : nd.querySelector && nd.querySelector(SEL))) ligarEm(nd); }
+}
+});
+obs.observe(doc.documentElement, { childList: true, subtree: true });
+ligarEm(doc.documentElement);
+}
+var UnidadesUI = {
+ligar: ligar, ligarEm: ligarEm, texto: texto, valor: valorInterno, iniciar: iniciar,
+unidade: function (el) { var e = estado(el); return e ? e.u : null; },
+preferida: function (g) { return pref(g); },
+escolher: function (g, u) { var Gd = U() && U().GRANDEZAS[g]; if (!Gd || Gd.unidades[u] == null) return false; gravar(g, u); if (doc) [].slice.call(doc.querySelectorAll('input[data-grandeza="' + g + '"]')).forEach(function (o) { if (estado(o)) mostrarEm(o, u); }); return true; }
+};
+global.UnidadesUI = UnidadesUI;
+if (typeof module !== "undefined" && module.exports) module.exports = UnidadesUI;
+if (doc) { if (doc.readyState === "loading") doc.addEventListener("DOMContentLoaded", iniciar); else iniciar(); }
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/unidadesmemorial.js ==== */
+try {
+(function (global) {
+"use strict";
+function UN() { return global.Unidades || (typeof require === "function" ? require("./unidades.js") : null); }
+var MARCA = 'data-un-processado="1"';
+var SI = {
+"kN": { g: "forca", f: 1 }, "N": { g: "forca", f: 0.001 },
+"kN·m": { g: "momento", f: 1 }, "kN.m": { g: "momento", f: 1, u: "kN·m" }, "kN·cm": { g: "momento", f: 0.01, tec: ["kgf·cm", "tf·cm"] },
+"N·m": { g: "momento", f: 0.001 }, "N·mm": { g: "momento", f: 1e-6, tec: ["kgf·cm", "kgf·cm"] },
+"kN/m": { g: "linear", f: 1 }, "N/mm": { g: "linear", f: 1, tec: ["kgf/mm", "kgf/mm"] }, "N/m": { g: "linear", f: 0.001 },
+"kN/m²": { g: "superficie", f: 1 }, "kN/m2": { g: "superficie", f: 1, u: "kN/m²" }, "kPa": { g: "superficie", f: 1 }, "N/m²": { g: "superficie", f: 0.001 }, "Pa": { g: "superficie", f: 0.001 },
+"kN/cm²": { g: "tensao", f: 10 }, "MPa": { g: "tensao", f: 1 }, "N/mm²": { g: "tensao", f: 1 }, "GPa": { g: "tensao", f: 1000 },
+"kN/m³": { g: "peso", f: 1 }, "kN·m/m": { g: "momentoLinear", f: 1 }
+};
+var SIMBOLOS = Object.keys(SI).sort(function (a, b) { return b.length - a.length; });
+function reEsc(s) { return s.replace(/[.*+?^${}()|[\]\\\/]/g, "\\$&"); }
+var NUM = "[+\\-−]?(?:\\d{1,3}(?:\\.\\d{3})+|\\d+)(?:,\\d+)?";
+var ESP = "(?:\\s|&nbsp;|&#160;|\\u00a0|\\u202f)*";
+var UNI = "(" + SIMBOLOS.map(reEsc).join("|") + ")";
+var FIM = "(?![A-Za-zÀ-ÿ0-9²³·/_µ])";
+var RE_Q = new RegExp("(^|[^\\wÀ-ÿ.,\\-−/·])(" + NUM + ")" + ESP + UNI + FIM, "g");
+var RE_NUM_G = new RegExp("(^|[^\\wÀ-ÿ.,\\-−/·])(" + NUM + ")(?![\\d.,]*\\d)", "g");
+var RE_SO_NUM = new RegExp("^\\s*" + NUM + "(?:\\s*(?:;|/|–|—| a | e )\\s*" + NUM + ")*\\s*$");
+var RE_FRASE = /(Unidades:|[Vv]alores em)\s+((?:kN(?:·m|\/m²|\/m)?|MPa|kPa|m)(?:(?:,\s*|\s+e\s+)(?:kN(?:·m|\/m²|\/m)?|MPa|kPa|m))*(?:\s*\(tensões em MPa\))?)(?![\wÀ-ÿ·\/²])/g;
+var RE_LIDER = new RegExp("^\\s*(" + NUM + ")\\s+\\(");
+var RE_UNI_CAB = new RegExp("\\(\\s*" + UNI + "\\s*\\)");
+var RE_PAREN = /\(([^()]{1,24})\)/g;
+var NAO_HERDA = /raz[aã]o|η|coef|fator|γ|ψ|%|n\.?\s*º|quant|índice|λ|χ|aproveit|esbelt|perfil|barra|caso|comb|ação|descri|norma|item|tipo|nó|apoio/i;
+var BLOCO = /^(tr|li|p|div|h[1-6]|caption|table|thead|tbody|tfoot|section|ul|ol|dl|dd|dt|blockquote|figure|figcaption|header|footer|article|aside|main|body|details|summary)$/;
+var CELULA = /^(td|th)$/;
+var PULAR = /^(script|style|head|title|svg|textarea|code|pre|math|template|noscript)$/;
+function lerN(s) { var U = UN(); return U.lerNumero(String(s).replace(/−/g, "-")); }
+function fmtN(x, u, op) { var U = UN(); return U.numeroBR(x, U.casasAuto(u, x), { menos: (op && op.menos) || "−" }); }
+function escTxt(s) { return String(s).replace(/&(?!(?:[a-z]+|#\d+);)/gi, "&amp;").replace(/</g, "&lt;"); }
+function escolher(tecs, g, maxInterna) {
+var U = UN(), Gd = U.GRANDEZAS[g]; if (!tecs[1] || tecs[0] === tecs[1]) return tecs[0];
+return Math.abs(U.converter(maxInterna, g, Gd.interna, tecs[0])) >= 999.995 ? tecs[1] : tecs[0];
+}
+function tecsDe(d) { var U = UN(); return d.tec || U.GRANDEZAS[d.g].tecnicas; }
+function conv(vInterna, g, u) { var U = UN(); return U.converter(vInterna, g, U.GRANDEZAS[g].interna, u); }
+function tokenizar(html) {
+var re = /<!--[\s\S]*?-->|<\/?[a-zA-Z][^>]*>|<![^>]*>|[^<]+|</g, out = [], m;
+while ((m = re.exec(html))) {
+var t = m[0], k = { s: t };
+if (t.charAt(0) === "<" && t.length > 1 && t !== "<") {
+if (t.slice(0, 4) === "<!--" || t.charAt(1) === "!") k.tipo = "outro";
+else { var mm = /^<(\/?)([a-zA-Z][\w-]*)/.exec(t); k.tipo = "tag"; k.fecha = !!mm[1]; k.nome = mm[2].toLowerCase(); k.auto = /\/>$/.test(t); }
+} else k.tipo = "txt";
+out.push(k);
+}
+return out;
+}
+function attr(tag, nome) { var m = new RegExp("\\s" + nome + "\\s*=\\s*(\"([^\"]*)\"|'([^']*)'|([^\\s>]+))", "i").exec(tag); return m ? (m[2] != null ? m[2] : m[3] != null ? m[3] : m[4]) : null; }
+function textoPuro(s) { return s.replace(/&nbsp;|&#160;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&"); }
+function processar(html, op) {
+op = op || {}; html = String(html == null ? "" : html);
+var U = UN(); if (!U) return { html: html, convertidos: 0, motivo: "js/unidades.js não carregou" };
+if (html.indexOf(MARCA) >= 0) return { html: html, convertidos: 0, ja: true };
+var tk = tokenizar(html);
+var pular = 0, cru = null, grupo = 0, ctx = "", tabelas = [], pilha = [], celula = null;
+var grupos = {};
+var itens = [];
+var nConv = 0, nMant = 0;
+function grupoMax(chave, v) { var a = Math.abs(v); if (!(chave in grupos) || a > grupos[chave]) grupos[chave] = a; }
+function tabAtual() { return pilha.length ? pilha[pilha.length - 1] : null; }
+function colunaDe(tb, idx) { if (!tb.cols[idx]) tb.cols[idx] = { cab: null, uni: null, herda: true, max: 0, n: 0, cabTok: [] }; return tb.cols[idx]; }
+for (var i = 0; i < tk.length; i++) {
+var t = tk[i];
+if (t.tipo === "tag") {
+if (cru) { if (t.fecha && t.nome === cru) cru = null; continue; }
+if (PULAR.test(t.nome) && !t.auto) {
+if (t.nome === "svg" || t.nome === "math") { if (t.fecha) pular = Math.max(0, pular - 1); else pular++; }
+else if (!t.fecha) { cru = t.nome; }
+continue;
+}
+if (pular) continue;
+if (BLOCO.test(t.nome) || t.nome === "br") { grupo++; ctx = ""; }
+if (CELULA.test(t.nome)) ctx = "";
+var tb = tabAtual();
+if (t.nome === "table") {
+if (!t.fecha) pilha.push({ cols: [], cap: null, capTok: [], emCap: false, emHead: false, temHead: false, linha: -1, col: 0, linhaTh: true, linhaCelulas: [], idx: tabelas.length });
+else if (tb) { tabelas.push(pilha.pop()); }
+continue;
+}
+if (!tb) continue;
+if (t.nome === "caption") { tb.emCap = !t.fecha; if (t.fecha) { var cm = RE_UNI_CAB.exec(tb.capTexto || ""); if (cm) tb.cap = { uni: cm[1], d: SI[cm[1]], max: 0, n: 0 }; } continue; }
+if (t.nome === "thead") { tb.emHead = !t.fecha; if (!t.fecha) tb.temHead = true; continue; }
+if (t.nome === "tr") {
+if (!t.fecha) { tb.linha++; tb.col = 0; tb.linhaTh = true; tb.linhaCelulas = []; }
+else {
+var ehCab = tb.emHead || (!tb.temHead && tb.linha === 0 && tb.linhaTh && tb.linhaCelulas.length);
+tb.linhaCelulas.forEach(function (c) { c.cab = !!ehCab; });
+if (ehCab) tb.linhaCelulas.forEach(function (c) {
+var txt = c.texto, mU = RE_UNI_CAB.exec(txt), col;
+for (var k = 0; k < c.span; k++) {
+col = colunaDe(tb, c.col + k);
+if (mU) { col.uni = mU[1]; col.d = SI[mU[1]]; col.cabTok = c.toks; col.herda = false; }
+else {
+var outra = false, mp; RE_PAREN.lastIndex = 0;
+while ((mp = RE_PAREN.exec(txt))) { if (/[a-zA-Z%°²³]/.test(mp[1])) outra = true; }
+if (outra || NAO_HERDA.test(txt)) col.herda = false;
+}
+}
+});
+}
+continue;
+}
+if (CELULA.test(t.nome)) {
+if (!t.fecha) {
+if (t.nome === "td") tb.linhaTh = false;
+var sp = Math.max(1, parseInt(attr(t.s, "colspan"), 10) || 1);
+celula = { col: tb.col, span: sp, texto: "", toks: [], tb: tb, num: [] };
+tb.col += sp; tb.linhaCelulas.push(celula);
+} else celula = null;
+continue;
+}
+continue;
+}
+if (t.tipo !== "txt" || pular || cru) continue;
+var s = t.s, tb2 = tabAtual();
+if (tb2 && tb2.emCap) tb2.capTexto = (tb2.capTexto || "") + textoPuro(s);
+if (tb2 && tb2.emCap) tb2.capTok.push(i);
+if (celula) { celula.texto += textoPuro(s); celula.toks.push(i); }
+var acoes = [], m, ultimoFim = 0;
+RE_Q.lastIndex = 0;
+while ((m = RE_Q.exec(s))) {
+var ini = m.index + m[1].length, numTxt = m[2], simb = m[3], d = SI[simb], fim = m.index + m[0].length;
+var v = lerN(numTxt); if (!isFinite(v)) continue;
+var vi = v * d.f, tecs = tecsDe(d), chave = grupo + "|" + d.g + "|" + tecs[0];
+var antes = textoPuro(ctx + s.slice(0, ini)), manter = false;
+if (/=\s*$/.test(antes)) {
+var expr = antes.replace(/=\s*$/, ""), corte = Math.max(expr.lastIndexOf("="), expr.lastIndexOf(";"), expr.lastIndexOf(":"));
+expr = expr.slice(corte + 1);
+if (/\d\s*[×x·*\/+−\-]\s*\(?\s*\d/.test(expr) && !new RegExp(NUM + ESP + UNI + FIM).test(expr)) manter = true;
+}
+var lista = [];
+var trecho = s.slice(ultimoFim, ini), NOME = "[A-Za-zΣΔ][A-Za-z0-9_,.À-ÿ]{0,14}";
+var reLN = new RegExp("((?:" + NOME + "\\s*=\\s*" + NUM + "\\s*;\\s*)+)(" + NOME + "\\s*=\\s*)$");
+var reLB = new RegExp("(?:^|\\s)((?:" + NUM + "\\s*;\\s*){2,})$");
+var mlN = reLN.exec(trecho), ml = mlN || reLB.exec(trecho);
+if (mlN) { var ini0 = mlN[2].charAt(0), nomes = mlN[1].match(new RegExp(NOME + "(?=\\s*=)", "g")) || []; if (nomes.some(function (nm) { return nm.charAt(0) !== ini0; })) ml = null; }
+if (ml) {
+var base = ultimoFim + ml.index + ml[0].indexOf(ml[1]), bloco = ml[1], mn;
+var reItem = mlN ? new RegExp("=\\s*(" + NUM + ")", "g") : new RegExp("(" + NUM + ")", "g");
+while ((mn = reItem.exec(bloco))) {
+var posN = base + mn.index + mn[0].indexOf(mn[1]), vv = lerN(mn[1]);
+if (isFinite(vv)) { lista.push({ ini: posN, fim: posN + mn[1].length, num: mn[1], vi: vv * d.f }); grupoMax(chave, vv * d.f); }
+}
+}
+grupoMax(chave, vi);
+lista.forEach(function (x) { acoes.push({ tipo: "num", ini: x.ini, fim: x.fim, orig: x.num, vi: x.vi, g: d.g, chave: chave, tecs: tecs }); });
+acoes.push({ tipo: manter ? "manter" : "q", ini: ini, fim: fim, orig: s.slice(ini, fim), vi: vi, g: d.g, chave: chave, tecs: tecs });
+if (manter) nMant++;
+ultimoFim = fim;
+}
+if (!acoes.length && celula && !celula.toks.slice(0, -1).some(function (it) { return /\S/.test(tk[it].s); })) {
+var nums = [], mm2, so = RE_SO_NUM.test(textoPuro(s)), lider = !so ? RE_LIDER.exec(s) : null;
+if (so) { RE_NUM_G.lastIndex = 0; while ((mm2 = RE_NUM_G.exec(s))) { var p0 = mm2.index + mm2[1].length, vn = lerN(mm2[2]); if (isFinite(vn)) nums.push({ ini: p0, fim: p0 + mm2[2].length, num: mm2[2], v: vn }); } }
+else if (lider) { var p1 = lider[0].indexOf(lider[1]), vl = lerN(lider[1]); if (isFinite(vl)) nums.push({ ini: p1, fim: p1 + lider[1].length, num: lider[1], v: vl }); }
+if (nums.length) acoes.push({ tipo: "cel", celula: celula, nums: nums });
+}
+RE_FRASE.lastIndex = 0; var mf;
+while ((mf = RE_FRASE.exec(s))) {
+var fi = mf.index + mf[0].length - mf[2].length, ff = fi + mf[2].length;
+if (!acoes.some(function (a) { return a.ini != null && a.ini < ff && a.fim > fi; })) acoes.push({ tipo: "frase", ini: fi, fim: ff, orig: mf[2] });
+}
+if (acoes.length) itens[i] = acoes;
+ctx += s;
+if (ctx.length > 400) ctx = ctx.slice(-400);
+}
+while (pilha.length) tabelas.push(pilha.pop());
+var colPorTok = {}, nCols = 0;
+itens.forEach(function (acoes, iTok) {
+if (!acoes) return;
+acoes.forEach(function (a) {
+if (a.tipo !== "cel") return;
+var c = a.celula, tb = c.tb; if (c.cab) return;
+var col = tb.cols[c.col], alvo = null;
+if (col && col.d) alvo = col;
+else if (tb.cap && tb.cap.d && (!col || col.herda) && c.span === 1) alvo = tb.cap;
+if (!alvo) return;
+a.alvo = alvo;
+a.nums.forEach(function (x) { var vi = x.v * alvo.d.f; x.vi = vi; if (Math.abs(vi) > alvo.max) alvo.max = Math.abs(vi); });
+alvo.n++;
+});
+});
+tabelas.forEach(function (tb) {
+var lst = tb.cols.filter(Boolean).concat(tb.cap ? [tb.cap] : []);
+lst.forEach(function (al) { if (al.d && al.n) { al.tecU = escolher(tecsDe(al.d), al.d.g, al.max); nCols++; } });
+tb.cols.forEach(function (col) { if (col && col.d && col.n && col.cabTok) col.cabTok.forEach(function (it) { colPorTok[it] = (colPorTok[it] || []).concat([col]); }); });
+if (tb.cap && tb.cap.d && tb.cap.n) tb.capTok.forEach(function (it) { colPorTok[it] = (colPorTok[it] || []).concat([tb.cap]); });
+});
+var out = [];
+function par(si, tc) { nConv++; return '<span class="un-si">' + si + '</span><span class="un-tc">' + tc + "</span>"; }
+for (var j = 0; j < tk.length; j++) {
+var tt = tk[j], acs = itens[j], cols = colPorTok[j];
+if (!acs && !cols) { out.push(tt.s); continue; }
+var s2 = tt.s, pedacos = [], pos = 0;
+var lista2 = [];
+(acs || []).forEach(function (a) {
+if (a.tipo === "frase") { lista2.push({ ini: a.ini, fim: a.fim, html: par(a.orig, a.orig + " (nesta leitura, convertidos para kgf e tf)") }); return; }
+if (a.tipo === "cel") { if (!a.alvo || !a.alvo.tecU) return; a.nums.forEach(function (x) { lista2.push({ ini: x.ini, fim: x.fim, html: par(x.num, escTxt(fmtN(conv(x.vi, a.alvo.d.g, a.alvo.tecU), a.alvo.tecU))) }); }); return; }
+var u = escolher(a.tecs, a.g, grupos[a.chave] || Math.abs(a.vi)), x2 = conv(a.vi, a.g, u), tx = fmtN(x2, u);
+if (a.tipo === "num") lista2.push({ ini: a.ini, fim: a.fim, html: par(a.orig, escTxt(tx)) });
+else if (a.tipo === "manter") lista2.push({ ini: a.ini, fim: a.fim, html: par(a.orig, a.orig + " (" + escTxt(tx + " " + u) + ")") });
+else lista2.push({ ini: a.ini, fim: a.fim, html: par(a.orig, escTxt(tx + " " + u)) });
+});
+if (cols) cols.forEach(function (al) {
+RE_UNI_CAB.lastIndex = 0; var mc = new RegExp("\\(\\s*" + reEsc(al.uni) + "\\s*\\)").exec(s2);
+if (mc && !lista2.some(function (q) { return q.ini < mc.index + mc[0].length && q.fim > mc.index; })) {
+var ab = mc.index + mc[0].indexOf(al.uni);
+lista2.push({ ini: ab, fim: ab + al.uni.length, html: par(al.uni, escTxt(al.tecU)) });
+}
+});
+lista2.sort(function (a, b) { return a.ini - b.ini; });
+lista2.forEach(function (q) { if (q.ini < pos) return; pedacos.push(s2.slice(pos, q.ini)); pedacos.push(q.html); pos = q.fim; });
+pedacos.push(s2.slice(pos));
+out.push(pedacos.join(""));
+}
+var corpo = out.join("");
+return { html: embrulhar(corpo, op), convertidos: nConv, mantidos: nMant, tabelas: tabelas.length, colunas: nCols };
+}
+var CSS = "html .un-tc{display:none!important}html.un-tec .un-si{display:none!important}html.un-tec .un-tc{display:inline!important}" +
+".un-aba{position:sticky;top:0;z-index:60;display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 10px;padding:7px 10px;background:#f3f6f9;border:1px solid #c9d3dd;border-radius:0 0 8px 8px;font:12.5px/1.3 system-ui,'Segoe UI',Arial,sans-serif;color:#1d2733}" +
+".un-aba b{font-weight:600;margin-right:2px}.un-aba button{font:inherit;padding:5px 12px;min-height:30px;border:1px solid #9fb0c0;background:#fff;color:#1d2733;border-radius:6px;cursor:pointer}" +
+".un-aba button[aria-selected=true]{background:#1f4f78;border-color:#1f4f78;color:#fff}.un-aba button:focus-visible{outline:2px solid #0d6ebd;outline-offset:2px}" +
+".un-aba .un-dica{color:#4a5866;font-size:11.5px;flex:1 1 260px}" +
+".un-capa{margin-top:10px;font-size:9.5pt;color:#33414f;border-left:3px solid #1f4f78;padding:4px 8px;background:#f7f9fb}" +
+"@media print{.un-aba{display:none!important}}";
+function nota(U) {
+return '<p class="un-capa" data-un="capa"><b>Unidades deste documento:</b> <span class="un-si">Sistema Internacional — kN, kN·m, kN/m, kN/m² e MPa (as do cálculo).</span>' +
+'<span class="un-tc">técnicas — kgf e tf (kgf·m, tf·m, kgf/m, kgf/m², kgf/cm²), convertidas dos valores do cálculo, que foi feito em SI. ' + U.NOTA_BASE.replace(/^Conversão/, "Conversão") + " As figuras e diagramas ficam em kN.</span></p>";
+}
+var SCRIPT = "(function(){var K='orcapro:memorial:unidades',d=document,h=d.documentElement;" +
+"function por(m){h.className=h.className.replace(/\\s*\\bun-tec\\b/g,'')+(m==='tec'?' un-tec':'');var b=d.querySelectorAll('[data-un-modo]');for(var i=0;i<b.length;i++)b[i].setAttribute('aria-selected',b[i].getAttribute('data-un-modo')===m?'true':'false');try{localStorage.setItem(K,m)}catch(e){}}" +
+"var m0=/\\bun-tec\\b/.test(h.className)?'tec':'si';try{m0=localStorage.getItem(K)||m0}catch(e){}try{var q=/[?&]unidades=(tec|si)/.exec(location.search);if(q)m0=q[1]}catch(e){}" +
+"d.addEventListener('click',function(ev){var b=ev.target.closest&&ev.target.closest('[data-un-modo]');if(b){ev.preventDefault();por(b.getAttribute('data-un-modo'))}});" +
+"d.addEventListener('keydown',function(ev){var b=ev.target.closest&&ev.target.closest('[data-un-modo]');if(b&&(ev.key==='ArrowLeft'||ev.key==='ArrowRight')){var o=b.getAttribute('data-un-modo')==='si'?'tec':'si';por(o);var n=d.querySelector('[data-un-modo='+o+']');if(n)n.focus()}});" +
+"window.OrcaUnidades={modo:por,atual:function(){return /\\bun-tec\\b/.test(h.className)?'tec':'si'}};por(m0==='tec'?'tec':'si')})();";
+function embrulhar(corpo, op) {
+var U = UN(), modo = op.modo === "tec" ? "tec" : "si";
+var aba = '<div class="un-aba" role="tablist" aria-label="Unidades do memorial" ' + MARCA + '><b>Unidades:</b>' +
+'<button type="button" role="tab" data-un-modo="si" aria-selected="' + (modo === "si") + '">SI (kN)</button>' +
+'<button type="button" role="tab" data-un-modo="tec" aria-selected="' + (modo === "tec") + '">Técnica (kgf / tf)</button>' +
+'<span class="un-dica">A técnica mostra força, momento, carga e tensão em quilograma-força e tonelada-força (g = 9,80665 m/s²); o cálculo é o mesmo, em SI. A impressão sai na unidade escolhida.</span></div>';
+var estilo = '<style id="un-css">' + CSS + "</style>", scr = "<script>" + SCRIPT + "</script>";
+var h = corpo;
+if (modo === "tec") h = /<html\b[^>]*>/i.test(h) ? h.replace(/<html\b([^>]*)>/i, function (a, at) { return /class=/.test(at) ? a.replace(/class=(["'])/, "class=$1un-tec ") : "<html" + at + ' class="un-tec">'; }) : h;
+if (/<\/head>/i.test(h)) h = h.replace(/<\/head>/i, estilo + "</head>"); else h = estilo + h;
+if (/<body\b[^>]*>/i.test(h)) h = h.replace(/<body\b[^>]*>/i, function (b) { return b + aba; }); else h = aba + h;
+var iCapa = h.search(/<section\b[^>]*class=["'][^"']*\bcapa\b/i), nt = nota(U), feito = false;
+if (iCapa >= 0) { var iFim = h.indexOf("</section>", iCapa); if (iFim > 0) { h = h.slice(0, iFim) + nt + h.slice(iFim); feito = true; } }
+if (!feito) { var iH1 = h.search(/<\/h1>/i); if (iH1 >= 0) { h = h.slice(0, iH1 + 5) + nt + h.slice(iH1 + 5); feito = true; } }
+if (!feito) { var iA = h.indexOf("</div>", h.indexOf(MARCA)); h = h.slice(0, iA + 6) + nt + h.slice(iA + 6); }
+if (/<\/body>/i.test(h)) h = h.replace(/<\/body>(?![\s\S]*<\/body>)/i, scr + "</body>"); else h += scr;
+return h;
+}
+function preparar(html, op) {
+try { var r = processar(html, op); return r && typeof r.html === "string" && r.html ? r.html : html; }
+catch (e) { try { if (global.console) console.error("[unidades] memorial sem a aba de unidades:", e && e.message); } catch (e2) {} return html; }
+}
+var UnidadesMemorial = { processar: processar, preparar: preparar, SI: SI, CSS: CSS, MARCA: MARCA, _tokenizar: tokenizar };
+global.UnidadesMemorial = UnidadesMemorial;
+if (typeof module !== "undefined" && module.exports) module.exports = UnidadesMemorial;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/metalcalcui.js ==== */
 try {
 (function (global) {
@@ -77044,11 +77850,12 @@ return '<footer class="mc-rod"><span class="mc-msg' + (ult && !val.ok ? " erro" 
 : '<button class="mc-bt pri" data-mc-acao="proximo">Próximo ' + (ico("avancar", 15)) + "</button>") + "</footer>";
 }
 var nCampo = 0;
+var GRANDEZA_UN = { "kN": "forca", "kN·m": "momento", "kN/m": "linear", "kN/m²": "superficie" };
 function campo(cam, rot, un, op) {
 op = op || {};
 var v = pegar(UIC.est, cam), id = "mc-c" + (++nCampo);
 return '<div class="mc-campo" data-mc-box="' + cam + '"><label for="' + id + '">' + esc(rot) + (op.dica ? ' <button type="button" class="mc-i" data-dica="' + op.dica + '" data-dica-lado="direita" aria-label="Exemplo ilustrado: ' + esc(rot) + '">i</button>' : "") + "</label>" +
-'<div class="mc-in"><input id="' + id + '" data-mc-campo="' + cam + '" data-mc-tipo="' + (op.texto ? "txt" : "num") + '"' + (op.texto ? "" : ' inputmode="decimal"') + ' value="' + esc(op.texto ? (v || "") : fmtIn(num(v, NaN))) + '"' +
+'<div class="mc-in"><input id="' + id + '" data-mc-campo="' + cam + '" data-mc-tipo="' + (op.texto ? "txt" : "num") + '"' + (GRANDEZA_UN[un] ? ' data-grandeza="' + GRANDEZA_UN[un] + '"' : "") + (op.texto ? "" : ' inputmode="decimal"') + ' value="' + esc(op.texto ? (v || "") : fmtIn(num(v, NaN))) + '"' +
 (op.min != null ? ' data-mc-min="' + op.min + '"' : "") + (op.max != null ? ' data-mc-max="' + op.max + '"' : "") + (op.ph ? ' placeholder="' + esc(op.ph) + '"' : "") + ' autocomplete="off">' + (un ? '<span class="mc-un">' + un + "</span>" : "") + "</div>" +
 (op.exp ? "<small>" + op.exp + "</small>" : "") + '<em class="mc-erro" data-mc-erro="' + cam + '"></em></div>';
 }
@@ -77788,6 +78595,7 @@ if (w && w.document) { try { w.document.write('<!doctype html><meta charset="utf
 status("Montando o memorial de cálculo (fotos do 3D, figuras e verificações)…");
 fotos(r).then(function (img) { return M.gerar(r, opcoesMemorial(img)); }).then(function (x) {
 var html = typeof x === "string" ? x : (x && x.html) || "";
+if (html && global.UnidadesMemorial) html = UnidadesMemorial.preparar(html);
 if (!html) { if (w) try { w.close(); } catch (e) {} toast("Memorial: " + ((x && x.motivo) || "não gerou conteúdo") + ".", "erro", 9000); return; }
 UIC.ultimoMemorial = { titulo: x.titulo, secoes: arr(x.secoes).length, avisos: arr(x.avisos).length, bytes: html.length };
 if (w && w.document) { w.document.open(); w.document.write(html); w.document.close(); toast("Memorial aberto em outra aba: imprima ou salve em PDF (Ctrl+P)." + (arr(x.avisos).length ? " " + x.avisos.length + " conferência(s) acusada(s) na seção 13." : ""), "ok", 8000); }
@@ -77969,7 +78777,7 @@ var cam = t.getAttribute("data-mc-campo"), tipo = t.getAttribute("data-mc-tipo")
 var val;
 if (tipo === "bool") val = !!t.checked;
 else if (tipo === "num") {
-var s = String(t.value || "").trim();
+var s = String((global.UnidadesUI ? UnidadesUI.texto(t) : t.value) || "").trim();
 if (s === "" && /posicao|v0Manual/.test(cam)) val = null;
 else {
 val = num(s, NaN);
@@ -78258,10 +79066,10 @@ if (!e.areas.length) h += '<p class="ml-nota">Nenhuma área ainda.</p>';
 e.areas.forEach(function (a, k) {
 var u = a.uso ? M.usoDe(a.uso) : null, uc = a.uso ? M.usoCarga({ uso: a.uso, qInformado: num(a.qInformado, null), alturaEstoque: num(a.alturaEstoque, null), inclinacaoPct: num(a.inclinacaoPct, 3) }) : null;
 h += '<div class="ml-card" style="background:var(--ml-sup2)" data-ml-area="' + k + '"><div class="ml-lin" style="justify-content:space-between"><b>' + esc(a.nome) + '</b><span class="ml-nota">' + fmt(M.areaPoligono(a.poligono), 2) + " m² · cota " + fmt(a.cota, 2) + " m · " + arr(a.vigas).length + ' vigas</span><button class="ml-bt mini" data-ml-acao="area-tirar" data-ml-v="' + k + '">Remover</button></div>' +
-'<div class="ml-lin"><label class="ml-campo">Revestimento / piso g (kN/m²)<input data-ml-campo="area.g" data-ml-k="' + k + '" value="' + esc(fin(a.g)) + '" inputmode="decimal"></label>' +
+'<div class="ml-lin"><label class="ml-campo">Revestimento / piso g (kN/m²)<input data-grandeza="superficie" data-ml-campo="area.g" data-ml-k="' + k + '" value="' + esc(fin(a.g)) + '" inputmode="decimal"></label>' +
 '<label class="ml-campo">γ do permanente<select data-ml-campo="area.gCategoria" data-ml-k="' + k + '">' + [["G-geral", "em geral / equipamentos (1,50)"], ["G-insitu", "industrializado + in loco, p. ex. steel deck com concreto (1,40)"], ["G-industrializado", "industrializado, p. ex. grade, chapa (1,35)"]].map(function (o) { return '<option value="' + o[0] + '"' + ((a.gCategoria || "G-geral") === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + "</select></label>" +
-'<label class="ml-campo">Uso — NBR 6120:2019, Tabela 10<select data-ml-campo="area.uso" data-ml-k="' + k + '">' + opcoesUso(a.uso) + "</select></label>" +
-(u && (u.informado || u.q == null) && !u.cobertura ? '<label class="ml-campo">q informado (kN/m²)<input data-ml-campo="area.qInformado" data-ml-k="' + k + '" value="' + esc(fin(a.qInformado)) + '" inputmode="decimal"></label>' : "") +
+'<label class="ml-campo">Uso — NBR 6120:2019, Tabela 10<select data-grandeza="superficie" data-ml-campo="area.uso" data-ml-k="' + k + '">' + opcoesUso(a.uso) + "</select></label>" +
+(u && (u.informado || u.q == null) && !u.cobertura ? '<label class="ml-campo">q informado (kN/m²)<input data-grandeza="superficie" data-ml-campo="area.qInformado" data-ml-k="' + k + '" value="' + esc(fin(a.qInformado)) + '" inputmode="decimal"></label>' : "") +
 (u && u.estoque ? '<label class="ml-campo">Altura de estoque (m)<input data-ml-campo="area.alturaEstoque" data-ml-k="' + k + '" value="' + esc(fin(a.alturaEstoque == null ? 2.5 : a.alturaEstoque)) + '" inputmode="decimal"></label>' : "") +
 (u && u.cobertura ? '<label class="ml-campo">Inclinação (%)<input data-ml-campo="area.inclinacaoPct" data-ml-k="' + k + '" value="' + esc(fin(a.inclinacaoPct == null ? 3 : a.inclinacaoPct)) + '" inputmode="decimal"></label>' : "") +
 '<label class="ml-campo">Direção da placa<select data-ml-campo="area.direcao" data-ml-k="' + k + '">' + [["auto", "automática (menor vão)"], ["x", "vigas em x"], ["z", "vigas em z"]].map(function (o) { return '<option value="' + o[0] + '"' + ((a.direcao || "auto") === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + "</select></label>" +
@@ -78270,7 +79078,7 @@ h += '<div class="ml-card" style="background:var(--ml-sup2)" data-ml-area="' + k
 });
 h += "</div>";
 h += '<div class="ml-card"><h4>Cargas pontuais (equipamento, talha, reação de outra estrutura)</h4><div class="ml-lin"><label class="ml-campo">Distância do início da peça (m)<input data-ml-campo="pt.s" value="' + esc(fin(U.ptS)) + '" inputmode="decimal" placeholder="meio"></label>' +
-'<label class="ml-campo">Fx (kN)<input data-ml-campo="pt.fx" value="' + esc(fin(U.ptF && U.ptF[0])) + '" inputmode="decimal" placeholder="0"></label><label class="ml-campo">Fy (kN, − para baixo)<input data-ml-campo="pt.fy" value="' + esc(fin(U.ptF && U.ptF[1])) + '" inputmode="decimal" placeholder="−10"></label><label class="ml-campo">Fz (kN)<input data-ml-campo="pt.fz" value="' + esc(fin(U.ptF && U.ptF[2])) + '" inputmode="decimal" placeholder="0"></label>' +
+'<label class="ml-campo">Fx (kN)<input data-grandeza="forca" data-ml-campo="pt.fx" value="' + esc(fin(U.ptF && U.ptF[0])) + '" inputmode="decimal" placeholder="0"></label><label class="ml-campo">Fy (kN, − para baixo)<input data-grandeza="forca" data-ml-campo="pt.fy" value="' + esc(fin(U.ptF && U.ptF[1])) + '" inputmode="decimal" placeholder="−10"></label><label class="ml-campo">Fz (kN)<input data-grandeza="forca" data-ml-campo="pt.fz" value="' + esc(fin(U.ptF && U.ptF[2])) + '" inputmode="decimal" placeholder="0"></label>' +
 '<label class="ml-campo">Caso<select data-ml-campo="pt.caso"><option value="G">permanente (equipamento fixo)</option><option value="Q"' + (U.ptCaso === "Q" ? " selected" : "") + '>variável</option></select></label><button class="ml-bt" data-ml-acao="pt-add">Na peça selecionada</button></div>' +
 (e.pontuais.length ? '<table class="ml-t"><thead><tr><th>Carga</th><th>Peça</th><th>s (m)</th><th>F x; y; z (kN)</th><th>Caso</th><th></th></tr></thead><tbody>' + e.pontuais.map(function (p, k) { return "<tr><td>" + esc(p.nome) + "</td><td>" + esc(p.peca) + '</td><td class="n">' + fmt(p.s, 2) + '</td><td class="n">' + p.F.map(function (x) { return fmt(x, 2); }).join("; ") + "</td><td>" + esc(p.caso) + '</td><td><button class="ml-bt mini" data-ml-acao="pt-tirar" data-ml-v="' + k + '">Remover</button></td></tr>'; }).join("") + "</tbody></table>" : "") + "</div>";
 var vt = e.vento;
@@ -78330,7 +79138,7 @@ return '<footer class="ml-rod"><span class="ml-msg">' + (ok ? "Memorial, vista 3
 '<button class="ml-bt pri" data-ml-acao="calcular">Calcular de novo</button></footer>';
 }
 function campo(el) {
-var e = estado(), c = el.getAttribute("data-ml-campo"), k = +el.getAttribute("data-ml-k"), v = el.type === "checkbox" ? el.checked : el.value, rer = false;
+var e = estado(), c = el.getAttribute("data-ml-campo"), k = +el.getAttribute("data-ml-k"), v = el.type === "checkbox" ? el.checked : (global.UnidadesUI ? UnidadesUI.texto(el) : el.value), rer = false;
 if (c === "soSelecao") { e.soSelecao = v; rer = true; }
 else if (c === "base") { var p = el.getAttribute("data-ml-peca"); if (v) e.apoios.bases[p] = v; else delete e.apoios.bases[p]; }
 else if (/^area\./.test(c)) { var a = e.areas[k]; if (!a) return; var f = c.slice(5); a[f] = v; if (f === "uso" || f === "cobertura") rer = true; if (f === "qInformado" || f === "alturaEstoque" || f === "inclinacaoPct") rer = true; }
@@ -78432,6 +79240,7 @@ var o = obra() || {};
 status("Montando o memorial (fotos do 3D, verificações)…");
 fotos(r).then(function (img) {
 var x = Mm.gerar(r, { obra: { nome: o.nome, endereco: o.endereco, cidade: o.cidade, cliente: o.cliente }, empresa: { nome: emp.nome || emp.razaoSocial, cnpj: emp.cnpj, logoDataUrl: logo }, responsavel: { nome: emp.responsavel, titulo: emp.titulo, crea: emp.crea }, imagens: img, versao: global.CONFIG && CONFIG.versao });
+if (x && x.ok && global.UnidadesMemorial) x.html = UnidadesMemorial.preparar(x.html);
 U.ultimoMemorial = x && x.ok ? { titulo: x.titulo, secoes: x.secoes.length, bytes: x.html.length, avisos: x.avisos.length } : null;
 if (!x || !x.ok) { if (w) try { w.close(); } catch (e) {} toast("Memorial: " + ((x && x.motivo) || "falhou"), "erro"); return; }
 if (w && w.document) { w.document.open(); w.document.write(x.html); w.document.close(); toast("Memorial aberto em outra aba: imprima ou salve em PDF (Ctrl+P).", "ok", 7000); }
@@ -80253,6 +81062,7 @@ var COM_CALCULO = '<p class="muted mpr-nota" data-mpr="com-calculo">Verificaçã
 function modoDe(tipo) { var M = global.MetalProntas, T = M && M.TIPOS[tipo]; if (!T) return "ponto"; if (tipo === "mezanino") return "retangulo"; return T.modo || (T.cliques === 2 ? "retangulo" : "ponto"); }
 function temCalculo(tipo, par) { var M = global.MetalProntas, T = M && M.TIPOS[tipo]; return !!(global.AcoAcessos && global.MetalAcessos && T && (T.calcula || (tipo === "escada" && par && par.norma))); }
 var CAMPOS_EXTRA = {};
+var GRANDEZA = { qInformado: "superficie", usoGuarda: "linear", usoPiso: "superficie" };
 var COMANDOS = [
 { id: "met-pronta-trelica", tipo: "trelica", rotulo: "Treliça\nplana", icone: "telhado", grande: true, dica: "Treliça Howe, Pratt ou Warren, banzos paralelos, trapezoidal ou triangular: vão, altura e painéis; cantoneira simples ou dupla, U ou tubo; nós com chapa gusset. Clique onde fica o apoio." },
 { id: "met-pronta-escada", tipo: "escada", rotulo: "Escada\nmetálica", icone: "niveis", grande: true, dica: "Escada reta, em L, em U ou caracol: longarinas, degraus em chapa xadrez ou grade, espelho, patamar, guarda-corpo e corrimão. Degrau por Blondel (2e + p de 63 a 64 cm). Clique no pé da escada." },
@@ -80397,10 +81207,10 @@ var cs = campos(tipo), h = '<div class="mpr-dlg" data-modal-largo data-mpr="dlg"
 cs.forEach(function (c) {
 var id = c[0], v = par[id], ck = c[2] === "check";
 h += '<label' + (ck ? ' class="mpr-ck"' : "") + '>' + (ck ? "" : "<span>" + esc(c[1]) + "</span>");
-if (c[2] === "sel" || c[2] === "par") { var ops = c[2] === "par" ? parafusos() : c[3]; h += '<select data-mpr-c="' + id + '">' + ops.map(function (op) { return '<option value="' + esc(op[0]) + '"' + (String(op[0]) === String(v) ? " selected" : "") + ">" + esc(op[1]) + "</option>"; }).join("") + "</select>"; }
+if (c[2] === "sel" || c[2] === "par") { var ops = c[2] === "par" ? parafusos() : c[3]; h += '<select data-mpr-c="' + id + '"' + (GRANDEZA[id] ? ' data-grandeza="' + GRANDEZA[id] + '"' : "") + '>' + ops.map(function (op) { return '<option value="' + esc(op[0]) + '"' + (String(op[0]) === String(v) ? " selected" : "") + ">" + esc(op[1]) + "</option>"; }).join("") + "</select>"; }
 else if (c[2] === "cat") h += '<input data-mpr-c="' + id + '" list="mpr-dl-' + id + '" value="' + esc(v) + '" autocomplete="off" spellcheck="false"><datalist id="mpr-dl-' + id + '">' + datalist(c[3]).map(function (n) { return '<option value="' + esc(n) + '">'; }).join("") + "</datalist>";
 else if (ck) h += '<input type="checkbox" data-mpr-c="' + id + '"' + (v ? " checked" : "") + "><span>" + esc(c[1]) + "</span>";
-else h += '<input data-mpr-c="' + id + '" value="' + esc(MM[id] ? br(num(v, 0) * 1000, 2) : (c[2] === "txt" ? v : br(v, c[2] === "int" ? 0 : 3))) + '"' + (c[2] === "txt" ? "" : ' inputmode="decimal"') + ">";
+else h += '<input data-mpr-c="' + id + '"' + (GRANDEZA[id] ? ' data-grandeza="' + GRANDEZA[id] + '"' : "") + ' value="' + esc(MM[id] ? br(num(v, 0) * 1000, 2) : (c[2] === "txt" ? v : br(v, c[2] === "int" ? 0 : 3))) + '"' + (c[2] === "txt" ? "" : ' inputmode="decimal"') + ">";
 h += "</label>";
 });
 if (tipo !== "rolamento") {
@@ -80434,7 +81244,7 @@ cs.concat([["x0", "", "num"], ["y0", "", "num"], ["z0", "", "num"]]).forEach(fun
 var el = raiz.querySelector('[data-mpr-c="' + c[0] + '"]'); if (!el) return;
 if (c[2] === "check") p[c[0]] = !!el.checked;
 else if (c[2] === "sel" || c[2] === "par" || c[2] === "cat" || c[2] === "txt") p[c[0]] = c[0] === "pontos" ? num(el.value, 4) : String(el.value).trim();
-else { var v = num(el.value, NaN); if (isFinite(v)) p[c[0]] = MM[c[0]] ? v / 1000 : v; }
+else { var v = num(global.UnidadesUI ? UnidadesUI.texto(el) : el.value, NaN); if (isFinite(v)) p[c[0]] = MM[c[0]] ? v / 1000 : v; }
 });
 return p;
 },
@@ -80607,12 +81417,17 @@ function resolver(e) {
 var P = Pl(), r = api.raio(e.clientX, e.clientY); if (!r || !P) return null;
 var y = self.cota(), pl = { o: [0, y, 0], u: [1, 0, 0], v: [0, 0, -1], n: [0, 1, 0], horizontal: true, y: y };
 var q = P.pontoNoPlano(r, pl); if (!q) return null;
-var sn = null;
-if (PR()) {
+var sn = null, Bo = global.BimBarraOpcoes, liga = function (t) { return !Bo || !Bo.snapLigado || Bo.snapLigado(t); };
+if (PR() && liga(null)) {
 var p2 = P.pontoNoPlano(api.raio(e.clientX + 14, e.clientY), pl), tol = p2 ? Math.max(0.005, Math.min(2, Math.sqrt(Math.pow(p2[0] - q[0], 2) + Math.pow(p2[2] - q[2], 2)))) : 0.2;
 var s0 = self._pos && self._pos.pts.length ? self._pos.pts[0] : null;
-sn = PR().snap({ x: q[0], z: q[2] }, geoPr(), { tol: tol, tipos: { fim: true, intersecao: true, meio: true, centro: true, perpendicular: !!s0, extensao: false, proximo: false, grade: false }, ref: s0 ? { x: s0[0], z: s0[2] } : null });
+sn = PR().snap({ x: q[0], z: q[2] }, geoPr(), { tol: tol, tipos: { fim: liga("fim"), intersecao: liga("intersecao"), meio: liga("meio"), centro: liga("centro"), perpendicular: !!s0 && liga("perpendicular"), extensao: false, proximo: false, grade: false }, ref: s0 ? { x: s0[0], z: s0[2] } : null });
 if (sn) q = [sn.p.x, y, sn.p.z];
+}
+var sp = self._pos, md = sp ? modoDe(sp.tipo) : null;
+if (sp && sp.pts.length && (md === "polilinha" || md === "linha") && Bo && Bo.travar) {
+var b0 = sp.pts[sp.pts.length - 1], aj = Bo.travar({ x: b0[0], z: b0[2] }, { x: q[0], z: q[2] }, { shift: !!e.shiftKey, tipoSnap: sn ? sn.tipo : null });
+if (aj.travado) { q = [aj.p.x, y, aj.p.z]; sn = null; }
 }
 return { p: q, sn: sn };
 }
@@ -80649,8 +81464,11 @@ return true;
 clique: function (e, hit, pForcado) {
 if (!ativo()) return false;
 var p;
-if (pForcado) p = [pForcado.x, self.cota(), pForcado.z];
-else { var r = resolver(e); if (!r) { api.hint("Não achei o ponto no plano — gire a vista."); return true; } p = r.p; }
+if (pForcado) {
+p = [pForcado.x, self.cota(), pForcado.z];
+var sF = self._pos, mF = sF ? modoDe(sF.tipo) : null, BoF = global.BimBarraOpcoes;
+if (sF && sF.pts.length && (mF === "polilinha" || mF === "linha") && BoF && BoF.travar) { var bF = sF.pts[sF.pts.length - 1], aF = BoF.travar({ x: bF[0], z: bF[2] }, { x: p[0], z: p[2] }, { shift: !!(e && e.shiftKey) }); if (aF.travado) p = [aF.p.x, p[1], aF.p.z]; }
+} else { var r = resolver(e); if (!r) { api.hint("Não achei o ponto no plano — gire a vista."); return true; } p = r.p; }
 limpar(); api.marcaEsconder();
 self.ponto(p);
 return true;
@@ -80981,6 +81799,7 @@ var Mm = MM(); if (!r || !r.ok || !Mm) { toast("O memorial sai de um cálculo de
 var emp = {}, logo = null; try { if (global.Empresa && Empresa.dados) emp = Empresa.dados() || {}; if (global.Empresa && Empresa.logo) logo = Empresa.logo(); } catch (e) {}
 var o = {}; try { o = (global.Store && global.Auth && global.Gestao && global.Gestao._bimSel ? global.Store.obter(global.Auth.empresaId(), "obras", global.Gestao._bimSel) : null) || {}; } catch (e2) {}
 var x = Mm.gerar(r, { obra: { nome: o.nome, endereco: o.endereco, cidade: o.cidade, cliente: o.cliente }, empresa: { nome: emp.nome || emp.razaoSocial, cnpj: emp.cnpj, logoDataUrl: logo }, responsavel: { nome: emp.responsavel, titulo: emp.titulo, crea: emp.crea } });
+if (x && x.ok && global.UnidadesMemorial) x.html = UnidadesMemorial.preparar(x.html);
 this.ultimoMemorial = x && x.ok ? { titulo: x.titulo, secoes: x.secoes.length, bytes: x.html.length, avisos: x.avisos.length } : null;
 if (!x || !x.ok) { toast("Memorial: " + ((x && x.motivo) || "falhou"), "erro"); return x; }
 var w = null; try { w = global.open("", "_blank"); } catch (e3) { w = null; }
@@ -81050,10 +81869,10 @@ function resolver(e) {
 var P = Pl(), r = api.raio(e.clientX, e.clientY); if (!r || !P) return null;
 var y = self.cota(), pl = { o: [0, y, 0], u: [1, 0, 0], v: [0, 0, -1], n: [0, 1, 0], horizontal: true, y: y };
 var q = P.pontoNoPlano(r, pl); if (!q) return null;
-var sn = null;
-if (PR()) {
+var sn = null, Bo = global.BimBarraOpcoes, liga = function (t) { return !Bo || !Bo.snapLigado || Bo.snapLigado(t); };
+if (PR() && liga(null)) {
 var p2 = P.pontoNoPlano(api.raio(e.clientX + 14, e.clientY), pl), tol = p2 ? Math.max(0.005, Math.min(2, Math.sqrt(Math.pow(p2[0] - q[0], 2) + Math.pow(p2[2] - q[2], 2)))) : 0.2;
-sn = PR().snap({ x: q[0], z: q[2] }, geoPr(), { tol: tol, tipos: { fim: true, intersecao: true, meio: true, centro: true, perpendicular: false, extensao: false, proximo: false, grade: false } });
+sn = PR().snap({ x: q[0], z: q[2] }, geoPr(), { tol: tol, tipos: { fim: liga("fim"), intersecao: liga("intersecao"), meio: liga("meio"), centro: liga("centro"), perpendicular: false, extensao: false, proximo: false, grade: false } });
 if (sn) q = [sn.p.x, y, sn.p.z];
 }
 return { p: q, sn: sn };
@@ -81333,7 +82152,7 @@ return true;
 },
 memorial: function (r) {
 var o = {}; try { var G = global.Gestao, ob = G && G._bimObra ? G._bimObra() : null; if (ob) o.obra = ob.nome; } catch (e) {}
-var x = MA().memorial(r, o); this.ultimoMemorial = x && x.ok ? { titulo: x.titulo, secoes: x.secoes.length, bytes: x.html.length } : null;
+var x = MA().memorial(r, o); if (x && x.ok && global.UnidadesMemorial) x.html = UnidadesMemorial.preparar(x.html); this.ultimoMemorial = x && x.ok ? { titulo: x.titulo, secoes: x.secoes.length, bytes: x.html.length } : null;
 if (!x || !x.ok) { toast("Memorial: " + ((x && x.motivo) || "falhou"), "erro"); return null; }
 var w = null; try { w = global.open("", "_blank"); } catch (e) { w = null; }
 if (w && w.document) { w.document.open(); w.document.write(x.html); w.document.close(); toast("Memorial aberto em outra aba: imprima ou salve em PDF (Ctrl+P).", "ok", 7000); }
@@ -82172,6 +82991,7 @@ return "<!doctype html><html lang=\"pt-BR\"><head><meta charset=\"utf-8\"><title
 (sec ? sec.html : "<p>Nenhuma ligação aplicada pela ligação inteligente neste modelo.</p>" + (S0 && S0.escopoHtml ? S0.escopoHtml() : "")) + "</body></html>";
 },
 abrirHtml: function (html, nome) {
+if (global.UnidadesMemorial) html = UnidadesMemorial.preparar(html);
 var w = null; try { w = global.open("", "_blank"); } catch (e) { w = null; }
 if (w && w.document) { w.document.open(); w.document.write(html); w.document.close(); toast("Memorial aberto em outra aba (Ctrl+P para PDF).", "ok", 6000); return true; }
 var M = MU(); if (M && M.baixar) { M.baixar((M.arqBase ? M.arqBase() : "obra") + "-" + nome + ".html", html, "text/html"); toast("Memorial baixado (.html).", "ok", 6000); return true; }
@@ -82482,6 +83302,14 @@ if (sub === "telhado") return cfg.telhado.modo;
 if (sub === "fundacao") { var t = cfg.fundacao.tipoFundacao; return t === "baldrame" ? "dois" : (t === "radier" ? cfg.fundacao.radierModo : "um"); }
 return "um";
 }
+function travar(sub, q, e) {
+var mo = modoPts(sub), Bo = global.BimBarraOpcoes, base = pts[pts.length - 1];
+if (!base || !Bo || !Bo.travar || mo === "um" || (mo === "retangulo" && pts.length === 1)) return q;
+var u = null; try { var pz = global.BIM && global.BIM.precisao ? global.BIM.precisao() : null; u = pz && pz.estado ? pz.estado().ultimo : null; } catch (eU) { u = null; }
+var tipo = u && u.p && Math.abs(u.p.x - q.x) < 1e-6 && Math.abs(u.p.z - q.z) < 1e-6 ? u.tipo : null;
+var r = Bo.travar(base, q, { shift: !!(e && e.shiftKey), tipoSnap: tipo });
+return r && r.travado ? { x: r.p.x, z: r.p.z } : q;
+}
 var m3d = {
 contar: function (st) { return arr(st && st.telhados).length + arr(st && st.bordas).length + arr(st && st.fundacoes).length; },
 dica: function (sub) {
@@ -82505,7 +83333,7 @@ var sub = edit && edit.on ? edit.sub : null; if (!SUBS[sub] || !pts.length || !a
 var p = api.planoPonto(e.clientX, e.clientY); if (!p) return false;
 var mo = modoPts(sub), a = pts[0];
 if (mo === "retangulo" && pts.length === 1) linha([a, { x: p.x, z: a.z }, { x: p.x, z: p.z }, { x: a.x, z: p.z }, a]);
-else linha(pts.concat([{ x: p.x, z: p.z }]));
+else linha(pts.concat([travar(sub, { x: p.x, z: p.z }, e)]));
 return false;
 },
 clique: function (sub, e, hit, p) {
@@ -82522,6 +83350,7 @@ if (sub === "telhado-borda") return feito(self.opBorda(edit.estado, q, null));
 var mo = modoPts(sub);
 if (mo === "um") return feito(self.opFundacao(edit.estado, { p1: q }, nivel(), edit.base));
 if (mo === "contorno" && perto1(e)) return m3d.fechar();
+q = travar(sub, q, e);
 pts.push(q); marca(q);
 if (mo === "dois" && pts.length === 2) return feito(self.opFundacao(edit.estado, { p1: pts[0], p2: pts[1] }, nivel(), edit.base));
 if (mo === "retangulo" && pts.length === 2) return feito(sub === "telhado" ? self.opTelhado(edit.estado, { p1: pts[0], p2: pts[1] }, nivel(), edit.base) : self.opFundacao(edit.estado, { p1: pts[0], p2: pts[1] }, nivel(), edit.base));
@@ -86932,12 +87761,13 @@ try { if (global.BimShell) global.BimShell.pintarProps(null); } catch (e2) {}
 _marcarVistas: function (on) {
 var P = P2(); if (!P) return;
 Object.keys(P._cache || {}).forEach(function (k) { var c = P._cache[k]; if (c && c.el) { if (on) c.el.setAttribute("data-a7-ferr", "1"); else c.el.removeAttribute("data-a7-ferr"); } });
+try { if (global.BimSelecao && global.BimSelecao.mudou) global.BimSelecao.mudou(); } catch (eS) {}
 },
 dica: function () {
 var f = this._f; if (!f) return "";
 var d = f.def;
 if (d.k === "cota") {
-if (d.cota === "linear" || d.cota === "alinhada") return f.refs.length < 2 ? d.rotulo + ": clique a " + (f.refs.length ? "próxima" : "1ª") + " referência (face, eixo, ponta, meio ou furo da peça; Tab alterna face/eixo). Esc sai." : d.rotulo + ": mais uma referência faz cadeia; clique no vazio para posicionar a linha (Enter usa a posição padrão).";
+if (d.cota === "linear" || d.cota === "alinhada") return f.refs.length < 2 ? d.rotulo + ": clique a " + (f.refs.length ? "próxima" : "1ª") + " referência (face, eixo, ponta, meio ou furo da peça; Tab alterna face/eixo). Esc sai." : d.rotulo + ": mais uma referência faz cadeia; clique no VAZIO (longe de peça e de eixo) para posicionar a linha — Enter põe a linha por fora do desenho.";
 if (d.cota === "coordenada") return f.refs.length ? "Cota por coordenada: clique o próximo ponto; Enter (ou clique no vazio) termina. Tab alterna face/eixo. Esc sai." : "Cota por coordenada: clique a ORIGEM. Esc sai.";
 if (d.cota === "angular") return f.refs.length < 2 ? "Cota angular: clique a " + (f.refs.length ? "2ª" : "1ª") + " linha." : "Cota angular: clique onde passa o arco.";
 if (d.cota === "elevacao") return f.refs.length ? "Cota de elevação: clique onde vai o texto." : "Cota de elevação: clique o ponto.";
@@ -87064,7 +87894,7 @@ return ok;
 var oVista = { corte: corte, vista: id };
 if (k === "linear" || k === "alinhada" || k === "coordenada") {
 var h = this._acharCota(st, p, tol, id, corte, null);
-if (h && !f.refs.some(function (r) { return r.el != null && r.el === h.ref.el && r.r === h.ref.r && r.k === h.ref.k && r.i === h.ref.i && r.el2 === h.ref.el2; })) { f.refs.push(h.ref); status(this.dica() + " (" + h.rotulo + ")"); this._previa(id, p); return true; }
+if (h && !f.refs.some(function (r) { return BimAnot2DUI._mesmaRef(r, h.ref); })) { f.refs.push(h.ref); status(this.dica() + " (" + h.rotulo + ")"); this._previa(id, p); return true; }
 if (f.refs.length < 2) { f.refs.push({ x: q.x, y: q.y }); this._previa(id, p); status(this.dica()); return true; }
 var orient = k !== "alinhada" ? (o.orient === "h" || o.orient === "v" ? o.orient : this._orientAuto(st, f.refs, p, corte)) : undefined;
 var prov = { tipo: "cota", cota: k, refs: f.refs, orient: orient, off: 0, vista: id };
@@ -87073,8 +87903,9 @@ return criar({ orient: orient, off: M.offsetPara(st, prov, p, oVista) }) || true
 if (k === "angular") {
 if (f.refs.length < 2) {
 var ha = M.acharRef(st, p, tol, "linha", id);
-if (!ha || ha.ref.r === "centro") { toast("Clique perto de uma linha (face de parede, eixo, linha de detalhe).", "aviso"); return true; }
-f.refs.push(ha.ref); status(this.dica()); return true;
+if (!ha || ha.ref.r === "centro") ha = this._acharLinhaDesenho(st, p, tol, id);
+if (!ha) { toast("Clique perto de uma linha (face ou aresta de peça, eixo, linha de detalhe).", "aviso"); return true; }
+f.refs.push(ha.ref); status(this.dica() + " (" + (ha.rotulo || "linha") + ")"); return true;
 }
 var pa = { tipo: "cota", cota: k, refs: f.refs, off: 1 };
 return criar({ off: M.offsetPara(st, pa, p, {}) }) || true;
@@ -87082,7 +87913,7 @@ return criar({ off: M.offsetPara(st, pa, p, {}) }) || true;
 if (k === "radial" || k === "diametro" || k === "arco") {
 if (!f.refs.length) {
 var hc = M.acharRef(st, p, tol, "circulo", id);
-if (!hc) { toast("Clique no contorno de um pilar circular ou de um círculo/arco de detalhe.", "aviso"); return true; }
+if (!hc) { toast(corte ? "No corte o círculo é o de detalhe: desenhe um círculo/arco (Linha de detalhe) ou cote o pilar circular na planta." : "Clique no contorno de um pilar circular, de uma parede curva ou de um círculo/arco de detalhe.", "aviso"); return true; }
 f.refs.push(hc.ref); status(this.dica()); return true;
 }
 var m0 = M.medirCota(st, { tipo: "cota", cota: k, refs: f.refs }, oVista);
@@ -87092,8 +87923,8 @@ return criar({ ang: ang, off: off }) || true;
 }
 if (k === "elevacao") {
 if (!f.refs.length) {
-var hx = this._acharCota(st, p, tol, id, corte, "topo");
-var he = hx && hx.ref.r === "p3" ? hx : (corte ? (hx || { ref: { x: q.x, y: q.y } }) : M.acharRef(st, p, tol, "topo", id));
+var hx = this._acharCota(st, p, tol, id, corte, corte ? null : "topo");
+var he = hx && hx.ref.r === "p3" ? hx : (corte ? (hx || { ref: { x: q.x, y: q.y } }) : M.acharRef(st, p, tol, "topo", id, null, { yMax: this._optDesenho(id).yCorte }));
 if (he.ref.r === "nivel") he.ref.yRef = this._nivelY(id) || 0;
 f.refs.push(he.ref); status(this.dica()); return true;
 }
@@ -87116,6 +87947,13 @@ return true;
 }
 return true;
 },
+_mesmaRef: function (a, b) {
+if (!a || !b || a.el == null || a.el !== b.el || a.r !== b.r || a.k !== b.k || a.i !== b.i || a.el2 !== b.el2) return false;
+function q(v) { return Math.round(num(v, 0) * 1e5); }
+if (a.k === "loc") return q(a.u) === q(b.u) && q(a.v) === q(b.v) && q(a.w) === q(b.w);
+if (a.k === "aresta") return JSON.stringify([a.a, a.b]) === JSON.stringify([b.a, b.b]);
+return true;
+},
 _orientAuto: function (st, refs, p, corte) {
 var M = A7(), I = M.indice(st), vo = { corte: corte, vista: this._f && this._f.vista }, a = M.resolverRef(I, refs[0], vo), b = M.resolverRef(I, refs[refs.length - 1], vo);
 if (!a.ok || !b.ok) return "h";
@@ -87127,19 +87965,42 @@ var h = corte || filtro === "topo" ? null : M.acharRef(st, p, tol, filtro, id, p
 if (!BCm) return h;
 var proj = M.projDe ? M.projDe(id) : (corte ? null : { tipo: "planta" }); if (!proj) return h;
 var ch = this._candCache, modo = pref === "face" ? "face" : "auto";
-if (!ch || ch.st !== st || ch.id !== id || ch.modo !== modo) ch = this._candCache = { st: st, id: id, modo: modo, pts: BCm.candidatosVista(st, proj, { modo: modo, yEixo: 0 }) };
+if (!ch || ch.st !== st || ch.id !== id || ch.modo !== modo) ch = this._candCache = { st: st, id: id, modo: modo, pts: BCm.candidatosVista(st, proj, { modo: modo, yEixo: 0, yCorte: corte ? null : this._optDesenho(id).yCorte }) };
 var pts = ch.pts;
 if (filtro === "topo") pts = pts.filter(function (q) { return q.ref && q.ref.k === "topo"; });
-var c = BCm.maisPerto(pts, p, tol); if (!c) return h;
-if (h && !(c.dist <= h.dist + 0.3 * tol)) return h;
-return { ref: c.ref, dist: c.dist, rotulo: c.rotulo, p: c.p, tipo: c.tipo };
+var c = BCm.maisPerto(pts, p, tol);
+var dz = filtro === "topo" || pref === "eixo" ? null : this._encaixeDesenho(st, p, tol, id, proj, false);
+var CL = BCm.CLASSE || {}, cs = [];
+if (c) cs.push({ o: c, cl: c.cl != null ? c.cl : (CL[c.tipo] != null ? CL[c.tipo] : 5) });
+if (dz && (dz.tipo === "fim" || !h)) cs.push({ o: dz, cl: dz.tipo === "fim" ? 0 : 3 });
+cs.sort(function (a, b) { return (a.cl - b.cl) || (a.o.dist - b.o.dist); });
+var b0 = cs.length ? cs[0].o : null;
+if (!b0) return h;
+if (h && !(b0.dist <= h.dist + 0.3 * tol)) return h;
+return { ref: b0.ref, dist: b0.dist, rotulo: b0.rotulo, p: b0.p, tipo: b0.tipo };
+},
+_candDesenho: function (id) {
+var P = P2(), c = P && P._cache ? P._cache[id] : null, BCm = global.BimCotas; if (!c || !c.dados || !BCm || !BCm.candidatosDesenho) return null;
+if (!this._desCache || this._desCache.dados !== c.dados) this._desCache = { dados: c.dados, cand: BCm.candidatosDesenho(c.dados) };
+return this._desCache.cand;
+},
+_optDesenho: function (id) { var P = P2(), d = P && P.def ? P.def(id) : null; return { yCorte: d && d.nivel ? num(d.nivel.y, 0) + num(d.altura, 1.2) : 0 }; },
+_encaixeDesenho: function (st, p, tol, id, proj, soCantos) {
+var BCm = global.BimCotas, cand = this._candDesenho(id); if (!cand || !BCm.encaixeDesenho) return null;
+var o = this._optDesenho(id); o.soCantos = !!soCantos;
+return BCm.encaixeDesenho(st, cand, p, tol, proj, o);
+},
+_acharLinhaDesenho: function (st, p, tol, id) {
+var M = A7(), BCm = global.BimCotas, cand = this._candDesenho(id); if (!cand || !BCm || !BCm.linhaDesenho) return null;
+var proj = M.projDe ? M.projDe(id) : null; if (!proj) return null;
+return BCm.linhaDesenho(st, cand, p, tol, proj, this._optDesenho(id));
 },
 concluir: function () {
 var f = this._f, M = A7(); if (!f || !M || !f.vista) return false;
 var d = f.def, o = this.opcoes(), id = f.vista, r = null;
 if (d.k === "cota" && (d.cota === "linear" || d.cota === "alinhada" || d.cota === "coordenada") && f.refs.length >= 2) {
 var orient = d.cota !== "alinhada" ? (o.orient === "h" || o.orient === "v" ? o.orient : this._orientAuto(this.estado(), f.refs, null, /^d2c-/.test(id))) : undefined;
-var b0 = { id: novoId(), vista: id, cota: d.cota, refs: f.refs, off: 0.6, orient: orient, tipoCota: o.tipoCota || undefined };
+var b0 = { id: novoId(), vista: id, cota: d.cota, refs: f.refs, off: this._offFora(f.refs, d.cota, orient, id), orient: orient, tipoCota: o.tipoCota || undefined };
 var Uc = global.BimCotasUI; if (Uc && Uc.ajustarCota2d) Uc.ajustarCota2d(b0, this.estado(), id);
 r = M.opCota(b0);
 f.refs = [];
@@ -87162,6 +88023,17 @@ if (!r.ok) { toast(r.motivo, "aviso"); return false; }
 var ok = this._op(r.op); if (ok) status(d.rotulo + " criada. Continue, ou Esc.");
 return ok;
 },
+_offFora: function (refs, cota, orient, id) {
+var M = A7(), st = this.estado(), P = P2(), c = P && P._cache ? P._cache[id] : null, vb = c && (c.vbTotal || c.vb);
+try {
+var m = M.medirCota(st, { tipo: "cota", cota: cota, refs: refs, orient: orient, off: 0, vista: id }, { corte: /^d2c-/.test(id), vista: id });
+if (!m.ok || !m.geo || !m.geo.t || !vb) return 0.6;
+var tt = m.geo.t, l0 = m.geo.lineT, vs = m.geo.pts.map(function (q) { return q[0] * tt[0] + q[1] * tt[1]; });
+var cen = (vb.x + vb.w / 2) * tt[0] + (vb.y + vb.h / 2) * tt[1];
+var lado = cen > l0 ? -1 : 1, ext = lado > 0 ? Math.max.apply(null, vs) : Math.min.apply(null, vs);
+return Math.round((ext - l0 + lado * 0.6) * 1e4) / 1e4;
+} catch (e) { return 0.6; }
+},
 _usuario: function () { try { var u = global.Auth && global.Auth._usuario; return (u && (u.nome || u.email)) ? String(u.nome || u.email).slice(0, 60) : ""; } catch (e) { return ""; } },
 _previa: function (id, p) {
 var f = this._f, P = P2(), c = P && P._cache[id]; if (!f || !c || !c.svg) return;
@@ -87172,7 +88044,7 @@ if (f.def.k === "cota") {
 var I = M.indice(st), vo = { corte: corte, vista: id };
 f.refs.forEach(function (r) { var x = M.resolverRef(I, r, vo); if (x.ok) pts.push([x.p[0], x.p[1]]); });
 if (p && (f.def.cota === "linear" || f.def.cota === "alinhada" || f.def.cota === "coordenada" || f.def.cota === "elevacao" || f.def.cota === "inclinacao")) {
-hS = this._acharCota(st, p, this._tol(id), id, corte, f.def.cota === "elevacao" ? "topo" : null);
+hS = this._acharCota(st, p, this._tol(id), id, corte, f.def.cota === "elevacao" && !corte ? "topo" : null);
 if (hS) { var xs = M.resolverRef(I, hS.ref, vo); if (xs.ok) pS = [xs.p[0], xs.p[1]]; }
 }
 } else f.pts.forEach(function (q) { pts.push([q.x, q.y]); });
@@ -87516,6 +88388,31 @@ return true;
 };
 var _apos = BimAnot2DUI.aposRebuild;
 BimAnot2DUI.aposRebuild = function (st) { this._snapAnt = this._snap; return _apos.call(this, st); };
+function travar2d(a, q, ev) {
+var Bo = global.BimBarraOpcoes; if (!a || !q || !Bo || !Bo.travar) return q;
+var r = Bo.travar({ x: a.x, z: a.y }, { x: q.x, z: q.y }, { shift: !!(ev && ev.shiftKey) });
+return r && r.travado ? { x: r.p.x, y: r.p.z } : q;
+}
+function ortoDe(self, id, ev, p) {
+var f = self._f; if (!f || !f.def || !p || f.vista !== id) return p;
+var d = f.def, o = self.opcoes ? self.opcoes() : {};
+if ((d.k === "linha" || d.k === "regiao" || d.k === "nuvem") && f.pts && f.pts.length && !(d.k === "linha" && /^(circulo|arco)$/.test(o.forma || ""))) {
+var q = travar2d(f.pts[f.pts.length - 1], { x: p[0], y: p[1] }, ev); return [q.x, q.y];
+}
+if (d.k === "cota" && (d.cota === "linear" || d.cota === "coordenada") && f.refs && f.refs.length === 1) {
+var M = A7(), st = self.estado(), corte = /^d2c-/.test(id);
+if (!M || self._acharCota(st, p, self._tol(id), id, corte, null)) return p;
+var r0 = M.resolverRef(M.indice(st), f.refs[0], { corte: corte, vista: id }); if (!r0 || !r0.ok) return p;
+var q2 = travar2d({ x: r0.p[0], y: r0.p[1] }, { x: p[0], y: p[1] }, ev); return [q2.x, q2.y];
+}
+return p;
+}
+var _clique2dPrec = BimAnot2DUI.clique2d;
+BimAnot2DUI.clique2d = function (id, ev, p) { try { if (this.ativo()) p = ortoDe(this, id, ev, p); } catch (eO) {} return _clique2dPrec.call(this, id, ev, p); };
+var _mover2dPrec = BimAnot2DUI.mover2d;
+BimAnot2DUI.mover2d = function (id, ev, p) { try { p = ortoDe(this, id, ev, p); } catch (eO) {} return _mover2dPrec.call(this, id, ev, p); };
+var _acharCotaPrec = BimAnot2DUI._acharCota;
+BimAnot2DUI._acharCota = function () { var Bo = global.BimBarraOpcoes; if (Bo && Bo.snapLigado && !Bo.snapLigado(null)) return null; return _acharCotaPrec.apply(this, arguments); };
 global.BimAnot2DUI = BimAnot2DUI;
 if (typeof module !== "undefined" && module.exports) module.exports = BimAnot2DUI;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
@@ -87568,7 +88465,7 @@ return P && a && P.ehVista2d && P.ehVista2d(a) && P._cache && P._cache[a] && P._
 }
 function projVista(id) {
 var P = P2(), d = P && P.def ? P.def(id) : null; if (!d) return null;
-var c = d.corte; if (c && fin(+c.ax) && fin(+c.bx)) return { tipo: "corte", ax: +c.ax, az: +c.az, bx: +c.bx, bz: +c.bz, inv: !!c.inv };
+var c = d.corte; if (c && fin(+c.ax) && fin(+c.bx)) return { tipo: "corte", ax: +c.ax, az: +c.az, bx: +c.bx, bz: +c.bz, inv: !!c.inv, prof: +c.prof > 0 ? +c.prof : 0 };
 if (d.tipo === "planta" || d.nivel || /^d2p-/.test(id)) return { tipo: "planta" };
 return null;
 }
@@ -87789,6 +88686,7 @@ return orig ? orig(e) : false;
 try { if (Rb._EXCLUSIVOS && Rb._EXCLUSIVOS.indexOf(id) < 0) Rb._EXCLUSIVOS.push(id); } catch (eX) {}
 });
 try { if (A7() && A7().fonteVistas) A7().fonteVistas(projVista); } catch (eF) {}
+try { if (BC().fonteFamilias) BC().fonteFamilias(function (f) { var b = B(); return b && b.familiaAvaliar ? b.familiaAvaliar(f.famId, f.tipoId, f.inst) : null; }); } catch (eFa) {}
 this._ganchos2d();
 this._dicas();
 if (global.BimBarraOpcoes && global.BimBarraOpcoes.declarar) global.BimBarraOpcoes.declarar(SUB, { rotulo: "Cota" });
@@ -87880,9 +88778,10 @@ return st.geo;
 }
 function resolver(e) {
 var C = BC(), est = e3(), cur = { x: e.clientX, y: e.clientY }, tol = e.pointerType === "touch" ? 30 : 14, c = cfg(), sn = null;
-if (c.encaixe !== false) sn = C.snap(cur, geo(), proj, { tol: tol });
+var enc = c.encaixe !== false && snapUnico(null);
+if (enc) sn = C.snap(cur, geoTipos(), proj, { tol: tol });
 if (sn && sn.ref && sn.ref.face) sn.ref = C.refDaFace(est, sn.ref.el, sn.p);
-if (c.encaixe !== false && c.pref !== "eixo" && (!sn || sn.tipo === "proximo")) {
+if (enc && snapUnico("proximo") && c.pref !== "eixo" && (!sn || sn.tipo === "proximo")) {
 var hit = api.raycast ? api.raycast(e.clientX, e.clientY) : null;
 if (hit && hit.point) {
 var ud = (hit.object && hit.object.userData) || {}, P = [hit.point.x, hit.point.y, hit.point.z];
@@ -87899,7 +88798,17 @@ if (rf.x == null || rf.z == null) { rf.x = r6(sn.p[0]); if (rf.y == null) rf.y =
 return { p: sn.p, ref: rf, tipo: sn.tipo, rotulo: sn.rotulo || C.ROT_REF[rf.r] || "ponto", id: rf.el != null ? rf.el : null };
 }
 var pp = api.planoPonto ? api.planoPonto(e.clientX, e.clientY) : null; if (!pp) return null;
+if ((st.modo === "alinhada" || st.modo === "coordenada") && st.refs.length === 1) {
+var p0 = pontoDe(st.refs[0]), Bo = global.BimBarraOpcoes;
+if (p0 && Bo && Bo.travar) { var aj = Bo.travar({ x: p0[0], z: p0[2] }, { x: pp.x, z: pp.z }, { shift: !!e.shiftKey }); if (aj.travado) { pp = { x: aj.p.x, y: pp.y, z: aj.p.z }; } }
+}
 return { p: [pp.x, pp.y, pp.z], ref: { r: "p", x: r6(pp.x), y: r6(pp.y), z: r6(pp.z) }, tipo: null, vazio: true, rotulo: "livre" };
+}
+function snapUnico(t) { try { var Bo = global.BimBarraOpcoes; return Bo && Bo.snapLigado ? Bo.snapLigado(t) : true; } catch (e) { return true; } }
+function geoTipos() {
+var g = geo(), Bo = global.BimBarraOpcoes; if (!Bo || !Bo.snapLigado) return g;
+var pts = (g.pontos || []).filter(function (q) { return !q.tipo || !(q.tipo in { fim: 1, meio: 1, centro: 1, intersecao: 1, proximo: 1 }) || Bo.snapLigado(q.tipo); });
+return { pontos: pts, linhas: Bo.snapLigado("proximo") ? g.linhas : [] };
 }
 function pontoDe(ref) { var x = BC().resolver(e3(), ref); return x.ok ? x.p : (x.p || null); }
 var caixa = document.createElement("div"); caixa.className = "bct-vivo"; caixa.setAttribute("data-bct", "vivo"); caixa.style.display = "none";
@@ -88268,6 +89177,22 @@ o.virar = !!c.virar;
 o.unir = typeof c.unir === "boolean" ? c.unir : p.unir;
 return o;
 }
+var CAMPOS_PREC = ["orto", "inc", "snap", "tipos", "grade", "passo"];
+var FORTE = { fim: 1, intersecao: 1, meio: 1, centro: 1, perpendicular: 1 };
+function sanearPrec(c) {
+var p = padrao(), o = {};
+c = c && typeof c === "object" ? c : {};
+o.orto = typeof c.orto === "boolean" ? c.orto : p.orto;
+var inc = Array.isArray(c.inc) ? c.inc.map(Number).filter(function (g) { return INCREMENTOS.indexOf(g) >= 0; }) : null;
+o.inc = inc ? INCREMENTOS.filter(function (g) { return inc.indexOf(g) >= 0; }) : p.inc;
+o.snap = typeof c.snap === "boolean" ? c.snap : p.snap;
+var T = c.tipos && typeof c.tipos === "object" ? c.tipos : {};
+o.tipos = {}; TIPOS_SNAP.forEach(function (t) { o.tipos[t] = T[t] !== false; });
+o.grade = typeof c.grade === "boolean" ? c.grade : p.grade;
+o.tipos.grade = o.grade;
+var ps = num(c.passo, p.passo); o.passo = ps > 0 && ps <= 10 ? ps : p.passo;
+return o;
+}
 function norm360(g) { var t = g % 360; if (t < 0) t += 360; return Math.abs(t - 360) < 1e-9 ? 0 : t; }
 function difAng(a, b) { var d = Math.abs(norm360(a) - norm360(b)); return d > 180 ? 360 - d : d; }
 function maisPerto(g, inc) {
@@ -88307,34 +89232,96 @@ function usuario() {
 try { var u = global.Auth && global.Auth._usuario; return u ? String(u.uid || u.email || "local").slice(0, 80) : "local"; } catch (e) { return "local"; }
 }
 var BimBarraOpcoes = {
-CHAVE: CHAVE, INCREMENTOS: INCREMENTOS, PADRAO_INC: PADRAO_INC, JANELA: JANELA, TRACO: TRACO, TIPOS_SNAP: TIPOS_SNAP,
-padrao: padrao, sanear: sanear, ajustarAngulo: ajustarAngulo, ajustarPontoCom: ajustarPonto, arredondar: arredondar, grausDe: grausDe, maisPerto: maisPerto,
+CHAVE: CHAVE, INCREMENTOS: INCREMENTOS, PADRAO_INC: PADRAO_INC, JANELA: JANELA, TRACO: TRACO, TIPOS_SNAP: TIPOS_SNAP, CAMPOS_PREC: CAMPOS_PREC,
+padrao: padrao, sanear: sanear, sanearPrec: sanearPrec, ajustarAngulo: ajustarAngulo, ajustarPontoCom: ajustarPonto, arredondar: arredondar, grausDe: grausDe, maisPerto: maisPerto,
 _armaz: null,
 _cache: null,
+_ouvintes: [],
 _chave: function () { return CHAVE + ":" + usuario(); },
 _ler: function () {
 if (this._cache && this._cache.k === this._chave()) return this._cache.v;
 var a = this._armaz || armazenamento(), v = null;
 try { v = a ? JSON.parse(a.getItem(this._chave()) || "null") : null; } catch (e) { v = null; }
 if (!v || typeof v !== "object" || typeof v.ferr !== "object" || !v.ferr) v = { v: 1, ferr: {} };
+if (!v.prec || typeof v.prec !== "object") {
+var fonte = v.ferr.parede || v.ferr[Object.keys(v.ferr)[0]] || null;
+v.prec = sanearPrec(fonte);
+} else v.prec = sanearPrec(v.prec);
 this._cache = { k: this._chave(), v: v };
 return v;
 },
-cfg: function (sub) {
-var k = String(sub || "geral");
-return sanear(this._ler().ferr[k], k);
-},
-gravar: function (sub, c) {
-var k = String(sub || "geral"), v = this._ler();
-v.ferr[k] = sanear(c, k);
+_salvar: function (v) {
 var a = this._armaz || armazenamento();
 try { if (a) a.setItem(this._chave(), JSON.stringify(v)); } catch (e) { }
-return clone(v.ferr[k]);
 },
-mudar: function (sub, campo, valor) { var c = this.cfg(sub); c[campo] = valor; return this.gravar(sub, c); },
+precisao: function () { return clone(this._ler().prec); },
+precisaoMudar: function (patch) {
+var v = this._ler(), atual = v.prec, novo = clone(atual);
+patch = patch && typeof patch === "object" ? patch : {};
+CAMPOS_PREC.forEach(function (f) {
+if (!(f in patch)) return;
+if (f === "tipos") { var T = patch.tipos || {}; Object.keys(T).forEach(function (t) { if (TIPOS_SNAP.indexOf(t) >= 0) novo.tipos[t] = T[t] !== false; }); if ("grade" in T && !("grade" in patch)) novo.grade = T.grade !== false; }
+else novo[f] = patch[f];
+});
+novo = sanearPrec(novo);
+if (JSON.stringify(novo) === JSON.stringify(atual)) return clone(atual);
+v.prec = novo; this._salvar(v);
+var copia = clone(novo);
+this._ouvintes.slice().forEach(function (fn) { try { fn(clone(copia)); } catch (e) {} });
+return copia;
+},
+alternar: function (campo) {
+var p = this.precisao(), o = {};
+if (/^tipo:/.test(campo)) { var t = campo.slice(5); if (TIPOS_SNAP.indexOf(t) < 0) return null; o.tipos = {}; o.tipos[t] = !p.tipos[t]; if (t === "grade") o.grade = !p.tipos[t]; return this.precisaoMudar(o).tipos[t]; }
+if (campo !== "orto" && campo !== "snap" && campo !== "grade") return null;
+o[campo] = !p[campo];
+return this.precisaoMudar(o)[campo];
+},
+snapLigado: function (t) { var p = this._ler().prec; return !!p.snap && (t == null || p.tipos[t] !== false); },
+assinar: function (fn) {
+if (typeof fn !== "function") return function () {};
+var L = this._ouvintes; L.push(fn);
+return function () { var i = L.indexOf(fn); if (i >= 0) L.splice(i, 1); };
+},
+cfg: function (sub) {
+var k = String(sub || "geral"), v = this._ler(), o = sanear(v.ferr[k], k), p = v.prec;
+CAMPOS_PREC.forEach(function (f) { o[f] = clone(p[f]); });
+return o;
+},
+gravar: function (sub, c) {
+var k = String(sub || "geral"), v = this._ler(), s = sanear(c, k), pat = {};
+CAMPOS_PREC.forEach(function (f) { if (c && typeof c === "object" && f in c && c[f] != null) pat[f] = s[f]; delete s[f]; });
+if (pat.tipos === null) delete pat.tipos;
+v.ferr[k] = s;
+this._salvar(v);
+if (Object.keys(pat).length) this.precisaoMudar(pat);
+return this.cfg(k);
+},
+mudar: function (sub, campo, valor) {
+if (CAMPOS_PREC.indexOf(campo) >= 0) { var o = {}; o[campo] = valor; this.precisaoMudar(o); return this.cfg(sub); }
+var c = this.cfg(sub); c[campo] = valor; return this.gravar(sub, c);
+},
 ajustarPonto: function (sub, base, p, shift, o) {
 var c = this.cfg(sub), aj = this.ajustarPontoCom(base, p, c, shift);
 return (o && o.grade && c.snap && c.grade) ? this.arredondar(base, aj, c.passo) : aj;
+},
+travar: function (base, p, o) {
+o = o || {};
+if (!base || !p || !fin(base.x) || !fin(base.z) || !fin(p.x) || !fin(p.z)) return { p: p, graus: null, dist: 0, travado: false };
+if (o.tipoSnap && FORTE[o.tipoSnap]) return { p: { x: p.x, z: p.z }, graus: grausDe(base, p), dist: Math.sqrt(Math.pow(p.x - base.x, 2) + Math.pow(p.z - base.z, 2)), travado: false, forte: true };
+var c = this.precisao(), aj = ajustarPonto(base, p, c, !!o.shift);
+if (aj.travado && (!o.tipoSnap || o.tipoSnap === "grade") && c.snap && c.grade) aj = arredondar(base, aj, c.passo);
+return aj;
+},
+EIXOS_CRIAR: { fundacao: 1, pilar: 1 },
+querEixos: function (sub) {
+if (!sub) return false;
+if (this.EIXOS_CRIAR[sub]) return true;
+try {
+if (global.MetalCriarUI && global.MetalCriarUI.querEixos && global.MetalCriarUI.querEixos(sub)) return true;
+if (global.MetalProntasUI && global.MetalProntasUI.querEixos && global.MetalProntasUI.querEixos(sub)) return true;
+} catch (e) {}
+return false;
 },
 ehTraco: function (sub) { return !!TRACO[sub]; },
 declarar: function (sub, o) {
@@ -88402,6 +89389,7 @@ return el;
 BimBarraOpcoes.montar = function () {
 if (!this.ativa()) return false;
 try { var b = B(), a = b && b.planta2d ? b.planta2d() : null, t = a ? a.traco() : null; UIst.sub = t && t.on ? t.sub : null; } catch (e) { UIst.sub = null; }
+try { if (global.BimBarraSnaps && global.BimBarraSnaps.garantir) global.BimBarraSnaps.garantir(); } catch (eS) {}
 return this.pintar();
 };
 function opcoes(lista, valor) {
@@ -88501,16 +89489,7 @@ h += grupo("Desenhar", L.map(function (f) {
 return '<button type="button" class="bbo-forma" data-bbo="forma" data-forma="' + esc(f.id) + '" aria-pressed="' + (fa && fa.id === f.id ? "true" : "false") + '" title="' + esc(f.rotulo + (f.dica ? " — " + f.dica : "")) + '" aria-label="' + esc(f.rotulo) + '">' + glifo(f) + "</button>";
 }).join("") + (fa && /^poligono/.test(fa.id) ? campoNum("lados", "Lados", String(c.lados), "", "Número de lados do polígono", "2.6em") : ""), "bbo-desenhar");
 }
-var pr = "";
-if (TRACO[sub]) {
-pr += liga("orto", "Ortogonal", c.orto, "Ligado: o traço só anda nos ângulos dos incrementos. Desligado: ângulo livre, atraído a ±" + JANELA + "° deles. Shift inverte.", "regua");
-pr += '<button type="button" class="bbo-menu-bt" data-bbo="incMenu" aria-haspopup="true" title="Incrementos de ângulo">' + ico("angulo", 15) + '<span data-bbo="incTexto">' + esc(this.textoInc(c.inc)) + '</span><span class="bbo-seta">▾</span></button>';
-}
-pr += liga("snap", "Snaps", c.snap, "Ponto final, meio, interseção, perpendicular, extensão… (F3 também liga e desliga)", "ima");
-pr += '<button type="button" class="bbo-menu-bt bbo-so-seta" data-bbo="snapMenu" aria-haspopup="true" title="Quais snaps" aria-label="Quais snaps"><span class="bbo-seta">▾</span></button>';
-pr += liga("grade", "Grade", c.grade, "O cursor anda no passo da grade quando não há outro ponto perto", "grade");
-pr += campoNum("passo", "", fmt(c.passo), "m", "Passo da grade", "3.2em");
-h += grupo("", pr, "bbo-precisao");
+void c;
 if (b2 || esp) h += grupo("", b2 + esp, "bbo-cmd");
 corpo.innerHTML = h;
 void slot;
@@ -88522,35 +89501,12 @@ var el = UIst.el, m = el ? el.querySelector(".bbo-pop") : null;
 if (m) m.parentNode.removeChild(m);
 UIst.menu = null;
 };
-BimBarraOpcoes._abrirMenu = function (qual, repintar) {
-var el = UIst.el, sub = UIst.sub; if (!el || !sub) return;
-var bt = el.querySelector('[data-bbo="' + qual + '"]'); if (!bt) return;
-var velho = el.querySelector(".bbo-pop"); if (velho) velho.parentNode.removeChild(velho);
-if (!repintar && UIst.menu === qual) { UIst.menu = null; return; }
-var c = this.cfg(sub), pop = document.createElement("div");
-pop.className = "bbo-pop"; pop.setAttribute("data-bbo-pop", qual); pop.setAttribute("role", "menu");
-if (qual === "incMenu") {
-pop.innerHTML = '<div class="bbo-pop-tit">Incrementos de ângulo</div>' + INCREMENTOS.map(function (g) {
-return '<label class="bbo-pop-item"><input type="checkbox" data-bbo-inc="' + g + '"' + (c.inc.indexOf(g) >= 0 ? " checked" : "") + "> " + g + "°</label>";
-}).join("") + '<div class="bbo-pop-nota">O traço anda nos múltiplos de cada ângulo marcado.</div>';
-} else {
-var T = c.tipos, Pr = global.BimPrecisao;
-pop.innerHTML = '<div class="bbo-pop-tit">Snaps</div>' + TIPOS_SNAP.map(function (t) {
-var rot = Pr && Pr.ROTULO ? Pr.ROTULO[t] : t;
-return '<label class="bbo-pop-item"><input type="checkbox" data-bbo-tipo="' + t + '"' + (!T || T[t] !== false ? " checked" : "") + "> " + esc(rot) + "</label>";
-}).join("");
-}
-var r = bt.getBoundingClientRect(), re = el.getBoundingClientRect();
-pop.style.left = Math.max(0, r.left - re.left) + "px";
-el.appendChild(pop);
-UIst.menu = qual;
-};
+BimBarraOpcoes._abrirMenu = function () { UIst.menu = null; };
 BimBarraOpcoes._ligar = function (el) {
 var self = this;
 el.addEventListener("click", function (e) {
 var b = e.target.closest ? e.target.closest("[data-bbo]") : null; if (!b || !el.contains(b)) return;
 var k = b.getAttribute("data-bbo"), sub = UIst.sub; if (!sub) return;
-if (k === "incMenu" || k === "snapMenu") { self._abrirMenu(k); return; }
 if (k === "forma") { self.mudar(sub, "forma", b.getAttribute("data-forma")); self._aplicar(sub, "forma"); self.pintar(); return; }
 if (k === "orto" || k === "snap" || k === "grade" || k === "encadear" || k === "virar" || k === "unir") {
 var c = self.cfg(sub), v = !c[k];
@@ -88564,19 +89520,6 @@ unir: v ? "Unir automaticamente: a parede nova une com as que encontra (sem linh
 });
 el.addEventListener("change", function (e) {
 var t = e.target, sub = UIst.sub; if (!sub || !t) return;
-var inc = t.getAttribute("data-bbo-inc"), tp = t.getAttribute("data-bbo-tipo");
-if (inc) {
-var c = self.cfg(sub), g = +inc, L = c.inc.filter(function (x) { return x !== g; });
-if (t.checked) L.push(g);
-self.mudar(sub, "inc", L);
-var tx = el.querySelector('[data-bbo="incTexto"]'); if (tx) tx.textContent = self.textoInc(self.cfg(sub).inc);
-status("Incrementos de ângulo: " + self.textoInc(self.cfg(sub).inc) + ".");
-return;
-}
-if (tp) {
-var c2 = self.cfg(sub), T = c2.tipos || {}; TIPOS_SNAP.forEach(function (x) { if (T[x] == null) T[x] = true; });
-T[tp] = !!t.checked; self.mudar(sub, "tipos", T); self._aplicar(sub, "snap"); return;
-}
 var k = t.getAttribute("data-bbo"); if (!k) return;
 self._campo(sub, k, t.value, t);
 });
@@ -88596,12 +89539,6 @@ document.addEventListener("change", function (e) {
 if (!UIst.sub || !e.target || !e.target.closest || !e.target.closest(".rv-props")) return;
 clearTimeout(UIst.tProps); UIst.tProps = setTimeout(function () { self.pintar(); }, 60);
 });
-document.addEventListener("keydown", function (e) {
-if (e.key !== "F3" || !UIst.sub) return;
-setTimeout(function () {
-try { var pz = B() && B().precisao ? B().precisao() : null, sn = pz && pz.snaps ? pz.snaps() : null; if (sn && UIst.sub) { var c = self.cfg(UIst.sub); c.snap = !!sn.on; self.gravar(UIst.sub, c); self.pintar(); } } catch (eF) {}
-}, 0);
-}, true);
 };
 BimBarraOpcoes._campo = function (sub, k, valor, alvo) {
 var U = AU();
@@ -88631,10 +89568,6 @@ BimBarraOpcoes._aplicar = function (sub, campo) {
 var c = this.cfg(sub), b = B();
 if (!b) return;
 try {
-if (!campo || campo === "snap" || campo === "grade" || campo === "passo") {
-var pz = b.precisao ? b.precisao() : null;
-if (pz && pz.snaps) { var T = {}; TIPOS_SNAP.forEach(function (t) { T[t] = !c.tipos || c.tipos[t] !== false; }); T.grade = !!c.grade && T.grade; pz.snaps({ on: c.snap, tipos: T, grade: c.passo }); }
-}
 if ((!campo || campo === "encadear") && sub === "parede" && b.planta2d && b.planta2d()) b.planta2d().encadear(c.encadear);
 var pl = b.planta2d ? b.planta2d() : null;
 if ((!campo || campo === "linhaLoc") && sub === "parede" && b.editarB2 && pl && pl.traco().b2) b.editarB2({ linhaLoc: c.linhaLoc === "eixo" ? null : c.linhaLoc });
@@ -88653,10 +89586,227 @@ UIst.sub = sub || null;
 if (mudou) this._fecharMenu();
 if (sub) this._aplicar(sub, null);
 var P = PM(); if (P && P.aoSub) P.aoSub(sub || null);
+try { if (global.BimBarraSnaps && global.BimBarraSnaps.garantir && !global.BimBarraSnaps.elemento()) global.BimBarraSnaps.garantir(); } catch (eS) {}
 this.pintar();
 };
 global.BimBarraOpcoes = BimBarraOpcoes;
 if (typeof module !== "undefined" && module.exports) module.exports = BimBarraOpcoes;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/bimbarrasnaps.js ==== */
+try {
+(function (global) {
+"use strict";
+function BO() { var b = global.BimBarraOpcoes; return b && typeof b.precisao === "function" ? b : null; }
+function Pr() { return global.BimPrecisao || null; }
+function previa() { try { return !!(global.BimPrevia && global.BimPrevia.modelador()); } catch (e) { return false; } }
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+function ico(nome, tam) { try { return global.Icones && global.Icones.get ? (global.Icones.get(nome, tam || 14) || "") : ""; } catch (e) { return ""; } }
+function status(t) { try { if (global.BimShell && global.BimShell.status) global.BimShell.status(t); } catch (e) {} }
+function fmt(v) { return (Math.round(v * 100) / 100).toFixed(2).replace(".", ","); }
+function num(v) { var n = Number(String(v == null ? "" : v).replace(",", ".")); return isFinite(n) ? n : NaN; }
+var ROT = { fim: "Extremidade (ponto final)", intersecao: "Interseção", meio: "Ponto médio", centro: "Centro", perpendicular: "Perpendicular",
+extensao: "Prolongamento (extensão)", proximo: "Sobre a peça (próximo)", grade: "Grade" };
+var COR = { fim: "var(--verde)", intersecao: "var(--vermelho)", meio: "var(--amarelo)", centro: "var(--aco)", perpendicular: "var(--aco)",
+extensao: "var(--amarelo)", proximo: "var(--texto-fraco)", grade: "var(--texto-fraco)" };
+var DICA_SNAP = "Snap: o ponto agarra na extremidade, no meio, na interseção, no centro, na perpendicular, no prolongamento, sobre a peça e na grade. Vale para tudo o que você cria (2D e 3D). F3 liga e desliga; a seta escolhe os tipos.";
+var DICA_ORTO = "Orto: o traço anda só na horizontal/vertical e nos ângulos marcados (45°, 90°…). Vale para parede, viga, peça metálica, linha, cota, contorno de laje/telhado/fundação, guarda-corpo… F8 liga e desliga; Shift inverte enquanto está apertado (com o Orto apagado, é o orto temporário).";
+var BimBarraSnaps = {
+_el: null, _menu: null, _pop: null, _ligado: false, _sairOuvinte: null,
+_vistabar: function () {
+if (!previa() || typeof document === "undefined") return null;
+var raiz = null; try { raiz = global.BimShell && global.BimShell.raiz ? global.BimShell.raiz() : null; } catch (e) { raiz = null; }
+if (!raiz || !document.body || !document.body.contains(raiz)) return null;
+return raiz.querySelector(".rv-vistabar");
+},
+garantir: function () {
+var vb = this._vistabar(); if (!vb || !BO()) return null;
+var g = this._el;
+if (!g || !vb.contains(g)) {
+g = document.createElement("div");
+g.className = "bbs"; g.setAttribute("data-bbs", "grupo"); g.setAttribute("role", "toolbar"); g.setAttribute("aria-label", "Precisão do desenho: snap e ortogonal");
+this._el = g; this._ligar(g);
+vb.appendChild(g);
+}
+this._ligarDoc();
+this.pintar();
+return g;
+},
+elemento: function () { return this._el && document.body.contains(this._el) ? this._el : null; },
+atendeTeclas: function () { var g = this.elemento(); return !!(g && previa()); },
+pintar: function () {
+var g = this.elemento(), B = BO(); if (!g || !B) return false;
+var p = B.precisao(), T = (Pr() && Pr().TIPOS) || B.TIPOS_SNAP, nOn = T.filter(function (t) { return p.tipos[t] !== false; }).length;
+function liga(id, rot, on, dica, icone, extra) {
+return '<button type="button" class="rv-vb bbs-bt" data-bbs="' + id + '" aria-pressed="' + (on ? "true" : "false") + '" title="' + esc(dica) + '" aria-label="' + esc(rot + (on ? " ligado" : " desligado")) + '">' +
+'<span class="bbs-luz" aria-hidden="true"></span>' + (icone ? ico(icone, 14) : "") + '<span class="bbs-rot">' + esc(rot) + "</span>" + (extra || "") + "</button>";
+}
+function seta(id, dica, txt) {
+return '<button type="button" class="rv-vb bbs-seta" data-bbs="' + id + '" aria-haspopup="true" aria-expanded="' + (this._menu === id ? "true" : "false") + '" title="' + esc(dica) + '" aria-label="' + esc(dica) + '">' + (txt ? '<span class="bbs-txt">' + esc(txt) + "</span>" : "") + '<span class="bbs-v">▾</span></button>';
+}
+var h = '<span class="bbs-tit" aria-hidden="true">Precisão</span>';
+h += liga("snap", "Snap", p.snap, DICA_SNAP, "ima", nOn < T.length ? '<span class="bbs-n">' + nOn + "/" + T.length + "</span>" : "") +
+seta.call(this, "snapMenu", "Quais snaps (e o passo da grade)") +
+liga("orto", "Orto", p.orto, DICA_ORTO, "regua") +
+seta.call(this, "incMenu", "Incrementos de ângulo do Orto", B.textoInc(p.inc));
+g.innerHTML = h;
+g.setAttribute("data-bbs-snap", p.snap ? "1" : "0"); g.setAttribute("data-bbs-orto", p.orto ? "1" : "0");
+if (this._menu) this._abrir(this._menu, true);
+return true;
+},
+_fechar: function () {
+if (this._pop && this._pop.parentNode) this._pop.parentNode.removeChild(this._pop);
+this._pop = null; this._menu = null;
+var g = this.elemento(); if (g) Array.prototype.forEach.call(g.querySelectorAll("[aria-expanded]"), function (b) { b.setAttribute("aria-expanded", "false"); });
+},
+_abrir: function (qual, repintar) {
+var g = this.elemento(), B = BO(); if (!g || !B) return false;
+var bt = g.querySelector('[data-bbs="' + qual + '"]'); if (!bt) return false;
+if (!repintar && this._menu === qual) { this._fechar(); return false; }
+if (this._pop && this._pop.parentNode) this._pop.parentNode.removeChild(this._pop);
+var p = B.precisao(), T = (Pr() && Pr().TIPOS) || B.TIPOS_SNAP, pop = document.createElement("div");
+pop.className = "bbs-pop"; pop.setAttribute("data-bbs-pop", qual); pop.setAttribute("role", "menu");
+if (qual === "snapMenu") {
+pop.innerHTML = '<div class="bbs-pop-tit">Snaps <span class="bbs-tecla">F3</span></div>' +
+'<label class="bbs-pop-item bbs-pop-geral"><input type="checkbox" data-bbs-geral="1"' + (p.snap ? " checked" : "") + "> Snap ligado</label>" +
+T.map(function (t) {
+var gl = Pr() && Pr().glifoSvg ? Pr().glifoSvg(t) : "";
+return '<label class="bbs-pop-item"><input type="checkbox" data-bbs-tipo="' + t + '"' + (p.tipos[t] !== false ? " checked" : "") + '><span class="bbs-glifo" style="color:' + COR[t] + '">' + gl + "</span> " + esc(ROT[t] || t) + "</label>";
+}).join("") +
+'<label class="bbs-pop-item bbs-pop-passo">Passo da grade <input data-bbs-passo="1" inputmode="decimal" autocomplete="off" value="' + esc(fmt(p.passo)) + '"> m</label>' +
+'<div class="bbs-pop-nota">Quando dois concorrem: ponto (extremidade, interseção, meio, centro) &gt; perpendicular &gt; prolongamento &gt; sobre a peça &gt; grade.</div>';
+} else {
+pop.innerHTML = '<div class="bbs-pop-tit">Incrementos do Orto <span class="bbs-tecla">F8</span></div>' +
+'<label class="bbs-pop-item bbs-pop-geral"><input type="checkbox" data-bbs-orto="1"' + (p.orto ? " checked" : "") + "> Orto ligado</label>" +
+B.INCREMENTOS.map(function (gr) { return '<label class="bbs-pop-item"><input type="checkbox" data-bbs-inc="' + gr + '"' + (p.inc.indexOf(gr) >= 0 ? " checked" : "") + "> " + gr + "°</label>"; }).join("") +
+'<div class="bbs-pop-nota">Orto ligado: o traço só anda nos múltiplos dos ângulos marcados. Desligado: ângulo livre, atraído a ±' + B.JANELA + "° deles. Shift inverte enquanto está apertado.</div>";
+}
+var raiz = global.BimShell && global.BimShell.raiz ? global.BimShell.raiz() : document.body;
+raiz.appendChild(pop);
+var r = bt.getBoundingClientRect(), w = pop.offsetWidth || 220, vw = global.innerWidth || 1200;
+pop.style.left = Math.max(4, Math.min(vw - w - 4, r.right - w)) + "px";
+pop.style.bottom = Math.max(4, (global.innerHeight || 800) - r.top + 4) + "px";
+this._pop = pop; this._menu = qual;
+bt.setAttribute("aria-expanded", "true");
+this._ligarPop(pop);
+return true;
+},
+_ligarPop: function (pop) {
+var self = this;
+pop.addEventListener("change", function (e) {
+var t = e.target, B = BO(); if (!t || !B) return;
+if (t.hasAttribute("data-bbs-geral")) { B.precisaoMudar({ snap: !!t.checked }); self._avisar("snap"); return; }
+if (t.hasAttribute("data-bbs-orto")) { B.precisaoMudar({ orto: !!t.checked }); self._avisar("orto"); return; }
+var tp = t.getAttribute("data-bbs-tipo");
+if (tp) { var o = { tipos: {} }; o.tipos[tp] = !!t.checked; if (tp === "grade") o.grade = !!t.checked; B.precisaoMudar(o); status((ROT[tp] || tp) + (t.checked ? ": ligado." : ": desligado — não agarra mais.")); return; }
+var inc = t.getAttribute("data-bbs-inc");
+if (inc) { var g = +inc, L = B.precisao().inc.filter(function (x) { return x !== g; }); if (t.checked) L.push(g); B.precisaoMudar({ inc: L }); status("Incrementos do Orto: " + B.textoInc(B.precisao().inc) + "."); return; }
+if (t.hasAttribute("data-bbs-passo")) { var v = num(t.value); if (v > 0 && v <= 10) B.precisaoMudar({ passo: v }); t.value = fmt(B.precisao().passo); status("Passo da grade: " + fmt(B.precisao().passo) + " m."); }
+});
+pop.addEventListener("keydown", function (e) {
+e.stopPropagation();
+if (e.key === "Enter" && e.target && e.target.tagName === "INPUT") { e.preventDefault(); e.target.blur(); }
+if (e.key === "Escape") { e.preventDefault(); self._fechar(); }
+});
+},
+abrirMenu: function (qual, on) {
+var id = qual === "orto" || qual === "incMenu" ? "incMenu" : "snapMenu";
+if (!this.garantir()) return false;
+if (on === false) { if (this._menu === id) this._fechar(); return false; }
+if (on === true && this._menu === id) return true;
+return this._abrir(id, false);
+},
+GIRO_METAL: { "met-pilar": "pilar", "met-viga": "viga", "met-diagonal": "diagonal", "met-terca": "terca" },
+_armada: function () { try { var B = BO(); return B && B.ferramenta ? B.ferramenta() : null; } catch (e) { return null; } },
+_arqui: function () { var U = global.BimArqUI; try { return U && U.ativo && U.ativo() && U.cfg ? U : null; } catch (e) { return null; } },
+gira: function (sub) {
+if (!sub) return false;
+if (this.GIRO_METAL[sub]) return !!(global.MetalCriarUI && global.MetalCriarUI.cfg);
+if (sub === "pilar" || sub === "viga") return !!this._arqui();
+return false;
+},
+girar: function (sub) {
+sub = sub || this._armada();
+var g, msg, MU = global.MetalCriarUI;
+if (this.GIRO_METAL[sub] && MU && MU.cfg && MU.mudarFerramenta) {
+var ferr = this.GIRO_METAL[sub], c = MU.cfg()[ferr] || {};
+MU.mudarFerramenta(ferr, "mcrf:giro", (Number(c.giro) || 0) + 90);
+try { if (global.BimShell && MU.esquemaFerramenta) global.BimShell.pintarProps(MU.esquemaFerramenta(ferr)); } catch (eP) {}
+try { var S3 = MU._3d; if (S3 && S3.redesenhar) S3.redesenhar(); } catch (eR) {}
+g = ((Math.round(Number(MU.cfg()[ferr].giro) || 0) % 360) + 360) % 360;
+msg = ferr === "pilar" ? "Giro " + g + "° — Espaço gira o pilar 90°." : "Giro da seção " + g + "° (" + (g % 180 === 0 ? "de pé" : "deitada") + ") — Espaço gira 90° em volta do eixo da peça.";
+} else if (sub === "pilar" && this._arqui()) {
+var U = this._arqui();
+g = ((Math.round(Number(U.cfg().giroPilar) || 0) + 90) % 360 + 360) % 360;
+U.mudarFerramenta("pilar", "b2f:giroPilar", g);
+try { if (U._repintar) U._repintar(); } catch (eU) {}
+msg = "Giro " + g + "° — Espaço gira o pilar 90°.";
+} else if (sub === "viga" && this._arqui()) {
+var U2 = this._arqui(), pv = U2.cfg().perfilViga || {};
+if (!(pv.b > 0 && pv.h > 0) || pv.cat) { status("Esta seção de viga não tem largura × altura para girar (perfil de catálogo: troque o perfil em Propriedades)."); return null; }
+var b = pv.b, h = pv.h;
+U2.mudarFerramenta("viga", "b2f:pv:d:b", String(Math.round(h * 10000) / 100)); U2.mudarFerramenta("viga", "b2f:pv:d:h", String(Math.round(b * 10000) / 100));
+try { if (U2._repintar) U2._repintar(); } catch (eV) {}
+var p2 = U2.cfg().perfilViga || {};
+g = p2.b > p2.h ? 90 : 0;
+msg = "Viga " + fmt(p2.b) + " × " + fmt(p2.h) + " m (" + (g ? "deitada" : "de pé") + ") — Espaço gira a seção 90°.";
+} else return null;
+try { var B = BO(); if (B && B.pintar) B.pintar(); } catch (eB) {}
+status(msg);
+return g;
+},
+alternar: function (campo) {
+var B = BO(); if (!B) return null;
+var v = B.alternar(campo);
+this._avisar(campo);
+return v;
+},
+_avisar: function (campo) {
+var B = BO(); if (!B) return;
+var p = B.precisao();
+if (campo === "snap") status(p.snap ? "Snap ligado (F3 desliga)." : "Snap desligado (F3 liga): o ponto fica onde o cursor está.");
+if (campo === "orto") status(p.orto ? "Orto ligado (F8 desliga): o traço anda na horizontal/vertical e em " + B.textoInc(p.inc) + "." : "Orto desligado (F8 liga): ângulo livre, atraído a ±" + B.JANELA + "° dos incrementos. Shift trava enquanto está apertado.");
+},
+_ligar: function (g) {
+var self = this;
+g.addEventListener("click", function (e) {
+var b = e.target && e.target.closest ? e.target.closest("[data-bbs]") : null; if (!b || !g.contains(b)) return;
+var k = b.getAttribute("data-bbs");
+if (k === "snap" || k === "orto") { self.alternar(k); return; }
+if (k === "snapMenu" || k === "incMenu") { self._abrir(k, false); }
+});
+g.addEventListener("keydown", function (e) { if (e.key === "Escape" && self._menu) { e.preventDefault(); self._fechar(); } });
+},
+_ligarDoc: function () {
+if (this._ligado || typeof document === "undefined") return;
+this._ligado = true;
+var self = this;
+var B = BO(); if (B && B.assinar) this._sairOuvinte = B.assinar(function () { self.pintar(); });
+document.addEventListener("pointerdown", function (e) {
+if (!self._pop) return;
+if (self._pop.contains(e.target)) return;
+var g = self.elemento(); if (g && g.contains(e.target) && e.target.closest && e.target.closest(".bbs-seta")) return;
+self._fechar();
+}, true);
+document.addEventListener("keydown", function (e) {
+if ((e.key !== " " && e.code !== "Space") || e.ctrlKey || e.altKey || e.metaKey || e.repeat) return;
+var t = e.target || {}; if (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || "") || t.isContentEditable) return;
+if (!self.atendeTeclas()) return;
+var sub = self._armada(); if (!self.gira(sub)) return;
+e.preventDefault(); e.stopImmediatePropagation();
+self.girar(sub);
+}, true);
+document.addEventListener("keydown", function (e) {
+if (e.key !== "F3" && e.key !== "F8") return;
+if (e.ctrlKey || e.altKey || e.metaKey || !self.atendeTeclas()) return;
+e.preventDefault(); e.stopPropagation();
+self.alternar(e.key === "F3" ? "snap" : "orto");
+}, true);
+}
+};
+try { if (typeof document !== "undefined" && document.readyState !== "loading") setTimeout(function () { try { BimBarraSnaps.garantir(); } catch (e) {} }, 0); } catch (e0) {}
+global.BimBarraSnaps = BimBarraSnaps;
+if (typeof module !== "undefined" && module.exports) module.exports = BimBarraSnaps;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/bimplantamodelar.js ==== */
@@ -88860,7 +90010,8 @@ _geo: function (id) {
 var b = B(), est = null; try { est = b && b.editarEstado ? b.editarEstado().estado : null; } catch (e) { est = null; }
 var P2 = D2(), c = P2 && P2._cache ? P2._cache[id] : null, dados = c ? c.dados : null;
 var sub0 = this.ferramenta(), comEixos = !!(sub0 && ((global.MetalCriarUI && global.MetalCriarUI.querEixos && global.MetalCriarUI.querEixos(sub0)) ||
-(global.MetalProntasUI && global.MetalProntasUI.querEixos && global.MetalProntasUI.querEixos(sub0))));
+(global.MetalProntasUI && global.MetalProntasUI.querEixos && global.MetalProntasUI.querEixos(sub0)) ||
+(BB() && BB().querEixos && BB().querEixos(sub0))));
 if (st.geo && st.gk1 === est && st.gk2 === dados && st.geo.id === id && st.gk3 === comEixos) return st.geo;
 var R = Pr(), g = R ? R.geometria(est || {}, { avaliar: b && b.familiaAvaliar ? function (f, t, i) { return b.familiaAvaliar(f, t, i); } : null, eixos: comEixos }) : { els: [], segs: [], pontos: [] };
 var segs = g.segs.slice(), pontos = g.pontos.slice(), n = 0, MAX = 4000;
@@ -89666,7 +90817,7 @@ if (st.hover && st.hoverId === id && !sm[st.hover] && !d) contorno(st.hover, "sl
 sel.forEach(function (u) { contorno(u, "sl-sel"); });
 var prc = this._precisao(), R = Pr(), planta = this._ehPlanta(id);
 var eds = sel.filter(function (u) { return /^edit:/.test(u); });
-if (planta && modelador() && prc && R && eds.length === 1 && sel.length === 1 && !(d && d.modo === "mover")) {
+if (planta && modelador() && prc && R && eds.length === 1 && sel.length === 1 && !(d && d.modo === "mover") && !this.ferramenta2d()) {
 var est = this._estado(), eid = eds[0].slice(5), cx = est && (est.caixas || []).filter(function (x) { return x.id === eid; })[0];
 (cx ? R.alcas(cx) : []).forEach(function (a) {
 var p = (d && d.modo === "alca" && d.alca && String(d.alca.k) === String(a.k) && d.dest) ? d.dest : a.p;

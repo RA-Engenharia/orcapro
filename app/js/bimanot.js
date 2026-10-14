@@ -890,12 +890,21 @@
       if (!pj) return ponto();
       return BCo.resolverP7(I.estado, ref, { proj: pj, niveis: opc.niveis });
     }
+    /* COTAS (14/10/2026): a LINHA do desenho de peça do IFC (aresta solta: ponto + direção) — a cota angular no corte */
+    if (ref.r === "lin") { var dl = unit([num(ref.dx, 1), num(ref.dy, 0)]); return cl && dl ? { ok: true, p: cl, d: dl } : { ok: false }; }
     if (ref.r === "ponto" || el == null || el === "") {
       if (ref.r === "nivel") return cl ? { ok: true, p: cl, d: null, y: num(opc.nivelY, num(ref.yRef, 0)) } : { ok: false };
       return ponto();
     }
     var c = I.caixa[el];
     if (c) {
+      /* COTAS (14/10/2026): a RAMPA na planta — a inclinação do segmento clicado (a do tipo, como na cobertura) */
+      if (ref.r === "rampa") {
+        var la = c.rampa ? arr(c.rampa.lances)[Math.round(num(ref.i, 0))] : null; if (!la) return { ok: false, orfa: !c.rampa };
+        var dR = [Math.cos(num(la.ang, 0)), Math.sin(num(la.ang, 0))], par = c.rampa.par || {}, cal = c.rampa.calc || {};
+        var inc = fin(+par.inclinacao) ? +par.inclinacao : num(cal.inclinacao, 0);
+        return { ok: true, p: cl || [num(la.x, 0), num(la.z, 0)], d: null, incl: inc, desce: mul(dR, -1) };
+      }
       /* CURVA: a parede curva dá o CÍRCULO (centro, raio, ângulos) — cota radial, diâmetro e comprimento do arco */
       if (c.arco && (ref.r === "eixo" || ref.r === "face+" || ref.r === "face-" || ref.r === "contorno")) {
         var BCr = dep("BimCurva", "./bimcurva.js"), ra = BCr ? BCr.refArco(c, ref.r) : null; if (ra) return ra;
@@ -1013,7 +1022,8 @@
       if (fin(S.incl)) { incl = S.incl; desce = S.desce; }
       else if (R.length >= 2) {
         var dv = sub(R[1].p, R[0].p);
-        if (opc.corte && Math.abs(dv[0]) > 1e-6) { incl = Math.abs(dv[1] / dv[0]) * 100; desce = unit(dv[1] > 0 ? dv : mul(dv, -1)); }
+        /* COTAS (14/10/2026): no corte o símbolo vai no MEIO dos dois pontos (em cima da rampa, não no pé) */
+        if (opc.corte && Math.abs(dv[0]) > 1e-6) { incl = Math.abs(dv[1] / dv[0]) * 100; desce = unit(dv[1] > 0 ? dv : mul(dv, -1)); S = { p: mul(add(R[0].p, R[1].p), 0.5) }; }
         /* COTAS: na planta, dois pontos de peça com a altura (ref p3): desnível ÷ distância em planta */
         else if (!opc.corte && fin(R[0].y) && fin(R[1].y) && len(dv) > 1e-6) { incl = Math.abs(R[1].y - R[0].y) / len(dv) * 100; desce = unit(R[1].y <= R[0].y ? dv : mul(dv, -1)); S = { p: mul(add(R[0].p, R[1].p), 0.5) }; }
       } else if (fin(+it.inclManual)) { incl = +it.inclManual; desce = unit([num(it.dir && it.dir.x, 1), num(it.dir && it.dir.y, 0)]); }
@@ -1192,13 +1202,19 @@
     }
     return dentro;
   }
-  function acharRef(estado, p, tol, filtro, vista, pref) {
+  function acharRef(estado, p, tol, filtro, vista, pref, lim) {
     var melhor = null, I = indice(estado);
+    /* COTAS (14/10/2026): as peças aqui estão em coordenadas de PLANTA (x, z). No CORTE o ponto da vista é
+       (ao longo do corte, −altura): comparar com a planta pegava a peça ERRADA (a angular e a radial do corte
+       agarravam uma parede qualquer). No corte só valem as linhas de detalhe da própria vista; o desenho das
+       peças entra pelo js/bimcotas.js (encaixeDesenho/linhaDesenho). */
+    var corteV = /^d2c-/.test(String(vista == null ? "" : vista));
     /* COTAS: a preferência do encaixe (Tab): 'face' tira o eixo e o centro; 'eixo' tira face, ponta e aresta */
     var FORA = pref === "face" ? { eixo: 1, centro: 1 } : pref === "eixo" ? { "face+": 1, "face-": 1, fim0: 1, fim1: 1, aresta: 1 } : {};
     function cand(ref, dist, rot) { if (FORA[ref.r] && ref.el != null && !(I.eixo[ref.el])) return; if (dist <= tol && (!melhor || dist < melhor.dist - 1e-9)) melhor = { ref: ref, dist: dist, rotulo: rot }; }
     function sOf(b, d) { return r6(dot(sub(p, b), d)); }
     var ptRef = { x: r6(p[0]), y: r6(p[1]) };
+    if (corteV && (filtro === "topo" || filtro === "plano")) return null;
     if (filtro === "topo") {
       /* a peça de cima (laje/piso) que contém o ponto; senão, o nível da vista */
       var alvo = null;
@@ -1207,6 +1223,9 @@
         var ok = c.contorno ? dentroPoli(p, c.contorno.map(function (q) { return [q.x, q.z]; })) : dentroRet(p, c);
         if (!ok) return;
         var top = num(c.cy, 0) + num(c.altura, 0) / 2;
+        /* COTAS (14/10/2026): na planta, só o que está ABAIXO do plano de corte — antes a cota de nível no piso
+           do térreo pegava a laje do Superior (+3,00), que nem aparece na planta */
+        if (lim && fin(+lim.yMax) && top > +lim.yMax + 1e-6) return;
         if (!alvo || top > alvo.top) alvo = { c: c, top: top };
       });
       if (alvo) return { ref: { el: alvo.c.id, r: "topo", x: ptRef.x, y: ptRef.y }, dist: 0, rotulo: "topo da " + (alvo.c.tipo || "peça") };
@@ -1220,10 +1239,20 @@
           if (dentroRet(p, q)) ach = { ref: { el: cb.id, r: "plano", i: i, x: ptRef.x, y: ptRef.y }, dist: 0, rotulo: "água " + (i + 1) + " da cobertura" };
         });
       });
+      /* COTAS (14/10/2026): a RAMPA — o segmento que contém o ponto (o pé do segmento, a direção da subida e a largura) */
+      if (!ach) arr(estado && estado.caixas).forEach(function (c) {
+        if (!c || c.tipo !== "rampa" || !c.rampa) return;
+        var Ls = num(c.rampa.calc && c.rampa.calc.comprimentoSegmento, 0);
+        arr(c.rampa.lances).forEach(function (la, i) {
+          var dR = [Math.cos(num(la.ang, 0)), Math.sin(num(la.ang, 0))], v = sub(p, [num(la.x, 0), num(la.z, 0)]), uu = dot(v, dR), ww = dot(v, [-dR[1], dR[0]]);
+          var Lx = Ls > 0 ? Ls : Math.max.apply(null, arr(la.perfil).map(function (q) { return num(q.u, 0); }).concat([0]));
+          if (uu >= -1e-9 && uu <= Lx + 1e-9 && Math.abs(ww) <= num(la.largura, 1.2) / 2 + 1e-9) ach = { ref: { el: c.id, r: "rampa", i: i, x: ptRef.x, y: ptRef.y }, dist: 0, rotulo: "rampa (segmento " + (i + 1) + ")" };
+        });
+      });
       return ach;
     }
     arr(estado && estado.caixas).forEach(function (c) {
-      if (!c || c.id == null) return;
+      if (!c || c.id == null || corteV) return;
       var R = secaoCirc(c);
       if (R) {
         var C = [num(c.cx, 0), num(c.cz, 0)], dc = Math.abs(len(sub(p, C)) - R);
@@ -1265,7 +1294,7 @@
         cand({ el: c.id, r: "eixo", s: sOf(Cc, u), x: ptRef.x, y: ptRef.y }, distSeg(p, ea, eb) * 1.6, "eixo da " + nome);
       }
     });
-    if (filtro !== "circulo") {
+    if (filtro !== "circulo" && !corteV) {
       arr(estado && estado.familias).forEach(function (f) {
         if (!f || f.id == null) return;
         var fc = [num(f.x, 0), num(f.z, 0)], nd = eixoN(num(f.rotY, 0));
@@ -1472,15 +1501,29 @@
         s += lnS(add(p, mul(dv, Math.min(gap, L * 0.5))), add(q, mul(dv, extC)), wL, "a7-l");
       });
       var ini = qs[0], fim = qs[qs.length - 1], dl = unit(sub(fim, ini)) || n;
-      s += lnS(sub(ini, mul(dl, t.marca === "obliquo" ? extL : 0)), add(fim, mul(dl, t.marca === "obliquo" ? extL : 0)), wL, "a7-l");
-      qs.forEach(function (q, i) { s += marcaS(q, i === 0 ? mul(dl, -1) : dl, t, k, wM); });
       var rot = angLegivel(dl);
       /* "acima da linha": o lado -y da tela depois de girar para leitura */
       var acima = mul(perp([Math.cos(rot * Math.PI / 180), Math.sin(rot * Math.PI / 180)]), -1);
-      m.segs.forEach(function (sg, i) {
-        var mid = mul(add(qs[i], qs[i + 1]), 0.5), tx = textoCota(it, t, sg.valor, it.eq && m.segs.length >= 2), p = add(add(mid, mul(acima, dT)), tmv(i));
-        if (opaco) s += fundoTexto(p, largTexto(tx, h, t), h, rot, "middle");
-        s += seg(txS(p, h, esc(tx), "a7-tx", "middle", rot, t), i);
+      /* COTAS (14/10/2026): o texto que NÃO CABE entre as marcas (a laje de 0,12 na cadeia do corte, o
+         batente de 0,15) ficava em cima do vizinho e ninguém lia. Não cabe → a 1ª e a última vão para FORA
+         da linha (a linha de cota se estende até elas) e as do meio sobem em degraus alternados. */
+      var nS = m.segs.length, ext0 = 0, ext1 = 0, degrau = 0, folga = h * 0.5;
+      var textos = m.segs.map(function (sg, i) {
+        var mid = mul(add(qs[i], qs[i + 1]), 0.5), tx = textoCota(it, t, sg.valor, it.eq && nS >= 2), wT = largTexto(tx, h, t), Ls = len(sub(qs[i + 1], qs[i]));
+        var base = add(mid, mul(acima, dT));
+        if (wT + folga > Ls) {
+          if (i === nS - 1) { var d1 = extL + wT / 2 + folga; base = add(add(fim, mul(dl, d1)), mul(acima, dT)); ext1 = Math.max(ext1, d1 + wT / 2); degrau = 0; }
+          else if (i === 0) { var d0 = extL + wT / 2 + folga; base = add(sub(ini, mul(dl, d0)), mul(acima, dT)); ext0 = Math.max(ext0, d0 + wT / 2); }
+          else { degrau = degrau === 1 ? 2 : 1; base = add(base, mul(acima, (h * 1.25) * degrau)); }
+        } else degrau = 0;
+        return { tx: tx, p: add(base, tmv(i)), w: wT };
+      });
+      var e0 = Math.max(t.marca === "obliquo" ? extL : 0, ext0), e1 = Math.max(t.marca === "obliquo" ? extL : 0, ext1);
+      s += lnS(sub(ini, mul(dl, e0)), add(fim, mul(dl, e1)), wL, "a7-l");
+      qs.forEach(function (q, i) { s += marcaS(q, i === 0 ? mul(dl, -1) : dl, t, k, wM); });
+      textos.forEach(function (o, i) {
+        if (opaco) s += fundoTexto(o.p, o.w, h, rot, "middle");
+        s += seg(txS(o.p, h, esc(o.tx), "a7-tx", "middle", rot, t), i);
       });
       if (it.travada) {   /* o cadeado: um quadradinho no meio da linha */
         var mc = mul(add(ini, fim), 0.5), cs = 1.2 * k, ab = add(mc, mul(acima, -1.6 * k));
@@ -1494,6 +1537,10 @@
       s += lnS(G.O, add(G.O, mul(G.v1, R + extC)), wL, "a7-l") + lnS(G.O, add(G.O, mul(G.v2, R + extC)), wL, "a7-l");
       s += marcaS(p1, perp(G.v1), t, k, wM) + marcaS(p2, perp(G.v2), t, k, wM);
       var am = a1 + da / 2, pm = add(add(G.O, mul([Math.cos(am), Math.sin(am)], R + dT + h * 0.4)), tmv(0)), txA = textoCota(it, t, m.valor, false), ra = angLegivel(perp([Math.cos(am), Math.sin(am)]));
+      /* COTAS (14/10/2026): arco curto (a rampa a 4,8°) — o texto ao longo do arco atravessava as linhas de
+         chamada; não cabe → texto DEITADO, por fora do arco, na direção da bissetriz */
+      var wA = largTexto(txA, h, t);
+      if (R * Math.abs(da) < wA + h * 0.5) { var bA = [Math.cos(am), Math.sin(am)]; pm = add(add(G.O, mul(bA, R + dT + Math.abs(bA[0]) * (wA / 2 + h * 0.3) + Math.abs(bA[1]) * h * 0.9)), tmv(0)); ra = 0; }
       if (opaco) s += fundoTexto(pm, largTexto(txA, h, t), h, ra, "middle");
       s += txS(pm, h, esc(txA), "a7-tx", "middle", ra, t);
     } else if (m.tipo === "radial" || m.tipo === "diametro" || m.tipo === "arco") {

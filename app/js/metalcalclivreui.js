@@ -197,10 +197,10 @@
     e.areas.forEach(function (a, k) {
       var u = a.uso ? M.usoDe(a.uso) : null, uc = a.uso ? M.usoCarga({ uso: a.uso, qInformado: num(a.qInformado, null), alturaEstoque: num(a.alturaEstoque, null), inclinacaoPct: num(a.inclinacaoPct, 3) }) : null;
       h += '<div class="ml-card" style="background:var(--ml-sup2)" data-ml-area="' + k + '"><div class="ml-lin" style="justify-content:space-between"><b>' + esc(a.nome) + '</b><span class="ml-nota">' + fmt(M.areaPoligono(a.poligono), 2) + " m² · cota " + fmt(a.cota, 2) + " m · " + arr(a.vigas).length + ' vigas</span><button class="ml-bt mini" data-ml-acao="area-tirar" data-ml-v="' + k + '">Remover</button></div>' +
-        '<div class="ml-lin"><label class="ml-campo">Revestimento / piso g (kN/m²)<input data-ml-campo="area.g" data-ml-k="' + k + '" value="' + esc(fin(a.g)) + '" inputmode="decimal"></label>' +
+        '<div class="ml-lin"><label class="ml-campo">Revestimento / piso g (kN/m²)<input data-grandeza="superficie" data-ml-campo="area.g" data-ml-k="' + k + '" value="' + esc(fin(a.g)) + '" inputmode="decimal"></label>' +
         '<label class="ml-campo">γ do permanente<select data-ml-campo="area.gCategoria" data-ml-k="' + k + '">' + [["G-geral", "em geral / equipamentos (1,50)"], ["G-insitu", "industrializado + in loco, p. ex. steel deck com concreto (1,40)"], ["G-industrializado", "industrializado, p. ex. grade, chapa (1,35)"]].map(function (o) { return '<option value="' + o[0] + '"' + ((a.gCategoria || "G-geral") === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + "</select></label>" +
-        '<label class="ml-campo">Uso — NBR 6120:2019, Tabela 10<select data-ml-campo="area.uso" data-ml-k="' + k + '">' + opcoesUso(a.uso) + "</select></label>" +
-        (u && (u.informado || u.q == null) && !u.cobertura ? '<label class="ml-campo">q informado (kN/m²)<input data-ml-campo="area.qInformado" data-ml-k="' + k + '" value="' + esc(fin(a.qInformado)) + '" inputmode="decimal"></label>' : "") +
+        '<label class="ml-campo">Uso — NBR 6120:2019, Tabela 10<select data-grandeza="superficie" data-ml-campo="area.uso" data-ml-k="' + k + '">' + opcoesUso(a.uso) + "</select></label>" +
+        (u && (u.informado || u.q == null) && !u.cobertura ? '<label class="ml-campo">q informado (kN/m²)<input data-grandeza="superficie" data-ml-campo="area.qInformado" data-ml-k="' + k + '" value="' + esc(fin(a.qInformado)) + '" inputmode="decimal"></label>' : "") +
         (u && u.estoque ? '<label class="ml-campo">Altura de estoque (m)<input data-ml-campo="area.alturaEstoque" data-ml-k="' + k + '" value="' + esc(fin(a.alturaEstoque == null ? 2.5 : a.alturaEstoque)) + '" inputmode="decimal"></label>' : "") +
         (u && u.cobertura ? '<label class="ml-campo">Inclinação (%)<input data-ml-campo="area.inclinacaoPct" data-ml-k="' + k + '" value="' + esc(fin(a.inclinacaoPct == null ? 3 : a.inclinacaoPct)) + '" inputmode="decimal"></label>' : "") +
         '<label class="ml-campo">Direção da placa<select data-ml-campo="area.direcao" data-ml-k="' + k + '">' + [["auto", "automática (menor vão)"], ["x", "vigas em x"], ["z", "vigas em z"]].map(function (o) { return '<option value="' + o[0] + '"' + ((a.direcao || "auto") === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + "</select></label>" +
@@ -209,7 +209,7 @@
     });
     h += "</div>";
     h += '<div class="ml-card"><h4>Cargas pontuais (equipamento, talha, reação de outra estrutura)</h4><div class="ml-lin"><label class="ml-campo">Distância do início da peça (m)<input data-ml-campo="pt.s" value="' + esc(fin(U.ptS)) + '" inputmode="decimal" placeholder="meio"></label>' +
-      '<label class="ml-campo">Fx (kN)<input data-ml-campo="pt.fx" value="' + esc(fin(U.ptF && U.ptF[0])) + '" inputmode="decimal" placeholder="0"></label><label class="ml-campo">Fy (kN, − para baixo)<input data-ml-campo="pt.fy" value="' + esc(fin(U.ptF && U.ptF[1])) + '" inputmode="decimal" placeholder="−10"></label><label class="ml-campo">Fz (kN)<input data-ml-campo="pt.fz" value="' + esc(fin(U.ptF && U.ptF[2])) + '" inputmode="decimal" placeholder="0"></label>' +
+      '<label class="ml-campo">Fx (kN)<input data-grandeza="forca" data-ml-campo="pt.fx" value="' + esc(fin(U.ptF && U.ptF[0])) + '" inputmode="decimal" placeholder="0"></label><label class="ml-campo">Fy (kN, − para baixo)<input data-grandeza="forca" data-ml-campo="pt.fy" value="' + esc(fin(U.ptF && U.ptF[1])) + '" inputmode="decimal" placeholder="−10"></label><label class="ml-campo">Fz (kN)<input data-grandeza="forca" data-ml-campo="pt.fz" value="' + esc(fin(U.ptF && U.ptF[2])) + '" inputmode="decimal" placeholder="0"></label>' +
       '<label class="ml-campo">Caso<select data-ml-campo="pt.caso"><option value="G">permanente (equipamento fixo)</option><option value="Q"' + (U.ptCaso === "Q" ? " selected" : "") + '>variável</option></select></label><button class="ml-bt" data-ml-acao="pt-add">Na peça selecionada</button></div>' +
       (e.pontuais.length ? '<table class="ml-t"><thead><tr><th>Carga</th><th>Peça</th><th>s (m)</th><th>F x; y; z (kN)</th><th>Caso</th><th></th></tr></thead><tbody>' + e.pontuais.map(function (p, k) { return "<tr><td>" + esc(p.nome) + "</td><td>" + esc(p.peca) + '</td><td class="n">' + fmt(p.s, 2) + '</td><td class="n">' + p.F.map(function (x) { return fmt(x, 2); }).join("; ") + "</td><td>" + esc(p.caso) + '</td><td><button class="ml-bt mini" data-ml-acao="pt-tirar" data-ml-v="' + k + '">Remover</button></td></tr>'; }).join("") + "</tbody></table>" : "") + "</div>";
     var vt = e.vento;
@@ -273,7 +273,7 @@
 
   /* ============================================================ AÇÕES */
   function campo(el) {
-    var e = estado(), c = el.getAttribute("data-ml-campo"), k = +el.getAttribute("data-ml-k"), v = el.type === "checkbox" ? el.checked : el.value, rer = false;
+    var e = estado(), c = el.getAttribute("data-ml-campo"), k = +el.getAttribute("data-ml-k"), v = el.type === "checkbox" ? el.checked : (global.UnidadesUI ? UnidadesUI.texto(el) : el.value), rer = false;
     if (c === "soSelecao") { e.soSelecao = v; rer = true; }
     else if (c === "base") { var p = el.getAttribute("data-ml-peca"); if (v) e.apoios.bases[p] = v; else delete e.apoios.bases[p]; }
     else if (/^area\./.test(c)) { var a = e.areas[k]; if (!a) return; var f = c.slice(5); a[f] = v; if (f === "uso" || f === "cobertura") rer = true; if (f === "qInformado" || f === "alturaEstoque" || f === "inclinacaoPct") rer = true; }
@@ -376,6 +376,7 @@
     status("Montando o memorial (fotos do 3D, verificações)…");
     fotos(r).then(function (img) {
       var x = Mm.gerar(r, { obra: { nome: o.nome, endereco: o.endereco, cidade: o.cidade, cliente: o.cliente }, empresa: { nome: emp.nome || emp.razaoSocial, cnpj: emp.cnpj, logoDataUrl: logo }, responsavel: { nome: emp.responsavel, titulo: emp.titulo, crea: emp.crea }, imagens: img, versao: global.CONFIG && CONFIG.versao });
+      if (x && x.ok && global.UnidadesMemorial) x.html = UnidadesMemorial.preparar(x.html);   /* aba SI | Técnica (kgf / tf) — js/unidadesmemorial.js */
       U.ultimoMemorial = x && x.ok ? { titulo: x.titulo, secoes: x.secoes.length, bytes: x.html.length, avisos: x.avisos.length } : null;
       if (!x || !x.ok) { if (w) try { w.close(); } catch (e) {} toast("Memorial: " + ((x && x.motivo) || "falhou"), "erro"); return; }
       if (w && w.document) { w.document.open(); w.document.write(x.html); w.document.close(); toast("Memorial aberto em outra aba: imprima ou salve em PDF (Ctrl+P).", "ok", 7000); }

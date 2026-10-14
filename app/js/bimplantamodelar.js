@@ -274,7 +274,8 @@
       /* METÁLICA (js/metalcriarui.js): com pilar, viga, diagonal, terça ou chapa armados, os EIXOS da
          grade também encaixam — o cruzamento de dois eixos é o ponto do pilar na planta de locação */
       var sub0 = this.ferramenta(), comEixos = !!(sub0 && ((global.MetalCriarUI && global.MetalCriarUI.querEixos && global.MetalCriarUI.querEixos(sub0)) ||
-        (global.MetalProntasUI && global.MetalProntasUI.querEixos && global.MetalProntasUI.querEixos(sub0))));   /* e as PEÇAS PRONTAS (js/metalprontasui.js) */
+        (global.MetalProntasUI && global.MetalProntasUI.querEixos && global.MetalProntasUI.querEixos(sub0)) ||   /* e as PEÇAS PRONTAS (js/metalprontasui.js) */
+        (BB() && BB().querEixos && BB().querEixos(sub0))));   /* e a FUNDAÇÃO e o PILAR de concreto (14/10/2026, js/bimbarraopcoes.js) */
       if (st.geo && st.gk1 === est && st.gk2 === dados && st.geo.id === id && st.gk3 === comEixos) return st.geo;
       var R = Pr(), g = R ? R.geometria(est || {}, { avaliar: b && b.familiaAvaliar ? function (f, t, i) { return b.familiaAvaliar(f, t, i); } : null, eixos: comEixos }) : { els: [], segs: [], pontos: [] };
       var segs = g.segs.slice(), pontos = g.pontos.slice(), n = 0, MAX = 4000;

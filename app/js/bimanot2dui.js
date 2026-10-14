@@ -164,12 +164,14 @@
     _marcarVistas: function (on) {
       var P = P2(); if (!P) return;
       Object.keys(P._cache || {}).forEach(function (k) { var c = P._cache[k]; if (c && c.el) { if (on) c.el.setAttribute("data-a7-ferr", "1"); else c.el.removeAttribute("data-a7-ferr"); } });
+      /* COTAS (14/10/2026): a camada da seleção se refaz (as alças da peça selecionada saem de cima das referências) */
+      try { if (global.BimSelecao && global.BimSelecao.mudou) global.BimSelecao.mudou(); } catch (eS) {}
     },
     dica: function () {
       var f = this._f; if (!f) return "";
       var d = f.def;
       if (d.k === "cota") {
-        if (d.cota === "linear" || d.cota === "alinhada") return f.refs.length < 2 ? d.rotulo + ": clique a " + (f.refs.length ? "próxima" : "1ª") + " referência (face, eixo, ponta, meio ou furo da peça; Tab alterna face/eixo). Esc sai." : d.rotulo + ": mais uma referência faz cadeia; clique no vazio para posicionar a linha (Enter usa a posição padrão).";
+        if (d.cota === "linear" || d.cota === "alinhada") return f.refs.length < 2 ? d.rotulo + ": clique a " + (f.refs.length ? "próxima" : "1ª") + " referência (face, eixo, ponta, meio ou furo da peça; Tab alterna face/eixo). Esc sai." : d.rotulo + ": mais uma referência faz cadeia; clique no VAZIO (longe de peça e de eixo) para posicionar a linha — Enter põe a linha por fora do desenho.";
         if (d.cota === "coordenada") return f.refs.length ? "Cota por coordenada: clique o próximo ponto; Enter (ou clique no vazio) termina. Tab alterna face/eixo. Esc sai." : "Cota por coordenada: clique a ORIGEM. Esc sai.";
         if (d.cota === "angular") return f.refs.length < 2 ? "Cota angular: clique a " + (f.refs.length ? "2ª" : "1ª") + " linha." : "Cota angular: clique onde passa o arco.";
         if (d.cota === "elevacao") return f.refs.length ? "Cota de elevação: clique onde vai o texto." : "Cota de elevação: clique o ponto.";
@@ -305,7 +307,7 @@
       var oVista = { corte: corte, vista: id };
       if (k === "linear" || k === "alinhada" || k === "coordenada") {
         var h = this._acharCota(st, p, tol, id, corte, null);
-        if (h && !f.refs.some(function (r) { return r.el != null && r.el === h.ref.el && r.r === h.ref.r && r.k === h.ref.k && r.i === h.ref.i && r.el2 === h.ref.el2; })) { f.refs.push(h.ref); status(this.dica() + " (" + h.rotulo + ")"); this._previa(id, p); return true; }
+        if (h && !f.refs.some(function (r) { return BimAnot2DUI._mesmaRef(r, h.ref); })) { f.refs.push(h.ref); status(this.dica() + " (" + h.rotulo + ")"); this._previa(id, p); return true; }
         if (f.refs.length < 2) { f.refs.push({ x: q.x, y: q.y }); this._previa(id, p); status(this.dica()); return true; }
         var orient = k !== "alinhada" ? (o.orient === "h" || o.orient === "v" ? o.orient : this._orientAuto(st, f.refs, p, corte)) : undefined;
         var prov = { tipo: "cota", cota: k, refs: f.refs, orient: orient, off: 0, vista: id };
@@ -313,9 +315,12 @@
       }
       if (k === "angular") {
         if (f.refs.length < 2) {
+          /* COTAS (14/10/2026): no corte (e na planta, longe de face/eixo) a linha é a ARESTA desenhada —
+             a crista da rampa, o piso, o banzo da tesoura; presa à peça quando é do editor */
           var ha = M.acharRef(st, p, tol, "linha", id);
-          if (!ha || ha.ref.r === "centro") { toast("Clique perto de uma linha (face de parede, eixo, linha de detalhe).", "aviso"); return true; }
-          f.refs.push(ha.ref); status(this.dica()); return true;
+          if (!ha || ha.ref.r === "centro") ha = this._acharLinhaDesenho(st, p, tol, id);
+          if (!ha) { toast("Clique perto de uma linha (face ou aresta de peça, eixo, linha de detalhe).", "aviso"); return true; }
+          f.refs.push(ha.ref); status(this.dica() + " (" + (ha.rotulo || "linha") + ")"); return true;
         }
         var pa = { tipo: "cota", cota: k, refs: f.refs, off: 1 };
         return criar({ off: M.offsetPara(st, pa, p, {}) }) || true;
@@ -323,7 +328,7 @@
       if (k === "radial" || k === "diametro" || k === "arco") {
         if (!f.refs.length) {
           var hc = M.acharRef(st, p, tol, "circulo", id);
-          if (!hc) { toast("Clique no contorno de um pilar circular ou de um círculo/arco de detalhe.", "aviso"); return true; }
+          if (!hc) { toast(corte ? "No corte o círculo é o de detalhe: desenhe um círculo/arco (Linha de detalhe) ou cote o pilar circular na planta." : "Clique no contorno de um pilar circular, de uma parede curva ou de um círculo/arco de detalhe.", "aviso"); return true; }
           f.refs.push(hc.ref); status(this.dica()); return true;
         }
         var m0 = M.medirCota(st, { tipo: "cota", cota: k, refs: f.refs }, oVista);
@@ -334,8 +339,9 @@
       if (k === "elevacao") {
         if (!f.refs.length) {
           /* COTAS: o topo do aço (TOS) e as pontas das peças entram pelo encaixe novo; senão, o de antes */
-          var hx = this._acharCota(st, p, tol, id, corte, "topo");
-          var he = hx && hx.ref.r === "p3" ? hx : (corte ? (hx || { ref: { x: q.x, y: q.y } }) : M.acharRef(st, p, tol, "topo", id));
+          /* no corte a altura é a do próprio ponto: vale qualquer encaixe (topo da laje, peitoril, degrau) */
+          var hx = this._acharCota(st, p, tol, id, corte, corte ? null : "topo");
+          var he = hx && hx.ref.r === "p3" ? hx : (corte ? (hx || { ref: { x: q.x, y: q.y } }) : M.acharRef(st, p, tol, "topo", id, null, { yMax: this._optDesenho(id).yCorte }));
           if (he.ref.r === "nivel") he.ref.yRef = this._nivelY(id) || 0;
           f.refs.push(he.ref); status(this.dica()); return true;
         }
@@ -359,6 +365,16 @@
       }
       return true;
     },
+    /* a MESMA referência (clicar duas vezes no mesmo lugar não faz cadeia): a mesma peça e a mesma parte; o
+       ponto da face (loc, do desenho) só é o mesmo se for o mesmo ponto — antes dois cantos da mesma laje
+       contavam como um, e o 3º clique virava "posicionar a linha" (14/10/2026) */
+    _mesmaRef: function (a, b) {
+      if (!a || !b || a.el == null || a.el !== b.el || a.r !== b.r || a.k !== b.k || a.i !== b.i || a.el2 !== b.el2) return false;
+      function q(v) { return Math.round(num(v, 0) * 1e5); }
+      if (a.k === "loc") return q(a.u) === q(b.u) && q(a.v) === q(b.v) && q(a.w) === q(b.w);
+      if (a.k === "aresta") return JSON.stringify([a.a, a.b]) === JSON.stringify([b.a, b.b]);
+      return true;
+    },
     _orientAuto: function (st, refs, p, corte) {
       var M = A7(), I = M.indice(st), vo = { corte: corte, vista: this._f && this._f.vista }, a = M.resolverRef(I, refs[0], vo), b = M.resolverRef(I, refs[refs.length - 1], vo);
       if (!a.ok || !b.ok) return "h";
@@ -373,12 +389,42 @@
       if (!BCm) return h;
       var proj = M.projDe ? M.projDe(id) : (corte ? null : { tipo: "planta" }); if (!proj) return h;
       var ch = this._candCache, modo = pref === "face" ? "face" : "auto";
-      if (!ch || ch.st !== st || ch.id !== id || ch.modo !== modo) ch = this._candCache = { st: st, id: id, modo: modo, pts: BCm.candidatosVista(st, proj, { modo: modo, yEixo: 0 }) };
+      if (!ch || ch.st !== st || ch.id !== id || ch.modo !== modo) ch = this._candCache = { st: st, id: id, modo: modo, pts: BCm.candidatosVista(st, proj, { modo: modo, yEixo: 0, yCorte: corte ? null : this._optDesenho(id).yCorte }) };
       var pts = ch.pts;
       if (filtro === "topo") pts = pts.filter(function (q) { return q.ref && q.ref.k === "topo"; });
-      var c = BCm.maisPerto(pts, p, tol); if (!c) return h;
-      if (h && !(c.dist <= h.dist + 0.3 * tol)) return h;
-      return { ref: c.ref, dist: c.dist, rotulo: c.rotulo, p: c.p, tipo: c.tipo };
+      var c = BCm.maisPerto(pts, p, tol);
+      /* COTAS (14/10/2026): o DESENHO da vista também é referência — o canto e a aresta do que está
+         cortado ou visto (topo da parede e da laje, degrau, crista da rampa, aba do perfil). Na planta,
+         a cota de nível fica com o topo das peças (o canto do desenho não diz a altura). */
+      var dz = filtro === "topo" || pref === "eixo" ? null : this._encaixeDesenho(st, p, tol, id, proj, false);
+      /* PONTO (canto, ombreira, topo) ganha de LINHA (aresta desenhada, eixo no corte); na mesma classe, o mais
+         perto. Na planta a aresta do desenho não entra quando a face da P7 já pegou (ela tem direção). */
+      var CL = BCm.CLASSE || {}, cs = [];
+      if (c) cs.push({ o: c, cl: c.cl != null ? c.cl : (CL[c.tipo] != null ? CL[c.tipo] : 5) });
+      if (dz && (dz.tipo === "fim" || !h)) cs.push({ o: dz, cl: dz.tipo === "fim" ? 0 : 3 });
+      cs.sort(function (a, b) { return (a.cl - b.cl) || (a.o.dist - b.o.dist); });
+      var b0 = cs.length ? cs[0].o : null;
+      if (!b0) return h;
+      if (h && !(b0.dist <= h.dist + 0.3 * tol)) return h;
+      return { ref: b0.ref, dist: b0.dist, rotulo: b0.rotulo, p: b0.p, tipo: b0.tipo };
+    },
+    /* os candidatos do desenho da vista (cache por desenho: refeito a cada extração) */
+    _candDesenho: function (id) {
+      var P = P2(), c = P && P._cache ? P._cache[id] : null, BCm = global.BimCotas; if (!c || !c.dados || !BCm || !BCm.candidatosDesenho) return null;
+      if (!this._desCache || this._desCache.dados !== c.dados) this._desCache = { dados: c.dados, cand: BCm.candidatosDesenho(c.dados) };
+      return this._desCache.cand;
+    },
+    _optDesenho: function (id) { var P = P2(), d = P && P.def ? P.def(id) : null; return { yCorte: d && d.nivel ? num(d.nivel.y, 0) + num(d.altura, 1.2) : 0 }; },
+    _encaixeDesenho: function (st, p, tol, id, proj, soCantos) {
+      var BCm = global.BimCotas, cand = this._candDesenho(id); if (!cand || !BCm.encaixeDesenho) return null;
+      var o = this._optDesenho(id); o.soCantos = !!soCantos;
+      return BCm.encaixeDesenho(st, cand, p, tol, proj, o);
+    },
+    /* a LINHA do desenho (cota angular no corte, e na planta quando não há face da P7 perto) */
+    _acharLinhaDesenho: function (st, p, tol, id) {
+      var M = A7(), BCm = global.BimCotas, cand = this._candDesenho(id); if (!cand || !BCm || !BCm.linhaDesenho) return null;
+      var proj = M.projDe ? M.projDe(id) : null; if (!proj) return null;
+      return BCm.linhaDesenho(st, cand, p, tol, proj, this._optDesenho(id));
     },
     /* Enter: fecha o contorno, termina a linha ou posiciona a cota no lugar padrão */
     concluir: function () {
@@ -386,7 +432,7 @@
       var d = f.def, o = this.opcoes(), id = f.vista, r = null;
       if (d.k === "cota" && (d.cota === "linear" || d.cota === "alinhada" || d.cota === "coordenada") && f.refs.length >= 2) {
         var orient = d.cota !== "alinhada" ? (o.orient === "h" || o.orient === "v" ? o.orient : this._orientAuto(this.estado(), f.refs, null, /^d2c-/.test(id))) : undefined;
-        var b0 = { id: novoId(), vista: id, cota: d.cota, refs: f.refs, off: 0.6, orient: orient, tipoCota: o.tipoCota || undefined };
+        var b0 = { id: novoId(), vista: id, cota: d.cota, refs: f.refs, off: this._offFora(f.refs, d.cota, orient, id), orient: orient, tipoCota: o.tipoCota || undefined };
         var Uc = global.BimCotasUI; if (Uc && Uc.ajustarCota2d) Uc.ajustarCota2d(b0, this.estado(), id);
         r = M.opCota(b0);
         f.refs = [];
@@ -410,6 +456,20 @@
       var ok = this._op(r.op); if (ok) status(d.rotulo + " criada. Continue, ou Esc.");
       return ok;
     },
+    /* Enter = a posição PADRÃO da linha: por FORA do desenho (do lado contrário ao centro da vista) e além de
+       todas as referências — antes ia 0,60 para um lado fixo e a acumulada da fachada atravessava a sala
+       (14/10/2026) */
+    _offFora: function (refs, cota, orient, id) {
+      var M = A7(), st = this.estado(), P = P2(), c = P && P._cache ? P._cache[id] : null, vb = c && (c.vbTotal || c.vb);
+      try {
+        var m = M.medirCota(st, { tipo: "cota", cota: cota, refs: refs, orient: orient, off: 0, vista: id }, { corte: /^d2c-/.test(id), vista: id });
+        if (!m.ok || !m.geo || !m.geo.t || !vb) return 0.6;
+        var tt = m.geo.t, l0 = m.geo.lineT, vs = m.geo.pts.map(function (q) { return q[0] * tt[0] + q[1] * tt[1]; });
+        var cen = (vb.x + vb.w / 2) * tt[0] + (vb.y + vb.h / 2) * tt[1];
+        var lado = cen > l0 ? -1 : 1, ext = lado > 0 ? Math.max.apply(null, vs) : Math.min.apply(null, vs);
+        return Math.round((ext - l0 + lado * 0.6) * 1e4) / 1e4;
+      } catch (e) { return 0.6; }
+    },
     _usuario: function () { try { var u = global.Auth && global.Auth._usuario; return (u && (u.nome || u.email)) ? String(u.nome || u.email).slice(0, 60) : ""; } catch (e) { return ""; } },
 
     /* ----------------------------------------------- prévia (elástico) */
@@ -423,7 +483,7 @@
         f.refs.forEach(function (r) { var x = M.resolverRef(I, r, vo); if (x.ok) pts.push([x.p[0], x.p[1]]); });
         /* COTAS: a prévia ELÁSTICA vai até o ponto ENCAIXADO (não o cursor cru) e mostra o valor antes do clique */
         if (p && (f.def.cota === "linear" || f.def.cota === "alinhada" || f.def.cota === "coordenada" || f.def.cota === "elevacao" || f.def.cota === "inclinacao")) {
-          hS = this._acharCota(st, p, this._tol(id), id, corte, f.def.cota === "elevacao" ? "topo" : null);
+          hS = this._acharCota(st, p, this._tol(id), id, corte, f.def.cota === "elevacao" && !corte ? "topo" : null);
           if (hS) { var xs = M.resolverRef(I, hS.ref, vo); if (xs.ok) pS = [xs.p[0], xs.p[1]]; }
         }
       } else f.pts.forEach(function (q) { pts.push([q.x, q.y]); });
@@ -786,6 +846,41 @@
   /* a foto de ANTES de cada replay (para saber que peça andou quando a trava estoura) */
   var _apos = BimAnot2DUI.aposRebuild;
   BimAnot2DUI.aposRebuild = function (st) { this._snapAnt = this._snap; return _apos.call(this, st); };
+
+  /* ====================== PRECISÃO ÚNICA (14/10/2026, barra de baixo — js/bimbarrasnaps.js)
+   * Em BLOCO À PARTE, embrulhando os métodos (e não por dentro deles): o corpo das cotas 2D é da
+   * frente das cotas, que mexe nele em paralelo — assim as duas mudanças não brigam.
+   *  · Linha de detalhe, região e nuvem: o próximo ponto anda no Orto da barra de baixo
+   *    (horizontal/vertical e incrementos; Shift inverte). Círculo e arco não: o 2º ponto deles é
+   *    raio/ângulo, não um lado.
+   *  · Cota LINEAR e por COORDENADA: o 2º ponto LIVRE (fora de peça) anda no Orto; o ponto de peça é
+   *    associativo e não se mexe; a ALINHADA continua livre (é a cota "na reta dos pontos").
+   *  · Snap apagado na barra de baixo: a cota 2D não encaixa (só pontos livres), como a do 3D. */
+  function travar2d(a, q, ev) {
+    var Bo = global.BimBarraOpcoes; if (!a || !q || !Bo || !Bo.travar) return q;
+    var r = Bo.travar({ x: a.x, z: a.y }, { x: q.x, z: q.y }, { shift: !!(ev && ev.shiftKey) });   /* (x, y) da vista entra como (x, z) */
+    return r && r.travado ? { x: r.p.x, y: r.p.z } : q;
+  }
+  function ortoDe(self, id, ev, p) {
+    var f = self._f; if (!f || !f.def || !p || f.vista !== id) return p;
+    var d = f.def, o = self.opcoes ? self.opcoes() : {};
+    if ((d.k === "linha" || d.k === "regiao" || d.k === "nuvem") && f.pts && f.pts.length && !(d.k === "linha" && /^(circulo|arco)$/.test(o.forma || ""))) {
+      var q = travar2d(f.pts[f.pts.length - 1], { x: p[0], y: p[1] }, ev); return [q.x, q.y];
+    }
+    if (d.k === "cota" && (d.cota === "linear" || d.cota === "coordenada") && f.refs && f.refs.length === 1) {
+      var M = A7(), st = self.estado(), corte = /^d2c-/.test(id);
+      if (!M || self._acharCota(st, p, self._tol(id), id, corte, null)) return p;
+      var r0 = M.resolverRef(M.indice(st), f.refs[0], { corte: corte, vista: id }); if (!r0 || !r0.ok) return p;
+      var q2 = travar2d({ x: r0.p[0], y: r0.p[1] }, { x: p[0], y: p[1] }, ev); return [q2.x, q2.y];
+    }
+    return p;
+  }
+  var _clique2dPrec = BimAnot2DUI.clique2d;
+  BimAnot2DUI.clique2d = function (id, ev, p) { try { if (this.ativo()) p = ortoDe(this, id, ev, p); } catch (eO) {} return _clique2dPrec.call(this, id, ev, p); };
+  var _mover2dPrec = BimAnot2DUI.mover2d;
+  BimAnot2DUI.mover2d = function (id, ev, p) { try { p = ortoDe(this, id, ev, p); } catch (eO) {} return _mover2dPrec.call(this, id, ev, p); };
+  var _acharCotaPrec = BimAnot2DUI._acharCota;
+  BimAnot2DUI._acharCota = function () { var Bo = global.BimBarraOpcoes; if (Bo && Bo.snapLigado && !Bo.snapLigado(null)) return null; return _acharCotaPrec.apply(this, arguments); };
 
   global.BimAnot2DUI = BimAnot2DUI;
   if (typeof module !== "undefined" && module.exports) module.exports = BimAnot2DUI;

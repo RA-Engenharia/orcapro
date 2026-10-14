@@ -122,7 +122,11 @@
       }
       return geomCaixa(o);
     }
-    if (pc.k === "familia") { var pf = [num(o.x, 0), num(o.y, 0), num(o.z, 0)]; return { c: pf, m: pf, a: pf, b: pf, topo: pf, base: pf, tipo: "familia", cantos: [], furos: [] }; }
+    if (pc.k === "familia") {
+      /* PORTA/JANELA hospedada: o VÃO (as duas ombreiras, o peitoril e a verga) — a cota de esquadria */
+      var gv = o.host ? geomVao(o) : null; if (gv) return gv;
+      var pf = [num(o.x, 0), num(o.y, 0), num(o.z, 0)]; return { c: pf, m: pf, a: pf, b: pf, topo: pf, base: pf, tipo: "familia", cantos: [], furos: [] };
+    }
     if (pc.k === "peca") { var pp = [num(o.x, 0), num(o.y, 0), num(o.z, 0)]; return { c: pp, m: pp, a: pp, b: pp, topo: pp, base: pp, tipo: "peca", cantos: [], furos: [] }; }
     if (pc.k === "trecho") {
       var a = V3(o.p1), b = V3(o.p2); if (!a || !b) return null;
@@ -162,6 +166,42 @@
              quadro: { O: q.O, X: q.X, Y: q.Y, Z: q.Z, t: t, u0: Math.min.apply(null, us.length ? us : [0]), u1: Math.max.apply(null, us.length ? us : [0]), v0: Math.min.apply(null, vs.length ? vs : [0]), v1: Math.max.apply(null, vs.length ? vs : [0]) },
              furosUV: arr(m.furos).map(function (f) { return { u: num(f.u, 0), v: num(f.v, 0), d: num(f.d, 0) }; }) };
   }
+  /* ------------------------------------------------ o VÃO da porta/janela (14/10/2026)
+   * Pedido: "simula a cotação dentro da planta baixa e dos cortes — todo tipo
+   * de cotação". A cota de esquadria (largura do vão na planta, peitoril e
+   * altura no corte) precisa da ABERTURA, que é da família: quem tem o
+   * avaliador (js/bimcotasui.js: BIM.familiaAvaliar) registra a fonte. A
+   * família hospedada já vem do replay com x/y/z na base da parede (no eixo)
+   * e o rotY da parede (BimEdit.posicaoHospedada). */
+  var _avalFam = null;
+  function aberturaDe(f) {
+    var av = null;
+    try { av = _avalFam ? _avalFam(f) : null; } catch (e) { av = null; }
+    var a = av && av.abertura;
+    if (!a || !(num(a.largura, 0) > 0) || !(num(a.altura, 0) > 0)) return null;
+    return { largura: num(a.largura, 0), altura: num(a.altura, 0), peitoril: num(a.peitoril, 0), desloc: num(a.deslocX, 0) };
+  }
+  function geomVao(f) {
+    var ab = aberturaDe(f); if (!ab) return null;
+    var th = num(f.rotY, 0), u = rotY([1, 0, 0], th), n = rotY([0, 0, 1], th), E = num(f.inst && f.inst.Espessura_parede, 0.15);
+    var C = add([num(f.x, 0), num(f.y, 0), num(f.z, 0)], mul(u, ab.desloc));
+    var y0 = C[1] + ab.peitoril, y1 = y0 + ab.altura, ym = (y0 + y1) / 2;
+    function em(p, y) { return [p[0], y, p[2]]; }
+    var c0 = add(C, mul(u, -ab.largura / 2)), c1 = add(C, mul(u, ab.largura / 2));
+    return { c: em(C, ym), m: em(C, ym), a: em(c0, ym), b: em(c1, ym), topo: em(C, y1), base: em(C, y0), tipo: "abertura", cantos: [], furos: [],
+             vao: { a0: em(c0, ym), a1: em(c1, ym), pe: em(C, y0), ve: em(C, y1), c0: c0, c1: c1, C: C, u: u, n: n, E: E, y0: y0, y1: y1, ym: ym, largura: ab.largura, altura: ab.altura, peitoril: ab.peitoril } };
+  }
+  /* os traços do vão (em 3D) por onde o clique pega a referência: a ombreira de face a face e de
+     baixo a cima; o peitoril e a verga de face a face e de ombreira a ombreira */
+  function tracosVao(g, r) {
+    var V = g && g.vao; if (!V) return [];
+    var h = mul(V.n, V.E / 2);
+    function em(p, y) { return [p[0], y, p[2]]; }
+    if (r === "vao0" || r === "vao1") { var P = r === "vao0" ? V.c0 : V.c1; return [[sub(em(P, V.ym), h), add(em(P, V.ym), h)], [em(P, V.y0), em(P, V.y1)]]; }
+    if (r === "peitoril" || r === "verga") { var Y = r === "peitoril" ? V.y0 : V.y1; return [[sub(em(V.C, Y), h), add(em(V.C, Y), h)], [em(V.c0, Y), em(V.c1, Y)]]; }
+    return [];
+  }
+  var REFS_VAO = { vao0: 1, vao1: 1, peitoril: 1, verga: 1 };
   function geomCaixa(o) {
     var C = [num(o.cx, 0), num(o.cy, 0), num(o.cz, 0)], th = num(o.rotY, 0), u = rotY([1, 0, 0], th), n = rotY([0, 0, 1], th);
     var L = num(o.comprimento, 0), H = num(o.altura, 0), E = num(o.espessura, 0), t = o.tipo || "peca";
@@ -193,8 +233,9 @@
    * r: fim0 | fim1 | meio | centro | topo | base | canto (i) | furo (i) |
    *    loc (u, v, w ∈ [−1, 1] no referencial da peça) | eixo (s ao longo do
    *    eixo da grade, na cota y) | nivel (o nível `nivel`, em x/z) | p (solto) */
-  var REFS = { fim0: 1, fim1: 1, meio: 1, centro: 1, topo: 1, base: 1, canto: 1, furo: 1, loc: 1, eixo: 1, cruz: 1, nivel: 1, p: 1 };
-  var ROT_REF = { fim0: "ponta", fim1: "ponta", meio: "meio", centro: "centro", topo: "topo", base: "base", canto: "canto", furo: "centro do furo", loc: "face", eixo: "eixo", cruz: "cruzamento de eixos", nivel: "nível", p: "ponto" };
+  var REFS = { fim0: 1, fim1: 1, meio: 1, centro: 1, topo: 1, base: 1, canto: 1, furo: 1, loc: 1, eixo: 1, cruz: 1, nivel: 1, p: 1, vao0: 1, vao1: 1, peitoril: 1, verga: 1 };
+  var ROT_REF = { fim0: "ponta", fim1: "ponta", meio: "meio", centro: "centro", topo: "topo", base: "base", canto: "canto", furo: "centro do furo", loc: "face", eixo: "eixo", cruz: "cruzamento de eixos", nivel: "nível", p: "ponto",
+                  vao0: "ombreira do vão", vao1: "ombreira do vão", peitoril: "peitoril", verga: "verga" };
   function fallback(ref) { return V3(ref); }
   function resolver(estado, ref, opc) {
     if (!ref || typeof ref !== "object") return { ok: false };
@@ -237,6 +278,10 @@
       case "base": p = g.base; break;
       case "canto": p = g.cantos[Math.round(num(ref.i, 0))] || null; break;
       case "furo": p = g.furos[Math.round(num(ref.i, 0))] || null; break;
+      case "vao0": p = g.vao ? g.vao.a0 : null; break;
+      case "vao1": p = g.vao ? g.vao.a1 : null; break;
+      case "peitoril": p = g.vao ? g.vao.pe : null; break;
+      case "verga": p = g.vao ? g.vao.ve : null; break;
       case "loc":
         var q = g.quadro; if (!q) { p = g.c; break; }
         p = add(add(add(q.O, mul(q.X, num(ref.u, 0) * (q.hx != null ? q.hx : 1))), mul(q.Y, num(ref.v, 0) * (q.hy != null ? q.hy : 1))), mul(q.Z, num(ref.w, 0) * (q.hz != null ? q.hz : 1)));
@@ -245,6 +290,8 @@
     }
     if (!p) return { ok: false, orfa: true, p: fb };
     if (g.linha && (r === "fim0" || r === "fim1" || r === "meio")) d = unit(sub(g.b, g.a));
+    /* o vão: a ombreira, o peitoril e a verga são LINHAS de face a face da parede (a cota mede perpendicular a elas) */
+    if (g.vao && REFS_VAO[r]) d = g.vao.n.slice();
     return { ok: true, p: p.slice(), d: d, metal: !!g.metal, tipo: g.tipo };
   }
   /* o ponto clicado numa FACE de uma peça → a referência normalizada (acompanha
@@ -277,6 +324,11 @@
     Object.keys(I.caixa).concat(Object.keys(I.trecho), Object.keys(I.familia), Object.keys(I.peca)).forEach(function (id) {
       var pc = acharPeca(estado, id), g = geom(pc); if (!g) return;
       var nome = g.tipo || "peça";
+      if (g.vao) {
+        pt(g.vao.a0, "fim", R(id, "vao0"), "ombreira do vão"); pt(g.vao.a1, "fim", R(id, "vao1"), "ombreira do vão");
+        pt(g.vao.pe, "fim", R(id, "peitoril"), g.vao.peitoril > 0.005 ? "peitoril" : "soleira"); pt(g.vao.ve, "fim", R(id, "verga"), "verga (topo do vão)");
+        return;
+      }
       if (g.chapa) {
         if (modo !== "face") {
           g.furos.forEach(function (p, i) { pt(p, "centro", R(id, "furo", i), "centro do furo " + (i + 1)); });
@@ -575,7 +627,9 @@
     var x = resolver(estado, ref); if (!x.ok) return null;
     if (ref.x == null) { ref.x = r6(x.p[0]); ref.y = r6(x.p[1]); ref.z = r6(x.p[2]); }
     var q = plano(x.p), d = null, ext = [q, q];
-    if (linha) { var la = plano(linha[0]), lb = plano(linha[1]), dl = [lb[0] - la[0], lb[1] - la[1]], L = Math.sqrt(dl[0] * dl[0] + dl[1] * dl[1]); if (L > 1e-6) { d = [dl[0] / L, dl[1] / L]; ext = [la, lb]; } }
+    /* a linha que a vista vê de TOPO (a parede perpendicular ao corte) é um ponto: o giro gravado com 4 casas
+       deixa 2·10⁻⁵ de "comprimento" e a direção desse resto (lixo numérico) tirava a parede da cadeia (14/10/2026) */
+    if (linha) { var la = plano(linha[0]), lb = plano(linha[1]), dl = [lb[0] - la[0], lb[1] - la[1]], L = Math.sqrt(dl[0] * dl[0] + dl[1] * dl[1]); if (L > 1e-3) { d = [dl[0] / L, dl[1] / L]; ext = [la, lb]; } }
     return { id: id, ref: ref, q: q, d: d, ext: ext, p3: x.p, g: g, metal: !!g.metal, eixo: pc.k === "eixo" };
   }
   function dot2(a, b) { return a[0] * b[0] + a[1] * b[1]; }
@@ -673,8 +727,12 @@
     if (!proj || proj.tipo !== "corte") return { tipo: "planta", p: function (p) { return [p[0], p[2]]; }, d: function (d) { var u = [d[0], d[2]], L = Math.sqrt(u[0] * u[0] + u[1] * u[1]); return L > 1e-6 ? [u[0] / L, u[1] / L] : null; } };
     var ax = num(proj.ax, 0), az = num(proj.az, 0), dx = num(proj.bx, 0) - ax, dz = num(proj.bz, 0) - az, L = Math.sqrt(dx * dx + dz * dz) || 1, nx = dz / L, nz = -dx / L;
     if (proj.inv) { nx = -nx; nz = -nz; }
+    var prof = num(proj.prof, 0);
     return {
-      tipo: "corte", nx: nx, nz: nz,
+      tipo: "corte", nx: nx, nz: nz, ax: ax, az: az, prof: prof,
+      /* o ponto está na parte VISTA do corte? (do plano para a frente, até a profundidade da vista) — o que fica
+         atrás do plano ou além da profundidade não está desenhado e não pode ser referência (14/10/2026) */
+      visivel: function (p) { var s = (p[0] - ax) * nx + (p[2] - az) * nz; return s >= -0.01 && (!(prof > 0) || s <= prof + 0.01); },
       p: function (p) { return [(p[0] - ax) * (-nz) + (p[2] - az) * nx, -p[1]]; },
       d: function (d) { var u = [d[0] * (-nz) + d[2] * nx, -d[1]], l = Math.sqrt(u[0] * u[0] + u[1] * u[1]); return l > 1e-6 ? [u[0] / l, u[1] / l] : null; },
       /* o eixo da grade cruza a linha do corte onde? (x do desenho) — null se não cruza */
@@ -696,6 +754,16 @@
     }
     var pc = acharPeca(estado, ref.el);
     if (!pc) return { ok: false, orfa: true };
+    if (ref.k === "aresta") {
+      /* a ARESTA desenhada de uma peça (a cota angular no corte): as duas pontas na face da peça
+         (normalizadas — a rampa muda de inclinação e o ângulo acompanha); p = onde foi o clique (s) */
+      var A0 = ref.a || {}, B0 = ref.b || {}, ra = resolver(estado, { el: ref.el, r: "loc", u: A0.u, v: A0.v, w: A0.w, hx1: ref.hx1 }, opc), rb = resolver(estado, { el: ref.el, r: "loc", u: B0.u, v: B0.v, w: B0.w, hx1: ref.hx1 }, opc);
+      if (!ra.ok || !rb.ok) return { ok: false, orfa: true };
+      var pa = J.p(ra.p), pb = J.p(rb.p), dl = [pb[0] - pa[0], pb[1] - pa[1]], Ll = Math.sqrt(dl[0] * dl[0] + dl[1] * dl[1]);
+      if (!(Ll > 1e-9)) return { ok: false };
+      var sl = fin(+ref.s) ? +ref.s : 0.5;
+      return { ok: true, p: [pa[0] + dl[0] * sl, pa[1] + dl[1] * sl], d: [dl[0] / Ll, dl[1] / Ll], aresta: [pa, pb] };
+    }
     if (pc.k === "eixo" && ref.k !== "cruz") {
       if (J.tipo === "corte") { var xe = J.eixo(pc.o); if (xe == null) return { ok: false, orfa: true }; return { ok: true, p: [xe, cl ? cl[1] : 0], d: [0, 1] }; }
       var g = geom(pc), dd = unit(sub(g.b, g.a)); if (!dd) return { ok: false };
@@ -728,24 +796,147 @@
   /* PONTOS NOTÁVEIS NA VISTA (para o encaixe da cota 2D): os mesmos da peça, projetados */
   function candidatosVista(estado, proj, opc) {
     var J = projetor(proj), C = candidatos(estado, { y: num(opc && opc.y, 0), modo: opc && opc.modo });
-    var pts = C.pontos.map(function (q) { var v = J.p(q.p); return { p: v, tipo: q.tipo, id: q.id, rotulo: q.rotulo, ref: refParaP7(estado, q.ref.r === "eixo" ? q.ref : q.ref, proj) }; });
+    var yC = opc && fin(+opc.yCorte) ? +opc.yCorte : null, baseOk = {};
+    var pts = C.pontos.filter(function (q) {
+      /* na planta o peitoril e a verga caem em cima da linha das ombreiras: só confundem */
+      if (J.tipo === "planta" && q.ref && (q.ref.r === "peitoril" || q.ref.r === "verga")) return false;
+      /* só o que está DESENHADO: no corte, do plano para a frente; na planta, a peça que começa abaixo do plano de
+         corte (a viga e a laje do andar de cima não aparecem na planta e não podem ser referência) */
+      if (J.tipo === "corte") return J.visivel(q.p);
+      if (yC != null && q.id != null) {
+        var k = String(q.id); if (baseOk[k] == null) { var gq = geom(acharPeca(estado, q.id)); baseOk[k] = !gq || !gq.base || gq.base[1] <= yC + 0.01; }
+        return baseOk[k];
+      }
+      return true;
+    }).map(function (q) {
+      var v = J.p(q.p), o = { p: v, tipo: q.tipo, id: q.id, rotulo: q.rotulo, ref: refParaP7(estado, q.ref, proj) };
+      /* o vão pega pelo TRAÇO (a ombreira de face a face, o peitoril de ombreira a ombreira), não só pelo ponto */
+      if (q.ref && REFS_VAO[q.ref.r]) {
+        var sg = tracosVao(geom(acharPeca(estado, q.ref.el)), q.ref.r).map(function (s) { return [J.p(s[0]), J.p(s[1])]; })
+          .filter(function (s) { return Math.abs(s[1][0] - s[0][0]) + Math.abs(s[1][1] - s[0][1]) > 1e-6; });
+        if (sg.length) o.segs = sg;
+      }
+      return o;
+    });
     if (J.tipo === "corte") {
       /* no corte, o eixo da grade é uma vertical onde cruza a linha do corte */
       arr(estado && estado.eixos).forEach(function (e) { var xe = J.eixo(e); if (xe != null) pts.push({ p: [xe, num(opc && opc.yEixo, 0)], tipo: "intersecao", id: e.id, rotulo: "eixo " + txt(e.nome), ref: { el: e.id, r: "p3", k: "eixo", x: r6(xe), y: r6(num(opc && opc.yEixo, 0)) }, linhaV: true }); });
     }
     return pts;
   }
+  /* o ponto do segmento [a, b] (2D) mais perto de p → { q, d, t } */
+  function noSeg(p, a, b) {
+    var dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy, t = L2 > 1e-18 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2)) : 0;
+    var q = [a[0] + dx * t, a[1] + dy * t]; return { q: q, t: t, d: Math.sqrt(Math.pow(q[0] - p[0], 2) + Math.pow(q[1] - p[1], 2)) };
+  }
   function maisPerto(pts, p, tol) {
     var best = null;
     arr(pts).forEach(function (q) {
-      var d = q.linhaV ? Math.abs(q.p[0] - p[0]) : Math.sqrt(Math.pow(q.p[0] - p[0], 2) + Math.pow(q.p[1] - p[1], 2));
+      var d = q.linhaV ? Math.abs(q.p[0] - p[0]) : Math.sqrt(Math.pow(q.p[0] - p[0], 2) + Math.pow(q.p[1] - p[1], 2)), pp = null;
+      arr(q.segs).forEach(function (s) { var r = noSeg(p, s[0], s[1]); if (r.d < d) { d = r.d; pp = r.q; } });
       if (d > tol) return;
-      var cl = CLASSE[q.tipo] != null ? CLASSE[q.tipo] : 5;
-      if (!best || cl < best.cl || (cl === best.cl && d < best.d - 1e-9)) best = { q: q, d: d, cl: cl };
+      /* o EIXO no corte é uma linha vertical inteira: vale como LINHA (classe do "na linha"), não como ponto —
+         senão a 7,5 cm do eixo a face da parede (que fica no eixo) nunca era pega (14/10/2026) */
+      var cl = q.linhaV ? CLASSE.proximo : (CLASSE[q.tipo] != null ? CLASSE[q.tipo] : 5);
+      if (!best || cl < best.cl || (cl === best.cl && d < best.d - 1e-9)) best = { q: q, d: d, cl: cl, pp: pp };
     });
     if (!best) return null;
     var r = clone(best.q.ref); if (best.q.linhaV) r.y = r6(p[1]);
-    return { ref: r, dist: best.d, rotulo: best.q.rotulo, tipo: best.q.tipo, p: best.q.linhaV ? [best.q.p[0], p[1]] : best.q.p };
+    return { ref: r, dist: best.d, rotulo: best.q.rotulo, tipo: best.q.tipo, p: best.q.linhaV ? [best.q.p[0], p[1]] : (best.pp || best.q.p), cl: best.cl, linhaV: !!best.q.linhaV };
+  }
+
+  /* ================================================ O DESENHO DA VISTA (14/10/2026)
+   * Na planta e no corte a cota pegava só os pontos notáveis das peças (ponta,
+   * meio, topo) e, na planta, as faces da P7: no CORTE não havia como pegar o
+   * topo da parede, a face da laje, o degrau da escada, a crista da rampa nem
+   * a aba do perfil — o que está DESENHADO não era referência. Aqui o desenho
+   * (os contornos cortados e as arestas vistas, cada um com o uid da peça —
+   * vista2d com p6Tag) vira candidato: o CANTO e a ARESTA. A referência é
+   * ASSOCIATIVA quando a peça é do editor: o ponto volta para o 3D (no plano
+   * do corte; na planta, na altura do corte) e vira um ponto da FACE da peça,
+   * normalizado (refDaFace): a peça anda, cresce ou muda de inclinação e a
+   * cota acompanha. Peça do IFC aberto: o ponto do desenho (solto).
+   * dados = { cortes:[{pts, fechado, u}], linhas:[[x1,y1,x2,y2]], linhasUd:[{u}] } */
+  function candidatosDesenho(dados, opc) {
+    opc = opc || {};
+    var pts = [], segs = [], visto = {};
+    function chave(p, u) { return Math.round(p[0] * 1e4) + "," + Math.round(p[1] * 1e4) + "," + u; }
+    function vert(p, u, fonte) { if (!p || !fin(+p[0]) || !fin(+p[1])) return; var k = chave(p, u); if (visto[k]) return; visto[k] = 1; pts.push({ p: [+p[0], +p[1]], u: u, fonte: fonte }); }
+    arr(dados && dados.cortes).forEach(function (c) {
+      var P = arr(c && c.pts), u = (c && c.u) || "", n = P.length; if (n < 2) return;
+      var fecha = c.fechado !== false && n > 2;
+      P.forEach(function (q) { vert(q, u, "corte"); });
+      for (var i = 0; i + 1 < n + (fecha ? 1 : 0); i++) { var a = P[i], b = P[(i + 1) % n]; if (Math.abs(b[0] - a[0]) + Math.abs(b[1] - a[1]) > 1e-6) segs.push({ a: [+a[0], +a[1]], b: [+b[0], +b[1]], u: u, fonte: "corte" }); }
+    });
+    var L = arr(dados && dados.linhas), U = arr(dados && dados.linhasUd);
+    for (var k = 0; k < L.length; k++) {
+      var l = L[k], u2 = (U[k] && U[k].u) || ""; if (!l || l.length < 4) continue;
+      var a2 = [+l[0], +l[1]], b2 = [+l[2], +l[3]];
+      if (Math.abs(b2[0] - a2[0]) + Math.abs(b2[1] - a2[1]) < 1e-6) continue;
+      vert(a2, u2, "linha"); vert(b2, u2, "linha"); segs.push({ a: a2, b: b2, u: u2, fonte: "linha" });
+    }
+    return { pts: pts, segs: segs };
+  }
+  /* o ponto da vista → o 3D: na planta, na altura do corte (aresta vista: na altura do centro da peça);
+     no corte, no plano do corte (aresta vista: na profundidade do centro da peça) */
+  function desprojetar(J, p2, opc, alvo) {
+    if (J.tipo !== "corte") return [p2[0], alvo ? alvo[1] : num(opc && opc.yCorte, 0), p2[1]];
+    var b = [J.ax + p2[0] * (-J.nz), -p2[1], J.az + p2[0] * J.nx];
+    if (alvo) { var s = (alvo[0] - b[0]) * J.nx + (alvo[2] - b[2]) * J.nz; b = [b[0] + J.nx * s, b[1], b[2] + J.nz * s]; }
+    return b;
+  }
+  function pecaDoUid(estado, u) {
+    var m = /^edit:(.+)$/.exec(String(u || "")); if (!m) return null;
+    var pc = acharPeca(estado, m[1]), g = pc ? geom(pc) : null;
+    return g && g.quadro ? { id: m[1], g: g } : null;
+  }
+  /* a referência P7 de um ponto do desenho (associativa na peça do editor) */
+  function refDoDesenho(estado, u, p2, proj, opc, fonte) {
+    var solto = { x: r6(p2[0]), y: r6(p2[1]) }, pk = pecaDoUid(estado, u); if (!pk) return solto;
+    var J = projetor(proj), P3 = desprojetar(J, p2, opc, fonte === "corte" ? null : pk.g.quadro.O);
+    var r3 = refDaFace(estado, pk.id, P3); if (!r3 || r3.r !== "loc") return solto;
+    var o = refParaP7(estado, r3, proj); if (!o || o.r !== "p3") return solto;
+    o.x = solto.x; o.y = solto.y; o.des = 1;   /* des: veio do desenho (o rótulo e o teste sabem) */
+    return o;
+  }
+  /* a referência de LINHA de uma aresta do desenho (cota angular): associativa = as duas pontas na face */
+  function refLinhaDesenho(estado, sg, q, proj, opc) {
+    var dx = sg.b[0] - sg.a[0], dy = sg.b[1] - sg.a[1], L = Math.sqrt(dx * dx + dy * dy); if (!(L > 1e-9)) return null;
+    var t = Math.max(0, Math.min(1, ((q[0] - sg.a[0]) * dx + (q[1] - sg.a[1]) * dy) / (L * L)));
+    var A = refDoDesenho(estado, sg.u, sg.a, proj, opc, sg.fonte), Bq = refDoDesenho(estado, sg.u, sg.b, proj, opc, sg.fonte);
+    if (A.r === "p3" && Bq.r === "p3" && A.k === "loc" && Bq.k === "loc" && String(A.el) === String(Bq.el)) {
+      var o = { el: A.el, r: "p3", k: "aresta", a: { u: A.u, v: A.v, w: A.w }, b: { u: Bq.u, v: Bq.v, w: Bq.w }, s: r6(t), x: r6(q[0]), y: r6(q[1]), des: 1 };
+      if (A.hx1) o.hx1 = 1;
+      return o;
+    }
+    return { r: "lin", x: r6(sg.a[0] + dx * t), y: r6(sg.a[1] + dy * t), dx: r6(dx / L), dy: r6(dy / L) };
+  }
+  function nomeDoUid(estado, u) {
+    var pk = /^edit:(.+)$/.exec(String(u || "")), pc = pk ? acharPeca(estado, pk[1]) : null;
+    if (pc && pc.k === "caixa") return pc.o.tipo === "metal" ? "perfil" : (pc.o.tipo || "peça");
+    if (pc && pc.k === "familia") return "esquadria";
+    return "peça";
+  }
+  /* O ENCAIXE NO DESENHO: o canto mais perto (dentro de tol) e, sem canto, o ponto da aresta.
+     → { ref, dist, rotulo, tipo:'fim'|'proximo', p, seg } | null. sem 'linha': só cantos. */
+  function encaixeDesenho(estado, cand, p, tol, proj, opc) {
+    opc = opc || {};
+    if (!cand || !p) return null;
+    var bp = null, bs = null;
+    arr(cand.pts).forEach(function (q) { var d = Math.sqrt(Math.pow(q.p[0] - p[0], 2) + Math.pow(q.p[1] - p[1], 2)); if (d <= tol && (!bp || d < bp.d - 1e-12)) bp = { q: q, d: d }; });
+    if (bp) return { ref: refDoDesenho(estado, bp.q.u, bp.q.p, proj, opc, bp.q.fonte), dist: bp.d, rotulo: "canto da " + nomeDoUid(estado, bp.q.u), tipo: "fim", p: bp.q.p.slice() };
+    if (opc.soCantos) return null;
+    arr(cand.segs).forEach(function (s) { var r = noSeg(p, s.a, s.b); if (r.d <= tol && (!bs || r.d < bs.d - 1e-12)) bs = { s: s, d: r.d, q: r.q }; });
+    if (!bs) return null;
+    return { ref: refDoDesenho(estado, bs.s.u, bs.q, proj, opc, bs.s.fonte), dist: bs.d, rotulo: "aresta da " + nomeDoUid(estado, bs.s.u), tipo: "proximo", p: bs.q, seg: bs.s };
+  }
+  /* a LINHA do desenho mais perto (cota angular) → { ref, dist, rotulo } | null */
+  function linhaDesenho(estado, cand, p, tol, proj, opc) {
+    var bs = null;
+    arr(cand && cand.segs).forEach(function (s) { var r = noSeg(p, s.a, s.b); if (r.d <= tol && (!bs || r.d < bs.d - 1e-12)) bs = { s: s, d: r.d, q: r.q }; });
+    if (!bs) return null;
+    var ref = refLinhaDesenho(estado, bs.s, bs.q, proj, opc); if (!ref) return null;
+    return { ref: ref, dist: bs.d, rotulo: "aresta da " + nomeDoUid(estado, bs.s.u), p: bs.q };
   }
 
   /* COTAR SELEÇÃO NA VISTA 2D → { ok, ops:[anot2d…] } (cota linear da P7, presa às peças) */
@@ -931,6 +1122,9 @@
     medir: medir, opCota3d: opCota3d, valida: valida, aplicarOp: aplicarOp, fim: fim, registrar: registrar,
     estacao: estacao, cadeias: cadeias, cotarSelecao: cotarSelecao, cotarSelecaoVista: cotarSelecaoVista,
     projetor: projetor, resolverP7: resolverP7, refParaP7: refParaP7, candidatosVista: candidatosVista, maisPerto: maisPerto,
+    /* 14/10/2026: o vão da esquadria e o desenho da vista como referência */
+    fonteFamilias: function (fn) { _avalFam = typeof fn === "function" ? fn : null; return true; }, aberturaDe: aberturaDe, tracosVao: tracosVao,
+    candidatosDesenho: candidatosDesenho, encaixeDesenho: encaixeDesenho, linhaDesenho: linhaDesenho, refDoDesenho: refDoDesenho, refLinhaDesenho: refLinhaDesenho, desprojetar: desprojetar, noSeg: noSeg,
     furacao: furacao, furacaoVista: furacaoVista, cotarVista: cotarVista, cotarVista3d: cotarVista3d,
     itens: function (estado) { return arr(estado && estado.cotas3d); },
     item: function (estado, id) { return arr(estado && estado.cotas3d).filter(function (x) { return String(x.id) === String(id); })[0] || null; }

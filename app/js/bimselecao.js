@@ -446,7 +446,9 @@
       /* alças: uma peça do editor selecionada, na planta, com o modelador */
       var prc = this._precisao(), R = Pr(), planta = this._ehPlanta(id);
       var eds = sel.filter(function (u) { return /^edit:/.test(u); });
-      if (planta && modelador() && prc && R && eds.length === 1 && sel.length === 1 && !(d && d.modo === "mover")) {
+      /* COTAS (14/10/2026): com uma ferramenta da vista armada (cota, texto, corte…) as alças saem — elas ficavam
+         POR CIMA das pontas e dos cantos da peça, justo onde a cota encaixa */
+      if (planta && modelador() && prc && R && eds.length === 1 && sel.length === 1 && !(d && d.modo === "mover") && !this.ferramenta2d()) {
         var est = this._estado(), eid = eds[0].slice(5), cx = est && (est.caixas || []).filter(function (x) { return x.id === eid; })[0];
         (cx ? R.alcas(cx) : []).forEach(function (a) {
           var p = (d && d.modo === "alca" && d.alca && String(d.alca.k) === String(a.k) && d.dest) ? d.dest : a.p;

@@ -12317,6 +12317,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var t2 = ev.target || {}; if (/^(INPUT|TEXTAREA|SELECT)$/.test(t2.tagName || '')) return;
     edit.famRot = (edit.famRot + Math.PI / 2) % (2 * Math.PI); ev.preventDefault();
     S._hint('Girada para ' + Math.round(edit.famRot * 180 / Math.PI) + '°.');
+    /* GIRO COM ESPAÇO (14/10/2026, js/bimbarrasnaps.js): o giro atual também na barra de status de baixo */
+    try { if (window.BimShell && BimShell.status) BimShell.status('Giro ' + Math.round(edit.famRot * 180 / Math.PI) + '° — Espaço gira 90°.'); } catch (eGS) {}
   });
 
   /* ===================== VOLUME LIVRE (fase B4, 08/10/2026) =====================

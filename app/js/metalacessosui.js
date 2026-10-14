@@ -256,7 +256,7 @@
     },
     memorial: function (r) {
       var o = {}; try { var G = global.Gestao, ob = G && G._bimObra ? G._bimObra() : null; if (ob) o.obra = ob.nome; } catch (e) {}
-      var x = MA().memorial(r, o); this.ultimoMemorial = x && x.ok ? { titulo: x.titulo, secoes: x.secoes.length, bytes: x.html.length } : null;
+      var x = MA().memorial(r, o); if (x && x.ok && global.UnidadesMemorial) x.html = UnidadesMemorial.preparar(x.html); this.ultimoMemorial = x && x.ok ? { titulo: x.titulo, secoes: x.secoes.length, bytes: x.html.length } : null;
       if (!x || !x.ok) { toast("Memorial: " + ((x && x.motivo) || "falhou"), "erro"); return null; }
       var w = null; try { w = global.open("", "_blank"); } catch (e) { w = null; }
       if (w && w.document) { w.document.open(); w.document.write(x.html); w.document.close(); toast("Memorial aberto em outra aba: imprima ou salve em PDF (Ctrl+P).", "ok", 7000); }

@@ -1006,11 +1006,12 @@
 
   /* ---------------------------------------------------------------- campos */
   var nCampo = 0;
+  var GRANDEZA_UN = { "kN": "forca", "kN·m": "momento", "kN/m": "linear", "kN/m²": "superficie" };   /* campo com seletor de unidade (js/unidadesui.js) */
   function campo(cam, rot, un, op) {
     op = op || {};
     var v = pegar(UIC.est, cam), id = "mc-c" + (++nCampo);
     return '<div class="mc-campo" data-mc-box="' + cam + '"><label for="' + id + '">' + esc(rot) + (op.dica ? ' <button type="button" class="mc-i" data-dica="' + op.dica + '" data-dica-lado="direita" aria-label="Exemplo ilustrado: ' + esc(rot) + '">i</button>' : "") + "</label>" +
-      '<div class="mc-in"><input id="' + id + '" data-mc-campo="' + cam + '" data-mc-tipo="' + (op.texto ? "txt" : "num") + '"' + (op.texto ? "" : ' inputmode="decimal"') + ' value="' + esc(op.texto ? (v || "") : fmtIn(num(v, NaN))) + '"' +
+      '<div class="mc-in"><input id="' + id + '" data-mc-campo="' + cam + '" data-mc-tipo="' + (op.texto ? "txt" : "num") + '"' + (GRANDEZA_UN[un] ? ' data-grandeza="' + GRANDEZA_UN[un] + '"' : "") + (op.texto ? "" : ' inputmode="decimal"') + ' value="' + esc(op.texto ? (v || "") : fmtIn(num(v, NaN))) + '"' +
       (op.min != null ? ' data-mc-min="' + op.min + '"' : "") + (op.max != null ? ' data-mc-max="' + op.max + '"' : "") + (op.ph ? ' placeholder="' + esc(op.ph) + '"' : "") + ' autocomplete="off">' + (un ? '<span class="mc-un">' + un + "</span>" : "") + "</div>" +
       (op.exp ? "<small>" + op.exp + "</small>" : "") + '<em class="mc-erro" data-mc-erro="' + cam + '"></em></div>';
   }
@@ -1807,6 +1808,7 @@
     status("Montando o memorial de cálculo (fotos do 3D, figuras e verificações)…");
     fotos(r).then(function (img) { return M.gerar(r, opcoesMemorial(img)); }).then(function (x) {
       var html = typeof x === "string" ? x : (x && x.html) || "";
+      if (html && global.UnidadesMemorial) html = UnidadesMemorial.preparar(html);   /* aba SI | Técnica (kgf / tf) */
       if (!html) { if (w) try { w.close(); } catch (e) {} toast("Memorial: " + ((x && x.motivo) || "não gerou conteúdo") + ".", "erro", 9000); return; }
       UIC.ultimoMemorial = { titulo: x.titulo, secoes: arr(x.secoes).length, avisos: arr(x.avisos).length, bytes: html.length };
       if (w && w.document) { w.document.open(); w.document.write(html); w.document.close(); toast("Memorial aberto em outra aba: imprima ou salve em PDF (Ctrl+P)." + (arr(x.avisos).length ? " " + x.avisos.length + " conferência(s) acusada(s) na seção 13." : ""), "ok", 8000); }
@@ -2021,7 +2023,7 @@
     var val;
     if (tipo === "bool") val = !!t.checked;
     else if (tipo === "num") {
-      var s = String(t.value || "").trim();
+      var s = String((global.UnidadesUI ? UnidadesUI.texto(t) : t.value) || "").trim();
       if (s === "" && /posicao|v0Manual/.test(cam)) val = null;
       else {
         val = num(s, NaN);

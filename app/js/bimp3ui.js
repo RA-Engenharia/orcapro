@@ -264,6 +264,17 @@
         if (sub === "fundacao") { var t = cfg.fundacao.tipoFundacao; return t === "baldrame" ? "dois" : (t === "radier" ? cfg.fundacao.radierModo : "um"); }
         return "um";
       }
+      /* PRECISÃO ÚNICA (14/10/2026, barra de baixo — js/bimbarrasnaps.js): o próximo ponto do contorno
+         (telhado/radier por perímetro), do baldrame e da extrusão anda no Orto; o 2º canto do
+         RETÂNGULO não (é a diagonal). Ponto notável do snap (canto, meio…) ganha da trava. */
+      function travar(sub, q, e) {
+        var mo = modoPts(sub), Bo = global.BimBarraOpcoes, base = pts[pts.length - 1];
+        if (!base || !Bo || !Bo.travar || mo === "um" || (mo === "retangulo" && pts.length === 1)) return q;
+        var u = null; try { var pz = global.BIM && global.BIM.precisao ? global.BIM.precisao() : null; u = pz && pz.estado ? pz.estado().ultimo : null; } catch (eU) { u = null; }
+        var tipo = u && u.p && Math.abs(u.p.x - q.x) < 1e-6 && Math.abs(u.p.z - q.z) < 1e-6 ? u.tipo : null;
+        var r = Bo.travar(base, q, { shift: !!(e && e.shiftKey), tipoSnap: tipo });
+        return r && r.travado ? { x: r.p.x, z: r.p.z } : q;
+      }
       var m3d = {
         contar: function (st) { return arr(st && st.telhados).length + arr(st && st.bordas).length + arr(st && st.fundacoes).length; },
         dica: function (sub) {
@@ -287,7 +298,7 @@
           var p = api.planoPonto(e.clientX, e.clientY); if (!p) return false;
           var mo = modoPts(sub), a = pts[0];
           if (mo === "retangulo" && pts.length === 1) linha([a, { x: p.x, z: a.z }, { x: p.x, z: p.z }, { x: a.x, z: p.z }, a]);
-          else linha(pts.concat([{ x: p.x, z: p.z }]));
+          else linha(pts.concat([travar(sub, { x: p.x, z: p.z }, e)]));
           return false;
         },
         clique: function (sub, e, hit, p) {
@@ -304,6 +315,7 @@
           var mo = modoPts(sub);
           if (mo === "um") return feito(self.opFundacao(edit.estado, { p1: q }, nivel(), edit.base));
           if (mo === "contorno" && perto1(e)) return m3d.fechar();
+          q = travar(sub, q, e);
           pts.push(q); marca(q);
           if (mo === "dois" && pts.length === 2) return feito(self.opFundacao(edit.estado, { p1: pts[0], p2: pts[1] }, nivel(), edit.base));
           if (mo === "retangulo" && pts.length === 2) return feito(sub === "telhado" ? self.opTelhado(edit.estado, { p1: pts[0], p2: pts[1] }, nivel(), edit.base) : self.opFundacao(edit.estado, { p1: pts[0], p2: pts[1] }, nivel(), edit.base));

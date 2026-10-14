@@ -211,6 +211,10 @@
   function svgCota(c, e, pena) {
     var k = e.escala / 1000, h = e.textoCota * k, ext = 2 * k, gap = 1.5 * k, tk = 1.6 * k;
     var s = "", t = esc(fmtMedida(c.valor, e)), mid = (c.a + c.b) / 2, sent = c.linha >= c.base ? 1 : -1;
+    /* COTAS (14/10/2026): o texto que não cabe entre as marcas (a laje de 0,12, o piso de 0,10) ficava em cima
+       das marcas e do vizinho — sai para FORA, depois da maior ponta, e a linha de cota vai até ele */
+    var wT = String(fmtMedida(c.valor, e)).length * h * 0.56, fora = wT + h * 0.5 > Math.abs(c.b - c.a), hi = Math.max(c.a, c.b);
+    if (fora) mid = hi + ext + h * 0.4 + wT / 2;
     function ln(x1, y1, x2, y2, w) { return '<line x1="' + n4(x1) + '" y1="' + n4(y1) + '" x2="' + n4(x2) + '" y2="' + n4(y2) + '" stroke-width="' + w + '" ' + NS + "/>"; }
     function marca(x, y, ang) {
       if (e.marcaCota === "ponto") return '<circle cx="' + n4(x) + '" cy="' + n4(y) + '" r="' + n4(0.7 * k) + '" class="d2-cota-pt"/>';
@@ -225,12 +229,14 @@
       var y = c.linha;
       s += ln(c.a, c.base + sent * gap, c.a, y + sent * ext, pena.cota) + ln(c.b, c.base + sent * gap, c.b, y + sent * ext, pena.cota);
       s += ln(c.a - (e.marcaCota === "obliquo" ? ext : 0), y, c.b + (e.marcaCota === "obliquo" ? ext : 0), y, pena.cota);
+      if (fora) s += ln(hi, y, mid + wT / 2, y, pena.cota);
       s += marca(c.a, y, Math.PI) + marca(c.b, y, 0);
       s += txt(mid, y - 0.8 * k, h, t, "d2-cota-tx", "middle");
     } else {
       var x = c.linha;
       s += ln(c.base + sent * gap, c.a, x + sent * ext, c.a, pena.cota) + ln(c.base + sent * gap, c.b, x + sent * ext, c.b, pena.cota);
       s += ln(x, c.a - (e.marcaCota === "obliquo" ? ext : 0), x, c.b + (e.marcaCota === "obliquo" ? ext : 0), pena.cota);
+      if (fora) s += ln(x, hi, x, mid + wT / 2, pena.cota);
       s += marca(x, c.a, -Math.PI / 2) + marca(x, c.b, Math.PI / 2);
       s += txt(x - 0.8 * k, mid, h, t, "d2-cota-tx", "middle", -90);
     }

@@ -93,3 +93,46 @@
 .pm-dig label { display: inline-flex; align-items: center; gap: 4px; }
 .pm-dig input { width: 5em; height: 22px; padding: 0 4px; border: 1px solid var(--d2-fraco); border-radius: 3px; background: var(--d2-papel); color: var(--d2-tinta); font-size: 12px; }
 .pm-dig input:focus-visible { outline: 2px solid var(--d2-sel); outline-offset: 0; }
+
+/* ------------------------------------------------- a PRECISÃO na barra de baixo (14/10/2026)
+   js/bimbarrasnaps.js: Snap (F3) e Orto (F8), com os menus dos tipos e dos incrementos. Mora na
+   `.rv-vistabar` (rodapé da área, FORA do palco): nunca fica por cima do desenho. A luz diz se está
+   aceso ou apagado mesmo sem passar o mouse. */
+.bbs { display: inline-flex; align-items: center; gap: 2px; margin-left: auto; padding-left: 8px; border-left: 1px solid var(--rv-linha); flex: 0 0 auto; }
+.bbs-tit { color: var(--rv-tx-fraco); margin-right: 4px; white-space: nowrap; }
+.rv-vb.bbs-bt { width: auto; padding: 0 7px; gap: 5px; }
+.rv-vb.bbs-seta { width: auto; min-width: 16px; padding: 0 4px; gap: 4px; margin-left: -1px; }
+.bbs-rot, .bbs-txt { font-size: inherit; white-space: nowrap; }
+.bbs-txt { color: var(--rv-tx-fraco); font-variant-numeric: tabular-nums; }
+.bbs-v { font-size: 9px; color: var(--rv-tx-fraco); }
+.bbs-n { font-size: 10px; color: var(--rv-tx-fraco); font-variant-numeric: tabular-nums; }
+.bbs-luz { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; background: var(--rv-tx-off); box-shadow: inset 0 0 0 1px var(--rv-linha-forte); }
+.bbs-bt[aria-pressed="true"] .bbs-luz { background: var(--verde, #15803d); box-shadow: 0 0 0 2px color-mix(in srgb, var(--verde, #15803d) 25%, transparent); }
+.bbs-bt[aria-pressed="false"] .bbs-rot { color: var(--rv-tx-fraco); }
+.bbs-bt:focus-visible, .bbs-seta:focus-visible { outline: 2px solid var(--rv-foco); outline-offset: 1px; }
+.bbs-seta[aria-expanded="true"] { background: var(--rv-ativo); border-color: var(--rv-ativo-borda); }
+/* o menu sobe da barra (position fixed, preso à casca — o overflow da barra cortaria) */
+.bbs-pop {
+  position: fixed; z-index: 80; min-width: 210px; max-width: 280px; padding: 8px 10px;
+  border: 1px solid var(--rv-linha-forte); border-radius: 4px; background: var(--rv-painel-bg);
+  color: var(--rv-painel-tx); box-shadow: 0 -6px 18px var(--rv-sombra); font-size: 12px; white-space: normal;
+}
+.bbs-pop-tit { display: flex; align-items: center; justify-content: space-between; font-weight: 600; margin-bottom: 4px; }
+.bbs-tecla { font-weight: 500; font-size: 10px; padding: 0 4px; border: 1px solid var(--rv-linha-forte); border-radius: 3px; color: var(--rv-tx-fraco); }
+.bbs-pop-item { display: flex; align-items: center; gap: 6px; padding: 3px 0; min-height: 22px; cursor: pointer; }
+.bbs-pop-geral { font-weight: 600; border-bottom: 1px solid var(--rv-linha); padding-bottom: 5px; margin-bottom: 3px; }
+.bbs-glifo { display: inline-flex; width: 16px; height: 16px; }
+.bbs-glifo svg { width: 14px; height: 14px; }
+.bbs-pop-passo { border-top: 1px solid var(--rv-linha); margin-top: 3px; padding-top: 6px; cursor: default; }
+.bbs-pop-passo input { width: 4em; height: 22px; padding: 0 4px; border: 1px solid var(--rv-linha-forte); border-radius: 3px; background: var(--rv-tela); color: var(--rv-painel-tx); font-size: 12px; }
+.bbs-pop-passo input:focus-visible { outline: 2px solid var(--rv-foco); outline-offset: 0; }
+.bbs-pop-nota { margin-top: 5px; color: var(--rv-tx-fraco); line-height: 1.35; }
+@media (max-width: 640px) { .bbs-tit { display: none; } }
+/* com a Precisão na barra, o botão "Snap" antigo da mesma barra (o da TRENA, que mora também em
+   Anotar › Medir › Snap) sai dela: dois "Snap" lado a lado confundiam qual era o do desenho */
+.rv-vistabar:has(.bbs) [data-rv-vb="snap"] { display: none; }
+/* O SELO DA DISCIPLINA (canto de baixo da vista, js/bimshell.js) apaga enquanto uma ferramenta de CRIAR
+   está armada (a barra de opções mostra o comando): ele fica por cima do canto do desenho, onde a parede,
+   a viga ou a cota caem. Sem ferramenta ele volta — é o que sai no print da tela. (A cota 2D já apaga
+   pelo css/bimcotas.css; esta regra vale para todo comando.) */
+.bim-revit:has(.bbo[data-bbo-sub]:not([data-bbo-sub=""])) .rv-disc-selo { opacity: 0; transition: opacity .15s ease; }

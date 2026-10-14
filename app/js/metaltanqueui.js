@@ -346,6 +346,7 @@
       var emp = {}, logo = null; try { if (global.Empresa && Empresa.dados) emp = Empresa.dados() || {}; if (global.Empresa && Empresa.logo) logo = Empresa.logo(); } catch (e) {}
       var o = {}; try { o = (global.Store && global.Auth && global.Gestao && global.Gestao._bimSel ? global.Store.obter(global.Auth.empresaId(), "obras", global.Gestao._bimSel) : null) || {}; } catch (e2) {}
       var x = Mm.gerar(r, { obra: { nome: o.nome, endereco: o.endereco, cidade: o.cidade, cliente: o.cliente }, empresa: { nome: emp.nome || emp.razaoSocial, cnpj: emp.cnpj, logoDataUrl: logo }, responsavel: { nome: emp.responsavel, titulo: emp.titulo, crea: emp.crea } });
+      if (x && x.ok && global.UnidadesMemorial) x.html = UnidadesMemorial.preparar(x.html);   /* aba SI | Técnica (kgf / tf) */
       this.ultimoMemorial = x && x.ok ? { titulo: x.titulo, secoes: x.secoes.length, bytes: x.html.length, avisos: x.avisos.length } : null;
       if (!x || !x.ok) { toast("Memorial: " + ((x && x.motivo) || "falhou"), "erro"); return x; }
       var w = null; try { w = global.open("", "_blank"); } catch (e3) { w = null; }
@@ -419,10 +420,11 @@
         var P = Pl(), r = api.raio(e.clientX, e.clientY); if (!r || !P) return null;
         var y = self.cota(), pl = { o: [0, y, 0], u: [1, 0, 0], v: [0, 0, -1], n: [0, 1, 0], horizontal: true, y: y };
         var q = P.pontoNoPlano(r, pl); if (!q) return null;
-        var sn = null;
-        if (PR()) {
+        var sn = null, Bo = global.BimBarraOpcoes, liga = function (t) { return !Bo || !Bo.snapLigado || Bo.snapLigado(t); };
+        /* PRECISÃO ÚNICA (14/10/2026, barra de baixo): o Snap geral e cada tipo desligado lá valem no posicionar do tanque */
+        if (PR() && liga(null)) {
           var p2 = P.pontoNoPlano(api.raio(e.clientX + 14, e.clientY), pl), tol = p2 ? Math.max(0.005, Math.min(2, Math.sqrt(Math.pow(p2[0] - q[0], 2) + Math.pow(p2[2] - q[2], 2)))) : 0.2;
-          sn = PR().snap({ x: q[0], z: q[2] }, geoPr(), { tol: tol, tipos: { fim: true, intersecao: true, meio: true, centro: true, perpendicular: false, extensao: false, proximo: false, grade: false } });
+          sn = PR().snap({ x: q[0], z: q[2] }, geoPr(), { tol: tol, tipos: { fim: liga("fim"), intersecao: liga("intersecao"), meio: liga("meio"), centro: liga("centro"), perpendicular: false, extensao: false, proximo: false, grade: false } });
           if (sn) q = [sn.p.x, y, sn.p.z];
         }
         return { p: q, sn: sn };

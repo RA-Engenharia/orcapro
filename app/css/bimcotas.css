@@ -34,3 +34,11 @@
 .bct-op { display: block; padding: 8px 10px; border: 1px solid var(--linha); border-radius: var(--raio-sm); background: var(--card-bg); cursor: pointer; line-height: 1.4; }
 .bct-op:hover, .bct-op:focus-within { border-color: var(--aco); }
 .bct-op input { accent-color: var(--aco); }
+
+/* COTAS (14/10/2026): com a ferramenta de anotação armada numa vista 2D, o selo da disciplina
+   (o canto de baixo da vista, por cima do desenho) apaga — ele cobria o título da vista e a cota
+   que caísse ali. Sem ferramenta ele volta (é o que sai no print da tela). */
+.rv-palco:has(.d2-vista-tela[data-a7-ferr]) .rv-disc-selo { opacity: 0; transition: opacity .15s ease; }
+/* ... e as cotas AUTOMÁTICAS da vista (as do desenho, cinza) recuam enquanto a ferramenta está armada: elas
+   ocupam a mesma faixa por fora do desenho onde a cota do projeto vai e embaralhavam a leitura. */
+.d2-vista-tela[data-a7-ferr] .d2-cota { opacity: .22; transition: opacity .15s ease; }

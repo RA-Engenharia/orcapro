@@ -41,6 +41,8 @@
     escala: ["sel", "baseE"], juntas: ["canto"], "alternar-uniao": ["pecaU1", "pecaU2"], "unir-geo": ["pecaU1", "pecaU2"], "desunir-geo": ["pecaU1", "pecaU2"],
     pintar: ["face"], "dividir-face": ["face"], "remover-pintura": ["face"]
   };
+  /* os passos que têm PONTO BASE (o ortogonal/incrementos da barra de baixo valem neles) */
+  var PASSO_TRACO = { destino: 1, eixo2: 1, p2: 1, ref: 1, final: 1 };
   /* P4: os passos que pedem a PEÇA ou a LINHA clicada (não só um ponto do plano) */
   var P4 = { linhaRef: 1, linhaAlvo: 1, alvoD: 1, pecaA: 1, pecaB: 1, alvoV: 1, pontoDiv: 1, pecaF: 1, fonte: 1, pS1: 1, pS2: 1, alvoT: 1, baseE: 1, canto: 1, pecaU1: 1, pecaU2: 1, face: 1 };
   var DICA = {
@@ -76,8 +78,45 @@
                  /* P4: as opções da barra (deslocamento, junta, escala, pintura) e o que a ferramenta já pegou */
                  p4: { desl: 0.15, deslCopia: true, juntaModo: "topo", fator: 2, material: "Pintura acrílica", codigo: "", barrado: 1.5, ref: null, a: null, fonte: null, pts: [] } };
       Pr().TIPOS.forEach(function (t) { pr.tipos[t] = true; });
-      try { var g0 = JSON.parse(global.localStorage.getItem(CHAVE) || "null"); if (g0) { if (g0.tipos) Object.keys(g0.tipos).forEach(function (k) { if (k in pr.tipos) pr.tipos[k] = !!g0.tipos[k]; }); if (g0.grade >= 0) pr.grade = +g0.grade; if (g0.snapOn === false) pr.snapOn = false; } } catch (eL) {}
-      function guardarPref() { try { global.localStorage.setItem(CHAVE, JSON.stringify({ tipos: pr.tipos, grade: pr.grade, snapOn: pr.snapOn })); } catch (eG) {} }
+      /* A PRECISÃO É UMA SÓ (14/10/2026): snaps ligados, quais tipos, grade e passo vêm do estado
+         único do js/bimbarraopcoes.js (a barra de baixo, js/bimbarrasnaps.js, mostra e muda). Sem ele
+         (página sem o modelador), vale a preferência antiga deste aparelho, como antes. */
+      function BBO() { var b = global.BimBarraOpcoes; return b && typeof b.precisao === "function" ? b : null; }
+      var sairUnico = null;   /* ⚠ antes do 1º lerUnico(): o `var` mais abaixo zeraria a inscrição já feita */
+      /* ⚠ LIDO A CADA PONTO, não só na montagem: o visualizador monta ANTES do js/bimbarraopcoes.js
+         terminar de carregar (os dois vêm no mesmo grupo) — lendo uma vez só, o 3D ficava com a
+         preferência antiga e o tipo desligado na barra de baixo continuava pegando (a e2e pegou) */
+      function lerUnico() {
+        var b = BBO(); if (!b) return false;
+        var p = b.precisao(); pr.snapOn = !!p.snap;
+        Pr().TIPOS.forEach(function (t) { pr.tipos[t] = p.tipos[t] !== false; });
+        pr.tipos.grade = !!p.grade && p.tipos.grade !== false; pr.grade = +p.passo;
+        ouvirUnico();
+        return true;
+      }
+      if (!lerUnico()) { try { var g0 = JSON.parse(global.localStorage.getItem(CHAVE) || "null"); if (g0) { if (g0.tipos) Object.keys(g0.tipos).forEach(function (k) { if (k in pr.tipos) pr.tipos[k] = !!g0.tipos[k]; }); if (g0.grade >= 0) pr.grade = +g0.grade; if (g0.snapOn === false) pr.snapOn = false; } } catch (eL) {} }
+      function guardarPref() {
+        var b = BBO();
+        if (b) {
+          var pat = { snap: pr.snapOn, tipos: pr.tipos, grade: !!pr.tipos.grade && pr.grade > 0 };
+          if (pr.grade > 0) pat.passo = pr.grade;   /* passo 0 = grade desligada (o passo de antes fica) */
+          b.precisaoMudar(pat); lerUnico(); return;
+        }
+        try { global.localStorage.setItem(CHAVE, JSON.stringify({ tipos: pr.tipos, grade: pr.grade, snapOn: pr.snapOn })); } catch (eG) {}
+      }
+      /* a barra de baixo (ou F3/F8, ou outra tela) mudou a precisão: o desenho acompanha na hora.
+         Visualizador desmontado (S.alive false) sai da lista — não fica ouvinte de tela morta. */
+      function ouvirUnico() {
+        if (sairUnico || !BBO() || !BBO().assinar) return;
+        try {
+          sairUnico = BBO().assinar(function () {
+            if (S.alive === false) { sairUnico(); return; }
+            lerUnico(); pr.geo = null;
+            if (painel.style.display === "block") pintarPainel();
+            if (!pr.snapOn) { try { api.marcaEsconder(); limparGrupo(grp); } catch (eM) {} }
+          });
+        } catch (eA) { sairUnico = null; }
+      }
       function ativo() { return previa() && edit.on && S.alive !== false; }
       function host() { return api.host(); }
       function cam() { return api.camera(); }
@@ -134,7 +173,10 @@
         /* só a peça cuja ALÇA está sendo arrastada sai do snap (senão a ponta agarra nela mesma e não anda);
            no copiar/mover/girar o ponto base costuma ser a ponta da própria peça selecionada */
         var exc = (pr.arrasto ? [pr.arrasto.id] : []).join("|");
-        if (!pr.geo || pr.geoExc !== exc) { pr.geo = Pr().geometria(estado(), { excluir: exc ? exc.split("|") : [], avaliar: api.avaliar }); pr.geoExc = exc; }
+        /* os EIXOS da grade entram no encaixe de quem os pede (fundação, pilar — js/bimbarraopcoes.js querEixos):
+           a sapata clicada perto do cruzamento 1×A nasce nele (14/10/2026) */
+        var eix = !pr.arrasto && !!(BBO() && BBO().querEixos && BBO().querEixos(edit.sub)), chave = exc + "|" + (eix ? "E" : "");
+        if (!pr.geo || pr.geoExc !== chave) { pr.geo = Pr().geometria(estado(), { excluir: exc ? exc.split("|") : [], avaliar: api.avaliar, eixos: eix }); pr.geoExc = chave; }
         return pr.geo;
       }
       /* tolerância do snap em METROS: o raio em pixels (14 no mouse, 30 no dedo) medido no plano de trabalho */
@@ -151,6 +193,7 @@
       }
       function pontoSnap(e, hit) {
         var pl = api.planoPonto(e.clientX, e.clientY); if (!pl) return null;
+        lerUnico();   /* a precisão única (barra de baixo) do momento */
         var cur = { x: pl.x, z: pl.z }, ref = baseAtual(), tol = tolM(e), sn = null, malha = false;
         if (pr.snapOn) sn = Pr().snap(cur, geometria(), { tol: tol, tipos: pr.tipos, ref: ref, grade: pr.tipos.grade ? pr.grade : 0 });
         /* o canto do IFC importado (malha) entra quando aqui não há PONTO notável:
@@ -161,6 +204,13 @@
         }
         var p = sn ? { x: sn.p.x, z: sn.p.z } : cur;
         if (e.shiftKey && ref) { p = Pr().orto(ref, p); if (sn && !malha) sn = { p: p, tipo: sn.tipo === "grade" ? "grade" : null }; }
+        /* A PRECISÃO ÚNICA (14/10/2026): o 2º ponto das ferramentas daqui (destino do mover/copiar/
+           matriz, eixo do espelho, direção do girar, 2º ponto da cota) anda no ORTOGONAL e nos
+           incrementos da barra de baixo — o mesmo da parede. Ponto notável ganha da trava. */
+        else if (ref && ferramenta() && PASSO_TRACO[pr.passo] && BBO() && BBO().travar) {
+          var aj = BBO().travar(ref, (!sn || sn.tipo === "grade") ? cur : p, { tipoSnap: sn ? sn.tipo : null });
+          if (aj.travado) { p = aj.p; sn = sn && sn.tipo === "grade" ? { p: p, tipo: "grade" } : null; malha = false; }
+        }
         return { p: p, sn: sn, malha: malha, tol: tol };
       }
       function mostrarMarca(sp) {
@@ -281,6 +331,7 @@
 
       /* ------------------------------------------- painel de snaps */
       function pintarPainel() {
+        lerUnico();
         painel.innerHTML = '<div class="bp-snaps-tit"><b>Snaps do editor</b><button type="button" class="btn sm" data-bps="fechar" aria-label="Fechar">Fechar</button></div>' +
           '<label class="bp-snaps-todos"><input type="checkbox" data-bps="on"' + (pr.snapOn ? " checked" : "") + '> Snaps ligados <span class="bp-tecla">F3</span></label>' +
           Pr().TIPOS.map(function (t) {
@@ -299,7 +350,7 @@
       painel.addEventListener("click", function (e) { var b = e.target.closest ? e.target.closest('[data-bps="fechar"]') : null; if (b) painel.style.display = "none"; });
       painel.addEventListener("keydown", function (e) { e.stopPropagation(); if (e.key === "Escape") painel.style.display = "none"; });
       function alternarSnaps() {
-        pr.snapOn = !pr.snapOn; guardarPref();
+        lerUnico(); pr.snapOn = !pr.snapOn; guardarPref();
         if (painel.style.display === "block") pintarPainel();
         if (!pr.snapOn) { api.marcaEsconder(); limparGrupo(grp); }
         hint(pr.snapOn ? "Snaps ligados (F3 desliga)." : "Snaps desligados (F3 liga): o ponto fica onde o cursor está.");
@@ -706,7 +757,9 @@
         if (!ativo()) return;
         var alvo = e.target || {};
         if (digitandoFora(alvo) || caixa.contains(alvo)) return;
-        if (e.key === "F3") { e.preventDefault(); e.stopPropagation(); alternarSnaps(); return; }
+        /* F3 com a barra de baixo na tela: quem atende é ela (js/bimbarrasnaps.js — F3 snap, F8 ortogonal),
+           senão o F3 alternava duas vezes (aqui e lá) e ficava como estava */
+        if (e.key === "F3") { if (global.BimBarraSnaps && global.BimBarraSnaps.atendeTeclas && global.BimBarraSnaps.atendeTeclas()) return; e.preventDefault(); e.stopPropagation(); alternarSnaps(); return; }
         /* Esc, um passo por vez: 1) desfaz o ponto já clicado; 2) sai da
            ferramenta (o editor continua aberto); 3) limpa a seleção; 4) só então o Esc de
            sempre (fecha o editor). Parede/viga com o traço aberto: o Esc de sempre encerra o traço. */
@@ -896,6 +949,10 @@
         /* para a fita, o e2e e o suporte */
         api: {
           painelSnaps: function (on) {
+            /* com a barra de baixo (js/bimbarrasnaps.js) os snaps têm UM lugar só: o menu dela.
+               A fita (Modificar › Snaps) e quem chamava este painel abrem aquele menu. */
+            var BS = global.BimBarraSnaps;
+            if (BS && BS.garantir && BS.garantir()) { painel.style.display = "none"; return BS.abrirMenu("snap", on == null ? undefined : !!on); }
             pendurar();
             var abrir = on == null ? painel.style.display !== "block" : !!on;
             if (abrir) pintarPainel();
@@ -903,6 +960,7 @@
             return abrir;
           },
           snaps: function (cfg) {
+            lerUnico();
             if (cfg) {
               if (cfg.on != null) pr.snapOn = !!cfg.on;
               if (cfg.tipos) Object.keys(cfg.tipos).forEach(function (k) { if (k in pr.tipos) pr.tipos[k] = !!cfg.tipos[k]; });

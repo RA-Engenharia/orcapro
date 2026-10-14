@@ -42,6 +42,7 @@
   function modoDe(tipo) { var M = global.MetalProntas, T = M && M.TIPOS[tipo]; if (!T) return "ponto"; if (tipo === "mezanino") return "retangulo"; return T.modo || (T.cliques === 2 ? "retangulo" : "ponto"); }
   function temCalculo(tipo, par) { var M = global.MetalProntas, T = M && M.TIPOS[tipo]; return !!(global.AcoAcessos && global.MetalAcessos && T && (T.calcula || (tipo === "escada" && par && par.norma))); }
   var CAMPOS_EXTRA = {};
+  var GRANDEZA = { qInformado: "superficie", usoGuarda: "linear", usoPiso: "superficie" };   /* campos em kN… com seletor de unidade e listas da norma com a equivalência em kgf (js/unidadesui.js); o valor guardado continua em kN */
 
   /* ------------------------------------------------------------ fita */
   var COMANDOS = [
@@ -202,10 +203,10 @@
       cs.forEach(function (c) {
         var id = c[0], v = par[id], ck = c[2] === "check";
         h += '<label' + (ck ? ' class="mpr-ck"' : "") + '>' + (ck ? "" : "<span>" + esc(c[1]) + "</span>");
-        if (c[2] === "sel" || c[2] === "par") { var ops = c[2] === "par" ? parafusos() : c[3]; h += '<select data-mpr-c="' + id + '">' + ops.map(function (op) { return '<option value="' + esc(op[0]) + '"' + (String(op[0]) === String(v) ? " selected" : "") + ">" + esc(op[1]) + "</option>"; }).join("") + "</select>"; }
+        if (c[2] === "sel" || c[2] === "par") { var ops = c[2] === "par" ? parafusos() : c[3]; h += '<select data-mpr-c="' + id + '"' + (GRANDEZA[id] ? ' data-grandeza="' + GRANDEZA[id] + '"' : "") + '>' + ops.map(function (op) { return '<option value="' + esc(op[0]) + '"' + (String(op[0]) === String(v) ? " selected" : "") + ">" + esc(op[1]) + "</option>"; }).join("") + "</select>"; }
         else if (c[2] === "cat") h += '<input data-mpr-c="' + id + '" list="mpr-dl-' + id + '" value="' + esc(v) + '" autocomplete="off" spellcheck="false"><datalist id="mpr-dl-' + id + '">' + datalist(c[3]).map(function (n) { return '<option value="' + esc(n) + '">'; }).join("") + "</datalist>";
         else if (ck) h += '<input type="checkbox" data-mpr-c="' + id + '"' + (v ? " checked" : "") + "><span>" + esc(c[1]) + "</span>";
-        else h += '<input data-mpr-c="' + id + '" value="' + esc(MM[id] ? br(num(v, 0) * 1000, 2) : (c[2] === "txt" ? v : br(v, c[2] === "int" ? 0 : 3))) + '"' + (c[2] === "txt" ? "" : ' inputmode="decimal"') + ">";
+        else h += '<input data-mpr-c="' + id + '"' + (GRANDEZA[id] ? ' data-grandeza="' + GRANDEZA[id] + '"' : "") + ' value="' + esc(MM[id] ? br(num(v, 0) * 1000, 2) : (c[2] === "txt" ? v : br(v, c[2] === "int" ? 0 : 3))) + '"' + (c[2] === "txt" ? "" : ' inputmode="decimal"') + ">";
         h += "</label>";
       });
       if (tipo !== "rolamento") {
@@ -240,7 +241,7 @@
         var el = raiz.querySelector('[data-mpr-c="' + c[0] + '"]'); if (!el) return;
         if (c[2] === "check") p[c[0]] = !!el.checked;
         else if (c[2] === "sel" || c[2] === "par" || c[2] === "cat" || c[2] === "txt") p[c[0]] = c[0] === "pontos" ? num(el.value, 4) : String(el.value).trim();
-        else { var v = num(el.value, NaN); if (isFinite(v)) p[c[0]] = MM[c[0]] ? v / 1000 : v; }
+        else { var v = num(global.UnidadesUI ? UnidadesUI.texto(el) : el.value, NaN); if (isFinite(v)) p[c[0]] = MM[c[0]] ? v / 1000 : v; }
       });
       return p;
     },
@@ -430,12 +431,21 @@
         var P = Pl(), r = api.raio(e.clientX, e.clientY); if (!r || !P) return null;
         var y = self.cota(), pl = { o: [0, y, 0], u: [1, 0, 0], v: [0, 0, -1], n: [0, 1, 0], horizontal: true, y: y };
         var q = P.pontoNoPlano(r, pl); if (!q) return null;
-        var sn = null;
-        if (PR()) {
+        var sn = null, Bo = global.BimBarraOpcoes, liga = function (t) { return !Bo || !Bo.snapLigado || Bo.snapLigado(t); };
+        /* PRECISÃO ÚNICA (14/10/2026, barra de baixo — js/bimbarrasnaps.js): o Snap geral e cada tipo
+           desligado lá valem aqui (a peça pronta só usa os pontos notáveis e a perpendicular) */
+        if (PR() && liga(null)) {
           var p2 = P.pontoNoPlano(api.raio(e.clientX + 14, e.clientY), pl), tol = p2 ? Math.max(0.005, Math.min(2, Math.sqrt(Math.pow(p2[0] - q[0], 2) + Math.pow(p2[2] - q[2], 2)))) : 0.2;
           var s0 = self._pos && self._pos.pts.length ? self._pos.pts[0] : null;
-          sn = PR().snap({ x: q[0], z: q[2] }, geoPr(), { tol: tol, tipos: { fim: true, intersecao: true, meio: true, centro: true, perpendicular: !!s0, extensao: false, proximo: false, grade: false }, ref: s0 ? { x: s0[0], z: s0[2] } : null });
+          sn = PR().snap({ x: q[0], z: q[2] }, geoPr(), { tol: tol, tipos: { fim: liga("fim"), intersecao: liga("intersecao"), meio: liga("meio"), centro: liga("centro"), perpendicular: !!s0 && liga("perpendicular"), extensao: false, proximo: false, grade: false }, ref: s0 ? { x: s0[0], z: s0[2] } : null });
           if (sn) q = [sn.p.x, y, sn.p.z];
+        }
+        /* o próximo ponto da peça em LINHA ou POLILINHA (guarda-corpo, escada, passarela) anda no Orto;
+           o 2º canto do retângulo (mezanino) é a diagonal: fica livre */
+        var sp = self._pos, md = sp ? modoDe(sp.tipo) : null;
+        if (sp && sp.pts.length && (md === "polilinha" || md === "linha") && Bo && Bo.travar) {
+          var b0 = sp.pts[sp.pts.length - 1], aj = Bo.travar({ x: b0[0], z: b0[2] }, { x: q[0], z: q[2] }, { shift: !!e.shiftKey, tipoSnap: sn ? sn.tipo : null });
+          if (aj.travado) { q = [aj.p.x, y, aj.p.z]; sn = null; }
         }
         return { p: q, sn: sn };
       }
@@ -472,8 +482,12 @@
         clique: function (e, hit, pForcado) {
           if (!ativo()) return false;
           var p;
-          if (pForcado) p = [pForcado.x, self.cota(), pForcado.z];
-          else { var r = resolver(e); if (!r) { api.hint("Não achei o ponto no plano — gire a vista."); return true; } p = r.p; }
+          if (pForcado) {
+            p = [pForcado.x, self.cota(), pForcado.z];
+            /* da planta: o mesmo Orto da barra de baixo no próximo ponto da linha/polilinha */
+            var sF = self._pos, mF = sF ? modoDe(sF.tipo) : null, BoF = global.BimBarraOpcoes;
+            if (sF && sF.pts.length && (mF === "polilinha" || mF === "linha") && BoF && BoF.travar) { var bF = sF.pts[sF.pts.length - 1], aF = BoF.travar({ x: bF[0], z: bF[2] }, { x: p[0], z: p[2] }, { shift: !!(e && e.shiftKey) }); if (aF.travado) p = [aF.p.x, p[1], aF.p.z]; }
+          } else { var r = resolver(e); if (!r) { api.hint("Não achei o ponto no plano — gire a vista."); return true; } p = r.p; }
           limpar(); api.marcaEsconder();
           self.ponto(p);
           return true;

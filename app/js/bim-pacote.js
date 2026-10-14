@@ -9332,6 +9332,7 @@ if (!edit.on || edit.sub !== 'familia' || ev.key !== ' ') return;
 var t2 = ev.target || {}; if (/^(INPUT|TEXTAREA|SELECT)$/.test(t2.tagName || '')) return;
 edit.famRot = (edit.famRot + Math.PI / 2) % (2 * Math.PI); ev.preventDefault();
 S._hint('Girada para ' + Math.round(edit.famRot * 180 / Math.PI) + '°.');
+try { if (window.BimShell && BimShell.status) BimShell.status('Giro ' + Math.round(edit.famRot * 180 / Math.PI) + '° — Espaço gira 90°.'); } catch (eGS) {}
 });
 var VOL_SUBS = { extrusao: 1, revolucao: 1, varredura: 1, unir: 1, subtrair: 1, empurrar: 1, volprops: 1 };
 edit.vol = { pts: [], linha: null, marcas: [], eixo: null, dirPerfil: null, alvo: null, face: null, dist: 0,

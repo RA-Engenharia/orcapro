@@ -83,7 +83,7 @@
   }
   function projVista(id) {
     var P = P2(), d = P && P.def ? P.def(id) : null; if (!d) return null;
-    var c = d.corte; if (c && fin(+c.ax) && fin(+c.bx)) return { tipo: "corte", ax: +c.ax, az: +c.az, bx: +c.bx, bz: +c.bz, inv: !!c.inv };
+    var c = d.corte; if (c && fin(+c.ax) && fin(+c.bx)) return { tipo: "corte", ax: +c.ax, az: +c.az, bx: +c.bx, bz: +c.bz, inv: !!c.inv, prof: +c.prof > 0 ? +c.prof : 0 };
     if (d.tipo === "planta" || d.nivel || /^d2p-/.test(id)) return { tipo: "planta" };
     return null;
   }
@@ -327,6 +327,8 @@
       });
       /* a projeção do corte para a cota 2D (referência 3D dentro da cota do corte) */
       try { if (A7() && A7().fonteVistas) A7().fonteVistas(projVista); } catch (eF) {}
+      /* o VÃO das portas e janelas (ombreiras, peitoril, verga): a abertura vem da família (14/10/2026) */
+      try { if (BC().fonteFamilias) BC().fonteFamilias(function (f) { var b = B(); return b && b.familiaAvaliar ? b.familiaAvaliar(f.famId, f.tipoId, f.inst) : null; }); } catch (eFa) {}
       this._ganchos2d();
       this._dicas();
       if (global.BimBarraOpcoes && global.BimBarraOpcoes.declarar) global.BimBarraOpcoes.declarar(SUB, { rotulo: "Cota" });
@@ -424,9 +426,12 @@
          > ponto do modelo (IFC) > o plano de trabalho (vazio = posicionar a linha) */
       function resolver(e) {
         var C = BC(), est = e3(), cur = { x: e.clientX, y: e.clientY }, tol = e.pointerType === "touch" ? 30 : 14, c = cfg(), sn = null;
-        if (c.encaixe !== false) sn = C.snap(cur, geo(), proj, { tol: tol });
+        /* PRECISÃO ÚNICA (14/10/2026, barra de baixo — js/bimbarrasnaps.js): o Snap geral e cada tipo
+           desligado lá valem aqui também (o "Encaixe ligado" de Propriedades continua por cima) */
+        var enc = c.encaixe !== false && snapUnico(null);
+        if (enc) sn = C.snap(cur, geoTipos(), proj, { tol: tol });
         if (sn && sn.ref && sn.ref.face) sn.ref = C.refDaFace(est, sn.ref.el, sn.p);
-        if (c.encaixe !== false && c.pref !== "eixo" && (!sn || sn.tipo === "proximo")) {
+        if (enc && snapUnico("proximo") && c.pref !== "eixo" && (!sn || sn.tipo === "proximo")) {
           var hit = api.raycast ? api.raycast(e.clientX, e.clientY) : null;
           if (hit && hit.point) {
             var ud = (hit.object && hit.object.userData) || {}, P = [hit.point.x, hit.point.y, hit.point.z];
@@ -443,7 +448,22 @@
           return { p: sn.p, ref: rf, tipo: sn.tipo, rotulo: sn.rotulo || C.ROT_REF[rf.r] || "ponto", id: rf.el != null ? rf.el : null };
         }
         var pp = api.planoPonto ? api.planoPonto(e.clientX, e.clientY) : null; if (!pp) return null;
+        /* PRECISÃO ÚNICA: o 2º ponto LIVRE da cota (fora de peça) anda no Orto da barra de baixo —
+           horizontal/vertical a partir do 1º (Shift inverte). Ponto de peça é associativo: não se mexe. */
+        if ((st.modo === "alinhada" || st.modo === "coordenada") && st.refs.length === 1) {
+          var p0 = pontoDe(st.refs[0]), Bo = global.BimBarraOpcoes;
+          if (p0 && Bo && Bo.travar) { var aj = Bo.travar({ x: p0[0], z: p0[2] }, { x: pp.x, z: pp.z }, { shift: !!e.shiftKey }); if (aj.travado) { pp = { x: aj.p.x, y: pp.y, z: aj.p.z }; } }
+        }
         return { p: [pp.x, pp.y, pp.z], ref: { r: "p", x: r6(pp.x), y: r6(pp.y), z: r6(pp.z) }, tipo: null, vazio: true, rotulo: "livre" };
+      }
+      /* os pontos de encaixe sem os TIPOS desligados na barra de baixo (fim, meio, centro, interseção) e
+         sem as linhas quando "sobre a peça" está desligado */
+      /* o Snap da barra de baixo — geral (t null) ou um tipo */
+      function snapUnico(t) { try { var Bo = global.BimBarraOpcoes; return Bo && Bo.snapLigado ? Bo.snapLigado(t) : true; } catch (e) { return true; } }
+      function geoTipos() {
+        var g = geo(), Bo = global.BimBarraOpcoes; if (!Bo || !Bo.snapLigado) return g;
+        var pts = (g.pontos || []).filter(function (q) { return !q.tipo || !(q.tipo in { fim: 1, meio: 1, centro: 1, intersecao: 1, proximo: 1 }) || Bo.snapLigado(q.tipo); });
+        return { pontos: pts, linhas: Bo.snapLigado("proximo") ? g.linhas : [] };
       }
       function pontoDe(ref) { var x = BC().resolver(e3(), ref); return x.ok ? x.p : (x.p || null); }
 

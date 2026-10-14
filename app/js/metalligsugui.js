@@ -321,6 +321,7 @@
         (sec ? sec.html : "<p>Nenhuma ligação aplicada pela ligação inteligente neste modelo.</p>" + (S0 && S0.escopoHtml ? S0.escopoHtml() : "")) + "</body></html>";
     },
     abrirHtml: function (html, nome) {
+      if (global.UnidadesMemorial) html = UnidadesMemorial.preparar(html);   /* aba SI | Técnica (kgf / tf) */
       var w = null; try { w = global.open("", "_blank"); } catch (e) { w = null; }
       if (w && w.document) { w.document.open(); w.document.write(html); w.document.close(); toast("Memorial aberto em outra aba (Ctrl+P para PDF).", "ok", 6000); return true; }
       var M = MU(); if (M && M.baixar) { M.baixar((M.arqBase ? M.arqBase() : "obra") + "-" + nome + ".html", html, "text/html"); toast("Memorial baixado (.html).", "ok", 6000); return true; }
