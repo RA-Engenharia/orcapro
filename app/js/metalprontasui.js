@@ -40,6 +40,14 @@
   /* ACESSOS (js/metalacessos.js, 14/10/2026): o tipo que tem regras de norma e dimensionamento mostra a conformidade */
   var COM_CALCULO = '<p class="muted mpr-nota" data-mpr="com-calculo">Verificação de <b>norma</b> (NR-12, NBR 9050, NPT/IT de saída de emergência, NBR 14718, NBR 6120) e <b>dimensionamento simplificado</b> das peças principais (NBR 8800) — o que não foi verificado aparece. Memorial completo em <b>Acessos › Verificar acesso</b>.</p>';
   function modoDe(tipo) { var M = global.MetalProntas, T = M && M.TIPOS[tipo]; if (!T) return "ponto"; if (tipo === "mezanino") return "retangulo"; return T.modo || (T.cliques === 2 ? "retangulo" : "ponto"); }
+  /* CONTORNO E ESCADA POR LINHA (frente S6, 14/10/2026): o modo da SESSÃO de posicionar manda (o diálogo pode oferecer mais de
+     um: piso por retângulo ou por contorno, guarda-corpo por polilinha ou por retângulo); modos de fora (a escada puxada por
+     linha, js/metalescadalinhaui.js) registram { ponto, previa, dica, enter, voltar, cancelar } */
+  var MODOS = {};
+  function modoPos(s) { return s ? (s.modo || modoDe(s.tipo)) : null; }
+  var ROT_MODO = { retangulo: "Posicionar (2 cliques)", linha: "Posicionar (começo e fim)", polilinha: "Posicionar (cliques; Enter fecha)", contorno: "Contorno (cliques; Enter fecha)", ponto: "Posicionar no modelo" };
+  /* a fixação "auto" da escada (e o resto que depende do modelo) resolvida antes de gerar */
+  function resolver(tipo, par, fase) { try { var R = global.MetalEscadaLinhaUI; if (R && R.resolverPar) return R.resolverPar(tipo, par, fase); } catch (e) {} return par; }
   function temCalculo(tipo, par) { var M = global.MetalProntas, T = M && M.TIPOS[tipo]; return !!(global.AcoAcessos && global.MetalAcessos && T && (T.calcula || (tipo === "escada" && par && par.norma))); }
   var CAMPOS_EXTRA = {};
   var GRANDEZA = { qInformado: "superficie", usoGuarda: "linear", usoPiso: "superficie" };   /* campos em kN… com seletor de unidade e listas da norma com a equivalência em kgf (js/unidadesui.js); o valor guardado continua em kN */
@@ -76,6 +84,12 @@
       ["lanceMax", "Altura máx. por lance — com patamares (m; 0 = a da norma)", "num"], ["patamarComp", "Comprimento do patamar (m; 0 = o da norma)", "num"], ["patamarTopo", "Patamar superior — reta (m; 0 = sem)", "num"], ["apoioBase", "Chapa de apoio no pé das longarinas", "check"],
       ["rodape", "Rodapé (NR-12: 0,20 m)", "check"], ["paredeLados", "Lados encostados em parede (0, 1 ou 2)", "int"],
       ["usoGuarda", "Força no guarda-corpo (NBR 6120, Tabela 12)", "sel", USO_GUARDA], ["usoPiso", "Sobrecarga (NBR 6120, Tabela 10)", "sel", USO_PISO],
+      /* FIXAÇÃO CONFIGURADA (frente S6, 14/10/2026 — js/metalescadalinha.js): cada ponta dimensionada com os esforços da escada */
+      ["fixPe", "Fixação no pé", "sel", FIXACOES], ["fixTopo", "Fixação no topo", "sel", FIXACOES],
+      ["concPeEsp", "Concreto no pé: espessura (m; 0 = do modelo)", "num"], ["concPeFck", "Concreto no pé: fck (MPa; 0 = do modelo)", "num"], ["concTopoEsp", "Concreto no topo: espessura (m; 0 = do modelo)", "num"],
+      ["concPeBorda", "Concreto no pé: distância até a borda (m; 0 = do contorno da laje desenhada)", "num"], ["concTopoBorda", "Concreto no topo: distância até a borda (m; 0 = do contorno)", "num"],
+      /* ESCADA POR LINHA (frente S6): o 1º clique, a altura lida do modelo e a abertura no piso de chegada */
+      ["sentidoLinha", "Por linha: o 1º clique é", "sel", [["desce", "O TOPO (borda do piso de cima) — a escada desce"], ["sobe", "O PÉ — a escada sobe"]]], ["alturaDoModelo", "Por linha: ler a altura do piso/laje de chegada (senão o desnível acima)", "check"], ["abrirPiso", "Por linha: abrir o piso/laje de chegada (com guarda-corpo)", "check"],
       ["virar", "Virada (L e U)", "sel", [["esquerda", "Para a esquerda"], ["direita", "Para a direita"]]], ["vao", "Poço entre os lances — U (m)", "num"],
       ["longarinaTipo", "Longarina", "sel", [["perfil", "Perfil U"], ["chapa", "Chapa"]]], ["longarina", "Perfil da longarina", "cat", ["C", "GERDAU-U", "UE"]],
       ["hLongarina", "Altura da longarina em chapa (m)", "num"], ["tLongarina", "Espessura da longarina em chapa (mm)", "mm"],
@@ -114,6 +128,7 @@
       ["entreFurosX", "Entre-furos no comprimento (m)", "num"], ["entreFurosZ", "Entre-furos na largura (m)", "num"], ["parafuso", "Parafuso do equipamento", "par"], giro];
     return [];
   }
+  var FIXACOES = [["", "Sem fixação configurada"], ["auto", "Automática pelo que está embaixo/em cima"], ["ancorada", "ANCORADA — placa de base + chumbadores (concreto)"], ["parafusada", "PARAFUSADA — chapa + parafusos (aço)"], ["soldada", "SOLDADA — no aço onde toca"], ["apoiada", "APOIADA — apoio simples (no topo: pés de apoio)"]];
   var USO_GUARDA = [["industrial", "2,0 kN/m — atividade industrial (padrão, NBR 6120 Tabela 12)"], ["manutencao", "0,4 kN/m — SÓ passarela declarada de inspeção e manutenção"], ["sem-publico", "1,0 kN/m — uso NÃO industrial sem acesso público"], ["publico", "1,0 kN/m — uso NÃO industrial com acesso público"], ["fluxo-paralelo", "2,0 kN/m — fluxo de público, paralela"], ["fluxo-perpendicular", "3,0 kN/m — fluxo de público, perpendicular"], ["emergencia", "1,0 kN/m a 1,1 m — escada de emergência em edifícios (NBR 6120, Tabela 12)"]];
   var USO_PISO = [["escada-sem-publico", "2,5 kN/m² — escadas e passarelas sem acesso público"], ["escada-publico", "3,0 kN/m² — escadas e passarelas com acesso público"], ["area-tecnica", "3,0 kN/m² — área técnica"], ["informado", "Valor do projeto (informar)"]];
   var _dl = {};
@@ -223,8 +238,9 @@
       var bts = [];
       if (alvo) bts.push({ texto: "Atualizar no lugar", classe: "primary", onClick: function () { self._confirmar("atualizar"); } });
       else {
-        var md = modoDe(tipo);
-        bts.push({ texto: md === "retangulo" ? "Posicionar (2 cliques)" : (md === "linha" ? "Posicionar (começo e fim)" : md === "polilinha" ? "Posicionar (cliques; Enter fecha)" : (tipo === "rolamento" ? "Clicar o lado da ponte" : "Posicionar no modelo")), classe: "primary", onClick: function () { self._confirmar("posicionar"); } });
+        var md = modoDe(tipo), mds = T.modos && T.modos.length ? T.modos : [md];
+        mds.forEach(function (m, i) { bts.push({ texto: m === "ponto" && tipo === "rolamento" ? "Clicar o lado da ponte" : (ROT_MODO[m] || (MODOS[m] && MODOS[m].rotulo) || "Posicionar"), classe: i === 0 ? "primary" : "", onClick: function () { self._confirmar("posicionar", m); } }); });
+        if (o.modosExtra) o.modosExtra.forEach(function (m) { bts.push({ texto: (MODOS[m] && MODOS[m].rotulo) || m, classe: "primary", onClick: function () { self._confirmar("posicionar", m); } }); });
         bts.push({ texto: tipo === "rolamento" ? "Criar deste lado" : "Criar nas coordenadas", onClick: function () { self._confirmar("coordenadas"); } });
       }
       bts.push({ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); self._dlg = null; } });
@@ -253,6 +269,7 @@
     previaDialogo: function () {
       var d = this._dlg, M = MP(); if (!d || !M || !d.raiz || !d.raiz.isConnected) return null;
       var p = this.lerDialogo(), q = clone(p); q.x0 = 0; q.y0 = 0; q.z0 = 0; q.giro = 0;
+      q = resolver(d.tipo, q);
       var k = 0, r = M.gerar(d.tipo, q, function () { return "pv" + (++k); }, d.ctx);
       var el = function (s) { return d.raiz.querySelector('[data-mpr="' + s + '"]'); };
       d.previa = r;
@@ -285,7 +302,7 @@
       if (dm && dm.ok) h += '<p class="mpr-conf-res ' + (dm.aprovado ? "ok" : "falha") + '" data-mpr="dim-res">' + (dm.aprovado ? "Cálculo — passa: " : (dm.status === "incompleto" ? "Cálculo — INCOMPLETO: " : "Cálculo — NÃO PASSA: ")) + esc(dm.resumo) + "</p>";
       return h;
     },
-    _confirmar: function (modo) {
+    _confirmar: function (modo, modoPosicao) {
       var d = this._dlg, M = MP(); if (!d || !M) return false;
       var p = this.lerDialogo(), e = M.validar(d.tipo, p);
       if (e) { var er = d.raiz && d.raiz.querySelector('[data-mpr="erro"]'); if (er) er.textContent = e; return false; }
@@ -294,7 +311,7 @@
       var tipo = d.tipo, alvo = d.alvo, ctx = d.ctx; this._dlg = null;
       if (modo === "atualizar") return this.colocar(tipo, p, ctx, alvo);
       if (modo === "coordenadas") return this.colocar(tipo, p, ctx, null);
-      return this.posicionar(tipo, p, ctx);
+      return this.posicionar(tipo, p, ctx, modoPosicao);
     },
 
     /* ------------------------------------------------------------ cota e posicionar */
@@ -304,9 +321,11 @@
       var b = B(); try { return b && b.editarBase ? b.editarBase() : 0; } catch (e3) { return 0; }
     },
     _pos: null,
-    posicionar: function (tipo, par, ctx) {
+    registrarModo: function (nome, h) { if (nome && h) MODOS[nome] = h; return true; },
+    modoPos: modoPos,
+    posicionar: function (tipo, par, ctx, modo) {
       var b = B(); if (!b || !b.editarArmar) { toast("Abra o modelo 3D para posicionar.", "aviso"); return false; }
-      this._pos = { tipo: tipo, par: clone(par), ctx: ctx || {}, pts: [] };
+      this._pos = { tipo: tipo, par: clone(par), ctx: ctx || {}, pts: [], modo: modo && modo !== modoDe(tipo) ? modo : null };
       var ok = b.editarArmar(SUB);
       if (ok === false) { this._pos = null; return false; }
       this._dica();
@@ -314,8 +333,11 @@
     },
     _dica: function () {
       var s = this._pos; if (!s) return "";
-      var T = MP().TIPOS[s.tipo], md = modoDe(s.tipo), t = md === "retangulo" ? (s.pts.length ? T.rotulo + ": agora o canto OPOSTO." : T.rotulo + ": clique o 1º canto (encaixa nos eixos e nas pontas).")
-        : (md === "polilinha" ? T.rotulo + ": clique os pontos (" + s.pts.length + " até agora); Enter termina (2 pontos ou mais), Esc cancela."
+      var T = MP().TIPOS[s.tipo], md = modoPos(s);
+      if (MODOS[md] && MODOS[md].dica) { var tx = MODOS[md].dica(s); status(tx); if (this._3d && this._3d.hint) this._3d.hint(tx); return tx; }
+      var t = md === "retangulo" ? (s.pts.length ? T.rotulo + ": agora o canto OPOSTO." : T.rotulo + ": clique o 1º canto (encaixa nos eixos e nas pontas).")
+        : (md === "polilinha" ? T.rotulo + ": clique os pontos (" + s.pts.length + " até agora); Enter termina (2 pontos ou mais), Backspace desfaz o último, Esc cancela."
+        : md === "contorno" ? T.rotulo + ": clique os cantos do contorno (" + s.pts.length + " até agora); Enter fecha (3 cantos ou mais), Backspace desfaz o último, Esc cancela."
         : md === "linha" ? (s.pts.length ? T.rotulo + ": agora o FIM." : T.rotulo + ": clique o COMEÇO (encaixa nos eixos e nas pontas).")
         : (s.tipo === "rolamento" ? "Viga de rolamento: clique do lado da fila onde fica a ponte." : T.rotulo + ": clique onde fica (encaixa nos eixos e nas pontas)."));
       t += " Espaço gira 90° (" + br(s.par.giro, 0) + "°), Esc cancela — no 3D ou na planta.";
@@ -325,12 +347,21 @@
     /* aceita o ponto (3D ou planta) */
     ponto: function (p) {
       var s = this._pos, M = MP(); if (!s || !M) return false;
-      var md = modoDe(s.tipo);
+      var md = modoPos(s);
+      if (MODOS[md] && MODOS[md].ponto) return MODOS[md].ponto(s, p, this);
+      if (md === "contorno") {
+        var ultC = s.pts[s.pts.length - 1];
+        if (s.pts.length >= 3 && Math.hypot(p[0] - s.pts[0][0], p[2] - s.pts[0][2]) < 0.05) return this.fecharPolilinha();   /* clicou no 1º canto: fecha */
+        if (!ultC || Math.hypot(p[0] - ultC[0], p[2] - ultC[2]) > 0.05) s.pts.push(p.slice());
+        this._dica(); if (this._3d) this._3d.redesenhar();
+        return true;
+      }
       if (md === "retangulo") {
         if (!s.pts.length) { s.pts.push(p.slice()); this._dica(); return true; }
-        var rt = M.retangulo(s.pts[0], p, s.par.giro), mn = s.tipo === "piso" ? 0.2 : 0.5;
+        var rt = M.retangulo(s.pts[0], p, s.par.giro), mn = s.tipo === "piso" || s.tipo === "guardacorpo" ? 0.2 : 0.5;
         if (!(rt.Lx > mn && rt.Lz > mn)) { status(M.TIPOS[s.tipo].rotulo + ": os dois cantos têm de formar um retângulo (mais de " + br(mn) + " m de cada lado)."); return true; }
         s.par.x0 = rt.x0; s.par.y0 = rt.y0; s.par.z0 = rt.z0; s.par.Lx = rt.Lx; s.par.Lz = rt.Lz;
+        if (s.tipo === "guardacorpo" || s.par.contorno != null) this.aplicarRetangulo(s, rt);
       } else if (md === "polilinha") {
         /* GUARDA-CORPO EM POLILINHA: cada clique é um canto; Enter termina (fecharPolilinha) */
         var ult = s.pts[s.pts.length - 1];
@@ -356,22 +387,49 @@
     /* o caminho da polilinha em texto ("x z; x z", relativo ao 1º ponto, eixos do mundo) */
     caminhoDe: function (pts) { var a = pts[0]; return pts.map(function (q) { return br(q[0] - a[0], 3) + " " + br(q[2] - a[2], 3); }).join("; "); },
     fecharPolilinha: function () {
-      var s = this._pos; if (!s || modoDe(s.tipo) !== "polilinha") return false;
-      if (s.pts.length < 2) { status(MP().TIPOS[s.tipo].rotulo + ": clique pelo menos 2 pontos antes do Enter."); return false; }
-      var a = s.pts[0]; s.par.x0 = Math.round(a[0] * 1e4) / 1e4; s.par.y0 = Math.round(a[1] * 1e4) / 1e4; s.par.z0 = Math.round(a[2] * 1e4) / 1e4; s.par.giro = 0; s.par.caminho = this.caminhoDe(s.pts);
+      var s = this._pos, mdF = modoPos(s); if (!s || (mdF !== "polilinha" && mdF !== "contorno")) return false;
+      var nMin = mdF === "contorno" ? 3 : 2;
+      if (s.pts.length < nMin) { status(MP().TIPOS[s.tipo].rotulo + ": clique pelo menos " + nMin + " pontos antes do Enter."); return false; }
+      var a = s.pts[0]; s.par.x0 = Math.round(a[0] * 1e4) / 1e4; s.par.y0 = Math.round(a[1] * 1e4) / 1e4; s.par.z0 = Math.round(a[2] * 1e4) / 1e4; s.par.giro = 0;
+      if (mdF === "contorno") s.par.contorno = this.caminhoDe(s.pts); else s.par.caminho = this.caminhoDe(s.pts);
       this._pos = null;
       var b = B(); try { if (b && b.editarArmar) b.editarArmar(null); } catch (e) {}
       return this.colocar(s.tipo, s.par, s.ctx, null);
     },
+    /* BACKSPACE: desfaz o último ponto clicado (polilinha, contorno, linha, retângulo e os modos de fora) */
+    voltarPonto: function () {
+      var s = this._pos; if (!s) return false;
+      var h = MODOS[modoPos(s)]; if (h && h.voltar) { h.voltar(s, this); this._dica(); if (this._3d) this._3d.redesenhar(); return true; }
+      if (!s.pts.length) return false;
+      s.pts.pop(); this._dica(); if (this._3d) this._3d.redesenhar();
+      return true;
+    },
+    /* o retângulo (2 cantos) do guarda-corpo vira o CAMINHO dos 4 lados (menos o lado aberto); o do piso vira o contorno */
+    aplicarRetangulo: function (s, rt) {
+      var th = (Number(s.par.giro) || 0) * Math.PI / 180, c = Math.cos(th), sn = Math.sin(th);
+      function W(u, w) { return [u * c + w * sn, -u * sn + w * c]; }   /* local → mundo (relativo à origem) */
+      var cs = [W(0, 0), W(rt.Lx, 0), W(rt.Lx, rt.Lz), W(0, rt.Lz)], lados = ["frente", "direita", "fundo", "esquerda"], ab = lados.indexOf(String(s.par.ladoAberto || "")), seq = [];
+      if (s.tipo === "guardacorpo") {
+        if (ab < 0) seq = [0, 1, 2, 3, 0]; else for (var k = 1; k <= 4; k++) seq.push((ab + k) % 4);
+        s.par.caminho = seq.map(function (i) { return br(cs[i][0], 3) + " " + br(cs[i][1], 3); }).join("; ");
+        if (ab >= 0) { var o0 = cs[seq[0]]; s.par.caminho = seq.map(function (i) { return br(cs[i][0] - o0[0], 3) + " " + br(cs[i][1] - o0[1], 3); }).join("; "); s.par.x0 = Math.round((rt.x0 + o0[0]) * 1e4) / 1e4; s.par.z0 = Math.round((rt.z0 + o0[1]) * 1e4) / 1e4; }
+        s.par.giro = 0;
+      } else s.par.contorno = "";
+      return s.par;
+    },
     girar: function () { var s = this._pos; if (!s) return false; s.par.giro = ((Math.round(num(s.par.giro, 0) / 90) * 90 + 90) % 360); this._dica(); if (this._3d) this._3d.redesenhar(); return true; },
-    cancelar: function () { if (this._pos) { this._pos = null; status("Peça pronta: posicionamento cancelado."); } },
+    cancelar: function () { if (this._pos) { var h = MODOS[modoPos(this._pos)]; if (h && h.cancelar) try { h.cancelar(this._pos, this); } catch (e) {} this._pos = null; status("Peça pronta: posicionamento cancelado."); } },
     /* a peça (em arame) no ponto do cursor — para o 3D */
     previaEm: function (p) {
       var s = this._pos, M = MP(); if (!s || !M || !p) return null;
-      var q = clone(s.par), md = modoDe(s.tipo);
-      if (md === "retangulo") {
+      var q = clone(s.par), md = modoPos(s);
+      if (MODOS[md] && MODOS[md].previa) return MODOS[md].previa(s, p, this);
+      if (md === "contorno") {
+        if (!s.pts.length) { q.x0 = p[0]; q.y0 = p[1]; q.z0 = p[2]; q.contorno = ""; }
+        else { var ptsC = s.pts.concat([p]); if (Math.hypot(p[0] - s.pts[s.pts.length - 1][0], p[2] - s.pts[s.pts.length - 1][2]) < 0.06) ptsC = s.pts.slice(); if (ptsC.length < 3) return null; q.x0 = ptsC[0][0]; q.y0 = ptsC[0][1]; q.z0 = ptsC[0][2]; q.giro = 0; q.contorno = this.caminhoDe(ptsC); }
+      } else if (md === "retangulo") {
         if (!s.pts.length) { q.x0 = p[0]; q.y0 = p[1]; q.z0 = p[2]; }
-        else { var rt = M.retangulo(s.pts[0], p, q.giro); if (!(rt.Lx > 0.2 && rt.Lz > 0.2)) return null; q.x0 = rt.x0; q.y0 = rt.y0; q.z0 = rt.z0; q.Lx = rt.Lx; q.Lz = rt.Lz; }
+        else { var rt = M.retangulo(s.pts[0], p, q.giro); if (!(rt.Lx > 0.2 && rt.Lz > 0.2)) return null; q.x0 = rt.x0; q.y0 = rt.y0; q.z0 = rt.z0; q.Lx = rt.Lx; q.Lz = rt.Lz; if (s.tipo === "guardacorpo" || q.contorno != null) this.aplicarRetangulo({ tipo: s.tipo, par: q }, rt); }
       } else if (md === "polilinha") {
         if (!s.pts.length) { q.x0 = p[0]; q.y0 = p[1]; q.z0 = p[2]; }
         else { var pts = s.pts.concat([p]); if (Math.hypot(p[0] - s.pts[s.pts.length - 1][0], p[2] - s.pts[s.pts.length - 1][2]) < 0.06) pts = s.pts.slice(); if (pts.length < 2) return null; q.x0 = pts[0][0]; q.y0 = pts[0][1]; q.z0 = pts[0][2]; q.giro = 0; q.caminho = this.caminhoDe(pts); }
@@ -381,14 +439,37 @@
       } else if (s.tipo === "rolamento") q.lado = M.ladoDoClique(s.ctx.pilares, p);
       else { q.x0 = p[0]; q.y0 = p[1]; q.z0 = p[2]; }
       q.ligacoes = false; q.placaBase = false;   /* a prévia não precisa das chapas (fica leve) */
+      q = resolver(s.tipo, q);
       var k = 0, r = M.gerar(s.tipo, q, function () { return "pv" + (++k); }, s.ctx);
       return r.ok ? r : null;
     },
 
+    /* a prévia na PLANTA (js/bimplantamodelar.js): os segmentos em planta da peça no cursor + a linha/contorno clicados */
+    previaPlanta: function (x, z) {
+      var s = this._pos; if (!s) return null;
+      var p = [x, this.cota(), z], r = null; try { r = this.previaEm(p); } catch (e) { r = null; }
+      var segs = [];
+      if (r) r.linhas.forEach(function (l) { if (segs.length < 1500 && Math.hypot(l.a[0] - l.b[0], l.a[2] - l.b[2]) > 1e-3) segs.push([l.a[0], l.a[2], l.b[0], l.b[2], "pm-forma"]); });
+      if (s.pts.length) { var pts = s.pts.concat([p]); for (var i = 1; i < pts.length; i++) segs.push([pts[i - 1][0], pts[i - 1][2], pts[i][0], pts[i][2], "pm-elastico"]); }
+      return { segs: segs, falta: !!(r && r.corPrevia) };
+    },
+
     /* ------------------------------------------------------------ criar / atualizar no lugar */
+    /* o lote da peça pronta (com a identidade) SEM mandar para o editor — quem junta mais ops num lote só (a escada por linha
+       com a abertura no piso) usa este e manda tudo de uma vez */
+    preparar: function (tipo, par, ctx, alvo) {
+      var M = MP(), self = this; if (!M) return null;
+      par = resolver(tipo, par, "criar");
+      var r = M.gerar(tipo, par, function () { return self.novoId(); }, ctx || {});
+      if (!r.ok) return r;
+      var gid = alvo ? alvo.id : "pronta-" + this.novoId();
+      M.identidade(r, gid, { tipo: tipo, par: r.par, em: new Date().toISOString() }, alvo);
+      return r;
+    },
     colocar: function (tipo, par, ctx, alvo) {
       var M = MP(), self = this; if (!M) return null;
       if (alvo && alvo.info && alvo.info.par && tipo !== "rolamento") ["x0", "y0", "z0"].forEach(function (k) { if (par[k] == null) par[k] = alvo.info.par[k]; });
+      par = resolver(tipo, par, "criar");
       var r = M.gerar(tipo, par, function () { return self.novoId(); }, ctx || {});
       if (!r.ok) { toast(M.TIPOS[tipo].rotulo + ": " + r.motivo, "aviso", 9000); status(r.motivo); return r; }
       var gid = alvo ? alvo.id : "pronta-" + this.novoId();
@@ -447,8 +528,8 @@
         }
         /* o próximo ponto da peça em LINHA ou POLILINHA (guarda-corpo, escada, passarela) anda no Orto;
            o 2º canto do retângulo (mezanino) é a diagonal: fica livre */
-        var sp = self._pos, md = sp ? modoDe(sp.tipo) : null;
-        if (sp && sp.pts.length && (md === "polilinha" || md === "linha") && Bo && Bo.travar) {
+        var sp = self._pos, md = sp ? modoPos(sp) : null;
+        if (sp && sp.pts.length && (md === "polilinha" || md === "linha" || md === "contorno" || (MODOS[md] && MODOS[md].orto)) && Bo && Bo.travar) {
           var b0 = sp.pts[sp.pts.length - 1], aj = Bo.travar({ x: b0[0], z: b0[2] }, { x: q[0], z: q[2] }, { shift: !!e.shiftKey, tipoSnap: sn ? sn.tipo : null });
           if (aj.travado) { q = [aj.p.x, y, aj.p.z]; sn = null; }
         }
@@ -456,21 +537,26 @@
       }
       function desenhar(p) {
         limpar(); if (!p) return;
-        var r = self.previaEm(p); if (!r) return;
+        var r = self.previaEm(p);
+        var s0 = self._pos, h0 = s0 ? MODOS[modoPos(s0)] : null;
+        if (h0 && h0.pintar) { try { h0.pintar(s0, p, r, { linhas: linhas, cor: cor, grp: grp, THREE: THREE }); } catch (eP) {} }
+        if (!r) { st.n = grp.children.length; return; }
         var pos = [], posG = [];
         r.linhas.forEach(function (l) { (/guarda|Corrim|Montante do/.test(l.p) ? posG : pos).push(l.a[0], l.a[1], l.a[2], l.b[0], l.b[1], l.b[2]); });
-        var l1 = linhas(pos, cor("--aco-claro", "#5b9bd5")), l2 = linhas(posG, cor("--amarelo", "#d99a1e"), 0.8);
+        var l1 = linhas(pos, r.corPrevia ? cor(r.corPrevia, "#c0392b") : cor("--aco-claro", "#5b9bd5")), l2 = linhas(posG, cor("--amarelo", "#d99a1e"), 0.8);
         if (l1) grp.add(l1); if (l2) grp.add(l2);
         var s = self._pos;
-        if (s && modoDe(s.tipo) === "polilinha" && s.pts.length) { var pp2 = []; s.pts.concat([p]).forEach(function (q, i, l2) { if (i) pp2.push(l2[i - 1][0], l2[i - 1][1], l2[i - 1][2], q[0], q[1], q[2]); }); var lp = linhas(pp2, cor("--verde", "#15803d"), 1); if (lp) grp.add(lp); }
-        else if (s && (modoDe(s.tipo) === "retangulo" || modoDe(s.tipo) === "linha") && s.pts.length) { var a = s.pts[0], lb = linhas([a[0], a[1], a[2], p[0], p[1], p[2]], cor("--verde", "#15803d"), 1); if (lb) grp.add(lb); }
+        if (s && (modoPos(s) === "polilinha" || modoPos(s) === "contorno") && s.pts.length) { var pp2 = []; s.pts.concat([p]).forEach(function (q, i, l2) { if (i) pp2.push(l2[i - 1][0], l2[i - 1][1], l2[i - 1][2], q[0], q[1], q[2]); }); var lp = linhas(pp2, cor("--verde", "#15803d"), 1); if (lp) grp.add(lp); }
+        else if (s && (modoPos(s) === "retangulo" || modoPos(s) === "linha") && s.pts.length) { var a = s.pts[0], lb = linhas([a[0], a[1], a[2], p[0], p[1], p[2]], cor("--verde", "#15803d"), 1); if (lb) grp.add(lb); }
         st.n = grp.children.length; st.resumo = r.resumo;
       }
       document.addEventListener("keydown", function (e) {
         if (!ativo() || e.ctrlKey || e.metaKey || e.altKey) return;
         var t = e.target || {}; if (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || "") || t.isContentEditable) return;
         if (e.key === " " || e.code === "Space") { e.preventDefault(); e.stopImmediatePropagation(); self.girar(); }
-        else if ((e.key === "Enter" || e.code === "Enter" || e.code === "NumpadEnter") && self._pos && modoDe(self._pos.tipo) === "polilinha") { e.preventDefault(); e.stopImmediatePropagation(); limpar(); api.marcaEsconder(); self.fecharPolilinha(); }
+        else if ((e.key === "Enter" || e.code === "Enter" || e.code === "NumpadEnter") && self._pos && (modoPos(self._pos) === "polilinha" || modoPos(self._pos) === "contorno")) { e.preventDefault(); e.stopImmediatePropagation(); limpar(); api.marcaEsconder(); self.fecharPolilinha(); }
+        else if ((e.key === "Enter" || e.code === "Enter" || e.code === "NumpadEnter") && self._pos && MODOS[modoPos(self._pos)] && MODOS[modoPos(self._pos)].enter) { e.preventDefault(); e.stopImmediatePropagation(); MODOS[modoPos(self._pos)].enter(self._pos, self); }
+        else if ((e.key === "Backspace" || e.code === "Backspace") && self._pos) { e.preventDefault(); e.stopImmediatePropagation(); self.voltarPonto(); }
       }, true);
       var api3 = {
         ativo: ativo,
@@ -490,14 +576,14 @@
           if (pForcado) {
             p = [pForcado.x, self.cota(), pForcado.z];
             /* da planta: o mesmo Orto da barra de baixo no próximo ponto da linha/polilinha */
-            var sF = self._pos, mF = sF ? modoDe(sF.tipo) : null, BoF = global.BimBarraOpcoes;
-            if (sF && sF.pts.length && (mF === "polilinha" || mF === "linha") && BoF && BoF.travar) { var bF = sF.pts[sF.pts.length - 1], aF = BoF.travar({ x: bF[0], z: bF[2] }, { x: p[0], z: p[2] }, { shift: !!(e && e.shiftKey) }); if (aF.travado) p = [aF.p.x, p[1], aF.p.z]; }
+            var sF = self._pos, mF = sF ? modoPos(sF) : null, BoF = global.BimBarraOpcoes;
+            if (sF && sF.pts.length && (mF === "polilinha" || mF === "linha" || mF === "contorno" || (MODOS[mF] && MODOS[mF].orto)) && BoF && BoF.travar) { var bF = sF.pts[sF.pts.length - 1], aF = BoF.travar({ x: bF[0], z: bF[2] }, { x: p[0], z: p[2] }, { shift: !!(e && e.shiftKey) }); if (aF.travado) p = [aF.p.x, p[1], aF.p.z]; }
           } else { var r = resolver(e); if (!r) { api.hint("Não achei o ponto no plano — gire a vista."); return true; } p = r.p; }
           limpar(); api.marcaEsconder();
           self.ponto(p);
           return true;
         },
-        cancelar: function () { limpar(); if (self._pos && self._pos.pts.length) { self._pos.pts = []; self._dica(); } },
+        cancelar: function () { limpar(); if (self._pos && self._pos.pts.length) { self._pos.pts = []; var hC = MODOS[modoPos(self._pos)]; if (hC && hC.cancelar) try { hC.cancelar(self._pos, self); } catch (eC) {} self._dica(); } },
         aoSub: function (sub) {
           limpar(); st.geoPr = null;
           if (sub === SUB) { self._dica(); return; }
@@ -505,7 +591,8 @@
         },
         redesenhar: function () { if (st.cur) desenhar(st.cur); },
         hint: function (t) { api.hint(t); },
-        estado: function () { return { ativo: ativo(), tipo: self._pos ? self._pos.tipo : null, pts: self._pos ? self._pos.pts.length : 0, previa: grp.children.length, cur: st.cur, resumo: st.resumo || null, giro: self._pos ? self._pos.par.giro : null }; },
+        estado: function () { return { ativo: ativo(), tipo: self._pos ? self._pos.tipo : null, modo: self._pos ? modoPos(self._pos) : null, pts: self._pos ? self._pos.pts.length : 0, previa: grp.children.length, cur: st.cur, resumo: st.resumo || null, giro: self._pos ? self._pos.par.giro : null }; },
+        telaDe: function (x, y, z) { return api.telaDe ? api.telaDe(x, y, z) : null; },
         _resolver: function (cx, cy) { var r = resolver({ clientX: cx, clientY: cy }); return r ? { p: r.p, tipo: r.sn ? r.sn.tipo : null } : null; }
       };
       this._3d = api3;

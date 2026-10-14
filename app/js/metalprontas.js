@@ -83,6 +83,7 @@
   function Arq() { return dep("BimArq", "./bimarq.js"); }
   function Est() { return dep("BimEstrut", "./bimestrut.js"); }
   function Acs() { return dep("AcoAcessos", "./acoacessos.js"); }
+  function Esl() { return dep("MetalEscadaLinha", "./metalescadalinha.js"); }   /* frente S6: escada por linha + fixação */
   function num(v, d) { if (v == null || v === "") return d; var n = Number(String(v).replace(",", ".")); return isFinite(n) ? n : d; }
   function fin(v) { return typeof v === "number" && isFinite(v); }
   function r2(v) { return Math.round(v * 100) / 100; }
@@ -128,6 +129,10 @@
       patamarPerfil: "C150X12.2", pilarete: "HSS76.2X76.2X6.4",
       raio: 0.9, mastro: "HSS168.3X7.1", raioLinha: 0.55, sentido: "anti-horario",
       norma: "", rodape: false, hRodape: 0.20, tRodape: 0.00475, patamarComp: 0, lanceMax: 0, paredeLados: 0, patamarTopo: 0, apoioBase: false, usoGuarda: "industrial", usoPiso: "escada-sem-publico",
+      /* ESCADA POR LINHA E FIXAÇÃO (frente S6, 14/10/2026 — js/metalescadalinha.js): o degrau que enche a linha (n, p) e a
+         fixação de cada ponta ("" = sem; soldada | parafusada | ancorada | apoiada; "auto" a tela resolve pelo modelo) */
+      nDegrau: 0, pDegrau: 0, fixPe: "", fixTopo: "", concPeEsp: 0, concPeFck: 0, concTopoEsp: 0, concTopoFck: 0, supPeT: 0, supTopoT: 0, concPeBorda: 0, concTopoBorda: 0,
+      sentidoLinha: "desce", alturaDoModelo: true, abrirPiso: true,
       aco: "ASTM A36", x0: 0, y0: 0, z0: 0, giro: 0 } },
     mezanino: { id: "mezanino", rotulo: "Mezanino / plataforma", cliques: 2, PADRAO: {
       Lx: 6, Lz: 4, vaosX: 2, vaosZ: 1, altura: 3.0, direcao: "x",
@@ -159,12 +164,12 @@
   };
   var ORDEM = ["trelica", "escada", "mezanino", "rolamento", "rack", "skid"];
   var NUMS = { trelica: ["vao", "altura", "alturaApoio", "paineis", "tGusset", "parafusos"],
-    escada: ["desnivel", "largura", "vao", "tLongarina", "hLongarina", "tDegrau", "tEspelho", "gradeH", "gradeT", "gradeA", "gradeB", "gradeS", "espac", "raio", "raioLinha", "hRodape", "tRodape", "patamarComp", "lanceMax", "paredeLados", "patamarTopo"],
+    escada: ["desnivel", "largura", "vao", "tLongarina", "hLongarina", "tDegrau", "tEspelho", "gradeH", "gradeT", "gradeA", "gradeB", "gradeS", "espac", "raio", "raioLinha", "hRodape", "tRodape", "patamarComp", "lanceMax", "paredeLados", "patamarTopo", "nDegrau", "pDegrau", "concPeEsp", "concPeFck", "concTopoEsp", "concTopoFck", "supPeT", "supTopoT", "concPeBorda", "concTopoBorda"],
     mezanino: ["Lx", "Lz", "vaosX", "vaosZ", "altura", "espSec", "tPiso", "tDeck", "painelMax", "gradeH", "gradeT", "gradeA", "gradeB", "gradeS", "espac", "travessas", "hRodape", "tRodape", "intermediaria", "aberturaPos", "aberturaLarg"],
     rolamento: ["capacidade", "vaoPonte", "cotaTrilho", "excentricidade", "trilhoB", "trilhoH", "lado"],
     rack: ["porticos", "espacamento", "largura"],
     skid: ["comprimento", "largura", "folga", "espTravessas", "tChapa", "pontos", "entreFurosX", "entreFurosZ"] };
-  var BOOLS = { trelica: ["ligacoes"], escada: ["espelho", "rodape", "apoioBase"], mezanino: ["frente", "fundo", "esquerda", "direita", "contraventar", "placaBase", "rodape", "semPilares", "contraventoPlano"], rolamento: [], rack: ["longarinas", "placaBase"], skid: ["chapa"] };
+  var BOOLS = { trelica: ["ligacoes"], escada: ["espelho", "rodape", "apoioBase", "alturaDoModelo", "abrirPiso"], mezanino: ["frente", "fundo", "esquerda", "direita", "contraventar", "placaBase", "rodape", "semPilares", "contraventoPlano"], rolamento: [], rack: ["longarinas", "placaBase"], skid: ["chapa"] };
 
   function padrao(tipo) { var T = TIPOS[tipo]; return T ? clone(T.PADRAO) : null; }
   function bool(v) { return !(v === false || v === "false" || v === 0 || v === "0" || v === "nao" || v === "não"); }
@@ -215,6 +220,10 @@
       var ks = ["montante", "corrimao"];
       if (p.forma === "caracol") ks.push("mastro"); else { if (p.longarinaTipo !== "chapa") ks.push("longarina"); if (p.forma !== "reta") ks.push("patamarPerfil", "pilarete"); }
       if (p.norma && p.forma !== "caracol") { var dg0 = Acs().degraus(p.desnivel, p.norma); if (!dg0.ok) return dg0.motivo; }
+      var FIXS = ["", "auto", "soldada", "parafusada", "ancorada", "apoiada"];
+      if (FIXS.indexOf(String(p.fixPe || "")) < 0 || FIXS.indexOf(String(p.fixTopo || "")) < 0) return "Fixação da escada: soldada, parafusada, ancorada ou apoiada.";
+      if (p.fixPe === "apoiada" && p.fixTopo === "apoiada") return "Fixação da escada: as duas pontas APOIADAS não seguram a escada na horizontal — deixe uma fixa (soldada, parafusada ou ancorada).";
+      if ((p.fixPe || p.fixTopo) && (p.forma === "L" || p.forma === "U" || p.forma === "caracol" || p.longarinaTipo === "chapa")) return "Fixação configurada: só na escada reta ou reta com patamares com longarina em perfil U.";
       f = faltam(p, ks);
       if (!f.length && p.longarinaTipo !== "chapa" && p.forma !== "caracol" && perfilDe(p.longarina).forma !== "U") return "Longarina em perfil: use um U (C, U Gerdau ou Ue) — ou escolha longarina em chapa.";
       if (p.forma === "caracol") { var mq = perfilDe(p.mastro); if (mq && (mq.D || mq.b || 0.1) / 2 >= p.raio - 0.3) return "Caracol: o mastro ocupa o degrau — aumente o raio."; if (!(p.raioLinha > (mq ? (mq.D || mq.b || 0.1) / 2 : 0.05) && p.raioLinha < p.raio)) return "Caracol: a linha de percurso fica entre o mastro e a borda."; }
@@ -351,11 +360,11 @@
   function guardaCorpo(K, pts, o) {
     var lig = "gc-" + o.gid, pm = perfilDe(o.montante), pc = perfilDe(o.corrimao), Hg = o.altura, sgs = [];
     if (!pm || !pc || pts.length < 2) return 0;
-    var n0 = K.pecas.length, posts = [];
+    var n0 = K.pecas.length, posts = [], fechado = pts.length > 3 && len(sub(pts[0], pts[pts.length - 1])) < 1e-3;   /* contorno fechado (guarda-corpo por retângulo): sem montante repetido */
     for (var i = 0; i + 1 < pts.length; i++) {
       var a = pts[i], b = pts[i + 1], d = sub(b, a), Lh = Math.sqrt(d[0] * d[0] + d[2] * d[2]), L = len(d); if (!(L > 0.05)) continue;
       var nS = Math.max(1, Math.ceil(L / o.espac - 1e-9));
-      for (var k = 0; k <= nS; k++) { if (k === 0 && i > 0) continue; posts.push(add(a, mul(d, k / nS))); }
+      for (var k = 0; k <= nS; k++) { if (k === 0 && i > 0) continue; if (fechado && i === pts.length - 2 && k === nS) continue; posts.push(add(a, mul(d, k / nS))); }
       sgs.push({ a: a, b: b, Lh: Lh });
     }
     posts.forEach(function (P, k) {
@@ -479,7 +488,7 @@
     var W = p.largura, G = alturasGuarda(), gid = String(novoId()), AC = p.norma && p.forma !== "caracol" ? Acs() : null, dgN = null, calc;
     if (AC) {
       /* degrau pela NORMA do acesso (js/acoacessos.js, 14/10/2026): NR-12 (industrial), NBR 9050 (rota acessível), NBR 9077 (emergência) */
-      dgN = AC.degraus(p.desnivel, p.norma); if (!dgN.ok) return { erro: dgN.motivo };
+      dgN = AC.degraus(p.desnivel, p.norma, p.nDegrau > 0 ? { n: p.nDegrau, p: p.pDegrau } : {}); if (!dgN.ok) return { erro: dgN.motivo };
       calc = { ok: true, n: dgN.n, e: dgN.e, p: dgN.p, blondel: dgN.blondel, regra: p.norma, avisos: [] };
     } else calc = A.escadaCalc(p.desnivel, { regra: p.regra === "blondel" ? "blondel" : "tipo", largura: p.forma === "caracol" ? null : W });
     if (!calc.ok) return { erro: calc.motivo };
@@ -497,7 +506,7 @@
     var alt = [G.guarda].concat(G.corrimaos), gOpt = function (gid2) { return { gid: gid2, montante: p.montante, corrimao: p.corrimao, altura: G.guarda, alturas: alt, corrimao2: G.corrimaos, espac: p.espac, aco: p.aco, rodape: p.rodape ? num(p.hRodape, 0.2) : 0, tRodape: p.tRodape }; };
     var prolonga = p.norma === "nbr9050" ? 0.30 : 0, corrInterm = false;
     var lados = p.guarda === "nenhum" ? [] : (p.guarda === "um" ? [1] : [1, -1]);
-    var nLance = 0;
+    var nLance = 0, lancesReg = [], patReg = [];
     function degrauChapa(F, o, rot) {
       var KK = K.F; K.F = F;
       var c = K.chapa(o, "degraus"); K.F = KK;
@@ -517,12 +526,13 @@
       /* LONGARINAS: o topo na linha dos bocéis; corte horizontal no pé e de prumo no topo */
       var X = [Math.cos(al), Math.sin(al), 0], Y = [-Math.sin(al), Math.cos(al), 0];
       var yEixo = function (u) { return e + e / pp * u - dL / (2 * ca); };
-      var uA = (dL / (2 * ca) - e) * pp / e, Pa = [uA, 0, 0], Pb = [uTop, yEixo(uTop), 0], Ll = len(sub(Pb, Pa));
+      var uA = (dL / (2 * ca) - e) * pp / e, Pa = [uA, 0, 0], Pb = [uTop, yEixo(uTop), 0], Ll = len(sub(Pb, Pa)), reg = { F: F, uA: uA, uTop: uTop, nR: nR, yC: num(F.yC, 0), pecas: [] };
+      lancesReg.push(reg);
       [1, -1].forEach(function (s) {
         if (longU) {
           var w = s * (W / 2 + pl.bf / 2), org = s > 0 ? [Pa[0], Pa[1], w] : [Pb[0], Pb[1], w], ex = s > 0 ? X : mul(X, -1);
           var cIni = corteDe(ex, Y, s > 0 ? UP : [1, 0, 0]), cFim = corteDe(ex, Y, s > 0 ? [1, 0, 0] : UP);
-          K.perfil({ origem: org, ex: ex, ey: Y, perfil: pl, L: Ll, cortes: { almaIni: cIni.alma, almaFim: cFim.alma }, papel: "Longarina", ifc: "IFCMEMBER", aco: p.aco, nome: "Longarina " + (s > 0 ? "esquerda" : "direita") + " — lance " + nLance }, "longarinas");
+          reg.pecas.push(K.perfil({ origem: org, ex: ex, ey: Y, perfil: pl, L: Ll, cortes: { almaIni: cIni.alma, almaFim: cFim.alma }, papel: "Longarina", ifc: "IFCMEMBER", aco: p.aco, nome: "Longarina " + (s > 0 ? "esquerda" : "direita") + " — lance " + nLance }, "longarinas"));
           /* APOIO DA LONGARINA no piso (1º lance): chapa chumbada com 2 furos, debaixo do corte horizontal do pé */
           if (p.apoioBase && nLance === 1) K.chapa({ origem: [Pa[0] - 0.05, 0, w - 0.10], ex: [1, 0, 0], ey: [0, 0, 1], t: 0.0125, ret: { L: 0.25, B: 0.20 }, furos: [{ u: 0.18, v: 0.05, db: 18, tipo: "padrao" }, { u: 0.18, v: 0.15, db: 18, tipo: "padrao" }], papel: "Chapa de apoio da longarina", aco: "ASTM A36", nome: "Chapa de apoio da longarina " + (s > 0 ? "esquerda" : "direita") }, "apoios");
         } else {
@@ -558,7 +568,10 @@
       var c = degrauChapa(K.F, { origem: [u0, y, w0], ex: [1, 0, 0], ey: [0, 0, 1], t: tD, ret: { L: u1 - u0, B: w1 - w0 }, papel: "Piso do patamar", aco: p.aco, nome: "Piso do patamar" }, "Piso do patamar em chapa xadrez");
       if (c) c.metal.papel = degXadrez ? "Piso do patamar em chapa xadrez" : "Piso do patamar em grade";
       var yB = yV - (pq ? pq.d : 0.15);
-      cantos.forEach(function (q, i) { K.barra([q[0], 0, q[1]], [q[0], yB, q[1]], { ferr: "pilar", cat: pr ? pr.cat : p.pilarete, papel: "Pilarete do patamar", aco: p.aco, nome: "Pilarete do patamar " + (i + 1) }, "pilaretes"); });
+      /* o pilarete vai até o TOPO DO AÇO (a linha das vigas do patamar, "topo"), como no mezanino: no cálculo da estrutura
+         desenhada a ponta dele é o nó da viga (parando no fundo da viga ele ficava solto — frente S6, 14/10/2026) */
+      cantos.forEach(function (q, i) { K.barra([q[0], 0, q[1]], [q[0], yV, q[1]], { ferr: "pilar", cat: pr ? pr.cat : p.pilarete, papel: "Pilarete do patamar", aco: p.aco, nome: "Pilarete do patamar " + (i + 1) }, "pilaretes"); });
+      if (cantos.length) patReg.push({ F: K.F, cantos: cantos, yB: yV, Lp: Math.abs(u1 - u0) });
       if (p.guarda !== "nenhum") bordas.forEach(function (b, i) { guardaCorpo(K, [[b[0], y, b[1]], [b[2], y, b[3]]], gOpt(gid + "-pt" + i)); });
     }
     var F0 = K.F, info = {}, nLances = 1, hLanceMax = p.desnivel, patC = 0, patL = 0;
@@ -575,7 +588,8 @@
       var uC = 0, yC = 0;
       hLanceMax = 0;
       for (var iL = 0; iL < nL; iL++) {
-        var nR = nBase + (iL < resto ? 1 : 0), li = lance(F0.filho([uC, yC, 0], 0), nR, lados);
+        var Fl = F0.filho([uC, yC, 0], 0); Fl.yC = yC;
+        var nR = nBase + (iL < resto ? 1 : 0), li = lance(Fl, nR, lados);
         yC += nR * e; hLanceMax = Math.max(hLanceMax, nR * e);
         if (iL < nL - 1) {
           var ua = uC + li.uTop, ub = ua + Lp;
@@ -630,6 +644,13 @@
       info = { voltas: r3((n - 1) * beta / (2 * Math.PI)), angulo: r2((n - 1) * beta / GRAU) };
       if ((n - 1) * beta > 2 * Math.PI * 1.05) K.avisos.push("Caracol com " + br((n - 1) * beta / GRAU, 0) + "° de giro: confira a passagem livre (altura de cabeça) sobre os degraus de baixo");
     }
+    /* FIXAÇÃO NAS PONTAS e PILARETES DOS PATAMARES dimensionados (frente S6, 14/10/2026 — js/metalescadalinha.js) */
+    var fixR = null, ES = Esl();
+    if (ES && ES.desenhar && longU && (p.forma === "reta" || p.forma === "patamares") && (p.fixPe || p.fixTopo)) {
+      /* "auto" sem o modelo (a tela resolve pelo que está embaixo/em cima): pé ancorada, topo apoiada */
+      var pf = clone(p); if (pf.fixPe === "auto") pf.fixPe = "ancorada"; if (pf.fixTopo === "auto") pf.fixTopo = pf.fixPe === "apoiada" ? "ancorada" : "apoiada";
+      fixR = ES.desenhar(K, ajudantes(), { p: pf, lances: lancesReg, patamares: patReg, e: e, pp: pp, W: W, bL: bL, dL: dL, al: al, gid: gid, gPiso: degXadrez ? 78.5 * tD * 1.07 : gradeKgM2(p) * 9.81 / 1000, qPiso: Acs() ? Acs().sobrecarga(p.usoPiso).q : 2.5 });
+    }
     K.avisos.push("Guarda-corpo a " + br(G.guarda) + " m e corrimão a " + br(G.corrimaos[0]) + " e " + br(G.corrimaos[1]) + " m: " + G.fonte);
     if (dgN) K.avisos.push("Degrau pela norma: " + dgN.ref + (dgN.conferir ? " (conferir no texto da norma)" : ""));
     if (!degXadrez) K.avisos.push("Grade: " + br(gradeKgM2(p), 1) + " kg/m² pela geometria (barra portante " + cm(p.gradeH) + " × " + br(p.gradeT * 1000, 1) + " mm a cada " + cm(p.gradeA) + " cm) — valor de partida, conferir com o fabricante");
@@ -647,13 +668,14 @@
       else nvs.push("não verificado: longarina em chapa (verificar a chapa como viga inclinada à parte)");
       its.push({ tipo: "degrau", material: degXadrez ? "chapa" : "grade", aco: "ASTM A36", t: tD, vao: W, p: pp, gradeH: p.gradeH, gradeT: p.gradeT, gradeA: p.gradeA, q: qPiso });
       if (nLances > 1 && perfilDe(p.patamarPerfil)) its.push({ tipo: "viga", nome: "Viga do patamar", perfil: p.patamarPerfil, aco: p.aco, L: Math.max(patC, patL), faixa: Math.min(patC, patL) / 2, q: qPiso, gPiso: 0.6, travadaPeloPiso: true });
-      nvs.push("não verificado: ligação degrau × longarina e base da escada (chumbadores)");
-      if (nLances > 1) nvs.push("não verificado: pilaretes do patamar (compressão) e as ligações do patamar");
+      if (fixR) { fixR.itens.forEach(function (it) { its.push(it); }); arr(fixR.naoVerificados).forEach(function (t) { nvs.push(t); }); nvs.push("não verificado: ligação degrau × longarina" + (p.fixPe ? "" : "; base da escada (sem fixação configurada no pé)") + (p.fixTopo ? "" : "; chegada no topo (sem fixação configurada)")); if (nLances > 1) nvs.push("não verificado: as ligações das vigas do patamar"); }
+      else { nvs.push("não verificado: ligação degrau × longarina e base da escada (chumbadores)"); if (nLances > 1) nvs.push("não verificado: pilaretes do patamar (compressão) e as ligações do patamar"); }
     } else nvs.push("não verificado: escada caracol — mastro, degraus em balanço e a solda no mastro");
     if (lados.length && perfilDe(p.montante)) its.push({ tipo: "montante", perfil: p.montante, corrimao: p.corrimao, aco: p.aco, uso: p.usoGuarda, espac: p.espac });
-    med.dim = { itens: its, naoVerificados: nvs };
+    med.dim = { itens: its, naoVerificados: nvs, criticos: fixR ? arr(fixR.criticos) : [] };
+    if (fixR) med.fixacao = { pe: p.fixPe || null, topo: p.fixTopo || null, resumo: fixR.resumo };
     return { resumo: "Escada " + ({ reta: "reta", patamares: "reta com " + (nLances - 1) + " patamar(es)", L: "em L", U: "em U", caracol: "caracol" })[p.forma] + " — desnível " + br(p.desnivel) + " m: " + n + " espelhos de " + cm(e) + " cm, piso de " + cm(pp) + " cm (2e + p = " + cm(2 * e + pp) + " cm" +
-      (dgN ? ", " + dgN.ref : (calc.blondel >= 0.63 - 1e-9 && calc.blondel <= 0.64 + 1e-9 ? ", dentro de Blondel" : ", fora de 63 a 64 cm")) + "); " + (cont.degraus || 0) + " degraus" + (cont.longarinas ? ", " + cont.longarinas + " longarinas" : "") + (cont.guarda ? ", " + cont.guarda + " peças de guarda-corpo" : ""),
+      (dgN ? ", " + dgN.ref : (calc.blondel >= 0.63 - 1e-9 && calc.blondel <= 0.64 + 1e-9 ? ", dentro de Blondel" : ", fora de 63 a 64 cm")) + "); " + (cont.degraus || 0) + " degraus" + (cont.longarinas ? ", " + cont.longarinas + " longarinas" : "") + (cont.guarda ? ", " + cont.guarda + " peças de guarda-corpo" : "") + (fixR && fixR.resumo.length ? "; fixação — " + fixR.resumo.join("; ") : ""),
       medidas: med };
   }
 
@@ -888,7 +910,7 @@
   }
   function registrarTipo(id, def) {
     if (!id || !def || typeof def.gerar !== "function") return false;
-    TIPOS[id] = { id: id, rotulo: def.rotulo || id, cliques: def.cliques || 1, modo: def.modo || null, calcula: !!def.calcula, PADRAO: clone(def.PADRAO || {}) };
+    TIPOS[id] = { id: id, rotulo: def.rotulo || id, cliques: def.cliques || 1, modo: def.modo || null, modos: def.modos ? def.modos.slice() : null, calcula: !!def.calcula, PADRAO: clone(def.PADRAO || {}) };
     ["x0", "y0", "z0", "giro"].forEach(function (k) { if (TIPOS[id].PADRAO[k] == null) TIPOS[id].PADRAO[k] = 0; });
     if (TIPOS[id].PADRAO.aco == null) TIPOS[id].PADRAO.aco = "ASTM A36";
     NUMS[id] = arr(def.nums).slice(); BOOLS[id] = arr(def.bools).slice();

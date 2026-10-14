@@ -273,9 +273,10 @@
       var P2 = D2(), c = P2 && P2._cache ? P2._cache[id] : null, dados = c ? c.dados : null;
       /* METÁLICA (js/metalcriarui.js): com pilar, viga, diagonal, terça ou chapa armados, os EIXOS da
          grade também encaixam — o cruzamento de dois eixos é o ponto do pilar na planta de locação */
-      var sub0 = this.ferramenta(), comEixos = !!(sub0 && ((global.MetalCriarUI && global.MetalCriarUI.querEixos && global.MetalCriarUI.querEixos(sub0)) ||
+      var sub0 = this.ferramenta(), comEixos = (BB() && BB().snapLigado && BB().TIPOS_SNAP && BB().TIPOS_SNAP.indexOf("eixos") >= 0) ? !!(sub0 && BB().snapLigado("eixos")) : !!(sub0 && ((global.MetalCriarUI && global.MetalCriarUI.querEixos && global.MetalCriarUI.querEixos(sub0)) ||
         (global.MetalProntasUI && global.MetalProntasUI.querEixos && global.MetalProntasUI.querEixos(sub0)) ||   /* e as PEÇAS PRONTAS (js/metalprontasui.js) */
-        (BB() && BB().querEixos && BB().querEixos(sub0))));   /* e a FUNDAÇÃO e o PILAR de concreto (14/10/2026, js/bimbarraopcoes.js) */
+        (BB() && BB().querEixos && BB().querEixos(sub0)) ||   /* e a FUNDAÇÃO e o PILAR de concreto (14/10/2026, js/bimbarraopcoes.js) */
+        (BB() && BB().snapLigado && BB().snapLigado("eixos"))));   /* e TODA ferramenta com "Eixos da grade" marcado no menu do Snap */
       if (st.geo && st.gk1 === est && st.gk2 === dados && st.geo.id === id && st.gk3 === comEixos) return st.geo;
       var R = Pr(), g = R ? R.geometria(est || {}, { avaliar: b && b.familiaAvaliar ? function (f, t, i) { return b.familiaAvaliar(f, t, i); } : null, eixos: comEixos }) : { els: [], segs: [], pontos: [] };
       var segs = g.segs.slice(), pontos = g.pontos.slice(), n = 0, MAX = 4000;
@@ -294,7 +295,7 @@
         });
         (dados.linhas || []).forEach(function (l) { if (l && fin(l[0]) && fin(l[1]) && fin(l[2]) && fin(l[3])) seg(P(l[0], l[1]), P(l[2], l[3])); });
       }
-      st.geo = { id: id, els: g.els, segs: segs, pontos: pontos }; st.gk1 = est; st.gk2 = dados; st.gk3 = comEixos;
+      st.geo = { id: id, els: g.els, segs: segs, pontos: pontos, circs: g.circs || [] }; st.gk1 = est; st.gk2 = dados; st.gk3 = comEixos;   /* circs: pilar redondo, parede curva (quadrante, tangente) */
       return st.geo;
     },
     /* a peça do editor sob o ponto (pegada); porta/janela só aceita parede */
@@ -340,9 +341,9 @@
       var sn = null;
       if (R && cfg && cfg.snap) {
         var T = {}; (R.TIPOS || []).forEach(function (t) { T[t] = !cfg.tipos || cfg.tipos[t] !== false; }); T.grade = !!cfg.grade && T.grade;
-        sn = R.snap(cur, this._geo(id), { tol: tol, tipos: T, ref: base.snap, grade: cfg.grade ? cfg.passo : 0 });
+        sn = R.snap(cur, this._geo(id), { tol: tol, tipos: T, ref: base.snap, grade: cfg.grade ? cfg.passo : 0, prefereCentro: !!(R.CENTRO_SUB && R.CENTRO_SUB[sub]) });   /* fundação e pilar: cruzamento de eixos e centro primeiro */
       }
-      var q = sn ? P(sn.p.x, sn.p.z) : cur, forte = !!(sn && R && R.CLASSE[sn.sub || sn.tipo] <= 1), aj = null;
+      var q = sn ? P(sn.p.x, sn.p.z) : cur, forte = !!(sn && R && (R.CLASSE[sn.sub || sn.tipo] <= 1 || sn.tipo === "paralelo" || sn.tipo === "rastreamento")), aj = null;   /* o paralelo e a guia do rastreamento mandam na direção (não a trava) */
       if (base.ang && Bo && !forte) {
         /* o ponto da GRADE não entra na trava: projetar o nó da grade na direção travada dá um
            comprimento quebrado (2,97 m). Trava o CURSOR e o comprimento anda no passo da grade.
@@ -542,6 +543,12 @@
         caminho(t.pts.concat(r ? [r.p] : []), "pm-elastico");
         if (CONTORNO[sub] && r && t.pts.length >= 2) caminho([r.p, t.pts[0]], "pm-fecho");
         t.pts.forEach(function (q) { el("circle", { cx: r6(q.x), cy: r6(q.z), r: r6(3 * u), "class": "pm-vert" }); });
+      }
+      /* METÁLICA › PEÇAS PRONTAS (frente S6, 14/10/2026 — js/metalprontasui.js): a prévia da peça pronta também na PLANTA
+         (escada por linha com o painel vermelho/verde, piso e guarda-corpo por contorno/retângulo) */
+      if (sub === "met-pronta-colocar" && r && global.MetalProntasUI && global.MetalProntasUI.previaPlanta) {
+        var lpP = null; try { lpP = global.MetalProntasUI.previaPlanta(r.p.x, r.p.z); } catch (eP) { lpP = null; }
+        if (lpP) lpP.segs.forEach(function (sg) { var ep = caminho([P(sg[0], sg[1]), P(sg[2], sg[3])], sg[4]); if (ep && lpP.falta) ep.style.stroke = "var(--vermelho)"; });
       }
       /* porta/janela: a parede sob o cursor e o vão que vai abrir */
       if (sub === "familia" && r && this._familiaHospedada()) this._desenharVao(id, caminho, r, t);

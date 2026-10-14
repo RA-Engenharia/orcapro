@@ -719,7 +719,7 @@
             /* o encaixe do desenho de precisão NO PLANO: eixos da grade (cruzamentos), faces e
                pontas das peças, extensão e grade — em metros, com a tolerância dos 14 px */
             var p2 = P.pontoNoPlano(api.raio(e.clientX + tolPx, e.clientY), pl), tolM = p2 ? Math.max(0.005, Math.min(2, Math.sqrt(Math.pow(p2[0] - q[0], 2) + Math.pow(p2[2] - q[2], 2)))) : 0.2;
-            var sn = PR().snap({ x: q[0], z: q[2] }, geoPr(), { tol: tolM, tipos: T, ref: refSnap ? { x: refSnap[0], z: refSnap[2] } : null, grade: bc && bc.grade ? bc.passo : 0 });
+            var sn = PR().snap({ x: q[0], z: q[2] }, geoPr(), { tol: tolM, tipos: T, ref: refSnap ? { x: refSnap[0], z: refSnap[2] } : null, grade: bc && bc.grade ? bc.passo : 0, prefereCentro: ferr() === "pilar" });   /* pilar: cruzamento de eixos e centro primeiro (js/bimprecisao.js escolherCentro) */
             if (sn) { var p3 = [sn.p.x, pl.y, sn.p.z], s = proj(p3); sp = { p: p3, tipo: sn.tipo, classe: PR().CLASSE[sn.sub || sn.tipo], d: s ? Math.sqrt(Math.pow(s.x - cur.x, 2) + Math.pow(s.y - cur.y, 2)) : 99, guias: sn.guias }; }
           }
           best = M.combinar(s3, sp);

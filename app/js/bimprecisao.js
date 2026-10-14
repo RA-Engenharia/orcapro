@@ -89,6 +89,88 @@
     return t;
   }
 
+  /* ------------------------------------------- SNAPS COMPLETOS (14/10/2026)
+   * Pedido do Rogério: "pense em TODOS os snaps possíveis — perpendicular,
+   * paralelo, tangente, tudo que existe em trigonometria que dá para
+   * parametrizar". A geometria pura de cada um mora aqui (testada em
+   * tools/test-bimsnaps-completo.js). ÂNGULO DOS CÍRCULOS: θ = atan2(dz, dx)
+   * no plano (x, z) — o ponto é c + r·(cos θ, sen θ); o arco vai de a0 a a1
+   * no sentido de θ crescente. Na vista 2D (x, y da tela) é o mesmo atan2(dy, dx). */
+  function normT(a) { var t = a % (2 * Math.PI); return t < 0 ? t + 2 * Math.PI : t; }
+  /* θ está no arco (a0 → a1, θ crescente)? Sem a0/a1 é o círculo inteiro */
+  function naArco(th, ci) { if (!ci || !fin(ci.a0) || !fin(ci.a1)) return true; var span = normT(ci.a1 - ci.a0); if (span < 1e-9) span = 2 * Math.PI; return normT(th - ci.a0) <= span + 1e-9; }
+  function pontoCirc(ci, th) { return P(ci.c.x + ci.r * Math.cos(th), ci.c.z + ci.r * Math.sin(th)); }
+  /* os pontos de TANGÊNCIA de uma reta que sai de p e toca o círculo (0, 1 ou 2) */
+  function tangentes(p, ci) {
+    var dx = p.x - ci.c.x, dz = p.z - ci.c.z, d = Math.sqrt(dx * dx + dz * dz);
+    if (!(ci.r > 0) || d <= ci.r + 1e-9) return [];
+    var al = Math.atan2(dz, dx), be = Math.acos(ci.r / d);
+    return [al + be, al - be].filter(function (t) { return naArco(t, ci); }).map(function (t) { return pontoCirc(ci, t); });
+  }
+  /* QUADRANTES (0°, 90°, 180°, 270°) — girados com a peça: rotY na convenção do rotY das caixas
+     (atan2(−dz, dx)), então o 0° da peça é θ = −rotY; no arco, só os que caem nele */
+  function quadrantes(ci) {
+    var r0 = -num(ci.rot, 0), out = [];
+    for (var k = 0; k < 4; k++) { var th = r0 + k * Math.PI / 2; if (naArco(th, ci)) out.push(pontoCirc(ci, th)); }
+    return out;
+  }
+  /* CENTRO GEOMÉTRICO (centroide de ÁREA) de um polígono simples, côncavo ou não. Não é a média dos
+     vértices: num "L" a média cai fora do centro de massa (e às vezes fora da peça). */
+  function centroide(pts) {
+    var A = 0, cx = 0, cz = 0, n = pts ? pts.length : 0;
+    for (var i = 0; i < n; i++) {
+      var a = pts[i], b = pts[(i + 1) % n], cr = a.x * b.z - b.x * a.z;
+      A += cr; cx += (a.x + b.x) * cr; cz += (a.z + b.z) * cr;
+    }
+    if (Math.abs(A) < 1e-12) return n ? media(pts) : null;
+    return P(cx / (3 * A), cz / (3 * A));
+  }
+  /* o círculo que passa por três pontos (a parede curva: ponta, meio do arco, ponta) */
+  function circ3(a, m, b) {
+    var ax = a.x, az = a.z, bx = m.x, bz = m.z, cx = b.x, cz = b.z;
+    var d = 2 * (ax * (bz - cz) + bx * (cz - az) + cx * (az - bz)); if (Math.abs(d) < 1e-12) return null;
+    var ux = ((ax * ax + az * az) * (bz - cz) + (bx * bx + bz * bz) * (cz - az) + (cx * cx + cz * cz) * (az - bz)) / d;
+    var uz = ((ax * ax + az * az) * (cx - bx) + (bx * bx + bz * bz) * (ax - cx) + (cx * cx + cz * cz) * (bx - ax)) / d;
+    var c = P(ux, uz), r = dist(c, a), t0 = Math.atan2(az - uz, ax - ux), tm = Math.atan2(bz - uz, bx - ux), t1 = Math.atan2(cz - uz, cx - ux);
+    /* o arco é o lado que passa pelo meio: se o meio não fica de t0 a t1 (θ crescente), troca as pontas */
+    var ci = { c: c, r: r, a0: t0, a1: t1 };
+    if (!naArco(tm, ci)) ci = { c: c, r: r, a0: t1, a1: t0 };
+    return ci;
+  }
+  /* PONTO MÉDIO ENTRE 2 PONTOS (o modo temporário: dois cliques, vale o meio) */
+  function meio2p(a, b) { return a && b && fin(a.x) && fin(b.x) ? P(r4((a.x + b.x) / 2), r4((a.z + b.z) / 2)) : null; }
+  /* as direções (unitárias) do RASTREAMENTO polar: os múltiplos de cada incremento, de 0° a 180° */
+  function direcoesPolares(incs) {
+    var L = Array.isArray(incs) && incs.length ? incs : [90], vistos = {}, out = [];
+    L.forEach(function (g) { g = num(g, 90); if (!(g > 0)) return; for (var a = 0; a < 180 - 1e-9; a += g) { var k = Math.round(a * 1000); if (vistos[k]) continue; vistos[k] = 1; var r = a * Math.PI / 180; out.push(P(Math.cos(r), -Math.sin(r))); } });
+    return out;
+  }
+  /* a geometria de snap de uma LISTA de linhas/círculos soltos (a vista 2D: linhas de detalhe, círculos,
+     arcos): [{ id, pts:[{x,z}], fechado, circ:{ c:{x,z}, r, a0, a1 } }] → { els, segs, pontos, circs } */
+  function geoDeLinhas(lista) {
+    var segs = [], pontos = [], circs = [], els = [];
+    (lista || []).forEach(function (it) {
+      if (!it) return;
+      if (it.circ && it.circ.c && it.circ.r > 0) { var ci = { c: P(num(it.circ.c.x, 0), num(it.circ.c.z, 0)), r: +it.circ.r, a0: it.circ.a0, a1: it.circ.a1, rot: 0, id: it.id }; addCirc(ci, it.id, pontos, circs); return; }
+      var pts = (it.pts || []).map(function (q) { return P(num(q.x, 0), num(q.z, 0)); });
+      if (pts.length < 2) { if (pts.length === 1) pontos.push({ p: pts[0], tipo: "no", id: it.id }); return; }
+      if (it.fechado && pts.length >= 3) { bordas(pts, it.id, "face", segs, pontos); pontos.push({ p: centroide(pts), tipo: "centroide", id: it.id }); }
+      else {
+        for (var i = 0; i + 1 < pts.length; i++) { var a = pts[i], b = pts[i + 1]; if (dist(a, b) < 1e-6) continue; segs.push({ a: a, b: b, id: it.id, k: "face" }); pontos.push({ p: P((a.x + b.x) / 2, (a.z + b.z) / 2), tipo: "meio", id: it.id }); }
+        pts.forEach(function (q) { pontos.push({ p: q, tipo: "fim", id: it.id }); });
+      }
+      els.push({ id: it.id });
+    });
+    return { els: els, segs: segs, pontos: pontos, circs: circs };
+  }
+  /* um círculo (ou arco) entra no snap: o centro, os quadrantes e, no arco, as pontas */
+  function addCirc(ci, id, pontos, circs) {
+    ci.id = id; circs.push(ci);
+    pontos.push({ p: ci.c, tipo: "centro", id: id });
+    quadrantes(ci).forEach(function (q) { pontos.push({ p: q, tipo: "quadrante", id: id }); });
+    if (fin(ci.a0) && fin(ci.a1)) { pontos.push({ p: pontoCirc(ci, ci.a0), tipo: "fim", id: id }, { p: pontoCirc(ci, ci.a1), tipo: "fim", id: id }); }
+  }
+
   /* ------------------------------------------------------- pegada (planta) */
   /* retângulo de centro c, eixos u/n e meias-medidas hL (ao longo de u) e hE */
   function retangulo(c, u, n, hL, hE) {
@@ -110,7 +192,7 @@
      snap pega o que vier sem este arquivo precisar conhecer cada tipo. */
   function pegada(el, avaliar, comEixos) {
     if (!el || el.id == null) return null;
-    var segs = [], pontos = [], cantos = [], id = el.id, rot = 0, c;
+    var segs = [], pontos = [], cantos = [], circs = [], id = el.id, rot = 0, c;
     if (el.planos && el.planos.length) {                               /* cobertura: os planos, com beiral */
       el.planos.forEach(function (p) {
         var u = eixoU(num(p.rotY, 0)), n = eixoN(num(p.rotY, 0));
@@ -120,12 +202,29 @@
       rot = num(el.planos[0].rotY, 0);
       c = fin(el.x0) && fin(el.x1) ? P((el.x0 + el.x1) / 2, (el.z0 + el.z1) / 2) : media(cantos);
       pontos.push({ p: c, tipo: "centro", id: id });
-      return { id: id, tipo: "cobertura", centro: c, rotY: rot, cantos: cantos, segs: segs, pontos: pontos };
+      return { id: id, tipo: "cobertura", centro: c, rotY: rot, cantos: cantos, segs: segs, pontos: pontos, circs: circs };
+    }
+    /* a faixa de ALTURA da peça (de baixo ao topo): duas linhas que se cruzam na planta mas não se tocam
+       no espaço (viga a +3,00 sobre viga a +6,00) dão a INTERSEÇÃO APARENTE, não a interseção */
+    var yr = fin(el.cy) && fin(el.altura) ? [el.cy - el.altura / 2, el.cy + el.altura / 2] : null;
+    function comY(lista) { if (yr) lista.forEach(function (s) { s.yr = yr; }); return lista; }
+    /* LAJE POR CONTORNO (B2): o contorno de verdade (não a caixa envolvente) e o CENTRO GEOMÉTRICO dele */
+    if (Array.isArray(el.contorno) && el.contorno.length >= 3 && el.tipo === "laje") {
+      cantos = el.contorno.map(function (q) { return Array.isArray(q) ? P(num(q[0], 0), num(q[1], 0)) : P(num(q.x, 0), num(q.z, 0)); });
+      bordas(cantos, id, "face", segs, pontos); comY(segs);
+      c = centroide(cantos); pontos.push({ p: c, tipo: "centroide", id: id });
+      return { id: id, tipo: "laje", centro: c, rotY: num(el.rotY, 0), cantos: cantos, segs: segs, pontos: pontos, circs: circs };
     }
     if (ehCaixa(el)) {
       rot = num(el.rotY, 0); c = P(el.cx, el.cz);
       var u2 = eixoU(rot), n2 = eixoN(rot), hL = el.comprimento / 2, hE = el.espessura / 2;
       cantos = retangulo(c, u2, n2, hL, hE);
+      /* PILAR (ou tubo) REDONDO: o círculo de verdade — centro e quadrantes, girados com a peça */
+      var pf = el.perfil, rr = pf && (pf.forma === "circ" ? num(pf.d, 0) / 2 : pf.forma === "tubo-circ" ? num(pf.D, 0) / 2 : 0);
+      if (rr > 0) {
+        addCirc({ c: c, r: rr, rot: rot }, id, pontos, circs); circs[circs.length - 1].yr = yr;
+        return { id: id, tipo: el.tipo || "caixa", centro: c, rotY: rot, cantos: cantos, segs: segs, pontos: pontos, circs: circs, hospedada: false };
+      }
       bordas(cantos, id, "face", segs, pontos);
       /* METÁLICA (js/metalcriar.js): a barra de aço deitada (viga, terça, diagonal) nasce com o eixo no X
          local — a linha de centro da pegada é o eixo dela na planta, e a ponta agarra como a da viga */
@@ -135,15 +234,18 @@
         var e0 = soma(c, u2, -hL), e1 = soma(c, u2, hL);
         segs.push({ a: e0, b: e1, id: id, k: "eixo" });
         pontos.push({ p: e0, tipo: "fim", id: id, eixo: true }, { p: e1, tipo: "fim", id: id, eixo: true }, { p: c, tipo: "meio", id: id, eixo: true });
+        /* PAREDE CURVA: o arco do eixo (centro, quadrantes no arco e tangente) */
+        if (el.arco && el.arco.m && fin(el.arco.m.x)) { var ca = circ3(e0, P(el.arco.m.x, el.arco.m.z), e1); if (ca) { addCirc(ca, id, pontos, circs); ca.yr = yr; } }
       } else pontos.push({ p: c, tipo: "centro", id: id });
-      return { id: id, tipo: el.tipo || "caixa", centro: c, rotY: rot, cantos: cantos, segs: segs, pontos: pontos, hospedada: false };
+      comY(segs);
+      return { id: id, tipo: el.tipo || "caixa", centro: c, rotY: rot, cantos: cantos, segs: segs, pontos: pontos, circs: circs, hospedada: false };
     }
     if (comEixos && fin(el.x0) && fin(el.z0) && fin(el.x1) && fin(el.z1) && el.tipo == null && el.nome != null) {   /* P4: eixo da grade — só para Alinhar/Aparar (a linha de referência); o snap do desenho fica como na B3 */
       var g0 = P(el.x0, el.z0), g1 = P(el.x1, el.z1);
       if (dist(g0, g1) < 1e-6) return null;
       segs.push({ a: g0, b: g1, id: id, k: "eixo-grade" });
       pontos.push({ p: g0, tipo: "fim", id: id }, { p: g1, tipo: "fim", id: id }, { p: P((g0.x + g1.x) / 2, (g0.z + g1.z) / 2), tipo: "meio", id: id });
-      return { id: id, tipo: "eixo", centro: P((g0.x + g1.x) / 2, (g0.z + g1.z) / 2), rotY: Math.atan2(-(g1.z - g0.z), g1.x - g0.x), cantos: [g0, g1], segs: segs, pontos: pontos };
+      return { id: id, tipo: "eixo", centro: P((g0.x + g1.x) / 2, (g0.z + g1.z) / 2), rotY: Math.atan2(-(g1.z - g0.z), g1.x - g0.x), cantos: [g0, g1], segs: segs, pontos: pontos, circs: circs };
     }
     if (fin(el.x) && fin(el.z) && el.famId) {                         /* família colocada */
       rot = num(el.rotY, 0); c = P(el.x, el.z);
@@ -154,14 +256,15 @@
         cantos = [[b.x0, b.z0], [b.x1, b.z0], [b.x1, b.z1], [b.x0, b.z1]].map(function (q) { return P(c.x + q[0] * u3.x + q[1] * n3.x, c.z + q[0] * u3.z + q[1] * n3.z); });
         bordas(cantos, id, "face", segs, pontos);
       } else cantos = [c];
-      pontos.push({ p: c, tipo: "centro", id: id });
-      return { id: id, tipo: "familia", centro: c, rotY: rot, cantos: cantos, segs: segs, pontos: pontos, hospedada: !!el.host };
+      /* o ponto de INSERÇÃO da família (onde ela foi colocada) — não é o centro da caixa dela */
+      pontos.push({ p: c, tipo: "insercao", id: id });
+      return { id: id, tipo: "familia", centro: c, rotY: rot, cantos: cantos, segs: segs, pontos: pontos, circs: circs, hospedada: !!el.host };
     }
     var poli = el.contorno || el.pontos;
     if (Array.isArray(poli) && poli.length >= 2) {
       cantos = poli.map(function (q) { return Array.isArray(q) ? P(num(q[0], 0), num(q[1], 0)) : P(num(q.x, 0), num(q.z, 0)); });
       /* polígono fechado (laje por contorno) ou linha aberta (tubo, guarda-corpo) */
-      if (el.fechado !== false && cantos.length >= 3) bordas(cantos, id, "face", segs, pontos);
+      if (el.fechado !== false && cantos.length >= 3) { bordas(cantos, id, "face", segs, pontos); c = centroide(cantos); pontos.push({ p: c, tipo: "centroide", id: id }); }
       else {
         for (var i = 0; i + 1 < cantos.length; i++) {
           var a0 = cantos[i], a1 = cantos[i + 1]; if (dist(a0, a1) < 1e-6) continue;
@@ -169,11 +272,13 @@
           pontos.push({ p: P((a0.x + a1.x) / 2, (a0.z + a1.z) / 2), tipo: "meio", id: id });
         }
         cantos.forEach(function (q) { pontos.push({ p: q, tipo: "fim", id: id }); });
+        c = media(cantos);
       }
-      c = media(cantos); pontos.push({ p: c, tipo: "centro", id: id });
-      return { id: id, tipo: el.tipo || "poligono", centro: c, rotY: num(el.rotY, 0), cantos: cantos, segs: segs, pontos: pontos };
+      comY(segs);
+      return { id: id, tipo: el.tipo || "poligono", centro: c, rotY: num(el.rotY, 0), cantos: cantos, segs: segs, pontos: pontos, circs: circs };
     }
-    if (fin(el.x) && fin(el.z)) { c = P(el.x, el.z); return { id: id, tipo: el.tipo || "ponto", centro: c, rotY: 0, cantos: [c], segs: [], pontos: [{ p: c, tipo: "centro", id: id }] }; }
+    /* o NÓ (peça de um ponto só: sapata, ponto de referência) */
+    if (fin(el.x) && fin(el.z)) { c = P(el.x, el.z); return { id: id, tipo: el.tipo || "ponto", centro: c, rotY: 0, cantos: [c], segs: [], pontos: [{ p: c, tipo: "no", id: id }], circs: circs }; }
     return null;
   }
   function media(pts) { var x = 0, z = 0; pts.forEach(function (p) { x += p.x; z += p.z; }); return pts.length ? P(x / pts.length, z / pts.length) : P(0, 0); }
@@ -183,7 +288,7 @@
   /* toda a geometria de snap do estado da edição: { els, segs, pontos } */
   function geometria(estado, o) {
     o = o || {};
-    var fora = {}, els = [], segs = [], pontos = [];
+    var fora = {}, els = [], segs = [], pontos = [], circs = [];
     (o.excluir || []).forEach(function (id) { fora[id] = 1; });
     Object.keys(estado || {}).forEach(function (k) {
       if (CHAVES_FORA[k] || !Array.isArray(estado[k])) return;
@@ -191,31 +296,78 @@
         if (!el || typeof el !== "object" || fora[el.id]) return;
         if (el.host && fora[el.host.id]) return;      /* a porta anda com a parede: não agarra nela mesma */
         var pg = pegada(el, o.avaliar, !!o.eixos); if (!pg) return;
-        els.push(pg); segs = segs.concat(pg.segs); pontos = pontos.concat(pg.pontos);
+        els.push(pg); segs = segs.concat(pg.segs); pontos = pontos.concat(pg.pontos); if (pg.circs) circs = circs.concat(pg.circs);
       });
     });
-    return { els: els, segs: segs, pontos: pontos };
+    return { els: els, segs: segs, pontos: pontos, circs: circs };
   }
 
   /* ---------------------------------------------------------------- SNAP */
-  var TIPOS = ["fim", "intersecao", "meio", "centro", "perpendicular", "extensao", "proximo", "grade"];
-  /* ⚠ A PRIORIDADE QUANDO DOIS CONCORREM (é o que o pedido nomeia):
-   *  1) CLASSE primeiro: ponto notável (fim, interseção, meio, centro) vence
-   *     construção (perpendicular, cruzamento de duas extensões), que vence a
-   *     extensão simples, que vence "próximo" (cair na aresta), que vence a
-   *     grade. Um ponto de verdade a 20 cm nunca perde para uma linha de
-   *     construção a 5 cm — é a regra do CAD, e é o que evita a parede que
-   *     "quase" fecha no canto.
-   *  2) Dentro da classe, o MAIS PERTO do cursor ganha — mas dois candidatos
-   *     a menos de EMPATE × tolerância um do outro (em distância) são um
-   *     empate, e aí vale a ordem de TIPOS: ponto final > interseção > meio >
-   *     centro. Sem a janela de empate, um meio a 5,0 cm roubaria o canto a
-   *     5,1 cm, e o usuário via o marcador pular entre os dois.
-   * A trena do visualizador tem outra régua (pesos em pixel, js/bim.js
-   * SNAP_PESO): ela mede malha de IFC; esta mede o que foi modelado aqui. */
-  var CLASSE = { fim: 0, intersecao: 0, meio: 0, centro: 0, perpendicular: 1, extensao2: 1, extensao: 2, proximo: 3, grade: 4 };
-  var ORDEM = { fim: 0, intersecao: 1, meio: 2, centro: 3, perpendicular: 4, extensao2: 5, extensao: 6, proximo: 7, grade: 8 };
+  /* OS TIPOS (14/10/2026: "todos os snaps possíveis"). Os quatro últimos não são calculados aqui: `eixos`
+     põe os eixos da grade na geometria (js/bimprecisaoui.js, js/bimplantamodelar.js) e `vertice`,
+     `aresta` e `face` são o encaixe na MALHA do modelo importado (js/bim.js aplicarSnap) — mas ligam e
+     desligam no mesmo menu e moram no mesmo estado (js/bimbarraopcoes.js). */
+  var TIPOS = ["fim", "intersecao", "meio", "centro", "centroide", "quadrante", "insercao", "no",
+               "perpendicular", "tangente", "aparente", "extensao", "paralelo", "rastreamento", "proximo", "grade",
+               "eixos", "vertice", "aresta", "face"];
+  /* o menu da barra de baixo agrupa assim (js/bimbarrasnaps.js) */
+  var GRUPOS = [
+    { id: "pontos", rotulo: "Pontos", tipos: ["fim", "meio", "centro", "centroide", "quadrante", "insercao", "no"] },
+    { id: "geometria", rotulo: "Geometria", tipos: ["intersecao", "aparente", "extensao", "proximo"] },
+    { id: "relacoes", rotulo: "Relações", tipos: ["perpendicular", "paralelo", "tangente"] },
+    { id: "referencias", rotulo: "Referências", tipos: ["grade", "eixos", "vertice", "aresta", "face"] },
+    { id: "rastreamento", rotulo: "Rastreamento", tipos: ["rastreamento"] }
+  ];
+  /* ligado na primeira vez: todos, menos a FACE (o ponto na face do modelo importado tira o clique do plano
+     de trabalho — quem quer liga) */
+  var PADRAO_TIPOS = {}; TIPOS.forEach(function (t) { PADRAO_TIPOS[t] = t !== "face"; });
+  /* ⚠ A PRIORIDADE QUANDO DOIS CONCORREM:
+   *  1) CLASSE primeiro:
+   *     0 · ponto notável ......... extremidade, interseção, meio, centro, quadrante, centro geométrico,
+   *                                  inserção, nó (e, na malha, vértice/meio/centro);
+   *     1 · ponto construído ....... perpendicular, tangente, interseção aparente, cruzamento de duas
+   *                                  extensões, cruzamento de duas guias do rastreamento;
+   *     2 · linha de construção .... paralelo, rastreamento, extensão (o adquirido antes do automático);
+   *     3 · sobre a peça ........... próximo (aresta, arco, face);
+   *     4 · grade.
+   *     Um ponto de verdade a 20 cm nunca perde para uma linha de construção a 5 cm — é o que evita a
+   *     parede que "quase" fecha no canto.
+   *  2) Dentro da classe, o MAIS PERTO do cursor ganha — mas dois candidatos a menos de EMPATE ×
+   *     tolerância um do outro (em distância) são um empate, e aí vale a ORDEM abaixo. Sem a janela de
+   *     empate, um meio a 5,0 cm roubaria o canto a 5,1 cm, e o usuário via o marcador pular.
+   *  A TOLERÂNCIA é em PIXELS de tela (14 no mouse, 30 no dedo), convertida em metros pela tela que
+   *  chama (js/bimprecisaoui.js tolM, js/bimplantamodelar.js _tol): o snap pega igual em qualquer zoom.
+   * A trena do visualizador tem outra régua (pesos em pixel, js/bim.js SNAP_PESO): ela mede malha de
+   * IFC; esta mede o que foi modelado aqui. */
+  var CLASSE = { fim: 0, intersecao: 0, meio: 0, centro: 0, quadrante: 0, centroide: 0, insercao: 0, no: 0,
+                 perpendicular: 1, tangente: 1, aparente: 1, extensao2: 1, rastreamento2: 1,
+                 extensao: 2, rastreamento: 2, paralelo: 2, proximo: 3, grade: 4 };
+  var ORDEM = { fim: 0, intersecao: 1, meio: 2, centro: 3, quadrante: 4, centroide: 5, insercao: 6, no: 7,
+                perpendicular: 8, tangente: 9, aparente: 10, extensao2: 11, rastreamento2: 12,
+                paralelo: 13, rastreamento: 14, extensao: 15, proximo: 16, grade: 17 };   /* o que o usuário ADQUIRIU (paralelo, guia) vem antes do prolongamento automático */
   var EMPATE = 0.3;
+  /* FUNDAÇÃO e PILAR (o.prefereCentro, 14/10/2026 — a simulação do pórtico: a Fundação clicada no centro do
+     pilar W 250 × 32,7 nascia a 0,1295 m do eixo, presa ao meio da face da mesa). Nesta ordem, dentro da
+     tolerância e sem janela de distância: 1º o CRUZAMENTO DE EIXOS; 2º o CENTRO / a INSERÇÃO de peça
+     existente; 3º o resto pela regra de sempre. E com o cursor DENTRO da seção de uma peça, as arestas,
+     pontas e meios DELA (e os cruzamentos com as faces dela) não entram: ali se quer o centro. */
+  function escolherCentro(cands, tol) {
+    if (!cands || !cands.length) return null;
+    function maisPerto(L) { return L.reduce(function (m, c) { return !m || c.d < m.d ? c : m; }, null); }
+    var cruz = cands.filter(function (c) { return c.cruzEixos; });
+    if (cruz.length) return maisPerto(cruz);
+    var cen = cands.filter(function (c) { return c.tipo === "centro" || c.tipo === "insercao"; });
+    if (cen.length) return maisPerto(cen);
+    return escolher(cands, tol);
+  }
+  function dentroPoli(p, pts) {
+    var dentro = false;
+    for (var i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      var a = pts[i], b = pts[j];
+      if (((a.z > p.z) !== (b.z > p.z)) && (p.x < (b.x - a.x) * (p.z - a.z) / ((b.z - a.z) || 1e-12) + a.x)) dentro = !dentro;
+    }
+    return dentro;
+  }
   function escolher(cands, tol) {
     if (!cands || !cands.length) return null;
     var melhorClasse = Infinity;
@@ -229,16 +381,21 @@
     eleg.sort(function (a, b) { return (ORDEM[a.sub || a.tipo] - ORDEM[b.sub || b.tipo]) || ((b.eixo ? 1 : 0) - (a.eixo ? 1 : 0)) || (a.d - b.d); });
     return eleg[0];
   }
-  var PADRAO = { fim: true, intersecao: true, meio: true, centro: true, perpendicular: true, extensao: true, proximo: true, grade: true };
+  var PADRAO = PADRAO_TIPOS;
+  /* as faixas de altura de duas linhas se tocam? (sem altura = desenho 2D: tocam) */
+  function tocamEmY(s1, s2) { if (!s1.yr || !s2.yr) return true; return s1.yr[0] <= s2.yr[1] + 1e-6 && s2.yr[0] <= s1.yr[1] + 1e-6; }
   /* cur = {x, z} do cursor no plano; geo = geometria(); o = { tol (m), tipos,
-     ref (1º ponto do traço: perpendicular e alinhamento), grade (passo m),
-     origemGrade, alcance (m, das linhas de extensão), on }.
+     ref (1º ponto do traço: perpendicular, tangente, paralelo e alinhamento), grade (passo m),
+     origemGrade, alcance (m, das linhas de extensão), on,
+     paralelos: [segmentos de referência ADQUIRIDOS — o traço fica paralelo a eles],
+     adquiridos: [pontos ADQUIRIDOS do rastreamento], incs: [graus das guias polares; padrão 90] }.
      Devolve { p, tipo, d, guias:[{a,b}], seg } ou null. */
   function snap(cur, geo, o) {
     o = o || {};
     if (o.on === false || !cur || !fin(cur.x) || !fin(cur.z)) return null;
     var tol = num(o.tol, 0.25), ti = o.tipos || PADRAO, cands = [], alcance = num(o.alcance, 30);
     geo = geo || { segs: [], pontos: [] };
+    var circs = geo.circs || [], temRef = !!(o.ref && fin(o.ref.x) && fin(o.ref.z)), ref = temRef ? P(o.ref.x, o.ref.z) : null;
     function add(p, tipo, ex) {
       var d = dist(p, cur); if (d > tol) return;
       var c = { p: P(r4(p.x), r4(p.z)), tipo: tipo, d: d };
@@ -247,25 +404,30 @@
     }
     geo.pontos.forEach(function (pt) { if (ti[pt.tipo]) add(pt.p, pt.tipo, pt.eixo ? { id: pt.id, eixo: true } : { id: pt.id }); });
     var perto = geo.segs.filter(function (s) { return distPontoSeg(cur, s.a, s.b) <= tol; });
-    if (ti.intersecao) {
+    if (ti.intersecao || ti.aparente) {
       for (var i = 0; i < perto.length; i++) for (var j = i + 1; j < perto.length; j++) {
         if (perto[i].id === perto[j].id) continue;   /* cruzamento dentro da MESMA peça é canto dela: já é "fim" */
-        var x = intersecaoSegs(perto[i].a, perto[i].b, perto[j].a, perto[j].b);
-        if (x) add(x, "intersecao", { segs: [perto[i], perto[j]] });
+        var x = intersecaoSegs(perto[i].a, perto[i].b, perto[j].a, perto[j].b); if (!x) continue;
+        /* INTERSEÇÃO APARENTE: na planta se cruzam, no espaço passam uma por cima da outra */
+        var real = tocamEmY(perto[i], perto[j]);
+        if (real && ti.intersecao) add(x, "intersecao", { segs: [perto[i], perto[j]] });
+        else if (!real && ti.aparente) add(x, "aparente", { segs: [perto[i], perto[j]] });
       }
     }
-    if (ti.perpendicular && o.ref && fin(o.ref.x)) {
+    if (ti.perpendicular && temRef) {
       geo.segs.forEach(function (s) {
-        var pr = projReta(o.ref, s.a, s.b);
+        var pr = projReta(ref, s.a, s.b);
         if (pr.t < -1e-9 || pr.t > 1 + 1e-9 || pr.d < 1e-4) return;
-        add(pr.p, "perpendicular", { seg: s, guias: [{ a: P(o.ref.x, o.ref.z), b: pr.p }] });
+        add(pr.p, "perpendicular", { seg: s, guias: [{ a: P(ref.x, ref.z), b: pr.p }] });
       });
     }
+    /* TANGENTE: do 1º ponto do traço, os dois pontos onde a reta toca o círculo (ou o arco) */
+    if (ti.tangente && temRef) circs.forEach(function (ci) { tangentes(ref, ci).forEach(function (t) { add(t, "tangente", { circ: ci, guias: [{ a: P(ref.x, ref.z), b: t }] }); }); });
+    var linhas = [];
     if (ti.extensao) {
       /* linhas de construção: o prolongamento de cada aresta ALÉM das pontas e
          as linhas X/Z que passam pelas pontas (e pelo 1º ponto do traço) —
          o "alinhar com aquela parede" */
-      var linhas = [];
       geo.segs.forEach(function (s) {
         var pr = projReta(cur, s.a, s.b); if (pr.d > tol || (pr.t >= 0 && pr.t <= 1)) return;
         var ponta = pr.t < 0 ? s.a : s.b; if (dist(ponta, pr.p) > alcance) return;
@@ -273,13 +435,13 @@
         linhas.push({ o: ponta, d: P((s.b.x - s.a.x) / L, (s.b.z - s.a.z) / L), foot: pr.p, dd: pr.d });
       });
       var refs = geo.pontos.filter(function (pt) { return pt.tipo === "fim"; }).map(function (pt) { return pt.p; });
-      if (o.ref && fin(o.ref.x)) refs.push(P(o.ref.x, o.ref.z));
+      if (temRef) refs.push(P(ref.x, ref.z));
       /* ⚠ a linha X/Z de uma ponta pode ser a PRÓPRIA aresta (a face de uma
          parede reta corre em X): com o cursor em cima dela isso é "próximo",
          não alinhamento — senão a extensão roubava todo clique na aresta. */
-      function sobreAresta(foot, d) {
+      var sobreAresta = function (foot, d) {
         return perto.some(function (s) { var L = dist(s.a, s.b); if (L < 1e-9) return false; var cr = Math.abs(((s.b.x - s.a.x) * d.z - (s.b.z - s.a.z) * d.x) / L); return cr < 1e-6 && distPontoSeg(foot, s.a, s.b) < 1e-6; });
-      }
+      };
       refs.forEach(function (q) {
         if (dist(q, cur) > alcance || dist(q, cur) <= tol) return;
         if (Math.abs(cur.z - q.z) <= tol && !sobreAresta(P(cur.x, q.z), P(1, 0))) linhas.push({ o: q, d: P(1, 0), foot: P(cur.x, q.z), dd: Math.abs(cur.z - q.z) });
@@ -292,18 +454,62 @@
         add(xi, "extensao", { sub: "extensao2", guias: [{ a: linhas[a].o, b: xi }, { a: linhas[b].o, b: xi }] });
       }
     }
-    if (ti.proximo) perto.forEach(function (s) { var pr = projReta(cur, s.a, s.b); var t = Math.max(0, Math.min(1, pr.t)); add(P(s.a.x + (s.b.x - s.a.x) * t, s.a.z + (s.b.z - s.a.z) * t), "proximo", { seg: s }); });
-    var best = escolher(cands, tol);
+    /* RASTREAMENTO: dos pontos ADQUIRIDOS (o cursor parou ~0,5 s em cima deles), as guias horizontais,
+       verticais e polares (os incrementos do Orto); o cruzamento de duas guias vale mais (classe 1) */
+    if (ti.rastreamento && Array.isArray(o.adquiridos) && o.adquiridos.length) {
+      var dirs = direcoesPolares(o.incs), guias = [];
+      o.adquiridos.forEach(function (q0, iq) {
+        if (!q0 || !fin(q0.x) || !fin(q0.z)) return;
+        var q = P(q0.x, q0.z); if (dist(q, cur) > alcance) return;
+        dirs.forEach(function (d) { var t = (cur.x - q.x) * d.x + (cur.z - q.z) * d.z, f = P(q.x + d.x * t, q.z + d.z * t); guias.push({ o: q, d: d, foot: f, dd: dist(f, cur), iq: iq }); });
+      });
+      guias.forEach(function (g) { if (g.dd <= tol && dist(g.o, cur) > tol) add(g.foot, "rastreamento", { guias: [{ a: g.o, b: g.foot }] }); });
+      var gp = guias.filter(function (g) { return g.dd <= 3 * tol; });
+      for (var ga = 0; ga < gp.length; ga++) for (var gb = ga + 1; gb < gp.length && gb < 60; gb++) {
+        if (gp[ga].iq === gp[gb].iq) continue;
+        var xg = intersecaoRetas(gp[ga].o, gp[ga].d, gp[gb].o, gp[gb].d); if (!xg) continue;
+        add(xg, "rastreamento", { sub: "rastreamento2", guias: [{ a: gp[ga].o, b: xg }, { a: gp[gb].o, b: xg }] });
+      }
+    }
+    /* PARALELO: o traço que sai do 1º ponto fica paralelo a uma linha de referência ADQUIRIDA (o cursor
+       parou em cima dela) — trava de direção, o comprimento continua livre */
+    if (ti.paralelo && temRef && Array.isArray(o.paralelos)) {
+      o.paralelos.forEach(function (s) {
+        if (!s || !s.a || !s.b) return;
+        var L = dist(s.a, s.b); if (L < 1e-6) return;
+        var d = P((s.b.x - s.a.x) / L, (s.b.z - s.a.z) / L), t = (cur.x - ref.x) * d.x + (cur.z - ref.z) * d.z;
+        if (Math.abs(t) < tol) return;   /* em cima do 1º ponto não há direção */
+        var f = P(ref.x + d.x * t, ref.z + d.z * t);
+        add(f, "paralelo", { seg: s, guias: [{ a: P(ref.x, ref.z), b: f }, { a: s.a, b: s.b }] });
+      });
+    }
+    if (ti.proximo) {
+      perto.forEach(function (s) { var pr = projReta(cur, s.a, s.b); var t = Math.max(0, Math.min(1, pr.t)); add(P(s.a.x + (s.b.x - s.a.x) * t, s.a.z + (s.b.z - s.a.z) * t), "proximo", { seg: s }); });
+      /* sobre o CÍRCULO/ARCO: o ponto dele mais perto do cursor */
+      circs.forEach(function (ci) { var dx = cur.x - ci.c.x, dz = cur.z - ci.c.z, L = Math.sqrt(dx * dx + dz * dz); if (L < 1e-9) return; var th = Math.atan2(dz, dx); if (!naArco(th, ci)) return; add(pontoCirc(ci, th), "proximo", { circ: ci }); });
+    }
+    if (o.prefereCentro) {
+      /* as peças com o cursor DENTRO da seção (a pegada fechada delas) */
+      var dentroDe = {};
+      (geo.els || []).forEach(function (g) { if (g && g.id != null && g.cantos && g.cantos.length >= 3 && dentroPoli(cur, g.cantos)) dentroDe[g.id] = 1; });
+      cands = cands.filter(function (c) {
+        if (c.id != null && dentroDe[c.id] && /^(fim|meio|proximo|quadrante)$/.test(c.tipo)) return false;
+        if (c.segs && c.segs.some(function (s) { return dentroDe[s.id]; })) return false;
+        if (c.seg && dentroDe[c.seg.id]) return false;
+        return true;
+      });
+      cands.forEach(function (c) { if (c.tipo === "intersecao" && c.segs && c.segs.length === 2 && c.segs.every(function (s) { return s.k === "eixo-grade"; })) c.cruzEixos = true; });
+    }
+    var best = o.prefereCentro ? escolherCentro(cands, tol) : escolher(cands, tol);
     if (best) return best;
     var g = num(o.grade, 0);
     if (ti.grade && g > 0) {
       var og = o.origemGrade || P(0, 0);
-      var gp = P(og.x + Math.round((cur.x - og.x) / g) * g, og.z + Math.round((cur.z - og.z) / g) * g);
-      return { p: P(r4(gp.x), r4(gp.z)), tipo: "grade", d: dist(gp, cur) };
+      var gp2 = P(og.x + Math.round((cur.x - og.x) / g) * g, og.z + Math.round((cur.z - og.z) / g) * g);
+      return { p: P(r4(gp2.x), r4(gp2.z)), tipo: "grade", d: dist(gp2, cur) };
     }
     return null;
   }
-
   /* ------------------------------------------------ digitar e ortogonal */
   /* "2,5" · "2.5" · "250 cm" · "2500mm" · "2,5 m" → metros (null se não for número) */
   function lerNumero(s) {
@@ -950,9 +1156,24 @@
     perpendicular: '<path d="M2.5 13.5 L13.5 13.5 M8 13.5 L8 2.5"/>',
     extensao: '<path d="M5 5 L11 11 M11 5 L5 11"/>',
     proximo: '<path d="M3 3 L13 3 L3 13 L13 13 Z"/>',
-    grade: '<path d="M2.5 5.5 L13.5 5.5 M2.5 10.5 L13.5 10.5 M5.5 2.5 L5.5 13.5 M10.5 2.5 L10.5 13.5"/>'
+    grade: '<path d="M2.5 5.5 L13.5 5.5 M2.5 10.5 L13.5 10.5 M5.5 2.5 L5.5 13.5 M10.5 2.5 L10.5 13.5"/>',
+    /* 14/10/2026 — os snaps completos: cada um com a sua forma */
+    centroide: '<circle cx="8" cy="8" r="5.5"/><path d="M8 4.5 L8 11.5 M4.5 8 L11.5 8"/>',
+    quadrante: '<path d="M8 2 L14 8 L8 14 L2 8 Z"/>',
+    insercao: '<rect x="2.5" y="2.5" width="11" height="11"/><path d="M8 5 L8 11 M5 8 L11 8"/>',
+    no: '<circle cx="8" cy="8" r="5.5"/><path d="M4.5 4.5 L11.5 11.5 M11.5 4.5 L4.5 11.5"/>',
+    aparente: '<rect x="2.5" y="2.5" width="11" height="11" stroke-dasharray="2 1.5"/><path d="M4.5 4.5 L11.5 11.5 M11.5 4.5 L4.5 11.5"/>',
+    paralelo: '<path d="M3 13 L9 3 M7 13 L13 3"/>',
+    tangente: '<circle cx="8" cy="9.5" r="4.5"/><path d="M1.5 5 L14.5 5"/>',
+    rastreamento: '<path d="M8 1.5 L8 14.5 M1.5 8 L14.5 8" stroke-dasharray="2 1.5"/><circle cx="8" cy="8" r="1.6"/>',
+    eixos: '<path d="M5 1.5 L5 14.5 M1.5 11 L14.5 11" stroke-dasharray="4 1.5 1 1.5"/>',
+    vertice: '<path d="M2.5 13.5 L8 2.5 L13.5 13.5"/>',
+    aresta: '<path d="M2 13 L14 3"/><circle cx="8" cy="8" r="2"/>',
+    face: '<path d="M2.5 5 L10 2.5 L13.5 11 L6 13.5 Z"/>'
   };
-  var ROTULO = { fim: "ponto final", intersecao: "interseção", meio: "ponto médio", centro: "centro", perpendicular: "perpendicular", extensao: "extensão", proximo: "próximo", grade: "grade" };
+  var ROTULO = { fim: "ponto final", intersecao: "interseção", meio: "ponto médio", centro: "centro", perpendicular: "perpendicular", extensao: "extensão", proximo: "próximo", grade: "grade",
+                 centroide: "centro geométrico", quadrante: "quadrante", insercao: "inserção", no: "nó", aparente: "interseção aparente", paralelo: "paralelo",
+                 tangente: "tangente", rastreamento: "rastreamento", eixos: "eixos da grade", vertice: "vértice", aresta: "aresta", face: "face" };
   function glifoSvg(tipo) {
     var g = GLIFO[tipo]; if (!g) return "";
     return '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true">' + g + "</svg>";
@@ -1005,6 +1226,9 @@
 
   var BimPrecisao = {
     TIPOS: TIPOS, CLASSE: CLASSE, ORDEM: ORDEM, EMPATE: EMPATE, ROTULO: ROTULO, GLIFO: GLIFO, FITA: FITA, ATALHOS: ATALHOS,
+    /* SNAPS COMPLETOS (14/10/2026) */
+    GRUPOS: GRUPOS, PADRAO_TIPOS: PADRAO_TIPOS, tangentes: tangentes, quadrantes: quadrantes, centroide: centroide, circ3: circ3, meio2p: meio2p,
+    naArco: naArco, direcoesPolares: direcoesPolares, geoDeLinhas: geoDeLinhas, dentroPoli: dentroPoli, CENTRO_SUB: { fundacao: 1, pilar: 1, "met-pilar": 1 },
     projReta: projReta, distPontoSeg: distPontoSeg, intersecaoSegs: intersecaoSegs, intersecaoRetas: intersecaoRetas, raioSeg: raioSeg,
     pegada: pegada, geometria: geometria, escolher: escolher, snap: snap,
     lerNumero: lerNumero, lerAngulo: lerAngulo, lerRetangulo: lerRetangulo, distAng: distAng, pontoPor: pontoPor, orto: orto, fmtM: fmtM,

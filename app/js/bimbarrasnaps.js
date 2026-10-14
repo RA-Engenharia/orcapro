@@ -40,11 +40,29 @@
   function fmt(v) { return (Math.round(v * 100) / 100).toFixed(2).replace(".", ","); }
   function num(v) { var n = Number(String(v == null ? "" : v).replace(",", ".")); return isFinite(n) ? n : NaN; }
 
-  var ROT = { fim: "Extremidade (ponto final)", intersecao: "Interseção", meio: "Ponto médio", centro: "Centro", perpendicular: "Perpendicular",
-              extensao: "Prolongamento (extensão)", proximo: "Sobre a peça (próximo)", grade: "Grade" };
+  var ROT = { fim: "Extremidade (ponto final)", intersecao: "Interseção", meio: "Ponto médio", centro: "Centro (círculo e arco)", perpendicular: "Perpendicular",
+              extensao: "Prolongamento (extensão)", proximo: "Mais próximo (sobre a peça)", grade: "Grade",
+              centroide: "Centro geométrico", quadrante: "Quadrante (0°, 90°, 180°, 270°)", insercao: "Inserção", no: "Nó (ponto)",
+              aparente: "Interseção aparente", paralelo: "Paralelo", tangente: "Tangente", rastreamento: "Rastreamento (guias)",
+              eixos: "Eixos da grade", vertice: "Vértice (3D)", aresta: "Aresta (3D)", face: "Face (3D)" };
   var COR = { fim: "var(--verde)", intersecao: "var(--vermelho)", meio: "var(--amarelo)", centro: "var(--aco)", perpendicular: "var(--aco)",
-              extensao: "var(--amarelo)", proximo: "var(--texto-fraco)", grade: "var(--texto-fraco)" };
-  var DICA_SNAP = "Snap: o ponto agarra na extremidade, no meio, na interseção, no centro, na perpendicular, no prolongamento, sobre a peça e na grade. Vale para tudo o que você cria (2D e 3D). F3 liga e desliga; a seta escolhe os tipos.";
+              extensao: "var(--amarelo)", proximo: "var(--texto-fraco)", grade: "var(--texto-fraco)",
+              centroide: "var(--aco)", quadrante: "var(--verde)", insercao: "var(--aco)", no: "var(--aco)", aparente: "var(--vermelho)",
+              paralelo: "var(--amarelo)", tangente: "var(--verde)", rastreamento: "var(--amarelo)", eixos: "var(--texto-fraco)",
+              vertice: "var(--verde)", aresta: "var(--texto-fraco)", face: "var(--texto-fraco)" };
+  /* a dica de cada tipo (passar o mouse na linha do menu) */
+  var DICA_TIPO = {
+    fim: "A ponta de parede, viga, linha, aresta.", meio: "O meio de uma aresta ou do eixo da peça.", centro: "O centro de círculo, arco, pilar redondo e da peça.",
+    centroide: "O centro geométrico (de massa) de laje, polígono, face.", quadrante: "Os pontos a 0°, 90°, 180° e 270° do círculo ou arco, girados com a peça.",
+    insercao: "O ponto onde a família ou o componente foi colocado.", no: "Peça de um ponto só (sapata, ponto de referência).",
+    intersecao: "Onde duas linhas se cruzam de verdade (na mesma altura).", aparente: "Onde duas linhas se cruzam na PLANTA mas passam em alturas diferentes (viga sobre viga).",
+    extensao: "O prolongamento de uma aresta além da ponta e o alinhamento com pontas.", proximo: "O ponto da aresta, do arco ou da face mais perto do cursor.",
+    perpendicular: "O pé da perpendicular do 1º ponto até a aresta.", paralelo: "Pare o cursor ~0,5 s numa linha: o traço fica paralelo a ela.",
+    tangente: "Os pontos onde a reta que sai do 1º ponto toca o círculo ou o arco.", rastreamento: "Pare o cursor ~0,5 s num ponto: guias horizontais, verticais e nos ângulos do Orto saem dele.",
+    grade: "O passo da grade quando não há outro ponto perto.", eixos: "As linhas e os cruzamentos da grade de eixos.",
+    vertice: "O vértice da malha do modelo importado (3D).", aresta: "A aresta da malha do modelo importado (3D).", face: "O ponto na face do modelo importado (3D)."
+  };
+  var DICA_SNAP = "Snap: clique para escolher os tipos (extremidade, meio, centro, quadrante, interseção, perpendicular, paralelo, tangente, rastreamento…). Vale para tudo o que você cria (2D e 3D). F3 liga e desliga.";
   var DICA_ORTO = "Orto: o traço anda só na horizontal/vertical e nos ângulos marcados (45°, 90°…). Vale para parede, viga, peça metálica, linha, cota, contorno de laje/telhado/fundação, guarda-corpo… F8 liga e desliga; Shift inverte enquanto está apertado (com o Orto apagado, é o orto temporário).";
 
   var BimBarraSnaps = {
@@ -78,6 +96,8 @@
     pintar: function () {
       var g = this.elemento(), B = BO(); if (!g || !B) return false;
       var p = B.precisao(), T = (Pr() && Pr().TIPOS) || B.TIPOS_SNAP, nOn = T.filter(function (t) { return p.tipos[t] !== false; }).length;
+      /* o contador só aparece quando a escolha dos tipos não é a de fábrica (a FACE nasce desligada) */
+      var PD = B.TIPO_PADRAO || {}, mudou = T.some(function (t) { return (p.tipos[t] !== false) !== (PD[t] !== false); });
       function liga(id, rot, on, dica, icone, extra) {
         return '<button type="button" class="rv-vb bbs-bt" data-bbs="' + id + '" aria-pressed="' + (on ? "true" : "false") + '" title="' + esc(dica) + '" aria-label="' + esc(rot + (on ? " ligado" : " desligado")) + '">' +
           '<span class="bbs-luz" aria-hidden="true"></span>' + (icone ? ico(icone, 14) : "") + '<span class="bbs-rot">' + esc(rot) + "</span>" + (extra || "") + "</button>";
@@ -86,8 +106,9 @@
         return '<button type="button" class="rv-vb bbs-seta" data-bbs="' + id + '" aria-haspopup="true" aria-expanded="' + (this._menu === id ? "true" : "false") + '" title="' + esc(dica) + '" aria-label="' + esc(dica) + '">' + (txt ? '<span class="bbs-txt">' + esc(txt) + "</span>" : "") + '<span class="bbs-v">▾</span></button>';
       }
       var h = '<span class="bbs-tit" aria-hidden="true">Precisão</span>';
-      h += liga("snap", "Snap", p.snap, DICA_SNAP, "ima", nOn < T.length ? '<span class="bbs-n">' + nOn + "/" + T.length + "</span>" : "") +
-           seta.call(this, "snapMenu", "Quais snaps (e o passo da grade)") +
+      /* 14/10/2026: CLICAR no Snap ABRE o menu dos tipos (o pedido: "eu clicar nela e abrir ali quais eu quero
+         selecionar"); o liga/desliga geral é a 1ª caixa do menu e o F3 — a luz continua dizendo o estado */
+      h += liga("snap", "Snap", p.snap, DICA_SNAP, "ima", (mudou ? '<span class="bbs-n">' + nOn + "/" + T.length + "</span>" : "") + '<span class="bbs-v">▾</span>').replace('class="rv-vb bbs-bt"', 'class="rv-vb bbs-bt" aria-haspopup="true" aria-expanded="' + (this._menu === "snapMenu" ? "true" : "false") + '"') +
            liga("orto", "Orto", p.orto, DICA_ORTO, "regua") +
            seta.call(this, "incMenu", "Incrementos de ângulo do Orto", B.textoInc(p.inc));
       g.innerHTML = h;
@@ -105,20 +126,27 @@
     /* abre o menu de snaps ("snapMenu") ou de incrementos ("incMenu"); de novo no mesmo, fecha */
     _abrir: function (qual, repintar) {
       var g = this.elemento(), B = BO(); if (!g || !B) return false;
-      var bt = g.querySelector('[data-bbs="' + qual + '"]'); if (!bt) return false;
+      /* o menu dos snaps abre no próprio botão Snap (14/10/2026: a seta separada saiu) */
+      var bt = g.querySelector('[data-bbs="' + (qual === "snapMenu" ? "snap" : qual) + '"]'); if (!bt) return false;
       if (!repintar && this._menu === qual) { this._fechar(); return false; }
       if (this._pop && this._pop.parentNode) this._pop.parentNode.removeChild(this._pop);
       var p = B.precisao(), T = (Pr() && Pr().TIPOS) || B.TIPOS_SNAP, pop = document.createElement("div");
       pop.className = "bbs-pop"; pop.setAttribute("data-bbs-pop", qual); pop.setAttribute("role", "menu");
       if (qual === "snapMenu") {
+        var GR = (Pr() && Pr().GRUPOS) || [{ id: "todos", rotulo: "Snaps", tipos: T }];
+        var item = function (t) {
+          var gl = Pr() && Pr().glifoSvg ? Pr().glifoSvg(t) : "";
+          return '<label class="bbs-pop-item" title="' + esc(DICA_TIPO[t] || "") + '"><input type="checkbox" data-bbs-tipo="' + t + '"' + (p.tipos[t] !== false ? " checked" : "") + '><span class="bbs-glifo" style="color:' + (COR[t] || "var(--aco)") + '">' + gl + "</span> " + esc(ROT[t] || t) + "</label>";
+        };
         pop.innerHTML = '<div class="bbs-pop-tit">Snaps <span class="bbs-tecla">F3</span></div>' +
-          '<label class="bbs-pop-item bbs-pop-geral"><input type="checkbox" data-bbs-geral="1"' + (p.snap ? " checked" : "") + "> Snap ligado</label>" +
-          T.map(function (t) {
-            var gl = Pr() && Pr().glifoSvg ? Pr().glifoSvg(t) : "";
-            return '<label class="bbs-pop-item"><input type="checkbox" data-bbs-tipo="' + t + '"' + (p.tipos[t] !== false ? " checked" : "") + '><span class="bbs-glifo" style="color:' + COR[t] + '">' + gl + "</span> " + esc(ROT[t] || t) + "</label>";
-          }).join("") +
+          '<label class="bbs-pop-item bbs-pop-geral"><input type="checkbox" data-bbs-geral="1"' + (p.snap ? " checked" : "") + "> Snap ligado (F3)</label>" +
+          '<div class="bbs-pop-acoes"><button type="button" class="btn sm ghost" data-bbs-todos="1">Marcar todos</button><button type="button" class="btn sm ghost" data-bbs-todos="0">Nenhum</button>' +
+          '<button type="button" class="btn sm ghost" data-bbs-m2p="1" title="O próximo ponto é o MEIO entre dois cliques (cada um com snap) — vale uma vez">Meio entre 2 pontos</button></div>' +
+          '<div class="bbs-pop-grupos">' + GR.map(function (g) {
+            return '<div class="bbs-pop-grupo" data-bbs-grupo="' + esc(g.id) + '"><div class="bbs-pop-gtit">' + esc(g.rotulo) + "</div>" + g.tipos.filter(function (t) { return T.indexOf(t) >= 0; }).map(item).join("") + "</div>";
+          }).join("") + "</div>" +
           '<label class="bbs-pop-item bbs-pop-passo">Passo da grade <input data-bbs-passo="1" inputmode="decimal" autocomplete="off" value="' + esc(fmt(p.passo)) + '"> m</label>' +
-          '<div class="bbs-pop-nota">Quando dois concorrem: ponto (extremidade, interseção, meio, centro) &gt; perpendicular &gt; prolongamento &gt; sobre a peça &gt; grade.</div>';
+          '<div class="bbs-pop-nota">Quando dois concorrem: ponto (extremidade, interseção, meio, centro, quadrante, centro geométrico, inserção, nó) &gt; ponto construído (perpendicular, tangente, interseção aparente, cruzamento de guias) &gt; linha de construção (prolongamento, rastreamento, paralelo) &gt; sobre a peça &gt; grade. Rastreamento e paralelo: pare o cursor ~0,5 s num ponto ou numa linha para adquirir.</div>';
       } else {
         pop.innerHTML = '<div class="bbs-pop-tit">Incrementos do Orto <span class="bbs-tecla">F8</span></div>' +
           '<label class="bbs-pop-item bbs-pop-geral"><input type="checkbox" data-bbs-orto="1"' + (p.orto ? " checked" : "") + "> Orto ligado</label>" +
@@ -138,6 +166,16 @@
     },
     _ligarPop: function (pop) {
       var self = this;
+      pop.addEventListener("click", function (e) {
+        var b = e.target && e.target.closest ? e.target.closest("[data-bbs-todos],[data-bbs-m2p]") : null, B = BO(); if (!b || !B) return;
+        if (b.hasAttribute("data-bbs-todos")) { var on = b.getAttribute("data-bbs-todos") === "1"; if (B.tiposTodos) B.tiposTodos(on); status(on ? "Todos os snaps marcados." : "Nenhum tipo de snap marcado (o Snap geral continua como estava)."); return; }
+        if (b.hasAttribute("data-bbs-m2p")) {
+          var pz = null; try { pz = global.BIM && global.BIM.precisao ? global.BIM.precisao() : null; } catch (eP) { pz = null; }
+          var ok = !!(pz && pz.m2p && pz.m2p(true));
+          self._fechar();
+          status(ok ? "Meio entre 2 pontos: clique o 1º ponto e o 2º — o ponto é o meio deles (vale uma vez)." : "Meio entre 2 pontos: arme uma ferramenta de criar no 3D primeiro.");
+        }
+      });
       pop.addEventListener("change", function (e) {
         var t = e.target, B = BO(); if (!t || !B) return;
         if (t.hasAttribute("data-bbs-geral")) { B.precisaoMudar({ snap: !!t.checked }); self._avisar("snap"); return; }
@@ -234,8 +272,9 @@
       g.addEventListener("click", function (e) {
         var b = e.target && e.target.closest ? e.target.closest("[data-bbs]") : null; if (!b || !g.contains(b)) return;
         var k = b.getAttribute("data-bbs");
-        if (k === "snap" || k === "orto") { self.alternar(k); return; }
-        if (k === "snapMenu" || k === "incMenu") { self._abrir(k, false); }
+        if (k === "orto") { self.alternar(k); return; }
+        if (k === "snap" || k === "snapMenu") { self._abrir("snapMenu", false); return; }
+        if (k === "incMenu") { self._abrir(k, false); }
       });
       /* Esc com o foco na barra fecha o menu aberto */
       g.addEventListener("keydown", function (e) { if (e.key === "Escape" && self._menu) { e.preventDefault(); self._fechar(); } });
@@ -249,7 +288,7 @@
       document.addEventListener("pointerdown", function (e) {
         if (!self._pop) return;
         if (self._pop.contains(e.target)) return;
-        var g = self.elemento(); if (g && g.contains(e.target) && e.target.closest && e.target.closest(".bbs-seta")) return;   /* o clique na seta alterna o menu */
+        var g = self.elemento(); if (g && g.contains(e.target) && e.target.closest && e.target.closest(".bbs-seta, [data-bbs=snap]")) return;   /* o clique na seta (ou no Snap, que abre o menu dele) alterna o menu */
         self._fechar();
       }, true);
       /* ESPAÇO = gira 90° a peça da ferramenta de criar armada (ver `girar`). Só com uma ferramenta que

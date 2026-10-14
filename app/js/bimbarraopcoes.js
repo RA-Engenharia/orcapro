@@ -46,7 +46,14 @@
   var INCREMENTOS = [15, 30, 45, 90, 180];
   var PADRAO_INC = [45, 90, 180];
   var JANELA = 5;   /* graus de atração com o ortogonal desligado */
-  var TIPOS_SNAP = ["fim", "intersecao", "meio", "centro", "perpendicular", "extensao", "proximo", "grade"];
+  /* os tipos de snap (14/10/2026: os snaps completos — a mesma lista do js/bimprecisao.js TIPOS; este
+     arquivo não depende dele para o teste em Node). A FACE nasce desligada: o ponto na face do modelo
+     importado tira o clique do plano de trabalho — quem quer liga no menu. */
+  var TIPOS_SNAP = ["fim", "intersecao", "meio", "centro", "centroide", "quadrante", "insercao", "no",
+                    "perpendicular", "tangente", "aparente", "extensao", "paralelo", "rastreamento", "proximo", "grade",
+                    "eixos", "vertice", "aresta", "face"];
+  var TIPO_PADRAO = {}; TIPOS_SNAP.forEach(function (t) { TIPO_PADRAO[t] = t !== "face"; });
+  function tipoDe(T, t) { return T && typeof T[t] === "boolean" ? T[t] : TIPO_PADRAO[t]; }
   /* ferramentas de TRAÇO: têm ponto base, então o ortogonal e os incrementos valem (a cobertura não:
      o 2º clique dela é o canto OPOSTO, uma diagonal — travar faria todo telhado quadrado) */
   var TRACO = { parede: 1, viga: 1, eixo: 1, laje: 1, furo: 1, forro: 1, guarda: 1, escada: 1, rampa: 1, trelica: 1, inst: 1,
@@ -81,7 +88,7 @@
     var inc = Array.isArray(c.inc) ? c.inc.map(Number).filter(function (g) { return INCREMENTOS.indexOf(g) >= 0; }) : null;
     o.inc = inc ? INCREMENTOS.filter(function (g) { return inc.indexOf(g) >= 0; }) : p.inc;   /* em ordem, sem repetir */
     o.snap = typeof c.snap === "boolean" ? c.snap : p.snap;
-    if (c.tipos && typeof c.tipos === "object") { o.tipos = {}; TIPOS_SNAP.forEach(function (t) { o.tipos[t] = c.tipos[t] !== false; }); } else o.tipos = null;
+    if (c.tipos && typeof c.tipos === "object") { o.tipos = {}; TIPOS_SNAP.forEach(function (t) { o.tipos[t] = tipoDe(c.tipos, t); }); } else o.tipos = null;
     o.grade = typeof c.grade === "boolean" ? c.grade : p.grade;
     var ps = num(c.passo, p.passo); o.passo = ps > 0 && ps <= 10 ? ps : p.passo;
     o.forma = typeof c.forma === "string" && /^[a-zA-Z0-9_-]{1,40}$/.test(c.forma) ? c.forma : p.forma;
@@ -106,7 +113,8 @@
    * armar a viga trazia o ortogonal desligado de novo: a pessoa não sabia em que estado
    * estava. Um estado só, sempre à vista embaixo, é o que acaba com isso. */
   var CAMPOS_PREC = ["orto", "inc", "snap", "tipos", "grade", "passo"];
-  var FORTE = { fim: 1, intersecao: 1, meio: 1, centro: 1, perpendicular: 1 };
+  var FORTE = { fim: 1, intersecao: 1, meio: 1, centro: 1, perpendicular: 1,
+                centroide: 1, quadrante: 1, insercao: 1, no: 1, tangente: 1, aparente: 1, paralelo: 1, rastreamento: 1 };   /* snaps completos: o paralelo e a guia do rastreamento também mandam na direção */
   function sanearPrec(c) {
     var p = padrao(), o = {};
     c = c && typeof c === "object" ? c : {};
@@ -115,7 +123,7 @@
     o.inc = inc ? INCREMENTOS.filter(function (g) { return inc.indexOf(g) >= 0; }) : p.inc;
     o.snap = typeof c.snap === "boolean" ? c.snap : p.snap;
     var T = c.tipos && typeof c.tipos === "object" ? c.tipos : {};
-    o.tipos = {}; TIPOS_SNAP.forEach(function (t) { o.tipos[t] = T[t] !== false; });
+    o.tipos = {}; TIPOS_SNAP.forEach(function (t) { o.tipos[t] = tipoDe(T, t); });
     o.grade = typeof c.grade === "boolean" ? c.grade : p.grade;
     o.tipos.grade = o.grade;   /* "Grade" é um só: o botão e o tipo de snap andam juntos */
     var ps = num(c.passo, p.passo); o.passo = ps > 0 && ps <= 10 ? ps : p.passo;
@@ -172,7 +180,7 @@
   }
 
   var BimBarraOpcoes = {
-    CHAVE: CHAVE, INCREMENTOS: INCREMENTOS, PADRAO_INC: PADRAO_INC, JANELA: JANELA, TRACO: TRACO, TIPOS_SNAP: TIPOS_SNAP, CAMPOS_PREC: CAMPOS_PREC,
+    CHAVE: CHAVE, INCREMENTOS: INCREMENTOS, PADRAO_INC: PADRAO_INC, JANELA: JANELA, TRACO: TRACO, TIPOS_SNAP: TIPOS_SNAP, TIPO_PADRAO: TIPO_PADRAO, CAMPOS_PREC: CAMPOS_PREC,
     padrao: padrao, sanear: sanear, sanearPrec: sanearPrec, ajustarAngulo: ajustarAngulo, ajustarPontoCom: ajustarPonto, arredondar: arredondar, grausDe: grausDe, maisPerto: maisPerto,
     _armaz: null,      /* teste: troca o localStorage */
     _cache: null,
@@ -224,6 +232,8 @@
       o[campo] = !p[campo];
       return this.precisaoMudar(o)[campo];
     },
+    /* "Marcar todos" / "Nenhum" do menu da barra de baixo: todos os tipos de uma vez (o Snap geral fica como está) */
+    tiposTodos: function (on) { var T = {}; TIPOS_SNAP.forEach(function (t) { T[t] = !!on; }); return this.precisaoMudar({ tipos: T, grade: !!on }); },
     /* o snap geral está ligado E este tipo também? (sem tipo: só o geral) */
     snapLigado: function (t) { var p = this._ler().prec; return !!p.snap && (t == null || p.tipos[t] !== false); },
     /* quem precisa repintar quando a precisão muda (as barras, o desenho de precisão) */
@@ -281,6 +291,9 @@
     EIXOS_CRIAR: { fundacao: 1, pilar: 1 },
     querEixos: function (sub) {
       if (!sub) return false;
+      /* SNAPS COMPLETOS (14/10/2026): "Eixos da grade" é um tipo do menu do Snap — marcado, TODA ferramenta
+         de criar encaixa nos eixos (linhas e cruzamentos); desmarcado, nenhuma */
+      if (TIPOS_SNAP.indexOf("eixos") >= 0) return this.snapLigado("eixos");
       if (this.EIXOS_CRIAR[sub]) return true;
       try {
         if (global.MetalCriarUI && global.MetalCriarUI.querEixos && global.MetalCriarUI.querEixos(sub)) return true;

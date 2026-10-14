@@ -345,7 +345,11 @@
        Figura 1 C) e Blondel só como PREFERÊNCIA (item 12 não o exige; a ISO 14122-3 recomenda); íngreme: p ≤ e (45°+) e
        Blondel obrigatório (item 11 g); NBR 9050 e emergência: Blondel obrigatório. Preferência: Blondel, e ≤ ePref, alvo. */
     var nMin = Math.max(2, Math.ceil(H / R.eMax - 1e-9)), nMax = Math.max(nMin, Math.floor(H / R.eMin + 1e-9)), melhor = null;
-    for (var n = nMin; n <= nMax; n++) {
+    /* ESCADA POR LINHA (14/10/2026, js/metalescadalinha.js): op.n e op.p = o degrau que enche a linha puxada — vale só
+       se estiver DENTRO da regra da norma (senão a escolha de sempre, com o aviso) */
+    var nFix = num(op.n, 0) > 0 ? Math.round(num(op.n, 0)) : 0, pFix = num(op.p, 0) > 0 ? num(op.p, 0) : 0;
+    if (nFix && (nFix < nMin || nFix > nMax)) nFix = 0;
+    for (var n = nFix || nMin; n <= (nFix || nMax); n++) {
       var e = H / n; if (e > R.eMax + 1e-9 || e < R.eMin - 1e-9) continue;
       var lo = R.pMin, hi = R.pMax;
       if (R.angMax) lo = Math.max(lo, e / Math.tan(R.angMax * GRAU));
@@ -353,11 +357,14 @@
       if (R.blondelObrig) { lo = Math.max(lo, R.fMin - 2 * e); hi = Math.min(hi, R.fMax - 2 * e); }
       lo = Math.ceil(lo * 200 - 1e-6) / 200; hi = Math.floor(hi * 200 + 1e-6) / 200;
       if (lo > hi + 1e-9) continue;
-      var p = Math.min(hi, Math.max(lo, Math.round((R.alvo - 2 * e) * 200) / 200)), f = p + 2 * e, blOk = f >= R.fMin - 1e-9 && f <= R.fMax + 1e-9;
+      var p = Math.min(hi, Math.max(lo, Math.round((R.alvo - 2 * e) * 200) / 200));
+      if (pFix && pFix >= lo - 1e-9 && pFix <= hi + 1e-9) p = pFix;
+      var f = p + 2 * e, blOk = f >= R.fMin - 1e-9 && f <= R.fMax + 1e-9;
       var cand = { n: n, e: e, p: p, f: f, blOk: blOk, pena: (blOk ? 0 : 10) + (R.ePref && e > R.ePref + 1e-9 ? 5 : 0) + Math.abs(f - R.alvo) + n * 1e-4 };
       if (op.preferir === "menosDegraus") { if (!melhor) melhor = cand; }
       else if (!melhor || cand.pena < melhor.pena - 1e-9) melhor = cand;
     }
+    if (!melhor && nFix) return degraus(H, perfil, {});
     if (!melhor) return { ok: false, motivo: "Não há degrau igual que atenda " + R.ref + " para " + br(H, 2) + " m — ajuste o desnível (o espelho fica entre " + cm(R.eMin) + " e " + cm(R.eMax) + ")." };
     var ang = Math.atan(melhor.e / melhor.p) / GRAU;
     return { ok: true, n: melhor.n, e: melhor.e, p: melhor.p, blondel: r4(melhor.f), blondelOk: melhor.blOk, angulo: ang, perfil: perfil, regra: R, ref: R.ref, conferir: R.conferir,
@@ -716,10 +723,25 @@
     return out;
   }
 
-  /* spec = { itens: [{ tipo: "longarina"|"degrau"|"viga"|"console"|"montante"|"piso"|"marinheiro", ... }], carga: {uso, q}, guarda: {uso} } */
+  /* FIXAÇÃO DA ESCADA (soldada, parafusada, ancorada, apoiada — com os pés de apoio) e PILARETE DO PATAMAR à compressão:
+     quem dimensiona é o js/metalescadalinha.js (14/10/2026, frente S6); sem ele = verificação crítica não feita */
+  function EL() { return dep("MetalEscadaLinha", "./metalescadalinha.js"); }
+  function fixacaoEscada(sp) { var E = EL(); if (!E || !E.fixacao) return { verificacoes: [], naoVerificados: ["não verificado: fixação da escada — js/metalescadalinha.js não carregou (CRÍTICO)"], avisos: [] }; var r = E.fixacao(sp); return { verificacoes: r.verificacoes, naoVerificados: r.naoVerificados, avisos: r.avisos }; }
+  function pilaretePatamar(sp) {
+    var s = secao(sp.perfil), a = aco(sp.aco), h = num(sp.h, 1), N = num(sp.N, 0), out = { verificacoes: [], naoVerificados: [], avisos: [] };
+    if (!s) { out.naoVerificados.push("não verificado: pilarete do patamar — perfil \"" + sp.perfil + "\" sem propriedades (CRÍTICO)"); return out; }
+    var est = []; for (var i = 0; i <= 4; i++) est.push({ x: h * i / 4, N: -N, Vy: 0, Mz: 0, comb: "ELU" });
+    var r = viaDim8800("Pilarete", s, a, h, est, { flambagem: { Lx: h, Ly: h, Lz: h }, travamentos: { mais: [], menos: [] }, papel: "pilar" });
+    out.verificacoes.push({ nome: "Pilarete do patamar — cargas", item: GAMA.ref, passos: [{ rotulo: "Força no pilarete", formula: "N = wd·Lp·W/4 + V da longarina que chega no canto", valor: br(N, 2) + " kN (h = " + m2(h) + ", rotulado nas pontas, K = 1)" }], razao: 0, ok: true, info: true });
+    if (r) out.verificacoes = out.verificacoes.concat(resumir("Pilarete do patamar", r)); else out.naoVerificados.push("não verificado: pilarete do patamar — js/acodim8800.js ausente (CRÍTICO)");
+    var I = Math.min(num(s.Ix, Infinity), num(s.Iy, Infinity)), rg = isFinite(I) && s.A > 0 ? Math.sqrt(I / s.A) : null;
+    if (rg) { var lam = h * 1000 / rg; out.verificacoes.push({ nome: "Pilarete do patamar — esbeltez KL/r", item: "NBR 8800:2008, 5.3.4.1 (KL/r ≤ 200)", passos: [{ rotulo: "KL/r", formula: "K = 1", valor: br(lam, 0) }], resistencia: 200, solicitante: lam, unidade: "", razao: lam / 200, ok: lam <= 200 + 1e-9 }); }
+    return out;
+  }
+  /* spec = { itens: [{ tipo: "longarina"|"degrau"|"viga"|"console"|"montante"|"piso"|"marinheiro"|"fixacao"|"pilarete", ... }], carga: {uso, q}, guarda: {uso} } */
   function dimensionar(spec) {
     spec = spec || {};
-    var vs = [], nv = [], av = [], crit = [], F = { longarina: longarina, degrau: degrau, viga: viga, console: console_, montante: montante, piso: piso, marinheiro: marinheiro, corrimao: corrimao };
+    var vs = [], nv = [], av = [], crit = [], F = { longarina: longarina, degrau: degrau, viga: viga, console: console_, montante: montante, piso: piso, marinheiro: marinheiro, corrimao: corrimao, fixacao: fixacaoEscada, pilarete: pilaretePatamar, baseMontante: function (sp) { var E = EL(); if (!E || !E.baseMontante) return { verificacoes: [], naoVerificados: ["não verificado: base do montante — js/metalescadalinha.js não carregou (CRÍTICO)"], avisos: [] }; var r = E.baseMontante(sp); return { verificacoes: r.verificacoes, naoVerificados: r.naoVerificados, avisos: r.avisos }; } };
     arr(spec.itens).forEach(function (it) {
       var f = F[it.tipo]; if (!f) { nv.push("não verificado: " + it.tipo); return; }
       if (it.q === null) { crit.push("não verificado: " + it.tipo + " — sobrecarga não informada (CRÍTICO)"); return; }
@@ -729,9 +751,12 @@
       if (!r.verificacoes.filter(function (v) { return !v.info; }).length) crit.push("não verificado: " + (it.nome || it.tipo) + " — nenhuma verificação calculada (CRÍTICO): " + (r.naoVerificados[0] || "sem dado"));
       r.naoVerificados.forEach(function (t) { if (/CRÍTICO/.test(t)) crit.push(t); });
     });
-    arr(spec.naoVerificados).forEach(function (t) { nv.push(t); });
+    /* REVISÃO S6 rodada 3 (B3): o "(CRÍTICO)" da lista geral da peça também segura o "aprovado" (antes só o dos itens) */
+    arr(spec.naoVerificados).forEach(function (t) { nv.push(t); if (/CRÍTICO/.test(t)) crit.push(t); });
     arr(spec.externas).forEach(function (v) { vs.push(v); });
     arr(spec.criticos).forEach(function (t) { crit.push(t); });
+    /* REVISÃO S6 (C1): razão NÃO FINITA (∞, NaN, null de um clone) numa verificação calculada é FALHA — nunca 0 nem "ok" */
+    vs.forEach(function (v) { if (v.info) return; if (!(typeof v.razao === "number" && isFinite(v.razao))) { v.razao = 9.99; v.ok = false; v.naoFinita = true; } });
     arr(spec.avisos).forEach(function (t) { av.unshift(t); });
     var calc = vs.filter(function (v) { return !v.info; }), razao = calc.reduce(function (m, v) { return Math.max(m, num(v.razao, 0)); }, 0), falhas = calc.filter(function (v) { return v.ok === false; });
     var gov = calc.slice().sort(function (a, b) { return num(b.razao, 0) - num(a.razao, 0); })[0];

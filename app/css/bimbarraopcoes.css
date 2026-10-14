@@ -136,3 +136,12 @@
    a viga ou a cota caem. Sem ferramenta ele volta — é o que sai no print da tela. (A cota 2D já apaga
    pelo css/bimcotas.css; esta regra vale para todo comando.) */
 .bim-revit:has(.bbo[data-bbo-sub]:not([data-bbo-sub=""])) .rv-disc-selo { opacity: 0; transition: opacity .15s ease; }
+/* SNAPS COMPLETOS (14/10/2026): o menu do Snap agrupado (Pontos · Geometria · Relações · Referências ·
+   Rastreamento), em duas colunas; tela baixa rola dentro do menu */
+.bbs-pop[data-bbs-pop="snapMenu"] { max-width: min(520px, calc(100vw - 16px)); min-width: 300px; max-height: calc(100vh - 120px); overflow-y: auto; }
+.bbs-pop-acoes { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0 6px; }
+.bbs-pop-grupos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 14px; }
+.bbs-pop-grupo { min-width: 0; }
+.bbs-pop-gtit { font-weight: 600; font-size: 11px; color: var(--rv-tx-fraco); text-transform: uppercase; letter-spacing: .04em; margin: 6px 0 2px; }
+@media (max-width: 640px) { .bbs-pop-grupos { grid-template-columns: 1fr; } }
+/* as guias do rastreamento e os pontos adquiridos ficam no 3D (js/bimprecisaoui.js); aqui só o menu */

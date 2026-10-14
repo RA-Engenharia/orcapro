@@ -5564,6 +5564,7 @@ function getBK() { return (typeof Blocok !== 'undefined' && Blocok) || (typeof w
 function blocokLiberado() {
 try {
 try { if (typeof localStorage !== 'undefined' && localStorage.getItem('orcapro:blocok:owner') === '1') return true; } catch (_) {}
+try { if (window.Modela && Modela.tem && Modela.tem('blocok')) return true; } catch (_) {}
 var norm = function (e) { return String(e || '').trim().toLowerCase(); };
 var A = (typeof window !== 'undefined' && window.Auth) ? window.Auth : (typeof Auth !== 'undefined' ? Auth : null);
 var emLocal = (A && A.usuario && A.usuario()) ? norm(A.usuario().email) : '';
@@ -5633,7 +5634,7 @@ raw.forEach(function (w) {
 var espCm = (blocokCfg.espForcada === 'auto') ? BK.espBlocok(w.esp) : +blocokCfg.espForcada;
 var pag = BK.paginar({ comprimento: w.L, altura: w.H, vaos: w.vlist });
 np++;
-paredes.push({ id: 'P' + np, uid: w.uid, nome: nomePorUid[w.uid] || ('Parede ' + np), comprimento: w.L, altura: w.H, espessura: espCm, espM: w.esp, pag: pag, p1: w.obb.p1, p2: w.obb.p2, vaos: w.vlist, pavimento: pavDaParede(w.uid, w.yMin) });
+paredes.push({ id: 'P' + np, uid: w.uid, nome: nomePorUid[w.uid] || ('Parede ' + np), comprimento: w.L, altura: w.H, espessura: espCm, espM: w.esp, pag: pag, p1: w.obb.p1, p2: w.obb.p2, vaos: w.vlist, yMin: w.yMin, pavimento: pavDaParede(w.uid, w.yMin) });
 });
 return { paredes: paredes, vaosDet: vaosDet };
 }
@@ -5875,6 +5876,7 @@ host.appendChild(snapMarca);
 S.snapMarca = snapMarca;
 var SNAP_VIS = { vertice: { cor: '#22c55e', borda: '0', rot: 'vértice' }, meio: { cor: '#f59e0b', borda: '50%', rot: 'meio' }, aresta: { cor: '#38bdf8', borda: '0', rot: 'aresta' }, intersecao: { cor: '#e879f9', borda: '0', rot: '✚ interseção' }, centro: { cor: '#facc15', borda: '50%', rot: '⊕ centro' } };
 if (window.BimPrecisao) ['fim', 'perpendicular', 'extensao', 'proximo', 'grade'].forEach(function (k) { SNAP_VIS[k] = { cor: { fim: 'var(--verde)', perpendicular: 'var(--aco)', extensao: 'var(--amarelo)', proximo: 'var(--texto-fraco)', grade: 'var(--texto-fraco)' }[k], borda: '0', rot: BimPrecisao.ROTULO[k], svg: BimPrecisao.glifoSvg(k) }; });
+if (window.BimPrecisao && BimPrecisao.TIPOS) BimPrecisao.TIPOS.forEach(function (k) { if (!SNAP_VIS[k]) SNAP_VIS[k] = { cor: 'var(--aco)', borda: '0', rot: BimPrecisao.ROTULO[k] || k, svg: BimPrecisao.glifoSvg(k) }; });
 var snapVivo = null;
 var NOTAVEL_MAX = 8;
 var NOTAVEL_MIN_SEP = 9;
@@ -8878,7 +8880,7 @@ if (ev && ev._semAjuste) return p;
 if (edit.b2 && edit.b2.lajeModo === 'retangulo' && (edit.sub === 'laje' || edit.sub === 'furo') && edit.b2pts && edit.b2pts.length === 1) return p;
 if (window.BimBarraOpcoes && BimBarraOpcoes.substituiPainel && BimBarraOpcoes.substituiPainel()) {
 var uB = (S._prec && S._prec.api && S._prec.api.estado) ? S._prec.api.estado().ultimo : null;
-if (uB && uB.tipo && /^(fim|intersecao|meio|centro|perpendicular)$/.test(uB.tipo) && uB.p && Math.abs(uB.p.x - p.x) < 1e-6 && Math.abs(uB.p.z - p.z) < 1e-6) return p;
+if (uB && uB.tipo && /^(fim|intersecao|meio|centro|perpendicular|centroide|quadrante|insercao|no|tangente|aparente|paralelo|rastreamento)$/.test(uB.tipo) && uB.p && Math.abs(uB.p.x - p.x) < 1e-6 && Math.abs(uB.p.z - p.z) < 1e-6) return p;
 var rB = BimBarraOpcoes.ajustarPonto(edit.sub, { x: edit.p1.x, z: edit.p1.z }, { x: p.x, z: p.z }, !!(ev && ev.shiftKey), { grade: !uB || !uB.tipo || uB.tipo === 'grade' });
 var qB = p.clone(); qB.x = rB.p.x; qB.z = rB.p.z; qB.y = edit.p1.y; return qB;
 }
@@ -9156,6 +9158,7 @@ if (S._mat) S._mat.aposRebuild(st, edit.modelo);
 if (S._p10) S._p10.aposRebuild(st, edit.modelo);
 if (S._p11) S._p11.aposRebuild(st);
 if (S._emb) S._emb.aposRebuild(st);
+if (S._bkx) S._bkx.aposRebuild(st);
 if (S._metc) S._metc.aposRebuild(st);
 if (S._cot) S._cot.aposRebuild(st);
 if (window.BimInstUI && BimInstUI.aoMudarModelo) BimInstUI.aoMudarModelo();
@@ -9912,6 +9915,9 @@ desarmar: function () { if (edit.sub) setEditSub(edit.sub); },
 baseNivel: function () { return (edit.b2 && edit.b2.nivel && isFinite(+edit.b2.nivel.elevacao)) ? +edit.b2.nivel.elevacao : editBase(); },
 vaos: function (st) { return BimEdit.vaosDasParedes(st, famAval); },
 alvo: function () { return orbit && orbit.target ? orbit.target.clone() : null; }
+}) : null;
+S._bkx = (window.BlocokExecUI && BlocokExecUI.montar3d) ? BlocokExecUI.montar3d({
+THREE: THREE, S: S, edit: edit, scene: scene, vaos: function (st) { return BimEdit.vaosDasParedes(st, famAval); }
 }) : null;
 S._raioDe = function (cx, cy) {
 var rc = canvasEl.getBoundingClientRect(), m2 = new THREE.Vector2(((cx - rc.left) / rc.width) * 2 - 1, -((cy - rc.top) / rc.height) * 2 + 1), rr = new THREE.Raycaster();

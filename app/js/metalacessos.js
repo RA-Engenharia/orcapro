@@ -388,10 +388,13 @@
     return o;
   }
   function textoCaminho(pts) { return pts.map(function (q) { return brf(q[0], 3) + " " + brf(q[1], 3); }).join("; "); }
-  var GUARDA = { rotulo: "Guarda-corpo", cliques: 2, modo: "polilinha", calcula: true, PADRAO: {
+  /* frente S6 (14/10/2026): o guarda-corpo também por RETÂNGULO (2 cantos = os 4 lados, com um lado aberto para o acesso) —
+     o retângulo vira o mesmo CAMINHO da polilinha (js/metalprontasui.js, aplicarRetangulo): um gerador só */
+  var GUARDA = { rotulo: "Guarda-corpo", cliques: 2, modo: "polilinha", modos: ["polilinha", "retangulo"], calcula: true, PADRAO: {
     comprimento: 3, alturaGuarda: 1.10, intermediaria: 0.70, rodape: true, hRodape: 0.20, espac: 1.0, montante: "HSS73X5.2", corrimao: "HSS48.3X3.7",
-    norma: "nr12", usoGuarda: "industrial", perna: 6, abastecimento: false, retornoIni: 0, retornoFim: 0, ladoRetorno: "esquerda", travessasExtra: 0, fixacao: "solda", caminho: "", aco: "ASTM A36" },
-    nums: ["comprimento", "alturaGuarda", "intermediaria", "hRodape", "espac", "perna", "retornoIni", "retornoFim", "travessasExtra"], bools: ["rodape", "abastecimento"], perfis: ["montante", "corrimao"],
+    norma: "nr12", usoGuarda: "industrial", perna: 6, abastecimento: false, retornoIni: 0, retornoFim: 0, ladoRetorno: "esquerda", travessasExtra: 0, fixacao: "solda", caminho: "", aco: "ASTM A36",
+    Lx: 0, Lz: 0, ladoAberto: "", concEsp: 0, concFck: 0, suporte: "" },
+    nums: ["comprimento", "alturaGuarda", "intermediaria", "hRodape", "espac", "perna", "retornoIni", "retornoFim", "travessasExtra", "Lx", "Lz", "concEsp", "concFck"], bools: ["rodape", "abastecimento"], perfis: ["montante", "corrimao"],
     validar: function (p) {
       var cm0 = lerCaminho(p.caminho);
       if (cm0.length === 1 || (String(p.caminho || "").trim() && cm0.length < 2)) return "Guarda-corpo: o caminho precisa de 2 pontos ou mais (x z; x z…).";
@@ -416,9 +419,13 @@
       var n0 = K.pecas.length, n = H.guardaCorpo(K, cam, go);
       if (!n) return { erro: "Guarda-corpo: os perfis do montante ou do corrimão não fecharam." };
       /* os montantes (as mesmas posições do guarda-corpo: pontas de cada trecho e a cada ≤ espac) */
-      var posts = [];
-      for (var i2 = 0; i2 + 1 < cam.length; i2++) { var a = cam[i2], b = cam[i2 + 1], Lt = Math.hypot(b[0] - a[0], b[2] - a[2]), nS = Math.max(1, Math.ceil(Lt / p.espac - 1e-9)); for (var k = 0; k <= nS; k++) { if (k === 0 && i2 > 0) continue; posts.push([a[0] + (b[0] - a[0]) * k / nS, 0, a[2] + (b[2] - a[2]) * k / nS]); } }
+      var posts = [], fechado = cam.length > 3 && Math.hypot(cam[0][0] - cam[cam.length - 1][0], cam[0][2] - cam[cam.length - 1][2]) < 1e-3;
+      for (var i2 = 0; i2 + 1 < cam.length; i2++) { var a = cam[i2], b = cam[i2 + 1], Lt = Math.hypot(b[0] - a[0], b[2] - a[2]), nS = Math.max(1, Math.ceil(Lt / p.espac - 1e-9)); for (var k = 0; k <= nS; k++) { if (k === 0 && i2 > 0) continue; if (fechado && i2 === cam.length - 2 && k === nS) continue; posts.push([a[0] + (b[0] - a[0]) * k / nS, 0, a[2] + (b[2] - a[2]) * k / nS]); } }
+      /* CHAPA CHUMBADA (frente S6, 14/10/2026): a placa e os chumbadores DIMENSIONADOS com a força da NBR 6120 (Tabela 12) —
+         js/metalescadalinha.js baseMontante (placa engastada do js/acoligcalc.js); sem o motor, a chapa de partida de antes */
+      var ELb = dep("MetalEscadaLinha", "./metalescadalinha.js"), bm = p.fixacao === "chapa" && ELb && ELb.baseMontante ? ELb.baseMontante({ perfil: p.montante, uso: p.usoGuarda, espac: p.espac, concreto: { esp: p.concEsp, fck: p.concFck } }) : null;
       if (p.fixacao === "chapa") posts.forEach(function (P, j) {
+        if (bm && bm.desenho && ELb.chapaFixacao) { ELb.chapaFixacao(K, K.F, P[0], P[2], 0, bm.desenho, "gc-base-" + (j + 1), "Chapa de base do montante " + (j + 1), 0, "Chapa de base do montante"); return; }
         K.chapa({ origem: [P[0] - 0.075, 0.0125, P[2] - 0.075], ex: [1, 0, 0], ey: [0, 0, 1], t: 0.0125, ret: { L: 0.15, B: 0.15 }, furos: [[0.02, 0.02], [0.13, 0.02], [0.02, 0.13], [0.13, 0.13]].map(function (f) { return { u: f[0], v: f[1], db: 12, tipo: "padrao" }; }), papel: "Chapa de base do montante", aco: "ASTM A36", lig: "gc-base", nome: "Chapa de base do montante " + (j + 1) }, "basesMontante");
       });
       for (var z2 = n0; z2 < K.pecas.length; z2++) if (K.pecas[z2].metal && !K.pecas[z2].metal.acessorio) K.pecas[z2].metal.acessorio = "guarda-corpo";
@@ -426,35 +433,274 @@
       var acesso = { tipo: "guarda-corpo", perfil: p.norma === "nbr9050" ? "nbr9050" : "nr12", abastecimento: !!p.abastecimento, guarda: acessoGuarda(H, p, 1, 1) };
       var cont = K.cont;
       return { resumo: "Guarda-corpo de " + brf(Ltot) + " m" + (livre.length >= 2 ? " em " + (cam.length - 1) + " trecho(s)" : "") + " a " + brf(p.alturaGuarda) + " m: " + nm + " montantes a ≤ " + brf(p.espac) + " m, " + (num(p.intermediaria, 0) > 0 ? "intermediária a " + brf(p.intermediaria) + " m, " : "") + (p.rodape ? "rodapé de " + brf(p.hRodape * 100, 0) + " cm, " : "sem rodapé, ") + (cont.guarda || 0) + " peças",
-        medidas: { montantes: nm, comprimento: r4(Ltot), trechos: cam.length - 1, acesso: acesso, dim: { itens: [{ tipo: "montante", perfil: p.montante, corrimao: p.corrimao, aco: p.aco, uso: p.usoGuarda, espac: p.espac, perna: p.perna }], naoVerificados: ["não verificado: o elemento onde o guarda-corpo fixa (viga, laje, borda de chapa)"].concat(p.fixacao === "chapa" ? ["não verificado: chapa de base 150 × 150 × 12,5 mm e os 4 chumbadores Ø 12 mm (de partida — dimensionar na laje)"] : []) } } };
+        medidas: { montantes: nm, comprimento: r4(Ltot), trechos: cam.length - 1, acesso: acesso, dim: { itens: [{ tipo: "montante", perfil: p.montante, corrimao: p.corrimao, aco: p.aco, uso: p.usoGuarda, espac: p.espac, perna: p.perna }].concat(bm ? [{ tipo: "baseMontante", perfil: p.montante, uso: p.usoGuarda, espac: p.espac, concreto: { esp: p.concEsp, fck: p.concFck } }] : []), naoVerificados: ["não verificado: o elemento onde o guarda-corpo fixa (viga, laje, borda de chapa)"].concat(p.fixacao === "chapa" && !bm ? ["não verificado: chapa de base 150 × 150 × 12,5 mm e os 4 chumbadores Ø 12 mm (de partida — dimensionar na laje) (CRÍTICO)"] : []).concat(p.fixacao !== "chapa" && p.suporte === "concreto" ? ["não verificado: montante SOLDADO sobre CONCRETO não existe — use a fixação \"chapa de base chumbada\" (CRÍTICO)"] : []) } } };
     },
     dica: { titulo: "Guarda-corpo", oQueE: "Guarda-corpo avulso: montantes de tubo, corrimão sem superfície plana, travessa intermediária e rodapé, com a força horizontal da NBR 6120 verificada no montante e na solda da base.", ondeUsa: "Borda de laje, mezanino existente, fosso, plataforma de máquina, cobertura.", dica: "Clique o começo e o fim. NR-12: 1,10–1,20 m, intermediária a 0,70 m, rodapé de 0,20 m." },
     desenho: function (D) { var s = D.mem(20, 160, 300, 160, false, 4); for (var i = 0; i < 4; i++) s += D.mem(40 + i * 80, 160, 40 + i * 80, 50, false, 4); s += D.mem(30, 50, 290, 50, true, 5) + D.mem(30, 95, 290, 95, false, 3) + '<rect x="30" y="140" width="260" height="20" fill="' + D.DST + '" fill-opacity="0.5" stroke="' + D.DSTL + '"/>'; return s + D.tx(300, 45, "1,10", "end") + D.tx(300, 90, "0,70", "end") + D.tx(300, 135, "rodapé 0,20", "end"); }
   };
 
-  /* ================================================================ PISO (2 cliques: dois cantos) */
-  var PISO = { rotulo: "Piso industrial", cliques: 2, modo: "retangulo", calcula: true, PADRAO: {
+  /* ================================================================ PISO INDUSTRIAL — retângulo (2 cantos) ou CONTORNO (cliques, Enter fecha)
+   * frente S6 (14/10/2026): o piso ganha a ESTRUTURA DE SUPORTE dimensionada — vigas de borda no contorno e intermediárias no
+   * VÃO MÁXIMO do piso escolhido (grade: tabela de vão × carga do catálogo industrial quando a grade está nela, senão as barras
+   * portantes; chapa: flexão e flecha), cada viga no perfil mais leve que passa (NBR 8800 pelo js/acoacessos.js), apoiada no
+   * que está embaixo (par.apoios, lido pela tela no modelo) ou em PILARETES até a cota de baixo (placa de base ancorada e X nas
+   * faces), e as ABERTURAS (passagem de escada: par.aberturas, polígonos locais) com vigas de borda em volta. */
+  var PERFIS_VIGA_PISO = ["C150X12.2", "C200X17.1", "W150X13", "W200X15", "W250X25.3", "W310X32.7", "W360X39", "W410X46.1", "W460X52", "W530X66"];
+  function poligonoPiso(p) {
+    var c = lerCaminho(p.contorno);
+    if (c.length >= 3) { if (Math.hypot(c[0][0] - c[c.length - 1][0], c[0][1] - c[c.length - 1][1]) < 1e-6) c.pop(); return c; }
+    return [[0, 0], [p.Lx, 0], [p.Lx, p.Lz], [0, p.Lz]];
+  }
+  function areaP(P) { var s = 0; for (var i = 0; i < P.length; i++) { var a = P[i], b = P[(i + 1) % P.length]; s += a[0] * b[1] - b[0] * a[1]; } return s / 2; }
+  /* Sutherland–Hodgman: o polígono P recortado pelo retângulo [x0,x1] × [z0,z1] */
+  function recortarRet(P, x0, x1, z0, z1) {
+    var out = P.slice();
+    [[0, x0, 1], [0, x1, -1], [1, z0, 1], [1, z1, -1]].forEach(function (pl) {
+      var k = pl[0], v = pl[1], sg = pl[2], inp = out; out = [];
+      if (!inp.length) return;
+      var den = function (q) { return sg * (q[k] - v); };
+      for (var i = 0; i < inp.length; i++) {
+        var a = inp[i], b = inp[(i + 1) % inp.length], da = den(a), db = den(b);
+        if (da >= 0) out.push(a);
+        if ((da >= 0) !== (db >= 0)) { var t = da / (da - db); out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]); }
+      }
+    });
+    return out;
+  }
+  function cortesLinha(P, x) {   /* os trechos da reta vertical X = x dentro do polígono → [[z0, z1]…] */
+    var zs = [];
+    for (var i = 0; i < P.length; i++) { var a = P[i], b = P[(i + 1) % P.length]; if ((a[0] <= x && b[0] > x) || (b[0] <= x && a[0] > x)) zs.push(a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0])); }
+    zs.sort(function (u, v) { return u - v; }); var o = []; for (var j = 0; j + 1 < zs.length; j += 2) o.push([zs[j], zs[j + 1]]); return o;
+  }
+  function menosFaixas(seg, faixas) {   /* [z0, z1] menos as faixas [a, b] */
+    var o = [seg];
+    faixas.forEach(function (f) { var n = []; o.forEach(function (s) { if (f[1] <= s[0] || f[0] >= s[1]) n.push(s); else { if (f[0] > s[0]) n.push([s[0], f[0]]); if (f[1] < s[1]) n.push([f[1], s[1]]); } }); o = n; });
+    return o.filter(function (s) { return s[1] - s[0] > 0.05; });
+  }
+  function bboxP(P) { var xs = P.map(function (q) { return q[0]; }), zs = P.map(function (q) { return q[1]; }); return { x0: Math.min.apply(null, xs), x1: Math.max.apply(null, xs), z0: Math.min.apply(null, zs), z1: Math.max.apply(null, zs) }; }
+  /* o VÃO MÁXIMO do piso: o maior vão (de 5 em 5 cm) em que todas as verificações do piso passam */
+  function vaoMaxPiso(p, q) {
+    var A = AC(); if (!A) return { vao: num(p.vao, 1), fonte: "informado (sem o js/acoacessos.js)", conferir: true };
+    var mat = p.material === "lisa" || p.material === "xadrez" ? "chapa" : p.material, melhor = null, fonte = null;
+    if (mat === "expandida" || mat === "perfurada") return { vao: num(p.vao, 1), fonte: "informado — chapa " + mat + ": usar a tabela de vão × carga do fabricante", conferir: true };
+    for (var v = 0.30; v <= 3.0 + 1e-9; v += 0.05) {
+      var r = A.piso({ material: mat, vao: v, t: p.t, gradeH: p.gradeH, gradeT: p.gradeT, gradeA: p.gradeA, gradeB: p.gradeB, q: q });
+      var cs = r.verificacoes.filter(function (x) { return !x.info; });
+      if (!cs.length || !cs.every(function (x) { return x.ok; })) break;
+      melhor = Math.round(v * 100) / 100; fonte = cs.some(function (x) { return /tabela do fabricante/.test(x.nome); }) ? "tabela de vão × carga do fabricante (catálogo industrial)" : (mat === "grade" ? "barras portantes (a grade não está nas tabelas do catálogo — conferir com o fabricante)" : "chapa: flexão e flecha");
+    }
+    return melhor ? { vao: melhor, fonte: fonte, conferir: !/fabricante \(/.test(fonte) } : { vao: 0, fonte: "nenhum vão de 0,30 m passa com " + brf(q, 1) + " kN/m² — escolha um piso mais forte", conferir: true };
+  }
+  /* o perfil mais leve da lista que passa (viga biapoiada travada pelo piso, faixa de influência) */
+  function vigaQuePassa(L, faixa, q, gP, aco, cache, minIdx) {
+    var A = AC(), i0 = Math.max(0, Math.min(PERFIS_VIGA_PISO.length - 1, Math.round(num(minIdx, 0)))), k = brf(L, 2) + "|" + brf(faixa, 2) + "|" + i0; if (cache[k]) return cache[k];
+    var res = null;
+    for (var i = i0; i < PERFIS_VIGA_PISO.length && A; i++) {
+      /* mesa comprimida DESTRAVADA no vão (a grade/chapa presa por clip não conta como travamento — a mesma premissa da
+         Estrutura desenhada, que verifica o piso inteiro: um motor só, sem "passa aqui e reprova lá") */
+      var r = A.viga({ nome: "Viga", perfil: PERFIS_VIGA_PISO[i], aco: aco, L: L, faixa: faixa, q: q, gPiso: gP, travadaPeloPiso: false });
+      var cs = r.verificacoes.filter(function (x) { return !x.info; });
+      if (cs.length && cs.every(function (x) { return x.ok; })) { res = { perfil: PERFIS_VIGA_PISO[i], L: L, faixa: faixa }; break; }
+    }
+    cache[k] = res; return res;
+  }
+  var PISO = { rotulo: "Piso industrial", cliques: 2, modo: "retangulo", modos: ["retangulo", "contorno"], calcula: true, PADRAO: {
     Lx: 2, Lz: 1, material: "grade", t: 0.00635, gradeH: 0.030, gradeT: 0.003, gradeA: 0.030, gradeB: 0.100, gradeS: 0.005,
-    cordao: 0.004, losangoMenor: 0.025, furoD: 0.010, furoPasso: 0.015, painelMax: 1.0, vao: 1.0, usoPiso: "area-tecnica", qInformado: 0, aco: "ASTM A36" },
-    nums: ["Lx", "Lz", "t", "gradeH", "gradeT", "gradeA", "gradeB", "gradeS", "cordao", "losangoMenor", "furoD", "furoPasso", "painelMax", "vao", "qInformado"], bools: [], perfis: [],
+    cordao: 0.004, losangoMenor: 0.025, furoD: 0.010, furoPasso: 0.015, painelMax: 1.0, vao: 1.0, usoPiso: "area-tecnica", qInformado: 0, aco: "ASTM A36",
+    contorno: "", aberturas: [], estrutura: "auto", cotaApoio: 0, apoios: [], concEsp: 0, concFck: 0, minBorda: 0, minInter: 0, minPil: 0, bordasExistentes: [], concPoly: [], concBorda: 0, passagens: [], apoioMax: 0 },
+    nums: ["Lx", "Lz", "t", "gradeH", "gradeT", "gradeA", "gradeB", "gradeS", "cordao", "losangoMenor", "furoD", "furoPasso", "painelMax", "vao", "qInformado", "cotaApoio", "concEsp", "concFck", "minBorda", "minInter", "minPil", "concBorda", "apoioMax"], bools: [], perfis: [],
     validar: function (p) {
-      if (!(p.Lx >= 0.2 && p.Lx <= 30 && p.Lz >= 0.2 && p.Lz <= 30)) return "Piso: cada lado de 0,20 a 30 m (clique dois cantos).";
+      var c = lerCaminho(p.contorno);
+      if (String(p.contorno || "").trim() && c.length < 3) return "Piso por contorno: 3 cantos ou mais (x z; x z; x z).";
+      if (c.length >= 3) { var bb = bboxP(c); if (Math.abs(areaP(c)) < 0.04) return "Piso por contorno: a área fica abaixo de 0,04 m²."; if (bb.x1 - bb.x0 > 30 || bb.z1 - bb.z0 > 30) return "Piso: cada lado de 0,20 a 30 m."; }
+      else if (!(p.Lx >= 0.2 && p.Lx <= 30 && p.Lz >= 0.2 && p.Lz <= 30)) return "Piso: cada lado de 0,20 a 30 m (clique dois cantos).";
       if (["grade", "xadrez", "expandida", "perfurada", "lisa"].indexOf(p.material) < 0) return "Piso: grade, chapa xadrez, expandida, perfurada ou lisa.";
       if (!(p.painelMax >= 0.3 && p.painelMax <= 3)) return "Largura máxima do painel de 0,30 a 3 m.";
       if (!(p.vao >= 0.2 && p.vao <= 4)) return "Vão do piso entre apoios de 0,20 a 4 m.";
+      if (["auto", "nenhuma"].indexOf(p.estrutura) < 0) return "Estrutura do piso: automática ou nenhuma.";
       return null;
     },
     gerar: function (p, K, novoId, ctx, H) {
-      var tP = p.material === "grade" ? p.gradeH : p.t, nP = Math.max(1, Math.ceil(p.Lx / p.painelMax - 1e-9)), kg = AC() ? AC().pisoKgM2(p.material === "lisa" ? "chapa" : p.material, p) : null;
-      for (var i = 0; i < nP; i++) {
-        var u0 = p.Lx * i / nP, c = K.chapa({ origem: [u0, 0, 0], ex: [1, 0, 0], ey: [0, 0, 1], t: tP, ret: { L: p.Lx / nP, B: p.Lz }, papel: "Piso", aco: "ASTM A36", nome: "Painel de piso " + (i + 1) }, "paineis");
-        pisoSobre(H, K, c, p, p.material === "lisa" ? "chapa" : p.material);
+      var tP = p.material === "grade" ? p.gradeH : p.t, kg = AC() ? AC().pisoKgM2(p.material === "lisa" ? "chapa" : p.material, p) : null, P = poligonoPiso(p);
+      if (areaP(P) < 0) P = P.slice().reverse();
+      var bb = bboxP(P), A0 = Math.abs(areaP(P)), q = qDe(p), gP = kg ? r4(kg.kgm2 * 9.81 / 1000) : 0.5, gid = String(novoId()), est = p.estrutura !== "nenhuma";
+      var abs = arr(p.aberturas).map(function (ab) { var b = bboxP(ab); return b; }).filter(function (b) { return b.x1 - b.x0 > 0.1 && b.z1 - b.z0 > 0.1; });
+      /* o vão do piso: o MÁXIMO pela tabela/cálculo quando a estrutura é automática; senão o informado */
+      var vm = est ? vaoMaxPiso(p, q) : { vao: p.vao, fonte: "informado" };
+      if (est && !(vm.vao > 0)) return { erro: "Piso: " + vm.fonte + "." };
+      /* direção: as vigas intermediárias vencem a MENOR dimensão (linhas X = constante quando o piso é mais comprido em X) */
+      var aoLongoX = (bb.x1 - bb.x0) >= (bb.z1 - bb.z0);
+      function T(q2) { return aoLongoX ? q2 : [q2[1], q2[0]]; }   /* troca x ↔ z: o algoritmo trabalha com as intermediárias em X = constante */
+      var Pt = P.map(T), bt = bboxP(Pt), absT = abs.map(function (b) { var c0 = T([b.x0, b.z0]), c1 = T([b.x1, b.z1]); return { x0: Math.min(c0[0], c1[0]), x1: Math.max(c0[0], c1[0]), z0: Math.min(c0[1], c1[1]), z1: Math.max(c0[1], c1[1]) }; });
+      var Wx = bt.x1 - bt.x0, nI = est ? Math.max(1, Math.ceil(Wx / vm.vao - 1e-9)) : 1, s = Wx / nI;
+      /* ---- PAINÉIS: faixas de largura ≤ painelMax ao longo de X, recortadas pelo contorno e sem as aberturas */
+      var nP = Math.max(1, Math.ceil(Wx / Math.min(p.painelMax, est ? s : p.painelMax) - 1e-9)), xs = [];
+      for (var i = 0; i <= nP; i++) xs.push(bt.x0 + Wx * i / nP);
+      absT.forEach(function (b) { xs.push(b.x0, b.x1); });
+      xs = xs.filter(function (x) { return x >= bt.x0 - 1e-9 && x <= bt.x1 + 1e-9; }).sort(function (a, b) { return a - b; }).filter(function (x, k, l) { return !k || x - l[k - 1] > 1e-4; });
+      var nPain = 0, areaPain = 0;
+      for (var j = 0; j + 1 < xs.length; j++) {
+        var xa = xs[j], xb = xs[j + 1], xm = (xa + xb) / 2, faixas = absT.filter(function (b) { return xm > b.x0 && xm < b.x1; }).map(function (b) { return [b.z0, b.z1]; });
+        menosFaixas([bt.z0, bt.z1], faixas).forEach(function (zf) {
+          var pc = recortarRet(Pt, xa, xb, zf[0], zf[1]); if (pc.length < 3 || Math.abs(areaP(pc)) < 0.005) return;
+          var pcL = pc.map(T); if (areaP(pcL) < 0) pcL.reverse();
+          var c = K.chapa({ origem: [0, 0, 0], ex: [1, 0, 0], ey: [0, 0, 1], t: tP, contorno: pcL.map(function (q3) { return [r4(q3[0]), r4(q3[1])]; }), papel: "Piso", aco: "ASTM A36", nome: "Painel de piso " + (nPain + 1) }, "paineis");
+          if (c) { pisoSobre(H, K, c, p, p.material === "lisa" ? "chapa" : p.material); nPain++; areaPain += Math.abs(areaP(pcL)); }
+        });
       }
       if (kg && kg.conferir) K.avisos.push("Peso do piso: " + brf(kg.kgm2, 1) + " kg/m² — " + kg.fonte);
-      return { resumo: "Piso em " + ({ grade: "grade eletrofundida", xadrez: "chapa xadrez", expandida: "chapa expandida", perfurada: "chapa perfurada", lisa: "chapa lisa" })[p.material] + " " + brf(p.Lx) + " × " + brf(p.Lz) + " m em " + nP + " painel(éis)" + (kg ? " (" + brf(kg.kgm2, 1) + " kg/m²)" : ""),
-        medidas: { paineis: nP, kgm2: kg ? kg.kgm2 : null, acesso: null, dim: { itens: [{ tipo: "piso", material: p.material === "lisa" || p.material === "xadrez" ? "chapa" : p.material, vao: p.vao, t: p.t, gradeH: p.gradeH, gradeT: p.gradeT, gradeA: p.gradeA, q: qDe(p) }], naoVerificados: ["não verificado: fixação do piso nas vigas (presilha/clip da grade, solda ou parafuso)"] } } };
+      var dimItens = [{ tipo: "piso", material: p.material === "lisa" || p.material === "xadrez" ? "chapa" : p.material, vao: est ? r4(s) : p.vao, t: p.t, gradeH: p.gradeH, gradeT: p.gradeT, gradeA: p.gradeA, gradeB: p.gradeB, q: q }];
+      var nvs = ["não verificado: fixação do piso nas vigas (presilha/clip da grade, solda ou parafuso)"], crit = [], est0 = null;
+      if (est) {
+        /* ---- ESTRUTURA: borda (cada lado do contorno e de cada abertura) + intermediárias a cada s (X = constante) */
+        var cache = {}, vigas = [], yV = -tP, Lint = 0;
+        var linhasInt = [], xsAb = [];
+        /* ABERTURA (o "vigamento de abertura"): os dois lados paralelos às intermediárias são vigas INTEIRAS de borda a borda
+           (as que seguram tudo); os outros dois são as travessas entre elas, e as intermediárias cortadas apoiam nas travessas */
+        absT.forEach(function (b) { [b.x0, b.x1].forEach(function (xa) { xsAb.push(xa); cortesLinha(Pt, xa).forEach(function (sg) { var fx = absT.filter(function (o2) { return o2 !== b && xa > o2.x0 - 1e-6 && xa < o2.x1 + 1e-6; }).map(function (o2) { return [o2.z0, o2.z1]; }); menosFaixas(sg, fx).forEach(function (s2) { linhasInt.push([[xa, s2[0]], [xa, s2[1]], "abertura"]); Lint = Math.max(Lint, s2[1] - s2[0]); }); }); }); });
+        for (var k = 1; k < nI; k++) { var xk = bt.x0 + s * k; if (xsAb.some(function (xa) { return Math.abs(xa - xk) < 0.10; })) continue; cortesLinha(Pt, xk).forEach(function (sg) { var fx = absT.filter(function (b) { return xk > b.x0 - 1e-6 && xk < b.x1 + 1e-6; }).map(function (b) { return [b.z0, b.z1]; }); menosFaixas(sg, fx).forEach(function (s2) { linhasInt.push([[xk, s2[0]], [xk, s2[1]]]); Lint = Math.max(Lint, s2[1] - s2[0]); }); }); }
+        var bordas = [], exRef = arr(p.bordasExistentes).map(function (x) { return x && x.ref ? x.ref : null; }).filter(Boolean);
+        /* lado do contorno que já está sobre uma VIGA EXISTENTE (a tela lê no modelo; pontas locais a, b): sem viga de borda nova,
+           os cantos dele apoiam nela */
+        var exPares = arr(p.bordasExistentes).filter(function (x) { return x && x.a && x.b; }).map(function (x) { return [T([num(x.a[0], 0), num(x.a[1], 0)]), T([num(x.b[0], 0), num(x.b[1], 0)])]; });
+        var mesmo = function (u, v) { return Math.hypot(u[0] - v[0], u[1] - v[1]) < 0.02; }, bEx = [];
+        /* REVISÃO S6 (A2): a abertura que CRUZA a borda do piso (a escada chega pela borda) corta a viga de borda ali — os
+           pedaços de fora da passagem ficam, com apoio nas pontas; as travessas da abertura só onde ficam dentro do piso */
+        var foraDasAberturas = function (a, b) {
+          var ts = [[0, 1]];
+          absT.forEach(function (bx) {
+            var t0 = 0, t1 = 1, d = [b[0] - a[0], b[1] - a[1]], ok = true;
+            [[-d[0], a[0] - bx.x0], [d[0], bx.x1 - a[0]], [-d[1], a[1] - bx.z0], [d[1], bx.z1 - a[1]]].forEach(function (pq) { if (!ok) return; var pp0 = pq[0], qq = pq[1]; if (Math.abs(pp0) < 1e-12) { if (qq < 0) ok = false; return; } var r = qq / pp0; if (pp0 < 0) t0 = Math.max(t0, r); else t1 = Math.min(t1, r); });
+            if (!ok || t1 - t0 < 1e-6) return;
+            var nt = []; ts.forEach(function (iv) { if (t1 <= iv[0] || t0 >= iv[1]) nt.push(iv); else { if (t0 > iv[0]) nt.push([iv[0], t0]); if (t1 < iv[1]) nt.push([t1, iv[1]]); } }); ts = nt;
+          });
+          return ts.filter(function (iv) { return (iv[1] - iv[0]) * Math.hypot(b[0] - a[0], b[1] - a[1]) > 0.05; }).map(function (iv) { return [[a[0] + (b[0] - a[0]) * iv[0], a[1] + (b[1] - a[1]) * iv[0]], [a[0] + (b[0] - a[0]) * iv[1], a[1] + (b[1] - a[1]) * iv[1]]]; });
+        };
+        var dentroPol = function (x, z) { var c = false; for (var i5 = 0, j5 = Pt.length - 1; i5 < Pt.length; j5 = i5++) { var a5 = Pt[i5], b5 = Pt[j5]; if (((a5[1] > z) !== (b5[1] > z)) && (x < (b5[0] - a5[0]) * (z - a5[1]) / (b5[1] - a5[1]) + a5[0])) c = !c; } return c; };
+        for (var e = 0; e < Pt.length; e++) { var ea = Pt[e], eb = Pt[(e + 1) % Pt.length]; if (exPares.some(function (pr) { return (mesmo(pr[0], ea) && mesmo(pr[1], eb)) || (mesmo(pr[0], eb) && mesmo(pr[1], ea)); })) { bEx.push(e); continue; } foraDasAberturas(ea, eb).forEach(function (sg) { bordas.push({ a: sg[0], b: sg[1], tipo: "borda" }); }); }
+        absT.forEach(function (b) { [[[b.x0, b.z0], [b.x1, b.z0]], [[b.x1, b.z1], [b.x0, b.z1]]].forEach(function (sg) { var mz = (sg[0][1] + sg[1][1]) / 2, mx = (sg[0][0] + sg[1][0]) / 2; if (!dentroPol(mx, mz + 1e-3) || !dentroPol(mx, mz - 1e-3)) return; bordas.push({ a: sg[0], b: sg[1], tipo: "abertura" }); }); });
+        if (!Lint) Lint = bt.z1 - bt.z0;
+        var apoiosPts = [], falhas = [], hEst = num(p.y0, 0) - num(p.cotaApoio, 0), apMax = num(p.apoioMax, 0) > 0 ? num(p.apoioMax, 0) : (hEst > 0.15 && hEst < 1.5 ? Math.max(1.2, 2.5 * hEst) : 0);
+        function ptApoio(q4) { for (var a = 0; a < apoiosPts.length; a++) if (Math.hypot(apoiosPts[a].p[0] - q4[0], apoiosPts[a].p[1] - q4[1]) < 0.02) return apoiosPts[a]; var o = { p: q4, N: 0 }; apoiosPts.push(o); return o; }
+        bordas.forEach(function (bd) {
+          var L = Math.hypot(bd.b[0] - bd.a[0], bd.b[1] - bd.a[1]); if (L < 0.1) return;
+          var paralela = Math.abs(bd.b[0] - bd.a[0]) < 0.3 * L, faixa = paralela ? s / 2 : Lint / 2, nS = 1, vq = null;
+          /* REVISÃO S6 (A3): piso BAIXO — o X entre apoios longe uns dos outros fica quase deitado e não trava (mecanismo):
+             apoio a cada ≤ 2,5·h (mín. 1,2 m) ao longo da borda, ou o espaçamento pedido (apoioMax) */
+          var nS0 = bd.tipo === "borda" && apMax > 0 ? Math.max(1, Math.ceil(L / apMax - 1e-9)) : 1;
+          for (nS = nS0; nS <= Math.max(6, nS0); nS++) { vq = vigaQuePassa(L / nS, faixa, q, gP, p.aco, cache, p.minBorda); if (vq) break; }
+          if (!vq) { falhas.push("borda de " + brf(L) + " m"); nS = 1; vq = { perfil: PERFIS_VIGA_PISO[PERFIS_VIGA_PISO.length - 1], L: L, faixa: faixa, falha: true }; }
+          var wd = 1.25 * (gP * faixa) + 1.5 * (q * faixa);
+          /* a viga de borda é UMA barra contínua de canto a canto (os apoios a mais ficam por baixo dela): a viga partida
+             no apoio viraria rótula em corrente e o nó do pilarete do meio ficaria solto em planta (mecanismo) */
+          vigas.push({ a: bd.a, b: bd.b, perfil: vq.perfil, papel: bd.tipo === "abertura" ? "Viga de borda da abertura do piso" : "Viga de borda do piso", L: L / nS, faixa: faixa, vaos: nS });
+          if (bd.tipo === "borda") for (var t2 = 0; t2 < nS; t2++) {
+            var a2 = [bd.a[0] + (bd.b[0] - bd.a[0]) * t2 / nS, bd.a[1] + (bd.b[1] - bd.a[1]) * t2 / nS], b2 = [bd.a[0] + (bd.b[0] - bd.a[0]) * (t2 + 1) / nS, bd.a[1] + (bd.b[1] - bd.a[1]) * (t2 + 1) / nS];
+            ptApoio(a2).N += wd * L / nS / 2 * (t2 > 0 ? 1.25 : 1); ptApoio(b2).N += wd * L / nS / 2 * (t2 < nS - 1 ? 1.25 : 1);   /* apoio do meio de viga contínua: +25 % (a favor) */
+          }
+        });
+        linhasInt.forEach(function (li) {
+          var ab = li[2] === "abertura", L = li[1][1] - li[0][1], vq = vigaQuePassa(L, ab ? s : s, q, gP, p.aco, cache, ab ? Math.max(num(p.minInter, 0), num(p.minBorda, 0)) : p.minInter);
+          if (!vq) { falhas.push((ab ? "viga da abertura" : "intermediária") + " de " + brf(L) + " m"); vq = { perfil: PERFIS_VIGA_PISO[PERFIS_VIGA_PISO.length - 1] }; }
+          vigas.push({ a: li[0], b: li[1], perfil: vq.perfil, papel: ab ? "Viga de borda da abertura do piso" : "Viga intermediária do piso", L: L, faixa: s });
+        });
+        /* as vigas no modelo: topo no fundo do piso; borda do contorno com o perfil "para dentro" */
+        var porPerfil = {};
+        vigas.forEach(function (vg, iv) {
+          var a3 = T(vg.a), b3 = T(vg.b);
+          K.barra([a3[0], yV, a3[1]], [b3[0], yV, b3[1]], { ferr: "viga", cat: vg.perfil, just: "topo", papel: vg.papel, ifc: "IFCBEAM", aco: p.aco, nome: vg.papel + " " + (iv + 1) }, "vigas");
+          var kk = vg.papel + "|" + vg.perfil + "|" + brf(vg.L, 2) + "|" + brf(vg.faixa, 2); if (!porPerfil[kk]) { porPerfil[kk] = 1; dimItens.push({ tipo: "viga", nome: vg.papel + " " + vg.perfil + " (" + brf(vg.L) + " m)", perfil: vg.perfil, aco: p.aco, L: vg.L, faixa: vg.faixa, q: q, gPiso: gP, travadaPeloPiso: false }); }
+        });
+        /* ---- APOIOS: o que a tela leu embaixo (existente) ou PILARETE até a cota de baixo */
+        var EL = dep("MetalEscadaLinha", "./metalescadalinha.js"), Hmax = 0, nPil = 0, nEx = 0, refs = {}, pilPts = [];
+        var yBase = num(p.cotaApoio, 0) - num(p.y0, 0);
+        bEx.forEach(function (e3) { if (e3 >= 0 && e3 < Pt.length) [Pt[e3], Pt[(e3 + 1) % Pt.length]].forEach(function (q5) { ptApoio(q5).existente = true; }); });
+        exRef.forEach(function (rf) { refs[rf] = 1; });
+        apoiosPts.forEach(function (ap, ia) {
+          var pl = T(ap.p), lido = arr(p.apoios).filter(function (x) { return Math.hypot(num(x.x, 0) - pl[0], num(x.z, 0) - pl[1]) < 0.05; })[0];
+          if (ap.existente) { nEx++; return; }
+          var vgA = vigas.filter(function (vg) { return Math.hypot(vg.a[0] - ap.p[0], vg.a[1] - ap.p[1]) < 0.02 || Math.hypot(vg.b[0] - ap.p[0], vg.b[1] - ap.p[1]) < 0.02; }), dMax = 0;
+          vgA.forEach(function (vg) { var pf = H.perfilDe(vg.perfil); if (pf) dMax = Math.max(dMax, pf.d || 0.15); });
+          var yFundo = yV - dMax;
+          if (lido && lido.tipo === "existente") { nEx++; refs[lido.ref || "?"] = 1; return; }
+          var yB = lido && lido.tipo === "pilarete" && isFinite(num(lido.y, NaN)) ? num(lido.y, 0) - num(p.y0, 0) : yBase, h = yFundo - yB;
+          if (h < 0.15) { nEx++; refs["piso embaixo"] = 1; return; }
+          var N = ap.N * 1.0 + 0.3, pr = EL && EL.pilarete ? EL.pilarete(N, h, p.aco, p.minPil) : null, perfil = pr && pr.ok ? pr.perfil : "HSS101.6X101.6X6.4";
+          if (pr && !pr.ok) falhas.push("pilarete de " + brf(h) + " m (" + pr.motivo + ")");
+          /* até o TOPO DO AÇO (a linha das vigas "topo"), como no mezanino: no cálculo a ponta do pilarete é o nó das vigas */
+          K.barra([pl[0], yB, pl[1]], [pl[0], yV, pl[1]], { ferr: "pilar", cat: perfil, papel: "Pilarete do piso", ifc: "IFCCOLUMN", aco: p.aco, nome: "Pilarete do piso " + (nPil + 1) }, "pilaretes");
+          pilPts.push({ p: pl, yB: yB, yF: yV }); nPil++; Hmax = Math.max(Hmax, h);
+          dimItens.push({ tipo: "pilarete", perfil: perfil, aco: p.aco, h: r4(h), N: r4(N), nome: "Pilarete do piso " + nPil });
+          /* a placa de base ancorada, dimensionada pela compressão do pilarete (js/metalescadalinha.js) */
+          if (EL && EL.fixacao) {
+            var sP = H.perfilDe(perfil), it = { tipo: "fixacao", ponta: "pe", modo: "pes", rotulo: "Base do pilarete do piso " + nPil, pes: { s: { b: sP ? (sP.b || sP.bf || 0.1) * 1000 : 100, t: sP ? num(sP.t || sP.tw, 0.006) * 1000 : 6 } }, R: { V: N, H: 0.1 * N, hip: "base do pilarete: compressão + 10 % de horizontal (imperfeição, a favor)" }, longarina: { d: 100, bf: 100, tw: 6, tf: 6 }, alfa: 90, concreto: { esp: num(p.concEsp, 0), fck: num(p.concFck, 0), poly: arr(p.concPoly), borda: num(p.concBorda, 0), rotulo: "Piso de concreto embaixo" }, P: K.F.W([pl[0], yB, pl[1]]), eixo: [1, 0] };
+            var fr = EL.fixacao(it); dimItens.push(it);   /* REVISÃO S6: a base de CADA pilarete (cada uma no seu ponto) */
+            if (fr.desenho && fr.desenho.chapa && EL.chapaFixacao) EL.chapaFixacao(K, K.F, pl[0], pl[1], yB, fr.desenho, "pis-pb-" + gid + "-" + nPil, "Base do pilarete do piso " + nPil, 0, "Placa de base");
+          }
+        });
+        /* ---- X nas faces entre pilaretes vizinhos (a estrutura rotulada não fica de pé sem ele) */
+        var nX = 0;
+        if (pilPts.length >= 2 && EL) {
+          /* X em cada SUB-VÃO de cada lado (entre apoios consecutivos — cantos e apoios do meio): cada pilarete travado no plano da face */
+          var trechos = [];
+          for (var e2 = 0; e2 < Pt.length; e2++) {
+            var pa0 = T(Pt[e2]), pb0 = T(Pt[(e2 + 1) % Pt.length]), dxe = pb0[0] - pa0[0], dze = pb0[1] - pa0[1], Le = Math.hypot(dxe, dze);
+            var noLado = pilPts.filter(function (x) { var t3 = ((x.p[0] - pa0[0]) * dxe + (x.p[1] - pa0[1]) * dze) / (Le * Le); return t3 > -1e-6 && t3 < 1 + 1e-6 && Math.abs((x.p[0] - pa0[0]) * dze - (x.p[1] - pa0[1]) * dxe) / Le < 0.02; })
+              .sort(function (a, b) { return ((a.p[0] - pa0[0]) * dxe + (a.p[1] - pa0[1]) * dze) - ((b.p[0] - pa0[0]) * dxe + (b.p[1] - pa0[1]) * dze); });
+            for (var j3 = 0; j3 + 1 < noLado.length; j3++) trechos.push([noLado[j3], noLado[j3 + 1]]);
+          }
+          /* a PASSAGEM da escada (recorte na borda): nenhum X atravessa o caminho dela */
+          var pass = arr(p.passagens).filter(function (q6) { return arr(q6).length >= 4; });
+          var cruzaPassagem = function (A1, B1) {
+            var m = [(A1.p[0] + B1.p[0]) / 2, (A1.p[1] + B1.p[1]) / 2], d = [B1.p[0] - A1.p[0], B1.p[1] - A1.p[1]], Ld = Math.hypot(d[0], d[1]) || 1;
+            return pass.some(function (q6) {
+              var bb = bboxP(q6); if (m[0] < bb.x0 - 0.06 || m[0] > bb.x1 + 0.06 || m[1] < bb.z0 - 0.06 || m[1] > bb.z1 + 0.06) return false;
+              var lx = bb.x1 - bb.x0, lz = bb.z1 - bb.z0, ax = lx >= lz ? [1, 0] : [0, 1];   /* o eixo comprido da passagem = a direção da escada */
+              return Math.abs((d[0] * ax[0] + d[1] * ax[1]) / Ld) < 0.7;
+            });
+          };
+          trechos.forEach(function (tr) {
+            var A1 = tr[0], B1 = tr[1];
+            if (A1.yF - A1.yB < 0.15) return;
+            if (cruzaPassagem(A1, B1)) return;   /* REVISÃO S6 (A3): piso baixo também leva X (sem ele, pilarete rotulado = mecanismo) */
+            K.barra([A1.p[0], A1.yB, A1.p[1]], [B1.p[0], B1.yF, B1.p[1]], { ferr: "diagonal", cat: EL.BR_X, papel: "Contraventamento do piso", ifc: "IFCMEMBER", aco: p.aco, nome: "X do piso " + (++nX) }, "contravento");
+            K.barra([B1.p[0], B1.yB, B1.p[1]], [A1.p[0], A1.yF, A1.p[1]], { ferr: "diagonal", cat: EL.BR_X, papel: "Contraventamento do piso", ifc: "IFCMEMBER", aco: p.aco, nome: "X do piso " + (++nX) }, "contravento");
+          });
+        }
+        /* REVISÃO S6: com apoio no MEIO dos lados (pilarete do meio da viga de borda) o plano do piso precisa de X horizontal —
+           sem ele os nós do meio só se seguram pela flexão fraca da viga de borda (a Estrutura desenhada acusava grande
+           deslocabilidade). X no plano em cada vão entre apoios dos dois lados compridos; nenhum atravessa uma abertura */
+        var nXp = 0;
+        if (!lerCaminho(p.contorno).length && pilPts.length > 4 && EL) {
+          var z0s = [], z1s = [];
+          pilPts.forEach(function (pp7) { var q7 = T(pp7.p); if (Math.abs(q7[1] - bt.z0) < 0.02) z0s.push(q7[0]); else if (Math.abs(q7[1] - bt.z1) < 0.02) z1s.push(q7[0]); });
+          var comuns = z0s.filter(function (x7) { return z1s.some(function (y7) { return Math.abs(x7 - y7) < 0.02; }); }).sort(function (u7, v7) { return u7 - v7; });
+          var atravessa = function (a7, b7) { return absT.some(function (bx) { for (var t7 = 0; t7 <= 1.0001; t7 += 0.05) { var x8 = a7[0] + (b7[0] - a7[0]) * t7, z8 = a7[1] + (b7[1] - a7[1]) * t7; if (x8 > bx.x0 && x8 < bx.x1 && z8 > bx.z0 && z8 < bx.z1) return true; } return false; }); };
+          for (var i7 = 0; i7 + 1 < comuns.length; i7++) {
+            var xa7 = comuns[i7], xb7 = comuns[i7 + 1];
+            [[[xa7, bt.z0], [xb7, bt.z1]], [[xb7, bt.z0], [xa7, bt.z1]]].forEach(function (dg) {
+              if (atravessa(dg[0], dg[1])) return;
+              var A7 = T(dg[0]), B7 = T(dg[1]);
+              K.barra([A7[0], yV, A7[1]], [B7[0], yV, B7[1]], { ferr: "diagonal", cat: EL.BR_X, papel: "Contraventamento no plano do piso", ifc: "IFCMEMBER", aco: p.aco, nome: "X no plano do piso " + (++nXp) }, "contravento");
+            });
+          }
+        }
+        if (falhas.length) K.avisos.unshift("NÃO PASSA: " + falhas.join("; ") + " — aumente os apoios ou divida o piso");
+        if (nPil && Hmax > 0.15 && !nX) crit.push("não verificado: estabilidade lateral dos pilaretes (sem X nas faces) (CRÍTICO)");
+        nvs.push("não verificado: ligações viga × viga e viga × pilarete do piso (use Ligação inteligente)");
+        /* o elemento EXISTENTE que passa a receber o piso não é verificado aqui: crítico (calcule a estrutura desenhada com ele) */
+        if (nEx && Object.keys(refs).some(function (k6) { return k6 !== "piso embaixo"; })) crit.push("não verificado: o elemento existente onde o piso apoia (" + Object.keys(refs).join(", ") + ") com a carga do piso — calcule pela Estrutura desenhada com ele (CRÍTICO)");
+        est0 = { vigas: vigas.length, intermediarias: linhasInt.length, pilaretes: nPil, existentes: nEx, refs: Object.keys(refs), vao: r4(s), vaoMax: vm.vao, fonteVao: vm.fonte, x: nX, falhas: falhas };
+        K.avisos.push("Vão das intermediárias: " + brf(s) + " m ≤ vão máximo do piso " + brf(vm.vao) + " m (" + vm.fonte + ")");
+      }
+      var mats = { grade: "grade eletrofundida", xadrez: "chapa xadrez", expandida: "chapa expandida", perfurada: "chapa perfurada", lisa: "chapa lisa" };
+      var forma = lerCaminho(p.contorno).length >= 3 ? "contorno de " + P.length + " lados, " + brf(A0) + " m²" : brf(p.Lx) + " × " + brf(p.Lz) + " m";
+      var apoioTxt = est0 ? (est0.pilaretes ? est0.pilaretes + " pilarete(s) até a cota " + brf(num(p.cotaApoio, 0)) + " m" + (est0.x ? " com X nas faces" : "") : "") + (est0.existentes ? (est0.pilaretes ? "; " : "") + est0.existentes + " apoio(s) no que está embaixo (" + est0.refs.join(", ") + ")" : "") : "";
+      return { resumo: "Piso em " + mats[p.material] + " " + forma + " em " + nPain + " painel(éis)" + (kg ? " (" + brf(kg.kgm2, 1) + " kg/m²)" : "") + (abs.length ? ", " + abs.length + " abertura(s)" : "") +
+          (est0 ? "; estrutura: " + est0.vigas + " vigas (" + est0.intermediarias + " intermediárias a cada " + brf(est0.vao) + " m — vão máx. do piso " + brf(est0.vaoMax) + " m pela " + est0.fonteVao.split(" (")[0] + "); apoio: " + (apoioTxt || "—") : ""),
+        medidas: { paineis: nPain, area: r4(areaPain), kgm2: kg ? kg.kgm2 : null, acesso: null, estrutura: est0, aberturas: abs.length, dim: { itens: dimItens, naoVerificados: nvs, criticos: crit } } };
     },
-    dica: { titulo: "Piso industrial", oQueE: "Painéis de piso: grade eletrofundida (barra portante × travessa), chapa xadrez, chapa expandida ou perfurada — com o peso de cada tipo e a verificação do vão.", ondeUsa: "Plataformas, passarelas, degraus, tampas de canaleta, mezaninos.", dica: "Dois cliques nos cantos. A grade: barra portante (altura × espessura) a cada a, travessa a cada b; o vão é o da barra portante." },
+    dica: { titulo: "Piso industrial", oQueE: "Piso em grade eletrofundida, chapa xadrez, expandida ou perfurada por RETÂNGULO (2 cantos) ou CONTORNO (cliques, Enter fecha), com a estrutura de suporte: vigas de borda e intermediárias no vão máximo do piso (tabela de vão × carga do catálogo) e pilaretes até o nível de baixo quando não há apoio.", ondeUsa: "Plataformas, mezaninos, passarelas, tampas de canaleta, piso técnico.", dica: "Retângulo: 2 cantos. Contorno: clique os cantos e Enter (Backspace desfaz o último, Esc cancela). A escada por linha abre a passagem neste piso sozinha." },
     desenho: function (D) { var s = "", i; for (i = 0; i < 12; i++) s += D.ln(40 + i * 22, 50, 40 + i * 22, 160, D.ACOL, 3); for (i = 0; i < 5; i++) s += D.ln(30, 55 + i * 26, 290, 55 + i * 26, D.DSTL, 1.2); return s + D.tx(160, 185, "barra portante × travessa", "middle"); }
   };
 
@@ -689,7 +935,7 @@
     corrimaoparede: { verifica: ["alturas, diâmetro, prolongamento (NBR 9050) e a folga da parede (NPT 011)", "corrimão entre suportes e o suporte em balanço com 900 N (NPT 011, 5.8.3.2)"], naoVerifica: ["chumbadores/buchas na parede", "a parede"] },
     rampa: { verifica: ["inclinação pela norma (NR-12: até 20°, peças transversais de 10° a 20°; NBR 9050: 8,33 % e desnível por segmento)", "largura, patamares, guarda-corpo e corrimão", "longarina entre apoios, travessa, piso e montante"], naoVerifica: ["pilaretes, ligações e chumbadores", "inclinação transversal e piso tátil (NBR 9050)", "guia de balizamento da NBR 9050 (altura a conferir)"] },
     helicoidal: { verifica: ["degrau pela norma na linha de percurso, largura, descanso a cada 3,00 m, guarda-corpo de fora (NR-12)", "longarina entre consoles, degrau, console em balanço, montante e solda"], naoVerifica: ["ligação console × costado e a parede do tanque", "torção da longarina curva", "largura do degrau junto do costado (fica menor que na linha de percurso — ver o aviso)"] },
-    piso: { verifica: ["peso por tipo", "chapa: flexão e flecha (faixa de 1 m)", "grade: tabela do fabricante (catálogo) quando houver, e as barras portantes"], naoVerifica: ["fixação (presilhas, solda, parafuso)", "chapa expandida e perfurada (tabela do fabricante)", "carga concentrada de equipamento"] }
+    piso: { verifica: ["peso por tipo", "chapa: flexão e flecha (faixa de 1 m)", "grade: tabela do fabricante (catálogo) quando houver, e as barras portantes", "vão máximo do piso → espaçamento das vigas intermediárias", "vigas de borda, intermediárias e de borda das aberturas (NBR 8800, perfil mais leve que passa)", "pilaretes à compressão (KL/r ≤ 200) e a placa de base ancorada"], naoVerifica: ["fixação do piso nas vigas (presilhas, solda, parafuso)", "ligações viga × viga e viga × pilarete (Ligação inteligente)", "chapa expandida e perfurada (tabela do fabricante)", "carga concentrada de equipamento", "o elemento existente onde o piso apoia"] }
   };
   function escopo(tipo) { return ESCOPO[tipo] || null; }
 
@@ -709,13 +955,15 @@
     var A = AC(); if (!A || !r || !r.ok || !r.medidas) return null;
     var g = r.medidas.acesso, d = r.medidas.dim;
     if (d && (r.tipo === "plataforma" || r.tipo === "passarela")) d = comEstruturaDesenhada(r, d);
+    /* S6 (14/10/2026): o PISO com estrutura em pilaretes também vai para o MESMO motor (vigas, pilaretes e X com 2ª ordem) */
+    else if (d && r.tipo === "piso" && r.medidas.estrutura && r.medidas.estrutura.pilaretes > 0 && !r.medidas.estrutura.existentes) d = comEstruturaDesenhada(r, d);
     return { conformidade: g ? A.verificar(g) : null, dimensionamento: d ? A.dimensionar(d) : null, estrutura: d && d._estrutura ? d._estrutura : null };
   }
   /* PLATAFORMA e PASSARELA: vigas, pilares e contraventamento pelo js/acodimlivre.js (o MESMO cálculo do Cálculo ›
      Estrutura desenhada, com a força do guarda-corpo, 2ª ordem e interação N + M) — sem cálculo simplificado paralelo.
      Sem o motor carregado: INCOMPLETO ("calcule pela Estrutura desenhada"), nunca "passa". */
   function comEstruturaDesenhada(r, d) {
-    var o = JSON.parse(JSON.stringify(d)); o.itens = arr(o.itens).filter(function (it) { return it.tipo !== "viga"; }); o.externas = []; o.criticos = [];
+    var o = JSON.parse(JSON.stringify(d)); o.itens = arr(o.itens).filter(function (it) { return it.tipo !== "viga" && it.tipo !== "pilarete"; }); o.externas = []; o.criticos = [];
     o.naoVerificados = arr(o.naoVerificados).filter(function (t) { return !/pilares e contraventamento/.test(t); });
     var L = dep("AcoDimLivre", "./acodimlivre.js"), M = MP();
     if (!L || !M) { o.criticos.push("não verificado: vigas, pilares e contraventamento — calcule pela Estrutura desenhada (CRÍTICO)"); return o; }
@@ -724,13 +972,20 @@
     try { res = L.calcular(ent.entrada); } catch (e) { res = { ok: false, motivo: "erro no cálculo: " + (e && e.message) }; }
     o._estrutura = { ok: !!(res && res.ok), aprovado: !!(res && res.ok && res.aprovado), motivo: res && res.motivo, premissa: ent.premissa };
     var ED = "Cálculo › Estrutura desenhada (js/acodimlivre.js): NBR 8800 com 2ª ordem; cargas da NBR 6120 (área de piso e força do guarda-corpo, 6.3)";
-    if (!res || !res.ok) { o.externas.push({ nome: "Estrutura desenhada — análise", item: ED, passos: [{ rotulo: "o modelo não fechou", formula: "", valor: String(res && res.motivo || "sem resultado") }], resistencia: 1, solicitante: 9.99, unidade: "", razao: 9.99, ok: false }); return o; }
+    if (!res || !res.ok) { o.externas.push({ nome: "Estrutura desenhada — análise", item: ED, passos: [{ rotulo: "o modelo não fechou", formula: "", valor: (r.tipo === "piso" ? "SAÍDA: diminua \"Apoios a cada (m)\" no diálogo do piso (mais pilaretes, X menos deitado) — " : "") + String(res && res.motivo || "sem resultado") }], resistencia: 1, solicitante: 9.99, unidade: "", razao: 9.99, ok: false }); return o; }
     var porPeca = {}; cx.forEach(function (c) { porPeca[String(c.id)] = c; });
     res.modelo.membros.forEach(function (mb) {
       var x = res.membros[mb.id]; if (!x) return; var pc = porPeca[String(mb.peca)] || {}, papel = pc.metal ? pc.metal.papel : mb.papel;
       o.externas.push({ nome: "Estrutura desenhada — " + papel + " " + mb.id + " (" + (mb.secao ? mb.secao.nome : "") + ")", item: ED, passos: [{ rotulo: "verificação que governa", formula: String(x.governante || ""), valor: br(num(x.razao, 0) * 100, 0) + " %" }], resistencia: 1, solicitante: num(x.razao, 0), unidade: "", razao: num(x.razao, 0), ok: !!x.ok && num(x.razao, 0) <= 1 + 1e-9 });
     });
     (res.servico || []).forEach(function (sv) { o.externas.push({ nome: "Estrutura desenhada — flecha " + sv.membro, item: ED + " (" + (sv.ref || "Anexo C") + ")", passos: [{ rotulo: "flecha", formula: "", valor: br(sv.valor * 1000, 1) + " mm ≤ " + br(sv.limite * 1000, 1) + " mm" }], resistencia: sv.limite, solicitante: sv.valor, unidade: "m", razao: num(sv.razao, 0), ok: num(sv.razao, 0) <= 1 + 1e-9, els: true }); });
+    /* REVISÃO S6 (regra de ouro): a Estrutura desenhada NÃO aprovou por algo que não é de barra (grande deslocabilidade,
+       estabilidade global, escada como único travamento…) — vira FALHA aqui também, nunca "aprovado" com o motor reprovando */
+    if (!res.aprovado && !o.externas.some(function (v) { return v.ok === false; })) {
+      var porque = arr(res.avisos).filter(function (a) { return /deslocabilidade|instáv|mecanismo|estabilidade|trava|não fech|NÃO/i.test(a); }).slice(0, 2).join(" | ") || ("a Estrutura desenhada não aprovou (" + num(res.falhas, 0) + " falha(s))");
+      if (r.tipo === "piso") porque = "SAÍDA: diminua \"Apoios a cada (m)\" no diálogo do piso (mais pilaretes, X menos deitado) ou desenhe o apoio embaixo — " + porque;
+      o.externas.push({ nome: "Estrutura desenhada — situação global", item: ED, passos: [{ rotulo: "não aprovada", formula: "", valor: porque.slice(0, 400) }], resistencia: 1, solicitante: 9.99, unidade: "", razao: 9.99, ok: false });
+    }
     return o;
   }
   function br(v, c) { c = c == null ? 2 : c; return (Math.round(num(v, 0) * Math.pow(10, c)) / Math.pow(10, c)).toFixed(c).replace(".", ","); }
@@ -769,16 +1024,30 @@
    * contraventamento estabiliza), a área de piso com o peso do piso e o uso da NBR 6120 (Tabela 10) e, na
    * passarela apoiada nas pontas, os apoios nas pontas das vigas longitudinais (fixo no começo, móvel no fim). */
   var USO_LIVRE = { "area-tecnica": "area-tecnica", "escada-sem-publico": "passarela-sem-publico", "escada-publico": "passarela-publico", "informado": "outro" };
+  /* o PISO INDUSTRIAL com estrutura (frente S6): as vigas, os pilaretes e o X dele; a área de piso na planta inteira (a carga
+     sobre as aberturas fica — a favor), o uso da NBR 6120 e o peso do piso; bases e ligações rotuladas (o X estabiliza) */
+  function entradaPiso(p, minhas, caixas) {
+    var EL = dep("MetalEscadaLinha", "./metalescadalinha.js"), pol = EL && EL.plantaPronta ? EL.plantaPronta("piso", p) : null;
+    if (!pol) return { ok: false, motivo: "a planta do piso não fechou" };
+    var barras = minhas.filter(function (c) { return c.metal && c.metal.kind === "perfil" && !c.metal.lig; });
+    var vigas = barras.filter(function (c) { return /^Viga/.test(c.metal.papel || ""); }).map(function (c) { return String(c.id); });
+    var A = AC(), kg = A ? A.pisoKgM2(p.material === "lisa" ? "chapa" : p.material, p).kgm2 : 30, uso = USO_LIVRE[p.usoPiso] || "area-tecnica", q = num(p.qInformado, 0);
+    var area = { id: "piso", nome: "Piso industrial", poligono: pol, cota: r4(num(p.y0, 0)), vigas: vigas, direcao: "auto", g: r4(kg * 9.81 / 1000), gCategoria: "G-industrializado", gTexto: "piso " + p.material + " (" + brf(kg, 1) + " kg/m²)", uso: uso, qInformado: q > 0 ? q : (uso === "outro" ? 3 : null) };
+    return { ok: true, tipo: "piso", rigida: false, aviso: null, premissa: "ligações rotuladas + contraventamento em X nas faces",
+      entrada: { caixas: caixas, ids: barras.map(function (c) { return String(c.id); }), apoios: { basePadrao: "rotulada", bases: {}, extras: {} }, ligacoes: { vigaPilar: "rotulada", vigaViga: "rotulada" }, cargas: { areas: [area], pontuais: [], acrescimoLigacoes: 0.05, vento: null }, otimizar: false },
+      area: area, barras: barras.length, pontuais: [], forcaGuarda: 0, naoVerificado: "a carga sobre as aberturas do piso fica na área (a favor)" };
+  }
   function entradaCalculo(caixas, pronta) {
     var M = MP(); if (!M) return { ok: false, motivo: "js/metalprontas.js não carregou." };
     if (!pronta || !pronta.info || !pronta.info.par) return { ok: false, motivo: "Selecione uma peça da plataforma ou da passarela." };
-    var tipo = pronta.tipo; if (tipo !== "plataforma" && tipo !== "passarela") return { ok: false, motivo: "Só a plataforma e a passarela vão para a Estrutura desenhada (os outros acessos têm o cálculo próprio)." };
+    var tipo = pronta.tipo; if (tipo !== "plataforma" && tipo !== "passarela" && tipo !== "piso") return { ok: false, motivo: "Só a plataforma, a passarela e o piso industrial vão para a Estrutura desenhada (os outros acessos têm o cálculo próprio)." };
     var minhas = (caixas || []).filter(function (c) { return c && String(c.pronta) === String(pronta.id); });
     var e0 = entradaDe(tipo, M.normalizar(tipo, M.parParaRefazer(pronta)), minhas, caixas);
     if (e0.ok) e0.area.id = "piso-" + pronta.id;
     return e0;
   }
   function entradaDe(tipo, p, minhas, caixas) {
+    if (tipo === "piso") return entradaPiso(p, minhas, caixas);
     var M = MP(), H = M.ajudantes(), Lx = tipo === "plataforma" ? p.Lx : p.comprimento, Lz = tipo === "plataforma" ? p.Lz : p.largura;
     var F = H.quadroLocal([p.x0, p.y0, p.z0], p.giro);
     var pol = [[0, 0], [Lx, 0], [Lx, Lz], [0, Lz]].map(function (q) { var w = F.W([q[0], 0, q[1]]); return [r4(w[0]), r4(w[2])]; });

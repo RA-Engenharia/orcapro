@@ -7508,6 +7508,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       // desbloqueio PERMANENTE desta máquina (dono/teste): sobrevive a updates (localStorage não é
       // sobrescrito pelo pacote de atualização). Ligado pelo LIBERAR-BLOCOK.html do instalador.
       try { if (typeof localStorage !== 'undefined' && localStorage.getItem('orcapro:blocok:owner') === '1') return true; } catch (_) {}
+      /* módulo Blocok comprado à parte (js/modela.js, extras — 14/10/2026) */
+      try { if (window.Modela && Modela.tem && Modela.tem('blocok')) return true; } catch (_) {}
       var norm = function (e) { return String(e || '').trim().toLowerCase(); };
       var A = (typeof window !== 'undefined' && window.Auth) ? window.Auth : (typeof Auth !== 'undefined' ? Auth : null);
       var emLocal = (A && A.usuario && A.usuario()) ? norm(A.usuario().email) : '';           // login local
@@ -7589,7 +7591,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       var espCm = (blocokCfg.espForcada === 'auto') ? BK.espBlocok(w.esp) : +blocokCfg.espForcada;
       var pag = BK.paginar({ comprimento: w.L, altura: w.H, vaos: w.vlist });
       np++;
-      paredes.push({ id: 'P' + np, uid: w.uid, nome: nomePorUid[w.uid] || ('Parede ' + np), comprimento: w.L, altura: w.H, espessura: espCm, espM: w.esp, pag: pag, p1: w.obb.p1, p2: w.obb.p2, vaos: w.vlist, pavimento: pavDaParede(w.uid, w.yMin) });
+      paredes.push({ id: 'P' + np, uid: w.uid, nome: nomePorUid[w.uid] || ('Parede ' + np), comprimento: w.L, altura: w.H, espessura: espCm, espM: w.esp, pag: pag, p1: w.obb.p1, p2: w.obb.p2, vaos: w.vlist, yMin: w.yMin, pavimento: pavDaParede(w.uid, w.yMin) });
     });
     return { paredes: paredes, vaosDet: vaosDet };
   }
@@ -7851,6 +7853,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   /* B3 (08/10/2026): os snaps do EDITOR (js/bimprecisao.js) usam este MESMO marcador, guias e lupa —
      com o desenho de símbolo padrão (quadrado, triângulo, X, ⊥…) em vez da caixa colorida. `svg` só nos tipos dele. */
   if (window.BimPrecisao) ['fim', 'perpendicular', 'extensao', 'proximo', 'grade'].forEach(function (k) { SNAP_VIS[k] = { cor: { fim: 'var(--verde)', perpendicular: 'var(--aco)', extensao: 'var(--amarelo)', proximo: 'var(--texto-fraco)', grade: 'var(--texto-fraco)' }[k], borda: '0', rot: BimPrecisao.ROTULO[k], svg: BimPrecisao.glifoSvg(k) }; });
+  /* SNAPS COMPLETOS (14/10/2026): os tipos novos do editor (quadrante, tangente, paralelo, rastreamento…) com o símbolo e o nome deles */
+  if (window.BimPrecisao && BimPrecisao.TIPOS) BimPrecisao.TIPOS.forEach(function (k) { if (!SNAP_VIS[k]) SNAP_VIS[k] = { cor: 'var(--aco)', borda: '0', rot: BimPrecisao.ROTULO[k] || k, svg: BimPrecisao.glifoSvg(k) }; });
   // o marcador é ANCORADO NO MUNDO e re-projetado a cada frame (achado do usuário: posicionado
   // uma única vez, ficava "pendurado" na tela enquanto o damping da câmera ainda deslizava —
   // o ponto mostrado parecia longe/bugado em relação ao ponto real)
@@ -11808,7 +11812,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       /* o snap de PONTO (fim, interseção, meio, centro, perpendicular) ganha da trava:
          senão fechar a sala no 1º ponto por um lado fora dos incrementos puxava a ponta para longe dele */
       var uB = (S._prec && S._prec.api && S._prec.api.estado) ? S._prec.api.estado().ultimo : null;
-      if (uB && uB.tipo && /^(fim|intersecao|meio|centro|perpendicular)$/.test(uB.tipo) && uB.p && Math.abs(uB.p.x - p.x) < 1e-6 && Math.abs(uB.p.z - p.z) < 1e-6) return p;
+      if (uB && uB.tipo && /^(fim|intersecao|meio|centro|perpendicular|centroide|quadrante|insercao|no|tangente|aparente|paralelo|rastreamento)$/.test(uB.tipo) && uB.p && Math.abs(uB.p.x - p.x) < 1e-6 && Math.abs(uB.p.z - p.z) < 1e-6) return p;
       var rB = BimBarraOpcoes.ajustarPonto(edit.sub, { x: edit.p1.x, z: edit.p1.z }, { x: p.x, z: p.z }, !!(ev && ev.shiftKey), { grade: !uB || !uB.tipo || uB.tipo === 'grade' });
       var qB = p.clone(); qB.x = rB.p.x; qB.z = rB.p.z; qB.y = edit.p1.y; return qB;
     }
@@ -12113,6 +12117,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (S._p10) S._p10.aposRebuild(st, edit.modelo);   /* P10: gráficos de fase e opção visível (js/bimp10ui.js) */
     if (S._p11) S._p11.aposRebuild(st);   /* P11: as curvas de nível do terreno */
     if (S._emb) S._emb.aposRebuild(st);   /* EMBREVE: as barras e o graute da alvenaria estrutural (js/bimgraute.js) */
+    if (S._bkx) S._bkx.aposRebuild(st);   /* BLOCOK: as peças no 3D e a tela do módulo acompanham (js/blocokexecui.js) */
     if (S._metc) S._metc.aposRebuild(st);   /* METÁLICA: cotas entre eixos, níveis no 3D e o plano da ferramenta acompanham */
     if (S._cot) S._cot.aposRebuild(st);   /* COTAS: as cotas 3D medem de novo (a peça andou, trocou de perfil, sumiu → órfã) — js/bimcotasui.js */
     if (window.BimInstUI && BimInstUI.aoMudarModelo) BimInstUI.aoMudarModelo();
@@ -13022,6 +13027,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     baseNivel: function () { return (edit.b2 && edit.b2.nivel && isFinite(+edit.b2.nivel.elevacao)) ? +edit.b2.nivel.elevacao : editBase(); },
     vaos: function (st) { return BimEdit.vaosDasParedes(st, famAval); },
     alvo: function () { return orbit && orbit.target ? orbit.target.clone() : null; }
+  }) : null;
+  /* BLOCOK — GANCHO (14/10/2026, js/blocokexecui.js): as peças Blocok no 3D (faces, EPS,
+     concreto dos reforços e juntas) acompanham o modelo. Sem o módulo liberado não desenha nada. */
+  S._bkx = (window.BlocokExecUI && BlocokExecUI.montar3d) ? BlocokExecUI.montar3d({
+    THREE: THREE, S: S, edit: edit, scene: scene, vaos: function (st) { return BimEdit.vaosDasParedes(st, famAval); }
   }) : null;
   /* METÁLICA — GANCHOS (12/10/2026, js/metalcriarui.js + js/metalcriar.js): criar pilar, viga,
      diagonal, terça e chapa CLICANDO no 3D (e na planta, pela editClique de sempre): o raio do

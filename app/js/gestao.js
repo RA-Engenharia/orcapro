@@ -10809,6 +10809,8 @@
       try { if (window.BimCotasUI) BimCotasUI.registrar(reg, self); } catch (eCot) {}
       /* MADEIRA (12/10/2026): Carpintaria & Marcenaria › Cálculo estrutural — o cálculo da estrutura de madeira (NBR 7190-1:2022), memorial, pranchas, manual, CYPE e compra — js/madcalcui.js (sem a prévia do modelador ou sem a disciplina, sai na hora) */
       try { if (window.MadCalcUI) MadCalcUI.registrar(reg, self); } catch (eMad) {}
+      /* BLOCOK (14/10/2026): Alvenaria › Blocok — paginação em amarração, cálculo, orçamento e documentos — js/blocokexecui.js (módulo à parte: sem a compra, sai na hora) */
+      try { if (window.BlocokExecUI) BlocokExecUI.registrar(reg, self); } catch (eBkx) {}
       /* PROJETOS BIM (12/10/2026): Novo/Abrir/Salvar passam pelo projeto, e um comando com a tela inicial na frente é a pessoa começando a trabalhar — js/bimprojetosui.js. POR ÚLTIMO: ele embrulha o que os outros registraram */
       try { if (window.BimProjetosUI) BimProjetosUI.registrar(reg, self); } catch (eProj) {}
 

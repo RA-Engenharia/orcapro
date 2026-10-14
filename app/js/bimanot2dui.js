@@ -861,11 +861,37 @@
     var r = Bo.travar({ x: a.x, z: a.y }, { x: q.x, z: q.y }, { shift: !!(ev && ev.shiftKey) });   /* (x, y) da vista entra como (x, z) */
     return r && r.travado ? { x: r.p.x, y: r.p.z } : q;
   }
+  /* SNAPS COMPLETOS (14/10/2026): a linha, a região e a nuvem da vista 2D encaixam nas linhas, círculos e
+     arcos de detalhe DESTA vista — extremidade, meio, centro, quadrante, centro geométrico, interseção,
+     perpendicular, TANGENTE (do 1º ponto ao círculo), paralelo e prolongamento — com os tipos e a
+     tolerância (em pixels) do Snap da barra de baixo. Devolve o snap ({ p:{x,z}, tipo }) ou null. */
+  var _geo2d = { st: null, id: null, geo: null };
+  function snap2d(self, id, p, base) {
+    var R = global.BimPrecisao, Bo = global.BimBarraOpcoes;
+    if (!R || !R.geoDeLinhas || !Bo || !Bo.snapLigado || !Bo.snapLigado(null)) return null;
+    var st = self.estado();
+    if (_geo2d.st !== st || _geo2d.id !== id) {
+      var itens = ((st && st.anot2d && st.anot2d.itens) || []).filter(function (it) { return it && it.vista === id && (it.tipo === "linha" || it.tipo === "regiao"); });
+      _geo2d = { st: st, id: id, geo: R.geoDeLinhas(itens.map(function (it) {
+        return it.arco ? { id: it.id, circ: { c: { x: +it.arco.cx, z: +it.arco.cy }, r: +it.arco.r, a0: it.arco.a0, a1: it.arco.a1 } }
+                       : { id: it.id, pts: (it.pts || []).map(function (q) { return { x: +q.x, z: +q.y }; }), fechado: it.tipo === "regiao" };
+      })) };
+    }
+    var T = {}; R.TIPOS.forEach(function (t) { T[t] = Bo.snapLigado(t); });
+    var inc = [90]; try { inc = Bo.precisao().inc; } catch (eI) {}
+    return R.snap({ x: p[0], z: p[1] }, _geo2d.geo, { tol: self._tol(id, 12), tipos: T, ref: base ? { x: base.x, z: base.y } : null, grade: 0, incs: inc });
+  }
   function ortoDe(self, id, ev, p) {
-    var f = self._f; if (!f || !f.def || !p || f.vista !== id) return p;
+    var f = self._f; if (!f || !f.def || !p || (f.vista && f.vista !== id)) return p;
     var d = f.def, o = self.opcoes ? self.opcoes() : {};
-    if ((d.k === "linha" || d.k === "regiao" || d.k === "nuvem") && f.pts && f.pts.length && !(d.k === "linha" && /^(circulo|arco)$/.test(o.forma || ""))) {
-      var q = travar2d(f.pts[f.pts.length - 1], { x: p[0], y: p[1] }, ev); return [q.x, q.y];
+    if (d.k === "linha" || d.k === "regiao" || d.k === "nuvem") {
+      var ult = f.pts && f.pts.length && f.vista === id ? f.pts[f.pts.length - 1] : null, sn = null;
+      try { sn = snap2d(self, id, p, ult); } catch (eS) { sn = null; }
+      self._snap2d = sn ? { p: { x: sn.p.x, y: sn.p.z }, tipo: sn.tipo } : null;
+      var q0 = sn ? { x: sn.p.x, y: sn.p.z } : { x: p[0], y: p[1] }, R = global.BimPrecisao;
+      var forte = !!(sn && R && (R.CLASSE[sn.sub || sn.tipo] <= 1 || sn.tipo === "paralelo" || sn.tipo === "rastreamento"));
+      if (ult && !forte && !(d.k === "linha" && /^(circulo|arco)$/.test(o.forma || ""))) q0 = travar2d(ult, q0, ev);
+      return [q0.x, q0.y];
     }
     if (d.k === "cota" && (d.cota === "linear" || d.cota === "coordenada") && f.refs && f.refs.length === 1) {
       var M = A7(), st = self.estado(), corte = /^d2c-/.test(id);
@@ -878,7 +904,34 @@
   var _clique2dPrec = BimAnot2DUI.clique2d;
   BimAnot2DUI.clique2d = function (id, ev, p) { try { if (this.ativo()) p = ortoDe(this, id, ev, p); } catch (eO) {} return _clique2dPrec.call(this, id, ev, p); };
   var _mover2dPrec = BimAnot2DUI.mover2d;
-  BimAnot2DUI.mover2d = function (id, ev, p) { try { p = ortoDe(this, id, ev, p); } catch (eO) {} return _mover2dPrec.call(this, id, ev, p); };
+  BimAnot2DUI.mover2d = function (id, ev, p) {
+    try { p = ortoDe(this, id, ev, p); } catch (eO) {}
+    var r = _mover2dPrec.call(this, id, ev, p);
+    try { marca2d(this, id); } catch (eM) {}
+    return r;
+  };
+  /* a marca sai junto com a prévia (Enter, Esc, trocar de ferramenta) */
+  var _limparPreviaPrec = BimAnot2DUI._limparPrevia;
+  BimAnot2DUI._limparPrevia = function () {
+    var r = _limparPreviaPrec.apply(this, arguments);
+    try { Array.prototype.forEach.call(document.querySelectorAll(".a7-snap2d"), function (n) { n.parentNode.removeChild(n); }); } catch (eL) {}
+    this._snap2d = null;
+    return r;
+  };
+  /* a MARCA do snap na vista 2D (linha, região, nuvem): o mesmo símbolo do 3D (js/bimprecisao.js glifoSvg) junto ao
+     ponto, com o nome do tipo — a cota já tem a dela (js/bimcotasui.js) */
+  function marca2d(self, id) {
+    var P = global.Bim2D, c = P && P._cache ? P._cache[id] : null, f = self._f; if (!c || !c.svg) return;
+    var NS = "http://www.w3.org/2000/svg", g = c.svg.querySelector(".a7-snap2d"), sn = self._snap2d, R = global.BimPrecisao;
+    if (!f || !f.def || f.def.k === "cota" || !sn || !sn.tipo || sn.tipo === "grade") { if (g) g.parentNode.removeChild(g); return; }
+    if (!g) { g = document.createElementNS(NS, "g"); g.setAttribute("class", "a7-snap2d"); g.setAttribute("pointer-events", "none"); c.svg.appendChild(g); }
+    var px = self._tol(id, 1), tam = 14 * px;
+    g.setAttribute("data-tipo", sn.tipo);
+    g.setAttribute("transform", "translate(" + (sn.p.x - tam / 2) + " " + (sn.p.y - tam / 2) + ") scale(" + (tam / 16) + ")");
+    var gl = R && R.GLIFO && R.GLIFO[sn.tipo] ? R.GLIFO[sn.tipo] : '<circle cx="8" cy="8" r="5.5"/>';
+    g.innerHTML = '<g fill="none" stroke="var(--d2-sel, #1f6fb2)" stroke-width="2">' + gl + "</g>" +
+      '<text x="19" y="5" font-size="11" fill="var(--d2-sel, #1f6fb2)" stroke="none">' + String((R && R.ROTULO && R.ROTULO[sn.tipo]) || sn.tipo).replace(/[<&]/g, "") + "</text>";
+  }
   var _acharCotaPrec = BimAnot2DUI._acharCota;
   BimAnot2DUI._acharCota = function () { var Bo = global.BimBarraOpcoes; if (Bo && Bo.snapLigado && !Bo.snapLigado(null)) return null; return _acharCotaPrec.apply(this, arguments); };
 

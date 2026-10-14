@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.141",
+versao: "1.2.142",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -978,6 +978,8 @@ var DISCIPLINAS = [
 { id: "marcenaria", nome: "Marcenaria" }
 ];
 var IDS = DISCIPLINAS.map(function (d) { return d.id; });
+var EXTRAS = [{ id: "blocok", nome: "Blocok — paredes prontas" }];
+var IDS_EXTRAS = EXTRAS.map(function (d) { return d.id; });
 var DEMO_URL = false;
 try { DEMO_URL = /[?&]demo=1\b/.test((global.location && global.location.search) || ""); } catch (e) {}
 function num(x) { x = Number(x); return isFinite(x) ? x : 0; }
@@ -985,6 +987,8 @@ function nomeDe(id) { for (var i = 0; i < DISCIPLINAS.length; i++) if (DISCIPLIN
 var Modela = {
 DISCIPLINAS: DISCIPLINAS,
 IDS: IDS,
+EXTRAS: EXTRAS,
+IDS_EXTRAS: IDS_EXTRAS,
 TESTE_MS: TESTE_MS,
 GRACE_MS: GRACE_MS,
 KEY: KEY,
@@ -1004,6 +1008,8 @@ var ate = num(c.disciplinas[id]);
 if (ate > agora) { compradas[id] = ate; lista.push(id); }
 });
 }
+var extras = {};
+IDS_EXTRAS.forEach(function (id) { extras[id] = !!(cacheValido && c.disciplinas && num(c.disciplinas[id]) > agora); });
 var vitalicia = !!e.vitaliciaLocal || !!(cacheValido && c.vitalicia === true);
 var ini = 0;
 [num(e.testeLocal), c && c.teste ? num(c.teste.inicio) : 0].forEach(function (x) { if (x > 0 && (!ini || x < ini)) ini = x; });
@@ -1018,8 +1024,9 @@ restanteMs: rest,
 dias: Math.ceil(rest / DIA)
 };
 var demo = !!e.demo, play = !!e.play;
+IDS_EXTRAS.forEach(function (id) { if (demo || teste.ativo) extras[id] = true; });
 var out = {
-liberado: false, completo: false, disciplinas: [], motivo: "encerrado",
+liberado: false, completo: false, disciplinas: [], motivo: "encerrado", extras: extras,
 teste: teste, vitalicia: vitalicia, demo: demo, play: play,
 podeComprar: !play && !demo, compradas: compradas,
 revalidar: !!(c && !cacheValido && String(c.chaveRef || "") === chaveRef && c.disciplinas &&
@@ -1070,6 +1077,7 @@ return s;
 },
 tem: function (id) {
 var s = this.status(), k = String(id || "").toLowerCase();
+if (IDS_EXTRAS.indexOf(k) >= 0) return !!(s.extras && s.extras[k]);
 if (!s.liberado) return false;
 if (k === "completo") return IDS.every(function (d) { return s.disciplinas.indexOf(d) >= 0; });
 return s.disciplinas.indexOf(k) >= 0;
@@ -1086,7 +1094,7 @@ if (!d || d.ok !== true) return false;
 this._memo = null;
 var l = this._ler(), antes = JSON.stringify(this.status());
 var dis = {};
-IDS.forEach(function (id) { var a = d.disciplinas && num(d.disciplinas[id]); if (a > 0) dis[id] = a; });
+IDS.concat(IDS_EXTRAS).forEach(function (id) { var a = d.disciplinas && num(d.disciplinas[id]); if (a > 0) dis[id] = a; });
 l.srv = { em: Date.now(), chaveRef: this._chaveRef(), vitalicia: d.vitalicia === true, disciplinas: dis,
 teste: { inicio: d.teste ? num(d.teste.inicio) : 0 } };
 this._gravar(l);
@@ -65784,7 +65792,11 @@ bloco_concreto_9: { rotulo: "Bloco de concreto 9 cm", e: 90, familia: null, peso
 bloco_ceramico_14: { rotulo: "Bloco cerâmico 14 cm", e: 140, familia: null, peso: 1300, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6120:2019 — alvenaria de bloco cerâmico vazado ≈ 13 kN/m³" },
 bloco_ceramico_9: { rotulo: "Bloco cerâmico 9 cm", e: 90, familia: null, peso: 1300, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6120:2019" },
 concreto_armado_15: { rotulo: "Parede de concreto 15 cm", e: 150, familia: null, peso: 2500, unidade: "kg/m3", tipo: "concreto", fonte: "NBR 6120:2019 — concreto armado 25 kN/m³" },
-drywall_70: { rotulo: "Drywall montante 70 mm", e: 95, familia: null, peso: 280, unidade: "kg/m3", tipo: "seco", fonte: "prática — 70 mm + 2 chapas de 12,5 mm" }
+drywall_70: { rotulo: "Drywall montante 70 mm", e: 95, familia: null, peso: 280, unidade: "kg/m3", tipo: "seco", fonte: "prática — 70 mm + 2 chapas de 12,5 mm" },
+blocok_10: { rotulo: "Blocok 10 cm (painel EPS)", e: 100, familia: null, peso: 469, unidade: "kg/m3", tipo: "blocok", modulo: "blocok", fonte: "38 kg ÷ (0,81 m² × 0,10 m) — franqueado Blocok" },
+blocok_13: { rotulo: "Blocok 13 cm (painel EPS)", e: 130, familia: null, peso: 427, unidade: "kg/m3", tipo: "blocok", modulo: "blocok", fonte: "45 kg ÷ (0,81 m² × 0,13 m) — franqueado Blocok" },
+blocok_15: { rotulo: "Blocok 15 cm (painel EPS)", e: 150, familia: null, peso: 412, unidade: "kg/m3", tipo: "blocok", modulo: "blocok", fonte: "50 kg ÷ (0,81 m² × 0,15 m) — franqueado Blocok (laudo UFMG: ~45 kg)" },
+blocok_20: { rotulo: "Blocok 20 cm (painel EPS)", e: 200, familia: null, peso: 383, unidade: "kg/m3", tipo: "blocok", modulo: "blocok", fonte: "62 kg ÷ (0,81 m² × 0,20 m) — franqueado Blocok" }
 },
 TIPOS: {
 "est-14-int": {
@@ -65851,6 +65863,36 @@ dentro: ["chapisco", "massa_unica", "massa_corrida", "pintura_latex"],
 fora: ["chapisco", "massa_unica", "massa_corrida", "pintura_latex"],
 nota: "O bloco cerâmico furado é o mais comum na vedação da obra corrente brasileira."
 },
+"blk-20-fachada": {
+rotulo: "Blocok 20 · fachada (recebe laje)", funcao: "vedacao", nucleo: "blocok_20", modulo: "blocok",
+dentro: ["massa_corrida", "pintura_latex"], fora: ["massa_acrilica", "pintura_acril"],
+nota: "Peça de 20 cm: o pilar embutido tem 15 cm — é a que pode receber laje (NBR 6118 13.2.3 com γn)."
+},
+"blk-15-fachada": {
+rotulo: "Blocok 15 · fachada", funcao: "vedacao", nucleo: "blocok_15", modulo: "blocok",
+dentro: ["massa_corrida", "pintura_latex"], fora: ["massa_acrilica", "pintura_acril"],
+nota: "Fechamento. O pilarete embutido (10 cm) só trava a parede ao vento — não recebe laje."
+},
+"blk-15-int": {
+rotulo: "Blocok 15 · interna", funcao: "vedacao", nucleo: "blocok_15", modulo: "blocok",
+dentro: ["massa_corrida", "pintura_latex"], fora: ["massa_corrida", "pintura_latex"],
+nota: "Parede interna sem acabamento de argamassa."
+},
+"blk-13-int": {
+rotulo: "Blocok 13 · interna", funcao: "vedacao", nucleo: "blocok_13", modulo: "blocok",
+dentro: ["massa_corrida", "pintura_latex"], fora: ["massa_corrida", "pintura_latex"],
+nota: "Divisória SEM porta/janela, entre paredes nas duas pontas, até 4,0 m, encunhada sob a laje: o concreto embutido de 8 cm não comporta verga, pilarete nem cinta (NBR 6118 13.2.2)."
+},
+"blk-13-molhada": {
+rotulo: "Blocok 13 · área molhada", funcao: "vedacao", nucleo: "blocok_13", modulo: "blocok",
+dentro: ["ceramica"], fora: ["massa_corrida", "pintura_latex"],
+nota: "Cerâmica colada direto na peça. Mesmas limitações da 13 cm: sem vão, pontas travadas, até 4,0 m."
+},
+"blk-10-div": {
+rotulo: "Blocok 10 · divisória leve", funcao: "vedacao", nucleo: "blocok_10", modulo: "blocok",
+dentro: ["massa_corrida", "pintura_latex"], fora: ["massa_corrida", "pintura_latex"],
+nota: "Não aceita concreto embutido: só divisória SEM vão, entre paredes travadas, até 4,0 m, encunhada sob a laje."
+},
 "crua": {
 rotulo: "Parede crua (só o núcleo)",
 funcao: "vedacao", nucleo: "bloco_concreto_14",
@@ -65909,10 +65951,17 @@ for (var k in (opts || {})) if (Object.prototype.hasOwnProperty.call(opts, k)) o
 o.base = id; o.id = id;
 return this.montar(o);
 },
+moduloLiberado: null,
+visivel: function (id) {
+var t = this.TIPOS[id]; if (!t) return false;
+if (!t.modulo) return true;
+try { return typeof this.moduloLiberado === "function" && !!this.moduloLiberado(t.modulo); } catch (e) { return false; }
+},
 listar: function () {
 var self = this, out = [];
 for (var id in this.TIPOS) {
 if (!Object.prototype.hasOwnProperty.call(this.TIPOS, id)) continue;
+if (!this.visivel(id)) continue;
 var t = self.tipo(id);
 out.push({ id: id, rotulo: this.TIPOS[id].rotulo, funcao: this.TIPOS[id].funcao,
 espessura: t.ok ? t.espessura : null, espessuraM: t.ok ? t.espessuraM : null });

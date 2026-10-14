@@ -32,7 +32,9 @@
 
   /* a escada industrial da fita Acessos: a escada das peças prontas com a norma NR-12 e o que ela pede */
   var ESCADA_NR12 = { norma: "nr12", forma: "patamares", desnivel: 3.0, largura: 0.8, degrau: "grade", gradeH: 0.030, gradeT: 0.005, gradeA: 0.030, rodape: true, hRodape: 0.20,
-    guarda: "dois", montante: "HSS73X5.2", corrimao: "HSS48.3X3.7", espac: 1.0, usoGuarda: "industrial", usoPiso: "escada-sem-publico", longarina: "C200X17.1" };
+    guarda: "dois", montante: "HSS73X5.2", corrimao: "HSS48.3X3.7", espac: 1.0, usoGuarda: "industrial", usoPiso: "escada-sem-publico", longarina: "C200X17.1",
+    /* S6 (14/10/2026): a escada industrial já vem com a FIXAÇÃO configurada (automática pelo que está embaixo/em cima) */
+    fixPe: "auto", fixTopo: "auto" };
   var PRESETS = {
     nr12: ESCADA_NR12,
     "nr12-ingreme": { norma: "nr12-ingreme", forma: "patamares", desnivel: 2.5, largura: 0.6, degrau: "grade", gradeH: 0.030, gradeT: 0.005, rodape: true, montante: "HSS73X5.2", usoGuarda: "industrial", longarina: "C150X12.2" },
@@ -44,15 +46,17 @@
   var COMANDOS = [
     { id: "met-ac-escolher", rotulo: "Escolher o\nacesso", icone: "alvo", grande: true, dica: "Desnível, espaço em planta e o uso → o meio de acesso pela norma (rampa, escada, escada de degraus, marinheiro; rota acessível; saída de emergência), com o motivo e o item — e o botão que abre o diálogo dele." },
     { id: "met-ac-escada", tipo: "escada", rotulo: "Escada\nindustrial", icone: "niveis", grande: true, dica: "Escada pela norma escolhida (NR-12 industrial, NBR 9050 acessível, saída de emergência): degrau calculado, patamares de descanso, guarda-corpo com intermediária e rodapé; conformidade e cálculo da longarina, do degrau e do montante ao vivo." },
+    /* S6 (14/10/2026, js/metalescadalinhaui.js): a escada puxada por LINHA — vermelho "não chegou" até vencer a altura pela norma */
+    { id: "met-ac-escada-linha", rotulo: "Escada\npor linha", icone: "desLinha", grande: true, dica: "Puxe a linha do topo (borda do piso de cima) para baixo, ou do pé para cima: enquanto o comprimento não vence a altura pela norma (NR-12: espelho 20–25 cm, piso ≥ espelho, patamar a cada 3,00 m) a prévia fica VERMELHA com quanto falta; ao caber, VERDE. Chegando num piso/laje, abre a passagem com guarda-corpo; a fixação (ancorada, parafusada, soldada ou apoiada com pés de apoio) já vem dimensionada." },
     { id: "met-ac-marinheiro", tipo: "marinheiro", rotulo: "Escada de\nmarinheiro", icone: "regua", grande: true, dica: "Escada fixa tipo marinheiro (NR-12, 13): gaiola acima de 3,50 m, lances de até 6 m com plataforma de descanso acima de 10 m, montantes passando 1,10 m no topo e cancela de autofechamento. Clique no pé da escada." },
     { id: "met-ac-helicoidal", tipo: "helicoidal", rotulo: "Escada no\ntanque", icone: "ciclo", grande: true, dica: "Escada helicoidal enrolada no costado do tanque: degrau pela NR-12 na linha de percurso, patamar de descanso a cada 3,00 m, consoles radiais e guarda-corpo do lado de fora. Clique o centro do tanque." },
     { id: "met-ac-rampa", tipo: "rampa", rotulo: "Rampa", icone: "desLinha", grande: true, dica: "Rampa de aço pela NR-12 (até 20°, peças transversais acima de 10°) ou pela NBR 9050 (até 8,33 %, patamar entre segmentos, corrimão duplo com prolongamento). Clique o pé da rampa." },
     { id: "met-ac-plataforma", tipo: "plataforma", rotulo: "Plataforma\nde manutenção", icone: "laje", grande: true, dica: "Plataforma retangular por dois cantos: pilares, vigas, piso em grade, guarda-corpo NR-12 (1,10 m, intermediária a 0,70 m, rodapé 0,20 m) e a abertura de acesso com cancela." },
     { id: "met-ac-anelar", tipo: "anelar", rotulo: "Plataforma\nanelar", icone: "desCirculo", grande: true, dica: "Plataforma em volta de tanque ou equipamento cilíndrico: consoles radiais no costado com mão-francesa, viga de borda, piso em setores de grade e guarda-corpo. Clique o centro do tanque." },
     { id: "met-ac-passarela", tipo: "passarela", rotulo: "Passarela", icone: "desLinha", grande: true, dica: "Passarela reta por dois cliques (começo e fim), apoiada nas pontas ou em pilares, piso em grade e guarda-corpo NR-12 dos dois lados." },
-    { id: "met-ac-guarda", tipo: "guardacorpo", rotulo: "Guarda-\ncorpo", icone: "grade", grande: true, dica: "Guarda-corpo avulso por dois cliques: montantes, corrimão sem superfície plana, intermediária e rodapé; a força horizontal da NBR 6120 verificada no montante e na solda da base." },
+    { id: "met-ac-guarda", tipo: "guardacorpo", rotulo: "Guarda-\ncorpo", icone: "grade", grande: true, dica: "Guarda-corpo por POLILINHA (cliques, Enter fecha; Backspace desfaz) ou por RETÂNGULO (os 4 lados, com um lado aberto para o acesso), no 3D ou na planta: montantes, corrimão sem superfície plana, intermediária e rodapé; a força horizontal da NBR 6120 (2,0 kN/m industrial) verificada no montante, na solda da base e nos travessões." },
     { id: "met-ac-corrimao", tipo: "corrimaoparede", rotulo: "Corrimão\nde parede", icone: "regua", grande: true, dica: "Corrimão preso na parede: duas alturas (0,92 e 0,70 m), Ø 30–45 mm, 4 cm da parede, prolongamento de 0,30 m com as pontas recurvadas e suportes verificados com 900 N. Clique o começo e o fim na face da parede." },
-    { id: "met-ac-piso", tipo: "piso", rotulo: "Piso\nindustrial", icone: "camadas", grande: true, dica: "Painéis de grade eletrofundida, chapa xadrez, expandida ou perfurada por dois cantos, com o peso do tipo e a verificação do vão." },
+    { id: "met-ac-piso", tipo: "piso", rotulo: "Piso\nindustrial", icone: "camadas", grande: true, dica: "Piso em grade, chapa xadrez, expandida ou perfurada por RETÂNGULO (2 cantos) ou CONTORNO (cliques, Enter fecha; Backspace desfaz): a estrutura de suporte sai dimensionada — vigas de borda e intermediárias no vão máximo do piso (tabela de vão × carga do catálogo) e pilaretes até o nível de baixo quando não há apoio." },
     { id: "met-ac-verificar", rotulo: "Verificar\nacesso", icone: "livro", grande: true, dica: "Selecione uma peça de um acesso (escada, marinheiro, plataforma, anelar, passarela, guarda-corpo, piso): a conformidade item a item com a norma e a correção, as verificações e o memorial." }
   ];
   var CMD_DE = {}; COMANDOS.forEach(function (c) { if (c.tipo) CMD_DE[c.tipo] = c.id; });
@@ -86,7 +90,9 @@
         ["duplo", "Duas alturas (0,92 e 0,70 m)", "check"], ["alturaSup", "Altura de cima (m)", "num"], ["alturaInf", "Altura de baixo (m)", "num"], ["folga", "Folga até a parede (m)", "num"], ["prolongamento", "Prolongamento nas pontas (m)", "num"],
         ["corrimao", "Tubo do corrimão", "cat", ["HSSC"]], ["espSuportes", "Suportes a cada (m)", "num"], ["suporteD", "Suporte: barra redonda Ø (m)", "num"]],
       guardacorpo: [["caminho", "Caminho livre — x z; x z… (m, relativo; os cliques preenchem)", "txt"], ["comprimento", "Comprimento (m) — sem caminho", "num"], ["retornoIni", "Retorno no começo (m; encontro em L)", "num"], ["retornoFim", "Retorno no fim (m)", "num"], ["ladoRetorno", "Lado dos retornos", "sel", [["esquerda", "À esquerda (do começo para o fim)"], ["direita", "À direita"]]],
-        ["travessasExtra", "Travessas a mais entre o rodapé e a intermediária", "int"], ["fixacao", "Fixação do montante", "sel", [["solda", "Soldado na estrutura"], ["chapa", "Chapa de base chumbada (laje)"]]], ["alturaGuarda", "Altura do travessão superior (m)", "num"], ["norma", "Norma", "sel", [["nr12", "NR-12 (industrial)"], ["nbr9050", "NBR 9050 / NBR 14718 (edificação)"]]], ["perna", "Solda da base: perna do filete (mm)", "num"], ["abastecimento", "Plataforma de abastecimento (1,00–1,10 m)", "check"]].concat(guarda),
+        ["travessasExtra", "Travessas a mais entre o rodapé e a intermediária", "int"], ["fixacao", "Fixação do montante", "sel", [["solda", "Soldado na estrutura"], ["chapa", "Chapa de base chumbada (laje)"]]], ["alturaGuarda", "Altura do travessão superior (m)", "num"], ["norma", "Norma", "sel", [["nr12", "NR-12 (industrial)"], ["nbr9050", "NBR 9050 / NBR 14718 (edificação)"]]], ["perna", "Solda da base: perna do filete (mm)", "num"], ["abastecimento", "Plataforma de abastecimento (1,00–1,10 m)", "check"],
+        /* S6 (14/10/2026): por RETÂNGULO, um lado pode ficar aberto para o acesso */
+        ["ladoAberto", "Retângulo: lado aberto para o acesso", "sel", [["", "Nenhum (os 4 lados)"], ["frente", "Frente (Z mín.)"], ["direita", "Direita (X máx.)"], ["fundo", "Fundo (Z máx.)"], ["esquerda", "Esquerda (X mín.)"]]]].concat(guarda),
       rampa: [["norma", "Norma", "sel", [["nr12", "Industrial — NR-12 (até 20°)"], ["nbr9050", "Rota acessível — NBR 9050 (até 8,33 %)"]]], ["desnivel", "Desnível (m)", "num"], ["inclinacao", "Inclinação (%)", "num"], ["largura", "Largura útil (m)", "num"],
         ["segMax", "Desnível máx. por segmento (m; 0 = o da norma)", "num"], ["patamarComp", "Comprimento do patamar (m)", "num"], ["vaoMax", "Apoios (pilaretes) a cada (m)", "num"], ["espTravessas", "Travessas sob o piso a cada (m)", "num"],
         ["longarina", "Longarinas", "cat", ["C", "GERDAU-U"]], ["travessa", "Travessas", "cat", ["C", "L", "GERDAU-U"]], ["pilarete", "Pilaretes", "cat", ["HSSR", "HSSC", "W"]],
@@ -98,7 +104,10 @@
         ["degrau", "Degrau", "sel", [["grade", "Grade"], ["xadrez", "Chapa xadrez"]]], ["gradeH", "Grade: altura da barra (m)", "num"], ["gradeT", "Grade: espessura da barra (m)", "num"]].concat(guarda).concat([["usoPiso", "Sobrecarga (NBR 6120)", "sel", UP]]),
       piso: [["Lx", "Comprimento em X (m) — ou 2 cliques", "num"], ["Lz", "Largura em Z (m) — ou 2 cliques", "num"], ["material", "Tipo", "sel", [["grade", "Grade eletrofundida"], ["xadrez", "Chapa xadrez"], ["expandida", "Chapa expandida"], ["perfurada", "Chapa perfurada"], ["lisa", "Chapa lisa"]]],
         ["t", "Chapa: espessura (m)", "num"], ["gradeH", "Grade: altura da barra portante (m)", "num"], ["gradeT", "Grade: espessura da barra (m)", "num"], ["gradeA", "Grade: passo das barras (m)", "num"], ["gradeB", "Grade: passo das travessas (m)", "num"],
-        ["losangoMenor", "Expandida: losango menor (m)", "num"], ["cordao", "Expandida: cordão (m)", "num"], ["furoD", "Perfurada: furo Ø (m)", "num"], ["furoPasso", "Perfurada: passo (m)", "num"], ["painelMax", "Largura máx. do painel (m)", "num"], ["vao", "Vão entre apoios — verificação (m)", "num"], ["usoPiso", "Sobrecarga (NBR 6120)", "sel", UP], ["qInformado", "Sobrecarga do projeto (kN/m², se maior)", "num"]]
+        ["losangoMenor", "Expandida: losango menor (m)", "num"], ["cordao", "Expandida: cordão (m)", "num"], ["furoD", "Perfurada: furo Ø (m)", "num"], ["furoPasso", "Perfurada: passo (m)", "num"], ["painelMax", "Largura máx. do painel (m)", "num"], ["vao", "Vão entre apoios — sem estrutura (m)", "num"], ["usoPiso", "Sobrecarga (NBR 6120)", "sel", UP], ["qInformado", "Sobrecarga do projeto (kN/m², se maior)", "num"],
+        /* S6 (14/10/2026): contorno livre e a ESTRUTURA DE SUPORTE dimensionada */
+        ["contorno", "Contorno — x z; x z… (m, relativo; os cliques preenchem)", "txt"], ["estrutura", "Estrutura de suporte", "sel", [["auto", "Automática: vigas no vão máximo do piso + pilaretes/apoios"], ["nenhuma", "Nenhuma (só os painéis)"]]],
+        ["cotaApoio", "Pilaretes até a cota (m) — o que está embaixo manda", "num"], ["concEsp", "Concreto embaixo: espessura (m; 0 = do modelo)", "num"], ["concFck", "Concreto embaixo: fck (MPa; 0 = do modelo)", "num"], ["concBorda", "Concreto embaixo: distância dos pilaretes até a borda (m; 0 = do contorno da laje)", "num"], ["apoioMax", "Apoios (pilaretes) a cada, no máximo (m; 0 = automático: 2,5 × altura no piso baixo)", "num"]]
     };
   }
 
@@ -126,6 +135,7 @@
             if (c.id === "met-ac-escolher") self.escolher();
             else if (c.id === "met-ac-verificar") self.verificar();
             else if (c.tipo === "escada") self.escada();
+            else if (c.id === "met-ac-escada-linha") { if (global.MetalEscadaLinhaUI && MetalEscadaLinhaUI.pronto()) MetalEscadaLinhaUI.abrir(); else toast("A escada por linha não carregou (js/metalescadalinha.js).", "erro", 8000); }
             else PU().comando(c.tipo);
           } catch (e) { toast("Acessos: " + (e && e.message ? e.message : e), "erro", 8000); }
           return true;
@@ -224,7 +234,7 @@
       h += "</div>";
       var self = this;
       var bts = [{ texto: "Memorial", classe: "primary", onClick: function () { self.memorial(r); } }];
-      if (alvo.tipo === "plataforma" || alvo.tipo === "passarela") bts.push({ texto: "Calcular a estrutura", onClick: function () { UI.fecharModal(); self.calcularEstrutura(alvo); } });
+      if (alvo.tipo === "plataforma" || alvo.tipo === "passarela" || (alvo.tipo === "piso" && r.medidas && r.medidas.estrutura && r.medidas.estrutura.pilaretes > 0)) bts.push({ texto: "Calcular a estrutura", onClick: function () { UI.fecharModal(); self.calcularEstrutura(alvo); } });
       UI.modal("Verificar acesso — " + (T.rotulo || alvo.tipo), h, bts.concat([
         { texto: "Editar", onClick: function () { UI.fecharModal(); PU().dialogo(alvo.tipo, { alvo: alvo }); } },
         { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]));

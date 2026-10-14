@@ -47,6 +47,12 @@
     { id: "marcenaria", nome: "Marcenaria" }
   ];
   var IDS = DISCIPLINAS.map(function (d) { return d.id; });
+  /* MÓDULOS À PARTE (decisão do Rogério, 14/10/2026: "módulo pago à parte").
+     Não entram no "completo" nem na vitalícia — só compra própria, o teste de
+     7 dias e a vitrine (?demo=1). O cliente que já tinha o Blocok (licença
+     GCon) segue liberado pela trava antiga do js/bim.js (BLOCOK_HASHES). */
+  var EXTRAS = [{ id: "blocok", nome: "Blocok — paredes prontas" }];
+  var IDS_EXTRAS = EXTRAS.map(function (d) { return d.id; });
 
   /* a URL é lida na CARGA (a navegação interna pode limpar o endereço depois) */
   var DEMO_URL = false;
@@ -58,6 +64,8 @@
   var Modela = {
     DISCIPLINAS: DISCIPLINAS,
     IDS: IDS,
+    EXTRAS: EXTRAS,
+    IDS_EXTRAS: IDS_EXTRAS,
     TESTE_MS: TESTE_MS,
     GRACE_MS: GRACE_MS,
     KEY: KEY,
@@ -86,6 +94,8 @@
           if (ate > agora) { compradas[id] = ate; lista.push(id); }
         });
       }
+      var extras = {};
+      IDS_EXTRAS.forEach(function (id) { extras[id] = !!(cacheValido && c.disciplinas && num(c.disciplinas[id]) > agora); });
       var vitalicia = !!e.vitaliciaLocal || !!(cacheValido && c.vitalicia === true);
 
       /* o início do teste: o MAIS ANTIGO entre o local e o do servidor. O do
@@ -104,8 +114,9 @@
       };
 
       var demo = !!e.demo, play = !!e.play;
+      IDS_EXTRAS.forEach(function (id) { if (demo || teste.ativo) extras[id] = true; });
       var out = {
-        liberado: false, completo: false, disciplinas: [], motivo: "encerrado",
+        liberado: false, completo: false, disciplinas: [], motivo: "encerrado", extras: extras,
         teste: teste, vitalicia: vitalicia, demo: demo, play: play,
         podeComprar: !play && !demo, compradas: compradas,
         revalidar: !!(c && !cacheValido && String(c.chaveRef || "") === chaveRef && c.disciplinas &&
@@ -166,6 +177,7 @@
        inteira mostraria comando de disciplina não contratada. */
     tem: function (id) {
       var s = this.status(), k = String(id || "").toLowerCase();
+      if (IDS_EXTRAS.indexOf(k) >= 0) return !!(s.extras && s.extras[k]);   // módulo à parte: não precisa do Modela liberado
       if (!s.liberado) return false;
       if (k === "completo") return IDS.every(function (d) { return s.disciplinas.indexOf(d) >= 0; });
       return s.disciplinas.indexOf(k) >= 0;
@@ -185,7 +197,7 @@
       this._memo = null;
       var l = this._ler(), antes = JSON.stringify(this.status());
       var dis = {};
-      IDS.forEach(function (id) { var a = d.disciplinas && num(d.disciplinas[id]); if (a > 0) dis[id] = a; });
+      IDS.concat(IDS_EXTRAS).forEach(function (id) { var a = d.disciplinas && num(d.disciplinas[id]); if (a > 0) dis[id] = a; });
       l.srv = { em: Date.now(), chaveRef: this._chaveRef(), vitalicia: d.vitalicia === true, disciplinas: dis,
         teste: { inicio: d.teste ? num(d.teste.inicio) : 0 } };
       this._gravar(l);

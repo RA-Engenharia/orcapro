@@ -135,7 +135,16 @@
       bloco_ceramico_14:  { rotulo: "Bloco cerâmico 14 cm",     e: 140, familia: null,    peso: 1300, unidade: "kg/m3", tipo: "bloco",  fonte: "NBR 6120:2019 — alvenaria de bloco cerâmico vazado ≈ 13 kN/m³" },
       bloco_ceramico_9:   { rotulo: "Bloco cerâmico 9 cm",      e: 90,  familia: null,    peso: 1300, unidade: "kg/m3", tipo: "bloco",  fonte: "NBR 6120:2019" },
       concreto_armado_15: { rotulo: "Parede de concreto 15 cm", e: 150, familia: null,    peso: 2500, unidade: "kg/m3", tipo: "concreto", fonte: "NBR 6120:2019 — concreto armado 25 kN/m³" },
-      drywall_70:         { rotulo: "Drywall montante 70 mm",   e: 95,  familia: null,    peso: 280,  unidade: "kg/m3", tipo: "seco",   fonte: "prática — 70 mm + 2 chapas de 12,5 mm" }
+      drywall_70:         { rotulo: "Drywall montante 70 mm",   e: 95,  familia: null,    peso: 280,  unidade: "kg/m3", tipo: "seco",   fonte: "prática — 70 mm + 2 chapas de 12,5 mm" },
+      /* BLOCOK (módulo à parte, js/blocokexec.js): painel 90×90 de EPS com 2 faces de
+         microconcreto de 1,5 cm. Massa específica APARENTE da peça = peso da peça ÷
+         (0,81 m² × espessura): 38/45/50/62 kg (tabela de franqueado — ver o
+         cabeçalho do js/blocokexec.js). Pilaretes, vergas e cintas embutidos são
+         somados à parte pelo motor do Blocok, não aqui. */
+      blocok_10: { rotulo: "Blocok 10 cm (painel EPS)", e: 100, familia: null, peso: 469, unidade: "kg/m3", tipo: "blocok", modulo: "blocok", fonte: "38 kg ÷ (0,81 m² × 0,10 m) — franqueado Blocok" },
+      blocok_13: { rotulo: "Blocok 13 cm (painel EPS)", e: 130, familia: null, peso: 427, unidade: "kg/m3", tipo: "blocok", modulo: "blocok", fonte: "45 kg ÷ (0,81 m² × 0,13 m) — franqueado Blocok" },
+      blocok_15: { rotulo: "Blocok 15 cm (painel EPS)", e: 150, familia: null, peso: 412, unidade: "kg/m3", tipo: "blocok", modulo: "blocok", fonte: "50 kg ÷ (0,81 m² × 0,15 m) — franqueado Blocok (laudo UFMG: ~45 kg)" },
+      blocok_20: { rotulo: "Blocok 20 cm (painel EPS)", e: 200, familia: null, peso: 383, unidade: "kg/m3", tipo: "blocok", modulo: "blocok", fonte: "62 kg ÷ (0,81 m² × 0,20 m) — franqueado Blocok" }
     },
 
     /* ---------------------------------------------------------------
@@ -208,6 +217,39 @@
         dentro: ["chapisco", "massa_unica", "massa_corrida", "pintura_latex"],
         fora:   ["chapisco", "massa_unica", "massa_corrida", "pintura_latex"],
         nota: "O bloco cerâmico furado é o mais comum na vedação da obra corrente brasileira."
+      },
+      /* BLOCOK — sem chapisco nem reboco: acabamento direto sobre a peça depois do
+         tratamento de juntas (vídeo oficial da franquia, 11/06/2026). Cerâmica colada
+         direto. Só aparecem com o módulo Blocok liberado (`modulo`). */
+      "blk-20-fachada": {
+        rotulo: "Blocok 20 · fachada (recebe laje)", funcao: "vedacao", nucleo: "blocok_20", modulo: "blocok",
+        dentro: ["massa_corrida", "pintura_latex"], fora: ["massa_acrilica", "pintura_acril"],
+        nota: "Peça de 20 cm: o pilar embutido tem 15 cm — é a que pode receber laje (NBR 6118 13.2.3 com γn)."
+      },
+      "blk-15-fachada": {
+        rotulo: "Blocok 15 · fachada", funcao: "vedacao", nucleo: "blocok_15", modulo: "blocok",
+        dentro: ["massa_corrida", "pintura_latex"], fora: ["massa_acrilica", "pintura_acril"],
+        nota: "Fechamento. O pilarete embutido (10 cm) só trava a parede ao vento — não recebe laje."
+      },
+      "blk-15-int": {
+        rotulo: "Blocok 15 · interna", funcao: "vedacao", nucleo: "blocok_15", modulo: "blocok",
+        dentro: ["massa_corrida", "pintura_latex"], fora: ["massa_corrida", "pintura_latex"],
+        nota: "Parede interna sem acabamento de argamassa."
+      },
+      "blk-13-int": {
+        rotulo: "Blocok 13 · interna", funcao: "vedacao", nucleo: "blocok_13", modulo: "blocok",
+        dentro: ["massa_corrida", "pintura_latex"], fora: ["massa_corrida", "pintura_latex"],
+        nota: "Divisória SEM porta/janela, entre paredes nas duas pontas, até 4,0 m, encunhada sob a laje: o concreto embutido de 8 cm não comporta verga, pilarete nem cinta (NBR 6118 13.2.2)."
+      },
+      "blk-13-molhada": {
+        rotulo: "Blocok 13 · área molhada", funcao: "vedacao", nucleo: "blocok_13", modulo: "blocok",
+        dentro: ["ceramica"], fora: ["massa_corrida", "pintura_latex"],
+        nota: "Cerâmica colada direto na peça. Mesmas limitações da 13 cm: sem vão, pontas travadas, até 4,0 m."
+      },
+      "blk-10-div": {
+        rotulo: "Blocok 10 · divisória leve", funcao: "vedacao", nucleo: "blocok_10", modulo: "blocok",
+        dentro: ["massa_corrida", "pintura_latex"], fora: ["massa_corrida", "pintura_latex"],
+        nota: "Não aceita concreto embutido: só divisória SEM vão, entre paredes travadas, até 4,0 m, encunhada sob a laje."
       },
       "crua": {
         rotulo: "Parede crua (só o núcleo)",
@@ -283,10 +325,20 @@
       return this.montar(o);
     },
 
+    /* MÓDULOS À PARTE — tipo com `modulo` só aparece se quem vende o módulo
+       disser que está liberado (o js/blocokexecui.js pluga a função). Sem a
+       função, fica escondido: módulo pago não vaza na lista de quem não comprou. */
+    moduloLiberado: null,
+    visivel: function (id) {
+      var t = this.TIPOS[id]; if (!t) return false;
+      if (!t.modulo) return true;
+      try { return typeof this.moduloLiberado === "function" && !!this.moduloLiberado(t.modulo); } catch (e) { return false; }
+    },
     listar: function () {
       var self = this, out = [];
       for (var id in this.TIPOS) {
         if (!Object.prototype.hasOwnProperty.call(this.TIPOS, id)) continue;
+        if (!this.visivel(id)) continue;
         var t = self.tipo(id);
         out.push({ id: id, rotulo: this.TIPOS[id].rotulo, funcao: this.TIPOS[id].funcao,
                    espessura: t.ok ? t.espessura : null, espessuraM: t.ok ? t.espessuraM : null });

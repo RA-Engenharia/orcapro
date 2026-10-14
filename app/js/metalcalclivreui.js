@@ -693,6 +693,7 @@
       U.ultimasLigacoesCompletas = ligs;
       U.ultimasLigacoes = ligs.map(function (l) { return { id: l.id, tipologia: l.info && l.info.tipologia, ok: !!(l.resultado && l.resultado.ok), razao: l.resultado && l.resultado.razao, confere: l.confere, comCalculo: l.comCalculo, fundacao: l.resultado && l.resultado.fundacao ? l.resultado.fundacao.id : null, ajusteCota: l.resultado && l.resultado.ajusteCota ? l.resultado.ajusteCota : null }; });
       var x = Mm.gerar(r, { ligacoes: ligs, obra: { nome: o.nome, endereco: o.endereco, cidade: o.cidade, cliente: o.cliente }, empresa: { nome: emp.nome || emp.razaoSocial, cnpj: emp.cnpj, logoDataUrl: logo }, responsavel: { nome: emp.responsavel, titulo: emp.titulo, crea: emp.crea }, imagens: img, versao: global.CONFIG && CONFIG.versao });
+      if (x && x.ok && global.MetalEscadaLinhaUI && MetalEscadaLinhaUI.secaoMemorial) try { x.html = MetalEscadaLinhaUI.secaoMemorial(x.html); } catch (eE) {}   /* S6 (14/10/2026): a fixação das escadas — js/metalescadalinhaui.js */
       if (x && x.ok && global.UnidadesMemorial) x.html = UnidadesMemorial.preparar(x.html);   /* aba SI | Técnica (kgf / tf) — js/unidadesmemorial.js */
       U.ultimoMemorial = x && x.ok ? { titulo: x.titulo, secoes: x.secoes.length, bytes: x.html.length, avisos: x.avisos.length, ids: x.secoes.map(function (q) { return q.id; }) } : null;
       U.ultimoHtml = x && x.ok ? x.html : null;

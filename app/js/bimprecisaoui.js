@@ -30,7 +30,10 @@
   var CHAVE = "orcapro:bim:precisao:v1";   /* só preferência do aparelho (snaps ligados, passo da grade) */
   /* cor do marcador por tipo — tokens do css/app.css (o tema escuro vem junto) */
   var COR = { fim: "var(--verde)", intersecao: "var(--vermelho)", meio: "var(--amarelo)", centro: "var(--aco)", perpendicular: "var(--aco)",
-              extensao: "var(--amarelo)", proximo: "var(--texto-fraco)", grade: "var(--texto-fraco)" };
+              extensao: "var(--amarelo)", proximo: "var(--texto-fraco)", grade: "var(--texto-fraco)",
+              /* snaps completos (14/10/2026) */
+              centroide: "var(--aco)", quadrante: "var(--verde)", insercao: "var(--aco)", no: "var(--aco)", aparente: "var(--vermelho)",
+              paralelo: "var(--amarelo)", tangente: "var(--verde)", rastreamento: "var(--amarelo)", vertice: "var(--verde)", aresta: "var(--texto-fraco)", face: "var(--texto-fraco)" };
   /* ferramentas desta fase e os passos de cada uma */
   var PASSOS = {
     mover: ["sel", "base", "destino"], copiar: ["sel", "base", "destino"], espelhar: ["sel", "eixo1", "eixo2"],
@@ -195,12 +198,20 @@
         var pl = api.planoPonto(e.clientX, e.clientY); if (!pl) return null;
         lerUnico();   /* a precisão única (barra de baixo) do momento */
         var cur = { x: pl.x, z: pl.z }, ref = baseAtual(), tol = tolM(e), sn = null, malha = false;
-        if (pr.snapOn) sn = Pr().snap(cur, geometria(), { tol: tol, tipos: pr.tipos, ref: ref, grade: pr.tipos.grade ? pr.grade : 0 });
+        /* SNAPS COMPLETOS (14/10/2026): as linhas de referência do PARALELO e os pontos do RASTREAMENTO que o cursor
+           adquiriu (parando ~0,5 s), com as guias nos incrementos do Orto */
+        var incs = [90]; try { incs = BBO() ? BBO().precisao().inc : [90]; } catch (eI) {}
+        /* FUNDAÇÃO e PILAR: o cruzamento de eixos e o centro da peça existente vêm primeiro (js/bimprecisao.js escolherCentro) */
+        var cSub = !!(Pr().CENTRO_SUB && Pr().CENTRO_SUB[edit.sub]);
+        if (pr.snapOn) sn = Pr().snap(cur, geometria(), { tol: tol, tipos: pr.tipos, ref: ref, grade: pr.tipos.grade ? pr.grade : 0, paralelos: pr.par, adquiridos: pr.adq, incs: incs, prefereCentro: cSub });
         /* o canto do IFC importado (malha) entra quando aqui não há PONTO notável:
            desenhar a parede nova sobre a planta do projeto continua agarrando */
         if (pr.snapOn && (!sn || Pr().CLASSE[sn.sub || sn.tipo] > 0) && hit && hit.object && hit.object.userData && hit.object.userData.mid !== "edit") {
           var ms = api.snapMalha(e, hit);
-          if (ms && ms.tipo) { sn = { p: { x: ms.p.x, z: ms.p.z }, tipo: ms.tipo, malha: true, obj: ms.obj, seg: ms.seg }; malha = true; }
+          /* o tipo da MALHA (vértice, aresta, meio, interseção, centro) desligado no menu não pega */
+          if (ms && ms.tipo && pr.tipos[ms.tipo] !== false) { sn = { p: { x: ms.p.x, z: ms.p.z }, tipo: ms.tipo, malha: true, obj: ms.obj, seg: ms.seg }; malha = true; }
+          /* FACE (desligada de fábrica): o ponto na face do modelo importado */
+          else if (pr.tipos.face && !sn && hit.point) { sn = { p: { x: hit.point.x, z: hit.point.z }, tipo: "face", malha: true, obj: hit.object }; malha = true; }
         }
         var p = sn ? { x: sn.p.x, z: sn.p.z } : cur;
         if (e.shiftKey && ref) { p = Pr().orto(ref, p); if (sn && !malha) sn = { p: p, tipo: sn.tipo === "grade" ? "grade" : null }; }
@@ -211,7 +222,60 @@
           var aj = BBO().travar(ref, (!sn || sn.tipo === "grade") ? cur : p, { tipoSnap: sn ? sn.tipo : null });
           if (aj.travado) { p = aj.p; sn = sn && sn.tipo === "grade" ? { p: p, tipo: "grade" } : null; malha = false; }
         }
-        return { p: p, sn: sn, malha: malha, tol: tol };
+        return { p: p, sn: sn, malha: malha, tol: tol, cur: cur };
+      }
+      /* ------------------------- SNAPS COMPLETOS: o que o cursor ADQUIRE e o meio entre 2 pontos (14/10/2026)
+       * Parar o cursor ~0,5 s em cima de um PONTO notável (extremidade, meio, centro...) o adquire para o
+       * RASTREAMENTO (as guias saem dele; parar de novo solta); em cima de uma ARESTA ("mais próximo") a
+       * adquire para o PARALELO. Até 5 pontos; uma linha. Trocar de ferramenta limpa. */
+      pr.adq = []; pr.par = []; pr.adqCand = null; pr.m2p = null;
+      var adqGrp = new THREE.Group(); adqGrp.name = "precisao-adquiridos"; api.scene.add(adqGrp);
+      function chaveP(p) { return Math.round(p.x * 1000) + ":" + Math.round(p.z * 1000); }
+      function desenharAdquiridos() {
+        limparGrupo(adqGrp);
+        var ls = [], k = 0.12;
+        pr.adq.forEach(function (q) { ls.push([{ x: q.x - k, z: q.z }, { x: q.x + k, z: q.z }], [{ x: q.x, z: q.z - k }, { x: q.x, z: q.z + k }]); });
+        pr.par.forEach(function (sg) { ls.push([sg.a, sg.b]); });
+        var l = segs(ls, matGuia, edit.base + 0.015); if (l) adqGrp.add(l);
+      }
+      function limparAdquiridos() { pr.adq = []; pr.par = []; if (pr.adqCand && pr.adqCand.t) clearTimeout(pr.adqCand.t); pr.adqCand = null; limparGrupo(adqGrp); }
+      function adquirir(sp) {
+        var sn = sp && sp.sn;
+        function solta() { if (pr.adqCand && pr.adqCand.t) clearTimeout(pr.adqCand.t); pr.adqCand = null; }
+        if (!sp || sp.malha) { solta(); return; }
+        var ponto = !!(sn && sn.tipo && Pr().CLASSE[sn.sub || sn.tipo] === 0), linha = null;
+        /* a LINHA sob o cursor (a aresta mais perto, dentro da tolerância) — mesmo que o snap que ganhou seja
+           um prolongamento que passa por ali: perto da ponta de uma viga as guias da ponta cobrem a aresta */
+        if (!ponto && sp.cur) {
+          var dmin = Infinity; (geometria().segs || []).forEach(function (sg) { if (sg.k === "desenho") return; var d = Pr().distPontoSeg(sp.cur, sg.a, sg.b); if (d <= sp.tol && d < dmin) { dmin = d; linha = sg; } });
+        }
+        if (!ponto && !linha) { solta(); return; }
+        sn = sn || { tipo: "proximo" };
+        var k = ponto ? "p" + chaveP(sp.p) : "s" + chaveP(linha.a) + chaveP(linha.b);
+        if (pr.adqCand && pr.adqCand.k === k) return;   /* o mesmo: o relógio já está correndo */
+        solta();
+        var cand = { k: k, p: { x: sp.p.x, z: sp.p.z }, seg: ponto ? null : linha };
+        cand.t = setTimeout(function () {
+          if (!pr.adqCand || pr.adqCand.k !== k || S.alive === false) return;
+          pr.adqCand = null;
+          if (cand.seg) { if (pr.tipos.paralelo) { pr.par = [cand.seg]; hint("Linha de referência adquirida: o traço fica paralelo a ela quando você passa pela direção dela."); } }
+          else if (pr.tipos.rastreamento) {
+            var i = -1; pr.adq.forEach(function (q, j) { if (chaveP(q) === chaveP(cand.p)) i = j; });
+            if (i >= 0) pr.adq.splice(i, 1); else { pr.adq.push(cand.p); if (pr.adq.length > 5) pr.adq.shift(); }
+            hint(i >= 0 ? "Ponto solto do rastreamento." : "Ponto adquirido: as guias (horizontal, vertical e nos ângulos do Orto) saem dele.");
+          }
+          desenharAdquiridos();
+        }, 500);
+        pr.adqCand = cand;
+      }
+      /* MEIO ENTRE 2 PONTOS: true = o 1º ponto foi guardado (o clique acaba aqui); ponto = o meio; null = modo desligado */
+      function m2pPonto(p) {
+        if (!pr.m2p) return null;
+        pr.m2p.pts.push({ x: p.x, z: p.z });
+        if (pr.m2p.pts.length < 2) { hint("Meio entre 2 pontos: agora o 2º ponto."); return true; }
+        var m = Pr().meio2p(pr.m2p.pts[0], pr.m2p.pts[1]); pr.m2p = null;
+        hint("Meio entre 2 pontos: " + fmt(m.x) + " ; " + fmt(m.z) + ".");
+        return m;
       }
       function mostrarMarca(sp) {
         limparGrupo(grp);
@@ -822,6 +886,7 @@
           var sp = pontoSnap(e, hit); if (!sp) return true;
           pr.ult = sp;
           mostrarMarca(sp);
+          adquirir(sp);   /* rastreamento e paralelo: o cursor parado ~0,5 s adquire */
           var base = baseAtual(), pv = sp.p;
           /* parede e viga: a trava orto/ângulo do editor de sempre (botão Orto, ∠) vale também aqui */
           if (!ferramenta() && edit.p1 && (edit.sub === "parede" || edit.sub === "viga")) { var q = api.ajustar(V3(sp.p), e); pv = { x: q.x, z: q.z }; }
@@ -838,8 +903,9 @@
           if (!f) {
             if (!edit.sub || edit.sub === "apagar" || edit.sub === "anotar") return null;
             var sp0 = pontoSnap(e, hit); if (!sp0) return null;
+            var m0 = m2pPonto(sp0.p); if (m0 === true) return true;   /* MEIO ENTRE 2 PONTOS: o 1º clique só marca */
             caixaEsconder(); limparGrupo(grp);
-            return V3(sp0.p);
+            return V3(m0 || sp0.p);
           }
           if (pr.passo === "sel") {
             var id = idDoHit();
@@ -852,8 +918,9 @@
           }
           if (P4[pr.passo]) return passoP4(e, hit);   /* P4: peça, linha, face ou canto */
           var sp = pontoSnap(e, hit); if (!sp) { hint("Não achei o ponto no plano de trabalho."); return true; }
+          var m1 = m2pPonto(sp.p); if (m1 === true) return true;
           limparGrupo(grp); caixaEsconder();
-          passoComPonto(sp.p);
+          passoComPonto(m1 || sp.p);
           return true;
         },
         /* PLANTA (js/bimplantamodelar.js): o clique da planta 2D nas ferramentas desta fase — o ponto
@@ -934,6 +1001,7 @@
         },
         aoSub: function (sub) {
           pr.pts = []; caixaEsconder(); limparGrupo(grp);
+          limparAdquiridos(); pr.m2p = null;   /* snaps completos: troca de ferramenta zera o que foi adquirido */
           if (!ativo()) {   /* editor desligado: a seleção sai e a peça volta à cor dela */
             pr.sel = []; realcar(); pr.passo = null;
             opcoes.style.display = "none"; painel.style.display = "none"; camadaDom.innerHTML = ""; pr.cotasTmp = []; pr.alcas = []; return;
@@ -948,6 +1016,10 @@
         },
         /* para a fita, o e2e e o suporte */
         api: {
+          /* SNAPS COMPLETOS: o modo MEIO ENTRE 2 PONTOS (uma vez) e o que o cursor adquiriu (e2e e suporte) */
+          m2p: function (on) { if (!ativo() || !edit.sub) { pr.m2p = null; return false; } pr.m2p = on === false ? null : { pts: [] }; if (pr.m2p) hint("Meio entre 2 pontos: clique o 1º ponto."); return !!pr.m2p; },
+          adquiridos: function () { return { pontos: pr.adq.map(function (q) { return { x: q.x, z: q.z }; }), paralelos: pr.par.map(function (sg) { return { a: sg.a, b: sg.b, id: sg.id }; }), m2p: pr.m2p ? pr.m2p.pts.length : null }; },
+          limparAdquiridos: function () { limparAdquiridos(); return true; },
           painelSnaps: function (on) {
             /* com a barra de baixo (js/bimbarrasnaps.js) os snaps têm UM lugar só: o menu dela.
                A fita (Modificar › Snaps) e quem chamava este painel abrem aquele menu. */
