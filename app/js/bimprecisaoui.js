@@ -848,6 +848,9 @@
         if ((e.key === "Delete" || e.key === "Del") && !edit.sub && pr.sel.length) {
           e.preventDefault(); e.stopPropagation();
           var stD = estado(), fix = pr.sel.filter(function (id) { return Pr().fixado(stD, id); }), lib = pr.sel.filter(function (id) { return fix.indexOf(id) < 0; });   /* P4: fixada não sai */
+          /* SELECIONAR INSTÂNCIAS (js/bimselinst.js): parte de uma PEÇA PRONTA selecionada → pergunta antes
+             (só as selecionadas ou a peça pronta inteira); o resto segue o Delete de sempre */
+          try { if (global.BimSelInst && global.BimSelInst.interceptarApagar && global.BimSelInst.interceptarApagar(pr.sel.slice())) return; } catch (eSI) {}
           /* UM lote para a seleção inteira: cada op refaz a cena toda (editRebuild), e apagar 276 peças uma a uma
              travava o sistema por minutos (o Rogério achou em 12/10/2026). Um Ctrl+Z desfaz tudo de uma vez. */
           var opsD = lib.map(function (id) { return { op: "apagar", id: id }; });

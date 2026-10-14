@@ -239,9 +239,35 @@
       if (!perto(el.poly, x, z, tolH)) return;
       if (el.furos && el.furos.some(function (F) { return F.length >= 3 && dentro(F, x, z); })) return;
       if (Math.abs(el.topo - y) > tolV) return;
-      if (!best || Math.abs(el.topo - y) < Math.abs(best.topo - y)) best = el;
+      /* REVISÃO S6 (Rogério, 14/10): o PISO ACABADO manda — onde há piso/laje no ponto, a viga embaixo da grade (topo 3 cm
+         abaixo) não é a chegada; o nível é o topo da grade/chapa */
+      var sup = function (e) { return e.tipo === "viga" ? 0 : 1; };
+      if (!best || sup(el) > sup(best) || (sup(el) === sup(best) && Math.abs(el.topo - y) < Math.abs(best.topo - y))) best = el;
     });
     return best;
+  }
+  /* REVISÃO S6 (Rogério, 14/10): a PEÇA ESTRUTURAL MAIS PRÓXIMA do ponto de ligação (viga de aço, piso de aço, laje),
+     com o topo no nível (tolV) e até tolH em planta — a mais perto em planta; no empate, a viga (é nela que se liga) */
+  function maisProxima(els, x, z, y, op) {
+    op = op || {};
+    var tolH = num(op.tolH, 0.50), tolV = num(op.tolV, 0.10), best = null, dBest = Infinity;
+    arr(els).forEach(function (el) {
+      if (Math.abs(el.topo - y) > tolV) return;
+      if (el.furos && el.furos.some(function (F) { return F.length >= 3 && dentro(F, x, z); })) return;
+      var d = dentro(el.poly, x, z) ? 0 : distBorda(el.poly, [x, z]); if (d > tolH) return;
+      if (d < dBest - 0.02 || (Math.abs(d - dBest) <= 0.02 && el.tipo === "viga" && best && best.tipo !== "viga")) { best = el; dBest = d; }
+    });
+    return best ? { el: best, dist: r4(dBest) } : null;
+  }
+  /* onde a reta A + t·u cruza a borda do polígono (t em m, com sinal) */
+  function cruzaBorda(P, A, u) {
+    var ts = [];
+    for (var i = 0; i < P.length; i++) {
+      var a = P[i], b = P[(i + 1) % P.length], ex = b[0] - a[0], ez = b[1] - a[1], den = u[0] * ez - u[1] * ex; if (Math.abs(den) < 1e-9) continue;
+      var t = ((a[0] - A[0]) * ez - (a[1] - A[1]) * ex) / den, s2 = ((a[0] - A[0]) * u[1] - (a[1] - A[1]) * u[0]) / den;
+      if (s2 >= -1e-6 && s2 <= 1 + 1e-6) ts.push(t);
+    }
+    return ts.sort(function (p1, p2) { return p1 - p2; });
   }
   /* o elemento mais BAIXO acima de y0 + 0,3 m que o caminho atravessa (amostras na linha) */
   function elementoAcima(els, pts, y0, op) {
@@ -273,6 +299,8 @@
     var yPe, yTopo, fonte, chegada = null, apoio = null;
     if (desce) {
       var noTopo = elementoEm(els, P1[0], P1[2], y, { tolH: 0.30, tolV: 0.06 });
+      /* o clique pegou a viga (ou a face dela) logo abaixo da grade: o piso que cobre o ponto, até 0,60 m acima do clique */
+      if (!noTopo || noTopo.tipo === "viga") { var pz = null; els.forEach(function (el) { if (el.tipo === "viga" || !(el.topo >= y - 0.06 && el.topo <= y + 0.60) || !perto(el.poly, P1[0], P1[2], 0.30)) return; if (!pz || el.topo < pz.topo) pz = el; }); if (pz) noTopo = pz; }
       if (noTopo) { yTopo = noTopo.topo; chegada = noTopo; }
       if (H > 0.1) {
         if (yTopo == null) { var acimaP1 = elementoAcima(els, [P1], y); if (acimaP1 && Math.abs(acimaP1.topo - y - H) < 0.06) { chegada = acimaP1; yTopo = acimaP1.topo; } else yTopo = y + H; }
@@ -289,6 +317,7 @@
       if (!apoio) apoio = elementoEm(els, P2[0], P2[2], yPe, { tolH: 0.02, tolV: 0.06 });
     } else {
       yPe = y; apoio = elementoEm(els, P1[0], P1[2], y, { tolH: 0.02, tolV: 0.06 });
+      if (apoio && apoio.tipo !== "viga") yPe = apoio.topo;   /* o pé no PISO ACABADO (topo da grade/chapa/laje) */
       if (H > 0.1) { yTopo = y + H; fonte = "altura digitada (" + m2(H) + ")"; var ch = elementoAcima(els, amostras(P1, P2, 12), y); if (ch && Math.abs(ch.topo - yTopo) < 0.06) chegada = ch; }
       else {
         var ch2 = elementoAcima(els, amostras(P1, P2, 12), y);
@@ -379,7 +408,15 @@
     else { var C = recortarContorno(P, R); if (!C) return { ok: false, precisa: true, motivo: "A abertura cruza a borda do " + (el.tipo === "laje" ? "laje" : "piso") + " mais de uma vez: recorte o contorno à mão.", poly: res.poly }; res.modo = "recorte"; res.contornoNovo = C; }
     /* GUARDA-CORPO em volta da abertura: os três lados que NÃO são a entrada (a entrada é o lado do topo da escada) */
     var lado = function (a, b) { var A = aMundo(geo, a[0], a[1]), B = aMundo(geo, b[0], b[1]); return [A, B]; };
-    var gs = [lado([proj, -wm], [u0, -wm]), lado([u0, -wm], [u0, wm]), lado([u0, wm], [proj, wm])].filter(function (s) { var m = [(s[0][0] + s[1][0]) / 2, (s[0][1] + s[1][1]) / 2]; return dentro(P, m[0], m[1]) || distBorda(P, m) < 0.02; });
+    /* REVISÃO S6 (Rogério, 14/10): no RECORTE (o vão cruza a borda) os lados do vão ficam metade fora do piso — o guarda-corpo
+       vai no trecho de DENTRO de cada lado (antes o lado inteiro saía, porque o meio dele caía fora do piso) */
+    var dentroDe = function (s) {
+      var A = s[0], B = s[1], dx = B[0] - A[0], dz = B[1] - A[1], Ls = Math.sqrt(dx * dx + dz * dz); if (Ls < 1e-6) return [];
+      var u = [dx / Ls, dz / Ls], cs = [0].concat(cruzaBorda(P, A, u).filter(function (t) { return t > 1e-6 && t < Ls - 1e-6; })).concat([Ls]), o = [];
+      for (var k = 0; k + 1 < cs.length; k++) { var tm = (cs[k] + cs[k + 1]) / 2, mx = A[0] + u[0] * tm, mz = A[1] + u[1] * tm; if ((dentro(P, mx, mz) || distBorda(P, [mx, mz]) < 0.02) && cs[k + 1] - cs[k] > 0.10) o.push([[A[0] + u[0] * cs[k], A[1] + u[1] * cs[k]], [A[0] + u[0] * cs[k + 1], A[1] + u[1] * cs[k + 1]]]); }
+      return o;
+    };
+    var gs = []; [lado([proj, -wm], [u0, -wm]), lado([u0, -wm], [u0, wm]), lado([u0, wm], [proj, wm])].forEach(function (s) { gs = gs.concat(dentroDe(s)); });
     res.guarda = gs.map(function (s) { return [[r4(s[0][0]), r4(s[0][1])], [r4(s[1][0]), r4(s[1][1])]]; });
     return res;
   }
@@ -475,7 +512,10 @@
   function ligacaoTopo(nome, V, H, lg, al, aco, fw, Lsob) {
     var C = LC(), vs = [], tg = Math.tan(al), a0 = Math.max(C.pernaMinima(Math.max(GUS.t, num(lg.tw, 5))), 5), cap, a, g, Hl = H;
     /* coordenadas (mm) no plano da alma: u ao longo da escada (0 = corte de prumo), y para cima (0 = topo da longarina no corte) */
-    var Lm = Math.min(GUS.L, GUS.h / Math.max(tg, 0.2)), linhas = [[-Lm, -Lm * tg, 0, 0], [0, 0, 0, -Math.min(GUS.h, lg.d / Math.cos(al))]];
+    /* REVISÃO S6 r4: a chapa fica ENCOSTADA na face da alma (lado de dentro do U, sem mesa); os cordões: na linha do topo da
+       longarina (canto da chapa com a face de cima da mesa) e na borda de BAIXO da chapa, sobre a alma (no corte de prumo as
+       duas bordas ficam rentes — ali não há filete) */
+    var hB = Math.min(GUS.h, lg.d / Math.cos(al) - 10), Lm = Math.min(GUS.L, GUS.h / Math.max(tg, 0.2)), linhas = [[-Lm, -Lm * tg, 0, 0], [-Lm, -hB, 0, -hB]];
     var M = V * (GUS.L / 2) + Hl * 0;   /* a reação chega na borda de cima da chapa, no meio dela: braço GUS.L/2 até o corte (kN·mm) */
     /* o filete corre na BORDA da chapa de 9,5 mm (perna máxima ao longo da borda t − 1,5 mm — NBR 8800, soldas de filete, tamanho máximo) e o metal-base da ALMA da
        longarina limita por mm (escoamento por cisalhamento 0,60·fy·tw/γa1) */
@@ -484,7 +524,7 @@
     g = grupoSolda(linhas, Hl, V, M);
     for (a = a0; a < aMax; a++) { if (capDe(a) >= g.f) break; }
     cap = capDe(a);
-    vs.push(verif(nome + " — solda da chapa de ligação na alma da longarina (filete " + a + " mm, " + br(g.Lt, 0) + " mm de cordão)", "NBR 8800:2024 (expressão da 2008), 6.2.5 e Tabela 10 — grupo de solda pelo método da linha (cisalhamento direto + momento)", [passo("Cordões", "na linha da mesa inclinada (" + br(Lm / Math.cos(al), 0) + " mm) + no corte de prumo", br(g.Lt, 0) + " mm"), passo("Força no ponto mais solicitado", "√((H/L − M·y/J)² + (V/L + M·x/J)²), M = V·" + br(GUS.L / 2, 0) + " mm", br(g.f * 1000, 0) + " N/mm"), passo("Resistência por mm", "mín(0,60·0,707·a·fw/γw2; 0,60·a·fy/γa1; alma 0,60·fy·tw/γa1), a ≤ " + aMax + " mm na borda da chapa", br(cap * 1000, 0) + " N/mm")], cap * 1000, g.f * 1000, "N/mm"));
+    vs.push(verif(nome + " — solda da chapa de ligação na alma da longarina (filete " + a + " mm, " + br(g.Lt, 0) + " mm de cordão)", "NBR 8800:2024 (expressão da 2008), 6.2.5 e Tabela 10 — grupo de solda pelo método da linha (cisalhamento direto + momento)", [passo("Cordões", "na linha do topo da longarina (" + br(Lm / Math.cos(al), 0) + " mm) + na borda de baixo da chapa, sobre a alma (" + br(Lm, 0) + " mm)", br(g.Lt, 0) + " mm"), passo("Força no ponto mais solicitado", "√((H/L − M·y/J)² + (V/L + M·x/J)²), M = V·" + br(GUS.L / 2, 0) + " mm", br(g.f * 1000, 0) + " N/mm"), passo("Resistência por mm", "mín(0,60·0,707·a·fw/γw2; 0,60·a·fy/γa1; alma 0,60·fy·tw/γa1), a ≤ " + aMax + " mm na borda da chapa", br(cap * 1000, 0) + " N/mm")], cap * 1000, g.f * 1000, "N/mm"));
     var Lb = Math.max(20, Math.min(GUS.L, num(Lsob, GUS.L))), Lc = 2 * Lb, a2 = a0, cap2 = C.soldaFilete(a2, Lc, fw, aco.fy), R = Math.sqrt(V * V + Hl * Hl);
     while (cap2 < R && a2 < aMax) { a2++; cap2 = C.soldaFilete(a2, Lc, fw, aco.fy); }
     vs.push(verif(nome + " — solda da chapa de ligação embaixo da chapa horizontal (filete " + a2 + " mm dos dois lados)", "NBR 8800:2024 (expressão da 2008), 6.2.5", [passo("Cordão", "2 × " + br(Lb, 0) + " mm (o trecho da chapa de ligação embaixo da chapa horizontal)", br(Lc, 0) + " mm"), passo("Resultante", "√(V² + H²)", br(R, 2) + " kN")], cap2, R));
@@ -619,9 +659,10 @@
         out.verificacoes = out.verificacoes.filter(function (v) { return !/Solda (do pilar|das mesas|da alma)/.test(v.nome); });
         out.verificacoes.push(verifExtensao(nome, it.extensao, V, pb.dimensoes.t, aco, pb.dimensoes.B));
         out.verificacoes.push(juntaTopo(nome, it.extensao.b, Math.min(num(it.extensao.t, pb.dimensoes.t), pb.dimensoes.t), V, V * num(it.extensao.braco, 0.1), aco));
-        var lt = ligacaoTopo(nome, V, H, lg, al, aco, fw); out.verificacoes = out.verificacoes.concat(lt.verificacoes); out.gusset = lt.gusset;
+        if (it.patamarTopo) { var swP = soldaLongarina(Math.sqrt(V * V + H * H)); swP.v.nome = nome + " — solda da viga do patamar na chapa de extensão (filete " + swP.a + " mm no contorno)"; out.verificacoes.push(swP.v); }   /* viga horizontal: sem a chapa de ligação da longarina inclinada */
+        else { var lt = ligacaoTopo(nome, V, H, lg, al, aco, fw); out.verificacoes = out.verificacoes.concat(lt.verificacoes); out.gusset = lt.gusset; }
       }
-      out.desenho = { modo: modo, chapa: { B: pb.dimensoes.B, L: pb.dimensoes.L, t: pb.dimensoes.t }, chumbadores: pb.dimensoes.chumbadores, solda: pb.dimensoes.solda, graute: it.ponta === "topo" ? 0 : 0.025, gusset: out.gusset || null };
+      out.desenho = { modo: modo, chapa: { B: pb.dimensoes.B, L: pb.dimensoes.L, t: pb.dimensoes.t }, chumbadores: pb.dimensoes.chumbadores, solda: pb.dimensoes.solda, graute: it.ponta === "topo" || it.patamarTopo ? 0 : 0.025, gusset: out.gusset || null };
       var rs = String(pb.resumo || "");
       /* REVISÃO S6 r3 (A1): o resumo diz a ligação que existe (o "pilar" do js/acoligcalc.js é a longarina ou o pé de apoio) */
       if (it.extensao) rs = rs.replace(/;\s*solda de filete [^;]*em volta do pilar/, "; chapa de extensão " + br(it.extensao.b, 0) + " × " + br(Math.min(num(it.extensao.t, pb.dimensoes.t), pb.dimensoes.t), 1) + " mm em junta de topo (penetração total) + chapa de ligação " + GUS.L + " × " + GUS.h + " × " + br(GUS.t, 1) + " mm na alma da longarina" + (out.gusset ? " (filetes " + out.gusset.a + " e " + out.gusset.a2 + " mm)" : "")).replace(/;\s*graute sem retração[^;]*/, "");
@@ -728,6 +769,10 @@
     var pl = Hh.perfilDe(p.longarina), lg = pl ? { d: pl.d * 1000, bf: pl.bf * 1000, tw: num(pl.tw, 0.005) * 1000, tf: num(pl.tf, 0.008) * 1000 } : { d: 200, bf: 57, tw: 5.6, tf: 9.9 };
     var al = o.al, ca = Math.cos(al), e = o.e, pp = o.pp, dL = o.dL, gid = o.gid;
     var modoPe = p.fixPe || "", modoTopo = p.fixTopo || "";
+    /* REVISÃO S6 (Rogério, 14/10): com o PATAMAR DE TOPO da escada por linha a longarina chega no patamar (soldada na viga
+       dele) e quem liga na peça da chegada é a borda do patamar (uT1) — mais abaixo, depois dos pilaretes */
+    var patTopo = arr(o.patamares).filter(function (q) { return q.topo; })[0] || null;
+    if (patTopo && p.patamarTopoFix) modoTopo = "soldada";
     function R(ponta, lance) { return reacoes({ e: e, p: pp, Lh: Math.max(pp, (lance.nR - 1) * pp), largura: o.W, gPiso: o.gPiso, perfil: p.longarina, q: o.qPiso, usoGuarda: p.usoGuarda, fixPe: modoPe, fixTopo: modoTopo })[ponta]; }
     function mm(v) { return v / 1000; }
     /* a placa sob a LONGARINA não é placa de base de pilar (o leitor do cálculo trata "Placa de base" como base de pilar) */
@@ -789,7 +834,7 @@
           if (f2.desenho && f2.desenho.chapa) {
             var Lm2 = mm(f2.desenho.chapa.L), tM = mm(f2.desenho.chapa.t), ucD = modoTopo === "parafusada" ? laN.uTop : u0 + Lm2 / 2;
             chapaFix(laN.F, ucD, s2 * wL, yT + tM, f2.desenho, "esc-tp-" + gid + (s2 > 0 ? "e" : "d"), "Fixação do topo — longarina " + nomeLado(s2));
-            if (f2.desenho.gusset) { var KKg = K.F; K.F = laN.F; K.chapa({ origem: [laN.uTop - mm(f2.desenho.gusset.L), yT - mm(f2.desenho.gusset.h), s2 * wL - mm(f2.desenho.gusset.t) / 2], ex: [1, 0, 0], ey: [0, 1, 0], t: mm(f2.desenho.gusset.t), ret: { L: mm(f2.desenho.gusset.L), B: mm(f2.desenho.gusset.h) }, papel: "Chapa de ligação da longarina (topo)", aco: "ASTM A36", lig: "esc-tp-" + gid + (s2 > 0 ? "e" : "d"), nome: "Chapa de ligação do topo — longarina " + nomeLado(s2) }, "fixacao"); K.F = KKg; }
+            if (f2.desenho.gusset) { var KKg = K.F, tG = mm(f2.desenho.gusset.t), zAlma = o.W / 2; K.F = laN.F; K.chapa({ origem: [laN.uTop - mm(f2.desenho.gusset.L), yT - mm(f2.desenho.gusset.h), s2 > 0 ? zAlma - tG : -zAlma], ex: [1, 0, 0], ey: [0, 1, 0], t: mm(f2.desenho.gusset.t), ret: { L: mm(f2.desenho.gusset.L), B: mm(f2.desenho.gusset.h) }, papel: "Chapa de ligação da longarina (topo)", aco: "ASTM A36", lig: "esc-tp-" + gid + (s2 > 0 ? "e" : "d"), nome: "Chapa de ligação do topo — longarina " + nomeLado(s2) }, "fixacao"); K.F = KKg; }
             if (modoTopo === "ancorada") {
               var tE = mm(num(it2.extensao && it2.extensao.t, f2.desenho.chapa.t)), KK2 = K.F; K.F = laN.F;
               var bE = mm(num(it2.extensao && it2.extensao.b, bExt));
@@ -807,7 +852,15 @@
     var Renv = reacoes({ e: e, p: pp, Lh: Math.max(pp, (la0.nR - 1) * pp), largura: o.W, gPiso: o.gPiso, perfil: p.longarina, q: o.qPiso, usoGuarda: p.usoGuarda }).pe;
     arr(o.patamares).forEach(function (pt, ip) {
       var Lp = num(pt.Lp, 0.8), wdA = 1.25 * o.gPiso + 1.5 * o.qPiso, N = wdA * Lp * o.W / 4 + num(Renv.V, 0), comX = pt.cantos.length === 4 && pt.yB > 0.15;
-      if (comX) {
+      /* o patamar de topo ligado na chegada: 2 pilaretes no lado da escada com X entre eles (o outro sentido trava pela ligação
+         do patamar na peça da chegada); a força leva a metade do patamar + a longarina que chega */
+      if (pt.topo && pt.cantos.length === 2 && pt.yB > 0.15) {
+        comX = true; N = wdA * Lp * o.W / 4 + num(Renv.V, 0);
+        var KKy = K.F, ca2 = pt.cantos; K.F = pt.F;
+        K.barra([ca2[0][0], 0, ca2[0][1]], [ca2[1][0], pt.yB, ca2[1][1]], { ferr: "diagonal", cat: BR_X, papel: "Contraventamento do patamar", ifc: "IFCMEMBER", aco: "ASTM A36", nome: "X do patamar de topo 1" }, "contravento");
+        K.barra([ca2[1][0], 0, ca2[1][1]], [ca2[0][0], pt.yB, ca2[0][1]], { ferr: "diagonal", cat: BR_X, papel: "Contraventamento do patamar", ifc: "IFCMEMBER", aco: "ASTM A36", nome: "X do patamar de topo 2" }, "contravento");
+        K.F = KKy;
+      } else if (comX) {
         var cs = pt.cantos.slice().sort(function (a, b) { return a[0] - b[0] || a[1] - b[1]; }), anel = [cs[0], cs[1], cs[3], cs[2]], KKx = K.F; K.F = pt.F;
         anel.forEach(function (a, ia) { var b = anel[(ia + 1) % 4]; K.barra([a[0], 0, a[1]], [b[0], pt.yB, b[1]], { ferr: "diagonal", cat: BR_X, papel: "Contraventamento do patamar", ifc: "IFCMEMBER", aco: "ASTM A36", nome: "X do patamar " + (ip + 1) + "-" + (2 * ia + 1) }, "contravento"); K.barra([b[0], 0, b[1]], [a[0], pt.yB, a[1]], { ferr: "diagonal", cat: BR_X, papel: "Contraventamento do patamar", ifc: "IFCMEMBER", aco: "ASTM A36", nome: "X do patamar " + (ip + 1) + "-" + (2 * ia + 2) }, "contravento"); });
         K.F = KKx;
@@ -822,6 +875,41 @@
         if (fr.desenho && fr.desenho.chapa) chapaFix(pt.F, q[0], q[1], 0, fr.desenho, "esc-pp-" + gid + "-" + ip + "-" + j, "Base do pilarete do patamar " + (ip + 1) + "-" + (j + 1), fr.desenho.chumbadores ? "Placa de base" : null);
       });
     });
+    /* ---- A BORDA DO PATAMAR DE TOPO NA PEÇA DA CHEGADA (a mais próxima: viga de borda do piso → parafusada; laje → ancorada) */
+    if (patTopo && (p.patamarTopoFix === "parafusada" || p.patamarTopoFix === "ancorada")) {
+      /* REVISÃO S6 (revisor, 14/10): por canto, a ÁREA DE INFLUÊNCIA de um quarto do patamar (4 cantos: 2 no lado da escada, 2 na
+         borda); a horizontal = a da escada + a do GUARDA-CORPO do próprio patamar (1,5·f·Lpt/2 por canto, f da norma do uso) e o
+         momento dele a h (1,10 m) vira binário entre as duas bordas: ΔV = Hg·h/W (tração e compressão) */
+      var wdT = 1.25 * o.gPiso + 1.5 * o.qPiso, Lpt = num(patTopo.Lp, 0.8), RtP = R("topo", laN), mdT = p.patamarTopoFix, resB = [];
+      var AA = AC(), fgP = AA && AA.forcaGuarda ? AA.forcaGuarda(p.usoGuarda || "industrial") : { f: 2.0, altura: 1.1, ref: "NBR 6120:2019, Tabela 12" };
+      var Hesc = Math.abs(num(RtP.H, 0)), Hg = p.guarda !== "nenhum" ? 1.5 * num(fgP.f, 2.0) * Lpt / 2 : 0, hG = num(fgP.altura, 1.1), dVg = Hg * hG / o.W, Vgk = (o.gPiso * Lpt * o.W) / 4;
+      var Vb = wdT * Lpt * o.W / 4 + dVg, Hb = Hesc + Hg, NtB = Math.max(0, dVg - Vgk);
+      var eixoB = patTopo.F.D([1, 0, 0]), ctB = concretoDe(p, "topo"), pqT = Hh.perfilDe(p.patamarPerfil), lgP = pqT ? { d: pqT.d * 1000, bf: (pqT.bf || pqT.b || 0.075) * 1000, tw: num(pqT.tw || pqT.t, 0.006) * 1000, tf: num(pqT.tf || pqT.t, 0.008) * 1000 } : { d: 150, bf: 75, tw: 6, tf: 8 };
+      /* ANCORADA: a placa INTEIRA dentro do concreto, recuada 5 cm da borda (o concreto só existe depois da borda de chegada) e
+         a viga do patamar chega nela por uma chapa de extensão — a placa engastada com a excentricidade; desenho e cálculo no
+         MESMO ponto (2 passadas: o tamanho da placa, depois o ponto dela) */
+      var bExtP = Math.ceil((lgP.bf + 40) / 10) * 10, recB = 0.05;
+      var mkB = function (s2, Lm) {
+        var anc = mdT === "ancorada", ucB = anc ? patTopo.u1 + recB + Lm / 2 : patTopo.u1, bra = ucB - patTopo.u1, cB = JSON.parse(JSON.stringify(ctB));
+        if (anc) cB.chegada = { P: patTopo.F.W([patTopo.u1, patTopo.yT, 0]), n: [eixoB[0], eixoB[2]] };
+        return { tipo: "fixacao", ponta: "pe", patamarTopo: true, lado: nomeLado(s2), rotulo: "Patamar de topo na chegada (" + nomeLado(s2) + ") — " + (ROT[mdT] || mdT), modo: mdT,
+          R: { V: r4(Vb), H: r4(Hb), Nt: r4(NtB), hip: "um quarto do patamar (" + br(Lpt, 2) + " × " + br(o.W, 2) + " m) por canto — a área de influência de cada um dos 4 cantos; H = a da escada (" + br(Hesc, 2) + " kN) + a do guarda-corpo do patamar 1,5·" + br(num(fgP.f, 2), 2) + "·" + br(Lpt, 2) + "/2 = " + br(Hg, 2) + " kN (" + fgP.ref + "); o momento dele a " + br(hG, 2) + " m vira ΔV = ±" + br(dVg, 2) + " kN entre as bordas" },
+          longarina: lgP, alfa: 90, concreto: cB, P: patTopo.F.W([ucB, patTopo.yT, s2 * o.W / 2]), eixo: [eixoB[0], eixoB[2]], suporteT: num(p.supTopoT, 0), semViga: !!p.supTopoSemViga,
+          M: anc ? r4(Vb * bra) : 0, braco: r4(bra), pilar: anc ? { d: 80, bf: bExtP, tw: 9.5, tf: 9.5 } : null, extensao: anc ? { b: bExtP, braco: r4(bra) } : null };
+      };
+      lados.forEach(function (s2) {
+        var it1 = mkB(s2, 0.30), f1 = fixacao(it1), L1 = f1.desenho && f1.desenho.chapa ? mm(f1.desenho.chapa.L) : 0.30;
+        var itB = mkB(s2, L1); if (!itB.pilar) delete itB.pilar; if (!itB.extensao) delete itB.extensao;
+        var fb = fixacao(itB); out.itens.push(itB); resB.push(fb);
+        if (fb.desenho && fb.desenho.chapa) {
+          var LmB = mm(fb.desenho.chapa.L), ucD = mdT === "ancorada" ? patTopo.u1 + recB + LmB / 2 : patTopo.u1;
+          chapaFix(patTopo.F, ucD, s2 * o.W / 2, patTopo.yT, fb.desenho, "esc-tp-pt" + gid + (s2 > 0 ? "e" : "d"), "Patamar de topo na chegada — " + nomeLado(s2));
+          if (mdT === "ancorada") { var tEb = mm(num(itB.extensao && itB.extensao.t, fb.desenho.chapa.t)), bEb = mm(num(itB.extensao && itB.extensao.b, bExtP)), KKb = K.F; K.F = patTopo.F;
+            K.chapa({ origem: [patTopo.u1 - 0.10, patTopo.yT + tEb, s2 * o.W / 2 - bEb / 2], ex: [1, 0, 0], ey: [0, 0, 1], t: tEb, ret: { L: r4(ucD - (patTopo.u1 - 0.10)), B: bEb }, papel: "Chapa de extensão do patamar de topo", aco: "ASTM A36", lig: "esc-tp-pt" + gid + (s2 > 0 ? "e" : "d"), nome: "Chapa de extensão do patamar de topo — " + nomeLado(s2) }, "fixacao"); K.F = KKb; }
+        }
+      });
+      out.resumo.push("patamar de topo " + br(Lpt, 2) + " m ligado na chegada: " + (resB[0] ? resB[0].resumo : mdT));
+    }
     if ((o.patamares && o.patamares.length) || modoTopo === "apoiada") out.naoVerificados.push("não verificado: as barras redondas do X (patamar/pés de apoio) — a tração delas sai na Estrutura desenhada");
     return out;
   }
@@ -829,7 +917,7 @@
   var MetalEscadaLinha = {
     NORMA_PADRAO: NORMA_PADRAO, PES: PES, ROT: ROT, desenhar: desenhar, concretoDe: concretoDe, chapaFixacao: chapaFixacao, BR_X: BR_X,
     hMaxDe: hMaxDe, lpDe: lpDe, candidatos: candidatos, ajustar: ajustar, linha: linha, giroDe: giroDe, projecaoDe: projecaoDe, topoDe: topoDe,
-    elementos: elementos, elementoEm: elementoEm, elementoAcima: elementoAcima, elementoAbaixo: elementoAbaixo, alturas: alturas,
+    elementos: elementos, elementoEm: elementoEm, maisProxima: maisProxima, cruzaBorda: cruzaBorda, elementoAcima: elementoAcima, elementoAbaixo: elementoAbaixo, alturas: alturas,
     abertura: abertura, uAlturaLivre: uAlturaLivre, ligacaoTopo: ligacaoTopo, juntaTopo: juntaTopo, recortarContorno: recortarContorno, baseMontante: baseMontante, clipConvexo: clipConvexo, plantaPronta: plantaPronta, hLivreDe: hLivreDe, reacoes: reacoes, pilarete: pilarete, fixacao: fixacao, fixacaoAuto: fixacaoAuto,
     _int: { dentro: dentro, areaPol: areaPol, distBorda: distBorda, aMundo: aMundo }
   };

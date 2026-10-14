@@ -197,7 +197,47 @@
               furos: arr(o.furos).map(normFuroFace).filter(Boolean), ex: null, ey: null, o: null };
     /* xRef: a REFERÊNCIA dos furos fica xRef antes do início do sólido — esticar/encurtar a ponta inicial não move os furos */
     if (Math.abs(num(o.xRef, 0)) > 1e-9) m.xRef = r6(num(o.xRef, 0));
+    /* ACABAMENTO DE FABRICAÇÃO (js/metaldetalhe.js, frente S10, 14/10/2026):
+       bocas = a ponta cortada na FORMA DO TUBO que recebe (boca de lobo): { ini: [cil…], fim: [cil…] }, cada cilindro
+               { R, e: [ea, eb, ez] (direção do eixo), c: [ca, cb, dz] (um ponto do eixo) } na base (a, b, z) do sólido
+               — a = largura (Z), b = altura (Y), z = eixo da barra — com dz a partir da ponta. L = comprimento PELO EIXO
+               até a superfície do tubo que recebe; a ponta de cada linha da seção vai até a 1ª superfície que ela toca.
+       curva = a barra CURVADA (curva de retorno do corrimão): { R (m, raio pela linha de centro), ang (graus), dir: "y" |
+               "-y" | "z" | "-z" (para onde ela dobra) } — L = o DESENVOLVIMENTO (R·θ), que é o comprimento de corte. */
+    var bc = normBocas(o.bocas); if (bc) m.bocas = bc;
+    if (o.curva && num(o.curva.R, 0) > 0.005 && num(o.curva.ang, 0) > 0.5) {
+      var dv = /^-?[yz]$/.test(String(o.curva.dir)) ? String(o.curva.dir) : "-y";
+      m.curva = { R: r6(num(o.curva.R, 0)), ang: r4(Math.min(180, num(o.curva.ang, 0))), dir: dv };
+      m.L = r6(m.curva.R * m.curva.ang * Math.PI / 180);
+      m.cortes = {};
+    }
     return montar(m, o, o.ifc || "IFCMEMBER");
+  }
+  function normBocas(b) {
+    if (!b || typeof b !== "object") return null;
+    var out = {}, tem = false;
+    ["ini", "fim"].forEach(function (k) {
+      var l = arr(Array.isArray(b[k]) ? b[k] : (b[k] ? [b[k]] : [])).map(function (q) {
+        if (!q || !(num(q.R, 0) > 0.001)) return null;
+        var e = V(q.e), le = len(e); if (!(le > 1e-9)) return null;
+        return { R: r6(num(q.R, 0)), e: [r6(e[0] / le), r6(e[1] / le), r6(e[2] / le)], c: V(q.c).map(r6) };
+      }).filter(Boolean);
+      if (l.length) { out[k] = l; tem = true; }
+    });
+    return tem ? out : null;
+  }
+  /* a ponta da linha (a, b) da seção na boca: t a partir da ponta nominal (fim: a 1ª superfície vindo de −z; ini: vindo
+     de +z). Linha paralela ao eixo do tubo que recebe ou que não o toca: fica na ponta nominal (t = 0). */
+  function tBoca(cils, a, b, fim) {
+    var best = null;
+    cils.forEach(function (q) {
+      var e = q.e, w0 = [a - q.c[0], b - q.c[1], -q.c[2]], d = [0, 0, 1];
+      var we = dot(w0, e), de = dot(d, e), wp = sub(w0, mul(e, we)), dp = sub(d, mul(e, de));
+      var A = dot(dp, dp), B = 2 * dot(wp, dp), C = dot(wp, wp) - q.R * q.R; if (A < 1e-12) return;
+      var disc = B * B - 4 * A * C, t = disc < 0 ? -B / (2 * A) : (fim ? (-B - Math.sqrt(disc)) / (2 * A) : (-B + Math.sqrt(disc)) / (2 * A));
+      if (best == null || (fim ? t < best : t > best)) best = t;
+    });
+    return best == null ? 0 : best;
   }
   function normFuroFace(f) {
     if (!f || !/^[ouvh]$/.test(String(f.face))) return null;
@@ -312,14 +352,32 @@
    *    cisalha: {ini:[ka,kb], fim:[ka,kb]} (só no perfil cortado) }]
    * O 3D (js/bim.js) extruda cada um com o mapa `ponto`; o IFC (js/ifcsaida.js)
    * usa O/U/Vv/W (e Brep quando há cisalha). */
-  function solido(poli, furos, z0, z1, O, U, Vv, W, cis) {
+  function solido(poli, furos, z0, z1, O, U, Vv, W, cis, bocas) {
     var s = { poli: poli, furos: furos || [], z0: z0, z1: z1, O: O, U: U, Vv: Vv, W: W, cisalha: cis || null };
+    if (bocas) s.bocas = bocas;
     s.ponto = function (a, b, z) {
-      var zz = z;
-      if (cis) { var k = Math.abs(z - z1) < 1e-12 ? cis.fim : cis.ini; zz = z + k[0] * a + k[1] * b; }
+      var zz = z, fim = Math.abs(z - z1) < 1e-12;
+      if (bocas && (fim ? bocas.fim : (Math.abs(z - z0) < 1e-12 && bocas.ini))) zz = z + tBoca(fim ? bocas.fim : bocas.ini, a, b, fim);
+      else if (cis) { var k = fim ? cis.fim : cis.ini; zz = z + k[0] * a + k[1] * b; }
       return add(add(add(O, mul(U, a)), mul(Vv, b)), mul(W, zz));
     };
     return s;
+  }
+  /* giro de v em volta do eixo unitário k (Rodrigues) */
+  function girar(v, k, f) { var c = Math.cos(f), s = Math.sin(f); return add(add(mul(v, c), mul(cross(k, v), s)), mul(k, dot(k, v) * (1 - c))); }
+  /* a CURVA (barra curvada): cordas de no máximo 10° com as pontas no plano normal à tangente — as cordas fecham
+     umas nas outras sem vão (o 3D vê o tubo curvado; a lista vê UMA peça com o desenvolvimento) */
+  function solidosCurva(s, m, q) {
+    var cv = m.curva, R = num(cv.R, 0), th = num(cv.ang, 0) * Math.PI / 180, out = [];
+    var Dv = cv.dir === "y" ? q.Y : (cv.dir === "-y" ? mul(q.Y, -1) : (cv.dir === "z" ? q.Z : mul(q.Z, -1))), K = cross(q.X, Dv);
+    var n = Math.max(3, Math.ceil(th / (10 * Math.PI / 180) - 1e-9));
+    function P(f) { return add(add(q.O, mul(q.X, R * Math.sin(f))), mul(Dv, R * (1 - Math.cos(f)))); }
+    for (var i = 0; i < n; i++) {
+      var f0 = th * i / n, f1 = th * (i + 1) / n, fm = (f0 + f1) / 2, W = girar(q.X, K, fm), U = girar(q.Z, K, fm), Vv = girar(q.Y, K, fm);
+      var kk = function (f) { var nn = girar(q.X, K, f), dw = dot(nn, W); return [-dot(nn, U) / dw, -dot(nn, Vv) / dw]; };
+      out.push(solido(s.contorno, s.furos, 0, 2 * R * Math.sin((f1 - f0) / 2), P(f0), U, Vv, W, { ini: kk(f0), fim: kk(f1) }));
+    }
+    return out;
   }
   function solidos(c) {
     var m = c && c.metal; if (!m) return [];
@@ -331,9 +389,10 @@
     } else if (m.kind === "perfil") {
       var s = secaoDe(m.perfil); if (!s || !s.ok) return [];
       /* contorno da seção: a = x do BimArq (largura), b = y (altura); a largura vai em Z = X × Y */
+      if (m.curva) return solidosCurva(s, m, q);
       var ct = m.cortes || {}, tg = function (g) { return Math.tan(num(g, 0) * Math.PI / 180); };
       var cis = (ct.almaIni || ct.almaFim || ct.abaIni || ct.abaFim) ? { ini: [tg(ct.abaIni), tg(ct.almaIni)], fim: [tg(ct.abaFim), tg(ct.almaFim)] } : null;
-      out.push(solido(s.contorno, s.furos, 0, num(m.L, 0), q.O, q.Z, q.Y, q.X, cis));
+      out.push(solido(s.contorno, s.furos, 0, num(m.L, 0), q.O, q.Z, q.Y, q.X, cis, m.bocas || null));
     } else if (m.kind === "parafuso") {
       var N = Norma(), p = N ? N.parafuso(m.id) : null; if (!p) return [];
       var mm = function (v) { return v / 1000; }, X = q.X, Y = q.Y, Z = q.Z, O = q.O, ap = num(m.aperto, 0);

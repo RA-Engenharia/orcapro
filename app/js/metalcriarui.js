@@ -324,9 +324,66 @@
       if (!previa() || !/^edit:/.test(String(uid || ""))) return false;
       var c = caixaDe(String(uid).slice(5)); return !!(c && c.tipo === "metal" && c.metal && (c.metal.kind === "perfil" || c.metal.kind === "chapa"));
     },
+    /* SELECIONAR INSTÂNCIAS (14/10/2026, js/bimselinst.js): as peças metálicas selecionadas junto com esta */
+    _selMetal: function (id) {
+      var b = B(), sel = [];
+      try { sel = b && b.precisao && b.precisao() ? b.precisao().selecao().map(String) : []; } catch (e) { sel = []; }
+      if (sel.indexOf(String(id)) < 0) return [];
+      return sel.filter(function (x) { var c = caixaDe(x); return !!(c && c.tipo === "metal" && c.metal && (c.metal.kind === "perfil" || c.metal.kind === "chapa")); });
+    },
+    /* PROPRIEDADES EM LOTE: "N selecionados"; o que é igual em todas aparece, o diferente fica ‹vários›;
+       mudar aplica a todas num lote só (um Ctrl+Z) — perfil (troca de perfil em lote), giro e aço */
+    propsLote: function (info, G, ids) {
+      var self = this, M = MC(), cs = ids.map(caixaDe).filter(Boolean), pre = "mcrl:", VAR = "‹vários›";
+      var ro = function (k, r, v) { return { id: pre + k, rotulo: r, leitura: true, valor: v == null || v === "" ? "—" : v }; };
+      function comum(f) { var v0 = f(cs[0]); return cs.every(function (c) { return f(c) === v0; }) ? v0 : null; }
+      var kind = comum(function (c) { return c.metal.kind; }), papeis = {}, massa = 0;
+      cs.forEach(function (c) { papeis[c.metal.papel] = (papeis[c.metal.papel] || 0) + 1; massa += num(c.massa, 0); });
+      var sec = [{ nome: "Seleção", params: [ro("n", "Selecionados", cs.length + " peças metálicas"), ro("papeis", "Peças", Object.keys(papeis).map(function (k) { return papeis[k] + " × " + k; }).join(" · ")), ro("massa", "Peso total", br(massa, 2) + " kg")] }];
+      if (kind === "perfil") {
+        var cat = comum(function (c) { return (c.metal.perfil && c.metal.perfil.cat) || ""; });
+        var sp = this._secPerfil(null, pre, cat || "", this._buscaLote || "");
+        if (!cat) {
+          sp.params.forEach(function (p) { if (p.id === pre + "cat") { p.opcoes = [{ id: "", rotulo: VAR }].concat(p.opcoes || []); p.valor = ""; } });
+          sp.params = sp.params.filter(function (p) { return p.id !== pre + "info" && p.id !== pre + "fab"; });
+        }
+        sec.push(sp);
+        var giro = comum(function (c) { return Math.round(M.linhaAtual(c).giro * 100) / 100; });
+        sec.push({ nome: "Posição da seção", params: [{ id: pre + "giro", rotulo: "Giro", unidade: "°", tipo: "numero", passo: "15", valor: giro == null ? "" : giro, motivo: giro == null ? VAR : "" }] });
+      }
+      var aco = comum(function (c) { return c.metal.aco; }), base = kind === "chapa" ? ACOS_CHAPA : ACOS_PERFIL, lis = base.slice();
+      cs.forEach(function (c) { if (c.metal.aco && lis.indexOf(c.metal.aco) < 0) lis.push(c.metal.aco); });
+      sec.push({ nome: "Material", params: [{ id: pre + "aco", rotulo: "Aço", tipo: "lista", valor: aco || "", opcoes: (aco ? [] : [{ id: "", rotulo: VAR }]).concat(lis.map(function (a) { return { id: a, rotulo: a }; })) }] });
+      return { daPeca: true, uid: info.uid, semEditarTipo: true, lote: cs.length, titulo: cs.length + " selecionados", icone: "estrutura", secoes: sec,
+        onMudar: function (pid, v) { self.mudarLote(ids, pid, v); return G && G._bimPropsPeca ? G._bimPropsPeca(info) : self.propsPeca(info, G); } };
+    },
+    _buscaLote: null,
+    mudarLote: function (ids, pid, v) {
+      var M = MC(), k = String(pid).replace(/^mcrl:/, ""), mud = {};
+      if (!M) return false;
+      if (k === "busca") { this._buscaLote = String(v || "").slice(0, 60); return true; }
+      if (k === "cat") { if (!v) return false; mud.cat = String(v); }
+      else if (k === "aco") { if (!v) return false; mud.aco = String(v); }
+      else if (k === "giro") { var n = num(v, NaN); if (!fin(n)) { status("Valor inválido."); return false; } mud.giro = n; }
+      else return false;
+      var ops = [], erros = 0;
+      ids.forEach(function (id) {
+        var c = caixaDe(id); if (!c || !c.metal) return;
+        if ((mud.cat != null || mud.giro != null) && c.metal.kind !== "perfil") return;
+        var r = M.editar(c, mud); if (!r || r.erro) { erros++; return; }
+        ops.push(M.opAjustar(id, r.caixa));
+      });
+      if (!ops.length) { status("Nada mudou" + (erros ? " (" + erros + " peça(s) recusaram a mudança)" : "") + "."); return false; }
+      if (!enviarLote(ops, "Propriedades em lote — " + ops.length + " peças metálicas")) { status("O editor recusou a mudança."); return false; }
+      if (k === "cat") this._buscaLote = null;
+      status(ops.length + " peças metálicas atualizadas (Ctrl+Z desfaz de uma vez)" + (erros ? "; " + erros + " recusaram" : "") + ".");
+      return true;
+    },
     propsPeca: function (info, G) {
       var self = this, id = String(info.uid).slice(5), c = caixaDe(id), M = MC(), BMe = BM();
       if (!c || !M || !BMe) return null;
+      var selM = this._selMetal(id);
+      if (selM.length > 1) return this.propsLote(info, G, selM);
       var m = c.metal, pre = "mcrp:", sec = [], ro = function (k, r, v) { return { id: pre + k, rotulo: r, leitura: true, valor: v == null || v === "" ? "—" : v }; };
       var lig = (m.lig ? 1 : 0) + ((c.metalFuros || []).length ? 1 : 0) + (estado().caixas || []).filter(function (x) { return x.metal && String(x.metal.soldadaEm) === String(id); }).length;
       sec.push({ nome: "Identidade", params: [ro("papel", "Peça", m.papel), ro("marca", "Marca", c.marca || "(sem marca — Fabricação › Numerar)"), ro("id", "Identificador", id)]

@@ -85,7 +85,10 @@
     return { id: c.id, kind: "perfil", papel: c.tipo === "metal" ? c.metal.papel : (c.tipo === "pilar" ? "Pilar" : "Viga"), perfil: p, nomePerfil: p.cat || s.rotulo, codigo: COD_DSTV[p.forma] || "SO",
              L: mm(mb.L), cortes: cortesDe(mb), furos: furos, dims: dims, kgm: cat && cat.massa ? cat.massa : r3(s.area * 7850), m2m: cat && cat.per ? cat.per : r3(s.perimetro),
              aco: c.tipo === "metal" ? c.metal.aco : (c.aco || "ASTM A572 Gr.50"), massa: massa, area: num(c.area, s.perimetro * mb.L), soldadaEm: c.metal ? c.metal.soldadaEm || null : null,
-             solda: c.metal ? c.metal.solda || null : null, ifc: c.ifc, marcaAtual: c.marca || "", nome: c.metal ? M().nome(c) : (c.tipo === "pilar" ? "Pilar " : "Viga ") + c.id };
+             solda: c.metal ? c.metal.solda || null : null, ifc: c.ifc, marcaAtual: c.marca || "", nome: c.metal ? M().nome(c) : (c.tipo === "pilar" ? "Pilar " : "Viga ") + c.id,
+             /* ACABAMENTO (js/metaldetalhe.js, S10): comprimentos externo/interno e o tipo de cada ponta, a CURVA (raio e
+                desenvolvimento) e a BOCA DE LOBO — vão para o desenho de fabricação e para a lista de corte */
+             fab: c.metal && c.metal.fab ? JSON.parse(JSON.stringify(c.metal.fab)) : null, curva: c.metal && c.metal.curva ? JSON.parse(JSON.stringify(c.metal.curva)) : null, bocas: !!(c.metal && c.metal.bocas) };
   }
   function chapaFab(c) {
     var m = c.metal, C = M().pol.uv(m.contorno).map(function (q) { return [mm(q[0]), mm(q[1])]; });
@@ -147,7 +150,10 @@
       return face + q5(x) + "," + q5(y) + "," + q5(f.d) + "," + q5(f.l);
     }).sort();
     var cc = vt.ct.map(function (i, k) { var g = c0[vt.troca ? (i < 2 ? i + 2 : i - 2) : i] * vt.sg[k]; return Math.round(g * 10) / 10; });
-    return ["P", p.nomePerfil, q5(L), cc.join("/"), p.aco, fs.join(";")].join("|");
+    /* a curva e a boca de lobo também separam marcas (mesmo eixo, ponta diferente = outra peça na fábrica) */
+    var fb = p.fab ? [q5(p.fab.externo), q5(p.fab.interno), [txt(p.fab.ini), txt(p.fab.fim)].sort().join("/")].join(",") : "";
+    var cv = p.curva ? "C" + q5(num(p.curva.R, 0) * 1000) + "/" + q5(p.curva.ang) : "";
+    return ["P", p.nomePerfil, q5(L), cc.join("/"), p.aco, fs.join(";")].join("|") + (fb || cv ? "|" + fb + cv : "");
   }
   function canonChapa(C, furos, rec) {
     /* 8 posições (4 giros × espelho); cada uma levada para a origem; vale a menor como texto */

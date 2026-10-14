@@ -6700,6 +6700,7 @@ try { if (window.BimMetalUI) BimMetalUI.registrar(reg, self); } catch (eMet) {}
 try { if (window.BimCotasUI) BimCotasUI.registrar(reg, self); } catch (eCot) {}
 try { if (window.MadCalcUI) MadCalcUI.registrar(reg, self); } catch (eMad) {}
 try { if (window.BlocokExecUI) BlocokExecUI.registrar(reg, self); } catch (eBkx) {}
+try { if (window.BimCoresCatUI) BimCoresCatUI.registrar(reg, self); } catch (eCC) {}
 try { if (window.BimProjetosUI) BimProjetosUI.registrar(reg, self); } catch (eProj) {}
 BimCmd.registrar(reg);
 try { this._famSync(); } catch (eFs) {}
@@ -7045,11 +7046,22 @@ try { uid = window.BimSelecao ? BimSelecao.pecaEm(vid, [q.x, q.y]) : null; } cat
 if (d.tipo === "corte") extra.cotaClique = -q.y;
 }
 }
+var sob = uid;
+if (!sob && em3d) { try { sob = BIM.uidEm ? BIM.uidEm(ev.clientX, ev.clientY) : null; } catch (eU) { sob = null; } }
+if (!uid && sob) uid = sob;
 if (!uid) { try { var s = BIM.selecao().uids || []; if (s.length === 1) uid = s[0]; } catch (eS) {} }
 var info = uid ? self._nivAquiInfo(uid) : null;
-if (!info && extra.cotaClique == null) return;
+var itNiv = (info || extra.cotaClique != null) ? [{ id: "niv-aqui", rotulo: "Criar nível aqui…", fn: function () { self._nivAquiDialogo(info || { cotas: [] }, extra); } }] : [];
+var SI = window.BimSelInst, temSel = false;
+try { temSel = !!(BIM.selecao().uids || []).length; } catch (eT) {}
+if (SI && SI.ativo && SI.ativo() && (sob || temSel)) {
+var telaV = tela2d ? tela2d.closest(".bim-tela") : null;
 ev.preventDefault();
-BimShell._menuNo(ev.clientX, ev.clientY, [{ id: "niv-aqui", rotulo: "Criar nível aqui…", fn: function () { self._nivAquiDialogo(info || { cotas: [] }, extra); } }]);
+if (SI.abrirMenu(ev.clientX, ev.clientY, sob || null, { vista: telaV ? telaV.getAttribute("data-vista") : "3d", ctrl: !!(ev.ctrlKey || ev.metaKey), extras: itNiv })) return;
+}
+if (!itNiv.length) return;
+ev.preventDefault();
+BimShell._menuNo(ev.clientX, ev.clientY, itNiv);
 }, true);
 },
 _nivRepintar: function () {
@@ -9728,7 +9740,8 @@ daVista: true, semEditarTipo: true, titulo: "Vista 3D: " + nome, icone: "quadrad
 secoes: [
 { nome: "Gráficos", params: [
 { id: "vista-nome", rotulo: "Nome da vista", leitura: true, valor: nome },
-{ id: "vista-orto", rotulo: "Ortogonal", tipo: "sim-nao", valor: orto, leitura: !temModelo, motivo: "Abra um modelo primeiro" } ] },
+{ id: "vista-orto", rotulo: "Ortogonal", tipo: "sim-nao", valor: orto, leitura: !temModelo, motivo: "Abra um modelo primeiro" },
+{ id: "cc:on", rotulo: "Cores por categoria", tipo: "sim-nao", valor: !!(window.BimCoresCatUI && BimCoresCatUI.ligada(id)), leitura: !temModelo, motivo: "Abra um modelo primeiro" } ] },
 { nome: "Extensões", params: [
 { id: "vista-caixa", rotulo: "Caixa de corte", tipo: "sim-nao", valor: caixa, leitura: !temModelo, motivo: "Abra um modelo primeiro" } ] }
 ].concat(
@@ -9741,6 +9754,7 @@ var on;
 try {
 if (pid === "vista-caixa") { on = id === "3d" ? b.caixaCorte(!!valor) : b.vistaCaixaCorte(id, !!valor); BimRibbon.setAtivo("caixa-corte", !!on); }
 if (pid === "vista-orto") { on = id === "3d" ? b.ortogonal(!!valor) : b.vistaOrtogonal(id, !!valor); BimRibbon.setAtivo("ortogonal", !!on); }
+if (pid === "cc:on" && window.BimCoresCatUI) BimCoresCatUI.mudarVista(id, pid, valor);
 BimShell.pintarFita();
 } catch (e2) {}
 return self._bimPropsVista();
@@ -9835,6 +9849,7 @@ st.lista.forEach(function (v) { if (v.tipo === "2d" || v.tipo === "folha") retur
 } catch (e) {}
 this._bimVxDocs();
 try { BimRibbon.setAtivo("lado-a-lado", st.lado); BimShell.pintarFita(); } catch (e2) {}
+try { if (window.BimCoresCatUI) BimCoresCatUI.aoMudarVista(); } catch (eCC) {}
 requestAnimationFrame(function () { requestAnimationFrame(function () { try { BIM.vistasRedimensionar(); } catch (e3) {} }); });
 },
 _bimVxFechar: function (id) {
@@ -19081,7 +19096,7 @@ try { if (window.BimAmbienteUI) BimAmbienteUI.aoSelecionar(info); } catch (eAm) 
 self._bimSelecao = info || null;
 try { self._bimCascaContexto(); } catch (e) {}
 try { if (window.BimShell) BimShell.pintarProps(info ? self._bimPropsPeca(info) : null); } catch (eP) {}
-try { if (window.BimShell) BimShell.contadores(self._bimRotuloVis(), info ? (info.nome || info.tipo) : null); } catch (e2) {}
+try { var nSelC = 0; try { nSelC = (BIM.selecao().uids || []).length; } catch (eN) {} if (window.BimShell) BimShell.contadores(self._bimRotuloVis(), nSelC > 1 ? nSelC + " selecionados" : (info ? (info.nome || info.tipo) : null)); } catch (e2) {}
 if (self._bimModoRevit()) {
 var boxR = document.getElementById("bim-info");
 if (boxR && boxR.getAttribute("data-bim-balao") === "selecao") { boxR.style.display = "none"; boxR.removeAttribute("data-bim-balao"); }
@@ -67940,5 +67955,5 @@ UI.toast("Orçamentista: " + n.casado + " casados · " + n.revisar + " para revi
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=908f2b1493"},{"src":"js/bim-pacote.js?v=ab1162fa29","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=e18fd80047","modulo":true}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=c54a0e6f36"},{"src":"js/bim-pacote.js?v=fb970d145f","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=e18fd80047","modulo":true}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

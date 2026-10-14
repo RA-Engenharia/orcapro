@@ -86,7 +86,38 @@
       var base = clone(par); delete base.sentidoLinha;
       var g = M.linha({ P1: P1, P2: p, sentido: sentido, yPe: alt.yPe, yTopo: alt.yTopo, norma: par.norma, largura: par.largura, lanceMax: par.lanceMax, patamarComp: par.patamarComp, par: base });
       if (g.ok) g.alt = alt;
+      if (g.ok && alt.chegada && par.abrirPiso !== false && par.patamarTopoAuto !== false) { var gp = this.comPatamarTopo(s, p, g, alt, base, sentido); if (gp) return gp; }
       return g;
+    },
+    /* REVISÃO S6 (Rogério, 14/10): "sempre tem que ter um PATAMAR" — a escada que sai (ou chega) pela FACE onde o piso termina
+       (a projeção fica fora dele) ganha o patamar de topo no nível do piso acabado, com o comprimento da norma (lpDe: ≥ a
+       largura e ≥ 0,80 m na NR-12 — NR-12, Anexo III, 12 e) dá a largura útil ≥ 0,60 m; os 0,80 m são da ABNT NBR ISO 14122-3,
+       conferir); a projeção SOBRE o piso não leva patamar (o piso é o patamar) — lá a criação abre o vão */
+    comPatamarTopo: function (s, p, g, alt, base, sentido) {
+      var M = E(), el = alt.chegada, par = s.par, P1 = s.pts[0]; if (!M || !el || !el.poly || !g.par) return null;
+      var pl = global.PerfisAco && PerfisAco.completo ? PerfisAco.completo(g.par.longarina || "C200X17.1") : null;
+      var ab = M.abertura({ geo: g, el: el, largura: g.par.largura, bLong: pl && pl.bf ? pl.bf / 1000 : 0.06, folga: 0.10 });
+      if (!ab || !ab.ok || ab.precisa) return null;
+      var Lpt = M.lpDe(g.ajuste ? g.ajuste.norma : par.norma, num(g.par.largura, 0.8), par.patamarComp);
+      var dx = p[0] - P1[0], dz = p[2] - P1[2], L = Math.sqrt(dx * dx + dz * dz); if (L < 0.05) return null;
+      var u = [dx / L, dz / L], ts = M.cruzaBorda(el.poly, [P1[0], P1[2]], u), g2 = null, lp = Lpt;
+      var op = { sentido: sentido, yPe: alt.yPe, yTopo: alt.yTopo, norma: par.norma, largura: par.largura, lanceMax: par.lanceMax, patamarComp: par.patamarComp, par: base };
+      var I = M._int || {};
+      if (sentido === "desce") {
+        var tb = null; ts.forEach(function (t) { if (Math.abs(t) <= 0.60 && (tb == null || Math.abs(t) < Math.abs(tb))) tb = t; }); if (tb == null) return null;   /* clique longe da borda: não é a saída pela face */
+        op.P1 = [P1[0] + u[0] * (tb + Lpt), P1[1], P1[2] + u[1] * (tb + Lpt)]; op.P2 = p;
+        g2 = M.linha(op);
+      } else {
+        if (I.dentro && I.dentro(el.poly, P1[0], P1[2])) return null;   /* o pé embaixo do piso: a escada sobe por dentro (vão), não pela face */
+        var tE = null; ts.forEach(function (t) { if (t > 0.05 && (tE == null || t < tE)) tE = t; }); if (tE == null) return null;
+        op.P1 = P1; op.P2 = [P1[0] + u[0] * Math.max(0.06, tE - Lpt), p[1], P1[2] + u[1] * Math.max(0.06, tE - Lpt)];
+        g2 = M.linha(op); if (g2.ok && g2.ajuste && g2.alcancou) lp = r4(tE - g2.ajuste.projecao);
+      }
+      if (!g2 || !g2.ok) return g2;
+      g2.alt = alt; g2.patamarTopo = { L: lp, Lmin: Lpt };
+      if (g2.par) { g2.par.patamarTopo = r4(lp); g2.par.patamarTopoFix = "auto"; }
+      g2.texto = (g2.texto || "") + (g2.alcancou ? " + patamar de topo de " + br(lp) + " m no nível do piso (mín. " + br(Lpt) + " m)" : " (já contando o patamar de topo de " + br(Lpt) + " m)");
+      return g2;
     },
     /* a fixação "auto" e o concreto/aço das pontas pelo modelo (pé e topo da escada) */
     /* PISO INDUSTRIAL: o que está embaixo de cada canto (pilarete até ele) e o concreto para a placa de base dos pilaretes */
@@ -149,12 +180,17 @@
       if (tipo !== "escada" || !par || (!par.fixPe && !par.fixTopo)) return par;
       var M = E(); if (!M) return par;
       var q = clone(par), tp = M.topoDe(q); if (!tp) return par;
-      var es = els(), c = tp.dir, pe = tp.pe, topo = tp.topo;
-      var apoio = M.elementoEm(es, pe[0], pe[2], pe[1], { tolH: 0.05, tolV: 0.06 });
-      var chegada = M.elementoEm(es, topo[0] + c[0] * 0.15, topo[2] + c[1] * 0.15, topo[1], { tolH: 0.30, tolV: 0.06 });
+      var es = els(), c = tp.dir, pe = tp.pe, topo = tp.topo, offT = num(q.patamarTopo, 0) > 0.2 && q.patamarTopoFix ? num(q.patamarTopo, 0) : 0;
+      if (offT) topo = [topo[0] + c[0] * offT, topo[1], topo[2] + c[1] * offT];   /* com patamar de topo, quem liga é a borda dele */
+      /* REVISÃO S6 (Rogério, 14/10): a PEÇA ESTRUTURAL MAIS PRÓXIMA (até 0,30 m no pé e 0,50 m no topo, no nível); sem peça, os
+         apoios (pés de apoio/pilaretes) */
+      var apoio = M.elementoEm(es, pe[0], pe[2], pe[1], { tolH: 0.05, tolV: 0.06 }); if (!apoio && M.maisProxima) { var mpP = M.maisProxima(es, pe[0], pe[2], pe[1], { tolH: 0.30, tolV: 0.06 }); apoio = mpP ? mpP.el : null; }
+      var chegada = M.elementoEm(es, topo[0] + c[0] * 0.15, topo[2] + c[1] * 0.15, topo[1], { tolH: 0.30, tolV: 0.06 }); if (!chegada && M.maisProxima) { var mpT = M.maisProxima(es, topo[0] + c[0] * 0.15, topo[2] + c[1] * 0.15, topo[1], { tolH: 0.50, tolV: 0.10 }); chegada = mpT ? mpT.el : null; }
       var au = M.fixacaoAuto({ apoioPe: apoio, chegada: chegada });
       if (q.fixPe === "auto") q.fixPe = au.pe;
       if (q.fixTopo === "auto") q.fixTopo = q.fixPe === "apoiada" && au.topo === "apoiada" ? "ancorada" : au.topo;
+      if (offT && q.patamarTopoFix === "auto") q.patamarTopoFix = au.topo;
+      q.pecaTopo = chegada ? { id: chegada.id, tipo: chegada.tipo, material: chegada.material } : null;
       /* REVISÃO S6 (C2): o contorno E os FUROS da laje vão para o cálculo da ancoragem; a abertura que a própria escada vai
          abrir (par._aberturaTopo, posta pela criação) entra antes — o furo novo ou o contorno recortado */
       var info = function (el) { return el ? { id: el.id, tipo: el.tipo, esp: el.esp, fck: el.fck, poly: el.poly, furos: el.furos || [], topo: el.topo, rotulo: (el.tipo === "laje" ? "Laje " : "Piso ") + el.id } : null; };
@@ -229,7 +265,7 @@
       var pl = global.PerfisAco && PerfisAco.completo ? PerfisAco.completo(g.par.longarina || "C200X17.1") : null;
       var ab = L.abertura({ geo: g, el: el, largura: g.par.largura, bLong: pl && pl.bf ? pl.bf / 1000 : 0.06, folga: 0.10 });
       if (ab && !ab.ok) return ab.motivo;
-      if (ab && ab.precisa && el.tipo === "piso" && ab.modo === "recorte") return "a passagem cruzaria a borda do piso industrial " + (el.prontaId || el.id) + ": puxe a escada para chegar PELA borda (sem abertura) ou mais para dentro (abertura interna com vigamento)";
+      if (ab && ab.precisa && el.tipo !== "laje" && !(el.tipo === "piso" && el.prontaId)) return "a escada passa pelo " + el.tipo + " " + el.id + ", que a tela não sabe abrir: abra a passagem à mão antes (ou desligue \"abrir o piso\")";
       return null;
     },
     /* ------------------------------------------------------------ criar: escada + abertura + guarda-corpo num lote só */
@@ -245,8 +281,9 @@
           var feito = this.abrir_(el, ab, opsAb);
           if (feito.ok) {
             extras.push(feito.texto);
+            if (feito.critico) { par.criticosExtra = [feito.critico]; avisos.push(feito.critico.replace(/^não verificado: /, "").replace(/ \(CRÍTICO\)$/, "")); }
             par._aberturaTopo = { el: el.id, furo: ab.modo === "furo" ? ab.poly : null, contorno: ab.modo === "recorte" ? ab.contornoNovo : null, vigaNaBorda: el.tipo === "piso" };
-            gcAb = this.guardaAbertura(el, ab); if (gcAb && gcAb.ok) extras.push("guarda-corpo em " + ab.guarda.length + " lado(s) da abertura");
+            gcAb = this.guardaAbertura(el, ab); if (gcAb && gcAb.ok) extras.push("guarda-corpo em " + ab.guarda.length + " lado(s) da abertura" + (gcAb.n > 1 ? " (" + gcAb.n + " trechos)" : ""));
             if (el.tipo === "laje") avisos.push("a laje " + el.id + " ganhou " + (ab.modo === "furo" ? "um furo" : "um recorte") + " de " + br(ab.comprimento) + " × " + br(ab.largura) + " m — verifique a laje com a abertura (armadura de borda do furo) no projeto de concreto");
           } else { this.recusa = feito.motivo; status("Escada por linha: " + feito.motivo); toast("A escada NÃO foi criada: " + feito.motivo, "aviso", 12000); painel({ t: "A escada não foi criada", s: feito.motivo }, "falta"); return { ok: false, motivo: feito.motivo }; }
         } else if (ab && !ab.ok) { this.recusa = ab.motivo; status("Escada por linha: " + ab.motivo); toast("A escada NÃO foi criada: " + ab.motivo, "aviso", 12000); painel({ t: "A escada não foi criada", s: ab.motivo }, "falta"); return { ok: false, motivo: ab.motivo }; }
@@ -279,16 +316,33 @@
         if (pr && pr.tipo === "piso" && pr.info && pr.info.par) {
           var pp = M.parParaRefazer(pr), th = num(pp.giro, 0) * Math.PI / 180, c = Math.cos(th), sn = Math.sin(th);
           var aLocal = function (q) { var dx = q[0] - pp.x0, dz = q[1] - pp.z0; return [r4(dx * c - dz * sn), r4(dx * sn + dz * c)]; };
-          /* REVISÃO S6 (A2): a abertura que CRUZA a borda do piso industrial NÃO é feita sozinha — o vigamento de um recorte de
-             borda (vigas que perdem o apoio na borda) não fecha estável sem projeto: a tela diz o que fazer, nunca "refeito" */
-          if (ab.modo === "recorte") return { ok: false, motivo: "a passagem cruzaria a borda do piso industrial " + el.prontaId + ": puxe a escada para chegar PELA borda (sem abertura) ou mais para dentro (abertura interna com vigamento)" };
           var locAb = ab.poly.map(aLocal);
+          /* REVISÃO S6 (Rogério, 14/10): no RECORTE, a sobra de piso menor que 0,50 m entre o vão e o lado do piso vai junto (o
+             vão vai até o lado): o pedaço de viga de borda de 0,3 m virava "peça solta" na Estrutura desenhada; o guarda-corpo
+             que ficaria sobre a sobra retirada sai */
+          if (ab.modo === "recorte" && !String(pp.contorno || "").trim() && num(pp.Lx, 0) > 0 && num(pp.Lz, 0) > 0) {
+            var xs = locAb.map(function (q) { return q[0]; }), zs = locAb.map(function (q) { return q[1]; }), bx = [Math.min.apply(null, xs), Math.max.apply(null, xs), Math.min.apply(null, zs), Math.max.apply(null, zs)], LX = num(pp.Lx, 0), LZ = num(pp.Lz, 0), mudou = false;
+            if (bx[0] > 1e-3 && bx[0] < 0.5) { bx[0] = -0.2; mudou = true; } if (bx[1] < LX - 1e-3 && bx[1] > LX - 0.5) { bx[1] = LX + 0.2; mudou = true; }
+            if (bx[2] > 1e-3 && bx[2] < 0.5) { bx[2] = -0.2; mudou = true; } if (bx[3] < LZ - 1e-3 && bx[3] > LZ - 0.5) { bx[3] = LZ + 0.2; mudou = true; }
+            if (mudou) {
+              locAb = [[bx[0], bx[2]], [bx[1], bx[2]], [bx[1], bx[3]], [bx[0], bx[3]]].map(function (q) { return [r4(q[0]), r4(q[1])]; });
+              ab.guarda = (ab.guarda || []).filter(function (sg) { var m = aLocal([(sg[0][0] + sg[1][0]) / 2, (sg[0][1] + sg[1][1]) / 2]); return !(m[0] > bx[0] + 0.02 && m[0] < bx[1] - 0.02 && m[1] > bx[2] + 0.02 && m[1] < bx[3] - 0.02); });
+              ab.ampliado = true;
+            }
+          }
           pp.aberturas = (Array.isArray(pp.aberturas) ? pp.aberturas : []).concat([locAb]);
           pp.passagens = (Array.isArray(pp.passagens) ? pp.passagens : []).concat([locAb]);
+          /* REVISÃO S6 (Rogério, 14/10): o piso refeito com o vão passa pelo MESMO refino da criação (a viga que não passa sobe de
+             perfil) — sem isso o vão novo deixava a viga de borda reprovada e o piso saía com o CRÍTICO à toa */
+          try { var ppR = this.refinarPiso(this.resolverPiso(pp)); if (ppR) pp = ppR; } catch (eR) {}
           var r2 = U.preparar("piso", pp, {}, pr);
           if (!r2 || !r2.ok) return { ok: false, motivo: "o piso " + el.prontaId + " não refez com a abertura: " + ((r2 && r2.motivo) || "") };
           r2.op.ops.forEach(function (o) { ops.push(o); });
-          return { ok: true, texto: (ab.modo === "recorte" ? "recorte de " : "abertura de ") + br(ab.comprimento) + " × " + br(ab.largura) + " m no piso industrial (refeito, com " + (ab.modo === "recorte" ? "as vigas de borda no contorno novo" : "o vigamento da abertura") + ")" };
+          /* REVISÃO S6 (Rogério, 14/10): o piso refeito com o vão passa pela Estrutura desenhada; não fechando, a escada leva o
+             item CRÍTICO (o vão e o guarda-corpo ficam feitos — o que falta é a estrutura do piso em volta) */
+          var critP = null, AA = global.MetalAcessos;
+          if (AA && AA.avaliar) { try { var avP = AA.avaliar(r2), dP = avP && avP.dimensionamento; if (!dP) critP = "não verificado: o piso industrial " + el.prontaId + " refeito com o vão da escada — a Estrutura desenhada não avaliou (CRÍTICO)"; else if (dP.status === "reprovado") { var fP = dP.verificacoes.filter(function (v) { return v.ok === false; })[0]; critP = "não verificado: o piso industrial " + el.prontaId + " refeito com o vão da escada NÃO FECHA na Estrutura desenhada (" + (fP ? String(fP.nome).replace(/^Estrutura desenhada — /, "") : "reprovado") + ") — reforce o vigamento em volta do vão ou desenhe os apoios embaixo (CRÍTICO)"; } } catch (eA) { critP = "não verificado: o piso industrial " + el.prontaId + " refeito com o vão — a avaliação falhou (CRÍTICO)"; } }
+          return { ok: true, critico: critP, texto: (ab.modo === "recorte" ? "recorte de " : "abertura de ") + br(ab.comprimento) + " × " + br(ab.largura) + " m no piso industrial (refeito, com " + (ab.modo === "recorte" ? "as vigas de borda no contorno novo" : "o vigamento da abertura") + ")" };
         }
       }
       return { ok: false, motivo: "a escada chega no " + el.tipo + " " + el.id + " que não é laje por contorno nem piso industrial: abra a passagem à mão antes (ou desligue \"abrir o piso\")" };
@@ -296,8 +350,15 @@
     /* GUARDA-CORPO em volta da abertura (os lados que não são a entrada), em cadeias contínuas */
     guardaAbertura: function (el, ab) {
       var U = PU(); if (!ab.guarda || !ab.guarda.length) return null;
-      var pts = [ab.guarda[0][0], ab.guarda[0][1]];
-      for (var i = 1; i < ab.guarda.length; i++) { var u = pts[pts.length - 1], g = ab.guarda[i]; if (Math.hypot(g[0][0] - u[0], g[0][1] - u[1]) < 1e-3) pts.push(g[1]); else break; }
+      /* REVISÃO S6 (Rogério, 14/10): uma peça de guarda-corpo por CADEIA contínua (no recorte os dois lados ficam soltos) */
+      var cadeias = [], cur = null;
+      ab.guarda.forEach(function (g) { var u = cur ? cur[cur.length - 1] : null; if (u && Math.hypot(g[0][0] - u[0], g[0][1] - u[1]) < 1e-3) cur.push(g[1]); else { cur = [g[0], g[1]]; cadeias.push(cur); } });
+      var self = this, rs = cadeias.map(function (c) { return self.guardaCadeia(el, c); }).filter(function (r) { return r && r.ok; });
+      if (!rs.length) return null;
+      return { ok: true, n: rs.length, op: { ops: rs.reduce(function (o, r) { return o.concat(r.op.ops); }, []) } };
+    },
+    guardaCadeia: function (el, pts) {
+      var U = PU();
       var a = pts[0], par = { caminho: pts.map(function (q) { return br(q[0] - a[0], 3) + " " + br(q[1] - a[1], 3); }).join("; "), x0: a[0], y0: el.topo, z0: a[1], giro: 0, norma: "nr12", usoGuarda: "industrial", fixacao: el.material === "concreto" ? "chapa" : "solda" };
       return U.preparar("guardacorpo", par, {}, null);
     },

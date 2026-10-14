@@ -66,6 +66,7 @@
   <link rel="stylesheet" href="css/bimcotas.css">
   <link rel="stylesheet" href="css/bimprops.css">
   <link rel="stylesheet" href="css/bimtabela.css">
+  <link rel="stylesheet" href="css/bimcorescat.css">
   <link rel="stylesheet" href="css/tour360.css">
   <link rel="stylesheet" href="css/visual.css">
 </head>
@@ -388,6 +389,8 @@
   <script src="js/metalcriar.js"></script>
   <!-- METÁLICA — PEÇAS PRONTAS (13/10/2026): treliça, escada, mezanino, viga de rolamento, rack e skid paramétricos (motor puro) -->
   <script src="js/metalprontas.js"></script>
+  <!-- METÁLICA › S10 (14/10/2026, js/metaldetalhe.js): ACABAMENTO DE FABRICAÇÃO do guarda-corpo — meia-esquadria nos cantos, terminais boleados, encontros sem atravessar, rodapé a topo, interferências e a folha de detalhe típico — motor puro (o guardaCorpo do js/metalprontas.js chama) -->
+  <script src="js/metaldetalhe.js"></script>
   <!-- METÁLICA › T — TANQUES (14/10/2026): motor (API 650, vento NBR 6123, Zick, torre), geometria no BIM e memorial — motores puros -->
   <script src="js/acotanque.js"></script>
   <script src="js/metaltanque.js"></script>
@@ -662,6 +665,8 @@
   <script src="js/bimbarrasnaps.js"></script>
   <script src="js/bimplantamodelar.js"></script>
   <script src="js/bimselecao.js"></script>
+  <!-- SELECIONAR TODAS AS INSTÂNCIAS (14/10/2026): o clique direito na peça (3D, planta, corte) — mesmo tipo, descrição, peça pronta, categoria; nesta vista × no projeto; apagar/ocultar/isolar em lote -->
+  <script src="js/bimselinst.js"></script>
   <!-- P5: a tabela numa aba de vista, o editor (Propriedades da tabela) e o .xlsx — só com a prévia do modelador -->
   <script src="js/bimtabelaui.js"></script>
   <!-- P8: folhas no BIM (vista em escala, carimbo parametrizado, listas, revisões) e o DXF da vista e da folha — só com a prévia do modelador -->
@@ -678,6 +683,9 @@
   <!-- MATERIAIS (09/10/2026): materiais do projeto (Gerenciar › Biblioteca) — motor puro em js/bimmateriais.js, tela e ganchos em js/bimmateriaisui.js -->
   <script src="js/bimmateriais.js"></script>
   <script src="js/bimmateriaisui.js"></script>
+  <!-- CORES POR CATEGORIA (14/10/2026): cada tipo de peça numa cor (pilares, vigas, componentes, pisos…), por vista, só gráfico — motor puro em js/bimcorescat.js, tela em js/bimcorescatui.js -->
+  <script src="js/bimcorescat.js"></script>
+  <script src="js/bimcorescatui.js"></script>
   <!-- PROJETOS BIM (12/10/2026): o BIM abre na tela inicial (nada carrega sozinho); projeto com nome e obra, salvo no sistema (IndexedDB) e na pasta do computador, recentes — motor puro em js/bimprojetos.js, tela e ganchos em js/bimprojetosui.js -->
   <script src="js/bimprojetos.js"></script>
   <script src="js/bimprojetosui.js"></script>

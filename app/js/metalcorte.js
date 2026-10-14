@@ -214,9 +214,21 @@
 
   /* comprimento de CORTE da barra: o eixo + a projeção do corte inclinado (alma: meia altura; aba: meia largura) */
   function comprimentoCorte(p) {
+    /* peça com o ACABAMENTO medido (js/metaldetalhe.js: meia-esquadria, boca de lobo, curva): o externo medido nas
+       geratrizes do sólido é o comprimento de corte — a fórmula abaixo não conhece a boca de lobo */
+    if (p.fab && num(p.fab.externo, 0) > 0) return r1(num(p.fab.externo, 0));
     var ct = p.cortes || {}, d = p.dims || {}, tg = function (g) { return Math.abs(Math.tan(num(g, 0) * Math.PI / 180)); };
     var ext = (tg(ct.almaIni) + tg(ct.almaFim)) * num(d.h, 0) / 2 + (tg(ct.abaIni) + tg(ct.abaFim)) * num(d.b, 0) / 2;
     return r1(num(p.L, 0) + ext);
+  }
+  /* o ACABAMENTO das pontas para a lista: ângulo do corte com o eixo, comprimento interno, curva (raio e
+     desenvolvimento), boca de lobo — texto curto "45°/45°", "R 97 · desenv. 303", "boca de lobo" */
+  function acabamento(p) {
+    var f = p.fab; if (!f && !p.curva) return null;
+    var tp = function (t, a) { return t === "meia-esquadria" || t === "inclinado" ? br(a, 1).replace(/,0$/, "") + "°" : (t === "boca" ? "boca de lobo" : (t === "topo" ? "reto (topo)" : "reto")); };
+    if (f && f.curva) return { texto: "curva " + br(f.ang, 0) + "° R " + br(f.R, 0) + " - desenv. " + br(f.desenvolvimento, 0), interno: null, curva: { R: f.R, ang: f.ang, desenvolvimento: f.desenvolvimento } };
+    if (!f) return null;
+    return { texto: tp(f.ini, f.angIni) + " / " + tp(f.fim, f.angFim), interno: num(f.interno, 0), angIni: f.angIni, angFim: f.angFim, ini: f.ini, fim: f.fim };
   }
   /* o PLANO DE CORTE do modelo: numeracao = BimMetalFab.numerar(estado) */
   function planoBarras(n, cfg0) {
@@ -225,7 +237,7 @@
       var p = g.rep; if (!p || p.kind !== "perfil") return;
       var k = p.nomePerfil + "|" + p.aco;
       if (!grupos[k]) { grupos[k] = { perfil: p.nomePerfil, aco: p.aco, kgm: num(p.kgm, 0), itens: [] }; ordem.push(k); }
-      grupos[k].itens.push({ marca: g.marca, L: comprimentoCorte(p), Leixo: r1(num(p.L, 0)), qtd: g.ids.length });
+      grupos[k].itens.push({ marca: g.marca, L: comprimentoCorte(p), Leixo: r1(num(p.L, 0)), qtd: g.ids.length, acab: acabamento(p) });
     });
     ordem.sort();
     var out = ordem.map(function (k) {
@@ -395,8 +407,8 @@
     /* PEÇAS */
     var wq = wb.addWorksheet("Peças");
     titulo(wq, "Peças de perfil a cortar", "Comprimento de corte = comprimento pelo eixo + projeção do corte inclinado nas pontas.", 6);
-    var lq = []; plano.grupos.forEach(function (g) { g.itens.forEach(function (it) { lq.push({ marca: it.marca, perfil: g.perfil, aco: g.aco, eixo: it.Leixo, corte: it.L, qtd: it.qtd }); }); });
-    tabela(wq, [["marca", "Marca", 9], ["perfil", "Perfil", 22], ["aco", "Aço", 18], ["eixo", "Compr. pelo eixo (mm)", 16, "#,##0"], ["corte", "Compr. de corte (mm)", 16, "#,##0"], ["qtd", "Qtd", 7, "0"]], lq, { marca: "TOTAL", qtd: plano.totais.pecas }, 4);
+    var lq = []; plano.grupos.forEach(function (g) { g.itens.forEach(function (it) { lq.push({ marca: it.marca, perfil: g.perfil, aco: g.aco, eixo: it.Leixo, corte: it.L, interno: it.acab && it.acab.interno ? it.acab.interno : null, pontas: it.acab ? it.acab.texto : "reto / reto", qtd: it.qtd }); }); });
+    tabela(wq, [["marca", "Marca", 9], ["perfil", "Perfil", 22], ["aco", "Aço", 18], ["eixo", "Compr. pelo eixo (mm)", 16, "#,##0"], ["corte", "Compr. de corte - externo (mm)", 18, "#,##0"], ["interno", "Compr. interno (mm)", 14, "#,##0"], ["pontas", "Pontas (corte com o eixo)", 26], ["qtd", "Qtd", 7, "0"]], lq, { marca: "TOTAL", qtd: plano.totais.pecas }, 4);
     /* SOBRAS */
     var wr = wb.addWorksheet("Sobras");
     titulo(wr, "Sobras reaproveitáveis", "Pontas a partir de " + br(c.sobraMin, 0) + " mm: identificar e estocar (perfil, aço e comprimento).", 5);
@@ -443,7 +455,7 @@
   var BimMetalCorte = {
     CONFIG_BARRAS: CONFIG_BARRAS, CONFIG_CHAPAS: CONFIG_CHAPAS,
     cfgBarras: cfgBarras, cfgChapas: cfgChapas, lerLista: lerLista, lerChapas: lerChapas,
-    otimizarBarras: otimizarBarras, planoBarras: planoBarras, comprimentoCorte: comprimentoCorte,
+    otimizarBarras: otimizarBarras, planoBarras: planoBarras, comprimentoCorte: comprimentoCorte, acabamento: acabamento,
     nestingChapas: nestingChapas, itensChapas: itensChapas, maxrects: maxrects,
     xlsxCorte: xlsxCorte, xlsxNesting: xlsxNesting, br: br
   };

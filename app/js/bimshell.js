@@ -1131,6 +1131,8 @@
        * Por que existem: a coluna de Propriedades + Navegador ocupa 268px
        * fixos no computador, e a fita ocupa a faixa de cima. Num notebook
        * sobra pouco para o 3D, e a tela fica cheia demais para trabalhar. */
+      /* CORES POR CATEGORIA (js/bimcorescatui.js): o interruptor da vista ativa, ao lado do Estilo */
+      if (global.BimCoresCatUI && global.BimCoresCatUI.botaoBarra) { var bCC = global.BimCoresCatUI.botaoBarra(el, ico); if (bCC) d.appendChild(bCC); }
       /* SELECIONAR (js/bimselecao.js, 09/10/2026): o esquerdo SELECIONA; a Mão é a ferramenta explícita
          de mover a vista com o esquerdo (o botão do meio move sempre). Estado da tela, como os de baixo. */
       var bMao = el("button", "rv-vb");

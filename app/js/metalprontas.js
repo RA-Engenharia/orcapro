@@ -358,6 +358,11 @@
    * pts = [[u, y, w]…] a linha de BASE (onde o montante nasce); alturas: as travessas
    * (acima da base); os montantes nas pontas e a no máximo `espac` ao longo do caminho */
   function guardaCorpo(K, pts, o) {
+    /* GANCHO S10 (14/10/2026): o ACABAMENTO DE FABRICAÇÃO (meia-esquadria nos cantos, terminais boleados, encontros
+       sem atravessar, rodapé a topo) mora no js/metaldetalhe.js; sem ele (ou desligado: MetalDetalhe.ligar(false), o
+       controle negativo do teste) segue o gerador de antes, abaixo. */
+    var Dt = dep("MetalDetalhe", "./metaldetalhe.js");
+    if (Dt && Dt.ativo() && o.acabamento !== false) return Dt.guardaCorpo(K, pts, o, ajudantes());
     var lig = "gc-" + o.gid, pm = perfilDe(o.montante), pc = perfilDe(o.corrimao), Hg = o.altura, sgs = [];
     if (!pm || !pc || pts.length < 2) return 0;
     var n0 = K.pecas.length, posts = [], fechado = pts.length > 3 && len(sub(pts[0], pts[pts.length - 1])) < 1e-3;   /* contorno fechado (guarda-corpo por retângulo): sem montante repetido */
@@ -560,7 +565,7 @@
       return { uTop: uTop, yTopo: nR * e };
     }
     /* PATAMAR: quadro de U, chapa por cima (topo no nível), pilaretes nos cantos de fora, guarda-corpo nas bordas de fora */
-    function patamar(u0, u1, w0, w1, y, cantos, bordas) {
+    function patamar(u0, u1, w0, w1, y, cantos, bordas, extra) {
       var pq = perfilDe(p.patamarPerfil), pr = perfilDe(p.pilarete), yV = y - tD;
       [[u0, w0, u1, w0], [u1, w1, u0, w1], [u0, w1, u0, w0], [u1, w0, u1, w1]].forEach(function (s, i) {
         K.barra([s[0], yV, s[1]], [s[2], yV, s[3]], { ferr: "viga", cat: pq ? pq.cat : p.patamarPerfil, just: "topo", lado: "esquerda", papel: "Viga do patamar", aco: p.aco, nome: "Viga do patamar " + (i + 1) }, "patamar");
@@ -571,7 +576,7 @@
       /* o pilarete vai até o TOPO DO AÇO (a linha das vigas do patamar, "topo"), como no mezanino: no cálculo da estrutura
          desenhada a ponta dele é o nó da viga (parando no fundo da viga ele ficava solto — frente S6, 14/10/2026) */
       cantos.forEach(function (q, i) { K.barra([q[0], 0, q[1]], [q[0], yV, q[1]], { ferr: "pilar", cat: pr ? pr.cat : p.pilarete, papel: "Pilarete do patamar", aco: p.aco, nome: "Pilarete do patamar " + (i + 1) }, "pilaretes"); });
-      if (cantos.length) patReg.push({ F: K.F, cantos: cantos, yB: yV, Lp: Math.abs(u1 - u0) });
+      if (cantos.length) { var rg = { F: K.F, cantos: cantos, yB: yV, Lp: Math.abs(u1 - u0) }; if (extra) Object.keys(extra).forEach(function (k9) { rg[k9] = extra[k9]; }); patReg.push(rg); }
       if (p.guarda !== "nenhum") bordas.forEach(function (b, i) { guardaCorpo(K, [[b[0], y, b[1]], [b[2], y, b[3]]], gOpt(gid + "-pt" + i)); });
     }
     var F0 = K.F, info = {}, nLances = 1, hLanceMax = p.desnivel, patC = 0, patL = 0;
@@ -603,7 +608,11 @@
     /* PATAMAR SUPERIOR (opcional, reta e com patamares): a chegada no nível de cima, com guarda-corpo nos lados */
     if ((p.forma === "reta" || p.forma === "patamares") && p.patamarTopo > 0.2) {
       var uT0 = info.uTop, uT1 = uT0 + p.patamarTopo, yT = n * e;
-      patamar(uT0, uT1, -W / 2, W / 2, yT, [[uT1, -W / 2], [uT1, W / 2]], lados.map(function (sg3) { return [uT0, sg3 * W / 2, uT1, sg3 * W / 2]; }));
+      /* REVISÃO S6 (Rogério, 14/10): o patamar de TOPO da escada por linha — de pé sozinho (pilaretes nos 4 cantos com X nas
+         faces: a Estrutura desenhada não depende da ligação para ficar estável) e a borda do lado do piso (uT1) LIGADA na
+         peça da chegada (viga de borda do piso/laje: patamarTopoFix parafusada/ancorada, verificada); sem peça, só os apoios */
+      if (p.patamarTopoFix) patamar(uT0, uT1, -W / 2, W / 2, yT, [[uT0, -W / 2], [uT0, W / 2], [uT1, -W / 2], [uT1, W / 2]], lados.map(function (sg3) { return [uT0, sg3 * W / 2, uT1, sg3 * W / 2]; }), { topo: true, u0: uT0, u1: uT1, yT: yT, fix: p.patamarTopoFix });
+      else patamar(uT0, uT1, -W / 2, W / 2, yT, [[uT1, -W / 2], [uT1, W / 2]], lados.map(function (sg3) { return [uT0, sg3 * W / 2, uT1, sg3 * W / 2]; }));
     }
     if (p.forma === "reta" || p.forma === "patamares") {
       /* (nada: os ramos acima já montaram) */
@@ -668,11 +677,14 @@
       else nvs.push("não verificado: longarina em chapa (verificar a chapa como viga inclinada à parte)");
       its.push({ tipo: "degrau", material: degXadrez ? "chapa" : "grade", aco: "ASTM A36", t: tD, vao: W, p: pp, gradeH: p.gradeH, gradeT: p.gradeT, gradeA: p.gradeA, q: qPiso });
       if (nLances > 1 && perfilDe(p.patamarPerfil)) its.push({ tipo: "viga", nome: "Viga do patamar", perfil: p.patamarPerfil, aco: p.aco, L: Math.max(patC, patL), faixa: Math.min(patC, patL) / 2, q: qPiso, gPiso: 0.6, travadaPeloPiso: true });
+      /* REVISÃO S6 (Rogério, 14/10): o patamar de TOPO da escada por linha também tem a viga verificada (de baixo até a borda ele
+         pode passar dos 0,80 m da norma — o vão que sobra entre a escada e o piso) */
+      if (p.patamarTopoFix && p.patamarTopo > 0.2 && perfilDe(p.patamarPerfil)) its.push({ tipo: "viga", nome: "Viga do patamar de topo", perfil: p.patamarPerfil, aco: p.aco, L: Math.max(p.patamarTopo, W), faixa: Math.min(p.patamarTopo, W) / 2, q: qPiso, gPiso: 0.6, travadaPeloPiso: true });
       if (fixR) { fixR.itens.forEach(function (it) { its.push(it); }); arr(fixR.naoVerificados).forEach(function (t) { nvs.push(t); }); nvs.push("não verificado: ligação degrau × longarina" + (p.fixPe ? "" : "; base da escada (sem fixação configurada no pé)") + (p.fixTopo ? "" : "; chegada no topo (sem fixação configurada)")); if (nLances > 1) nvs.push("não verificado: as ligações das vigas do patamar"); }
       else { nvs.push("não verificado: ligação degrau × longarina e base da escada (chumbadores)"); if (nLances > 1) nvs.push("não verificado: pilaretes do patamar (compressão) e as ligações do patamar"); }
     } else nvs.push("não verificado: escada caracol — mastro, degraus em balanço e a solda no mastro");
     if (lados.length && perfilDe(p.montante)) its.push({ tipo: "montante", perfil: p.montante, corrimao: p.corrimao, aco: p.aco, uso: p.usoGuarda, espac: p.espac });
-    med.dim = { itens: its, naoVerificados: nvs, criticos: fixR ? arr(fixR.criticos) : [] };
+    med.dim = { itens: its, naoVerificados: nvs, criticos: (fixR ? arr(fixR.criticos) : []).concat(arr(p.criticosExtra)) };
     if (fixR) med.fixacao = { pe: p.fixPe || null, topo: p.fixTopo || null, resumo: fixR.resumo };
     return { resumo: "Escada " + ({ reta: "reta", patamares: "reta com " + (nLances - 1) + " patamar(es)", L: "em L", U: "em U", caracol: "caracol" })[p.forma] + " — desnível " + br(p.desnivel) + " m: " + n + " espelhos de " + cm(e) + " cm, piso de " + cm(pp) + " cm (2e + p = " + cm(2 * e + pp) + " cm" +
       (dgN ? ", " + dgN.ref : (calc.blondel >= 0.63 - 1e-9 && calc.blondel <= 0.64 + 1e-9 ? ", dentro de Blondel" : ", fora de 63 a 64 cm")) + "); " + (cont.degraus || 0) + " degraus" + (cont.longarinas ? ", " + cont.longarinas + " longarinas" : "") + (cont.guarda ? ", " + cont.guarda + " peças de guarda-corpo" : "") + (fixR && fixR.resumo.length ? "; fixação — " + fixR.resumo.join("; ") : ""),
@@ -927,6 +939,9 @@
     var p = normalizar(tipo, par), F = quadroLocal([p.x0, p.y0, p.z0], tipo === "rolamento" ? 0 : p.giro), K = construtor(novoId, F, tipo);
     var r = GERADORES[tipo](p, K, novoId, ctx || {});
     if (!r || r.erro) return { ok: false, motivo: r ? r.erro : "falhou" };
+    /* GANCHO S10 (14/10/2026): guarda-corpos chamados lado a lado (mezanino, plataforma, anelar) que se encontram
+       no mesmo ponto viram UM caminho — meia-esquadria no canto, um montante só (js/metaldetalhe.js finalizar) */
+    var Dt2 = dep("MetalDetalhe", "./metaldetalhe.js"); if (Dt2 && Dt2.ativo() && Dt2.finalizar) Dt2.finalizar(K, ajudantes());
     if (!K.pecas.length) return { ok: false, motivo: "Nenhuma peça foi criada." + (K.avisos.length ? " " + K.avisos.join("; ") : "") };
     if (tipo === "rolamento") { p.pilares = r.medidas.pilares.slice(); p.lado = r.medidas.lado; }
     var avL = []; K.ligs.forEach(function (l) { l.avisos.forEach(function (a) { if (avL.indexOf(a) < 0) avL.push(a); }); });

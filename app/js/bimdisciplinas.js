@@ -108,7 +108,7 @@
     "nova-vista", "lado-a-lado", "vistas", "max-3d", "janela-3d", "paineis", "tamanho-ui", "pele-revit",
     "render-ia", "galeria-ia", "render-fisico",
     "elevacao-vista", "elevacao-interior", "planta-forro", "planta-estrutural", "planta-nova", "chamada-detalhe", "vista-desenho", "duplicar-vista",
-    "modelos-vista", "vg-vista", "estilos-objeto", "navegador-org", "tabela-quantidades", "levantamento-material",
+    "modelos-vista", "vg-vista", "estilos-objeto", "cores-categoria", "cores-categoria-paleta", "navegador-org", "tabela-quantidades", "levantamento-material",
     /* Folhas e exportação técnica */
     "nova-folha", "posicionar-vista", "revisoes-folha", "lista-folhas", "lista-vistas", "exportar-dxf", "exportar-dwg", "pdf-lote",
     /* jogo de pranchas no carimbo do escritório (js/bimfolhaui.js; o botão "Pranchas" da barra de título fica fora da fita) */

@@ -216,6 +216,37 @@
       var tf = (ang(ct.almaFim) ? "alma " + br(ct.almaFim, 2) + "°" : "") + (ang(ct.abaFim) ? (ang(ct.almaFim) ? " / " : "") + "aba " + br(ct.abaFim, 2) + "°" : "");
       D.texto(Xp(Math.min(0, mp.x0)), yC + 8, "CORTE INCLINADO - início: " + (ti || "reto") + "; fim: " + (tf || "reto") + " (comprimento pelo eixo)", T.nota, { attr: ' data-corte="1"' });
     }
+    /* ACABAMENTO (js/metaldetalhe.js): MEIA-ESQUADRIA cotada — o ângulo do corte com o eixo em cada ponta e os
+       comprimentos EXTERNO (o de corte) e INTERNO; a vista de cima mostra o corte na aba (o do canto em planta) */
+    var fb = p.fab;
+    if (fb) {
+      var angP = function (t, a) { return t === "meia-esquadria" || t === "inclinado" ? br(a, 1).replace(/,0$/, "") + "°" : (t === "boca" ? "BOCA DE LOBO" : "RETO"); };
+      var temMitra = /meia-esquadria|inclinado/.test(fb.ini + fb.fim), yM = yC + ([ct.almaIni, ct.almaFim, ct.abaIni, ct.abaFim].some(ang) ? 13 : 8);
+      if (temMitra && (ang(ct.abaIni) || ang(ct.abaFim)) && p.dims) {
+        /* VISTA DE CIMA: o contorno na largura (a) com os cortes da aba, as cotas externa e interna e o ângulo */
+        var rr = num(p.dims.b, 0) / 2, xI = function (a) { return Math.tan(num(ct.abaIni, 0) * Math.PI / 180) * a; }, xF = function (a) { return p.L + Math.tan(num(ct.abaFim, 0) * Math.PI / 180) * a; };
+        /* título, folga da cota de cima (8 mm), a faixa e a cota de baixo — nada sobre nada */
+        var yV = yM + 12, hV = 2 * rr / e, Ya = function (a) { return yV + hV / 2 - a / e; };
+        var lsup = xF(rr) - xI(rr), linf = xF(-rr) - xI(-rr), ladoExt = lsup >= linf ? rr : -rr, ladoInt = -ladoExt;
+        D.texto(Xp(Math.min(0, mp.x0)), yM, "VISTA DE CIMA - CORTE DO CANTO", T.nota, { attr: ' data-vista-cima="1" data-compr-externo="' + mmTxt(Math.max(lsup, linf)) + '" data-compr-interno="' + mmTxt(Math.min(lsup, linf)) + '"' });
+        D.poli([[Xp(xI(rr)), Ya(rr)], [Xp(xF(rr)), Ya(rr)], [Xp(xF(-rr)), Ya(-rr)], [Xp(xI(-rr)), Ya(-rr)]], "MET-PERFIL", true);
+        mp.quebras.forEach(function (qX) { quebrarFaixa(D, x0 + 4 + qX, yV, yV + hV); });
+        D.cota(Xp(xI(ladoExt)), Ya(ladoExt), Xp(xF(ladoExt)), Ya(ladoExt), ladoExt > 0 ? 5 : -5, mmTxt(Math.max(lsup, linf)));
+        D.cota(Xp(xI(ladoInt)), Ya(ladoInt), Xp(xF(ladoInt)), Ya(ladoInt), ladoInt > 0 ? 5 : -5, mmTxt(Math.min(lsup, linf)));
+        if (ang(ct.abaIni)) D.texto(Xp(xI(0)) - 1.5, Ya(0) + T.cota * 0.35, angP(fb.ini, fb.angIni), T.cota, { al: "D", attr: ' data-angulo-ini="' + angP(fb.ini, fb.angIni) + '"' });
+        if (ang(ct.abaFim)) D.texto(Xp(xF(0)) + 1.5, Ya(0) + T.cota * 0.35, angP(fb.fim, fb.angFim), T.cota, { attr: ' data-angulo-fim="' + angP(fb.fim, fb.angFim) + '"' });
+        yM = yV + hV + 12;
+      }
+      if (temMitra || /boca/.test(fb.ini + fb.fim)) {
+        var lin = "PONTAS - início: " + angP(fb.ini, fb.angIni) + "; fim: " + angP(fb.fim, fb.angFim) + " (ângulo do corte com o eixo). COMPR. DE CORTE (EXTERNO) " + mmTxt(fb.externo) + " / INTERNO " + mmTxt(fb.interno) + " / EIXO " + mmTxt(fb.eixo) + ".";
+        /* as linhas quebradas na largura da vista (sem entrar na SEÇÃO à direita) */
+        var xT0 = Xp(Math.min(0, mp.x0)), wT = Math.max(60, availW - (xT0 - x0)), yy = yM;
+        var escrever = function (t2, attr) { A.quebrar(t2, T.nota, wT).forEach(function (l2, il) { D.texto(xT0, yy, l2, T.nota, { attr: il === 0 ? attr : undefined }); yy += T.nota * 1.45; }); };
+        escrever(lin, ' data-pontas="1"');
+        if (temMitra) escrever("MEIA-ESQUADRIA: as duas barras do canto cortadas na bissetriz; solda de topo em todo o contorno, esmerilhada (AWS A2.4).", ' data-meia-esquadria="1"');
+        if (/boca/.test(fb.ini + fb.fim)) escrever("BOCA DE LOBO: ponta recortada na forma do tubo que recebe" + (fb.bocaR ? " (R = " + mmTxt(fb.bocaR) + ")" : "") + " - gabarito de corte na peça; filete em todo o contorno.", ' data-boca="1"');
+      }
+    }
     /* solda AWS A2.4: a peça é soldada em outra */
     if (p.solda && o.soldadaEm) D.solda(Xp(0) + 2, primeiro, -60, junta(soldaOpcoes(p.solda), { ls: 9, lr: 18, cauda: "EM " + o.soldadaEm }));
     /* SEÇÃO transversal */
@@ -234,6 +265,29 @@
     return { escala: "1:" + e, mapa: mp };
   }
   function junta(a, b) { Object.keys(b || {}).forEach(function (k) { a[k] = b[k]; }); return a; }
+
+  /* ================================================================ BARRA CURVADA (curva de retorno, js/metaldetalhe.js) */
+  function vistaCurva(D, geo, p, o) {
+    var A = AP(), T = D.E.T, ar = geo.area, cv = p.curva || {}, R = num(cv.R, 0) * 1000, th = num(cv.ang, 90), Dd = num(p.dims && p.dims.h, 48), r = Dd / 2;
+    var ext = R + r, e = escalaQueCabe([2 * ext + 40, ext + 40], [ar.w * 0.45, ar.h * 0.5]), s = 1 / e;
+    var tit = A.tituloVista(D, ar.x + 2, ar.y + 2, "PEÇA " + o.marca + " - " + txt(p.papel).toUpperCase(), "ESCALA 1:" + e);
+    var cx = ar.x + 30 + ext * s, cy = ar.y + tit + 16 + ext * s, f0 = -Math.PI / 2;
+    function arco(rr) { var out = [], n = Math.max(8, Math.ceil(th / 7.5)); for (var k = 0; k <= n; k++) { var f = f0 + th * Math.PI / 180 * k / n; out.push([cx + rr * s * Math.cos(f), cy + rr * s * Math.sin(f)]); } return out; }
+    D.poli(arco(R + r), "MET-PERFIL", false); D.poli(arco(R - r), "MET-PERFIL", false); D.poli(arco(R), "MET-EIXO", false);
+    var fE = f0 + th * Math.PI / 180;
+    [f0, fE].forEach(function (f) { D.linha(cx + (R - r) * s * Math.cos(f), cy + (R - r) * s * Math.sin(f), cx + (R + r) * s * Math.cos(f), cy + (R + r) * s * Math.sin(f), "MET-PERFIL"); });
+    D.linha(cx, cy, cx + R * s * Math.cos(f0 + th * Math.PI / 360), cy + R * s * Math.sin(f0 + th * Math.PI / 360), "MET-FINA");
+    D.circ(cx, cy, 0.5, "MET-FINA");
+    D.texto(cx + 3, cy + T.cota * 0.4, "R = " + mmTxt(R) + " (LINHA DE CENTRO)", T.cota, { attr: ' data-raio="' + mmTxt(R) + '"' });
+    D.texto(cx + 3, cy + T.cota * 2.0, "ÂNGULO = " + br(th, 0) + "°", T.cota, { attr: ' data-angulo-curva="' + br(th, 0) + '"' });
+    var Ld = num(p.L, 0), yD = cy + ext * s + 18, wD = Math.min(ar.w * 0.6, Ld / e), hD = Math.max(1.2, Dd / e);
+    D.texto(ar.x + 6, yD - 3, "DESENVOLVIMENTO (COMPRIMENTO DE CORTE DA BARRA RETA)", T.nota, { attr: ' data-desenvolvimento="' + mmTxt(Ld) + '"' });
+    D.ret(ar.x + 6, yD, wD, hD, "MET-PERFIL");
+    D.cota(ar.x + 6, yD + hD, ar.x + 6 + wD, yD + hD, -5, mmTxt(Ld));
+    D.texto(ar.x + 6, yD + hD + 13, "Desenvolvimento = R x θ = " + mmTxt(R) + " x " + br(th * Math.PI / 180, 4) + " rad = " + mmTxt(Ld) + " mm. Raio de partida R = 2·D (prática de curvamento a frio - conferir com o curvador).", T.nota);
+    D.texto(ar.x + 6, yD + hD + 13 + T.nota * 1.5, "Pontas retas (a topo): solda de topo em todo o contorno, esmerilhada (AWS A2.4).", T.nota);
+    return { escala: "1:" + e };
+  }
 
   /* ================================================================ CHAPA (plana ou dobrada) */
   function vistaChapa(D, geo, p, o) {
@@ -351,7 +405,7 @@
       var p = g.rep, alvo = p.soldadaEm && n.marcaDe[p.soldadaEm] ? n.marcaDe[p.soldadaEm] : "", o = { marca: g.marca, soldadaEm: alvo, avisos: avisos };
       defs.push({ id: "marca-" + g.marca, marca: g.marca, titulo: "FABRICAÇÃO - MARCA " + g.marca + " (" + (p.kind === "perfil" ? perfilTxt(p.nomePerfil) : (p.kind === "chapa" ? (p.dobras ? "CHAPA DOBRADA" : "CHAPA") : txt(p.papel).toUpperCase())) + ")",
         desenhar: function (D, geo) {
-          var r = p.kind === "perfil" ? vistaPerfil(D, geo, p, o) : (p.kind === "chapa" ? vistaChapa(D, geo, p, o) : vistaMec(D, geo, p, o));
+          var r = p.kind === "perfil" ? (p.curva ? vistaCurva(D, geo, p, o) : vistaPerfil(D, geo, p, o)) : (p.kind === "chapa" ? vistaChapa(D, geo, p, o) : vistaMec(D, geo, p, o));
           colunaPeca(D, geo, g, p, num(kgDe[g.marca], num(p.massa, 0)), alvo && p.solda ? ["Soldada em " + alvo + ": " + soldaTexto(p.solda) + "."] : null);
           return r;
         } });
@@ -386,6 +440,9 @@
           return r;
         } });
     });
+    /* DETALHE TÍPICO DO GUARDA-CORPO (js/metaldetalhe.js): meia-esquadria, terminal boleado e base — quando o modelo tem guarda-corpo */
+    var MDt = dep("MetalDetalhe", "./metaldetalhe.js"), dtp = op.detalheTipico !== false && MDt && !so ? MDt.defDetalheTipico(arr(estado && estado.caixas)) : null;
+    if (dtp) defs.push(dtp);
     var r = montar(defs, op);
     r.avisos = (r.avisos || []).concat(avisos.filter(function (a, i) { return avisos.indexOf(a) === i; }));
     r.numeracao = n;
@@ -395,7 +452,8 @@
   /* ================================================================ PLANO DE CORTE (barras) */
   function folhasCorte(plano, op) {
     op = op || {};
-    var gr = arr(plano && plano.grupos), defs = [], linhas = [];
+    var gr = arr(plano && plano.grupos), defs = [], linhas = [], acabDe = {};
+    gr.forEach(function (g) { arr(g.itens).forEach(function (it) { if (it.acab) acabDe[it.marca] = it.acab.texto; }); });
     /* barras com o MESMO plano de corte numa linha só ("B1 a B6 - 6x") */
     gr.forEach(function (g) {
       linhas.push({ cab: true, g: g });
@@ -430,7 +488,7 @@
               if (A.largTexto(pc.marca, T.minimo) + 0.8 < w) D.texto(xa + w / 2, y + hb / 2, pc.marca, Math.min(T.nota, Math.max(T.minimo, hb * 0.6)), { al: "C", meio: true });
             });
             if (b.sobra > 0) { var xs = xb + (b.comprimento - b.sobra) / e; D.hachura(xs, y, b.sobra / e, hb, 1.2, b.reaproveitavel ? "MET-SECUNDARIO" : "MET-HACHURA"); }
-            var seq = b.pecas.map(function (pc) { return pc.marca + " " + mmTxt(pc.L); }).join(" + ") + (b.sobra > 0 ? "  |  sobra " + mmTxt(b.sobra) + (b.reaproveitavel ? " (reaproveitar)" : " (sucata)") : "");
+            var seq = b.pecas.map(function (pc) { var ac = acabDe[pc.marca]; return pc.marca + " " + mmTxt(pc.L) + (ac && /°|boca|curva/.test(ac) ? " (" + ac + ")" : ""); }).join(" + ") + (b.sobra > 0 ? "  |  sobra " + mmTxt(b.sobra) + (b.reaproveitavel ? " (reaproveitar)" : " (sucata)") : "");
             var ls = A.quebrar(seq, T.minimo, ar.w - 30);
             D.texto(xb, y + hb + T.minimo * 1.2, ls[0] + (ls.length > 1 ? " ..." : ""), T.minimo);
             y += 12;
@@ -445,7 +503,7 @@
           col.tabela([{ t: "ITEM", w: 70, al: "E" }, { t: "VALOR", w: 30 }], [["Peso das peças (kg)", br(Tt.pecasKg, 1)], ["Sobras reaproveitáveis (kg)", br(Tt.sobrasKg, 1)], ["Perda: serra + pontas curtas (kg)", br(Tt.perdaKg, 1)], ["Perda (%)", br(Tt.perdaPct, 2)]]);
           var c = plano.config || {};
           col.notas(["Barras comerciais " + arr(c.barras).map(mmTxt).join(" e ") + " mm; serra " + br(c.serra, 1) + " mm; sobra reaproveitável a partir de " + mmTxt(c.sobraMin) + " mm (valores de partida).",
-                     "Cortes na ordem, a partir da ponta da barra. Hachura = sobra.", "Comprimento de corte = eixo + projeção do corte inclinado."]);
+                     "Cortes na ordem, a partir da ponta da barra. Hachura = sobra.", "Comprimento de corte = eixo + projeção do corte inclinado (meia-esquadria: o EXTERNO; entre parênteses o ângulo do corte com o eixo em cada ponta; curva: o desenvolvimento)."]);
           return { escala: "1:" + e };
         } });
     });

@@ -10811,6 +10811,8 @@
       try { if (window.MadCalcUI) MadCalcUI.registrar(reg, self); } catch (eMad) {}
       /* BLOCOK (14/10/2026): Alvenaria › Blocok — paginação em amarração, cálculo, orçamento e documentos — js/blocokexecui.js (módulo à parte: sem a compra, sai na hora) */
       try { if (window.BlocokExecUI) BlocokExecUI.registrar(reg, self); } catch (eBkx) {}
+      /* CORES POR CATEGORIA (14/10/2026): Vista › Gráficos › Cores por categoria + a legenda e o painel — js/bimcorescatui.js (a barra de baixo e as Propriedades da vista chamam o mesmo módulo) */
+      try { if (window.BimCoresCatUI) BimCoresCatUI.registrar(reg, self); } catch (eCC) {}
       /* PROJETOS BIM (12/10/2026): Novo/Abrir/Salvar passam pelo projeto, e um comando com a tela inicial na frente é a pessoa começando a trabalhar — js/bimprojetosui.js. POR ÚLTIMO: ele embrulha o que os outros registraram */
       try { if (window.BimProjetosUI) BimProjetosUI.registrar(reg, self); } catch (eProj) {}
 
@@ -11224,11 +11226,23 @@
             if (d.tipo === "corte") extra.cotaClique = -q.y;   /* no corte, o y do desenho é a cota com o sinal trocado */
           }
         }
+        /* SELECIONAR TODAS AS INSTÂNCIAS (14/10/2026, js/bimselinst.js): a peça SOB o cursor — no 3D pelo raio do clique */
+        var sob = uid;
+        if (!sob && em3d) { try { sob = BIM.uidEm ? BIM.uidEm(ev.clientX, ev.clientY) : null; } catch (eU) { sob = null; } }
+        if (!uid && sob) uid = sob;
         if (!uid) { try { var s = BIM.selecao().uids || []; if (s.length === 1) uid = s[0]; } catch (eS) {} }
         var info = uid ? self._nivAquiInfo(uid) : null;
-        if (!info && extra.cotaClique == null) return;
+        var itNiv = (info || extra.cotaClique != null) ? [{ id: "niv-aqui", rotulo: "Criar nível aqui…", fn: function () { self._nivAquiDialogo(info || { cotas: [] }, extra); } }] : [];
+        var SI = window.BimSelInst, temSel = false;
+        try { temSel = !!(BIM.selecao().uids || []).length; } catch (eT) {}
+        if (SI && SI.ativo && SI.ativo() && (sob || temSel)) {
+          var telaV = tela2d ? tela2d.closest(".bim-tela") : null;
+          ev.preventDefault();
+          if (SI.abrirMenu(ev.clientX, ev.clientY, sob || null, { vista: telaV ? telaV.getAttribute("data-vista") : "3d", ctrl: !!(ev.ctrlKey || ev.metaKey), extras: itNiv })) return;
+        }
+        if (!itNiv.length) return;
         ev.preventDefault();
-        BimShell._menuNo(ev.clientX, ev.clientY, [{ id: "niv-aqui", rotulo: "Criar nível aqui…", fn: function () { self._nivAquiDialogo(info || { cotas: [] }, extra); } }]);
+        BimShell._menuNo(ev.clientX, ev.clientY, itNiv);
       }, true);
     },
 
@@ -14545,7 +14559,9 @@
         secoes: [
           { nome: "Gráficos", params: [
             { id: "vista-nome", rotulo: "Nome da vista", leitura: true, valor: nome },
-            { id: "vista-orto", rotulo: "Ortogonal", tipo: "sim-nao", valor: orto, leitura: !temModelo, motivo: "Abra um modelo primeiro" } ] },
+            { id: "vista-orto", rotulo: "Ortogonal", tipo: "sim-nao", valor: orto, leitura: !temModelo, motivo: "Abra um modelo primeiro" },
+            /* CORES POR CATEGORIA (js/bimcorescatui.js): o mesmo interruptor da barra de baixo */
+            { id: "cc:on", rotulo: "Cores por categoria", tipo: "sim-nao", valor: !!(window.BimCoresCatUI && BimCoresCatUI.ligada(id)), leitura: !temModelo, motivo: "Abra um modelo primeiro" } ] },
           { nome: "Extensões", params: [
             { id: "vista-caixa", rotulo: "Caixa de corte", tipo: "sim-nao", valor: caixa, leitura: !temModelo, motivo: "Abra um modelo primeiro" } ] }
         ].concat(
@@ -14559,6 +14575,7 @@
           try {
             if (pid === "vista-caixa") { on = id === "3d" ? b.caixaCorte(!!valor) : b.vistaCaixaCorte(id, !!valor); BimRibbon.setAtivo("caixa-corte", !!on); }
             if (pid === "vista-orto") { on = id === "3d" ? b.ortogonal(!!valor) : b.vistaOrtogonal(id, !!valor); BimRibbon.setAtivo("ortogonal", !!on); }
+            if (pid === "cc:on" && window.BimCoresCatUI) BimCoresCatUI.mudarVista(id, pid, valor);
             BimShell.pintarFita();
           } catch (e2) {}
           return self._bimPropsVista();
@@ -14661,6 +14678,7 @@
       } catch (e) {}
       this._bimVxDocs();
       try { BimRibbon.setAtivo("lado-a-lado", st.lado); BimShell.pintarFita(); } catch (e2) {}
+      try { if (window.BimCoresCatUI) BimCoresCatUI.aoMudarVista(); } catch (eCC) {}   /* CORES POR CATEGORIA: o botão e a legenda seguem a vista ativa */
       requestAnimationFrame(function () { requestAnimationFrame(function () { try { BIM.vistasRedimensionar(); } catch (e3) {} }); });
     },
     _bimVxFechar: function (id) {
@@ -25968,7 +25986,8 @@
                  a vista ativa). Antes a seleção nunca chegava lá e, com as
                  propriedades da vista, a peça selecionada parecia ignorada. */
               try { if (window.BimShell) BimShell.pintarProps(info ? self._bimPropsPeca(info) : null); } catch (eP) {}
-              try { if (window.BimShell) BimShell.contadores(self._bimRotuloVis(), info ? (info.nome || info.tipo) : null); } catch (e2) {}
+              /* SELECIONAR INSTÂNCIAS (14/10/2026): com várias peças o contador diz quantas */
+              try { var nSelC = 0; try { nSelC = (BIM.selecao().uids || []).length; } catch (eN) {} if (window.BimShell) BimShell.contadores(self._bimRotuloVis(), nSelC > 1 ? nSelC + " selecionados" : (info ? (info.nome || info.tipo) : null)); } catch (e2) {}
               /* ⚠ NO COMPUTADOR O BALÃO DA SELEÇÃO NÃO APARECE: Propriedades já
                  mostra a peça e o balão tapava o 3D (pedido do Rogério,
                  30/09/2026 — "pode tirar"). No celular e no modo foco ele

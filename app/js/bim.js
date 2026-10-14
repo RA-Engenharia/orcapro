@@ -2020,6 +2020,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       if (v._fundoBranco !== fb) { v._fundoBranco = fb; v.cont.style.background = fb ? '#fff' : ''; }
       var envP = scene.environment; scene.environment = v.env;
       var tr = null;
+      try { catAjustarVista(v); } catch (_) {}   /* CORES POR CATEGORIA: a cor e as categorias escondidas são DESTA vista */
       try { if (v.est) tr = trocasDaVista(v); v.renderer.render(scene, v.camera); v.cx.desenhar(v.renderer, v.camera); } catch (_) {}
       finally { if (tr) desfazerTrocas(tr); }
       scene.environment = envP;
@@ -2052,13 +2053,14 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   function uidDe(m) { return m.userData.mid + ':' + m.userData.expressID; }
   function existeNaVista(m, est) {
     if (ehFuturo4d(m) || ehRemovidoEd(m)) return false;   /* peça que ainda não existe (4D) ou foi apagada no editor */
+    if (est.catOc) { var kOc = catDeMalha(m); if (kOc && est.catOc[kOc]) return false; }   /* CORES POR CATEGORIA: a categoria que ESTA vista escondeu */
     var u = uidDe(m);
     if (est.isolados) return !!est.isolados[u];
     if (est.ocultos) return !est.ocultos[u];
     return true;
   }
   function corNaVista(m, est) {
-    var u = uidDe(m), c = est.cores[u] || _corDoMaterial(m.userData.matOrig || m.material);
+    var u = uidDe(m), c = est.cores[u] || (est.catOn ? catCorLinear(m) : null) || _corDoMaterial(m.userData.matOrig || m.material);   /* a cor de ponto de vista manda; depois a da categoria (SÓ se esta vista pediu); senão a do material de origem */
     var a = c[3] == null ? 1 : c[3];
     if (est.rx && !est.rx[u]) a = 0.1;   /* raio-X: o resto vira fantasma (o 0,1 do ghostMat) */
     return [c[0], c[1], c[2], a];
@@ -2147,7 +2149,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         if (q !== (m.visible !== false)) { t.vis.push([m, m.visible]); m.visible = q; }
         if (q && !_ehRealce(m.material)) {
           var u = uidDe(m);
-          if (est.cores[u] || est.rx) { t.mats.push([m, m.material]); m.material = matCorVista(corNaVista(m, est)); }
+          if (est.cores[u] || est.rx || est.catOn || catCor.on) { t.mats.push([m, m.material]); m.material = matCorVista(corNaVista(m, est)); }
         }
       });
     });
@@ -6162,6 +6164,29 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return novo;
   }
   S._selAplicar = selAplicar; S._selAtual = selAtual;
+  /* SELECIONAR TODAS AS INSTÂNCIAS (14/10/2026, js/bimselinst.js): a peça sob o cursor (o menu do clique
+     direito), o que está visível NESTA vista (malha visível dentro do campo da câmera) e o ocultar
+     temporário (a mesma visibilidade do painel Visibilidade: "Restaurar tudo"/"Mostrar todos" traz de volta) */
+  S._uidEm = function (cx, cy) { var hit = raycastEm(cx, cy); return uidDeMalha(hit && hit.object); };
+  S._uidsNaVista3d = function () {
+    var fr = new THREE.Frustum(), mt = new THREE.Matrix4(), bx = new THREE.Box3(), out = {};
+    camera.updateMatrixWorld(); mt.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); fr.setFromProjectionMatrix(mt);
+    todasMalhas(function (m) {
+      var u = uidDeMalha(m); if (!u || out[u] || !m.geometry || !cadeiaVisivel(m)) return;
+      if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+      bx.copy(m.geometry.boundingBox).applyMatrix4(m.matrixWorld);
+      if (fr.intersectsBox(bx)) out[u] = 1;
+    });
+    return Object.keys(out);
+  };
+  S._ocultarUids = function (uids) {
+    var fora = {}, n = 0; (uids || []).forEach(function (u) { fora[u] = 1; });
+    if (S.selected && fora[uidDeMalha(S.selected)]) { S.selected.material = S.prevMat; S.selected = null; S.prevMat = null; contornoSelecao(null); }
+    todasMalhas(function (m) { var u = uidDeMalha(m); if (u && fora[u] && m.visible !== false) { m.visible = false; n++; } });
+    pav.manual = true;   /* remover/carregar modelo e "Restaurar tudo" restauram */
+    return n;
+  };
+  S._algoOculto = function () { var r = false; todasMalhas(function (m) { if (!r && m.userData.expressID != null && m.visible === false && !ehFuturo4d(m) && !ehRemovidoEd(m)) r = true; }); return r; };
   function sel3Clique(e) {
     var hit = raycastEm(e.clientX, e.clientY), u = uidDeMalha(hit && hit.object), ctrl = !!(e.ctrlKey || e.metaKey);
     if (u) selAplicar([u], ctrl ? 'alternar' : 'trocar'); else if (!ctrl) selAplicar([], 'trocar');
@@ -6267,6 +6292,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   S._selTeclas = function (e) {
     if (!S || S !== Sm || !S.alive) return;
     var k = e.key; if (k !== 'Escape' && k !== 'Delete' && k !== 'Del') return;
+    if (window.BimSelInst && BimSelInst.menuAberto && BimSelInst.menuAberto()) return;   /* o menu do clique direito aberto: a tecla é dele (Esc fecha o menu, a seleção fica) */
     var t = e.target || {}; if (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || '') || t.isContentEditable) return;
     /* o BIM não está na tela (outro módulo aberto): a tecla não é daqui. ⚠ O host do 3D fica ESCONDIDO com a
        planta na frente — quem diz se o BIM está na tela é a casca (ou o host, sem casca) */
@@ -7451,6 +7477,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   function setSisColor(on) {
     on = !!on;
     if (on && S._estiloOn && S._estiloOn() && S._setEstiloDesenho) S._setEstiloDesenho(false); // exclusivo do estilo-desenho P&B do corte técnico
+    if (on && catCor.on && S._setCoresCat) S._setCoresCat(false); // exclusivo das cores por categoria (js/bimcorescat.js): a última escolha manda
     sisColor.on = on;
     if (on) construirSisIdx();
     S.modelos.forEach(function (mo) { refreshModelo(mo); }); // repinta a base respeitando 4D/seleção/clash
@@ -9990,6 +10017,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   S._pavRender = pavRender;
   function restaurarVisibilidade() {
     pav.isolado = null; pav.manual = false;
+    if (window.BimSelInst && BimSelInst._limparOcultos) BimSelInst._limparOcultos();   /* o ocultar/isolar do clique direito também acaba aqui */
     if (S._limparRaioX) S._limparRaioX(); // ↺ também tira o raio-X (materiais fantasma → originais)
     todasMalhas(function (m) { m.visible = !ehFuturo4d(m) && !ehRemovidoEd(m); }); // restaurar NÃO ressuscita futuros do 4D nem removidos da edição
     pavRender();
@@ -12124,6 +12152,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (window.BimPropsUI && BimPropsUI.aoMudarModelo) BimPropsUI.aoMudarModelo();   /* P1-C: a paleta de Propriedades acompanha (op, desfazer, refazer, níveis) */
     if (window.BimAnot2DUI && BimAnot2DUI.aposRebuild) BimAnot2DUI.aposRebuild(st);   /* P7: as vistas 2D redesenham a anotação (cota acompanha a peça) e a trava confere */
     if (window.BimTabelaUI && BimTabelaUI.aoMudarModelo) BimTabelaUI.aoMudarModelo();   /* P5: as tabelas abertas (abas) acompanham o modelo */
+    if (window.BimSelInst && BimSelInst.aposRebuild) { try { BimSelInst.aposRebuild(); } catch (eSI) {} }   /* SELECIONAR INSTÂNCIAS: o que foi ocultado na vista continua oculto depois da op */
     if (S._acima3d && planta.on) S._acima3d.agendar();   /* ACIMA DO CORTE: a viga nova acima do plano aparece tracejada na Planta 3D */
     if (opts.onLoaded) opts.onLoaded(elementosVivos());
     if (opts.onEdicao && !edit._replay) { try { opts.onEdicao(edit.ops.slice()); } catch (_) {} }
@@ -14564,7 +14593,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
   function modeloDe(mid) { for (var i = 0; i < S.modelos.length; i++) if (S.modelos[i].mid === mid) return S.modelos[i]; return null; }
   function publicos() { return S.modelos.map(function (mo) { return { mid: mo.mid, nome: mo.nome, disciplina: mo.disciplina, alpha: mo.alpha, visivel: mo.visivel, n: mo.elementos.length, modeloId: mo.modeloId || '', arquivoId: mo.versaoId || '', doCache: !!mo.doCache, sintetico: !!mo.sintetico, temColeta: !!mo._coleta, semCache: mo._semCache || '', exemplo: !!mo.exemplo }; }); }
-  function notifyModelos() { if (S._reaplicarEstilo) S._reaplicarEstilo(); if (S._reaplicarSistema) S._reaplicarSistema(); if (S._reaplicarEstiloVisual) S._reaplicarEstiloVisual(); if (S.opts && S.opts.onModelos) { try { S.opts.onModelos(publicos()); } catch (_) {} } } // estilo desenho E cor-por-sistema pegam modelo que entrar depois
+  function notifyModelos() { if (S._reaplicarEstilo) S._reaplicarEstilo(); if (S._reaplicarSistema) S._reaplicarSistema(); if (S._reaplicarEstiloVisual) S._reaplicarEstiloVisual(); if (S._reaplicarCoresCat) S._reaplicarCoresCat(); if (S.opts && S.opts.onModelos) { try { S.opts.onModelos(publicos()); } catch (_) {} } } // estilo desenho E cor-por-sistema pegam modelo que entrar depois
   S._publicos = publicos;
 
   /* =====================================================================
@@ -15157,6 +15186,180 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (marcasSvg.style.display === 'none') marcasSvg.style.display = 'block';
   });
 
+  /* =====================================================================
+   * CORES POR CATEGORIA (14/10/2026) — o motor puro é o js/bimcorescat.js
+   *
+   * Pedido do Rogério: "todos os PILARES uma cor, todas as VIGAS outra, os
+   * PARAMÉTRICOS outra, PISO outra… para ficar fácil identificar pelas cores".
+   * É modo de MODELAGEM: só gráfico, nada do modelo muda.
+   *
+   * ⚠ ENTRA NO `matBase`, como a cor por sistema, e não num `m.material = …`
+   * solto: `refreshModelo` reescreve o material de toda malha a cada ajuste de
+   * transparência, disciplina, estilo ou 4D, e uma pintura aplicada por fora
+   * sumiria no primeiro. Entrando na aparência-base ela vale no 3D, nas vistas
+   * lado a lado e no imersivo, e DESLIGAR devolve exatamente o material de antes
+   * (o `matOrig` nunca foi tocado: textura e cor voltam sozinhas).
+   * ⚠ Um material por (categoria × cor × opacidade), e não por peça: 20 mil
+   * peças usam 14 materiais, e a malha mesclada (B2) continua mesclada.
+   * ⚠ PRECEDÊNCIA (dita na legenda): a pintura de conjunto, o 4D, a seleção e o
+   * raio-X ficam POR CIMA da cor; a cor por sistema e o estilo desenho são
+   * exclusivos (ligar um desliga o outro); o que os filtros de visibilidade
+   * escondem CONTINUA escondido.
+   * ⚠ ESCONDER POR CATEGORIA (clique na legenda) não toca no modelo: é
+   * `visible = false` marcado em `userData._catOc` e reafirmado a cada quadro —
+   * "Restaurar tudo" e o isolamento escrevem `visible = true` por cima, e sem a
+   * reafirmação a categoria escondida voltaria sozinha. Ao mostrar de novo, a
+   * peça só volta se o 4D e a edição não a estiverem escondendo (ehFuturo4d,
+   * ehRemovidoEd — a mesma composição de todo escritor de visibilidade).
+   * ===================================================================== */
+  var catCor = { on: false, ocultas: {}, porUid: {}, mats: {}, cx: null, esc: [], nOc: 0 };
+  function catMotor() { return (typeof window !== 'undefined' && window.BimCoresCat) ? window.BimCoresCat : null; }
+  function catCaixas() {
+    var est = S.edit && S.edit.estado; if (!est || !est.caixas) return null;
+    if (!catCor.cx || catCor.cx.est !== est || catCor.cx.n !== est.caixas.length) {
+      var mp = {}; est.caixas.forEach(function (c) { mp[c.id] = c; });
+      catCor.cx = { est: est, n: est.caixas.length, map: mp, pt: catMotor() ? catMotor().tiposDePronta(est.caixas) : {} };   /* pt: pronta id → tipo (escada, rack, skid…), que decide o que a "Longarina" avulsa é */
+    }
+    return catCor.cx.map;
+  }
+  function catElemento(mo, id) {
+    var ix = mo._catIdx, L = mo.elementos || [];
+    if (!ix || ix.n !== L.length) { ix = { n: L.length, m: {} }; L.forEach(function (e) { ix.m[e.id] = e; }); mo._catIdx = ix; }
+    return ix.m[id];
+  }
+  /* a categoria da peça: uma conta por elemento (guardada por uid), mesmo com várias malhas */
+  function catDeMalha(m) {
+    var CC = catMotor(); if (!CC || !m || !m.userData || m.userData.expressID == null) return null;
+    var mid = m.userData.mid, mo = modeloDe(mid), id = m.userData.expressID, uid = mid + ':' + id;
+    var k = catCor.porUid[uid]; if (k) return k;
+    var d = null, e = mo ? catElemento(mo, id) : null;
+    if (mid === 'edit') { var cx = catCaixas(), c = cx ? cx[id] : null; if (c) { d = CC.descritorDeCaixa(c, { prontaTipos: catCor.cx && catCor.cx.pt }); if (!d.nome && e) d.nome = e.nome; } }
+    if (!d) {
+      var ex = {};
+      if (e && e.familia && e.familia.famId && S._famCat) ex.famCat = S._famCat(e.familia.famId);
+      if (e && mid === 'edit' && !e.familia && /^(hidraulica|eletrica)$/.test(e.disciplina || '')) ex.instalacao = true;
+      d = CC.descritorDeElemento(e || { tipo: m.userData.tipo, nome: '' }, ex);
+      if (!e) d.ifc = m.userData.tipo;
+    }
+    k = CC.categoria(d); catCor.porUid[uid] = k;
+    return k;
+  }
+  function catMat(cat, alpha) {
+    var CC = catMotor(), cor = CC ? CC.corDe(cat) : '#8e959c';
+    var op = Math.round((alpha == null ? 1 : Math.max(0.05, Math.min(1, alpha))) / 0.05) * 0.05, transp = op < 0.985;
+    var key = cat + '@' + op.toFixed(2) + '@' + cor;
+    if (!catCor.mats[key]) catCor.mats[key] = new THREE.MeshStandardMaterial({ color: new THREE.Color(cor), roughness: 0.7, metalness: 0.02, transparent: transp, opacity: op, depthWrite: !transp, side: THREE.DoubleSide });
+    return catCor.mats[key];
+  }
+  /* ---------------------------------------------------------------
+   * A COR É DA VISTA (vistas 3D extras, lado a lado). A cena é UMA: o que o matBase e o `visible` mostram é o da {3D}
+   * principal. A vista extra que quer outra coisa (colorida com a {3D} sem cor, ou o contrário; ou com categorias
+   * escondidas que a {3D} mostra) ganha um ESTADO PRÓPRIO — o mesmo mecanismo do ponto de vista aberto numa aba
+   * (índice, cor por vértice e material dela, trocados só durante o desenho dela). Quando ela quer o mesmo que a cena,
+   * o estado próprio sai e ela volta ao caminho comum (com textura). `catCfg` = { on, ocultas }, posto pela tela.
+   * ⚠ Com estado próprio a vista desenha por cor de vértice: sem a textura do estilo Realista (limite honesto,
+   * só enquanto ela difere da cena). A cor da categoria de ponto de vista (est.cores) continua mandando por cima.
+   * --------------------------------------------------------------- */
+  catCor.lin = {}; catCor.palVer = 0;
+  function catCorLinear(m) {
+    var k = catDeMalha(m), CC = catMotor(); if (!k || !CC) return null;
+    var hex = CC.corDe(k), c = catCor.lin[hex] || (catCor.lin[hex] = new THREE.Color(hex)), mo = modeloDe(m.userData.mid);
+    return [c.r, c.g, c.b, mo ? mo.alpha : 1];
+  }
+  function catAjustarVista(v) {
+    var cfg = v.catCfg || null, quer = !!(cfg && cfg.on), oc = (cfg && cfg.ocultas) || {};
+    var sigOc = Object.keys(oc).filter(function (k) { return oc[k]; }).sort().join(',');
+    var sigCena = catCor.on ? Object.keys(catCor.ocultas).filter(function (k) { return catCor.ocultas[k]; }).sort().join(',') : '';
+    var precisa = quer !== !!catCor.on || sigOc !== sigCena;
+    var est = v.est;
+    if (!est) {
+      if (!precisa) return;
+      est = v.est = { isolados: null, ocultos: null, cores: {}, rx: null, ver: ++_estSeq, catAuto: true }; v.cache = {};
+    } else if (!precisa && est.catAuto) { v.est = null; v.cache = {}; return; }
+    var sig = (quer ? 1 : 0) + '|' + sigOc + '|' + (catCor.on ? 1 : 0) + '|' + catCor.palVer;
+    if (est.catSig === sig) return;
+    est.catSig = sig; est.catOn = quer; est.catOc = sigOc ? oc : null; est.ver = ++_estSeq;
+  }
+  S._catVista = function (id, on, ocultas) {
+    var v = S.vistas[id]; if (!v) return false;
+    var oc = {}; Object.keys(ocultas || {}).forEach(function (k) { if (ocultas[k]) oc[k] = 1; });
+    v.catCfg = (on || Object.keys(oc).length) ? { on: !!on, ocultas: oc } : null;
+    try { catAjustarVista(v); } catch (_) {}   /* o estado próprio nasce já (o desenho do quadro só monta os buffers) */
+    return true;
+  };
+  S._catVistaEst = function (id) { var v = S.vistas[id]; return v ? { cfg: v.catCfg || null, estado: !!v.est, auto: !!(v.est && v.est.catAuto), catOn: !!(v.est && v.est.catOn) } : null; };
+  /* esconde/mostra por categoria (ver a nota acima sobre a reafirmação) */
+  function catAplicarOcultas() {
+    var lista = [], tem = false; Object.keys(catCor.ocultas).forEach(function (k) { if (catCor.ocultas[k]) tem = true; });
+    todasMalhas(function (m) {
+      if (!m.isMesh || m.userData.expressID == null) return;
+      var oc = false;
+      if (catCor.on && tem) { var k = catDeMalha(m); oc = !!(k && catCor.ocultas[k]); }
+      if (oc) { m.userData._catOc = 1; if (m.visible !== false) m.visible = false; lista.push(m); }
+      else if (m.userData._catOc) { delete m.userData._catOc; if (!ehFuturo4d(m) && !ehRemovidoEd(m)) m.visible = true; }
+    });
+    catCor.esc = lista; catCor.nOc = lista.length;
+    return lista.length;
+  }
+  S._tickExtra.push(function () {
+    var L = catCor.esc; if (!L.length || !catCor.on) return;
+    for (var i = 0; i < L.length; i++) if (L[i].visible !== false) L[i].visible = false;
+  });
+  function catRepintarBase() {
+    S.modelos.forEach(function (mo) { refreshModelo(mo); });
+    if (S.selected) S.prevMat = matBase(S.selected);   /* a seleção devolve a base nova, não a anterior */
+    if (S._reaplicarEstilo) S._reaplicarEstilo();
+  }
+  function catAvisar() { try { window.dispatchEvent(new CustomEvent('bim:cores-cat', { detail: { on: catCor.on } })); } catch (_) {} }
+  function setCoresCat(on) {
+    on = !!on;
+    if (on && !catMotor()) return false;
+    if (on === catCor.on) return catCor.on;
+    if (on) {
+      /* exclusivos: a cor por sistema e a massa cinza do estilo desenho */
+      if (sisColor.on) setSisColor(false);
+      if (S._estiloOn && S._estiloOn() && S._setEstiloDesenho) S._setEstiloDesenho(false);
+      catCor.porUid = {}; catCor.cx = null;
+    }
+    catCor.on = on;
+    catRepintarBase();
+    catAplicarOcultas();
+    catAvisar();
+    return catCor.on;
+  }
+  S._setCoresCat = setCoresCat;
+  S._coresCatOn = function () { return !!catCor.on; };
+  S._catDeUid = function (uid, tipo) {
+    var m = S.meshPorUid && S.meshPorUid[uid];
+    if (m) return catDeMalha(m);
+    var CC = catMotor(); return CC ? CC.categoria({ ifc: tipo }) : null;
+  };
+  S._catOcultas = function (mapa) {
+    if (mapa !== undefined) { catCor.ocultas = {}; Object.keys(mapa || {}).forEach(function (k) { if (mapa[k]) catCor.ocultas[k] = 1; }); catAplicarOcultas(); }
+    var o = {}; Object.keys(catCor.ocultas).forEach(function (k) { o[k] = 1; }); return o;
+  };
+  S._catRepintar = function () { catCor.palVer++; if (catCor.on) catRepintarBase(); };
+  /* o que a legenda mostra: quantas PEÇAS de cada categoria existem (contando as escondidas por categoria) */
+  S._catInfo = function () {
+    var cont = {}, vistos = {};
+    S.modelos.forEach(function (mo) {
+      if (!mo.visivel) return;
+      mo.grupo.children.forEach(function (m) {
+        if (!m.isMesh || m.userData.expressID == null) return;
+        var uid = mo.mid + ':' + m.userData.expressID; if (vistos[uid]) return; vistos[uid] = 1;
+        if (ehRemovidoEd(m)) return;
+        var k = catDeMalha(m); if (k) cont[k] = (cont[k] || 0) + 1;
+      });
+    });
+    return { on: !!catCor.on, contagem: cont, ocultas: S._catOcultas(), escondidas: catCor.nOc, pecas: Object.keys(vistos).length };
+  };
+  /* modelo novo/refeito (editor, IFC que entra): a cor e o que está escondido valem para ele também */
+  S._reaplicarCoresCat = function () {
+    catCor.porUid = {}; catCor.cx = null;
+    if (catCor.on) { catRepintarBase(); catAplicarOcultas(); }
+    try { window.dispatchEvent(new CustomEvent('bim:modelos', { detail: { cores: catCor.on } })); } catch (_) {}
+  };
+
   // material corrente de um mesh respeitando a TRANSPARÊNCIA do modelo dele
   function matBase(m) {
     /* ⚠ B3 — A COR DO CONJUNTO ENTRA AQUI, e não num `m.material = …` solto.
@@ -15185,6 +15388,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         return corMat(_cp, _moP ? _moP.alpha : 1);
       }
     }
+    /* CORES POR CATEGORIA: a pintura de conjunto (acima) e o 4D mandam; esta cor vence o material do IFC e a cor por sistema */
+    if (catCor.on) { var _kc = catDeMalha(m); if (_kc) { var _moC = modeloDe(m.userData.mid); return catMat(_kc, _moC ? _moC.alpha : 1); } }
     // v1.1.96 — modo "colorir por sistema" ligado: a aparência-base vira a COR DO SISTEMA
     // hidrossanitário (isto faz a cor valer no 3D, na Planta e no imersivo de uma vez).
     if (sisColor.on) { var _moS = modeloDe(m.userData.mid); return sisMat(m.userData._sisK || 'outros', _moS ? _moS.alpha : 1); }
@@ -15916,6 +16121,7 @@ function aplicarEstado(est) {
 }
 function mostrarTudo() {
   if (!S) return;
+  if (typeof window !== 'undefined' && window.BimSelInst && BimSelInst._limparOcultos) BimSelInst._limparOcultos();
   if (S.pav && (S.pav.isolado || S.pav.manual)) { S.pav.isolado = null; S.pav.manual = false; if (S._pavRender) S._pavRender(); }
   S._fut4d = null; S._and4d = null; // sair do 4D: nada mais é "futuro" nem "em andamento"
   if (S._pinturaDono === "4d-auto") { S._pintura = null; S._pinturaDono = null; }
@@ -16667,6 +16873,11 @@ window.BIM = {
      (alças, Delete, arrastar); a do IFC, para o realce de sempre. Propriedades mostram a primeira. */
   selecionar: function (uids, modo) { return (S && S._selAplicar) ? S._selAplicar(uids || [], modo || 'trocar') : []; },
   selecao: function () { return { uids: (S && S._selAtual) ? S._selAtual() : [] }; },
+  /* SELECIONAR TODAS AS INSTÂNCIAS (js/bimselinst.js): a peça sob o ponto da tela, o visível na vista 3D e o ocultar temporário */
+  uidEm: function (x, y) { return (S && S.alive && S._uidEm) ? S._uidEm(x, y) : null; },
+  uidsNaVista3d: function () { return (S && S._uidsNaVista3d) ? S._uidsNaVista3d() : []; },
+  ocultarUids: function (uids) { return (S && S._ocultarUids) ? S._ocultarUids(uids || []) : 0; },
+  algoOculto: function () { return !!(S && S._algoOculto && S._algoOculto()); },
   imersivo: function (modo) { if (!S || !S.xr) return false; if (S.xr.on) return true; if (S._toggleXR && (!S.xrPanel || S.xrPanel.style.display !== 'flex')) S._toggleXR(); var b = S.xrPanel && S.xrPanel.querySelector('[data-x="' + (modo || 'caminhar') + '"]'); if (b) { b.click(); return true; } return false; },
   imersivoAtivo: function () { return !!(S && S.xr && S.xr.on); },
   sairImersivo: function () { if (S && S._sairImersivo) S._sairImersivo(); },
@@ -16727,6 +16938,15 @@ window.BIM = {
   sistemaOn: function () { return !!(S && S._sisColorOn && S._sisColorOn()); },
   sistemaInfo: function () { return (S && S._sisInfo) ? S._sisInfo() : null; },
   sistemaClassificar: function (texto) { return (S && S._sisClassificar) ? S._sisClassificar(texto) : null; }, // classifica um nome/descrição num sistema (pura; p/ testes e plugins)
+  /* CORES POR CATEGORIA (js/bimcorescat.js): só gráfico, na {3D} principal. A tela (js/bimcorescatui.js) guarda o liga/desliga por vista. */
+  coresCategoria: function (on) { return !!(S && S._setCoresCat && S._setCoresCat(on == null ? !(S._coresCatOn && S._coresCatOn()) : !!on)); },
+  coresCategoriaOn: function () { return !!(S && S._coresCatOn && S._coresCatOn()); },
+  coresCategoriaInfo: function () { return (S && S._catInfo) ? S._catInfo() : { on: false, contagem: {}, ocultas: {}, escondidas: 0, pecas: 0 }; },
+  coresCategoriaOcultas: function (mapa) { return (S && S._catOcultas) ? S._catOcultas(mapa) : {}; },
+  coresCategoriaRepintar: function () { if (S && S._catRepintar) S._catRepintar(); },
+  /* a cor por categoria de UMA vista 3D extra (aba nova / lado a lado): as categorias escondidas são só dela */
+  coresCategoriaVista: function (id, on, ocultas) { return !!(S && S._catVista && S._catVista(id, on, ocultas)); },
+  categoriaDaPeca: function (uid, tipo) { return (S && S._catDeUid) ? S._catDeUid(uid, tipo) : null; },
   // v1.1.99 — Plantas Executivas Blocok: lê as paredes do IFC → pranchas 90×90 numeradas + material + carga na fundação
   blocok: function (opts) { return (S && S.blocok) ? S.blocok(opts) : null; }, // {semJanela?:bool} → {paredes,material,carga}; abre a prancha em nova aba salvo semJanela
   blocokParedes: function () { return (S && S._extrairParedesBlocok && S._blocokLiberado && S._blocokLiberado()) ? S._extrairParedesBlocok() : { paredes: [], vaosDet: 0 }; }, // só a extração (E2E/diagnóstico) — mesmo gate por licença

@@ -157,7 +157,10 @@
       if (!bruto || !bruto.ok) return null;
       var an = b2._anotar(d, bruto); an.linhasIfc = bruto.linhasIfc || [];
       var est = clone(b2.estilo(vistaId)); est.titulo = false;   /* o título é o do viewport */
-      var res = D.svg(an, est, { titulo: "" });
+      var exF = { titulo: "" };
+      /* CORES POR CATEGORIA: a folha sai SEM as cores, a menos que a vista peça "imprimir com as cores" (js/bimcorescatui.js) */
+      try { var cf = global.BimCoresCatUI ? global.BimCoresCatUI.paraImpressao(vistaId, bruto, exF) : null; if (cf) { an = b2._anotar(d, cf); an.linhasIfc = bruto.linhasIfc || []; } } catch (eCF) { exF = { titulo: "" }; }
+      var res = D.svg(an, est, exF);
       var o = { vistaId: vistaId, nome: d.nome, tipo: d.tipo, dados: an, estilo: est, svg: res.svg, vb: res.vb, pena: est.pena, penasPx: D.PENAS[est.pena], escala: est.escala };
       this._desenhos[vistaId] = o;
       return o;

@@ -596,7 +596,8 @@
       var antes = this._tela && this._tela.uid === info.uid && igual(this._tela.idsTodos, ids) ? this._tela.filtro : null;
       this._tela = { uid: info.uid, info: info, idsTodos: ids, filtro: antes, extras: (opts && opts.extras) || [], aoMudarExtra: opts && opts.aoMudarExtra };
       var p0 = ctx.res.porId[id];
-      return { bp1: true, daPeca: true, uid: info.uid, semEditarTipo: true, titulo: p0.nomeCategoria, icone: p0.categoria === "parede" ? "parede" : (p0.categoria === "pilar" ? "pilar" : (p0.categoria === "ambiente" ? "ambiente" : "quadrado")), secoes: [],
+      /* SELECIONAR INSTÂNCIAS (14/10/2026): com várias peças o título diz quantas ("12 selecionados") */
+      return { bp1: true, daPeca: true, uid: info.uid, semEditarTipo: true, lote: ids.length > 1 ? ids.length : 0, titulo: ids.length > 1 ? ids.length + " selecionados" : p0.nomeCategoria, icone: p0.categoria === "parede" ? "parede" : (p0.categoria === "pilar" ? "pilar" : (p0.categoria === "ambiente" ? "ambiente" : "quadrado")), secoes: [],
                render: function (corpo) { self.render(corpo); },
                onMudar: function (pid, valor) { if (self._tela && typeof self._tela.aoMudarExtra === "function") self._tela.aoMudarExtra(pid, valor); } };
     },
@@ -656,6 +657,8 @@
       corpo.innerHTML = "";
       var raiz = el(doc, "div", "bp1-paleta"); raiz.setAttribute("data-bp1", "paleta");
       corpo.appendChild(raiz);
+      /* SELECIONAR INSTÂNCIAS (14/10/2026): "N selecionados" no alto — o valor diferente entre elas é ‹vários› */
+      if (arr(this._tela.idsTodos).length > 1) { var nl = el(doc, "div", "bp1-lote", this._tela.idsTodos.length + " selecionados — o que muda aqui vale para todas (um Ctrl+Z)"); nl.setAttribute("data-bp1", "lote"); raiz.appendChild(nl); }
       raiz.appendChild(this._topo(doc, ctx, md));
       raiz.appendChild(this._linhaFiltro(doc, ctx, md));
       var tb = el(doc, "table", "rv-params bp1-params"), rec = this._recolhidos();

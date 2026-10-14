@@ -55,7 +55,9 @@
   function optGuarda(H, p, gid) {
     var alts = [num(p.alturaGuarda, GC.altura)];
     if (num(p.intermediaria, GC.intermediaria) > 0) alts.push(num(p.intermediaria, GC.intermediaria));
-    return { gid: gid, montante: p.montante, corrimao: p.corrimao, altura: alts[0], alturas: alts, espac: num(p.espac, 1.2), aco: "ASTM A36", rodape: p.rodape === false ? 0 : num(p.hRodape, GC.rodape), tRodape: num(p.tRodape, GC.tRodape) };
+    return { gid: gid, montante: p.montante, corrimao: p.corrimao, altura: alts[0], alturas: alts, espac: num(p.espac, 1.2), aco: "ASTM A36", rodape: p.rodape === false ? 0 : num(p.hRodape, GC.rodape), tRodape: num(p.tRodape, GC.tRodape),
+      /* GANCHO S10: o terminal de cada ponta livre (retorno | curva | tampao) e a perna da solda da base — js/metaldetalhe.js */
+      terminal: { ini: p.terminalIni, fim: p.terminalFim }, perna: p.perna };
   }
   function acessoGuarda(H, p, lados, protegidos) {
     var pc = H.perfilDe(p.corrimao);
@@ -578,7 +580,17 @@
         };
         var dentroPol = function (x, z) { var c = false; for (var i5 = 0, j5 = Pt.length - 1; i5 < Pt.length; j5 = i5++) { var a5 = Pt[i5], b5 = Pt[j5]; if (((a5[1] > z) !== (b5[1] > z)) && (x < (b5[0] - a5[0]) * (z - a5[1]) / (b5[1] - a5[1]) + a5[0])) c = !c; } return c; };
         for (var e = 0; e < Pt.length; e++) { var ea = Pt[e], eb = Pt[(e + 1) % Pt.length]; if (exPares.some(function (pr) { return (mesmo(pr[0], ea) && mesmo(pr[1], eb)) || (mesmo(pr[0], eb) && mesmo(pr[1], ea)); })) { bEx.push(e); continue; } foraDasAberturas(ea, eb).forEach(function (sg) { bordas.push({ a: sg[0], b: sg[1], tipo: "borda" }); }); }
-        absT.forEach(function (b) { [[[b.x0, b.z0], [b.x1, b.z0]], [[b.x1, b.z1], [b.x0, b.z1]]].forEach(function (sg) { var mz = (sg[0][1] + sg[1][1]) / 2, mx = (sg[0][0] + sg[1][0]) / 2; if (!dentroPol(mx, mz + 1e-3) || !dentroPol(mx, mz - 1e-3)) return; bordas.push({ a: sg[0], b: sg[1], tipo: "abertura" }); }); });
+        /* REVISÃO S6 rodada 4: a travessa da abertura que CRUZA a borda acaba NA borda (antes passava dela e ficava com a ponta
+           solta no vazio — a Estrutura desenhada acusava mecanismo) */
+        var cortesLinhaZ = function (P, z) { var xs = []; for (var i6 = 0; i6 < P.length; i6++) { var a6 = P[i6], b6 = P[(i6 + 1) % P.length]; if ((a6[1] <= z && b6[1] > z) || (b6[1] <= z && a6[1] > z)) xs.push(a6[0] + (b6[0] - a6[0]) * (z - a6[1]) / (b6[1] - a6[1])); } xs.sort(function (u6, v6) { return u6 - v6; }); var o6 = []; for (var j6 = 0; j6 + 1 < xs.length; j6 += 2) o6.push([xs[j6], xs[j6 + 1]]); return o6; };
+        absT.forEach(function (b) { [[[b.x0, b.z0], [b.x1, b.z0]], [[b.x1, b.z1], [b.x0, b.z1]]].forEach(function (sg) {
+          var zL = sg[0][1], xa6 = Math.min(sg[0][0], sg[1][0]), xb6 = Math.max(sg[0][0], sg[1][0]);
+          [zL + 1e-3, zL - 1e-3].reduce(function (acc, zz) { return acc.length ? acc : cortesLinhaZ(Pt, zz); }, []).forEach(function (iv) {
+            var c0 = Math.max(xa6, iv[0]), c1 = Math.min(xb6, iv[1]); if (c1 - c0 < 0.05) return;
+            if (!dentroPol((c0 + c1) / 2, zL + 1e-3) || !dentroPol((c0 + c1) / 2, zL - 1e-3)) return;
+            var ida = sg[0][0] <= sg[1][0]; bordas.push({ a: [ida ? c0 : c1, zL], b: [ida ? c1 : c0, zL], tipo: "abertura" });
+          });
+        }); });
         if (!Lint) Lint = bt.z1 - bt.z0;
         var apoiosPts = [], falhas = [], hEst = num(p.y0, 0) - num(p.cotaApoio, 0), apMax = num(p.apoioMax, 0) > 0 ? num(p.apoioMax, 0) : (hEst > 0.15 && hEst < 1.5 ? Math.max(1.2, 2.5 * hEst) : 0);
         function ptApoio(q4) { for (var a = 0; a < apoiosPts.length; a++) if (Math.hypot(apoiosPts[a].p[0] - q4[0], apoiosPts[a].p[1] - q4[1]) < 0.02) return apoiosPts[a]; var o = { p: q4, N: 0 }; apoiosPts.push(o); return o; }
@@ -587,7 +599,9 @@
           var paralela = Math.abs(bd.b[0] - bd.a[0]) < 0.3 * L, faixa = paralela ? s / 2 : Lint / 2, nS = 1, vq = null;
           /* REVISÃO S6 (A3): piso BAIXO — o X entre apoios longe uns dos outros fica quase deitado e não trava (mecanismo):
              apoio a cada ≤ 2,5·h (mín. 1,2 m) ao longo da borda, ou o espaçamento pedido (apoioMax) */
-          var nS0 = bd.tipo === "borda" && apMax > 0 ? Math.max(1, Math.ceil(L / apMax - 1e-9)) : 1;
+          /* REVISÃO S6 rodada 4: só na borda que RECEBE as intermediárias (elas escoram o apoio do meio no plano do piso); na
+             borda PARALELA a elas o pilarete do meio ficava solto na perpendicular (6 × 8 a 1,4 m: Δ2/Δ1 = 3,7, falso reprovado) */
+          var nS0 = bd.tipo === "borda" && apMax > 0 && !paralela ? Math.max(1, Math.ceil(L / apMax - 1e-9)) : 1;
           for (nS = nS0; nS <= Math.max(6, nS0); nS++) { vq = vigaQuePassa(L / nS, faixa, q, gP, p.aco, cache, p.minBorda); if (vq) break; }
           if (!vq) { falhas.push("borda de " + brf(L) + " m"); nS = 1; vq = { perfil: PERFIS_VIGA_PISO[PERFIS_VIGA_PISO.length - 1], L: L, faixa: faixa, falha: true }; }
           var wd = 1.25 * (gP * faixa) + 1.5 * (q * faixa);
@@ -672,18 +686,22 @@
            deslocabilidade). X no plano em cada vão entre apoios dos dois lados compridos; nenhum atravessa uma abertura */
         var nXp = 0;
         if (!lerCaminho(p.contorno).length && pilPts.length > 4 && EL) {
-          var z0s = [], z1s = [];
-          pilPts.forEach(function (pp7) { var q7 = T(pp7.p); if (Math.abs(q7[1] - bt.z0) < 0.02) z0s.push(q7[0]); else if (Math.abs(q7[1] - bt.z1) < 0.02) z1s.push(q7[0]); });
-          var comuns = z0s.filter(function (x7) { return z1s.some(function (y7) { return Math.abs(x7 - y7) < 0.02; }); }).sort(function (u7, v7) { return u7 - v7; });
+          var z0s = [], z1s = [], x0s = [], x1s = [];
+          pilPts.forEach(function (pp7) { var q7 = T(pp7.p); if (Math.abs(q7[1] - bt.z0) < 0.02) z0s.push(q7[0]); else if (Math.abs(q7[1] - bt.z1) < 0.02) z1s.push(q7[0]); if (Math.abs(q7[0] - bt.x0) < 0.02) x0s.push(q7[1]); else if (Math.abs(q7[0] - bt.x1) < 0.02) x1s.push(q7[1]); });
+          var comunsDe = function (a8, b8) { return a8.filter(function (x7) { return b8.some(function (y7) { return Math.abs(x7 - y7) < 0.02; }); }).sort(function (u7, v7) { return u7 - v7; }); };
+          var comuns = comunsDe(z0s, z1s), comunsX = comunsDe(x0s, x1s), feitos = {};
           var atravessa = function (a7, b7) { return absT.some(function (bx) { for (var t7 = 0; t7 <= 1.0001; t7 += 0.05) { var x8 = a7[0] + (b7[0] - a7[0]) * t7, z8 = a7[1] + (b7[1] - a7[1]) * t7; if (x8 > bx.x0 && x8 < bx.x1 && z8 > bx.z0 && z8 < bx.z1) return true; } return false; }); };
-          for (var i7 = 0; i7 + 1 < comuns.length; i7++) {
-            var xa7 = comuns[i7], xb7 = comuns[i7 + 1];
-            [[[xa7, bt.z0], [xb7, bt.z1]], [[xb7, bt.z0], [xa7, bt.z1]]].forEach(function (dg) {
-              if (atravessa(dg[0], dg[1])) return;
-              var A7 = T(dg[0]), B7 = T(dg[1]);
-              K.barra([A7[0], yV, A7[1]], [B7[0], yV, B7[1]], { ferr: "diagonal", cat: EL.BR_X, papel: "Contraventamento no plano do piso", ifc: "IFCMEMBER", aco: p.aco, nome: "X no plano do piso " + (++nXp) }, "contravento");
-            });
-          }
+          var diag = function (dg) {
+            var ch = [dg[0], dg[1]].map(function (q8) { return q8[0].toFixed(3) + "," + q8[1].toFixed(3); }).sort().join("|");
+            if (feitos[ch] || atravessa(dg[0], dg[1])) return; feitos[ch] = 1;
+            var A7 = T(dg[0]), B7 = T(dg[1]);
+            K.barra([A7[0], yV, A7[1]], [B7[0], yV, B7[1]], { ferr: "diagonal", cat: EL.BR_X, papel: "Contraventamento no plano do piso", ifc: "IFCMEMBER", aco: p.aco, nome: "X no plano do piso " + (++nXp) }, "contravento");
+          };
+          for (var i7 = 0; i7 + 1 < comuns.length; i7++) { var xa7 = comuns[i7], xb7 = comuns[i7 + 1]; diag([[xa7, bt.z0], [xb7, bt.z1]]); diag([[xb7, bt.z0], [xa7, bt.z1]]); }
+          /* REVISÃO S6 rodada 4 (revisor): os pilaretes do MEIO dos outros dois lados também precisam do plano do piso — sem
+             diagonal chegando neles só a flexão fraca da viga de borda os segurava (6 × 8 a 0,6 m: Δ2/Δ1 = 3,7, reprovado por
+             deslocabilidade) — a 2ª família de X, entre os lados x0 e x1, quando eles têm apoio no meio */
+          if (comunsX.length > 2) for (var i9 = 0; i9 + 1 < comunsX.length; i9++) { var za9 = comunsX[i9], zb9 = comunsX[i9 + 1]; diag([[bt.x0, za9], [bt.x1, zb9]]); diag([[bt.x0, zb9], [bt.x1, za9]]); }
         }
         if (falhas.length) K.avisos.unshift("NÃO PASSA: " + falhas.join("; ") + " — aumente os apoios ou divida o piso");
         if (nPil && Hmax > 0.15 && !nX) crit.push("não verificado: estabilidade lateral dos pilaretes (sem X nas faces) (CRÍTICO)");

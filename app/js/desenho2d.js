@@ -681,7 +681,8 @@
       var s = st(key); if (s.visivel === false) return;
       var mm = p6PenaEf(penas, s.corte, e), w = p6Px(mm, penas), cor = p6Cor(s);
       var pr = (p6.preenchimentos || {})[s.preench], fill = "none";
-      if (p6.nivelDetalhe !== "baixo" && pr) {
+      /* CORES POR CATEGORIA: o preenchimento da categoria (corCat) aparece também no nível de detalhe baixo — é o que a pessoa pediu para ver */
+      if ((p6.nivelDetalhe !== "baixo" || s.corCat) && pr) {
         if (pr.tipo === "solido") fill = s.meioTom ? "#cfd3d8" : corOk(s.corPreench || pr.cor);   /* MATERIAIS: corPreench = a cor do padrão do material do projeto */
         else if (pr.tipo === "padrao") {
           var pid = String(s.preench) + (s.meioTom ? "-mt" : (s.corPreench ? "-c" + String(s.corPreench).replace("#", "") : ""));
@@ -885,7 +886,7 @@
       if (it.segs && it.segs.length) it.segs.forEach(function (q) { dd += "M" + n4(q[0]) + " " + n4(q[1]) + "L" + n4(q[2]) + " " + n4(q[3]); });
       else if (it.pts && it.pts.length >= 2) dd = caminho(it.pts, it.pts.length > 2);
       if (!dd) return;
-      s += '<path d="' + dd + '" fill="none" stroke="' + ACIMA_COR + '" class="d2-acima-l" data-d2-acima="' + esc(it.u) + '"' + mm + ' stroke-width="' + w + '" ' + NS + tr + "/>";
+      s += '<path d="' + dd + '" fill="none" stroke="' + (it.cor && /^#[0-9a-fA-F]{6}$/.test(it.cor) ? it.cor : ACIMA_COR) + '" class="d2-acima-l" data-d2-acima="' + esc(it.u) + '"' + mm + ' stroke-width="' + w + '" ' + NS + tr + (it.cor && /^#[0-9a-fA-F]{6}$/.test(it.cor) ? ' style="stroke:' + it.cor + '"' : "") + "/>";   /* CORES POR CATEGORIA: style inline, porque a classe do css vence o atributo stroke */
       var t = acimaTexto(it, modo), ex = it.eixo; if (!t || !ex) return;
       /* ao longo da peça, por baixo dela (nunca de cabeça para baixo) */
       var ang = Math.atan2(ex.uy, ex.ux) * 180 / Math.PI; if (ang > 90.001) ang -= 180; if (ang <= -89.999) ang += 180;

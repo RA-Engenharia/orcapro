@@ -224,7 +224,10 @@
         c.dados = r; c.info = r.info;
       }
       var ex = { titulo: d.nome }, M6 = this._p6(); if (M6) M6.extraSvg(id, c.dados, ex);   /* P6: estilos de objeto RA */
-      var res = D2().svg(this._anotar(d, c.dados), this.estilo(id), ex);
+      /* CORES POR CATEGORIA (js/bimcorescatui.js): só a TELA recebe as cópias pintadas — c.dados (que a folha e o DXF também leem) fica intacto */
+      var dadosTela = c.dados;
+      try { if (global.BimCoresCatUI) dadosTela = global.BimCoresCatUI.aplicar2D(id, c.dados, ex) || c.dados; } catch (eCC) { dadosTela = c.dados; }
+      var res = D2().svg(this._anotar(d, dadosTela), this.estilo(id), ex);
       var vbAnt = c.vb;
       c.el.innerHTML = res.svg;
       c.svg = c.el.querySelector("svg");
@@ -399,6 +402,7 @@
       e.cortes = e.cortes.filter(function (x) { return x.id !== cid; });
       if (e.cortes.length === n0) return false;
       delete e.estilos[this.idCorte(cid)];
+      try { if (global.BimCoresCatUI) global.BimCoresCatUI.vistaSaiu(this.idCorte(cid)); } catch (eCC) {}   /* CORES POR CATEGORIA: o corte apagado não deixa estado guardado */
       this._gravar();
       Object.keys(this._cache).forEach(function (k) { if (/^d2p-/.test(k)) self.redesenhar(k, false); });
       this._avisarMudou();
@@ -532,6 +536,8 @@
         if (ac.on) pa.push({ id: "acima:info", rotulo: "Peças acima", leitura: true, valor: nAc + (nAc === 1 ? " peça tracejada" : " peças tracejadas") + (c.dados && c.dados.acimaTopo != null ? " (até " + D2().fmtCota(c.dados.acimaTopo) + ")" : "") });
         secoes.push({ nome: "Acima do plano de corte", params: pa });
       }
+      /* CORES POR CATEGORIA: liga/desliga e "imprimir com as cores" desta vista */
+      try { var sCC = global.BimCoresCatUI ? global.BimCoresCatUI.secaoVista(id) : null; if (sCC) secoes.push(sCC); } catch (eSCC) {}
       /* P2-D: "Esquema de cores" e identificadores de ambiente da planta (js/bimambienteui.js) */
       if (d.tipo === "planta" && global.BimAmbienteUI && global.BimAmbienteUI.secaoVista) {
         try { var sa = global.BimAmbienteUI.secaoVista(e); if (sa) secoes.push(sa); } catch (eSa) {}
@@ -567,6 +573,7 @@
     },
     _mudar: function (id, pid, valor) {
       var d = this.def(id); if (!d) return;
+      if (/^cc:/.test(String(pid)) && global.BimCoresCatUI && global.BimCoresCatUI.mudarVista(id, pid, valor)) return;   /* CORES POR CATEGORIA */
       var M6 = this._p6(); if (M6 && M6.mudar(id, pid, valor)) return;   /* P6 */
       var e = this.estado();
       var mc = /^cad-(\w+)-(vis|dx|dy|rot)$/.exec(pid);
