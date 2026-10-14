@@ -6087,7 +6087,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (S._lupaMover && S._lupaMover(e)) return;
     if (S._p2d && S._p2d.mover(e)) return;   /* P2-D: o realce da região do Ambiente antes do clique (js/bimambienteui.js) */
     if (S._p3) S._p3.mover(e);   /* P3: a linha de prévia do telhado/fundação (js/bimp3ui.js) — os snaps seguem */
+    if (S._cot && S._cot.mover(e)) return;   /* COTAS: a ferramenta de cota no 3D — encaixe, prévia elástica e o valor antes do clique (js/bimcotasui.js) */
     if (S._metc && S._metc.mover(e)) return;   /* METÁLICA: pilar, viga, diagonal, terça e chapa clicando — encaixe 3D e a prévia da peça (js/metalcriarui.js) */
+    if (S._metp && S._metp.mover(e)) return;   /* METÁLICA › PEÇAS PRONTAS: a peça inteira em arame segue o cursor (js/metalprontasui.js) */
+    if (S._mtq && S._mtq.mover(e)) return;   /* METÁLICA › T — TANQUES (14/10/2026, js/metaltanqueui.js): o contorno do tanque segue o cursor */
     if (S._prec && S._prec.mover(e)) {   /* B3: com a prévia do modelador, o editor usa os snaps de precisão (js/bimprecisaoui.js) */
       if (window.BimPlantaModelar && BimPlantaModelar.moverForma3d) BimPlantaModelar.moverForma3d();   /* PLANTA: a prévia da forma da barra (retângulo, círculo…) segue o cursor também no 3D */
       return;
@@ -11654,6 +11657,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (S._b2Cancelar) S._b2Cancelar();   /* B2: contorno/caminho pela metade sai junto */
     if (S._p3) S._p3.cancelar();   /* P3: o contorno do telhado/radier pela metade sai junto */
     if (S._metc) S._metc.cancelar();   /* METÁLICA: a peça pela metade (1º ponto da viga, canto da chapa) sai junto (js/metalcriarui.js) */
+    if (S._cot) S._cot.cancelar();   /* COTAS: as referências já clicadas saem junto (js/bimcotasui.js) */
+    if (S._metp) S._metp.cancelar();   /* METÁLICA › PEÇAS PRONTAS: o 1º canto do mezanino sai junto (js/metalprontasui.js) */
+    if (S._mtq) S._mtq.cancelar();   /* METÁLICA › T — TANQUES (js/metaltanqueui.js) */
   }
   // ---- v1.1.82: desenho com orto e ângulo predefinido ----
   // ajusta o 2º ponto pela trava orto (botão OU Shift) e pelos ângulos predefinidos
@@ -11977,6 +11983,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (S._p11) S._p11.aposRebuild(st);   /* P11: as curvas de nível do terreno */
     if (S._emb) S._emb.aposRebuild(st);   /* EMBREVE: as barras e o graute da alvenaria estrutural (js/bimgraute.js) */
     if (S._metc) S._metc.aposRebuild(st);   /* METÁLICA: cotas entre eixos, níveis no 3D e o plano da ferramenta acompanham */
+    if (S._cot) S._cot.aposRebuild(st);   /* COTAS: as cotas 3D medem de novo (a peça andou, trocou de perfil, sumiu → órfã) — js/bimcotasui.js */
     if (window.BimInstUI && BimInstUI.aoMudarModelo) BimInstUI.aoMudarModelo();
     if (window.BimPropsUI && BimPropsUI.aoMudarModelo) BimPropsUI.aoMudarModelo();   /* P1-C: a paleta de Propriedades acompanha (op, desfazer, refazer, níveis) */
     if (window.BimAnot2DUI && BimAnot2DUI.aposRebuild) BimAnot2DUI.aposRebuild(st);   /* P7: as vistas 2D redesenham a anotação (cota acompanha a peça) e a trava confere */
@@ -12114,6 +12121,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (!hb && edit.sub && S._p11) hb = S._p11.dica(edit.sub);   /* P11: terreno */
     if (!hb && edit.sub && S._p3) hb = S._p3.dica(edit.sub);   /* P3: telhado, bordas, unir, fundação */
     if (!hb && edit.sub && S._emb) hb = S._emb.dica(edit.sub);   /* EMBREVE: plano de trabalho */
+    if (!hb && edit.sub && S._cot) hb = S._cot.dica(edit.sub);   /* COTAS */
     /* ⚠ SEM O PAINEL NÃO HÁ "ESCOLHA NO PAINEL" (auditoria de 12/10/2026). Com a barra de
        opções no lugar do painel do editor (modelador + casca) o balão mandava escolher uma
        ferramenta num painel que não abre — e ficava no meio do 3D. Ali, sem ferramenta, não
@@ -12133,7 +12141,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     }
     /* METÁLICA (js/metalcriarui.js): as ferramentas de criar peça metálica resolvem o ponto elas mesmas
        (encaixe 3D em pontas de barra em qualquer cota + o do plano); da planta o ponto já vem em pForcado */
+    if (S._cot && S._cot.clique(e, hit, pForcado)) return;   /* COTAS: a cota no 3D resolve o ponto ela mesma (pontos das peças, face, plano) — js/bimcotasui.js */
     if (S._metc && S._metc.clique(e, hit, pForcado)) return;
+    if (S._metp && S._metp.clique(e, hit, pForcado)) return;   /* METÁLICA › PEÇAS PRONTAS: o ponto da peça pronta (3D ou planta) */
+    if (S._mtq && S._mtq.clique(e, hit, pForcado)) return;   /* METÁLICA › T — TANQUES: o centro da base do tanque (3D ou planta) */
     /* B3: com a prévia, o ponto vem dos snaps de precisão; as ferramentas novas (copiar, girar…) consomem o clique */
     /* B5 × B3: no traçado de instalação, o ponto de ligação do aparelho (ou a ponta/peça do mesmo sistema)
        ganha do snap de precisão — o conector manda. Sem alvo perto, valem os snaps. */
@@ -12677,6 +12688,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (S._p3) S._p3.aoSub(edit.sub);   /* P3 */
     if (S._emb) S._emb.aoSub(edit.sub);   /* EMBREVE */
     if (S._metc) S._metc.aoSub(edit.sub);   /* METÁLICA: o plano de trabalho visível, a barra e as Propriedades da ferramenta */
+    if (S._cot) S._cot.aoSub(edit.sub);   /* COTAS: Propriedades da ferramenta; sair dela apaga o botão da fita */
+    if (S._metp) S._metp.aoSub(edit.sub);   /* METÁLICA › PEÇAS PRONTAS */
+    if (S._mtq) S._mtq.aoSub(edit.sub);   /* METÁLICA › T — TANQUES */
     if (window.BimBarraOpcoes && BimBarraOpcoes.armou) BimBarraOpcoes.armou(edit.sub);   /* PLANTA: a barra de opções da ferramenta */
   }
   function setEdit(on) {
@@ -12702,6 +12716,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       if (S._p11) S._p11.aoSub(null);   /* P11 */
       if (S._p3) S._p3.aoSub(null);   /* P3 */
       if (S._metc) S._metc.aoSub(null);   /* METÁLICA */
+      if (S._cot) S._cot.aoSub(null);   /* COTAS */
+      if (S._metp) S._metp.aoSub(null);   /* METÁLICA › PEÇAS PRONTAS */
+      if (S._mtq) S._mtq.aoSub(null);   /* METÁLICA › T — TANQUES */
       if (window.BimBarraOpcoes && BimBarraOpcoes.armou) BimBarraOpcoes.armou(null);   /* PLANTA */
     }
     var be = bar.querySelector('[data-b="editar"]'); if (be) { be.style.background = on ? corAtiva() : ''; be.style.color = on ? '#fff' : ''; }
@@ -12888,6 +12905,32 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     marca: mostrarSnapMarca, marcaEsconder: esconderSnapMarca, hint: function (t) { S._hint(t); }, fechou: marcarFechamento,
     telaDe: function (x, y, z) { return S._telaDe ? S._telaDe(x, y, z) : null; }, reescalar: rescaleObj, avaliar: famAval,
     alvo: function () { return orbit && orbit.target ? orbit.target.clone() : null; }
+  }) : null;
+  /* COTAS — GANCHOS (13/10/2026, js/bimcotasui.js + js/bimcotas.js): a ferramenta de cota no 3D
+     (sub "cota3d": encaixe nos pontos das peças, face, prévia com o valor), o desenho das cotas 3D
+     associativas (órfã em vermelho), a seleção e o arrasto da linha e do texto. Sem a prévia do
+     modelador o módulo não arma nada. */
+  S._cot = (window.BimCotasUI && BimCotasUI.montar3d && window.BimCotas) ? BimCotasUI.montar3d({
+    THREE: THREE, S: S, edit: edit, scene: scene, canvas: canvasEl,
+    host: function () { return (S && S.host) || host; }, camera: function () { return camera; },
+    raio: function (cx, cy) { return S._raioDe(cx, cy); }, raycast: raycastEm,
+    snapMalha: function (e, h) { return h ? aplicarSnap(h, raioToque(e)) : null; },
+    planoPonto: editPontoPlano, marca: mostrarSnapMarca, marcaEsconder: esconderSnapMarca,
+    hint: function (t) { S._hint(t); }, fechou: marcarFechamento,
+    telaDe: function (x, y, z) { return S._telaDe ? S._telaDe(x, y, z) : null; }, reescalar: rescaleObj
+  }) : null;
+  /* METÁLICA › PEÇAS PRONTAS (13/10/2026, js/metalprontasui.js): treliça, escada, mezanino, viga de rolamento,
+     rack e skid posicionados por clique — o mesmo raio do cursor, a marca do encaixe e o balão */
+  S._metp = (window.MetalProntasUI && MetalProntasUI.montar3d) ? MetalProntasUI.montar3d({
+    THREE: THREE, S: S, edit: edit, scene: scene,
+    raio: function (cx, cy) { return S._raioDe(cx, cy); }, marca: mostrarSnapMarca, marcaEsconder: esconderSnapMarca, hint: function (t) { S._hint(t); },
+    telaDe: function (x, y, z) { return S._telaDe ? S._telaDe(x, y, z) : null; }
+  }) : null;
+  /* METÁLICA › T — TANQUES (14/10/2026, js/metaltanqueui.js): o tanque posicionado por clique — o mesmo raio do cursor, a marca do encaixe e o balão */
+  S._mtq = (window.MetalTanqueUI && MetalTanqueUI.montar3d) ? MetalTanqueUI.montar3d({
+    THREE: THREE, S: S, edit: edit, scene: scene,
+    raio: function (cx, cy) { return S._raioDe(cx, cy); }, marca: mostrarSnapMarca, marcaEsconder: esconderSnapMarca, hint: function (t) { S._hint(t); },
+    telaDe: function (x, y, z) { return S._telaDe ? S._telaDe(x, y, z) : null; }
   }) : null;
   /* ======================================================================
    * B2 — MODELADOR (prévia `?previa=modelador`, js/bimprevia.js; motor puro
@@ -16629,7 +16672,7 @@ window.BIM = {
     if (o && window.BimGrupos && BimGrupos.redirecionar && S && S.edit && S.edit.estado) o = BimGrupos.redirecionar(o, S.edit.estado);
     if (!S || !S._editOpExterna || !o || ['ajustar', 'renomear', 'apagar', 'mover', 'eixo', 'ajustarTipo', 'marcar', 'forro', 'ambiente', 'ajustarAmbiente', 'separador', 'delimitar', 'ambienteRegra', 'fases', 'grupo', 'opcoes',
       'topossolido', 'subregiao', 'plataforma', 'divisa', 'implantacao', 'compTerreno', 'rotuloCurvas',
-      'telhado', 'borda', 'fundacao', 'graute'].indexOf(o.op) < 0 && !(window.BimAnotP7 && BimAnotP7.ehOp(o.op))) return false;   /* EMBREVE: graute (js/bimgraute.js) */   /* P7: anot2d, anot2dAjustar, anot2dTipo, revisao (js/bimanot.js) */   /* P2-B: forro (Propriedades do forro); P11: terreno */
+      'telhado', 'borda', 'fundacao', 'graute'].indexOf(o.op) < 0 && !(window.BimAnotP7 && BimAnotP7.ehOp(o.op)) && !(window.BimCotas && BimCotas.ehOp(o.op))) return false;   /* COTAS: cota3d, cota3dAjustar (js/bimcotas.js) */   /* EMBREVE: graute (js/bimgraute.js) */   /* P7: anot2d, anot2dAjustar, anot2dTipo, revisao (js/bimanot.js) */   /* P2-B: forro (Propriedades do forro); P11: terreno */
     if (!BimEdit.sanear([o]).length) return false;
     S._editOpExterna(o); return true;
   },

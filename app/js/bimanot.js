@@ -620,6 +620,8 @@
     /* a cota estrutural: unidade, casas e texto do Padrão de detalhamento (v2: 2,5 mm — test-bimanot-cotas confere) */
     tipoC("linear-cm", "Linear - 2,5 mm Arial (cm)", "Linear", { texto: 2.5, unidade: "cm", casas: 0 }),
     tipoC("linear-centro", "Linear com centro - 2,5 mm Arial", "Linear", { centro: true }),
+    /* COTAS (js/bimcotas.js, 13/10/2026): a cota da METÁLICA — milímetro inteiro, como na fábrica */
+    tipoC("linear-mm", "Linear - 2,5 mm Arial (mm)", "Linear", { unidade: "mm", casas: 0 }),
     tipoC("angular", "Angular - 2,5 mm Arial", "Angular", { casas: 2 }),
     tipoC("radial", "Radial - 2,5 mm Arial", "Radial", { marca: "seta", prefixo: "R " }),
     tipoC("diametro", "Diâmetro - 2,5 mm Arial", "Diametro", { marca: "seta", prefixo: "Ø " }),
@@ -630,9 +632,9 @@
   ];
   /* que tipo de cota (op) usa que estilo de tipo */
   var ESTILO_DA_COTA = { linear: "Linear", alinhada: "Linear", angular: "Angular", radial: "Radial", diametro: "Diametro",
-                         arco: "ComprimentoDoArco", elevacao: "CotaDeElevacao", inclinacao: "InclinacaoDePonto" };
+                         arco: "ComprimentoDoArco", elevacao: "CotaDeElevacao", inclinacao: "InclinacaoDePonto", coordenada: "Linear" };
   var TIPO_PADRAO_COTA = { linear: "linear", alinhada: "linear", angular: "angular", radial: "radial", diametro: "diametro",
-                           arco: "arco", elevacao: "elevacao", inclinacao: "inclinacao" };
+                           arco: "arco", elevacao: "elevacao", inclinacao: "inclinacao", coordenada: "linear" };
   var MARCAS = { obliquo: "Diagonal (traço oblíquo)", seta: "Seta preenchida", ponto: "Ponto", nenhuma: "Nenhuma" };
   /* campo do tipo ↔ parâmetro (código BuiltInParameter + nome PT-BR, conferidos no teste contra o inventário) */
   var PARAMS_TIPO_COTA = [
@@ -758,12 +760,16 @@
   };
 
   var TIPOS_ITEM = { cota: 1, texto: 1, simbolo: 1, notaChave: 1, nuvem: 1, linha: 1, regiao: 1, componente: 1, legenda: 1 };
-  var TIPOS_DE_COTA = { linear: 1, alinhada: 1, angular: 1, radial: 1, diametro: 1, arco: 1, elevacao: 1, inclinacao: 1 };
+  var TIPOS_DE_COTA = { linear: 1, alinhada: 1, angular: 1, radial: 1, diametro: 1, arco: 1, elevacao: 1, inclinacao: 1, coordenada: 1 };
   var OPS = { anot2d: 1, anot2dAjustar: 1, anot2dTipo: 1, revisao: 1 };
-  /* campos que o anot2dAjustar aceita (o resto é do tipo do item ou fixo) */
+  /* campos que o anot2dAjustar aceita (o resto é do tipo do item ou fixo)
+     COTAS (13/10/2026): txt (texto substituto, "<>" = o valor), unidade e casas (precisão da
+     instância), tmov (o texto movido: {"<trecho>": {x, y}}), dirMed (direção de medida fixa),
+     graus (inclinação também em °), auto (quem gerou: "selecao", "vista"…) */
   var AJUSTAVEIS = { tipoCota: 1, tipoTexto: 1, off: 1, orient: 1, prefixo: 1, sufixo: 1, eq: 1, travada: 1, valorTravado: 1, chamada: 1,
                      texto: 1, x: 1, y: 1, lx: 1, ly: 1, comLider: 1, alinhH: 1, alinhV: 1, rot: 1, legivel: 1, simbolo: 1, escalaSimb: 1,
-                     chave: 1, revisao: 1, estilo: 1, padrao: 1, mascara: 1, comp: 1, larg: 1, alt: 1, titulo: 1, refs: 1, pts: 1, ang: 1, base: 1 };
+                     chave: 1, revisao: 1, estilo: 1, padrao: 1, mascara: 1, comp: 1, larg: 1, alt: 1, titulo: 1, refs: 1, pts: 1, ang: 1, base: 1,
+                     txt: 1, unidade: 1, casas: 1, tmov: 1, dirMed: 1, graus: 1, auto: 1 };
 
   /* ===================================================== tipos efetivos (RA + projeto) */
   function tiposProjeto(estado) { var a = estado && estado.anot2d; return (a && a.tipos) || { cota: [], texto: [] }; }
@@ -787,20 +793,37 @@
   function fmtComp(m, t) {
     var c = Math.max(0, Math.min(3, Math.round(num(t.casas, 2))));
     if (t.unidade === "cm") return fmtNum(m * 100, c > 1 ? 0 : c);
-    if (t.unidade === "mm") return fmtNum(m * 1000, 0);
+    /* mm sem separador de milhar (o padrão da fábrica: 12000, não 12.000) */
+    if (t.unidade === "mm") return String(Math.round(m * 1000));
     return fmtNum(m, c);
+  }
+  /* o tipo com a precisão da INSTÂNCIA por cima (unidade e casas em Propriedades) */
+  function comPrecisao(t, it) {
+    var temC = !!it && it.casas != null && it.casas !== "" && fin(+it.casas), temU = !!it && (it.unidade === "m" || it.unidade === "cm" || it.unidade === "mm");
+    if (!temC && !temU) return t;
+    var o = {}; Object.keys(t).forEach(function (k) { o[k] = t[k]; });
+    if (temU) { o.unidade = it.unidade; if (!temC) o.casas = it.unidade === "m" ? 2 : 0; }
+    if (temC) o.casas = +it.casas;
+    return o;
   }
   function fmtElev(y, t) { var c = Math.max(0, Math.min(3, Math.round(num(t.casas, 2)))); var z = Math.abs(y) < 0.5 * Math.pow(10, -c) ? 0 : y; return (z > 0 ? "+" : z < 0 ? "−" : "±") + fmtNum(Math.abs(z), c); }
   /* o texto que a cota mostra: prefixo + valor + sufixo (instância antes do tipo), ou o texto de igualdade */
   function textoCota(it, t, valor, eq) {
     if (eq) return txt(t.textoEq || "EQ");
+    t = comPrecisao(t, it);
     var pre = it.prefixo != null && it.prefixo !== "" ? it.prefixo : txt(t.prefixo), suf = it.sufixo != null && it.sufixo !== "" ? it.sufixo : txt(t.sufixo);
     var v;
     if (it.cota === "angular") v = fmtNum(valor, Math.max(0, Math.min(3, Math.round(num(t.casas, 2))))) + "°";
     else if (it.cota === "elevacao") v = fmtElev(valor, t);
     else if (it.cota === "inclinacao") v = fmtNum(valor, Math.max(0, Math.min(3, Math.round(num(t.casas, 1)))));
     else v = fmtComp(valor, t);
-    return pre + v + suf;
+    /* texto substituto: "<>" é o valor medido (vazio = o valor) */
+    if (it.txt != null && String(it.txt) !== "") v = String(it.txt).replace(/<>/g, v);
+    var s = pre + v + suf;
+    /* a inclinação também em graus (as cotas novas: "12,5% (7,1°)") */
+    if (it.cota === "inclinacao" && it.graus && fin(valor)) s += " (" + fmtNum(Math.atan(valor / 100) * 180 / Math.PI, 1) + "°)";
+    if (it.orfa) s += " (órfã)";
+    return s;
   }
 
   /* ===================================================== REFERÊNCIAS
@@ -820,7 +843,16 @@
     arr(estado && estado.eixos).forEach(function (e) { if (e && e.id != null) I.eixo[e.id] = e; });
     arr(estado && estado.coberturas).forEach(function (c) { if (c && c.id != null) I.cobertura[c.id] = c; });
     var a = estado && estado.anot2d; arr(a && a.itens).forEach(function (x) { if (x && x.id != null) I.anot[x.id] = x; });
+    I.estado = estado;   /* COTAS: a referência 3D ("p3") resolve no estado inteiro (perfil metálico, tubo, furo) */
     return I;
+  }
+  /* COTAS (js/bimcotas.js): de que vista é o desenho — a projeção do corte. Quem tem as vistas
+     abertas (js/bimcotasui.js) registra a fonte: id da vista → { tipo:'planta' } | { tipo:'corte', ax, az, bx, bz, inv } */
+  var _fonteProj = null;
+  function projDe(vista, opc) {
+    if (opc && opc.proj) return opc.proj;
+    if (_fonteProj) { try { var p = _fonteProj(vista); if (p) return p; } catch (e) {} }
+    return /^d2c-/.test(String(vista || "")) ? null : { tipo: "planta" };
   }
   function secaoCirc(c) {
     var p = c && c.perfil; if (!p) return null;
@@ -849,6 +881,15 @@
     if (!ref) return { ok: false };
     var cl = fin(+ref.x) && fin(+ref.y) ? [+ref.x, +ref.y] : null, s = num(ref.s, 0), el = ref.el;
     function ponto() { return cl ? { ok: true, p: cl, d: null, solto: true } : { ok: false }; }
+    /* COTAS: a referência 3D (perfil metálico, tubo, furo e canto de chapa, cruzamento de eixos,
+       nível no corte) — projetada na planta ou no corte pelo js/bimcotas.js */
+    if (ref.r === "p3" || ref.r === "nivelc") {
+      var BCo = dep("BimCotas", "./bimcotas.js");
+      if (!BCo || !I.estado) return ponto();
+      var pj = opc.proj || (opc.vista != null ? projDe(opc.vista) : (opc.corte ? null : { tipo: "planta" }));
+      if (!pj) return ponto();
+      return BCo.resolverP7(I.estado, ref, { proj: pj, niveis: opc.niveis });
+    }
     if (ref.r === "ponto" || el == null || el === "") {
       if (ref.r === "nivel") return cl ? { ok: true, p: cl, d: null, y: num(opc.nivelY, num(ref.yRef, 0)) } : { ok: false };
       return ponto();
@@ -914,11 +955,13 @@
     var R = arr(it.refs).map(function (r) { return resolverRef(I, r, opc); });
     if (!R.length || R.some(function (x) { return !x.ok; })) return { ok: false, orfa: R.some(function (x) { return x.orfa; }) };
     var k = it.cota;
-    if (k === "linear" || k === "alinhada") {
+    if (k === "linear" || k === "alinhada" || k === "coordenada") {
       if (R.length < 2) return { ok: false };
       var n = null;
       if (it.orient === "h") n = [1, 0]; else if (it.orient === "v") n = [0, 1];
-      else if (k === "alinhada") {
+      /* COTAS: a direção de medida FIXA (a cadeia de "Cotar seleção" e a furação inclinadas na vista) */
+      else if (it.dirMed && fin(+it.dirMed.x) && fin(+it.dirMed.y)) n = unit([+it.dirMed.x, +it.dirMed.y]);
+      if (!n && k !== "linear") {
         /* direção da cota: perpendicular à 1ª referência que é linha; entre dois pontos, a reta deles */
         for (var i = 0; i < R.length && !n; i++) if (R[i].d) n = perp(R[i].d);
         if (!n) n = unit(sub(R[R.length - 1].p, R[0].p));
@@ -929,6 +972,13 @@
       if (dot(sub(R[R.length - 1].p, R[0].p), n) < 0) n = mul(n, -1);
       var tt = perp(n), ts = R.map(function (x) { return dot(x.p, n); });
       var segs = [];
+      if (k === "coordenada") {
+        /* COORDENADA (ordenada): cada ponto com a distância até a ORIGEM (a 1ª referência) */
+        for (var jc = 0; jc < ts.length; jc++) segs.push({ valor: r6(Math.abs(ts[jc] - ts[0])) });
+        var mx = 0; segs.forEach(function (s) { if (s.valor > mx) mx = s.valor; });
+        return { ok: true, tipo: k, valor: mx, total: mx, segs: segs, eqOk: true,
+                 geo: { n: n, t: tt, ts: ts, lineT: dot(R[0].p, tt) + num(it.off, 0.6), pts: R.map(function (x) { return x.p; }) } };
+      }
       for (var j = 0; j + 1 < ts.length; j++) segs.push({ valor: r6(Math.abs(ts[j + 1] - ts[j])) });
       var total = r6(Math.abs(ts[ts.length - 1] - ts[0]));
       var eqOk = segs.length >= 2 ? segs.every(function (s) { return Math.abs(s.valor - segs[0].valor) < 0.0005; }) : true;
@@ -964,6 +1014,8 @@
       else if (R.length >= 2) {
         var dv = sub(R[1].p, R[0].p);
         if (opc.corte && Math.abs(dv[0]) > 1e-6) { incl = Math.abs(dv[1] / dv[0]) * 100; desce = unit(dv[1] > 0 ? dv : mul(dv, -1)); }
+        /* COTAS: na planta, dois pontos de peça com a altura (ref p3): desnível ÷ distância em planta */
+        else if (!opc.corte && fin(R[0].y) && fin(R[1].y) && len(dv) > 1e-6) { incl = Math.abs(R[1].y - R[0].y) / len(dv) * 100; desce = unit(R[1].y <= R[0].y ? dv : mul(dv, -1)); S = { p: mul(add(R[0].p, R[1].p), 0.5) }; }
       } else if (fin(+it.inclManual)) { incl = +it.inclManual; desce = unit([num(it.dir && it.dir.x, 1), num(it.dir && it.dir.y, 0)]); }
       if (!fin(incl)) return { ok: false };
       return { ok: true, tipo: k, valor: r6(incl), total: r6(incl), segs: [{ valor: r6(incl) }], eqOk: true, geo: { p: S.p, desce: desce || [1, 0] } };
@@ -982,7 +1034,7 @@
     if (!o || o.id == null || typeof o.vista !== "string" || !o.vista || !TIPOS_ITEM[o.tipo]) return false;
     switch (o.tipo) {
       case "cota": return !!TIPOS_DE_COTA[o.cota] && refsOk(o.refs) && (o.off == null || fin(+o.off)) &&
-        (o.cota === "linear" || o.cota === "alinhada" || o.cota === "angular" ? o.refs.length >= 2 : true);
+        (o.cota === "linear" || o.cota === "alinhada" || o.cota === "angular" || o.cota === "coordenada" ? o.refs.length >= 2 : true);
       case "texto": return fin(+o.x) && fin(+o.y) && String(o.texto || "").trim().length > 0;
       case "simbolo": return fin(+o.x) && fin(+o.y) && !!SIMBOLOS[o.simbolo];
       case "notaChave": return fin(+o.x) && fin(+o.y) && String(o.chave || "").trim().length > 0;
@@ -1085,7 +1137,7 @@
     var I = indice(out);
     itens.forEach(function (it) {
       if (it.tipo !== "cota") return;
-      var m = medirCota(I, it, { corte: /^d2c-/.test(it.vista) });
+      var m = medirCota(I, it, { corte: /^d2c-/.test(it.vista), vista: it.vista, proj: projDe(it.vista) });
       it.calc = m.ok ? { valor: m.valor, total: m.total, segs: m.segs.map(function (s) { return s.valor; }), eqOk: m.eqOk } : { erro: true, orfa: !!m.orfa };
       if (!m.ok && m.orfa) res.orfas.push(it.id);
       if (m.ok && it.travada && fin(+it.valorTravado) && Math.abs(m.valor - +it.valorTravado) > 0.0005)
@@ -1140,9 +1192,11 @@
     }
     return dentro;
   }
-  function acharRef(estado, p, tol, filtro, vista) {
+  function acharRef(estado, p, tol, filtro, vista, pref) {
     var melhor = null, I = indice(estado);
-    function cand(ref, dist, rot) { if (dist <= tol && (!melhor || dist < melhor.dist - 1e-9)) melhor = { ref: ref, dist: dist, rotulo: rot }; }
+    /* COTAS: a preferência do encaixe (Tab): 'face' tira o eixo e o centro; 'eixo' tira face, ponta e aresta */
+    var FORA = pref === "face" ? { eixo: 1, centro: 1 } : pref === "eixo" ? { "face+": 1, "face-": 1, fim0: 1, fim1: 1, aresta: 1 } : {};
+    function cand(ref, dist, rot) { if (FORA[ref.r] && ref.el != null && !(I.eixo[ref.el])) return; if (dist <= tol && (!melhor || dist < melhor.dist - 1e-9)) melhor = { ref: ref, dist: dist, rotulo: rot }; }
     function sOf(b, d) { return r6(dot(sub(p, b), d)); }
     var ptRef = { x: r6(p[0]), y: r6(p[1]) };
     if (filtro === "topo") {
@@ -1251,6 +1305,13 @@
     if (fin(+o.lx) && fin(+o.ly)) { it.lx = r4(+o.lx); it.ly = r4(+o.ly); }
     if (o.dir) it.dir = { x: r6(num(o.dir.x, 1)), y: r6(num(o.dir.y, 0)) };
     if (fin(+o.inclManual)) it.inclManual = +o.inclManual;
+    /* COTAS (13/10/2026) */
+    if (o.dirMed && fin(+o.dirMed.x) && fin(+o.dirMed.y)) it.dirMed = { x: r6(+o.dirMed.x), y: r6(+o.dirMed.y) };
+    if (o.txt != null && o.txt !== "") it.txt = String(o.txt).slice(0, 120);
+    if (o.unidade === "m" || o.unidade === "cm" || o.unidade === "mm") it.unidade = o.unidade;
+    if (fin(+o.casas) && o.casas !== "" && o.casas != null) it.casas = Math.max(0, Math.min(4, Math.round(+o.casas)));
+    if (o.graus) it.graus = true;
+    if (o.auto) it.auto = String(o.auto).slice(0, 30);
     return itemValido(it) ? { ok: true, op: it } : { ok: false, motivo: "Cota incompleta: faltam referências." };
   }
   /* desloca a linha de cota até passar pelo ponto q (o 3º clique posiciona a linha) */
@@ -1389,7 +1450,21 @@
     var wL = penaPx(t.pena, jogo), wM = penaPx(t.penaMarca, jogo), h = num(t.texto, 2.5) * k, s = "", cor = stroke(t.cor);
     var gap = num(t.intervalo, 1) * k, extC = num(t.extChamada, 1.5) * k, extL = num(t.extLinha, 1.5) * k, dT = num(t.deslocTexto, 0.8) * k;
     var opaco = t.fundo !== "Transparente";
-    if (m.tipo === "linear" || m.tipo === "alinhada") {
+    /* COTAS: o texto movido (arrastar o texto: tmov {"<trecho>": {x, y}}) e o trecho de cada texto (data-a7-seg) */
+    function tmv(i) { var q = it.tmov && it.tmov[String(i)]; return q && fin(+q.x) && fin(+q.y) ? [+q.x, +q.y] : [0, 0]; }
+    function seg(str, i) { return str.replace("<text ", '<text data-a7-seg="' + i + '" '); }
+    if (m.tipo === "coordenada") {
+      /* COORDENADA: a chamada de cada ponto até a linha de base e o valor (distância à origem) ao longo dela */
+      var gc = m.geo, nc = gc.n, tc = gc.t;
+      gc.pts.forEach(function (p, i) {
+        var q = add(mul(nc, gc.ts[i]), mul(tc, gc.lineT)), v = sub(q, p), L = len(v), dv = L > 1e-9 ? mul(v, 1 / L) : tc;
+        if (L > 1e-9) s += lnS(add(p, mul(dv, Math.min(gap, L * 0.5))), q, wL, "a7-l");
+        if (i === 0) s += '<circle cx="' + n4(q[0]) + '" cy="' + n4(q[1]) + '" r="' + n4(0.7 * k) + '" fill="none" stroke-width="' + wL + '" ' + NS + ' class="a7-l"/>';
+        var tx = textoCota(it, t, m.segs[i].valor, false), wT = largTexto(tx, h, t), rc = angLegivel(dv), pt = add(add(q, mul(dv, dT + wT / 2)), tmv(i));
+        if (opaco) s += fundoTexto(pt, wT, h, rc, "middle");
+        s += seg(txS(add(pt, mul(perp(dv), h * 0.35)), h, esc(tx), "a7-tx", "middle", rc, t), i);
+      });
+    } else if (m.tipo === "linear" || m.tipo === "alinhada") {
       var g = m.geo, n = g.n, tt = g.t, qs = g.ts.map(function (tv) { return add(mul(n, tv), mul(tt, g.lineT)); });
       g.pts.forEach(function (p, i) {
         var q = qs[i], v = sub(q, p), L = len(v); if (L < 1e-9) return;
@@ -1403,9 +1478,9 @@
       /* "acima da linha": o lado -y da tela depois de girar para leitura */
       var acima = mul(perp([Math.cos(rot * Math.PI / 180), Math.sin(rot * Math.PI / 180)]), -1);
       m.segs.forEach(function (sg, i) {
-        var mid = mul(add(qs[i], qs[i + 1]), 0.5), tx = textoCota(it, t, sg.valor, it.eq && m.segs.length >= 2), p = add(mid, mul(acima, dT));
+        var mid = mul(add(qs[i], qs[i + 1]), 0.5), tx = textoCota(it, t, sg.valor, it.eq && m.segs.length >= 2), p = add(add(mid, mul(acima, dT)), tmv(i));
         if (opaco) s += fundoTexto(p, largTexto(tx, h, t), h, rot, "middle");
-        s += txS(p, h, esc(tx), "a7-tx", "middle", rot, t);
+        s += seg(txS(p, h, esc(tx), "a7-tx", "middle", rot, t), i);
       });
       if (it.travada) {   /* o cadeado: um quadradinho no meio da linha */
         var mc = mul(add(ini, fim), 0.5), cs = 1.2 * k, ab = add(mc, mul(acima, -1.6 * k));
@@ -1418,7 +1493,7 @@
       s += '<path d="M' + n4(p1[0]) + " " + n4(p1[1]) + "A" + n4(R) + " " + n4(R) + " 0 0 " + (da > 0 ? 1 : 0) + " " + n4(p2[0]) + " " + n4(p2[1]) + '" fill="none" stroke-width="' + wL + '" ' + NS + ' class="a7-l"/>';
       s += lnS(G.O, add(G.O, mul(G.v1, R + extC)), wL, "a7-l") + lnS(G.O, add(G.O, mul(G.v2, R + extC)), wL, "a7-l");
       s += marcaS(p1, perp(G.v1), t, k, wM) + marcaS(p2, perp(G.v2), t, k, wM);
-      var am = a1 + da / 2, pm = add(G.O, mul([Math.cos(am), Math.sin(am)], R + dT + h * 0.4)), txA = textoCota(it, t, m.valor, false), ra = angLegivel(perp([Math.cos(am), Math.sin(am)]));
+      var am = a1 + da / 2, pm = add(add(G.O, mul([Math.cos(am), Math.sin(am)], R + dT + h * 0.4)), tmv(0)), txA = textoCota(it, t, m.valor, false), ra = angLegivel(perp([Math.cos(am), Math.sin(am)]));
       if (opaco) s += fundoTexto(pm, largTexto(txA, h, t), h, ra, "middle");
       s += txS(pm, h, esc(txA), "a7-tx", "middle", ra, t);
     } else if (m.tipo === "radial" || m.tipo === "diametro" || m.tipo === "arco") {
@@ -1430,7 +1505,7 @@
         s += lnS(add(Gr.c, mul([Math.cos(Gr.a0), Math.sin(Gr.a0)], Gr.r + gap)), add(q0, mul([Math.cos(Gr.a0), Math.sin(Gr.a0)], extC)), wL, "a7-l");
         s += lnS(add(Gr.c, mul([Math.cos(Gr.a1), Math.sin(Gr.a1)], Gr.r + gap)), add(q1, mul([Math.cos(Gr.a1), Math.sin(Gr.a1)], extC)), wL, "a7-l");
         s += marcaS(q0, perp([Math.cos(Gr.a0), Math.sin(Gr.a0)]), t, k, wM) + marcaS(q1, mul(perp([Math.cos(Gr.a1), Math.sin(Gr.a1)]), -1), t, k, wM);
-        var amid = Gr.a0 + dA / 2, pt2 = add(Gr.c, mul([Math.cos(amid), Math.sin(amid)], Ra + dT + h * 0.4)), r2 = angLegivel(perp([Math.cos(amid), Math.sin(amid)]));
+        var amid = Gr.a0 + dA / 2, pt2 = add(add(Gr.c, mul([Math.cos(amid), Math.sin(amid)], Ra + dT + h * 0.4)), tmv(0)), r2 = angLegivel(perp([Math.cos(amid), Math.sin(amid)]));
         if (opaco) s += fundoTexto(pt2, largTexto(txR, h, t), h, r2, "middle");
         s += txS(pt2, h, esc(txR), "a7-tx", "middle", r2, t);
       } else {
@@ -1440,7 +1515,7 @@
         if (m.tipo === "diametro") s += marcaS(a, mul(dir, -1), { marca: "seta" }, k, wM);
         /* o texto acima da linha, no meio do raio (ou do diâmetro) */
         var rr = angLegivel(dir), acR = mul(perp([Math.cos(rr * Math.PI / 180), Math.sin(rr * Math.PI / 180)]), -1);
-        var pT = add(mul(add(a, borda), 0.5), mul(acR, dT));
+        var pT = add(add(mul(add(a, borda), 0.5), mul(acR, dT)), tmv(0));
         if (opaco) s += fundoTexto(pT, largTexto(txR, h, t), h, rr, "middle");
         s += txS(pT, h, esc(txR), "a7-tx", "middle", rr, t);
       }
@@ -1457,17 +1532,17 @@
       }
       var wE = largTexto(txE, h, t);
       s += lnS(P, lp, wL, "a7-l") + lnS(lp, add(lp, [wE + 1 * k, 0]), wL, "a7-l");
-      var pE = add(lp, [0.5 * k, -dT]);
+      var pE = add(add(lp, [0.5 * k, -dT]), tmv(0));
       if (opaco) s += fundoTexto(pE, wE, h, 0, "start");
       s += txS(pE, h, esc(txE), "a7-tx", "start", 0, t);
     } else if (m.tipo === "inclinacao") {
       var Pi = m.geo.p, ds = unit(m.geo.desce) || [1, 0], Ls = 12 * k, a0 = sub(Pi, mul(ds, Ls / 2)), b0 = add(Pi, mul(ds, Ls / 2)), txI = textoCota(it, t, m.valor, false);
       s += lnS(a0, b0, wL, "a7-l") + marcaS(b0, ds, { marca: "seta" }, k, wM);
-      var ri = angLegivel(ds), acI = mul(perp([Math.cos(ri * Math.PI / 180), Math.sin(ri * Math.PI / 180)]), -1), pI = add(Pi, mul(acI, dT));
+      var ri = angLegivel(ds), acI = mul(perp([Math.cos(ri * Math.PI / 180), Math.sin(ri * Math.PI / 180)]), -1), pI = add(add(Pi, mul(acI, dT)), tmv(0));
       if (opaco) s += fundoTexto(pI, largTexto(txI, h, t), h, ri, "middle");
       s += txS(pI, h, esc(txI), "a7-tx", "middle", ri, t);
     }
-    var cls = "a7-item a7-cota a7-cota-" + m.tipo + (sel ? " a7-sel" : "") + (it.violada ? " a7-violada" : "");
+    var cls = "a7-item a7-cota a7-cota-" + m.tipo + (sel ? " a7-sel" : "") + (it.violada ? " a7-violada" : "") + (it.orfa ? " a7-orfa" : "");
     return '<g class="' + cls + '" data-a7="' + esc(it.id) + '"' + cor + ">" + s + "</g>";
   }
   /* ---- texto com chamada (líder) */
@@ -1646,7 +1721,17 @@
     var itens = L.map(function (it) {
       var x = clone(it); if (violadas[it.id]) x.violada = true;
       var o = { it: x };
-      if (it.tipo === "cota") { o.m = medirCota(I, it, { corte: corte, nivelY: opc.nivelY }); o.t = tipoCotaDe(estado, it); }
+      if (it.tipo === "cota") {
+        var oM = { corte: corte, nivelY: opc.nivelY, vista: vista, proj: projDe(vista, opc) };
+        o.m = medirCota(I, it, oM); o.t = tipoCotaDe(estado, it);
+        /* COTAS: a peça sumiu → a cota ÓRFÃ continua desenhada onde estava (os pontos do clique), em
+           vermelho e com "(órfã)" — não some calada (Ctrl+Z traz a peça; ou apague a cota) */
+        if (!o.m.ok && o.m.orfa) {
+          var fb = clone(it); fb.refs = arr(it.refs).map(function (r) { return fin(+r.x) && fin(+r.y) ? { x: +r.x, y: +r.y } : r; });
+          var m2 = medirCota(I, fb, oM);
+          if (m2.ok) { o.m = m2; x.orfa = true; }
+        }
+      }
       if (it.tipo === "texto") o.t = tipoTextoDe(estado, it);
       return o;
     });
@@ -1714,7 +1799,10 @@
     itensDaVista: itensDaVista, item: item, revisoes: revisoes, revisaoAtual: revisaoAtual, proximoNumero: proximoNumero, violacoes: violacoes,
     opCota: opCota, opTexto: opTexto, opSimbolo: opSimbolo, opNotaChave: opNotaChave, opNuvem: opNuvem, opLinha: opLinha, opRegiao: opRegiao,
     opComponente: opComponente, opLegenda: opLegenda, opRevisao: opRevisao, opTravar: opTravar, opsIgualar: opsIgualar, opsManterTrava: opsManterTrava,
-    anotarVista: anotarVista, svg: svgVista, caixa: caixaVista, conteudoLegenda: conteudoLegenda
+    anotarVista: anotarVista, svg: svgVista, caixa: caixaVista, conteudoLegenda: conteudoLegenda,
+    /* COTAS (js/bimcotas.js): a fonte da projeção de cada vista (o corte) e a projeção de uma vista */
+    fonteVistas: function (fn) { _fonteProj = typeof fn === "function" ? fn : null; return true; },
+    projDe: function (vista, opc) { return projDe(vista, opc); }, comPrecisao: comPrecisao
   };
   if (global.BimEdit) registrar(global.BimEdit);
   else if (typeof require === "function") { try { var BEr = require("./bimedit.js"); if (BEr) registrar(BEr); } catch (eR) {} }

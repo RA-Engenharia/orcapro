@@ -311,8 +311,8 @@
 
   /* U laminado (abas de face paralela aproximada; o catálogo manda em A e I).
      Centro de torção (parede fina): e0 = 3·b²·tf / (6·b·tf + h0·tw) a partir da linha média da alma. */
-  function perfilU(d, bf, tw, tf) {
-    d = num(d, 0); bf = num(bf, 0); tw = num(tw, 0); tf = num(tf, 0);
+  function perfilU(d, bf, tw, tf, r) {
+    d = num(d, 0); bf = num(bf, 0); tw = num(tw, 0); tf = num(tf, 0); r = num(r, 0);
     if (!(d > 2 * tf && bf > tw)) return null;
     var h0 = d - tf, b = bf - tw / 2;
     var p = paredeFina([[bf, h0 / 2], [tw / 2, h0 / 2], [tw / 2, -h0 / 2], [bf, -h0 / 2]], 1);   /* geometria com espessuras diferentes: abaixo */
@@ -327,7 +327,12 @@
     var x0 = -(e0 + (xg - tw / 2));   /* centro de torção do lado de fora da alma, medido do centróide */
     var rx = Math.sqrt(Ix / A), ry = Math.sqrt(Iy / A);
     p = { forma: "U", d: d, bf: bf, tw: tw, tf: tf, A: A, Ix: Ix, Iy: Iy, xg: xg, Wx: 2 * Ix / d, Wy: Iy / Math.max(xg, bf - xg),
-          rx: rx, ry: ry, J: J, Cw: Cw, x0: x0, y0: 0, r0: Math.sqrt(rx * rx + ry * ry + x0 * x0), e0: e0, Aw: d * tw, massa: A * 7850 / 1e6 };
+          rx: rx, ry: ry, J: J, Cw: Cw, x0: x0, y0: 0, r0: Math.sqrt(rx * rx + ry * ry + x0 * x0), e0: e0, Aw: d * tw, massa: A * 7850 / 1e6,
+          /* ALTURA DA ALMA do U laminado (14/10/2026): h = d − 2·(tf + r), a parte plana entre as concordâncias — a mesma
+             definição do I laminado (perfilI) e a do exemplo FLX-04 (CBCA, U 152 × 15,6: hw = 111 mm); sem o raio (catálogo
+             que não o traz) fica d − 2·tf, a favor da segurança. Antes faltava e o js/acodim8800.js classificava a alma
+             do U como esbelta ("Anexo H, não coberto") por h indefinido. */
+          h: d - 2 * tf - 2 * r, hw: d - 2 * tf };
     return p;
   }
 
@@ -340,7 +345,7 @@
     forma = forma || cat.forma;
     var g = null, origem = {};
     if (forma === "I") g = perfilI(cat.d, cat.bf, cat.tw, cat.tf, num(cat.r, 0));
-    else if (forma === "U") g = perfilU(cat.d, cat.bf, cat.tw, cat.tf);
+    else if (forma === "U") g = perfilU(cat.d, cat.bf, cat.tw, cat.tf, num(cat.r, 0));
     else if (forma === "L") g = cantoneira(num(cat.a, cat.d), num(cat.b, cat.bf), cat.t);
     else if (forma === "tubo-ret") g = tuboRet(cat.h, cat.b, num(cat.t, cat.tn), num(cat.ro, 2 * num(cat.t, cat.tn)));
     else if (forma === "tubo-circ") g = tuboCirc(cat.D, num(cat.t, cat.tn));

@@ -63,6 +63,7 @@
   <link rel="stylesheet" href="css/bimbarraopcoes.css">
   <link rel="stylesheet" href="css/metalcriar.css">
   <link rel="stylesheet" href="css/bimanot.css">
+  <link rel="stylesheet" href="css/bimcotas.css">
   <link rel="stylesheet" href="css/bimprops.css">
   <link rel="stylesheet" href="css/bimtabela.css">
   <link rel="stylesheet" href="css/tour360.css">
@@ -377,8 +378,27 @@
   <script src="js/metalligacao.js"></script>
   <script src="js/metalgalpao.js"></script>
   <script src="js/metalfab.js"></script>
+  <!-- METÁLICA — FERRAMENTAS DE FABRICAÇÃO (13/10/2026): chapa dobrada e planificação (fator K), lista de corte com aproveitamento de barras e nesting de chapas, área de pintura e peso, folhas de fabricação no Padrão RA e o PDF vetorial delas — motores puros -->
+  <script src="js/metalplanif.js"></script>
+  <script src="js/metalcorte.js"></script>
+  <script src="js/metalpintura.js"></script>
+  <script src="js/svgpdf.js"></script>
+  <script src="js/metalfabdes.js"></script>
   <!-- METÁLICA — CRIAR CLICANDO (12/10/2026): pilar, viga, diagonal, terça e chapa pelos pontos clicados, encaixe 3D, editar pelas Propriedades (op metalAjustar), grade e cotas de eixos — motor puro -->
   <script src="js/metalcriar.js"></script>
+  <!-- METÁLICA — PEÇAS PRONTAS (13/10/2026): treliça, escada, mezanino, viga de rolamento, rack e skid paramétricos (motor puro) -->
+  <script src="js/metalprontas.js"></script>
+  <!-- METÁLICA › T — TANQUES (14/10/2026): motor (API 650, vento NBR 6123, Zick, torre), geometria no BIM e memorial — motores puros -->
+  <script src="js/acotanque.js"></script>
+  <script src="js/metaltanque.js"></script>
+  <script src="js/acotanquememorial.js"></script>
+  <!-- METÁLICA › ACESSOS (14/10/2026, js/acoacessos.js + js/metalacessos.js): regras de norma (NR-12 Anexo III, NBR 9050, NPT/IT, NBR 14718, NBR 6120), verificador, dimensionamento e memorial; marinheiro, plataforma, anelar, passarela, guarda-corpo e piso — motores puros -->
+  <script src="js/acoacessos.js"></script>
+  <script src="js/metalacessos.js"></script>
+  <!-- METÁLICA › L — LIGAÇÕES (14/10/2026): catálogo de tipologias, dimensionamento das novas (NBR 8800) e a ligação inteligente (motores puros) -->
+  <script src="js/acoligtipos.js"></script>
+  <script src="js/acoligcalc2.js"></script>
+  <script src="js/acoligsugere.js"></script>
   <script src="js/familia.js"></script>
   <!-- FAMIMPORT: família importada (malha por tipo, .opfam v2 do plugin) e o leitor do .rfa (CFB/PartAtom) -->
   <script src="js/cfb.js"></script>
@@ -400,6 +420,8 @@
   <!-- P5: tabela/quantidades (motor puro; a op tabela no replay do js/bimedit.js) e anotação parte 1 (identificadores) -->
   <script src="js/bimtabela.js"></script>
   <script src="js/bimanot.js"></script>
+  <!-- COTAS (13/10/2026): o motor das cotas associativas (referência presa à peça, cadeias, cota 3D; extensão do replay do js/bimedit.js) -->
+  <script src="js/bimcotas.js"></script>
   <!-- P10: fases (existente / demolido / novo), grupos, opções de projeto e utilidades de Gerenciar (motores puros; as ops entram no replay do js/bimedit.js por extensão) -->
   <script src="js/bimfases.js"></script>
   <script src="js/bimgrupos.js"></script>
@@ -545,6 +567,8 @@
        as normas, as dicas ilustradas e a tela do cálculo. O js/acocalcworker.js é o mesmo arquivo que roda no Web
        Worker: aqui ele só dá a prévia do vento (V0, q, vão da telha) e o cálculo sem Worker. -->
   <script src="js/acomateriais.js"></script>
+  <!-- METÁLICA › CATÁLOGO INDUSTRIAL (14/10/2026): aços, chapas, grade de piso, pintura, galvanização e cores, cada dado com a fonte (motor puro; dados gerados de dados-fonte/metalica/catalogo-industrial) -->
+  <script src="js/acocatalogoind.js"></script>
   <script src="js/acosecao.js"></script>
   <script src="js/acofsm.js"></script>
   <script src="js/acodim14762.js"></script>
@@ -557,7 +581,11 @@
   <script src="js/acovento.js"></script>
   <script src="js/acoligcalc.js"></script>
   <script src="js/acodimensionar.js"></script>
+  <!-- METÁLICA — ESTRUTURA DESENHADA (13/10/2026): qualquer estrutura de aço desenhada à mão (mezanino, passarela, pórtico avulso) — leitor das peças → modelo, cálculo e memorial; a tela é o js/metalcalclivreui.js -->
+  <script src="js/acomodelolivre.js"></script>
+  <script src="js/acodimlivre.js"></script>
   <script src="js/acomemorial.js"></script>
+  <script src="js/acomemoriallivre.js"></script>
   <script src="js/acopranchas.js"></script>
   <script src="js/acocype.js"></script>
   <script src="js/acofechamentos.js"></script>
@@ -566,10 +594,23 @@
   <script src="js/dicarica.js"></script>
   <script src="js/acocalcworker.js"></script>
   <script src="js/metalcalcui.js"></script>
+  <script src="js/metalcalclivreui.js"></script>
   <!-- METÁLICA & MECÂNICA: a aba da disciplina (Peças, Ligações, Galpão, Cálculo, Fabricação) — só com a prévia do modelador -->
+  <!-- METÁLICA — a tela das ferramentas de fabricação (grupo Fabricação: lista de corte, chapa dobrada, planificação, nesting, pintura, desenho no Padrão RA) -->
+  <script src="js/metalfabui.js"></script>
   <script src="js/metalui.js"></script>
   <!-- METÁLICA — CRIAR CLICANDO: a tela (ferramentas no 3D e na planta, plano de trabalho visível, níveis no 3D, cotas dos eixos, Propriedades da ferramenta e da peça) — só com a prévia do modelador -->
   <script src="js/metalcriarui.js"></script>
+  <!-- METÁLICA — PEÇAS PRONTAS: a tela (diálogos com prévia, posicionar por clique no 3D e na planta, editar no lugar) — só com a prévia do modelador -->
+  <script src="js/metalprontasui.js"></script>
+  <!-- METÁLICA › T — TANQUES: a tela (assistente com prévia, modelos prontos, posicionar por clique, editar no lugar, calcular e memorial) -->
+  <script src="js/metaltanqueui.js"></script>
+  <!-- METÁLICA › ACESSOS (14/10/2026, js/metalacessosui.js): grupo Acessos da fita — escolher o acesso, escada industrial, marinheiro, plataformas, passarela, guarda-corpo, piso, verificar acesso — só com a prévia do modelador -->
+  <script src="js/metalacessosui.js"></script>
+  <!-- METÁLICA › CATÁLOGO INDUSTRIAL: o painel de consulta (abas Aços, Chapas e pisos, Pintura e proteção, Cores) com a calculadora de peso de chapa e de consumo de tinta — só com a prévia do modelador -->
+  <script src="js/metalcatalogoui.js"></script>
+  <!-- METÁLICA › L — LIGAÇÃO INTELIGENTE: a tela (sugestões por clique no pilar e na viga, catálogo de ligações, memorial, ligar todos os nós) — só com a prévia do modelador -->
+  <script src="js/metalligsugui.js"></script>
   <script src="js/bimp3ui.js"></script>
   <!-- CARPINTARIA & MARCENARIA: a tela (aba da disciplina; só com o modelador) -->
   <script src="js/marcenariaui.js"></script>
@@ -589,6 +630,8 @@
   <script src="js/bimambienteui.js"></script>
   <!-- P7: anotação nas vistas 2D (cotas por referência, texto, nuvem de revisão, linhas e regiões) — só com a prévia do modelador -->
   <script src="js/bimanot2dui.js"></script>
+  <!-- COTAS (13/10/2026): cotar fácil — a cota no 3D, na planta e no corte (encaixe, valor antes do clique, Tab face/eixo), Cotar seleção, Cotar a vista, coordenada, nível TOS/TOL, inclinação, furação de chapa; cotas associativas (órfã em vermelho) — só com a prévia do modelador -->
+  <script src="js/bimcotasui.js"></script>
   <!-- PLANTA: modelar na planta baixa (parede, porta, laje, pilar… clicando na planta 2D) e a barra de opções da ferramenta (ortogonal, incrementos, snaps, formas) — só com a prévia do modelador -->
   <script src="js/bimbarraopcoes.js"></script>
   <script src="js/bimplantamodelar.js"></script>

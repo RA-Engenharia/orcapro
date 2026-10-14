@@ -246,9 +246,24 @@
   };
 
   global.Modela = Modela;
+  /* ⚠ JANELA DESTACADA NÃO CONSULTA O SERVIDOR NO CARREGAMENTO — a mesma regra
+     das guardas `!this._janela` do js/app.js (nuvem, backup, telemetria,
+     atualização): a janela principal já consulta, e o status mora no
+     localStorage, que as duas janelas dividem. Sem esta guarda, a janela do
+     ⧉ (e a do 3D da Simulação 4D) chamava /api/modela/status 2,5 s depois de
+     abrir; tools/e2e-janela-destacada.js [3] pegava quando a janela demorava
+     mais que ~1,6 s para ficar pronta (3 de 4 rodadas na árvore da 1.2.136,
+     0 de 3 na da 1.2.134, com o mesmo modela.js). Mesmo reconhecimento de rota
+     do App.iniciar (Janelas.lerRota / lerRotaBim). */
+  function ehJanelaDestacada() {
+    try {
+      var J = global.Janelas, h = (global.location && global.location.hash) || "";
+      return !!(J && ((J.lerRota && J.lerRota(h)) || (J.lerRotaBim && J.lerRotaBim(h))));
+    } catch (e) { return false; }
+  }
   /* a consulta ao servidor no carregamento: sem esperar ninguém chamar. Falha calada (offline). */
   try {
-    if (typeof window !== "undefined" && global.setTimeout) global.setTimeout(function () { try { Modela.atualizar(); } catch (e) {} }, 2500);
+    if (typeof window !== "undefined" && global.setTimeout) global.setTimeout(function () { try { if (ehJanelaDestacada()) return; Modela.atualizar(); } catch (e) {} }, 2500);
   } catch (eT) {}
   if (typeof module !== "undefined" && module.exports) module.exports = Modela;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

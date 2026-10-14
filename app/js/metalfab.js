@@ -49,6 +49,8 @@
   function N() { return dep("BimMetalNorma", "./metalnorma.js"); }
   function Aco() { return dep("PerfisAco", "./perfisaco.js"); }
   function Peso() { return dep("BimPeso", "./bimpeso.js"); }
+  function Planif() { return dep("BimMetalPlanif", "./metalplanif.js"); }
+  function Corte() { return dep("BimMetalCorte", "./metalcorte.js"); }
   function num(v, d) { if (v == null || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
   function arr(v) { return Array.isArray(v) ? v : []; }
   function r1(v) { return Math.round(v * 10) / 10; }
@@ -95,6 +97,16 @@
              L: r1(Math.max.apply(null, xs) - Math.min.apply(null, xs)), B: r1(Math.max.apply(null, ys) - Math.min.apply(null, ys)), areaLiq: num(m.dim && m.dim.areaLiq, 0),
              soldadaEm: m.soldadaEm || null, solda: m.solda || null, ifc: c.ifc, marcaAtual: c.marca || "", nome: M().nome(c), borda: m.borda || "laminada" };
   }
+  /* CHAPA DOBRADA (js/metalplanif.js): na fábrica é a CHAPA PLANIFICADA — retângulo Ld × L com as
+     linhas de dobra (dobras: x a partir da borda, ângulo, sentido, raio); a peça dobrada fica em `dobrada` */
+  function chapaDobradaFab(c) {
+    var PL = Planif(), m = c.metal; if (!PL) return null;
+    var pl = PL.planificar(m.perfil, m.L, PL.config); if (!pl.ok) return null;
+    var Ld = pl.Ld, B = pl.Lpeca;
+    return { id: c.id, kind: "chapa", papel: m.papel, t: pl.t, contorno: [[0, 0], [Ld, 0], [Ld, B], [0, B]], furos: [], recortes: [], aco: m.aco, massa: num(c.massa, 0), area: num(c.area, 0),
+             L: r1(Ld), B: r1(B), areaLiq: r3(Ld * B / 1e6), soldadaEm: m.soldadaEm || null, solda: m.solda || null, ifc: c.ifc, marcaAtual: c.marca || "", nome: M().nome(c), borda: "laminada",
+             dobras: pl.dobras, dobrada: { pts: pl.pts, t: pl.t, ri: pl.ri, K: pl.K, kModo: pl.kModo, fonteK: pl.fonteK, conferir: pl.conferir, rot: m.perfil.rot || "", Ld: Ld, abas: pl.abas, avisos: pl.avisos } };
+  }
   function pecasFab(estado) {
     var pecas = [], parafusos = [];
     arr(estado && estado.caixas).forEach(function (c) {
@@ -102,6 +114,7 @@
       if (c.tipo === "metal" && c.metal) {
         var k = c.metal.kind;
         if (k === "chapa") pecas.push(chapaFab(c));
+        else if (k === "perfil" && c.metal.perfil && c.metal.perfil.forma === "dobrada") { var cd = chapaDobradaFab(c); if (cd) pecas.push(cd); }
         else if (k === "perfil") { var pf = perfilFab(c); if (pf) pecas.push(pf); }
         else if (k === "parafuso") parafusos.push({ id: c.id, papel: c.metal.papel, idP: c.metal.id, Lmm: c.metal.Lmm, classe: c.metal.classe, sistema: c.metal.sistema, arruelas: num(c.metal.arrCabeca, 0) + num(c.metal.arrPorca, 0), porcas: 1, massa: num(c.massa, 0), lig: c.metal.lig || "" });
         else if (k === "mecanica") pecas.push({ id: c.id, kind: "mec", papel: c.metal.papel, tipoMec: c.metal.tipoMec, D: mm(c.metal.D), d: mm(c.metal.d), L: mm(c.metal.L), aco: c.metal.aco, massa: num(c.massa, 0), area: num(c.area, 0), soldadaEm: c.metal.soldadaEm || null, ifc: c.ifc, marcaAtual: c.marca || "", nome: M().nome(c) });
@@ -150,9 +163,19 @@
     }
     return melhor;
   }
+  /* as dobras sem depender do lado de onde se olha: a sequência (posição, ângulo, sentido) ou a de trás para a frente, com ou sem o sentido trocado — vale a menor */
+  function assinDobras(ds) {
+    var L = 0; ds.forEach(function (d) { L = Math.max(L, d.fim); });
+    var v = [];
+    [false, true].forEach(function (rev) { [false, true].forEach(function (inv) {
+      var s = (rev ? ds.slice().reverse() : ds).map(function (d) { var sn = (d.sentido === "cima") !== inv ? "c" : "b"; return q5(rev ? L - d.x : d.x) + "/" + q5(d.ang) + sn + "/" + q5(d.ri); }).join(";");
+      v.push(s);
+    }); });
+    return v.sort()[0];
+  }
   function assinatura(p) {
     if (p.kind === "perfil") return variantes(p).map(function (vt) { return assinaturaPerfil(p, vt); }).sort()[0];
-    if (p.kind === "chapa") return ["CH", q5(p.t), p.aco, canonChapa(p.contorno, p.furos, p.recortes)].join("|");
+    if (p.kind === "chapa") return ["CH", q5(p.t), p.aco, canonChapa(p.contorno, p.furos, p.recortes)].join("|") + (p.dobras ? "|D" + assinDobras(p.dobras) : "");
     return ["M", p.tipoMec, q5(p.D), q5(p.d), q5(p.L), p.aco].join("|");
   }
 
@@ -332,6 +355,7 @@
     e.push("0", "SEQEND", "8", camada);
     this.e.push(e.join("\n"));
   };
+  DxfDoc.prototype.linha = function (camada, a, b) { this.pt(a[0], a[1]); this.pt(b[0], b[1]); this.e.push(["0", "LINE", "8", camada, "10", dxfNum(a[0]), "20", dxfNum(a[1]), "30", "0", "11", dxfNum(b[0]), "21", dxfNum(b[1]), "31", "0"].join("\n")); };
   DxfDoc.prototype.circulo = function (camada, x, y, r) { this.pt(x - r, y - r); this.pt(x + r, y + r); this.e.push(["0", "CIRCLE", "8", camada, "10", dxfNum(x), "20", dxfNum(y), "30", "0", "40", dxfNum(r)].join("\n")); };
   DxfDoc.prototype.texto = function (camada, x, y, h, t) { this.e.push(["0", "TEXT", "8", camada, "10", dxfNum(x), "20", dxfNum(y), "30", "0", "40", dxfNum(h), "1", ascii(t)].join("\n")); };
   DxfDoc.prototype.escrever = function (camadas) {
@@ -343,7 +367,7 @@
     T.push("0", "ENDTAB", "0", "ENDSEC");
     return H.concat(T).concat(["0", "SECTION", "2", "ENTITIES"]).join("\n") + "\n" + this.e.join("\n") + "\n0\nENDSEC\n0\nEOF\n";
   };
-  var CAMADAS_DXF = [["CUT_OUTSIDE", 7], ["CUT_INSIDE", 1], ["ETCH", 3], ["CHAPA_PADRAO", 8]];
+  var CAMADAS_DXF = [["CUT_OUTSIDE", 7], ["CUT_INSIDE", 1], ["ETCH", 3], ["CHAPA_PADRAO", 8], ["BEND", 5], ["BEND_TEXT", 3]];
   /* oblongo com arco (bulge 1 = meia-volta) */
   function oblongoDxf(f) {
     var w = num(f.d, 0), l = num(f.l, w), r = w / 2, h = (l - w) / 2, a = num(f.ang, 0) * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a);
@@ -358,53 +382,47 @@
       else { var c = T([f.x, f.y]); doc.circulo("CUT_INSIDE", c[0], c[1], num(f.d, 0) / 2); }
     });
     p.recortes.forEach(function (r) { doc.poli("CUT_INSIDE", semRepetidos(r).map(T)); });
+    /* chapa dobrada: as linhas de dobra (BEND) e o ângulo/sentido/raio (BEND_TEXT, não corta) */
+    if (p.dobras && p.dobras.length && Planif()) Planif().dxfDobras(doc, { dobras: p.dobras }, T, p.B);
     /* a marca gravada perto do canto (dentro da chapa, fora dos furos) */
     var pos = T([Math.min(15, p.L / 5), Math.min(10, p.B / 5)]);
     doc.texto("ETCH", pos[0], pos[1], Math.max(4, Math.min(10, Math.min(p.L, p.B) / 8)), marca || p.marcaAtual || ("ID" + p.id));
   }
-  function dxfChapa(p, marca) { var d = new DxfDoc(); desenharChapa(d, p, 0, 0, false, marca); return d.escrever(CAMADAS_DXF.slice(0, 3)); }
-  /* NESTING SIMPLES (prateleiras): mesma espessura e aço numa chapa padrão (L × B, partida 3000 × 1200 mm, editável),
-     folga entre peças (partida 10 mm); gira 90° quando a peça cabe melhor deitada. Não é otimização: é o
-     aproveitamento de partida para orçar e cortar lote pequeno. */
+  function dxfChapa(p, marca) { var d = new DxfDoc(); desenharChapa(d, p, 0, 0, false, marca); return d.escrever(p.dobras && p.dobras.length ? CAMADAS_DXF.slice(0, 3).concat(CAMADAS_DXF.slice(4)) : CAMADAS_DXF.slice(0, 3)); }
+  /* NESTING: as chapas da mesma espessura e aço arrumadas nas chapas COMERCIAIS pelo retângulo envolvente —
+     o arranjo é o do js/metalcorte.js (MaxRects, várias medidas de chapa, folga e borda); aqui ele vira DXF com o
+     contorno de verdade de cada peça (girada 90° quando o arranjo pediu). o = { chapas: [[1200,3000]…] | L, B (uma
+     chapa só, como antes), folga, borda }. Não é otimização de contorno: é o aproveitamento para orçar e cortar lote pequeno. */
   function nesting(itens, o) {
     o = o || {};
-    var CL = num(o.L, 3000), CB = num(o.B, 1200), folga = num(o.folga, 10), borda = num(o.borda, 10);
-    var lista = [];
-    itens.forEach(function (it) { for (var k = 0; k < Math.max(1, Math.round(num(it.qtd, 1))); k++) lista.push({ p: it.p, marca: it.marca }); });
-    lista.forEach(function (x) { var w = x.p.L, h = x.p.B; x.gira = h > w && w <= CB - 2 * borda; x.w = x.gira ? h : w; x.h = x.gira ? w : h; });
-    lista.sort(function (a, b) { return (b.h - a.h) || (b.w - a.w) || (a.marca < b.marca ? -1 : 1); });
-    var chapas = [], fora = [];
-    function nova() { var c = { prat: [], pecas: [] }; chapas.push(c); return c; }
-    lista.forEach(function (x) {
-      if (x.w > CL - 2 * borda || x.h > CB - 2 * borda) { fora.push(x.marca); return; }
-      var feito = false;
-      for (var i = 0; i < chapas.length && !feito; i++) {
-        var c = chapas[i];
-        for (var j = 0; j < c.prat.length && !feito; j++) { var pr = c.prat[j]; if (x.h <= pr.h + 1e-6 && pr.x + x.w <= CL - borda + 1e-6) { c.pecas.push({ x: pr.x, y: pr.y, it: x }); pr.x += x.w + folga; feito = true; } }
-        if (!feito) { var yN = c.prat.length ? c.prat[c.prat.length - 1].y + c.prat[c.prat.length - 1].h + folga : borda; if (yN + x.h <= CB - borda + 1e-6) { var pr2 = { y: yN, h: x.h, x: borda }; c.prat.push(pr2); c.pecas.push({ x: pr2.x, y: pr2.y, it: x }); pr2.x += x.w + folga; feito = true; } }
-      }
-      if (!feito) { var c2 = nova(); var pr3 = { y: borda, h: x.h, x: borda }; c2.prat.push(pr3); c2.pecas.push({ x: pr3.x, y: pr3.y, it: x }); pr3.x += x.w + folga; }
-    });
-    var doc = new DxfDoc(), areaPecas = 0;
-    chapas.forEach(function (c, i) {
-      var ox = i * (CL + 200);
-      doc.poli("CHAPA_PADRAO", [[ox, 0], [ox + CL, 0], [ox + CL, CB], [ox, CB]]);
-      c.pecas.forEach(function (pc) {
-        var p = pc.it.p, xs = p.contorno.map(function (q) { return q[0]; }), ys = p.contorno.map(function (q) { return q[1]; }), x0 = Math.min.apply(null, xs), y0 = Math.min.apply(null, ys);
-        /* girar 90°: (x, y) → (−y, x); o canto da peça vai para (pc.x, pc.y) */
-        if (pc.it.gira) desenharChapa(doc, p, ox + pc.x + (Math.max.apply(null, ys)), pc.y - x0, true, pc.it.marca);
-        else desenharChapa(doc, p, ox + pc.x - x0, pc.y - y0, false, pc.it.marca);
-        areaPecas += num(p.areaLiq, 0) > 0 ? p.areaLiq * 1e6 : p.L * p.B;
+    var C = Corte(); if (!C) return { chapas: 0, pecas: 0, fora: itens.map(function (it) { return it.marca; }), aproveitamento: 0, chapaPadrao: [0, 0], texto: "", compra: [] };
+    var cfg = { chapas: o.chapas || (o.L || o.B ? [[num(o.B, 1200), num(o.L, 3000)]] : null), folga: o.folga, borda: o.borda };
+    var porMarca = {};
+    var lista = itens.map(function (it) { var p = it.p; porMarca[it.marca] = p; return { marca: it.marca, w: p.L, h: p.B, qtd: it.qtd, area: num(p.areaLiq, 0) > 0 ? p.areaLiq * 1e6 : p.L * p.B, t: p.t, aco: p.aco }; });
+    var r = C.nestingChapas(lista, cfg), doc = new DxfDoc(), ox = 0, nCh = 0, nPc = 0, fora = [], areaCh = 0, areaPc = 0, compra = [];
+    r.grupos.forEach(function (g) {
+      g.chapas.forEach(function (ch) {
+        doc.poli("CHAPA_PADRAO", [[ox, 0], [ox + ch.W, 0], [ox + ch.W, ch.H], [ox, ch.H]]);
+        ch.pecas.forEach(function (pc) {
+          var p = porMarca[pc.marca], xs = p.contorno.map(function (q) { return q[0]; }), ys = p.contorno.map(function (q) { return q[1]; }), x0 = Math.min.apply(null, xs), y0 = Math.min.apply(null, ys);
+          /* girar 90°: (x, y) → (−y, x); o canto da peça vai para (pc.x, pc.y) */
+          if (pc.girada) desenharChapa(doc, p, ox + pc.x + Math.max.apply(null, ys), pc.y - x0, true, pc.marca);
+          else desenharChapa(doc, p, ox + pc.x - x0, pc.y - y0, false, pc.marca);
+          nPc++;
+        });
+        ox += ch.W + 200; nCh++;
       });
+      fora = fora.concat(g.fora.map(function (x) { return x.marca; }));
+      areaCh += g.areaChapasM2; areaPc += g.areaPecasM2; compra = compra.concat(g.compra);
     });
-    var areaChapas = chapas.length * CL * CB;
-    return { chapas: chapas.length, pecas: lista.length - fora.length, fora: fora, aproveitamento: areaChapas ? r1(100 * areaPecas / areaChapas) : 0, chapaPadrao: [CL, CB],
-             texto: doc.escrever(CAMADAS_DXF) };
+    var c0 = r.config.chapas[0];
+    return { chapas: nCh, pecas: nPc, fora: fora, aproveitamento: areaCh ? r1(100 * areaPc / areaCh) : 0, chapaPadrao: [c0[1], c0[0]], compra: compra, detalhe: r, texto: doc.escrever(CAMADAS_DXF) };
   }
 
   /* =============================================================== LISTAS */
   function descricao(p) {
     if (p.kind === "perfil") return p.nomePerfil + " × " + Math.round(p.L) + " mm";
+    if (p.kind === "chapa" && p.dobras) return "Chapa dobrada #" + br(p.t, 1) + (p.dobrada && p.dobrada.rot ? " " + p.dobrada.rot : "") + " — planificada " + Math.round(p.L) + " × " + Math.round(p.B) + " mm (" + p.dobras.length + " dobra" + (p.dobras.length > 1 ? "s" : "") + ")";
     if (p.kind === "chapa") return "Chapa #" + br(p.t, 1) + " × " + Math.round(p.L) + " × " + Math.round(p.B) + " mm";
     return p.papel + " Ø" + br(p.D, 1) + (p.d ? "/Ø" + br(p.d, 1) : "") + " × " + Math.round(p.L) + " mm";
   }
@@ -587,7 +605,7 @@
     if (o.nesting !== false) Object.keys(chapasNest).sort().forEach(function (k) {
       var r = nesting(chapasNest[k], o.chapaPadrao || {});
       out["DXF/nesting_" + k.replace("#", "chapa") + ".dxf"] = r.texto;
-      resumoNest.push({ grupo: k, chapas: r.chapas, aproveitamento: r.aproveitamento, fora: r.fora });
+      resumoNest.push({ grupo: k, chapas: r.chapas, aproveitamento: r.aproveitamento, fora: r.fora, compra: r.compra });
     });
     return { arquivos: out, numeracao: n, listas: L, nesting: resumoNest };
   }
@@ -597,7 +615,7 @@
     pecasFab: pecasFab, assinatura: assinatura, numerar: numerar, opNumerar: opNumerar,
     dstv: dstv, lerDstv: lerDstv, contornosFaces: contornosFaces, dxfChapa: dxfChapa, nesting: nesting,
     listas: listas, xlsx: xlsx, desenhoChapa: desenhoChapa, desenhoPerfil: desenhoPerfil, desenhoConjunto: desenhoConjunto, descricao: descricao,
-    arquivos: arquivos, ascii: ascii
+    arquivos: arquivos, ascii: ascii, DxfDoc: DxfDoc, assinDobras: assinDobras
   };
   global.BimMetalFab = BimMetalFab;
   if (typeof module !== "undefined" && module.exports) module.exports = BimMetalFab;

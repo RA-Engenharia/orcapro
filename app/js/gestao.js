@@ -10257,7 +10257,9 @@
             /* B3 (prévia do modelador): Modificar (mover, copiar, espelhar, girar, matriz, snaps) e a cota do modelo */
             if (window.BimPrevia && BimPrevia.modelador() && window.BimPrecisao && BimRibbon.acrescentar) {
               BimRibbon.acrescentar("arquitetura", { nome: "Modificar", comandos: BimPrecisao.FITA.modificar });
-              BimRibbon.acrescentar("anotar", { nome: "Cota do modelo", comandos: BimPrecisao.FITA.cotar });
+              /* COTAS (13/10/2026): a "Cota do modelo" (ponto a ponto, só no 3D, sem peça) saiu da fita — a Cota
+                 de Anotar › Cotas faz o mesmo no 3D, na planta e no corte, presa às peças
+                 (BimRibbon.SUBSTITUIDOS_B1: cota-alinhada → p7-cota-alinhada; o atalho DI continua) */
               /* P4: Geometria (juntas de parede, alternar ordem de união, unir/desunir) e Pintar (pintar, dividir face) */
               if (BimPrecisao.FITA.geometria) BimRibbon.acrescentar("arquitetura", { nome: "Geometria", comandos: BimPrecisao.FITA.geometria });
               if (BimPrecisao.FITA.pintar) BimRibbon.acrescentar("acabamentos", { nome: "Pintar", comandos: BimPrecisao.FITA.pintar });
@@ -10802,6 +10804,9 @@
       try { if (window.BimMateriaisUI) BimMateriaisUI.registrar(reg, self); } catch (eMat) {}
       /* METÁLICA & MECÂNICA (09/10/2026): a aba da disciplina — peças, ligações, galpão e fabricação (DSTV, DXF, listas, IFC) — js/metalui.js (sem a prévia do modelador, sai na hora) */
       try { if (window.BimMetalUI) BimMetalUI.registrar(reg, self); } catch (eMet) {}
+      /* COTAS (13/10/2026): Anotar › Cotas — a Cota no 3D/planta/corte, Cotar seleção, Cotar a vista, Coordenada, Nível (TOS/TOL),
+         Inclinação, Furação de chapa e o atalho na Metálica — js/bimcotasui.js (DEPOIS da P7 e da Metálica: estende os dois) */
+      try { if (window.BimCotasUI) BimCotasUI.registrar(reg, self); } catch (eCot) {}
       /* MADEIRA (12/10/2026): Carpintaria & Marcenaria › Cálculo estrutural — o cálculo da estrutura de madeira (NBR 7190-1:2022), memorial, pranchas, manual, CYPE e compra — js/madcalcui.js (sem a prévia do modelador ou sem a disciplina, sai na hora) */
       try { if (window.MadCalcUI) MadCalcUI.registrar(reg, self); } catch (eMad) {}
       /* PROJETOS BIM (12/10/2026): Novo/Abrir/Salvar passam pelo projeto, e um comando com a tela inicial na frente é a pessoa começando a trabalhar — js/bimprojetosui.js. POR ÚLTIMO: ele embrulha o que os outros registraram */

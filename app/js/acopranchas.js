@@ -2531,7 +2531,9 @@
 
   var AcoPranchas = { PADRAO_ACO: PADRAO_ACO, gerar: gerar, largTexto: largTexto, sobreposicoes: sobreposicoes,
     /* partes (teste e tela) */
-    extrair: extrair, ligacoes: ligacoes, esforcos: esforcos, listaMateriais: listaMateriais, casosReacao: casosReacao };
+    extrair: extrair, ligacoes: ligacoes, esforcos: esforcos, listaMateriais: listaMateriais, casosReacao: casosReacao,
+    /* o MESMO desenho (penas, letra, cotas, solda AWS A2.4, tabela) e o MESMO carimbo RA para os desenhos de fabricação (js/metalfabdes.js) */
+    Desenho: Desenho, estilo: estilo, carimbo: carimbo, tituloVista: tituloVista, quebrar: quebrar, espChapa: espChapa, FONTE: FONTE, VERMELHO: VERMELHO };
   global.AcoPranchas = AcoPranchas;
   if (typeof module !== "undefined" && module.exports) module.exports = AcoPranchas;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

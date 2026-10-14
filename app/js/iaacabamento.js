@@ -150,7 +150,7 @@
       });
     },
     _pintarPreco: function () {
-      var st = this._st, el = document.getElementById("iaa-preco"), b = this._botao(); if (!st || !el) return;
+      var self = this, st = this._st, el = document.getElementById("iaa-preco"), b = this._botao(); if (!st || !el) return;
       var p = st.preco;
       if (!p) { el.innerHTML = '<span class="muted">Consultando o preço…</span>'; if (b) { b.disabled = true; b.textContent = "Gerar acabamento"; } return; }
       if (!p.ok) { el.innerHTML = '<span class="fe-erro">' + esc(p.erro) + "</span>"; if (b) { b.disabled = true; b.textContent = "Gerar acabamento"; } return; }
@@ -159,10 +159,16 @@
         h += '<div class="muted" style="font-size:11.5px;margin-top:4px">Os ' + esc(p.cota && p.cota.teto) + " acabamentos do plano deste mês já foram usados. O preço inclui:</div>" +
           '<ul style="margin:4px 0 0 18px;padding:0;font-size:11.5px">' + (p.inclui || []).map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>" +
           '<div style="font-size:12px;margin-top:6px">Saldo da carteira de créditos: <b>' + esc(this.brl(p.carteira && p.carteira.saldoCent)) + "</b>" +
-          (p.carteira && p.carteira.suficiente ? "" : ' — <span style="color:#b91c1c">insuficiente.</span> ' + esc((p.compraCreditos && p.compraCreditos.texto) || "")) + "</div>" +
+          (p.carteira && p.carteira.suficiente ? "" : ' — <span style="color:#b91c1c">insuficiente.</span> ' + esc((p.compraCreditos && p.compraCreditos.texto) || "") +
+            (p.compraCreditos && p.compraCreditos.pix ? ' <button type="button" class="btn sm" data-ia="comprar-creditos">Comprar créditos (PIX)</button>' : "")) + "</div>" +
           '<div class="muted" style="font-size:11px;margin-top:2px">Preço válido por ' + esc(p.validadeMin || 15) + " minutos. Se a IA não entregar a imagem, o valor volta para a carteira.</div>";
       }
       el.innerHTML = h;
+      var bc = el.querySelector('[data-ia="comprar-creditos"]');
+      if (bc) bc.onclick = function () {
+        var falta = Math.max(0, (Number(p.precoCent) || 0) - (Number(p.carteira && p.carteira.saldoCent) || 0)), volta = function () { self.abrir(self._ctx); };
+        self.comprarCreditos({ valorCent: falta, aoCreditar: volta, aoFechar: volta });
+      };
       if (b) { b.disabled = !this.podeConfirmar(p); b.textContent = this.rotuloBotao(p); }
     },
     _msg: function (html) { var m = document.getElementById("iaa-msg"); if (m) m.innerHTML = html; },
@@ -219,14 +225,108 @@
         var NOME = { credito: "Crédito", debito: "Débito", estorno: "Estorno" };
         el.innerHTML = '<div class="card" style="margin-top:8px" data-ia="carteira"><b>Créditos de IA</b>' +
           '<div style="font-size:13px;margin-top:4px">Saldo: <b>' + esc(c.saldo) + "</b>" + (c.acabamento ? " · Acabamentos com IA neste mês: " + esc(c.acabamento.usado + " de " + c.acabamento.teto) + " incluídos no plano" : "") + "</div>" +
+          /* ORÇAMENTISTA POR IA (13/10/2026): o grátis do mês e o preço que vale depois dele */
+          (c.orcamentista ? '<div style="font-size:12.5px;margin-top:2px" data-ia="carteira-orcamentista">Orçamentos por IA neste mês: ' + esc(c.orcamentista.usado + " de " + c.orcamentista.teto) +
+            " incluídos no plano · depois, " + esc(c.orcamentista.preco) + " por orçamento (" + esc(String(c.orcamentista.revisoesIncluidas)) + " revisão incluída), revisão extra " + esc(c.orcamentista.revisao) + "</div>" : "") +
           (ext.length ? '<table style="width:100%;font-size:12px;margin-top:6px;border-collapse:collapse"><thead><tr><th style="text-align:left">Data</th><th style="text-align:left">Lançamento</th><th style="text-align:right">Valor</th><th style="text-align:right">Saldo</th></tr></thead><tbody>' +
             ext.map(function (l) {
               return "<tr><td>" + esc(new Date(l.em).toLocaleDateString("pt-BR")) + "</td><td>" + esc((NOME[l.tipo] || l.tipo) + (l.descricao ? " — " + l.descricao : "")) + '</td><td style="text-align:right;color:' + (l.tipo === "debito" ? "#b91c1c" : "#15803d") + '">' +
                 (l.tipo === "debito" ? "−" : "+") + esc(self.brl(l.valorCent).replace("R$ ", "")) + '</td><td style="text-align:right">' + esc(self.brl(l.saldoCent)) + "</td></tr>";
             }).join("") + "</tbody></table>" : '<div class="muted" style="font-size:12px;margin-top:4px">Nenhum lançamento ainda.</div>') +
-          '<div class="muted" style="font-size:11px;margin-top:6px">Os créditos pagam o acabamento com IA além do que o plano inclui. ' + esc((c.compraCreditos && c.compraCreditos.texto) || "") + "</div></div>";
+          '<div class="muted" style="font-size:11px;margin-top:6px">Os créditos pagam o acabamento com IA e o Orçamentista por IA além do que o plano inclui. ' + esc((c.compraCreditos && c.compraCreditos.texto) || "") + "</div>" +
+          (c.compraCreditos && c.compraCreditos.pix ? '<button type="button" class="btn sm" style="margin-top:6px" data-ia="comprar-creditos">Comprar créditos (PIX)</button>' : "") + "</div>";
+        var bc = el.querySelector('[data-ia="comprar-creditos"]');
+        if (bc) bc.onclick = function () {
+          var volta = function () { if (global.App && App.abrirLicenca) App.abrirLicenca(); };
+          self.comprarCreditos({ aoCreditar: volta, aoFechar: volta });
+        };
         return c;
       });
+    },
+
+    /* =================================================================
+     * CRÉDITOS POR PIX (13/10/2026, decisão do Rogério: "Comprar pelo app
+     * com PIX"). A loja (CONFIG.licencaServer) gera o PIX do Asaas contra a
+     * CHAVE da licença; pago, o crédito entra na carteira pelo servidor
+     * (server/creditos-ia.js → /ia/admin/carteira/creditar). A janela mostra
+     * o QR e o copia-e-cola e confere o pagamento sozinha a cada 5 s enquanto
+     * estiver aberta (até 30 min).
+     *   o.valorCent  o que falta (sugere o valor; mínimo R$ 20, inteiro)
+     *   o.aoCreditar roda quando o crédito entrar (voltar ao que a pessoa fazia)
+     *   o.aoFechar   roda quando ela fechar sem pagar
+     * ⚠ O CPF/CNPJ é pedido só quando a loja não acha o documento de um pedido
+     *   anterior da mesma chave (o PIX do Asaas exige).
+     * ================================================================= */
+    comprarCreditos: function (o) {
+      o = o || {};
+      var self = this, loja = (global.CONFIG && (CONFIG.licencaServer || CONFIG.iaBackend)) || "";
+      var chave = (global.Licenca && Licenca.chave) ? Licenca.chave() : "";
+      if (!loja || !chave) { toast("Ative a licença do OrçaPRO para comprar créditos.", "erro"); return; }
+      var sugerido = Math.max(20, Math.ceil((Number(o.valorCent) || 10000) / 100));
+      var valores = [20, 100, 200, 500]; if (valores.indexOf(sugerido) < 0) valores.unshift(sugerido);
+      var html = '<p style="font-size:13px;margin-top:0">Escolha o valor. O PIX é da RA Engenharia (pelo Asaas), e o saldo entra na sua carteira de créditos de IA assim que o pagamento é confirmado.</p>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap" data-ia="creditos-valores">' + valores.map(function (v) {
+          return '<label style="display:flex;gap:4px;align-items:center;border:1px solid var(--linha);border-radius:8px;padding:6px 10px"><input type="radio" name="iac-valor" value="' + v + '"' + (v === sugerido ? " checked" : "") + "> R$ " + v + ",00</label>";
+        }).join("") + "</div>" +
+        '<label style="display:block;font-size:12.5px;margin-top:10px">CPF ou CNPJ de quem paga <span class="muted">(se a loja já tiver o seu, pode deixar em branco)</span>' +
+        '<input id="iac-doc" inputmode="numeric" autocomplete="off" style="width:100%;margin-top:4px" placeholder="só números"></label>' +
+        '<div id="iac-pix" style="margin-top:12px"></div>';
+      var gerar = function () {
+        var sel = document.querySelector('input[name="iac-valor"]:checked'), valor = sel ? parseInt(sel.value, 10) : sugerido;
+        var doc = String((document.getElementById("iac-doc") || {}).value || "").replace(/\D/g, "");
+        var box = document.getElementById("iac-pix"); if (!box) return;
+        box.innerHTML = '<div class="muted" style="font-size:12.5px">Gerando o PIX…</div>';
+        fetch(loja + "/api/pedido-creditos-ia", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ licenca: chave, valor: valor, cnpj: doc }) })
+          .then(function (r) { return r.json().then(function (j) { return { s: r.status, j: j || {} }; }, function () { return { s: r.status, j: {} }; }); })
+          .then(function (x) {
+            var bx = document.getElementById("iac-pix"); if (!bx) return;
+            if (x.s !== 200 || !x.j.pix) {
+              bx.innerHTML = '<div class="fe-erro" style="font-size:12.5px">' + esc(x.j.erro || ("Não consegui gerar o PIX (HTTP " + x.s + ").")) + "</div>";
+              if (x.j.precisaDoc) { var d = document.getElementById("iac-doc"); if (d) d.focus(); }
+              return;
+            }
+            bx.innerHTML = (x.j.qrImagem ? '<img alt="QR Code do PIX" style="width:180px;height:180px;display:block;margin:0 auto 8px" src="data:image/png;base64,' + esc(x.j.qrImagem) + '">' : "") +
+              '<div style="font-size:12.5px">PIX copia e cola (R$ ' + esc(String(x.j.valor)) + ",00):</div>" +
+              '<textarea id="iac-copia" readonly style="width:100%;height:64px;font-size:11px">' + esc(x.j.pix) + "</textarea>" +
+              '<button type="button" class="btn sm" id="iac-copiar">Copiar</button> <span id="iac-situacao" class="muted" style="font-size:12.5px">Aguardando o pagamento…</span>';
+            var bt = document.getElementById("iac-copiar");
+            if (bt) bt.onclick = function () {
+              var t = document.getElementById("iac-copia"); if (!t) return;
+              if (global.navigator && navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t.value).then(function () { toast("PIX copiado.", "ok"); }, function () {});
+              else { t.select(); try { document.execCommand("copy"); toast("PIX copiado.", "ok"); } catch (e) {} }
+            };
+            self._vigiarPix(loja, chave, x.j.id, new Date().getTime(), o);
+          }, function () { var bx2 = document.getElementById("iac-pix"); if (bx2) bx2.innerHTML = '<div class="fe-erro" style="font-size:12.5px">Sem conexão com a loja — tente de novo.</div>'; });
+      };
+      UI.modal("Comprar créditos de IA por PIX", html, [
+        { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); if (o.aoFechar) o.aoFechar(); } },
+        { texto: ic("check") + " Gerar o PIX", classe: "success", onClick: function () { gerar(); } }
+      ]);
+    },
+    /* confere o pedido a cada 5 s enquanto a janela estiver aberta; creditado → fecha e segue */
+    _vigiarPix: function (loja, chave, id, inicio, o) {
+      var self = this;
+      if (!document.getElementById("iac-situacao")) return;              // a janela fechou: para de conferir
+      if (new Date().getTime() - inicio > 30 * 60000) {
+        var s0 = document.getElementById("iac-situacao");
+        if (s0) s0.textContent = "Ainda não recebi a confirmação. Se você já pagou, o saldo aparece na tela de Licença assim que o banco confirmar.";
+        return;
+      }
+      setTimeout(function () {
+        if (!document.getElementById("iac-situacao")) return;
+        fetch(loja + "/api/pedido-creditos-ia/status", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: id, licenca: chave }) })
+          .then(function (r) { return r.json(); })
+          .then(function (j) {
+            var s = document.getElementById("iac-situacao"); if (!s) return;
+            if (j && j.creditadoEm) {
+              toast("Pagamento confirmado: R$ " + j.valor + ",00 na sua carteira de créditos de IA.", "ok", 6000);
+              UI.fecharModal(); if (o.aoCreditar) o.aoCreditar();
+              return;
+            }
+            if (j && j.pendente) s.textContent = "Pagamento confirmado — lançando o crédito na carteira…";
+            self._vigiarPix(loja, chave, id, inicio, o);
+          }, function () { self._vigiarPix(loja, chave, id, inicio, o); });
+      }, 5000);
     }
   };
 

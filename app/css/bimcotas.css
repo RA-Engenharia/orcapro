@@ -1,0 +1,36 @@
+/* =====================================================================
+ * bimcotas.css — COTAR FÁCIL (js/bimcotasui.js + a cota 2D da P7):
+ * o valor ao lado do cursor no 3D, a prévia da cota na vista 2D (o ponto
+ * encaixado e o número antes do clique), a cota ÓRFÃ em vermelho e o
+ * diálogo do arredondamento. Só tokens do css/app.css (tema claro e
+ * escuro); tudo nasce escondido — sem o modelador nada disto aparece.
+ * ===================================================================== */
+
+/* 3D: o valor da cota junto ao cursor, antes do clique */
+.bct-vivo {
+  position: absolute; z-index: 7; display: none; pointer-events: none;
+  padding: 3px 8px; border: 1px solid var(--aco); border-radius: var(--raio-sm);
+  background: var(--card-bg); color: var(--texto); font-size: var(--t-micro); font-weight: 600;
+  font-variant-numeric: tabular-nums; box-shadow: var(--sombra-sm); white-space: nowrap;
+}
+
+/* vista 2D: o ponto encaixado e o número da prévia (a tinta é a da vista: --d2-sel) */
+.a7-previa-snap { fill: none; stroke: var(--d2-sel, var(--aco)); stroke-width: 1.5; pointer-events: none; }
+.a7-previa-snap[data-tipo="livre"] { stroke-dasharray: 2 2; }
+.a7-previa-tx {
+  fill: var(--d2-sel, var(--aco)); font-family: Arial, "IBM Plex Sans", "Segoe UI", sans-serif; font-weight: 700;
+  paint-order: stroke; stroke: var(--d2-papel, var(--bg)); stroke-width: 3px; stroke-linejoin: round; pointer-events: none;
+}
+
+/* a cota ÓRFÃ (a peça sumiu): vermelha, não some */
+.a7-orfa .a7-l, .a7-orfa .a7-marca { stroke: var(--a7-erro, var(--vermelho)); stroke-dasharray: 4 2; }
+.a7-orfa .a7-tx, .a7-orfa .a7-cheio { fill: var(--a7-erro, var(--vermelho)); }
+
+/* a cota selecionada: o texto se arrasta */
+.a7-sel .a7-tx { cursor: move; }
+
+/* diálogo do arredondamento */
+.bct-dlg { display: flex; flex-direction: column; gap: 10px; color: var(--texto); }
+.bct-op { display: block; padding: 8px 10px; border: 1px solid var(--linha); border-radius: var(--raio-sm); background: var(--card-bg); cursor: pointer; line-height: 1.4; }
+.bct-op:hover, .bct-op:focus-within { border-color: var(--aco); }
+.bct-op input { accent-color: var(--aco); }

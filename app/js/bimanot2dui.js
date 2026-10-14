@@ -48,6 +48,8 @@
     "p7-cota-arco": { k: "cota", cota: "arco", rotulo: "Cota de comprimento de arco" },
     "p7-cota-elevacao": { k: "cota", cota: "elevacao", rotulo: "Cota de elevação" },
     "p7-cota-inclinacao": { k: "cota", cota: "inclinacao", rotulo: "Inclinação de ponto" },
+    /* COTAS (js/bimcotasui.js, 13/10/2026): a cota por coordenada (ordenada a partir de uma origem) */
+    "cota-coordenada": { k: "cota", cota: "coordenada", rotulo: "Cota por coordenada" },
     "p7-texto": { k: "texto", rotulo: "Texto" },
     "p7-simbolo": { k: "simbolo", rotulo: "Símbolo" },
     "p7-nota-chave": { k: "notaChave", rotulo: "Nota-chave" },
@@ -85,15 +87,19 @@
       if (!this.ativo() || !global.BimRibbon) return false;
       var self = this, R = global.BimRibbon;
       var C = function (id, rot, ico, dica, grande, tipo) { var c = { id: id, rotulo: rot, icone: ico, dica: dica, tipo: tipo || "alterna" }; if (grande) c.grande = true; return c; };
-      R.acrescentar("anotar", "Anotar", "Cota", [
-        C("p7-cota-alinhada", "Cota\nalinhada", "regua", "Cota alinhada: clique perto da FACE, do EIXO ou da PONTA de uma peça (ou de uma linha de detalhe), depois da outra — mais referências fazem cadeia — e clique no vazio para posicionar a linha. A cota fica presa às peças e acompanha quando elas andam. Na vista 2D aberta.", true),
+      /* COTAS (13/10/2026): o grupo chama "Cotas" e a Cota, a Cota de nível e a Inclinação valem também no
+         3D (js/bimcotasui.js troca para o 3D quando a vista ativa é o 3D); Cotar seleção, Cotar a vista,
+         Furação e Arredondamento entram neste mesmo painel pelo js/bimcotasui.js */
+      R.acrescentar("anotar", "Anotar", "Cotas", [
+        C("p7-cota-alinhada", "Cota", "regua", "Cota: clique perto da FACE, do EIXO, da PONTA, do MEIO ou do centro de FURO de uma peça, depois da outra — mais referências fazem cadeia — e clique no vazio para posicionar a linha. O valor aparece antes do clique; Tab alterna face/eixo. A cota fica presa às peças: anda, troca de perfil e muda de nível junto. No 3D, na planta e no corte.", true),
         C("p7-cota-linear", "Cota\nlinear", "regua", "Cota linear horizontal ou vertical (Propriedades da ferramenta): mede só na direção X ou Y da vista, entre referências."),
+        C("cota-coordenada", "Coordenada", "grade", "Cota por coordenada: clique a ORIGEM e depois cada ponto; Enter termina. Cada ponto mostra a distância até a origem (furação, locação de pilares, inserts). No 3D, na planta e no corte."),
         C("p7-cota-angular", "Angular", "angulo", "Cota angular: clique duas linhas (faces de parede, eixos, linhas de detalhe) e onde passa o arco."),
         C("p7-cota-radial", "Radial", "alvo", "Cota radial: clique no contorno de um pilar circular ou de um círculo/arco de detalhe e onde vai o texto."),
         C("p7-cota-diametro", "Diâmetro", "alvo", "Cota de diâmetro: clique no contorno de um pilar circular ou de um círculo de detalhe."),
         C("p7-cota-arco", "Comprimento\ndo arco", "ciclo", "Comprimento do arco: clique num arco de detalhe e onde passa a linha de cota."),
-        C("p7-cota-elevacao", "Cota de\nelevação", "niveis", "Cota de elevação: clique no ponto (topo da laje, da viga… ou o nível da vista; no corte, a altura do ponto) e onde vai o texto."),
-        C("p7-cota-inclinacao", "Inclinação", "telhado", "Inclinação de ponto: na planta, clique numa água da cobertura; no corte, clique dois pontos. Mostra a inclinação em % com a seta do caimento."),
+        C("p7-cota-elevacao", "Cota de\nnível", "niveis", "Cota de nível: clique no topo da peça — TOS no aço, TOL na laje e no piso (o prefixo sai sozinho) — ou no nível da vista; no corte, a altura do ponto. Acompanha a peça quando ela muda de nível. No 3D, na planta e no corte."),
+        C("p7-cota-inclinacao", "Inclinação", "telhado", "Inclinação em % e em graus: na planta, clique numa água da cobertura; no corte e no 3D, clique dois pontos (as pontas da terça, da diagonal, do tubo)."),
         C("p7-tipos", "Tipos de cota\ne texto", "ajustes", "Os tipos nomeados de cota e de texto (os da RA e os do projeto): duplicar e editar o tipo — vale para todas as cotas e textos daquele tipo.", false, "botao")
       ]);
       R.acrescentar("anotar", "Anotar", "Texto", [
@@ -163,7 +169,8 @@
       var f = this._f; if (!f) return "";
       var d = f.def;
       if (d.k === "cota") {
-        if (d.cota === "linear" || d.cota === "alinhada") return f.refs.length < 2 ? d.rotulo + ": clique a " + (f.refs.length ? "próxima" : "1ª") + " referência (face, eixo ou ponta da peça). Esc sai." : d.rotulo + ": mais uma referência faz cadeia; clique no vazio para posicionar a linha (Enter usa a posição padrão).";
+        if (d.cota === "linear" || d.cota === "alinhada") return f.refs.length < 2 ? d.rotulo + ": clique a " + (f.refs.length ? "próxima" : "1ª") + " referência (face, eixo, ponta, meio ou furo da peça; Tab alterna face/eixo). Esc sai." : d.rotulo + ": mais uma referência faz cadeia; clique no vazio para posicionar a linha (Enter usa a posição padrão).";
+        if (d.cota === "coordenada") return f.refs.length ? "Cota por coordenada: clique o próximo ponto; Enter (ou clique no vazio) termina. Tab alterna face/eixo. Esc sai." : "Cota por coordenada: clique a ORIGEM. Esc sai.";
         if (d.cota === "angular") return f.refs.length < 2 ? "Cota angular: clique a " + (f.refs.length ? "2ª" : "1ª") + " linha." : "Cota angular: clique onde passa o arco.";
         if (d.cota === "elevacao") return f.refs.length ? "Cota de elevação: clique onde vai o texto." : "Cota de elevação: clique o ponto.";
         if (d.cota === "inclinacao") return "Inclinação: clique numa água da cobertura (planta) ou dois pontos (corte).";
@@ -183,7 +190,10 @@
       if (d.k === "cota") {
         var est = M.ESTILO_DA_COTA[d.cota], tipos = M.tiposCota(st).filter(function (t) { return t.estilo === est; });
         params.push(lista("tipoCota", "Tipo de cota", o.tipoCota && tipos.some(function (t) { return t.id === o.tipoCota; }) ? o.tipoCota : (tipos[0] || {}).id, tipos.map(function (t) { return { id: t.id, rotulo: t.nome }; })));
-        if (d.cota === "linear") params.push(lista("orient", "Direção", o.orient, [{ id: "auto", rotulo: "Automática" }, { id: "h", rotulo: "Horizontal" }, { id: "v", rotulo: "Vertical" }]));
+        if (d.cota === "linear" || d.cota === "coordenada") params.push(lista("orient", "Direção", o.orient, [{ id: "auto", rotulo: "Automática" }, { id: "h", rotulo: "Horizontal" }, { id: "v", rotulo: "Vertical" }]));
+        /* COTAS: encaixe (Tab) e arredondamento — os mesmos do 3D (js/bimcotasui.js) */
+        var U = global.BimCotasUI;
+        if (U && U.paramsFerramenta) params = params.concat(U.paramsFerramenta());
       }
       if (d.k === "texto") {
         params.push(lista("tipoTexto", "Tipo de texto", o.tipoTexto, M.tiposTexto(st).map(function (t) { return { id: t.id, rotulo: t.nome }; })));
@@ -206,7 +216,10 @@
         params.push({ id: "revisoes", rotulo: "Revisões", tipo: "botao", rotuloBotao: "Revisões do projeto…", fn: function () { self.dialogoRevisoes(); } });
       }
       return { daVista: false, semEditarTipo: true, titulo: d.rotulo, icone: "regua", secoes: [{ nome: "Ferramenta", params: params }],
-               onMudar: function (pid, valor) { self.opcoes()[pid] = valor; self._gravarOpc(); return self.esquemaFerramenta(); } };
+               onMudar: function (pid, valor) {
+                 if (/^bct-/.test(pid) && global.BimCotasUI) { global.BimCotasUI.mudarCfg(pid, valor); return self.esquemaFerramenta(); }
+                 self.opcoes()[pid] = valor; self._gravarOpc(); return self.esquemaFerramenta();
+               } };
     },
 
     /* ----------------------------------------------- cliques na vista 2D */
@@ -228,6 +241,8 @@
       if (f && global.BimRibbon && !global.BimRibbon.ativo(f.cmd)) { this.desarmar(); f = null; }
       if (!f) {
         var alvo = ev && ev.target && ev.target.closest ? ev.target.closest("[data-a7]") : null;
+        /* COTAS: na cota JÁ selecionada, arrastar o texto move o texto e arrastar a linha muda o deslocamento */
+        if (alvo && this._sel != null && alvo.getAttribute("data-a7") === String(this._sel) && p && this._arrastoInicio(id, ev, p)) return true;
         if (alvo) { this.selecionar(alvo.getAttribute("data-a7"), id); return true; }
         if (this._sel) { this.selecionar(null, id); }
         return false;
@@ -277,6 +292,8 @@
       function criar(extra) {
         var base = { id: novoId(), vista: id, cota: k, refs: f.refs, tipoCota: o.tipoCota || undefined };
         Object.keys(extra || {}).forEach(function (x) { base[x] = extra[x]; });
+        /* COTAS: o arredondamento do padrão (mm na metálica), a inclinação também em graus e o TOS/TOL */
+        var U = global.BimCotasUI; if (U && U.ajustarCota2d) U.ajustarCota2d(base, st, id);
         var r = M.opCota(base); if (!r.ok) { toast(r.motivo, "aviso"); return false; }
         /* o tipo escolhido precisa ser do estilo certo; se não for, fica o padrão */
         if (r.op.tipoCota && !M.tiposCota(st).some(function (t) { return t.id === r.op.tipoCota && t.estilo === M.ESTILO_DA_COTA[k]; })) delete r.op.tipoCota;
@@ -285,13 +302,14 @@
         if (ok) status(d.rotulo + " criada. Clique a próxima ou Esc.");
         return ok;
       }
-      if (k === "linear" || k === "alinhada") {
-        var h = corte ? null : M.acharRef(st, p, tol, null, id);
-        if (h && !f.refs.some(function (r) { return r.el === h.ref.el && r.r === h.ref.r; })) { f.refs.push(h.ref); status(this.dica() + " (" + h.rotulo + ")"); this._previa(id, p); return true; }
+      var oVista = { corte: corte, vista: id };
+      if (k === "linear" || k === "alinhada" || k === "coordenada") {
+        var h = this._acharCota(st, p, tol, id, corte, null);
+        if (h && !f.refs.some(function (r) { return r.el != null && r.el === h.ref.el && r.r === h.ref.r && r.k === h.ref.k && r.i === h.ref.i && r.el2 === h.ref.el2; })) { f.refs.push(h.ref); status(this.dica() + " (" + h.rotulo + ")"); this._previa(id, p); return true; }
         if (f.refs.length < 2) { f.refs.push({ x: q.x, y: q.y }); this._previa(id, p); status(this.dica()); return true; }
-        var orient = k === "linear" ? (o.orient === "h" || o.orient === "v" ? o.orient : this._orientAuto(st, f.refs, p, corte)) : undefined;
+        var orient = k !== "alinhada" ? (o.orient === "h" || o.orient === "v" ? o.orient : this._orientAuto(st, f.refs, p, corte)) : undefined;
         var prov = { tipo: "cota", cota: k, refs: f.refs, orient: orient, off: 0, vista: id };
-        return criar({ orient: orient, off: M.offsetPara(st, prov, p, { corte: corte }) }) || true;
+        return criar({ orient: orient, off: M.offsetPara(st, prov, p, oVista) }) || true;
       }
       if (k === "angular") {
         if (f.refs.length < 2) {
@@ -308,14 +326,16 @@
           if (!hc) { toast("Clique no contorno de um pilar circular ou de um círculo/arco de detalhe.", "aviso"); return true; }
           f.refs.push(hc.ref); status(this.dica()); return true;
         }
-        var m0 = M.medirCota(st, { tipo: "cota", cota: k, refs: f.refs }, {});
+        var m0 = M.medirCota(st, { tipo: "cota", cota: k, refs: f.refs }, oVista);
         var ang = m0.ok ? Math.atan2(p[1] - m0.geo.c[1], p[0] - m0.geo.c[0]) : 0;
         var off = m0.ok ? Math.sqrt(Math.pow(p[0] - m0.geo.c[0], 2) + Math.pow(p[1] - m0.geo.c[1], 2)) - m0.geo.r : 0.3;
         return criar({ ang: ang, off: off }) || true;
       }
       if (k === "elevacao") {
         if (!f.refs.length) {
-          var he = corte ? { ref: { x: q.x, y: q.y } } : M.acharRef(st, p, tol, "topo", id);
+          /* COTAS: o topo do aço (TOS) e as pontas das peças entram pelo encaixe novo; senão, o de antes */
+          var hx = this._acharCota(st, p, tol, id, corte, "topo");
+          var he = hx && hx.ref.r === "p3" ? hx : (corte ? (hx || { ref: { x: q.x, y: q.y } }) : M.acharRef(st, p, tol, "topo", id));
           if (he.ref.r === "nivel") he.ref.yRef = this._nivelY(id) || 0;
           f.refs.push(he.ref); status(this.dica()); return true;
         }
@@ -324,27 +344,51 @@
       if (k === "inclinacao") {
         if (!corte) {
           var hp = M.acharRef(st, p, tol, "plano", id);
-          if (!hp) { toast("Clique dentro de uma água da cobertura.", "aviso"); return true; }
+          if (!hp) {
+            /* COTAS: fora de uma água da cobertura, a inclinação entre DOIS pontos de peça (terça, tubo) */
+            var h2 = this._acharCota(st, p, tol, id, false, null);
+            if (h2 && h2.ref.r === "p3") { f.refs.push(h2.ref); if (f.refs.length >= 2) return criar({}) || true; status("Inclinação: clique o 2º ponto."); return true; }
+            toast("Clique dentro de uma água da cobertura (ou em dois pontos de uma peça).", "aviso"); return true;
+          }
           f.refs = [hp.ref]; return criar({}) || true;
         }
-        f.refs.push({ x: q.x, y: q.y });
+        var hc2 = this._acharCota(st, p, tol, id, true, null);
+        f.refs.push(hc2 ? hc2.ref : { x: q.x, y: q.y });
         if (f.refs.length >= 2) return criar({}) || true;
         return true;
       }
       return true;
     },
     _orientAuto: function (st, refs, p, corte) {
-      var M = A7(), I = M.indice(st), a = M.resolverRef(I, refs[0], { corte: corte }), b = M.resolverRef(I, refs[refs.length - 1], { corte: corte });
+      var M = A7(), I = M.indice(st), vo = { corte: corte, vista: this._f && this._f.vista }, a = M.resolverRef(I, refs[0], vo), b = M.resolverRef(I, refs[refs.length - 1], vo);
       if (!a.ok || !b.ok) return "h";
       return Math.abs(b.p[0] - a.p[0]) >= Math.abs(b.p[1] - a.p[1]) ? "h" : "v";
+    },
+    /* COTAS (js/bimcotas.js): o encaixe da cota na vista — as faces, eixos e pontas da P7 e os pontos
+       NOTÁVEIS das peças (ponta, meio, centro de furo, cruzamento de eixos, topo do aço) projetados na
+       planta ou no corte; ponto ganha de linha numa janela de 30 % da tolerância. Tab alterna face/eixo. */
+    _acharCota: function (st, p, tol, id, corte, filtro) {
+      var M = A7(), BCm = global.BimCotas, U = global.BimCotasUI, pref = U && U.cfg ? U.cfg().pref : "auto";
+      var h = corte || filtro === "topo" ? null : M.acharRef(st, p, tol, filtro, id, pref);
+      if (!BCm) return h;
+      var proj = M.projDe ? M.projDe(id) : (corte ? null : { tipo: "planta" }); if (!proj) return h;
+      var ch = this._candCache, modo = pref === "face" ? "face" : "auto";
+      if (!ch || ch.st !== st || ch.id !== id || ch.modo !== modo) ch = this._candCache = { st: st, id: id, modo: modo, pts: BCm.candidatosVista(st, proj, { modo: modo, yEixo: 0 }) };
+      var pts = ch.pts;
+      if (filtro === "topo") pts = pts.filter(function (q) { return q.ref && q.ref.k === "topo"; });
+      var c = BCm.maisPerto(pts, p, tol); if (!c) return h;
+      if (h && !(c.dist <= h.dist + 0.3 * tol)) return h;
+      return { ref: c.ref, dist: c.dist, rotulo: c.rotulo, p: c.p, tipo: c.tipo };
     },
     /* Enter: fecha o contorno, termina a linha ou posiciona a cota no lugar padrão */
     concluir: function () {
       var f = this._f, M = A7(); if (!f || !M || !f.vista) return false;
       var d = f.def, o = this.opcoes(), id = f.vista, r = null;
-      if (d.k === "cota" && (d.cota === "linear" || d.cota === "alinhada") && f.refs.length >= 2) {
-        var orient = d.cota === "linear" ? (o.orient === "h" || o.orient === "v" ? o.orient : this._orientAuto(this.estado(), f.refs, null, /^d2c-/.test(id))) : undefined;
-        r = M.opCota({ id: novoId(), vista: id, cota: d.cota, refs: f.refs, off: 0.6, orient: orient, tipoCota: o.tipoCota || undefined });
+      if (d.k === "cota" && (d.cota === "linear" || d.cota === "alinhada" || d.cota === "coordenada") && f.refs.length >= 2) {
+        var orient = d.cota !== "alinhada" ? (o.orient === "h" || o.orient === "v" ? o.orient : this._orientAuto(this.estado(), f.refs, null, /^d2c-/.test(id))) : undefined;
+        var b0 = { id: novoId(), vista: id, cota: d.cota, refs: f.refs, off: 0.6, orient: orient, tipoCota: o.tipoCota || undefined };
+        var Uc = global.BimCotasUI; if (Uc && Uc.ajustarCota2d) Uc.ajustarCota2d(b0, this.estado(), id);
+        r = M.opCota(b0);
         f.refs = [];
       } else if (d.k === "linha" && f.pts.length >= 2) { r = M.opLinha({ id: novoId(), vista: id, pts: f.pts, estilo: o.estilo }); f.pts = []; }
       else if (d.k === "regiao" && f.pts.length >= 3) { r = M.opRegiao({ id: novoId(), vista: id, pts: f.pts, padrao: o.padrao, estilo: d.mascara ? null : o.estilo, mascara: !!d.mascara }); f.pts = []; }
@@ -373,22 +417,37 @@
       var f = this._f, P = P2(), c = P && P._cache[id]; if (!f || !c || !c.svg) return;
       var NS = "http://www.w3.org/2000/svg", g = c.svg.querySelector(".a7-previa");
       if (!g) { g = document.createElementNS(NS, "path"); g.setAttribute("class", "a7-previa"); g.setAttribute("vector-effect", "non-scaling-stroke"); g.setAttribute("fill", "none"); c.svg.appendChild(g); }
-      var pts = [], M = A7();
+      var pts = [], M = A7(), st = this.estado(), corte = /^d2c-/.test(id), hS = null, pS = p;
       if (f.def.k === "cota") {
-        var I = M.indice(this.estado());
-        f.refs.forEach(function (r) { var x = M.resolverRef(I, r, { corte: /^d2c-/.test(id) }); if (x.ok) pts.push([x.p[0], x.p[1]]); });
+        var I = M.indice(st), vo = { corte: corte, vista: id };
+        f.refs.forEach(function (r) { var x = M.resolverRef(I, r, vo); if (x.ok) pts.push([x.p[0], x.p[1]]); });
+        /* COTAS: a prévia ELÁSTICA vai até o ponto ENCAIXADO (não o cursor cru) e mostra o valor antes do clique */
+        if (p && (f.def.cota === "linear" || f.def.cota === "alinhada" || f.def.cota === "coordenada" || f.def.cota === "elevacao" || f.def.cota === "inclinacao")) {
+          hS = this._acharCota(st, p, this._tol(id), id, corte, f.def.cota === "elevacao" ? "topo" : null);
+          if (hS) { var xs = M.resolverRef(I, hS.ref, vo); if (xs.ok) pS = [xs.p[0], xs.p[1]]; }
+        }
       } else f.pts.forEach(function (q) { pts.push([q.x, q.y]); });
-      if (p) pts.push(p);
+      if (pS) pts.push(pS);
       var d = ""; pts.forEach(function (q, i) { d += (i ? "L" : "M") + q[0] + " " + q[1]; });
       g.setAttribute("d", d);
+      var tx = c.svg.querySelector(".a7-previa-tx"), mk = c.svg.querySelector(".a7-previa-snap");
+      if (f.def.k !== "cota" || !pS) { if (tx) tx.parentNode.removeChild(tx); if (mk) mk.parentNode.removeChild(mk); return; }
+      var U = global.BimCotasUI, val = U && U.textoPrevia2d ? U.textoPrevia2d(st, id, f, hS ? hS.ref : { x: pS[0], y: pS[1] }) : "";
+      var px = this._tol(id, 1);
+      if (!mk) { mk = document.createElementNS(NS, "circle"); mk.setAttribute("class", "a7-previa-snap"); mk.setAttribute("vector-effect", "non-scaling-stroke"); c.svg.appendChild(mk); }
+      mk.setAttribute("cx", pS[0]); mk.setAttribute("cy", pS[1]); mk.setAttribute("r", 5 * px); mk.setAttribute("data-tipo", hS ? (hS.tipo || hS.ref.r || "") : "livre");
+      if (!tx) { tx = document.createElementNS(NS, "text"); tx.setAttribute("class", "a7-previa-tx"); c.svg.appendChild(tx); }
+      tx.setAttribute("x", pS[0] + 9 * px); tx.setAttribute("y", pS[1] - 9 * px); tx.setAttribute("font-size", 13 * px);
+      tx.textContent = val || (hS ? hS.rotulo || "" : "");
     },
     _limparPrevia: function () {
       var P = P2(); if (!P) return;
-      Object.keys(P._cache || {}).forEach(function (k) { var c = P._cache[k], g = c && c.svg ? c.svg.querySelector(".a7-previa") : null; if (g) g.parentNode.removeChild(g); });
+      Object.keys(P._cache || {}).forEach(function (k) { var c = P._cache[k]; if (!c || !c.svg) return; Array.prototype.forEach.call(c.svg.querySelectorAll(".a7-previa, .a7-previa-tx, .a7-previa-snap"), function (g) { g.parentNode.removeChild(g); }); });
     },
     mover2d: function (id, ev, p) {
       if (!this._f || !p) return;
-      if (this._f.refs.length || this._f.pts.length) this._previa(id, p);
+      /* COTAS: a cota mostra o encaixe e o valor desde o 1º movimento (antes do 1º clique também) */
+      if (this._f.refs.length || this._f.pts.length || this._f.def.k === "cota") this._previa(id, p);
     },
     _ligarTeclado: function () {
       if (this._tecla || typeof document === "undefined") return;
@@ -402,6 +461,12 @@
           self.desarmar(); return;
         }
         if (ev.key === "Enter" && self._f) { if (self.concluir()) { ev.stopPropagation(); ev.preventDefault(); } return; }
+        /* COTAS: Tab alterna o encaixe (automático → eixo → face) */
+        if (ev.key === "Tab" && self._f && self._f.def.k === "cota" && global.BimCotasUI && global.BimCotasUI.alternarPref) {
+          var np = global.BimCotasUI.alternarPref(); self._candCache = null;
+          status("Encaixe: " + np + ". " + self.dica()); ev.stopPropagation(); ev.preventDefault(); return;
+        }
+        if (ev.key === "Escape" && self._arr) { self._arrastoFim(true); ev.stopPropagation(); ev.preventDefault(); return; }
         if ((ev.key === "Delete" || ev.key === "Backspace") && !self._f && self._sel) {
           var id = self._sel; self.selecionar(null);
           if (self._op({ op: "apagar", id: id })) status("Anotação apagada (Ctrl+Z volta).");
@@ -409,6 +474,53 @@
         }
       };
       document.addEventListener("keydown", this._tecla, true);
+    },
+
+    /* ----------------------------------------------- COTAS: arrastar a linha e o texto (13/10/2026)
+     * Na cota selecionada: o texto arrastado anda (tmov do trecho), a linha arrastada muda o
+     * deslocamento (off). Durante o arrasto o desenho acompanha; ao soltar vira UMA op
+     * anot2dAjustar (Ctrl+Z volta). Esc cancela e devolve o que era. */
+    _arrastoInicio: function (vista, ev, p) {
+      var M = A7(), st = this.estado(), it = M.item(st, this._sel); if (!it || it.tipo !== "cota") return false;
+      var tx = ev.target && ev.target.closest ? ev.target.closest("[data-a7-seg]") : null;
+      var modo = tx ? "texto" : (it.cota === "elevacao" || it.cota === "inclinacao" ? null : "linha"); if (!modo) return false;
+      var self = this, P = P2();
+      this._arr = { vista: vista, id: it.id, modo: modo, seg: tx ? String(tx.getAttribute("data-a7-seg")) : "0", p0: p, x0: ev.clientX, y0: ev.clientY, mexeu: false,
+                    off: it.off, tmov: it.tmov ? JSON.parse(JSON.stringify(it.tmov)) : null };
+      this._arrMove = function (e) {
+        var a = self._arr; if (!a) return;
+        var q = P._ptSvg(a.vista, e); if (!q) return;
+        if (!a.mexeu && Math.abs(e.clientX - a.x0) + Math.abs(e.clientY - a.y0) < 4) return;
+        a.mexeu = true;
+        var cur = M.item(self.estado(), a.id); if (!cur) return;
+        if (a.modo === "linha") { cur.off = M.offsetPara(self.estado(), cur, q, { corte: /^d2c-/.test(a.vista), vista: a.vista }); a.novo = { off: cur.off }; }
+        else {
+          var tm = a.tmov ? JSON.parse(JSON.stringify(a.tmov)) : {}, b = tm[a.seg] || { x: 0, y: 0 };
+          tm[a.seg] = { x: Math.round((num(b.x, 0) + q[0] - a.p0[0]) * 1e4) / 1e4, y: Math.round((num(b.y, 0) + q[1] - a.p0[1]) * 1e4) / 1e4 };
+          cur.tmov = tm; a.novo = { tmov: tm };
+        }
+        try { P.redesenhar(a.vista, false); } catch (e2) {}
+      };
+      this._arrUp = function () { self._arrastoFim(false); };
+      document.addEventListener("pointermove", this._arrMove, true);
+      document.addEventListener("pointerup", this._arrUp, true);
+      status(modo === "texto" ? "Arraste o texto da cota; solte para gravar (Esc cancela)." : "Arraste a linha da cota; solte para gravar (Esc cancela).");
+      return true;
+    },
+    _arrastoFim: function (cancelar) {
+      var a = this._arr; if (!a) return false;
+      this._arr = null;
+      document.removeEventListener("pointermove", this._arrMove, true);
+      document.removeEventListener("pointerup", this._arrUp, true);
+      var cur = A7().item(this.estado(), a.id);
+      if (cancelar || !a.mexeu || !a.novo) {
+        if (cur) { cur.off = a.off; if (a.tmov) cur.tmov = a.tmov; else delete cur.tmov; }
+        try { P2().redesenhar(a.vista, false); } catch (e) {}
+        if (cancelar) status("Arrasto cancelado.");
+        return false;
+      }
+      if (this._op({ op: "anot2dAjustar", id: a.id, campos: a.novo })) status(a.modo === "texto" ? "Texto da cota movido (Ctrl+Z volta)." : "Linha da cota no lugar novo (Ctrl+Z volta).");
+      return true;
     },
 
     /* ----------------------------------------------- desenho (gancho no js/bim2dui.js) */
@@ -483,8 +595,14 @@
           { id: "total", rotulo: "Comprimento total", leitura: true, valor: c.total != null && (it.cota === "linear" || it.cota === "alinhada") ? M.fmtComp(c.total, t) : "—" },
           { id: "contagem", rotulo: "Contagem", leitura: true, valor: arr(it.refs).length },
           { id: "prefixo", rotulo: "Prefixo", tipo: "texto", valor: it.prefixo || "" },
-          { id: "sufixo", rotulo: "Sufixo", tipo: "texto", valor: it.sufixo || "" }];
-        if (it.cota === "linear" || it.cota === "alinhada") {
+          { id: "sufixo", rotulo: "Sufixo", tipo: "texto", valor: it.sufixo || "" },
+          /* COTAS (13/10/2026): texto substituto e precisão da instância; a órfã avisa */
+          { id: "txt", rotulo: "Texto substituto", tipo: "texto", valor: it.txt || "", dica: "Vazio = o valor medido. <> dentro do texto é o valor (ex.: <> EQ)." },
+          { id: "unidade", rotulo: "Unidade", tipo: "lista", valor: it.unidade || "", opcoes: [{ id: "", rotulo: "Do tipo (" + (t.unidade || "m") + ")" }, { id: "m", rotulo: "m" }, { id: "cm", rotulo: "cm" }, { id: "mm", rotulo: "mm" }] },
+          { id: "casas", rotulo: "Casas decimais", tipo: "lista", valor: it.casas == null ? "" : String(it.casas), opcoes: [{ id: "", rotulo: "Do tipo (" + (t.casas != null ? t.casas : 2) + ")" }, { id: "0", rotulo: "0" }, { id: "1", rotulo: "1" }, { id: "2", rotulo: "2" }, { id: "3", rotulo: "3" }] }];
+        var orfaV = A7().violacoes ? (st.anot2d && (st.anot2d.orfas || []).indexOf(it.id) >= 0) : false;
+        if (orfaV) g.unshift({ id: "a7-orfa", rotulo: "Órfã", leitura: true, valor: "a peça a que a cota estava presa foi apagada — Ctrl+Z traz a peça; ou apague a cota" });
+        if (it.cota === "linear" || it.cota === "alinhada" || it.cota === "coordenada") {
           g.push({ id: "travada", rotulo: "Travar", tipo: "sim-nao", valor: !!it.travada });
           if (arr(it.refs).length >= 3) {
             g.push({ id: "eq", rotulo: "Igualdade (EQ)", tipo: "sim-nao", valor: !!it.eq });
@@ -495,7 +613,7 @@
         }
         g.push(excluir);
         secoes.push({ nome: "Cota", params: g });
-        mapa = { prefixo: "texto", sufixo: "texto", travada: "trava", eq: "bool", off: "num", orient: "texto", tipoCota: "texto" };
+        mapa = { prefixo: "texto", sufixo: "texto", travada: "trava", eq: "bool", off: "num", orient: "texto", tipoCota: "texto", txt: "texto", unidade: "opcional", casas: "opcionalNum" };
       } else if (it.tipo === "texto") {
         var tt = M.tipoTextoDe(st, it);
         secoes.push({ nome: "Tipo", params: [
@@ -552,7 +670,8 @@
           var k = mapa[pid]; if (!k) return null;
           if (k === "trava") { var r = M.opTravar(self.estado(), id, !!valor); if (!r.ok) toast(r.motivo, "aviso"); else self._op(r.op); return null; }
           var campos = {};
-          campos[pid] = k === "num" ? num(valor, 0) : k === "bool" ? !!valor : k === "textoMulti" ? String(valor).replace(/\s+\/\s+/g, "\n") : String(valor);
+          campos[pid] = k === "num" ? num(valor, 0) : k === "bool" ? !!valor : k === "textoMulti" ? String(valor).replace(/\s+\/\s+/g, "\n") :
+            k === "opcionalNum" ? (valor === "" || valor == null ? null : num(valor, 0)) : k === "opcional" ? (valor === "" || valor == null ? null : String(valor)) : String(valor);
           aj(campos);
           return null;
         } };

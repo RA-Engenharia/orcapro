@@ -4493,7 +4493,10 @@ if (!S || !S.alive) return;
 if (S._lupaMover && S._lupaMover(e)) return;
 if (S._p2d && S._p2d.mover(e)) return;
 if (S._p3) S._p3.mover(e);
+if (S._cot && S._cot.mover(e)) return;
 if (S._metc && S._metc.mover(e)) return;
+if (S._metp && S._metp.mover(e)) return;
+if (S._mtq && S._mtq.mover(e)) return;
 if (S._prec && S._prec.mover(e)) {
 if (window.BimPlantaModelar && BimPlantaModelar.moverForma3d) BimPlantaModelar.moverForma3d();
 return;
@@ -8754,6 +8757,9 @@ volLimpar();
 if (S._b2Cancelar) S._b2Cancelar();
 if (S._p3) S._p3.cancelar();
 if (S._metc) S._metc.cancelar();
+if (S._cot) S._cot.cancelar();
+if (S._metp) S._metp.cancelar();
+if (S._mtq) S._mtq.cancelar();
 }
 function editAjustarPonto(p, ev) {
 if (!edit.p1 || !p || (edit.sub !== 'parede' && edit.sub !== 'viga' && edit.sub !== 'inst' && !(edit.b2 && /^(eixo|laje|furo|guarda|escada)$/.test(edit.sub)))) return p;
@@ -9040,6 +9046,7 @@ if (S._p10) S._p10.aposRebuild(st, edit.modelo);
 if (S._p11) S._p11.aposRebuild(st);
 if (S._emb) S._emb.aposRebuild(st);
 if (S._metc) S._metc.aposRebuild(st);
+if (S._cot) S._cot.aposRebuild(st);
 if (window.BimInstUI && BimInstUI.aoMudarModelo) BimInstUI.aoMudarModelo();
 if (window.BimPropsUI && BimPropsUI.aoMudarModelo) BimPropsUI.aoMudarModelo();
 if (window.BimAnot2DUI && BimAnot2DUI.aposRebuild) BimAnot2DUI.aposRebuild(st);
@@ -9159,6 +9166,7 @@ if (!hb && edit.sub && S._p2d) hb = S._p2d.dica(edit.sub);
 if (!hb && edit.sub && S._p11) hb = S._p11.dica(edit.sub);
 if (!hb && edit.sub && S._p3) hb = S._p3.dica(edit.sub);
 if (!hb && edit.sub && S._emb) hb = S._emb.dica(edit.sub);
+if (!hb && edit.sub && S._cot) hb = S._cot.dica(edit.sub);
 var semPainel = !!(window.BimBarraOpcoes && BimBarraOpcoes.substituiPainel && BimBarraOpcoes.substituiPainel());
 if (semPainel) h.anotar = '' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' Escreva o texto na barra de opções (Texto) e clique no ponto do modelo.';
 S._hint(edit.sub ? (hb || h[edit.sub] || '') : (semPainel ? '' : '' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + ' Editor: escolha uma ferramenta no painel.'));
@@ -9169,7 +9177,10 @@ var pAmb = editPontoPlano(e.clientX, e.clientY);
 if (pAmb && window.Gestao && Gestao._ambClique) Gestao._ambClique({ x: pAmb.x, z: pAmb.z });
 return;
 }
+if (S._cot && S._cot.clique(e, hit, pForcado)) return;
 if (S._metc && S._metc.clique(e, hit, pForcado)) return;
+if (S._metp && S._metp.clique(e, hit, pForcado)) return;
+if (S._mtq && S._mtq.clique(e, hit, pForcado)) return;
 var instAlvo = false;
 if (!pForcado && S._prec && edit.sub === 'inst' && window.BimInstUI && BimInstUI.cfg && BimInstUI.cfg.ferramenta !== 'peca') {
 try {
@@ -9649,6 +9660,9 @@ if (S._p11) S._p11.aoSub(edit.sub);
 if (S._p3) S._p3.aoSub(edit.sub);
 if (S._emb) S._emb.aoSub(edit.sub);
 if (S._metc) S._metc.aoSub(edit.sub);
+if (S._cot) S._cot.aoSub(edit.sub);
+if (S._metp) S._metp.aoSub(edit.sub);
+if (S._mtq) S._mtq.aoSub(edit.sub);
 if (window.BimBarraOpcoes && BimBarraOpcoes.armou) BimBarraOpcoes.armou(edit.sub);
 }
 function setEdit(on) {
@@ -9670,6 +9684,9 @@ if (S._p2d) S._p2d.aoSub(null);
 if (S._p11) S._p11.aoSub(null);
 if (S._p3) S._p3.aoSub(null);
 if (S._metc) S._metc.aoSub(null);
+if (S._cot) S._cot.aoSub(null);
+if (S._metp) S._metp.aoSub(null);
+if (S._mtq) S._mtq.aoSub(null);
 if (window.BimBarraOpcoes && BimBarraOpcoes.armou) BimBarraOpcoes.armou(null);
 }
 var be = bar.querySelector('[data-b="editar"]'); if (be) { be.style.background = on ? corAtiva() : ''; be.style.color = on ? '#fff' : ''; }
@@ -9795,6 +9812,25 @@ raio: function (cx, cy) { return S._raioDe(cx, cy); }, raycast: raycastEm, hits:
 marca: mostrarSnapMarca, marcaEsconder: esconderSnapMarca, hint: function (t) { S._hint(t); }, fechou: marcarFechamento,
 telaDe: function (x, y, z) { return S._telaDe ? S._telaDe(x, y, z) : null; }, reescalar: rescaleObj, avaliar: famAval,
 alvo: function () { return orbit && orbit.target ? orbit.target.clone() : null; }
+}) : null;
+S._cot = (window.BimCotasUI && BimCotasUI.montar3d && window.BimCotas) ? BimCotasUI.montar3d({
+THREE: THREE, S: S, edit: edit, scene: scene, canvas: canvasEl,
+host: function () { return (S && S.host) || host; }, camera: function () { return camera; },
+raio: function (cx, cy) { return S._raioDe(cx, cy); }, raycast: raycastEm,
+snapMalha: function (e, h) { return h ? aplicarSnap(h, raioToque(e)) : null; },
+planoPonto: editPontoPlano, marca: mostrarSnapMarca, marcaEsconder: esconderSnapMarca,
+hint: function (t) { S._hint(t); }, fechou: marcarFechamento,
+telaDe: function (x, y, z) { return S._telaDe ? S._telaDe(x, y, z) : null; }, reescalar: rescaleObj
+}) : null;
+S._metp = (window.MetalProntasUI && MetalProntasUI.montar3d) ? MetalProntasUI.montar3d({
+THREE: THREE, S: S, edit: edit, scene: scene,
+raio: function (cx, cy) { return S._raioDe(cx, cy); }, marca: mostrarSnapMarca, marcaEsconder: esconderSnapMarca, hint: function (t) { S._hint(t); },
+telaDe: function (x, y, z) { return S._telaDe ? S._telaDe(x, y, z) : null; }
+}) : null;
+S._mtq = (window.MetalTanqueUI && MetalTanqueUI.montar3d) ? MetalTanqueUI.montar3d({
+THREE: THREE, S: S, edit: edit, scene: scene,
+raio: function (cx, cy) { return S._raioDe(cx, cy); }, marca: mostrarSnapMarca, marcaEsconder: esconderSnapMarca, hint: function (t) { S._hint(t); },
+telaDe: function (x, y, z) { return S._telaDe ? S._telaDe(x, y, z) : null; }
 }) : null;
 edit.b2 = null; edit.b2pts = null; edit.b2linha = null; edit.b2objs = []; edit.b2moverEixo = null;
 var b2Mats = null;
@@ -12580,7 +12616,7 @@ if (S && S._editOpExterna && o && ['tabela', 'tabelaApagar', 'identificar', 'des
 if (o && window.BimGrupos && BimGrupos.redirecionar && S && S.edit && S.edit.estado) o = BimGrupos.redirecionar(o, S.edit.estado);
 if (!S || !S._editOpExterna || !o || ['ajustar', 'renomear', 'apagar', 'mover', 'eixo', 'ajustarTipo', 'marcar', 'forro', 'ambiente', 'ajustarAmbiente', 'separador', 'delimitar', 'ambienteRegra', 'fases', 'grupo', 'opcoes',
 'topossolido', 'subregiao', 'plataforma', 'divisa', 'implantacao', 'compTerreno', 'rotuloCurvas',
-'telhado', 'borda', 'fundacao', 'graute'].indexOf(o.op) < 0 && !(window.BimAnotP7 && BimAnotP7.ehOp(o.op))) return false;
+'telhado', 'borda', 'fundacao', 'graute'].indexOf(o.op) < 0 && !(window.BimAnotP7 && BimAnotP7.ehOp(o.op)) && !(window.BimCotas && BimCotas.ehOp(o.op))) return false;
 if (!BimEdit.sanear([o]).length) return false;
 S._editOpExterna(o); return true;
 },

@@ -96,6 +96,7 @@
       /* o CÁLCULO (js/metalcalcui.js): os comandos só chamam a tela */
       "Cálculo": [
         { id: "met-calc-assistente", rotulo: "Assistente\nde cálculo", icone: "calculadora", grande: true, dica: "Galpão de aço calculado de ponta a ponta: o endereço dá o vento (NBR 6123); você diz as faces, a telha e os aços. O sistema decide terças, travamentos, flambagem e o perfil mais leve que passa (NBR 8800)." },
+        { id: "met-calc-livre", rotulo: "Estrutura\ndesenhada", icone: "estrutura", grande: true, dica: "Calcula QUALQUER estrutura de aço desenhada no modelo (mezanino, passarela, plataforma, pórtico avulso, cobertura simples): o sistema lê as peças, monta os nós, decide flambagem e travamentos; você diz as bases e as cargas por área (NBR 6120) e calcula. O perfil mais leve que passa volta para as peças, no lugar." },
         { id: "met-calc-modelos", rotulo: "Modelos\nprontos", icone: "camadas", grande: true, dica: "Galpões prontos para só ajustar: cobertura aberta, fechado com telha, misto alvenaria + telha, centro logístico, uma água e oficina em bloco." },
         { id: "met-calc-calcular", rotulo: "Calcular", icone: "raio", grande: true, dica: "Calcula o galpão desta obra com os dados do assistente, em paralelo (a tela continua livre), e mostra o resultado." },
         { id: "met-calc-resultados", rotulo: "Resultados", icone: "grafico", grande: true, dica: "Aprovado ou não, peso e kg/m², aproveitamento por grupo, as decisões do sistema com o motivo e os problemas com as soluções." },
@@ -106,7 +107,12 @@
       ],
       "Fabricação": [
         { id: "met-numerar", rotulo: "Numerar\npeças", icone: "lista", grande: true, dica: "Marca as peças (iguais = mesma marca: P1, CH12…) e os conjuntos de montagem (peça principal + o que é soldado nela = A1…). Sempre a mesma marca para o mesmo modelo." },
-        { id: "met-desenho", rotulo: "Desenho de\nfabricação", icone: "prancha", grande: true, dica: "Uma folha por peça e por conjunto: vistas, furação cotada a partir da origem e a lista de furos — vai para as Pranchas do projeto." },
+        { id: "met-desenho", rotulo: "Desenho de\nfabricação", icone: "prancha", grande: true, dica: "Uma folha A3 por marca e por conjunto soldado no Padrão RA, com o carimbo: vista com a furação cotada da ponta, cortes, chanfros, dobras, solda AWS A2.4 e a lista de material — caderno em PDF, PDF por marca ou nas Pranchas do projeto." },
+        { id: "met-corte", rotulo: "Lista de\ncorte", icone: "regua", grande: true, dica: "Aproveitamento de barras: as peças de cada perfil e aço encaixadas nas barras comerciais (6 m e 12 m), com a serra; barras a comprar, sobras reaproveitáveis e a perda em kg e % — .xlsx e PDF." },
+        { id: "met-dobrada", rotulo: "Chapa\ndobrada", icone: "desLinha", grande: true, dica: "Peça de chapa dobrada (L, U, Ue, Z, cartola ou polilinha livre) com espessura e raio interno — no 3D, no peso e no IFC; na fábrica ela é a chapa planificada." },
+        { id: "met-planif", rotulo: "Planifi-\ncação", icone: "camadas", grande: true, dica: "O comprimento desenvolvido das chapas dobradas pelo fator K (0,33 de partida, tabela por ri/t ou o da dobradeira), as linhas de dobra com ângulo e sentido e o DXF da planificação." },
+        { id: "met-nesting", rotulo: "Nesting de\nchapas", icone: "grade", grande: true, dica: "As chapas planas e planificadas arrumadas nas chapas comerciais (1200 × 3000, 1500 × 3000, 1500 × 6000 — editável) pelo retângulo envolvente, com o aproveitamento % — PDF e .xlsx." },
+        { id: "met-pintura", rotulo: "Pintura\ne peso", icone: "calculadora", grande: true, dica: "Área de pintura e peso por peça, por marca e total (perímetro do perfil × comprimento; chapas dos dois lados) e a tinta por demão pelo rendimento — .xlsx e lançar no orçamento." },
         { id: "met-dstv", rotulo: "DSTV\n(.nc1)", icone: "exportar", grande: true, dica: "Arquivos DSTV NC1 para serra, furadeira e corte — um por marca (perfis e chapas), num .zip." },
         { id: "met-dxf", rotulo: "DXF de\nchapas", icone: "baixar", grande: true, dica: "DXF 1:1 em mm para laser/plasma: CUT_OUTSIDE, CUT_INSIDE e ETCH, um por marca, e o aproveitamento numa chapa padrão." },
         { id: "met-listas", rotulo: "Listas\n(.xlsx)", icone: "planilha", grande: true, dica: "Lista de peças, de conjuntos, de parafusos/porcas/arruelas, de chapas e o resumo de peso por material (o mesmo peso do içamento)." },
@@ -120,22 +126,50 @@
       this._G = G || this._G;
       var R = global.BimRibbon, self = this;
       if (!previa() || !R || !M() || !L()) return false;
-      Object.keys(this.COMANDOS).forEach(function (pn) { R.acrescentar("metalica", "Metálica & Mecânica", pn, self.COMANDOS[pn]); });
-      if (global.BimDisciplinas && global.BimDisciplinas.declarar) { try { global.BimDisciplinas.declarar(this.ids(), "metalica"); } catch (e) {} }
+      /* PEÇAS PRONTAS (js/metalprontasui.js, 13/10/2026): o grupo entra logo depois do Galpão */
+      var PP = global.MetalProntasUI && global.MetalProntas ? global.MetalProntasUI : null;
+      /* METÁLICA › T — TANQUES (14/10/2026, js/metaltanqueui.js): o grupo entra logo depois das Peças prontas */
+      var TQ = global.MetalTanqueUI && global.MetalTanque && global.AcoTanque ? global.MetalTanqueUI : null;
+      /* METÁLICA › ACESSOS (14/10/2026, js/metalacessosui.js): o grupo entra logo depois das Peças prontas — só se os motores carregaram */
+      var AU = PP && global.MetalAcessosUI && global.MetalAcessosUI.pronto && global.MetalAcessosUI.pronto() ? global.MetalAcessosUI : null;
+      /* METÁLICA › L (14/10/2026, js/metalligsugui.js): o grupo "Ligação inteligente" entra antes de "Ligações" */
+      var LSU = global.MetalLigSugUI && global.AcoLigSugere && global.AcoLigCalc2 && global.AcoLigTipos ? global.MetalLigSugUI : null;
+      Object.keys(this.COMANDOS).forEach(function (pn) {
+        if (pn === "Ligações" && LSU) R.acrescentar("metalica", "Metálica & Mecânica", "Ligação inteligente", LSU.COMANDOS.map(function (c) { return { id: c.id, rotulo: c.rotulo, icone: c.icone, grande: c.grande, dica: c.dica }; }));
+        R.acrescentar("metalica", "Metálica & Mecânica", pn, self.COMANDOS[pn]);
+        if (pn === "Galpão" && PP) R.acrescentar("metalica", "Metálica & Mecânica", "Peças prontas", PP.COMANDOS.map(function (c) { return { id: c.id, rotulo: c.rotulo, icone: c.icone, grande: c.grande, dica: c.dica }; }));
+        if (pn === "Galpão" && AU) R.acrescentar("metalica", "Metálica & Mecânica", "Acessos", AU.COMANDOS.map(function (c) { return { id: c.id, rotulo: c.rotulo, icone: c.icone, grande: c.grande, dica: c.dica }; }));
+        if (pn === "Galpão" && TQ) R.acrescentar("metalica", "Metálica & Mecânica", "Tanques", TQ.COMANDOS.map(function (c) { return { id: c.id, rotulo: c.rotulo, icone: c.icone, grande: c.grande, dica: c.dica }; }));   /* METÁLICA › T */
+      });
+      if (global.BimDisciplinas && global.BimDisciplinas.declarar) { try { global.BimDisciplinas.declarar(this.ids().concat(PP ? PP.ids() : []).concat(AU ? AU.ids() : []).concat(TQ ? TQ.ids() : []).concat(LSU ? LSU.ids() : []), "metalica"); } catch (e) {} }
+      /* METÁLICA › CATÁLOGO INDUSTRIAL (14/10/2026, js/metalcatalogoui.js): o grupo "Catálogo" entra depois da Fabricação; o painel é uma consulta (aços, chapas, pintura, cores) e não mexe no modelo */
+      var CAT = global.MetalCatalogoUI && global.AcoCatalogoInd ? global.MetalCatalogoUI : null;
+      if (CAT) {
+        R.acrescentar("metalica", "Metálica & Mecânica", "Catálogo", CAT.COMANDOS.map(function (c) { return { id: c.id, rotulo: c.rotulo, icone: c.icone, grande: c.grande, dica: c.dica }; }));
+        if (global.BimDisciplinas && global.BimDisciplinas.declarar) { try { global.BimDisciplinas.declarar(CAT.ids(), "metalica"); } catch (eCat) {} }
+      }
       var h = {
         "met-chapa": function () { self.dlgChapa(); }, "met-perfil": function () { self.dlgPerfil(); }, "met-enrijecedor": function () { self.dlgLigacao("enrijecedor"); }, "met-mecanica": function () { self.dlgMecanica(); },
         "met-placa-base": function () { self.dlgLigacao("placaBase"); }, "met-chapa-ext": function () { self.dlgLigacao("chapaExtremidade"); }, "met-cant-dupla": function () { self.dlgLigacao("cantoneiraDupla"); },
         "met-emenda": function () { self.dlgLigacao("emendaCobrejunta"); }, "met-clip": function () { self.dlgLigacao("clipTerca"); }, "met-contravento": function () { self.dlgLigacao("contraventamento"); }, "met-no": function () { self.dlgLigacao("noTrelica"); },
         "met-conferir": function () { self.conferirTudo(); }, "met-apagar-lig": function () { self.apagarLigacao(); },
         "met-galpao": function () { self.dlgGalpao(); },
-        "met-calc-assistente": function () { self.calc("abrir"); }, "met-calc-modelos": function () { self.calc("modelos"); }, "met-calc-calcular": function () { self.calc("calcular"); },
+        "met-calc-assistente": function () { self.calc("abrir"); }, "met-calc-livre": function () { if (!global.MetalCalcLivreUI) { toast("O cálculo da estrutura desenhada não carregou (js/metalcalclivreui.js).", "erro", 8000); return; } global.MetalCalcLivreUI.abrir(); }, "met-calc-modelos": function () { self.calc("modelos"); }, "met-calc-calcular": function () { self.calc("calcular"); },
         "met-calc-resultados": function () { self.calc("resultados"); }, "met-calc-memorial": function () { self.calc("memorial"); }, "met-calc-pranchas": function () { self.calc("pranchas"); },
         "met-calc-cype": function () { self.calc("cype"); }, "met-calc-normas": function () { self.calc("normas"); },
-        "met-numerar": function () { self.numerar(); }, "met-desenho": function () { self.desenhos(); }, "met-dstv": function () { self.exportar("dstv"); }, "met-dxf": function () { self.exportar("dxf"); },
+        "met-numerar": function () { self.numerar(); }, "met-desenho": function () { self.fab("desenhos"); }, "met-corte": function () { self.fab("corte"); }, "met-dobrada": function () { self.fab("dobrada"); },
+        "met-planif": function () { self.fab("planificacao"); }, "met-nesting": function () { self.fab("nesting"); }, "met-pintura": function () { self.fab("pintura"); }, "met-dstv": function () { self.exportar("dstv"); }, "met-dxf": function () { self.exportar("dxf"); },
         "met-listas": function () { self.listas(); }, "met-ifc": function () { self.ifc(); }, "met-pacote": function () { self.pacote(); }, "met-fontes": function () { self.fontes(); }
       };
       Object.keys(h).forEach(function (k) { reg[k] = function () { try { h[k](); } catch (e) { toast("Metálica: " + (e && e.message ? e.message : e), "erro", 8000); } return true; }; });
+      if (PP && PP.registrar) { try { PP.registrar(reg); } catch (eP) { toast("Metálica (peças prontas): " + (eP && eP.message ? eP.message : eP), "erro", 8000); } }
+      /* METÁLICA › T — TANQUES (14/10/2026, js/metaltanqueui.js) */
+      if (TQ && TQ.registrar) { try { TQ.registrar(reg); } catch (eT) { toast("Metálica (tanques): " + (eT && eT.message ? eT.message : eT), "erro", 8000); } }
+      if (AU && AU.registrar) { try { AU.registrar(reg); } catch (eA) { toast("Metálica (acessos): " + (eA && eA.message ? eA.message : eA), "erro", 8000); } }   /* METÁLICA › ACESSOS (14/10/2026) */
+      if (CAT && CAT.registrar) { try { CAT.registrar(reg); } catch (eK) { toast("Metálica (catálogo industrial): " + (eK && eK.message ? eK.message : eK), "erro", 8000); } }   /* METÁLICA › CATÁLOGO INDUSTRIAL (js/metalcatalogoui.js) */
+      if (LSU && LSU.registrar) { try { LSU.registrar(reg); } catch (eL) { toast("Metálica (ligação inteligente): " + (eL && eL.message ? eL.message : eL), "erro", 8000); } }
       /* criar clicando e a referência (plano, eixos, cotas, níveis): js/metalcriarui.js */
+      if (global.MetalFabUI && global.MetalFabUI.registrarDicas) { try { global.MetalFabUI.registrarDicas(); } catch (eD) {} }
       if (global.MetalCriarUI && global.MetalCriarUI.registrar) { try { global.MetalCriarUI.registrar(reg); } catch (eC) { toast("Metálica (criar clicando): " + (eC && eC.message ? eC.message : eC), "erro", 8000); } }
       /* a aba é NOVA: se a casca já estava montada, ela ressincroniza a barra de abas
          (BimShell._sincAbas — o mesmo mecanismo da troca de disciplina, que respeita o
@@ -145,6 +179,13 @@
         try { var sh = global.BimShell; if (sh && sh._raiz && typeof sh._sincAbas === "function") sh._sincAbas(); } catch (e) {}
       }, 0);
       return true;
+    },
+
+    /* as ferramentas de FABRICAÇÃO (lista de corte, chapa dobrada, planificação, nesting, pintura e o desenho no Padrão RA): js/metalfabui.js */
+    fab: function (qual) {
+      var X = global.MetalFabUI;
+      if (!X || typeof X[qual] !== "function") { toast("As ferramentas de fabricação não carregaram (js/metalfabui.js).", "erro", 8000); return false; }
+      return X[qual]();
     },
 
     /* o painel Cálculo: a tela é o js/metalcalcui.js (que pode ainda não ter carregado) */
@@ -458,7 +499,7 @@
       this.ultimo = { tipo: qual, arquivos: sel, nesting: r.nesting };
       var z = this.zip(sel); if (!z) { toast("O gerador de .zip (js/bimbcf.js) não carregou.", "erro"); return null; }
       this.baixar(this.arqBase() + (qual === "dstv" ? "-dstv.zip" : "-dxf-chapas.zip"), z, "application/zip");
-      var extra = qual === "dxf" && r.nesting.length ? " Aproveitamento (chapa padrão 3000 × 1200, valor de partida): " + r.nesting.map(function (x) { return x.grupo + " " + x.chapas + " chapa(s), " + br(x.aproveitamento, 1) + " %"; }).join("; ") + "." : "";
+      var extra = qual === "dxf" && r.nesting.length ? " Nesting nas chapas comerciais (valores de partida, Fabricação › Nesting de chapas): " + r.nesting.map(function (x) { return x.grupo + " " + x.chapas + " chapa(s), " + br(x.aproveitamento, 1) + " %"; }).join("; ") + "." : "";
       toast((qual === "dstv" ? n + " arquivo(s) DSTV NC1" : n + " DXF de corte") + " no .zip." + extra + " Confira o sentido dos ângulos e o cabeçalho de chapa no pós-processador da máquina.", "ok", 10000);
       return sel;
     },
@@ -494,23 +535,34 @@
       if (!F().listas(st).pecas.length) { toast("Não há peça de aço no modelo para o pacote da fábrica.", "aviso"); return; }
       var r = F().arquivos(st, { pedido: this.nomeObra().slice(0, 20) }), arqs = {};
       Object.keys(r.arquivos).forEach(function (k) { arqs[k] = r.arquivos[k]; });
-      var fim = function (buf) {
+      /* a lista de corte (aproveitamento de barras) e o caderno de desenhos no Padrão RA (js/metalfabui.js) entram no pacote */
+      var X = global.MetalFabUI, CO = global.BimMetalCorte, FDs = global.BimMetalFabDes, plano = null;
+      try { if (X && CO && r.numeracao) plano = CO.planoBarras(r.numeracao, X.cfg()); } catch (eP) { plano = null; }
+      try { if (X && FDs && global.SvgPdf) { var fl = FDs.folhasFabricacao(st, (function () { var o = X.opFolhas(); o.numeracao = r.numeracao; return o; })()); if (fl.ok && fl.folhas.length) arqs["desenhos-fabricacao.pdf"] = FDs.pdf(fl.folhas, "Desenhos de fabricação"); } } catch (eD) {}
+      var fim = function (buf, bufCorte) {
         if (buf) arqs["listas-fabricacao.xlsx"] = new Uint8Array(buf);
+        if (bufCorte) arqs["lista-de-corte.xlsx"] = new Uint8Array(bufCorte);
         self.ifc(true).then(function (ri) {
           if (ri && ri.texto) arqs["fabricacao.ifc"] = ri.texto;
-          arqs["LEIA-ME.txt"] = "OrcaPRO Modela - Metalica & Mecanica\r\nDSTV/: um .nc1 por marca (DSTV NC1, 7a ed. jul/1998). Conferir no pos-processador da maquina o sentido dos angulos de corte e o cabecalho de chapa.\r\nDXF/: chapas 1:1 em mm (CUT_OUTSIDE, CUT_INSIDE, ETCH) e o nesting simples na chapa padrao.\r\nNao e calculo estrutural: perfis, parafusos, chapas e soldas de partida devem ser conferidos pelo projeto.\r\n";
+          arqs["LEIA-ME.txt"] = "OrcaPRO Modela - Metalica & Mecanica\r\nDSTV/: um .nc1 por marca (DSTV NC1, 7a ed. jul/1998). Conferir no pos-processador da maquina o sentido dos angulos de corte e o cabecalho de chapa.\r\nDXF/: chapas 1:1 em mm (CUT_OUTSIDE, CUT_INSIDE, ETCH; BEND nas chapas dobradas planificadas) e o nesting nas chapas comerciais.\r\nlista-de-corte.xlsx: aproveitamento de barras (barras a comprar, plano de corte, sobras). desenhos-fabricacao.pdf: uma folha por marca e por conjunto (Padrao RA).\r\nNao e calculo estrutural: perfis, parafusos, chapas e soldas de partida devem ser conferidos pelo projeto.\r\n";
           var z = self.zip(arqs); if (!z) { toast("O gerador de .zip não carregou.", "erro"); return; }
           self.ultimo = { tipo: "pacote", arquivos: Object.keys(arqs) };
           self.baixar(self.arqBase() + "-pacote-fabrica.zip", z, "application/zip");
-          toast("Pacote da fábrica: " + Object.keys(arqs).length + " arquivos (DSTV, DXF, nesting, listas e IFC).", "ok", 9000);
+          toast("Pacote da fábrica: " + Object.keys(arqs).length + " arquivos (DSTV, DXF, nesting, listas, lista de corte, desenhos e IFC).", "ok", 9000);
         });
       };
       var Ls = r.listas;
-      var go = function () { F().xlsx(Ls, global.ExcelJS).xlsx.writeBuffer().then(fim, function () { fim(null); }); };
+      var go = function () {
+        F().xlsx(Ls, global.ExcelJS).xlsx.writeBuffer().then(function (b1) {
+          if (!plano || !plano.grupos.length) { fim(b1, null); return; }
+          CO.xlsxCorte(plano, global.ExcelJS, { obra: self.nomeObra() }).xlsx.writeBuffer().then(function (b2) { fim(b1, b2); }, function () { fim(b1, null); });
+        }, function () { fim(null, null); });
+      };
       if (global.ExcelJS) go(); else if (global.ExcelOrc && ExcelOrc.ensureExcelJS) ExcelOrc.ensureExcelJS(go); else fim(null);
     },
-    /* DESENHO DE FABRICAÇÃO → uma prancha A3 com uma folha por marca de peça e por conjunto */
-    desenhos: function () {
+    /* DESENHO DE FABRICAÇÃO → as Pranchas do projeto (uma folha A3 por marca de peça e por conjunto); o caderno
+       em PDF no Padrão RA (carimbo RA) é o js/metalfabui.js — o botão abre lá e este é o "Enviar às Pranchas" */
+    desenhosPrancha: function () {
       var st = this.estado(), G = this._G || global.Gestao; if (!st) { toast("Abra o modelador primeiro.", "aviso"); return null; }
       var n = F().numerar(st); if (!n.grupos.length) { toast("Não há peça de aço no modelo.", "aviso"); return null; }
       var folhas = [], imgs = {}, base = "metfab:" + Date.now().toString(36) + ":";

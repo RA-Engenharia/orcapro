@@ -1,5 +1,5 @@
 ﻿POLÍTICA DE PRIVACIDADE — OrçaPRO IA
-Versão 1.15 — vigente a partir de [DATA DA PUBLICAÇÃO — preencher no release]
+Versão 1.16 — vigente a partir de 14/10/2026
 Elaborada conforme a Lei nº 13.709/2018 (LGPD)
 
 O que mudou na 1.15: duas coisas.
@@ -237,6 +237,15 @@ Estados Unidos (transferência internacional, art. 33 da LGPD).
     de cada pedido (qual provedor e modelo atendeu e quanto texto foi
     processado), ligados a um resumo da licença — nunca o texto, o croqui nem
     o resultado —, por 12 meses (item 6).
+  · No Orçamentista ("Refinar com IA"), o uso é cobrado POR ORÇAMENTO: o
+    primeiro do mês é incluído no plano; depois dele, o preço aparece ANTES e
+    só é cobrado, pela carteira de créditos (item 4.17), se você confirmar. Para
+    isso o nosso servidor guarda, ligados a um resumo da licença, o
+    identificador do orçamento, uma ASSINATURA da planilha — códigos curtos
+    calculados a partir das descrições dos itens, que não permitem ler o
+    texto — e o registro de cada uso (data, se foi incluído ou pago, valor
+    cobrado e custo do provedor), por 12 meses (item 6). Se a IA não responder,
+    o valor volta para a carteira.
   · Acontece apenas no clique. Nada é enviado em segundo plano.
   · O conteúdo é usado só para produzir aquela resposta; não alimentamos
     treinamento de modelo com ele.

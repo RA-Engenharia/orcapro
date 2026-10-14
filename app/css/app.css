@@ -1119,10 +1119,15 @@ tr.tr-aviso-insumo b { cursor: pointer; text-decoration: underline; text-underli
    a herdar --t-micro do `.pill` (o padding apertado é que mantém o selo
    discreto sob o código), e o verde desce um degrau para #166534 — medido em
    6,03:1 e 5,43:1. O escuro já passava (7,74 e 6,96) e não muda. */
-.pill.lic-alerta { background: rgba(220,38,38,.12); color: #991b1b; padding: 1px 6px; margin-top: 2px; font-size: 10px; font-weight: 700; }
-[data-tema="dark"] .pill.lic-alerta { color: #fca5a5; }
 .pill.regime-des { background: rgba(22,163,74,.15); color: #166534; padding: 1px 6px; margin-top: 2px; }
 [data-tema="dark"] .pill.regime-des { color: #4ade80; }
+/* LICITAÇÃO: selo "acima do órgão" sob o código do item (js/ui.js). Mesmo
+   molde do selo do regime, logo acima: herda --t-micro e --p-forte do `.pill`.
+   ⚠ Nasceu (1.2.135) com tamanho 10px e peso 700 escritos à mão — abaixo do
+   piso de 12px da tela de canteiro e fora da régua; o gate da 1.2.136 pegou
+   pelo tools/test-contraste.js ("tamanho de fonte solto", "peso solto"). */
+.pill.lic-alerta { background: rgba(220,38,38,.12); color: #991b1b; padding: 1px 6px; margin-top: 2px; }
+[data-tema="dark"] .pill.lic-alerta { color: #fca5a5; }
 /* Dark: texto claro para não sumir sobre superfície escura */
 /* ⚠ `.propria` (com A) faltava aqui, e o par claro sempre teve as duas
    grafias. Conferido: hoje o render só emite `pill proprio`, então isto é

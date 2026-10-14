@@ -602,7 +602,10 @@
      a MESMA tela da Conferência de alvenaria. docs/bim/AUDITORIA-FERRAMENTAS.md */
   Ribbon.SUBSTITUIDOS_B1 = {
     "p3d": "gerar-volumetria", "corte-tecnico": "corte-2d", "cotas-auto": "planta-2d",
-    "familia-bloco": "conferir-modulacao", "modular": "conferir-modulacao", "junta": "conferir-modulacao", "peso-alvenaria": "conferir-modulacao"
+    "familia-bloco": "conferir-modulacao", "modular": "conferir-modulacao", "junta": "conferir-modulacao", "peso-alvenaria": "conferir-modulacao",
+    /* COTAS (13/10/2026): a cota do modelo ponto a ponto (só 3D, solta das peças) → a Cota de Anotar › Cotas
+       (3D, planta e corte, presa às peças, valor antes do clique) */
+    "cota-alinhada": "p7-cota-alinhada"
   };
   /* com o MODELADOR ligado o editor sintético da primeira versão sai: o painel
      dele já não abre (pedido de 09/10/2026) e Parede, Piso, Pilar, Viga, o

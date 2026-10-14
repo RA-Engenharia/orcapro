@@ -91,7 +91,9 @@
     /* volume livre (peça de qualquer disciplina) */
     "extrusao", "revolucao", "varredura", "unir", "subtrair", "empurrar",
     /* Anotar */
-    "medir", "area", "angulo", "snap", "limpar-medidas", "cotas-auto", "anotacao", "foto", "pranchas", "cota-alinhada",
+    "medir", "area", "angulo", "snap", "limpar-medidas", "cotas-auto", "anotacao", "foto", "pranchas",
+    /* COTAS (js/bimcotasui.js): o grupo Anotar › Cotas vale em toda disciplina */
+    "cotar-selecao", "cotar-vista", "cota-coordenada", "cota-furacao", "cotas-padrao",
     "identificar-categoria", "identificar-todos",
     "p7-cota-alinhada", "p7-cota-linear", "p7-cota-angular", "p7-cota-radial", "p7-cota-diametro", "p7-cota-arco",
     "p7-cota-elevacao", "p7-cota-inclinacao", "p7-tipos", "p7-texto", "p7-simbolo", "p7-nota-chave",

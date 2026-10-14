@@ -174,6 +174,8 @@
   }
   function secaoDe(p) {
     if (p && p.forma === "frio") return secaoFrio(p);
+    /* CHAPA DOBRADA (js/metalplanif.js): polilinha pela linha média + espessura + raio interno */
+    if (p && p.forma === "dobrada") { var PL = dep("BimMetalPlanif", "./metalplanif.js"); return PL ? PL.secao(p) : { ok: false, motivo: "O motor da chapa dobrada (js/metalplanif.js) não carregou." }; }
     if (p && p.forma === "circ" && num(p.d, 0) > 0.003 && num(p.d, 0) < 0.02) {
       var d = num(p.d, 0); return { ok: true, forma: "circ", contorno: circ(0, 0, d / 2, 24), furos: [], area: Math.PI * d * d / 4, perimetro: Math.PI * d, larg: d, alt: d, rotulo: "Ø " + Math.round(d * 10000) / 10 + " mm" };
     }
@@ -453,7 +455,7 @@
     if (p.forma === "L" || p.forma === "tubo-ret" || p.forma === "tubo-circ") return num(p.t, 0);
     if (p.forma === "ret") return num(p.b, 0);
     if (p.forma === "circ") return num(p.d, 0);
-    if (p.forma === "frio") return num(p.t, 0);
+    if (p.forma === "frio" || p.forma === "dobrada") return num(p.t, 0);
     return 0;
   }
   function faces(p) {

@@ -935,6 +935,7 @@
       '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f3c26f" stroke-width="2" stroke-linejoin="round"><path d="M3 20V9l9-5 9 5v11"/><path d="M3 9h18" stroke="#9fc2e4"/><path d="M8 20v-6h8v6" stroke="#9fc2e4"/></svg></div>' +
       '<div><h2 id="mc-tit">Cálculo do galpão de aço</h2><p>' + esc((o && o.nome ? o.nome + " · " : "") + (sub || "NBR 8800 · NBR 6123 · NBR 6120 · NBR 8681 · NBR 14762")) + "</p></div>" +
       '<span class="mc-esp"></span>' + (semBotoes ? "" :
+      (global.MetalCalcLivreUI ? '<button class="mc-cb" data-mc-acao="livre" title="Calcular a estrutura desenhada no modelo (mezanino, passarela, pórtico avulso, cobertura simples)">' + ico("estrutura", 15) + " Estrutura desenhada</button>" : "") +
       '<button class="mc-cb" data-mc-acao="modelos" title="Galpões prontos para ajustar">' + ico("camadas", 15) + " Modelos prontos</button>" +
       '<button class="mc-cb" data-mc-acao="normas" title="As normas e edições que o cálculo usa">' + ico("livro", 15) + " Normas</button>" +
       (UIC.r ? '<button class="mc-cb" data-mc-acao="resultados" title="O último cálculo desta obra">' + ico("grafico", 15) + " Resultado</button>" : "")) +
@@ -2053,6 +2054,7 @@
     var e = UIC.est;
     switch (a) {
       case "fechar": fechar(); return;
+      case "livre": fechar(); if (global.MetalCalcLivreUI) global.MetalCalcLivreUI.abrir(); return;
       case "passo": case "passo-assistente": UIC.passo = clamp(+val || 1, 1, PASSOS.length); UIC.modo = "assistente"; render(); return;
       case "proximo": UIC.passo = Math.min(PASSOS.length, UIC.passo + 1); render(); return;
       case "voltar": UIC.passo = Math.max(1, UIC.passo - 1); render(); return;

@@ -6311,7 +6311,6 @@ if (document.documentElement.getAttribute("data-visual") === "nova" || (window.B
 BimRibbon.reorganizar();
 if (window.BimPrevia && BimPrevia.modelador() && window.BimPrecisao && BimRibbon.acrescentar) {
 BimRibbon.acrescentar("arquitetura", { nome: "Modificar", comandos: BimPrecisao.FITA.modificar });
-BimRibbon.acrescentar("anotar", { nome: "Cota do modelo", comandos: BimPrecisao.FITA.cotar });
 if (BimPrecisao.FITA.geometria) BimRibbon.acrescentar("arquitetura", { nome: "Geometria", comandos: BimPrecisao.FITA.geometria });
 if (BimPrecisao.FITA.pintar) BimRibbon.acrescentar("acabamentos", { nome: "Pintar", comandos: BimPrecisao.FITA.pintar });
 }
@@ -6698,6 +6697,7 @@ try { if (window.BimEmBreveUI) BimEmBreveUI.registrar(reg, self); } catch (eEmb)
 try { if (window.BimRender) BimRender.registrar(reg, self); } catch (eRender) {}
 try { if (window.BimMateriaisUI) BimMateriaisUI.registrar(reg, self); } catch (eMat) {}
 try { if (window.BimMetalUI) BimMetalUI.registrar(reg, self); } catch (eMet) {}
+try { if (window.BimCotasUI) BimCotasUI.registrar(reg, self); } catch (eCot) {}
 try { if (window.MadCalcUI) MadCalcUI.registrar(reg, self); } catch (eMad) {}
 try { if (window.BimProjetosUI) BimProjetosUI.registrar(reg, self); } catch (eProj) {}
 BimCmd.registrar(reg);
@@ -67376,24 +67376,119 @@ UI.modal(ic("tabela") + " Composição própria elaborada — " + esc(c.codigo |
 };
 });
 };
+App._orcmRaiz = function () {
+var st = this._orcm;
+if (st.raiz) return st.raiz;
+var orc = (st.modo === "orcamento" && this.orcAtual && this.orcAtual.id === st.orcId) ? this.orcAtual : null, r = "";
+if (orc) {
+r = orc.orcmRaiz || "";
+if (!r) {
+var lista = [];
+try { lista = (typeof Store !== "undefined" && Store.listarOrcamentos) ? (Store.listarOrcamentos(Auth.empresaId()) || []) : []; } catch (e) { lista = []; }
+var porId = {}; lista.forEach(function (o) { if (o && o.id) porId[o.id] = o; });
+var cur = orc, passos = 0;
+while (cur && !cur.orcmRaiz && cur.revisaoDe && porId[cur.revisaoDe] && passos < 50) { cur = porId[cur.revisaoDe]; passos++; }
+r = (cur && (cur.orcmRaiz || cur.id)) || orc.id || "";
+}
+}
+r = String(r || "").replace(/[^A-Za-z0-9_.:-]/g, "").slice(0, 80);
+if (!r) { var asg = this._orcmAssinatura().slice().sort(); r = "imp_" + asg.length.toString(36) + "_" + this._orcmHash(asg.join(",")); }
+return (st.raiz = r);
+};
+App._orcmHash = function (s) {
+var h = 0x811c9dc5;
+s = String(s || "");
+for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = (h + (h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24)) >>> 0; }
+return ("0000000" + h.toString(16)).slice(-8);
+};
+App._orcmAssinatura = function () {
+var self = this, vistos = {}, out = [];
+Util.arr(this._orcm && this._orcm.plano).forEach(function (L) {
+var d = String((typeof Util !== "undefined" && Util.normalizar) ? Util.normalizar(L.item.descricao || "") : (L.item.descricao || "")).toUpperCase().replace(/\s+/g, " ").trim();
+if (!d) return;
+var hx = self._orcmHash(d);
+if (!vistos[hx]) { vistos[hx] = 1; out.push(hx); }
+});
+return out.slice(0, 2000);
+};
+App._orcmPrecoModal = function (p, confirmar) {
+var self = this, rg = p.regra || {}, pago = p.precoCent > 0, suficiente = !pago || !!(p.carteira && p.carteira.suficiente);
+var revs = function (n) { return n === 1 ? "1 revisão incluída" : n + " revisões incluídas"; };
+var html = '<p style="font-size:14px;margin-top:0" data-orcm="preco-texto"><b>' + esc(p.texto || "") + "</b></p>" +
+'<p class="muted" style="font-size:12.5px">A IA escolhe entre os candidatos que o Orçamentista achou nas bases e propõe a estrutura das composições que nenhuma base tem. Ela nunca inventa código nem preço.</p>' +
+'<p class="muted" style="font-size:12.5px">Regra: ' + (rg.gratisPorMes === 1 ? "1 orçamento" : esc(String(rg.gratisPorMes)) + " orçamentos") + " por IA por mês incluído" + (rg.gratisPorMes === 1 ? "" : "s") + " no plano; depois, " + esc(rg.preco || "") +
+" por orçamento, com " + revs(rg.revisoesIncluidas) + "; revisão extra, " + esc(rg.revisao || "") + ". Confirmado, a IA fica liberada neste orçamento por " + esc(String(rg.janelaHoras || "")) +
+" h. Se ela não responder, o valor volta para a carteira.</p>";
+if (pago) html += '<p style="font-size:13px">Saldo da carteira de créditos: <b>' + esc((p.carteira && p.carteira.saldo) || "") + "</b>" + (suficiente ? "" : " — insuficiente.") + "</p>" +
+(suficiente ? "" : '<p class="muted" style="font-size:12.5px">' + esc((p.compraCreditos && p.compraCreditos.texto) || "") + "</p>");
+var botoes = [{ texto: "Voltar", classe: "ghost", onClick: function () { UI.fecharModal(); self._orcmAbrirRevisao(); } }];
+if (suficiente) botoes.push({ texto: ic("alvo") + (pago ? " Confirmar " + esc(p.preco || "") + " e usar a IA" : " Usar a IA (incluído)"), classe: "success", onClick: function () { confirmar(); } });
+else if (p.compraCreditos && p.compraCreditos.pix && typeof IAAcabamento !== "undefined" && IAAcabamento.comprarCreditos) botoes.push({ texto: "Comprar créditos (PIX)", classe: "success", onClick: function () {
+var falta = Math.max(0, (Number(p.precoCent) || 0) - (Number(p.carteira && p.carteira.saldoCent) || 0));
+IAAcabamento.comprarCreditos({ valorCent: falta, aoCreditar: function () { self._orcmRefinarIA(); }, aoFechar: function () { self._orcmAbrirRevisao(); } });
+} });
+UI.modal(ic("ia") + " IA do Orçamentista — " + (pago ? "o preço antes de usar" : "incluído no plano"), html, botoes);
+};
+App._orcmJanelaIA = function (back, seguir) {
+var self = this, st = this._orcm;
+if (st.janela && st.janela.ate > new Date().getTime() + 60000) { seguir(st.janela.id); return; }
+var hdr = { "Content-Type": "application/json", "x-licenca": (typeof Licenca !== "undefined" ? Licenca.chave() : "") };
+var corpo = { raiz: this._orcmRaiz(), assinatura: this._orcmAssinatura() };
+var post = function (rota, b) {
+return fetch(back + rota, { method: "POST", headers: hdr, body: JSON.stringify(b) })
+.then(function (r) { return r.json().then(function (j) { return { status: r.status, j: j || {} }; }, function () { return { status: r.status, j: {} }; }); });
+};
+var semRede = function () { UI.loadingFim(); UI.toast("Sem conexão com o servidor de IA — nada foi cobrado.", "erro"); };
+var abrir = function (orcamentoId) {
+var b = { raiz: corpo.raiz, assinatura: corpo.assinatura };
+if (orcamentoId) b.orcamentoId = orcamentoId;
+UI.loading("Liberando a IA neste orçamento…");
+post("/ia/orcamentista/abrir", b).then(function (o) {
+UI.loadingFim();
+if (o.status !== 200 || !o.j.ok) { UI.toast(o.j.error || ("Não consegui liberar a IA (HTTP " + o.status + ") — nada foi cobrado."), "erro"); UI.fecharModal(); self._orcmAbrirRevisao(); return; }
+st.janela = { id: o.j.sessao, ate: Date.parse(o.j.ate) || (new Date().getTime() + 3600000) };
+if (o.j.cobrado) UI.toast("Cobrado " + o.j.cobrado.texto + " da carteira de créditos (saldo: " + o.j.cobrado.saldo + ").", "ok");
+UI.fecharModal(); self._orcmAbrirRevisao();
+seguir(st.janela.id);
+}, semRede);
+};
+UI.loading("Consultando o preço da IA…");
+post("/ia/orcamentista/preco", corpo).then(function (o) {
+UI.loadingFim();
+if (o.status === 404 || o.status === 503) { seguir(null); return; }
+if (o.status !== 200 || !o.j.ok) { UI.toast(o.j.error || ("Não consegui consultar o preço da IA (HTTP " + o.status + ")."), "erro"); return; }
+if (o.j.situacao === "aberta") { abrir(null); return; }
+self._orcmPrecoModal(o.j, function () { abrir(o.j.orcamentoId || null); });
+}, semRede);
+};
 App._orcmRefinarIA = function () {
 var self = this, st = this._orcm, back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? CONFIG.iaBackend : "";
 if (!back) { UI.toast("Servidor de IA não configurado.", "erro"); return; }
-var hdr = { "Content-Type": "application/json", "x-licenca": (typeof Licenca !== "undefined" ? Licenca.chave() : "") };
 var revisar = st.plano.filter(function (L) { return L.status === "revisar" && L.candidatos.length >= 2 && !L.decididoPeloUsuario && !L.refinadoIA; });
 var pend = st.plano.filter(function (L) { return L.status === "pendente" && !L.decididoPeloUsuario && !L.refinadoIA; });
 if (!revisar.length && !pend.length) { UI.toast("Nada para a IA refinar: sem linhas em revisão ou pendentes.", "ok"); return; }
+this._orcmJanelaIA(back, function (sessao) { self._orcmRefinarIAComJanela(back, sessao, revisar, pend); });
+};
+App._orcmRefinarIAComJanela = function (back, sessao, revisar, pend) {
+var self = this, st = this._orcm;
+var hdr = { "Content-Type": "application/json", "x-licenca": (typeof Licenca !== "undefined" ? Licenca.chave() : "") };
+if (sessao) hdr["x-orcm-sessao"] = sessao;
 UI.toast(ic("alvo") + " IA: " + revisar.length + " em revisão, " + pend.length + " pendente(s)…", "ok");
-var refinados = 0, compostas = 0, limite = false;
+var refinados = 0, compostas = 0, limite = false, parar = "";
+var fechou = function (o) {
+if (o.status === 402 || (o.j && o.j.devolvido)) { parar = (o.j && o.j.error) || "A janela da IA deste orçamento foi encerrada — confirme de novo."; st.janela = null; return true; }
+return false;
+};
 var lotes = []; for (var k = 0; k < revisar.length; k += 6) lotes.push(revisar.slice(k, k + 6));
 var casar = lotes.reduce(function (p, lote) {
 return p.then(function () {
-if (limite) return;
+if (limite || parar) return;
 var payload = lote.map(function (L) { return { descricao: L.item.descricao, unidade: L.item.unidade || "", candidatos: L.candidatos.slice(0, 3).map(function (c) { return { codigo: c.item.codigo, descricao: String(c.item.descricao || "").slice(0, 70), unidade: c.item.unidade }; }) }; });
 return fetch(back + "/ia/casar", { method: "POST", headers: hdr, body: JSON.stringify({ itens: payload }) })
 .then(function (r) { return r.json().then(function (j) { return { status: r.status, j: j }; }, function () { return { status: r.status, j: {} }; }); })
 .then(function (o) {
 var j = o.j;
+if (fechou(o)) return;
 if (!j.ok && (o.status === 429 || /rate limit|429/i.test(String(j.error || "")))) { limite = true; return; }
 if (!j.ok || !j.escolhas) return;
 j.escolhas.forEach(function (e) {
@@ -67407,11 +67502,12 @@ if (String(L.candidatos[z].item.codigo) === String(e.codigo)) { Orcamentista.apl
 });
 }, Promise.resolve());
 var compor = casar.then(function () {
-if (limite || !pend.length) return;
+if (limite || parar || !pend.length) return;
 var payload = pend.slice(0, 20).map(function (L) { return { i: L.i, descricao: L.item.descricao, unidade: L.item.unidade || "" }; });
 return fetch(back + "/ia/compor", { method: "POST", headers: hdr, body: JSON.stringify({ itens: payload }) })
 .then(function (r) { return r.json().then(function (j) { return { status: r.status, j: j }; }, function () { return { status: r.status, j: {} }; }); })
 .then(function (o) {
+if (fechou(o)) return;
 if (o.status === 404) { UI.toast("O servidor de IA ainda não tem a rota /ia/compor — pendentes ficam para você completar.", "erro"); return; }
 var j = o.j; if (!j || !j.ok || !Array.isArray(j.composicoes)) return;
 j.composicoes.forEach(function (c) {
@@ -67428,6 +67524,7 @@ L.confianca = 30; L.motivo = "composição proposta pela IA (insumos casados nas
 });
 compor.then(function () {
 var body = document.getElementById("orcm-body"); if (body) { body.outerHTML = UI.renderOrcamentistaRevisao(st); self._orcmLigar(); }
+if (parar) { UI.toast(parar + (refinados || compostas ? " (antes disso: " + refinados + " escolha(s), " + compostas + " composição(ões))" : ""), "erro"); return; }
 UI.toast("IA: " + refinados + " escolha(s) refinada(s), " + compostas + " composição(ões) proposta(s)." + (limite ? " ⏳ Limite da IA por minuto — clique de novo daqui ~1 min." : ""), limite ? "erro" : "ok");
 });
 };
@@ -67525,6 +67622,7 @@ if (it && item.orcamentista) it.orcamentista = item.orcamentista;
 n[L.status]++;
 });
 orc.orcamentista = { em: new Date().toISOString(), fontes: st.fontes, resumo: n, versao: (typeof CONFIG !== "undefined" ? CONFIG.versao : "") };
+if (st.raiz) orc.orcmRaiz = st.raiz;
 if (!Store.salvarOrcamento(Auth.empresaId(), orc)) {
 this._orcmRecado("O orçamento NÃO foi criado: " + porque() + ". " +
 (gravadas ? gravadas + " composição(ões) própria(s) já ficaram na sua base PRÓPRIA. " : "") + "As decisões continuam neste quadro.");
@@ -67548,6 +67646,7 @@ if (!(L.item.custoPlanilha > 0) || !planilhaVence) { ref.custoUnitario = custoNo
 ref.orcamentista = item.orcamentista; n[L.status]++;
 });
 copia.orcamentista = { em: new Date().toISOString(), fontes: st.fontes, resumo: n, versao: (typeof CONFIG !== "undefined" ? CONFIG.versao : "") };
+if (st.raiz && !copia.orcmRaiz) copia.orcmRaiz = st.raiz;
 var gravou = false, excecao = null;
 this.orcAtual = copia;
 try { gravou = this.persistir ? this.persistir({ semBackupModal: true, rotulo: "decisões do Orçamentista" }) : !!Store.salvarOrcamento(Auth.empresaId(), copia); }
@@ -67570,5 +67669,5 @@ UI.toast("Orçamentista: " + n.casado + " casados · " + n.revisar + " para revi
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=235ef4648e"},{"src":"js/bim-pacote.js?v=893cd67a5b","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=e18fd80047","modulo":true}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=b2aa529e8d"},{"src":"js/bim-pacote.js?v=c18b27c2d1","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=e18fd80047","modulo":true}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map
