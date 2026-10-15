@@ -73,6 +73,7 @@ var U = (typeof window !== 'undefined' && window.Util) ? window.Util : (typeof U
 if (!U || !U.sha256hex) return false;
 try { return BLOCOK_HASHES.indexOf(U.sha256hex(BLOCOK_SAL + e)) >= 0; } catch (_) { return false; }
 }
+try { if (typeof window !== 'undefined') window.blocokEmailLiberado = blocokEmailLiberado; } catch (_) {}
 function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
 var TIPOS = {
 IFCWALL: 'Parede', IFCWALLSTANDARDCASE: 'Parede', IFCSLAB: 'Laje', IFCBEAM: 'Viga', IFCCOLUMN: 'Pilar',

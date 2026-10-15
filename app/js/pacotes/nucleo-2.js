@@ -67974,5 +67974,5 @@ UI.toast("Orçamentista: " + n.casado + " casados · " + n.revisar + " para revi
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=02006cd8b2"},{"src":"js/bim-pacote.js?v=141cd5f76d","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=5e242cc970"},{"src":"js/bim-pacote.js?v=5a86918ded","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

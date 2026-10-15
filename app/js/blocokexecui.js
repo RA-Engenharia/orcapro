@@ -59,8 +59,23 @@
   }
 
   /* --------------------------------------------------------- liberação */
+  /* As MESMAS três portas do js/bim.js (blocokLiberado): a trava da máquina do dono
+     (`orcapro:blocok:owner`, ligada pelo instalador ou à mão), a compra/teste/vitrine
+     (Modela) e a licença antiga por e-mail (BLOCOK_HASHES, cliente GCon).
+     ⚠ POR QUE (15/10/2026): antes só havia Modela + BIM.temBotao("blocok"), e o
+     temBotao procura o botão da barra ANTIGA, que ainda não existe quando a fita é
+     montada — o dono e o cliente GCon recebiam os tipos de parede Blocok (lidos
+     depois) mas não o painel "Blocok executivo / Documentos Blocok" (lido na hora). */
+  function emailsDaSessao() {
+    var r = [];
+    try { var A = global.Auth; if (A && A.usuario && A.usuario() && A.usuario().email) r.push(A.usuario().email); } catch (e) {}
+    try { var N = global.Nuvem; if (N && N.auth && N.auth.currentUser && N.auth.currentUser.email) r.push(N.auth.currentUser.email); } catch (e) {}
+    return r;
+  }
   function liberado() {
+    try { if (global.localStorage && global.localStorage.getItem("orcapro:blocok:owner") === "1") return true; } catch (e0) {}
     try { if (global.Modela && Modela.tem && Modela.tem("blocok")) return true; } catch (e) {}
+    try { if (typeof global.blocokEmailLiberado === "function" && emailsDaSessao().some(function (m) { return global.blocokEmailLiberado(m); })) return true; } catch (e1) {}
     try { if (global.BIM && BIM.temBotao && BIM.temBotao("blocok")) return true; } catch (e2) {}
     return false;
   }

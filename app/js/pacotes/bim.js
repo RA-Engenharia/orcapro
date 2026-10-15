@@ -100773,8 +100773,16 @@ return { laje: { tipo: "macica", espessura: 0.10, revestimento: 1.0, uso: "resid
 cobertura: { g: 0.5, q: 0.25, vao: 4.0 }, vento: { v0: "", categoria: "IV", grupoS3: 2 }, solo: { tensaoAdm: "" },
 painel: { MRdX: "", MRdY: "", fonte: "" }, fck: 25, caa: "II", apoia: {}, nome: "", local: "" };
 }
+function emailsDaSessao() {
+var r = [];
+try { var A = global.Auth; if (A && A.usuario && A.usuario() && A.usuario().email) r.push(A.usuario().email); } catch (e) {}
+try { var N = global.Nuvem; if (N && N.auth && N.auth.currentUser && N.auth.currentUser.email) r.push(N.auth.currentUser.email); } catch (e) {}
+return r;
+}
 function liberado() {
+try { if (global.localStorage && global.localStorage.getItem("orcapro:blocok:owner") === "1") return true; } catch (e0) {}
 try { if (global.Modela && Modela.tem && Modela.tem("blocok")) return true; } catch (e) {}
+try { if (typeof global.blocokEmailLiberado === "function" && emailsDaSessao().some(function (m) { return global.blocokEmailLiberado(m); })) return true; } catch (e1) {}
 try { if (global.BIM && BIM.temBotao && BIM.temBotao("blocok")) return true; } catch (e2) {}
 return false;
 }

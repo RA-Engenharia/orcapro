@@ -235,6 +235,9 @@ function blocokEmailLiberado(email) {
   if (!U || !U.sha256hex) return false;
   try { return BLOCOK_HASHES.indexOf(U.sha256hex(BLOCOK_SAL + e)) >= 0; } catch (_) { return false; }
 }
+/* bim.js é carregado como MÓDULO (index.html: type="module"): função declarada aqui não vira global.
+   A tela do executivo Blocok (js/blocokexecui.js) consulta a licença por e-mail por este nome — 15/10/2026. */
+try { if (typeof window !== 'undefined') window.blocokEmailLiberado = blocokEmailLiberado; } catch (_) {}
 
 function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
 
